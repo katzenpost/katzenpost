@@ -14,13 +14,14 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-package sphinx
+package tests
 
 import (
 	"crypto/rand"
 	"testing"
 
 	"github.com/katzenpost/katzenpost/core/crypto/nike/ecdh"
+	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/stretchr/testify/require"
 )
@@ -43,7 +44,7 @@ func TestEcdhSphinxGeometry(t *testing.T) {
 	err := g.Validate()
 	require.NoError(err)
 
-	sphinx := NewSphinx(g)
+	sphinx := sphinx.NewSphinx(g)
 	nrHops := 5
 	_, path := newNikePathVector(require, mynike, nrHops, true)
 	payload := make([]byte, g.ForwardPayloadLength)
@@ -62,7 +63,7 @@ func TestEcdhForwardSphinx(t *testing.T) {
 	mynike := ecdh.NewEcdhNike(rand.Reader)
 	nrHops := 20
 	g := geo.GeometryFromUserForwardPayloadLength(mynike, len(testPayload), false, nrHops)
-	sphinx := NewSphinx(g)
+	sphinx := sphinx.NewSphinx(g)
 	testForwardSphinx(t, mynike, sphinx, []byte(testPayload))
 }
 
@@ -73,7 +74,7 @@ func TestEcdhSURB(t *testing.T) {
 	mynike := ecdh.NewEcdhNike(rand.Reader)
 	nrHops := 20
 	g := geo.GeometryFromUserForwardPayloadLength(mynike, len(testPayload), false, nrHops)
-	sphinx := NewSphinx(g)
+	sphinx := sphinx.NewSphinx(g)
 	testSURB(t, mynike, sphinx, []byte(testPayload))
 }
 
@@ -87,7 +88,7 @@ func TestSphinxProductionSimili(t *testing.T) {
 
 	g := geo.GeometryFromUserForwardPayloadLength(mynike, 2000, true, nrHops)
 
-	s, err := FromGeometry(g)
+	s, err := sphinx.FromGeometry(g)
 	require.NoError(t, err)
 
 	zeroBytes := make([]byte, g.UserForwardPayloadLength)
@@ -118,7 +119,7 @@ func TestSphinxOneHop(t *testing.T) {
 
 	g := geo.GeometryFromUserForwardPayloadLength(mynike, 2000, true, nrHops)
 
-	s, err := FromGeometry(g)
+	s, err := sphinx.FromGeometry(g)
 	require.NoError(t, err)
 
 	zeroBytes := make([]byte, g.UserForwardPayloadLength)

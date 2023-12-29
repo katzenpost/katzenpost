@@ -11,20 +11,32 @@ import (
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 )
 
-// PathFactory is used to compose Sphinx packet paths.
-type PathFactory struct {
+type PathFactory interface {
+	ComposePath(
+		geo *geo.Geometry,
+		doc *pki.Document,
+		srcMix *[32]byte,
+		dstId []byte,
+		dstMix *[32]byte,
+		surbID *[constants.SURBIDLength]byte,
+		baseTime time.Time,
+		isForward bool) (outputPath []*PathHop, rtt time.Time, err error)
+}
+
+// DefaultPathFactory is used to compose Sphinx packet paths.
+type DefaultPathFactory struct {
 	rng *mRand.Rand
 }
 
-func NewPathFactory() *PathFactory {
-	return &PathFactory{
+func NewDefaultPathFactory() *DefaultPathFactory {
+	return &DefaultPathFactory{
 		rng: rand.NewMath(),
 	}
 }
 
 // ComposePath is used to compose a Sphinx packet path. Returns
 // path and round trip time or an error.
-func (d *PathFactory) ComposePath(
+func (d *DefaultPathFactory) ComposePath(
 	geo *geo.Geometry,
 	doc *pki.Document,
 	srcMix *[32]byte,

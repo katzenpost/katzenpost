@@ -8,7 +8,6 @@ import (
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx"
-
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	sphinxPath "github.com/katzenpost/katzenpost/core/sphinx/path"
@@ -16,7 +15,7 @@ import (
 
 // PacketFactory is used to compose Sphinx packets.
 type PacketFactory struct {
-	pathFactory *sphinxPath.PathFactory
+	pathFactory sphinxPath.PathFactory
 	geo         *geo.Geometry
 	sphinx      *sphinx.Sphinx
 }
@@ -25,9 +24,9 @@ type PacketFactory struct {
 type PacketFactoryOption func(*PacketFactory)
 
 // WithPathFactory is used to set the path factory.
-func WithPathFactory(pathFactory *sphinxPath.PathFactory) PacketFactoryOption {
-	return func(PacketFactory *PacketFactory) {
-		PacketFactory.pathFactory = pathFactory
+func WithPathFactory(pathFactory sphinxPath.PathFactory) PacketFactoryOption {
+	return func(packetFactory *PacketFactory) {
+		packetFactory.pathFactory = pathFactory
 	}
 }
 
@@ -37,7 +36,7 @@ func NewPacketFactory(geo *geo.Geometry, opts ...PacketFactoryOption) *PacketFac
 		panic(err)
 	}
 	factory := &PacketFactory{
-		pathFactory: sphinxPath.NewPathFactory(),
+		pathFactory: sphinxPath.NewDefaultPathFactory(),
 		geo:         geo,
 		sphinx:      s,
 	}
@@ -57,14 +56,15 @@ func (p *PacketFactory) ComposePacket(
 	message []byte) (packet []byte, surbKey []byte, rtt time.Duration, err error) {
 
 	if len(dstId) > constants.RecipientIDLength {
-		return nil, nil, 0, fmt.Errorf("minclient: invalid recipient: '%v'", dstId)
+		return nil, nil, 0, fmt.Errorf("invalid recipient: '%v'", dstId)
 	}
 	if len(message) > p.geo.UserForwardPayloadLength {
-		return nil, nil, 0, fmt.Errorf("minclient: invalid ciphertext size: %v", len(message))
+		return nil, nil, 0, fmt.Errorf("message size %d exceeds geo.UserForwardPayloadLength", len(message))
 	}
 
-	payload := make([]byte, p.geo.UserForwardPayloadLength)
-	payload = append(payload, message...)
+	// Our application message is padded with zero bytes until length p.geo.UserForwardPayloadLength
+	forwardMessage := make([]byte, p.geo.UserForwardPayloadLength)
+	copy(forwardMessage, message)
 
 	for {
 		unixTime := time.Now().Unix()
@@ -114,14 +114,16 @@ func (p *PacketFactory) ComposePacket(
 		// that happens, the path selection must be redone.
 		if then.Sub(now) < epochtime.Period*2 {
 			if surbID != nil {
-				payload := make([]byte, 2, 2+p.geo.SURBLength+len(message))
+				payload := make([]byte, p.geo.SphinxPlaintextHeaderLength, p.geo.SphinxPlaintextHeaderLength+p.geo.SURBLength+p.geo.UserForwardPayloadLength)
 				payload[0] = 1 // Packet has a SURB.
 				surb, k, err := p.sphinx.NewSURB(rand.Reader, revPath)
 				if err != nil {
 					return nil, nil, 0, err
 				}
 				payload = append(payload, surb...)
-				payload = append(payload, message...)
+				payload = append(payload, forwardMessage...)
+
+				// NOTE: len(payload) must be exactly geometry.ForwardPayloadLength
 
 				pkt, err := p.sphinx.NewPacket(rand.Reader, fwdPath, payload)
 				if err != nil {
@@ -129,7 +131,7 @@ func (p *PacketFactory) ComposePacket(
 				}
 				return pkt, k, then.Sub(now), err
 			} else {
-				pkt, err := p.sphinx.NewPacket(rand.Reader, fwdPath, payload)
+				pkt, err := p.sphinx.NewPacket(rand.Reader, fwdPath, forwardMessage)
 				if err != nil {
 					return nil, nil, 0, err
 				}

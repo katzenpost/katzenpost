@@ -14,17 +14,22 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-package sphinx
+package tests
 
 import (
 	"crypto/rand"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/katzenpost/katzenpost/core/crypto/nike"
+	"github.com/katzenpost/katzenpost/core/pki"
+	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/katzenpost/katzenpost/core/sphinx/commands"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
+	sphinxFactory "github.com/katzenpost/katzenpost/core/sphinx/packet_factory"
 	"github.com/katzenpost/katzenpost/core/sphinx/path"
 )
 
@@ -84,7 +89,24 @@ func newNikePathVector(require *require.Assertions, mynike nike.Scheme, nrHops i
 	return nodes, p
 }
 
-func testForwardSphinx(t *testing.T, mynike nike.Scheme, sphinx *Sphinx, testPayload []byte) {
+type PathFactory struct {
+	path  []*path.PathHop
+	nodes []*nodeParams
+}
+
+func (p *PathFactory) ComposePath(
+	geo *geo.Geometry,
+	doc *pki.Document,
+	srcMix *[32]byte,
+	dstId []byte,
+	dstMix *[32]byte,
+	surbID *[constants.SURBIDLength]byte,
+	baseTime time.Time,
+	isForward bool) (outputPath []*path.PathHop, rtt time.Time, err error) {
+	return p.path, time.Now(), nil
+}
+
+func testForwardSphinx(t *testing.T, mynike nike.Scheme, sphinx *sphinx.Sphinx, payload []byte) {
 	require := require.New(t)
 
 	for nrHops := 1; nrHops <= sphinx.Geometry().NrHops; nrHops++ {
@@ -93,10 +115,19 @@ func testForwardSphinx(t *testing.T, mynike nike.Scheme, sphinx *Sphinx, testPay
 		// Generate the "nodes" and path for the forward sphinx packet.
 		nodes, path := newNikePathVector(require, mynike, nrHops, false)
 
+		pathFactory := &PathFactory{
+			path:  path,
+			nodes: nodes,
+		}
+
 		// Create the packet.
-		payload := []byte(testPayload)
-		pkt, err := sphinx.NewPacket(rand.Reader, path, payload)
+		packetFactory := sphinxFactory.NewPacketFactory(sphinx.Geometry(), sphinxFactory.WithPathFactory(pathFactory))
+		surbID := &[constants.SURBIDLength]byte{}
+		_, err := rand.Reader.Read(surbID[:])
 		require.NoError(err)
+		pkt, surbKey, _, err := packetFactory.ComposePacket(nil, nil, nil, nil, nil, surbID, payload)
+		require.NoError(err)
+		require.NotNil(surbKey)
 		require.Equal(sphinx.Geometry().PacketLength, len(pkt))
 
 		// Unwrap the packet, validating the output.
@@ -124,7 +155,7 @@ func testForwardSphinx(t *testing.T, mynike nike.Scheme, sphinx *Sphinx, testPay
 	}
 }
 
-func testSURB(t *testing.T, mynike nike.Scheme, sphinx *Sphinx, testPayload []byte) {
+func testSURB(t *testing.T, mynike nike.Scheme, sphinx *sphinx.Sphinx, testPayload []byte) {
 	require := require.New(t)
 
 	for nrHops := 1; nrHops <= sphinx.Geometry().NrHops; nrHops++ {
