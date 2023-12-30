@@ -97,7 +97,13 @@ func (t *ThinClient) Close() error {
 // Dial dials the client daemon via our agreed upon abstract unix domain socket.
 func (t *ThinClient) Dial() error {
 	t.log.Debug("Dial begin")
-	srcUnixAddr, err := net.ResolveUnixAddr("unixpacket", "@katzenpost_golang_thin_client")
+	uniqueID := make([]byte, 4)
+	_, err := rand.Reader.Read(uniqueID)
+	if err != nil {
+		return err
+	}
+
+	srcUnixAddr, err := net.ResolveUnixAddr("unixpacket", fmt.Sprintf("@katzenpost_golang_thin_client_%x", uniqueID))
 	if err != nil {
 		return err
 	}
