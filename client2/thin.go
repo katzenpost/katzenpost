@@ -90,7 +90,7 @@ func (t *ThinClient) GetLogger(prefix string) *log.Logger {
 func (t *ThinClient) Close() error {
 	err := t.unixConn.Close()
 	close(t.receivedCh)
-	t.Halt()
+	t.Worker.Halt()
 	return err
 }
 

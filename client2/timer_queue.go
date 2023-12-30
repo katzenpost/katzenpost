@@ -28,6 +28,10 @@ func NewTimerQueue(action func(interface{})) *TimerQueue {
 	}
 }
 
+func (t *TimerQueue) Halt() {
+	t.Worker.Halt()
+}
+
 func (t *TimerQueue) Start() {
 	t.Go(t.worker)
 }

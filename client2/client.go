@@ -59,7 +59,7 @@ func (c *Client) halt() {
 	c.log.Info("Starting graceful shutdown.")
 
 	if c.conn != nil {
-		c.conn.Halt()
+		c.conn.halt()
 		// nil out after the PKI is torn down due to a dependency.
 	}
 
@@ -67,6 +67,7 @@ func (c *Client) halt() {
 		c.pki.Halt()
 		c.pki = nil
 	}
+
 	c.conn = nil
 
 	c.log.Info("Shutdown complete.")

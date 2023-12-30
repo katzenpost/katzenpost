@@ -87,6 +87,13 @@ func NewARQ(sphinxComposerSender SphinxComposerSender, mylog *log.Logger) *ARQ {
 	}
 }
 
+// Stop stops the ARQ's timer queue worker thread.
+func (a *ARQ) Stop() {
+	a.log.Info("Stop")
+	a.timerQueue.Halt()
+	a.timerQueue.Wait()
+}
+
 // Start starts the ARQ worker thread. You MUST start before using.
 func (a *ARQ) Start() {
 	a.log.Info("Start")
@@ -99,13 +106,6 @@ func (a *ARQ) Start() {
 		a.resend(surbID)
 	})
 	a.timerQueue.Start()
-}
-
-// Stop stops the ARQ's timer queue worker thread.
-func (a *ARQ) Stop() {
-	a.log.Info("Stop")
-	a.timerQueue.Halt()
-	a.timerQueue.Wait()
 }
 
 func (a *ARQ) resend(surbID *[sConstants.SURBIDLength]byte) {

@@ -108,6 +108,8 @@ type connection struct {
 
 	provider *[32]byte
 	queueID  []byte
+
+	isShutdown bool
 }
 
 type getConsensusCtx struct {
@@ -262,7 +264,11 @@ func (c *connection) doConnect(dialCtx context.Context) {
 
 		if c.client.cfg.Callbacks != nil {
 			if c.client.cfg.Callbacks.OnConnFn != nil {
-				c.client.cfg.Callbacks.OnConnFn(connErr)
+				if !c.isShutdown {
+					c.client.cfg.Callbacks.OnConnFn(connErr)
+				} else {
+					c.log.Debug("already shutting down, skipping OnConnFn callback")
+				}
 			}
 		}
 	}()
@@ -683,6 +689,9 @@ func (c *connection) IsPeerValid(creds *wire.PeerCredentials) bool {
 }
 
 func (c *connection) onConnStatusChange(err error) {
+	if c.isShutdown {
+		return
+	}
 	c.log.Info("onConnStatusChange")
 	c.Lock()
 	if err == nil {
@@ -799,6 +808,11 @@ func (c *connection) getConsensus(ctx context.Context, epoch uint64) (*commands.
 	}
 
 	// NOTREACHED
+}
+
+func (c *connection) halt() {
+	c.isShutdown = true
+	c.Worker.Halt()
 }
 
 func (c *connection) start() {

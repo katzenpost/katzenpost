@@ -8,6 +8,7 @@ import (
 	"io"
 	mrand "math/rand"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/charmbracelet/log"
@@ -48,8 +49,9 @@ type Daemon struct {
 	timerQueue *TimerQueue
 	replyCh    chan sphinxReply
 	gcSurbIDCh chan *[sConstants.SURBIDLength]byte
+	arq        *ARQ
 
-	arq *ARQ
+	haltOnce sync.Once
 }
 
 func NewDaemon(cfg *config.Config, egressSize int) (*Daemon, error) {
@@ -88,6 +90,25 @@ func NewDaemon(cfg *config.Config, egressSize int) (*Daemon, error) {
 	}
 
 	return d, nil
+}
+
+// Shutdown cleanly shuts down a given Server instance.
+func (d *Daemon) Shutdown() {
+	d.haltOnce.Do(func() { d.halt() })
+}
+
+func (d *Daemon) halt() {
+	d.log.Debug("Stopping ARQ worker")
+	d.arq.Stop()
+
+	d.log.Debug("Stopping thin client listener")
+	d.listener.Halt()
+
+	d.log.Debug("Stopping timerQueue")
+	d.timerQueue.Halt()
+
+	d.log.Debug("Stopping client")
+	d.client.Shutdown()
 }
 
 func (d *Daemon) Start() error {
@@ -147,10 +168,7 @@ func (d *Daemon) egressWorker() {
 	for {
 		select {
 		case <-d.HaltCh():
-			d.client.Shutdown()
-			d.timerQueue.Halt()
-			d.arq.Stop()
-			d.listener.Halt()
+			d.Shutdown()
 			return
 		case surbID := <-d.gcSurbIDCh:
 			delete(d.replies, *surbID)

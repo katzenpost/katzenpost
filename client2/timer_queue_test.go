@@ -49,4 +49,6 @@ func TestTimerQueuePush(t *testing.T) {
 	require.Equal(t, q.Len(), 10)
 	<-time.After(200 * time.Millisecond)
 	require.Equal(t, q.Len(), 0)
+	go q.Halt()
+	q.Wait()
 }
