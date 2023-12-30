@@ -32,7 +32,7 @@ type SpoolWriteDescriptor struct {
 	Receiver []byte
 
 	// Provider is the name of the Provider hosting the spool.
-	Provider string
+	Provider *[32]byte
 }
 
 // SpoolReadDescriptor describes a remotely readable spool.
@@ -47,7 +47,7 @@ type SpoolReadDescriptor struct {
 	Receiver []byte
 
 	// Provider is the name of the Provider hosting the spool.
-	Provider string
+	Provider *[32]byte
 
 	// ReadOffset is the number of messages to offset the next read from this
 	// described spool.
@@ -71,7 +71,7 @@ func (r *SpoolReadDescriptor) GetWriteDescriptor() *SpoolWriteDescriptor {
 
 // NewSpoolReadDescriptor blocks until the remote spool is created
 // or the round trip timeout is reached.
-func NewSpoolReadDescriptor(receiver []byte, provider string, session *client2.ThinClient) (*SpoolReadDescriptor, error) {
+func NewSpoolReadDescriptor(receiver []byte, provider *[32]byte, session *client2.ThinClient) (*SpoolReadDescriptor, error) {
 	privateKey, err := eddsa.NewKeypair(rand.Reader)
 	if err != nil {
 		return nil, err
@@ -82,13 +82,8 @@ func NewSpoolReadDescriptor(receiver []byte, provider string, session *client2.T
 	}
 
 	// create a kaetzchen Request
-	doc := session.PKIDocument()
-	providerKey, err := doc.GetProviderKeyHash(provider)
-	if err != nil {
-		return nil, err
-	}
 	id := session.NewMessageID()
-	reply, err := session.BlockingSendReliableMessage(id, createCmd, providerKey, receiver)
+	reply, err := session.BlockingSendReliableMessage(id, createCmd, provider, receiver)
 	if err != nil {
 		return nil, err
 	}

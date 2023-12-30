@@ -21,14 +21,15 @@ package client
 
 import (
 	"bytes"
-	"context"
 	"testing"
+	"time"
 
-	cc "github.com/katzenpost/katzenpost/client"
-	"github.com/katzenpost/katzenpost/client/config"
+	"github.com/stretchr/testify/require"
+
+	cc "github.com/katzenpost/katzenpost/client2"
+	"github.com/katzenpost/katzenpost/client2/config"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/memspool/common"
-	"github.com/stretchr/testify/require"
 )
 
 func TestDockerUnreliableSpoolService(t *testing.T) {
@@ -37,29 +38,36 @@ func TestDockerUnreliableSpoolService(t *testing.T) {
 	cfg, err := config.LoadFile("testdata/client.toml")
 	require.NoError(err)
 
-	client, err := cc.New(cfg)
+	egressSize := 100
+	d1, err := cc.NewDaemon(cfg, egressSize)
+	require.NoError(err)
+	err = d1.Start()
 	require.NoError(err)
 
-	s, err := client.NewTOFUSession(context.Background())
+	// maybe we need to sleep first to ensure the daemon is listening first before dialing
+	time.Sleep(time.Second * 3)
 
+	s := cc.NewThinClient(cfg)
+	err = s.Dial()
 	require.NoError(err)
-
-	s.WaitForDocument(context.Background())
 
 	// look up a spool provider
 	desc, err := s.GetService(common.SpoolServiceName)
 	require.NoError(err)
-	t.Logf("Found spool provider: %v@%v", desc.Name, desc.Provider)
+	t.Logf("Found spool provider: %v@%s", desc.RecipientQueueID, desc.MixDescriptor.Name)
 
 	// create the spool on the remote provider
-	spoolReadDescriptor, err := NewSpoolReadDescriptor(desc.Name, desc.Provider, s)
+	providerKey := desc.MixDescriptor.IdentityKey.Sum256()
+	spoolReadDescriptor, err := NewSpoolReadDescriptor(desc.RecipientQueueID, &providerKey, s)
 	require.NoError(err)
 
 	// append to a spool
 	message := []byte("hello there")
-	appendCmd, err := common.AppendToSpool(spoolReadDescriptor.ID, message, s.SphinxGeometry())
+	appendCmd, err := common.AppendToSpool(spoolReadDescriptor.ID, message, cfg.SphinxGeometry)
 	require.NoError(err)
-	rawResponse, err := s.BlockingSendReliableMessage(desc.Name, desc.Provider, appendCmd)
+	mesgID := s.NewMessageID()
+	providerKey = desc.MixDescriptor.IdentityKey.Sum256()
+	rawResponse, err := s.BlockingSendReliableMessage(mesgID, appendCmd, &providerKey, desc.RecipientQueueID)
 	require.NoError(err)
 	response := new(common.SpoolResponse)
 	err = response.Unmarshal(rawResponse)
@@ -71,7 +79,10 @@ func TestDockerUnreliableSpoolService(t *testing.T) {
 	// read from a spool (should find our original message)
 	readCmd, err := common.ReadFromSpool(spoolReadDescriptor.ID, messageID, spoolReadDescriptor.PrivateKey)
 	require.NoError(err)
-	rawResponse, err = s.BlockingSendReliableMessage(desc.Name, desc.Provider, readCmd)
+
+	mesgID = s.NewMessageID()
+	providerKey = desc.MixDescriptor.IdentityKey.Sum256()
+	rawResponse, err = s.BlockingSendReliableMessage(mesgID, readCmd, &providerKey, desc.RecipientQueueID)
 	require.NoError(err)
 	response = new(common.SpoolResponse)
 	err = response.Unmarshal(rawResponse)
@@ -83,7 +94,9 @@ func TestDockerUnreliableSpoolService(t *testing.T) {
 	// purge a spool
 	purgeCmd, err := common.PurgeSpool(spoolReadDescriptor.ID, spoolReadDescriptor.PrivateKey)
 	require.NoError(err)
-	rawResponse, err = s.BlockingSendReliableMessage(desc.Name, desc.Provider, purgeCmd)
+	providerKey = desc.MixDescriptor.IdentityKey.Sum256()
+	mesgID = s.NewMessageID()
+	rawResponse, err = s.BlockingSendReliableMessage(mesgID, purgeCmd, &providerKey, desc.RecipientQueueID)
 	require.NoError(err)
 	response = new(common.SpoolResponse)
 	err = response.Unmarshal(rawResponse)
@@ -93,16 +106,16 @@ func TestDockerUnreliableSpoolService(t *testing.T) {
 	// read from a spool (should be empty?)
 	readCmd, err = common.ReadFromSpool(spoolReadDescriptor.ID, messageID, spoolReadDescriptor.PrivateKey)
 	require.NoError(err)
-	rawResponse, err = s.BlockingSendReliableMessage(desc.Name, desc.Provider, readCmd)
+
+	mesgID = s.NewMessageID()
+	rawResponse, err = s.BlockingSendReliableMessage(mesgID, readCmd, &providerKey, desc.RecipientQueueID)
 	response = new(common.SpoolResponse)
 	err = response.Unmarshal(rawResponse)
 	require.NoError(err)
 	require.False(response.IsOK())
 
-	<-s.EventSink
-
-	client.Shutdown()
-	client.Wait()
+	s.Close()
+	d1.Halt()
 }
 
 func TestDockerUnreliableSpoolServiceMore(t *testing.T) {
@@ -112,30 +125,38 @@ func TestDockerUnreliableSpoolServiceMore(t *testing.T) {
 	cfg, err := config.LoadFile("testdata/client.toml")
 	require.NoError(err)
 
-	client, err := cc.New(cfg)
+	egressSize := 100
+	d1, err := cc.NewDaemon(cfg, egressSize)
+	require.NoError(err)
+	err = d1.Start()
 	require.NoError(err)
 
-	s, err := client.NewTOFUSession(context.Background())
-	require.NoError(err)
+	// maybe we need to sleep first to ensure the daemon is listening first before dialing
+	time.Sleep(time.Second * 3)
 
-	s.WaitForDocument(context.Background())
+	s := cc.NewThinClient(cfg)
+	err = s.Dial()
+	require.NoError(err)
 
 	// look up a spool provider
 	desc, err := s.GetService(common.SpoolServiceName)
 	require.NoError(err)
-	t.Logf("Found spool provider: %v@%v", desc.Name, desc.Provider)
+	t.Logf("Found spool provider: %v@%s", desc.RecipientQueueID, desc.MixDescriptor.Name)
 
 	// create the spool on the remote provider
-	spoolReadDescriptor, err := NewSpoolReadDescriptor(desc.Name, desc.Provider, s)
+	providerKey := desc.MixDescriptor.IdentityKey.Sum256()
+	spoolReadDescriptor, err := NewSpoolReadDescriptor(desc.RecipientQueueID, &providerKey, s)
 	require.NoError(err)
 	messageID := uint32(1) // where do we learn messageID?
 	for i := 0; i < 20; i += 1 {
 		// append to a spool
-		message := make([]byte, common.SpoolPayloadLength(s.SphinxGeometry()))
+		message := make([]byte, common.SpoolPayloadLength(cfg.SphinxGeometry))
 		rand.Reader.Read(message[:])
-		appendCmd, err := common.AppendToSpool(spoolReadDescriptor.ID, message[:], s.SphinxGeometry())
+		appendCmd, err := common.AppendToSpool(spoolReadDescriptor.ID, message[:], cfg.SphinxGeometry)
 		require.NoError(err)
-		rawResponse, err := s.BlockingSendUnreliableMessage(desc.Name, desc.Provider, appendCmd)
+		mesgID := s.NewMessageID()
+		providerKey := desc.MixDescriptor.IdentityKey.Sum256()
+		rawResponse, err := s.BlockingSendReliableMessage(mesgID, appendCmd, &providerKey, desc.RecipientQueueID)
 		require.NoError(err)
 		response := new(common.SpoolResponse)
 		err = response.Unmarshal(rawResponse)
@@ -145,7 +166,8 @@ func TestDockerUnreliableSpoolServiceMore(t *testing.T) {
 		// read from a spool (should find our original message)
 		readCmd, err := common.ReadFromSpool(spoolReadDescriptor.ID, messageID, spoolReadDescriptor.PrivateKey)
 		require.NoError(err)
-		rawResponse, err = s.BlockingSendReliableMessage(desc.Name, desc.Provider, readCmd)
+		mesgID = s.NewMessageID()
+		rawResponse, err = s.BlockingSendReliableMessage(mesgID, readCmd, &providerKey, desc.RecipientQueueID)
 		require.NoError(err)
 		response = new(common.SpoolResponse)
 		err = response.Unmarshal(rawResponse)
@@ -163,20 +185,27 @@ func TestDockerGetSpoolServices(t *testing.T) {
 	cfg, err := config.LoadFile("testdata/client.toml")
 	require.NoError(err)
 
-	client, err := cc.New(cfg)
+	egressSize := 100
+	d1, err := cc.NewDaemon(cfg, egressSize)
+	require.NoError(err)
+	err = d1.Start()
 	require.NoError(err)
 
-	s, err := client.NewTOFUSession(context.Background())
-	require.NoError(err)
+	// maybe we need to sleep first to ensure the daemon is listening first before dialing
+	time.Sleep(time.Second * 3)
 
-	s.WaitForDocument(context.Background())
+	s := cc.NewThinClient(cfg)
+	err = s.Dial()
+	require.NoError(err)
 
 	spoolServices, err := s.GetServices(common.SpoolServiceName)
 	require.NoError(err)
 
 	for _, svc := range spoolServices {
 		t.Logf("Got %s ServiceDescriptor: %v", common.SpoolServiceName, svc)
-		rd, err := NewSpoolReadDescriptor(svc.Name, svc.Provider, s)
+		providerKey := svc.MixDescriptor.IdentityKey.Sum256()
+
+		rd, err := NewSpoolReadDescriptor(svc.RecipientQueueID, &providerKey, s)
 		require.NoError(err)
 		t.Logf("Got SpoolReadDescriptor: %v", rd)
 	}
