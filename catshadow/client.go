@@ -104,7 +104,7 @@ type Client struct {
 type MessageID [MessageIDLen]byte
 
 type queuedSpoolCommand struct {
-	Provider string
+	Provider *[32]byte
 	Receiver []byte
 	Command  []byte
 	ID       MessageID
@@ -517,7 +517,8 @@ func (c *Client) doCreateRemoteSpool(provider string, responseChan chan error) {
 	go func() {
 		// NewSpoolReadDescriptor blocks, so we run this in another thread and then use
 		// another workerOp to save the spool descriptor.
-		spool, err := memspoolclient.NewSpoolReadDescriptor(desc.RecipientQueueID, desc.MixDescriptor.Name, c.session)
+		providerHash := desc.MixDescriptor.IdentityKey.Sum256()
+		spool, err := memspoolclient.NewSpoolReadDescriptor(desc.RecipientQueueID, &providerHash, c.session)
 		if err != nil {
 			select {
 			case <-c.HaltCh():
@@ -983,14 +984,8 @@ func (c *Client) sendMessage(contact *Contact) {
 		return
 	}
 
-	doc := c.session.PKIDocument()
-	providerKeyHash, err := doc.GetProviderKeyHash(cmd.Provider)
-	if err != nil {
-		c.log.Errorf("failed to get provider key hash: %s", err)
-		return
-	}
 	mesgID := c.session.NewMessageID()
-	err = c.session.ARQSend(mesgID, cmd.Command, providerKeyHash, cmd.Receiver)
+	err = c.session.ARQSend(mesgID, cmd.Command, cmd.Provider, cmd.Receiver)
 	if err != nil {
 		c.log.Errorf("failed to send ciphertext to remote spool: %s", err)
 		return
@@ -1016,7 +1011,7 @@ func (c *Client) sendReadInbox() {
 	}
 
 	doc := c.session.PKIDocument()
-	providerKeyHash, err := doc.GetProviderKeyHash(c.spoolReadDescriptor.Provider)
+	providerDesc, err := doc.GetProviderByKeyHash(c.spoolReadDescriptor.Provider)
 	if err != nil {
 		c.log.Errorf("failed to get provider key hash: %s", err)
 		return
@@ -1025,7 +1020,8 @@ func (c *Client) sendReadInbox() {
 	surbid := c.session.NewSURBID()
 	mesgID := make([]byte, len(surbid[:]))
 	copy(mesgID, surbid[:])
-	err = c.session.SendMessage(surbid, cmd, providerKeyHash, c.spoolReadDescriptor.Receiver)
+	providerKeyHash := providerDesc.IdentityKey.Sum256()
+	err = c.session.SendMessage(surbid, cmd, &providerKeyHash, c.spoolReadDescriptor.Receiver)
 	switch err.(type) {
 	case nil:
 	default:

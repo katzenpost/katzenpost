@@ -26,16 +26,17 @@ import (
 	"context"
 	"net/http"
 	_ "net/http/pprof"
+	"os"
 	"runtime"
 	"testing"
 	"time"
 
+	"github.com/charmbracelet/log"
 	"github.com/stretchr/testify/require"
 
 	"github.com/katzenpost/katzenpost/client2"
 	"github.com/katzenpost/katzenpost/client2/config"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
-	"github.com/katzenpost/katzenpost/core/log"
 )
 
 func getClientState(c *Client) *State {
@@ -67,9 +68,14 @@ func createCatshadowClientWithState(t *testing.T, stateFile string) *Client {
 	require.NoError(t, err)
 	// must start stateWorker BEFORE calling NewClientAndRemoteSpool
 	stateWorker.Start()
-	backendLog, err := log.New(cfg.Logging.File, cfg.Logging.Level, cfg.Logging.Disable)
-	require.NoError(t, err)
-	catShadowClient, err = NewClientAndRemoteSpool(context.Background(), backendLog, c, stateWorker)
+
+	debugLog := log.NewWithOptions(os.Stderr, log.Options{
+		ReportTimestamp: true,
+		Prefix:          "createCatshadowClientWithState",
+		Level:           log.ParseLevel("debug"),
+	})
+
+	catShadowClient, err = NewClientAndRemoteSpool(context.Background(), debugLog, c, stateWorker)
 	require.NoError(t, err)
 
 	return catShadowClient
@@ -89,15 +95,18 @@ func reloadCatshadowState(t *testing.T, stateFile string) *Client {
 	state, err := decryptStateFile(stateFile, key)
 	require.NoError(err)
 
-	logBackend, err := log.New(cfg.Logging.File, cfg.Logging.Level, cfg.Logging.Disable)
-	require.NoError(err)
-
 	c := client2.NewThinClient(cfg)
 	require.NoError(err)
 	stateWorker, state, err = LoadStateWriter(c.GetLogger(stateFile), stateFile, passphrase)
 	require.NoError(err)
 
-	catShadowClient, err = New(logBackend, c, stateWorker, state)
+	debugLog := log.NewWithOptions(os.Stderr, log.Options{
+		ReportTimestamp: true,
+		Prefix:          "reloadCatshadowState",
+		Level:           log.ParseLevel("debug"),
+	})
+
+	catShadowClient, err = New(debugLog, c, stateWorker, state)
 	require.NoError(err)
 
 	// Start catshadow client.

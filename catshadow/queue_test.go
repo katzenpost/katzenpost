@@ -1,23 +1,34 @@
 package catshadow
 
 import (
-	"fmt"
+	"crypto/rand"
+	"testing"
+
 	"github.com/fxamacker/cbor/v2"
 	"github.com/stretchr/testify/assert"
-	"testing"
 )
 
 func TestQueue(t *testing.T) {
 	assert := assert.New(t)
 	q := new(Queue)
-	b := &queuedSpoolCommand{Provider: "foo"}
-	err := q.Push(b)
+
+	providerHash1 := [32]byte{}
+	_, err := rand.Read(providerHash1[:])
+	assert.NoError(err)
+
+	b := &queuedSpoolCommand{Provider: &providerHash1}
+	err = q.Push(b)
 	assert.NoError(err)
 	s, err := q.Pop()
 	assert.NoError(err)
 	assert.Equal(b, s)
 
-	b = &queuedSpoolCommand{Provider: "bar"}
+	providerHash2 := [32]byte{}
+	_, err = rand.Read(providerHash2[:])
+	assert.NoError(err)
+
+	b = &queuedSpoolCommand{Provider: &providerHash2}
+
 	err = q.Push(b)
 	assert.NoError(err)
 
@@ -34,7 +45,11 @@ func TestQueue(t *testing.T) {
 
 	sent := make([]*queuedSpoolCommand, 0)
 	for i := 0; i < MaxQueueSize; i++ {
-		b = &queuedSpoolCommand{Provider: fmt.Sprintf("foo %d", i)}
+		myProviderHash := [32]byte{}
+		_, err = rand.Read(providerHash2[:])
+		assert.NoError(err)
+
+		b = &queuedSpoolCommand{Provider: &myProviderHash}
 		sent = append(sent, b)
 		err := newq.Push(b)
 		assert.NoError(err)
@@ -47,13 +62,10 @@ func TestQueue(t *testing.T) {
 	assert.NoError(err)
 	err = cbor.Unmarshal(serialized, &newq2)
 	assert.NoError(err)
-	for _, x := range sent {
-		x.Provider = "bar"
-	}
 	for i := 0; i < MaxQueueSize; i++ {
 		s, err = newq2.Pop()
 		assert.NoError(err)
-		assert.NotEqual(sent[i], s)
+		assert.Equal(sent[i], s)
 	}
 	s, err = newq2.Pop()
 	assert.Error(err)
