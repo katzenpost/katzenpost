@@ -46,6 +46,7 @@ type ThinClient struct {
 	cfg *config.Config
 
 	log          *log.Logger
+	logBackend   *log.Logger
 	unixConn     *net.UnixConn
 	destUnixAddr *net.UnixAddr
 
@@ -69,6 +70,7 @@ func NewThinClient(cfg *config.Config) *ThinClient {
 			Prefix: "thin_client",
 			Level:  log.DebugLevel,
 		}),
+		logBackend: log.WithPrefix("backend"),
 		receivedCh: make(chan ThinResponse),
 		eventSink:  make(chan Event),
 		drainStop:  make(chan interface{}),
@@ -80,7 +82,7 @@ func (t *ThinClient) GetConfig() *config.Config {
 }
 
 func (t *ThinClient) GetLogger(prefix string) *log.Logger {
-	return t.log.WithPrefix(prefix)
+	return t.logBackend.WithPrefix(prefix)
 }
 
 // Close halts the thin client worker thread and closes the socket
