@@ -122,17 +122,6 @@ func reloadCatshadowState(t *testing.T, stateFile string) *Client {
 func TestDockerPandaSuccess(t *testing.T) {
 	t.Parallel()
 
-	cfg, err := config.LoadFile("testdata/catshadow.toml")
-	require.NoError(t, err)
-	egressSize := 100
-	d1, err := client2.NewDaemon(cfg, egressSize)
-	require.NoError(t, err)
-	err = d1.Start()
-	require.NoError(t, err)
-
-	// maybe we need to sleep first to ensure the daemon is listening first before dialing
-	time.Sleep(time.Second * 3)
-
 	aliceState := createRandomStateFile(t)
 	alice := createCatshadowClientWithState(t, aliceState)
 	bobState := createRandomStateFile(t)
@@ -140,7 +129,7 @@ func TestDockerPandaSuccess(t *testing.T) {
 
 	sharedSecret := []byte("There is a certain kind of small town that grows like a boil on the ass of every Army base in the world.")
 	randBytes := [8]byte{}
-	_, err = rand.Reader.Read(randBytes[:])
+	_, err := rand.Reader.Read(randBytes[:])
 	require.NoError(t, err)
 	sharedSecret = append(sharedSecret, randBytes[:]...)
 
@@ -176,17 +165,6 @@ loop2:
 func TestDockerPandaTagContendedError(t *testing.T) {
 	t.Parallel()
 
-	cfg, err := config.LoadFile("testdata/catshadow.toml")
-	require.NoError(t, err)
-	egressSize := 100
-	d1, err := client2.NewDaemon(cfg, egressSize)
-	require.NoError(t, err)
-	err = d1.Start()
-	require.NoError(t, err)
-
-	// maybe we need to sleep first to ensure the daemon is listening first before dialing
-	time.Sleep(time.Second * 3)
-
 	aliceStateFilePath := createRandomStateFile(t)
 	alice := createCatshadowClientWithState(t, aliceStateFilePath)
 	bobStateFilePath := createRandomStateFile(t)
@@ -194,7 +172,7 @@ func TestDockerPandaTagContendedError(t *testing.T) {
 
 	sharedSecret := []byte("twas brillig and the slithy toves")
 	randBytes := [8]byte{}
-	_, err = rand.Reader.Read(randBytes[:])
+	_, err := rand.Reader.Read(randBytes[:])
 	require.NoError(t, err)
 	sharedSecret = append(sharedSecret, randBytes[:]...)
 
@@ -263,16 +241,6 @@ loop4:
 }
 
 func TestDockerSendReceive(t *testing.T) {
-	cfg, err := config.LoadFile("testdata/catshadow.toml")
-	require.NoError(t, err)
-	egressSize := 100
-	d1, err := client2.NewDaemon(cfg, egressSize)
-	require.NoError(t, err)
-	err = d1.Start()
-	require.NoError(t, err)
-
-	// maybe we need to sleep first to ensure the daemon is listening first before dialing
-	time.Sleep(time.Second * 3)
 
 	aliceStateFilePath := createRandomStateFile(t)
 	alice := createCatshadowClientWithState(t, aliceStateFilePath)
@@ -284,7 +252,7 @@ func TestDockerSendReceive(t *testing.T) {
 	sharedSecret := []byte(`oxcart pillage village bicycle gravity socks`)
 	sharedSecret2 := make([]byte, len(sharedSecret))
 	randBytes := [8]byte{}
-	_, err = rand.Reader.Read(randBytes[:])
+	_, err := rand.Reader.Read(randBytes[:])
 	require.NoError(t, err)
 	_, err = rand.Reader.Read(sharedSecret2[:])
 	require.NoError(t, err)
@@ -531,17 +499,6 @@ func TestDockerReunionSuccess(t *testing.T) {
 	t.Skip("Reunion does not work with 2KB payloads")
 	t.Parallel()
 
-	cfg, err := config.LoadFile("testdata/catshadow.toml")
-	require.NoError(t, err)
-	egressSize := 100
-	d1, err := client2.NewDaemon(cfg, egressSize)
-	require.NoError(t, err)
-	err = d1.Start()
-	require.NoError(t, err)
-
-	// maybe we need to sleep first to ensure the daemon is listening first before dialing
-	time.Sleep(time.Second * 3)
-
 	aliceState := createRandomStateFile(t)
 	alice := createCatshadowClientWithState(t, aliceState)
 
@@ -550,7 +507,7 @@ func TestDockerReunionSuccess(t *testing.T) {
 
 	sharedSecret := []byte("There is a certain kind of small town that grows like a boil on the ass of every Army base in the world.")
 	randBytes := [8]byte{}
-	_, err = rand.Reader.Read(randBytes[:])
+	_, err := rand.Reader.Read(randBytes[:])
 	require.NoError(t, err)
 	sharedSecret = append(sharedSecret, randBytes[:]...)
 
@@ -616,21 +573,10 @@ loop2:
 func TestDockerChangeExpiration(t *testing.T) {
 	t.Parallel()
 
-	cfg, err := config.LoadFile("testdata/catshadow.toml")
-	require.NoError(t, err)
-	egressSize := 100
-	d1, err := client2.NewDaemon(cfg, egressSize)
-	require.NoError(t, err)
-	err = d1.Start()
-	require.NoError(t, err)
-
-	// maybe we need to sleep first to ensure the daemon is listening first before dialing
-	time.Sleep(time.Second * 3)
-
 	a := createCatshadowClientWithState(t, createRandomStateFile(t))
 
 	s := [8]byte{}
-	_, err = rand.Reader.Read(s[:])
+	_, err := rand.Reader.Read(s[:])
 	require.NoError(t, err)
 
 	a.NewContact("b", s[:])
@@ -650,22 +596,11 @@ func TestDockerChangeExpiration(t *testing.T) {
 func TestDockerAddRemoveContact(t *testing.T) {
 	t.Parallel()
 
-	cfg, err := config.LoadFile("testdata/catshadow.toml")
-	require.NoError(t, err)
-	egressSize := 100
-	d1, err := client2.NewDaemon(cfg, egressSize)
-	require.NoError(t, err)
-	err = d1.Start()
-	require.NoError(t, err)
-
-	// maybe we need to sleep first to ensure the daemon is listening first before dialing
-	time.Sleep(time.Second * 3)
-
 	a := createCatshadowClientWithState(t, createRandomStateFile(t))
 	b := createCatshadowClientWithState(t, createRandomStateFile(t))
 
 	s := [8]byte{}
-	_, err = rand.Reader.Read(s[:])
+	_, err := rand.Reader.Read(s[:])
 	require.NoError(t, err)
 
 	a.NewContact("b", s[:])
@@ -759,22 +694,11 @@ loop5:
 func TestDockerRenameContact(t *testing.T) {
 	t.Parallel()
 
-	cfg, err := config.LoadFile("testdata/catshadow.toml")
-	require.NoError(t, err)
-	egressSize := 100
-	d1, err := client2.NewDaemon(cfg, egressSize)
-	require.NoError(t, err)
-	err = d1.Start()
-	require.NoError(t, err)
-
-	// maybe we need to sleep first to ensure the daemon is listening first before dialing
-	time.Sleep(time.Second * 3)
-
 	a := createCatshadowClientWithState(t, createRandomStateFile(t))
 	b := createCatshadowClientWithState(t, createRandomStateFile(t))
 
 	s := [8]byte{}
-	_, err = rand.Reader.Read(s[:])
+	_, err := rand.Reader.Read(s[:])
 	require.NoError(t, err)
 
 	a.NewContact("b", s[:])
@@ -953,4 +877,22 @@ func init() {
 	}()
 	runtime.SetMutexProfileFraction(1)
 	runtime.SetBlockProfileRate(1)
+
+	cfg, err := config.LoadFile("testdata/catshadow.toml")
+	if err != nil {
+		panic(err)
+	}
+
+	egressSize := 100
+	d1, err := client2.NewDaemon(cfg, egressSize)
+	if err != nil {
+		panic(err)
+	}
+	err = d1.Start()
+	if err != nil {
+		panic(err)
+	}
+
+	// maybe we need to sleep first to ensure the daemon is listening first before dialing
+	time.Sleep(time.Second * 3)
 }
