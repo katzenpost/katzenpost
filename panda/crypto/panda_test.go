@@ -4,12 +4,12 @@ import (
 	"bytes"
 	"crypto/rand"
 	"errors"
+	"os"
 	"sync"
 	"testing"
 
-	"github.com/katzenpost/katzenpost/core/log"
+	"github.com/charmbracelet/log"
 	"github.com/stretchr/testify/require"
-	"gopkg.in/op/go-logging.v1"
 )
 
 const paddingSize = 1 << 16
@@ -85,9 +85,6 @@ func TestSerialise(t *testing.T) {
 	srv := []byte("this should be 32 bytes long....")
 	mp := NewSimpleMeetingPlace()
 
-	logBackend, err := log.New("", "debug", false)
-	require.NoError(err)
-
 	shutdownChan := make(chan interface{})
 	go func() {
 		<-shutdownChan
@@ -100,15 +97,20 @@ func TestSerialise(t *testing.T) {
 	}()
 
 	contactID := uint64(123)
-	kx, err := NewKeyExchange(rand.Reader, logBackend.GetLogger("a_kx"), mp, srv, secret, []byte{1}, contactID, pandaChan, shutdownChan)
+	mylog := log.NewWithOptions(os.Stderr, log.Options{
+		ReportTimestamp: true,
+		Prefix:          "TestSerialise",
+		Level:           log.ParseLevel("debug"),
+	})
+	kx, err := NewKeyExchange(rand.Reader, mylog.WithPrefix("a_kx"), mp, srv, secret, []byte{1}, contactID, pandaChan, shutdownChan)
 	require.NoError(err)
 
 	serialised := kx.Marshal()
-	_, err = UnmarshalKeyExchange(rand.Reader, logBackend.GetLogger("unmarshal_kx"), mp, serialised, contactID, pandaChan, shutdownChan)
+	_, err = UnmarshalKeyExchange(rand.Reader, mylog.WithPrefix("unmarshal_kx"), mp, serialised, contactID, pandaChan, shutdownChan)
 	require.NoError(err)
 }
 
-func getKX(resultChan chan interface{}, log *logging.Logger, mp MeetingPlace, srv []byte, secret []byte, message []byte) (*KeyExchange, chan interface{}, error) {
+func getKX(resultChan chan interface{}, log *log.Logger, mp MeetingPlace, srv []byte, secret []byte, message []byte) (*KeyExchange, chan interface{}, error) {
 
 	shutdownChan := make(chan interface{})
 	pandaChan := make(chan PandaUpdate)
@@ -130,7 +132,7 @@ func getKX(resultChan chan interface{}, log *logging.Logger, mp MeetingPlace, sr
 	return kx, shutdownChan, err
 }
 
-func runKX(resultChan chan interface{}, log *logging.Logger, mp MeetingPlace, srv []byte, secret []byte, message []byte) {
+func runKX(resultChan chan interface{}, log *log.Logger, mp MeetingPlace, srv []byte, secret []byte, message []byte) {
 	kx, _, err := getKX(resultChan, log, mp, srv, secret, message)
 	if err == nil {
 		kx.Run()
@@ -150,11 +152,14 @@ func TestKeyExchange(t *testing.T) {
 	msg1 := []byte("test1")
 	msg2 := []byte("test2")
 
-	logBackend, err := log.New("", "debug", false)
-	require.NoError(err)
+	mylog := log.NewWithOptions(os.Stderr, log.Options{
+		ReportTimestamp: true,
+		Prefix:          "TestKeyExchange",
+		Level:           log.ParseLevel("debug"),
+	})
 
-	go runKX(a, logBackend.GetLogger("a_kx"), mp, srv, secret, msg1)
-	go runKX(b, logBackend.GetLogger("b_kx"), mp, srv, secret, msg2)
+	go runKX(a, mylog.WithPrefix("a_kx"), mp, srv, secret, msg1)
+	go runKX(b, mylog.WithPrefix("b_kx"), mp, srv, secret, msg2)
 
 	result := <-a
 	reply, ok := result.([]byte)
@@ -180,10 +185,13 @@ func NoTestUpdateSRV(t *testing.T) {
 	msg1 := []byte("test1")
 	msg2 := []byte("test2")
 
-	logBackend, err := log.New("", "debug", false)
-	require.NoError(err)
+	mylog := log.NewWithOptions(os.Stderr, log.Options{
+		ReportTimestamp: true,
+		Prefix:          "NoTestUpdateSRV",
+		Level:           log.ParseLevel("debug"),
+	})
 
-	kx1, shutdownChan, err := getKX(a, logBackend.GetLogger("a_kx"), mp, srv1, secret, msg1)
+	kx1, shutdownChan, err := getKX(a, mylog.WithPrefix("a_kx"), mp, srv1, secret, msg1)
 	require.NoError(err)
 	wg := new(sync.WaitGroup)
 	wg.Add(1)
@@ -191,7 +199,7 @@ func NoTestUpdateSRV(t *testing.T) {
 		kx1.Run()
 		wg.Done()
 	}()
-	go runKX(b, logBackend.GetLogger("b_kx"), mp, srv2, secret, msg2)
+	go runKX(b, mylog.WithPrefix("b_kx"), mp, srv2, secret, msg2)
 
 	// stop the exchange, update the srv, and restart the exchange
 	var foo struct{}
@@ -211,7 +219,7 @@ func NoTestUpdateSRV(t *testing.T) {
 	require.Equal(reply, msg1)
 }
 
-func runKXWithSerialize(resultChan chan interface{}, log *logging.Logger, mp MeetingPlace, srv []byte, secret []byte, message []byte) {
+func runKXWithSerialize(resultChan chan interface{}, log *log.Logger, mp MeetingPlace, srv []byte, secret []byte, message []byte) {
 
 	shutdownChan := make(chan interface{})
 	contactID := uint64(123)
@@ -261,11 +269,14 @@ func TestKeyExchangeWithSerialization(t *testing.T) {
 	msg1 := []byte("test1")
 	msg2 := []byte("test2")
 
-	logBackend, err := log.New("", "debug", false)
-	require.NoError(err)
+	mylog := log.NewWithOptions(os.Stderr, log.Options{
+		ReportTimestamp: true,
+		Prefix:          "TestKeyExchangeWithSerialization",
+		Level:           log.ParseLevel("debug"),
+	})
 
-	go runKX(a, logBackend.GetLogger("a_kx"), mp, srv, secret, msg1)
-	go runKXWithSerialize(b, logBackend.GetLogger("b_kx"), mp, srv, secret, msg2)
+	go runKX(a, mylog.WithPrefix("a_kx"), mp, srv, secret, msg1)
+	go runKXWithSerialize(b, mylog.WithPrefix("b_kx"), mp, srv, secret, msg2)
 
 	result := <-a
 	reply, ok := result.([]byte)

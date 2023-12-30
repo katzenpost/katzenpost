@@ -23,21 +23,21 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/katzenpost/katzenpost/core/log"
+	"github.com/charmbracelet/log"
+	"github.com/stretchr/testify/require"
+
 	"github.com/katzenpost/katzenpost/reunion/commands"
 	"github.com/katzenpost/katzenpost/reunion/epochtime"
 	"github.com/katzenpost/katzenpost/reunion/epochtime/katzenpost"
 	"github.com/katzenpost/katzenpost/reunion/server"
-	"github.com/stretchr/testify/require"
-	"gopkg.in/op/go-logging.v1"
 )
 
 type MockReunionDB struct {
 	server *server.Server
-	log    *logging.Logger
+	log    *log.Logger
 }
 
-func NewMockReunionDB(mylog *logging.Logger, clock epochtime.EpochClock) (*MockReunionDB, error) {
+func NewMockReunionDB(mylog *log.Logger, clock epochtime.EpochClock) (*MockReunionDB, error) {
 	stateFile, err := os.CreateTemp("", "catshadow_test_statefile")
 	if err != nil {
 		return nil, err
@@ -72,16 +72,17 @@ func TestClientServerBasics1(t *testing.T) {
 	require := require.New(t)
 
 	// variable shared among reunion clients
-	f := ""
-	level := "DEBUG"
-	disable := false
-	logBackend, err := log.New(f, level, disable)
-	require.NoError(err)
 	shutdownChan := make(chan struct{})
 
 	clock := new(katzenpost.Clock)
 	epoch, _, _ := clock.Now()
-	dblog := logBackend.GetLogger("Reunion_DB")
+
+	dblog := log.NewWithOptions(os.Stderr, log.Options{
+		ReportTimestamp: true,
+		Prefix:          "Reunion_TestClientServerBasics1",
+		Level:           log.ParseLevel("debug"),
+	})
+
 	reunionDB, err := NewMockReunionDB(dblog, clock)
 	require.NoError(err)
 
@@ -94,7 +95,7 @@ func TestClientServerBasics1(t *testing.T) {
 	// alice client
 	alicePayload := []byte("Hello Bobby, what's up dude?")
 	aliceContactID := uint64(1)
-	aliceExchangelog := logBackend.GetLogger("alice_exchange")
+	aliceExchangelog := dblog.WithPrefix("alice_exchange")
 
 	var wg sync.WaitGroup
 	wg.Add(1)
@@ -116,9 +117,7 @@ func TestClientServerBasics1(t *testing.T) {
 	// bob client
 	bobPayload := []byte("yo Alice, so you are a cryptographer and a language designer both?")
 	bobContactID := uint64(1)
-	bobLogBackend, err := log.New(f, level, disable)
-	require.NoError(err)
-	bobExchangelog := bobLogBackend.GetLogger("bob_exchange")
+	bobExchangelog := dblog.WithPrefix("bob_exchange")
 
 	wg.Add(1)
 	bobUpdateCh := make(chan ReunionUpdate)
@@ -185,16 +184,15 @@ func TestClientServerBasics2(t *testing.T) {
 	require := require.New(t)
 
 	// variable shared among reunion clients
-	f := ""
-	level := "DEBUG"
-	disable := false
-	logBackend, err := log.New(f, level, disable)
-	require.NoError(err)
-	shutdownChan := make(chan struct {})
+	shutdownChan := make(chan struct{})
 
 	clock := new(katzenpost.Clock)
 	epoch, _, _ := clock.Now()
-	dblog := logBackend.GetLogger("Reunion_DB")
+	dblog := log.NewWithOptions(os.Stderr, log.Options{
+		ReportTimestamp: true,
+		Prefix:          "Reunion_TestClientServerBasics2",
+		Level:           log.ParseLevel("debug"),
+	})
 	reunionDB, err := NewMockReunionDB(dblog, clock)
 	require.NoError(err)
 
@@ -208,7 +206,7 @@ func TestClientServerBasics2(t *testing.T) {
 	alicePayload := []byte("sup bobby")
 	aliceContactID := uint64(1)
 	require.NoError(err)
-	aliceExchangelog := logBackend.GetLogger("alice_exchange")
+	aliceExchangelog := dblog.WithPrefix("alice_exchange")
 
 	var wg sync.WaitGroup
 	wg.Add(1)
@@ -231,9 +229,8 @@ func TestClientServerBasics2(t *testing.T) {
 	// bob client
 	bobPayload := []byte("yo alice")
 	bobContactID := uint64(1)
-	bobLogBackend, err := log.New(f, level, disable)
 	require.NoError(err)
-	bobExchangelog := bobLogBackend.GetLogger("bob_exchange")
+	bobExchangelog := dblog.WithPrefix("bob_exchange")
 
 	wg.Add(1)
 	bobUpdateCh := make(chan ReunionUpdate)
@@ -269,16 +266,15 @@ func NoTestClientServerBasics3(t *testing.T) {
 	require := require.New(t)
 
 	// variable shared among reunion clients
-	f := ""
-	level := "DEBUG"
-	disable := false
-	logBackend, err := log.New(f, level, disable)
-	require.NoError(err)
-	shutdownChan := make(chan struct {})
+	shutdownChan := make(chan struct{})
 
 	clock := new(katzenpost.Clock)
 	epoch, _, _ := clock.Now()
-	dblog := logBackend.GetLogger("Reunion_DB")
+	dblog := log.NewWithOptions(os.Stderr, log.Options{
+		ReportTimestamp: true,
+		Prefix:          "Reunion_TestClientServerBasics3",
+		Level:           log.ParseLevel("debug"),
+	})
 	reunionDB, err := NewMockReunionDB(dblog, clock)
 	require.NoError(err)
 
@@ -293,7 +289,7 @@ func NoTestClientServerBasics3(t *testing.T) {
 	alicePayload := []byte("sup bobby")
 	aliceContactID := uint64(1)
 	require.NoError(err)
-	aliceExchangelog := logBackend.GetLogger("alice_exchange")
+	aliceExchangelog := dblog.WithPrefix("alice_exchange")
 
 	var wg sync.WaitGroup
 	wg.Add(2)
@@ -322,9 +318,7 @@ func NoTestClientServerBasics3(t *testing.T) {
 	// bob client
 	bobPayload := []byte("yo alice")
 	bobContactID := uint64(1)
-	bobLogBackend, err := log.New(f, level, disable)
-	require.NoError(err)
-	bobExchangelog := bobLogBackend.GetLogger("bob_exchange")
+	bobExchangelog := dblog.WithPrefix("bob_exchange")
 
 	wg.Add(2)
 	bobUpdateCh := make(chan ReunionUpdate)
@@ -352,9 +346,7 @@ func NoTestClientServerBasics3(t *testing.T) {
 	// nsa client
 	nsaPayload := []byte("yo alice, this is the NSA")
 	nsaContactID := uint64(1)
-	nsaLogBackend, err := log.New(f, level, disable)
-	require.NoError(err)
-	nsaExchangelog := nsaLogBackend.GetLogger("nsa_exchange")
+	nsaExchangelog := dblog.WithPrefix("nsa_exchange")
 
 	wg.Add(2)
 	nsaUpdateCh := make(chan ReunionUpdate)
@@ -400,16 +392,14 @@ func TestClientServerBasics4(t *testing.T) {
 	require := require.New(t)
 
 	// variable shared among reunion clients
-	f := ""
-	level := "DEBUG"
-	disable := false
-	logBackend, err := log.New(f, level, disable)
-	require.NoError(err)
-	shutdownChan := make(chan struct {})
-
+	shutdownChan := make(chan struct{})
 	clock := new(katzenpost.Clock)
 	epoch, _, _ := clock.Now()
-	dblog := logBackend.GetLogger("Reunion_DB")
+	dblog := log.NewWithOptions(os.Stderr, log.Options{
+		ReportTimestamp: true,
+		Prefix:          "Reunion_TestClientServerBasics4",
+		Level:           log.ParseLevel("debug"),
+	})
 	reunionDB, err := NewMockReunionDB(dblog, clock)
 	require.NoError(err)
 
@@ -426,7 +416,7 @@ func TestClientServerBasics4(t *testing.T) {
 	alicePayload := []byte("sup bobby")
 	aliceContactID := uint64(1)
 	require.NoError(err)
-	aliceExchangelog := logBackend.GetLogger("alice_exchange")
+	aliceExchangelog := dblog.WithPrefix("alice_exchange")
 
 	var wg sync.WaitGroup
 	wg.Add(1)
@@ -450,9 +440,7 @@ func TestClientServerBasics4(t *testing.T) {
 	// bob client
 	bobPayload := []byte("yo alice")
 	bobContactID := uint64(1)
-	bobLogBackend, err := log.New(f, level, disable)
-	require.NoError(err)
-	bobExchangelog := bobLogBackend.GetLogger("bob_exchange")
+	bobExchangelog := dblog.WithPrefix("bob_exchange")
 
 	wg.Add(1)
 	bobUpdateCh := make(chan ReunionUpdate)
@@ -475,9 +463,7 @@ func TestClientServerBasics4(t *testing.T) {
 	// nsa client
 	nsaPayload := []byte("ho GCHQ, this is the NSA")
 	nsaContactID := uint64(1)
-	nsaLogBackend, err := log.New(f, level, disable)
-	require.NoError(err)
-	nsaExchangelog := nsaLogBackend.GetLogger("nsa_exchange")
+	nsaExchangelog := dblog.WithPrefix("nsa_exchange")
 
 	wg.Add(1)
 	nsaUpdateCh := make(chan ReunionUpdate)
@@ -500,9 +486,7 @@ func TestClientServerBasics4(t *testing.T) {
 	// gchq client
 	gchqPayload := []byte("yo NSA, this is the GCHQ")
 	gchqContactID := uint64(1)
-	gchqLogBackend, err := log.New(f, level, disable)
-	require.NoError(err)
-	gchqExchangelog := gchqLogBackend.GetLogger("gchq_exchange")
+	gchqExchangelog := dblog.WithPrefix("gchq_exchange")
 
 	wg.Add(1)
 	gchqUpdateCh := make(chan ReunionUpdate)
@@ -542,16 +526,15 @@ func TestClientStateSavingAndRecovery(t *testing.T) {
 	require := require.New(t)
 
 	// variable shared among reunion clients
-	f := ""
-	level := "DEBUG"
-	disable := false
-	logBackend, err := log.New(f, level, disable)
-	require.NoError(err)
-	shutdownChan := make(chan struct {})
+	shutdownChan := make(chan struct{})
 
 	clock := new(katzenpost.Clock)
 	epoch, _, _ := clock.Now()
-	dblog := logBackend.GetLogger("Reunion_DB")
+	dblog := log.NewWithOptions(os.Stderr, log.Options{
+		ReportTimestamp: true,
+		Prefix:          "Reunion_TestClientStateSavingAndRecovery",
+		Level:           log.ParseLevel("debug"),
+	})
 	reunionDB, err := NewMockReunionDB(dblog, clock)
 	require.NoError(err)
 
@@ -565,7 +548,7 @@ func TestClientStateSavingAndRecovery(t *testing.T) {
 	alicePayload := []byte("Hello Bobby, what's up dude?")
 	aliceContactID := uint64(1)
 	require.NoError(err)
-	aliceExchangelog := logBackend.GetLogger("alice_exchange")
+	aliceExchangelog := dblog.WithPrefix("alice_exchange")
 
 	var wg sync.WaitGroup
 	wg.Add(1)
@@ -587,9 +570,7 @@ func TestClientStateSavingAndRecovery(t *testing.T) {
 	// bob client
 	bobPayload := []byte("yo Alice, so you are a cryptographer and a language designer both?")
 	bobContactID := uint64(1)
-	bobLogBackend, err := log.New(f, level, disable)
-	require.NoError(err)
-	bobExchangelog := bobLogBackend.GetLogger("bob_exchange")
+	bobExchangelog := dblog.WithPrefix("bob_exchange")
 
 	wg.Add(1)
 	bobUpdateCh := make(chan ReunionUpdate)
