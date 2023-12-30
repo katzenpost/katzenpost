@@ -25,8 +25,8 @@ jobs:
       - name: Run catshadow unit tests
         run: sudo sh -c "cd catshadow && ulimit -l 64435 && GORACE=history_size=7 go test -coverprofile=coverage.out -race -v -failfast -timeout 30m ./..."
 
-      - name: Run client unit tests
-        run: sudo sh -c "cd client && ulimit -l 64435 && GORACE=history_size=7 go test -coverprofile=coverage.out -race -v -failfast -timeout 30m ./..."
+      - name: Run client2 unit tests
+        run: sudo sh -c "cd client2 && ulimit -l 64435 && GORACE=history_size=7 go test -coverprofile=coverage.out -race -v -failfast -timeout 30m ./..."
 
       - name: Run core unit tests
         run: sudo sh -c "cd core && ulimit -l 64435 && GORACE=history_size=7 go test -coverprofile=coverage.out -race -v -failfast -timeout 30m ./..."
@@ -49,7 +49,7 @@ jobs:
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v3
 
-  test_e2e_client:
+  test_e2e_client2:
     env:
       warped: true
       XDG_RUNTIME_DIR: /run
@@ -78,7 +78,7 @@ jobs:
         run: cd docker && sudo -E make run-ping
 
       - name: run client end to end tests
-        run: cd client && sudo -E make testargs=-coverprofile=coverage.part dockerdockertest && cat coverage.part >> ../coverage.out
+        run: cd client2 && sudo -E make testargs=-coverprofile=coverage.part dockerdockertest && cat coverage.part >> ../coverage.out
 
       - name: Stop the mixnet
         run: |
