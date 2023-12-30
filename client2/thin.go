@@ -387,13 +387,13 @@ func (t *ThinClient) ARQReceiveMessage() (*[MessageIDLength]byte, []byte) {
 }
 
 // BlockingSendReliableMessage blocks until the message is reliably sent and the ARQ reply is received.
-func (t *ThinClient) BlockingSendReliableMessage(id *[MessageIDLength]byte, payload []byte, destNode *[32]byte, destQueue []byte) (reply []byte, err error) {
-	err = t.ARQSend(id, payload, destNode, destQueue)
+func (t *ThinClient) BlockingSendReliableMessage(messageID *[MessageIDLength]byte, payload []byte, destNode *[32]byte, destQueue []byte) (reply []byte, err error) {
+	err = t.ARQSend(messageID, payload, destNode, destQueue)
 	if err != nil {
 		return nil, err
 	}
 	id2, reply := t.ARQReceiveMessage()
-	if !bytes.Equal(id[:], id2[:]) {
+	if !bytes.Equal(messageID[:], id2[:]) {
 		return nil, errors.New("received unexpected ARQ reply")
 	}
 	return reply, nil
