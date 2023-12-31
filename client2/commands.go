@@ -2,7 +2,11 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 package client2
 
-import sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
+import (
+	"time"
+
+	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
+)
 
 type Response struct {
 	// ID is the unique identifier with respect to the Request Payload.
@@ -18,6 +22,19 @@ type Response struct {
 
 	// Payload contains the Response payload, a SURB reply.
 	Payload []byte `cbor:payload`
+
+	// IsMessageSent is used to indicate that this response
+	// identifies a specific message was sent sucessfully.
+	IsMessageSent bool
+
+	// SentAt contains the time the message was sent.
+	SentAt time.Time
+
+	// ReplyETA is the expected round trip time to receive a response.
+	ReplyETA time.Duration
+
+	// Err is the error encountered when sending the message if any.
+	Err error
 
 	// IsStatus is set to true if Payload should be nil and IsConnected
 	// regarded as the latest connection status.

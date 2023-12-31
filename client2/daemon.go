@@ -124,7 +124,7 @@ func (d *Daemon) Start() error {
 		return err
 	}
 
-	d.arq = NewARQ(d.client, d.log)
+	d.arq = NewARQ(d.client, d, d.log)
 	d.arq.Start()
 
 	d.listener, err = NewListener(d.client, rates, d.egressCh, d.logbackend)
@@ -248,22 +248,48 @@ func (d *Daemon) sendARQMessage(request *Request) {
 	}
 }
 
+func (d *Daemon) SentEvent(response *Response) {
+	incomingConn := d.listener.getConnection(response.AppID)
+	err := incomingConn.sendResponse(response)
+	if err != nil {
+		d.log.Errorf("failed to send Response: %s", err)
+	}
+}
+
 func (d *Daemon) send(request *Request) {
 	surbKey := []byte{}
 	var rtt time.Duration
 	var err error
-
+	var now time.Time
 	if request.WithSURB {
 		surbKey, rtt, err = d.client.SendCiphertext(request)
 		if err != nil {
 			d.log.Infof("SendCiphertext error: %s", err.Error())
 		}
 
+		now = time.Now()
 		slop := time.Second * 20 // XXX perhaps make this configurable if needed
 		duration := rtt + slop
-		replyArrivalTime := time.Now().Add(duration)
+		replyArrivalTime := now.Add(duration)
 		d.log.Infof("reply arrival duration: %s", duration)
 		d.timerQueue.Push(uint64(replyArrivalTime.UnixNano()), request.SURBID)
+
+		incomingConn := d.listener.getConnection(request.AppID)
+		if incomingConn != nil {
+			response := &Response{
+				ID:            request.ID,
+				SURBID:        request.SURBID,
+				AppID:         request.AppID,
+				SentAt:        now,
+				ReplyETA:      rtt,
+				Err:           err,
+				IsMessageSent: true,
+			}
+			err = incomingConn.sendResponse(response)
+			if err != nil {
+				d.log.Errorf("failed to send Response: %s", err)
+			}
+		}
 	}
 
 	if request.IsSendOp {

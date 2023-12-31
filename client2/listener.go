@@ -146,6 +146,17 @@ func (l *listener) updateRatesFromPKIDoc(doc *cpki.Document) {
 	l.decoySender.UpdateRates(ratesFromPKIDoc(doc))
 }
 
+func (l *listener) getConnection(appID uint64) *incomingConn {
+	l.Lock()
+	defer l.Unlock()
+
+	conn, ok := l.conns[appID]
+	if !ok {
+		return nil
+	}
+	return conn
+}
+
 // New creates a new listener.
 func NewListener(client *Client, rates *Rates, egressCh chan *Request, logbackend io.Writer) (*listener, error) {
 	var err error

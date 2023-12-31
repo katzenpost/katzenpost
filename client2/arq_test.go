@@ -29,6 +29,10 @@ func (m *mockComposerSender) SendSphinxPacket(pkt []byte) error {
 	return nil
 }
 
+type mockSentEventSender struct{}
+
+func (m *mockSentEventSender) SentEvent(response *Response) {}
+
 func TestARQ(t *testing.T) {
 	sphinxComposerSender := &mockComposerSender{
 		t:        t,
@@ -41,7 +45,9 @@ func TestARQ(t *testing.T) {
 		Level:           log.ParseLevel("debug"),
 	})
 
-	arq := NewARQ(sphinxComposerSender, logger)
+	m := &mockSentEventSender{}
+
+	arq := NewARQ(sphinxComposerSender, m, logger)
 	arq.Start()
 
 	appid := uint64(0)

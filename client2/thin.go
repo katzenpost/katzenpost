@@ -165,6 +165,21 @@ func (t *ThinClient) worker() {
 		t.log.Debug("THIN CLIENT WORKER RECEIVED A MESSAGE---------------------")
 
 		switch {
+		case message.IsMessageSent == true:
+			event := &MessageSentEvent{
+				MessageID: message.ID,
+				SentAt:    message.SentAt,
+				ReplyETA:  message.ReplyETA,
+				Err:       message.Err,
+			}
+
+			select {
+			case t.eventSink <- event:
+				continue
+			case <-t.HaltCh():
+				return
+			}
+
 		case message.IsStatus == true:
 			t.isConnected = message.IsConnected
 			event := &ConnectionStatusEvent{

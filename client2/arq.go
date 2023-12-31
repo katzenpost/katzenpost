@@ -27,6 +27,10 @@ type SphinxComposerSender interface {
 	SendSphinxPacket(pkt []byte) error
 }
 
+type SentEventSender interface {
+	SentEvent(response *Response)
+}
+
 // ARQMessage is used by ARQ.
 type ARQMessage struct {
 
@@ -73,10 +77,11 @@ type ARQ struct {
 	surbIDMap  map[[sConstants.SURBIDLength]byte]*ARQMessage
 
 	sphinxComposerSender SphinxComposerSender
+	sentEventSender      SentEventSender
 }
 
 // NewARQ creates a new ARQ.
-func NewARQ(sphinxComposerSender SphinxComposerSender, mylog *log.Logger) *ARQ {
+func NewARQ(sphinxComposerSender SphinxComposerSender, sentEventSender SentEventSender, mylog *log.Logger) *ARQ {
 	arqlog := mylog.WithPrefix("_ARQ_")
 	arqlog.Info("NewARQ")
 	return &ARQ{
@@ -84,6 +89,7 @@ func NewARQ(sphinxComposerSender SphinxComposerSender, mylog *log.Logger) *ARQ {
 		gcSurbIDCh:           make(chan *[sConstants.SURBIDLength]byte),
 		surbIDMap:            make(map[[sConstants.SURBIDLength]byte]*ARQMessage),
 		sphinxComposerSender: sphinxComposerSender,
+		sentEventSender:      sentEventSender,
 	}
 }
 
@@ -231,6 +237,17 @@ func (a *ARQ) Send(appid uint64, id *[MessageIDLength]byte, payload []byte, prov
 	if err != nil {
 		return err
 	}
+
+	response := &Response{
+		ID:            id,
+		SURBID:        surbID,
+		AppID:         appid,
+		SentAt:        time.Now(),
+		ReplyETA:      rtt,
+		Err:           err,
+		IsMessageSent: true,
+	}
+	a.sentEventSender.SentEvent(response)
 
 	return nil
 }
