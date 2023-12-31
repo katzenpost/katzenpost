@@ -39,9 +39,9 @@ func TestDockerUnreliableSpoolService(t *testing.T) {
 	require.NoError(err)
 
 	egressSize := 100
-	d1, err := cc.NewDaemon(cfg, egressSize)
+	d, err := cc.NewDaemon(cfg, egressSize)
 	require.NoError(err)
-	err = d1.Start()
+	err = d.Start()
 	require.NoError(err)
 
 	// maybe we need to sleep first to ensure the daemon is listening first before dialing
@@ -109,13 +109,16 @@ func TestDockerUnreliableSpoolService(t *testing.T) {
 
 	mesgID = s.NewMessageID()
 	rawResponse, err = s.BlockingSendReliableMessage(mesgID, readCmd, &providerKey, desc.RecipientQueueID)
+	require.NoError(err)
 	response = new(common.SpoolResponse)
 	err = response.Unmarshal(rawResponse)
 	require.NoError(err)
 	require.False(response.IsOK())
 
-	s.Close()
-	d1.Halt()
+	err = s.Close()
+	require.NoError(err)
+
+	d.Shutdown()
 }
 
 func TestDockerUnreliableSpoolServiceMore(t *testing.T) {
@@ -126,9 +129,9 @@ func TestDockerUnreliableSpoolServiceMore(t *testing.T) {
 	require.NoError(err)
 
 	egressSize := 100
-	d1, err := cc.NewDaemon(cfg, egressSize)
+	d, err := cc.NewDaemon(cfg, egressSize)
 	require.NoError(err)
-	err = d1.Start()
+	err = d.Start()
 	require.NoError(err)
 
 	// maybe we need to sleep first to ensure the daemon is listening first before dialing
@@ -177,6 +180,11 @@ func TestDockerUnreliableSpoolServiceMore(t *testing.T) {
 		require.True(bytes.Equal(response.Message, message[:]))
 		messageID += 1
 	}
+
+	err = s.Close()
+	require.NoError(err)
+
+	d.Shutdown()
 }
 
 func TestDockerGetSpoolServices(t *testing.T) {
@@ -186,9 +194,9 @@ func TestDockerGetSpoolServices(t *testing.T) {
 	require.NoError(err)
 
 	egressSize := 100
-	d1, err := cc.NewDaemon(cfg, egressSize)
+	d, err := cc.NewDaemon(cfg, egressSize)
 	require.NoError(err)
-	err = d1.Start()
+	err = d.Start()
 	require.NoError(err)
 
 	// maybe we need to sleep first to ensure the daemon is listening first before dialing
@@ -210,4 +218,8 @@ func TestDockerGetSpoolServices(t *testing.T) {
 		t.Logf("Got SpoolReadDescriptor: %v", rd)
 	}
 
+	err = s.Close()
+	require.NoError(err)
+
+	d.Shutdown()
 }
