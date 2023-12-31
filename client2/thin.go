@@ -167,11 +167,43 @@ func (t *ThinClient) worker() {
 		switch {
 		case message.IsStatus == true:
 			t.isConnected = message.IsConnected
+			event := &ConnectionStatusEvent{
+				IsConnected: message.IsConnected,
+			}
+			select {
+			case t.eventSink <- event:
+				continue
+			case <-t.HaltCh():
+				return
+			}
 		case message.IsPKIDoc == true:
-			t.parsePKIDoc(message.Payload)
+			doc, err := t.parsePKIDoc(message.Payload)
+			if err != nil {
+				t.log.Fatalf("parsePKIDoc %s", err)
+			}
+			event := &NewDocumentEvent{
+				Document: doc,
+			}
+			select {
+			case t.eventSink <- event:
+				continue
+			case <-t.HaltCh():
+				return
+			}
 		default:
 			if message.Payload == nil {
 				t.log.Infof("message.Payload is nil")
+			}
+			event := &MessageReplyEvent{
+				MessageID: message.ID,
+				Payload:   message.Payload,
+				Err:       nil,
+			}
+			select {
+			case t.eventSink <- event:
+				continue
+			case <-t.HaltCh():
+				return
 			}
 			response := ThinResponse{
 				SURBID:  message.SURBID,
@@ -214,17 +246,17 @@ func (t *ThinClient) eventSinkDrain() {
 	}
 }
 
-func (t *ThinClient) parsePKIDoc(payload []byte) error {
+func (t *ThinClient) parsePKIDoc(payload []byte) (*cpki.Document, error) {
 	doc := &cpki.Document{}
 	err := doc.Deserialize(payload)
 	if err != nil {
 		t.log.Errorf("failed to unmarshal CBOR PKI doc: %s", err.Error())
-		return err
+		return nil, err
 	}
 	t.pkidocMutex.Lock()
 	t.pkidoc = doc
 	t.pkidocMutex.Unlock()
-	return nil
+	return doc, nil
 }
 
 // PKIDocument returns the thin client's current reference to the PKI doc
