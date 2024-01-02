@@ -39,6 +39,28 @@ import (
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 )
 
+func setupDaemon() *client2.Daemon {
+	cfg, err := config.LoadFile("testdata/catshadow.toml")
+	if err != nil {
+		panic(err)
+	}
+
+	egressSize := 100
+	d, err := client2.NewDaemon(cfg, egressSize)
+	if err != nil {
+		panic(err)
+	}
+	err = d1.Start()
+	if err != nil {
+		panic(err)
+	}
+
+	// maybe we need to sleep first to ensure the daemon is listening first before dialing
+	time.Sleep(time.Second * 3)
+
+	return d
+}
+
 func getClientState(c *Client) *State {
 	contacts := []*Contact{}
 	for _, contact := range c.contacts {
@@ -78,7 +100,7 @@ func createCatshadowClientWithState(t *testing.T, stateFile string) *Client {
 	catShadowClient, err = NewClientAndRemoteSpool(context.Background(), debugLog, c, stateWorker)
 	require.NoError(t, err)
 
-	return catShadowClient
+	return catShadowClient, d
 }
 
 func reloadCatshadowState(t *testing.T, stateFile string) *Client {
@@ -120,7 +142,9 @@ func reloadCatshadowState(t *testing.T, stateFile string) *Client {
 }
 
 func TestDockerPandaSuccess(t *testing.T) {
-	t.Parallel()
+
+	d := setupDaemon()
+	defer d.Shutdown()
 
 	aliceState := createRandomStateFile(t)
 	alice := createCatshadowClientWithState(t, aliceState)
@@ -163,7 +187,9 @@ loop2:
 }
 
 func TestDockerPandaTagContendedError(t *testing.T) {
-	t.Parallel()
+
+	d := setupDaemon()
+	defer d.Shutdown()
 
 	aliceStateFilePath := createRandomStateFile(t)
 	alice := createCatshadowClientWithState(t, aliceStateFilePath)
@@ -241,6 +267,9 @@ loop4:
 }
 
 func TestDockerSendReceive(t *testing.T) {
+
+	d := setupDaemon()
+	defer d.Shutdown()
 
 	aliceStateFilePath := createRandomStateFile(t)
 	alice := createCatshadowClientWithState(t, aliceStateFilePath)
@@ -497,7 +526,9 @@ and can readily scale to millions of users.
 
 func TestDockerReunionSuccess(t *testing.T) {
 	t.Skip("Reunion does not work with 2KB payloads")
-	t.Parallel()
+
+	d := setupDaemon()
+	defer d.Shutdown()
 
 	aliceState := createRandomStateFile(t)
 	alice := createCatshadowClientWithState(t, aliceState)
@@ -571,7 +602,9 @@ loop2:
 }
 
 func TestDockerChangeExpiration(t *testing.T) {
-	t.Parallel()
+
+	d := setupDaemon()
+	defer d.Shutdown()
 
 	a := createCatshadowClientWithState(t, createRandomStateFile(t))
 
@@ -594,7 +627,9 @@ func TestDockerChangeExpiration(t *testing.T) {
 }
 
 func TestDockerAddRemoveContact(t *testing.T) {
-	t.Parallel()
+
+	d := setupDaemon()
+	defer d.Shutdown()
 
 	a := createCatshadowClientWithState(t, createRandomStateFile(t))
 	b := createCatshadowClientWithState(t, createRandomStateFile(t))
@@ -692,7 +727,9 @@ loop5:
 }
 
 func TestDockerRenameContact(t *testing.T) {
-	t.Parallel()
+
+	d := setupDaemon()
+	defer d.Shutdown()
 
 	a := createCatshadowClientWithState(t, createRandomStateFile(t))
 	b := createCatshadowClientWithState(t, createRandomStateFile(t))
@@ -877,22 +914,4 @@ func init() {
 	}()
 	runtime.SetMutexProfileFraction(1)
 	runtime.SetBlockProfileRate(1)
-
-	cfg, err := config.LoadFile("testdata/catshadow.toml")
-	if err != nil {
-		panic(err)
-	}
-
-	egressSize := 100
-	d1, err := client2.NewDaemon(cfg, egressSize)
-	if err != nil {
-		panic(err)
-	}
-	err = d1.Start()
-	if err != nil {
-		panic(err)
-	}
-
-	// maybe we need to sleep first to ensure the daemon is listening first before dialing
-	time.Sleep(time.Second * 3)
 }
