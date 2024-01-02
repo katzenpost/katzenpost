@@ -50,7 +50,7 @@ func setupDaemon() *client2.Daemon {
 	if err != nil {
 		panic(err)
 	}
-	err = d1.Start()
+	err = d.Start()
 	if err != nil {
 		panic(err)
 	}
@@ -100,7 +100,7 @@ func createCatshadowClientWithState(t *testing.T, stateFile string) *Client {
 	catShadowClient, err = NewClientAndRemoteSpool(context.Background(), debugLog, c, stateWorker)
 	require.NoError(t, err)
 
-	return catShadowClient, d
+	return catShadowClient
 }
 
 func reloadCatshadowState(t *testing.T, stateFile string) *Client {
