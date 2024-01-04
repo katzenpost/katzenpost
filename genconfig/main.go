@@ -203,6 +203,7 @@ func (s *katzenpost) genNodeConfig(isProvider bool, isVoting bool) error {
 			}
 			// generate talek common and replica configs
 			s.genTalekReplicaCfg(filepath.Join(s.outDir, cfg.Server.Identifier))
+			s.genTalekFrontendCfg(filepath.Join(s.outDir, "client"))
 			talekReplicaCfg := &sConfig.CBORPluginKaetzchen{
 				Capability:     "talek_replica",
 				Endpoint:       "+talek_replica",
