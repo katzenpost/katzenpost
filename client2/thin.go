@@ -60,6 +60,8 @@ type ThinClient struct {
 	isConnected bool
 
 	receivedCh chan ThinResponse
+
+	closeOnce sync.Once
 }
 
 // NewThinClient creates a new thing client.
@@ -89,7 +91,7 @@ func (t *ThinClient) GetLogger(prefix string) *log.Logger {
 // connection with the client daemon.
 func (t *ThinClient) Close() error {
 	err := t.unixConn.Close()
-	close(t.receivedCh)
+	t.closeOnce.Do(func() { close(t.receivedCh) })
 	t.Worker.Halt()
 	return err
 }
