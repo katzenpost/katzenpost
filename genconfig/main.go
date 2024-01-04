@@ -186,7 +186,7 @@ func (s *katzenpost) genNodeConfig(isProvider bool, isVoting bool) error {
 		s.providerIdx++
 
 		cfg.Provider = new(sConfig.Provider)
-		// configure an entry provider or a spool storage provider
+		// configure an entry or service provider
 		if s.providerIdx%2 == 0 {
 			cfg.Provider.TrustOnFirstUse = true
 			cfg.Provider.EnableEphemeralClients = true
@@ -201,7 +201,24 @@ func (s *katzenpost) genNodeConfig(isProvider bool, isVoting bool) error {
 					"log_dir":    s.baseDir + "/" + cfg.Server.Identifier,
 				},
 			}
-			cfg.Provider.CBORPluginKaetzchen = []*sConfig.CBORPluginKaetzchen{spoolCfg}
+			// generate talek common and replica configs
+			s.genTalekReplicaCfg(filepath.Join(s.outDir, cfg.Server.Identifier))
+			s.genTalekFrontendCfg(filepath.Join(s.outDir, "client"))
+			talekReplicaCfg := &sConfig.CBORPluginKaetzchen{
+				Capability:     "talek_replica",
+				Endpoint:       "+talek_replica",
+				Command:        s.baseDir + "/replica" + s.binSuffix,
+				MaxConcurrency: 1,
+				Config: map[string]interface{}{
+					"backing":   "cpu.0",
+					"config":    filepath.Join(s.baseDir, cfg.Server.Identifier, "replica.json"),
+					"common":    filepath.Join(s.baseDir, cfg.Server.Identifier, "common.json"),
+					"log_dir":   filepath.Join(s.baseDir, cfg.Server.Identifier),
+					"log_level": s.logLevel,
+				},
+			}
+
+			cfg.Provider.CBORPluginKaetzchen = []*sConfig.CBORPluginKaetzchen{spoolCfg, talekReplicaCfg}
 			if !s.hasPanda {
 				pandaCfg := &sConfig.CBORPluginKaetzchen{
 					Capability:     "panda",

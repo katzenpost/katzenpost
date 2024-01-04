@@ -12,12 +12,14 @@ require (
 	github.com/fxamacker/cbor/v2 v2.4.0
 	github.com/go-faster/xor v1.0.0
 	github.com/golang/protobuf v1.5.2
+	github.com/gorilla/rpc v1.1.0
 	github.com/henrydcase/nobs v0.0.0-20210422124615-3a8ac85da11b
 	github.com/jackc/pgx v3.6.2+incompatible
 	github.com/katzenpost/chacha20 v0.0.0-20190910113340-7ce890d6a556
 	github.com/katzenpost/chacha20poly1305 v0.0.0-20211026103954-7b6fb2fc0129
 	github.com/katzenpost/nyquist v0.0.0-20231024064113-96ae83e5c09b
 	github.com/katzenpost/sntrup4591761 v0.0.0-20231024131303-8755eb1986b8
+	github.com/privacylab/talek v0.0.0-20230726095920-a7c09fc17f64
 	github.com/prometheus/client_golang v1.14.0
 	github.com/stretchr/testify v1.8.4
 	github.com/ugorji/go/codec v1.2.8
@@ -35,6 +37,7 @@ require (
 )
 
 require (
+	github.com/agl/ed25519 v0.0.0-20170116200512-5312a6153412 // indirect
 	github.com/awnumar/memcall v0.1.2 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cespare/xxhash/v2 v2.2.0 // indirect
@@ -42,6 +45,7 @@ require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/dchest/siphash v1.2.3 // indirect
 	github.com/eapache/queue v1.1.0 // indirect
+	github.com/foobaz/go-zopfli v0.0.0-20140122214029-7432051485e2 // indirect
 	github.com/gofrs/uuid v4.0.0+incompatible // indirect
 	github.com/jackc/fake v0.0.0-20150926172116-812a484cc733 // indirect
 	github.com/kr/pretty v0.3.1 // indirect
@@ -56,6 +60,7 @@ require (
 	github.com/prometheus/procfs v0.9.0 // indirect
 	github.com/rfjakob/eme v1.1.2 // indirect
 	github.com/shopspring/decimal v1.2.0 // indirect
+	github.com/willscott/bloom v0.0.0-20190611115233-60e4b211444f // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	gitlab.com/yawning/slice.git v0.0.0-20190714152416-bc4ae2510529 // indirect
 	golang.org/x/sys v0.13.0 // indirect

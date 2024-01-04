@@ -62,14 +62,9 @@ func (s *Server) worker() {
 		case <-s.HaltCh():
 			return
 		case cmd := <-s.socket.ReadChan():
-			reply, err := s.plugin.OnCommand(cmd)
+			err := s.plugin.OnCommand(cmd)
 			if err != nil {
 				s.log.Debugf("plugin returned err: %s", err)
-			}
-			select {
-			case <-s.HaltCh():
-				return
-			case s.socket.WriteChan() <- reply:
 			}
 		}
 	}
