@@ -180,7 +180,10 @@ func (k *CBORPluginWorker) KaetzchenForPKI() ServiceMap {
 			continue
 		}
 		params := make(PluginParameters)
-		p := k.GetParameters()
+		p, err := k.GetParameters()
+		if err != nil {
+			continue
+		}
 		if p != nil {
 			for key, value := range *p {
 				params[key] = value
