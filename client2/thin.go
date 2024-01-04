@@ -72,7 +72,7 @@ func NewThinClient(cfg *config.Config) *ThinClient {
 		}),
 		logBackend: log.WithPrefix("backend"),
 		receivedCh: make(chan ThinResponse),
-		eventSink:  make(chan Event),
+		eventSink:  make(chan Event, 2),
 		drainStop:  make(chan interface{}),
 	}
 }
@@ -138,8 +138,8 @@ func (t *ThinClient) Dial() error {
 		return err
 	}
 	t.parsePKIDoc(message2.Payload)
-	t.Go(t.worker)
 	t.Go(t.eventSinkDrain)
+	t.Go(t.worker)
 	t.log.Debug("Dial end")
 	return nil
 }
@@ -209,27 +209,31 @@ func (t *ThinClient) worker() {
 			if message.Payload == nil {
 				t.log.Infof("message.Payload is nil")
 			}
+			t.log.Infof("message.Payload is %s", string(message.Payload))
 			event := &MessageReplyEvent{
 				MessageID: message.ID,
 				Payload:   message.Payload,
 				Err:       nil,
 			}
+			t.log.Debugf("before emitting message to event sink")
 			select {
 			case t.eventSink <- event:
-				continue
 			case <-t.HaltCh():
 				return
 			}
+			t.log.Debugf("after emitting message to event sink")
 			response := ThinResponse{
 				SURBID:  message.SURBID,
 				ID:      message.ID,
 				Payload: message.Payload,
 			}
+			t.log.Debugf("before sending message to receivedCh")
 			select {
 			case <-t.HaltCh():
 				return
 			case t.receivedCh <- response:
 			}
+			t.log.Debugf("after sending message to receivedCh")
 		}
 	}
 }
@@ -247,6 +251,8 @@ func (t *ThinClient) stopDrain() {
 
 // drain the eventSink until stopDrain() is called
 func (t *ThinClient) eventSinkDrain() {
+	t.log.Debug("STARTING eventSinkDrain")
+	defer t.log.Debug("STOPPING eventSinkDrain")
 	for {
 		select {
 		case <-t.HaltCh():

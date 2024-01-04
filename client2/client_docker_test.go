@@ -14,7 +14,6 @@ import (
 	"github.com/katzenpost/katzenpost/client2/config"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
-	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 )
 
 func TestDockerClientSendReceive(t *testing.T) {
@@ -55,13 +54,10 @@ func TestDockerClientSendReceive(t *testing.T) {
 	// Test send/receive
 
 	t.Log("thin client send ping")
-	surbID := &[sConstants.SURBIDLength]byte{}
-	_, err = rand.Reader.Read(surbID[:])
-	require.NoError(t, err)
-
+	surbID := thin.NewSURBID()
 	thin.SendMessage(surbID, message1, &nodeIdKey, []byte("testdest"))
 
-	time.Sleep(time.Second * 1)
+	time.Sleep(time.Second * 3)
 
 	replyID, message2 := thin.ReceiveMessage()
 
