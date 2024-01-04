@@ -125,7 +125,6 @@ func TestDockerMultiplexClients(t *testing.T) {
 	require.NotEqual(t, message2, []byte{})
 	require.Equal(t, message1, message2[:len(message1)])
 	require.Equal(t, replyID, surbID)
-
 }
 
 func TestDockerClientARQSendReceive(t *testing.T) {
@@ -185,5 +184,4 @@ func TestDockerClientARQSendReceive(t *testing.T) {
 
 	err = thin.Close()
 	require.NoError(t, err)
-	d.Shutdown()
 }
