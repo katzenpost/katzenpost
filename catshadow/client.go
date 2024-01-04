@@ -1410,34 +1410,6 @@ func (c *Client) Online(ctx context.Context) error {
 	return errors.New("Shutdown")
 }
 
-// goOnline is called by worker routine when a goOnline is received. currently only a single session is supported.
-func (c *Client) goOnline() error {
-	c.connMutex.RLock()
-	if c.online || c.connecting || c.session != nil {
-		c.connMutex.RUnlock()
-		return errors.New("Already Connected")
-	}
-	c.connMutex.RUnlock()
-
-	// set connecting status
-	c.connMutex.Lock()
-	c.connecting = true
-	c.connMutex.Unlock()
-
-	// try to connect
-	s := client2.NewThinClient(nil)
-
-	// re-obtain lock
-	c.connMutex.Lock()
-	c.connecting = false
-	c.session = s
-	c.online = true
-	c.connMutex.Unlock()
-
-	// wait for pki document to arrive
-	return s.Dial()
-}
-
 // Offline() tells the client to disconnect from network services and blocks until the client has disconnected.
 func (c *Client) Offline() error {
 	// TODO: implement some safe shutdown where necessary
