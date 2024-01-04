@@ -33,4 +33,4 @@ dockerdockertest:
 
 test1:
 	$(docker) run ${docker_args} $(image) \
-		sh -c 'cd /go/katzenpost/client2/; GORACE=history_size=7 go test $(testargs) -ldflags ${ldflags} -tags=docker_test -v -timeout 1h -run TestDockerClientSendReceive'
+		sh -c 'cd /go/katzenpost/client2/; GORACE=history_size=7 go test $(testargs) -ldflags ${ldflags} -tags=docker_test -v -timeout 1h -run TestDockerMultiplexClients'

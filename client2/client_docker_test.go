@@ -16,7 +16,10 @@ import (
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 )
 
-func TestDockerClientSendReceive(t *testing.T) {
+func TestDockerMultiplexClients(t *testing.T) {
+
+	// daemon listen
+
 	cfg, err := config.LoadFile("testdata/client.toml")
 	require.NoError(t, err)
 
@@ -26,17 +29,32 @@ func TestDockerClientSendReceive(t *testing.T) {
 	err = d.Start()
 	require.NoError(t, err)
 
+	defer d.Shutdown()
+
 	time.Sleep(time.Second * 3)
 
-	thin := NewThinClient(cfg)
+	// client 1 dial
+
+	thin1 := NewThinClient(cfg)
 	t.Log("thin client Dialing")
-	err = thin.Dial()
+	err = thin1.Dial()
 	require.NoError(t, err)
 	require.Nil(t, err)
 	t.Log("thin client connected")
 
+	// client 2 dial
+
+	thin2 := NewThinClient(cfg)
+	t.Log("thin client Dialing")
+	err = thin2.Dial()
+	require.NoError(t, err)
+	require.Nil(t, err)
+	t.Log("thin client connected")
+
+	// client 1 prepare to send
+
 	t.Log("thin client getting PKI doc")
-	doc := thin.PKIDocument()
+	doc := thin1.PKIDocument()
 	require.NotNil(t, doc)
 	require.NotEqual(t, doc.LambdaP, 0.0)
 
@@ -51,15 +69,15 @@ func TestDockerClientSendReceive(t *testing.T) {
 	message1 := []byte("hello alice, this is bob.")
 	nodeIdKey := pingTargets[0].IdentityKey.Sum256()
 
-	// Test send/receive
+	// client 1 send/receive
 
 	t.Log("thin client send ping")
-	surbID := thin.NewSURBID()
-	thin.SendMessage(surbID, message1, &nodeIdKey, []byte("testdest"))
+	surbID := thin1.NewSURBID()
+	thin1.SendMessage(surbID, message1, &nodeIdKey, []byte("testdest"))
 
 	time.Sleep(time.Second * 3)
 
-	replyID, message2 := thin.ReceiveMessage()
+	replyID, message2 := thin1.ReceiveMessage()
 
 	require.NoError(t, err)
 	require.NotEqual(t, message1, []byte{})
@@ -67,9 +85,47 @@ func TestDockerClientSendReceive(t *testing.T) {
 	require.Equal(t, message1, message2[:len(message1)])
 	require.Equal(t, replyID, surbID)
 
-	err = thin.Close()
+	// client 2 send/receive
+
+	t.Log("thin client send ping")
+	surbID = thin2.NewSURBID()
+	thin2.SendMessage(surbID, message1, &nodeIdKey, []byte("testdest"))
+
+	time.Sleep(time.Second * 3)
+
+	replyID, message2 = thin2.ReceiveMessage()
+
 	require.NoError(t, err)
-	d.Shutdown()
+	require.NotEqual(t, message1, []byte{})
+	require.NotEqual(t, message2, []byte{})
+	require.Equal(t, message1, message2[:len(message1)])
+	require.Equal(t, replyID, surbID)
+
+	// client 3 dial
+
+	thin3 := NewThinClient(cfg)
+	t.Log("thin client Dialing")
+	err = thin3.Dial()
+	require.NoError(t, err)
+	require.Nil(t, err)
+	t.Log("thin client connected")
+
+	// client 3 send/receive
+
+	t.Log("thin client send ping")
+	surbID = thin3.NewSURBID()
+	thin3.SendMessage(surbID, message1, &nodeIdKey, []byte("testdest"))
+
+	time.Sleep(time.Second * 3)
+
+	replyID, message2 = thin3.ReceiveMessage()
+
+	require.NoError(t, err)
+	require.NotEqual(t, message1, []byte{})
+	require.NotEqual(t, message2, []byte{})
+	require.Equal(t, message1, message2[:len(message1)])
+	require.Equal(t, replyID, surbID)
+
 }
 
 func TestDockerClientARQSendReceive(t *testing.T) {
@@ -81,6 +137,8 @@ func TestDockerClientARQSendReceive(t *testing.T) {
 	require.NoError(t, err)
 	err = d.Start()
 	require.NoError(t, err)
+
+	defer d.Shutdown()
 
 	time.Sleep(time.Second * 3)
 
