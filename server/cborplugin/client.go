@@ -193,7 +193,10 @@ func (c *Client) GetParameters() (*Parameters, error) {
 		case *Parameters:
 			return p, nil
 		default:
-			return nil, errors.New("Failed to receive Parameters from Plugin")
+			c.log.Debugf("Plugin does not support ParametersRequest, return Parameters with default endpoint")
+			responseParams := make(Parameters)
+			responseParams["endpoint"] = c.endpoint
+			return &responseParams, nil
 		}
 	}
 }
