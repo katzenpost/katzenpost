@@ -24,7 +24,7 @@ import (
 	"math"
 	"time"
 
-	"github.com/katzenpost/katzenpost/client"
+	"github.com/katzenpost/katzenpost/client2"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 )
 
@@ -52,7 +52,7 @@ func (c *Client) worker() {
 	gcMessagestimer := time.NewTimer(GarbageCollectionInterval)
 	defer gcMessagestimer.Stop()
 
-	isConnected := false
+	isConnected := true
 	for {
 		var qo interface{}
 		select {
@@ -74,12 +74,6 @@ func (c *Client) worker() {
 			}
 		case qo = <-c.opCh:
 			switch op := qo.(type) {
-			case *opOnline:
-				// no op
-			case *opOffline:
-				op.responseChan <- c.goOffline()
-				isConnected = false
-				c.haltKeyExchanges()
 			case *opCreateSpool:
 				c.doCreateRemoteSpool(op.provider, op.responseChan)
 			case *opUpdateSpool:
@@ -132,11 +126,9 @@ func (c *Client) worker() {
 			continue
 		case rawClientEvent := <-c.sessionEvents():
 			switch event := rawClientEvent.(type) {
-			/* do we really need this?
-			case *client.MessageIDGarbageCollected:
-							c.garbageCollectSendMap(event)
-			*/
-			case *client.ConnectionStatusEvent:
+			case *client2.MessageIDGarbageCollected:
+				c.garbageCollectSendMap(event)
+			case *client2.ConnectionStatusEvent:
 				c.log.Infof("Connection status change: isConnected %v", event.IsConnected)
 				if isConnected != event.IsConnected && event.IsConnected {
 					readInboxInterval := c.getReadInboxInterval()
@@ -155,13 +147,14 @@ func (c *Client) worker() {
 					c.haltKeyExchanges()
 				}
 				c.eventCh.In() <- event
-			case *client.MessageSentEvent:
+			case *client2.MessageSentEvent:
+				c.log.Debug("received MESSAGE SENT EVENT")
 				c.handleSent(event)
 				continue
-			case *client.MessageReplyEvent:
+			case *client2.MessageReplyEvent:
 				c.handleReply(event)
 				continue
-			case *client.NewDocumentEvent:
+			case *client2.NewDocumentEvent:
 				doc := event.Document
 				c.getReadInboxInterval = func() time.Duration { return getReadInboxInterval(doc.LambdaP, doc.LambdaPMaxDelay) }
 				readInboxInterval := c.getReadInboxInterval()

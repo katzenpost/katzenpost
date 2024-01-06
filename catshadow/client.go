@@ -32,7 +32,6 @@ import (
 	"github.com/fxamacker/cbor/v2"
 	"gopkg.in/eapache/channels.v1"
 
-	"github.com/katzenpost/katzenpost/client"
 	cConstants "github.com/katzenpost/katzenpost/client/constants"
 	"github.com/katzenpost/katzenpost/client2"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
@@ -200,19 +199,13 @@ func (c *Client) Start() {
 			return
 		}
 		c.log.Warnf("Shutting down due to error: %v", err)
+		c.session.Close()
 		c.Shutdown()
 	}()
 
 	c.garbageCollectConversations()
 	c.Go(c.eventSinkWorker)
 	c.Go(c.worker)
-
-	// Shutdown if the client halts for some reason
-	go func() {
-		c.session.Close()
-		c.Shutdown()
-	}()
-
 }
 
 func (c *Client) initKeyExchange(contact *Contact) error {
@@ -517,6 +510,9 @@ func (c *Client) doCreateRemoteSpool(provider string, responseChan chan error) {
 	go func() {
 		// NewSpoolReadDescriptor blocks, so we run this in another thread and then use
 		// another workerOp to save the spool descriptor.
+		if c.session == nil {
+			panic("thin client reference is nil")
+		}
 		providerHash := desc.MixDescriptor.IdentityKey.Sum256()
 		spool, err := memspoolclient.NewSpoolReadDescriptor(desc.RecipientQueueID, &providerHash, c.session)
 		if err != nil {
@@ -1034,12 +1030,12 @@ func (c *Client) sendReadInbox() {
 	c.sendMap.Store(mesgID, &ReadMessageDescriptor{MessageID: a})
 }
 
-func (c *Client) garbageCollectSendMap(gcEvent *client.MessageIDGarbageCollected) {
+func (c *Client) garbageCollectSendMap(gcEvent *client2.MessageIDGarbageCollected) {
 	c.log.Debug("Garbage Collecting Message ID %x", gcEvent.MessageID[:])
 	c.sendMap.Delete(gcEvent.MessageID)
 }
 
-func (c *Client) handleSent(sentEvent *client.MessageSentEvent) {
+func (c *Client) handleSent(sentEvent *client2.MessageSentEvent) {
 	orig, ok := c.sendMap.Load(*sentEvent.MessageID)
 	if ok {
 		switch tp := orig.(type) {
@@ -1081,7 +1077,7 @@ func (c *Client) handleSent(sentEvent *client.MessageSentEvent) {
 	}
 }
 
-func (c *Client) handleReply(replyEvent *client.MessageReplyEvent) {
+func (c *Client) handleReply(replyEvent *client2.MessageReplyEvent) {
 	if ev, ok := c.sendMap.Load(*replyEvent.MessageID); ok {
 		defer c.sendMap.Delete(replyEvent.MessageID)
 		switch tp := ev.(type) {
@@ -1396,18 +1392,8 @@ func (c *Client) GetBlob(id string) ([]byte, error) {
 
 // Online() brings catshadow online or returns an error
 func (c *Client) Online(ctx context.Context) error {
-	// XXX: block until connection or error ?
-	r := make(chan error, 1)
-	select {
-	case <-c.HaltCh():
-	case c.opCh <- &opOnline{context: ctx, responseChan: r}:
-	}
-	select {
-	case <-c.HaltCh():
-	case r := <-r:
-		return r
-	}
-	return errors.New("Shutdown")
+	c.online = true
+	return nil
 }
 
 // Offline() tells the client to disconnect from network services and blocks until the client has disconnected.
