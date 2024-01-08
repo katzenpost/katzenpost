@@ -16,22 +16,46 @@ import (
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 )
 
-func TestDockerMultiplexClients(t *testing.T) {
+func TestAllClient2Tests(t *testing.T) {
+	d := setupDaemon()
+
+	t.Cleanup(func() {
+		d.Shutdown()
+	})
+
+	t.Run("TestDockerMultiplexClients", testDockerMultiplexClients)
+	t.Run("TestDockerClientARQSendReceive", testDockerClientARQSendReceive)
+}
+
+func setupDaemon() *Daemon {
+	cfg, err := config.LoadFile("testdata/catshadow.toml")
+	if err != nil {
+		panic(err)
+	}
+
+	egressSize := 100
+	d, err := NewDaemon(cfg, egressSize)
+	if err != nil {
+		panic(err)
+	}
+	err = d.Start()
+	if err != nil {
+		panic(err)
+	}
+
+	// maybe we need to sleep first to ensure the daemon is listening first before dialing
+	time.Sleep(time.Second * 3)
+
+	return d
+}
+
+func testDockerMultiplexClients(t *testing.T) {
+	t.Parallel()
 
 	// daemon listen
 
 	cfg, err := config.LoadFile("testdata/client.toml")
 	require.NoError(t, err)
-
-	egressSize := 100
-	d, err := NewDaemon(cfg, egressSize)
-	require.NoError(t, err)
-	err = d.Start()
-	require.NoError(t, err)
-
-	defer d.Shutdown()
-
-	time.Sleep(time.Second * 3)
 
 	// client 1 dial
 
@@ -127,19 +151,11 @@ func TestDockerMultiplexClients(t *testing.T) {
 	require.Equal(t, replyID, surbID)
 }
 
-func TestDockerClientARQSendReceive(t *testing.T) {
+func testDockerClientARQSendReceive(t *testing.T) {
+	t.Parallel()
+
 	cfg, err := config.LoadFile("testdata/client.toml")
 	require.NoError(t, err)
-
-	egressSize := 100
-	d, err := NewDaemon(cfg, egressSize)
-	require.NoError(t, err)
-	err = d.Start()
-	require.NoError(t, err)
-
-	defer d.Shutdown()
-
-	time.Sleep(time.Second * 3)
 
 	thin := NewThinClient(cfg)
 	t.Log("thin client Dialing")
