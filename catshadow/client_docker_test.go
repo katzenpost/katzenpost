@@ -39,6 +39,22 @@ import (
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 )
 
+func TestAllCatshadow(t *testing.T) {
+
+	d := setupDaemon()
+
+	t.Cleanup(func() {
+		d.Shutdown()
+	})
+
+	t.Run("TestDockerPandaSuccess", testDockerPandaSuccess)
+	t.Run("TestDockerPandaTagContendedError", testDockerPandaTagContendedError)
+	t.Run("TestDockerSendReceive", testDockerSendReceive)
+	t.Run("TestDockerReunionSuccess", testDockerReunionSuccess)
+	t.Run("TestDockerChangeExpiration", testDockerChangeExpiration)
+	t.Run("TestDockerAddRemoveContact", testDockerAddRemoveContact)
+}
+
 func setupDaemon() *client2.Daemon {
 	cfg, err := config.LoadFile("testdata/catshadow.toml")
 	if err != nil {
@@ -141,10 +157,8 @@ func reloadCatshadowState(t *testing.T, stateFile string) *Client {
 	return catShadowClient
 }
 
-func TestDockerPandaSuccess(t *testing.T) {
-
-	d := setupDaemon()
-	defer d.Shutdown()
+func testDockerPandaSuccess(t *testing.T) {
+	t.Parallel()
 
 	aliceState := createRandomStateFile(t)
 	alice := createCatshadowClientWithState(t, aliceState)
@@ -186,10 +200,8 @@ loop2:
 	bob.Shutdown()
 }
 
-func TestDockerPandaTagContendedError(t *testing.T) {
-
-	d := setupDaemon()
-	defer d.Shutdown()
+func testDockerPandaTagContendedError(t *testing.T) {
+	t.Parallel()
 
 	aliceStateFilePath := createRandomStateFile(t)
 	alice := createCatshadowClientWithState(t, aliceStateFilePath)
@@ -266,10 +278,8 @@ loop4:
 	jeff.Shutdown()
 }
 
-func TestDockerSendReceive(t *testing.T) {
-
-	d := setupDaemon()
-	defer d.Shutdown()
+func testDockerSendReceive(t *testing.T) {
+	t.Parallel()
 
 	aliceStateFilePath := createRandomStateFile(t)
 	alice := createCatshadowClientWithState(t, aliceStateFilePath)
@@ -524,11 +534,10 @@ and can readily scale to millions of users.
 	newBob.Shutdown()
 }
 
-func TestDockerReunionSuccess(t *testing.T) {
-	t.Skip("Reunion does not work with 2KB payloads")
+func testDockerReunionSuccess(t *testing.T) {
+	t.Parallel()
 
-	d := setupDaemon()
-	defer d.Shutdown()
+	t.Skip("Reunion does not work with 2KB payloads")
 
 	aliceState := createRandomStateFile(t)
 	alice := createCatshadowClientWithState(t, aliceState)
@@ -601,10 +610,8 @@ loop2:
 	bob.Shutdown()
 }
 
-func TestDockerChangeExpiration(t *testing.T) {
-
-	d := setupDaemon()
-	defer d.Shutdown()
+func testDockerChangeExpiration(t *testing.T) {
+	t.Parallel()
 
 	a := createCatshadowClientWithState(t, createRandomStateFile(t))
 
@@ -626,10 +633,8 @@ func TestDockerChangeExpiration(t *testing.T) {
 
 }
 
-func TestDockerAddRemoveContact(t *testing.T) {
-
-	d := setupDaemon()
-	defer d.Shutdown()
+func testDockerAddRemoveContact(t *testing.T) {
+	t.Parallel()
 
 	a := createCatshadowClientWithState(t, createRandomStateFile(t))
 	b := createCatshadowClientWithState(t, createRandomStateFile(t))
@@ -726,10 +731,8 @@ loop5:
 	b.Shutdown()
 }
 
-func TestDockerRenameContact(t *testing.T) {
-
-	d := setupDaemon()
-	defer d.Shutdown()
+func testDockerRenameContact(t *testing.T) {
+	t.Parallel()
 
 	a := createCatshadowClientWithState(t, createRandomStateFile(t))
 	b := createCatshadowClientWithState(t, createRandomStateFile(t))
