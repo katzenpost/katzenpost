@@ -26,28 +26,55 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	cc "github.com/katzenpost/katzenpost/client2"
+	"github.com/katzenpost/katzenpost/client2"
 	"github.com/katzenpost/katzenpost/client2/config"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/memspool/common"
 )
 
-func TestDockerUnreliableSpoolService(t *testing.T) {
+func TestAllMemspoolClientTests(t *testing.T) {
+	d := setupDaemon()
+
+	t.Cleanup(func() {
+		d.Shutdown()
+	})
+
+	t.Run("TestDockerUnreliableSpoolService", testDockerUnreliableSpoolService)
+	t.Run("TestDockerUnreliableSpoolServiceMore", testDockerUnreliableSpoolServiceMore)
+	t.Run("TestDockerGetSpoolServices", testDockerGetSpoolServices)
+}
+
+func setupDaemon() *client2.Daemon {
+	cfg, err := config.LoadFile("testdata/catshadow.toml")
+	if err != nil {
+		panic(err)
+	}
+
+	egressSize := 100
+	d, err := client2.NewDaemon(cfg, egressSize)
+	if err != nil {
+		panic(err)
+	}
+	err = d.Start()
+	if err != nil {
+		panic(err)
+	}
+
+	// maybe we need to sleep first to ensure the daemon is listening first before dialing
+	time.Sleep(time.Second * 3)
+
+	return d
+}
+
+func testDockerUnreliableSpoolService(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 
 	cfg, err := config.LoadFile("testdata/client.toml")
 	require.NoError(err)
 
-	egressSize := 100
-	d, err := cc.NewDaemon(cfg, egressSize)
-	require.NoError(err)
-	err = d.Start()
-	require.NoError(err)
-
-	// maybe we need to sleep first to ensure the daemon is listening first before dialing
-	time.Sleep(time.Second * 3)
-
-	s := cc.NewThinClient(cfg)
+	s := client2.NewThinClient(cfg)
 	err = s.Dial()
 	require.NoError(err)
 
@@ -117,27 +144,16 @@ func TestDockerUnreliableSpoolService(t *testing.T) {
 
 	err = s.Close()
 	require.NoError(err)
-
-	d.Shutdown()
 }
 
-func TestDockerUnreliableSpoolServiceMore(t *testing.T) {
+func testDockerUnreliableSpoolServiceMore(t *testing.T) {
 	t.Skip("This test does not handle lossy networks well")
 	require := require.New(t)
 
 	cfg, err := config.LoadFile("testdata/client.toml")
 	require.NoError(err)
 
-	egressSize := 100
-	d, err := cc.NewDaemon(cfg, egressSize)
-	require.NoError(err)
-	err = d.Start()
-	require.NoError(err)
-
-	// maybe we need to sleep first to ensure the daemon is listening first before dialing
-	time.Sleep(time.Second * 3)
-
-	s := cc.NewThinClient(cfg)
+	s := client2.NewThinClient(cfg)
 	err = s.Dial()
 	require.NoError(err)
 
@@ -183,26 +199,17 @@ func TestDockerUnreliableSpoolServiceMore(t *testing.T) {
 
 	err = s.Close()
 	require.NoError(err)
-
-	d.Shutdown()
 }
 
-func TestDockerGetSpoolServices(t *testing.T) {
+func testDockerGetSpoolServices(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 
 	cfg, err := config.LoadFile("testdata/client.toml")
 	require.NoError(err)
 
-	egressSize := 100
-	d, err := cc.NewDaemon(cfg, egressSize)
-	require.NoError(err)
-	err = d.Start()
-	require.NoError(err)
-
-	// maybe we need to sleep first to ensure the daemon is listening first before dialing
-	time.Sleep(time.Second * 3)
-
-	s := cc.NewThinClient(cfg)
+	s := client2.NewThinClient(cfg)
 	err = s.Dial()
 	require.NoError(err)
 
@@ -220,6 +227,4 @@ func TestDockerGetSpoolServices(t *testing.T) {
 
 	err = s.Close()
 	require.NoError(err)
-
-	d.Shutdown()
 }
