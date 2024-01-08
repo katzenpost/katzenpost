@@ -125,7 +125,7 @@ func (k *CBORPluginWorker) haltAllClients() {
 func (k *CBORPluginWorker) processKaetzchen(pkt *packet.Packet, pluginClient *cborplugin.Client) {
 	defer pkt.Dispose()
 	pluginCap := pluginClient.Capability()
-	payload, surb, err := packet.ParseForwardPacket(pkt)
+	request, surb, err := packet.ParseForwardPacket(pkt)
 	if err != nil {
 		k.log.Debugf("%v: Dropping Kaetzchen request: %v (%v)", pluginCap, pkt.ID, err)
 		instrument.KaetzchenRequestsDropped(1)
@@ -134,7 +134,7 @@ func (k *CBORPluginWorker) processKaetzchen(pkt *packet.Packet, pluginClient *cb
 
 	pluginClient.WriteChan() <- &cborplugin.Request{
 		ID:      pkt.ID,
-		Payload: payload,
+		Payload: request,
 		HasSURB: surb != nil,
 	}
 	cborResponse := <-pluginClient.ReadChan()
@@ -154,17 +154,14 @@ func (k *CBORPluginWorker) processKaetzchen(pkt *packet.Packet, pluginClient *cb
 				k.log.Debugf("%v: Failed to generate SURB-Reply: %v (%v)", pluginCap, pkt.ID, err)
 				return
 			}
-
 			k.log.Debugf("%v: Handing off newly generated SURB-Reply: %v (Src:%v)", pluginCap, respPkt.ID, pkt.ID)
 			k.glue.Scheduler().OnPacket(respPkt)
-			return
+		} else {
+			k.log.Debugf("No SURB provided: %v", pkt.ID)
 		}
-		k.log.Debugf("No SURB provided: %v", pkt.ID)
 	default:
 		// received some unknown command type
 		k.log.Errorf("%v: Failed to handle Kaetzchen request: %v (%v), response: %s", pluginCap, pkt.ID, err, cborResponse)
-		instrument.KaetzchenRequestsDropped(1)
-		return
 	}
 }
 
