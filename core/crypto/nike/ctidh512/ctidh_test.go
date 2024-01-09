@@ -14,12 +14,12 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-package ctidh
+package ctidh512
 
 import (
 	"testing"
 
-	ctidh "codeberg.org/vula/highctidh/ctidh1024"
+	ctidh "codeberg.org/vula/highctidh/ctidh512"
 	"github.com/stretchr/testify/require"
 )
 
