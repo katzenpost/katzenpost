@@ -143,13 +143,13 @@ func (cfg *ClientConfig) validate() error {
 	return nil
 }
 
-func (c *Client) SetPollInterval(interval time.Duration) {
+func (c *Client) setPollInterval(interval time.Duration) {
 	c.Lock()
 	c.cfg.MessagePollInterval = interval
 	c.Unlock()
 }
 
-func (c *Client) GetPollInterval() time.Duration {
+func (c *Client) getPollInterval() time.Duration {
 	c.RLock()
 	defer c.RUnlock()
 	return c.cfg.MessagePollInterval
@@ -228,10 +228,10 @@ func New(cfg *ClientConfig) (*Client, error) {
 	c.conn = newConnection(c)
 	c.pki = newPKI(c)
 	c.pki.start()
-	c.conn.start()
 	if c.cfg.CachedDocument != nil {
 		// connectWorker waits for a pki fetch, we already have a document cached, so wake the worker
 		c.conn.onPKIFetch()
 	}
+	c.conn.start()
 	return c, nil
 }

@@ -20,10 +20,10 @@ int main()
     unsigned char m[SPX_FORS_MSG_BYTES];
     uint32_t addr[8] = {0};
 
-    randombytes(ctx.sk_seed, SPX_N);
-    randombytes(ctx.pub_seed, SPX_N);
-    randombytes(m, SPX_FORS_MSG_BYTES);
-    randombytes((unsigned char *)addr, 8 * sizeof(uint32_t));
+    _randombytes(ctx.sk_seed, SPX_N);
+    _randombytes(ctx.pub_seed, SPX_N);
+    _randombytes(m, SPX_FORS_MSG_BYTES);
+    _randombytes((unsigned char *)addr, 8 * sizeof(uint32_t));
 
     printf("Testing FORS signature and PK derivation.. ");
 

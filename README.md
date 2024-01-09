@@ -40,33 +40,19 @@ There are essentially two types of interaction with a Katzenpost mixnet:
 1. clients talk to mixnet services and their traffic stays in the mixnet
 2. clients talk to Internet services; proxying through the mixnet onto the Internet.
 
+# Building Katzenpost
+
+To build all server related components, type "make" when inside this repo:
+
+```bash
+cd katzenpost
+make
+```
+
 # Client:
 
 Currently, [Katzen](https://github.com/katzenpost/katzen) is the only client available for use with Katzenpost. However a SOCKS proxy client is forthcoming
 and you'll be able to use that with many existing applications.
-
-# Server Side: Easy One Step BUILD
-
-You'd want to build the server side if you are
-a developer, mix node operator or dirauth operator.
-
-This builds 3 binaries:
-
-* mix server
-* dirauth server
-* mixnet ping CLI command
-
-All you have to do is type:
-
-```bash
-make
-```
-
-For Docker users, you can use:
-
-```bash
-make docker
-```
 
 # Server Side Usage/Configuration
 
@@ -206,9 +192,25 @@ QROM.
 Mix network key management and distribution is handled by the
 directory authority system, a decentralized voting protocol that can
 tolerate (1/2 * n)-1 node outages.  Clients and mix nodes can talk to
-the dirauth system to get a published PKI document which is
+the dirauth (directory authority) system to get a published PKI document which is
 essentially a view of the network which contains public cryptographic
 keys and network connection information.
+
+The mix descriptors are signed by the mix nodes. Each dirauth also signs their
+interactions in the voting protocol and the final published PKI document.
+
+Mix nodes and dirauth (directory authority) nodes use our hybrid post quantum signature
+scheme which is currently:
+
+* ed25519 + Sphincs+
+
+Note that we could have just used Sphincs+ since hash based signature schemes have a
+solid theoretical foundation, however there can still be mistakes in the hyper tree design
+and so pairing it with ed25519 is prudent defense in dept.
+
+Clients also use this signature scheme to verify PKI documents.
+
+We are using the *SHAKE-256f* parameterization of Sphincs+ via the reference implementation.
 
 # License
 
