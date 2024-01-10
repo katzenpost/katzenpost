@@ -128,7 +128,7 @@ func main() {
 	}
 	socketFile := filepath.Join(tmpDir, fmt.Sprintf("%d.http_proxy.socket", os.Getpid()))
 
-	p := proxy{allowedHost: make(map[string]struct{}), log: serverLog}
+	p := &proxy{allowedHost: make(map[string]struct{}), log: serverLog}
 	// TODO: support csv host arg
 	p.allowedHost[host] = struct{}{}
 
