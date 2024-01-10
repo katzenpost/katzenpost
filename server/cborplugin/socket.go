@@ -81,8 +81,10 @@ func (c *CommandIO) Start(initiator bool, socketFile string, commandBuilder Comm
 			if err != nil {
 				time.Sleep(time.Second)
 				continue
+			} else {
+				started = true
+				break
 			}
-			started = true
 		}
 		if started != true {
 			panic(err)
