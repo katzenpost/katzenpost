@@ -23,7 +23,7 @@ import (
 	"testing"
 
 	"github.com/katzenpost/katzenpost/core/crypto/kem/adapter"
-	"github.com/katzenpost/katzenpost/core/crypto/nike/ctidh"
+	ctidh "github.com/katzenpost/katzenpost/core/crypto/nike/ctidh1024"
 )
 
 func BenchmarkCtidh1024SphinxUnwrap(b *testing.B) {
@@ -33,6 +33,6 @@ func BenchmarkCtidh1024SphinxUnwrap(b *testing.B) {
 	benchmarkSphinxUnwrap(b, ctidh.CTIDH1024Scheme)
 }
 
-func BenchmarkKEMSphinxUnwrapCSTIDH1024(b *testing.B) {
+func BenchmarkKEMSphinxUnwrapCTIDH1024(b *testing.B) {
 	benchmarkKEMSphinxUnwrap(b, adapter.FromNIKE(ctidh.CTIDH1024Scheme))
 }
