@@ -1,3 +1,6 @@
+//go:build ctidh2048
+// +build ctidh2048
+
 // ctidh2048_benchmark_test.go - Sphinx Packet Format benchmarks.
 // Copyright (C) 2022 David Stainton.
 //
