@@ -3,7 +3,7 @@ module github.com/katzenpost/katzenpost
 go 1.19
 
 require (
-	codeberg.org/vula/highctidh v1.0.2024010701
+	codeberg.org/vula/highctidh v1.0.2024011100
 	filippo.io/edwards25519 v1.0.0
 	github.com/BurntSushi/toml v1.2.1
 	github.com/awnumar/memguard v0.22.3
