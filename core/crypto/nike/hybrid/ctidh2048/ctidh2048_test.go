@@ -1,6 +1,4 @@
-//go:build ctidh2048
-
-package hybrid
+package CTIDH2048X25519
 
 import (
 	"testing"
