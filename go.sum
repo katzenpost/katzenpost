@@ -2,10 +2,10 @@ codeberg.org/vula/highctidh/ctidh1024 v0.0.0-20240112145400-d12c8f0a1ef9 h1:YjSw
 codeberg.org/vula/highctidh/ctidh1024 v0.0.0-20240112145400-d12c8f0a1ef9/go.mod h1:sECYP5rCfCLxIL4r7lUC+LIiLEb3IcoSrpvy3bAxU48=
 codeberg.org/vula/highctidh/ctidh2048 v0.0.0-20240112145400-d12c8f0a1ef9 h1:+BfaBVR4GlVNrHBvRCWy3P0Nfv7XkQdg0/agefh84/Y=
 codeberg.org/vula/highctidh/ctidh2048 v0.0.0-20240112145400-d12c8f0a1ef9/go.mod h1:siQ0Uz9i8Mwp3vFl5Y/pTTc4j9Bd1dC5ArOGyqlmugs=
-codeberg.org/vula/highctidh/ctidh511 v0.0.0-20240112144653-49dd34b90bf5 h1:82PD9kv5KMOCmxCMBn2BTBqnj3lSiA61jbO+mpToD4Y=
-codeberg.org/vula/highctidh/ctidh511 v0.0.0-20240112144653-49dd34b90bf5/go.mod h1:Wakeuwl2rnlkBeZtVQ72An6D8/+vXmm3+hYtsCYOMBM=
-codeberg.org/vula/highctidh/ctidh512 v0.0.0-20240112144653-49dd34b90bf5 h1:cbZ9GvEom5CJ1wBOM5+MdQEQKwsfqrl7ygRGXAKU1os=
-codeberg.org/vula/highctidh/ctidh512 v0.0.0-20240112144653-49dd34b90bf5/go.mod h1:r7gDd0cm4FBDi8zzuOoP4C3kBfjistm4+M4cYNAl4PI=
+codeberg.org/vula/highctidh/ctidh511 v0.0.0-20240112145400-d12c8f0a1ef9 h1:NlPbINFRMXpx/umDDcPLfhKLi3cqmtUV/vV6lq2k2Ag=
+codeberg.org/vula/highctidh/ctidh511 v0.0.0-20240112145400-d12c8f0a1ef9/go.mod h1:Wakeuwl2rnlkBeZtVQ72An6D8/+vXmm3+hYtsCYOMBM=
+codeberg.org/vula/highctidh/ctidh512 v0.0.0-20240112145400-d12c8f0a1ef9 h1:/W+KJ6bUH6269MIZfnc5iorRgDoGXHZ/jd3woaRlbGU=
+codeberg.org/vula/highctidh/ctidh512 v0.0.0-20240112145400-d12c8f0a1ef9/go.mod h1:r7gDd0cm4FBDi8zzuOoP4C3kBfjistm4+M4cYNAl4PI=
 filippo.io/edwards25519 v1.0.0 h1:0wAIcmJUqRdI8IJ/3eGi5/HwXZWPujYXXlkrQogz0Ek=
 filippo.io/edwards25519 v1.0.0/go.mod h1:N1IkdkCkiLB6tki+MYJoSx2JTY9NUlxZE7eHn5EwJns=
 github.com/BurntSushi/toml v1.2.1 h1:9F2/+DoOYIOksmaJFPw1tGFy1eDnIJXg+UHjuD8lTak=
