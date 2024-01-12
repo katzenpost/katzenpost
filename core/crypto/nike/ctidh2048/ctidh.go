@@ -1,3 +1,5 @@
+//go:build ctidh2048
+
 // ctidh.go - Adapts ctidh module to our NIKE interface.
 // Copyright (C) 2022  David Stainton.
 //
@@ -14,13 +16,13 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-package ctidh
+package ctidh2048
 
 import (
 	"encoding/base64"
 	"io"
 
-	ctidh "codeberg.org/vula/highctidh/ctidh1024"
+	ctidh "codeberg.org/vula/highctidh/ctidh2048"
 
 	"github.com/katzenpost/katzenpost/core/crypto/nike"
 )
@@ -28,7 +30,7 @@ import (
 // CTIDH implements the Nike interface using our CTIDH module.
 type Nike struct{}
 
-var CTIDH1024Scheme *Nike
+var CTIDH2048Scheme *Nike
 
 var _ nike.PrivateKey = (*PrivateKey)(nil)
 var _ nike.PublicKey = (*PublicKey)(nil)
@@ -228,5 +230,5 @@ func (p *PrivateKey) UnmarshalText(data []byte) error {
 }
 
 func init() {
-	CTIDH1024Scheme = &Nike{}
+	CTIDH2048Scheme = &Nike{}
 }

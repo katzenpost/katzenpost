@@ -22,9 +22,9 @@ package sphinx
 import (
 	"testing"
 
-	ctidhnike "github.com/katzenpost/katzenpost/core/crypto/nike/ctidh"
+	ctidh "github.com/katzenpost/katzenpost/core/crypto/nike/ctidh2048"
 )
 
 func BenchmarkCtidh2048SphinxUnwrap(b *testing.B) {
-	benchmarkSphinxUnwrap(b, ctidhnike.NewCtidhNike())
+	benchmarkSphinxUnwrap(b, ctidh.CTIDH2048Scheme)
 }
