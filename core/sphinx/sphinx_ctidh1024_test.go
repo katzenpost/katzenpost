@@ -1,5 +1,3 @@
-//go:build ctidh1024
-
 // sphinx_ctidh_test.go - Sphinx Packet Format tests.
 // Copyright (C) 2022  David Stainton.
 //
@@ -22,11 +20,11 @@ import (
 	"testing"
 
 	ctidh "github.com/katzenpost/katzenpost/core/crypto/nike/ctidh1024"
-	"github.com/katzenpost/katzenpost/core/crypto/nike/hybrid"
+	hybrid "github.com/katzenpost/katzenpost/core/crypto/nike/hybrid/ctidh1024"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 )
 
-func TestHybridCtidhForwardSphinx(t *testing.T) {
+func TestHybridCTIDH1024ForwardSphinx(t *testing.T) {
 	const testPayload = "It is the stillest words that bring on the storm.  Thoughts that come on doves’ feet guide the world."
 
 	mynike := hybrid.CTIDH1024X25519
@@ -40,7 +38,7 @@ func TestHybridCtidhForwardSphinx(t *testing.T) {
 	testForwardSphinx(t, mynike, sphinx, []byte(testPayload))
 }
 
-func TestCtidhForwardSphinx(t *testing.T) {
+func TestCTIDH1024ForwardSphinx(t *testing.T) {
 	const testPayload = "It is the stillest words that bring on the storm.  Thoughts that come on doves’ feet guide the world."
 
 	mynike := ctidh.CTIDH1024Scheme
@@ -50,7 +48,7 @@ func TestCtidhForwardSphinx(t *testing.T) {
 	testForwardSphinx(t, mynike, sphinx, []byte(testPayload))
 }
 
-func TestCtidhSURB(t *testing.T) {
+func TestCTIDH1024SURB(t *testing.T) {
 	const testPayload = "The smallest minority on earth is the individual.  Those who deny individual rights cannot claim to be defenders of minorities."
 
 	mynike := ctidh.CTIDH1024Scheme
@@ -60,7 +58,7 @@ func TestCtidhSURB(t *testing.T) {
 	testSURB(t, mynike, sphinx, []byte(testPayload))
 }
 
-func TestCTIDHSphinxGeometry(t *testing.T) {
+func TestCTIDH1024SphinxGeometry(t *testing.T) {
 	withSURB := false
 	g := geo.GeometryFromUserForwardPayloadLength(ctidh.CTIDH1024Scheme, 512, withSURB, 5)
 	t.Logf("NIKE Sphinx CTIDH 5 hops: HeaderLength = %d", g.HeaderLength)

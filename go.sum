@@ -1,5 +1,11 @@
-codeberg.org/vula/highctidh v1.0.2024011100 h1:lL9iuLJwkUZIbFXVID4qketGHaYsO8oOyiVEZ4pYsLw=
-codeberg.org/vula/highctidh v1.0.2024011100/go.mod h1:ckK/64QwzjHuezu/k0JytpQtbs84PkESUuSK39j1TTw=
+codeberg.org/vula/highctidh/ctidh1024 v0.0.0-20240112145400-d12c8f0a1ef9 h1:YjSwJ6QXBL6qWQtBgsND1AIx5CQQYXKKYmB507qH02I=
+codeberg.org/vula/highctidh/ctidh1024 v0.0.0-20240112145400-d12c8f0a1ef9/go.mod h1:sECYP5rCfCLxIL4r7lUC+LIiLEb3IcoSrpvy3bAxU48=
+codeberg.org/vula/highctidh/ctidh2048 v0.0.0-20240112145400-d12c8f0a1ef9 h1:+BfaBVR4GlVNrHBvRCWy3P0Nfv7XkQdg0/agefh84/Y=
+codeberg.org/vula/highctidh/ctidh2048 v0.0.0-20240112145400-d12c8f0a1ef9/go.mod h1:siQ0Uz9i8Mwp3vFl5Y/pTTc4j9Bd1dC5ArOGyqlmugs=
+codeberg.org/vula/highctidh/ctidh511 v0.0.0-20240112144653-49dd34b90bf5 h1:82PD9kv5KMOCmxCMBn2BTBqnj3lSiA61jbO+mpToD4Y=
+codeberg.org/vula/highctidh/ctidh511 v0.0.0-20240112144653-49dd34b90bf5/go.mod h1:Wakeuwl2rnlkBeZtVQ72An6D8/+vXmm3+hYtsCYOMBM=
+codeberg.org/vula/highctidh/ctidh512 v0.0.0-20240112144653-49dd34b90bf5 h1:cbZ9GvEom5CJ1wBOM5+MdQEQKwsfqrl7ygRGXAKU1os=
+codeberg.org/vula/highctidh/ctidh512 v0.0.0-20240112144653-49dd34b90bf5/go.mod h1:r7gDd0cm4FBDi8zzuOoP4C3kBfjistm4+M4cYNAl4PI=
 filippo.io/edwards25519 v1.0.0 h1:0wAIcmJUqRdI8IJ/3eGi5/HwXZWPujYXXlkrQogz0Ek=
 filippo.io/edwards25519 v1.0.0/go.mod h1:N1IkdkCkiLB6tki+MYJoSx2JTY9NUlxZE7eHn5EwJns=
 github.com/BurntSushi/toml v1.2.1 h1:9F2/+DoOYIOksmaJFPw1tGFy1eDnIJXg+UHjuD8lTak=
@@ -41,6 +47,7 @@ github.com/golang/protobuf v1.5.2 h1:ROPKBNFfQgOUMifHyP+KYbvpjbdoFNs+aK7DXlji0Tw
 github.com/golang/protobuf v1.5.2/go.mod h1:XVQd3VNwM+JqD3oG2Ue2ip4fOMUkwXdXDdiuN0vRsmY=
 github.com/google/go-cmp v0.5.5/go.mod h1:v8dTdLbMG2kIc/vJvl+f65V22dbkXbowE6jgT/gNBxE=
 github.com/google/go-cmp v0.5.9 h1:O2Tfq5qg4qc4AmwVlvv0oLiVAGB7enBSJ2x2DqQFi38=
+github.com/google/go-cmp v0.5.9/go.mod h1:17dUlkBOakJ0+DkrSSNjCkIjxS6bF9zb3elmeNGIjoY=
 github.com/henrydcase/nobs v0.0.0-20210422124615-3a8ac85da11b h1:pr3HoGXC9qTsyOeON9+TZhwD0mSdJwLlG0WgMaclWlQ=
 github.com/henrydcase/nobs v0.0.0-20210422124615-3a8ac85da11b/go.mod h1:+liTPsuK0xSOSyNKhVz4h7Khig8zW4NcvxdVbzS0Jyw=
 github.com/jackc/fake v0.0.0-20150926172116-812a484cc733 h1:vr3AYkKovP8uR8AvSGGUK1IDqRa5lAAvEkZG1LKaCRc=
@@ -138,6 +145,7 @@ google.golang.org/protobuf v1.28.1 h1:d0NfwRgPtno5B1Wa6L2DAG+KivqkdutMf1UhdNx175
 google.golang.org/protobuf v1.28.1/go.mod h1:HV8QOd/L58Z+nl8r43ehVNZIU/HEI6OcFqwMG9pJV4I=
 gopkg.in/check.v1 v0.0.0-20161208181325-20d25e280405/go.mod h1:Co6ibVJAznAaIkqp8huTwlJQCZ016jof/cbN4VW5Yz0=
 gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c h1:Hei/4ADfdWqJk1ZMxUNpqntNwaWcugrBjAiHlqqRiVk=
+gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c/go.mod h1:JHkPIbrfpd72SG/EVd6muEfDQjcINNoR0C8j2r3qZ4Q=
 gopkg.in/eapache/channels.v1 v1.1.0 h1:5bGAyKKvyCTWjSj7mhefG6Lc68VyN4MH1v8/7OoeeB4=
 gopkg.in/eapache/channels.v1 v1.1.0/go.mod h1:BHIBujSvu9yMTrTYbTCjDD43gUhtmaOtTWDe7sTv1js=
 gopkg.in/op/go-logging.v1 v1.0.0-20160211212156-b2cb9fa56473 h1:6D+BvnJ/j6e222UW8s2qTSe3wGBtvo0MbVQG/c5k8RE=

@@ -1,5 +1,3 @@
-//go:build ctidh511
-
 // ctidh.go - Adapts ctidh module to our NIKE interface.
 // Copyright (C) 2022  David Stainton.
 //
@@ -87,7 +85,7 @@ func (e *Nike) GenerateKeyPairFromEntropy(rng io.Reader) (nike.PublicKey, nike.P
 
 // GenerateKeyPair creates a new key pair.
 func (e *Nike) GenerateKeyPair() (nike.PublicKey, nike.PrivateKey, error) {
-	privKey, pubKey := ctidh.GenerateCtidh511KeyPair()
+	privKey, pubKey := ctidh.GenerateKeyPair()
 	return &PublicKey{
 			publicKey: pubKey,
 		}, &PrivateKey{
