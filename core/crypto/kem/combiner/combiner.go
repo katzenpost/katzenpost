@@ -355,6 +355,7 @@ func (sch *Scheme) UnmarshalBinaryPublicKey(buf []byte) (kem.PublicKey, error) {
 		return nil, err
 	}
 	publicKeys[0] = pk1
+	offset = 0
 	for i := 0; i < len(sch.schemes); i++ {
 		pk, err := sch.schemes[i].UnmarshalBinaryPublicKey(buf[offset : offset+sch.schemes[i].PublicKeySize()])
 		if err != nil {
