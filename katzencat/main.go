@@ -62,7 +62,7 @@ func main() {
 	if *secret == "" {
 		st, _ = stream.NewDuplex(s)
 		*secret = st.RemoteAddr().String()
-		fmt.Fprintln(os.Stderr, "KatzenCat secret:", *secret)
+		fmt.Fprintln(os.Stderr, "KatzenCat secret:", *secret, "\n")
 	} else {
 		st, err = stream.DialDuplex(s, "", *secret)
 		if err != nil {
