@@ -9,58 +9,82 @@ version: 0
 draft: false
 ---
 
-**Katzenpost is still pre-alpha.DO NOT DEPEND ON IT FOR STRONG SECURITY OR ANONYMITY.**
+This Podman-compatible docker-compose configuration is intended to allow
+Katzenpost developers to locally run an offline test network on their
+development system. It is meant for developing and testing client and
+server mix network components as part of the core Katzenpost developer
+work flow.
 
-Mix networks are meant to be decentralized and therefore should be
-operated by multiple entities. You can of course be the only operator of
-a mix network for testing purposes.
+### 0. Requirements
 
-## Build Software
+- Podman or Docker
+- docker-compose (tested with 1.29.2, among other versions)
+- GNU Make
 
-Take a look at our docker repo. This will explain how to configure and
-run a katzenpost mixnet.
 
-- https://github.com/katzenpost/katzenpost/docker
+### 1. Run a test network
 
-A Katzenpost mix network has two binary programs, a `PKI` and a `Mix Provider`.
-
-Katzenpost server side requires a recent golang. See golang install
-instructions: <https://golang.org/doc/install>
-
-Follow the build instructions for each Katzenpost component repo.
-
-- https://github.com/katzenpost/katzenpost/server
-- https://github.com/katzenpost/katzenpost/authority
-
-The produced binaries are statically linked, so you can build the
-authority and the server code on one machine, and then distribute them
-to any Linux based machines to run.
-
-## Synchronize Clock
-
-Each network component, the PKI and mixes/providers, MUST have the
-correct time. We recommend [chrony](https://chrony.tuxfamily.org/) for
-the purpose of time synchronization.
-
-``` console
-apt install chrony
+```
+git clone https://github.com/katzenpost/katzenpost.git
+cd katzenpost/docker
+make run-voting-testnet
 ```
 
-## Add Users to the Provider
+Note that if you do not have podman and your system configuration
+requires you to `sudo` to use docker, you will need to prefix all of the
+`make` commands in this directory with `sudo`. If you have both podman
+and docker installed, you can override the automatic choice of podman
+over docker by prefixing the `make` argument list with `docker=docker`.
 
-This step might not need to be performed if you are using a client that
-auto-registers users with their Katzenpost Provider; such as catchat.
+Also note that if you are using podman, you'll need to have the podman
+system service running, and pointed to by DOCKER_HOST environment
+variable:
 
-Add `User` to the `Provider` using the management interface:
-
-``` console
-socat unix:/<path-to-data-dir>/management_sock STDOUT
-ADD_USER alice X25519_public_key_in_hex_or_base64
+```
+export DOCKER_HOST=unix:///var/run/user/$(id -u)/podman/podman.sock
+podman system service -t 0 $DOCKER_HOST &
 ```
 
-In case you want to use the automatic key discovery for mailproxy, the
-user identity key (identity.public.pem) also needs to be set:
+At this point, you should have a locally running network. You can hit
+ctrl-C to stop it, or use another terminal to observe the logs with
+`tail -F voting_mixnet/*/*log`
 
-``` console
-SET_USER_IDENTITY alice X25519_public_key_in_hex_or_base64
+You can send pings through the network with `make ping`
+
+While the docker-compose test network is running, you can use the
+`make dockerdockertest` targets in the `client` and `catshadow`
+directories to run their docker tests (also in docker, but without
+docker-compose managing the instance where the tests are running). When
+running the docker tests, it may be desirable to add the `warped=true`
+to the make commands (eg, `make warped=true run-nonvoting-testnet` here
+in the docker directory, and `make warped=true dockerdockertest` in the
+client directory) to set the WarpedEpoch build flag.
+
+You can also connect to the test network with a catshadow client by
+telling it to use the `docker/voting_mixnet/client/client.toml`
+configuration file.
+
+After stopping the network, you can discard all katzenpost-specific
+container images by running `make clean`, and can delete the test
+network's data with `make clean-data`, or run `make clean` to delete
+both images and data.
+
+The `make clean-local` target will delete instance data and
+offline-regeneratable images, but will retain the images containing
+dependencies which require network access to rebuild. This allows for an
+offline development workflow.
+
+The docker/podman commands in the `Makefile` are not as robust as they
+should be, so watch for error messages to see if it becomes necessary to
+delete stray containers which are using the images and preventing them
+from being deleted.
+
+### Miscellaneous
+
+**NOTE**: If you switch between voting and nonvoting authority mixnets
+then you must run this command after shutting down the old docker
+composed mixnet:
+
+```
+docker network prune
 ```
