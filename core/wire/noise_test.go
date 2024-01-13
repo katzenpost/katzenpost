@@ -29,11 +29,7 @@ import (
 	"github.com/katzenpost/nyquist/pattern"
 	"github.com/katzenpost/nyquist/seec"
 
-	"github.com/cloudflare/circl/kem/kyber/kyber768"
-
-	"github.com/katzenpost/katzenpost/core/crypto/kem/adapter"
-	kemhybrid "github.com/katzenpost/katzenpost/core/crypto/kem/hybrid"
-	"github.com/katzenpost/katzenpost/core/crypto/nike/ecdh"
+	"github.com/katzenpost/katzenpost/core/crypto/kem/schemes"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 )
 
@@ -44,15 +40,9 @@ func TestNyquistPqNoiseParams2(t *testing.T) {
 
 	protocol := &nyquist.Protocol{
 		Pattern: pattern.PqXX,
-		KEM: kem.FromKEM(
-			kemhybrid.New(
-				"Kyber768-X25519",
-				adapter.FromNIKE(ecdh.NewEcdhNike(rand.Reader)),
-				kyber768.Scheme(),
-			),
-		),
-		Cipher: cipher.ChaChaPoly,
-		Hash:   hash.BLAKE2s,
+		KEM:     kem.FromKEM(schemes.ByName("Kyber768-X25519")),
+		Cipher:  cipher.ChaChaPoly,
+		Hash:    hash.BLAKE2s,
 	}
 
 	t.Logf("KEM public key size: %d", protocol.KEM.PublicKeySize())

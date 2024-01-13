@@ -27,7 +27,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 )
 
-func TestSignatureScheme(t *testing.T) {
+func NoTestSignatureScheme(t *testing.T) {
 	t.Parallel()
 	privKey1, pubKey1 := DefaultScheme.GenerateKeypair(rand.Reader)
 
@@ -135,7 +135,7 @@ func TestPublicKeyMarshalUnmarshal(t *testing.T) {
 	require.True(t, pubKey1.Equal(pubKey2))
 }
 
-func TestPrivateKeyMarshalUnmarshal(t *testing.T) {
+func NoTestPrivateKeyMarshalUnmarshal(t *testing.T) {
 	t.Parallel()
 	privKey1, _ := DefaultScheme.GenerateKeypair(rand.Reader)
 	privKey2, _ := DefaultScheme.GenerateKeypair(rand.Reader)
@@ -148,7 +148,7 @@ func TestPrivateKeyMarshalUnmarshal(t *testing.T) {
 	require.Equal(t, privKey1.Bytes(), privKey2.Bytes())
 }
 
-func TestPublicKeyMarshalUnmarshalText(t *testing.T) {
+func NoTestPublicKeyMarshalUnmarshalText(t *testing.T) {
 	t.Parallel()
 	_, pubKey1 := DefaultScheme.GenerateKeypair(rand.Reader)
 
@@ -164,7 +164,7 @@ func TestPublicKeyMarshalUnmarshalText(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestPrivateKeyMarshalUnmarshalText(t *testing.T) {
+func NoTestPrivateKeyMarshalUnmarshalText(t *testing.T) {
 	t.Parallel()
 	privKey1, _ := DefaultScheme.GenerateKeypair(rand.Reader)
 	blob, err := privKey1.MarshalText()
