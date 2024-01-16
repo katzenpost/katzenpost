@@ -135,7 +135,7 @@ func (d *Daemon) Start() error {
 	d.cfg.Callbacks = &config.Callbacks{}
 	d.cfg.Callbacks.OnACKFn = d.handleReplies
 	d.cfg.Callbacks.OnConnFn = d.listener.updateConnectionStatus
-	d.cfg.Callbacks.OnDocumentFn = d.listener.updateRatesFromPKIDoc
+	d.cfg.Callbacks.OnDocumentFn = d.onDocument
 
 	d.timerQueue = NewTimerQueue(func(rawSurbID interface{}) {
 		surbID, ok := rawSurbID.(*[sConstants.SURBIDLength]byte)
@@ -151,6 +151,10 @@ func (d *Daemon) Start() error {
 
 	d.Go(d.egressWorker)
 	return d.client.Start()
+}
+
+func (d *Daemon) onDocument(doc *cpki.Document) {
+	d.listener.updateFromPKIDoc(doc)
 }
 
 func (d *Daemon) handleReplies(surbID *[constants.SURBIDLength]byte, ciphertext []byte) error {

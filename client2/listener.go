@@ -100,7 +100,6 @@ func (l *listener) onNewConn(conn *net.UnixConn) {
 		panic("doc is nil")
 	}
 
-	doc.StripSignatures()
 	l.log.Debug("send pki doc")
 	c.sendPKIDoc(doc)
 	l.log.Debug("onNewConn end")
@@ -131,18 +130,24 @@ func (l *listener) updateConnectionStatus(status error) {
 	l.decoySender.UpdateConnectionStatus(status == nil)
 
 	l.Lock()
-	l.connectionStatusMutex.Lock()
 	conns := l.conns
-	l.connectionStatusMutex.Unlock()
 
 	for key, _ := range conns {
 		l.conns[key].updateConnectionStatus(status)
 	}
 	l.Unlock()
-
 }
 
-func (l *listener) updateRatesFromPKIDoc(doc *cpki.Document) {
+func (l *listener) updateFromPKIDoc(doc *cpki.Document) {
+	// send doc to all thin clients
+	l.Lock()
+	conns := l.conns
+	for key, _ := range conns {
+		l.conns[key].sendPKIDoc(doc)
+	}
+	l.Unlock()
+
+	// update our send rates from PKI doc
 	l.decoySender.UpdateRates(ratesFromPKIDoc(doc))
 }
 
