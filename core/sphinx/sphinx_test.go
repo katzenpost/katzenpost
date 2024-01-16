@@ -111,6 +111,7 @@ func testForwardSphinx(t *testing.T, mynike nike.Scheme, sphinx *Sphinx, testPay
 
 				require.Equalf(b, payload, "Hop %d: payload mismatch", i)
 			} else {
+				require.Equal(sphinx.Geometry().PacketLength, len(pkt))
 				require.Equalf(2, len(cmds), "Hop %d: Unexpected number of commands", i)
 				require.EqualValuesf(path[i].Commands[0], cmds[0], "Hop %d: delay mismatch", i)
 
@@ -159,7 +160,7 @@ func testSURB(t *testing.T, mynike nike.Scheme, sphinx *Sphinx, testPayload []by
 				require.NoError(err, "DecrytSURBPayload")
 				require.Equalf(b, payload, "SURB Hop %d: payload mismatch", i)
 			} else {
-
+				require.Equal(sphinx.Geometry().PacketLength, len(pkt))
 				require.Equalf(2, len(cmds), "SURB Hop %d: Unexpected number of commands", i)
 				require.EqualValuesf(path[i].Commands[0], cmds[0], "SURB Hop %d: delay mismatch", i)
 
