@@ -11,7 +11,7 @@ import (
 type Response struct {
 	// ID is the unique identifier with respect to the Request Payload.
 	// This is only used by the ARQ.
-	ID *[MessageIDLength]byte
+	ID *[MessageIDLength]byte `cbor:id`
 
 	// SURBID must be a unique identity for each request.
 	SURBID *[sConstants.SURBIDLength]byte `cbor:surbid`
@@ -25,16 +25,16 @@ type Response struct {
 
 	// IsMessageSent is used to indicate that this response
 	// identifies a specific message was sent sucessfully.
-	IsMessageSent bool
+	IsMessageSent bool `cbor:is_message_sent`
 
 	// SentAt contains the time the message was sent.
-	SentAt time.Time
+	SentAt time.Time `cbor:sent_at`
 
 	// ReplyETA is the expected round trip time to receive a response.
-	ReplyETA time.Duration
+	ReplyETA time.Duration `cbor:reply_eta`
 
 	// Err is the error encountered when sending the message if any.
-	Err error
+	Err error `cbor:err`
 
 	// IsStatus is set to true if Payload should be nil and IsConnected
 	// regarded as the latest connection status.
@@ -50,11 +50,11 @@ type Response struct {
 type Request struct {
 	// ID is the unique identifier with respect to the Payload.
 	// This is only used by the ARQ.
-	ID *[MessageIDLength]byte
+	ID *[MessageIDLength]byte `cbor:id`
 
 	// WithSURB indicates if the message should be sent with a SURB
 	// in the Sphinx payload.
-	WithSURB bool
+	WithSURB bool `cbor:with_surb`
 
 	// SURBID must be a unique identity for each request.
 	// This field should be nil if WithSURB is false.

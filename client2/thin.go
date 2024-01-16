@@ -372,7 +372,6 @@ func (t *ThinClient) SendMessage(surbID *[sConstants.SURBIDLength]byte, payload 
 	req.Payload = payload
 	req.DestinationIdHash = destNode
 	req.RecipientQueueID = destQueue
-	req.IsSendOp = true
 
 	blob, err := cbor.Marshal(req)
 	if err != nil {
