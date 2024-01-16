@@ -98,7 +98,6 @@ type connection struct {
 	pkiEpoch   uint64
 	descriptor *cpki.MixDescriptor
 
-	pkiFetchCh     chan interface{}
 	fetchCh        chan interface{}
 	sendCh         chan *connSendCtx
 	getConsensusCh chan *getConsensusCtx
@@ -141,17 +140,6 @@ func (c *Client) ForceFetchPKI() {
 	select {
 	case c.pki.forceUpdateCh <- true:
 	default:
-	}
-}
-
-func (c *connection) onPKIFetch() {
-	c.log.Debug("onPKIFetch")
-	select {
-	case c.pkiFetchCh <- true:
-	default:
-		// Probably a connection is in progress, the right thing will happen
-		// regardless of if the signal gets dropped, though it might require
-		// the fallback timer to fire.
 	}
 }
 
@@ -830,7 +818,6 @@ func newConnection(c *Client) *connection {
 
 	k.log.Debug("newConnection")
 
-	k.pkiFetchCh = make(chan interface{}, 1)
 	k.fetchCh = make(chan interface{}, 1)
 	k.sendCh = make(chan *connSendCtx)
 	k.getConsensusCh = make(chan *getConsensusCtx, 1)

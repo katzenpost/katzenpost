@@ -108,10 +108,6 @@ func (c *Client) Start() error {
 	c.pki = newPKI(c)
 	c.pki.start()
 	c.conn.start()
-	if c.cfg.CachedDocument != nil {
-		// connectWorker waits for a pki fetch, we already have a document cached, so wake the worker
-		c.conn.onPKIFetch()
-	}
 	return nil
 }
 

@@ -172,10 +172,6 @@ func (p *pki) worker() {
 			// Prune documents.
 			p.pruneDocuments(now)
 
-			// Kick the connector iff it is waiting on a PKI document.
-			if p.c.conn != nil {
-				p.c.conn.onPKIFetch()
-			}
 		}
 		if now != lastCallbackEpoch && p.c.cfg.Callbacks.OnDocumentFn != nil {
 			if d, ok := p.docs.Load(now); ok {
