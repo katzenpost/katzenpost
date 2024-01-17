@@ -18,7 +18,7 @@ import (
 )
 
 var (
-	cborFrameOverhead = 0
+	cborFrameOverhead = 0 // overhead is determined by init()
 	hash              = sha256.New
 	ErrStatusNotFound = errors.New("StatusNotFound")
 )
