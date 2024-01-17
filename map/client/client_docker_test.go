@@ -50,39 +50,45 @@ func TestCreateMap(t *testing.T) {
 	_, err = io.ReadFull(rand.Reader, addr)
 	require.NoError(err)
 	id := rwCap.RootCapability.ForAddr(addr)
-	wKey := rwCap.WriteCapForAddr(addr)
+	wKey := rwCap.WriteOnlyCapability.ForAddr(addr)
 
 	// make sure that the verifier of id matches the publickey of writekey
-	require.Equal(wKey.PublicKey().Bytes(), id.WritePk().Bytes())
+	require.Equal(wKey.PublicKey().Bytes(), id.WriteVerifier().Bytes())
 
 	// get the readKey for the address
-	rKey := rwCap.Read(addr)
+	rKey := rwCap.ReadOnlyCapability.ForAddr(addr)
 
 	// make sure the verifier of id matches the publicKey of readKey
-	require.Equal(rKey.PublicKey().Bytes(), id.ReadPk().Bytes())
+	require.Equal(rKey.PublicKey().Bytes(), id.ReadVerifier().Bytes())
 	payload := []byte("hello world")
 
 	// verify that writing with Write() works
-	err = c.Put(id, wKey.Sign(payload), payload)
+	addrWriteCap := rwCap.WriteOnlyCapability.WriteCapForAddr(addr, payload)
+	err = c.Put(addrWriteCap)
 	require.NoError(err)
 
 	// verify that writing with wrong key fails:
-	err = c.Put(id, rKey.Sign(payload), payload)
+	addrReadCap := rwCap.ReadOnlyCapability.ReadCapForAddr(addr)
+	wrongCap := &crypto.WriteCapability{
+		ID:        addrWriteCap.ID,
+		Signature: addrReadCap.Signature,
+		Payload:   payload,
+	}
+	err = c.Put(wrongCap)
 	require.Error(err)
 
 	// verify that Reading with the ROKey interface works
-	roKey := rwCap.ReadOnly().Read(addr)
-	payload2, err := c.Get(id, roKey.Sign(id.Bytes()))
+	addrReadCap2 := rwCap.ReadOnlyCapability.ReadCapForAddr(addr)
+	payload2, err := c.Get(addrReadCap2)
 	require.NoError(err)
 	require.Equal(payload, payload2)
 
-	payload2 = []byte("goodbye world")
 	// verify that Writing with the WOKey works
-	woKey := rwCap.WriteOnly().Write(addr)
-	id = rwCap.WriteOnly().Addr(addr)
-	err = c.Put(id, woKey.Sign(payload2), payload2)
+	payload2 = []byte("goodbye world")
+	addrWriteCap2 := rwCap.WriteOnlyCapability.WriteCapForAddr(addr, payload2)
+	err = c.Put(addrWriteCap2)
 	require.NoError(err)
-	resp, err := c.Get(id, roKey.Sign(id.Bytes()))
+	resp, err := c.Get(addrReadCap2)
 	require.NoError(err)
 	require.Equal(payload2, resp)
 }
