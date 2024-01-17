@@ -16,6 +16,7 @@
 package common
 
 import (
+	"bytes"
 	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
 )
 
@@ -150,8 +151,8 @@ func NewWOCap(pRoot *eddsa.PublicKey, wSk *eddsa.BlindedPrivateKey) *WOCap {
 	wo := &WOCap{}
 	wo.CapPk = pRoot
 	wo.CapWSk = wSk
-	if wSk.PublicKey() != pRoot.Blind(WriteCap) {
-		panic("wtf")
+	if !bytes.Equal(wSk.PublicKey().Bytes(), pRoot.Blind(WriteCap).Bytes()) {
+		panic("capability root public key is not root for WO capability")
 	}
 	return wo
 }
@@ -161,8 +162,8 @@ func NewROCap(pRoot *eddsa.PublicKey, rSk *eddsa.BlindedPrivateKey) *ROCap {
 	ro := &ROCap{}
 	ro.CapPk = pRoot
 	ro.CapRSk = rSk
-	if rSk.PublicKey() != pRoot.Blind(ReadCap) {
-		panic("wtf")
+	if !bytes.Equal(rSk.PublicKey().Bytes(), pRoot.Blind(ReadCap).Bytes()) {
+		panic("capability root public key is not root for RO capability")
 	}
 	return ro
 }

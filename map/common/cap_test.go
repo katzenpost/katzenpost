@@ -37,3 +37,33 @@ func TestCreateRWCap(t *testing.T) {
 	rKey := rwCap.Read(addr)
 	require.Equal(rKey.PublicKey().Bytes(), id.ReadPk().Bytes())
 }
+
+func TestCreateROCap(t *testing.T) {
+	require := require.New(t)
+	// create a capability key
+	pk, err := eddsa.NewKeypair(rand.Reader)
+	require.NoError(err)
+
+	rwCap := NewRWCap(pk)
+	addr := []byte("we can use whatever byte sequence we like as address here")
+	id := rwCap.Addr(addr)
+	wKey := rwCap.Write(addr)
+	require.Equal(wKey.PublicKey().Bytes(), id.WritePk().Bytes())
+
+	rKey := rwCap.Read(addr)
+	require.Equal(rKey.PublicKey().Bytes(), id.ReadPk().Bytes())
+}
+
+func TestCreateWOCap(t *testing.T) {
+	require := require.New(t)
+	// create a capability key
+	sk, err := eddsa.NewKeypair(rand.Reader)
+	require.NoError(err)
+	pRoot := sk.PublicKey()
+
+	woCap := NewWOCap(pRoot, sk.Blind(WriteCap))
+	addr := []byte("we can use whatever byte sequence we like as address here")
+	id := woCap.Addr(addr)
+	wKey := woCap.Write(addr)
+	require.Equal(wKey.PublicKey().Bytes(), id.WritePk().Bytes())
+}
