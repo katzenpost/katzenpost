@@ -76,13 +76,13 @@ type WriteOnlyCap interface {
 	Write(addr []byte) *eddsa.BlindedPrivateKey
 }
 
-// PCap holds CapPk and Addr method
-type PCap struct {
+// RootCap holds CapPk and implements the Addr method which other capability types inherit.
+type RootCap struct {
 	CapPk *eddsa.PublicKey
 }
 
 // Addr returns the capability id (publickey) for addr, used as map address
-func (s *PCap) Addr(addr []byte) MessageID {
+func (s *RootCap) Addr(addr []byte) MessageID {
 	// returns the capability derived from the root key
 	// mapping address to a public identity key contained in MessageID
 	// which provides ReadPk and WritePk methods to verify Signatures
@@ -95,7 +95,7 @@ func (s *PCap) Addr(addr []byte) MessageID {
 
 // RWCap holds the keys implementing Read/Write Capabilities using blinded ed25519 keys
 type RWCap struct {
-	PCap
+	RootCap
 	ROCap
 	WOCap
 	// capability root private key from which other keys are derived
@@ -104,7 +104,7 @@ type RWCap struct {
 
 // ROCap holds the keys implementing Read Capabilities using blinded ed25519 keys
 type ROCap struct {
-	PCap
+	RootCap
 	// Read capability keys
 	CapRSk *eddsa.BlindedPrivateKey
 	CapRPk *eddsa.PublicKey
@@ -112,7 +112,7 @@ type ROCap struct {
 
 // WOCap holds the keys implementing Write Capabilities using blinded ed25519 keys
 type WOCap struct {
-	PCap
+	RootCap
 	// Write capability keys
 	CapWSk *eddsa.BlindedPrivateKey
 	CapWPk *eddsa.PublicKey
