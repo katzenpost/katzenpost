@@ -13,7 +13,7 @@ const (
 
 type MapRequest struct {
 	// ID is the ID of the block which is a ed25519 PublicKey
-	ID MessageID
+	ID *MessageID
 
 	// Future version may wish to include the PublicKey
 	// if PublicKeySize is

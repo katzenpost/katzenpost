@@ -20,13 +20,14 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
+	"time"
+
 	"github.com/fxamacker/cbor/v2"
 	bolt "go.etcd.io/bbolt"
 	"gopkg.in/op/go-logging.v1"
-	"time"
 
 	"github.com/katzenpost/katzenpost/core/worker"
-	"github.com/katzenpost/katzenpost/map/common"
+	"github.com/katzenpost/katzenpost/map/crypto"
 	"github.com/katzenpost/katzenpost/server/cborplugin"
 )
 
@@ -46,7 +47,7 @@ type Map struct {
 }
 
 // Get retrieves an item from the db
-func (m *Map) Get(msgID common.MessageID) ([]byte, error) {
+func (m *Map) dbGet(msgID *crypto.MessageID) ([]byte, error) {
 	var resp []byte
 	err := m.db.View(func(tx *bolt.Tx) error {
 		mapBkt := tx.Bucket([]byte(mapBucket))
@@ -66,7 +67,7 @@ func (m *Map) Get(msgID common.MessageID) ([]byte, error) {
 }
 
 // Put places an item in the db
-func (m *Map) Put(msgID common.MessageID, payload []byte) error {
+func (m *Map) dbPut(msgID *crypto.MessageID, payload []byte) error {
 	return m.db.Update(func(tx *bolt.Tx) error {
 		bkt := tx.Bucket([]byte(mapBucket))
 		p := bkt.Get(msgID[:])
@@ -116,7 +117,7 @@ func (m *Map) Put(msgID common.MessageID, payload []byte) error {
 }
 
 // GarbageCollect prunes the oldest bucket of entries when the map size limit is exceeded
-func (m *Map) GarbageCollect() error {
+func (m *Map) garbageCollect() error {
 	return m.db.Update(func(tx *bolt.Tx) error {
 		bkt := tx.Bucket([]byte(gcBucket))
 		size := bkt.Stats().InlineBucketN * m.gcSize
@@ -147,7 +148,7 @@ func (m *Map) worker() {
 		case <-m.HaltCh():
 			return
 		case <-time.After(1 * time.Hour):
-			m.GarbageCollect()
+			m.garbageCollect()
 		}
 	}
 }
@@ -188,7 +189,7 @@ func (m *Map) OnCommand(cmd cborplugin.Command) (cborplugin.Command, error) {
 		if !r.HasSURB {
 			return nil, errors.New("no SURB, cannot reply")
 		}
-		req := &common.MapRequest{}
+		req := &crypto.MapRequest{}
 		dec := cbor.NewDecoder(bytes.NewReader(r.Payload))
 		err := dec.Decode(req)
 		if err != nil {
@@ -196,31 +197,47 @@ func (m *Map) OnCommand(cmd cborplugin.Command) (cborplugin.Command, error) {
 		}
 
 		// validate the capabilities of MapRequest
-		if !validateCap(req) {
-			m.log.Errorf("validateCap failed with error %s", err)
-			return nil, errors.New("failed to verify capability")
+		if len(req.Payload) > 0 {
+			readCap := &crypto.ReadCapability{
+				ID:        req.ID,
+				Signature: req.Signature,
+			}
+			if !readCap.Verify() {
+				m.log.Error("verification failed")
+				return nil, errors.New("failed to verify read capability")
+			}
+		} else {
+			writeCap := &crypto.WriteCapability{
+				ID:        req.ID,
+				Signature: req.Signature,
+				Payload:   req.Payload,
+			}
+			if !writeCap.Verify() {
+				m.log.Error("verification failed")
+				return nil, errors.New("failed to verify write capability")
+			}
 		}
 
-		resp := &common.MapResponse{}
+		resp := &crypto.MapResponse{}
 		// Write data if payload present
 		if len(req.Payload) > 0 {
-			err := m.Put(req.ID, req.Payload)
+			err := m.dbPut(req.ID, req.Payload)
 			if err != nil {
 				m.log.Debugf("Put(%x): Failed", req.ID)
-				resp.Status = common.StatusFailed
+				resp.Status = crypto.StatusFailed
 			} else {
 				m.log.Debugf("Put(%x): OK", req.ID)
-				resp.Status = common.StatusOK
+				resp.Status = crypto.StatusOK
 			}
 			// Otherwise request data
 		} else {
-			p, err := m.Get(req.ID)
+			p, err := m.dbGet(req.ID)
 			if err != nil {
 				m.log.Debugf("Get(%x): NotFound", req.ID)
-				resp.Status = common.StatusNotFound
+				resp.Status = crypto.StatusNotFound
 			} else {
 				m.log.Debugf("Get(%x): OK", req.ID)
-				resp.Status = common.StatusOK
+				resp.Status = crypto.StatusOK
 				resp.Payload = p
 			}
 		}
@@ -235,18 +252,8 @@ func (m *Map) OnCommand(cmd cborplugin.Command) (cborplugin.Command, error) {
 	}
 }
 
-func validateCap(req *common.MapRequest) bool {
-	if len(req.Payload) == 0 {
-		v := req.ID.ReadPk()
-		// verify v Signs the publickey bytes
-		return v.Verify(req.Signature, req.ID.Bytes())
-	} else {
-		v := req.ID.WritePk()
-		// verify v Signs the payload bytes
-		return v.Verify(req.Signature, req.Payload)
-	}
-}
-
+// RegisterConsumer is a no-op but necessary for this type to satisfy
+// the cborplugin.ServerPlugin interface.
 func (m *Map) RegisterConsumer(svr *cborplugin.Server) {
 	m.log.Debugf("RegisterConsumer called")
 }

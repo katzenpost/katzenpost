@@ -1,34 +1,23 @@
-// client_test.go - map service client tests
-// Copyright (C) 2021  Masala
-//
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU Affero General Public License as
-// published by the Free Software Foundation, either version 3 of the
-// License, or (at your option) any later version.
-//
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU Affero General Public License for more details.
-//
-// You should have received a copy of the GNU Affero General Public License
-// along with this program.  If not, see <http://www.gnu.org/licenses/>.
 //go:build docker_test
 // +build docker_test
+
+// SPDX-FileCopyrightText: Copyright (C) 2021  Masala
+// SPDX-License-Identifier: AGPL-3.0-only
 
 package client
 
 import (
-	"io"
 	"context"
+	"io"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 
 	"github.com/katzenpost/katzenpost/client"
 	"github.com/katzenpost/katzenpost/client/config"
 	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
-	"github.com/katzenpost/katzenpost/map/common"
-	"github.com/stretchr/testify/require"
+	"github.com/katzenpost/katzenpost/map/crypto"
 )
 
 func TestCreateMap(t *testing.T) {
@@ -54,14 +43,14 @@ func TestCreateMap(t *testing.T) {
 	// create a capability key
 	pk, err := eddsa.NewKeypair(rand.Reader)
 	require.NoError(err)
-	rwCap := common.NewRWCap(pk)
+	rwCap := crypto.NewReadWriteCapability(pk)
 
 	// get the id and writeKey for an addrress
 	addr := make([]byte, 32)
 	_, err = io.ReadFull(rand.Reader, addr)
 	require.NoError(err)
-	id := rwCap.Addr(addr)
-	wKey := rwCap.Write(addr)
+	id := rwCap.RootCapability.ForAddr(addr)
+	wKey := rwCap.WriteCapForAddr(addr)
 
 	// make sure that the verifier of id matches the publickey of writekey
 	require.Equal(wKey.PublicKey().Bytes(), id.WritePk().Bytes())

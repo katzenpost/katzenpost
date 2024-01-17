@@ -17,14 +17,15 @@
 package server
 
 import (
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
-	"github.com/katzenpost/katzenpost/map/common"
-	"github.com/stretchr/testify/require"
-	"gopkg.in/op/go-logging.v1"
 	"io/ioutil"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/katzenpost/map/crypto"
+	"github.com/stretchr/testify/require"
+	"gopkg.in/op/go-logging.v1"
 )
 
 func TestCreateMap(t *testing.T) {
@@ -53,16 +54,16 @@ func TestMap(t *testing.T) {
 	require.NoError(err)
 
 	// put data in a key
-	var msgID common.MessageID
+	var msgID crypto.MessageID
 	_, err = rand.Reader.Read(msgID[:])
 	require.NoError(err)
 	payload := []byte("hola")
 
-	err = m.Put(msgID, payload)
+	err = m.dbPut(&msgID, payload)
 	require.NoError(err)
 
 	// read data from key
-	data, err := m.Get(msgID)
+	data, err := m.dbGet(&msgID)
 	require.NoError(err)
 
 	// verify the key was retrieved
@@ -74,7 +75,7 @@ func TestMap(t *testing.T) {
 	m, err = NewMap(f, log, 10, 100)
 
 	// verify the data is still there
-	data, err = m.Get(msgID)
+	data, err = m.dbGet(&msgID)
 	require.Equal(data, payload)
 
 	// clean up
@@ -98,14 +99,14 @@ func TestGarbageCollect(t *testing.T) {
 	m, err := NewMap(f, log, gcsize, mapsize)
 	require.NoError(err)
 
-	msgIDs := make([]common.MessageID, mapsize+1)
+	msgIDs := make([]crypto.MessageID, mapsize+1)
 	// fill map to mapSize + 1 to trigger GarbageCollection
-	for i := 0; i< mapsize + 1; i++ {
-		var msgID common.MessageID
+	for i := 0; i < mapsize+1; i++ {
+		var msgID crypto.MessageID
 		_, err = rand.Reader.Read(msgID[:])
 		require.NoError(err)
 		payload := []byte("hola")
-		err = m.Put(msgID, payload)
+		err = m.dbPut(&msgID, payload)
 		require.NoError(err)
 
 		// keep ordered list of msgID
@@ -113,23 +114,23 @@ func TestGarbageCollect(t *testing.T) {
 	}
 
 	// verify that the keys are available
-	for i := 0; i < gcsize; i ++ {
-		d, err := m.Get(msgIDs[i])
+	for i := 0; i < gcsize; i++ {
+		d, err := m.dbGet(&msgIDs[i])
 		require.NoError(err)
 		require.Equal(d, []byte("hola"))
 	}
-	err = m.GarbageCollect()
+	err = m.garbageCollect()
 	require.NoError(err)
 
 	// verify that the keys are gone
-	for i := 0; i < gcsize; i ++ {
-		_, err := m.Get(msgIDs[i])
+	for i := 0; i < gcsize; i++ {
+		_, err := m.dbGet(&msgIDs[i])
 		require.Error(err)
 	}
 
 	// verify that the next gcsize keys are still there
-	for i := gcsize; i < 2*gcsize; i ++ {
-		d, err := m.Get(msgIDs[i])
+	for i := gcsize; i < 2*gcsize; i++ {
+		d, err := m.dbGet(&msgIDs[i])
 		require.NoError(err)
 		require.Equal(d, []byte("hola"))
 	}

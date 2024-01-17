@@ -1,18 +1,5 @@
-// client.go - map service client
-// Copyright (C) 2021  Masala
-//
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU Affero General Public License as
-// published by the Free Software Foundation, either version 3 of the
-// License, or (at your option) any later version.
-//
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU Affero General Public License for more details.
-//
-// You should have received a copy of the GNU Affero General Public License
-// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+// SPDX-FileCopyrightText: Copyright (C) 2021  Masala
+// SPDX-License-Identifier: AGPL-3.0-only
 
 package client
 
@@ -20,13 +7,14 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"errors"
+	"sort"
+
 	"github.com/fxamacker/cbor/v2"
+
 	"github.com/katzenpost/katzenpost/client"
 	"github.com/katzenpost/katzenpost/client/utils"
 	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
-	"github.com/katzenpost/katzenpost/map/common"
-	"golang.org/x/crypto/hkdf"
-	"sort"
+	"github.com/katzenpost/katzenpost/map/crypto"
 )
 
 var (
@@ -44,17 +32,18 @@ func NewClient(s *client.Session) (*Client, error) {
 }
 
 type StorageLocation interface {
-	ID() common.MessageID
+	ID() *crypto.MessageID
 	Name() string
 	Provider() string
 }
 
 type mapStorage struct {
-	id             common.MessageID
-	name, provider string
+	id       *crypto.MessageID
+	name     string
+	provider string
 }
 
-func (m *mapStorage) ID() common.MessageID {
+func (m *mapStorage) ID() *crypto.MessageID {
 	return m.id
 }
 func (m *mapStorage) Name() string {
@@ -84,33 +73,37 @@ func deterministicSelect(descs []utils.ServiceDescriptor, slot int) utils.Servic
 }
 
 // GetStorageProvider returns the deterministically selected storage provider given a storage secret ID
-func (c *Client) GetStorageProvider(ID common.MessageID) (StorageLocation, error) {
+func (c *Client) GetStorageProvider(id *crypto.MessageID) (StorageLocation, error) {
 	// doc must be current document!
 	doc := c.Session.CurrentDocument()
 	if doc == nil {
 		return nil, errors.New("No PKI document") // XXX: find correct error
 	}
-	descs := utils.FindServices(common.MapServiceName, doc)
+	descs := utils.FindServices(crypto.MapServiceName, doc)
 	if len(descs) == 0 {
 		return nil, errors.New("No descriptors")
 	}
-	slot := int(binary.LittleEndian.Uint64(ID[:8])) % len(descs)
+	slot := int(binary.LittleEndian.Uint64(id[:8])) % len(descs)
 	// sort the descs and return the chosen one
 	desc := deterministicSelect(descs, slot)
-	return &mapStorage{name: desc.Name, provider: desc.Provider, id: ID}, nil
+	return &mapStorage{
+		name:     desc.Name,
+		provider: desc.Provider,
+		id:       id,
+	}, nil
 }
 
 // Put places a value into the store
-func (c *Client) Put(ID common.MessageID, signature, payload []byte) error {
-	if !ID.WritePk().Verify(signature, payload) {
-		return errors.New("signature does not verify Write")
-	}
-
-	loc, err := c.GetStorageProvider(ID)
+func (c *Client) Put(cap *crypto.WriteCapability) error {
+	loc, err := c.GetStorageProvider(cap.ID)
 	if err != nil {
 		return err
 	}
-	b := common.MapRequest{ID: ID, Signature: signature, Payload: payload}
+	b := crypto.MapRequest{
+		ID:        cap.ID,
+		Signature: cap.Signature,
+		Payload:   cap.Payload,
+	}
 	// XXX: ideally we limit the number of retries
 	// so that it doesn't keep trying to deliver to a stale/missing service forever...
 	serialized, err := cbor.Marshal(b)
@@ -130,16 +123,12 @@ func (c *Client) PayloadSize() int {
 }
 
 // Get requests ID from the chosen storage node and returns a payload or error
-func (c *Client) Get(ID common.MessageID, signature []byte) ([]byte, error) {
-
-	if !ID.ReadPk().Verify(signature, ID[:]) {
-		return nil, errors.New("signature does not verify Read")
-	}
-	loc, err := c.GetStorageProvider(ID)
+func (c *Client) Get(cap *crypto.ReadCapability) ([]byte, error) {
+	loc, err := c.GetStorageProvider(cap.ID)
 	if err != nil {
 		return nil, err
 	}
-	b := &common.MapRequest{ID: ID, Signature: signature}
+	b := &crypto.MapRequest{ID: cap.ID, Signature: cap.Signature}
 	serialized, err := cbor.Marshal(b)
 	if err != nil {
 		return nil, err
@@ -150,12 +139,12 @@ func (c *Client) Get(ID common.MessageID, signature []byte) ([]byte, error) {
 		return nil, err
 	}
 	// unwrap the response and return the payload
-	resp := &common.MapResponse{}
+	resp := &crypto.MapResponse{}
 	err = cbor.Unmarshal(r, resp)
 	if err != nil {
 		return nil, err
 	}
-	if resp.Status == common.StatusNotFound {
+	if resp.Status == crypto.StatusNotFound {
 		return nil, ErrStatusNotFound
 	}
 	return resp.Payload, nil
@@ -185,21 +174,19 @@ type WOClient interface {
 // have different capabilities for the underlying Streams transported by map/client
 type rwMap struct {
 	c     *Client
-	rwCap common.ReadWriteCap
+	rwCap crypto.ReadWriteCapability
 }
 
 // Get implements RWClient.Get
 func (r *rwMap) Get(addr []byte) ([]byte, error) {
-	i := r.rwCap.Addr(addr)
-	k := r.rwCap.Read(addr)
-	return r.c.Get(i, k.Sign(i.Bytes()))
+	readCap := r.rwCap.ReadCapForAddr(addr)
+	return r.c.Get(readCap)
 }
 
 // Put implements RWClient.Put
 func (r *rwMap) Put(addr []byte, payload []byte) error {
-	i := r.rwCap.Addr(addr)
-	k := r.rwCap.Read(addr)
-	return r.c.Put(i, k.Sign(payload), payload)
+	writeCap := r.rwCap.WriteCapForAddr(addr, payload)
+	return r.c.Put(writeCap)
 }
 
 // PayloadSize implements RWClient.PayloadSize
@@ -210,14 +197,13 @@ func (r *rwMap) PayloadSize() int {
 // roMap implements ReadOnlyTranport using a ReadOnlyCap and reference to map client
 type roMap struct {
 	c     *Client
-	roCap common.ReadOnlyCap
+	roCap *crypto.ReadOnlyCapability
 }
 
 // Get implements ROClient.Get
 func (r *roMap) Get(addr []byte) ([]byte, error) {
-	i := r.roCap.Addr(addr)
-	k := r.roCap.Read(addr)
-	return r.c.Get(i, k.Sign(i.Bytes()))
+	readCap := r.roCap.ReadCapForAddr(addr)
+	return r.c.Get(readCap)
 }
 
 // PayloadSize implements ROClient.PayloadSize
@@ -228,14 +214,13 @@ func (r *roMap) PayloadSize() int {
 // woMap implements WOClient
 type woMap struct {
 	c     *Client
-	woCap common.WriteOnlyCap
+	woCap *crypto.WriteOnlyCapability
 }
 
 // Put implements WOClient.Put
 func (w *woMap) Put(addr []byte, payload []byte) error {
-	i := w.woCap.Addr(addr)
-	k := w.woCap.Write(addr)
-	return w.c.Put(i, k.Sign(payload), payload)
+	writeCap := w.woCap.WriteCapForAddr(addr, payload)
+	return w.c.Put(writeCap)
 }
 
 // PayloadSize implements WOClient.PayloadSize
@@ -244,7 +229,7 @@ func (r *woMap) PayloadSize() int {
 }
 
 // ReadWrite returns a Transport using map that can read or write with Get() and Put()
-func ReadWrite(c *Client, rwCap common.ReadWriteCap) RWClient {
+func ReadWrite(c *Client, rwCap crypto.ReadWriteCapability) RWClient {
 	m := new(rwMap)
 	m.c = c
 	m.rwCap = rwCap
@@ -252,7 +237,7 @@ func ReadWrite(c *Client, rwCap common.ReadWriteCap) RWClient {
 }
 
 // ReadOnly returns a Transport using map that can read with Get() only
-func ReadOnly(c *Client, roCap common.ReadOnlyCap) ROClient {
+func ReadOnly(c *Client, roCap *crypto.ReadOnlyCapability) ROClient {
 	m := new(roMap)
 	m.c = c
 	m.roCap = roCap
@@ -260,7 +245,7 @@ func ReadOnly(c *Client, roCap common.ReadOnlyCap) ROClient {
 }
 
 // WriteOnly returns a Transport using map that can write with Put() only
-func WriteOnly(c *Client, woCap common.WriteOnlyCap) WOClient {
+func WriteOnly(c *Client, woCap *crypto.WriteOnlyCapability) WOClient {
 	m := new(woMap)
 	m.c = c
 	m.woCap = woCap
@@ -268,34 +253,9 @@ func WriteOnly(c *Client, woCap common.WriteOnlyCap) WOClient {
 }
 
 // create a duplex using a shared secret
-func DuplexFromSeed(c *Client, initiator bool, secret []byte) RWClient {
-	salt := []byte("duplex initialized from seed is not for multi-party use")
-	keymaterial := hkdf.New(hash, secret, salt, nil)
-	var err error
-	var pk1, pk2 *eddsa.PrivateKey
-	// return the listener or dialer side of caps from seed
-	if initiator {
-		if pk1, err = eddsa.NewKeypair(keymaterial); err != nil {
-			panic(err)
-		}
-		if pk2, err = eddsa.NewKeypair(keymaterial); err != nil {
-			panic(err)
-		}
-	} else {
-		if pk2, err = eddsa.NewKeypair(keymaterial); err != nil {
-			panic(err)
-		}
-		if pk1, err = eddsa.NewKeypair(keymaterial); err != nil {
-			panic(err)
-		}
-	}
-
-	// initialize root capabilities for both keys
-	rw1 := common.NewRWCap(pk1)
-	rw2 := common.NewRWCap(pk2)
-
-	// initiator socket
-	return Duplex(c, rw1.ReadOnly(), rw2.WriteOnly())
+func DuplexFromSeed(c *Client, initiator bool, seed []byte) RWClient {
+	duplexCap := crypto.DuplexFromSeed(initiator, seed)
+	return Duplex(c, duplexCap.ReadOnlyCap, duplexCap.WriteOnlyCap)
 }
 
 // duplex holds a pair of ROClient and WOClient and implements
@@ -322,7 +282,7 @@ func (s *duplex) PayloadSize() int {
 }
 
 // Duplex returns a RWclient from a pair of ReadOnly and WriteOnly capabilities
-func Duplex(c *Client, r common.ReadOnlyCap, w common.WriteOnlyCap) RWClient {
+func Duplex(c *Client, r *crypto.ReadOnlyCapability, w *crypto.WriteOnlyCapability) RWClient {
 	s := new(duplex)
 	s.wo = WriteOnly(c, w)
 	s.ro = ReadOnly(c, r)
@@ -330,6 +290,6 @@ func Duplex(c *Client, r common.ReadOnlyCap, w common.WriteOnlyCap) RWClient {
 }
 
 func init() {
-	b, _ := cbor.Marshal(common.MapRequest{})
+	b, _ := cbor.Marshal(crypto.MapRequest{})
 	cborFrameOverhead = len(b)
 }
