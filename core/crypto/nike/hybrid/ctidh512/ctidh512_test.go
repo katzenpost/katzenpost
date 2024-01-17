@@ -1,6 +1,4 @@
-//go:build ctidh511
-
-package hybrid
+package CTIDH512X25519
 
 import (
 	"testing"
@@ -8,8 +6,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestHybridCTIDH511X25519(t *testing.T) {
-	scheme := CTIDH511X25519
+func TestHybridCTIDH512X25519(t *testing.T) {
+	scheme := CTIDH512X25519
 
 	alicePublicKey, alicePrivateKey, err := scheme.GenerateKeyPair()
 	require.NoError(t, err)
