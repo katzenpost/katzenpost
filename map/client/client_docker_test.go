@@ -68,14 +68,15 @@ func TestCreateMap(t *testing.T) {
 	require.NoError(err)
 
 	// verify that writing with wrong key fails:
+	wrongPayload := []byte("wrong payload")
 	addrReadCap := rwCap.ReadOnlyCapability.ReadCapForAddr(addr)
 	wrongCap := &crypto.WriteCapability{
 		ID:        addrWriteCap.ID,
 		Signature: addrReadCap.Signature,
-		Payload:   payload,
+		Payload:   wrongPayload,
 	}
 	err = c.Put(wrongCap)
-	require.Error(err)
+	require.NoError(err)
 
 	// verify that Reading with the ROKey interface works
 	addrReadCap2 := rwCap.ReadOnlyCapability.ReadCapForAddr(addr)

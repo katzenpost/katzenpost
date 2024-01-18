@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"sort"
 
 	"github.com/fxamacker/cbor/v2"
@@ -99,7 +100,7 @@ func (c *Client) Put(cap *crypto.WriteCapability) error {
 	if err != nil {
 		return err
 	}
-	b := crypto.MapRequest{
+	b := &crypto.MapRequest{
 		ID:        cap.ID,
 		Signature: cap.Signature,
 		Payload:   cap.Payload,
@@ -110,6 +111,8 @@ func (c *Client) Put(cap *crypto.WriteCapability) error {
 	if err != nil {
 		return err
 	}
+
+	fmt.Printf("putting blob into storage: %x\n", serialized)
 
 	_, err = c.Session.SendUnreliableMessage(loc.Name(), loc.Provider(), serialized)
 	// XXX: do we need to track msgId and see if it was delivered or not ???
@@ -128,7 +131,10 @@ func (c *Client) Get(cap *crypto.ReadCapability) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	b := &crypto.MapRequest{ID: cap.ID, Signature: cap.Signature}
+	b := &crypto.MapRequest{
+		ID:        cap.ID,
+		Signature: cap.Signature,
+	}
 	serialized, err := cbor.Marshal(b)
 	if err != nil {
 		return nil, err
@@ -139,6 +145,7 @@ func (c *Client) Get(cap *crypto.ReadCapability) ([]byte, error) {
 		return nil, err
 	}
 	// unwrap the response and return the payload
+	fmt.Printf("map response blob %x\n", r)
 	resp := &crypto.MapResponse{}
 	err = cbor.Unmarshal(r, resp)
 	if err != nil {
