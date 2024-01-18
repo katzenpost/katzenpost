@@ -19,8 +19,8 @@
 package client
 
 import (
-	"io"
 	"context"
+	"io"
 	"testing"
 
 	"github.com/katzenpost/katzenpost/client"

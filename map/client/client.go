@@ -302,7 +302,7 @@ func DuplexFromSeed(c *Client, initiator bool, secret []byte) ReadWriteClient {
 // ReadWriteClient with different read/write root capabilities so that a pair
 // of clients may use the capabilities to communicate unidirectionally
 type duplex struct {
-	ro ReadOnlyClient // used to read data to client
+	ro ReadOnlyClient  // used to read data to client
 	wo WriteOnlyClient // used to send data to peer
 }
 

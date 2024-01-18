@@ -100,7 +100,7 @@ func TestGarbageCollect(t *testing.T) {
 
 	msgIDs := make([]common.MessageID, mapsize+1)
 	// fill map to mapSize + 1 to trigger GarbageCollection
-	for i := 0; i< mapsize + 1; i++ {
+	for i := 0; i < mapsize+1; i++ {
 		var msgID common.MessageID
 		_, err = rand.Reader.Read(msgID[:])
 		require.NoError(err)
@@ -113,7 +113,7 @@ func TestGarbageCollect(t *testing.T) {
 	}
 
 	// verify that the keys are available
-	for i := 0; i < gcsize; i ++ {
+	for i := 0; i < gcsize; i++ {
 		d, err := m.Get(msgIDs[i])
 		require.NoError(err)
 		require.Equal(d, []byte("hola"))
@@ -122,13 +122,13 @@ func TestGarbageCollect(t *testing.T) {
 	require.NoError(err)
 
 	// verify that the keys are gone
-	for i := 0; i < gcsize; i ++ {
+	for i := 0; i < gcsize; i++ {
 		_, err := m.Get(msgIDs[i])
 		require.Error(err)
 	}
 
 	// verify that the next gcsize keys are still there
-	for i := gcsize; i < 2*gcsize; i ++ {
+	for i := gcsize; i < 2*gcsize; i++ {
 		d, err := m.Get(msgIDs[i])
 		require.NoError(err)
 		require.Equal(d, []byte("hola"))
