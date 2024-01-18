@@ -28,8 +28,8 @@ var (
 // MessageID represents a storage address with Read/Write capability
 type MessageID [eddsa.PublicKeySize]byte
 
-// ReadPk returns the verifier of ReadCap for this ID
-func (m MessageID) ReadPk() *eddsa.PublicKey {
+// ReadVerifier returns the verifier of ReadCap for this ID
+func (m MessageID) ReadVerifier() *eddsa.PublicKey {
 	p := new(eddsa.PublicKey)
 	if err := p.FromBytes(m[:]); err != nil {
 		panic(err)
@@ -37,8 +37,8 @@ func (m MessageID) ReadPk() *eddsa.PublicKey {
 	return p.Blind(ReadCap)
 }
 
-// WritePk returns the verifier of WriteCap for this ID
-func (m MessageID) WritePk() *eddsa.PublicKey {
+// WriteVerifier returns the verifier of WriteCap for this ID
+func (m MessageID) WriteVerifier() *eddsa.PublicKey {
 	p := new(eddsa.PublicKey)
 	if err := p.FromBytes(m[:]); err != nil {
 		panic(err)
@@ -85,7 +85,7 @@ type RootCap struct {
 func (s *RootCap) Addr(addr []byte) MessageID {
 	// returns the capability derived from the root key
 	// mapping address to a public identity key contained in MessageID
-	// which provides ReadPk and WritePk methods to verify Signatures
+	// which provides ReadVerifier and WriteVerifier methods to verify Signatures
 	// from the Read() and Write() capability keys help by Cap
 	capAddr := s.CapPk.Blind(addr)
 	var id MessageID

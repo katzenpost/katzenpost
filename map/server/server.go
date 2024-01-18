@@ -237,11 +237,11 @@ func (m *Map) OnCommand(cmd cborplugin.Command) (cborplugin.Command, error) {
 
 func validateCap(req *common.MapRequest) bool {
 	if len(req.Payload) == 0 {
-		v := req.ID.ReadPk()
+		v := req.ID.ReadVerifier()
 		// verify v Signs the publickey bytes
 		return v.Verify(req.Signature, req.ID.Bytes())
 	} else {
-		v := req.ID.WritePk()
+		v := req.ID.WriteVerifier()
 		// verify v Signs the payload bytes
 		return v.Verify(req.Signature, req.Payload)
 	}

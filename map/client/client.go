@@ -102,7 +102,7 @@ func (c *Client) GetStorageProvider(ID common.MessageID) (StorageLocation, error
 
 // Put places a value into the store
 func (c *Client) Put(ID common.MessageID, signature, payload []byte) error {
-	if !ID.WritePk().Verify(signature, payload) {
+	if !ID.WriteVerifier().Verify(signature, payload) {
 		return errors.New("signature does not verify Write")
 	}
 
@@ -132,7 +132,7 @@ func (c *Client) PayloadSize() int {
 // Get requests ID from the chosen storage node and returns a payload or error
 func (c *Client) Get(ID common.MessageID, signature []byte) ([]byte, error) {
 
-	if !ID.ReadPk().Verify(signature, ID[:]) {
+	if !ID.ReadVerifier().Verify(signature, ID[:]) {
 		return nil, errors.New("signature does not verify Read")
 	}
 	loc, err := c.GetStorageProvider(ID)
