@@ -142,7 +142,7 @@ func TestGarbageCollect(t *testing.T) {
 	require.NoError(err)
 }
 
-func TestValidateCap(t *testing.T) {
+func TestValidateRWCap(t *testing.T) {
 	require := require.New(t)
 	sk, err := eddsa.NewKeypair(rand.Reader)
 	require.NoError(err)
@@ -165,5 +165,46 @@ func TestValidateCap(t *testing.T) {
 	require.True(validateCap(&common.MapRequest{ID: mID, Signature: rSignature, Payload: []byte{}}))
 
 	// test failure of read
+	require.False(validateCap(&common.MapRequest{ID: mID, Signature: rSignature, Payload: payload[:len(payload)-1]}))
+}
+
+func TestValidateROCap(t *testing.T) {
+	require := require.New(t)
+	sk, err := eddsa.NewKeypair(rand.Reader)
+	require.NoError(err)
+
+	cap_rw := common.NewRWCap(sk)
+	cap_ro := cap_rw.ReadOnly()
+	addr := []byte("address we want to read")
+
+	mID := cap_ro.Addr(addr)
+	rKey := cap_ro.ReadKey(addr)
+	rSignature := rKey.Sign(mID.Bytes())
+
+	// test verification of read
+	require.True(validateCap(&common.MapRequest{ID: mID, Signature: rSignature, Payload: []byte{}}))
+
+	// test failure of read
+	require.False(validateCap(&common.MapRequest{ID: mID, Signature: rSignature[:len(rSignature)-1], Payload: []byte{}}))
+}
+
+func TestValidateWOCap(t *testing.T) {
+	require := require.New(t)
+	sk, err := eddsa.NewKeypair(rand.Reader)
+	require.NoError(err)
+
+	cap_rw := common.NewRWCap(sk)
+	cap_wo := cap_rw.WriteOnly()
+	addr := []byte("address we want to read")
+	payload := []byte("here are some bytes to write")
+
+	mID := cap_wo.Addr(addr)
+	wKey := cap_wo.WriteKey(addr)
+	wSignature := wKey.Sign(payload)
+
+	// test verification of write
+	require.True(validateCap(&common.MapRequest{ID: mID, Signature: wSignature, Payload: payload}))
+
+	// test failure of write
 	require.False(validateCap(&common.MapRequest{ID: mID, Signature: wSignature, Payload: payload[:len(payload)-1]}))
 }
