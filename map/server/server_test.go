@@ -17,6 +17,7 @@
 package server
 
 import (
+	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/map/common"
 	"github.com/stretchr/testify/require"
@@ -139,4 +140,30 @@ func TestGarbageCollect(t *testing.T) {
 	// clean up
 	err = os.RemoveAll(tmpDir)
 	require.NoError(err)
+}
+
+func TestValidateCap(t *testing.T) {
+	require := require.New(t)
+	sk, err := eddsa.NewKeypair(rand.Reader)
+	require.NoError(err)
+
+	cap_rw := common.NewRWCap(sk)
+	addr := []byte("address we want to read")
+	payload := []byte("here are some bytes to write")
+
+	mID := cap_rw.Addr(addr)
+	wKey := cap_rw.WriteKey(addr)
+	rKey := cap_rw.ReadKey(addr)
+	wSignature := wKey.Sign(payload)
+	rSignature := rKey.Sign(mID.Bytes())
+	// test verification of write
+	require.True(validateCap(&common.MapRequest{ID: mID, Signature: wSignature, Payload: payload}))
+	// test failure of write
+	require.False(validateCap(&common.MapRequest{ID: mID, Signature: wSignature, Payload: payload[:len(payload)-2]}))
+
+	// test verification of read
+	require.True(validateCap(&common.MapRequest{ID: mID, Signature: rSignature, Payload: []byte{}}))
+
+	// test failure of read
+	require.False(validateCap(&common.MapRequest{ID: mID, Signature: wSignature, Payload: payload[:len(payload)-1]}))
 }
