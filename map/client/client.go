@@ -127,10 +127,6 @@ func (c *Client) PayloadSize() int {
 
 // Get requests ID from the chosen storage node and returns a payload or error
 func (c *Client) Get(ID common.MessageID, signature []byte) ([]byte, error) {
-
-	if !ID.ReadVerifier().Verify(signature, ID[:]) {
-		return nil, errors.New("signature does not verify Read")
-	}
 	loc, err := c.GetStorageProvider(ID)
 	if err != nil {
 		return nil, err
