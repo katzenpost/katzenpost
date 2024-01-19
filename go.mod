@@ -15,7 +15,7 @@ require (
 	github.com/fxamacker/cbor/v2 v2.4.0
 	github.com/go-faster/xor v1.0.0
 	github.com/golang/protobuf v1.5.2
-	github.com/henrydcase/nobs v0.0.0-20210422124615-3a8ac85da11b
+	github.com/henrydcase/nobs v0.0.0-20230313231516-25b66236df73
 	github.com/jackc/pgx v3.6.2+incompatible
 	github.com/katzenpost/chacha20 v0.0.0-20190910113340-7ce890d6a556
 	github.com/katzenpost/chacha20poly1305 v0.0.0-20211026103954-7b6fb2fc0129
@@ -29,7 +29,7 @@ require (
 	gitlab.com/yawning/avl.git v0.0.0-20180224045358-04c7c776e391
 	gitlab.com/yawning/bsaes.git v0.0.0-20190805113838-0a714cd429ec
 	go.etcd.io/bbolt v1.3.6
-	golang.org/x/crypto v0.17.0
+	golang.org/x/crypto v0.18.0
 	golang.org/x/net v0.17.0
 	golang.org/x/text v0.14.0
 	google.golang.org/protobuf v1.28.1
@@ -47,6 +47,7 @@ require (
 	github.com/eapache/queue v1.1.0 // indirect
 	github.com/gofrs/uuid v4.0.0+incompatible // indirect
 	github.com/jackc/fake v0.0.0-20150926172116-812a484cc733 // indirect
+	github.com/katzenpost/hpqc v0.0.0-20240119071246-a9281bda53d9 // indirect
 	github.com/kr/pretty v0.3.1 // indirect
 	github.com/lib/pq v1.10.3 // indirect
 	github.com/mattn/go-pointer v0.0.1 // indirect
@@ -61,6 +62,6 @@ require (
 	github.com/shopspring/decimal v1.2.0 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	gitlab.com/yawning/slice.git v0.0.0-20190714152416-bc4ae2510529 // indirect
-	golang.org/x/sys v0.15.0 // indirect
+	golang.org/x/sys v0.16.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
