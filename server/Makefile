@@ -1,14 +1,13 @@
 warped?=false
-CGO_CFLAGS_ALLOW="-DPARAMS=sphincs-shake-256f"
 ldflags="-buildid= -X github.com/katzenpost/katzenpost/core/epochtime.WarpedEpoch=${warped} -X github.com/katzenpost/katzenpost/server/internal/pki.WarpedEpoch=${warped} -X github.com/katzenpost/katzenpost/minclient/pki.WarpedEpoch=${warped}"
 
 testnet-build:
 	go mod verify
-	cd cmd/server ; CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f go build -trimpath -ldflags ${ldflags}
-	cd ../memspool/server/cmd/memspool ; CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f go build -trimpath -ldflags ${ldflags}
-	cd ../reunion/servers/reunion_katzenpost_server ; CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f go build -trimpath -ldflags ${ldflags}
-	cd ../panda/server/cmd/panda_server ; CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f go build -trimpath -ldflags ${ldflags}
-	cd ../server_plugins/cbor_plugins/echo-go ; CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f go build -trimpath -o echo_server -ldflags ${ldflags}
+	cd cmd/server ; go build -trimpath -ldflags ${ldflags}
+	cd ../memspool/server/cmd/memspool ; go build -trimpath -ldflags ${ldflags}
+	cd ../reunion/servers/reunion_katzenpost_server ; go build -trimpath -ldflags ${ldflags}
+	cd ../panda/server/cmd/panda_server ; go build -trimpath -ldflags ${ldflags}
+	cd ../server_plugins/cbor_plugins/echo-go ; go build -trimpath -o echo_server -ldflags ${ldflags}
 
 testnet-install:
 	mv /go/katzenpost/server/cmd/server/server /$(net_name)/server.$(distro)
