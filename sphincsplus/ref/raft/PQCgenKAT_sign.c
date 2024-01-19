@@ -55,14 +55,14 @@ main()
     for (int i=0; i<48; i++)
         entropy_input[i] = (unsigned char)i;
 
-    randombytes_init(entropy_input, NULL);
+    _randombytes_init(entropy_input, NULL);
     for (int i=0; i<100; i++) {
         fprintf(fp_req, "count = %d\n", i);
-        randombytes(seed, 48);
+        _randombytes(seed, 48);
         fprintBstr(fp_req, "seed = ", seed, 48);
         mlen = (unsigned long long int)(33*(i+1));
         fprintf(fp_req, "mlen = %llu\n", mlen);
-        randombytes(msg, mlen);
+        _randombytes(msg, mlen);
         fprintBstr(fp_req, "msg = ", msg, mlen);
         fprintf(fp_req, "pk =\n");
         fprintf(fp_req, "sk =\n");
@@ -94,7 +94,7 @@ main()
         }
         fprintBstr(fp_rsp, "seed = ", seed, 48);
 
-        randombytes_init(seed, NULL);
+        _randombytes_init(seed, NULL);
 
         if ( FindMarker(fp_req, "mlen = ") )
             ret_val = fscanf(fp_req, "%llu", &mlen);

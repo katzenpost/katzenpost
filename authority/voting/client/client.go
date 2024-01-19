@@ -296,7 +296,7 @@ func (c *Client) Post(ctx context.Context, epoch uint64, signingPrivateKey sign.
 
 // Get returns the PKI document along with the raw serialized form for the provided epoch.
 func (c *Client) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, error) {
-	c.log.Debugf("Get(ctx, %d)", epoch)
+	c.log.Noticef("Get(ctx, %d)", epoch)
 
 	// Generate a random keypair to use for the link authentication.
 	scheme := wire.DefaultScheme
