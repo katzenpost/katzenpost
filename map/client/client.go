@@ -183,14 +183,14 @@ type rwMap struct {
 // Get implements ReadWriteClient.Get
 func (r *rwMap) Get(addr []byte) ([]byte, error) {
 	i := r.rwCap.Addr(addr)
-	k := r.rwCap.Read(addr)
+	k := r.rwCap.ReadKey(addr)
 	return r.c.Get(i, k.Sign(i.Bytes()))
 }
 
 // Put implements ReadWriteClient.Put
 func (r *rwMap) Put(addr []byte, payload []byte) error {
 	i := r.rwCap.Addr(addr)
-	k := r.rwCap.Read(addr)
+	k := r.rwCap.ReadKey(addr)
 	return r.c.Put(i, k.Sign(payload), payload)
 }
 
@@ -208,7 +208,7 @@ type roMap struct {
 // Get implements ReadOnlyClient.Get
 func (r *roMap) Get(addr []byte) ([]byte, error) {
 	i := r.roCap.Addr(addr)
-	k := r.roCap.Read(addr)
+	k := r.roCap.ReadKey(addr)
 	return r.c.Get(i, k.Sign(i.Bytes()))
 }
 
@@ -226,7 +226,7 @@ type woMap struct {
 // Put implements WriteOnlyClient.Put
 func (w *woMap) Put(addr []byte, payload []byte) error {
 	i := w.woCap.Addr(addr)
-	k := w.woCap.Write(addr)
+	k := w.woCap.WriteKey(addr)
 	return w.c.Put(i, k.Sign(payload), payload)
 }
 
