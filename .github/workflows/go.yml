@@ -31,6 +31,9 @@ jobs:
       - name: Run core unit tests
         run: sudo sh -c "cd core && ulimit -l 64435 && GORACE=history_size=7 go test -coverprofile=coverage.out -race -v -failfast -timeout 30m ./..."
 
+      - name: Run NIKE Sphinx unit tests with CTIDH
+        run: sudo sh -c "cd core/sphinx && ulimit -l 64435 && GORACE=history_size=7 go test -coverprofile=coverage.out -race -v -failfast -timeout 30m ./..."
+
       - name: Run doubleratchet unit tests
         run: sudo sh -c "cd doubleratchet && ulimit -l 64435 && GORACE=history_size=7 go test -coverprofile=coverage.out -race -v -failfast -timeout 30m ./..."
 
