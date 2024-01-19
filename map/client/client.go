@@ -102,10 +102,6 @@ func (c *Client) GetStorageProvider(ID common.MessageID) (StorageLocation, error
 
 // Put places a value into the store
 func (c *Client) Put(ID common.MessageID, signature, payload []byte) error {
-	if !ID.WriteVerifier().Verify(signature, payload) {
-		return errors.New("signature does not verify Write")
-	}
-
 	loc, err := c.GetStorageProvider(ID)
 	if err != nil {
 		return err
