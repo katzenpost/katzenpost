@@ -135,8 +135,8 @@ int main()
     double result;
     int i;
 
-    randombytes(m, SPX_MLEN);
-    randombytes(addr, SPX_ADDR_BYTES);
+    _randombytes(m, SPX_MLEN);
+    _randombytes(addr, SPX_ADDR_BYTES);
 
     printf("Parameters: n = %d, h = %d, d = %d, b = %d, k = %d, w = %d\n",
            SPX_N, SPX_FULL_HEIGHT, SPX_D, SPX_FORS_HEIGHT, SPX_FORS_TREES,

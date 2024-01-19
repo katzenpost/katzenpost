@@ -9,47 +9,51 @@ import (
 
 var _ nike.PrivateKey = (*privateKey)(nil)
 var _ nike.PublicKey = (*publicKey)(nil)
-var _ nike.Scheme = (*scheme)(nil)
+var _ nike.Scheme = (*Scheme)(nil)
 
 type publicKey struct {
-	scheme *scheme
+	Scheme *Scheme
 	first  nike.PublicKey
 	second nike.PublicKey
 }
 
 type privateKey struct {
-	scheme *scheme
+	Scheme *Scheme
 	first  nike.PrivateKey
 	second nike.PrivateKey
 }
 
-type scheme struct {
+type Scheme struct {
 	name   string
 	first  nike.Scheme
 	second nike.Scheme
 }
 
-func (s *scheme) Name() string {
+func New(name string, first nike.Scheme, second nike.Scheme) *Scheme {
+    return &Scheme{name: name, first: first, second: second}
+}
+
+func (s *Scheme) Name() string {
 	return s.name
 }
 
-func (s *scheme) PublicKeySize() int {
+func (s *Scheme) PublicKeySize() int {
 	return s.first.PublicKeySize() + s.second.PublicKeySize()
 }
 
-func (s *scheme) PrivateKeySize() int {
+func (s *Scheme) PrivateKeySize() int {
 	return s.first.PrivateKeySize() + s.second.PrivateKeySize()
 }
 
-func (s *scheme) GeneratePrivateKey(rng io.Reader) nike.PrivateKey {
+func (s *Scheme) GeneratePrivateKey(rng io.Reader) nike.PrivateKey {
 	return &privateKey{
-		scheme: s,
+		Scheme: s,
 		first:  s.first.GeneratePrivateKey(rng),
 		second: s.second.GeneratePrivateKey(rng),
 	}
 }
 
-func (s *scheme) GenerateKeyPairFromEntropy(rng io.Reader) (nike.PublicKey, nike.PrivateKey, error) {
+func (s *Scheme) GenerateKeyPairFromEntropy(rng io.Reader) (nike.PublicKey, nike.PrivateKey, error) {
 	pubKey1, privKey1, err := s.first.GenerateKeyPairFromEntropy(rng)
 	if err != nil {
 		return nil, nil, err
@@ -59,17 +63,17 @@ func (s *scheme) GenerateKeyPairFromEntropy(rng io.Reader) (nike.PublicKey, nike
 		return nil, nil, err
 	}
 	return &publicKey{
-			scheme: s,
+			Scheme: s,
 			first:  pubKey1,
 			second: pubKey2,
 		}, &privateKey{
-			scheme: s,
+			Scheme: s,
 			first:  privKey1,
 			second: privKey2,
 		}, nil
 }
 
-func (s *scheme) GenerateKeyPair() (nike.PublicKey, nike.PrivateKey, error) {
+func (s *Scheme) GenerateKeyPair() (nike.PublicKey, nike.PrivateKey, error) {
 	pubKey1, privKey1, err := s.first.GenerateKeyPair()
 	if err != nil {
 		return nil, nil, err
@@ -79,54 +83,54 @@ func (s *scheme) GenerateKeyPair() (nike.PublicKey, nike.PrivateKey, error) {
 		return nil, nil, err
 	}
 	return &publicKey{
-			scheme: s,
+			Scheme: s,
 			first:  pubKey1,
 			second: pubKey2,
 		}, &privateKey{
-			scheme: s,
+			Scheme: s,
 			first:  privKey1,
 			second: privKey2,
 		}, nil
 }
 
-func (s *scheme) DeriveSecret(privKey nike.PrivateKey, pubKey nike.PublicKey) []byte {
-	return append(privKey.(*privateKey).scheme.first.DeriveSecret(privKey.(*privateKey).first, pubKey.(*publicKey).first),
-		privKey.(*privateKey).scheme.second.DeriveSecret(privKey.(*privateKey).second, pubKey.(*publicKey).second)...)
+func (s *Scheme) DeriveSecret(privKey nike.PrivateKey, pubKey nike.PublicKey) []byte {
+	return append(privKey.(*privateKey).Scheme.first.DeriveSecret(privKey.(*privateKey).first, pubKey.(*publicKey).first),
+		privKey.(*privateKey).Scheme.second.DeriveSecret(privKey.(*privateKey).second, pubKey.(*publicKey).second)...)
 }
 
-func (s *scheme) DerivePublicKey(privKey nike.PrivateKey) nike.PublicKey {
+func (s *Scheme) DerivePublicKey(privKey nike.PrivateKey) nike.PublicKey {
 	return &publicKey{
-		scheme: s,
-		first:  privKey.(*privateKey).scheme.first.DerivePublicKey(privKey.(*privateKey).first),
-		second: privKey.(*privateKey).scheme.second.DerivePublicKey(privKey.(*privateKey).second),
+		Scheme: s,
+		first:  privKey.(*privateKey).Scheme.first.DerivePublicKey(privKey.(*privateKey).first),
+		second: privKey.(*privateKey).Scheme.second.DerivePublicKey(privKey.(*privateKey).second),
 	}
 }
 
-func (s *scheme) Blind(groupMember nike.PublicKey, blindingFactor nike.PrivateKey) nike.PublicKey {
+func (s *Scheme) Blind(groupMember nike.PublicKey, blindingFactor nike.PrivateKey) nike.PublicKey {
 	return &publicKey{
-		scheme: s,
+		Scheme: s,
 		first:  s.first.Blind(groupMember.(*publicKey).first, blindingFactor.(*privateKey).first),
 		second: s.second.Blind(groupMember.(*publicKey).second, blindingFactor.(*privateKey).second),
 	}
 }
 
-func (s *scheme) NewEmptyPublicKey() nike.PublicKey {
+func (s *Scheme) NewEmptyPublicKey() nike.PublicKey {
 	return &publicKey{
-		scheme: s,
+		Scheme: s,
 		first:  s.first.NewEmptyPublicKey(),
 		second: s.second.NewEmptyPublicKey(),
 	}
 }
 
-func (s *scheme) NewEmptyPrivateKey() nike.PrivateKey {
+func (s *Scheme) NewEmptyPrivateKey() nike.PrivateKey {
 	return &privateKey{
-		scheme: s,
+		Scheme: s,
 		first:  s.first.NewEmptyPrivateKey(),
 		second: s.second.NewEmptyPrivateKey(),
 	}
 }
 
-func (s *scheme) UnmarshalBinaryPublicKey(b []byte) (nike.PublicKey, error) {
+func (s *Scheme) UnmarshalBinaryPublicKey(b []byte) (nike.PublicKey, error) {
 	pubkey := s.NewEmptyPublicKey()
 	err := pubkey.FromBytes(b)
 	if err != nil {
@@ -135,7 +139,7 @@ func (s *scheme) UnmarshalBinaryPublicKey(b []byte) (nike.PublicKey, error) {
 	return pubkey, nil
 }
 
-func (s *scheme) UnmarshalBinaryPrivateKey(b []byte) (nike.PrivateKey, error) {
+func (s *Scheme) UnmarshalBinaryPrivateKey(b []byte) (nike.PrivateKey, error) {
 	privkey := s.NewEmptyPrivateKey()
 	err := privkey.FromBytes(b)
 	if err != nil {
@@ -146,7 +150,7 @@ func (s *scheme) UnmarshalBinaryPrivateKey(b []byte) (nike.PrivateKey, error) {
 
 func (p *privateKey) Public() nike.PublicKey {
 	return &publicKey{
-		scheme: p.scheme,
+		Scheme: p.Scheme,
 		first:  p.first.Public(),
 		second: p.second.Public(),
 	}
@@ -162,11 +166,11 @@ func (p *privateKey) Bytes() []byte {
 }
 
 func (p *privateKey) FromBytes(b []byte) error {
-	err := p.first.FromBytes(b[:p.scheme.first.PrivateKeySize()])
+	err := p.first.FromBytes(b[:p.Scheme.first.PrivateKeySize()])
 	if err != nil {
 		return err
 	}
-	return p.second.FromBytes(b[p.scheme.first.PrivateKeySize():])
+	return p.second.FromBytes(b[p.Scheme.first.PrivateKeySize():])
 }
 
 // MarshalBinary is an implementation of a method on the
@@ -221,11 +225,11 @@ func (p *publicKey) Bytes() []byte {
 }
 
 func (p *publicKey) FromBytes(b []byte) error {
-	err := p.first.FromBytes(b[:p.scheme.first.PublicKeySize()])
+	err := p.first.FromBytes(b[:p.Scheme.first.PublicKeySize()])
 	if err != nil {
 		return err
 	}
-	return p.second.FromBytes(b[p.scheme.first.PublicKeySize():])
+	return p.second.FromBytes(b[p.Scheme.first.PublicKeySize():])
 }
 
 // MarshalBinary is an implementation of a method on the
