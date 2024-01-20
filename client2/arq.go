@@ -193,6 +193,9 @@ func (a *ARQ) HandleAck(surbID *[sConstants.SURBIDLength]byte) (*replyDescriptor
 
 // Send sends a message asynchronously. Sometime later, perhaps a reply will be received.
 func (a *ARQ) Send(appid *[AppIDLength]byte, id *[MessageIDLength]byte, payload []byte, providerHash *[32]byte, queueID []byte) error {
+	if appid == nil {
+		panic("appid is nil")
+	}
 	a.log.Info("Send")
 
 	a.lock.Lock()
@@ -204,6 +207,7 @@ func (a *ARQ) Send(appid *[AppIDLength]byte, id *[MessageIDLength]byte, payload 
 	}
 
 	pkt, k, rtt, err := a.sphinxComposerSender.ComposeSphinxPacket(&Request{
+		AppID:             appid,
 		WithSURB:          true,
 		SURBID:            surbID,
 		DestinationIdHash: providerHash,

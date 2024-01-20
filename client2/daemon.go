@@ -255,6 +255,9 @@ func (d *Daemon) egressWorker() {
 }
 
 func (d *Daemon) sendARQMessage(request *Request) {
+	if request.AppID == nil {
+		panic("request.AppID is nil")
+	}
 	err := d.arq.Send(request.AppID, request.ID, request.Payload, request.DestinationIdHash, request.RecipientQueueID)
 	if err != nil {
 		panic(err)
@@ -262,6 +265,9 @@ func (d *Daemon) sendARQMessage(request *Request) {
 }
 
 func (d *Daemon) SentEvent(response *Response) {
+	if response.AppID == nil {
+		panic("response.AppID is nil")
+	}
 	incomingConn := d.listener.getConnection(response.AppID)
 	err := incomingConn.sendResponse(response)
 	if err != nil {
@@ -287,20 +293,22 @@ func (d *Daemon) send(request *Request) {
 		d.log.Infof("reply arrival duration: %s", duration)
 		d.timerQueue.Push(uint64(replyArrivalTime.UnixNano()), request.SURBID)
 
-		incomingConn := d.listener.getConnection(request.AppID)
-		if incomingConn != nil {
-			response := &Response{
-				ID:            request.ID,
-				SURBID:        request.SURBID,
-				AppID:         request.AppID,
-				SentAt:        now,
-				ReplyETA:      rtt,
-				Err:           err,
-				IsMessageSent: true,
-			}
-			err = incomingConn.sendResponse(response)
-			if err != nil {
-				d.log.Errorf("failed to send Response: %s", err)
+		if request.IsLoopDecoy == false {
+			incomingConn := d.listener.getConnection(request.AppID)
+			if incomingConn != nil {
+				response := &Response{
+					ID:            request.ID,
+					SURBID:        request.SURBID,
+					AppID:         request.AppID,
+					SentAt:        now,
+					ReplyETA:      rtt,
+					Err:           err,
+					IsMessageSent: true,
+				}
+				err = incomingConn.sendResponse(response)
+				if err != nil {
+					d.log.Errorf("failed to send Response: %s", err)
+				}
 			}
 		}
 	}
@@ -370,6 +378,7 @@ func (d *Daemon) sendLoopDecoy(request *Request) {
 	request.SURBID = surbID
 	request.DestinationIdHash = &serviceIdHash
 	request.RecipientQueueID = echoService.RecipientQueueID
+	request.IsLoopDecoy = true
 
 	d.send(request)
 }
@@ -390,6 +399,7 @@ func (d *Daemon) sendDropDecoy() {
 	request.Payload = payload
 	request.DestinationIdHash = &serviceIdHash
 	request.RecipientQueueID = echoService.RecipientQueueID
+	request.IsDropDecoy = true
 
 	d.send(request)
 }

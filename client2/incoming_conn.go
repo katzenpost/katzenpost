@@ -44,6 +44,7 @@ func (c *incomingConn) recvRequest() (*Request, error) {
 		return nil, err
 	}
 
+	req.AppID = c.appID
 	return req, nil
 }
 
