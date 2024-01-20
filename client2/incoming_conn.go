@@ -6,10 +6,10 @@ package client2
 import (
 	"fmt"
 	"net"
-	"sync/atomic"
 
 	"github.com/charmbracelet/log"
 	"github.com/fxamacker/cbor/v2"
+	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 )
 
@@ -21,7 +21,7 @@ type incomingConn struct {
 	log      *log.Logger
 
 	unixConn *net.UnixConn
-	appID    uint64
+	appID    *[AppIDLength]byte
 
 	closeConnectionCh chan bool
 	sendToClientCh    chan *Response
@@ -176,10 +176,17 @@ func (c *incomingConn) worker() {
 }
 
 func newIncomingConn(l *listener, conn *net.UnixConn) *incomingConn {
+
+	appid := new([AppIDLength]byte)
+	_, err := rand.Reader.Read(appid[:])
+	if err != nil {
+		panic(err)
+	}
+
 	c := &incomingConn{
 		listener:          l,
 		unixConn:          conn,
-		appID:             atomic.AddUint64(&incomingConnID, 1), // Diagnostic only, wrapping is fine.
+		appID:             appid,
 		closeConnectionCh: make(chan bool),
 		sendToClientCh:    make(chan *Response, 2),
 	}

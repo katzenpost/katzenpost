@@ -24,7 +24,7 @@ type listener struct {
 	logbackend io.Writer
 
 	listener *net.UnixListener
-	conns    map[uint64]*incomingConn // appID -> *incomingConn
+	conns    map[[AppIDLength]byte]*incomingConn // appID -> *incomingConn
 
 	ingressCh   chan *Request
 	decoySender *decoySender
@@ -86,7 +86,7 @@ func (l *listener) onNewConn(conn *net.UnixConn) {
 		l.Unlock()
 		go c.worker()
 	}()
-	l.conns[c.appID] = c
+	l.conns[*c.appID] = c
 
 	l.log.Debug("get connection status")
 	status := l.getConnectionStatus()
@@ -111,7 +111,7 @@ func (l *listener) onClosedConn(c *incomingConn) {
 		l.Unlock()
 		l.closeAllWg.Done()
 	}()
-	delete(l.conns, c.appID)
+	delete(l.conns, *c.appID)
 }
 
 func (l *listener) getConnectionStatus() error {
@@ -151,11 +151,11 @@ func (l *listener) updateFromPKIDoc(doc *cpki.Document) {
 	l.decoySender.UpdateRates(ratesFromPKIDoc(doc))
 }
 
-func (l *listener) getConnection(appID uint64) *incomingConn {
+func (l *listener) getConnection(appID *[AppIDLength]byte) *incomingConn {
 	l.Lock()
 	defer l.Unlock()
 
-	conn, ok := l.conns[appID]
+	conn, ok := l.conns[*appID]
 	if !ok {
 		return nil
 	}
@@ -176,7 +176,7 @@ func NewListener(client *Client, rates *Rates, egressCh chan *Request, logbacken
 			Level:  logLevel,
 		}),
 		logbackend: logbackend,
-		conns:      make(map[uint64]*incomingConn),
+		conns:      make(map[[AppIDLength]byte]*incomingConn),
 		closeAllCh: make(chan interface{}),
 		ingressCh:  make(chan *Request),
 	}

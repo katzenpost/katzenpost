@@ -22,6 +22,11 @@ import (
 	"github.com/katzenpost/katzenpost/core/worker"
 )
 
+const (
+	// AppIDLength is the length of the application ID in bytes.
+	AppIDLength = 16
+)
+
 type sphinxReply struct {
 	surbID     *[constants.SURBIDLength]byte
 	ciphertext []byte
@@ -29,7 +34,7 @@ type sphinxReply struct {
 
 type replyDescriptor struct {
 	ID      *[MessageIDLength]byte
-	appID   uint64
+	appID   *[AppIDLength]byte
 	surbKey []byte
 }
 
@@ -221,9 +226,9 @@ func (d *Daemon) egressWorker() {
 				d.log.Info("decoy message ---")
 				continue
 			}
-			conn, ok := d.listener.conns[desc.appID]
+			conn, ok := d.listener.conns[*desc.appID]
 			if !ok {
-				d.log.Infof("no connection associated with AppID %d", desc.appID)
+				d.log.Infof("no connection associated with AppID %x", desc.appID[:])
 				panic("no connection associated with AppID")
 			}
 			conn.sendResponse(&Response{

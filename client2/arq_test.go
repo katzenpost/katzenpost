@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/log"
+	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/log2"
 	"github.com/stretchr/testify/require"
 )
@@ -59,7 +60,10 @@ func NoTestARQ(t *testing.T) {
 	arq := NewARQ(sphinxComposerSender, m, logger)
 	arq.Start()
 
-	appid := uint64(0)
+	appid := new([AppIDLength]byte)
+	_, err := rand.Reader.Read(appid[:])
+	require.NoError(t, err)
+
 	id := &[MessageIDLength]byte{}
 	payload := []byte("hello world")
 	providerHash := &[32]byte{}
@@ -67,7 +71,7 @@ func NoTestARQ(t *testing.T) {
 
 	require.Equal(t, 0, arq.timerQueue.Len())
 
-	err := arq.Send(appid, id, payload, providerHash, queueID)
+	err = arq.Send(appid, id, payload, providerHash, queueID)
 	require.NoError(t, err)
 	require.Equal(t, 1, arq.timerQueue.Len())
 

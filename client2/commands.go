@@ -18,7 +18,7 @@ type Response struct {
 
 	// AppID must be a unique identity for the client application
 	// that is receiving this Response.
-	AppID uint64 `cbor:id`
+	AppID *[AppIDLength]byte `cbor:id`
 
 	// Payload contains the Response payload, a SURB reply.
 	Payload []byte `cbor:payload`
@@ -62,7 +62,7 @@ type Request struct {
 
 	// AppID must be a unique identity for the client application
 	// that is sending this Request.
-	AppID uint64 `cbor:app_id`
+	AppID *[AppIDLength]byte `cbor:id`
 
 	// DestinationIdHash is 32 byte hash of the destination Provider's
 	// identity public key.

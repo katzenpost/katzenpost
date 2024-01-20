@@ -35,7 +35,7 @@ type SentEventSender interface {
 type ARQMessage struct {
 
 	// AppID identifies the application sending/receiving the message/reply.
-	AppID uint64
+	AppID *[AppIDLength]byte
 
 	// MessageID is the unique message identifier
 	MessageID *[MessageIDLength]byte
@@ -192,7 +192,7 @@ func (a *ARQ) HandleAck(surbID *[sConstants.SURBIDLength]byte) (*replyDescriptor
 }
 
 // Send sends a message asynchronously. Sometime later, perhaps a reply will be received.
-func (a *ARQ) Send(appid uint64, id *[MessageIDLength]byte, payload []byte, providerHash *[32]byte, queueID []byte) error {
+func (a *ARQ) Send(appid *[AppIDLength]byte, id *[MessageIDLength]byte, payload []byte, providerHash *[32]byte, queueID []byte) error {
 	a.log.Info("Send")
 
 	a.lock.Lock()
