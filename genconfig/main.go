@@ -26,14 +26,16 @@ import (
 	"sort"
 
 	"github.com/BurntSushi/toml"
-	kemschemes "github.com/cloudflare/circl/kem/schemes"
+
+	kemschemes "github.com/katzenpost/hpqc/kem/schemes"
+	"github.com/katzenpost/hpqc/nike/schemes"
+	"github.com/katzenpost/hpqc/util/pem"
+
+	"github.com/katzenpost/hpqc/rand"
+	"github.com/katzenpost/hpqc/sign"
 	vConfig "github.com/katzenpost/katzenpost/authority/voting/server/config"
 	cConfig "github.com/katzenpost/katzenpost/client/config"
-	"github.com/katzenpost/katzenpost/core/crypto/cert"
-	"github.com/katzenpost/katzenpost/core/crypto/nike/schemes"
-	"github.com/katzenpost/katzenpost/core/crypto/pem"
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
-	"github.com/katzenpost/katzenpost/core/crypto/sign"
+	"github.com/katzenpost/katzenpost/core/cert"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
 	sConfig "github.com/katzenpost/katzenpost/server/config"

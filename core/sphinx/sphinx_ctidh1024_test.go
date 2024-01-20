@@ -19,8 +19,9 @@ package sphinx
 import (
 	"testing"
 
-	ctidh "github.com/katzenpost/katzenpost/core/crypto/nike/ctidh1024"
-	hybrid "github.com/katzenpost/katzenpost/core/crypto/nike/hybrid/ctidh1024"
+	ctidh "github.com/katzenpost/hpqc/nike/ctidh/ctidh1024"
+	"github.com/katzenpost/hpqc/nike/hybrid"
+
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 )
 
@@ -41,7 +42,7 @@ func TestHybridCTIDH1024ForwardSphinx(t *testing.T) {
 func TestCTIDH1024ForwardSphinx(t *testing.T) {
 	const testPayload = "It is the stillest words that bring on the storm.  Thoughts that come on doves’ feet guide the world."
 
-	mynike := ctidh.CTIDH1024Scheme
+	mynike := ctidh.Scheme()
 	geo := geo.GeometryFromUserForwardPayloadLength(mynike, len(testPayload), false, 5)
 	sphinx := NewNIKESphinx(mynike, geo)
 
@@ -51,7 +52,7 @@ func TestCTIDH1024ForwardSphinx(t *testing.T) {
 func TestCTIDH1024SURB(t *testing.T) {
 	const testPayload = "The smallest minority on earth is the individual.  Those who deny individual rights cannot claim to be defenders of minorities."
 
-	mynike := ctidh.CTIDH1024Scheme
+	mynike := ctidh.Scheme()
 	geo := geo.GeometryFromUserForwardPayloadLength(mynike, len(testPayload), false, 5)
 	sphinx := NewNIKESphinx(mynike, geo)
 
@@ -60,8 +61,8 @@ func TestCTIDH1024SURB(t *testing.T) {
 
 func TestCTIDH1024SphinxGeometry(t *testing.T) {
 	withSURB := false
-	g := geo.GeometryFromUserForwardPayloadLength(ctidh.CTIDH1024Scheme, 512, withSURB, 5)
+	g := geo.GeometryFromUserForwardPayloadLength(ctidh.Scheme(), 512, withSURB, 5)
 	t.Logf("NIKE Sphinx CTIDH 5 hops: HeaderLength = %d", g.HeaderLength)
-	g = geo.GeometryFromUserForwardPayloadLength(ctidh.CTIDH1024Scheme, 512, withSURB, 10)
+	g = geo.GeometryFromUserForwardPayloadLength(ctidh.Scheme(), 512, withSURB, 10)
 	t.Logf("NIKE Sphinx CTIDH 10 hops: HeaderLength = %d", g.HeaderLength)
 }

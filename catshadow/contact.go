@@ -25,7 +25,7 @@ import (
 	"github.com/fxamacker/cbor/v2"
 	ratchet "github.com/katzenpost/katzenpost/doubleratchet"
 	cConstants "github.com/katzenpost/katzenpost/client/constants"
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/hpqc/rand"
 	memspoolClient "github.com/katzenpost/katzenpost/memspool/client"
 )
 

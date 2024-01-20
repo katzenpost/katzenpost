@@ -25,10 +25,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/katzenpost/katzenpost/core/crypto/cert"
-	"github.com/katzenpost/katzenpost/core/crypto/nike/ecdh"
-	"github.com/katzenpost/katzenpost/core/crypto/pem"
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	ecdh "github.com/katzenpost/hpqc/nike/x25519"
+	"github.com/katzenpost/hpqc/rand"
+	"github.com/katzenpost/hpqc/util/pem"
+
+	"github.com/katzenpost/katzenpost/core/cert"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/server/config"
@@ -62,7 +63,7 @@ func TestServerStartShutdown(t *testing.T) {
 	require.NoError(t, err)
 
 	geo := geo.GeometryFromUserForwardPayloadLength(
-		ecdh.NewEcdhNike(rand.Reader),
+		ecdh.Scheme(rand.Reader),
 		2000,
 		true,
 		5,

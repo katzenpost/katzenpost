@@ -23,10 +23,12 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/katzenpost/katzenpost/core/crypto/cert"
-	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
-	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/stretchr/testify/require"
+
+	ecdh "github.com/katzenpost/hpqc/nike/x25519"
+
+	"github.com/katzenpost/katzenpost/core/cert"
+	"github.com/katzenpost/katzenpost/core/wire"
 )
 
 func genDescriptor(require *require.Assertions, idx int, provider bool) (*MixDescriptor, []byte) {
@@ -42,12 +44,15 @@ func genDescriptor(require *require.Assertions, idx int, provider bool) (*MixDes
 	identityPriv, identityPub := cert.Scheme.NewKeypair()
 	d.IdentityKey = identityPub
 	scheme := wire.DefaultScheme
-	_, d.LinkKey = scheme.GenerateKeypair(rand.Reader)
+	linkKey, _, err := scheme.GenerateKeyPair()
+	require.NoError(err)
+	d.LinkKey, err = linkKey.MarshalBinary()
+	require.NoError(err)
 	d.MixKeys = make(map[uint64][]byte)
 	for e := debugTestEpoch; e < debugTestEpoch+3; e++ {
 		mPriv, err := ecdh.NewKeypair(rand.Reader)
 		require.NoError(err, "[%d]: ecdh.NewKeypair()", e)
-		d.MixKeys[uint64(e)] = mPriv.PublicKey().Bytes()
+		d.MixKeys[uint64(e)] = mPriv.Public().Bytes()
 	}
 	if provider {
 		d.Kaetzchen = make(map[string]map[string]interface{})
@@ -56,7 +61,7 @@ func genDescriptor(require *require.Assertions, idx int, provider bool) (*MixDes
 			"miauCount": idx,
 		}
 	}
-	err := IsDescriptorWellFormed(d, debugTestEpoch)
+	err = IsDescriptorWellFormed(d, debugTestEpoch)
 	require.NoError(err, "IsDescriptorWellFormed(good)")
 
 	signed, err := SignDescriptor(identityPriv, identityPub, d)
@@ -148,7 +153,7 @@ func TestDocument(t *testing.T) {
 	// (It would have been nice to check that SignDocument was idempotent,
 	// but it seems SPHINCS+ uses randomness?
 	tmpDocBytes := signed
-	for i := 0 ; i < 4 ; i++ {
+	for i := 0; i < 4; i++ {
 		tmpDoc, err := ParseDocument(tmpDocBytes)
 		require.Equal(nil, err)
 		require.Equal(ddoc, tmpDoc)

@@ -21,7 +21,7 @@ package pkicache
 import (
 	"fmt"
 
-	"github.com/katzenpost/katzenpost/core/crypto/sign"
+	"github.com/katzenpost/hpqc/sign"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 )

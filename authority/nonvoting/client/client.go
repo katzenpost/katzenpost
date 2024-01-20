@@ -23,9 +23,10 @@ import (
 	"fmt"
 	"net"
 
-	"github.com/katzenpost/katzenpost/core/crypto/cert"
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
-	"github.com/katzenpost/katzenpost/core/crypto/sign"
+	"github.com/katzenpost/hpqc/kem"
+	"github.com/katzenpost/hpqc/rand"
+	"github.com/katzenpost/hpqc/sign"
+	"github.com/katzenpost/katzenpost/core/cert"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/wire"
@@ -49,7 +50,7 @@ type Config struct {
 	AuthorityIdentityKey sign.PublicKey
 
 	// AuthorityLinkKey is the authority's link key used in our noise wire protocol.
-	AuthorityLinkKey wire.PublicKey
+	AuthorityLinkKey kem.PublicKey
 
 	// LinkKey is the client's link layer keypair.
 	LinkKey wire.PrivateKey
@@ -73,7 +74,7 @@ type client struct {
 	cfg *Config
 	log *logging.Logger
 
-	serverLinkKey wire.PublicKey
+	serverLinkKey kem.PublicKey
 }
 
 func (c *client) Post(ctx context.Context, epoch uint64, signingPrivateKey sign.PrivateKey, signingPublicKey sign.PublicKey, d *pki.MixDescriptor) error {

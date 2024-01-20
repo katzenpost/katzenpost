@@ -3,24 +3,16 @@ module github.com/katzenpost/katzenpost
 go 1.19
 
 require (
-	codeberg.org/vula/highctidh/ctidh1024 v0.0.0-20240112145400-d12c8f0a1ef9
-	codeberg.org/vula/highctidh/ctidh2048 v0.0.0-20240112145400-d12c8f0a1ef9
-	codeberg.org/vula/highctidh/ctidh511 v0.0.0-20240112145400-d12c8f0a1ef9
-	codeberg.org/vula/highctidh/ctidh512 v0.0.0-20240112145400-d12c8f0a1ef9
-	filippo.io/edwards25519 v1.0.0
 	github.com/BurntSushi/toml v1.2.1
 	github.com/awnumar/memguard v0.22.3
 	github.com/carlmjohnson/versioninfo v0.22.4
-	github.com/cloudflare/circl v1.3.7
 	github.com/fxamacker/cbor/v2 v2.4.0
-	github.com/go-faster/xor v1.0.0
 	github.com/golang/protobuf v1.5.2
 	github.com/henrydcase/nobs v0.0.0-20230313231516-25b66236df73
 	github.com/jackc/pgx v3.6.2+incompatible
-	github.com/katzenpost/chacha20 v0.0.0-20190910113340-7ce890d6a556
 	github.com/katzenpost/chacha20poly1305 v0.0.0-20211026103954-7b6fb2fc0129
-	github.com/katzenpost/nyquist v0.0.0-20231024064113-96ae83e5c09b
-	github.com/katzenpost/sntrup4591761 v0.0.0-20231024131303-8755eb1986b8
+	github.com/katzenpost/hpqc v0.0.0-20240120003156-59686a802fde
+	github.com/katzenpost/nyquist v0.0.2
 	github.com/prometheus/client_golang v1.14.0
 	github.com/stretchr/testify v1.8.4
 	github.com/ugorji/go/codec v1.2.8
@@ -38,16 +30,23 @@ require (
 )
 
 require (
+	codeberg.org/dawuud/highctidh v1.0.2024010702-0.20240119231727-003bd97f7b44 // indirect
+	filippo.io/edwards25519 v1.0.0 // indirect
 	github.com/awnumar/memcall v0.1.2 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cespare/xxhash/v2 v2.2.0 // indirect
+	github.com/cloudflare/circl v1.0.1-0.20210909233310-258cb6f0e1ab // indirect
 	github.com/cockroachdb/apd v1.1.0 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/dchest/siphash v1.2.3 // indirect
 	github.com/eapache/queue v1.1.0 // indirect
+	github.com/go-faster/xor v1.0.0 // indirect
 	github.com/gofrs/uuid v4.0.0+incompatible // indirect
 	github.com/jackc/fake v0.0.0-20150926172116-812a484cc733 // indirect
-	github.com/katzenpost/hpqc v0.0.0-20240119071246-a9281bda53d9 // indirect
+	github.com/katzenpost/chacha20 v0.0.0-20190910113340-7ce890d6a556 // indirect
+	github.com/katzenpost/circl v0.0.1-0.20240114190552-a60da6747ebd // indirect
+	github.com/katzenpost/sntrup4591761 v0.0.0-20231024131303-8755eb1986b8 // indirect
+	github.com/katzenpost/sphincsplus v0.0.2-0.20240114192234-1dc77b544e31 // indirect
 	github.com/kr/pretty v0.3.1 // indirect
 	github.com/lib/pq v1.10.3 // indirect
 	github.com/mattn/go-pointer v0.0.1 // indirect
@@ -65,3 +64,7 @@ require (
 	golang.org/x/sys v0.16.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
+
+replace github.com/katzenpost/nyquist => /home/human/code/nyquist
+
+replace github.com/katzenpost/hpqc => /home/human/code/hpqc

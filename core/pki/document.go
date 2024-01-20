@@ -28,8 +28,9 @@ import (
 	"github.com/fxamacker/cbor/v2"
 	"golang.org/x/crypto/blake2b"
 
-	"github.com/katzenpost/katzenpost/core/crypto/cert"
-	"github.com/katzenpost/katzenpost/core/crypto/sign"
+	"github.com/katzenpost/hpqc/sign"
+
+	"github.com/katzenpost/katzenpost/core/cert"
 )
 
 const (

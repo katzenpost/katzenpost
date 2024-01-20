@@ -23,7 +23,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
+	eddsa "github.com/katzenpost/hpqc/sign/ed25519"
 	"github.com/stretchr/testify/assert"
 )
 

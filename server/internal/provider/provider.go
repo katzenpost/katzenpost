@@ -25,7 +25,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/monotime"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"

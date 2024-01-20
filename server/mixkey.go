@@ -22,14 +22,16 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/cloudflare/circl/kem"
-	"github.com/katzenpost/katzenpost/core/crypto/nike"
+	"gopkg.in/op/go-logging.v1"
+
+	"github.com/katzenpost/hpqc/kem"
+	"github.com/katzenpost/hpqc/nike"
+
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/server/internal/constants"
 	"github.com/katzenpost/katzenpost/server/internal/glue"
 	"github.com/katzenpost/katzenpost/server/internal/mixkey"
-	"gopkg.in/op/go-logging.v1"
 )
 
 type mixKeys struct {

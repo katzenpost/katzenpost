@@ -26,7 +26,7 @@ import (
 
 	"github.com/awnumar/memguard"
 	"github.com/fxamacker/cbor/v2"
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/katzenpost/katzenpost/memspool/client"

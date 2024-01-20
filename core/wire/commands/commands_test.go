@@ -21,9 +21,10 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/katzenpost/katzenpost/core/crypto/cert"
-	"github.com/katzenpost/katzenpost/core/crypto/nike/ecdh"
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	ecdh "github.com/katzenpost/hpqc/nike/x25519"
+	"github.com/katzenpost/hpqc/rand"
+
+	"github.com/katzenpost/katzenpost/core/cert"
 	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
@@ -33,7 +34,7 @@ func TestNoOp(t *testing.T) {
 	t.Parallel()
 	require := require.New(t)
 
-	nike := ecdh.NewEcdhNike(rand.Reader)
+	nike := ecdh.Scheme(rand.Reader)
 	forwardPayloadLength := 123
 	nrHops := 5
 
@@ -60,7 +61,7 @@ func TestDisconnect(t *testing.T) {
 	b := cmd.ToBytes()
 	require.Equal(cmdOverhead, len(b), "Disconnect: ToBytes() length")
 
-	nike := ecdh.NewEcdhNike(rand.Reader)
+	nike := ecdh.Scheme(rand.Reader)
 	forwardPayloadLength := 123
 	nrHops := 5
 
@@ -85,7 +86,7 @@ func TestSendPacket(t *testing.T) {
 	b := cmd.ToBytes()
 	require.Equal(cmdOverhead+len(payload), len(b), "SendPacket: ToBytes() length")
 
-	nike := ecdh.NewEcdhNike(rand.Reader)
+	nike := ecdh.Scheme(rand.Reader)
 	forwardPayloadLength := 123
 	nrHops := 5
 	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
@@ -112,7 +113,7 @@ func TestRetrieveMessage(t *testing.T) {
 	b := cmd.ToBytes()
 	require.Equal(cmdOverhead+4, len(b), "RetrieveMessage: ToBytes() length")
 
-	nike := ecdh.NewEcdhNike(rand.Reader)
+	nike := ecdh.Scheme(rand.Reader)
 	forwardPayloadLength := 123
 	nrHops := 5
 	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
@@ -132,7 +133,7 @@ func TestRetrieveMessage(t *testing.T) {
 func TestMessage(t *testing.T) {
 	t.Parallel()
 
-	nike := ecdh.NewEcdhNike(rand.Reader)
+	nike := ecdh.Scheme(rand.Reader)
 	forwardPayloadLength := 2000
 	nrHops := 5
 	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
@@ -230,7 +231,7 @@ func TestGetConsensus(t *testing.T) {
 	b := cmd.ToBytes()
 	require.Equal(getConsensusLength+cmdOverhead, len(b), "GetConsensus: ToBytes() length")
 
-	nike := ecdh.NewEcdhNike(rand.Reader)
+	nike := ecdh.Scheme(rand.Reader)
 	forwardPayloadLength := 123
 	nrHops := 5
 	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
@@ -255,7 +256,7 @@ func TestConsensus(t *testing.T) {
 	b := cmd.ToBytes()
 	require.Len(b, consensusBaseLength+len(cmd.Payload)+cmdOverhead, "GetConsensus: ToBytes() length")
 
-	nike := ecdh.NewEcdhNike(rand.Reader)
+	nike := ecdh.Scheme(rand.Reader)
 	forwardPayloadLength := 123
 	nrHops := 5
 	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
@@ -294,7 +295,7 @@ func TestPostDescriptor(t *testing.T) {
 	b := cmd.ToBytes()
 	require.Equal(postDescriptorLength+len(cmd.Payload)+cmdOverhead, len(b), "PostDescriptor: ToBytes() length")
 
-	nike := ecdh.NewEcdhNike(rand.Reader)
+	nike := ecdh.Scheme(rand.Reader)
 	forwardPayloadLength := 123
 	nrHops := 5
 
@@ -323,7 +324,7 @@ func TestPostDescriptorStatus(t *testing.T) {
 	b := cmd.ToBytes()
 	require.Len(b, postDescriptorStatusLength+cmdOverhead, "PostDescriptorStatus: ToBytes() length")
 
-	nike := ecdh.NewEcdhNike(rand.Reader)
+	nike := ecdh.Scheme(rand.Reader)
 	forwardPayloadLength := 123
 	nrHops := 5
 
@@ -353,7 +354,7 @@ func TestGetVote(t *testing.T) {
 	b := cmd.ToBytes()
 	require.Equal(voteOverhead+cmdOverhead, len(b), "GetVote: ToBytes() length")
 
-	nike := ecdh.NewEcdhNike(rand.Reader)
+	nike := ecdh.Scheme(rand.Reader)
 	forwardPayloadLength := 123
 	nrHops := 5
 
@@ -382,7 +383,7 @@ func TestVote(t *testing.T) {
 	b := cmd.ToBytes()
 	require.Len(b, cmdOverhead+voteOverhead+len(cmd.Payload), "Vote: ToBytes() length")
 
-	nike := ecdh.NewEcdhNike(rand.Reader)
+	nike := ecdh.Scheme(rand.Reader)
 	forwardPayloadLength := 123
 	nrHops := 5
 
@@ -412,7 +413,7 @@ func TestVoteStatus(t *testing.T) {
 	b := cmd.ToBytes()
 	require.Len(b, voteStatusLength+cmdOverhead, "VoteStatus: ToBytes() length")
 
-	nike := ecdh.NewEcdhNike(rand.Reader)
+	nike := ecdh.Scheme(rand.Reader)
 	forwardPayloadLength := 123
 	nrHops := 5
 
@@ -447,7 +448,7 @@ func TestReveal(t *testing.T) {
 	b := cmd.ToBytes()
 	require.Len(b, cmdOverhead+revealOverhead+32, "Reveal: ToBytes() length")
 
-	nike := ecdh.NewEcdhNike(rand.Reader)
+	nike := ecdh.Scheme(rand.Reader)
 	forwardPayloadLength := 123
 	nrHops := 5
 
@@ -477,7 +478,7 @@ func TestRevealtatus(t *testing.T) {
 	b := cmd.ToBytes()
 	require.Len(b, revealStatusLength+cmdOverhead, "RevealStatus: ToBytes() length")
 
-	nike := ecdh.NewEcdhNike(rand.Reader)
+	nike := ecdh.Scheme(rand.Reader)
 	forwardPayloadLength := 123
 	nrHops := 5
 	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
@@ -506,7 +507,7 @@ func TestCert(t *testing.T) {
 	b := cmd.ToBytes()
 	require.Len(b, cmdOverhead+certOverhead+len(cmd.Payload), "Cert: ToBytes() length")
 
-	nike := ecdh.NewEcdhNike(rand.Reader)
+	nike := ecdh.Scheme(rand.Reader)
 	forwardPayloadLength := 123
 	nrHops := 5
 
@@ -536,7 +537,7 @@ func TestCertStatus(t *testing.T) {
 	b := cmd.ToBytes()
 	require.Len(b, certStatusLength+cmdOverhead, "CertStatus: ToBytes() length")
 
-	nike := ecdh.NewEcdhNike(rand.Reader)
+	nike := ecdh.Scheme(rand.Reader)
 	forwardPayloadLength := 123
 	nrHops := 5
 	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
@@ -565,7 +566,7 @@ func TestSig(t *testing.T) {
 	b := cmd.ToBytes()
 	require.Len(b, cmdOverhead+sigOverhead+len(cmd.Payload), "Sig: ToBytes() length")
 
-	nike := ecdh.NewEcdhNike(rand.Reader)
+	nike := ecdh.Scheme(rand.Reader)
 	forwardPayloadLength := 123
 	nrHops := 5
 
@@ -595,7 +596,7 @@ func TestSigStatus(t *testing.T) {
 	b := cmd.ToBytes()
 	require.Len(b, revealStatusLength+cmdOverhead, "SigStatus: ToBytes() length")
 
-	nike := ecdh.NewEcdhNike(rand.Reader)
+	nike := ecdh.Scheme(rand.Reader)
 	forwardPayloadLength := 123
 	nrHops := 5
 	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)

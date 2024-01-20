@@ -22,8 +22,9 @@ import (
 	"github.com/fxamacker/cbor/v2"
 	"github.com/stretchr/testify/require"
 
-	"github.com/katzenpost/katzenpost/core/crypto/nike/ecdh"
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	ecdh "github.com/katzenpost/hpqc/nike/x25519"
+	"github.com/katzenpost/hpqc/rand"
+
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/server/cborplugin"
 )
@@ -37,7 +38,7 @@ func TestSerializationSanity(t *testing.T) {
 	serialized, err := cbor.Marshal(reply)
 	require.NoError(err)
 
-	mynike := ecdh.NewEcdhNike(rand.Reader)
+	mynike := ecdh.Scheme(rand.Reader)
 	nrHops := 5
 	geo := geo.GeometryFromUserForwardPayloadLength(mynike, 2000, true, nrHops)
 

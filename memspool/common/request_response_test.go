@@ -19,9 +19,10 @@ package common
 import (
 	"testing"
 
-	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/stretchr/testify/require"
+
+	"github.com/katzenpost/hpqc/rand"
+	eddsa "github.com/katzenpost/hpqc/sign/ed25519"
 )
 
 func TestCommandSerialization(t *testing.T) {

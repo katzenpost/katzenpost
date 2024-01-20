@@ -1,15 +1,12 @@
 package wire
 
 import (
-	"crypto/rand"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/katzenpost/nyquist/kem"
-
-	"github.com/katzenpost/katzenpost/core/crypto/kem/schemes"
-	"github.com/katzenpost/katzenpost/core/crypto/pem"
+	"github.com/katzenpost/hpqc/kem/pem"
+	"github.com/katzenpost/hpqc/kem/schemes"
 )
 
 func TestToFromPEM(t *testing.T) {
@@ -42,14 +39,10 @@ rJoEjFXoChJF5xWicIVxi0F3k6KTZYTCus+SlMJkVLFwmf9Ui+rDIqVwJ1C6tzKm
 7pZc295vLdQ4w4gOVmGd9w==
 -----END KYBER768-X25519 PUBLIC KEY-----
 `
-	s := &scheme{
-		KEM: kem.FromKEM(schemes.ByName("Kyber768-X25519")),
-	}
-
-	_, publicKey := s.GenerateKeypair(rand.Reader)
-	err := pem.FromPEMString(linkPemString1, publicKey)
+	s := schemes.ByName("Kyber768-X25519")
+	mypublicKey, err := pem.FromPublicPEMString(linkPemString1, s)
 	require.NoError(t, err)
 
-	linkPemString2 := pem.ToPEMBytes(publicKey)
+	linkPemString2 := pem.ToPublicPEMBytes(mypublicKey)
 	require.Equal(t, string(linkPemString1), string(linkPemString2))
 }

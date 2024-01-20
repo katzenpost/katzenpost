@@ -17,9 +17,10 @@
 package client
 
 import (
+	"github.com/katzenpost/hpqc/rand"
+	eddsa "github.com/katzenpost/hpqc/sign/ed25519"
+
 	"github.com/katzenpost/katzenpost/client"
-	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/memspool/common"
 )
 

@@ -28,14 +28,16 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/cloudflare/circl/kem"
-	"github.com/katzenpost/katzenpost/core/crypto/nike"
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/yawning/bloom"
+	bolt "go.etcd.io/bbolt"
+
+	"github.com/katzenpost/hpqc/kem"
+	"github.com/katzenpost/hpqc/nike"
+	"github.com/katzenpost/hpqc/rand"
+
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/worker"
-	"github.com/yawning/bloom"
-	bolt "go.etcd.io/bbolt"
 )
 
 const (

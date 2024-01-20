@@ -33,7 +33,7 @@ import (
 	"github.com/BurntSushi/toml"
 	"github.com/fxamacker/cbor/v2"
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
-	"github.com/katzenpost/katzenpost/core/crypto/sign"
+	"github.com/katzenpost/hpqc/sign"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/utils"

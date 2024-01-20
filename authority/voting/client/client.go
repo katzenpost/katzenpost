@@ -26,11 +26,16 @@ import (
 
 	"gopkg.in/op/go-logging.v1"
 
+	nyquistkem "github.com/katzenpost/nyquist/kem"
+	"github.com/katzenpost/nyquist/seec"
+
+	"github.com/katzenpost/hpqc/kem"
+	kempem "github.com/katzenpost/hpqc/kem/pem"
+	"github.com/katzenpost/hpqc/rand"
+	"github.com/katzenpost/hpqc/sign"
+
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
-	"github.com/katzenpost/katzenpost/core/crypto/cert"
-	"github.com/katzenpost/katzenpost/core/crypto/pem"
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
-	"github.com/katzenpost/katzenpost/core/crypto/sign"
+	"github.com/katzenpost/katzenpost/core/cert"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/wire"
@@ -42,7 +47,7 @@ var defaultDialer = &net.Dialer{}
 // authorityAuthenticator implements the PeerAuthenticator interface
 type authorityAuthenticator struct {
 	IdentityPublicKey sign.PublicKey
-	LinkPublicKey     wire.PublicKey
+	LinkPublicKey     kem.PublicKey
 	log               *logging.Logger
 }
 
@@ -54,8 +59,16 @@ func (a *authorityAuthenticator) IsPeerValid(creds *wire.PeerCredentials) bool {
 		a.log.Warningf("voting/Client: IsPeerValid(): AD mismatch: %x != %x", identityHash[:], creds.AdditionalData[:sign.PublicKeyHashSize])
 		return false
 	}
-	if !hmac.Equal(a.LinkPublicKey.Bytes(), creds.PublicKey.Bytes()) {
-		a.log.Warningf("voting/Client: IsPeerValid(): Link Public Key mismatch: %s != %s", pem.ToPEMString(a.LinkPublicKey), pem.ToPEMString(creds.PublicKey))
+	blob1, err := a.LinkPublicKey.MarshalBinary()
+	if err != nil {
+		panic(err)
+	}
+	blob2, err := creds.PublicKey.MarshalBinary()
+	if err != nil {
+		panic(err)
+	}
+	if !hmac.Equal(blob1, blob2) {
+		a.log.Warningf("voting/Client: IsPeerValid(): Link Public Key mismatch: %s != %s", kempem.ToPublicPEMString(a.LinkPublicKey), kempem.ToPublicPEMString(creds.PublicKey))
 		return false
 	}
 	return true
@@ -64,7 +77,7 @@ func (a *authorityAuthenticator) IsPeerValid(creds *wire.PeerCredentials) bool {
 // Config is a voting authority pki.Client instance.
 type Config struct {
 	// LinkKey is the link key for the client's wire connections.
-	LinkKey wire.PrivateKey
+	LinkKey kem.PrivateKey
 
 	// LogBackend is the `core/log` Backend instance to use for logging.
 	LogBackend *log.Backend
@@ -117,7 +130,7 @@ func newConnector(cfg *Config) *connector {
 	return p
 }
 
-func (p *connector) initSession(ctx context.Context, doneCh <-chan interface{}, linkKey wire.PrivateKey, signingKey sign.PublicKey, peer *config.Authority) (*connection, error) {
+func (p *connector) initSession(ctx context.Context, doneCh <-chan interface{}, linkKey kem.PrivateKey, signingKey sign.PublicKey, peer *config.Authority) (*connection, error) {
 	var conn net.Conn
 	var err error
 
@@ -194,7 +207,7 @@ func (p *connector) roundTrip(s *wire.Session, cmd commands.Command) (commands.C
 	return s.RecvCommand()
 }
 
-func (p *connector) allPeersRoundTrip(ctx context.Context, linkKey wire.PrivateKey, signingKey sign.PublicKey, cmd commands.Command) ([]commands.Command, error) {
+func (p *connector) allPeersRoundTrip(ctx context.Context, linkKey kem.PrivateKey, signingKey sign.PublicKey, cmd commands.Command) ([]commands.Command, error) {
 	doneCh := make(chan interface{})
 	defer close(doneCh)
 	responses := []commands.Command{}
@@ -217,7 +230,7 @@ func (p *connector) allPeersRoundTrip(ctx context.Context, linkKey wire.PrivateK
 	return responses, nil
 }
 
-func (p *connector) fetchConsensus(ctx context.Context, linkKey wire.PrivateKey, epoch uint64) (commands.Command, error) {
+func (p *connector) fetchConsensus(ctx context.Context, linkKey kem.PrivateKey, epoch uint64) (commands.Command, error) {
 	doneCh := make(chan interface{})
 	defer close(doneCh)
 
@@ -316,8 +329,12 @@ func (c *Client) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, 
 
 	// Generate a random keypair to use for the link authentication.
 	scheme := wire.DefaultScheme
-	linkKey, _ := scheme.GenerateKeypair(rand.Reader)
-	defer linkKey.Reset()
+	genRand, err := seec.GenKeyPRPAES(rand.Reader, 256)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	_, linkKey := nyquistkem.GenerateKeypair(scheme, genRand)
 
 	// Initialize the TCP/IP connection, and wire session.
 	doneCh := make(chan interface{})

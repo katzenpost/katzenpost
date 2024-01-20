@@ -24,7 +24,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/server/userdb"
 	bolt "go.etcd.io/bbolt"

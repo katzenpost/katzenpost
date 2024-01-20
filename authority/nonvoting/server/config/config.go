@@ -28,9 +28,10 @@ import (
 	"github.com/BurntSushi/toml"
 	"golang.org/x/net/idna"
 
-	"github.com/katzenpost/katzenpost/core/crypto/cert"
-	"github.com/katzenpost/katzenpost/core/crypto/pem"
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/hpqc/util/pem"
+
+	"github.com/katzenpost/katzenpost/core/cert"
+	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/utils"
 )

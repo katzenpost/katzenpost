@@ -26,7 +26,7 @@ import (
 
 	"github.com/katzenpost/katzenpost/server/internal/instrument"
 
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/monotime"
 	cpki "github.com/katzenpost/katzenpost/core/pki"

@@ -20,13 +20,15 @@ import (
 	"os"
 	"testing"
 
-	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
-	"github.com/katzenpost/katzenpost/core/crypto/nike/ecdh"
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/stretchr/testify/assert"
+
+	ecdh "github.com/katzenpost/hpqc/nike/x25519"
+	"github.com/katzenpost/hpqc/rand"
+	eddsa "github.com/katzenpost/hpqc/sign/ed25519"
+
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/memspool/common"
-	"github.com/stretchr/testify/assert"
 )
 
 func TestSpool(t *testing.T) {
@@ -113,7 +115,7 @@ func TestPersistence(t *testing.T) {
 	assert.NoError(err)
 	messages := make([][]byte, 1)
 
-	mynike := ecdh.NewEcdhNike(rand.Reader)
+	mynike := ecdh.Scheme(rand.Reader)
 	nrHops := 5
 	geo := geo.GeometryFromUserForwardPayloadLength(mynike, 2000, true, nrHops)
 

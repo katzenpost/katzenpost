@@ -29,10 +29,13 @@ import (
 	"github.com/BurntSushi/toml"
 	"golang.org/x/net/idna"
 
-	"github.com/katzenpost/katzenpost/core/crypto/cert"
-	"github.com/katzenpost/katzenpost/core/crypto/pem"
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
-	"github.com/katzenpost/katzenpost/core/crypto/sign"
+	"github.com/katzenpost/hpqc/kem"
+	"github.com/katzenpost/hpqc/kem/pem"
+	"github.com/katzenpost/hpqc/rand"
+	"github.com/katzenpost/hpqc/sign"
+	utilpem "github.com/katzenpost/hpqc/util/pem"
+
+	"github.com/katzenpost/katzenpost/core/cert"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/utils"
 	"github.com/katzenpost/katzenpost/core/wire"
@@ -254,26 +257,30 @@ type Authority struct {
 	// the public identity key key.
 	IdentityPublicKey sign.PublicKey
 	// LinkPublicKeyPem is string containing the PEM format of the peer's public link layer key.
-	LinkPublicKey wire.PublicKey
+	LinkPublicKey kem.PublicKey
 	// Addresses are the IP address/port combinations that the peer authority
 	// uses for the Directory Authority service.
 	Addresses []string
 }
 
-// UnmarshalTOML deserializes into non-nil instances of sign.PublicKey and wire.PublicKey
+// UnmarshalTOML deserializes into non-nil instances of sign.PublicKey and kem.PublicKey
 func (a *Authority) UnmarshalTOML(v interface{}) error {
 	_, a.IdentityPublicKey = cert.Scheme.NewKeypair()
-	_, a.LinkPublicKey = wire.DefaultScheme.GenerateKeypair(rand.Reader)
+	var err error
+	a.LinkPublicKey, _, err = wire.DefaultScheme.GenerateKeyPair()
+	if err != nil {
+		return err
+	}
 
 	data, _ := v.(map[string]interface{})
 	a.Identifier, _ = data["Identifier"].(string)
 	idPublicKeyString, _ := data["IdentityPublicKey"].(string)
-	err := a.IdentityPublicKey.UnmarshalText([]byte(idPublicKeyString))
+	err = a.IdentityPublicKey.UnmarshalText([]byte(idPublicKeyString))
 	if err != nil {
 		return err
 	}
 	linkPublicKeyString, _ := data["LinkPublicKey"].(string)
-	err = a.LinkPublicKey.UnmarshalText([]byte(linkPublicKeyString))
+	a.LinkPublicKey, err = pem.FromPublicPEMString(linkPublicKeyString, wire.DefaultScheme)
 	if err != nil {
 		return err
 	}
@@ -461,7 +468,7 @@ func (cfg *Config) FixupAndValidate() error {
 		}
 		idMap[v.Identifier] = v
 
-		err := pem.FromFile(filepath.Join(cfg.Server.DataDir, v.IdentityPublicKeyPem), identityKey)
+		err := utilpem.FromFile(filepath.Join(cfg.Server.DataDir, v.IdentityPublicKeyPem), identityKey)
 		if err != nil {
 			return err
 		}

@@ -36,12 +36,14 @@ import (
 	"golang.org/x/crypto/blake2b"
 	"gopkg.in/op/go-logging.v1"
 
+	"github.com/katzenpost/hpqc/kem"
+	"github.com/katzenpost/hpqc/util/pem"
+
+	"github.com/katzenpost/hpqc/rand"
+	"github.com/katzenpost/hpqc/sign"
 	"github.com/katzenpost/katzenpost/authority/voting/client"
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
-	"github.com/katzenpost/katzenpost/core/crypto/cert"
-	"github.com/katzenpost/katzenpost/core/crypto/pem"
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
-	"github.com/katzenpost/katzenpost/core/crypto/sign"
+	"github.com/katzenpost/katzenpost/core/cert"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/monotime"
 	"github.com/katzenpost/katzenpost/core/pki"
@@ -101,7 +103,7 @@ type state struct {
 	authorizedMixes       map[[publicKeyHashSize]byte]bool
 	authorizedProviders   map[[publicKeyHashSize]byte]string
 	authorizedAuthorities map[[publicKeyHashSize]byte]bool
-	authorityLinkKeys     map[[publicKeyHashSize]byte]wire.PublicKey
+	authorityLinkKeys     map[[publicKeyHashSize]byte]kem.PublicKey
 
 	documents    map[uint64]*pki.Document
 	myconsensus  map[uint64]*pki.Document
@@ -1831,7 +1833,7 @@ func newState(s *Server) (*state, error) {
 	}
 	st.reverseHash[st.s.identityPublicKey.Sum256()] = st.s.identityPublicKey
 
-	st.authorityLinkKeys = make(map[[publicKeyHashSize]byte]wire.PublicKey)
+	st.authorityLinkKeys = make(map[[publicKeyHashSize]byte]kem.PublicKey)
 	for _, v := range st.s.cfg.Authorities {
 		pk := v.IdentityPublicKey.Sum256()
 		st.authorityLinkKeys[pk] = v.LinkPublicKey

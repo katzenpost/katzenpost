@@ -24,19 +24,19 @@ import (
 	"net"
 	"strconv"
 
-	"github.com/cloudflare/circl/kem"
 	"github.com/fxamacker/cbor/v2"
+
 	"golang.org/x/net/idna"
 
-	kemschemes "github.com/cloudflare/circl/kem/schemes"
+	"github.com/katzenpost/hpqc/kem"
+	kemschemes "github.com/katzenpost/hpqc/kem/schemes"
+	"github.com/katzenpost/hpqc/nike"
+	"github.com/katzenpost/hpqc/nike/schemes"
+	"github.com/katzenpost/hpqc/sign"
 
-	"github.com/katzenpost/katzenpost/core/crypto/cert"
-	"github.com/katzenpost/katzenpost/core/crypto/nike"
-	"github.com/katzenpost/katzenpost/core/crypto/nike/schemes"
-	"github.com/katzenpost/katzenpost/core/crypto/sign"
+	"github.com/katzenpost/katzenpost/core/cert"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
-	"github.com/katzenpost/katzenpost/core/wire"
 )
 
 const (
@@ -64,7 +64,7 @@ type MixDescriptor struct {
 	Signature *cert.Signature `cbor:"-"`
 
 	// LinkKey is the node's wire protocol public key.
-	LinkKey wire.PublicKey
+	LinkKey []byte
 
 	// MixKeys is a map of epochs to Sphinx keys.
 	MixKeys map[uint64][]byte
@@ -144,8 +144,7 @@ func (d *MixDescriptor) UnmarshalBinary(data []byte) error {
 	// Instantiate concrete instances so we deserialize into the right types
 	idPublicKey := cert.Scheme.NewEmptyPublicKey()
 	d.IdentityKey = idPublicKey
-	linkPub := wire.DefaultScheme.NewEmptyPublicKey()
-	d.LinkKey = linkPub
+	d.LinkKey = []byte{}
 
 	// encoding type is cbor
 	err = cbor.Unmarshal(certified, (*mixdescriptor)(d))
@@ -221,9 +220,8 @@ func VerifyDescriptor(rawDesc []byte) (*MixDescriptor, error) {
 	// that rawDesc will deserialize into the right type
 	d := new(MixDescriptor)
 	_, idPubKey := cert.Scheme.NewKeypair()
-	linkPub := wire.DefaultScheme.NewEmptyPublicKey()
 	d.IdentityKey = idPubKey
-	d.LinkKey = linkPub
+	d.LinkKey = []byte{}
 	err := d.UnmarshalBinary(rawDesc)
 	if err != nil {
 		return nil, err
