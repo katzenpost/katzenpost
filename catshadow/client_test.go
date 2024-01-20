@@ -29,6 +29,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/katzenpost/core/log2"
 )
 
 func createRandomStateFile(t *testing.T) string {
@@ -54,7 +55,7 @@ func TestBlobStorage(t *testing.T) {
 	mylog := log.NewWithOptions(os.Stderr, log.Options{
 		ReportTimestamp: true,
 		Prefix:          "catshadow",
-		Level:           log.ParseLevel("debug"),
+		Level:           log2.ParseLevel("debug"),
 	})
 
 	stateWorker, err := NewStateWriter(mylog.WithPrefix("state_writer"), aliceState, passphrase)

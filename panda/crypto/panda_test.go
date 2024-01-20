@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/charmbracelet/log"
+	"github.com/katzenpost/katzenpost/core/log2"
 	"github.com/stretchr/testify/require"
 )
 
@@ -100,7 +101,7 @@ func TestSerialise(t *testing.T) {
 	mylog := log.NewWithOptions(os.Stderr, log.Options{
 		ReportTimestamp: true,
 		Prefix:          "TestSerialise",
-		Level:           log.ParseLevel("debug"),
+		Level:           log2.ParseLevel("debug"),
 	})
 	kx, err := NewKeyExchange(rand.Reader, mylog.WithPrefix("a_kx"), mp, srv, secret, []byte{1}, contactID, pandaChan, shutdownChan)
 	require.NoError(err)
@@ -155,7 +156,7 @@ func TestKeyExchange(t *testing.T) {
 	mylog := log.NewWithOptions(os.Stderr, log.Options{
 		ReportTimestamp: true,
 		Prefix:          "TestKeyExchange",
-		Level:           log.ParseLevel("debug"),
+		Level:           log2.ParseLevel("debug"),
 	})
 
 	go runKX(a, mylog.WithPrefix("a_kx"), mp, srv, secret, msg1)
@@ -188,7 +189,7 @@ func NoTestUpdateSRV(t *testing.T) {
 	mylog := log.NewWithOptions(os.Stderr, log.Options{
 		ReportTimestamp: true,
 		Prefix:          "NoTestUpdateSRV",
-		Level:           log.ParseLevel("debug"),
+		Level:           log2.ParseLevel("debug"),
 	})
 
 	kx1, shutdownChan, err := getKX(a, mylog.WithPrefix("a_kx"), mp, srv1, secret, msg1)
@@ -272,7 +273,7 @@ func TestKeyExchangeWithSerialization(t *testing.T) {
 	mylog := log.NewWithOptions(os.Stderr, log.Options{
 		ReportTimestamp: true,
 		Prefix:          "TestKeyExchangeWithSerialization",
-		Level:           log.ParseLevel("debug"),
+		Level:           log2.ParseLevel("debug"),
 	})
 
 	go runKX(a, mylog.WithPrefix("a_kx"), mp, srv, secret, msg1)

@@ -74,12 +74,16 @@ func NewDaemon(cfg *config.Config, egressSize int) (*Daemon, error) {
 			}
 		}
 	}
+	logLevel, err := log.ParseLevel(cfg.Logging.Level)
+	if err != nil {
+		return nil, err
+	}
 	d := &Daemon{
 		logbackend: logbackend,
 		log: log.NewWithOptions(logbackend, log.Options{
 			ReportTimestamp: true,
 			Prefix:          "client2_daemon",
-			Level:           log.ParseLevel(cfg.Logging.Level),
+			Level:           logLevel,
 		}),
 		cfg:        cfg,
 		egressCh:   make(chan *Request, egressSize),

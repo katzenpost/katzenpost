@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/log"
+	"github.com/katzenpost/katzenpost/core/log2"
 	"github.com/stretchr/testify/require"
 )
 
@@ -50,7 +51,7 @@ func NoTestARQ(t *testing.T) {
 	logger := log.NewWithOptions(logbackend, log.Options{
 		ReportTimestamp: true,
 		Prefix:          "TestARQ",
-		Level:           log.ParseLevel("debug"),
+		Level:           log2.ParseLevel("debug"),
 	})
 
 	m := &mockSentEventSender{}

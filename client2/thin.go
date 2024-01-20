@@ -66,11 +66,15 @@ type ThinClient struct {
 
 // NewThinClient creates a new thing client.
 func NewThinClient(cfg *config.Config) *ThinClient {
+	logLevel, err := log.ParseLevel(cfg.Logging.Level)
+	if err != nil {
+		panic(err)
+	}
 	return &ThinClient{
 		cfg: cfg,
 		log: log.NewWithOptions(os.Stderr, log.Options{
 			Prefix: "thin_client",
-			Level:  log.DebugLevel,
+			Level:  logLevel,
 		}),
 		logBackend: log.WithPrefix("backend"),
 		receivedCh: make(chan ThinResponse),

@@ -26,6 +26,7 @@ import (
 	"github.com/charmbracelet/log"
 	"github.com/stretchr/testify/require"
 
+	"github.com/katzenpost/katzenpost/core/log2"
 	"github.com/katzenpost/katzenpost/reunion/commands"
 	"github.com/katzenpost/katzenpost/reunion/epochtime"
 	"github.com/katzenpost/katzenpost/reunion/epochtime/katzenpost"
@@ -80,7 +81,7 @@ func TestClientServerBasics1(t *testing.T) {
 	dblog := log.NewWithOptions(os.Stderr, log.Options{
 		ReportTimestamp: true,
 		Prefix:          "Reunion_TestClientServerBasics1",
-		Level:           log.ParseLevel("debug"),
+		Level:           log2.ParseLevel("debug"),
 	})
 
 	reunionDB, err := NewMockReunionDB(dblog, clock)
@@ -191,7 +192,7 @@ func TestClientServerBasics2(t *testing.T) {
 	dblog := log.NewWithOptions(os.Stderr, log.Options{
 		ReportTimestamp: true,
 		Prefix:          "Reunion_TestClientServerBasics2",
-		Level:           log.ParseLevel("debug"),
+		Level:           log2.ParseLevel("debug"),
 	})
 	reunionDB, err := NewMockReunionDB(dblog, clock)
 	require.NoError(err)
@@ -273,7 +274,7 @@ func NoTestClientServerBasics3(t *testing.T) {
 	dblog := log.NewWithOptions(os.Stderr, log.Options{
 		ReportTimestamp: true,
 		Prefix:          "Reunion_TestClientServerBasics3",
-		Level:           log.ParseLevel("debug"),
+		Level:           log2.ParseLevel("debug"),
 	})
 	reunionDB, err := NewMockReunionDB(dblog, clock)
 	require.NoError(err)
@@ -398,7 +399,7 @@ func TestClientServerBasics4(t *testing.T) {
 	dblog := log.NewWithOptions(os.Stderr, log.Options{
 		ReportTimestamp: true,
 		Prefix:          "Reunion_TestClientServerBasics4",
-		Level:           log.ParseLevel("debug"),
+		Level:           log2.ParseLevel("debug"),
 	})
 	reunionDB, err := NewMockReunionDB(dblog, clock)
 	require.NoError(err)
@@ -533,7 +534,7 @@ func TestClientStateSavingAndRecovery(t *testing.T) {
 	dblog := log.NewWithOptions(os.Stderr, log.Options{
 		ReportTimestamp: true,
 		Prefix:          "Reunion_TestClientStateSavingAndRecovery",
-		Level:           log.ParseLevel("debug"),
+		Level:           log2.ParseLevel("debug"),
 	})
 	reunionDB, err := NewMockReunionDB(dblog, clock)
 	require.NoError(err)

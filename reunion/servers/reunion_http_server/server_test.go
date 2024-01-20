@@ -25,6 +25,7 @@ import (
 	"github.com/charmbracelet/log"
 	"github.com/stretchr/testify/require"
 
+	"github.com/katzenpost/katzenpost/core/log2"
 	"github.com/katzenpost/katzenpost/reunion/client"
 	"github.com/katzenpost/katzenpost/reunion/epochtime/katzenpost"
 	"github.com/katzenpost/katzenpost/reunion/transports/http"
@@ -45,7 +46,7 @@ func TestHTTPServer2(t *testing.T) {
 	dblog := log.NewWithOptions(os.Stderr, log.Options{
 		ReportTimestamp: true,
 		Prefix:          "TestHTTPServer2",
-		Level:           log.ParseLevel("debug"),
+		Level:           log2.ParseLevel("debug"),
 	})
 
 	_, reunionServer, err := runHTTPServer(address, urlPath, logPath, logLevel, clock, stateFile.Name())
@@ -145,7 +146,7 @@ func TestHTTPServer3(t *testing.T) {
 	dblog := log.NewWithOptions(os.Stderr, log.Options{
 		ReportTimestamp: true,
 		Prefix:          "Reunion_TestHTTPServer3",
-		Level:           log.ParseLevel("debug"),
+		Level:           log2.ParseLevel("debug"),
 	})
 
 	srv := []byte{1, 2, 3}
