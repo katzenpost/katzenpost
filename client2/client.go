@@ -126,9 +126,14 @@ func New(cfg *config.Config, logbackend io.Writer) (*Client, error) {
 		return nil, err
 	}
 	c.cfg = cfg
+	logLevel, err := log.ParseLevel(cfg.Logging.Level)
+	if err != nil {
+		return nil, err
+	}
 	c.log = log.NewWithOptions(logbackend, log.Options{
 		ReportTimestamp: true,
 		Prefix:          "client2",
+		Level:           logLevel,
 	})
 
 	c.haltedCh = make(chan interface{})

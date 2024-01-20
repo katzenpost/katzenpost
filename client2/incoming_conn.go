@@ -184,9 +184,13 @@ func newIncomingConn(l *listener, conn *net.UnixConn) *incomingConn {
 		sendToClientCh:    make(chan *Response, 2),
 	}
 
+	logLevel, err := log.ParseLevel(l.client.cfg.Logging.Level)
+	if err != nil {
+		panic(err)
+	}
 	c.log = log.NewWithOptions(l.logbackend, log.Options{
 		ReportTimestamp: true,
-		Level:           log.DebugLevel,
+		Level:           logLevel,
 		Prefix:          fmt.Sprintf("incoming:%d", c.appID),
 	})
 

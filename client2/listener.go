@@ -165,12 +165,15 @@ func (l *listener) getConnection(appID uint64) *incomingConn {
 // New creates a new listener.
 func NewListener(client *Client, rates *Rates, egressCh chan *Request, logbackend io.Writer) (*listener, error) {
 	var err error
-
+	logLevel, err := log.ParseLevel(client.cfg.Logging.Level)
+	if err != nil {
+		return nil, err
+	}
 	l := &listener{
 		client: client,
 		log: log.NewWithOptions(logbackend, log.Options{
 			Prefix: "listener",
-			Level:  log.DebugLevel,
+			Level:  logLevel,
 		}),
 		logbackend: logbackend,
 		conns:      make(map[uint64]*incomingConn),

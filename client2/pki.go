@@ -15,6 +15,7 @@ import (
 
 	vServer "github.com/katzenpost/katzenpost/authority/voting/server"
 	"github.com/katzenpost/katzenpost/core/epochtime"
+	"github.com/katzenpost/katzenpost/core/log2"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"github.com/katzenpost/katzenpost/core/worker"
@@ -281,7 +282,7 @@ func newPKI(c *Client) *pki {
 	p.c = c
 	p.log = log.NewWithOptions(c.logbackend, log.Options{
 		Prefix: "client2/pki",
-		Level:  log.DebugLevel,
+		Level:  log2.ParseLevel(c.cfg.Logging.Level),
 	})
 
 	p.failedFetches = make(map[uint64]error)

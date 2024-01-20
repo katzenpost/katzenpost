@@ -811,9 +811,13 @@ func (c *connection) start() {
 func newConnection(c *Client) *connection {
 	k := new(connection)
 	k.client = c
+	logLevel, err := log.ParseLevel(c.cfg.Logging.Level)
+	if err != nil {
+		panic(err)
+	}
 	k.log = log.NewWithOptions(c.logbackend, log.Options{
 		Prefix: "client2/conn",
-		Level:  log.DebugLevel,
+		Level:  logLevel,
 	})
 
 	k.log.Debug("newConnection")
