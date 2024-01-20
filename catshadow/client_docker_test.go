@@ -37,6 +37,7 @@ import (
 	"github.com/katzenpost/katzenpost/client2"
 	"github.com/katzenpost/katzenpost/client2/config"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/katzenpost/core/log2"
 )
 
 func TestAllCatshadow(t *testing.T) {
@@ -110,7 +111,7 @@ func createCatshadowClientWithState(t *testing.T, stateFile string) *Client {
 	debugLog := log.NewWithOptions(os.Stderr, log.Options{
 		ReportTimestamp: true,
 		Prefix:          "createCatshadowClientWithState",
-		Level:           log.ParseLevel("debug"),
+		Level:           log2.ParseLevel("debug"),
 	})
 
 	catShadowClient, err = NewClientAndRemoteSpool(context.Background(), debugLog, c, stateWorker)
@@ -141,7 +142,7 @@ func reloadCatshadowState(t *testing.T, stateFile string) *Client {
 	debugLog := log.NewWithOptions(os.Stderr, log.Options{
 		ReportTimestamp: true,
 		Prefix:          "reloadCatshadowState",
-		Level:           log.ParseLevel("debug"),
+		Level:           log2.ParseLevel("debug"),
 	})
 
 	catShadowClient, err = New(debugLog, c, stateWorker, state)
