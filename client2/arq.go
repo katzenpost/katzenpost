@@ -243,6 +243,15 @@ func (a *ARQ) Send(appid *[AppIDLength]byte, id *[MessageIDLength]byte, payload 
 	}
 
 	response := &Response{
+		AppID: appid,
+		MessageSentEvent: &MessageSentEvent{
+			MessageID: id,
+			SentAt:    time.Now(),
+			ReplyETA:  rtt,
+			Err:       nil,
+		},
+	}
+	/*
 		ID:            id,
 		SURBID:        surbID,
 		AppID:         appid,
@@ -250,7 +259,7 @@ func (a *ARQ) Send(appid *[AppIDLength]byte, id *[MessageIDLength]byte, payload 
 		ReplyETA:      rtt,
 		Err:           err,
 		IsMessageSent: true,
-	}
+	}*/
 	a.sentEventSender.SentEvent(response)
 
 	return nil

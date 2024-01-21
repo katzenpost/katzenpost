@@ -3,48 +3,21 @@
 package client2
 
 import (
-	"time"
-
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 )
 
 type Response struct {
-	// ID is the unique identifier with respect to the Request Payload.
-	// This is only used by the ARQ.
-	ID *[MessageIDLength]byte `cbor:id`
-
-	// SURBID must be a unique identity for each request.
-	SURBID *[sConstants.SURBIDLength]byte `cbor:surbid`
-
 	// AppID must be a unique identity for the client application
 	// that is receiving this Response.
-	AppID *[AppIDLength]byte `cbor:id`
+	AppID *[AppIDLength]byte `cbor:app_id`
 
-	// Payload contains the Response payload, a SURB reply.
-	Payload []byte `cbor:payload`
+	ConnectionStatusEvent *ConnectionStatusEvent `cbor:connection_status_event`
 
-	// IsMessageSent is used to indicate that this response
-	// identifies a specific message was sent sucessfully.
-	IsMessageSent bool `cbor:is_message_sent`
+	NewPKIDocumentEvent *NewPKIDocumentEvent `cbor:new_pki_document_event`
 
-	// SentAt contains the time the message was sent.
-	SentAt time.Time `cbor:sent_at`
+	MessageSentEvent *MessageSentEvent `cbor:message_sent_event`
 
-	// ReplyETA is the expected round trip time to receive a response.
-	ReplyETA time.Duration `cbor:reply_eta`
-
-	// Err is the error encountered when sending the message if any.
-	Err error `cbor:err`
-
-	// IsStatus is set to true if Payload should be nil and IsConnected
-	// regarded as the latest connection status.
-	IsStatus bool `cbor:is_status`
-	// IsConnected is the latest connection status if IsStatus is true.
-	IsConnected bool `cbor:is_connected`
-
-	// IsPKIDoc is to to true if the Payload contains a PKI document stripped
-	// of signatures.
-	IsPKIDoc bool `cbor:is_pki_doc`
+	MessageReplyEvent *MessageReplyEvent `cbor:message_reply_event`
 }
 
 type Request struct {
@@ -62,7 +35,7 @@ type Request struct {
 
 	// AppID must be a unique identity for the client application
 	// that is sending this Request.
-	AppID *[AppIDLength]byte `cbor:id`
+	AppID *[AppIDLength]byte `cbor:app_id`
 
 	// DestinationIdHash is 32 byte hash of the destination Provider's
 	// identity public key.
@@ -81,11 +54,6 @@ type Request struct {
 	// IsARQSendOp is set to true if the intent is to send a message through
 	// the mix network using the naive ARQ error correction scheme.
 	IsARQSendOp bool `cbor:is_arq_send_op`
-
-	// IsEchoOp is set to true if the intent is to merely test that the unix
-	// socket listener is working properly; the Response payload will be
-	// contain the Request payload.
-	IsEchoOp bool `cbor:is_echo_op`
 
 	// IsLoopDecoy is set to true to indicate that this message shall
 	// be a loop decoy message.

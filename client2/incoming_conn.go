@@ -50,15 +50,6 @@ func (c *incomingConn) recvRequest() (*Request, error) {
 
 func (c *incomingConn) handleRequest(req *Request) (*Response, error) {
 	c.log.Infof("handleRequest: ID %d, Payload: %x", req.AppID, req.Payload)
-	if req.IsEchoOp {
-		c.log.Info("echo operation")
-		payload := make([]byte, len(req.Payload))
-		copy(payload, req.Payload)
-		return &Response{
-			AppID:   req.AppID,
-			Payload: payload,
-		}, nil
-	}
 
 	req.AppID = c.appID
 	c.listener.ingressCh <- req
@@ -77,8 +68,9 @@ func (c *incomingConn) sendPKIDoc(doc *cpki.Document) error {
 	c.log.Debugf("sendPKIDoc: stripped PKI Doc size is %d", len(blob))
 
 	message := &Response{
-		IsPKIDoc: true,
-		Payload:  blob,
+		NewPKIDocumentEvent: &NewPKIDocumentEvent{
+			Payload: blob,
+		},
 	}
 	c.sendToClientCh <- message
 	return nil
@@ -86,8 +78,10 @@ func (c *incomingConn) sendPKIDoc(doc *cpki.Document) error {
 
 func (c *incomingConn) updateConnectionStatus(status error) {
 	message := &Response{
-		IsStatus:    true,
-		IsConnected: status == nil,
+		ConnectionStatusEvent: &ConnectionStatusEvent{
+			IsConnected: status == nil,
+			Err:         status,
+		},
 	}
 	c.sendToClientCh <- message
 }

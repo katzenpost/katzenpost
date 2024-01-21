@@ -131,10 +131,10 @@ func (t *ThinClient) Dial() error {
 	if err != nil {
 		return err
 	}
-	if !message1.IsStatus {
-		panic("did not receive a connection status message")
+	if message1.ConnectionStatusEvent == nil {
+		panic("bug: thin client protocol sequence violation")
 	}
-	if !message1.IsConnected {
+	if !message1.ConnectionStatusEvent.IsConnected {
 		return errors.New("not connected")
 	}
 
@@ -143,7 +143,10 @@ func (t *ThinClient) Dial() error {
 	if err != nil {
 		return err
 	}
-	t.parsePKIDoc(message2.Payload)
+	if message2.NewPKIDocumentEvent == nil {
+		panic("bug: thin client protocol sequence violation")
+	}
+	t.parsePKIDoc(message2.NewPKIDocumentEvent.Payload)
 	t.Go(t.eventSinkDrain)
 	t.Go(t.worker)
 	t.log.Debug("Dial end")
@@ -171,34 +174,23 @@ func (t *ThinClient) worker() {
 		t.log.Debug("THIN CLIENT WORKER RECEIVED A MESSAGE---------------------")
 
 		switch {
-		case message.IsMessageSent == true:
-			event := &MessageSentEvent{
-				MessageID: message.ID,
-				SentAt:    message.SentAt,
-				ReplyETA:  message.ReplyETA,
-				Err:       message.Err,
-			}
-
+		case message.MessageSentEvent != nil:
 			select {
-			case t.eventSink <- event:
+			case t.eventSink <- message.MessageSentEvent:
 				continue
 			case <-t.HaltCh():
 				return
 			}
 
-		case message.IsStatus == true:
-			t.isConnected = message.IsConnected
-			event := &ConnectionStatusEvent{
-				IsConnected: message.IsConnected,
-			}
+		case message.ConnectionStatusEvent != nil:
 			select {
-			case t.eventSink <- event:
+			case t.eventSink <- message.ConnectionStatusEvent:
 				continue
 			case <-t.HaltCh():
 				return
 			}
-		case message.IsPKIDoc == true:
-			doc, err := t.parsePKIDoc(message.Payload)
+		case message.NewPKIDocumentEvent != nil:
+			doc, err := t.parsePKIDoc(message.NewPKIDocumentEvent.Payload)
 			if err != nil {
 				t.log.Fatalf("parsePKIDoc %s", err)
 			}
@@ -211,27 +203,21 @@ func (t *ThinClient) worker() {
 			case <-t.HaltCh():
 				return
 			}
-		default:
-			if message.Payload == nil {
+		case message.MessageReplyEvent != nil:
+			if message.MessageReplyEvent.Payload == nil {
 				t.log.Infof("message.Payload is nil")
-			}
-			t.log.Infof("message.Payload is %s", string(message.Payload))
-			event := &MessageReplyEvent{
-				MessageID: message.ID,
-				Payload:   message.Payload,
-				Err:       nil,
 			}
 			t.log.Debugf("before emitting message to event sink")
 			select {
-			case t.eventSink <- event:
+			case t.eventSink <- message.MessageReplyEvent:
 			case <-t.HaltCh():
 				return
 			}
 			t.log.Debugf("after emitting message to event sink")
 			response := ThinResponse{
-				SURBID:  message.SURBID,
-				ID:      message.ID,
-				Payload: message.Payload,
+				SURBID:  message.MessageReplyEvent.SURBID,
+				ID:      message.MessageReplyEvent.MessageID,
+				Payload: message.MessageReplyEvent.Payload,
 			}
 			t.log.Debugf("before sending message to receivedCh")
 			select {
@@ -240,6 +226,8 @@ func (t *ThinClient) worker() {
 			case t.receivedCh <- response:
 			}
 			t.log.Debugf("after sending message to receivedCh")
+		default:
+			t.log.Error("bug: received invalid thin client message")
 		}
 	}
 }

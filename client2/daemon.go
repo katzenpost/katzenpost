@@ -232,10 +232,12 @@ func (d *Daemon) egressWorker() {
 				panic("no connection associated with AppID")
 			}
 			conn.sendResponse(&Response{
-				ID:      desc.ID,
-				SURBID:  reply.surbID,
-				AppID:   desc.appID,
-				Payload: plaintext,
+				AppID: desc.appID,
+				MessageReplyEvent: &MessageReplyEvent{
+					MessageID: desc.ID,
+					SURBID:    reply.surbID,
+					Payload:   plaintext,
+				},
 			})
 		case request := <-d.egressCh:
 			switch {
@@ -297,13 +299,14 @@ func (d *Daemon) send(request *Request) {
 			incomingConn := d.listener.getConnection(request.AppID)
 			if incomingConn != nil {
 				response := &Response{
-					ID:            request.ID,
-					SURBID:        request.SURBID,
-					AppID:         request.AppID,
-					SentAt:        now,
-					ReplyETA:      rtt,
-					Err:           err,
-					IsMessageSent: true,
+					AppID: request.AppID,
+					MessageSentEvent: &MessageSentEvent{
+						MessageID: request.ID,
+						SURBID:    request.SURBID,
+						SentAt:    now,
+						ReplyETA:  rtt,
+						Err:       err,
+					},
 				}
 				err = incomingConn.sendResponse(response)
 				if err != nil {
