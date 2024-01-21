@@ -82,47 +82,47 @@ Note that there are two protocol message types and they are always CBOR encoded.
 We do not make use of any prefix length encoding because the socket type preserves
 message boundaries for us. Therefore we simply send over pure CBOR encoded messages.
 
-The daemon sends the `Response` message which is defined in golang as:
+The daemon sends the `Response` message which is defined in golang as
+a struct containing an app ID and one of four possible events:
 
 ```golang
 
 type Response struct {
-	// ID is the unique identifier with respect to the Request Payload.
-	// This is only used by the ARQ.
-	ID *[MessageIDLength]byte `cbor:id`
-
-	// SURBID must be a unique identity for each request.
-	SURBID *[sConstants.SURBIDLength]byte `cbor:surbid`
-
 	// AppID must be a unique identity for the client application
 	// that is receiving this Response.
-	AppID *[AppIDLength]byte `cbor:id`
+	AppID *[AppIDLength]byte `cbor:app_id`
 
-	// Payload contains the Response payload, a SURB reply.
-	Payload []byte `cbor:payload`
+	ConnectionStatusEvent *ConnectionStatusEvent `cbor:connection_status_event`
 
-	// IsMessageSent is used to indicate that this response
-	// identifies a specific message was sent sucessfully.
-	IsMessageSent bool `cbor:is_message_sent`
+	NewPKIDocumentEvent *NewPKIDocumentEvent `cbor:new_pki_document_event`
 
-	// SentAt contains the time the message was sent.
-	SentAt time.Time `cbor:sent_at`
+	MessageSentEvent *MessageSentEvent `cbor:message_sent_event`
 
-	// ReplyETA is the expected round trip time to receive a response.
-	ReplyETA time.Duration `cbor:reply_eta`
+	MessageReplyEvent *MessageReplyEvent `cbor:message_reply_event`
+}
 
-	// Err is the error encountered when sending the message if any.
-	Err error `cbor:err`
-
-	// IsStatus is set to true if Payload should be nil and IsConnected
-	// regarded as the latest connection status.
-	IsStatus bool `cbor:is_status`
-	// IsConnected is the latest connection status if IsStatus is true.
+type ConnectionStatusEvent struct {
 	IsConnected bool `cbor:is_connected`
+	Err error `cbor:err`
+}
 
-	// IsPKIDoc is to to true if the Payload contains a PKI document stripped
-	// of signatures.
-	IsPKIDoc bool `cbor:is_pki_doc`
+type NewPKIDocumentEvent struct {
+	Payload []byte `cbor:payload`
+}
+
+type MessageReplyEvent struct {
+	MessageID *[MessageIDLength]byte `cbor:message_id`
+	SURBID *[sConstants.SURBIDLength]byte `cbor:surbid`
+	Payload []byte `cbor:payload`
+	Err error `cbor:err`
+}
+
+type MessageSentEvent struct {
+	MessageID *[MessageIDLength]byte `cbor:message_id`
+	SURBID *[sConstants.SURBIDLength]byte `cbor:surbid`
+	SentAt time.Time `cbor:sent_at`
+	ReplyETA time.Duration `cbor:reply_eta`
+	Err error `cbor:err`
 }
 ```
 
@@ -145,7 +145,7 @@ type Request struct {
 
 	// AppID must be a unique identity for the client application
 	// that is sending this Request.
-	AppID *[AppIDLength]byte `cbor:id`
+	AppID *[AppIDLength]byte `cbor:app_id`
 
 	// DestinationIdHash is 32 byte hash of the destination Provider's
 	// identity public key.
@@ -252,46 +252,27 @@ two messages, a connection status followed by a PKI document.
 After this connection sequence phase, the daemon may send the thin client
 a connection status or PKI document update at any time.
 
-Thin clients recieve four possible types of `Response` messages:
+Thin clients recieve four possible events inside of `Response` messages:
 
-* connection status update
+1. connection status event
+   * `is_connected` indicated whether the client is connected or not.
+   * `err` may contain an error indicating why connection status changed.
 
-* PKI document update
+2. new PKI document event
+   * `payload` is the CBOR serialied PKI document, stripped of all the cryptographic signatures.
 
-* Message sent event
+3. message sent event
+   * `message_id` is a unique message ID
+   * `surb_id` is the SURB ID
+   * `sent_at` is the time the message was sent
+   * `replay_eta` is the time we expect a reply
+   * `err` is the optional error we received when attempting to send
 
-* Message reply event
+4. message reply event
+   * `message_id` is a unique message ID
+   * `surb_id` is a the SURB ID
+   * `payload` is the replay payload
+   * `err` is the error, if any.
 
-
-A connection status update must have two fields of the `Response` message set:
-
-* `is_status` This field is set to true to indicate the `Response` is a connection status update.
-* `is_connected` This field is set to true to indicate the daemon has a PQ Noise connection to the entry node.
-
-During the initial connection sequence phase of the protocol, the daemon sends the above noted status message
-followed by a `Response` message whose `payload` contains the stripped PKI document.
-
-However subsequent PKI documents must be indicated by setting the `is_pki_doc` field to true.
-
-The `is_message_sent` field is set to true to indicate the message represents a "sent message event"
-which means that the client's earlier `Request` resulted in a message that was successfuly sent to the mixnet
-entry node. In particular, these "sent message events" use several fields of the `Response`, namely:
-
-* `ID` A unique message ID.
-
-* `SentAt` Timestamp indicating when the message was sent.
-
-* `ReplyETA` Timestamp indicating when the reply is expected.
-
-* `Err` Optional error message encountered during the sending of the message.
-
-If the `is_status` field is false and the `is_pki_doc` is false and the `is_message_sent` is also false then the
-given `Response` is a reply message event and therefore the following additional fields must be set:
-
-* `surbid` Indicates the indentity of the SURB used to send the reply.
-
-* `id` the unique message ID indicates which message the reply corresponds to.
-
-* `payload` contains the actual reply message payload.
 
 
