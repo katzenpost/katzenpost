@@ -64,13 +64,13 @@ func TestCreateMap(t *testing.T) {
 	wKey := rwCap.WriteKey(addr)
 
 	// make sure that the verifier of id matches the publickey of writekey
-	require.Equal(wKey.PublicKey().Bytes(), id.WritePk().Bytes())
+	require.Equal(wKey.PublicKey().Bytes(), id.WriteVerifier().Bytes())
 
 	// get the readKey for the address
 	rKey := rwCap.ReadKey(addr)
 
 	// make sure the verifier of id matches the publicKey of readKey
-	require.Equal(rKey.PublicKey().Bytes(), id.ReadPk().Bytes())
+	require.Equal(rKey.PublicKey().Bytes(), id.ReadVerifier().Bytes())
 	payload := []byte("hello world")
 
 	// verify that writing with WriteKey() works
