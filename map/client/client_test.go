@@ -61,19 +61,19 @@ func TestCreateMap(t *testing.T) {
 	_, err = io.ReadFull(rand.Reader, addr)
 	require.NoError(err)
 	id := rwCap.Addr(addr)
-	wKey := rwCap.Write(addr)
+	wKey := rwCap.WriteKey(addr)
 
 	// make sure that the verifier of id matches the publickey of writekey
 	require.Equal(wKey.PublicKey().Bytes(), id.WritePk().Bytes())
 
 	// get the readKey for the address
-	rKey := rwCap.Read(addr)
+	rKey := rwCap.ReadKey(addr)
 
 	// make sure the verifier of id matches the publicKey of readKey
 	require.Equal(rKey.PublicKey().Bytes(), id.ReadPk().Bytes())
 	payload := []byte("hello world")
 
-	// verify that writing with Write() works
+	// verify that writing with WriteKey() works
 	err = c.Put(id, wKey.Sign(payload), payload)
 	require.NoError(err)
 
@@ -82,14 +82,14 @@ func TestCreateMap(t *testing.T) {
 	require.Error(err)
 
 	// verify that Reading with the ROKey interface works
-	roKey := rwCap.ReadOnly().Read(addr)
+	roKey := rwCap.ReadOnly().ReadKey(addr)
 	payload2, err := c.Get(id, roKey.Sign(id.Bytes()))
 	require.NoError(err)
 	require.Equal(payload, payload2)
 
 	payload2 = []byte("goodbye world")
 	// verify that Writing with the WOKey works
-	woKey := rwCap.WriteOnly().Write(addr)
+	woKey := rwCap.WriteOnly().WriteKey(addr)
 	id = rwCap.WriteOnly().Addr(addr)
 	err = c.Put(id, woKey.Sign(payload2), payload2)
 	require.NoError(err)
