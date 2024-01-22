@@ -133,9 +133,10 @@ func (k *CBORPluginWorker) processKaetzchen(pkt *packet.Packet, pluginClient *cb
 	}
 
 	pluginClient.WriteChan() <- &cborplugin.Request{
-		ID:      pkt.ID,
-		Payload: payload,
-		HasSURB: surb != nil,
+		ID:           pkt.ID,
+		Payload:      payload,
+		ResponseSize: k.geo.UserForwardPayloadLength,
+		HasSURB:      surb != nil,
 	}
 	cborResponse := <-pluginClient.ReadChan()
 	switch r := cborResponse.(type) {
