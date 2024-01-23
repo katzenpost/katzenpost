@@ -33,6 +33,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/katzenpost/katzenpost/server/cborplugin"
+	"github.com/katzenpost/katzenpost/server/config"
 	"github.com/katzenpost/katzenpost/server/internal/glue"
 	"github.com/katzenpost/katzenpost/server/internal/instrument"
 	"github.com/katzenpost/katzenpost/server/internal/packet"
@@ -86,7 +87,9 @@ func (k *CBORPluginWorker) worker(recipient [constants.RecipientIDLength]byte, p
 
 	defer k.haltOnce.Do(k.haltAllClients)
 
+	k.Lock()
 	handlerCh, ok := k.pluginChans[recipient]
+	k.Unlock()
 	if !ok {
 		k.log.Debugf("Failed to find handler. Dropping Kaetzchen request: %v", recipient)
 		instrument.KaetzchenRequestsDropped(1)
@@ -236,10 +239,6 @@ func NewCBORPluginWorker(glue glue.Glue) (*CBORPluginWorker, error) {
 		clients:     make([]*cborplugin.Client, 0),
 	}
 
-	// hold lock while mutating pluginChans and clients
-	kaetzchenWorker.Lock()
-	defer kaetzchenWorker.Unlock()
-
 	capaMap := make(map[string]bool)
 
 	for _, pluginConf := range glue.Config().Provider.CBORPluginKaetzchen {
@@ -270,44 +269,55 @@ func NewCBORPluginWorker(glue glue.Glue) (*CBORPluginWorker, error) {
 		if len(rawEp) == 0 || len(rawEp) > constants.RecipientIDLength {
 			return nil, fmt.Errorf("provider: Kaetzchen: '%v' invalid endpoint, length out of bounds", capa)
 		}
-
-		// Add an infinite channel for this plugin.
-		var endpoint [constants.RecipientIDLength]byte
-		copy(endpoint[:], rawEp)
-		kaetzchenWorker.pluginChans[endpoint] = channels.NewInfiniteChannel()
-		kaetzchenWorker.log.Noticef("Starting Kaetzchen plugin client: %s", capa)
-
-		var args []string
-		if len(pluginConf.Config) > 0 {
-			args = []string{}
-			for key, val := range pluginConf.Config {
-				args = append(args, fmt.Sprintf("-%s", key), val.(string))
-			}
-		}
-
-		pluginClient, err := kaetzchenWorker.launch(pluginConf.Command, pluginConf.Capability, pluginConf.Endpoint, args)
+		err := kaetzchenWorker.register(pluginConf)
 		if err != nil {
-			kaetzchenWorker.log.Error("Failed to start a plugin client: %s", err)
 			return nil, err
 		}
 
-		// Accumulate a list of all clients to facilitate clean shutdown.
-		kaetzchenWorker.clients = append(kaetzchenWorker.clients, pluginClient)
-
-		// Start the workers _after_ we have added all of the entries to pluginChans
-		// otherwise the worker() goroutines race this thread.
-		defer kaetzchenWorker.Go(func() {
-			kaetzchenWorker.worker(endpoint, pluginClient)
-		})
-
-		// Unregister pluginClient when it halts
-		defer kaetzchenWorker.Go(func() {
-			<-pluginClient.HaltCh()
-			kaetzchenWorker.unregister(endpoint, pluginClient)
-		})
-
 		capaMap[capa] = true
 	}
-
 	return &kaetzchenWorker, nil
+}
+
+func (k *CBORPluginWorker) register(pluginConf *config.CBORPluginKaetzchen) error {
+	// hold lock while mutating pluginChans and clients
+	k.Lock()
+	defer k.Unlock()
+
+	// Add an infinite channel for this plugin.
+	var endpoint [constants.RecipientIDLength]byte
+	copy(endpoint[:], []byte(pluginConf.Endpoint))
+	k.pluginChans[endpoint] = channels.NewInfiniteChannel()
+	k.log.Noticef("Starting Kaetzchen plugin client: %s", pluginConf.Capability)
+
+	var args []string
+	if len(pluginConf.Config) > 0 {
+		args = []string{}
+		for key, val := range pluginConf.Config {
+			args = append(args, fmt.Sprintf("-%s", key), val.(string))
+		}
+	}
+
+	pluginClient, err := k.launch(pluginConf.Command, pluginConf.Capability, pluginConf.Endpoint, args)
+	if err != nil {
+		k.log.Error("Failed to start a plugin client: %s", err)
+		return err
+	}
+
+	// Accumulate a list of all clients to facilitate clean shutdown.
+	k.clients = append(k.clients, pluginClient)
+
+	// Start the workers _after_ we have added all of the entries to pluginChans
+	// otherwise the worker() goroutines race this thread.
+	defer k.Go(func() {
+		// pluginChans must exist for worker routine and OnKaetzchen
+		k.worker(endpoint, pluginClient)
+	})
+
+	// Unregister pluginClient when it halts
+	defer k.Go(func() {
+		<-pluginClient.HaltCh()
+		k.unregister(endpoint, pluginClient)
+	})
+	return nil
 }
