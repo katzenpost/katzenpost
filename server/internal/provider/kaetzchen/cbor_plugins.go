@@ -279,6 +279,49 @@ func NewCBORPluginWorker(glue glue.Glue) (*CBORPluginWorker, error) {
 	return &kaetzchenWorker, nil
 }
 
+// RegisterKaetzchen adds a Kaetzchen service to the set of available Kaetzchen
+func (k *CBORPluginWorker) RegisterKaetzchen(capa string) error {
+	for _, kaetzchenConfig := range k.glue.Config().Provider.CBORPluginKaetzchen {
+		if kaetzchenConfig.Capability == capa {
+			// verify that the plugin isn't already registered
+			var endpoint [constants.RecipientIDLength]byte
+			copy(endpoint[:], []byte(kaetzchenConfig.Endpoint))
+			if k.IsKaetzchen(endpoint) {
+				return fmt.Errorf("provider: kaetzchen: '%v' is already registered", capa)
+			}
+			return k.register(kaetzchenConfig)
+		}
+	}
+	return fmt.Errorf("provider: kaetzchen: '%v' not found in config", capa)
+}
+
+// UnregisterKaetzchen stops a CBORPluginKaetzczhen and removes it from the set of available Kaetzchen
+func (k *CBORPluginWorker) UnregisterKaetzchen(capa string) error {
+	for _, kaetzchenConfig := range k.glue.Config().Provider.CBORPluginKaetzchen {
+		if kaetzchenConfig.Capability == capa {
+			// verify that the plugin is already registered
+			var endpoint [constants.RecipientIDLength]byte
+			copy(endpoint[:], []byte(kaetzchenConfig.Endpoint))
+			if !k.IsKaetzchen(endpoint) {
+				return fmt.Errorf("provider: kaetzchen: '%v' is not registered", capa)
+			}
+
+			// find the client plugin and halt it
+			k.Lock()
+			for _, client := range k.clients {
+				if client.Capability() == capa {
+					k.log.Debugf("Halting plugin client: %s", capa)
+					k.Unlock()
+					go client.Halt() // unregister is called after the plugin has Halted
+					return nil
+				}
+			}
+			k.Unlock()
+		}
+	}
+	return fmt.Errorf("provider: CBORPluginKaetzchen: '%v' not found", capa)
+}
+
 func (k *CBORPluginWorker) register(pluginConf *config.CBORPluginKaetzchen) error {
 	// hold lock while mutating pluginChans and clients
 	k.Lock()
