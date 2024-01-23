@@ -26,8 +26,12 @@ coverage-file:
 coverage-html:
 	go tool cover -html=coverage.out
 
-
 dockerdockertest:
 	$(docker) run ${docker_args} $(image) \
 		sh -c 'cd /go/katzenpost/client2/; GORACE=history_size=7 go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 1h -run TestAllClient2Tests'
 
+warpedclientdaemon:
+	cd cmd/kpclientd; go build -ldflags ${ldflags}
+
+clientdaemon:
+	cd cmd/kpclientd; go build
