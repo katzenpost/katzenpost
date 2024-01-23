@@ -538,6 +538,76 @@ func (p *provider) onSendBurst(c *thwack.Conn, l string) error {
 	return c.Writer().PrintfLine("%v %v", thwack.StatusOk, burst)
 }
 
+// handler for STOP_KAETZCHEN
+func (p *provider) onStopKaetzchen(c *thwack.Conn, l string) error {
+	p.Lock()
+	defer p.Unlock()
+
+	sp := strings.Split(l, " ")
+
+	if len(sp) != 2 {
+		c.Log().Debugf("STOP_KAETZCHEN invalid syntax: '%v'", l)
+		return c.WriteReply(thwack.StatusSyntaxError)
+	}
+	capa := sp[1]
+	// check internal plugins
+	if p.isKaetzchenConfigured(capa) && p.isKaetzchenRegistered(capa) {
+		err := p.kaetzchenWorker.UnregisterKaetzchen(capa)
+		if err != nil {
+			p.log.Errorf("provider: Kaetzchen: '%v'", err)
+			return c.WriteReply(thwack.StatusTransactionFailed)
+		}
+		return c.Writer().PrintfLine("%v %v", thwack.StatusOk, capa)
+	}
+	// check external plugins
+	if p.isCBORKaetzchenConfigured(capa) && !p.isCBORKaetzchenRegistered(capa) {
+		c.Log().Debugf("START_KAETZCHEN failed: %v not running", capa)
+		return c.WriteReply(thwack.StatusTransactionFailed)
+	}
+	err := p.cborPluginKaetzchenWorker.UnregisterKaetzchen(capa)
+	if err != nil {
+		p.log.Errorf("provider: Kaetzchen: '%v'", err)
+		return c.WriteReply(thwack.StatusTransactionFailed)
+	}
+	return c.Writer().PrintfLine("%v %v", thwack.StatusOk, capa)
+}
+
+// handler for START_KAETZCHEN
+func (p *provider) onStartKaetzchen(c *thwack.Conn, l string) error {
+	p.Lock()
+	defer p.Unlock()
+
+	sp := strings.Split(l, " ")
+
+	if len(sp) != 2 {
+		c.Log().Debugf("START_KAETZCHEN invalid syntax: '%v'", l)
+		return c.WriteReply(thwack.StatusSyntaxError)
+	}
+
+	capa := sp[1]
+
+	// check internal plugins
+	if p.isKaetzchenConfigured(capa) && !p.isKaetzchenRegistered(capa) {
+		err := p.kaetzchenWorker.RegisterKaetzchen(capa)
+		if err != nil {
+			p.log.Errorf("provider: Kaetzchen: '%v'", err)
+			return c.WriteReply(thwack.StatusTransactionFailed)
+		}
+		return c.Writer().PrintfLine("%v %v", thwack.StatusOk, capa)
+	}
+	// check external plugins
+	if p.isCBORKaetzchenConfigured(capa) && p.isCBORKaetzchenRegistered(capa) {
+		c.Log().Debugf("START_KAETZCHEN failed: %v already running", capa)
+		return c.WriteReply(thwack.StatusTransactionFailed)
+	}
+	err := p.cborPluginKaetzchenWorker.RegisterKaetzchen(capa)
+	if err != nil {
+		p.log.Errorf("provider: Kaetzchen: '%v'", err)
+		return c.WriteReply(thwack.StatusTransactionFailed)
+	}
+	return c.Writer().PrintfLine("%v %v", thwack.StatusOk, capa)
+}
+
 // New constructs a new provider instance.
 func New(glue glue.Glue) (glue.Provider, error) {
 	kaetzchenWorker, err := kaetzchen.New(glue)
@@ -631,6 +701,8 @@ func New(glue glue.Glue) (glue.Provider, error) {
 			cmdUserLink           = "USER_LINK"
 			cmdSendRate           = "SEND_RATE"
 			cmdSendBurst          = "SEND_BURST"
+			cmdStopKaetzchen      = "STOP_KAETZCHEN"
+			cmdStartKaetzchen     = "START_KAETZCHEN"
 		)
 
 		glue.Management().RegisterCommand(cmdAddUser, p.onAddUser)
@@ -642,6 +714,8 @@ func New(glue glue.Glue) (glue.Provider, error) {
 		glue.Management().RegisterCommand(cmdUserLink, p.onUserLink)
 		glue.Management().RegisterCommand(cmdSendRate, p.onSendRate)
 		glue.Management().RegisterCommand(cmdSendBurst, p.onSendBurst)
+		glue.Management().RegisterCommand(cmdStopKaetzchen, p.onStopKaetzchen)
+		glue.Management().RegisterCommand(cmdStartKaetzchen, p.onStartKaetzchen)
 	}
 
 	// Start the workers.
