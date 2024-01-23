@@ -143,7 +143,8 @@ func (c *Client) makePath(recipient []byte, provider *[32]byte, surbID *[sConsta
 	rng := rand.NewMath()
 	p, t, err := path.New(rng, c.cfg.SphinxGeometry, doc, recipient, src, dst, surbID, baseTime, true, isForward)
 	if err == nil {
-		c.logPath(doc, p)
+		// XXX Do not log the paths, too verbose.
+		// c.logPath(doc, p)
 	}
 
 	return p, t, err

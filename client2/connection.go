@@ -516,7 +516,6 @@ func (c *connection) onWireConn(w *wire.Session) {
 			adjFetchDelay()
 			continue
 		case ctx := <-c.sendCh:
-			c.log.Debugf("Dequeued packet for send.")
 			cmd := &commands.SendPacket{
 				SphinxPacket: ctx.pkt,
 			}
@@ -526,7 +525,6 @@ func (c *connection) onWireConn(w *wire.Session) {
 				c.log.Debugf("Failed to send SendPacket: %v", wireErr)
 				return
 			}
-			c.log.Debugf("Sent SendPacket.")
 
 			adjFetchDelay()
 			continue
@@ -560,7 +558,6 @@ func (c *connection) onWireConn(w *wire.Session) {
 					c.log.Debugf("Failed to send RetrieveMessage: %v", wireErr)
 					return
 				}
-				c.log.Debugf("Sent RetrieveMessage: %d", seq)
 				nrReqs++
 			}
 			fetchDelay = c.client.GetPollInterval()
@@ -590,7 +587,6 @@ func (c *connection) onWireConn(w *wire.Session) {
 			wireErr = newProtocolError("peer send Disconnect")
 			return
 		case *commands.MessageEmpty:
-			c.log.Debugf("Received MessageEmpty: %v", cmd.Sequence)
 			if wireErr = checkSeq(cmd.Sequence); wireErr != nil {
 				c.log.Errorf("MessageEmpty sequence unexpected: %v", cmd.Sequence)
 				return
@@ -625,7 +621,6 @@ func (c *connection) onWireConn(w *wire.Session) {
 				}
 			}
 		case *commands.MessageACK:
-			c.log.Debugf("Received MessageACK: %v", cmd.Sequence)
 			if wireErr = checkSeq(cmd.Sequence); wireErr != nil {
 				c.log.Errorf("MessageACK sequence unexpected: %v", cmd.Sequence)
 				return
@@ -710,7 +705,6 @@ func (c *connection) onConnStatusChange(err error) {
 }
 
 func (c *connection) sendPacket(pkt []byte) error {
-	c.log.Debug("sendPacket")
 	c.Lock()
 	if !c.isConnected {
 		c.Unlock()
@@ -729,7 +723,6 @@ func (c *connection) sendPacket(pkt []byte) error {
 	case <-c.HaltCh():
 		return ErrShutdown
 	}
-	c.log.Debugf("Enqueued packet for send.")
 
 	select {
 	case err := <-errCh:

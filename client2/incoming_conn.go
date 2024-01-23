@@ -49,7 +49,7 @@ func (c *incomingConn) recvRequest() (*Request, error) {
 }
 
 func (c *incomingConn) handleRequest(req *Request) (*Response, error) {
-	c.log.Infof("handleRequest: ID %d, Payload: %x", req.AppID, req.Payload)
+	c.log.Infof("handleRequest: ID %x, Payload: %x", req.AppID[:], req.Payload)
 
 	req.AppID = c.appID
 	c.listener.ingressCh <- req
@@ -193,10 +193,10 @@ func newIncomingConn(l *listener, conn *net.UnixConn) *incomingConn {
 	c.log = log.NewWithOptions(l.logbackend, log.Options{
 		ReportTimestamp: true,
 		Level:           logLevel,
-		Prefix:          fmt.Sprintf("incoming:%d", c.appID),
+		Prefix:          fmt.Sprintf("incoming:%x", c.appID[:]),
 	})
 
-	c.log.Debugf("New incoming connection: %v", conn.RemoteAddr())
+	c.log.Debugf("New incoming connection. Remove addr: %v assigned App ID: %x", conn.RemoteAddr(), appid[:])
 
 	// Note: Unlike most other things, this does not spawn the worker here,
 	// because the worker needs to be spawned after the struct is added to
