@@ -145,6 +145,42 @@ func (p *provider) connectedClients() (map[[sConstants.RecipientIDLength]byte]in
 	return identities, nil
 }
 
+func (p *provider) isKaetzchenConfigured(capa string) bool {
+	for _, v := range p.glue.Config().Provider.Kaetzchen {
+		// do not enable a plugin explicitely disabled by configuration
+		if v.Capability == capa && !v.Disable {
+			return true
+		}
+	}
+	return false
+}
+
+func (p *provider) isKaetzchenRegistered(capa string) bool {
+	kpki := p.kaetzchenWorker.KaetzchenForPKI()
+	if _, ok := kpki[capa]; ok {
+		return true
+	}
+	return false
+}
+
+func (p *provider) isCBORKaetzchenConfigured(capa string) bool {
+	// check whether the capability is a CBORPlugin
+	for _, pluginConf := range p.glue.Config().Provider.CBORPluginKaetzchen {
+		if capa == pluginConf.Capability && !pluginConf.Disable {
+			return true
+		}
+	}
+	return false
+}
+
+func (p *provider) isCBORKaetzchenRegistered(capa string) bool {
+	kpki := p.cborPluginKaetzchenWorker.KaetzchenForPKI()
+	if _, ok := kpki[capa]; ok {
+		return true
+	}
+	return false
+}
+
 func (p *provider) gcEphemeralClients() {
 	p.log.Debug("garbage collecting expired ephemeral clients")
 	connectedClients, err := p.connectedClients()
