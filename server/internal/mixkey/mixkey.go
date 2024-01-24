@@ -110,11 +110,9 @@ func (k *MixKey) IsReplay(rawTag []byte) bool {
 	defer k.Unlock()
 
 	// If the filter is saturated then probability of a false replay is increased
-	// XXX: the filter size should be turned for the maximum line rate expected so that this does not happen
+	// XXX: the filter size should be tuned for the maximum line rate expected so that this does not happen
 	if k.f.Entries() >= k.f.MaxEntries() {
-		// XXX: does not have a logger...
-		panic("bloom filter size too small")
-		//k.log.Errorf("bloom filter reached satruation: '%v'", k.f.MaxEntries())
+		panic("MixKey bloom filter size too small")
 	}
 	if !k.f.TestAndSet(tag[:]) {
 		return false
