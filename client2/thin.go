@@ -4,7 +4,7 @@
 package client2
 
 import (
-	"bytes"
+	"crypto/hmac"
 	"errors"
 	"fmt"
 	"net"
@@ -435,9 +435,19 @@ func (t *ThinClient) ARQSend(id *[MessageIDLength]byte, payload []byte, destNode
 
 // ARQReceiveMessage blocks until a message is received.
 // Use ResponseChan instead if you want an async way to receive messages.
-func (t *ThinClient) ARQReceiveMessage() (*[MessageIDLength]byte, []byte) {
-	resp := <-t.receivedCh
-	return resp.ID, resp.Payload
+func (t *ThinClient) ARQReceiveMessage(messageId *[MessageIDLength]byte) []byte {
+	for {
+		select {
+		case <-t.HaltCh():
+			return nil
+		case resp := <-t.receivedCh:
+			if hmac.Equal(messageId[:], resp.ID[:]) {
+				return resp.Payload
+			}
+		}
+	}
+	panic("impossible")
+	return nil
 }
 
 // BlockingSendReliableMessage blocks until the message is reliably sent and the ARQ reply is received.
@@ -446,9 +456,6 @@ func (t *ThinClient) BlockingSendReliableMessage(messageID *[MessageIDLength]byt
 	if err != nil {
 		return nil, err
 	}
-	id2, reply := t.ARQReceiveMessage()
-	if !bytes.Equal(messageID[:], id2[:]) {
-		return nil, errors.New("received unexpected ARQ reply")
-	}
+	reply = t.ARQReceiveMessage(messageID)
 	return reply, nil
 }

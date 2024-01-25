@@ -158,14 +158,11 @@ func testDockerClientARQSendReceive(t *testing.T) {
 	require.NoError(t, err)
 
 	thin.ARQSend(id, message1, &nodeIdKey, []byte("testdest"))
-	replyID, message2 := thin.ARQReceiveMessage()
+	message2 := thin.ARQReceiveMessage(id)
 
-	require.NotNil(t, replyID)
-	require.NoError(t, err)
 	require.NotEqual(t, message1, []byte{})
 	require.NotEqual(t, message2, []byte{})
 	require.Equal(t, message1, message2[:len(message1)])
-	require.Equal(t, replyID[:], id[:])
 
 	id2 := &[MessageIDLength]byte{}
 	_, err = rand.Reader.Read(id2[:])
