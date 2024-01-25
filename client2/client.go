@@ -65,7 +65,6 @@ func (c *Client) halt() {
 
 	if c.pki != nil {
 		c.pki.Halt()
-		c.pki = nil
 	}
 
 	c.conn = nil
