@@ -40,7 +40,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/log2"
 )
 
-func TestAllCatshadow(t *testing.T) {
+func TestAllDockerCatshadow(t *testing.T) {
 
 	d := setupDaemon()
 
@@ -57,7 +57,7 @@ func TestAllCatshadow(t *testing.T) {
 }
 
 func setupDaemon() *client2.Daemon {
-	cfg, err := config.LoadFile("testdata/catshadow.toml")
+	cfg, err := config.LoadFile("testdata/client.toml")
 	if err != nil {
 		panic(err)
 	}
