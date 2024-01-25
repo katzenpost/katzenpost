@@ -76,7 +76,7 @@ $(net_name):
 	mkdir -p $(net_name)
 
 $(docker_compose_yml): ../genconfig/main.go $(distro)_go_mod.stamp $(net_name)
-	$(docker) run -e --network=host ${docker_args} --rm katzenpost-$(distro)_go_mod \
+	$(docker) run ${docker_args} --rm katzenpost-$(distro)_go_mod \
 		$(sh) -c 'cd genconfig && go build && cd ../docker \
 		&& ../genconfig/genconfig -a ${bind_addr} -nv ${auths} -n ${mixes} -p ${providers} \
 		-sr ${sr} -mu ${mu} -muMax ${muMax} -lP ${lP} -lPMax ${lPMax} -lL ${lL} \
@@ -208,7 +208,7 @@ run-ping-testdest: $(net_name)/ping.$(distro) $(net_name)/running.stamp
         /$(net_name)/ping.$(distro) -c /go/katzenpost/docker/$(net_name)/client2/client.toml -s testdest -printDiff -n 1
 
 shell: $(distro)_go_mod.stamp $(net_name)
-	$(docker) run -e --network=host ${docker_args} $(mount_net_name) --rm -it katzenpost-$(distro)_go_mod $(sh)
+	$(docker) run --network=host ${docker_args} $(mount_net_name) -w /go/katzenpost/docker/$(net_name) --rm -it katzenpost-$(distro)_go_mod $(sh)
 
 # this is for running with docker, where we are root outside and (except for
 # here) non-root inside. When using podman, we are rootless outside and uid 0
