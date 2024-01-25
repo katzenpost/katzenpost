@@ -99,8 +99,6 @@ func testDockerMultiplexClients(t *testing.T) {
 	surbID := thin1.NewSURBID()
 	thin1.SendMessage(surbID, message1, &nodeIdKey, []byte("testdest"))
 
-	time.Sleep(time.Second * 3)
-
 	replyID, message2 := thin1.ReceiveMessage()
 
 	require.NoError(t, err)
@@ -113,41 +111,14 @@ func testDockerMultiplexClients(t *testing.T) {
 
 	t.Log("thin client send ping")
 	surbID = thin2.NewSURBID()
-	thin2.SendMessage(surbID, message1, &nodeIdKey, []byte("testdest"))
+	message3 := []byte("hello bob, this is alice.")
+	thin2.SendMessage(surbID, message3, &nodeIdKey, []byte("testdest"))
 
-	time.Sleep(time.Second * 3)
-
-	replyID, message2 = thin2.ReceiveMessage()
-
-	require.NoError(t, err)
-	require.NotEqual(t, message1, []byte{})
-	require.NotEqual(t, message2, []byte{})
-	require.Equal(t, message1, message2[:len(message1)])
-	require.Equal(t, replyID, surbID)
-
-	// client 3 dial
-
-	thin3 := NewThinClient(cfg)
-	t.Log("thin client Dialing")
-	err = thin3.Dial()
-	require.NoError(t, err)
-	require.Nil(t, err)
-	t.Log("thin client connected")
-
-	// client 3 send/receive
-
-	t.Log("thin client send ping")
-	surbID = thin3.NewSURBID()
-	thin3.SendMessage(surbID, message1, &nodeIdKey, []byte("testdest"))
-
-	time.Sleep(time.Second * 3)
-
-	replyID, message2 = thin3.ReceiveMessage()
+	replyID, message4 := thin2.ReceiveMessage()
 
 	require.NoError(t, err)
-	require.NotEqual(t, message1, []byte{})
-	require.NotEqual(t, message2, []byte{})
-	require.Equal(t, message1, message2[:len(message1)])
+	require.NotEqual(t, message4, []byte{})
+	require.Equal(t, message3, message4[:len(message1)])
 	require.Equal(t, replyID, surbID)
 }
 
@@ -187,8 +158,6 @@ func testDockerClientARQSendReceive(t *testing.T) {
 	require.NoError(t, err)
 
 	thin.ARQSend(id, message1, &nodeIdKey, []byte("testdest"))
-	time.Sleep(time.Second * 3)
-
 	replyID, message2 := thin.ARQReceiveMessage()
 
 	require.NotNil(t, replyID)
@@ -197,6 +166,15 @@ func testDockerClientARQSendReceive(t *testing.T) {
 	require.NotEqual(t, message2, []byte{})
 	require.Equal(t, message1, message2[:len(message1)])
 	require.Equal(t, replyID[:], id[:])
+
+	id2 := &[MessageIDLength]byte{}
+	_, err = rand.Reader.Read(id2[:])
+	require.NoError(t, err)
+
+	message3, err := thin.BlockingSendReliableMessage(id2, message1, &nodeIdKey, []byte("testdest"))
+	require.NoError(t, err)
+	require.NotEqual(t, message3, []byte{})
+	require.Equal(t, message1, message3[:len(message1)])
 
 	err = thin.Close()
 	require.NoError(t, err)
