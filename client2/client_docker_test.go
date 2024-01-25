@@ -28,7 +28,7 @@ func TestAllClient2Tests(t *testing.T) {
 }
 
 func setupDaemon() *Daemon {
-	cfg, err := config.LoadFile("testdata/catshadow.toml")
+	cfg, err := config.LoadFile("testdata/client.toml")
 	if err != nil {
 		panic(err)
 	}

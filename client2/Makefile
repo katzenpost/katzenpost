@@ -29,8 +29,4 @@ coverage-html:
 
 dockerdockertest:
 	$(docker) run ${docker_args} $(image) \
-		sh -c 'cd /go/katzenpost/client2/; GORACE=history_size=7 go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 1h -run Docker'
-
-test1:
-	$(docker) run ${docker_args} $(image) \
-		sh -c 'cd /go/katzenpost/client2/; GORACE=history_size=7 go test $(testargs) -ldflags ${ldflags} -tags=docker_test -v -timeout 1h -run TestDockerMultiplexClients'
+		sh -c 'cd /go/katzenpost/client2/; GORACE=history_size=7 go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 1h -run TestAllClient2Tests'
