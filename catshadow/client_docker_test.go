@@ -57,7 +57,7 @@ func TestAllDockerCatshadow(t *testing.T) {
 }
 
 func setupDaemon() *client2.Daemon {
-	cfg, err := config.LoadFile("testdata/client.toml")
+	cfg, err := config.LoadFile("testdata/catshadow.toml")
 	if err != nil {
 		panic(err)
 	}
