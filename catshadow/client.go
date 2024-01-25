@@ -1014,8 +1014,6 @@ func (c *Client) sendReadInbox() {
 	}
 
 	surbid := c.session.NewSURBID()
-	mesgID := make([]byte, len(surbid[:]))
-	copy(mesgID, surbid[:])
 	providerKeyHash := providerDesc.IdentityKey.Sum256()
 	err = c.session.SendMessage(surbid, cmd, &providerKeyHash, c.spoolReadDescriptor.Receiver)
 	switch err.(type) {
@@ -1024,10 +1022,10 @@ func (c *Client) sendReadInbox() {
 		c.log.Errorf("sendReadInbox failure: %v", err)
 		return
 	}
-	c.log.Debug("Message enqueued for reading remote spool %x:%d, message-ID: %x", c.spoolReadDescriptor.ID, sequence, mesgID)
+	c.log.Debug("Message enqueued for reading remote spool %x:%d, message-ID: %x", c.spoolReadDescriptor.ID, sequence, surbid[:])
 	var a MessageID
 	binary.BigEndian.PutUint32(a[:4], sequence)
-	c.sendMap.Store(mesgID, &ReadMessageDescriptor{MessageID: a})
+	c.sendMap.Store(surbid, &ReadMessageDescriptor{MessageID: a})
 }
 
 func (c *Client) garbageCollectSendMap(gcEvent *client2.MessageIDGarbageCollected) {
