@@ -19,7 +19,7 @@ const (
 
 	// RoundTripTimeSlop is the slop added to the expected packet
 	// round trip timeout threshold.
-	RoundTripTimeSlop = 3 * time.Second
+	RoundTripTimeSlop = 10 * time.Second
 )
 
 type SphinxComposerSender interface {
@@ -152,11 +152,11 @@ func (a *ARQ) resend(surbID *[sConstants.SURBIDLength]byte) {
 
 		err = a.sphinxComposerSender.SendSphinxPacket(pkt)
 		if err != nil {
-			a.log.Errorf("gc sphinx composer failure: %s", err.Error())
+			a.log.Errorf("failed to send sphinx packet: %s", err.Error())
 		}
 
 	} else {
-		a.log.Error("gc SURB ID not found")
+		a.log.Error("SURB ID not found")
 	}
 }
 
@@ -237,7 +237,12 @@ func (a *ARQ) Send(appid *[AppIDLength]byte, id *[MessageIDLength]byte, payload 
 	a.surbIDMap[*surbID] = message
 	a.lock.Unlock()
 
+	a.log.Infof("RTT %s", rtt)
+
 	p := time.Duration(message.ReplyETA + RoundTripTimeSlop)
+
+	a.log.Infof("RTT with slop %s", p)
+
 	a.log.Infof("Push to timer queue with priorit %s", p)
 	priority := uint64(message.SentAt.Add(message.ReplyETA).Add(RoundTripTimeSlop).UnixNano())
 

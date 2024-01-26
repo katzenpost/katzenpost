@@ -10,9 +10,9 @@ import (
 	"time"
 
 	"github.com/charmbracelet/log"
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
-	"github.com/katzenpost/katzenpost/core/log2"
 	"github.com/stretchr/testify/require"
+
+	"github.com/katzenpost/katzenpost/core/crypto/rand"
 )
 
 var mockRTT time.Duration = time.Second * 2
@@ -51,10 +51,12 @@ func TestARQ(t *testing.T) {
 		ch:       make(chan bool, 0),
 	}
 	logbackend := os.Stderr
+	level, err := log.ParseLevel("debug")
+	require.NoError(t, err)
 	logger := log.NewWithOptions(logbackend, log.Options{
 		ReportTimestamp: true,
 		Prefix:          "TestARQ",
-		Level:           log2.ParseLevel("debug"),
+		Level:           level,
 	})
 
 	m := &mockSentEventSender{}
@@ -63,7 +65,7 @@ func TestARQ(t *testing.T) {
 	arq.Start()
 
 	appid := new([AppIDLength]byte)
-	_, err := rand.Reader.Read(appid[:])
+	_, err = rand.Reader.Read(appid[:])
 	require.NoError(t, err)
 
 	id := &[MessageIDLength]byte{}
