@@ -1034,6 +1034,9 @@ func (c *Client) garbageCollectSendMap(gcEvent *client2.MessageIDGarbageCollecte
 }
 
 func (c *Client) handleSent(sentEvent *client2.MessageSentEvent) {
+	if sentEvent == nil {
+		panic("sentEvent is nil")
+	}
 	orig, ok := c.sendMap.Load(*sentEvent.MessageID)
 	if ok {
 		switch tp := orig.(type) {
