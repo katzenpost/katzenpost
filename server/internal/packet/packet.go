@@ -37,7 +37,7 @@ var (
 		},
 	}
 	pktID uint64
-	rng = rand.NewMath()
+	rng   = rand.NewMath()
 )
 
 type Packet struct {

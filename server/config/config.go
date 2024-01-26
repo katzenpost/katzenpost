@@ -21,8 +21,8 @@ import (
 	"errors"
 	"fmt"
 	"net"
-	"net/netip"
 	"net/mail"
+	"net/netip"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -166,7 +166,7 @@ func (sCfg *Server) validate() error {
 	if !filepath.IsAbs(sCfg.DataDir) {
 		return fmt.Errorf("config: Server: DataDir '%v' is not an absolute path", sCfg.DataDir)
 	}
-	if sCfg.MetricsAddress != ""  {
+	if sCfg.MetricsAddress != "" {
 		if _, err := netip.ParseAddrPort(sCfg.MetricsAddress); err != nil {
 			return fmt.Errorf("config: Server: MetricsAddress '%v' is invalid: %v", sCfg.MetricsAddress, err)
 		}
