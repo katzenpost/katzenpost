@@ -77,7 +77,27 @@ func sendPing(client *client2.ThinClient, serviceDesc *client2.ServiceDescriptor
 		return false
 	}
 
-	_, reply := client.ReceiveMessage()
+	eventSink := client.EventSink()
+	reply := []byte{}
+
+Loop:
+	for {
+		event := <-eventSink
+		switch v := event.(type) {
+		case *client2.ConnectionStatusEvent:
+			if !v.IsConnected {
+				panic("socket connection lost")
+			}
+		case *client2.NewPKIDocumentEvent:
+		case *client2.MessageSentEvent:
+		case *client2.MessageReplyEvent:
+			reply = v.Payload
+			break Loop
+		default:
+			panic("impossible event type")
+		}
+	}
+
 	var replyPayload []byte
 	err = cbor.Unmarshal(reply, &replyPayload)
 	if err != nil {

@@ -97,29 +97,38 @@ func testDockerMultiplexClients(t *testing.T) {
 
 	t.Log("thin client send ping")
 	surbID := thin1.NewSURBID()
-	thin1.SendMessage(surbID, message1, &nodeIdKey, []byte("testdest"))
-
-	replyID, message2 := thin1.ReceiveMessage()
-
+	err = thin1.SendMessage(surbID, message1, &nodeIdKey, []byte("testdest"))
 	require.NoError(t, err)
+
+	eventSink := thin1.EventSink()
+	message2 := []byte{}
+
+Loop:
+	for {
+		event := <-eventSink
+		switch v := event.(type) {
+		case *ConnectionStatusEvent:
+			t.Log("ConnectionStatusEvent")
+			if !v.IsConnected {
+				panic("socket connection lost")
+			}
+		case *NewPKIDocumentEvent:
+			t.Log("NewPKIDocumentEvent")
+		case *MessageSentEvent:
+			t.Log("MessageSentEvent")
+		case *MessageReplyEvent:
+			t.Log("MessageReplyEvent")
+			require.Equal(t, surbID[:], v.SURBID[:])
+			message2 = v.Payload
+			break Loop
+		default:
+			panic("impossible event type")
+		}
+	}
+
 	require.NotEqual(t, message1, []byte{})
 	require.NotEqual(t, message2, []byte{})
 	require.Equal(t, message1, message2[:len(message1)])
-	require.Equal(t, replyID, surbID)
-
-	// client 2 send/receive
-
-	t.Log("thin client send ping")
-	surbID = thin2.NewSURBID()
-	message3 := []byte("hello bob, this is alice.")
-	thin2.SendMessage(surbID, message3, &nodeIdKey, []byte("testdest"))
-
-	replyID, message4 := thin2.ReceiveMessage()
-
-	require.NoError(t, err)
-	require.NotEqual(t, message4, []byte{})
-	require.Equal(t, message3, message4[:len(message1)])
-	require.Equal(t, replyID, surbID)
 }
 
 func testDockerClientARQSendReceive(t *testing.T) {
@@ -157,8 +166,34 @@ func testDockerClientARQSendReceive(t *testing.T) {
 	_, err = rand.Reader.Read(id[:])
 	require.NoError(t, err)
 
-	thin.ARQSend(id, message1, &nodeIdKey, []byte("testdest"))
-	message2 := thin.ARQReceiveMessage(id)
+	err = thin.SendReliableMessage(id, message1, &nodeIdKey, []byte("testdest"))
+	require.NoError(t, err)
+
+	eventSink := thin.EventSink()
+	message2 := []byte{}
+
+Loop:
+	for {
+		event := <-eventSink
+		switch v := event.(type) {
+		case *ConnectionStatusEvent:
+			t.Log("ConnectionStatusEvent")
+			if !v.IsConnected {
+				panic("socket connection lost")
+			}
+		case *NewPKIDocumentEvent:
+			t.Log("NewPKIDocumentEvent")
+		case *MessageSentEvent:
+			t.Log("MessageSentEvent")
+		case *MessageReplyEvent:
+			t.Log("MessageReplyEvent")
+			require.Equal(t, id[:], v.MessageID[:])
+			message2 = v.Payload
+			break Loop
+		default:
+			panic("impossible event type")
+		}
+	}
 
 	require.NotEqual(t, message1, []byte{})
 	require.NotEqual(t, message2, []byte{})

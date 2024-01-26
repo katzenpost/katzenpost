@@ -981,7 +981,7 @@ func (c *Client) sendMessage(contact *Contact) {
 	}
 
 	mesgID := c.session.NewMessageID()
-	err = c.session.ARQSend(mesgID, cmd.Command, cmd.Provider, cmd.Receiver)
+	err = c.session.SendReliableMessage(mesgID, cmd.Command, cmd.Provider, cmd.Receiver)
 	if err != nil {
 		c.log.Errorf("failed to send ciphertext to remote spool: %s", err)
 		return
