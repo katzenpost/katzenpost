@@ -282,11 +282,13 @@ func (d *Daemon) send(request *Request) {
 	var rtt time.Duration
 	var err error
 	var now time.Time
+
+	surbKey, rtt, err = d.client.SendCiphertext(request)
+	if err != nil {
+		d.log.Infof("SendCiphertext error: %s", err.Error())
+	}
+
 	if request.WithSURB {
-		surbKey, rtt, err = d.client.SendCiphertext(request)
-		if err != nil {
-			d.log.Infof("SendCiphertext error: %s", err.Error())
-		}
 
 		now = time.Now()
 		slop := time.Second * 20 // XXX perhaps make this configurable if needed
