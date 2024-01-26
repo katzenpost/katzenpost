@@ -195,15 +195,20 @@ func (t *ThinClient) worker() {
 				return
 			}
 		case message.MessageSentEvent != nil:
-			sentWaitChanRaw, ok := t.sentWaitChanMap.Load(*message.MessageSentEvent.MessageID)
-			if ok {
-				sentWaitChan := sentWaitChanRaw.(chan error)
-				select {
-				case sentWaitChan <- message.MessageSentEvent.Err:
-				case <-t.HaltCh():
-					return
+			isArq := false
+			if message.MessageSentEvent.MessageID != nil {
+				sentWaitChanRaw, ok := t.sentWaitChanMap.Load(*message.MessageSentEvent.MessageID)
+				if ok {
+					isArq = true
+					sentWaitChan := sentWaitChanRaw.(chan error)
+					select {
+					case sentWaitChan <- message.MessageSentEvent.Err:
+					case <-t.HaltCh():
+						return
+					}
 				}
-			} else {
+			}
+			if !isArq {
 				select {
 				case t.eventSink <- message.MessageSentEvent:
 					continue
@@ -215,15 +220,20 @@ func (t *ThinClient) worker() {
 			if message.MessageReplyEvent.Payload == nil {
 				t.log.Error("message.Payload is nil")
 			}
-			replyWaitChanRaw, ok := t.replyWaitChanMap.Load(*message.MessageReplyEvent.MessageID)
-			if ok {
-				replyWaitChan := replyWaitChanRaw.(chan []byte)
-				select {
-				case replyWaitChan <- message.MessageReplyEvent.Payload:
-				case <-t.HaltCh():
-					return
+			isArq := false
+			if message.MessageReplyEvent.MessageID != nil {
+				replyWaitChanRaw, ok := t.replyWaitChanMap.Load(*message.MessageReplyEvent.MessageID)
+				if ok {
+					isArq = true
+					replyWaitChan := replyWaitChanRaw.(chan []byte)
+					select {
+					case replyWaitChan <- message.MessageReplyEvent.Payload:
+					case <-t.HaltCh():
+						return
+					}
 				}
-			} else {
+			}
+			if !isArq {
 				t.log.Debugf("before emitting message to event sink")
 				select {
 				case t.eventSink <- message.MessageReplyEvent:
