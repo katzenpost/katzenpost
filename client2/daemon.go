@@ -27,6 +27,11 @@ const (
 	AppIDLength = 16
 )
 
+type gcReply struct {
+	id    *[MessageIDLength]byte
+	appID *[AppIDLength]byte
+}
+
 type sphinxReply struct {
 	surbID     *[constants.SURBIDLength]byte
 	ciphertext []byte
@@ -55,6 +60,9 @@ type Daemon struct {
 	replyCh    chan sphinxReply
 	gcSurbIDCh chan *[sConstants.SURBIDLength]byte
 	arq        *ARQ
+
+	gctimerQueue *TimerQueue
+	gcReplyCh    chan *gcReply
 
 	haltOnce sync.Once
 }
@@ -96,6 +104,7 @@ func NewDaemon(cfg *config.Config, egressSize int) (*Daemon, error) {
 		replies:    make(map[[sConstants.SURBIDLength]byte]replyDescriptor),
 		decoys:     make(map[[sConstants.SURBIDLength]byte]replyDescriptor),
 		gcSurbIDCh: make(chan *[sConstants.SURBIDLength]byte),
+		gcReplyCh:  make(chan *gcReply),
 	}
 
 	return d, nil
@@ -115,6 +124,7 @@ func (d *Daemon) halt() {
 
 	d.log.Debug("Stopping timerQueue")
 	d.timerQueue.Halt()
+	d.gctimerQueue.Halt()
 
 	d.log.Debug("Stopping client")
 	d.client.Shutdown()
@@ -158,6 +168,18 @@ func (d *Daemon) Start() error {
 		}
 	})
 
+	d.gctimerQueue = NewTimerQueue(func(rawGCReply interface{}) {
+		myGcReply, ok := rawGCReply.(*gcReply)
+		if !ok {
+			panic("wtf, failed type assertion!")
+		}
+		select {
+		case d.gcReplyCh <- myGcReply:
+		case <-d.HaltCh():
+			return
+		}
+	})
+
 	d.Go(d.egressWorker)
 	return d.client.Start()
 }
@@ -183,6 +205,22 @@ func (d *Daemon) egressWorker() {
 		case <-d.HaltCh():
 			d.Shutdown()
 			return
+		case mygcreply := <-d.gcReplyCh:
+			response := &Response{
+				AppID: mygcreply.appID,
+				MessageIDGarbageCollected: &MessageIDGarbageCollected{
+					MessageID: mygcreply.id,
+				},
+			}
+			conn, ok := d.listener.conns[*mygcreply.appID]
+			if !ok {
+				d.log.Infof("no connection associated with AppID %x", mygcreply.appID[:])
+				panic("no connection associated with AppID")
+			}
+			err := conn.sendResponse(response)
+			if err != nil {
+				d.log.Errorf("failed to send Response: %s", err)
+			}
 		case surbID := <-d.gcSurbIDCh:
 			delete(d.replies, *surbID)
 			// XXX FIXME consume statistics on our loop decoys for n-1 detection
@@ -259,10 +297,16 @@ func (d *Daemon) sendARQMessage(request *Request) {
 	if request.AppID == nil {
 		panic("request.AppID is nil")
 	}
-	err := d.arq.Send(request.AppID, request.ID, request.Payload, request.DestinationIdHash, request.RecipientQueueID)
+	rtt, err := d.arq.Send(request.AppID, request.ID, request.Payload, request.DestinationIdHash, request.RecipientQueueID)
 	if err != nil {
 		panic(err)
 	}
+	slop := time.Second * 20 // XXX perhaps make this configurable if needed
+	replyArrivalTime := time.Now().Add(rtt + slop)
+	d.gctimerQueue.Push(uint64(replyArrivalTime.UnixNano()), &gcReply{
+		id:    request.ID,
+		appID: request.AppID,
+	})
 }
 
 func (d *Daemon) SentEvent(response *Response) {

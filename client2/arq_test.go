@@ -73,7 +73,7 @@ func TestARQ(t *testing.T) {
 
 	require.Equal(t, 0, arq.timerQueue.Len())
 
-	err = arq.Send(appid, id, payload, providerHash, queueID)
+	_, err = arq.Send(appid, id, payload, providerHash, queueID)
 	require.NoError(t, err)
 	require.Equal(t, 1, arq.timerQueue.Len())
 

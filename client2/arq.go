@@ -194,7 +194,7 @@ func (a *ARQ) HandleAck(surbID *[sConstants.SURBIDLength]byte) (*replyDescriptor
 }
 
 // Send sends a message asynchronously. Sometime later, perhaps a reply will be received.
-func (a *ARQ) Send(appid *[AppIDLength]byte, id *[MessageIDLength]byte, payload []byte, providerHash *[32]byte, queueID []byte) error {
+func (a *ARQ) Send(appid *[AppIDLength]byte, id *[MessageIDLength]byte, payload []byte, providerHash *[32]byte, queueID []byte) (time.Duration, error) {
 	a.log.Info("ARQ Send")
 
 	if appid == nil {
@@ -257,5 +257,5 @@ func (a *ARQ) Send(appid *[AppIDLength]byte, id *[MessageIDLength]byte, payload 
 	}
 	a.sentEventSender.SentEvent(response)
 
-	return nil
+	return rtt, nil
 }

@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/katzenpost/katzenpost/core/queue"
-	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/worker"
 )
 
@@ -36,10 +35,10 @@ func (t *TimerQueue) Start() {
 	t.Go(t.worker)
 }
 
-func (t *TimerQueue) Push(priority uint64, surbID *[sConstants.SURBIDLength]byte) {
+func (t *TimerQueue) Push(priority uint64, value interface{}) {
 	t.mutex.Lock()
 	defer t.mutex.Unlock()
-	t.queue.Enqueue(priority, surbID)
+	t.queue.Enqueue(priority, value)
 }
 
 func (t *TimerQueue) Len() int {
