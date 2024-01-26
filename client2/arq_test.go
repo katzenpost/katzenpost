@@ -1,3 +1,5 @@
+//go:build time
+
 // SPDX-FileCopyrightText: © 2023 David Stainton
 // SPDX-License-Identifier: AGPL-3.0-only
 package client2
@@ -42,7 +44,7 @@ type mockSentEventSender struct{}
 func (m *mockSentEventSender) SentEvent(response *Response) {}
 
 // disable for now; github CI cannot properly handle any tests that use time.
-func NoTestARQ(t *testing.T) {
+func TestARQ(t *testing.T) {
 	sphinxComposerSender := &mockComposerSender{
 		t:        t,
 		requests: make([]*Request, 0),

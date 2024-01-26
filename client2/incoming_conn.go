@@ -57,16 +57,12 @@ func (c *incomingConn) handleRequest(req *Request) (*Response, error) {
 }
 
 func (c *incomingConn) sendPKIDoc(doc *cpki.Document) error {
-	c.log.Debug("sendPKIDoc begin")
 	doc.StripSignatures()
 	blob, err := doc.Serialize()
 	if err != nil {
 		c.log.Debugf("cbor marshal failed: %s", err.Error())
 		return err
 	}
-
-	c.log.Debugf("sendPKIDoc: stripped PKI Doc size is %d", len(blob))
-
 	message := &Response{
 		NewPKIDocumentEvent: &NewPKIDocumentEvent{
 			Payload: blob,
@@ -87,12 +83,10 @@ func (c *incomingConn) updateConnectionStatus(status error) {
 }
 
 func (c *incomingConn) sendResponse(response *Response) error {
-	c.log.Debug("sendResponse")
 	blob, err := cbor.Marshal(response)
 	if err != nil {
 		return err
 	}
-	c.log.Debug("unixConn Write")
 	count, err := c.unixConn.Write(blob)
 	if err != nil {
 		return err

@@ -223,7 +223,6 @@ func (d *Daemon) egressWorker() {
 
 			// XXX FIXME consume statistics on our loop decoys for n-1 detection
 			if isDecoy {
-				d.log.Info("decoy message ---")
 				continue
 			}
 			conn, ok := d.listener.conns[*desc.appID]
@@ -294,7 +293,7 @@ func (d *Daemon) send(request *Request) {
 		slop := time.Second * 20 // XXX perhaps make this configurable if needed
 		duration := rtt + slop
 		replyArrivalTime := now.Add(duration)
-		d.log.Infof("reply arrival duration: %s", duration)
+
 		d.timerQueue.Push(uint64(replyArrivalTime.UnixNano()), request.SURBID)
 
 		if request.IsLoopDecoy == false {

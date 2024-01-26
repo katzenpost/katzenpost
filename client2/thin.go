@@ -170,10 +170,9 @@ func (t *ThinClient) worker() {
 			return
 		}
 
-		t.log.Debug("THIN CLIENT WORKER RECEIVED A MESSAGE---------------------")
-
 		switch {
 		case message.ConnectionStatusEvent != nil:
+			t.log.Debug("ConnectionStatusEvent")
 			select {
 			case t.eventSink <- message.ConnectionStatusEvent:
 				continue
@@ -181,6 +180,7 @@ func (t *ThinClient) worker() {
 				return
 			}
 		case message.NewPKIDocumentEvent != nil:
+			t.log.Debug("NewPKIDocumentEvent")
 			doc, err := t.parsePKIDoc(message.NewPKIDocumentEvent.Payload)
 			if err != nil {
 				t.log.Fatalf("parsePKIDoc %s", err)
@@ -195,6 +195,7 @@ func (t *ThinClient) worker() {
 				return
 			}
 		case message.MessageSentEvent != nil:
+			t.log.Debug("MessageSentEvent")
 			isArq := false
 			if message.MessageSentEvent.MessageID != nil {
 				sentWaitChanRaw, ok := t.sentWaitChanMap.Load(*message.MessageSentEvent.MessageID)
@@ -217,6 +218,7 @@ func (t *ThinClient) worker() {
 				}
 			}
 		case message.MessageReplyEvent != nil:
+			t.log.Debug("MessageReplyEvent")
 			if message.MessageReplyEvent.Payload == nil {
 				t.log.Error("message.Payload is nil")
 			}

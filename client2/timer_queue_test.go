@@ -1,3 +1,8 @@
+//go:build time
+
+// SPDX-FileCopyrightText: © 2023 David Stainton
+// SPDX-License-Identifier: AGPL-3.0-only
+
 package client2
 
 import (
@@ -24,8 +29,7 @@ func TestTimerQueueHalt(t *testing.T) {
 	q.Wait()
 }
 
-// disable time based tests because github CI cannot properly handle it
-func NoTestTimerQueuePush(t *testing.T) {
+func TestTimerQueuePush(t *testing.T) {
 	t.Parallel()
 	assert := assert.New(t)
 
@@ -50,6 +54,7 @@ func NoTestTimerQueuePush(t *testing.T) {
 	require.Equal(t, q.Len(), 10)
 	<-time.After(200 * time.Millisecond)
 	require.Equal(t, q.Len(), 0)
+
 	go q.Halt()
 	q.Wait()
 }

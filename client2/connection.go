@@ -496,7 +496,6 @@ func (c *connection) onWireConn(w *wire.Session) {
 		case <-c.fetchCh:
 			doFetch = true
 		case ctx := <-c.getConsensusCh:
-			c.log.Debugf("Dequeued GetConsesus for send.")
 			if consensusCtx != nil {
 				ctx.doneFn(fmt.Errorf("outstanding GetConsensus already exists: %v", consensusCtx.epoch))
 			} else {
@@ -510,7 +509,6 @@ func (c *connection) onWireConn(w *wire.Session) {
 					c.log.Debugf("Failed to send GetConsensus: %v", wireErr)
 					return
 				}
-				c.log.Debugf("Sent GetConsensus.")
 			}
 
 			adjFetchDelay()
