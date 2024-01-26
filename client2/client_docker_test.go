@@ -112,7 +112,7 @@ Loop:
 			if !v.IsConnected {
 				panic("socket connection lost")
 			}
-		case *NewPKIDocumentEvent:
+		case *NewDocumentEvent:
 			t.Log("NewPKIDocumentEvent")
 		case *MessageSentEvent:
 			t.Log("MessageSentEvent")
@@ -181,7 +181,7 @@ Loop:
 			if !v.IsConnected {
 				panic("socket connection lost")
 			}
-		case *NewPKIDocumentEvent:
+		case *NewDocumentEvent:
 			t.Log("NewPKIDocumentEvent")
 		case *MessageSentEvent:
 			t.Log("MessageSentEvent")
