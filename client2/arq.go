@@ -174,6 +174,8 @@ func (a *ARQ) Has(surbID *[sConstants.SURBIDLength]byte) bool {
 // the APP ID and SURB Key so that the reply and be decrypted and routed
 // to the correct application.
 func (a *ARQ) HandleAck(surbID *[sConstants.SURBIDLength]byte) (*replyDescriptor, error) {
+	a.log.Info("HandleAck")
+
 	a.lock.Lock()
 	defer a.lock.Unlock()
 
