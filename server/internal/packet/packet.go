@@ -63,6 +63,15 @@ type Packet struct {
 	rawPacketPool sync.Pool
 }
 
+// NewDelay returns the new Delay from time.Now and pkt.RecvAt
+func (pkt *Packet) NewDelay() time.Duration {
+	delay := pkt.Delay - time.Since(pkt.RecvAt)
+	if delay < 0 {
+		return time.Duration(0)
+	}
+	return delay
+}
+
 // Set sets the Packet's internal components.
 func (pkt *Packet) Set(payload []byte, cmds []commands.RoutingCommand) error {
 	pkt.Payload = payload
@@ -297,6 +306,9 @@ func NewPacketFromSURB(surb, payload []byte, geo *geo.Geometry) (*Packet, error)
 	copy(nextHopCmd.ID[:], firstHop[:])
 	cmds = append(cmds, nextHopCmd)
 
+	// Delay is set to 0, caller must set the appropriate Delay in order to
+	// respect the senders delay assumptions, after any processing delay
+	// has been accounted for.
 	nodeDelayCmd := new(commands.NodeDelay)
 	nodeDelayCmd.Delay = 0
 	cmds = append(cmds, nodeDelayCmd)
@@ -312,10 +324,6 @@ func NewPacketFromSURB(surb, payload []byte, geo *geo.Geometry) (*Packet, error)
 		return nil, err
 	}
 
-	//respPkt.RecvAt = time.Now()
-	// XXX: This should probably fudge the delay to account for processing
-	// time.
-	//respPkt.Delay = time.Duration(nodeDelayCmd.Delay) * time.Millisecond
 	respPkt.MustForward = true
 	respPkt.rawPacketPool = sync.Pool{
 		New: func() interface{} {
