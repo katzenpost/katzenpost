@@ -193,16 +193,18 @@ func (a *ARQ) HandleAck(surbID *[sConstants.SURBIDLength]byte) (*replyDescriptor
 
 // Send sends a message asynchronously. Sometime later, perhaps a reply will be received.
 func (a *ARQ) Send(appid *[AppIDLength]byte, id *[MessageIDLength]byte, payload []byte, providerHash *[32]byte, queueID []byte) error {
+	a.log.Info("ARQ Send")
+
 	if appid == nil {
 		panic("appid is nil")
 	}
-	a.log.Info("Send")
+	if id == nil {
+		panic("id is nil")
+	}
 
-	a.lock.Lock()
 	surbID := &[sConstants.SURBIDLength]byte{}
 	_, err := rand.Reader.Read(surbID[:])
 	if err != nil {
-		a.lock.Unlock()
 		panic(err)
 	}
 
@@ -216,7 +218,6 @@ func (a *ARQ) Send(appid *[AppIDLength]byte, id *[MessageIDLength]byte, payload 
 		IsSendOp:          true,
 	})
 	if err != nil {
-		a.lock.Unlock()
 		panic(err)
 	}
 
@@ -229,8 +230,11 @@ func (a *ARQ) Send(appid *[AppIDLength]byte, id *[MessageIDLength]byte, payload 
 		SentAt:             time.Now(),
 		ReplyETA:           rtt,
 	}
+
+	a.lock.Lock()
 	a.surbIDMap[*surbID] = message
 	a.lock.Unlock()
+
 	p := time.Duration(message.ReplyETA + RoundTripTimeSlop)
 	a.log.Infof("Push to timer queue with priorit %s", p)
 	priority := uint64(message.SentAt.Add(message.ReplyETA).Add(RoundTripTimeSlop).UnixNano())
@@ -238,28 +242,17 @@ func (a *ARQ) Send(appid *[AppIDLength]byte, id *[MessageIDLength]byte, payload 
 	a.timerQueue.Push(priority, surbID)
 
 	err = a.sphinxComposerSender.SendSphinxPacket(pkt)
-	if err != nil {
-		return err
-	}
 
 	response := &Response{
 		AppID: appid,
 		MessageSentEvent: &MessageSentEvent{
 			MessageID: id,
+			SURBID:    surbID,
 			SentAt:    time.Now(),
 			ReplyETA:  rtt,
-			Err:       nil,
+			Err:       err,
 		},
 	}
-	/*
-		ID:            id,
-		SURBID:        surbID,
-		AppID:         appid,
-		SentAt:        time.Now(),
-		ReplyETA:      rtt,
-		Err:           err,
-		IsMessageSent: true,
-	}*/
 	a.sentEventSender.SentEvent(response)
 
 	return nil
