@@ -59,6 +59,7 @@ type ThinClient struct {
 
 	isConnected bool
 
+	// used by BlockingSendReliableMessage only
 	sentWaitChanMap  sync.Map // MessageID -> chan error
 	replyWaitChanMap sync.Map // MessageID -> chan []byte
 
@@ -171,6 +172,13 @@ func (t *ThinClient) worker() {
 		}
 
 		switch {
+		case message.MessageIDGarbageCollected != nil:
+			select {
+			case t.eventSink <- message.MessageIDGarbageCollected:
+				continue
+			case <-t.HaltCh():
+				return
+			}
 		case message.ConnectionStatusEvent != nil:
 			t.log.Debug("ConnectionStatusEvent")
 			select {

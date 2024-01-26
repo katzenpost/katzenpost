@@ -18,6 +18,8 @@ type Response struct {
 	MessageSentEvent *MessageSentEvent `cbor:message_sent_event`
 
 	MessageReplyEvent *MessageReplyEvent `cbor:message_reply_event`
+
+	MessageIDGarbageCollected *MessageIDGarbageCollected
 }
 
 type Request struct {
