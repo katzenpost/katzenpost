@@ -89,18 +89,6 @@ func (e *MessageSentEvent) String() string {
 	return fmt.Sprintf("MessageSent: %v", hex.EncodeToString(e.MessageID[:]))
 }
 
-// MessageIDGarbageCollected is the event used to signal when a given
-// message ID has been garbage collected.
-type MessageIDGarbageCollected struct {
-	// MessageID is the local unique identifier for the message.
-	MessageID *[MessageIDLength]byte `cbor:message_id`
-}
-
-// String returns a string representation of a MessageIDGarbageCollected.
-func (e *MessageIDGarbageCollected) String() string {
-	return fmt.Sprintf("MessageIDGarbageCollected: %v", hex.EncodeToString(e.MessageID[:]))
-}
-
 // NewDocumentEvent is the new document event, signaling that
 // we have received a new document from the PKI.
 type NewDocumentEvent struct {
