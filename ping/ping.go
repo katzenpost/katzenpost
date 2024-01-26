@@ -88,7 +88,7 @@ Loop:
 			if !v.IsConnected {
 				panic("socket connection lost")
 			}
-		case *client2.NewPKIDocumentEvent:
+		case *client2.NewDocumentEvent:
 		case *client2.MessageSentEvent:
 		case *client2.MessageReplyEvent:
 			reply = v.Payload
