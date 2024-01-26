@@ -156,7 +156,7 @@ func TestVerifyAll(t *testing.T) {
 
 	current, _, _ := epochtime.Now()
 
-	certificate, err := Sign(signingPrivKey1, signingPubKey1, ephemeralPubKey.Bytes(), current+1)
+	certificate, err := Sign(signingPrivKey1, signingPubKey1, ephemeralPubKey.Bytes(), current+2)
 	assert.NoError(err)
 
 	certificate, err = SignMulti(signingPrivKey2, signingPubKey2, certificate)

@@ -20,7 +20,7 @@ static int test_haraka_S_incremental(void) {
     int squeezed;
     int returncode = 0;
 
-    randombytes(input, 521);
+    _randombytes(input, 521);
 
     haraka_S(check, 521, input, 521);
 

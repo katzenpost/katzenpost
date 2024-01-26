@@ -233,7 +233,7 @@ func New(cfg *config.Config) (*Server, error) {
 	if err := s.initLogging(); err != nil {
 		return nil, err
 	}
-	instrument.Init()
+	instrument.StartPrometheusListener(goo)
 
 	s.log.Notice("Katzenpost is still pre-alpha.  DO NOT DEPEND ON IT FOR STRONG SECURITY OR ANONYMITY.")
 	if s.cfg.Logging.Level == "DEBUG" {
