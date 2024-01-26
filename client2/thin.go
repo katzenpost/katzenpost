@@ -4,7 +4,6 @@
 package client2
 
 import (
-	"crypto/hmac"
 	"errors"
 	"fmt"
 	"net"
@@ -30,6 +29,7 @@ type ThinResponse struct {
 	// SURBID of the sent message.
 	SURBID *[sConstants.SURBIDLength]byte
 
+	// ID is the unique ID for the corresponding sent message.
 	ID *[MessageIDLength]byte
 
 	// Payload is the decrypted payload plaintext.
@@ -59,7 +59,8 @@ type ThinClient struct {
 
 	isConnected bool
 
-	receivedCh chan ThinResponse
+	sentWaitChanMap  sync.Map // MessageID -> chan error
+	replyWaitChanMap sync.Map // MessageID -> chan []byte
 
 	closeOnce sync.Once
 }
@@ -77,7 +78,6 @@ func NewThinClient(cfg *config.Config) *ThinClient {
 			Level:  logLevel,
 		}),
 		logBackend: log.WithPrefix("backend"),
-		receivedCh: make(chan ThinResponse),
 		eventSink:  make(chan Event, 2),
 		drainStop:  make(chan interface{}),
 	}
@@ -95,7 +95,6 @@ func (t *ThinClient) GetLogger(prefix string) *log.Logger {
 // connection with the client daemon.
 func (t *ThinClient) Close() error {
 	err := t.unixConn.Close()
-	t.closeOnce.Do(func() { close(t.receivedCh) })
 	t.Worker.Halt()
 	return err
 }
@@ -174,14 +173,6 @@ func (t *ThinClient) worker() {
 		t.log.Debug("THIN CLIENT WORKER RECEIVED A MESSAGE---------------------")
 
 		switch {
-		case message.MessageSentEvent != nil:
-			select {
-			case t.eventSink <- message.MessageSentEvent:
-				continue
-			case <-t.HaltCh():
-				return
-			}
-
 		case message.ConnectionStatusEvent != nil:
 			select {
 			case t.eventSink <- message.ConnectionStatusEvent:
@@ -203,29 +194,43 @@ func (t *ThinClient) worker() {
 			case <-t.HaltCh():
 				return
 			}
+		case message.MessageSentEvent != nil:
+			sentWaitChanRaw, ok := t.sentWaitChanMap.Load(*message.MessageSentEvent.MessageID)
+			if ok {
+				sentWaitChan := sentWaitChanRaw.(chan error)
+				select {
+				case sentWaitChan <- message.MessageSentEvent.Err:
+				case <-t.HaltCh():
+					return
+				}
+			} else {
+				select {
+				case t.eventSink <- message.MessageSentEvent:
+					continue
+				case <-t.HaltCh():
+					return
+				}
+			}
 		case message.MessageReplyEvent != nil:
 			if message.MessageReplyEvent.Payload == nil {
-				t.log.Infof("message.Payload is nil")
+				t.log.Error("message.Payload is nil")
 			}
-			t.log.Debugf("before emitting message to event sink")
-			select {
-			case t.eventSink <- message.MessageReplyEvent:
-			case <-t.HaltCh():
-				return
+			replyWaitChanRaw, ok := t.replyWaitChanMap.Load(*message.MessageReplyEvent.MessageID)
+			if ok {
+				replyWaitChan := replyWaitChanRaw.(chan []byte)
+				select {
+				case replyWaitChan <- message.MessageReplyEvent.Payload:
+				case <-t.HaltCh():
+					return
+				}
+			} else {
+				t.log.Debugf("before emitting message to event sink")
+				select {
+				case t.eventSink <- message.MessageReplyEvent:
+				case <-t.HaltCh():
+					return
+				}
 			}
-			t.log.Debugf("after emitting message to event sink")
-			response := ThinResponse{
-				SURBID:  message.MessageReplyEvent.SURBID,
-				ID:      message.MessageReplyEvent.MessageID,
-				Payload: message.MessageReplyEvent.Payload,
-			}
-			t.log.Debugf("before sending message to receivedCh")
-			select {
-			case <-t.HaltCh():
-				return
-			case t.receivedCh <- response:
-			}
-			t.log.Debugf("after sending message to receivedCh")
 		default:
 			t.log.Error("bug: received invalid thin client message")
 		}
@@ -356,15 +361,14 @@ func (t *ThinClient) SendMessage(surbID *[sConstants.SURBIDLength]byte, payload 
 	if surbID == nil {
 		return errors.New("surbID cannot be nil")
 	}
-
-	req := new(Request)
-	req.WithSURB = true
-	req.SURBID = surbID
-	req.IsSendOp = true
-	req.Payload = payload
-	req.DestinationIdHash = destNode
-	req.RecipientQueueID = destQueue
-
+	req := &Request{
+		SURBID:            surbID,
+		WithSURB:          true,
+		IsSendOp:          true,
+		Payload:           payload,
+		DestinationIdHash: destNode,
+		RecipientQueueID:  destQueue,
+	}
 	blob, err := cbor.Marshal(req)
 	if err != nil {
 		return err
@@ -376,7 +380,29 @@ func (t *ThinClient) SendMessage(surbID *[sConstants.SURBIDLength]byte, payload 
 	if count != len(blob) {
 		return fmt.Errorf("SendMessage error: wrote %d instead of %d bytes", count, len(blob))
 	}
+	return nil
+}
 
+func (t *ThinClient) SendReliableMessage(messageID *[MessageIDLength]byte, payload []byte, destNode *[32]byte, destQueue []byte) error {
+	req := &Request{
+		ID:                messageID,
+		WithSURB:          true,
+		IsARQSendOp:       true,
+		Payload:           payload,
+		DestinationIdHash: destNode,
+		RecipientQueueID:  destQueue,
+	}
+	blob, err := cbor.Marshal(req)
+	if err != nil {
+		return err
+	}
+	count, _, err := t.unixConn.WriteMsgUnix(blob, nil, t.destUnixAddr)
+	if err != nil {
+		return err
+	}
+	if count != len(blob) {
+		return fmt.Errorf("SendReliableMessage error: wrote %d instead of %d bytes", count, len(blob))
+	}
 	return nil
 }
 
@@ -395,67 +421,49 @@ func (t *ThinClient) readNextMessage() (*Response, error) {
 	return &response, nil
 }
 
-// ResponseChan returns the channel that receives message responses
-// from the client daemon, of type ThinResponse.
-func (t *ThinClient) ResponseChan() chan ThinResponse {
-	return t.receivedCh
-}
-
-// ReceiveMessage blocks until a message is received.
-// Use ResponseChan instead if you want an async way to receive messages.
-func (t *ThinClient) ReceiveMessage() (*[sConstants.SURBIDLength]byte, []byte) {
-	resp := <-t.receivedCh
-	return resp.SURBID, resp.Payload
-}
-
-// ARQSend uses a naive ARQ scheme for error correction in the sending of the message.
-func (t *ThinClient) ARQSend(id *[MessageIDLength]byte, payload []byte, destNode *[32]byte, destQueue []byte) error {
-	req := new(Request)
-	req.ID = id
-	req.WithSURB = true
-	req.IsARQSendOp = true
-	req.Payload = payload
-	req.DestinationIdHash = destNode
-	req.RecipientQueueID = destQueue
+// BlockingSendReliableMessage blocks until the message is reliably sent and the ARQ reply is received.
+func (t *ThinClient) BlockingSendReliableMessage(messageID *[MessageIDLength]byte, payload []byte, destNode *[32]byte, destQueue []byte) (reply []byte, err error) {
+	req := &Request{
+		ID:                messageID,
+		WithSURB:          true,
+		IsARQSendOp:       true,
+		Payload:           payload,
+		DestinationIdHash: destNode,
+		RecipientQueueID:  destQueue,
+	}
 
 	blob, err := cbor.Marshal(req)
 	if err != nil {
-		return err
+		return nil, err
 	}
+
+	sentWaitChan := make(chan error)
+	t.sentWaitChanMap.Store(*messageID, sentWaitChan)
+	defer t.sentWaitChanMap.Delete(*messageID)
+
+	replyWaitChan := make(chan []byte)
+	t.replyWaitChanMap.Store(*messageID, replyWaitChan)
+	defer t.replyWaitChanMap.Delete(*messageID)
+
 	count, _, err := t.unixConn.WriteMsgUnix(blob, nil, t.destUnixAddr)
-	if err != nil {
-		return err
-	}
-	if count != len(blob) {
-		return fmt.Errorf("SendMessage error: wrote %d instead of %d bytes", count, len(blob))
-	}
-
-	return nil
-}
-
-// ARQReceiveMessage blocks until a message is received.
-// Use ResponseChan instead if you want an async way to receive messages.
-func (t *ThinClient) ARQReceiveMessage(messageId *[MessageIDLength]byte) []byte {
-	for {
-		select {
-		case <-t.HaltCh():
-			return nil
-		case resp := <-t.receivedCh:
-			if hmac.Equal(messageId[:], resp.ID[:]) {
-				return resp.Payload
-			}
-		}
-	}
-	panic("impossible")
-	return nil
-}
-
-// BlockingSendReliableMessage blocks until the message is reliably sent and the ARQ reply is received.
-func (t *ThinClient) BlockingSendReliableMessage(messageID *[MessageIDLength]byte, payload []byte, destNode *[32]byte, destQueue []byte) (reply []byte, err error) {
-	err = t.ARQSend(messageID, payload, destNode, destQueue)
 	if err != nil {
 		return nil, err
 	}
-	reply = t.ARQReceiveMessage(messageID)
-	return reply, nil
+	if count != len(blob) {
+		return nil, fmt.Errorf("SendMessage error: wrote %d instead of %d bytes", count, len(blob))
+	}
+
+	sentErr := <-sentWaitChan
+	if sentErr != nil {
+		return nil, sentErr
+	}
+
+	select {
+	case reply := <-replyWaitChan:
+		return reply, nil
+	case <-t.HaltCh():
+		return nil, errors.New("halting")
+	}
+
+	// unreachable
 }
