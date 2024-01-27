@@ -1082,11 +1082,19 @@ func (c *Client) handleSent(sentEvent *client2.MessageSentEvent) {
 }
 
 func (c *Client) handleReply(replyEvent *client2.MessageReplyEvent) {
+	var id *[16]byte
 	if replyEvent.MessageID == nil {
-		c.log.Info("ignoring replyEvent with nil MessageID")
+		if replyEvent.SURBID == nil {
+			c.log.Info("ignoring replyEvent with nil MessageID and nil SURBID")
+			return
+		}
+		id = replyEvent.SURBID
+
+	} else {
+		id = replyEvent.MessageID
 	}
-	if ev, ok := c.sendMap.Load(*replyEvent.MessageID); ok {
-		defer c.sendMap.Delete(*replyEvent.MessageID)
+	if ev, ok := c.sendMap.Load(*id); ok {
+		defer c.sendMap.Delete(*id)
 		switch tp := ev.(type) {
 		case *SentMessageDescriptor:
 			// Deserialize spoolresponse
