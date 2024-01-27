@@ -23,8 +23,7 @@ const (
 )
 
 type SphinxComposerSender interface {
-	ComposeSphinxPacket(request *Request) ([]byte, []byte, time.Duration, error)
-	SendSphinxPacket(pkt []byte) error
+	SendCiphertext(request *Request) ([]byte, time.Duration, error)
 }
 
 type SentEventSender interface {
@@ -128,7 +127,7 @@ func (a *ARQ) resend(surbID *[sConstants.SURBIDLength]byte) {
 			panic(err)
 		}
 
-		pkt, k, rtt, err := a.sphinxComposerSender.ComposeSphinxPacket(&Request{
+		k, rtt, err := a.sphinxComposerSender.SendCiphertext(&Request{
 			WithSURB:          true,
 			SURBID:            newsurbID,
 			DestinationIdHash: message.DestinationIdHash,
@@ -137,7 +136,7 @@ func (a *ARQ) resend(surbID *[sConstants.SURBIDLength]byte) {
 			IsSendOp:          true,
 		})
 		if err != nil {
-			panic(err)
+			a.log.Errorf("failed to send sphinx packet: %s", err.Error())
 		}
 
 		message.SURBID = newsurbID
@@ -149,12 +148,6 @@ func (a *ARQ) resend(surbID *[sConstants.SURBIDLength]byte) {
 		a.surbIDMap[*newsurbID] = message
 		priority := uint64(message.SentAt.Add(message.ReplyETA).Add(RoundTripTimeSlop).UnixNano())
 		a.timerQueue.Push(priority, surbID)
-
-		err = a.sphinxComposerSender.SendSphinxPacket(pkt)
-		if err != nil {
-			a.log.Errorf("failed to send sphinx packet: %s", err.Error())
-		}
-
 	} else {
 		a.log.Error("SURB ID not found")
 	}
@@ -214,7 +207,7 @@ func (a *ARQ) Send(appid *[AppIDLength]byte, id *[MessageIDLength]byte, payload 
 		panic(err)
 	}
 
-	pkt, k, rtt, err := a.sphinxComposerSender.ComposeSphinxPacket(&Request{
+	k, rtt, err := a.sphinxComposerSender.SendCiphertext(&Request{
 		AppID:             appid,
 		WithSURB:          true,
 		SURBID:            surbID,
@@ -223,9 +216,6 @@ func (a *ARQ) Send(appid *[AppIDLength]byte, id *[MessageIDLength]byte, payload 
 		Payload:           payload,
 		IsSendOp:          true,
 	})
-	if err != nil {
-		panic(err)
-	}
 
 	message := &ARQMessage{
 		AppID:              appid,
@@ -251,8 +241,6 @@ func (a *ARQ) Send(appid *[AppIDLength]byte, id *[MessageIDLength]byte, payload 
 	priority := uint64(message.SentAt.Add(message.ReplyETA).Add(RoundTripTimeSlop).UnixNano())
 
 	a.timerQueue.Push(priority, surbID)
-
-	err = a.sphinxComposerSender.SendSphinxPacket(pkt)
 
 	response := &Response{
 		AppID: appid,

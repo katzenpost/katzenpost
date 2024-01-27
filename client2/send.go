@@ -14,13 +14,8 @@ import (
 	"github.com/katzenpost/katzenpost/core/sphinx/path"
 )
 
-// SendSphinxPacket sends the given Sphinx packet.
-func (c *Client) SendSphinxPacket(pkt []byte) error {
-	return c.conn.sendPacket(pkt)
-}
-
 // ComposeSphinxPacket is used to compose Sphinx packets.
-func (c *Client) ComposeSphinxPacket(request *Request) (pkt []byte, surbkey []byte, rtt time.Duration, err error) {
+func (c *Client) composeSphinxPacket(request *Request) (pkt []byte, surbkey []byte, rtt time.Duration, err error) {
 
 	if len(request.RecipientQueueID) > sConstants.RecipientIDLength {
 		return nil, nil, 0, fmt.Errorf("client2: invalid recipient: '%v'", request.RecipientQueueID)
@@ -107,7 +102,7 @@ func (c *Client) ComposeSphinxPacket(request *Request) (pkt []byte, surbkey []by
 // SURB identified by surbID, and returns the SURB decryption key and total
 // round trip delay.
 func (c *Client) SendCiphertext(request *Request) ([]byte, time.Duration, error) {
-	pkt, k, rtt, err := c.ComposeSphinxPacket(request)
+	pkt, k, rtt, err := c.composeSphinxPacket(request)
 	if err != nil {
 		panic(fmt.Sprintf("COMPOSE SPHINX PACKET FAIL %s", err.Error()))
 	}
