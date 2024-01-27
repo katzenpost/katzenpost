@@ -23,20 +23,18 @@ type mockComposerSender struct {
 	ch       chan bool
 }
 
-func (m *mockComposerSender) ComposeSphinxPacket(request *Request) ([]byte, []byte, time.Duration, error) {
+func (m *mockComposerSender) SendCiphertext(request *Request) ([]byte, time.Duration, error) {
 	m.t.Log("ComposeSphinxPacket")
 	m.requests = append(m.requests, request)
-	return []byte("packet"), []byte("key"), mockRTT, nil
-}
 
-func (m *mockComposerSender) SendSphinxPacket(pkt []byte) error {
 	defer func() {
 		if len(m.requests) == 2 {
 			m.ch <- false
 		}
 	}()
 	m.t.Log("SendSphinxPacket")
-	return nil
+
+	return []byte("packet"), mockRTT, nil
 }
 
 type mockSentEventSender struct{}
