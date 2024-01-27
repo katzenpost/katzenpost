@@ -349,14 +349,13 @@ func (t *ThinClient) NewSURBID() *[sConstants.SURBIDLength]byte {
 // SendMessageWithoutReply sends a message encapsulated in a Sphinx packet, without any SURB.
 // No reply will be possible.
 func (t *ThinClient) SendMessageWithoutReply(payload []byte, destNode *[32]byte, destQueue []byte) error {
-	req := new(Request)
-	req.WithSURB = false
-	req.IsSendOp = true
-	req.Payload = payload
-	req.DestinationIdHash = destNode
-	req.RecipientQueueID = destQueue
-	req.IsSendOp = true
-
+	req := &Request{
+		WithSURB:          false,
+		IsSendOp:          true,
+		Payload:           payload,
+		DestinationIdHash: destNode,
+		RecipientQueueID:  destQueue,
+	}
 	blob, err := cbor.Marshal(req)
 	if err != nil {
 		return err
@@ -368,7 +367,6 @@ func (t *ThinClient) SendMessageWithoutReply(payload []byte, destNode *[32]byte,
 	if count != len(blob) {
 		return fmt.Errorf("SendMessage error: wrote %d instead of %d bytes", count, len(blob))
 	}
-
 	return nil
 }
 
@@ -473,9 +471,9 @@ func (t *ThinClient) BlockingSendReliableMessage(messageID *[MessageIDLength]byt
 		return nil, fmt.Errorf("SendMessage error: wrote %d instead of %d bytes", count, len(blob))
 	}
 
-	sentErr := <-sentWaitChan
-	if sentErr != nil {
-		return nil, sentErr
+	err = <-sentWaitChan
+	if err != nil {
+		return nil, err
 	}
 
 	select {
