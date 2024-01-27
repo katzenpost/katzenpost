@@ -208,6 +208,7 @@ func (a *ARQ) Send(appid *[AppIDLength]byte, id *[MessageIDLength]byte, payload 
 		panic(err)
 	}
 
+	a.log.Warn("BEFORE SendCiphertext")
 	k, rtt, err := a.sphinxComposerSender.SendCiphertext(&Request{
 		AppID:             appid,
 		WithSURB:          true,
@@ -216,6 +217,7 @@ func (a *ARQ) Send(appid *[AppIDLength]byte, id *[MessageIDLength]byte, payload 
 		RecipientQueueID:  queueID,
 		Payload:           payload,
 	})
+	a.log.Warn("AFTER SendCiphertext")
 
 	message := &ARQMessage{
 		AppID:              appid,

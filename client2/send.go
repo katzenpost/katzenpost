@@ -100,7 +100,7 @@ func (c *Client) composeSphinxPacket(request *Request) (pkt []byte, surbkey []by
 
 // SendCiphertext sends the ciphertext b to the recipient/provider, with a
 // SURB identified by surbID, and returns the SURB decryption key and total
-// round trip delay.
+// round trip delay. Blocks until packet is sent on the wire.
 func (c *Client) SendCiphertext(request *Request) ([]byte, time.Duration, error) {
 	pkt, k, rtt, err := c.composeSphinxPacket(request)
 	if err != nil {

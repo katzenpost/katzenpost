@@ -6,8 +6,8 @@ package client2
 import cpki "github.com/katzenpost/katzenpost/core/pki"
 
 type Rates struct {
-	messageOrLoop         float64
-	messageOrLoopMaxDelay uint64
+	messageOrDrop         float64
+	messageOrDropMaxDelay uint64
 
 	loop         float64
 	loopMaxDelay uint64
@@ -18,8 +18,8 @@ type Rates struct {
 
 func ratesFromPKIDoc(doc *cpki.Document) *Rates {
 	return &Rates{
-		messageOrLoop:         doc.LambdaP,
-		messageOrLoopMaxDelay: doc.LambdaPMaxDelay,
+		messageOrDrop:         doc.LambdaP,
+		messageOrDropMaxDelay: doc.LambdaPMaxDelay,
 		loop:                  doc.LambdaL,
 		loopMaxDelay:          doc.LambdaLMaxDelay,
 		drop:                  doc.LambdaD,

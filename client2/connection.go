@@ -702,6 +702,8 @@ func (c *connection) onConnStatusChange(err error) {
 	}
 }
 
+// sendPacket blocks until the packet is sent
+// on the wire.
 func (c *connection) sendPacket(pkt []byte) error {
 	c.Lock()
 	if !c.isConnected {
