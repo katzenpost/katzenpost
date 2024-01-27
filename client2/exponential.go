@@ -32,20 +32,18 @@ type ExpDist struct {
 }
 
 func NewExpDist(rate, maxDelay uint64) *ExpDist {
-	return &ExpDist{
+	e := &ExpDist{
 		averageRate: rate,
 		maxDelay:    maxDelay,
 		opCh:        make(chan interface{}),
 		outCh:       make(chan struct{}),
 	}
+	e.Go(e.worker)
+	return e
 }
 
 func (e *ExpDist) OutCh() <-chan struct{} {
 	return e.outCh
-}
-
-func (e *ExpDist) Start() {
-	e.Go(e.worker)
 }
 
 func (e *ExpDist) Stop() {
@@ -117,7 +115,7 @@ func (e *ExpDist) worker() {
 
 		if isConnected && e.averageRate != 0 && e.maxDelay != 0 {
 			mRng := rand.NewMath()
-			rateMsec = uint64(rand.Exp(mRng, float64(1/e.averageRate)))
+			rateMsec = uint64(rand.Exp(mRng, float64(1/float64(e.averageRate))))
 			if rateMsec > e.maxDelay {
 				rateMsec = e.maxDelay
 			}
@@ -135,7 +133,5 @@ func (e *ExpDist) worker() {
 				rateTimer.Reset(rateInterval)
 			}
 		}
-
 	} // end for
-
 }
