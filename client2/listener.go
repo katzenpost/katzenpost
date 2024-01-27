@@ -27,6 +27,7 @@ type listener struct {
 	conns    map[[AppIDLength]byte]*incomingConn // appID -> *incomingConn
 
 	ingressCh   chan *Request
+	egressCh    chan *Request
 	decoySender *decoySender
 
 	closeAllCh chan interface{}
@@ -179,6 +180,7 @@ func NewListener(client *Client, rates *Rates, egressCh chan *Request, logbacken
 		conns:      make(map[[AppIDLength]byte]*incomingConn),
 		closeAllCh: make(chan interface{}),
 		ingressCh:  make(chan *Request),
+		egressCh:   egressCh,
 	}
 
 	l.decoySender = newDecoySender(rates, l.ingressCh, egressCh)

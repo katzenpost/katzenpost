@@ -263,8 +263,9 @@ func (d *Daemon) egressWorker() {
 			if isDecoy {
 				continue
 			}
-			conn, ok := d.listener.conns[*desc.appID]
-			if !ok {
+
+			conn := d.listener.getConnection(desc.appID)
+			if conn == nil {
 				d.log.Infof("no connection associated with AppID %x", desc.appID[:])
 				panic("no connection associated with AppID")
 			}
