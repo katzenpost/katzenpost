@@ -128,12 +128,13 @@ func (a *ARQ) resend(surbID *[sConstants.SURBIDLength]byte) {
 		}
 
 		k, rtt, err := a.sphinxComposerSender.SendCiphertext(&Request{
+			ID:                message.MessageID,
+			AppID:             message.AppID,
 			WithSURB:          true,
-			SURBID:            newsurbID,
 			DestinationIdHash: message.DestinationIdHash,
 			RecipientQueueID:  message.RecipientQueueID,
 			Payload:           message.Payload,
-			IsSendOp:          true,
+			SURBID:            newsurbID,
 		})
 		if err != nil {
 			a.log.Errorf("failed to send sphinx packet: %s", err.Error())
@@ -214,7 +215,6 @@ func (a *ARQ) Send(appid *[AppIDLength]byte, id *[MessageIDLength]byte, payload 
 		DestinationIdHash: providerHash,
 		RecipientQueueID:  queueID,
 		Payload:           payload,
-		IsSendOp:          true,
 	})
 
 	message := &ARQMessage{
