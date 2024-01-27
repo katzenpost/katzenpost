@@ -162,11 +162,12 @@ func (a *ARQ) resend(surbID *[sConstants.SURBIDLength]byte) {
 
 // Has checks if a given SURB ID exists.
 func (a *ARQ) Has(surbID *[sConstants.SURBIDLength]byte) bool {
-	a.log.Info("Has")
 
 	a.lock.RLock()
-	_, ok := a.surbIDMap[*surbID]
+	m, ok := a.surbIDMap[*surbID]
 	a.lock.RUnlock()
+
+	a.log.Infof("Has %x", m.MessageID[:])
 	return ok
 }
 
@@ -174,17 +175,20 @@ func (a *ARQ) Has(surbID *[sConstants.SURBIDLength]byte) bool {
 // the APP ID and SURB Key so that the reply and be decrypted and routed
 // to the correct application.
 func (a *ARQ) HandleAck(surbID *[sConstants.SURBIDLength]byte) (*replyDescriptor, error) {
-	a.log.Info("HandleAck")
-
-	a.lock.Lock()
-	defer a.lock.Unlock()
-
+	a.lock.RLock()
 	m, ok := a.surbIDMap[*surbID]
+	a.lock.RUnlock()
+
+	a.log.Infof("HandleAck ID %x", m.MessageID[:])
+
 	if !ok {
 		a.log.Error("failed to find SURB ID in ARQ map")
 		return nil, errors.New("failed to find SURB ID in ARQ map")
 	}
+
+	a.lock.Lock()
 	delete(a.surbIDMap, *surbID)
+	a.lock.Unlock()
 
 	return &replyDescriptor{
 		ID:      m.MessageID,
@@ -195,7 +199,7 @@ func (a *ARQ) HandleAck(surbID *[sConstants.SURBIDLength]byte) (*replyDescriptor
 
 // Send sends a message asynchronously. Sometime later, perhaps a reply will be received.
 func (a *ARQ) Send(appid *[AppIDLength]byte, id *[MessageIDLength]byte, payload []byte, providerHash *[32]byte, queueID []byte) (time.Duration, error) {
-	a.log.Info("ARQ Send")
+	a.log.Infof("Send ID %x", id[:])
 
 	if appid == nil {
 		panic("appid is nil")
