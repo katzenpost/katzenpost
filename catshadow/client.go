@@ -1037,6 +1037,9 @@ func (c *Client) handleSent(sentEvent *client2.MessageSentEvent) {
 	if sentEvent == nil {
 		panic("sentEvent is nil")
 	}
+	if sentEvent.MessageID == nil {
+		return
+	}
 	orig, ok := c.sendMap.Load(*sentEvent.MessageID)
 	if ok {
 		switch tp := orig.(type) {
