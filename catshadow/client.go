@@ -1025,12 +1025,12 @@ func (c *Client) sendReadInbox() {
 	c.log.Debug("Message enqueued for reading remote spool %x:%d, message-ID: %x", c.spoolReadDescriptor.ID, sequence, surbid[:])
 	var a MessageID
 	binary.BigEndian.PutUint32(a[:4], sequence)
-	c.sendMap.Store(surbid, &ReadMessageDescriptor{MessageID: a})
+	c.sendMap.Store(*surbid, &ReadMessageDescriptor{MessageID: a})
 }
 
 func (c *Client) garbageCollectSendMap(gcEvent *client2.MessageIDGarbageCollected) {
 	c.log.Debug("Garbage Collecting Message ID %x", gcEvent.MessageID[:])
-	c.sendMap.Delete(gcEvent.MessageID)
+	c.sendMap.Delete(*gcEvent.MessageID)
 }
 
 func (c *Client) handleSent(sentEvent *client2.MessageSentEvent) {
@@ -1082,8 +1082,11 @@ func (c *Client) handleSent(sentEvent *client2.MessageSentEvent) {
 }
 
 func (c *Client) handleReply(replyEvent *client2.MessageReplyEvent) {
+	if replyEvent.MessageID == nil {
+		c.log.Info("ignoring replyEvent with nil MessageID")
+	}
 	if ev, ok := c.sendMap.Load(*replyEvent.MessageID); ok {
-		defer c.sendMap.Delete(replyEvent.MessageID)
+		defer c.sendMap.Delete(*replyEvent.MessageID)
 		switch tp := ev.(type) {
 		case *SentMessageDescriptor:
 			// Deserialize spoolresponse
