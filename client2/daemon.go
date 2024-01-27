@@ -408,6 +408,9 @@ func (d *Daemon) sendLoopDecoy(request *Request) {
 	// XXX FIXME consume statistics on our echo decoys for n-1 detection
 
 	doc := d.client.CurrentDocument()
+	if doc == nil {
+		panic("doc is nil")
+	}
 	echoServices := FindServices(EchoService, doc)
 	if len(echoServices) == 0 {
 		panic("wtf no echo services")
