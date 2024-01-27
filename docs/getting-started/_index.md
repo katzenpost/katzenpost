@@ -14,7 +14,7 @@ operating system environment.
 
 We do some additional ticket tracking in:
 
-- mixnet_uprising - Repository for tracking open tasks for the Katzenpost mixnet framework.
+- [mixnet_uprising](https://github.com/katzenpost/mixnet_uprising/) - Repository for tracking open tasks for the Katzenpost mixnet framework.
 
 Our specs, drafts and other documents are in:
 
@@ -23,36 +23,36 @@ Our specs, drafts and other documents are in:
 The mix server and directory authority libraries both make use of our
 core library:
 
-- core - Core library
-- server - Mix server
-- authority - Mix PKI, nonvoting and voting Directory Authority servers and clients
-- tools - Tools are programs that we use for testing and debugging.
+- [core](https://github.com/katzenpost/katzenpost/tree/main/core) - Core library
+- [server](https://github.com/katzenpost/katzenpost/tree/main/server) - Mix server
+- [authority](https://github.com/katzenpost/katzenpost/tree/main/authority) - Mix PKI, nonvoting and voting Directory Authority servers and clients
+- [tools](https://github.com/katzenpost/tools) - Tools are programs that we use for testing and debugging.
 
 Our core library's wire protocol depends on our fork of the golang
 noise library:
 
-- noise - The Katzenpost fork of flynn's golang Noise crypto library implementation which has the ablity to use the New Hope Simple post quantum hybrid key exchange for forward secrecy.
+- [noise](https://github.com/katzenpost/noise) - The Katzenpost fork of flynn's golang Noise crypto library implementation which has the ablity to use the New Hope Simple post quantum hybrid key exchange for forward secrecy.
 
 Clients also use the core library:
 
-- minclient - Minimal client library which is the basis for all other mix clients.
-- mailproxy - High-level client library with optional reliability and optional SMTP and POP3 listeners.
-- client - Experimental client library implementing proper Loopix decoy traffic et cetera.
+- [minclient](https://github.com/katzenpost/katzenpost/tree/main/minclient) - Minimal client library which is the basis for all other mix clients.
+- [mailproxy](https://github.com/katzenpost/mailproxy) - High-level client library with optional reliability and optional SMTP and POP3 listeners.
+- [client](https://github.com/katzenpost/katzenpost/tree/main/client) - Experimental client library implementing proper Loopix decoy traffic et cetera.
 
 Our website:
 
-- website - The Katzenpost website
+- [website](https://github.com/katzenpost/website/) - The Katzenpost website
 
 The rest of these repositories do not currently have a maintainer
 associated with them and it is likely they have bitrot:
 
-- bindings - Language bindings for Java and Python. STATUS: NOT finished.
-- nixops - NixOS automated configuration for Katzenpost server components.
-- nixpkg - NixOS packages for Katzenpost components.
-- pykatzenpost - Python client library for Katzenpost.
-- katzsim - Client simulator for load testing mix servers.
-- katzenpost-android-mail - A Katzenpost client, based on K-9 Mail.
-- pykatzen-auth - Optional Katzenpost server authentication module in python.
+- [bindings](https://github.com/katzenpost/bindings) - Language bindings for Java and Python. STATUS: NOT finished.
+- [nixops](https://github.com/katzenpost/nixops) - NixOS automated configuration for Katzenpost server components.
+- [nixpkgs](https://github.com/katzenpost/nixpkgs) - NixOS packages for Katzenpost components.
+- [pykatzenpost](https://github.com/katzenpost/pykatzenpost) - Python client library for Katzenpost.
+- [katzsim](https://github.com/katzenpost/katzsim) - Client simulator for load testing mix servers.
+- [katzenpost-android-mail](https://github.com/katzenpost/katzenpost-android-mail) - A Katzenpost client, based on K-9 Mail.
+- [pykatzen-auth](https://github.com/katzenpost/pykatzen-auth) - Optional Katzenpost server authentication module in python.
 
 
 ## Development workflow
