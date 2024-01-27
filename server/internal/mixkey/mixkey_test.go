@@ -40,34 +40,16 @@ var (
 	testPositiveTags, testNegativeTags map[[TagLength]byte]bool
 )
 
-func TestMixKey(t *testing.T) {
-	t.Logf("Temp Dir: %v", tmpDir)
-
-	if ok := t.Run("create", doTestCreate); ok {
-		t.Run("load", doTestLoad)
-		t.Run("unlink", doTestUnlink)
-	} else {
-		t.Errorf("create tests failed, skipping load tests")
-	}
-
-	// Clean up after all of the tests, by removing the temporary directory
-	// that holds keys.
-	os.RemoveAll(tmpDir)
-}
-
-func doTestCreate(t *testing.T) {
+func TestCreateMixKey(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 
 	mynike := ecdh.EcdhScheme
 	geo := geo.GeometryFromUserForwardPayloadLength(mynike, 2000, true, 5)
 
-	k, err := New(tmpDir, testEpoch, geo)
+	k, err := New(testEpoch, geo)
 	require.NoError(err, "New()")
-	testKeyPath = k.db.Path()
 	defer k.Deref()
-
-	t.Logf("db: %v", testKeyPath)
 
 	nikePubKey, _ := k.PublicKey()
 	//nikeScheme, kemScheme := geo.Scheme()
@@ -103,48 +85,6 @@ func doTestCreate(t *testing.T) {
 	}
 }
 
-func doTestLoad(t *testing.T) {
-	require := require.New(t)
-	assert := assert.New(t)
-
-	mynike := ecdh.EcdhScheme
-	geo := geo.GeometryFromUserForwardPayloadLength(mynike, 2000, true, 5)
-
-	k, err := New(tmpDir, testEpoch, geo)
-	require.NoError(err, "New() load")
-	k.SetUnlinkIfExpired(true)
-	defer k.Deref()
-
-	a := k.PrivateKey()
-	key := a.(nike.PrivateKey)
-	assert.Equal(testKey.Bytes(), key.Bytes(), "Serialized private key")
-	require.NotNil(k)
-	d, _ := k.PublicKey()
-	require.NotNil(d)
-
-	assert.Equal(testKey.Public(), d, "Serialized public key")
-	assert.Equal(uint64(testEpoch), k.Epoch(), "Serialized epoch")
-
-	// Ensure that the loaded replay filter is consistent.
-	assert.True(k.IsReplay([]byte{}), "IsReplay([]byte{})")
-	for tag := range testPositiveTags {
-		isReplay := k.IsReplay(tag[:])
-		assert.True(isReplay, "IsReplay() load, positive: %v", hex.EncodeToString(tag[:]))
-	}
-	for tag := range testNegativeTags {
-		isReplay := k.IsReplay(tag[:])
-		assert.False(isReplay, "IsReplay() load, negative: %v", hex.EncodeToString(tag[:]))
-	}
-}
-
-func doTestUnlink(t *testing.T) {
-	require := require.New(t)
-
-	// doTestLoad() should have removed the database, unless it failed to load.
-	_, err := os.Lstat(testKeyPath)
-	require.True(os.IsNotExist(err), "Database should not exist")
-}
-
 func BenchmarkMixKey(b *testing.B) {
 	var err error
 	tmpDir, err = os.MkdirTemp("", "mixkey_benchmarks")
@@ -160,7 +100,7 @@ func BenchmarkMixKey(b *testing.B) {
 func doBenchIsReplayMiss(b *testing.B) {
 	mynike := ecdh.EcdhScheme
 	geo := geo.GeometryFromUserForwardPayloadLength(mynike, 2000, true, 5)
-	k, err := New(tmpDir, testEpoch, geo)
+	k, err := New(testEpoch, geo)
 	if err != nil {
 		b.Fatalf("Failed to open key: %v", err)
 	}
@@ -192,7 +132,7 @@ func doBenchIsReplayMiss(b *testing.B) {
 func doBenchIsReplayHit(b *testing.B) {
 	mynike := ecdh.EcdhScheme
 	geo := geo.GeometryFromUserForwardPayloadLength(mynike, 2000, true, 5)
-	k, err := New(tmpDir, testEpoch, geo)
+	k, err := New(testEpoch, geo)
 	if err != nil {
 		b.Fatalf("Failed to open key: %v", err)
 	}
@@ -205,7 +145,6 @@ func doBenchIsReplayHit(b *testing.B) {
 		b.Fatalf("Failed to read random tag: %v", err)
 	}
 	k.IsReplay(tag[:]) // Add as a replay.
-	k.doFlush(true)    // Flush the write-back cache.
 
 	count := 0
 	b.ResetTimer()
