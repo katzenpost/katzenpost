@@ -586,7 +586,7 @@ func (c *Client) createContact(nickname string, sharedSecret []byte) error {
 		c.initKeyExchange(contact)
 		err = c.doPANDAExchange(contact)
 		if err != nil {
-			c.log.Info("PANDA Failure for %v: %v", contact, err)
+			c.log.Infof("PANDA Failure for %v: %v", contact, err)
 		}
 
 		// FIXME: #157
@@ -951,7 +951,7 @@ func (c *Client) doSendMessage(convoMesgID MessageID, nickname string, message [
 		}
 	}
 	if err := contact.outbound.Push(item); err != nil {
-		c.log.Debugf("Failed to enqueue message!")
+		c.log.Debug("Failed to enqueue message!")
 		c.eventCh.In() <- &MessageNotSentEvent{
 			Nickname:  nickname,
 			MessageID: convoMesgID,
@@ -986,7 +986,7 @@ func (c *Client) sendMessage(contact *Contact) {
 		c.log.Errorf("failed to send ciphertext to remote spool: %s", err)
 		return
 	}
-	c.log.Debug("Message enqueued for sending to %s, message-ID: %x", contact.Nickname, *mesgID)
+	c.log.Debugf("Message enqueued for sending to %s, message-ID: %x", contact.Nickname, mesgID[:])
 	c.sendMap.Store(*mesgID, &SentMessageDescriptor{
 		Nickname:  contact.Nickname,
 		MessageID: cmd.ID,
@@ -996,7 +996,7 @@ func (c *Client) sendMessage(contact *Contact) {
 func (c *Client) sendReadInbox() {
 	// apparently never checks to see if the spool has been made first...
 	if c.spoolReadDescriptor == nil {
-		c.log.Errorf("Should not sendReadInbox before the remote spool was made...")
+		c.log.Error("Should not sendReadInbox before the remote spool was made...")
 		return
 	}
 	sequence := c.spoolReadDescriptor.ReadOffset
@@ -1029,7 +1029,7 @@ func (c *Client) sendReadInbox() {
 }
 
 func (c *Client) garbageCollectSendMap(gcEvent *client2.MessageIDGarbageCollected) {
-	c.log.Debug("Garbage Collecting Message ID %x", gcEvent.MessageID[:])
+	c.log.Debugf("Garbage Collecting Message ID %x", gcEvent.MessageID[:])
 	c.sendMap.Delete(*gcEvent.MessageID)
 }
 
@@ -1045,9 +1045,9 @@ func (c *Client) handleSent(sentEvent *client2.MessageSentEvent) {
 		switch tp := orig.(type) {
 		case *ReadMessageDescriptor:
 			if sentEvent.Err != nil {
-				c.log.Debugf("readInbox command %x failed with %s", *sentEvent.MessageID, sentEvent.Err)
+				c.log.Debugf("readInbox command %x failed with %s", sentEvent.MessageID[:], sentEvent.Err)
 			} else {
-				c.log.Debugf("readInbox command %x sent", *sentEvent.MessageID)
+				c.log.Debugf("readInbox command %x sent", sentEvent.MessageID[:])
 			}
 			return
 		case *SentMessageDescriptor:
@@ -1069,7 +1069,7 @@ func (c *Client) handleSent(sentEvent *client2.MessageSentEvent) {
 				contact.ackID = *sentEvent.MessageID
 			}
 
-			c.log.Debugf("MessageSentEvent for %x", *sentEvent.MessageID)
+			c.log.Debugf("MessageSentEvent for %x", sentEvent.MessageID[:])
 			c.setMessageSent(tp.Nickname, tp.MessageID)
 			c.eventCh.In() <- &MessageSentEvent{
 				Nickname:  tp.Nickname,
@@ -1101,7 +1101,7 @@ func (c *Client) handleReply(replyEvent *client2.MessageReplyEvent) {
 			spoolResponse := common.SpoolResponse{}
 			err := cbor.Unmarshal(replyEvent.Payload, &spoolResponse)
 			if err != nil {
-				c.log.Errorf("Could not deserialize SpoolResponse to message ID %d: %s", tp.MessageID, err)
+				c.log.Errorf("Could not deserialize SpoolResponse to message ID %x: %s", tp.MessageID[:], err)
 				c.eventCh.In() <- &MessageNotDeliveredEvent{Nickname: tp.Nickname, MessageID: tp.MessageID,
 					Err: fmt.Errorf("Invalid spool response: %s", err),
 				}
@@ -1117,17 +1117,17 @@ func (c *Client) handleReply(replyEvent *client2.MessageReplyEvent) {
 				}
 				return
 			}
-			c.log.Debugf("MessageDeliveredEvent for %s MessageID %x", tp.Nickname, *replyEvent.MessageID)
+			c.log.Debugf("MessageDeliveredEvent for %s MessageID %x", tp.Nickname, replyEvent.MessageID[:])
 			if contact, ok := c.contactNicknames[tp.Nickname]; ok {
 				if contact.ackID != *replyEvent.MessageID {
 					// spurious ACK
-					c.log.Debugf("Dropping spurious ACK for %x", *replyEvent.MessageID)
+					c.log.Debugf("Dropping spurious ACK for %x", replyEvent.MessageID[:])
 					return
 				}
 				if _, err := contact.outbound.Pop(); err != nil {
 					// duplicate ACK?
 					c.log.Debugf("Maybe duplicate ACK received for %s with MessageID %x %s",
-						contact.Nickname, *replyEvent.MessageID, err)
+						contact.Nickname, replyEvent.MessageID[:], err)
 					return // do not send an extra MessageDeliveredEvent!
 				} else {
 					// try to send the next message, if one exists
@@ -1144,7 +1144,7 @@ func (c *Client) handleReply(replyEvent *client2.MessageReplyEvent) {
 			spoolResponse := common.SpoolResponse{}
 			err := cbor.Unmarshal(replyEvent.Payload, &spoolResponse)
 			if err != nil {
-				c.log.Errorf("Could not deserialize SpoolResponse to ReadInbox ID %d: %s", tp.MessageID, err)
+				c.log.Errorf("Could not deserialize SpoolResponse to ReadInbox ID %x: %s", tp.MessageID[:], err)
 				return
 			}
 			if !spoolResponse.IsOK() {
@@ -1159,7 +1159,7 @@ func (c *Client) handleReply(replyEvent *client2.MessageReplyEvent) {
 			case spoolResponse.MessageID < c.spoolReadDescriptor.ReadOffset:
 				return // dup
 			case spoolResponse.MessageID == c.spoolReadDescriptor.ReadOffset:
-				c.log.Debugf("Calling decryptMessage(%x, xx)", *replyEvent.MessageID)
+				c.log.Debugf("Calling decryptMessage(%x, xx)", replyEvent.MessageID[:])
 				err := c.decryptMessage(replyEvent.MessageID, spoolResponse.Message)
 				switch err {
 				case ErrTrialDecryptionFailed:
@@ -1169,7 +1169,7 @@ func (c *Client) handleReply(replyEvent *client2.MessageReplyEvent) {
 					// has already completed the key exchange and sent a first message, before we have
 					// completed our key exchange.
 					// XXX: this could break things if a contact key exchange never completes...
-					c.log.Debugf("failure to decrypt tip of spool - MessageID: %x", *replyEvent.MessageID)
+					c.log.Debugf("failure to decrypt tip of spool - MessageID: %x", replyEvent.MessageID[:])
 					for _, contact := range c.contacts {
 						if contact.IsPending {
 							c.log.Warn("received message we could not decrypt while key exchange pending, delaying spool read descriptor increment")
@@ -1179,10 +1179,10 @@ func (c *Client) handleReply(replyEvent *client2.MessageReplyEvent) {
 					c.log.Warn("received message we could not decrypt while NO key exchange pending, skipping this message")
 				case nil:
 					// message was decrypted successfully
-					c.log.Debugf("successfully decrypted tip of spool - MessageID: %x", *replyEvent.MessageID)
+					c.log.Debugf("successfully decrypted tip of spool - MessageID: %x", replyEvent.MessageID[:])
 				default:
 					// received an error, likely due to retransmission
-					c.log.Debugf("failure to decrypt tip of spool - MessageID: %x, err: %s", *replyEvent.MessageID, err.Error())
+					c.log.Debugf("failure to decrypt tip of spool - MessageID: %x, err: %s", replyEvent.MessageID[:], err.Error())
 				}
 				// in all other cases, advance the spool read descriptor
 				c.spoolReadDescriptor.IncrementOffset()
@@ -1339,7 +1339,7 @@ func (c *Client) decryptMessage(messageID *[cConstants.MessageIDLength]byte, cip
 		}
 		return nil
 	}
-	c.log.Debugf("trial ratchet decryption failure for message ID %x reported ratchet error: %s", *messageID, err)
+	c.log.Debugf("trial ratchet decryption failure for message ID %x reported ratchet error: %s", messageID[:], err)
 	return ErrTrialDecryptionFailed
 }
 
