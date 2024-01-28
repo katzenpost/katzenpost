@@ -161,7 +161,11 @@ func (a *ARQ) Has(surbID *[sConstants.SURBIDLength]byte) bool {
 	m, ok := a.surbIDMap[*surbID]
 	a.lock.RUnlock()
 
-	a.log.Infof("Has %x", m.MessageID[:])
+	if ok {
+		a.log.Infof("Has %x", m.MessageID[:])
+	} else {
+		a.log.Infof("Has called with unfound SURBID %x", surbID[:])
+	}
 	return ok
 }
 

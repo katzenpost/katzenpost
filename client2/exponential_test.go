@@ -15,7 +15,7 @@ import (
 func TestExponential(t *testing.T) {
 	rate := 0.001
 	maxDelay := uint64(1000)
-	e := NewExpDist(uint64(1/rate), maxDelay)
+	e := NewExpDist()
 
 	e.UpdateRate(uint64(1/rate), maxDelay)
 	e.UpdateConnectionStatus(true)

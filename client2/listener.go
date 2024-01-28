@@ -183,7 +183,7 @@ func NewListener(client *Client, rates *Rates, egressCh chan *Request, logbacken
 		egressCh:   egressCh,
 	}
 
-	l.decoySender = newSender(rates, l.ingressCh, egressCh)
+	l.decoySender = newSender(l.ingressCh, egressCh)
 
 	network := "unixpacket"
 	address := "@katzenpost"

@@ -80,6 +80,7 @@ func TestARQ(t *testing.T) {
 	surbid1 := sphinxComposerSender.requests[0].SURBID
 	require.True(t, arq.Has(surbid1))
 
+	t.Log("awaiting channel <-sphinxComposerSender.ch")
 	<-sphinxComposerSender.ch
 
 	require.Equal(t, 1, arq.timerQueue.Len())

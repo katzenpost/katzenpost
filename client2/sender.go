@@ -3,7 +3,9 @@
 
 package client2
 
-import "github.com/katzenpost/katzenpost/core/worker"
+import (
+	"github.com/katzenpost/katzenpost/core/worker"
+)
 
 type sender struct {
 	worker.Worker
@@ -16,13 +18,17 @@ type sender struct {
 	sendLoop          *ExpDist
 }
 
-func newSender(rates *Rates, in chan *Request, out chan *Request) *sender {
+// newSender starts it's worker but does nothing by default until
+// methods UpdateConnectionStatus and UpdateRates are called.
+// The worker only works when we have a connection and when we have
+// a rate set.
+func newSender(in chan *Request, out chan *Request) *sender {
 	s := &sender{
 		in:                in,
 		out:               out,
-		sendMessageOrDrop: NewExpDist(uint64(1/rates.messageOrDrop), rates.messageOrDropMaxDelay),
-		sendLoop:          NewExpDist(uint64(1/rates.loop), rates.loopMaxDelay),
-		sendDrop:          NewExpDist(uint64(1/rates.drop), rates.dropMaxDelay),
+		sendMessageOrDrop: NewExpDist(),
+		sendLoop:          NewExpDist(),
+		sendDrop:          NewExpDist(),
 	}
 	s.Go(s.worker)
 	return s

@@ -31,12 +31,10 @@ type ExpDist struct {
 	outCh chan struct{}
 }
 
-func NewExpDist(rate, maxDelay uint64) *ExpDist {
+func NewExpDist() *ExpDist {
 	e := &ExpDist{
-		averageRate: rate,
-		maxDelay:    maxDelay,
-		opCh:        make(chan interface{}),
-		outCh:       make(chan struct{}),
+		opCh:  make(chan interface{}),
+		outCh: make(chan struct{}),
 	}
 	e.Go(e.worker)
 	return e
