@@ -167,7 +167,7 @@ func (d *Daemon) Start() error {
 			return
 		}
 	})
-
+	d.timerQueue.Start()
 	d.gctimerQueue = NewTimerQueue(func(rawGCReply interface{}) {
 		myGcReply, ok := rawGCReply.(*gcReply)
 		if !ok {
@@ -179,6 +179,7 @@ func (d *Daemon) Start() error {
 			return
 		}
 	})
+	d.gctimerQueue.Start()
 
 	d.Go(d.egressWorker)
 	return d.client.Start()
