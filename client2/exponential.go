@@ -12,7 +12,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/worker"
 )
 
-type opExpConnStatusChanged struct {
+type opConnStatusChanged struct {
 	isConnected bool
 }
 
@@ -79,7 +79,7 @@ func (e *ExpDist) worker() {
 
 	for {
 		var rateFired bool
-		var qo poissonWorkerOp
+		var qo interface{}
 
 		select {
 		case <-e.HaltCh():
