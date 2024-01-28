@@ -7,6 +7,7 @@ package client2
 
 import (
 	"io"
+	"sync"
 	"testing"
 	"time"
 
@@ -17,6 +18,7 @@ import (
 )
 
 func TestTimerQueueHalt(t *testing.T) {
+	t.Parallel()
 	noop := func(ignored interface{}) {
 		t.Log("action")
 	}
@@ -33,13 +35,21 @@ func TestTimerQueuePush(t *testing.T) {
 	t.Parallel()
 	assert := assert.New(t)
 
+	actionsLock := new(sync.RWMutex)
+	actions := 0
 	noop := func(ignored interface{}) {
 		t.Log("action")
+		actionsLock.Lock()
+		actions += 1
+		actionsLock.Unlock()
 	}
 	q := NewTimerQueue(noop)
 	q.Start()
 
-	for i := 0; i < 10; i++ {
+	require.Equal(t, 0, q.Len())
+
+	numItems := 10
+	for i := 0; i < numItems; i++ {
 		surbID := [sConstants.SURBIDLength]byte{}
 		_, err := io.ReadFull(rand.Reader, surbID[:])
 		assert.NoError(err)
@@ -48,12 +58,19 @@ func TestTimerQueuePush(t *testing.T) {
 		duration := rtt
 		replyArrivalTime := time.Now().Add(duration)
 		priority := uint64(replyArrivalTime.UnixNano())
-
+		t.Logf("Push %d", i)
 		q.Push(priority, &surbID)
 	}
-	require.Equal(t, q.Len(), 10)
-	<-time.After(200 * time.Millisecond)
-	require.Equal(t, q.Len(), 0)
+	require.NotEqual(t, 0, q.Len())
+	<-time.After(1 * time.Second)
+
+	actionsLock.RLock()
+	queuedItems := numItems - actions
+	actionsLock.RUnlock()
+	require.Equal(t, queuedItems, q.Len())
+	require.Equal(t, 0, queuedItems)
+
+	t.Logf("queue length %d", q.Len())
 
 	go q.Halt()
 	q.Wait()

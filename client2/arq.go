@@ -3,6 +3,7 @@
 package client2
 
 import (
+	"crypto/hmac"
 	"errors"
 	"sync"
 	"time"
@@ -19,7 +20,7 @@ const (
 
 	// RoundTripTimeSlop is the slop added to the expected packet
 	// round trip timeout threshold.
-	RoundTripTimeSlop = 10 * time.Second
+	RoundTripTimeSlop = 15 * time.Second
 )
 
 type SphinxComposerSender interface {
@@ -102,6 +103,7 @@ func (a *ARQ) Stop() {
 // Start starts the ARQ worker thread. You MUST start before using.
 func (a *ARQ) Start() {
 	a.log.Info("Start")
+
 	a.timerQueue = NewTimerQueue(func(rawSurbID interface{}) {
 		a.log.Info("TimerQueue callback!")
 		surbID, ok := rawSurbID.(*[sConstants.SURBIDLength]byte)
@@ -110,23 +112,32 @@ func (a *ARQ) Start() {
 		}
 		a.resend(surbID)
 	})
+
 	a.timerQueue.Start()
+	a.log.Info("Starting timerQueue finished.")
 }
 
 func (a *ARQ) resend(surbID *[sConstants.SURBIDLength]byte) {
-	a.log.Info("resend")
+	a.log.Info("resend start")
+	defer a.log.Info("resend end")
 
 	a.lock.Lock()
 	defer a.lock.Unlock()
 	message, ok := a.surbIDMap[*surbID]
+	// NOTE(david): if the surbIDMap entry is not found
+	// it means that HandleAck was already called with the
+	// given SURB ID.
 	if ok {
+		if message.DestinationIdHash == nil {
+			panic("message.DestinationIdHash is nil")
+		}
+
 		delete(a.surbIDMap, *surbID)
 		newsurbID := &[sConstants.SURBIDLength]byte{}
 		_, err := rand.Reader.Read(newsurbID[:])
 		if err != nil {
 			panic(err)
 		}
-
 		k, rtt, err := a.sphinxComposerSender.SendCiphertext(&Request{
 			ID:                message.MessageID,
 			AppID:             message.AppID,
@@ -149,15 +160,15 @@ func (a *ARQ) resend(surbID *[sConstants.SURBIDLength]byte) {
 		a.surbIDMap[*newsurbID] = message
 		priority := uint64(message.SentAt.Add(message.ReplyETA).Add(RoundTripTimeSlop).UnixNano())
 		a.timerQueue.Push(priority, surbID)
-	} else {
-		a.log.Error("SURB ID not found")
 	}
 }
 
 // Has checks if a given SURB ID exists.
 func (a *ARQ) Has(surbID *[sConstants.SURBIDLength]byte) bool {
+	a.log.Info("Has")
 
 	a.lock.RLock()
+	a.log.Info("Has got lock")
 	m, ok := a.surbIDMap[*surbID]
 	a.lock.RUnlock()
 
@@ -173,20 +184,26 @@ func (a *ARQ) Has(surbID *[sConstants.SURBIDLength]byte) bool {
 // the APP ID and SURB Key so that the reply and be decrypted and routed
 // to the correct application.
 func (a *ARQ) HandleAck(surbID *[sConstants.SURBIDLength]byte) (*replyDescriptor, error) {
-	a.lock.RLock()
+	a.log.Info("HandleAck")
+	a.lock.Lock()
+	defer a.lock.Unlock()
+
 	m, ok := a.surbIDMap[*surbID]
-	a.lock.RUnlock()
-
-	a.log.Infof("HandleAck ID %x", m.MessageID[:])
-
-	if !ok {
-		a.log.Error("failed to find SURB ID in ARQ map")
+	if ok {
+		a.log.Infof("HandleAck ID %x", m.MessageID[:])
+	} else {
+		a.log.Error("HandleAck: failed to find SURB ID in ARQ map")
 		return nil, errors.New("failed to find SURB ID in ARQ map")
 	}
-
-	a.lock.Lock()
 	delete(a.surbIDMap, *surbID)
-	a.lock.Unlock()
+
+	peeked := a.timerQueue.Peek()
+	if peeked != nil {
+		peekSurbId := peeked.Value.(*[sConstants.SURBIDLength]byte)
+		if hmac.Equal(surbID[:], peekSurbId[:]) {
+			a.timerQueue.Pop()
+		}
+	}
 
 	return &replyDescriptor{
 		ID:      m.MessageID,
@@ -199,20 +216,20 @@ func (a *ARQ) HandleAck(surbID *[sConstants.SURBIDLength]byte) (*replyDescriptor
 func (a *ARQ) Send(appid *[AppIDLength]byte, id *[MessageIDLength]byte, payload []byte, providerHash *[32]byte, queueID []byte) (time.Duration, error) {
 	a.log.Infof("Send ID %x", id[:])
 
+	if providerHash == nil {
+		panic("providerHash is nil")
+	}
 	if appid == nil {
 		panic("appid is nil")
 	}
 	if id == nil {
 		panic("id is nil")
 	}
-
 	surbID := &[sConstants.SURBIDLength]byte{}
 	_, err := rand.Reader.Read(surbID[:])
 	if err != nil {
 		panic(err)
 	}
-
-	a.log.Warn("BEFORE SendCiphertext")
 	k, rtt, err := a.sphinxComposerSender.SendCiphertext(&Request{
 		AppID:             appid,
 		WithSURB:          true,
@@ -221,33 +238,26 @@ func (a *ARQ) Send(appid *[AppIDLength]byte, id *[MessageIDLength]byte, payload 
 		RecipientQueueID:  queueID,
 		Payload:           payload,
 	})
-	a.log.Warn("AFTER SendCiphertext")
-
 	message := &ARQMessage{
 		AppID:              appid,
 		MessageID:          id,
 		SURBID:             surbID,
 		Payload:            payload,
+		DestinationIdHash:  providerHash,
+		RecipientQueueID:   queueID,
 		SURBDecryptionKeys: k,
 		SentAt:             time.Now(),
 		ReplyETA:           rtt,
 	}
-
 	a.lock.Lock()
 	a.surbIDMap[*surbID] = message
 	a.lock.Unlock()
-
-	a.log.Infof("RTT %s", rtt)
-
-	p := time.Duration(message.ReplyETA + RoundTripTimeSlop)
-
-	a.log.Infof("RTT with slop %s", p)
-
-	a.log.Infof("Push to timer queue with priorit %s", p)
 	priority := uint64(message.SentAt.Add(message.ReplyETA).Add(RoundTripTimeSlop).UnixNano())
 
-	a.timerQueue.Push(priority, surbID)
+	// doesn't work
+	//priority := uint64(message.SentAt.Add(message.ReplyETA).Add(message.ReplyETA / 2).UnixNano())
 
+	a.timerQueue.Push(priority, surbID)
 	response := &Response{
 		AppID: appid,
 		MessageSentEvent: &MessageSentEvent{
@@ -259,6 +269,5 @@ func (a *ARQ) Send(appid *[AppIDLength]byte, id *[MessageIDLength]byte, payload 
 		},
 	}
 	a.sentEventSender.SentEvent(response)
-
 	return rtt, nil
 }

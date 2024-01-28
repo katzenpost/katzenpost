@@ -3,12 +3,18 @@
 package client2
 
 import (
+	"math"
 	"sync"
 	"time"
 
 	"github.com/katzenpost/katzenpost/core/queue"
 	"github.com/katzenpost/katzenpost/core/worker"
 )
+
+type pushedItem struct {
+	priority uint64
+	value    interface{}
+}
 
 type TimerQueue struct {
 	worker.Worker
@@ -17,13 +23,21 @@ type TimerQueue struct {
 	timer  *time.Timer
 	mutex  sync.RWMutex
 	action func(interface{})
+
+	pushCh chan *pushedItem
 }
 
 func NewTimerQueue(action func(interface{})) *TimerQueue {
+	// NOTE(david): pushCh is a buffered channel that sits between
+	// the worker goroutine and the goroutine which
+	// calls our Push method. It needs to be a buffered
+	// channel in case a Push happens while the worker
+	// isn't blocking on it's select statement's timer channel.
 	return &TimerQueue{
 		timer:  time.NewTimer(0),
 		queue:  queue.New(),
 		action: action,
+		pushCh: make(chan *pushedItem, 100),
 	}
 }
 
@@ -35,10 +49,23 @@ func (t *TimerQueue) Start() {
 	t.Go(t.worker)
 }
 
-func (t *TimerQueue) Push(priority uint64, value interface{}) {
+func (t *TimerQueue) Peek() *queue.Entry {
+	t.mutex.RLock()
+	defer t.mutex.RUnlock()
+	return t.queue.Peek()
+}
+
+func (t *TimerQueue) Pop() interface{} {
 	t.mutex.Lock()
 	defer t.mutex.Unlock()
-	t.queue.Enqueue(priority, value)
+	return t.queue.Pop()
+}
+
+func (t *TimerQueue) Push(priority uint64, value interface{}) {
+	t.pushCh <- &pushedItem{
+		priority: priority,
+		value:    value,
+	}
 }
 
 func (t *TimerQueue) Len() int {
@@ -48,34 +75,61 @@ func (t *TimerQueue) Len() int {
 }
 
 func (t *TimerQueue) worker() {
-	for {
-		var waitCh <-chan time.Time
-		t.mutex.RLock()
+	timer := time.NewTimer(math.MaxInt64)
+	defer timer.Stop()
 
-		m := t.queue.Peek()
-		if m != nil {
+	for {
+		var timerFired bool
+
+		select {
+		case <-t.HaltCh():
+			return
+		case <-timer.C:
+			timerFired = true
+
+			t.mutex.Lock()
+			m := t.queue.Peek()
+			t.queue.Pop()
+			t.mutex.Unlock()
+			if m != nil {
+				t.action(m.Value)
+			}
+		case item := <-t.pushCh:
+			t.mutex.Lock()
+			t.queue.Enqueue(item.priority, item.value)
+			t.mutex.Unlock()
+		}
+
+		if !timerFired && !timer.Stop() {
+			<-timer.C
+		}
+
+		for {
+
+			t.mutex.RLock()
+			m := t.queue.Peek()
+			t.mutex.RUnlock()
+
+			if m == nil {
+				// The queue is empty, just reschedule for the max duration,
+				// when there are messages to schedule, we'll get woken up.
+				timer.Reset(math.MaxInt64)
+				break
+			}
+
 			// Figure out if the message needs to be handled now.
 			timeLeft := int64(m.Priority) - time.Now().UnixNano()
 			if timeLeft < 0 || m.Priority < uint64(time.Now().UnixNano()) {
-				t.mutex.RUnlock()
 				t.mutex.Lock()
 				t.queue.Pop()
 				t.mutex.Unlock()
 				t.action(m.Value)
 				continue
 			} else {
-				waitCh = time.After(time.Duration(timeLeft))
+				timer.Reset(time.Duration(timeLeft))
+				break
 			}
 		}
-		t.mutex.RUnlock()
-		select {
-		case <-t.HaltCh():
-			return
-		case <-waitCh:
-			t.mutex.Lock()
-			t.queue.Pop()
-			t.mutex.Unlock()
-			t.action(m.Value)
-		}
+
 	}
 }

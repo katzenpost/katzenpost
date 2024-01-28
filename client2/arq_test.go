@@ -6,6 +6,7 @@ package client2
 
 import (
 	"os"
+	"sync"
 	"testing"
 	"time"
 
@@ -21,18 +22,24 @@ type mockComposerSender struct {
 	t        *testing.T
 	requests []*Request
 	ch       chan bool
+	lock     sync.RWMutex
 }
 
 func (m *mockComposerSender) SendCiphertext(request *Request) ([]byte, time.Duration, error) {
-	m.t.Log("ComposeSphinxPacket")
+	m.t.Log("SendCiphertext")
+	m.lock.Lock()
 	m.requests = append(m.requests, request)
+	m.lock.Unlock()
 
 	defer func() {
+		m.lock.RLock()
 		if len(m.requests) == 2 {
 			m.ch <- false
 		}
+		m.lock.RUnlock()
+
+		m.t.Log("SendCiphertext return")
 	}()
-	m.t.Log("SendSphinxPacket")
 
 	return []byte("packet"), mockRTT, nil
 }
@@ -69,26 +76,38 @@ func TestARQ(t *testing.T) {
 	id := &[MessageIDLength]byte{}
 	payload := []byte("hello world")
 	providerHash := &[32]byte{}
+	_, err = rand.Reader.Read(providerHash[:])
+	require.NoError(t, err)
+	require.NotNil(t, providerHash)
+
 	queueID := []byte{1, 2, 3, 4, 5, 6, 7}
 
 	require.Equal(t, 0, arq.timerQueue.Len())
 
 	_, err = arq.Send(appid, id, payload, providerHash, queueID)
 	require.NoError(t, err)
+
+	time.Sleep(1 * time.Second)
 	require.Equal(t, 1, arq.timerQueue.Len())
 
+	sphinxComposerSender.lock.Lock()
 	surbid1 := sphinxComposerSender.requests[0].SURBID
+	sphinxComposerSender.lock.Unlock()
+
 	require.True(t, arq.Has(surbid1))
 
 	t.Log("awaiting channel <-sphinxComposerSender.ch")
 	<-sphinxComposerSender.ch
 
-	require.Equal(t, 1, arq.timerQueue.Len())
 	require.Equal(t, 2, len(sphinxComposerSender.requests))
+
+	sphinxComposerSender.lock.Lock()
 	surbid2 := sphinxComposerSender.requests[1].SURBID
+	sphinxComposerSender.lock.Unlock()
 
 	require.True(t, arq.Has(surbid2))
 	arq.HandleAck(surbid2)
+
 	require.False(t, arq.Has(surbid2))
 	require.False(t, arq.Has(surbid1))
 

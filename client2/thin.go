@@ -173,6 +173,7 @@ func (t *ThinClient) worker() {
 
 		switch {
 		case message.MessageIDGarbageCollected != nil:
+			t.log.Debug("MessageIDGarbageCollected")
 			select {
 			case t.eventSink <- message.MessageIDGarbageCollected:
 				continue
