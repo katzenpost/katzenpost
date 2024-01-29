@@ -207,6 +207,7 @@ func (d *Daemon) egressWorker() {
 			d.Shutdown()
 			return
 		case mygcreply := <-d.gcReplyCh:
+			d.log.Warn("GC Reply event")
 			response := &Response{
 				AppID: mygcreply.appID,
 				MessageIDGarbageCollected: &MessageIDGarbageCollected{
@@ -299,18 +300,18 @@ func (d *Daemon) sendARQMessage(request *Request) {
 	if request.AppID == nil {
 		panic("request.AppID is nil")
 	}
-	_, err := d.arq.Send(request.AppID, request.ID, request.Payload, request.DestinationIdHash, request.RecipientQueueID)
+	rtt, err := d.arq.Send(request.AppID, request.ID, request.Payload, request.DestinationIdHash, request.RecipientQueueID)
 	if err != nil {
 		panic(err)
 	}
-	/*
-		slop := time.Second * 200 // very conservative
-		replyArrivalTime := time.Now().Add(rtt + slop)
-		d.gctimerQueue.Push(uint64(replyArrivalTime.UnixNano()), &gcReply{
-			id:    request.ID,
-			appID: request.AppID,
-		})
-	*/
+
+	slop := time.Minute * 5 // very conservative
+	replyArrivalTime := time.Now().Add(rtt + slop)
+	d.gctimerQueue.Push(uint64(replyArrivalTime.UnixNano()), &gcReply{
+		id:    request.ID,
+		appID: request.AppID,
+	})
+
 }
 
 func (d *Daemon) SentEvent(response *Response) {
@@ -336,10 +337,8 @@ func (d *Daemon) send(request *Request) {
 	}
 
 	if request.WithSURB {
-
 		now = time.Now()
-		slop := time.Second * 20 // XXX perhaps make this configurable if needed
-		duration := rtt + slop
+		duration := rtt
 		replyArrivalTime := now.Add(duration)
 
 		d.timerQueue.Push(uint64(replyArrivalTime.UnixNano()), request.SURBID)

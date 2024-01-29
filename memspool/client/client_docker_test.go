@@ -128,6 +128,7 @@ func testDockerUnreliableSpoolService(t *testing.T) {
 	response = new(common.SpoolResponse)
 	err = response.Unmarshal(rawResponse)
 	require.NoError(err)
+	t.Logf("status %s", response.StatusAsError())
 	require.True(response.IsOK())
 
 	// read from a spool (should be empty?)

@@ -730,6 +730,7 @@ func (c *connection) sendPacket(pkt []byte) error {
 	case <-c.HaltCh():
 		return ErrShutdown
 	}
+	return nil
 }
 
 func (c *connection) getConsensus(ctx context.Context, epoch uint64) (*commands.Consensus, error) {

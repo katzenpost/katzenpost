@@ -22,7 +22,7 @@ func TestAllClient2Tests(t *testing.T) {
 		d.Shutdown()
 	})
 
-	//t.Run("TestDockerMultiplexClients", testDockerMultiplexClients)
+	t.Run("TestDockerMultiplexClients", testDockerMultiplexClients)
 	t.Run("TestDockerClientARQSendReceive", testDockerClientARQSendReceive)
 }
 
@@ -106,6 +106,8 @@ Loop:
 	for {
 		event := <-eventSink
 		switch v := event.(type) {
+		case *MessageIDGarbageCollected:
+			t.Log("MessageIDGarbageCollected")
 		case *ConnectionStatusEvent:
 			t.Log("ConnectionStatusEvent")
 			if !v.IsConnected {
@@ -159,46 +161,6 @@ func testDockerClientARQSendReceive(t *testing.T) {
 	message1 := []byte("hello alice, this is bob.")
 	nodeIdKey := pingTargets[0].IdentityKey.Sum256()
 
-	// Test ARQ send/receive
-
-	/*
-			id := &[MessageIDLength]byte{}
-			_, err = rand.Reader.Read(id[:])
-			require.NoError(t, err)
-
-			err = thin.SendReliableMessage(id, message1, &nodeIdKey, []byte("testdest"))
-			require.NoError(t, err)
-
-			eventSink := thin.EventSink()
-			message2 := []byte{}
-
-		Loop:
-			for {
-				event := <-eventSink
-				switch v := event.(type) {
-				case *ConnectionStatusEvent:
-					t.Log("ConnectionStatusEvent")
-					if !v.IsConnected {
-						panic("socket connection lost")
-					}
-				case *NewDocumentEvent:
-					t.Log("NewPKIDocumentEvent")
-				case *MessageSentEvent:
-					t.Log("MessageSentEvent")
-				case *MessageReplyEvent:
-					t.Log("MessageReplyEvent")
-					require.Equal(t, id[:], v.MessageID[:])
-					message2 = v.Payload
-					break Loop
-				default:
-					panic("impossible event type")
-				}
-			}
-
-			require.NotEqual(t, message1, []byte{})
-			require.NotEqual(t, message2, []byte{})
-			require.Equal(t, message1, message2[:len(message1)])
-	*/
 	id1 := thin.NewMessageID()
 	id2 := thin.NewMessageID()
 	id3 := thin.NewMessageID()
