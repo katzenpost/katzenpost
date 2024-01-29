@@ -105,7 +105,6 @@ func (t *TimerQueue) worker() {
 		}
 
 		for {
-
 			t.mutex.RLock()
 			m := t.queue.Peek()
 			t.mutex.RUnlock()

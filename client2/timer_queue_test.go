@@ -11,10 +11,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
-	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 )
 
 func TestTimerQueueHalt(t *testing.T) {
@@ -35,39 +36,67 @@ func TestTimerQueuePush(t *testing.T) {
 	t.Parallel()
 	assert := assert.New(t)
 
+	surbidMap := make(map[[sConstants.SURBIDLength]byte]time.Time)
+
 	actionsLock := new(sync.RWMutex)
 	actions := 0
-	noop := func(ignored interface{}) {
+	numItems := 10
+	actionsDoneCh := make(chan struct{}, 0)
+	noop := func(rawSurbId interface{}) {
+
+		surbId, ok := rawSurbId.(*[sConstants.SURBIDLength]byte)
+		if !ok {
+			panic("not a surb id")
+		}
+
 		t.Log("action")
+
 		actionsLock.Lock()
 		actions += 1
+		arrivalTime := surbidMap[*surbId]
 		actionsLock.Unlock()
+
+		now := time.Now()
+		delta := now.Sub(arrivalTime)
+
+		// Fail test if any of the queue items are more than halt a second late.
+		require.False(t, delta > (500*time.Millisecond))
+
+		if actions == numItems {
+			actionsDoneCh <- struct{}{}
+		}
 	}
 	q := NewTimerQueue(noop)
 	q.Start()
 
 	require.Equal(t, 0, q.Len())
 
-	numItems := 10
+	itemDelay := 4 * time.Second
+
 	for i := 0; i < numItems; i++ {
 		surbID := [sConstants.SURBIDLength]byte{}
 		_, err := io.ReadFull(rand.Reader, surbID[:])
 		assert.NoError(err)
 
-		rtt := time.Millisecond * 50
+		rtt := itemDelay
 		duration := rtt
 		replyArrivalTime := time.Now().Add(duration)
+		surbidMap[surbID] = replyArrivalTime
 		priority := uint64(replyArrivalTime.UnixNano())
+
 		t.Logf("Push %d", i)
 		q.Push(priority, &surbID)
 	}
-	require.NotEqual(t, 0, q.Len())
-	<-time.After(1 * time.Second)
+
+	<-actionsDoneCh
 
 	actionsLock.RLock()
 	queuedItems := numItems - actions
 	actionsLock.RUnlock()
+
 	require.Equal(t, queuedItems, q.Len())
+	t.Logf("queuedItems %d", queuedItems)
+
 	require.Equal(t, 0, queuedItems)
 
 	t.Logf("queue length %d", q.Len())
