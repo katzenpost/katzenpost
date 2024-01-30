@@ -206,12 +206,43 @@ Lets review the Kaetzchen configuration parameters:
 
 ### External Kaetzchen Plugin Configuration
 
-Currently the Katzenpost server external kaetzchen plugin system uses
-CBOR over HTTP over UNIX domain socket to communicate with plugin
-programs. That is to say, the katzenpost server will spin up each plugin
-program one or more times as specified by it's `MaxConcurrency`
-parameter, connect to it as a HTTP client and pipeline Kaetzchen
-queries.
+Currently the Katzenpost server external kaetzchen plugin system uses CBOR
+serialised structs over UNIX domain socket to communicate with plugin programs.
+That is to say, the katzenpost server will spin up each plugin program one or
+more times as specified by it's `MaxConcurrency` parameter, and dial (connect)
+to the UNIX domain socket specified in the first line of standard output
+written by the client plugin.
+
+Thereafter, requests that arrive for the specific plugin program, as identified
+by the "Endpoint" configuration parameter, are written to this UNIX socket by
+the mix server as CBOR encoded structs, specified in
+server/cborplugin/client.go:
+
+```
+// Request is the struct type used in service query requests to plugins.
+type Request struct {
+	ID      uint64
+	Payload []byte
+	HasSURB bool
+}
+```
+
+Responses are written synchronously (the mix server will wait for a Response
+before sending another Request to the plugin) to the mix server via the UNIX
+domain socket similarly, writing a CBOR encoded struct, specified in
+server/cborplugin/client.go:
+
+```
+// Response is the response received after sending a Request to the plugin.
+type Response struct {
+	Payload []byte
+}
+```
+
+Response Payloads must fit inside the Katzenpost mix packet size as defined by
+the operators of the network used. There is not a facility for informing the
+plugin of the payload size or informing it whether the response was accepted.
+
 
 Here's a configuration example for the external currency service:
 
