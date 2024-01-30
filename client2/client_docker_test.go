@@ -130,6 +130,12 @@ Loop:
 	require.NotEqual(t, message1, []byte{})
 	require.NotEqual(t, message2, []byte{})
 	require.Equal(t, message1, message2[:len(message1)])
+
+	err = thin1.Close()
+	require.NoError(t, err)
+
+	err = thin2.Close()
+	require.NoError(t, err)
 }
 
 func testDockerClientARQSendReceive(t *testing.T) {
