@@ -97,6 +97,7 @@ func (t *ThinClient) GetLogger(prefix string) *log.Logger {
 func (t *ThinClient) Close() error {
 	err := t.unixConn.Close()
 	t.Worker.Halt()
+	t.Worker.Wait()
 	return err
 }
 
@@ -245,7 +246,6 @@ func (t *ThinClient) worker() {
 				}
 			}
 			if !isArq {
-				t.log.Debugf("before emitting message to event sink")
 				select {
 				case t.eventSink <- message.MessageReplyEvent:
 				case <-t.HaltCh():
