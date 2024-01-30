@@ -137,7 +137,9 @@ func (a *ARQ) resend(surbID *[sConstants.SURBIDLength]byte) {
 		panic("message.DestinationIdHash is nil")
 	}
 
+	a.log.Warnf("resend ----------------- REMOVING SURB ID %x", surbID[:])
 	delete(a.surbIDMap, *surbID)
+
 	newsurbID := &[sConstants.SURBIDLength]byte{}
 	_, err := rand.Reader.Read(newsurbID[:])
 	if err != nil {
@@ -151,6 +153,7 @@ func (a *ARQ) resend(surbID *[sConstants.SURBIDLength]byte) {
 		RecipientQueueID:  message.RecipientQueueID,
 		Payload:           message.Payload,
 		SURBID:            newsurbID,
+		IsARQSendOp:       true,
 	})
 	if err != nil {
 		a.log.Errorf("failed to send sphinx packet: %s", err.Error())
@@ -162,6 +165,7 @@ func (a *ARQ) resend(surbID *[sConstants.SURBIDLength]byte) {
 	message.SentAt = time.Now()
 	message.Retransmissions += 1
 	a.surbIDMap[*newsurbID] = message
+	a.log.Warnf("resend PUTTING INTO MAP, NEW SURB ID %x", newsurbID[:])
 
 	priority := uint64(message.SentAt.Add(message.ReplyETA).Add(RoundTripTimeSlop).UnixNano())
 	a.timerQueue.Push(priority, newsurbID)
@@ -179,7 +183,7 @@ func (a *ARQ) Has(surbID *[sConstants.SURBIDLength]byte) bool {
 	if ok {
 		a.log.Infof("Has SURBID %x message ID %x", surbID[:], m.MessageID[:])
 	} else {
-		a.log.Infof("Has called with unfound SURBID %x", surbID[:])
+		a.log.Infof("Has SURB NOT FOUND! SURBID %x", surbID[:])
 	}
 	return ok
 }
@@ -199,6 +203,8 @@ func (a *ARQ) HandleAck(surbID *[sConstants.SURBIDLength]byte) (*replyDescriptor
 		a.log.Error("HandleAck: failed to find SURB ID in ARQ map")
 		return nil, errors.New("failed to find SURB ID in ARQ map")
 	}
+
+	a.log.Warnf("HandleAck ----------------- REMOVING SURB ID %x", surbID[:])
 	delete(a.surbIDMap, *surbID)
 
 	peeked := a.timerQueue.Peek()
@@ -257,6 +263,8 @@ func (a *ARQ) Send(appid *[AppIDLength]byte, id *[MessageIDLength]byte, payload 
 		SentAt:             time.Now(),
 		ReplyETA:           rtt,
 	}
+
+	a.log.Warnf("Send PUTTING INTO MAP, NEW SURB ID %x", surbID[:])
 	a.lock.Lock()
 	a.surbIDMap[*surbID] = message
 	a.lock.Unlock()
