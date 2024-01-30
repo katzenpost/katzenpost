@@ -3,7 +3,7 @@
 package client2
 
 import (
-	"math"
+	"container/heap"
 	"sync"
 	"time"
 
@@ -19,12 +19,14 @@ type pushedItem struct {
 type TimerQueue struct {
 	worker.Worker
 
-	queue  *queue.PriorityQueue
-	timer  *time.Timer
-	mutex  sync.RWMutex
+	cond  *sync.Cond
+	mutex sync.RWMutex
+	queue *queue.PriorityQueue
+	timer *time.Timer
+
 	action func(interface{})
 
-	pushCh chan *pushedItem
+	wakech chan struct{}
 }
 
 func NewTimerQueue(action func(interface{})) *TimerQueue {
@@ -37,7 +39,7 @@ func NewTimerQueue(action func(interface{})) *TimerQueue {
 		timer:  time.NewTimer(0),
 		queue:  queue.New(),
 		action: action,
-		pushCh: make(chan *pushedItem, 100),
+		cond:   sync.NewCond(new(sync.Mutex)),
 	}
 }
 
@@ -68,66 +70,71 @@ func (t *TimerQueue) Len() int {
 }
 
 func (t *TimerQueue) Push(priority uint64, value interface{}) {
-	t.pushCh <- &pushedItem{
-		priority: priority,
-		value:    value,
+	t.mutex.Lock()
+	t.queue.Enqueue(priority, value)
+	t.mutex.Unlock()
+	t.cond.Signal()
+}
+
+// wakeupCh() returns the channel that fires upon Signal of the TimerQueue's sync.Cond
+func (t *TimerQueue) wakeupCh() chan struct{} {
+	if t.wakech != nil {
+		return t.wakech
 	}
+	c := make(chan struct{})
+	go func() {
+		defer close(c)
+		var v struct{}
+		for {
+			t.cond.L.Lock()
+			t.cond.Wait()
+			t.cond.L.Unlock()
+			select {
+			case <-t.HaltCh():
+				return
+			case c <- v:
+			}
+		}
+	}()
+	t.wakech = c
+	return c
+}
+
+// pop top item from queue and call the action
+// callback with the item as the argument
+func (t *TimerQueue) forward() {
+	t.mutex.Lock()
+	m := heap.Pop(t.queue)
+	t.mutex.Unlock()
+	if m == nil {
+		return
+	}
+	t.action(m.(*queue.Entry).Value)
 }
 
 func (t *TimerQueue) worker() {
-	timer := time.NewTimer(math.MaxInt64)
-	defer timer.Stop()
-
 	for {
-		var timerFired bool
-
-		select {
-		case <-t.HaltCh():
-			return
-		case <-timer.C:
-			timerFired = true
-
-			t.mutex.Lock()
-			m := t.queue.Peek()
-			t.queue.Pop()
-			t.mutex.Unlock()
-			if m != nil {
-				t.action(m.Value)
-			}
-		case item := <-t.pushCh:
-			t.mutex.Lock()
-			t.queue.Enqueue(item.priority, item.value)
-			t.mutex.Unlock()
-		}
-
-		if !timerFired && !timer.Stop() {
-			<-timer.C
-		}
-
-		for {
-			t.mutex.Lock()
-			m := t.queue.Peek()
-
-			if m == nil {
-				// The queue is empty, just reschedule for the max duration,
-				// when there are messages to schedule, we'll get woken up.
-				timer.Reset(math.MaxInt64)
-				t.mutex.Unlock()
-				break
-			}
-
+		var c <-chan time.Time
+		t.mutex.Lock()
+		if m := t.queue.Peek(); m != nil {
 			// Figure out if the message needs to be handled now.
 			timeLeft := int64(m.Priority) - time.Now().UnixNano()
 			if timeLeft < 0 || m.Priority < uint64(time.Now().UnixNano()) {
-				t.queue.Pop()
 				t.mutex.Unlock()
-				t.action(m.Value)
+				t.forward()
 				continue
 			} else {
-				timer.Reset(time.Duration(timeLeft))
-				t.mutex.Unlock()
-				break
+				c = time.After(time.Duration(timeLeft))
 			}
+		}
+		t.mutex.Unlock()
+		select {
+		case <-t.HaltCh():
+			t.cond.Signal()
+			return
+		case <-c:
+			t.forward()
+		case <-t.wakeupCh():
 		}
 	}
 }
