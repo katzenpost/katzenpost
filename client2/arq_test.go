@@ -77,10 +77,8 @@ func TestARQ(t *testing.T) {
 	arq.Start()
 
 	appid := new([AppIDLength]byte)
-	_, err = rand.Reader.Read(appid[:])
-	require.NoError(t, err)
-
 	id := &[MessageIDLength]byte{}
+
 	payload := []byte("hello world")
 	providerHash := &[32]byte{}
 	_, err = rand.Reader.Read(providerHash[:])
