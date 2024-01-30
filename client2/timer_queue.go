@@ -61,17 +61,17 @@ func (t *TimerQueue) Pop() interface{} {
 	return t.queue.Pop()
 }
 
+func (t *TimerQueue) Len() int {
+	t.mutex.RLock()
+	defer t.mutex.RUnlock()
+	return t.queue.Len()
+}
+
 func (t *TimerQueue) Push(priority uint64, value interface{}) {
 	t.pushCh <- &pushedItem{
 		priority: priority,
 		value:    value,
 	}
-}
-
-func (t *TimerQueue) Len() int {
-	t.mutex.RLock()
-	defer t.mutex.RUnlock()
-	return t.queue.Len()
 }
 
 func (t *TimerQueue) worker() {
@@ -105,30 +105,29 @@ func (t *TimerQueue) worker() {
 		}
 
 		for {
-			t.mutex.RLock()
+			t.mutex.Lock()
 			m := t.queue.Peek()
-			t.mutex.RUnlock()
 
 			if m == nil {
 				// The queue is empty, just reschedule for the max duration,
 				// when there are messages to schedule, we'll get woken up.
 				timer.Reset(math.MaxInt64)
+				t.mutex.Unlock()
 				break
 			}
 
 			// Figure out if the message needs to be handled now.
 			timeLeft := int64(m.Priority) - time.Now().UnixNano()
 			if timeLeft < 0 || m.Priority < uint64(time.Now().UnixNano()) {
-				t.mutex.Lock()
 				t.queue.Pop()
 				t.mutex.Unlock()
 				t.action(m.Value)
 				continue
 			} else {
 				timer.Reset(time.Duration(timeLeft))
+				t.mutex.Unlock()
 				break
 			}
 		}
-
 	}
 }
