@@ -28,14 +28,16 @@ func TestSender(t *testing.T) {
 	s.UpdateConnectionStatus(true)
 	s.UpdateRates(rates)
 
-	for i := 0; i < 3; i++ {
+	n := 40
+	for i := 0; i < n; i++ {
 		go func() {
 			in <- &Request{}
 		}()
 	}
 
-	for i := 0; i < 3; i++ {
+	for i := 0; i < n; i++ {
 		t.Log("before out")
+		s.UpdateRates(rates)
 		r1 := <-s.out
 		t.Log("after out")
 		t.Logf("received request: %v", r1)
