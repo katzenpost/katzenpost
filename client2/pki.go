@@ -111,6 +111,7 @@ func (p *pki) currentDocument() *cpki.Document {
 
 func (p *pki) worker() {
 	p.log.Debug("worker")
+	defer p.log.Debug("stopping worker")
 	timer := time.NewTimer(0)
 	defer func() {
 		p.log.Debug("Halting PKI worker.")
@@ -120,6 +121,7 @@ func (p *pki) worker() {
 	var lastCallbackEpoch uint64
 	for {
 		timerFired := false
+		p.log.Warn("yo1")
 		select {
 		case <-p.HaltCh():
 			p.log.Debugf("Terminating gracefully.")
@@ -128,8 +130,14 @@ func (p *pki) worker() {
 		case <-timer.C:
 			timerFired = true
 		}
+		p.log.Warn("yo2")
 		if !timerFired && !timer.Stop() {
-			<-timer.C
+			select {
+			case <-timer.C:
+			case <-p.HaltCh():
+				p.log.Debugf("Terminating gracefully.")
+				return
+			}
 		}
 
 		// Use the skewed time to determine which documents to fetch.
@@ -139,11 +147,13 @@ func (p *pki) worker() {
 		if till < nextFetchTill {
 			epochs = append(epochs, now+1)
 		}
-
+		p.log.Warn("yo3")
 		// Fetch the documents that we are missing.
 		didUpdate := false
 		for _, epoch := range epochs {
+			p.log.Warn("yo3.5")
 			if _, ok := p.docs.Load(epoch); ok {
+				p.log.Warn("yo3.7")
 				continue
 			}
 
@@ -155,7 +165,9 @@ func (p *pki) worker() {
 				continue
 			}
 
+			p.log.Warn("yo3.1")
 			err := p.updateDocument(epoch)
+			p.log.Warn("yo3.2")
 			if err != nil {
 				p.log.Warnf("Failed to fetch PKI for epoch %v: %v", epoch, err)
 				switch err {
@@ -169,20 +181,25 @@ func (p *pki) worker() {
 			}
 			didUpdate = true
 		}
+		p.log.Warn("yo4")
 		p.pruneFailures(now)
 		if didUpdate {
 			// Prune documents.
 			p.pruneDocuments(now)
 
 		}
+		p.log.Warn("yo5")
 		if now != lastCallbackEpoch && p.c.cfg.Callbacks.OnDocumentFn != nil {
 			if d, ok := p.docs.Load(now); ok {
 				lastCallbackEpoch = now
+				p.log.Warn("yo5.1")
 				p.c.cfg.Callbacks.OnDocumentFn(d.(*cpki.Document))
+				p.log.Warn("yo5.2")
 			}
 		}
-
+		p.log.Warn("yo6")
 		timer.Reset(recheckInterval)
+		p.log.Warn("yo7")
 	}
 
 	// NOTREACHED
@@ -193,6 +210,7 @@ func (p *pki) updateDocument(epoch uint64) error {
 	go func() {
 		select {
 		case <-p.HaltCh():
+			p.log.Debugf("Terminating gracefully.")
 			cancelFn()
 		case <-pkiCtx.Done():
 		}

@@ -60,15 +60,18 @@ func (c *Client) halt() {
 
 	if c.conn != nil {
 		c.conn.halt()
-		// nil out after the PKI is torn down due to a dependency.
+		c.conn.Wait()
+		c.conn = nil
 	}
 
 	if c.pki != nil {
+		c.log.Info("stopping PKI worker")
 		c.pki.Halt()
+		c.log.Info("waiting for stopped PKI worker to exit")
+		c.pki.Wait()
+		// nil out after the PKI is torn down due to a dependency.
 		c.pki = nil
 	}
-
-	c.conn = nil
 
 	c.log.Info("Shutdown complete.")
 	close(c.haltedCh)

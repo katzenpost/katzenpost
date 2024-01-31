@@ -101,7 +101,11 @@ func (t *TimerQueue) worker() {
 		}
 
 		if !timerFired && !timer.Stop() {
-			<-timer.C
+			select {
+			case <-timer.C:
+			case <-t.HaltCh():
+				return
+			}
 		}
 
 		for {
