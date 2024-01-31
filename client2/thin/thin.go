@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: © 2023 David Stainton
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package client2
+package thin
 
 import (
 	"errors"
@@ -13,12 +13,15 @@ import (
 	"github.com/charmbracelet/log"
 	"github.com/fxamacker/cbor/v2"
 
+	"github.com/katzenpost/katzenpost/client2/common"
 	"github.com/katzenpost/katzenpost/client2/config"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/worker"
 )
+
+const MessageIDLength = 16
 
 // ThinResponse is used to encapsulate a message response
 // that are passed to the client application.
@@ -308,9 +311,9 @@ func (t *ThinClient) PKIDocument() *cpki.Document {
 }
 
 // GetServices returns the services matching the specified service name
-func (t *ThinClient) GetServices(capability string) ([]*ServiceDescriptor, error) {
+func (t *ThinClient) GetServices(capability string) ([]*common.ServiceDescriptor, error) {
 	doc := t.PKIDocument()
-	descriptors := FindServices(capability, doc)
+	descriptors := common.FindServices(capability, doc)
 	if len(descriptors) == 0 {
 		return nil, errors.New("error, GetService failure, service not found in pki doc")
 	}
@@ -319,7 +322,7 @@ func (t *ThinClient) GetServices(capability string) ([]*ServiceDescriptor, error
 
 // GetService returns a randomly selected service
 // matching the specified service name
-func (t *ThinClient) GetService(serviceName string) (*ServiceDescriptor, error) {
+func (t *ThinClient) GetService(serviceName string) (*common.ServiceDescriptor, error) {
 	serviceDescriptors, err := t.GetServices(serviceName)
 	if err != nil {
 		return nil, err

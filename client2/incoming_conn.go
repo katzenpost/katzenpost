@@ -9,6 +9,7 @@ import (
 
 	"github.com/charmbracelet/log"
 	"github.com/fxamacker/cbor/v2"
+	"github.com/katzenpost/katzenpost/client2/thin"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 )
@@ -37,15 +38,13 @@ func (c *incomingConn) recvRequest() (*Request, error) {
 	if err != nil {
 		return nil, err
 	}
-	req := new(Request)
+	req := new(thin.Request)
 	err = cbor.Unmarshal(buff[:reqLen], &req)
 	if err != nil {
 		fmt.Printf("error decoding cbor from client: %s\n", err)
 		return nil, err
 	}
-
-	req.AppID = c.appID
-	return req, nil
+	return FromThinRequest(req, c.appID), nil
 }
 
 func (c *incomingConn) handleRequest(req *Request) (*Response, error) {
@@ -64,7 +63,7 @@ func (c *incomingConn) sendPKIDoc(doc *cpki.Document) error {
 		return err
 	}
 	message := &Response{
-		NewPKIDocumentEvent: &NewPKIDocumentEvent{
+		NewPKIDocumentEvent: &thin.NewPKIDocumentEvent{
 			Payload: blob,
 		},
 	}
@@ -74,7 +73,7 @@ func (c *incomingConn) sendPKIDoc(doc *cpki.Document) error {
 
 func (c *incomingConn) updateConnectionStatus(status error) {
 	message := &Response{
-		ConnectionStatusEvent: &ConnectionStatusEvent{
+		ConnectionStatusEvent: &thin.ConnectionStatusEvent{
 			IsConnected: status == nil,
 			Err:         status,
 		},
@@ -82,7 +81,8 @@ func (c *incomingConn) updateConnectionStatus(status error) {
 	c.sendToClientCh <- message
 }
 
-func (c *incomingConn) sendResponse(response *Response) error {
+func (c *incomingConn) sendResponse(r *Response) error {
+	response := IntoThinResponse(r)
 	blob, err := cbor.Marshal(response)
 	if err != nil {
 		return err
@@ -145,22 +145,9 @@ func (c *incomingConn) worker() {
 				return
 			}
 			c.log.Infof("Received Request from peer application.")
-			response, err := c.handleRequest(rawReq)
-			if err != nil {
-				c.log.Infof("Failed to handle Request: %v", err)
-				return
-			}
-
-			if response != nil {
-				err = c.sendResponse(response)
-				if err != nil {
-					c.log.Infof("received error sending Response: %s", err.Error())
-				}
-			}
+			c.handleRequest(rawReq)
 		}
-
 	}
-
 	// NOTREACHED
 }
 

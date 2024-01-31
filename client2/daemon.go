@@ -13,7 +13,9 @@ import (
 
 	"github.com/charmbracelet/log"
 
+	"github.com/katzenpost/katzenpost/client2/common"
 	"github.com/katzenpost/katzenpost/client2/config"
+	"github.com/katzenpost/katzenpost/client2/thin"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx"
@@ -210,7 +212,7 @@ func (d *Daemon) egressWorker() {
 			d.log.Warn("GC Reply event")
 			response := &Response{
 				AppID: mygcreply.appID,
-				MessageIDGarbageCollected: &MessageIDGarbageCollected{
+				MessageIDGarbageCollected: &thin.MessageIDGarbageCollected{
 					MessageID: mygcreply.id,
 				},
 			}
@@ -273,7 +275,7 @@ func (d *Daemon) egressWorker() {
 			}
 			conn.sendResponse(&Response{
 				AppID: desc.appID,
-				MessageReplyEvent: &MessageReplyEvent{
+				MessageReplyEvent: &thin.MessageReplyEvent{
 					MessageID: desc.ID,
 					SURBID:    reply.surbID,
 					Payload:   plaintext,
@@ -348,7 +350,7 @@ func (d *Daemon) send(request *Request) {
 			if incomingConn != nil {
 				response := &Response{
 					AppID: request.AppID,
-					MessageSentEvent: &MessageSentEvent{
+					MessageSentEvent: &thin.MessageSentEvent{
 						MessageID: request.ID,
 						SURBID:    request.SURBID,
 						SentAt:    now,
@@ -381,31 +383,6 @@ func (d *Daemon) send(request *Request) {
 	}
 }
 
-// ServiceDescriptor describe a mixnet Provider-side service.
-type ServiceDescriptor struct {
-	// RecipientQueueID is the service name or queue ID.
-	RecipientQueueID []byte
-	// Provider name.
-	MixDescriptor *cpki.MixDescriptor
-}
-
-// FindServices is a helper function for finding Provider-side services in the PKI document.
-func FindServices(capability string, doc *cpki.Document) []*ServiceDescriptor {
-	services := []*ServiceDescriptor{}
-	for _, provider := range doc.Providers {
-		for cap := range provider.Kaetzchen {
-			if cap == capability {
-				serviceID := &ServiceDescriptor{
-					RecipientQueueID: []byte(provider.Kaetzchen[cap]["endpoint"].(string)),
-					MixDescriptor:    provider,
-				}
-				services = append(services, serviceID)
-			}
-		}
-	}
-	return services
-}
-
 func (d *Daemon) sendLoopDecoy(request *Request) {
 	// XXX FIXME consume statistics on our echo decoys for n-1 detection
 
@@ -413,7 +390,7 @@ func (d *Daemon) sendLoopDecoy(request *Request) {
 	if doc == nil {
 		panic("doc is nil")
 	}
-	echoServices := FindServices(EchoService, doc)
+	echoServices := common.FindServices(EchoService, doc)
 	if len(echoServices) == 0 {
 		panic("wtf no echo services")
 	}
@@ -439,7 +416,7 @@ func (d *Daemon) sendLoopDecoy(request *Request) {
 
 func (d *Daemon) sendDropDecoy() {
 	doc := d.client.CurrentDocument()
-	echoServices := FindServices(EchoService, doc)
+	echoServices := common.FindServices(EchoService, doc)
 	if len(echoServices) == 0 {
 		panic("wtf no echo services")
 	}

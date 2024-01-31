@@ -10,6 +10,7 @@ import (
 
 	"github.com/charmbracelet/log"
 
+	"github.com/katzenpost/katzenpost/client2/thin"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 )
@@ -274,7 +275,7 @@ func (a *ARQ) Send(appid *[AppIDLength]byte, id *[MessageIDLength]byte, payload 
 
 	response := &Response{
 		AppID: appid,
-		MessageSentEvent: &MessageSentEvent{
+		MessageSentEvent: &thin.MessageSentEvent{
 			MessageID: id,
 			SURBID:    surbID,
 			SentAt:    time.Now(),

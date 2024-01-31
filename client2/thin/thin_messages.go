@@ -1,52 +1,22 @@
 // SPDX-FileCopyrightText: © 2023 David Stainton
 // SPDX-License-Identifier: AGPL-3.0-only
-package client2
+
+package thin
 
 import (
-	"github.com/katzenpost/katzenpost/client2/thin"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 )
 
-func IntoThinResponse(r *Response) *thin.Response {
-	return &thin.Response{
-		ConnectionStatusEvent:     r.ConnectionStatusEvent,
-		NewPKIDocumentEvent:       r.NewPKIDocumentEvent,
-		MessageSentEvent:          r.MessageSentEvent,
-		MessageReplyEvent:         r.MessageReplyEvent,
-		MessageIDGarbageCollected: r.MessageIDGarbageCollected,
-	}
-}
-
 type Response struct {
-	// AppID must be a unique identity for the client application
-	// that is receiving this Response.
-	AppID *[AppIDLength]byte `cbor:app_id`
+	ConnectionStatusEvent *ConnectionStatusEvent `cbor:connection_status_event`
 
-	ConnectionStatusEvent *thin.ConnectionStatusEvent `cbor:connection_status_event`
+	NewPKIDocumentEvent *NewPKIDocumentEvent `cbor:new_pki_document_event`
 
-	NewPKIDocumentEvent *thin.NewPKIDocumentEvent `cbor:new_pki_document_event`
+	MessageSentEvent *MessageSentEvent `cbor:message_sent_event`
 
-	MessageSentEvent *thin.MessageSentEvent `cbor:message_sent_event`
+	MessageReplyEvent *MessageReplyEvent `cbor:message_reply_event`
 
-	MessageReplyEvent *thin.MessageReplyEvent `cbor:message_reply_event`
-
-	MessageIDGarbageCollected *thin.MessageIDGarbageCollected
-}
-
-func FromThinRequest(r *thin.Request, appid *[AppIDLength]byte) *Request {
-	return &Request{
-		AppID:             appid,
-		ID:                r.ID,
-		WithSURB:          r.WithSURB,
-		SURBID:            r.SURBID,
-		DestinationIdHash: r.DestinationIdHash,
-		RecipientQueueID:  r.RecipientQueueID,
-		Payload:           r.Payload,
-		IsSendOp:          r.IsSendOp,
-		IsARQSendOp:       r.IsARQSendOp,
-		IsLoopDecoy:       r.IsLoopDecoy,
-		IsDropDecoy:       r.IsDropDecoy,
-	}
+	MessageIDGarbageCollected *MessageIDGarbageCollected
 }
 
 type Request struct {
@@ -61,10 +31,6 @@ type Request struct {
 	// SURBID must be a unique identity for each request.
 	// This field should be nil if WithSURB is false.
 	SURBID *[sConstants.SURBIDLength]byte `cbor:surbid`
-
-	// AppID must be a unique identity for the client application
-	// that is sending this Request.
-	AppID *[AppIDLength]byte `cbor:app_id`
 
 	// DestinationIdHash is 32 byte hash of the destination Provider's
 	// identity public key.
