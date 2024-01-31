@@ -48,60 +48,12 @@ func setupDaemon() *Daemon {
 	return d
 }
 
-func testDockerMultiplexClients(t *testing.T) {
-	t.Parallel()
-
-	// daemon listen
-
-	cfg, err := config.LoadFile("testdata/client.toml")
+func sendAndWait(t *testing.T, client *ThinClient, message []byte, nodeID *[32]byte, queueID []byte) []byte {
+	surbID := client.NewSURBID()
+	err := client.SendMessage(surbID, message, nodeID, queueID)
 	require.NoError(t, err)
 
-	// client 1 dial
-
-	thin1 := NewThinClient(cfg)
-	t.Log("thin client Dialing")
-	err = thin1.Dial()
-	require.NoError(t, err)
-	require.Nil(t, err)
-	t.Log("thin client connected")
-
-	// client 2 dial
-
-	thin2 := NewThinClient(cfg)
-	t.Log("thin client Dialing")
-	err = thin2.Dial()
-	require.NoError(t, err)
-	require.Nil(t, err)
-	t.Log("thin client connected")
-
-	// client 1 prepare to send
-
-	t.Log("thin client getting PKI doc")
-	doc := thin1.PKIDocument()
-	require.NotNil(t, doc)
-	require.NotEqual(t, doc.LambdaP, 0.0)
-
-	pingTargets := []*cpki.MixDescriptor{}
-	for i := 0; i < len(doc.Providers); i++ {
-		_, ok := doc.Providers[i].Kaetzchen["testdest"]
-		if ok {
-			pingTargets = append(pingTargets, doc.Providers[i])
-		}
-	}
-	require.True(t, len(pingTargets) > 0)
-	message1 := []byte("hello alice, this is bob.")
-	nodeIdKey := pingTargets[0].IdentityKey.Sum256()
-
-	// client 1 send/receive
-
-	t.Log("thin client send ping")
-	surbID := thin1.NewSURBID()
-	err = thin1.SendMessage(surbID, message1, &nodeIdKey, []byte("testdest"))
-	require.NoError(t, err)
-
-	eventSink := thin1.EventSink()
-	message2 := []byte{}
-
+	eventSink := client.EventSink()
 Loop:
 	for {
 		event := <-eventSink
@@ -120,16 +72,58 @@ Loop:
 		case *MessageReplyEvent:
 			t.Log("MessageReplyEvent")
 			require.Equal(t, surbID[:], v.SURBID[:])
-			message2 = v.Payload
+			return v.Payload
 			break Loop
 		default:
 			panic("impossible event type")
 		}
 	}
+	panic("impossible event type")
+}
 
-	require.NotEqual(t, message1, []byte{})
-	require.NotEqual(t, message2, []byte{})
-	require.Equal(t, message1, message2[:len(message1)])
+func testDockerMultiplexClients(t *testing.T) {
+	t.Parallel()
+
+	cfg, err := config.LoadFile("testdata/client.toml")
+	require.NoError(t, err)
+
+	thin1 := NewThinClient(cfg)
+	t.Log("thin client Dialing")
+	err = thin1.Dial()
+	require.NoError(t, err)
+	require.Nil(t, err)
+	t.Log("thin client connected")
+
+	thin2 := NewThinClient(cfg)
+	t.Log("thin client Dialing")
+	err = thin2.Dial()
+	require.NoError(t, err)
+	require.Nil(t, err)
+	t.Log("thin client connected")
+
+	t.Log("thin client getting PKI doc")
+	doc := thin1.PKIDocument()
+	require.NotNil(t, doc)
+	require.NotEqual(t, doc.LambdaP, 0.0)
+
+	pingTargets := []*cpki.MixDescriptor{}
+	for i := 0; i < len(doc.Providers); i++ {
+		_, ok := doc.Providers[i].Kaetzchen["testdest"]
+		if ok {
+			pingTargets = append(pingTargets, doc.Providers[i])
+		}
+	}
+	require.True(t, len(pingTargets) > 0)
+	message1 := []byte("hello alice, this is bob.")
+	nodeIdKey := pingTargets[0].IdentityKey.Sum256()
+
+	for i := 0; i < 2; i++ {
+		reply := sendAndWait(t, thin1, message1, &nodeIdKey, []byte("testdest"))
+		require.Equal(t, message1, reply[:len(message1)])
+
+		//reply = sendAndWait(t, thin2, message1, &nodeIdKey, []byte("testdest"))
+		//require.Equal(t, message1, reply[:len(message1)])
+	}
 
 	err = thin1.Close()
 	require.NoError(t, err)
