@@ -88,10 +88,6 @@ a struct containing an app ID and one of four possible events:
 ```golang
 
 type Response struct {
-	// AppID must be a unique identity for the client application
-	// that is receiving this Response.
-	AppID *[AppIDLength]byte `cbor:app_id`
-
 	ConnectionStatusEvent *ConnectionStatusEvent `cbor:connection_status_event`
 
 	NewPKIDocumentEvent *NewPKIDocumentEvent `cbor:new_pki_document_event`
@@ -142,10 +138,6 @@ type Request struct {
 	// SURBID must be a unique identity for each request.
 	// This field should be nil if WithSURB is false.
 	SURBID *[sConstants.SURBIDLength]byte `cbor:surbid`
-
-	// AppID must be a unique identity for the client application
-	// that is sending this Request.
-	AppID *[AppIDLength]byte `cbor:app_id`
 
 	// DestinationIdHash is 32 byte hash of the destination Provider's
 	// identity public key.
@@ -203,14 +195,7 @@ indicated a connection status change, a new PKI document or a message sent or re
 
 ## 3.5 Request message fields
 
-There are several `Request` fields that we need to discuss.
-
-Firstly, each `Request` message sent by a thin client needs to have
-the `app_id` field set to an ID that is unique among the applications
-using thin clients. The `app_id` is used by the daemon to route `Response`
-messages to the correct thin client socket.
-
-The rest of the fields we are concerned with are the following:
+There are several `Request` fields that we need to discuss:
 
 * `with_surb` is set to true if a Sphinx packet with a SURB in it's payload should be sent.
 
