@@ -36,6 +36,7 @@ import (
 
 	"github.com/katzenpost/katzenpost/client2"
 	"github.com/katzenpost/katzenpost/client2/config"
+	"github.com/katzenpost/katzenpost/client2/thin"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/log2"
 )
@@ -98,7 +99,7 @@ func createCatshadowClientWithState(t *testing.T, stateFile string) *Client {
 	require.NoError(t, err)
 	//cfg.Logging.Level = "INFO" // client verbosity reductionism
 
-	c := client2.NewThinClient(cfg)
+	c := thin.NewThinClient(cfg)
 	err = c.Dial()
 	require.NoError(t, err)
 
@@ -134,7 +135,7 @@ func reloadCatshadowState(t *testing.T, stateFile string) *Client {
 	state, err := decryptStateFile(stateFile, key)
 	require.NoError(err)
 
-	c := client2.NewThinClient(cfg)
+	c := thin.NewThinClient(cfg)
 	require.NoError(err)
 	stateWorker, state, err = LoadStateWriter(c.GetLogger(stateFile), stateFile, passphrase)
 	require.NoError(err)

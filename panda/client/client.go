@@ -26,7 +26,7 @@ import (
 	"github.com/charmbracelet/log"
 	"github.com/ugorji/go/codec"
 
-	"github.com/katzenpost/katzenpost/client2"
+	"github.com/katzenpost/katzenpost/client2/thin"
 	"github.com/katzenpost/katzenpost/panda/common"
 )
 
@@ -44,7 +44,7 @@ const (
 // Panda is a PANDA client that uses our mixnet client library
 // to communicate with the PANDA kaetzchen service.
 type Panda struct {
-	session    *client2.ThinClient
+	session    *thin.ThinClient
 	log        *log.Logger
 	blobSize   int
 	jsonHandle codec.JsonHandle
@@ -136,7 +136,7 @@ func (p *Panda) Exchange(id, message []byte, shutdown <-chan interface{}) ([]byt
 }
 
 // New creates a new Panda instance.
-func New(blobSize int, s *client2.ThinClient, log *log.Logger, recipient []byte, provider string) *Panda {
+func New(blobSize int, s *thin.ThinClient, log *log.Logger, recipient []byte, provider string) *Panda {
 	p := &Panda{
 		session:   s,
 		blobSize:  blobSize,

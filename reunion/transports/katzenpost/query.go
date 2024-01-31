@@ -25,7 +25,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/katzenpost/katzenpost/client2"
+	"github.com/katzenpost/katzenpost/client2/thin"
 	"github.com/katzenpost/katzenpost/reunion/commands"
 )
 
@@ -34,7 +34,7 @@ import (
 type Transport struct {
 	// Session is a thin client which
 	// can be used to send mixnet messages.
-	Session *client2.ThinClient
+	Session *thin.ThinClient
 	// Recipient is the destination service.
 	Recipient []byte
 	// Provider is the destination Provider.

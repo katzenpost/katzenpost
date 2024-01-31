@@ -24,7 +24,7 @@ import (
 	"math"
 	"time"
 
-	"github.com/katzenpost/katzenpost/client2"
+	"github.com/katzenpost/katzenpost/client2/thin"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 )
 
@@ -126,9 +126,9 @@ func (c *Client) worker() {
 			continue
 		case rawClientEvent := <-c.sessionEvents():
 			switch event := rawClientEvent.(type) {
-			case *client2.MessageIDGarbageCollected:
+			case *thin.MessageIDGarbageCollected:
 				c.garbageCollectSendMap(event)
-			case *client2.ConnectionStatusEvent:
+			case *thin.ConnectionStatusEvent:
 				c.log.Infof("Connection status change: isConnected %v", event.IsConnected)
 				if isConnected != event.IsConnected && event.IsConnected {
 					readInboxInterval := c.getReadInboxInterval()
@@ -147,14 +147,14 @@ func (c *Client) worker() {
 					c.haltKeyExchanges()
 				}
 				c.eventCh.In() <- event
-			case *client2.MessageSentEvent:
+			case *thin.MessageSentEvent:
 				c.log.Debug("received MESSAGE SENT EVENT")
 				c.handleSent(event)
 				continue
-			case *client2.MessageReplyEvent:
+			case *thin.MessageReplyEvent:
 				c.handleReply(event)
 				continue
-			case *client2.NewDocumentEvent:
+			case *thin.NewDocumentEvent:
 				doc := event.Document
 				c.getReadInboxInterval = func() time.Duration { return getReadInboxInterval(doc.LambdaP, doc.LambdaPMaxDelay) }
 				readInboxInterval := c.getReadInboxInterval()

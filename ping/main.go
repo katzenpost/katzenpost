@@ -24,7 +24,9 @@ import (
 
 	"github.com/carlmjohnson/versioninfo"
 	"github.com/katzenpost/katzenpost/client2"
+	"github.com/katzenpost/katzenpost/client2/common"
 	"github.com/katzenpost/katzenpost/client2/config"
+	"github.com/katzenpost/katzenpost/client2/thin"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 )
 
@@ -84,7 +86,7 @@ func main() {
 		time.Sleep(time.Second * 3)
 	}
 
-	thin := client2.NewThinClient(cfg)
+	thin := thin.NewThinClient(cfg)
 	err = thin.Dial()
 	if err != nil {
 		panic(err)
@@ -95,7 +97,7 @@ func main() {
 		panic("pki doc cannot be nil")
 	}
 
-	echoServices := client2.FindServices(service, doc)
+	echoServices := common.FindServices(service, doc)
 	if len(echoServices) == 0 {
 		panic("wtf no echo services")
 	}

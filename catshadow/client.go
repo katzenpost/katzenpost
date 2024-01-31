@@ -33,7 +33,8 @@ import (
 	"gopkg.in/eapache/channels.v1"
 
 	cConstants "github.com/katzenpost/katzenpost/client/constants"
-	"github.com/katzenpost/katzenpost/client2"
+	client2common "github.com/katzenpost/katzenpost/client2/common"
+	"github.com/katzenpost/katzenpost/client2/thin"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
@@ -94,7 +95,7 @@ type Client struct {
 	online     bool
 	connecting bool
 
-	session   *client2.ThinClient
+	session   *thin.ThinClient
 	providers []*pki.MixDescriptor
 
 	log *log.Logger
@@ -115,7 +116,7 @@ type queuedSpoolCommand struct {
 // encrypted statefile, of course.  This constructor of Client is used when
 // creating a new Client as opposed to loading the previously saved state for
 // an existing Client.
-func NewClientAndRemoteSpool(ctx context.Context, log *log.Logger, mixnetClient *client2.ThinClient, stateWorker *StateWriter) (*Client, error) {
+func NewClientAndRemoteSpool(ctx context.Context, log *log.Logger, mixnetClient *thin.ThinClient, stateWorker *StateWriter) (*Client, error) {
 	state := &State{
 		Blob:          make(map[string][]byte),
 		Contacts:      make([]*Contact, 0),
@@ -140,7 +141,7 @@ func NewClientAndRemoteSpool(ctx context.Context, log *log.Logger, mixnetClient 
 
 // New creates a new Client instance given a mixnetClient, stateWorker and state.
 // This constructor is used to load the previously saved state of a Client.
-func New(log *log.Logger, mixnetClient *client2.ThinClient, stateWorker *StateWriter, state *State) (*Client, error) {
+func New(log *log.Logger, mixnetClient *thin.ThinClient, stateWorker *StateWriter, state *State) (*Client, error) {
 	if state == nil {
 		state = &State{
 			Blob:          make(map[string][]byte),
@@ -180,7 +181,7 @@ func New(log *log.Logger, mixnetClient *client2.ThinClient, stateWorker *StateWr
 
 // sessionEvents() is called by the worker routine. It returns
 // events from the established session or nil, if the client is in offline mode
-func (c *Client) sessionEvents() chan client2.Event {
+func (c *Client) sessionEvents() chan thin.Event {
 	c.connMutex.RLock()
 	defer c.connMutex.RUnlock()
 	if c.session != nil {
@@ -419,7 +420,7 @@ func (c *Client) doGetSpoolProviders() interface{} {
 		return ErrNoCurrentDocument
 	}
 
-	spoolProviders := client2.FindServices(common.SpoolServiceName, doc)
+	spoolProviders := client2common.FindServices(common.SpoolServiceName, doc)
 	providerNames := make([]string, len(spoolProviders))
 	for i, d := range spoolProviders {
 		providerNames[i] = d.MixDescriptor.Name
@@ -480,7 +481,7 @@ func (c *Client) doCreateRemoteSpool(provider string, responseChan chan error) {
 		responseChan <- ErrNotOnline
 		return
 	}
-	var desc *client2.ServiceDescriptor
+	var desc *client2common.ServiceDescriptor
 	var err error
 	// if no provider is specified, pick a random one
 	if provider == "" {
@@ -1028,12 +1029,12 @@ func (c *Client) sendReadInbox() {
 	c.sendMap.Store(*surbid, &ReadMessageDescriptor{MessageID: a})
 }
 
-func (c *Client) garbageCollectSendMap(gcEvent *client2.MessageIDGarbageCollected) {
+func (c *Client) garbageCollectSendMap(gcEvent *thin.MessageIDGarbageCollected) {
 	c.log.Debugf("Garbage Collecting Message ID %x", gcEvent.MessageID[:])
 	c.sendMap.Delete(*gcEvent.MessageID)
 }
 
-func (c *Client) handleSent(sentEvent *client2.MessageSentEvent) {
+func (c *Client) handleSent(sentEvent *thin.MessageSentEvent) {
 	if sentEvent == nil {
 		panic("sentEvent is nil")
 	}
@@ -1081,7 +1082,7 @@ func (c *Client) handleSent(sentEvent *client2.MessageSentEvent) {
 	}
 }
 
-func (c *Client) handleReply(replyEvent *client2.MessageReplyEvent) {
+func (c *Client) handleReply(replyEvent *thin.MessageReplyEvent) {
 	var id *[16]byte
 	if replyEvent.MessageID == nil {
 		if replyEvent.SURBID == nil {

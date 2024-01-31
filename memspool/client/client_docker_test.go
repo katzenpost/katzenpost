@@ -28,6 +28,7 @@ import (
 
 	"github.com/katzenpost/katzenpost/client2"
 	"github.com/katzenpost/katzenpost/client2/config"
+	"github.com/katzenpost/katzenpost/client2/thin"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/memspool/common"
 )
@@ -74,7 +75,7 @@ func testDockerUnreliableSpoolService(t *testing.T) {
 	cfg, err := config.LoadFile("testdata/client.toml")
 	require.NoError(err)
 
-	s := client2.NewThinClient(cfg)
+	s := thin.NewThinClient(cfg)
 	err = s.Dial()
 	require.NoError(err)
 
@@ -154,7 +155,7 @@ func testDockerUnreliableSpoolServiceMore(t *testing.T) {
 	cfg, err := config.LoadFile("testdata/client.toml")
 	require.NoError(err)
 
-	s := client2.NewThinClient(cfg)
+	s := thin.NewThinClient(cfg)
 	err = s.Dial()
 	require.NoError(err)
 
@@ -210,7 +211,7 @@ func testDockerGetSpoolServices(t *testing.T) {
 	cfg, err := config.LoadFile("testdata/client.toml")
 	require.NoError(err)
 
-	s := client2.NewThinClient(cfg)
+	s := thin.NewThinClient(cfg)
 	err = s.Dial()
 	require.NoError(err)
 

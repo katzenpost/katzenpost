@@ -20,8 +20,8 @@ test:
 lint:
 	golint ./...
 
-coverage-file:
-	go test ./... -coverprofile=coverage.out
+coverage:
+	go test -v -tags time -race -coverprofile=coverage.out
 
 coverage-html:
 	go tool cover -html=coverage.out
