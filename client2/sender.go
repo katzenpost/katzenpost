@@ -53,6 +53,9 @@ func (s *sender) worker() {
 			case <-s.HaltCh():
 				return
 			default:
+				if s.disableDecoys {
+					continue
+				}
 				toSend = newDropDecoy()
 			}
 			select {

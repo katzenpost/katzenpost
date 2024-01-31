@@ -60,6 +60,12 @@ func (l *listener) worker() {
 		l.listener.Close() // Usually redundant, but harmless.
 	}()
 	for {
+		select {
+		case <-l.HaltCh():
+			return
+		default:
+		}
+
 		conn, err := l.listener.Accept()
 		if err != nil {
 			if e, ok := err.(net.Error); ok && !e.Temporary() {
