@@ -16,25 +16,34 @@ type sender struct {
 	sendMessageOrDrop *ExpDist
 	sendDrop          *ExpDist
 	sendLoop          *ExpDist
+
+	disableDecoys bool
 }
 
 // newSender starts it's worker but does nothing by default until
 // methods UpdateConnectionStatus and UpdateRates are called.
 // The worker only works when we have a connection and when we have
 // a rate set.
-func newSender(in chan *Request, out chan *Request) *sender {
+func newSender(in chan *Request, out chan *Request, disableDecoys bool) *sender {
 	s := &sender{
 		in:                in,
 		out:               out,
 		sendMessageOrDrop: NewExpDist(),
 		sendLoop:          NewExpDist(),
 		sendDrop:          NewExpDist(),
+		disableDecoys:     disableDecoys,
 	}
 	s.Go(s.worker)
 	return s
 }
 
 func (s *sender) worker() {
+	dropDecoyCh := s.sendDrop.OutCh()
+	loopDecoyCh := s.sendLoop.OutCh()
+	if s.disableDecoys {
+		loopDecoyCh = make(<-chan struct{})
+		dropDecoyCh = make(<-chan struct{})
+	}
 	for {
 		select {
 		case <-s.sendMessageOrDrop.OutCh():
@@ -51,14 +60,14 @@ func (s *sender) worker() {
 			case <-s.HaltCh():
 				return
 			}
-		case <-s.sendLoop.OutCh():
+		case <-loopDecoyCh:
 			toSend := newLoopDecoy()
 			select {
 			case s.out <- toSend:
 			case <-s.HaltCh():
 				return
 			}
-		case <-s.sendDrop.OutCh():
+		case <-dropDecoyCh:
 			toSend := newDropDecoy()
 			select {
 			case s.out <- toSend:
