@@ -226,10 +226,12 @@ func (d *Daemon) egressWorker() {
 				d.log.Errorf("failed to send Response: %s", err)
 			}
 		case surbID := <-d.gcSurbIDCh:
+			d.log.Warn("gc SURB ID")
 			delete(d.replies, *surbID)
 			// XXX FIXME consume statistics on our loop decoys for n-1 detection
 			delete(d.decoys, *surbID)
 		case reply := <-d.replyCh:
+			d.log.Warn("Reply Received")
 			isDecoy := false
 			desc, ok := d.replies[*reply.surbID]
 			if !ok {
@@ -282,6 +284,7 @@ func (d *Daemon) egressWorker() {
 				},
 			})
 		case request := <-d.egressCh:
+			d.log.Warn("Request to send egress packet.")
 			switch {
 			case request.IsLoopDecoy == true:
 				d.sendLoopDecoy(request)
