@@ -55,13 +55,14 @@ type Daemon struct {
 	listener   *listener
 	egressCh   chan *Request
 
-	replies map[[sConstants.SURBIDLength]byte]replyDescriptor
-	decoys  map[[sConstants.SURBIDLength]byte]replyDescriptor
+	replies   map[[sConstants.SURBIDLength]byte]replyDescriptor
+	decoys    map[[sConstants.SURBIDLength]byte]replyDescriptor
+	arq       *ARQ
+	replyLock *sync.Mutex
 
 	timerQueue *TimerQueue
-	replyCh    chan sphinxReply
+	replyCh    chan *sphinxReply
 	gcSurbIDCh chan *[sConstants.SURBIDLength]byte
-	arq        *ARQ
 
 	gctimerQueue *TimerQueue
 	gcReplyCh    chan *gcReply
@@ -102,11 +103,12 @@ func NewDaemon(cfg *config.Config, egressSize int) (*Daemon, error) {
 		}),
 		cfg:        cfg,
 		egressCh:   make(chan *Request, egressSize),
-		replyCh:    make(chan sphinxReply),
+		replyCh:    make(chan *sphinxReply, 2),
 		replies:    make(map[[sConstants.SURBIDLength]byte]replyDescriptor),
 		decoys:     make(map[[sConstants.SURBIDLength]byte]replyDescriptor),
 		gcSurbIDCh: make(chan *[sConstants.SURBIDLength]byte),
 		gcReplyCh:  make(chan *gcReply),
+		replyLock:  new(sync.Mutex),
 	}
 
 	return d, nil
@@ -161,7 +163,7 @@ func (d *Daemon) Start() error {
 	}
 
 	d.cfg.Callbacks = &config.Callbacks{}
-	d.cfg.Callbacks.OnACKFn = d.handleReplies
+	d.cfg.Callbacks.OnACKFn = d.proxyReplies
 	d.cfg.Callbacks.OnConnFn = d.listener.updateConnectionStatus
 	d.cfg.Callbacks.OnDocumentFn = d.onDocument
 
@@ -190,7 +192,9 @@ func (d *Daemon) Start() error {
 	})
 	d.gctimerQueue.Start()
 
+	d.Go(d.ingressWorker)
 	d.Go(d.egressWorker)
+
 	return d.client.Start()
 }
 
@@ -198,9 +202,9 @@ func (d *Daemon) onDocument(doc *cpki.Document) {
 	d.listener.updateFromPKIDoc(doc)
 }
 
-func (d *Daemon) handleReplies(surbID *[constants.SURBIDLength]byte, ciphertext []byte) error {
+func (d *Daemon) proxyReplies(surbID *[constants.SURBIDLength]byte, ciphertext []byte) error {
 	select {
-	case d.replyCh <- sphinxReply{
+	case d.replyCh <- &sphinxReply{
 		surbID:     surbID,
 		ciphertext: ciphertext}:
 	case <-d.HaltCh():
@@ -215,8 +219,30 @@ func (d *Daemon) egressWorker() {
 		case <-d.HaltCh():
 			d.Shutdown()
 			return
+		case request := <-d.egressCh:
+			switch {
+			case request.IsLoopDecoy == true:
+				d.sendLoopDecoy(request)
+			case request.IsDropDecoy == true:
+				d.sendDropDecoy()
+			case request.IsSendOp == true:
+				d.send(request)
+			case request.IsARQSendOp == true:
+				d.sendARQMessage(request)
+			default:
+				panic("send operation not fully specified")
+			}
+		}
+	}
+}
+
+func (d *Daemon) ingressWorker() {
+	for {
+		select {
+		case <-d.HaltCh():
+			d.Shutdown()
+			return
 		case mygcreply := <-d.gcReplyCh:
-			d.log.Warn("GC Reply event")
 			response := &Response{
 				AppID: mygcreply.appID,
 				MessageIDGarbageCollected: &thin.MessageIDGarbageCollected{
@@ -233,79 +259,74 @@ func (d *Daemon) egressWorker() {
 				d.log.Errorf("failed to send Response: %s", err)
 			}
 		case surbID := <-d.gcSurbIDCh:
-			d.log.Warn("gc SURB ID")
+			d.replyLock.Lock()
 			delete(d.replies, *surbID)
-			// XXX FIXME consume statistics on our loop decoys for n-1 detection
 			delete(d.decoys, *surbID)
+			d.replyLock.Unlock()
 		case reply := <-d.replyCh:
-			d.log.Warn("Reply Received")
-			isDecoy := false
-			desc, ok := d.replies[*reply.surbID]
-			if !ok {
-				desc, ok = d.decoys[*reply.surbID]
-				if ok {
-					isDecoy = true
-				} else {
-					if d.arq.Has(reply.surbID) {
-						myDesc, err := d.arq.HandleAck(reply.surbID)
-						if err != nil {
-							d.log.Infof("failed to handle ACK")
-							continue
-						}
-						desc = *myDesc
-					} else {
-						d.log.Infof("reply descriptor not found for SURB ID %x", reply.surbID[:])
-						continue
-					}
-				}
-
-			}
-			delete(d.replies, *reply.surbID)
-			delete(d.decoys, *reply.surbID)
-			s, err := sphinx.FromGeometry(d.client.cfg.SphinxGeometry)
-			if err != nil {
-				panic(err)
-			}
-			plaintext, err := s.DecryptSURBPayload(reply.ciphertext, desc.surbKey)
-			if err != nil {
-				d.log.Infof("SURB reply decryption error: %s", err.Error())
-				continue
-			}
-
-			// XXX FIXME consume statistics on our loop decoys for n-1 detection
-			if isDecoy {
-				continue
-			}
-
-			conn := d.listener.getConnection(desc.appID)
-			if conn == nil {
-				d.log.Infof("no connection associated with AppID %x", desc.appID[:])
-				panic("no connection associated with AppID")
-			}
-			conn.sendResponse(&Response{
-				AppID: desc.appID,
-				MessageReplyEvent: &thin.MessageReplyEvent{
-					MessageID: desc.ID,
-					SURBID:    reply.surbID,
-					Payload:   plaintext,
-				},
-			})
-		case request := <-d.egressCh:
-			d.log.Warn("Request to send egress packet.")
-			switch {
-			case request.IsLoopDecoy == true:
-				d.sendLoopDecoy(request)
-			case request.IsDropDecoy == true:
-				d.sendDropDecoy()
-			case request.IsSendOp == true:
-				d.send(request)
-			case request.IsARQSendOp == true:
-				d.sendARQMessage(request)
-			default:
-				panic("send operation not fully specified")
-			}
+			d.handleReplies(reply)
 		}
 	}
+}
+
+func (d *Daemon) handleReplies(reply *sphinxReply) {
+	d.log.Warn("Reply Received")
+	isDecoy := false
+	d.replyLock.Lock()
+	desc, ok := d.replies[*reply.surbID]
+	if !ok {
+		desc, ok = d.decoys[*reply.surbID]
+		if ok {
+			isDecoy = true
+		} else {
+			if d.arq.Has(reply.surbID) {
+				myDesc, err := d.arq.HandleAck(reply.surbID)
+				if err != nil {
+					d.log.Infof("failed to handle ACK")
+					d.replyLock.Unlock()
+					return
+				}
+				desc = *myDesc
+			} else {
+				d.log.Infof("reply descriptor not found for SURB ID %x", reply.surbID[:])
+				d.replyLock.Unlock()
+				return
+			}
+		}
+
+	}
+	delete(d.replies, *reply.surbID)
+	delete(d.decoys, *reply.surbID)
+	d.replyLock.Unlock()
+	s, err := sphinx.FromGeometry(d.client.cfg.SphinxGeometry)
+	if err != nil {
+		panic(err)
+	}
+	plaintext, err := s.DecryptSURBPayload(reply.ciphertext, desc.surbKey)
+	if err != nil {
+		d.log.Infof("SURB reply decryption error: %s", err.Error())
+		return
+	}
+
+	// XXX FIXME consume statistics on our loop decoys for n-1 detection
+	if isDecoy {
+		return
+	}
+
+	conn := d.listener.getConnection(desc.appID)
+	if conn == nil {
+		d.log.Infof("no connection associated with AppID %x", desc.appID[:])
+		panic("no connection associated with AppID")
+	}
+	conn.sendResponse(&Response{
+		AppID: desc.appID,
+		MessageReplyEvent: &thin.MessageReplyEvent{
+			MessageID: desc.ID,
+			SURBID:    reply.surbID,
+			Payload:   plaintext,
+		},
+	})
+
 }
 
 func (d *Daemon) sendARQMessage(request *Request) {
@@ -376,11 +397,13 @@ func (d *Daemon) send(request *Request) {
 		}
 	}
 
+	d.replyLock.Lock()
 	if request.IsSendOp {
 		d.replies[*request.SURBID] = replyDescriptor{
 			appID:   request.AppID,
 			surbKey: surbKey,
 		}
+		d.replyLock.Unlock()
 		return
 	}
 
@@ -389,8 +412,10 @@ func (d *Daemon) send(request *Request) {
 			appID:   request.AppID,
 			surbKey: surbKey,
 		}
+		d.replyLock.Unlock()
 		return
 	}
+	d.replyLock.Unlock()
 }
 
 func (d *Daemon) sendLoopDecoy(request *Request) {
