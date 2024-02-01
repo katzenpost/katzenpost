@@ -113,7 +113,7 @@ func (l *listener) onNewConn(conn *net.UnixConn) {
 	l.connsLock.Lock()
 	defer func() {
 		l.connsLock.Unlock()
-		go c.worker()
+		c.start()
 	}()
 	l.conns[*c.appID] = c
 

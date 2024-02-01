@@ -4,6 +4,7 @@
 package client2
 
 import (
+	"errors"
 	"fmt"
 	"net"
 
@@ -24,12 +25,7 @@ type incomingConn struct {
 	unixConn *net.UnixConn
 	appID    *[AppIDLength]byte
 
-	closeConnectionCh chan bool
-	sendToClientCh    chan *Response
-}
-
-func (c *incomingConn) Close() {
-	c.closeConnectionCh <- true
+	sendToClientCh chan *Response
 }
 
 func (c *incomingConn) recvRequest() (*Request, error) {
@@ -47,14 +43,6 @@ func (c *incomingConn) recvRequest() (*Request, error) {
 	return FromThinRequest(req, c.appID), nil
 }
 
-func (c *incomingConn) handleRequest(req *Request) (*Response, error) {
-	c.log.Infof("handleRequest: ID %x, Payload: %x", req.AppID[:], req.Payload)
-
-	req.AppID = c.appID
-	c.listener.ingressCh <- req
-	return nil, nil
-}
-
 func (c *incomingConn) sendPKIDoc(doc *cpki.Document) error {
 	doc.StripSignatures()
 	blob, err := doc.Serialize()
@@ -67,7 +55,11 @@ func (c *incomingConn) sendPKIDoc(doc *cpki.Document) error {
 			Payload: blob,
 		},
 	}
-	c.sendToClientCh <- message
+	select {
+	case c.sendToClientCh <- message:
+	case <-c.listener.closeAllCh:
+		return errors.New("shutting down")
+	}
 	return nil
 }
 
@@ -78,7 +70,11 @@ func (c *incomingConn) updateConnectionStatus(status error) {
 			Err:         status,
 		},
 	}
-	c.sendToClientCh <- message
+	select {
+	case c.sendToClientCh <- message:
+	case <-c.listener.closeAllCh:
+		return
+	}
 }
 
 func (c *incomingConn) sendResponse(r *Response) error {
@@ -95,6 +91,10 @@ func (c *incomingConn) sendResponse(r *Response) error {
 		return fmt.Errorf("sendResponse error: only wrote %d bytes whereas buffer is size %d", count, len(blob))
 	}
 	return nil
+}
+
+func (c *incomingConn) start() {
+	go c.worker()
 }
 
 func (c *incomingConn) worker() {
@@ -137,15 +137,18 @@ func (c *incomingConn) worker() {
 				c.log.Infof("received error sending client a message: %s", err.Error())
 			}
 		case <-c.listener.closeAllCh:
-			// Server is getting shutdown, all connections are being closed.
 			return
 		case rawReq, ok = <-requestCh:
-			// Process incoming requests.
 			if !ok {
 				return
 			}
 			c.log.Infof("Received Request from peer application.")
-			c.handleRequest(rawReq)
+			rawReq.AppID = c.appID
+			select {
+			case c.listener.ingressCh <- rawReq:
+			case <-c.listener.closeAllCh:
+				return
+			}
 		}
 	}
 	// NOTREACHED
@@ -160,11 +163,10 @@ func newIncomingConn(l *listener, conn *net.UnixConn) *incomingConn {
 	}
 
 	c := &incomingConn{
-		listener:          l,
-		unixConn:          conn,
-		appID:             appid,
-		closeConnectionCh: make(chan bool),
-		sendToClientCh:    make(chan *Response, 2),
+		listener:       l,
+		unixConn:       conn,
+		appID:          appid,
+		sendToClientCh: make(chan *Response, 2),
 	}
 
 	logLevel, err := log.ParseLevel(l.client.cfg.Logging.Level)
