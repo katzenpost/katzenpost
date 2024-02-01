@@ -13,6 +13,7 @@ import (
 	"github.com/katzenpost/katzenpost/client2/thin"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/core/worker"
 )
 
 const (
@@ -25,11 +26,17 @@ const (
 )
 
 type SphinxComposerSender interface {
-	SendCiphertext(request *Request) ([]byte, time.Duration, error)
+	SendPacket(pkt []byte) error
+	ComposeSphinxPacket(request *Request) (pkt []byte, surbkey []byte, rtt time.Duration, err error)
 }
 
 type SentEventSender interface {
 	SentEvent(response *Response)
+}
+
+type sendCtx struct {
+	arqMessage *ARQMessage
+	pkt        []byte
 }
 
 // ARQMessage is used by ARQ.
@@ -70,6 +77,8 @@ type ARQMessage struct {
 // ARQ is a very simple Automatic Repeat reQuest error correction stategy.
 // Lost packets will be retransmitted. Not an optimized design.
 type ARQ struct {
+	worker.Worker
+
 	log *log.Logger
 
 	timerQueue *TimerQueue
@@ -79,6 +88,9 @@ type ARQ struct {
 
 	sphinxComposerSender SphinxComposerSender
 	sentEventSender      SentEventSender
+
+	sendCh   chan *sendCtx
+	resendCh chan *[sConstants.SURBIDLength]byte
 }
 
 // NewARQ creates a new ARQ.
@@ -91,6 +103,8 @@ func NewARQ(sphinxComposerSender SphinxComposerSender, sentEventSender SentEvent
 		surbIDMap:            make(map[[sConstants.SURBIDLength]byte]*ARQMessage),
 		sphinxComposerSender: sphinxComposerSender,
 		sentEventSender:      sentEventSender,
+		sendCh:               make(chan *sendCtx, 2),
+		resendCh:             make(chan *[sConstants.SURBIDLength]byte, 2),
 	}
 }
 
@@ -118,9 +132,19 @@ func (a *ARQ) Start() {
 
 	a.timerQueue.Start()
 	a.log.Info("Starting timerQueue finished.")
+
+	a.Go(a.egressWorker)
 }
 
 func (a *ARQ) resend(surbID *[sConstants.SURBIDLength]byte) {
+	select {
+	case <-a.HaltCh():
+		return
+	case a.resendCh <- surbID:
+	}
+}
+
+func (a *ARQ) doResend(surbID *[sConstants.SURBIDLength]byte) {
 	a.log.Info("resend start")
 	defer a.log.Info("resend end")
 
@@ -146,7 +170,7 @@ func (a *ARQ) resend(surbID *[sConstants.SURBIDLength]byte) {
 	if err != nil {
 		panic(err)
 	}
-	k, rtt, err := a.sphinxComposerSender.SendCiphertext(&Request{
+	pkt, k, rtt, err := a.sphinxComposerSender.ComposeSphinxPacket(&Request{
 		ID:                message.MessageID,
 		AppID:             message.AppID,
 		WithSURB:          true,
@@ -170,6 +194,11 @@ func (a *ARQ) resend(surbID *[sConstants.SURBIDLength]byte) {
 
 	priority := uint64(message.SentAt.Add(message.ReplyETA).Add(RoundTripTimeSlop).UnixNano())
 	a.timerQueue.Push(priority, newsurbID)
+
+	a.sendCh <- &sendCtx{
+		arqMessage: message,
+		pkt:        pkt,
+	}
 }
 
 // Has checks if a given SURB ID exists.
@@ -226,24 +255,13 @@ func (a *ARQ) HandleAck(surbID *[sConstants.SURBIDLength]byte) (*replyDescriptor
 
 // Send sends a message asynchronously. Sometime later, perhaps a reply will be received.
 func (a *ARQ) Send(appid *[AppIDLength]byte, id *[MessageIDLength]byte, payload []byte, providerHash *[32]byte, queueID []byte) (time.Duration, error) {
-	a.log.Infof("Send ID %x", id[:])
-
-	if providerHash == nil {
-		panic("providerHash is nil")
-	}
-	if appid == nil {
-		panic("appid is nil")
-	}
-	if id == nil {
-		panic("id is nil")
-	}
 	surbID := &[sConstants.SURBIDLength]byte{}
 	_, err := rand.Reader.Read(surbID[:])
 	if err != nil {
 		panic(err)
 	}
 
-	k, rtt, err := a.sphinxComposerSender.SendCiphertext(&Request{
+	pkt, k, rtt, err := a.sphinxComposerSender.ComposeSphinxPacket(&Request{
 		AppID:             appid,
 		WithSURB:          true,
 		SURBID:            surbID,
@@ -252,6 +270,10 @@ func (a *ARQ) Send(appid *[AppIDLength]byte, id *[MessageIDLength]byte, payload 
 		Payload:           payload,
 		IsARQSendOp:       true,
 	})
+	if err != nil {
+		return 0, err
+	}
+
 	message := &ARQMessage{
 		AppID:              appid,
 		MessageID:          id,
@@ -264,26 +286,46 @@ func (a *ARQ) Send(appid *[AppIDLength]byte, id *[MessageIDLength]byte, payload 
 		SentAt:             time.Now(),
 		ReplyETA:           rtt,
 	}
-
 	a.log.Warnf("Send PUTTING INTO MAP, NEW SURB ID %x", surbID[:])
 	a.lock.Lock()
 	a.surbIDMap[*surbID] = message
 	a.lock.Unlock()
-
 	priority := uint64(message.SentAt.Add(message.ReplyETA).Add(RoundTripTimeSlop).UnixNano())
+
+	a.sendCh <- &sendCtx{
+		arqMessage: message,
+		pkt:        pkt,
+	}
+
 	a.timerQueue.Push(priority, surbID)
 
+	return rtt, nil
+}
+
+func (a *ARQ) egressWorker() {
+	for {
+		select {
+		case <-a.HaltCh():
+			return
+		case surbID := <-a.resendCh:
+			a.doResend(surbID)
+		case r := <-a.sendCh:
+			a.doSend(r)
+		}
+	}
+}
+
+func (a *ARQ) doSend(s *sendCtx) {
+	err := a.sphinxComposerSender.SendPacket(s.pkt)
 	response := &Response{
-		AppID: appid,
+		AppID: s.arqMessage.AppID,
 		MessageSentEvent: &thin.MessageSentEvent{
-			MessageID: id,
-			SURBID:    surbID,
+			MessageID: s.arqMessage.MessageID,
+			SURBID:    s.arqMessage.SURBID,
 			SentAt:    time.Now(),
-			ReplyETA:  rtt,
+			ReplyETA:  s.arqMessage.ReplyETA,
 			Err:       err,
 		},
 	}
 	a.sentEventSender.SentEvent(response)
-
-	return rtt, nil
 }

@@ -33,7 +33,7 @@ func setupDaemon() *Daemon {
 		panic(err)
 	}
 
-	egressSize := 1000
+	egressSize := 1
 	d, err := NewDaemon(cfg, egressSize)
 	if err != nil {
 		panic(err)

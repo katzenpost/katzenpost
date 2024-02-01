@@ -16,7 +16,7 @@ import (
 )
 
 // ComposeSphinxPacket is used to compose Sphinx packets.
-func (c *Client) composeSphinxPacket(request *Request) (pkt []byte, surbkey []byte, rtt time.Duration, err error) {
+func (c *Client) ComposeSphinxPacket(request *Request) (pkt []byte, surbkey []byte, rtt time.Duration, err error) {
 	if request.DestinationIdHash == nil {
 		return nil, nil, 0, errors.New("request.DestinationIdHash is nil")
 	}
@@ -109,12 +109,20 @@ func (c *Client) SendCiphertext(request *Request) ([]byte, time.Duration, error)
 		return nil, 0, errors.New("request.DestinationIdHash is nil")
 	}
 
-	pkt, k, rtt, err := c.composeSphinxPacket(request)
+	pkt, k, rtt, err := c.ComposeSphinxPacket(request)
 	if err != nil {
 		panic(fmt.Sprintf("COMPOSE SPHINX PACKET FAIL %s", err.Error()))
 	}
 	err = c.conn.sendPacket(pkt)
 	return k, rtt, err
+}
+
+func (c *Client) SendPacket(pkt []byte) error {
+	err := c.conn.sendPacket(pkt)
+	if err != nil {
+		c.log.Warnf("failed to send packet %s", err)
+	}
+	return err
 }
 
 func (c *Client) makePath(recipient []byte, provider *[32]byte, surbID *[sConstants.SURBIDLength]byte, baseTime time.Time, isForward bool) ([]*path.PathHop, time.Time, error) {

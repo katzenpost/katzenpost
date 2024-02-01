@@ -12,12 +12,15 @@ import (
 	"github.com/katzenpost/katzenpost/client2/thin"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
+	"github.com/katzenpost/katzenpost/core/worker"
 )
 
 var incomingConnID uint64
 
 // incomingConn type is used along with listener type
 type incomingConn struct {
+	worker.Worker
+
 	listener *listener
 	log      *log.Logger
 
@@ -97,7 +100,21 @@ func (c *incomingConn) sendResponse(r *Response) error {
 	return nil
 }
 
-func (c *incomingConn) worker() {
+func (c *incomingConn) ingressWorker() {
+	for {
+		select {
+		case <-c.HaltCh():
+			return
+		case message := <-c.sendToClientCh:
+			err := c.sendResponse(message)
+			if err != nil {
+				c.log.Infof("received error sending client a message: %s", err.Error())
+			}
+		}
+	}
+}
+
+func (c *incomingConn) egressWorker() {
 	defer func() {
 		c.log.Debugf("Closing.")
 		c.unixConn.Close()
@@ -131,12 +148,8 @@ func (c *incomingConn) worker() {
 		var ok bool
 
 		select {
-		case message := <-c.sendToClientCh:
-			err := c.sendResponse(message)
-			if err != nil {
-				c.log.Infof("received error sending client a message: %s", err.Error())
-			}
 		case <-c.listener.closeAllCh:
+			go c.Halt()
 			// Server is getting shutdown, all connections are being closed.
 			return
 		case rawReq, ok = <-requestCh:
@@ -182,6 +195,8 @@ func newIncomingConn(l *listener, conn *net.UnixConn) *incomingConn {
 	// Note: Unlike most other things, this does not spawn the worker here,
 	// because the worker needs to be spawned after the struct is added to
 	// the connection list.
+
+	c.Go(c.ingressWorker)
 
 	return c
 }

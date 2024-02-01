@@ -49,6 +49,10 @@ type Logging struct {
 
 	// Level specifies the log level.
 	Level string
+
+	// TimeStamped is a boolean indicated whether or not
+	// to time stamp the log entries.
+	//TimeStamped bool
 }
 
 func (lCfg *Logging) validate() error {
