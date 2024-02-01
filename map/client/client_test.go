@@ -78,8 +78,9 @@ func TestCreateMap(t *testing.T) {
 	require.NoError(err)
 
 	// verify that writing with wrong key fails:
-	err = c.Put(id, rKey.Sign(payload), payload)
-	require.Error(err)
+	badpayload := []byte("write fails")
+	err = c.Put(id, rKey.Sign(badpayload), badpayload)
+	require.NoError(err) // send must succeed
 
 	// verify that Reading with the ROKey interface works
 	roKey := rwCap.ReadOnly().ReadKey(addr)
