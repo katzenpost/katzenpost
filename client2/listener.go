@@ -87,7 +87,6 @@ func (l *listener) worker() {
 			return
 		default:
 		}
-
 		conn, err := l.listener.Accept()
 		if err != nil {
 			if e, ok := err.(net.Error); ok && !e.Temporary() {
@@ -96,12 +95,9 @@ func (l *listener) worker() {
 			}
 			continue
 		}
-
 		l.log.Debugf("Accepted new connection: %v", conn.RemoteAddr())
-
 		l.onNewConn(conn.(*net.UnixConn))
 	}
-
 	// NOTREACHED
 }
 
@@ -110,12 +106,14 @@ func (l *listener) onNewConn(conn *net.UnixConn) {
 	c := newIncomingConn(l, conn)
 
 	l.closeAllWg.Add(1)
-	l.connsLock.Lock()
+
 	defer func() {
-		l.connsLock.Unlock()
 		c.start()
 	}()
+
+	l.connsLock.Lock()
 	l.conns[*c.appID] = c
+	l.connsLock.Unlock()
 
 	l.log.Debug("get connection status")
 	status := l.getConnectionStatus()
@@ -136,11 +134,9 @@ func (l *listener) onNewConn(conn *net.UnixConn) {
 
 func (l *listener) onClosedConn(c *incomingConn) {
 	l.connsLock.Lock()
-	defer func() {
-		l.connsLock.Unlock()
-		l.closeAllWg.Done()
-	}()
 	delete(l.conns, *c.appID)
+	l.connsLock.Unlock()
+	l.closeAllWg.Done()
 }
 
 func (l *listener) getConnectionStatus() error {
@@ -177,33 +173,32 @@ func (l *listener) doUpdateConnectionStatus(status error) {
 
 	l.decoySender.UpdateConnectionStatus(status == nil)
 
-	l.connsLock.Lock()
+	l.connsLock.RLock()
 	conns := l.conns
 
 	for key, _ := range conns {
 		l.conns[key].updateConnectionStatus(status)
 	}
-	l.connsLock.Unlock()
+	l.connsLock.RUnlock()
 }
 
 func (l *listener) doUpdateFromPKIDoc(doc *cpki.Document) {
 	// send doc to all thin clients
-	l.connsLock.Lock()
+	l.connsLock.RLock()
 	conns := l.conns
 	for key, _ := range conns {
 		l.conns[key].sendPKIDoc(doc)
 	}
-	l.connsLock.Unlock()
+	l.connsLock.RUnlock()
 
 	// update our send rates from PKI doc
 	l.decoySender.UpdateRates(ratesFromPKIDoc(doc))
 }
 
 func (l *listener) getConnection(appID *[AppIDLength]byte) *incomingConn {
-	l.connsLock.Lock()
-	defer l.connsLock.Unlock()
-
+	l.connsLock.RLock()
 	conn, ok := l.conns[*appID]
+	l.connsLock.RUnlock()
 	if !ok {
 		return nil
 	}
