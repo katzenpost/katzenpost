@@ -126,16 +126,25 @@ func (c *incomingConn) worker() {
 		}
 	}()
 
+	go func() {
+		for {
+			select {
+			case <-c.listener.closeAllCh:
+				return
+			case message := <-c.sendToClientCh:
+				err := c.sendResponse(message)
+				if err != nil {
+					c.log.Infof("received error sending client a message: %s", err.Error())
+				}
+			}
+		}
+	}()
+
 	for {
 		var rawReq *Request
 		var ok bool
 
 		select {
-		case message := <-c.sendToClientCh:
-			err := c.sendResponse(message)
-			if err != nil {
-				c.log.Infof("received error sending client a message: %s", err.Error())
-			}
 		case <-c.listener.closeAllCh:
 			return
 		case rawReq, ok = <-requestCh:
