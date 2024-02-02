@@ -123,6 +123,9 @@ func (d *Daemon) halt() {
 	d.log.Debug("Stopping ARQ worker")
 	d.arq.Stop()
 
+	d.log.Debug("Stopping thin client listener")
+	d.listener.Halt()
+
 	d.log.Debug("Stopping timerQueue")
 	d.timerQueue.Halt()
 	d.gctimerQueue.Halt()
@@ -137,8 +140,6 @@ func (d *Daemon) halt() {
 	//d.log.Debug("waiting for stopped daemon to exit")
 	//d.Worker.Wait()
 
-	d.log.Debug("Stopping thin client listener")
-	d.listener.Halt()
 }
 
 func (d *Daemon) Start() error {

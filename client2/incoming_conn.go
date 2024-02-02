@@ -145,7 +145,6 @@ func (c *incomingConn) worker() {
 				return
 			}
 			c.log.Infof("Received Request from peer application.")
-			rawReq.AppID = c.appID
 			select {
 			case c.listener.ingressCh <- rawReq:
 			case <-c.listener.closeAllCh:
