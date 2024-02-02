@@ -130,7 +130,7 @@ func (a *ARQ) Start() {
 		a.log.Warn("AFTER resend")
 	})
 
-	a.timerQueue.Start()
+	//a.timerQueue.Start()
 	a.log.Info("Starting timerQueue finished.")
 
 	a.Go(a.egressWorker)
