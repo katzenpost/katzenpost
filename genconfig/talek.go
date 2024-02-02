@@ -31,6 +31,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"path/filepath"
@@ -40,6 +41,53 @@ import (
 	tCommon "github.com/privacylab/talek/common"
 	tServer "github.com/privacylab/talek/server"
 )
+
+// read the talek replica configuration file and return the public key identifying the node
+func getPubKeyFromReplicaCfg(cfgPath string) ([]byte, error) {
+	var config map[string]interface{}
+	configBytes, err := ioutil.ReadFile(cfgPath)
+	if err != nil {
+		return nil, err
+	}
+	err = json.Unmarshal(configBytes, &config)
+	if err != nil {
+		return nil, err
+	}
+	trustdomain, ok := config["TrustDomain"]
+	if !ok {
+		return nil, errors.New("config has no key TrustDomain")
+	}
+	trustdomainCfg, ok := trustdomain.(map[string]interface{})
+	if !ok {
+		return nil, errors.New("TrustDomain config section missing")
+	}
+
+	pubKey, ok := trustdomainCfg["PublicKey"]
+	if !ok {
+		return nil, errors.New("TrustDomain config has no key PublicKey")
+	}
+	pubKeyFloats, ok := pubKey.([]interface{})
+	if !ok {
+		return nil, errors.New("wrong type")
+	}
+	if len(pubKeyFloats) != 32 {
+		return nil, errors.New("public key size is wrong")
+	}
+	pubKeyBytes := make([]byte, 32)
+	for i, val := range pubKeyFloats {
+		v, ok := val.(float64) // what the fuck, why didn't they just base64 encode the key bytes
+		if !ok {
+			return nil, fmt.Errorf("unexpected type %T in PublicKey", val)
+		}
+		pubKeyInt := int(v)
+
+		if pubKeyInt < 0 || pubKeyInt > 255 {
+			return nil, fmt.Errorf("unexpected range in PublicKey value: %v", pubKeyInt)
+		}
+		pubKeyBytes[i] = byte(pubKeyInt & 0xFF)
+	}
+	return pubKeyBytes, nil
+}
 
 // generate talek replica configuration files
 func (s *katzenpost) genTalekReplicaCfg(cfgPath string) {
