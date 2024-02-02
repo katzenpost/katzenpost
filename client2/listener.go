@@ -189,9 +189,6 @@ func (l *listener) doUpdateConnectionStatus(status error) {
 
 func (l *listener) doUpdateFromPKIDoc(doc *cpki.Document) {
 	// send doc to all thin clients
-	l.connsLock.RLock()
-	conns := l.conns
-	l.connsLock.RUnlock()
 
 	doc.StripSignatures()
 	docBlob, err := doc.Serialize()
@@ -200,6 +197,9 @@ func (l *listener) doUpdateFromPKIDoc(doc *cpki.Document) {
 		return
 	}
 
+	l.connsLock.RLock()
+	conns := l.conns
+	defer l.connsLock.RUnlock()
 	for key, _ := range conns {
 		err = l.conns[key].sendPKIDoc(docBlob)
 		if err != nil {
@@ -239,7 +239,7 @@ func NewListener(client *Client, rates *Rates, egressCh chan *Request, logbacken
 		conns:          make(map[[AppIDLength]byte]*incomingConn),
 		connsLock:      new(sync.RWMutex),
 		closeAllCh:     make(chan interface{}),
-		ingressCh:      make(chan *Request),
+		ingressCh:      make(chan *Request, 1),
 		updatePKIDocCh: make(chan *cpki.Document, 2),
 		updateStatusCh: make(chan error, 2),
 	}
