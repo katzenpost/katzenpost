@@ -12,7 +12,6 @@ import (
 	"github.com/fxamacker/cbor/v2"
 	"github.com/katzenpost/katzenpost/client2/thin"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
-	cpki "github.com/katzenpost/katzenpost/core/pki"
 )
 
 var incomingConnID uint64
@@ -43,16 +42,10 @@ func (c *incomingConn) recvRequest() (*Request, error) {
 	return FromThinRequest(req, c.appID), nil
 }
 
-func (c *incomingConn) sendPKIDoc(doc *cpki.Document) error {
-	doc.StripSignatures()
-	blob, err := doc.Serialize()
-	if err != nil {
-		c.log.Debugf("cbor marshal failed: %s", err.Error())
-		return err
-	}
+func (c *incomingConn) sendPKIDoc(doc []byte) error {
 	message := &Response{
 		NewPKIDocumentEvent: &thin.NewPKIDocumentEvent{
-			Payload: blob,
+			Payload: doc,
 		},
 	}
 	select {

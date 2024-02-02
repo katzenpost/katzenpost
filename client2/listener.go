@@ -128,7 +128,12 @@ func (l *listener) onNewConn(conn *net.UnixConn) {
 	}
 
 	l.log.Debug("send pki doc")
-	c.sendPKIDoc(doc)
+	doc.StripSignatures()
+	docBlob, err := doc.Serialize()
+	if err != nil {
+		l.log.Errorf("cbor fail: %s", err)
+	}
+	c.sendPKIDoc(docBlob)
 	l.log.Debug("onNewConn end")
 }
 
@@ -186,10 +191,22 @@ func (l *listener) doUpdateFromPKIDoc(doc *cpki.Document) {
 	// send doc to all thin clients
 	l.connsLock.RLock()
 	conns := l.conns
-	for key, _ := range conns {
-		l.conns[key].sendPKIDoc(doc)
-	}
 	l.connsLock.RUnlock()
+
+	doc.StripSignatures()
+	docBlob, err := doc.Serialize()
+	if err != nil {
+		l.log.Errorf("cbor marshal failed: %s", err.Error())
+		return
+	}
+
+	for key, _ := range conns {
+		err = l.conns[key].sendPKIDoc(docBlob)
+		if err != nil {
+			l.log.Errorf("sendPKIDoc failure: %s", err)
+			return
+		}
+	}
 
 	// update our send rates from PKI doc
 	l.decoySender.UpdateRates(ratesFromPKIDoc(doc))
