@@ -22,7 +22,7 @@ const (
 
 	// RoundTripTimeSlop is the slop added to the expected packet
 	// round trip timeout threshold.
-	RoundTripTimeSlop = (1 * time.Minute) + (30 * time.Second)
+	RoundTripTimeSlop = (1 * time.Minute) + (47 * time.Second)
 
 	MaxRetransmissions = 3
 )
@@ -158,10 +158,20 @@ func (a *ARQ) doResend(surbID *[sConstants.SURBIDLength]byte) {
 	// given SURB ID.
 	if !ok {
 		a.log.Warnf("SURB ID %x NOT FOUND. Aborting resend.", surbID[:])
+		a.lock.Unlock()
 		return
 	}
 	if (message.Retransmissions + 1) > MaxRetransmissions {
 		a.log.Warn("Max retries met.")
+		response := &Response{
+			AppID: message.AppID,
+			MessageReplyEvent: &thin.MessageReplyEvent{
+				MessageID: message.MessageID,
+				Err:       errors.New("Max retries met."),
+			},
+		}
+		a.sentEventSender.SentEvent(response)
+		a.lock.Unlock()
 		return
 	}
 
@@ -184,6 +194,7 @@ func (a *ARQ) doResend(surbID *[sConstants.SURBIDLength]byte) {
 		IsARQSendOp:       true,
 	})
 	if err != nil {
+		a.lock.Unlock()
 		a.log.Errorf("failed to send sphinx packet: %s", err.Error())
 	}
 
