@@ -42,10 +42,11 @@ type listener struct {
 
 func (l *listener) Halt() {
 	l.decoySender.Halt()
+	l.decoySender.Wait()
 	// Close the listener, wait for worker() to return.
 	l.listener.Close()
 	l.Worker.Halt()
-
+	l.Worker.Wait()
 	// Close all connections belonging to the listener.
 	//
 	// Note: Worst case this can take up to the handshake timeout to

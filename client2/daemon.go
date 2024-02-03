@@ -120,15 +120,15 @@ func (d *Daemon) Shutdown() {
 }
 
 func (d *Daemon) halt() {
+	d.log.Debug("Stopping timerQueues")
+	d.timerQueue.Halt()
+	d.gctimerQueue.Halt()
+
 	d.log.Debug("Stopping ARQ worker")
 	d.arq.Stop()
 
 	d.log.Debug("Stopping thin client listener")
 	d.listener.Halt()
-
-	d.log.Debug("Stopping timerQueue")
-	d.timerQueue.Halt()
-	d.gctimerQueue.Halt()
 
 	d.log.Debug("Stopping client")
 	d.client.Shutdown()
