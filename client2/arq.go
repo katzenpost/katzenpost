@@ -22,7 +22,9 @@ const (
 
 	// RoundTripTimeSlop is the slop added to the expected packet
 	// round trip timeout threshold.
-	RoundTripTimeSlop = 10 * time.Second
+	RoundTripTimeSlop = (1 * time.Minute) + (30 * time.Second)
+
+	MaxRetransmissions = 3
 )
 
 type SphinxComposerSender interface {
@@ -130,7 +132,7 @@ func (a *ARQ) Start() {
 		a.log.Warn("AFTER resend")
 	})
 
-	//a.timerQueue.Start()
+	a.timerQueue.Start()
 	a.log.Info("Starting timerQueue finished.")
 
 	a.Go(a.egressWorker)
@@ -149,7 +151,7 @@ func (a *ARQ) doResend(surbID *[sConstants.SURBIDLength]byte) {
 	defer a.log.Info("resend end")
 
 	a.lock.Lock()
-	defer a.lock.Unlock()
+
 	message, ok := a.surbIDMap[*surbID]
 	// NOTE(david): if the surbIDMap entry is not found
 	// it means that HandleAck was already called with the
@@ -158,8 +160,9 @@ func (a *ARQ) doResend(surbID *[sConstants.SURBIDLength]byte) {
 		a.log.Warnf("SURB ID %x NOT FOUND. Aborting resend.", surbID[:])
 		return
 	}
-	if message.DestinationIdHash == nil {
-		panic("message.DestinationIdHash is nil")
+	if (message.Retransmissions + 1) > MaxRetransmissions {
+		a.log.Warn("Max retries met.")
+		return
 	}
 
 	a.log.Warnf("resend ----------------- REMOVING SURB ID %x", surbID[:])
@@ -189,10 +192,15 @@ func (a *ARQ) doResend(surbID *[sConstants.SURBIDLength]byte) {
 	message.ReplyETA = rtt
 	message.SentAt = time.Now()
 	message.Retransmissions += 1
+
 	a.surbIDMap[*newsurbID] = message
+	a.lock.Unlock()
+
 	a.log.Warnf("resend PUTTING INTO MAP, NEW SURB ID %x", newsurbID[:])
 
-	priority := uint64(message.SentAt.Add(message.ReplyETA).Add(RoundTripTimeSlop).UnixNano())
+	myRtt := message.SentAt.Add(message.ReplyETA)
+	myRtt = myRtt.Add(RoundTripTimeSlop)
+	priority := uint64(myRtt.UnixNano())
 	a.timerQueue.Push(priority, newsurbID)
 
 	a.sendCh <- &sendCtx{
@@ -224,18 +232,19 @@ func (a *ARQ) Has(surbID *[sConstants.SURBIDLength]byte) bool {
 func (a *ARQ) HandleAck(surbID *[sConstants.SURBIDLength]byte) (*replyDescriptor, error) {
 	a.log.Info("HandleAck")
 	a.lock.Lock()
-	defer a.lock.Unlock()
 
 	m, ok := a.surbIDMap[*surbID]
 	if ok {
 		a.log.Infof("HandleAck ID %x", m.MessageID[:])
 	} else {
 		a.log.Error("HandleAck: failed to find SURB ID in ARQ map")
+		a.lock.Unlock()
 		return nil, errors.New("failed to find SURB ID in ARQ map")
 	}
 
 	a.log.Warnf("HandleAck ----------------- REMOVING SURB ID %x", surbID[:])
 	delete(a.surbIDMap, *surbID)
+	a.lock.Unlock()
 
 	peeked := a.timerQueue.Peek()
 	if peeked != nil {
@@ -290,13 +299,15 @@ func (a *ARQ) Send(appid *[AppIDLength]byte, id *[MessageIDLength]byte, payload 
 	a.lock.Lock()
 	a.surbIDMap[*surbID] = message
 	a.lock.Unlock()
-	priority := uint64(message.SentAt.Add(message.ReplyETA).Add(RoundTripTimeSlop).UnixNano())
 
 	a.sendCh <- &sendCtx{
 		arqMessage: message,
 		pkt:        pkt,
 	}
 
+	myRtt := message.SentAt.Add(message.ReplyETA)
+	myRtt = myRtt.Add(RoundTripTimeSlop)
+	priority := uint64(myRtt.UnixNano())
 	a.timerQueue.Push(priority, surbID)
 
 	return rtt, nil
