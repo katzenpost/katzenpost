@@ -250,8 +250,8 @@ func (d *Daemon) ingressWorker() {
 					MessageID: mygcreply.id,
 				},
 			}
-			conn, ok := d.listener.conns[*mygcreply.appID]
-			if !ok {
+			conn := d.listener.getConnection(mygcreply.appID)
+			if conn == nil {
 				d.log.Infof("no connection associated with AppID %x", mygcreply.appID[:])
 				panic("no connection associated with AppID")
 			}
