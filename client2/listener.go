@@ -191,7 +191,7 @@ func (l *listener) doUpdateConnectionStatus(status error) {
 func (l *listener) doUpdateFromPKIDoc(doc *cpki.Document) {
 	// send doc to all thin clients
 
-	doc.StripSignatures()
+	doc = doc.CopyWithoutSignatures()
 	docBlob, err := doc.Serialize()
 	if err != nil {
 		l.log.Errorf("cbor marshal failed: %s", err.Error())

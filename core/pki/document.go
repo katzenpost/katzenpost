@@ -175,6 +175,58 @@ type Document struct {
 // document contains fields from Document but not the encoding.BinaryMarshaler methods
 type document Document
 
+// CopyWithoutSignatures returns a copy of Document without
+// the following fields:
+// Signatures
+// SharedRandomCommit
+// SharedRandomReveal
+func (d *Document) CopyWithoutSignatures() *Document {
+	doc := &Document{
+		Epoch:              d.Epoch,
+		GenesisEpoch:       d.GenesisEpoch,
+		SendRatePerMinute:  d.SendRatePerMinute,
+		Mu:                 d.Mu,
+		MuMaxDelay:         d.MuMaxDelay,
+		LambdaP:            d.LambdaP,
+		LambdaPMaxDelay:    d.LambdaPMaxDelay,
+		LambdaL:            d.LambdaL,
+		LambdaLMaxDelay:    d.LambdaLMaxDelay,
+		LambdaD:            d.LambdaD,
+		LambdaDMaxDelay:    d.LambdaDMaxDelay,
+		LambdaM:            d.LambdaM,
+		LambdaMMaxDelay:    d.LambdaMMaxDelay,
+		Topology:           [][]*MixDescriptor{},
+		Providers:          []*MixDescriptor{},
+		Signatures:         nil,
+		SharedRandomCommit: nil,
+		SharedRandomReveal: nil,
+		SharedRandomValue:  nil,
+		PriorSharedRandom:  nil,
+		SphinxGeometryHash: nil,
+		Version:            d.Version,
+	}
+
+	doc.Signatures = make(map[[PublicKeyHashSize]byte]cert.Signature)
+	for key, value := range d.Signatures {
+		doc.Signatures[key] = value
+	}
+
+	doc.SharedRandomValue = make([]byte, len(d.SharedRandomValue))
+	copy(doc.SharedRandomValue, d.SharedRandomValue)
+
+	doc.PriorSharedRandom = make([][]byte, len(d.PriorSharedRandom))
+	for i := 0; i < len(doc.PriorSharedRandom); i++ {
+		doc.PriorSharedRandom[i] = make([]byte, len(d.PriorSharedRandom[i]))
+	}
+
+	doc.SphinxGeometryHash = make([]byte, len(d.SphinxGeometryHash))
+	copy(doc.SphinxGeometryHash, d.SphinxGeometryHash)
+
+	doc.Version = d.Version
+
+	return doc
+}
+
 // String returns a string representation of a Document.
 func (d *Document) String() string {
 	srv := base64.StdEncoding.EncodeToString(d.SharedRandomValue)
