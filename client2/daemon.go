@@ -252,8 +252,8 @@ func (d *Daemon) ingressWorker() {
 			}
 			conn := d.listener.getConnection(mygcreply.appID)
 			if conn == nil {
-				d.log.Infof("no connection associated with AppID %x", mygcreply.appID[:])
-				panic("no connection associated with AppID")
+				d.log.Errorf("no connection associated with AppID %x", mygcreply.appID[:])
+				continue
 			}
 			err := conn.sendResponse(response)
 			if err != nil {
@@ -265,12 +265,12 @@ func (d *Daemon) ingressWorker() {
 			delete(d.decoys, *surbID)
 			d.replyLock.Unlock()
 		case reply := <-d.replyCh:
-			d.handleReplies(reply)
+			d.handleReply(reply)
 		}
 	}
 }
 
-func (d *Daemon) handleReplies(reply *sphinxReply) {
+func (d *Daemon) handleReply(reply *sphinxReply) {
 	d.log.Warn("Reply Received")
 	isDecoy := false
 	d.replyLock.Lock()
@@ -316,8 +316,8 @@ func (d *Daemon) handleReplies(reply *sphinxReply) {
 
 	conn := d.listener.getConnection(desc.appID)
 	if conn == nil {
-		d.log.Infof("no connection associated with AppID %x", desc.appID[:])
-		panic("no connection associated with AppID")
+		d.log.Errorf("no connection associated with AppID %x", desc.appID[:])
+		return
 	}
 	conn.sendResponse(&Response{
 		AppID: desc.appID,
