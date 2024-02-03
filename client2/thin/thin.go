@@ -475,9 +475,13 @@ func (t *ThinClient) BlockingSendReliableMessage(messageID *[MessageIDLength]byt
 		return nil, fmt.Errorf("SendMessage error: wrote %d instead of %d bytes", count, len(blob))
 	}
 
-	err = <-sentWaitChan
-	if err != nil {
-		return nil, err
+	select {
+	case err = <-sentWaitChan:
+		if err != nil {
+			return nil, err
+		}
+	case <-t.HaltCh():
+		return nil, errors.New("halting")
 	}
 
 	select {
