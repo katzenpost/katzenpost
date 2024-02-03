@@ -733,7 +733,7 @@ func (c *connection) sendPacket(pkt []byte) error {
 	return nil
 }
 
-func (c *connection) getConsensus(ctx context.Context, epoch uint64) (*commands.Consensus, error) {
+func (c *connection) GetConsensus(ctx context.Context, epoch uint64) (*commands.Consensus, error) {
 	c.log.Debug("getConsensus")
 	c.Lock()
 	if !c.isConnected {

@@ -32,11 +32,17 @@ var (
 	WarpedEpoch = "false"
 )
 
+type ConsensusGetter interface {
+	GetConsensus(ctx context.Context, epoch uint64) (*commands.Consensus, error)
+}
+
 type pki struct {
 	sync.Mutex
 	worker.Worker
 
-	c   *Client
+	c               *Client
+	consensusGetter ConsensusGetter
+
 	log *log.Logger
 
 	docs          sync.Map
@@ -223,7 +229,7 @@ func (p *pki) getDocument(ctx context.Context, epoch uint64) (*cpki.Document, er
 	var err error
 
 	p.log.Debugf("Fetching PKI doc for epoch %v from Provider.", epoch)
-	resp, err := p.c.conn.getConsensus(ctx, epoch)
+	resp, err := p.consensusGetter.GetConsensus(ctx, epoch)
 	switch err {
 	case nil:
 	case cpki.ErrNoDocument:
@@ -284,15 +290,17 @@ func (p *pki) start() {
 }
 
 func newPKI(c *Client) *pki {
-	p := new(pki)
-	p.c = c
-	p.log = log.NewWithOptions(c.logbackend, log.Options{
-		Prefix: "client2/pki",
-		Level:  log2.ParseLevel(c.cfg.Logging.Level),
-	})
+	p := &pki{
+		c: c,
+		log: log.NewWithOptions(c.logbackend, log.Options{
+			Prefix: "client2/pki",
+			Level:  log2.ParseLevel(c.cfg.Logging.Level),
+		}),
+		failedFetches:   make(map[uint64]error),
+		forceUpdateCh:   make(chan interface{}, 1),
+		consensusGetter: c.conn,
+	}
 
-	p.failedFetches = make(map[uint64]error)
-	p.forceUpdateCh = make(chan interface{}, 1)
 	// Save cached documents
 	d := c.cfg.CachedDocument
 	if d != nil {
