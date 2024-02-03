@@ -93,6 +93,25 @@ type MixDescriptor struct {
 
 type mixdescriptor MixDescriptor
 
+func (d *MixDescriptor) ShallowCopyWithoutSignature() *MixDescriptor {
+	desc := &MixDescriptor{
+		Name:               d.Name,
+		Epoch:              d.Epoch,
+		IdentityKey:        d.IdentityKey,
+		Signature:          nil,
+		LinkKey:            d.LinkKey,
+		MixKeys:            d.MixKeys,
+		Addresses:          d.Addresses,
+		Kaetzchen:          d.Kaetzchen,
+		Provider:           d.Provider,
+		LoadWeight:         d.LoadWeight,
+		AuthenticationType: d.AuthenticationType,
+		Version:            d.Version,
+	}
+
+	return desc
+}
+
 func (d *MixDescriptor) UnmarshalMixKeyAsNike(epoch uint64, g *geo.Geometry) (nike.PublicKey, error) {
 	s := schemes.ByName(g.NIKEName)
 	if s == nil {

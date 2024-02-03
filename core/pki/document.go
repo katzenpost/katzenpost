@@ -181,6 +181,18 @@ type document Document
 // SharedRandomCommit
 // SharedRandomReveal
 func (d *Document) CopyWithoutSignatures() *Document {
+	topology := make([][]*MixDescriptor, len(d.Topology))
+	for i := 0; i < len(d.Topology); i++ {
+		topology[i] = make([]*MixDescriptor, len(d.Topology[i]))
+		for j := 0; j < len(topology[i]); j++ {
+			topology[i][j] = d.Topology[i][j].ShallowCopyWithoutSignature()
+		}
+	}
+
+	providers := make([]*MixDescriptor, len(d.Providers))
+	for i := 0; i < len(d.Providers); i++ {
+		providers[i] = d.Providers[i].ShallowCopyWithoutSignature()
+	}
 	doc := &Document{
 		Epoch:              d.Epoch,
 		GenesisEpoch:       d.GenesisEpoch,
@@ -195,8 +207,8 @@ func (d *Document) CopyWithoutSignatures() *Document {
 		LambdaDMaxDelay:    d.LambdaDMaxDelay,
 		LambdaM:            d.LambdaM,
 		LambdaMMaxDelay:    d.LambdaMMaxDelay,
-		Topology:           [][]*MixDescriptor{},
-		Providers:          []*MixDescriptor{},
+		Topology:           topology,
+		Providers:          providers,
 		Signatures:         nil,
 		SharedRandomCommit: nil,
 		SharedRandomReveal: nil,
