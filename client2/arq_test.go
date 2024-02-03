@@ -26,22 +26,29 @@ type mockComposerSender struct {
 	targetRequestNum int
 }
 
-func (m *mockComposerSender) SendCiphertext(request *Request) ([]byte, time.Duration, error) {
-	m.t.Log("START ------------ SendCiphertext --------------------------------------------------------------------------------------")
-	defer m.t.Log("END ------------ SendCiphertext --------------------------------------------------------------------------------------")
+func (m *mockComposerSender) ComposeSphinxPacket(request *Request) (pkt []byte, surbkey []byte, rtt time.Duration, err error) {
 	m.lock.Lock()
-	defer m.lock.Unlock()
 	m.requests = append(m.requests, request)
+	m.lock.Unlock()
+	return []byte("packet"), []byte("surb key"), mockRTT, nil
+}
+
+func (m *mockComposerSender) SendPacket(pkt []byte) error {
+	m.t.Log("START ------------ SendPacket --------------------------------------------------------------------------------------")
+	defer m.t.Log("END ------------ SendPacket --------------------------------------------------------------------------------------")
 
 	defer func() {
-		if len(m.requests) == m.targetRequestNum {
+		m.lock.Lock()
+		l := len(m.requests)
+		m.lock.Unlock()
+		if l == m.targetRequestNum {
 			m.ch <- false
 		}
 
 		m.t.Log("SendCiphertext return")
 	}()
 
-	return []byte("packet"), mockRTT, nil
+	return nil
 }
 
 func newMockComposerSender(t *testing.T, targetRequestNum int) *mockComposerSender {

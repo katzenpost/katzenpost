@@ -22,7 +22,7 @@ func TestSender(t *testing.T) {
 	in := make(chan *Request)
 	out := make(chan *Request)
 
-	s := newSender(in, out)
+	s := newSender(in, out, false)
 	defer s.Halt()
 
 	s.UpdateConnectionStatus(true)
