@@ -40,8 +40,7 @@ func TestAllDockerMemspoolClientTests(t *testing.T) {
 		d.Shutdown()
 	})
 
-	t.Run("TestDockerUnreliableSpoolService", testDockerUnreliableSpoolService)
-	t.Run("TestDockerUnreliableSpoolServiceMore", testDockerUnreliableSpoolServiceMore)
+	t.Run("TestDockerReliableSpoolService", testDockerReliableSpoolService)
 	t.Run("TestDockerGetSpoolServices", testDockerGetSpoolServices)
 }
 
@@ -67,7 +66,7 @@ func setupDaemon() *client2.Daemon {
 	return d
 }
 
-func testDockerUnreliableSpoolService(t *testing.T) {
+func testDockerReliableSpoolService(t *testing.T) {
 	t.Parallel()
 
 	require := require.New(t)
@@ -143,61 +142,6 @@ func testDockerUnreliableSpoolService(t *testing.T) {
 	err = response.Unmarshal(rawResponse)
 	require.NoError(err)
 	require.False(response.IsOK())
-
-	err = s.Close()
-	require.NoError(err)
-}
-
-func testDockerUnreliableSpoolServiceMore(t *testing.T) {
-	t.Skip("This test does not handle lossy networks well")
-	require := require.New(t)
-
-	cfg, err := config.LoadFile("testdata/client.toml")
-	require.NoError(err)
-
-	s := thin.NewThinClient(cfg)
-	err = s.Dial()
-	require.NoError(err)
-
-	// look up a spool provider
-	desc, err := s.GetService(common.SpoolServiceName)
-	require.NoError(err)
-	t.Logf("Found spool provider: %v@%s", desc.RecipientQueueID, desc.MixDescriptor.Name)
-
-	// create the spool on the remote provider
-	providerKey := desc.MixDescriptor.IdentityKey.Sum256()
-	spoolReadDescriptor, err := NewSpoolReadDescriptor(desc.RecipientQueueID, &providerKey, s)
-	require.NoError(err)
-	messageID := uint32(1) // where do we learn messageID?
-	for i := 0; i < 20; i += 1 {
-		// append to a spool
-		message := make([]byte, common.SpoolPayloadLength(cfg.SphinxGeometry))
-		rand.Reader.Read(message[:])
-		appendCmd, err := common.AppendToSpool(spoolReadDescriptor.ID, message[:], cfg.SphinxGeometry)
-		require.NoError(err)
-		mesgID := s.NewMessageID()
-		providerKey := desc.MixDescriptor.IdentityKey.Sum256()
-		rawResponse, err := s.BlockingSendReliableMessage(mesgID, appendCmd, &providerKey, desc.RecipientQueueID)
-		require.NoError(err)
-		response := new(common.SpoolResponse)
-		err = response.Unmarshal(rawResponse)
-		require.NoError(err)
-		require.True(response.IsOK())
-
-		// read from a spool (should find our original message)
-		readCmd, err := common.ReadFromSpool(spoolReadDescriptor.ID, messageID, spoolReadDescriptor.PrivateKey)
-		require.NoError(err)
-		mesgID = s.NewMessageID()
-		rawResponse, err = s.BlockingSendReliableMessage(mesgID, readCmd, &providerKey, desc.RecipientQueueID)
-		require.NoError(err)
-		response = new(common.SpoolResponse)
-		err = response.Unmarshal(rawResponse)
-		require.NoError(err)
-		require.True(response.IsOK())
-		// XXX require.Equal(response.SpoolID, spoolReadDescriptor.ID)
-		require.True(bytes.Equal(response.Message, message[:]))
-		messageID += 1
-	}
 
 	err = s.Close()
 	require.NoError(err)
