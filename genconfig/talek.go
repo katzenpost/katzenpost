@@ -161,7 +161,7 @@ func (s *katzenpost) genTalekReplicaCfg(cfgPath string) {
 	}
 }
 
-// generate talek replica configuration files
+// generate talek frontend configuration files
 func (s *katzenpost) genTalekFrontendCfg(cfgPath string) {
 	// write common.json
 	m := rand.NewMath()
@@ -190,11 +190,11 @@ func (s *katzenpost) genTalekFrontendCfg(cfgPath string) {
 	}
 	ioutil.WriteFile(filepath.Join(cfgPath, "common.json"), commonDat, 0640)
 
-	// write replica.json
+	// write frontend.json
 	// first encode
 	servraw, err := json.Marshal(sc)
 	if err != nil {
-		fmt.Printf("Cannot flatten replica: %v\n", err)
+		fmt.Printf("Cannot flatten frontend: %v\n", err)
 		return
 	}
 	// reload both replica config and trustdomain config as JSON messages
@@ -222,11 +222,11 @@ func (s *katzenpost) genTalekFrontendCfg(cfgPath string) {
 
 	servraw, err = json.MarshalIndent(servstruct, "", "  ")
 	if err != nil {
-		fmt.Printf("Could not flatten combined replica config: %v\n", err)
+		fmt.Printf("Could not flatten combined frontend config: %v\n", err)
 		return
 	}
 
-	err = ioutil.WriteFile(filepath.Join(cfgPath, "replica.json"), servraw, 0640)
+	err = ioutil.WriteFile(filepath.Join(cfgPath, "frontend.json"), servraw, 0640)
 	if err != nil {
 		fmt.Printf("Failed to write file: %v\n", err)
 		return
