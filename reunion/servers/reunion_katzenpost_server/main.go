@@ -58,7 +58,7 @@ func main() {
 	}
 
 	var server *cborplugin.Server
-	server = cborplugin.NewServer(reunionServer.GetNewLogger("reunion_cbor_listener"), socketFile, new(cborplugin.RequestFactory), reunionServer)
+	server = cborplugin.NewServer(reunionServer.GetNewLogger("reunion_cbor_listener"), socketFile, reunionServer)
 	fmt.Printf("%s\n", socketFile)
 	server.Accept()
 	server.Wait()

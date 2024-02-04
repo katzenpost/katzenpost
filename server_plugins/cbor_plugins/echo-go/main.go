@@ -78,7 +78,7 @@ func main() {
 	echo := new(Echo)
 
 	var server *cborplugin.Server
-	server = cborplugin.NewServer(serverLog, socketFile, new(cborplugin.RequestFactory), echo)
+	server = cborplugin.NewServer(serverLog, socketFile, echo)
 	fmt.Printf("%s\n", socketFile)
 	server.Accept()
 	server.Wait()
