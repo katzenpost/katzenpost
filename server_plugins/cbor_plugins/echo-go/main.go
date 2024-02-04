@@ -34,6 +34,11 @@ func (e *Echo) OnCommand(cmd cborplugin.Command) (cborplugin.Command, error) {
 	switch r := cmd.(type) {
 	case *cborplugin.Request:
 		return &cborplugin.Response{Payload: r.Payload}, nil
+	case *cborplugin.ParametersRequest:
+		// echo doesn't set any custom parameters in the PKI, so let the
+		// cborplugin.Client populate cborplugin.Parameters{}.
+		// and we don't know what the required endpoint field should be anyway
+		return nil, nil
 	default:
 		return nil, errors.New("echo-plugin: Invalid Command type")
 	}
