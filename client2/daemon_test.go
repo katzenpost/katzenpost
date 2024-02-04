@@ -13,8 +13,7 @@ func TestDaemonStartStop(t *testing.T) {
 	cfg, err := config.LoadFile("testdata/client.toml")
 	require.NoError(t, err)
 
-	egressSize := 100
-	d, err := NewDaemon(cfg, egressSize)
+	d, err := NewDaemon(cfg)
 	require.NoError(t, err)
 
 	err = d.Start()

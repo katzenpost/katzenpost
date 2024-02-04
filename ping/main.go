@@ -72,8 +72,7 @@ func main() {
 	}
 
 	if launch {
-		egressSize := 100
-		d, err := client2.NewDaemon(cfg, egressSize)
+		d, err := client2.NewDaemon(cfg)
 		if err != nil {
 			panic(err)
 		}

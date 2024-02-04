@@ -70,7 +70,7 @@ type Daemon struct {
 	haltOnce sync.Once
 }
 
-func NewDaemon(cfg *config.Config, egressSize int) (*Daemon, error) {
+func NewDaemon(cfg *config.Config) (*Daemon, error) {
 	var err error
 	var logbackend io.Writer
 
@@ -94,6 +94,7 @@ func NewDaemon(cfg *config.Config, egressSize int) (*Daemon, error) {
 	if err != nil {
 		return nil, err
 	}
+	egressSize := 2
 	d := &Daemon{
 		logbackend: logbackend,
 		log: log.NewWithOptions(logbackend, log.Options{

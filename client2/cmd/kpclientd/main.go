@@ -36,8 +36,7 @@ func main() {
 		panic(err)
 	}
 
-	egressSize := 123
-	d, err := client2.NewDaemon(cfg, egressSize)
+	d, err := client2.NewDaemon(cfg)
 	if err != nil {
 		panic(err)
 	}

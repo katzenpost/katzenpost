@@ -29,7 +29,6 @@ import (
 	"github.com/katzenpost/katzenpost/client2"
 	"github.com/katzenpost/katzenpost/client2/config"
 	"github.com/katzenpost/katzenpost/client2/thin"
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/memspool/common"
 )
 
@@ -50,8 +49,7 @@ func setupDaemon() *client2.Daemon {
 		panic(err)
 	}
 
-	egressSize := 100
-	d, err := client2.NewDaemon(cfg, egressSize)
+	d, err := client2.NewDaemon(cfg)
 	if err != nil {
 		panic(err)
 	}
