@@ -27,13 +27,6 @@ import (
 	"github.com/katzenpost/katzenpost/server/cborplugin"
 )
 
-func parametersHandler(clock *katzenpost.Clock) cborplugin.Parameters {
-	params := make(cborplugin.Parameters)
-	epoch, _, _ := clock.Now()
-	params["epoch"] = fmt.Sprintf("[%d, %d, %d]", epoch-1, epoch, epoch+1)
-	return params
-}
-
 func main() {
 	logPath := flag.String("log", "", "Log file path. Default STDOUT.")
 	logLevel := flag.String("log_level", "DEBUG", "logging level could be set to: DEBUG, INFO, NOTICE, WARNING, ERROR, CRITICAL")
