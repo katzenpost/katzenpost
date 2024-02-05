@@ -19,16 +19,18 @@ package kaetzchen
 import (
 	"testing"
 
-	"github.com/katzenpost/katzenpost/core/cert"
-	"github.com/katzenpost/hpqc/rand"
+	"github.com/stretchr/testify/require"
+
+	"github.com/katzenpost/hpqc/kem"
 	"github.com/katzenpost/hpqc/sign"
+
+	"github.com/katzenpost/katzenpost/core/cert"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/server/config"
-	"github.com/stretchr/testify/require"
 )
 
-func getGlue(logBackend *log.Backend, provider *mockProvider, linkKey wire.PrivateKey, idKey sign.PrivateKey) *mockGlue {
+func getGlue(logBackend *log.Backend, provider *mockProvider, linkKey kem.PrivateKey, idKey sign.PrivateKey) *mockGlue {
 	goo := &mockGlue{
 		s: &mockServer{
 			logBackend: logBackend,
@@ -59,12 +61,14 @@ func TestCBORInvalidCommandWithPluginKaetzchenWorker(t *testing.T) {
 	require.NoError(err)
 
 	scheme := wire.DefaultScheme
-	userKey, _ := scheme.GenerateKeypair(rand.Reader)
-	linkKey, _ := scheme.GenerateKeypair(rand.Reader)
+	_, userKey, err := scheme.GenerateKeyPair()
+	require.NoError(err)
+	_, linkKey, err := scheme.GenerateKeyPair()
+	require.NoError(err)
 
 	mockProvider := &mockProvider{
 		userName: "alice",
-		userKey:  userKey.PublicKey(),
+		userKey:  userKey.Public(),
 	}
 
 	goo := getGlue(logBackend, mockProvider, linkKey, idKey)

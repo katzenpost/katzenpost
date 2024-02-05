@@ -24,6 +24,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/katzenpost/hpqc/kem"
 	ecdh "github.com/katzenpost/hpqc/nike/x25519"
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/hpqc/sign"
@@ -54,17 +55,17 @@ func (u *mockUserDB) Exists([]byte) bool {
 	return true
 }
 
-func (u *mockUserDB) IsValid([]byte, wire.PublicKey) bool { return true }
+func (u *mockUserDB) IsValid([]byte, kem.PublicKey) bool { return true }
 
-func (u *mockUserDB) Add([]byte, wire.PublicKey, bool) error { return nil }
+func (u *mockUserDB) Add([]byte, kem.PublicKey, bool) error { return nil }
 
-func (u *mockUserDB) SetIdentity([]byte, wire.PublicKey) error { return nil }
+func (u *mockUserDB) SetIdentity([]byte, kem.PublicKey) error { return nil }
 
-func (u *mockUserDB) Link([]byte) (wire.PublicKey, error) {
+func (u *mockUserDB) Link([]byte) (kem.PublicKey, error) {
 	return nil, nil
 }
 
-func (u *mockUserDB) Identity([]byte) (wire.PublicKey, error) {
+func (u *mockUserDB) Identity([]byte) (kem.PublicKey, error) {
 	return u.provider.userKey, nil
 }
 
@@ -96,7 +97,7 @@ func (s *mockSpool) Close() {}
 
 type mockProvider struct {
 	userName string
-	userKey  wire.PublicKey
+	userKey  kem.PublicKey
 }
 
 func (p *mockProvider) Halt() {}
@@ -134,7 +135,7 @@ type mockServer struct {
 	logBackend        *log.Backend
 	identityKey       sign.PrivateKey
 	identityPublicKey sign.PublicKey
-	linkKey           wire.PrivateKey
+	linkKey           kem.PrivateKey
 	management        *thwack.Server
 	mixKeys           glue.MixKeys
 	pki               glue.PKI
@@ -164,7 +165,7 @@ func (g *mockGlue) IdentityPublicKey() sign.PublicKey {
 	return g.s.identityPublicKey
 }
 
-func (g *mockGlue) LinkKey() wire.PrivateKey {
+func (g *mockGlue) LinkKey() kem.PrivateKey {
 	return g.s.linkKey
 }
 
@@ -238,12 +239,14 @@ func TestKaetzchenWorker(t *testing.T) {
 	require.NoError(t, err)
 
 	scheme := wire.DefaultScheme
-	userKey, _ := scheme.GenerateKeypair(rand.Reader)
-	linkKey, _ := scheme.GenerateKeypair(rand.Reader)
+	_, userKey, err := scheme.GenerateKeyPair()
+	require.NoError(t, err)
+	_, linkKey, err := scheme.GenerateKeyPair()
+	require.NoError(t, err)
 
 	mockProvider := &mockProvider{
 		userName: "alice",
-		userKey:  userKey.PublicKey(),
+		userKey:  userKey.Public(),
 	}
 
 	goo := &mockGlue{
