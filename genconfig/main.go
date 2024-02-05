@@ -27,11 +27,12 @@ import (
 
 	"github.com/BurntSushi/toml"
 
+	"github.com/katzenpost/hpqc/kem"
+	kempem "github.com/katzenpost/hpqc/kem/pem"
 	kemschemes "github.com/katzenpost/hpqc/kem/schemes"
 	"github.com/katzenpost/hpqc/nike/schemes"
 	"github.com/katzenpost/hpqc/util/pem"
 
-	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/hpqc/sign"
 	vConfig "github.com/katzenpost/katzenpost/authority/voting/server/config"
 	cConfig "github.com/katzenpost/katzenpost/client/config"
@@ -563,7 +564,7 @@ func cfgIdKey(cfg interface{}, outDir string) sign.PublicKey {
 	return idPubKey
 }
 
-func cfgLinkKey(cfg interface{}, outDir string) wire.PublicKey {
+func cfgLinkKey(cfg interface{}, outDir string) kem.PublicKey {
 	var linkpriv string
 	var linkpublic string
 
@@ -575,19 +576,18 @@ func cfgLinkKey(cfg interface{}, outDir string) wire.PublicKey {
 		panic("wrong type")
 	}
 
-	linkPrivKey, linkPubKey := wire.DefaultScheme.GenerateKeypair(rand.Reader)
-	err := pem.FromFile(linkpublic, linkPubKey)
-	if err == nil {
-		return linkPubKey
+	linkPubKey, linkPrivKey, err := wire.DefaultScheme.GenerateKeyPair()
+	if err != nil {
+		panic(err)
 	}
-	linkPrivKey, linkPubKey = wire.DefaultScheme.GenerateKeypair(rand.Reader)
+
 	log.Printf("writing %s", linkpriv)
-	err = pem.ToFile(linkpriv, linkPrivKey)
+	err = kempem.PrivateKeyToFile(linkpriv, linkPrivKey)
 	if err != nil {
 		panic(err)
 	}
 	log.Printf("writing %s", linkpublic)
-	err = pem.ToFile(linkpublic, linkPubKey)
+	err = kempem.PublicKeyToFile(linkpublic, linkPubKey)
 	if err != nil {
 		panic(err)
 	}
@@ -615,7 +615,7 @@ scrape_configs:
 `)
 
 	for _, cfg := range s.nodeConfigs {
-		write(f,`    - %s
+		write(f, `    - %s
 `, cfg.Server.MetricsAddress)
 	}
 	return nil
@@ -702,5 +702,5 @@ services:
     network_mode: host
 `, "metrics", "prom/prometheus", s.baseDir, s.baseDir)
 
-      return nil
+	return nil
 }
