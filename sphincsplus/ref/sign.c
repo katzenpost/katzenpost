@@ -83,7 +83,7 @@ int crypto_sign_seed_keypair(unsigned char *pk, unsigned char *sk,
 int crypto_sign_keypair(unsigned char *pk, unsigned char *sk)
 {
   unsigned char seed[CRYPTO_SEEDBYTES];
-  randombytes(seed, CRYPTO_SEEDBYTES);
+  _randombytes(seed, CRYPTO_SEEDBYTES);
   crypto_sign_seed_keypair(pk, sk, seed);
 
   return 0;
@@ -122,7 +122,7 @@ int crypto_sign_signature(uint8_t *sig, size_t *siglen,
     /* Optionally, signing can be made non-deterministic using optrand.
        This can help counter side-channel attacks that would benefit from
        getting a large number of traces when the signer uses the same nodes. */
-    randombytes(optrand, SPX_N);
+    _randombytes(optrand, SPX_N);
     /* Compute the digest randomization value. */
     gen_message_random(sig, sk_prf, optrand, m, mlen, &ctx);
 

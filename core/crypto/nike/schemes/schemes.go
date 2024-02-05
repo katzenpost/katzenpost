@@ -4,19 +4,22 @@ import (
 	"strings"
 
 	"github.com/katzenpost/katzenpost/core/crypto/nike"
-	"github.com/katzenpost/katzenpost/core/crypto/nike/csidh"
 	"github.com/katzenpost/katzenpost/core/crypto/nike/ecdh"
 	"github.com/katzenpost/katzenpost/core/crypto/nike/hybrid"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 )
 
-// NOTE(david): The CTIDH schemes won't work unless you build with
-// "ctidh" build tag.
 var allSchemes = [...]nike.Scheme{
-	csidh.CSIDHScheme,
 	ecdh.NewEcdhNike(rand.Reader),
-	hybrid.NOBS_CSIDHX25519,
-	hybrid.CTIDHX25519,
+	hybrid.NOBS_CSIDH512X25519, // This should be removed once ctidh is fully integrated
+
+	/* XXX find another way to add hybrids to our list? these are gated with build tags ctidh511 etc.
+
+	hybrid.CTIDH511X25519,
+	hybrid.CTIDH512X25519,
+	hybrid.CTIDH1024X25519,
+	hybrid.CTIDH2048X25519,
+	*/
 }
 
 var allSchemeNames map[string]nike.Scheme

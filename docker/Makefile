@@ -10,6 +10,7 @@ help:
 	@echo " status             - show testnet consensus status"
 	@echo " show-latest-vote   - does what it says"
 	@echo " run-ping           - send a ping over the testnet"
+	@echo " clean-bin          - stop, and delete compiled binaries"
 	@echo " clean-local        - stop, and delete data and binaries"
 	@echo " clean-local-dryrun - show what clean-local would delete"
 	@echo " clean              - the above, plus cleans includes go_deps images"
@@ -45,26 +46,29 @@ DISTROS=alpine debian
 distro=alpine
 net_name=voting_mixnet
 base_port=30000
+bind_addr=127.0.0.1
 docker_compose_yml=$(net_name)/docker-compose.yml
 sh=$(shell if echo ${distro}|grep -q alpine; then echo sh; else echo bash; fi)
 SHELL=/bin/bash
 
+# log_level can be DEBUG, INFO, NOTICE, WARNING, ERROR, CRITICAL
+log_level=DEBUG
+
 docker=$(shell if which podman|grep -q .; then echo podman; else echo docker; fi)
 
 ldflags="-buildid= -X github.com/katzenpost/katzenpost/core/epochtime.WarpedEpoch=${warped} -X github.com/katzenpost/katzenpost/server/internal/pki.WarpedEpoch=${warped} -X github.com/katzenpost/katzenpost/minclient/pki.WarpedEpoch=${warped}"
-CGO_CFLAGS_ALLOW="-DPARAMS=sphincs-shake-256f"
 
 uid?=$(shell [ "$$SUDO_UID" != "" ] && echo "$$SUDO_UID" || id -u)
 gid?=$(shell [ "$$SUDO_GID" != "" ] && echo "$$SUDO_GID" || id -g)
 
 docker_user?=$(shell if echo ${docker}|grep -q podman; then echo 0:0; else echo ${uid}:${gid}; fi)
-docker_args=--user ${docker_user} --volume $(shell readlink -f ..):/go/katzenpost --workdir /go/katzenpost -e CGO_CFLAGS_ALLOW=${CGO_CFLAGS_ALLOW}
+docker_args=--user ${docker_user} --volume $(shell readlink -f ..):/go/katzenpost --workdir /go/katzenpost
 
 replace_name=$(shell if echo ${docker}|grep -q podman; then echo " --replace --name"; else echo " --name"; fi)
 i_if_podman=$(shell if echo ${docker}|grep -q podman; then echo " -i"; else echo; fi)
 mount_net_name=-v `pwd`/$(net_name):/$(net_name)
 
-docker_compose?= $(shell if echo ${docker}|grep -q podman; then echo DOCKER_HOST="unix:$$XDG_RUNTIME_DIR/podman/podman.sock" docker-compose; else echo docker-compose; fi)
+docker_compose?= $(shell if echo ${docker}|grep -q podman; then echo DOCKER_HOST="unix://$$XDG_RUNTIME_DIR/podman/podman.sock" docker-compose; else echo docker-compose; fi)
 
 make_args=--no-print-directory net_name=$(net_name) docker=$(docker) distro=$(distro) warped=$(warped) docker_user=$(docker_user)
 
@@ -72,14 +76,14 @@ $(net_name):
 	mkdir -p $(net_name)
 
 $(docker_compose_yml): ../genconfig/main.go $(distro)_go_mod.stamp $(net_name)
-	$(docker) run -e --network=host ${docker_args} --rm katzenpost-$(distro)_go_mod \
+	$(docker) run ${docker_args} --rm katzenpost-$(distro)_go_mod \
 		$(sh) -c 'cd genconfig && go build && cd ../docker \
-		&& ../genconfig/genconfig -nv ${auths} -n ${mixes} -p ${providers} \
+		&& ../genconfig/genconfig -a ${bind_addr} -nv ${auths} -n ${mixes} -p ${providers} \
 		-sr ${sr} -mu ${mu} -muMax ${muMax} -lP ${lP} -lPMax ${lPMax} -lL ${lL} \
 		-lLMax ${lLMax} -lD ${lD} -lDMax ${lDMax} -lM ${lM} -lMMax ${lMMax} \
 		-S .$(distro) -v -o ./$(net_name) -b /$(net_name) -P $(base_port) \
 		-nike "$(nike)" -kem "$(kem)" -d katzenpost-$(distro)_go_mod \
-		-UserForwardPayloadLength $(UserForwardPayloadLength)'
+		-UserForwardPayloadLength $(UserForwardPayloadLength) -log_level $(log_level)'
 
 $(net_name)/running.stamp: $(net_name)
 	make $(make_args) start
@@ -114,24 +118,8 @@ show-latest-vote:
 	@grep -A30 'Ready to send' voting_mixnet/auth1/katzenpost.log |tail -30|sed /Sending/q
 
 wait: $(net_name)/running.stamp
-	# this waiting approach still needs a lot of improvement, and will wait
-	# significantly longer than necessary (including when waiting isn't
-	# necessary at all).
-	#
-	# ideally we should make the ping command be usable for waiting, instead..
-	#
-	tail -F $(net_name)/auth1/katzenpost.log |while read line; do \
-        echo "$$line"; \
-        if echo "$$line"|grep -q Genesis; then \
-            while read a b c d; do \
-                echo "$$(date) Network has been running for $$(($$b - $$d)) epochs"; \
-                if [ $$(($$b - $$d)) -gt 1 ]; then \
-                    echo "OK! Network should be ready to use now."; \
-                    break 2; \
-                fi; \
-            done < <(echo "$$line"); \
-        fi; \
-    done
+	$(docker) run --network=host ${docker_args} $(mount_net_name) --rm  katzenpost-$(distro)_go_mod \
+	/$(net_name)/fetch.$(distro) -f /$(net_name)/client/client.toml
 
 debian_base.stamp:
 	$(docker) run $(replace_name) katzenpost_debian_base docker.io/golang:bullseye $(sh) -c 'adduser katzenpost --gecos "" --disabled-password --uid ${uid} && apt update && apt upgrade -y'
@@ -172,9 +160,9 @@ $(net_name)/server.$(distro): $(distro)_go_mod.stamp $(docker_compose_yml) $(net
 
 $(net_name)/voting.$(distro): $(distro)_go_mod.stamp $(docker_compose_yml) $(net_name)
 		$(docker) run ${docker_args} $(mount_net_name) --rm katzenpost-$(distro)_go_mod \
-			$(sh) -c 'cd authority/cmd/voting && go mod verify && \
-			go build -trimpath -ldflags ${ldflags} && \
-			mv voting /$(net_name)/voting.$(distro)'
+			$(sh) -c 'cd authority && make $(make_args) cmd/voting/voting cmd/fetch/fetch && \
+			mv cmd/voting/voting /$(net_name)/voting.$(distro) && \
+			mv cmd/fetch/fetch /$(net_name)/fetch.$(distro)'
 
 $(net_name)/ping.$(distro): $(distro)_go_mod.stamp $(net_name)
 		$(docker) run ${docker_args} $(mount_net_name) --rm katzenpost-$(distro)_go_mod \
@@ -197,7 +185,10 @@ clean-image-%:
 	-$(docker) rmi $(patsubst clean-image-%,katzenpost-%,$@)
 	-rm -fv $(patsubst clean-image-%,%,$@).stamp
 
-clean-local: stop
+clean-bin: stop
+	rm -vf ./$(net_name)/*.$(distro)
+
+clean-local: clean-bin
 	git clean -f -x $(net_name)
 	git status .
 
@@ -213,7 +204,7 @@ run-ping: $(net_name)/ping.$(distro) $(net_name)/running.stamp
         /$(net_name)/ping.$(distro) -c /go/katzenpost/docker/$(net_name)/client/client.toml -s echo -printDiff -n 1
 
 shell: $(distro)_go_mod.stamp $(net_name)
-	$(docker) run -e --network=host ${docker_args} $(mount_net_name) --rm -it katzenpost-$(distro)_go_mod $(sh)
+	$(docker) run --network=host ${docker_args} $(mount_net_name) -w /go/katzenpost/docker/$(net_name) --rm -it katzenpost-$(distro)_go_mod $(sh)
 
 # this is for running with docker, where we are root outside and (except for
 # here) non-root inside. When using podman, we are rootless outside and uid 0
@@ -225,4 +216,3 @@ test: wait
 	cd ../client    && make $(make_args) testargs=$(testargs) dockerdockertest
 	cd ../catshadow && make $(make_args) testargs=$(testargs) dockerdockertest
 	cd ../memspool  && make $(make_args) testargs=$(testargs) dockerdockertest
-

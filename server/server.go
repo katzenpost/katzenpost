@@ -233,7 +233,7 @@ func New(cfg *config.Config) (*Server, error) {
 	if err := s.initLogging(); err != nil {
 		return nil, err
 	}
-	instrument.Init()
+	instrument.StartPrometheusListener(goo)
 
 	s.log.Notice("Katzenpost is still pre-alpha.  DO NOT DEPEND ON IT FOR STRONG SECURITY OR ANONYMITY.")
 	if s.cfg.Logging.Level == "DEBUG" {
@@ -245,6 +245,7 @@ func New(cfg *config.Config) (*Server, error) {
 		s.log.Warningf("AEZv5 implementation IS NOT hardware accelerated.")
 	}
 	s.log.Noticef("Server identifier is: '%v'", s.cfg.Server.Identifier)
+	s.log.Noticef("Sphinx Geometry: %s", cfg.SphinxGeometry.Display())
 
 	// Initialize the server identity and link keys.
 	identityPrivateKeyFile := filepath.Join(s.cfg.Server.DataDir, "identity.private.pem")
