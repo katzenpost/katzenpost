@@ -679,7 +679,6 @@ func New(glue glue.Glue) (glue.PKI, error) {
 	}
 
 	pkiCfg := &vClient.Config{
-		DataDir:     glue.Config().Server.DataDir,
 		LinkKey:     glue.LinkKey(),
 		LogBackend:  glue.LogBackend(),
 		Authorities: glue.Config().PKI.Voting.Authorities,
