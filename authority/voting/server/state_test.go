@@ -29,7 +29,9 @@ import (
 	"github.com/stretchr/testify/require"
 	bolt "go.etcd.io/bbolt"
 
-	ecdh "github.com/katzenpost/hpqc/nike/x25519"
+	"github.com/katzenpost/hpqc/kem"
+	kempem "github.com/katzenpost/hpqc/kem/pem"
+	"github.com/katzenpost/hpqc/nike/x25519"
 	"github.com/katzenpost/hpqc/util/pem"
 
 	"github.com/katzenpost/hpqc/rand"
@@ -45,7 +47,7 @@ import (
 )
 
 var sphinxGeometry = geo.GeometryFromUserForwardPayloadLength(
-	ecdh.Scheme(rand.Reader),
+	x25519.Scheme(rand.Reader),
 	2000,
 	true,
 	5,
@@ -144,7 +146,7 @@ func TestVote(t *testing.T) {
 		require.NoError(err)
 		auth := &config.Authority{Addresses: aCfg.Server.Addresses,
 			IdentityPublicKey: peerKeys[i].idPubKey,
-			LinkPublicKey:     peerKeys[i].linkKey.PublicKey(),
+			LinkPublicKey:     peerKeys[i].linkKey.Public(),
 		}
 		if len(aCfg.Server.Addresses) == 0 {
 			panic("wtf")
@@ -203,13 +205,16 @@ func TestVote(t *testing.T) {
 		mkeys := genMixKeys(votingEpoch)
 		addr := make(map[pki.Transport][]string)
 		addr[pki.TransportTCPv4] = []string{"127.0.0.1:1234"}
-		_, linkPubKey := wire.DefaultScheme.GenerateKeypair(rand.Reader)
-
+		linkPubKey, _, err := wire.DefaultScheme.GenerateKeyPair()
+		linkBlob, err := linkPubKey.MarshalBinary()
+		if err != nil {
+			panic(err)
+		}
 		desc := &pki.MixDescriptor{
 			Name:        mixCfgs[i].Server.Identifier,
 			Epoch:       votingEpoch,
 			IdentityKey: idKeys[i].pubKey,
-			LinkKey:     linkPubKey,
+			LinkKey:     linkBlob,
 			MixKeys:     mkeys,
 			Provider:    mixCfgs[i].Server.IsProvider,
 			Addresses:   addr,
@@ -218,7 +223,7 @@ func TestVote(t *testing.T) {
 		err = pki.IsDescriptorWellFormed(desc, votingEpoch)
 		require.NoError(err)
 		// Make a serialized + signed + serialized descriptor.
-		_, err := pki.SignDescriptor(idKeys[i].privKey, idKeys[i].pubKey, desc)
+		_, err = pki.SignDescriptor(idKeys[i].privKey, idKeys[i].pubKey, desc)
 		require.NoError(err)
 
 		if mixCfgs[i].Server.IsProvider {
@@ -358,7 +363,7 @@ func TestVote(t *testing.T) {
 }
 
 type peerKeys struct {
-	linkKey  wire.PrivateKey
+	linkKey  kem.PrivateKey
 	idKey    sign.PrivateKey
 	idPubKey sign.PublicKey
 	datadir  string
@@ -391,7 +396,10 @@ func genVotingAuthoritiesCfg(parameters *config.Parameters, numAuthorities int) 
 		lastPort += 1
 
 		scheme := wire.DefaultScheme
-		linkKey, linkPubKey := scheme.GenerateKeypair(rand.Reader)
+		linkPubKey, linkKey, err := scheme.GenerateKeyPair()
+		if err != nil {
+			return nil, nil, err
+		}
 		idKey, idPubKey := cert.Scheme.NewKeypair()
 
 		myPeerKeys[i] = peerKeys{
@@ -459,7 +467,7 @@ func genProviderConfig(name string, pki *sConfig.PKI, port uint16) (*identityKey
 	idKey, idPubKey := cert.Scheme.NewKeypair()
 
 	scheme := wire.DefaultScheme
-	linkKey, linkPubKey := scheme.GenerateKeypair(rand.Reader)
+	linkPubKey, linkKey, err := scheme.GenerateKeyPair()
 	linkPublicKeyPem := "link.public.pem"
 
 	idprivkeypem := filepath.Join(datadir, "identity.private.pem")
@@ -474,12 +482,12 @@ func genProviderConfig(name string, pki *sConfig.PKI, port uint16) (*identityKey
 		return nil, nil, err
 	}
 
-	err = pem.ToFile(filepath.Join(datadir, "link.private.pem"), linkKey)
+	err = kempem.PrivateKeyToFile(filepath.Join(datadir, "link.private.pem"), linkKey)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	err = pem.ToFile(filepath.Join(datadir, linkPublicKeyPem), linkPubKey)
+	err = kempem.PublicKeyToFile(filepath.Join(datadir, linkPublicKeyPem), linkPubKey)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -546,7 +554,7 @@ func genMixConfig(name string, pki *sConfig.PKI, port uint16) (*identityKey, *sC
 	idKey, idPubKey := cert.Scheme.NewKeypair()
 
 	scheme := wire.DefaultScheme
-	linkKey, linkPubKey := scheme.GenerateKeypair(rand.Reader)
+	linkPubKey, linkKey, err := scheme.GenerateKeyPair()
 	linkPublicKeyPem := "link.public.pem"
 
 	idprivkeypem := filepath.Join(datadir, "identity.private.pem")
@@ -562,12 +570,12 @@ func genMixConfig(name string, pki *sConfig.PKI, port uint16) (*identityKey, *sC
 		return nil, nil, err
 	}
 
-	err = pem.ToFile(filepath.Join(datadir, "link.private.pem"), linkKey)
+	err = kempem.PrivateKeyToFile(filepath.Join(datadir, "link.private.pem"), linkKey)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	err = pem.ToFile(filepath.Join(datadir, linkPublicKeyPem), linkPubKey)
+	err = kempem.PublicKeyToFile(filepath.Join(datadir, linkPublicKeyPem), linkPubKey)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -597,7 +605,7 @@ func genMixConfig(name string, pki *sConfig.PKI, port uint16) (*identityKey, *sC
 func genMixKeys(votingEpoch uint64) map[uint64][]byte {
 	mixKeys := make(map[uint64][]byte)
 	for i := votingEpoch; i < votingEpoch+2; i++ {
-		pubkey, _, err := ecdh.EcdhScheme.GenerateKeyPairFromEntropy(rand.Reader)
+		pubkey, _, err := x25519.Scheme(rand.Reader).GenerateKeyPairFromEntropy(rand.Reader)
 		if err != nil {
 			panic(err)
 		}
