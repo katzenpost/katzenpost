@@ -678,7 +678,12 @@ func (c *connection) IsPeerValid(creds *wire.PeerCredentials) bool {
 	if !hmac.Equal(identityHash[:], creds.AdditionalData) {
 		return false
 	}
-	if !c.descriptor.LinkKey.Equal(creds.PublicKey) {
+
+	blob, err := creds.PublicKey.MarshalBinary()
+	if err != nil {
+		panic(err)
+	}
+	if !hmac.Equal(c.descriptor.LinkKey, blob) {
 		return false
 	}
 	return true

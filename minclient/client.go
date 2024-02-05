@@ -26,6 +26,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/katzenpost/hpqc/kem"
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/hpqc/sign"
 	"github.com/katzenpost/katzenpost/core/log"
@@ -54,7 +55,7 @@ type ClientConfig struct {
 	ProviderKeyPin sign.PublicKey
 
 	// LinkKey is the user's ECDH link authentication private key.
-	LinkKey wire.PrivateKey
+	LinkKey kem.PrivateKey
 
 	// LogBackend is the logging backend to use for client logging.
 	LogBackend *log.Backend
