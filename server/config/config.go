@@ -21,8 +21,8 @@ import (
 	"errors"
 	"fmt"
 	"net"
-	"net/netip"
 	"net/mail"
+	"net/netip"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -30,16 +30,16 @@ import (
 	"strconv"
 	"strings"
 
+	"golang.org/x/net/idna"
+	"golang.org/x/text/secure/precis"
+
 	"github.com/BurntSushi/toml"
 	"github.com/fxamacker/cbor/v2"
+
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
-	"github.com/katzenpost/hpqc/sign"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/utils"
-	"github.com/katzenpost/katzenpost/core/wire"
-	"golang.org/x/net/idna"
-	"golang.org/x/text/secure/precis"
 )
 
 const (
@@ -166,7 +166,7 @@ func (sCfg *Server) validate() error {
 	if !filepath.IsAbs(sCfg.DataDir) {
 		return fmt.Errorf("config: Server: DataDir '%v' is not an absolute path", sCfg.DataDir)
 	}
-	if sCfg.MetricsAddress != ""  {
+	if sCfg.MetricsAddress != "" {
 		if _, err := netip.ParseAddrPort(sCfg.MetricsAddress); err != nil {
 			return fmt.Errorf("config: Server: MetricsAddress '%v' is invalid: %v", sCfg.MetricsAddress, err)
 		}
@@ -664,51 +664,14 @@ func (pCfg *Provider) validate() error {
 
 // PKI is the Katzenpost directory authority configuration.
 type PKI struct {
-	// Nonvoting is a non-voting directory authority.
-	Nonvoting *Nonvoting
-	Voting    *Voting
+	Voting *Voting
 }
 
 func (pCfg *PKI) validate(datadir string) error {
-	nrCfg := 0
-	if pCfg.Nonvoting != nil && pCfg.Voting != nil {
-		return errors.New("pki config failure: cannot configure voting and nonvoting pki")
+	if pCfg.Voting == nil {
+		return errors.New("Voting is nil")
 	}
-	if pCfg.Nonvoting != nil {
-		if err := pCfg.Nonvoting.validate(datadir); err != nil {
-			return err
-		}
-		nrCfg++
-	} else if pCfg.Voting != nil {
-		if err := pCfg.Voting.validate(datadir); err != nil {
-			return err
-		}
-		nrCfg++
-	}
-	if nrCfg != 1 {
-		return fmt.Errorf("config: Exactly one authority backend should be configured, got: %v", nrCfg)
-	}
-	return nil
-}
-
-// Nonvoting is a non-voting directory authority.
-type Nonvoting struct {
-	// Address is the authority's IP/port combination.
-	Address string
-
-	// PublicKeyPem is the authority's Identity key PEM filepath.
-	PublicKey sign.PublicKey
-
-	// LinkPublicKeyPem is the authority's public link key PEM filepath.
-	LinkPublicKey wire.PublicKey
-}
-
-func (nCfg *Nonvoting) validate(datadir string) error {
-	if err := utils.EnsureAddrIPPort(nCfg.Address); err != nil {
-		return fmt.Errorf("config: PKI/Nonvoting: Address is invalid: %v", err)
-	}
-
-	return nil
+	return pCfg.Voting.validate(datadir)
 }
 
 // Voting is a set of Authorities that vote on a threshold consensus PKI
@@ -717,6 +680,9 @@ type Voting struct {
 }
 
 func (vCfg *Voting) validate(datadir string) error {
+	if vCfg.Authorities == nil {
+		return errors.New("Authorities is nil")
+	}
 	for _, auth := range vCfg.Authorities {
 		err := auth.Validate()
 		if err != nil {

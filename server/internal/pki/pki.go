@@ -28,7 +28,6 @@ import (
 	"sync"
 	"time"
 
-	nClient "github.com/katzenpost/katzenpost/authority/nonvoting/client"
 	vClient "github.com/katzenpost/katzenpost/authority/voting/client"
 	vServer "github.com/katzenpost/katzenpost/authority/voting/server"
 	"github.com/katzenpost/katzenpost/core/epochtime"
@@ -679,29 +678,16 @@ func New(glue glue.Glue) (glue.PKI, error) {
 		return nil, errors.New("Descriptor address map is zero size.")
 	}
 
-	if glue.Config().PKI.Nonvoting != nil {
-		pkiCfg := &nClient.Config{
-			LinkKey:              glue.LinkKey(),
-			LogBackend:           glue.LogBackend(),
-			Address:              glue.Config().PKI.Nonvoting.Address,
-			AuthorityIdentityKey: glue.Config().PKI.Nonvoting.PublicKey,
-			AuthorityLinkKey:     glue.Config().PKI.Nonvoting.LinkPublicKey,
-		}
-		p.impl, err = nClient.New(pkiCfg)
-		if err != nil {
-			return nil, err
-		}
-	} else {
-		pkiCfg := &vClient.Config{
-			LinkKey:     glue.LinkKey(),
-			LogBackend:  glue.LogBackend(),
-			Authorities: glue.Config().PKI.Voting.Authorities,
-		}
-		p.impl, err = vClient.New(pkiCfg)
-		if err != nil {
-			return nil, err
-		}
+	pkiCfg := &vClient.Config{
+		LinkKey:     glue.LinkKey(),
+		LogBackend:  glue.LogBackend(),
+		Authorities: glue.Config().PKI.Voting.Authorities,
 	}
+	p.impl, err = vClient.New(pkiCfg)
+	if err != nil {
+		return nil, err
+	}
+
 	// TODO: Wire in a real PKI implementation in addition to the test one.
 
 	// Note: This does not start the worker immediately since the worker can

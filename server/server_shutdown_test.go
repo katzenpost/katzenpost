@@ -44,7 +44,8 @@ func TestServerStartShutdown(t *testing.T) {
 	authLinkPubKeyPem := "auth_link_pub_key.pem"
 
 	scheme := wire.DefaultScheme
-	_, authLinkPubKey := scheme.GenerateKeypair(rand.Reader)
+	authLinkPubKey, _, err := scheme.GenerateKeyPair()
+	require.NoError(t, err)
 	err = pem.ToFile(filepath.Join(datadir, authLinkPubKeyPem), authLinkPubKey)
 	require.NoError(t, err)
 
@@ -84,10 +85,15 @@ func TestServerStartShutdown(t *testing.T) {
 		},
 		Provider: nil,
 		PKI: &config.PKI{
-			Nonvoting: &config.Nonvoting{
-				Address:       "127.0.0.1:3321",
-				PublicKey:     authPubkey,
-				LinkPublicKey: authLinkPubKey,
+			Voting: &config.Voting{
+				Authorities: []*aconfig.Authority{
+					&aconfig.Authority{
+						Identifier:        "auth1",
+						IdentityPublicKey: authPubkey,
+						LinkPublicKey:     authLinkPubKey,
+						Addresses:         []string{"127.0.0.1:1234"},
+					},
+				},
 			},
 		},
 		Management: &config.Management{
