@@ -666,6 +666,9 @@ type PKI struct {
 }
 
 func (pCfg *PKI) validate(datadir string) error {
+	if pCfg.Voting == nil {
+		return errors.New("Voting is nil")
+	}
 	return pCfg.Voting.validate(datadir)
 }
 
@@ -675,6 +678,9 @@ type Voting struct {
 }
 
 func (vCfg *Voting) validate(datadir string) error {
+	if vCfg.Authorities == nil {
+		return errors.New("Authorities is nil")
+	}
 	for _, auth := range vCfg.Authorities {
 		err := auth.Validate()
 		if err != nil {
