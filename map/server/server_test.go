@@ -22,10 +22,11 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
-	"github.com/katzenpost/katzenpost/map/crypto"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/op/go-logging.v1"
+
+	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/katzenpost/map/crypto"
 )
 
 func TestCreateMap(t *testing.T) {

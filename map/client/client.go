@@ -157,21 +157,21 @@ func (c *Client) Get(cap *crypto.ReadCapability) ([]byte, error) {
 	return resp.Payload, nil
 }
 
-// RWClient has both Get and Put
-type RWClient interface {
+// ReadWriteClient has both Get and Put
+type ReadWriteClient interface {
 	Put(addr []byte, payload []byte) error
 	Get(addr []byte) ([]byte, error)
 	PayloadSize() int
 }
 
-// ROClient only has Get
-type ROClient interface {
+// ReadOnlyClient only has Get
+type ReadOnlyClient interface {
 	Get(addr []byte) ([]byte, error)
 	PayloadSize() int
 }
 
-// WOClient only has Put
-type WOClient interface {
+// WriteOnlyClient only has Put
+type WriteOnlyClient interface {
 	Put(addr []byte, payload []byte) error
 	PayloadSize() int
 }
@@ -184,19 +184,19 @@ type rwMap struct {
 	rwCap crypto.ReadWriteCapability
 }
 
-// Get implements RWClient.Get
+// Get implements ReadWriteClient.Get
 func (r *rwMap) Get(addr []byte) ([]byte, error) {
 	readCap := r.rwCap.ReadCapForAddr(addr)
 	return r.c.Get(readCap)
 }
 
-// Put implements RWClient.Put
+// Put implements ReadWriteClient.Put
 func (r *rwMap) Put(addr []byte, payload []byte) error {
 	writeCap := r.rwCap.WriteCapForAddr(addr, payload)
 	return r.c.Put(writeCap)
 }
 
-// PayloadSize implements RWClient.PayloadSize
+// PayloadSize implements ReadWriteClient.PayloadSize
 func (r *rwMap) PayloadSize() int {
 	return r.c.PayloadSize()
 }
@@ -207,36 +207,36 @@ type roMap struct {
 	roCap *crypto.ReadOnlyCapability
 }
 
-// Get implements ROClient.Get
+// Get implements ReadOnlyClient.Get
 func (r *roMap) Get(addr []byte) ([]byte, error) {
 	readCap := r.roCap.ReadCapForAddr(addr)
 	return r.c.Get(readCap)
 }
 
-// PayloadSize implements ROClient.PayloadSize
+// PayloadSize implements ReadOnlyClient.PayloadSize
 func (r *roMap) PayloadSize() int {
 	return r.c.PayloadSize()
 }
 
-// woMap implements WOClient
+// woMap implements WriteOnlyClient
 type woMap struct {
 	c     *Client
 	woCap *crypto.WriteOnlyCapability
 }
 
-// Put implements WOClient.Put
+// Put implements WriteOnlyClient.Put
 func (w *woMap) Put(addr []byte, payload []byte) error {
 	writeCap := w.woCap.WriteCapForAddr(addr, payload)
 	return w.c.Put(writeCap)
 }
 
-// PayloadSize implements WOClient.PayloadSize
+// PayloadSize implements WriteOnlyClient.PayloadSize
 func (r *woMap) PayloadSize() int {
 	return r.c.PayloadSize()
 }
 
 // ReadWrite returns a Transport using map that can read or write with Get() and Put()
-func ReadWrite(c *Client, rwCap crypto.ReadWriteCapability) RWClient {
+func ReadWrite(c *Client, rwCap crypto.ReadWriteCapability) ReadWriteClient {
 	m := new(rwMap)
 	m.c = c
 	m.rwCap = rwCap
@@ -244,7 +244,7 @@ func ReadWrite(c *Client, rwCap crypto.ReadWriteCapability) RWClient {
 }
 
 // ReadOnly returns a Transport using map that can read with Get() only
-func ReadOnly(c *Client, roCap *crypto.ReadOnlyCapability) ROClient {
+func ReadOnly(c *Client, roCap *crypto.ReadOnlyCapability) ReadOnlyClient {
 	m := new(roMap)
 	m.c = c
 	m.roCap = roCap
@@ -252,7 +252,7 @@ func ReadOnly(c *Client, roCap *crypto.ReadOnlyCapability) ROClient {
 }
 
 // WriteOnly returns a Transport using map that can write with Put() only
-func WriteOnly(c *Client, woCap *crypto.WriteOnlyCapability) WOClient {
+func WriteOnly(c *Client, woCap *crypto.WriteOnlyCapability) WriteOnlyClient {
 	m := new(woMap)
 	m.c = c
 	m.woCap = woCap
@@ -260,36 +260,36 @@ func WriteOnly(c *Client, woCap *crypto.WriteOnlyCapability) WOClient {
 }
 
 // create a duplex using a shared secret
-func DuplexFromSeed(c *Client, initiator bool, seed []byte) RWClient {
+func DuplexFromSeed(c *Client, initiator bool, seed []byte) ReadWriteClient {
 	duplexCap := crypto.DuplexFromSeed(initiator, seed)
 	return Duplex(c, duplexCap.ReadOnlyCap, duplexCap.WriteOnlyCap)
 }
 
-// duplex holds a pair of ROClient and WOClient and implements
-// RWClient with different read/write root capabilities so that a pair
+// duplex holds a pair of ReadOnlyClient and WriteOnlyClient and implements
+// ReadWriteClient with different read/write root capabilities so that a pair
 // of clients may use the capabilities to communicate unidirectionally
 type duplex struct {
-	ro ROClient // used to read data to client
-	wo WOClient // used to send data to peer
+	ro ReadOnlyClient  // used to read data to client
+	wo WriteOnlyClient // used to send data to peer
 }
 
-// Put implements RWClient.Put
+// Put implements ReadWriteClient.Put
 func (s *duplex) Put(addr []byte, payload []byte) error {
 	return s.wo.Put(addr, payload)
 }
 
-// Put implements RWClient.Get
+// Put implements ReadWriteClient.Get
 func (s *duplex) Get(addr []byte) ([]byte, error) {
 	return s.ro.Get(addr)
 }
 
-// PayloadSize implements RWClient.PayloadSize
+// PayloadSize implements ReadWriteClient.PayloadSize
 func (s *duplex) PayloadSize() int {
 	return s.ro.PayloadSize()
 }
 
 // Duplex returns a RWclient from a pair of ReadOnly and WriteOnly capabilities
-func Duplex(c *Client, r *crypto.ReadOnlyCapability, w *crypto.WriteOnlyCapability) RWClient {
+func Duplex(c *Client, r *crypto.ReadOnlyCapability, w *crypto.WriteOnlyCapability) ReadWriteClient {
 	s := new(duplex)
 	s.wo = WriteOnly(c, w)
 	s.ro = ReadOnly(c, r)

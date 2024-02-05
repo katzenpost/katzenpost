@@ -31,11 +31,11 @@ func TestCreateRWCap(t *testing.T) {
 	rwCap := NewRWCap(pk)
 	addr := []byte("we can use whatever byte sequence we like as address here")
 	id := rwCap.Addr(addr)
-	wKey := rwCap.Write(addr)
-	require.Equal(wKey.PublicKey().Bytes(), id.WritePk().Bytes())
+	wKey := rwCap.WriteKey(addr)
+	require.Equal(wKey.PublicKey().Bytes(), id.WriteVerifier().Bytes())
 
-	rKey := rwCap.Read(addr)
-	require.Equal(rKey.PublicKey().Bytes(), id.ReadPk().Bytes())
+	rKey := rwCap.ReadKey(addr)
+	require.Equal(rKey.PublicKey().Bytes(), id.ReadVerifier().Bytes())
 }
 
 func TestCreateROCap(t *testing.T) {
@@ -47,11 +47,11 @@ func TestCreateROCap(t *testing.T) {
 	rwCap := NewRWCap(pk)
 	addr := []byte("we can use whatever byte sequence we like as address here")
 	id := rwCap.Addr(addr)
-	wKey := rwCap.Write(addr)
-	require.Equal(wKey.PublicKey().Bytes(), id.WritePk().Bytes())
+	wKey := rwCap.WriteKey(addr)
+	require.Equal(wKey.PublicKey().Bytes(), id.WriteVerifier().Bytes())
 
-	rKey := rwCap.Read(addr)
-	require.Equal(rKey.PublicKey().Bytes(), id.ReadPk().Bytes())
+	rKey := rwCap.ReadKey(addr)
+	require.Equal(rKey.PublicKey().Bytes(), id.ReadVerifier().Bytes())
 }
 
 func TestCreateWOCap(t *testing.T) {
@@ -64,6 +64,6 @@ func TestCreateWOCap(t *testing.T) {
 	woCap := NewWOCap(pRoot, sk.Blind(WriteCap))
 	addr := []byte("we can use whatever byte sequence we like as address here")
 	id := woCap.Addr(addr)
-	wKey := woCap.Write(addr)
-	require.Equal(wKey.PublicKey().Bytes(), id.WritePk().Bytes())
+	wKey := woCap.WriteKey(addr)
+	require.Equal(wKey.PublicKey().Bytes(), id.WriteVerifier().Bytes())
 }

@@ -863,7 +863,7 @@ func (s *Stream) RemoteAddr() *StreamAddr {
 }
 
 // Transport describes the interface to Get or Put Frames
-type Transport mClient.RWClient
+type Transport mClient.ReadWriteClient
 
 func newStream(c Transport) *Stream {
 	s := new(Stream)

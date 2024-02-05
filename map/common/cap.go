@@ -28,8 +28,8 @@ var (
 // MessageID represents a storage address with Read/Write capability
 type MessageID [eddsa.PublicKeySize]byte
 
-// ReadPk returns the verifier of ReadCap for this ID
-func (m MessageID) ReadPk() *eddsa.PublicKey {
+// ReadVerifier returns the verifier of ReadCap for this ID
+func (m MessageID) ReadVerifier() *eddsa.PublicKey {
 	p := new(eddsa.PublicKey)
 	if err := p.FromBytes(m[:]); err != nil {
 		panic(err)
@@ -37,8 +37,8 @@ func (m MessageID) ReadPk() *eddsa.PublicKey {
 	return p.Blind(ReadCap)
 }
 
-// WritePk returns the verifier of WriteCap for this ID
-func (m MessageID) WritePk() *eddsa.PublicKey {
+// WriteVerifier returns the verifier of WriteCap for this ID
+func (m MessageID) WriteVerifier() *eddsa.PublicKey {
 	p := new(eddsa.PublicKey)
 	if err := p.FromBytes(m[:]); err != nil {
 		panic(err)
@@ -67,13 +67,13 @@ type ReadWriteCap interface {
 // ReadOnlyCap describes a Capability that has Read capability only.
 type ReadOnlyCap interface {
 	Cap
-	Read(addr []byte) *eddsa.BlindedPrivateKey
+	ReadKey(addr []byte) *eddsa.BlindedPrivateKey
 }
 
 // ReadOnlyCap describes a Capability that has Write capability only.
 type WriteOnlyCap interface {
 	Cap
-	Write(addr []byte) *eddsa.BlindedPrivateKey
+	WriteKey(addr []byte) *eddsa.BlindedPrivateKey
 }
 
 // RootCap holds CapPk and implements the Addr method which other capability types inherit.
@@ -85,8 +85,8 @@ type RootCap struct {
 func (s *RootCap) Addr(addr []byte) MessageID {
 	// returns the capability derived from the root key
 	// mapping address to a public identity key contained in MessageID
-	// which provides ReadPk and WritePk methods to verify Signatures
-	// from the Read() and Write() capability keys help by Cap
+	// which provides ReadVerifier and WriteVerifier methods to verify Signatures
+	// from the ReadKey() and WriteKey() capability keys help by Cap
 	capAddr := s.CapPk.Blind(addr)
 	var id MessageID
 	copy(id[:], capAddr.Bytes())
@@ -118,13 +118,13 @@ type WOCap struct {
 	CapWPk *eddsa.PublicKey
 }
 
-// Read(addr) returns a key from which to sign the command reading from addr
-func (s *ROCap) Read(addr []byte) *eddsa.BlindedPrivateKey {
+// ReadKey(addr) returns a key from which to sign the command reading from addr
+func (s *ROCap) ReadKey(addr []byte) *eddsa.BlindedPrivateKey {
 	return s.CapRSk.Blind(addr)
 }
 
-// Write(addr) returns a key from which to sign the command writing to addr
-func (s *WOCap) Write(addr []byte) *eddsa.BlindedPrivateKey {
+// WriteKey(addr) returns a key from which to sign the command writing to addr
+func (s *WOCap) WriteKey(addr []byte) *eddsa.BlindedPrivateKey {
 	return s.CapWSk.Blind(addr)
 }
 
