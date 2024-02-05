@@ -30,7 +30,7 @@ require (
 )
 
 require (
-	codeberg.org/dawuud/highctidh v1.0.2024010702-0.20240119231727-003bd97f7b44 // indirect
+	codeberg.org/vula/highctidh v1.0.2024012400 // indirect
 	filippo.io/edwards25519 v1.0.0 // indirect
 	github.com/awnumar/memcall v0.1.2 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
