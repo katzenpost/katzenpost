@@ -148,6 +148,9 @@ func (s *katzenpost) genNodeConfig(isProvider bool, isVoting bool) error {
 			"TCP": []string{fmt.Sprintf("localhost:%d", s.lastPort)},
 		}
 	}
+	// Enable Metrics endpoint
+	s.lastPort += 1
+	cfg.Server.MetricsAddress = fmt.Sprintf("127.0.0.1:%d", s.lastPort)
 
 	// Debug section.
 	cfg.Debug = new(sConfig.Debug)
@@ -506,6 +509,12 @@ func main() {
 	if err != nil {
 		log.Fatalf("%s", err)
 	}
+
+	err = s.genPrometheus()
+	if err != nil {
+		log.Fatalf("%s", err)
+	}
+
 }
 
 func identifier(cfg interface{}) string {
@@ -607,6 +616,33 @@ func cfgLinkKey(cfg interface{}, outDir string) wire.PublicKey {
 	return linkPubKey
 }
 
+func (s *katzenpost) genPrometheus() error {
+	dest := filepath.Join(s.outDir, "prometheus.yml")
+	log.Printf("writing %s", dest)
+
+	f, err := os.Create(dest)
+
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	defer f.Close()
+
+	write(f, `
+scrape_configs:
+- job_name: katzenpost
+  scrape_interval: 1s
+  static_configs:
+  - targets:
+`)
+
+	for _, cfg := range s.nodeConfigs {
+		write(f,`    - %s
+`, cfg.Server.MetricsAddress)
+	}
+	return nil
+}
+
 func (s *katzenpost) genDockerCompose(dockerImage string) error {
 	dest := filepath.Join(s.outDir, "docker-compose.yml")
 	log.Printf("writing %s", dest)
@@ -677,5 +713,16 @@ services:
     network_mode: host
 `, authCfg.Server.Identifier, dockerImage, s.baseDir, s.baseDir, s.binSuffix, s.baseDir, authCfg.Server.Identifier)
 	}
-	return nil
+
+	write(f, `
+  %s:
+    restart: "no"
+    image: %s
+    volumes:
+      - ./:%s
+    command: --config.file="%s/prometheus.yml"
+    network_mode: host
+`, "metrics", "prom/prometheus", s.baseDir, s.baseDir)
+
+      return nil
 }

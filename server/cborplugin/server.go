@@ -32,21 +32,19 @@ type Server struct {
 	socket *CommandIO
 	log    *logging.Logger
 	//conn           net.Conn
-	socketFile     string
-	plugin         ServerPlugin
-	commandBuilder CommandBuilder
+	socketFile string
+	plugin     ServerPlugin
 }
 
-func NewServer(log *logging.Logger, socketFile string, commandBuilder CommandBuilder, plugin ServerPlugin) *Server {
+func NewServer(log *logging.Logger, socketFile string, plugin ServerPlugin) *Server {
 	s := &Server{
-		log:            log,
-		socketFile:     socketFile,
-		plugin:         plugin,
-		commandBuilder: commandBuilder,
-		socket:         NewCommandIO(log),
+		log:        log,
+		socketFile: socketFile,
+		plugin:     plugin,
+		socket:     NewCommandIO(log),
 	}
 	s.plugin.RegisterConsumer(s)
-	s.socket.Start(false, s.socketFile, s.commandBuilder)
+	s.socket.Start(false, s.socketFile)
 	return s
 }
 
@@ -65,6 +63,7 @@ func (s *Server) worker() {
 			err := s.plugin.OnCommand(cmd)
 			if err != nil {
 				s.log.Debugf("plugin returned err: %s", err)
+				return
 			}
 		}
 	}

@@ -25,8 +25,10 @@ package cborplugin
 
 import (
 	"bufio"
+	"errors"
 	"io"
 	"os/exec"
+	"reflect"
 	"syscall"
 	"time"
 
@@ -35,6 +37,26 @@ import (
 	"github.com/katzenpost/katzenpost/core/worker"
 	"gopkg.in/op/go-logging.v1"
 )
+
+var TagSet = cbor.NewTagSet()
+
+func init() {
+	// tags are given an unassigned number:
+	// https://www.iana.org/assignments/cbor-tags/cbor-tags.xhtml
+	// 1401-18299 "Unassigned"
+	TagSet.Add(
+		cbor.TagOptions{EncTag: cbor.EncTagRequired, DecTag: cbor.DecTagRequired},
+		reflect.TypeOf(Request{}), 1401)
+	TagSet.Add(
+		cbor.TagOptions{EncTag: cbor.EncTagRequired, DecTag: cbor.DecTagRequired},
+		reflect.TypeOf(Response{}), 1402)
+	TagSet.Add(
+		cbor.TagOptions{EncTag: cbor.EncTagRequired, DecTag: cbor.DecTagRequired},
+		reflect.TypeOf(ParametersRequest{}), 1403)
+	TagSet.Add(
+		cbor.TagOptions{EncTag: cbor.EncTagRequired, DecTag: cbor.DecTagRequired},
+		reflect.TypeOf(Parameters{}), 1404)
+}
 
 // Request is the struct type used in service query requests to plugins.
 type Request struct {
@@ -63,16 +85,7 @@ func (r *Request) Unmarshal(b []byte) error {
 	return cbor.Unmarshal(b, r)
 }
 
-// RequestFactory is a CommandBuilder for Requests
-type RequestFactory struct {
-}
-
-// Build returns a Request
-func (r *RequestFactory) Build() Command {
-	return new(Request)
-}
-
-// Response is the response received after sending a Request to the plugin
+// Response is the response received after sending a Request to the plugin.
 type Response struct {
 	// RequestAt is the time when the Request corresponding to this Response was received
 	RequestAt time.Time
@@ -96,15 +109,6 @@ func (r *Response) Unmarshal(b []byte) error {
 	return cbor.Unmarshal(b, r)
 }
 
-// ResponseFactory is a CommandBuilder for Responses
-type ResponseFactory struct {
-}
-
-// Build returns a Response
-func (r *ResponseFactory) Build() Command {
-	return new(Response)
-}
-
 // Parameters is an optional mapping that plugins can publish, these get
 // advertised to clients in the MixDescriptor.
 // The output of GetParameters() ends up being published in a map
@@ -112,6 +116,30 @@ func (r *ResponseFactory) Build() Command {
 // This information is part of the Mix Descriptor which is defined here:
 // https://github.com/katzenpost/katzenpost/blob/master/core/pki/pki.go
 type Parameters map[string]string
+
+// Marshal serializes Response and implements Command
+func (r *Parameters) Marshal() ([]byte, error) {
+	return cbor.Marshal(r)
+}
+
+// Unmarshal deserializes Response and implements Command
+func (r *Parameters) Unmarshal(b []byte) error {
+	return cbor.Unmarshal(b, r)
+}
+
+// ParametersRequest is a Command requesting a ServerPlugin's Parameters
+type ParametersRequest struct {
+}
+
+// Marshal serializes ParametersRequest
+func (r *ParametersRequest) Marshal() ([]byte, error) {
+	return cbor.Marshal(r)
+}
+
+// Unmarshal deserializes ParametersRequest
+func (r *ParametersRequest) Unmarshal(b []byte) error {
+	return cbor.Unmarshal(b, r)
+}
 
 // ServicePlugin is the interface that we expose for external
 // plugins to implement. This is similar to the internal Kaetzchen
@@ -153,23 +181,23 @@ type Client struct {
 	cmd        *exec.Cmd
 	//conn       net.Conn
 
-	commandBuilder CommandBuilder
-
 	capability string
 	endpoint   string
+
+	paramChan chan *Parameters // GetParameters sends a ParametersRequest which is intercepted by sendworker and written to this channel
 }
 
 // New creates a new plugin client instance which represents the single execution
 // of the external plugin program.
 
-func NewClient(logBackend *log.Backend, capability, endpoint string, commandBuilder CommandBuilder) *Client {
+func NewClient(logBackend *log.Backend, capability, endpoint string) *Client {
 	return &Client{
-		socket:         NewCommandIO(logBackend.GetLogger("client_socket")),
-		logBackend:     logBackend,
-		log:            logBackend.GetLogger("client"),
-		commandBuilder: commandBuilder,
-		capability:     capability,
-		endpoint:       endpoint,
+		socket:     NewCommandIO(logBackend.GetLogger("client_socket")),
+		logBackend: logBackend,
+		log:        logBackend.GetLogger("client"),
+		capability: capability,
+		endpoint:   endpoint,
+		paramChan:  make(chan *Parameters, 1),
 	}
 }
 
@@ -177,10 +205,22 @@ func (c *Client) Capability() string {
 	return c.capability
 }
 
-func (c *Client) GetParameters() *map[string]interface{} {
-	responseParams := make(map[string]interface{})
-	responseParams["endpoint"] = c.endpoint
-	return &responseParams
+func (c *Client) GetParameters() (*Parameters, error) {
+	var responseParams *Parameters
+	c.WriteChan() <- &ParametersRequest{}
+	select {
+	case <-c.HaltCh():
+		return nil, errors.New("Halted")
+	case time.After(5*time.Second):
+		c.log.Warn("GetParameters() timed out receiving response from plugin")
+		fallthrough
+	case responseParams = <-c.paramChan:
+		if responseParams == nil {
+			responseParams = make(Parameters)
+		}
+		responseParams["endpoint"] = c.endpoint
+		return &responseParams, nil
+	}
 }
 
 // Start execs the plugin and starts a worker thread to listen
@@ -192,7 +232,7 @@ func (c *Client) Start(command string, args []string) error {
 		return err
 	}
 	c.Go(c.reaper)
-	c.socket.Start(true, c.socketFile, c.commandBuilder)
+	c.socket.Start(true, c.socketFile)
 	return nil
 }
 

@@ -92,7 +92,7 @@ func main() {
 
 	var server *cborplugin.Server
 	h := &pandaRequestHandler{p: panda, log: serverLog}
-	server = cborplugin.NewServer(serverLog, socketFile, new(cborplugin.RequestFactory), h)
+	server = cborplugin.NewServer(serverLog, socketFile, h)
 	// emit socketFile to stdout, because this tells the mix server where to connect
 	fmt.Printf("%s\n", socketFile)
 	server.Accept()
@@ -124,6 +124,11 @@ func (s *pandaRequestHandler) OnCommand(cmd cborplugin.Command) error {
 			s.write(&cborplugin.Response{ID: r.ID, SURB: r.SURB, Payload: pandaResponse})
 		}()
 		return nil
+	case *cborplugin.ParametersRequest:
+		// panda doesn't set any custom parameters in the PKI, so let the
+		// cborplugin.Client populate cborplugin.Parameters{}.
+		// and we don't know what the required endpoint field should be anyway
+		return nil, nil
 	default:
 		s.log.Errorf("OnCommand called with unknown Command type")
 		return errors.New("Invalid Command type")

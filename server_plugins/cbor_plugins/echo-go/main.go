@@ -39,6 +39,11 @@ func (e *Echo) OnCommand(cmd cborplugin.Command) error {
 			e.write(&cborplugin.Response{ID: r.ID, SURB: r.SURB, Payload: r.Payload})
 		}()
 		return nil
+	case *cborplugin.ParametersRequest:
+		// echo doesn't set any custom parameters in the PKI, so let the
+		// cborplugin.Client populate cborplugin.Parameters{}.
+		// and we don't know what the required endpoint field should be anyway
+		return nil, nil
 	default:
 		return errors.New("echo-plugin: Invalid Command type")
 	}
@@ -83,7 +88,7 @@ func main() {
 	echo := new(Echo)
 
 	var server *cborplugin.Server
-	server = cborplugin.NewServer(serverLog, socketFile, new(cborplugin.RequestFactory), echo)
+	server = cborplugin.NewServer(serverLog, socketFile, echo)
 	fmt.Printf("%s\n", socketFile)
 	server.Accept()
 	server.Wait()
