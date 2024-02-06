@@ -11,8 +11,8 @@ require (
 	github.com/henrydcase/nobs v0.0.0-20230313231516-25b66236df73
 	github.com/jackc/pgx v3.6.2+incompatible
 	github.com/katzenpost/chacha20poly1305 v0.0.0-20211026103954-7b6fb2fc0129
-	github.com/katzenpost/hpqc v0.0.0-20240206001207-cb2c611c95c8
-	github.com/katzenpost/nyquist v0.0.3-0.20231119132407-166503183e1d
+	github.com/katzenpost/hpqc v0.0.1
+	github.com/katzenpost/nyquist v0.0.4
 	github.com/prometheus/client_golang v1.14.0
 	github.com/stretchr/testify v1.8.4
 	github.com/ugorji/go/codec v1.2.8
@@ -35,7 +35,7 @@ require (
 	github.com/awnumar/memcall v0.1.2 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cespare/xxhash/v2 v2.2.0 // indirect
-	github.com/cloudflare/circl v1.0.1-0.20210909233310-258cb6f0e1ab // indirect
+	github.com/cloudflare/circl v1.3.7 // indirect
 	github.com/cockroachdb/apd v1.1.0 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/dchest/siphash v1.2.3 // indirect
@@ -64,5 +64,3 @@ require (
 	golang.org/x/sys v0.16.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
-
-replace github.com/katzenpost/nyquist => /home/human/code/nyquist

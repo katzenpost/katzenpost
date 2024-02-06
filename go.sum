@@ -21,6 +21,8 @@ github.com/cespare/xxhash/v2 v2.2.0 h1:DC2CZ1Ep5Y4k3ZQ899DldepgrayRUGE6BBZ/cd9Cj
 github.com/cespare/xxhash/v2 v2.2.0/go.mod h1:VGX0DQ3Q6kWi7AoAeZDth3/j3BFtOZR5XLFGgcrjCOs=
 github.com/cloudflare/circl v1.0.1-0.20210909233310-258cb6f0e1ab h1:7aRw7ztZF5+LESAaQSnNoAQtxoaQB1ieT3+mkViz1s8=
 github.com/cloudflare/circl v1.0.1-0.20210909233310-258cb6f0e1ab/go.mod h1:tnEeRn/onb0b4Ew40H00boTlcVMHveaTzi6m+/iMruw=
+github.com/cloudflare/circl v1.3.7 h1:qlCDlTPz2n9fu58M0Nh1J/JzcFpfgkFHHX3O35r5vcU=
+github.com/cloudflare/circl v1.3.7/go.mod h1:sRTcRWXGLrKw6yIGJ+l7amYJFfAXbZG0kBSc8r4zxgA=
 github.com/cockroachdb/apd v1.1.0 h1:3LFP3629v+1aKXU5Q37mxmRxX/pIu1nijXydLShEq5I=
 github.com/cockroachdb/apd v1.1.0/go.mod h1:8Sl8LxpKi29FqWXR16WEFZRNSz3SoPzUzeMeY4+DwBQ=
 github.com/creack/pty v1.1.9/go.mod h1:oKZEueFk5CKHvIhNR5MUki03XCEU+Q6VDXinZuGJ33E=
@@ -59,11 +61,18 @@ github.com/katzenpost/circl v0.0.1-0.20231120061013-c230f9c84244/go.mod h1:NcGc/
 github.com/katzenpost/circl v0.0.1-0.20240114190552-a60da6747ebd h1:YJx4KfR+r340h8xVBMaEZ7Q1DkFSjrO6sSjMcEoH+Vk=
 github.com/katzenpost/circl v0.0.1-0.20240114190552-a60da6747ebd/go.mod h1:o+xQQBvrc5MO2FXUpb0HIYZ42PzrMHNPXTJvJLp901Y=
 github.com/katzenpost/ctidh_cgo v0.0.0-20230523083445-e789a8b77082/go.mod h1:xqyj8Y3rR3PfAPoDvhriOtNLPr2VXjlFj1LqGR5xA88=
+github.com/katzenpost/hpqc v0.0.0-20231118061647-13b08c4e76f2/go.mod h1:DKovaDeQmmGjfJl/tZGk183NQmlAP5tyb20xPRGQ988=
 github.com/katzenpost/hpqc v0.0.0-20231120044158-69d8c78c0eea/go.mod h1:EcDC/jYIF1G1tJsYDf8wRW5fOGkIIc5XXXfCvqUJVss=
 github.com/katzenpost/hpqc v0.0.0-20240114172129-b96678fb103d/go.mod h1:J/gidf2p+4XvIRtHu2urDDjlLZnVqh24ShMb7CHtuP8=
 github.com/katzenpost/hpqc v0.0.0-20240114190904-bc8bcfcca4ee/go.mod h1:i2+fQVPYzpv+WoZcN0KQqjQLEc/AgzRYwAFjYC/LiHg=
 github.com/katzenpost/hpqc v0.0.0-20240206001207-cb2c611c95c8 h1:O0vCC5KBMsEUw/h8XlPYapbN0QlUn0q0++6VhWupUOc=
 github.com/katzenpost/hpqc v0.0.0-20240206001207-cb2c611c95c8/go.mod h1:cen9fo1a9MAQCoZjg46aWFPdUjFsN3uYhq6mrqiWUHI=
+github.com/katzenpost/hpqc v0.0.1 h1:DpLSGRdWmj608SLCgHs3Q3WHIxx9Hrl5BdYuozwZodQ=
+github.com/katzenpost/hpqc v0.0.1/go.mod h1:cen9fo1a9MAQCoZjg46aWFPdUjFsN3uYhq6mrqiWUHI=
+github.com/katzenpost/nyquist v0.0.2/go.mod h1:1x/VqOl8InVjCeUS91EJYjHp+uU1EEJUEvAZhKBUyT0=
+github.com/katzenpost/nyquist v0.0.3-0.20231119132407-166503183e1d/go.mod h1:vvdOm//ncHrdSR9QrzdBF6DYvpyo4B9yyjTO6hEEXI4=
+github.com/katzenpost/nyquist v0.0.4 h1:Da8y9wvUeNhJ00ONK9G9pqNn46n2sugtQyax/Hj3lsI=
+github.com/katzenpost/nyquist v0.0.4/go.mod h1:c6crJNF+gr1mS9Ir4mmHLHAAn6dehoEaQpVPE44LYGw=
 github.com/katzenpost/sntrup4591761 v0.0.0-20231024131303-8755eb1986b8 h1:TsKxH0x2RUwf5rBw67k15bqVM3oVbexA9oaTZQLIy3Y=
 github.com/katzenpost/sntrup4591761 v0.0.0-20231024131303-8755eb1986b8/go.mod h1:Hmcrwom7jcEmGdo0CsyuJNnldPeyS+M07FuCbo7I8fw=
 github.com/katzenpost/sphincsplus v0.0.1/go.mod h1:oSEQjtj0GRF8Nzl3L3sMCbLk+m/xWwEh03rTKzVwgIc=
@@ -105,6 +114,7 @@ github.com/stretchr/objx v0.4.0/go.mod h1:YvHI0jy2hoMjB+UWwv71VJQ9isScKT/TqJzVSS
 github.com/stretchr/objx v0.5.0/go.mod h1:Yh+to48EsGEfYuaHDzXPcE3xhTkx73EhmCGUpEOglKo=
 github.com/stretchr/testify v1.3.0/go.mod h1:M5WIy9Dh21IEIfnGCwXGc5bZfKNJtfHm1UVUgZn+9EI=
 github.com/stretchr/testify v1.4.0/go.mod h1:j7eGeouHqKxXV5pUuKE4zz7dFj8WfuZ+81PSLYec5m4=
+github.com/stretchr/testify v1.7.0/go.mod h1:6Fq8oRcR53rry900zMqJjRRixrwX3KX962/h/Wwjteg=
 github.com/stretchr/testify v1.7.1/go.mod h1:6Fq8oRcR53rry900zMqJjRRixrwX3KX962/h/Wwjteg=
 github.com/stretchr/testify v1.8.0/go.mod h1:yNjHg4UonilssWZ8iaSj1OCr/vHnekPRkoO+kdMU+MU=
 github.com/stretchr/testify v1.8.4 h1:CcVxjf3Q8PM0mHUKJCdn+eZZtm5yQwehR5yeSVQQcUk=
