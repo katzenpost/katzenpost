@@ -3,16 +3,16 @@ module github.com/katzenpost/katzenpost
 go 1.19
 
 require (
-	github.com/BurntSushi/toml v1.2.1
+	github.com/BurntSushi/toml v1.3.2
 	github.com/awnumar/memguard v0.22.3
 	github.com/carlmjohnson/versioninfo v0.22.4
-	github.com/fxamacker/cbor/v2 v2.4.0
+	github.com/fxamacker/cbor/v2 v2.5.0
 	github.com/golang/protobuf v1.5.2
 	github.com/henrydcase/nobs v0.0.0-20230313231516-25b66236df73
 	github.com/jackc/pgx v3.6.2+incompatible
 	github.com/katzenpost/chacha20poly1305 v0.0.0-20211026103954-7b6fb2fc0129
-	github.com/katzenpost/hpqc v0.0.0-20240120003156-59686a802fde
-	github.com/katzenpost/nyquist v0.0.2
+	github.com/katzenpost/hpqc v0.0.0-20240206001207-cb2c611c95c8
+	github.com/katzenpost/nyquist v0.0.3-0.20231119132407-166503183e1d
 	github.com/prometheus/client_golang v1.14.0
 	github.com/stretchr/testify v1.8.4
 	github.com/ugorji/go/codec v1.2.8
@@ -66,5 +66,3 @@ require (
 )
 
 replace github.com/katzenpost/nyquist => /home/human/code/nyquist
-
-replace github.com/katzenpost/hpqc => /home/human/code/hpqc
