@@ -48,6 +48,9 @@ type Request struct {
 	Payload []byte
 	// SURB is the routing header used to return the Response to the requesting client
 	SURB []byte
+	// ResponseSize indicates the maximum response size accepted by the mix server
+	ResponseSize int
+	HasSURB      bool
 }
 
 // Marshal serializes Request

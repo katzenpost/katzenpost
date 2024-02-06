@@ -132,11 +132,12 @@ func (k *CBORPluginWorker) processKaetzchen(pkt *packet.Packet, pluginClient *cb
 	}
 
 	pluginClient.WriteChan() <- &cborplugin.Request{
-		ID:        pkt.ID,
-		RequestAt: time.Now(),
-		Delay:     pkt.Delay,
-		Payload:   payload,
-		SURB:      surb,
+		ID:           pkt.ID,
+		RequestAt:    time.Now(),
+		Delay:        pkt.Delay,
+		Payload:      payload,
+		SURB:         surb,
+		ResponseSize: k.geo.UserForwardPayloadLength,
 	}
 }
 
