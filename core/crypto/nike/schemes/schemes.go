@@ -12,7 +12,14 @@ import (
 var allSchemes = [...]nike.Scheme{
 	ecdh.NewEcdhNike(rand.Reader),
 	hybrid.NOBS_CSIDH512X25519, // This should be removed once ctidh is fully integrated
+
+	/* XXX find another way to add hybrids to our list? these are gated with build tags ctidh511 etc.
+
+	hybrid.CTIDH511X25519,
+	hybrid.CTIDH512X25519,
 	hybrid.CTIDH1024X25519,
+	hybrid.CTIDH2048X25519,
+	*/
 }
 
 var allSchemeNames map[string]nike.Scheme

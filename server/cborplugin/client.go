@@ -41,13 +41,13 @@ type Request struct {
 	// RequestAt is the time when the Request corresponding to this Response was received
 	RequestAt time.Time
 	// Delay is the amount of time that the Response should be delayed before transmission
-	Delay     time.Duration // the Delay specififed for this hop
+	Delay time.Duration // the Delay specififed for this hop
 	// ID is the Request's packet ID
-	ID        uint64
+	ID uint64
 	// Payload is the encrypted Request
-	Payload   []byte
+	Payload []byte
 	// SURB is the routing header used to return the Response to the requesting client
-	SURB      []byte
+	SURB []byte
 }
 
 // Marshal serializes Request
@@ -74,13 +74,13 @@ type Response struct {
 	// RequestAt is the time when the Request corresponding to this Response was received
 	RequestAt time.Time
 	// Delay is the amount of time that the Response should be delayed before transmission
-	Delay     time.Duration
+	Delay time.Duration
 	// ID is the Request's packet ID
-	ID        uint64
+	ID uint64
 	// Payload is the encrypted response
-	Payload   []byte
+	Payload []byte
 	// SURB is the routing header used to return the Response to the requesting client
-	SURB      []byte
+	SURB []byte
 }
 
 // Marshal serializes Response

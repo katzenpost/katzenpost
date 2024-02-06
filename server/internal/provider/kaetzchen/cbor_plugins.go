@@ -153,7 +153,7 @@ func (k *CBORPluginWorker) sendworker(pluginClient *cborplugin.Client) {
 				if len(r.Payload) > k.geo.UserForwardPayloadLength {
 					// response is probably invalid, so drop it
 					k.log.Errorf("%v: Got response too long: %d > max (%d)",
-					pluginCap, len(r.Payload), k.geo.UserForwardPayloadLength)
+						pluginCap, len(r.Payload), k.geo.UserForwardPayloadLength)
 					instrument.KaetzchenRequestsDropped(1)
 					continue
 				}
@@ -165,7 +165,7 @@ func (k *CBORPluginWorker) sendworker(pluginClient *cborplugin.Client) {
 						continue
 					}
 					// Set the packet queue delay
-					delay := r.Delay-time.Since(r.RequestAt)
+					delay := r.Delay - time.Since(r.RequestAt)
 					if delay < 0 {
 						respPkt.Delay = 0
 					} else {

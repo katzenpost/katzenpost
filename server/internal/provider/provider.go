@@ -292,6 +292,10 @@ func (p *provider) onToUser(pkt *packet.Packet, recipient []byte) {
 			p.log.Debugf("Failed to generate SURB-ACK: %v (%v)", pkt.ID, err)
 			return
 		}
+		// set the response packet delay from requesting packet, sans processing duration
+		delay := pkt.NewDelay()
+		ackPkt.NodeDelay.Delay = uint32(delay)
+		ackPkt.Delay = delay
 
 		p.log.Debugf("Handing off newly generated SURB-ACK: %v (Src:%v)", ackPkt.ID, pkt.ID)
 		p.glue.Scheduler().OnPacket(ackPkt)

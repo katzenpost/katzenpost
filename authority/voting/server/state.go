@@ -331,7 +331,7 @@ func (s *state) doParseDocument(b []byte) (*pki.Document, error) {
 func (s *state) doSignDocument(signer cert.Signer, verifier cert.Verifier, d *pki.Document) ([]byte, error) {
 	signAt := time.Now()
 	sig, err := pki.SignDocument(signer, verifier, d)
-	s.log.Debugf("pki.SignDocument took %v", time.Since(signAt))
+	s.log.Notice("pki.SignDocument took %v", time.Since(signAt))
 	return sig, err
 }
 

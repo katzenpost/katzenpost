@@ -3,12 +3,15 @@ module github.com/katzenpost/katzenpost
 go 1.19
 
 require (
-	codeberg.org/vula/highctidh v1.0.2023121100
+	codeberg.org/vula/highctidh/ctidh1024 v0.0.0-20240112145400-d12c8f0a1ef9
+	codeberg.org/vula/highctidh/ctidh2048 v0.0.0-20240112145400-d12c8f0a1ef9
+	codeberg.org/vula/highctidh/ctidh511 v0.0.0-20240112145400-d12c8f0a1ef9
+	codeberg.org/vula/highctidh/ctidh512 v0.0.0-20240112145400-d12c8f0a1ef9
 	filippo.io/edwards25519 v1.0.0
 	github.com/BurntSushi/toml v1.2.1
 	github.com/awnumar/memguard v0.22.3
 	github.com/carlmjohnson/versioninfo v0.22.4
-	github.com/cloudflare/circl v1.3.3
+	github.com/cloudflare/circl v1.3.7
 	github.com/fxamacker/cbor/v2 v2.4.0
 	github.com/go-faster/xor v1.0.0
 	github.com/golang/protobuf v1.5.2
@@ -28,9 +31,9 @@ require (
 	gitlab.com/yawning/avl.git v0.0.0-20180224045358-04c7c776e391
 	gitlab.com/yawning/bsaes.git v0.0.0-20190805113838-0a714cd429ec
 	go.etcd.io/bbolt v1.3.6
-	golang.org/x/crypto v0.14.0
+	golang.org/x/crypto v0.17.0
 	golang.org/x/net v0.17.0
-	golang.org/x/text v0.13.0
+	golang.org/x/text v0.14.0
 	google.golang.org/protobuf v1.28.1
 	gopkg.in/eapache/channels.v1 v1.1.0
 	gopkg.in/op/go-logging.v1 v1.0.0-20160211212156-b2cb9fa56473
@@ -63,6 +66,6 @@ require (
 	github.com/willscott/bloom v0.0.0-20190611115233-60e4b211444f // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	gitlab.com/yawning/slice.git v0.0.0-20190714152416-bc4ae2510529 // indirect
-	golang.org/x/sys v0.13.0 // indirect
+	golang.org/x/sys v0.15.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
