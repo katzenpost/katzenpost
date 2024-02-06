@@ -22,6 +22,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/katzenpost/hpqc/kem"
 	ecdh "github.com/katzenpost/hpqc/nike/x25519"
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/hpqc/sign"
@@ -29,7 +30,6 @@ import (
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/thwack"
-	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/server/config"
 	"github.com/katzenpost/katzenpost/server/internal/glue"
 	"github.com/katzenpost/katzenpost/server/internal/packet"
@@ -62,7 +62,7 @@ func (m *mockGlue) IdentityPublicKey() sign.PublicKey {
 	return nil
 }
 
-func (m *mockGlue) LinkKey() wire.PrivateKey {
+func (m *mockGlue) LinkKey() kem.PrivateKey {
 	return nil
 }
 func (m *mockGlue) Listeners() []glue.Listener {

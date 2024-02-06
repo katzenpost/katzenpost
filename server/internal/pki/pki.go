@@ -28,6 +28,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/katzenpost/hpqc/hash"
 	vClient "github.com/katzenpost/katzenpost/authority/voting/client"
 	vServer "github.com/katzenpost/katzenpost/authority/voting/server"
 	"github.com/katzenpost/katzenpost/core/epochtime"
@@ -268,7 +269,11 @@ func (p *pki) validateCacheEntry(ent *pkicache.Entry) error {
 	if !desc.IdentityKey.Equal(p.glue.IdentityPublicKey()) {
 		return fmt.Errorf("self identity key mismatch")
 	}
-	if !desc.LinkKey.Equal(p.glue.LinkKey().PublicKey()) {
+	blob, err := p.glue.LinkKey().Public().MarshalBinary()
+	if err != nil {
+		return err
+	}
+	if !hmac.Equal(desc.LinkKey, blob) {
 		return fmt.Errorf("self link key mismatch")
 	}
 	return nil
@@ -364,10 +369,14 @@ func (p *pki) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 	// probably not worth it.
 
 	// Generate the non-key parts of the descriptor.
+	linkblob, err := p.glue.LinkKey().Public().MarshalBinary()
+	if err != nil {
+		return err
+	}
 	desc := &cpki.MixDescriptor{
 		Name:        p.glue.Config().Server.Identifier,
 		IdentityKey: p.glue.IdentityPublicKey(),
-		LinkKey:     p.glue.LinkKey().PublicKey(),
+		LinkKey:     linkblob,
 		Addresses:   p.descAddrMap,
 		Epoch:       epoch,
 	}
@@ -424,7 +433,7 @@ func (p *pki) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 	}
 
 	// Post the descriptor to all the authorities.
-	err := p.impl.Post(pkiCtx, doPublishEpoch, p.glue.IdentityKey(), p.glue.IdentityPublicKey(), desc)
+	err = p.impl.Post(pkiCtx, doPublishEpoch, p.glue.IdentityKey(), p.glue.IdentityPublicKey(), desc)
 	switch err {
 	case nil:
 		p.log.Debugf("Posted descriptor for epoch: %v", doPublishEpoch)
@@ -546,9 +555,13 @@ func (p *pki) AuthenticateConnection(c *wire.PeerCredentials, isOutgoing bool) (
 		// The LinkKey that is being used for authentication should
 		// match what is listed in the descriptor in the document, or
 		// the most recent descriptor we have for the node.
-		if !m.LinkKey.Equal(c.PublicKey) {
-			if desc == m || !desc.LinkKey.Equal(c.PublicKey) {
-				p.log.Warningf("%v: '%x' Public Key mismatch: '%x'", dirStr, c.AdditionalData, c.PublicKey.Sum256())
+		blob, err := c.PublicKey.MarshalBinary()
+		if err != nil {
+			panic(err)
+		}
+		if !hmac.Equal(m.LinkKey, blob) {
+			if desc == m || !hmac.Equal(m.LinkKey, blob) {
+				p.log.Warningf("%v: '%x' Public Key mismatch: '%x'", dirStr, c.AdditionalData, hash.Sum256(blob))
 				continue
 			}
 		}

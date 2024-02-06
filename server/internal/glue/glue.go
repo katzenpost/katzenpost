@@ -19,6 +19,7 @@
 package glue
 
 import (
+	"github.com/katzenpost/hpqc/kem"
 	"github.com/katzenpost/hpqc/sign"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
@@ -39,7 +40,7 @@ type Glue interface {
 	LogBackend() *log.Backend
 	IdentityKey() sign.PrivateKey
 	IdentityPublicKey() sign.PublicKey
-	LinkKey() wire.PrivateKey
+	LinkKey() kem.PrivateKey
 
 	Management() *thwack.Server
 	MixKeys() MixKeys

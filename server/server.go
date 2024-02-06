@@ -28,11 +28,18 @@ import (
 	"gopkg.in/eapache/channels.v1"
 	"gopkg.in/op/go-logging.v1"
 
+	nyquistkem "github.com/katzenpost/nyquist/kem"
+	"github.com/katzenpost/nyquist/seec"
+
+	"github.com/katzenpost/hpqc/hash"
+	"github.com/katzenpost/hpqc/kem"
+	pemkem "github.com/katzenpost/hpqc/kem/pem"
+	"github.com/katzenpost/hpqc/util"
 	"github.com/katzenpost/hpqc/util/pem"
 
-	"github.com/katzenpost/katzenpost/core/cert"
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/hpqc/sign"
+	"github.com/katzenpost/katzenpost/core/cert"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/thwack"
 	"github.com/katzenpost/katzenpost/core/utils"
@@ -59,7 +66,7 @@ type Server struct {
 
 	identityPrivateKey sign.PrivateKey
 	identityPublicKey  sign.PublicKey
-	linkKey            wire.PrivateKey
+	linkKey            kem.PrivateKey
 
 	logBackend *log.Backend
 	log        *logging.Logger
@@ -208,7 +215,6 @@ func (s *Server) halt() {
 	if s.inboundPackets != nil {
 		s.inboundPackets.Close()
 	}
-	s.linkKey.Reset()
 	s.identityPrivateKey.Reset()
 	s.identityPublicKey.Reset()
 	close(s.fatalErrCh)
@@ -254,7 +260,7 @@ func New(cfg *config.Config) (*Server, error) {
 
 	s.identityPrivateKey, s.identityPublicKey = cert.Scheme.NewKeypair()
 
-	if pem.BothExists(identityPrivateKeyFile, identityPublicKeyFile) {
+	if util.BothExists(identityPrivateKeyFile, identityPublicKeyFile) {
 		err := pem.FromFile(identityPrivateKeyFile, s.identityPrivateKey)
 		if err != nil {
 			return nil, err
@@ -263,7 +269,7 @@ func New(cfg *config.Config) (*Server, error) {
 		if err != nil {
 			return nil, err
 		}
-	} else if pem.BothNotExists(identityPrivateKeyFile, identityPublicKeyFile) {
+	} else if util.BothNotExists(identityPrivateKeyFile, identityPublicKeyFile) {
 		err := pem.ToFile(identityPrivateKeyFile, s.identityPrivateKey)
 		if err != nil {
 			return nil, err
@@ -283,23 +289,32 @@ func New(cfg *config.Config) (*Server, error) {
 	linkPublicKeyFile := filepath.Join(s.cfg.Server.DataDir, "link.public.pem")
 	scheme := wire.DefaultScheme
 
-	linkPrivateKey, linkPublicKey := scheme.GenerateKeypair(rand.Reader)
-	if pem.BothExists(linkPrivateKeyFile, linkPublicKeyFile) {
-		err = pem.FromFile(linkPrivateKeyFile, linkPrivateKey)
+	//GenerateKeypair
+	rng, err := seec.GenKeyPassthrough(rand.Reader, 0)
+	if err != nil {
+		panic(err)
+	}
+	linkPublicKey, linkPrivateKey := nyquistkem.GenerateKeypair(scheme, rng)
+	if util.BothExists(linkPrivateKeyFile, linkPublicKeyFile) {
+		linkPrivateKey, err = pemkem.FromPrivatePEMFile(linkPrivateKeyFile, scheme)
 		if err != nil {
 			return nil, err
 		}
-		err = pem.FromFile(linkPublicKeyFile, linkPublicKey)
+		linkPublicKey, err = pemkem.FromPublicPEMFile(linkPublicKeyFile, scheme)
 		if err != nil {
 			return nil, err
 		}
-	} else if pem.BothNotExists(linkPrivateKeyFile, linkPublicKeyFile) {
-		linkPrivateKey, linkPublicKey = scheme.GenerateKeypair(rand.Reader)
-		err = pem.ToFile(linkPrivateKeyFile, linkPrivateKey)
+	} else if util.BothNotExists(linkPrivateKeyFile, linkPublicKeyFile) {
+		rng, err := seec.GenKeyPassthrough(rand.Reader, 0)
+		if err != nil {
+			panic(err)
+		}
+		linkPublicKey, linkPrivateKey := nyquistkem.GenerateKeypair(scheme, rng)
+		err = pemkem.PrivateKeyToFile(linkPrivateKeyFile, linkPrivateKey)
 		if err != nil {
 			return nil, err
 		}
-		err = pem.ToFile(linkPublicKeyFile, linkPublicKey)
+		err = pemkem.PublicKeyToFile(linkPublicKeyFile, linkPublicKey)
 		if err != nil {
 			return nil, err
 		}
@@ -308,8 +323,11 @@ func New(cfg *config.Config) (*Server, error) {
 	}
 
 	s.linkKey = linkPrivateKey
-
-	linkPubKeyHash := linkPublicKey.Sum256()
+	blob, err := linkPublicKey.MarshalBinary()
+	if err != nil {
+		panic(err)
+	}
+	linkPubKeyHash := hash.Sum256(blob)
 	s.log.Noticef("Server link public key hash is: %x", linkPubKeyHash[:])
 
 	if s.cfg.Debug.GenerateOnly {
@@ -457,7 +475,7 @@ func (g *serverGlue) IdentityPublicKey() sign.PublicKey {
 	return g.s.identityPublicKey
 }
 
-func (g *serverGlue) LinkKey() wire.PrivateKey {
+func (g *serverGlue) LinkKey() kem.PrivateKey {
 	return g.s.linkKey
 }
 

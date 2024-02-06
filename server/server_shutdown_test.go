@@ -25,10 +25,12 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	kempem "github.com/katzenpost/hpqc/kem/pem"
 	ecdh "github.com/katzenpost/hpqc/nike/x25519"
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/hpqc/util/pem"
 
+	aconfig "github.com/katzenpost/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/katzenpost/core/cert"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
@@ -46,7 +48,8 @@ func TestServerStartShutdown(t *testing.T) {
 	scheme := wire.DefaultScheme
 	authLinkPubKey, _, err := scheme.GenerateKeyPair()
 	require.NoError(t, err)
-	err = pem.ToFile(filepath.Join(datadir, authLinkPubKeyPem), authLinkPubKey)
+
+	err = kempem.PublicKeyToFile(filepath.Join(datadir, authLinkPubKeyPem), authLinkPubKey)
 	require.NoError(t, err)
 
 	_, authPubkey := cert.Scheme.NewKeypair()

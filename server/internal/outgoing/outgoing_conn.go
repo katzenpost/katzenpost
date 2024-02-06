@@ -62,7 +62,11 @@ func (c *outgoingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 		c.log.Debug("IsPeerValid false, identity hash mismatch")
 		return false
 	}
-	if !c.dst.LinkKey.Equal(creds.PublicKey) {
+	keyblob, err := creds.PublicKey.MarshalBinary()
+	if err != nil {
+		panic(err)
+	}
+	if !hmac.Equal(c.dst.LinkKey, keyblob) {
 		c.log.Debug("IsPeerValid false, link key mismatch")
 		return false
 	}
@@ -131,9 +135,13 @@ func (c *outgoingConn) worker() {
 	}()
 
 	identityHash := c.dst.IdentityKey.Sum256()
+	linkPubKey, err := wire.DefaultScheme.UnmarshalBinaryPublicKey(c.dst.LinkKey)
+	if err != nil {
+		panic(err)
+	}
 	dialCheckCreds := wire.PeerCredentials{
 		AdditionalData: identityHash[:],
-		PublicKey:      c.dst.LinkKey,
+		PublicKey:      linkPubKey,
 	}
 
 	// Establish the outgoing connection.
@@ -149,7 +157,11 @@ func (c *outgoingConn) worker() {
 			// the cached pointer.
 			if desc != nil {
 				c.dst = desc
-				dialCheckCreds.PublicKey = c.dst.LinkKey
+				linkPubKey, err := wire.DefaultScheme.UnmarshalBinaryPublicKey(c.dst.LinkKey)
+				if err != nil {
+					panic(err)
+				}
+				dialCheckCreds.PublicKey = linkPubKey
 			}
 		} else {
 			c.log.Debugf("Bailing out of Dial loop, no longer in PKI.")
