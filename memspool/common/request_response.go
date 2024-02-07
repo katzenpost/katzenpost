@@ -103,7 +103,8 @@ func (s *SpoolResponse) Marshal() ([]byte, error) {
 
 // Unmarshal implements cborplugin.Command
 func (s *SpoolResponse) Unmarshal(b []byte) error {
-	return cbor.Unmarshal(b, s)
+	_, err := cbor.UnmarshalFirst(b, s)
+	return err
 }
 
 func (s *SpoolResponse) IsOK() bool {
