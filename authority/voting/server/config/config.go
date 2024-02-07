@@ -30,7 +30,6 @@ import (
 	"golang.org/x/net/idna"
 
 	"github.com/katzenpost/hpqc/kem"
-	"github.com/katzenpost/hpqc/kem/pem"
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/hpqc/sign"
 	utilpem "github.com/katzenpost/hpqc/util/pem"
@@ -272,20 +271,29 @@ func (a *Authority) UnmarshalTOML(v interface{}) error {
 		return err
 	}
 
-	data, _ := v.(map[string]interface{})
+	data, ok := v.(map[string]interface{})
+	if !ok {
+		return errors.New("type assertion failed")
+	}
 	a.Identifier, _ = data["Identifier"].(string)
 	idPublicKeyString, _ := data["IdentityPublicKey"].(string)
 	err = a.IdentityPublicKey.UnmarshalText([]byte(idPublicKeyString))
 	if err != nil {
 		return err
 	}
-	linkPublicKeyRaw, _ := data["LinkPublicKey"].([]byte)
-	a.LinkPublicKey, err = pem.FromPublicPEMBytes(linkPublicKeyRaw, wire.DefaultScheme)
+	linkPublicKeyString, ok := data["LinkPublicKey"].(string)
+	if !ok {
+		return errors.New("type assertion failed")
+	}
+	err = a.LinkPublicKey.UnmarshalText([]byte(linkPublicKeyString))
 	if err != nil {
 		return err
 	}
 	addresses := make([]string, 0)
-	pos, _ := data["Addresses"]
+	pos, ok := data["Addresses"]
+	if !ok {
+		return errors.New("map entry not found")
+	}
 	for _, addr := range pos.([]interface{}) {
 		addresses = append(addresses, addr.(string))
 	}
