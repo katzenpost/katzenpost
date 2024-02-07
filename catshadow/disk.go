@@ -107,7 +107,7 @@ func decryptStateFile(stateFile string, key *[32]byte) (*State, error) {
 		return nil, err
 	}
 	state := new(State)
-	if err = cbor.Unmarshal(plaintext, &state); err != nil {
+	if _, err = cbor.UnmarshalFirst(plaintext, &state); err != nil {
 		return nil, err
 	}
 	return state, nil
