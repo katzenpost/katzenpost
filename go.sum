@@ -65,6 +65,8 @@ github.com/katzenpost/hpqc v0.0.0-20240114190904-bc8bcfcca4ee/go.mod h1:i2+fQVPY
 github.com/katzenpost/hpqc v0.0.0-20240206001207-cb2c611c95c8/go.mod h1:cen9fo1a9MAQCoZjg46aWFPdUjFsN3uYhq6mrqiWUHI=
 github.com/katzenpost/hpqc v0.0.1 h1:DpLSGRdWmj608SLCgHs3Q3WHIxx9Hrl5BdYuozwZodQ=
 github.com/katzenpost/hpqc v0.0.1/go.mod h1:cen9fo1a9MAQCoZjg46aWFPdUjFsN3uYhq6mrqiWUHI=
+github.com/katzenpost/hpqc v0.0.2 h1:FNW723J7aNKgUJyqFtkl3gY39vFvyBYU7Q6xkujxIKo=
+github.com/katzenpost/hpqc v0.0.2/go.mod h1:cen9fo1a9MAQCoZjg46aWFPdUjFsN3uYhq6mrqiWUHI=
 github.com/katzenpost/nyquist v0.0.2/go.mod h1:1x/VqOl8InVjCeUS91EJYjHp+uU1EEJUEvAZhKBUyT0=
 github.com/katzenpost/nyquist v0.0.3-0.20231119132407-166503183e1d/go.mod h1:vvdOm//ncHrdSR9QrzdBF6DYvpyo4B9yyjTO6hEEXI4=
 github.com/katzenpost/nyquist v0.0.4 h1:Da8y9wvUeNhJ00ONK9G9pqNn46n2sugtQyax/Hj3lsI=
