@@ -279,8 +279,8 @@ func (a *Authority) UnmarshalTOML(v interface{}) error {
 	if err != nil {
 		return err
 	}
-	linkPublicKeyString, _ := data["LinkPublicKey"].(string)
-	a.LinkPublicKey, err = pem.FromPublicPEMString(linkPublicKeyString, wire.DefaultScheme)
+	linkPublicKeyRaw, _ := data["LinkPublicKey"].([]byte)
+	a.LinkPublicKey, err = pem.FromPublicPEMBytes(linkPublicKeyRaw, wire.DefaultScheme)
 	if err != nil {
 		return err
 	}
