@@ -700,7 +700,7 @@ services:
       - ./:%s
     command: --config.file="%s/prometheus.yml"
     network_mode: host
-`, "metrics", "prom/prometheus", s.baseDir, s.baseDir)
+`, "metrics", "docker.io/prom/prometheus", s.baseDir, s.baseDir)
 
 	return nil
 }
