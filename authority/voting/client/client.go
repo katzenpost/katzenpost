@@ -59,15 +59,7 @@ func (a *authorityAuthenticator) IsPeerValid(creds *wire.PeerCredentials) bool {
 		a.log.Warningf("voting/Client: IsPeerValid(): AD mismatch: %x != %x", identityHash[:], creds.AdditionalData[:sign.PublicKeyHashSize])
 		return false
 	}
-	blob1, err := a.LinkPublicKey.MarshalBinary()
-	if err != nil {
-		panic(err)
-	}
-	blob2, err := creds.PublicKey.MarshalBinary()
-	if err != nil {
-		panic(err)
-	}
-	if !hmac.Equal(blob1, blob2) {
+	if !a.LinkPublicKey.Equal(creds.PublicKey) {
 		a.log.Warningf("voting/Client: IsPeerValid(): Link Public Key mismatch: %s != %s", kempem.ToPublicPEMString(a.LinkPublicKey), kempem.ToPublicPEMString(creds.PublicKey))
 		return false
 	}
