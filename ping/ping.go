@@ -72,7 +72,7 @@ func sendPing(session *client.Session, serviceDesc *utils.ServiceDescriptor, pri
 
 	var replyPayload []byte
 
-	err = cbor.Unmarshal(reply, &replyPayload)
+	_, err = cbor.UnmarshalFirst(reply, &replyPayload)
 	if err != nil {
 		fmt.Printf("Failed to unmarshal: %s\n", err)
 		panic(err)

@@ -12,7 +12,7 @@ require (
 	github.com/awnumar/memguard v0.22.3
 	github.com/carlmjohnson/versioninfo v0.22.4
 	github.com/cloudflare/circl v1.3.7
-	github.com/fxamacker/cbor/v2 v2.4.0
+	github.com/fxamacker/cbor/v2 v2.5.0
 	github.com/go-faster/xor v1.0.0
 	github.com/golang/protobuf v1.5.2
 	github.com/henrydcase/nobs v0.0.0-20210422124615-3a8ac85da11b
