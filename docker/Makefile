@@ -137,7 +137,7 @@ alpine_base.stamp:
 $(distro)_go_mod.stamp: $(distro)_base.stamp
 	$(docker) run ${docker_args} $(replace_name) \
 		katzenpost_$(distro)_go_mod katzenpost-$(distro)_base \
-		sh -c 'go mod download && cd sphincsplus/ref && go install'
+		sh -c 'go mod download'
 	$(docker) commit katzenpost_$(distro)_go_mod katzenpost-$(distro)_go_mod
 	$(docker) rm katzenpost_$(distro)_go_mod
 	touch $@
