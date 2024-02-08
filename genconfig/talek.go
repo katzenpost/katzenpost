@@ -112,7 +112,7 @@ func (s *katzenpost) genTalekReplicaCfg(cfgPath string) {
 		Config:        &com,
 	}
 
-	commonDat, err := json.MarshalIndent(sc, "", "  ")
+	commonDat, err := json.MarshalIndent(com, "", "  ")
 	if err != nil {
 		panic(err)
 	}
