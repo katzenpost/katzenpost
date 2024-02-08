@@ -16,6 +16,7 @@
 package main
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -39,6 +40,7 @@ import (
 type talekRequestHandler struct {
 	worker.Worker
 	replica *server.Replica
+	config  *server.Config
 	log     *logging.Logger
 	write   func(cborplugin.Command)
 }
@@ -113,7 +115,7 @@ func main() {
 	// instantiate replica srever
 	replica := server.NewReplica(serverConfig.TrustDomain.Name, backing, serverConfig)
 
-	h := &talekRequestHandler{replica: replica, log: serverLog}
+	h := &talekRequestHandler{replica: replica, log: serverLog, config: &serverConfig}
 	cbserver := cborplugin.NewServer(serverLog, socketFile, h)
 	cbserver.Accept()
 	cbserver.Wait()
@@ -177,6 +179,11 @@ func (s *talekRequestHandler) OnCommand(cmd cborplugin.Command) error {
 			return errors.New("Invalid ReplicaCommand type")
 		}
 	case *cborplugin.ParametersRequest:
+		params := make(cborplugin.Parameters)
+		params["PublicKey"] = base64.StdEncoding.EncodeToString(s.config.TrustDomain.PublicKey[:])
+		params["SignPublicKey"] = base64.StdEncoding.EncodeToString(s.config.TrustDomain.SignPublicKey[:])
+		s.write(&params)
+
 	default:
 		return errors.New("Invalid Command, expected cborplugin.Request")
 	}
