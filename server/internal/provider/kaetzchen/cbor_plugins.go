@@ -153,6 +153,15 @@ func (k *CBORPluginWorker) sendworker(pluginClient *cborplugin.Client) {
 			return
 		case cborResponse := <-pluginClient.ReadChan():
 			switch r := cborResponse.(type) {
+			case *cborplugin.Parameters:
+				select {
+				case pluginClient.ParamChan() <- r:
+					k.log.Debugf("%v: received Parameters from plugin", pluginCap)
+					continue
+				case <-pluginClient.HaltCh():
+					k.log.Errorf("pluginClient Halted, halting sendworker")
+					return
+				}
 			case *cborplugin.Response:
 				if len(r.Payload) > k.geo.UserForwardPayloadLength {
 					// response is probably invalid, so drop it

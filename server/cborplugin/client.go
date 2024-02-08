@@ -296,3 +296,7 @@ func (c *Client) ReadChan() chan Command {
 func (c *Client) WriteChan() chan Command {
 	return c.socket.WriteChan()
 }
+
+func (c *Client) ParamChan() chan *Parameters {
+	return c.paramChan
+}
