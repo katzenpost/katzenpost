@@ -296,26 +296,6 @@ func NewCBORPluginWorker(glue glue.Glue) (*CBORPluginWorker, error) {
 			return nil, err
 		}
 
-		// Accumulate a list of all clients to facilitate clean shutdown.
-		kaetzchenWorker.clients = append(kaetzchenWorker.clients, pluginClient)
-
-		// Start the workers _after_ we have added all of the entries to pluginChans
-		// otherwise the worker() goroutines race this thread.
-		defer kaetzchenWorker.Go(func() {
-			kaetzchenWorker.worker(endpoint, pluginClient)
-		})
-
-		// start the sendworker for each pluginClient
-		defer kaetzchenWorker.Go(func() {
-			kaetzchenWorker.sendworker(pluginClient)
-		})
-
-		// Unregister pluginClient when it halts
-		defer kaetzchenWorker.Go(func() {
-			<-pluginClient.HaltCh()
-			kaetzchenWorker.unregister(endpoint, pluginClient)
-		})
-
 		capaMap[capa] = true
 	}
 	return &kaetzchenWorker, nil
@@ -397,6 +377,10 @@ func (k *CBORPluginWorker) register(pluginConf *config.CBORPluginKaetzchen) erro
 	defer k.Go(func() {
 		// pluginChans must exist for worker routine and OnKaetzchen
 		k.worker(endpoint, pluginClient)
+	})
+	// start the sendworker for each pluginClient
+	defer k.Go(func() {
+		k.sendworker(pluginClient)
 	})
 
 	// Unregister pluginClient when it halts
