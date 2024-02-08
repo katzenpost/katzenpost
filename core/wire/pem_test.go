@@ -1,6 +1,7 @@
 package wire
 
 import (
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -46,8 +47,6 @@ rJoEjFXoChJF5xWicIVxi0F3k6KTZYTCus+SlMJkVLFwmf9Ui+rDIqVwJ1C6tzKm
 	blob1 := pem.ToPublicPEMBytes(key1)
 	require.Equal(t, string(linkPemString1), string(blob1))
 
-	//
-
 	key2, err := s.UnmarshalTextPublicKey([]byte(linkPemString1))
 	require.NoError(t, err)
 
@@ -73,4 +72,52 @@ func TestKEMTextUnmarshal(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Equal(t, blob1, blob2)
+}
+
+func TestKEMMarshalingShouldFailButDoesNotFail(t *testing.T) {
+	linkPubKey, linkPrivKey, err := DefaultScheme.GenerateKeyPair()
+	require.NoError(t, err)
+
+	linkPrivKeyBlob := pem.ToPrivatePEMBytes(linkPrivKey)
+	linkPubKeyBlob := pem.ToPublicPEMBytes(linkPubKey)
+
+	linkPrivKey2, err := pem.FromPrivatePEMBytes(linkPrivKeyBlob, DefaultScheme)
+	require.NoError(t, err)
+
+	linkPubKey2, err := pem.FromPublicPEMBytes(linkPubKeyBlob, DefaultScheme)
+	require.NoError(t, err)
+
+	require.True(t, linkPubKey.Equal(linkPubKey2))
+	require.True(t, linkPrivKey.Equal(linkPrivKey2))
+
+	linkPrivKeyBlob2 := pem.ToPrivatePEMBytes(linkPrivKey2)
+	linkPubKeyBlob2 := pem.ToPublicPEMBytes(linkPubKey2)
+
+	require.Equal(t, linkPrivKeyBlob, linkPrivKeyBlob2)
+	require.Equal(t, linkPubKeyBlob, linkPubKeyBlob2)
+}
+
+func TestKEMPEMFiles(t *testing.T) {
+	dir := t.TempDir()
+
+	linkpriv := filepath.Join(dir, "link.private.pem")
+	linkpub := filepath.Join(dir, "link.pubate.pem")
+
+	linkPubKey, linkPrivKey, err := DefaultScheme.GenerateKeyPair()
+	require.NoError(t, err)
+
+	err = pem.PrivateKeyToFile(linkpriv, linkPrivKey)
+	require.NoError(t, err)
+
+	err = pem.PublicKeyToFile(linkpub, linkPubKey)
+	require.NoError(t, err)
+
+	linkPrivKey2, err := pem.FromPrivatePEMFile(linkpriv, DefaultScheme)
+	require.NoError(t, err)
+
+	linkPubKey2, err := pem.FromPublicPEMFile(linkpub, DefaultScheme)
+	require.NoError(t, err)
+
+	require.True(t, linkPrivKey.Equal(linkPrivKey2))
+	require.True(t, linkPubKey.Equal(linkPubKey2))
 }
