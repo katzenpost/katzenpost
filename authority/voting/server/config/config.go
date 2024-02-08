@@ -291,11 +291,7 @@ func (a *Authority) UnmarshalTOML(v interface{}) error {
 		return errors.New("type assertion failed")
 	}
 
-	a.LinkPublicKey, _, err = wire.DefaultScheme.GenerateKeyPair()
-	if err != nil {
-		return err
-	}
-	err = a.LinkPublicKey.UnmarshalText([]byte(linkPublicKeyString))
+	a.LinkPublicKey, err = wire.DefaultScheme.UnmarshalTextPublicKey([]byte(linkPublicKeyString))
 	if err != nil {
 		return err
 	}
