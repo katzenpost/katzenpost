@@ -104,13 +104,17 @@ func main() {
 	if err = json.Unmarshal(commonString, serverConfig.Config); err != nil {
 		panic(err)
 	}
+	// emit socketFile to stdout, because this tells the mix server where to connect
+	// do this BEFORE starting the replica, because talek writes to stdout too
+	// XXX: unfortunately mix server tries to dial the socket before we've started it
+	// there is a workaround in PR 485
+	fmt.Printf("%s\n", socketFile)
+
 	// instantiate replica srever
 	replica := server.NewReplica(serverConfig.TrustDomain.Name, backing, serverConfig)
 
 	h := &talekRequestHandler{replica: replica, log: serverLog}
-	cbserver := cborplugin.NewServer(serverLog, socketFile, new(cborplugin.RequestFactory), h)
-	// emit socketFile to stdout, because this tells the mix server where to connect
-	fmt.Printf("%s\n", socketFile)
+	cbserver := cborplugin.NewServer(serverLog, socketFile, h)
 	cbserver.Accept()
 	cbserver.Wait()
 	replica.Close()
