@@ -264,31 +264,42 @@ type Authority struct {
 
 // UnmarshalTOML deserializes into non-nil instances of sign.PublicKey and kem.PublicKey
 func (a *Authority) UnmarshalTOML(v interface{}) error {
-	_, a.IdentityPublicKey = cert.Scheme.NewKeypair()
-	var err error
-	a.LinkPublicKey, _, err = wire.DefaultScheme.GenerateKeyPair()
-	if err != nil {
-		return err
-	}
 
 	data, ok := v.(map[string]interface{})
 	if !ok {
 		return errors.New("type assertion failed")
 	}
-	a.Identifier, _ = data["Identifier"].(string)
+
+	// identifier
+	_, a.IdentityPublicKey = cert.Scheme.NewKeypair()
+	a.Identifier, ok = data["Identifier"].(string)
+	if !ok {
+		return errors.New("Authority.Identifier type assertion failed")
+	}
+
+	// identity key
 	idPublicKeyString, _ := data["IdentityPublicKey"].(string)
-	err = a.IdentityPublicKey.UnmarshalText([]byte(idPublicKeyString))
+	err := a.IdentityPublicKey.UnmarshalText([]byte(idPublicKeyString))
 	if err != nil {
 		return err
 	}
+
+	// link key
 	linkPublicKeyString, ok := data["LinkPublicKey"].(string)
 	if !ok {
 		return errors.New("type assertion failed")
+	}
+
+	a.LinkPublicKey, _, err = wire.DefaultScheme.GenerateKeyPair()
+	if err != nil {
+		return err
 	}
 	err = a.LinkPublicKey.UnmarshalText([]byte(linkPublicKeyString))
 	if err != nil {
 		return err
 	}
+
+	// address
 	addresses := make([]string, 0)
 	pos, ok := data["Addresses"]
 	if !ok {
