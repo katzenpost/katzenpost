@@ -258,8 +258,14 @@ func New(cfg *config.Config) (*Server, error) {
 		if err != nil {
 			return nil, err
 		}
-		_, err = kempem.FromPublicPEMFile(linkPublicKeyFile, scheme)
+		linkpubkey, err := kempem.FromPublicPEMFile(linkPublicKeyFile, scheme)
 		if err != nil {
+			return nil, err
+		}
+		s.log.Warning("attempting to call validate our config's peers against our own link public key")
+		err = cfg.ValidateAuthorities(linkpubkey)
+		if err != nil {
+			s.log.Error("config's peers validation failure. must be your own peer!")
 			return nil, err
 		}
 	} else if util.BothNotExists(linkPrivateKeyFile, linkPublicKeyFile) {

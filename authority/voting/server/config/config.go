@@ -19,6 +19,7 @@
 package config
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -421,6 +422,30 @@ type Layer struct {
 // Topology contains a slice of Layers, each containing a slice of Nodes
 type Topology struct {
 	Layers []Layer
+}
+
+// ValidateAuthorities takes as an argument the dirauth server's own public key
+// and tries to find a match in the dirauth peers. Returns an error if no
+// match is found. Dirauths must be their own peer.
+func (cfg *Config) ValidateAuthorities(linkPubKey kem.PublicKey) error {
+	linkblob1, err := linkPubKey.MarshalText()
+	if err != nil {
+		return err
+	}
+	match := false
+	for i := 0; i < len(cfg.Authorities); i++ {
+		linkblob, err := cfg.Authorities[i].LinkPublicKey.MarshalText()
+		if err != nil {
+			return err
+		}
+		if bytes.Equal(linkblob1, linkblob) {
+			match = true
+		}
+	}
+	if !match {
+		return errors.New("Authority must be it's own peer")
+	}
+	return nil
 }
 
 // FixupAndValidate applies defaults to config entries and validates the
