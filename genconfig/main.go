@@ -208,10 +208,6 @@ func (s *katzenpost) genNodeConfig(isProvider bool, isVoting bool) error {
 			cfgDir := filepath.Join(s.outDir, cfg.Server.Identifier)
 			s.genTalekReplicaCfg(cfgDir)
 			s.genTalekFrontendCfg(filepath.Join(s.outDir, "client"))
-			pubKey, err := getPubKeyFromReplicaCfg(filepath.Join(cfgDir, "replica.json"))
-			if err != nil {
-				return err
-			}
 
 			talekReplicaCfg := &sConfig.CBORPluginKaetzchen{
 				Capability:     "talek_replica",
@@ -224,7 +220,6 @@ func (s *katzenpost) genNodeConfig(isProvider bool, isVoting bool) error {
 					"common":     filepath.Join(s.baseDir, cfg.Server.Identifier, "common.json"),
 					"log_dir":    filepath.Join(s.baseDir, cfg.Server.Identifier),
 					"log_level":  s.logLevel,
-					"public_key": fmt.Sprintf("%v", pubKey),
 				},
 			}
 
