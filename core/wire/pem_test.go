@@ -45,4 +45,38 @@ rJoEjFXoChJF5xWicIVxi0F3k6KTZYTCus+SlMJkVLFwmf9Ui+rDIqVwJ1C6tzKm
 
 	linkPemString2 := pem.ToPublicPEMBytes(mypublicKey)
 	require.Equal(t, string(linkPemString1), string(linkPemString2))
+
+	//
+
+	testpubkey, _, err := s.GenerateKeyPair()
+	require.NoError(t, err)
+
+	err = testpubkey.UnmarshalText([]byte(linkPemString1))
+	require.NoError(t, err)
+
+	blob0, err := testpubkey.MarshalText()
+	require.NoError(t, err)
+
+	t.Logf("%s", blob0)
+}
+
+func TestKEMTextUnmarshal(t *testing.T) {
+	s := schemes.ByName("Kyber768")
+
+	testpubkey2, _, err := s.GenerateKeyPair()
+	require.NoError(t, err)
+
+	pubkey, _, err := s.GenerateKeyPair()
+	require.NoError(t, err)
+
+	blob1, err := pubkey.MarshalText()
+	require.NoError(t, err)
+
+	err = testpubkey2.UnmarshalText(blob1)
+	require.NoError(t, err)
+
+	blob2, err := testpubkey2.MarshalText()
+	require.NoError(t, err)
+
+	require.Equal(t, blob1, blob2)
 }
