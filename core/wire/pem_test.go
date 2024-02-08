@@ -7,10 +7,6 @@ import (
 
 	"github.com/katzenpost/hpqc/kem/pem"
 	"github.com/katzenpost/hpqc/kem/schemes"
-	"github.com/katzenpost/hpqc/rand"
-
-	nyquistkem "github.com/katzenpost/nyquist/kem"
-	"github.com/katzenpost/nyquist/seec"
 )
 
 func TestToFromPEM(t *testing.T) {
@@ -52,10 +48,7 @@ rJoEjFXoChJF5xWicIVxi0F3k6KTZYTCus+SlMJkVLFwmf9Ui+rDIqVwJ1C6tzKm
 
 	//
 
-	key2, _, err := s.GenerateKeyPair()
-	require.NoError(t, err)
-
-	err = key2.UnmarshalText([]byte(linkPemString1))
+	key2, err := s.UnmarshalTextPublicKey([]byte(linkPemString1))
 	require.NoError(t, err)
 
 	blob2, err := key2.MarshalText()
@@ -67,20 +60,13 @@ rJoEjFXoChJF5xWicIVxi0F3k6KTZYTCus+SlMJkVLFwmf9Ui+rDIqVwJ1C6tzKm
 func TestKEMTextUnmarshal(t *testing.T) {
 	s := schemes.ByName("Kyber768-X25519")
 
-	rng, err := seec.GenKeyPassthrough(rand.Reader, 0)
-	require.NoError(t, err)
-	testpubkey2, _ := nyquistkem.GenerateKeypair(s, rng)
-
-	//testpubkey2, _, err := s.GenerateKeyPair()
-	//require.NoError(t, err)
-
 	pubkey, _, err := s.GenerateKeyPair()
 	require.NoError(t, err)
 
 	blob1, err := pubkey.MarshalText()
 	require.NoError(t, err)
 
-	err = testpubkey2.UnmarshalText(blob1)
+	testpubkey2, err := s.UnmarshalTextPublicKey([]byte(blob1))
 	require.NoError(t, err)
 
 	blob2, err := testpubkey2.MarshalText()
