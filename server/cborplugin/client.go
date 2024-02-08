@@ -211,16 +211,15 @@ func (c *Client) GetParameters() (*Parameters, error) {
 	select {
 	case <-c.HaltCh():
 		return nil, errors.New("Halted")
-	case time.After(5*time.Second):
-		c.log.Warn("GetParameters() timed out receiving response from plugin")
-		fallthrough
+	case <-time.After(5*time.Second):
+		c.log.Errorf("GetParameters() timed out receiving response from plugin")
 	case responseParams = <-c.paramChan:
-		if responseParams == nil {
-			responseParams = make(Parameters)
-		}
-		responseParams["endpoint"] = c.endpoint
-		return &responseParams, nil
 	}
+	if responseParams == nil {
+		responseParams = &Parameters{}
+	}
+	(*responseParams)["endpoint"] = c.endpoint
+	return responseParams, nil
 }
 
 // Start execs the plugin and starts a worker thread to listen
