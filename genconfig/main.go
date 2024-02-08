@@ -489,10 +489,12 @@ func main() {
 		log.Fatalf("%s", err)
 	}
 
-	err = s.genPrometheus()
-	if err != nil {
-		log.Fatalf("%s", err)
-	}
+	/*
+		err = s.genPrometheus()
+		if err != nil {
+			log.Fatalf("%s", err)
+		}
+	*/
 
 }
 

@@ -258,6 +258,12 @@ func New(cfg *config.Config) (*Server, error) {
 		if err != nil {
 			return nil, err
 		}
+		_, err = kempem.FromPublicPEMFile(linkPublicKeyFile, scheme)
+		if err != nil {
+			return nil, err
+		}
+
+		/* NOTE(david): enable this check after we get things working again?
 		linkpubkey, err := kempem.FromPublicPEMFile(linkPublicKeyFile, scheme)
 		if err != nil {
 			return nil, err
@@ -268,6 +274,7 @@ func New(cfg *config.Config) (*Server, error) {
 			s.log.Error("config's peers validation failure. must be your own peer!")
 			return nil, err
 		}
+		*/
 	} else if util.BothNotExists(linkPrivateKeyFile, linkPublicKeyFile) {
 		linkPublicKey, linkPrivateKey := nyquistkem.GenerateKeypair(scheme, genRand)
 
