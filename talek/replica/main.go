@@ -176,6 +176,7 @@ func (s *talekRequestHandler) OnCommand(cmd cborplugin.Command) error {
 		default:
 			return errors.New("Invalid ReplicaCommand type")
 		}
+	case *cborplugin.ParametersRequest:
 	default:
 		return errors.New("Invalid Command, expected cborplugin.Request")
 	}
