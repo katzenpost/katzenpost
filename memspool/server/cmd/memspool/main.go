@@ -126,7 +126,7 @@ func (s *spoolRequestHandler) OnCommand(cmd cborplugin.Command) error {
 		// memspool doesn't set any custom parameters in the PKI, so let the
 		// cborplugin.Client populate cborplugin.Parameters{}.
 		// and we don't know what the required endpoint field should be anyway
-		return nil, nil
+		return nil
 	default:
 		s.log.Errorf("OnCommand called with unknown Command type")
 		return errors.New("Invalid Command type")
