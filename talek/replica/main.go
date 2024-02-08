@@ -26,7 +26,6 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"time"
 
 	"github.com/fxamacker/cbor/v2"
 	"github.com/katzenpost/katzenpost/core/log"
@@ -88,14 +87,22 @@ func main() {
 	socketFile := filepath.Join(tmpDir, fmt.Sprintf("%d.talek_replica.socket", os.Getpid()))
 
 	// instantiate replica configuration, with defaults
-	serverConfig := server.Config{
+	serverConfig := &server.Config{
 		Config:           &tCommon.Config{},
-		WriteInterval:    time.Second,
-		ReadInterval:     time.Second,
-		ReadBatch:        8,
 		TrustDomain:      &tCommon.TrustDomainConfig{},
-		TrustDomainIndex: 0,
 	}
+
+	// read cfgFile
+	cfgString, err := ioutil.ReadFile(cfgFile)
+	if err != nil {
+		panic(err)
+	}
+
+	// deserialize cfgFile
+	if err = json.Unmarshal(cfgString, &serverConfig); err != nil {
+		panic(err)
+	}
+
 	// read commonCfgFile
 	commonString, err := ioutil.ReadFile(commonCfgFile)
 	if err != nil {
@@ -106,6 +113,7 @@ func main() {
 	if err = json.Unmarshal(commonString, serverConfig.Config); err != nil {
 		panic(err)
 	}
+
 	// emit socketFile to stdout, because this tells the mix server where to connect
 	// do this BEFORE starting the replica, because talek writes to stdout too
 	// XXX: unfortunately mix server tries to dial the socket before we've started it
@@ -113,9 +121,9 @@ func main() {
 	fmt.Printf("%s\n", socketFile)
 
 	// instantiate replica srever
-	replica := server.NewReplica(serverConfig.TrustDomain.Name, backing, serverConfig)
+	replica := server.NewReplica(serverConfig.TrustDomain.Name, backing, *serverConfig)
 
-	h := &talekRequestHandler{replica: replica, log: serverLog, config: &serverConfig}
+	h := &talekRequestHandler{replica: replica, log: serverLog, config: serverConfig}
 	cbserver := cborplugin.NewServer(serverLog, socketFile, h)
 	cbserver.Accept()
 	cbserver.Wait()
