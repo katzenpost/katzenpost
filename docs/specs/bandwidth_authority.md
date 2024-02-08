@@ -90,23 +90,37 @@ We would ideally like to prevent a single entity from operating multiple mix nod
 in different topology layers. Without some form of absolute mix operator identity, there is
 no way for us to enforce this if we are adding new mix nodes to every network topology layer.
 
-Likewise in a batch mixing scenario we'd want to make sure that a single entity doesn't
-operate more than one mix node per cascade. Why do we want to enforce where
-a given entity's mix is situated in the network? A bad mix network route is defined
-as a route where every mix is bad acting, compromised or colluding with one another.
+The any trust assumption states: as long as there is one honest mix is a given route
+adveraries will not be able to link a packet going into the mix network with it's
+final destination. Likewise, a bad route is defined as a route where every hop
+is a bad acting mix node.
 
-There may well be no decent solution to the above dilemma without also implementing
-verified mix routing, essentially BFT like protocol for the mix network which can
-detect bad mixes and remove them, just as described in:
+Therefore, when we add many new mix nodes to the network we alter the
+probability of select bad mixes and bad routes. If a given adversary is
+able to place many mixes in each layer then there's an increased chance
+that clients will select a bad route completely controlled by that adversary.
+
+Likewise in a batch mixing scenario we'd want to make sure that a single entity doesn't
+operate more than one mix node per cascade.
+
+In either case, stratified topology with continuous time mixing or many cascades with
+batch mixing; the solution to the above problem is to have an enforced identity system
+such that the dirauth can enforce the topology rules of mix node placement.
+
+However it is probably acceptable to ignore the above problem if there is a mechanism
+to detect and remove bad mixes such as is described in this paper:
 
 * "No right to remain silent: Isolating Malicious Mixes"
   by Hemi Leibowitz, Ania Piotrowska, George Danezis, and Amir Herzberg 
   https://eprint.iacr.org/2017/1000
 
-All that having been said, our Mix descriptor format must have an additional field to
-indicate the operator's identity. Perhaps initialy we could make this operator identity
-field be a 32 byte hash of some other key that we know them by, for example, the
-mix descriptor with the addition of such a field looks like this in golang:
+
+We can enforce the topology rules as a sort of naive best effort
+attempt to enforce our topology rules of mix node placement in the context
+of a non-enforceable identity system. In that case each opeartor
+would have a unique 32 byte identity tag such that when they
+operatore multiple mixes, each mix descriptor would have that same tag in their
+`OperatorIdentity` field:
 
 ```
 // MixDescriptor is a description of a given Mix or Provider (node).
