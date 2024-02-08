@@ -11,8 +11,7 @@ require (
 	github.com/henrydcase/nobs v0.0.0-20230313231516-25b66236df73
 	github.com/jackc/pgx v3.6.2+incompatible
 	github.com/katzenpost/chacha20poly1305 v0.0.0-20211026103954-7b6fb2fc0129
-	github.com/katzenpost/hpqc v0.0.3-0.20240207221731-873fa802001e
-	github.com/katzenpost/nyquist v0.0.5-0.20240207222845-4d1fe546da8a
+	github.com/katzenpost/nyquist v0.0.5
 	github.com/prometheus/client_golang v1.18.0
 	github.com/stretchr/testify v1.8.4
 	github.com/ugorji/go/codec v1.2.12
@@ -44,7 +43,8 @@ require (
 	github.com/gofrs/uuid v4.4.0+incompatible // indirect
 	github.com/jackc/fake v0.0.0-20150926172116-812a484cc733 // indirect
 	github.com/katzenpost/chacha20 v0.0.0-20190910113340-7ce890d6a556 // indirect
-	github.com/katzenpost/circl v0.0.1-0.20240207222605-76395c8a6bd1 // indirect
+	github.com/katzenpost/circl v0.0.1-0.20240208011206-18895641f848 // indirect
+	github.com/katzenpost/hpqc v0.0.3-0.20240208011326-74b423350c98 // indirect
 	github.com/katzenpost/sntrup4591761 v0.0.0-20231024131303-8755eb1986b8 // indirect
 	github.com/katzenpost/sphincsplus v0.0.2-0.20240114192234-1dc77b544e31 // indirect
 	github.com/kr/text v0.2.0 // indirect
