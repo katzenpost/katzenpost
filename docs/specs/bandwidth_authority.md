@@ -16,10 +16,11 @@ mixnet protocol that can be optionally enabled.
 
 ## 1. Introduction
 
-The basic idea is that we have some kind of testing heuristic for validating new
-mix nodes. The goal of this protocol is to cause the directory authority servers
-to add the new mix nodes into it's hot spare pool. This protocol addition will
-require changes to the dirauth server AND the mix node server.
+The basic idea is that we have some kind of testing heuristic for
+validating new mix nodes. The goal of this protocol is to cause the
+directory authority servers to add the new mix nodes into it's hot
+spare pool. This protocol addition will require changes to the dirauth
+server AND the mix node server.
 
 ### 1.1 Terminology
 
@@ -85,30 +86,35 @@ batch mix networks is simples than continuous time mix networks.
 ## 2. Threat Model
 
 There is some tension between growing the network as fast as possible
-and keeping the network secure in the sense of not having too many bad acting mix nodes.
-We would ideally like to prevent a single entity from operating multiple mix nodes
-in different topology layers. Without some form of absolute mix operator identity, there is
-no way for us to enforce this if we are adding new mix nodes to every network topology layer.
+and keeping the network secure in the sense of not having too many bad
+acting mix nodes.  We would ideally like to prevent a single entity
+from operating multiple mix nodes in different topology
+layers. Without some form of absolute mix operator identity, there is
+no way for us to enforce this if we are adding new mix nodes to every
+network topology layer.
 
-The any trust assumption states: as long as there is one honest mix is a given route
-adveraries will not be able to link a packet going into the mix network with it's
-final destination. Likewise, a bad route is defined as a route where every hop
-is a bad acting mix node.
+The any trust assumption states: as long as there is one honest mix is
+a given route adveraries will not be able to link a packet going into
+the mix network with it's final destination. Likewise, a bad route is
+defined as a route where every hop is a bad acting mix node.
 
 Therefore, when we add many new mix nodes to the network we alter the
-probability of select bad mixes and bad routes. If a given adversary is
-able to place many mixes in each layer then there's an increased chance
-that clients will select a bad route completely controlled by that adversary.
+probability of select bad mixes and bad routes. If a given adversary
+is able to place many mixes in each layer then there's an increased
+chance that clients will select a bad route completely controlled by
+that adversary.
 
-Likewise in a batch mixing scenario we'd want to make sure that a single entity doesn't
-operate more than one mix node per cascade.
+Likewise in a batch mixing scenario we'd want to make sure that a
+single entity doesn't operate more than one mix node per cascade.
 
-In either case, stratified topology with continuous time mixing or many cascades with
-batch mixing; the solution to the above problem is to have an enforced identity system
-such that the dirauth can enforce the topology rules of mix node placement.
+In either case, stratified topology with continuous time mixing or
+many cascades with batch mixing; the solution to the above problem is
+to have an enforced identity system such that the dirauth can enforce
+the topology rules of mix node placement.
 
-However it is probably acceptable to ignore the above problem if there is a mechanism
-to detect and remove bad mixes such as is described in this paper:
+However it is probably acceptable to ignore the above problem if there
+is a mechanism to detect and remove bad mixes such as is described in
+this paper:
 
 * "No right to remain silent: Isolating Malicious Mixes"
   by Hemi Leibowitz, Ania Piotrowska, George Danezis, and Amir Herzberg 
@@ -192,12 +198,16 @@ The dirauths therefore need an additional finite state machine to handle this:
 5. if approved, add the mix to the mix hotspare pool
 6. send approval/rejection message to new mix node
 
-Currently the PKI epoch duration is 20 minutes. Therefore new mix node registrations will take at least
-20 minutes. In the above protocol description, ideally every dirauth node knows about the new mix
-node registration request. Thus each dirauth can assign it's own bandwidth authority node to probe
-the new mix node. Each will likewise in turn report it's statistics to the dirauth that requested
-it's service. The consensus (aka voting) protocol will then make use of the set of approvals/rejections
-for each of the new mix node registrations within the epoch boundary. Therefore if a majoriy of dirauths
-approve of a mix registration then that mix node will be added to the dirauth hot spare pool.
+Currently the PKI epoch duration is 20 minutes. Therefore new mix node
+registrations will take at least 20 minutes. In the above protocol
+description, ideally every dirauth node knows about the new mix node
+registration request. Thus each dirauth can assign it's own bandwidth
+authority node to probe the new mix node. Each will likewise in turn
+report it's statistics to the dirauth that requested it's service. The
+consensus (aka voting) protocol will then make use of the set of
+approvals/rejections for each of the new mix node registrations within
+the epoch boundary. Therefore if a majoriy of dirauths approve of a
+mix registration then that mix node will be added to the dirauth hot
+spare pool.
 
 
