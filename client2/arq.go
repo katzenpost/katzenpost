@@ -5,7 +5,6 @@ package client2
 import (
 	"crypto/hmac"
 	"errors"
-	"sync"
 	"time"
 
 	"github.com/charmbracelet/log"
@@ -26,6 +25,16 @@ const (
 
 	MaxRetransmissions = 3
 )
+
+type handleAckCtx struct {
+	surbid  *[sConstants.SURBIDLength]byte
+	replyCh chan *replyDescriptor
+}
+
+type hasCtx struct {
+	surbid  *[sConstants.SURBIDLength]byte
+	replyCh chan bool
+}
 
 type SphinxComposerSender interface {
 	SendPacket(pkt []byte) error
@@ -84,7 +93,6 @@ type ARQ struct {
 	log *log.Logger
 
 	timerQueue *TimerQueue
-	lock       sync.RWMutex
 	gcSurbIDCh chan *[sConstants.SURBIDLength]byte
 	surbIDMap  map[[sConstants.SURBIDLength]byte]*ARQMessage
 
@@ -93,6 +101,11 @@ type ARQ struct {
 
 	sendCh   chan *sendCtx
 	resendCh chan *[sConstants.SURBIDLength]byte
+
+	hasCh      chan *hasCtx
+	hasReplyCh chan bool
+
+	handleAckCh chan *handleAckCtx
 }
 
 // NewARQ creates a new ARQ.
@@ -107,6 +120,8 @@ func NewARQ(sphinxComposerSender SphinxComposerSender, sentEventSender SentEvent
 		sentEventSender:      sentEventSender,
 		sendCh:               make(chan *sendCtx, 2),
 		resendCh:             make(chan *[sConstants.SURBIDLength]byte, 2),
+		hasCh:                make(chan *hasCtx, 0),
+		handleAckCh:          make(chan *handleAckCtx, 0),
 	}
 }
 
@@ -150,15 +165,12 @@ func (a *ARQ) doResend(surbID *[sConstants.SURBIDLength]byte) {
 	a.log.Info("resend start")
 	defer a.log.Info("resend end")
 
-	a.lock.Lock()
-
 	message, ok := a.surbIDMap[*surbID]
 	// NOTE(david): if the surbIDMap entry is not found
 	// it means that HandleAck was already called with the
 	// given SURB ID.
 	if !ok {
 		a.log.Warnf("SURB ID %x NOT FOUND. Aborting resend.", surbID[:])
-		a.lock.Unlock()
 		return
 	}
 	if (message.Retransmissions + 1) > MaxRetransmissions {
@@ -171,7 +183,6 @@ func (a *ARQ) doResend(surbID *[sConstants.SURBIDLength]byte) {
 			},
 		}
 		a.sentEventSender.SentEvent(response)
-		a.lock.Unlock()
 		return
 	}
 
@@ -194,7 +205,6 @@ func (a *ARQ) doResend(surbID *[sConstants.SURBIDLength]byte) {
 		IsARQSendOp:       true,
 	})
 	if err != nil {
-		a.lock.Unlock()
 		a.log.Errorf("failed to send sphinx packet: %s", err.Error())
 	}
 
@@ -205,7 +215,6 @@ func (a *ARQ) doResend(surbID *[sConstants.SURBIDLength]byte) {
 	message.Retransmissions += 1
 
 	a.surbIDMap[*newsurbID] = message
-	a.lock.Unlock()
 
 	a.log.Warnf("resend PUTTING INTO MAP, NEW SURB ID %x", newsurbID[:])
 
@@ -223,17 +232,12 @@ func (a *ARQ) doResend(surbID *[sConstants.SURBIDLength]byte) {
 // Has checks if a given SURB ID exists.
 func (a *ARQ) Has(surbID *[sConstants.SURBIDLength]byte) bool {
 	a.log.Info("Has")
-
-	a.lock.RLock()
-	a.log.Info("Has got lock")
-	m, ok := a.surbIDMap[*surbID]
-	a.lock.RUnlock()
-
-	if ok {
-		a.log.Infof("Has SURBID %x message ID %x", surbID[:], m.MessageID[:])
-	} else {
-		a.log.Infof("Has SURB NOT FOUND! SURBID %x", surbID[:])
+	replyCh := make(chan bool, 0)
+	a.hasCh <- &hasCtx{
+		surbid:  surbID,
+		replyCh: replyCh,
 	}
+	ok := <-replyCh
 	return ok
 }
 
@@ -242,35 +246,15 @@ func (a *ARQ) Has(surbID *[sConstants.SURBIDLength]byte) bool {
 // to the correct application.
 func (a *ARQ) HandleAck(surbID *[sConstants.SURBIDLength]byte) (*replyDescriptor, error) {
 	a.log.Info("HandleAck")
-	a.lock.Lock()
 
-	m, ok := a.surbIDMap[*surbID]
-	if ok {
-		a.log.Infof("HandleAck ID %x", m.MessageID[:])
-	} else {
-		a.log.Error("HandleAck: failed to find SURB ID in ARQ map")
-		a.lock.Unlock()
-		return nil, errors.New("failed to find SURB ID in ARQ map")
+	replyCh := make(chan *replyDescriptor, 0)
+	a.handleAckCh <- &handleAckCtx{
+		surbid:  surbID,
+		replyCh: replyCh,
 	}
+	replyDesc := <-replyCh
 
-	a.log.Warnf("HandleAck ----------------- REMOVING SURB ID %x", surbID[:])
-	delete(a.surbIDMap, *surbID)
-	a.lock.Unlock()
-
-	peeked := a.timerQueue.Peek()
-	if peeked != nil {
-		peekSurbId := peeked.Value.(*[sConstants.SURBIDLength]byte)
-		if hmac.Equal(surbID[:], peekSurbId[:]) {
-			a.log.Warn("HandleAck Popped")
-			a.timerQueue.Pop()
-		}
-	}
-
-	return &replyDescriptor{
-		ID:      m.MessageID,
-		appID:   m.AppID,
-		surbKey: m.SURBDecryptionKeys,
-	}, nil
+	return replyDesc, nil
 }
 
 // Send sends a message asynchronously. Sometime later, perhaps a reply will be received.
@@ -307,19 +291,10 @@ func (a *ARQ) Send(appid *[AppIDLength]byte, id *[MessageIDLength]byte, payload 
 		ReplyETA:           rtt,
 	}
 	a.log.Warnf("Send PUTTING INTO MAP, NEW SURB ID %x", surbID[:])
-	a.lock.Lock()
-	a.surbIDMap[*surbID] = message
-	a.lock.Unlock()
-
 	a.sendCh <- &sendCtx{
 		arqMessage: message,
 		pkt:        pkt,
 	}
-
-	myRtt := message.SentAt.Add(message.ReplyETA)
-	myRtt = myRtt.Add(RoundTripTimeSlop)
-	priority := uint64(myRtt.UnixNano())
-	a.timerQueue.Push(priority, surbID)
 
 	return rtt, nil
 }
@@ -331,8 +306,23 @@ func (a *ARQ) egressWorker() {
 			return
 		case surbID := <-a.resendCh:
 			a.doResend(surbID)
-		case r := <-a.sendCh:
-			a.doSend(r)
+		case ctx := <-a.sendCh:
+			message := ctx.arqMessage
+			a.surbIDMap[*message.SURBID] = message
+			myRtt := message.SentAt.Add(message.ReplyETA)
+			myRtt = myRtt.Add(RoundTripTimeSlop)
+			priority := uint64(myRtt.UnixNano())
+			a.timerQueue.Push(priority, message.SURBID)
+			a.doSend(ctx)
+		case ctx := <-a.hasCh:
+			_, ok := a.surbIDMap[*ctx.surbid]
+			ctx.replyCh <- ok
+		case ctx := <-a.handleAckCh:
+			replyDesc, err := a.doHandleAck(ctx.surbid)
+			if err != nil {
+				continue
+			}
+			ctx.replyCh <- replyDesc
 		}
 	}
 }
@@ -350,4 +340,30 @@ func (a *ARQ) doSend(s *sendCtx) {
 		},
 	}
 	a.sentEventSender.SentEvent(response)
+}
+
+func (a *ARQ) doHandleAck(surbid *[sConstants.SURBIDLength]byte) (*replyDescriptor, error) {
+	m, ok := a.surbIDMap[*surbid]
+	if ok {
+		a.log.Infof("HandleAck ID %x", m.MessageID[:])
+	} else {
+		a.log.Error("HandleAck: failed to find SURB ID in ARQ map")
+		return nil, errors.New("failed to find SURB ID in ARQ map")
+	}
+
+	delete(a.surbIDMap, *surbid)
+	peeked := a.timerQueue.Peek()
+	if peeked != nil {
+		peekSurbId := peeked.Value.(*[sConstants.SURBIDLength]byte)
+		if hmac.Equal(surbid[:], peekSurbId[:]) {
+			a.log.Warn("HandleAck Popped")
+			a.timerQueue.Pop()
+		}
+	}
+
+	return &replyDescriptor{
+		ID:      m.MessageID,
+		appID:   m.AppID,
+		surbKey: m.SURBDecryptionKeys,
+	}, nil
 }
