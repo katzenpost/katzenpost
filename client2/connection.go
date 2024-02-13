@@ -89,7 +89,6 @@ func newProtocolError(f string, a ...interface{}) error {
 }
 
 type connection struct {
-	sync.Mutex
 	worker.Worker
 
 	client *Client
@@ -102,8 +101,10 @@ type connection struct {
 	sendCh         chan *connSendCtx
 	getConsensusCh chan *getConsensusCtx
 
-	retryDelay  int64 // used as atomic time.Duration
-	isConnected bool
+	retryDelay int64 // used as atomic time.Duration
+
+	isConnectedLock sync.RWMutex
+	isConnected     bool
 
 	provider *[32]byte
 	queueID  []byte
@@ -674,11 +675,15 @@ func (c *connection) onConnStatusChange(err error) {
 		return
 	}
 	c.log.Info("onConnStatusChange")
-	c.Lock()
+
 	if err == nil {
+		c.isConnectedLock.Lock()
 		c.isConnected = true
+		c.isConnectedLock.Unlock()
 	} else {
+		c.isConnectedLock.Lock()
 		c.isConnected = false
+		c.isConnectedLock.Unlock()
 		// Force drain the channels used to poke the loop.
 		select {
 		case ctx := <-c.sendCh:
@@ -695,7 +700,6 @@ func (c *connection) onConnStatusChange(err error) {
 		default:
 		}
 	}
-	c.Unlock()
 
 	if c.client.cfg.Callbacks.OnConnFn != nil {
 		c.client.cfg.Callbacks.OnConnFn(err)
@@ -705,12 +709,12 @@ func (c *connection) onConnStatusChange(err error) {
 // sendPacket blocks until the packet is sent
 // on the wire.
 func (c *connection) sendPacket(pkt []byte) error {
-	c.Lock()
+	c.isConnectedLock.RLock()
 	if !c.isConnected {
-		c.Unlock()
+		c.isConnectedLock.RUnlock()
 		return ErrNotConnected
 	}
-	c.Unlock()
+	c.isConnectedLock.RUnlock()
 
 	errCh := make(chan error)
 	select {
@@ -735,12 +739,12 @@ func (c *connection) sendPacket(pkt []byte) error {
 
 func (c *connection) GetConsensus(ctx context.Context, epoch uint64) (*commands.Consensus, error) {
 	c.log.Debug("getConsensus")
-	c.Lock()
+	c.isConnectedLock.RLock()
 	if !c.isConnected {
-		c.Unlock()
+		c.isConnectedLock.RUnlock()
 		return nil, ErrNotConnected
 	}
-	c.Unlock()
+	c.isConnectedLock.RUnlock()
 
 	errCh := make(chan error)
 	replyCh := make(chan interface{})

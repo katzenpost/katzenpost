@@ -37,7 +37,6 @@ type ConsensusGetter interface {
 }
 
 type pki struct {
-	sync.Mutex
 	worker.Worker
 
 	c               *Client
@@ -47,6 +46,8 @@ type pki struct {
 
 	docs          sync.Map
 	failedFetches map[uint64]error
+
+	clockSkewLock sync.RWMutex
 	clockSkew     int64
 
 	forceUpdateCh chan interface{}
@@ -58,8 +59,8 @@ type pki struct {
 // this routine should not be made until the first `ClientConfig.OnConnFn(true)`
 // callback.
 func (c *Client) ClockSkew() time.Duration {
-	c.pki.Lock()
-	defer c.pki.Unlock()
+	c.pki.clockSkewLock.RLock()
+	defer c.pki.clockSkewLock.RUnlock()
 
 	return time.Duration(c.pki.clockSkew) * time.Second
 }
@@ -84,9 +85,9 @@ func (c *Client) WaitForCurrentDocument() {
 
 func (p *pki) setClockSkew(skew int64) {
 	p.log.Debugf("New clock skew: %v sec", skew)
-	p.Lock()
+	p.clockSkewLock.Lock()
 	p.clockSkew = skew
-	p.Unlock()
+	p.clockSkewLock.Unlock()
 
 	// Wake up the worker if able to.
 	select {
@@ -100,8 +101,8 @@ func (p *pki) skewedUnixTime() int64 {
 		return time.Now().Unix()
 	}
 
-	p.Lock()
-	defer p.Unlock()
+	p.clockSkewLock.RLock()
+	defer p.clockSkewLock.RUnlock()
 
 	return time.Now().Unix() + p.clockSkew
 }
