@@ -384,7 +384,38 @@ type Config struct {
 	Providers []*Node
 	Topology  *Topology
 
+	RegistrationPlugin *RegistrationPlugin
+
 	SphinxGeometry *geo.Geometry
+}
+
+// RegistrationPlugin is an optional feature set
+// that allows mix node registration.
+type RegistrationPlugin struct {
+	// Config is the extra per agent arguments to be passed to the agent's
+	// initialization routine.
+	Config map[string]interface{}
+
+	// Command is the full file path to the external plugin program
+	// that implements this Kaetzchen service.
+	Command string
+
+	// MaxConcurrency is the number of worker goroutines to start
+	// for this service.
+	MaxConcurrency int
+
+	// Disable disabled a configured registration plugin.
+	Disable bool
+}
+
+func (r *RegistrationPlugin) Validate() error {
+	if r.Command == "" {
+		return errors.New("RegistrationPlugin error: Command is empty string")
+	}
+	if r.MaxConcurrency < 1 {
+		return errors.New("RegistrationPlugin error: MaxConcurrency is < 1")
+	}
+	return nil
 }
 
 // Layer holds a slice of Nodes
@@ -401,6 +432,13 @@ type Topology struct {
 // supplied configuration.  Most people should call one of the Load variants
 // instead.
 func (cfg *Config) FixupAndValidate() error {
+
+	if cfg.RegistrationPlugin != nil {
+		err := cfg.RegistrationPlugin.Validate()
+		if err != nil {
+			return err
+		}
+	}
 
 	if cfg.SphinxGeometry == nil {
 		return errors.New("config: No SphinxGeometry block was present")
