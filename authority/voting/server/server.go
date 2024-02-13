@@ -321,6 +321,10 @@ func New(cfg *config.Config) (*Server, error) {
 		return nil, fmt.Errorf("authority: failed to start all listeners")
 	}
 
+	if s.cfg.RegistrationPlugin != nil {
+		s.startRegistrationHandler()
+	}
+
 	isOk = true
 	return s, nil
 }
