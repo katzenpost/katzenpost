@@ -234,7 +234,7 @@ func main() {
 	// generate a client configuration to use with talekclient
 	// XXX : find out how to populate Config
 	commoncfg := commonCfgs[0]
-	clientConfig := libtalek.ClientConfig{Config: commoncfg, FrontendAddr: listen}
+	clientConfig := libtalek.ClientConfig{Config: &tCommon.Config{}, FrontendAddr: "127.0.0.1"+listen}
 	commonJson, err := json.Marshal(commoncfg)
 	if err != nil {
 		fmt.Println(err)
