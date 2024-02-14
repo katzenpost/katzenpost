@@ -119,16 +119,12 @@ func NewKPFrontendServer(name string, session *client.Session, serverConfig *ser
 }
 
 func main() {
-	var configPath string
 	var kpConfigPath string
-	var commonPath string
 	var listen string
 	var verbose bool
 
 	// add mixnet config
 	flag.StringVar(&kpConfigPath, "kpconfig", "client.toml", "Katzenpost Configuration")
-	flag.StringVar(&configPath, "config", "replica.conf", "Talek Replica Configuration")
-	flag.StringVar(&commonPath, "common", "common.conf", "Talek Common Configuration")
 	flag.StringVar(&listen, "listen", ":8080", "Listening Address")
 	flag.BoolVar(&verbose, "verbose", false, "Verbose output")
 	flag.Parse()
@@ -147,22 +143,6 @@ func main() {
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(-1)
-	}
-
-	// create a server.Config
-	serverConfig := &server.Config{
-		Config:           &tCommon.Config{},
-		WriteInterval:    time.Second,
-		ReadInterval:     time.Second,
-		ReadBatch:        8,
-		TrustDomain:      &tCommon.TrustDomainConfig{},
-		TrustDomainIndex: 0,
-	}
-
-	config := libtalek.ClientConfigFromFile(configPath)
-	if config == nil {
-		flag.Usage()
-		return
 	}
 
 	// bootstrap mixnet
@@ -188,10 +168,11 @@ func main() {
 		os.Exit(-1)
 	}
 
-	replicas := make([]*ReplicaKPC, 0, len(descs))
-	for i, d := range descs {
+	replicas := make([]*ReplicaKPC, 0)
+	trustDomainCfgs := make([]*tCommon.TrustDomainConfig, 0)
+	for _, desc := range descs {
 		// get the publickeys from the MixDescriptor
-		md, err := pkiDoc.GetProvider(d.Provider)
+		md, err := pkiDoc.GetProvider(desc.Provider)
 		if err != nil {
 			fmt.Println(err)
 			continue
@@ -200,56 +181,79 @@ func main() {
 		// obtain the plugin parameters
 		kpReplicaParams, ok := md.Kaetzchen[talekReplicaService]
 		if !ok {
-			fmt.Println("Failed to find talek replica plugin parameters for ", d.Provider)
+			fmt.Println("Failed to find talek replica plugin parameters for ", desc.Provider)
 			continue
 		}
 
-		pubKey, ok := kpReplicaParams["PublicKey"]
-		if !ok {
-			fmt.Println("Failed to find talek replica parameter PublickKey for ", d.Provider)
-			continue
-		}
-		signPubKey, ok := kpReplicaParams["SignPublicKey"]
-		if !ok {
-			fmt.Println("Failed to find talek replica parameter SignPublickKey for ", d.Provider)
+		trustDomainCfg, err := trustDomainFromParams(desc.Name, desc.Provider, kpReplicaParams)
+		if err != nil {
+			fmt.Println("trustDomainFromParams returned %v", err)
 			continue
 		}
 
-		// copy the key material into arrays
-		var signPubKeyArray [32]byte
-		var pubKeyArray [32]byte
-		if signPubKey, ok := signPubKey.([]byte); ok {
-			copy(signPubKeyArray[:], signPubKey)
-		} else {
-			fmt.Println("Invalid type for SignPublicKey")
-			continue
-		}
-		if pubKey, ok := pubKey.([]byte); ok {
-			copy(pubKeyArray[:], pubKey)
-		} else {
-			fmt.Println("Invalid type for PublicKey")
-			continue
-		}
-
-		// make a TrustDomainConfig for this replica
-		trustDomainCfg := tCommon.TrustDomainConfig{
-			Name:          d.Name + "@" + d.Provider,
-			Address:       "kp://" + d.Name + "@" + d.Provider,
-			IsValid:       true,
-			IsDistributed: true,
-			PublicKey:     pubKeyArray,
-			SignPublicKey: signPubKeyArray,
-		}
+		// keep the trustDomain configs for the client config
+		trustDomainCfgs = append(trustDomainCfgs, trustDomainCfg)
 
 		// make a replica instance
-		replicas[i] = NewReplicaKPC(d.Name, d.Provider, session, &trustDomainCfg)
+		replicas = append(replicas, NewReplicaKPC(desc.Name, desc.Provider, session, trustDomainCfg))
 	}
 
-	// XXX: can TrustDomainConfig have an Address of format kaetchen@provider
-	//f := server.NewFrontendServer("Talek Frontend", serverConfig, config.TrustDomains)
+	// create a server.Config
+	serverConfig := &server.Config{
+		// XXX: this should be learned from PKI too
+		Config:           &tCommon.Config{},
+		WriteInterval:    defaultWriteInterval,
+		ReadInterval:     defaultReadInterval,
+		ReadBatch:        defaultReadBatch,
+		TrustDomain:      &tCommon.TrustDomainConfig{},
+		TrustDomainIndex: 0,
+	}
+
+	// start the frontend server
 	f := NewKPFrontendServer("Talek Frontend", session, serverConfig, replicas)
 	f.Frontend.Verbose = true // *verbose
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, os.Interrupt)
+
+	// generate a client configuration to use with talekclient
+	clientConfig := libtalek.ClientConfig{WriteInterval: defaultWriteInterval, ReadInterval: defaultReadInterval}
+	clientConfig.Config =  
+
 	<-sigCh
 }
+func trustDomainFromParams(endpoint string, provider string, kpReplicaParams map[string]interface{}) (*tCommon.TrustDomainConfig, error) {
+	pubKey, ok := kpReplicaParams["PublicKey"]
+	if !ok {
+		return nil, fmt.Errorf("Failed to find talek replica parameter PublickKey for ", provider)
+	}
+	signPubKey, ok := kpReplicaParams["SignPublicKey"]
+	if !ok {
+		return nil, fmt.Errorf("Failed to find talek replica parameter SignPublickKey for ", provider)
+	}
+
+	// copy the key material into arrays
+	var signPubKeyArray [32]byte
+	var pubKeyArray [32]byte
+	if signPubKey, ok := signPubKey.([]byte); ok {
+		copy(signPubKeyArray[:], signPubKey)
+	} else {
+		return nil, fmt.Errorf("Invalid type for SignPublicKey")
+	}
+	if pubKey, ok := pubKey.([]byte); ok {
+		copy(pubKeyArray[:], pubKey)
+	} else {
+		return nil, fmt.Errorf("Invalid type for PublicKey")
+	}
+
+	// make a TrustDomainConfig for this replica
+	trustDomainCfg := tCommon.TrustDomainConfig{
+		Name:          endpoint + "@" + provider,
+		Address:       "kp://" + endpoint + "@" + provider,
+		IsValid:       true,
+		IsDistributed: true,
+		PublicKey:     pubKeyArray,
+		SignPublicKey: signPubKeyArray,
+	}
+	return &trustDomainCfg, nil
+}
+
