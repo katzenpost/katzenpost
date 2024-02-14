@@ -4,6 +4,7 @@
 package client2
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	mrand "math/rand"
@@ -55,8 +56,8 @@ type Daemon struct {
 	listener   *listener
 	egressCh   chan *Request
 
-	replies   map[[sConstants.SURBIDLength]byte]replyDescriptor
-	decoys    map[[sConstants.SURBIDLength]byte]replyDescriptor
+	replies   map[[sConstants.SURBIDLength]byte]*replyDescriptor
+	decoys    map[[sConstants.SURBIDLength]byte]*replyDescriptor
 	arq       *ARQ
 	replyLock *sync.Mutex
 
@@ -105,8 +106,8 @@ func NewDaemon(cfg *config.Config) (*Daemon, error) {
 		cfg:        cfg,
 		egressCh:   make(chan *Request, egressSize),
 		replyCh:    make(chan *sphinxReply, 2),
-		replies:    make(map[[sConstants.SURBIDLength]byte]replyDescriptor),
-		decoys:     make(map[[sConstants.SURBIDLength]byte]replyDescriptor),
+		replies:    make(map[[sConstants.SURBIDLength]byte]*replyDescriptor),
+		decoys:     make(map[[sConstants.SURBIDLength]byte]*replyDescriptor),
 		gcSurbIDCh: make(chan *[sConstants.SURBIDLength]byte),
 		gcReplyCh:  make(chan *gcReply),
 		replyLock:  new(sync.Mutex),
@@ -271,35 +272,42 @@ func (d *Daemon) ingressWorker() {
 	}
 }
 
-func (d *Daemon) handleReply(reply *sphinxReply) {
-	d.log.Warn("Reply Received")
+func (d *Daemon) getReplyDesc(surbID *[sConstants.SURBIDLength]byte) (*replyDescriptor, bool, error) {
 	isDecoy := false
 	d.replyLock.Lock()
-	desc, ok := d.replies[*reply.surbID]
+	desc, ok := d.replies[*surbID]
 	if !ok {
-		desc, ok = d.decoys[*reply.surbID]
+		desc, ok = d.decoys[*surbID]
 		if ok {
 			isDecoy = true
-		} else {
-			if d.arq.Has(reply.surbID) {
-				myDesc, err := d.arq.HandleAck(reply.surbID)
-				if err != nil {
-					d.log.Infof("failed to handle ACK")
-					d.replyLock.Unlock()
-					return
-				}
-				desc = *myDesc
-			} else {
-				d.log.Infof("reply descriptor not found for SURB ID %x", reply.surbID[:])
-				d.replyLock.Unlock()
-				return
+		}
+	}
+	delete(d.replies, *surbID)
+	delete(d.decoys, *surbID)
+	d.replyLock.Unlock()
+	if isDecoy {
+		return desc, isDecoy, nil
+	}
+	if desc == nil {
+		if d.arq.Has(surbID) {
+			d.replyLock.Unlock()
+			myDesc, err := d.arq.HandleAck(surbID)
+			if err == nil {
+				return myDesc, false, nil
 			}
 		}
-
 	}
-	delete(d.replies, *reply.surbID)
-	delete(d.decoys, *reply.surbID)
-	d.replyLock.Unlock()
+	return nil, false, errors.New("replyDescriptor not found for the given SURB ID")
+}
+
+func (d *Daemon) handleReply(reply *sphinxReply) {
+	d.log.Warn("Reply Received")
+	desc, isDecoy, err := d.getReplyDesc(reply.surbID)
+	if err != nil {
+		d.log.Errorf("handleReply failure: %s", err)
+		return
+	}
+
 	s, err := sphinx.FromGeometry(d.client.cfg.SphinxGeometry)
 	if err != nil {
 		panic(err)
@@ -328,7 +336,6 @@ func (d *Daemon) handleReply(reply *sphinxReply) {
 			Payload:   plaintext,
 		},
 	})
-
 }
 
 func (d *Daemon) sendARQMessage(request *Request) {
@@ -401,7 +408,7 @@ func (d *Daemon) send(request *Request) {
 
 	d.replyLock.Lock()
 	if request.IsSendOp {
-		d.replies[*request.SURBID] = replyDescriptor{
+		d.replies[*request.SURBID] = &replyDescriptor{
 			appID:   request.AppID,
 			surbKey: surbKey,
 		}
@@ -410,7 +417,7 @@ func (d *Daemon) send(request *Request) {
 	}
 
 	if request.IsLoopDecoy {
-		d.decoys[*request.SURBID] = replyDescriptor{
+		d.decoys[*request.SURBID] = &replyDescriptor{
 			appID:   request.AppID,
 			surbKey: surbKey,
 		}
