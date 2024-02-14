@@ -161,16 +161,13 @@ func (s *katzenpost) genNodeConfig(isProvider bool, isVoting bool) error {
 
 	// PKI section.
 	if isVoting {
-		authorities := make([]*vConfig.Authority, 0, len(s.votingAuthConfigs))
-		for _, authCfg := range s.votingAuthConfigs {
-			auth := &vConfig.Authority{
-				Identifier:        authCfg.Server.Identifier,
-				IdentityPublicKey: cfgIdKey(authCfg, s.outDir),
-				LinkPublicKey:     cfgLinkKey(authCfg, s.outDir),
-				Addresses:         authCfg.Server.Addresses,
-			}
+		authorities := make([]*vConfig.Authority, 0, len(s.authorities))
+		i := 0
+		for _, auth := range s.authorities {
 			authorities = append(authorities, auth)
+			i += 1
 		}
+
 		sort.Sort(AuthById(authorities))
 		cfg.PKI = &sConfig.PKI{
 			Voting: &sConfig.Voting{

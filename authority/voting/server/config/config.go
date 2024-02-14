@@ -31,6 +31,7 @@ import (
 	"golang.org/x/net/idna"
 
 	"github.com/katzenpost/hpqc/kem"
+	kempem "github.com/katzenpost/hpqc/kem/pem"
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/hpqc/sign"
 	utilpem "github.com/katzenpost/hpqc/util/pem"
@@ -291,7 +292,7 @@ func (a *Authority) UnmarshalTOML(v interface{}) error {
 		return errors.New("type assertion failed")
 	}
 
-	a.LinkPublicKey, err = wire.DefaultScheme.UnmarshalTextPublicKey([]byte(linkPublicKeyString))
+	a.LinkPublicKey, err = kempem.FromPublicPEMString(linkPublicKeyString, wire.DefaultScheme)
 	if err != nil {
 		return err
 	}
