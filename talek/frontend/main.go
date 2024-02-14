@@ -233,14 +233,28 @@ func main() {
 
 	// generate a client configuration to use with talekclient
 	// XXX : find out how to populate Config
-	clientConfig := libtalek.ClientConfig{Config: commonCfgs[0]}
-
-	clientCfg, err := json.Marshal(clientConfig)
+	commoncfg := commonCfgs[0]
+	clientConfig := libtalek.ClientConfig{Config: commoncfg, FrontendAddr: listen}
+	commonJson, err := json.Marshal(commoncfg)
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(-1)
 	}
-	err = ioutil.WriteFile(clientConfigPath, clientCfg, 0660)
+	err = json.Unmarshal(commonJson, &clientConfig)
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(-1)
+	}
+
+	// add trustdomain configs
+	clientConfig.TrustDomains = trustDomainCfgs
+	clientConfigBytes, err := json.Marshal(clientConfig)
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(-1)
+	}
+
+	err = ioutil.WriteFile(clientConfigPath, clientConfigBytes, 0660)
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(-1)
