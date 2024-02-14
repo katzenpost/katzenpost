@@ -68,6 +68,9 @@ type katzenpost struct {
 	clientIdx   int
 	providerIdx int
 	hasPanda    bool
+
+	decoyOff    bool
+	mixDecoyOff bool
 }
 
 type AuthById []*vConfig.Authority
@@ -108,7 +111,7 @@ func (s *katzenpost) genClientCfg() error {
 	cfg.VotingAuthority = &cConfig.VotingAuthority{Peers: peers}
 
 	// Debug section
-	cfg.Debug = &cConfig.Debug{DisableDecoyTraffic: false}
+	cfg.Debug = &cConfig.Debug{DisableDecoyTraffic: s.decoyOff}
 	err := saveCfg(cfg, s.outDir)
 	if err != nil {
 		return err
@@ -154,7 +157,7 @@ func (s *katzenpost) genNodeConfig(isProvider bool, isVoting bool) error {
 
 	// Debug section.
 	cfg.Debug = new(sConfig.Debug)
-	cfg.Debug.SendDecoyTraffic = true
+	cfg.Debug.SendDecoyTraffic = s.mixDecoyOff
 
 	// PKI section.
 	if isVoting {
@@ -363,6 +366,8 @@ func main() {
 	kem := flag.String("kem", "", "Name of the KEM Scheme to be used with Sphinx")
 	nike := flag.String("nike", "x25519", "Name of the NIKE Scheme to be used with Sphinx")
 	UserForwardPayloadLength := flag.Int("UserForwardPayloadLength", 2000, "UserForwardPayloadLength")
+	decoyOff := flag.Bool("nodecoy", false, "Disable client decoy traffic")
+	mixDecoyOff := flag.Bool("nomixdecoy", false, "Disable client decoy traffic")
 
 	sr := flag.Uint64("sr", 0, "Sendrate limit")
 	mu := flag.Float64("mu", 0.005, "Inverse of mean of per hop delay.")
@@ -435,6 +440,9 @@ func main() {
 			nrHops,
 		)
 	}
+
+	s.decoyOff  = *decoyOff
+	s.mixDecoyOff = *mixDecoyOff
 
 	os.Mkdir(s.outDir, 0700)
 	os.Mkdir(filepath.Join(s.outDir, s.baseDir), 0700)
