@@ -294,7 +294,7 @@ func commonConfigFromParams(kpReplicaParams map[string]interface{}) (*tCommon.Co
 	if err != nil {
 		return nil, fmt.Errorf("Wrong encoding for Config: must be base64")
 	}
-	err = json.Unmarshal(configBytes, cfg)
+	err = json.Unmarshal(configBytes, &cfg)
 	if err != nil {
 		return nil, err
 	}
