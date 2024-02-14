@@ -290,7 +290,6 @@ func (d *Daemon) getReplyDesc(surbID *[sConstants.SURBIDLength]byte) (*replyDesc
 	}
 	if desc == nil {
 		if d.arq.Has(surbID) {
-			d.replyLock.Unlock()
 			myDesc, err := d.arq.HandleAck(surbID)
 			if err == nil {
 				return myDesc, false, nil
