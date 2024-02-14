@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
@@ -124,11 +125,13 @@ func NewKPFrontendServer(name string, session *client.Session, serverConfig *ser
 }
 
 func main() {
+	var clientConfigPath string
 	var kpConfigPath string
 	var listen string
 	var verbose bool
 
 	// add mixnet config
+	flag.StringVar(&clientConfigPath, "config", "client.json", "File to write Talek Client Configuration")
 	flag.StringVar(&kpConfigPath, "kpconfig", "client.toml", "Katzenpost Configuration")
 	flag.StringVar(&listen, "listen", ":8080", "Listening Address")
 	flag.BoolVar(&verbose, "verbose", false, "Verbose output")
@@ -229,8 +232,19 @@ func main() {
 	signal.Notify(sigCh, os.Interrupt)
 
 	// generate a client configuration to use with talekclient
+	// XXX : find out how to populate Config
 	clientConfig := libtalek.ClientConfig{Config: commonCfgs[0]}
-	clientConfig.Config = commonCfgs[0]
+
+	clientCfg, err := json.Marshal(clientConfig)
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(-1)
+	}
+	err = ioutil.WriteFile(clientConfigPath, clientCfg, 0660)
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(-1)
+	}
 
 	<-sigCh
 }

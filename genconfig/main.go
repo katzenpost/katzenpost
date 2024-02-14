@@ -86,7 +86,6 @@ func (a NodeById) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
 func (a NodeById) Less(i, j int) bool { return a[i].Identifier < a[j].Identifier }
 
 func (s *katzenpost) genClientCfg() error {
-	os.Mkdir(filepath.Join(s.outDir, "client"), 0700)
 	cfg := new(cConfig.Config)
 
 	cfg.SphinxGeometry = s.sphinxGeometry
@@ -445,6 +444,7 @@ func main() {
 	s.mixDecoyOff = *mixDecoyOff
 
 	os.Mkdir(s.outDir, 0700)
+	os.Mkdir(filepath.Join(s.outDir, "client"), 0700)
 	os.Mkdir(filepath.Join(s.outDir, s.baseDir), 0700)
 
 	if *voting {
