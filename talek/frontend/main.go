@@ -218,9 +218,6 @@ func main() {
 	serverConfig := &server.Config{
 		// XXX: this should be learned from PKI too
 		Config:           commonCfgs[0],
-		WriteInterval:    defaultWriteInterval,
-		ReadInterval:     defaultReadInterval,
-		ReadBatch:        defaultReadBatch,
 		TrustDomain:      &tCommon.TrustDomainConfig{},
 		TrustDomainIndex: 0,
 	}
@@ -232,7 +229,7 @@ func main() {
 	signal.Notify(sigCh, os.Interrupt)
 
 	// generate a client configuration to use with talekclient
-	clientConfig := libtalek.ClientConfig{WriteInterval: defaultWriteInterval, ReadInterval: defaultReadInterval}
+	clientConfig := libtalek.ClientConfig{Config: commonCfgs[0]}
 	clientConfig.Config = commonCfgs[0]
 
 	<-sigCh
