@@ -81,6 +81,9 @@ func (r *ReplicaKPC) BatchRead(args *tCommon.BatchReadRequest, reply *tCommon.Ba
 
 	// wrap the serialized command in ReplicaCommand
 	serialized, err = cbor.Marshal(&common.ReplicaRequest{Command: common.ReplicaWriteCommand, Payload: serialized})
+	if err != nil {
+		return err
+	}
 	rawResp, err := r.session.BlockingSendUnreliableMessage(r.name, r.provider, serialized)
 	if err != nil {
 		return err
