@@ -519,7 +519,6 @@ func (c *connection) onWireConn(w *wire.Session) {
 				SphinxPacket: ctx.pkt,
 			}
 			wireErr = w.SendCommand(cmd)
-			ctx.doneFn(wireErr)
 			if wireErr != nil {
 				c.log.Debugf("Failed to send SendPacket: %v", wireErr)
 				return
@@ -715,22 +714,10 @@ func (c *connection) sendPacket(pkt []byte) error {
 		return ErrNotConnected
 	}
 	c.isConnectedLock.RUnlock()
-
-	errCh := make(chan error)
 	select {
 	case c.sendCh <- &connSendCtx{
 		pkt: pkt,
-		doneFn: func(err error) {
-			errCh <- err
-		},
 	}:
-	case <-c.HaltCh():
-		return ErrShutdown
-	}
-
-	select {
-	case err := <-errCh:
-		return err
 	case <-c.HaltCh():
 		return ErrShutdown
 	}
