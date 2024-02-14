@@ -235,11 +235,11 @@ func main() {
 	<-sigCh
 }
 func trustDomainFromParams(endpoint string, provider string, kpReplicaParams map[string]interface{}) (*tCommon.TrustDomainConfig, error) {
-	pubKey, ok := kpReplicaParams["PublicKey"]
+	rawPubKey, ok := kpReplicaParams["PublicKey"]
 	if !ok {
 		return nil, fmt.Errorf("Failed to find talek replica parameter PublickKey for ", provider)
 	}
-	signPubKey, ok := kpReplicaParams["SignPublicKey"]
+	rawSignPubKey, ok := kpReplicaParams["SignPublicKey"]
 	if !ok {
 		return nil, fmt.Errorf("Failed to find talek replica parameter SignPublickKey for ", provider)
 	}
@@ -247,12 +247,20 @@ func trustDomainFromParams(endpoint string, provider string, kpReplicaParams map
 	// copy the key material into arrays
 	var signPubKeyArray [32]byte
 	var pubKeyArray [32]byte
-	if signPubKey, ok := signPubKey.([]byte); ok {
+	if signPubKeyb64, ok := rawSignPubKey.(string); ok {
+		signPubKey, err := base64.StdEncoding.DecodeString(signPubKeyb64)
+		if err != nil {
+			return nil, err
+		}
 		copy(signPubKeyArray[:], signPubKey)
 	} else {
 		return nil, fmt.Errorf("Invalid type for SignPublicKey")
 	}
-	if pubKey, ok := pubKey.([]byte); ok {
+	if pubKeyb64, ok := rawPubKey.(string); ok {
+		pubKey, err := base64.StdEncoding.DecodeString(pubKeyb64)
+		if err != nil {
+			return nil, err
+		}
 		copy(pubKeyArray[:], pubKey)
 	} else {
 		return nil, fmt.Errorf("Invalid type for PublicKey")
