@@ -17,6 +17,8 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
@@ -27,7 +29,7 @@ import (
 
 	"github.com/fxamacker/cbor/v2"
 	"github.com/gorilla/rpc"
-	"github.com/gorilla/rpc/json"
+	gJson "github.com/gorilla/rpc/json"
 	"github.com/katzenpost/katzenpost/client"
 	//"github.com/katzenpost/katzenpost/server/cborplugin"
 	"github.com/katzenpost/katzenpost/client/config"
@@ -115,7 +117,7 @@ func NewKPFrontendServer(name string, session *client.Session, serverConfig *ser
 
 	// Set up the RPC server component.
 	fe.Server = rpc.NewServer()
-	fe.Server.RegisterCodec(&json.Codec{}, "application/json")
+	fe.Server.RegisterCodec(&gJson.Codec{}, "application/json")
 	fe.Server.RegisterTCPService(fe.Frontend, "Frontend")
 	http.Handle("/rpc", fe.Server)
 	return fe
@@ -173,6 +175,7 @@ func main() {
 
 	replicas := make([]*ReplicaKPC, 0)
 	trustDomainCfgs := make([]*tCommon.TrustDomainConfig, 0)
+	commonCfgs := make([]*tCommon.Config, 0)
 	for _, desc := range descs {
 		// get the publickeys from the MixDescriptor
 		md, err := pkiDoc.GetProvider(desc.Provider)
@@ -188,6 +191,7 @@ func main() {
 			continue
 		}
 
+		// obtain a trustdomain from parameters
 		trustDomainCfg, err := trustDomainFromParams(desc.Name, desc.Provider, kpReplicaParams)
 		if err != nil {
 			fmt.Println("trustDomainFromParams returned %v", err)
@@ -197,14 +201,23 @@ func main() {
 		// keep the trustDomain configs for the client config
 		trustDomainCfgs = append(trustDomainCfgs, trustDomainCfg)
 
+		// obtain a common config from parameters
+		commonCfg, err := commonConfigFromParams(kpReplicaParams)
+		if err != nil {
+			fmt.Println("commonConfigFromParams returned %v", err)
+			continue
+		}
+		commonCfgs = append(commonCfgs, commonCfg)
+
 		// make a replica instance
 		replicas = append(replicas, NewReplicaKPC(desc.Name, desc.Provider, session, trustDomainCfg))
 	}
+	// XXX // check that all replicas agree on parameters
 
 	// create a server.Config
 	serverConfig := &server.Config{
 		// XXX: this should be learned from PKI too
-		Config:           &tCommon.Config{},
+		Config:           commonCfgs[0],
 		WriteInterval:    defaultWriteInterval,
 		ReadInterval:     defaultReadInterval,
 		ReadBatch:        defaultReadBatch,
@@ -220,7 +233,7 @@ func main() {
 
 	// generate a client configuration to use with talekclient
 	clientConfig := libtalek.ClientConfig{WriteInterval: defaultWriteInterval, ReadInterval: defaultReadInterval}
-	clientConfig.Config =  
+	clientConfig.Config = commonCfgs[0]
 
 	<-sigCh
 }
@@ -260,3 +273,25 @@ func trustDomainFromParams(endpoint string, provider string, kpReplicaParams map
 	return &trustDomainCfg, nil
 }
 
+func commonConfigFromParams(kpReplicaParams map[string]interface{}) (*tCommon.Config, error) {
+	cfg := tCommon.Config{}
+	var err error
+
+	rawConfig, ok := kpReplicaParams["Config"]
+	if !ok {
+		return nil, fmt.Errorf("No Parameter Config")
+	}
+	configStr, ok := rawConfig.(string)
+	if !ok {
+		return nil, fmt.Errorf("Wrong type for Config %T, must be string", rawConfig)
+	}
+	configBytes, err := base64.StdEncoding.DecodeString(configStr)
+	if err != nil {
+		return nil, fmt.Errorf("Wrong encoding for Config: must be base64")
+	}
+	err = json.Unmarshal(configBytes, cfg)
+	if err != nil {
+		return nil, err
+	}
+	return &cfg, nil
+}

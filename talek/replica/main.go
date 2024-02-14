@@ -26,7 +26,6 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"strconv"
 
 	"github.com/fxamacker/cbor/v2"
 	"github.com/katzenpost/katzenpost/core/log"
@@ -206,15 +205,11 @@ func paramsFromServerConfig(config *server.Config) *cborplugin.Parameters {
 	params["PublicKey"] = base64.StdEncoding.EncodeToString(config.TrustDomain.PublicKey[:])
 	params["SignPublicKey"] = base64.StdEncoding.EncodeToString(config.TrustDomain.SignPublicKey[:])
 
-	params["NumBuckets"] = strconv.FormatUint(config.NumBuckets, 10)
-	params["BucketDepth"] = strconv.FormatUint(config.BucketDepth, 10)
-	params["DataSize"] = strconv.FormatUint(config.DataSize, 10)
-	params["BloomFalsePositive"] = strconv.FormatFloat(config.BloomFalsePositive, 'X', -1, 64)
-	params["WriteInterval"] = strconv.FormatInt(int64(config.WriteInterval), 10)
-	params["ReadInterval"] = strconv.FormatInt(int64(config.ReadInterval), 10)
-	params["InterestMultiple"] = strconv.FormatInt(int64(config.InterestMultiple), 10)
-	params["InterestSeed"] = strconv.FormatInt(config.InterestSeed, 10)
-	params["MaxLoadFactor"] = strconv.FormatFloat(config.MaxLoadFactor, 'X', -1, 64)
-	params["LoadFactorStep"] = strconv.FormatFloat(config.LoadFactorStep, 'X', -1, 64)
+	cfgJson, err := json.Marshal(config)
+	if err != nil {
+		panic("server config is not marshalable")
+	}
+
+	params["Config"] = base64.StdEncoding.EncodeToString(cfgJson)
 	return &params
 }
