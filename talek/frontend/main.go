@@ -50,7 +50,7 @@ type kpTalekFrontend struct {
 // it wraps Write and BatchRead commands to Replicas using Katzenpost
 type ReplicaKPC struct {
 	config   *tCommon.TrustDomainConfig
-	log      *tCommon.Logger
+	log      *log.Logger
 	session  *client.Session
 	name     string // name of the kaetzchen service
 	provider string // name of the provider hosting the service
@@ -95,7 +95,7 @@ func NewReplicaKPC(name string, provider string, session *client.Session, config
 	return &ReplicaKPC{
 		name:     name,
 		provider: provider,
-		log:      tCommon.NewLogger(name),
+		log:      log.New(os.Stdout, "frontend", log.Flags()),
 		session:  session,
 	}
 }
