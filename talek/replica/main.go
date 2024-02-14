@@ -205,7 +205,7 @@ func paramsFromServerConfig(config *server.Config) *cborplugin.Parameters {
 	params["PublicKey"] = base64.StdEncoding.EncodeToString(config.TrustDomain.PublicKey[:])
 	params["SignPublicKey"] = base64.StdEncoding.EncodeToString(config.TrustDomain.SignPublicKey[:])
 
-	cfgJson, err := json.Marshal(config)
+	cfgJson, err := json.Marshal(config.Config)
 	if err != nil {
 		panic("server config is not marshalable")
 	}
