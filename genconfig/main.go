@@ -156,7 +156,7 @@ func (s *katzenpost) genNodeConfig(isProvider bool, isVoting bool) error {
 
 	// Debug section.
 	cfg.Debug = new(sConfig.Debug)
-	cfg.Debug.SendDecoyTraffic = s.mixDecoyOff
+	cfg.Debug.SendDecoyTraffic = !s.mixDecoyOff
 
 	// PKI section.
 	if isVoting {
