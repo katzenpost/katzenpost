@@ -34,11 +34,10 @@ import (
 	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/kem"
 	pemkem "github.com/katzenpost/hpqc/kem/pem"
-	"github.com/katzenpost/hpqc/util"
-	"github.com/katzenpost/hpqc/util/pem"
-
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/hpqc/sign"
+	"github.com/katzenpost/hpqc/util/pem"
+
 	"github.com/katzenpost/katzenpost/core/cert"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/thwack"
@@ -260,7 +259,7 @@ func New(cfg *config.Config) (*Server, error) {
 
 	s.identityPrivateKey, s.identityPublicKey = cert.Scheme.NewKeypair()
 
-	if util.BothExists(identityPrivateKeyFile, identityPublicKeyFile) {
+	if utils.BothExists(identityPrivateKeyFile, identityPublicKeyFile) {
 		err := pem.FromFile(identityPrivateKeyFile, s.identityPrivateKey)
 		if err != nil {
 			return nil, err
@@ -269,7 +268,7 @@ func New(cfg *config.Config) (*Server, error) {
 		if err != nil {
 			return nil, err
 		}
-	} else if util.BothNotExists(identityPrivateKeyFile, identityPublicKeyFile) {
+	} else if utils.BothNotExists(identityPrivateKeyFile, identityPublicKeyFile) {
 		err := pem.ToFile(identityPrivateKeyFile, s.identityPrivateKey)
 		if err != nil {
 			return nil, err
@@ -295,7 +294,7 @@ func New(cfg *config.Config) (*Server, error) {
 		panic(err)
 	}
 	linkPublicKey, linkPrivateKey := nyquistkem.GenerateKeypair(scheme, rng)
-	if util.BothExists(linkPrivateKeyFile, linkPublicKeyFile) {
+	if utils.BothExists(linkPrivateKeyFile, linkPublicKeyFile) {
 		linkPrivateKey, err = pemkem.FromPrivatePEMFile(linkPrivateKeyFile, scheme)
 		if err != nil {
 			return nil, err
@@ -304,7 +303,7 @@ func New(cfg *config.Config) (*Server, error) {
 		if err != nil {
 			return nil, err
 		}
-	} else if util.BothNotExists(linkPrivateKeyFile, linkPublicKeyFile) {
+	} else if utils.BothNotExists(linkPrivateKeyFile, linkPublicKeyFile) {
 		rng, err := seec.GenKeyPassthrough(rand.Reader, 0)
 		if err != nil {
 			panic(err)

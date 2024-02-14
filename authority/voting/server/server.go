@@ -32,7 +32,6 @@ import (
 	kempem "github.com/katzenpost/hpqc/kem/pem"
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/hpqc/sign"
-	"github.com/katzenpost/hpqc/util"
 	"github.com/katzenpost/hpqc/util/pem"
 
 	nyquistkem "github.com/katzenpost/nyquist/kem"
@@ -42,6 +41,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/cert"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
+	"github.com/katzenpost/katzenpost/core/utils"
 	"github.com/katzenpost/katzenpost/core/wire"
 )
 
@@ -220,7 +220,7 @@ func New(cfg *config.Config) (*Server, error) {
 
 	s.identityPrivateKey, s.identityPublicKey = cert.Scheme.NewKeypair()
 	var err error
-	if util.BothExists(identityPrivateKeyFile, identityPublicKeyFile) {
+	if utils.BothExists(identityPrivateKeyFile, identityPublicKeyFile) {
 		err = pem.FromFile(identityPrivateKeyFile, s.identityPrivateKey)
 		if err != nil {
 			return nil, err
@@ -229,7 +229,7 @@ func New(cfg *config.Config) (*Server, error) {
 		if err != nil {
 			return nil, err
 		}
-	} else if util.BothNotExists(identityPrivateKeyFile, identityPublicKeyFile) {
+	} else if utils.BothNotExists(identityPrivateKeyFile, identityPublicKeyFile) {
 		err = pem.ToFile(identityPrivateKeyFile, s.identityPrivateKey)
 		if err != nil {
 			return nil, err
@@ -253,7 +253,7 @@ func New(cfg *config.Config) (*Server, error) {
 
 	var linkPrivateKey kem.PrivateKey
 
-	if util.BothExists(linkPrivateKeyFile, linkPublicKeyFile) {
+	if utils.BothExists(linkPrivateKeyFile, linkPublicKeyFile) {
 		linkPrivateKey, err = kempem.FromPrivatePEMFile(linkPrivateKeyFile, scheme)
 		if err != nil {
 			return nil, err
@@ -275,7 +275,7 @@ func New(cfg *config.Config) (*Server, error) {
 			return nil, err
 		}
 		*/
-	} else if util.BothNotExists(linkPrivateKeyFile, linkPublicKeyFile) {
+	} else if utils.BothNotExists(linkPrivateKeyFile, linkPublicKeyFile) {
 		linkPublicKey, linkPrivateKey := nyquistkem.GenerateKeypair(scheme, genRand)
 
 		err = kempem.PrivateKeyToFile(linkPrivateKeyFile, linkPrivateKey)

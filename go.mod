@@ -44,7 +44,7 @@ require (
 	github.com/jackc/fake v0.0.0-20150926172116-812a484cc733 // indirect
 	github.com/katzenpost/chacha20 v0.0.0-20190910113340-7ce890d6a556 // indirect
 	github.com/katzenpost/circl v1.3.8-0.20240208050109-5fb03bb61607 // indirect
-	github.com/katzenpost/hpqc v0.0.4 // indirect
+	github.com/katzenpost/hpqc v0.0.5 // indirect
 	github.com/katzenpost/sntrup4591761 v0.0.0-20231024131303-8755eb1986b8 // indirect
 	github.com/katzenpost/sphincsplus v0.0.2-0.20240114192234-1dc77b544e31 // indirect
 	github.com/kr/text v0.2.0 // indirect
