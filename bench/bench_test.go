@@ -21,21 +21,6 @@
 package bench
 
 import (
-	"github.com/katzenpost/katzenpost/client"
-	"github.com/katzenpost/katzenpost/client/config"
-	cConstants "github.com/katzenpost/katzenpost/client/constants"
-	"github.com/katzenpost/katzenpost/client/utils"
-	"github.com/katzenpost/hpqc/rand"
-	"github.com/katzenpost/katzenpost/core/epochtime"
-	"github.com/katzenpost/katzenpost/core/log"
-	"github.com/katzenpost/katzenpost/core/pki"
-
-	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
-
-	"github.com/katzenpost/katzenpost/core/wire"
-	"github.com/katzenpost/katzenpost/core/worker"
-	"github.com/katzenpost/katzenpost/minclient"
-
 	"context"
 	"errors"
 	"fmt"
@@ -48,7 +33,23 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/crypto/blake2b"
 	"gopkg.in/op/go-logging.v1"
+
+	"github.com/katzenpost/hpqc/kem"
+	"github.com/katzenpost/hpqc/rand"
+
+	"github.com/katzenpost/katzenpost/client"
+	"github.com/katzenpost/katzenpost/client/config"
+	cConstants "github.com/katzenpost/katzenpost/client/constants"
+	"github.com/katzenpost/katzenpost/client/utils"
+	"github.com/katzenpost/katzenpost/core/epochtime"
+	"github.com/katzenpost/katzenpost/core/log"
+	"github.com/katzenpost/katzenpost/core/pki"
+	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/core/wire"
+	"github.com/katzenpost/katzenpost/core/worker"
+	"github.com/katzenpost/katzenpost/minclient"
 )
 
 var (
@@ -124,7 +125,7 @@ type MinclientBench struct {
 	sync.Mutex
 	cfg             *config.Config
 	log             *logging.Logger
-	linkKey         wire.PrivateKey
+	linkKey         kem.PrivateKey
 	minclientConfig *minclient.ClientConfig
 	minclient       *minclient.Client
 	provider        *pki.MixDescriptor
@@ -151,8 +152,12 @@ func (b *MinclientBench) setup() {
 
 	b.log = logBackend.GetLogger("MinclientBench")
 
-	b.linkKey, _ = wire.DefaultScheme.GenerateKeypair(rand.Reader)
-	idHash := b.linkKey.PublicKey().Sum256()
+	_, b.linkKey, err = wire.DefaultScheme.GenerateKeyPair()
+	blob, err := b.linkKey.Public().MarshalBinary()
+	if err != nil {
+		panic(err)
+	}
+	idHash := blake2b.Sum256(blob)
 	proxyContext := fmt.Sprintf("session %d", rand.NewMath().Uint64())
 	pkiClient, err := cfg.NewPKIClient(logBackend, cfg.UpstreamProxyConfig(), b.linkKey)
 	currentEpoch, _, _ := epochtime.Now()
