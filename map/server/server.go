@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/fxamacker/cbor/v2"
@@ -183,6 +184,28 @@ func NewMap(fileStore string, log *logging.Logger, gcSize int, mapSize int) (*Ma
 	return m, nil
 }
 
+func validate(req *crypto.MapRequest) error {
+	switch {
+	case req.ReadCap != nil:
+		if !req.ReadCap.Verify() {
+			return errors.New("failed to verify read capability")
+		}
+		return nil
+	case req.WriteCap != nil:
+		if !req.WriteCap.Verify() {
+			return errors.New("failed to verify write capability")
+		}
+		return nil
+	case (req.WriteCap != nil) && (req.ReadCap != nil):
+		return errors.New("invalid map request, both read and write caps cannot be set")
+	case (req.WriteCap == nil) && (req.ReadCap == nil):
+		return errors.New("invalid map request, at least one cap must be set")
+	default:
+		panic("impossible")
+	}
+	return errors.New("impossible")
+}
+
 func (m *Map) OnCommand(cmd cborplugin.Command) (cborplugin.Command, error) {
 	switch r := cmd.(type) {
 	case *cborplugin.Request:
@@ -197,46 +220,31 @@ func (m *Map) OnCommand(cmd cborplugin.Command) (cborplugin.Command, error) {
 		}
 
 		// validate the capabilities of MapRequest
-		if len(req.Payload) > 0 {
-			readCap := &crypto.ReadCapability{
-				ID:        req.ID,
-				Signature: req.Signature,
-			}
-			if !readCap.Verify() {
-				m.log.Error("verification failed")
-				return nil, errors.New("failed to verify read capability")
-			}
-		} else {
-			writeCap := &crypto.WriteCapability{
-				ID:        req.ID,
-				Signature: req.Signature,
-				Payload:   req.Payload,
-			}
-			if !writeCap.Verify() {
-				m.log.Error("verification failed")
-				return nil, errors.New("failed to verify write capability")
-			}
+		err = validate(req)
+		if err != nil {
+			m.log.Errorf("verification failed: %s", err)
+			return nil, fmt.Errorf("verification failed: %s", err)
 		}
 
 		resp := &crypto.MapResponse{}
 		// Write data if payload present
-		if len(req.Payload) > 0 {
-			err := m.dbPut(req.ID, req.Payload)
+		if req.WriteCap != nil {
+			err := m.dbPut(req.WriteCap.ID, req.WriteCap.Payload)
 			if err != nil {
-				m.log.Debugf("Put(%x): Failed", req.ID)
+				m.log.Debugf("Put(%x): Failed", req.WriteCap.ID)
 				resp.Status = crypto.StatusFailed
 			} else {
-				m.log.Debugf("Put(%x): OK", req.ID)
+				m.log.Debugf("Put(%x): OK", req.WriteCap.ID)
 				resp.Status = crypto.StatusOK
 			}
 			// Otherwise request data
 		} else {
-			p, err := m.dbGet(req.ID)
+			p, err := m.dbGet(req.ReadCap.ID)
 			if err != nil {
-				m.log.Debugf("Get(%x): NotFound", req.ID)
+				m.log.Debugf("Get(%x): NotFound", req.ReadCap.ID)
 				resp.Status = crypto.StatusNotFound
 			} else {
-				m.log.Debugf("Get(%x): OK", req.ID)
+				m.log.Debugf("Get(%x): OK", req.ReadCap.ID)
 				resp.Status = crypto.StatusOK
 				resp.Payload = p
 			}

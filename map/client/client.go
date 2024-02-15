@@ -101,9 +101,11 @@ func (c *Client) Put(cap *crypto.WriteCapability) error {
 		return err
 	}
 	b := &crypto.MapRequest{
-		ID:        cap.ID,
-		Signature: cap.Signature,
-		Payload:   cap.Payload,
+		WriteCap: &crypto.WriteCapability{
+			ID:        cap.ID,
+			Signature: cap.Signature,
+			Payload:   cap.Payload,
+		},
 	}
 	// XXX: ideally we limit the number of retries
 	// so that it doesn't keep trying to deliver to a stale/missing service forever...
@@ -132,8 +134,10 @@ func (c *Client) Get(cap *crypto.ReadCapability) ([]byte, error) {
 		return nil, err
 	}
 	b := &crypto.MapRequest{
-		ID:        cap.ID,
-		Signature: cap.Signature,
+		ReadCap: &crypto.ReadCapability{
+			ID:        cap.ID,
+			Signature: cap.Signature,
+		},
 	}
 	serialized, err := cbor.Marshal(b)
 	if err != nil {
