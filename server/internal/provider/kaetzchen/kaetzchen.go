@@ -87,6 +87,7 @@ type BuiltInCtorFn func(*config.Kaetzchen, glue.Glue) (Kaetzchen, error)
 var BuiltInCtors = map[string]BuiltInCtorFn{
 	EchoCapability:      NewEcho,
 	keyserverCapability: NewKeyserver,
+	StatsCapability:     NewStats,
 }
 
 type KaetzchenWorker struct {
