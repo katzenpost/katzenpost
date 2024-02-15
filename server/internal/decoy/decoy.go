@@ -28,6 +28,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/fxamacker/cbor/v2"
+	"gitlab.com/yawning/avl.git"
+	"gopkg.in/op/go-logging.v1"
+
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/monotime"
@@ -43,8 +47,6 @@ import (
 	"github.com/katzenpost/katzenpost/server/internal/packet"
 	"github.com/katzenpost/katzenpost/server/internal/pkicache"
 	"github.com/katzenpost/katzenpost/server/internal/provider/kaetzchen"
-	"gitlab.com/yawning/avl.git"
-	"gopkg.in/op/go-logging.v1"
 )
 
 const maxAttempts = 3
@@ -61,6 +63,11 @@ type surbCtx struct {
 	sentTime    time.Time
 
 	etaNode *avl.Node
+}
+
+type LoopStats struct {
+	Epoch uint64
+	Stats []*LoopStat
 }
 
 type LoopStat struct {
@@ -211,9 +218,16 @@ func (d *decoy) worker() {
 			d.log.Debugf("Next wakeInterval: %v", wakeInterval)
 
 			d.sweepSURBCtxs()
+
+			d.sendDecoyLoopStats(docCache)
 		}
 		if !timerFired && !timer.Stop() {
-			<-timer.C
+			select {
+			case <-d.HaltCh():
+				d.log.Debugf("Terminating gracefully.")
+				return
+			case <-timer.C:
+			}
 		}
 		timer.Reset(wakeInterval)
 	}
@@ -262,6 +276,126 @@ func (d *decoy) sendDecoyPacket(ent *pkicache.Entry) {
 		return
 	}
 	d.sendDiscardPacket(doc, []byte(loopRecip), selfDesc, providerDesc)
+}
+
+func (d *decoy) sendDecoyLoopStats(ent *pkicache.Entry) {
+	selfDesc := ent.Self()
+	if selfDesc.Provider {
+		// The code doesn't handle this correctly yet.  It does need to
+		// happen eventually though.
+		panic("BUG: Provider generated decoy traffic not supported yet")
+	}
+	doc := ent.Document()
+	// Find a random Provider that is running a loop/discard service.
+	var providerDesc *pki.MixDescriptor
+	var destRecip string
+	for _, idx := range d.rng.Perm(len(doc.Providers)) {
+		desc := doc.Providers[idx]
+		params, ok := desc.Kaetzchen[kaetzchen.StatsCapability]
+		if !ok {
+			continue
+		}
+		destRecip, ok = params["endpoint"].(string)
+		if !ok {
+			continue
+		}
+		providerDesc = desc
+		break
+	}
+	if providerDesc == nil {
+		d.log.Warningf("Failed to find suitable provider")
+		return
+	}
+
+	d.sendLoopPacket(doc, []byte(destRecip), selfDesc, providerDesc)
+	return
+}
+
+func (d *decoy) sendLoopStatsPacket(doc *pki.Document, recipient []byte, src, dst *pki.MixDescriptor) {
+	var surbID [sConstants.SURBIDLength]byte
+	d.makeSURBID(&surbID)
+
+	for attempts := 0; attempts < maxAttempts; attempts++ {
+		now := time.Now()
+
+		fwdPath, then, err := path.New(d.rng, d.geo, doc, recipient, src, dst, &surbID, time.Now(), false, true)
+		if err != nil {
+			d.log.Debugf("Failed to select forward path: %v", err)
+			return
+		}
+
+		revPath, then, err := path.New(d.rng, d.geo, doc, d.recipient, dst, src, &surbID, then, false, false)
+		if err != nil {
+			d.log.Debugf("Failed to select reverse path: %v", err)
+			return
+		}
+
+		if deltaT := then.Sub(now); deltaT < epochtime.Period*2 {
+			zeroBytes := make([]byte, d.geo.UserForwardPayloadLength)
+			payload := make([]byte, 2, 2+d.geo.SURBLength+d.geo.UserForwardPayloadLength)
+			payload[0] = 1 // Packet has a SURB.
+
+			surb, k, err := d.sphinx.NewSURB(rand.Reader, revPath)
+			if err != nil {
+				d.log.Debugf("Failed to generate SURB: %v", err)
+			}
+
+			payload = append(payload, surb...)
+
+			epoch, _, _ := epochtime.Now()
+
+			d.Lock()
+			stats, ok := d.loopStats[epoch-1]
+			d.Unlock()
+
+			if !ok {
+				d.log.Error("failed to find decoy loop stats")
+				return
+			}
+
+			loopstats := &LoopStats{
+				Epoch: epoch - 1,
+				Stats: stats,
+			}
+
+			blob, err := cbor.Marshal(loopstats)
+			if err != nil {
+				d.log.Errorf("failed to marshal cbor blob: %s", err)
+				return
+			}
+
+			payload = append(payload, blob...)
+			payload = append(payload, zeroBytes[len(blob):]...)
+
+			// TODO: This should probably also store path information,
+			// so that it's possible to figure out which links/nodes
+			// are causing issues.
+			ctx := &surbCtx{
+				id:          binary.BigEndian.Uint64(surbID[8:]),
+				eta:         monotime.Now() + deltaT,
+				sprpKey:     k,
+				forwardPath: fwdPath,
+				replyPath:   revPath,
+				sentTime:    time.Now(),
+			}
+			d.storeSURBCtx(ctx)
+
+			pkt, err := d.sphinx.NewPacket(rand.Reader, fwdPath, payload)
+			if err != nil {
+				d.log.Debugf("Failed to generate Sphinx packet: %v", err)
+				return
+			}
+
+			d.logPath(doc, fwdPath)
+			d.logPath(doc, revPath)
+			d.log.Debugf("Dispatching loop packet: SURB ID: 0x%08x", binary.BigEndian.Uint64(surbID[8:]))
+
+			d.dispatchPacket(fwdPath, pkt)
+			return
+		}
+	}
+
+	d.log.Debugf("Failed to generate loop packet: %v", errMaxAttempts)
 }
 
 func (d *decoy) sendLoopPacket(doc *pki.Document, recipient []byte, src, dst *pki.MixDescriptor) {
