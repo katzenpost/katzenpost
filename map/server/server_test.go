@@ -17,15 +17,16 @@
 package server
 
 import (
-	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
-	"github.com/katzenpost/katzenpost/map/common"
-	"github.com/stretchr/testify/require"
-	"gopkg.in/op/go-logging.v1"
 	"io/ioutil"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/stretchr/testify/require"
+	"gopkg.in/op/go-logging.v1"
+
+	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/katzenpost/map/crypto"
 )
 
 func TestCreateMap(t *testing.T) {
@@ -54,16 +55,16 @@ func TestMap(t *testing.T) {
 	require.NoError(err)
 
 	// put data in a key
-	var msgID common.MessageID
+	var msgID crypto.MessageID
 	_, err = rand.Reader.Read(msgID[:])
 	require.NoError(err)
 	payload := []byte("hola")
 
-	err = m.Put(msgID, payload)
+	err = m.dbPut(&msgID, payload)
 	require.NoError(err)
 
 	// read data from key
-	data, err := m.Get(msgID)
+	data, err := m.dbGet(&msgID)
 	require.NoError(err)
 
 	// verify the key was retrieved
@@ -75,7 +76,7 @@ func TestMap(t *testing.T) {
 	m, err = NewMap(f, log, 10, 100)
 
 	// verify the data is still there
-	data, err = m.Get(msgID)
+	data, err = m.dbGet(&msgID)
 	require.Equal(data, payload)
 
 	// clean up
@@ -99,14 +100,14 @@ func TestGarbageCollect(t *testing.T) {
 	m, err := NewMap(f, log, gcsize, mapsize)
 	require.NoError(err)
 
-	msgIDs := make([]common.MessageID, mapsize+1)
+	msgIDs := make([]crypto.MessageID, mapsize+1)
 	// fill map to mapSize + 1 to trigger GarbageCollection
 	for i := 0; i < mapsize+1; i++ {
-		var msgID common.MessageID
+		var msgID crypto.MessageID
 		_, err = rand.Reader.Read(msgID[:])
 		require.NoError(err)
 		payload := []byte("hola")
-		err = m.Put(msgID, payload)
+		err = m.dbPut(&msgID, payload)
 		require.NoError(err)
 
 		// keep ordered list of msgID
@@ -115,22 +116,22 @@ func TestGarbageCollect(t *testing.T) {
 
 	// verify that the keys are available
 	for i := 0; i < gcsize; i++ {
-		d, err := m.Get(msgIDs[i])
+		d, err := m.dbGet(&msgIDs[i])
 		require.NoError(err)
 		require.Equal(d, []byte("hola"))
 	}
-	err = m.GarbageCollect()
+	err = m.garbageCollect()
 	require.NoError(err)
 
 	// verify that the keys are gone
 	for i := 0; i < gcsize; i++ {
-		_, err := m.Get(msgIDs[i])
+		_, err := m.dbGet(&msgIDs[i])
 		require.Error(err)
 	}
 
 	// verify that the next gcsize keys are still there
 	for i := gcsize; i < 2*gcsize; i++ {
-		d, err := m.Get(msgIDs[i])
+		d, err := m.dbGet(&msgIDs[i])
 		require.NoError(err)
 		require.Equal(d, []byte("hola"))
 	}
@@ -140,71 +141,4 @@ func TestGarbageCollect(t *testing.T) {
 	// clean up
 	err = os.RemoveAll(tmpDir)
 	require.NoError(err)
-}
-
-func TestValidateRWCap(t *testing.T) {
-	require := require.New(t)
-	sk, err := eddsa.NewKeypair(rand.Reader)
-	require.NoError(err)
-
-	cap_rw := common.NewRWCap(sk)
-	addr := []byte("address we want to read")
-	payload := []byte("here are some bytes to write")
-
-	mID := cap_rw.Addr(addr)
-	wKey := cap_rw.WriteKey(addr)
-	rKey := cap_rw.ReadKey(addr)
-	wSignature := wKey.Sign(payload)
-	rSignature := rKey.Sign(mID.Bytes())
-	// test verification of write
-	require.True(validateCap(&common.MapRequest{ID: mID, Signature: wSignature, Payload: payload}))
-	// test failure of write
-	require.False(validateCap(&common.MapRequest{ID: mID, Signature: wSignature, Payload: payload[:len(payload)-2]}))
-
-	// test verification of read
-	require.True(validateCap(&common.MapRequest{ID: mID, Signature: rSignature, Payload: []byte{}}))
-
-	// test failure of read
-	require.False(validateCap(&common.MapRequest{ID: mID, Signature: rSignature, Payload: payload[:len(payload)-1]}))
-}
-
-func TestValidateROCap(t *testing.T) {
-	require := require.New(t)
-	sk, err := eddsa.NewKeypair(rand.Reader)
-	require.NoError(err)
-
-	cap_rw := common.NewRWCap(sk)
-	cap_ro := cap_rw.ReadOnly()
-	addr := []byte("address we want to read")
-
-	mID := cap_ro.Addr(addr)
-	rKey := cap_ro.ReadKey(addr)
-	rSignature := rKey.Sign(mID.Bytes())
-
-	// test verification of read
-	require.True(validateCap(&common.MapRequest{ID: mID, Signature: rSignature, Payload: []byte{}}))
-
-	// test failure of read
-	require.False(validateCap(&common.MapRequest{ID: mID, Signature: rSignature[:len(rSignature)-1], Payload: []byte{}}))
-}
-
-func TestValidateWOCap(t *testing.T) {
-	require := require.New(t)
-	sk, err := eddsa.NewKeypair(rand.Reader)
-	require.NoError(err)
-
-	cap_rw := common.NewRWCap(sk)
-	cap_wo := cap_rw.WriteOnly()
-	addr := []byte("address we want to read")
-	payload := []byte("here are some bytes to write")
-
-	mID := cap_wo.Addr(addr)
-	wKey := cap_wo.WriteKey(addr)
-	wSignature := wKey.Sign(payload)
-
-	// test verification of write
-	require.True(validateCap(&common.MapRequest{ID: mID, Signature: wSignature, Payload: payload}))
-
-	// test failure of write
-	require.False(validateCap(&common.MapRequest{ID: mID, Signature: wSignature, Payload: payload[:len(payload)-1]}))
 }

@@ -1,5 +1,4 @@
 warped?=true
-CGO_CFLAGS_ALLOW="-DPARAMS=sphincs-shake-256f"
 ldflags="-X github.com/katzenpost/katzenpost/core/epochtime.WarpedEpoch=${warped} -X github.com/katzenpost/katzenpost/server/internal/pki.WarpedEpoch=${warped} -X github.com/katzenpost/katzenpost/minclient/pki.WarpedEpoch=${warped}"
 uid=$(shell [ "$$SUDO_UID" != "" ] && echo "$$SUDO_UID" || id -u)
 gid=$(shell [ "$$SUDO_GID" != "" ] && echo "$$SUDO_GID" || id -g)
@@ -11,4 +10,4 @@ docker_args=--user ${docker_user} -v $(shell readlink -f ..):/go/katzenpost -e G
 
 dockerdockertest:
 	$(docker) run ${docker_args} $(image) \
-		sh -c 'cd /go/katzenpost/map/client; CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f GORACE=history_size=7 go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 0 -failfast'
+		sh -c 'cd /go/katzenpost/map/client; GORACE=history_size=7 go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 0 -failfast'
