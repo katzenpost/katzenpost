@@ -29,6 +29,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"gopkg.in/op/go-logging.v1"
 
+	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/kem"
 	ecdh "github.com/katzenpost/hpqc/nike/x25519"
 	"github.com/katzenpost/hpqc/rand"
@@ -77,7 +78,10 @@ func generateMixKeys(epoch uint64) (map[uint64][]byte, error) {
 func generateNodes(isProvider bool, num int, epoch uint64) ([]*descriptor, error) {
 	mixes := []*descriptor{}
 	for i := 0; i < num; i++ {
-		mixIdentityPrivateKey, mixIdentityPublicKey := cert.Scheme.NewKeypair()
+		mixIdentityPublicKey, mixIdentityPrivateKey, err := cert.Scheme.GenerateKey()
+		if err != nil {
+			return nil, err
+		}
 		mixKeys, err := generateMixKeys(epoch)
 		if err != nil {
 			return nil, err
@@ -100,10 +104,15 @@ func generateNodes(isProvider bool, num int, epoch uint64) ([]*descriptor, error
 			return nil, err
 		}
 
+		blob, err := mixIdentityPublicKey.MarshalBinary()
+		if err != nil {
+			return nil, err
+		}
+
 		mix := &pki.MixDescriptor{
 			Name:        name,
 			Epoch:       epoch,
-			IdentityKey: mixIdentityPublicKey,
+			IdentityKey: blob,
 			LinkKey:     linkKeyBlob,
 			MixKeys:     mixKeys,
 			Addresses: map[pki.Transport][]string{
@@ -266,7 +275,7 @@ func (d *mockDialer) mockServer(address string, linkPrivateKey kem.PrivateKey, i
 	mygeo := geo.GeometryFromUserForwardPayloadLength(mynike, 2000, true, 5)
 
 	d.waitUntilDialed(address)
-	identityHash := identityPublicKey.Sum256()
+	identityHash := hash.Sum256From(identityPublicKey)
 	cfg := &wire.SessionConfig{
 		Geometry:          mygeo,
 		Authenticator:     d,
@@ -325,7 +334,10 @@ func (d *mockDialer) IsPeerValid(creds *wire.PeerCredentials) bool {
 }
 
 func generatePeer(peerNum int) (*config.Authority, sign.PrivateKey, sign.PublicKey, kem.PrivateKey, error) {
-	identityPrivateKey, identityPublicKey := cert.Scheme.NewKeypair()
+	identityPublicKey, identityPrivateKey, err := cert.Scheme.GenerateKey()
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
 
 	scheme := wire.DefaultScheme
 	linkPublicKey, linkPrivateKey, err := scheme.GenerateKeyPair()

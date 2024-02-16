@@ -29,6 +29,7 @@ import (
 	nyquistkem "github.com/katzenpost/nyquist/kem"
 	"github.com/katzenpost/nyquist/seec"
 
+	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/kem"
 	kempem "github.com/katzenpost/hpqc/kem/pem"
 	"github.com/katzenpost/hpqc/rand"
@@ -54,9 +55,9 @@ type authorityAuthenticator struct {
 // IsPeerValid authenticates the remote peer's credentials, returning true
 // iff the peer is valid.
 func (a *authorityAuthenticator) IsPeerValid(creds *wire.PeerCredentials) bool {
-	identityHash := a.IdentityPublicKey.Sum256()
-	if !hmac.Equal(identityHash[:], creds.AdditionalData[:sign.PublicKeyHashSize]) {
-		a.log.Warningf("voting/Client: IsPeerValid(): AD mismatch: %x != %x", identityHash[:], creds.AdditionalData[:sign.PublicKeyHashSize])
+	identityHash := hash.Sum256From(a.IdentityPublicKey)
+	if !hmac.Equal(identityHash[:], creds.AdditionalData[:hash.HashSize]) {
+		a.log.Warningf("voting/Client: IsPeerValid(): AD mismatch: %x != %x", identityHash[:], creds.AdditionalData[:hash.HashSize])
 		return false
 	}
 	if !a.LinkPublicKey.Equal(creds.PublicKey) {
@@ -156,7 +157,7 @@ func (p *connector) initSession(ctx context.Context, doneCh <-chan interface{}, 
 	// Initialize the wire protocol session.
 	var ad []byte
 	if signingKey != nil {
-		keyHash := signingKey.Sum256()
+		keyHash := hash.Sum256From(signingKey)
 		ad = keyHash[:]
 	}
 	cfg := &wire.SessionConfig{
@@ -206,7 +207,7 @@ func (p *connector) allPeersRoundTrip(ctx context.Context, linkKey kem.PrivateKe
 	for _, peer := range p.cfg.Authorities {
 		conn, err := p.initSession(ctx, doneCh, linkKey, signingKey, peer)
 		if err != nil {
-			p.log.Noticef("pki/voting/client: failure to connect to Authority %s (%x)\n", peer.Identifier, peer.IdentityPublicKey.Sum256())
+			p.log.Noticef("pki/voting/client: failure to connect to Authority %s (%x)\n", peer.Identifier, hash.Sum256From(peer.IdentityPublicKey))
 			continue
 		}
 		resp, err := p.roundTrip(conn.session, cmd)
@@ -269,7 +270,7 @@ type Client struct {
 	cfg       *Config
 	log       *logging.Logger
 	pool      *connector
-	verifiers []cert.Verifier
+	verifiers []sign.PublicKey
 	threshold int
 }
 
@@ -416,7 +417,7 @@ func New(cfg *Config) (pki.Client, error) {
 	c.cfg = cfg
 	c.log = cfg.LogBackend.GetLogger("pki/voting/Client")
 	c.pool = newConnector(cfg)
-	c.verifiers = make([]cert.Verifier, len(c.cfg.Authorities))
+	c.verifiers = make([]sign.PublicKey, len(c.cfg.Authorities))
 	for i, auth := range c.cfg.Authorities {
 		c.verifiers[i] = auth.IdentityPublicKey
 	}
