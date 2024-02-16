@@ -345,7 +345,9 @@ func TestPostDescriptorStatus(t *testing.T) {
 func TestGetVote(t *testing.T) {
 	t.Parallel()
 	require := require.New(t)
-	_, alicePub := cert.Scheme.NewKeypair()
+
+	alicePub, _, err := cert.Scheme.GenerateKey()
+	require.NoError(err)
 
 	cmd := &GetVote{
 		Epoch:     123,
@@ -374,7 +376,8 @@ func TestVote(t *testing.T) {
 	t.Parallel()
 	require := require.New(t)
 
-	_, alicePub := cert.Scheme.NewKeypair()
+	alicePub, _, err := cert.Scheme.GenerateKey()
+	require.NoError(err)
 	cmd := &Vote{
 		Epoch:     3141,
 		PublicKey: alicePub,
@@ -399,7 +402,12 @@ func TestVote(t *testing.T) {
 	require.IsType(cmd, c, "Vote: FromBytes() invalid type")
 	d := c.(*Vote)
 	require.Equal(d.Epoch, cmd.Epoch)
-	require.Equal(d.PublicKey.Bytes(), cmd.PublicKey.Bytes())
+
+	blob1, err := d.PublicKey.MarshalBinary()
+	require.NoError(err)
+	blob2, err := cmd.PublicKey.MarshalBinary()
+	require.NoError(err)
+	require.Equal(blob1, blob2)
 	require.Equal(d.Payload, cmd.Payload)
 }
 
@@ -435,7 +443,8 @@ func TestReveal(t *testing.T) {
 	t.Parallel()
 	require := require.New(t)
 
-	_, alicePub := cert.Scheme.NewKeypair()
+	alicePub, _, err := cert.Scheme.GenerateKey()
+	require.NoError(err)
 	digest := make([]byte, 32)
 	for i := 0; i < 32; i++ {
 		digest[i] = uint8(i)
@@ -464,7 +473,13 @@ func TestReveal(t *testing.T) {
 	require.IsType(cmd, c, "Reveal: FromBytes() invalid type")
 	d := c.(*Reveal)
 	require.Equal(d.Epoch, cmd.Epoch)
-	require.Equal(d.PublicKey.Bytes(), cmd.PublicKey.Bytes())
+
+	blob1, err := d.PublicKey.MarshalBinary()
+	require.NoError(err)
+	blob2, err := cmd.PublicKey.MarshalBinary()
+	require.NoError(err)
+	require.Equal(blob1, blob2)
+
 	require.Equal(d.Payload, cmd.Payload)
 }
 
@@ -498,7 +513,9 @@ func TestCert(t *testing.T) {
 	t.Parallel()
 	require := require.New(t)
 
-	_, alicePub := cert.Scheme.NewKeypair()
+	alicePub, _, err := cert.Scheme.GenerateKey()
+	require.NoError(err)
+
 	cmd := &Cert{
 		Epoch:     3141,
 		PublicKey: alicePub,
@@ -523,7 +540,13 @@ func TestCert(t *testing.T) {
 	require.IsType(cmd, c, "Reveal: FromBytes() invalid type")
 	d := c.(*Cert)
 	require.Equal(d.Epoch, cmd.Epoch)
-	require.Equal(d.PublicKey.Bytes(), cmd.PublicKey.Bytes())
+
+	blob1, err := d.PublicKey.MarshalBinary()
+	require.NoError(err)
+	blob2, err := cmd.PublicKey.MarshalBinary()
+	require.NoError(err)
+	require.Equal(blob1, blob2)
+
 	require.Equal(d.Payload, cmd.Payload)
 }
 
@@ -557,7 +580,9 @@ func TestSig(t *testing.T) {
 	t.Parallel()
 	require := require.New(t)
 
-	_, alicePub := cert.Scheme.NewKeypair()
+	alicePub, _, err := cert.Scheme.GenerateKey()
+	require.NoError(err)
+
 	cmd := &Sig{
 		Epoch:     3141,
 		PublicKey: alicePub,
@@ -582,7 +607,13 @@ func TestSig(t *testing.T) {
 	require.IsType(cmd, c, "Sig: FromBytes() invalid type")
 	d := c.(*Sig)
 	require.Equal(d.Epoch, cmd.Epoch)
-	require.Equal(d.PublicKey.Bytes(), cmd.PublicKey.Bytes())
+
+	blob1, err := d.PublicKey.MarshalBinary()
+	require.NoError(err)
+	blob2, err := cmd.PublicKey.MarshalBinary()
+	require.NoError(err)
+	require.Equal(blob1, blob2)
+
 	require.Equal(d.Payload, cmd.Payload)
 }
 
