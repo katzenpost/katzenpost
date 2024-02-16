@@ -57,10 +57,10 @@ func TestMemSpoolMapBasics(t *testing.T) {
 	t.Parallel()
 	assert := assert.New(t)
 
-	privKey, err := eddsa.NewKeypair(rand.NewMath())
+	_, privKey, err := eddsa.Scheme().GenerateKey()
 	assert.NoError(err)
-	signature := privKey.Sign(privKey.PublicKey().Bytes())
-
+	signature := privKey.Scheme().Sign(privKey, privKey.Public().(*eddsa.PublicKey).Bytes(), nil)
+	assert.NoError(err)
 	fileStore, err := os.CreateTemp("", "catshadow_test_filestore")
 	assert.NoError(err)
 
@@ -70,7 +70,7 @@ func TestMemSpoolMapBasics(t *testing.T) {
 
 	spoolMap, err := NewMemSpoolMap(fileStore.Name(), logger)
 	assert.NoError(err)
-	spoolID, err := spoolMap.CreateSpool(privKey.PublicKey(), signature)
+	spoolID, err := spoolMap.CreateSpool(privKey.Public().(*eddsa.PublicKey), signature)
 	assert.NoError(err)
 
 	message1 := []byte("hello")
@@ -99,9 +99,9 @@ func TestPersistence(t *testing.T) {
 	t.Parallel()
 	assert := assert.New(t)
 
-	privKey, err := eddsa.NewKeypair(rand.NewMath())
+	_, privKey, err := eddsa.Scheme().GenerateKey()
 	assert.NoError(err)
-	signature := privKey.Sign(privKey.PublicKey().Bytes())
+	signature := privKey.Scheme().Sign(privKey, privKey.Public().(*eddsa.PublicKey).Bytes(), nil)
 	fileStore, err := os.CreateTemp("", "catshadow_test_filestore")
 	assert.NoError(err)
 
@@ -111,7 +111,7 @@ func TestPersistence(t *testing.T) {
 
 	spoolMap, err := NewMemSpoolMap(fileStore.Name(), logger)
 	assert.NoError(err)
-	spoolID, err := spoolMap.CreateSpool(privKey.PublicKey(), signature)
+	spoolID, err := spoolMap.CreateSpool(privKey.Public().(*eddsa.PublicKey), signature)
 	assert.NoError(err)
 	messages := make([][]byte, 1)
 

@@ -55,7 +55,7 @@ func getGlue(logBackend *log.Backend, provider *mockProvider, linkKey kem.Privat
 func TestCBORInvalidCommandWithPluginKaetzchenWorker(t *testing.T) {
 	require := require.New(t)
 
-	idKey, _ := cert.Scheme.NewKeypair()
+	_, idKey, err := cert.Scheme.GenerateKey()
 
 	logBackend, err := log.New("", "DEBUG", false)
 	require.NoError(err)

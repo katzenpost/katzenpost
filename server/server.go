@@ -36,7 +36,7 @@ import (
 	pemkem "github.com/katzenpost/hpqc/kem/pem"
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/hpqc/sign"
-	"github.com/katzenpost/hpqc/util/pem"
+	signpem "github.com/katzenpost/hpqc/sign/pem"
 
 	"github.com/katzenpost/katzenpost/core/cert"
 	"github.com/katzenpost/katzenpost/core/log"
@@ -214,8 +214,7 @@ func (s *Server) halt() {
 	if s.inboundPackets != nil {
 		s.inboundPackets.Close()
 	}
-	s.identityPrivateKey.Reset()
-	s.identityPublicKey.Reset()
+
 	close(s.fatalErrCh)
 
 	s.log.Noticef("Shutdown complete.")
@@ -257,23 +256,24 @@ func New(cfg *config.Config) (*Server, error) {
 	identityPrivateKeyFile := filepath.Join(s.cfg.Server.DataDir, "identity.private.pem")
 	identityPublicKeyFile := filepath.Join(s.cfg.Server.DataDir, "identity.public.pem")
 
-	s.identityPrivateKey, s.identityPublicKey = cert.Scheme.NewKeypair()
+	var err error
+	s.identityPublicKey, s.identityPrivateKey, err = cert.Scheme.GenerateKey()
 
 	if utils.BothExists(identityPrivateKeyFile, identityPublicKeyFile) {
-		err := pem.FromFile(identityPrivateKeyFile, s.identityPrivateKey)
+		s.identityPrivateKey, err = signpem.FromPrivatePEMFile(identityPrivateKeyFile, cert.Scheme)
 		if err != nil {
 			return nil, err
 		}
-		err = pem.FromFile(identityPublicKeyFile, s.identityPublicKey)
+		s.identityPublicKey, err = signpem.FromPublicPEMFile(identityPublicKeyFile, cert.Scheme)
 		if err != nil {
 			return nil, err
 		}
 	} else if utils.BothNotExists(identityPrivateKeyFile, identityPublicKeyFile) {
-		err := pem.ToFile(identityPrivateKeyFile, s.identityPrivateKey)
+		err = signpem.PrivateKeyToFile(identityPrivateKeyFile, s.identityPrivateKey)
 		if err != nil {
 			return nil, err
 		}
-		err = pem.ToFile(identityPublicKeyFile, s.identityPublicKey)
+		err = signpem.PublicKeyToFile(identityPublicKeyFile, s.identityPublicKey)
 		if err != nil {
 			return nil, err
 		}
@@ -281,8 +281,7 @@ func New(cfg *config.Config) (*Server, error) {
 		return nil, fmt.Errorf("%s and %s must either both exist or not exist", identityPrivateKeyFile, identityPublicKeyFile)
 	}
 
-	var err error
-	idPubKeyHash := s.identityPublicKey.Sum256()
+	idPubKeyHash := hash.Sum256From(s.identityPublicKey)
 	s.log.Noticef("Server identity public key hash is: %x", idPubKeyHash[:])
 	linkPrivateKeyFile := filepath.Join(s.cfg.Server.DataDir, "link.private.pem")
 	linkPublicKeyFile := filepath.Join(s.cfg.Server.DataDir, "link.public.pem")

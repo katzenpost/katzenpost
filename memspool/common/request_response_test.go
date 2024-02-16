@@ -21,14 +21,13 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/katzenpost/hpqc/rand"
 	eddsa "github.com/katzenpost/hpqc/sign/ed25519"
 )
 
 func TestCommandSerialization(t *testing.T) {
 	require := require.New(t)
-	pk, err := eddsa.NewKeypair(rand.Reader)
-	signature := pk.Sign(pk.PublicKey().Bytes())
+	_, pk, err := eddsa.Scheme().GenerateKey()
+	signature := eddsa.Scheme().Sign(pk, pk.Public().(*eddsa.PublicKey).Bytes(), nil)
 	require.NoError(err)
 	cmd, err := CreateSpool(pk)
 	require.NoError(err)

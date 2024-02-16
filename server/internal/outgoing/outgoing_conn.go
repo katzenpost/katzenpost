@@ -26,6 +26,7 @@ import (
 
 	"github.com/katzenpost/katzenpost/server/internal/instrument"
 
+	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/monotime"
@@ -57,7 +58,7 @@ func (c *outgoingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 	// At a minimum, the peer's credentials should match what we started out
 	// with.  This is enforced even if mix authentication is disabled.
 
-	idHash := c.dst.IdentityKey.Sum256()
+	idHash := hash.Sum256(c.dst.IdentityKey)
 	if !hmac.Equal(idHash[:], creds.AdditionalData) {
 		c.log.Debug("IsPeerValid false, identity hash mismatch")
 		return false
@@ -134,7 +135,7 @@ func (c *outgoingConn) worker() {
 		}
 	}()
 
-	identityHash := c.dst.IdentityKey.Sum256()
+	identityHash := hash.Sum256(c.dst.IdentityKey)
 	linkPubKey, err := wire.DefaultScheme.UnmarshalBinaryPublicKey(c.dst.LinkKey)
 	if err != nil {
 		panic(err)
@@ -247,7 +248,7 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 	}()
 
 	// Allocate the session struct.
-	identityHash := c.co.glue.IdentityPublicKey().Sum256()
+	identityHash := hash.Sum256From(c.co.glue.IdentityPublicKey())
 	cfg := &wire.SessionConfig{
 		Geometry:          c.geo,
 		Authenticator:     c,

@@ -163,7 +163,7 @@ func (c *incomingConn) worker() {
 	}()
 
 	// Allocate the session struct.
-	identityHash := c.l.glue.IdentityPublicKey().Sum256()
+	identityHash := hash.Sum256From(c.l.glue.IdentityPublicKey())
 	cfg := &wire.SessionConfig{
 		Geometry:          c.geo,
 		Authenticator:     c,

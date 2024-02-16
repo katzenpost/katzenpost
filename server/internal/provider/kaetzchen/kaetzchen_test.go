@@ -28,7 +28,7 @@ import (
 	ecdh "github.com/katzenpost/hpqc/nike/x25519"
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/hpqc/sign"
-	"github.com/katzenpost/hpqc/util/pem"
+	signpem "github.com/katzenpost/hpqc/sign/pem"
 
 	"github.com/katzenpost/katzenpost/core/cert"
 	"github.com/katzenpost/katzenpost/core/log"
@@ -228,11 +228,13 @@ func TestKaetzchenWorker(t *testing.T) {
 
 	datadir := os.TempDir()
 
-	idKey, idPubKey := cert.Scheme.NewKeypair()
-	err := pem.ToFile(filepath.Join(datadir, "identity.private.pem"), idKey)
+	idPubKey, idKey, err := cert.Scheme.GenerateKey()
 	require.NoError(t, err)
 
-	err = pem.ToFile(filepath.Join(datadir, "identity.public.pem"), idPubKey)
+	err = signpem.PrivateKeyToFile(filepath.Join(datadir, "identity.private.pem"), idKey)
+	require.NoError(t, err)
+
+	err = signpem.PublicKeyToFile(filepath.Join(datadir, "identity.public.pem"), idPubKey)
 	require.NoError(t, err)
 
 	logBackend, err := log.New("", "DEBUG", false)

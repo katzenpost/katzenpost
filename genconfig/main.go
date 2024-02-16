@@ -27,11 +27,12 @@ import (
 
 	"github.com/BurntSushi/toml"
 
+	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/kem"
 	kempem "github.com/katzenpost/hpqc/kem/pem"
 	kemschemes "github.com/katzenpost/hpqc/kem/schemes"
 	"github.com/katzenpost/hpqc/nike/schemes"
-	"github.com/katzenpost/hpqc/util/pem"
+	signpem "github.com/katzenpost/hpqc/sign/pem"
 
 	"github.com/katzenpost/hpqc/sign"
 	vConfig "github.com/katzenpost/katzenpost/authority/voting/server/config"
@@ -290,7 +291,7 @@ func (s *katzenpost) genVotingAuthoritiesCfg(numAuthorities int, parameters *vCo
 			LinkPublicKey:     linkKey,
 			Addresses:         cfg.Server.Addresses,
 		}
-		s.authorities[idKey.Sum256()] = authority
+		s.authorities[hash.Sum256From(idKey)] = authority
 	}
 
 	// tell each authority about it's peers
@@ -547,16 +548,15 @@ func cfgIdKey(cfg interface{}, outDir string) sign.PublicKey {
 		panic("wrong type")
 	}
 
-	idKey, idPubKey := cert.Scheme.NewKeypair()
-	err := pem.FromFile(public, idPubKey)
+	idPubKey, err := signpem.FromPublicPEMFile(public, cert.Scheme)
 	if err == nil {
 		return idPubKey
 	}
-	idKey, idPubKey = cert.Scheme.NewKeypair()
+	idPubKey, idKey, err := cert.Scheme.GenerateKey()
 	log.Printf("writing %s", priv)
-	pem.ToFile(priv, idKey)
+	signpem.PrivateKeyToFile(priv, idKey)
 	log.Printf("writing %s", public)
-	pem.ToFile(public, idPubKey)
+	signpem.PublicKeyToFile(public, idPubKey)
 	return idPubKey
 }
 

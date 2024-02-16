@@ -28,7 +28,7 @@ import (
 	kempem "github.com/katzenpost/hpqc/kem/pem"
 	ecdh "github.com/katzenpost/hpqc/nike/x25519"
 	"github.com/katzenpost/hpqc/rand"
-	"github.com/katzenpost/hpqc/util/pem"
+	signpem "github.com/katzenpost/hpqc/sign/pem"
 
 	aconfig "github.com/katzenpost/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/katzenpost/core/cert"
@@ -52,18 +52,20 @@ func TestServerStartShutdown(t *testing.T) {
 	err = kempem.PublicKeyToFile(filepath.Join(datadir, authLinkPubKeyPem), authLinkPubKey)
 	require.NoError(t, err)
 
-	_, authPubkey := cert.Scheme.NewKeypair()
+	authPubkey, _, err := cert.Scheme.GenerateKey()
+	require.NoError(t, err)
 
 	authIDPubKeyPem := "auth_id_pub_key.pem"
 	authkeyPath := filepath.Join(datadir, authIDPubKeyPem)
 
-	err = pem.ToFile(authkeyPath, authPubkey)
+	err = signpem.PublicKeyToFile(authkeyPath, authPubkey)
 	require.NoError(t, err)
 
-	mixIdPrivateKey, mixIdPublicKey := cert.Scheme.NewKeypair()
-	err = pem.ToFile(filepath.Join(datadir, "identity.private.pem"), mixIdPrivateKey)
+	mixIdPublicKey, mixIdPrivateKey, err := cert.Scheme.GenerateKey()
 	require.NoError(t, err)
-	err = pem.ToFile(filepath.Join(datadir, "identity.public.pem"), mixIdPublicKey)
+	err = signpem.PrivateKeyToFile(filepath.Join(datadir, "identity.private.pem"), mixIdPrivateKey)
+	require.NoError(t, err)
+	err = signpem.PublicKeyToFile(filepath.Join(datadir, "identity.public.pem"), mixIdPublicKey)
 	require.NoError(t, err)
 
 	geo := geo.GeometryFromUserForwardPayloadLength(

@@ -266,10 +266,14 @@ func (p *pki) validateCacheEntry(ent *pkicache.Entry) error {
 	if desc.Name != p.glue.Config().Server.Identifier {
 		return fmt.Errorf("self Name field does not match Identifier")
 	}
-	if !desc.IdentityKey.Equal(p.glue.IdentityPublicKey()) {
+	blob, err := p.glue.IdentityPublicKey().MarshalBinary()
+	if err != nil {
+		return err
+	}
+	if !hmac.Equal(desc.IdentityKey, blob) {
 		return fmt.Errorf("self identity key mismatch")
 	}
-	blob, err := p.glue.LinkKey().Public().MarshalBinary()
+	blob, err = p.glue.LinkKey().Public().MarshalBinary()
 	if err != nil {
 		return err
 	}
@@ -373,9 +377,13 @@ func (p *pki) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 	if err != nil {
 		return err
 	}
+	idkeyblob, err := p.glue.IdentityPublicKey().MarshalBinary()
+	if err != nil {
+		return err
+	}
 	desc := &cpki.MixDescriptor{
 		Name:        p.glue.Config().Server.Identifier,
-		IdentityKey: p.glue.IdentityPublicKey(),
+		IdentityKey: idkeyblob,
 		LinkKey:     linkblob,
 		Addresses:   p.descAddrMap,
 		Epoch:       epoch,
@@ -619,7 +627,7 @@ func (p *pki) OutgoingDestinations() map[[sConstants.NodeIDLength]byte]*cpki.Mix
 		}
 
 		for _, v := range d.Outgoing() {
-			nodeID := v.IdentityKey.Sum256()
+			nodeID := hash.Sum256(v.IdentityKey)
 
 			// Ignore nodes from past epochs that are not listed in the
 			// current document.

@@ -21,6 +21,7 @@ import (
 
 	"github.com/fxamacker/cbor/v2"
 
+	"github.com/katzenpost/hpqc/sign"
 	eddsa "github.com/katzenpost/hpqc/sign/ed25519"
 
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
@@ -116,15 +117,19 @@ func (s *SpoolResponse) StatusAsError() error {
 	return errors.New(s.Status)
 }
 
-func CreateSpool(privKey *eddsa.PrivateKey) ([]byte, error) {
-	signature := privKey.Sign(privKey.PublicKey().Bytes())
+func CreateSpool(privKey sign.PrivateKey) ([]byte, error) {
+	message, err := privKey.Public().(*eddsa.PublicKey).MarshalBinary()
+	if err != nil {
+		return nil, err
+	}
+	signature := privKey.Scheme().Sign(privKey, message, nil)
 	emtpySpoolID := [SpoolIDSize]byte{}
 	emptyMessage := []byte{}
 	s := SpoolRequest{
 		Command:   CreateSpoolCommand,
 		SpoolID:   emtpySpoolID,
 		Signature: signature,
-		PublicKey: privKey.PublicKey().Bytes(),
+		PublicKey: privKey.Public().(*eddsa.PublicKey).Bytes(),
 		MessageID: 0,
 		Message:   emptyMessage,
 	}
@@ -132,7 +137,11 @@ func CreateSpool(privKey *eddsa.PrivateKey) ([]byte, error) {
 }
 
 func PurgeSpool(spoolID [SpoolIDSize]byte, privKey *eddsa.PrivateKey) ([]byte, error) {
-	signature := privKey.Sign(privKey.PublicKey().Bytes())
+	message, err := privKey.PublicKey().MarshalBinary()
+	if err != nil {
+		return nil, err
+	}
+	signature := privKey.Scheme().Sign(privKey, message, nil)
 	s := SpoolRequest{
 		Command:   PurgeSpoolCommand,
 		PublicKey: privKey.PublicKey().Bytes(),
@@ -159,7 +168,11 @@ func AppendToSpool(spoolID [SpoolIDSize]byte, message []byte, geo *geo.Geometry)
 }
 
 func ReadFromSpool(spoolID [SpoolIDSize]byte, messageID uint32, privKey *eddsa.PrivateKey) ([]byte, error) {
-	signature := privKey.Sign(privKey.PublicKey().Bytes())
+	message, err := privKey.PublicKey().MarshalBinary()
+	if err != nil {
+		return nil, err
+	}
+	signature := privKey.Scheme().Sign(privKey, message, nil)
 	s := SpoolRequest{
 		Command:   RetrieveMessageCommand,
 		PublicKey: privKey.PublicKey().Bytes(),

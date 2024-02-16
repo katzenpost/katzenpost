@@ -17,8 +17,7 @@
 package client
 
 import (
-	"github.com/katzenpost/hpqc/rand"
-	eddsa "github.com/katzenpost/hpqc/sign/ed25519"
+	"github.com/katzenpost/hpqc/sign/ed25519"
 
 	"github.com/katzenpost/katzenpost/client"
 	"github.com/katzenpost/katzenpost/memspool/common"
@@ -39,7 +38,7 @@ type SpoolWriteDescriptor struct {
 // SpoolReadDescriptor describes a remotely readable spool.
 type SpoolReadDescriptor struct {
 	// PrivateKey is the key material required for reading the described spool.
-	PrivateKey *eddsa.PrivateKey
+	PrivateKey *ed25519.PrivateKey
 
 	// ID is the identity of the described spool.
 	ID [common.SpoolIDSize]byte
@@ -73,7 +72,7 @@ func (r *SpoolReadDescriptor) GetWriteDescriptor() *SpoolWriteDescriptor {
 // NewSpoolReadDescriptor blocks until the remote spool is created
 // or the round trip timeout is reached.
 func NewSpoolReadDescriptor(receiver, provider string, session *client.Session) (*SpoolReadDescriptor, error) {
-	privateKey, err := eddsa.NewKeypair(rand.Reader)
+	_, privateKey, err := ed25519.Scheme().GenerateKey()
 	if err != nil {
 		return nil, err
 	}
@@ -96,7 +95,7 @@ func NewSpoolReadDescriptor(receiver, provider string, session *client.Session) 
 		return nil, spoolResponse.StatusAsError()
 	}
 	return &SpoolReadDescriptor{
-		PrivateKey: privateKey,
+		PrivateKey: privateKey.(*ed25519.PrivateKey),
 		ID:         spoolResponse.SpoolID,
 		Receiver:   receiver,
 		Provider:   provider,
