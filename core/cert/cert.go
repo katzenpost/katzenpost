@@ -25,6 +25,8 @@ import (
 
 	"github.com/fxamacker/cbor/v2"
 
+	"github.com/katzenpost/hpqc/hash"
+	"github.com/katzenpost/hpqc/sign"
 	"github.com/katzenpost/hpqc/sign/schemes"
 
 	"github.com/katzenpost/katzenpost/core/epochtime"
@@ -81,24 +83,6 @@ var (
 	// Create reusable EncMode interface with immutable options, safe for concurrent use.
 	ccbor cbor.EncMode
 )
-
-// Verifier is used to verify signatures.
-type Verifier interface {
-	// Verify verifies a signature.
-	Verify(sig, msg []byte) bool
-
-	// Sum256 returns the Blake2b 256-bit checksum of the key's raw bytes.
-	Sum256() [32]byte
-}
-
-// Signer signs messages.
-type Signer interface {
-	// Sign signs the message and returns the signature.
-	Sign(msg []byte) []byte
-
-	// KeyType returns the key type string.
-	KeyType() string
-}
 
 // Signature is a cryptographic signature
 // which has an associated signer ID.
@@ -195,11 +179,11 @@ func (c *Certificate) sanityCheck() error {
 
 // Sign uses the given Signer to create a certificate which
 // certifies the given data.
-func Sign(signer Signer, verifier Verifier, data []byte, expiration uint64) ([]byte, error) {
+func Sign(signer sign.PrivateKey, verifier sign.PublicKey, data []byte, expiration uint64) ([]byte, error) {
 	cert := Certificate{
 		Version:    CertVersion,
 		Expiration: expiration,
-		KeyType:    signer.KeyType(),
+		KeyType:    signer.Scheme().Name(),
 		Certified:  data,
 	}
 	err := cert.sanityCheck()
@@ -211,9 +195,13 @@ func Sign(signer Signer, verifier Verifier, data []byte, expiration uint64) ([]b
 		return nil, err
 	}
 	cert.Signatures = make(map[[32]byte]Signature)
-	cert.Signatures[verifier.Sum256()] = Signature{
-		PublicKeySum256: verifier.Sum256(),
-		Payload:         signer.Sign(mesg),
+	sig, err := signer.Sign(nil, mesg, nil)
+	if err != nil {
+		return nil, err
+	}
+	cert.Signatures[hash.Sum256From(verifier)] = Signature{
+		PublicKeySum256: hash.Sum256From(verifier),
+		Payload:         sig,
 	}
 	return cert.Marshal()
 }
@@ -291,7 +279,7 @@ func (d byIdentity) Less(i, j int) bool {
 
 // SignMulti uses the given signer to create a signature
 // and appends it to the certificate and returns it.
-func SignMulti(signer Signer, verifier Verifier, rawCert []byte) ([]byte, error) {
+func SignMulti(signer sign.PrivateKey, verifier sign.PublicKey, rawCert []byte) ([]byte, error) {
 	// decode certificate
 	cert := new(Certificate)
 	err := cbor.Unmarshal(rawCert, cert)
@@ -302,7 +290,7 @@ func SignMulti(signer Signer, verifier Verifier, rawCert []byte) ([]byte, error)
 	if err != nil {
 		return nil, err
 	}
-	if signer.KeyType() != cert.KeyType {
+	if signer.Scheme().Name() != cert.KeyType {
 		return nil, ErrKeyTypeMismatch
 	}
 
@@ -311,9 +299,13 @@ func SignMulti(signer Signer, verifier Verifier, rawCert []byte) ([]byte, error)
 	if err != nil {
 		return nil, err
 	}
+	sig, err := signer.Sign(nil, mesg, nil)
+	if err != nil {
+		return nil, err
+	}
 	signature := Signature{
-		PublicKeySum256: verifier.Sum256(),
-		Payload:         signer.Sign(mesg),
+		PublicKeySum256: hash.Sum256From(verifier),
+		Payload:         sig,
 	}
 
 	cert.Signatures[signature.PublicKeySum256] = signature
@@ -328,7 +320,7 @@ func SignMulti(signer Signer, verifier Verifier, rawCert []byte) ([]byte, error)
 
 // AddSignature adds the signature to the certificate if the verifier
 // can verify the signature signs the certificate.
-func AddSignature(verifier Verifier, signature Signature, rawCert []byte) ([]byte, error) {
+func AddSignature(verifier sign.PublicKey, signature Signature, rawCert []byte) ([]byte, error) {
 	// decode certificate
 	cert := new(Certificate)
 	err := cbor.Unmarshal(rawCert, cert)
@@ -353,7 +345,7 @@ func AddSignature(verifier Verifier, signature Signature, rawCert []byte) ([]byt
 		return nil, err
 	}
 
-	if verifier.Verify(signature.Payload, mesg) {
+	if verifier.Scheme().Verify(verifier, mesg, signature.Payload, nil) {
 		cert.Signatures[signature.PublicKeySum256] = signature
 	} else {
 		return nil, ErrBadSignature
@@ -368,7 +360,7 @@ func AddSignature(verifier Verifier, signature Signature, rawCert []byte) ([]byt
 
 // Verify is used to verify one of the signatures attached to the certificate.
 // It returns the certified data if the signature is valid.
-func Verify(verifier Verifier, rawCert []byte) ([]byte, error) {
+func Verify(verifier sign.PublicKey, rawCert []byte) ([]byte, error) {
 	cert := new(Certificate)
 	err := cbor.Unmarshal(rawCert, cert)
 	if err != nil {
@@ -380,13 +372,13 @@ func Verify(verifier Verifier, rawCert []byte) ([]byte, error) {
 	}
 
 	for _, sig := range cert.Signatures {
-		hash := verifier.Sum256()
+		hash := hash.Sum256From(verifier)
 		if hmac.Equal(hash[:], sig.PublicKeySum256[:]) {
 			mesg, err := cert.message()
 			if err != nil {
 				return nil, err
 			}
-			if verifier.Verify(sig.Payload, mesg) {
+			if verifier.Scheme().Verify(verifier, mesg, sig.Payload, nil) {
 				return cert.Certified, nil
 			}
 			return nil, ErrBadSignature
@@ -397,7 +389,7 @@ func Verify(verifier Verifier, rawCert []byte) ([]byte, error) {
 
 // VerifyAll returns the certified data if all of the given verifiers
 // can verify the certificate. Otherwise nil is returned along with an error.
-func VerifyAll(verifiers []Verifier, rawCert []byte) ([]byte, error) {
+func VerifyAll(verifiers []sign.PublicKey, rawCert []byte) ([]byte, error) {
 	var err error
 	certified := []byte{}
 	for _, verifier := range verifiers {
@@ -413,25 +405,25 @@ func VerifyAll(verifiers []Verifier, rawCert []byte) ([]byte, error) {
 // and the failed verifiers if at least a threshold number of verifiers
 // can verify the certificate. Otherwise nil is returned along with an
 // error.
-func VerifyThreshold(verifiers []Verifier, threshold int, rawCert []byte) ([]byte, []Verifier, []Verifier, error) {
+func VerifyThreshold(verifiers []sign.PublicKey, threshold int, rawCert []byte) ([]byte, []sign.PublicKey, []sign.PublicKey, error) {
 	if threshold > len(verifiers) {
 		return nil, nil, nil, ErrInvalidThreshold
 	}
 	certified := []byte{}
 	count := 0
-	good := make(map[[32]byte]*Verifier)
-	bad := []Verifier{}
+	good := make(map[[32]byte]*sign.PublicKey)
+	bad := []sign.PublicKey{}
 	for i, verifier := range verifiers {
 		c, err := Verify(verifier, rawCert)
 		if err != nil {
 			bad = append(bad, verifier)
 			continue
 		}
-		good[verifier.Sum256()] = &verifiers[i]
+		good[hash.Sum256From(verifier)] = &verifiers[i]
 		certified = c
 		count++
 	}
-	var good_out []Verifier
+	var good_out []sign.PublicKey
 	for _, v := range good {
 		good_out = append(good_out, *v)
 	}

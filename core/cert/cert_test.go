@@ -23,9 +23,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/katzenpost/hpqc/rand"
-	eddsa "github.com/katzenpost/hpqc/sign/ed25519"
-
+	"github.com/katzenpost/hpqc/hash"
+	"github.com/katzenpost/hpqc/sign"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 )
 
@@ -34,16 +33,18 @@ func TestExpiredCertificate(t *testing.T) {
 	assert := assert.New(t)
 
 	scheme := Scheme
-	_, ephemeralPubKey := scheme.NewKeypair()
+	ephemeralPubKey, _, err := scheme.GenerateKey()
+	require.NoError(t, err)
 
-	signingPrivKey, signingPubKey := scheme.NewKeypair()
-	signingPrivKey, err := eddsa.NewKeypair(rand.Reader)
-	assert.NoError(err)
+	signingPubKey, signingPrivKey, err := scheme.GenerateKey()
+	require.NoError(t, err)
 
 	current, _, _ := epochtime.Now()
+	blob, err := ephemeralPubKey.MarshalBinary()
+	require.NoError(t, err)
 
-	certificate, err := Sign(signingPrivKey, signingPubKey, ephemeralPubKey.Bytes(), current-12)
-	assert.Error(err)
+	certificate, err := Sign(signingPrivKey, signingPubKey, blob, current-12)
+	require.Error(t, err)
 
 	certified, err := Verify(ephemeralPubKey, certificate)
 	assert.Error(err)
@@ -55,13 +56,17 @@ func TestCertificate(t *testing.T) {
 	assert := assert.New(t)
 
 	scheme := Scheme
-	_, ephemeralPubKey := scheme.NewKeypair()
+	ephemeralPubKey, _, err := scheme.GenerateKey()
+	require.NoError(t, err)
 
-	signingPrivKey, signingPubKey := scheme.NewKeypair()
+	signingPubKey, signingPrivKey, err := scheme.GenerateKey()
+	require.NoError(t, err)
 
 	current, _, _ := epochtime.Now()
 
-	toSign := ephemeralPubKey.Bytes()
+	toSign, err := ephemeralPubKey.MarshalBinary()
+	require.NoError(t, err)
+
 	certificate, err := Sign(signingPrivKey, signingPubKey, toSign, current+123)
 	assert.NoError(err)
 
@@ -74,7 +79,8 @@ func TestCertificate(t *testing.T) {
 func TestBadCertificate(t *testing.T) {
 	t.Parallel()
 
-	signingPrivKey, signingPubKey := Scheme.NewKeypair()
+	signingPubKey, signingPrivKey, err := Scheme.GenerateKey()
+	require.NoError(t, err)
 
 	current, _, _ := epochtime.Now()
 	validBeforeEpoch := current + 2
@@ -100,11 +106,16 @@ func TestWrongCertificate(t *testing.T) {
 	t.Parallel()
 	assert := assert.New(t)
 
-	_, ephemeralPubKey := Scheme.NewKeypair()
-	signingPrivKey, signingPubKey := Scheme.NewKeypair()
+	ephemeralPubKey, _, err := Scheme.GenerateKey()
+	require.NoError(t, err)
+
+	signingPubKey, signingPrivKey, err := Scheme.GenerateKey()
+	require.NoError(t, err)
 
 	current, _, _ := epochtime.Now()
-	certificate, err := Sign(signingPrivKey, signingPubKey, ephemeralPubKey.Bytes(), current+1)
+	blob, err := ephemeralPubKey.MarshalBinary()
+	require.NoError(t, err)
+	certificate, err := Sign(signingPrivKey, signingPubKey, blob, current+1)
 	assert.NoError(err)
 
 	mesg, err := Verify(ephemeralPubKey, certificate)
@@ -116,9 +127,12 @@ func TestMultiSignatureCertificate(t *testing.T) {
 	t.Parallel()
 	assert := assert.New(t)
 
-	signingPrivKey1, signingPubKey1 := Scheme.NewKeypair()
-	signingPrivKey2, signingPubKey2 := Scheme.NewKeypair()
-	signingPrivKey3, signingPubKey3 := Scheme.NewKeypair()
+	signingPubKey1, signingPrivKey1, err := Scheme.GenerateKey()
+	require.NoError(t, err)
+	signingPubKey2, signingPrivKey2, err := Scheme.GenerateKey()
+	require.NoError(t, err)
+	signingPubKey3, signingPrivKey3, err := Scheme.GenerateKey()
+	require.NoError(t, err)
 
 	current, _, _ := epochtime.Now()
 
@@ -150,15 +164,22 @@ func TestVerifyAll(t *testing.T) {
 	t.Parallel()
 	assert := assert.New(t)
 
-	_, ephemeralPubKey := Scheme.NewKeypair()
+	ephemeralPubKey, _, err := Scheme.GenerateKey()
+	require.NoError(t, err)
 
-	signingPrivKey1, signingPubKey1 := Scheme.NewKeypair()
-	signingPrivKey2, signingPubKey2 := Scheme.NewKeypair()
-	signingPrivKey3, signingPubKey3 := Scheme.NewKeypair()
+	signingPubKey1, signingPrivKey1, err := Scheme.GenerateKey()
+	require.NoError(t, err)
+	signingPubKey2, signingPrivKey2, err := Scheme.GenerateKey()
+	require.NoError(t, err)
+	signingPubKey3, signingPrivKey3, err := Scheme.GenerateKey()
+	require.NoError(t, err)
 
 	current, _, _ := epochtime.Now()
 
-	certificate, err := Sign(signingPrivKey1, signingPubKey1, ephemeralPubKey.Bytes(), current+2)
+	blob, err := ephemeralPubKey.MarshalBinary()
+	require.NoError(t, err)
+
+	certificate, err := Sign(signingPrivKey1, signingPubKey1, blob, current+2)
 	assert.NoError(err)
 
 	certificate, err = SignMulti(signingPrivKey2, signingPubKey2, certificate)
@@ -167,7 +188,7 @@ func TestVerifyAll(t *testing.T) {
 	certificate, err = SignMulti(signingPrivKey3, signingPubKey3, certificate)
 	assert.NoError(err)
 
-	verifiers := []Verifier{signingPubKey1, signingPubKey2, signingPubKey2}
+	verifiers := []sign.PublicKey{signingPubKey1, signingPubKey2, signingPubKey2}
 	mesg, err := VerifyAll(verifiers, certificate)
 	assert.NoError(err)
 	assert.NotNil(mesg)
@@ -177,16 +198,22 @@ func TestVerifyThreshold(t *testing.T) {
 	t.Parallel()
 	assert := assert.New(t)
 
-	_, ephemeralPubKey := Scheme.NewKeypair()
+	ephemeralPubKey, _, err := Scheme.GenerateKey()
+	require.NoError(t, err)
 
-	signingPrivKey1, signingPubKey1 := Scheme.NewKeypair()
-	signingPrivKey2, signingPubKey2 := Scheme.NewKeypair()
-	signingPrivKey3, signingPubKey3 := Scheme.NewKeypair()
-	_, signingPubKey4 := Scheme.NewKeypair()
+	signingPubKey1, signingPrivKey1, err := Scheme.GenerateKey()
+	require.NoError(t, err)
+	signingPubKey2, signingPrivKey2, err := Scheme.GenerateKey()
+	require.NoError(t, err)
+	signingPubKey3, signingPrivKey3, err := Scheme.GenerateKey()
+	require.NoError(t, err)
+	signingPubKey4, _, err := Scheme.GenerateKey()
+	require.NoError(t, err)
 
 	current, _, _ := epochtime.Now()
 
-	certificate, err := Sign(signingPrivKey1, signingPubKey1, ephemeralPubKey.Bytes(), current+1)
+	blob, err := ephemeralPubKey.MarshalBinary()
+	certificate, err := Sign(signingPrivKey1, signingPubKey1, blob, current+1)
 	assert.NoError(err)
 
 	certificate, err = SignMulti(signingPrivKey2, signingPubKey2, certificate)
@@ -195,18 +222,18 @@ func TestVerifyThreshold(t *testing.T) {
 	certificate, err = SignMulti(signingPrivKey3, signingPubKey3, certificate)
 	assert.NoError(err)
 
-	verifiers := []Verifier{signingPubKey1, signingPubKey2, signingPubKey4}
+	verifiers := []sign.PublicKey{signingPubKey1, signingPubKey2, signingPubKey4}
 	threshold := 2
 	mesg, good, bad, err := VerifyThreshold(verifiers, threshold, certificate)
 	assert.NoError(err)
 	assert.NotNil(mesg)
 	assert.Equal(len(verifiers), len(good)+len(bad))
 	assert.Equal(true, len(good) >= threshold)
-	assert.Equal(bad[0].Sum256(), signingPubKey4.Sum256())
-	hasVerifier := func(verifier Verifier) bool {
+	assert.Equal(hash.Sum256From(bad[0]), hash.Sum256From(signingPubKey4))
+	hasVerifier := func(verifier sign.PublicKey) bool {
 		for _, v := range good {
-			a := v.Sum256()
-			b := verifier.Sum256()
+			a := hash.Sum256From(v)
+			b := hash.Sum256From(verifier)
 			if bytes.Equal(a[:], b[:]) {
 				return true
 			}
@@ -222,21 +249,27 @@ func TestAddSignature(t *testing.T) {
 	t.Parallel()
 	assert := assert.New(t)
 
-	_, ephemeralPubKey := Scheme.NewKeypair()
+	ephemeralPubKey, _, err := Scheme.GenerateKey()
+	require.NoError(t, err)
 
-	signingPrivKey1, signingPubKey1 := Scheme.NewKeypair()
-	signingPrivKey2, signingPubKey2 := Scheme.NewKeypair()
+	signingPubKey1, signingPrivKey1, err := Scheme.GenerateKey()
+	require.NoError(t, err)
+	signingPubKey2, signingPrivKey2, err := Scheme.GenerateKey()
+	require.NoError(t, err)
 
 	current, _, _ := epochtime.Now()
 
-	certificate, err := Sign(signingPrivKey1, signingPubKey1, ephemeralPubKey.Bytes(), current+1)
+	blob, err := ephemeralPubKey.MarshalBinary()
+	require.NoError(t, err)
+
+	certificate, err := Sign(signingPrivKey1, signingPubKey1, blob, current+1)
 	assert.NoError(err)
 
 	certificate2, err := SignMulti(signingPrivKey2, signingPubKey2, certificate)
 	assert.NoError(err)
 
-	hash := signingPubKey2.Sum256()
-	sig, err := GetSignature(hash[:], certificate2)
+	h := hash.Sum256From(signingPubKey2)
+	sig, err := GetSignature(h[:], certificate2)
 	assert.NoError(err)
 	assert.NotNil(sig)
 	certificate3, err := AddSignature(signingPubKey2, *sig, certificate)
