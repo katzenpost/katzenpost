@@ -167,59 +167,9 @@ func main() {
 	}
 	cancelFn()
 
-	// get a pki doc
-	pkiDoc := session.CurrentDocument()
-	if pkiDoc == nil {
-		fmt.Println(err)
-		os.Exit(-1)
-	}
+	// configure replicas and extract configuration from PKI
+	replicas, trustDomainCfgs, commonCfgs := getCurrentReplicas(session)
 
-	// find replicas from pki
-	descs, err := session.GetServices(talekReplicaService)
-	if err != nil {
-		fmt.Println(err)
-		os.Exit(-1)
-	}
-
-	replicas := make([]*ReplicaKPC, 0)
-	trustDomainCfgs := make([]*tCommon.TrustDomainConfig, 0)
-	commonCfgs := make([]*tCommon.Config, 0)
-	for _, desc := range descs {
-		// get the publickeys from the MixDescriptor
-		md, err := pkiDoc.GetProvider(desc.Provider)
-		if err != nil {
-			fmt.Println(err)
-			continue
-		}
-
-		// obtain the plugin parameters
-		kpReplicaParams, ok := md.Kaetzchen[talekReplicaService]
-		if !ok {
-			fmt.Println("Failed to find talek replica plugin parameters for ", desc.Provider)
-			continue
-		}
-
-		// obtain a trustdomain from parameters
-		trustDomainCfg, err := trustDomainFromParams(desc.Name, desc.Provider, kpReplicaParams)
-		if err != nil {
-			fmt.Println("trustDomainFromParams returned %v", err)
-			continue
-		}
-
-		// keep the trustDomain configs for the client config
-		trustDomainCfgs = append(trustDomainCfgs, trustDomainCfg)
-
-		// obtain a common config from parameters
-		commonCfg, err := commonConfigFromParams(kpReplicaParams)
-		if err != nil {
-			fmt.Println("commonConfigFromParams returned %v", err)
-			continue
-		}
-		commonCfgs = append(commonCfgs, commonCfg)
-
-		// make a replica instance
-		replicas = append(replicas, NewReplicaKPC(desc.Name, desc.Provider, session, trustDomainCfg))
-	}
 	// TODO check that all replicas agree on parameters
 
 	// marshal common.Config into indented json and print parameters
@@ -372,4 +322,61 @@ func commonConfigFromParams(kpReplicaParams map[string]interface{}) (*tCommon.Co
 		return nil, err
 	}
 	return &cfg, nil
+}
+
+func getCurrentReplicas(session *client.Session) ([]*ReplicaKPC, []*tCommon.TrustDomainConfig, []*tCommon.Config) {
+	// get a pki doc
+	pkiDoc := session.CurrentDocument()
+	if pkiDoc == nil {
+		fmt.Println("No Current PKI Document")
+		os.Exit(-1)
+	}
+
+	// find talek replicas from pki
+	descs, err := session.GetServices(talekReplicaService)
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(-1)
+	}
+
+	replicas := make([]*ReplicaKPC, 0)
+	trustDomainCfgs := make([]*tCommon.TrustDomainConfig, 0)
+	commonCfgs := make([]*tCommon.Config, 0)
+	for _, desc := range descs {
+		// get the publickeys from the MixDescriptor
+		md, err := pkiDoc.GetProvider(desc.Provider)
+		if err != nil {
+			fmt.Println(err)
+			continue
+		}
+
+		// obtain the plugin parameters
+		kpReplicaParams, ok := md.Kaetzchen[talekReplicaService]
+		if !ok {
+			fmt.Println("Failed to find talek replica plugin parameters for ", desc.Provider)
+			continue
+		}
+
+		// obtain a trustdomain from parameters
+		trustDomainCfg, err := trustDomainFromParams(desc.Name, desc.Provider, kpReplicaParams)
+		if err != nil {
+			fmt.Println("trustDomainFromParams returned %v", err)
+			continue
+		}
+
+		// keep the trustDomain configs for the client config
+		trustDomainCfgs = append(trustDomainCfgs, trustDomainCfg)
+
+		// obtain a common config from parameters
+		commonCfg, err := commonConfigFromParams(kpReplicaParams)
+		if err != nil {
+			fmt.Println("commonConfigFromParams returned %v", err)
+			continue
+		}
+		commonCfgs = append(commonCfgs, commonCfg)
+
+		// make a replica instance
+		replicas = append(replicas, NewReplicaKPC(desc.Name, desc.Provider, session, trustDomainCfg))
+	}
+	return replicas, trustDomainCfgs, commonCfgs
 }
