@@ -207,17 +207,22 @@ func (c *Client) Capability() string {
 
 func (c *Client) GetParameters() (*Parameters, error) {
 	var responseParams *Parameters
+	c.log.Debugf("sending ParametersRequest to plugin %s", c.capability)
 	c.WriteChan() <- &ParametersRequest{}
+	c.log.Debugf("ParametersRequest wrote toplugin %s", c.capability)
 	select {
 	case <-c.HaltCh():
 		return nil, errors.New("Halted")
 	case <-time.After(5*time.Second):
-		c.log.Errorf("GetParameters() timed out receiving response from plugin")
+		c.log.Errorf("GetParameters() timed out receiving response from plugin %s", c.capability)
 	case responseParams = <-c.paramChan:
+		c.log.Debugf("ParametersRequestResponse received from plugin %s", c.capability)
 	}
+	// create a default Parameters
 	if responseParams == nil {
 		responseParams = &Parameters{}
 	}
+	// set endpoint name mapped to the plugin
 	(*responseParams)["endpoint"] = c.endpoint
 	return responseParams, nil
 }
