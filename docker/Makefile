@@ -19,7 +19,7 @@ help:
 warped?=true
 mixes=3
 auths=3
-providers=2
+providers=4
 
 # Parameters
 sr=0
