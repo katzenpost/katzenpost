@@ -193,7 +193,7 @@ func main() {
 	}
 
 	// set the frontend address, trust domains
-	clientConfig.FrontendAddr = listenAddress
+	clientConfig.FrontendAddr = "http://"+listenAddress+"/rpc"
 	clientConfig.TrustDomains = trustDomainCfgs
 
 	// serialize clientConfig to .json
