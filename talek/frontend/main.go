@@ -98,7 +98,7 @@ func NewReplicaKPC(name string, provider string, session *client.Session, config
 	return &ReplicaKPC{
 		name:     name,
 		provider: provider,
-		log:      log.New(os.Stdout, "frontend", log.Flags()),
+		log:      log.New(os.Stdout, "[ReplicaKPC:"+provider+"] ", log.Flags()),
 		session:  session,
 	}
 }
