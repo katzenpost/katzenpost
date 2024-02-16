@@ -97,18 +97,38 @@ type GetLoopDecoyStatsResponse struct {
 The payload will be a CBOR encoded struct of type:
 
 ```
-type LoopRoute struct {
-	SentTime time.Time
-	ForwardPath []Hop
-	ReplyPath []Hop
+type LoopStats struct {
+	Epoch uint64
+	Stats []*LoopStat
 }
 
-type LoopDecoyStats struct {
-	Epoch uint64
-	FailedLoops []LoopRoute
-	SuccessfulLoops []LoopRoute
+type LoopStat struct {
+	forwardPath []*sphinx.PathHop
+	replyPath   []*sphinx.PathHop
+	sentTime    time.Time
+	isSuccess   bool
 }
 ```
+
+The above `LoopStats` MUST be signed by the mix, and so,
+we marshal it into this type with a signature field:
+
+```
+type SignedLoopStats {
+	Payload: []byte,
+	Signature: []byte,
+}
+```
+
+Currently, all Katzenpost components, mix nodes, dirauth servers and clients all use
+our hybrid Sphincs+ Ed25519 signature scheme for verifying mix descriptors and PKI documents.
+This works well enough despite the 49 kilobyte signature size because the signature never
+transit the mixnet itself, there are merely sent over our PQ Noise based wire protocol.
+However for these statistics, we'll be sending them over the mixnet to the Providers.
+Therefore we'll use a different hybrid signature scheme with a smaller signature size
+that will easily fit within our Sphinx packet payload size.
+
+Perhaps use: ed25519 + Dilithium
 
 
 ## 5. Gossip Protocol
