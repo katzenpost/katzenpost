@@ -126,13 +126,16 @@ func NewKPFrontendServer(name string, session *client.Session, serverConfig *ser
 
 func main() {
 	var clientConfigPath string
+	var frontendConfigPath string
 	var kpConfigPath string
 	var listenAddress string
-	var verbose bool
+	var trustDomainSecretsPath string
 	var configOnly bool
+	var verbose bool
 
-	// add mixnet config
 	flag.StringVar(&clientConfigPath, "config", "client.json", "File to write Talek Client Configuration")
+	flag.StringVar(&frontendConfigPath, "frontend_config", "frontend.json", "File to write Talek Frontend Configuration")
+	flag.StringVar(&trustDomainSecretsPath, "secrets", "keys.json", "File to serialize Frontend PrivateTrustDomainConfig")
 	flag.StringVar(&kpConfigPath, "kpconfig", "client.toml", "Katzenpost Configuration")
 	flag.StringVar(&listenAddress, "listen", "localhost:8080", "Listening Address")
 	flag.BoolVar(&verbose, "verbose", false, "Verbose output")
@@ -231,11 +234,11 @@ func main() {
 	// create a TrustDomainConfig for this Frontend
 	frontendServerTrustDomain := tCommon.NewTrustDomainConfig("Frontend", listenAddress, true, false)
 
-	// XXX: Is this correct?
+	// XXX: Adds frontend's TrustDomain to clients set of TrustDomains. Is this correct?
 	trustDomainCfgs = append(trustDomainCfgs, frontendServerTrustDomain)
 
 	// create a ClientConfig
-	clientConfig := &libtalek.ClientConfig{}
+	clientConfig := new(libtalek.ClientConfig)
 	err = json.Unmarshal(cfgJson, clientConfig)
 	if err != nil {
 		fmt.Println(err)
@@ -252,10 +255,40 @@ func main() {
 		fmt.Println(err)
 		os.Exit(-1)
 	}
-	fmt.Printf("serialized clientConfig: '%v'\n", string(clientConfigBytes))
+	fmt.Printf("serialized ClientConfig: '%v'\n", string(clientConfigBytes))
 
-	// write client config to disk
+	// write ClientConfig to disk
 	err = ioutil.WriteFile(clientConfigPath, clientConfigBytes, 0660)
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(-1)
+	}
+
+	// write Frontend secrets to disk
+	frontendTrustDomainPrivateJson, err := json.Marshal(frontendServerTrustDomain.Private())
+	err = ioutil.WriteFile(trustDomainSecretsPath, frontendTrustDomainPrivateJson, 0660)
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(-1)
+	}
+
+	// create Frontend Server Config
+	serverConfig := new(server.Config)
+	serverConfig.TrustDomain = frontendServerTrustDomain
+	err = json.Unmarshal(cfgJson, serverConfig) // sets common.Config fields of server.Config
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(-1)
+	}
+
+	// write FrontendServer Config to disk
+	frontendServerConfigJson, err := json.MarshalIndent(serverConfig, "", "  ")
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(-1)
+	}
+	fmt.Printf("serialized Frontend Config: '%v'\n", string(frontendServerConfigJson))
+	err = ioutil.WriteFile(frontendConfigPath, frontendServerConfigJson, 0660)
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(-1)
@@ -264,12 +297,6 @@ func main() {
 	// flag -g toggles writing a config and exiting
 	if configOnly {
 		os.Exit(0)
-	}
-
-	// create a FrontendServer Config
-	serverConfig := &server.Config{
-		Config:      commonCfg,
-		TrustDomain: frontendServerTrustDomain,
 	}
 
 	// start the frontend server
