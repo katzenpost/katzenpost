@@ -2,6 +2,8 @@ module github.com/katzenpost/katzenpost
 
 go 1.19
 
+replace github.com/privacylab/talek => github.com/katzenpost/talek v0.0.0-20240216175806-a46e4c9748e7
+
 require (
 	codeberg.org/vula/highctidh/ctidh1024 v0.0.0-20240112145400-d12c8f0a1ef9
 	codeberg.org/vula/highctidh/ctidh2048 v0.0.0-20240112145400-d12c8f0a1ef9
