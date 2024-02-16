@@ -148,7 +148,8 @@ func (s *talekRequestHandler) OnCommand(cmd cborplugin.Command) error {
 			reply := new(tCommon.BatchReadReply)
 			err = cbor.Unmarshal(cmd.Payload, args)
 			if err != nil {
-				return err
+				s.log.Errorf("replica.Request failure to unmarshal args: %v", err)
+				return nil
 			}
 			s.Go(func() {
 				// run the comand asynchronously
@@ -166,7 +167,8 @@ func (s *talekRequestHandler) OnCommand(cmd cborplugin.Command) error {
 			args := new(tCommon.ReplicaWriteArgs)
 			err = cbor.Unmarshal(r.Payload, args)
 			if err != nil {
-				return err
+				s.log.Errorf("replica.Write failure to unmarshal args: %v", err)
+				return nil
 			}
 
 			// run the comand asynchronously
