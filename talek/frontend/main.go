@@ -250,6 +250,7 @@ func main() {
 	// start the frontend server
 	f := NewKPFrontendServer("Talek Frontend", session, serverConfig, replicas)
 	f.Frontend.Verbose = true // *verbose
+	go http.ListenAndServe(listenAddress, nil)
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, os.Interrupt)
 
