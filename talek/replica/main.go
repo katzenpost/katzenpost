@@ -139,7 +139,8 @@ func (s *talekRequestHandler) OnCommand(cmd cborplugin.Command) error {
 		r := new(common.ReplicaRequest)
 		err := cbor.Unmarshal(cmd.Payload, r)
 		if err != nil {
-			return err
+			s.log.Errorf("Did not deserialize a ReplicaRequest")
+			return nil
 		}
 		switch r.Command {
 		case common.ReplicaRequestCommand:
