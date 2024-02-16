@@ -109,8 +109,8 @@ func main() {
 		panic(err)
 	}
 
-	// deserialize common
-	if err = json.Unmarshal(commonString, serverConfig.Config); err != nil {
+	// deserialize common configuration elements
+	if err = json.Unmarshal(commonString, serverConfig); err != nil {
 		panic(err)
 	}
 
@@ -122,6 +122,7 @@ func main() {
 
 	// instantiate replica srever
 	replica := server.NewReplica(serverConfig.TrustDomain.Name, backing, *serverConfig)
+	serverLog.Notice("Started Replica with configuration %v", serverConfig)
 
 	h := &talekRequestHandler{replica: replica, log: serverLog, config: serverConfig}
 	cbserver := cborplugin.NewServer(serverLog, socketFile, h)
