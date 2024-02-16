@@ -158,11 +158,16 @@ func (s *talekRequestHandler) OnCommand(cmd cborplugin.Command) error {
 			s.Go(func() {
 				reply := new(tCommon.BatchReadReply)
 				// run the comand asynchronously
+				s.log.Debugf("starting BatchRead")
 				err = s.replica.BatchRead(request, reply)
 				if err != nil {
 					s.log.Errorf("BatchRead failure: %v", err)
 					reply.Err = err.Error()
+				} else {
+					pp, _ := json.MarshalIndent(reply, "", "  ")
+					s.log.Debugf("BatchRead got reply: %s", pp)
 				}
+
 				serialized, err := cbor.Marshal(reply)
 				if err != nil {
 					s.log.Errorf("cbor.Marshal failure: %v", err)
@@ -181,9 +186,13 @@ func (s *talekRequestHandler) OnCommand(cmd cborplugin.Command) error {
 			// run the comand asynchronously
 			s.Go(func() {
 				reply := new(tCommon.ReplicaWriteReply)
+				s.log.Debugf("starting Write")
 				err = s.replica.Write(args, reply)
 				if err != nil {
 					s.log.Errorf("replica.Write failure: %v", err)
+				} else {
+					pp, _ := json.MarshalIndent(reply, "", "  ")
+					s.log.Debugf("replica.Write got reply: %s", pp)
 				}
 				serialized, err := cbor.Marshal(reply)
 				if err != nil {
@@ -192,6 +201,7 @@ func (s *talekRequestHandler) OnCommand(cmd cborplugin.Command) error {
 				s.write(&cborplugin.Response{SURB: cmd.SURB, Payload: serialized})
 			})
 		default:
+			s.log.Errorf("Got Invalid type %T", r.Command)
 			return errors.New("Invalid ReplicaCommand type")
 		}
 	case *cborplugin.ParametersRequest:
