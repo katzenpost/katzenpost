@@ -30,11 +30,12 @@ import (
 	"github.com/BurntSushi/toml"
 	"golang.org/x/net/idna"
 
+	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/kem"
 	kempem "github.com/katzenpost/hpqc/kem/pem"
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/hpqc/sign"
-	utilpem "github.com/katzenpost/hpqc/util/pem"
+	signpem "github.com/katzenpost/hpqc/sign/pem"
 
 	"github.com/katzenpost/katzenpost/core/cert"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
@@ -273,7 +274,11 @@ func (a *Authority) UnmarshalTOML(v interface{}) error {
 	}
 
 	// identifier
-	_, a.IdentityPublicKey = cert.Scheme.NewKeypair()
+	var err error
+	a.IdentityPublicKey, _, err = cert.Scheme.GenerateKey()
+	if err != nil {
+		return err
+	}
 	a.Identifier, ok = data["Identifier"].(string)
 	if !ok {
 		return errors.New("Authority.Identifier type assertion failed")
@@ -281,7 +286,8 @@ func (a *Authority) UnmarshalTOML(v interface{}) error {
 
 	// identity key
 	idPublicKeyString, _ := data["IdentityPublicKey"].(string)
-	err := a.IdentityPublicKey.UnmarshalText([]byte(idPublicKeyString))
+
+	a.IdentityPublicKey, err = signpem.FromPublicPEMString(idPublicKeyString, cert.Scheme)
 	if err != nil {
 		return err
 	}
@@ -497,7 +503,9 @@ func (cfg *Config) FixupAndValidate() error {
 	for _, v := range cfg.Providers {
 		allNodes = append(allNodes, v)
 	}
-	_, identityKey := cert.Scheme.NewKeypair()
+
+	var identityKey sign.PublicKey
+
 	idMap := make(map[string]*Node)
 	pkMap := make(map[[publicKeyHashSize]byte]*Node)
 	for _, v := range allNodes {
@@ -509,12 +517,12 @@ func (cfg *Config) FixupAndValidate() error {
 		}
 		idMap[v.Identifier] = v
 
-		err := utilpem.FromFile(filepath.Join(cfg.Server.DataDir, v.IdentityPublicKeyPem), identityKey)
+		identityKey, err = signpem.FromPublicPEMFile(filepath.Join(cfg.Server.DataDir, v.IdentityPublicKeyPem), cert.Scheme)
 		if err != nil {
 			return err
 		}
 
-		tmp := identityKey.Sum256()
+		tmp := hash.Sum256From(identityKey)
 		if _, ok := pkMap[tmp]; ok {
 			return fmt.Errorf("config: Nodes: IdentityPublicKeyPem '%v' is present more than once", v.IdentityPublicKeyPem)
 		}
@@ -533,18 +541,19 @@ func (cfg *Config) FixupAndValidate() error {
 	if err != nil {
 		return err
 	}
-	ourPubKey := cert.Scheme.NewEmptyPublicKey()
-	err = ourPubKey.UnmarshalText(pemData)
+
+	ourPubKey, err := signpem.FromPublicPEMBytes(pemData, cert.Scheme)
 	if err != nil {
 		return err
 	}
-	ourPubKeyHash := ourPubKey.Sum256()
+	ourPubKeyHash := hash.Sum256From(ourPubKey)
 	for _, auth := range cfg.Authorities {
 		err := auth.Validate()
 		if err != nil {
 			return err
 		}
-		if auth.IdentityPublicKey.Sum256() == ourPubKeyHash {
+
+		if hash.Sum256From(auth.IdentityPublicKey) == ourPubKeyHash {
 			selfInAuthorities = true
 		}
 	}

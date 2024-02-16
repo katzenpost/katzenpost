@@ -25,7 +25,8 @@ import (
 
 	"github.com/fxamacker/cbor/v2"
 
-	"github.com/katzenpost/hpqc/sign/ed25519sphincsplus"
+	"github.com/katzenpost/hpqc/sign/schemes"
+
 	"github.com/katzenpost/katzenpost/core/epochtime"
 )
 
@@ -75,7 +76,7 @@ var (
 	ErrThresholdNotMet = errors.New("threshold failure")
 
 	// Scheme is the signature scheme we are using throughout various components of the network.
-	Scheme = ed25519sphincsplus.Scheme
+	Scheme = schemes.ByName("Ed25519 Sphincs+")
 
 	// Create reusable EncMode interface with immutable options, safe for concurrent use.
 	ccbor cbor.EncMode
