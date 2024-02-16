@@ -21,10 +21,10 @@ import (
 	"net"
 	"time"
 
+	"github.com/katzenpost/hpqc/hash"
 	ecdh "github.com/katzenpost/hpqc/nike/x25519"
 
 	"github.com/katzenpost/hpqc/rand"
-	"github.com/katzenpost/hpqc/sign"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/wire"
@@ -47,7 +47,7 @@ func (s *Server) onConn(conn net.Conn) {
 
 	// Initialize the wire protocol session.
 	auth := &wireAuthenticator{s: s}
-	keyHash := s.identityPublicKey.Sum256()
+	keyHash := hash.Sum256From(s.identityPublicKey)
 	cfg := &wire.SessionConfig{
 		Geometry:          nil,
 		Authenticator:     auth,
@@ -191,16 +191,16 @@ func (s *Server) onPostDescriptor(rAddr net.Addr, cmd *commands.PostDescriptor, 
 	}
 
 	// Ensure that the descriptor is signed by the peer that is posting.
-	identityKeyHash := desc.IdentityKey.Sum256()
+	identityKeyHash := hash.Sum256(desc.IdentityKey)
 	if !hmac.Equal(identityKeyHash[:], pubKeyHash) {
-		s.log.Errorf("Peer %v: Identity key hash '%x' is not link key '%v'.", rAddr, desc.IdentityKey.Sum256(), pubKeyHash)
+		s.log.Errorf("Peer %v: Identity key hash '%x' is not link key '%v'.", rAddr, hash.Sum256(desc.IdentityKey), pubKeyHash)
 		resp.ErrorCode = commands.DescriptorForbidden
 		return resp
 	}
 
 	// Ensure that the descriptor is from an allowed peer.
 	if !s.state.isDescriptorAuthorized(desc) {
-		s.log.Errorf("Peer %v: Identity key hash '%x' not authorized", rAddr, desc.IdentityKey.Sum256)
+		s.log.Errorf("Peer %v: Identity key hash '%x' not authorized", rAddr, hash.Sum256(desc.IdentityKey))
 		resp.ErrorCode = commands.DescriptorForbidden
 		return resp
 	}
@@ -237,7 +237,7 @@ func (a *wireAuthenticator) IsPeerValid(creds *wire.PeerCredentials) bool {
 	case 0:
 		a.isClient = true
 		return true
-	case sign.PublicKeyHashSize:
+	case hash.HashSize:
 	default:
 		a.s.log.Warning("Rejecting authentication, invalid AD size.")
 		return false
@@ -245,8 +245,8 @@ func (a *wireAuthenticator) IsPeerValid(creds *wire.PeerCredentials) bool {
 
 	a.peerIdentityKeyHash = creds.AdditionalData
 
-	pk := [sign.PublicKeyHashSize]byte{}
-	copy(pk[:], creds.AdditionalData[:sign.PublicKeyHashSize])
+	pk := [hash.HashSize]byte{}
+	copy(pk[:], creds.AdditionalData[:hash.HashSize])
 
 	_, isMix := a.s.state.authorizedMixes[pk]
 	_, isProvider := a.s.state.authorizedProviders[pk]

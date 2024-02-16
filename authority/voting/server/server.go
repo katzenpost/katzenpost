@@ -28,11 +28,12 @@ import (
 
 	"gopkg.in/op/go-logging.v1"
 
+	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/kem"
 	kempem "github.com/katzenpost/hpqc/kem/pem"
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/hpqc/sign"
-	"github.com/katzenpost/hpqc/util/pem"
+	signpem "github.com/katzenpost/hpqc/sign/pem"
 
 	nyquistkem "github.com/katzenpost/nyquist/kem"
 	"github.com/katzenpost/nyquist/seec"
@@ -183,8 +184,6 @@ func (s *Server) halt() {
 		s.state = nil
 	}
 
-	s.identityPublicKey.Reset()
-	s.identityPrivateKey.Reset()
 	close(s.fatalErrCh)
 
 	s.log.Notice("Shutdown complete.")
@@ -218,23 +217,20 @@ func New(cfg *config.Config) (*Server, error) {
 	identityPrivateKeyFile := filepath.Join(s.cfg.Server.DataDir, "identity.private.pem")
 	identityPublicKeyFile := filepath.Join(s.cfg.Server.DataDir, "identity.public.pem")
 
-	s.identityPrivateKey, s.identityPublicKey = cert.Scheme.NewKeypair()
 	var err error
+	s.identityPublicKey, s.identityPrivateKey, err = cert.Scheme.GenerateKey()
+
 	if utils.BothExists(identityPrivateKeyFile, identityPublicKeyFile) {
-		err = pem.FromFile(identityPrivateKeyFile, s.identityPrivateKey)
-		if err != nil {
-			return nil, err
-		}
-		err = pem.FromFile(identityPublicKeyFile, s.identityPublicKey)
+		s.identityPrivateKey, err = signpem.FromPrivatePEMFile(identityPrivateKeyFile, cert.Scheme)
 		if err != nil {
 			return nil, err
 		}
 	} else if utils.BothNotExists(identityPrivateKeyFile, identityPublicKeyFile) {
-		err = pem.ToFile(identityPrivateKeyFile, s.identityPrivateKey)
+		err = signpem.PrivateKeyToFile(identityPrivateKeyFile, s.identityPrivateKey)
 		if err != nil {
 			return nil, err
 		}
-		err = pem.ToFile(identityPublicKeyFile, s.identityPublicKey)
+		err = signpem.PublicKeyToFile(identityPublicKeyFile, s.identityPublicKey)
 		if err != nil {
 			return nil, err
 		}
@@ -292,7 +288,7 @@ func New(cfg *config.Config) (*Server, error) {
 
 	s.linkKey = linkPrivateKey
 
-	s.log.Noticef("Authority identity public key hash is: %x", s.identityPublicKey.Sum256())
+	s.log.Noticef("Authority identity public key hash is: %x", hash.Sum256From(s.identityPublicKey))
 	linkBlob, err := s.linkKey.Public().MarshalBinary()
 	if err != nil {
 		return nil, err
