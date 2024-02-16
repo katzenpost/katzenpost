@@ -184,9 +184,6 @@ func main() {
 	// create a TrustDomainConfig for this Frontend
 	frontendServerTrustDomain := tCommon.NewTrustDomainConfig("Frontend", listenAddress, true, false)
 
-	// XXX: Adds frontend's TrustDomain to clients set of TrustDomains. Is this correct?
-	trustDomainCfgs = append(trustDomainCfgs, frontendServerTrustDomain)
-
 	// create a ClientConfig
 	clientConfig := new(libtalek.ClientConfig)
 	err = json.Unmarshal(cfgJson, clientConfig)
@@ -214,18 +211,18 @@ func main() {
 		os.Exit(-1)
 	}
 
-	// write Frontend secrets to disk
-	frontendTrustDomainPrivateJson, err := json.Marshal(frontendServerTrustDomain.Private())
-	err = ioutil.WriteFile(trustDomainSecretsPath, frontendTrustDomainPrivateJson, 0660)
+	// create Frontend Server Config
+	serverConfig := new(server.Config)
+	serverConfig.TrustDomain = frontendServerTrustDomain
+	err = json.Unmarshal(cfgJson, serverConfig) // sets common.Config fields of server.Config
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(-1)
 	}
 
-	// create Frontend Server Config
-	serverConfig := new(server.Config)
-	serverConfig.TrustDomain = frontendServerTrustDomain
-	err = json.Unmarshal(cfgJson, serverConfig) // sets common.Config fields of server.Config
+	// write Frontend secrets to disk
+	frontendTrustDomainPrivateJson, err := json.Marshal(frontendServerTrustDomain.Private())
+	err = ioutil.WriteFile(trustDomainSecretsPath, frontendTrustDomainPrivateJson, 0660)
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(-1)
@@ -237,6 +234,7 @@ func main() {
 		fmt.Println(err)
 		os.Exit(-1)
 	}
+
 	fmt.Printf("serialized Frontend Config: '%v'\n", string(frontendServerConfigJson))
 	err = ioutil.WriteFile(frontendConfigPath, frontendServerConfigJson, 0660)
 	if err != nil {
