@@ -143,19 +143,23 @@ func (s *talekRequestHandler) OnCommand(cmd cborplugin.Command) error {
 		}
 		switch r.Command {
 		case common.ReplicaRequestCommand:
-			// deserialize talek command
-			args := new(tCommon.BatchReadRequest)
-			reply := new(tCommon.BatchReadReply)
-			err = cbor.Unmarshal(cmd.Payload, args)
+			// deserialize BatchReadRequest
+			request := new(tCommon.BatchReadRequest)
+
+			err = cbor.Unmarshal(cmd.Payload, request)
 			if err != nil {
 				s.log.Errorf("replica.Request failure to unmarshal args: %v", err)
 				return nil
 			}
+
+			// run the command asynchronously
 			s.Go(func() {
+				reply := new(tCommon.BatchReadReply)
 				// run the comand asynchronously
-				err = s.replica.BatchRead(args, reply)
+				err = s.replica.BatchRead(request, reply)
 				if err != nil {
 					s.log.Errorf("BatchRead failure: %v", err)
+					reply.Err = err.Error()
 				}
 				serialized, err := cbor.Marshal(reply)
 				if err != nil {
@@ -164,6 +168,7 @@ func (s *talekRequestHandler) OnCommand(cmd cborplugin.Command) error {
 				s.write(&cborplugin.Response{Payload: serialized})
 			})
 		case common.ReplicaWriteCommand:
+			// deserialize ReplicaWriteArgs
 			args := new(tCommon.ReplicaWriteArgs)
 			err = cbor.Unmarshal(r.Payload, args)
 			if err != nil {
@@ -173,7 +178,6 @@ func (s *talekRequestHandler) OnCommand(cmd cborplugin.Command) error {
 
 			// run the comand asynchronously
 			s.Go(func() {
-
 				reply := new(tCommon.ReplicaWriteReply)
 				err = s.replica.Write(args, reply)
 				if err != nil {
