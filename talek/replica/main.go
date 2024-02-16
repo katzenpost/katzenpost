@@ -165,7 +165,7 @@ func (s *talekRequestHandler) OnCommand(cmd cborplugin.Command) error {
 				if err != nil {
 					s.log.Errorf("cbor.Marshal failure: %v", err)
 				}
-				s.write(&cborplugin.Response{Payload: serialized})
+				s.write(&cborplugin.Response{SURB: cmd.SURB, Payload: serialized})
 			})
 		case common.ReplicaWriteCommand:
 			// deserialize ReplicaWriteArgs
@@ -187,7 +187,7 @@ func (s *talekRequestHandler) OnCommand(cmd cborplugin.Command) error {
 				if err != nil {
 					s.log.Errorf("cbor.Marshal failure: %v", err)
 				}
-				s.write(&cborplugin.Response{Payload: serialized})
+				s.write(&cborplugin.Response{SURB: cmd.SURB, Payload: serialized})
 			})
 		default:
 			return errors.New("Invalid ReplicaCommand type")
