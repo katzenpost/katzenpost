@@ -28,6 +28,7 @@ import (
 	"github.com/fxamacker/cbor/v2"
 	"golang.org/x/crypto/blake2b"
 
+	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/sign"
 
 	"github.com/katzenpost/katzenpost/core/cert"
@@ -215,7 +216,7 @@ func (d *Document) GetProviderByKeyHash(keyhash *[32]byte) (*MixDescriptor, erro
 		if v.IdentityKey == nil {
 			return nil, fmt.Errorf("pki: document contains invalid descriptors")
 		}
-		idKeyHash := v.IdentityKey.Sum256()
+		idKeyHash := hash.Sum256(v.IdentityKey)
 		if hmac.Equal(idKeyHash[:], keyhash[:]) {
 			return v, nil
 		}
@@ -238,14 +239,14 @@ func (d *Document) GetMix(name string) (*MixDescriptor, error) {
 // GetMixLayer returns the assigned layer for the given mix from Topology
 func (d *Document) GetMixLayer(keyhash *[32]byte) (uint8, error) {
 	for _, p := range d.Providers {
-		idKeyHash := p.IdentityKey.Sum256()
+		idKeyHash := hash.Sum256(p.IdentityKey)
 		if hmac.Equal(idKeyHash[:], keyhash[:]) {
 			return LayerProvider, nil
 		}
 	}
 	for n, l := range d.Topology {
 		for _, v := range l {
-			idKeyHash := v.IdentityKey.Sum256()
+			idKeyHash := hash.Sum256(v.IdentityKey)
 			if hmac.Equal(idKeyHash[:], keyhash[:]) {
 				return uint8(n), nil
 			}
@@ -270,7 +271,7 @@ func (d *Document) GetMixByKeyHash(keyhash *[32]byte) (*MixDescriptor, error) {
 			if v.IdentityKey == nil {
 				return nil, fmt.Errorf("pki: document contains invalid descriptors")
 			}
-			idKeyHash := v.IdentityKey.Sum256()
+			idKeyHash := hash.Sum256(v.IdentityKey)
 			if hmac.Equal(idKeyHash[:], keyhash[:]) {
 				return v, nil
 			}
@@ -330,7 +331,7 @@ var (
 )
 
 // FromPayload deserializes, then verifies a Document, and returns the Document or error.
-func FromPayload(verifier cert.Verifier, payload []byte) (*Document, error) {
+func FromPayload(verifier sign.PublicKey, payload []byte) (*Document, error) {
 	_, err := cert.Verify(verifier, payload)
 	if err != nil {
 		return nil, err
@@ -343,7 +344,7 @@ func FromPayload(verifier cert.Verifier, payload []byte) (*Document, error) {
 }
 
 // SignDocument signs and serializes the document with the provided signing key.
-func SignDocument(signer cert.Signer, verifier cert.Verifier, d *Document) ([]byte, error) {
+func SignDocument(signer sign.PrivateKey, verifier sign.PublicKey, d *Document) ([]byte, error) {
 	d.Version = DocumentVersion
 	// Marshal the document including any existing d.Signatures
 	certified, err := d.MarshalBinary()
@@ -364,7 +365,7 @@ func SignDocument(signer cert.Signer, verifier cert.Verifier, d *Document) ([]by
 }
 
 // MultiSignDocument signs and serializes the document with the provided signing key, adding the signature to the existing signatures.
-func MultiSignDocument(signer cert.Signer, verifier cert.Verifier, peerSignatures []*cert.Signature, verifiers map[[32]byte]cert.Verifier, d *Document) ([]byte, error) {
+func MultiSignDocument(signer sign.PrivateKey, verifier sign.PublicKey, peerSignatures []*cert.Signature, verifiers map[[32]byte]sign.PublicKey, d *Document) ([]byte, error) {
 	d.Version = DocumentVersion
 
 	// Serialize the document.
@@ -405,7 +406,7 @@ func ParseDocument(b []byte) (*Document, error) {
 
 // IsDocumentWellFormed validates the document and returns a descriptive error
 // iff there are any problems that invalidates the document.
-func IsDocumentWellFormed(d *Document, verifiers []cert.Verifier) error {
+func IsDocumentWellFormed(d *Document, verifiers []sign.PublicKey) error {
 	// Ensure the document is well formed.
 	if d.Version != DocumentVersion {
 		return fmt.Errorf("Invalid Document Version: '%v'", d.Version)
@@ -418,9 +419,9 @@ func IsDocumentWellFormed(d *Document, verifiers []cert.Verifier) error {
 	}
 	// If there is a SharedRandomCommit, verify the Epoch contained in
 	// SharedRandomCommit matches the Epoch in the Document.
-	vmap := make(map[[PublicKeyHashSize]byte]cert.Verifier)
+	vmap := make(map[[PublicKeyHashSize]byte]sign.PublicKey)
 	for _, v := range verifiers {
-		vmap[v.Sum256()] = v
+		vmap[hash.Sum256From(v)] = v
 	}
 
 	for id, signedCommit := range d.SharedRandomCommit {
@@ -475,7 +476,7 @@ func IsDocumentWellFormed(d *Document, verifiers []cert.Verifier) error {
 	if len(d.Topology) == 0 {
 		return fmt.Errorf("Document contains no Topology")
 	}
-	pks := make(map[[sign.PublicKeyHashSize]byte]bool)
+	pks := make(map[[hash.HashSize]byte]bool)
 	for layer, nodes := range d.Topology {
 		if len(nodes) == 0 {
 			return fmt.Errorf("Document Topology layer %d contains no nodes", layer)
@@ -484,7 +485,7 @@ func IsDocumentWellFormed(d *Document, verifiers []cert.Verifier) error {
 			if err := IsDescriptorWellFormed(desc, d.Epoch); err != nil {
 				return err
 			}
-			pk := desc.IdentityKey.Sum256()
+			pk := hash.Sum256(desc.IdentityKey)
 			if _, ok := pks[pk]; ok {
 				return fmt.Errorf("Document contains multiple entries for %v", desc.IdentityKey)
 			}
@@ -501,7 +502,7 @@ func IsDocumentWellFormed(d *Document, verifiers []cert.Verifier) error {
 		if !desc.Provider {
 			return fmt.Errorf("Document lists %v as a Provider with desc.Provider = false %v", desc.IdentityKey, desc.Provider)
 		}
-		pk := desc.IdentityKey.Sum256()
+		pk := hash.Sum256(desc.IdentityKey)
 		if _, ok := pks[pk]; ok {
 			return fmt.Errorf("Document contains multiple entries for %v", desc.IdentityKey)
 		}
@@ -523,7 +524,7 @@ func (d *Document) MarshalBinary() ([]byte, error) {
 	certified := cert.Certificate{
 		Version:    cert.CertVersion,
 		Expiration: d.Epoch + 5,
-		KeyType:    cert.Scheme.PrivateKeyType(),
+		KeyType:    cert.Scheme.Name(),
 		Certified:  payload,
 		Signatures: d.Signatures,
 	}
@@ -556,7 +557,7 @@ func (d *Document) UnmarshalBinary(data []byte) error {
 }
 
 // AddSignature will add a Signature over this Document if it is signed by verifier.
-func (d *Document) AddSignature(verifier cert.Verifier, signature cert.Signature) error {
+func (d *Document) AddSignature(verifier sign.PublicKey, signature cert.Signature) error {
 	// Serialize this Document
 	payload, err := d.MarshalBinary()
 	if err != nil {
@@ -568,7 +569,7 @@ func (d *Document) AddSignature(verifier cert.Verifier, signature cert.Signature
 	if err != nil {
 		return err
 	}
-	d.Signatures[verifier.Sum256()] = signature
+	d.Signatures[hash.Sum256From(verifier)] = signature
 	return nil
 }
 

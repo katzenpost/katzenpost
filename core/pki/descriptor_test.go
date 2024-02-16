@@ -52,8 +52,13 @@ func TestDescriptor(t *testing.T) {
 	}
 	d.Provider = true
 	d.LoadWeight = 23
-	identityPriv, identityPub := cert.Scheme.NewKeypair()
-	d.IdentityKey = identityPub
+
+	identityPub, identityPriv, err := cert.Scheme.GenerateKey()
+	require.NoError(err)
+
+	d.IdentityKey, err = identityPub.MarshalBinary()
+	require.NoError(err)
+
 	scheme := wire.DefaultScheme
 	linkKey, _, err := scheme.GenerateKeyPair()
 	require.NoError(err)
@@ -92,7 +97,8 @@ func TestDescriptor(t *testing.T) {
 	assert.Equal(d.Addresses, dd.Addresses, "Addresses")
 	assert.Equal(d.Provider, dd.Provider, "Provider")
 	assert.Equal(d.LoadWeight, dd.LoadWeight, "LoadWeight")
-	assert.Equal(d.IdentityKey.Bytes(), dd.IdentityKey.Bytes(), "IdentityKey")
+
+	assert.Equal(d.IdentityKey, dd.IdentityKey, "IdentityKey")
 	assert.Equal(d.LinkKey, dd.LinkKey, "LinkKey")
 	require.Equal(len(d.MixKeys), len(dd.MixKeys), "len(MixKeys)")
 	for k, v := range d.MixKeys {

@@ -41,8 +41,13 @@ func genDescriptor(require *require.Assertions, idx int, provider bool) (*MixDes
 	d.Epoch = debugTestEpoch
 	d.Version = DescriptorVersion
 	d.LoadWeight = 23
-	identityPriv, identityPub := cert.Scheme.NewKeypair()
-	d.IdentityKey = identityPub
+
+	identityPub, identityPriv, err := cert.Scheme.GenerateKey()
+	require.NoError(err)
+
+	d.IdentityKey, err = identityPub.MarshalBinary()
+	require.NoError(err)
+
 	scheme := wire.DefaultScheme
 	linkKey, _, err := scheme.GenerateKeyPair()
 	require.NoError(err)
@@ -75,7 +80,8 @@ func TestDocument(t *testing.T) {
 	require := require.New(t)
 
 	// Generate a random signing key.
-	k, idPub := cert.Scheme.NewKeypair()
+	idPub, k, err := cert.Scheme.GenerateKey()
+	require.NoError(err)
 
 	testSendRate := uint64(3)
 	sharedRandomCommit := make([]byte, SharedRandomLength)
