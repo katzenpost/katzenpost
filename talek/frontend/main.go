@@ -65,7 +65,7 @@ func (r *ReplicaKPC) Write(args *tCommon.ReplicaWriteArgs, reply *tCommon.Replic
 		return err
 	}
 	// wrap the serialized command in ReplicaCommand
-	serialized, err = cbor.Marshal(&common.ReplicaRequest{Command: common.ReplicaRequestCommand, Payload: serialized})
+	serialized, err = cbor.Marshal(&common.ReplicaRequest{Command: common.ReplicaWriteCommand, Payload: serialized})
 	rawResp, err := r.session.BlockingSendUnreliableMessage(r.name, r.provider, serialized)
 	if err != nil {
 		return err
@@ -82,7 +82,7 @@ func (r *ReplicaKPC) BatchRead(args *tCommon.BatchReadRequest, reply *tCommon.Ba
 	}
 
 	// wrap the serialized command in ReplicaCommand
-	serialized, err = cbor.Marshal(&common.ReplicaRequest{Command: common.ReplicaWriteCommand, Payload: serialized})
+	serialized, err = cbor.Marshal(&common.ReplicaRequest{Command: common.ReplicaRequestCommand, Payload: serialized})
 	if err != nil {
 		return err
 	}
