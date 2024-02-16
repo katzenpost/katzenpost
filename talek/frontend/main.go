@@ -32,7 +32,6 @@ import (
 	"github.com/gorilla/rpc"
 	gJson "github.com/gorilla/rpc/json"
 	"github.com/katzenpost/katzenpost/client"
-	//"github.com/katzenpost/katzenpost/server/cborplugin"
 	"github.com/katzenpost/katzenpost/client/config"
 	"github.com/katzenpost/katzenpost/talek/replica/common"
 	tCommon "github.com/privacylab/talek/common"
