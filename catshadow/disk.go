@@ -26,13 +26,16 @@ import (
 
 	"github.com/awnumar/memguard"
 	"github.com/fxamacker/cbor/v2"
-	"github.com/katzenpost/hpqc/rand"
-	"github.com/katzenpost/katzenpost/core/pki"
-	"github.com/katzenpost/katzenpost/core/worker"
-	"github.com/katzenpost/katzenpost/memspool/client"
 	"golang.org/x/crypto/argon2"
 	"golang.org/x/crypto/nacl/secretbox"
 	"gopkg.in/op/go-logging.v1"
+
+	"github.com/katzenpost/hpqc/rand"
+	"github.com/katzenpost/hpqc/sign/ed25519"
+
+	"github.com/katzenpost/katzenpost/core/pki"
+	"github.com/katzenpost/katzenpost/core/worker"
+	"github.com/katzenpost/katzenpost/memspool/client"
 )
 
 const (
@@ -107,6 +110,9 @@ func decryptStateFile(stateFile string, key *[32]byte) (*State, error) {
 		return nil, err
 	}
 	state := new(State)
+	state.SpoolReadDescriptor = &client.SpoolReadDescriptor{
+		PrivateKey: ed25519.NewEmptyPrivateKey(),
+	}
 	if _, err = cbor.UnmarshalFirst(plaintext, &state); err != nil {
 		return nil, err
 	}

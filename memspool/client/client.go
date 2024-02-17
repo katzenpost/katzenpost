@@ -17,6 +17,7 @@
 package client
 
 import (
+	"github.com/katzenpost/hpqc/sign"
 	"github.com/katzenpost/hpqc/sign/ed25519"
 
 	"github.com/katzenpost/katzenpost/client"
@@ -38,7 +39,7 @@ type SpoolWriteDescriptor struct {
 // SpoolReadDescriptor describes a remotely readable spool.
 type SpoolReadDescriptor struct {
 	// PrivateKey is the key material required for reading the described spool.
-	PrivateKey *ed25519.PrivateKey
+	PrivateKey sign.PrivateKey
 
 	// ID is the identity of the described spool.
 	ID [common.SpoolIDSize]byte
@@ -95,7 +96,7 @@ func NewSpoolReadDescriptor(receiver, provider string, session *client.Session) 
 		return nil, spoolResponse.StatusAsError()
 	}
 	return &SpoolReadDescriptor{
-		PrivateKey: privateKey.(*ed25519.PrivateKey),
+		PrivateKey: privateKey,
 		ID:         spoolResponse.SpoolID,
 		Receiver:   receiver,
 		Provider:   provider,

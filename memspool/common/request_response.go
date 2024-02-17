@@ -136,15 +136,16 @@ func CreateSpool(privKey sign.PrivateKey) ([]byte, error) {
 	return s.Marshal()
 }
 
-func PurgeSpool(spoolID [SpoolIDSize]byte, privKey *eddsa.PrivateKey) ([]byte, error) {
-	message, err := privKey.PublicKey().MarshalBinary()
+func PurgeSpool(spoolID [SpoolIDSize]byte, privKey sign.PrivateKey) ([]byte, error) {
+	message, err := privKey.Public().(sign.PublicKey).MarshalBinary()
 	if err != nil {
 		return nil, err
 	}
 	signature := privKey.Scheme().Sign(privKey, message, nil)
+	pubkeyblob, err := privKey.Public().(sign.PublicKey).MarshalBinary()
 	s := SpoolRequest{
 		Command:   PurgeSpoolCommand,
-		PublicKey: privKey.PublicKey().Bytes(),
+		PublicKey: pubkeyblob,
 		Signature: signature,
 		SpoolID:   spoolID,
 	}
@@ -167,15 +168,19 @@ func AppendToSpool(spoolID [SpoolIDSize]byte, message []byte, geo *geo.Geometry)
 	return s.Marshal()
 }
 
-func ReadFromSpool(spoolID [SpoolIDSize]byte, messageID uint32, privKey *eddsa.PrivateKey) ([]byte, error) {
-	message, err := privKey.PublicKey().MarshalBinary()
+func ReadFromSpool(spoolID [SpoolIDSize]byte, messageID uint32, privKey sign.PrivateKey) ([]byte, error) {
+	message, err := privKey.Public().(sign.PublicKey).MarshalBinary()
 	if err != nil {
 		return nil, err
 	}
 	signature := privKey.Scheme().Sign(privKey, message, nil)
+	pubkey, err := privKey.Public().(sign.PublicKey).MarshalBinary()
+	if err != nil {
+		return nil, err
+	}
 	s := SpoolRequest{
 		Command:   RetrieveMessageCommand,
-		PublicKey: privKey.PublicKey().Bytes(),
+		PublicKey: pubkey,
 		Signature: signature,
 		SpoolID:   spoolID,
 		MessageID: messageID,
