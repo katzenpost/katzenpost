@@ -218,14 +218,21 @@ func New(cfg *config.Config) (*Server, error) {
 	identityPublicKeyFile := filepath.Join(s.cfg.Server.DataDir, "identity.public.pem")
 
 	var err error
-	s.identityPublicKey, s.identityPrivateKey, err = cert.Scheme.GenerateKey()
 
 	if utils.BothExists(identityPrivateKeyFile, identityPublicKeyFile) {
 		s.identityPrivateKey, err = signpem.FromPrivatePEMFile(identityPrivateKeyFile, cert.Scheme)
 		if err != nil {
 			return nil, err
 		}
+		s.identityPublicKey, err = signpem.FromPublicPEMFile(identityPublicKeyFile, cert.Scheme)
+		if err != nil {
+			return nil, err
+		}
 	} else if utils.BothNotExists(identityPrivateKeyFile, identityPublicKeyFile) {
+		s.identityPublicKey, s.identityPrivateKey, err = cert.Scheme.GenerateKey()
+		if err != nil {
+			return nil, err
+		}
 		err = signpem.PrivateKeyToFile(identityPrivateKeyFile, s.identityPrivateKey)
 		if err != nil {
 			return nil, err
