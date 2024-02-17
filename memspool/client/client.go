@@ -55,6 +55,38 @@ type SpoolReadDescriptor struct {
 	ReadOffset uint32
 }
 
+func (s *SpoolReadDescriptor) ToCBOR() *CBORSpoolReadDescriptor {
+	privkey, err := s.PrivateKey.MarshalBinary()
+	if err != nil {
+		panic(err)
+	}
+	return &CBORSpoolReadDescriptor{
+		PrivateKey: privkey,
+		ID:         s.ID,
+		Receiver:   s.Receiver,
+		Provider:   s.Provider,
+		ReadOffset: s.ReadOffset,
+	}
+}
+
+type CBORSpoolReadDescriptor struct {
+	// PrivateKey is the key material required for reading the described spool.
+	PrivateKey []byte
+
+	// ID is the identity of the described spool.
+	ID [common.SpoolIDSize]byte
+
+	// Receiver is the responding service name of the SURB based spool service.
+	Receiver string
+
+	// Provider is the name of the Provider hosting the spool.
+	Provider string
+
+	// ReadOffset is the number of messages to offset the next read from this
+	// described spool.
+	ReadOffset uint32
+}
+
 // IncrementOffset increments the ReadOffset
 func (r *SpoolReadDescriptor) IncrementOffset() {
 	r.ReadOffset += 1

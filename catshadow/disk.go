@@ -57,6 +57,24 @@ type State struct {
 	Blob                map[string][]byte
 }
 
+func (s *State) ToCBOR() *CBORState {
+	return &CBORState{
+		SpoolReadDescriptor: s.SpoolReadDescriptor.ToCBOR(),
+		Contacts:            s.Contacts,
+		Providers:           s.Providers,
+		Conversations:       s.Conversations,
+		Blob:                s.Blob,
+	}
+}
+
+type CBORState struct {
+	SpoolReadDescriptor *client.CBORSpoolReadDescriptor
+	Contacts            []*Contact
+	Providers           []*pki.MixDescriptor
+	Conversations       map[string]map[MessageID]*Message
+	Blob                map[string][]byte
+}
+
 // StateWriter takes ownership of the Client's encrypted statefile
 // and has a worker goroutine which writes updates to disk.
 type StateWriter struct {
@@ -109,13 +127,18 @@ func decryptStateFile(stateFile string, key *[32]byte) (*State, error) {
 	if err != nil {
 		return nil, err
 	}
-	state := new(State)
-	state.SpoolReadDescriptor = &client.SpoolReadDescriptor{
-		PrivateKey: ed25519.NewEmptyPrivateKey(),
-	}
-	if _, err = cbor.UnmarshalFirst(plaintext, &state); err != nil {
+	cborstate := new(CBORState)
+	cborstate.SpoolReadDescriptor = new(client.CBORSpoolReadDescriptor)
+	if _, err = cbor.UnmarshalFirst(plaintext, &cborstate); err != nil {
 		return nil, err
 	}
+	state := new(State)
+	state.SpoolReadDescriptor = &client.SpoolReadDescriptor{}
+	state.SpoolReadDescriptor.PrivateKey, err = ed25519.Scheme().UnmarshalBinaryPrivateKey(cborstate.SpoolReadDescriptor.PrivateKey)
+	if err != nil {
+		return nil, err
+	}
+
 	return state, nil
 }
 
