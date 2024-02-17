@@ -58,10 +58,6 @@ github.com/katzenpost/circl v0.0.1-0.20231120061013-c230f9c84244/go.mod h1:NcGc/
 github.com/katzenpost/circl v0.0.1-0.20240114190552-a60da6747ebd/go.mod h1:o+xQQBvrc5MO2FXUpb0HIYZ42PzrMHNPXTJvJLp901Y=
 github.com/katzenpost/circl v1.3.8-0.20240208011206-18895641f848/go.mod h1:Gmr3/SyKxO4LRasxQjcXWRZA5sMNcPGyeNgdnp4ak3M=
 github.com/katzenpost/circl v1.3.8-0.20240208050109-5fb03bb61607/go.mod h1:Uv5vNSenUKpvNK2zT7llPz9RAM0NC5KiqdkCjHOdh8U=
-github.com/katzenpost/circl v1.3.8 h1:F7oricmI2/fzblMH1dLcI+EXtW6fYgfNlMk2zQqCv8w=
-github.com/katzenpost/circl v1.3.8/go.mod h1:Uv5vNSenUKpvNK2zT7llPz9RAM0NC5KiqdkCjHOdh8U=
-github.com/katzenpost/circl v1.3.9-0.20240217000451-a5600f189729 h1:RBU+B402OHXKn0y9YsVcc2+QTk+h093HinB1aBkhGIk=
-github.com/katzenpost/circl v1.3.9-0.20240217000451-a5600f189729/go.mod h1:+EBrwiGYs9S+qZqaqxujN1CReTNCMAG6p+31KkEDeeA=
 github.com/katzenpost/circl v1.3.9-0.20240217041329-ca5040c423ad h1:cbCxk0AcVM0bZDdgcqKoJ9gd9Q3ju6BhyRDQVwoyDJc=
 github.com/katzenpost/circl v1.3.9-0.20240217041329-ca5040c423ad/go.mod h1:+EBrwiGYs9S+qZqaqxujN1CReTNCMAG6p+31KkEDeeA=
 github.com/katzenpost/ctidh_cgo v0.0.0-20230523083445-e789a8b77082/go.mod h1:xqyj8Y3rR3PfAPoDvhriOtNLPr2VXjlFj1LqGR5xA88=
@@ -72,14 +68,8 @@ github.com/katzenpost/hpqc v0.0.0-20240114190904-bc8bcfcca4ee/go.mod h1:i2+fQVPY
 github.com/katzenpost/hpqc v0.0.3-0.20240207221731-873fa802001e/go.mod h1:cen9fo1a9MAQCoZjg46aWFPdUjFsN3uYhq6mrqiWUHI=
 github.com/katzenpost/hpqc v0.0.4-0.20240208043333-a3612ffc463b/go.mod h1:vQ/E+Zim1pTF8FIw9ETDvH76ls/z0T9JOzwWnLbqc4Q=
 github.com/katzenpost/hpqc v0.0.6/go.mod h1:f5L6YpbR4PYNiICwFhbeHr1GX92WjUc9pKnfgjjThQA=
-github.com/katzenpost/hpqc v0.0.8 h1:zmrsQqVerx9lw/bWdyr4P8bDh03qHcLJ/PoujVd8xC0=
-github.com/katzenpost/hpqc v0.0.8/go.mod h1:8Q8Q0FcTubTkELC0um1NWVXlFbll0we0YUSJiimIBeE=
-github.com/katzenpost/hpqc v0.0.9 h1:llXYo8Sw06jyhZni8WbCgxJmsOiFb7eQOMJOYUmNldY=
-github.com/katzenpost/hpqc v0.0.9/go.mod h1:8Q8Q0FcTubTkELC0um1NWVXlFbll0we0YUSJiimIBeE=
-github.com/katzenpost/hpqc v0.0.10-0.20240217000945-e91458dc9a7b h1:+q3c1K9esqEsm7oqzM1/kIZNf0UwEoy1zrBeEAja9Gg=
-github.com/katzenpost/hpqc v0.0.10-0.20240217000945-e91458dc9a7b/go.mod h1:Q2e1Dp3daTG4SuJ1NEiUfQg8mMj2CgX5Xj8vyK9PyKY=
-github.com/katzenpost/hpqc v0.0.10 h1:i3FFj6QjxkdNjBCFTx6AG/5wT+GKh0B8/qjJ48LHu9E=
-github.com/katzenpost/hpqc v0.0.10/go.mod h1:Q2e1Dp3daTG4SuJ1NEiUfQg8mMj2CgX5Xj8vyK9PyKY=
+github.com/katzenpost/hpqc v0.0.11 h1:575qltBwYzCuyW04XKfqeDFSfEaT5jetlKxD5g4Z7zM=
+github.com/katzenpost/hpqc v0.0.11/go.mod h1:LHe0YiXx4E5et2TPezPkWzUtUpFt9QYhfLHViBwHAVI=
 github.com/katzenpost/mlkem768 v0.0.1 h1:5JqjyhLUAHhdtuBiOE7SEs9ZE7bxW+10mUwOP02hRkI=
 github.com/katzenpost/mlkem768 v0.0.1/go.mod h1:EXp1RSzk/CWdWk+LKhMp51rxDB8IEZbMyze8TsIE79w=
 github.com/katzenpost/nyquist v0.0.2/go.mod h1:1x/VqOl8InVjCeUS91EJYjHp+uU1EEJUEvAZhKBUyT0=
