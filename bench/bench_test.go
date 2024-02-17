@@ -43,6 +43,7 @@ import (
 	"github.com/katzenpost/katzenpost/client/config"
 	cConstants "github.com/katzenpost/katzenpost/client/constants"
 	"github.com/katzenpost/katzenpost/client/utils"
+	"github.com/katzenpost/katzenpost/core/cert"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
@@ -172,12 +173,15 @@ func (b *MinclientBench) setup() {
 		panic(err)
 	}
 	b.provider = desc
-
+	idkey, err := cert.Scheme.UnmarshalBinaryPublicKey(b.provider.IdentityKey)
+	if err != nil {
+		panic(err)
+	}
 	b.minclientConfig = &minclient.ClientConfig{
 		SphinxGeometry:      cfg.SphinxGeometry,
 		User:                string(idHash[:]),
 		Provider:            b.provider.Name,
-		ProviderKeyPin:      b.provider.IdentityKey,
+		ProviderKeyPin:      idkey,
 		LinkKey:             b.linkKey,
 		LogBackend:          logBackend,
 		PKIClient:           pkiClient,
