@@ -129,6 +129,7 @@ func decryptStateFile(stateFile string, key *[32]byte) (*State, error) {
 	}
 	cborstate := new(CBORState)
 	cborstate.SpoolReadDescriptor = new(client.CBORSpoolReadDescriptor)
+	cborstate.SpoolReadDescriptor.PrivateKey = make([]byte, ed25519.PrivateKeySize)
 	if _, err = cbor.UnmarshalFirst(plaintext, &cborstate); err != nil {
 		return nil, err
 	}
