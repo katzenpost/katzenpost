@@ -31,7 +31,6 @@ import (
 	"gopkg.in/op/go-logging.v1"
 
 	"github.com/katzenpost/hpqc/rand"
-	"github.com/katzenpost/hpqc/sign/ed25519"
 
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/worker"
@@ -55,16 +54,6 @@ type State struct {
 	Providers           []*pki.MixDescriptor
 	Conversations       map[string]map[MessageID]*Message
 	Blob                map[string][]byte
-}
-
-func (s *State) ToCBOR() *CBORState {
-	return &CBORState{
-		SpoolReadDescriptor: s.SpoolReadDescriptor.ToCBOR(),
-		Contacts:            s.Contacts,
-		Providers:           s.Providers,
-		Conversations:       s.Conversations,
-		Blob:                s.Blob,
-	}
 }
 
 type CBORState struct {
@@ -127,19 +116,10 @@ func decryptStateFile(stateFile string, key *[32]byte) (*State, error) {
 	if err != nil {
 		return nil, err
 	}
-	cborstate := new(CBORState)
-	cborstate.SpoolReadDescriptor = new(client.CBORSpoolReadDescriptor)
-	cborstate.SpoolReadDescriptor.PrivateKey = make([]byte, ed25519.PrivateKeySize)
-	if _, err = cbor.UnmarshalFirst(plaintext, &cborstate); err != nil {
-		return nil, err
-	}
 	state := new(State)
-	state.SpoolReadDescriptor = &client.SpoolReadDescriptor{}
-	state.SpoolReadDescriptor.PrivateKey, err = ed25519.Scheme().UnmarshalBinaryPrivateKey(cborstate.SpoolReadDescriptor.PrivateKey)
-	if err != nil {
+	if _, err = cbor.UnmarshalFirst(plaintext, &state); err != nil {
 		return nil, err
 	}
-
 	return state, nil
 }
 

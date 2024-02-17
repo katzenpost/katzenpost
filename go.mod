@@ -44,7 +44,7 @@ require (
 	github.com/gofrs/uuid v4.4.0+incompatible // indirect
 	github.com/jackc/fake v0.0.0-20150926172116-812a484cc733 // indirect
 	github.com/katzenpost/chacha20 v0.0.0-20190910113340-7ce890d6a556 // indirect
-	github.com/katzenpost/circl v1.3.9-0.20240217000451-a5600f189729 // indirect
+	github.com/katzenpost/circl v1.3.9-0.20240217041329-ca5040c423ad // indirect
 	github.com/katzenpost/mlkem768 v0.0.1 // indirect
 	github.com/katzenpost/sntrup4591761 v0.0.0-20231024131303-8755eb1986b8 // indirect
 	github.com/katzenpost/sphincsplus v0.0.2-0.20240114192234-1dc77b544e31 // indirect
@@ -65,3 +65,5 @@ require (
 	golang.org/x/sys v0.16.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
+
+replace github.com/katzenpost/hpqc => /home/human/code/hpqc

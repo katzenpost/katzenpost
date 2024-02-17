@@ -840,7 +840,7 @@ func (c *Client) marshal() (*memguard.LockedBuffer, error) {
 	ms := memguard.NewStream()
 	em, _ := cbor.EncOptions{Time: cbor.TimeUnixDynamic}.EncMode()
 	e := em.NewEncoder(ms)
-	e.Encode(s.ToCBOR())
+	e.Encode(s)
 	return ms.Flush()
 }
 
