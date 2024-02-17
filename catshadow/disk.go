@@ -31,6 +31,7 @@ import (
 	"gopkg.in/op/go-logging.v1"
 
 	"github.com/katzenpost/hpqc/rand"
+	"github.com/katzenpost/hpqc/sign/ed25519"
 
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/worker"
@@ -117,6 +118,11 @@ func decryptStateFile(stateFile string, key *[32]byte) (*State, error) {
 		return nil, err
 	}
 	state := new(State)
+	state.SpoolReadDescriptor = new(client.SpoolReadDescriptor)
+	_, state.SpoolReadDescriptor.PrivateKey, err = ed25519.Scheme().GenerateKey()
+	if err != nil {
+		return nil, err
+	}
 	if _, err = cbor.UnmarshalFirst(plaintext, &state); err != nil {
 		return nil, err
 	}
