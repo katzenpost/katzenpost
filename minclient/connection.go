@@ -191,9 +191,13 @@ func (c *connection) getDescriptor() error {
 		c.log.Debugf("Failed to find descriptor for Provider: %v", err)
 		return newPKIError("failed to find descriptor for Provider: %v", err)
 	}
-	if c.c.cfg.ProviderKeyPin != nil && !c.c.cfg.ProviderKeyPin.Equal(desc.IdentityKey) {
-		c.log.Errorf("Provider identity key does not match pinned key: %v", desc.IdentityKey)
-		return newPKIError("identity key for Provider does not match pinned key: %v", desc.IdentityKey)
+	providerPinKeyBlob, err := c.c.cfg.ProviderKeyPin.MarshalBinary()
+	if err != nil {
+		return err
+	}
+	if c.c.cfg.ProviderKeyPin != nil && !hmac.Equal(providerPinKeyBlob, desc.IdentityKey) {
+		c.log.Errorf("Provider identity key does not match pinned key: %x", desc.IdentityKey)
+		return newPKIError("identity key for Provider does not match pinned key: %x", desc.IdentityKey)
 	}
 	if desc != c.descriptor {
 		c.log.Debugf("Descriptor for epoch %v: %+v", doc.Epoch, desc)
