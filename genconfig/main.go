@@ -67,6 +67,7 @@ type katzenpost struct {
 	nodeIdx     int
 	clientIdx   int
 	providerIdx int
+	replicaIdx  int
 	hasPanda    bool
 
 	decoyOff    bool

@@ -106,11 +106,14 @@ func (s *katzenpost) genTalekReplicaCfg(cfgPath string) {
 		LoadFactorStep:     0.05,
 	}
 	sc := tServer.Config{
-		ReadBatch:     8,
-		WriteInterval: time.Second,
-		ReadInterval:  time.Second,
-		Config:        &com,
+		ReadBatch:        8,
+		BatchReadReply:   8,
+		WriteInterval:    time.Second,
+		ReadInterval:     time.Second,
+		Config:           &com,
+		TrustDomainIndex: s.replicaIdx,
 	}
+	s.replicaIdx += 1
 
 	commonDat, err := json.MarshalIndent(com, "", "  ")
 	if err != nil {
