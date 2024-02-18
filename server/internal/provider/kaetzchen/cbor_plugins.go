@@ -229,6 +229,11 @@ func (k *CBORPluginWorker) KaetzchenForPKI() ServiceMap {
 func (k *CBORPluginWorker) IsKaetzchen(recipient [constants.RecipientIDLength]byte) bool {
 	k.Lock()
 	defer k.Unlock()
+	return k.isKaetzchen(recipient)
+}
+
+// isKaetzchen returns true if the given recipient is one of our workers.
+func (k *CBORPluginWorker) isKaetzchen(recipient [constants.RecipientIDLength]byte) bool {
 	_, ok := k.pluginChans[recipient]
 	return ok
 }
@@ -317,9 +322,6 @@ func (k *CBORPluginWorker) RegisterKaetzchen(capa string) error {
 			// verify that the plugin isn't already registered
 			var endpoint [constants.RecipientIDLength]byte
 			copy(endpoint[:], []byte(kaetzchenConfig.Endpoint))
-			if k.IsKaetzchen(endpoint) {
-				return fmt.Errorf("provider: kaetzchen: '%v' is already registered", capa)
-			}
 			return k.register(kaetzchenConfig)
 		}
 	}
@@ -328,26 +330,25 @@ func (k *CBORPluginWorker) RegisterKaetzchen(capa string) error {
 
 // UnregisterKaetzchen stops a CBORPluginKaetzczhen and removes it from the set of available Kaetzchen
 func (k *CBORPluginWorker) UnregisterKaetzchen(capa string) error {
+	k.Lock()
+	defer k.Unlock()
 	for _, kaetzchenConfig := range k.glue.Config().Provider.CBORPluginKaetzchen {
 		if kaetzchenConfig.Capability == capa {
 			// verify that the plugin is already registered
 			var endpoint [constants.RecipientIDLength]byte
 			copy(endpoint[:], []byte(kaetzchenConfig.Endpoint))
-			if !k.IsKaetzchen(endpoint) {
+			if !k.isKaetzchen(endpoint) {
 				return fmt.Errorf("provider: kaetzchen: '%v' is not registered", capa)
 			}
 
 			// find the client plugin and halt it
-			k.Lock()
 			for _, client := range k.clients {
 				if client.Capability() == capa {
 					k.log.Debugf("Halting plugin client: %s", capa)
-					k.Unlock()
 					go client.Halt() // unregister is called after the plugin has Halted
 					return nil
 				}
 			}
-			k.Unlock()
 		}
 	}
 	return fmt.Errorf("provider: CBORPluginKaetzchen: '%v' not found", capa)
@@ -357,10 +358,14 @@ func (k *CBORPluginWorker) register(pluginConf *config.CBORPluginKaetzchen) erro
 	// hold lock while mutating pluginChans and clients
 	k.Lock()
 	defer k.Unlock()
-
-	// Add an infinite channel for this plugin.
 	var endpoint [constants.RecipientIDLength]byte
 	copy(endpoint[:], []byte(pluginConf.Endpoint))
+
+	if k.isKaetzchen(endpoint) {
+		return fmt.Errorf("provider: kaetzchen: '%v' is already registered", pluginConf.Capability)
+	}
+
+	// Add an infinite channel for this plugin.
 	k.pluginChans[endpoint] = channels.NewInfiniteChannel()
 	k.log.Noticef("Starting Kaetzchen plugin client: %s", pluginConf.Capability)
 
