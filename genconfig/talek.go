@@ -139,7 +139,7 @@ func (s *katzenpost) genTalekReplicaCfg(cfgPath string) {
 	delete(servstruct, "TrustDomain")
 	tdc := *tCommon.NewTrustDomainConfig("talek", fmt.Sprintf("%s:%d", s.bindAddr, s.lastPort), true, false)
 	s.lastPort += 1
-	tdb, err := json.MarshalIndent(tdc, "", "  ")
+	tdb, err := json.MarshalIndent(tdc.Private(), "", "  ")
 	if err != nil {
 		fmt.Printf("Failed to marshal trust domain: %v\n", err)
 	}
