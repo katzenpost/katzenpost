@@ -174,9 +174,13 @@ func (p *provider) isCBORKaetzchenConfigured(capa string) bool {
 }
 
 func (p *provider) isCBORKaetzchenRegistered(capa string) bool {
-	kpki := p.cborPluginKaetzchenWorker.KaetzchenForPKI()
-	if _, ok := kpki[capa]; ok {
-		return true
+	// get endpoint from config
+	for _, pluginConf := range p.glue.Config().Provider.CBORPluginKaetzchen {
+		if capa == pluginConf.Capability && !pluginConf.Disable {
+			var endpoint [sConstants.RecipientIDLength]byte
+			copy(endpoint[:], []byte(pluginConf.Endpoint))
+			return p.cborPluginKaetzchenWorker.IsKaetzchen(endpoint)
+		}
 	}
 	return false
 }
