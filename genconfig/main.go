@@ -218,11 +218,11 @@ func (s *katzenpost) genNodeConfig(isProvider bool, isVoting bool) error {
 				Command:        s.baseDir + "/replica" + s.binSuffix,
 				MaxConcurrency: 1,
 				Config: map[string]interface{}{
-					"backing":    "cpu.0",
-					"config":     filepath.Join(s.baseDir, cfg.Server.Identifier, "replica.json"),
-					"common":     filepath.Join(s.baseDir, cfg.Server.Identifier, "common.json"),
-					"log_dir":    filepath.Join(s.baseDir, cfg.Server.Identifier),
-					"log_level":  s.logLevel,
+					"backing":   "cpu.0",
+					"config":    filepath.Join(s.baseDir, cfg.Server.Identifier, "replica.json"),
+					"common":    filepath.Join(s.baseDir, cfg.Server.Identifier, "common.json"),
+					"log_dir":   filepath.Join(s.baseDir, cfg.Server.Identifier),
+					"log_level": s.logLevel,
 				},
 			}
 
@@ -441,7 +441,7 @@ func main() {
 		)
 	}
 
-	s.decoyOff  = *decoyOff
+	s.decoyOff = *decoyOff
 	s.mixDecoyOff = *mixDecoyOff
 
 	os.Mkdir(s.outDir, 0700)
@@ -641,7 +641,7 @@ scrape_configs:
 `)
 
 	for _, cfg := range s.nodeConfigs {
-		write(f,`    - %s
+		write(f, `    - %s
 `, cfg.Server.MetricsAddress)
 	}
 	return nil
@@ -728,5 +728,5 @@ services:
     network_mode: host
 `, "metrics", "prom/prometheus", s.baseDir, s.baseDir)
 
-      return nil
+	return nil
 }
