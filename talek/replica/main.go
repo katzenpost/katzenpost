@@ -122,7 +122,13 @@ func main() {
 
 	// instantiate replica srever
 	replica := server.NewReplica(serverConfig.TrustDomain.Name, backing, *serverConfig)
-	serverLog.Notice("Started Replica with configuration %v", serverConfig)
+	// serialize serverConfig to .json
+	serverConfigBytes, err := json.MarshalIndent(serverConfig, "", "  ")
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(-1)
+	}
+	serverLog.Notice("Started Replica with configuration %s", string(serverConfigBytes))
 
 	h := &talekRequestHandler{replica: replica, log: serverLog, config: serverConfig}
 	cbserver := cborplugin.NewServer(serverLog, socketFile, h)
