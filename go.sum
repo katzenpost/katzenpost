@@ -74,8 +74,6 @@ github.com/katzenpost/nyquist v0.0.0-20231024064113-96ae83e5c09b h1:Bji/WmibCApg
 github.com/katzenpost/nyquist v0.0.0-20231024064113-96ae83e5c09b/go.mod h1:1x/VqOl8InVjCeUS91EJYjHp+uU1EEJUEvAZhKBUyT0=
 github.com/katzenpost/sntrup4591761 v0.0.0-20231024131303-8755eb1986b8 h1:TsKxH0x2RUwf5rBw67k15bqVM3oVbexA9oaTZQLIy3Y=
 github.com/katzenpost/sntrup4591761 v0.0.0-20231024131303-8755eb1986b8/go.mod h1:Hmcrwom7jcEmGdo0CsyuJNnldPeyS+M07FuCbo7I8fw=
-github.com/katzenpost/talek v0.0.0-20240216175806-a46e4c9748e7 h1:aVLgsPYgCn/ilzy14ogJyS99FFH4IlFISQYRntaJZ6k=
-github.com/katzenpost/talek v0.0.0-20240216175806-a46e4c9748e7/go.mod h1:IbffBmzS5YS130VuGpZ32W5kjQ8CwSJarx+wfGi/cmg=
 github.com/kr/pretty v0.3.1 h1:flRD4NNwYAUpkphVc1HcthR4KEIFJ65n8Mw5qdRn3LE=
 github.com/kr/pretty v0.3.1/go.mod h1:hoEshYVHaxMs3cyo3Yncou5ZscifuDolrwPKZanG3xk=
 github.com/kr/text v0.2.0 h1:5Nx0Ya0ZqY2ygV366QzturHI13Jq95ApcVaJBhpS+AY=
@@ -93,6 +91,8 @@ github.com/pkg/errors v0.9.1 h1:FEBLx1zS214owpjy7qsBeixbURkuhQAwrK5UwLGTwt4=
 github.com/pkg/errors v0.9.1/go.mod h1:bwawxfHBFNV+L2hUp1rHADufV3IMtnDRdf1r5NINEl0=
 github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
+github.com/privacylab/talek v0.0.0-20240218092236-5b8a7476485f h1:aB6gABQOU/S/kU3ho3wrZXizXQBqI7m7bKQdxfWCjJY=
+github.com/privacylab/talek v0.0.0-20240218092236-5b8a7476485f/go.mod h1:IbffBmzS5YS130VuGpZ32W5kjQ8CwSJarx+wfGi/cmg=
 github.com/prometheus/client_golang v1.14.0 h1:nJdhIvne2eSX/XRAFV9PcvFFRbrjbcTUj0VP62TMhnw=
 github.com/prometheus/client_golang v1.14.0/go.mod h1:8vpkKitgIVNcqrRBWh1C4TIUQgYNtG/XQE4E/Zae36Y=
 github.com/prometheus/client_model v0.3.0 h1:UBgGFHqYdG/TPFD1B1ogZywDqEkwp3fBMvqdiQ7Xew4=
