@@ -164,14 +164,16 @@ func (s *talekRequestHandler) OnCommand(cmd cborplugin.Command) error {
 			s.Go(func() {
 				reply := new(tCommon.BatchReadReply)
 				// run the comand asynchronously
-				s.log.Debugf("starting BatchRead")
+				req, _ := json.MarshalIndent(request, "", "  ")
+				s.log.Debugf("starting BatchRead:\n%s\n", req)
+
 				err = s.replica.BatchRead(request, reply)
 				if err != nil {
 					s.log.Errorf("BatchRead failure: %v", err)
 					reply.Err = err.Error()
 				} else {
 					pp, _ := json.MarshalIndent(reply, "", "  ")
-					s.log.Debugf("BatchRead got reply: %s", pp)
+					s.log.Debugf("BatchRead got reply:\n%s\n", pp)
 				}
 
 				serialized, err := cbor.Marshal(reply)
@@ -192,13 +194,14 @@ func (s *talekRequestHandler) OnCommand(cmd cborplugin.Command) error {
 			// run the comand asynchronously
 			s.Go(func() {
 				reply := new(tCommon.ReplicaWriteReply)
-				s.log.Debugf("starting Write")
+				req, _ := json.MarshalIndent(args, "", "  ")
+				s.log.Debugf("starting Write:\n%s\n", req)
 				err = s.replica.Write(args, reply)
 				if err != nil {
 					s.log.Errorf("replica.Write failure: %v", err)
 				} else {
 					pp, _ := json.MarshalIndent(reply, "", "  ")
-					s.log.Debugf("replica.Write got reply: %s", pp)
+					s.log.Debugf("replica.Write got reply:\n%s\n", pp)
 				}
 				serialized, err := cbor.Marshal(reply)
 				if err != nil {
