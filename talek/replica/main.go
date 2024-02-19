@@ -180,6 +180,9 @@ func (s *talekRequestHandler) OnCommand(cmd cborplugin.Command) error {
 				if err != nil {
 					s.log.Errorf("cbor.Marshal failure: %v", err)
 				}
+				if len(serialized) > cmd.ResponseSize {
+					return fmt.Errorf("response too large for payoad")
+				}
 				s.write(&cborplugin.Response{SURB: cmd.SURB, Payload: serialized})
 			})
 		case common.ReplicaWriteCommand:
@@ -206,6 +209,9 @@ func (s *talekRequestHandler) OnCommand(cmd cborplugin.Command) error {
 				serialized, err := cbor.Marshal(reply)
 				if err != nil {
 					s.log.Errorf("cbor.Marshal failure: %v", err)
+				}
+				if len(serialized) > cmd.ResponseSize {
+					return fmt.Errorf("response too large for payoad")
 				}
 				s.write(&cborplugin.Response{SURB: cmd.SURB, Payload: serialized})
 			})
