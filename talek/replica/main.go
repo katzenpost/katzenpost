@@ -181,7 +181,7 @@ func (s *talekRequestHandler) OnCommand(cmd cborplugin.Command) error {
 					s.log.Errorf("cbor.Marshal failure: %v", err)
 				}
 				if len(serialized) > cmd.ResponseSize {
-					return fmt.Errorf("response too large for payoad")
+					s.log.Fatalf("response too large for payoad")
 				}
 				s.write(&cborplugin.Response{SURB: cmd.SURB, Payload: serialized})
 			})
@@ -211,7 +211,7 @@ func (s *talekRequestHandler) OnCommand(cmd cborplugin.Command) error {
 					s.log.Errorf("cbor.Marshal failure: %v", err)
 				}
 				if len(serialized) > cmd.ResponseSize {
-					return fmt.Errorf("response too large for payoad")
+					s.log.Fatalf("response too large for payoad")
 				}
 				s.write(&cborplugin.Response{SURB: cmd.SURB, Payload: serialized})
 			})
