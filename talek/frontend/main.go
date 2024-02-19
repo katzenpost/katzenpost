@@ -60,12 +60,12 @@ type ReplicaKPC struct {
 
 // Write implements libtalek/common.ReplicaInterface
 func (r *ReplicaKPC) Write(args *tCommon.ReplicaWriteArgs, reply *tCommon.ReplicaWriteReply) error {
-	serialized, err := cbor.Marshal(args)
+	serializedArgs, err := cbor.Marshal(args)
 	if err != nil {
 		return err
 	}
 	// wrap the serialized command in ReplicaCommand
-	serialized, err = cbor.Marshal(&common.ReplicaRequest{Command: common.ReplicaWriteCommand, Payload: serialized})
+	serialized, err := cbor.Marshal(&common.ReplicaRequest{Command: common.ReplicaWriteCommand, Payload: serializedArgs})
 	rawResp, err := r.session.BlockingSendUnreliableMessage(r.name, r.provider, serialized)
 	if err != nil {
 		return err
@@ -76,13 +76,16 @@ func (r *ReplicaKPC) Write(args *tCommon.ReplicaWriteArgs, reply *tCommon.Replic
 
 // BatchRead implements libtalek/common.ReplicaInterface
 func (r *ReplicaKPC) BatchRead(args *tCommon.BatchReadRequest, reply *tCommon.BatchReadReply) error {
-	serialized, err := cbor.Marshal(args)
+	serializedArgs, err := cbor.Marshal(args)
 	if err != nil {
 		return err
 	}
 
 	// wrap the serialized command in ReplicaCommand
-	serialized, err = cbor.Marshal(&common.ReplicaRequest{Command: common.ReplicaRequestCommand, Payload: serialized})
+	serialized, err := cbor.Marshal(&common.ReplicaRequest{Command: common.ReplicaRequestCommand, Payload: serializedArgs})
+	if len(serialized) > r.session.SphinxGeometry().ForwardPayloadLength {
+		return fmt.Errorf("Payload too large")
+	}
 	if err != nil {
 		return err
 	}
