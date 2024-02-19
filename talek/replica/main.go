@@ -154,7 +154,7 @@ func (s *talekRequestHandler) OnCommand(cmd cborplugin.Command) error {
 			// deserialize BatchReadRequest
 			request := new(tCommon.BatchReadRequest)
 
-			err = cbor.Unmarshal(cmd.Payload, request)
+			err = cbor.Unmarshal(r.Payload, request)
 			if err != nil {
 				s.log.Errorf("replica.Request failure to unmarshal args: %v", err)
 				return nil
