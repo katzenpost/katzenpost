@@ -107,7 +107,6 @@ func (s *katzenpost) genTalekReplicaCfg(cfgPath string) {
 	}
 	sc := tServer.Config{
 		ReadBatch:        8,
-		BatchReadReply:   8,
 		WriteInterval:    time.Second,
 		ReadInterval:     time.Second,
 		Config:           &com,
