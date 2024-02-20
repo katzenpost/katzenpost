@@ -30,6 +30,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/monotime"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/thwack"
+	"github.com/katzenpost/katzenpost/core/utils"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/katzenpost/katzenpost/server/config"
@@ -201,59 +202,60 @@ func (p *provider) worker() {
 			continue
 		}
 
-		// Kaetzchen endpoints are published in the PKI and are never
-		// user-facing, so omit the recipient-post processing.  If clients
-		// are written under the assumption that Kaetzchen addresses are
-		// normalized, that's their problem.
-		if p.kaetzchenWorker.IsKaetzchen(pkt.Recipient.ID) {
-			// Packet is destined for a Kaetzchen auto-responder agent, and
-			// can't be a SURB-Reply.
-			if pkt.IsSURBReply() {
-				p.log.Debugf("Dropping packet: %v (SURB-Reply for Kaetzchen)", pkt.ID)
-				instrument.PacketsDropped()
-				pkt.Dispose()
-			} else {
-				// Note that we pass ownership of pkt to p.kaetzchenWorker
-				// which will take care to dispose of it.
-				p.kaetzchenWorker.OnKaetzchen(pkt)
+		if p.glue.Config().Provider.EnableServiceProvider {
+			// Kaetzchen endpoints are published in the PKI and are never
+			// user-facing, so omit the recipient-post processing.  If clients
+			// are written under the assumption that Kaetzchen addresses are
+			// normalized, that's their problem.
+			if p.kaetzchenWorker.IsKaetzchen(pkt.Recipient.ID) {
+				// Packet is destined for a Kaetzchen auto-responder agent, and
+				// can't be a SURB-Reply.
+				if pkt.IsSURBReply() {
+					p.log.Debugf("Dropping packet: %v (SURB-Reply for Kaetzchen)", pkt.ID)
+					instrument.PacketsDropped()
+					pkt.Dispose()
+				} else {
+					// Note that we pass ownership of pkt to p.kaetzchenWorker
+					// which will take care to dispose of it.
+					p.kaetzchenWorker.OnKaetzchen(pkt)
+				}
+				continue
 			}
-			continue
-		}
 
-		if p.cborPluginKaetzchenWorker.IsKaetzchen(pkt.Recipient.ID) {
-			if pkt.IsSURBReply() {
-				p.log.Debugf("Dropping packet: %v (SURB-Reply for Kaetzchen)", pkt.ID)
-				instrument.PacketsDropped()
-				pkt.Dispose()
-			} else {
-				// Note that we pass ownership of pkt to p.kaetzchenWorker
-				// which will take care to dispose of it.
-				p.cborPluginKaetzchenWorker.OnKaetzchen(pkt)
+			if p.cborPluginKaetzchenWorker.IsKaetzchen(pkt.Recipient.ID) {
+				if pkt.IsSURBReply() {
+					p.log.Debugf("Dropping packet: %v (SURB-Reply for Kaetzchen)", pkt.ID)
+					instrument.PacketsDropped()
+					pkt.Dispose()
+				} else {
+					// Note that we pass ownership of pkt to p.kaetzchenWorker
+					// which will take care to dispose of it.
+					p.cborPluginKaetzchenWorker.OnKaetzchen(pkt)
+				}
+				continue
 			}
-			continue
-		}
-
-		// Post-process the recipient.
-		recipient := pkt.Recipient.ID[:]
-
-		// Ensure the packet is for a valid recipient.
-		if !p.userDB.Exists(recipient) {
-			p.log.Debugf("Dropping packet: %v (Invalid Recipient: '%x')", pkt.ID, recipient)
-			instrument.PacketsDropped()
-			pkt.Dispose()
-			continue
-		}
-
-		// Process the packet based on type.
-		if pkt.IsSURBReply() {
-			p.onSURBReply(pkt, recipient)
 		} else {
-			// Caller checks that the packet is either a SURB-Reply or a user
-			// message, so this must be the latter.
-			p.onToUser(pkt, recipient)
-		}
+			// Post-process the recipient.
+			recipient := pkt.Recipient.ID[:]
 
-		pkt.Dispose()
+			// Ensure the packet is for a valid recipient.
+			if !p.userDB.Exists(recipient) {
+				p.log.Debugf("Dropping packet: %v (Invalid Recipient: '%v')", pkt.ID, utils.ASCIIBytesToPrintString(recipient))
+				instrument.PacketsDropped()
+				pkt.Dispose()
+				continue
+			}
+
+			// Process the packet based on type.
+			if pkt.IsSURBReply() {
+				p.onSURBReply(pkt, recipient)
+			} else {
+				// Caller checks that the packet is either a SURB-Reply or a user
+				// message, so this must be the latter.
+				p.onToUser(pkt, recipient)
+			}
+			pkt.Dispose()
+		}
 	}
 }
 

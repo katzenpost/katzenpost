@@ -330,6 +330,12 @@ func (lCfg *Logging) validate() error {
 
 // Provider is the Katzenpost provider configuration.
 type Provider struct {
+	// EnableServiceProvider determins if a Provider
+	// can host services or act as an entry node.
+	// If set to true, the Provider can host services
+	// but not be used as an entry node.
+	EnableServiceProvider bool
+
 	// EnableEphemeralhClients is set to true in order to
 	// allow ephemeral clients to be created when the Provider
 	// first receives a given user identity string.
