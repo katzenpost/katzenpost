@@ -380,9 +380,10 @@ type Config struct {
 	Parameters  *Parameters
 	Debug       *Debug
 
-	Mixes     []*Node
-	Providers []*Node
-	Topology  *Topology
+	Mixes        []*Node
+	GatewayNodes []*Node
+	ServiceNodes []*Node
+	Topology     *Topology
 
 	SphinxGeometry *geo.Geometry
 }
@@ -442,11 +443,14 @@ func (cfg *Config) FixupAndValidate() error {
 	cfg.Parameters.applyDefaults()
 	cfg.Debug.applyDefaults()
 
-	allNodes := make([]*Node, 0, len(cfg.Mixes)+len(cfg.Providers))
+	allNodes := make([]*Node, 0, len(cfg.Mixes)+len(cfg.GatewayNodes)+len(cfg.ServiceNodes))
 	for _, v := range cfg.Mixes {
 		allNodes = append(allNodes, v)
 	}
-	for _, v := range cfg.Providers {
+	for _, v := range cfg.GatewayNodes {
+		allNodes = append(allNodes, v)
+	}
+	for _, v := range cfg.ServiceNodes {
 		allNodes = append(allNodes, v)
 	}
 	_, identityKey := cert.Scheme.NewKeypair()
