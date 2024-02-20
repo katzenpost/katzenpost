@@ -18,12 +18,39 @@ package sphinx
 
 import (
 	"crypto/rand"
+	"fmt"
 	"testing"
 
+	"github.com/katzenpost/hpqc/kem"
+	kemschemes "github.com/katzenpost/hpqc/kem/schemes"
 	"github.com/katzenpost/hpqc/nike"
+	"github.com/katzenpost/hpqc/nike/schemes"
+
 	"github.com/katzenpost/katzenpost/core/sphinx/commands"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 )
+
+func BenchmarkSphinxUnwrap(b *testing.B) {
+
+	testNIKEs := []string{"x25519", "CTIDH1024", "CTIDH1024-X25519"}
+	testKEMs := []string{"x25519", "MLKEM768", "XWING"}
+
+	for _, nike := range testNIKEs {
+		run := func(b *testing.B) {
+			benchmarkSphinxUnwrap(b, schemes.ByName(nike))
+		}
+		b.Run(fmt.Sprintf("NIKE Sphinx %s benchmark:", nike), run)
+	}
+
+	for _, kem := range testKEMs {
+		run := func(b *testing.B) {
+			benchmarkKEMSphinxUnwrap(b, kemschemes.ByName(kem))
+		}
+		b.Run(fmt.Sprintf("KEM Sphinx %s benchmark:", kem), run)
+	}
+}
+
+// nike benchmark stuff
 
 func benchmarkSphinxUnwrap(b *testing.B, mynike nike.Scheme) {
 	const testPayload = "It is the stillest words that bring on the storm.  Thoughts that come on doves’ feet guide the world."
@@ -109,6 +136,94 @@ func benchNewPathVector(nrHops int, isSURB bool, mynike nike.Scheme) ([]*nodePar
 				if err != nil {
 					panic("wtf")
 				}
+				path[i].Commands = append(path[i].Commands, surbReply)
+			}
+		}
+	}
+
+	return nodes, path
+}
+
+// kem benchmark stuff
+
+func benchmarkKEMSphinxUnwrap(b *testing.B, mykem kem.Scheme) {
+	const testPayload = "It is the stillest words that bring on the storm.  Thoughts that come on doves’ feet guide the world."
+
+	g := geo.KEMGeometryFromUserForwardPayloadLength(mykem, len(testPayload), false, 5)
+	sphinx := NewKEMSphinx(mykem, g)
+
+	nodes, path := newBenchKEMPathVector(mykem, g.NrHops, false)
+	payload := []byte(testPayload)
+
+	pkt, err := sphinx.newKEMPacket(rand.Reader, path, payload)
+	if err != nil {
+		panic("wtf")
+	}
+	if len(pkt) != g.HeaderLength+g.PayloadTagLength+len(payload) {
+		panic("wtf")
+	}
+
+	for n := 0; n < b.N; n++ {
+		testPacket := make([]byte, len(pkt))
+		copy(testPacket, pkt)
+		_, _, _, err := sphinx.Unwrap(nodes[0].privateKey, testPacket)
+		if err != nil {
+			panic("wtf")
+		}
+	}
+}
+
+func benchNewKEMNode(mykem kem.Scheme) *kemNodeParams {
+	n := new(kemNodeParams)
+
+	_, err := rand.Reader.Read(n.id[:])
+	if err != nil {
+		panic("wtf")
+	}
+	n.publicKey, n.privateKey, err = mykem.GenerateKeyPair()
+	if err != nil {
+		panic("wtf")
+	}
+	return n
+}
+
+func newBenchKEMPathVector(mykem kem.Scheme, nrHops int, isSURB bool) ([]*kemNodeParams, []*PathHop) {
+	const delayBase = 0xdeadbabe
+
+	// Generate the keypairs and node identifiers for the "nodes".
+	nodes := make([]*kemNodeParams, nrHops)
+	for i := range nodes {
+		nodes[i] = benchNewKEMNode(mykem)
+	}
+
+	// Assemble the path vector.
+	path := make([]*PathHop, nrHops)
+	for i := range path {
+		path[i] = new(PathHop)
+		copy(path[i].ID[:], nodes[i].id[:])
+		path[i].KEMPublicKey = nodes[i].publicKey
+		if i < nrHops-1 {
+			// Non-terminal hop, add the delay.
+			delay := new(commands.NodeDelay)
+			delay.Delay = delayBase * uint32(i+1)
+			path[i].Commands = append(path[i].Commands, delay)
+		} else {
+			// Terminal hop, add the recipient.
+			recipient := new(commands.Recipient)
+			_, err := rand.Reader.Read(recipient.ID[:])
+			if err != nil {
+				panic(err)
+			}
+			path[i].Commands = append(path[i].Commands, recipient)
+
+			// This is a SURB, add a surb_reply.
+			if isSURB {
+				surbReply := new(commands.SURBReply)
+				_, err := rand.Reader.Read(surbReply.ID[:])
+				if err != nil {
+					panic(err)
+				}
+
 				path[i].Commands = append(path[i].Commands, surbReply)
 			}
 		}
