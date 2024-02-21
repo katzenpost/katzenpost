@@ -197,7 +197,8 @@ func TestVote(t *testing.T) {
 
 	// post descriptors from nodes
 	mixDescs := make([]*pki.MixDescriptor, 0)
-	providerDescs := make([]*pki.MixDescriptor, 0)
+	gatewayDescs := make([]*pki.MixDescriptor, 0)
+	serviceDescs := make([]*pki.MixDescriptor, 0)
 	for i := 0; i < len(mixCfgs); i++ {
 		mkeys := genMixKeys(votingEpoch)
 		addr := make(map[pki.Transport][]string)
@@ -205,13 +206,14 @@ func TestVote(t *testing.T) {
 		_, linkPubKey := wire.DefaultScheme.GenerateKeypair(rand.Reader)
 
 		desc := &pki.MixDescriptor{
-			Name:        mixCfgs[i].Server.Identifier,
-			Epoch:       votingEpoch,
-			IdentityKey: idKeys[i].pubKey,
-			LinkKey:     linkPubKey,
-			MixKeys:     mkeys,
-			Provider:    mixCfgs[i].Server.IsProvider,
-			Addresses:   addr,
+			Name:          mixCfgs[i].Server.Identifier,
+			Epoch:         votingEpoch,
+			IdentityKey:   idKeys[i].pubKey,
+			LinkKey:       linkPubKey,
+			MixKeys:       mkeys,
+			IsGatewayNode: mixCfgs[i].Server.IsGatewayNode,
+			IsServiceNode: mixCfgs[i].Server.IsServiceNode,
+			Addresses:     addr,
 		}
 
 		err = pki.IsDescriptorWellFormed(desc, votingEpoch)
@@ -220,8 +222,10 @@ func TestVote(t *testing.T) {
 		_, err := pki.SignDescriptor(idKeys[i].privKey, idKeys[i].pubKey, desc)
 		require.NoError(err)
 
-		if mixCfgs[i].Server.IsProvider {
-			providerDescs = append(mixDescs, desc)
+		if mixCfgs[i].Server.IsServiceNode {
+			serviceDescs = append(serviceDescs, desc)
+		} else if mixCfgs[i].Server.IsGatewayNode {
+			gatewayDescs = append(gatewayDescs, desc)
 		} else {
 			mixDescs = append(mixDescs, desc)
 		}

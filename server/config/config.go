@@ -101,8 +101,11 @@ type Server struct {
 	// DataDir is the absolute path to the server's state files.
 	DataDir string
 
-	// IsProvider specifies if the server is a provider (vs a mix).
-	IsProvider bool
+	// IsGatewayNode specifies if the server is a gateway or not.
+	IsGatewayNode bool
+
+	// IsServiceNode specifies if the server is a service node or not.
+	IsServiceNode bool
 }
 
 func (sCfg *Server) applyDefaults() {
@@ -328,19 +331,19 @@ func (lCfg *Logging) validate() error {
 	return nil
 }
 
-// Provider is the Katzenpost provider configuration.
-type Provider struct {
-	// EnableServiceProvider determins if a Provider
-	// can host services or act as an entry node.
-	// If set to true, the Provider can host services
-	// but not be used as an entry node.
-	EnableServiceProvider bool
+// ServiceNode is the service node configuration.
+type ServiceNode struct {
+	// Kaetzchen is the list of configured internal Kaetzchen (auto-responder agents)
+	// for this provider.
+	Kaetzchen []*Kaetzchen
 
-	// EnableEphemeralhClients is set to true in order to
-	// allow ephemeral clients to be created when the Provider
-	// first receives a given user identity string.
-	EnableEphemeralClients bool
+	// CBORPluginKaetzchen is the list of configured external CBOR Kaetzchen plugins
+	// for this provider.
+	CBORPluginKaetzchen []*CBORPluginKaetzchen
+}
 
+// Gateway is the Katzenpost gateway configuration.
+type Gateway struct {
 	// AltAddresses is the map of extra transports and addresses at which
 	// the Provider is reachable by clients.  The most useful alternative
 	// transport is likely ("tcp") (`core/pki.TransportTCP`).
@@ -354,19 +357,6 @@ type Provider struct {
 
 	// SpoolDB is the user message spool configuration.
 	SpoolDB *SpoolDB
-
-	// Kaetzchen is the list of configured internal Kaetzchen (auto-responder agents)
-	// for this provider.
-	Kaetzchen []*Kaetzchen
-
-	// CBORPluginKaetzchen is the list of configured external CBOR Kaetzchen plugins
-	// for this provider.
-	CBORPluginKaetzchen []*CBORPluginKaetzchen
-
-	// TrustOnFirstUse indicates whether or not to trust client's wire protocol keys
-	// on first use. If set to true then first seen keys cause an entry in the userDB
-	// to be created. It will later be garbage collected.
-	TrustOnFirstUse bool
 }
 
 // SQLDB is the SQL database backend configuration.
@@ -726,7 +716,8 @@ func (mCfg *Management) validate() error {
 type Config struct {
 	Server         *Server
 	Logging        *Logging
-	Provider       *Provider
+	ServiceNode    *ServiceNode
+	Gateway        *Gateway
 	PKI            *PKI
 	Management     *Management
 	SphinxGeometry *geo.Geometry
@@ -773,9 +764,9 @@ func (cfg *Config) FixupAndValidate() error {
 	if err := cfg.PKI.validate(cfg.Server.DataDir); err != nil {
 		return err
 	}
-	if cfg.Server.IsProvider {
-		if cfg.Provider == nil {
-			cfg.Provider = &Provider{}
+	if cfg.Server.IsGatewayNode {
+		if cfg.Gateway == nil {
+			cfg.Gateway = &Gateway{}
 		}
 		cfg.Provider.applyDefaults(cfg.Server)
 		if err := cfg.Provider.validate(); err != nil {
