@@ -29,13 +29,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func genDescriptor(require *require.Assertions, idx int, provider bool) (*MixDescriptor, []byte) {
+func genDescriptor(require *require.Assertions, idx int, isGatewayNode, isServiceNode bool) (*MixDescriptor, []byte) {
 	d := new(MixDescriptor)
 	d.Name = fmt.Sprintf("gen%d.example.net", idx)
 	d.Addresses = map[Transport][]string{
 		TransportTCPv4: []string{fmt.Sprintf("192.0.2.%d:4242", idx)},
 	}
-	d.Provider = provider
+	d.IsGatewayNode = isGatewayNode
+	d.IsServiceNode = isServiceNode
 	d.Epoch = debugTestEpoch
 	d.Version = DescriptorVersion
 	d.LoadWeight = 23
@@ -49,7 +50,7 @@ func genDescriptor(require *require.Assertions, idx int, provider bool) (*MixDes
 		require.NoError(err, "[%d]: ecdh.NewKeypair()", e)
 		d.MixKeys[uint64(e)] = mPriv.PublicKey().Bytes()
 	}
-	if provider {
+	if isServiceNode {
 		d.Kaetzchen = make(map[string]map[string]interface{})
 		d.Kaetzchen["miau"] = map[string]interface{}{
 			"endpoint":  "+miau",
@@ -94,8 +95,9 @@ func TestDocument(t *testing.T) {
 	idx := 1
 	for l := 0; l < 3; l++ {
 		for i := 0; i < 5; i++ {
-			provider := false
-			_, rawDesc := genDescriptor(require, idx, provider)
+			isGatewayNode := false
+			isServiceNode := false
+			_, rawDesc := genDescriptor(require, idx, isGatewayNode, isServiceNode)
 			d := new(MixDescriptor)
 			err := d.UnmarshalBinary(rawDesc)
 			require.NoError(err)
@@ -107,15 +109,16 @@ func TestDocument(t *testing.T) {
 		}
 	}
 	for i := 0; i < 3; i++ {
-		provider := true
-		_, rawDesc := genDescriptor(require, idx, provider)
+		isGatewayNode := false
+		isServiceNode := true
+		_, rawDesc := genDescriptor(require, idx, isGatewayNode, isServiceNode)
 		d := new(MixDescriptor)
 		err := d.UnmarshalBinary(rawDesc)
 		require.NoError(err)
 		foo, err := d.MarshalBinary()
 		require.NoError(err)
 		require.True(bytes.Equal(foo, rawDesc))
-		doc.Providers = append(doc.Providers, d)
+		doc.GatewayNodes = append(doc.GatewayNodes, d)
 		idx++
 	}
 
@@ -148,7 +151,7 @@ func TestDocument(t *testing.T) {
 	// (It would have been nice to check that SignDocument was idempotent,
 	// but it seems SPHINCS+ uses randomness?
 	tmpDocBytes := signed
-	for i := 0 ; i < 4 ; i++ {
+	for i := 0; i < 4; i++ {
 		tmpDoc, err := ParseDocument(tmpDocBytes)
 		require.Equal(nil, err)
 		require.Equal(ddoc, tmpDoc)
@@ -174,10 +177,10 @@ func TestDocument(t *testing.T) {
 	}
 
 	// check that Providers are the same
-	for i, provider := range ddoc.Providers {
+	for i, provider := range ddoc.GatewayNodes {
 		d, err := provider.MarshalBinary()
 		require.NoError(err)
-		d2, err := doc.Providers[i].MarshalBinary()
+		d2, err := doc.GatewayNodes[i].MarshalBinary()
 		require.NoError(err)
 		require.True(bytes.Equal(d, d2))
 	}
