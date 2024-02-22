@@ -253,7 +253,7 @@ func TestKaetzchenWorker(t *testing.T) {
 			cfg: &config.Config{
 				Server:  &config.Server{},
 				Logging: &config.Logging{},
-				Provider: &config.Provider{
+				ServiceNode: &config.ServiceNode{
 					Kaetzchen: []*config.Kaetzchen{
 						&config.Kaetzchen{
 							Capability: "echo",

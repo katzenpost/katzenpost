@@ -163,7 +163,7 @@ func (p *pki) worker() {
 				panic("Sphinx Geometry mismatch!")
 			}
 
-			ent, err := pkicache.New(d, p.glue.IdentityPublicKey(), p.glue.Config().Server.IsProvider)
+			ent, err := pkicache.New(d, p.glue.IdentityPublicKey(), p.glue.Config().Server.IsGatewayNode, p.glue.Config().Server.IsServiceNode)
 			if err != nil {
 				p.log.Warningf("Failed to generate PKI cache for epoch %v: %v", epoch, err)
 				p.setFailedFetch(epoch, err)
@@ -371,10 +371,18 @@ func (p *pki) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 		Addresses:   p.descAddrMap,
 		Epoch:       epoch,
 	}
-	if p.glue.Config().Server.IsProvider {
+	if p.glue.Config().Server.IsGatewayNode {
 		// Only set the layer if the node is a provider.  Otherwise, nodes
 		// shouldn't be self assigning this.
-		desc.Provider = true
+		desc.IsGatewayNode = true
+
+		// Publish the AuthenticationType
+		desc.AuthenticationType = cpki.TrustOnFirstUseAuth
+	}
+	if p.glue.Config().Server.IsServiceNode {
+		// Only set the layer if the node is a provider.  Otherwise, nodes
+		// shouldn't be self assigning this.
+		desc.IsServiceNode = true
 
 		// Publish currently running Kaetzchen.
 		var err error
@@ -382,14 +390,8 @@ func (p *pki) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 		if err != nil {
 			return err
 		}
-
-		// Publish the AuthenticationType
-		if p.glue.Config().Provider.TrustOnFirstUse && p.glue.Config().Provider.EnableEphemeralClients {
-			desc.AuthenticationType = cpki.TrustOnFirstUseAuth
-		} else {
-			desc.AuthenticationType = cpki.OutOfBandAuth
-		}
 	}
+
 	desc.MixKeys = make(map[uint64][]byte)
 
 	// Ensure that there are mix keys for the epochs [e, ..., e+2],

@@ -152,8 +152,13 @@ func (d *decoy) worker() {
 				instrument.IgnoredPKIDocs()
 				continue
 			}
-			if d.glue.Config().Server.IsProvider {
-				d.log.Debugf("Received PKI document when Provider, ignoring (not supported yet).")
+			if d.glue.Config().Server.IsGatewayNode {
+				d.log.Debugf("Received PKI document when Gateway, ignoring (not supported yet).")
+				instrument.IgnoredPKIDocs()
+				continue
+			}
+			if d.glue.Config().Server.IsServiceNode {
+				d.log.Debugf("Received PKI document when Service Node, ignoring (not supported yet).")
 				instrument.IgnoredPKIDocs()
 				continue
 			}
@@ -204,7 +209,7 @@ func (d *decoy) sendDecoyPacket(ent *pkicache.Entry) {
 	isLoopPkt := true // HACK HACK HACK HACK.
 
 	selfDesc := ent.Self()
-	if selfDesc.Provider {
+	if selfDesc.IsGatewayNode || selfDesc.IsServiceNode {
 		// The code doesn't handle this correctly yet.  It does need to
 		// happen eventually though.
 		panic("BUG: Provider generated decoy traffic not supported yet")
@@ -217,8 +222,8 @@ func (d *decoy) sendDecoyPacket(ent *pkicache.Entry) {
 	// Find a random Provider that is running a loop/discard service.
 	var providerDesc *pki.MixDescriptor
 	var loopRecip string
-	for _, idx := range d.rng.Perm(len(doc.Providers)) {
-		desc := doc.Providers[idx]
+	for _, idx := range d.rng.Perm(len(doc.ServiceNodes)) {
+		desc := doc.ServiceNodes[idx]
 		params, ok := desc.Kaetzchen[kaetzchen.EchoCapability]
 		if !ok {
 			continue

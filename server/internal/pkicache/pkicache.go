@@ -141,10 +141,10 @@ func (e *Entry) incomingLayer() uint8 {
 		panic(err)
 	}
 	switch layer {
-	case pki.LayerGateway:
+	case pki.LayerService:
 		return uint8(len(e.doc.Topology)) - 1
 	case 0:
-		return pki.LayerProvider
+		return pki.LayerGateway
 	}
 	return layer - 1
 }
@@ -157,8 +157,8 @@ func (e *Entry) outgoingLayer() uint8 {
 	}
 	switch int(layer) {
 	case len(e.doc.Topology) - 1:
-		return pki.LayerProvider
-	case pki.LayerProvider:
+		return pki.LayerService
+	case pki.LayerGateway:
 		return 0
 	}
 	return layer + 1
@@ -194,8 +194,10 @@ func New(d *pki.Document, identityKey sign.PublicKey, isGateway, isServiceNode b
 	appendMap := func(layer uint8, m map[[constants.NodeIDLength]byte]*pki.MixDescriptor) {
 		var nodes []*pki.MixDescriptor
 		switch layer {
-		case pki.LayerProvider:
-			nodes = e.doc.Providers
+		case pki.LayerGateway:
+			nodes = e.doc.GatewayNodes
+		case pki.LayerService:
+			nodes = e.doc.ServiceNodes
 		default:
 			nodes = e.doc.Topology[layer]
 		}
@@ -213,7 +215,7 @@ func New(d *pki.Document, identityKey sign.PublicKey, isGateway, isServiceNode b
 	for i := 0; i < len(e.doc.Topology); i++ {
 		appendMap(uint8(i), e.all)
 	}
-	appendMap(pki.LayerProvider, e.all)
-
+	appendMap(pki.LayerGateway, e.all)
+	appendMap(pki.LayerService, e.all)
 	return e, nil
 }

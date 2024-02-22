@@ -427,7 +427,7 @@ func (c *incomingConn) onSendPacket(cmd *commands.SendPacket) error {
 	// to try to loop traffic back into the mix net, and sending packets
 	// that bypass the mix net.
 	pkt.MustForward = c.fromClient
-	pkt.MustTerminate = c.l.glue.Config().Server.IsProvider && !c.fromClient
+	pkt.MustTerminate = c.l.glue.Config().Server.IsServiceNode && !c.fromClient
 
 	// If the packet was from the client, and there is a SendShift for the
 	// current epoch, enforce SendShift based rate limits.

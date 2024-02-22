@@ -72,17 +72,17 @@ func TestServerStartShutdown(t *testing.T) {
 	cfg := config.Config{
 		SphinxGeometry: geo,
 		Server: &config.Server{
-			Identifier: "testserver",
-			Addresses:  []string{"127.0.0.1:1234"},
-			DataDir:    datadir,
-			IsProvider: false,
+			Identifier:    "testserver",
+			Addresses:     []string{"127.0.0.1:1234"},
+			DataDir:       datadir,
+			IsGatewayNode: false,
 		},
 		Logging: &config.Logging{
 			Disable: false,
 			File:    "",
 			Level:   "DEBUG",
 		},
-		Provider: nil,
+		Gateway: nil,
 		PKI: &config.PKI{
 			Voting: &config.Voting{
 				Authorities: []*aconfig.Authority{

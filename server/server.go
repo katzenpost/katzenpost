@@ -380,7 +380,7 @@ func New(cfg *config.Config) (*Server, error) {
 	}
 
 	// Initialize the provider backend.
-	if s.cfg.Server.IsProvider {
+	if s.cfg.Server.IsGatewayNode || s.cfg.Server.IsServiceNode {
 		if s.provider, err = provider.New(goo); err != nil {
 			s.log.Errorf("Failed to initialize provider backend: %v", err)
 			return nil, err
