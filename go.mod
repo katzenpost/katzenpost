@@ -11,7 +11,7 @@ require (
 	github.com/henrydcase/nobs v0.0.0-20230313231516-25b66236df73
 	github.com/jackc/pgx v3.6.2+incompatible
 	github.com/katzenpost/chacha20poly1305 v0.0.0-20211026103954-7b6fb2fc0129
-	github.com/katzenpost/hpqc v0.0.11
+	github.com/katzenpost/hpqc v0.0.13
 	github.com/katzenpost/nyquist v0.0.8
 	github.com/prometheus/client_golang v1.18.0
 	github.com/stretchr/testify v1.8.4
@@ -32,6 +32,7 @@ require (
 require (
 	codeberg.org/vula/highctidh v1.0.2024012400 // indirect
 	filippo.io/edwards25519 v1.0.0 // indirect
+	filippo.io/mlkem768 v0.0.0-20240221181710-5ce91625fdc1 // indirect
 	github.com/awnumar/memcall v0.1.2 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cespare/xxhash/v2 v2.2.0 // indirect
@@ -44,8 +45,7 @@ require (
 	github.com/gofrs/uuid v4.4.0+incompatible // indirect
 	github.com/jackc/fake v0.0.0-20150926172116-812a484cc733 // indirect
 	github.com/katzenpost/chacha20 v0.0.0-20190910113340-7ce890d6a556 // indirect
-	github.com/katzenpost/circl v1.3.9-0.20240217041329-ca5040c423ad // indirect
-	github.com/katzenpost/mlkem768 v0.0.1 // indirect
+	github.com/katzenpost/circl v1.3.9-0.20240222183521-1cd9a34e9a0c // indirect
 	github.com/katzenpost/sntrup4591761 v0.0.0-20231024131303-8755eb1986b8 // indirect
 	github.com/katzenpost/sphincsplus v0.0.2-0.20240114192234-1dc77b544e31 // indirect
 	github.com/kr/text v0.2.0 // indirect
