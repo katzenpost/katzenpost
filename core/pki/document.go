@@ -36,8 +36,8 @@ const (
 	// LayerGateway is the Layer that gateways list in their MixDescriptors.
 	LayerGateway = 255
 
-	// LayerGateway is the Layer that service nodes list in their MixDescriptors.
-	LayerService = 255
+	// LayerService is the Layer that service nodes list in their MixDescriptors.
+	LayerService = 254
 
 	PublicKeyHashSize       = 32
 	SharedRandomLength      = 40

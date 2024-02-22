@@ -518,7 +518,7 @@ func (kCfg *CBORPluginKaetzchen) validate() error {
 	return nil
 }
 
-func (pCfg *Provider) applyDefaults(sCfg *Server) {
+func (pCfg *Gateway) applyDefaults(sCfg *Server) {
 	if pCfg.UserDB == nil {
 		pCfg.UserDB = &UserDB{}
 	}
@@ -554,7 +554,30 @@ func (pCfg *Provider) applyDefaults(sCfg *Server) {
 	}
 }
 
-func (pCfg *Provider) validate() error {
+func (pCfg *ServiceNode) validate() error {
+	capaMap := make(map[string]bool)
+	for _, v := range pCfg.Kaetzchen {
+		if err := v.validate(); err != nil {
+			return err
+		}
+		if capaMap[v.Capability] {
+			return fmt.Errorf("config: Kaetzchen: '%v' configured multiple times", v.Capability)
+		}
+		capaMap[v.Capability] = true
+	}
+	for _, v := range pCfg.CBORPluginKaetzchen {
+		if err := v.validate(); err != nil {
+			return err
+		}
+		if capaMap[v.Capability] {
+			return fmt.Errorf("config: Kaetzchen: '%v' configured multiple times", v.Capability)
+		}
+		capaMap[v.Capability] = true
+	}
+	return nil
+}
+
+func (pCfg *Gateway) validate() error {
 	internalTransports := make(map[string]bool)
 	for _, v := range pki.InternalTransports {
 		internalTransports[strings.ToLower(string(v))] = true
@@ -631,26 +654,6 @@ func (pCfg *Provider) validate() error {
 		}
 	default:
 		return fmt.Errorf("config: Provider: Invalid SpoolDB Backend: '%v'", pCfg.SpoolDB.Backend)
-	}
-
-	capaMap := make(map[string]bool)
-	for _, v := range pCfg.Kaetzchen {
-		if err := v.validate(); err != nil {
-			return err
-		}
-		if capaMap[v.Capability] {
-			return fmt.Errorf("config: Kaetzchen: '%v' configured multiple times", v.Capability)
-		}
-		capaMap[v.Capability] = true
-	}
-	for _, v := range pCfg.CBORPluginKaetzchen {
-		if err := v.validate(); err != nil {
-			return err
-		}
-		if capaMap[v.Capability] {
-			return fmt.Errorf("config: Kaetzchen: '%v' configured multiple times", v.Capability)
-		}
-		capaMap[v.Capability] = true
 	}
 
 	return nil
@@ -768,13 +771,25 @@ func (cfg *Config) FixupAndValidate() error {
 		if cfg.Gateway == nil {
 			cfg.Gateway = &Gateway{}
 		}
-		cfg.Provider.applyDefaults(cfg.Server)
-		if err := cfg.Provider.validate(); err != nil {
+		cfg.Gateway.applyDefaults(cfg.Server)
+		if err := cfg.Gateway.validate(); err != nil {
 			return err
 		}
-	} else if cfg.Provider != nil {
-		return errors.New("config: Provider block set when not a Provider")
+	} else if cfg.Gateway != nil {
+		return errors.New("config: Gateway block set when not a Gateway")
 	}
+
+	if cfg.Server.IsServiceNode {
+		if cfg.ServiceNode == nil {
+			cfg.ServiceNode = &ServiceNode{}
+		}
+		if err := cfg.ServiceNode.validate(); err != nil {
+			return err
+		}
+	} else if cfg.ServiceNode != nil {
+		return errors.New("config: Service node block set when not a Service node")
+	}
+
 	if err = cfg.Logging.validate(); err != nil {
 		return err
 	}
