@@ -185,14 +185,14 @@ func (c *connection) getDescriptor() error {
 	} else if c.c.cfg.CachedDocument != nil {
 		doc = c.c.cfg.CachedDocument
 	}
-	desc, err := doc.GetProvider(c.c.cfg.Provider)
+	desc, err := doc.GetGateway(c.c.cfg.Gateway)
 	if err != nil {
-		c.log.Debugf("Failed to find descriptor for Provider: %v", err)
-		return newPKIError("failed to find descriptor for Provider: %v", err)
+		c.log.Debugf("Failed to find descriptor for Gateway: %v", err)
+		return newPKIError("failed to find descriptor for Gateway: %v", err)
 	}
-	if c.c.cfg.ProviderKeyPin != nil && !c.c.cfg.ProviderKeyPin.Equal(desc.IdentityKey) {
-		c.log.Errorf("Provider identity key does not match pinned key: %v", desc.IdentityKey)
-		return newPKIError("identity key for Provider does not match pinned key: %v", desc.IdentityKey)
+	if c.c.cfg.GatewayKeyPin != nil && !c.c.cfg.GatewayKeyPin.Equal(desc.IdentityKey) {
+		c.log.Errorf("Gateway identity key does not match pinned key: %v", desc.IdentityKey)
+		return newPKIError("identity key for Gateway does not match pinned key: %v", desc.IdentityKey)
 	}
 	if desc != c.descriptor {
 		c.log.Debugf("Descriptor for epoch %v: %+v", doc.Epoch, desc)
