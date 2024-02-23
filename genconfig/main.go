@@ -472,7 +472,7 @@ func main() {
 	// write the mixes keys and configs to disk
 	for _, v := range s.nodeConfigs {
 		if err := saveCfg(v, *outDir); err != nil {
-			log.Fatalf("%s", err)
+			log.Fatalf("saveCfg failure: %s", err)
 		}
 	}
 
@@ -526,7 +526,7 @@ func saveCfg(cfg interface{}, outDir string) error {
 	log.Printf("writing %s", fileName)
 	f, err := os.Create(fileName)
 	if err != nil {
-		return err
+		return fmt.Errorf("os.Create(%s) failed: %s", fileName, err)
 	}
 	defer f.Close()
 
