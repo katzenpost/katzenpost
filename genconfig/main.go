@@ -343,7 +343,7 @@ func main() {
 	nrNodes := flag.Int("n", nrNodes, "Number of mixes.")
 
 	nrGateways := flag.Int("gateways", nrGateways, "Number of gateways.")
-	nrServiceNodes := flag.Int("sserviceNodes", nrServiceNodes, "Number of providers.")
+	nrServiceNodes := flag.Int("serviceNodes", nrServiceNodes, "Number of providers.")
 
 	voting := flag.Bool("v", false, "Generate voting configuration")
 	nrVoting := flag.Int("nv", nrAuthorities, "Generate voting configuration")
