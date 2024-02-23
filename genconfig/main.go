@@ -145,7 +145,9 @@ func (s *katzenpost) genNodeConfig(isGateway, isServiceNode bool, isVoting bool)
 	cfg.Server.Identifier = n
 	cfg.Server.Addresses = []string{fmt.Sprintf("%s:%d", s.bindAddr, s.lastPort)}
 	cfg.Server.DataDir = filepath.Join(s.baseDir, n)
+
 	os.Mkdir(filepath.Join(s.outDir, cfg.Server.Identifier), 0700)
+
 	cfg.Server.IsGatewayNode = isGateway
 	cfg.Server.IsServiceNode = isServiceNode
 	if isGateway {
@@ -340,8 +342,8 @@ func main() {
 	nrLayers := flag.Int("L", nrLayers, "Number of layers.")
 	nrNodes := flag.Int("n", nrNodes, "Number of mixes.")
 
-	nrGateways := flag.Int("g", nrGateways, "Number of gateways.")
-	nrServiceNodes := flag.Int("s", nrServiceNodes, "Number of providers.")
+	nrGateways := flag.Int("gateways", nrGateways, "Number of gateways.")
+	nrServiceNodes := flag.Int("sserviceNodes", nrServiceNodes, "Number of providers.")
 
 	voting := flag.Bool("v", false, "Generate voting configuration")
 	nrVoting := flag.Int("nv", nrAuthorities, "Generate voting configuration")

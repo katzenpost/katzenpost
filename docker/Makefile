@@ -19,7 +19,8 @@ help:
 warped?=true
 mixes=3
 auths=3
-providers=2
+gateways=1
+serviceNodes=1
 
 # Parameters
 sr=0
@@ -78,7 +79,8 @@ $(net_name):
 $(docker_compose_yml): ../genconfig/main.go $(distro)_go_mod.stamp $(net_name)
 	$(docker) run ${docker_args} --rm katzenpost-$(distro)_go_mod \
 		$(sh) -c 'cd genconfig && go build && cd ../docker \
-		&& ../genconfig/genconfig -a ${bind_addr} -nv ${auths} -n ${mixes} -p ${providers} \
+		&& ../genconfig/genconfig -a ${bind_addr} -nv ${auths} -n ${mixes} -gateways ${gateways} \
+		-serviceNodes ${sserviceNodes} \
 		-sr ${sr} -mu ${mu} -muMax ${muMax} -lP ${lP} -lPMax ${lPMax} -lL ${lL} \
 		-lLMax ${lLMax} -lD ${lD} -lDMax ${lDMax} -lM ${lM} -lMMax ${lMMax} \
 		-S .$(distro) -v -o ./$(net_name) -b /$(net_name) -P $(base_port) \
@@ -126,7 +128,6 @@ debian_base.stamp:
 	$(docker) commit katzenpost_debian_base katzenpost-debian_base
 	$(docker) rm katzenpost_debian_base
 	touch $@
-	
 
 alpine_base.stamp:
 	$(docker) run $(replace_name) katzenpost_alpine_base docker.io/golang:alpine sh -c 'adduser katzenpost --gecos "" --disabled-password  && apk update && apk upgrade && apk add gcc musl-dev make' \
