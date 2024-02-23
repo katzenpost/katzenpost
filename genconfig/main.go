@@ -134,7 +134,7 @@ func (s *katzenpost) genNodeConfig(isGateway, isServiceNode bool, isVoting bool)
 	if isGateway {
 		n = fmt.Sprintf("gateway%d", s.gatewayIdx+1)
 	} else if isServiceNode {
-		n = fmt.Sprintf("serviceNode%d", s.serviceNodeIdx+1)
+		n = fmt.Sprintf("servicenode%d", s.serviceNodeIdx+1)
 	}
 	cfg := new(sConfig.Config)
 
