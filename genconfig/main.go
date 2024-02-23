@@ -195,63 +195,42 @@ func (s *katzenpost) genNodeConfig(isGateway, isServiceNode bool, isVoting bool)
 
 		s.serviceNodeIdx++
 
-		cfg.ServiceNode = new(sConfig.ServiceNode)
 		// configure an entry provider or a spool storage provider
-		if s.serviceNodeIdx%2 == 0 {
-			cfg.Gateway = &sConfig.Gateway{}
-		} else {
-			cfg.ServiceNode = &sConfig.ServiceNode{}
-			spoolCfg := &sConfig.CBORPluginKaetzchen{
-				Capability:     "spool",
-				Endpoint:       "+spool",
-				Command:        s.baseDir + "/memspool" + s.binSuffix,
+		cfg.ServiceNode = &sConfig.ServiceNode{}
+		spoolCfg := &sConfig.CBORPluginKaetzchen{
+			Capability:     "spool",
+			Endpoint:       "+spool",
+			Command:        s.baseDir + "/memspool" + s.binSuffix,
+			MaxConcurrency: 1,
+			Config: map[string]interface{}{
+				"data_store": s.baseDir + "/" + cfg.Server.Identifier + "/memspool.storage",
+				"log_dir":    s.baseDir + "/" + cfg.Server.Identifier,
+			},
+		}
+		cfg.ServiceNode.CBORPluginKaetzchen = []*sConfig.CBORPluginKaetzchen{spoolCfg}
+		if !s.hasPanda {
+			pandaCfg := &sConfig.CBORPluginKaetzchen{
+				Capability:     "panda",
+				Endpoint:       "+panda",
+				Command:        s.baseDir + "/panda_server" + s.binSuffix,
 				MaxConcurrency: 1,
 				Config: map[string]interface{}{
-					"data_store": s.baseDir + "/" + cfg.Server.Identifier + "/memspool.storage",
-					"log_dir":    s.baseDir + "/" + cfg.Server.Identifier,
+					"fileStore": s.baseDir + "/" + cfg.Server.Identifier + "/panda.storage",
+					"log_dir":   s.baseDir + "/" + cfg.Server.Identifier,
+					"log_level": s.logLevel,
 				},
 			}
-			cfg.ServiceNode.CBORPluginKaetzchen = []*sConfig.CBORPluginKaetzchen{spoolCfg}
-			if !s.hasPanda {
-				pandaCfg := &sConfig.CBORPluginKaetzchen{
-					Capability:     "panda",
-					Endpoint:       "+panda",
-					Command:        s.baseDir + "/panda_server" + s.binSuffix,
-					MaxConcurrency: 1,
-					Config: map[string]interface{}{
-						"fileStore": s.baseDir + "/" + cfg.Server.Identifier + "/panda.storage",
-						"log_dir":   s.baseDir + "/" + cfg.Server.Identifier,
-						"log_level": s.logLevel,
-					},
-				}
-				cfg.ServiceNode.CBORPluginKaetzchen = append(cfg.ServiceNode.CBORPluginKaetzchen, pandaCfg)
-				s.hasPanda = true
-			}
+			cfg.ServiceNode.CBORPluginKaetzchen = append(cfg.ServiceNode.CBORPluginKaetzchen, pandaCfg)
+			s.hasPanda = true
 		}
 
 		echoCfg := new(sConfig.Kaetzchen)
 		echoCfg.Capability = "echo"
 		echoCfg.Endpoint = "+echo"
 		cfg.ServiceNode.Kaetzchen = append(cfg.ServiceNode.Kaetzchen, echoCfg)
-
-		/*
-			keysvrCfg := new(sConfig.Kaetzchen)
-			keysvrCfg.Capability = "keyserver"
-			keysvrCfg.Endpoint = "+keyserver"
-			cfg.Provider.Kaetzchen = append(cfg.Provider.Kaetzchen, keysvrCfg)
-
-				if s.providerIdx == 1 {
-					cfg.Debug.NumProviderWorkers = 10
-					cfg.Provider.SQLDB = new(sConfig.SQLDB)
-					cfg.Provider.SQLDB.Backend = "pgx"
-					cfg.Provider.SQLDB.DataSourceName = "host=localhost port=5432 database=katzenpost sslmode=disable"
-					cfg.Provider.UserDB = new(sConfig.UserDB)
-					cfg.Provider.UserDB.Backend = sConfig.BackendSQL
-
-					cfg.Provider.SpoolDB = new(sConfig.SpoolDB)
-					cfg.Provider.SpoolDB.Backend = sConfig.BackendSQL
-				}
-		*/
+	} else if isGateway {
+		s.gatewayIdx++
+		cfg.Gateway = &sConfig.Gateway{}
 	} else {
 		s.nodeIdx++
 	}
@@ -442,20 +421,20 @@ func main() {
 		}
 	}
 
-	// Generate the provider configs.
-	// XXX
+	// Generate the gateway configs.
 	for i := 0; i < *nrGateways; i++ {
 		if err = s.genNodeConfig(true, false, *voting); err != nil {
 			log.Fatalf("Failed to generate provider config: %v", err)
 		}
 	}
+	// Generate the service node configs.
 	for i := 0; i < *nrServiceNodes; i++ {
 		if err = s.genNodeConfig(false, true, *voting); err != nil {
 			log.Fatalf("Failed to generate provider config: %v", err)
 		}
 	}
 
-	// Generate the node configs.
+	// Generate the mix node configs.
 	for i := 0; i < *nrNodes; i++ {
 		if err = s.genNodeConfig(false, false, *voting); err != nil {
 			log.Fatalf("Failed to generate node config: %v", err)
