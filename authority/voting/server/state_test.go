@@ -181,9 +181,18 @@ func TestVote(t *testing.T) {
 	authCfgs[1].Topology = &topology
 	authCfgs[2].Topology = &topology
 
-	// generate providers
+	// generate gateways
 	for i := 0; i < m; i++ {
-		idKey, c, err := genProviderConfig(fmt.Sprintf("provider-%d", i), votingPKI, port)
+		idKey, c, err := genGatewayConfig(fmt.Sprintf("gateway-%d", i), votingPKI, port)
+		require.NoError(err)
+		mixCfgs = append(mixCfgs, c)
+		idKeys = append(idKeys, idKey)
+		port++
+		reverseHash[idKey.pubKey.Sum256()] = idKey.pubKey
+	}
+	// generate serviceNodes
+	for i := 0; i < m; i++ {
+		idKey, c, err := genServiceNodeConfig(fmt.Sprintf("serviceNode-%d", i), votingPKI, port)
 		require.NoError(err)
 		mixCfgs = append(mixCfgs, c)
 		idKeys = append(idKeys, idKey)
@@ -259,14 +268,19 @@ func TestVote(t *testing.T) {
 	for _, s := range stateAuthority {
 		s.descriptors[votingEpoch] = make(map[[sign.PublicKeyHashSize]byte]*pki.MixDescriptor)
 		s.authorizedMixes = make(map[[sign.PublicKeyHashSize]byte]bool)
-		s.authorizedProviders = make(map[[sign.PublicKeyHashSize]byte]string)
+		s.authorizedGatewayNodes = make(map[[sign.PublicKeyHashSize]byte]string)
+		s.authorizedServiceNodes = make(map[[sign.PublicKeyHashSize]byte]string)
 		for _, d := range mixDescs {
 			s.descriptors[votingEpoch][d.IdentityKey.Sum256()] = d
 			s.authorizedMixes[d.IdentityKey.Sum256()] = true
 		}
-		for _, d := range providerDescs {
+		for _, d := range gatewayDescs {
 			s.descriptors[votingEpoch][d.IdentityKey.Sum256()] = d
-			s.authorizedProviders[d.IdentityKey.Sum256()] = d.Name
+			s.authorizedGatewayNodes[d.IdentityKey.Sum256()] = d.Name
+		}
+		for _, d := range serviceDescs {
+			s.descriptors[votingEpoch][d.IdentityKey.Sum256()] = d
+			s.authorizedServiceNodes[d.IdentityKey.Sum256()] = d.Name
 		}
 	}
 
@@ -432,7 +446,7 @@ func genVotingAuthoritiesCfg(parameters *config.Parameters, numAuthorities int) 
 	return myPeerKeys, configs, nil
 }
 
-func genProviderConfig(name string, pki *sConfig.PKI, port uint16) (*identityKey, *sConfig.Config, error) {
+func genGatewayConfig(name string, pki *sConfig.PKI, port uint16) (*identityKey, *sConfig.Config, error) {
 	const serverLogFile = ""
 
 	cfg := new(sConfig.Config)
@@ -453,7 +467,8 @@ func genProviderConfig(name string, pki *sConfig.PKI, port uint16) (*identityKey
 	}
 
 	cfg.Server.DataDir = datadir
-	cfg.Server.IsProvider = true
+	cfg.Server.IsGatewayNode = true
+	cfg.Server.IsServiceNode = true
 
 	// Debug section.
 	cfg.Debug = new(sConfig.Debug)
@@ -494,12 +509,89 @@ func genProviderConfig(name string, pki *sConfig.PKI, port uint16) (*identityKey
 	cfg.Management = new(sConfig.Management)
 	cfg.Management.Enable = true
 
-	cfg.Provider = new(sConfig.Provider)
+	cfg.Gateway = new(sConfig.Gateway)
+	err = cfg.FixupAndValidate()
+	if err != nil {
+		return nil, nil, err
+	}
+	return &identityKey{
+		publicPemFile:         filepath.Join(datadir, "identity.public.pem"),
+		privatePemFile:        filepath.Join(datadir, "identity.private.pem"),
+		identityPrivateKeyPem: idprivkeypem,
+		privKey:               idKey,
+		pubKey:                idPubKey,
+	}, cfg, nil
+}
+
+func genServiceNodeConfig(name string, pki *sConfig.PKI, port uint16) (*identityKey, *sConfig.Config, error) {
+	const serverLogFile = ""
+
+	cfg := new(sConfig.Config)
+
+	cfg.SphinxGeometry = sphinxGeometry
+
+	// Server section.
+	cfg.Server = new(sConfig.Server)
+	cfg.Server.Identifier = name
+	cfg.Server.Addresses = []string{fmt.Sprintf("127.0.0.1:%d", port)}
+	cfg.Server.AltAddresses = map[string][]string{
+		"TCP": []string{fmt.Sprintf("localhost:%d", port)},
+	}
+
+	datadir, err := os.MkdirTemp("", fmt.Sprintf("provider_%s", name))
+	if err != nil {
+		panic(err)
+	}
+
+	cfg.Server.DataDir = datadir
+	cfg.Server.IsGatewayNode = true
+	cfg.Server.IsServiceNode = true
+
+	// Debug section.
+	cfg.Debug = new(sConfig.Debug)
+
+	// Generate keys
+	idKey, idPubKey := cert.Scheme.NewKeypair()
+
+	scheme := wire.DefaultScheme
+	linkKey, linkPubKey := scheme.GenerateKeypair(rand.Reader)
+	linkPublicKeyPem := "link.public.pem"
+
+	idprivkeypem := filepath.Join(datadir, "identity.private.pem")
+
+	err = pem.ToFile(idprivkeypem, idKey)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	err = pem.ToFile(filepath.Join(datadir, "identity.public.pem"), idPubKey)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	err = pem.ToFile(filepath.Join(datadir, "link.private.pem"), linkKey)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	err = pem.ToFile(filepath.Join(datadir, linkPublicKeyPem), linkPubKey)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// PKI section.
+	cfg.PKI = pki
+
+	// Enable the thwack interface.
+	cfg.Management = new(sConfig.Management)
+	cfg.Management.Enable = true
+
+	cfg.ServiceNode = new(sConfig.ServiceNode)
 
 	echoCfg := new(sConfig.Kaetzchen)
 	echoCfg.Capability = "echo"
 	echoCfg.Endpoint = "+echo"
-	cfg.Provider.Kaetzchen = append(cfg.Provider.Kaetzchen, echoCfg)
+	cfg.ServiceNode.Kaetzchen = append(cfg.ServiceNode.Kaetzchen, echoCfg)
 	err = cfg.FixupAndValidate()
 	if err != nil {
 		return nil, nil, err
@@ -533,7 +625,8 @@ func genMixConfig(name string, pki *sConfig.PKI, port uint16) (*identityKey, *sC
 	cfg.Server = new(sConfig.Server)
 	cfg.Server.Identifier = name
 	cfg.Server.Addresses = []string{fmt.Sprintf("127.0.0.1:%d", port)}
-	cfg.Server.IsProvider = false
+	cfg.Server.IsGatewayNode = false
+	cfg.Server.IsServiceNode = false
 
 	datadir, err := os.MkdirTemp("", fmt.Sprintf("mix_%s", name))
 	if err != nil {
