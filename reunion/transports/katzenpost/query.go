@@ -65,7 +65,7 @@ func (k *Transport) CurrentEpochs() ([]uint64, error) {
 
 	// Verify the service is still advertising valid epochs in the current PKI
 	doc := k.Session.CurrentDocument()
-	p, err := doc.GetProvider(k.Provider)
+	p, err := doc.GetGateway(k.Provider)
 	if err != nil {
 		return nil, errors.New("Provider not found in PKI")
 	}
