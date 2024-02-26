@@ -468,7 +468,7 @@ func genGatewayConfig(name string, pki *sConfig.PKI, port uint16) (*identityKey,
 
 	cfg.Server.DataDir = datadir
 	cfg.Server.IsGatewayNode = true
-	cfg.Server.IsServiceNode = true
+	cfg.Server.IsServiceNode = false
 
 	// Debug section.
 	cfg.Debug = new(sConfig.Debug)
@@ -544,7 +544,7 @@ func genServiceNodeConfig(name string, pki *sConfig.PKI, port uint16) (*identity
 	}
 
 	cfg.Server.DataDir = datadir
-	cfg.Server.IsGatewayNode = true
+	cfg.Server.IsGatewayNode = false
 	cfg.Server.IsServiceNode = true
 
 	// Debug section.
