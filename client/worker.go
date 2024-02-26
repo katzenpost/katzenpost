@@ -21,11 +21,12 @@ import (
 	"math"
 	"time"
 
+	mrand "math/rand"
+
 	"github.com/katzenpost/katzenpost/client/constants"
 	"github.com/katzenpost/katzenpost/client/utils"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/pki"
-	mrand "math/rand"
 )
 
 type workerOp interface{}
@@ -221,11 +222,11 @@ func (s *Session) sendFromQueueOrDecoy(loopSvc *utils.ServiceDescriptor) {
 }
 
 func (s *Session) isDocValid(doc *pki.Document) error {
-	for _, provider := range doc.Providers {
+	for _, provider := range doc.ServiceNodes {
 		_, ok := provider.Kaetzchen[constants.LoopService]
 		if ok {
 			return nil
 		}
 	}
-	return errors.New("found a no provider with the loop service")
+	return errors.New("found no provider with the loop service")
 }

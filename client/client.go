@@ -69,20 +69,18 @@ func PKIBootstrap(ctx context.Context, c *Client, linkKey wire.PrivateKey) (pki.
 	return pkiClient, doc, nil
 }
 
-// SelectProvider returns a provider descriptor or error.
-func SelectProvider(doc *pki.Document) (*pki.MixDescriptor, error) {
+// SelectServiceNode returns a service node descriptor or error.
+func SelectServiceNode(doc *pki.Document) (*pki.MixDescriptor, error) {
 	// Pick a Provider that supports TrustOnFirstUse
-	providers := []*pki.MixDescriptor{}
-	for _, provider := range doc.Providers {
-		if provider.AuthenticationType == pki.TrustOnFirstUseAuth {
-			providers = append(providers, provider)
-		}
+	serviceNodes := []*pki.MixDescriptor{}
+	for _, serviceNode := range doc.ServiceNodes {
+		serviceNodes = append(serviceNodes, serviceNode)
 	}
-	if len(providers) == 0 {
+	if len(serviceNodes) == 0 {
 		return nil, errors.New("no Providers supporting tofu-authenticated connections found in the consensus")
 	}
-	provider := providers[rand.NewMath().Intn(len(providers))]
-	return provider, nil
+	serviceNode := serviceNodes[rand.NewMath().Intn(len(serviceNodes))]
+	return serviceNode, nil
 }
 
 // New creates a new Client with the provided configuration.
@@ -173,7 +171,7 @@ func (c *Client) NewTOFUSession(ctx context.Context) (*Session, error) {
 		return nil, err
 	}
 	// choose a provider
-	if provider, err = SelectProvider(doc); err != nil {
+	if provider, err = SelectServiceNode(doc); err != nil {
 		return nil, err
 	}
 
