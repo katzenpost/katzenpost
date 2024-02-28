@@ -1,6 +1,8 @@
 module github.com/katzenpost/katzenpost
 
-go 1.20
+go 1.21.3
+
+toolchain go1.21.7
 
 require (
 	github.com/BurntSushi/toml v1.3.2
