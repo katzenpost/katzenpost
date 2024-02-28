@@ -20,7 +20,7 @@ jobs:
         run: cd genconfig && go build && ./genconfig -v -b /conf -o ../docker/voting_mixnet/
 
       - name: Run authority unit tests
-        run: sudo sh -c "cd authority && ulimit -l 64435 && GORACE=history_size=7 go test -coverprofile=coverage.out -race -v -failfast -timeout 30m ./..."
+        run: sudo sh -c "go version; cd authority && ulimit -l 64435 && GORACE=history_size=7 go test -coverprofile=coverage.out -race -v -failfast -timeout 30m ./..."
 
       - name: Run catshadow unit tests
         run: sudo sh -c "cd catshadow && ulimit -l 64435 && GORACE=history_size=7 go test -coverprofile=coverage.out -race -v -failfast -timeout 30m ./..."
