@@ -12,7 +12,7 @@ require (
 	github.com/jackc/pgx v3.6.2+incompatible
 	github.com/katzenpost/chacha20poly1305 v0.0.0-20211026103954-7b6fb2fc0129
 	github.com/katzenpost/hpqc v0.0.13
-	github.com/katzenpost/nyquist v0.0.8
+	github.com/katzenpost/nyquist v0.0.9-0.20240228182321-e73e23fc0b84
 	github.com/prometheus/client_golang v1.18.0
 	github.com/stretchr/testify v1.8.4
 	github.com/ugorji/go/codec v1.2.12
