@@ -4,17 +4,18 @@ import (
 	"bytes"
 	"testing"
 
-	"github.com/cloudflare/circl/kem/kyber/kyber768"
-	"github.com/katzenpost/katzenpost/core/crypto/kem/adapter"
-	kemhybrid "github.com/katzenpost/katzenpost/core/crypto/kem/hybrid"
-	"github.com/katzenpost/katzenpost/core/crypto/nike/ecdh"
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/nyquist"
 	"github.com/katzenpost/nyquist/cipher"
 	"github.com/katzenpost/nyquist/hash"
-	"github.com/katzenpost/nyquist/kem"
+	nyquistkem "github.com/katzenpost/nyquist/kem"
 	"github.com/katzenpost/nyquist/pattern"
 	"github.com/katzenpost/nyquist/seec"
+
+	"github.com/katzenpost/hpqc/kem/adapter"
+	kemhybrid "github.com/katzenpost/hpqc/kem/hybrid"
+	"github.com/katzenpost/hpqc/kem/schemes"
+	ecdh "github.com/katzenpost/hpqc/nike/x25519"
+	"github.com/katzenpost/hpqc/rand"
 )
 
 func BenchmarkPQNoise(b *testing.B) {
@@ -25,22 +26,16 @@ func BenchmarkPQNoise(b *testing.B) {
 
 	protocol := &nyquist.Protocol{
 		Pattern: pattern.PqXX,
-		KEM: kem.FromKEM(
-			kemhybrid.New(
-				"Kyber768-X25519",
-				adapter.FromNIKE(ecdh.NewEcdhNike(rand.Reader)),
-				kyber768.Scheme(),
-			),
+		KEM: kemhybrid.New(
+			"Kyber768-X25519",
+			adapter.FromNIKE(ecdh.Scheme(rand.Reader)),
+			schemes.ByName("Kyber768"),
 		),
 		Cipher: cipher.ChaChaPoly,
 		Hash:   hash.BLAKE2s,
 	}
 
-	clientStatic, err := protocol.KEM.GenerateKeypair(seecGenRand)
-	if err != nil {
-		panic(err)
-	}
-
+	_, clientStatic := nyquistkem.GenerateKeypair(protocol.KEM, seecGenRand)
 	wireVersion := []byte{0x03} // Prologue indicates version 3.
 	maxMsgLen := 1048576
 
@@ -56,11 +51,7 @@ func BenchmarkPQNoise(b *testing.B) {
 		IsInitiator: true,
 	}
 
-	serverStatic, err := protocol.KEM.GenerateKeypair(seecGenRand)
-	if err != nil {
-		panic(err)
-	}
-
+	_, serverStatic := nyquistkem.GenerateKeypair(protocol.KEM, seecGenRand)
 	serverCfg := &nyquist.HandshakeConfig{
 		Protocol:       protocol,
 		Rng:            rand.Reader,
