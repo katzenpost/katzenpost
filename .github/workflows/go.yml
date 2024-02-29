@@ -2,12 +2,13 @@ name: build
 on: [push, pull_request]
 jobs:
   test:
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        go-version: [1.21.x]
+        os: [ubuntu-latest]
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
-        with:
-          fetch-depth: 0
       - name: Install Go (from go.mod)
         uses: actions/setup-go@v4
         with:
@@ -54,17 +55,14 @@ jobs:
     env:
       warped: true
       XDG_RUNTIME_DIR: /run
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        go-version: [1.21.x]
+        os: [ubuntu-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
-        with:
-          fetch-depth: 0
-      - name: Install Go (from go.mod)
-        uses: actions/setup-go@v4
-        with:
-          go-version-file: go.mod
-          check-latest: true
 
       - name: Configure podman socket
         run: |
@@ -72,7 +70,7 @@ jobs:
 
       - name: Build and start the mixnet
         run: |
-          cd docker && sudo -E make start
+          go version && cd docker && sudo -E make start
 
       - name: Allow mixnet to settle
         run: |
@@ -95,17 +93,14 @@ jobs:
     env:
       warped: true
       XDG_RUNTIME_DIR: /run
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        go-version: [1.21.x]
+        os: [ubuntu-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
-        with:
-          fetch-depth: 0
-      - name: Install Go (from go.mod)
-        uses: actions/setup-go@v4
-        with:
-          go-version-file: go.mod
-          check-latest: true
 
       - name: Configure podman socket
         run: |
@@ -133,17 +128,14 @@ jobs:
     env:
       warped: true
       XDG_RUNTIME_DIR: /run
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        go-version: [1.21.x]
+        os: [ubuntu-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
-        with:
-          fetch-depth: 0
-      - name: Install Go (from go.mod)
-        uses: actions/setup-go@v4
-        with:
-          go-version-file: go.mod
-          check-latest: true
 
       - name: Configure podman socket
         run: |
@@ -171,17 +163,14 @@ jobs:
     env:
       warped: true
       XDG_RUNTIME_DIR: /run
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        go-version: [1.21.x]
+        os: [ubuntu-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
-        with:
-          fetch-depth: 0
-      - name: Install Go (from go.mod)
-        uses: actions/setup-go@v4
-        with:
-          go-version-file: go.mod
-          check-latest: true
 
       - name: Configure podman socket
         run: |
