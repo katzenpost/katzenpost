@@ -3,7 +3,7 @@ package pki
 import (
 	"context"
 
-	"github.com/katzenpost/katzenpost/core/crypto/sign"
+	"github.com/katzenpost/hpqc/sign"
 )
 
 // Client is the abstract interface used for PKI interaction.

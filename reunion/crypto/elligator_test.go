@@ -30,7 +30,7 @@ package crypto
 import (
 	"testing"
 
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/hpqc/rand"
 	"github.com/stretchr/testify/require"
 )
 
