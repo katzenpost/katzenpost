@@ -6,7 +6,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
-
+        with:
+          fetch-depth: 0
       - name: Install Go (from go.mod)
         uses: actions/setup-go@v4
         with:
@@ -53,14 +54,17 @@ jobs:
     env:
       warped: true
       XDG_RUNTIME_DIR: /run
-    strategy:
-      matrix:
-        go-version: [1.20.x]
-        os: [ubuntu-22.04]
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+      - name: Install Go (from go.mod)
+        uses: actions/setup-go@v4
+        with:
+          go-version-file: go.mod
+          check-latest: true
 
       - name: Configure podman socket
         run: |
@@ -91,14 +95,17 @@ jobs:
     env:
       warped: true
       XDG_RUNTIME_DIR: /run
-    strategy:
-      matrix:
-        go-version: [1.20.x]
-        os: [ubuntu-22.04]
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+      - name: Install Go (from go.mod)
+        uses: actions/setup-go@v4
+        with:
+          go-version-file: go.mod
+          check-latest: true
 
       - name: Configure podman socket
         run: |
@@ -126,14 +133,17 @@ jobs:
     env:
       warped: true
       XDG_RUNTIME_DIR: /run
-    strategy:
-      matrix:
-        go-version: [1.20.x]
-        os: [ubuntu-22.04]
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+      - name: Install Go (from go.mod)
+        uses: actions/setup-go@v4
+        with:
+          go-version-file: go.mod
+          check-latest: true
 
       - name: Configure podman socket
         run: |
@@ -161,14 +171,17 @@ jobs:
     env:
       warped: true
       XDG_RUNTIME_DIR: /run
-    strategy:
-      matrix:
-        go-version: [1.20.x]
-        os: [ubuntu-22.04]
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+      - name: Install Go (from go.mod)
+        uses: actions/setup-go@v4
+        with:
+          go-version-file: go.mod
+          check-latest: true
 
       - name: Configure podman socket
         run: |
