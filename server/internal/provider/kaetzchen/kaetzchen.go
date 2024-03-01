@@ -260,7 +260,7 @@ func New(glue glue.Glue) (*KaetzchenWorker, error) {
 
 	// Initialize the internal Kaetzchen.
 	capaMap := make(map[string]bool)
-	for _, v := range glue.Config().Provider.Kaetzchen {
+	for _, v := range glue.Config().ServiceNode.Kaetzchen {
 		capa := v.Capability
 		if v.Disable {
 			kaetzchenWorker.log.Noticef("Skipping disabled Kaetzchen: '%v'.", capa)

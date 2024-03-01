@@ -103,8 +103,11 @@ type Server struct {
 	// DataDir is the absolute path to the server's state files.
 	DataDir string
 
-	// IsProvider specifies if the server is a provider (vs a mix).
-	IsProvider bool
+	// IsGatewayNode specifies if the server is a gateway or not.
+	IsGatewayNode bool
+
+	// IsServiceNode specifies if the server is a service node or not.
+	IsServiceNode bool
 }
 
 func (sCfg *Server) applyDefaults() {
@@ -330,13 +333,19 @@ func (lCfg *Logging) validate() error {
 	return nil
 }
 
-// Provider is the Katzenpost provider configuration.
-type Provider struct {
-	// EnableEphemeralhClients is set to true in order to
-	// allow ephemeral clients to be created when the Provider
-	// first receives a given user identity string.
-	EnableEphemeralClients bool
+// ServiceNode is the service node configuration.
+type ServiceNode struct {
+	// Kaetzchen is the list of configured internal Kaetzchen (auto-responder agents)
+	// for this provider.
+	Kaetzchen []*Kaetzchen
 
+	// CBORPluginKaetzchen is the list of configured external CBOR Kaetzchen plugins
+	// for this provider.
+	CBORPluginKaetzchen []*CBORPluginKaetzchen
+}
+
+// Gateway is the Katzenpost gateway configuration.
+type Gateway struct {
 	// AltAddresses is the map of extra transports and addresses at which
 	// the Provider is reachable by clients.  The most useful alternative
 	// transport is likely ("tcp") (`core/pki.TransportTCP`).
@@ -350,19 +359,6 @@ type Provider struct {
 
 	// SpoolDB is the user message spool configuration.
 	SpoolDB *SpoolDB
-
-	// Kaetzchen is the list of configured internal Kaetzchen (auto-responder agents)
-	// for this provider.
-	Kaetzchen []*Kaetzchen
-
-	// CBORPluginKaetzchen is the list of configured external CBOR Kaetzchen plugins
-	// for this provider.
-	CBORPluginKaetzchen []*CBORPluginKaetzchen
-
-	// TrustOnFirstUse indicates whether or not to trust client's wire protocol keys
-	// on first use. If set to true then first seen keys cause an entry in the userDB
-	// to be created. It will later be garbage collected.
-	TrustOnFirstUse bool
 }
 
 // SQLDB is the SQL database backend configuration.
@@ -524,7 +520,7 @@ func (kCfg *CBORPluginKaetzchen) validate() error {
 	return nil
 }
 
-func (pCfg *Provider) applyDefaults(sCfg *Server) {
+func (pCfg *Gateway) applyDefaults(sCfg *Server) {
 	if pCfg.UserDB == nil {
 		pCfg.UserDB = &UserDB{}
 	}
@@ -560,7 +556,30 @@ func (pCfg *Provider) applyDefaults(sCfg *Server) {
 	}
 }
 
-func (pCfg *Provider) validate() error {
+func (pCfg *ServiceNode) validate() error {
+	capaMap := make(map[string]bool)
+	for _, v := range pCfg.Kaetzchen {
+		if err := v.validate(); err != nil {
+			return err
+		}
+		if capaMap[v.Capability] {
+			return fmt.Errorf("config: Kaetzchen: '%v' configured multiple times", v.Capability)
+		}
+		capaMap[v.Capability] = true
+	}
+	for _, v := range pCfg.CBORPluginKaetzchen {
+		if err := v.validate(); err != nil {
+			return err
+		}
+		if capaMap[v.Capability] {
+			return fmt.Errorf("config: Kaetzchen: '%v' configured multiple times", v.Capability)
+		}
+		capaMap[v.Capability] = true
+	}
+	return nil
+}
+
+func (pCfg *Gateway) validate() error {
 	internalTransports := make(map[string]bool)
 	for _, v := range pki.InternalTransports {
 		internalTransports[strings.ToLower(string(v))] = true
@@ -639,26 +658,6 @@ func (pCfg *Provider) validate() error {
 		return fmt.Errorf("config: Provider: Invalid SpoolDB Backend: '%v'", pCfg.SpoolDB.Backend)
 	}
 
-	capaMap := make(map[string]bool)
-	for _, v := range pCfg.Kaetzchen {
-		if err := v.validate(); err != nil {
-			return err
-		}
-		if capaMap[v.Capability] {
-			return fmt.Errorf("config: Kaetzchen: '%v' configured multiple times", v.Capability)
-		}
-		capaMap[v.Capability] = true
-	}
-	for _, v := range pCfg.CBORPluginKaetzchen {
-		if err := v.validate(); err != nil {
-			return err
-		}
-		if capaMap[v.Capability] {
-			return fmt.Errorf("config: Kaetzchen: '%v' configured multiple times", v.Capability)
-		}
-		capaMap[v.Capability] = true
-	}
-
 	return nil
 }
 
@@ -722,7 +721,8 @@ func (mCfg *Management) validate() error {
 type Config struct {
 	Server         *Server
 	Logging        *Logging
-	Provider       *Provider
+	ServiceNode    *ServiceNode
+	Gateway        *Gateway
 	PKI            *PKI
 	Management     *Management
 	SphinxGeometry *geo.Geometry
@@ -769,17 +769,29 @@ func (cfg *Config) FixupAndValidate() error {
 	if err := cfg.PKI.validate(cfg.Server.DataDir); err != nil {
 		return err
 	}
-	if cfg.Server.IsProvider {
-		if cfg.Provider == nil {
-			cfg.Provider = &Provider{}
+	if cfg.Server.IsGatewayNode {
+		if cfg.Gateway == nil {
+			cfg.Gateway = &Gateway{}
 		}
-		cfg.Provider.applyDefaults(cfg.Server)
-		if err := cfg.Provider.validate(); err != nil {
+		cfg.Gateway.applyDefaults(cfg.Server)
+		if err := cfg.Gateway.validate(); err != nil {
 			return err
 		}
-	} else if cfg.Provider != nil {
-		return errors.New("config: Provider block set when not a Provider")
+	} else if cfg.Gateway != nil {
+		return errors.New("config: Gateway block set when not a Gateway")
 	}
+
+	if cfg.Server.IsServiceNode {
+		if cfg.ServiceNode == nil {
+			cfg.ServiceNode = &ServiceNode{}
+		}
+		if err := cfg.ServiceNode.validate(); err != nil {
+			return err
+		}
+	} else if cfg.ServiceNode != nil {
+		return errors.New("config: Service node block set when not a Service node")
+	}
+
 	if err = cfg.Logging.validate(); err != nil {
 		return err
 	}

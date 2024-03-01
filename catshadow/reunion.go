@@ -21,6 +21,7 @@ package catshadow
 import (
 	"errors"
 	"fmt"
+
 	rClient "github.com/katzenpost/katzenpost/reunion/client"
 	rTrans "github.com/katzenpost/katzenpost/reunion/transports/katzenpost"
 )
@@ -161,7 +162,7 @@ func (c *Client) getReunionTransports() ([]*rTrans.Transport, error) {
 	transports := make([]*rTrans.Transport, 0)
 
 	// Get reunion endpoints and epoch values
-	for _, p := range doc.Providers {
+	for _, p := range doc.ServiceNodes {
 		if r, ok := p.Kaetzchen["reunion"]; ok {
 			if ep, ok := r["endpoint"]; ok {
 				ep := ep.(string)

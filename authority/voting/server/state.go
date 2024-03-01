@@ -100,11 +100,12 @@ type state struct {
 
 	db *bolt.DB
 
-	reverseHash           map[[publicKeyHashSize]byte]sign.PublicKey
-	authorizedMixes       map[[publicKeyHashSize]byte]bool
-	authorizedProviders   map[[publicKeyHashSize]byte]string
-	authorizedAuthorities map[[publicKeyHashSize]byte]bool
-	authorityLinkKeys     map[[publicKeyHashSize]byte]kem.PublicKey
+	reverseHash            map[[publicKeyHashSize]byte]sign.PublicKey
+	authorizedMixes        map[[publicKeyHashSize]byte]bool
+	authorizedGatewayNodes map[[publicKeyHashSize]byte]string
+	authorizedServiceNodes map[[publicKeyHashSize]byte]string
+	authorizedAuthorities  map[[publicKeyHashSize]byte]bool
+	authorityLinkKeys      map[[publicKeyHashSize]byte]kem.PublicKey
 
 	documents    map[uint64]*pki.Document
 	myconsensus  map[uint64]*pki.Document
@@ -496,11 +497,15 @@ func (s *state) identityPubKeyHash() [publicKeyHashSize]byte {
 
 func (s *state) getDocument(descriptors []*pki.MixDescriptor, params *config.Parameters, srv []byte) *pki.Document {
 	// Carve out the descriptors between providers and nodes.
-	var providers []*pki.MixDescriptor
-	var nodes []*pki.MixDescriptor
+	gateways := []*pki.MixDescriptor{}
+	serviceNodes := []*pki.MixDescriptor{}
+	nodes := []*pki.MixDescriptor{}
+
 	for _, v := range descriptors {
-		if v.Provider {
-			providers = append(providers, v)
+		if v.IsGatewayNode {
+			gateways = append(gateways, v)
+		} else if v.IsServiceNode {
+			serviceNodes = append(serviceNodes, v)
 		} else {
 			nodes = append(nodes, v)
 		}
@@ -540,7 +545,8 @@ func (s *state) getDocument(descriptors []*pki.MixDescriptor, params *config.Par
 		LambdaM:            params.LambdaM,
 		LambdaMMaxDelay:    params.LambdaMMaxDelay,
 		Topology:           topology,
-		Providers:          providers,
+		GatewayNodes:       gateways,
+		ServiceNodes:       serviceNodes,
 		SharedRandomValue:  srv,
 		PriorSharedRandom:  s.priorSRV,
 		SphinxGeometryHash: s.geo.Hash(),
@@ -552,19 +558,25 @@ func (s *state) hasEnoughDescriptors(m map[[publicKeyHashSize]byte]*pki.MixDescr
 	// A Document will be generated iff there are at least:
 	//
 	//  * Debug.Layers * Debug.MinNodesPerLayer nodes.
-	//  * One provider.
+	//  * One gateway.
+	//  * One service node.
 	//
 	// Otherwise, it's pointless to generate a unusable document.
-	nrProviders := 0
+	nrGateways := 0
+	nrServiceNodes := 0
 	for _, v := range m {
-		if v.Provider {
-			nrProviders++
+		if v.IsGatewayNode {
+			nrGateways++
 		}
+		if v.IsServiceNode {
+			nrServiceNodes++
+		}
+
 	}
-	nrNodes := len(m) - nrProviders
+	nrNodes := len(m) - nrGateways - nrServiceNodes
 
 	minNodes := s.s.cfg.Debug.Layers * s.s.cfg.Debug.MinNodesPerLayer
-	return nrProviders > 0 && nrNodes >= minNodes
+	return (nrGateways > 0) && (nrServiceNodes > 0) && (nrNodes >= minNodes)
 }
 
 func (s *state) verifyCommits(epoch uint64) (map[[publicKeyHashSize]byte][]byte, map[[publicKeyHashSize]byte][]byte) {
@@ -958,8 +970,20 @@ func (s *state) tallyVotes(epoch uint64) ([]*pki.MixDescriptor, *config.Paramete
 		}
 		mixParams[bs] = append(mixParams[bs], vote)
 
-		// include providers in the tally.
-		for _, desc := range vote.Providers {
+		// include edge nodes in the tally.
+		for _, desc := range vote.GatewayNodes {
+			rawDesc, err := desc.MarshalBinary()
+			if err != nil {
+				s.log.Errorf("Skipping vote from Authority whose MixDescriptor failed to encode?! %v", err)
+				continue
+			}
+			k := string(rawDesc)
+			if _, ok := mixTally[k]; !ok {
+				mixTally[k] = make([]*pki.Document, 0)
+			}
+			mixTally[k] = append(mixTally[k], vote)
+		}
+		for _, desc := range vote.ServiceNodes {
 			rawDesc, err := desc.MarshalBinary()
 			if err != nil {
 				s.log.Errorf("Skipping vote from Authority whose MixDescriptor failed to encode?! %v", err)
@@ -1265,14 +1289,24 @@ func (s *state) pruneDocuments() {
 
 func (s *state) isDescriptorAuthorized(desc *pki.MixDescriptor) bool {
 	pk := hash.Sum256(desc.IdentityKey)
-	if !desc.Provider {
+	if !desc.IsGatewayNode && !desc.IsServiceNode {
 		return s.authorizedMixes[pk]
 	}
-	name, ok := s.authorizedProviders[pk]
-	if !ok {
-		return false
+	if desc.IsGatewayNode {
+		name, ok := s.authorizedGatewayNodes[pk]
+		if !ok {
+			return false
+		}
+		return name == desc.Name
 	}
-	return name == desc.Name
+	if desc.IsServiceNode {
+		name, ok := s.authorizedServiceNodes[pk]
+		if !ok {
+			return false
+		}
+		return name == desc.Name
+	}
+	panic("impossible")
 }
 
 func (s *state) dupSig(sig commands.Sig) bool {
@@ -1807,8 +1841,8 @@ func newState(s *Server) (*state, error) {
 		st.authorizedMixes[pk] = true
 		st.reverseHash[pk] = identityPublicKey
 	}
-	st.authorizedProviders = make(map[[publicKeyHashSize]byte]string)
-	for _, v := range st.s.cfg.Providers {
+	st.authorizedGatewayNodes = make(map[[publicKeyHashSize]byte]string)
+	for _, v := range st.s.cfg.GatewayNodes {
 		var identityPublicKey sign.PublicKey
 		var err error
 
@@ -1826,7 +1860,29 @@ func newState(s *Server) (*state, error) {
 		}
 
 		pk := hash.Sum256From(identityPublicKey)
-		st.authorizedProviders[pk] = v.Identifier
+		st.authorizedGatewayNodes[pk] = v.Identifier
+		st.reverseHash[pk] = identityPublicKey
+	}
+	st.authorizedServiceNodes = make(map[[publicKeyHashSize]byte]string)
+	for _, v := range st.s.cfg.ServiceNodes {
+		var identityPublicKey sign.PublicKey
+		var err error
+
+		if filepath.IsAbs(v.IdentityPublicKeyPem) {
+			identityPublicKey, err = signpem.FromPublicPEMFile(v.IdentityPublicKeyPem, cert.Scheme)
+			if err != nil {
+				panic(err)
+			}
+		} else {
+			pemFilePath := filepath.Join(s.cfg.Server.DataDir, v.IdentityPublicKeyPem)
+			identityPublicKey, err = signpem.FromPublicPEMFile(pemFilePath, cert.Scheme)
+			if err != nil {
+				panic(err)
+			}
+		}
+
+		pk := hash.Sum256From(identityPublicKey)
+		st.authorizedServiceNodes[pk] = v.Identifier
 		st.reverseHash[pk] = identityPublicKey
 	}
 	st.authorizedAuthorities = make(map[[publicKeyHashSize]byte]bool)

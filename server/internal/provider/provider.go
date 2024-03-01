@@ -36,6 +36,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/monotime"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/thwack"
+	"github.com/katzenpost/katzenpost/core/utils"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/katzenpost/katzenpost/server/config"
@@ -179,7 +180,8 @@ func (p *provider) worker() {
 	// statement below. If set then the timer will periodically
 	// write to the channel triggering our GC routine.
 	var gcEphemeralClientGCTickerChan <-chan time.Time
-	if p.glue.Config().Provider.EnableEphemeralClients {
+
+	if p.glue.Config().Gateway != nil {
 		ticker := time.NewTicker(epochtime.Period)
 		gcEphemeralClientGCTickerChan = ticker.C
 		defer ticker.Stop()
@@ -209,59 +211,60 @@ func (p *provider) worker() {
 			continue
 		}
 
-		// Kaetzchen endpoints are published in the PKI and are never
-		// user-facing, so omit the recipient-post processing.  If clients
-		// are written under the assumption that Kaetzchen addresses are
-		// normalized, that's their problem.
-		if p.kaetzchenWorker.IsKaetzchen(pkt.Recipient.ID) {
-			// Packet is destined for a Kaetzchen auto-responder agent, and
-			// can't be a SURB-Reply.
-			if pkt.IsSURBReply() {
-				p.log.Debugf("Dropping packet: %v (SURB-Reply for Kaetzchen)", pkt.ID)
-				instrument.PacketsDropped()
-				pkt.Dispose()
-			} else {
-				// Note that we pass ownership of pkt to p.kaetzchenWorker
-				// which will take care to dispose of it.
-				p.kaetzchenWorker.OnKaetzchen(pkt)
+		if p.glue.Config().ServiceNode != nil {
+			// Kaetzchen endpoints are published in the PKI and are never
+			// user-facing, so omit the recipient-post processing.  If clients
+			// are written under the assumption that Kaetzchen addresses are
+			// normalized, that's their problem.
+			if p.kaetzchenWorker.IsKaetzchen(pkt.Recipient.ID) {
+				// Packet is destined for a Kaetzchen auto-responder agent, and
+				// can't be a SURB-Reply.
+				if pkt.IsSURBReply() {
+					p.log.Debugf("Dropping packet: %v (SURB-Reply for Kaetzchen)", pkt.ID)
+					instrument.PacketsDropped()
+					pkt.Dispose()
+				} else {
+					// Note that we pass ownership of pkt to p.kaetzchenWorker
+					// which will take care to dispose of it.
+					p.kaetzchenWorker.OnKaetzchen(pkt)
+				}
+				continue
 			}
-			continue
-		}
 
-		if p.cborPluginKaetzchenWorker.IsKaetzchen(pkt.Recipient.ID) {
-			if pkt.IsSURBReply() {
-				p.log.Debugf("Dropping packet: %v (SURB-Reply for Kaetzchen)", pkt.ID)
-				instrument.PacketsDropped()
-				pkt.Dispose()
-			} else {
-				// Note that we pass ownership of pkt to p.kaetzchenWorker
-				// which will take care to dispose of it.
-				p.cborPluginKaetzchenWorker.OnKaetzchen(pkt)
+			if p.cborPluginKaetzchenWorker.IsKaetzchen(pkt.Recipient.ID) {
+				if pkt.IsSURBReply() {
+					p.log.Debugf("Dropping packet: %v (SURB-Reply for Kaetzchen)", pkt.ID)
+					instrument.PacketsDropped()
+					pkt.Dispose()
+				} else {
+					// Note that we pass ownership of pkt to p.kaetzchenWorker
+					// which will take care to dispose of it.
+					p.cborPluginKaetzchenWorker.OnKaetzchen(pkt)
+				}
+				continue
 			}
-			continue
-		}
-
-		// Post-process the recipient.
-		recipient := pkt.Recipient.ID[:]
-
-		// Ensure the packet is for a valid recipient.
-		if !p.userDB.Exists(recipient) {
-			p.log.Debugf("Dropping packet: %v (Invalid Recipient: '%x')", pkt.ID, recipient)
-			instrument.PacketsDropped()
-			pkt.Dispose()
-			continue
-		}
-
-		// Process the packet based on type.
-		if pkt.IsSURBReply() {
-			p.onSURBReply(pkt, recipient)
 		} else {
-			// Caller checks that the packet is either a SURB-Reply or a user
-			// message, so this must be the latter.
-			p.onToUser(pkt, recipient)
-		}
+			// Post-process the recipient.
+			recipient := pkt.Recipient.ID[:]
 
-		pkt.Dispose()
+			// Ensure the packet is for a valid recipient.
+			if !p.userDB.Exists(recipient) {
+				p.log.Debugf("Dropping packet: %v (Invalid Recipient: '%v')", pkt.ID, utils.ASCIIBytesToPrintString(recipient))
+				instrument.PacketsDropped()
+				pkt.Dispose()
+				continue
+			}
+
+			// Process the packet based on type.
+			if pkt.IsSURBReply() {
+				p.onSURBReply(pkt, recipient)
+			} else {
+				// Caller checks that the packet is either a SURB-Reply or a user
+				// message, so this must be the latter.
+				p.onToUser(pkt, recipient)
+			}
+			pkt.Dispose()
+		}
 	}
 }
 
@@ -535,55 +538,52 @@ func New(glue glue.Glue) (glue.Provider, error) {
 		}
 	}()
 
-	if cfg.Provider.SQLDB != nil {
-		if cfg.Provider.UserDB.Backend == config.BackendSQL || cfg.Provider.SpoolDB.Backend == config.BackendSQL {
-			p.sqlDB, err = sqldb.New(glue)
-			if err != nil {
-				return nil, err
+	if cfg.Gateway != nil {
+		if cfg.Gateway.SQLDB != nil {
+			if cfg.Gateway.UserDB.Backend == config.BackendSQL || cfg.Gateway.SpoolDB.Backend == config.BackendSQL {
+				p.sqlDB, err = sqldb.New(glue)
+				if err != nil {
+					return nil, err
+				}
+			} else {
+				p.log.Warningf("SQL database configured but not used for the User or Spool databases.")
 			}
-		} else {
-			p.log.Warningf("SQL database configured but not used for the User or Spool databases.")
 		}
-	}
 
-	switch cfg.Provider.UserDB.Backend {
-	case config.BackendBolt:
-		if cfg.Provider.TrustOnFirstUse {
-			p.userDB, err = boltuserdb.New(cfg.Provider.UserDB.Bolt.UserDB, boltuserdb.WithTrustOnFirstUse())
-		} else {
-			p.userDB, err = boltuserdb.New(cfg.Provider.UserDB.Bolt.UserDB)
+		switch cfg.Gateway.UserDB.Backend {
+		case config.BackendBolt:
+			p.userDB, err = boltuserdb.New(cfg.Gateway.UserDB.Bolt.UserDB, boltuserdb.WithTrustOnFirstUse())
+		case config.BackendExtern:
+			p.userDB, err = externuserdb.New(cfg.Gateway.UserDB.Extern.ProviderURL)
+		case config.BackendSQL:
+			if p.sqlDB != nil {
+				p.userDB, err = p.sqlDB.UserDB()
+			} else {
+				err = errors.New("gateway: SQL UserDB backend with no SQL database")
+			}
+		default:
+			return nil, fmt.Errorf("gateway: Unknown UserDB backend: %v", cfg.Gateway.UserDB.Backend)
 		}
-	case config.BackendExtern:
-		p.userDB, err = externuserdb.New(cfg.Provider.UserDB.Extern.ProviderURL)
-	case config.BackendSQL:
-		if p.sqlDB != nil {
-			p.userDB, err = p.sqlDB.UserDB()
-		} else {
-			err = errors.New("provider: SQL UserDB backend with no SQL database")
+		if err != nil {
+			return nil, err
 		}
-	default:
-		return nil, fmt.Errorf("provider: Unknown UserDB backend: %v", cfg.Provider.UserDB.Backend)
-	}
-	if err != nil {
-		return nil, err
-	}
 
-	switch cfg.Provider.SpoolDB.Backend {
-	case config.BackendBolt:
-		p.spool, err = boltspool.New(cfg.Provider.SpoolDB.Bolt.SpoolDB)
-	case config.BackendSQL:
-		if p.sqlDB != nil {
-			p.spool = p.sqlDB.Spool()
-		} else {
-			err = errors.New("provider: SQL SpoolDB backend with no SQL database")
+		switch cfg.Gateway.SpoolDB.Backend {
+		case config.BackendBolt:
+			p.spool, err = boltspool.New(cfg.Gateway.SpoolDB.Bolt.SpoolDB)
+		case config.BackendSQL:
+			if p.sqlDB != nil {
+				p.spool = p.sqlDB.Spool()
+			} else {
+				err = errors.New("gateway: SQL SpoolDB backend with no SQL database")
+			}
+		default:
+			err = fmt.Errorf("gateway: Unknown SpoolDB backend: %v", cfg.Gateway.SpoolDB.Backend)
 		}
-	default:
-		err = fmt.Errorf("provider: Unknown SpoolDB backend: %v", cfg.Provider.SpoolDB.Backend)
+		if err != nil {
+			return nil, err
+		}
 	}
-	if err != nil {
-		return nil, err
-	}
-
 	// Purge spools that belong to users that no longer exist in the user db.
 	if err = p.spool.Vacuum(p.userDB); err != nil {
 		return nil, err

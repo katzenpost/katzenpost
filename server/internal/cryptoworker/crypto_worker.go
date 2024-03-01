@@ -142,7 +142,8 @@ func (w *Worker) doUnwrap(pkt *packet.Packet) error {
 func (w *Worker) worker() {
 	const absoluteMinimumDelay = 1 * time.Millisecond
 
-	isProvider := w.glue.Config().Server.IsProvider
+	isGateway := w.glue.Config().Server.IsGatewayNode
+	isServiceNode := w.glue.Config().Server.IsServiceNode
 	unwrapSlack := time.Duration(w.glue.Config().Debug.UnwrapDelay) * time.Millisecond
 	defer w.derefKeys()
 
@@ -264,7 +265,7 @@ func (w *Worker) worker() {
 			w.log.Debugf("Dispatching packet: %v", pkt.ID)
 			w.glue.Scheduler().OnPacket(pkt)
 			continue
-		} else if !isProvider {
+		} else if !isGateway || !isServiceNode {
 			// This may be a decoy traffic response.
 			if pkt.IsSURBReply() {
 				w.log.Debugf("Handing off decoy response packet: %v", pkt.ID)

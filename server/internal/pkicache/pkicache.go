@@ -102,14 +102,30 @@ func (e *Entry) Outgoing() []*pki.MixDescriptor {
 	return l
 }
 
-func (e *Entry) isOurLayerSane(isProvider bool) bool {
-	if isProvider && !e.self.Provider {
+func (e *Entry) isOurLayerSane(isGateway, isServiceNode bool) bool {
+	if isGateway && isServiceNode {
 		return false
 	}
-	if !isProvider {
+	if isGateway && !e.self.IsGatewayNode {
+		return false
+	}
+	if isServiceNode && !e.self.IsServiceNode {
+		return false
+	}
+	if !isGateway {
 		idHash := hash.Sum256(e.self.IdentityKey)
 		layer, err := e.doc.GetMixLayer(&idHash)
-		if err != nil || layer == pki.LayerProvider {
+		if err != nil || layer == pki.LayerGateway {
+			return false
+		}
+		if int(layer) >= len(e.doc.Topology) {
+			return false
+		}
+	}
+	if !isServiceNode {
+		idHash := hash.Sum256(e.self.IdentityKey)
+		layer, err := e.doc.GetMixLayer(&idHash)
+		if err != nil || layer == pki.LayerService {
 			return false
 		}
 		if int(layer) >= len(e.doc.Topology) {
@@ -126,10 +142,10 @@ func (e *Entry) incomingLayer() uint8 {
 		panic(err)
 	}
 	switch layer {
-	case pki.LayerProvider:
+	case pki.LayerService:
 		return uint8(len(e.doc.Topology)) - 1
 	case 0:
-		return pki.LayerProvider
+		return pki.LayerGateway
 	}
 	return layer - 1
 }
@@ -142,15 +158,15 @@ func (e *Entry) outgoingLayer() uint8 {
 	}
 	switch int(layer) {
 	case len(e.doc.Topology) - 1:
-		return pki.LayerProvider
-	case pki.LayerProvider:
+		return pki.LayerService
+	case pki.LayerGateway:
 		return 0
 	}
 	return layer + 1
 }
 
 // New constructs a new Entry from a given document.
-func New(d *pki.Document, identityKey sign.PublicKey, isProvider bool) (*Entry, error) {
+func New(d *pki.Document, identityKey sign.PublicKey, isGateway, isServiceNode bool) (*Entry, error) {
 	e := new(Entry)
 	e.doc = d
 	e.incoming = make(map[[constants.NodeIDLength]byte]*pki.MixDescriptor)
@@ -166,7 +182,7 @@ func New(d *pki.Document, identityKey sign.PublicKey, isProvider bool) (*Entry, 
 	}
 
 	// Ensure that the self descriptor has a sensible layer.
-	if !e.isOurLayerSane(isProvider) {
+	if !e.isOurLayerSane(isGateway, isServiceNode) {
 		layer, err := e.doc.GetMixLayer(&idKeyHash)
 		if err != nil {
 			return nil, err
@@ -179,8 +195,10 @@ func New(d *pki.Document, identityKey sign.PublicKey, isProvider bool) (*Entry, 
 	appendMap := func(layer uint8, m map[[constants.NodeIDLength]byte]*pki.MixDescriptor) {
 		var nodes []*pki.MixDescriptor
 		switch layer {
-		case pki.LayerProvider:
-			nodes = e.doc.Providers
+		case pki.LayerGateway:
+			nodes = e.doc.GatewayNodes
+		case pki.LayerService:
+			nodes = e.doc.ServiceNodes
 		default:
 			nodes = e.doc.Topology[layer]
 		}
@@ -198,7 +216,7 @@ func New(d *pki.Document, identityKey sign.PublicKey, isProvider bool) (*Entry, 
 	for i := 0; i < len(e.doc.Topology); i++ {
 		appendMap(uint8(i), e.all)
 	}
-	appendMap(pki.LayerProvider, e.all)
-
+	appendMap(pki.LayerGateway, e.all)
+	appendMap(pki.LayerService, e.all)
 	return e, nil
 }
