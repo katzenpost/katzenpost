@@ -105,7 +105,7 @@ type state struct {
 	authorizedGatewayNodes map[[publicKeyHashSize]byte]string
 	authorizedServiceNodes map[[publicKeyHashSize]byte]string
 	authorizedAuthorities  map[[publicKeyHashSize]byte]bool
-	authorityLinkKeys      map[[publicKeyHashSize]byte]wire.PublicKey
+	authorityLinkKeys      map[[publicKeyHashSize]byte]kem.PublicKey
 
 	documents    map[uint64]*pki.Document
 	myconsensus  map[uint64]*pki.Document
@@ -1859,22 +1859,23 @@ func newState(s *Server) (*state, error) {
 			}
 		}
 
-		pk := identityPublicKey.Sum256()
+		pk := hash.Sum256From(identityPublicKey)
 		st.authorizedGatewayNodes[pk] = v.Identifier
 		st.reverseHash[pk] = identityPublicKey
 	}
 	st.authorizedServiceNodes = make(map[[publicKeyHashSize]byte]string)
 	for _, v := range st.s.cfg.ServiceNodes {
-		_, identityPublicKey := cert.Scheme.NewKeypair()
+		var identityPublicKey sign.PublicKey
+		var err error
 
 		if filepath.IsAbs(v.IdentityPublicKeyPem) {
-			err := pem.FromFile(v.IdentityPublicKeyPem, identityPublicKey)
+			identityPublicKey, err = signpem.FromPublicPEMFile(v.IdentityPublicKeyPem, cert.Scheme)
 			if err != nil {
 				panic(err)
 			}
 		} else {
 			pemFilePath := filepath.Join(s.cfg.Server.DataDir, v.IdentityPublicKeyPem)
-			err := pem.FromFile(pemFilePath, identityPublicKey)
+			identityPublicKey, err = signpem.FromPublicPEMFile(pemFilePath, cert.Scheme)
 			if err != nil {
 				panic(err)
 			}
