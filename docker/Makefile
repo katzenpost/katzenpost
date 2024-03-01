@@ -130,7 +130,7 @@ debian_base.stamp:
 	touch $@
 
 alpine_base.stamp:
-	$(docker) run $(replace_name) katzenpost_alpine_base docker.io/golang:alpine sh -c 'adduser katzenpost --gecos "" --disabled-password  && apk update && apk upgrade && apk add gcc musl-dev make' \
+	$(docker) run $(replace_name) katzenpost_alpine_base docker.io/golang:1.21-alpine sh -c 'adduser katzenpost --gecos "" --disabled-password  && apk update && apk upgrade && apk add gcc musl-dev make' \
 	&& $(docker) commit katzenpost_alpine_base katzenpost-alpine_base \
 	&& $(docker) rm katzenpost_alpine_base
 	touch $@
@@ -138,7 +138,7 @@ alpine_base.stamp:
 $(distro)_go_mod.stamp: $(distro)_base.stamp
 	$(docker) run ${docker_args} $(replace_name) \
 		katzenpost_$(distro)_go_mod katzenpost-$(distro)_base \
-		sh -c 'go mod download && cd sphincsplus/ref && go install'
+		sh -c 'go mod download'
 	$(docker) commit katzenpost_$(distro)_go_mod katzenpost-$(distro)_go_mod
 	$(docker) rm katzenpost_$(distro)_go_mod
 	touch $@
@@ -217,3 +217,6 @@ test: wait
 	cd ../client    && make $(make_args) testargs=$(testargs) dockerdockertest
 	cd ../catshadow && make $(make_args) testargs=$(testargs) dockerdockertest
 	cd ../memspool  && make $(make_args) testargs=$(testargs) dockerdockertest
+
+check-go-version:
+	podman run --rm katzenpost-alpine_base go version

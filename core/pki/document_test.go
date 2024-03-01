@@ -23,10 +23,12 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/katzenpost/katzenpost/core/crypto/cert"
-	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
-	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/stretchr/testify/require"
+
+	ecdh "github.com/katzenpost/hpqc/nike/x25519"
+
+	"github.com/katzenpost/katzenpost/core/cert"
+	"github.com/katzenpost/katzenpost/core/wire"
 )
 
 func genDescriptor(require *require.Assertions, idx int, isGatewayNode, isServiceNode bool) (*MixDescriptor, []byte) {
@@ -40,15 +42,23 @@ func genDescriptor(require *require.Assertions, idx int, isGatewayNode, isServic
 	d.Epoch = debugTestEpoch
 	d.Version = DescriptorVersion
 	d.LoadWeight = 23
-	identityPriv, identityPub := cert.Scheme.NewKeypair()
-	d.IdentityKey = identityPub
+
+	identityPub, identityPriv, err := cert.Scheme.GenerateKey()
+	require.NoError(err)
+
+	d.IdentityKey, err = identityPub.MarshalBinary()
+	require.NoError(err)
+
 	scheme := wire.DefaultScheme
-	_, d.LinkKey = scheme.GenerateKeypair(rand.Reader)
+	linkKey, _, err := scheme.GenerateKeyPair()
+	require.NoError(err)
+	d.LinkKey, err = linkKey.MarshalBinary()
+	require.NoError(err)
 	d.MixKeys = make(map[uint64][]byte)
 	for e := debugTestEpoch; e < debugTestEpoch+3; e++ {
 		mPriv, err := ecdh.NewKeypair(rand.Reader)
 		require.NoError(err, "[%d]: ecdh.NewKeypair()", e)
-		d.MixKeys[uint64(e)] = mPriv.PublicKey().Bytes()
+		d.MixKeys[uint64(e)] = mPriv.Public().Bytes()
 	}
 	if isServiceNode {
 		d.Kaetzchen = make(map[string]map[string]interface{})
@@ -57,7 +67,7 @@ func genDescriptor(require *require.Assertions, idx int, isGatewayNode, isServic
 			"miauCount": idx,
 		}
 	}
-	err := IsDescriptorWellFormed(d, debugTestEpoch)
+	err = IsDescriptorWellFormed(d, debugTestEpoch)
 	require.NoError(err, "IsDescriptorWellFormed(good)")
 
 	signed, err := SignDescriptor(identityPriv, identityPub, d)
@@ -71,7 +81,8 @@ func TestDocument(t *testing.T) {
 	require := require.New(t)
 
 	// Generate a random signing key.
-	k, idPub := cert.Scheme.NewKeypair()
+	idPub, k, err := cert.Scheme.GenerateKey()
+	require.NoError(err)
 
 	testSendRate := uint64(3)
 	sharedRandomCommit := make([]byte, SharedRandomLength)

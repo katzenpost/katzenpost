@@ -17,7 +17,6 @@
 package boltuserdb
 
 import (
-	"crypto/rand"
 	"os"
 	"path/filepath"
 	"testing"
@@ -25,6 +24,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/katzenpost/hpqc/kem"
 	"github.com/katzenpost/katzenpost/core/wire"
 )
 
@@ -35,7 +35,7 @@ var (
 	testDBPath string
 
 	testUsernames = []string{"alice", "bob"}
-	testUsers     map[string]wire.PublicKey
+	testUsers     map[string]kem.PublicKey
 )
 
 func TestBoltUserDB(t *testing.T) {
@@ -83,7 +83,8 @@ func doTestCreateWithTOFU(t *testing.T) {
 	}
 
 	scheme := wire.DefaultScheme
-	_, wrongPubKey := scheme.GenerateKeypair(rand.Reader)
+	wrongPubKey, _, err := scheme.GenerateKeyPair()
+	require.NoError(err)
 
 	for u, k := range testUsers {
 		assert.True(d.Exists([]byte(u)), "Exists('%s')", u)
@@ -127,7 +128,8 @@ func doTestLoadTOFU(t *testing.T) {
 	defer d.Close()
 
 	scheme := wire.DefaultScheme
-	_, wrongPubKey := scheme.GenerateKeypair(rand.Reader)
+	wrongPubKey, _, err := scheme.GenerateKeyPair()
+	require.NoError(err)
 
 	for u, k := range testUsers {
 		assert.True(d.Exists([]byte(u)), "Exists('%s')", u)
@@ -168,9 +170,12 @@ func init() {
 		panic(err)
 	}
 	testDBPath = filepath.Join(tmpDir, testDB)
-	testUsers = make(map[string]wire.PublicKey)
+	testUsers = make(map[string]kem.PublicKey)
 	for _, v := range testUsernames {
 		scheme := wire.DefaultScheme
-		_, testUsers[v] = scheme.GenerateKeypair(rand.Reader)
+		testUsers[v], _, err = scheme.GenerateKeyPair()
+		if err != nil {
+			panic(err)
+		}
 	}
 }

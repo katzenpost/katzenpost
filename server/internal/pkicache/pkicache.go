@@ -21,7 +21,8 @@ package pkicache
 import (
 	"fmt"
 
-	"github.com/katzenpost/katzenpost/core/crypto/sign"
+	"github.com/katzenpost/hpqc/hash"
+	"github.com/katzenpost/hpqc/sign"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 )
@@ -135,7 +136,7 @@ func (e *Entry) isOurLayerSane(isGateway, isServiceNode bool) bool {
 }
 
 func (e *Entry) incomingLayer() uint8 {
-	idHash := e.self.IdentityKey.Sum256()
+	idHash := hash.Sum256(e.self.IdentityKey)
 	layer, err := e.doc.GetMixLayer(&idHash)
 	if err != nil {
 		panic(err)
@@ -150,7 +151,7 @@ func (e *Entry) incomingLayer() uint8 {
 }
 
 func (e *Entry) outgoingLayer() uint8 {
-	idHash := e.self.IdentityKey.Sum256()
+	idHash := hash.Sum256(e.self.IdentityKey)
 	layer, err := e.doc.GetMixLayer(&idHash)
 	if err != nil {
 		panic(err)
@@ -174,7 +175,7 @@ func New(d *pki.Document, identityKey sign.PublicKey, isGateway, isServiceNode b
 
 	// Find our descriptor.
 	var err error
-	idKeyHash := identityKey.Sum256()
+	idKeyHash := hash.Sum256From(identityKey)
 	e.self, err = d.GetNodeByKeyHash(&idKeyHash)
 	if err != nil {
 		return nil, err
@@ -204,7 +205,7 @@ func New(d *pki.Document, identityKey sign.PublicKey, isGateway, isServiceNode b
 		for _, v := range nodes {
 			// The concrete PKI implementation is responsible for ensuring
 			// that documents only contain one descriptor per identity key.
-			nodeID := v.IdentityKey.Sum256()
+			nodeID := hash.Sum256(v.IdentityKey)
 			m[nodeID] = v
 		}
 	}

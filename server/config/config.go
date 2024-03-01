@@ -30,14 +30,16 @@ import (
 	"strconv"
 	"strings"
 
+	"golang.org/x/net/idna"
+	"golang.org/x/text/secure/precis"
+
 	"github.com/BurntSushi/toml"
 	"github.com/fxamacker/cbor/v2"
+
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/utils"
-	"golang.org/x/net/idna"
-	"golang.org/x/text/secure/precis"
 )
 
 const (

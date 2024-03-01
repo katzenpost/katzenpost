@@ -24,7 +24,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/hpqc/hash"
+	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/katzenpost/core/monotime"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
@@ -140,7 +141,11 @@ func (c *incomingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 	if isValid {
 		c.fromMix = true
 	} else {
-		c.log.Debugf("Authentication failed: '%x' (%x)", creds.AdditionalData, creds.PublicKey.Sum256())
+		blob, err := creds.PublicKey.MarshalBinary()
+		if err != nil {
+			panic(err)
+		}
+		c.log.Debugf("Authentication failed: '%x' (%x)", creds.AdditionalData, hash.Sum256(blob))
 	}
 
 	return isValid
@@ -158,7 +163,7 @@ func (c *incomingConn) worker() {
 	}()
 
 	// Allocate the session struct.
-	identityHash := c.l.glue.IdentityPublicKey().Sum256()
+	identityHash := hash.Sum256From(c.l.glue.IdentityPublicKey())
 	cfg := &wire.SessionConfig{
 		Geometry:          c.geo,
 		Authenticator:     c,
@@ -192,10 +197,14 @@ func (c *incomingConn) worker() {
 	if err != nil {
 		c.log.Debugf("Session failure: %s", err)
 	}
+	blob, err := creds.PublicKey.MarshalBinary()
+	if err != nil {
+		panic(err)
+	}
 	if c.fromMix {
-		c.log.Debugf("Peer: '%x' (%x)", creds.AdditionalData, creds.PublicKey.Sum256())
+		c.log.Debugf("Peer: '%x' (%x)", creds.AdditionalData, hash.Sum256(blob))
 	} else {
-		c.log.Debugf("User: '%x', Key: '%x'", creds.AdditionalData, creds.PublicKey.Sum256())
+		c.log.Debugf("User: '%x', Key: '%x'", creds.AdditionalData, hash.Sum256(blob))
 	}
 
 	// Ensure that there's only one incoming conn from any given peer, though

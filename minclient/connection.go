@@ -28,7 +28,8 @@ import (
 
 	"gopkg.in/op/go-logging.v1"
 
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/hpqc/hash"
+	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/wire"
@@ -674,11 +675,16 @@ func (c *connection) IsPeerValid(creds *wire.PeerCredentials) bool {
 		return false
 	}
 
-	identityHash := c.descriptor.IdentityKey.Sum256()
+	identityHash := hash.Sum256(c.descriptor.IdentityKey)
 	if !hmac.Equal(identityHash[:], creds.AdditionalData) {
 		return false
 	}
-	if !c.descriptor.LinkKey.Equal(creds.PublicKey) {
+
+	blob, err := creds.PublicKey.MarshalBinary()
+	if err != nil {
+		panic(err)
+	}
+	if !hmac.Equal(c.descriptor.LinkKey, blob) {
 		return false
 	}
 	return true
