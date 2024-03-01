@@ -123,7 +123,7 @@ func NewSession(
 	// A per-connection tag (for Tor SOCKS5 stream isloation)
 	proxyContext := fmt.Sprintf("session %d", rand.NewMath().Uint64())
 
-	idpubkey, err := cert.Scheme.UnmarshalBinaryPublicKey(s.provider.IdentityKey)
+	idpubkey, err := cert.Scheme.UnmarshalBinaryPublicKey(s.gateway.IdentityKey)
 	if err != nil {
 		return nil, err
 	}
@@ -132,7 +132,7 @@ func NewSession(
 		SphinxGeometry:      cfg.SphinxGeometry,
 		User:                string(idHash[:]),
 		Gateway:             s.gateway.Name,
-		GatewayKeyPin:       s.gateway.IdentityKey,
+		GatewayKeyPin:       idpubkey,
 		LinkKey:             s.linkKey,
 		LogBackend:          logBackend,
 		PKIClient:           pkiClient,
