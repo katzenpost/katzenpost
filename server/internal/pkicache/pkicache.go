@@ -113,7 +113,7 @@ func (e *Entry) isOurLayerSane(isGateway, isServiceNode bool) bool {
 		return false
 	}
 	if !isGateway {
-		idHash := e.self.IdentityKey.Sum256()
+		idHash := hash.Sum256(e.self.IdentityKey)
 		layer, err := e.doc.GetMixLayer(&idHash)
 		if err != nil || layer == pki.LayerGateway {
 			return false
@@ -123,7 +123,7 @@ func (e *Entry) isOurLayerSane(isGateway, isServiceNode bool) bool {
 		}
 	}
 	if !isServiceNode {
-		idHash := e.self.IdentityKey.Sum256()
+		idHash := hash.Sum256(e.self.IdentityKey)
 		layer, err := e.doc.GetMixLayer(&idHash)
 		if err != nil || layer == pki.LayerService {
 			return false
