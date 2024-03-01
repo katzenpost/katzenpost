@@ -140,12 +140,12 @@ func selectHops(rng *mRand.Rand, doc *pki.Document, src, dst *pki.MixDescriptor,
 	}
 	if isForward {
 		if !dst.IsServiceNode {
-			return nil, fmt.Errorf("path: invalid destination (non service node): %x", dst.IdentityKey.Sum256())
+			return nil, fmt.Errorf("path: invalid destination (non service node): %x", hash.Sum256(dst.IdentityKey))
 		}
 		if isFromClient {
 			// Client packets must span provider to provider.
 			if !src.IsGatewayNode {
-				return nil, fmt.Errorf("path: invalid source from client (non gateway node): %x", src.IdentityKey.Sum256())
+				return nil, fmt.Errorf("path: invalid source from client (non gateway node): %x", hash.Sum256(src.IdentityKey))
 			}
 			nHops = len(doc.Topology) + 2
 		} else {
