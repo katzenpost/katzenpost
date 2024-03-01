@@ -253,7 +253,7 @@ func (d *Document) GetServiceNodeByKeyHash(keyhash *[32]byte) (*MixDescriptor, e
 		if v.IdentityKey == nil {
 			return nil, fmt.Errorf("pki: document contains invalid descriptors")
 		}
-		idKeyHash := v.IdentityKey.Sum256()
+		idKeyHash := hash.Sum256(v.IdentityKey)
 		if hmac.Equal(idKeyHash[:], keyhash[:]) {
 			return v, nil
 		}
@@ -276,13 +276,13 @@ func (d *Document) GetMix(name string) (*MixDescriptor, error) {
 // GetMixLayer returns the assigned layer for the given mix from Topology
 func (d *Document) GetMixLayer(keyhash *[32]byte) (uint8, error) {
 	for _, p := range d.GatewayNodes {
-		idKeyHash := p.IdentityKey.Sum256()
+		idKeyHash := hash.Sum256(p.IdentityKey)
 		if hmac.Equal(idKeyHash[:], keyhash[:]) {
 			return LayerGateway, nil
 		}
 	}
 	for _, p := range d.ServiceNodes {
-		idKeyHash := p.IdentityKey.Sum256()
+		idKeyHash := hash.Sum256(p.IdentityKey)
 		if hmac.Equal(idKeyHash[:], keyhash[:]) {
 			return LayerService, nil
 		}
@@ -555,7 +555,7 @@ func IsDocumentWellFormed(d *Document, verifiers []sign.PublicKey) error {
 		if !desc.IsGatewayNode {
 			return fmt.Errorf("Document lists %v as a Provider with desc.IsGatewayNode = %v", desc.IdentityKey, desc.IsGatewayNode)
 		}
-		pk := desc.IdentityKey.Sum256()
+		pk := hash.Sum256(desc.IdentityKey)
 		if _, ok := pks[pk]; ok {
 			return fmt.Errorf("Document contains multiple entries for %v", desc.IdentityKey)
 		}
