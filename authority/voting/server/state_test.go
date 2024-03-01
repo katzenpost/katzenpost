@@ -192,7 +192,7 @@ func TestVote(t *testing.T) {
 		mixCfgs = append(mixCfgs, c)
 		idKeys = append(idKeys, idKey)
 		port++
-		reverseHash[idKey.pubKey.Sum256()] = idKey.pubKey
+		reverseHash[hash.Sum256From(idKey.pubKey)] = idKey.pubKey
 	}
 	// generate serviceNodes
 	for i := 0; i < m; i++ {
@@ -221,14 +221,14 @@ func TestVote(t *testing.T) {
 		if err != nil {
 			panic(err)
 		}
-		blob, err := idKeys[i].pubKey.MarshalBinary()
+		idkeyblob, err := idKeys[i].pubKey.MarshalBinary()
 		require.NoError(err)
 
 		desc := &pki.MixDescriptor{
 			Name:          mixCfgs[i].Server.Identifier,
 			Epoch:         votingEpoch,
-			IdentityKey:   idKeys[i].pubKey,
-			LinkKey:       linkPubKey,
+			IdentityKey:   idkeyblob,
+			LinkKey:       linkBlob,
 			MixKeys:       mkeys,
 			IsGatewayNode: mixCfgs[i].Server.IsGatewayNode,
 			IsServiceNode: mixCfgs[i].Server.IsServiceNode,
@@ -276,21 +276,21 @@ func TestVote(t *testing.T) {
 
 	// populate the authorities with the descriptors
 	for _, s := range stateAuthority {
-		s.descriptors[votingEpoch] = make(map[[sign.PublicKeyHashSize]byte]*pki.MixDescriptor)
-		s.authorizedMixes = make(map[[sign.PublicKeyHashSize]byte]bool)
-		s.authorizedGatewayNodes = make(map[[sign.PublicKeyHashSize]byte]string)
-		s.authorizedServiceNodes = make(map[[sign.PublicKeyHashSize]byte]string)
+		s.descriptors[votingEpoch] = make(map[[hash.HashSize]byte]*pki.MixDescriptor)
+		s.authorizedMixes = make(map[[hash.HashSize]byte]bool)
+		s.authorizedGatewayNodes = make(map[[hash.HashSize]byte]string)
+		s.authorizedServiceNodes = make(map[[hash.HashSize]byte]string)
 		for _, d := range mixDescs {
 			s.descriptors[votingEpoch][hash.Sum256(d.IdentityKey)] = d
 			s.authorizedMixes[hash.Sum256(d.IdentityKey)] = true
 		}
 		for _, d := range gatewayDescs {
-			s.descriptors[votingEpoch][d.IdentityKey.Sum256()] = d
-			s.authorizedGatewayNodes[d.IdentityKey.Sum256()] = d.Name
+			s.descriptors[votingEpoch][hash.Sum256(d.IdentityKey)] = d
+			s.authorizedGatewayNodes[hash.Sum256(d.IdentityKey)] = d.Name
 		}
 		for _, d := range serviceDescs {
-			s.descriptors[votingEpoch][d.IdentityKey.Sum256()] = d
-			s.authorizedServiceNodes[d.IdentityKey.Sum256()] = d.Name
+			s.descriptors[votingEpoch][hash.Sum256(d.IdentityKey)] = d
+			s.authorizedServiceNodes[hash.Sum256(d.IdentityKey)] = d.Name
 		}
 	}
 
@@ -570,30 +570,36 @@ func genServiceNodeConfig(name string, pki *sConfig.PKI, port uint16) (*identity
 	cfg.Debug = new(sConfig.Debug)
 
 	// Generate keys
-	idKey, idPubKey := cert.Scheme.NewKeypair()
-
+	idPubKey, idKey, err := cert.Scheme.GenerateKey()
+	if err != nil {
+		panic(err)
+	}
 	scheme := wire.DefaultScheme
-	linkKey, linkPubKey := scheme.GenerateKeypair(rand.Reader)
+	linkPubKey, linkKey, err := scheme.GenerateKeyPair()
+	if err != nil {
+		panic(err)
+	}
+
 	linkPublicKeyPem := "link.public.pem"
 
 	idprivkeypem := filepath.Join(datadir, "identity.private.pem")
 
-	err = pem.ToFile(idprivkeypem, idKey)
+	err = signpem.PrivateKeyToFile(idprivkeypem, idKey)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	err = pem.ToFile(filepath.Join(datadir, "identity.public.pem"), idPubKey)
+	err = signpem.PublicKeyToFile(filepath.Join(datadir, "identity.public.pem"), idPubKey)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	err = pem.ToFile(filepath.Join(datadir, "link.private.pem"), linkKey)
+	err = kempem.PrivateKeyToFile(filepath.Join(datadir, "link.private.pem"), linkKey)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	err = pem.ToFile(filepath.Join(datadir, linkPublicKeyPem), linkPubKey)
+	err = kempem.PublicKeyToFile(filepath.Join(datadir, linkPublicKeyPem), linkPubKey)
 	if err != nil {
 		return nil, nil, err
 	}
