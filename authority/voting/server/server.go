@@ -31,12 +31,8 @@ import (
 	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/kem"
 	kempem "github.com/katzenpost/hpqc/kem/pem"
-	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/hpqc/sign"
 	signpem "github.com/katzenpost/hpqc/sign/pem"
-
-	nyquistkem "github.com/katzenpost/nyquist/kem"
-	"github.com/katzenpost/nyquist/seec"
 
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/katzenpost/core/cert"
@@ -249,11 +245,6 @@ func New(cfg *config.Config) (*Server, error) {
 	linkPrivateKeyFile := filepath.Join(s.cfg.Server.DataDir, "link.private.pem")
 	linkPublicKeyFile := filepath.Join(s.cfg.Server.DataDir, "link.public.pem")
 
-	genRand, err := seec.GenKeyPRPAES(rand.Reader, 256)
-	if err != nil {
-		return nil, err
-	}
-
 	var linkPrivateKey kem.PrivateKey
 
 	if utils.BothExists(linkPrivateKeyFile, linkPublicKeyFile) {
@@ -279,7 +270,10 @@ func New(cfg *config.Config) (*Server, error) {
 		}
 		*/
 	} else if utils.BothNotExists(linkPrivateKeyFile, linkPublicKeyFile) {
-		linkPublicKey, linkPrivateKey := nyquistkem.GenerateKeypair(scheme, genRand)
+		linkPublicKey, linkPrivateKey, err := scheme.GenerateKeyPair()
+		if err != nil {
+			return nil, err
+		}
 
 		err = kempem.PrivateKeyToFile(linkPrivateKeyFile, linkPrivateKey)
 		if err != nil {

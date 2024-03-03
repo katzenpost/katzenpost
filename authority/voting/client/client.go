@@ -26,9 +26,6 @@ import (
 
 	"gopkg.in/op/go-logging.v1"
 
-	nyquistkem "github.com/katzenpost/nyquist/kem"
-	"github.com/katzenpost/nyquist/seec"
-
 	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/kem"
 	kempem "github.com/katzenpost/hpqc/kem/pem"
@@ -321,13 +318,10 @@ func (c *Client) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, 
 	c.log.Noticef("Get(ctx, %d)", epoch)
 
 	// Generate a random keypair to use for the link authentication.
-	scheme := wire.DefaultScheme
-	genRand, err := seec.GenKeyPRPAES(rand.Reader, 256)
+	_, linkKey, err := wire.DefaultScheme.GenerateKeyPair()
 	if err != nil {
 		return nil, nil, err
 	}
-
-	_, linkKey := nyquistkem.GenerateKeypair(scheme, genRand)
 
 	// Initialize the TCP/IP connection, and wire session.
 	doneCh := make(chan interface{})

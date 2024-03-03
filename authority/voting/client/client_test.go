@@ -94,7 +94,7 @@ func generateNodes(isProvider bool, num int, epoch uint64) ([]*descriptor, error
 		}
 
 		scheme := wire.DefaultScheme
-		_, linkPubKey, err := scheme.GenerateKeyPair()
+		linkPubKey, _, err := scheme.GenerateKeyPair()
 		if err != nil {
 			return nil, err
 		}

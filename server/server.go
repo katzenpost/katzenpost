@@ -288,11 +288,10 @@ func New(cfg *config.Config) (*Server, error) {
 	scheme := wire.DefaultScheme
 
 	//GenerateKeypair
-	rng, err := seec.GenKeyPassthrough(rand.Reader, 0)
+	linkPublicKey, linkPrivateKey, err := scheme.GenerateKeyPair()
 	if err != nil {
 		panic(err)
 	}
-	linkPublicKey, linkPrivateKey := nyquistkem.GenerateKeypair(scheme, rng)
 	if utils.BothExists(linkPrivateKeyFile, linkPublicKeyFile) {
 		linkPrivateKey, err = pemkem.FromPrivatePEMFile(linkPrivateKeyFile, scheme)
 		if err != nil {

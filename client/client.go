@@ -26,9 +26,6 @@ import (
 
 	"gopkg.in/op/go-logging.v1"
 
-	nyquistkem "github.com/katzenpost/nyquist/kem"
-	"github.com/katzenpost/nyquist/seec"
-
 	"github.com/katzenpost/hpqc/kem"
 	"github.com/katzenpost/hpqc/rand"
 
@@ -171,11 +168,10 @@ func (c *Client) NewTOFUSession(ctx context.Context) (*Session, error) {
 	)
 
 	// generate a linkKey
-	rng, err := seec.GenKeyPassthrough(rand.Reader, 0)
+	_, linkKey, err = wire.DefaultScheme.GenerateKeyPair()
 	if err != nil {
 		return nil, err
 	}
-	_, linkKey = nyquistkem.GenerateKeypair(wire.DefaultScheme, rng)
 
 	// fetch a pki.Document
 	pkiclient, doc, err := PKIBootstrap(ctx, c, linkKey)
