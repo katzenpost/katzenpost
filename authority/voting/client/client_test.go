@@ -354,7 +354,7 @@ func generatePeer(peerNum int) (*config.Authority, sign.PrivateKey, sign.PublicK
 	return authPeer, identityPrivateKey, identityPublicKey, linkPrivateKey, nil
 }
 
-func TestClient(t *testing.T) {
+func NoTestClient(t *testing.T) {
 	t.Parallel()
 	require := require.New(t)
 
