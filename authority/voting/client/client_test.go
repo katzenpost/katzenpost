@@ -226,11 +226,9 @@ type mockDialer struct {
 func newMockDialer(logBackend *log.Backend) *mockDialer {
 	d := new(mockDialer)
 	d.Lock()
-	defer d.Unlock()
-
 	d.netMap = make(map[string]*conn)
-
 	d.log = logBackend.GetLogger("mockDialer: ")
+	d.Unlock()
 	return d
 }
 
@@ -241,9 +239,8 @@ func (d *mockDialer) dial(ctx context.Context, network string, address string) (
 		d.Unlock()
 	}()
 	d.log.Debug("MOCK DIAL %s", address)
-	d.Lock()
-	defer d.Unlock()
-	return d.netMap[address].clientConn, nil
+	element := d.netMap[address]
+	return element.clientConn, nil
 }
 
 func (d *mockDialer) waitUntilDialed(address string) {
