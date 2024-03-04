@@ -56,7 +56,7 @@ const (
 var (
 	prologue = []byte{0x03} // Prologue indicates version 3.
 
-	DefaultScheme = schemes.ByName("MLKEM768-X25519")
+	DefaultScheme = schemes.ByName("xwing")
 )
 
 const (
