@@ -170,7 +170,7 @@ func main() {
 	cancelFn()
 
 	// configure replicas and extract configuration from PKI
-	replicas, trustDomainCfgs, commonCfgs := getCurrentReplicas(session)
+	replicas, trustDomainCfgs, serverCfgs := getCurrentReplicas(session)
 
 	// TODO check that all replicas agree on parameters
 	for _, replica := range replicas {
@@ -182,19 +182,20 @@ func main() {
 	}
 
 	// marshal common.Config into indented json and print parameters
-	commonCfg := commonCfgs[0]
-	cfgJson, err := json.MarshalIndent(commonCfg, "", "  ")
+	serverCfg := serverCfgs[0]
+	cfgJson, err := json.MarshalIndent(serverCfg, "", "  ")
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(-1)
 	}
-	fmt.Printf("received common.Config:\n'%v'\n", string(cfgJson))
+	fmt.Printf("received server.Config:\n'%v'\n", string(cfgJson))
 
 	// create a TrustDomainConfig for this Frontend
 	frontendServerTrustDomain := tCommon.NewTrustDomainConfig("Frontend", listenAddress, true, false)
 
 	// create a ClientConfig
 	clientConfig := new(libtalek.ClientConfig)
+	clientConfig.Config = new(tCommon.Config)
 	err = json.Unmarshal(cfgJson, clientConfig)
 	if err != nil {
 		fmt.Println(err)
@@ -309,8 +310,8 @@ func trustDomainFromParams(endpoint string, provider string, kpReplicaParams map
 	return &trustDomainCfg, nil
 }
 
-func commonConfigFromParams(kpReplicaParams map[string]interface{}) (*tCommon.Config, error) {
-	cfg := tCommon.Config{}
+func serverConfigFromParams(kpReplicaParams map[string]interface{}) (*server.Config, error) {
+	cfg := server.Config{}
 	var err error
 
 	rawConfig, ok := kpReplicaParams["Config"]
@@ -332,7 +333,7 @@ func commonConfigFromParams(kpReplicaParams map[string]interface{}) (*tCommon.Co
 	return &cfg, nil
 }
 
-func getCurrentReplicas(session *client.Session) ([]*ReplicaKPC, []*tCommon.TrustDomainConfig, []*tCommon.Config) {
+func getCurrentReplicas(session *client.Session) ([]*ReplicaKPC, []*tCommon.TrustDomainConfig, []*server.Config) {
 	// get a pki doc
 	pkiDoc := session.CurrentDocument()
 	if pkiDoc == nil {
@@ -349,7 +350,7 @@ func getCurrentReplicas(session *client.Session) ([]*ReplicaKPC, []*tCommon.Trus
 
 	replicas := make([]*ReplicaKPC, 0)
 	trustDomainCfgs := make([]*tCommon.TrustDomainConfig, 0)
-	commonCfgs := make([]*tCommon.Config, 0)
+	serverCfgs := make([]*server.Config, 0)
 	for _, desc := range descs {
 		// get the publickeys from the MixDescriptor
 		md, err := pkiDoc.GetProvider(desc.Provider)
@@ -375,16 +376,16 @@ func getCurrentReplicas(session *client.Session) ([]*ReplicaKPC, []*tCommon.Trus
 		// keep the trustDomain configs for the client config
 		trustDomainCfgs = append(trustDomainCfgs, trustDomainCfg)
 
-		// obtain a common config from parameters
-		commonCfg, err := commonConfigFromParams(kpReplicaParams)
+		// obtain a server config from parameters
+		serverCfg, err := serverConfigFromParams(kpReplicaParams)
 		if err != nil {
 			fmt.Println("commonConfigFromParams returned %v", err)
 			continue
 		}
-		commonCfgs = append(commonCfgs, commonCfg)
+		serverCfgs = append(serverCfgs, serverCfg)
 
 		// make a replica instance
 		replicas = append(replicas, NewReplicaKPC(desc.Name, desc.Provider, session, trustDomainCfg))
 	}
-	return replicas, trustDomainCfgs, commonCfgs
+	return replicas, trustDomainCfgs, serverCfgs
 }
