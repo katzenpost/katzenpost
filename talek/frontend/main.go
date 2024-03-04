@@ -66,6 +66,10 @@ func (r *ReplicaKPC) Write(args *tCommon.ReplicaWriteArgs, reply *tCommon.Replic
 	}
 	// wrap the serialized command in ReplicaCommand
 	serialized, err := cbor.Marshal(&common.ReplicaRequest{Command: common.ReplicaWriteCommand, Payload: serializedArgs})
+	// verify response isn't too large
+	if len(serialized) > r.session.SphinxGeometry().ForwardPayloadLength {
+		return fmt.Errorf("Payload too large")
+	}
 	rawResp, err := r.session.BlockingSendUnreliableMessage(r.name, r.provider, serialized)
 	if err != nil {
 		return err
