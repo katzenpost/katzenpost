@@ -173,6 +173,13 @@ func main() {
 	replicas, trustDomainCfgs, commonCfgs := getCurrentReplicas(session)
 
 	// TODO check that all replicas agree on parameters
+	for _, replica := range replicas {
+		fmt.Println("replica: ", replica.name+ "@"+ replica.provider)
+	}
+	if len(replicas) < 2 {
+		fmt.Println("Must have at least 2 replicas to proceed")
+		os.Exit(-1)
+	}
 
 	// marshal common.Config into indented json and print parameters
 	commonCfg := commonCfgs[0]
