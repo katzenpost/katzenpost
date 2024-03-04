@@ -31,6 +31,7 @@ import (
 	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/kem"
 	kempem "github.com/katzenpost/hpqc/kem/pem"
+	"github.com/katzenpost/hpqc/kem/schemes"
 	"github.com/katzenpost/hpqc/sign"
 	signpem "github.com/katzenpost/hpqc/sign/pem"
 
@@ -39,7 +40,6 @@ import (
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/utils"
-	"github.com/katzenpost/katzenpost/core/wire"
 )
 
 // ErrGenerateOnly is the error returned when the server initialization
@@ -241,7 +241,7 @@ func New(cfg *config.Config) (*Server, error) {
 		return nil, fmt.Errorf("%s and %s must either both exist or not exist", identityPrivateKeyFile, identityPublicKeyFile)
 	}
 
-	scheme := wire.DefaultScheme
+	scheme := schemes.ByName(cfg.Server.WireKEMScheme)
 	linkPrivateKeyFile := filepath.Join(s.cfg.Server.DataDir, "link.private.pem")
 	linkPublicKeyFile := filepath.Join(s.cfg.Server.DataDir, "link.public.pem")
 

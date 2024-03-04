@@ -255,7 +255,7 @@ func (s *katzenpost) genNodeConfig(isProvider bool, isVoting bool) error {
 	return cfg.FixupAndValidate()
 }
 
-func (s *katzenpost) genVotingAuthoritiesCfg(numAuthorities int, parameters *vConfig.Parameters, nrLayers int) error {
+func (s *katzenpost) genVotingAuthoritiesCfg(numAuthorities int, parameters *vConfig.Parameters, nrLayers int, wirekem string) error {
 
 	configs := []*vConfig.Config{}
 
@@ -284,11 +284,12 @@ func (s *katzenpost) genVotingAuthoritiesCfg(numAuthorities int, parameters *vCo
 		}
 		configs = append(configs, cfg)
 		idKey := cfgIdKey(cfg, s.outDir)
-		linkKey := cfgLinkKey(cfg, s.outDir)
+		linkKey := cfgLinkKey(cfg, s.outDir, wirekem)
 		authority := &vConfig.Authority{
 			Identifier:        fmt.Sprintf("auth%d", i),
 			IdentityPublicKey: idKey,
 			LinkPublicKey:     linkKey,
+			WireKEMScheme:     wirekem,
 			Addresses:         cfg.Server.Addresses,
 		}
 		s.authorities[hash.Sum256From(idKey)] = authority
@@ -342,6 +343,7 @@ func main() {
 	binSuffix := flag.String("S", "", "suffix for binaries in docker-compose.yml")
 	logLevel := flag.String("log_level", "DEBUG", "logging level could be set to: DEBUG, INFO, NOTICE, WARNING, ERROR, CRITICAL")
 	omitTopology := flag.Bool("D", false, "Dynamic topology (omit fixed topology definition)")
+	wirekem := flag.String("wirekem", "", "Name of the KEM Scheme to be used with wire protocol")
 	kem := flag.String("kem", "", "Name of the KEM Scheme to be used with Sphinx")
 	nike := flag.String("nike", "x25519", "Name of the NIKE Scheme to be used with Sphinx")
 	UserForwardPayloadLength := flag.Int("UserForwardPayloadLength", 2000, "UserForwardPayloadLength")
@@ -359,6 +361,10 @@ func main() {
 	lMMax := flag.Uint64("lMMax", 100, "Maximum delay for LambdaM")
 
 	flag.Parse()
+
+	if *wirekem == "" {
+		log.Fatal("wire KEM must be set")
+	}
 
 	if *kem == "" && *nike == "" {
 		log.Fatal("either nike or kem must be set")
@@ -423,7 +429,7 @@ func main() {
 
 	if *voting {
 		// Generate the voting authority configurations
-		err := s.genVotingAuthoritiesCfg(*nrVoting, parameters, *nrLayers)
+		err := s.genVotingAuthoritiesCfg(*nrVoting, parameters, *nrLayers, *wirekem)
 		if err != nil {
 			log.Fatalf("getVotingAuthoritiesCfg failed: %s", err)
 		}
@@ -560,7 +566,7 @@ func cfgIdKey(cfg interface{}, outDir string) sign.PublicKey {
 	return idPubKey
 }
 
-func cfgLinkKey(cfg interface{}, outDir string) kem.PublicKey {
+func cfgLinkKey(cfg interface{}, outDir string, kemScheme string) kem.PublicKey {
 	var linkpriv string
 	var linkpublic string
 
@@ -572,7 +578,7 @@ func cfgLinkKey(cfg interface{}, outDir string) kem.PublicKey {
 		panic("wrong type")
 	}
 
-	linkPubKey, linkPrivKey, err := wire.DefaultScheme.GenerateKeyPair()
+	linkPubKey, linkPrivKey, err := schemes.ByName(kemScheme).GenerateKeyPair()
 	if err != nil {
 		panic(err)
 	}

@@ -187,6 +187,7 @@ func (uCfg *UpstreamProxy) toProxyConfig() (*proxy.Config, error) {
 
 // Config is the top level client configuration.
 type Config struct {
+	WireKEMScheme   string
 	SphinxGeometry  *geo.Geometry
 	Logging         *Logging
 	UpstreamProxy   *UpstreamProxy
@@ -204,6 +205,9 @@ func (c *Config) UpstreamProxyConfig() *proxy.Config {
 // FixupAndValidate applies defaults to config entries and validates the
 // configuration sections.
 func (c *Config) FixupAndValidate() error {
+	if c.WireKEMScheme == "" {
+		return errors.New("config: WireKEMScheme was not set")
+	}
 	if c.SphinxGeometry == nil {
 		return errors.New("config: No SphinxGeometry block was present")
 	}

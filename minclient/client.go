@@ -54,6 +54,8 @@ type ClientConfig struct {
 	// in PKI documents unless they are signed by the pinned key.
 	ProviderKeyPin sign.PublicKey
 
+	LinkKemScheme kem.Scheme
+
 	// LinkKey is the user's ECDH link authentication private key.
 	LinkKey kem.PrivateKey
 

@@ -128,11 +128,17 @@ func NewSession(
 		return nil, err
 	}
 
+	kemScheme := kem.ByName(cfg.WireKEMScheme)
+	if kemScheme == nil {
+		return nil, fmt.Errorf("apparently your KEM Scheme %s doesn't work", cfg.WireKEMScheme)
+	}
+
 	clientCfg := &minclient.ClientConfig{
 		SphinxGeometry:      cfg.SphinxGeometry,
 		User:                string(idHash[:]),
 		Provider:            s.provider.Name,
 		ProviderKeyPin:      idpubkey,
+		LinkKemScheme:       kemScheme,
 		LinkKey:             s.linkKey,
 		LogBackend:          logBackend,
 		PKIClient:           pkiClient,

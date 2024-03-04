@@ -28,7 +28,6 @@ import (
 	"github.com/katzenpost/hpqc/kem"
 	"github.com/katzenpost/hpqc/kem/pem"
 
-	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/server/userdb"
 )
 
@@ -40,6 +39,7 @@ var (
 
 type externAuth struct {
 	provider string
+	scheme   kem.Scheme
 }
 
 func (e *externAuth) doPost(endpoint string, data url.Values) bool {
@@ -99,7 +99,7 @@ func (e *externAuth) Identity(u []byte) (kem.PublicKey, error) {
 		}
 
 		if idkey, ok := response[endpoint]; ok {
-			pubKey, err := pem.FromPublicPEMString(idkey, wire.DefaultScheme)
+			pubKey, err := pem.FromPublicPEMString(idkey, e.scheme)
 			if err != nil {
 				return nil, err
 			}
@@ -119,6 +119,9 @@ func (e *externAuth) Close() {
 }
 
 // New creates an external user database with the given provider
-func New(provider string) (userdb.UserDB, error) {
-	return &externAuth{provider}, nil
+func New(provider string, scheme kem.Scheme) (userdb.UserDB, error) {
+	return &externAuth{
+		provider: provider,
+		scheme:   scheme,
+	}, nil
 }

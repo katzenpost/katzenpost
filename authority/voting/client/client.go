@@ -66,6 +66,9 @@ func (a *authorityAuthenticator) IsPeerValid(creds *wire.PeerCredentials) bool {
 
 // Config is a voting authority pki.Client instance.
 type Config struct {
+	// KEMScheme indicates the KEM scheme used for the LinkKey/wire protocol.
+	KEMScheme kem.Scheme
+
 	// LinkKey is the link key for the client's wire connections.
 	LinkKey kem.PrivateKey
 
@@ -318,7 +321,7 @@ func (c *Client) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, 
 	c.log.Noticef("Get(ctx, %d)", epoch)
 
 	// Generate a random keypair to use for the link authentication.
-	_, linkKey, err := wire.DefaultScheme.GenerateKeyPair()
+	_, linkKey, err := c.cfg.KEMScheme.GenerateKeyPair()
 	if err != nil {
 		return nil, nil, err
 	}

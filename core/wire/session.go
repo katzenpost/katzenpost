@@ -34,7 +34,6 @@ import (
 	"github.com/katzenpost/nyquist/seec"
 
 	"github.com/katzenpost/hpqc/kem"
-	"github.com/katzenpost/hpqc/kem/schemes"
 	"github.com/katzenpost/hpqc/rand"
 
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
@@ -55,8 +54,6 @@ const (
 
 var (
 	prologue = []byte{0x03} // Prologue indicates version 3.
-
-	DefaultScheme = schemes.ByName("xwing")
 )
 
 const (
@@ -573,7 +570,7 @@ func NewPKISession(cfg *SessionConfig, isInitiator bool) (*Session, error) {
 	s := &Session{
 		protocol: &nyquist.Protocol{
 			Pattern: pattern.PqXX,
-			KEM:     DefaultScheme,
+			KEM:     cfg.KEMScheme,
 			Cipher:  cipher.ChaChaPoly,
 			Hash:    hash.BLAKE2b,
 		},
@@ -612,7 +609,7 @@ func NewSession(cfg *SessionConfig, isInitiator bool) (*Session, error) {
 	s := &Session{
 		protocol: &nyquist.Protocol{
 			Pattern: pattern.PqXX,
-			KEM:     DefaultScheme,
+			KEM:     cfg.KEMScheme,
 			Cipher:  cipher.ChaChaPoly,
 			Hash:    hash.BLAKE2b,
 		},
@@ -632,6 +629,10 @@ func NewSession(cfg *SessionConfig, isInitiator bool) (*Session, error) {
 
 // SessionConfig is the configuration used to create new Sessions.
 type SessionConfig struct {
+
+	// KEMScheme wire/link protocol KEM scheme.
+	KEMScheme kem.Scheme
+
 	// Authenticator is the PeerAuthenticator instance that will be used to
 	// authenticate the remote peer for the newly created Session.
 	Authenticator PeerAuthenticator
