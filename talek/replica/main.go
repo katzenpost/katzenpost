@@ -51,10 +51,12 @@ func main() {
 	var cfgFile string
 	var commonCfgFile string
 	var listen string
+	var index int
 
 	flag.StringVar(&backing, "backing", "cpu.0", "PIR daemon method")
 	flag.StringVar(&cfgFile, "config", "replica.conf", "Talek Replica Configuration")
 	flag.StringVar(&commonCfgFile, "common", "common.conf", "Talek Common Configuration")
+	flag.IntVar(&index, "index", 0, "Talek Replica Trustdomain Index") // wtfbbq
 	flag.StringVar(&listen, "listen", ":8080", "Listening Address")
 	flag.StringVar(&logDir, "log_dir", "", "logging directory")
 	flag.StringVar(&logLevel, "log_level", "DEBUG", "logging level could be set to: DEBUG, INFO, NOTICE, WARNING, ERROR, CRITICAL")
@@ -90,6 +92,7 @@ func main() {
 	serverConfig := &server.Config{
 		Config:      &tCommon.Config{},
 		TrustDomain: &tCommon.TrustDomainConfig{},
+		TrustDomainIndex: index,
 	}
 
 	// read cfgFile
