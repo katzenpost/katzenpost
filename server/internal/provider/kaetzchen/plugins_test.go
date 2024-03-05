@@ -26,7 +26,6 @@ import (
 
 	"github.com/katzenpost/katzenpost/core/cert"
 	"github.com/katzenpost/katzenpost/core/log"
-	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/server/config"
 )
 
@@ -60,7 +59,7 @@ func TestCBORInvalidCommandWithPluginKaetzchenWorker(t *testing.T) {
 	logBackend, err := log.New("", "DEBUG", false)
 	require.NoError(err)
 
-	scheme := wire.DefaultScheme
+	scheme := testingScheme
 	_, userKey, err := scheme.GenerateKeyPair()
 	require.NoError(err)
 	_, linkKey, err := scheme.GenerateKeyPair()
