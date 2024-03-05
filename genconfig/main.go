@@ -90,6 +90,7 @@ func (s *katzenpost) genClientCfg() error {
 	os.Mkdir(filepath.Join(s.outDir, "client"), 0700)
 	cfg := new(cConfig.Config)
 
+	cfg.WireKEMScheme = s.wireKEMScheme
 	cfg.SphinxGeometry = s.sphinxGeometry
 
 	s.clientIdx++
