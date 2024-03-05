@@ -32,14 +32,13 @@ import (
 	kempem "github.com/katzenpost/hpqc/kem/pem"
 	kemschemes "github.com/katzenpost/hpqc/kem/schemes"
 	"github.com/katzenpost/hpqc/nike/schemes"
+	"github.com/katzenpost/hpqc/sign"
 	signpem "github.com/katzenpost/hpqc/sign/pem"
 
-	"github.com/katzenpost/hpqc/sign"
 	vConfig "github.com/katzenpost/katzenpost/authority/voting/server/config"
 	cConfig "github.com/katzenpost/katzenpost/client/config"
 	"github.com/katzenpost/katzenpost/core/cert"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
-	"github.com/katzenpost/katzenpost/core/wire"
 	sConfig "github.com/katzenpost/katzenpost/server/config"
 )
 
@@ -578,7 +577,7 @@ func cfgLinkKey(cfg interface{}, outDir string, kemScheme string) kem.PublicKey 
 		panic("wrong type")
 	}
 
-	linkPubKey, linkPrivKey, err := schemes.ByName(kemScheme).GenerateKeyPair()
+	linkPubKey, linkPrivKey, err := kemschemes.ByName(kemScheme).GenerateKeyPair()
 	if err != nil {
 		panic(err)
 	}
