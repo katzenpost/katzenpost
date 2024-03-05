@@ -27,13 +27,13 @@ import (
 	"gopkg.in/op/go-logging.v1"
 
 	"github.com/katzenpost/hpqc/kem"
+	"github.com/katzenpost/hpqc/kem/schemes"
 	"github.com/katzenpost/hpqc/rand"
 
 	"github.com/katzenpost/katzenpost/client/config"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
-	"github.com/katzenpost/katzenpost/core/wire"
 )
 
 const (
@@ -168,7 +168,7 @@ func (c *Client) NewTOFUSession(ctx context.Context) (*Session, error) {
 	)
 
 	// generate a linkKey
-	_, linkKey, err = wire.DefaultScheme.GenerateKeyPair()
+	_, linkKey, err = schemes.ByName(c.cfg.WireKEMScheme).GenerateKeyPair()
 	if err != nil {
 		return nil, err
 	}
