@@ -26,7 +26,6 @@ import (
 	"github.com/katzenpost/hpqc/rand"
 
 	"github.com/katzenpost/katzenpost/core/cert"
-	"github.com/katzenpost/katzenpost/core/wire"
 )
 
 const debugTestEpoch = 0xFFFFFFFF
@@ -59,7 +58,7 @@ func TestDescriptor(t *testing.T) {
 	d.IdentityKey, err = identityPub.MarshalBinary()
 	require.NoError(err)
 
-	scheme := wire.DefaultScheme
+	scheme := testingScheme
 	linkKey, _, err := scheme.GenerateKeyPair()
 	require.NoError(err)
 	d.LinkKey, err = linkKey.MarshalBinary()
