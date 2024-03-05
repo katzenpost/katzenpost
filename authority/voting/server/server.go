@@ -242,6 +242,9 @@ func New(cfg *config.Config) (*Server, error) {
 	}
 
 	scheme := schemes.ByName(cfg.Server.WireKEMScheme)
+	if scheme == nil {
+		return nil, errors.New("KEM scheme not found in registry")
+	}
 	linkPrivateKeyFile := filepath.Join(s.cfg.Server.DataDir, "link.private.pem")
 	linkPublicKeyFile := filepath.Join(s.cfg.Server.DataDir, "link.public.pem")
 
