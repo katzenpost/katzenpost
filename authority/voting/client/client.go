@@ -29,6 +29,7 @@ import (
 	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/kem"
 	kempem "github.com/katzenpost/hpqc/kem/pem"
+	"github.com/katzenpost/hpqc/kem/schemes"
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/hpqc/sign"
 
@@ -161,6 +162,7 @@ func (p *connector) initSession(ctx context.Context, doneCh <-chan interface{}, 
 		ad = keyHash[:]
 	}
 	cfg := &wire.SessionConfig{
+		KEMScheme:         schemes.ByName(peer.WireKEMScheme),
 		Geometry:          nil,
 		Authenticator:     peerAuthenticator,
 		AdditionalData:    ad,

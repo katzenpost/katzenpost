@@ -567,6 +567,10 @@ func NewPKISession(cfg *SessionConfig, isInitiator bool) (*Session, error) {
 		return nil, errors.New("wire/session: missing RandomReader")
 	}
 
+	if cfg.KEMScheme == nil {
+		return nil, errors.New("wire/session: missing KEM Scheme")
+	}
+
 	s := &Session{
 		protocol: &nyquist.Protocol{
 			Pattern: pattern.PqXX,
