@@ -267,9 +267,10 @@ func (s *katzenpost) genVotingAuthoritiesCfg(numAuthorities int, parameters *vCo
 		cfg := new(vConfig.Config)
 		cfg.SphinxGeometry = s.sphinxGeometry
 		cfg.Server = &vConfig.Server{
-			Identifier: fmt.Sprintf("auth%d", i),
-			Addresses:  []string{fmt.Sprintf("%s:%d", s.bindAddr, s.lastPort)},
-			DataDir:    filepath.Join(s.baseDir, fmt.Sprintf("auth%d", i)),
+			WireKEMScheme: s.wireKEMScheme,
+			Identifier:    fmt.Sprintf("auth%d", i),
+			Addresses:     []string{fmt.Sprintf("%s:%d", s.bindAddr, s.lastPort)},
+			DataDir:       filepath.Join(s.baseDir, fmt.Sprintf("auth%d", i)),
 		}
 		os.Mkdir(filepath.Join(s.outDir, cfg.Server.Identifier), 0700)
 		s.lastPort += 1
