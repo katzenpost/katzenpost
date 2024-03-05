@@ -26,9 +26,11 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/katzenpost/hpqc/kem/pem"
-
-	"github.com/katzenpost/katzenpost/core/wire"
+	"github.com/katzenpost/hpqc/kem/schemes"
 )
+
+var testingSchemeName = "x25519"
+var testingScheme = schemes.ByName(testingSchemeName)
 
 func TestConfig(t *testing.T) {
 	require := require.New(t)
@@ -36,7 +38,7 @@ func TestConfig(t *testing.T) {
 	_, err := Load(nil)
 	require.Error(err, "no Load() with nil config")
 	require.EqualError(err, "No nil buffer as config file")
-	linkPubKey, _, err := wire.DefaultScheme.GenerateKeyPair()
+	linkPubKey, _, err := testingScheme.GenerateKeyPair()
 	require.NoError(err)
 
 	basicConfig := `# A basic configuration example.
@@ -60,11 +62,12 @@ func TestConfig(t *testing.T) {
   KEMName = ""
 
 [server]
-Identifier = "katzenpost.example.com"
-Addresses = [ "127.0.0.1:29483", "[::1]:29483" ]
-DataDir = "%s"
-IsProvider = true
-MetricsAddress = "127.0.0.1:6543"
+  WireKEM = "%s"
+  Identifier = "katzenpost.example.com"
+  Addresses = [ "127.0.0.1:29483", "[::1]:29483" ]
+  DataDir = "%s"
+  IsProvider = true
+  MetricsAddress = "127.0.0.1:6543"
 
 [Provider]
   [[Provider.Kaetzchen]]
@@ -81,13 +84,14 @@ Level = "DEBUG"
 [PKI]
   [PKI.Voting]
     [[PKI.Voting.Authorities]]
+      WireKEMScheme = "%s"
       Identifier = "auth1"
       IdentityPublicKey = "-----BEGIN ED25519 SPHINCS+ PUBLIC KEY-----\n+4Q2LKzxmrOo3X6CTEbuECJu2v3YUZltsJO9bfQykoVL1SiwVAqkEy4BoDotwKrJ\nDPDKXF4yRfqdQWNFsi14XH31Wlxl1Ik+WD6l1c8UGPeSfRAzRAgKAjScDC3/qrYS\n-----END ED25519 SPHINCS+ PUBLIC KEY-----\n"
       LinkPublicKey = "%s"
       Addresses = ["127.0.0.1:30001"]
 `
 
-	config := fmt.Sprintf(basicConfig, os.TempDir(), strings.Replace(pem.ToPublicPEMString(linkPubKey), "\n", "\\n", -1))
+	config := fmt.Sprintf(basicConfig, testingSchemeName, os.TempDir(), testingSchemeName, strings.Replace(pem.ToPublicPEMString(linkPubKey), "\n", "\\n", -1))
 
 	cfg, err := Load([]byte(config))
 	require.NoError(err)

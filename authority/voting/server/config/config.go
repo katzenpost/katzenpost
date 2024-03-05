@@ -300,7 +300,17 @@ func (a *Authority) UnmarshalTOML(v interface{}) error {
 		return errors.New("type assertion failed")
 	}
 
-	a.LinkPublicKey, err = kempem.FromPublicPEMString(linkPublicKeyString, schemes.ByName(a.WireKEMScheme))
+	kemSchemeName, ok := data["WireKEMScheme"].(string)
+	if !ok {
+		return errors.New("WireKEMScheme failed type assertion")
+	}
+
+	a.WireKEMScheme = kemSchemeName
+	s := schemes.ByName(kemSchemeName)
+	if s == nil {
+		return fmt.Errorf("scheme `%s` not found", a.WireKEMScheme)
+	}
+	a.LinkPublicKey, err = kempem.FromPublicPEMString(linkPublicKeyString, s)
 	if err != nil {
 		return err
 	}
