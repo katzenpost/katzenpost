@@ -20,6 +20,7 @@ package client
 import (
 	"context"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"sync"
 	"time"
@@ -168,7 +169,11 @@ func (c *Client) NewTOFUSession(ctx context.Context) (*Session, error) {
 	)
 
 	// generate a linkKey
-	_, linkKey, err = schemes.ByName(c.cfg.WireKEMScheme).GenerateKeyPair()
+	s := schemes.ByName(c.cfg.WireKEMScheme)
+	if s == nil {
+		return nil, fmt.Errorf("config specified scheme `%s` not found", c.cfg.WireKEMScheme)
+	}
+	_, linkKey, err = s.GenerateKeyPair()
 	if err != nil {
 		return nil, err
 	}
