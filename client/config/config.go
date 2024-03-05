@@ -27,6 +27,8 @@ import (
 	"golang.org/x/crypto/blake2b"
 
 	"github.com/katzenpost/hpqc/kem"
+	"github.com/katzenpost/hpqc/kem/schemes"
+
 	vClient "github.com/katzenpost/katzenpost/authority/voting/client"
 	vServerConfig "github.com/katzenpost/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/katzenpost/client/internal/proxy"
@@ -115,13 +117,14 @@ type VotingAuthority struct {
 }
 
 // New constructs a pki.Client with the specified voting authority config.
-func (vACfg *VotingAuthority) New(l *log.Backend, pCfg *proxy.Config, linkKey kem.PrivateKey) (pki.Client, error) {
+func (vACfg *VotingAuthority) New(l *log.Backend, pCfg *proxy.Config, linkKey kem.PrivateKey, scheme kem.Scheme) (pki.Client, error) {
 	blob, err := linkKey.Public().MarshalBinary()
 	if err != nil {
 		return nil, err
 	}
 	linkHash := blake2b.Sum256(blob)
 	cfg := &vClient.Config{
+		KEMScheme:     scheme,
 		LinkKey:       linkKey,
 		LogBackend:    l,
 		Authorities:   vACfg.Peers,
@@ -146,7 +149,7 @@ func (vACfg *VotingAuthority) validate() error {
 func (c *Config) NewPKIClient(l *log.Backend, pCfg *proxy.Config, linkKey kem.PrivateKey) (pki.Client, error) {
 	switch {
 	case c.VotingAuthority != nil:
-		return c.VotingAuthority.New(l, pCfg, linkKey)
+		return c.VotingAuthority.New(l, pCfg, linkKey, schemes.ByName(c.WireKEMScheme))
 	}
 	return nil, errors.New("no Authority found")
 }
