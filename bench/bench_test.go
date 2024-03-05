@@ -37,6 +37,7 @@ import (
 	"gopkg.in/op/go-logging.v1"
 
 	"github.com/katzenpost/hpqc/kem"
+	"github.com/katzenpost/hpqc/kem/schemes"
 	"github.com/katzenpost/hpqc/rand"
 
 	"github.com/katzenpost/katzenpost/client"
@@ -48,10 +49,12 @@ import (
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
-	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/katzenpost/katzenpost/minclient"
 )
+
+var testingSchemeName = "x25519"
+var testingScheme = schemes.ByName(testingSchemeName)
 
 var (
 	clientTestCfg              = "testdata/client.toml"
@@ -153,7 +156,7 @@ func (b *MinclientBench) setup() {
 
 	b.log = logBackend.GetLogger("MinclientBench")
 
-	_, b.linkKey, err = wire.DefaultScheme.GenerateKeyPair()
+	_, b.linkKey, err = testingScheme.GenerateKeyPair()
 	blob, err := b.linkKey.Public().MarshalBinary()
 	if err != nil {
 		panic(err)
@@ -178,6 +181,7 @@ func (b *MinclientBench) setup() {
 		panic(err)
 	}
 	b.minclientConfig = &minclient.ClientConfig{
+		LinkKemScheme:       testingScheme,
 		SphinxGeometry:      cfg.SphinxGeometry,
 		User:                string(idHash[:]),
 		Provider:            b.provider.Name,

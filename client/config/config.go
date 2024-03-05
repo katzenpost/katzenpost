@@ -118,6 +118,10 @@ type VotingAuthority struct {
 
 // New constructs a pki.Client with the specified voting authority config.
 func (vACfg *VotingAuthority) New(l *log.Backend, pCfg *proxy.Config, linkKey kem.PrivateKey, scheme kem.Scheme) (pki.Client, error) {
+	if scheme == nil {
+		return nil, errors.New("KEM scheme cannot be nil")
+	}
+
 	blob, err := linkKey.Public().MarshalBinary()
 	if err != nil {
 		return nil, err
