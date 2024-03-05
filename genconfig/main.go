@@ -58,6 +58,7 @@ type katzenpost struct {
 	logLevel  string
 	logWriter io.Writer
 
+	wireKEMScheme     string
 	sphinxGeometry    *geo.Geometry
 	votingAuthConfigs []*vConfig.Config
 	authorities       map[[32]byte]*vConfig.Authority
@@ -141,6 +142,7 @@ func (s *katzenpost) genNodeConfig(isProvider bool, isVoting bool) error {
 
 	// Server section.
 	cfg.Server = new(sConfig.Server)
+	cfg.Server.WireKEM = s.wireKEMScheme
 	cfg.Server.Identifier = n
 	cfg.Server.Addresses = []string{fmt.Sprintf("%s:%d", s.bindAddr, s.lastPort)}
 	cfg.Server.DataDir = filepath.Join(s.baseDir, n)
@@ -387,6 +389,11 @@ func main() {
 	}
 
 	s := &katzenpost{}
+
+	s.wireKEMScheme = *wirekem
+	if kemschemes.ByName(*wirekem) == nil {
+		log.Fatal("invalid wire KEM scheme")
+	}
 
 	s.baseDir = *baseDir
 	s.outDir = *outDir
