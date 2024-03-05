@@ -25,10 +25,13 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/katzenpost/hpqc/kem"
-	"github.com/katzenpost/katzenpost/core/wire"
+	"github.com/katzenpost/hpqc/kem/schemes"
 )
 
 const testDB = "userdb.db"
+
+var testingSchemeName = "x25519"
+var testingScheme = schemes.ByName(testingSchemeName)
 
 var (
 	tmpDir     string
@@ -73,7 +76,7 @@ func doTestCreateWithTOFU(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 
-	d, err := New(testDBPath, WithTrustOnFirstUse())
+	d, err := New(testDBPath, testingScheme, WithTrustOnFirstUse())
 	require.NoError(err, "New()")
 	defer d.Close()
 
@@ -82,7 +85,7 @@ func doTestCreateWithTOFU(t *testing.T) {
 		require.NoErrorf(err, "Add(%v, k, false)", u)
 	}
 
-	scheme := wire.DefaultScheme
+	scheme := testingScheme
 	wrongPubKey, _, err := scheme.GenerateKeyPair()
 	require.NoError(err)
 
@@ -102,7 +105,7 @@ func doTestCreate(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 
-	d, err := New(testDBPath)
+	d, err := New(testDBPath, testingScheme)
 	require.NoError(err, "New()")
 	defer d.Close()
 
@@ -123,11 +126,11 @@ func doTestLoadTOFU(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 
-	d, err := New(testDBPath, WithTrustOnFirstUse())
+	d, err := New(testDBPath, testingScheme, WithTrustOnFirstUse())
 	require.NoError(err, "New() load")
 	defer d.Close()
 
-	scheme := wire.DefaultScheme
+	scheme := testingScheme
 	wrongPubKey, _, err := scheme.GenerateKeyPair()
 	require.NoError(err)
 
@@ -148,7 +151,7 @@ func doTestLoad(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 
-	d, err := New(testDBPath)
+	d, err := New(testDBPath, testingScheme)
 	require.NoError(err, "New() load")
 	defer d.Close()
 
@@ -172,7 +175,7 @@ func init() {
 	testDBPath = filepath.Join(tmpDir, testDB)
 	testUsers = make(map[string]kem.PublicKey)
 	for _, v := range testUsernames {
-		scheme := wire.DefaultScheme
+		scheme := testingScheme
 		testUsers[v], _, err = scheme.GenerateKeyPair()
 		if err != nil {
 			panic(err)

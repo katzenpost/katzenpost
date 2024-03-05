@@ -24,16 +24,20 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/stretchr/testify/require"
+
+	"github.com/katzenpost/hpqc/kem/schemes"
 )
+
+var testingSchemeName = "x25519"
+var testingScheme = schemes.ByName(testingSchemeName)
 
 func TestExists(t *testing.T) {
 	t.Parallel()
 	ts := httpMock("{\"exists\": true}")
 	defer ts.Close()
 
-	e, _ := New(ts.URL)
+	e, _ := New(ts.URL, testingScheme)
 
 	u := []byte("testuser")
 	if !e.Exists(u) {
@@ -46,7 +50,7 @@ func TestNotExists(t *testing.T) {
 	ts := httpMock("{\"exists\": false}")
 	defer ts.Close()
 
-	e, _ := New(ts.URL)
+	e, _ := New(ts.URL, testingScheme)
 
 	u := []byte("testuser")
 	if e.Exists(u) {
@@ -59,9 +63,9 @@ func TestIsValid(t *testing.T) {
 	ts := httpMock("{\"isvalid\": true}")
 	defer ts.Close()
 
-	e, _ := New(ts.URL)
+	e, _ := New(ts.URL, testingScheme)
 
-	key, _, err := wire.DefaultScheme.GenerateKeyPair()
+	key, _, err := testingScheme.GenerateKeyPair()
 	require.NoError(t, err)
 
 	u := []byte("testuser")
@@ -73,9 +77,9 @@ func TestIsNotValid(t *testing.T) {
 	ts := httpMock("{\"isvalid\": false}")
 	defer ts.Close()
 
-	e, _ := New(ts.URL)
+	e, _ := New(ts.URL, testingScheme)
 
-	key, _, err := wire.DefaultScheme.GenerateKeyPair()
+	key, _, err := testingScheme.GenerateKeyPair()
 	require.NoError(t, err)
 
 	u := []byte("testuser")
