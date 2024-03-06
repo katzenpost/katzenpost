@@ -702,7 +702,14 @@ func (s *state) sendCommandToPeer(peer *config.Authority, cmd commands.Command) 
 	s.s.Add(1)
 	defer s.s.Done()
 	identityHash := hash.Sum256From(s.s.identityPublicKey)
+
+	kemscheme := schemes.ByName(s.s.cfg.Server.WireKEMScheme)
+	if kemscheme == nil {
+		panic("kem scheme not found in registry")
+	}
+
 	cfg := &wire.SessionConfig{
+		KEMScheme:         kemscheme,
 		Geometry:          nil,
 		Authenticator:     s,
 		AdditionalData:    identityHash[:],
