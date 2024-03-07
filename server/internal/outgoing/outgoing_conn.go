@@ -253,6 +253,7 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 	// Allocate the session struct.
 	identityHash := hash.Sum256From(c.co.glue.IdentityPublicKey())
 	cfg := &wire.SessionConfig{
+		KEMScheme:         c.scheme,
 		Geometry:          c.geo,
 		Authenticator:     c,
 		AdditionalData:    identityHash[:],

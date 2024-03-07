@@ -149,7 +149,13 @@ func (co *connector) spawnNewConns() {
 	// Spawn the new outgoingConn objects.
 	for id, v := range newPeerMap {
 		co.log.Debugf("Spawning connection to: '%x'.", id)
-		c := newOutgoingConn(co, v, co.glue.Config().SphinxGeometry, schemes.ByName(co.glue.Config().Server.WireKEM))
+
+		scheme := schemes.ByName(co.glue.Config().Server.WireKEM)
+		if scheme == nil {
+			panic("KEM scheme not found in registry")
+		}
+
+		c := newOutgoingConn(co, v, co.glue.Config().SphinxGeometry, scheme)
 		co.onNewConn(c)
 	}
 }

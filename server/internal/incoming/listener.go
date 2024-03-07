@@ -26,11 +26,14 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"gopkg.in/op/go-logging.v1"
+
+	"github.com/katzenpost/hpqc/kem/schemes"
+
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/katzenpost/katzenpost/server/internal/constants"
 	"github.com/katzenpost/katzenpost/server/internal/glue"
-	"gopkg.in/op/go-logging.v1"
 )
 
 type listener struct {
@@ -102,7 +105,11 @@ func (l *listener) worker() {
 }
 
 func (l *listener) onNewConn(conn net.Conn) {
-	c := newIncomingConn(l, conn, l.glue.Config().SphinxGeometry)
+	scheme := schemes.ByName(l.glue.Config().Server.WireKEM)
+	if scheme == nil {
+		panic("KEM scheme not found in registry")
+	}
+	c := newIncomingConn(l, conn, l.glue.Config().SphinxGeometry, scheme)
 
 	l.closeAllWg.Add(1)
 	l.Lock()
