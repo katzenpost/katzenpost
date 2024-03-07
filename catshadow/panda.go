@@ -23,7 +23,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/katzenpost/katzenpost/client"
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/hpqc/rand"
 	pclient "github.com/katzenpost/katzenpost/panda/client"
 	pCommon "github.com/katzenpost/katzenpost/panda/common"
 	panda "github.com/katzenpost/katzenpost/panda/crypto"

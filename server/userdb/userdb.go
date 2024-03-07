@@ -21,8 +21,9 @@ package userdb
 import (
 	"errors"
 
+	"github.com/katzenpost/hpqc/kem"
+
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
-	"github.com/katzenpost/katzenpost/core/wire"
 )
 
 // MaxUsernameSize is the maximum username length in bytes.
@@ -45,24 +46,24 @@ type UserDB interface {
 
 	// IsValid returns true iff the user identified by the username and
 	// public key is valid.
-	IsValid([]byte, wire.PublicKey) bool
+	IsValid([]byte, kem.PublicKey) bool
 
 	// Link returns the user's link layer authentication key.
-	Link([]byte) (wire.PublicKey, error)
+	Link([]byte) (kem.PublicKey, error)
 
 	// Add adds the user identified by the username and public key
 	// to the database.  Existing users will have their public keys
 	// updated if specified, otherwise an error will be returned.
-	Add([]byte, wire.PublicKey, bool) error
+	Add([]byte, kem.PublicKey, bool) error
 
 	// SetIdentity sets the optional identity key for the user identified
 	// by the user name to the provided public key.  Providing a nil key
 	// will remove the user's identity key iff it exists.
-	SetIdentity([]byte, wire.PublicKey) error
+	SetIdentity([]byte, kem.PublicKey) error
 
 	// Identity returns the optional identity key for the user identified
 	// by the user name.
-	Identity([]byte) (wire.PublicKey, error)
+	Identity([]byte) (kem.PublicKey, error)
 
 	// Remove removes the user identified by the username from the database.
 	Remove([]byte) error

@@ -32,7 +32,8 @@ import (
 	"gitlab.com/yawning/avl.git"
 	"gopkg.in/op/go-logging.v1"
 
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/hpqc/rand"
+
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/monotime"
 	"github.com/katzenpost/katzenpost/core/pki"

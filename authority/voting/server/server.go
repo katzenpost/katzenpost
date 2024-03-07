@@ -18,6 +18,7 @@
 package server
 
 import (
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"net"
@@ -27,13 +28,21 @@ import (
 
 	"gopkg.in/op/go-logging.v1"
 
+	"github.com/katzenpost/hpqc/hash"
+	"github.com/katzenpost/hpqc/kem"
+	kempem "github.com/katzenpost/hpqc/kem/pem"
+	"github.com/katzenpost/hpqc/rand"
+	"github.com/katzenpost/hpqc/sign"
+	signpem "github.com/katzenpost/hpqc/sign/pem"
+
+	nyquistkem "github.com/katzenpost/nyquist/kem"
+	"github.com/katzenpost/nyquist/seec"
+
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
-	"github.com/katzenpost/katzenpost/core/crypto/cert"
-	"github.com/katzenpost/katzenpost/core/crypto/pem"
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
-	"github.com/katzenpost/katzenpost/core/crypto/sign"
+	"github.com/katzenpost/katzenpost/core/cert"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
+	"github.com/katzenpost/katzenpost/core/utils"
 	"github.com/katzenpost/katzenpost/core/wire"
 )
 
@@ -50,7 +59,7 @@ type Server struct {
 
 	identityPrivateKey sign.PrivateKey
 	identityPublicKey  sign.PublicKey
-	linkKey            wire.PrivateKey
+	linkKey            kem.PrivateKey
 
 	logBackend *log.Backend
 	log        *logging.Logger
@@ -175,9 +184,6 @@ func (s *Server) halt() {
 		s.state = nil
 	}
 
-	s.identityPublicKey.Reset()
-	s.identityPrivateKey.Reset()
-	s.linkKey.Reset()
 	close(s.fatalErrCh)
 
 	s.log.Notice("Shutdown complete.")
@@ -211,23 +217,27 @@ func New(cfg *config.Config) (*Server, error) {
 	identityPrivateKeyFile := filepath.Join(s.cfg.Server.DataDir, "identity.private.pem")
 	identityPublicKeyFile := filepath.Join(s.cfg.Server.DataDir, "identity.public.pem")
 
-	s.identityPrivateKey, s.identityPublicKey = cert.Scheme.NewKeypair()
 	var err error
-	if pem.BothExists(identityPrivateKeyFile, identityPublicKeyFile) {
-		err = pem.FromFile(identityPrivateKeyFile, s.identityPrivateKey)
+
+	if utils.BothExists(identityPrivateKeyFile, identityPublicKeyFile) {
+		s.identityPrivateKey, err = signpem.FromPrivatePEMFile(identityPrivateKeyFile, cert.Scheme)
 		if err != nil {
 			return nil, err
 		}
-		err = pem.FromFile(identityPublicKeyFile, s.identityPublicKey)
+		s.identityPublicKey, err = signpem.FromPublicPEMFile(identityPublicKeyFile, cert.Scheme)
 		if err != nil {
 			return nil, err
 		}
-	} else if pem.BothNotExists(identityPrivateKeyFile, identityPublicKeyFile) {
-		err = pem.ToFile(identityPrivateKeyFile, s.identityPrivateKey)
+	} else if utils.BothNotExists(identityPrivateKeyFile, identityPublicKeyFile) {
+		s.identityPublicKey, s.identityPrivateKey, err = cert.Scheme.GenerateKey()
 		if err != nil {
 			return nil, err
 		}
-		err = pem.ToFile(identityPublicKeyFile, s.identityPublicKey)
+		err = signpem.PrivateKeyToFile(identityPrivateKeyFile, s.identityPrivateKey)
+		if err != nil {
+			return nil, err
+		}
+		err = signpem.PublicKeyToFile(identityPublicKeyFile, s.identityPublicKey)
 		if err != nil {
 			return nil, err
 		}
@@ -239,23 +249,43 @@ func New(cfg *config.Config) (*Server, error) {
 	linkPrivateKeyFile := filepath.Join(s.cfg.Server.DataDir, "link.private.pem")
 	linkPublicKeyFile := filepath.Join(s.cfg.Server.DataDir, "link.public.pem")
 
-	linkPrivateKey, linkPublicKey := scheme.GenerateKeypair(rand.Reader)
-	if pem.BothExists(linkPrivateKeyFile, linkPublicKeyFile) {
-		err = pem.FromFile(linkPrivateKeyFile, linkPrivateKey)
+	genRand, err := seec.GenKeyPRPAES(rand.Reader, 256)
+	if err != nil {
+		return nil, err
+	}
+
+	var linkPrivateKey kem.PrivateKey
+
+	if utils.BothExists(linkPrivateKeyFile, linkPublicKeyFile) {
+		linkPrivateKey, err = kempem.FromPrivatePEMFile(linkPrivateKeyFile, scheme)
 		if err != nil {
 			return nil, err
 		}
-		err = pem.FromFile(linkPublicKeyFile, linkPublicKey)
+		_, err = kempem.FromPublicPEMFile(linkPublicKeyFile, scheme)
 		if err != nil {
 			return nil, err
 		}
-	} else if pem.BothNotExists(linkPrivateKeyFile, linkPublicKeyFile) {
-		linkPrivateKey, linkPublicKey = scheme.GenerateKeypair(rand.Reader)
-		err = pem.ToFile(linkPrivateKeyFile, linkPrivateKey)
+
+		/* NOTE(david): enable this check after we get things working again?
+		linkpubkey, err := kempem.FromPublicPEMFile(linkPublicKeyFile, scheme)
 		if err != nil {
 			return nil, err
 		}
-		err = pem.ToFile(linkPublicKeyFile, linkPublicKey)
+		s.log.Warning("attempting to call validate our config's peers against our own link public key")
+		err = cfg.ValidateAuthorities(linkpubkey)
+		if err != nil {
+			s.log.Error("config's peers validation failure. must be your own peer!")
+			return nil, err
+		}
+		*/
+	} else if utils.BothNotExists(linkPrivateKeyFile, linkPublicKeyFile) {
+		linkPublicKey, linkPrivateKey := nyquistkem.GenerateKeypair(scheme, genRand)
+
+		err = kempem.PrivateKeyToFile(linkPrivateKeyFile, linkPrivateKey)
+		if err != nil {
+			return nil, err
+		}
+		err = kempem.PublicKeyToFile(linkPublicKeyFile, linkPublicKey)
 		if err != nil {
 			return nil, err
 		}
@@ -265,8 +295,12 @@ func New(cfg *config.Config) (*Server, error) {
 
 	s.linkKey = linkPrivateKey
 
-	s.log.Noticef("Authority identity public key hash is: %x", s.identityPublicKey.Sum256())
-	s.log.Noticef("Authority link public key hash is: %x", s.linkKey.PublicKey().Sum256())
+	s.log.Noticef("Authority identity public key hash is: %x", hash.Sum256From(s.identityPublicKey))
+	linkBlob, err := s.linkKey.Public().MarshalBinary()
+	if err != nil {
+		return nil, err
+	}
+	s.log.Noticef("Authority link public key hash is: %x", sha256.Sum256(linkBlob))
 
 	if s.cfg.Debug.GenerateOnly {
 		return nil, ErrGenerateOnly

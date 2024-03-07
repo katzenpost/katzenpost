@@ -23,10 +23,12 @@ import (
 	"os"
 	"testing"
 
-	"github.com/katzenpost/katzenpost/core/crypto/nike/ecdh"
+	"github.com/stretchr/testify/assert"
+
+	ecdh "github.com/katzenpost/hpqc/nike/x25519"
+
 	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
-	"github.com/stretchr/testify/assert"
 )
 
 const wireCommandsVectorsFile = "testdata/wire_commands_vectors.json"
@@ -72,7 +74,7 @@ func NoTestBuildCommandVectors(t *testing.T) {
 		hint = 0x17
 	)
 
-	nike := ecdh.NewEcdhNike(rand.Reader)
+	nike := ecdh.Scheme(rand.Reader)
 	//forwardPayloadLength := len(payload) + (sphinx.SphinxPlaintextHeaderLength + 556)
 	nrHops := 5
 
@@ -160,7 +162,7 @@ func TestCommandVectors(t *testing.T) {
 	err = json.Unmarshal(serialized, &cmdsTest)
 	assert.NoError(err)
 
-	nike := ecdh.NewEcdhNike(rand.Reader)
+	nike := ecdh.Scheme(rand.Reader)
 
 	nrHops := 5
 
