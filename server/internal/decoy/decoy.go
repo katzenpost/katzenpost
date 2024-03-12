@@ -32,6 +32,7 @@ import (
 	"gitlab.com/yawning/avl.git"
 	"gopkg.in/op/go-logging.v1"
 
+	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/rand"
 
 	"github.com/katzenpost/katzenpost/core/epochtime"
@@ -60,11 +61,17 @@ type surbCtx struct {
 	eta     time.Duration
 	sprpKey []byte
 
+	epoch uint64
+
+	etaNode *avl.Node
+}
+
+type trialLoop struct {
+	epoch       uint64
 	forwardPath []*sphinx.PathHop
 	replyPath   []*sphinx.PathHop
 	sentTime    time.Time
-
-	etaNode *avl.Node
+	isSuccess   bool
 }
 
 type decoy struct {
@@ -85,9 +92,9 @@ type decoy struct {
 	surbStore  map[uint64]*surbCtx
 	surbIDBase uint64
 
-	loopStatsLock   *sync.RWMutex
-	loopStats       map[uint64][]*loops.LoopStat
-	failedLoopStats map[uint64][]*loops.LoopStat
+	loopStatsLock *sync.RWMutex
+	trialLoops    map[uint64]*trialLoop                 // surbCtx.id -> *trialLoop
+	loopStats     map[uint64]map[uint64]*loops.LoopStat // epoch id -> surbCtx.id -> *LoopStat
 }
 
 func (d *decoy) OnNewDocument(ent *pkicache.Entry) {
@@ -133,17 +140,27 @@ func (d *decoy) OnPacket(pkt *packet.Packet) {
 		return
 	}
 
-	loopstat := &loops.LoopStat{
-		ForwardPath: ctx.forwardPath,
-		ReplyPath:   ctx.replyPath,
-		SentTime:    ctx.sentTime,
+	// remove loop from trialLoops and add it to
+	// loopStats map
+	d.loopStatsLock.Lock()
+	defer d.loopStatsLock.Unlock()
+	trial, ok := d.trialLoops[ctx.id]
+	if !ok {
+		d.log.Error("failed to find decoy loop entry in trialLoops map")
+		return
+	}
+	result := &loops.LoopStat{
+		ForwardPath: trial.forwardPath,
+		ReplyPath:   trial.replyPath,
+		SentTime:    trial.sentTime,
 		IsSuccess:   true,
 	}
-	epoch, _, _ := epochtime.Now()
-	d.loopStats[epoch] = append(d.loopStats[epoch], loopstat)
-
-	// TODO: At some point, this should do more than just log.
-	d.log.Debugf("Response packet: %v (SURB ID: 0x%08x): ETA: %v, Actual: %v (DeltaT: %v)", pkt.ID, id, ctx.eta, pkt.RecvAt, pkt.RecvAt-ctx.eta)
+	_, ok = d.loopStats[ctx.epoch]
+	if !ok {
+		d.loopStats[ctx.epoch] = make(map[uint64]*loops.LoopStat)
+	}
+	d.loopStats[ctx.epoch][ctx.id] = result
+	delete(d.trialLoops, ctx.id)
 }
 
 func (d *decoy) worker() {
@@ -181,6 +198,8 @@ func (d *decoy) worker() {
 			d.log.Debugf("Received new PKI document for epoch: %v", now)
 			instrument.PKIDocs(fmt.Sprintf("%v", now))
 			docCache = newEnt
+
+			d.sendDecoyLoopStats(docCache)
 		case <-timer.C:
 			timerFired = true
 		}
@@ -210,8 +229,6 @@ func (d *decoy) worker() {
 			d.log.Debugf("Next wakeInterval: %v", wakeInterval)
 
 			d.sweepSURBCtxs()
-
-			d.sendDecoyLoopStats(docCache)
 		}
 		if !timerFired && !timer.Stop() {
 			select {
@@ -223,6 +240,29 @@ func (d *decoy) worker() {
 		}
 		timer.Reset(wakeInterval)
 	}
+}
+
+func findService(rng *mRand.Rand, service string, doc *pki.Document) (string, *pki.MixDescriptor, error) {
+	var providerDesc *pki.MixDescriptor
+	var serviceName string
+	for _, idx := range rng.Perm(len(doc.Providers)) {
+		desc := doc.Providers[idx]
+		params, ok := desc.Kaetzchen[service]
+		if !ok {
+			continue
+		}
+		serviceName, ok = params["endpoint"].(string)
+		if !ok {
+			continue
+		}
+		providerDesc = desc
+		break
+	}
+	if providerDesc == nil {
+		return "", nil, errors.New("Failed to find suitable provider")
+	}
+
+	return serviceName, providerDesc, nil
 }
 
 func (d *decoy) sendDecoyPacket(ent *pkicache.Entry) {
@@ -240,22 +280,8 @@ func (d *decoy) sendDecoyPacket(ent *pkicache.Entry) {
 	// rather than randomized, but this is obviously correct and leak proof.
 
 	// Find a random Provider that is running a loop/discard service.
-	var providerDesc *pki.MixDescriptor
-	var loopRecip string
-	for _, idx := range d.rng.Perm(len(doc.Providers)) {
-		desc := doc.Providers[idx]
-		params, ok := desc.Kaetzchen[kaetzchen.EchoCapability]
-		if !ok {
-			continue
-		}
-		loopRecip, ok = params["endpoint"].(string)
-		if !ok {
-			continue
-		}
-		providerDesc = desc
-		break
-	}
-	if providerDesc == nil {
+	loopRecip, providerDesc, err := findService(d.rng, kaetzchen.EchoCapability, doc)
+	if err != nil {
 		d.log.Debugf("Failed to find suitable provider")
 		return
 	}
@@ -326,22 +352,22 @@ func (d *decoy) sendLoopStatsPacket(doc *pki.Document, recipient []byte, src, ds
 				d.log.Debugf("Failed to generate SURB: %v", err)
 			}
 
-			payload = append(payload, surb...)
-
 			epoch, _, _ := epochtime.Now()
+			myEpoch := epoch - 1
 
-			d.Lock()
-			stats, ok := d.loopStats[epoch-1]
-			d.Unlock()
-
-			if !ok {
-				d.log.Error("failed to find decoy loop stats")
-				return
+			d.loopStatsLock.Lock()
+			defer d.loopStatsLock.Unlock()
+			loopList := make([]*loops.LoopStat, len(d.loopStats[myEpoch]))
+			i := 0
+			for _, loop := range d.loopStats[myEpoch] {
+				loopList[i] = loop
+				i++
 			}
-
+			mixid := hash.Sum256From(d.glue.IdentityPublicKey())
 			loopstats := &loops.LoopStats{
-				Epoch: epoch - 1,
-				Stats: stats,
+				Epoch:           myEpoch,
+				MixIdentityHash: &mixid,
+				Stats:           loopList,
 			}
 
 			blob, err := cbor.Marshal(loopstats)
@@ -350,6 +376,7 @@ func (d *decoy) sendLoopStatsPacket(doc *pki.Document, recipient []byte, src, ds
 				return
 			}
 
+			payload = append(payload, surb...)
 			payload = append(payload, blob...)
 			payload = append(payload, zeroBytes[len(blob):]...)
 
@@ -357,12 +384,9 @@ func (d *decoy) sendLoopStatsPacket(doc *pki.Document, recipient []byte, src, ds
 			// so that it's possible to figure out which links/nodes
 			// are causing issues.
 			ctx := &surbCtx{
-				id:          binary.BigEndian.Uint64(surbID[8:]),
-				eta:         monotime.Now() + deltaT,
-				sprpKey:     k,
-				forwardPath: fwdPath,
-				replyPath:   revPath,
-				sentTime:    time.Now(),
+				id:      binary.BigEndian.Uint64(surbID[8:]),
+				eta:     monotime.Now() + deltaT,
+				sprpKey: k,
 			}
 			d.storeSURBCtx(ctx)
 
@@ -415,16 +439,13 @@ func (d *decoy) sendLoopPacket(doc *pki.Document, recipient []byte, src, dst *pk
 			payload = append(payload, surb...)
 			payload = append(payload, zeroBytes...)
 
-			// TODO: This should probably also store path information,
-			// so that it's possible to figure out which links/nodes
-			// are causing issues.
+			epoch, _, _ := epochtime.Now()
+
 			ctx := &surbCtx{
-				id:          binary.BigEndian.Uint64(surbID[8:]),
-				eta:         monotime.Now() + deltaT,
-				sprpKey:     k,
-				forwardPath: fwdPath,
-				replyPath:   revPath,
-				sentTime:    time.Now(),
+				id:      binary.BigEndian.Uint64(surbID[8:]),
+				eta:     monotime.Now() + deltaT,
+				sprpKey: k,
+				epoch:   epoch,
 			}
 			d.storeSURBCtx(ctx)
 
@@ -440,22 +461,16 @@ func (d *decoy) sendLoopPacket(doc *pki.Document, recipient []byte, src, dst *pk
 
 			d.dispatchPacket(fwdPath, pkt)
 
-			loopStat := &loops.LoopStat{
-				ForwardPath: fwdPath,
-				ReplyPath:   revPath,
-				SentTime:    time.Now(),
-				IsSuccess:   false,
+			trialStat := &trialLoop{
+				epoch:       epoch,
+				forwardPath: fwdPath,
+				replyPath:   revPath,
+				sentTime:    time.Now(),
+				isSuccess:   false,
 			}
-			epoch, _, _ := epochtime.Now()
 
 			d.loopStatsLock.Lock()
-			myloops, ok := d.failedLoopStats[epoch]
-			if !ok {
-				d.failedLoopStats[epoch] = make([]*loops.LoopStat, 0)
-				myloops = d.failedLoopStats[epoch]
-			}
-			myloops = append(myloops, loopStat)
-			d.failedLoopStats[epoch] = myloops
+			d.trialLoops[ctx.id] = trialStat
 			d.loopStatsLock.Unlock()
 
 			return
@@ -577,15 +592,6 @@ func (d *decoy) sweepSURBCtxs() {
 			break
 		}
 
-		stat := &loops.LoopStat{
-			ForwardPath: ctx.forwardPath,
-			ReplyPath:   ctx.replyPath,
-			SentTime:    ctx.sentTime,
-			IsSuccess:   false,
-		}
-		epoch, _, _ := epochtime.Now()
-		d.loopStats[epoch] = append(d.loopStats[epoch], stat)
-
 		delete(d.surbStore, ctx.id)
 
 		// TODO: At some point, this should do more than just log.
@@ -594,6 +600,34 @@ func (d *decoy) sweepSURBCtxs() {
 		// modification is unsupported EXCEPT "removing the current
 		// Node", see godoc for avl/avl.go:Iterator
 		d.surbETAs.Remove(node)
+
+		// remove trial loop stat from trialLoops map
+		// and add the entry as a failed loop into our loopStats map
+		d.loopStatsLock.Lock()
+		trial, ok := d.trialLoops[ctx.id]
+		if !ok {
+			d.loopStatsLock.Unlock()
+			return
+		}
+		delete(d.trialLoops, ctx.id)
+		var isSuccess bool
+		_, ok = d.loopStats[ctx.epoch]
+		if !ok {
+			d.loopStats[ctx.epoch] = make(map[uint64]*loops.LoopStat)
+			isSuccess = false
+		} else {
+			_, isSuccess = d.loopStats[ctx.epoch][ctx.id]
+		}
+		if !isSuccess {
+			result := &loops.LoopStat{
+				ForwardPath: trial.forwardPath,
+				ReplyPath:   trial.replyPath,
+				SentTime:    trial.sentTime,
+				IsSuccess:   isSuccess,
+			}
+			d.loopStats[ctx.epoch][ctx.id] = result
+		}
+		d.loopStatsLock.Unlock()
 	}
 
 	d.log.Debugf("Sweep: Count: %v (Removed: %v, Elapsed: %v)", len(d.surbStore), swept, monotime.Now()-now)
@@ -630,7 +664,8 @@ func New(glue glue.Glue) (glue.Decoy, error) {
 		}),
 		surbStore:  make(map[uint64]*surbCtx),
 		surbIDBase: uint64(time.Now().Unix()),
-		loopStats:  make(map[uint64][]*loops.LoopStat),
+		trialLoops: make(map[uint64]*trialLoop),
+		loopStats:  make(map[uint64]map[uint64]*loops.LoopStat),
 	}
 	if _, err := io.ReadFull(rand.Reader, d.recipient); err != nil {
 		return nil, err
