@@ -53,6 +53,7 @@ import (
 	"github.com/katzenpost/katzenpost/server/internal/pki"
 	"github.com/katzenpost/katzenpost/server/internal/provider"
 	"github.com/katzenpost/katzenpost/server/internal/scheduler"
+	"github.com/katzenpost/katzenpost/server/loops"
 )
 
 // ErrGenerateOnly is the error returned when the server initialization
@@ -71,6 +72,8 @@ type Server struct {
 	log        *logging.Logger
 
 	inboundPackets *channels.InfiniteChannel
+
+	loopsCache *loops.Cache
 
 	scheduler     glue.Scheduler
 	cryptoWorkers []*cryptoworker.Worker
@@ -421,6 +424,9 @@ func New(cfg *config.Config) (*Server, error) {
 	// Initialize the outgoing connection manager, decoy source/sink, and then
 	// start the PKI worker.
 	s.connector = outgoing.New(goo)
+
+	s.loopsCache = loops.New()
+
 	if s.decoy, err = decoy.New(goo); err != nil {
 		s.log.Errorf("Failed to initialize decoy source/sink: %v", err)
 		return nil, err
@@ -455,6 +461,10 @@ func New(cfg *config.Config) (*Server, error) {
 
 type serverGlue struct {
 	s *Server
+}
+
+func (g *serverGlue) LoopsCache() *loops.Cache {
+	return g.s.loopsCache
 }
 
 func (g *serverGlue) Config() *config.Config {

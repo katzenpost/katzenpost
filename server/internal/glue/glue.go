@@ -30,12 +30,14 @@ import (
 	"github.com/katzenpost/katzenpost/server/internal/mixkey"
 	"github.com/katzenpost/katzenpost/server/internal/packet"
 	"github.com/katzenpost/katzenpost/server/internal/pkicache"
+	"github.com/katzenpost/katzenpost/server/loops"
 	"github.com/katzenpost/katzenpost/server/spool"
 	"github.com/katzenpost/katzenpost/server/userdb"
 )
 
 // Glue is the structure that binds the internal components together.
 type Glue interface {
+	LoopsCache() *loops.Cache
 	Config() *config.Config
 	LogBackend() *log.Backend
 	IdentityKey() sign.PrivateKey

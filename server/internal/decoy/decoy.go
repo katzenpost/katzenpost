@@ -48,6 +48,7 @@ import (
 	"github.com/katzenpost/katzenpost/server/internal/packet"
 	"github.com/katzenpost/katzenpost/server/internal/pkicache"
 	"github.com/katzenpost/katzenpost/server/internal/provider/kaetzchen"
+	"github.com/katzenpost/katzenpost/server/loops"
 )
 
 const maxAttempts = 3
@@ -64,18 +65,6 @@ type surbCtx struct {
 	sentTime    time.Time
 
 	etaNode *avl.Node
-}
-
-type LoopStats struct {
-	Epoch uint64
-	Stats []*LoopStat
-}
-
-type LoopStat struct {
-	forwardPath []*sphinx.PathHop
-	replyPath   []*sphinx.PathHop
-	sentTime    time.Time
-	isSuccess   bool
 }
 
 type decoy struct {
@@ -96,7 +85,9 @@ type decoy struct {
 	surbStore  map[uint64]*surbCtx
 	surbIDBase uint64
 
-	loopStats map[uint64][]*LoopStat
+	loopStatsLock   *sync.RWMutex
+	loopStats       map[uint64][]*loops.LoopStat
+	failedLoopStats map[uint64][]*loops.LoopStat
 }
 
 func (d *decoy) OnNewDocument(ent *pkicache.Entry) {
@@ -142,11 +133,11 @@ func (d *decoy) OnPacket(pkt *packet.Packet) {
 		return
 	}
 
-	loopstat := &LoopStat{
-		forwardPath: ctx.forwardPath,
-		replyPath:   ctx.replyPath,
-		sentTime:    ctx.sentTime,
-		isSuccess:   true,
+	loopstat := &loops.LoopStat{
+		ForwardPath: ctx.forwardPath,
+		ReplyPath:   ctx.replyPath,
+		SentTime:    ctx.sentTime,
+		IsSuccess:   true,
 	}
 	epoch, _, _ := epochtime.Now()
 	d.loopStats[epoch] = append(d.loopStats[epoch], loopstat)
@@ -237,9 +228,6 @@ func (d *decoy) worker() {
 func (d *decoy) sendDecoyPacket(ent *pkicache.Entry) {
 	// TODO: (#52) Do nothing if the rate limiter would discard the packet(?).
 
-	// TODO: Determine if this should be a loop or discard packet.
-	isLoopPkt := true // HACK HACK HACK HACK.
-
 	selfDesc := ent.Self()
 	if selfDesc.Provider {
 		// The code doesn't handle this correctly yet.  It does need to
@@ -272,11 +260,8 @@ func (d *decoy) sendDecoyPacket(ent *pkicache.Entry) {
 		return
 	}
 
-	if isLoopPkt {
-		d.sendLoopPacket(doc, []byte(loopRecip), selfDesc, providerDesc)
-		return
-	}
-	d.sendDiscardPacket(doc, []byte(loopRecip), selfDesc, providerDesc)
+	d.sendLoopPacket(doc, []byte(loopRecip), selfDesc, providerDesc)
+	return
 }
 
 func (d *decoy) sendDecoyLoopStats(ent *pkicache.Entry) {
@@ -308,7 +293,7 @@ func (d *decoy) sendDecoyLoopStats(ent *pkicache.Entry) {
 		return
 	}
 
-	d.sendLoopPacket(doc, []byte(destRecip), selfDesc, providerDesc)
+	d.sendLoopStatsPacket(doc, []byte(destRecip), selfDesc, providerDesc)
 	return
 }
 
@@ -354,7 +339,7 @@ func (d *decoy) sendLoopStatsPacket(doc *pki.Document, recipient []byte, src, ds
 				return
 			}
 
-			loopstats := &LoopStats{
+			loopstats := &loops.LoopStats{
 				Epoch: epoch - 1,
 				Stats: stats,
 			}
@@ -454,6 +439,25 @@ func (d *decoy) sendLoopPacket(doc *pki.Document, recipient []byte, src, dst *pk
 			d.log.Debugf("Dispatching loop packet: SURB ID: 0x%08x", binary.BigEndian.Uint64(surbID[8:]))
 
 			d.dispatchPacket(fwdPath, pkt)
+
+			loopStat := &loops.LoopStat{
+				ForwardPath: fwdPath,
+				ReplyPath:   revPath,
+				SentTime:    time.Now(),
+				IsSuccess:   false,
+			}
+			epoch, _, _ := epochtime.Now()
+
+			d.loopStatsLock.Lock()
+			myloops, ok := d.failedLoopStats[epoch]
+			if !ok {
+				d.failedLoopStats[epoch] = make([]*loops.LoopStat, 0)
+				myloops = d.failedLoopStats[epoch]
+			}
+			myloops = append(myloops, loopStat)
+			d.failedLoopStats[epoch] = myloops
+			d.loopStatsLock.Unlock()
+
 			return
 		}
 	}
@@ -573,11 +577,11 @@ func (d *decoy) sweepSURBCtxs() {
 			break
 		}
 
-		stat := &LoopStat{
-			forwardPath: ctx.forwardPath,
-			replyPath:   ctx.replyPath,
-			sentTime:    ctx.sentTime,
-			isSuccess:   false,
+		stat := &loops.LoopStat{
+			ForwardPath: ctx.forwardPath,
+			ReplyPath:   ctx.replyPath,
+			SentTime:    ctx.sentTime,
+			IsSuccess:   false,
 		}
 		epoch, _, _ := epochtime.Now()
 		d.loopStats[epoch] = append(d.loopStats[epoch], stat)
@@ -626,7 +630,7 @@ func New(glue glue.Glue) (glue.Decoy, error) {
 		}),
 		surbStore:  make(map[uint64]*surbCtx),
 		surbIDBase: uint64(time.Now().Unix()),
-		loopStats:  make(map[uint64][]*LoopStat),
+		loopStats:  make(map[uint64][]*loops.LoopStat),
 	}
 	if _, err := io.ReadFull(rand.Reader, d.recipient); err != nil {
 		return nil, err
