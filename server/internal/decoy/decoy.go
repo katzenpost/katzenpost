@@ -299,22 +299,8 @@ func (d *decoy) sendDecoyLoopStats(ent *pkicache.Entry) {
 	}
 	doc := ent.Document()
 	// Find a random Provider that is running a loop/discard service.
-	var providerDesc *pki.MixDescriptor
-	var destRecip string
-	for _, idx := range d.rng.Perm(len(doc.Providers)) {
-		desc := doc.Providers[idx]
-		params, ok := desc.Kaetzchen[kaetzchen.StatsCapability]
-		if !ok {
-			continue
-		}
-		destRecip, ok = params["endpoint"].(string)
-		if !ok {
-			continue
-		}
-		providerDesc = desc
-		break
-	}
-	if providerDesc == nil {
+	destRecip, providerDesc, err := findService(d.rng, kaetzchen.StatsCapability, doc)
+	if err != nil {
 		d.log.Warningf("Failed to find suitable provider")
 		return
 	}
