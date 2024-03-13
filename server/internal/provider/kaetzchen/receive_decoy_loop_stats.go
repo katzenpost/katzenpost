@@ -15,8 +15,7 @@ const StatsCapability = "stats"
 type kaetzchenStats struct {
 	log    *logging.Logger
 	params Parameters
-	glue   glue.Glue // XXX NOTE(DAVID): use this glue reference later on to save the loop stats
-	// to the correct location where it can be exchanged via our PQ Noise based gossip protocol.
+	glue   glue.Glue
 }
 
 func (k *kaetzchenStats) Capability() string {
@@ -28,10 +27,6 @@ func (k *kaetzchenStats) Parameters() Parameters {
 }
 
 func (k *kaetzchenStats) OnRequest(id uint64, payload []byte, hasSURB bool) ([]byte, error) {
-	if !hasSURB {
-		return nil, ErrNoResponse
-	}
-
 	k.log.Debugf("Handling request: %v", id)
 
 	stats := &loops.LoopStats{}
@@ -43,10 +38,14 @@ func (k *kaetzchenStats) OnRequest(id uint64, payload []byte, hasSURB bool) ([]b
 
 	k.log.Noticef("Storing received LoopStats for %d loops", len(stats.Stats))
 
-	// XXX TODO(DAVID): store loop stats here
+	err = k.glue.LoopsCache().Store(stats)
+	if err != nil {
+		k.log.Errorf("failed to store decoy loop stats cache: %s", err)
+		return nil, err
+	}
 
-	// success
-	return []byte{0, 0, 0}, nil
+	// success, no reply
+	return nil, nil
 }
 
 func (k *kaetzchenStats) Halt() {
