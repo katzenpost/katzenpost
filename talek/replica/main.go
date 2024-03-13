@@ -16,6 +16,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -28,8 +29,8 @@ import (
 	"path/filepath"
 
 	"github.com/fxamacker/cbor/v2"
-	"github.com/katzenpost/katzenpost/client/utils"
 	"github.com/katzenpost/katzenpost/core/log"
+	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/katzenpost/katzenpost/server/cborplugin"
 	"github.com/katzenpost/katzenpost/talek/replica/common"
@@ -223,17 +224,37 @@ func (s *talekRequestHandler) OnCommand(cmd cborplugin.Command) error {
 		s.write(params)
 	case *cborplugin.Document:
 		// restart the replica service if our TrustDomainIndex has changed
-		doc := &cmd.Document //get a *pki.Document
+		doc := &cmd.Document
 		s.log.Notice("Received PKI Document for Epoch %d", doc.Epoch)
 
-		// find all of the replica services in the PKI
-		descs := utils.FindServices(capability, doc)
+		// find all of the talek replica instances
+		replicas := make([]*pki.MixDescriptor, 0)
+		for _, provider := range doc.Providers {
+			for capa, _ := range provider.Kaetzchen {
+				if capa == capability {
+					s.log.Notice("Found %s@%s in PKI", capability, provider.Name)
+					replicas = append(replicas, provider)
+					break
+				}
+			}
+		}
 
+		// check which TrustDomainIndex this replica is by PKI order
 		inPKI := false
-		for idx, desc := range descs {
-			if desc.Provider == s.config.TrustDomain.Name {
+		for idx, replica := range replicas {
+			params := replica.Kaetzchen[capability]
+			// XXX ideally we would verify ownership of this key
+			p := params["PublicKey"]
+			publicKey := p.(string)
+			publicKeyBytes, err := base64.StdEncoding.DecodeString(publicKey)
+			if err != nil {
+				s.log.Errorf("Failed to decode PublicKey from %s", replica.Name)
+				return nil
+			}
+			if bytes.Equal(publicKeyBytes, s.config.TrustDomain.PublicKey[:]) {
 				inPKI = true
-				if s.config.TrustDomainIndex != idx {
+				s.log.Notice("Found this Replica in position %d", idx)
+				if idx != s.config.TrustDomainIndex {
 					s.log.Notice("Restarting replica Idx %d as TrustDomainIndex %d", s.config.TrustDomainIndex, idx)
 					s.replica.Close()
 					s.config.TrustDomainIndex = idx
@@ -241,6 +262,7 @@ func (s *talekRequestHandler) OnCommand(cmd cborplugin.Command) error {
 				}
 			}
 		}
+
 		if !inPKI {
 			// service is not in the PKI
 			s.log.Errorf("TrustDomain %s not found in PKI", s.config.TrustDomain.Name)
