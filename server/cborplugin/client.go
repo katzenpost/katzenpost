@@ -148,16 +148,16 @@ func (r *ParametersRequest) Unmarshal(b []byte) error {
 
 // Document is a pki.Document with Marshal and Unmarshal methods to implement Command
 type Document struct {
-	*pki.Document
+	pki.Document
 }
 
 // Marshal serializes Request
-func (r Document) Marshal() ([]byte, error) {
+func (r *Document) Marshal() ([]byte, error) {
 	return cbor.Marshal(r)
 }
 
 // Unmarshal deserializes Request
-func (r Document) Unmarshal(b []byte) error {
+func (r *Document) Unmarshal(b []byte) error {
 	return cbor.Unmarshal(b, r)
 }
 

@@ -409,7 +409,7 @@ func (k *CBORPluginWorker) register(pluginConf *config.CBORPluginKaetzchen) erro
 // OnNewDocument is called when a new pki.Document is available
 func (k *CBORPluginWorker) OnNewDocument(doc *pki.Document) {
 	// wrap in an Document Command and send to each plugin client
-	cmd := &cborplugin.Document{doc}
+	cmd := &cborplugin.Document{Document:*doc}
 	for _, pluginClient := range k.clients {
 		pluginClient.WriteChan() <- cmd
 	}
