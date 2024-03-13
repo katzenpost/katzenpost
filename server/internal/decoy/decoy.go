@@ -123,7 +123,9 @@ type decoy struct {
 	trialLoopsLock *sync.RWMutex
 	trialLoops     map[uint64]*trialLoop // surbCtx.id -> *trialLoop
 
-	isSending *sync.Mutex
+	isSending      *sync.Mutex
+	startingEpoch  uint64
+	epochsReported map[uint64]bool // epoch id -> always false
 }
 
 func (d *decoy) OnNewDocument(ent *pkicache.Entry) {
@@ -238,7 +240,21 @@ func (d *decoy) worker() {
 			instrument.PKIDocs(fmt.Sprintf("%v", now))
 			docCache = newEnt
 
+			// don't send decoy loop stats too early, wait at least 4 epochs
+			if now-d.startingEpoch < 4 {
+				continue
+			}
+
+			// skip if already reported
+			_, ok := d.epochsReported[now-1]
+			if ok {
+				continue
+			}
+
 			d.sendDecoyLoopStats(docCache)
+
+			d.epochsReported[now-1] = false
+
 		case <-timer.C:
 			timerFired = true
 		}
@@ -330,11 +346,7 @@ func (d *decoy) sendDecoyPacket(ent *pkicache.Entry) {
 }
 
 func (d *decoy) sendDecoyLoopStats(ent *pkicache.Entry) {
-
-	ok := d.isSending.TryLock()
-	if !ok {
-		return
-	}
+	d.isSending.Lock()
 
 	go func() {
 		d.doSendDecoyLoopStats(ent)
@@ -694,6 +706,9 @@ func New(glue glue.Glue) (glue.Decoy, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	epoch, _, _ := epochtime.Now()
+
 	d := &decoy{
 		geo:       glue.Config().SphinxGeometry,
 		sphinx:    s,
@@ -717,10 +732,12 @@ func New(glue glue.Glue) (glue.Decoy, error) {
 				return 0
 			}
 		}),
-		surbStore:  make(map[uint64]*surbCtx),
-		surbIDBase: uint64(time.Now().Unix()),
-		trialLoops: make(map[uint64]*trialLoop),
-		loopStats:  make(map[uint64]map[uint64]*loops.LoopStat),
+		surbStore:      make(map[uint64]*surbCtx),
+		surbIDBase:     uint64(time.Now().Unix()),
+		trialLoops:     make(map[uint64]*trialLoop),
+		loopStats:      make(map[uint64]map[uint64]*loops.LoopStat),
+		startingEpoch:  epoch,
+		epochsReported: make(map[uint64]bool),
 	}
 	if _, err := io.ReadFull(rand.Reader, d.recipient); err != nil {
 		return nil, err
