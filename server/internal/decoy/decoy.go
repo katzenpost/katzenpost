@@ -26,6 +26,7 @@ import (
 	"math"
 	mRand "math/rand"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/fxamacker/cbor/v2"
@@ -55,6 +56,31 @@ import (
 const maxAttempts = 3
 
 var errMaxAttempts = errors.New("decoy: max path selection attempts exceeded")
+
+// ServiceDescriptor describe a mixnet Provider-side service.
+type ServiceDescriptor struct {
+	// RecipientQueueID is the service name or queue ID.
+	RecipientQueueID []byte
+	// Provider name.
+	MixDescriptor *pki.MixDescriptor
+}
+
+// findServices is a helper function for finding Provider-side services in the PKI document.
+func findServices(capability string, doc *pki.Document) []*ServiceDescriptor {
+	services := []*ServiceDescriptor{}
+	for _, provider := range doc.Providers {
+		for cap := range provider.Kaetzchen {
+			if cap == capability {
+				serviceID := &ServiceDescriptor{
+					RecipientQueueID: []byte(provider.Kaetzchen[cap]["endpoint"].(string)),
+					MixDescriptor:    provider,
+				}
+				services = append(services, serviceID)
+			}
+		}
+	}
+	return services
+}
 
 type surbCtx struct {
 	id      uint64
@@ -93,8 +119,12 @@ type decoy struct {
 	surbIDBase uint64
 
 	loopStatsLock *sync.RWMutex
-	trialLoops    map[uint64]*trialLoop                 // surbCtx.id -> *trialLoop
 	loopStats     map[uint64]map[uint64]*loops.LoopStat // epoch id -> surbCtx.id -> *LoopStat
+
+	trialLoopsLock *sync.RWMutex
+	trialLoops     map[uint64]*trialLoop // surbCtx.id -> *trialLoop
+
+	isSending uint32
 }
 
 func (d *decoy) OnNewDocument(ent *pkicache.Entry) {
@@ -142,9 +172,9 @@ func (d *decoy) OnPacket(pkt *packet.Packet) {
 
 	// remove loop from trialLoops and add it to
 	// loopStats map
-	d.loopStatsLock.Lock()
-	defer d.loopStatsLock.Unlock()
+	d.trialLoopsLock.RLock()
 	trial, ok := d.trialLoops[ctx.id]
+	d.trialLoopsLock.RUnlock()
 	if !ok {
 		d.log.Error("failed to find decoy loop entry in trialLoops map")
 		return
@@ -155,12 +185,22 @@ func (d *decoy) OnPacket(pkt *packet.Packet) {
 		SentTime:    trial.sentTime,
 		IsSuccess:   true,
 	}
+
+	d.loopStatsLock.RLock()
 	_, ok = d.loopStats[ctx.epoch]
+	d.loopStatsLock.RUnlock()
 	if !ok {
+		d.loopStatsLock.Lock()
 		d.loopStats[ctx.epoch] = make(map[uint64]*loops.LoopStat)
+		d.loopStatsLock.Unlock()
 	}
+	d.loopStatsLock.Lock()
 	d.loopStats[ctx.epoch][ctx.id] = result
+	d.loopStatsLock.Unlock()
+
+	d.trialLoopsLock.Lock()
 	delete(d.trialLoops, ctx.id)
+	d.trialLoopsLock.Unlock()
 }
 
 func (d *decoy) worker() {
@@ -291,6 +331,18 @@ func (d *decoy) sendDecoyPacket(ent *pkicache.Entry) {
 }
 
 func (d *decoy) sendDecoyLoopStats(ent *pkicache.Entry) {
+	if atomic.LoadUint32(&d.isSending) == 1 {
+		// alreadying sending
+		return
+	}
+	go func() {
+		atomic.StoreUint32(&d.isSending, 1)
+		d.doSendDecoyLoopStats(ent)
+		atomic.StoreUint32(&d.isSending, 0)
+	}()
+}
+
+func (d *decoy) doSendDecoyLoopStats(ent *pkicache.Entry) {
 	selfDesc := ent.Self()
 	if selfDesc.Provider {
 		// The code doesn't handle this correctly yet.  It does need to
@@ -298,14 +350,41 @@ func (d *decoy) sendDecoyLoopStats(ent *pkicache.Entry) {
 		panic("BUG: Provider generated decoy traffic not supported yet")
 	}
 	doc := ent.Document()
-	// Find a random Provider that is running a loop/discard service.
-	destRecip, providerDesc, err := findService(d.rng, kaetzchen.StatsCapability, doc)
-	if err != nil {
-		d.log.Warningf("Failed to find suitable provider")
-		return
+
+	// Find a random Provider that is running a "loop-stats-caching service".
+	dests := findServices(kaetzchen.StatsCapability, doc)
+	if len(dests) == 0 {
+		panic("BUG: no service nodes are running the Loop-Stats-Caching service")
 	}
 
-	d.sendLoopStatsPacket(doc, []byte(destRecip), selfDesc, providerDesc)
+	// send the loop stats to 1/3 of a service nodes or 10 service nodes whichever is less
+	shares := 0
+	n := len(dests)
+	switch {
+	case n < 10:
+		// send to all service nodes
+		shares = n
+	case n >= 10 && n < 30:
+		// send to 1/3 of the service nodes
+		shares = n / 3
+	case n >= 30:
+		// send to 10 of the service nodes
+		shares = 10
+	}
+
+	// don't send to the same destination more than once
+	remove := func(slice []*ServiceDescriptor, s int) []*ServiceDescriptor {
+		return append(slice[:s], slice[s+1:]...)
+	}
+
+	for i := 0; i < shares; i++ {
+		// XXX FIXME TODO: randomize delay between sendings!
+		index := mRand.Intn(len(dests))
+		dest := dests[index]
+		d.sendLoopStatsPacket(doc, dest.RecipientQueueID, selfDesc, dest.MixDescriptor)
+		dests = remove(dests, index)
+	}
+
 	return
 }
 
@@ -341,14 +420,15 @@ func (d *decoy) sendLoopStatsPacket(doc *pki.Document, recipient []byte, src, ds
 			epoch, _, _ := epochtime.Now()
 			myEpoch := epoch - 1
 
-			d.loopStatsLock.Lock()
-			defer d.loopStatsLock.Unlock()
+			d.loopStatsLock.RLock()
 			loopList := make([]*loops.LoopStat, len(d.loopStats[myEpoch]))
 			i := 0
 			for _, loop := range d.loopStats[myEpoch] {
 				loopList[i] = loop
 				i++
 			}
+			d.loopStatsLock.RUnlock()
+
 			mixid := hash.Sum256From(d.glue.IdentityPublicKey())
 			loopstats := &loops.LoopStats{
 				Epoch:           myEpoch,
@@ -455,9 +535,9 @@ func (d *decoy) sendLoopPacket(doc *pki.Document, recipient []byte, src, dst *pk
 				isSuccess:   false,
 			}
 
-			d.loopStatsLock.Lock()
+			d.trialLoopsLock.Lock()
 			d.trialLoops[ctx.id] = trialStat
-			d.loopStatsLock.Unlock()
+			d.trialLoopsLock.Unlock()
 
 			return
 		}
@@ -589,14 +669,17 @@ func (d *decoy) sweepSURBCtxs() {
 
 		// remove trial loop stat from trialLoops map
 		// and add the entry as a failed loop into our loopStats map
-		d.loopStatsLock.Lock()
+		d.trialLoopsLock.Lock()
 		trial, ok := d.trialLoops[ctx.id]
 		if !ok {
-			d.loopStatsLock.Unlock()
+			d.trialLoopsLock.Unlock()
 			return
 		}
 		delete(d.trialLoops, ctx.id)
+		d.trialLoopsLock.Unlock()
+
 		var isSuccess bool
+		d.loopStatsLock.Lock()
 		_, ok = d.loopStats[ctx.epoch]
 		if !ok {
 			d.loopStats[ctx.epoch] = make(map[uint64]*loops.LoopStat)
