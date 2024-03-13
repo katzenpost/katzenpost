@@ -224,6 +224,7 @@ func (s *talekRequestHandler) OnCommand(cmd cborplugin.Command) error {
 	case *cborplugin.Document:
 		// restart the replica service if our TrustDomainIndex has changed
 		doc := cmd.Document
+		s.log.Notice("Received PKI Document for Epoch %d", doc.Epoch)
 
 		// find all of the replica services in the PKI
 		descs := utils.FindServices(capability, doc)
