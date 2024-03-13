@@ -402,33 +402,19 @@ func (d *decoy) doSendDecoyLoopStats(ent *pkicache.Entry) {
 }
 
 func (d *decoy) sendLoopStatsPacket(doc *pki.Document, recipient []byte, src, dst *pki.MixDescriptor) {
-	var surbID [sConstants.SURBIDLength]byte
-	d.makeSURBID(&surbID)
-
 	for attempts := 0; attempts < maxAttempts; attempts++ {
 		now := time.Now()
 
-		fwdPath, then, err := path.New(d.rng, d.geo, doc, recipient, src, dst, &surbID, time.Now(), false, true)
+		fwdPath, then, err := path.New(d.rng, d.geo, doc, recipient, src, dst, nil, time.Now(), false, true)
 		if err != nil {
 			d.log.Debugf("Failed to select forward path: %v", err)
 			return
 		}
 
-		revPath, then, err := path.New(d.rng, d.geo, doc, d.recipient, dst, src, &surbID, then, false, false)
-		if err != nil {
-			d.log.Debugf("Failed to select reverse path: %v", err)
-			return
-		}
-
 		if deltaT := then.Sub(now); deltaT < epochtime.Period*2 {
-			zeroBytes := make([]byte, d.geo.UserForwardPayloadLength)
+			zeroBytes := make([]byte, d.geo.UserForwardPayloadLength+d.geo.SURBLength)
 			payload := make([]byte, 2, 2+d.geo.SURBLength+d.geo.UserForwardPayloadLength)
-			payload[0] = 1 // Packet has a SURB.
-
-			surb, k, err := d.sphinx.NewSURB(rand.Reader, revPath)
-			if err != nil {
-				d.log.Debugf("Failed to generate SURB: %v", err)
-			}
+			payload[0] = 0 // Packet does NOT have a SURB.
 
 			epoch, _, _ := epochtime.Now()
 			myEpoch := epoch - 1
@@ -455,19 +441,8 @@ func (d *decoy) sendLoopStatsPacket(doc *pki.Document, recipient []byte, src, ds
 				return
 			}
 
-			payload = append(payload, surb...)
 			payload = append(payload, blob...)
 			payload = append(payload, zeroBytes[len(blob):]...)
-
-			// TODO: This should probably also store path information,
-			// so that it's possible to figure out which links/nodes
-			// are causing issues.
-			ctx := &surbCtx{
-				id:      binary.BigEndian.Uint64(surbID[8:]),
-				eta:     monotime.Now() + deltaT,
-				sprpKey: k,
-			}
-			d.storeSURBCtx(ctx)
 
 			pkt, err := d.sphinx.NewPacket(rand.Reader, fwdPath, payload)
 			if err != nil {
@@ -475,9 +450,7 @@ func (d *decoy) sendLoopStatsPacket(doc *pki.Document, recipient []byte, src, ds
 				return
 			}
 
-			d.logPath(doc, fwdPath)
-			d.logPath(doc, revPath)
-			d.log.Debugf("Dispatching loop packet: SURB ID: 0x%08x", binary.BigEndian.Uint64(surbID[8:]))
+			d.log.Debug("Dispatching decoy loop statistics packet")
 
 			d.dispatchPacket(fwdPath, pkt)
 			return
