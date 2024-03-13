@@ -304,7 +304,10 @@ func (c *incomingConn) worker() {
 				continue
 			case *commands.GetDecoyLoopsCache:
 				c.log.Debugf("Received GetDecoyLoopsCache from client.")
-				c.onGetDecoyLoopsCache(cmd)
+				err := c.onGetDecoyLoopsCache(cmd)
+				if err != nil {
+					c.log.Errorf("failed to handle GetDecoyLoopsCache command: %s", err)
+				}
 				continue
 			default:
 				// Probably a common command, like SendPacket.
@@ -321,7 +324,7 @@ func (c *incomingConn) worker() {
 	// NOTREACHED
 }
 
-func (c *incomingConn) onGetDecoyLoopsCache(cmd *commands.GetDecoyLoopsCache) {
+func (c *incomingConn) onGetDecoyLoopsCache(cmd *commands.GetDecoyLoopsCache) error {
 
 	// XXX FIXME(david): make it work
 
