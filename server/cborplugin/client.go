@@ -34,6 +34,7 @@ import (
 
 	"github.com/fxamacker/cbor/v2"
 	"github.com/katzenpost/katzenpost/core/log"
+	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/worker"
 	"gopkg.in/op/go-logging.v1"
 )
@@ -56,6 +57,10 @@ func init() {
 	TagSet.Add(
 		cbor.TagOptions{EncTag: cbor.EncTagRequired, DecTag: cbor.DecTagRequired},
 		reflect.TypeOf(Parameters{}), 1404)
+	TagSet.Add(
+		cbor.TagOptions{EncTag: cbor.EncTagRequired, DecTag: cbor.DecTagRequired},
+		reflect.TypeOf(Document{}), 1405)
+
 }
 
 // Request is the struct type used in service query requests to plugins.
@@ -138,6 +143,21 @@ func (r *ParametersRequest) Marshal() ([]byte, error) {
 
 // Unmarshal deserializes ParametersRequest
 func (r *ParametersRequest) Unmarshal(b []byte) error {
+	return cbor.Unmarshal(b, r)
+}
+
+// Document is a pki.Document with Marshal and Unmarshal methods to implement Command
+type Document struct {
+	*pki.Document
+}
+
+// Marshal serializes Request
+func (r Document) Marshal() ([]byte, error) {
+	return cbor.Marshal(r)
+}
+
+// Unmarshal deserializes Request
+func (r Document) Unmarshal(b []byte) error {
 	return cbor.Unmarshal(b, r)
 }
 

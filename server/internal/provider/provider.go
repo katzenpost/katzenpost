@@ -28,6 +28,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/thwack"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/worker"
@@ -133,9 +134,12 @@ func (p *provider) KaetzchenForPKI() (map[string]map[string]interface{}, error) 
 
 // OnNewDocument is called when a new PKI document is received
 func (p *provider) OnNewDocument(doc *pki.Document) {
+	p.kaetzchenWorker.OnNewDocument(doc)
+	p.cborPluginKaetzchenWorker.OnNewDocument(doc)
+
 	docCh := p.docCh.In()
 	select {
-	case docCh <= doc:
+	case docCh <- doc:
 	case <-p.HaltCh():
 	}
 }
@@ -238,7 +242,7 @@ func (p *provider) worker() {
 			p.gcEphemeralClients()
 			continue
 		case d := <-docCh:
-			doc = d.(*pki.Document)
+			doc := d.(*pki.Document)
 			p.log.Notice("New document for epoch received: %d", doc.Epoch)
 			// TODO: update kaetzchen plugin workers with new pki document
 			continue

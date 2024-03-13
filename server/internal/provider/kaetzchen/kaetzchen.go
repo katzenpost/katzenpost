@@ -26,6 +26,7 @@ import (
 	"time"
 
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/katzenpost/katzenpost/server/config"
 	"github.com/katzenpost/katzenpost/server/internal/glue"
@@ -324,6 +325,10 @@ func (k *KaetzchenWorker) KaetzchenForPKI() map[string]map[string]interface{} {
 		m[v.Capability()] = v.Parameters()
 	}
 	return m
+}
+
+// OnNewDocument is called when a new pki.Document is available
+func (k *KaetzchenWorker) OnNewDocument(doc *pki.Document) {
 }
 
 func New(glue glue.Glue) (*KaetzchenWorker, error) {

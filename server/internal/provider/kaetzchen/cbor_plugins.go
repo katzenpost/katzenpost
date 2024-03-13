@@ -30,6 +30,7 @@ import (
 
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
+	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/katzenpost/katzenpost/server/cborplugin"
 	"github.com/katzenpost/katzenpost/server/config"
@@ -403,4 +404,13 @@ func (k *CBORPluginWorker) register(pluginConf *config.CBORPluginKaetzchen) erro
 		k.unregister(endpoint, pluginClient)
 	})
 	return nil
+}
+
+// OnNewDocument is called when a new pki.Document is available
+func (k *CBORPluginWorker) OnNewDocument(doc *pki.Document) {
+	// wrap in an Document Command and send to each plugin client
+	cmd := &cborplugin.Document{doc}
+	for _, pluginClient := range k.clients {
+		pluginClient.WriteChan() <- cmd
+	}
 }
