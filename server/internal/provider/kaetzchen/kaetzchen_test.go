@@ -43,6 +43,7 @@ import (
 	"github.com/katzenpost/katzenpost/server/internal/glue"
 	"github.com/katzenpost/katzenpost/server/internal/packet"
 	"github.com/katzenpost/katzenpost/server/internal/pkicache"
+	"github.com/katzenpost/katzenpost/server/loops"
 	"github.com/katzenpost/katzenpost/server/spool"
 	"github.com/katzenpost/katzenpost/server/userdb"
 )
@@ -147,6 +148,10 @@ type mockServer struct {
 
 type mockGlue struct {
 	s *mockServer
+}
+
+func (g *mockGlue) LoopsCache() *loops.Cache {
+	return nil
 }
 
 func (g *mockGlue) Config() *config.Config {

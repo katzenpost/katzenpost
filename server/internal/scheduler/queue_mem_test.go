@@ -33,6 +33,7 @@ import (
 	"github.com/katzenpost/katzenpost/server/config"
 	"github.com/katzenpost/katzenpost/server/internal/glue"
 	"github.com/katzenpost/katzenpost/server/internal/packet"
+	"github.com/katzenpost/katzenpost/server/loops"
 )
 
 type mockServer struct {
@@ -40,6 +41,10 @@ type mockServer struct {
 }
 type mockGlue struct {
 	s mockServer
+}
+
+func (m *mockGlue) LoopsCache() *loops.Cache {
+	return nil
 }
 
 func (m *mockGlue) Config() *config.Config {
