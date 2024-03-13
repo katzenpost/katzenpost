@@ -219,8 +219,10 @@ func (p *pki) worker() {
 				p.log.Debugf("Updating decoy document for epoch %v.", now)
 				p.glue.Decoy().OnNewDocument(ent)
 
-				p.log.Debugf("Updating provider document for epoch %v.", now)
-				p.glue.Provider().OnNewDocument(ent.Document())
+				if p.glue.Config().Server.IsProvider {
+					p.log.Debugf("Updating provider document for epoch %v.", now)
+					p.glue.Provider().OnNewDocument(ent.Document())
+				}
 
 				lastUpdateEpoch = now
 			}
