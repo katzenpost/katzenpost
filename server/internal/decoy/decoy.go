@@ -242,12 +242,14 @@ func (d *decoy) worker() {
 
 			// don't send decoy loop stats too early, wait at least 4 epochs
 			if now-d.startingEpoch < 4 {
+				d.log.Debug("not sending decoy loop stats in the first 4 epochs")
 				continue
 			}
 
 			// skip if already reported
 			_, ok := d.epochsReported[now-1]
 			if ok {
+				d.log.Debug("skipping decoy stats report, already reported for last epoch")
 				continue
 			}
 
@@ -346,7 +348,7 @@ func (d *decoy) sendDecoyPacket(ent *pkicache.Entry) {
 }
 
 func (d *decoy) sendDecoyLoopStats(ent *pkicache.Entry) {
-	// FIX ME
+	d.log.Debug("sendDecoyLoopStats")
 
 	d.isSending.Lock()
 	go func() {
@@ -357,6 +359,7 @@ func (d *decoy) sendDecoyLoopStats(ent *pkicache.Entry) {
 }
 
 func (d *decoy) doSendDecoyLoopStats(ent *pkicache.Entry) {
+	// FIX ME
 	d.log.Debug("doSendDecoyLoopStats begin")
 	selfDesc := ent.Self()
 	if selfDesc.Provider {
@@ -438,20 +441,12 @@ func (d *decoy) sendLoopStatsPacket(doc *pki.Document, recipient []byte, src, ds
 			epoch, _, _ := epochtime.Now()
 			myEpoch := epoch - 1
 
-			d.loopStatsLock.RLock()
-			loopList := make([]*loops.LoopStat, len(d.loopStats[myEpoch]))
-			i := 0
-			for _, loop := range d.loopStats[myEpoch] {
-				loopList[i] = loop
-				i++
-			}
-			d.loopStatsLock.RUnlock()
-
 			mixid := hash.Sum256From(d.glue.IdentityPublicKey())
+
+			// FIX ME
 			loopstats := &loops.LoopStats{
 				Epoch:           myEpoch,
 				MixIdentityHash: &mixid,
-				Stats:           loopList,
 			}
 
 			blob, err := cbor.Marshal(loopstats)
@@ -470,8 +465,9 @@ func (d *decoy) sendLoopStatsPacket(doc *pki.Document, recipient []byte, src, ds
 			}
 
 			d.log.Debug("Dispatching decoy loop statistics packet")
-
 			d.dispatchPacket(fwdPath, pkt)
+			d.log.Debug("AFTER Dispatching decoy loop statistics packet")
+
 			return
 		}
 	}
