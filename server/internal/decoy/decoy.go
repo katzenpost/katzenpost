@@ -377,8 +377,21 @@ func (d *decoy) doSendDecoyLoopStats(ent *pkicache.Entry) {
 		return append(slice[:s], slice[s+1:]...)
 	}
 
+	hasDelay := true
 	for i := 0; i < shares; i++ {
-		// XXX FIXME TODO: randomize delay between sendings!
+
+		// no random sleep for warped epoch
+		if epochtime.Period == (2 * time.Minute) {
+			hasDelay = false
+		}
+
+		// random sleep for < 30 seconds
+		if hasDelay {
+			maxSeconds := 30
+			snooze := time.Duration(mRand.Intn(maxSeconds)) * time.Second
+			time.Sleep(snooze)
+		}
+
 		index := mRand.Intn(len(dests))
 		dest := dests[index]
 		d.sendLoopStatsPacket(doc, dest.RecipientQueueID, selfDesc, dest.MixDescriptor)
