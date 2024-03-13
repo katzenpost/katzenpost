@@ -346,15 +346,18 @@ func (d *decoy) sendDecoyPacket(ent *pkicache.Entry) {
 }
 
 func (d *decoy) sendDecoyLoopStats(ent *pkicache.Entry) {
-	d.isSending.Lock()
+	// FIX ME
 
+	d.isSending.Lock()
 	go func() {
 		d.doSendDecoyLoopStats(ent)
 		d.isSending.Unlock()
 	}()
+
 }
 
 func (d *decoy) doSendDecoyLoopStats(ent *pkicache.Entry) {
+	d.log.Debug("doSendDecoyLoopStats begin")
 	selfDesc := ent.Self()
 	if selfDesc.Provider {
 		// The code doesn't handle this correctly yet.  It does need to
@@ -391,7 +394,7 @@ func (d *decoy) doSendDecoyLoopStats(ent *pkicache.Entry) {
 
 	hasDelay := true
 	for i := 0; i < shares; i++ {
-
+		d.log.Debug("for")
 		// no random sleep for warped epoch
 		if epochtime.Period == (2 * time.Minute) {
 			hasDelay = false
@@ -401,15 +404,19 @@ func (d *decoy) doSendDecoyLoopStats(ent *pkicache.Entry) {
 		if hasDelay {
 			maxSeconds := 30
 			snooze := time.Duration(mRand.Intn(maxSeconds)) * time.Second
+			d.log.Infof("Sleeping for %s", snooze)
 			time.Sleep(snooze)
 		}
 
 		index := mRand.Intn(len(dests))
 		dest := dests[index]
+		d.log.Debug("before sendLoopStatsPacket")
 		d.sendLoopStatsPacket(doc, dest.RecipientQueueID, selfDesc, dest.MixDescriptor)
+		d.log.Debug("after sendLoopStatsPacket")
 		dests = remove(dests, index)
 	}
 
+	d.log.Debug("doSendDecoyLoopStats end")
 	return
 }
 
@@ -732,10 +739,16 @@ func New(glue glue.Glue) (glue.Decoy, error) {
 				return 0
 			}
 		}),
-		surbStore:      make(map[uint64]*surbCtx),
-		surbIDBase:     uint64(time.Now().Unix()),
+		surbStore:  make(map[uint64]*surbCtx),
+		surbIDBase: uint64(time.Now().Unix()),
+
+		loopStatsLock: new(sync.RWMutex),
+		loopStats:     make(map[uint64]map[uint64]*loops.LoopStat),
+
+		trialLoopsLock: new(sync.RWMutex),
 		trialLoops:     make(map[uint64]*trialLoop),
-		loopStats:      make(map[uint64]map[uint64]*loops.LoopStat),
+
+		isSending:      new(sync.Mutex),
 		startingEpoch:  epoch,
 		epochsReported: make(map[uint64]bool),
 	}
