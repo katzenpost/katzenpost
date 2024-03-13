@@ -28,6 +28,7 @@ import (
 	"path/filepath"
 
 	"github.com/fxamacker/cbor/v2"
+	"github.com/katzenpost/katzenpost/client/utils"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/katzenpost/katzenpost/server/cborplugin"
@@ -36,8 +37,11 @@ import (
 	"github.com/privacylab/talek/server"
 )
 
+const capability = "talek_replica"
+
 type talekRequestHandler struct {
 	worker.Worker
+	backing string
 	replica *server.Replica
 	config  *server.Config
 	log     *logging.Logger
@@ -90,8 +94,8 @@ func main() {
 
 	// instantiate replica configuration, with defaults
 	serverConfig := &server.Config{
-		Config:      &tCommon.Config{},
-		TrustDomain: &tCommon.TrustDomainConfig{},
+		Config:           &tCommon.Config{},
+		TrustDomain:      &tCommon.TrustDomainConfig{},
 		TrustDomainIndex: index,
 	}
 
@@ -125,15 +129,7 @@ func main() {
 
 	// instantiate replica srever
 	replica := server.NewReplica(serverConfig.TrustDomain.Name, backing, *serverConfig)
-	// serialize serverConfig to .json
-	serverConfigBytes, err := json.MarshalIndent(serverConfig, "", "  ")
-	if err != nil {
-		fmt.Println(err)
-		os.Exit(-1)
-	}
-	serverLog.Notice("Started Replica with configuration %s", string(serverConfigBytes))
-
-	h := &talekRequestHandler{replica: replica, log: serverLog, config: serverConfig}
+	h := &talekRequestHandler{replica: replica, log: serverLog, config: serverConfig, backing: backing}
 	cbserver := cborplugin.NewServer(serverLog, socketFile, h)
 	cbserver.Accept()
 	cbserver.Wait()
@@ -225,6 +221,30 @@ func (s *talekRequestHandler) OnCommand(cmd cborplugin.Command) error {
 	case *cborplugin.ParametersRequest:
 		params := paramsFromServerConfig(s.config)
 		s.write(params)
+	case *cborplugin.Document:
+		// restart the replica service if our TrustDomainIndex has changed
+		doc := cmd.Document
+
+		// find all of the replica services in the PKI
+		descs := utils.FindServices(capability, doc)
+
+		inPKI := false
+		for idx, desc := range descs {
+			if desc.Provider == s.config.TrustDomain.Name {
+				inPKI = true
+				if s.config.TrustDomainIndex != idx {
+					s.log.Notice("Restarting replica Idx %d as TrustDomainIndex %d", s.config.TrustDomainIndex, idx)
+					s.replica.Close()
+					s.config.TrustDomainIndex = idx
+					s.replica = server.NewReplica(s.config.TrustDomain.Name, s.backing, *s.config)
+				}
+			}
+		}
+		if !inPKI {
+			// service is not in the PKI
+			s.log.Errorf("TrustDomain %s not found in PKI", s.config.TrustDomain.Name)
+			return nil
+		}
 	default:
 		return errors.New("Invalid Command, expected cborplugin.Request")
 	}
