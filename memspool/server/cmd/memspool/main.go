@@ -122,7 +122,7 @@ func (s *spoolRequestHandler) OnCommand(cmd cborplugin.Command) error {
 			s.write(&cborplugin.Response{ID: r.ID, SURB: r.SURB, Payload: rawResp})
 		}()
 		return nil
-	case *cborplugin.ParametersRequest:
+	case *cborplugin.ParametersRequest, *cborplugin.Document:
 		// memspool doesn't set any custom parameters in the PKI, so let the
 		// cborplugin.Client populate cborplugin.Parameters{}.
 		// and we don't know what the required endpoint field should be anyway

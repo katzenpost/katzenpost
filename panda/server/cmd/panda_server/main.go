@@ -124,7 +124,7 @@ func (s *pandaRequestHandler) OnCommand(cmd cborplugin.Command) error {
 			s.write(&cborplugin.Response{ID: r.ID, SURB: r.SURB, Payload: pandaResponse})
 		}()
 		return nil
-	case *cborplugin.ParametersRequest:
+	case *cborplugin.ParametersRequest, *cborplugin.Document:
 		// panda doesn't set any custom parameters in the PKI, so let the
 		// cborplugin.Client populate cborplugin.Parameters{}.
 		// and we don't know what the required endpoint field should be anyway
