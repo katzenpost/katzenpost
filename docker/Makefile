@@ -99,7 +99,8 @@ run: $(docker_compose_yml) $(net_name)/server.$(distro) $(net_name)/voting.$(dis
 	cd $(net_name) && rm -v running.stamp
 
 start: $(docker_compose_yml) $(net_name)/server.$(distro) $(net_name)/voting.$(distro)
-	cd $(net_name); DOCKER_USER=${docker_user} $(docker_compose) up --remove-orphans -d; $(docker_compose) top
+	cd $(net_name); DOCKER_USER=${docker_user} $(docker_compose) up --remove-orphans -d
+	cd $(net_name); $(docker_compose) ps
 	touch $(net_name)/running.stamp
 
 stop:
