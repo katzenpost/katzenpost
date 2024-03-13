@@ -33,6 +33,8 @@ const (
 	retreiveMessageLength = 4
 	messageBaseLength     = 1 + 1 + 4
 
+	getDecoyLoopsCacheLength = 8
+
 	getConsensusLength  = 8
 	consensusBaseLength = 1
 
@@ -69,6 +71,8 @@ const (
 	sigStatus            commandID = 28
 	certificate          commandID = 29
 	certStatus           commandID = 30
+	getDecoyLoopsCache   commandID = 31
+	decoyLoopsCache      commandID = 32
 
 	// ConsensusOk signifies that the GetConsensus request has completed
 	// successfully.
@@ -247,6 +251,55 @@ func (c *NoOp) ToBytes() []byte {
 	out := make([]byte, cmdOverhead)
 	out[0] = byte(noOp)
 	return out
+}
+
+type GetDecoyLoopsCache struct {
+	Epoch uint64
+}
+
+// ToBytes serializes the GetConsensus and returns the resulting byte slice.
+func (c *GetDecoyLoopsCache) ToBytes() []byte {
+	out := make([]byte, cmdOverhead+getConsensusLength)
+	out[0] = byte(getDecoyLoopsCache)
+	binary.BigEndian.PutUint32(out[2:6], getConsensusLength)
+	binary.BigEndian.PutUint64(out[6:14], c.Epoch)
+	return out
+}
+
+func getDecoyLoopsCacheFromBytes(b []byte) (Command, error) {
+	if len(b) != getDecoyLoopsCacheLength {
+		return nil, errInvalidCommand
+	}
+
+	r := new(GetDecoyLoopsCache)
+	r.Epoch = binary.BigEndian.Uint64(b[0:8])
+	return r, nil
+}
+
+type DecoyLoopsCache struct {
+	Payload []byte
+}
+
+func (c *DecoyLoopsCache) ToBytes() []byte {
+	length := uint32(len(c.Payload))
+	out := make([]byte, cmdOverhead+length)
+	out[0] = byte(decoyLoopsCache) // out[1] is reserved
+	binary.BigEndian.PutUint32(out[2:6], length)
+	copy(out[6:], c.Payload)
+	return out
+}
+
+func decoyLoopsCacheFromBytes(b []byte) (Command, error) {
+	if len(b) == 0 {
+		return nil, errInvalidCommand
+	}
+
+	r := new(DecoyLoopsCache)
+	if payloadLength := len(b); payloadLength > 0 {
+		r.Payload = make([]byte, 0, payloadLength)
+		r.Payload = append(r.Payload, b...)
+	}
+	return r, nil
 }
 
 // GetConsensus is a de-serialized get_consensus command.
@@ -901,6 +954,10 @@ func (c *Commands) FromBytes(b []byte) (Command, error) {
 		return sigFromBytes(b)
 	case sigStatus:
 		return sigStatusFromBytes(b)
+	case getDecoyLoopsCache:
+		return getDecoyLoopsCacheFromBytes(b)
+	case decoyLoopsCache:
+		return decoyLoopsCacheFromBytes(b)
 	default:
 		return nil, errInvalidCommand
 	}

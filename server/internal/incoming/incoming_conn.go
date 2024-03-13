@@ -289,18 +289,22 @@ func (c *incomingConn) worker() {
 		if c.fromClient {
 			switch cmd := rawCmd.(type) {
 			case *commands.RetrieveMessage:
-				c.log.Debugf("Received RetrieveMessage from peer.")
+				c.log.Debugf("Received RetrieveMessage from client.")
 				if err := c.onRetrieveMessage(cmd); err != nil {
 					c.log.Debugf("Failed to handle RetreiveMessage: %v", err)
 					return
 				}
 				continue
 			case *commands.GetConsensus:
-				c.log.Debugf("Received GetConsensus from peer.")
+				c.log.Debugf("Received GetConsensus from client.")
 				if err := c.onGetConsensus(cmd); err != nil {
 					c.log.Debugf("Failed to handle GetConsensus: %v", err)
 					return
 				}
+				continue
+			case *commands.GetDecoyLoopsCache:
+				c.log.Debugf("Received GetDecoyLoopsCache from client.")
+				c.onGetDecoyLoopsCache(cmd)
 				continue
 			default:
 				// Probably a common command, like SendPacket.
@@ -315,6 +319,14 @@ func (c *incomingConn) worker() {
 	}
 
 	// NOTREACHED
+}
+
+func (c *incomingConn) onGetDecoyLoopsCache(cmd *commands.GetDecoyLoopsCache) {
+
+	// XXX FIXME(david): make it work
+
+	respCmd := &commands.DecoyLoopsCache{}
+	return c.w.SendCommand(respCmd)
 }
 
 func (c *incomingConn) onMixCommand(rawCmd commands.Command) bool {

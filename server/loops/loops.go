@@ -36,6 +36,7 @@ func New() *Cache {
 	return c
 }
 
+// XXX FIXME(David): add garbage collection
 func (c *Cache) Store(stats *LoopStats) error {
 	epoch, _, _ := epochtime.Now()
 	if stats.Epoch != (epoch - 1) {

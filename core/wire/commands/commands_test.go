@@ -221,6 +221,65 @@ func TestMessage(t *testing.T) {
 	require.Equal(ackPayload, cmdMessageACK.Payload, "MessageACK: FromBytes() Payload")
 }
 
+func TestGetDecoyLoopsCache(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+
+	cmd := &GetDecoyLoopsCache{
+		Epoch: 123,
+	}
+	b := cmd.ToBytes()
+	require.Equal(getDecoyLoopsCacheLength+cmdOverhead, len(b))
+
+	nike := ecdh.Scheme(rand.Reader)
+	forwardPayloadLength := 123
+	nrHops := 5
+	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
+	s := sphinx.NewSphinx(geo)
+	cmds := &Commands{
+		geo: s.Geometry(),
+	}
+
+	c, err := cmds.FromBytes(b)
+	require.NoError(err)
+	require.IsType(cmd, c)
+}
+
+func TestDecoyLoopsCache(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+
+	cmd := &DecoyLoopsCache{
+		Payload: []byte("TANSTAFL: There's ain't no such thing as a free lunch."),
+	}
+	b := cmd.ToBytes()
+	require.Len(b, len(cmd.Payload)+cmdOverhead)
+
+	nike := ecdh.Scheme(rand.Reader)
+	forwardPayloadLength := 123
+	nrHops := 5
+	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
+	s := sphinx.NewSphinx(geo)
+	cmds := &Commands{
+		geo: s.Geometry(),
+	}
+
+	c, err := cmds.FromBytes(b)
+	require.NoError(err)
+	require.IsType(cmd, c)
+	d := c.(*DecoyLoopsCache)
+	require.Equal(d.Payload, cmd.Payload)
+
+	cmd.Payload = []byte{0}
+	b = cmd.ToBytes()
+	require.Len(b, len(cmd.Payload)+cmdOverhead)
+	c, err = cmds.FromBytes(b)
+	require.NoError(err)
+	require.IsType(cmd, c)
+	d = c.(*DecoyLoopsCache)
+	require.Equal(d.Payload, cmd.Payload)
+}
+
 func TestGetConsensus(t *testing.T) {
 	t.Parallel()
 	require := require.New(t)
