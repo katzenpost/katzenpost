@@ -136,7 +136,8 @@ func (s *katzenpost) genTalekReplicaCfg(cfgPath string) {
 	}
 	delete(servstruct, "CommonConfig")
 	delete(servstruct, "TrustDomain")
-	tdc := *tCommon.NewTrustDomainConfig("talek", fmt.Sprintf("%s:%d", s.bindAddr, s.lastPort), true, false)
+	providerName := fmt.Sprintf("provider%d", s.providerIdx+1)
+	tdc := *tCommon.NewTrustDomainConfig(providerName, fmt.Sprintf("%s:%d", s.bindAddr, s.lastPort), true, false)
 	s.lastPort += 1
 	tdb, err := json.MarshalIndent(tdc.Private(), "", "  ")
 	if err != nil {
