@@ -54,6 +54,7 @@ type provider struct {
 	log  *logging.Logger
 
 	ch     *channels.InfiniteChannel
+	docCh  *channels.InfiniteChannel
 	sqlDB  *sqldb.SQLDB
 	userDB userdb.UserDB
 	spool  spool.Spool
@@ -66,6 +67,7 @@ func (p *provider) Halt() {
 	p.Worker.Halt()
 
 	p.ch.Close()
+	p.docCh.Close()
 	p.kaetzchenWorker.Halt()
 	p.cborPluginKaetzchenWorker.Halt()
 	if p.userDB != nil {
@@ -127,6 +129,15 @@ func (p *provider) KaetzchenForPKI() (map[string]map[string]interface{}, error) 
 	}
 
 	return merged, nil
+}
+
+// OnNewDocument is called when a new PKI document is received
+func (p *provider) OnNewDocument(doc *pki.Document) {
+	docCh := p.docCh.In()
+	select {
+	case docCh <= doc:
+	case <-p.HaltCh():
+	}
 }
 
 func (p *provider) connectedClients() (map[[sConstants.RecipientIDLength]byte]interface{}, error) {
@@ -204,6 +215,7 @@ func (p *provider) worker() {
 	defer p.log.Debugf("Halting Provider worker.")
 
 	ch := p.ch.Out()
+	docCh  := p.docCh.Out()
 
 	// Here we optionally set this GC timer. If unset the
 	// channel remains nil and has no effect on the select
@@ -224,6 +236,11 @@ func (p *provider) worker() {
 			return
 		case <-gcEphemeralClientGCTickerChan:
 			p.gcEphemeralClients()
+			continue
+		case d := <-docCh:
+			doc = d.(*pki.Document)
+			p.log.Notice("New document for epoch received: %d", doc.Epoch)
+			// TODO: update kaetzchen plugin workers with new pki document
 			continue
 		case e := <-ch:
 			pkt = e.(*packet.Packet)
@@ -629,6 +646,7 @@ func New(glue glue.Glue) (glue.Provider, error) {
 		glue:                      glue,
 		log:                       glue.LogBackend().GetLogger("provider"),
 		ch:                        channels.NewInfiniteChannel(),
+		docCh:                     channels.NewInfiniteChannel(),
 		kaetzchenWorker:           kaetzchenWorker,
 		cborPluginKaetzchenWorker: cborPluginWorker,
 	}

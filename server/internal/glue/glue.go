@@ -76,6 +76,7 @@ type Provider interface {
 	Spool() spool.Spool
 	AuthenticateClient(*wire.PeerCredentials) bool
 	OnPacket(*packet.Packet)
+	OnNewDocument(*pki.Document)
 	KaetzchenForPKI() (map[string]map[string]interface{}, error)
 }
 
