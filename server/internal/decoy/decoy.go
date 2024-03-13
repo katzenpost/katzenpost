@@ -26,7 +26,6 @@ import (
 	"math"
 	mRand "math/rand"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/fxamacker/cbor/v2"
@@ -124,7 +123,7 @@ type decoy struct {
 	trialLoopsLock *sync.RWMutex
 	trialLoops     map[uint64]*trialLoop // surbCtx.id -> *trialLoop
 
-	isSending uint32
+	isSending *sync.Mutex
 }
 
 func (d *decoy) OnNewDocument(ent *pkicache.Entry) {
@@ -331,14 +330,15 @@ func (d *decoy) sendDecoyPacket(ent *pkicache.Entry) {
 }
 
 func (d *decoy) sendDecoyLoopStats(ent *pkicache.Entry) {
-	if atomic.LoadUint32(&d.isSending) == 1 {
-		// alreadying sending
+
+	ok := d.isSending.TryLock()
+	if !ok {
 		return
 	}
+
 	go func() {
-		atomic.StoreUint32(&d.isSending, 1)
 		d.doSendDecoyLoopStats(ent)
-		atomic.StoreUint32(&d.isSending, 0)
+		d.isSending.Unlock()
 	}()
 }
 
