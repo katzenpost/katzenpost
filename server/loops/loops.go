@@ -4,8 +4,14 @@ import (
 	"errors"
 	"sync"
 
+	"github.com/fxamacker/cbor/v2"
+
 	"github.com/katzenpost/katzenpost/core/epochtime"
 )
+
+type AllHeatMaps struct {
+	Nodes map[[32]byte]*LoopStats
+}
 
 type LoopStats struct {
 	Epoch           uint64
@@ -23,8 +29,34 @@ type Cache struct {
 }
 
 func New() *Cache {
-	c := &Cache{}
-	return c
+	return &Cache{
+		mapping: new(sync.Map),
+	}
+}
+
+func (c *Cache) Retrieve(epoch uint64) []byte {
+	epochMap, ok := c.mapping.Load(epoch)
+	if !ok {
+		blob, err := cbor.Marshal(&AllHeatMaps{})
+		if err != nil {
+			panic(err)
+		}
+		return blob
+	}
+	m := &AllHeatMaps{
+		Nodes: make(map[[32]byte]*LoopStats),
+	}
+	epochMap.(*sync.Map).Range(func(key, value any) bool {
+		mixid := key.(*[32]byte)
+		stats := value.(*LoopStats)
+		m.Nodes[*mixid] = stats
+		return true
+	})
+	blob, err := cbor.Marshal(m)
+	if err != nil {
+		panic(err)
+	}
+	return blob
 }
 
 // XXX FIXME(David): add garbage collection

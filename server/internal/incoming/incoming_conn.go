@@ -31,6 +31,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
+	"github.com/katzenpost/katzenpost/server/internal/glue"
 	"github.com/katzenpost/katzenpost/server/internal/instrument"
 	"github.com/katzenpost/katzenpost/server/internal/packet"
 	"gopkg.in/op/go-logging.v1"
@@ -39,6 +40,8 @@ import (
 var incomingConnID uint64
 
 type incomingConn struct {
+	glue glue.Glue
+
 	l   *listener
 	log *logging.Logger
 
@@ -325,10 +328,10 @@ func (c *incomingConn) worker() {
 }
 
 func (c *incomingConn) onGetDecoyLoopsCache(cmd *commands.GetDecoyLoopsCache) error {
-
-	// XXX FIXME(david): make it work
-
-	respCmd := &commands.DecoyLoopsCache{}
+	cache := c.glue.LoopsCache()
+	respCmd := &commands.DecoyLoopsCache{
+		Payload: cache.Retrieve(cmd.Epoch),
+	}
 	return c.w.SendCommand(respCmd)
 }
 
@@ -491,8 +494,9 @@ func (c *incomingConn) onSendPacket(cmd *commands.SendPacket) error {
 	return nil
 }
 
-func newIncomingConn(l *listener, conn net.Conn, geo *geo.Geometry) *incomingConn {
+func newIncomingConn(l *listener, conn net.Conn, geo *geo.Geometry, glue glue.Glue) *incomingConn {
 	c := &incomingConn{
+		glue:              glue,
 		l:                 l,
 		c:                 conn,
 		id:                atomic.AddUint64(&incomingConnID, 1), // Diagnostic only, wrapping is fine.
