@@ -88,6 +88,9 @@ type surbCtx struct {
 
 	epoch uint64
 
+	forwardPath []*sphinx.PathHop
+	replyPath   []*sphinx.PathHop
+
 	etaNode *avl.Node
 }
 
@@ -117,11 +120,11 @@ type decoy struct {
 	surbStore  map[uint64]*surbCtx
 	surbIDBase uint64
 
-	loopStatsLock *sync.RWMutex
-	loopStats     map[uint64]map[uint64]*loops.LoopStat // epoch id -> surbCtx.id -> *LoopStat
-
-	trialLoopsLock *sync.RWMutex
-	trialLoops     map[uint64]*trialLoop // surbCtx.id -> *trialLoop
+	statsLock *sync.RWMutex
+	total     map[[32]byte]int     // mix id -> count
+	completed map[[32]byte]int     // mix id -> count
+	loss      map[[32]byte]int     // mix id -> count
+	ratios    map[[32]byte]float64 // mix id -> ratio
 
 	isSending      *sync.Mutex
 	startingEpoch  uint64
@@ -171,37 +174,7 @@ func (d *decoy) OnPacket(pkt *packet.Packet) {
 		return
 	}
 
-	// remove loop from trialLoops and add it to
-	// loopStats map
-	d.trialLoopsLock.RLock()
-	trial, ok := d.trialLoops[ctx.id]
-	d.trialLoopsLock.RUnlock()
-	if !ok {
-		d.log.Error("failed to find decoy loop entry in trialLoops map")
-		return
-	}
-	result := &loops.LoopStat{
-		ForwardPath: trial.forwardPath,
-		ReplyPath:   trial.replyPath,
-		SentTime:    trial.sentTime,
-		IsSuccess:   true,
-	}
-
-	d.loopStatsLock.RLock()
-	_, ok = d.loopStats[ctx.epoch]
-	d.loopStatsLock.RUnlock()
-	if !ok {
-		d.loopStatsLock.Lock()
-		d.loopStats[ctx.epoch] = make(map[uint64]*loops.LoopStat)
-		d.loopStatsLock.Unlock()
-	}
-	d.loopStatsLock.Lock()
-	d.loopStats[ctx.epoch][ctx.id] = result
-	d.loopStatsLock.Unlock()
-
-	d.trialLoopsLock.Lock()
-	delete(d.trialLoops, ctx.id)
-	d.trialLoopsLock.Unlock()
+	d.incrementCompleted(ctx.forwardPath, ctx.replyPath)
 }
 
 func (d *decoy) worker() {
@@ -443,7 +416,7 @@ func (d *decoy) sendLoopStatsPacket(doc *pki.Document, recipient []byte, src, ds
 
 			mixid := hash.Sum256From(d.glue.IdentityPublicKey())
 
-			// FIX ME
+			// XXX FIXME
 			loopstats := &loops.LoopStats{
 				Epoch:           myEpoch,
 				MixIdentityHash: &mixid,
@@ -509,10 +482,12 @@ func (d *decoy) sendLoopPacket(doc *pki.Document, recipient []byte, src, dst *pk
 			epoch, _, _ := epochtime.Now()
 
 			ctx := &surbCtx{
-				id:      binary.BigEndian.Uint64(surbID[8:]),
-				eta:     monotime.Now() + deltaT,
-				sprpKey: k,
-				epoch:   epoch,
+				id:          binary.BigEndian.Uint64(surbID[8:]),
+				eta:         monotime.Now() + deltaT,
+				forwardPath: fwdPath,
+				replyPath:   revPath,
+				sprpKey:     k,
+				epoch:       epoch,
 			}
 			d.storeSURBCtx(ctx)
 
@@ -528,23 +503,41 @@ func (d *decoy) sendLoopPacket(doc *pki.Document, recipient []byte, src, dst *pk
 
 			d.dispatchPacket(fwdPath, pkt)
 
-			trialStat := &trialLoop{
-				epoch:       epoch,
-				forwardPath: fwdPath,
-				replyPath:   revPath,
-				sentTime:    time.Now(),
-				isSuccess:   false,
-			}
-
-			d.trialLoopsLock.Lock()
-			d.trialLoops[ctx.id] = trialStat
-			d.trialLoopsLock.Unlock()
+			d.incrementTotal(fwdPath, revPath)
 
 			return
 		}
 	}
 
 	d.log.Debugf("Failed to generate loop packet: %v", errMaxAttempts)
+}
+
+func (d *decoy) incrementCompleted(forwardPath []*sphinx.PathHop, replyPath []*sphinx.PathHop) {
+	mypath := append(forwardPath, replyPath...)
+	d.statsLock.Lock()
+	for i := 0; i < len(mypath); i++ {
+		_, ok := d.completed[forwardPath[i].ID]
+		if !ok {
+			d.completed[forwardPath[i].ID] = 1
+		} else {
+			d.completed[forwardPath[i].ID] += 1
+		}
+	}
+	d.statsLock.Unlock()
+}
+
+func (d *decoy) incrementTotal(forwardPath []*sphinx.PathHop, replyPath []*sphinx.PathHop) {
+	mypath := append(forwardPath, replyPath...)
+	d.statsLock.Lock()
+	for i := 0; i < len(mypath); i++ {
+		_, ok := d.total[forwardPath[i].ID]
+		if !ok {
+			d.total[forwardPath[i].ID] = 1
+		} else {
+			d.total[forwardPath[i].ID] += 1
+		}
+	}
+	d.statsLock.Unlock()
 }
 
 func (d *decoy) sendDiscardPacket(doc *pki.Document, recipient []byte, src, dst *pki.MixDescriptor) {
@@ -667,37 +660,6 @@ func (d *decoy) sweepSURBCtxs() {
 		// modification is unsupported EXCEPT "removing the current
 		// Node", see godoc for avl/avl.go:Iterator
 		d.surbETAs.Remove(node)
-
-		// remove trial loop stat from trialLoops map
-		// and add the entry as a failed loop into our loopStats map
-		d.trialLoopsLock.Lock()
-		trial, ok := d.trialLoops[ctx.id]
-		if !ok {
-			d.trialLoopsLock.Unlock()
-			return
-		}
-		delete(d.trialLoops, ctx.id)
-		d.trialLoopsLock.Unlock()
-
-		var isSuccess bool
-		d.loopStatsLock.Lock()
-		_, ok = d.loopStats[ctx.epoch]
-		if !ok {
-			d.loopStats[ctx.epoch] = make(map[uint64]*loops.LoopStat)
-			isSuccess = false
-		} else {
-			_, isSuccess = d.loopStats[ctx.epoch][ctx.id]
-		}
-		if !isSuccess {
-			result := &loops.LoopStat{
-				ForwardPath: trial.forwardPath,
-				ReplyPath:   trial.replyPath,
-				SentTime:    trial.sentTime,
-				IsSuccess:   isSuccess,
-			}
-			d.loopStats[ctx.epoch][ctx.id] = result
-		}
-		d.loopStatsLock.Unlock()
 	}
 
 	d.log.Debugf("Sweep: Count: %v (Removed: %v, Elapsed: %v)", len(d.surbStore), swept, monotime.Now()-now)
@@ -713,13 +675,15 @@ func New(glue glue.Glue) (glue.Decoy, error) {
 	epoch, _, _ := epochtime.Now()
 
 	d := &decoy{
-		geo:       glue.Config().SphinxGeometry,
-		sphinx:    s,
-		glue:      glue,
-		log:       glue.LogBackend().GetLogger("decoy"),
-		recipient: make([]byte, sConstants.RecipientIDLength),
-		rng:       rand.NewMath(),
-		docCh:     make(chan *pkicache.Entry),
+		geo:        glue.Config().SphinxGeometry,
+		sphinx:     s,
+		glue:       glue,
+		log:        glue.LogBackend().GetLogger("decoy"),
+		recipient:  make([]byte, sConstants.RecipientIDLength),
+		rng:        rand.NewMath(),
+		docCh:      make(chan *pkicache.Entry),
+		surbStore:  make(map[uint64]*surbCtx),
+		surbIDBase: uint64(time.Now().Unix()),
 		surbETAs: avl.New(func(a, b interface{}) int {
 			surbCtxA, surbCtxB := a.(*surbCtx), b.(*surbCtx)
 			switch {
@@ -735,15 +699,11 @@ func New(glue glue.Glue) (glue.Decoy, error) {
 				return 0
 			}
 		}),
-		surbStore:  make(map[uint64]*surbCtx),
-		surbIDBase: uint64(time.Now().Unix()),
-
-		loopStatsLock: new(sync.RWMutex),
-		loopStats:     make(map[uint64]map[uint64]*loops.LoopStat),
-
-		trialLoopsLock: new(sync.RWMutex),
-		trialLoops:     make(map[uint64]*trialLoop),
-
+		statsLock:      new(sync.RWMutex),
+		total:          make(map[[32]byte]int),
+		completed:      make(map[[32]byte]int),
+		loss:           make(map[[32]byte]int),
+		ratios:         make(map[[32]byte]float64),
 		isSending:      new(sync.Mutex),
 		startingEpoch:  epoch,
 		epochsReported: make(map[uint64]bool),
