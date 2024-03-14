@@ -323,6 +323,9 @@ func (d *decoy) sendDecoyLoopStats(ent *pkicache.Entry) {
 
 	d.isSending.Lock()
 	go func() {
+		if epochtime.Period > (2 * time.Minute) {
+			time.Sleep(2 * time.Minute)
+		}
 		d.doSendDecoyLoopStats(ent)
 		d.isSending.Unlock()
 	}()
