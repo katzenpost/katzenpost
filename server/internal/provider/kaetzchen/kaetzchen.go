@@ -25,16 +25,16 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/katzenpost/katzenpost/core/monotime"
-	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
-	"github.com/katzenpost/katzenpost/core/worker"
-	"github.com/katzenpost/katzenpost/server/config"
-	"github.com/katzenpost/katzenpost/server/internal/glue"
-	"github.com/katzenpost/katzenpost/server/internal/instrument"
-	"github.com/katzenpost/katzenpost/server/internal/packet"
 	"golang.org/x/text/secure/precis"
 	"gopkg.in/eapache/channels.v1"
 	"gopkg.in/op/go-logging.v1"
+
+	"github.com/katzenpost/katzenpost/core/monotime"
+	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/core/worker"
+	"github.com/katzenpost/katzenpost/server/internal/glue"
+	"github.com/katzenpost/katzenpost/server/internal/instrument"
+	"github.com/katzenpost/katzenpost/server/internal/packet"
 )
 
 // ParameterEndpoint is the mandatory Parameter key indicationg the
@@ -81,7 +81,7 @@ type Kaetzchen interface {
 }
 
 // BuiltInCtorFn is the constructor type for a built-in Kaetzchen.
-type BuiltInCtorFn func(*config.Kaetzchen, glue.Glue) (Kaetzchen, error)
+type BuiltInCtorFn func(glue.Glue) (Kaetzchen, error)
 
 // BuiltInCtors are the constructors for all built-in Kaetzchen.
 var BuiltInCtors = map[string]BuiltInCtorFn{
@@ -261,28 +261,13 @@ func New(glue glue.Glue) (*KaetzchenWorker, error) {
 
 	// Initialize the internal Kaetzchen.
 	capaMap := make(map[string]bool)
-	for _, v := range glue.Config().Provider.Kaetzchen {
-		capa := v.Capability
-		if v.Disable {
-			kaetzchenWorker.log.Noticef("Skipping disabled Kaetzchen: '%v'.", capa)
-			continue
-		}
-
-		ctor, ok := BuiltInCtors[capa]
-		if !ok {
-			return nil, fmt.Errorf("provider: Kaetzchen: Unsupported capability: '%v'", capa)
-		}
-
-		k, err := ctor(v, glue)
+	for capa, ctor := range BuiltInCtors {
+		k, err := ctor(glue)
 		if err != nil {
 			return nil, err
 		}
 		if err = kaetzchenWorker.registerKaetzchen(k); err != nil {
 			return nil, err
-		}
-
-		if capaMap[capa] {
-			return nil, fmt.Errorf("provider: Kaetzchen '%v' registered more than once", capa)
 		}
 		capaMap[capa] = true
 	}

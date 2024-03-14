@@ -351,10 +351,6 @@ type Provider struct {
 	// SpoolDB is the user message spool configuration.
 	SpoolDB *SpoolDB
 
-	// Kaetzchen is the list of configured internal Kaetzchen (auto-responder agents)
-	// for this provider.
-	Kaetzchen []*Kaetzchen
-
 	// CBORPluginKaetzchen is the list of configured external CBOR Kaetzchen plugins
 	// for this provider.
 	CBORPluginKaetzchen []*CBORPluginKaetzchen
@@ -640,15 +636,6 @@ func (pCfg *Provider) validate() error {
 	}
 
 	capaMap := make(map[string]bool)
-	for _, v := range pCfg.Kaetzchen {
-		if err := v.validate(); err != nil {
-			return err
-		}
-		if capaMap[v.Capability] {
-			return fmt.Errorf("config: Kaetzchen: '%v' configured multiple times", v.Capability)
-		}
-		capaMap[v.Capability] = true
-	}
 	for _, v := range pCfg.CBORPluginKaetzchen {
 		if err := v.validate(); err != nil {
 			return err

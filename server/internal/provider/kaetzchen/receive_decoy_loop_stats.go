@@ -4,7 +4,6 @@ import (
 	"github.com/fxamacker/cbor/v2"
 	"gopkg.in/op/go-logging.v1"
 
-	"github.com/katzenpost/katzenpost/server/config"
 	"github.com/katzenpost/katzenpost/server/internal/glue"
 	"github.com/katzenpost/katzenpost/server/loops"
 )
@@ -52,13 +51,13 @@ func (k *kaetzchenStats) Halt() {
 
 // NewStats constructs a new Stats Kaetzchen instance, providing the "echo"
 // capability, on the configured endpoint.
-func NewStats(cfg *config.Kaetzchen, glue glue.Glue) (Kaetzchen, error) {
+func NewStats(glue glue.Glue) (Kaetzchen, error) {
 	k := &kaetzchenStats{
 		log:    glue.LogBackend().GetLogger("kaetzchen/echo"),
 		params: make(Parameters),
 		glue:   glue,
 	}
-	k.params[ParameterEndpoint] = cfg.Endpoint
+	k.params[ParameterEndpoint] = "+decoy_cache_stats"
 
 	return k, nil
 }
