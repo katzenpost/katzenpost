@@ -121,10 +121,8 @@ type decoy struct {
 	surbIDBase uint64
 
 	statsLock *sync.RWMutex
-	total     map[[32]byte]int     // mix id -> count
-	completed map[[32]byte]int     // mix id -> count
-	loss      map[[32]byte]int     // mix id -> count
-	ratios    map[[32]byte]float64 // mix id -> ratio
+	total     map[[32]byte]int // mix id -> count
+	completed map[[32]byte]int // mix id -> count
 
 	isSending      *sync.Mutex
 	startingEpoch  uint64
@@ -397,6 +395,11 @@ func (d *decoy) doSendDecoyLoopStats(ent *pkicache.Entry) {
 }
 
 func (d *decoy) sendLoopStatsPacket(doc *pki.Document, recipient []byte, src, dst *pki.MixDescriptor) {
+	statsblob, err := d.prepareLoopStats()
+	if err != nil {
+		return
+	}
+
 	for attempts := 0; attempts < maxAttempts; attempts++ {
 		now := time.Now()
 
@@ -411,25 +414,8 @@ func (d *decoy) sendLoopStatsPacket(doc *pki.Document, recipient []byte, src, ds
 			payload := make([]byte, 2, 2+d.geo.SURBLength+d.geo.UserForwardPayloadLength)
 			payload[0] = 0 // Packet does NOT have a SURB.
 
-			epoch, _, _ := epochtime.Now()
-			myEpoch := epoch - 1
-
-			mixid := hash.Sum256From(d.glue.IdentityPublicKey())
-
-			// XXX FIXME
-			loopstats := &loops.LoopStats{
-				Epoch:           myEpoch,
-				MixIdentityHash: &mixid,
-			}
-
-			blob, err := cbor.Marshal(loopstats)
-			if err != nil {
-				d.log.Errorf("failed to marshal cbor blob: %s", err)
-				return
-			}
-
-			payload = append(payload, blob...)
-			payload = append(payload, zeroBytes[len(blob):]...)
+			payload = append(payload, statsblob...)
+			payload = append(payload, zeroBytes[len(statsblob):]...)
 
 			pkt, err := d.sphinx.NewPacket(rand.Reader, fwdPath, payload)
 			if err != nil {
@@ -510,6 +496,33 @@ func (d *decoy) sendLoopPacket(doc *pki.Document, recipient []byte, src, dst *pk
 	}
 
 	d.log.Debugf("Failed to generate loop packet: %v", errMaxAttempts)
+}
+
+func (d *decoy) prepareLoopStats() ([]byte, error) {
+	loss := make(map[[32]byte]int)
+	for mixid, _ := range d.total {
+		loss[mixid] = d.total[mixid] - d.completed[mixid]
+	}
+	ratios := make(map[[32]byte]float64)
+	for mixid, _ := range loss {
+		ratios[mixid] = float64(loss[mixid]) / float64(d.total[mixid])
+	}
+
+	epoch, _, _ := epochtime.Now()
+	myEpoch := epoch - 1
+	mixid := hash.Sum256From(d.glue.IdentityPublicKey())
+
+	loopstats := &loops.LoopStats{
+		Epoch:           myEpoch,
+		MixIdentityHash: &mixid,
+		Ratios:          ratios,
+	}
+	blob, err := cbor.Marshal(loopstats)
+	if err != nil {
+		d.log.Errorf("failed to marshal cbor blob: %s", err)
+		return nil, err
+	}
+	return blob, nil
 }
 
 func (d *decoy) incrementCompleted(forwardPath []*sphinx.PathHop, replyPath []*sphinx.PathHop) {
@@ -702,8 +715,6 @@ func New(glue glue.Glue) (glue.Decoy, error) {
 		statsLock:      new(sync.RWMutex),
 		total:          make(map[[32]byte]int),
 		completed:      make(map[[32]byte]int),
-		loss:           make(map[[32]byte]int),
-		ratios:         make(map[[32]byte]float64),
 		isSending:      new(sync.Mutex),
 		startingEpoch:  epoch,
 		epochsReported: make(map[uint64]bool),

@@ -3,23 +3,14 @@ package loops
 import (
 	"errors"
 	"sync"
-	"time"
 
 	"github.com/katzenpost/katzenpost/core/epochtime"
-	"github.com/katzenpost/katzenpost/core/sphinx"
 )
 
 type LoopStats struct {
 	Epoch           uint64
 	MixIdentityHash *[32]byte
-	Stats           []*LoopStat
-}
-
-type LoopStat struct {
-	ForwardPath []*sphinx.PathHop
-	ReplyPath   []*sphinx.PathHop
-	SentTime    time.Time
-	IsSuccess   bool
+	Ratios          map[[32]byte]float64
 }
 
 // Cache scheme under `mapping` field is as follows:
