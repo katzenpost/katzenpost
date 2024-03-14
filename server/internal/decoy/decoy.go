@@ -537,11 +537,11 @@ func (d *decoy) incrementCompleted(forwardPath []*sphinx.PathHop, replyPath []*s
 	mypath := append(forwardPath, replyPath...)
 	d.statsLock.Lock()
 	for i := 0; i < len(mypath); i++ {
-		_, ok := d.completed[forwardPath[i].ID]
+		_, ok := d.completed[mypath[i].ID]
 		if !ok {
-			d.completed[forwardPath[i].ID] = 1
+			d.completed[mypath[i].ID] = 1
 		} else {
-			d.completed[forwardPath[i].ID] += 1
+			d.completed[mypath[i].ID] += 1
 		}
 	}
 	d.statsLock.Unlock()
@@ -551,11 +551,11 @@ func (d *decoy) incrementTotal(forwardPath []*sphinx.PathHop, replyPath []*sphin
 	mypath := append(forwardPath, replyPath...)
 	d.statsLock.Lock()
 	for i := 0; i < len(mypath); i++ {
-		_, ok := d.total[forwardPath[i].ID]
+		_, ok := d.total[mypath[i].ID]
 		if !ok {
-			d.total[forwardPath[i].ID] = 1
+			d.total[mypath[i].ID] = 1
 		} else {
-			d.total[forwardPath[i].ID] += 1
+			d.total[mypath[i].ID] += 1
 		}
 	}
 	d.statsLock.Unlock()
