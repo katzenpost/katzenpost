@@ -522,6 +522,11 @@ func (d *decoy) prepareLoopStats() ([]byte, error) {
 		d.log.Errorf("failed to marshal cbor blob: %s", err)
 		return nil, err
 	}
+
+	// zero out our book keeping
+	d.total = make(map[[32]byte]int)
+	d.completed = make(map[[32]byte]int)
+
 	return blob, nil
 }
 
