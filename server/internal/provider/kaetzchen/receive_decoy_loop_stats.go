@@ -1,6 +1,8 @@
 package kaetzchen
 
 import (
+	"errors"
+
 	"github.com/fxamacker/cbor/v2"
 	"gopkg.in/op/go-logging.v1"
 
@@ -28,14 +30,37 @@ func (k *kaetzchenStats) Parameters() Parameters {
 func (k *kaetzchenStats) OnRequest(id uint64, payload []byte, hasSURB bool) ([]byte, error) {
 	k.log.Debugf("Handling request: %v", id)
 
-	stats := &loops.LoopStats{}
+	stats := &loops.SphinxLoopStats{}
 	err := cbor.Unmarshal(payload, &stats)
 	if err != nil {
-		k.log.Error("Invalid payload format, cannot decoy LoopStats CBOR object.")
+		k.log.Error("Invalid payload format, cannot decode loops.SphinxLoopStats CBOR object.")
 		return nil, err
 	}
 
-	err = k.glue.LoopsCache().Store(stats)
+	doc := k.glue.Provider().CurrentDocument()
+	desc, err := doc.GetMixByKeyHash(stats.MixIdentityHash)
+	if err != nil {
+		k.log.Errorf("doc.GetMixByKeyHash failed")
+		return nil, err
+	}
+	pubkey, err := desc.GetDecoyStatsKey()
+	if err != nil {
+		return nil, err
+	}
+
+	if !loops.Scheme.Verify(pubkey, stats.Payload, stats.Signature, nil) {
+		k.log.Errorf("decoy stats failed signature verification")
+		return nil, errors.New("decoy stats failed signature verification")
+	}
+
+	cachedStats := &loops.LoopStats{}
+	err = cbor.Unmarshal(stats.Payload, &cachedStats)
+	if err != nil {
+		k.log.Error("Invalid payload format, cannot decode loops.LoopStats CBOR object.")
+		return nil, err
+	}
+
+	err = k.glue.LoopsCache().Store(cachedStats)
 	if err != nil {
 		k.log.Errorf("failed to store decoy loop stats cache: %s", err)
 		return nil, err

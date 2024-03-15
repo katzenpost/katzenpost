@@ -21,7 +21,6 @@ package kaetzchen
 import (
 	"errors"
 	"fmt"
-	"sync"
 	"sync/atomic"
 	"time"
 
@@ -90,7 +89,6 @@ var BuiltInCtors = map[string]BuiltInCtorFn{
 }
 
 type KaetzchenWorker struct {
-	sync.Mutex
 	worker.Worker
 
 	glue glue.Glue

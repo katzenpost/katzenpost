@@ -43,7 +43,8 @@ type Glue interface {
 	IdentityKey() sign.PrivateKey
 	IdentityPublicKey() sign.PublicKey
 	LinkKey() kem.PrivateKey
-
+	DecoyStatsKey() sign.PrivateKey
+	DecoyStatsPublicKey() sign.PublicKey
 	Management() *thwack.Server
 	MixKeys() MixKeys
 	PKI() PKI
@@ -79,6 +80,8 @@ type Provider interface {
 	AuthenticateClient(*wire.PeerCredentials) bool
 	OnPacket(*packet.Packet)
 	KaetzchenForPKI() (map[string]map[string]interface{}, error)
+	OnNewDocument(*pki.Document)
+	CurrentDocument() *pki.Document
 }
 
 type Scheduler interface {

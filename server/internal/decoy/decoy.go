@@ -520,15 +520,26 @@ func (d *decoy) prepareLoopStats() ([]byte, error) {
 		MixIdentityHash: &mixid,
 		Ratios:          ratios,
 	}
-	blob, err := cbor.Marshal(loopstats)
+	loopstatsBlob, err := cbor.Marshal(loopstats)
 	if err != nil {
-		d.log.Errorf("failed to marshal cbor blob: %s", err)
-		return nil, err
+		panic(err)
 	}
+
+	signature := loops.Scheme.Sign(d.glue.DecoyStatsKey(), loopstatsBlob, nil)
 
 	// zero out our book keeping
 	d.total = make(map[[32]byte]int)
 	d.completed = make(map[[32]byte]int)
+
+	stats := &loops.SphinxLoopStats{
+		MixIdentityHash: &mixid,
+		Payload:         loopstatsBlob,
+		Signature:       signature,
+	}
+	blob, err := cbor.Marshal(stats)
+	if err != nil {
+		panic(err)
+	}
 
 	return blob, nil
 }

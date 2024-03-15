@@ -6,11 +6,21 @@ import (
 
 	"github.com/fxamacker/cbor/v2"
 
+	"github.com/katzenpost/hpqc/sign/schemes"
+
 	"github.com/katzenpost/katzenpost/core/epochtime"
 )
 
+var Scheme = schemes.ByName("Ed25519-Dilithium2")
+
 type AllHeatMaps struct {
 	Nodes map[[32]byte]*LoopStats
+}
+
+type SphinxLoopStats struct {
+	MixIdentityHash *[32]byte
+	Payload         []byte
+	Signature       []byte
 }
 
 type LoopStats struct {
