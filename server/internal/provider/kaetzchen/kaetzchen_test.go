@@ -33,6 +33,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/cert"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/monotime"
+	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/commands"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
@@ -99,6 +100,12 @@ func (s *mockSpool) Close() {}
 type mockProvider struct {
 	userName string
 	userKey  kem.PublicKey
+}
+
+func (p *mockProvider) OnNewDocument(*pki.Document) {}
+
+func (p *mockProvider) CurrentDocument() *pki.Document {
+	return nil
 }
 
 func (p *mockProvider) Halt() {}
@@ -172,6 +179,14 @@ func (g *mockGlue) IdentityPublicKey() sign.PublicKey {
 
 func (g *mockGlue) LinkKey() kem.PrivateKey {
 	return g.s.linkKey
+}
+
+func (g *mockGlue) DecoyStatsKey() sign.PrivateKey {
+	return nil
+}
+
+func (g *mockGlue) DecoyStatsPublicKey() sign.PublicKey {
+	return nil
 }
 
 func (g *mockGlue) Management() *thwack.Server {
@@ -262,18 +277,9 @@ func TestKaetzchenWorker(t *testing.T) {
 			provider:   mockProvider,
 			linkKey:    linkKey,
 			cfg: &config.Config{
-				Server:  &config.Server{},
-				Logging: &config.Logging{},
-				Provider: &config.Provider{
-					Kaetzchen: []*config.Kaetzchen{
-						&config.Kaetzchen{
-							Capability: "echo",
-							Endpoint:   "echo",
-							Config:     map[string]interface{}{},
-							Disable:    false,
-						},
-					},
-				},
+				Server:     &config.Server{},
+				Logging:    &config.Logging{},
+				Provider:   &config.Provider{},
 				PKI:        &config.PKI{},
 				Management: &config.Management{},
 				Debug: &config.Debug{

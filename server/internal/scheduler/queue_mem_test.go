@@ -70,6 +70,15 @@ func (m *mockGlue) IdentityPublicKey() sign.PublicKey {
 func (m *mockGlue) LinkKey() kem.PrivateKey {
 	return nil
 }
+
+func (m *mockGlue) DecoyStatsKey() sign.PrivateKey {
+	return nil
+}
+
+func (m *mockGlue) DecoyStatsPublicKey() sign.PublicKey {
+	return nil
+}
+
 func (m *mockGlue) Listeners() []glue.Listener {
 	return make([]glue.Listener, 0)
 }
