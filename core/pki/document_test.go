@@ -53,6 +53,7 @@ func genDescriptor(require *require.Assertions, idx int, provider bool) (*MixDes
 	require.NoError(err)
 	d.LinkKey, err = linkKey.MarshalBinary()
 	require.NoError(err)
+	d.DecoyStatsKey = []byte("hi i'm a key for decoy stats")
 	d.MixKeys = make(map[uint64][]byte)
 	for e := debugTestEpoch; e < debugTestEpoch+3; e++ {
 		mPriv, err := ecdh.NewKeypair(rand.Reader)
