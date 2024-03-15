@@ -60,7 +60,7 @@ func (k *kaetzchenStats) OnRequest(id uint64, payload []byte, hasSURB bool) ([]b
 		return nil, err
 	}
 
-	err = k.glue.LoopsCache().Store(cachedStats)
+	err = k.glue.LoopsCache().Store(cachedStats, stats.Signature)
 	if err != nil {
 		k.log.Errorf("failed to store decoy loop stats cache: %s", err)
 		return nil, err
