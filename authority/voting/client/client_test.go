@@ -110,11 +110,12 @@ func generateNodes(isProvider bool, num int, epoch uint64) ([]*descriptor, error
 		}
 
 		mix := &pki.MixDescriptor{
-			Name:        name,
-			Epoch:       epoch,
-			IdentityKey: blob,
-			LinkKey:     linkKeyBlob,
-			MixKeys:     mixKeys,
+			Name:          name,
+			Epoch:         epoch,
+			IdentityKey:   blob,
+			LinkKey:       linkKeyBlob,
+			DecoyStatsKey: []byte("non-nil byte slice value"),
+			MixKeys:       mixKeys,
 			Addresses: map[pki.Transport][]string{
 				pki.Transport("tcp4"): []string{fmt.Sprintf("127.0.0.1:%d", i+1)},
 			},
