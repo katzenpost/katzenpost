@@ -34,6 +34,7 @@ import (
 
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/monotime"
+	"github.com/katzenpost/katzenpost/core/pki"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/thwack"
 	"github.com/katzenpost/katzenpost/core/wire"
@@ -65,6 +66,9 @@ type provider struct {
 
 	kaetzchenWorker           *kaetzchen.KaetzchenWorker
 	cborPluginKaetzchenWorker *kaetzchen.CBORPluginWorker
+
+	doc     *pki.Document
+	docLock *sync.RWMutex
 }
 
 func (p *provider) Halt() {
@@ -165,6 +169,18 @@ func (p *provider) gcEphemeralClients() {
 		p.log.Errorf("wtf: %s", err)
 		return
 	}
+}
+
+func (p *provider) CurrentDocument() *pki.Document {
+	p.docLock.RLock()
+	defer p.docLock.RUnlock()
+	return p.doc
+}
+
+func (p *provider) OnNewDocument(doc *pki.Document) {
+	p.docLock.Lock()
+	p.doc = doc
+	p.docLock.Unlock()
 }
 
 func (p *provider) worker() {

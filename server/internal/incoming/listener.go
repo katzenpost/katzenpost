@@ -102,7 +102,7 @@ func (l *listener) worker() {
 }
 
 func (l *listener) onNewConn(conn net.Conn) {
-	c := newIncomingConn(l, conn, l.glue.Config().SphinxGeometry)
+	c := newIncomingConn(l, conn, l.glue.Config().SphinxGeometry, l.glue)
 
 	l.closeAllWg.Add(1)
 	l.Lock()

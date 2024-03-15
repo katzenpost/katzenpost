@@ -31,6 +31,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
+	"github.com/katzenpost/katzenpost/server/internal/glue"
 	"github.com/katzenpost/katzenpost/server/internal/instrument"
 	"github.com/katzenpost/katzenpost/server/internal/packet"
 	"gopkg.in/op/go-logging.v1"
@@ -39,6 +40,8 @@ import (
 var incomingConnID uint64
 
 type incomingConn struct {
+	glue glue.Glue
+
 	l   *listener
 	log *logging.Logger
 
@@ -289,17 +292,24 @@ func (c *incomingConn) worker() {
 		if c.fromClient {
 			switch cmd := rawCmd.(type) {
 			case *commands.RetrieveMessage:
-				c.log.Debugf("Received RetrieveMessage from peer.")
+				c.log.Debugf("Received RetrieveMessage from client.")
 				if err := c.onRetrieveMessage(cmd); err != nil {
 					c.log.Debugf("Failed to handle RetreiveMessage: %v", err)
 					return
 				}
 				continue
 			case *commands.GetConsensus:
-				c.log.Debugf("Received GetConsensus from peer.")
+				c.log.Debugf("Received GetConsensus from client.")
 				if err := c.onGetConsensus(cmd); err != nil {
 					c.log.Debugf("Failed to handle GetConsensus: %v", err)
 					return
+				}
+				continue
+			case *commands.GetDecoyLoopsCache:
+				c.log.Debugf("Received GetDecoyLoopsCache from client.")
+				err := c.onGetDecoyLoopsCache(cmd)
+				if err != nil {
+					c.log.Errorf("failed to handle GetDecoyLoopsCache command: %s", err)
 				}
 				continue
 			default:
@@ -315,6 +325,14 @@ func (c *incomingConn) worker() {
 	}
 
 	// NOTREACHED
+}
+
+func (c *incomingConn) onGetDecoyLoopsCache(cmd *commands.GetDecoyLoopsCache) error {
+	cache := c.glue.LoopsCache()
+	respCmd := &commands.DecoyLoopsCache{
+		Payload: cache.Retrieve(cmd.Epoch),
+	}
+	return c.w.SendCommand(respCmd)
 }
 
 func (c *incomingConn) onMixCommand(rawCmd commands.Command) bool {
@@ -476,8 +494,9 @@ func (c *incomingConn) onSendPacket(cmd *commands.SendPacket) error {
 	return nil
 }
 
-func newIncomingConn(l *listener, conn net.Conn, geo *geo.Geometry) *incomingConn {
+func newIncomingConn(l *listener, conn net.Conn, geo *geo.Geometry, glue glue.Glue) *incomingConn {
 	c := &incomingConn{
+		glue:              glue,
 		l:                 l,
 		c:                 conn,
 		id:                atomic.AddUint64(&incomingConnID, 1), // Diagnostic only, wrapping is fine.

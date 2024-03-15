@@ -30,18 +30,21 @@ import (
 	"github.com/katzenpost/katzenpost/server/internal/mixkey"
 	"github.com/katzenpost/katzenpost/server/internal/packet"
 	"github.com/katzenpost/katzenpost/server/internal/pkicache"
+	"github.com/katzenpost/katzenpost/server/loops"
 	"github.com/katzenpost/katzenpost/server/spool"
 	"github.com/katzenpost/katzenpost/server/userdb"
 )
 
 // Glue is the structure that binds the internal components together.
 type Glue interface {
+	LoopsCache() *loops.Cache
 	Config() *config.Config
 	LogBackend() *log.Backend
 	IdentityKey() sign.PrivateKey
 	IdentityPublicKey() sign.PublicKey
 	LinkKey() kem.PrivateKey
-
+	DecoyStatsKey() sign.PrivateKey
+	DecoyStatsPublicKey() sign.PublicKey
 	Management() *thwack.Server
 	MixKeys() MixKeys
 	PKI() PKI
@@ -77,6 +80,8 @@ type Provider interface {
 	AuthenticateClient(*wire.PeerCredentials) bool
 	OnPacket(*packet.Packet)
 	KaetzchenForPKI() (map[string]map[string]interface{}, error)
+	OnNewDocument(*pki.Document)
+	CurrentDocument() *pki.Document
 }
 
 type Scheduler interface {

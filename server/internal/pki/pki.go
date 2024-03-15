@@ -381,12 +381,17 @@ func (p *pki) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 	if err != nil {
 		return err
 	}
+	decoyStatsKey, err := p.glue.DecoyStatsPublicKey().MarshalBinary()
+	if err != nil {
+		return err
+	}
 	desc := &cpki.MixDescriptor{
-		Name:        p.glue.Config().Server.Identifier,
-		IdentityKey: idkeyblob,
-		LinkKey:     linkblob,
-		Addresses:   p.descAddrMap,
-		Epoch:       epoch,
+		Name:          p.glue.Config().Server.Identifier,
+		IdentityKey:   idkeyblob,
+		LinkKey:       linkblob,
+		DecoyStatsKey: decoyStatsKey,
+		Addresses:     p.descAddrMap,
+		Epoch:         epoch,
 	}
 	if p.glue.Config().Server.IsProvider {
 		// Only set the layer if the node is a provider.  Otherwise, nodes

@@ -43,6 +43,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/thwack"
 	"github.com/katzenpost/katzenpost/core/utils"
 	"github.com/katzenpost/katzenpost/core/wire"
+
 	"github.com/katzenpost/katzenpost/server/config"
 	"github.com/katzenpost/katzenpost/server/internal/cryptoworker"
 	"github.com/katzenpost/katzenpost/server/internal/decoy"
@@ -53,6 +54,7 @@ import (
 	"github.com/katzenpost/katzenpost/server/internal/pki"
 	"github.com/katzenpost/katzenpost/server/internal/provider"
 	"github.com/katzenpost/katzenpost/server/internal/scheduler"
+	"github.com/katzenpost/katzenpost/server/loops"
 )
 
 // ErrGenerateOnly is the error returned when the server initialization
@@ -63,14 +65,18 @@ var ErrGenerateOnly = errors.New("server: GenerateOnly set")
 type Server struct {
 	cfg *config.Config
 
-	identityPrivateKey sign.PrivateKey
-	identityPublicKey  sign.PublicKey
-	linkKey            kem.PrivateKey
+	identityPrivateKey   sign.PrivateKey
+	identityPublicKey    sign.PublicKey
+	linkKey              kem.PrivateKey
+	decoyStatsPrivateKey sign.PrivateKey
+	decoyStatsPublicKey  sign.PublicKey
 
 	logBackend *log.Backend
 	log        *logging.Logger
 
 	inboundPackets *channels.InfiniteChannel
+
+	loopsCache *loops.Cache
 
 	scheduler     glue.Scheduler
 	cryptoWorkers []*cryptoworker.Worker
@@ -328,6 +334,33 @@ func New(cfg *config.Config) (*Server, error) {
 	linkPubKeyHash := hash.Sum256(blob)
 	s.log.Noticef("Server link public key hash is: %x", linkPubKeyHash[:])
 
+	decoyStatsPrivateKeyFile := filepath.Join(s.cfg.Server.DataDir, "decoy_stats.private.pem")
+	decoyStatsPublicKeyFile := filepath.Join(s.cfg.Server.DataDir, "decoy_stats.public.pem")
+
+	s.decoyStatsPublicKey, s.decoyStatsPrivateKey, err = loops.Scheme.GenerateKey()
+
+	if utils.BothExists(decoyStatsPrivateKeyFile, decoyStatsPublicKeyFile) {
+		s.decoyStatsPrivateKey, err = signpem.FromPrivatePEMFile(decoyStatsPrivateKeyFile, loops.Scheme)
+		if err != nil {
+			return nil, err
+		}
+		s.decoyStatsPublicKey, err = signpem.FromPublicPEMFile(decoyStatsPublicKeyFile, loops.Scheme)
+		if err != nil {
+			return nil, err
+		}
+	} else if utils.BothNotExists(decoyStatsPrivateKeyFile, decoyStatsPublicKeyFile) {
+		err = signpem.PrivateKeyToFile(decoyStatsPrivateKeyFile, s.decoyStatsPrivateKey)
+		if err != nil {
+			return nil, err
+		}
+		err = signpem.PublicKeyToFile(decoyStatsPublicKeyFile, s.decoyStatsPublicKey)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		panic("Improbable: Only found one decoy_stats PEM file.")
+	}
+
 	if s.cfg.Debug.GenerateOnly {
 		return nil, ErrGenerateOnly
 	}
@@ -421,6 +454,9 @@ func New(cfg *config.Config) (*Server, error) {
 	// Initialize the outgoing connection manager, decoy source/sink, and then
 	// start the PKI worker.
 	s.connector = outgoing.New(goo)
+
+	s.loopsCache = loops.New()
+
 	if s.decoy, err = decoy.New(goo); err != nil {
 		s.log.Errorf("Failed to initialize decoy source/sink: %v", err)
 		return nil, err
@@ -457,6 +493,10 @@ type serverGlue struct {
 	s *Server
 }
 
+func (g *serverGlue) LoopsCache() *loops.Cache {
+	return g.s.loopsCache
+}
+
 func (g *serverGlue) Config() *config.Config {
 	return g.s.cfg
 }
@@ -475,6 +515,14 @@ func (g *serverGlue) IdentityPublicKey() sign.PublicKey {
 
 func (g *serverGlue) LinkKey() kem.PrivateKey {
 	return g.s.linkKey
+}
+
+func (g *serverGlue) DecoyStatsKey() sign.PrivateKey {
+	return g.s.decoyStatsPrivateKey
+}
+
+func (g *serverGlue) DecoyStatsPublicKey() sign.PublicKey {
+	return g.s.decoyStatsPublicKey
 }
 
 func (g *serverGlue) Management() *thwack.Server {

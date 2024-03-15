@@ -17,9 +17,9 @@
 package kaetzchen
 
 import (
-	"github.com/katzenpost/katzenpost/server/config"
-	"github.com/katzenpost/katzenpost/server/internal/glue"
 	"gopkg.in/op/go-logging.v1"
+
+	"github.com/katzenpost/katzenpost/server/internal/glue"
 )
 
 // EchoCapability is the standardized capability for the echo service.
@@ -54,12 +54,12 @@ func (k *kaetzchenEcho) Halt() {
 
 // NewEcho constructs a new Echo Kaetzchen instance, providing the "echo"
 // capability, on the configured endpoint.
-func NewEcho(cfg *config.Kaetzchen, glue glue.Glue) (Kaetzchen, error) {
+func NewEcho(glue glue.Glue) (Kaetzchen, error) {
 	k := &kaetzchenEcho{
 		log:    glue.LogBackend().GetLogger("kaetzchen/echo"),
 		params: make(Parameters),
 	}
-	k.params[ParameterEndpoint] = cfg.Endpoint
+	k.params[ParameterEndpoint] = "+echo"
 
 	return k, nil
 }

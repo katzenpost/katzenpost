@@ -38,6 +38,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/cert"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
+	"github.com/katzenpost/katzenpost/server/loops"
 )
 
 const (
@@ -63,6 +64,10 @@ type MixDescriptor struct {
 
 	// Signature is the raw cert.Signature over the serialized MixDescriptor
 	Signature *cert.Signature `cbor:"-"`
+
+	// DecoyStatsKey is a signing key used to sign mix decoy loops statistics
+	// before sending them to the Providers to be cached and retreived by clients.
+	DecoyStatsKey []byte
 
 	// LinkKey is the node's wire protocol public key.
 	LinkKey []byte
@@ -178,6 +183,10 @@ func (d *MixDescriptor) MarshalBinary() ([]byte, error) {
 	return data, err
 }
 
+func (d *MixDescriptor) GetDecoyStatsKey() (sign.PublicKey, error) {
+	return loops.Scheme.UnmarshalBinaryPublicKey(d.DecoyStatsKey)
+}
+
 // SignDescriptor signs and serializes the descriptor with the provided signing
 // key.
 func SignDescriptor(signer sign.PrivateKey, verifier sign.PublicKey, desc *MixDescriptor) ([]byte, error) {
@@ -249,6 +258,9 @@ func IsDescriptorWellFormed(d *MixDescriptor, epoch uint64) error {
 	}
 	if len(d.Name) > constants.NodeIDLength {
 		return fmt.Errorf("Descriptor Name '%v' exceeds max length", d.Name)
+	}
+	if d.DecoyStatsKey == nil {
+		return fmt.Errorf("Descriptor missing DecoyStatsKey")
 	}
 	if d.LinkKey == nil {
 		return fmt.Errorf("Descriptor missing LinkKey")

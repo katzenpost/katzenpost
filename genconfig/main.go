@@ -222,30 +222,6 @@ func (s *katzenpost) genNodeConfig(isProvider bool, isVoting bool) error {
 				s.hasPanda = true
 			}
 		}
-
-		echoCfg := new(sConfig.Kaetzchen)
-		echoCfg.Capability = "echo"
-		echoCfg.Endpoint = "+echo"
-		cfg.Provider.Kaetzchen = append(cfg.Provider.Kaetzchen, echoCfg)
-
-		/*
-			keysvrCfg := new(sConfig.Kaetzchen)
-			keysvrCfg.Capability = "keyserver"
-			keysvrCfg.Endpoint = "+keyserver"
-			cfg.Provider.Kaetzchen = append(cfg.Provider.Kaetzchen, keysvrCfg)
-
-				if s.providerIdx == 1 {
-					cfg.Debug.NumProviderWorkers = 10
-					cfg.Provider.SQLDB = new(sConfig.SQLDB)
-					cfg.Provider.SQLDB.Backend = "pgx"
-					cfg.Provider.SQLDB.DataSourceName = "host=localhost port=5432 database=katzenpost sslmode=disable"
-					cfg.Provider.UserDB = new(sConfig.UserDB)
-					cfg.Provider.UserDB.Backend = sConfig.BackendSQL
-
-					cfg.Provider.SpoolDB = new(sConfig.SpoolDB)
-					cfg.Provider.SpoolDB.Backend = sConfig.BackendSQL
-				}
-		*/
 	} else {
 		s.nodeIdx++
 	}
@@ -344,7 +320,7 @@ func main() {
 	omitTopology := flag.Bool("D", false, "Dynamic topology (omit fixed topology definition)")
 	kem := flag.String("kem", "", "Name of the KEM Scheme to be used with Sphinx")
 	nike := flag.String("nike", "x25519", "Name of the NIKE Scheme to be used with Sphinx")
-	UserForwardPayloadLength := flag.Int("UserForwardPayloadLength", 2000, "UserForwardPayloadLength")
+	UserForwardPayloadLength := flag.Int("UserForwardPayloadLength", 3000, "UserForwardPayloadLength")
 
 	sr := flag.Uint64("sr", 0, "Sendrate limit")
 	mu := flag.Float64("mu", 0.005, "Inverse of mean of per hop delay.")

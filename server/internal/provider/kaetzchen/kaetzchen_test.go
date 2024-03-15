@@ -33,6 +33,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/cert"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/monotime"
+	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/commands"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
@@ -43,6 +44,7 @@ import (
 	"github.com/katzenpost/katzenpost/server/internal/glue"
 	"github.com/katzenpost/katzenpost/server/internal/packet"
 	"github.com/katzenpost/katzenpost/server/internal/pkicache"
+	"github.com/katzenpost/katzenpost/server/loops"
 	"github.com/katzenpost/katzenpost/server/spool"
 	"github.com/katzenpost/katzenpost/server/userdb"
 )
@@ -100,6 +102,12 @@ type mockProvider struct {
 	userKey  kem.PublicKey
 }
 
+func (p *mockProvider) OnNewDocument(*pki.Document) {}
+
+func (p *mockProvider) CurrentDocument() *pki.Document {
+	return nil
+}
+
 func (p *mockProvider) Halt() {}
 
 func (p *mockProvider) UserDB() userdb.UserDB {
@@ -149,6 +157,10 @@ type mockGlue struct {
 	s *mockServer
 }
 
+func (g *mockGlue) LoopsCache() *loops.Cache {
+	return nil
+}
+
 func (g *mockGlue) Config() *config.Config {
 	return g.s.cfg
 }
@@ -167,6 +179,14 @@ func (g *mockGlue) IdentityPublicKey() sign.PublicKey {
 
 func (g *mockGlue) LinkKey() kem.PrivateKey {
 	return g.s.linkKey
+}
+
+func (g *mockGlue) DecoyStatsKey() sign.PrivateKey {
+	return nil
+}
+
+func (g *mockGlue) DecoyStatsPublicKey() sign.PublicKey {
+	return nil
 }
 
 func (g *mockGlue) Management() *thwack.Server {
@@ -257,18 +277,9 @@ func TestKaetzchenWorker(t *testing.T) {
 			provider:   mockProvider,
 			linkKey:    linkKey,
 			cfg: &config.Config{
-				Server:  &config.Server{},
-				Logging: &config.Logging{},
-				Provider: &config.Provider{
-					Kaetzchen: []*config.Kaetzchen{
-						&config.Kaetzchen{
-							Capability: "echo",
-							Endpoint:   "echo",
-							Config:     map[string]interface{}{},
-							Disable:    false,
-						},
-					},
-				},
+				Server:     &config.Server{},
+				Logging:    &config.Logging{},
+				Provider:   &config.Provider{},
 				PKI:        &config.PKI{},
 				Management: &config.Management{},
 				Debug: &config.Debug{

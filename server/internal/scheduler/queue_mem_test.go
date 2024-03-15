@@ -33,6 +33,7 @@ import (
 	"github.com/katzenpost/katzenpost/server/config"
 	"github.com/katzenpost/katzenpost/server/internal/glue"
 	"github.com/katzenpost/katzenpost/server/internal/packet"
+	"github.com/katzenpost/katzenpost/server/loops"
 )
 
 type mockServer struct {
@@ -40,6 +41,10 @@ type mockServer struct {
 }
 type mockGlue struct {
 	s mockServer
+}
+
+func (m *mockGlue) LoopsCache() *loops.Cache {
+	return nil
 }
 
 func (m *mockGlue) Config() *config.Config {
@@ -65,6 +70,15 @@ func (m *mockGlue) IdentityPublicKey() sign.PublicKey {
 func (m *mockGlue) LinkKey() kem.PrivateKey {
 	return nil
 }
+
+func (m *mockGlue) DecoyStatsKey() sign.PrivateKey {
+	return nil
+}
+
+func (m *mockGlue) DecoyStatsPublicKey() sign.PublicKey {
+	return nil
+}
+
 func (m *mockGlue) Listeners() []glue.Listener {
 	return make([]glue.Listener, 0)
 }
