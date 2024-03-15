@@ -337,6 +337,8 @@ func New(cfg *config.Config) (*Server, error) {
 	decoyStatsPrivateKeyFile := filepath.Join(s.cfg.Server.DataDir, "decoy_stats.private.pem")
 	decoyStatsPublicKeyFile := filepath.Join(s.cfg.Server.DataDir, "decoy_stats.public.pem")
 
+	s.decoyStatsPublicKey, s.decoyStatsPrivateKey, err = loops.Scheme.GenerateKey()
+
 	if utils.BothExists(decoyStatsPrivateKeyFile, decoyStatsPublicKeyFile) {
 		s.decoyStatsPrivateKey, err = signpem.FromPrivatePEMFile(decoyStatsPrivateKeyFile, loops.Scheme)
 		if err != nil {
