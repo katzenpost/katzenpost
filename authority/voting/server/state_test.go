@@ -215,13 +215,14 @@ func TestVote(t *testing.T) {
 		require.NoError(err)
 
 		desc := &pki.MixDescriptor{
-			Name:        mixCfgs[i].Server.Identifier,
-			Epoch:       votingEpoch,
-			IdentityKey: blob,
-			LinkKey:     linkBlob,
-			MixKeys:     mkeys,
-			Provider:    mixCfgs[i].Server.IsProvider,
-			Addresses:   addr,
+			Name:          mixCfgs[i].Server.Identifier,
+			Epoch:         votingEpoch,
+			IdentityKey:   blob,
+			LinkKey:       linkBlob,
+			DecoyStatsKey: []byte("non-nil byte slice value"),
+			MixKeys:       mkeys,
+			Provider:      mixCfgs[i].Server.IsProvider,
+			Addresses:     addr,
 		}
 
 		err = pki.IsDescriptorWellFormed(desc, votingEpoch)
@@ -511,10 +512,6 @@ func genProviderConfig(name string, pki *sConfig.PKI, port uint16) (*identityKey
 
 	cfg.Provider = new(sConfig.Provider)
 
-	echoCfg := new(sConfig.Kaetzchen)
-	echoCfg.Capability = "echo"
-	echoCfg.Endpoint = "+echo"
-	cfg.Provider.Kaetzchen = append(cfg.Provider.Kaetzchen, echoCfg)
 	err = cfg.FixupAndValidate()
 	if err != nil {
 		return nil, nil, err
