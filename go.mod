@@ -22,7 +22,7 @@ require (
 	github.com/katzenpost/chacha20poly1305 v0.0.0-20211026103954-7b6fb2fc0129
 	github.com/katzenpost/nyquist v0.0.0-20231024064113-96ae83e5c09b
 	github.com/katzenpost/sntrup4591761 v0.0.0-20231024131303-8755eb1986b8
-	github.com/privacylab/talek v0.0.0-20240218092236-5b8a7476485f
+	github.com/privacylab/talek v0.0.0-20240319125730-57ac6aafbf14
 	github.com/prometheus/client_golang v1.14.0
 	github.com/stretchr/testify v1.8.4
 	github.com/ugorji/go/codec v1.2.8
