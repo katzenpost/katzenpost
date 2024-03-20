@@ -72,7 +72,7 @@ functioning correctly.
 Experimental setup, node A:
 
 * Data: each network node `A` collects a record of emitted test loops in a certain epoch, their paths and whether they returned or not. Importantly, each loop is the same length and includes l steps.
-* A segment is defined as a possible connection from a device in the network to another, for example from a node in the layer `i` to a node in the layer `i+1`. Each loop is a sequence of such segments.
+* A segment is defined as a possible connection from a device in the network to another, for example from a node in the layer `k` to a node in the layer `k+1`. Each loop is a sequence of such segments.
 * Each node `A` will create 3 arrays with slots corresponding to valid path segments. These arrays will be `sent_loops_A`, `completed_loops_A` and `ratios_A`.
 * Every time the node A sends out a test loop, for each segment in the loop path, it will increment the slot corresponding to that nodes node by 1 in the array `sent_loops_A`.
 * When a test loop returns, for each step in the loop path, it will increment the slot corresponding to that node by 1 in the array `completed_loops_A`.
