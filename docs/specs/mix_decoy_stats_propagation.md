@@ -23,20 +23,25 @@ observing.
 
 ## 1. Design Overview
 
-Nodes (mixes, gateways, and providers) need upload packet-loss statistics to the directory authorities, so that authorities can remove malfunctioning nodes from the consensus in the next epoch.
+Nodes (mixes, gateways, and providers) need upload packet-loss
+statistics to the directory authorities, so that authorities can
+remove malfunctioning nodes from the consensus in the next epoch.
 
 Nodes currently sign and upload a Descriptor in each epoch.
 
-In the future, they should instead upload a "DescriptorUploadDocument" (fixme, better name) containing:
+In the future, they should instead upload a "DescriptorUploadDocument"
+(fixme, better name) containing:
     * Descriptor
     * Stats
     * Signature
 
 Stats contains:
-    * a map from pairs-of-mixes to count-of-loops-sent
-    * a map from pairs-of-mixes to count-of-loops-received
+	* a map from pairs-of-mixes to the ratio of count-of-loops-sent vs count-of-loops-received
 
-Authorities can now detect failing mixes and remove them from the next epoch, or later potentially adjust their bandwidth weights. Clients do not need nodes' stats or their signatures over their descriptor, because they are reliant on the directory authorities anyway.
+Authorities can now detect failing mixes and remove them from the next
+epoch, or later potentially adjust their bandwidth weights. Clients do
+not need nodes' stats or their signatures over their descriptor,
+because they are reliant on the directory authorities anyway.
 
 
 ### 1.2 Cryptographic primitives
@@ -108,11 +113,21 @@ faulty nodes should approach 0 (if the node doesn’t work at all), and
 be binomially distributed at nodes that can share a loop with faulty
 nodes.
 
+Therefore each mix node generates a statistics report to upload
+to the dirauth nodes, of the struct type:
+
+```
+type LoopStats struct {
+	Epoch           uint64
+	MixIdentityHash *[32]byte
+	Ratios          map[[64]byte]float64
+}
+```
+
 The report is subsequently uploaded to the directory authorities,
 which combine the reports of individual nodes into a health status of
 the network and arrive at a consensus decision about the topology of
 the network.
-
 
 
 
