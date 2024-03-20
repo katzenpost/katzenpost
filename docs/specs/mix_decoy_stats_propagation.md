@@ -71,26 +71,26 @@ functioning correctly.
 
 Experimental setup, node A:
 
-* Data: each mix node collects a record of emitted test loops in a certain epoch, their paths and whether
+* Data: each mix node `A` collects a record of emitted test loops in a certain epoch, their paths and whether
 they returned or not. Importantly, each loop is the same length and includes l steps.
-* Track them in two maps, `sent_loops` and `completed_loops`, where every slot in the map corresponds to a pair of nodes representing a segment of one of the possible paths through the network.
+* A segment is defined as a possible connection from a device in the network to another, for example from a node in the layer `i` to a node in the layer `i+1`. Each loop is a sequence of such segments.
+* Each node `A` will create 3 arrays with slots corresponding to valid path segments. These arrays will be `sent_loops_A`, `completed_loops_A` and `ratios_A`.
 * Every time the node A sends out a test loop, for each step in the loop path, it will increment the slot
-corresponding to that nodes node by 1 in the map `sent_loops`.
+corresponding to that nodes node by 1 in the map `sent_loops_A`.
 * When a test loop returns, for each step in the loop path, it will increment the slot corresponding to that
-node by 1 in the array `completed_loops`.
+node by 1 in the array `completed_loops_A`.
 * A decision needs to be made if it is preferable to pause sending out new loops near the end of the
 epoch in order to not have false negatives.
-* Generate a new map `loss[i] = sent_loops[i] − completed_loops[i]`
-* Finally, use the array sent_loops to normalize the entries in `loss`, by dividing `loss[i]/sent_loops[i]` for each
-entry, and record the results in a new map ratios.
+*
+* Generate a new map `ratios_A`. For each slot `i`, if `sent_loops_A[i]==0` set `ratios_A[i]=1`. Else `ratios_A[i] = completed_loops_A[i]/sent_loops_A[i]`
 * Plot the resulting distribution, and calculate the standard deviation to detect anomalies. Have the
 node report significant anomalies after a sufficient time period as to not leak information on the route
 of individual loops.
 
 You would expect the distribution of values in `completed_loops` to approximate a
-binomial distribution. In an absence of faulty nodes, `loss` should be
-0, and when there are some faulty nodes values at faulty nodes should
-approach 1 (if the node doesn’t work at all), and be binomially
+binomial distribution. In an absence of faulty nodes, `ratios` should be
+1, and when there are some faulty nodes values at faulty nodes should
+approach 0 (if the node doesn’t work at all), and be binomially
 distributed at nodes that can share a loop with faulty nodes.
 
 
