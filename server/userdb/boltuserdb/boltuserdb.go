@@ -24,11 +24,12 @@ import (
 	"fmt"
 	"sync"
 
+	bolt "go.etcd.io/bbolt"
+
 	"github.com/katzenpost/hpqc/kem"
 	"github.com/katzenpost/hpqc/kem/pem"
-	"github.com/katzenpost/katzenpost/core/wire"
+
 	"github.com/katzenpost/katzenpost/server/userdb"
-	bolt "go.etcd.io/bbolt"
 )
 
 const (
@@ -254,7 +255,7 @@ func (d *boltUserDB) Close() {
 }
 
 // New creates (or loads) a user database with the given file name f.
-func New(f string, opts ...BoltUserDBOption) (userdb.UserDB, error) {
+func New(f string, kemscheme kem.Scheme, opts ...BoltUserDBOption) (userdb.UserDB, error) {
 	const (
 		metadataBucket = "metadata"
 		versionKey     = "version"
@@ -268,7 +269,7 @@ func New(f string, opts ...BoltUserDBOption) (userdb.UserDB, error) {
 		opt(d)
 	}
 
-	d.scheme = wire.DefaultScheme
+	d.scheme = kemscheme
 	d.db, err = bolt.Open(f, 0600, nil)
 	if err != nil {
 		return nil, err

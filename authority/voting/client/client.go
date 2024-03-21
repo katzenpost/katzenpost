@@ -26,12 +26,10 @@ import (
 
 	"gopkg.in/op/go-logging.v1"
 
-	nyquistkem "github.com/katzenpost/nyquist/kem"
-	"github.com/katzenpost/nyquist/seec"
-
 	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/kem"
 	kempem "github.com/katzenpost/hpqc/kem/pem"
+	"github.com/katzenpost/hpqc/kem/schemes"
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/hpqc/sign"
 
@@ -69,6 +67,9 @@ func (a *authorityAuthenticator) IsPeerValid(creds *wire.PeerCredentials) bool {
 
 // Config is a voting authority pki.Client instance.
 type Config struct {
+	// KEMScheme indicates the KEM scheme used for the LinkKey/wire protocol.
+	KEMScheme kem.Scheme
+
 	// LinkKey is the link key for the client's wire connections.
 	LinkKey kem.PrivateKey
 
@@ -161,6 +162,7 @@ func (p *connector) initSession(ctx context.Context, doneCh <-chan interface{}, 
 		ad = keyHash[:]
 	}
 	cfg := &wire.SessionConfig{
+		KEMScheme:         schemes.ByName(peer.WireKEMScheme),
 		Geometry:          nil,
 		Authenticator:     peerAuthenticator,
 		AdditionalData:    ad,
@@ -321,13 +323,10 @@ func (c *Client) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, 
 	c.log.Noticef("Get(ctx, %d)", epoch)
 
 	// Generate a random keypair to use for the link authentication.
-	scheme := wire.DefaultScheme
-	genRand, err := seec.GenKeyPRPAES(rand.Reader, 256)
+	_, linkKey, err := c.cfg.KEMScheme.GenerateKeyPair()
 	if err != nil {
 		return nil, nil, err
 	}
-
-	_, linkKey := nyquistkem.GenerateKeypair(scheme, genRand)
 
 	// Initialize the TCP/IP connection, and wire session.
 	doneCh := make(chan interface{})

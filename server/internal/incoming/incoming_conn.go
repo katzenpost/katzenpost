@@ -24,8 +24,12 @@ import (
 	"sync/atomic"
 	"time"
 
+	"gopkg.in/op/go-logging.v1"
+
 	"github.com/katzenpost/hpqc/hash"
+	"github.com/katzenpost/hpqc/kem"
 	"github.com/katzenpost/hpqc/rand"
+
 	"github.com/katzenpost/katzenpost/core/monotime"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
@@ -33,12 +37,13 @@ import (
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"github.com/katzenpost/katzenpost/server/internal/instrument"
 	"github.com/katzenpost/katzenpost/server/internal/packet"
-	"gopkg.in/op/go-logging.v1"
 )
 
 var incomingConnID uint64
 
 type incomingConn struct {
+	scheme kem.Scheme
+
 	l   *listener
 	log *logging.Logger
 
@@ -165,6 +170,7 @@ func (c *incomingConn) worker() {
 	// Allocate the session struct.
 	identityHash := hash.Sum256From(c.l.glue.IdentityPublicKey())
 	cfg := &wire.SessionConfig{
+		KEMScheme:         c.scheme,
 		Geometry:          c.geo,
 		Authenticator:     c,
 		AdditionalData:    identityHash[:],
@@ -476,8 +482,9 @@ func (c *incomingConn) onSendPacket(cmd *commands.SendPacket) error {
 	return nil
 }
 
-func newIncomingConn(l *listener, conn net.Conn, geo *geo.Geometry) *incomingConn {
+func newIncomingConn(l *listener, conn net.Conn, geo *geo.Geometry, scheme kem.Scheme) *incomingConn {
 	c := &incomingConn{
+		scheme:            scheme,
 		l:                 l,
 		c:                 conn,
 		id:                atomic.AddUint64(&incomingConnID, 1), // Diagnostic only, wrapping is fine.

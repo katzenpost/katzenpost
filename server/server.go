@@ -34,6 +34,7 @@ import (
 	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/kem"
 	pemkem "github.com/katzenpost/hpqc/kem/pem"
+	"github.com/katzenpost/hpqc/kem/schemes"
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/hpqc/sign"
 	signpem "github.com/katzenpost/hpqc/sign/pem"
@@ -42,7 +43,6 @@ import (
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/thwack"
 	"github.com/katzenpost/katzenpost/core/utils"
-	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/server/config"
 	"github.com/katzenpost/katzenpost/server/internal/cryptoworker"
 	"github.com/katzenpost/katzenpost/server/internal/decoy"
@@ -285,14 +285,16 @@ func New(cfg *config.Config) (*Server, error) {
 	s.log.Noticef("Server identity public key hash is: %x", idPubKeyHash[:])
 	linkPrivateKeyFile := filepath.Join(s.cfg.Server.DataDir, "link.private.pem")
 	linkPublicKeyFile := filepath.Join(s.cfg.Server.DataDir, "link.public.pem")
-	scheme := wire.DefaultScheme
+	scheme := schemes.ByName(cfg.Server.WireKEM)
+	if scheme == nil {
+		panic("KEM scheme not found")
+	}
 
 	//GenerateKeypair
-	rng, err := seec.GenKeyPassthrough(rand.Reader, 0)
+	linkPublicKey, linkPrivateKey, err := scheme.GenerateKeyPair()
 	if err != nil {
 		panic(err)
 	}
-	linkPublicKey, linkPrivateKey := nyquistkem.GenerateKeypair(scheme, rng)
 	if utils.BothExists(linkPrivateKeyFile, linkPublicKeyFile) {
 		linkPrivateKey, err = pemkem.FromPrivatePEMFile(linkPrivateKeyFile, scheme)
 		if err != nil {

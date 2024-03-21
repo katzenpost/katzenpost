@@ -29,6 +29,8 @@ import (
 	"time"
 
 	"github.com/katzenpost/hpqc/hash"
+	"github.com/katzenpost/hpqc/kem/schemes"
+
 	vClient "github.com/katzenpost/katzenpost/authority/voting/client"
 	vServer "github.com/katzenpost/katzenpost/authority/voting/server"
 	"github.com/katzenpost/katzenpost/core/epochtime"
@@ -699,7 +701,13 @@ func New(glue glue.Glue) (glue.PKI, error) {
 		return nil, errors.New("Descriptor address map is zero size.")
 	}
 
+	kemscheme := schemes.ByName(glue.Config().Server.WireKEM)
+	if kemscheme == nil {
+		return nil, errors.New("kem scheme not found in registry")
+	}
+
 	pkiCfg := &vClient.Config{
+		KEMScheme:   kemscheme,
 		LinkKey:     glue.LinkKey(),
 		LogBackend:  glue.LogBackend(),
 		Authorities: glue.Config().PKI.Voting.Authorities,

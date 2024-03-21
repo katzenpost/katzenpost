@@ -31,6 +31,7 @@ import (
 
 	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/kem"
+	"github.com/katzenpost/hpqc/kem/schemes"
 	ecdh "github.com/katzenpost/hpqc/nike/x25519"
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/hpqc/sign"
@@ -44,6 +45,9 @@ import (
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 )
+
+var testingSchemeName = "xwing"
+var testingScheme = schemes.ByName(testingSchemeName)
 
 type descriptor struct {
 	desc *pki.MixDescriptor
@@ -93,8 +97,8 @@ func generateNodes(isProvider bool, num int, epoch uint64) ([]*descriptor, error
 			name = fmt.Sprintf("NSA_Spy_Satelite_Mix%d", i)
 		}
 
-		scheme := wire.DefaultScheme
-		_, linkPubKey, err := scheme.GenerateKeyPair()
+		scheme := testingScheme
+		linkPubKey, _, err := scheme.GenerateKeyPair()
 		if err != nil {
 			return nil, err
 		}
@@ -277,6 +281,7 @@ func (d *mockDialer) mockServer(address string, linkPrivateKey kem.PrivateKey, i
 	d.waitUntilDialed(address)
 	identityHash := hash.Sum256From(identityPublicKey)
 	cfg := &wire.SessionConfig{
+		KEMScheme:         testingScheme,
 		Geometry:          mygeo,
 		Authenticator:     d,
 		AdditionalData:    identityHash[:],
@@ -339,13 +344,14 @@ func generatePeer(peerNum int) (*config.Authority, sign.PrivateKey, sign.PublicK
 		return nil, nil, nil, nil, err
 	}
 
-	scheme := wire.DefaultScheme
+	scheme := testingScheme
 	linkPublicKey, linkPrivateKey, err := scheme.GenerateKeyPair()
 	if err != nil {
 		return nil, nil, nil, nil, err
 	}
 
 	authPeer := &config.Authority{
+		WireKEMScheme:     testingSchemeName,
 		IdentityPublicKey: identityPublicKey,
 		LinkPublicKey:     linkPublicKey,
 		Addresses:         []string{fmt.Sprintf("127.0.0.1:%d", peerNum)},
@@ -376,6 +382,7 @@ func TestClient(t *testing.T) {
 	}
 	wg.Wait()
 	cfg := &Config{
+		KEMScheme:     testingScheme,
 		LogBackend:    logBackend,
 		Authorities:   peers,
 		DialContextFn: dialer.dial,
