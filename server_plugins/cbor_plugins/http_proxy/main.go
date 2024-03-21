@@ -116,6 +116,10 @@ func (s *proxyRequestHandler) OnCommand(cmd cborplugin.Command) (cborplugin.Comm
 		if err != nil {
 			return nil, err
 		}
+
+		// mutate request with our destination host
+		request.Host = s.dest.Host
+
 		resp, err := http.DefaultClient.Do(request)
 		if err != nil {
 			return nil, err
