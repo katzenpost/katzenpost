@@ -183,7 +183,7 @@ jobs:
 
       - name: Allow mixnet to settle
         run: |
-          sleep 240
+          sleep 180
 
       - name: run benchmark tests
         run: cd bench && sudo -E make testargs=-coverprofile=coverage.part dockerdockertest && cat coverage.part >> ../coverage.out
