@@ -156,6 +156,9 @@ func (b *MinclientBench) setup() {
 
 	b.log = logBackend.GetLogger("MinclientBench")
 
+	if testingScheme == nil {
+		panic("testingScheme is invalid")
+	}
 	_, b.linkKey, err = testingScheme.GenerateKeyPair()
 	blob, err := b.linkKey.Public().MarshalBinary()
 	if err != nil {
