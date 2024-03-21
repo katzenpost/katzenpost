@@ -179,11 +179,7 @@ jobs:
 
       - name: Build and start the mixnet
         run: |
-          cd docker && sudo -E make start
-
-      - name: Allow mixnet to settle
-        run: |
-          sleep 180
+          cd docker && sudo -E make start wait run-ping
 
       - name: run benchmark tests
         run: cd bench && sudo -E make testargs=-coverprofile=coverage.part dockerdockertest && cat coverage.part >> ../coverage.out
