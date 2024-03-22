@@ -1,1 +1,0 @@
-../../ref/params/params-sphincs-sha2-192s.h

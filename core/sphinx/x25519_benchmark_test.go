@@ -19,9 +19,10 @@ package sphinx
 import (
 	"testing"
 
-	"github.com/katzenpost/katzenpost/core/crypto/nike/ecdh"
+	ecdh "github.com/katzenpost/hpqc/nike/x25519"
+	"github.com/katzenpost/hpqc/rand"
 )
 
 func BenchmarkX25519SphinxUnwrap(b *testing.B) {
-	benchmarkSphinxUnwrap(b, ecdh.EcdhScheme)
+	benchmarkSphinxUnwrap(b, ecdh.Scheme(rand.Reader))
 }

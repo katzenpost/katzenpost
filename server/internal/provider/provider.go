@@ -25,7 +25,13 @@ import (
 	"sync"
 	"time"
 
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"gopkg.in/eapache/channels.v1"
+	"gopkg.in/op/go-logging.v1"
+
+	"github.com/katzenpost/hpqc/hash"
+	"github.com/katzenpost/hpqc/kem"
+	kempem "github.com/katzenpost/hpqc/kem/pem"
+
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/thwack"
@@ -42,8 +48,6 @@ import (
 	"github.com/katzenpost/katzenpost/server/userdb"
 	"github.com/katzenpost/katzenpost/server/userdb/boltuserdb"
 	"github.com/katzenpost/katzenpost/server/userdb/externuserdb"
-	"gopkg.in/eapache/channels.v1"
-	"gopkg.in/op/go-logging.v1"
 )
 
 type provider struct {
@@ -92,10 +96,14 @@ func (p *provider) UserDB() userdb.UserDB {
 func (p *provider) AuthenticateClient(c *wire.PeerCredentials) bool {
 	isValid := p.userDB.IsValid(c.AdditionalData, c.PublicKey)
 	if !isValid {
+		blob, err := c.PublicKey.MarshalBinary()
+		if err != nil {
+			panic(err)
+		}
 		if len(c.AdditionalData) == sConstants.NodeIDLength {
-			p.log.Errorf("Authentication failed: User: '%x', Key: '%x' (Probably a peer)", c.AdditionalData, c.PublicKey.Sum256())
+			p.log.Errorf("Authentication failed: User: '%x', Key: '%x' (Probably a peer)", c.AdditionalData, hash.Sum256(blob))
 		} else {
-			p.log.Errorf("Authentication failed: User: '%x', Key: '%x'", c.AdditionalData, c.PublicKey.Sum256())
+			p.log.Errorf("Authentication failed: User: '%x', Key: '%x'", c.AdditionalData, hash.Sum256(blob))
 		}
 	}
 	return isValid
@@ -319,8 +327,7 @@ func (p *provider) doAddUpdate(c *thwack.Conn, l string, isUpdate bool) error {
 	}
 
 	// Deserialize the public key.
-	_, pubKey := wire.DefaultScheme.GenerateKeypair(rand.Reader)
-	err := pubKey.UnmarshalText([]byte(sp[2]))
+	pubKey, err := kempem.FromPublicPEMString(sp[2], wire.DefaultScheme)
 	if err != nil {
 		c.Log().Errorf("[ADD/UPDATE]_USER invalid public key: %v", err)
 		return c.WriteReply(thwack.StatusSyntaxError)
@@ -389,14 +396,13 @@ func (p *provider) onSetUserIdentity(c *thwack.Conn, l string) error {
 	defer p.Unlock()
 
 	var err error
-	var pubKey wire.PublicKey
+	var pubKey kem.PublicKey
 
 	sp := strings.Split(l, " ")
 	switch len(sp) {
 	case 2:
 	case 3:
-		_, pubKey = wire.DefaultScheme.GenerateKeypair(rand.Reader)
-		err = pubKey.UnmarshalText([]byte(sp[2]))
+		pubKey, err = kempem.FromPublicPEMString(sp[2], wire.DefaultScheme)
 		if err != nil {
 			c.Log().Errorf("SET_USER_IDENTITY invalid public key: %v", err)
 			return c.WriteReply(thwack.StatusSyntaxError)

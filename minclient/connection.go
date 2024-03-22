@@ -28,7 +28,8 @@ import (
 
 	"gopkg.in/op/go-logging.v1"
 
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/hpqc/hash"
+	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/wire"
@@ -190,9 +191,13 @@ func (c *connection) getDescriptor() error {
 		c.log.Debugf("Failed to find descriptor for Provider: %v", err)
 		return newPKIError("failed to find descriptor for Provider: %v", err)
 	}
-	if c.c.cfg.ProviderKeyPin != nil && !c.c.cfg.ProviderKeyPin.Equal(desc.IdentityKey) {
-		c.log.Errorf("Provider identity key does not match pinned key: %v", desc.IdentityKey)
-		return newPKIError("identity key for Provider does not match pinned key: %v", desc.IdentityKey)
+	providerPinKeyBlob, err := c.c.cfg.ProviderKeyPin.MarshalBinary()
+	if err != nil {
+		return err
+	}
+	if c.c.cfg.ProviderKeyPin != nil && !hmac.Equal(providerPinKeyBlob, desc.IdentityKey) {
+		c.log.Errorf("Provider identity key does not match pinned key: %x", desc.IdentityKey)
+		return newPKIError("identity key for Provider does not match pinned key: %x", desc.IdentityKey)
 	}
 	if desc != c.descriptor {
 		c.log.Debugf("Descriptor for epoch %v: %+v", doc.Epoch, desc)
@@ -674,11 +679,16 @@ func (c *connection) IsPeerValid(creds *wire.PeerCredentials) bool {
 		return false
 	}
 
-	identityHash := c.descriptor.IdentityKey.Sum256()
+	identityHash := hash.Sum256(c.descriptor.IdentityKey)
 	if !hmac.Equal(identityHash[:], creds.AdditionalData) {
 		return false
 	}
-	if !c.descriptor.LinkKey.Equal(creds.PublicKey) {
+
+	blob, err := creds.PublicKey.MarshalBinary()
+	if err != nil {
+		panic(err)
+	}
+	if !hmac.Equal(c.descriptor.LinkKey, blob) {
 		return false
 	}
 	return true
