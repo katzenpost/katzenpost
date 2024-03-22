@@ -32,6 +32,7 @@ import (
 
 	"github.com/katzenpost/katzenpost/core/cert"
 	"github.com/katzenpost/katzenpost/core/log"
+	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/commands"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
@@ -120,6 +121,8 @@ func (p *mockProvider) OnPacket(*packet.Packet) {}
 func (p *mockProvider) KaetzchenForPKI() (map[string]map[string]interface{}, error) {
 	return nil, nil
 }
+
+func (d *mockProvider) OnNewDocument(*pki.Document) {}
 
 type mockDecoy struct{}
 
