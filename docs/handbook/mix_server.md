@@ -464,3 +464,15 @@ SEND_RATE 30
 ```
 SEND_BURST 4
 ```
+
+- `START_KAETZCHEN` - Start the Kaetzchen identified by capability:
+
+```
+START_KAETZCHEN echo
+```
+
+- `STOP_KAETZCHEN` - Stop the Kaetzchen identified by capability:
+
+```
+STOP_KAETZCHEN echo
+```
