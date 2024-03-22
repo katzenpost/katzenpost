@@ -19,17 +19,17 @@ package sphinx
 import (
 	"testing"
 
-	"github.com/katzenpost/katzenpost/core/crypto/kem/adapter"
-	ctidh "github.com/katzenpost/katzenpost/core/crypto/nike/ctidh1024"
+	"github.com/katzenpost/hpqc/kem/adapter"
+	ctidh "github.com/katzenpost/hpqc/nike/ctidh/ctidh1024"
 )
 
 func BenchmarkCtidh1024SphinxUnwrap(b *testing.B) {
-	if ctidh.CTIDH1024Scheme == nil {
+	if ctidh.Scheme() == nil {
 		panic("ctidh.CTIDH1024Scheme is NIL")
 	}
-	benchmarkSphinxUnwrap(b, ctidh.CTIDH1024Scheme)
+	benchmarkSphinxUnwrap(b, ctidh.Scheme())
 }
 
 func BenchmarkKEMSphinxUnwrapCTIDH1024(b *testing.B) {
-	benchmarkKEMSphinxUnwrap(b, adapter.FromNIKE(ctidh.CTIDH1024Scheme))
+	benchmarkKEMSphinxUnwrap(b, adapter.FromNIKE(ctidh.Scheme()))
 }
