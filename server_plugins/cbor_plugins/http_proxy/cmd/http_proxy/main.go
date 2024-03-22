@@ -18,6 +18,7 @@ import (
 
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/server/cborplugin"
+	"github.com/katzenpost/katzenpost/server_plugins/cbor_plugins/http_proxy"
 )
 
 func main() {
@@ -78,12 +79,6 @@ func main() {
 	os.Remove(socketFile)
 }
 
-// Request is the type which is serialized into the cborplugin request payload.
-type Request struct {
-	// Payload contains the proxied http request
-	Payload []byte
-}
-
 type proxyRequestHandler struct {
 	log  *logging.Logger
 	dest *url.URL
@@ -105,7 +100,7 @@ func (s *proxyRequestHandler) OnCommand(cmd cborplugin.Command) (cborplugin.Comm
 		// know how long it is, so we will use a streaming
 		// decoder and simply return the first cbor object
 		// and then discard the decoder and buffer
-		req := &Request{}
+		req := &http_proxy.Request{}
 		dec := cbor.NewDecoder(bytes.NewReader(r.Payload))
 		err := dec.Decode(req)
 		if err != nil {
