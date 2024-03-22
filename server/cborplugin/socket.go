@@ -18,6 +18,7 @@ package cborplugin
 
 import (
 	"net"
+	"time"
 
 	"github.com/fxamacker/cbor/v2"
 	"gopkg.in/op/go-logging.v1"
@@ -69,8 +70,23 @@ func (c *CommandIO) Start(initiator bool, socketFile string, commandBuilder Comm
 	c.commandBuilder = commandBuilder
 
 	if initiator {
-		err := c.dial(socketFile)
-		if err != nil {
+
+		// it's possible that the plugin has written the socketFile to its stdout
+		// but the call to Accept hasn't happened yet, so backoff and wait a bit
+		// https://github.com/katzenpost/katzenpost/issues/477
+		var err error
+		started := false
+		for tries := 0; tries < 3; tries++ {
+			err = c.dial(socketFile)
+			if err != nil {
+				time.Sleep(time.Second)
+				continue
+			} else {
+				started = true
+				break
+			}
+		}
+		if started != true {
 			panic(err)
 		}
 		c.Go(c.reader)
