@@ -17,7 +17,7 @@ package common
 
 import (
 	"bytes"
-	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
+	"github.com/katzenpost/hpqc/sign/ed25519"
 )
 
 var (
@@ -26,11 +26,11 @@ var (
 )
 
 // MessageID represents a storage address with Read/Write capability
-type MessageID [eddsa.PublicKeySize]byte
+type MessageID [ed25519.PublicKeySize]byte
 
 // ReadVerifier returns the verifier of ReadCap for this ID
-func (m MessageID) ReadVerifier() *eddsa.PublicKey {
-	p := new(eddsa.PublicKey)
+func (m MessageID) ReadVerifier() *ed25519.PublicKey {
+	p := new(ed25519.PublicKey)
 	if err := p.FromBytes(m[:]); err != nil {
 		panic(err)
 	}
@@ -38,8 +38,8 @@ func (m MessageID) ReadVerifier() *eddsa.PublicKey {
 }
 
 // WriteVerifier returns the verifier of WriteCap for this ID
-func (m MessageID) WriteVerifier() *eddsa.PublicKey {
-	p := new(eddsa.PublicKey)
+func (m MessageID) WriteVerifier() *ed25519.PublicKey {
+	p := new(ed25519.PublicKey)
 	if err := p.FromBytes(m[:]); err != nil {
 		panic(err)
 	}
@@ -67,18 +67,18 @@ type ReadWriteCap interface {
 // ReadOnlyCap describes a Capability that has Read capability only.
 type ReadOnlyCap interface {
 	Cap
-	ReadKey(addr []byte) *eddsa.BlindedPrivateKey
+	ReadKey(addr []byte) *ed25519.BlindedPrivateKey
 }
 
 // ReadOnlyCap describes a Capability that has Write capability only.
 type WriteOnlyCap interface {
 	Cap
-	WriteKey(addr []byte) *eddsa.BlindedPrivateKey
+	WriteKey(addr []byte) *ed25519.BlindedPrivateKey
 }
 
 // RootCap holds CapPk and implements the Addr method which other capability types inherit.
 type RootCap struct {
-	CapPk *eddsa.PublicKey
+	CapPk *ed25519.PublicKey
 }
 
 // Addr returns the capability id (publickey) for addr, used as map address
@@ -99,32 +99,32 @@ type RWCap struct {
 	ROCap
 	WOCap
 	// capability root private key from which other keys are derived
-	CapSk *eddsa.PrivateKey
+	CapSk *ed25519.PrivateKey
 }
 
 // ROCap holds the keys implementing Read Capabilities using blinded ed25519 keys
 type ROCap struct {
 	RootCap
 	// Read capability keys
-	CapRSk *eddsa.BlindedPrivateKey
-	CapRPk *eddsa.PublicKey
+	CapRSk *ed25519.BlindedPrivateKey
+	CapRPk *ed25519.PublicKey
 }
 
 // WOCap holds the keys implementing Write Capabilities using blinded ed25519 keys
 type WOCap struct {
 	RootCap
 	// Write capability keys
-	CapWSk *eddsa.BlindedPrivateKey
-	CapWPk *eddsa.PublicKey
+	CapWSk *ed25519.BlindedPrivateKey
+	CapWPk *ed25519.PublicKey
 }
 
 // ReadKey(addr) returns a key from which to sign the command reading from addr
-func (s *ROCap) ReadKey(addr []byte) *eddsa.BlindedPrivateKey {
+func (s *ROCap) ReadKey(addr []byte) *ed25519.BlindedPrivateKey {
 	return s.CapRSk.Blind(addr)
 }
 
 // WriteKey(addr) returns a key from which to sign the command writing to addr
-func (s *WOCap) WriteKey(addr []byte) *eddsa.BlindedPrivateKey {
+func (s *WOCap) WriteKey(addr []byte) *ed25519.BlindedPrivateKey {
 	return s.CapWSk.Blind(addr)
 }
 
@@ -147,7 +147,7 @@ func (s *RWCap) WriteOnly() *WOCap {
 }
 
 // NewROCap returns a Cap initialized with read capability and root public key
-func NewWOCap(pRoot *eddsa.PublicKey, wSk *eddsa.BlindedPrivateKey) *WOCap {
+func NewWOCap(pRoot *ed25519.PublicKey, wSk *ed25519.BlindedPrivateKey) *WOCap {
 	wo := &WOCap{}
 	wo.CapPk = pRoot
 	wo.CapWSk = wSk
@@ -158,7 +158,7 @@ func NewWOCap(pRoot *eddsa.PublicKey, wSk *eddsa.BlindedPrivateKey) *WOCap {
 }
 
 // NewROCap returns a Cap initialized with read capability and root public key
-func NewROCap(pRoot *eddsa.PublicKey, rSk *eddsa.BlindedPrivateKey) *ROCap {
+func NewROCap(pRoot *ed25519.PublicKey, rSk *ed25519.BlindedPrivateKey) *ROCap {
 	ro := &ROCap{}
 	ro.CapPk = pRoot
 	ro.CapRSk = rSk
@@ -169,7 +169,7 @@ func NewROCap(pRoot *eddsa.PublicKey, rSk *eddsa.BlindedPrivateKey) *ROCap {
 }
 
 // NewRWCap returns a Cap initialized with capability keys from a root key
-func NewRWCap(root *eddsa.PrivateKey) *RWCap {
+func NewRWCap(root *ed25519.PrivateKey) *RWCap {
 	pRoot := root.PublicKey()
 	rw := &RWCap{}
 	rw.CapSk = root

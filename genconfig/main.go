@@ -26,14 +26,18 @@ import (
 	"sort"
 
 	"github.com/BurntSushi/toml"
-	kemschemes "github.com/cloudflare/circl/kem/schemes"
+
+	"github.com/katzenpost/hpqc/hash"
+	"github.com/katzenpost/hpqc/kem"
+	kempem "github.com/katzenpost/hpqc/kem/pem"
+	kemschemes "github.com/katzenpost/hpqc/kem/schemes"
+	"github.com/katzenpost/hpqc/nike/schemes"
+	signpem "github.com/katzenpost/hpqc/sign/pem"
+
+	"github.com/katzenpost/hpqc/sign"
 	vConfig "github.com/katzenpost/katzenpost/authority/voting/server/config"
 	cConfig "github.com/katzenpost/katzenpost/client/config"
-	"github.com/katzenpost/katzenpost/core/crypto/cert"
-	"github.com/katzenpost/katzenpost/core/crypto/nike/schemes"
-	"github.com/katzenpost/katzenpost/core/crypto/pem"
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
-	"github.com/katzenpost/katzenpost/core/crypto/sign"
+	"github.com/katzenpost/katzenpost/core/cert"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
 	sConfig "github.com/katzenpost/katzenpost/server/config"
@@ -158,16 +162,13 @@ func (s *katzenpost) genNodeConfig(isProvider bool, isVoting bool) error {
 
 	// PKI section.
 	if isVoting {
-		authorities := make([]*vConfig.Authority, 0, len(s.votingAuthConfigs))
-		for _, authCfg := range s.votingAuthConfigs {
-			auth := &vConfig.Authority{
-				Identifier:        authCfg.Server.Identifier,
-				IdentityPublicKey: cfgIdKey(authCfg, s.outDir),
-				LinkPublicKey:     cfgLinkKey(authCfg, s.outDir),
-				Addresses:         authCfg.Server.Addresses,
-			}
+		authorities := make([]*vConfig.Authority, 0, len(s.authorities))
+		i := 0
+		for _, auth := range s.authorities {
 			authorities = append(authorities, auth)
+			i += 1
 		}
+
 		sort.Sort(AuthById(authorities))
 		cfg.PKI = &sConfig.PKI{
 			Voting: &sConfig.Voting{
@@ -302,7 +303,7 @@ func (s *katzenpost) genVotingAuthoritiesCfg(numAuthorities int, parameters *vCo
 			LinkPublicKey:     linkKey,
 			Addresses:         cfg.Server.Addresses,
 		}
-		s.authorities[idKey.Sum256()] = authority
+		s.authorities[hash.Sum256From(idKey)] = authority
 	}
 
 	// tell each authority about it's peers
@@ -502,7 +503,6 @@ func main() {
 	if err != nil {
 		log.Fatalf("%s", err)
 	}
-
 }
 
 func identifier(cfg interface{}) string {
@@ -560,20 +560,19 @@ func cfgIdKey(cfg interface{}, outDir string) sign.PublicKey {
 		panic("wrong type")
 	}
 
-	idKey, idPubKey := cert.Scheme.NewKeypair()
-	err := pem.FromFile(public, idPubKey)
+	idPubKey, err := signpem.FromPublicPEMFile(public, cert.Scheme)
 	if err == nil {
 		return idPubKey
 	}
-	idKey, idPubKey = cert.Scheme.NewKeypair()
+	idPubKey, idKey, err := cert.Scheme.GenerateKey()
 	log.Printf("writing %s", priv)
-	pem.ToFile(priv, idKey)
+	signpem.PrivateKeyToFile(priv, idKey)
 	log.Printf("writing %s", public)
-	pem.ToFile(public, idPubKey)
+	signpem.PublicKeyToFile(public, idPubKey)
 	return idPubKey
 }
 
-func cfgLinkKey(cfg interface{}, outDir string) wire.PublicKey {
+func cfgLinkKey(cfg interface{}, outDir string) kem.PublicKey {
 	var linkpriv string
 	var linkpublic string
 
@@ -585,19 +584,18 @@ func cfgLinkKey(cfg interface{}, outDir string) wire.PublicKey {
 		panic("wrong type")
 	}
 
-	linkPrivKey, linkPubKey := wire.DefaultScheme.GenerateKeypair(rand.Reader)
-	err := pem.FromFile(linkpublic, linkPubKey)
-	if err == nil {
-		return linkPubKey
+	linkPubKey, linkPrivKey, err := wire.DefaultScheme.GenerateKeyPair()
+	if err != nil {
+		panic(err)
 	}
-	linkPrivKey, linkPubKey = wire.DefaultScheme.GenerateKeypair(rand.Reader)
+
 	log.Printf("writing %s", linkpriv)
-	err = pem.ToFile(linkpriv, linkPrivKey)
+	err = kempem.PrivateKeyToFile(linkpriv, linkPrivKey)
 	if err != nil {
 		panic(err)
 	}
 	log.Printf("writing %s", linkpublic)
-	err = pem.ToFile(linkpublic, linkPubKey)
+	err = kempem.PublicKeyToFile(linkpublic, linkPubKey)
 	if err != nil {
 		panic(err)
 	}
@@ -625,7 +623,7 @@ scrape_configs:
 `)
 
 	for _, cfg := range s.nodeConfigs {
-		write(f,`    - %s
+		write(f, `    - %s
 `, cfg.Server.MetricsAddress)
 	}
 	return nil
@@ -710,7 +708,7 @@ services:
       - ./:%s
     command: --config.file="%s/prometheus.yml"
     network_mode: host
-`, "metrics", "prom/prometheus", s.baseDir, s.baseDir)
+`, "metrics", "docker.io/prom/prometheus", s.baseDir, s.baseDir)
 
-      return nil
+	return nil
 }

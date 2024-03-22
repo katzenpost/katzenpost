@@ -26,13 +26,16 @@ import (
 
 	"github.com/awnumar/memguard"
 	"github.com/fxamacker/cbor/v2"
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
-	"github.com/katzenpost/katzenpost/core/pki"
-	"github.com/katzenpost/katzenpost/core/worker"
-	"github.com/katzenpost/katzenpost/memspool/client"
 	"golang.org/x/crypto/argon2"
 	"golang.org/x/crypto/nacl/secretbox"
 	"gopkg.in/op/go-logging.v1"
+
+	"github.com/katzenpost/hpqc/rand"
+	"github.com/katzenpost/hpqc/sign/ed25519"
+
+	"github.com/katzenpost/katzenpost/core/pki"
+	"github.com/katzenpost/katzenpost/core/worker"
+	"github.com/katzenpost/katzenpost/memspool/client"
 )
 
 const (
@@ -48,6 +51,14 @@ var (
 // which is encrypted and persisted to disk.
 type State struct {
 	SpoolReadDescriptor *client.SpoolReadDescriptor
+	Contacts            []*Contact
+	Providers           []*pki.MixDescriptor
+	Conversations       map[string]map[MessageID]*Message
+	Blob                map[string][]byte
+}
+
+type CBORState struct {
+	SpoolReadDescriptor *client.CBORSpoolReadDescriptor
 	Contacts            []*Contact
 	Providers           []*pki.MixDescriptor
 	Conversations       map[string]map[MessageID]*Message
@@ -107,7 +118,12 @@ func decryptStateFile(stateFile string, key *[32]byte) (*State, error) {
 		return nil, err
 	}
 	state := new(State)
-	if err = cbor.Unmarshal(plaintext, &state); err != nil {
+	state.SpoolReadDescriptor = new(client.SpoolReadDescriptor)
+	_, state.SpoolReadDescriptor.PrivateKey, err = ed25519.Scheme().GenerateKey()
+	if err != nil {
+		return nil, err
+	}
+	if _, err = cbor.UnmarshalFirst(plaintext, &state); err != nil {
 		return nil, err
 	}
 	return state, nil

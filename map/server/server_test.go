@@ -17,8 +17,8 @@
 package server
 
 import (
-	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/hpqc/rand"
+	"github.com/katzenpost/hpqc/sign/ed25519"
 	"github.com/katzenpost/katzenpost/map/common"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/op/go-logging.v1"
@@ -144,7 +144,7 @@ func TestGarbageCollect(t *testing.T) {
 
 func TestValidateRWCap(t *testing.T) {
 	require := require.New(t)
-	sk, err := eddsa.NewKeypair(rand.Reader)
+	sk, _, err := ed25519.NewKeypair(rand.Reader)
 	require.NoError(err)
 
 	cap_rw := common.NewRWCap(sk)
@@ -170,7 +170,7 @@ func TestValidateRWCap(t *testing.T) {
 
 func TestValidateROCap(t *testing.T) {
 	require := require.New(t)
-	sk, err := eddsa.NewKeypair(rand.Reader)
+	sk, _, err := ed25519.NewKeypair(rand.Reader)
 	require.NoError(err)
 
 	cap_rw := common.NewRWCap(sk)
@@ -190,7 +190,7 @@ func TestValidateROCap(t *testing.T) {
 
 func TestValidateWOCap(t *testing.T) {
 	require := require.New(t)
-	sk, err := eddsa.NewKeypair(rand.Reader)
+	sk, _, err := ed25519.NewKeypair(rand.Reader)
 	require.NoError(err)
 
 	cap_rw := common.NewRWCap(sk)

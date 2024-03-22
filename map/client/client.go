@@ -21,9 +21,9 @@ import (
 	"encoding/binary"
 	"errors"
 	"github.com/fxamacker/cbor/v2"
+	"github.com/katzenpost/hpqc/sign/ed25519"
 	"github.com/katzenpost/katzenpost/client"
 	"github.com/katzenpost/katzenpost/client/utils"
-	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/katzenpost/map/common"
 	"golang.org/x/crypto/hkdf"
 	"sort"
@@ -122,7 +122,7 @@ func (c *Client) Put(ID common.MessageID, signature, payload []byte) error {
 // PayloadSize returns the size of the user payload
 func (c *Client) PayloadSize() int {
 	geo := c.Session.SphinxGeometry()
-	return geo.UserForwardPayloadLength - cborFrameOverhead - eddsa.SignatureSize
+	return geo.UserForwardPayloadLength - cborFrameOverhead - ed25519.SignatureSize
 }
 
 // Get requests ID from the chosen storage node and returns a payload or error
@@ -264,20 +264,20 @@ func DuplexFromSeed(c *Client, initiator bool, secret []byte) ReadWriteClient {
 	salt := []byte("duplex initialized from seed is not for multi-party use")
 	keymaterial := hkdf.New(hash, secret, salt, nil)
 	var err error
-	var pk1, pk2 *eddsa.PrivateKey
+	var pk1, pk2 *ed25519.PrivateKey
 	// return the listener or dialer side of caps from seed
 	if initiator {
-		if pk1, err = eddsa.NewKeypair(keymaterial); err != nil {
+		if pk1, _, err = ed25519.NewKeypair(keymaterial); err != nil {
 			panic(err)
 		}
-		if pk2, err = eddsa.NewKeypair(keymaterial); err != nil {
+		if pk2, _, err = ed25519.NewKeypair(keymaterial); err != nil {
 			panic(err)
 		}
 	} else {
-		if pk2, err = eddsa.NewKeypair(keymaterial); err != nil {
+		if pk2, _, err = ed25519.NewKeypair(keymaterial); err != nil {
 			panic(err)
 		}
-		if pk1, err = eddsa.NewKeypair(keymaterial); err != nil {
+		if pk1, _, err = ed25519.NewKeypair(keymaterial); err != nil {
 			panic(err)
 		}
 	}

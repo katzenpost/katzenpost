@@ -26,18 +26,20 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/katzenpost/hpqc/kem"
+	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/katzenpost/client/config"
 	cConstants "github.com/katzenpost/katzenpost/client/constants"
 	"github.com/katzenpost/katzenpost/client/utils"
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/katzenpost/core/cert"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
-	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/katzenpost/katzenpost/minclient"
+	"golang.org/x/crypto/blake2b"
 	"gopkg.in/eapache/channels.v1"
 	"gopkg.in/op/go-logging.v1"
 )
@@ -62,7 +64,7 @@ type Session struct {
 	eventCh   channels.Channel
 	EventSink chan Event
 
-	linkKey   wire.PrivateKey
+	linkKey   kem.PrivateKey
 	onlineAt  time.Time
 	hasPKIDoc bool
 	newPKIDoc chan bool
@@ -86,7 +88,7 @@ func NewSession(
 	fatalErrCh chan error,
 	logBackend *log.Backend,
 	cfg *config.Config,
-	linkKey wire.PrivateKey,
+	linkKey kem.PrivateKey,
 	provider *pki.MixDescriptor) (*Session, error) {
 
 	clientLog := logBackend.GetLogger(fmt.Sprintf("%s_client", provider.Name))
@@ -115,14 +117,24 @@ func NewSession(
 	// Configure the timerQ instance
 	s.timerQ = NewTimerQueue(s)
 	// Configure and bring up the minclient instance.
-	idHash := s.linkKey.PublicKey().Sum256()
+	blob, err := s.linkKey.Public().MarshalBinary()
+	if err != nil {
+		return nil, err
+	}
+	idHash := blake2b.Sum256(blob)
 	// A per-connection tag (for Tor SOCKS5 stream isloation)
 	proxyContext := fmt.Sprintf("session %d", rand.NewMath().Uint64())
+
+	idpubkey, err := cert.Scheme.UnmarshalBinaryPublicKey(s.provider.IdentityKey)
+	if err != nil {
+		return nil, err
+	}
+
 	clientCfg := &minclient.ClientConfig{
 		SphinxGeometry:      cfg.SphinxGeometry,
 		User:                string(idHash[:]),
 		Provider:            s.provider.Name,
-		ProviderKeyPin:      s.provider.IdentityKey,
+		ProviderKeyPin:      idpubkey,
 		LinkKey:             s.linkKey,
 		LogBackend:          logBackend,
 		PKIClient:           pkiClient,

@@ -16,8 +16,8 @@
 package common
 
 import (
-	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/hpqc/rand"
+	"github.com/katzenpost/hpqc/sign/ed25519"
 	"github.com/stretchr/testify/require"
 	"testing"
 )
@@ -25,7 +25,7 @@ import (
 func TestCreateRWCap(t *testing.T) {
 	require := require.New(t)
 	// create a capability key
-	pk, err := eddsa.NewKeypair(rand.Reader)
+	pk, _, err := ed25519.NewKeypair(rand.Reader)
 	require.NoError(err)
 
 	rwCap := NewRWCap(pk)
@@ -41,7 +41,7 @@ func TestCreateRWCap(t *testing.T) {
 func TestCreateROCap(t *testing.T) {
 	require := require.New(t)
 	// create a capability key
-	pk, err := eddsa.NewKeypair(rand.Reader)
+	pk, _, err := ed25519.NewKeypair(rand.Reader)
 	require.NoError(err)
 
 	rwCap := NewRWCap(pk)
@@ -57,7 +57,7 @@ func TestCreateROCap(t *testing.T) {
 func TestCreateWOCap(t *testing.T) {
 	require := require.New(t)
 	// create a capability key
-	sk, err := eddsa.NewKeypair(rand.Reader)
+	sk, _, err := ed25519.NewKeypair(rand.Reader)
 	require.NoError(err)
 	pRoot := sk.PublicKey()
 

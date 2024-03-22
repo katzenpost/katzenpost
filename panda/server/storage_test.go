@@ -21,7 +21,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/katzenpost/panda/common"
 	"github.com/stretchr/testify/assert"
 )

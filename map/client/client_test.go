@@ -23,10 +23,10 @@ import (
 	"io"
 	"testing"
 
+	"github.com/katzenpost/hpqc/rand"
+	"github.com/katzenpost/hpqc/sign/ed25519"
 	"github.com/katzenpost/katzenpost/client"
 	"github.com/katzenpost/katzenpost/client/config"
-	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/map/common"
 	"github.com/stretchr/testify/require"
 )
@@ -52,7 +52,7 @@ func TestCreateMap(t *testing.T) {
 	// test creating and retrieving an item
 
 	// create a capability key
-	pk, err := eddsa.NewKeypair(rand.Reader)
+	pk, _,  err := ed25519.NewKeypair(rand.Reader)
 	require.NoError(err)
 	rwCap := common.NewRWCap(pk)
 
