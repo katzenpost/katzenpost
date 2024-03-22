@@ -205,7 +205,19 @@ func (s *katzenpost) genNodeConfig(isProvider bool, isVoting bool) error {
 					"log_dir":    s.baseDir + "/" + cfg.Server.Identifier,
 				},
 			}
-			cfg.Provider.CBORPluginKaetzchen = []*sConfig.CBORPluginKaetzchen{spoolCfg}
+
+			httpProxyCfg := &sConfig.CBORPluginKaetzchen{
+				Capability:     "http_proxy",
+				Endpoint:       "http_proxy",
+				Command:        s.baseDir + "/http_proxy" + s.binSuffix,
+				MaxConcurrency: 1,
+				Config: map[string]interface{}{
+					"log_dir":  s.baseDir + "/" + cfg.Server.Identifier,
+					"dest_url": "http://localhost:8080/",
+				},
+			}
+			cfg.Provider.CBORPluginKaetzchen = []*sConfig.CBORPluginKaetzchen{spoolCfg, httpProxyCfg}
+
 			if !s.hasPanda {
 				pandaCfg := &sConfig.CBORPluginKaetzchen{
 					Capability:     "panda",
