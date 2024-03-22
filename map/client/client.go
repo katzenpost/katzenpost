@@ -143,7 +143,7 @@ func (c *Client) Get(ID common.MessageID, signature []byte) ([]byte, error) {
 	}
 	// unwrap the response and return the payload
 	resp := &common.MapResponse{}
-	err = cbor.Unmarshal(r, resp)
+	_, err = cbor.UnmarshalFirst(r, resp)
 	if err != nil {
 		return nil, err
 	}

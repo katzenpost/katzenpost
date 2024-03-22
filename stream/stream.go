@@ -784,7 +784,7 @@ func (s *Stream) readFrame() (*Frame, error) {
 			}
 			f := new(Frame)
 			f.id = idx
-			err = cbor.Unmarshal(plaintext, f)
+			_, err = cbor.UnmarshalFirst(plaintext, f)
 			if err != nil {
 				// TODO: indicate serious error somehow
 				fc <- err
@@ -906,7 +906,7 @@ func LoadStream(s *client.Session, state []byte) (*Stream, error) {
 	st := new(Stream)
 	st.log = s.GetLogger(fmt.Sprintf("Stream %p", st))
 	st.startOnce = new(sync.Once)
-	err := cbor.Unmarshal(state, st)
+	_, err := cbor.UnmarshalFirst(state, st)
 	if err != nil {
 		return nil, err
 	}
