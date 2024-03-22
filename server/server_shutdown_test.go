@@ -25,10 +25,13 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/katzenpost/katzenpost/core/crypto/cert"
-	"github.com/katzenpost/katzenpost/core/crypto/nike/ecdh"
-	"github.com/katzenpost/katzenpost/core/crypto/pem"
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	kempem "github.com/katzenpost/hpqc/kem/pem"
+	ecdh "github.com/katzenpost/hpqc/nike/x25519"
+	"github.com/katzenpost/hpqc/rand"
+	signpem "github.com/katzenpost/hpqc/sign/pem"
+
+	aconfig "github.com/katzenpost/katzenpost/authority/voting/server/config"
+	"github.com/katzenpost/katzenpost/core/cert"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/server/config"
@@ -43,26 +46,30 @@ func TestServerStartShutdown(t *testing.T) {
 	authLinkPubKeyPem := "auth_link_pub_key.pem"
 
 	scheme := wire.DefaultScheme
-	_, authLinkPubKey := scheme.GenerateKeypair(rand.Reader)
-	err = pem.ToFile(filepath.Join(datadir, authLinkPubKeyPem), authLinkPubKey)
+	authLinkPubKey, _, err := scheme.GenerateKeyPair()
 	require.NoError(t, err)
 
-	_, authPubkey := cert.Scheme.NewKeypair()
+	err = kempem.PublicKeyToFile(filepath.Join(datadir, authLinkPubKeyPem), authLinkPubKey)
+	require.NoError(t, err)
+
+	authPubkey, _, err := cert.Scheme.GenerateKey()
+	require.NoError(t, err)
 
 	authIDPubKeyPem := "auth_id_pub_key.pem"
 	authkeyPath := filepath.Join(datadir, authIDPubKeyPem)
 
-	err = pem.ToFile(authkeyPath, authPubkey)
+	err = signpem.PublicKeyToFile(authkeyPath, authPubkey)
 	require.NoError(t, err)
 
-	mixIdPrivateKey, mixIdPublicKey := cert.Scheme.NewKeypair()
-	err = pem.ToFile(filepath.Join(datadir, "identity.private.pem"), mixIdPrivateKey)
+	mixIdPublicKey, mixIdPrivateKey, err := cert.Scheme.GenerateKey()
 	require.NoError(t, err)
-	err = pem.ToFile(filepath.Join(datadir, "identity.public.pem"), mixIdPublicKey)
+	err = signpem.PrivateKeyToFile(filepath.Join(datadir, "identity.private.pem"), mixIdPrivateKey)
+	require.NoError(t, err)
+	err = signpem.PublicKeyToFile(filepath.Join(datadir, "identity.public.pem"), mixIdPublicKey)
 	require.NoError(t, err)
 
 	geo := geo.GeometryFromUserForwardPayloadLength(
-		ecdh.NewEcdhNike(rand.Reader),
+		ecdh.Scheme(rand.Reader),
 		2000,
 		true,
 		5,
@@ -83,10 +90,15 @@ func TestServerStartShutdown(t *testing.T) {
 		},
 		Provider: nil,
 		PKI: &config.PKI{
-			Nonvoting: &config.Nonvoting{
-				Address:       "127.0.0.1:3321",
-				PublicKey:     authPubkey,
-				LinkPublicKey: authLinkPubKey,
+			Voting: &config.Voting{
+				Authorities: []*aconfig.Authority{
+					&aconfig.Authority{
+						Identifier:        "auth1",
+						IdentityPublicKey: authPubkey,
+						LinkPublicKey:     authLinkPubKey,
+						Addresses:         []string{"127.0.0.1:1234"},
+					},
+				},
 			},
 		},
 		Management: &config.Management{

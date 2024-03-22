@@ -1,15 +1,13 @@
 package wire
 
 import (
-	"crypto/rand"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/katzenpost/nyquist/kem"
-
-	"github.com/katzenpost/katzenpost/core/crypto/kem/schemes"
-	"github.com/katzenpost/katzenpost/core/crypto/pem"
+	"github.com/katzenpost/hpqc/kem/pem"
+	"github.com/katzenpost/hpqc/kem/schemes"
 )
 
 func TestToFromPEM(t *testing.T) {
@@ -42,14 +40,84 @@ rJoEjFXoChJF5xWicIVxi0F3k6KTZYTCus+SlMJkVLFwmf9Ui+rDIqVwJ1C6tzKm
 7pZc295vLdQ4w4gOVmGd9w==
 -----END KYBER768-X25519 PUBLIC KEY-----
 `
-	s := &scheme{
-		KEM: kem.FromKEM(schemes.ByName("Kyber768-X25519")),
-	}
-
-	_, publicKey := s.GenerateKeypair(rand.Reader)
-	err := pem.FromPEMString(linkPemString1, publicKey)
+	s := schemes.ByName("Kyber768-X25519")
+	key1, err := pem.FromPublicPEMString(linkPemString1, s)
 	require.NoError(t, err)
 
-	linkPemString2 := pem.ToPEMBytes(publicKey)
-	require.Equal(t, string(linkPemString1), string(linkPemString2))
+	blob1 := pem.ToPublicPEMBytes(key1)
+	require.Equal(t, string(linkPemString1), string(blob1))
+
+	key2, err := s.UnmarshalTextPublicKey([]byte(linkPemString1))
+	require.NoError(t, err)
+
+	blob2, err := key2.MarshalText()
+	require.NoError(t, err)
+
+	require.Equal(t, blob1, blob2)
+}
+
+func TestKEMTextUnmarshal(t *testing.T) {
+	s := schemes.ByName("Kyber768-X25519")
+
+	pubkey, _, err := s.GenerateKeyPair()
+	require.NoError(t, err)
+
+	blob1, err := pubkey.MarshalText()
+	require.NoError(t, err)
+
+	testpubkey2, err := s.UnmarshalTextPublicKey([]byte(blob1))
+	require.NoError(t, err)
+
+	blob2, err := testpubkey2.MarshalText()
+	require.NoError(t, err)
+
+	require.Equal(t, blob1, blob2)
+}
+
+func TestKEMMarshalingShouldFailButDoesNotFail(t *testing.T) {
+	linkPubKey, linkPrivKey, err := DefaultScheme.GenerateKeyPair()
+	require.NoError(t, err)
+
+	linkPrivKeyBlob := pem.ToPrivatePEMBytes(linkPrivKey)
+	linkPubKeyBlob := pem.ToPublicPEMBytes(linkPubKey)
+
+	linkPrivKey2, err := pem.FromPrivatePEMBytes(linkPrivKeyBlob, DefaultScheme)
+	require.NoError(t, err)
+
+	linkPubKey2, err := pem.FromPublicPEMBytes(linkPubKeyBlob, DefaultScheme)
+	require.NoError(t, err)
+
+	require.True(t, linkPubKey.Equal(linkPubKey2))
+	require.True(t, linkPrivKey.Equal(linkPrivKey2))
+
+	linkPrivKeyBlob2 := pem.ToPrivatePEMBytes(linkPrivKey2)
+	linkPubKeyBlob2 := pem.ToPublicPEMBytes(linkPubKey2)
+
+	require.Equal(t, linkPrivKeyBlob, linkPrivKeyBlob2)
+	require.Equal(t, linkPubKeyBlob, linkPubKeyBlob2)
+}
+
+func TestKEMPEMFiles(t *testing.T) {
+	dir := t.TempDir()
+
+	linkpriv := filepath.Join(dir, "link.private.pem")
+	linkpub := filepath.Join(dir, "link.pubate.pem")
+
+	linkPubKey, linkPrivKey, err := DefaultScheme.GenerateKeyPair()
+	require.NoError(t, err)
+
+	err = pem.PrivateKeyToFile(linkpriv, linkPrivKey)
+	require.NoError(t, err)
+
+	err = pem.PublicKeyToFile(linkpub, linkPubKey)
+	require.NoError(t, err)
+
+	linkPrivKey2, err := pem.FromPrivatePEMFile(linkpriv, DefaultScheme)
+	require.NoError(t, err)
+
+	linkPubKey2, err := pem.FromPublicPEMFile(linkpub, DefaultScheme)
+	require.NoError(t, err)
+
+	require.True(t, linkPrivKey.Equal(linkPrivKey2))
+	require.True(t, linkPubKey.Equal(linkPubKey2))
 }
