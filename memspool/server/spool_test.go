@@ -20,13 +20,15 @@ import (
 	"os"
 	"testing"
 
-	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
-	"github.com/katzenpost/katzenpost/core/crypto/nike/ecdh"
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/stretchr/testify/assert"
+
+	ecdh "github.com/katzenpost/hpqc/nike/x25519"
+	"github.com/katzenpost/hpqc/rand"
+	eddsa "github.com/katzenpost/hpqc/sign/ed25519"
+
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/memspool/common"
-	"github.com/stretchr/testify/assert"
 )
 
 func TestSpool(t *testing.T) {
@@ -55,10 +57,10 @@ func TestMemSpoolMapBasics(t *testing.T) {
 	t.Parallel()
 	assert := assert.New(t)
 
-	privKey, err := eddsa.NewKeypair(rand.NewMath())
+	_, privKey, err := eddsa.Scheme().GenerateKey()
 	assert.NoError(err)
-	signature := privKey.Sign(privKey.PublicKey().Bytes())
-
+	signature := privKey.Scheme().Sign(privKey, privKey.Public().(*eddsa.PublicKey).Bytes(), nil)
+	assert.NoError(err)
 	fileStore, err := os.CreateTemp("", "catshadow_test_filestore")
 	assert.NoError(err)
 
@@ -68,7 +70,7 @@ func TestMemSpoolMapBasics(t *testing.T) {
 
 	spoolMap, err := NewMemSpoolMap(fileStore.Name(), logger)
 	assert.NoError(err)
-	spoolID, err := spoolMap.CreateSpool(privKey.PublicKey(), signature)
+	spoolID, err := spoolMap.CreateSpool(privKey.Public().(*eddsa.PublicKey), signature)
 	assert.NoError(err)
 
 	message1 := []byte("hello")
@@ -97,9 +99,9 @@ func TestPersistence(t *testing.T) {
 	t.Parallel()
 	assert := assert.New(t)
 
-	privKey, err := eddsa.NewKeypair(rand.NewMath())
+	_, privKey, err := eddsa.Scheme().GenerateKey()
 	assert.NoError(err)
-	signature := privKey.Sign(privKey.PublicKey().Bytes())
+	signature := privKey.Scheme().Sign(privKey, privKey.Public().(*eddsa.PublicKey).Bytes(), nil)
 	fileStore, err := os.CreateTemp("", "catshadow_test_filestore")
 	assert.NoError(err)
 
@@ -109,11 +111,11 @@ func TestPersistence(t *testing.T) {
 
 	spoolMap, err := NewMemSpoolMap(fileStore.Name(), logger)
 	assert.NoError(err)
-	spoolID, err := spoolMap.CreateSpool(privKey.PublicKey(), signature)
+	spoolID, err := spoolMap.CreateSpool(privKey.Public().(*eddsa.PublicKey), signature)
 	assert.NoError(err)
 	messages := make([][]byte, 1)
 
-	mynike := ecdh.NewEcdhNike(rand.Reader)
+	mynike := ecdh.Scheme(rand.Reader)
 	nrHops := 5
 	geo := geo.GeometryFromUserForwardPayloadLength(mynike, 2000, true, nrHops)
 

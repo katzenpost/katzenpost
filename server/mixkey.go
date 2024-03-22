@@ -17,19 +17,18 @@
 package server
 
 import (
-	"fmt"
-	"os"
-	"path/filepath"
 	"sync"
 
-	"github.com/cloudflare/circl/kem"
-	"github.com/katzenpost/katzenpost/core/crypto/nike"
+	"gopkg.in/op/go-logging.v1"
+
+	"github.com/katzenpost/hpqc/kem"
+	"github.com/katzenpost/hpqc/nike"
+
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/server/internal/constants"
 	"github.com/katzenpost/katzenpost/server/internal/glue"
 	"github.com/katzenpost/katzenpost/server/internal/mixkey"
-	"gopkg.in/op/go-logging.v1"
 )
 
 type mixKeys struct {
@@ -56,24 +55,6 @@ func (m *mixKeys) init() error {
 		return err
 	}
 
-	// Clean up stale mix keys hanging around the data directory.
-	files, err := filepath.Glob(filepath.Join(m.glue.Config().Server.DataDir, mixkey.KeyGlob))
-	if err != nil {
-		m.log.Warningf("Failed to find persisted keys: %v", err)
-	}
-	keyFmt := filepath.Join(m.glue.Config().Server.DataDir, mixkey.KeyFmt)
-	for _, f := range files {
-		e := uint64(0)
-		if _, err := fmt.Sscanf(f, keyFmt, &e); err != nil {
-			m.log.Debugf("Failed to extract epoch from '%v': %v", f, err)
-			continue
-		}
-		if _, ok := m.keys[e]; !ok && e < epoch {
-			m.log.Debugf("Purging stale key: %v", f)
-			os.Remove(f)
-		}
-	}
-
 	return nil
 }
 
@@ -89,7 +70,7 @@ func (m *mixKeys) Generate(baseEpoch uint64) (bool, error) {
 		}
 
 		didGenerate = true
-		k, err := mixkey.New(m.glue.Config().Server.DataDir, e, m.geo)
+		k, err := mixkey.New(e, m.geo)
 		if err != nil {
 			// Clean up whatever keys that may have succeeded.
 			for ee := baseEpoch; ee < baseEpoch+constants.NumMixKeys; ee++ {

@@ -1,1 +1,0 @@
-../ref/thash_sha2_simple.c
