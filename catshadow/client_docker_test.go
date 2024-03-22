@@ -27,9 +27,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/katzenpost/client"
 	"github.com/katzenpost/katzenpost/client/config"
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/stretchr/testify/require"
 	"net/http"
@@ -477,6 +477,11 @@ and can readily scale to millions of users.
 	aliceState := getClientState(alice)
 	aliceBobConvo1 := aliceState.Conversations["bob"]
 	aliceBobConvo2 := newAliceState.Conversations["bob"]
+
+	time.Sleep(3 * time.Second)
+
+	require.NotNil(aliceBobConvo1)
+	require.NotNil(aliceBobConvo2)
 	newAlice.log.Debug("convo1\n")
 	for i, message := range aliceBobConvo1 {
 		require.True(bytes.Equal(message.Plaintext, aliceBobConvo2[i].Plaintext))

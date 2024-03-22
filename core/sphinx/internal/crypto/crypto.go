@@ -29,8 +29,8 @@ import (
 	"gitlab.com/yawning/bsaes.git"
 	"golang.org/x/crypto/hkdf"
 
-	"github.com/katzenpost/katzenpost/core/crypto/nike"
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/hpqc/nike"
+	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/katzenpost/core/utils"
 )
 
