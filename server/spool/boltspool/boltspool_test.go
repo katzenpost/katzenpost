@@ -25,7 +25,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/katzenpost/katzenpost/core/crypto/nike/ecdh"
+	ecdh "github.com/katzenpost/hpqc/nike/x25519"
+
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 )
@@ -51,7 +52,7 @@ func TestBoltSpool(t *testing.T) {
 
 	nrHops := 5
 	geo := geo.GeometryFromUserForwardPayloadLength(
-		ecdh.NewEcdhNike(rand.Reader),
+		ecdh.Scheme(rand.Reader),
 		2000,
 		true,
 		nrHops,

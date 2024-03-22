@@ -36,12 +36,15 @@ import (
 	"golang.org/x/crypto/blake2b"
 	"gopkg.in/op/go-logging.v1"
 
+	"github.com/katzenpost/hpqc/hash"
+	"github.com/katzenpost/hpqc/kem"
+	signpem "github.com/katzenpost/hpqc/sign/pem"
+
+	"github.com/katzenpost/hpqc/rand"
+	"github.com/katzenpost/hpqc/sign"
 	"github.com/katzenpost/katzenpost/authority/voting/client"
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
-	"github.com/katzenpost/katzenpost/core/crypto/cert"
-	"github.com/katzenpost/katzenpost/core/crypto/pem"
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
-	"github.com/katzenpost/katzenpost/core/crypto/sign"
+	"github.com/katzenpost/katzenpost/core/cert"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
@@ -100,7 +103,7 @@ type state struct {
 	authorizedMixes       map[[publicKeyHashSize]byte]bool
 	authorizedProviders   map[[publicKeyHashSize]byte]string
 	authorizedAuthorities map[[publicKeyHashSize]byte]bool
-	authorityLinkKeys     map[[publicKeyHashSize]byte]wire.PublicKey
+	authorityLinkKeys     map[[publicKeyHashSize]byte]kem.PublicKey
 
 	documents    map[uint64]*pki.Document
 	myconsensus  map[uint64]*pki.Document
@@ -111,7 +114,7 @@ type state struct {
 	priorSRV     [][]byte
 	reveals      map[uint64]map[[publicKeyHashSize]byte][]byte
 	commits      map[uint64]map[[publicKeyHashSize]byte][]byte
-	verifiers    map[[publicKeyHashSize]byte]cert.Verifier
+	verifiers    map[[publicKeyHashSize]byte]sign.PublicKey
 
 	updateCh chan interface{}
 
@@ -301,7 +304,7 @@ func (s *state) getVote(epoch uint64) (*pki.Document, error) {
 	if err != nil {
 		return nil, err
 	}
-	commits := make(map[[sign.PublicKeyHashSize]byte][]byte)
+	commits := make(map[[hash.HashSize]byte][]byte)
 	commits[s.identityPubKeyHash()] = signedCommit
 	vote.SharedRandomCommit = commits
 
@@ -328,7 +331,7 @@ func (s *state) doParseDocument(b []byte) (*pki.Document, error) {
 	return doc, err
 }
 
-func (s *state) doSignDocument(signer cert.Signer, verifier cert.Verifier, d *pki.Document) ([]byte, error) {
+func (s *state) doSignDocument(signer sign.PrivateKey, verifier sign.PublicKey, d *pki.Document) ([]byte, error) {
 	signAt := time.Now()
 	sig, err := pki.SignDocument(signer, verifier, d)
 	s.log.Notice("pki.SignDocument took %v", time.Since(signAt))
@@ -458,10 +461,10 @@ func (s *state) getThresholdConsensus(epoch uint64) (*pki.Document, error) {
 	}
 	_, good, bad, err := cert.VerifyThreshold(s.getVerifiers(), s.threshold, signedConsensus)
 	for _, b := range bad {
-		s.log.Errorf("Consensus NOT signed by %x", b.Sum256())
+		s.log.Errorf("Consensus NOT signed by %x", hash.Sum256From(b))
 	}
 	for _, g := range good {
-		s.log.Noticef("Consensus signed by %x", g.Sum256())
+		s.log.Noticef("Consensus signed by %x", hash.Sum256From(g))
 	}
 	if err == nil {
 		s.log.Noticef("Consensus made for epoch %d with %d/%d signatures: %v", epoch, len(good), len(s.verifiers), ourConsensus)
@@ -475,8 +478,8 @@ func (s *state) getThresholdConsensus(epoch uint64) (*pki.Document, error) {
 	return nil, fmt.Errorf("No consensus found for epoch %d", epoch)
 }
 
-func (s *state) getVerifiers() []cert.Verifier {
-	v := make([]cert.Verifier, len(s.verifiers))
+func (s *state) getVerifiers() []sign.PublicKey {
+	v := make([]sign.PublicKey, len(s.verifiers))
 	i := 0
 	for _, val := range s.verifiers {
 		v[i] = val
@@ -486,7 +489,7 @@ func (s *state) getVerifiers() []cert.Verifier {
 }
 
 func (s *state) identityPubKeyHash() [publicKeyHashSize]byte {
-	return s.s.identityPublicKey.Sum256()
+	return hash.Sum256From(s.s.identityPublicKey)
 }
 
 func (s *state) getDocument(descriptors []*pki.MixDescriptor, params *config.Parameters, srv []byte) *pki.Document {
@@ -695,7 +698,7 @@ func (s *state) sendCommandToPeer(peer *config.Authority, cmd commands.Command) 
 	defer conn.Close()
 	s.s.Add(1)
 	defer s.s.Done()
-	identityHash := s.s.identityPublicKey.Sum256()
+	identityHash := hash.Sum256From(s.s.identityPublicKey)
 	cfg := &wire.SessionConfig{
 		Geometry:          nil,
 		Authenticator:     s,
@@ -1072,7 +1075,7 @@ func (s *state) generateTopology(nodeList []*pki.MixDescriptor, doc *pki.Documen
 
 	nodeMap := make(map[[constants.NodeIDLength]byte]*pki.MixDescriptor)
 	for _, v := range nodeList {
-		id := v.IdentityKey.Sum256()
+		id := hash.Sum256(v.IdentityKey)
 		nodeMap[id] = v
 	}
 
@@ -1103,7 +1106,7 @@ func (s *state) generateTopology(nodeList []*pki.MixDescriptor, doc *pki.Documen
 				break
 			}
 
-			id := nodes[idx].IdentityKey.Sum256()
+			id := hash.Sum256(nodes[idx].IdentityKey)
 			if n, ok := nodeMap[id]; ok {
 				// There is a new descriptor with the same identity key,
 				// as an existing descriptor in the previous document,
@@ -1153,7 +1156,7 @@ func (s *state) generateFixedTopology(nodes []*pki.MixDescriptor, srv []byte) []
 	nodeMap := make(map[[constants.NodeIDLength]byte]*pki.MixDescriptor)
 	// collect all of the identity keys from the current set of descriptors
 	for _, v := range nodes {
-		id := v.IdentityKey.Sum256()
+		id := hash.Sum256(v.IdentityKey)
 		nodeMap[id] = v
 	}
 
@@ -1162,21 +1165,22 @@ func (s *state) generateFixedTopology(nodes []*pki.MixDescriptor, srv []byte) []
 	for strata, layer := range s.s.cfg.Topology.Layers {
 		for _, node := range layer.Nodes {
 
-			_, identityPublicKey := cert.Scheme.NewKeypair()
+			var identityPublicKey sign.PublicKey
+			var err error
 			if filepath.IsAbs(node.IdentityPublicKeyPem) {
-				err := pem.FromFile(node.IdentityPublicKeyPem, identityPublicKey)
+				identityPublicKey, err = signpem.FromPublicPEMFile(node.IdentityPublicKeyPem, cert.Scheme)
 				if err != nil {
 					panic(err)
 				}
 			} else {
 				pemFilePath := filepath.Join(s.s.cfg.Server.DataDir, node.IdentityPublicKeyPem)
-				err := pem.FromFile(pemFilePath, identityPublicKey)
+				identityPublicKey, err = signpem.FromPublicPEMFile(pemFilePath, cert.Scheme)
 				if err != nil {
 					panic(err)
 				}
 			}
 
-			id := identityPublicKey.Sum256()
+			id := hash.Sum256From(identityPublicKey)
 
 			// if the listed node is in the current descriptor set, place it in the layer
 			if n, ok := nodeMap[id]; ok {
@@ -1258,7 +1262,7 @@ func (s *state) pruneDocuments() {
 }
 
 func (s *state) isDescriptorAuthorized(desc *pki.MixDescriptor) bool {
-	pk := desc.IdentityKey.Sum256()
+	pk := hash.Sum256(desc.IdentityKey)
 	if !desc.Provider {
 		return s.authorizedMixes[pk]
 	}
@@ -1270,14 +1274,14 @@ func (s *state) isDescriptorAuthorized(desc *pki.MixDescriptor) bool {
 }
 
 func (s *state) dupSig(sig commands.Sig) bool {
-	if _, ok := s.signatures[s.votingEpoch][sig.PublicKey.Sum256()]; ok {
+	if _, ok := s.signatures[s.votingEpoch][hash.Sum256From(sig.PublicKey)]; ok {
 		return true
 	}
 	return false
 }
 
 func (s *state) dupVote(vote commands.Vote) bool {
-	if _, ok := s.votes[s.votingEpoch][vote.PublicKey.Sum256()]; ok {
+	if _, ok := s.votes[s.votingEpoch][hash.Sum256From(vote.PublicKey)]; ok {
 		return true
 	}
 	return false
@@ -1290,7 +1294,7 @@ func (s *state) onCertUpload(certificate *commands.Cert) commands.Command {
 	resp := commands.CertStatus{}
 
 	// if not authorized
-	_, ok := s.authorizedAuthorities[certificate.PublicKey.Sum256()]
+	_, ok := s.authorizedAuthorities[hash.Sum256From(certificate.PublicKey)]
 	if !ok {
 		s.log.Error("Voter not authorized.")
 		resp.ErrorCode = commands.CertNotAuthorized
@@ -1327,7 +1331,7 @@ func (s *state) onCertUpload(certificate *commands.Cert) commands.Command {
 	}
 
 	// haven't received a vote from this peer yet for this epoch
-	if _, ok := s.votes[s.votingEpoch][certificate.PublicKey.Sum256()]; !ok {
+	if _, ok := s.votes[s.votingEpoch][hash.Sum256From(certificate.PublicKey)]; !ok {
 		s.log.Error("Cert received before peer's vote?.")
 		resp.ErrorCode = commands.CertTooEarly
 		return &resp
@@ -1339,13 +1343,13 @@ func (s *state) onCertUpload(certificate *commands.Cert) commands.Command {
 	}
 
 	// already received a certificate for this round
-	if _, ok := s.certificates[s.votingEpoch][certificate.PublicKey.Sum256()]; ok {
-		s.log.Error("Another Cert received from peer %x", certificate.PublicKey.Sum256())
+	if _, ok := s.certificates[s.votingEpoch][hash.Sum256From(certificate.PublicKey)]; ok {
+		s.log.Error("Another Cert received from peer %x", hash.Sum256From(certificate.PublicKey))
 		resp.ErrorCode = commands.CertAlreadyReceived
 		return &resp
 	}
-	s.log.Noticef("Cert OK from: %x\n%s", certificate.PublicKey.Sum256(), doc)
-	s.certificates[s.votingEpoch][certificate.PublicKey.Sum256()] = doc
+	s.log.Noticef("Cert OK from: %x\n%s", hash.Sum256From(certificate.PublicKey), doc)
+	s.certificates[s.votingEpoch][hash.Sum256From(certificate.PublicKey)] = doc
 	resp.ErrorCode = commands.CertOk
 	return &resp
 }
@@ -1356,7 +1360,7 @@ func (s *state) onRevealUpload(reveal *commands.Reveal) commands.Command {
 	resp := commands.RevealStatus{}
 
 	// if not authorized
-	_, ok := s.authorizedAuthorities[reveal.PublicKey.Sum256()]
+	_, ok := s.authorizedAuthorities[hash.Sum256From(reveal.PublicKey)]
 	if !ok {
 		s.log.Error("Voter not authorized.")
 		resp.ErrorCode = commands.RevealNotAuthorized
@@ -1394,7 +1398,7 @@ func (s *state) onRevealUpload(reveal *commands.Reveal) commands.Command {
 	}
 
 	// haven't received a commit from this peer yet for this epoch
-	if _, ok := s.commits[s.votingEpoch][reveal.PublicKey.Sum256()]; !ok {
+	if _, ok := s.commits[s.votingEpoch][hash.Sum256From(reveal.PublicKey)]; !ok {
 		s.log.Error("Reveal received before peer's vote?.")
 		resp.ErrorCode = commands.RevealTooEarly
 		return &resp
@@ -1406,13 +1410,13 @@ func (s *state) onRevealUpload(reveal *commands.Reveal) commands.Command {
 	}
 
 	// already received a reveal for this round
-	if _, ok := s.reveals[s.votingEpoch][reveal.PublicKey.Sum256()]; ok {
+	if _, ok := s.reveals[s.votingEpoch][hash.Sum256From(reveal.PublicKey)]; ok {
 		s.log.Error("Another Reveal received from peer's vote?.")
 		resp.ErrorCode = commands.RevealAlreadyReceived
 		return &resp
 	}
-	s.log.Noticef("Reveal OK from: %x\n%x", reveal.PublicKey.Sum256(), certified)
-	s.reveals[s.votingEpoch][reveal.PublicKey.Sum256()] = reveal.Payload
+	s.log.Noticef("Reveal OK from: %x\n%x", hash.Sum256From(reveal.PublicKey), certified)
+	s.reveals[s.votingEpoch][hash.Sum256From(reveal.PublicKey)] = reveal.Payload
 	resp.ErrorCode = commands.RevealOk
 	return &resp
 }
@@ -1423,7 +1427,7 @@ func (s *state) onVoteUpload(vote *commands.Vote) commands.Command {
 	resp := commands.VoteStatus{}
 
 	// if not authorized
-	_, ok := s.authorizedAuthorities[vote.PublicKey.Sum256()]
+	_, ok := s.authorizedAuthorities[hash.Sum256From(vote.PublicKey)]
 	if !ok {
 		s.log.Error("Voter not authorized.")
 		resp.ErrorCode = commands.VoteNotAuthorized
@@ -1454,7 +1458,7 @@ func (s *state) onVoteUpload(vote *commands.Vote) commands.Command {
 	}
 
 	// peer has already voted for this epoch
-	_, ok = s.votes[s.votingEpoch][vote.PublicKey.Sum256()]
+	_, ok = s.votes[s.votingEpoch][hash.Sum256From(vote.PublicKey)]
 	if ok {
 		s.log.Error("Vote command invalid: more than one vote from same peer is not allowed.")
 		resp.ErrorCode = commands.VoteAlreadyReceived
@@ -1478,7 +1482,7 @@ func (s *state) onVoteUpload(vote *commands.Vote) commands.Command {
 
 	// Check that the deserialiezd payload was signed for the correct Epoch
 	if doc.Epoch != s.votingEpoch {
-		s.log.Error("Authority %x lying about Vote Payload Epoch", vote.PublicKey.Sum256())
+		s.log.Error("Authority %x lying about Vote Payload Epoch", hash.Sum256From(vote.PublicKey))
 		resp.ErrorCode = commands.VoteMalformed
 		return &resp
 	}
@@ -1486,19 +1490,19 @@ func (s *state) onVoteUpload(vote *commands.Vote) commands.Command {
 	// extract commit from document and verify that it was signed by this peer
 	// IsDocumentWellFormed has already verified that any commit is for
 	// this Epoch and is signed by a known verifier
-	commit, ok := doc.SharedRandomCommit[vote.PublicKey.Sum256()]
+	commit, ok := doc.SharedRandomCommit[hash.Sum256From(vote.PublicKey)]
 	if !ok {
 		// It's possible that an authority submitted another authoritys vote on its behalf,
 		// but we are not going to allow that behavior as it is not specified.
-		s.log.Error("Vote did not contain SharedRandom Commit from %x.", vote.PublicKey.Sum256())
+		s.log.Error("Vote did not contain SharedRandom Commit from %x.", hash.Sum256From(vote.PublicKey))
 		resp.ErrorCode = commands.VoteMalformed
 		return &resp
 	}
 	// save the vote
-	s.votes[s.votingEpoch][vote.PublicKey.Sum256()] = doc
+	s.votes[s.votingEpoch][hash.Sum256From(vote.PublicKey)] = doc
 	// save the commit
-	s.commits[s.votingEpoch][vote.PublicKey.Sum256()] = commit
-	s.log.Noticef("Vote OK from: %x\n%s", vote.PublicKey.Sum256(), doc)
+	s.commits[s.votingEpoch][hash.Sum256From(vote.PublicKey)] = commit
+	s.log.Noticef("Vote OK from: %x\n%s", hash.Sum256From(vote.PublicKey), doc)
 	resp.ErrorCode = commands.VoteOk
 	return &resp
 }
@@ -1518,7 +1522,7 @@ func (s *state) onSigUpload(sig *commands.Sig) commands.Command {
 		resp.ErrorCode = commands.SigTooLate
 		return &resp
 	}
-	_, ok := s.authorizedAuthorities[sig.PublicKey.Sum256()]
+	_, ok := s.authorizedAuthorities[hash.Sum256From(sig.PublicKey)]
 	if !ok {
 		s.log.Error("Sigr not authorized.")
 		resp.ErrorCode = commands.SigNotAuthorized
@@ -1543,11 +1547,11 @@ func (s *state) onSigUpload(sig *commands.Sig) commands.Command {
 		err := csig.Unmarshal(verified)
 		if err != nil {
 			resp.ErrorCode = commands.SigInvalid
-			s.log.Errorf("Signature failed to deserialize from: %x", sig.PublicKey.Sum256())
+			s.log.Errorf("Signature failed to deserialize from: %x", hash.Sum256From(sig.PublicKey))
 			return &resp
 		}
-		s.log.Noticef("Signature OK from: %x", sig.PublicKey.Sum256())
-		s.signatures[s.votingEpoch][sig.PublicKey.Sum256()] = csig
+		s.log.Noticef("Signature OK from: %x", hash.Sum256From(sig.PublicKey))
+		s.signatures[s.votingEpoch][hash.Sum256From(sig.PublicKey)] = csig
 		resp.ErrorCode = commands.SigOk
 		return &resp
 	} else {
@@ -1564,7 +1568,7 @@ func (s *state) onDescriptorUpload(rawDesc []byte, desc *pki.MixDescriptor, epoc
 	defer s.Unlock()
 
 	// Note: Caller ensures that the epoch is the current epoch +- 1.
-	pk := desc.IdentityKey.Sum256()
+	pk := hash.Sum256(desc.IdentityKey)
 
 	// Get the public key -> descriptor map for the epoch.
 	_, ok := s.descriptors[epoch]
@@ -1582,7 +1586,7 @@ func (s *state) onDescriptorUpload(rawDesc []byte, desc *pki.MixDescriptor, epoc
 			return err
 		}
 		if !hmac.Equal(serialized, rawDesc) {
-			return fmt.Errorf("state: node %s (%x): Conflicting descriptor for epoch %v", desc.Name, desc.IdentityKey.Sum256(), epoch)
+			return fmt.Errorf("state: node %s (%x): Conflicting descriptor for epoch %v", desc.Name, hash.Sum256(desc.IdentityKey), epoch)
 		}
 
 		// Redundant uploads that don't change are harmless.
@@ -1727,7 +1731,7 @@ func (s *state) restorePersistence() error {
 						s.log.Errorf("Failed to validate persisted descriptor: %v", err)
 						continue
 					}
-					idHash := desc.IdentityKey.Sum256()
+					idHash := hash.Sum256(desc.IdentityKey)
 					if !hmac.Equal(wantHash, idHash[:]) {
 						s.log.Errorf("Discarding persisted descriptor: key mismatch")
 						continue
@@ -1743,7 +1747,7 @@ func (s *state) restorePersistence() error {
 						s.descriptors[epoch] = make(map[[publicKeyHashSize]byte]*pki.MixDescriptor)
 					}
 
-					s.descriptors[epoch][desc.IdentityKey.Sum256()] = desc
+					s.descriptors[epoch][hash.Sum256(desc.IdentityKey)] = desc
 					s.log.Debugf("Restored descriptor for epoch %v: %+v", epoch, desc)
 				}
 			}
@@ -1770,11 +1774,11 @@ func newState(s *Server) (*state, error) {
 	st.log.Debugf("State initialized with AuthorityVoteDeadline: %s", AuthorityVoteDeadline)
 	st.log.Debugf("State initialized with AuthorityRevealDeadline: %s", AuthorityRevealDeadline)
 	st.log.Debugf("State initialized with PublishConsensusDeadline: %s", PublishConsensusDeadline)
-	st.verifiers = make(map[[publicKeyHashSize]byte]cert.Verifier)
+	st.verifiers = make(map[[publicKeyHashSize]byte]sign.PublicKey)
 	for _, auth := range s.cfg.Authorities {
-		st.verifiers[auth.IdentityPublicKey.Sum256()] = auth.IdentityPublicKey
+		st.verifiers[hash.Sum256From(auth.IdentityPublicKey)] = auth.IdentityPublicKey
 	}
-	st.verifiers[s.IdentityKey().Sum256()] = cert.Verifier(s.IdentityKey())
+	st.verifiers[hash.Sum256From(s.IdentityKey())] = sign.PublicKey(s.IdentityKey())
 	st.threshold = len(st.verifiers)/2 + 1
 	st.dissenters = len(s.cfg.Authorities)/2 - 1
 
@@ -1782,56 +1786,58 @@ func newState(s *Server) (*state, error) {
 	st.reverseHash = make(map[[publicKeyHashSize]byte]sign.PublicKey)
 	st.authorizedMixes = make(map[[publicKeyHashSize]byte]bool)
 	for _, v := range st.s.cfg.Mixes {
-		_, identityPublicKey := cert.Scheme.NewKeypair()
+		var identityPublicKey sign.PublicKey
+		var err error
 		if filepath.IsAbs(v.IdentityPublicKeyPem) {
-			err := pem.FromFile(v.IdentityPublicKeyPem, identityPublicKey)
+			identityPublicKey, err = signpem.FromPublicPEMFile(v.IdentityPublicKeyPem, cert.Scheme)
 			if err != nil {
 				panic(err)
 			}
 		} else {
 			pemFilePath := filepath.Join(s.cfg.Server.DataDir, v.IdentityPublicKeyPem)
-			err := pem.FromFile(pemFilePath, identityPublicKey)
+			identityPublicKey, err = signpem.FromPublicPEMFile(pemFilePath, cert.Scheme)
 			if err != nil {
 				panic(err)
 			}
 		}
 
-		pk := identityPublicKey.Sum256()
+		pk := hash.Sum256From(identityPublicKey)
 		st.authorizedMixes[pk] = true
 		st.reverseHash[pk] = identityPublicKey
 	}
 	st.authorizedProviders = make(map[[publicKeyHashSize]byte]string)
 	for _, v := range st.s.cfg.Providers {
-		_, identityPublicKey := cert.Scheme.NewKeypair()
+		var identityPublicKey sign.PublicKey
+		var err error
 
 		if filepath.IsAbs(v.IdentityPublicKeyPem) {
-			err := pem.FromFile(v.IdentityPublicKeyPem, identityPublicKey)
+			identityPublicKey, err = signpem.FromPublicPEMFile(v.IdentityPublicKeyPem, cert.Scheme)
 			if err != nil {
 				panic(err)
 			}
 		} else {
 			pemFilePath := filepath.Join(s.cfg.Server.DataDir, v.IdentityPublicKeyPem)
-			err := pem.FromFile(pemFilePath, identityPublicKey)
+			identityPublicKey, err = signpem.FromPublicPEMFile(pemFilePath, cert.Scheme)
 			if err != nil {
 				panic(err)
 			}
 		}
 
-		pk := identityPublicKey.Sum256()
+		pk := hash.Sum256From(identityPublicKey)
 		st.authorizedProviders[pk] = v.Identifier
 		st.reverseHash[pk] = identityPublicKey
 	}
 	st.authorizedAuthorities = make(map[[publicKeyHashSize]byte]bool)
 	for _, v := range st.s.cfg.Authorities {
-		pk := v.IdentityPublicKey.Sum256()
+		pk := hash.Sum256From(v.IdentityPublicKey)
 		st.authorizedAuthorities[pk] = true
 		st.reverseHash[pk] = v.IdentityPublicKey
 	}
-	st.reverseHash[st.s.identityPublicKey.Sum256()] = st.s.identityPublicKey
+	st.reverseHash[hash.Sum256From(st.s.identityPublicKey)] = st.s.identityPublicKey
 
-	st.authorityLinkKeys = make(map[[publicKeyHashSize]byte]wire.PublicKey)
+	st.authorityLinkKeys = make(map[[publicKeyHashSize]byte]kem.PublicKey)
 	for _, v := range st.s.cfg.Authorities {
-		pk := v.IdentityPublicKey.Sum256()
+		pk := hash.Sum256From(v.IdentityPublicKey)
 		st.authorityLinkKeys[pk] = v.LinkPublicKey
 	}
 
@@ -1912,7 +1918,7 @@ func epochFromBytes(b []byte) uint64 {
 
 func sortNodesByPublicKey(nodes []*pki.MixDescriptor) {
 	dTos := func(d *pki.MixDescriptor) string {
-		pk := d.IdentityKey.Sum256()
+		pk := hash.Sum256(d.IdentityKey)
 		return string(pk[:])
 	}
 	sort.Slice(nodes, func(i, j int) bool { return dTos(nodes[i]) < dTos(nodes[j]) })

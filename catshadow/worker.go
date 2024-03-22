@@ -25,7 +25,7 @@ import (
 	"time"
 
 	"github.com/katzenpost/katzenpost/client"
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/hpqc/rand"
 )
 
 // ReadInboxLambdaPDivisor is used to divide our LambdaP parameter

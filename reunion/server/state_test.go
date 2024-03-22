@@ -19,7 +19,7 @@ package server
 import (
 	"testing"
 
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/katzenpost/reunion/commands"
 	"github.com/stretchr/testify/require"
 )

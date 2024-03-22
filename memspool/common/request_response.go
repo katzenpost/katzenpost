@@ -21,7 +21,9 @@ import (
 
 	"github.com/fxamacker/cbor/v2"
 
-	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
+	"github.com/katzenpost/hpqc/sign"
+	eddsa "github.com/katzenpost/hpqc/sign/ed25519"
+
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 )
 
@@ -103,7 +105,8 @@ func (s *SpoolResponse) Marshal() ([]byte, error) {
 
 // Unmarshal implements cborplugin.Command
 func (s *SpoolResponse) Unmarshal(b []byte) error {
-	return cbor.Unmarshal(b, s)
+	_, err := cbor.UnmarshalFirst(b, s)
+	return err
 }
 
 func (s *SpoolResponse) IsOK() bool {
@@ -114,26 +117,35 @@ func (s *SpoolResponse) StatusAsError() error {
 	return errors.New(s.Status)
 }
 
-func CreateSpool(privKey *eddsa.PrivateKey) ([]byte, error) {
-	signature := privKey.Sign(privKey.PublicKey().Bytes())
+func CreateSpool(privKey sign.PrivateKey) ([]byte, error) {
+	message, err := privKey.Public().(*eddsa.PublicKey).MarshalBinary()
+	if err != nil {
+		return nil, err
+	}
+	signature := privKey.Scheme().Sign(privKey, message, nil)
 	emtpySpoolID := [SpoolIDSize]byte{}
 	emptyMessage := []byte{}
 	s := SpoolRequest{
 		Command:   CreateSpoolCommand,
 		SpoolID:   emtpySpoolID,
 		Signature: signature,
-		PublicKey: privKey.PublicKey().Bytes(),
+		PublicKey: privKey.Public().(*eddsa.PublicKey).Bytes(),
 		MessageID: 0,
 		Message:   emptyMessage,
 	}
 	return s.Marshal()
 }
 
-func PurgeSpool(spoolID [SpoolIDSize]byte, privKey *eddsa.PrivateKey) ([]byte, error) {
-	signature := privKey.Sign(privKey.PublicKey().Bytes())
+func PurgeSpool(spoolID [SpoolIDSize]byte, privKey sign.PrivateKey) ([]byte, error) {
+	message, err := privKey.Public().(sign.PublicKey).MarshalBinary()
+	if err != nil {
+		return nil, err
+	}
+	signature := privKey.Scheme().Sign(privKey, message, nil)
+	pubkeyblob, err := privKey.Public().(sign.PublicKey).MarshalBinary()
 	s := SpoolRequest{
 		Command:   PurgeSpoolCommand,
-		PublicKey: privKey.PublicKey().Bytes(),
+		PublicKey: pubkeyblob,
 		Signature: signature,
 		SpoolID:   spoolID,
 	}
@@ -156,11 +168,19 @@ func AppendToSpool(spoolID [SpoolIDSize]byte, message []byte, geo *geo.Geometry)
 	return s.Marshal()
 }
 
-func ReadFromSpool(spoolID [SpoolIDSize]byte, messageID uint32, privKey *eddsa.PrivateKey) ([]byte, error) {
-	signature := privKey.Sign(privKey.PublicKey().Bytes())
+func ReadFromSpool(spoolID [SpoolIDSize]byte, messageID uint32, privKey sign.PrivateKey) ([]byte, error) {
+	message, err := privKey.Public().(sign.PublicKey).MarshalBinary()
+	if err != nil {
+		return nil, err
+	}
+	signature := privKey.Scheme().Sign(privKey, message, nil)
+	pubkey, err := privKey.Public().(sign.PublicKey).MarshalBinary()
+	if err != nil {
+		return nil, err
+	}
 	s := SpoolRequest{
 		Command:   RetrieveMessageCommand,
-		PublicKey: privKey.PublicKey().Bytes(),
+		PublicKey: pubkey,
 		Signature: signature,
 		SpoolID:   spoolID,
 		MessageID: messageID,

@@ -20,17 +20,19 @@ import (
 	"testing"
 	"time"
 
-	"github.com/katzenpost/katzenpost/core/crypto/nike/ecdh"
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
-	"github.com/katzenpost/katzenpost/core/crypto/sign"
+	"github.com/stretchr/testify/require"
+
+	"github.com/katzenpost/hpqc/kem"
+	ecdh "github.com/katzenpost/hpqc/nike/x25519"
+	"github.com/katzenpost/hpqc/rand"
+	"github.com/katzenpost/hpqc/sign"
+
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/thwack"
-	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/server/config"
 	"github.com/katzenpost/katzenpost/server/internal/glue"
 	"github.com/katzenpost/katzenpost/server/internal/packet"
-	"github.com/stretchr/testify/require"
 )
 
 type mockServer struct {
@@ -60,7 +62,7 @@ func (m *mockGlue) IdentityPublicKey() sign.PublicKey {
 	return nil
 }
 
-func (m *mockGlue) LinkKey() wire.PrivateKey {
+func (m *mockGlue) LinkKey() kem.PrivateKey {
 	return nil
 }
 func (m *mockGlue) Listeners() []glue.Listener {
@@ -96,7 +98,7 @@ func TestMemoryQueueBulkEnqueue(t *testing.T) {
 	pkts := make([]*packet.Packet, 100)
 
 	geo := geo.GeometryFromUserForwardPayloadLength(
-		ecdh.NewEcdhNike(rand.Reader),
+		ecdh.Scheme(rand.Reader),
 		2000,
 		true,
 		5,
