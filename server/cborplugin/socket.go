@@ -26,12 +26,12 @@ import (
 )
 
 type ServerPlugin interface {
-	OnCommand(Command) (Command, error)
+	OnCommand(Command) error
 	RegisterConsumer(*Server)
 }
 
 type ClientPlugin interface {
-	OnCommand(interface{}) (Command, error)
+	OnCommand(Command) error
 	RegisterConsumer(*Client)
 }
 

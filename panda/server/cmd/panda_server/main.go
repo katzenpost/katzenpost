@@ -103,10 +103,11 @@ func main() {
 type pandaRequestHandler struct {
 	p   *server.Panda
 	log *logging.Logger
+	write func(cborplugin.Command)
 }
 
 // OnCommand processes a SpoolRequest and returns a SpoolResponse
-func (s *pandaRequestHandler) OnCommand(cmd cborplugin.Command) (cborplugin.Command, error) {
+func (s *pandaRequestHandler) OnCommand(cmd cborplugin.Command) error {
 	switch r := cmd.(type) {
 	case *cborplugin.Request:
 		// the padding bytes were not stripped because
@@ -114,17 +115,21 @@ func (s *pandaRequestHandler) OnCommand(cmd cborplugin.Command) (cborplugin.Comm
 		// know how long it is, so we will use a streaming
 		// decoder and simply return the first cbor object
 		// and then discard the decoder and buffer
-		pandaResponse, err := s.p.OnRequest(r.ID, r.Payload, r.HasSURB)
+		pandaResponse, err := s.p.OnRequest(r.ID, r.Payload, len(r.SURB) > 0)
 		if err != nil {
 			s.log.Errorf("OnCommand called with invalid request")
-			return nil, err
+			return err
 		}
-		return &cborplugin.Response{Payload: pandaResponse}, nil
+		go func() {
+			s.write(&cborplugin.Response{ID: r.ID, SURB: r.SURB, Payload: pandaResponse})
+		}()
+		return nil
 	default:
 		s.log.Errorf("OnCommand called with unknown Command type")
-		return nil, errors.New("Invalid Command type")
+		return errors.New("Invalid Command type")
 	}
 }
 
 func (s *pandaRequestHandler) RegisterConsumer(svr *cborplugin.Server) {
+	s.write = svr.Write
 }

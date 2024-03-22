@@ -29,8 +29,8 @@ import (
 type Server struct {
 	worker.Worker
 
-	socket         *CommandIO
-	log            *logging.Logger
+	socket *CommandIO
+	log    *logging.Logger
 	//conn           net.Conn
 	socketFile     string
 	plugin         ServerPlugin
@@ -62,14 +62,9 @@ func (s *Server) worker() {
 		case <-s.HaltCh():
 			return
 		case cmd := <-s.socket.ReadChan():
-			reply, err := s.plugin.OnCommand(cmd)
+			err := s.plugin.OnCommand(cmd)
 			if err != nil {
 				s.log.Debugf("plugin returned err: %s", err)
-			}
-			select {
-			case <-s.HaltCh():
-				return
-			case s.socket.WriteChan() <- reply:
 			}
 		}
 	}

@@ -24,7 +24,6 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/katzenpost/katzenpost/core/monotime"
 	"github.com/katzenpost/katzenpost/core/sphinx/commands"
 	"github.com/katzenpost/katzenpost/server/internal/glue"
 	"github.com/katzenpost/katzenpost/server/internal/instrument"
@@ -55,7 +54,7 @@ var (
 	boltPacketMustForward = []byte{0x01}
 )
 
-func packetToBoltBkt(parentBkt *bolt.Bucket, pkt *packet.Packet, prio time.Duration) error {
+func packetToBoltBkt(parentBkt *bolt.Bucket, pkt *packet.Packet, prio time.Time) error {
 	// Since the packet is entering the mix queue, by definition, it is
 	// a forward packet.  Ensure this invariant is true.
 	if !pkt.IsForward() {
@@ -72,7 +71,7 @@ func packetToBoltBkt(parentBkt *bolt.Bucket, pkt *packet.Packet, prio time.Durat
 	// increasing, but it's something that "should never happen" in the
 	// first place.
 	var pktKey [boltPacketKeySize]byte
-	binary.BigEndian.PutUint64(pktKey[0:], uint64(prio))
+	binary.BigEndian.PutUint64(pktKey[0:], uint64(prio.UnixNano()))
 	binary.BigEndian.PutUint64(pktKey[8:], pkt.ID)
 	bkt, err := parentBkt.CreateBucket(pktKey[:])
 	if err != nil {
@@ -105,8 +104,8 @@ func packetToBoltBkt(parentBkt *bolt.Bucket, pkt *packet.Packet, prio time.Durat
 
 	var timesBuf [boltPacketTimesSize]byte
 	binary.BigEndian.PutUint64(timesBuf[0:], uint64(pkt.Delay))
-	binary.BigEndian.PutUint64(timesBuf[8:], uint64(pkt.RecvAt))
-	binary.BigEndian.PutUint64(timesBuf[16:], uint64(pkt.DispatchAt))
+	binary.BigEndian.PutUint64(timesBuf[8:], uint64(pkt.RecvAt.UnixNano()))
+	binary.BigEndian.PutUint64(timesBuf[16:], uint64(pkt.DispatchAt.UnixNano()))
 	err = bkt.Put([]byte(boltPacketTimesKey), timesBuf[:])
 	if err != nil {
 		return err
@@ -166,8 +165,8 @@ func packetFromBoltBkt(parentBkt *bolt.Bucket, k []byte, g glue.Glue) (*packet.P
 
 	if b := bkt.Get([]byte(boltPacketTimesKey)); len(b) == boltPacketTimesSize {
 		pkt.Delay = time.Duration(binary.BigEndian.Uint64(b[0:]))
-		pkt.RecvAt = time.Duration(binary.BigEndian.Uint64(b[8:]))
-		pkt.DispatchAt = time.Duration(binary.BigEndian.Uint64(b[16:]))
+		pkt.RecvAt = time.Unix(0, int64(binary.BigEndian.Uint64(b[8:])))
+		pkt.DispatchAt = time.Unix(0, int64(binary.BigEndian.Uint64(b[16:])))
 	} else {
 		pkt.Dispose()
 		return nil, errMalformedTimes
@@ -193,7 +192,7 @@ type boltQueue struct {
 	db *bolt.DB
 
 	headPkt  *packet.Packet
-	headPrio time.Duration
+	headPrio time.Time
 
 	dbCount uint64
 }
@@ -207,14 +206,14 @@ func (q *boltQueue) Halt() {
 	}
 }
 
-func (q *boltQueue) Peek() (time.Duration, *packet.Packet) {
+func (q *boltQueue) Peek() (time.Time, *packet.Packet) {
 	return q.headPrio, q.headPkt
 }
 
 func (q *boltQueue) Pop() {
 	if q.headPkt != nil {
 		q.headPkt = nil
-		q.headPrio = 0
+		q.headPrio = time.Time{}
 		if q.dbCount == 0 {
 			return
 		}
@@ -222,7 +221,7 @@ func (q *boltQueue) Pop() {
 		panic("BUG: Pop() called on empty queue")
 	}
 
-	now := monotime.Now()
+	now := time.Now()
 	timerSlack := time.Duration(q.glue.Config().Debug.SchedulerSlack) * time.Millisecond
 
 	var removed uint64
@@ -241,11 +240,11 @@ func (q *boltQueue) Pop() {
 			// Figure out if the packet's deadline is blown.  This replicates
 			// some code from scheduler.worker(), but dropping en-mass in a
 			// single transactions is the sensible thing to do.
-			prio := time.Duration(binary.BigEndian.Uint64(k[0:]))
+			prio := time.Unix(0, int64(binary.BigEndian.Uint64(k[0:])))
 			id := binary.BigEndian.Uint64(k[8:])
 			var pkt *packet.Packet
 			var err error
-			if deltaT := now - prio; deltaT > timerSlack {
+			if deltaT := now.Sub(prio); deltaT > timerSlack {
 				q.log.Debugf("Dropping packet: %v (Deadline blown by %v)", id, deltaT)
 				instrument.DeadlineBlownPacketsDropped()
 				instrument.OutgoingPacketsDropped()
@@ -279,33 +278,33 @@ func (q *boltQueue) Pop() {
 		panic("Pop() failed.")
 	} else {
 		q.dbCount -= removed
-		q.log.Debugf("Pop(): Count %v (Removed %v, Elapsed: %v).", q.dbCount, removed, monotime.Now()-now)
+		q.log.Debugf("Pop(): Count %v (Removed %v, Elapsed: %v).", q.dbCount, removed, time.Now().Sub(now))
 	}
 }
 
 func (q *boltQueue) BulkEnqueue(batch []*packet.Packet) {
 	var added uint64
-	now := monotime.Now()
+	now := time.Now()
 
 	// Special case enqueuing a single packet, with a totally empty queue.
 	if len(batch) == 1 && q.dbCount == 0 && q.headPkt == nil {
 		q.log.Debugf("BulkEnqueue(): Taking fast path.")
 		q.headPkt = batch[0]
-		q.headPrio = now + batch[0].Delay
+		q.headPrio = now.Add(batch[0].Delay)
 		return
 	}
 
 	err := q.db.Update(func(tx *bolt.Tx) error {
 		packetsBkt := tx.Bucket([]byte(boltPacketsBucket))
 		for _, pkt := range batch {
-			prio := now + pkt.Delay
+			prio := now.Add(pkt.Delay)
 
 			if q.headPkt == nil {
 				q.headPkt = pkt
 				q.headPrio = prio
 				continue
 			}
-			if prio < q.headPrio {
+			if q.headPrio.After(prio) {
 				pkt, q.headPkt = q.headPkt, pkt
 				prio, q.headPrio = q.headPrio, prio
 			}
@@ -326,7 +325,7 @@ func (q *boltQueue) BulkEnqueue(batch []*packet.Packet) {
 		q.log.Errorf("BulkEnqueue(): Transaction failed: %v", err)
 	} else {
 		q.dbCount += added
-		q.log.Debugf("BulkEnqueue(): Count %v (Added %v, Elapsed: %v).", q.dbCount, added, monotime.Now()-now)
+		q.log.Debugf("BulkEnqueue(): Count %v (Added %v, Elapsed: %v).", q.dbCount, added, time.Now().Sub(now))
 	}
 }
 

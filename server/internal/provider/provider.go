@@ -33,7 +33,6 @@ import (
 	kempem "github.com/katzenpost/hpqc/kem/pem"
 
 	"github.com/katzenpost/katzenpost/core/epochtime"
-	"github.com/katzenpost/katzenpost/core/monotime"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/thwack"
 	"github.com/katzenpost/katzenpost/core/wire"
@@ -197,7 +196,7 @@ func (p *provider) worker() {
 		case e := <-ch:
 			pkt = e.(*packet.Packet)
 
-			if dwellTime := monotime.Now() - pkt.DispatchAt; dwellTime > maxDwell {
+			if dwellTime := time.Now().Sub(pkt.DispatchAt); dwellTime > maxDwell {
 				p.log.Debugf("Dropping packet: %v (Spend %v in queue)", pkt.ID, dwellTime)
 				instrument.PacketsDropped()
 				pkt.Dispose()
@@ -296,11 +295,15 @@ func (p *provider) onToUser(pkt *packet.Packet, recipient []byte) {
 
 	// Iff there is a SURB, generate a SURB-ACK and schedule.
 	if surb != nil {
-		ackPkt, err := packet.NewPacketFromSURB(pkt, surb, nil, p.glue.Config().SphinxGeometry)
+		ackPkt, err := packet.NewPacketFromSURB(surb, nil, p.glue.Config().SphinxGeometry)
 		if err != nil {
 			p.log.Debugf("Failed to generate SURB-ACK: %v (%v)", pkt.ID, err)
 			return
 		}
+		// set the response packet delay from requesting packet, sans processing duration
+		delay := pkt.NewDelay()
+		ackPkt.NodeDelay.Delay = uint32(delay)
+		ackPkt.Delay = delay
 
 		p.log.Debugf("Handing off newly generated SURB-ACK: %v (Src:%v)", ackPkt.ID, pkt.ID)
 		p.glue.Scheduler().OnPacket(ackPkt)

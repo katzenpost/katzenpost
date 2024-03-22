@@ -22,7 +22,6 @@ import (
 	"time"
 
 	"github.com/katzenpost/hpqc/rand"
-	"github.com/katzenpost/katzenpost/core/monotime"
 	"github.com/katzenpost/katzenpost/core/queue"
 	"github.com/katzenpost/katzenpost/server/internal/glue"
 	"github.com/katzenpost/katzenpost/server/internal/packet"
@@ -41,13 +40,13 @@ func (q *memoryQueue) Halt() {
 	// No cleanup to be done.
 }
 
-func (q *memoryQueue) Peek() (time.Duration, *packet.Packet) {
+func (q *memoryQueue) Peek() (time.Time, *packet.Packet) {
 	e := q.q.Peek()
 	if e == nil {
-		return 0, nil
+		return time.Time{}, nil
 	}
 
-	return time.Duration(e.Priority), e.Value.(*packet.Packet)
+	return time.Unix(0, int64(e.Priority)), e.Value.(*packet.Packet)
 }
 
 func (q *memoryQueue) Pop() {
@@ -55,16 +54,16 @@ func (q *memoryQueue) Pop() {
 }
 
 func (q *memoryQueue) BulkEnqueue(batch []*packet.Packet) {
-	now := monotime.Now()
+	now := time.Now()
 	for _, pkt := range batch {
-		q.doEnqueue(now+pkt.Delay, pkt)
+		q.doEnqueue(now.Add(pkt.Delay), pkt)
 	}
 }
 
-func (q *memoryQueue) doEnqueue(prio time.Duration, pkt *packet.Packet) {
+func (q *memoryQueue) doEnqueue(prio time.Time, pkt *packet.Packet) {
 	// Enqueue the packet unconditionally so that it is a
 	// candidate to be dropped.
-	q.q.Enqueue(uint64(prio), pkt)
+	q.q.Enqueue(uint64(prio.UnixNano()), pkt)
 
 	// If queue limitations are enabled, check to see if the
 	// queue is over capacity after the new packet was

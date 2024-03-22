@@ -30,7 +30,6 @@ import (
 
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/katzenpost/core/epochtime"
-	"github.com/katzenpost/katzenpost/core/monotime"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/katzenpost/katzenpost/core/sphinx/commands"
@@ -53,7 +52,7 @@ var errMaxAttempts = errors.New("decoy: max path selection attempts exceeded")
 
 type surbCtx struct {
 	id      uint64
-	eta     time.Duration
+	eta     time.Time
 	sprpKey []byte
 
 	etaNode *avl.Node
@@ -122,7 +121,7 @@ func (d *decoy) OnPacket(pkt *packet.Packet) {
 	}
 
 	// TODO: At some point, this should do more than just log.
-	d.log.Debugf("Response packet: %v (SURB ID: 0x%08x): ETA: %v, Actual: %v (DeltaT: %v)", pkt.ID, id, ctx.eta, pkt.RecvAt, pkt.RecvAt-ctx.eta)
+	d.log.Debugf("Response packet: %v (SURB ID: 0x%08x): ETA: %v, Actual: %v (DeltaT: %v)", pkt.ID, id, ctx.eta, pkt.RecvAt, pkt.RecvAt.Sub(ctx.eta))
 }
 
 func (d *decoy) worker() {
@@ -278,7 +277,7 @@ func (d *decoy) sendLoopPacket(doc *pki.Document, recipient []byte, src, dst *pk
 			// are causing issues.
 			ctx := &surbCtx{
 				id:      binary.BigEndian.Uint64(surbID[8:]),
-				eta:     monotime.Now() + deltaT,
+				eta:     time.Now().Add(deltaT),
 				sprpKey: k,
 			}
 			d.storeSURBCtx(ctx)
@@ -336,7 +335,7 @@ func (d *decoy) dispatchPacket(fwdPath []*sphinx.PathHop, raw []byte) {
 	}
 	pkt.NextNodeHop = &commands.NextNodeHop{}
 	copy(pkt.NextNodeHop.ID[:], fwdPath[0].ID[:])
-	pkt.DispatchAt = monotime.Now()
+	pkt.DispatchAt = time.Now()
 
 	d.log.Debugf("Dispatching packet: %v", pkt.ID)
 	d.glue.Connector().DispatchPacket(pkt)
@@ -399,31 +398,31 @@ func (d *decoy) sweepSURBCtxs() {
 		return
 	}
 
-	now := monotime.Now()
+	now := time.Now()
 	slack := time.Duration(d.glue.Config().Debug.DecoySlack) * time.Millisecond
 	// instead of if ctx.eta + slack > now { break } in each loop iteration
 	// we precompute it:
-	now_minus_slack := now - slack
+	now_minus_slack := now.Add(-slack)
 
 	var swept int
 	iter := d.surbETAs.Iterator(avl.Forward)
 	for node := iter.First(); node != nil; node = iter.Next() {
 		ctx := node.Value.(*surbCtx)
-		if ctx.eta > now_minus_slack {
+		if ctx.eta.After(now_minus_slack) {
 			break
 		}
 
 		delete(d.surbStore, ctx.id)
 
 		// TODO: At some point, this should do more than just log.
-		d.log.Debugf("Sweep: Lost SURB ID: 0x%08x ETA: %v (DeltaT: %v)", ctx.id, ctx.eta, now-ctx.eta)
+		d.log.Debugf("Sweep: Lost SURB ID: 0x%08x ETA: %v (DeltaT: %v)", ctx.id, ctx.eta, now.Sub(ctx.eta))
 		swept++
 		// modification is unsupported EXCEPT "removing the current
 		// Node", see godoc for avl/avl.go:Iterator
 		d.surbETAs.Remove(node)
 	}
 
-	d.log.Debugf("Sweep: Count: %v (Removed: %v, Elapsed: %v)", len(d.surbStore), swept, monotime.Now()-now)
+	d.log.Debugf("Sweep: Count: %v (Removed: %v, Elapsed: %v)", len(d.surbStore), swept, time.Now().Sub(now))
 }
 
 // New constructs a new decoy instance.
@@ -443,9 +442,9 @@ func New(glue glue.Glue) (glue.Decoy, error) {
 		surbETAs: avl.New(func(a, b interface{}) int {
 			surbCtxA, surbCtxB := a.(*surbCtx), b.(*surbCtx)
 			switch {
-			case surbCtxA.eta < surbCtxB.eta:
+			case surbCtxB.eta.After(surbCtxA.eta):
 				return -1
-			case surbCtxA.eta > surbCtxB.eta:
+			case surbCtxA.eta.After(surbCtxB.eta):
 				return 1
 			case surbCtxA.id < surbCtxB.id:
 				return -1
