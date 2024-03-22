@@ -8,6 +8,7 @@ testnet-build:
 	cd ../reunion/servers/reunion_katzenpost_server ; go build -trimpath -ldflags ${ldflags}
 	cd ../panda/server/cmd/panda_server ; go build -trimpath -ldflags ${ldflags}
 	cd ../server_plugins/cbor_plugins/echo-go ; go build -trimpath -o echo_server -ldflags ${ldflags}
+	cd ../server_plugins/cbor_plugins/http_proxy ; go build -trimpath -o http_proxy -ldflags ${ldflags}
 
 testnet-install:
 	mv /go/katzenpost/server/cmd/server/server /$(net_name)/server.$(distro)
@@ -15,3 +16,4 @@ testnet-install:
 	mv /go/katzenpost/reunion/servers/reunion_katzenpost_server/reunion_katzenpost_server /$(net_name)/reunion_katzenpost_server.$(distro)
 	mv /go/katzenpost/panda/server/cmd/panda_server/panda_server /$(net_name)/panda_server.$(distro)
 	mv /go/katzenpost/server_plugins/cbor_plugins/echo-go/echo_server /$(net_name)/echo_server.$(distro)
+	mv /go/katzenpost/server_plugins/cbor_plugins/http_proxy/http_proxy /$(net_name)/http_proxy.$(distro)
