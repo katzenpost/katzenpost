@@ -33,8 +33,8 @@ import (
 	kempem "github.com/katzenpost/hpqc/kem/pem"
 
 	"github.com/katzenpost/katzenpost/core/epochtime"
-	"github.com/katzenpost/katzenpost/core/monotime"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/thwack"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/worker"
@@ -59,6 +59,7 @@ type provider struct {
 	log  *logging.Logger
 
 	ch     *channels.InfiniteChannel
+	docCh  *channels.InfiniteChannel
 	sqlDB  *sqldb.SQLDB
 	userDB userdb.UserDB
 	spool  spool.Spool
@@ -71,6 +72,7 @@ func (p *provider) Halt() {
 	p.Worker.Halt()
 
 	p.ch.Close()
+	p.docCh.Close()
 	p.kaetzchenWorker.Halt()
 	p.cborPluginKaetzchenWorker.Halt()
 	if p.userDB != nil {
@@ -138,6 +140,18 @@ func (p *provider) KaetzchenForPKI() (map[string]map[string]interface{}, error) 
 	return merged, nil
 }
 
+// OnNewDocument is called when a new PKI document is received
+func (p *provider) OnNewDocument(doc *pki.Document) {
+	p.kaetzchenWorker.OnNewDocument(doc)
+	p.cborPluginKaetzchenWorker.OnNewDocument(doc)
+
+	docCh := p.docCh.In()
+	select {
+	case docCh <- doc:
+	case <-p.HaltCh():
+	}
+}
+
 func (p *provider) connectedClients() (map[[sConstants.RecipientIDLength]byte]interface{}, error) {
 	identities := make(map[[sConstants.RecipientIDLength]byte]interface{})
 	for _, listener := range p.glue.Listeners() {
@@ -151,6 +165,46 @@ func (p *provider) connectedClients() (map[[sConstants.RecipientIDLength]byte]in
 		}
 	}
 	return identities, nil
+}
+
+func (p *provider) isKaetzchenConfigured(capa string) bool {
+	for _, v := range p.glue.Config().Provider.Kaetzchen {
+		// do not enable a plugin explicitely disabled by configuration
+		if v.Capability == capa && !v.Disable {
+			return true
+		}
+	}
+	return false
+}
+
+func (p *provider) isKaetzchenRegistered(capa string) bool {
+	kpki := p.kaetzchenWorker.KaetzchenForPKI()
+	if _, ok := kpki[capa]; ok {
+		return true
+	}
+	return false
+}
+
+func (p *provider) isCBORKaetzchenConfigured(capa string) bool {
+	// check whether the capability is a CBORPlugin
+	for _, pluginConf := range p.glue.Config().Provider.CBORPluginKaetzchen {
+		if capa == pluginConf.Capability && !pluginConf.Disable {
+			return true
+		}
+	}
+	return false
+}
+
+func (p *provider) isCBORKaetzchenRegistered(capa string) bool {
+	// get endpoint from config
+	for _, pluginConf := range p.glue.Config().Provider.CBORPluginKaetzchen {
+		if capa == pluginConf.Capability && !pluginConf.Disable {
+			var endpoint [sConstants.RecipientIDLength]byte
+			copy(endpoint[:], []byte(pluginConf.Endpoint))
+			return p.cborPluginKaetzchenWorker.IsKaetzchen(endpoint)
+		}
+	}
+	return false
 }
 
 func (p *provider) gcEphemeralClients() {
@@ -173,6 +227,7 @@ func (p *provider) worker() {
 	defer p.log.Debugf("Halting Provider worker.")
 
 	ch := p.ch.Out()
+	docCh  := p.docCh.Out()
 
 	// Here we optionally set this GC timer. If unset the
 	// channel remains nil and has no effect on the select
@@ -194,10 +249,15 @@ func (p *provider) worker() {
 		case <-gcEphemeralClientGCTickerChan:
 			p.gcEphemeralClients()
 			continue
+		case d := <-docCh:
+			doc := d.(*pki.Document)
+			p.log.Notice("New document for epoch received: %d", doc.Epoch)
+			// TODO: update kaetzchen plugin workers with new pki document
+			continue
 		case e := <-ch:
 			pkt = e.(*packet.Packet)
 
-			if dwellTime := monotime.Now() - pkt.DispatchAt; dwellTime > maxDwell {
+			if dwellTime := time.Now().Sub(pkt.DispatchAt); dwellTime > maxDwell {
 				p.log.Debugf("Dropping packet: %v (Spend %v in queue)", pkt.ID, dwellTime)
 				instrument.PacketsDropped()
 				pkt.Dispose()
@@ -296,11 +356,15 @@ func (p *provider) onToUser(pkt *packet.Packet, recipient []byte) {
 
 	// Iff there is a SURB, generate a SURB-ACK and schedule.
 	if surb != nil {
-		ackPkt, err := packet.NewPacketFromSURB(pkt, surb, nil, p.glue.Config().SphinxGeometry)
+		ackPkt, err := packet.NewPacketFromSURB(surb, nil, p.glue.Config().SphinxGeometry)
 		if err != nil {
 			p.log.Debugf("Failed to generate SURB-ACK: %v (%v)", pkt.ID, err)
 			return
 		}
+		// set the response packet delay from requesting packet, sans processing duration
+		delay := pkt.NewDelay()
+		ackPkt.NodeDelay.Delay = uint32(delay)
+		ackPkt.Delay = delay
 
 		p.log.Debugf("Handing off newly generated SURB-ACK: %v (Src:%v)", ackPkt.ID, pkt.ID)
 		p.glue.Scheduler().OnPacket(ackPkt)
@@ -508,6 +572,76 @@ func (p *provider) onSendBurst(c *thwack.Conn, l string) error {
 	return c.Writer().PrintfLine("%v %v", thwack.StatusOk, burst)
 }
 
+// handler for STOP_KAETZCHEN
+func (p *provider) onStopKaetzchen(c *thwack.Conn, l string) error {
+	p.Lock()
+	defer p.Unlock()
+
+	sp := strings.Split(l, " ")
+
+	if len(sp) != 2 {
+		c.Log().Debugf("STOP_KAETZCHEN invalid syntax: '%v'", l)
+		return c.WriteReply(thwack.StatusSyntaxError)
+	}
+	capa := sp[1]
+	// check internal plugins
+	if p.isKaetzchenConfigured(capa) && p.isKaetzchenRegistered(capa) {
+		err := p.kaetzchenWorker.UnregisterKaetzchen(capa)
+		if err != nil {
+			p.log.Errorf("provider: Kaetzchen: '%v'", err)
+			return c.WriteReply(thwack.StatusTransactionFailed)
+		}
+		return c.Writer().PrintfLine("%v %v", thwack.StatusOk, capa)
+	}
+	// check external plugins
+	if p.isCBORKaetzchenConfigured(capa) && !p.isCBORKaetzchenRegistered(capa) {
+		c.Log().Debugf("START_KAETZCHEN failed: %v not running", capa)
+		return c.WriteReply(thwack.StatusTransactionFailed)
+	}
+	err := p.cborPluginKaetzchenWorker.UnregisterKaetzchen(capa)
+	if err != nil {
+		p.log.Errorf("provider: Kaetzchen: '%v'", err)
+		return c.WriteReply(thwack.StatusTransactionFailed)
+	}
+	return c.Writer().PrintfLine("%v %v", thwack.StatusOk, capa)
+}
+
+// handler for START_KAETZCHEN
+func (p *provider) onStartKaetzchen(c *thwack.Conn, l string) error {
+	p.Lock()
+	defer p.Unlock()
+
+	sp := strings.Split(l, " ")
+
+	if len(sp) != 2 {
+		c.Log().Debugf("START_KAETZCHEN invalid syntax: '%v'", l)
+		return c.WriteReply(thwack.StatusSyntaxError)
+	}
+
+	capa := sp[1]
+
+	// check internal plugins
+	if p.isKaetzchenConfigured(capa) && !p.isKaetzchenRegistered(capa) {
+		err := p.kaetzchenWorker.RegisterKaetzchen(capa)
+		if err != nil {
+			p.log.Errorf("provider: Kaetzchen: '%v'", err)
+			return c.WriteReply(thwack.StatusTransactionFailed)
+		}
+		return c.Writer().PrintfLine("%v %v", thwack.StatusOk, capa)
+	}
+	// check external plugins
+	if p.isCBORKaetzchenConfigured(capa) && p.isCBORKaetzchenRegistered(capa) {
+		c.Log().Debugf("START_KAETZCHEN failed: %v already running", capa)
+		return c.WriteReply(thwack.StatusTransactionFailed)
+	}
+	err := p.cborPluginKaetzchenWorker.RegisterKaetzchen(capa)
+	if err != nil {
+		p.log.Errorf("provider: Kaetzchen: '%v'", err)
+		return c.WriteReply(thwack.StatusTransactionFailed)
+	}
+	return c.Writer().PrintfLine("%v %v", thwack.StatusOk, capa)
+}
+
 // New constructs a new provider instance.
 func New(glue glue.Glue) (glue.Provider, error) {
 	kaetzchenWorker, err := kaetzchen.New(glue)
@@ -522,6 +656,7 @@ func New(glue glue.Glue) (glue.Provider, error) {
 		glue:                      glue,
 		log:                       glue.LogBackend().GetLogger("provider"),
 		ch:                        channels.NewInfiniteChannel(),
+		docCh:                     channels.NewInfiniteChannel(),
 		kaetzchenWorker:           kaetzchenWorker,
 		cborPluginKaetzchenWorker: cborPluginWorker,
 	}
@@ -601,6 +736,8 @@ func New(glue glue.Glue) (glue.Provider, error) {
 			cmdUserLink           = "USER_LINK"
 			cmdSendRate           = "SEND_RATE"
 			cmdSendBurst          = "SEND_BURST"
+			cmdStopKaetzchen      = "STOP_KAETZCHEN"
+			cmdStartKaetzchen     = "START_KAETZCHEN"
 		)
 
 		glue.Management().RegisterCommand(cmdAddUser, p.onAddUser)
@@ -612,6 +749,8 @@ func New(glue glue.Glue) (glue.Provider, error) {
 		glue.Management().RegisterCommand(cmdUserLink, p.onUserLink)
 		glue.Management().RegisterCommand(cmdSendRate, p.onSendRate)
 		glue.Management().RegisterCommand(cmdSendBurst, p.onSendBurst)
+		glue.Management().RegisterCommand(cmdStopKaetzchen, p.onStopKaetzchen)
+		glue.Management().RegisterCommand(cmdStartKaetzchen, p.onStartKaetzchen)
 	}
 
 	// Start the workers.

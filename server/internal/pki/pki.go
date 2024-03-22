@@ -219,6 +219,11 @@ func (p *pki) worker() {
 				p.log.Debugf("Updating decoy document for epoch %v.", now)
 				p.glue.Decoy().OnNewDocument(ent)
 
+				if p.glue.Config().Server.IsProvider {
+					p.log.Debugf("Updating provider document for epoch %v.", now)
+					p.glue.Provider().OnNewDocument(ent.Document())
+				}
+
 				lastUpdateEpoch = now
 			}
 		}
@@ -642,6 +647,17 @@ func (p *pki) OutgoingDestinations() map[[sConstants.NodeIDLength]byte]*cpki.Mix
 		}
 	}
 	return descMap
+}
+
+func (p *pki) CurrentDocument() (*cpki.Document, error) {
+	epoch, _, _ := epochtime.Now()
+	p.RLock()
+	defer p.RUnlock()
+	val, ok := p.docs[epoch]
+	if ok {
+		return val.Document(), nil
+	}
+	return nil, cpki.ErrNoDocument
 }
 
 func (p *pki) GetRawConsensus(epoch uint64) ([]byte, error) {

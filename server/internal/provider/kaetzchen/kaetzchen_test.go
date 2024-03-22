@@ -32,7 +32,7 @@ import (
 
 	"github.com/katzenpost/katzenpost/core/cert"
 	"github.com/katzenpost/katzenpost/core/log"
-	"github.com/katzenpost/katzenpost/core/monotime"
+	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/commands"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
@@ -121,6 +121,8 @@ func (p *mockProvider) OnPacket(*packet.Packet) {}
 func (p *mockProvider) KaetzchenForPKI() (map[string]map[string]interface{}, error) {
 	return nil, nil
 }
+
+func (d *mockProvider) OnNewDocument(*pki.Document) {}
 
 type mockDecoy struct{}
 
@@ -300,6 +302,33 @@ func TestKaetzchenWorker(t *testing.T) {
 	_, ok := pkiMap["test"]
 	require.True(t, ok)
 
+	// register another service
+	params2 := make(Parameters)
+	params2[ParameterEndpoint] = "+test2"
+	mockService2 := &MockKaetzchen{
+		capability: "test2",
+		parameters: params2,
+		receivedCh: make(chan bool),
+	}
+
+	kaetzWorker.registerKaetzchen(mockService2)
+
+	recipient2 := [sConstants.RecipientIDLength]byte{}
+	copy(recipient2[:], []byte("+test2"))
+	require.True(t, kaetzWorker.IsKaetzchen(recipient2))
+
+	pkiMap = kaetzWorker.KaetzchenForPKI()
+	_, ok = pkiMap["test2"]
+	require.True(t, ok)
+
+	// unregister service and verify it no longer exists
+	kaetzWorker.unregisterKaetzchen(mockService2)
+	// verify it no longer exists
+	require.False(t, kaetzWorker.IsKaetzchen(recipient2))
+	pkiMap = kaetzWorker.KaetzchenForPKI()
+	_, ok = pkiMap["test2"]
+	require.False(t, ok)
+
 	geo := geo.GeometryFromUserForwardPayloadLength(
 		ecdh.Scheme(rand.Reader),
 		2000,
@@ -314,7 +343,7 @@ func TestKaetzchenWorker(t *testing.T) {
 	testPacket.Recipient = &commands.Recipient{
 		ID: recipient,
 	}
-	testPacket.DispatchAt = monotime.Now()
+	testPacket.DispatchAt = time.Now()
 
 	testPacket.Payload = make([]byte, geo.ForwardPayloadLength-1) // off by one erroneous size
 	kaetzWorker.OnKaetzchen(testPacket)
@@ -326,7 +355,7 @@ func TestKaetzchenWorker(t *testing.T) {
 	testPacket.Recipient = &commands.Recipient{
 		ID: recipient,
 	}
-	testPacket.DispatchAt = monotime.Now() - time.Duration(goo.Config().Debug.KaetzchenDelay)*time.Millisecond
+	testPacket.DispatchAt = time.Now().Add(-time.Duration(goo.Config().Debug.KaetzchenDelay) * time.Millisecond)
 	testPacket.Payload = make([]byte, geo.ForwardPayloadLength)
 	kaetzWorker.OnKaetzchen(testPacket)
 
@@ -337,7 +366,7 @@ func TestKaetzchenWorker(t *testing.T) {
 	testPacket.Recipient = &commands.Recipient{
 		ID: recipient,
 	}
-	testPacket.DispatchAt = monotime.Now()
+	testPacket.DispatchAt = time.Now()
 	testPacket.Payload = make([]byte, geo.ForwardPayloadLength)
 
 	kaetzWorker.OnKaetzchen(testPacket)

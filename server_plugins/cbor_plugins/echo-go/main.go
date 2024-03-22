@@ -28,19 +28,29 @@ import (
 	"github.com/katzenpost/katzenpost/server/cborplugin"
 )
 
-type Echo struct{}
+type Echo struct{
+	write func(cborplugin.Command)
+}
 
-func (e *Echo) OnCommand(cmd cborplugin.Command) (cborplugin.Command, error) {
+func (e *Echo) OnCommand(cmd cborplugin.Command) error {
 	switch r := cmd.(type) {
 	case *cborplugin.Request:
-		return &cborplugin.Response{Payload: r.Payload}, nil
+		go func() {
+			e.write(&cborplugin.Response{ID: r.ID, SURB: r.SURB, Payload: r.Payload})
+		}()
+		return nil
+	case *cborplugin.ParametersRequest:
+		// echo doesn't set any custom parameters in the PKI, so let the
+		// cborplugin.Client populate cborplugin.Parameters{}.
+		// and we don't know what the required endpoint field should be anyway
+		return nil
 	default:
-		return nil, errors.New("echo-plugin: Invalid Command type")
+		return errors.New("echo-plugin: Invalid Command type")
 	}
 }
 
 func (e *Echo) RegisterConsumer(s *cborplugin.Server) {
-	// noop
+	e.write = s.Write
 }
 
 func main() {
@@ -78,7 +88,7 @@ func main() {
 	echo := new(Echo)
 
 	var server *cborplugin.Server
-	server = cborplugin.NewServer(serverLog, socketFile, new(cborplugin.RequestFactory), echo)
+	server = cborplugin.NewServer(serverLog, socketFile, echo)
 	fmt.Printf("%s\n", socketFile)
 	server.Accept()
 	server.Wait()

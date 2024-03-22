@@ -1,5 +1,4 @@
-// monotime_linux_generic.go - Generic Linux stubs.
-// Copyright (C) 2017  Yawning Angel.
+// Copyright (C) 2023  Masala.
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as
@@ -14,16 +13,18 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-// +build linux,!amd64 linux,amd64,noasm !go1.9
+package common
 
-package monotime
+// ReplicaCommand differentiates between a Read or Write ReplicaRequest
+type ReplicaCommand uint8
 
-import "errors"
+const (
+	ReplicaRequestCommand ReplicaCommand = iota
+	ReplicaWriteCommand
+)
 
-func vdsoClockGettimeTrampoline(clkID uint64, res uintptr, fn uintptr) {
-	panic("monotime: vDSO call on unsupported architecture")
-}
-
-func initArchDep() error {
-	return errors.New("monotime: unsupported architecture for vDSO calls")
+// ReplicaRequest wraps the Talek Replica API command types
+type ReplicaRequest struct {
+	Command ReplicaCommand
+	Payload []byte
 }

@@ -19,7 +19,7 @@ help:
 warped?=true
 mixes=3
 auths=3
-providers=2
+providers=4
 
 # Parameters
 sr=0
@@ -34,13 +34,16 @@ lDMax=3000
 lM=0.0005
 lMMax=100
 
-UserForwardPayloadLength=2000
+UserForwardPayloadLength=4200
 
 # hybrid ctidh PQ can work here, but requires manually building ctidh.
 nike=x25519
 
 # kem can be Kyber1024-X448 or any of the other schemes at https://github.com/cloudflare/circl/blob/main/kem/schemes/schemes.go (and then nike must be unset)
 kem=
+
+decoy_off?=false
+mix_decoy_off?=false
 
 DISTROS=alpine debian
 distro=alpine
@@ -68,7 +71,7 @@ replace_name=$(shell if echo ${docker}|grep -q podman; then echo " --replace --n
 i_if_podman=$(shell if echo ${docker}|grep -q podman; then echo " -i"; else echo; fi)
 mount_net_name=-v `pwd`/$(net_name):/$(net_name)
 
-docker_compose?= $(shell if echo ${docker}|grep -q podman; then echo DOCKER_HOST="unix://$$XDG_RUNTIME_DIR/podman/podman.sock" docker-compose; else echo docker-compose; fi)
+docker_compose?= $(shell if [ -e /usr/bin/podman ]; then echo DOCKER_HOST="unix://$$XDG_RUNTIME_DIR/podman/podman.sock" docker-compose; else echo docker-compose; fi)
 
 make_args=--no-print-directory net_name=$(net_name) docker=$(docker) distro=$(distro) warped=$(warped) docker_user=$(docker_user)
 
@@ -82,8 +85,10 @@ $(docker_compose_yml): ../genconfig/main.go $(distro)_go_mod.stamp $(net_name)
 		-sr ${sr} -mu ${mu} -muMax ${muMax} -lP ${lP} -lPMax ${lPMax} -lL ${lL} \
 		-lLMax ${lLMax} -lD ${lD} -lDMax ${lDMax} -lM ${lM} -lMMax ${lMMax} \
 		-S .$(distro) -v -o ./$(net_name) -b /$(net_name) -P $(base_port) \
-		-nike "$(nike)" -kem "$(kem)" -d katzenpost-$(distro)_go_mod \
-		-UserForwardPayloadLength $(UserForwardPayloadLength) -log_level $(log_level)'
+		-nike "$(nike)" -kem "$(kem)" \
+		-d katzenpost-$(distro)_go_mod \
+		-UserForwardPayloadLength $(UserForwardPayloadLength) -log_level $(log_level) \
+		$(shell if ${decoy_off} ; then echo "-nodecoy " ; fi) $(shell if ${mix_decoy_off} ; then echo "-nomixdecoy "; fi)'
 
 $(net_name)/running.stamp: $(net_name)
 	make $(make_args) start
@@ -94,7 +99,8 @@ run: $(docker_compose_yml) $(net_name)/server.$(distro) $(net_name)/voting.$(dis
 	cd $(net_name) && rm -v running.stamp
 
 start: $(docker_compose_yml) $(net_name)/server.$(distro) $(net_name)/voting.$(distro)
-	cd $(net_name); DOCKER_USER=${docker_user} $(docker_compose) up --remove-orphans -d; $(docker_compose) top
+	cd $(net_name); DOCKER_USER=${docker_user} $(docker_compose) up --remove-orphans -d
+	cd $(net_name); $(docker_compose) ps
 	touch $(net_name)/running.stamp
 
 stop:

@@ -92,7 +92,7 @@ func main() {
 
 	var server *cborplugin.Server
 	h := &pandaRequestHandler{p: panda, log: serverLog}
-	server = cborplugin.NewServer(serverLog, socketFile, new(cborplugin.RequestFactory), h)
+	server = cborplugin.NewServer(serverLog, socketFile, h)
 	// emit socketFile to stdout, because this tells the mix server where to connect
 	fmt.Printf("%s\n", socketFile)
 	server.Accept()
@@ -103,10 +103,11 @@ func main() {
 type pandaRequestHandler struct {
 	p   *server.Panda
 	log *logging.Logger
+	write func(cborplugin.Command)
 }
 
 // OnCommand processes a SpoolRequest and returns a SpoolResponse
-func (s *pandaRequestHandler) OnCommand(cmd cborplugin.Command) (cborplugin.Command, error) {
+func (s *pandaRequestHandler) OnCommand(cmd cborplugin.Command) error {
 	switch r := cmd.(type) {
 	case *cborplugin.Request:
 		// the padding bytes were not stripped because
@@ -114,17 +115,26 @@ func (s *pandaRequestHandler) OnCommand(cmd cborplugin.Command) (cborplugin.Comm
 		// know how long it is, so we will use a streaming
 		// decoder and simply return the first cbor object
 		// and then discard the decoder and buffer
-		pandaResponse, err := s.p.OnRequest(r.ID, r.Payload, r.HasSURB)
+		pandaResponse, err := s.p.OnRequest(r.ID, r.Payload, len(r.SURB) > 0)
 		if err != nil {
 			s.log.Errorf("OnCommand called with invalid request")
-			return nil, err
+			return err
 		}
-		return &cborplugin.Response{Payload: pandaResponse}, nil
+		go func() {
+			s.write(&cborplugin.Response{ID: r.ID, SURB: r.SURB, Payload: pandaResponse})
+		}()
+		return nil
+	case *cborplugin.ParametersRequest, *cborplugin.Document:
+		// panda doesn't set any custom parameters in the PKI, so let the
+		// cborplugin.Client populate cborplugin.Parameters{}.
+		// and we don't know what the required endpoint field should be anyway
+		return nil
 	default:
 		s.log.Errorf("OnCommand called with unknown Command type")
-		return nil, errors.New("Invalid Command type")
+		return errors.New("Invalid Command type")
 	}
 }
 
 func (s *pandaRequestHandler) RegisterConsumer(svr *cborplugin.Server) {
+	s.write = svr.Write
 }

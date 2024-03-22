@@ -71,7 +71,11 @@ type katzenpost struct {
 	nodeIdx     int
 	clientIdx   int
 	providerIdx int
+	replicaIdx  int
 	hasPanda    bool
+
+	decoyOff    bool
+	mixDecoyOff bool
 }
 
 type AuthById []*vConfig.Authority
@@ -87,7 +91,6 @@ func (a NodeById) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
 func (a NodeById) Less(i, j int) bool { return a[i].Identifier < a[j].Identifier }
 
 func (s *katzenpost) genClientCfg() error {
-	os.Mkdir(filepath.Join(s.outDir, "client"), 0700)
 	cfg := new(cConfig.Config)
 
 	cfg.SphinxGeometry = s.sphinxGeometry
@@ -112,7 +115,7 @@ func (s *katzenpost) genClientCfg() error {
 	cfg.VotingAuthority = &cConfig.VotingAuthority{Peers: peers}
 
 	// Debug section
-	cfg.Debug = &cConfig.Debug{DisableDecoyTraffic: false}
+	cfg.Debug = &cConfig.Debug{DisableDecoyTraffic: s.decoyOff}
 	err := saveCfg(cfg, s.outDir)
 	if err != nil {
 		return err
@@ -158,7 +161,7 @@ func (s *katzenpost) genNodeConfig(isProvider bool, isVoting bool) error {
 
 	// Debug section.
 	cfg.Debug = new(sConfig.Debug)
-	cfg.Debug.SendDecoyTraffic = true
+	cfg.Debug.SendDecoyTraffic = !s.mixDecoyOff
 
 	// PKI section.
 	if isVoting {
@@ -190,7 +193,7 @@ func (s *katzenpost) genNodeConfig(isProvider bool, isVoting bool) error {
 		s.providerIdx++
 
 		cfg.Provider = new(sConfig.Provider)
-		// configure an entry provider or a spool storage provider
+		// configure an entry or service provider
 		if s.providerIdx%2 == 0 {
 			cfg.Provider.TrustOnFirstUse = true
 			cfg.Provider.EnableEphemeralClients = true
@@ -205,7 +208,28 @@ func (s *katzenpost) genNodeConfig(isProvider bool, isVoting bool) error {
 					"log_dir":    s.baseDir + "/" + cfg.Server.Identifier,
 				},
 			}
-			cfg.Provider.CBORPluginKaetzchen = []*sConfig.CBORPluginKaetzchen{spoolCfg}
+			// generate talek common and replica configs
+			cfgDir := filepath.Join(s.outDir, cfg.Server.Identifier)
+			index := s.replicaIdx
+			s.genTalekReplicaCfg(cfgDir)
+			s.genTalekFrontendCfg(filepath.Join(s.outDir, "client"))
+
+			talekReplicaCfg := &sConfig.CBORPluginKaetzchen{
+				Capability:     "talek_replica",
+				Endpoint:       "+talek_replica",
+				Command:        s.baseDir + "/replica" + s.binSuffix,
+				MaxConcurrency: 1,
+				Config: map[string]interface{}{
+					"backing":   "cpu.0",
+					"config":    filepath.Join(s.baseDir, cfg.Server.Identifier, "replica.json"),
+					"common":    filepath.Join(s.baseDir, cfg.Server.Identifier, "common.json"),
+					"index":     fmt.Sprintf("%d", index),
+					"log_dir":   filepath.Join(s.baseDir, cfg.Server.Identifier),
+					"log_level": s.logLevel,
+				},
+			}
+
+			cfg.Provider.CBORPluginKaetzchen = []*sConfig.CBORPluginKaetzchen{spoolCfg, talekReplicaCfg}
 			if !s.hasPanda {
 				pandaCfg := &sConfig.CBORPluginKaetzchen{
 					Capability:     "panda",
@@ -227,25 +251,6 @@ func (s *katzenpost) genNodeConfig(isProvider bool, isVoting bool) error {
 		echoCfg.Capability = "echo"
 		echoCfg.Endpoint = "+echo"
 		cfg.Provider.Kaetzchen = append(cfg.Provider.Kaetzchen, echoCfg)
-
-		/*
-			keysvrCfg := new(sConfig.Kaetzchen)
-			keysvrCfg.Capability = "keyserver"
-			keysvrCfg.Endpoint = "+keyserver"
-			cfg.Provider.Kaetzchen = append(cfg.Provider.Kaetzchen, keysvrCfg)
-
-				if s.providerIdx == 1 {
-					cfg.Debug.NumProviderWorkers = 10
-					cfg.Provider.SQLDB = new(sConfig.SQLDB)
-					cfg.Provider.SQLDB.Backend = "pgx"
-					cfg.Provider.SQLDB.DataSourceName = "host=localhost port=5432 database=katzenpost sslmode=disable"
-					cfg.Provider.UserDB = new(sConfig.UserDB)
-					cfg.Provider.UserDB.Backend = sConfig.BackendSQL
-
-					cfg.Provider.SpoolDB = new(sConfig.SpoolDB)
-					cfg.Provider.SpoolDB.Backend = sConfig.BackendSQL
-				}
-		*/
 	} else {
 		s.nodeIdx++
 	}
@@ -345,6 +350,8 @@ func main() {
 	kem := flag.String("kem", "", "Name of the KEM Scheme to be used with Sphinx")
 	nike := flag.String("nike", "x25519", "Name of the NIKE Scheme to be used with Sphinx")
 	UserForwardPayloadLength := flag.Int("UserForwardPayloadLength", 2000, "UserForwardPayloadLength")
+	decoyOff := flag.Bool("nodecoy", false, "Disable client decoy traffic")
+	mixDecoyOff := flag.Bool("nomixdecoy", false, "Disable client decoy traffic")
 
 	sr := flag.Uint64("sr", 0, "Sendrate limit")
 	mu := flag.Float64("mu", 0.005, "Inverse of mean of per hop delay.")
@@ -418,7 +425,11 @@ func main() {
 		)
 	}
 
+	s.decoyOff = *decoyOff
+	s.mixDecoyOff = *mixDecoyOff
+
 	os.Mkdir(s.outDir, 0700)
+	os.Mkdir(filepath.Join(s.outDir, "client"), 0700)
 	os.Mkdir(filepath.Join(s.outDir, s.baseDir), 0700)
 
 	if *voting {

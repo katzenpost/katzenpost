@@ -25,8 +25,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/katzenpost/katzenpost/core/monotime"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/katzenpost/katzenpost/server/config"
 	"github.com/katzenpost/katzenpost/server/internal/glue"
@@ -102,28 +102,39 @@ type KaetzchenWorker struct {
 }
 
 func (k *KaetzchenWorker) IsKaetzchen(recipient [sConstants.RecipientIDLength]byte) bool {
+	k.Lock()
+	defer k.Unlock()
 	_, ok := k.kaetzchen[recipient]
 	return ok
 }
 
+func endpointFromParams(params Parameters) (string, error) {
+	// Sanitize the endpoint.
+	var ep string
+	if v, ok := params[ParameterEndpoint]; !ok {
+		return "", fmt.Errorf("Parameters has no ParametersEndpoint key")
+	} else if ep, ok = v.(string); !ok {
+		return "", fmt.Errorf("ParametersEndpoint value is not a string")
+	} else if epNorm, err := precis.UsernameCaseMapped.String(ep); err != nil {
+		return "", fmt.Errorf("Parameters endpoint '%v' is not valid", ep)
+	} else if epNorm != ep {
+		return "", fmt.Errorf("provider: Kaetzchen: '%v' invalid endpoint, not normalized", epNorm)
+	}
+	return ep, nil
+}
+
 func (k *KaetzchenWorker) registerKaetzchen(service Kaetzchen) error {
+	k.Lock()
+	defer k.Unlock()
 	capa := service.Capability()
 
 	params := service.Parameters()
 	if params == nil {
 		return fmt.Errorf("provider: Kaetzchen: '%v' provided no parameters", capa)
 	}
-
-	// Sanitize the endpoint.
-	var ep string
-	if v, ok := params[ParameterEndpoint]; !ok {
-		return fmt.Errorf("provider: Kaetzchen: '%v' provided no endpoint", capa)
-	} else if ep, ok = v.(string); !ok {
-		return fmt.Errorf("provider: Kaetzchen: '%v' invalid endpoint type: %T", capa, v)
-	} else if epNorm, err := precis.UsernameCaseMapped.String(ep); err != nil {
-		return fmt.Errorf("provider: Kaetzchen: '%v' invalid endpoint: %v", capa, err)
-	} else if epNorm != ep {
-		return fmt.Errorf("provider: Kaetzchen: '%v' invalid endpoint, not normalized", capa)
+	ep, err := endpointFromParams(params)
+	if err != nil {
+		return err
 	}
 	rawEp := []byte(ep)
 	if len(rawEp) == 0 || len(rawEp) > sConstants.RecipientIDLength {
@@ -140,6 +151,63 @@ func (k *KaetzchenWorker) registerKaetzchen(service Kaetzchen) error {
 	k.log.Noticef("Registered Kaetzchen: '%v' -> '%v'.", ep, capa)
 
 	return nil
+}
+
+// RegisterKaetzchen adds an internal Kaetzchen service to the set of available Kaetzchen
+func (k *KaetzchenWorker) RegisterKaetzchen(capa string) error {
+	ctor, ok := BuiltInCtors[capa]
+	if !ok {
+		return fmt.Errorf("provider: Kaetzchen: Unsupported capability: '%v'", capa)
+	}
+
+	for _, kaetzchenConfig := range k.glue.Config().Provider.Kaetzchen {
+		if kaetzchenConfig.Capability == capa {
+			kaetzchen, err := ctor(kaetzchenConfig, k.glue)
+			if err != nil {
+				return fmt.Errorf("provider: Kaetzchen: '%v': %v", capa, err)
+			}
+			return k.registerKaetzchen(kaetzchen)
+		}
+	}
+	return fmt.Errorf("provider: Kaetzchen: '%v' not found in config", capa)
+}
+
+func (k *KaetzchenWorker) unregisterKaetzchen(service Kaetzchen) error {
+	k.Lock()
+	defer k.Unlock()
+	params := service.Parameters()
+	capa := service.Capability()
+	ep, err := endpointFromParams(params)
+	if err != nil {
+		return err
+	}
+
+	rawEp := []byte(ep)
+	var epKey [sConstants.RecipientIDLength]byte
+	copy(epKey[:], rawEp)
+
+	if len(rawEp) == 0 || len(rawEp) > sConstants.RecipientIDLength {
+		return fmt.Errorf("provider: Kaetzchen: '%v' invalid endpoint, length out of bounds", capa)
+	}
+
+	if _, ok := k.kaetzchen[epKey]; !ok {
+		return fmt.Errorf("provider: Kaetzchen: '%v' invalid endpoint, not registered)", capa)
+	}
+	delete(k.kaetzchen, epKey)
+	return nil
+}
+
+// UnregisterKaetzchen removes a running internal Kaetzchen service from the set of available Kaetzchen
+func (k *KaetzchenWorker) UnregisterKaetzchen(capa string) error {
+	k.Lock()
+	defer k.Unlock()
+	for epKey, service := range k.kaetzchen {
+		if service.Capability() == capa {
+			delete(k.kaetzchen, epKey)
+			return nil
+		}
+	}
+	return fmt.Errorf("provider: Kaetzchen: '%v' not found", capa)
 }
 
 func (k *KaetzchenWorker) OnKaetzchen(pkt *packet.Packet) {
@@ -170,7 +238,7 @@ func (k *KaetzchenWorker) worker() {
 			return
 		case e := <-ch:
 			pkt = e.(*packet.Packet)
-			if dwellTime := monotime.Now() - pkt.DispatchAt; dwellTime > maxDwell {
+			if dwellTime := time.Now().Sub(pkt.DispatchAt); dwellTime > maxDwell {
 				count := k.incrementDropCounter()
 				k.log.Debugf("Dropping packet: %v (Spend %v in queue), total drops %d", pkt.ID, dwellTime, count)
 				instrument.PacketsDropped()
@@ -196,7 +264,9 @@ func (k *KaetzchenWorker) processKaetzchen(pkt *packet.Packet) {
 	}
 
 	var resp []byte
+	k.Lock()
 	dst, ok := k.kaetzchen[pkt.Recipient.ID]
+	k.Unlock()
 	if !ok {
 		k.log.Error("KaetzchenWorker does not handle the specified recipient")
 		k.log.Debugf("Dropping Kaetzchen request: %v (%v)", pkt.ID, err)
@@ -221,11 +291,16 @@ func (k *KaetzchenWorker) processKaetzchen(pkt *packet.Packet) {
 
 	// Iff there is a SURB, generate a SURB-Reply and schedule.
 	if surb != nil {
-		respPkt, err := packet.NewPacketFromSURB(pkt, surb, resp, k.glue.Config().SphinxGeometry)
+		respPkt, err := packet.NewPacketFromSURB(surb, resp, k.glue.Config().SphinxGeometry)
 		if err != nil {
 			k.log.Debugf("Failed to generate SURB-Reply: %v (%v)", pkt.ID, err)
 			return
 		}
+
+		// set the response packet delay from requesting packet, sans processing duration
+		delay := pkt.NewDelay()
+		respPkt.NodeDelay.Delay = uint32(delay)
+		respPkt.Delay = delay
 
 		k.log.Debugf("Handing off newly generated SURB-Reply: %v (Src:%v)", respPkt.ID, pkt.ID)
 		k.glue.Scheduler().OnPacket(respPkt)
@@ -238,6 +313,8 @@ func (k *KaetzchenWorker) processKaetzchen(pkt *packet.Packet) {
 }
 
 func (k *KaetzchenWorker) KaetzchenForPKI() map[string]map[string]interface{} {
+	k.Lock()
+	defer k.Unlock()
 	if len(k.kaetzchen) == 0 {
 		return nil
 	}
@@ -247,6 +324,10 @@ func (k *KaetzchenWorker) KaetzchenForPKI() map[string]map[string]interface{} {
 		m[v.Capability()] = v.Parameters()
 	}
 	return m
+}
+
+// OnNewDocument is called when a new pki.Document is available
+func (k *KaetzchenWorker) OnNewDocument(doc *pki.Document) {
 }
 
 func New(glue glue.Glue) (*KaetzchenWorker, error) {
