@@ -22,12 +22,14 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/cloudflare/circl/kem"
-	"github.com/katzenpost/katzenpost/core/crypto/nike"
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
-	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/yawning/bloom"
 	bolt "go.etcd.io/bbolt"
+
+	"github.com/katzenpost/hpqc/kem"
+	"github.com/katzenpost/hpqc/nike"
+	"github.com/katzenpost/hpqc/rand"
+
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 )
 
 const (
