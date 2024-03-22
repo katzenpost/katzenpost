@@ -24,13 +24,19 @@ import (
 	"sync"
 	"time"
 
+	"gopkg.in/op/go-logging.v1"
+
+	nyquistkem "github.com/katzenpost/nyquist/kem"
+	"github.com/katzenpost/nyquist/seec"
+
+	"github.com/katzenpost/hpqc/kem"
+	"github.com/katzenpost/hpqc/rand"
+
 	"github.com/katzenpost/katzenpost/client/config"
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/wire"
-	"gopkg.in/op/go-logging.v1"
 )
 
 const (
@@ -55,7 +61,7 @@ func (c *Client) GetConfig() *config.Config {
 }
 
 // PKIBootstrap returns a pkiClient and fetches a consensus.
-func PKIBootstrap(ctx context.Context, c *Client, linkKey wire.PrivateKey) (pki.Client, *pki.Document, error) {
+func PKIBootstrap(ctx context.Context, c *Client, linkKey kem.PrivateKey) (pki.Client, *pki.Document, error) {
 	// Retrieve a copy of the PKI consensus document.
 	pkiClient, err := c.cfg.NewPKIClient(c.logBackend, c.cfg.UpstreamProxyConfig(), linkKey)
 	if err != nil {
@@ -161,11 +167,15 @@ func (c *Client) NewTOFUSession(ctx context.Context) (*Session, error) {
 		err      error
 		doc      *pki.Document
 		provider *pki.MixDescriptor
-		linkKey  wire.PrivateKey
+		linkKey  kem.PrivateKey
 	)
 
 	// generate a linkKey
-	linkKey, _ = wire.DefaultScheme.GenerateKeypair(rand.Reader)
+	rng, err := seec.GenKeyPassthrough(rand.Reader, 0)
+	if err != nil {
+		return nil, err
+	}
+	_, linkKey = nyquistkem.GenerateKeypair(wire.DefaultScheme, rng)
 
 	// fetch a pki.Document
 	pkiclient, doc, err := PKIBootstrap(ctx, c, linkKey)
