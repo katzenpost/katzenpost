@@ -37,7 +37,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/hpqc/rand"
 	tCommon "github.com/privacylab/talek/common"
 	tServer "github.com/privacylab/talek/server"
 )

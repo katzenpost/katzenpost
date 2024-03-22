@@ -102,7 +102,7 @@ func (q *Queue) MarshalBinary() ([]byte, error) {
 
 func (q *Queue) UnmarshalBinary(data []byte) error {
 	tmp := &serializedQ{}
-	if err := cbor.Unmarshal(data, &tmp); err != nil {
+	if _, err := cbor.UnmarshalFirst(data, &tmp); err != nil {
 		return err
 	}
 	for i, _ := range tmp.Content {
