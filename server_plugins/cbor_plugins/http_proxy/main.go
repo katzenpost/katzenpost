@@ -50,15 +50,15 @@ func main() {
 	}
 
 	// Log to a file.
-	logFile := path.Join(logDir, fmt.Sprintf("memspool.%d.log", os.Getpid()))
+	logFile := path.Join(logDir, fmt.Sprintf("http_proxy.%d.log", os.Getpid()))
 	logBackend, err := log.New(logFile, logLevel, false)
 	if err != nil {
 		panic(err)
 	}
-	serverLog := logBackend.GetLogger("memspool_server")
+	serverLog := logBackend.GetLogger("http_proxy")
 
 	// start service
-	tmpDir, err := os.MkdirTemp("", "memspool_server")
+	tmpDir, err := os.MkdirTemp("", "http_proxy")
 	if err != nil {
 		panic(err)
 	}
