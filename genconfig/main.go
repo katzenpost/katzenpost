@@ -239,25 +239,6 @@ func (s *katzenpost) genNodeConfig(isProvider bool, isVoting bool) error {
 		echoCfg.Capability = "echo"
 		echoCfg.Endpoint = "+echo"
 		cfg.Provider.Kaetzchen = append(cfg.Provider.Kaetzchen, echoCfg)
-
-		/*
-			keysvrCfg := new(sConfig.Kaetzchen)
-			keysvrCfg.Capability = "keyserver"
-			keysvrCfg.Endpoint = "+keyserver"
-			cfg.Provider.Kaetzchen = append(cfg.Provider.Kaetzchen, keysvrCfg)
-
-				if s.providerIdx == 1 {
-					cfg.Debug.NumProviderWorkers = 10
-					cfg.Provider.SQLDB = new(sConfig.SQLDB)
-					cfg.Provider.SQLDB.Backend = "pgx"
-					cfg.Provider.SQLDB.DataSourceName = "host=localhost port=5432 database=katzenpost sslmode=disable"
-					cfg.Provider.UserDB = new(sConfig.UserDB)
-					cfg.Provider.UserDB.Backend = sConfig.BackendSQL
-
-					cfg.Provider.SpoolDB = new(sConfig.SpoolDB)
-					cfg.Provider.SpoolDB.Backend = sConfig.BackendSQL
-				}
-		*/
 	} else {
 		s.nodeIdx++
 	}
