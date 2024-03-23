@@ -23,11 +23,16 @@ import (
 	"time"
 
 	"github.com/fxamacker/cbor/v2"
+<<<<<<< HEAD
 
 	cConstants "github.com/katzenpost/katzenpost/client/constants"
 	"github.com/katzenpost/katzenpost/core/crypto/nike"
 	"github.com/katzenpost/katzenpost/core/crypto/nike/hybrid"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
+=======
+	"github.com/katzenpost/hpqc/rand"
+	cConstants "github.com/katzenpost/katzenpost/client/constants"
+>>>>>>> main
 	ratchet "github.com/katzenpost/katzenpost/doubleratchet"
 	memspoolClient "github.com/katzenpost/katzenpost/memspool/client"
 )
@@ -54,7 +59,7 @@ func NewContactExchangeBytes(spoolWriteDescriptor *memspoolClient.SpoolWriteDesc
 
 func parseContactExchangeBytes(contactExchangeBytes []byte) (*contactExchange, error) {
 	exchange := new(contactExchange)
-	if err := cbor.Unmarshal(contactExchangeBytes, &exchange); err != nil {
+	if _, err := cbor.UnmarshalFirst(contactExchangeBytes, &exchange); err != nil {
 		return nil, err
 	}
 	return exchange, nil
@@ -201,7 +206,7 @@ func (c *Contact) MarshalBinary() ([]byte, error) {
 // from the given binary blob.
 func (c *Contact) UnmarshalBinary(data []byte) error {
 	s := new(serializedContact)
-	if err := cbor.Unmarshal(data, &s); err != nil {
+	if _, err := cbor.UnmarshalFirst(data, &s); err != nil {
 		return err
 	}
 

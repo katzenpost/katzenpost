@@ -85,8 +85,7 @@ type BuiltInCtorFn func(*config.Kaetzchen, glue.Glue) (Kaetzchen, error)
 
 // BuiltInCtors are the constructors for all built-in Kaetzchen.
 var BuiltInCtors = map[string]BuiltInCtorFn{
-	EchoCapability:      NewEcho,
-	keyserverCapability: NewKeyserver,
+	EchoCapability: NewEcho,
 }
 
 type KaetzchenWorker struct {
@@ -186,7 +185,6 @@ func (k *KaetzchenWorker) worker() {
 }
 
 func (k *KaetzchenWorker) processKaetzchen(pkt *packet.Packet) {
-	instrument.SetKaetzchenRequestsTimer()
 	defer pkt.Dispose()
 
 	payload, surb, err := packet.ParseForwardPacket(pkt)
@@ -237,7 +235,6 @@ func (k *KaetzchenWorker) processKaetzchen(pkt *packet.Packet) {
 		// implementation should have caught this.
 		k.log.Debugf("Kaetzchen message: %v (Has reply but no SURB)", pkt.ID)
 	}
-	instrument.TimeKaetzchenRequestsDuration()
 }
 
 func (k *KaetzchenWorker) KaetzchenForPKI() map[string]map[string]interface{} {

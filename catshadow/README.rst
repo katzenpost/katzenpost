@@ -123,23 +123,23 @@ the longer design overview
 The design of this messaging is not yet fully specified but is
 partially specified in these specification documents:
 
-* https://github.com/katzenpost/katzenpost/blob/master/docs/drafts/client.rst
-* https://github.com/katzenpost/katzenpost/blob/master/docs/drafts/deaddrop.rst
-* https://github.com/katzenpost/katzenpost/blob/master/docs/drafts/decoy_traffic.rst
-* https://github.com/katzenpost/katzenpost/blob/master/docs/drafts/panda.txt
+* https://github.com/katzenpost/katzenpost/blob/main/docs/drafts/client.md
+* https://github.com/katzenpost/katzenpost/blob/main/docs/drafts/deaddrop.md
+* https://github.com/katzenpost/katzenpost/blob/main/docs/drafts/decoy_traffic.md
+* https://github.com/katzenpost/katzenpost/blob/main/docs/drafts/panda.md
 
 Whereas all those specifications assume the existence of the core
 Katzenpost specifications here which mostly covers the design of
 the server infrastructure:
 
-* https://github.com/katzenpost/katzenpost/blob/master/docs/specs/mixnet.rst
-* https://github.com/katzenpost/katzenpost/blob/master/docs/specs/wire-protocol.rst
-* https://github.com/katzenpost/katzenpost/blob/master/docs/specs/kaetzchen.rst
-* https://github.com/katzenpost/katzenpost/blob/master/docs/specs/sphinx_replay_detection.rst
-* https://github.com/katzenpost/katzenpost/blob/master/docs/specs/sphinx.rst
-* https://github.com/katzenpost/katzenpost/blob/master/docs/specs/end_to_end.rst
-* https://github.com/katzenpost/katzenpost/blob/master/docs/specs/pki.rst
-* https://github.com/katzenpost/katzenpost/blob/master/docs/specs/certificate.rst
+* https://github.com/katzenpost/katzenpost/blob/main/docs/specs/mixnet.md
+* https://github.com/katzenpost/katzenpost/blob/main/docs/specs/wire-protocol.md
+* https://github.com/katzenpost/katzenpost/blob/main/docs/specs/kaetzchen.md
+* https://github.com/katzenpost/katzenpost/blob/main/docs/specs/sphinx_replay_detection.md
+* https://github.com/katzenpost/katzenpost/blob/main/docs/specs/sphinx.md
+* https://github.com/katzenpost/katzenpost/blob/main/docs/specs/oldspecs/end_to_end.md
+* https://github.com/katzenpost/katzenpost/blob/main/docs/specs/pki.md
+* https://github.com/katzenpost/katzenpost/blob/main/docs/specs/certificate.md
 
 There is an older copy of our core Katzenpost specifications rendered
 in Latex if you prefer to read it that way:

@@ -17,7 +17,6 @@
 package main
 
 import (
-	"bytes"
 	"flag"
 	"fmt"
 	"io"
@@ -27,15 +26,18 @@ import (
 	"sort"
 
 	"github.com/BurntSushi/toml"
-	kemschemes "github.com/cloudflare/circl/kem/schemes"
-	aConfig "github.com/katzenpost/katzenpost/authority/nonvoting/server/config"
+
+	"github.com/katzenpost/hpqc/hash"
+	"github.com/katzenpost/hpqc/kem"
+	kempem "github.com/katzenpost/hpqc/kem/pem"
+	kemschemes "github.com/katzenpost/hpqc/kem/schemes"
+	"github.com/katzenpost/hpqc/nike/schemes"
+	signpem "github.com/katzenpost/hpqc/sign/pem"
+
+	"github.com/katzenpost/hpqc/sign"
 	vConfig "github.com/katzenpost/katzenpost/authority/voting/server/config"
 	cConfig "github.com/katzenpost/katzenpost/client/config"
-	"github.com/katzenpost/katzenpost/core/crypto/cert"
-	"github.com/katzenpost/katzenpost/core/crypto/nike/schemes"
-	"github.com/katzenpost/katzenpost/core/crypto/pem"
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
-	"github.com/katzenpost/katzenpost/core/crypto/sign"
+	"github.com/katzenpost/katzenpost/core/cert"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
 	sConfig "github.com/katzenpost/katzenpost/server/config"
@@ -43,6 +45,7 @@ import (
 
 const (
 	basePort      = 30000
+	bindAddr      = "127.0.0.1"
 	nrLayers      = 3
 	nrNodes       = 6
 	nrProviders   = 2
@@ -53,10 +56,10 @@ type katzenpost struct {
 	baseDir   string
 	outDir    string
 	binSuffix string
+	logLevel  string
 	logWriter io.Writer
 
 	sphinxGeometry    *geo.Geometry
-	authConfig        *aConfig.Config
 	votingAuthConfigs []*vConfig.Config
 	authorities       map[[32]byte]*vConfig.Authority
 	authIdentity      sign.PublicKey
@@ -64,6 +67,7 @@ type katzenpost struct {
 	nodeConfigs []*sConfig.Config
 	basePort    uint16
 	lastPort    uint16
+	bindAddr    string
 	nodeIdx     int
 	clientIdx   int
 	providerIdx int
@@ -91,7 +95,7 @@ func (s *katzenpost) genClientCfg() error {
 	s.clientIdx++
 
 	// Logging section.
-	cfg.Logging = &cConfig.Logging{File: "", Level: "DEBUG"}
+	cfg.Logging = &cConfig.Logging{File: "", Level: s.logLevel}
 
 	// UpstreamProxy section
 	cfg.UpstreamProxy = &cConfig.UpstreamProxy{Type: "none"}
@@ -139,7 +143,7 @@ func (s *katzenpost) genNodeConfig(isProvider bool, isVoting bool) error {
 	// Server section.
 	cfg.Server = new(sConfig.Server)
 	cfg.Server.Identifier = n
-	cfg.Server.Addresses = []string{fmt.Sprintf("127.0.0.1:%d", s.lastPort)}
+	cfg.Server.Addresses = []string{fmt.Sprintf("%s:%d", s.bindAddr, s.lastPort)}
 	cfg.Server.DataDir = filepath.Join(s.baseDir, n)
 	os.Mkdir(filepath.Join(s.outDir, cfg.Server.Identifier), 0700)
 	cfg.Server.IsProvider = isProvider
@@ -148,6 +152,9 @@ func (s *katzenpost) genNodeConfig(isProvider bool, isVoting bool) error {
 			"TCP": []string{fmt.Sprintf("localhost:%d", s.lastPort)},
 		}
 	}
+	// Enable Metrics endpoint
+	s.lastPort += 1
+	cfg.Server.MetricsAddress = fmt.Sprintf("127.0.0.1:%d", s.lastPort)
 
 	// Debug section.
 	cfg.Debug = new(sConfig.Debug)
@@ -155,33 +162,25 @@ func (s *katzenpost) genNodeConfig(isProvider bool, isVoting bool) error {
 
 	// PKI section.
 	if isVoting {
-		authorities := make([]*vConfig.Authority, 0, len(s.votingAuthConfigs))
-		for _, authCfg := range s.votingAuthConfigs {
-			auth := &vConfig.Authority{
-				Identifier:        authCfg.Server.Identifier,
-				IdentityPublicKey: cfgIdKey(authCfg, s.outDir),
-				LinkPublicKey:     cfgLinkKey(authCfg, s.outDir),
-				Addresses:         authCfg.Server.Addresses,
-			}
+		authorities := make([]*vConfig.Authority, 0, len(s.authorities))
+		i := 0
+		for _, auth := range s.authorities {
 			authorities = append(authorities, auth)
+			i += 1
 		}
+
 		sort.Sort(AuthById(authorities))
 		cfg.PKI = &sConfig.PKI{
 			Voting: &sConfig.Voting{
 				Authorities: authorities,
 			},
 		}
-	} else {
-		cfg.PKI = new(sConfig.PKI)
-		cfg.PKI.Nonvoting = new(sConfig.Nonvoting)
-		cfg.PKI.Nonvoting.Address = fmt.Sprintf("127.0.0.1:%d", s.basePort)
-		cfg.PKI.Nonvoting.PublicKey = s.authIdentity
 	}
 
 	// Logging section.
 	cfg.Logging = new(sConfig.Logging)
 	cfg.Logging.File = serverLogFile
-	cfg.Logging.Level = "DEBUG"
+	cfg.Logging.Level = s.logLevel
 
 	if isProvider {
 		// Enable the thwack interface.
@@ -216,7 +215,7 @@ func (s *katzenpost) genNodeConfig(isProvider bool, isVoting bool) error {
 					Config: map[string]interface{}{
 						"fileStore": s.baseDir + "/" + cfg.Server.Identifier + "/panda.storage",
 						"log_dir":   s.baseDir + "/" + cfg.Server.Identifier,
-						"log_level": "DEBUG",
+						"log_level": s.logLevel,
 					},
 				}
 				cfg.Provider.CBORPluginKaetzchen = append(cfg.Provider.CBORPluginKaetzchen, pandaCfg)
@@ -256,56 +255,6 @@ func (s *katzenpost) genNodeConfig(isProvider bool, isVoting bool) error {
 	return cfg.FixupAndValidate()
 }
 
-func (s *katzenpost) genAuthConfig() error {
-	const authLogFile = "authority.log"
-
-	cfg := new(aConfig.Config)
-
-	cfg.SphinxGeometry = s.sphinxGeometry
-
-	// Server section.
-	cfg.Server = new(aConfig.Server)
-	cfg.Server.Addresses = []string{fmt.Sprintf("127.0.0.1:%d", s.basePort)}
-	cfg.Server.DataDir = filepath.Join(s.baseDir, "authority")
-
-	// Logging section.
-	cfg.Logging = new(aConfig.Logging)
-	cfg.Logging.File = authLogFile
-	cfg.Logging.Level = "DEBUG"
-
-	// Mkdir
-	os.Mkdir(cfg.Server.DataDir, 0700)
-
-	// Generate keys
-	priv := filepath.Join(s.outDir, "authority", "identity.private.pem")
-	public := filepath.Join(s.outDir, "authority", "identity.public.pem")
-
-	// cert.
-	idKey, idPubKey := cert.Scheme.NewKeypair()
-	err := pem.ToFile(priv, idKey)
-	if err != nil {
-		return err
-	}
-	err = pem.ToFile(public, idPubKey)
-	if err != nil {
-		return err
-	}
-
-	s.authIdentity = idPubKey
-	if err != nil {
-		return err
-	}
-
-	// Debug section.
-	cfg.Debug = new(aConfig.Debug)
-
-	if err := cfg.FixupAndValidate(); err != nil {
-		return err
-	}
-	s.authConfig = cfg
-	return nil
-}
-
 func (s *katzenpost) genVotingAuthoritiesCfg(numAuthorities int, parameters *vConfig.Parameters, nrLayers int) error {
 
 	configs := []*vConfig.Config{}
@@ -317,7 +266,7 @@ func (s *katzenpost) genVotingAuthoritiesCfg(numAuthorities int, parameters *vCo
 		cfg.SphinxGeometry = s.sphinxGeometry
 		cfg.Server = &vConfig.Server{
 			Identifier: fmt.Sprintf("auth%d", i),
-			Addresses:  []string{fmt.Sprintf("127.0.0.1:%d", s.lastPort)},
+			Addresses:  []string{fmt.Sprintf("%s:%d", s.bindAddr, s.lastPort)},
 			DataDir:    filepath.Join(s.baseDir, fmt.Sprintf("auth%d", i)),
 		}
 		os.Mkdir(filepath.Join(s.outDir, cfg.Server.Identifier), 0700)
@@ -325,7 +274,7 @@ func (s *katzenpost) genVotingAuthoritiesCfg(numAuthorities int, parameters *vCo
 		cfg.Logging = &vConfig.Logging{
 			Disable: false,
 			File:    "katzenpost.log",
-			Level:   "DEBUG",
+			Level:   s.logLevel,
 		}
 		cfg.Parameters = parameters
 		cfg.Debug = &vConfig.Debug{
@@ -342,42 +291,20 @@ func (s *katzenpost) genVotingAuthoritiesCfg(numAuthorities int, parameters *vCo
 			LinkPublicKey:     linkKey,
 			Addresses:         cfg.Server.Addresses,
 		}
-		s.authorities[idKey.Sum256()] = authority
+		s.authorities[hash.Sum256From(idKey)] = authority
 	}
 
 	// tell each authority about it's peers
 	for i := 0; i < numAuthorities; i++ {
-		h := cfgIdKey(configs[i], s.outDir).Sum256()
 		peers := []*vConfig.Authority{}
-		for id, peer := range s.authorities {
-			if !bytes.Equal(id[:], h[:]) {
-				peers = append(peers, peer)
-			}
+		for _, peer := range s.authorities {
+			peers = append(peers, peer)
 		}
 		sort.Sort(AuthById(peers))
 		configs[i].Authorities = peers
 	}
 	s.votingAuthConfigs = configs
 	return nil
-}
-
-func (s *katzenpost) genNonVotingAuthorizedNodes() ([]*aConfig.Node, []*aConfig.Node, error) {
-	mixes := []*aConfig.Node{}
-	providers := []*aConfig.Node{}
-	for _, nodeCfg := range s.nodeConfigs {
-		node := &aConfig.Node{
-			Identifier:     nodeCfg.Server.Identifier,
-			IdentityKeyPem: filepath.Join("../", nodeCfg.Server.Identifier, "identity.public.pem"),
-		}
-
-		if nodeCfg.Server.IsProvider {
-			providers = append(providers, node)
-			continue
-		}
-		mixes = append(mixes, node)
-	}
-
-	return providers, mixes, nil
 }
 
 func (s *katzenpost) genAuthorizedNodes() ([]*vConfig.Node, []*vConfig.Node, error) {
@@ -409,9 +336,11 @@ func main() {
 	nrVoting := flag.Int("nv", nrAuthorities, "Generate voting configuration")
 	baseDir := flag.String("b", "", "Path to use as baseDir option")
 	basePort := flag.Int("P", basePort, "First port number to use")
+	bindAddr := flag.String("a", bindAddr, "Address to bind to")
 	outDir := flag.String("o", "", "Path to write files to")
 	dockerImage := flag.String("d", "katzenpost-go_mod", "Docker image for compose-compose")
 	binSuffix := flag.String("S", "", "suffix for binaries in docker-compose.yml")
+	logLevel := flag.String("log_level", "DEBUG", "logging level could be set to: DEBUG, INFO, NOTICE, WARNING, ERROR, CRITICAL")
 	omitTopology := flag.Bool("D", false, "Dynamic topology (omit fixed topology definition)")
 	kem := flag.String("kem", "", "Name of the KEM Scheme to be used with Sphinx")
 	nike := flag.String("nike", "x25519", "Name of the NIKE Scheme to be used with Sphinx")
@@ -459,6 +388,8 @@ func main() {
 	s.binSuffix = *binSuffix
 	s.basePort = uint16(*basePort)
 	s.lastPort = s.basePort + 1
+	s.bindAddr = *bindAddr
+	s.logLevel = *logLevel
 
 	nrHops := *nrLayers + 2
 
@@ -495,11 +426,6 @@ func main() {
 		err := s.genVotingAuthoritiesCfg(*nrVoting, parameters, *nrLayers)
 		if err != nil {
 			log.Fatalf("getVotingAuthoritiesCfg failed: %s", err)
-		}
-	} else {
-		panic("non-voting mode is not currently supported")
-		if err = s.genAuthConfig(); err != nil {
-			log.Fatalf("Failed to generate authority config: %v", err)
 		}
 	}
 
@@ -543,18 +469,6 @@ func main() {
 				log.Fatalf("Failed to saveCfg of authority with %s", err)
 			}
 		}
-	} else {
-		// The node lists.
-		if providers, mixes, err := s.genNonVotingAuthorizedNodes(); err == nil {
-			s.authConfig.Mixes = mixes
-			s.authConfig.Providers = providers
-		} else {
-			log.Fatalf("Failed to genNonVotingAuthorizedNodes with %s", err)
-		}
-
-		if err := saveCfg(s.authConfig, *outDir); err != nil {
-			log.Fatalf("Failed to saveCfg of authority with %s", err)
-		}
 	}
 	// write the mixes keys and configs to disk
 	for _, v := range s.nodeConfigs {
@@ -572,6 +486,11 @@ func main() {
 	if err != nil {
 		log.Fatalf("%s", err)
 	}
+
+	err = s.genPrometheus()
+	if err != nil {
+		log.Fatalf("%s", err)
+	}
 }
 
 func identifier(cfg interface{}) string {
@@ -580,8 +499,6 @@ func identifier(cfg interface{}) string {
 		return "client"
 	case *sConfig.Config:
 		return cfg.(*sConfig.Config).Server.Identifier
-	case *aConfig.Config:
-		return "authority"
 	case *vConfig.Config:
 		return cfg.(*vConfig.Config).Server.Identifier
 	default:
@@ -596,8 +513,6 @@ func toml_name(cfg interface{}) string {
 		return "client"
 	case *sConfig.Config:
 		return "katzenpost"
-	case *aConfig.Config:
-		return "nonvoting"
 	case *vConfig.Config:
 		return "authority"
 	default:
@@ -633,20 +548,19 @@ func cfgIdKey(cfg interface{}, outDir string) sign.PublicKey {
 		panic("wrong type")
 	}
 
-	idKey, idPubKey := cert.Scheme.NewKeypair()
-	err := pem.FromFile(public, idPubKey)
+	idPubKey, err := signpem.FromPublicPEMFile(public, cert.Scheme)
 	if err == nil {
 		return idPubKey
 	}
-	idKey, idPubKey = cert.Scheme.NewKeypair()
+	idPubKey, idKey, err := cert.Scheme.GenerateKey()
 	log.Printf("writing %s", priv)
-	pem.ToFile(priv, idKey)
+	signpem.PrivateKeyToFile(priv, idKey)
 	log.Printf("writing %s", public)
-	pem.ToFile(public, idPubKey)
+	signpem.PublicKeyToFile(public, idPubKey)
 	return idPubKey
 }
 
-func cfgLinkKey(cfg interface{}, outDir string) wire.PublicKey {
+func cfgLinkKey(cfg interface{}, outDir string) kem.PublicKey {
 	var linkpriv string
 	var linkpublic string
 
@@ -658,23 +572,49 @@ func cfgLinkKey(cfg interface{}, outDir string) wire.PublicKey {
 		panic("wrong type")
 	}
 
-	linkPrivKey, linkPubKey := wire.DefaultScheme.GenerateKeypair(rand.Reader)
-	err := pem.FromFile(linkpublic, linkPubKey)
-	if err == nil {
-		return linkPubKey
+	linkPubKey, linkPrivKey, err := wire.DefaultScheme.GenerateKeyPair()
+	if err != nil {
+		panic(err)
 	}
-	linkPrivKey, linkPubKey = wire.DefaultScheme.GenerateKeypair(rand.Reader)
+
 	log.Printf("writing %s", linkpriv)
-	err = pem.ToFile(linkpriv, linkPrivKey)
+	err = kempem.PrivateKeyToFile(linkpriv, linkPrivKey)
 	if err != nil {
 		panic(err)
 	}
 	log.Printf("writing %s", linkpublic)
-	err = pem.ToFile(linkpublic, linkPubKey)
+	err = kempem.PublicKeyToFile(linkpublic, linkPubKey)
 	if err != nil {
 		panic(err)
 	}
 	return linkPubKey
+}
+
+func (s *katzenpost) genPrometheus() error {
+	dest := filepath.Join(s.outDir, "prometheus.yml")
+	log.Printf("writing %s", dest)
+
+	f, err := os.Create(dest)
+
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	defer f.Close()
+
+	write(f, `
+scrape_configs:
+- job_name: katzenpost
+  scrape_interval: 1s
+  static_configs:
+  - targets:
+`)
+
+	for _, cfg := range s.nodeConfigs {
+		write(f, `    - %s
+`, cfg.Server.MetricsAddress)
+	}
+	return nil
 }
 
 func (s *katzenpost) genDockerCompose(dockerImage string) error {
@@ -747,5 +687,16 @@ services:
     network_mode: host
 `, authCfg.Server.Identifier, dockerImage, s.baseDir, s.baseDir, s.binSuffix, s.baseDir, authCfg.Server.Identifier)
 	}
+
+	write(f, `
+  %s:
+    restart: "no"
+    image: %s
+    volumes:
+      - ./:%s
+    command: --config.file="%s/prometheus.yml"
+    network_mode: host
+`, "metrics", "docker.io/prom/prometheus", s.baseDir, s.baseDir)
+
 	return nil
 }

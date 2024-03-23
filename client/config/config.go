@@ -24,17 +24,15 @@ import (
 	"strings"
 
 	"github.com/BurntSushi/toml"
+	"golang.org/x/crypto/blake2b"
 
-	nvClient "github.com/katzenpost/katzenpost/authority/nonvoting/client"
+	"github.com/katzenpost/hpqc/kem"
 	vClient "github.com/katzenpost/katzenpost/authority/voting/client"
 	vServerConfig "github.com/katzenpost/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/katzenpost/client/internal/proxy"
-	"github.com/katzenpost/katzenpost/core/crypto/cert"
-	"github.com/katzenpost/katzenpost/core/crypto/pem"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
-	"github.com/katzenpost/katzenpost/core/wire"
 )
 
 const (
@@ -111,61 +109,23 @@ func (d *Debug) fixup() {
 	}
 }
 
-// NonvotingAuthority is a non-voting authority configuration.
-type NonvotingAuthority struct {
-	// Address is the IP address/port combination of the authority.
-	Address string
-
-	// IdentityPublicKeyPem is the authority's identity public key pem.
-	IdentityPublicKeyPem string
-
-	// LinkPublicKeyPem is the PEM data of the authority's link public key.
-	LinkPublicKeyPem string
-}
-
-// New constructs a pki.Client with the specified non-voting authority config.
-func (nvACfg *NonvotingAuthority) New(l *log.Backend, pCfg *proxy.Config, linkKey wire.PrivateKey) (pki.Client, error) {
-	scheme := wire.DefaultScheme
-
-	authLinkKey := scheme.NewEmptyPublicKey()
-	err := pem.FromPEMString(nvACfg.LinkPublicKeyPem, authLinkKey)
-	if err != nil {
-		return nil, err
-	}
-
-	_, identityPublicKey := cert.Scheme.NewKeypair()
-	pem.FromPEMString(nvACfg.IdentityPublicKeyPem, identityPublicKey)
-
-	cfg := &nvClient.Config{
-		AuthorityLinkKey:     authLinkKey,
-		LinkKey:              linkKey,
-		LogBackend:           l,
-		Address:              nvACfg.Address,
-		AuthorityIdentityKey: identityPublicKey,
-		DialContextFn:        pCfg.ToDialContext(fmt.Sprintf("nonvoting: %x", linkKey.PublicKey().Sum256())),
-	}
-	return nvClient.New(cfg)
-}
-
-func (nvACfg *NonvotingAuthority) validate() error {
-	if nvACfg.IdentityPublicKeyPem == "" {
-		return errors.New("error IdentityPublicKeyPem is missing")
-	}
-	return nil
-}
-
 // VotingAuthority is a voting authority configuration.
 type VotingAuthority struct {
 	Peers []*vServerConfig.Authority
 }
 
 // New constructs a pki.Client with the specified voting authority config.
-func (vACfg *VotingAuthority) New(l *log.Backend, pCfg *proxy.Config, linkKey wire.PrivateKey) (pki.Client, error) {
+func (vACfg *VotingAuthority) New(l *log.Backend, pCfg *proxy.Config, linkKey kem.PrivateKey) (pki.Client, error) {
+	blob, err := linkKey.Public().MarshalBinary()
+	if err != nil {
+		return nil, err
+	}
+	linkHash := blake2b.Sum256(blob)
 	cfg := &vClient.Config{
 		LinkKey:       linkKey,
 		LogBackend:    l,
 		Authorities:   vACfg.Peers,
-		DialContextFn: pCfg.ToDialContext(fmt.Sprintf("voting: %x", linkKey.PublicKey().Sum256())),
+		DialContextFn: pCfg.ToDialContext(fmt.Sprintf("voting: %x", linkHash)),
 	}
 	return vClient.New(cfg)
 }
@@ -183,10 +143,8 @@ func (vACfg *VotingAuthority) validate() error {
 }
 
 // NewPKIClient returns a voting or nonvoting implementation of pki.Client or error
-func (c *Config) NewPKIClient(l *log.Backend, pCfg *proxy.Config, linkKey wire.PrivateKey) (pki.Client, error) {
+func (c *Config) NewPKIClient(l *log.Backend, pCfg *proxy.Config, linkKey kem.PrivateKey) (pki.Client, error) {
 	switch {
-	case c.NonvotingAuthority != nil:
-		return c.NonvotingAuthority.New(l, pCfg, linkKey)
 	case c.VotingAuthority != nil:
 		return c.VotingAuthority.New(l, pCfg, linkKey)
 	}
@@ -229,13 +187,12 @@ func (uCfg *UpstreamProxy) toProxyConfig() (*proxy.Config, error) {
 
 // Config is the top level client configuration.
 type Config struct {
-	SphinxGeometry     *geo.Geometry
-	Logging            *Logging
-	UpstreamProxy      *UpstreamProxy
-	Debug              *Debug
-	NonvotingAuthority *NonvotingAuthority
-	VotingAuthority    *VotingAuthority
-	upstreamProxy      *proxy.Config
+	SphinxGeometry  *geo.Geometry
+	Logging         *Logging
+	UpstreamProxy   *UpstreamProxy
+	Debug           *Debug
+	VotingAuthority *VotingAuthority
+	upstreamProxy   *proxy.Config
 }
 
 // UpstreamProxyConfig returns the configured upstream proxy, suitable for
@@ -277,14 +234,12 @@ func (c *Config) FixupAndValidate() error {
 		return err
 	}
 	switch {
-	case c.NonvotingAuthority == nil && c.VotingAuthority != nil:
+	case c.VotingAuthority != nil:
 		if err := c.VotingAuthority.validate(); err != nil {
-			return fmt.Errorf("config: NonvotingAuthority/VotingAuthority is invalid: %s", err)
+			return fmt.Errorf("config: VotingAuthority is invalid: %s", err)
 		}
-	case c.NonvotingAuthority != nil && c.VotingAuthority == nil:
-		if err := c.NonvotingAuthority.validate(); err != nil {
-			return fmt.Errorf("config: NonvotingAuthority/VotingAuthority is invalid: %s", err)
-		}
+	case c.VotingAuthority == nil:
+		return fmt.Errorf("config: VotingAuthority is invalid: %s", err)
 	default:
 		return fmt.Errorf("config: Authority configuration is invalid")
 	}

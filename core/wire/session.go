@@ -30,11 +30,13 @@ import (
 	"github.com/katzenpost/nyquist"
 	"github.com/katzenpost/nyquist/cipher"
 	"github.com/katzenpost/nyquist/hash"
-	"github.com/katzenpost/nyquist/kem"
 	"github.com/katzenpost/nyquist/pattern"
 	"github.com/katzenpost/nyquist/seec"
 
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/hpqc/kem"
+	"github.com/katzenpost/hpqc/kem/schemes"
+	"github.com/katzenpost/hpqc/rand"
+
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 )
@@ -53,6 +55,8 @@ const (
 
 var (
 	prologue = []byte{0x03} // Prologue indicates version 3.
+
+	DefaultScheme = schemes.ByName("Kyber768-X25519")
 )
 
 const (
@@ -110,7 +114,7 @@ func authenticateMessageFromBytes(b []byte) *authenticateMessage {
 // of PublicKey.
 type PeerCredentials struct {
 	AdditionalData []byte
-	PublicKey      PublicKey
+	PublicKey      kem.PublicKey
 }
 
 // PeerAuthenticator is the interface used to authenticate the remote peer,
@@ -140,7 +144,7 @@ type Session struct {
 	authenticator   PeerAuthenticator
 
 	additionalData       []byte
-	authenticationKEMKey kem.Keypair
+	authenticationKEMKey kem.PrivateKey
 
 	randReader io.Reader
 
@@ -230,16 +234,17 @@ func (s *Session) handshake() error {
 		peerAuth := authenticateMessageFromBytes(rawAuth)
 
 		// Authenticate the peer.
-		peerAuthenticationKEMKey, err := s.protocol.KEM.ParsePublicKey(handshake.GetStatus().KEM.RemoteStatic.Bytes())
+		remoteKeyBlob, err := handshake.GetStatus().KEM.RemoteStatic.MarshalBinary()
+		if err != nil {
+			return err
+		}
+		peerAuthenticationKEMKey, err := s.protocol.KEM.UnmarshalBinaryPublicKey(remoteKeyBlob)
 		if err != nil {
 			return err
 		}
 		s.peerCredentials = &PeerCredentials{
 			AdditionalData: peerAuth.ad,
-			PublicKey: &publicKey{
-				publicKey: peerAuthenticationKEMKey,
-				KEM:       s.protocol.KEM,
-			},
+			PublicKey:      peerAuthenticationKEMKey,
 		}
 		if !s.authenticator.IsPeerValid(s.peerCredentials) {
 			return errAuthenticationFailed
@@ -319,17 +324,18 @@ func (s *Session) handshake() error {
 		peerAuth := authenticateMessageFromBytes(rawAuth)
 
 		// Authenticate the peer.
-		peerAuthenticationKEMKey, err := s.protocol.KEM.ParsePublicKey(handshake.GetStatus().KEM.RemoteStatic.Bytes())
+		remoteKeyBlob, err := handshake.GetStatus().KEM.RemoteStatic.MarshalBinary()
+		if err != nil {
+			return err
+		}
+		peerAuthenticationKEMKey, err := s.protocol.KEM.UnmarshalBinaryPublicKey(remoteKeyBlob)
 		if err != nil {
 			return err
 		}
 
 		s.peerCredentials = &PeerCredentials{
 			AdditionalData: peerAuth.ad,
-			PublicKey: &publicKey{
-				publicKey: peerAuthenticationKEMKey,
-				KEM:       s.protocol.KEM,
-			},
+			PublicKey:      peerAuthenticationKEMKey,
 		}
 		if !s.authenticator.IsPeerValid(s.peerCredentials) {
 			return errAuthenticationFailed
@@ -567,9 +573,9 @@ func NewPKISession(cfg *SessionConfig, isInitiator bool) (*Session, error) {
 	s := &Session{
 		protocol: &nyquist.Protocol{
 			Pattern: pattern.PqXX,
-			KEM:     DefaultScheme.KEM,
+			KEM:     DefaultScheme,
 			Cipher:  cipher.ChaChaPoly,
-			Hash:    hash.BLAKE2s,
+			Hash:    hash.BLAKE2b,
 		},
 		authenticator:  cfg.Authenticator,
 		additionalData: cfg.AdditionalData,
@@ -580,7 +586,7 @@ func NewPKISession(cfg *SessionConfig, isInitiator bool) (*Session, error) {
 		txKeyMutex:     new(sync.RWMutex),
 		commands:       commands.NewPKICommands(),
 	}
-	s.authenticationKEMKey = cfg.AuthenticationKey.(*privateKey).privateKey
+	s.authenticationKEMKey = cfg.AuthenticationKey
 
 	return s, nil
 }
@@ -606,9 +612,9 @@ func NewSession(cfg *SessionConfig, isInitiator bool) (*Session, error) {
 	s := &Session{
 		protocol: &nyquist.Protocol{
 			Pattern: pattern.PqXX,
-			KEM:     DefaultScheme.KEM,
+			KEM:     DefaultScheme,
 			Cipher:  cipher.ChaChaPoly,
-			Hash:    hash.BLAKE2s,
+			Hash:    hash.BLAKE2b,
 		},
 		authenticator:  cfg.Authenticator,
 		additionalData: cfg.AdditionalData,
@@ -619,7 +625,7 @@ func NewSession(cfg *SessionConfig, isInitiator bool) (*Session, error) {
 		txKeyMutex:     new(sync.RWMutex),
 		commands:       commands.NewCommands(cfg.Geometry),
 	}
-	s.authenticationKEMKey = cfg.AuthenticationKey.(*privateKey).privateKey
+	s.authenticationKEMKey = cfg.AuthenticationKey
 
 	return s, nil
 }
@@ -637,7 +643,7 @@ type SessionConfig struct {
 
 	// AuthenticationKey is the static long term authentication key used to
 	// authenticate with the remote peer.
-	AuthenticationKey PrivateKey
+	AuthenticationKey kem.PrivateKey
 
 	// RandomReader is a cryptographic entropy source.
 	RandomReader io.Reader

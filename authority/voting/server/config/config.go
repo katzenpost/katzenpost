@@ -19,8 +19,10 @@
 package config
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -28,10 +30,14 @@ import (
 	"github.com/BurntSushi/toml"
 	"golang.org/x/net/idna"
 
-	"github.com/katzenpost/katzenpost/core/crypto/cert"
-	"github.com/katzenpost/katzenpost/core/crypto/pem"
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
-	"github.com/katzenpost/katzenpost/core/crypto/sign"
+	"github.com/katzenpost/hpqc/hash"
+	"github.com/katzenpost/hpqc/kem"
+	kempem "github.com/katzenpost/hpqc/kem/pem"
+	"github.com/katzenpost/hpqc/rand"
+	"github.com/katzenpost/hpqc/sign"
+	signpem "github.com/katzenpost/hpqc/sign/pem"
+
+	"github.com/katzenpost/katzenpost/core/cert"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/utils"
 	"github.com/katzenpost/katzenpost/core/wire"
@@ -253,31 +259,56 @@ type Authority struct {
 	// the public identity key key.
 	IdentityPublicKey sign.PublicKey
 	// LinkPublicKeyPem is string containing the PEM format of the peer's public link layer key.
-	LinkPublicKey wire.PublicKey
+	LinkPublicKey kem.PublicKey
 	// Addresses are the IP address/port combinations that the peer authority
 	// uses for the Directory Authority service.
 	Addresses []string
 }
 
-// UnmarshalTOML deserializes into non-nil instances of sign.PublicKey and wire.PublicKey
+// UnmarshalTOML deserializes into non-nil instances of sign.PublicKey and kem.PublicKey
 func (a *Authority) UnmarshalTOML(v interface{}) error {
-	_, a.IdentityPublicKey = cert.Scheme.NewKeypair()
-	_, a.LinkPublicKey = wire.DefaultScheme.GenerateKeypair(rand.Reader)
 
-	data, _ := v.(map[string]interface{})
-	a.Identifier, _ = data["Identifier"].(string)
+	data, ok := v.(map[string]interface{})
+	if !ok {
+		return errors.New("type assertion failed")
+	}
+
+	// identifier
+	var err error
+	a.IdentityPublicKey, _, err = cert.Scheme.GenerateKey()
+	if err != nil {
+		return err
+	}
+	a.Identifier, ok = data["Identifier"].(string)
+	if !ok {
+		return errors.New("Authority.Identifier type assertion failed")
+	}
+
+	// identity key
 	idPublicKeyString, _ := data["IdentityPublicKey"].(string)
-	err := a.IdentityPublicKey.UnmarshalText([]byte(idPublicKeyString))
+
+	a.IdentityPublicKey, err = signpem.FromPublicPEMString(idPublicKeyString, cert.Scheme)
 	if err != nil {
 		return err
 	}
-	linkPublicKeyString, _ := data["LinkPublicKey"].(string)
-	err = a.LinkPublicKey.UnmarshalText([]byte(linkPublicKeyString))
+
+	// link key
+	linkPublicKeyString, ok := data["LinkPublicKey"].(string)
+	if !ok {
+		return errors.New("type assertion failed")
+	}
+
+	a.LinkPublicKey, err = kempem.FromPublicPEMString(linkPublicKeyString, wire.DefaultScheme)
 	if err != nil {
 		return err
 	}
+
+	// address
 	addresses := make([]string, 0)
-	pos, _ := data["Addresses"]
+	pos, ok := data["Addresses"]
+	if !ok {
+		return errors.New("map entry not found")
+	}
 	for _, addr := range pos.([]interface{}) {
 		addresses = append(addresses, addr.(string))
 	}
@@ -396,6 +427,30 @@ type Topology struct {
 	Layers []Layer
 }
 
+// ValidateAuthorities takes as an argument the dirauth server's own public key
+// and tries to find a match in the dirauth peers. Returns an error if no
+// match is found. Dirauths must be their own peer.
+func (cfg *Config) ValidateAuthorities(linkPubKey kem.PublicKey) error {
+	linkblob1, err := linkPubKey.MarshalText()
+	if err != nil {
+		return err
+	}
+	match := false
+	for i := 0; i < len(cfg.Authorities); i++ {
+		linkblob, err := cfg.Authorities[i].LinkPublicKey.MarshalText()
+		if err != nil {
+			return err
+		}
+		if bytes.Equal(linkblob1, linkblob) {
+			match = true
+		}
+	}
+	if !match {
+		return errors.New("Authority must be it's own peer")
+	}
+	return nil
+}
+
 // FixupAndValidate applies defaults to config entries and validates the
 // supplied configuration.  Most people should call one of the Load variants
 // instead.
@@ -448,7 +503,9 @@ func (cfg *Config) FixupAndValidate() error {
 	for _, v := range cfg.Providers {
 		allNodes = append(allNodes, v)
 	}
-	_, identityKey := cert.Scheme.NewKeypair()
+
+	var identityKey sign.PublicKey
+
 	idMap := make(map[string]*Node)
 	pkMap := make(map[[publicKeyHashSize]byte]*Node)
 	for _, v := range allNodes {
@@ -460,25 +517,49 @@ func (cfg *Config) FixupAndValidate() error {
 		}
 		idMap[v.Identifier] = v
 
-		err := pem.FromFile(filepath.Join(cfg.Server.DataDir, v.IdentityPublicKeyPem), identityKey)
+		identityKey, err = signpem.FromPublicPEMFile(filepath.Join(cfg.Server.DataDir, v.IdentityPublicKeyPem), cert.Scheme)
 		if err != nil {
 			return err
 		}
 
-		tmp := identityKey.Sum256()
+		tmp := hash.Sum256From(identityKey)
 		if _, ok := pkMap[tmp]; ok {
 			return fmt.Errorf("config: Nodes: IdentityPublicKeyPem '%v' is present more than once", v.IdentityPublicKeyPem)
 		}
 		pkMap[tmp] = v
 	}
 
+	// if our own identity is not in cfg.Authorities return error
+	selfInAuthorities := false
+
+	ourPubKeyFile := filepath.Join(cfg.Server.DataDir, "identity.public.pem")
+	f, err := os.Open(ourPubKeyFile)
+	if err != nil {
+		return err
+	}
+	pemData, err := io.ReadAll(f)
+	if err != nil {
+		return err
+	}
+
+	ourPubKey, err := signpem.FromPublicPEMBytes(pemData, cert.Scheme)
+	if err != nil {
+		return err
+	}
+	ourPubKeyHash := hash.Sum256From(ourPubKey)
 	for _, auth := range cfg.Authorities {
 		err := auth.Validate()
 		if err != nil {
 			return err
 		}
-	}
 
+		if hash.Sum256From(auth.IdentityPublicKey) == ourPubKeyHash {
+			selfInAuthorities = true
+		}
+	}
+	if !selfInAuthorities {
+		return errors.New("Authorities section must contain self")
+	}
 	return nil
 }
 
