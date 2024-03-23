@@ -116,6 +116,7 @@ func (s *proxyRequestHandler) OnCommand(cmd cborplugin.Command) (cborplugin.Comm
 
 		// mutate request with our destination
 		rewriteRequestURL(request, s.dest)
+		request.RequestURI = ""
 
 		resp, err := http.DefaultClient.Do(request)
 		if err != nil {
