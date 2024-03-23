@@ -37,7 +37,7 @@ import (
 var nikeScheme nike.Scheme
 
 func init() {
-	nikeScheme = hybrid.NOBS_CSIDH512X25519
+	nikeScheme = hybrid.CTIDH1024X25519
 }
 
 type contactExchange struct {
