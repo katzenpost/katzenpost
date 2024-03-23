@@ -24,8 +24,9 @@ import (
 
 	"github.com/fxamacker/cbor/v2"
 
-	"github.com/katzenpost/katzenpost/core/crypto/nike"
-	"github.com/katzenpost/katzenpost/core/crypto/nike/hybrid"
+	"github.com/katzenpost/hpqc/nike"
+	"github.com/katzenpost/hpqc/nike/hybrid"
+
 	"github.com/katzenpost/katzenpost/doubleratchet/utils"
 )
 

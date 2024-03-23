@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"testing"
 
-	//"github.com/katzenpost/katzenpost/core/crypto/nike/hybrid"
-	"github.com/katzenpost/katzenpost/core/crypto/nike/ecdh"
 	"github.com/stretchr/testify/require"
+
+	ecdh "github.com/katzenpost/hpqc/nike/x25519"
 )
 
-var nikeScheme = ecdh.NewEcdhNike(rand.Reader)
+var nikeScheme = ecdh.Scheme(rand.Reader)
 
 //var nikeScheme = hybrid.CTIDHX25519
 
