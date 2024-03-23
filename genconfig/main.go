@@ -95,7 +95,7 @@ func (s *katzenpost) genClientCfg() error {
 	s.clientIdx++
 
 	// Logging section.
-	cfg.Logging = &cConfig.Logging{File: "", Level: s.logLevel}
+	cfg.Logging = &cConfig.Logging{File: "/tmp/client.log", Level: s.logLevel}
 
 	// UpstreamProxy section
 	cfg.UpstreamProxy = &cConfig.UpstreamProxy{Type: "none"}
