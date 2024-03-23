@@ -84,11 +84,13 @@ func main() {
 	}()
 	// catch ctrl-C and kill stream
 	intc := make(chan os.Signal, 1)
+	haltchan := make(chan bool, 0)
 	signal.Notify(intc, os.Interrupt)
 	go func() {
 		for _ = range intc {
 			fmt.Fprintln(os.Stderr, "ctrl-c caught")
 			st.Close()
+			close(haltchan)
 			break
 		}
 	}()
@@ -97,6 +99,9 @@ func main() {
 	st.Close()
 	fmt.Fprintln(os.Stderr, "halting gracefully")
 	// it seems that messages may get lost in the send queue if exit happens immediately after Close()
-	<-time.After(5 * time.Second)
+	select {
+	case <-time.After(5 * time.Second):
+	case <-haltchan:
+	}
 	s.Shutdown()
 }
