@@ -218,7 +218,7 @@ func (s *Stream) reader() {
 		f, err := s.readFrame()
 		switch err {
 		case nil:
-			backoff = backoff >> 2
+			backoff = backoff / 4
 			if backoff < minBackoffDelay {
 				backoff = minBackoffDelay
 			}
