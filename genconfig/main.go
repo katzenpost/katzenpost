@@ -213,7 +213,7 @@ func (s *katzenpost) genNodeConfig(isProvider bool, isVoting bool) error {
 				MaxConcurrency: 1,
 				Config: map[string]interface{}{
 					"log_dir":  s.baseDir + "/" + cfg.Server.Identifier,
-					"dest_url": "http://localhost:8080/",
+					"dest_url": "https://sphinx.rs/",
 				},
 			}
 			cfg.Provider.CBORPluginKaetzchen = []*sConfig.CBORPluginKaetzchen{spoolCfg, httpProxyCfg}
