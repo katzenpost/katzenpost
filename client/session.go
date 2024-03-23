@@ -217,6 +217,7 @@ func (s *Session) garbageCollect() {
 	surbIDMapRange := func(rawSurbID, rawMessage interface{}) bool {
 		surbID := rawSurbID.([sConstants.SURBIDLength]byte)
 		message := rawMessage.(*Message)
+		// TODO only garbage collect messages from epochs we no longer hold keys for
 		if time.Now().After(message.SentAt.Add(message.ReplyETA).Add(cConstants.RoundTripTimeSlop)) {
 			s.log.Debug("Garbage collecting SURB ID Map entry for Message ID %x", message.ID)
 			s.surbIDMap.Delete(surbID)
