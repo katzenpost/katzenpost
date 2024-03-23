@@ -63,7 +63,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	socketFile := filepath.Join(tmpDir, fmt.Sprintf("%d.blockchain_proxy.socket", os.Getpid()))
+	socketFile := filepath.Join(tmpDir, fmt.Sprintf("%d.http_proxy.socket", os.Getpid()))
 
 	var server *cborplugin.Server
 
@@ -104,12 +104,14 @@ func (s *proxyRequestHandler) OnCommand(cmd cborplugin.Command) (cborplugin.Comm
 		dec := cbor.NewDecoder(bytes.NewReader(r.Payload))
 		err := dec.Decode(req)
 		if err != nil {
+			s.log.Errorf("dec.Decode(req) failed: %s", err)
 			return nil, err
 		}
 
 		request, err := http.ReadRequest(bufio.NewReader(bytes.NewReader(req.Payload)))
 		if err != nil {
-			return nil, err
+			s.log.Errorf("http.ReadRequest failed: %s", err)
+			return nil, fmt.Errorf("http.ReadRequest failed: %s", err)
 		}
 
 		// mutate request with our destination host
@@ -117,12 +119,14 @@ func (s *proxyRequestHandler) OnCommand(cmd cborplugin.Command) (cborplugin.Comm
 
 		resp, err := http.DefaultClient.Do(request)
 		if err != nil {
-			return nil, err
+			s.log.Errorf("http.DefaultClient.Do failed: %s", err)
+			return nil, fmt.Errorf("http.DefaultClient.Do failed: %s", err)
 		}
 		defer resp.Body.Close()
 		body, err := io.ReadAll(resp.Body)
 		if err != nil {
-			return nil, err
+			s.log.Errorf("io.ReadAll(resp.Body) failed: %s", err)
+			return nil, fmt.Errorf("io.ReadAll(resp.Body) failed: %s", err)
 		}
 		return &cborplugin.Response{Payload: body}, nil
 	default:
