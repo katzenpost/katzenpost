@@ -114,8 +114,8 @@ func (s *proxyRequestHandler) OnCommand(cmd cborplugin.Command) (cborplugin.Comm
 			return nil, fmt.Errorf("http.ReadRequest failed: %s", err)
 		}
 
-		// mutate request with our destination host
-		request.Host = s.dest.Host
+		// mutate request with our destination
+		rewriteRequestURL(request, s.dest)
 
 		resp, err := http.DefaultClient.Do(request)
 		if err != nil {
