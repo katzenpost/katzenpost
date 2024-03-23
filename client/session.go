@@ -32,6 +32,7 @@ import (
 	cConstants "github.com/katzenpost/katzenpost/client/constants"
 	"github.com/katzenpost/katzenpost/client/utils"
 	"github.com/katzenpost/katzenpost/core/cert"
+	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx"
@@ -214,11 +215,13 @@ func (s *Session) garbageCollectionWorker() {
 func (s *Session) garbageCollect() {
 	s.log.Debug("Running garbage collection process.")
 	// [sConstants.SURBIDLength]byte -> *Message
+	currentEpoch, _, _ := epochtime.Now()
+
 	surbIDMapRange := func(rawSurbID, rawMessage interface{}) bool {
 		surbID := rawSurbID.([sConstants.SURBIDLength]byte)
 		message := rawMessage.(*Message)
-		// TODO only garbage collect messages from epochs we no longer hold keys for
-		if time.Now().After(message.SentAt.Add(message.ReplyETA).Add(cConstants.RoundTripTimeSlop)) {
+		sentEpoch := uint64(message.SentAt.Sub(epochtime.Epoch)/epochtime.Period)
+		if sentEpoch < currentEpoch - 2 {
 			s.log.Debug("Garbage collecting SURB ID Map entry for Message ID %x", message.ID)
 			s.surbIDMap.Delete(surbID)
 			s.eventCh.In() <- &MessageIDGarbageCollected{
