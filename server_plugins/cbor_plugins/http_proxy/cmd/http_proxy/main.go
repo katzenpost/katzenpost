@@ -93,6 +93,9 @@ func New(log *logging.Logger, dest *url.URL) *proxyRequestHandler {
 
 // OnCommand processes a SpoolRequest and returns a SpoolResponse
 func (s *proxyRequestHandler) OnCommand(cmd cborplugin.Command) (cborplugin.Command, error) {
+	s.log.Info("OnCommand begin")
+	defer s.log.Info("OnCommand end")
+
 	switch r := cmd.(type) {
 	case *cborplugin.Request:
 		// the padding bytes were not stripped because
@@ -108,15 +111,21 @@ func (s *proxyRequestHandler) OnCommand(cmd cborplugin.Command) (cborplugin.Comm
 			return nil, err
 		}
 
+		s.log.Debugf("Raw request payload: %s", req.Payload)
+
 		request, err := http.ReadRequest(bufio.NewReader(bytes.NewReader(req.Payload)))
 		if err != nil {
 			s.log.Errorf("http.ReadRequest failed: %s", err)
 			return nil, fmt.Errorf("http.ReadRequest failed: %s", err)
 		}
 
+		s.log.Debugf("Request before mutation: %t", request)
+
 		// mutate request with our destination
 		rewriteRequestURL(request, s.dest)
 		request.RequestURI = ""
+
+		s.log.Debugf("Request after mutation: %t", request)
 
 		resp, err := http.DefaultClient.Do(request)
 		if err != nil {
@@ -129,6 +138,9 @@ func (s *proxyRequestHandler) OnCommand(cmd cborplugin.Command) (cborplugin.Comm
 			s.log.Errorf("io.ReadAll(resp.Body) failed: %s", err)
 			return nil, fmt.Errorf("io.ReadAll(resp.Body) failed: %s", err)
 		}
+
+		s.log.Debugf("Reply payload: %s", body)
+
 		return &cborplugin.Response{Payload: body}, nil
 	default:
 		s.log.Errorf("OnCommand called with unknown Command type")
