@@ -51,11 +51,11 @@ type Session struct {
 	geo    *geo.Geometry
 	sphinx *sphinx.Sphinx
 
-	cfg       *config.Config
-	pkiClient pki.Client
-	minclient *minclient.Client
-	provider  *pki.MixDescriptor
-	log       *logging.Logger
+	cfg        *config.Config
+	pkiClient  pki.Client
+	minclient  *minclient.Client
+	provider   *pki.MixDescriptor
+	log        *logging.Logger
 	logBackend *log.Backend
 
 	fatalErrCh chan error

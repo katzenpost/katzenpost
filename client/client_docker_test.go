@@ -27,9 +27,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/katzenpost/client/config"
 	"github.com/katzenpost/katzenpost/client/constants"
-	"github.com/katzenpost/hpqc/rand"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/stretchr/testify/require"
 )
