@@ -23,16 +23,13 @@ import (
 	"time"
 
 	"github.com/fxamacker/cbor/v2"
-<<<<<<< HEAD
+
+	"github.com/katzenpost/hpqc/nike"
+	"github.com/katzenpost/hpqc/nike/hybrid"
+	"github.com/katzenpost/hpqc/rand"
 
 	cConstants "github.com/katzenpost/katzenpost/client/constants"
-	"github.com/katzenpost/katzenpost/core/crypto/nike"
-	"github.com/katzenpost/katzenpost/core/crypto/nike/hybrid"
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
-=======
-	"github.com/katzenpost/hpqc/rand"
-	cConstants "github.com/katzenpost/katzenpost/client/constants"
->>>>>>> main
+
 	ratchet "github.com/katzenpost/katzenpost/doubleratchet"
 	memspoolClient "github.com/katzenpost/katzenpost/memspool/client"
 )
