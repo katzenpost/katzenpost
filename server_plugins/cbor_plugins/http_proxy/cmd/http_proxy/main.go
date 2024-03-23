@@ -133,6 +133,9 @@ func (s *proxyRequestHandler) OnCommand(cmd cborplugin.Command) (cborplugin.Comm
 			return nil, fmt.Errorf("http.DefaultClient.Do failed: %s", err)
 		}
 		defer resp.Body.Close()
+
+		resp.Header = http.Header{}
+
 		body, err := io.ReadAll(resp.Body)
 		if err != nil {
 			s.log.Errorf("io.ReadAll(resp.Body) failed: %s", err)
