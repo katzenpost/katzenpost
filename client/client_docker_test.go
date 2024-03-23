@@ -225,7 +225,7 @@ func TestDockerClientTestIntegrationGarbageCollection(t *testing.T) {
 					}
 					clientSession.surbIDMap.Range(surbIDMapRange)
 					_, _, till := epochtime.Now()
-					duration := time.Duration(till + 2 * epochtime.Period)
+					duration := time.Duration(till + 1 * epochtime.Period)
 					t.Logf("Sleeping for %s so that the SURB ID Map entry will get garbage collected.", duration)
 					time.Sleep(duration)
 					wg.Done()

@@ -221,7 +221,7 @@ func (s *Session) garbageCollect() {
 		surbID := rawSurbID.([sConstants.SURBIDLength]byte)
 		message := rawMessage.(*Message)
 		sentEpoch := uint64(message.SentAt.Sub(epochtime.Epoch)/epochtime.Period)
-		if sentEpoch < currentEpoch - 2 {
+		if sentEpoch < currentEpoch - 1 {
 			s.log.Debug("Garbage collecting SURB ID Map entry for Message ID %x", message.ID)
 			s.surbIDMap.Delete(surbID)
 			s.eventCh.In() <- &MessageIDGarbageCollected{
