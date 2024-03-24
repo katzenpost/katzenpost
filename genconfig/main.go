@@ -112,7 +112,7 @@ func (s *katzenpost) genClientCfg() error {
 	cfg.VotingAuthority = &cConfig.VotingAuthority{Peers: peers}
 
 	// Debug section
-	cfg.Debug = &cConfig.Debug{DisableDecoyTraffic: false}
+	cfg.Debug = &cConfig.Debug{DisableDecoyTraffic: true}
 	err := saveCfg(cfg, s.outDir)
 	if err != nil {
 		return err
@@ -158,7 +158,7 @@ func (s *katzenpost) genNodeConfig(isProvider bool, isVoting bool) error {
 
 	// Debug section.
 	cfg.Debug = new(sConfig.Debug)
-	cfg.Debug.SendDecoyTraffic = true
+	cfg.Debug.SendDecoyTraffic = false
 
 	// PKI section.
 	if isVoting {
@@ -205,7 +205,18 @@ func (s *katzenpost) genNodeConfig(isProvider bool, isVoting bool) error {
 					"log_dir":    s.baseDir + "/" + cfg.Server.Identifier,
 				},
 			}
-			cfg.Provider.CBORPluginKaetzchen = []*sConfig.CBORPluginKaetzchen{spoolCfg}
+			mapCfg := &sConfig.CBORPluginKaetzchen{
+				Capability:     "map",
+				Endpoint:       "+map",
+				Command:        s.baseDir + "/map" + s.binSuffix,
+				MaxConcurrency: 1,
+				Config: map[string]interface{}{
+					"db": s.baseDir + "/" + cfg.Server.Identifier + "/map.storage",
+					"log_dir":    s.baseDir + "/" + cfg.Server.Identifier,
+				},
+			}
+
+			cfg.Provider.CBORPluginKaetzchen = []*sConfig.CBORPluginKaetzchen{spoolCfg, mapCfg}
 			if !s.hasPanda {
 				pandaCfg := &sConfig.CBORPluginKaetzchen{
 					Capability:     "panda",
@@ -221,6 +232,7 @@ func (s *katzenpost) genNodeConfig(isProvider bool, isVoting bool) error {
 				cfg.Provider.CBORPluginKaetzchen = append(cfg.Provider.CBORPluginKaetzchen, pandaCfg)
 				s.hasPanda = true
 			}
+			cfg.Debug.NumKaetzchenWorkers = 4
 		}
 
 		echoCfg := new(sConfig.Kaetzchen)

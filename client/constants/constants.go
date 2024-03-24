@@ -27,7 +27,7 @@ const (
 	// RoundTripTimeSlop is the slop added to the expected packet
 	// round trip timeout threshold. Used for GC and for blocking
 	// on reply in Session's BlockingSendUnreliableMessage method.
-	RoundTripTimeSlop = 60 * time.Second
+	RoundTripTimeSlop = 4 * time.Second
 
 	// TimeSkewWarnDelta is the client connection time skew threshold
 	// where clients print a warning log entry.

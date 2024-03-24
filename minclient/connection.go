@@ -571,7 +571,6 @@ func (c *connection) onWireConn(w *wire.Session) {
 					c.log.Debugf("Failed to send RetrieveMessage: %v", wireErr)
 					return
 				}
-				c.log.Debugf("Sent RetrieveMessage: %d", seq)
 				nrReqs++
 			}
 			fetchDelay = c.c.getPollInterval()
@@ -601,7 +600,6 @@ func (c *connection) onWireConn(w *wire.Session) {
 			wireErr = newProtocolError("peer send Disconnect")
 			return
 		case *commands.MessageEmpty:
-			c.log.Debugf("Received MessageEmpty: %v", cmd.Sequence)
 			if wireErr = checkSeq(cmd.Sequence); wireErr != nil {
 				c.log.Errorf("MessageEmpty sequence unexpected: %v", cmd.Sequence)
 				return

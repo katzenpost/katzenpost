@@ -21,10 +21,10 @@ import (
 	"math"
 	"time"
 
+	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/katzenpost/client/constants"
 	cConstants "github.com/katzenpost/katzenpost/client/constants"
 	"github.com/katzenpost/katzenpost/client/utils"
-	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/katzenpost/core/pki"
 	mrand "math/rand"
 )
