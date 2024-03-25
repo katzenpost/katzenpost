@@ -14,17 +14,19 @@ import (
 	"crypto/hmac"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"hash"
 	"io"
 	"time"
 
-	"golang.org/x/crypto/curve25519"
 	"golang.org/x/crypto/nacl/secretbox"
 	"golang.org/x/crypto/sha3"
 
-	"github.com/awnumar/memguard"
 	"github.com/fxamacker/cbor/v2"
-	"github.com/henrydcase/nobs/dh/csidh"
+
+	"github.com/katzenpost/hpqc/nike"
+	"github.com/katzenpost/hpqc/nike/hybrid"
+
 	"github.com/katzenpost/katzenpost/doubleratchet/utils"
 )
 
@@ -55,7 +57,7 @@ var (
 	ErrCSIDHPublicExport                      = errors.New("Ratchet: CSIDH: failed to export public key")
 	ErrCSIDHPublicImport                      = errors.New("Ratchet: CSIDH: failed to import public key")
 	ErrCSIDHInvalidPublicKey                  = errors.New("Ratchet: CSIDH public key validation failure")
-	ErrInconsistentState                       = errors.New("Ratchet: the state is inconsistent")
+	ErrInconsistentState                      = errors.New("Ratchet: the state is inconsistent")
 
 	// These constants are used as the label argument to deriveKey to derive
 	// independent keys from a master key.
@@ -69,12 +71,28 @@ var (
 	chainKeyStepLabel  = []byte("chain key step")
 )
 
+func array32p(b []byte) *[32]byte {
+	if len(b) != 32 {
+		panic("array32p slice not 32 bytes")
+	}
+	ar := [32]byte{}
+	copy(ar[:], b)
+	return &ar
+}
+
+func array32(b []byte) [32]byte {
+	if len(b) != 32 {
+		panic("array32 slice not 32 bytes")
+	}
+	ar := [32]byte{}
+	copy(ar[:], b)
+	return ar
+}
+
 // keyExchange is structure containing the public keys
 type keyExchange struct {
-	Dh0   []byte
-	Dh1   []byte
-	PQDh0 []byte
-	PQDh1 []byte
+	Dh0 []byte
+	Dh1 []byte
 }
 
 func (k *keyExchange) Wipe() {
@@ -85,13 +103,13 @@ func (k *keyExchange) Wipe() {
 // messageKey is structure containing the data associated with the message key
 type messageKey struct {
 	Num          uint32
-	Key          *memguard.LockedBuffer
+	Key          []byte
 	CreationTime int64
 }
 
 // savedKeys is structure containing the saved keys from delayed messages
 type savedKeys struct {
-	HeaderKey   *memguard.LockedBuffer
+	HeaderKey   []byte
 	MessageKeys []*messageKey
 }
 
@@ -108,16 +126,19 @@ type cborSavedKeys struct {
 // MarshalBinary implements encoding.BinaryUnmarshaler interface
 func (s *savedKeys) MarshalBinary() ([]byte, error) {
 	tmp := &cborSavedKeys{}
-	if s.HeaderKey.IsAlive() {
-		tmp.HeaderKey = s.HeaderKey.Bytes()
-		for _, m := range s.MessageKeys {
-			tmp.MessageKeys = append(tmp.MessageKeys, &cborMessageKey{Num: m.Num, Key: m.Key.Bytes(), CreationTime: m.CreationTime})
-		}
+	tmp.HeaderKey = s.HeaderKey
+	for _, m := range s.MessageKeys {
+		tmp.MessageKeys = append(tmp.MessageKeys,
+			&cborMessageKey{
+				Num:          m.Num,
+				Key:          m.Key,
+				CreationTime: m.CreationTime,
+			})
 	}
 	return cbor.Marshal(tmp)
 }
 
-// UnmarshalBinary instantiates memguard.LockedBuffer instances for each deserialized key
+// UnmarshalBinary instantiates instances for each deserialized key
 func (s *savedKeys) UnmarshalBinary(data []byte) error {
 	tmp := &cborSavedKeys{}
 
@@ -125,12 +146,17 @@ func (s *savedKeys) UnmarshalBinary(data []byte) error {
 	if err != nil {
 		return err
 	}
+
 	if len(tmp.HeaderKey) == keySize {
-		s.HeaderKey = memguard.NewBufferFromBytes(tmp.HeaderKey)
+		s.HeaderKey = tmp.HeaderKey
 		for _, m := range tmp.MessageKeys {
 			if len(m.Key) == keySize {
-				s.MessageKeys = append(s.MessageKeys, &messageKey{Num: m.Num,
-					Key: memguard.NewBufferFromBytes(m.Key), CreationTime: m.CreationTime})
+				s.MessageKeys = append(s.MessageKeys,
+					&messageKey{
+						Num:          m.Num,
+						Key:          m.Key,
+						CreationTime: m.CreationTime,
+					})
 			}
 		}
 	}
@@ -161,11 +187,50 @@ type state struct {
 	Ratchet              bool
 }
 
+func (s *state) Upgrade(scheme *hybrid.Scheme) error {
+	first1, err := scheme.First().UnmarshalBinaryPrivateKey(s.SendRatchetPrivate)
+	if err != nil {
+		return err
+	}
+	second1, err := scheme.Second().UnmarshalBinaryPrivateKey(s.SendPQRatchetPrivate)
+	if err != nil {
+		return err
+	}
+
+	hybridKey1 := scheme.PrivateKeyFromKeys(first1, second1)
+
+	s.SendRatchetPrivate = hybridKey1.Bytes()
+
+	first2, err := scheme.First().UnmarshalBinaryPublicKey(s.RecvRatchetPublic)
+	if err != nil {
+		return err
+	}
+	second2, err := scheme.Second().UnmarshalBinaryPublicKey(s.RecvPQRatchetPublic)
+	if err != nil {
+		return err
+	}
+
+	hybridKey2 := scheme.PublicKeyFromKeys(first2, second2)
+
+	s.RecvRatchetPublic = hybridKey2.Bytes()
+
+	utils.ExplicitBzero(s.SendPQRatchetPrivate)
+	utils.ExplicitBzero(s.RecvPQRatchetPublic)
+
+	s.SendPQRatchetPrivate = []byte{}
+	s.RecvPQRatchetPublic = []byte{}
+
+	s.Private0 = hybridKey1.Bytes()
+	s.Private1 = hybridKey2.Bytes()
+
+	return nil
+}
+
 // savedKey contains a message key and timestamp for a message which has not
 // been received. The timestamp comes from the message by which we learn of the
 // missing message.
 type savedKey struct {
-	key       *memguard.LockedBuffer
+	key       []byte
 	timestamp time.Time
 }
 
@@ -176,42 +241,35 @@ type Ratchet struct {
 	Now func() time.Time
 
 	// rootKey gets updated by the DH ratchet.
-	rootKey *memguard.LockedBuffer // 32 bytes long
+	rootKey []byte
 	// Header keys are used to encrypt message headers.
-	sendHeaderKey, recvHeaderKey         *memguard.LockedBuffer // 32 bytes long
-	nextSendHeaderKey, nextRecvHeaderKey *memguard.LockedBuffer // 32 bytes long
+	sendHeaderKey, recvHeaderKey         []byte
+	nextSendHeaderKey, nextRecvHeaderKey []byte
 	// Chain keys are used for forward secrecy updating.
-	sendChainKey, recvChainKey *memguard.LockedBuffer // 32 bytes long
+	sendChainKey, recvChainKey []byte
 
 	// Ratchet counts apply to both ECDH and CSIDH Ratchets
 	sendCount, recvCount uint32
 	prevSendCount        uint32
 
 	// DH Ratchet keys
-	sendRatchetPrivate, recvRatchetPublic *memguard.LockedBuffer // 32 bytes long
-
-	// CSIDH Ratchet keys
-	sendPQRatchetPrivate *csidh.PrivateKey
-	recvPQRatchetPublic  *csidh.PublicKey
+	sendRatchetPrivate nike.PrivateKey
+	recvRatchetPublic  nike.PublicKey
 
 	// ratchet is true if we will send a new ratchet value in the next message.
 	ratchet bool
 
 	// saved is a map from a header key to a map from sequence number to
 	// message key.
-	saved map[*memguard.LockedBuffer]map[uint32]savedKey
+	saved map[[32]byte]map[uint32]savedKey
 
 	// kxPrivate0 and kxPrivate1 contain curve25519 private values during
 	// the key exchange phase. They are not valid once key exchange has
 	// completed.
-	kxPrivate0 *memguard.LockedBuffer
-	kxPrivate1 *memguard.LockedBuffer
+	kxPrivate0 nike.PrivateKey
+	kxPrivate1 nike.PrivateKey
 
-	// kxPQPrivate0 and kxPQPrivate1 contain CSIDH private keys during
-	// the key exchange phase. They are not valid once key exchange has
-	// completed.
-	kxPQPrivate0 *csidh.PrivateKey
-	kxPQPrivate1 *csidh.PrivateKey
+	scheme nike.Scheme
 
 	rand io.Reader
 }
@@ -226,156 +284,118 @@ func (r *Ratchet) randBytes(buf []byte) {
 // unmarshals it into a new *Ratchet. The bytes are
 // wiped afterwards. The new *Ratchet is returned unless
 // there's an error.
-func NewRatchetFromBytes(rand io.Reader, data []byte) (*Ratchet, error) {
+func NewRatchetFromBytes(rand io.Reader, data []byte, scheme nike.Scheme) (*Ratchet, error) {
 	defer utils.ExplicitBzero(data)
 	state := state{}
 	if err := cbor.Unmarshal(data, &state); err != nil {
 		return nil, err
 	}
-	return newRatchetFromState(rand, &state)
+	if state.PQPrivate0 != nil && state.PQPrivate1 != nil {
+		err := state.Upgrade(scheme.(*hybrid.Scheme))
+		if err != nil {
+			return nil, fmt.Errorf("key upgrade failure: %s", err)
+		}
+	}
+	return newRatchetFromState(rand, &state, scheme)
 }
 
 // newRatchetFromState unmarshals state into a new ratchet.
 // state's fields are wiped in the process of copying them.
-func newRatchetFromState(rand io.Reader, s *state) (*Ratchet, error) {
+func newRatchetFromState(rand io.Reader, s *state, scheme nike.Scheme) (*Ratchet, error) {
 	r := &Ratchet{
-		rand:          rand,
-		saved:         make(map[*memguard.LockedBuffer]map[uint32]savedKey),
-		sendCount:     s.SendCount,
-		recvCount:     s.RecvCount,
-		prevSendCount: s.PrevSendCount,
-		ratchet:       s.Ratchet,
-	}
-	if s.RootKey != nil {
-		r.rootKey = memguard.NewBufferFromBytes(s.RootKey)
-	}
-	if s.SendHeaderKey != nil {
-		r.sendHeaderKey = memguard.NewBufferFromBytes(s.SendHeaderKey)
-	}
-	if s.RecvHeaderKey != nil {
-		r.recvHeaderKey = memguard.NewBufferFromBytes(s.RecvHeaderKey)
-	}
-	if s.NextSendHeaderKey != nil {
-		r.nextSendHeaderKey = memguard.NewBufferFromBytes(s.NextSendHeaderKey)
-	}
-	if s.NextRecvHeaderKey != nil {
-		r.nextRecvHeaderKey = memguard.NewBufferFromBytes(s.NextRecvHeaderKey)
-	}
-	if s.SendChainKey != nil {
-		r.sendChainKey = memguard.NewBufferFromBytes(s.SendChainKey)
-	}
-	if s.RecvChainKey != nil {
-		r.recvChainKey = memguard.NewBufferFromBytes(s.RecvChainKey)
+		rand:              rand,
+		scheme:            scheme,
+		saved:             make(map[[32]byte]map[uint32]savedKey),
+		sendCount:         s.SendCount,
+		recvCount:         s.RecvCount,
+		prevSendCount:     s.PrevSendCount,
+		ratchet:           s.Ratchet,
+		rootKey:           s.RootKey,
+		sendHeaderKey:     s.SendHeaderKey,
+		recvHeaderKey:     s.RecvHeaderKey,
+		nextSendHeaderKey: s.NextSendHeaderKey,
+		nextRecvHeaderKey: s.NextRecvHeaderKey,
+		sendChainKey:      s.SendChainKey,
+		recvChainKey:      s.RecvChainKey,
 	}
 
 	// DH Ratchet
 	if s.SendRatchetPrivate != nil {
-		r.sendRatchetPrivate = memguard.NewBufferFromBytes(s.SendRatchetPrivate)
-	}
-	if s.RecvRatchetPublic != nil {
-		r.recvRatchetPublic = memguard.NewBufferFromBytes(s.RecvRatchetPublic)
-	}
-	// CSIDH Ratchet
-	if s.SendPQRatchetPrivate != nil {
-		r.sendPQRatchetPrivate = new(csidh.PrivateKey)
-		ok := r.sendPQRatchetPrivate.Import(s.SendPQRatchetPrivate)
-		if !ok {
-			return nil, ErrCSIDHPrivateImport
+		r.sendRatchetPrivate = r.scheme.NewEmptyPrivateKey()
+		err := r.sendRatchetPrivate.FromBytes(s.SendRatchetPrivate)
+		if err != nil {
+			return nil, err
 		}
 	}
-	if s.RecvPQRatchetPublic != nil {
-		r.recvPQRatchetPublic = new(csidh.PublicKey)
-		ok := r.recvPQRatchetPublic.Import(s.RecvPQRatchetPublic)
-		if !ok {
-			return nil, ErrCSIDHPublicImport
+	if s.RecvRatchetPublic != nil {
+		r.recvRatchetPublic = r.scheme.NewEmptyPublicKey()
+		err := r.recvRatchetPublic.FromBytes(s.RecvRatchetPublic)
+		if err != nil {
+			return nil, err
 		}
 	}
 
 	// DH keys
 	if s.Private0 != nil && len(s.Private0) > 0 {
-		r.kxPrivate0 = memguard.NewBufferFromBytes(s.Private0)
-	}
-	if s.Private1 != nil && len(s.Private1) > 0 {
-		r.kxPrivate1 = memguard.NewBufferFromBytes(s.Private1)
-	}
-	// CSIDH keys
-	if s.PQPrivate0 != nil && len(s.PQPrivate0) > 0 {
-		r.kxPQPrivate0 = new(csidh.PrivateKey)
-		ok := r.kxPQPrivate0.Import(s.PQPrivate0)
-		if !ok {
-			return nil, ErrFailedToLoadPQRatchet
+		r.kxPrivate0 = r.scheme.NewEmptyPrivateKey()
+		err := r.kxPrivate0.FromBytes(s.Private0)
+		if err != nil {
+			return nil, err
 		}
 	}
-	if s.PQPrivate1 != nil && len(s.PQPrivate1) > 0 {
-		r.kxPQPrivate1 = new(csidh.PrivateKey)
-		ok := r.kxPQPrivate1.Import(s.PQPrivate1)
-		if !ok {
-			return nil, ErrFailedToLoadPQRatchet
+	if s.Private1 != nil && len(s.Private1) > 0 {
+		r.kxPrivate1 = r.scheme.NewEmptyPrivateKey()
+		err := r.kxPrivate1.FromBytes(s.Private1)
+		if err != nil {
+			return nil, err
 		}
 	}
 
 	for _, saved := range s.SavedKeys {
-		if saved.HeaderKey.Size() != keySize {
-			return nil, ErrSerialisedKeyLength
-		}
-
 		messageKeys := make(map[uint32]savedKey)
 		for _, messageKey := range saved.MessageKeys {
-			if messageKey.Key.Size() != keySize {
+			if len(messageKey.Key) != keySize {
 				return nil, ErrSerialisedKeyLength
 			}
 			savedKey := savedKey{key: messageKey.Key}
 			savedKey.timestamp = time.Unix(0, messageKey.CreationTime)
 			messageKeys[messageKey.Num] = savedKey
 		}
-
-		r.saved[saved.HeaderKey] = messageKeys
+		r.saved[array32(saved.HeaderKey)] = messageKeys
 	}
 	return r, nil
 }
 
 // InitRatchet initializes a ratchet struct
-func InitRatchet(rand io.Reader) (*Ratchet, error) {
+func InitRatchet(rand io.Reader, scheme nike.Scheme) (*Ratchet, error) {
 	r := &Ratchet{
-		rand:  rand,
-		saved: make(map[*memguard.LockedBuffer]map[uint32]savedKey),
+		rand:   rand,
+		saved:  make(map[[32]byte]map[uint32]savedKey),
+		scheme: scheme,
 	}
 
 	var err error
-	r.kxPrivate0, err = memguard.NewBufferFromReader(rand, privateKeySize)
-	if err != nil {
-		return nil, err
-	}
-	r.kxPrivate1, err = memguard.NewBufferFromReader(rand, privateKeySize)
-	if err != nil {
-		return nil, err
-	}
-	r.kxPQPrivate0 = new(csidh.PrivateKey)
-	err = csidh.GeneratePrivateKey(r.kxPQPrivate0, rand)
-	if err != nil {
-		return nil, err
-	}
-	r.kxPQPrivate1 = new(csidh.PrivateKey)
-	err = csidh.GeneratePrivateKey(r.kxPQPrivate1, rand)
+	_, r.kxPrivate0, err = scheme.GenerateKeyPairFromEntropy(rand)
 	if err != nil {
 		return nil, err
 	}
 
-	r.sendHeaderKey = memguard.NewBuffer(keySize)
-	r.recvHeaderKey = memguard.NewBuffer(keySize)
-	r.nextSendHeaderKey = memguard.NewBuffer(keySize)
-	r.nextRecvHeaderKey = memguard.NewBuffer(keySize)
-	r.sendChainKey = memguard.NewBuffer(keySize)
-	r.recvChainKey = memguard.NewBuffer(keySize)
-	r.rootKey = memguard.NewBuffer(keySize)
+	_, r.kxPrivate1, err = scheme.GenerateKeyPairFromEntropy(rand)
+	if err != nil {
+		return nil, err
+	}
+
+	r.sendHeaderKey = make([]byte, keySize)
+	r.recvHeaderKey = make([]byte, keySize)
+	r.nextSendHeaderKey = make([]byte, keySize)
+	r.nextRecvHeaderKey = make([]byte, keySize)
+	r.sendChainKey = make([]byte, keySize)
+	r.recvChainKey = make([]byte, keySize)
+	r.rootKey = make([]byte, keySize)
 
 	// DH Ratchet keys
-	r.sendRatchetPrivate = memguard.NewBuffer(keySize)
-	r.recvRatchetPublic = memguard.NewBuffer(keySize)
-
-	// CSIDH Ratchet keys
-	r.sendPQRatchetPrivate = new(csidh.PrivateKey)
-	r.recvPQRatchetPublic = new(csidh.PublicKey)
+	r.sendRatchetPrivate = scheme.NewEmptyPrivateKey()
+	r.recvRatchetPublic = scheme.NewEmptyPublicKey()
 
 	return r, nil
 }
@@ -389,33 +409,17 @@ func (r *Ratchet) CreateKeyExchange() ([]byte, error) {
 	if r.kxPrivate0 == r.kxPrivate1 && r.kxPrivate0 == nil {
 		return nil, ErrHandshakeAlreadyComplete
 	}
-	if r.kxPrivate0.IsAlive() != r.kxPrivate1.IsAlive() {
+	if (r.kxPrivate0 == nil) != (r.kxPrivate1 == nil) {
 		return nil, ErrInconsistentState
 	}
-	if r.kxPrivate0.IsAlive() == false {
+	if r.kxPrivate0 == nil {
 		return nil, ErrHandshakeAlreadyComplete
 	}
-	public0 := [publicKeySize]byte{}
-	public1 := [publicKeySize]byte{}
-	curve25519.ScalarBaseMult(&public0, r.kxPrivate0.ByteArray32())
-	curve25519.ScalarBaseMult(&public1, r.kxPrivate1.ByteArray32())
+	public0 := r.scheme.DerivePublicKey(r.kxPrivate0)
+	public1 := r.scheme.DerivePublicKey(r.kxPrivate1)
 	kx := &keyExchange{
-		Dh0: public0[:],
-		Dh1: public1[:],
-	}
-	pqpub0 := new(csidh.PublicKey)
-	pqpub1 := new(csidh.PublicKey)
-	csidh.GeneratePublicKey(pqpub0, r.kxPQPrivate0, r.rand)
-	csidh.GeneratePublicKey(pqpub1, r.kxPQPrivate1, r.rand)
-	kx.PQDh0 = make([]byte, csidh.PublicKeySize)
-	ok := pqpub0.Export(kx.PQDh0)
-	if !ok {
-		return nil, ErrCSIDHPublicExport
-	}
-	kx.PQDh1 = make([]byte, csidh.PublicKeySize)
-	ok = pqpub1.Export(kx.PQDh1)
-	if !ok {
-		return nil, ErrCSIDHPublicExport
+		Dh0: public0.Bytes(),
+		Dh1: public1.Bytes(),
 	}
 
 	serialized, err := cbor.Marshal(kx)
@@ -426,17 +430,13 @@ func (r *Ratchet) CreateKeyExchange() ([]byte, error) {
 }
 
 // deriveKey takes an HMAC object and a label and calculates out = HMAC(k, label).
-func deriveKey(key *memguard.LockedBuffer, label []byte, h hash.Hash) {
+func deriveKey(key []byte, label []byte, h hash.Hash) {
+	if len(key) != 32 {
+		panic("wtf")
+	}
 	h.Reset()
 	h.Write(label)
-	if !key.IsMutable() {
-		key.Melt()
-		defer key.Freeze()
-	}
-	h.Sum(key.Bytes()[:0])
-	if key.Size() != keySize {
-		panic("Hash function wrong size")
-	}
+	h.Sum(key[:0])
 }
 
 // ProcessKeyExchange processes the data of a keyExchange
@@ -458,21 +458,17 @@ func (r *Ratchet) completeKeyExchange(kx *keyExchange) error {
 	if r.kxPrivate0 == r.kxPrivate1 && r.kxPrivate0 == nil {
 		return ErrHandshakeAlreadyComplete
 	}
-	if r.kxPrivate0.IsAlive() != r.kxPrivate1.IsAlive() {
+	if (r.kxPrivate0 == nil) != (r.kxPrivate1 == nil) {
 		return ErrInconsistentState
 	}
-	if r.kxPrivate0.IsAlive() == false {
+	if r.kxPrivate0 == nil {
 		return ErrHandshakeAlreadyComplete
 	}
-	if len(kx.Dh0) != publicKeySize || len(kx.Dh1) != publicKeySize {
-		return ErrInvalidKeyExchange
-	}
-	if len(kx.PQDh0) != csidh.PublicKeySize || len(kx.PQDh1) != csidh.PublicKeySize {
+	if len(kx.Dh0) != r.scheme.PublicKeySize() || len(kx.Dh1) != r.scheme.PublicKeySize() {
 		return ErrInvalidKeyExchange
 	}
 
-	public0 := memguard.NewBuffer(publicKeySize)
-	curve25519.ScalarBaseMult(public0.ByteArray32(), r.kxPrivate0.ByteArray32())
+	public0 := r.scheme.DerivePublicKey(r.kxPrivate0)
 	var amAlice bool
 	switch bytes.Compare(public0.Bytes(), kx.Dh0) {
 	case -1:
@@ -482,67 +478,45 @@ func (r *Ratchet) completeKeyExchange(kx *keyExchange) error {
 	case 0:
 		return ErrEchoedDHValues
 	}
-	public0.Destroy()
+	public0.Reset()
 
-	theirDH := memguard.NewBufferFromBytes(kx.Dh0)
-	sharedKey := memguard.NewBuffer(sharedKeySize)
-	curve25519.ScalarMult(sharedKey.ByteArray32(), r.kxPrivate0.ByteArray32(), theirDH.ByteArray32())
-	theirDH.Destroy()
+	theirDH := r.scheme.NewEmptyPublicKey()
+	err := theirDH.FromBytes(kx.Dh0)
+	if err != nil {
+		return err
+	}
+	sharedKey := r.scheme.DeriveSecret(r.kxPrivate0, theirDH)
+	theirDH.Reset()
 
-	pqSharedSecret := &[64]byte{}
-	theirPQPublicKey0 := new(csidh.PublicKey)
-	ok := theirPQPublicKey0.Import(kx.PQDh0)
-	if !ok {
-		return ErrCSIDHPublicImport
-	}
-	ok = csidh.Validate(theirPQPublicKey0, r.rand)
-	if !ok {
-		return ErrCSIDHInvalidPublicKey
-	}
-	ok = csidh.DeriveSecret(pqSharedSecret, theirPQPublicKey0, r.kxPQPrivate0, r.rand)
-	if !ok {
-		return ErrCSIDHSharedSecret
-	}
-
-	h := hmac.New(sha3.New256, append(sharedKey.Bytes(), pqSharedSecret[:]...))
+	h := hmac.New(sha3.New256, sharedKey)
 	deriveKey(r.rootKey, rootKeyLabel, h)
-	sharedKey.Destroy()
+	utils.ExplicitBzero(sharedKey)
 
 	if amAlice {
 		deriveKey(r.recvHeaderKey, headerKeyLabel, h)
 		deriveKey(r.nextSendHeaderKey, nextHeaderKeyLabel, h)
 		deriveKey(r.nextRecvHeaderKey, nextHeaderKeyLabel, h)
 		deriveKey(r.recvChainKey, chainKeyLabel, h)
-		r.recvRatchetPublic.Melt()
-		r.recvRatchetPublic.Copy(kx.Dh1)
-		r.recvRatchetPublic.Freeze()
-		ok = r.recvPQRatchetPublic.Import(kx.PQDh1)
-		if !ok {
-			return ErrCSIDHPublicImport
-		}
-		ok = csidh.Validate(r.recvPQRatchetPublic, r.rand)
-		if !ok {
-			return ErrCSIDHInvalidPublicKey
+		r.recvRatchetPublic = r.scheme.NewEmptyPublicKey()
+		err := r.recvRatchetPublic.FromBytes(kx.Dh1)
+		if err != nil {
+			return err
 		}
 	} else {
 		deriveKey(r.sendHeaderKey, headerKeyLabel, h)
 		deriveKey(r.nextRecvHeaderKey, nextHeaderKeyLabel, h)
 		deriveKey(r.nextSendHeaderKey, nextHeaderKeyLabel, h)
 		deriveKey(r.sendChainKey, chainKeyLabel, h)
-		r.sendRatchetPrivate.Melt()
-		r.sendRatchetPrivate.Copy(r.kxPrivate1.Bytes())
-		r.sendRatchetPrivate.Freeze()
-		r.sendPQRatchetPrivate = r.kxPQPrivate1
+		r.sendRatchetPrivate = r.scheme.NewEmptyPrivateKey()
+		err := r.sendRatchetPrivate.FromBytes(r.kxPrivate1.Bytes())
+		if err != nil {
+			return err
+		}
 	}
 
 	r.ratchet = amAlice
-
-	r.kxPrivate0.Melt()
-	r.kxPrivate1.Melt()
-	r.kxPrivate0.Destroy()
-	r.kxPrivate1.Destroy()
-	r.kxPrivate0 = nil
-	r.kxPrivate1 = nil
+	r.kxPrivate0.Reset()
+	r.kxPrivate1.Reset()
 	return nil
 }
 
@@ -550,37 +524,19 @@ func (r *Ratchet) completeKeyExchange(kx *keyExchange) error {
 func (r *Ratchet) Encrypt(out, msg []byte) ([]byte, error) {
 	if r.ratchet {
 		var err error
-		r.sendRatchetPrivate, err = memguard.NewBufferFromReader(r.rand, keySize)
+		_, r.sendRatchetPrivate, err = r.scheme.GenerateKeyPairFromEntropy(r.rand)
 		if err != nil {
 			return nil, err
 		}
-		r.sendPQRatchetPrivate = new(csidh.PrivateKey)
-		err = csidh.GeneratePrivateKey(r.sendPQRatchetPrivate, r.rand)
-		if err != nil {
-			return nil, err
-		}
-
-		r.sendHeaderKey.Melt()
-		r.sendHeaderKey.Copy(r.nextSendHeaderKey.ByteArray32()[:])
-		r.sendHeaderKey.Freeze()
-
-		sharedKey := memguard.NewBuffer(sharedKeySize)
-		keyMaterial := memguard.NewBuffer(sharedKeySize)
-		curve25519.ScalarMult(sharedKey.ByteArray32(), r.sendRatchetPrivate.ByteArray32(), r.recvRatchetPublic.ByteArray32())
-
-		pqSharedKey := memguard.NewBuffer(csidh.SharedSecretSize)
-		ok := csidh.DeriveSecret(pqSharedKey.ByteArray64(), r.recvPQRatchetPublic, r.sendPQRatchetPrivate, r.rand)
-		if !ok {
-			return nil, ErrCSIDHSharedSecret
-		}
+		copy(r.sendHeaderKey, r.nextSendHeaderKey)
+		sharedKey := r.scheme.DeriveSecret(r.sendRatchetPrivate, r.recvRatchetPublic)
 
 		sha := sha3.New256()
 		sha.Write(rootKeyUpdateLabel)
-		sha.Write(r.rootKey.Bytes())
-		sha.Write(sharedKey.Bytes())
-		sha.Write(pqSharedKey.Bytes())
-		sha.Sum(keyMaterial.Bytes()[:0])
-		h := hmac.New(sha3.New256, keyMaterial.Bytes())
+		sha.Write(r.rootKey)
+		sha.Write(sharedKey)
+		keyMaterial := sha.Sum(nil)
+		h := hmac.New(sha3.New256, keyMaterial)
 
 		deriveKey(r.rootKey, rootKeyLabel, h)
 		deriveKey(r.nextSendHeaderKey, headerKeyLabel, h)
@@ -589,21 +545,12 @@ func (r *Ratchet) Encrypt(out, msg []byte) ([]byte, error) {
 		r.ratchet = false
 	}
 
-	h := hmac.New(sha3.New256, r.sendChainKey.Bytes())
-	messageKey := memguard.NewBuffer(keySize)
+	h := hmac.New(sha3.New256, r.sendChainKey)
+	messageKey := make([]byte, keySize)
 	deriveKey(messageKey, messageKeyLabel, h)
 	deriveKey(r.sendChainKey, chainKeyStepLabel, h)
 
-	var sendRatchetPublic [publicKeySize]byte
-	curve25519.ScalarBaseMult(&sendRatchetPublic, r.sendRatchetPrivate.ByteArray32())
-
-	sendPQRatchetPublic := new(csidh.PublicKey)
-	csidh.GeneratePublicKey(sendPQRatchetPublic, r.sendPQRatchetPrivate, r.rand)
-	sendPQRatchetPublicBytes := make([]byte, csidh.PublicKeySize)
-	ok := sendPQRatchetPublic.Export(sendPQRatchetPublicBytes)
-	if !ok {
-		return nil, ErrCSIDHPublicExport
-	}
+	sendRatchetPublic := r.scheme.DerivePublicKey(r.sendRatchetPrivate)
 
 	var header [headerSize]byte
 	var headerNonce, messageNonce [nonceSize]byte
@@ -612,14 +559,13 @@ func (r *Ratchet) Encrypt(out, msg []byte) ([]byte, error) {
 
 	binary.LittleEndian.PutUint32(header[0:4], r.sendCount)
 	binary.LittleEndian.PutUint32(header[4:8], r.prevSendCount)
-	copy(header[8:], sendRatchetPublic[:])
-	copy(header[PQRatchetPublicKeyInHeaderOffset:], sendPQRatchetPublicBytes)
+	copy(header[RatchetPublicKeyInHeaderOffset:], sendRatchetPublic.Bytes())
 	copy(header[nonceInHeaderOffset:], messageNonce[:])
 	out = append(out, headerNonce[:]...)
-	out = secretbox.Seal(out, header[:], &headerNonce, r.sendHeaderKey.ByteArray32())
+	out = secretbox.Seal(out, header[:], &headerNonce, array32p(r.sendHeaderKey))
 	r.sendCount++
 
-	return secretbox.Seal(out, msg, &messageNonce, messageKey.ByteArray32()), nil
+	return secretbox.Seal(out, msg, &messageNonce, array32p(messageKey)), nil
 }
 
 // trySavedKeys tries to decrypt the ciphertext using keys saved for delayed messages.
@@ -634,7 +580,7 @@ func (r *Ratchet) trySavedKeys(ciphertext []byte) ([]byte, error) {
 	sealedHeader = sealedHeader[len(nonce):]
 
 	for headerKey, messageKeys := range r.saved {
-		header, ok := secretbox.Open(nil, sealedHeader, &nonce, headerKey.ByteArray32())
+		header, ok := secretbox.Open(nil, sealedHeader, &nonce, &headerKey)
 		if !ok {
 			continue
 		}
@@ -652,15 +598,15 @@ func (r *Ratchet) trySavedKeys(ciphertext []byte) ([]byte, error) {
 
 		sealedMessage := ciphertext[sealedHeaderSize:]
 		copy(nonce[:], header[nonceInHeaderOffset:])
-		msg, ok := secretbox.Open(nil, sealedMessage, &nonce, msgKey.key.ByteArray32())
+		msg, ok := secretbox.Open(nil, sealedMessage, &nonce, array32p(msgKey.key))
 		if !ok {
 			return nil, ErrCorruptMessage
 		}
 		delete(messageKeys, msgNum)
-		msgKey.key.Destroy()
+		utils.ExplicitBzero(msgKey.key)
 		if len(messageKeys) == 0 {
 			delete(r.saved, headerKey)
-			headerKey.Destroy()
+			utils.ExplicitBzero(headerKey[:])
 		}
 		return msg, nil
 	}
@@ -674,7 +620,7 @@ func (r *Ratchet) trySavedKeys(ciphertext []byte) ([]byte, error) {
 // key. If any messages have been skipped over, it also returns savedKeys, a
 // map suitable for merging with r.saved, that contains the message keys for
 // the missing messages.
-func (r *Ratchet) saveKeys(headerKey, recvChainKey *memguard.LockedBuffer, messageNum, receivedCount uint32) (provisionalChainKey, messageKey *memguard.LockedBuffer, savedKeys map[*memguard.LockedBuffer]map[uint32]savedKey, err error) {
+func (r *Ratchet) saveKeys(headerKey, recvChainKey []byte, messageNum, receivedCount uint32) (provisionalChainKey, messageKey []byte, savedKeys map[[32]byte]map[uint32]savedKey, err error) {
 	if messageNum < receivedCount {
 		// This is a message from the past, but we didn't have a saved
 		// key for it, which means that it's a duplicate message or we
@@ -701,12 +647,12 @@ func (r *Ratchet) saveKeys(headerKey, recvChainKey *memguard.LockedBuffer, messa
 		now = r.Now()
 	}
 
-	provisionalChainKey = memguard.NewBuffer(keySize)
-	provisionalChainKey.Copy(recvChainKey.Bytes())
+	provisionalChainKey = make([]byte, keySize)
+	copy(provisionalChainKey, recvChainKey)
 
 	for n := receivedCount; n <= messageNum; n++ {
-		h := hmac.New(sha3.New256, provisionalChainKey.Bytes())
-		messageKey = memguard.NewBuffer(keySize)
+		h := hmac.New(sha3.New256, provisionalChainKey)
+		messageKey = make([]byte, keySize)
 		deriveKey(messageKey, messageKeyLabel, h)
 		deriveKey(provisionalChainKey, chainKeyStepLabel, h)
 
@@ -716,10 +662,8 @@ func (r *Ratchet) saveKeys(headerKey, recvChainKey *memguard.LockedBuffer, messa
 	}
 
 	if messageKeys != nil {
-		savedKeys = make(map[*memguard.LockedBuffer]map[uint32]savedKey)
-		hkey := memguard.NewBuffer(keySize)
-		hkey.Copy(headerKey.Bytes())
-		savedKeys[hkey] = messageKeys
+		savedKeys = make(map[[32]byte]map[uint32]savedKey)
+		savedKeys[*array32p(headerKey)] = messageKeys
 	}
 
 	return
@@ -727,14 +671,14 @@ func (r *Ratchet) saveKeys(headerKey, recvChainKey *memguard.LockedBuffer, messa
 
 // mergeSavedKeys takes a map of saved message keys from saveKeys and merges it
 // into r.saved.
-func (r *Ratchet) mergeSavedKeys(newKeys map[*memguard.LockedBuffer]map[uint32]savedKey) {
+func (r *Ratchet) mergeSavedKeys(newKeys map[[32]byte]map[uint32]savedKey) {
 	for headerKey, newMessageKeys := range newKeys {
 		messageKeys, ok := r.saved[headerKey]
 		if ok {
 			// We already have it so Destroy the new copy.
-			headerKey.Destroy()
+			utils.ExplicitBzero(headerKey[:])
 			for _, messageKey := range newMessageKeys {
-				messageKey.key.Destroy()
+				utils.ExplicitBzero(messageKey.key)
 			}
 		} else {
 			r.saved[headerKey] = newMessageKeys
@@ -750,10 +694,10 @@ func (r *Ratchet) mergeSavedKeys(newKeys map[*memguard.LockedBuffer]map[uint32]s
 func (r *Ratchet) wipeSavedKeys() {
 	for headerKey, keys := range r.saved {
 		for _, savedKey := range keys {
-			savedKey.key.Destroy()
+			utils.ExplicitBzero(savedKey.key)
 		}
 		delete(r.saved, headerKey)
-		headerKey.Destroy()
+		utils.ExplicitBzero(headerKey[:])
 	}
 }
 
@@ -770,8 +714,8 @@ func (r *Ratchet) Decrypt(ciphertext []byte) ([]byte, error) {
 	copy(nonce[:], sealedHeader)
 	sealedHeader = sealedHeader[len(nonce):]
 
-	header, ok := secretbox.Open(nil, sealedHeader, &nonce, r.recvHeaderKey.ByteArray32())
-	ok = ok && !utils.CtIsZero(r.recvHeaderKey.Bytes())
+	header, ok := secretbox.Open(nil, sealedHeader, &nonce, array32p(r.recvHeaderKey))
+	ok = ok && !utils.CtIsZero(r.recvHeaderKey)
 
 	if ok {
 		if len(header) != headerSize {
@@ -785,21 +729,19 @@ func (r *Ratchet) Decrypt(ciphertext []byte) ([]byte, error) {
 		}
 
 		copy(nonce[:], header[nonceInHeaderOffset:])
-		msg, ok := secretbox.Open(nil, sealedMessage, &nonce, messageKey.ByteArray32())
+		msg, ok := secretbox.Open(nil, sealedMessage, &nonce, array32p(messageKey))
 		if !ok {
 			return nil, ErrCorruptMessage
 		}
 
-		r.recvChainKey.Melt()
-		r.recvChainKey.Copy(provisionalChainKey.Bytes())
-		r.recvChainKey.Freeze()
+		copy(r.recvChainKey, provisionalChainKey)
 
 		r.mergeSavedKeys(savedKeys)
 		r.recvCount = messageNum + 1
 		return msg, nil
 	}
 
-	header, ok = secretbox.Open(nil, sealedHeader, &nonce, r.nextRecvHeaderKey.ByteArray32())
+	header, ok = secretbox.Open(nil, sealedHeader, &nonce, array32p(r.nextRecvHeaderKey))
 	if !ok {
 		return nil, ErrCannotDecrypt
 	}
@@ -819,36 +761,24 @@ func (r *Ratchet) Decrypt(ciphertext []byte) ([]byte, error) {
 		return nil, err
 	}
 
-	dhPublic := memguard.NewBuffer(keySize)
-	sharedKey := memguard.NewBuffer(keySize)
-	keyMaterial := memguard.NewBuffer(keySize)
-	dhPublic.Copy(header[8:])
-
-	curve25519.ScalarMult(sharedKey.ByteArray32(), r.sendRatchetPrivate.ByteArray32(), dhPublic.ByteArray32())
-
-	pqSharedKey := memguard.NewBuffer(csidh.SharedSecretSize)
-	theirPQRatchetPublic := new(csidh.PublicKey)
-	theirPQRatchetPublic.Import(header[PQRatchetPublicKeyInHeaderOffset : PQRatchetPublicKeyInHeaderOffset+csidh.PublicKeySize])
-	ok = csidh.Validate(theirPQRatchetPublic, r.rand)
-	if !ok {
-		return nil, ErrCSIDHInvalidPublicKey
+	theirRatchetPublic := r.scheme.NewEmptyPublicKey()
+	err = theirRatchetPublic.FromBytes(header[RatchetPublicKeyInHeaderOffset : RatchetPublicKeyInHeaderOffset+r.scheme.PublicKeySize()])
+	if err != nil {
+		return nil, err
 	}
-	ok = csidh.DeriveSecret(pqSharedKey.ByteArray64(), theirPQRatchetPublic, r.sendPQRatchetPrivate, r.rand)
-	if !ok {
-		return nil, ErrCSIDHSharedSecret
-	}
+
+	sharedKey := r.scheme.DeriveSecret(r.sendRatchetPrivate, theirRatchetPublic)
 
 	sha := sha3.New256()
 	sha.Write(rootKeyUpdateLabel)
-	sha.Write(r.rootKey.Bytes())
-	sha.Write(sharedKey.Bytes())
-	sha.Write(pqSharedKey.Bytes())
+	sha.Write(r.rootKey)
+	sha.Write(sharedKey)
 
 	var rootKeyHMAC hash.Hash
-	chainKey := memguard.NewBuffer(keySize)
+	chainKey := make([]byte, keySize)
 
-	sha.Sum(keyMaterial.Bytes()[:0])
-	rootKeyHMAC = hmac.New(sha3.New256, keyMaterial.Bytes())
+	keyMaterial := sha.Sum(nil)
+	rootKeyHMAC = hmac.New(sha3.New256, keyMaterial)
 	deriveKey(r.rootKey, rootKeyLabel, rootKeyHMAC)
 	deriveKey(chainKey, chainKeyLabel, rootKeyHMAC)
 
@@ -858,38 +788,20 @@ func (r *Ratchet) Decrypt(ciphertext []byte) ([]byte, error) {
 	}
 
 	copy(nonce[:], header[nonceInHeaderOffset:])
-	msg, ok = secretbox.Open(nil, sealedMessage, &nonce, messageKey.ByteArray32())
+	msg, ok = secretbox.Open(nil, sealedMessage, &nonce, array32p(messageKey))
 	if !ok {
 		return nil, ErrCorruptMessage
 	}
 
-	r.recvChainKey.Melt()
-	r.recvChainKey.Copy(provisionalChainKey.Bytes())
-	r.recvChainKey.Freeze()
-
-	r.recvHeaderKey.Melt()
-	r.recvHeaderKey.Copy(r.nextRecvHeaderKey.Bytes())
-	r.recvHeaderKey.Freeze()
-
+	copy(r.recvChainKey, provisionalChainKey)
+	copy(r.recvHeaderKey, r.nextRecvHeaderKey)
 	deriveKey(r.nextRecvHeaderKey, headerKeyLabel, rootKeyHMAC)
-
-	r.sendRatchetPrivate.Melt()
-	r.sendRatchetPrivate.Wipe()
-	r.sendRatchetPrivate.Freeze()
-
-	r.sendPQRatchetPrivate = new(csidh.PrivateKey)
-
-	r.recvRatchetPublic.Melt()
-	r.recvRatchetPublic.Copy(dhPublic.Bytes())
-	r.recvRatchetPublic.Freeze()
-
-	r.recvPQRatchetPublic = theirPQRatchetPublic
-
+	r.sendRatchetPrivate.Reset()
+	r.recvRatchetPublic.FromBytes(theirRatchetPublic.Bytes())
 	r.recvCount = messageNum + 1
 	r.mergeSavedKeys(oldSavedKeys)
 	r.mergeSavedKeys(savedKeys)
 	r.ratchet = true
-
 	return msg, nil
 }
 
@@ -905,13 +817,13 @@ func (r *Ratchet) Save() (data []byte, err error) {
 // Marshal transforms the object into a stream
 func (r *Ratchet) marshal(now time.Time, lifetime time.Duration) (*state, error) {
 	s := &state{
-		RootKey:            r.rootKey.Bytes(),
-		SendHeaderKey:      r.sendHeaderKey.Bytes(),
-		RecvHeaderKey:      r.recvHeaderKey.Bytes(),
-		NextSendHeaderKey:  r.nextSendHeaderKey.Bytes(),
-		NextRecvHeaderKey:  r.nextRecvHeaderKey.Bytes(),
-		SendChainKey:       r.sendChainKey.Bytes(),
-		RecvChainKey:       r.recvChainKey.Bytes(),
+		RootKey:            r.rootKey,
+		SendHeaderKey:      r.sendHeaderKey,
+		RecvHeaderKey:      r.recvHeaderKey,
+		NextSendHeaderKey:  r.nextSendHeaderKey,
+		NextRecvHeaderKey:  r.nextRecvHeaderKey,
+		SendChainKey:       r.sendChainKey,
+		RecvChainKey:       r.recvChainKey,
 		SendRatchetPrivate: r.sendRatchetPrivate.Bytes(),
 		RecvRatchetPublic:  r.recvRatchetPublic.Bytes(),
 		SendCount:          r.sendCount,
@@ -920,24 +832,11 @@ func (r *Ratchet) marshal(now time.Time, lifetime time.Duration) (*state, error)
 		Ratchet:            r.ratchet,
 	}
 
-	s.SendPQRatchetPrivate = make([]byte, csidh.PrivateKeySize)
-	r.sendPQRatchetPrivate.Export(s.SendPQRatchetPrivate)
-	s.RecvPQRatchetPublic = make([]byte, csidh.PublicKeySize)
-	r.recvPQRatchetPublic.Export(s.RecvPQRatchetPublic)
-
 	if r.kxPrivate0 != nil {
 		s.Private0 = r.kxPrivate0.Bytes()
 	}
 	if r.kxPrivate1 != nil {
 		s.Private1 = r.kxPrivate1.Bytes()
-	}
-	if r.kxPQPrivate0 != nil {
-		s.PQPrivate0 = make([]byte, csidh.PrivateKeySize)
-		r.kxPQPrivate0.Export(s.PQPrivate0)
-	}
-	if r.kxPQPrivate1 != nil {
-		s.PQPrivate1 = make([]byte, csidh.PrivateKeySize)
-		r.kxPQPrivate1.Export(s.PQPrivate1)
 	}
 
 	for headerKey, messageKeys := range r.saved {
@@ -953,7 +852,7 @@ func (r *Ratchet) marshal(now time.Time, lifetime time.Duration) (*state, error)
 			})
 		}
 		s.SavedKeys = append(s.SavedKeys, &savedKeys{
-			HeaderKey:   headerKey,
+			HeaderKey:   headerKey[:],
 			MessageKeys: keys,
 		})
 	}
@@ -963,26 +862,22 @@ func (r *Ratchet) marshal(now time.Time, lifetime time.Duration) (*state, error)
 
 // DestroyRatchet destroys the ratchet
 func DestroyRatchet(r *Ratchet) {
-	r.rootKey.Destroy()
-	r.sendHeaderKey.Destroy()
-	r.recvHeaderKey.Destroy()
-	r.nextSendHeaderKey.Destroy()
-	r.nextRecvHeaderKey.Destroy()
-	r.sendChainKey.Destroy()
-	r.recvChainKey.Destroy()
-	r.sendRatchetPrivate.Destroy()
-	r.recvRatchetPublic.Destroy()
-	r.sendPQRatchetPrivate = nil
-	r.recvPQRatchetPublic = nil
+	utils.ExplicitBzero(r.rootKey)
+	utils.ExplicitBzero(r.sendHeaderKey)
+	utils.ExplicitBzero(r.recvHeaderKey)
+	utils.ExplicitBzero(r.nextSendHeaderKey)
+	utils.ExplicitBzero(r.nextRecvHeaderKey)
+	utils.ExplicitBzero(r.sendChainKey)
+	utils.ExplicitBzero(r.recvChainKey)
+	r.sendRatchetPrivate.Reset()
+	r.recvRatchetPublic.Reset()
 	r.sendCount, r.recvCount = uint32(0), uint32(0)
 	r.prevSendCount = uint32(0)
 	if r.kxPrivate0 != nil {
-		r.kxPrivate0.Destroy()
+		r.kxPrivate0.Reset()
 	}
 	if r.kxPrivate1 != nil {
-		r.kxPrivate1.Destroy()
+		r.kxPrivate1.Reset()
 	}
-	r.kxPQPrivate0 = nil
-	r.kxPQPrivate1 = nil
 	r.wipeSavedKeys()
 }

@@ -8,12 +8,7 @@ import (
 )
 
 const (
-	keySize        = 32
-	privateKeySize = 32
-	publicKeySize  = 32
-	signatureSize  = 64
-
-	sharedKeySize         = 32
+	keySize               = 32
 	rootKeySize           = 32
 	chainKeySize          = 32
 	sendingChainKeySize   = 32
@@ -23,15 +18,14 @@ const (
 	// headerSize is the size, in bytes, of a header's plaintext contents.
 	headerSize = 4 /* uint32 message count */ +
 		4 /* uint32 previous message count */ +
-		32 /* curve25519 ratchet public */ +
-		csidh.PublicKeySize +
-		24 /* nonce for message */
+		24 /* nonce for message */ +
+		32 + 128 /* ratchet public key CTIDH-1024 + X25519 */
 	// sealedHeader is the size, in bytes, of an encrypted header.
-	sealedHeaderSize                 = 24 /* nonce */ + headerSize + secretbox.Overhead
-	PQRatchetPublicKeyInHeaderOffset = 4 + 4 + 32
+	sealedHeaderSize               = 24 /* nonce */ + headerSize + secretbox.Overhead
+	RatchetPublicKeyInHeaderOffset = 4 + 4 + 24
 	// nonceInHeaderOffset is the offset of the message nonce in the
 	// header's plaintext.
-	nonceInHeaderOffset = 4 + 4 + 32 + csidh.PublicKeySize
+	nonceInHeaderOffset = 4 + 4
 	// MaxMissingMessages is the maximum number of missing messages that
 	// we'll keep track of.
 	MaxMissingMessages = 8

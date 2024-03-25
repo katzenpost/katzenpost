@@ -41,7 +41,6 @@ import (
 	cUtils "github.com/katzenpost/katzenpost/client/utils"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
-	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/utils"
 	"github.com/katzenpost/katzenpost/core/worker"
 	memspoolclient "github.com/katzenpost/katzenpost/memspool/client"
@@ -65,10 +64,6 @@ var (
 	ErrHalted                 = errors.New("Halted")
 	pandaBlobSize             = 1000
 )
-
-func DoubleRatchetPayloadLength(geo *geo.Geometry) int {
-	return common.SpoolPayloadLength(geo) - ratchet.DoubleRatchetOverhead
-}
 
 // Client is the mixnet client which interacts with other clients
 // and services on the network.
@@ -859,14 +854,13 @@ func (c *Client) Shutdown() {
 }
 
 func (c *Client) DoubleRatchetPayloadLength() int {
-	return DoubleRatchetPayloadLength(c.client.GetConfig().SphinxGeometry)
+	cfg := c.client.GetConfig()
+	return common.SpoolPayloadLength(cfg.SphinxGeometry) - ratchet.DoubleRatchetOverhead
 }
 
 // SendMessage sends a message to the Client contact with the given nickname.
 func (c *Client) SendMessage(nickname string, message []byte) MessageID {
-	cfg := c.client.GetConfig()
-
-	if len(message)+4 > DoubleRatchetPayloadLength(cfg.SphinxGeometry) {
+	if len(message)+4 > c.DoubleRatchetPayloadLength() {
 		return MessageID{}
 	}
 	convoMesgID := MessageID{}

@@ -23,11 +23,22 @@ import (
 	"time"
 
 	"github.com/fxamacker/cbor/v2"
+
+	"github.com/katzenpost/hpqc/nike"
+	"github.com/katzenpost/hpqc/nike/hybrid"
 	"github.com/katzenpost/hpqc/rand"
+
 	cConstants "github.com/katzenpost/katzenpost/client/constants"
+
 	ratchet "github.com/katzenpost/katzenpost/doubleratchet"
 	memspoolClient "github.com/katzenpost/katzenpost/memspool/client"
 )
+
+var nikeScheme nike.Scheme
+
+func init() {
+	nikeScheme = hybrid.CTIDH1024X25519
+}
 
 type contactExchange struct {
 	SpoolWriteDescriptor *memspoolClient.SpoolWriteDescriptor
@@ -136,7 +147,7 @@ type Contact struct {
 
 // NewContact creates a new Contact or returns an error.
 func NewContact(nickname string, id uint64, secret []byte) (*Contact, error) {
-	ratchet, err := ratchet.InitRatchet(rand.Reader)
+	ratchet, err := ratchet.InitRatchet(rand.Reader, nikeScheme)
 	if err != nil {
 		return nil, err
 	}
@@ -196,7 +207,7 @@ func (c *Contact) UnmarshalBinary(data []byte) error {
 		return err
 	}
 
-	r, err := ratchet.NewRatchetFromBytes(rand.Reader, s.Ratchet)
+	r, err := ratchet.NewRatchetFromBytes(rand.Reader, s.Ratchet, nikeScheme)
 	if err != nil {
 		return err
 	}
