@@ -19,6 +19,7 @@ package server
 
 import (
 	"errors"
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -214,6 +215,14 @@ func (s *Server) OnCommand(cmd cborplugin.Command) (cborplugin.Command, error) {
 		rawReply := replyCmd.ToBytes()
 		reply := &cborplugin.Response{Payload: rawReply}
 		return reply, nil
+	case *cborplugin.ParametersRequest:
+		// panda doesn't set any custom parameters in the PKI, so let the
+		// cborplugin.Client populate cborplugin.Parameters{}.
+		// and we don't know what the required endpoint field should be anyway
+		params := make(cborplugin.Parameters)
+		epoch, _, _ := s.epochClock.Now()
+		params["epoch"] = fmt.Sprintf("[%d, %d, %d]", epoch-1, epoch, epoch+1)
+		return &params, nil
 	default:
 		s.log.Errorf("OnCommand called with unknown Command type")
 		return nil, errors.New("Invalid Command type")

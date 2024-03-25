@@ -80,7 +80,7 @@ func main() {
 
 	var server *cborplugin.Server
 	h := &spoolRequestHandler{m: spoolMap, log: serverLog}
-	server = cborplugin.NewServer(serverLog, socketFile, new(cborplugin.RequestFactory), h)
+	server = cborplugin.NewServer(serverLog, socketFile, h)
 	// emit socketFile to stdout, because this tells the mix server where to connect
 	fmt.Printf("%s\n", socketFile)
 	server.Accept()
@@ -116,6 +116,11 @@ func (s *spoolRequestHandler) OnCommand(cmd cborplugin.Command) (cborplugin.Comm
 			return nil, err
 		}
 		return &cborplugin.Response{Payload: rawResp}, nil
+	case *cborplugin.ParametersRequest:
+		// memspool doesn't set any custom parameters in the PKI, so let the
+		// cborplugin.Client populate cborplugin.Parameters{}.
+		// and we don't know what the required endpoint field should be anyway
+		return nil, nil
 	default:
 		s.log.Errorf("OnCommand called with unknown Command type")
 		return nil, errors.New("Invalid Command type")

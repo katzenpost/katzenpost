@@ -180,7 +180,10 @@ func (k *CBORPluginWorker) KaetzchenForPKI() ServiceMap {
 			continue
 		}
 		params := make(PluginParameters)
-		p := k.GetParameters()
+		p, err := k.GetParameters()
+		if err != nil {
+			continue
+		}
 		if p != nil {
 			for key, value := range *p {
 				params[key] = value
@@ -201,7 +204,7 @@ func (k *CBORPluginWorker) IsKaetzchen(recipient [constants.RecipientIDLength]by
 
 func (k *CBORPluginWorker) launch(command, capability, endpoint string, args []string) (*cborplugin.Client, error) {
 	k.log.Debugf("Launching plugin: %s", command)
-	plugin := cborplugin.NewClient(k.glue.LogBackend(), capability, endpoint, &cborplugin.ResponseFactory{})
+	plugin := cborplugin.NewClient(k.glue.LogBackend(), capability, endpoint)
 	err := plugin.Start(command, args)
 	return plugin, err
 }

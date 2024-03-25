@@ -40,10 +40,6 @@ type Command interface {
 	Unmarshal(b []byte) error
 }
 
-type CommandBuilder interface {
-	Build() Command
-}
-
 type CommandIO struct {
 	worker.Worker
 
@@ -53,8 +49,6 @@ type CommandIO struct {
 
 	readCh  chan Command
 	writeCh chan Command
-
-	commandBuilder CommandBuilder
 }
 
 func NewCommandIO(log *logging.Logger) *CommandIO {
@@ -65,8 +59,7 @@ func NewCommandIO(log *logging.Logger) *CommandIO {
 	}
 }
 
-func (c *CommandIO) Start(initiator bool, socketFile string, commandBuilder CommandBuilder) {
-	c.commandBuilder = commandBuilder
+func (c *CommandIO) Start(initiator bool, socketFile string) {
 
 	if initiator {
 		err := c.dial(socketFile)
@@ -117,14 +110,21 @@ func (c *CommandIO) WriteChan() chan Command {
 }
 
 func (c *CommandIO) reader() {
-	dec := cbor.NewDecoder(c.conn)
+	// register different types with decoder and create a decoder
+	dm, err := cbor.DecOptions{}.DecModeWithTags(TagSet)
+	if err != nil {
+		panic(err)
+	}
+	dec := dm.NewDecoder(c.conn)
+
 	for {
-		cmd := c.commandBuilder.Build()
-		err := dec.Decode(cmd)
+		var cmd Command
+		err := dec.Decode(&cmd)
 		if err != nil {
 			c.Halt()
 			return
 		}
+
 		select {
 		case <-c.HaltCh():
 			return
@@ -134,7 +134,11 @@ func (c *CommandIO) reader() {
 }
 
 func (c *CommandIO) writer() {
-	enc := cbor.NewEncoder(c.conn)
+	em, err := cbor.EncOptions{}.EncModeWithTags(TagSet)
+	if err != nil {
+		panic(err)
+	}
+	enc := em.NewEncoder(c.conn)
 	for {
 		select {
 		case <-c.HaltCh():
