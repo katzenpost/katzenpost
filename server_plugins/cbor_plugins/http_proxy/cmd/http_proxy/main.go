@@ -119,22 +119,17 @@ func (s *proxyRequestHandler) OnCommand(cmd cborplugin.Command) (cborplugin.Comm
 			return nil, fmt.Errorf("http.ReadRequest failed: %s", err)
 		}
 
-		s.log.Debugf("Request before mutation: %t", request)
+		newRequest, err := http.NewRequest("POST", s.dest.String(), request.Body)
 
-		// mutate request with our destination
-		rewriteRequestURL(request, s.dest)
-		request.RequestURI = ""
-
-		s.log.Debugf("Request after mutation: %t", request)
-
-		resp, err := http.DefaultClient.Do(request)
+		resp, err := http.DefaultClient.Do(newRequest)
 		if err != nil {
 			s.log.Errorf("http.DefaultClient.Do failed: %s", err)
 			return nil, fmt.Errorf("http.DefaultClient.Do failed: %s", err)
 		}
 		defer resp.Body.Close()
 
-		resp.Header = http.Header{}
+		//resp.Header = http.Header{}
+		resp.Header["Host"] = []string{request.URL.Host}
 
 		body, err := io.ReadAll(resp.Body)
 		if err != nil {
