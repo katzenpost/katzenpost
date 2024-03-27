@@ -1,0 +1,29 @@
+---
+- name: Copy Authority server binary to node
+  copy:
+    src: "{{ artifacts_dir }}/bin/server"
+    dest: "{{ base_dir }}/server"
+    mode: '0755'
+
+- name: copy memspool binary to node
+  copy:
+    src: "{{ artifacts_dir }}/bin/memspool"
+    dest: "/voting_mixnet/memspool"
+    mode: '0755'
+
+- name: copy panda_server binary to node
+  copy:
+    src: "{{ artifacts_dir }}/bin/panda_server"
+    dest: "/voting_mixnet/panda_server"
+    mode: '0755'
+
+- name: Copy Authority configuration to node
+  copy:
+    src: "{{ artifacts_dir }}/voting_mixnet/provider{{ ansible_play_batch.index(inventory_hostname) + 1 }}/katzenpost.toml"
+    dest: "{{ base_dir }}/katzenpost.toml"
+
+- name: Replace ansible_host IP address with 127.0.0.1 in authority.toml using sed
+  ansible.builtin.shell: "sed -i 's/{{ ansible_host }}/127.0.0.1/g' {{ base_dir }}/katzenpost.toml"
+  args:
+    executable: /bin/bash
+

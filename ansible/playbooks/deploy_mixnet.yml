@@ -1,0 +1,58 @@
+- name: Load global configuration
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Load configuration from external file
+      include_vars:
+        file: config.yml
+        name: config
+
+- name: Common setup for all nodes
+  hosts: all
+  become: true
+  strategy: free
+  tasks:
+    - name: Include common setup tasks
+      include_tasks: roles/common/tasks/main.yml
+
+- name: Deploy Directory Authority Voting Nodes
+  hosts: dirauth_nodes
+  become: true
+  vars:
+    base_dir: "/opt/katzenpost"
+    dirauth_count: "{{ config.dirauth_count }}"
+    artifacts_dir: "{{ playbook_dir }}/artifacts"
+  strategy: free
+  tasks:
+    - name: Include Directory Authority setup tasks
+      include_tasks: roles/dirauth/tasks/setup.yml
+    - name: Include Directory Authority run tasks
+      include_tasks: roles/dirauth/tasks/run.yml
+
+- name: Deploy Provider Nodes
+  hosts: provider_nodes
+  become: true
+  vars:
+    base_dir: "/opt/katzenpost"
+    provider_count: "{{ config.provider_count }}"
+    artifacts_dir: "{{ playbook_dir }}/artifacts"
+  strategy: free
+  tasks:
+    - name: Include Provider setup tasks
+      include_tasks: roles/provider/tasks/setup.yml
+    - name: Include Provider run tasks
+      include_tasks: roles/provider/tasks/run.yml
+
+- name: Deploy Mix Nodes
+  hosts: mix_nodes
+  become: true
+  vars:
+    base_dir: "/opt/katzenpost"
+    mix_count: "{{ config.mix_count }}"
+    artifacts_dir: "{{ playbook_dir }}/artifacts"
+  strategy: free
+  tasks:
+    - name: Include Mix setup tasks
+      include_tasks: roles/mix/tasks/setup.yml
+    - name: Include Mix run tasks
+      include_tasks: roles/mix/tasks/run.yml

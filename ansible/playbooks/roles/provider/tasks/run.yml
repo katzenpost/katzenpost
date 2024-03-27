@@ -1,0 +1,52 @@
+---
+- name: Check if provider service file exists
+  ansible.builtin.stat:
+    path: "/etc/systemd/system/provider.service"
+  register: provider_service
+
+- name: Create provider service file
+  block:
+    - name: Creating provider systemd service file
+      copy:
+        content: |
+          [Unit]
+          Description=Provider Service
+          After=network.target
+          
+          [Service]
+          Type=simple
+          User=root
+          WorkingDirectory={{ base_dir }}
+          ExecStart={{ base_dir }}/server -f {{ base_dir }}/katzenpost.toml
+          Restart=always
+          RestartSec=5
+          
+          [Install]
+          WantedBy=multi-user.target
+        dest: "/etc/systemd/system/provider.service"
+  when: not provider_service.stat.exists
+
+- name: Reload systemd to recognize mixnet service
+  ansible.builtin.systemd:
+    daemon_reload: yes
+  when: not provider_service.stat.exists
+
+- name: Ensure provider service is started and enabled
+  ansible.builtin.systemd:
+    name: provider
+    state: started
+    enabled: yes
+
+- name: Output systemctl status of provider
+  ansible.builtin.shell: systemctl status provider
+  register: service_status
+
+- name: Print the registered status output
+  ansible.builtin.debug:
+    var: service_status.stdout
+
+- name: Check if NTP is already synchronized
+  command: timedatectl status
+  register: timedatectl_status
+  failed_when: timedatectl_status.rc != 0
+  changed_when: false

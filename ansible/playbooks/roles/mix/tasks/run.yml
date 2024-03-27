@@ -1,0 +1,52 @@
+---
+- name: Check if mixnet_mix service file exists
+  ansible.builtin.stat:
+    path: "/etc/systemd/system/mixnet_mix.service"
+  register: mixnet_mix_service
+
+- name: Create mixnet_mix service file
+  block:
+    - name: Creating mixnet_mix systemd service file
+      copy:
+        content: |
+          [Unit]
+          Description=Mixnet Mix Service
+          After=network.target
+          
+          [Service]
+          Type=simple
+          User=root
+          WorkingDirectory={{ base_dir }}
+          ExecStart={{ base_dir }}/server -f {{ base_dir }}/katzenpost.toml
+          Restart=always
+          RestartSec=5
+          
+          [Install]
+          WantedBy=multi-user.target
+        dest: "/etc/systemd/system/mixnet_mix.service"
+  when: not mixnet_mix_service.stat.exists
+
+- name: Reload systemd to recognize mixnet service
+  ansible.builtin.systemd:
+    daemon_reload: yes
+  when: not mixnet_mix_service.stat.exists
+
+- name: Ensure mixnet_mix service is started and enabled
+  ansible.builtin.systemd:
+    name: mixnet_mix
+    state: started
+    enabled: yes
+
+- name: Output systemctl status of mixnet_mix
+  ansible.builtin.shell: systemctl status mixnet_mix
+  register: service_status
+
+- name: Print the registered status output
+  ansible.builtin.debug:
+    var: service_status.stdout
+
+- name: Check if NTP is already synchronized
+  command: timedatectl status
+  register: timedatectl_status
+  failed_when: timedatectl_status.rc != 0
+  changed_when: false

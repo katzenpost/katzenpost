@@ -1,0 +1,234 @@
+---
+- name: Build and Configure Katzenpost
+  hosts: katzenpost_builder
+  become: yes
+  environment:
+    GOROOT: /usr/local/go
+    GOPATH: "{{ ansible_env.HOME }}/go"
+    GOFLAGS: "-buildvcs=false"
+    PATH: "{{ ansible_env.PATH }}:/usr/local/go/bin:{{ ansible_env.HOME }}/go/bin"
+  vars:
+    go_version: "1.21.3"
+    go_tarball: "go{{ go_version }}.linux-amd64.tar.gz"
+    go_download_url: "https://go.dev/dl/{{ go_tarball }}"
+    go_checksum: "1241381b2843fae5a9707eec1f8fb2ef94d827990582c7c7c32f5bdfbfd420c8"
+    project_dir: "/opt/katzenpost"
+    configs_dir: "voting_mixnet"
+    dependencies: [ git, build-essential, zip ]
+    files_dir:
+
+  tasks:
+    - name: Load configuration variables from config.yml
+      include_vars:
+        file: config.yml
+        name: config
+    - name: Ensure artifacts directories exist
+      file:
+        path: "./artifacts"
+        state: directory
+
+    - name: Install required dependencies
+      apt:
+        name: "{{ dependencies }}"
+        state: present
+        update_cache: yes
+
+    - name: Setup Go environment
+      block:
+        - name: Download and extract Go tarball
+          get_url:
+            url: "{{ go_download_url }}"
+            dest: "/tmp/{{ go_tarball }}"
+            checksum: "sha256:{{ go_checksum }}"
+        - name: Extract Go tarball
+          ansible.builtin.unarchive:
+            src: "/tmp/{{ go_tarball }}"
+            dest: /usr/local
+            remote_src: yes
+            creates: "/usr/local/go/bin/go"
+        - name: Set Go environment paths
+          blockinfile:
+            path: /etc/profile.d/katzenpost.sh
+            block: |
+              export GOROOT=/usr/local/go
+              export GOPATH=$HOME/go
+              export GOFLAGS="-buildvcs=false"
+              export PATH=$PATH:/usr/local/go/bin:$HOME/go/bin
+            create: yes
+      notify: Refresh shell environment
+    - name: Clone and build Katzenpost components
+      block:
+        - name: Clone Katzenpost repository
+          git:
+            repo: "https://github.com/katzenpost/katzenpost.git"
+            dest: "{{ project_dir }}"
+            version: main
+            clone: yes
+            update: yes
+        - name: Build Katzenpost server components
+          shell: |
+            source /etc/profile.d/katzenpost.sh
+            cd "{{ project_dir }}"
+            make all
+          args:
+            executable: /bin/bash
+        - name: Build additional Katzenpost components
+          shell: |
+            source /etc/profile.d/katzenpost.sh
+            cd {{ project_dir }}/{{ item.path }}
+            go build -trimpath -ldflags "{{ item.ldflags }}"
+          loop:
+            - { path: "memspool/server/cmd/memspool", ldflags: "-buildid= -X github.com/katzenpost/katzenpost/core/epochtime.WarpedEpoch=true -X github.com/katzenpost/katzenpost/server/internal/pki.WarpedEpoch=true -X github.com/katzenpost/katzenpost/minclient/pki.WarpedEpoch=true" }
+            - { path: "panda/server/cmd/panda_server", ldflags: "-buildid= -X github.com/katzenpost/katzenpost/core/epochtime.WarpedEpoch=true -X github.com/katzenpost/katzenpost/server/internal/pki.WarpedEpoch=true -X github.com/katzenpost/katzenpost/minclient/pki.WarpedEpoch=true" }
+          args:
+            executable: /bin/bash
+
+    - name: Prepare directory and Copy build artifacts
+      block:
+        - name: Prepare directory for build artifacts
+          file:
+            path: "/home/ubuntu/bin"
+            state: directory
+          become: yes
+        - name: Copy build artifacts to a common directory
+          copy:
+            src: "{{ item.src }}"
+            dest: "/home/ubuntu/bin/{{ item.dest }}"
+            remote_src: yes
+          loop:
+            - { src: "{{ project_dir }}/server/cmd/server/server", dest: "server" }
+            - { src: "{{ project_dir }}/authority/cmd/voting/voting", dest: "voting" }
+            - { src: "{{ project_dir }}/ping/ping", dest: "ping" }
+            - { src: "{{ project_dir }}/memspool/server/cmd/memspool/memspool", dest: "memspool" }
+            - { src: "{{ project_dir }}/panda/server/cmd/panda_server/panda_server", dest: "panda_server" }
+          become: yes
+    - name: Build and Transfer Build Artifacts
+      block:
+        - name: Zip the bin directory on the remote host
+          shell: cd /home/ubuntu && zip -r bin.zip bin
+          args:
+            executable: /bin/bash
+          become: yes
+        - name: Fetch the zip file to the local machine
+          fetch:
+            src: "/home/ubuntu/bin.zip"
+            dest: "./artifacts/bin.zip"
+            flat: yes
+        - name: Unzip the bin directory locally
+          command: unzip -o "./artifacts/bin.zip" -d "./artifacts"
+          delegate_to: localhost
+          run_once: true
+          become: false
+    - name: generate Configuration of Katzenpost Network
+      block:
+        - name: Generate network configurations with genconfig
+          shell: |
+            mkdir -p "{{ configs_dir }}"
+            {{ project_dir }}/genconfig/genconfig \
+              -v \
+              -n {{ config.mix_count }} \
+              -p {{ config.provider_count }} \
+              -nv {{ config.dirauth_count }} \
+              -sr {{ config.sr }} \
+              -mu {{ config.mu }} \
+              -muMax {{ config.muMax }} \
+              -lP {{ config.lP }} \
+              -lPMax {{ config.lPMax }} \
+              -lL {{ config.lL }} \
+              -lLMax {{ config.lLMax }} \
+              -lD {{ config.lD }} \
+              -lDMax {{ config.lDMax }} \
+              -lM {{ config.lM }} \
+              -lMMax {{ config.lMMax }} \
+              -UserForwardPayloadLength {{ config.UserForwardPayloadLength }} \
+              -nike "{{ config.nike }}" \
+              -kem "{{ config.kem }}" \
+              -o "./{{ configs_dir }}" \
+              -b "/{{ configs_dir }}" \
+              -P {{ config.base_port }} \
+              -a "{{ config.bind_addr }}" \
+              -log_level {{ config.log_level }}
+          args:
+            executable: /bin/bash
+        # this task block updates the IP addresses in the generated configuration files
+        - name: Transfer and Execute Configuration Scripts
+          block:
+            - name: Copy hosts_mixnet.ini to builder host
+              copy:
+                src: ../hosts_mixnet.ini
+                dest: /home/ubuntu/hosts_mixnet.ini
+              become: yes
+            - name: Copy update_address.py to builder host
+              copy:
+                src: ../scripts/update_address.py
+                dest: /home/ubuntu/update_address.py
+              become: yes
+            - name: Execute update_address.py on builder host
+              command: python3 /home/ubuntu/update_address.py
+              args:
+                chdir: /home/ubuntu
+              become: yes
+        - name: Archive and Transfer Configuration Files
+          block:
+            - name: zip config files without including the parent 'home/ubuntu' directory
+              shell: cd /home/ubuntu && zip -r {{ configs_dir }}.zip {{ configs_dir }}
+              args:
+                executable: /bin/bash
+              register: zip_output
+              become: yes
+            - name: Copy config files to local machine
+              fetch:
+                src: "/home/ubuntu/{{ configs_dir }}.zip"
+                dest: "./artifacts/{{ configs_dir }}.zip"
+                flat: yes
+            - name: Unzip config files locally
+              command: unzip -o "./artifacts/{{ configs_dir }}.zip" -d "./artifacts"
+              delegate_to: localhost
+              run_once: true
+              become: false
+    - name: Distribute Public Key Infrastructure (PKI) Files
+      block:
+        - name: Find all *.public.pem files in voting_mixnet
+          ansible.builtin.find:
+            paths: "/home/ubuntu/{{ configs_dir }}"
+            patterns: "*.public.pem"
+            recurse: yes
+          register: public_pem_files
+        - name: Create directory structure for mixnet_pki
+          file:
+            path: "{{ project_dir }}/mixnet_pki/{{ item.path | regex_replace('^/home/ubuntu/' + configs_dir + '/', '') | regex_replace('/[^/]+$', '') }}"
+            state: directory
+          loop: "{{ public_pem_files.files }}"
+          loop_control:
+            label: "{{ item.path }}"
+          become: yes
+        - name: Copy found *.public.pem files to mixnet_pki directory on remote host
+          ansible.builtin.copy:
+            src: "{{ item.path }}"
+            dest: "{{ project_dir }}/mixnet_pki/{{ item.path | regex_replace('^/home/ubuntu/' + configs_dir + '/', '') }}"
+            remote_src: yes
+          loop: "{{ public_pem_files.files }}"
+          loop_control:
+            label: "{{ item.path }}"
+          become: yes
+        - name: Zip mixnet_pki directory on remote host
+          shell: cd "{{ project_dir }}" && zip -r mixnet_pki.zip mixnet_pki
+          args:
+            executable: /bin/bash
+          become: yes
+          register: zip_mixnet_pki_output
+        - name: Copy mixnet_pki.zip to local machine
+          fetch:
+            src: "{{ project_dir }}/mixnet_pki.zip"
+            dest: "./artifacts/mixnet_pki.zip"
+            flat: yes
+        - name: Unzip mixnet_pki directory locally
+          command: unzip -o "./artifacts/mixnet_pki.zip" -d "./artifacts"
+          delegate_to: localhost
+          run_once: true
+          become: false
+  handlers:
+    - name: Refresh shell environment
+      shell: source /etc/profile.d/katzenpost.sh
+      args:
+        executable: /bin/bash

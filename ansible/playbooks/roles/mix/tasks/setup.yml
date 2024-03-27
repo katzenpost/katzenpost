@@ -1,0 +1,16 @@
+---
+- name: Copy server server binary to node
+  copy:
+    src: "{{ artifacts_dir }}/bin/server"
+    dest: "{{ base_dir }}/server"
+    mode: '0755'
+
+- name: Copy katzenpost configuration to node
+  copy:
+    src: "{{ artifacts_dir }}/voting_mixnet/mix{{ ansible_play_batch.index(inventory_hostname) + 1 }}/katzenpost.toml"
+    dest: "{{ base_dir }}/katzenpost.toml"
+
+- name: Replace ansible_host IP address with 127.0.0.1 in authority.toml using sed
+  ansible.builtin.shell: "sed -i 's/{{ ansible_host }}/127.0.0.1/g' {{ base_dir }}/katzenpost.toml"
+  args:
+    executable: /bin/bash

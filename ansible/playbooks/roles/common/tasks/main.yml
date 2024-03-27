@@ -1,0 +1,48 @@
+---
+- name: Ensure system is updated
+  ansible.builtin.apt:
+    update_cache: yes
+    cache_valid_time: 3600  # 1 hour
+- name: Install required packages
+  ansible.builtin.apt:
+    name:
+      - ntp
+    state: present
+- name: Ensure base directory exists
+  ansible.builtin.file:
+    path: "/opt/katzenpost"
+    state: directory
+- name: Ensure mixnet pki directory exists
+  ansible.builtin.file:
+    path: "/voting_mixnet"
+    state: directory
+- name: Check if NTP is already synchronized
+  command: timedatectl status
+  register: timedatectl_status
+  failed_when: timedatectl_status.rc != 0
+  changed_when: false
+
+- name: Debug timedatectl output
+  debug:
+    var: timedatectl_status.stdout_lines
+
+- name: Configure NTP if not synchronized
+  block:
+    - name: Configure NTP
+      lineinfile:
+        path: /etc/ntp.conf
+        regexp: "^pool"
+        line: "pool {{ ntp_server }}"
+      loop:
+        - "0.ubuntu.pool.ntp.org"
+        - "1.ubuntu.pool.ntp.org"
+        - "2.ubuntu.pool.ntp.org"
+        - "3.ubuntu.pool.ntp.org"
+      loop_control:
+        loop_var: ntp_server
+
+    - name: Restart NTP service
+      systemd:
+        name: ntp
+        state: restarted
+  when: "'not synchronized' in timedatectl_status.stdout"

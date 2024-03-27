@@ -1,0 +1,40 @@
+---
+- name: Copy Authority voting binary to node
+  copy:
+    src: "{{ artifacts_dir }}/bin/voting"
+    dest: "{{ base_dir }}/voting"
+    mode: '0755'
+
+- name: Copy Authority configuration to node
+  copy:
+    src: "{{ artifacts_dir }}/voting_mixnet/auth{{ ansible_play_batch.index(inventory_hostname) + 1 }}/authority.toml"
+    dest: "{{ base_dir }}/authority.toml"
+
+- name: Replace ansible_host IP address with 127.0.0.1 in authority.toml using sed
+  ansible.builtin.shell: "sed -i 's/{{ ansible_host }}/127.0.0.1/g' {{ base_dir }}/authority.toml"
+  args:
+    executable: /bin/bash
+
+- name: Copy recursively mixnet_pki dir to base_dir/mixnet_pki
+  copy:
+    src: "{{ artifacts_dir }}/mixnet_pki/"
+    dest: "/voting_mixnet"
+
+- name: Set permissions for voting_mixnet directories
+  file:
+    path: "/voting_mixnet"
+    state: directory
+    mode: "0700"
+    recurse: yes
+
+- name: Copy identity private key to node
+  copy:
+    src: "{{ artifacts_dir }}/voting_mixnet/auth{{ ansible_play_batch.index(inventory_hostname) + 1 }}/identity.private.pem"
+    dest: "/voting_mixnet/auth{{ ansible_play_batch.index(inventory_hostname) + 1 }}/identity.private.pem"
+    mode: '0600'
+
+- name: Copy link private key to node
+  copy:
+    src: "{{ artifacts_dir }}/voting_mixnet/auth{{ ansible_play_batch.index(inventory_hostname) + 1 }}/link.private.pem"
+    dest: "/voting_mixnet/auth{{ ansible_play_batch.index(inventory_hostname) + 1 }}/link.private.pem"
+    mode: '0600'
