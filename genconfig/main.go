@@ -95,7 +95,7 @@ func (s *katzenpost) genClientCfg() error {
 	s.clientIdx++
 
 	// Logging section.
-	cfg.Logging = &cConfig.Logging{File: "", Level: s.logLevel}
+	cfg.Logging = &cConfig.Logging{File: "/tmp/client.log", Level: s.logLevel}
 
 	// UpstreamProxy section
 	cfg.UpstreamProxy = &cConfig.UpstreamProxy{Type: "none"}
@@ -205,7 +205,19 @@ func (s *katzenpost) genNodeConfig(isProvider bool, isVoting bool) error {
 					"log_dir":    s.baseDir + "/" + cfg.Server.Identifier,
 				},
 			}
-			cfg.Provider.CBORPluginKaetzchen = []*sConfig.CBORPluginKaetzchen{spoolCfg}
+
+			httpProxyCfg := &sConfig.CBORPluginKaetzchen{
+				Capability:     "http_proxy",
+				Endpoint:       "http_proxy",
+				Command:        s.baseDir + "/http_proxy" + s.binSuffix,
+				MaxConcurrency: 1,
+				Config: map[string]interface{}{
+					"log_dir":  s.baseDir + "/" + cfg.Server.Identifier,
+					"dest_url": "https://ethereum-rpc.publicnode.com",
+				},
+			}
+			cfg.Provider.CBORPluginKaetzchen = []*sConfig.CBORPluginKaetzchen{spoolCfg, httpProxyCfg}
+
 			if !s.hasPanda {
 				pandaCfg := &sConfig.CBORPluginKaetzchen{
 					Capability:     "panda",
@@ -227,25 +239,6 @@ func (s *katzenpost) genNodeConfig(isProvider bool, isVoting bool) error {
 		echoCfg.Capability = "echo"
 		echoCfg.Endpoint = "+echo"
 		cfg.Provider.Kaetzchen = append(cfg.Provider.Kaetzchen, echoCfg)
-
-		/*
-			keysvrCfg := new(sConfig.Kaetzchen)
-			keysvrCfg.Capability = "keyserver"
-			keysvrCfg.Endpoint = "+keyserver"
-			cfg.Provider.Kaetzchen = append(cfg.Provider.Kaetzchen, keysvrCfg)
-
-				if s.providerIdx == 1 {
-					cfg.Debug.NumProviderWorkers = 10
-					cfg.Provider.SQLDB = new(sConfig.SQLDB)
-					cfg.Provider.SQLDB.Backend = "pgx"
-					cfg.Provider.SQLDB.DataSourceName = "host=localhost port=5432 database=katzenpost sslmode=disable"
-					cfg.Provider.UserDB = new(sConfig.UserDB)
-					cfg.Provider.UserDB.Backend = sConfig.BackendSQL
-
-					cfg.Provider.SpoolDB = new(sConfig.SpoolDB)
-					cfg.Provider.SpoolDB.Backend = sConfig.BackendSQL
-				}
-		*/
 	} else {
 		s.nodeIdx++
 	}
