@@ -119,7 +119,9 @@ func (s *proxyRequestHandler) OnCommand(cmd cborplugin.Command) (cborplugin.Comm
 			return nil, fmt.Errorf("http.ReadRequest failed: %s", err)
 		}
 
-		newRequest, err := http.NewRequest("POST", s.dest.String(), request.Body)
+		newRequest, err := http.NewRequest(request.Method, s.dest.String(), request.Body)
+		newRequest.Header.Set("Content-Type", request.Header.Get("Content-Type"))
+		newRequest.Header.Set("Content-Length", request.Header.Get("Content-Length"))
 
 		resp, err := http.DefaultClient.Do(newRequest)
 		if err != nil {
