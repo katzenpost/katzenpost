@@ -34,7 +34,7 @@ lDMax=3000
 lM=0.0005
 lMMax=100
 
-UserForwardPayloadLength=10000
+UserForwardPayloadLength=15000
 
 # hybrid ctidh PQ can work here, but requires manually building ctidh.
 nike=x25519
