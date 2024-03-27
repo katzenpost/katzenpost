@@ -120,6 +120,10 @@ func (s *proxyRequestHandler) OnCommand(cmd cborplugin.Command) (cborplugin.Comm
 		}
 
 		newRequest, err := http.NewRequest("POST", s.dest.String(), request.Body)
+		if err != nil {
+			s.log.Errorf("http.NewRequest failed: %s", err)
+			return nil, fmt.Errorf("http.NewRequest failed: %s", err)
+		}
 
 		resp, err := http.DefaultClient.Do(newRequest)
 		if err != nil {
@@ -128,7 +132,6 @@ func (s *proxyRequestHandler) OnCommand(cmd cborplugin.Command) (cborplugin.Comm
 		}
 		defer resp.Body.Close()
 
-		//resp.Header = http.Header{}
 		resp.Header["Host"] = []string{request.URL.Host}
 
 		body, err := io.ReadAll(resp.Body)
@@ -139,7 +142,16 @@ func (s *proxyRequestHandler) OnCommand(cmd cborplugin.Command) (cborplugin.Comm
 
 		s.log.Debugf("Reply payload: %s", body)
 
-		return &cborplugin.Response{Payload: body}, nil
+		response := http_proxy.Response{
+			Payload: body,
+		}
+		payload, err := cbor.Marshal(response)
+		if err != nil {
+			s.log.Errorf("cbor.Marshal(response) failed: %s", err)
+			return nil, fmt.Errorf("cbor.Marshal(response) failed: %s", err)
+		}
+
+		return &cborplugin.Response{Payload: payload}, nil
 	default:
 		s.log.Errorf("OnCommand called with unknown Command type")
 		return nil, errors.New("Invalid Command type")
