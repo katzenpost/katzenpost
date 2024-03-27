@@ -34,7 +34,7 @@ import (
 
 	"github.com/awnumar/memguard"
 	"github.com/fxamacker/cbor/v2"
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/hpqc/rand"
 	"golang.org/x/crypto/curve25519"
 )
 

@@ -23,11 +23,12 @@ import (
 	"time"
 
 	"github.com/carlmjohnson/versioninfo"
+
+	"github.com/katzenpost/hpqc/rand"
+	"github.com/katzenpost/katzenpost/client/config"
 	"github.com/katzenpost/katzenpost/client2"
 	"github.com/katzenpost/katzenpost/client2/common"
-	"github.com/katzenpost/katzenpost/client2/config"
 	"github.com/katzenpost/katzenpost/client2/thin"
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
 )
 
 func randUser() string {

@@ -32,10 +32,12 @@ import (
 	"github.com/fxamacker/cbor/v2"
 	"gopkg.in/eapache/channels.v1"
 
+	"github.com/katzenpost/hpqc/rand"
+
+	"github.com/katzenpost/katzenpost/client"
 	cConstants "github.com/katzenpost/katzenpost/client/constants"
-	client2common "github.com/katzenpost/katzenpost/client2/common"
-	"github.com/katzenpost/katzenpost/client2/thin"
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	cUtils "github.com/katzenpost/katzenpost/client/utils"
+	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/utils"
@@ -1100,7 +1102,7 @@ func (c *Client) handleReply(replyEvent *thin.MessageReplyEvent) {
 		case *SentMessageDescriptor:
 			// Deserialize spoolresponse
 			spoolResponse := common.SpoolResponse{}
-			err := cbor.Unmarshal(replyEvent.Payload, &spoolResponse)
+			_, err := cbor.UnmarshalFirst(replyEvent.Payload, &spoolResponse)
 			if err != nil {
 				c.log.Errorf("Could not deserialize SpoolResponse to message ID %x: %s", tp.MessageID[:], err)
 				c.eventCh.In() <- &MessageNotDeliveredEvent{Nickname: tp.Nickname, MessageID: tp.MessageID,
@@ -1143,7 +1145,7 @@ func (c *Client) handleReply(replyEvent *thin.MessageReplyEvent) {
 		case *ReadMessageDescriptor:
 			// Deserialize spoolresponse
 			spoolResponse := common.SpoolResponse{}
-			err := cbor.Unmarshal(replyEvent.Payload, &spoolResponse)
+			_, err := cbor.UnmarshalFirst(replyEvent.Payload, &spoolResponse)
 			if err != nil {
 				c.log.Errorf("Could not deserialize SpoolResponse to ReadInbox ID %x: %s", tp.MessageID[:], err)
 				return
@@ -1286,7 +1288,7 @@ func (c *Client) decryptMessage(messageID *[cConstants.MessageIDLength]byte, cip
 			nickname = contact.Nickname
 
 			// if the message is a cbor-encoded Message, extract the fields
-			err := cbor.Unmarshal(plaintext, &message)
+			_, err := cbor.UnmarshalFirst(plaintext, &message)
 			if err != nil {
 				// FIXME: sometime soon, we should remove this
 				// backwards-compatibility code path which allows receiving

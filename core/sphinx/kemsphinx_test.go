@@ -22,11 +22,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/cloudflare/circl/kem"
-	"github.com/cloudflare/circl/kem/hybrid"
-	"github.com/cloudflare/circl/kem/kyber/kyber1024"
-	"github.com/cloudflare/circl/kem/kyber/kyber512"
-	"github.com/cloudflare/circl/kem/kyber/kyber768"
+	"github.com/katzenpost/hpqc/kem"
+	"github.com/katzenpost/hpqc/kem/schemes"
 
 	"github.com/katzenpost/katzenpost/core/sphinx/commands"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
@@ -42,7 +39,7 @@ type kemNodeParams struct {
 
 func TestKEMSphinxSimple(t *testing.T) {
 	t.Parallel()
-	mykem := hybrid.Kyber768X25519()
+	mykem := schemes.ByName("Kyber768-X25519")
 	withSURB := false
 	g := geo.KEMGeometryFromUserForwardPayloadLength(mykem, 512, withSURB, 5)
 	sphinx := NewKEMSphinx(mykem, g)
@@ -54,26 +51,26 @@ func TestKEMSphinxGeometry(t *testing.T) {
 	require := require.New(t)
 
 	withSURB := false
-	g := geo.KEMGeometryFromUserForwardPayloadLength(kyber512.Scheme(), 512, withSURB, 5)
+	g := geo.KEMGeometryFromUserForwardPayloadLength(schemes.ByName("Kyber512"), 512, withSURB, 5)
 	t.Logf("KEMSphinx Kyber512 5 hops: HeaderLength = %d", g.HeaderLength)
-	g = geo.KEMGeometryFromUserForwardPayloadLength(kyber512.Scheme(), 512, withSURB, 10)
+	g = geo.KEMGeometryFromUserForwardPayloadLength(schemes.ByName("Kyber512"), 512, withSURB, 10)
 	t.Logf("KEMSphinx Kyber512 10 hops: HeaderLength = %d", g.HeaderLength)
-	g = geo.KEMGeometryFromUserForwardPayloadLength(kyber768.Scheme(), 512, withSURB, 5)
+	g = geo.KEMGeometryFromUserForwardPayloadLength(schemes.ByName("Kyber768"), 512, withSURB, 5)
 	t.Logf("KEMSphinx Kyber768 5 hops: HeaderLength = %d", g.HeaderLength)
-	g = geo.KEMGeometryFromUserForwardPayloadLength(kyber768.Scheme(), 512, withSURB, 10)
+	g = geo.KEMGeometryFromUserForwardPayloadLength(schemes.ByName("Kyber768"), 512, withSURB, 10)
 	t.Logf("KEMSphinx Kyber768 10 hops: HeaderLength = %d", g.HeaderLength)
-	g = geo.KEMGeometryFromUserForwardPayloadLength(kyber1024.Scheme(), 512, withSURB, 5)
+	g = geo.KEMGeometryFromUserForwardPayloadLength(schemes.ByName("Kyber1024"), 512, withSURB, 5)
 	t.Logf("KEMSphinx Kyber1024 5 hops: HeaderLength = %d", g.HeaderLength)
-	g = geo.KEMGeometryFromUserForwardPayloadLength(kyber1024.Scheme(), 512, withSURB, 10)
+	g = geo.KEMGeometryFromUserForwardPayloadLength(schemes.ByName("Kyber1024"), 512, withSURB, 10)
 	t.Logf("KEMSphinx Kyber1024 10 hops: HeaderLength = %d", g.HeaderLength)
-	g = geo.KEMGeometryFromUserForwardPayloadLength(hybrid.Kyber768X25519(), 512, withSURB, 5)
+	g = geo.KEMGeometryFromUserForwardPayloadLength(schemes.ByName("Kyber768-X25519"), 512, withSURB, 5)
 	t.Logf("KEMSphinx Kyber768X25519 5 hops: HeaderLength = %d", g.HeaderLength)
-	g = geo.KEMGeometryFromUserForwardPayloadLength(hybrid.Kyber768X25519(), 512, withSURB, 10)
+	g = geo.KEMGeometryFromUserForwardPayloadLength(schemes.ByName("Kyber768-X25519"), 512, withSURB, 10)
 	t.Logf("KEMSphinx Kyber768X25519 10 hops: HeaderLength = %d", g.HeaderLength)
-	g = geo.KEMGeometryFromUserForwardPayloadLength(hybrid.Kyber768X25519(), 512, withSURB, 20)
+	g = geo.KEMGeometryFromUserForwardPayloadLength(schemes.ByName("Kyber768-X25519"), 512, withSURB, 20)
 	t.Logf("KEMSphinx Kyber768X25519 20 hops: HeaderLength = %d", g.HeaderLength)
 
-	mykem := hybrid.Kyber768X25519()
+	mykem := schemes.ByName("Kyber768-X25519")
 	withSURB = true
 	payloadLen := 2000
 
@@ -101,7 +98,7 @@ func TestKEMForwardSphinx(t *testing.T) {
 	t.Parallel()
 	const testPayload = "Only the mob and the elite can be attracted by the momentum of totalitarianism itself. The masses have to be won by propaganda."
 
-	mykem := hybrid.Kyber768X25519()
+	mykem := schemes.ByName("Kyber768-X25519")
 
 	g := geo.KEMGeometryFromUserForwardPayloadLength(mykem, len(testPayload), false, 20)
 	sphinx := NewKEMSphinx(mykem, g)
@@ -112,7 +109,7 @@ func TestKEMSphinxSURB(t *testing.T) {
 	t.Parallel()
 	const testPayload = "The smallest minority on earth is the individual.  Those who deny individual rights cannot claim to be defenders of minorities."
 
-	mykem := hybrid.Kyber768X25519()
+	mykem := schemes.ByName("Kyber768-X25519")
 	g := geo.KEMGeometryFromUserForwardPayloadLength(mykem, len(testPayload), false, 20)
 	sphinx := NewKEMSphinx(mykem, g)
 	testSURBKEMSphinx(t, mykem, sphinx, []byte(testPayload))

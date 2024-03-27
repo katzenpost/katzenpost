@@ -20,8 +20,8 @@ import (
 	"encoding/binary"
 	"errors"
 
-	"github.com/katzenpost/katzenpost/core/crypto/cert"
-	"github.com/katzenpost/katzenpost/core/crypto/sign"
+	"github.com/katzenpost/hpqc/sign"
+	"github.com/katzenpost/katzenpost/core/cert"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/utils"
@@ -285,7 +285,11 @@ func (v *GetVote) ToBytes() []byte {
 	out[0] = byte(getVote)
 	binary.BigEndian.PutUint32(out[2:6], uint32(VoteOverhead))
 	binary.BigEndian.PutUint64(out[6:14], v.Epoch)
-	out = append(out, v.PublicKey.Bytes()...)
+	blob, err := v.PublicKey.MarshalBinary()
+	if err != nil {
+		panic(err)
+	}
+	out = append(out, blob...)
 	return out
 }
 
@@ -401,7 +405,11 @@ func (r *Reveal) ToBytes() []byte {
 	// out[1] reserved
 	binary.BigEndian.PutUint32(out[2:6], uint32(RevealOverhead+len(r.Payload)))
 	binary.BigEndian.PutUint64(out[6:14], r.Epoch)
-	copy(out[14:14+cert.Scheme.PublicKeySize()], r.PublicKey.Bytes())
+	blob, err := r.PublicKey.MarshalBinary()
+	if err != nil {
+		panic(err)
+	}
+	copy(out[14:14+cert.Scheme.PublicKeySize()], blob)
 	out = append(out, r.Payload...)
 	return out
 }
@@ -476,7 +484,11 @@ func (c *Vote) ToBytes() []byte {
 	out[0] = byte(vote)
 	binary.BigEndian.PutUint32(out[2:6], uint32(VoteOverhead+len(c.Payload)))
 	binary.BigEndian.PutUint64(out[6:14], c.Epoch)
-	out = append(out, c.PublicKey.Bytes()...)
+	blob, err := c.PublicKey.MarshalBinary()
+	if err != nil {
+		panic(err)
+	}
+	out = append(out, blob...)
 	out = append(out, c.Payload...)
 	return out
 }
@@ -534,7 +546,11 @@ func (c *Cert) ToBytes() []byte {
 	out[0] = byte(certificate)
 	binary.BigEndian.PutUint32(out[2:6], uint32(CertOverhead+len(c.Payload)))
 	binary.BigEndian.PutUint64(out[6:14], c.Epoch)
-	out = append(out, c.PublicKey.Bytes()...)
+	blob, err := c.PublicKey.MarshalBinary()
+	if err != nil {
+		panic(err)
+	}
+	out = append(out, blob...)
 	out = append(out, c.Payload...)
 	return out
 }
@@ -592,7 +608,11 @@ func (c *Sig) ToBytes() []byte {
 	out[0] = byte(sig)
 	binary.BigEndian.PutUint32(out[2:6], uint32(SigOverhead+len(c.Payload)))
 	binary.BigEndian.PutUint64(out[6:14], c.Epoch)
-	out = append(out, c.PublicKey.Bytes()...)
+	blob, err := c.PublicKey.MarshalBinary()
+	if err != nil {
+		panic(err)
+	}
+	out = append(out, blob...)
 	out = append(out, c.Payload...)
 	return out
 }

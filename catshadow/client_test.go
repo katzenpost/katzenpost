@@ -28,7 +28,8 @@ import (
 	"github.com/charmbracelet/log"
 	"github.com/stretchr/testify/require"
 
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/hpqc/rand"
+
 	"github.com/katzenpost/katzenpost/core/log2"
 )
 

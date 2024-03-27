@@ -24,13 +24,14 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/katzenpost/katzenpost/core/crypto/cert"
-	"github.com/katzenpost/katzenpost/core/crypto/nike/ecdh"
-	"github.com/katzenpost/katzenpost/core/crypto/pem"
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
-	"github.com/katzenpost/katzenpost/core/crypto/sign"
+	"github.com/katzenpost/hpqc/kem"
+	ecdh "github.com/katzenpost/hpqc/nike/x25519"
+	"github.com/katzenpost/hpqc/rand"
+	"github.com/katzenpost/hpqc/sign"
+	signpem "github.com/katzenpost/hpqc/sign/pem"
+
+	"github.com/katzenpost/katzenpost/core/cert"
 	"github.com/katzenpost/katzenpost/core/log"
-	"github.com/katzenpost/katzenpost/core/monotime"
 	"github.com/katzenpost/katzenpost/core/sphinx/commands"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
@@ -53,17 +54,17 @@ func (u *mockUserDB) Exists([]byte) bool {
 	return true
 }
 
-func (u *mockUserDB) IsValid([]byte, wire.PublicKey) bool { return true }
+func (u *mockUserDB) IsValid([]byte, kem.PublicKey) bool { return true }
 
-func (u *mockUserDB) Add([]byte, wire.PublicKey, bool) error { return nil }
+func (u *mockUserDB) Add([]byte, kem.PublicKey, bool) error { return nil }
 
-func (u *mockUserDB) SetIdentity([]byte, wire.PublicKey) error { return nil }
+func (u *mockUserDB) SetIdentity([]byte, kem.PublicKey) error { return nil }
 
-func (u *mockUserDB) Link([]byte) (wire.PublicKey, error) {
+func (u *mockUserDB) Link([]byte) (kem.PublicKey, error) {
 	return nil, nil
 }
 
-func (u *mockUserDB) Identity([]byte) (wire.PublicKey, error) {
+func (u *mockUserDB) Identity([]byte) (kem.PublicKey, error) {
 	return u.provider.userKey, nil
 }
 
@@ -95,7 +96,7 @@ func (s *mockSpool) Close() {}
 
 type mockProvider struct {
 	userName string
-	userKey  wire.PublicKey
+	userKey  kem.PublicKey
 }
 
 func (p *mockProvider) Halt() {}
@@ -133,7 +134,7 @@ type mockServer struct {
 	logBackend        *log.Backend
 	identityKey       sign.PrivateKey
 	identityPublicKey sign.PublicKey
-	linkKey           wire.PrivateKey
+	linkKey           kem.PrivateKey
 	management        *thwack.Server
 	mixKeys           glue.MixKeys
 	pki               glue.PKI
@@ -163,7 +164,7 @@ func (g *mockGlue) IdentityPublicKey() sign.PublicKey {
 	return g.s.identityPublicKey
 }
 
-func (g *mockGlue) LinkKey() wire.PrivateKey {
+func (g *mockGlue) LinkKey() kem.PrivateKey {
 	return g.s.linkKey
 }
 
@@ -226,23 +227,27 @@ func TestKaetzchenWorker(t *testing.T) {
 
 	datadir := os.TempDir()
 
-	idKey, idPubKey := cert.Scheme.NewKeypair()
-	err := pem.ToFile(filepath.Join(datadir, "identity.private.pem"), idKey)
+	idPubKey, idKey, err := cert.Scheme.GenerateKey()
 	require.NoError(t, err)
 
-	err = pem.ToFile(filepath.Join(datadir, "identity.public.pem"), idPubKey)
+	err = signpem.PrivateKeyToFile(filepath.Join(datadir, "identity.private.pem"), idKey)
+	require.NoError(t, err)
+
+	err = signpem.PublicKeyToFile(filepath.Join(datadir, "identity.public.pem"), idPubKey)
 	require.NoError(t, err)
 
 	logBackend, err := log.New("", "DEBUG", false)
 	require.NoError(t, err)
 
 	scheme := wire.DefaultScheme
-	userKey, _ := scheme.GenerateKeypair(rand.Reader)
-	linkKey, _ := scheme.GenerateKeypair(rand.Reader)
+	_, userKey, err := scheme.GenerateKeyPair()
+	require.NoError(t, err)
+	_, linkKey, err := scheme.GenerateKeyPair()
+	require.NoError(t, err)
 
 	mockProvider := &mockProvider{
 		userName: "alice",
-		userKey:  userKey.PublicKey(),
+		userKey:  userKey.Public(),
 	}
 
 	goo := &mockGlue{
@@ -295,7 +300,7 @@ func TestKaetzchenWorker(t *testing.T) {
 	require.True(t, ok)
 
 	geo := geo.GeometryFromUserForwardPayloadLength(
-		ecdh.NewEcdhNike(rand.Reader),
+		ecdh.Scheme(rand.Reader),
 		2000,
 		true,
 		5,
@@ -308,7 +313,7 @@ func TestKaetzchenWorker(t *testing.T) {
 	testPacket.Recipient = &commands.Recipient{
 		ID: recipient,
 	}
-	testPacket.DispatchAt = monotime.Now()
+	testPacket.DispatchAt = time.Now()
 
 	testPacket.Payload = make([]byte, geo.ForwardPayloadLength-1) // off by one erroneous size
 	kaetzWorker.OnKaetzchen(testPacket)
@@ -320,7 +325,7 @@ func TestKaetzchenWorker(t *testing.T) {
 	testPacket.Recipient = &commands.Recipient{
 		ID: recipient,
 	}
-	testPacket.DispatchAt = monotime.Now() - time.Duration(goo.Config().Debug.KaetzchenDelay)*time.Millisecond
+	testPacket.DispatchAt = time.Now().Add(-time.Duration(goo.Config().Debug.KaetzchenDelay)*time.Millisecond)
 	testPacket.Payload = make([]byte, geo.ForwardPayloadLength)
 	kaetzWorker.OnKaetzchen(testPacket)
 
@@ -331,7 +336,7 @@ func TestKaetzchenWorker(t *testing.T) {
 	testPacket.Recipient = &commands.Recipient{
 		ID: recipient,
 	}
-	testPacket.DispatchAt = monotime.Now()
+	testPacket.DispatchAt = time.Now()
 	testPacket.Payload = make([]byte, geo.ForwardPayloadLength)
 
 	kaetzWorker.OnKaetzchen(testPacket)

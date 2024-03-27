@@ -21,6 +21,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/worker"
@@ -151,7 +152,7 @@ func (co *connector) spawnNewConns() {
 }
 
 func (co *connector) onNewConn(c *outgoingConn) {
-	nodeID := c.dst.IdentityKey.Sum256()
+	nodeID := hash.Sum256(c.dst.IdentityKey)
 
 	co.closeAllWg.Add(1)
 	co.Lock()
@@ -167,7 +168,7 @@ func (co *connector) onNewConn(c *outgoingConn) {
 }
 
 func (co *connector) onClosedConn(c *outgoingConn) {
-	nodeID := c.dst.IdentityKey.Sum256()
+	nodeID := hash.Sum256(c.dst.IdentityKey)
 
 	co.Lock()
 	defer func() {

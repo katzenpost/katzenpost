@@ -24,10 +24,9 @@ import (
 
 	"github.com/fxamacker/cbor/v2"
 
+	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/katzenpost/client2/common"
 	"github.com/katzenpost/katzenpost/client2/thin"
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
-	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 )
 
 const MaxEgressQueueSize = 40
@@ -101,7 +100,7 @@ Loop:
 	}
 
 	var replyPayload []byte
-	err = cbor.Unmarshal(reply, &replyPayload)
+	_, err = cbor.UnmarshalFirst(reply, &replyPayload)
 	if err != nil {
 		fmt.Printf("Failed to unmarshal: %s\n", err)
 		panic(err)

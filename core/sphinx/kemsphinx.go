@@ -22,9 +22,9 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/cloudflare/circl/kem"
+	"github.com/katzenpost/hpqc/kem"
 
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/katzenpost/core/sphinx/commands"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/sphinx/internal/crypto"

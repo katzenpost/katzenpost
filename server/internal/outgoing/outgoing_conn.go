@@ -26,9 +26,9 @@ import (
 
 	"github.com/katzenpost/katzenpost/server/internal/instrument"
 
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/hpqc/hash"
+	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/katzenpost/core/epochtime"
-	"github.com/katzenpost/katzenpost/core/monotime"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
@@ -57,12 +57,16 @@ func (c *outgoingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 	// At a minimum, the peer's credentials should match what we started out
 	// with.  This is enforced even if mix authentication is disabled.
 
-	idHash := c.dst.IdentityKey.Sum256()
+	idHash := hash.Sum256(c.dst.IdentityKey)
 	if !hmac.Equal(idHash[:], creds.AdditionalData) {
 		c.log.Debug("IsPeerValid false, identity hash mismatch")
 		return false
 	}
-	if !c.dst.LinkKey.Equal(creds.PublicKey) {
+	keyblob, err := creds.PublicKey.MarshalBinary()
+	if err != nil {
+		panic(err)
+	}
+	if !hmac.Equal(c.dst.LinkKey, keyblob) {
 		c.log.Debug("IsPeerValid false, link key mismatch")
 		return false
 	}
@@ -130,10 +134,14 @@ func (c *outgoingConn) worker() {
 		}
 	}()
 
-	identityHash := c.dst.IdentityKey.Sum256()
+	identityHash := hash.Sum256(c.dst.IdentityKey)
+	linkPubKey, err := wire.DefaultScheme.UnmarshalBinaryPublicKey(c.dst.LinkKey)
+	if err != nil {
+		panic(err)
+	}
 	dialCheckCreds := wire.PeerCredentials{
 		AdditionalData: identityHash[:],
-		PublicKey:      c.dst.LinkKey,
+		PublicKey:      linkPubKey,
 	}
 
 	// Establish the outgoing connection.
@@ -149,7 +157,11 @@ func (c *outgoingConn) worker() {
 			// the cached pointer.
 			if desc != nil {
 				c.dst = desc
-				dialCheckCreds.PublicKey = c.dst.LinkKey
+				linkPubKey, err := wire.DefaultScheme.UnmarshalBinaryPublicKey(c.dst.LinkKey)
+				if err != nil {
+					panic(err)
+				}
+				dialCheckCreds.PublicKey = linkPubKey
 			}
 		} else {
 			c.log.Debugf("Bailing out of Dial loop, no longer in PKI.")
@@ -235,7 +247,7 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 	}()
 
 	// Allocate the session struct.
-	identityHash := c.co.glue.IdentityPublicKey().Sum256()
+	identityHash := hash.Sum256From(c.co.glue.IdentityPublicKey())
 	cfg := &wire.SessionConfig{
 		Geometry:          c.geo,
 		Authenticator:     c,
@@ -333,9 +345,9 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 			continue
 		case pkt = <-c.ch:
 			// Check the packet queue dwell time and drop it if it is excessive.
-			now := monotime.Now()
-			if now-pkt.DispatchAt > time.Duration(c.co.glue.Config().Debug.SendSlack)*time.Millisecond {
-				c.log.Debugf("Dropping packet: %v (Deadline blown by %v)", pkt.ID, now-pkt.DispatchAt)
+			now := time.Now()
+			if now.Sub(pkt.DispatchAt) > time.Duration(c.co.glue.Config().Debug.SendSlack)*time.Millisecond {
+				c.log.Debugf("Dropping packet: %v (Deadline blown by %v)", pkt.ID, now.Sub(pkt.DispatchAt))
 				instrument.DeadlineBlownPacketsDropped()
 				instrument.OutgoingPacketsDropped()
 				instrument.PacketsDropped()

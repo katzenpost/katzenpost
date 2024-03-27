@@ -4,8 +4,8 @@ jobs:
   test:
     strategy:
       matrix:
-        go-version: [1.19.x]
-        os: [ubuntu-22.04]
+        go-version: [1.21.x]
+        os: [ubuntu-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - name: Install Go
@@ -58,8 +58,8 @@ jobs:
       XDG_RUNTIME_DIR: /run
     strategy:
       matrix:
-        go-version: [1.19.x]
-        os: [ubuntu-22.04]
+        go-version: [1.21.x]
+        os: [ubuntu-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout code
@@ -134,8 +134,8 @@ jobs:
       XDG_RUNTIME_DIR: /run
     strategy:
       matrix:
-        go-version: [1.19.x]
-        os: [ubuntu-22.04]
+        go-version: [1.21.x]
+        os: [ubuntu-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout code
@@ -169,8 +169,8 @@ jobs:
       XDG_RUNTIME_DIR: /run
     strategy:
       matrix:
-        go-version: [1.19.x]
-        os: [ubuntu-22.04]
+        go-version: [1.21.x]
+        os: [ubuntu-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout code
@@ -204,8 +204,8 @@ jobs:
       XDG_RUNTIME_DIR: /run
     strategy:
       matrix:
-        go-version: [1.19.x]
-        os: [ubuntu-22.04]
+        go-version: [1.21.x]
+        os: [ubuntu-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout code

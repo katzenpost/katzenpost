@@ -23,10 +23,9 @@ import (
 	mRand "math/rand"
 	"time"
 
-	"github.com/cloudflare/circl/kem"
+	"github.com/katzenpost/hpqc/hash"
+	"github.com/katzenpost/hpqc/rand"
 
-	"github.com/katzenpost/katzenpost/core/crypto/nike"
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/commands"
@@ -75,6 +74,7 @@ selectLoop:
 		then = baseTime
 		path = make([]*PathHop, 0, len(descs))
 		for idx, desc := range descs {
+
 			h := &PathHop{}
 			idHash := desc.IdentityKey.Sum256()
 			copy(h.ID[:], idHash[:])
@@ -138,24 +138,24 @@ func selectHops(rng *mRand.Rand, doc *pki.Document, src, dst *pki.MixDescriptor,
 	var hops []*pki.MixDescriptor
 
 	var startLayer, nHops int
-	idHash := src.IdentityKey.Sum256()
+	idHash := hash.Sum256(src.IdentityKey)
 	srcLayer, err := doc.GetMixLayer(&idHash)
 	if err != nil {
 		return nil, err
 	}
-	idHash = dst.IdentityKey.Sum256()
+	idHash = hash.Sum256(dst.IdentityKey)
 	dstLayer, err := doc.GetMixLayer(&idHash)
 	if err != nil {
 		return nil, err
 	}
 	if isForward {
 		if !dst.Provider {
-			return nil, fmt.Errorf("path: invalid destination (non provider): %x", dst.IdentityKey.Sum256())
+			return nil, fmt.Errorf("path: invalid destination (non provider): %x", hash.Sum256(dst.IdentityKey))
 		}
 		if isFromClient {
 			// Client packets must span provider to provider.
 			if !src.Provider {
-				return nil, fmt.Errorf("path: invalid source from client (non provider): %x", src.IdentityKey.Sum256())
+				return nil, fmt.Errorf("path: invalid source from client (non provider): %x", hash.Sum256(src.IdentityKey))
 			}
 			nHops = len(doc.Topology) + 2
 		} else {

@@ -20,7 +20,7 @@ import (
 	"crypto/rand"
 	"testing"
 
-	"github.com/katzenpost/katzenpost/core/crypto/nike"
+	"github.com/katzenpost/hpqc/nike"
 	"github.com/katzenpost/katzenpost/core/sphinx/commands"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/sphinx/path"

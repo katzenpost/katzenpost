@@ -24,14 +24,15 @@ import (
 	"strings"
 
 	"github.com/BurntSushi/toml"
+	"golang.org/x/crypto/blake2b"
 
+	"github.com/katzenpost/hpqc/kem"
 	vClient "github.com/katzenpost/katzenpost/authority/voting/client"
 	vServerConfig "github.com/katzenpost/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/katzenpost/client/internal/proxy"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
-	"github.com/katzenpost/katzenpost/core/wire"
 )
 
 const (
@@ -114,12 +115,17 @@ type VotingAuthority struct {
 }
 
 // New constructs a pki.Client with the specified voting authority config.
-func (vACfg *VotingAuthority) New(l *log.Backend, pCfg *proxy.Config, linkKey wire.PrivateKey) (pki.Client, error) {
+func (vACfg *VotingAuthority) New(l *log.Backend, pCfg *proxy.Config, linkKey kem.PrivateKey) (pki.Client, error) {
+	blob, err := linkKey.Public().MarshalBinary()
+	if err != nil {
+		return nil, err
+	}
+	linkHash := blake2b.Sum256(blob)
 	cfg := &vClient.Config{
 		LinkKey:       linkKey,
 		LogBackend:    l.GetLogWriter("client", "info"),
 		Authorities:   vACfg.Peers,
-		DialContextFn: pCfg.ToDialContext(fmt.Sprintf("voting: %x", linkKey.PublicKey().Sum256())),
+		DialContextFn: pCfg.ToDialContext(fmt.Sprintf("voting: %x", linkHash)),
 	}
 	return vClient.New(cfg)
 }
@@ -137,7 +143,7 @@ func (vACfg *VotingAuthority) validate() error {
 }
 
 // NewPKIClient returns a voting or nonvoting implementation of pki.Client or error
-func (c *Config) NewPKIClient(l *log.Backend, pCfg *proxy.Config, linkKey wire.PrivateKey) (pki.Client, error) {
+func (c *Config) NewPKIClient(l *log.Backend, pCfg *proxy.Config, linkKey kem.PrivateKey) (pki.Client, error) {
 	switch {
 	case c.VotingAuthority != nil:
 		return c.VotingAuthority.New(l, pCfg, linkKey)
