@@ -37,14 +37,7 @@ import (
 	"github.com/katzenpost/hpqc/sign"
 
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
-
-	"github.com/katzenpost/hpqc/rand"
-	"github.com/katzenpost/hpqc/sign"
-	"github.com/katzenpost/hpqc/sign/pem"
-
 	"github.com/katzenpost/katzenpost/core/cert"
-	"github.com/katzenpost/katzenpost/core/log"
-
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
@@ -56,7 +49,7 @@ var defaultDialer = &net.Dialer{}
 type authorityAuthenticator struct {
 	IdentityPublicKey sign.PublicKey
 	LinkPublicKey     kem.PublicKey
-	log               *logging.Logger
+	log               *log.Logger
 }
 
 // IsPeerValid authenticates the remote peer's credentials, returning true
@@ -64,11 +57,11 @@ type authorityAuthenticator struct {
 func (a *authorityAuthenticator) IsPeerValid(creds *wire.PeerCredentials) bool {
 	identityHash := hash.Sum256From(a.IdentityPublicKey)
 	if !hmac.Equal(identityHash[:], creds.AdditionalData[:hash.HashSize]) {
-		a.log.Warningf("voting/Client: IsPeerValid(): AD mismatch: %x != %x", identityHash[:], creds.AdditionalData[:hash.HashSize])
+		a.log.Warnf("voting/Client: IsPeerValid(): AD mismatch: %x != %x", identityHash[:], creds.AdditionalData[:hash.HashSize])
 		return false
 	}
 	if !a.LinkPublicKey.Equal(creds.PublicKey) {
-		a.log.Warningf("voting/Client: IsPeerValid(): Link Public Key mismatch: %s != %s", kempem.ToPublicPEMString(a.LinkPublicKey), kempem.ToPublicPEMString(creds.PublicKey))
+		a.log.Warnf("voting/Client: IsPeerValid(): Link Public Key mismatch: %s != %s", kempem.ToPublicPEMString(a.LinkPublicKey), kempem.ToPublicPEMString(creds.PublicKey))
 		return false
 	}
 	return true
@@ -215,7 +208,7 @@ func (p *connector) allPeersRoundTrip(ctx context.Context, linkKey kem.PrivateKe
 	for _, peer := range p.cfg.Authorities {
 		conn, err := p.initSession(ctx, doneCh, linkKey, signingKey, peer)
 		if err != nil {
-			p.log.Noticef("pki/voting/client: failure to connect to Authority %s (%x)\n", peer.Identifier, hash.Sum256From(peer.IdentityPublicKey))
+			p.log.Infof("pki/voting/client: failure to connect to Authority %s (%x)\n", peer.Identifier, hash.Sum256From(peer.IdentityPublicKey))
 			continue
 		}
 		resp, err := p.roundTrip(conn.session, cmd)
