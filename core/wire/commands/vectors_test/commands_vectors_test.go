@@ -31,7 +31,6 @@ import (
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 
 	"github.com/katzenpost/katzenpost/core/wire/commands"
-	"github.com/stretchr/testify/assert"
 )
 
 const wireCommandsVectorsFile = "testdata/wire_commands_vectors.json"

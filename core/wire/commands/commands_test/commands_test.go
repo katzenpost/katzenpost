@@ -379,7 +379,7 @@ func TestVote(t *testing.T) {
 
 	alicePub, _, err := cert.Scheme.GenerateKey()
 	require.NoError(err)
-	cmd := &Vote{
+	cmd := &commands.Vote{
 		Epoch:     3141,
 		PublicKey: alicePub,
 		Payload:   []byte{1, 2, 3, 4},
@@ -517,7 +517,7 @@ func TestCert(t *testing.T) {
 	alicePub, _, err := cert.Scheme.GenerateKey()
 	require.NoError(err)
 
-	cmd := &Cert{
+	cmd := &commands.Cert{
 		Epoch:     3141,
 		PublicKey: alicePub,
 		Payload:   []byte{1, 2, 3, 4},
@@ -584,7 +584,7 @@ func TestSig(t *testing.T) {
 	alicePub, _, err := cert.Scheme.GenerateKey()
 	require.NoError(err)
 
-	cmd := &Sig{
+	cmd := &commands.Sig{
 		Epoch:     3141,
 		PublicKey: alicePub,
 		Payload:   []byte{1, 2, 3, 4},
