@@ -32,12 +32,13 @@ import (
 	"github.com/fxamacker/cbor/v2"
 	"gopkg.in/eapache/channels.v1"
 
+	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/rand"
 
-	"github.com/katzenpost/katzenpost/client"
 	cConstants "github.com/katzenpost/katzenpost/client/constants"
-	cUtils "github.com/katzenpost/katzenpost/client/utils"
-	"github.com/katzenpost/katzenpost/core/log"
+	client2common "github.com/katzenpost/katzenpost/client2/common"
+	"github.com/katzenpost/katzenpost/client2/thin"
+
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/utils"
@@ -516,7 +517,7 @@ func (c *Client) doCreateRemoteSpool(provider string, responseChan chan error) {
 		if c.session == nil {
 			panic("thin client reference is nil")
 		}
-		providerHash := desc.MixDescriptor.IdentityKey.Sum256()
+		providerHash := hash.Sum256(desc.MixDescriptor.IdentityKey)
 		spool, err := memspoolclient.NewSpoolReadDescriptor(desc.RecipientQueueID, &providerHash, c.session)
 		if err != nil {
 			select {
@@ -1017,7 +1018,7 @@ func (c *Client) sendReadInbox() {
 	}
 
 	surbid := c.session.NewSURBID()
-	providerKeyHash := providerDesc.IdentityKey.Sum256()
+	providerKeyHash := hash.Sum256(providerDesc.IdentityKey)
 	err = c.session.SendMessage(surbid, cmd, &providerKeyHash, c.spoolReadDescriptor.Receiver)
 	switch err.(type) {
 	case nil:
