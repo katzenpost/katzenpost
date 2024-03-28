@@ -15,6 +15,7 @@ import (
 
 	"github.com/charmbracelet/log"
 
+	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/rand"
 
 	"github.com/katzenpost/katzenpost/core/epochtime"
@@ -164,12 +165,23 @@ func (c *connection) getDescriptor() error {
 			return errors.New("No PinnedProviders")
 		}
 		provider := c.client.cfg.PinnedProviders.Providers[rand.NewMath().Intn(n)]
-		idHash := provider.IdentityKey.Sum256()
+		idHash := hash.Sum256From(provider.IdentityKey)
 		c.provider = &idHash
+
+		idkey, err := provider.IdentityKey.MarshalBinary()
+		if err != nil {
+			return err
+		}
+
+		linkkey, err := provider.LinkKey.MarshalBinary()
+		if err != nil {
+			return err
+		}
+
 		c.descriptor = &cpki.MixDescriptor{
 			Name:        provider.Name,
-			IdentityKey: provider.IdentityKey,
-			LinkKey:     provider.LinkKey,
+			IdentityKey: idkey,
+			LinkKey:     linkkey,
 			Addresses:   provider.Addresses,
 			Provider:    true,
 		}
@@ -184,14 +196,14 @@ func (c *connection) getDescriptor() error {
 			return errors.New("invalid PKI doc, zero Providers")
 		}
 		provider := doc.Providers[rand.NewMath().Intn(n)]
-		idHash := provider.IdentityKey.Sum256()
+		idHash := hash.Sum256(provider.IdentityKey)
 		c.provider = &idHash
 		desc, err := doc.GetProvider(provider.Name)
 		if err != nil {
 			c.log.Debugf("Failed to find descriptor for Provider: %v", err)
 			return newPKIError("failed to find descriptor for Provider: %v", err)
 		}
-		if !provider.IdentityKey.Equal(desc.IdentityKey) {
+		if !hmac.Equal(provider.IdentityKey, desc.IdentityKey) {
 			c.log.Errorf("Provider identity key does not match pinned key: %v", desc.IdentityKey)
 			return newPKIError("identity key for Provider does not match pinned key: %v", desc.IdentityKey)
 		}
@@ -350,7 +362,10 @@ func (c *connection) onTCPConn(conn net.Conn) {
 	}()
 
 	c.log.Debug("onTCPConn: GenerateKeypair")
-	linkKey, _ := wire.DefaultScheme.GenerateKeypair(rand.Reader)
+	_, linkKey, err := wire.DefaultScheme.GenerateKeyPair()
+	if err != nil {
+		panic(err)
+	}
 
 	// Allocate the session struct.
 	userId := make([]byte, 16)
@@ -659,11 +674,15 @@ func (c *connection) onWireConn(w *wire.Session) {
 }
 
 func (c *connection) IsPeerValid(creds *wire.PeerCredentials) bool {
-	if !c.descriptor.LinkKey.Equal(creds.PublicKey) {
+	credsKey, err := creds.PublicKey.MarshalBinary()
+	if err != nil {
+		panic(err)
+	}
+	if !hmac.Equal(c.descriptor.LinkKey, credsKey) {
 		return false
 	}
 
-	identityHash := c.descriptor.IdentityKey.Sum256()
+	identityHash := hash.Sum256(c.descriptor.IdentityKey)
 	if !hmac.Equal(identityHash[:], creds.AdditionalData) {
 		return false
 	}

@@ -13,6 +13,7 @@ import (
 
 	"github.com/charmbracelet/log"
 
+	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/rand"
 
 	"github.com/katzenpost/katzenpost/client2/common"
@@ -434,7 +435,7 @@ func (d *Daemon) sendLoopDecoy(request *Request) {
 	}
 	echoService := echoServices[mrand.Intn(len(echoServices))]
 
-	serviceIdHash := echoService.MixDescriptor.IdentityKey.Sum256()
+	serviceIdHash := hash.Sum256(echoService.MixDescriptor.IdentityKey)
 	payload := make([]byte, d.client.geo.UserForwardPayloadLength)
 	surbID := &[sConstants.SURBIDLength]byte{}
 	_, err := rand.Reader.Read(surbID[:])
@@ -460,7 +461,7 @@ func (d *Daemon) sendDropDecoy() {
 	}
 	echoService := echoServices[mrand.Intn(len(echoServices))]
 
-	serviceIdHash := echoService.MixDescriptor.IdentityKey.Sum256()
+	serviceIdHash := hash.Sum256(echoService.MixDescriptor.IdentityKey)
 	payload := make([]byte, d.client.geo.UserForwardPayloadLength)
 
 	request := &Request{}

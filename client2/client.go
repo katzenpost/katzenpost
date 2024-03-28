@@ -10,8 +10,6 @@ import (
 
 	"github.com/charmbracelet/log"
 
-	"github.com/katzenpost/hpqc/rand"
-
 	"github.com/katzenpost/katzenpost/authority/voting/client"
 	"github.com/katzenpost/katzenpost/client2/config"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
@@ -94,14 +92,16 @@ func (c *Client) Start() error {
 
 	c.conn = newConnection(c)
 
-	pkilinkKey, _ := wire.DefaultScheme.GenerateKeypair(rand.Reader)
+	_, pkilinkKey, err := wire.DefaultScheme.GenerateKeyPair()
+	if err != nil {
+		return err
+	}
 	pkiClientConfig := &client.Config{
 		LinkKey:       pkilinkKey,
 		LogBackend:    c.logbackend,
 		Authorities:   c.cfg.VotingAuthority.Peers,
 		DialContextFn: nil,
 	}
-	var err error
 	c.PKIClient, err = client.New(pkiClientConfig)
 	if err != nil {
 		return err
