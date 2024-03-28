@@ -24,6 +24,8 @@ import (
 	"time"
 
 	"github.com/katzenpost/hpqc/hash"
+	"github.com/katzenpost/hpqc/kem"
+	"github.com/katzenpost/hpqc/nike"
 	"github.com/katzenpost/hpqc/rand"
 
 	"github.com/katzenpost/katzenpost/core/epochtime"
@@ -76,7 +78,7 @@ selectLoop:
 		for idx, desc := range descs {
 
 			h := &PathHop{}
-			idHash := desc.IdentityKey.Sum256()
+			idHash := hash.Sum256(desc.IdentityKey)
 			copy(h.ID[:], idHash[:])
 			epoch, _, _ := epochtime.FromUnix(then.Unix())
 			if _, ok := desc.MixKeys[epoch]; !ok {
