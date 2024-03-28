@@ -75,6 +75,8 @@ make_args=--no-print-directory net_name=$(net_name) docker=$(docker) distro=$(di
 $(net_name):
 	mkdir -p $(net_name)
 
+genconfig: $(docker_compose_yml)
+
 $(docker_compose_yml): ../genconfig/main.go $(distro)_go_mod.stamp $(net_name)
 	$(docker) run ${docker_args} --rm katzenpost-$(distro)_go_mod \
 		$(sh) -c 'cd genconfig && go build && cd ../docker \
