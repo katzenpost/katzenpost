@@ -24,9 +24,12 @@ import (
 
 	"github.com/fxamacker/cbor/v2"
 
+	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/rand"
+
 	"github.com/katzenpost/katzenpost/client2/common"
 	"github.com/katzenpost/katzenpost/client2/thin"
+	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 )
 
 const MaxEgressQueueSize = 40
@@ -70,7 +73,7 @@ func sendPing(client *thin.ThinClient, serviceDesc *common.ServiceDescriptor, pr
 		panic(err)
 	}
 
-	dest := serviceDesc.MixDescriptor.IdentityKey.Sum256()
+	dest := hash.Sum256(serviceDesc.MixDescriptor.IdentityKey)
 	err = client.SendMessage(&surbID, cborPayload, &dest, serviceDesc.RecipientQueueID)
 	if err != nil {
 		fmt.Printf("\nerror: %v\n", err)
