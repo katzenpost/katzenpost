@@ -142,19 +142,18 @@ func (d *MixDescriptor) String() string {
 }
 
 func (d *MixDescriptor) Certificate() (*cert.Certificate, error) {
-	pk, _ := cert.Scheme.NewKeypair()
 	rawDesc, err := ccbor.Marshal((*mixdescriptor)(d))
 	if err != nil {
 		return nil, err
 	}
 	signatures := make(map[[32]byte]cert.Signature)
 	if d.Signature != nil {
-		signatures[d.IdentityKey.Sum256()] = *d.Signature
+		signatures[hash.Sum256(d.IdentityKey)] = *d.Signature
 	}
 	certified := cert.Certificate{
 		Version:    cert.CertVersion,
 		Expiration: d.Epoch + 5,
-		KeyType:    pk.KeyType(),
+		KeyType:    cert.Scheme.Name(),
 		Certified:  rawDesc,
 		Signatures: signatures,
 	}
@@ -170,8 +169,12 @@ func (d *MixDescriptor) Verify() error {
 	if err != nil {
 		return err
 	}
-	cert.Verify(d.IdentityKey, rawCert)
-	return nil
+	idPubKey, err := cert.Scheme.UnmarshalBinaryPublicKey(d.IdentityKey)
+	if err != nil {
+		return err
+	}
+	_, err = cert.Verify(idPubKey, rawCert)
+	return err
 }
 
 // UnmarshalBinary implements encoding.BinaryUnmarshaler interface

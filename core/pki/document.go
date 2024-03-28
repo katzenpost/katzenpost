@@ -299,7 +299,7 @@ func (d *Document) GetProviderKeyHash(provider string) (*[32]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	key := desc.IdentityKey.Sum256()
+	key := hash.Sum256(desc.IdentityKey)
 	return &key, nil
 }
 
