@@ -530,8 +530,8 @@ and can readily scale to millions of users.
 
 	time.Sleep(3 * time.Second)
 
-	require.NotNil(aliceBobConvo1)
-	require.NotNil(aliceBobConvo2)
+	require.NotNil(t, aliceBobConvo1)
+	require.NotNil(t, aliceBobConvo2)
 	newAlice.log.Debug("convo1\n")
 	for i, message := range aliceBobConvo1 {
 		require.True(t, bytes.Equal(message.Plaintext, aliceBobConvo2[i].Plaintext))
