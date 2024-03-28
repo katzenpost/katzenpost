@@ -9,8 +9,9 @@ import (
 
 	"github.com/charmbracelet/log"
 
+	"github.com/katzenpost/hpqc/rand"
+
 	"github.com/katzenpost/katzenpost/client2/thin"
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/worker"
 )

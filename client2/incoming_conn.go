@@ -10,8 +10,10 @@ import (
 
 	"github.com/charmbracelet/log"
 	"github.com/fxamacker/cbor/v2"
+
+	"github.com/katzenpost/hpqc/rand"
+
 	"github.com/katzenpost/katzenpost/client2/thin"
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
 )
 
 var incomingConnID uint64
