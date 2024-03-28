@@ -11,6 +11,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/katzenpost/client2/config"
 	"github.com/katzenpost/katzenpost/client2/thin"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
@@ -115,7 +116,7 @@ func testDockerMultiplexClients(t *testing.T) {
 	}
 	require.True(t, len(pingTargets) > 0)
 	message1 := []byte("hello alice, this is bob.")
-	nodeIdKey := pingTargets[0].IdentityKey.Sum256()
+	nodeIdKey := hash.Sum256(pingTargets[0].IdentityKey)
 
 	for i := 0; i < 2; i++ {
 		reply := sendAndWait(t, thin1, message1, &nodeIdKey, []byte("testdest"))
@@ -159,7 +160,7 @@ func testDockerClientARQSendReceive(t *testing.T) {
 	}
 	require.True(t, len(pingTargets) > 0)
 	message1 := []byte("hello alice, this is bob.")
-	nodeIdKey := pingTargets[0].IdentityKey.Sum256()
+	nodeIdKey := hash.Sum256(pingTargets[0].IdentityKey)
 
 	id1 := thin.NewMessageID()
 	id2 := thin.NewMessageID()
