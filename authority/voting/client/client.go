@@ -27,9 +27,6 @@ import (
 
 	"github.com/charmbracelet/log"
 
-	nyquistkem "github.com/katzenpost/nyquist/kem"
-	"github.com/katzenpost/nyquist/seec"
-
 	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/kem"
 	kempem "github.com/katzenpost/hpqc/kem/pem"
@@ -60,7 +57,7 @@ func (a *authorityAuthenticator) IsPeerValid(creds *wire.PeerCredentials) bool {
 		a.log.Warnf("voting/Client: IsPeerValid(): AD mismatch: %x != %x", identityHash[:], creds.AdditionalData[:hash.HashSize])
 		return false
 	}
-	if !a.LinkPublicKey.Equal(creds.PublicKey) {
+	if a.LinkPublicKey.Equal(creds.PublicKey) {
 		a.log.Warnf("voting/Client: IsPeerValid(): Link Public Key mismatch: %s != %s", kempem.ToPublicPEMString(a.LinkPublicKey), kempem.ToPublicPEMString(creds.PublicKey))
 		return false
 	}
@@ -323,12 +320,10 @@ func (c *Client) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, 
 
 	// Generate a random keypair to use for the link authentication.
 	scheme := wire.DefaultScheme
-	genRand, err := seec.GenKeyPRPAES(rand.Reader, 256)
+	_, linkKey, err := scheme.GenerateKeyPair()
 	if err != nil {
 		return nil, nil, err
 	}
-
-	_, linkKey := nyquistkem.GenerateKeypair(scheme, genRand)
 
 	// Initialize the TCP/IP connection, and wire session.
 	doneCh := make(chan interface{})

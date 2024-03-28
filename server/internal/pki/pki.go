@@ -701,7 +701,7 @@ func New(glue glue.Glue) (glue.PKI, error) {
 
 	pkiCfg := &vClient.Config{
 		LinkKey:     glue.LinkKey(),
-		LogBackend:  glue.LogBackend(),
+		LogBackend:  glue.LogBackend().GetLogWriter("pki", "info"),
 		Authorities: glue.Config().PKI.Voting.Authorities,
 	}
 	p.impl, err = vClient.New(pkiCfg)
