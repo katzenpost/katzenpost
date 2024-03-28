@@ -22,10 +22,10 @@ type Event interface {
 // changes.
 type ConnectionStatusEvent struct {
 	// IsConnected is true iff the client is connected to the entry node.
-	IsConnected bool `cbor:is_connected`
+	IsConnected bool `cbor:"is_connected"`
 
 	// Err is the error encountered when connecting or by the connection if any.
-	Err error `cbor:err`
+	Err error `cbor:"err"`
 }
 
 // String returns a string representation of the ConnectionStatusEvent.
@@ -40,17 +40,17 @@ func (e *ConnectionStatusEvent) String() string {
 type MessageReplyEvent struct {
 	// MessageID is the unique identifier for the request associated with the
 	// reply.
-	MessageID *[MessageIDLength]byte `cbor:message_id`
+	MessageID *[MessageIDLength]byte `cbor:"message_id"`
 
 	// SURBID must be a unique identity for each request.
 	// This field should be nil if WithSURB is false.
-	SURBID *[sConstants.SURBIDLength]byte `cbor:surbid`
+	SURBID *[sConstants.SURBIDLength]byte `cbor:"surbid"`
 
 	// Payload is the reply payload if any.
-	Payload []byte `cbor:payload`
+	Payload []byte `cbor:"payload"`
 
 	// Err is the error encountered when servicing the request if any.
-	Err error `cbor:err`
+	Err error `cbor:"err"`
 }
 
 // String returns a string representation of the MessageReplyEvent.
@@ -65,20 +65,20 @@ func (e *MessageReplyEvent) String() string {
 type MessageSentEvent struct {
 	// MessageID is the local unique identifier for the message, generated
 	// when the message was enqueued.
-	MessageID *[MessageIDLength]byte `cbor:message_id`
+	MessageID *[MessageIDLength]byte `cbor:"message_id"`
 
 	// SURBID must be a unique identity for each request.
 	// This field should be nil if WithSURB is false.
-	SURBID *[sConstants.SURBIDLength]byte `cbor:surbid`
+	SURBID *[sConstants.SURBIDLength]byte `cbor:"surbid"`
 
 	// SentAt contains the time the message was sent.
-	SentAt time.Time `cbor:sent_at`
+	SentAt time.Time `cbor:"sent_at"`
 
 	// ReplyETA is the expected round trip time to receive a response.
-	ReplyETA time.Duration `cbor:reply_eta`
+	ReplyETA time.Duration `cbor:"reply_eta"`
 
 	// Err is the error encountered when sending the message if any.
-	Err error `cbor:err`
+	Err error `cbor:"err"`
 }
 
 // String returns a string representation of a MessageSentEvent.
@@ -93,7 +93,7 @@ func (e *MessageSentEvent) String() string {
 // message ID has been garbage collected.
 type MessageIDGarbageCollected struct {
 	// MessageID is the local unique identifier for the message.
-	MessageID *[MessageIDLength]byte `cbor:message_id`
+	MessageID *[MessageIDLength]byte `cbor:"message_id"`
 }
 
 // String returns a string representation of a MessageIDGarbageCollected.
@@ -104,7 +104,7 @@ func (e *MessageIDGarbageCollected) String() string {
 // NewDocumentEvent is the new document event, signaling that
 // we have received a new document from the PKI.
 type NewDocumentEvent struct {
-	Document *cpki.Document `cbor:document`
+	Document *cpki.Document `cbor:"document"`
 }
 
 // String returns a string representation of a NewDocumentEvent.
@@ -116,7 +116,7 @@ func (e *NewDocumentEvent) String() string {
 // by the daemon to tell the thin client about new PKI document events.
 // The payload field contains a CBOR encoded PKI document, stripped of signatures.
 type NewPKIDocumentEvent struct {
-	Payload []byte `cbor:payload`
+	Payload []byte `cbor:"payload"`
 }
 
 // String returns a string representation of a NewDocumentEvent.
