@@ -17,10 +17,9 @@
 package client
 
 import (
-	"github.com/katzenpost/hpqc/sign"
-	"github.com/katzenpost/hpqc/sign/ed25519"
+	eddsa "github.com/katzenpost/hpqc/sign/ed25519"
 
-	"github.com/katzenpost/katzenpost/client"
+	"github.com/katzenpost/katzenpost/client2/thin"
 	"github.com/katzenpost/katzenpost/memspool/common"
 )
 
@@ -39,39 +38,7 @@ type SpoolWriteDescriptor struct {
 // SpoolReadDescriptor describes a remotely readable spool.
 type SpoolReadDescriptor struct {
 	// PrivateKey is the key material required for reading the described spool.
-	PrivateKey sign.PrivateKey
-
-	// ID is the identity of the described spool.
-	ID [common.SpoolIDSize]byte
-
-	// Receiver is the responding service name of the SURB based spool service.
-	Receiver string
-
-	// Provider is the name of the Provider hosting the spool.
-	Provider string
-
-	// ReadOffset is the number of messages to offset the next read from this
-	// described spool.
-	ReadOffset uint32
-}
-
-func (s *SpoolReadDescriptor) ToCBOR() *CBORSpoolReadDescriptor {
-	privkey, err := s.PrivateKey.MarshalBinary()
-	if err != nil {
-		panic(err)
-	}
-	return &CBORSpoolReadDescriptor{
-		PrivateKey: privkey,
-		ID:         s.ID,
-		Receiver:   s.Receiver,
-		Provider:   s.Provider,
-		ReadOffset: s.ReadOffset,
-	}
-}
-
-type CBORSpoolReadDescriptor struct {
-	// PrivateKey is the key material required for reading the described spool.
-	PrivateKey []byte
+	PrivateKey *eddsa.PrivateKey
 
 	// ID is the identity of the described spool.
 	ID [common.SpoolIDSize]byte
@@ -104,8 +71,9 @@ func (r *SpoolReadDescriptor) GetWriteDescriptor() *SpoolWriteDescriptor {
 
 // NewSpoolReadDescriptor blocks until the remote spool is created
 // or the round trip timeout is reached.
-func NewSpoolReadDescriptor(receiver, provider string, session *client.Session) (*SpoolReadDescriptor, error) {
-	_, privateKey, err := ed25519.Scheme().GenerateKey()
+func NewSpoolReadDescriptor(receiver []byte, provider *[32]byte, session *thin.ThinClient) (*SpoolReadDescriptor, error) {
+	_, privateKey, err := eddsa.Scheme().GenerateKey()
+
 	if err != nil {
 		return nil, err
 	}
@@ -129,7 +97,7 @@ func NewSpoolReadDescriptor(receiver, provider string, session *client.Session) 
 		return nil, spoolResponse.StatusAsError()
 	}
 	return &SpoolReadDescriptor{
-		PrivateKey: privateKey,
+		PrivateKey: privateKey.(*eddsa.PrivateKey),
 		ID:         spoolResponse.SpoolID,
 		Receiver:   receiver,
 		Provider:   provider,
