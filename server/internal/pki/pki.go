@@ -60,7 +60,7 @@ type pki struct {
 	log  *logging.Logger
 
 	impl               cpki.Client
-	descAddrMap        map[cpki.Transport][]string
+	descAddrMap        map[string][]string
 	docs               map[uint64]*pkicache.Entry
 	rawDocs            map[uint64][]byte
 	failedFetches      map[uint64]error
@@ -676,7 +676,7 @@ func New(glue glue.Glue) (glue.PKI, error) {
 
 	var err error
 	if glue.Config().Server.OnlyAdvertiseAltAddresses {
-		p.descAddrMap = make(map[cpki.Transport][]string)
+		p.descAddrMap = make(map[string][]string)
 	} else {
 		if p.descAddrMap, err = makeDescAddrMap(glue.Config().Server.Addresses); err != nil {
 			return nil, err
@@ -688,7 +688,7 @@ func New(glue glue.Glue) (glue.PKI, error) {
 		if len(v) == 0 {
 			continue
 		}
-		kTransport := cpki.Transport(strings.ToLower(k))
+		kTransport := strings.ToLower(k)
 		if _, ok := p.descAddrMap[kTransport]; ok {
 			return nil, fmt.Errorf("BUG: pki: AltAddresses overrides existing transport: '%v'", k)
 		}
@@ -701,7 +701,7 @@ func New(glue glue.Glue) (glue.PKI, error) {
 
 	pkiCfg := &vClient.Config{
 		LinkKey:     glue.LinkKey(),
-		LogBackend:  glue.LogBackend(),
+		LogBackend:  glue.LogBackend().GetLogWriter("pki", "info"),
 		Authorities: glue.Config().PKI.Voting.Authorities,
 	}
 	p.impl, err = vClient.New(pkiCfg)
@@ -718,8 +718,8 @@ func New(glue glue.Glue) (glue.PKI, error) {
 	return p, nil
 }
 
-func makeDescAddrMap(addrs []string) (map[cpki.Transport][]string, error) {
-	m := make(map[cpki.Transport][]string)
+func makeDescAddrMap(addrs []string) (map[string][]string, error) {
+	m := make(map[string][]string)
 	for _, addr := range addrs {
 		h, p, err := net.SplitHostPort(addr)
 		if err != nil {
@@ -729,7 +729,7 @@ func makeDescAddrMap(addrs []string) (map[cpki.Transport][]string, error) {
 			return nil, err
 		}
 
-		var t cpki.Transport
+		var t string
 		ip := net.ParseIP(h)
 		if ip == nil {
 			return nil, fmt.Errorf("address '%v' is not an IP", h)

@@ -24,6 +24,7 @@ import (
 
 	"github.com/fxamacker/cbor/v2"
 	"github.com/katzenpost/hpqc/rand"
+
 	cConstants "github.com/katzenpost/katzenpost/client/constants"
 	ratchet "github.com/katzenpost/katzenpost/doubleratchet"
 	memspoolClient "github.com/katzenpost/katzenpost/memspool/client"
@@ -69,7 +70,7 @@ type serializedContact struct {
 
 type boundExchange struct {
 	serialized []byte
-	recipient  string
+	recipient  []byte
 	provider   string
 }
 

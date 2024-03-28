@@ -22,11 +22,13 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/katzenpost/katzenpost/core/log"
+	"github.com/charmbracelet/log"
+	"github.com/stretchr/testify/require"
+
+	"github.com/katzenpost/katzenpost/core/log2"
 	"github.com/katzenpost/katzenpost/reunion/client"
 	"github.com/katzenpost/katzenpost/reunion/epochtime/katzenpost"
 	"github.com/katzenpost/katzenpost/reunion/transports/http"
-	"github.com/stretchr/testify/require"
 )
 
 func TestHTTPServer2(t *testing.T) {
@@ -41,6 +43,12 @@ func TestHTTPServer2(t *testing.T) {
 	require.NoError(err)
 	stateFile.Close()
 
+	dblog := log.NewWithOptions(os.Stderr, log.Options{
+		ReportTimestamp: true,
+		Prefix:          "TestHTTPServer2",
+		Level:           log2.ParseLevel("debug"),
+	})
+
 	_, reunionServer, err := runHTTPServer(address, urlPath, logPath, logLevel, clock, stateFile.Name())
 	require.NoError(err)
 
@@ -49,11 +57,6 @@ func TestHTTPServer2(t *testing.T) {
 	httpTransport := http.NewTransport(url)
 
 	// variable shared among reunion clients
-	f := ""
-	level := "DEBUG"
-	disable := false
-	logBackend, err := log.New(f, level, disable)
-	require.NoError(err)
 	shutdownChan := make(chan struct{})
 
 	srv := []byte{1, 2, 3}
@@ -66,7 +69,7 @@ func TestHTTPServer2(t *testing.T) {
 	alicePayload := []byte("Hello Bobby, what's up dude?")
 	aliceContactID := uint64(1)
 	require.NoError(err)
-	aliceExchangelog := logBackend.GetLogger("alice_exchange")
+	aliceExchangelog := dblog.WithPrefix("alice_exchange")
 
 	var wg sync.WaitGroup
 	wg.Add(1)
@@ -89,7 +92,7 @@ func TestHTTPServer2(t *testing.T) {
 	bobPayload := []byte("Hello Alice, what's cracking?")
 	bobContactID := uint64(2)
 	require.NoError(err)
-	bobExchangelog := logBackend.GetLogger("bob_exchange")
+	bobExchangelog := dblog.WithPrefix("bob_exchange")
 
 	wg.Add(1)
 	bobUpdateCh := make(chan client.ReunionUpdate)
@@ -139,12 +142,12 @@ func TestHTTPServer3(t *testing.T) {
 	httpTransport := http.NewTransport(url)
 
 	// variable shared among reunion clients
-	f := ""
-	level := "DEBUG"
-	disable := false
-	logBackend, err := log.New(f, level, disable)
-	require.NoError(err)
 	shutdownChan := make(chan struct{})
+	dblog := log.NewWithOptions(os.Stderr, log.Options{
+		ReportTimestamp: true,
+		Prefix:          "Reunion_TestHTTPServer3",
+		Level:           log2.ParseLevel("debug"),
+	})
 
 	srv := []byte{1, 2, 3}
 	passphrase1 := []byte("blah blah motorcycle pencil sharpening gas tank")
@@ -159,7 +162,7 @@ func TestHTTPServer3(t *testing.T) {
 	alicePayload := []byte("Hello Bobby, what's up dude?")
 	aliceContactID := uint64(1)
 	require.NoError(err)
-	aliceExchangelog := logBackend.GetLogger("alice_exchange")
+	aliceExchangelog := dblog.WithPrefix("alice_exchange")
 
 	var wg sync.WaitGroup
 	wg.Add(1)
@@ -182,7 +185,7 @@ func TestHTTPServer3(t *testing.T) {
 	bobPayload := []byte("Hello Alice, what's cracking?")
 	bobContactID := uint64(2)
 	require.NoError(err)
-	bobExchangelog := logBackend.GetLogger("bob_exchange")
+	bobExchangelog := dblog.WithPrefix("bob_exchange")
 
 	wg.Add(1)
 	bobUpdateCh := make(chan client.ReunionUpdate)
@@ -204,7 +207,7 @@ func TestHTTPServer3(t *testing.T) {
 	nsaPayload := []byte("Hello GCHQ, what's cracking?")
 	nsaContactID := uint64(3)
 	require.NoError(err)
-	nsaExchangelog := logBackend.GetLogger("nsa_exchange")
+	nsaExchangelog := dblog.WithPrefix("nsa_exchange")
 
 	wg.Add(1)
 	nsaUpdateCh := make(chan client.ReunionUpdate)
@@ -226,7 +229,7 @@ func TestHTTPServer3(t *testing.T) {
 	gchqPayload := []byte("Hello NSA, what's upper?")
 	gchqContactID := uint64(4)
 	require.NoError(err)
-	gchqExchangelog := logBackend.GetLogger("gchq_exchange")
+	gchqExchangelog := dblog.WithPrefix("gchq_exchange")
 
 	wg.Add(1)
 	gchqUpdateCh := make(chan client.ReunionUpdate)

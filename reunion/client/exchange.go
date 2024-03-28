@@ -24,11 +24,12 @@ import (
 	"fmt"
 	"math/rand"
 
+	"github.com/charmbracelet/log"
+
 	"github.com/katzenpost/katzenpost/client"
 	"github.com/katzenpost/katzenpost/reunion/commands"
 	"github.com/katzenpost/katzenpost/reunion/crypto"
 	"github.com/katzenpost/katzenpost/reunion/server"
-	"gopkg.in/op/go-logging.v1"
 )
 
 var (
@@ -75,7 +76,7 @@ type ReunionUpdate struct {
 // For every t2 message sent in reply to their own t1,
 // they construct and transmit a t3 message.
 type Exchange struct {
-	log          *logging.Logger
+	log          *log.Logger
 	updateChan   chan ReunionUpdate
 	db           server.ReunionDatabase
 	shutdownChan chan struct{}
@@ -116,7 +117,7 @@ type Exchange struct {
 // NewExchangeFromSnapshot creates a new Exchange given a snapshot blob.
 func NewExchangeFromSnapshot(
 	serialized []byte,
-	log *logging.Logger,
+	log *log.Logger,
 	db server.ReunionDatabase,
 	updateChan chan ReunionUpdate,
 	shutdownChan chan struct{}) (*Exchange, error) {
@@ -170,7 +171,7 @@ func NewExchangeFromSnapshot(
 // NewExchange creates a new Exchange struct type.
 func NewExchange(
 	payload []byte,
-	log *logging.Logger,
+	log *log.Logger,
 	db server.ReunionDatabase,
 	contactID uint64,
 	passphrase []byte,

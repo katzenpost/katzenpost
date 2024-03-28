@@ -25,11 +25,12 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/katzenpost/katzenpost/client"
-	"github.com/katzenpost/katzenpost/client/config"
-	"github.com/katzenpost/hpqc/rand"
-	"github.com/katzenpost/katzenpost/core/log"
+	"github.com/charmbracelet/log"
 	"github.com/stretchr/testify/require"
+
+	"github.com/katzenpost/hpqc/rand"
+
+	"github.com/katzenpost/katzenpost/core/log2"
 )
 
 func createRandomStateFile(t *testing.T) string {
@@ -48,37 +49,41 @@ func createRandomStateFile(t *testing.T) string {
 
 func TestBlobStorage(t *testing.T) {
 	t.Parallel()
-	require := require.New(t)
 
 	aliceState := createRandomStateFile(t)
 	passphrase := []byte("")
-	cfg, err := config.LoadFile("testdata/catshadow.toml")
-	require.NoError(err)
 
-	c, err := client.New(cfg)
-	require.NoError(err)
-	stateWorker, err := NewStateWriter(c.GetLogger("catshadow_state"), aliceState, passphrase)
-	require.NoError(err)
+	mylog := log.NewWithOptions(os.Stderr, log.Options{
+		ReportTimestamp: true,
+		Prefix:          "catshadow",
+		Level:           log2.ParseLevel("debug"),
+	})
+
+	stateWorker, err := NewStateWriter(mylog.WithPrefix("state_writer"), aliceState, passphrase)
+	require.NoError(t, err)
+
 	stateWorker.Start()
-	logBackend, err := log.New(cfg.Logging.File, cfg.Logging.Level, cfg.Logging.Disable)
-	require.NoError(err)
+	require.NoError(t, err)
+
 	cs := &Client{blob: make(map[string][]byte),
-		logBackend:         logBackend,
-		client:             c,
-		log:                logBackend.GetLogger("foo"),
+		session:            nil,
+		log:                mylog,
 		contacts:           make(map[uint64]*Contact),
 		conversationsMutex: new(sync.Mutex),
 		blobMutex:          new(sync.Mutex),
 		stateWorker:        stateWorker,
 	}
-	require.NoError(err)
+	require.NoError(t, err)
+
 	cs.AddBlob("foo", []byte{1, 2, 3})
 	b, err := cs.GetBlob("foo")
-	require.NoError(err)
-	require.Equal(b, []byte{1, 2, 3})
+	require.NoError(t, err)
+	require.Equal(t, b, []byte{1, 2, 3})
+
 	err = cs.DeleteBlob("foo")
-	require.NoError(err)
+	require.NoError(t, err)
+
 	_, err = cs.GetBlob("foo")
-	require.Error(err, ErrBlobNotFound)
+	require.Error(t, err, ErrBlobNotFound)
 	stateWorker.Halt()
 }

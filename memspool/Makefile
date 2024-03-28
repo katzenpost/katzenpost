@@ -6,8 +6,8 @@ docker_user?=$(shell if echo ${docker}|grep -q podman; then echo 0:0; else echo 
 docker=$(shell if which podman|grep -q .; then echo podman; else echo docker; fi)
 distro=alpine
 image=katzenpost-$(distro)_go_mod
-docker_args=--user ${docker_user} -v $(shell readlink -f ..):/go/katzenpost -e GOCACHE=/tmp/gocache --network=host --rm
+docker_args=--user ${docker_user} -v $(shell readlink -f ..):/go/katzenpost -e GOCACHE=/tmp/gocache --network=host --rm -it -e "TERM=xterm-256color"
 
 dockerdockertest:
 	$(docker) run ${docker_args} $(image) \
-		sh -c 'cd /go/katzenpost/memspool/client; GORACE=history_size=7 go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 0 -failfast -run Docker'
+		sh -c 'cd /go/katzenpost/memspool/client; GORACE=history_size=7 go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 0 -failfast -run TestAllDockerMemspoolClientTests'

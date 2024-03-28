@@ -24,8 +24,9 @@ import (
 	"math"
 	"time"
 
-	"github.com/katzenpost/katzenpost/client"
 	"github.com/katzenpost/hpqc/rand"
+
+	"github.com/katzenpost/katzenpost/client2/thin"
 )
 
 // ReadInboxLambdaPDivisor is used to divide our LambdaP parameter
@@ -52,7 +53,7 @@ func (c *Client) worker() {
 	gcMessagestimer := time.NewTimer(GarbageCollectionInterval)
 	defer gcMessagestimer.Stop()
 
-	isConnected := false
+	isConnected := true
 	for {
 		var qo interface{}
 		select {
@@ -69,18 +70,11 @@ func (c *Client) worker() {
 				c.log.Debug("READING INBOX")
 				c.sendReadInbox()
 				readInboxInterval := c.getReadInboxInterval()
-				c.log.Debug("<-readInboxTimer.C: Setting readInboxTimer to %s", readInboxInterval)
+				c.log.Debugf("<-readInboxTimer.C: Setting readInboxTimer to %s", readInboxInterval)
 				readInboxTimer.Reset(readInboxInterval)
 			}
 		case qo = <-c.opCh:
 			switch op := qo.(type) {
-			case *opOnline:
-				// this operation is run in another goroutine, and is thread safe
-				go func() { op.responseChan <- c.goOnline(op.context) }()
-			case *opOffline:
-				op.responseChan <- c.goOffline()
-				isConnected = false
-				c.haltKeyExchanges()
 			case *opCreateSpool:
 				c.doCreateRemoteSpool(op.provider, op.responseChan)
 			case *opUpdateSpool:
@@ -133,13 +127,13 @@ func (c *Client) worker() {
 			continue
 		case rawClientEvent := <-c.sessionEvents():
 			switch event := rawClientEvent.(type) {
-			case *client.MessageIDGarbageCollected:
+			case *thin.MessageIDGarbageCollected:
 				c.garbageCollectSendMap(event)
-			case *client.ConnectionStatusEvent:
+			case *thin.ConnectionStatusEvent:
 				c.log.Infof("Connection status change: isConnected %v", event.IsConnected)
 				if isConnected != event.IsConnected && event.IsConnected {
 					readInboxInterval := c.getReadInboxInterval()
-					c.log.Debug("ConnectionStatusEvent: Connected: Setting readInboxTimer to %s", readInboxInterval)
+					c.log.Debugf("ConnectionStatusEvent: Connected: Setting readInboxTimer to %s", readInboxInterval)
 					readInboxTimer.Reset(readInboxInterval)
 					isConnected = event.IsConnected
 					c.restartSending()
@@ -149,22 +143,23 @@ func (c *Client) worker() {
 				}
 				isConnected = event.IsConnected
 				if !isConnected {
-					c.log.Debug("ConnectionStatusEvent: Disconnected: Setting readInboxTimer to %s and halting key exchanges", maxDuration)
+					c.log.Debugf("ConnectionStatusEvent: Disconnected: Setting readInboxTimer to %s and halting key exchanges", maxDuration)
 					readInboxTimer.Reset(maxDuration)
 					c.haltKeyExchanges()
 				}
 				c.eventCh.In() <- event
-			case *client.MessageSentEvent:
+			case *thin.MessageSentEvent:
+				c.log.Debug("received MESSAGE SENT EVENT")
 				c.handleSent(event)
 				continue
-			case *client.MessageReplyEvent:
+			case *thin.MessageReplyEvent:
 				c.handleReply(event)
 				continue
-			case *client.NewDocumentEvent:
+			case *thin.NewDocumentEvent:
 				doc := event.Document
 				c.getReadInboxInterval = func() time.Duration { return getReadInboxInterval(doc.LambdaP, doc.LambdaPMaxDelay) }
 				readInboxInterval := c.getReadInboxInterval()
-				c.log.Debug("NewDocumentEvent: Setting readInboxTimer to %s", readInboxInterval)
+				c.log.Debugf("NewDocumentEvent: Setting readInboxTimer to %s", readInboxInterval)
 				readInboxTimer.Reset(readInboxInterval)
 				continue
 			default:

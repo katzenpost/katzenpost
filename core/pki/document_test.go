@@ -34,7 +34,7 @@ import (
 func genDescriptor(require *require.Assertions, idx int, provider bool) (*MixDescriptor, []byte) {
 	d := new(MixDescriptor)
 	d.Name = fmt.Sprintf("gen%d.example.net", idx)
-	d.Addresses = map[Transport][]string{
+	d.Addresses = map[string][]string{
 		TransportTCPv4: []string{fmt.Sprintf("192.0.2.%d:4242", idx)},
 	}
 	d.Provider = provider
@@ -192,4 +192,13 @@ func TestDocument(t *testing.T) {
 		require.NoError(err)
 		require.True(bytes.Equal(d, d2))
 	}
+
+	// test that we can unmarshal a document stripped of signatures
+	doc.StripSignatures()
+	docblob, err := doc.Serialize()
+	require.NoError(err)
+
+	doc2 := &Document{}
+	err = doc2.Deserialize(docblob)
+	require.NoError(err)
 }

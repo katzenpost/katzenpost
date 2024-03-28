@@ -28,25 +28,24 @@ import (
 	"time"
 
 	"github.com/awnumar/memguard"
-
+	"github.com/charmbracelet/log"
 	"github.com/fxamacker/cbor/v2"
 	"gopkg.in/eapache/channels.v1"
-	"gopkg.in/op/go-logging.v1"
 
-	ratchet "github.com/katzenpost/katzenpost/doubleratchet"
-
+	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/rand"
-	"github.com/katzenpost/katzenpost/client"
+
 	cConstants "github.com/katzenpost/katzenpost/client/constants"
-	cUtils "github.com/katzenpost/katzenpost/client/utils"
-	"github.com/katzenpost/katzenpost/core/log"
+	client2common "github.com/katzenpost/katzenpost/client2/common"
+	"github.com/katzenpost/katzenpost/client2/thin"
+
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/utils"
 	"github.com/katzenpost/katzenpost/core/worker"
+	ratchet "github.com/katzenpost/katzenpost/doubleratchet"
 	memspoolclient "github.com/katzenpost/katzenpost/memspool/client"
 	"github.com/katzenpost/katzenpost/memspool/common"
-	"github.com/katzenpost/katzenpost/minclient"
 	panda "github.com/katzenpost/katzenpost/panda/crypto"
 	rClient "github.com/katzenpost/katzenpost/reunion/client"
 )
@@ -99,19 +98,17 @@ type Client struct {
 	online     bool
 	connecting bool
 
-	client    *client.Client
-	session   *client.Session
+	session   *thin.ThinClient
 	providers []*pki.MixDescriptor
 
-	log        *logging.Logger
-	logBackend *log.Backend
+	log *log.Logger
 }
 
 type MessageID [MessageIDLen]byte
 
 type queuedSpoolCommand struct {
-	Provider string
-	Receiver string
+	Provider *[32]byte
+	Receiver []byte
 	Command  []byte
 	ID       MessageID
 }
@@ -122,13 +119,13 @@ type queuedSpoolCommand struct {
 // encrypted statefile, of course.  This constructor of Client is used when
 // creating a new Client as opposed to loading the previously saved state for
 // an existing Client.
-func NewClientAndRemoteSpool(ctx context.Context, logBackend *log.Backend, mixnetClient *client.Client, stateWorker *StateWriter) (*Client, error) {
+func NewClientAndRemoteSpool(ctx context.Context, log *log.Logger, mixnetClient *thin.ThinClient, stateWorker *StateWriter) (*Client, error) {
 	state := &State{
 		Blob:          make(map[string][]byte),
 		Contacts:      make([]*Contact, 0),
 		Conversations: make(map[string]map[MessageID]*Message),
 	}
-	c, err := New(logBackend, mixnetClient, stateWorker, state)
+	c, err := New(log, mixnetClient, stateWorker, state)
 	if err != nil {
 		return nil, err
 	}
@@ -147,7 +144,7 @@ func NewClientAndRemoteSpool(ctx context.Context, logBackend *log.Backend, mixne
 
 // New creates a new Client instance given a mixnetClient, stateWorker and state.
 // This constructor is used to load the previously saved state of a Client.
-func New(logBackend *log.Backend, mixnetClient *client.Client, stateWorker *StateWriter, state *State) (*Client, error) {
+func New(log *log.Logger, mixnetClient *thin.ThinClient, stateWorker *StateWriter, state *State) (*Client, error) {
 	if state == nil {
 		state = &State{
 			Blob:          make(map[string][]byte),
@@ -175,9 +172,8 @@ func New(logBackend *log.Backend, mixnetClient *client.Client, stateWorker *Stat
 		conversationsMutex:  new(sync.Mutex),
 		connMutex:           new(sync.RWMutex),
 		stateWorker:         stateWorker,
-		client:              mixnetClient,
-		log:                 logBackend.GetLogger("catshadow"),
-		logBackend:          logBackend,
+		session:             mixnetClient,
+		log:                 log.WithPrefix("catshadow"),
 	}
 	for _, contact := range state.Contacts {
 		c.contacts[contact.id] = contact
@@ -188,11 +184,11 @@ func New(logBackend *log.Backend, mixnetClient *client.Client, stateWorker *Stat
 
 // sessionEvents() is called by the worker routine. It returns
 // events from the established session or nil, if the client is in offline mode
-func (c *Client) sessionEvents() chan client.Event {
+func (c *Client) sessionEvents() chan thin.Event {
 	c.connMutex.RLock()
 	defer c.connMutex.RUnlock()
 	if c.session != nil {
-		return c.session.EventSink
+		return c.session.EventSink()
 	}
 	return nil
 }
@@ -206,20 +202,14 @@ func (c *Client) Start() {
 		if !ok {
 			return
 		}
-		c.log.Warningf("Shutting down due to error: %v", err)
+		c.log.Warnf("Shutting down due to error: %v", err)
+		c.session.Close()
 		c.Shutdown()
 	}()
 
 	c.garbageCollectConversations()
 	c.Go(c.eventSinkWorker)
 	c.Go(c.worker)
-
-	// Shutdown if the client halts for some reason
-	go func() {
-		c.client.Wait()
-		c.Shutdown()
-	}()
-
 }
 
 func (c *Client) initKeyExchange(contact *Contact) error {
@@ -389,7 +379,7 @@ func (c *Client) doGetPKIDocument() interface{} {
 		return ErrNotOnline
 
 	} else {
-		doc := c.session.CurrentDocument()
+		doc := c.session.PKIDocument()
 		if doc == nil {
 			return ErrNoCurrentDocument
 		} else {
@@ -428,15 +418,15 @@ func (c *Client) doGetSpoolProviders() interface{} {
 	if !c.online || c.session == nil {
 		return ErrNotOnline
 	}
-	doc := c.session.CurrentDocument()
+	doc := c.session.PKIDocument()
 	if doc == nil {
 		return ErrNoCurrentDocument
 	}
 
-	spoolProviders := cUtils.FindServices(common.SpoolServiceName, doc)
+	spoolProviders := client2common.FindServices(common.SpoolServiceName, doc)
 	providerNames := make([]string, len(spoolProviders))
 	for i, d := range spoolProviders {
-		providerNames[i] = d.Provider
+		providerNames[i] = d.MixDescriptor.Name
 	}
 	return providerNames
 }
@@ -494,7 +484,7 @@ func (c *Client) doCreateRemoteSpool(provider string, responseChan chan error) {
 		responseChan <- ErrNotOnline
 		return
 	}
-	var desc *cUtils.ServiceDescriptor
+	var desc *client2common.ServiceDescriptor
 	var err error
 	// if no provider is specified, pick a random one
 	if provider == "" {
@@ -511,7 +501,7 @@ func (c *Client) doCreateRemoteSpool(provider string, responseChan chan error) {
 			return
 		}
 		for _, d := range descs {
-			if d.Provider == provider {
+			if d.MixDescriptor.Name == provider {
 				desc = d
 				break
 			}
@@ -524,7 +514,11 @@ func (c *Client) doCreateRemoteSpool(provider string, responseChan chan error) {
 	go func() {
 		// NewSpoolReadDescriptor blocks, so we run this in another thread and then use
 		// another workerOp to save the spool descriptor.
-		spool, err := memspoolclient.NewSpoolReadDescriptor(desc.Name, desc.Provider, c.session)
+		if c.session == nil {
+			panic("thin client reference is nil")
+		}
+		providerHash := hash.Sum256(desc.MixDescriptor.IdentityKey)
+		spool, err := memspoolclient.NewSpoolReadDescriptor(desc.RecipientQueueID, &providerHash, c.session)
 		if err != nil {
 			select {
 			case <-c.HaltCh():
@@ -596,13 +590,13 @@ func (c *Client) createContact(nickname string, sharedSecret []byte) error {
 		c.initKeyExchange(contact)
 		err = c.doPANDAExchange(contact)
 		if err != nil {
-			c.log.Notice("PANDA Failure for %v: %v", contact, err)
+			c.log.Infof("PANDA Failure for %v: %v", contact, err)
 		}
 
 		// FIXME: #157
 		//err = c.doReunion(contact)
 		//if err != nil {
-		//	c.log.Notice("Reunion Failure for %v: %v", contact, err)
+		//	c.log.Info("Reunion Failure for %v: %v", contact, err)
 		//}
 		return err
 	}
@@ -854,17 +848,17 @@ func (c *Client) haltKeyExchanges() {
 func (c *Client) Shutdown() {
 	c.log.Info("Shutting down now.")
 	c.Halt()
-	c.client.Shutdown()
+	c.session.Close()
 	c.stateWorker.Halt()
 }
 
 func (c *Client) DoubleRatchetPayloadLength() int {
-	return DoubleRatchetPayloadLength(c.client.GetConfig().SphinxGeometry)
+	return DoubleRatchetPayloadLength(c.session.GetConfig().SphinxGeometry)
 }
 
 // SendMessage sends a message to the Client contact with the given nickname.
 func (c *Client) SendMessage(nickname string, message []byte) MessageID {
-	cfg := c.client.GetConfig()
+	cfg := c.session.GetConfig()
 
 	if len(message)+4 > DoubleRatchetPayloadLength(cfg.SphinxGeometry) {
 		return MessageID{}
@@ -936,7 +930,7 @@ func (c *Client) doSendMessage(convoMesgID MessageID, nickname string, message [
 	}
 	contact.ratchetMutex.Unlock()
 
-	cfg := c.client.GetConfig()
+	cfg := c.session.GetConfig()
 	appendCmd, err := common.AppendToSpool(contact.spoolWriteDescriptor.ID, ciphertext, cfg.SphinxGeometry)
 	if err != nil {
 		c.log.Errorf("failed to compute spool append command: %s", err)
@@ -961,7 +955,7 @@ func (c *Client) doSendMessage(convoMesgID MessageID, nickname string, message [
 		}
 	}
 	if err := contact.outbound.Push(item); err != nil {
-		c.log.Debugf("Failed to enqueue message!")
+		c.log.Debug("Failed to enqueue message!")
 		c.eventCh.In() <- &MessageNotSentEvent{
 			Nickname:  nickname,
 			MessageID: convoMesgID,
@@ -990,13 +984,13 @@ func (c *Client) sendMessage(contact *Contact) {
 		return
 	}
 
-	// XXX: unfortunately this command does not tell us when to expect the message delivery to have occurred even though minclient knows it...
-	mesgID, err := c.session.SendReliableMessage(cmd.Receiver, cmd.Provider, cmd.Command)
+	mesgID := c.session.NewMessageID()
+	err = c.session.SendReliableMessage(mesgID, cmd.Command, cmd.Provider, cmd.Receiver)
 	if err != nil {
 		c.log.Errorf("failed to send ciphertext to remote spool: %s", err)
 		return
 	}
-	c.log.Debug("Message enqueued for sending to %s, message-ID: %x", contact.Nickname, *mesgID)
+	c.log.Debugf("Message enqueued for sending to %s, message-ID: %x", contact.Nickname, mesgID[:])
 	c.sendMap.Store(*mesgID, &SentMessageDescriptor{
 		Nickname:  contact.Nickname,
 		MessageID: cmd.ID,
@@ -1006,7 +1000,7 @@ func (c *Client) sendMessage(contact *Contact) {
 func (c *Client) sendReadInbox() {
 	// apparently never checks to see if the spool has been made first...
 	if c.spoolReadDescriptor == nil {
-		c.log.Errorf("Should not sendReadInbox before the remote spool was made...")
+		c.log.Error("Should not sendReadInbox before the remote spool was made...")
 		return
 	}
 	sequence := c.spoolReadDescriptor.ReadOffset
@@ -1015,36 +1009,49 @@ func (c *Client) sendReadInbox() {
 		c.fatalErrCh <- errors.New("failed to compose spool read command")
 		return
 	}
-	mesgID, err := c.session.SendUnreliableMessage(c.spoolReadDescriptor.Receiver, c.spoolReadDescriptor.Provider, cmd)
-	switch err.(type) {
-	case *minclient.PKIError:
-		c.session.ForceFetchPKI()
+
+	doc := c.session.PKIDocument()
+	providerDesc, err := doc.GetProviderByKeyHash(c.spoolReadDescriptor.Provider)
+	if err != nil {
+		c.log.Errorf("failed to get provider key hash: %s", err)
 		return
+	}
+
+	surbid := c.session.NewSURBID()
+	providerKeyHash := hash.Sum256(providerDesc.IdentityKey)
+	err = c.session.SendMessage(surbid, cmd, &providerKeyHash, c.spoolReadDescriptor.Receiver)
+	switch err.(type) {
 	case nil:
 	default:
 		c.log.Errorf("sendReadInbox failure: %v", err)
 		return
 	}
-	c.log.Debug("Message enqueued for reading remote spool %x:%d, message-ID: %x", c.spoolReadDescriptor.ID, sequence, mesgID)
+	c.log.Debug("Message enqueued for reading remote spool %x:%d, message-ID: %x", c.spoolReadDescriptor.ID, sequence, surbid[:])
 	var a MessageID
 	binary.BigEndian.PutUint32(a[:4], sequence)
-	c.sendMap.Store(*mesgID, &ReadMessageDescriptor{MessageID: a})
+	c.sendMap.Store(*surbid, &ReadMessageDescriptor{MessageID: a})
 }
 
-func (c *Client) garbageCollectSendMap(gcEvent *client.MessageIDGarbageCollected) {
-	c.log.Debug("Garbage Collecting Message ID %x", gcEvent.MessageID[:])
-	c.sendMap.Delete(gcEvent.MessageID)
+func (c *Client) garbageCollectSendMap(gcEvent *thin.MessageIDGarbageCollected) {
+	c.log.Debugf("Garbage Collecting Message ID %x", gcEvent.MessageID[:])
+	c.sendMap.Delete(*gcEvent.MessageID)
 }
 
-func (c *Client) handleSent(sentEvent *client.MessageSentEvent) {
+func (c *Client) handleSent(sentEvent *thin.MessageSentEvent) {
+	if sentEvent == nil {
+		panic("sentEvent is nil")
+	}
+	if sentEvent.MessageID == nil {
+		return
+	}
 	orig, ok := c.sendMap.Load(*sentEvent.MessageID)
 	if ok {
 		switch tp := orig.(type) {
 		case *ReadMessageDescriptor:
 			if sentEvent.Err != nil {
-				c.log.Debugf("readInbox command %x failed with %s", *sentEvent.MessageID, sentEvent.Err)
+				c.log.Debugf("readInbox command %x failed with %s", sentEvent.MessageID[:], sentEvent.Err)
 			} else {
-				c.log.Debugf("readInbox command %x sent", *sentEvent.MessageID)
+				c.log.Debugf("readInbox command %x sent", sentEvent.MessageID[:])
 			}
 			return
 		case *SentMessageDescriptor:
@@ -1066,7 +1073,7 @@ func (c *Client) handleSent(sentEvent *client.MessageSentEvent) {
 				contact.ackID = *sentEvent.MessageID
 			}
 
-			c.log.Debugf("MessageSentEvent for %x", *sentEvent.MessageID)
+			c.log.Debugf("MessageSentEvent for %x", sentEvent.MessageID[:])
 			c.setMessageSent(tp.Nickname, tp.MessageID)
 			c.eventCh.In() <- &MessageSentEvent{
 				Nickname:  tp.Nickname,
@@ -1078,16 +1085,27 @@ func (c *Client) handleSent(sentEvent *client.MessageSentEvent) {
 	}
 }
 
-func (c *Client) handleReply(replyEvent *client.MessageReplyEvent) {
-	if ev, ok := c.sendMap.Load(*replyEvent.MessageID); ok {
-		defer c.sendMap.Delete(replyEvent.MessageID)
+func (c *Client) handleReply(replyEvent *thin.MessageReplyEvent) {
+	var id *[16]byte
+	if replyEvent.MessageID == nil {
+		if replyEvent.SURBID == nil {
+			c.log.Info("ignoring replyEvent with nil MessageID and nil SURBID")
+			return
+		}
+		id = replyEvent.SURBID
+
+	} else {
+		id = replyEvent.MessageID
+	}
+	if ev, ok := c.sendMap.Load(*id); ok {
+		defer c.sendMap.Delete(*id)
 		switch tp := ev.(type) {
 		case *SentMessageDescriptor:
 			// Deserialize spoolresponse
 			spoolResponse := common.SpoolResponse{}
 			_, err := cbor.UnmarshalFirst(replyEvent.Payload, &spoolResponse)
 			if err != nil {
-				c.log.Errorf("Could not deserialize SpoolResponse to message ID %d: %s", tp.MessageID, err)
+				c.log.Errorf("Could not deserialize SpoolResponse to message ID %x: %s", tp.MessageID[:], err)
 				c.eventCh.In() <- &MessageNotDeliveredEvent{Nickname: tp.Nickname, MessageID: tp.MessageID,
 					Err: fmt.Errorf("Invalid spool response: %s", err),
 				}
@@ -1103,17 +1121,17 @@ func (c *Client) handleReply(replyEvent *client.MessageReplyEvent) {
 				}
 				return
 			}
-			c.log.Debugf("MessageDeliveredEvent for %s MessageID %x", tp.Nickname, *replyEvent.MessageID)
+			c.log.Debugf("MessageDeliveredEvent for %s MessageID %x", tp.Nickname, replyEvent.MessageID[:])
 			if contact, ok := c.contactNicknames[tp.Nickname]; ok {
 				if contact.ackID != *replyEvent.MessageID {
 					// spurious ACK
-					c.log.Debugf("Dropping spurious ACK for %x", *replyEvent.MessageID)
+					c.log.Debugf("Dropping spurious ACK for %x", replyEvent.MessageID[:])
 					return
 				}
 				if _, err := contact.outbound.Pop(); err != nil {
 					// duplicate ACK?
 					c.log.Debugf("Maybe duplicate ACK received for %s with MessageID %x %s",
-						contact.Nickname, *replyEvent.MessageID, err)
+						contact.Nickname, replyEvent.MessageID[:], err)
 					return // do not send an extra MessageDeliveredEvent!
 				} else {
 					// try to send the next message, if one exists
@@ -1130,7 +1148,7 @@ func (c *Client) handleReply(replyEvent *client.MessageReplyEvent) {
 			spoolResponse := common.SpoolResponse{}
 			_, err := cbor.UnmarshalFirst(replyEvent.Payload, &spoolResponse)
 			if err != nil {
-				c.log.Errorf("Could not deserialize SpoolResponse to ReadInbox ID %d: %s", tp.MessageID, err)
+				c.log.Errorf("Could not deserialize SpoolResponse to ReadInbox ID %x: %s", tp.MessageID[:], err)
 				return
 			}
 			if !spoolResponse.IsOK() {
@@ -1145,7 +1163,7 @@ func (c *Client) handleReply(replyEvent *client.MessageReplyEvent) {
 			case spoolResponse.MessageID < c.spoolReadDescriptor.ReadOffset:
 				return // dup
 			case spoolResponse.MessageID == c.spoolReadDescriptor.ReadOffset:
-				c.log.Debugf("Calling decryptMessage(%x, xx)", *replyEvent.MessageID)
+				c.log.Debugf("Calling decryptMessage(%x, xx)", replyEvent.MessageID[:])
 				err := c.decryptMessage(replyEvent.MessageID, spoolResponse.Message)
 				switch err {
 				case ErrTrialDecryptionFailed:
@@ -1155,20 +1173,20 @@ func (c *Client) handleReply(replyEvent *client.MessageReplyEvent) {
 					// has already completed the key exchange and sent a first message, before we have
 					// completed our key exchange.
 					// XXX: this could break things if a contact key exchange never completes...
-					c.log.Debugf("failure to decrypt tip of spool - MessageID: %x", *replyEvent.MessageID)
+					c.log.Debugf("failure to decrypt tip of spool - MessageID: %x", replyEvent.MessageID[:])
 					for _, contact := range c.contacts {
 						if contact.IsPending {
-							c.log.Warning("received message we could not decrypt while key exchange pending, delaying spool read descriptor increment")
+							c.log.Warn("received message we could not decrypt while key exchange pending, delaying spool read descriptor increment")
 							return
 						}
 					}
-					c.log.Warning("received message we could not decrypt while NO key exchange pending, skipping this message")
+					c.log.Warn("received message we could not decrypt while NO key exchange pending, skipping this message")
 				case nil:
 					// message was decrypted successfully
-					c.log.Debugf("successfully decrypted tip of spool - MessageID: %x", *replyEvent.MessageID)
+					c.log.Debugf("successfully decrypted tip of spool - MessageID: %x", replyEvent.MessageID[:])
 				default:
 					// received an error, likely due to retransmission
-					c.log.Debugf("failure to decrypt tip of spool - MessageID: %x, err: %s", *replyEvent.MessageID, err.Error())
+					c.log.Debugf("failure to decrypt tip of spool - MessageID: %x, err: %s", replyEvent.MessageID[:], err.Error())
 				}
 				// in all other cases, advance the spool read descriptor
 				c.spoolReadDescriptor.IncrementOffset()
@@ -1325,7 +1343,7 @@ func (c *Client) decryptMessage(messageID *[cConstants.MessageIDLength]byte, cip
 		}
 		return nil
 	}
-	c.log.Debugf("trial ratchet decryption failure for message ID %x reported ratchet error: %s", *messageID, err)
+	c.log.Debugf("trial ratchet decryption failure for message ID %x reported ratchet error: %s", messageID[:], err)
 	return ErrTrialDecryptionFailed
 }
 
@@ -1393,51 +1411,8 @@ func (c *Client) GetBlob(id string) ([]byte, error) {
 
 // Online() brings catshadow online or returns an error
 func (c *Client) Online(ctx context.Context) error {
-	// XXX: block until connection or error ?
-	r := make(chan error, 1)
-	select {
-	case <-c.HaltCh():
-	case c.opCh <- &opOnline{context: ctx, responseChan: r}:
-	}
-	select {
-	case <-c.HaltCh():
-	case r := <-r:
-		return r
-	}
-	return errors.New("Shutdown")
-}
-
-// goOnline is called by worker routine when a goOnline is received. currently only a single session is supported.
-func (c *Client) goOnline(ctx context.Context) error {
-	c.connMutex.RLock()
-	if c.online || c.connecting || c.session != nil {
-		c.connMutex.RUnlock()
-		return errors.New("Already Connected")
-	}
-	c.connMutex.RUnlock()
-
-	// set connecting status
-	c.connMutex.Lock()
-	c.connecting = true
-	c.connMutex.Unlock()
-
-	// try to connect
-	s, err := c.client.NewTOFUSession(ctx)
-
-	// re-obtain lock
-	c.connMutex.Lock()
-	c.connecting = false
-	if err != nil {
-		c.online = false
-		c.connMutex.Unlock()
-		return err
-	}
-	c.session = s
 	c.online = true
-	c.connMutex.Unlock()
-	// wait for pki document to arrive
-	err = s.WaitForDocument(ctx)
-	return err
+	return nil
 }
 
 // Offline() tells the client to disconnect from network services and blocks until the client has disconnected.
@@ -1481,7 +1456,7 @@ func (c *Client) goOffline() error {
 		return errors.New("Already Offline")
 	}
 
-	c.session.Shutdown()
+	c.session.Close()
 	c.online = false
 	c.session = nil
 	return nil

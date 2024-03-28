@@ -23,16 +23,16 @@ providers=2
 
 # Parameters
 sr=0
-mu=0.005
-muMax=1000
-lP=0.001
-lPMax=1000
-lL=0.0005
-lLMax=1000
-lD=0.0005
+mu=0.00025
+muMax=3000
+lP=0.00025
+lPMax=3000
+lL=0.00025
+lLMax=3000
+lD=0.00025
 lDMax=3000
-lM=0.0005
-lMMax=100
+lM=0.00025
+lMMax=3000
 
 UserForwardPayloadLength=2000
 
@@ -62,7 +62,7 @@ uid?=$(shell [ "$$SUDO_UID" != "" ] && echo "$$SUDO_UID" || id -u)
 gid?=$(shell [ "$$SUDO_GID" != "" ] && echo "$$SUDO_GID" || id -g)
 
 docker_user?=$(shell if echo ${docker}|grep -q podman; then echo 0:0; else echo ${uid}:${gid}; fi)
-docker_args=--user ${docker_user} --volume $(shell readlink -f ..):/go/katzenpost --workdir /go/katzenpost
+docker_args=--user ${docker_user} --volume $(shell readlink -f ..):/go/katzenpost --workdir /go/katzenpost -it -e "TERM=xterm-256color"
 
 replace_name=$(shell if echo ${docker}|grep -q podman; then echo " --replace --name"; else echo " --name"; fi)
 i_if_podman=$(shell if echo ${docker}|grep -q podman; then echo " -i"; else echo; fi)
@@ -74,6 +74,8 @@ make_args=--no-print-directory net_name=$(net_name) docker=$(docker) distro=$(di
 
 $(net_name):
 	mkdir -p $(net_name)
+
+genconfig: $(docker_compose_yml)
 
 $(docker_compose_yml): ../genconfig/main.go $(distro)_go_mod.stamp $(net_name)
 	$(docker) run ${docker_args} --rm katzenpost-$(distro)_go_mod \
@@ -200,7 +202,11 @@ clean: clean-images clean-local
 
 run-ping: $(net_name)/ping.$(distro) $(net_name)/running.stamp
 	$(docker) run --network=host ${docker_args} $(mount_net_name) --rm  katzenpost-$(distro)_go_mod \
-        /$(net_name)/ping.$(distro) -c /go/katzenpost/docker/$(net_name)/client/client.toml -s echo -printDiff -n 1
+        /$(net_name)/ping.$(distro) -c /go/katzenpost/docker/$(net_name)/client2/client.toml -s echo -printDiff -n 1
+
+run-ping-testdest: $(net_name)/ping.$(distro) $(net_name)/running.stamp
+	$(docker) run --network=host ${docker_args} $(mount_net_name) --rm  katzenpost-$(distro)_go_mod \
+        /$(net_name)/ping.$(distro) -c /go/katzenpost/docker/$(net_name)/client2/client.toml -s testdest -printDiff -n 1
 
 shell: $(distro)_go_mod.stamp $(net_name)
 	$(docker) run --network=host ${docker_args} $(mount_net_name) -w /go/katzenpost/docker/$(net_name) --rm -it katzenpost-$(distro)_go_mod $(sh)

@@ -72,7 +72,7 @@ type MixDescriptor struct {
 
 	// Addresses is the map of transport to address combinations that can
 	// be used to reach the node.
-	Addresses map[Transport][]string
+	Addresses map[string][]string
 
 	// Kaetzchen is the map of provider autoresponder agents by capability
 	// to parameters.
@@ -93,6 +93,25 @@ type MixDescriptor struct {
 }
 
 type mixdescriptor MixDescriptor
+
+func (d *MixDescriptor) ShallowCopyWithoutSignature() *MixDescriptor {
+	desc := &MixDescriptor{
+		Name:               d.Name,
+		Epoch:              d.Epoch,
+		IdentityKey:        d.IdentityKey,
+		Signature:          nil,
+		LinkKey:            d.LinkKey,
+		MixKeys:            d.MixKeys,
+		Addresses:          d.Addresses,
+		Kaetzchen:          d.Kaetzchen,
+		Provider:           d.Provider,
+		LoadWeight:         d.LoadWeight,
+		AuthenticationType: d.AuthenticationType,
+		Version:            d.Version,
+	}
+
+	return desc
+}
 
 func (d *MixDescriptor) UnmarshalMixKeyAsNike(epoch uint64, g *geo.Geometry) (nike.PublicKey, error) {
 	s := schemes.ByName(g.NIKEName)
@@ -122,6 +141,42 @@ func (d *MixDescriptor) String() string {
 	return s
 }
 
+func (d *MixDescriptor) Certificate() (*cert.Certificate, error) {
+	rawDesc, err := ccbor.Marshal((*mixdescriptor)(d))
+	if err != nil {
+		return nil, err
+	}
+	signatures := make(map[[32]byte]cert.Signature)
+	if d.Signature != nil {
+		signatures[hash.Sum256(d.IdentityKey)] = *d.Signature
+	}
+	certified := cert.Certificate{
+		Version:    cert.CertVersion,
+		Expiration: d.Epoch + 5,
+		KeyType:    cert.Scheme.Name(),
+		Certified:  rawDesc,
+		Signatures: signatures,
+	}
+	return &certified, nil
+}
+
+func (d *MixDescriptor) Verify() error {
+	c, err := d.Certificate()
+	if err != nil {
+		return err
+	}
+	rawCert, err := c.Marshal()
+	if err != nil {
+		return err
+	}
+	idPubKey, err := cert.Scheme.UnmarshalBinaryPublicKey(d.IdentityKey)
+	if err != nil {
+		return err
+	}
+	_, err = cert.Verify(idPubKey, rawCert)
+	return err
+}
+
 // UnmarshalBinary implements encoding.BinaryUnmarshaler interface
 func (d *MixDescriptor) UnmarshalBinary(data []byte) error {
 	// extract the embedded IdentityKey and verify it signs the payload
@@ -129,25 +184,17 @@ func (d *MixDescriptor) UnmarshalBinary(data []byte) error {
 	if err != nil {
 		return err
 	}
-	sigs, err := cert.GetSignatures(data)
-	if err != nil {
-		return err
-	}
-	switch len(sigs) {
-	case 0:
-		return ErrNoSignature
-	case 1:
-		// must have only 1 signature
-	default:
-		return ErrTooManySignatures
-	}
+	sigs, _ := cert.GetSignatures(data)
 
 	// encoding type is cbor
 	err = cbor.Unmarshal(certified, (*mixdescriptor)(d))
 	if err != nil {
 		return err
 	}
-	d.Signature = &sigs[0]
+
+	if sigs != nil && len(sigs) != 0 {
+		d.Signature = &sigs[0]
+	}
 	return nil
 }
 
@@ -225,6 +272,10 @@ func VerifyDescriptor(rawDesc []byte) (*MixDescriptor, error) {
 	}
 	if d.Version != DescriptorVersion {
 		return nil, fmt.Errorf("Invalid Document Version: '%v'", d.Version)
+	}
+	err = d.Verify()
+	if err != nil {
+		return nil, err
 	}
 	return d, nil
 }

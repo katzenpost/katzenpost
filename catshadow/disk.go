@@ -24,14 +24,14 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/awnumar/memguard"
-	"github.com/fxamacker/cbor/v2"
 	"golang.org/x/crypto/argon2"
 	"golang.org/x/crypto/nacl/secretbox"
-	"gopkg.in/op/go-logging.v1"
+
+	"github.com/awnumar/memguard"
+	"github.com/charmbracelet/log"
+	"github.com/fxamacker/cbor/v2"
 
 	"github.com/katzenpost/hpqc/rand"
-	"github.com/katzenpost/hpqc/sign/ed25519"
 
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/worker"
@@ -57,20 +57,12 @@ type State struct {
 	Blob                map[string][]byte
 }
 
-type CBORState struct {
-	SpoolReadDescriptor *client.CBORSpoolReadDescriptor
-	Contacts            []*Contact
-	Providers           []*pki.MixDescriptor
-	Conversations       map[string]map[MessageID]*Message
-	Blob                map[string][]byte
-}
-
 // StateWriter takes ownership of the Client's encrypted statefile
 // and has a worker goroutine which writes updates to disk.
 type StateWriter struct {
 	worker.Worker
 
-	log *logging.Logger
+	log *log.Logger
 
 	stateCh   chan *memguard.LockedBuffer
 	stateFile string
@@ -118,12 +110,7 @@ func decryptStateFile(stateFile string, key *[32]byte) (*State, error) {
 		return nil, err
 	}
 	state := new(State)
-	state.SpoolReadDescriptor = new(client.SpoolReadDescriptor)
-	_, state.SpoolReadDescriptor.PrivateKey, err = ed25519.Scheme().GenerateKey()
-	if err != nil {
-		return nil, err
-	}
-	if _, err = cbor.UnmarshalFirst(plaintext, &state); err != nil {
+	if err = cbor.Unmarshal(plaintext, &state); err != nil {
 		return nil, err
 	}
 	return state, nil
@@ -171,7 +158,7 @@ func encryptStateFile(stateFile string, state []byte, key *[32]byte) error {
 
 // LoadStateWriter decrypts the given stateFile and returns the State
 // as well as a new StateWriter.
-func LoadStateWriter(log *logging.Logger, stateFile string, passphrase []byte) (*StateWriter, *State, error) {
+func LoadStateWriter(log *log.Logger, stateFile string, passphrase []byte) (*StateWriter, *State, error) {
 	worker := &StateWriter{
 		log:       log,
 		stateCh:   make(chan *memguard.LockedBuffer),
@@ -188,7 +175,7 @@ func LoadStateWriter(log *logging.Logger, stateFile string, passphrase []byte) (
 
 // NewStateWriter is a constructor for StateWriter which is to be used when creating
 // the statefile for the first time.
-func NewStateWriter(log *logging.Logger, stateFile string, passphrase []byte) (*StateWriter, error) {
+func NewStateWriter(log *log.Logger, stateFile string, passphrase []byte) (*StateWriter, error) {
 	key := stretchKey(passphrase)
 	worker := &StateWriter{
 		log:       log,

@@ -94,7 +94,7 @@ func generateNodes(isProvider bool, num int, epoch uint64) ([]*descriptor, error
 		}
 
 		scheme := wire.DefaultScheme
-		_, linkPubKey, err := scheme.GenerateKeyPair()
+		linkPubKey, _, err := scheme.GenerateKeyPair()
 		if err != nil {
 			return nil, err
 		}
@@ -115,8 +115,8 @@ func generateNodes(isProvider bool, num int, epoch uint64) ([]*descriptor, error
 			IdentityKey: blob,
 			LinkKey:     linkKeyBlob,
 			MixKeys:     mixKeys,
-			Addresses: map[pki.Transport][]string{
-				pki.Transport("tcp4"): []string{fmt.Sprintf("127.0.0.1:%d", i+1)},
+			Addresses: map[string][]string{
+				"tcp4": []string{fmt.Sprintf("127.0.0.1:%d", i+1)},
 			},
 			Kaetzchen:  nil,
 			Provider:   isProvider,
@@ -336,13 +336,13 @@ func (d *mockDialer) IsPeerValid(creds *wire.PeerCredentials) bool {
 func generatePeer(peerNum int) (*config.Authority, sign.PrivateKey, sign.PublicKey, kem.PrivateKey, error) {
 	identityPublicKey, identityPrivateKey, err := cert.Scheme.GenerateKey()
 	if err != nil {
-		return nil, nil, nil, nil, err
+		panic(err)
 	}
 
 	scheme := wire.DefaultScheme
 	linkPublicKey, linkPrivateKey, err := scheme.GenerateKeyPair()
 	if err != nil {
-		return nil, nil, nil, nil, err
+		panic(err)
 	}
 
 	authPeer := &config.Authority{
@@ -352,7 +352,7 @@ func generatePeer(peerNum int) (*config.Authority, sign.PrivateKey, sign.PublicK
 	}
 	err = authPeer.Validate()
 	if err != nil {
-		return nil, nil, nil, nil, err
+		panic(err)
 	}
 	return authPeer, identityPrivateKey, identityPublicKey, linkPrivateKey, nil
 }
@@ -376,7 +376,7 @@ func TestClient(t *testing.T) {
 	}
 	wg.Wait()
 	cfg := &Config{
-		LogBackend:    logBackend,
+		LogBackend:    logBackend.GetLogWriter("pki", "info"),
 		Authorities:   peers,
 		DialContextFn: dialer.dial,
 	}

@@ -56,6 +56,7 @@ func (q *PriorityQueue) Push(x interface{}) {
 }
 
 // Pop removes and returns the 0th entry (lowest priority) if any.
+// Returns nil if zero items in the queue.
 func (q *PriorityQueue) Pop() interface{} {
 	if q.Len() <= 0 {
 		return nil
@@ -109,7 +110,6 @@ func (q *PriorityQueue) DequeueRandom(r *rand.Rand) *Entry {
 	}
 	e := heap.Remove(q, r.Intn(q.Len())).(*Entry)
 	return e
-
 }
 
 // Remove removes and returns element from the heap with given index

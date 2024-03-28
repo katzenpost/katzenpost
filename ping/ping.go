@@ -23,11 +23,16 @@ import (
 	"sync/atomic"
 
 	"github.com/fxamacker/cbor/v2"
-	"github.com/katzenpost/katzenpost/client"
-	"github.com/katzenpost/katzenpost/client/constants"
-	"github.com/katzenpost/katzenpost/client/utils"
+
+	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/rand"
+
+	"github.com/katzenpost/katzenpost/client2/common"
+	"github.com/katzenpost/katzenpost/client2/thin"
+	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 )
+
+const MaxEgressQueueSize = 40
 
 var basePayload = []byte(`Data encryption is used widely to protect the content of Internet
 communications and enables the myriad of activities that are popular today,
@@ -45,7 +50,7 @@ produced various designs. Of these, mix networks are among the most practical
 and can readily scale to millions of users.
 `)
 
-func sendPing(session *client.Session, serviceDesc *utils.ServiceDescriptor, printDiff bool) bool {
+func sendPing(client *thin.ThinClient, serviceDesc *common.ServiceDescriptor, printDiff bool) bool {
 	var nonce [32]byte
 
 	_, err := rand.Reader.Read(nonce[:])
@@ -62,16 +67,42 @@ func sendPing(session *client.Session, serviceDesc *utils.ServiceDescriptor, pri
 		panic(err)
 	}
 
-	reply, err := session.BlockingSendUnreliableMessage(serviceDesc.Name, serviceDesc.Provider, cborPayload)
+	surbID := [sConstants.SURBIDLength]byte{}
+	_, err = rand.Reader.Read(surbID[:])
+	if err != nil {
+		panic(err)
+	}
 
+	dest := hash.Sum256(serviceDesc.MixDescriptor.IdentityKey)
+	err = client.SendMessage(&surbID, cborPayload, &dest, serviceDesc.RecipientQueueID)
 	if err != nil {
 		fmt.Printf("\nerror: %v\n", err)
 		fmt.Printf(".") // Fail, did not receive a reply.
 		return false
 	}
 
-	var replyPayload []byte
+	eventSink := client.EventSink()
+	reply := []byte{}
 
+Loop:
+	for {
+		event := <-eventSink
+		switch v := event.(type) {
+		case *thin.ConnectionStatusEvent:
+			if !v.IsConnected {
+				panic("socket connection lost")
+			}
+		case *thin.NewDocumentEvent:
+		case *thin.MessageSentEvent:
+		case *thin.MessageReplyEvent:
+			reply = v.Payload
+			break Loop
+		default:
+			panic("impossible event type")
+		}
+	}
+
+	var replyPayload []byte
 	_, err = cbor.UnmarshalFirst(reply, &replyPayload)
 	if err != nil {
 		fmt.Printf("Failed to unmarshal: %s\n", err)
@@ -91,12 +122,12 @@ func sendPing(session *client.Session, serviceDesc *utils.ServiceDescriptor, pri
 	}
 }
 
-func sendPings(session *client.Session, serviceDesc *utils.ServiceDescriptor, count int, concurrency int, printDiff bool) {
-	if concurrency > constants.MaxEgressQueueSize {
-		fmt.Printf("error: concurrency cannot be greater than MaxEgressQueueSize (%d)\n", constants.MaxEgressQueueSize)
+func sendPings(client *thin.ThinClient, serviceDesc *common.ServiceDescriptor, count int, concurrency int, printDiff bool) {
+	if concurrency > MaxEgressQueueSize {
+		fmt.Printf("error: concurrency cannot be greater than MaxEgressQueueSize (%d)\n", MaxEgressQueueSize)
 		return
 	}
-	fmt.Printf("Sending %d Sphinx packets to %s@%s\n", count, serviceDesc.Name, serviceDesc.Provider)
+	fmt.Printf("Sending %d Sphinx packets to %s@%s\n", count, serviceDesc.RecipientQueueID, serviceDesc.MixDescriptor.Name)
 
 	var passed, failed uint64
 
@@ -111,7 +142,7 @@ func sendPings(session *client.Session, serviceDesc *utils.ServiceDescriptor, co
 
 		// make new goroutine for each ping to send them in parallel
 		go func() {
-			if sendPing(session, serviceDesc, printDiff) {
+			if sendPing(client, serviceDesc, printDiff) {
 				fmt.Printf("!")
 				atomic.AddUint64(&passed, 1)
 			} else {

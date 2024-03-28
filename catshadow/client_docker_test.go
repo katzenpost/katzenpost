@@ -24,18 +24,60 @@ package catshadow
 import (
 	"bytes"
 	"context"
+	"net/http"
+	_ "net/http/pprof"
+	"os"
+	"runtime"
 	"testing"
 	"time"
 
-	"github.com/katzenpost/hpqc/rand"
-	"github.com/katzenpost/katzenpost/client"
-	"github.com/katzenpost/katzenpost/client/config"
-	"github.com/katzenpost/katzenpost/core/log"
+	"github.com/charmbracelet/log"
 	"github.com/stretchr/testify/require"
-	"net/http"
-	_ "net/http/pprof"
-	"runtime"
+
+	"github.com/katzenpost/hpqc/rand"
+
+	"github.com/katzenpost/katzenpost/client2"
+	"github.com/katzenpost/katzenpost/client2/config"
+	"github.com/katzenpost/katzenpost/client2/thin"
+	"github.com/katzenpost/katzenpost/core/log2"
 )
+
+func TestAllDockerCatshadow(t *testing.T) {
+
+	d := setupDaemon()
+
+	t.Cleanup(func() {
+		d.Shutdown()
+	})
+
+	t.Run("TestDockerPandaSuccess", testDockerPandaSuccess)
+	t.Run("TestDockerPandaTagContendedError", testDockerPandaTagContendedError)
+	t.Run("TestDockerSendReceive", testDockerSendReceive)
+	t.Run("TestDockerReunionSuccess", testDockerReunionSuccess)
+	t.Run("TestDockerChangeExpiration", testDockerChangeExpiration)
+	t.Run("TestDockerAddRemoveContact", testDockerAddRemoveContact)
+}
+
+func setupDaemon() *client2.Daemon {
+	cfg, err := config.LoadFile("testdata/catshadow.toml")
+	if err != nil {
+		panic(err)
+	}
+
+	d, err := client2.NewDaemon(cfg)
+	if err != nil {
+		panic(err)
+	}
+	err = d.Start()
+	if err != nil {
+		panic(err)
+	}
+
+	// maybe we need to sleep first to ensure the daemon is listening first before dialing
+	time.Sleep(time.Second * 3)
+
+	return d
+}
 
 func getClientState(c *Client) *State {
 	contacts := []*Contact{}
@@ -50,25 +92,31 @@ func getClientState(c *Client) *State {
 }
 
 func createCatshadowClientWithState(t *testing.T, stateFile string) *Client {
-	require := require.New(t)
-
-	cfg, err := config.LoadFile("testdata/catshadow.toml")
-	require.NoError(err)
 	var stateWorker *StateWriter
 	var catShadowClient *Client
 
+	cfg, err := config.LoadFile("testdata/catshadow.toml")
+	require.NoError(t, err)
 	//cfg.Logging.Level = "INFO" // client verbosity reductionism
-	c, err := client.New(cfg)
-	require.NoError(err)
+
+	c := thin.NewThinClient(cfg)
+	err = c.Dial()
+	require.NoError(t, err)
+
 	passphrase := []byte("")
 	stateWorker, err = NewStateWriter(c.GetLogger("catshadow_state"), stateFile, passphrase)
-	require.NoError(err)
+	require.NoError(t, err)
 	// must start stateWorker BEFORE calling NewClientAndRemoteSpool
 	stateWorker.Start()
-	backendLog, err := log.New(cfg.Logging.File, cfg.Logging.Level, cfg.Logging.Disable)
-	require.NoError(err)
-	catShadowClient, err = NewClientAndRemoteSpool(context.Background(), backendLog, c, stateWorker)
-	require.NoError(err)
+
+	debugLog := log.NewWithOptions(os.Stderr, log.Options{
+		ReportTimestamp: true,
+		Prefix:          "createCatshadowClientWithState",
+		Level:           log2.ParseLevel("debug"),
+	})
+
+	catShadowClient, err = NewClientAndRemoteSpool(context.Background(), debugLog, c, stateWorker)
+	require.NoError(t, err)
 
 	return catShadowClient
 }
@@ -87,14 +135,18 @@ func reloadCatshadowState(t *testing.T, stateFile string) *Client {
 	state, err := decryptStateFile(stateFile, key)
 	require.NoError(err)
 
-	logBackend, err := log.New(cfg.Logging.File, cfg.Logging.Level, cfg.Logging.Disable)
-	require.NoError(err)
-	c, err := client.New(cfg)
+	c := thin.NewThinClient(cfg)
 	require.NoError(err)
 	stateWorker, state, err = LoadStateWriter(c.GetLogger(stateFile), stateFile, passphrase)
 	require.NoError(err)
 
-	catShadowClient, err = New(logBackend, c, stateWorker, state)
+	debugLog := log.NewWithOptions(os.Stderr, log.Options{
+		ReportTimestamp: true,
+		Prefix:          "reloadCatshadowState",
+		Level:           log2.ParseLevel("debug"),
+	})
+
+	catShadowClient, err = New(debugLog, c, stateWorker, state)
 	require.NoError(err)
 
 	// Start catshadow client.
@@ -107,9 +159,8 @@ func reloadCatshadowState(t *testing.T, stateFile string) *Client {
 	return catShadowClient
 }
 
-func TestDockerPandaSuccess(t *testing.T) {
+func testDockerPandaSuccess(t *testing.T) {
 	t.Parallel()
-	require := require.New(t)
 
 	aliceState := createRandomStateFile(t)
 	alice := createCatshadowClientWithState(t, aliceState)
@@ -119,7 +170,7 @@ func TestDockerPandaSuccess(t *testing.T) {
 	sharedSecret := []byte("There is a certain kind of small town that grows like a boil on the ass of every Army base in the world.")
 	randBytes := [8]byte{}
 	_, err := rand.Reader.Read(randBytes[:])
-	require.NoError(err)
+	require.NoError(t, err)
 	sharedSecret = append(sharedSecret, randBytes[:]...)
 
 	alice.NewContact("bob", sharedSecret)
@@ -130,7 +181,7 @@ loop1:
 		ev := <-alice.EventSink
 		switch event := ev.(type) {
 		case *KeyExchangeCompletedEvent:
-			require.Nil(event.Err)
+			require.Nil(t, event.Err)
 			break loop1
 		default:
 		}
@@ -141,7 +192,7 @@ loop2:
 		ev := <-bob.EventSink
 		switch event := ev.(type) {
 		case *KeyExchangeCompletedEvent:
-			require.Nil(event.Err)
+			require.Nil(t, event.Err)
 			break loop2
 		default:
 		}
@@ -151,9 +202,8 @@ loop2:
 	bob.Shutdown()
 }
 
-func TestDockerPandaTagContendedError(t *testing.T) {
+func testDockerPandaTagContendedError(t *testing.T) {
 	t.Parallel()
-	require := require.New(t)
 
 	aliceStateFilePath := createRandomStateFile(t)
 	alice := createCatshadowClientWithState(t, aliceStateFilePath)
@@ -163,7 +213,7 @@ func TestDockerPandaTagContendedError(t *testing.T) {
 	sharedSecret := []byte("twas brillig and the slithy toves")
 	randBytes := [8]byte{}
 	_, err := rand.Reader.Read(randBytes[:])
-	require.NoError(err)
+	require.NoError(t, err)
 	sharedSecret = append(sharedSecret, randBytes[:]...)
 
 	alice.NewContact("bob", sharedSecret)
@@ -174,7 +224,7 @@ loop1:
 		ev := <-alice.EventSink
 		switch event := ev.(type) {
 		case *KeyExchangeCompletedEvent:
-			require.Nil(event.Err)
+			require.Nil(t, event.Err)
 			break loop1
 		default:
 		}
@@ -185,7 +235,7 @@ loop2:
 		ev := <-bob.EventSink
 		switch event := ev.(type) {
 		case *KeyExchangeCompletedEvent:
-			require.Nil(event.Err)
+			require.Nil(t, event.Err)
 			break loop2
 		default:
 		}
@@ -209,7 +259,7 @@ loop3:
 		ev := <-ada.EventSink
 		switch event := ev.(type) {
 		case *KeyExchangeCompletedEvent:
-			require.NotNil(event.Err)
+			require.NotNil(t, event.Err)
 			break loop3
 		default:
 		}
@@ -220,7 +270,7 @@ loop4:
 		ev := <-jeff.EventSink
 		switch event := ev.(type) {
 		case *KeyExchangeCompletedEvent:
-			require.NotNil(event.Err)
+			require.NotNil(t, event.Err)
 			break loop4
 		default:
 		}
@@ -230,8 +280,8 @@ loop4:
 	jeff.Shutdown()
 }
 
-func TestDockerSendReceive(t *testing.T) {
-	require := require.New(t)
+func testDockerSendReceive(t *testing.T) {
+	t.Parallel()
 
 	aliceStateFilePath := createRandomStateFile(t)
 	alice := createCatshadowClientWithState(t, aliceStateFilePath)
@@ -244,9 +294,9 @@ func TestDockerSendReceive(t *testing.T) {
 	sharedSecret2 := make([]byte, len(sharedSecret))
 	randBytes := [8]byte{}
 	_, err := rand.Reader.Read(randBytes[:])
-	require.NoError(err)
+	require.NoError(t, err)
 	_, err = rand.Reader.Read(sharedSecret2[:])
-	require.NoError(err)
+	require.NoError(t, err)
 	sharedSecret = append(sharedSecret, randBytes[:]...)
 
 	alice.NewContact("bob", sharedSecret)
@@ -270,7 +320,7 @@ func TestDockerSendReceive(t *testing.T) {
 			switch event := ev.(type) {
 			case *KeyExchangeCompletedEvent:
 				bob.log.Debugf("CSTDSR: BOB GOT KEYEX COMPLETED")
-				require.Nil(event.Err)
+				require.Nil(t, event.Err)
 				bobKXFinishedChan <- true
 			case *MessageReceivedEvent:
 				// fields: Nickname, Message, Timestamp
@@ -278,7 +328,7 @@ func TestDockerSendReceive(t *testing.T) {
 				bobReceivedMessageChan <- true
 			case *MessageDeliveredEvent:
 				bob.log.Debugf("CSTDSR: BOB GOT DELIVERED EVENT")
-				require.Equal(event.Nickname, "mal")
+				require.Equal(t, event.Nickname, "mal")
 				bobDeliveredChan <- true
 			case *MessageSentEvent:
 				if _, ok = sentEventSeenIds[event.MessageID]; ok {
@@ -287,7 +337,7 @@ func TestDockerSendReceive(t *testing.T) {
 				}
 				sentEventSeenIds[event.MessageID] = true
 				bob.log.Debugf("CSTDSR: BOB SENT MESSAGE %x to %s", event.MessageID, event.Nickname)
-				require.Equal(event.Nickname, "mal")
+				require.Equal(t, event.Nickname, "mal")
 				bobSentChan <- true
 			default:
 				bob.log.Debugf("CSTDSR: BOB EVENTSINK GOT EVENT %t", ev)
@@ -309,12 +359,12 @@ func TestDockerSendReceive(t *testing.T) {
 			switch event := ev.(type) {
 			case *KeyExchangeCompletedEvent:
 				alice.log.Debugf("CSTDSR: ALICE GOT KEYEX COMPLETED")
-				require.Nil(event.Err)
+				require.Nil(t, event.Err)
 				aliceKXFinishedChan <- true
 				break
 			case *MessageDeliveredEvent:
 				alice.log.Debugf("CSTDSR: ALICE GOT DELIVERED EVENT")
-				require.Equal(event.Nickname, "bob")
+				require.Equal(t, event.Nickname, "bob")
 				aliceDeliveredChan <- true
 			case *MessageSentEvent:
 				if _, ok = sentEventSeenIds[event.MessageID]; ok {
@@ -322,7 +372,7 @@ func TestDockerSendReceive(t *testing.T) {
 					continue
 				}
 				alice.log.Debugf("CSTDSR: ALICE SENT MESSAGE %x to %s", event.MessageID, event.Nickname)
-				require.Equal(event.Nickname, "bob")
+				require.Equal(t, event.Nickname, "bob")
 				aliceSentChan <- true
 			default:
 				alice.log.Debugf("CSTDSR: ALICE EVENTSINK GOT EVENT %t", ev)
@@ -345,16 +395,16 @@ func TestDockerSendReceive(t *testing.T) {
 			switch event := ev.(type) {
 			case *KeyExchangeCompletedEvent:
 				mal.log.Debugf("CSTDSR: MAL GOT KEYEX COMPLETED")
-				require.Nil(event.Err)
+				require.Nil(t, event.Err)
 				malKXFinishedChan <- true
 			case *MessageReceivedEvent:
 				// fields: Nickname, Message, Timestamp
-				require.Equal(event.Nickname, "bob")
+				require.Equal(t, event.Nickname, "bob")
 				mal.log.Debugf("CSTDSR: MAL RECEIVED MESSAGE:\n%s", string(event.Message))
 				malReceivedMessageChan <- true
 			case *MessageDeliveredEvent:
 				mal.log.Debugf("CSTDSR: MAL GOT DELIVERED EVENT")
-				require.Equal(event.Nickname, "bob")
+				require.Equal(t, event.Nickname, "bob")
 				malDeliveredChan <- true
 			case *MessageSentEvent:
 				if _, ok = sentEventSeenIds[event.MessageID]; ok {
@@ -362,7 +412,7 @@ func TestDockerSendReceive(t *testing.T) {
 					continue
 				}
 				mal.log.Debugf("CSTDSR: MAL SENT MESSAGE %x to %s", event.MessageID, event.Nickname)
-				require.Equal(event.Nickname, "bob")
+				require.Equal(t, event.Nickname, "bob")
 				malSentChan <- true
 
 			default:
@@ -416,8 +466,8 @@ and can readily scale to millions of users.
 	// Test sorted conversation and message delivery status
 	aliceSortedConvesation := alice.GetSortedConversation("bob")
 	for _, msg := range aliceSortedConvesation {
-		require.True(msg.Sent)
-		require.True(msg.Delivered)
+		require.True(t, msg.Sent)
+		require.True(t, msg.Delivered)
 	}
 
 	bob.log.Debug("LOADING BOB'S CONVERSATION")
@@ -456,9 +506,9 @@ and can readily scale to millions of users.
 	for i, mesg := range malBobConversation {
 		newMal.log.Debugf("%d outbound %v message:\n%s\n", i, mesg.Outbound, mesg.Plaintext)
 		if !mesg.Outbound {
-			require.True(bytes.Equal(mesg.Plaintext, []byte(`Hello mal`)))
+			require.True(t, bytes.Equal(mesg.Plaintext, []byte(`Hello mal`)))
 		} else {
-			require.True(bytes.Equal(mesg.Plaintext, []byte(`Hello bob`)))
+			require.True(t, bytes.Equal(mesg.Plaintext, []byte(`Hello bob`)))
 		}
 	}
 
@@ -467,9 +517,9 @@ and can readily scale to millions of users.
 	for i, mesg := range bobMalConversation {
 		newBob.log.Debugf("%d outbound %v message:\n%s\n", i, mesg.Outbound, mesg.Plaintext)
 		if !mesg.Outbound {
-			require.True(bytes.Equal(mesg.Plaintext, []byte(`Hello bob`)))
+			require.True(t, bytes.Equal(mesg.Plaintext, []byte(`Hello bob`)))
 		} else {
-			require.True(bytes.Equal(mesg.Plaintext, []byte(`Hello mal`)))
+			require.True(t, bytes.Equal(mesg.Plaintext, []byte(`Hello mal`)))
 		}
 	}
 
@@ -480,21 +530,21 @@ and can readily scale to millions of users.
 
 	time.Sleep(3 * time.Second)
 
-	require.NotNil(aliceBobConvo1)
-	require.NotNil(aliceBobConvo2)
+	require.NotNil(t, aliceBobConvo1)
+	require.NotNil(t, aliceBobConvo2)
 	newAlice.log.Debug("convo1\n")
 	for i, message := range aliceBobConvo1 {
-		require.True(bytes.Equal(message.Plaintext, aliceBobConvo2[i].Plaintext))
+		require.True(t, bytes.Equal(message.Plaintext, aliceBobConvo2[i].Plaintext))
 		// XXX require.True(message.Timestamp.Equal(aliceBobConvo2[i].Timestamp))
 	}
 	newAlice.Shutdown()
 	newBob.Shutdown()
 }
 
-func TestDockerReunionSuccess(t *testing.T) {
-	t.Skip("Reunion does not work with 2KB payloads")
+func testDockerReunionSuccess(t *testing.T) {
 	t.Parallel()
-	require := require.New(t)
+
+	t.Skip("Reunion does not work with 2KB payloads")
 
 	aliceState := createRandomStateFile(t)
 	alice := createCatshadowClientWithState(t, aliceState)
@@ -505,7 +555,7 @@ func TestDockerReunionSuccess(t *testing.T) {
 	sharedSecret := []byte("There is a certain kind of small town that grows like a boil on the ass of every Army base in the world.")
 	randBytes := [8]byte{}
 	_, err := rand.Reader.Read(randBytes[:])
-	require.NoError(err)
+	require.NoError(t, err)
 	sharedSecret = append(sharedSecret, randBytes[:]...)
 
 	alice.NewContact("bob", sharedSecret)
@@ -536,7 +586,7 @@ loop1:
 			alice.log.Debugf("reunion ALICE RECEIVED event: %v\n", event)
 			if event.Err != nil {
 				afails++
-				require.True(afails < 6)
+				require.True(t, afails < 6)
 				continue
 			} else {
 				break loop1
@@ -554,7 +604,7 @@ loop2:
 			bob.log.Debugf("reunion BOB RECEIVED event: %v\n", event)
 			if event.Err != nil {
 				bfails++
-				require.True(bfails < 6)
+				require.True(t, bfails < 6)
 				continue
 			} else {
 				break loop2
@@ -567,40 +617,38 @@ loop2:
 	bob.Shutdown()
 }
 
-func TestDockerChangeExpiration(t *testing.T) {
+func testDockerChangeExpiration(t *testing.T) {
 	t.Parallel()
-	require := require.New(t)
 
 	a := createCatshadowClientWithState(t, createRandomStateFile(t))
 
 	s := [8]byte{}
 	_, err := rand.Reader.Read(s[:])
-	require.NoError(err)
+	require.NoError(t, err)
 
 	a.NewContact("b", s[:])
 	exp, err := a.GetExpiration("b")
-	require.NoError(err)
-	require.Equal(exp, MessageExpirationDuration)
+	require.NoError(t, err)
+	require.Equal(t, exp, MessageExpirationDuration)
 	err = a.ChangeExpiration("b", time.Duration(123))
-	require.NoError(err)
+	require.NoError(t, err)
 	exp, err = a.GetExpiration("b")
-	require.NoError(err)
-	require.Equal(exp, time.Duration(123))
+	require.NoError(t, err)
+	require.Equal(t, exp, time.Duration(123))
 	_, err = a.GetExpiration("c")
-	require.Error(err, ErrContactNotFound)
+	require.Error(t, err, ErrContactNotFound)
 
 }
 
-func TestDockerAddRemoveContact(t *testing.T) {
+func testDockerAddRemoveContact(t *testing.T) {
 	t.Parallel()
-	require := require.New(t)
 
 	a := createCatshadowClientWithState(t, createRandomStateFile(t))
 	b := createCatshadowClientWithState(t, createRandomStateFile(t))
 
 	s := [8]byte{}
 	_, err := rand.Reader.Read(s[:])
-	require.NoError(err)
+	require.NoError(t, err)
 
 	a.NewContact("b", s[:])
 	b.NewContact("a", s[:])
@@ -610,7 +658,7 @@ loop1:
 		ev := <-a.EventSink
 		switch event := ev.(type) {
 		case *KeyExchangeCompletedEvent:
-			require.Nil(event.Err)
+			require.Nil(t, event.Err)
 			break loop1
 		default:
 		}
@@ -621,7 +669,7 @@ loop2:
 		ev := <-b.EventSink
 		switch event := ev.(type) {
 		case *KeyExchangeCompletedEvent:
-			require.Nil(event.Err)
+			require.Nil(t, event.Err)
 			break loop2
 		default:
 		}
@@ -662,15 +710,15 @@ loop4:
 
 	t.Log("Removing contact b")
 	err = a.RemoveContact("b")
-	require.NoError(err)
-	require.Equal(len(a.GetContacts()), 0)
+	require.NoError(t, err)
+	require.Equal(t, len(a.GetContacts()), 0)
 
 	t.Log("Removing contact b again, checking for err")
 	err = a.RemoveContact("b")
-	require.Error(err, ErrContactNotFound)
+	require.Error(t, err, ErrContactNotFound)
 
 	c := a.conversations["b"]
-	require.Equal(len(c), 0)
+	require.Equal(t, len(c), 0)
 	// verify that contact data is gone
 	t.Log("Sending message to b, must fail")
 	a.SendMessage("b", []byte("must fail"))
@@ -690,16 +738,15 @@ loop5:
 	b.Shutdown()
 }
 
-func TestDockerRenameContact(t *testing.T) {
+func testDockerRenameContact(t *testing.T) {
 	t.Parallel()
-	require := require.New(t)
 
 	a := createCatshadowClientWithState(t, createRandomStateFile(t))
 	b := createCatshadowClientWithState(t, createRandomStateFile(t))
 
 	s := [8]byte{}
 	_, err := rand.Reader.Read(s[:])
-	require.NoError(err)
+	require.NoError(t, err)
 
 	a.NewContact("b", s[:])
 	b.NewContact("a", s[:])
@@ -710,7 +757,7 @@ loop1:
 		ev := <-a.EventSink
 		switch event := ev.(type) {
 		case *KeyExchangeCompletedEvent:
-			require.Nil(event.Err)
+			require.Nil(t, event.Err)
 			break loop1
 		default:
 		}
@@ -721,7 +768,7 @@ loop2:
 		ev := <-b.EventSink
 		switch event := ev.(type) {
 		case *KeyExchangeCompletedEvent:
-			require.Nil(event.Err)
+			require.Nil(t, event.Err)
 			break loop2
 		default:
 		}
@@ -790,10 +837,10 @@ loop4a:
 	// rename the contacts
 	t.Log("Renaming contact b")
 	err = a.RenameContact("b", "b2")
-	require.NoError(err)
+	require.NoError(t, err)
 
 	c := a.conversations["b"]
-	require.Equal(len(c), 0)
+	require.Equal(t, len(c), 0)
 
 	// verify that contact data is gone
 	t.Log("Sending message to b, must fail")
@@ -857,15 +904,15 @@ loop7:
 			received += 1
 		}
 	}
-	require.Equal(1, sent)
-	require.Equal(2, received)
-	require.Equal(1, len(a.conversations))
-	require.Equal(1, len(b.conversations))
+	require.Equal(t, 1, sent)
+	require.Equal(t, 2, received)
+	require.Equal(t, 1, len(a.conversations))
+	require.Equal(t, 1, len(b.conversations))
 
 	// clear conversation history
 	b.WipeConversation("a")
 	c = b.conversations["a"]
-	require.Equal(len(c), 0)
+	require.Equal(t, len(c), 0)
 
 	a.Shutdown()
 	b.Shutdown()
