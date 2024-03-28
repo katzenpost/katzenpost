@@ -26,10 +26,11 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/katzenpost/katzenpost/client/config"
+	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/katzenpost/client2"
 	"github.com/katzenpost/katzenpost/client2/config"
 	"github.com/katzenpost/katzenpost/client2/thin"
+
 	"github.com/katzenpost/katzenpost/memspool/common"
 )
 
@@ -83,7 +84,7 @@ func testDockerReliableSpoolService(t *testing.T) {
 	t.Logf("Found spool provider: %v@%s", desc.RecipientQueueID, desc.MixDescriptor.Name)
 
 	// create the spool on the remote provider
-	providerKey := desc.MixDescriptor.IdentityKey.Sum256()
+	providerKey := hash.Sum256(desc.MixDescriptor.IdentityKey)
 	spoolReadDescriptor, err := NewSpoolReadDescriptor(desc.RecipientQueueID, &providerKey, s)
 	require.NoError(err)
 
@@ -92,7 +93,7 @@ func testDockerReliableSpoolService(t *testing.T) {
 	appendCmd, err := common.AppendToSpool(spoolReadDescriptor.ID, message, cfg.SphinxGeometry)
 	require.NoError(err)
 	mesgID := s.NewMessageID()
-	providerKey = desc.MixDescriptor.IdentityKey.Sum256()
+	providerKey = hash.Sum256(desc.MixDescriptor.IdentityKey)
 	rawResponse, err := s.BlockingSendReliableMessage(mesgID, appendCmd, &providerKey, desc.RecipientQueueID)
 	require.NoError(err)
 	response := new(common.SpoolResponse)
@@ -107,7 +108,7 @@ func testDockerReliableSpoolService(t *testing.T) {
 	require.NoError(err)
 
 	mesgID = s.NewMessageID()
-	providerKey = desc.MixDescriptor.IdentityKey.Sum256()
+	providerKey = hash.Sum256(desc.MixDescriptor.IdentityKey)
 	rawResponse, err = s.BlockingSendReliableMessage(mesgID, readCmd, &providerKey, desc.RecipientQueueID)
 	require.NoError(err)
 	response = new(common.SpoolResponse)
@@ -120,7 +121,7 @@ func testDockerReliableSpoolService(t *testing.T) {
 	// purge a spool
 	purgeCmd, err := common.PurgeSpool(spoolReadDescriptor.ID, spoolReadDescriptor.PrivateKey)
 	require.NoError(err)
-	providerKey = desc.MixDescriptor.IdentityKey.Sum256()
+	providerKey = hash.Sum256(desc.MixDescriptor.IdentityKey)
 	mesgID = s.NewMessageID()
 	rawResponse, err = s.BlockingSendReliableMessage(mesgID, purgeCmd, &providerKey, desc.RecipientQueueID)
 	require.NoError(err)
@@ -163,7 +164,7 @@ func testDockerGetSpoolServices(t *testing.T) {
 
 	for _, svc := range spoolServices {
 		t.Logf("Got %s ServiceDescriptor: %v", common.SpoolServiceName, svc)
-		providerKey := svc.MixDescriptor.IdentityKey.Sum256()
+		providerKey := hash.Sum256(svc.MixDescriptor.IdentityKey)
 
 		rd, err := NewSpoolReadDescriptor(svc.RecipientQueueID, &providerKey, s)
 		require.NoError(err)
