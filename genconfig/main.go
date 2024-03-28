@@ -12,6 +12,7 @@ import (
 	"sort"
 
 	"github.com/BurntSushi/toml"
+	"github.com/charmbracelet/log"
 
 	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/kem"
@@ -23,6 +24,7 @@ import (
 
 	vConfig "github.com/katzenpost/katzenpost/authority/voting/server/config"
 	cConfig "github.com/katzenpost/katzenpost/client/config"
+	cConfig2 "github.com/katzenpost/katzenpost/client2/config"
 	"github.com/katzenpost/katzenpost/core/cert"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
