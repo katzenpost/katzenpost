@@ -14,8 +14,10 @@ import (
 
 	"github.com/BurntSushi/toml"
 
-	"github.com/katzenpost/hpqc/rand"
+	"github.com/katzenpost/hpqc/kem"
+	kempem "github.com/katzenpost/hpqc/kem/pem"
 	"github.com/katzenpost/hpqc/sign"
+	"github.com/katzenpost/hpqc/sign/pem"
 
 	vServerConfig "github.com/katzenpost/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/katzenpost/core/cert"
@@ -146,7 +148,7 @@ type Provider struct {
 	IdentityKey sign.PublicKey
 
 	// LinkKey is the node's wire protocol public key.
-	LinkKey wire.PublicKey
+	LinkKey kem.PublicKey
 
 	// Addresses is the map of transport to address combinations that can
 	// be used to reach the node.
@@ -154,16 +156,16 @@ type Provider struct {
 }
 
 func (p *Provider) UnmarshalTOML(v interface{}) error {
-	_, p.IdentityKey = cert.Scheme.NewKeypair()
-	_, p.LinkKey = wire.DefaultScheme.GenerateKeypair(rand.Reader)
 
 	data, _ := v.(map[string]interface{})
 	p.Name = data["Name"].(string)
-	err := p.IdentityKey.UnmarshalText([]byte(data["IdentityKey"].(string)))
+	var err error
+	p.IdentityKey, err = pem.FromPublicPEMString(data["IdentityKey"].(string), cert.Scheme)
 	if err != nil {
 		return err
 	}
-	err = p.LinkKey.UnmarshalText([]byte(data["LinkKey"].(string)))
+
+	p.LinkKey, err = kempem.FromPublicPEMString(data["LinkKey"].(string), wire.DefaultScheme)
 	if err != nil {
 		return err
 	}
