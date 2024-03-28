@@ -57,7 +57,7 @@ func (a *authorityAuthenticator) IsPeerValid(creds *wire.PeerCredentials) bool {
 		a.log.Warnf("voting/Client: IsPeerValid(): AD mismatch: %x != %x", identityHash[:], creds.AdditionalData[:hash.HashSize])
 		return false
 	}
-	if a.LinkPublicKey.Equal(creds.PublicKey) {
+	if !a.LinkPublicKey.Equal(creds.PublicKey) {
 		a.log.Warnf("voting/Client: IsPeerValid(): Link Public Key mismatch: %s != %s", kempem.ToPublicPEMString(a.LinkPublicKey), kempem.ToPublicPEMString(creds.PublicKey))
 		return false
 	}
