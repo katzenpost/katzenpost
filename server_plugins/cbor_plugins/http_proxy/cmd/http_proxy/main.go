@@ -21,6 +21,8 @@ import (
 	"github.com/katzenpost/katzenpost/server_plugins/cbor_plugins/http_proxy"
 )
 
+const MaxPayloadSize = 15000 - 20
+
 func main() {
 	var logLevel string
 	var logDir string
@@ -145,7 +147,25 @@ func (s *proxyRequestHandler) OnCommand(cmd cborplugin.Command) (cborplugin.Comm
 
 		s.log.Debugf("Reply payload: %s", body)
 
-		return &cborplugin.Response{Payload: body}, nil
+		var response *http_proxy.Response
+		if len(body) > MaxPayloadSize {
+			s.log.Error("http response body exceeds max Sphinx payload")
+			response = &http_proxy.Response{
+				Error: "http response is too big",
+			}
+		} else {
+			response = &http_proxy.Response{
+				Payload: body,
+			}
+		}
+
+		payload, err := cbor.Marshal(response)
+		if err != nil {
+			s.log.Errorf("cbor.Marshal(response) failed: %s", err)
+			return nil, fmt.Errorf("cbor.Marshal(response) failed: %s", err)
+		}
+
+		return &cborplugin.Response{Payload: payload}, nil
 	default:
 		s.log.Errorf("OnCommand called with unknown Command type")
 		return nil, errors.New("Invalid Command type")
