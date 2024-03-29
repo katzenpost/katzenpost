@@ -120,6 +120,11 @@ func (s *proxyRequestHandler) OnCommand(cmd cborplugin.Command) (cborplugin.Comm
 		}
 
 		newRequest, err := http.NewRequest(request.Method, s.dest.String(), request.Body)
+		if err != nil {
+			s.log.Errorf("http.NewRequest failed: %s", err)
+			return nil, fmt.Errorf("http.NewRequest failed: %s", err)
+		}
+
 		newRequest.Header.Set("Content-Type", request.Header.Get("Content-Type"))
 		newRequest.Header.Set("Content-Length", request.Header.Get("Content-Length"))
 
@@ -130,7 +135,6 @@ func (s *proxyRequestHandler) OnCommand(cmd cborplugin.Command) (cborplugin.Comm
 		}
 		defer resp.Body.Close()
 
-		//resp.Header = http.Header{}
 		resp.Header["Host"] = []string{request.URL.Host}
 
 		body, err := io.ReadAll(resp.Body)
