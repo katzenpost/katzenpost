@@ -34,10 +34,12 @@ import (
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/katzenpost/katzenpost/core/sphinx/commands"
+	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/sphinx/path"
 	"github.com/katzenpost/katzenpost/core/worker"
+	"github.com/katzenpost/katzenpost/loops"
 	"github.com/katzenpost/katzenpost/server/internal/glue"
 	"github.com/katzenpost/katzenpost/server/internal/instrument"
 	"github.com/katzenpost/katzenpost/server/internal/packet"
@@ -55,6 +57,9 @@ type surbCtx struct {
 	id      uint64
 	eta     time.Duration
 	sprpKey []byte
+
+	fwdPath []*sphinx.PathHop
+	revPath []*sphinx.PathHop
 
 	etaNode *avl.Node
 }
@@ -76,6 +81,59 @@ type decoy struct {
 	surbETAs   *avl.Tree
 	surbStore  map[uint64]*surbCtx
 	surbIDBase uint64
+
+	sentLoops      map[[loops.SegmentIDSize]byte]int     // segment id -> count
+	completedLoops map[[loops.SegmentIDSize]byte]int     // segment id -> count
+	ratios         map[[loops.SegmentIDSize]byte]float64 // segment id -> ratio
+}
+
+func pathToSegments(path []*sphinx.PathHop) [][loops.SegmentIDSize]byte {
+	segments := make([][loops.SegmentIDSize]byte, len(path)-1)
+	for i := 0; i < len(path)-1; i++ {
+		segmentID := [loops.SegmentIDSize]byte{}
+		copy(segmentID[:constants.NodeIDLength], path[i].ID[:])
+		copy(segmentID[constants.NodeIDLength:], path[i+1].ID[:])
+		segments[i] = segmentID
+	}
+	return segments
+}
+
+func (d *decoy) incrementSentSegments(fwdPath, revPath []*sphinx.PathHop) {
+	fwd := pathToSegments(fwdPath)
+	rev := pathToSegments(revPath)
+	for i := 0; i < len(fwd); i++ {
+		_, ok := d.sentLoops[fwd[i]]
+		if !ok {
+			d.sentLoops[fwd[i]] = 0
+		}
+		d.sentLoops[fwd[i]] += 1
+	}
+	for i := 0; i < len(rev); i++ {
+		_, ok := d.sentLoops[rev[i]]
+		if !ok {
+			d.sentLoops[rev[i]] = 0
+		}
+		d.sentLoops[rev[i]] += 1
+	}
+}
+
+func (d *decoy) incrementCompleted(fwdPath, revPath []*sphinx.PathHop) {
+	fwd := pathToSegments(fwdPath)
+	rev := pathToSegments(revPath)
+	for i := 0; i < len(fwd); i++ {
+		_, ok := d.completedLoops[fwd[i]]
+		if !ok {
+			d.completedLoops[fwd[i]] = 0
+		}
+		d.completedLoops[fwd[i]] += 1
+	}
+	for i := 0; i < len(rev); i++ {
+		_, ok := d.completedLoops[rev[i]]
+		if !ok {
+			d.completedLoops[rev[i]] = 0
+		}
+		d.completedLoops[rev[i]] += 1
+	}
 }
 
 func (d *decoy) OnNewDocument(ent *pkicache.Entry) {
@@ -121,8 +179,7 @@ func (d *decoy) OnPacket(pkt *packet.Packet) {
 		return
 	}
 
-	// TODO: At some point, this should do more than just log.
-	d.log.Debugf("Response packet: %v (SURB ID: 0x%08x): ETA: %v, Actual: %v (DeltaT: %v)", pkt.ID, id, ctx.eta, pkt.RecvAt, pkt.RecvAt-ctx.eta)
+	d.incrementCompleted(ctx.fwdPath, ctx.revPath)
 }
 
 func (d *decoy) worker() {
@@ -191,7 +248,12 @@ func (d *decoy) worker() {
 			d.sweepSURBCtxs()
 		}
 		if !timerFired && !timer.Stop() {
-			<-timer.C
+			select {
+			case <-d.HaltCh():
+				d.log.Debugf("Terminating gracefully.")
+				return
+			case <-timer.C:
+			}
 		}
 		timer.Reset(wakeInterval)
 	}
@@ -279,6 +341,8 @@ func (d *decoy) sendLoopPacket(doc *pki.Document, recipient []byte, src, dst *pk
 			ctx := &surbCtx{
 				id:      binary.BigEndian.Uint64(surbID[8:]),
 				eta:     monotime.Now() + deltaT,
+				fwdPath: fwdPath,
+				revPath: revPath,
 				sprpKey: k,
 			}
 			d.storeSURBCtx(ctx)
@@ -294,6 +358,9 @@ func (d *decoy) sendLoopPacket(doc *pki.Document, recipient []byte, src, dst *pk
 			d.log.Debugf("Dispatching loop packet: SURB ID: 0x%08x", binary.BigEndian.Uint64(surbID[8:]))
 
 			d.dispatchPacket(fwdPath, pkt)
+
+			d.incrementSentSegments(fwdPath, revPath)
+
 			return
 		}
 	}
@@ -455,8 +522,11 @@ func New(glue glue.Glue) (glue.Decoy, error) {
 				return 0
 			}
 		}),
-		surbStore:  make(map[uint64]*surbCtx),
-		surbIDBase: uint64(time.Now().Unix()),
+		surbStore:      make(map[uint64]*surbCtx),
+		surbIDBase:     uint64(time.Now().Unix()),
+		sentLoops:      make(map[[loops.SegmentIDSize]byte]int),
+		completedLoops: make(map[[loops.SegmentIDSize]byte]int),
+		ratios:         make(map[[loops.SegmentIDSize]byte]float64),
 	}
 	if _, err := io.ReadFull(rand.Reader, d.recipient); err != nil {
 		return nil, err
