@@ -222,11 +222,16 @@ func (s *katzenpost) genNodeConfig(isProvider bool, isVoting bool) error {
 				Networks: make(map[string]string),
 			}
 
-			myConfig.Networks["ethereum.mainnet"] = "https://ethereum-rpc.publicnode.com"
-			myConfig.Networks["ethereum.sepolia"] = "https://ethereum-sepolia-rpc.publicnode.com"
+			myConfig.Networks["ethereum"] = "https://ethereum-rpc.publicnode.com"
+			myConfig.Networks["ethereum/sepolia"] = "https://ethereum-sepolia-rpc.publicnode.com"
+			myConfig.Networks["mina"] = "https://proxy.minaexplorer.com/graphql"
+			myConfig.Networks["mina/berkeley"] = "https://proxy.berkeley.minaexplorer.com/graphql"
+			myConfig.Networks["mina/devnet"] = "https://proxy.devnet.minaexplorer.com/graphql"
 
 			httpProxyConfigPath := httpProxyCfg.Config["config"].(string)
-			httpProxyConfigPath = httpProxyConfigPath[1:]
+			if httpProxyConfigPath[0] == '/' {
+				httpProxyConfigPath = httpProxyConfigPath[1:]
+			}
 			f, err := os.Create(httpProxyConfigPath)
 			if err != nil {
 				return fmt.Errorf("failed to os.Create http proxy config file: %s", err)
