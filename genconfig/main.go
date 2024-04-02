@@ -214,7 +214,7 @@ func (s *katzenpost) genNodeConfig(isProvider bool, isVoting bool) error {
 				MaxConcurrency: 1,
 				Config: map[string]interface{}{
 					"log_dir": s.baseDir + "/" + cfg.Server.Identifier,
-					"config":  s.baseDir + "/" + cfg.Server.Identifier + "/" + "config.toml",
+					"config":  s.baseDir + "/" + cfg.Server.Identifier + "/" + "http_proxy_config.toml",
 				},
 			}
 
@@ -228,10 +228,7 @@ func (s *katzenpost) genNodeConfig(isProvider bool, isVoting bool) error {
 			myConfig.Networks["mina/berkeley"] = "https://proxy.berkeley.minaexplorer.com/graphql"
 			myConfig.Networks["mina/devnet"] = "https://proxy.devnet.minaexplorer.com/graphql"
 
-			httpProxyConfigPath := httpProxyCfg.Config["config"].(string)
-			if httpProxyConfigPath[0] == '/' {
-				httpProxyConfigPath = httpProxyConfigPath[1:]
-			}
+			httpProxyConfigPath := s.outDir + "/" + cfg.Server.Identifier + "/" + "http_proxy_config.toml"
 			f, err := os.Create(httpProxyConfigPath)
 			if err != nil {
 				return fmt.Errorf("failed to os.Create http proxy config file: %s", err)
