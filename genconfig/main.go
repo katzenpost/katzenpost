@@ -225,9 +225,11 @@ func (s *katzenpost) genNodeConfig(isProvider bool, isVoting bool) error {
 			myConfig.Networks["ethereum.mainnet"] = "https://ethereum-rpc.publicnode.com"
 			myConfig.Networks["ethereum.sepolia"] = "https://ethereum-sepolia-rpc.publicnode.com"
 
-			f, err := os.Create(httpProxyCfg.Config["config"].(string))
+			httpProxyConfigPath := httpProxyCfg.Config["config"].(string)
+			httpProxyConfigPath = httpProxyConfigPath[1:]
+			f, err := os.Create(httpProxyConfigPath)
 			if err != nil {
-				return err
+				return fmt.Errorf("failed to os.Create http proxy config file: %s", err)
 			}
 			enc := toml.NewEncoder(f)
 			err = enc.Encode(myConfig)
