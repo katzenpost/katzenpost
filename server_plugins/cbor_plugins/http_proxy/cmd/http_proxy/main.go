@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"os"
 	"path"
 	"path/filepath"
@@ -27,16 +26,20 @@ func main() {
 	var logLevel string
 	var logDir string
 	var destURL string
+	var configPath string
 
 	flag.StringVar(&logDir, "log_dir", "", "logging directory")
 	flag.StringVar(&logLevel, "log_level", "DEBUG", "logging level could be set to: DEBUG, INFO, NOTICE, WARNING, ERROR, CRITICAL")
 	flag.StringVar(&destURL, "dest_url", "", "destination URL for reverse proxying to")
+	flag.StringVar(&configPath, "config", "", "file path to the TOML configuration file")
+
 	flag.Parse()
 
-	if destURL == "" {
-		panic("proxy destination must be set")
+	if configPath == "" {
+		panic("config MUST be specified!")
 	}
-	myurl, err := url.Parse(destURL)
+
+	cfg, err := http_proxy.LoadFile(configPath)
 	if err != nil {
 		panic(err)
 	}
@@ -69,7 +72,7 @@ func main() {
 
 	var server *cborplugin.Server
 
-	h := New(serverLog, myurl)
+	h := New(cfg, serverLog)
 	server = cborplugin.NewServer(serverLog, socketFile, new(cborplugin.RequestFactory), h)
 
 	// emit socketFile to stdout, because this tells the mix server where to connect
@@ -81,15 +84,22 @@ func main() {
 	os.Remove(socketFile)
 }
 
-type proxyRequestHandler struct {
-	log  *logging.Logger
-	dest *url.URL
+func validateRequestURL(uri string) error {
+	if string(uri)[0] != '/' {
+		return errors.New("uri must start with a slash")
+	}
+	return nil
 }
 
-func New(log *logging.Logger, dest *url.URL) *proxyRequestHandler {
+type proxyRequestHandler struct {
+	cfg *http_proxy.Config
+	log *logging.Logger
+}
+
+func New(cfg *http_proxy.Config, log *logging.Logger) *proxyRequestHandler {
 	return &proxyRequestHandler{
-		log:  log,
-		dest: dest,
+		cfg: cfg,
+		log: log,
 	}
 }
 
@@ -121,7 +131,23 @@ func (s *proxyRequestHandler) OnCommand(cmd cborplugin.Command) (cborplugin.Comm
 			return nil, fmt.Errorf("http.ReadRequest failed: %s", err)
 		}
 
-		newRequest, err := http.NewRequest(request.Method, s.dest.String(), request.Body)
+		s.log.Debugf("REQUEST URL PATH: %s", request.URL.Path)
+
+		err = validateRequestURL(request.URL.Path)
+		if err != nil {
+			s.log.Errorf("validateRequestURL failed: %s", err)
+			return nil, fmt.Errorf("validateRequestURL failed: %s", err)
+		}
+
+		uri := request.URL.Path
+		uri = uri[1:]
+		target, ok := s.cfg.Networks[uri]
+		if !ok {
+			s.log.Error("URI not matched with config Networks")
+			return nil, errors.New("URI not matched with config Networks")
+		}
+
+		newRequest, err := http.NewRequest(request.Method, target, request.Body)
 		if err != nil {
 			s.log.Errorf("http.NewRequest failed: %s", err)
 			return nil, fmt.Errorf("http.NewRequest failed: %s", err)
@@ -172,5 +198,5 @@ func (s *proxyRequestHandler) OnCommand(cmd cborplugin.Command) (cborplugin.Comm
 	}
 }
 
-// RegisterConsumer is required by our plugin system interface
+// RegisterConsumer is required by our plugin interface
 func (s *proxyRequestHandler) RegisterConsumer(svr *cborplugin.Server) {}

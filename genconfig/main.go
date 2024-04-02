@@ -32,15 +32,16 @@ import (
 	kempem "github.com/katzenpost/hpqc/kem/pem"
 	kemschemes "github.com/katzenpost/hpqc/kem/schemes"
 	"github.com/katzenpost/hpqc/nike/schemes"
+	"github.com/katzenpost/hpqc/sign"
 	signpem "github.com/katzenpost/hpqc/sign/pem"
 
-	"github.com/katzenpost/hpqc/sign"
 	vConfig "github.com/katzenpost/katzenpost/authority/voting/server/config"
 	cConfig "github.com/katzenpost/katzenpost/client/config"
 	"github.com/katzenpost/katzenpost/core/cert"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
 	sConfig "github.com/katzenpost/katzenpost/server/config"
+	"github.com/katzenpost/katzenpost/server_plugins/cbor_plugins/http_proxy"
 )
 
 const (
@@ -212,10 +213,29 @@ func (s *katzenpost) genNodeConfig(isProvider bool, isVoting bool) error {
 				Command:        s.baseDir + "/http_proxy" + s.binSuffix,
 				MaxConcurrency: 1,
 				Config: map[string]interface{}{
-					"log_dir":  s.baseDir + "/" + cfg.Server.Identifier,
-					"dest_url": "https://ethereum-rpc.publicnode.com",
+					"log_dir": s.baseDir + "/" + cfg.Server.Identifier,
+					"config":  s.baseDir + "/" + cfg.Server.Identifier + "/" + "config.toml",
 				},
 			}
+
+			myConfig := &http_proxy.Config{
+				Networks: make(map[string]string),
+			}
+
+			myConfig.Networks["ethereum.mainnet"] = "https://ethereum-rpc.publicnode.com"
+			myConfig.Networks["ethereum.sepolia"] = "https://ethereum-sepolia-rpc.publicnode.com"
+
+			f, err := os.Create(httpProxyCfg.Config["config"].(string))
+			if err != nil {
+				return err
+			}
+			enc := toml.NewEncoder(f)
+			err = enc.Encode(myConfig)
+			if err != nil {
+				return err
+			}
+			f.Close()
+
 			cfg.Provider.CBORPluginKaetzchen = []*sConfig.CBORPluginKaetzchen{spoolCfg, httpProxyCfg}
 
 			if !s.hasPanda {
