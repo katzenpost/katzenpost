@@ -103,7 +103,7 @@ func New(cfg *http_proxy.Config, log *logging.Logger) *proxyRequestHandler {
 	}
 }
 
-// OnCommand processes a SpoolRequest and returns a SpoolResponse
+// OnCommand processes a request and returns a response
 func (s *proxyRequestHandler) OnCommand(cmd cborplugin.Command) (cborplugin.Command, error) {
 	s.log.Info("OnCommand begin")
 	defer s.log.Info("OnCommand end")
