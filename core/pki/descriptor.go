@@ -87,8 +87,11 @@ func (s *SignedUpload) Sign(privKey sign.PrivateKey, pubKey sign.PublicKey) erro
 }
 
 func (s *SignedUpload) Verify(pubKey sign.PublicKey) bool {
-	ss := s
-	ss.Signature = nil
+	ss := &SignedUpload{
+		Signature:     nil,
+		MixDescriptor: s.MixDescriptor,
+		LoopStats:     s.LoopStats,
+	}
 	blob, err := ss.Marshal()
 	if err != nil {
 		return false
