@@ -33,10 +33,12 @@ import (
 	kemschemes "github.com/katzenpost/hpqc/kem/schemes"
 	"github.com/katzenpost/hpqc/nike"
 	"github.com/katzenpost/hpqc/nike/schemes"
+	"github.com/katzenpost/hpqc/sign"
 
 	"github.com/katzenpost/katzenpost/core/cert"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
+	"github.com/katzenpost/katzenpost/loops"
 )
 
 const (
@@ -55,6 +57,44 @@ type SignedUpload struct {
 
 	// MixDescriptor is the mix descriptor.
 	MixDescriptor *MixDescriptor
+
+	// LoopStats is the mix loop statistics.
+	LoopStats *loops.LoopStats
+}
+
+func (s *SignedUpload) Marshal() ([]byte, error) {
+	return ccbor.Marshal(s)
+}
+
+func (s *SignedUpload) Unmarshal(data []byte) error {
+	return cbor.Unmarshal(data, s)
+}
+
+func (s *SignedUpload) Sign(privKey sign.PrivateKey, pubKey sign.PublicKey) error {
+	if s.Signature != nil {
+		return errors.New("SignedUpload already has a signature")
+	}
+	blob, err := s.Marshal()
+	if err != nil {
+		return err
+	}
+	sig := &cert.Signature{
+		PublicKeySum256: hash.Sum256From(pubKey),
+		Payload:         privKey.Scheme().Sign(privKey, blob, nil),
+	}
+	s.Signature = sig
+	return nil
+}
+
+func (s *SignedUpload) Verify(pubKey sign.PublicKey) bool {
+	ss := s
+	ss.Signature = nil
+	blob, err := ss.Marshal()
+	if err != nil {
+		return false
+	}
+
+	return pubKey.Scheme().Verify(pubKey, blob, s.Signature.Payload, nil)
 }
 
 // MixDescriptor is a description of a given Mix or Provider (node).
