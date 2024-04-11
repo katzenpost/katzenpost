@@ -28,7 +28,6 @@ import (
 	"gopkg.in/eapache/channels.v1"
 	"gopkg.in/op/go-logging.v1"
 
-	"github.com/katzenpost/katzenpost/core/monotime"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/worker"
@@ -102,7 +101,7 @@ func (k *CBORPluginWorker) worker(recipient [constants.RecipientIDLength]byte, p
 			return
 		case e := <-ch:
 			pkt = e.(*packet.Packet)
-			if dwellTime := monotime.Now() - pkt.DispatchAt; dwellTime > maxDwell {
+			if dwellTime := time.Now().Sub(pkt.DispatchAt); dwellTime > maxDwell {
 				k.log.Debugf("Dropping packet: %v (Spend %v in queue)", pkt.ID, dwellTime)
 				instrument.PacketsDropped()
 				pkt.Dispose()
@@ -133,9 +132,10 @@ func (k *CBORPluginWorker) processKaetzchen(pkt *packet.Packet, pluginClient *cb
 	}
 
 	pluginClient.WriteChan() <- &cborplugin.Request{
-		ID:      pkt.ID,
-		Payload: payload,
-		HasSURB: surb != nil,
+		ID:           pkt.ID,
+		Payload:      payload,
+		ResponseSize: k.geo.UserForwardPayloadLength,
+		HasSURB:      surb != nil,
 	}
 	cborResponse := <-pluginClient.ReadChan()
 	switch r := cborResponse.(type) {

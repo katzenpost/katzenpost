@@ -203,7 +203,7 @@ func (b *MinclientBench) setup() {
 
 func (b *MinclientBench) Start(t *testing.T) {
 	b.setup()
-	<-b.onDoc
+	<-b.onConn
 	// TODO: start benchmark timers
 	b.Go(b.sendWorker)
 }

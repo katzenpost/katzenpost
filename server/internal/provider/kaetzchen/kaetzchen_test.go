@@ -32,7 +32,6 @@ import (
 
 	"github.com/katzenpost/katzenpost/core/cert"
 	"github.com/katzenpost/katzenpost/core/log"
-	"github.com/katzenpost/katzenpost/core/monotime"
 	"github.com/katzenpost/katzenpost/core/sphinx/commands"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
@@ -314,7 +313,7 @@ func TestKaetzchenWorker(t *testing.T) {
 	testPacket.Recipient = &commands.Recipient{
 		ID: recipient,
 	}
-	testPacket.DispatchAt = monotime.Now()
+	testPacket.DispatchAt = time.Now()
 
 	testPacket.Payload = make([]byte, geo.ForwardPayloadLength-1) // off by one erroneous size
 	kaetzWorker.OnKaetzchen(testPacket)
@@ -326,7 +325,7 @@ func TestKaetzchenWorker(t *testing.T) {
 	testPacket.Recipient = &commands.Recipient{
 		ID: recipient,
 	}
-	testPacket.DispatchAt = monotime.Now() - time.Duration(goo.Config().Debug.KaetzchenDelay)*time.Millisecond
+	testPacket.DispatchAt = time.Now().Add(-time.Duration(goo.Config().Debug.KaetzchenDelay)*time.Millisecond)
 	testPacket.Payload = make([]byte, geo.ForwardPayloadLength)
 	kaetzWorker.OnKaetzchen(testPacket)
 
@@ -337,7 +336,7 @@ func TestKaetzchenWorker(t *testing.T) {
 	testPacket.Recipient = &commands.Recipient{
 		ID: recipient,
 	}
-	testPacket.DispatchAt = monotime.Now()
+	testPacket.DispatchAt = time.Now()
 	testPacket.Payload = make([]byte, geo.ForwardPayloadLength)
 
 	kaetzWorker.OnKaetzchen(testPacket)
