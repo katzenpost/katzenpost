@@ -89,7 +89,7 @@ $(net_name)/running.stamp: $(net_name)
 	make $(make_args) start
 
 run: $(docker_compose_yml) $(net_name)/server.$(distro) $(net_name)/voting.$(distro)
-	-cd $(net_name) && touch running.stamp \
+	cd $(net_name) && touch running.stamp \
 	&& DOCKER_USER=${docker_user} $(docker_compose) up --remove-orphans
 	cd $(net_name) && rm -v running.stamp
 
