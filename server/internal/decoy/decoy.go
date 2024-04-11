@@ -262,9 +262,6 @@ func (d *decoy) worker() {
 func (d *decoy) sendDecoyPacket(ent *pkicache.Entry) {
 	// TODO: (#52) Do nothing if the rate limiter would discard the packet(?).
 
-	// TODO: Determine if this should be a loop or discard packet.
-	isLoopPkt := true // HACK HACK HACK HACK.
-
 	selfDesc := ent.Self()
 	if selfDesc.Provider {
 		// The code doesn't handle this correctly yet.  It does need to
@@ -297,11 +294,7 @@ func (d *decoy) sendDecoyPacket(ent *pkicache.Entry) {
 		return
 	}
 
-	if isLoopPkt {
-		d.sendLoopPacket(doc, []byte(loopRecip), selfDesc, providerDesc)
-		return
-	}
-	d.sendDiscardPacket(doc, []byte(loopRecip), selfDesc, providerDesc)
+	d.sendLoopPacket(doc, []byte(loopRecip), selfDesc, providerDesc)
 }
 
 func (d *decoy) sendLoopPacket(doc *pki.Document, recipient []byte, src, dst *pki.MixDescriptor) {
@@ -366,33 +359,6 @@ func (d *decoy) sendLoopPacket(doc *pki.Document, recipient []byte, src, dst *pk
 	}
 
 	d.log.Debugf("Failed to generate loop packet: %v", errMaxAttempts)
-}
-
-func (d *decoy) sendDiscardPacket(doc *pki.Document, recipient []byte, src, dst *pki.MixDescriptor) {
-	payload := make([]byte, 2+d.geo.SURBLength+d.geo.UserForwardPayloadLength)
-
-	for attempts := 0; attempts < maxAttempts; attempts++ {
-		now := time.Now()
-
-		fwdPath, then, err := path.New(d.rng, d.geo, doc, recipient, src, dst, nil, time.Now(), false, true)
-		if err != nil {
-			d.log.Debugf("Failed to select forward path: %v", err)
-			return
-		}
-
-		if then.Sub(now) < epochtime.Period*2 {
-			pkt, err := d.sphinx.NewPacket(rand.Reader, fwdPath, payload)
-			if err != nil {
-				d.log.Debugf("Failed to generate Sphinx packet: %v", err)
-				return
-			}
-			d.logPath(doc, fwdPath)
-			d.dispatchPacket(fwdPath, pkt)
-			return
-		}
-	}
-
-	d.log.Debugf("Failed to generate discard decoy packet: %v", errMaxAttempts)
 }
 
 func (d *decoy) dispatchPacket(fwdPath []*sphinx.PathHop, raw []byte) {
