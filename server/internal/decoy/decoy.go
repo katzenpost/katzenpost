@@ -97,6 +97,41 @@ type decoy struct {
 	completedLoops map[uint64]map[[loops.SegmentIDSize]byte]int // epoch -> segment id -> count
 }
 
+func (d *decoy) gc(epoch uint64) {
+	d.Lock()
+	defer d.Unlock()
+
+	delete(d.sentLoops, epoch)
+	delete(d.completedLoops, epoch)
+}
+
+func (d *decoy) gcWorker() {
+	timer := time.NewTimer(epochtime.Period)
+	defer timer.Stop()
+
+	for {
+		var timerFired bool
+		select {
+		case <-d.HaltCh():
+			return
+		case <-timer.C:
+			timerFired = true
+		}
+		if timerFired {
+			epoch, _, _ := epochtime.Now()
+			d.gc(epoch - 7)
+		}
+		if !timerFired && !timer.Stop() {
+			select {
+			case <-d.HaltCh():
+				return
+			case <-timer.C:
+			}
+		}
+		timer.Reset(epochtime.Period)
+	}
+}
+
 func (d *decoy) GetStats(doPublishEpoch uint64) *loops.LoopStats {
 	d.Lock()
 
@@ -548,5 +583,6 @@ func New(glue glue.Glue) (glue.Decoy, error) {
 	}
 
 	d.Go(d.worker)
+	d.Go(d.gcWorker)
 	return d, nil
 }
