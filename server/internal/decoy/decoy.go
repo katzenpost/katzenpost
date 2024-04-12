@@ -28,6 +28,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/pki"
@@ -51,6 +52,17 @@ import (
 const maxAttempts = 3
 
 var errMaxAttempts = errors.New("decoy: max path selection attempts exceeded")
+
+func pathToSegments(path []*sphinx.PathHop) [][loops.SegmentIDSize]byte {
+	segments := make([][loops.SegmentIDSize]byte, len(path)-1)
+	for i := 0; i < len(path)-1; i++ {
+		segmentID := [loops.SegmentIDSize]byte{}
+		copy(segmentID[:constants.NodeIDLength], path[i].ID[:])
+		copy(segmentID[constants.NodeIDLength:], path[i+1].ID[:])
+		segments[i] = segmentID
+	}
+	return segments
+}
 
 type surbCtx struct {
 	id      uint64
@@ -81,57 +93,95 @@ type decoy struct {
 	surbStore  map[uint64]*surbCtx
 	surbIDBase uint64
 
-	sentLoops      map[[loops.SegmentIDSize]byte]int     // segment id -> count
-	completedLoops map[[loops.SegmentIDSize]byte]int     // segment id -> count
-	ratios         map[[loops.SegmentIDSize]byte]float64 // segment id -> ratio
+	sentLoops      map[uint64]map[[loops.SegmentIDSize]byte]int // epoch -> segment id -> count
+	completedLoops map[uint64]map[[loops.SegmentIDSize]byte]int // epoch -> segment id -> count
 }
 
-func pathToSegments(path []*sphinx.PathHop) [][loops.SegmentIDSize]byte {
-	segments := make([][loops.SegmentIDSize]byte, len(path)-1)
-	for i := 0; i < len(path)-1; i++ {
-		segmentID := [loops.SegmentIDSize]byte{}
-		copy(segmentID[:constants.NodeIDLength], path[i].ID[:])
-		copy(segmentID[constants.NodeIDLength:], path[i+1].ID[:])
-		segments[i] = segmentID
+func (d *decoy) GetStats(doPublishEpoch uint64) *loops.LoopStats {
+	d.Lock()
+
+	epoch, _, _ := epochtime.Now()
+	epoch = epoch - 1
+
+	id := hash.Sum256From(d.glue.IdentityPublicKey())
+	ratios := make(map[[loops.SegmentIDSize]byte]float64)
+
+	for id, _ := range d.sentLoops[epoch] {
+		sentCount, ok := d.sentLoops[epoch][id]
+		if !ok {
+			ratios[id] = 1
+			continue
+		}
+		completedCount, ok := d.completedLoops[epoch][id]
+		if !ok {
+			ratios[id] = 1
+			continue
+		}
+		ratios[id] = float64(completedCount) / float64(sentCount)
 	}
-	return segments
+
+	d.Unlock()
+
+	return &loops.LoopStats{
+		MixIdentityHash: &id,
+		Epoch:           doPublishEpoch,
+		SegmentRatios:   ratios,
+	}
 }
 
 func (d *decoy) incrementSentSegments(fwdPath, revPath []*sphinx.PathHop) {
+	d.Lock()
+	defer d.Unlock()
+
+	epoch, _, _ := epochtime.Now()
+	_, ok := d.sentLoops[epoch]
+	if !ok {
+		d.sentLoops[epoch] = make(map[[loops.SegmentIDSize]byte]int)
+	}
+
 	fwd := pathToSegments(fwdPath)
 	rev := pathToSegments(revPath)
 	for i := 0; i < len(fwd); i++ {
-		_, ok := d.sentLoops[fwd[i]]
+		_, ok := d.sentLoops[epoch][fwd[i]]
 		if !ok {
-			d.sentLoops[fwd[i]] = 0
+			d.sentLoops[epoch][fwd[i]] = 0
 		}
-		d.sentLoops[fwd[i]] += 1
+		d.sentLoops[epoch][fwd[i]] += 1
 	}
 	for i := 0; i < len(rev); i++ {
-		_, ok := d.sentLoops[rev[i]]
+		_, ok := d.sentLoops[epoch][rev[i]]
 		if !ok {
-			d.sentLoops[rev[i]] = 0
+			d.sentLoops[epoch][rev[i]] = 0
 		}
-		d.sentLoops[rev[i]] += 1
+		d.sentLoops[epoch][rev[i]] += 1
 	}
 }
 
 func (d *decoy) incrementCompleted(fwdPath, revPath []*sphinx.PathHop) {
+	d.Lock()
+	defer d.Unlock()
+
+	epoch, _, _ := epochtime.Now()
+	_, ok := d.completedLoops[epoch]
+	if !ok {
+		d.completedLoops[epoch] = make(map[[loops.SegmentIDSize]byte]int)
+	}
+
 	fwd := pathToSegments(fwdPath)
 	rev := pathToSegments(revPath)
 	for i := 0; i < len(fwd); i++ {
-		_, ok := d.completedLoops[fwd[i]]
+		_, ok := d.completedLoops[epoch][fwd[i]]
 		if !ok {
-			d.completedLoops[fwd[i]] = 0
+			d.completedLoops[epoch][fwd[i]] = 0
 		}
-		d.completedLoops[fwd[i]] += 1
+		d.completedLoops[epoch][fwd[i]] += 1
 	}
 	for i := 0; i < len(rev); i++ {
-		_, ok := d.completedLoops[rev[i]]
+		_, ok := d.completedLoops[epoch][rev[i]]
 		if !ok {
-			d.completedLoops[rev[i]] = 0
+			d.completedLoops[epoch][rev[i]] = 0
 		}
-		d.completedLoops[rev[i]] += 1
+		d.completedLoops[epoch][rev[i]] += 1
 	}
 }
 
@@ -490,9 +540,8 @@ func New(glue glue.Glue) (glue.Decoy, error) {
 		}),
 		surbStore:      make(map[uint64]*surbCtx),
 		surbIDBase:     uint64(time.Now().Unix()),
-		sentLoops:      make(map[[loops.SegmentIDSize]byte]int),
-		completedLoops: make(map[[loops.SegmentIDSize]byte]int),
-		ratios:         make(map[[loops.SegmentIDSize]byte]float64),
+		sentLoops:      make(map[uint64]map[[loops.SegmentIDSize]byte]int),
+		completedLoops: make(map[uint64]map[[loops.SegmentIDSize]byte]int),
 	}
 	if _, err := io.ReadFull(rand.Reader, d.recipient); err != nil {
 		return nil, err
