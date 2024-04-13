@@ -47,7 +47,6 @@ import (
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/katzenpost/core/cert"
 	"github.com/katzenpost/katzenpost/core/epochtime"
-	"github.com/katzenpost/katzenpost/core/monotime"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
@@ -334,10 +333,9 @@ func (s *state) doParseDocument(b []byte) (*pki.Document, error) {
 }
 
 func (s *state) doSignDocument(signer sign.PrivateKey, verifier sign.PublicKey, d *pki.Document) ([]byte, error) {
-	signAt := monotime.Now()
+	signAt := time.Now()
 	sig, err := pki.SignDocument(signer, verifier, d)
-	signedAt := monotime.Now()
-	s.log.Notice("pki.SignDocument took %v", signedAt-signAt)
+	s.log.Noticef("pki.SignDocument took %v", time.Since(signAt))
 	return sig, err
 }
 

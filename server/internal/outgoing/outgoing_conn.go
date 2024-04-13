@@ -31,7 +31,6 @@ import (
 	"github.com/katzenpost/hpqc/rand"
 
 	"github.com/katzenpost/katzenpost/core/epochtime"
-	"github.com/katzenpost/katzenpost/core/monotime"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
@@ -350,9 +349,9 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 			continue
 		case pkt = <-c.ch:
 			// Check the packet queue dwell time and drop it if it is excessive.
-			now := monotime.Now()
-			if now-pkt.DispatchAt > time.Duration(c.co.glue.Config().Debug.SendSlack)*time.Millisecond {
-				c.log.Debugf("Dropping packet: %v (Deadline blown by %v)", pkt.ID, now-pkt.DispatchAt)
+			now := time.Now()
+			if now.Sub(pkt.DispatchAt) > time.Duration(c.co.glue.Config().Debug.SendSlack)*time.Millisecond {
+				c.log.Debugf("Dropping packet: %v (Deadline blown by %v)", pkt.ID, now.Sub(pkt.DispatchAt))
 				instrument.DeadlineBlownPacketsDropped()
 				instrument.OutgoingPacketsDropped()
 				instrument.PacketsDropped()

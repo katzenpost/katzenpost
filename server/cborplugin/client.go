@@ -38,9 +38,10 @@ import (
 
 // Request is the struct type used in service query requests to plugins.
 type Request struct {
-	ID      uint64
-	Payload []byte
-	HasSURB bool
+	ID           uint64
+	Payload      []byte
+	ResponseSize int
+	HasSURB      bool
 }
 
 // Marshal serializes Request
