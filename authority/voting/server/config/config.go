@@ -454,7 +454,7 @@ func (cfg *Config) ValidateAuthorities(linkPubKey kem.PublicKey) error {
 // FixupAndValidate applies defaults to config entries and validates the
 // supplied configuration.  Most people should call one of the Load variants
 // instead.
-func (cfg *Config) FixupAndValidate() error {
+func (cfg *Config) FixupAndValidate(forceGenOnly bool) error {
 
 	if cfg.SphinxGeometry == nil {
 		return errors.New("config: No SphinxGeometry block was present")
@@ -505,6 +505,10 @@ func (cfg *Config) FixupAndValidate() error {
 	}
 
 	var identityKey sign.PublicKey
+
+	if forceGenOnly {
+		return nil
+	}
 
 	idMap := make(map[string]*Node)
 	pkMap := make(map[[publicKeyHashSize]byte]*Node)
@@ -571,7 +575,7 @@ func Load(b []byte, forceGenOnly bool) (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := cfg.FixupAndValidate(); err != nil {
+	if err := cfg.FixupAndValidate(forceGenOnly); err != nil {
 		return nil, err
 	}
 
