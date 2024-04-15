@@ -232,7 +232,18 @@ type wireAuthenticator struct {
 	isAuthority         bool
 }
 
+func (a *wireAuthenticator) LogAuthorizedAuthorities() {
+	a.s.log.Warning("start print authorizedAuthorities map")
+	for key, value := range a.s.state.authorizedAuthorities {
+		a.s.log.Warningf("key: %x -> value: %v", key[:], value)
+	}
+	a.s.log.Warning("end print authorizedAuthorities map")
+}
+
 func (a *wireAuthenticator) IsPeerValid(creds *wire.PeerCredentials) bool {
+
+	a.LogAuthorizedAuthorities()
+
 	switch len(creds.AdditionalData) {
 	case 0:
 		a.isClient = true
