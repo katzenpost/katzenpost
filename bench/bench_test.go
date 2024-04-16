@@ -53,9 +53,6 @@ import (
 	"github.com/katzenpost/katzenpost/minclient"
 )
 
-var testingSchemeName = "x25519"
-var testingScheme = schemes.ByName(testingSchemeName)
-
 var (
 	clientTestCfg              = "testdata/client.toml"
 	initialPKIConsensusTimeout = 45 * time.Second
@@ -156,10 +153,12 @@ func (b *MinclientBench) setup() {
 
 	b.log = logBackend.GetLogger("MinclientBench")
 
-	if testingScheme == nil {
-		panic("testingScheme is invalid")
+	myScheme := schemes.ByName(cfg.WireKEMScheme)
+	if myScheme == nil {
+		panic("WireKEMScheme is invalid")
 	}
-	_, b.linkKey, err = testingScheme.GenerateKeyPair()
+
+	_, b.linkKey, err = schemes.ByName(cfg.WireKEMScheme).GenerateKeyPair()
 	blob, err := b.linkKey.Public().MarshalBinary()
 	if err != nil {
 		panic(err)
@@ -184,7 +183,7 @@ func (b *MinclientBench) setup() {
 		panic(err)
 	}
 	b.minclientConfig = &minclient.ClientConfig{
-		LinkKemScheme:       testingScheme,
+		LinkKemScheme:       myScheme,
 		SphinxGeometry:      cfg.SphinxGeometry,
 		User:                string(idHash[:]),
 		Provider:            b.provider.Name,
