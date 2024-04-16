@@ -25,6 +25,7 @@ import (
 	ecdh "github.com/katzenpost/hpqc/nike/x25519"
 
 	"github.com/katzenpost/hpqc/rand"
+	"github.com/katzenpost/katzenpost/core/cert"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/wire"
@@ -182,18 +183,33 @@ func (s *Server) onPostDescriptor(rAddr net.Addr, cmd *commands.PostDescriptor, 
 		return resp
 	}
 
-	// Validate and deserialize the descriptor.
-	desc := new(pki.MixDescriptor)
-	err := desc.UnmarshalBinary(cmd.Payload)
+	// Validate and deserialize the SignedUpload.
+	signedUpload := new(pki.SignedUpload)
+	err := signedUpload.Unmarshal(cmd.Payload)
 	if err != nil {
 		s.log.Errorf("Peer %v: Invalid descriptor: %v", rAddr, err)
 		return resp
 	}
 
+	desc := signedUpload.MixDescriptor
+
 	// Ensure that the descriptor is signed by the peer that is posting.
 	identityKeyHash := hash.Sum256(desc.IdentityKey)
 	if !hmac.Equal(identityKeyHash[:], pubKeyHash) {
 		s.log.Errorf("Peer %v: Identity key hash '%x' is not link key '%v'.", rAddr, hash.Sum256(desc.IdentityKey), pubKeyHash)
+		resp.ErrorCode = commands.DescriptorForbidden
+		return resp
+	}
+
+	descIdPubKey, err := cert.Scheme.UnmarshalBinaryPublicKey(desc.IdentityKey)
+	if err != nil {
+		s.log.Error("failed to unmarshal descriptor IdentityKey")
+		resp.ErrorCode = commands.DescriptorForbidden
+		return resp
+	}
+
+	if !signedUpload.Verify(descIdPubKey) {
+		s.log.Error("PostDescriptorStatus contained a SignedUpload with an invalid signature")
 		resp.ErrorCode = commands.DescriptorForbidden
 		return resp
 	}
