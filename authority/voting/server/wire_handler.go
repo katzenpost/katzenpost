@@ -221,6 +221,8 @@ func (s *Server) onPostDescriptor(rAddr net.Addr, cmd *commands.PostDescriptor, 
 		return resp
 	}
 
+	// TODO(david): Use the packet loss statistics to make decisions about how to generate the consensus document.
+
 	// Hand the descriptor off to the state worker.  As long as this returns
 	// a nil, the authority "accepts" the descriptor.
 	err = s.state.onDescriptorUpload(cmd.Payload, desc, cmd.Epoch)
