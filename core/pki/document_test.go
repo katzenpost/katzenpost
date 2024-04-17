@@ -25,11 +25,14 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/katzenpost/hpqc/kem/schemes"
 	ecdh "github.com/katzenpost/hpqc/nike/x25519"
 
 	"github.com/katzenpost/katzenpost/core/cert"
-	"github.com/katzenpost/katzenpost/core/wire"
 )
+
+var testingSchemeName = "xwing"
+var testingScheme = schemes.ByName(testingSchemeName)
 
 func genDescriptor(require *require.Assertions, idx int, provider bool) *MixDescriptor {
 	d := new(MixDescriptor)
@@ -48,7 +51,7 @@ func genDescriptor(require *require.Assertions, idx int, provider bool) *MixDesc
 	d.IdentityKey, err = identityPub.MarshalBinary()
 	require.NoError(err)
 
-	scheme := wire.DefaultScheme
+	scheme := testingScheme
 	linkKey, _, err := scheme.GenerateKeyPair()
 	require.NoError(err)
 	d.LinkKey, err = linkKey.MarshalBinary()
