@@ -38,6 +38,7 @@ import (
 
 	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/kem"
+	"github.com/katzenpost/hpqc/kem/schemes"
 	signpem "github.com/katzenpost/hpqc/sign/pem"
 
 	"github.com/katzenpost/hpqc/rand"
@@ -699,7 +700,14 @@ func (s *state) sendCommandToPeer(peer *config.Authority, cmd commands.Command) 
 	s.s.Add(1)
 	defer s.s.Done()
 	identityHash := hash.Sum256From(s.s.identityPublicKey)
+
+	kemscheme := schemes.ByName(s.s.cfg.Server.WireKEMScheme)
+	if kemscheme == nil {
+		panic("kem scheme not found in registry")
+	}
+
 	cfg := &wire.SessionConfig{
+		KEMScheme:         kemscheme,
 		Geometry:          nil,
 		Authenticator:     s,
 		AdditionalData:    identityHash[:],
@@ -1876,8 +1884,13 @@ func (s *state) backgroundFetchConsensus(epoch uint64) {
 	// authorities for a consensus.
 	_, ok := s.documents[epoch]
 	if !ok {
+		kemscheme := schemes.ByName(s.s.cfg.Server.WireKEMScheme)
+		if kemscheme == nil {
+			panic("kem scheme not found in registry")
+		}
 		go func() {
 			cfg := &client.Config{
+				KEMScheme:     kemscheme,
 				LinkKey:       s.s.linkKey,
 				LogBackend:    s.s.logBackend,
 				Authorities:   s.s.cfg.Authorities,

@@ -44,6 +44,7 @@ kem=
 
 DISTROS=alpine debian
 distro=alpine
+wirekem=xwing
 net_name=voting_mixnet
 base_port=30000
 bind_addr=127.0.0.1
@@ -76,7 +77,7 @@ $(docker_compose_yml): ../genconfig/main.go $(distro)_go_mod.stamp
 	mkdir -p $(net_name)
 	$(docker) run ${docker_args} --rm katzenpost-$(distro)_go_mod \
 		$(sh) -c 'cd genconfig && go build && cd ../docker \
-		&& ../genconfig/genconfig -a ${bind_addr} -nv ${auths} -n ${mixes} -p ${providers} \
+		&& ../genconfig/genconfig -wirekem $(wirekem) -a ${bind_addr} -nv ${auths} -n ${mixes} -p ${providers} \
 		-sr ${sr} -mu ${mu} -muMax ${muMax} -lP ${lP} -lPMax ${lPMax} -lL ${lL} \
 		-lLMax ${lLMax} -lD ${lD} -lDMax ${lDMax} -lM ${lM} -lMMax ${lMMax} \
 		-S .$(distro) -v -o ./$(net_name) -b /$(net_name) -P $(base_port) \

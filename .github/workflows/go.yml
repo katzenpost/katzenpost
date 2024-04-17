@@ -17,7 +17,7 @@ jobs:
         uses: actions/checkout@v3
 
       - name: Generate mixnet configuration
-        run: cd genconfig && go build && ./genconfig -v -b /conf -o ../docker/voting_mixnet/
+        run: cd genconfig && go build && ./genconfig -wirekem xwing -v -b /conf -o ../docker/voting_mixnet/
 
       - name: Run authority unit tests
         run: sudo sh -c "cd authority && ulimit -l 64435 && GORACE=history_size=7 go test -coverprofile=coverage.out -race -v -failfast -timeout 30m ./..."
@@ -179,11 +179,7 @@ jobs:
 
       - name: Build and start the mixnet
         run: |
-          cd docker && sudo -E make start
-
-      - name: Allow mixnet to settle
-        run: |
-          sleep 240
+          cd docker && sudo -E make start wait run-ping
 
       - name: run benchmark tests
         run: cd bench && sudo -E make testargs=-coverprofile=coverage.part dockerdockertest && cat coverage.part >> ../coverage.out
