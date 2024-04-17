@@ -25,6 +25,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/katzenpost/hpqc/kem"
+	"github.com/katzenpost/hpqc/kem/schemes"
 	ecdh "github.com/katzenpost/hpqc/nike/x25519"
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/hpqc/sign"
@@ -32,7 +33,6 @@ import (
 
 	"github.com/katzenpost/katzenpost/core/cert"
 	"github.com/katzenpost/katzenpost/core/log"
-	"github.com/katzenpost/katzenpost/core/monotime"
 	"github.com/katzenpost/katzenpost/core/sphinx/commands"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
@@ -46,6 +46,9 @@ import (
 	"github.com/katzenpost/katzenpost/server/spool"
 	"github.com/katzenpost/katzenpost/server/userdb"
 )
+
+var testingSchemeName = "x25519"
+var testingScheme = schemes.ByName(testingSchemeName)
 
 type mockUserDB struct {
 	provider *mockProvider
@@ -240,7 +243,7 @@ func TestKaetzchenWorker(t *testing.T) {
 	logBackend, err := log.New("", "DEBUG", false)
 	require.NoError(t, err)
 
-	scheme := wire.DefaultScheme
+	scheme := testingScheme
 	_, userKey, err := scheme.GenerateKeyPair()
 	require.NoError(t, err)
 	_, linkKey, err := scheme.GenerateKeyPair()
@@ -314,7 +317,7 @@ func TestKaetzchenWorker(t *testing.T) {
 	testPacket.Recipient = &commands.Recipient{
 		ID: recipient,
 	}
-	testPacket.DispatchAt = monotime.Now()
+	testPacket.DispatchAt = time.Now()
 
 	testPacket.Payload = make([]byte, geo.ForwardPayloadLength-1) // off by one erroneous size
 	kaetzWorker.OnKaetzchen(testPacket)
@@ -326,7 +329,7 @@ func TestKaetzchenWorker(t *testing.T) {
 	testPacket.Recipient = &commands.Recipient{
 		ID: recipient,
 	}
-	testPacket.DispatchAt = monotime.Now() - time.Duration(goo.Config().Debug.KaetzchenDelay)*time.Millisecond
+	testPacket.DispatchAt = time.Now().Add(-time.Duration(goo.Config().Debug.KaetzchenDelay)*time.Millisecond)
 	testPacket.Payload = make([]byte, geo.ForwardPayloadLength)
 	kaetzWorker.OnKaetzchen(testPacket)
 
@@ -337,7 +340,7 @@ func TestKaetzchenWorker(t *testing.T) {
 	testPacket.Recipient = &commands.Recipient{
 		ID: recipient,
 	}
-	testPacket.DispatchAt = monotime.Now()
+	testPacket.DispatchAt = time.Now()
 	testPacket.Payload = make([]byte, geo.ForwardPayloadLength)
 
 	kaetzWorker.OnKaetzchen(testPacket)

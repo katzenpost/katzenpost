@@ -38,6 +38,7 @@ import (
 
 	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/kem"
+	"github.com/katzenpost/hpqc/kem/schemes"
 	signpem "github.com/katzenpost/hpqc/sign/pem"
 
 	"github.com/katzenpost/hpqc/rand"
@@ -46,7 +47,6 @@ import (
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/katzenpost/core/cert"
 	"github.com/katzenpost/katzenpost/core/epochtime"
-	"github.com/katzenpost/katzenpost/core/monotime"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
@@ -333,10 +333,9 @@ func (s *state) doParseDocument(b []byte) (*pki.Document, error) {
 }
 
 func (s *state) doSignDocument(signer sign.PrivateKey, verifier sign.PublicKey, d *pki.Document) ([]byte, error) {
-	signAt := monotime.Now()
+	signAt := time.Now()
 	sig, err := pki.SignDocument(signer, verifier, d)
-	signedAt := monotime.Now()
-	s.log.Notice("pki.SignDocument took %v", signedAt-signAt)
+	s.log.Noticef("pki.SignDocument took %v", time.Since(signAt))
 	return sig, err
 }
 
@@ -701,7 +700,14 @@ func (s *state) sendCommandToPeer(peer *config.Authority, cmd commands.Command) 
 	s.s.Add(1)
 	defer s.s.Done()
 	identityHash := hash.Sum256From(s.s.identityPublicKey)
+
+	kemscheme := schemes.ByName(s.s.cfg.Server.WireKEMScheme)
+	if kemscheme == nil {
+		panic("kem scheme not found in registry")
+	}
+
 	cfg := &wire.SessionConfig{
+		KEMScheme:         kemscheme,
 		Geometry:          nil,
 		Authenticator:     s,
 		AdditionalData:    identityHash[:],
@@ -1878,8 +1884,13 @@ func (s *state) backgroundFetchConsensus(epoch uint64) {
 	// authorities for a consensus.
 	_, ok := s.documents[epoch]
 	if !ok {
+		kemscheme := schemes.ByName(s.s.cfg.Server.WireKEMScheme)
+		if kemscheme == nil {
+			panic("kem scheme not found in registry")
+		}
 		go func() {
 			cfg := &client.Config{
+				KEMScheme:     kemscheme,
 				LinkKey:       s.s.linkKey,
 				LogBackend:    s.s.logBackend,
 				Authorities:   s.s.cfg.Authorities,

@@ -22,9 +22,10 @@ import (
 	"time"
 
 	"github.com/katzenpost/hpqc/hash"
+	"github.com/katzenpost/hpqc/kem/schemes"
 	ecdh "github.com/katzenpost/hpqc/nike/x25519"
-
 	"github.com/katzenpost/hpqc/rand"
+
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/wire"
@@ -48,7 +49,14 @@ func (s *Server) onConn(conn net.Conn) {
 	// Initialize the wire protocol session.
 	auth := &wireAuthenticator{s: s}
 	keyHash := hash.Sum256From(s.identityPublicKey)
+
+	kemscheme := schemes.ByName(s.cfg.Server.WireKEMScheme)
+	if kemscheme == nil {
+		panic("kem scheme not found in registry")
+	}
+
 	cfg := &wire.SessionConfig{
+		KEMScheme:         kemscheme,
 		Geometry:          nil,
 		Authenticator:     auth,
 		AdditionalData:    keyHash[:],
