@@ -443,7 +443,7 @@ func (p *pki) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 	}
 
 	// Post the descriptor to all the authorities.
-	err = p.impl.Post(pkiCtx, doPublishEpoch, p.glue.IdentityKey(), p.glue.IdentityPublicKey(), desc)
+	err = p.impl.Post(pkiCtx, doPublishEpoch, p.glue.IdentityKey(), p.glue.IdentityPublicKey(), desc, p.glue.Decoy().GetStats(doPublishEpoch))
 	switch err {
 	case nil:
 		p.log.Debugf("Posted descriptor for epoch: %v", doPublishEpoch)

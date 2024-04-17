@@ -39,6 +39,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/thwack"
 	"github.com/katzenpost/katzenpost/core/wire"
+	"github.com/katzenpost/katzenpost/loops"
 	"github.com/katzenpost/katzenpost/server/config"
 	"github.com/katzenpost/katzenpost/server/internal/glue"
 	"github.com/katzenpost/katzenpost/server/internal/packet"
@@ -132,6 +133,10 @@ func (d *mockDecoy) Halt() {}
 func (d *mockDecoy) OnNewDocument(*pkicache.Entry) {}
 
 func (d *mockDecoy) OnPacket(*packet.Packet) {}
+
+func (d *mockDecoy) GetStats(doPublishEpoch uint64) *loops.LoopStats {
+	return nil
+}
 
 type mockServer struct {
 	cfg               *config.Config
@@ -329,7 +334,7 @@ func TestKaetzchenWorker(t *testing.T) {
 	testPacket.Recipient = &commands.Recipient{
 		ID: recipient,
 	}
-	testPacket.DispatchAt = time.Now().Add(-time.Duration(goo.Config().Debug.KaetzchenDelay)*time.Millisecond)
+	testPacket.DispatchAt = time.Now().Add(-time.Duration(goo.Config().Debug.KaetzchenDelay) * time.Millisecond)
 	testPacket.Payload = make([]byte, geo.ForwardPayloadLength)
 	kaetzWorker.OnKaetzchen(testPacket)
 

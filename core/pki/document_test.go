@@ -34,7 +34,7 @@ import (
 var testingSchemeName = "xwing"
 var testingScheme = schemes.ByName(testingSchemeName)
 
-func genDescriptor(require *require.Assertions, idx int, provider bool) (*MixDescriptor, []byte) {
+func genDescriptor(require *require.Assertions, idx int, provider bool) *MixDescriptor {
 	d := new(MixDescriptor)
 	d.Name = fmt.Sprintf("gen%d.example.net", idx)
 	d.Addresses = map[Transport][]string{
@@ -45,7 +45,7 @@ func genDescriptor(require *require.Assertions, idx int, provider bool) (*MixDes
 	d.Version = DescriptorVersion
 	d.LoadWeight = 23
 
-	identityPub, identityPriv, err := cert.Scheme.GenerateKey()
+	identityPub, _, err := cert.Scheme.GenerateKey()
 	require.NoError(err)
 
 	d.IdentityKey, err = identityPub.MarshalBinary()
@@ -72,10 +72,7 @@ func genDescriptor(require *require.Assertions, idx int, provider bool) (*MixDes
 	err = IsDescriptorWellFormed(d, debugTestEpoch)
 	require.NoError(err, "IsDescriptorWellFormed(good)")
 
-	signed, err := SignDescriptor(identityPriv, identityPub, d)
-	require.NoError(err, "SignDescriptor()")
-
-	return d, []byte(signed)
+	return d
 }
 
 func TestDocument(t *testing.T) {
@@ -109,26 +106,18 @@ func TestDocument(t *testing.T) {
 	for l := 0; l < 3; l++ {
 		for i := 0; i < 5; i++ {
 			provider := false
-			_, rawDesc := genDescriptor(require, idx, provider)
-			d := new(MixDescriptor)
-			err := d.UnmarshalBinary(rawDesc)
+			d := genDescriptor(require, idx, provider)
+			_, err := d.MarshalBinary()
 			require.NoError(err)
-			foo, err := d.MarshalBinary()
-			require.NoError(err)
-			require.True(bytes.Equal(foo, rawDesc))
 			doc.Topology[l] = append(doc.Topology[l], d)
 			idx++
 		}
 	}
 	for i := 0; i < 3; i++ {
 		provider := true
-		_, rawDesc := genDescriptor(require, idx, provider)
-		d := new(MixDescriptor)
-		err := d.UnmarshalBinary(rawDesc)
+		d := genDescriptor(require, idx, provider)
+		_, err := d.MarshalBinary()
 		require.NoError(err)
-		foo, err := d.MarshalBinary()
-		require.NoError(err)
-		require.True(bytes.Equal(foo, rawDesc))
 		doc.Providers = append(doc.Providers, d)
 		idx++
 	}
@@ -178,10 +167,6 @@ func TestDocument(t *testing.T) {
 			otherDesc, err := nnode.MarshalBinary()
 			require.NoError(err)
 			rawDesc, err := node.MarshalBinary()
-			require.NoError(err)
-			_, err = VerifyDescriptor(rawDesc)
-			require.NoError(err)
-			_, err = VerifyDescriptor(otherDesc)
 			require.NoError(err)
 			require.True(bytes.Equal(otherDesc, rawDesc)) // require the serialization be the same
 		}

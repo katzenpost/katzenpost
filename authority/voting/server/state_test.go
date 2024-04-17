@@ -234,9 +234,6 @@ func TestVote(t *testing.T) {
 
 		err = pki.IsDescriptorWellFormed(desc, votingEpoch)
 		require.NoError(err)
-		// Make a serialized + signed + serialized descriptor.
-		_, err = pki.SignDescriptor(idKeys[i].privKey, idKeys[i].pubKey, desc)
-		require.NoError(err)
 
 		if mixCfgs[i].Server.IsProvider {
 			providerDescs = append(mixDescs, desc)
