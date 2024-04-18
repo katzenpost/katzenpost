@@ -26,6 +26,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/thwack"
 	"github.com/katzenpost/katzenpost/core/wire"
+	"github.com/katzenpost/katzenpost/loops"
 	"github.com/katzenpost/katzenpost/server/config"
 	"github.com/katzenpost/katzenpost/server/internal/mixkey"
 	"github.com/katzenpost/katzenpost/server/internal/packet"
@@ -106,4 +107,5 @@ type Decoy interface {
 	Halt()
 	OnNewDocument(*pkicache.Entry)
 	OnPacket(*packet.Packet)
+	GetStats(doPublishEpoch uint64) *loops.LoopStats
 }

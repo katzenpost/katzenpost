@@ -31,6 +31,7 @@ import (
 	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/kem"
 	kempem "github.com/katzenpost/hpqc/kem/pem"
+	"github.com/katzenpost/hpqc/kem/schemes"
 
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
@@ -392,7 +393,7 @@ func (p *provider) doAddUpdate(c *thwack.Conn, l string, isUpdate bool) error {
 	}
 
 	// Deserialize the public key.
-	pubKey, err := kempem.FromPublicPEMString(sp[2], wire.DefaultScheme)
+	pubKey, err := kempem.FromPublicPEMString(sp[2], schemes.ByName(p.glue.Config().Server.WireKEM))
 	if err != nil {
 		c.Log().Errorf("[ADD/UPDATE]_USER invalid public key: %v", err)
 		return c.WriteReply(thwack.StatusSyntaxError)
@@ -467,7 +468,7 @@ func (p *provider) onSetUserIdentity(c *thwack.Conn, l string) error {
 	switch len(sp) {
 	case 2:
 	case 3:
-		pubKey, err = kempem.FromPublicPEMString(sp[2], wire.DefaultScheme)
+		pubKey, err = kempem.FromPublicPEMString(sp[2], schemes.ByName(p.glue.Config().Server.WireKEM))
 		if err != nil {
 			c.Log().Errorf("SET_USER_IDENTITY invalid public key: %v", err)
 			return c.WriteReply(thwack.StatusSyntaxError)
@@ -684,12 +685,12 @@ func New(glue glue.Glue) (glue.Provider, error) {
 	switch cfg.Provider.UserDB.Backend {
 	case config.BackendBolt:
 		if cfg.Provider.TrustOnFirstUse {
-			p.userDB, err = boltuserdb.New(cfg.Provider.UserDB.Bolt.UserDB, boltuserdb.WithTrustOnFirstUse())
+			p.userDB, err = boltuserdb.New(cfg.Provider.UserDB.Bolt.UserDB, schemes.ByName(cfg.Server.WireKEM), boltuserdb.WithTrustOnFirstUse())
 		} else {
-			p.userDB, err = boltuserdb.New(cfg.Provider.UserDB.Bolt.UserDB)
+			p.userDB, err = boltuserdb.New(cfg.Provider.UserDB.Bolt.UserDB, schemes.ByName(cfg.Server.WireKEM))
 		}
 	case config.BackendExtern:
-		p.userDB, err = externuserdb.New(cfg.Provider.UserDB.Extern.ProviderURL)
+		p.userDB, err = externuserdb.New(cfg.Provider.UserDB.Extern.ProviderURL, schemes.ByName(cfg.Server.WireKEM))
 	case config.BackendSQL:
 		if p.sqlDB != nil {
 			p.userDB, err = p.sqlDB.UserDB()
