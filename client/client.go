@@ -175,11 +175,11 @@ func (c *Client) NewTOFUSession(ctx context.Context) (*Session, error) {
 	)
 
 	// generate a linkKey
-	s := schemes.ByName(c.cfg.WireKEMScheme)
-	if s == nil {
+	sch := schemes.ByName(c.cfg.WireKEMScheme)
+	if sch == nil {
 		return nil, fmt.Errorf("config specified scheme `%s` not found", c.cfg.WireKEMScheme)
 	}
-	_, linkKey, err = s.GenerateKeyPair()
+	_, linkKey, err = sch.GenerateKeyPair()
 	if err != nil {
 		return nil, err
 	}
@@ -196,12 +196,12 @@ func (c *Client) NewTOFUSession(ctx context.Context) (*Session, error) {
 
 	c.Lock()
 	defer c.Unlock()
-	s, err := NewSession(ctx, pkiclient, doc, c.fatalErrCh, c.logBackend, c.cfg, linkKey, provider)
+	sess, err := NewSession(ctx, pkiclient, doc, c.fatalErrCh, c.logBackend, c.cfg, linkKey, provider)
 	if err != nil {
 		return nil, err
 	}
-	c.sessions = append(c.sessions, s)
-	return s, err
+	c.sessions = append(c.sessions, sess)
+	return sess, err
 }
 
 // Returns a random Session from sessions
