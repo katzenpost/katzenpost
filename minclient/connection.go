@@ -373,6 +373,7 @@ func (c *connection) onTCPConn(conn net.Conn) {
 
 	// Allocate the session struct.
 	cfg := &wire.SessionConfig{
+		KEMScheme:         c.c.cfg.LinkKemScheme,
 		Geometry:          c.c.cfg.SphinxGeometry,
 		Authenticator:     c,
 		AdditionalData:    []byte(c.c.cfg.User),

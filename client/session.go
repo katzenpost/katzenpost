@@ -26,8 +26,14 @@ import (
 	"sync/atomic"
 	"time"
 
+	"golang.org/x/crypto/blake2b"
+	"gopkg.in/eapache/channels.v1"
+	"gopkg.in/op/go-logging.v1"
+
 	"github.com/katzenpost/hpqc/kem"
+	"github.com/katzenpost/hpqc/kem/schemes"
 	"github.com/katzenpost/hpqc/rand"
+
 	"github.com/katzenpost/katzenpost/client/config"
 	cConstants "github.com/katzenpost/katzenpost/client/constants"
 	"github.com/katzenpost/katzenpost/client/utils"
@@ -40,9 +46,6 @@ import (
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/katzenpost/katzenpost/minclient"
-	"golang.org/x/crypto/blake2b"
-	"gopkg.in/eapache/channels.v1"
-	"gopkg.in/op/go-logging.v1"
 )
 
 // Session is the struct type that keeps state for a given session.
@@ -131,11 +134,17 @@ func NewSession(
 		return nil, err
 	}
 
+	kemScheme := schemes.ByName(cfg.WireKEMScheme)
+	if kemScheme == nil {
+		return nil, fmt.Errorf("apparently your KEM Scheme %s doesn't work", cfg.WireKEMScheme)
+	}
+
 	clientCfg := &minclient.ClientConfig{
 		SphinxGeometry:      cfg.SphinxGeometry,
 		User:                string(idHash[:]),
 		Provider:            s.provider.Name,
 		ProviderKeyPin:      idpubkey,
+		LinkKemScheme:       kemScheme,
 		LinkKey:             s.linkKey,
 		LogBackend:          logBackend,
 		PKIClient:           pkiClient,
