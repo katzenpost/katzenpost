@@ -45,8 +45,10 @@ const (
 	// sent to the peer as part of the handshake authentication.
 	MaxAdditionalDataLength = 255
 
-	// raw pki doc with 10 voting authorities is 1195878
-	maxMsgLen = 1300000
+	// recent experimentation with composite KEMs yields
+	// rather large keys around 1.3M in size, so let's set
+	// the max message size slightly larger:
+	maxMsgLen = 1400000
 
 	macLen  = 16
 	authLen = 1 + MaxAdditionalDataLength + 4
