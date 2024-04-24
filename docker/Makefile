@@ -199,7 +199,7 @@ clean: clean-images clean-local
 
 run-ping: $(net_name)/ping.$(distro) $(net_name)/running.stamp
 	$(docker) run --network=host ${docker_args} $(mount_net_name) --rm  katzenpost-$(distro)_go_mod \
-        /$(net_name)/ping.$(distro) -c /go/katzenpost/docker/$(net_name)/client/client.toml -s echo -printDiff -n 1
+        /$(net_name)/ping.$(distro) -c /go/katzenpost/docker/$(net_name)/client2/client.toml -s echo -printDiff -n 1
 
 shell: $(distro)_go_mod.stamp
 	$(docker) run --network=host ${docker_args} $(mount_net_name) -w /go/katzenpost/docker/$(net_name) --rm -it katzenpost-$(distro)_go_mod $(sh)
