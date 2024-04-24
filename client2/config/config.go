@@ -168,7 +168,14 @@ func (p *Provider) UnmarshalTOML(v interface{}) error {
 		return err
 	}
 
+	if data["WireKEMScheme"].(string) == "" {
+		return errors.New("WireKEMScheme is empty string")
+	}
+
 	kemscheme := schemes.ByName(data["WireKEMScheme"].(string))
+	if kemscheme == nil {
+		return errors.New("WireKEMScheme is nil")
+	}
 	p.LinkKey, err = kempem.FromPublicPEMString(data["LinkKey"].(string), kemscheme)
 	if err != nil {
 		return err
@@ -288,6 +295,13 @@ func (c *Config) UpstreamProxyConfig() *proxy.Config {
 // FixupAndValidate applies defaults to config entries and validates the
 // configuration sections.
 func (c *Config) FixupAndValidate() error {
+	if c.WireKEMScheme == "" {
+		return errors.New("WireKEMScheme is empty string")
+	}
+	kemscheme := schemes.ByName(c.WireKEMScheme)
+	if kemscheme == nil {
+		return errors.New("WireKEMScheme is nil")
+	}
 	if c.PinnedProviders == nil {
 		return errors.New("config: No PinnedProviders block was present")
 	}

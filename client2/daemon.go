@@ -137,12 +137,6 @@ func (d *Daemon) halt() {
 	d.client.Shutdown()
 	d.log.Debug("waiting for stopped client to exit")
 	d.client.Wait()
-
-	d.log.Debug("stopping daemon")
-	//d.Worker.Halt()
-	//d.log.Debug("waiting for stopped daemon to exit")
-	//d.Worker.Wait()
-
 }
 
 func (d *Daemon) Start() error {
