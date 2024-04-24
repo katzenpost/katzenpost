@@ -23,7 +23,6 @@ import (
 	"time"
 
 	"github.com/katzenpost/katzenpost/core/epochtime"
-	"github.com/katzenpost/katzenpost/core/monotime"
 	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/katzenpost/katzenpost/server/internal/constants"
@@ -94,14 +93,14 @@ func (w *Worker) doUnwrap(pkt *packet.Packet) error {
 
 	var lastErr error
 	for _, k = range keys {
-		startAt := monotime.Now()
+		startAt := time.Now()
 
 		// TODO/perf: payload is a new heap allocation if it's returned,
 		// though that should only happen if this is a provider.
 		payload, tag, cmds, err := w.sphinx.Unwrap(k.PrivateKey(), pkt.Raw)
-		unwrapAt := monotime.Now()
+		unwrapAt := time.Now()
 
-		w.log.Debugf("Packet: %v (Unwrap took: %v)", pkt.ID, unwrapAt-startAt)
+		w.log.Debugf("Packet: %v (Unwrap took: %v)", pkt.ID, unwrapAt.Sub(startAt))
 
 		// Decryption failures can result from picking the wrong key.
 		if err != nil {
@@ -127,7 +126,7 @@ func (w *Worker) doUnwrap(pkt *packet.Packet) error {
 			break
 		}
 
-		w.log.Debugf("Packet: %v (IsReplay took: %v)", pkt.ID, monotime.Now()-unwrapAt)
+		w.log.Debugf("Packet: %v (IsReplay took: %v)", pkt.ID, time.Since(unwrapAt))
 
 		return nil
 	}
@@ -167,11 +166,11 @@ func (w *Worker) worker() {
 		// it (should) be constant across packets, and I'll go crazy trying
 		// to account for everything that impacts the actual delay vs
 		// requested.
-		now := monotime.Now()
+		startAt := time.Now()
 
 		// Drop the packet if it has been sitting in the queue waiting to
 		// be unwrapped for way too long.
-		dwellTime := now - pkt.RecvAt
+		dwellTime := startAt.Sub(pkt.RecvAt)
 		if dwellTime > unwrapSlack {
 			w.log.Debugf("Dropping packet: %v (Spent %v waiting for Unwrap())", pkt.ID, dwellTime)
 			instrument.PacketsDropped()
@@ -189,7 +188,7 @@ func (w *Worker) worker() {
 			pkt.Dispose()
 			continue
 		}
-		w.log.Debugf("Packet: %v (doUnwrap took: %v)", pkt.ID, monotime.Now()-now)
+		w.log.Debugf("Packet: %v (doUnwrap took: %v)", pkt.ID, time.Since(startAt))
 
 		// The common (in the both most likely, and done by all modes) case
 		// is that the packet is destined for another node.
@@ -295,7 +294,7 @@ func (w *Worker) worker() {
 		// Note: Callee takes ownership of pkt.
 		if pkt.IsToUser() || pkt.IsUnreliableToUser() || pkt.IsSURBReply() {
 			w.log.Debugf("Handing off user destined packet: %v", pkt.ID)
-			pkt.DispatchAt = now
+			pkt.DispatchAt = startAt
 			w.glue.Provider().OnPacket(pkt)
 		} else {
 			w.log.Debugf("Dropping user packet: %v (%v)", pkt.ID, pkt.CmdsToString())
