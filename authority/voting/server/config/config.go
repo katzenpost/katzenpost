@@ -33,6 +33,7 @@ import (
 	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/kem"
 	kempem "github.com/katzenpost/hpqc/kem/pem"
+	"github.com/katzenpost/hpqc/kem/schemes"
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/hpqc/sign"
 	signpem "github.com/katzenpost/hpqc/sign/pem"
@@ -40,7 +41,6 @@ import (
 	"github.com/katzenpost/katzenpost/core/cert"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/utils"
-	"github.com/katzenpost/katzenpost/core/wire"
 )
 
 const (
@@ -260,6 +260,8 @@ type Authority struct {
 	IdentityPublicKey sign.PublicKey
 	// LinkPublicKeyPem is string containing the PEM format of the peer's public link layer key.
 	LinkPublicKey kem.PublicKey
+	// WireKEMScheme is the wire protocol KEM scheme to use.
+	WireKEMScheme string
 	// Addresses are the IP address/port combinations that the peer authority
 	// uses for the Directory Authority service.
 	Addresses []string
@@ -298,7 +300,17 @@ func (a *Authority) UnmarshalTOML(v interface{}) error {
 		return errors.New("type assertion failed")
 	}
 
-	a.LinkPublicKey, err = kempem.FromPublicPEMString(linkPublicKeyString, wire.DefaultScheme)
+	kemSchemeName, ok := data["WireKEMScheme"].(string)
+	if !ok {
+		return errors.New("WireKEMScheme failed type assertion")
+	}
+
+	a.WireKEMScheme = kemSchemeName
+	s := schemes.ByName(kemSchemeName)
+	if s == nil {
+		return fmt.Errorf("scheme `%s` not found", a.WireKEMScheme)
+	}
+	a.LinkPublicKey, err = kempem.FromPublicPEMString(linkPublicKeyString, s)
 	if err != nil {
 		return err
 	}
@@ -318,6 +330,14 @@ func (a *Authority) UnmarshalTOML(v interface{}) error {
 
 // Validate parses and checks the Authority configuration.
 func (a *Authority) Validate() error {
+	if a.WireKEMScheme == "" {
+		return errors.New("WireKEMScheme is not set")
+	} else {
+		s := schemes.ByName(a.WireKEMScheme)
+		if s == nil {
+			return errors.New("KEM Scheme not found")
+		}
+	}
 	for _, v := range a.Addresses {
 		if err := utils.EnsureAddrIPPort(v); err != nil {
 			return fmt.Errorf("config: Authority : Address '%v' is invalid: %v", v, err)
@@ -370,6 +390,9 @@ type Server struct {
 	// Identifier is the human readable identifier for the node (eg: FQDN).
 	Identifier string
 
+	// WireKEMScheme is the wire protocol KEM scheme to use.
+	WireKEMScheme string
+
 	// Addresses are the IP address/port combinations that the server will bind
 	// to for incoming connections.
 	Addresses []string
@@ -380,6 +403,14 @@ type Server struct {
 
 // Validate parses and checks the Server configuration.
 func (sCfg *Server) validate() error {
+	if sCfg.WireKEMScheme == "" {
+		return errors.New("WireKEMScheme was not set")
+	} else {
+		s := schemes.ByName(sCfg.WireKEMScheme)
+		if s == nil {
+			return errors.New("KEM Scheme not found")
+		}
+	}
 	if sCfg.Addresses != nil {
 		for _, v := range sCfg.Addresses {
 			if err := utils.EnsureAddrIPPort(v); err != nil {
@@ -455,7 +486,7 @@ func (cfg *Config) ValidateAuthorities(linkPubKey kem.PublicKey) error {
 // FixupAndValidate applies defaults to config entries and validates the
 // supplied configuration.  Most people should call one of the Load variants
 // instead.
-func (cfg *Config) FixupAndValidate() error {
+func (cfg *Config) FixupAndValidate(forceGenOnly bool) error {
 
 	if cfg.SphinxGeometry == nil {
 		return errors.New("config: No SphinxGeometry block was present")
@@ -509,6 +540,10 @@ func (cfg *Config) FixupAndValidate() error {
 	}
 
 	var identityKey sign.PublicKey
+
+	if forceGenOnly {
+		return nil
+	}
 
 	idMap := make(map[string]*Node)
 	pkMap := make(map[[publicKeyHashSize]byte]*Node)
@@ -575,7 +610,7 @@ func Load(b []byte, forceGenOnly bool) (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := cfg.FixupAndValidate(); err != nil {
+	if err := cfg.FixupAndValidate(forceGenOnly); err != nil {
 		return nil, err
 	}
 

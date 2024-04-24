@@ -25,7 +25,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/katzenpost/katzenpost/core/monotime"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/katzenpost/katzenpost/server/config"
@@ -170,7 +169,7 @@ func (k *KaetzchenWorker) worker() {
 			return
 		case e := <-ch:
 			pkt = e.(*packet.Packet)
-			if dwellTime := monotime.Now() - pkt.DispatchAt; dwellTime > maxDwell {
+			if dwellTime := time.Now().Sub(pkt.DispatchAt); dwellTime > maxDwell {
 				count := k.incrementDropCounter()
 				k.log.Debugf("Dropping packet: %v (Spend %v in queue), total drops %d", pkt.ID, dwellTime, count)
 				instrument.PacketsDropped()

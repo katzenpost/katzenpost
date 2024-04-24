@@ -70,7 +70,7 @@ func TestSessionIntegration(t *testing.T) {
 
 	// Generate the credentials used for authentication.  In a real deployment,
 	// this information is conveyed out of band somehow to the peer a priori.
-	scheme := DefaultScheme
+	scheme := testingScheme
 	authKEMKeyAlicePub, authKEMKeyAlice, err := scheme.GenerateKeyPair()
 	require.NoError(err)
 
@@ -99,6 +99,7 @@ func TestSessionIntegration(t *testing.T) {
 
 	// Alice's session setup.
 	cfgAlice := &SessionConfig{
+		KEMScheme:         testingScheme,
 		Geometry:          geometry,
 		Authenticator:     &stubAuthenticator{creds: credsBob},
 		AdditionalData:    credsAlice.AdditionalData,
@@ -110,6 +111,7 @@ func TestSessionIntegration(t *testing.T) {
 
 	// Bob's session setup.
 	cfgBob := &SessionConfig{
+		KEMScheme:         testingScheme,
 		Geometry:          geometry,
 		Authenticator:     &stubAuthenticator{creds: credsAlice},
 		AdditionalData:    credsBob.AdditionalData,
@@ -216,7 +218,7 @@ func TestNewSessionErrors(t *testing.T) {
 		nrHops,
 	)
 
-	_, authKEMKeyBob, err := DefaultScheme.GenerateKeyPair()
+	_, authKEMKeyBob, err := testingScheme.GenerateKeyPair()
 	require.NoError(t, err)
 
 	credsBob := &PeerCredentials{
@@ -224,11 +226,12 @@ func TestNewSessionErrors(t *testing.T) {
 		PublicKey:      authKEMKeyBob.Public(),
 	}
 
-	_, authKEMKeyWrong, err := DefaultScheme.GenerateKeyPair()
+	_, authKEMKeyWrong, err := testingScheme.GenerateKeyPair()
 	require.NoError(t, err)
 
 	// test case if cfg.Geometry == nil
 	cfg := &SessionConfig{
+		KEMScheme:         testingScheme,
 		Geometry:          geometry,
 		Authenticator:     &stubAuthenticator{creds: credsBob},
 		AdditionalData:    make([]byte, MaxAdditionalDataLength),
@@ -243,6 +246,7 @@ func TestNewSessionErrors(t *testing.T) {
 
 	// test case if cfg.Authenticator == nil
 	cfg = &SessionConfig{
+		KEMScheme:         testingScheme,
 		Geometry:          geometry,
 		AdditionalData:    make([]byte, MaxAdditionalDataLength),
 		AuthenticationKey: authKEMKeyWrong,
@@ -253,6 +257,7 @@ func TestNewSessionErrors(t *testing.T) {
 
 	// test case if len(cfg.AdditionalData) > MaxAdditionalDataLength
 	cfg = &SessionConfig{
+		KEMScheme:         testingScheme,
 		Geometry:          geometry,
 		AdditionalData:    make([]byte, MaxAdditionalDataLength+1),
 		AuthenticationKey: authKEMKeyWrong,
@@ -263,6 +268,7 @@ func TestNewSessionErrors(t *testing.T) {
 
 	// test case if cfg.AuthenticationKey == nil
 	cfg = &SessionConfig{
+		KEMScheme:      testingScheme,
 		Geometry:       geometry,
 		Authenticator:  &stubAuthenticator{creds: credsBob},
 		AdditionalData: make([]byte, MaxAdditionalDataLength),
@@ -273,6 +279,7 @@ func TestNewSessionErrors(t *testing.T) {
 
 	// test case if cfg.RandomReader == nil {
 	cfg = &SessionConfig{
+		KEMScheme:         testingScheme,
 		Geometry:          geometry,
 		Authenticator:     &stubAuthenticator{creds: credsBob},
 		AdditionalData:    make([]byte, MaxAdditionalDataLength),
@@ -294,7 +301,7 @@ func TestErrorInvalidStatePeerCreds(t *testing.T) {
 		nrHops,
 	)
 
-	_, authKEMKeyBob, err := DefaultScheme.GenerateKeyPair()
+	_, authKEMKeyBob, err := testingScheme.GenerateKeyPair()
 	require.NoError(t, err)
 
 	credsBob := &PeerCredentials{
@@ -302,11 +309,12 @@ func TestErrorInvalidStatePeerCreds(t *testing.T) {
 		PublicKey:      authKEMKeyBob.Public(),
 	}
 
-	_, authKEMKeyWrong, err := DefaultScheme.GenerateKeyPair()
+	_, authKEMKeyWrong, err := testingScheme.GenerateKeyPair()
 	require.NoError(t, err)
 
 	// test case if cfg.Geometry == nil
 	cfg := &SessionConfig{
+		KEMScheme:         testingScheme,
 		Geometry:          geometry,
 		Authenticator:     &stubAuthenticator{creds: credsBob},
 		AdditionalData:    make([]byte, MaxAdditionalDataLength),
@@ -332,7 +340,7 @@ func TestErrorInvalidStateClockSkew(t *testing.T) {
 		nrHops,
 	)
 
-	_, authKEMKeyBob, err := DefaultScheme.GenerateKeyPair()
+	_, authKEMKeyBob, err := testingScheme.GenerateKeyPair()
 	require.NoError(t, err)
 
 	credsBob := &PeerCredentials{
@@ -340,11 +348,12 @@ func TestErrorInvalidStateClockSkew(t *testing.T) {
 		PublicKey:      authKEMKeyBob.Public(),
 	}
 
-	_, authKEMKeyWrong, err := DefaultScheme.GenerateKeyPair()
+	_, authKEMKeyWrong, err := testingScheme.GenerateKeyPair()
 	require.NoError(t, err)
 
 	// test case if cfg.Geometry == nil
 	cfg := &SessionConfig{
+		KEMScheme:         testingScheme,
 		Geometry:          geometry,
 		Authenticator:     &stubAuthenticator{creds: credsBob},
 		AdditionalData:    make([]byte, MaxAdditionalDataLength),

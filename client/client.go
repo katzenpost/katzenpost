@@ -20,23 +20,21 @@ package client
 import (
 	"context"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"sync"
 	"time"
 
 	"gopkg.in/op/go-logging.v1"
 
-	nyquistkem "github.com/katzenpost/nyquist/kem"
-	"github.com/katzenpost/nyquist/seec"
-
 	"github.com/katzenpost/hpqc/kem"
+	"github.com/katzenpost/hpqc/kem/schemes"
 	"github.com/katzenpost/hpqc/rand"
 
 	"github.com/katzenpost/katzenpost/client/config"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
-	"github.com/katzenpost/katzenpost/core/wire"
 )
 
 const (
@@ -169,11 +167,14 @@ func (c *Client) NewTOFUSession(ctx context.Context) (*Session, error) {
 	)
 
 	// generate a linkKey
-	rng, err := seec.GenKeyPassthrough(rand.Reader, 0)
+	s := schemes.ByName(c.cfg.WireKEMScheme)
+	if s == nil {
+		return nil, fmt.Errorf("config specified scheme `%s` not found", c.cfg.WireKEMScheme)
+	}
+	_, linkKey, err = s.GenerateKeyPair()
 	if err != nil {
 		return nil, err
 	}
-	_, linkKey = nyquistkem.GenerateKeypair(wire.DefaultScheme, rng)
 
 	// fetch a pki.Document
 	pkiclient, doc, err := PKIBootstrap(ctx, c, linkKey)

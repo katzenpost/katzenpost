@@ -32,20 +32,23 @@ import (
 	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/kem"
 	kempem "github.com/katzenpost/hpqc/kem/pem"
+	"github.com/katzenpost/hpqc/kem/schemes"
 	"github.com/katzenpost/hpqc/nike/x25519"
-	signpem "github.com/katzenpost/hpqc/sign/pem"
-
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/hpqc/sign"
+	signpem "github.com/katzenpost/hpqc/sign/pem"
+
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/katzenpost/core/cert"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
-	"github.com/katzenpost/katzenpost/core/wire"
 	sConfig "github.com/katzenpost/katzenpost/server/config"
 )
+
+var testingSchemeName = "xwing"
+var testingScheme = schemes.ByName(testingSchemeName)
 
 var sphinxGeometry = geo.GeometryFromUserForwardPayloadLength(
 	x25519.Scheme(rand.Reader),
@@ -146,6 +149,7 @@ func TestVote(t *testing.T) {
 	for i, aCfg := range authCfgs {
 		require.NoError(err)
 		auth := &config.Authority{Addresses: aCfg.Server.Addresses,
+			WireKEMScheme:     testingSchemeName,
 			IdentityPublicKey: peerKeys[i].idPubKey,
 			LinkPublicKey:     peerKeys[i].linkKey.Public(),
 		}
@@ -154,7 +158,11 @@ func TestVote(t *testing.T) {
 		}
 		authorities = append(authorities, auth)
 	}
-	votingPKI := &sConfig.PKI{Voting: &sConfig.Voting{Authorities: authorities}}
+	votingPKI := &sConfig.PKI{
+		Voting: &sConfig.Voting{
+			Authorities: authorities,
+		},
+	}
 
 	// generate mixes
 	n := 3 * 2 // 3 layer, 2 nodes per layer
@@ -216,7 +224,7 @@ func TestVote(t *testing.T) {
 		mkeys := genMixKeys(votingEpoch)
 		addr := make(map[pki.Transport][]string)
 		addr[pki.TransportTCPv4] = []string{"127.0.0.1:1234"}
-		linkPubKey, _, err := wire.DefaultScheme.GenerateKeyPair()
+		linkPubKey, _, err := testingScheme.GenerateKeyPair()
 		linkBlob, err := linkPubKey.MarshalBinary()
 		if err != nil {
 			panic(err)
@@ -236,9 +244,6 @@ func TestVote(t *testing.T) {
 		}
 
 		err = pki.IsDescriptorWellFormed(desc, votingEpoch)
-		require.NoError(err)
-		// Make a serialized + signed + serialized descriptor.
-		_, err = pki.SignDescriptor(idKeys[i].privKey, idKeys[i].pubKey, desc)
 		require.NoError(err)
 
 		if mixCfgs[i].Server.IsServiceNode {
@@ -417,7 +422,7 @@ func genVotingAuthoritiesCfg(parameters *config.Parameters, numAuthorities int) 
 		cfg.Server.DataDir = datadir
 		lastPort += 1
 
-		scheme := wire.DefaultScheme
+		scheme := testingScheme
 		linkPubKey, linkKey, err := scheme.GenerateKeyPair()
 		if err != nil {
 			return nil, nil, err
@@ -471,6 +476,7 @@ func genGatewayConfig(name string, pki *sConfig.PKI, port uint16) (*identityKey,
 
 	// Server section.
 	cfg.Server = new(sConfig.Server)
+	cfg.Server.WireKEM = testingSchemeName
 	cfg.Server.Identifier = name
 	cfg.Server.Addresses = []string{fmt.Sprintf("127.0.0.1:%d", port)}
 	cfg.Server.AltAddresses = map[string][]string{
@@ -495,7 +501,7 @@ func genGatewayConfig(name string, pki *sConfig.PKI, port uint16) (*identityKey,
 		panic(err)
 	}
 
-	scheme := wire.DefaultScheme
+	scheme := testingScheme
 	linkPubKey, linkKey, err := scheme.GenerateKeyPair()
 	linkPublicKeyPem := "link.public.pem"
 
@@ -648,6 +654,7 @@ func genMixConfig(name string, pki *sConfig.PKI, port uint16) (*identityKey, *sC
 
 	// Server section.
 	cfg.Server = new(sConfig.Server)
+	cfg.Server.WireKEM = testingSchemeName
 	cfg.Server.Identifier = name
 	cfg.Server.Addresses = []string{fmt.Sprintf("127.0.0.1:%d", port)}
 	cfg.Server.IsGatewayNode = false
@@ -669,7 +676,7 @@ func genMixConfig(name string, pki *sConfig.PKI, port uint16) (*identityKey, *sC
 		return nil, nil, err
 	}
 
-	scheme := wire.DefaultScheme
+	scheme := testingScheme
 	linkPubKey, linkKey, err := scheme.GenerateKeyPair()
 	linkPublicKeyPem := "link.public.pem"
 

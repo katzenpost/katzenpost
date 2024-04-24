@@ -24,21 +24,25 @@ import (
 	"sync/atomic"
 	"time"
 
+	"gopkg.in/op/go-logging.v1"
+
 	"github.com/katzenpost/hpqc/hash"
+	"github.com/katzenpost/hpqc/kem"
 	"github.com/katzenpost/hpqc/rand"
-	"github.com/katzenpost/katzenpost/core/monotime"
+
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"github.com/katzenpost/katzenpost/server/internal/instrument"
 	"github.com/katzenpost/katzenpost/server/internal/packet"
-	"gopkg.in/op/go-logging.v1"
 )
 
 var incomingConnID uint64
 
 type incomingConn struct {
+	scheme kem.Scheme
+
 	l   *listener
 	log *logging.Logger
 
@@ -54,7 +58,7 @@ type incomingConn struct {
 	maxSendTokens uint64
 
 	sendTokenIncr time.Duration
-	sendTokenLast time.Duration
+	sendTokenLast time.Time
 
 	isInitialized bool // Set by listener.
 	fromClient    bool
@@ -111,7 +115,7 @@ func (c *incomingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 			// If there was no previous limit start at 1 send credit.
 			if c.sendTokenIncr == 0 {
 				c.sendTokens = 1
-				c.sendTokenLast = monotime.Now()
+				c.sendTokenLast = time.Now()
 			}
 			c.sendTokenIncr = time.Duration(sendTokenDuration) * time.Millisecond
 
@@ -165,6 +169,7 @@ func (c *incomingConn) worker() {
 	// Allocate the session struct.
 	identityHash := hash.Sum256From(c.l.glue.IdentityPublicKey())
 	cfg := &wire.SessionConfig{
+		KEMScheme:         c.scheme,
 		Geometry:          c.geo,
 		Authenticator:     c,
 		AdditionalData:    identityHash[:],
@@ -442,11 +447,11 @@ func (c *incomingConn) onSendPacket(cmd *commands.SendPacket) error {
 	// current epoch, enforce SendShift based rate limits.
 	if c.fromClient && c.sendTokenIncr != 0 {
 		// Update the token bucket for the time that we were idle.
-		deltaT := monotime.Now() - c.sendTokenLast
+		deltaT := time.Now().Sub(c.sendTokenLast)
 		c.log.Debugf("Rate limit: DeltaT: %v Tokens: %v", deltaT, c.sendTokens)
 		incrCount := uint64(deltaT / c.sendTokenIncr)
 		if incrCount > 0 {
-			c.sendTokenLast += c.sendTokenIncr * time.Duration(incrCount)
+			c.sendTokenLast = c.sendTokenLast.Add(c.sendTokenIncr * time.Duration(incrCount))
 			c.sendTokens += incrCount
 
 			// Leaky bucket.
@@ -470,18 +475,19 @@ func (c *incomingConn) onSendPacket(cmd *commands.SendPacket) error {
 	// For purposes of fudging the scheduling delay based on queue dwell
 	// time, we treat the moment the packet is inserted into the crypto
 	// worker queue as the time the packet was received.
-	pkt.RecvAt = monotime.Now()
+	pkt.RecvAt = time.Now()
 	c.l.incomingCh <- pkt
 
 	return nil
 }
 
-func newIncomingConn(l *listener, conn net.Conn, geo *geo.Geometry) *incomingConn {
+func newIncomingConn(l *listener, conn net.Conn, geo *geo.Geometry, scheme kem.Scheme) *incomingConn {
 	c := &incomingConn{
+		scheme:            scheme,
 		l:                 l,
 		c:                 conn,
 		id:                atomic.AddUint64(&incomingConnID, 1), // Diagnostic only, wrapping is fine.
-		sendTokenLast:     monotime.Now(),
+		sendTokenLast:     time.Now(),
 		maxSendTokens:     4, // Reasonable burst to avoid some unnecessary rate limiting.
 		closeConnectionCh: make(chan bool),
 		geo:               geo,

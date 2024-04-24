@@ -22,9 +22,11 @@ import (
 	"time"
 
 	"github.com/katzenpost/hpqc/hash"
+	"github.com/katzenpost/hpqc/kem/schemes"
 	ecdh "github.com/katzenpost/hpqc/nike/x25519"
-
 	"github.com/katzenpost/hpqc/rand"
+
+	"github.com/katzenpost/katzenpost/core/cert"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/wire"
@@ -48,7 +50,14 @@ func (s *Server) onConn(conn net.Conn) {
 	// Initialize the wire protocol session.
 	auth := &wireAuthenticator{s: s}
 	keyHash := hash.Sum256From(s.identityPublicKey)
+
+	kemscheme := schemes.ByName(s.cfg.Server.WireKEMScheme)
+	if kemscheme == nil {
+		panic("kem scheme not found in registry")
+	}
+
 	cfg := &wire.SessionConfig{
+		KEMScheme:         kemscheme,
 		Geometry:          nil,
 		Authenticator:     auth,
 		AdditionalData:    keyHash[:],
@@ -182,18 +191,33 @@ func (s *Server) onPostDescriptor(rAddr net.Addr, cmd *commands.PostDescriptor, 
 		return resp
 	}
 
-	// Validate and deserialize the descriptor.
-	desc := new(pki.MixDescriptor)
-	err := desc.UnmarshalBinary(cmd.Payload)
+	// Validate and deserialize the SignedUpload.
+	signedUpload := new(pki.SignedUpload)
+	err := signedUpload.Unmarshal(cmd.Payload)
 	if err != nil {
 		s.log.Errorf("Peer %v: Invalid descriptor: %v", rAddr, err)
 		return resp
 	}
 
+	desc := signedUpload.MixDescriptor
+
 	// Ensure that the descriptor is signed by the peer that is posting.
 	identityKeyHash := hash.Sum256(desc.IdentityKey)
 	if !hmac.Equal(identityKeyHash[:], pubKeyHash) {
 		s.log.Errorf("Peer %v: Identity key hash '%x' is not link key '%v'.", rAddr, hash.Sum256(desc.IdentityKey), pubKeyHash)
+		resp.ErrorCode = commands.DescriptorForbidden
+		return resp
+	}
+
+	descIdPubKey, err := cert.Scheme.UnmarshalBinaryPublicKey(desc.IdentityKey)
+	if err != nil {
+		s.log.Error("failed to unmarshal descriptor IdentityKey")
+		resp.ErrorCode = commands.DescriptorForbidden
+		return resp
+	}
+
+	if !signedUpload.Verify(descIdPubKey) {
+		s.log.Error("PostDescriptorStatus contained a SignedUpload with an invalid signature")
 		resp.ErrorCode = commands.DescriptorForbidden
 		return resp
 	}
@@ -204,6 +228,8 @@ func (s *Server) onPostDescriptor(rAddr net.Addr, cmd *commands.PostDescriptor, 
 		resp.ErrorCode = commands.DescriptorForbidden
 		return resp
 	}
+
+	// TODO(david): Use the packet loss statistics to make decisions about how to generate the consensus document.
 
 	// Hand the descriptor off to the state worker.  As long as this returns
 	// a nil, the authority "accepts" the descriptor.

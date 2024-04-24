@@ -26,6 +26,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	kempem "github.com/katzenpost/hpqc/kem/pem"
+	"github.com/katzenpost/hpqc/kem/schemes"
 	ecdh "github.com/katzenpost/hpqc/nike/x25519"
 	"github.com/katzenpost/hpqc/rand"
 	signpem "github.com/katzenpost/hpqc/sign/pem"
@@ -33,9 +34,11 @@ import (
 	aconfig "github.com/katzenpost/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/katzenpost/core/cert"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
-	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/server/config"
 )
+
+var testingSchemeName = "xwing"
+var testingScheme = schemes.ByName(testingSchemeName)
 
 func TestServerStartShutdown(t *testing.T) {
 	assert := assert.New(t)
@@ -45,7 +48,7 @@ func TestServerStartShutdown(t *testing.T) {
 
 	authLinkPubKeyPem := "auth_link_pub_key.pem"
 
-	scheme := wire.DefaultScheme
+	scheme := testingScheme
 	authLinkPubKey, _, err := scheme.GenerateKeyPair()
 	require.NoError(t, err)
 
@@ -78,6 +81,7 @@ func TestServerStartShutdown(t *testing.T) {
 	cfg := config.Config{
 		SphinxGeometry: geo,
 		Server: &config.Server{
+			WireKEM:       testingSchemeName,
 			Identifier:    "testserver",
 			Addresses:     []string{"127.0.0.1:1234"},
 			DataDir:       datadir,
@@ -93,6 +97,7 @@ func TestServerStartShutdown(t *testing.T) {
 			Voting: &config.Voting{
 				Authorities: []*aconfig.Authority{
 					&aconfig.Authority{
+						WireKEMScheme:     testingSchemeName,
 						Identifier:        "auth1",
 						IdentityPublicKey: authPubkey,
 						LinkPublicKey:     authLinkPubKey,

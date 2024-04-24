@@ -84,6 +84,10 @@ type Server struct {
 	// Identifier is the human readable identifier for the node (eg: FQDN).
 	Identifier string
 
+	// WireKEM is the KEM string representing the chosen KEM scheme with which to communicate
+	// with the mixnet and dirauth nodes.
+	WireKEM string
+
 	// Addresses are the IP address/port combinations that the server will bind
 	// to for incoming connections.
 	Addresses []string
@@ -118,7 +122,11 @@ func (sCfg *Server) applyDefaults() {
 
 func (sCfg *Server) validate() error {
 	if sCfg.Identifier == "" {
-		return fmt.Errorf("config: Server: Identifier is not set")
+		return errors.New("config: Server: Identifier is not set")
+	}
+
+	if sCfg.WireKEM == "" {
+		return errors.New("config: Server: WireKEM is not set")
 	}
 
 	if sCfg.Addresses != nil {
