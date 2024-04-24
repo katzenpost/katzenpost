@@ -10,12 +10,13 @@ import (
 
 	"github.com/charmbracelet/log"
 
+	"github.com/katzenpost/hpqc/kem"
+	"github.com/katzenpost/hpqc/kem/schemes"
 	"github.com/katzenpost/katzenpost/authority/voting/client"
 	"github.com/katzenpost/katzenpost/client2/config"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
-	"github.com/katzenpost/katzenpost/core/wire"
 )
 
 // Client manages startup, shutdow, creating new connections and reconnecting.
@@ -35,8 +36,9 @@ type Client struct {
 
 	conn *connection
 
-	sphinx *sphinx.Sphinx
-	geo    *geo.Geometry
+	sphinx        *sphinx.Sphinx
+	geo           *geo.Geometry
+	wireKEMScheme kem.Scheme
 
 	haltedCh chan interface{}
 	haltOnce sync.Once
@@ -92,7 +94,7 @@ func (c *Client) Start() error {
 
 	c.conn = newConnection(c)
 
-	_, pkilinkKey, err := wire.DefaultScheme.GenerateKeyPair()
+	_, pkilinkKey, err := c.wireKEMScheme.GenerateKeyPair()
 	if err != nil {
 		return err
 	}
@@ -120,6 +122,7 @@ func New(cfg *config.Config, logbackend io.Writer) (*Client, error) {
 
 	c := new(Client)
 	c.logbackend = logbackend
+	c.wireKEMScheme = schemes.ByName(cfg.WireKEMScheme)
 	c.geo = cfg.SphinxGeometry
 	var err error
 	c.sphinx, err = sphinx.FromGeometry(cfg.SphinxGeometry)

@@ -362,7 +362,7 @@ func (c *connection) onTCPConn(conn net.Conn) {
 	}()
 
 	c.log.Debug("onTCPConn: GenerateKeypair")
-	_, linkKey, err := wire.DefaultScheme.GenerateKeyPair()
+	_, linkKey, err := c.client.wireKEMScheme.GenerateKeyPair()
 	if err != nil {
 		panic(err)
 	}
