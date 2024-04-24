@@ -374,7 +374,9 @@ func (c *connection) onTCPConn(conn net.Conn) {
 		panic(err)
 	}
 	c.queueID = []byte(fmt.Sprintf("%x", userId))
+
 	cfg := &wire.SessionConfig{
+		KEMScheme:         c.client.wireKEMScheme,
 		Geometry:          c.client.cfg.SphinxGeometry,
 		Authenticator:     c,
 		AdditionalData:    c.queueID,
