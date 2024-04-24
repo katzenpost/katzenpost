@@ -31,6 +31,7 @@ import (
 
 	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/kem"
+	"github.com/katzenpost/hpqc/kem/schemes"
 	ecdh "github.com/katzenpost/hpqc/nike/x25519"
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/hpqc/sign"
@@ -45,18 +46,21 @@ import (
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 )
 
+var testingSchemeName = "xwing"
+var testingScheme = schemes.ByName(testingSchemeName)
+
 type descriptor struct {
 	desc *pki.MixDescriptor
 	raw  []byte
 }
 
-func generateRandomTopology(nodes []*descriptor, layers int) [][]*pki.MixDescriptor {
+func generateRandomTopology(nodes []*pki.MixDescriptor, layers int) [][]*pki.MixDescriptor {
 	rng := rand.NewMath()
 	nodeIndexes := rng.Perm(len(nodes))
 	topology := make([][]*pki.MixDescriptor, layers)
 	for idx, layer := 0, 0; idx < len(nodes); idx++ {
 		n := nodes[nodeIndexes[idx]]
-		topology[layer] = append(topology[layer], n.desc)
+		topology[layer] = append(topology[layer], n)
 		layer++
 		layer = layer % len(topology)
 	}
@@ -75,10 +79,10 @@ func generateMixKeys(epoch uint64) (map[uint64][]byte, error) {
 	return m, nil
 }
 
-func generateNodes(isProvider bool, num int, epoch uint64) ([]*descriptor, error) {
-	mixes := []*descriptor{}
+func generateNodes(isProvider bool, num int, epoch uint64) ([]*pki.MixDescriptor, error) {
+	mixes := []*pki.MixDescriptor{}
 	for i := 0; i < num; i++ {
-		mixIdentityPublicKey, mixIdentityPrivateKey, err := cert.Scheme.GenerateKey()
+		mixIdentityPublicKey, _, err := cert.Scheme.GenerateKey()
 		if err != nil {
 			return nil, err
 		}
@@ -93,7 +97,7 @@ func generateNodes(isProvider bool, num int, epoch uint64) ([]*descriptor, error
 			name = fmt.Sprintf("NSA_Spy_Satelite_Mix%d", i)
 		}
 
-		scheme := wire.DefaultScheme
+		scheme := testingScheme
 		linkPubKey, _, err := scheme.GenerateKeyPair()
 		if err != nil {
 			return nil, err
@@ -122,15 +126,7 @@ func generateNodes(isProvider bool, num int, epoch uint64) ([]*descriptor, error
 			Provider:   isProvider,
 			LoadWeight: 0,
 		}
-		signed, err := pki.SignDescriptor(mixIdentityPrivateKey, mixIdentityPublicKey, mix)
-		if err != nil {
-			return nil, err
-		}
-		desc := &descriptor{
-			raw:  []byte(signed),
-			desc: mix,
-		}
-		mixes = append(mixes, desc)
+		mixes = append(mixes, mix)
 	}
 	return mixes, nil
 }
@@ -146,7 +142,7 @@ func generateMixnet(numMixes, numProviders int, epoch uint64) (*pki.Document, er
 	}
 	pdescs := make([]*pki.MixDescriptor, len(providers))
 	for i, p := range providers {
-		pdescs[i] = p.desc
+		pdescs[i] = p
 	}
 	topology := generateRandomTopology(mixes, 3)
 
@@ -277,6 +273,7 @@ func (d *mockDialer) mockServer(address string, linkPrivateKey kem.PrivateKey, i
 	d.waitUntilDialed(address)
 	identityHash := hash.Sum256From(identityPublicKey)
 	cfg := &wire.SessionConfig{
+		KEMScheme:         testingScheme,
 		Geometry:          mygeo,
 		Authenticator:     d,
 		AdditionalData:    identityHash[:],
@@ -339,13 +336,14 @@ func generatePeer(peerNum int) (*config.Authority, sign.PrivateKey, sign.PublicK
 		panic(err)
 	}
 
-	scheme := wire.DefaultScheme
+	scheme := testingScheme
 	linkPublicKey, linkPrivateKey, err := scheme.GenerateKeyPair()
 	if err != nil {
 		panic(err)
 	}
 
 	authPeer := &config.Authority{
+		WireKEMScheme:     testingSchemeName,
 		IdentityPublicKey: identityPublicKey,
 		LinkPublicKey:     linkPublicKey,
 		Addresses:         []string{fmt.Sprintf("127.0.0.1:%d", peerNum)},
@@ -377,6 +375,7 @@ func TestClient(t *testing.T) {
 	wg.Wait()
 	cfg := &Config{
 		LogBackend:    logBackend.GetLogWriter("pki", "info"),
+		KEMScheme:     testingScheme,
 		Authorities:   peers,
 		DialContextFn: dialer.dial,
 	}

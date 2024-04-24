@@ -26,7 +26,6 @@ import (
 	"github.com/katzenpost/hpqc/rand"
 
 	"github.com/katzenpost/katzenpost/core/cert"
-	"github.com/katzenpost/katzenpost/core/wire"
 )
 
 const debugTestEpoch = 0xFFFFFFFF
@@ -59,7 +58,7 @@ func TestDescriptor(t *testing.T) {
 	d.IdentityKey, err = identityPub.MarshalBinary()
 	require.NoError(err)
 
-	scheme := wire.DefaultScheme
+	scheme := testingScheme
 	linkKey, _, err := scheme.GenerateKeyPair()
 	require.NoError(err)
 	d.LinkKey, err = linkKey.MarshalBinary()
@@ -79,17 +78,16 @@ func TestDescriptor(t *testing.T) {
 	err = IsDescriptorWellFormed(d, debugTestEpoch)
 	require.NoError(err, "IsDescriptorWellFormed(good)")
 
-	// Sign the descriptor.
-	signed, err := SignDescriptor(identityPriv, identityPub, d)
-	require.NoError(err, "SignDescriptor()")
-
-	// Verify and deserialize the signed descriptor.
-	dd := new(MixDescriptor)
 	linkKey, _, err = scheme.GenerateKeyPair()
 	require.NoError(err)
-	dd.LinkKey, err = linkKey.MarshalBinary()
+	d.LinkKey, err = linkKey.MarshalBinary()
 	require.NoError(err)
-	err = dd.UnmarshalBinary(signed)
+
+	blob, err := d.MarshalBinary()
+	require.NoError(err)
+
+	dd := &MixDescriptor{}
+	err = dd.UnmarshalBinary(blob)
 	require.NoError(err)
 
 	// Ensure the base and de-serialized descriptors match.
@@ -106,4 +104,14 @@ func TestDescriptor(t *testing.T) {
 		require.NotNil(vv)
 		require.Equal(v, vv, "MixKeys[%v]", k)
 	}
+
+	signed := &SignedUpload{
+		Signature:     nil,
+		MixDescriptor: d,
+	}
+
+	err = signed.Sign(identityPriv, identityPub)
+	require.NoError(err)
+
+	require.True(signed.Verify(identityPub))
 }

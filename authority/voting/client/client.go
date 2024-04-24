@@ -30,6 +30,7 @@ import (
 	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/kem"
 	kempem "github.com/katzenpost/hpqc/kem/pem"
+	"github.com/katzenpost/hpqc/kem/schemes"
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/hpqc/sign"
 
@@ -38,6 +39,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
+	"github.com/katzenpost/katzenpost/loops"
 )
 
 var defaultDialer = &net.Dialer{}
@@ -66,6 +68,9 @@ func (a *authorityAuthenticator) IsPeerValid(creds *wire.PeerCredentials) bool {
 
 // Config is a voting authority pki.Client instance.
 type Config struct {
+	// KEMScheme indicates the KEM scheme used for the LinkKey/wire protocol.
+	KEMScheme kem.Scheme
+
 	// LinkKey is the link key for the client's wire connections.
 	LinkKey kem.PrivateKey
 
@@ -160,6 +165,8 @@ func (p *connector) initSession(ctx context.Context, doneCh <-chan interface{}, 
 		ad = keyHash[:]
 	}
 	cfg := &wire.SessionConfig{
+		KEMScheme:         schemes.ByName(peer.WireKEMScheme),
+		Geometry:          nil,
 		Authenticator:     peerAuthenticator,
 		AdditionalData:    ad,
 		AuthenticationKey: linkKey,
@@ -273,13 +280,24 @@ type Client struct {
 }
 
 // Post posts the node's descriptor to the PKI for the provided epoch.
-func (c *Client) Post(ctx context.Context, epoch uint64, signingPrivateKey sign.PrivateKey, signingPublicKey sign.PublicKey, d *pki.MixDescriptor) error {
+func (c *Client) Post(ctx context.Context, epoch uint64, signingPrivateKey sign.PrivateKey, signingPublicKey sign.PublicKey, d *pki.MixDescriptor, loopstats *loops.LoopStats) error {
 	// Ensure that the descriptor we are about to post is well formed.
 	if err := pki.IsDescriptorWellFormed(d, epoch); err != nil {
 		return err
 	}
-	// Make a serialized + signed + serialized descriptor.
-	signed, err := pki.SignDescriptor(signingPrivateKey, signingPublicKey, d)
+	signedUpload := &pki.SignedUpload{
+		MixDescriptor: d,
+		LoopStats:     loopstats,
+	}
+	blob, err := signedUpload.Marshal()
+	if err != nil {
+		return err
+	}
+	signedUpload.Signature = &cert.Signature{
+		PublicKeySum256: hash.Sum256From(signingPublicKey),
+		Payload:         signingPrivateKey.Scheme().Sign(signingPrivateKey, blob, nil),
+	}
+	signed, err := signedUpload.Marshal()
 	if err != nil {
 		return err
 	}
@@ -319,8 +337,7 @@ func (c *Client) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, 
 	c.log.Infof("Get(ctx, %d)", epoch)
 
 	// Generate a random keypair to use for the link authentication.
-	scheme := wire.DefaultScheme
-	_, linkKey, err := scheme.GenerateKeyPair()
+	_, linkKey, err := c.cfg.KEMScheme.GenerateKeyPair()
 	if err != nil {
 		return nil, nil, err
 	}

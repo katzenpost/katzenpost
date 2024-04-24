@@ -398,40 +398,6 @@ func (d *Document) GetNodeByKeyHash(keyhash *[32]byte) (*MixDescriptor, error) {
 	return nil, fmt.Errorf("pki: node not found")
 }
 
-func (d *Document) VerifyDescriptors() error {
-	var err error
-	for i := 0; i < len(d.Topology); i++ {
-		for j := 0; j < len(d.Topology[i]); j++ {
-			err = d.Topology[i][j].Verify()
-			if err != nil {
-				return err
-			}
-		}
-	}
-	for i := 0; i < len(d.Providers); i++ {
-		err = d.Providers[i].Verify()
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// StripSignatures removes all cryptographic signatures from the document.
-func (d *Document) StripSignatures() {
-	d.Signatures = nil
-	d.SharedRandomCommit = nil
-	d.SharedRandomReveal = nil
-	for i := 0; i < len(d.Topology); i++ {
-		for j := 0; j < len(d.Topology[i]); j++ {
-			d.Topology[i][j].Signature = nil
-		}
-	}
-	for i := 0; i < len(d.Providers); i++ {
-		d.Providers[i].Signature = nil
-	}
-}
-
 // FromPayload deserializes, then verifies a Document, and returns the Document or error.
 func FromPayload(verifier sign.PublicKey, payload []byte) (*Document, error) {
 	_, err := cert.Verify(verifier, payload)
@@ -443,10 +409,6 @@ func FromPayload(verifier sign.PublicKey, payload []byte) (*Document, error) {
 		return nil, err
 	}
 
-	err = d.VerifyDescriptors()
-	if err != nil {
-		return nil, err
-	}
 	return d, nil
 }
 

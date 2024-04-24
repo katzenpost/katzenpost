@@ -15,16 +15,12 @@ import (
 	"github.com/BurntSushi/toml"
 
 	"github.com/katzenpost/hpqc/kem"
-	kempem "github.com/katzenpost/hpqc/kem/pem"
 	"github.com/katzenpost/hpqc/sign"
-	"github.com/katzenpost/hpqc/sign/pem"
 
 	vServerConfig "github.com/katzenpost/katzenpost/authority/voting/server/config"
-	"github.com/katzenpost/katzenpost/core/cert"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
-	"github.com/katzenpost/katzenpost/core/wire"
 
 	"github.com/katzenpost/katzenpost/client2/internal/proxy"
 )
@@ -155,6 +151,7 @@ type Provider struct {
 	Addresses map[string][]string
 }
 
+/*
 func (p *Provider) UnmarshalTOML(v interface{}) error {
 
 	data, _ := v.(map[string]interface{})
@@ -188,6 +185,7 @@ func (p *Provider) UnmarshalTOML(v interface{}) error {
 
 	return nil
 }
+*/
 
 // VotingAuthority is a voting authority peer public configuration: key material, connection info etc.
 type VotingAuthority struct {
@@ -238,6 +236,8 @@ type Callbacks struct {
 
 // Config is the top level client configuration.
 type Config struct {
+	// WireKEMScheme specifies which KEM to use with our PQ Noise based wire protocol.
+	WireKEMScheme string
 
 	// SphinxGeometry
 	SphinxGeometry *geo.Geometry

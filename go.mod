@@ -25,7 +25,7 @@ require (
 	golang.org/x/crypto v0.18.0
 	golang.org/x/net v0.17.0
 	golang.org/x/text v0.14.0
-	google.golang.org/protobuf v1.32.0
+	google.golang.org/protobuf v1.33.0
 	gopkg.in/eapache/channels.v1 v1.1.0
 	gopkg.in/op/go-logging.v1 v1.0.0-20160211212156-b2cb9fa56473
 )

@@ -28,32 +28,52 @@ import (
 	"sync"
 	"time"
 
+	"gopkg.in/op/go-logging.v1"
+
+	"gitlab.com/yawning/avl.git"
+
+	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/rand"
+
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/katzenpost/katzenpost/core/sphinx/commands"
+	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/sphinx/path"
 	"github.com/katzenpost/katzenpost/core/worker"
+	"github.com/katzenpost/katzenpost/loops"
 	"github.com/katzenpost/katzenpost/server/internal/glue"
 	"github.com/katzenpost/katzenpost/server/internal/instrument"
 	"github.com/katzenpost/katzenpost/server/internal/packet"
 	"github.com/katzenpost/katzenpost/server/internal/pkicache"
 	"github.com/katzenpost/katzenpost/server/internal/provider/kaetzchen"
-	"gitlab.com/yawning/avl.git"
-	"gopkg.in/op/go-logging.v1"
 )
 
 const maxAttempts = 3
 
 var errMaxAttempts = errors.New("decoy: max path selection attempts exceeded")
 
+func pathToSegments(path []*path.PathHop) [][loops.SegmentIDSize]byte {
+	segments := make([][loops.SegmentIDSize]byte, len(path)-1)
+	for i := 0; i < len(path)-1; i++ {
+		segmentID := [loops.SegmentIDSize]byte{}
+		copy(segmentID[:constants.NodeIDLength], path[i].ID[:])
+		copy(segmentID[constants.NodeIDLength:], path[i+1].ID[:])
+		segments[i] = segmentID
+	}
+	return segments
+}
+
 type surbCtx struct {
 	id      uint64
 	eta     time.Time
 	sprpKey []byte
+
+	fwdPath []*path.PathHop
+	revPath []*path.PathHop
 
 	etaNode *avl.Node
 }
@@ -75,6 +95,132 @@ type decoy struct {
 	surbETAs   *avl.Tree
 	surbStore  map[uint64]*surbCtx
 	surbIDBase uint64
+
+	sentLoops      map[uint64]map[[loops.SegmentIDSize]byte]int // epoch -> segment id -> count
+	completedLoops map[uint64]map[[loops.SegmentIDSize]byte]int // epoch -> segment id -> count
+}
+
+func (d *decoy) gc(epoch uint64) {
+	d.Lock()
+	defer d.Unlock()
+
+	delete(d.sentLoops, epoch)
+	delete(d.completedLoops, epoch)
+}
+
+func (d *decoy) gcWorker() {
+	timer := time.NewTimer(epochtime.Period)
+	defer timer.Stop()
+
+	for {
+		var timerFired bool
+		select {
+		case <-d.HaltCh():
+			return
+		case <-timer.C:
+			timerFired = true
+		}
+		if timerFired {
+			epoch, _, _ := epochtime.Now()
+			d.gc(epoch - 7)
+		}
+		if !timerFired && !timer.Stop() {
+			select {
+			case <-d.HaltCh():
+				return
+			case <-timer.C:
+			}
+		}
+		timer.Reset(epochtime.Period)
+	}
+}
+
+func (d *decoy) GetStats(doPublishEpoch uint64) *loops.LoopStats {
+	d.Lock()
+
+	epoch, _, _ := epochtime.Now()
+	epoch = epoch - 1
+
+	id := hash.Sum256From(d.glue.IdentityPublicKey())
+	ratios := make(map[[loops.SegmentIDSize]byte]float64)
+
+	for id, _ := range d.sentLoops[epoch] {
+		sentCount, ok := d.sentLoops[epoch][id]
+		if !ok {
+			ratios[id] = 1
+			continue
+		}
+		completedCount, ok := d.completedLoops[epoch][id]
+		if !ok {
+			ratios[id] = 1
+			continue
+		}
+		ratios[id] = float64(completedCount) / float64(sentCount)
+	}
+
+	d.Unlock()
+
+	return &loops.LoopStats{
+		MixIdentityHash: &id,
+		Epoch:           doPublishEpoch,
+		SegmentRatios:   ratios,
+	}
+}
+
+func (d *decoy) incrementSentSegments(fwdPath, revPath []*path.PathHop) {
+	d.Lock()
+	defer d.Unlock()
+
+	epoch, _, _ := epochtime.Now()
+	_, ok := d.sentLoops[epoch]
+	if !ok {
+		d.sentLoops[epoch] = make(map[[loops.SegmentIDSize]byte]int)
+	}
+
+	fwd := pathToSegments(fwdPath)
+	rev := pathToSegments(revPath)
+	for i := 0; i < len(fwd); i++ {
+		_, ok := d.sentLoops[epoch][fwd[i]]
+		if !ok {
+			d.sentLoops[epoch][fwd[i]] = 0
+		}
+		d.sentLoops[epoch][fwd[i]] += 1
+	}
+	for i := 0; i < len(rev); i++ {
+		_, ok := d.sentLoops[epoch][rev[i]]
+		if !ok {
+			d.sentLoops[epoch][rev[i]] = 0
+		}
+		d.sentLoops[epoch][rev[i]] += 1
+	}
+}
+
+func (d *decoy) incrementCompleted(fwdPath, revPath []*path.PathHop) {
+	d.Lock()
+	defer d.Unlock()
+
+	epoch, _, _ := epochtime.Now()
+	_, ok := d.completedLoops[epoch]
+	if !ok {
+		d.completedLoops[epoch] = make(map[[loops.SegmentIDSize]byte]int)
+	}
+
+	fwd := pathToSegments(fwdPath)
+	rev := pathToSegments(revPath)
+	for i := 0; i < len(fwd); i++ {
+		_, ok := d.completedLoops[epoch][fwd[i]]
+		if !ok {
+			d.completedLoops[epoch][fwd[i]] = 0
+		}
+		d.completedLoops[epoch][fwd[i]] += 1
+	}
+	for i := 0; i < len(rev); i++ {
+		_, ok := d.completedLoops[epoch][rev[i]]
+		if !ok {
+			d.completedLoops[epoch][rev[i]] = 0
+		}
+		d.completedLoops[epoch][rev[i]] += 1
+	}
 }
 
 func (d *decoy) OnNewDocument(ent *pkicache.Entry) {
@@ -120,8 +266,8 @@ func (d *decoy) OnPacket(pkt *packet.Packet) {
 		return
 	}
 
-	// TODO: At some point, this should do more than just log.
 	d.log.Debugf("Response packet: %v (SURB ID: 0x%08x): ETA: %v, Actual: %v (DeltaT: %v)", pkt.ID, id, ctx.eta, pkt.RecvAt, pkt.RecvAt.Sub(ctx.eta))
+	d.incrementCompleted(ctx.fwdPath, ctx.revPath)
 }
 
 func (d *decoy) worker() {
@@ -190,7 +336,12 @@ func (d *decoy) worker() {
 			d.sweepSURBCtxs()
 		}
 		if !timerFired && !timer.Stop() {
-			<-timer.C
+			select {
+			case <-d.HaltCh():
+				d.log.Debugf("Terminating gracefully.")
+				return
+			case <-timer.C:
+			}
 		}
 		timer.Reset(wakeInterval)
 	}
@@ -198,9 +349,6 @@ func (d *decoy) worker() {
 
 func (d *decoy) sendDecoyPacket(ent *pkicache.Entry) {
 	// TODO: (#52) Do nothing if the rate limiter would discard the packet(?).
-
-	// TODO: Determine if this should be a loop or discard packet.
-	isLoopPkt := true // HACK HACK HACK HACK.
 
 	selfDesc := ent.Self()
 	if selfDesc.Provider {
@@ -234,11 +382,7 @@ func (d *decoy) sendDecoyPacket(ent *pkicache.Entry) {
 		return
 	}
 
-	if isLoopPkt {
-		d.sendLoopPacket(doc, []byte(loopRecip), selfDesc, providerDesc)
-		return
-	}
-	d.sendDiscardPacket(doc, []byte(loopRecip), selfDesc, providerDesc)
+	d.sendLoopPacket(doc, []byte(loopRecip), selfDesc, providerDesc)
 }
 
 func (d *decoy) sendLoopPacket(doc *pki.Document, recipient []byte, src, dst *pki.MixDescriptor) {
@@ -278,6 +422,8 @@ func (d *decoy) sendLoopPacket(doc *pki.Document, recipient []byte, src, dst *pk
 			ctx := &surbCtx{
 				id:      binary.BigEndian.Uint64(surbID[8:]),
 				eta:     time.Now().Add(deltaT),
+				fwdPath: fwdPath,
+				revPath: revPath,
 				sprpKey: k,
 			}
 			d.storeSURBCtx(ctx)
@@ -293,38 +439,14 @@ func (d *decoy) sendLoopPacket(doc *pki.Document, recipient []byte, src, dst *pk
 			d.log.Debugf("Dispatching loop packet: SURB ID: 0x%08x", binary.BigEndian.Uint64(surbID[8:]))
 
 			d.dispatchPacket(fwdPath, pkt)
+
+			d.incrementSentSegments(fwdPath, revPath)
+
 			return
 		}
 	}
 
 	d.log.Debugf("Failed to generate loop packet: %v", errMaxAttempts)
-}
-
-func (d *decoy) sendDiscardPacket(doc *pki.Document, recipient []byte, src, dst *pki.MixDescriptor) {
-	payload := make([]byte, 2+d.geo.SURBLength+d.geo.UserForwardPayloadLength)
-
-	for attempts := 0; attempts < maxAttempts; attempts++ {
-		now := time.Now()
-
-		fwdPath, then, err := path.New(d.rng, d.geo, doc, recipient, src, dst, nil, time.Now(), false, true)
-		if err != nil {
-			d.log.Debugf("Failed to select forward path: %v", err)
-			return
-		}
-
-		if then.Sub(now) < epochtime.Period*2 {
-			pkt, err := d.sphinx.NewPacket(rand.Reader, fwdPath, payload)
-			if err != nil {
-				d.log.Debugf("Failed to generate Sphinx packet: %v", err)
-				return
-			}
-			d.logPath(doc, fwdPath)
-			d.dispatchPacket(fwdPath, pkt)
-			return
-		}
-	}
-
-	d.log.Debugf("Failed to generate discard decoy packet: %v", errMaxAttempts)
 }
 
 func (d *decoy) dispatchPacket(fwdPath []*path.PathHop, raw []byte) {
@@ -454,13 +576,16 @@ func New(glue glue.Glue) (glue.Decoy, error) {
 				return 0
 			}
 		}),
-		surbStore:  make(map[uint64]*surbCtx),
-		surbIDBase: uint64(time.Now().Unix()),
+		surbStore:      make(map[uint64]*surbCtx),
+		surbIDBase:     uint64(time.Now().Unix()),
+		sentLoops:      make(map[uint64]map[[loops.SegmentIDSize]byte]int),
+		completedLoops: make(map[uint64]map[[loops.SegmentIDSize]byte]int),
 	}
 	if _, err := io.ReadFull(rand.Reader, d.recipient); err != nil {
 		return nil, err
 	}
 
 	d.Go(d.worker)
+	d.Go(d.gcWorker)
 	return d, nil
 }

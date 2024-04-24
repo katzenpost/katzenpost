@@ -25,6 +25,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/katzenpost/hpqc/kem"
+	"github.com/katzenpost/hpqc/kem/schemes"
 	ecdh "github.com/katzenpost/hpqc/nike/x25519"
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/hpqc/sign"
@@ -38,6 +39,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/thwack"
 	"github.com/katzenpost/katzenpost/core/wire"
+	"github.com/katzenpost/katzenpost/loops"
 	"github.com/katzenpost/katzenpost/server/config"
 	"github.com/katzenpost/katzenpost/server/internal/glue"
 	"github.com/katzenpost/katzenpost/server/internal/packet"
@@ -45,6 +47,9 @@ import (
 	"github.com/katzenpost/katzenpost/server/spool"
 	"github.com/katzenpost/katzenpost/server/userdb"
 )
+
+var testingSchemeName = "x25519"
+var testingScheme = schemes.ByName(testingSchemeName)
 
 type mockUserDB struct {
 	provider *mockProvider
@@ -128,6 +133,10 @@ func (d *mockDecoy) Halt() {}
 func (d *mockDecoy) OnNewDocument(*pkicache.Entry) {}
 
 func (d *mockDecoy) OnPacket(*packet.Packet) {}
+
+func (d *mockDecoy) GetStats(doPublishEpoch uint64) *loops.LoopStats {
+	return nil
+}
 
 type mockServer struct {
 	cfg               *config.Config
@@ -239,7 +248,7 @@ func TestKaetzchenWorker(t *testing.T) {
 	logBackend, err := log.New("", "DEBUG", false)
 	require.NoError(t, err)
 
-	scheme := wire.DefaultScheme
+	scheme := testingScheme
 	_, userKey, err := scheme.GenerateKeyPair()
 	require.NoError(t, err)
 	_, linkKey, err := scheme.GenerateKeyPair()
@@ -325,7 +334,7 @@ func TestKaetzchenWorker(t *testing.T) {
 	testPacket.Recipient = &commands.Recipient{
 		ID: recipient,
 	}
-	testPacket.DispatchAt = time.Now().Add(-time.Duration(goo.Config().Debug.KaetzchenDelay)*time.Millisecond)
+	testPacket.DispatchAt = time.Now().Add(-time.Duration(goo.Config().Debug.KaetzchenDelay) * time.Millisecond)
 	testPacket.Payload = make([]byte, geo.ForwardPayloadLength)
 	kaetzWorker.OnKaetzchen(testPacket)
 
