@@ -15,9 +15,13 @@ import (
 	"github.com/BurntSushi/toml"
 
 	"github.com/katzenpost/hpqc/kem"
+	kempem "github.com/katzenpost/hpqc/kem/pem"
+	"github.com/katzenpost/hpqc/kem/schemes"
 	"github.com/katzenpost/hpqc/sign"
+	signpem "github.com/katzenpost/hpqc/sign/pem"
 
 	vServerConfig "github.com/katzenpost/katzenpost/authority/voting/server/config"
+	"github.com/katzenpost/katzenpost/core/cert"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
@@ -137,6 +141,9 @@ func (uCfg *UpstreamProxy) toProxyConfig() (*proxy.Config, error) {
 // so that clients can connect to the Provider and use the mixnet
 // and retrieve cached PKI documents.
 type Provider struct {
+	// WireKEMScheme specifies which KEM to use with our PQ Noise based wire protocol.
+	WireKEMScheme string
+
 	// Name is the human readable (descriptive) node identifier.
 	Name string
 
@@ -151,18 +158,18 @@ type Provider struct {
 	Addresses map[string][]string
 }
 
-/*
 func (p *Provider) UnmarshalTOML(v interface{}) error {
 
 	data, _ := v.(map[string]interface{})
 	p.Name = data["Name"].(string)
 	var err error
-	p.IdentityKey, err = pem.FromPublicPEMString(data["IdentityKey"].(string), cert.Scheme)
+	p.IdentityKey, err = signpem.FromPublicPEMString(data["IdentityKey"].(string), cert.Scheme)
 	if err != nil {
 		return err
 	}
 
-	p.LinkKey, err = kempem.FromPublicPEMString(data["LinkKey"].(string), wire.DefaultScheme)
+	kemscheme := schemes.ByName(data["WireKEMScheme"].(string))
+	p.LinkKey, err = kempem.FromPublicPEMString(data["LinkKey"].(string), kemscheme)
 	if err != nil {
 		return err
 	}
@@ -185,7 +192,6 @@ func (p *Provider) UnmarshalTOML(v interface{}) error {
 
 	return nil
 }
-*/
 
 // VotingAuthority is a voting authority peer public configuration: key material, connection info etc.
 type VotingAuthority struct {
