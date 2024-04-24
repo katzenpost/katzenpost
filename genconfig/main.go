@@ -115,9 +115,10 @@ func (s *katzenpost) genClient2Cfg() error {
 		linkPubKey := cfgLinkKey(s.nodeConfigs[i], s.outDir, cfg.WireKEMScheme)
 
 		provider := &cConfig2.Provider{
-			Name:        s.nodeConfigs[i].Server.Identifier,
-			IdentityKey: idPubKey,
-			LinkKey:     linkPubKey,
+			WireKEMScheme: s.wireKEMScheme,
+			Name:          s.nodeConfigs[i].Server.Identifier,
+			IdentityKey:   idPubKey,
+			LinkKey:       linkPubKey,
 			Addresses: map[string][]string{
 				"tcp": s.nodeConfigs[i].Server.Addresses,
 			},
