@@ -16,6 +16,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
+	"github.com/katzenpost/katzenpost/loops"
 	"github.com/stretchr/testify/require"
 )
 
@@ -33,7 +34,7 @@ func (c *mockPKIClient) Get(ctx context.Context, epoch uint64) (*cpki.Document, 
 	return nil, nil, nil // XXX
 }
 
-func (c *mockPKIClient) Post(ctx context.Context, epoch uint64, signingPrivateKey sign.PrivateKey, signingPublicKey sign.PublicKey, d *cpki.MixDescriptor) error {
+func (c *mockPKIClient) Post(ctx context.Context, epoch uint64, signingPrivateKey sign.PrivateKey, signingPublicKey sign.PublicKey, d *cpki.MixDescriptor, loopstats *loops.LoopStats) error {
 	return nil
 }
 
