@@ -118,13 +118,11 @@ func testDockerMultiplexClients(t *testing.T) {
 	message1 := []byte("hello alice, this is bob.")
 	nodeIdKey := hash.Sum256(pingTargets[0].IdentityKey)
 
-	for i := 0; i < 2; i++ {
-		reply := sendAndWait(t, thin1, message1, &nodeIdKey, []byte("testdest"))
-		require.Equal(t, message1, reply[:len(message1)])
+	reply := sendAndWait(t, thin1, message1, &nodeIdKey, []byte("testdest"))
+	require.Equal(t, message1, reply[:len(message1)])
 
-		//reply = sendAndWait(t, thin2, message1, &nodeIdKey, []byte("testdest"))
-		//require.Equal(t, message1, reply[:len(message1)])
-	}
+	reply = sendAndWait(t, thin2, message1, &nodeIdKey, []byte("testdest"))
+	require.Equal(t, message1, reply[:len(message1)])
 
 	err = thin1.Close()
 	require.NoError(t, err)

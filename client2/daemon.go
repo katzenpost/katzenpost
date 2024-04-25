@@ -268,7 +268,6 @@ func (d *Daemon) ingressWorker() {
 }
 
 func (d *Daemon) handleReply(reply *sphinxReply) {
-	d.log.Warn("Reply Received")
 	isDecoy := false
 	d.replyLock.Lock()
 	desc, ok := d.replies[*reply.surbID]
@@ -286,7 +285,6 @@ func (d *Daemon) handleReply(reply *sphinxReply) {
 				}
 				desc = *myDesc
 			} else {
-				d.log.Infof("reply descriptor not found for SURB ID %x", reply.surbID[:])
 				d.replyLock.Unlock()
 				return
 			}

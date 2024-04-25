@@ -808,6 +808,7 @@ func (c *connection) GetConsensus(ctx context.Context, epoch uint64) (*commands.
 func (c *connection) halt() {
 	c.isShutdown = true
 	c.Worker.Halt()
+	c = nil
 }
 
 func (c *connection) start() {
