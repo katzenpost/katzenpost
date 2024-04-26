@@ -447,6 +447,9 @@ func (d *Daemon) sendLoopDecoy(request *Request) {
 
 func (d *Daemon) sendDropDecoy() {
 	doc := d.client.CurrentDocument()
+	if doc == nil {
+		panic("doc is nil")
+	}
 	echoServices := common.FindServices(EchoService, doc)
 	if len(echoServices) == 0 {
 		panic("wtf no echo services")
