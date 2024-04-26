@@ -193,13 +193,13 @@ func TestCommandVectors(t *testing.T) {
 	assert.NoError(err)
 	sendPacket := &SendPacket{SphinxPacket: sphinxPacket}
 	sendPacketBytes := sendPacket.ToBytes()
-	assert.Equal(sendPacketBytes, sendPacketCommand)
+	assert.Equal(sendPacketBytes[:len(sendPacketCommand)], sendPacketCommand)
 
 	retrieveMessage := &RetrieveMessage{Sequence: cmdsTest.RetrieveMessageSeq}
 	retrieveMessageBytes := retrieveMessage.ToBytes()
 	retrieveMessageWant, err := hex.DecodeString(cmdsTest.RetrieveMessage)
 	assert.NoError(err)
-	assert.Equal(retrieveMessageBytes, retrieveMessageWant)
+	assert.Equal(retrieveMessageBytes[:len(retrieveMessageWant)], retrieveMessageWant)
 
 	messageEmptyWant, err := hex.DecodeString(cmdsTest.MessageEmpty)
 	assert.NoError(err)
@@ -209,7 +209,7 @@ func TestCommandVectors(t *testing.T) {
 		Sequence: cmdsTest.MessageEmptySeq,
 	}
 	emptyMessageCmd := emptyMessage.ToBytes()
-	assert.Equal(emptyMessageCmd, messageEmptyWant)
+	assert.Equal(emptyMessageCmd[:len(messageEmptyWant)], messageEmptyWant)
 
 	messageWant, err := hex.DecodeString(cmdsTest.Message)
 	assert.NoError(err)
@@ -226,7 +226,7 @@ func TestCommandVectors(t *testing.T) {
 	}
 
 	messageCmd := message.ToBytes()
-	assert.Equal(messageCmd, messageWant)
+	assert.Equal(messageCmd[:len(messageWant)], messageWant)
 
 	messageAckWant, err := hex.DecodeString(cmdsTest.MessageAck)
 	assert.NoError(err)
@@ -241,7 +241,7 @@ func TestCommandVectors(t *testing.T) {
 		Payload:       ackPayload,
 	}
 	messageAckCmd := messageAck.ToBytes()
-	assert.Equal([]byte(messageAckCmd), []byte(messageAckWant))
+	assert.Equal(messageAckCmd[:len(messageAckWant)], messageAckWant)
 
 	getConsensusWant, err := hex.DecodeString(cmdsTest.GetConsensus)
 	assert.NoError(err)
@@ -249,7 +249,7 @@ func TestCommandVectors(t *testing.T) {
 		Epoch: cmdsTest.GetConsensusEpoch,
 	}
 	getConsensusCmd := getConsensus.ToBytes()
-	assert.Equal(getConsensusCmd, getConsensusWant)
+	assert.Equal(getConsensusCmd[:len(getConsensusWant)], getConsensusWant)
 
 	consensusWant, err := hex.DecodeString(cmdsTest.Consensus)
 	assert.NoError(err)
@@ -260,5 +260,5 @@ func TestCommandVectors(t *testing.T) {
 		ErrorCode: cmdsTest.ConsensusErrorCode,
 	}
 	consensusCmd := consensus.ToBytes()
-	assert.Equal(consensusCmd, consensusWant)
+	assert.Equal(consensusCmd[:len(consensusWant)], consensusWant)
 }

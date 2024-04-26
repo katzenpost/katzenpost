@@ -19,7 +19,6 @@ package commands
 import (
 	"encoding/binary"
 	"errors"
-
 	"github.com/katzenpost/hpqc/sign"
 	"github.com/katzenpost/katzenpost/core/cert"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
@@ -181,6 +180,9 @@ const (
 
 	// SigInvalid signifies that the signature failed to deserialiez.
 	SigInvalid = 26
+
+	// maxCommandSize is the maximum byte size of a command.
+	maxCommandSize = 100_000
 )
 
 var (
@@ -246,7 +248,7 @@ type NoOp struct{}
 func (c *NoOp) ToBytes() []byte {
 	out := make([]byte, cmdOverhead)
 	out[0] = byte(noOp)
-	return out
+	return padToMaxCommandSize(out)
 }
 
 // GetConsensus is a de-serialized get_consensus command.
@@ -260,7 +262,7 @@ func (c *GetConsensus) ToBytes() []byte {
 	out[0] = byte(getConsensus)
 	binary.BigEndian.PutUint32(out[2:6], getConsensusLength)
 	binary.BigEndian.PutUint64(out[6:14], c.Epoch)
-	return out
+	return padToMaxCommandSize(out)
 }
 
 func getConsensusFromBytes(b []byte) (Command, error) {
@@ -290,7 +292,7 @@ func (v *GetVote) ToBytes() []byte {
 		panic(err)
 	}
 	out = append(out, blob...)
-	return out
+	return padToMaxCommandSize(out)
 }
 
 func getVoteFromBytes(b []byte) (Command, error) {
@@ -321,7 +323,7 @@ func (c *Consensus) ToBytes() []byte {
 	binary.BigEndian.PutUint32(out[2:6], consensusLength)
 	out[6] = c.ErrorCode
 	out = append(out, c.Payload...)
-	return out
+	return padToMaxCommandSize(out)
 }
 
 func consensusFromBytes(b []byte) (Command, error) {
@@ -351,7 +353,7 @@ func (c *PostDescriptor) ToBytes() []byte {
 	binary.BigEndian.PutUint32(out[2:6], postDescriptorLength+uint32(len(c.Payload)))
 	binary.BigEndian.PutUint64(out[6:14], c.Epoch)
 	out = append(out, c.Payload...)
-	return out
+	return padToMaxCommandSize(out)
 }
 
 func postDescriptorFromBytes(b []byte) (Command, error) {
@@ -388,7 +390,7 @@ func (c *PostDescriptorStatus) ToBytes() []byte {
 	out[0] = byte(postDescriptorStatus)
 	binary.BigEndian.PutUint32(out[2:6], postDescriptorStatusLength)
 	out[6] = c.ErrorCode
-	return out
+	return padToMaxCommandSize(out)
 }
 
 // Reveal is a de-serialized reveal command exchanged by authorities.
@@ -411,7 +413,7 @@ func (r *Reveal) ToBytes() []byte {
 	}
 	copy(out[14:14+cert.Scheme.PublicKeySize()], blob)
 	out = append(out, r.Payload...)
-	return out
+	return padToMaxCommandSize(out)
 }
 
 func revealFromBytes(b []byte) (Command, error) {
@@ -452,7 +454,7 @@ func (r *RevealStatus) ToBytes() []byte {
 	out[0] = byte(revealStatus)
 	binary.BigEndian.PutUint32(out[2:6], revealStatusLength)
 	out[6] = r.ErrorCode
-	return out
+	return padToMaxCommandSize(out)
 }
 
 // Vote is a vote which is exchanged by Directory Authorities.
@@ -490,7 +492,7 @@ func (c *Vote) ToBytes() []byte {
 	}
 	out = append(out, blob...)
 	out = append(out, c.Payload...)
-	return out
+	return padToMaxCommandSize(out)
 }
 
 // VoteStatus is a resonse status for a Vote command.
@@ -504,7 +506,7 @@ func (c *VoteStatus) ToBytes() []byte {
 	out[0] = byte(voteStatus)
 	binary.BigEndian.PutUint32(out[2:6], voteStatusLength)
 	out[6] = c.ErrorCode
-	return out
+	return padToMaxCommandSize(out)
 }
 
 func voteStatusFromBytes(b []byte) (Command, error) {
@@ -552,7 +554,7 @@ func (c *Cert) ToBytes() []byte {
 	}
 	out = append(out, blob...)
 	out = append(out, c.Payload...)
-	return out
+	return padToMaxCommandSize(out)
 }
 
 // CertStatus is a resonse status for a Cert command.
@@ -566,7 +568,7 @@ func (c *CertStatus) ToBytes() []byte {
 	out[0] = byte(certStatus)
 	binary.BigEndian.PutUint32(out[2:6], certStatusLength)
 	out[6] = c.ErrorCode
-	return out
+	return padToMaxCommandSize(out)
 }
 
 func certStatusFromBytes(b []byte) (Command, error) {
@@ -614,7 +616,7 @@ func (c *Sig) ToBytes() []byte {
 	}
 	out = append(out, blob...)
 	out = append(out, c.Payload...)
-	return out
+	return padToMaxCommandSize(out)
 }
 
 // SigStatus is a resonse status for a Sig command.
@@ -628,7 +630,7 @@ func (c *SigStatus) ToBytes() []byte {
 	out[0] = byte(sigStatus)
 	binary.BigEndian.PutUint32(out[2:6], sigStatusLength)
 	out[6] = c.ErrorCode
-	return out
+	return padToMaxCommandSize(out)
 }
 
 func sigStatusFromBytes(b []byte) (Command, error) {
@@ -648,7 +650,7 @@ type Disconnect struct{}
 func (c *Disconnect) ToBytes() []byte {
 	out := make([]byte, cmdOverhead)
 	out[0] = byte(disconnect)
-	return out
+	return padToMaxCommandSize(out)
 }
 
 // SendPacket is a de-serialized send_packet command.
@@ -662,7 +664,7 @@ func (c *SendPacket) ToBytes() []byte {
 	out[0] = byte(sendPacket)
 	binary.BigEndian.PutUint32(out[2:6], uint32(len(c.SphinxPacket)))
 	out = append(out, c.SphinxPacket...)
-	return out
+	return padToMaxCommandSize(out)
 }
 
 func sendPacketFromBytes(b []byte) (Command, error) {
@@ -683,7 +685,7 @@ func (c *RetrieveMessage) ToBytes() []byte {
 	out[0] = byte(retreiveMessage)
 	binary.BigEndian.PutUint32(out[2:6], retreiveMessageLength)
 	binary.BigEndian.PutUint32(out[6:10], c.Sequence)
-	return out
+	return padToMaxCommandSize(out)
 }
 
 func retreiveMessageFromBytes(b []byte) (Command, error) {
@@ -721,7 +723,7 @@ func (c *MessageACK) ToBytes() []byte {
 	binary.BigEndian.PutUint32(out[8:12], c.Sequence)
 	copy(out[12:12+constants.SURBIDLength], c.ID[:])
 	out = append(out, c.Payload...)
-	return out
+	return padToMaxCommandSize(out)
 }
 
 // Message is a de-serialized message command containing a message.
@@ -747,7 +749,7 @@ func (c *Message) ToBytes() []byte {
 	out[7] = c.QueueSizeHint
 	binary.BigEndian.PutUint32(out[8:12], c.Sequence)
 	copy(out[12:], c.Payload)
-	return out
+	return padToMaxCommandSize(out)
 }
 
 // MessageEmpty is a de-serialized message command signifying a empty queue.
@@ -765,7 +767,7 @@ func (c *MessageEmpty) ToBytes() []byte {
 	binary.BigEndian.PutUint32(out[2:6], uint32(c.Cmds.messageEmptyLength()))
 	out[6] = byte(messageTypeEmpty)
 	binary.BigEndian.PutUint32(out[8:12], c.Sequence)
-	return out
+	return padToMaxCommandSize(out)
 }
 
 func (c *Commands) messageFromBytes(b []byte) (Command, error) {
@@ -904,4 +906,15 @@ func (c *Commands) FromBytes(b []byte) (Command, error) {
 	default:
 		return nil, errInvalidCommand
 	}
+}
+
+// padToMaxCommandSize takes a slice of bytes representing a serialized command and pads it to maxCommandSize.
+func padToMaxCommandSize(data []byte) []byte {
+	paddingSize := maxCommandSize - len(data)
+	if paddingSize <= 0 {
+		return data
+	}
+
+	padding := make([]byte, paddingSize)
+	return append(data, padding...)
 }
