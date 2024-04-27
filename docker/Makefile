@@ -23,16 +23,16 @@ providers=2
 
 # Parameters
 sr=0
-mu=0.005
-muMax=1000
-lP=0.001
-lPMax=1000
+mu=0.001
+muMax=10000
+lP=0.002
+lPMax=10000
 lL=0.0005
-lLMax=1000
+lLMax=10000
 lD=0.0005
-lDMax=3000
+lDMax=30000
 lM=0.0005
-lMMax=100
+lMMax=10000
 
 UserForwardPayloadLength=2000
 
