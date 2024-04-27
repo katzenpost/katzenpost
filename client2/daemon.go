@@ -4,6 +4,8 @@
 package client2
 
 import (
+	"crypto/hmac"
+	"errors"
 	"fmt"
 	"io"
 	mrand "math/rand"
@@ -20,7 +22,6 @@ import (
 	"github.com/katzenpost/katzenpost/client2/config"
 	"github.com/katzenpost/katzenpost/client2/thin"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
-	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/worker"
@@ -59,7 +60,6 @@ type Daemon struct {
 
 	replies   map[[sConstants.SURBIDLength]byte]replyDescriptor
 	decoys    map[[sConstants.SURBIDLength]byte]replyDescriptor
-	arq       *ARQ
 	replyLock *sync.Mutex
 
 	timerQueue *TimerQueue
@@ -68,6 +68,10 @@ type Daemon struct {
 
 	gctimerQueue *TimerQueue
 	gcReplyCh    chan *gcReply
+
+	arqTimerQueue *TimerQueue
+	arqSurbIDMap  map[[sConstants.SURBIDLength]byte]*ARQMessage
+	arqResendCh   chan *[sConstants.SURBIDLength]byte
 
 	haltOnce sync.Once
 }
@@ -105,14 +109,16 @@ func NewDaemon(cfg *config.Config) (*Daemon, error) {
 			Prefix:          "client2_daemon",
 			Level:           logLevel,
 		}),
-		cfg:        cfg,
-		egressCh:   make(chan *Request, egressSize),
-		ingressCh:  make(chan *sphinxReply, ingressSize),
-		replies:    make(map[[sConstants.SURBIDLength]byte]replyDescriptor),
-		decoys:     make(map[[sConstants.SURBIDLength]byte]replyDescriptor),
-		gcSurbIDCh: make(chan *[sConstants.SURBIDLength]byte),
-		gcReplyCh:  make(chan *gcReply),
-		replyLock:  new(sync.Mutex),
+		cfg:          cfg,
+		egressCh:     make(chan *Request, egressSize),
+		ingressCh:    make(chan *sphinxReply, ingressSize),
+		replies:      make(map[[sConstants.SURBIDLength]byte]replyDescriptor),
+		decoys:       make(map[[sConstants.SURBIDLength]byte]replyDescriptor),
+		gcSurbIDCh:   make(chan *[sConstants.SURBIDLength]byte),
+		gcReplyCh:    make(chan *gcReply),
+		replyLock:    new(sync.Mutex),
+		arqSurbIDMap: make(map[[sConstants.SURBIDLength]byte]*ARQMessage),
+		arqResendCh:  make(chan *[sConstants.SURBIDLength]byte, 2),
 	}
 
 	return d, nil
@@ -127,9 +133,6 @@ func (d *Daemon) halt() {
 	d.log.Debug("Stopping timerQueues")
 	d.timerQueue.Halt()
 	d.gctimerQueue.Halt()
-
-	d.log.Debug("Stopping ARQ worker")
-	d.arq.Stop()
 
 	d.log.Debug("Stopping thin client listener")
 	d.listener.Halt()
@@ -153,9 +156,6 @@ func (d *Daemon) Start() error {
 		return err
 	}
 
-	d.arq = NewARQ(d.client, d, d.log)
-	d.arq.Start()
-
 	d.listener, err = NewListener(d.client, rates, d.egressCh, d.logbackend)
 	if err != nil {
 		return err
@@ -178,6 +178,17 @@ func (d *Daemon) Start() error {
 		}
 	})
 	d.timerQueue.Start()
+	d.arqTimerQueue = NewTimerQueue(func(rawSurbID interface{}) {
+		d.log.Info("ARQ TimerQueue callback!")
+		surbID, ok := rawSurbID.(*[sConstants.SURBIDLength]byte)
+		if !ok {
+			panic("wtf, failed type assertion!")
+		}
+		d.log.Warn("BEFORE ARQ resend")
+		d.arqResend(surbID)
+		d.log.Warn("AFTER ARQ resend")
+	})
+	d.arqTimerQueue.Start()
 	d.gctimerQueue = NewTimerQueue(func(rawGCReply interface{}) {
 		myGcReply, ok := rawGCReply.(*gcReply)
 		if !ok {
@@ -218,6 +229,8 @@ func (d *Daemon) egressWorker() {
 		case <-d.HaltCh():
 			d.Shutdown()
 			return
+		case surbID := <-d.arqResendCh:
+			d.arqDoResend(surbID)
 		case request := <-d.egressCh:
 			switch {
 			case request.IsLoopDecoy == true:
@@ -227,7 +240,7 @@ func (d *Daemon) egressWorker() {
 			case request.IsSendOp == true:
 				d.send(request)
 			case request.IsARQSendOp == true:
-				d.sendARQMessage(request)
+				d.send(request)
 			default:
 				panic("send operation not fully specified")
 			}
@@ -270,6 +283,7 @@ func (d *Daemon) ingressWorker() {
 
 func (d *Daemon) handleReply(reply *sphinxReply) {
 	isDecoy := false
+
 	d.replyLock.Lock()
 	desc, ok := d.replies[*reply.surbID]
 	if !ok {
@@ -277,14 +291,21 @@ func (d *Daemon) handleReply(reply *sphinxReply) {
 		if ok {
 			isDecoy = true
 		} else {
-			if d.arq.Has(reply.surbID) {
-				myDesc, err := d.arq.HandleAck(reply.surbID)
-				if err != nil {
-					d.log.Infof("failed to handle ACK")
-					d.replyLock.Unlock()
-					return
+			arqMessage, ok := d.arqSurbIDMap[*reply.surbID]
+			if ok {
+				desc = replyDescriptor{
+					ID:      arqMessage.MessageID,
+					appID:   arqMessage.AppID,
+					surbKey: arqMessage.SURBDecryptionKeys,
 				}
-				desc = *myDesc
+				peeked := d.arqTimerQueue.Peek()
+				if peeked != nil {
+					peekSurbId := peeked.Value.(*[sConstants.SURBIDLength]byte)
+					if hmac.Equal(arqMessage.SURBID[:], peekSurbId[:]) {
+						d.log.Warn("HandleAck Popped")
+						d.arqTimerQueue.Pop()
+					}
+				}
 			} else {
 				d.replyLock.Unlock()
 				return
@@ -294,12 +315,10 @@ func (d *Daemon) handleReply(reply *sphinxReply) {
 	}
 	delete(d.replies, *reply.surbID)
 	delete(d.decoys, *reply.surbID)
+	delete(d.arqSurbIDMap, *reply.surbID)
 	d.replyLock.Unlock()
-	s, err := sphinx.FromGeometry(d.client.cfg.SphinxGeometry)
-	if err != nil {
-		panic(err)
-	}
-	plaintext, err := s.DecryptSURBPayload(reply.ciphertext, desc.surbKey)
+
+	plaintext, err := d.client.sphinx.DecryptSURBPayload(reply.ciphertext, desc.surbKey)
 	if err != nil {
 		d.log.Infof("SURB reply decryption error: %s", err.Error())
 		return
@@ -324,35 +343,6 @@ func (d *Daemon) handleReply(reply *sphinxReply) {
 		},
 	})
 
-}
-
-func (d *Daemon) sendARQMessage(request *Request) {
-	if request.AppID == nil {
-		panic("request.AppID is nil")
-	}
-	rtt, err := d.arq.Send(request.AppID, request.ID, request.Payload, request.DestinationIdHash, request.RecipientQueueID)
-	if err != nil {
-		panic(err)
-	}
-
-	slop := time.Minute * 5 // very conservative
-	replyArrivalTime := time.Now().Add(rtt + slop)
-	d.gctimerQueue.Push(uint64(replyArrivalTime.UnixNano()), &gcReply{
-		id:    request.ID,
-		appID: request.AppID,
-	})
-
-}
-
-func (d *Daemon) SentEvent(response *Response) {
-	if response.AppID == nil {
-		panic("response.AppID is nil")
-	}
-	incomingConn := d.listener.getConnection(response.AppID)
-	err := incomingConn.sendResponse(response)
-	if err != nil {
-		d.log.Errorf("failed to send Response: %s", err)
-	}
 }
 
 func (d *Daemon) send(request *Request) {
@@ -395,6 +385,35 @@ func (d *Daemon) send(request *Request) {
 	}
 
 	d.replyLock.Lock()
+	if request.IsARQSendOp == true {
+		message := &ARQMessage{
+			AppID:              request.AppID,
+			MessageID:          request.ID,
+			SURBID:             request.SURBID,
+			Payload:            request.Payload,
+			DestinationIdHash:  request.DestinationIdHash,
+			Retransmissions:    0,
+			RecipientQueueID:   request.RecipientQueueID,
+			SURBDecryptionKeys: surbKey,
+			SentAt:             time.Now(),
+			ReplyETA:           rtt,
+		}
+
+		d.arqSurbIDMap[*message.SURBID] = message
+		myRtt := message.SentAt.Add(message.ReplyETA)
+		myRtt = myRtt.Add(RoundTripTimeSlop)
+		priority := uint64(myRtt.UnixNano())
+		d.arqTimerQueue.Push(priority, message.SURBID)
+
+		// ensure that we send the thin client an arq gc event so it cleans up it's arq specific book keeping
+		slop := time.Minute * 5 // very conservative
+		replyArrivalTime := time.Now().Add(rtt + slop)
+		d.gctimerQueue.Push(uint64(replyArrivalTime.UnixNano()), &gcReply{
+			id:    request.ID,
+			appID: request.AppID,
+		})
+	}
+
 	if request.IsSendOp {
 		d.replies[*request.SURBID] = replyDescriptor{
 			appID:   request.AppID,
@@ -468,4 +487,88 @@ func (d *Daemon) sendDropDecoy() {
 	request.IsDropDecoy = true
 
 	d.send(request)
+}
+
+func (d *Daemon) arqResend(surbID *[sConstants.SURBIDLength]byte) {
+	select {
+	case <-d.HaltCh():
+		return
+	case d.arqResendCh <- surbID:
+	}
+}
+
+func (d *Daemon) arqDoResend(surbID *[sConstants.SURBIDLength]byte) {
+	defer d.log.Info("resend end")
+
+	d.replyLock.Lock()
+	message, ok := d.arqSurbIDMap[*surbID]
+
+	// NOTE(david): if the arqSurbIDMap entry is not found
+	// it means that HandleAck was already called with the
+	// given SURB ID.
+	if !ok {
+		d.log.Warnf("SURB ID %x NOT FOUND. Aborting resend.", surbID[:])
+		d.replyLock.Unlock()
+		return
+	}
+	if (message.Retransmissions + 1) > MaxRetransmissions {
+		d.log.Warn("ARQ Max retries met.")
+		response := &Response{
+			AppID: message.AppID,
+			MessageReplyEvent: &thin.MessageReplyEvent{
+				MessageID: message.MessageID,
+				Err:       errors.New("Max retries met."),
+			},
+		}
+		incomingConn := d.listener.getConnection(message.AppID)
+		if incomingConn == nil {
+			panic("incomingConn is nil")
+		}
+		err := incomingConn.sendResponse(response)
+		if err != nil {
+			d.log.Warnf("failed to send MessageReplyEvent with max retry failure")
+		}
+		d.replyLock.Unlock()
+		return
+	}
+	d.log.Warnf("resend ----------------- REMOVING SURB ID %x", surbID[:])
+	delete(d.arqSurbIDMap, *surbID)
+
+	newsurbID := &[sConstants.SURBIDLength]byte{}
+	_, err := rand.Reader.Read(newsurbID[:])
+	if err != nil {
+		panic(err)
+	}
+	pkt, k, rtt, err := d.client.ComposeSphinxPacket(&Request{
+		ID:                message.MessageID,
+		AppID:             message.AppID,
+		WithSURB:          true,
+		DestinationIdHash: message.DestinationIdHash,
+		RecipientQueueID:  message.RecipientQueueID,
+		Payload:           message.Payload,
+		SURBID:            newsurbID,
+		IsARQSendOp:       true,
+	})
+	if err != nil {
+		d.log.Errorf("failed to send sphinx packet: %s", err.Error())
+	}
+
+	message.SURBID = newsurbID
+	message.SURBDecryptionKeys = k
+	message.ReplyETA = rtt
+	message.SentAt = time.Now()
+	message.Retransmissions += 1
+	d.arqSurbIDMap[*newsurbID] = message
+	d.replyLock.Unlock()
+
+	d.log.Warnf("resend PUTTING INTO MAP, NEW SURB ID %x", newsurbID[:])
+	myRtt := message.SentAt.Add(message.ReplyETA)
+	myRtt = myRtt.Add(RoundTripTimeSlop)
+	priority := uint64(myRtt.UnixNano())
+	d.arqTimerQueue.Push(priority, newsurbID)
+
+	err = d.client.SendPacket(pkt)
+	if err != nil {
+		d.log.Warnf("ARQ resend failure: %s", err)
+	}
 }
