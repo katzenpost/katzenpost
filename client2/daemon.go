@@ -63,7 +63,7 @@ type Daemon struct {
 	replyLock *sync.Mutex
 
 	timerQueue *TimerQueue
-	replyCh    chan *sphinxReply
+	ingressCh  chan *sphinxReply
 	gcSurbIDCh chan *[sConstants.SURBIDLength]byte
 
 	gctimerQueue *TimerQueue
@@ -97,6 +97,7 @@ func NewDaemon(cfg *config.Config) (*Daemon, error) {
 		return nil, err
 	}
 	egressSize := 2
+	ingressSize := 200
 	d := &Daemon{
 		logbackend: logbackend,
 		log: log.NewWithOptions(logbackend, log.Options{
@@ -106,7 +107,7 @@ func NewDaemon(cfg *config.Config) (*Daemon, error) {
 		}),
 		cfg:        cfg,
 		egressCh:   make(chan *Request, egressSize),
-		replyCh:    make(chan *sphinxReply, 200),
+		ingressCh:  make(chan *sphinxReply, ingressSize),
 		replies:    make(map[[sConstants.SURBIDLength]byte]replyDescriptor),
 		decoys:     make(map[[sConstants.SURBIDLength]byte]replyDescriptor),
 		gcSurbIDCh: make(chan *[sConstants.SURBIDLength]byte),
@@ -202,7 +203,7 @@ func (d *Daemon) onDocument(doc *cpki.Document) {
 
 func (d *Daemon) proxyReplies(surbID *[constants.SURBIDLength]byte, ciphertext []byte) error {
 	select {
-	case d.replyCh <- &sphinxReply{
+	case d.ingressCh <- &sphinxReply{
 		surbID:     surbID,
 		ciphertext: ciphertext}:
 	case <-d.HaltCh():
@@ -261,7 +262,7 @@ func (d *Daemon) ingressWorker() {
 			delete(d.replies, *surbID)
 			delete(d.decoys, *surbID)
 			d.replyLock.Unlock()
-		case reply := <-d.replyCh:
+		case reply := <-d.ingressCh:
 			d.handleReply(reply)
 		}
 	}
