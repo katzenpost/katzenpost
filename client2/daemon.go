@@ -106,7 +106,7 @@ func NewDaemon(cfg *config.Config) (*Daemon, error) {
 		}),
 		cfg:        cfg,
 		egressCh:   make(chan *Request, egressSize),
-		replyCh:    make(chan *sphinxReply, 2),
+		replyCh:    make(chan *sphinxReply, 200),
 		replies:    make(map[[sConstants.SURBIDLength]byte]replyDescriptor),
 		decoys:     make(map[[sConstants.SURBIDLength]byte]replyDescriptor),
 		gcSurbIDCh: make(chan *[sConstants.SURBIDLength]byte),
