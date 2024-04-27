@@ -65,7 +65,7 @@ type ThinClient struct {
 
 	// used by BlockingSendReliableMessage only
 	sentWaitChanMap  sync.Map // MessageID -> chan error
-	replyWaitChanMap sync.Map // MessageID -> chan []byte
+	replyWaitChanMap sync.Map // MessageID -> chan *MessageReplyEvent
 
 	closeOnce sync.Once
 }
@@ -233,17 +233,14 @@ func (t *ThinClient) worker() {
 			}
 		case message.MessageReplyEvent != nil:
 			t.log.Debug("MessageReplyEvent")
-			if message.MessageReplyEvent.Payload == nil {
-				t.log.Error("message.Payload is nil")
-			}
 			isArq := false
 			if message.MessageReplyEvent.MessageID != nil {
 				replyWaitChanRaw, ok := t.replyWaitChanMap.Load(*message.MessageReplyEvent.MessageID)
 				if ok {
 					isArq = true
-					replyWaitChan := replyWaitChanRaw.(chan []byte)
+					replyWaitChan := replyWaitChanRaw.(chan *MessageReplyEvent)
 					select {
-					case replyWaitChan <- message.MessageReplyEvent.Payload:
+					case replyWaitChan <- message.MessageReplyEvent:
 					case <-t.HaltCh():
 						return
 					}
@@ -464,7 +461,7 @@ func (t *ThinClient) BlockingSendReliableMessage(messageID *[MessageIDLength]byt
 	t.sentWaitChanMap.Store(*messageID, sentWaitChan)
 	defer t.sentWaitChanMap.Delete(*messageID)
 
-	replyWaitChan := make(chan []byte)
+	replyWaitChan := make(chan *MessageReplyEvent)
 	t.replyWaitChanMap.Store(*messageID, replyWaitChan)
 	defer t.replyWaitChanMap.Delete(*messageID)
 
@@ -487,7 +484,10 @@ func (t *ThinClient) BlockingSendReliableMessage(messageID *[MessageIDLength]byt
 
 	select {
 	case reply := <-replyWaitChan:
-		return reply, nil
+		if reply.Err != nil {
+			return nil, reply.Err
+		}
+		return reply.Payload, nil
 	case <-t.HaltCh():
 		return nil, errors.New("halting")
 	}
