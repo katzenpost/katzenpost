@@ -166,9 +166,7 @@ func (t *ThinClient) worker() {
 		default:
 		}
 
-		t.log.Debug("-----------------------------BEFORE readNextMessage")
 		message, err := t.readNextMessage()
-		t.log.Debug("-----------------------------AFTER readNextMessage")
 		if err != nil {
 			t.log.Infof("thin client ReceiveMessage failed: %v", err)
 		}
