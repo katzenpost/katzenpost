@@ -169,6 +169,7 @@ func (t *ThinClient) worker() {
 		message, err := t.readNextMessage()
 		if err != nil {
 			t.log.Infof("thin client ReceiveMessage failed: %v", err)
+			continue
 		}
 		if message == nil {
 			return
@@ -231,6 +232,9 @@ func (t *ThinClient) worker() {
 			}
 		case message.MessageReplyEvent != nil:
 			t.log.Debug("MessageReplyEvent")
+			if message.MessageReplyEvent.Payload == nil {
+				t.log.Error("message.Payload is nil")
+			}
 			isArq := false
 			if message.MessageReplyEvent.MessageID != nil {
 				replyWaitChanRaw, ok := t.replyWaitChanMap.Load(*message.MessageReplyEvent.MessageID)

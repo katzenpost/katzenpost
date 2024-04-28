@@ -526,6 +526,8 @@ func (d *Daemon) arqDoResend(surbID *[sConstants.SURBIDLength]byte) {
 			MessageReplyEvent: &thin.MessageReplyEvent{
 				MessageID: message.MessageID,
 				Err:       errors.New("Max retries met."),
+				Payload:   []byte{},
+				SURBID:    surbID,
 			},
 		}
 		incomingConn := d.listener.getConnection(message.AppID)
