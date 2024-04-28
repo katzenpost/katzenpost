@@ -101,7 +101,7 @@ func NewDaemon(cfg *config.Config) (*Daemon, error) {
 		return nil, err
 	}
 	egressSize := 2
-	ingressSize := 1000
+	ingressSize := 200
 	d := &Daemon{
 		logbackend: logbackend,
 		log: log.NewWithOptions(logbackend, log.Options{
@@ -302,7 +302,6 @@ func (d *Daemon) handleReply(reply *sphinxReply) {
 				if peeked != nil {
 					peekSurbId := peeked.Value.(*[sConstants.SURBIDLength]byte)
 					if hmac.Equal(arqMessage.SURBID[:], peekSurbId[:]) {
-						d.log.Warn("HandleAck Popped")
 						d.arqTimerQueue.Pop()
 					}
 				}
@@ -362,6 +361,10 @@ func (d *Daemon) send(request *Request) {
 	surbKey, rtt, err = d.client.SendCiphertext(request)
 	if err != nil {
 		d.log.Infof("SendCiphertext error: %s", err.Error())
+	}
+
+	if request.IsARQSendOp == true {
+		d.log.Infof("ARQ RTT %s", rtt)
 	}
 
 	if request.WithSURB {
