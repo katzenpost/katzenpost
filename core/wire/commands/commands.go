@@ -180,9 +180,6 @@ const (
 
 	// SigInvalid signifies that the signature failed to deserialiez.
 	SigInvalid = 26
-
-	// maxCommandSize is the maximum byte size of a command.
-	maxCommandSize = 100_000
 )
 
 var (
