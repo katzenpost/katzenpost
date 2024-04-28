@@ -17,13 +17,13 @@
 package commands
 
 import (
-	"github.com/katzenpost/hpqc/util"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
 	ecdh "github.com/katzenpost/hpqc/nike/x25519"
 	"github.com/katzenpost/hpqc/rand"
+	"github.com/katzenpost/hpqc/util"
 
 	"github.com/katzenpost/katzenpost/core/cert"
 	"github.com/katzenpost/katzenpost/core/sphinx"
