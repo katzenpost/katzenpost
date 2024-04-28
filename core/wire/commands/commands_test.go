@@ -17,6 +17,7 @@
 package commands
 
 import (
+	"github.com/katzenpost/hpqc/util"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -44,10 +45,12 @@ func TestNoOp(t *testing.T) {
 		geo: s.Geometry(),
 	}
 
-	cmd := &NoOp{}
+	cmd := &NoOp{
+		Cmds: cmds,
+	}
 	b := cmd.ToBytes()
-	require.Len(b, maxCommandSize, "NoOp: ToBytes() length")
-	verifyPadding(require, b, cmdOverhead)
+	require.Len(b, cmds.maxMessageLen(), "NoOp: ToBytes() length")
+	require.True(util.CtIsZero(b[:cmdOverhead]), "NoOp: ToBytes() padding must be zero")
 
 	c, err := cmds.FromBytes(b)
 	require.NoError(err, "NoOp: FromBytes() failed")
@@ -58,11 +61,6 @@ func TestDisconnect(t *testing.T) {
 	t.Parallel()
 	require := require.New(t)
 
-	cmd := &Disconnect{}
-	b := cmd.ToBytes()
-	require.Len(b, maxCommandSize, "Disconnect: ToBytes() length")
-	verifyPadding(require, b, cmdOverhead)
-
 	nike := ecdh.Scheme(rand.Reader)
 	forwardPayloadLength := 123
 	nrHops := 5
@@ -72,6 +70,13 @@ func TestDisconnect(t *testing.T) {
 	cmds := &Commands{
 		geo: s.Geometry(),
 	}
+
+	cmd := &Disconnect{
+		Cmds: cmds,
+	}
+	b := cmd.ToBytes()
+	require.Len(b, cmds.maxMessageLen(), "Disconnect: ToBytes() length")
+	require.True(util.CtIsZero(b[:cmdOverhead]), "Disconnect: ToBytes() padding must be zero")
 
 	c, err := cmds.FromBytes(b)
 	require.NoError(err, "Disconnect: FromBytes() failed")
@@ -84,12 +89,6 @@ func TestSendPacket(t *testing.T) {
 
 	require := require.New(t)
 
-	cmd := &SendPacket{SphinxPacket: []byte(payload)}
-	b := cmd.ToBytes()
-	require.Len(b, maxCommandSize, "SendPacket: ToBytes() length")
-	actualDataLength := cmdOverhead + len(payload)
-	verifyPadding(require, b, actualDataLength)
-
 	nike := ecdh.Scheme(rand.Reader)
 	forwardPayloadLength := 123
 	nrHops := 5
@@ -98,6 +97,12 @@ func TestSendPacket(t *testing.T) {
 	cmds := &Commands{
 		geo: s.Geometry(),
 	}
+
+	cmd := &SendPacket{SphinxPacket: []byte(payload)}
+	b := cmd.ToBytes()
+	require.Len(b, cmds.maxMessageLen(), "SendPacket: ToBytes() length")
+	actualDataLength := cmdOverhead + len(payload)
+	require.True(util.CtIsZero(b[:actualDataLength]), "SendPacket: ToBytes() padding must be zero")
 
 	c, err := cmds.FromBytes(b)
 	require.NoError(err, "SendPacket: FromBytes() failed")
@@ -113,12 +118,6 @@ func TestRetrieveMessage(t *testing.T) {
 
 	require := require.New(t)
 
-	cmd := &RetrieveMessage{Sequence: seq}
-	b := cmd.ToBytes()
-	require.Len(b, maxCommandSize, "RetrieveMessage: ToBytes() length")
-	actualDataLength := cmdOverhead + 4
-	verifyPadding(require, b, actualDataLength)
-
 	nike := ecdh.Scheme(rand.Reader)
 	forwardPayloadLength := 123
 	nrHops := 5
@@ -127,6 +126,12 @@ func TestRetrieveMessage(t *testing.T) {
 	cmds := &Commands{
 		geo: s.Geometry(),
 	}
+
+	cmd := &RetrieveMessage{Sequence: seq}
+	b := cmd.ToBytes()
+	require.Len(b, cmds.maxMessageLen(), "RetrieveMessage: ToBytes() length")
+	actualDataLength := cmdOverhead + 4
+	require.True(util.CtIsZero(b[:actualDataLength]), "RetrieveMessage: ToBytes() padding must be zero")
 
 	c, err := cmds.FromBytes(b)
 	require.NoError(err, "RetrieveMessage: FromBytes() failed")
@@ -166,8 +171,8 @@ func TestMessage(t *testing.T) {
 		Sequence: seq,
 	}
 	b := cmdEmpty.ToBytes()
-	require.Len(b, maxCommandSize, "MessageEmpty: ToBytes() length")
-	verifyPadding(require, b, expectedLen)
+	require.Len(b, cmds.maxMessageLen(), "MessageEmpty: ToBytes() length")
+	require.True(util.CtIsZero(b[:expectedLen]), "MessageEmpty: ToBytes() padding must be zero")
 
 	c, err := cmds.FromBytes(b)
 	require.NoError(err, "MessageEmpty: FromBytes() failed")
@@ -187,8 +192,8 @@ func TestMessage(t *testing.T) {
 		Payload:       msgPayload,
 	}
 	b = cmdMessage.ToBytes()
-	require.Len(b, maxCommandSize, "Message: ToBytes() length")
-	verifyPadding(require, b, expectedLen)
+	require.Len(b, cmds.maxMessageLen(), "Message: ToBytes() length")
+	require.True(util.CtIsZero(b[:expectedLen]), "Message: ToBytes() padding must be zero")
 
 	c, err = cmds.FromBytes(b)
 	require.NoError(err, "Message: FromBytes() failed")
@@ -216,8 +221,8 @@ func TestMessage(t *testing.T) {
 	}
 	copy(cmdMessageACK.ID[:], id[:])
 	b = cmdMessageACK.ToBytes()
-	require.Len(b, maxCommandSize, "MessageACK: ToBytes() length")
-	verifyPadding(require, b, expectedLen)
+	require.Len(b, cmds.maxMessageLen(), "MessageACK: ToBytes() length")
+	require.True(util.CtIsZero(b[:expectedLen]), "MessageACK: ToBytes() padding must be zero")
 
 	c, err = cmds.FromBytes(b)
 	require.NoError(err, "MessageACK: FromBytes() failed")
@@ -234,14 +239,6 @@ func TestGetConsensus(t *testing.T) {
 	t.Parallel()
 	require := require.New(t)
 
-	cmd := &GetConsensus{
-		Epoch: 123,
-	}
-	b := cmd.ToBytes()
-	require.Len(b, maxCommandSize, "GetConsensus: ToBytes() length")
-	actualDataLength := cmdOverhead + getConsensusLength
-	verifyPadding(require, b, actualDataLength)
-
 	nike := ecdh.Scheme(rand.Reader)
 	forwardPayloadLength := 123
 	nrHops := 5
@@ -250,6 +247,14 @@ func TestGetConsensus(t *testing.T) {
 	cmds := &Commands{
 		geo: s.Geometry(),
 	}
+
+	cmd := &GetConsensus{
+		Epoch: 123,
+	}
+	b := cmd.ToBytes()
+	require.Len(b, cmds.maxMessageLen(), "GetConsensus: ToBytes() length")
+	actualDataLength := cmdOverhead + getConsensusLength
+	require.True(util.CtIsZero(b[:actualDataLength]), "GetConsensus: ToBytes() padding must be zero")
 
 	c, err := cmds.FromBytes(b)
 	require.NoError(err, "GetConsensus: FromBytes() failed")
@@ -265,9 +270,7 @@ func TestConsensus(t *testing.T) {
 		ErrorCode: ConsensusOk,
 	}
 	b := cmd.ToBytes()
-	require.Len(b, maxCommandSize, "Consensus: ToBytes() length")
-	actualDataLength := consensusBaseLength + len(cmd.Payload) + cmdOverhead
-	verifyPadding(require, b, actualDataLength)
+	require.Len(b, consensusBaseLength+len(cmd.Payload)+cmdOverhead, "GetConsensus: ToBytes() length")
 
 	nike := ecdh.Scheme(rand.Reader)
 	forwardPayloadLength := 123
@@ -288,10 +291,7 @@ func TestConsensus(t *testing.T) {
 	cmd.Payload = nil
 	cmd.ErrorCode = ConsensusNotFound // Just set it to something non 0.
 	b = cmd.ToBytes()
-	require.Len(b, maxCommandSize, "Consensus: ToBytes() length")
-	actualDataLength = consensusBaseLength + len(cmd.Payload) + cmdOverhead
-	verifyPadding(require, b, actualDataLength)
-
+	require.Len(b, consensusBaseLength+len(cmd.Payload)+cmdOverhead, "GetConsensus: ToBytes() length")
 	c, err = cmds.FromBytes(b)
 	require.NoError(err, "Consensus: FromBytes() failed")
 	require.IsType(cmd, c, "Consensus: FromBytes() invalid type")
@@ -309,9 +309,7 @@ func TestPostDescriptor(t *testing.T) {
 		Payload: []byte("This is my descriptor."),
 	}
 	b := cmd.ToBytes()
-	require.Len(b, maxCommandSize, "PostDescriptor: ToBytes() length")
-	actualDataLength := postDescriptorLength + len(cmd.Payload) + cmdOverhead
-	verifyPadding(require, b, actualDataLength)
+	require.Equal(postDescriptorLength+len(cmd.Payload)+cmdOverhead, len(b), "PostDescriptor: ToBytes() length")
 
 	nike := ecdh.Scheme(rand.Reader)
 	forwardPayloadLength := 123
@@ -340,9 +338,7 @@ func TestPostDescriptorStatus(t *testing.T) {
 		ErrorCode: 23,
 	}
 	b := cmd.ToBytes()
-	require.Len(b, maxCommandSize, "PostDescriptorStatus: ToBytes() length")
-	actualDataLength := postDescriptorStatusLength + cmdOverhead
-	verifyPadding(require, b, actualDataLength)
+	require.Len(b, postDescriptorStatusLength+cmdOverhead, "PostDescriptorStatus: ToBytes() length")
 
 	nike := ecdh.Scheme(rand.Reader)
 	forwardPayloadLength := 123
@@ -374,9 +370,7 @@ func TestGetVote(t *testing.T) {
 		PublicKey: alicePub,
 	}
 	b := cmd.ToBytes()
-	require.Len(b, maxCommandSize, "GetVote: ToBytes() length")
-	actualDataLength := voteOverhead + cmdOverhead
-	verifyPadding(require, b, actualDataLength)
+	require.Equal(voteOverhead+cmdOverhead, len(b), "GetVote: ToBytes() length")
 
 	nike := ecdh.Scheme(rand.Reader)
 	forwardPayloadLength := 123
@@ -406,9 +400,7 @@ func TestVote(t *testing.T) {
 		Payload:   []byte{1, 2, 3, 4},
 	}
 	b := cmd.ToBytes()
-	require.Len(b, maxCommandSize, "Vote: ToBytes() length")
-	actualDataLength := cmdOverhead + voteOverhead + len(cmd.Payload)
-	verifyPadding(require, b, actualDataLength)
+	require.Len(b, cmdOverhead+voteOverhead+len(cmd.Payload), "Vote: ToBytes() length")
 
 	nike := ecdh.Scheme(rand.Reader)
 	forwardPayloadLength := 123
@@ -443,9 +435,7 @@ func TestVoteStatus(t *testing.T) {
 		ErrorCode: 23,
 	}
 	b := cmd.ToBytes()
-	require.Len(b, maxCommandSize, "VoteStatus: ToBytes() length")
-	actualDataLength := voteStatusLength + cmdOverhead
-	verifyPadding(require, b, actualDataLength)
+	require.Len(b, voteStatusLength+cmdOverhead, "VoteStatus: ToBytes() length")
 
 	nike := ecdh.Scheme(rand.Reader)
 	forwardPayloadLength := 123
@@ -481,9 +471,7 @@ func TestReveal(t *testing.T) {
 		Payload:   digest,
 	}
 	b := cmd.ToBytes()
-	require.Len(b, maxCommandSize, "Reveal: ToBytes() length")
-	actualDataLength := cmdOverhead + revealOverhead + 32
-	verifyPadding(require, b, actualDataLength)
+	require.Len(b, cmdOverhead+revealOverhead+32, "Reveal: ToBytes() length")
 
 	nike := ecdh.Scheme(rand.Reader)
 	forwardPayloadLength := 123
@@ -519,9 +507,7 @@ func TestRevealtatus(t *testing.T) {
 		ErrorCode: 23,
 	}
 	b := cmd.ToBytes()
-	require.Len(b, maxCommandSize, "RevealStatus: ToBytes() length")
-	actualDataLength := revealStatusLength + cmdOverhead
-	verifyPadding(require, b, actualDataLength)
+	require.Len(b, revealStatusLength+cmdOverhead, "RevealStatus: ToBytes() length")
 
 	nike := ecdh.Scheme(rand.Reader)
 	forwardPayloadLength := 123
@@ -552,9 +538,7 @@ func TestCert(t *testing.T) {
 		Payload:   []byte{1, 2, 3, 4},
 	}
 	b := cmd.ToBytes()
-	require.Len(b, maxCommandSize, "Cert: ToBytes() length")
-	actualDataLength := cmdOverhead + certOverhead + len(cmd.Payload)
-	verifyPadding(require, b, actualDataLength)
+	require.Len(b, cmdOverhead+certOverhead+len(cmd.Payload), "Cert: ToBytes() length")
 
 	nike := ecdh.Scheme(rand.Reader)
 	forwardPayloadLength := 123
@@ -590,9 +574,7 @@ func TestCertStatus(t *testing.T) {
 		ErrorCode: 14,
 	}
 	b := cmd.ToBytes()
-	require.Len(b, maxCommandSize, "CertStatus: ToBytes() length")
-	actualDataLength := certStatusLength + cmdOverhead
-	verifyPadding(require, b, actualDataLength)
+	require.Len(b, certStatusLength+cmdOverhead, "CertStatus: ToBytes() length")
 
 	nike := ecdh.Scheme(rand.Reader)
 	forwardPayloadLength := 123
@@ -623,9 +605,7 @@ func TestSig(t *testing.T) {
 		Payload:   []byte{1, 2, 3, 4},
 	}
 	b := cmd.ToBytes()
-	require.Len(b, maxCommandSize, "Sig: ToBytes() length")
-	actualDataLength := cmdOverhead + sigOverhead + len(cmd.Payload)
-	verifyPadding(require, b, actualDataLength)
+	require.Len(b, cmdOverhead+sigOverhead+len(cmd.Payload), "Sig: ToBytes() length")
 
 	nike := ecdh.Scheme(rand.Reader)
 	forwardPayloadLength := 123
@@ -661,9 +641,7 @@ func TestSigStatus(t *testing.T) {
 		ErrorCode: 23,
 	}
 	b := cmd.ToBytes()
-	require.Len(b, maxCommandSize, "SigStatus: ToBytes() length")
-	actualDataLength := revealStatusLength + cmdOverhead
-	verifyPadding(require, b, actualDataLength)
+	require.Len(b, revealStatusLength+cmdOverhead, "SigStatus: ToBytes() length")
 
 	nike := ecdh.Scheme(rand.Reader)
 	forwardPayloadLength := 123
@@ -679,12 +657,4 @@ func TestSigStatus(t *testing.T) {
 	require.IsType(cmd, c, "SigStatus: FromBytes() invalid type")
 	d := c.(*SigStatus)
 	require.Equal(d.ErrorCode, cmd.ErrorCode)
-}
-
-// verifyPadding checks that the padding bytes in a byte slice are all zeros starting from the paddingStart index.
-func verifyPadding(require *require.Assertions, data []byte, paddingStart int) {
-	padding := data[paddingStart:]
-	for _, paddedByte := range padding {
-		require.Equal(byte(0), paddedByte, "Padding byte is not zero")
-	}
 }

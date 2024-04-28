@@ -62,14 +62,6 @@ type commandsTest struct {
 func NoTestBuildCommandVectors(t *testing.T) {
 	assert := assert.New(t)
 
-	noOp := NoOp{}
-	disconnect := &Disconnect{}
-
-	sendPacket := &SendPacket{SphinxPacket: []byte(payload)}
-
-	var retrieveMessageSeq uint32 = 12345
-	retrieveMessage := &RetrieveMessage{Sequence: retrieveMessageSeq}
-
 	const (
 		hint = 0x17
 	)
@@ -83,6 +75,18 @@ func NoTestBuildCommandVectors(t *testing.T) {
 	cmds := &Commands{
 		geo: geo,
 	}
+
+	noOp := NoOp{
+		Cmds: cmds,
+	}
+	disconnect := &Disconnect{
+		Cmds: cmds,
+	}
+
+	sendPacket := &SendPacket{SphinxPacket: []byte(payload), Cmds: cmds}
+
+	var retrieveMessageSeq uint32 = 12345
+	retrieveMessage := &RetrieveMessage{Sequence: retrieveMessageSeq, Cmds: cmds}
 
 	var emptyMsgSeq uint32 = 9876
 	messageEmpty := &MessageEmpty{
@@ -108,6 +112,7 @@ func NoTestBuildCommandVectors(t *testing.T) {
 	assert.NoError(err)
 	cmdMessageACK := &MessageACK{
 		Geo:           geo,
+		Cmds:          cmds,
 		QueueSizeHint: hint,
 		Sequence:      msgSeq,
 		Payload:       ackPayload,
@@ -116,6 +121,7 @@ func NoTestBuildCommandVectors(t *testing.T) {
 	getConsensusEpoch := uint64(123)
 	getConsensus := &GetConsensus{
 		Epoch: getConsensusEpoch,
+		Cmds:  cmds,
 	}
 
 	consensus := &Consensus{
@@ -191,11 +197,11 @@ func TestCommandVectors(t *testing.T) {
 	assert.NoError(err)
 	sendPacketCommand, err := hex.DecodeString(cmdsTest.SendPacket)
 	assert.NoError(err)
-	sendPacket := &SendPacket{SphinxPacket: sphinxPacket}
+	sendPacket := &SendPacket{SphinxPacket: sphinxPacket, Cmds: cmds}
 	sendPacketBytes := sendPacket.ToBytes()
 	assert.Equal(sendPacketBytes[:len(sendPacketCommand)], sendPacketCommand)
 
-	retrieveMessage := &RetrieveMessage{Sequence: cmdsTest.RetrieveMessageSeq}
+	retrieveMessage := &RetrieveMessage{Sequence: cmdsTest.RetrieveMessageSeq, Cmds: cmds}
 	retrieveMessageBytes := retrieveMessage.ToBytes()
 	retrieveMessageWant, err := hex.DecodeString(cmdsTest.RetrieveMessage)
 	assert.NoError(err)
@@ -234,7 +240,8 @@ func TestCommandVectors(t *testing.T) {
 	ackPayload, err := hex.DecodeString(cmdsTest.MessageAckPayload)
 	assert.NoError(err)
 	messageAck := &MessageACK{
-		Geo: geo,
+		Geo:  geo,
+		Cmds: cmds,
 
 		QueueSizeHint: cmdsTest.MessageAckHint,
 		Sequence:      cmdsTest.MessageAckSeq,
@@ -247,6 +254,7 @@ func TestCommandVectors(t *testing.T) {
 	assert.NoError(err)
 	getConsensus := &GetConsensus{
 		Epoch: cmdsTest.GetConsensusEpoch,
+		Cmds:  cmds,
 	}
 	getConsensusCmd := getConsensus.ToBytes()
 	assert.Equal(getConsensusCmd[:len(getConsensusWant)], getConsensusWant)
@@ -260,5 +268,5 @@ func TestCommandVectors(t *testing.T) {
 		ErrorCode: cmdsTest.ConsensusErrorCode,
 	}
 	consensusCmd := consensus.ToBytes()
-	assert.Equal(consensusCmd[:len(consensusWant)], consensusWant)
+	assert.Equal(consensusCmd, consensusWant)
 }

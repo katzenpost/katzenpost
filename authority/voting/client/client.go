@@ -245,7 +245,7 @@ func (p *connector) fetchConsensus(ctx context.Context, linkKey kem.PrivateKey, 
 			return nil, err
 		}
 		p.log.Noticef("sending getConsensus to %s", auth.Identifier)
-		cmd := &commands.GetConsensus{Epoch: epoch}
+		cmd := &commands.GetConsensus{Epoch: epoch, Cmds: conn.session.GetCommands()}
 		resp, err := p.roundTrip(conn.session, cmd)
 
 		if err != nil {
