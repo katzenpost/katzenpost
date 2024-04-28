@@ -243,7 +243,7 @@ func (c *Commands) messageMsgPaddingLength() int {
 
 // maxMessageLen returns the maximum message length.
 func (c *Commands) maxMessageLen() int {
-	return c.messageEmptyLength()
+	return cmdOverhead + c.messageEmptyLength()
 }
 
 // NoOp is a de-serialized noop command.
