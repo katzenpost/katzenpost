@@ -4,11 +4,16 @@
 package client2
 
 import (
+	"io"
+
+	"github.com/charmbracelet/log"
 	"github.com/katzenpost/katzenpost/core/worker"
 )
 
 type sender struct {
 	worker.Worker
+
+	log *log.Logger
 
 	in  chan *Request
 	out chan *Request
@@ -24,8 +29,17 @@ type sender struct {
 // methods UpdateConnectionStatus and UpdateRates are called.
 // The worker only works when we have a connection and when we have
 // a rate set.
-func newSender(in chan *Request, out chan *Request, disableDecoys bool) *sender {
+func newSender(in chan *Request, out chan *Request, disableDecoys bool, logbackend io.Writer, logginglevel string) *sender {
+	logLevel, err := log.ParseLevel(logginglevel)
+	if err != nil {
+		panic(err)
+	}
+
 	s := &sender{
+		log: log.NewWithOptions(logbackend, log.Options{
+			Prefix: "sender",
+			Level:  logLevel,
+		}),
 		in:                in,
 		out:               out,
 		sendMessageOrDrop: NewExpDist(),

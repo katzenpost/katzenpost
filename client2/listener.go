@@ -230,6 +230,7 @@ func NewListener(client *Client, rates *Rates, egressCh chan *Request, logbacken
 	if err != nil {
 		return nil, err
 	}
+	ingressSize := 200
 	l := &listener{
 		client: client,
 		log: log.NewWithOptions(logbackend, log.Options{
@@ -240,12 +241,12 @@ func NewListener(client *Client, rates *Rates, egressCh chan *Request, logbacken
 		conns:          make(map[[AppIDLength]byte]*incomingConn),
 		connsLock:      new(sync.RWMutex),
 		closeAllCh:     make(chan interface{}),
-		ingressCh:      make(chan *Request, 1),
+		ingressCh:      make(chan *Request, ingressSize),
 		updatePKIDocCh: make(chan *cpki.Document, 2),
 		updateStatusCh: make(chan error, 2),
 	}
 
-	l.decoySender = newSender(l.ingressCh, egressCh, client.cfg.Debug.DisableDecoyTraffic)
+	l.decoySender = newSender(l.ingressCh, egressCh, client.cfg.Debug.DisableDecoyTraffic, logbackend, client.cfg.Logging.Level)
 
 	network := "unixpacket"
 	address := "@katzenpost"
