@@ -146,6 +146,10 @@ func (c *incomingConn) worker() {
 			if !ok {
 				return
 			}
+			if rawReq.IsThinClose {
+				c.log.Info("Thin client sent a disconnect request, closing thin client connection.")
+				return
+			}
 			c.log.Infof("Received Request from peer application.")
 			select {
 			case c.listener.ingressCh <- rawReq:

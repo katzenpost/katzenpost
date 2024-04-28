@@ -22,6 +22,8 @@ type Response struct {
 	// that is receiving this Response.
 	AppID *[AppIDLength]byte
 
+	ShutdownEvent *thin.ShutdownEvent
+
 	ConnectionStatusEvent *thin.ConnectionStatusEvent
 
 	NewPKIDocumentEvent *thin.NewPKIDocumentEvent
@@ -46,6 +48,7 @@ func FromThinRequest(r *thin.Request, appid *[AppIDLength]byte) *Request {
 		IsARQSendOp:       r.IsARQSendOp,
 		IsLoopDecoy:       r.IsLoopDecoy,
 		IsDropDecoy:       r.IsDropDecoy,
+		IsThinClose:       r.IsThinClose,
 	}
 }
 
@@ -91,4 +94,8 @@ type Request struct {
 	// IsDropDecoy is set to true to indicate that this message shall
 	// be a drop decoy message.
 	IsDropDecoy bool
+
+	// IsThinClose is set to true to indicate that the thin client
+	// is disconnecting from the daemon.
+	IsThinClose bool
 }

@@ -8,6 +8,8 @@ import (
 )
 
 type Response struct {
+	ShutdownEvent *ShutdownEvent `cbor:"shudown_event"`
+
 	ConnectionStatusEvent *ConnectionStatusEvent `cbor:"connection_status_event"`
 
 	NewPKIDocumentEvent *NewPKIDocumentEvent `cbor:"new_pki_document_event"`
@@ -57,4 +59,8 @@ type Request struct {
 	// IsDropDecoy is set to true to indicate that this message shall
 	// be a drop decoy message.
 	IsDropDecoy bool `cbor:"is_drop_decoy"`
+
+	// IsThinClose is set to true to indicate that the thin client
+	// is disconnecting from the daemon.
+	IsThinClose bool `cbor:"is_thin_close"`
 }

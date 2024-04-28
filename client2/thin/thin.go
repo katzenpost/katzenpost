@@ -99,7 +99,23 @@ func (t *ThinClient) GetLogger(prefix string) *log.Logger {
 // Close halts the thin client worker thread and closes the socket
 // connection with the client daemon.
 func (t *ThinClient) Close() error {
-	err := t.unixConn.Close()
+
+	req := &Request{
+		IsThinClose: true,
+	}
+	blob, err := cbor.Marshal(req)
+	if err != nil {
+		return err
+	}
+	count, _, err := t.unixConn.WriteMsgUnix(blob, nil, t.destUnixAddr)
+	if err != nil {
+		return err
+	}
+	if count != len(blob) {
+		return fmt.Errorf("SendMessage error: wrote %d instead of %d bytes", count, len(blob))
+	}
+
+	err = t.unixConn.Close()
 	t.Worker.Halt()
 	t.Worker.Wait()
 	return err
@@ -172,10 +188,14 @@ func (t *ThinClient) worker() {
 			continue
 		}
 		if message == nil {
+			go t.Halt()
 			return
 		}
 
 		switch {
+		case message.ShutdownEvent != nil:
+			go t.Halt()
+			return
 		case message.MessageIDGarbageCollected != nil:
 			t.log.Debug("MessageIDGarbageCollected")
 			select {
