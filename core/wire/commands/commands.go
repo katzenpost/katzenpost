@@ -19,7 +19,6 @@ package commands
 import (
 	"encoding/binary"
 	"errors"
-	"fmt"
 	"github.com/katzenpost/hpqc/sign"
 	"github.com/katzenpost/katzenpost/core/cert"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
@@ -850,24 +849,24 @@ func (c *Commands) messageFromBytes(b []byte, cmds *Commands) (Command, error) {
 // an error.
 func (c *Commands) FromBytes(b []byte) (Command, error) {
 	if len(b) < cmdOverhead {
-		return nil, fmt.Errorf("err: %w, len < cmdOverhead", errInvalidCommand)
+		return nil, errInvalidCommand
 	}
 
 	// Parse the common header.
 	id := b[0]
 	if b[1] != 0 {
-		return nil, fmt.Errorf("err: %w, b[1] != 0", errInvalidCommand)
+		return nil, errInvalidCommand
 	}
 	cmdLen := binary.BigEndian.Uint32(b[2:6])
 	b = b[cmdOverhead:]
 	if uint32(len(b)) < cmdLen {
-		return nil, fmt.Errorf("err: %w, uint32(len(b)) < cmdLen", errInvalidCommand)
+		return nil, errInvalidCommand
 	}
 	padding := b[cmdLen:]
 
 	// Ensure that it is zero padded.
 	if !utils.CtIsZero(padding) {
-		return nil, fmt.Errorf("err: %w, !utils.CtIsZero(padding)", errInvalidCommand)
+		return nil, errInvalidCommand
 	}
 
 	// Just handle the commands with no payload inline.
