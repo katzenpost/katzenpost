@@ -21,6 +21,9 @@ func (c *Client) ComposeSphinxPacket(request *Request) (pkt []byte, surbkey []by
 	if request.DestinationIdHash == nil {
 		return nil, nil, 0, errors.New("request.DestinationIdHash is nil")
 	}
+	if len(request.RecipientQueueID) == 0 {
+		return nil, nil, 0, errors.New("client2: recipient is nil")
+	}
 	if len(request.RecipientQueueID) > sConstants.RecipientIDLength {
 		return nil, nil, 0, fmt.Errorf("client2: invalid recipient: '%v'", request.RecipientQueueID)
 	}
@@ -128,9 +131,6 @@ func (c *Client) SendPacket(pkt []byte) error {
 
 func (c *Client) makePath(recipient []byte, provider *[32]byte, surbID *[sConstants.SURBIDLength]byte, baseTime time.Time, isForward bool) ([]*path.PathHop, time.Time, error) {
 	if c.conn.provider == nil {
-		panic("source provider cannot be nil")
-	}
-	if c.conn.provider == nil {
 		panic("c.conn.provider is nil")
 	}
 	if provider == nil {
@@ -163,6 +163,10 @@ func (c *Client) makePath(recipient []byte, provider *[32]byte, surbID *[sConsta
 	if err == nil {
 		// XXX Do not log the paths, too verbose.
 		// c.logPath(doc, p)
+	}
+
+	if len(p) == nil {
+		panic("path is zero length")
 	}
 
 	return p, t, err
