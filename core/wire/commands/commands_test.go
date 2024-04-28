@@ -98,7 +98,7 @@ func TestSendPacket(t *testing.T) {
 		geo: s.Geometry(),
 	}
 
-	cmd := &SendPacket{SphinxPacket: []byte(payload)}
+	cmd := &SendPacket{SphinxPacket: []byte(payload), Cmds: cmds}
 	b := cmd.ToBytes()
 	require.Len(b, cmds.maxMessageLen(), "SendPacket: ToBytes() length")
 	actualDataLength := cmdOverhead + len(payload)
@@ -127,7 +127,7 @@ func TestRetrieveMessage(t *testing.T) {
 		geo: s.Geometry(),
 	}
 
-	cmd := &RetrieveMessage{Sequence: seq}
+	cmd := &RetrieveMessage{Sequence: seq, Cmds: cmds}
 	b := cmd.ToBytes()
 	require.Len(b, cmds.maxMessageLen(), "RetrieveMessage: ToBytes() length")
 	actualDataLength := cmdOverhead + 4
@@ -213,7 +213,8 @@ func TestMessage(t *testing.T) {
 	require.NoError(err, "MessageACK: Failed to generate ID")
 
 	cmdMessageACK := &MessageACK{
-		Geo: geo,
+		Geo:  geo,
+		Cmds: cmds,
 
 		QueueSizeHint: hint,
 		Sequence:      seq,
@@ -250,6 +251,7 @@ func TestGetConsensus(t *testing.T) {
 
 	cmd := &GetConsensus{
 		Epoch: 123,
+		Cmds:  cmds,
 	}
 	b := cmd.ToBytes()
 	require.Len(b, cmds.maxMessageLen(), "GetConsensus: ToBytes() length")
