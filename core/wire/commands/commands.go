@@ -797,6 +797,10 @@ func (c *Commands) messageFromBytes(b []byte, cmds *Commands) (Command, error) {
 
 	switch t {
 	case messageTypeACK:
+		if len(b) != constants.SURBIDLength+c.geo.PayloadTagLength+c.geo.ForwardPayloadLength {
+			return nil, errInvalidCommand
+		}
+
 		r := new(MessageACK)
 		r.QueueSizeHint = hint
 		r.Sequence = seq
@@ -807,6 +811,10 @@ func (c *Commands) messageFromBytes(b []byte, cmds *Commands) (Command, error) {
 		r.Cmds = cmds
 		return r, nil
 	case messageTypeMessage:
+		if len(b) != c.messageMsgPaddingLength()+c.geo.UserForwardPayloadLength {
+			return nil, errInvalidCommand
+		}
+
 		padding := b[c.geo.UserForwardPayloadLength:]
 		if !utils.CtIsZero(padding) {
 			return nil, errInvalidCommand
@@ -821,6 +829,10 @@ func (c *Commands) messageFromBytes(b []byte, cmds *Commands) (Command, error) {
 		r.Cmds = cmds
 		return r, nil
 	case messageTypeEmpty:
+		if len(b) != c.messageEmptyLength()-messageBaseLength {
+			return nil, errInvalidCommand
+		}
+
 		if !utils.CtIsZero(b) {
 			return nil, errInvalidCommand
 		}
