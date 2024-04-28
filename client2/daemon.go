@@ -100,7 +100,7 @@ func NewDaemon(cfg *config.Config) (*Daemon, error) {
 	if err != nil {
 		return nil, err
 	}
-	egressSize := 0
+	egressSize := 1000
 	ingressSize := 1000
 	d := &Daemon{
 		logbackend: logbackend,
