@@ -127,6 +127,9 @@ func (s *Sphinx) commandsToBytes(cmds []commands.RoutingCommand, isTerminal bool
 
 func (s *Sphinx) createHeader(r io.Reader, path []*path.PathHop) ([]byte, []*sprpKey, error) {
 	nrHops := len(path)
+	if nrHops == 0 {
+		return nil, nil, errors.New("sphinx: zero length path")
+	}
 	if nrHops > s.geometry.NrHops {
 		return nil, nil, errors.New("sphinx: invalid path")
 	}
