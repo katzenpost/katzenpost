@@ -165,7 +165,7 @@ func (c *Client) makePath(recipient []byte, provider *[32]byte, surbID *[sConsta
 		// c.logPath(doc, p)
 	}
 
-	if len(p) == nil {
+	if len(p) == 0 {
 		panic("path is zero length")
 	}
 

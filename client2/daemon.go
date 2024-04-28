@@ -351,6 +351,14 @@ func (d *Daemon) send(request *Request) {
 	var err error
 	var now time.Time
 
+	if request.IsARQSendOp == true {
+		request.SURBID = &[sConstants.SURBIDLength]byte{}
+		_, err = rand.Reader.Read(request.SURBID[:])
+		if err != nil {
+			panic(err)
+		}
+	}
+
 	surbKey, rtt, err = d.client.SendCiphertext(request)
 	if err != nil {
 		d.log.Infof("SendCiphertext error: %s", err.Error())
