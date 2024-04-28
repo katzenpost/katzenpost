@@ -19,6 +19,7 @@ package commands
 import (
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"github.com/katzenpost/hpqc/sign"
 	"github.com/katzenpost/katzenpost/core/cert"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
@@ -271,7 +272,7 @@ func (c *GetConsensus) ToBytes() []byte {
 }
 
 func getConsensusFromBytes(b []byte, cmds *Commands) (Command, error) {
-	if len(b) != cmds.maxMessageLen() {
+	if len(b) != getConsensusLength {
 		return nil, errInvalidCommand
 	}
 
@@ -700,7 +701,7 @@ func (c *RetrieveMessage) ToBytes() []byte {
 }
 
 func retreiveMessageFromBytes(b []byte, cmds *Commands) (Command, error) {
-	if len(b) != cmds.maxMessageLen() {
+	if len(b) != retreiveMessageLength {
 		return nil, errInvalidCommand
 	}
 
@@ -784,7 +785,7 @@ func (c *MessageEmpty) ToBytes() []byte {
 }
 
 func (c *Commands) messageFromBytes(b []byte, cmds *Commands) (Command, error) {
-	if len(b) < cmds.maxMessageLen() {
+	if len(b) < messageBaseLength {
 		return nil, errInvalidCommand
 	}
 
@@ -837,24 +838,24 @@ func (c *Commands) messageFromBytes(b []byte, cmds *Commands) (Command, error) {
 // an error.
 func (c *Commands) FromBytes(b []byte) (Command, error) {
 	if len(b) < cmdOverhead {
-		return nil, errInvalidCommand
+		return nil, fmt.Errorf("err: %w, len < cmdOverhead", errInvalidCommand)
 	}
 
 	// Parse the common header.
 	id := b[0]
 	if b[1] != 0 {
-		return nil, errInvalidCommand
+		return nil, fmt.Errorf("err: %w, b[1] != 0", errInvalidCommand)
 	}
 	cmdLen := binary.BigEndian.Uint32(b[2:6])
 	b = b[cmdOverhead:]
 	if uint32(len(b)) < cmdLen {
-		return nil, errInvalidCommand
+		return nil, fmt.Errorf("err: %w, uint32(len(b)) < cmdLen", errInvalidCommand)
 	}
 	padding := b[cmdLen:]
 
 	// Ensure that it is zero padded.
 	if !utils.CtIsZero(padding) {
-		return nil, errInvalidCommand
+		return nil, fmt.Errorf("err: %w, !utils.CtIsZero(padding)", errInvalidCommand)
 	}
 
 	// Just handle the commands with no payload inline.
