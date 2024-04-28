@@ -50,7 +50,7 @@ func TestNoOp(t *testing.T) {
 	}
 	b := cmd.ToBytes()
 	require.Len(b, cmds.maxMessageLen(), "NoOp: ToBytes() length")
-	require.True(util.CtIsZero(b[:cmdOverhead]), "NoOp: ToBytes() padding must be zero")
+	require.True(util.CtIsZero(b[cmdOverhead:]), "NoOp: ToBytes() padding must be zero")
 
 	c, err := cmds.FromBytes(b)
 	require.NoError(err, "NoOp: FromBytes() failed")
@@ -76,7 +76,7 @@ func TestDisconnect(t *testing.T) {
 	}
 	b := cmd.ToBytes()
 	require.Len(b, cmds.maxMessageLen(), "Disconnect: ToBytes() length")
-	require.True(util.CtIsZero(b[:cmdOverhead]), "Disconnect: ToBytes() padding must be zero")
+	require.True(util.CtIsZero(b[cmdOverhead:]), "Disconnect: ToBytes() padding must be zero")
 
 	c, err := cmds.FromBytes(b)
 	require.NoError(err, "Disconnect: FromBytes() failed")
@@ -102,7 +102,7 @@ func TestSendPacket(t *testing.T) {
 	b := cmd.ToBytes()
 	require.Len(b, cmds.maxMessageLen(), "SendPacket: ToBytes() length")
 	actualDataLength := cmdOverhead + len(payload)
-	require.True(util.CtIsZero(b[:actualDataLength]), "SendPacket: ToBytes() padding must be zero")
+	require.True(util.CtIsZero(b[actualDataLength:]), "SendPacket: ToBytes() padding must be zero")
 
 	c, err := cmds.FromBytes(b)
 	require.NoError(err, "SendPacket: FromBytes() failed")
@@ -131,7 +131,7 @@ func TestRetrieveMessage(t *testing.T) {
 	b := cmd.ToBytes()
 	require.Len(b, cmds.maxMessageLen(), "RetrieveMessage: ToBytes() length")
 	actualDataLength := cmdOverhead + 4
-	require.True(util.CtIsZero(b[:actualDataLength]), "RetrieveMessage: ToBytes() padding must be zero")
+	require.True(util.CtIsZero(b[actualDataLength:]), "RetrieveMessage: ToBytes() padding must be zero")
 
 	c, err := cmds.FromBytes(b)
 	require.NoError(err, "RetrieveMessage: FromBytes() failed")
@@ -172,7 +172,7 @@ func TestMessage(t *testing.T) {
 	}
 	b := cmdEmpty.ToBytes()
 	require.Len(b, cmds.maxMessageLen(), "MessageEmpty: ToBytes() length")
-	require.True(util.CtIsZero(b[:expectedLen]), "MessageEmpty: ToBytes() padding must be zero")
+	require.True(util.CtIsZero(b[expectedLen:]), "MessageEmpty: ToBytes() padding must be zero")
 
 	c, err := cmds.FromBytes(b)
 	require.NoError(err, "MessageEmpty: FromBytes() failed")
@@ -193,7 +193,7 @@ func TestMessage(t *testing.T) {
 	}
 	b = cmdMessage.ToBytes()
 	require.Len(b, cmds.maxMessageLen(), "Message: ToBytes() length")
-	require.True(util.CtIsZero(b[:expectedLen]), "Message: ToBytes() padding must be zero")
+	require.True(util.CtIsZero(b[expectedLen:]), "Message: ToBytes() padding must be zero")
 
 	c, err = cmds.FromBytes(b)
 	require.NoError(err, "Message: FromBytes() failed")
@@ -223,7 +223,7 @@ func TestMessage(t *testing.T) {
 	copy(cmdMessageACK.ID[:], id[:])
 	b = cmdMessageACK.ToBytes()
 	require.Len(b, cmds.maxMessageLen(), "MessageACK: ToBytes() length")
-	require.True(util.CtIsZero(b[:expectedLen]), "MessageACK: ToBytes() padding must be zero")
+	require.True(util.CtIsZero(b[expectedLen:]), "MessageACK: ToBytes() padding must be zero")
 
 	c, err = cmds.FromBytes(b)
 	require.NoError(err, "MessageACK: FromBytes() failed")
@@ -256,7 +256,7 @@ func TestGetConsensus(t *testing.T) {
 	b := cmd.ToBytes()
 	require.Len(b, cmds.maxMessageLen(), "GetConsensus: ToBytes() length")
 	actualDataLength := cmdOverhead + getConsensusLength
-	require.True(util.CtIsZero(b[:actualDataLength]), "GetConsensus: ToBytes() padding must be zero")
+	require.True(util.CtIsZero(b[actualDataLength:]), "GetConsensus: ToBytes() padding must be zero")
 
 	c, err := cmds.FromBytes(b)
 	require.NoError(err, "GetConsensus: FromBytes() failed")
