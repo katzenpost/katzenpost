@@ -23,12 +23,11 @@ import (
 	"os"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
-
 	ecdh "github.com/katzenpost/hpqc/nike/x25519"
-
+	"github.com/katzenpost/hpqc/util"
 	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
+	"github.com/stretchr/testify/assert"
 )
 
 const wireCommandsVectorsFile = "testdata/wire_commands_vectors.json"
@@ -200,12 +199,14 @@ func TestCommandVectors(t *testing.T) {
 	sendPacket := &SendPacket{SphinxPacket: sphinxPacket, Cmds: cmds}
 	sendPacketBytes := sendPacket.ToBytes()
 	assert.Equal(sendPacketBytes[:len(sendPacketCommand)], sendPacketCommand)
+	assert.True(util.CtIsZero(sendPacketBytes[len(sendPacketCommand):]), "SendPacket: ToBytes() padding must be zero")
 
 	retrieveMessage := &RetrieveMessage{Sequence: cmdsTest.RetrieveMessageSeq, Cmds: cmds}
 	retrieveMessageBytes := retrieveMessage.ToBytes()
 	retrieveMessageWant, err := hex.DecodeString(cmdsTest.RetrieveMessage)
 	assert.NoError(err)
 	assert.Equal(retrieveMessageBytes[:len(retrieveMessageWant)], retrieveMessageWant)
+	assert.True(util.CtIsZero(retrieveMessageBytes[len(retrieveMessageWant):]), "RetrieveMessage: ToBytes() padding must be zero")
 
 	messageEmptyWant, err := hex.DecodeString(cmdsTest.MessageEmpty)
 	assert.NoError(err)
@@ -216,6 +217,7 @@ func TestCommandVectors(t *testing.T) {
 	}
 	emptyMessageCmd := emptyMessage.ToBytes()
 	assert.Equal(emptyMessageCmd[:len(messageEmptyWant)], messageEmptyWant)
+	assert.True(util.CtIsZero(emptyMessageCmd[len(messageEmptyWant):]), "MessageEmpty: ToBytes() padding must be zero")
 
 	messageWant, err := hex.DecodeString(cmdsTest.Message)
 	assert.NoError(err)
@@ -233,6 +235,7 @@ func TestCommandVectors(t *testing.T) {
 
 	messageCmd := message.ToBytes()
 	assert.Equal(messageCmd[:len(messageWant)], messageWant)
+	assert.True(util.CtIsZero(messageCmd[len(messageWant):]), "Message: ToBytes() padding must be zero")
 
 	messageAckWant, err := hex.DecodeString(cmdsTest.MessageAck)
 	assert.NoError(err)
@@ -249,6 +252,7 @@ func TestCommandVectors(t *testing.T) {
 	}
 	messageAckCmd := messageAck.ToBytes()
 	assert.Equal(messageAckCmd[:len(messageAckWant)], messageAckWant)
+	assert.True(util.CtIsZero(messageAckCmd[len(messageAckWant):]), "MessageACK: ToBytes() padding must be zero")
 
 	getConsensusWant, err := hex.DecodeString(cmdsTest.GetConsensus)
 	assert.NoError(err)
@@ -258,6 +262,7 @@ func TestCommandVectors(t *testing.T) {
 	}
 	getConsensusCmd := getConsensus.ToBytes()
 	assert.Equal(getConsensusCmd[:len(getConsensusWant)], getConsensusWant)
+	assert.True(util.CtIsZero(getConsensusCmd[len(getConsensusWant):]), "GetConsensus: ToBytes() padding must be zero")
 
 	consensusWant, err := hex.DecodeString(cmdsTest.Consensus)
 	assert.NoError(err)
