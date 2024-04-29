@@ -23,11 +23,12 @@ import (
 	"os"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+
 	ecdh "github.com/katzenpost/hpqc/nike/x25519"
 	"github.com/katzenpost/hpqc/util"
 	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
-	"github.com/stretchr/testify/assert"
 )
 
 const wireCommandsVectorsFile = "testdata/wire_commands_vectors.json"
