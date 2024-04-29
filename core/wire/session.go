@@ -591,7 +591,7 @@ func NewPKISession(cfg *SessionConfig, isInitiator bool) (*Session, error) {
 		state:          stateInit,
 		rxKeyMutex:     new(sync.RWMutex),
 		txKeyMutex:     new(sync.RWMutex),
-		commands:       commands.NewPKICommands(),
+		commands:       commands.NewCommands(cfg.Geometry),
 	}
 	s.authenticationKEMKey = cfg.AuthenticationKey
 
