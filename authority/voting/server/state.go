@@ -708,7 +708,7 @@ func (s *state) sendCommandToPeer(peer *config.Authority, cmd commands.Command) 
 
 	cfg := &wire.SessionConfig{
 		KEMScheme:         kemscheme,
-		Geometry:          nil,
+		Geometry:          s.geo,
 		Authenticator:     s,
 		AdditionalData:    identityHash[:],
 		AuthenticationKey: s.s.linkKey,
