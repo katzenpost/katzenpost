@@ -1895,6 +1895,7 @@ func (s *state) backgroundFetchConsensus(epoch uint64) {
 				LogBackend:    s.s.logBackend,
 				Authorities:   s.s.cfg.Authorities,
 				DialContextFn: nil,
+				Geo:           s.geo,
 			}
 			c, err := client.New(cfg)
 			if err != nil {
