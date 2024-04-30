@@ -146,7 +146,7 @@ func (p *pki) worker() {
 				p.log.Debugf("Skipping fetch for epoch %v: %v", epoch, err)
 				continue
 			}
-
+			// fix here
 			d, rawDoc, err := p.impl.Get(pkiCtx, epoch)
 			if isCanceled() {
 				// Canceled mid-fetch.
@@ -711,6 +711,7 @@ func New(glue glue.Glue) (glue.PKI, error) {
 		LinkKey:     glue.LinkKey(),
 		LogBackend:  glue.LogBackend(),
 		Authorities: glue.Config().PKI.Voting.Authorities,
+		Geo:         glue.Config().SphinxGeometry,
 	}
 	p.impl, err = vClient.New(pkiCfg)
 	if err != nil {
