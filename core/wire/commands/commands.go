@@ -238,9 +238,25 @@ func (c *Commands) messageMsgPaddingLength() int {
 	return constants.SURBIDLength + c.geo.SphinxPlaintextHeaderLength + c.geo.SURBLength + c.geo.PayloadTagLength
 }
 
-// maxMessageLen returns the maximum message length.
-func (c *Commands) maxMessageLen() int {
-	return cmdOverhead + c.messageEmptyLength()
+func (c *Commands) maxMessageLenServerToClient() int {
+	return cmdOverhead + c.messageMsgLength() + c.geo.UserForwardPayloadLength
+}
+
+func (c *Commands) maxMessageLenClientToServer() int {
+	return cmdOverhead + c.geo.PacketLength
+}
+
+func (c *Commands) maxMessageLen(cmd Command) int {
+	switch cmd.(type) {
+	case *NoOp, *SendPacket, *Disconnect, *RetrieveMessage, *GetConsensus:
+		// These are client to server commands
+		return c.maxMessageLenClientToServer()
+	case *Message, *MessageACK, *MessageEmpty:
+		// These are server to client commands
+		return c.maxMessageLenServerToClient()
+	default:
+		panic("unhandled command type passed to maxMessageLen")
+	}
 }
 
 // NoOp is a de-serialized noop command.
@@ -252,7 +268,7 @@ type NoOp struct {
 func (c *NoOp) ToBytes() []byte {
 	out := make([]byte, cmdOverhead)
 	out[0] = byte(noOp)
-	return padToMaxCommandSize(out, c.Cmds.maxMessageLen())
+	return padToMaxCommandSize(out, c.Cmds.maxMessageLen(c))
 }
 
 // GetConsensus is a de-serialized get_consensus command.
@@ -267,7 +283,7 @@ func (c *GetConsensus) ToBytes() []byte {
 	out[0] = byte(getConsensus)
 	binary.BigEndian.PutUint32(out[2:6], getConsensusLength)
 	binary.BigEndian.PutUint64(out[6:14], c.Epoch)
-	return padToMaxCommandSize(out, c.Cmds.maxMessageLen())
+	return padToMaxCommandSize(out, c.Cmds.maxMessageLen(c))
 }
 
 func getConsensusFromBytes(b []byte, cmds *Commands) (Command, error) {
@@ -658,7 +674,7 @@ type Disconnect struct {
 func (c *Disconnect) ToBytes() []byte {
 	out := make([]byte, cmdOverhead)
 	out[0] = byte(disconnect)
-	return padToMaxCommandSize(out, c.Cmds.maxMessageLen())
+	return padToMaxCommandSize(out, c.Cmds.maxMessageLen(c))
 }
 
 // SendPacket is a de-serialized send_packet command.
@@ -673,7 +689,7 @@ func (c *SendPacket) ToBytes() []byte {
 	out[0] = byte(sendPacket)
 	binary.BigEndian.PutUint32(out[2:6], uint32(len(c.SphinxPacket)))
 	out = append(out, c.SphinxPacket...)
-	return padToMaxCommandSize(out, c.Cmds.maxMessageLen())
+	return padToMaxCommandSize(out, c.Cmds.maxMessageLen(c))
 }
 
 func sendPacketFromBytes(b []byte, cmds *Commands) (Command, error) {
@@ -696,7 +712,7 @@ func (c *RetrieveMessage) ToBytes() []byte {
 	out[0] = byte(retreiveMessage)
 	binary.BigEndian.PutUint32(out[2:6], retreiveMessageLength)
 	binary.BigEndian.PutUint32(out[6:10], c.Sequence)
-	return padToMaxCommandSize(out, c.Cmds.maxMessageLen())
+	return padToMaxCommandSize(out, c.Cmds.maxMessageLen(c))
 }
 
 func retreiveMessageFromBytes(b []byte, cmds *Commands) (Command, error) {
@@ -736,7 +752,7 @@ func (c *MessageACK) ToBytes() []byte {
 	binary.BigEndian.PutUint32(out[8:12], c.Sequence)
 	copy(out[12:12+constants.SURBIDLength], c.ID[:])
 	out = append(out, c.Payload...)
-	return padToMaxCommandSize(out, c.Cmds.maxMessageLen())
+	return padToMaxCommandSize(out, c.Cmds.maxMessageLen(c))
 }
 
 // Message is a de-serialized message command containing a message.
@@ -762,7 +778,7 @@ func (c *Message) ToBytes() []byte {
 	out[7] = c.QueueSizeHint
 	binary.BigEndian.PutUint32(out[8:12], c.Sequence)
 	copy(out[12:], c.Payload)
-	return padToMaxCommandSize(out, c.Cmds.maxMessageLen())
+	return padToMaxCommandSize(out, c.Cmds.maxMessageLen(c))
 }
 
 // MessageEmpty is a de-serialized message command signifying a empty queue.
@@ -780,7 +796,7 @@ func (c *MessageEmpty) ToBytes() []byte {
 	binary.BigEndian.PutUint32(out[2:6], uint32(c.Cmds.messageEmptyLength()))
 	out[6] = byte(messageTypeEmpty)
 	binary.BigEndian.PutUint32(out[8:12], c.Sequence)
-	return padToMaxCommandSize(out, c.Cmds.maxMessageLen())
+	return padToMaxCommandSize(out, c.Cmds.maxMessageLen(c))
 }
 
 func (c *Commands) messageFromBytes(b []byte, cmds *Commands) (Command, error) {

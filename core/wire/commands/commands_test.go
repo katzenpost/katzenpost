@@ -49,7 +49,7 @@ func TestNoOp(t *testing.T) {
 		Cmds: cmds,
 	}
 	b := cmd.ToBytes()
-	require.Len(b, cmds.maxMessageLen(), "NoOp: ToBytes() length")
+	require.Len(b, cmds.maxMessageLen(cmd), "NoOp: ToBytes() length")
 	require.True(util.CtIsZero(b[cmdOverhead:]), "NoOp: ToBytes() padding must be zero")
 
 	c, err := cmds.FromBytes(b)
@@ -75,7 +75,7 @@ func TestDisconnect(t *testing.T) {
 		Cmds: cmds,
 	}
 	b := cmd.ToBytes()
-	require.Len(b, cmds.maxMessageLen(), "Disconnect: ToBytes() length")
+	require.Len(b, cmds.maxMessageLen(cmd), "Disconnect: ToBytes() length")
 	require.True(util.CtIsZero(b[cmdOverhead:]), "Disconnect: ToBytes() padding must be zero")
 
 	c, err := cmds.FromBytes(b)
@@ -100,7 +100,7 @@ func TestSendPacket(t *testing.T) {
 
 	cmd := &SendPacket{SphinxPacket: []byte(payload), Cmds: cmds}
 	b := cmd.ToBytes()
-	require.Len(b, cmds.maxMessageLen(), "SendPacket: ToBytes() length")
+	require.Len(b, cmds.maxMessageLen(cmd), "SendPacket: ToBytes() length")
 	actualDataLength := cmdOverhead + len(payload)
 	require.True(util.CtIsZero(b[actualDataLength:]), "SendPacket: ToBytes() padding must be zero")
 
@@ -129,7 +129,7 @@ func TestRetrieveMessage(t *testing.T) {
 
 	cmd := &RetrieveMessage{Sequence: seq, Cmds: cmds}
 	b := cmd.ToBytes()
-	require.Len(b, cmds.maxMessageLen(), "RetrieveMessage: ToBytes() length")
+	require.Len(b, cmds.maxMessageLen(cmd), "RetrieveMessage: ToBytes() length")
 	actualDataLength := cmdOverhead + 4
 	require.True(util.CtIsZero(b[actualDataLength:]), "RetrieveMessage: ToBytes() padding must be zero")
 
@@ -171,7 +171,7 @@ func TestMessage(t *testing.T) {
 		Sequence: seq,
 	}
 	b := cmdEmpty.ToBytes()
-	require.Len(b, cmds.maxMessageLen(), "MessageEmpty: ToBytes() length")
+	require.Len(b, cmds.maxMessageLen(cmdEmpty), "MessageEmpty: ToBytes() length")
 	require.True(util.CtIsZero(b[expectedLen:]), "MessageEmpty: ToBytes() padding must be zero")
 
 	c, err := cmds.FromBytes(b)
@@ -192,7 +192,7 @@ func TestMessage(t *testing.T) {
 		Payload:       msgPayload,
 	}
 	b = cmdMessage.ToBytes()
-	require.Len(b, cmds.maxMessageLen(), "Message: ToBytes() length")
+	require.Len(b, cmds.maxMessageLen(cmdMessage), "Message: ToBytes() length")
 	require.True(util.CtIsZero(b[expectedLen:]), "Message: ToBytes() padding must be zero")
 
 	c, err = cmds.FromBytes(b)
@@ -222,7 +222,7 @@ func TestMessage(t *testing.T) {
 	}
 	copy(cmdMessageACK.ID[:], id[:])
 	b = cmdMessageACK.ToBytes()
-	require.Len(b, cmds.maxMessageLen(), "MessageACK: ToBytes() length")
+	require.Len(b, cmds.maxMessageLen(cmdMessageACK), "MessageACK: ToBytes() length")
 	require.True(util.CtIsZero(b[expectedLen:]), "MessageACK: ToBytes() padding must be zero")
 
 	c, err = cmds.FromBytes(b)
@@ -254,7 +254,7 @@ func TestGetConsensus(t *testing.T) {
 		Cmds:  cmds,
 	}
 	b := cmd.ToBytes()
-	require.Len(b, cmds.maxMessageLen(), "GetConsensus: ToBytes() length")
+	require.Len(b, cmds.maxMessageLen(cmd), "GetConsensus: ToBytes() length")
 	actualDataLength := cmdOverhead + getConsensusLength
 	require.True(util.CtIsZero(b[actualDataLength:]), "GetConsensus: ToBytes() padding must be zero")
 
