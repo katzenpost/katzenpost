@@ -76,6 +76,12 @@ github.com/katzenpost/hpqc v0.0.17 h1:F1//tr2e1kOSsbjzQWC4VLElF5h05QzDeNKbC/ppZ3
 github.com/katzenpost/hpqc v0.0.17/go.mod h1:LJKX+WZenSYuz1o2xwzQ3SUWN/DZdItqw6A/yI8fum4=
 github.com/katzenpost/hpqc v0.0.19 h1:zE/r9/Cbgcq336CwWBX17VTXXKRkC0Bx7lOfqrkdxLo=
 github.com/katzenpost/hpqc v0.0.19/go.mod h1:LJKX+WZenSYuz1o2xwzQ3SUWN/DZdItqw6A/yI8fum4=
+github.com/katzenpost/hpqc v0.0.20 h1:Ut+WfoOCZNLAeN7nbMPEtHvPKHxAWrCsWAXePMmicMI=
+github.com/katzenpost/hpqc v0.0.20/go.mod h1:CMtT5mbVjJWliRuZlIPIborvFXKZmDwckd7Uf1Z1wtM=
+github.com/katzenpost/hpqc v0.0.21-0.20240502231634-051c687b3198 h1:tvEr+wGIWOboSebCi+Mc1gxZCWFUSwIc5MyTQUzAscs=
+github.com/katzenpost/hpqc v0.0.21-0.20240502231634-051c687b3198/go.mod h1:CMtT5mbVjJWliRuZlIPIborvFXKZmDwckd7Uf1Z1wtM=
+github.com/katzenpost/hpqc v0.0.21 h1:b1WsLEc5qrSCj/gccnf/9FrRcYQgWG9aBoG1Xk3pgGc=
+github.com/katzenpost/hpqc v0.0.21/go.mod h1:CMtT5mbVjJWliRuZlIPIborvFXKZmDwckd7Uf1Z1wtM=
 github.com/katzenpost/mlkem768 v0.0.1/go.mod h1:EXp1RSzk/CWdWk+LKhMp51rxDB8IEZbMyze8TsIE79w=
 github.com/katzenpost/nyquist v0.0.2/go.mod h1:1x/VqOl8InVjCeUS91EJYjHp+uU1EEJUEvAZhKBUyT0=
 github.com/katzenpost/nyquist v0.0.3-0.20231119132407-166503183e1d/go.mod h1:vvdOm//ncHrdSR9QrzdBF6DYvpyo4B9yyjTO6hEEXI4=
@@ -122,9 +128,12 @@ github.com/rogpeppe/go-internal v1.10.0 h1:TMyTOH3F/DB16zRVcYyreMH6GnZZrwQVAoYjR
 github.com/rogpeppe/go-internal v1.10.0/go.mod h1:UQnix2H7Ngw/k4C5ijL5+65zddjncjaFoBhdsK/akog=
 github.com/shopspring/decimal v1.3.1 h1:2Usl1nmF/WZucqkFZhnfFYxxxu8LG21F6nPQBE5gKV8=
 github.com/shopspring/decimal v1.3.1/go.mod h1:DKyhrW/HYNuLGql+MJL6WCR6knT2jwCFRcu2hWCYk4o=
+github.com/spf13/jwalterweatherman v1.1.0 h1:ue6voC5bR5F8YxI5S67j9i582FU4Qvo2bmqnqMYADFk=
+github.com/spf13/jwalterweatherman v1.1.0/go.mod h1:aNWZUN0dPAAO/Ljvb5BEdw96iTZ0EXowPYD95IqWIGo=
 github.com/stretchr/objx v0.1.0/go.mod h1:HFkY916IF+rwdDfMAkV7OtwuqBVzrE8GR6GFx+wExME=
 github.com/stretchr/objx v0.4.0/go.mod h1:YvHI0jy2hoMjB+UWwv71VJQ9isScKT/TqJzVSSt89Yw=
 github.com/stretchr/objx v0.5.0/go.mod h1:Yh+to48EsGEfYuaHDzXPcE3xhTkx73EhmCGUpEOglKo=
+github.com/stretchr/testify v1.2.2/go.mod h1:a8OnRcib4nhh0OaRAV+Yts87kKdq0PP7pXfy6kDkUVs=
 github.com/stretchr/testify v1.3.0/go.mod h1:M5WIy9Dh21IEIfnGCwXGc5bZfKNJtfHm1UVUgZn+9EI=
 github.com/stretchr/testify v1.4.0/go.mod h1:j7eGeouHqKxXV5pUuKE4zz7dFj8WfuZ+81PSLYec5m4=
 github.com/stretchr/testify v1.7.0/go.mod h1:6Fq8oRcR53rry900zMqJjRRixrwX3KX962/h/Wwjteg=
@@ -139,6 +148,10 @@ github.com/x448/float16 v0.8.4/go.mod h1:14CWIYCyZA/cWjXOioeEpHeN/83MdbZDRQHoFcY
 github.com/yawning/bloom v0.0.0-20181019144233-44d6c5c71ed1 h1:by/pKf+AkH45+wnqGMw2Z9fHCJAyiMk/fviwWRoTi2k=
 github.com/yawning/bloom v0.0.0-20181019144233-44d6c5c71ed1/go.mod h1:hBY0dubdyl8NQQW4Mg66u6D/Tdur7S0x62gZVJTWaSU=
 github.com/yuin/goldmark v1.4.13/go.mod h1:6yULJ656Px+3vBD8DxQVa3kxgyrAnzto9xy5taEt/CY=
+gitlab.com/elixxir/crypto v0.0.9 h1:vt7+yRvGd/G9VtpQCaXa7EKPmHTgThf2hXbzZ1vlU6I=
+gitlab.com/elixxir/crypto v0.0.9/go.mod h1:KV3F+kO0VVusLIKPqSKMk4HZ4yQiS12SaIsOXg9LJb0=
+gitlab.com/xx_network/crypto v0.0.6 h1:+C44rBhclcbWrGa5EOic5yDF3NrXAbXScCb/mXmm3Ro=
+gitlab.com/xx_network/crypto v0.0.6/go.mod h1:C69/+XTiqJvKkYzcyA47+LdxvAofl9AzR/Nyo36y9hs=
 gitlab.com/yawning/aez.git v0.0.0-20211027044916-e49e68abd344 h1:eICJMpqnDkO4nQv+GWtXcE45CFum/ni3jhcE+acBjQk=
 gitlab.com/yawning/aez.git v0.0.0-20211027044916-e49e68abd344/go.mod h1:/WDFxZLKGy+NQc+nqvQg2O0rW1HeWNHSelVv5fwEL8s=
 gitlab.com/yawning/avl.git v0.0.0-20180224045358-04c7c776e391 h1:mh46wPOHuaOuvghkRsbm6kwWYmDE4yjV8NlAp1kwnKs=
