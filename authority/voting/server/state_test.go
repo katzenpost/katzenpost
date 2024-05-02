@@ -530,10 +530,6 @@ func genGatewayConfig(name string, pki *sConfig.PKI, port uint16) (*identityKey,
 	// PKI section.
 	cfg.PKI = pki
 
-	// Enable the thwack interface.
-	cfg.Management = new(sConfig.Management)
-	cfg.Management.Enable = true
-
 	cfg.Gateway = new(sConfig.Gateway)
 	err = cfg.FixupAndValidate()
 	if err != nil {
@@ -613,10 +609,6 @@ func genServiceNodeConfig(name string, pki *sConfig.PKI, port uint16) (*identity
 
 	// PKI section.
 	cfg.PKI = pki
-
-	// Enable the thwack interface.
-	cfg.Management = new(sConfig.Management)
-	cfg.Management.Enable = true
 
 	cfg.ServiceNode = new(sConfig.ServiceNode)
 
