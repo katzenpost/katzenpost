@@ -193,9 +193,6 @@ func (s *katzenpost) genNodeConfig(isGateway, isServiceNode bool, isVoting bool)
 
 	if isServiceNode {
 		// Enable the thwack interface.
-		cfg.Management = new(sConfig.Management)
-		cfg.Management.Enable = true
-
 		s.serviceNodeIdx++
 
 		// configure an entry provider or a spool storage provider
