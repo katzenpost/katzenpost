@@ -262,8 +262,7 @@ func TestCommandVectors(t *testing.T) {
 		Cmds:  cmds,
 	}
 	getConsensusCmd := getConsensus.ToBytes()
-	assert.Equal(getConsensusCmd[:len(getConsensusWant)], getConsensusWant)
-	assert.True(util.CtIsZero(getConsensusCmd[len(getConsensusWant):]), "GetConsensus: ToBytes() padding must be zero")
+	assert.Equal(getConsensusCmd, getConsensusWant)
 
 	consensusWant, err := hex.DecodeString(cmdsTest.Consensus)
 	assert.NoError(err)

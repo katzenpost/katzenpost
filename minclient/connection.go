@@ -514,8 +514,9 @@ func (c *connection) onWireConn(w *wire.Session) {
 			} else {
 				consensusCtx = ctx
 				cmd := &commands.GetConsensus{
-					Epoch: ctx.epoch,
-					Cmds:  w.GetCommands(),
+					Epoch:              ctx.epoch,
+					Cmds:               w.GetCommands(),
+					MixnetTransmission: true, // Enable padding for mixnet transmission
 				}
 				wireErr = w.SendCommand(cmd)
 				ctx.doneFn(wireErr)

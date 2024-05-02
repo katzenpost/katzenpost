@@ -273,8 +273,9 @@ func (c *NoOp) ToBytes() []byte {
 
 // GetConsensus is a de-serialized get_consensus command.
 type GetConsensus struct {
-	Epoch uint64
-	Cmds  *Commands
+	Epoch              uint64
+	Cmds               *Commands
+	MixnetTransmission bool // if GetConsensus is sent over the mixnet, if true we need to pad the message
 }
 
 // ToBytes serializes the GetConsensus and returns the resulting byte slice.
@@ -283,7 +284,11 @@ func (c *GetConsensus) ToBytes() []byte {
 	out[0] = byte(getConsensus)
 	binary.BigEndian.PutUint32(out[2:6], getConsensusLength)
 	binary.BigEndian.PutUint64(out[6:14], c.Epoch)
-	return padToMaxCommandSize(out, c.Cmds.maxMessageLen(c))
+	if c.MixnetTransmission {
+		// only pad if we are sending over the mixnet
+		return padToMaxCommandSize(out, c.Cmds.maxMessageLen(c))
+	}
+	return out
 }
 
 func getConsensusFromBytes(b []byte, cmds *Commands) (Command, error) {

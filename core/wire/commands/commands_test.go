@@ -250,17 +250,28 @@ func TestGetConsensus(t *testing.T) {
 	}
 
 	cmd := &GetConsensus{
-		Epoch: 123,
-		Cmds:  cmds,
+		Epoch:              123,
+		Cmds:               cmds,
+		MixnetTransmission: false,
 	}
 	b := cmd.ToBytes()
-	require.Len(b, cmds.maxMessageLen(cmd), "GetConsensus: ToBytes() length")
-	actualDataLength := cmdOverhead + getConsensusLength
-	require.True(util.CtIsZero(b[actualDataLength:]), "GetConsensus: ToBytes() padding must be zero")
+	require.Equal(getConsensusLength+cmdOverhead, len(b), "GetConsensus: ToBytes() length")
 
 	c, err := cmds.FromBytes(b)
 	require.NoError(err, "GetConsensus: FromBytes() failed")
 	require.IsType(cmd, c, "GetConsensus: FromBytes() invalid type")
+
+	// Test with Mixnet Transmission. padding is expected.
+	cmd.MixnetTransmission = true
+	b = cmd.ToBytes()
+
+	require.Len(b, cmds.maxMessageLen(cmd), "GetConsensus without Mixnet: ToBytes() length")
+	actualDataLength := cmdOverhead + getConsensusLength
+	require.True(util.CtIsZero(b[actualDataLength:]), "GetConsensus without Mixnet: No padding expected")
+
+	c, err = cmds.FromBytes(b)
+	require.NoError(err, "GetConsensus without Mixnet: FromBytes() failed")
+	require.IsType(cmd, c, "GetConsensus without Mixnet: FromBytes() invalid type")
 }
 
 func TestConsensus(t *testing.T) {
