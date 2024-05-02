@@ -160,7 +160,7 @@ func selectHops(rng *mRand.Rand, doc *pki.Document, src, dst *pki.MixDescriptor,
 			nHops = len(doc.Topology) - startLayer
 		}
 	} else {
-		if srcLayer != pki.LayerGateway {
+		if srcLayer != pki.LayerService {
 			return nil, fmt.Errorf("path: invalid source layer: %v", srcLayer)
 		}
 
