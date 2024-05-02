@@ -28,8 +28,12 @@ import (
 	"sync"
 	"time"
 
+	"gitlab.com/yawning/avl.git"
+	"gopkg.in/op/go-logging.v1"
+
 	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/rand"
+
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx"
@@ -44,9 +48,7 @@ import (
 	"github.com/katzenpost/katzenpost/server/internal/instrument"
 	"github.com/katzenpost/katzenpost/server/internal/packet"
 	"github.com/katzenpost/katzenpost/server/internal/pkicache"
-	"github.com/katzenpost/katzenpost/server/internal/provider/kaetzchen"
-	"gitlab.com/yawning/avl.git"
-	"gopkg.in/op/go-logging.v1"
+	"github.com/katzenpost/katzenpost/server/internal/service/kaetzchen"
 )
 
 const maxAttempts = 3

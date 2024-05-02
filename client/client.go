@@ -160,10 +160,10 @@ func (c *Client) halt() {
 // NewTOFUSession creates and returns a new ephemeral session or an error.
 func (c *Client) NewTOFUSession(ctx context.Context) (*Session, error) {
 	var (
-		err      error
-		doc      *pki.Document
-		provider *pki.MixDescriptor
-		linkKey  kem.PrivateKey
+		err     error
+		doc     *pki.Document
+		gateway *pki.MixDescriptor
+		linkKey kem.PrivateKey
 	)
 
 	// generate a linkKey
@@ -181,11 +181,11 @@ func (c *Client) NewTOFUSession(ctx context.Context) (*Session, error) {
 	if err != nil {
 		return nil, err
 	}
-	// choose a provider
-	if provider, err = SelectGatewayNode(doc); err != nil {
+	// choose a gateway
+	if gateway, err = SelectGatewayNode(doc); err != nil {
 		return nil, err
 	}
 
-	c.session, err = NewSession(ctx, pkiclient, doc, c.fatalErrCh, c.logBackend, c.cfg, linkKey, provider)
+	c.session, err = NewSession(ctx, pkiclient, doc, c.fatalErrCh, c.logBackend, c.cfg, linkKey, gateway)
 	return c.session, err
 }

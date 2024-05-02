@@ -22,6 +22,8 @@ import (
 	"fmt"
 	"time"
 
+	"gopkg.in/op/go-logging.v1"
+
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/katzenpost/katzenpost/core/worker"
@@ -30,7 +32,6 @@ import (
 	"github.com/katzenpost/katzenpost/server/internal/instrument"
 	"github.com/katzenpost/katzenpost/server/internal/mixkey"
 	"github.com/katzenpost/katzenpost/server/internal/packet"
-	"gopkg.in/op/go-logging.v1"
 )
 
 // Worker is a Sphinx crypto worker instance.
@@ -294,13 +295,25 @@ func (w *Worker) worker() {
 		// Toss the packets over to the provider backend.
 		// Note: Callee takes ownership of pkt.
 		if pkt.IsToUser() || pkt.IsUnreliableToUser() || pkt.IsSURBReply() {
-			w.log.Debugf("Handing off user destined packet: %v", pkt.ID)
-			pkt.DispatchAt = startAt
-			w.glue.Provider().OnPacket(pkt)
+			if isGateway {
+				w.log.Debugf("Handing off user destined packet: %v", pkt.ID)
+				pkt.DispatchAt = startAt
+				w.glue.Gateway().OnPacket(pkt)
+			} else {
+				w.log.Debugf("Dropping user packet: %v (%v)", pkt.ID, pkt.CmdsToString())
+				instrument.PacketsDropped()
+				pkt.Dispose()
+			}
 		} else {
-			w.log.Debugf("Dropping user packet: %v (%v)", pkt.ID, pkt.CmdsToString())
-			instrument.PacketsDropped()
-			pkt.Dispose()
+			if isServiceNode {
+				w.log.Debugf("Handing off service destined packet: %v", pkt.ID)
+				pkt.DispatchAt = startAt
+				w.glue.ServiceNode().OnPacket(pkt)
+			} else {
+				w.log.Debugf("Dropping user packet: %v (%v)", pkt.ID, pkt.CmdsToString())
+				instrument.PacketsDropped()
+				pkt.Dispose()
+			}
 		}
 	}
 

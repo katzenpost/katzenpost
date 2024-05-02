@@ -69,7 +69,7 @@ type incomingConn struct {
 }
 
 func (c *incomingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
-	provider := c.l.glue.Provider()
+	provider := c.l.glue.Gateway()
 	// this node is a provider
 	if provider != nil {
 		// see if it is from a Mix
@@ -374,7 +374,7 @@ func (c *incomingConn) onRetrieveMessage(cmd *commands.RetrieveMessage) error {
 	if err != nil {
 		return err
 	}
-	msg, surbID, remaining, err := c.l.glue.Provider().Spool().Get(creds.AdditionalData, advance)
+	msg, surbID, remaining, err := c.l.glue.Gateway().Spool().Get(creds.AdditionalData, advance)
 	if err != nil {
 		return err
 	}

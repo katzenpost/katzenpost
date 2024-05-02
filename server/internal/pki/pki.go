@@ -405,7 +405,7 @@ func (p *pki) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 
 		// Publish currently running Kaetzchen.
 		var err error
-		desc.Kaetzchen, err = p.glue.Provider().KaetzchenForPKI()
+		desc.Kaetzchen, err = p.glue.ServiceNode().KaetzchenForPKI()
 		if err != nil {
 			return err
 		}

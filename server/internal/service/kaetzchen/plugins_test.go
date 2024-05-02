@@ -33,14 +33,14 @@ func getGlue(logBackend *log.Backend, provider *mockProvider, linkKey kem.Privat
 	goo := &mockGlue{
 		s: &mockServer{
 			logBackend: logBackend,
-			provider:   provider,
+			gateway:    provider,
+			service:    provider,
 			linkKey:    linkKey,
 			cfg: &config.Config{
 				Server:      &config.Server{},
 				Logging:     &config.Logging{},
 				ServiceNode: &config.ServiceNode{},
 				PKI:         &config.PKI{},
-				Management:  &config.Management{},
 				Debug: &config.Debug{
 					NumKaetzchenWorkers: 3,
 					KaetzchenDelay:      300,
