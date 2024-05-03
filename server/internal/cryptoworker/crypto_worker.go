@@ -265,7 +265,7 @@ func (w *Worker) worker() {
 			w.log.Debugf("Dispatching packet: %v", pkt.ID)
 			w.glue.Scheduler().OnPacket(pkt)
 			continue
-		} else if !isGateway || !isServiceNode {
+		} else if !isGateway && !isServiceNode {
 			// This may be a decoy traffic response.
 			if pkt.IsSURBReply() {
 				w.log.Debugf("Handing off decoy response packet: %v", pkt.ID)
