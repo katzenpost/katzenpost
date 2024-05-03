@@ -266,14 +266,14 @@ func (w *Worker) worker() {
 			w.glue.Scheduler().OnPacket(pkt)
 			continue
 		} else {
-			// This may be a decoy traffic response.
-			if pkt.IsSURBReply() {
-				w.log.Debugf("Handing off decoy response packet: %v", pkt.ID)
-				w.glue.Decoy().OnPacket(pkt)
-				continue
-			}
-
 			if !isGateway && !isServiceNode {
+				// This may be a decoy traffic response.
+				if pkt.IsSURBReply() {
+					w.log.Debugf("Handing off decoy response packet: %v", pkt.ID)
+					w.glue.Decoy().OnPacket(pkt)
+					continue
+				}
+
 				// Mixes will only ever see forward commands.
 				w.log.Debugf("Dropping mix packet: %v (%v)", pkt.ID, pkt.CmdsToString())
 				instrument.PacketsDropped()
@@ -294,29 +294,24 @@ func (w *Worker) worker() {
 			continue
 		}
 
-		// Toss the packets over to the provider backend.
+		// Toss the packets over to the gateway/serviceNode backend.
 		// Note: Callee takes ownership of pkt.
-		if pkt.IsToUser() || pkt.IsUnreliableToUser() || pkt.IsSURBReply() {
-			if isGateway {
-				w.log.Debugf("Handing off user destined packet: %v", pkt.ID)
-				pkt.DispatchAt = startAt
-				w.glue.Gateway().OnPacket(pkt)
-			} else {
-				w.log.Debugf("Dropping user packet: %v (%v)", pkt.ID, pkt.CmdsToString())
-				instrument.PacketsDropped()
-				pkt.Dispose()
-			}
-		} else {
-			if isServiceNode {
-				w.log.Debugf("Handing off service destined packet: %v", pkt.ID)
-				pkt.DispatchAt = startAt
-				w.glue.ServiceNode().OnPacket(pkt)
-			} else {
-				w.log.Debugf("Dropping user packet: %v (%v)", pkt.ID, pkt.CmdsToString())
-				instrument.PacketsDropped()
-				pkt.Dispose()
-			}
+		if isGateway {
+			w.log.Debugf("Handing off user destined packet: %v", pkt.ID)
+			pkt.DispatchAt = startAt
+			w.glue.Gateway().OnPacket(pkt)
+			continue
 		}
+		if isServiceNode {
+			w.log.Debugf("Handing off service destined packet: %v", pkt.ID)
+			pkt.DispatchAt = startAt
+			w.glue.ServiceNode().OnPacket(pkt)
+			continue
+		}
+
+		w.log.Debugf("3 Dropping packet: %v (%v)", pkt.ID, pkt.CmdsToString())
+		instrument.PacketsDropped()
+		pkt.Dispose()
 	}
 
 	// NOTREACHED
