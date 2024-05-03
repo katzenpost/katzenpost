@@ -1,6 +1,7 @@
 codeberg.org/dawuud/highctidh v1.0.2024010702-0.20240119231727-003bd97f7b44/go.mod h1:rCvm5BNu5q2kHnM0XzbdEY9tuOqNqp/OQpLVeBCrEGg=
 codeberg.org/vula/highctidh v1.0.2024012400 h1:W0vCA6HbtfONz3nQcfjFdrrO3dcFJTjYkD5OUlL43SE=
 codeberg.org/vula/highctidh v1.0.2024012400/go.mod h1:admvznk7GhsrDih/BMy7jbIv9Y86U9vj7S5FVoquF/g=
+codeberg.org/vula/highctidh v1.0.2024050100/go.mod h1:admvznk7GhsrDih/BMy7jbIv9Y86U9vj7S5FVoquF/g=
 filippo.io/edwards25519 v1.0.0 h1:0wAIcmJUqRdI8IJ/3eGi5/HwXZWPujYXXlkrQogz0Ek=
 filippo.io/edwards25519 v1.0.0/go.mod h1:N1IkdkCkiLB6tki+MYJoSx2JTY9NUlxZE7eHn5EwJns=
 filippo.io/mlkem768 v0.0.0-20240221181710-5ce91625fdc1 h1:xbdqh5aDZeO0XqW896qVjKnAqRji9nkIwmsBEEbCA10=
@@ -76,6 +77,8 @@ github.com/katzenpost/hpqc v0.0.17 h1:F1//tr2e1kOSsbjzQWC4VLElF5h05QzDeNKbC/ppZ3
 github.com/katzenpost/hpqc v0.0.17/go.mod h1:LJKX+WZenSYuz1o2xwzQ3SUWN/DZdItqw6A/yI8fum4=
 github.com/katzenpost/hpqc v0.0.19 h1:zE/r9/Cbgcq336CwWBX17VTXXKRkC0Bx7lOfqrkdxLo=
 github.com/katzenpost/hpqc v0.0.19/go.mod h1:LJKX+WZenSYuz1o2xwzQ3SUWN/DZdItqw6A/yI8fum4=
+github.com/katzenpost/hpqc v0.0.22 h1:RkqoivLfYyoqzlmoGeGZrrERIRNf3fSTUadLL2dKmiE=
+github.com/katzenpost/hpqc v0.0.22/go.mod h1:vryt0laioJrqEkm64Zes19//j6kqV6Fhax4dF7C7PEw=
 github.com/katzenpost/mlkem768 v0.0.1/go.mod h1:EXp1RSzk/CWdWk+LKhMp51rxDB8IEZbMyze8TsIE79w=
 github.com/katzenpost/nyquist v0.0.2/go.mod h1:1x/VqOl8InVjCeUS91EJYjHp+uU1EEJUEvAZhKBUyT0=
 github.com/katzenpost/nyquist v0.0.3-0.20231119132407-166503183e1d/go.mod h1:vvdOm//ncHrdSR9QrzdBF6DYvpyo4B9yyjTO6hEEXI4=
