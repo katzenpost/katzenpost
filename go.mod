@@ -36,7 +36,6 @@ require (
 	github.com/awnumar/memcall v0.1.2 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cespare/xxhash/v2 v2.2.0 // indirect
-	github.com/cloudflare/circl v1.3.7 // indirect
 	github.com/cockroachdb/apd v1.1.0 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/dchest/siphash v1.2.3 // indirect
@@ -52,7 +51,6 @@ require (
 	github.com/lib/pq v1.10.9 // indirect
 	github.com/mattn/go-pointer v0.0.1 // indirect
 	github.com/matttproud/golang_protobuf_extensions/v2 v2.0.0 // indirect
-	github.com/oasislabs/deoxysii v0.0.0-20190807103041-6159f99c2236 // indirect
 	github.com/oasisprotocol/curve25519-voi v0.0.0-20230904125328-1f23a7beb09a // indirect
 	github.com/oasisprotocol/deoxysii v0.0.0-20220228165953-2091330c22b7 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
@@ -62,8 +60,10 @@ require (
 	github.com/prometheus/procfs v0.12.0 // indirect
 	github.com/rfjakob/eme v1.1.2 // indirect
 	github.com/shopspring/decimal v1.3.1 // indirect
+	github.com/spf13/jwalterweatherman v1.1.0 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
-	gitlab.com/yawning/slice.git v0.0.0-20190714152416-bc4ae2510529 // indirect
+	gitlab.com/elixxir/crypto v0.0.9 // indirect
+	gitlab.com/xx_network/crypto v0.0.6 // indirect
 	gitlab.com/yawning/x448.git v0.0.0-20221003101044-617eb9b7d9b7 // indirect
 	golang.org/x/sys v0.18.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
