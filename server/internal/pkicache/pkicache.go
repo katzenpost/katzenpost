@@ -200,9 +200,9 @@ func New(d *pki.Document, identityKey sign.PublicKey, isGateway, isServiceNode b
 		var nodes []*pki.MixDescriptor
 		switch layer {
 		case pki.LayerGateway:
-			fallthrough
+			nodes = e.doc.GatewayNodes
 		case pki.LayerService:
-			nodes = append(e.doc.GatewayNodes, e.doc.ServiceNodes...)
+			nodes = e.doc.ServiceNodes
 		default:
 			nodes = e.doc.Topology[layer]
 		}
