@@ -22,7 +22,6 @@ import (
 
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/katzenpost/core/epochtime"
-	"github.com/katzenpost/katzenpost/core/pki"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
@@ -140,8 +139,8 @@ func (c *Client) makePath(recipient, destNode string, surbID *[sConstants.SURBID
 	}
 
 	// Get the descriptors.
-	var src *pki.MixDescriptor
-	var dst *pki.MixDescriptor
+	var src *cpki.MixDescriptor
+	var dst *cpki.MixDescriptor
 	var err error
 	if isForward {
 		src, err = doc.GetGateway(srcNode)
