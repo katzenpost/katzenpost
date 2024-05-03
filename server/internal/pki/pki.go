@@ -114,9 +114,10 @@ func (p *pki) worker() {
 		var timerFired bool
 		select {
 		case <-p.HaltCh():
-			p.log.Debugf("Terminating gracefully.")
+			p.log.Debug("Terminating gracefully.")
 			return
 		case <-pkiCtx.Done():
+			p.log.Debug("pkiCtx.Done")
 			return
 		case <-timer.C:
 			timerFired = true
@@ -130,6 +131,7 @@ func (p *pki) worker() {
 		err := p.publishDescriptorIfNeeded(pkiCtx)
 		if isCanceled() {
 			// Canceled mid-post
+			p.log.Debug("Canceled mid-post")
 			return
 		}
 		if err != nil {
@@ -150,6 +152,7 @@ func (p *pki) worker() {
 			d, rawDoc, err := p.impl.Get(pkiCtx, epoch)
 			if isCanceled() {
 				// Canceled mid-fetch.
+				p.log.Debug("Canceled mid-fetch")
 				return
 			}
 			if err != nil {
