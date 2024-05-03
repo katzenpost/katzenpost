@@ -135,22 +135,24 @@ func (e *Entry) isOurLayerSane(isGateway, isServiceNode bool) bool {
 	return true
 }
 
-func (e *Entry) incomingLayer() uint8 {
+func (e *Entry) incomingLayer() []uint8 {
 	idHash := hash.Sum256(e.self.IdentityKey)
 	layer, err := e.doc.GetMixLayer(&idHash)
 	if err != nil {
 		panic(err)
 	}
 	switch layer {
+	case pki.LayerGateway:
+		fallthrough
 	case pki.LayerService:
-		return uint8(len(e.doc.Topology)) - 1
+		return []uint8{uint8(len(e.doc.Topology)) - 1}
 	case 0:
-		return pki.LayerGateway
+		return []uint8{pki.LayerGateway, pki.LayerService}
 	}
-	return layer - 1
+	return []uint8{layer - 1}
 }
 
-func (e *Entry) outgoingLayer() uint8 {
+func (e *Entry) outgoingLayer() []uint8 {
 	idHash := hash.Sum256(e.self.IdentityKey)
 	layer, err := e.doc.GetMixLayer(&idHash)
 	if err != nil {
@@ -158,11 +160,13 @@ func (e *Entry) outgoingLayer() uint8 {
 	}
 	switch int(layer) {
 	case len(e.doc.Topology) - 1:
-		return pki.LayerService
+		return []uint8{pki.LayerService, pki.LayerGateway}
+	case pki.LayerService:
+		return []uint8{0}
 	case pki.LayerGateway:
-		return 0
+		return []uint8{0}
 	}
-	return layer + 1
+	return []uint8{layer + 1}
 }
 
 // New constructs a new Entry from a given document.
@@ -209,8 +213,12 @@ func New(d *pki.Document, identityKey sign.PublicKey, isGateway, isServiceNode b
 			m[nodeID] = v
 		}
 	}
-	appendMap(e.incomingLayer(), e.incoming)
-	appendMap(e.outgoingLayer(), e.outgoing)
+	incomingLayers := e.incomingLayer()
+	outgoingLayers := e.outgoingLayer()
+	appendMap(incomingLayers[0], e.incoming)
+	appendMap(incomingLayers[1], e.incoming)
+	appendMap(outgoingLayers[0], e.outgoing)
+	appendMap(outgoingLayers[1], e.outgoing)
 
 	// Build the list of all nodes.
 	for i := 0; i < len(e.doc.Topology); i++ {
