@@ -265,7 +265,7 @@ func (w *Worker) worker() {
 			w.log.Debugf("Dispatching packet: %v", pkt.ID)
 			w.glue.Scheduler().OnPacket(pkt)
 			continue
-		} else if !isGateway && !isServiceNode {
+		} else {
 			// This may be a decoy traffic response.
 			if pkt.IsSURBReply() {
 				w.log.Debugf("Handing off decoy response packet: %v", pkt.ID)
@@ -273,11 +273,13 @@ func (w *Worker) worker() {
 				continue
 			}
 
-			// Mixes will only ever see forward commands.
-			w.log.Debugf("Dropping mix packet: %v (%v)", pkt.ID, pkt.CmdsToString())
-			instrument.PacketsDropped()
-			pkt.Dispose()
-			continue
+			if !isGateway && !isServiceNode {
+				// Mixes will only ever see forward commands.
+				w.log.Debugf("Dropping mix packet: %v (%v)", pkt.ID, pkt.CmdsToString())
+				instrument.PacketsDropped()
+				pkt.Dispose()
+				continue
+			}
 		}
 
 		// This node is a provider and the packet is not destined for another
