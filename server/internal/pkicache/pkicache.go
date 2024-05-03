@@ -118,7 +118,7 @@ func (e *Entry) isOurLayerSane(isGateway, isServiceNode bool) bool {
 		if err != nil || layer == pki.LayerGateway {
 			return false
 		}
-		if int(layer) >= len(e.doc.Topology) {
+		if !isServiceNode && int(layer) >= len(e.doc.Topology) {
 			return false
 		}
 	}
@@ -128,7 +128,7 @@ func (e *Entry) isOurLayerSane(isGateway, isServiceNode bool) bool {
 		if err != nil || layer == pki.LayerService {
 			return false
 		}
-		if int(layer) >= len(e.doc.Topology) {
+		if !isGateway && int(layer) >= len(e.doc.Topology) {
 			return false
 		}
 	}
