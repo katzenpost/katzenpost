@@ -22,6 +22,7 @@ import (
 
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/katzenpost/core/epochtime"
+	"github.com/katzenpost/katzenpost/core/pki"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
@@ -139,13 +140,27 @@ func (c *Client) makePath(recipient, destNode string, surbID *[sConstants.SURBID
 	}
 
 	// Get the descriptors.
-	src, err := doc.GetGateway(srcNode)
-	if err != nil {
-		return nil, time.Time{}, newPKIError("minclient: failed to find source Provider: %v", err)
-	}
-	dst, err := doc.GetServiceNode(dstNode)
-	if err != nil {
-		return nil, time.Time{}, newPKIError("minclient: failed to find destination Provider: %v", err)
+	var src *pki.MixDescriptor
+	var dst *pki.MixDescriptor
+	var err error
+	if isForward {
+		src, err = doc.GetGateway(srcNode)
+		if err != nil {
+			return nil, time.Time{}, newPKIError("minclient: failed to find source Gateway: %v", err)
+		}
+		dst, err = doc.GetServiceNode(dstNode)
+		if err != nil {
+			return nil, time.Time{}, newPKIError("minclient: failed to find destination Provider: %v", err)
+		}
+	} else {
+		src, err = doc.GetServiceNode(srcNode)
+		if err != nil {
+			return nil, time.Time{}, newPKIError("minclient: failed to find destination Provider: %v", err)
+		}
+		dst, err = doc.GetGateway(dstNode)
+		if err != nil {
+			return nil, time.Time{}, newPKIError("minclient: failed to find source Gateway: %v", err)
+		}
 	}
 
 	p, t, err := path.New(c.rng, c.cfg.SphinxGeometry, doc, []byte(recipient), src, dst, surbID, baseTime, true, isForward)
