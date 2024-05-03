@@ -144,7 +144,7 @@ func (s *talekRequestHandler) OnCommand(cmd cborplugin.Command) error {
 	case *cborplugin.Request:
 		// expected type
 		r := new(common.ReplicaRequest)
-		err := cbor.Unmarshal(cmd.Payload, r)
+		_, err := cbor.UnmarshalFirst(cmd.Payload, r)
 		if err != nil {
 			s.log.Errorf("Did not deserialize a ReplicaRequest")
 			return nil
@@ -154,7 +154,7 @@ func (s *talekRequestHandler) OnCommand(cmd cborplugin.Command) error {
 			// deserialize BatchReadRequest
 			request := new(tCommon.BatchReadRequest)
 
-			err = cbor.Unmarshal(r.Payload, request)
+			_, err = cbor.UnmarshalFirst(r.Payload, request)
 			if err != nil {
 				s.log.Errorf("replica.Request failure to unmarshal args: %v", err)
 				return nil
@@ -188,7 +188,7 @@ func (s *talekRequestHandler) OnCommand(cmd cborplugin.Command) error {
 		case common.ReplicaWriteCommand:
 			// deserialize ReplicaWriteArgs
 			args := new(tCommon.ReplicaWriteArgs)
-			err = cbor.Unmarshal(r.Payload, args)
+			_, err = cbor.UnmarshalFirst(r.Payload, args)
 			if err != nil {
 				s.log.Errorf("replica.Write failure to unmarshal args: %v", err)
 				return nil

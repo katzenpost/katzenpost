@@ -74,7 +74,8 @@ func (r *ReplicaKPC) Write(args *tCommon.ReplicaWriteArgs, reply *tCommon.Replic
 	if err != nil {
 		return err
 	}
-	return cbor.Unmarshal(rawResp, reply)
+	_, err = cbor.UnmarshalFirst(rawResp, reply)
+	return err
 
 }
 
@@ -97,7 +98,8 @@ func (r *ReplicaKPC) BatchRead(args *tCommon.BatchReadRequest, reply *tCommon.Ba
 	if err != nil {
 		return err
 	}
-	return cbor.Unmarshal(rawResp, reply)
+	_, err = cbor.UnmarshalFirst(rawResp, reply)
+	return err
 }
 
 func NewReplicaKPC(name string, provider string, session *client.Session, config *tCommon.TrustDomainConfig) *ReplicaKPC {
@@ -178,7 +180,7 @@ func main() {
 
 	// TODO check that all replicas agree on parameters
 	for _, replica := range replicas {
-		fmt.Println("replica: ", replica.name+ "@"+ replica.provider)
+		fmt.Println("replica: ", replica.name+"@"+replica.provider)
 	}
 	if len(replicas) < 2 {
 		fmt.Println("Must have at least 2 replicas to proceed")
