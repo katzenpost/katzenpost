@@ -743,6 +743,9 @@ func (c *connection) sendPacket(pkt []byte) error {
 
 	select {
 	case err := <-errCh:
+		if err != nil {
+			c.log.Debugf("sendPacket failed: %s", err)
+		}
 		return err
 	case <-c.HaltCh():
 		return ErrShutdown
