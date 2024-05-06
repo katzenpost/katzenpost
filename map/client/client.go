@@ -260,7 +260,7 @@ func WriteOnly(c *Client, woCap common.WriteOnlyCap) WriteOnlyClient {
 }
 
 // create a duplex using a shared secret
-func DuplexFromSeed(c *Client, initiator bool, secret []byte) ReadWriteClient {
+func duplexCapsFromSeed(initiator bool, secret []byte) (*common.ROCap, *common.WOCap) {
 	salt := []byte("duplex initialized from seed is not for multi-party use")
 	keymaterial := hkdf.New(hash, secret, salt, nil)
 	var err error
@@ -286,8 +286,14 @@ func DuplexFromSeed(c *Client, initiator bool, secret []byte) ReadWriteClient {
 	rw1 := common.NewRWCap(pk1)
 	rw2 := common.NewRWCap(pk2)
 
-	// initiator socket
-	return Duplex(c, rw1.ReadOnly(), rw2.WriteOnly())
+	// return reader and writer
+	return rw1.ReadOnly(), rw2.WriteOnly()
+}
+
+func DuplexFromSeed(c *Client, initiator bool, secret []byte) ReadWriteClient {
+	ro, wo := duplexCapsFromSeed(initiator, secret)
+
+	return Duplex(c, ro, wo)
 }
 
 // duplex holds a pair of ReadOnlyClient and WriteOnlyClient and implements
