@@ -52,7 +52,7 @@ func TestCreateMap(t *testing.T) {
 	// test creating and retrieving an item
 
 	// create a capability key
-	pk, _,  err := ed25519.NewKeypair(rand.Reader)
+	pk, _, err := ed25519.NewKeypair(rand.Reader)
 	require.NoError(err)
 	rwCap := common.NewRWCap(pk)
 
@@ -97,4 +97,32 @@ func TestCreateMap(t *testing.T) {
 	resp, err := c.Get(id, roKey.Sign(id.Bytes()))
 	require.NoError(err)
 	require.Equal(payload2, resp)
+}
+
+func TestCreateDuplex(t *testing.T) {
+	require := require.New(t)
+	cfg, err := config.LoadFile("testdata/client.toml")
+	require.NoError(err)
+
+	kClient, err := client.New(cfg)
+	require.NoError(err)
+
+	ctx := context.Background()
+	session, err := kClient.NewTOFUSession(ctx)
+	require.NoError(err)
+	session.WaitForDocument(ctx)
+
+	mapClient, err := NewClient(session)
+	require.NoError(err)
+	require.NotNil(mapClient)
+
+	a := DuplexFromSeed(mapClient, true, []byte("secret"))
+	b := DuplexFromSeed(mapClient, false, []byte("secret"))
+
+	err = a.Put([]byte("hello"), []byte("world"))
+	require.NoError(err)
+
+	resp, err := b.Get([]byte("hello"))
+	require.NoError(err)
+	require.Equal(resp, []byte("world"))
 }
