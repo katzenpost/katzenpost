@@ -711,6 +711,7 @@ func New(glue glue.Glue) (glue.PKI, error) {
 		LinkKey:     glue.LinkKey(),
 		LogBackend:  glue.LogBackend(),
 		Authorities: glue.Config().PKI.Voting.Authorities,
+		Geo:         glue.Config().SphinxGeometry,
 	}
 	p.impl, err = vClient.New(pkiCfg)
 	if err != nil {
