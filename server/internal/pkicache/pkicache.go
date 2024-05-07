@@ -213,13 +213,17 @@ func New(d *pki.Document, identityKey sign.PublicKey, isGateway, isServiceNode b
 			m[nodeID] = v
 		}
 	}
+
 	incomingLayers := e.incomingLayer()
 	outgoingLayers := e.outgoingLayer()
 	appendMap(incomingLayers[0], e.incoming)
-	appendMap(incomingLayers[1], e.incoming)
+	if len(incomingLayers) == 2 {
+		appendMap(incomingLayers[1], e.incoming)
+	}
 	appendMap(outgoingLayers[0], e.outgoing)
-	appendMap(outgoingLayers[1], e.outgoing)
-
+	if len(outgoingLayers) == 2 {
+		appendMap(outgoingLayers[1], e.outgoing)
+	}
 	// Build the list of all nodes.
 	for i := 0; i < len(e.doc.Topology); i++ {
 		appendMap(uint8(i), e.all)

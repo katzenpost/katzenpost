@@ -93,6 +93,7 @@ func (p *pki) worker() {
 		case <-p.HaltCh():
 			cancelFn()
 		case <-pkiCtx.Done():
+			p.log.Debug("<-pkiCtx.Done()")
 		}
 	}()
 	isCanceled := func() bool {
@@ -123,7 +124,12 @@ func (p *pki) worker() {
 			timerFired = true
 		}
 		if !timerFired && !timer.Stop() {
-			<-timer.C
+			select {
+			case <-p.HaltCh():
+				p.log.Debug("Terminating gracefully.")
+				return
+			case <-timer.C:
+			}
 		}
 
 		// Check to see if we need to publish the descriptor, and do so, along
@@ -137,7 +143,6 @@ func (p *pki) worker() {
 		if err != nil {
 			p.log.Warningf("Failed to post to PKI: %v", err)
 		}
-
 		// Fetch the PKI documents as required.
 		var didUpdate bool
 		for _, epoch := range p.documentsToFetch() {
@@ -171,7 +176,7 @@ func (p *pki) worker() {
 
 			ent, err := pkicache.New(d, p.glue.IdentityPublicKey(), p.glue.Config().Server.IsGatewayNode, p.glue.Config().Server.IsServiceNode)
 			if err != nil {
-				p.log.Warningf("Failed to generate PKI cache for epoch %v: %v", epoch, err)
+				p.log.Debugf("Failed to generate PKI cache for epoch %v: %v", epoch, err)
 				p.setFailedFetch(epoch, err)
 				instrument.FailedPKICacheGeneration(fmt.Sprintf("%v", epoch))
 				continue
@@ -227,7 +232,6 @@ func (p *pki) worker() {
 				lastUpdateEpoch = now
 			}
 		}
-
 		p.updateTimer(timer)
 	}
 }
