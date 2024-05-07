@@ -306,6 +306,7 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 			}
 			cmd := commands.SendPacket{
 				SphinxPacket: pkt.Raw,
+				Cmds:         w.GetCommands(),
 			}
 			if err := w.SendCommand(&cmd); err != nil {
 				c.log.Debugf("Dropping packet: %v (SendCommand failed: %v)", pkt.ID, err)

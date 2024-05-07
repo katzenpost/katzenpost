@@ -159,6 +159,10 @@ type Session struct {
 	isInitiator bool
 }
 
+func (s *Session) GetCommands() *commands.Commands {
+	return s.commands
+}
+
 func (s *Session) handshake() error {
 	defer func() {
 		// XXX FIXME: s.authenticationKEMKey.Reset()
@@ -383,7 +387,9 @@ func (s *Session) finalizeHandshake() error {
 
 	// Responder: The peer is authenticated at this point, so dispatch
 	// a NoOp so the peer can distinguish authentication failures.
-	noOpCmd := &commands.NoOp{}
+	noOpCmd := &commands.NoOp{
+		Cmds: s.commands,
+	}
 	return s.SendCommand(noOpCmd)
 }
 
@@ -585,7 +591,7 @@ func NewPKISession(cfg *SessionConfig, isInitiator bool) (*Session, error) {
 		state:          stateInit,
 		rxKeyMutex:     new(sync.RWMutex),
 		txKeyMutex:     new(sync.RWMutex),
-		commands:       commands.NewPKICommands(),
+		commands:       commands.NewCommands(cfg.Geometry),
 	}
 	s.authenticationKEMKey = cfg.AuthenticationKey
 

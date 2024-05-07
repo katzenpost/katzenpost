@@ -165,7 +165,7 @@ func (b *MinclientBench) setup() {
 	}
 	idHash := blake2b.Sum256(blob)
 	proxyContext := fmt.Sprintf("session %d", rand.NewMath().Uint64())
-	pkiClient, err := cfg.NewPKIClient(logBackend, cfg.UpstreamProxyConfig(), b.linkKey)
+	pkiClient, err := cfg.NewPKIClient(logBackend, cfg.UpstreamProxyConfig(), b.linkKey, cfg.SphinxGeometry)
 	currentEpoch, _, _ := epochtime.Now()
 	ctx, cancel := context.WithTimeout(context.Background(), initialPKIConsensusTimeout)
 	defer cancel()

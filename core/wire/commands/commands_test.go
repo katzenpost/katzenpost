@@ -23,6 +23,7 @@ import (
 
 	ecdh "github.com/katzenpost/hpqc/nike/x25519"
 	"github.com/katzenpost/hpqc/rand"
+	"github.com/katzenpost/hpqc/util"
 
 	"github.com/katzenpost/katzenpost/core/cert"
 	"github.com/katzenpost/katzenpost/core/sphinx"
@@ -44,9 +45,12 @@ func TestNoOp(t *testing.T) {
 		geo: s.Geometry(),
 	}
 
-	cmd := &NoOp{}
+	cmd := &NoOp{
+		Cmds: cmds,
+	}
 	b := cmd.ToBytes()
-	require.Equal(cmdOverhead, len(b), "NoOp: ToBytes() length")
+	require.Len(b, cmds.maxMessageLen(cmd), "NoOp: ToBytes() length")
+	require.True(util.CtIsZero(b[cmdOverhead:]), "NoOp: ToBytes() padding must be zero")
 
 	c, err := cmds.FromBytes(b)
 	require.NoError(err, "NoOp: FromBytes() failed")
@@ -57,10 +61,6 @@ func TestDisconnect(t *testing.T) {
 	t.Parallel()
 	require := require.New(t)
 
-	cmd := &Disconnect{}
-	b := cmd.ToBytes()
-	require.Equal(cmdOverhead, len(b), "Disconnect: ToBytes() length")
-
 	nike := ecdh.Scheme(rand.Reader)
 	forwardPayloadLength := 123
 	nrHops := 5
@@ -70,6 +70,13 @@ func TestDisconnect(t *testing.T) {
 	cmds := &Commands{
 		geo: s.Geometry(),
 	}
+
+	cmd := &Disconnect{
+		Cmds: cmds,
+	}
+	b := cmd.ToBytes()
+	require.Len(b, cmds.maxMessageLen(cmd), "Disconnect: ToBytes() length")
+	require.True(util.CtIsZero(b[cmdOverhead:]), "Disconnect: ToBytes() padding must be zero")
 
 	c, err := cmds.FromBytes(b)
 	require.NoError(err, "Disconnect: FromBytes() failed")
@@ -82,10 +89,6 @@ func TestSendPacket(t *testing.T) {
 
 	require := require.New(t)
 
-	cmd := &SendPacket{SphinxPacket: []byte(payload)}
-	b := cmd.ToBytes()
-	require.Equal(cmdOverhead+len(payload), len(b), "SendPacket: ToBytes() length")
-
 	nike := ecdh.Scheme(rand.Reader)
 	forwardPayloadLength := 123
 	nrHops := 5
@@ -94,6 +97,12 @@ func TestSendPacket(t *testing.T) {
 	cmds := &Commands{
 		geo: s.Geometry(),
 	}
+
+	cmd := &SendPacket{SphinxPacket: []byte(payload), Cmds: cmds}
+	b := cmd.ToBytes()
+	require.Len(b, cmds.maxMessageLen(cmd), "SendPacket: ToBytes() length")
+	actualDataLength := cmdOverhead + len(payload)
+	require.True(util.CtIsZero(b[actualDataLength:]), "SendPacket: ToBytes() padding must be zero")
 
 	c, err := cmds.FromBytes(b)
 	require.NoError(err, "SendPacket: FromBytes() failed")
@@ -109,10 +118,6 @@ func TestRetrieveMessage(t *testing.T) {
 
 	require := require.New(t)
 
-	cmd := &RetrieveMessage{Sequence: seq}
-	b := cmd.ToBytes()
-	require.Equal(cmdOverhead+4, len(b), "RetrieveMessage: ToBytes() length")
-
 	nike := ecdh.Scheme(rand.Reader)
 	forwardPayloadLength := 123
 	nrHops := 5
@@ -121,6 +126,12 @@ func TestRetrieveMessage(t *testing.T) {
 	cmds := &Commands{
 		geo: s.Geometry(),
 	}
+
+	cmd := &RetrieveMessage{Sequence: seq, Cmds: cmds}
+	b := cmd.ToBytes()
+	require.Len(b, cmds.maxMessageLen(cmd), "RetrieveMessage: ToBytes() length")
+	actualDataLength := cmdOverhead + 4
+	require.True(util.CtIsZero(b[actualDataLength:]), "RetrieveMessage: ToBytes() padding must be zero")
 
 	c, err := cmds.FromBytes(b)
 	require.NoError(err, "RetrieveMessage: FromBytes() failed")
@@ -160,7 +171,8 @@ func TestMessage(t *testing.T) {
 		Sequence: seq,
 	}
 	b := cmdEmpty.ToBytes()
-	require.Equal(expectedLen, len(b), "MessageEmpty: ToBytes() length")
+	require.Len(b, cmds.maxMessageLen(cmdEmpty), "MessageEmpty: ToBytes() length")
+	require.True(util.CtIsZero(b[expectedLen:]), "MessageEmpty: ToBytes() padding must be zero")
 
 	c, err := cmds.FromBytes(b)
 	require.NoError(err, "MessageEmpty: FromBytes() failed")
@@ -180,7 +192,8 @@ func TestMessage(t *testing.T) {
 		Payload:       msgPayload,
 	}
 	b = cmdMessage.ToBytes()
-	require.Equal(expectedLen, len(b), "Message: ToBytes() length")
+	require.Len(b, cmds.maxMessageLen(cmdMessage), "Message: ToBytes() length")
+	require.True(util.CtIsZero(b[expectedLen:]), "Message: ToBytes() padding must be zero")
 
 	c, err = cmds.FromBytes(b)
 	require.NoError(err, "Message: FromBytes() failed")
@@ -200,7 +213,8 @@ func TestMessage(t *testing.T) {
 	require.NoError(err, "MessageACK: Failed to generate ID")
 
 	cmdMessageACK := &MessageACK{
-		Geo: geo,
+		Geo:  geo,
+		Cmds: cmds,
 
 		QueueSizeHint: hint,
 		Sequence:      seq,
@@ -208,7 +222,8 @@ func TestMessage(t *testing.T) {
 	}
 	copy(cmdMessageACK.ID[:], id[:])
 	b = cmdMessageACK.ToBytes()
-	require.Equal(expectedLen, len(b), "MessageACK: ToBytes() length")
+	require.Len(b, cmds.maxMessageLen(cmdMessageACK), "MessageACK: ToBytes() length")
+	require.True(util.CtIsZero(b[expectedLen:]), "MessageACK: ToBytes() padding must be zero")
 
 	c, err = cmds.FromBytes(b)
 	require.NoError(err, "MessageACK: FromBytes() failed")
@@ -225,12 +240,6 @@ func TestGetConsensus(t *testing.T) {
 	t.Parallel()
 	require := require.New(t)
 
-	cmd := &GetConsensus{
-		Epoch: 123,
-	}
-	b := cmd.ToBytes()
-	require.Equal(getConsensusLength+cmdOverhead, len(b), "GetConsensus: ToBytes() length")
-
 	nike := ecdh.Scheme(rand.Reader)
 	forwardPayloadLength := 123
 	nrHops := 5
@@ -240,9 +249,29 @@ func TestGetConsensus(t *testing.T) {
 		geo: s.Geometry(),
 	}
 
+	cmd := &GetConsensus{
+		Epoch:              123,
+		Cmds:               cmds,
+		MixnetTransmission: false,
+	}
+	b := cmd.ToBytes()
+	require.Equal(getConsensusLength+cmdOverhead, len(b), "GetConsensus: ToBytes() length")
+
 	c, err := cmds.FromBytes(b)
 	require.NoError(err, "GetConsensus: FromBytes() failed")
 	require.IsType(cmd, c, "GetConsensus: FromBytes() invalid type")
+
+	// Test with Mixnet Transmission. padding is expected.
+	cmd.MixnetTransmission = true
+	b = cmd.ToBytes()
+
+	require.Len(b, cmds.maxMessageLen(cmd), "GetConsensus without Mixnet: ToBytes() length")
+	actualDataLength := cmdOverhead + getConsensusLength
+	require.True(util.CtIsZero(b[actualDataLength:]), "GetConsensus without Mixnet: No padding expected")
+
+	c, err = cmds.FromBytes(b)
+	require.NoError(err, "GetConsensus without Mixnet: FromBytes() failed")
+	require.IsType(cmd, c, "GetConsensus without Mixnet: FromBytes() invalid type")
 }
 
 func TestConsensus(t *testing.T) {

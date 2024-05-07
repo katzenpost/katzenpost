@@ -720,7 +720,7 @@ func (s *state) sendCommandToPeer(peer *config.Authority, cmd commands.Command) 
 
 	cfg := &wire.SessionConfig{
 		KEMScheme:         kemscheme,
-		Geometry:          nil,
+		Geometry:          s.geo,
 		Authenticator:     s,
 		AdditionalData:    identityHash[:],
 		AuthenticationKey: s.s.linkKey,
@@ -1951,6 +1951,7 @@ func (s *state) backgroundFetchConsensus(epoch uint64) {
 				LogBackend:    s.s.logBackend,
 				Authorities:   s.s.cfg.Authorities,
 				DialContextFn: nil,
+				Geo:           s.geo,
 			}
 			c, err := client.New(cfg)
 			if err != nil {
