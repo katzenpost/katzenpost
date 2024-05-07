@@ -389,7 +389,8 @@ func (c *incomingConn) onRetrieveMessage(cmd *commands.RetrieveMessage) error {
 	if surbID != nil {
 		// This was a SURBReply.
 		surbCmd := &commands.MessageACK{
-			Geo: c.geo,
+			Geo:  c.geo,
+			Cmds: commands.NewCommands(c.geo),
 
 			QueueSizeHint: hint,
 			Sequence:      cmd.Sequence,

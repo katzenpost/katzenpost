@@ -37,6 +37,7 @@ import (
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/katzenpost/core/cert"
 	"github.com/katzenpost/katzenpost/core/pki"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"github.com/katzenpost/katzenpost/loops"
@@ -83,6 +84,9 @@ type Config struct {
 	// DialContextFn is the optional alternative Dialer.DialContext function
 	// to be used when creating outgoing network connections.
 	DialContextFn func(ctx context.Context, network, address string) (net.Conn, error)
+
+	// Geo is the geometry used for the Sphinx packet construction.
+	Geo *geo.Geometry
 }
 
 func (cfg *Config) validate() error {
@@ -166,7 +170,7 @@ func (p *connector) initSession(ctx context.Context, doneCh <-chan interface{}, 
 	}
 	cfg := &wire.SessionConfig{
 		KEMScheme:         schemes.ByName(peer.WireKEMScheme),
-		Geometry:          nil,
+		Geometry:          p.cfg.Geo,
 		Authenticator:     peerAuthenticator,
 		AdditionalData:    ad,
 		AuthenticationKey: linkKey,
@@ -246,8 +250,10 @@ func (p *connector) fetchConsensus(ctx context.Context, linkKey kem.PrivateKey, 
 		if err != nil {
 			return nil, err
 		}
-		p.log.Infof("sending getConsensus to %s", auth.Identifier)
-		cmd := &commands.GetConsensus{Epoch: epoch}
+
+		p.log.Noticef("sending getConsensus to %s", auth.Identifier)
+		cmd := &commands.GetConsensus{Epoch: epoch, Cmds: conn.session.GetCommands()}
+
 		resp, err := p.roundTrip(conn.session, cmd)
 
 		if err != nil {

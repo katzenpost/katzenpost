@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-package vector_test
+package commands
 
 import (
 	"crypto/rand"
@@ -26,11 +26,9 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	ecdh "github.com/katzenpost/hpqc/nike/x25519"
-
+	"github.com/katzenpost/hpqc/util"
 	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
-
-	"github.com/katzenpost/katzenpost/core/wire/commands"
 )
 
 const wireCommandsVectorsFile = "testdata/wire_commands_vectors.json"
@@ -64,14 +62,6 @@ type commandsTest struct {
 func NoTestBuildCommandVectors(t *testing.T) {
 	assert := assert.New(t)
 
-	noOp := commands.NoOp{}
-	disconnect := &commands.Disconnect{}
-
-	sendPacket := &commands.SendPacket{SphinxPacket: []byte(payload)}
-
-	var retrieveMessageSeq uint32 = 12345
-	retrieveMessage := &commands.RetrieveMessage{Sequence: retrieveMessageSeq}
-
 	const (
 		hint = 0x17
 	)
@@ -82,12 +72,24 @@ func NoTestBuildCommandVectors(t *testing.T) {
 
 	//geo := geo.GeometryFromForwardPayloadLength(nike, forwardPayloadLength, nrHops)
 	geo := geo.GeometryFromUserForwardPayloadLength(nike, len(payload), true, nrHops)
-	cmds := &commands.Commands{
+	cmds := &Commands{
 		Geo: geo,
 	}
 
+	noOp := NoOp{
+		Cmds: cmds,
+	}
+	disconnect := &Disconnect{
+		Cmds: cmds,
+	}
+
+	sendPacket := &SendPacket{SphinxPacket: []byte(payload), Cmds: cmds}
+
+	var retrieveMessageSeq uint32 = 12345
+	retrieveMessage := &RetrieveMessage{Sequence: retrieveMessageSeq, Cmds: cmds}
+
 	var emptyMsgSeq uint32 = 9876
-	messageEmpty := &commands.MessageEmpty{
+	messageEmpty := &MessageEmpty{
 		Cmds:     cmds,
 		Sequence: emptyMsgSeq,
 	}
@@ -96,7 +98,7 @@ func NoTestBuildCommandVectors(t *testing.T) {
 	_, err := rand.Read(msgPayload)
 	assert.NoError(err)
 	var msgSeq uint32 = 9876
-	message := &commands.Message{
+	message := &Message{
 		Cmds: cmds,
 		Geo:  geo,
 
@@ -108,21 +110,23 @@ func NoTestBuildCommandVectors(t *testing.T) {
 	ackPayload := make([]byte, cmds.Geo.PayloadTagLength+cmds.Geo.ForwardPayloadLength)
 	_, err = rand.Read(ackPayload)
 	assert.NoError(err)
-	cmdMessageACK := &commands.MessageACK{
+	cmdMessageACK := &MessageACK{
 		Geo:           geo,
+		Cmds:          cmds,
 		QueueSizeHint: hint,
 		Sequence:      msgSeq,
 		Payload:       ackPayload,
 	}
 
 	getConsensusEpoch := uint64(123)
-	getConsensus := &commands.GetConsensus{
+	getConsensus := &GetConsensus{
 		Epoch: getConsensusEpoch,
+		Cmds:  cmds,
 	}
 
-	consensus := &commands.Consensus{
+	consensus := &Consensus{
 		Payload:   []byte("TANSTAFL: There's ain't no such thing as a free lunch."),
-		ErrorCode: commands.ConsensusOk,
+		ErrorCode: ConsensusOk,
 	}
 
 	cmdsTest := commandsTest{
@@ -171,7 +175,7 @@ func TestCommandVectors(t *testing.T) {
 	geo := geo.GeometryFromUserForwardPayloadLength(nike, len(payload), true, nrHops)
 	s := sphinx.NewSphinx(geo)
 
-	cmds := &commands.Commands{
+	cmds := &Commands{
 		Geo: s.Geometry(),
 	}
 
@@ -179,39 +183,42 @@ func TestCommandVectors(t *testing.T) {
 	assert.NoError(err)
 	cmd, err := cmds.FromBytes(noOpBytes)
 	assert.NoError(err)
-	_, ok := cmd.(*commands.NoOp)
+	_, ok := cmd.(*NoOp)
 	assert.True(ok)
 
 	disconnectBytes, err := hex.DecodeString(cmdsTest.Disconnect)
 	assert.NoError(err)
 	cmd, err = cmds.FromBytes(disconnectBytes)
 	assert.NoError(err)
-	_, ok = cmd.(*commands.Disconnect)
+	_, ok = cmd.(*Disconnect)
 	assert.True(ok)
 
 	sphinxPacket, err := hex.DecodeString(cmdsTest.SendPacketPayload)
 	assert.NoError(err)
 	sendPacketCommand, err := hex.DecodeString(cmdsTest.SendPacket)
 	assert.NoError(err)
-	sendPacket := &commands.SendPacket{SphinxPacket: sphinxPacket}
+	sendPacket := &SendPacket{SphinxPacket: sphinxPacket, Cmds: cmds}
 	sendPacketBytes := sendPacket.ToBytes()
-	assert.Equal(sendPacketBytes, sendPacketCommand)
+	assert.Equal(sendPacketBytes[:len(sendPacketCommand)], sendPacketCommand)
+	assert.True(util.CtIsZero(sendPacketBytes[len(sendPacketCommand):]), "SendPacket: ToBytes() padding must be zero")
 
-	retrieveMessage := &commands.RetrieveMessage{Sequence: cmdsTest.RetrieveMessageSeq}
+	retrieveMessage := &RetrieveMessage{Sequence: cmdsTest.RetrieveMessageSeq, Cmds: cmds}
 	retrieveMessageBytes := retrieveMessage.ToBytes()
 	retrieveMessageWant, err := hex.DecodeString(cmdsTest.RetrieveMessage)
 	assert.NoError(err)
-	assert.Equal(retrieveMessageBytes, retrieveMessageWant)
+	assert.Equal(retrieveMessageBytes[:len(retrieveMessageWant)], retrieveMessageWant)
+	assert.True(util.CtIsZero(retrieveMessageBytes[len(retrieveMessageWant):]), "RetrieveMessage: ToBytes() padding must be zero")
 
 	messageEmptyWant, err := hex.DecodeString(cmdsTest.MessageEmpty)
 	assert.NoError(err)
 
-	emptyMessage := &commands.MessageEmpty{
+	emptyMessage := &MessageEmpty{
 		Cmds:     cmds,
 		Sequence: cmdsTest.MessageEmptySeq,
 	}
 	emptyMessageCmd := emptyMessage.ToBytes()
-	assert.Equal(emptyMessageCmd, messageEmptyWant)
+	assert.Equal(emptyMessageCmd[:len(messageEmptyWant)], messageEmptyWant)
+	assert.True(util.CtIsZero(emptyMessageCmd[len(messageEmptyWant):]), "MessageEmpty: ToBytes() padding must be zero")
 
 	messageWant, err := hex.DecodeString(cmdsTest.Message)
 	assert.NoError(err)
@@ -219,7 +226,7 @@ func TestCommandVectors(t *testing.T) {
 	payload, err := hex.DecodeString(cmdsTest.MessagePayload)
 	assert.NoError(err)
 
-	message := &commands.Message{
+	message := &Message{
 		Geo:           geo,
 		Cmds:          cmds,
 		QueueSizeHint: cmdsTest.MessageHint,
@@ -228,27 +235,30 @@ func TestCommandVectors(t *testing.T) {
 	}
 
 	messageCmd := message.ToBytes()
-	assert.Equal(messageCmd, messageWant)
+	assert.Equal(messageCmd[:len(messageWant)], messageWant)
+	assert.True(util.CtIsZero(messageCmd[len(messageWant):]), "Message: ToBytes() padding must be zero")
 
 	messageAckWant, err := hex.DecodeString(cmdsTest.MessageAck)
 	assert.NoError(err)
 
 	ackPayload, err := hex.DecodeString(cmdsTest.MessageAckPayload)
 	assert.NoError(err)
-	messageAck := &commands.MessageACK{
-		Geo: geo,
-
+	messageAck := &MessageACK{
+		Geo:           geo,
+		Cmds:          cmds,
 		QueueSizeHint: cmdsTest.MessageAckHint,
 		Sequence:      cmdsTest.MessageAckSeq,
 		Payload:       ackPayload,
 	}
 	messageAckCmd := messageAck.ToBytes()
-	assert.Equal([]byte(messageAckCmd), []byte(messageAckWant))
+	assert.Equal(messageAckCmd[:len(messageAckWant)], messageAckWant)
+	assert.True(util.CtIsZero(messageAckCmd[len(messageAckWant):]), "MessageACK: ToBytes() padding must be zero")
 
 	getConsensusWant, err := hex.DecodeString(cmdsTest.GetConsensus)
 	assert.NoError(err)
-	getConsensus := &commands.GetConsensus{
+	getConsensus := &GetConsensus{
 		Epoch: cmdsTest.GetConsensusEpoch,
+		Cmds:  cmds,
 	}
 	getConsensusCmd := getConsensus.ToBytes()
 	assert.Equal(getConsensusCmd, getConsensusWant)
@@ -257,7 +267,7 @@ func TestCommandVectors(t *testing.T) {
 	assert.NoError(err)
 	consensusPayload, err := hex.DecodeString(cmdsTest.ConsensusPayload)
 	assert.NoError(err)
-	consensus := &commands.Consensus{
+	consensus := &Consensus{
 		Payload:   consensusPayload,
 		ErrorCode: cmdsTest.ConsensusErrorCode,
 	}
