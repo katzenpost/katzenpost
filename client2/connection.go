@@ -520,7 +520,9 @@ func (c *connection) onWireConn(w *wire.Session) {
 			} else {
 				consensusCtx = ctx
 				cmd := &commands.GetConsensus{
-					Epoch: ctx.epoch,
+					Epoch:              ctx.epoch,
+					Cmds:               w.GetCommands(),
+					MixnetTransmission: true, // Enable padding for mixnet transmission
 				}
 				wireErr = w.SendCommand(cmd)
 				ctx.doneFn(wireErr)
@@ -535,6 +537,7 @@ func (c *connection) onWireConn(w *wire.Session) {
 		case ctx := <-c.sendCh:
 			cmd := &commands.SendPacket{
 				SphinxPacket: ctx.pkt,
+				Cmds:         w.GetCommands(),
 			}
 			wireErr = w.SendCommand(cmd)
 			ctx.doneFn(wireErr)
@@ -570,6 +573,7 @@ func (c *connection) onWireConn(w *wire.Session) {
 			if nrReqs == nrResps {
 				cmd := &commands.RetrieveMessage{
 					Sequence: seq,
+					Cmds:     w.GetCommands(),
 				}
 				if wireErr = w.SendCommand(cmd); wireErr != nil {
 					c.log.Debugf("Failed to send RetrieveMessage: %v", wireErr)
