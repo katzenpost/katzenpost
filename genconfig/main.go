@@ -352,7 +352,6 @@ func main() {
 	lDMax := flag.Uint64("lDMax", 3000, "Maximum delay for LambaD")
 	lM := flag.Float64("lM", 0.2, "Inverse of mean of mix decoy send rate")
 	lMMax := flag.Uint64("lMMax", 100, "Maximum delay for LambdaM")
-	lG := flag.Float64("lG", 0.2, "Inverse of mean of mix decoy send rate")
 	lGMax := flag.Uint64("lGMax", 100, "Maximum delay for LambdaM")
 
 	flag.Parse()
@@ -380,7 +379,6 @@ func main() {
 		LambdaDMaxDelay:   *lDMax,
 		LambdaM:           *lM,
 		LambdaMMaxDelay:   *lMMax,
-		LambdaG:           *lG,
 		LambdaGMaxDelay:   *lGMax,
 	}
 
