@@ -66,8 +66,6 @@ const (
 	defaultLambdaDMaxPercentile = 0.99999
 	defaultLambdaM              = 0.00025
 	defaultLambdaMMaxPercentile = 0.99999
-	defaultLambdaG              = 0.00025
-	defaultLambdaGMaxPercentile = 0.99999
 
 	publicKeyHashSize = 32
 )
@@ -141,12 +139,15 @@ type Parameters struct {
 	// that is used to select the delay between sending mix node decoys.
 	LambdaM float64
 
+	// LambdaG is the inverse of the mean of the exponential distribution
+	// that is used to select the delay between sending gateway node decoys.
+	//
+	// WARNING: This is not used via the TOML config file; this field is only
+	// used internally by the dirauth server state machine.
+	LambdaG float64
+
 	// LambdaMMaxDelay sets the maximum delay for LambdaP.
 	LambdaMMaxDelay uint64
-
-	// LambdaG is the inverse of the mean of the exponential distribution
-	// that is used to select the delay between sending gateway decoys.
-	LambdaG float64
 
 	// LambdaGMaxDelay sets the maximum delay for LambdaG.
 	LambdaGMaxDelay uint64
@@ -183,11 +184,11 @@ func (pCfg *Parameters) validate() error {
 	if pCfg.LambdaMMaxDelay > absoluteMaxDelay {
 		return fmt.Errorf("config: Parameters: LambdaMMaxDelay %v is out of range", pCfg.LambdaPMaxDelay)
 	}
-	if pCfg.LambdaG < 0 {
-		return fmt.Errorf("config: Parameters: LambdaG %v is invalid", pCfg.LambdaP)
-	}
 	if pCfg.LambdaGMaxDelay > absoluteMaxDelay {
 		return fmt.Errorf("config: Parameters: LambdaGMaxDelay %v is out of range", pCfg.LambdaPMaxDelay)
+	}
+	if pCfg.LambdaGMaxDelay == 0 {
+		return errors.New("LambdaGMaxDelay must be set")
 	}
 
 	return nil
@@ -229,12 +230,6 @@ func (pCfg *Parameters) applyDefaults() {
 	}
 	if pCfg.LambdaMMaxDelay == 0 {
 		pCfg.LambdaMMaxDelay = uint64(rand.ExpQuantile(pCfg.LambdaM, defaultLambdaMMaxPercentile))
-	}
-	if pCfg.LambdaG == 0 {
-		pCfg.LambdaG = defaultLambdaG
-	}
-	if pCfg.LambdaGMaxDelay == 0 {
-		pCfg.LambdaGMaxDelay = uint64(rand.ExpQuantile(pCfg.LambdaG, defaultLambdaGMaxPercentile))
 	}
 }
 

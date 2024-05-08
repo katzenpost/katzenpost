@@ -21,6 +21,7 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"math"
 	"net"
 	"os"
 	"path/filepath"
@@ -66,6 +67,11 @@ type Server struct {
 	fatalErrCh chan error
 	haltedCh   chan interface{}
 	haltOnce   sync.Once
+}
+
+func computeLambdaG(cfg *config.Config) float64 {
+	n := float64(len(cfg.Topology.Layers[0].Nodes))
+	return n * math.Log(n)
 }
 
 func (s *Server) initDataDir() error {
