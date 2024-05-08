@@ -364,11 +364,6 @@ func (d *decoy) sendDecoyPacket(ent *pkicache.Entry) {
 	// TODO: (#52) Do nothing if the rate limiter would discard the packet(?).
 
 	selfDesc := ent.Self()
-	if selfDesc.IsServiceNode {
-		// The code doesn't handle this correctly yet.  It does need to
-		// happen eventually though.
-		panic("BUG: Service-node generated decoy traffic not supported")
-	}
 	doc := ent.Document()
 
 	// TODO: The path selection maybe should be more strategic/systematic
