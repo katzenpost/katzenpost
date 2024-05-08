@@ -333,18 +333,21 @@ func (d *decoy) worker() {
 			isServiceNode := d.glue.Config().Server.IsServiceNode
 
 			var lambda float64
+			var max uint64
 			doc := docCache.Document()
 
 			if !isServiceNode && !isGateway {
+				max = doc.LambdaMMaxDelay
 				lambda = doc.LambdaM
 			}
 			if isGateway {
+				max = doc.LambdaGMaxDelay
 				lambda = doc.LambdaG
 			}
 
 			wakeMsec := uint64(rand.Exp(d.rng, lambda))
-			if wakeMsec > doc.LambdaMMaxDelay {
-				wakeMsec = doc.LambdaMMaxDelay
+			if wakeMsec > max {
+				wakeMsec = max
 			}
 			wakeInterval = time.Duration(wakeMsec) * time.Millisecond
 			d.log.Debugf("Next wakeInterval: %v", wakeInterval)

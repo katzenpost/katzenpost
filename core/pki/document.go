@@ -123,12 +123,15 @@ type Document struct {
 	// that mixes will sample to determine send timing of mix loop decoy traffic.
 	LambdaM float64
 
+	// LambdaMMaxDelay is the maximum send interval in milliseconds.
+	LambdaMMaxDelay uint64
+
 	// LambdaG is the inverse of the mean of the exponential distribution
 	// that mixes will sample to determine send timing of gateway node loop decoy traffic.
 	LambdaG float64
 
 	// LambdaMMaxDelay is the maximum send interval in milliseconds.
-	LambdaMMaxDelay uint64
+	LambdaGMaxDelay uint64
 
 	// Topology is the mix network topology, excluding providers.
 	Topology [][]*MixDescriptor
