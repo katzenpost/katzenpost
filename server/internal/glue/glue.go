@@ -109,5 +109,6 @@ type Decoy interface {
 	Halt()
 	OnNewDocument(*pkicache.Entry)
 	OnPacket(*packet.Packet)
+	ExpectReply(pkt *packet.Packet) bool
 	GetStats(doPublishEpoch uint64) *loops.LoopStats
 }

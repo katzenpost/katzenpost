@@ -18,6 +18,7 @@
 package decoy
 
 import (
+	"crypto/hmac"
 	"crypto/subtle"
 	"encoding/binary"
 	"errors"
@@ -226,6 +227,10 @@ func (d *decoy) OnNewDocument(ent *pkicache.Entry) {
 	d.docCh <- ent
 }
 
+func (d *decoy) ExpectReply(pkt *packet.Packet) bool {
+	return hmac.Equal(pkt.Recipient.ID[:], d.recipient)
+}
+
 func (d *decoy) OnPacket(pkt *packet.Packet) {
 	// Note: This is called from the crypto worker context, which is "fine".
 	defer pkt.Dispose()
@@ -296,11 +301,6 @@ func (d *decoy) worker() {
 				instrument.IgnoredPKIDocs()
 				continue
 			}
-			if d.glue.Config().Server.IsGatewayNode {
-				d.log.Debugf("Received PKI document when Gateway, ignoring (not supported yet).")
-				instrument.IgnoredPKIDocs()
-				continue
-			}
 			if d.glue.Config().Server.IsServiceNode {
 				d.log.Debugf("Received PKI document when Service Node, ignoring (not supported yet).")
 				instrument.IgnoredPKIDocs()
@@ -329,8 +329,20 @@ func (d *decoy) worker() {
 			// outgoing sends, except that the SendShift value is ignored.
 			//
 			// TODO: Eventually this should use separate parameters.
+			isGateway := d.glue.Config().Server.IsGatewayNode
+			isServiceNode := d.glue.Config().Server.IsServiceNode
+
+			var lambda float64
 			doc := docCache.Document()
-			wakeMsec := uint64(rand.Exp(d.rng, doc.LambdaM))
+
+			if !isServiceNode && !isGateway {
+				lambda = doc.LambdaM
+			}
+			if isGateway {
+				lambda = doc.LambdaG
+			}
+
+			wakeMsec := uint64(rand.Exp(d.rng, lambda))
 			if wakeMsec > doc.LambdaMMaxDelay {
 				wakeMsec = doc.LambdaMMaxDelay
 			}
@@ -355,10 +367,10 @@ func (d *decoy) sendDecoyPacket(ent *pkicache.Entry) {
 	// TODO: (#52) Do nothing if the rate limiter would discard the packet(?).
 
 	selfDesc := ent.Self()
-	if selfDesc.IsGatewayNode || selfDesc.IsServiceNode {
+	if selfDesc.IsServiceNode {
 		// The code doesn't handle this correctly yet.  It does need to
 		// happen eventually though.
-		panic("BUG: Provider generated decoy traffic not supported yet")
+		panic("BUG: Service-node generated decoy traffic not supported")
 	}
 	doc := ent.Document()
 

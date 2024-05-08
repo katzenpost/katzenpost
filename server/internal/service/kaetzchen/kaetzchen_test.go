@@ -129,6 +129,10 @@ type mockDecoy struct{}
 
 func (d *mockDecoy) Halt() {}
 
+func (d *mockDecoy) ExpectReply(pkt *packet.Packet) bool {
+	return false
+}
+
 func (d *mockDecoy) OnNewDocument(*pkicache.Entry) {}
 
 func (d *mockDecoy) OnPacket(*packet.Packet) {}

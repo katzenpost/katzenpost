@@ -297,6 +297,12 @@ func (w *Worker) worker() {
 		// Toss the packets over to the gateway/serviceNode backend.
 		// Note: Callee takes ownership of pkt.
 		if isGateway {
+			if pkt.IsSURBReply() && w.glue.Decoy().ExpectReply(pkt) {
+				w.log.Debugf("Handing off decoy response packet: %v", pkt.ID)
+				w.glue.Decoy().OnPacket(pkt)
+				continue
+			}
+
 			w.log.Debugf("Handing off user destined packet: %v", pkt.ID)
 			pkt.DispatchAt = startAt
 			w.glue.Gateway().OnPacket(pkt)
