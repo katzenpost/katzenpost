@@ -301,11 +301,6 @@ func (d *decoy) worker() {
 				instrument.IgnoredPKIDocs()
 				continue
 			}
-			if d.glue.Config().Server.IsServiceNode {
-				d.log.Debugf("Received PKI document when Service Node, ignoring (not supported yet).")
-				instrument.IgnoredPKIDocs()
-				continue
-			}
 			d.log.Debugf("Received new PKI document for epoch: %v", now)
 			instrument.PKIDocs(fmt.Sprintf("%v", now))
 			docCache = newEnt
@@ -330,13 +325,12 @@ func (d *decoy) worker() {
 			//
 			// TODO: Eventually this should use separate parameters.
 			isGateway := d.glue.Config().Server.IsGatewayNode
-			isServiceNode := d.glue.Config().Server.IsServiceNode
 
 			var lambda float64
 			var max uint64
 			doc := docCache.Document()
 
-			if !isServiceNode && !isGateway {
+			if !isGateway {
 				max = doc.LambdaMMaxDelay
 				lambda = doc.LambdaM
 			}

@@ -309,6 +309,12 @@ func (w *Worker) worker() {
 			continue
 		}
 		if isServiceNode {
+			if pkt.IsSURBReply() && w.glue.Decoy().ExpectReply(pkt) {
+				w.log.Debugf("Handing off decoy response packet: %v", pkt.ID)
+				w.glue.Decoy().OnPacket(pkt)
+				continue
+			}
+
 			w.log.Debugf("Handing off service destined packet: %v", pkt.ID)
 			pkt.DispatchAt = startAt
 			w.glue.ServiceNode().OnPacket(pkt)
