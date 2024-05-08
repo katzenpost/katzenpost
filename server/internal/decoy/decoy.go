@@ -345,6 +345,8 @@ func (d *decoy) worker() {
 				lambda = doc.LambdaG
 			}
 
+			d.log.Infof("lambda is %f", lambda)
+
 			wakeMsec := uint64(rand.Exp(d.rng, lambda))
 			if wakeMsec > max {
 				wakeMsec = max
