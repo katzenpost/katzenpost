@@ -142,7 +142,7 @@ func (w *Worker) doUnwrap(pkt *packet.Packet) error {
 func (w *Worker) worker() {
 	const absoluteMinimumDelay = 1 * time.Millisecond
 
-	isGateway := w.glue.Config().Server.IsGatewayNode
+	isGatewayNode := w.glue.Config().Server.IsGatewayNode
 	isServiceNode := w.glue.Config().Server.IsServiceNode
 	unwrapSlack := time.Duration(w.glue.Config().Debug.UnwrapDelay) * time.Millisecond
 	defer w.derefKeys()
@@ -266,7 +266,7 @@ func (w *Worker) worker() {
 			w.glue.Scheduler().OnPacket(pkt)
 			continue
 		} else {
-			if !isGateway && !isServiceNode {
+			if !isGatewayNode && !isServiceNode {
 				// This may be a decoy traffic response.
 				if pkt.IsSURBReply() {
 					w.log.Debugf("Handing off decoy response packet: %v", pkt.ID)
@@ -296,7 +296,7 @@ func (w *Worker) worker() {
 
 		// Toss the packets over to the gateway/serviceNode backend.
 		// Note: Callee takes ownership of pkt.
-		if isGateway {
+		if isGatewayNode {
 			if pkt.IsSURBReply() && w.glue.Decoy().ExpectReply(pkt) {
 				w.log.Debugf("Handing off decoy response packet: %v", pkt.ID)
 				w.glue.Decoy().OnPacket(pkt)
