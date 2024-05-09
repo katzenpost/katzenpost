@@ -267,7 +267,10 @@ func (w *Worker) worker() {
 			continue
 		} else {
 			if !isGatewayNode && !isServiceNode {
-				// This may be a decoy traffic response.
+				// We're not a Gateway or Service node and this packet doesn't
+				// need to be routed to the next hop so the only legit reason
+				// to recieve a packet would be if it's a SURB reply to our
+				// mix loop decoys.
 				if pkt.IsSURBReply() {
 					w.log.Debugf("Handing off decoy response packet: %v", pkt.ID)
 					w.glue.Decoy().OnPacket(pkt)
@@ -275,7 +278,7 @@ func (w *Worker) worker() {
 				}
 
 				// Mixes will only ever see forward commands.
-				w.log.Debugf("Dropping mix packet: %v (%v)", pkt.ID, pkt.CmdsToString())
+				w.log.Errorf("Dropping mix packet that should not have been received: %v (%v)", pkt.ID, pkt.CmdsToString())
 				instrument.PacketsDropped()
 				pkt.Dispose()
 				continue
@@ -296,32 +299,28 @@ func (w *Worker) worker() {
 
 		// Toss the packets over to the gateway/serviceNode backend.
 		// Note: Callee takes ownership of pkt.
-		if isGatewayNode {
-			if pkt.IsSURBReply() && w.glue.Decoy().ExpectReply(pkt) {
-				w.log.Debugf("Handing off decoy response packet: %v", pkt.ID)
-				w.glue.Decoy().OnPacket(pkt)
-				continue
-			}
 
+		if pkt.IsSURBReply() && w.glue.Decoy().ExpectReply(pkt) {
+			w.log.Debugf("Handing off decoy response packet: %v", pkt.ID)
+			w.glue.Decoy().OnPacket(pkt)
+			continue
+		}
+
+		if isGatewayNode {
 			w.log.Debugf("Handing off user destined packet: %v", pkt.ID)
 			pkt.DispatchAt = startAt
 			w.glue.Gateway().OnPacket(pkt)
 			continue
 		}
-		if isServiceNode {
-			if pkt.IsSURBReply() && w.glue.Decoy().ExpectReply(pkt) {
-				w.log.Debugf("Handing off decoy response packet: %v", pkt.ID)
-				w.glue.Decoy().OnPacket(pkt)
-				continue
-			}
 
+		if isServiceNode {
 			w.log.Debugf("Handing off service destined packet: %v", pkt.ID)
 			pkt.DispatchAt = startAt
 			w.glue.ServiceNode().OnPacket(pkt)
 			continue
 		}
 
-		w.log.Debugf("3 Dropping packet: %v (%v)", pkt.ID, pkt.CmdsToString())
+		w.log.Debugf("Invalid packet, dropping packet: %v (%v)", pkt.ID, pkt.CmdsToString())
 		instrument.PacketsDropped()
 		pkt.Dispose()
 	}
