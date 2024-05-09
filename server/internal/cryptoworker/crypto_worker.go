@@ -272,7 +272,7 @@ func (w *Worker) worker() {
 				// to recieve a packet would be if it's a SURB reply to our
 				// mix loop decoys.
 				if pkt.IsSURBReply() {
-					w.log.Debugf("Handing off decoy response packet: %v", pkt.ID)
+					w.log.Errorf("Handing off decoy response packet: %v", pkt.ID)
 					w.glue.Decoy().OnPacket(pkt)
 					continue
 				}
@@ -291,7 +291,7 @@ func (w *Worker) worker() {
 		// packet processing does not get blocked.
 
 		if pkt.MustForward {
-			w.log.Debugf("Dropping client packet: %v (Send to local user)", pkt.ID)
+			w.log.Errorf("Dropping client packet: %v (Send to local user)", pkt.ID)
 			instrument.PacketsDropped()
 			pkt.Dispose()
 			continue
@@ -320,7 +320,7 @@ func (w *Worker) worker() {
 			continue
 		}
 
-		w.log.Debugf("Invalid packet, dropping packet: %v (%v)", pkt.ID, pkt.CmdsToString())
+		w.log.Errorf("Invalid packet, dropping packet: %v (%v)", pkt.ID, pkt.CmdsToString())
 		instrument.PacketsDropped()
 		pkt.Dispose()
 	}
