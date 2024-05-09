@@ -172,15 +172,15 @@ func (e *Entry) outgoingLayer() []uint8 {
 // Build the maps of peers that will connect to us, and that we will
 // connect to.
 func (e *Entry) appendMap(layers []uint8, m map[[constants.NodeIDLength]byte]*pki.MixDescriptor) {
-	for myLayer := range layers {
+	for i := 0; i < len(layers); i++ {
 		var nodes []*pki.MixDescriptor
-		switch myLayer {
+		switch layers[i] {
 		case pki.LayerGateway:
 			nodes = e.doc.GatewayNodes
 		case pki.LayerService:
 			nodes = e.doc.ServiceNodes
 		default:
-			nodes = e.doc.Topology[myLayer]
+			nodes = e.doc.Topology[layers[i]]
 		}
 		for _, v := range nodes {
 			// The concrete PKI implementation is responsible for ensuring
@@ -216,14 +216,16 @@ func New(d *pki.Document, identityKey sign.PublicKey, isGateway, isServiceNode b
 		return nil, fmt.Errorf("pkicache: self layer is invalid: %d", layer)
 	}
 
-	// If len is 2 then we expect to receive two layers,
-	// Gateway layer and Service layer.
+	// Note that there are two edge cases where we append two layers to the given
+	// map via our `appendMap` method, the first layer of mix nodes has two input layers:
+	// gateway nodes and service nodes. Likewise the last layer of mix nodes has two
+	// output layers: gateway nodes and service nodes.
+
 	incomingLayers := e.incomingLayer()
 	e.appendMap(incomingLayers, e.incoming)
-	// If len is 2 then we expect to receive two layers,
-	// Gateway layer and Service layer.
 	outgoingLayers := e.outgoingLayer()
 	e.appendMap(outgoingLayers, e.outgoing)
+
 	// Build the list of all nodes.
 	for i := 0; i < len(e.doc.Topology); i++ {
 		e.appendMap([]uint8{uint8(i)}, e.all)
