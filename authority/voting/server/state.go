@@ -529,6 +529,7 @@ func (s *state) getDocument(descriptors []*pki.MixDescriptor, params *config.Par
 	}
 
 	lambdaG := computeLambdaG(s.s.cfg)
+	s.log.Debugf("computed lambdaG is %f", lambdaG)
 
 	// Build the Document.
 	doc := &pki.Document{

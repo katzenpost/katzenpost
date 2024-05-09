@@ -324,20 +324,22 @@ func (d *decoy) worker() {
 			// outgoing sends, except that the SendShift value is ignored.
 			//
 			// TODO: Eventually this should use separate parameters.
-			isGateway := d.glue.Config().Server.IsGatewayNode
+			isGatewayNode := d.glue.Config().Server.IsGatewayNode
 
 			var lambda float64
 			var max uint64
 			doc := docCache.Document()
 
-			if !isGateway {
+			if !isGatewayNode {
 				max = doc.LambdaMMaxDelay
 				lambda = doc.LambdaM
 			}
-			if isGateway {
+			if isGatewayNode {
 				max = doc.LambdaGMaxDelay
 				lambda = doc.LambdaG
 			}
+
+			d.log.Debug("DECOY LAMBDA %f", lambda)
 
 			wakeMsec := uint64(rand.Exp(d.rng, lambda))
 			if wakeMsec > max {
