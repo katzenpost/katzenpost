@@ -20,12 +20,13 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"github.com/katzenpost/katzenpost/client/utils"
 	"io"
 	"time"
 
-	cConstants "github.com/katzenpost/katzenpost/client/constants"
+	"github.com/katzenpost/katzenpost/client/utils"
+
 	"github.com/katzenpost/hpqc/rand"
+	cConstants "github.com/katzenpost/katzenpost/client/constants"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 )
 
@@ -116,7 +117,7 @@ func (s *Session) doSend(msg *Message) {
 			return
 		}
 	}
-	s.eventCh.In() <- &MessageSentEvent{
+	s.eventCh <- &MessageSentEvent{
 		MessageID: msg.ID,
 		Err:       err,
 		SentAt:    msg.SentAt,
