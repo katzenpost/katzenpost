@@ -19,6 +19,8 @@ import (
 	"github.com/katzenpost/katzenpost/server/internal/packet"
 )
 
+const InboundPacketsChannelSize = 1000
+
 type queueImpl interface {
 	Halt()
 	Peek() (time.Time, *packet.Packet)
@@ -219,7 +221,7 @@ func New(glue glue.Glue) (glue.Scheduler, error) {
 	sch := &scheduler{
 		glue:       glue,
 		log:        glue.LogBackend().GetLogger("scheduler"),
-		inCh:       make(chan interface{}),
+		inCh:       make(chan interface{}, InboundPacketsChannelSize),
 		outCh:      NewBatchingChannel(maxBatchSize),
 		maxDelayCh: make(chan uint64),
 	}
