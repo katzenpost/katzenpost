@@ -25,7 +25,6 @@ import (
 	"sync"
 	"time"
 
-	"gopkg.in/eapache/channels.v1"
 	"gopkg.in/op/go-logging.v1"
 
 	"github.com/katzenpost/hpqc/hash"
@@ -51,6 +50,8 @@ import (
 	"github.com/katzenpost/katzenpost/server/userdb/externuserdb"
 )
 
+const InboundPacketsChannelSize = 1000
+
 type provider struct {
 	sync.Mutex
 	worker.Worker
@@ -58,7 +59,7 @@ type provider struct {
 	glue glue.Glue
 	log  *logging.Logger
 
-	ch     *channels.InfiniteChannel
+	ch     chan interface{}
 	sqlDB  *sqldb.SQLDB
 	userDB userdb.UserDB
 	spool  spool.Spool
@@ -70,7 +71,7 @@ type provider struct {
 func (p *provider) Halt() {
 	p.Worker.Halt()
 
-	p.ch.Close()
+	close(p.ch)
 	p.kaetzchenWorker.Halt()
 	p.cborPluginKaetzchenWorker.Halt()
 	if p.userDB != nil {
@@ -111,7 +112,7 @@ func (p *provider) AuthenticateClient(c *wire.PeerCredentials) bool {
 }
 
 func (p *provider) OnPacket(pkt *packet.Packet) {
-	p.ch.In() <- pkt
+	p.ch <- pkt
 }
 
 func (p *provider) KaetzchenForPKI() (map[string]map[string]interface{}, error) {
@@ -172,7 +173,7 @@ func (p *provider) worker() {
 
 	defer p.log.Debugf("Halting Provider worker.")
 
-	ch := p.ch.Out()
+	ch := p.ch
 
 	// Here we optionally set this GC timer. If unset the
 	// channel remains nil and has no effect on the select
@@ -521,7 +522,7 @@ func New(glue glue.Glue) (glue.Provider, error) {
 	p := &provider{
 		glue:                      glue,
 		log:                       glue.LogBackend().GetLogger("provider"),
-		ch:                        channels.NewInfiniteChannel(),
+		ch:                        make(chan interface{}, InboundPacketsChannelSize),
 		kaetzchenWorker:           kaetzchenWorker,
 		cborPluginKaetzchenWorker: cborPluginWorker,
 	}
