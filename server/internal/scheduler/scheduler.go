@@ -21,6 +21,8 @@ import (
 	"math"
 	"time"
 
+	"gopkg.in/op/go-logging.v1"
+
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/katzenpost/katzenpost/server/internal/constants"
@@ -28,8 +30,6 @@ import (
 	"github.com/katzenpost/katzenpost/server/internal/glue"
 	"github.com/katzenpost/katzenpost/server/internal/instrument"
 	"github.com/katzenpost/katzenpost/server/internal/packet"
-	"gopkg.in/eapache/channels.v1"
-	"gopkg.in/op/go-logging.v1"
 )
 
 type queueImpl interface {
@@ -47,7 +47,7 @@ type scheduler struct {
 
 	q          queueImpl
 	inCh       chan interface{}
-	outCh      *channels.BatchingChannel
+	outCh      *BatchingChannel
 	maxDelayCh chan uint64
 }
 
@@ -220,9 +220,7 @@ loop:
 				sch.log.Debugf("mix server's scheduler's pipe worker: Terminating gracefully.")
 				return
 			case sch.outCh.In() <- elem:
-
 			}
-
 		}
 	}
 }
@@ -235,7 +233,7 @@ func New(glue glue.Glue) (glue.Scheduler, error) {
 		glue:       glue,
 		log:        glue.LogBackend().GetLogger("scheduler"),
 		inCh:       make(chan interface{}),
-		outCh:      channels.NewBatchingChannel(maxBatchSize),
+		outCh:      NewBatchingChannel(maxBatchSize),
 		maxDelayCh: make(chan uint64),
 	}
 
