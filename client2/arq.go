@@ -14,7 +14,7 @@ const (
 
 	// RoundTripTimeSlop is the slop added to the expected packet
 	// round trip timeout threshold.
-	RoundTripTimeSlop = (2 * time.Minute) + (15 * time.Second)
+	RoundTripTimeSlop = (2 * time.Minute) + (45 * time.Second)
 
 	MaxRetransmissions = 3
 )
