@@ -56,11 +56,6 @@ func main() {
 		}
 	}
 
-	if *selfTest {
-		fmt.Println("Performing SEDA pipeline self-test.")
-		return
-	}
-
 	cfg, err := config.LoadFile(*cfgFile)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to load config file '%v': %v\n", *cfgFile, err)
@@ -73,6 +68,17 @@ func main() {
 	// Setup the signal handling.
 	haltCh := make(chan os.Signal)
 	signal.Notify(haltCh, os.Interrupt, syscall.SIGTERM)
+
+	if *selfTest {
+		fmt.Println("Performing SEDA pipeline self-test.")
+		server, err := server.NewSedaPipelineSelfTest(cfg)
+		if err != nil {
+			panic(err)
+		}
+		// Wait for the server to explode or be terminated.
+		server.Wait()
+		return
+	}
 
 	rotateCh := make(chan os.Signal)
 	signal.Notify(rotateCh, syscall.SIGHUP)
