@@ -66,6 +66,10 @@ var (
 	pandaBlobSize             = 1000
 )
 
+func DoubleRatchetPayloadLength(geo *geo.Geometry) int {
+       return common.SpoolPayloadLength(geo) - ratchet.DoubleRatchetOverhead
+}
+
 // Client is the mixnet client which interacts with other clients
 // and services on the network.
 type Client struct {
