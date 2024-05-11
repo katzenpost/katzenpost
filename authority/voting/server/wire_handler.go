@@ -58,7 +58,7 @@ func (s *Server) onConn(conn net.Conn) {
 
 	cfg := &wire.SessionConfig{
 		KEMScheme:         kemscheme,
-		Geometry:          nil,
+		Geometry:          s.geo,
 		Authenticator:     auth,
 		AdditionalData:    keyHash[:],
 		AuthenticationKey: s.linkKey,
