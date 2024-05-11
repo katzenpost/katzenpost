@@ -34,6 +34,7 @@ func main() {
 	cfgFile := flag.String("f", "katzenpost.toml", "Path to the server config file.")
 	genOnly := flag.Bool("g", false, "Generate the keys and exit immediately.")
 	version := flag.Bool("v", false, "Get version info.")
+	selfTest := flag.Bool("selftest", false, "Perform SEDA pipeline self-test.")
 
 	flag.Parse()
 
@@ -53,6 +54,11 @@ func main() {
 		if nProcs < nCPU {
 			runtime.GOMAXPROCS(nCPU)
 		}
+	}
+
+	if *selfTest {
+		fmt.Println("Performing SEDA pipeline self-test.")
+		return
 	}
 
 	cfg, err := config.LoadFile(*cfgFile)

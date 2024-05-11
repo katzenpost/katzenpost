@@ -103,6 +103,47 @@ func (c *outgoingConn) dispatchPacket(pkt *packet.Packet) {
 	}
 }
 
+func (c *outgoingConn) selftestWorker(serverConn net.Conn) {
+	identityHash := hash.Sum256(c.dst.IdentityKey)
+	linkPubKey, err := c.scheme.UnmarshalBinaryPublicKey(c.dst.LinkKey)
+	if err != nil {
+		panic(err)
+	}
+	dialCheckCreds := wire.PeerCredentials{
+		AdditionalData: identityHash[:],
+		PublicKey:      linkPubKey,
+	}
+
+	if desc, _, isValid := c.co.glue.PKI().AuthenticateConnection(&dialCheckCreds, true); isValid {
+		if desc != nil {
+			c.dst = desc
+			linkPubKey, err := c.scheme.UnmarshalBinaryPublicKey(c.dst.LinkKey)
+			if err != nil {
+				panic(err)
+			}
+			dialCheckCreds.PublicKey = linkPubKey
+		}
+	} else {
+		c.log.Debugf("Bailing out of Dial loop, no longer in PKI.")
+		return
+	}
+
+	fakeDialDoneCh := make(chan struct{})
+	go func() {
+		select {
+		case <-c.co.closeAllCh:
+			serverConn.Close()
+		case <-fakeDialDoneCh:
+		}
+	}()
+
+	if c.onConnEstablished(serverConn, fakeDialDoneCh) {
+		c.log.Debugf("Existing connection canceled.")
+		instrument.CancelledOutgoing()
+		return
+	}
+}
+
 func (c *outgoingConn) worker() {
 	var (
 		retryIncrement = epochtime.Period / 64
