@@ -2,6 +2,7 @@ package server
 
 import (
 	"fmt"
+	"net"
 	"path/filepath"
 
 	"gitlab.com/yawning/aez.git"
@@ -17,7 +18,10 @@ import (
 	signpem "github.com/katzenpost/hpqc/sign/pem"
 
 	"github.com/katzenpost/katzenpost/core/cert"
+	"github.com/katzenpost/katzenpost/core/pki"
+	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/utils"
+	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/server/config"
 	"github.com/katzenpost/katzenpost/server/internal/cryptoworker"
 	"github.com/katzenpost/katzenpost/server/internal/glue"
@@ -164,6 +168,12 @@ func NewSedaPipelineSelfTest(cfg *config.Config) (*Server, error) {
 		s.Shutdown()
 	}()
 
+	// Initialize the PKI interface.
+	if s.pki, err = NewSelfTestPKI(goo); err != nil {
+		s.log.Errorf("Failed to initialize PKI client: %v", err)
+		return nil, err
+	}
+
 	// Initialize the provider backend.
 	if s.cfg.Server.IsProvider {
 		if s.provider, err = provider.New(goo); err != nil {
@@ -188,19 +198,48 @@ func NewSedaPipelineSelfTest(cfg *config.Config) (*Server, error) {
 
 	// Initialize the outgoing connection manager, decoy source/sink, and then
 	// start the PKI worker.
-	s.connector = outgoing.New(goo)
+	var outConn net.Conn
+	s.connector, outConn = outgoing.NewSEDAFount(goo)
 
 	// Bring the listener(s) online.
 	s.listeners = make([]glue.Listener, 0, len(s.cfg.Server.Addresses))
 
-	l, clientConn := incoming.NewSEDADrain(goo, s.inboundPackets.In(), 1)
+	l, inConn := incoming.NewSEDADrain(goo, s.inboundPackets.In(), 1)
 	s.listeners = append(s.listeners, l)
 
 	// Start the periodic 1 Hz utility timer.
 	s.periodic = newPeriodicTimer(s)
 
-	fmt.Printf("clientConn %t", clientConn)
+	if inConn == nil {
+		panic("inConn is nil")
+	}
+	if outConn == nil {
+		panic("outConn is nil")
+	}
 
 	isOk = true
 	return s, nil
+}
+
+type selfTestPKI struct {
+}
+
+func NewSelfTestPKI(glue glue.Glue) (glue.PKI, error) {
+	return &selfTestPKI{}, nil
+}
+
+func (p *selfTestPKI) Halt() {}
+
+func (p *selfTestPKI) StartWorker() {}
+
+func (p *selfTestPKI) OutgoingDestinations() map[[constants.NodeIDLength]byte]*pki.MixDescriptor {
+	return nil // XXX FIXME
+}
+
+func (p *selfTestPKI) AuthenticateConnection(*wire.PeerCredentials, bool) (*pki.MixDescriptor, bool, bool) {
+	return nil, false, false // XXX FIXME
+}
+
+func (p *selfTestPKI) GetRawConsensus(uint64) ([]byte, error) {
+	return nil, nil // XXX FIXME
 }
