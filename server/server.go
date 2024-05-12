@@ -86,6 +86,9 @@ type Server struct {
 	fatalErrCh chan error
 	haltedCh   chan interface{}
 	haltOnce   sync.Once
+
+	// SEDA self test only
+	selftest *selfTestSenderReceiver
 }
 
 func (s *Server) initLogging() error {

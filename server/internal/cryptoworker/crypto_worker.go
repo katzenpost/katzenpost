@@ -331,3 +331,8 @@ func New(glue glue.Glue, incomingCh <-chan interface{}, id int) *Worker {
 	w.Go(w.worker)
 	return w
 }
+
+// SEDA self-test only
+func (w *Worker) MixKeys() map[uint64]*mixkey.MixKey {
+	return w.mixKeys
+}
