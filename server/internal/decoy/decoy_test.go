@@ -22,39 +22,41 @@ import (
 var testingSchemeName = "xwing"
 var testingScheme = schemes.ByName(testingSchemeName)
 
-// This updated version ensures the destination is always a provider.
+// Helper function to create a realistic path of hops within the network.
 func createPathHops(t *testing.T, numMixes, numProviders int) ([]*sphinx.PathHop, error) {
 	require := require.New(t)
 
-	// Generate a realistic document
+	// Generate a realistic PKI document simulating network structure
 	epoch, _, _ := epochtime.Now()
 	doc, err := generateMixnet(numMixes, numProviders, epoch)
 	require.NoError(err, "Failed to generate mixnet for testing")
 
-	// Ensure there is at least one provider to select as destination
+	// Ensure a provider is available for the test
 	require.Greater(len(doc.Providers), 0, "No providers available in the topology")
 
-	// Setup the geometry and Sphinx instance
+	// Setup geometric data for packet path calculations
 	nike := ecdh.Scheme(rand.Reader)
 	geo := geo.GeometryFromUserForwardPayloadLength(nike, 1024, true, 5) // Adjust size as needed
 
-	// Select a random mix as src and a provider as dst
-	src := doc.Topology[0][0] // Simplistic random selection, adjust as necessary
-	dst := doc.Providers[0]   // Ensure destination is a provider
+	// Choose source and destination nodes for the path
+	src := doc.Topology[0][0]
+	dst := doc.Providers[0]
 
 	recipient := []byte("recipient")
 	surbID := &[constants.SURBIDLength]byte{}
 
-	// Generate the path using Sphinx instance
+	// Create a path using Sphinx path generation logic
 	path, _, err := path.New(rand.NewMath(), geo, doc, recipient, src, dst, surbID, time.Now(), false, true)
 	return path, err
 }
 
+// TestIncrementSentSegments ensures that sent segments are counted correctly.
 func TestIncrementSentSegments(t *testing.T) {
 	d := newTestDecoy()
 	path, err := createPathHops(t, 5, 2)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
+	// Increment sent segments for both forward and reverse paths
 	d.incrementSentSegments(path, path)
 	require.NotNil(t, path, "Path should not be nil")
 
@@ -66,11 +68,13 @@ func TestIncrementSentSegments(t *testing.T) {
 	}
 }
 
+// TestIncrementCompleted checks that completed segments are handled correctly.
 func TestIncrementCompleted(t *testing.T) {
 	d := newTestDecoy()
 	path, err := createPathHops(t, 5, 2)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
+	// Increment completed segments for both forward and reverse paths
 	d.incrementCompleted(path, path)
 
 	epoch, _, _ := epochtime.Now()
@@ -81,6 +85,26 @@ func TestIncrementCompleted(t *testing.T) {
 	}
 }
 
+// TestDecoyGarbageCollection ensures that garbage collection is functioning correctly.
+func TestDecoyGarbageCollection(t *testing.T) {
+	d := newTestDecoy()
+	path, err := createPathHops(t, 5, 2)
+	require.NoError(t, err)
+
+	// Simulate several epochs of activity
+	d.incrementSentSegments(path, path)
+	d.incrementCompleted(path, path)
+
+	// Move time forward and trigger garbage collection
+	epoch, _, _ := epochtime.Now()
+	d.gc(epoch - 7) // simulate passage of 7 epochs
+
+	// Check if old data has been cleaned up
+	assert.Empty(t, d.sentLoops[epoch-7], "Old sent loops should be garbage collected")
+	assert.Empty(t, d.completedLoops[epoch-7], "Old completed loops should be garbage collected")
+}
+
+// NewTestDecoy creates a decoy instance with initialized maps for unit testing.
 func newTestDecoy() *decoy {
 	return &decoy{
 		sentLoops:      make(map[uint64]map[[loops.SegmentIDSize]byte]int),
