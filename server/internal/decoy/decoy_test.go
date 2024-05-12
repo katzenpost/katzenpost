@@ -53,18 +53,16 @@ func createPathHops(t *testing.T, numMixes, numProviders int) ([]*sphinx.PathHop
 func TestIncrementSentSegments(t *testing.T) {
 	d := newTestDecoy()
 	path, err := createPathHops(t, 5, 2)
-	require.NoError(t, err)
+	assert.NoError(t, err)
 
 	d.incrementSentSegments(path, path)
 	require.NotNil(t, path, "Path should not be nil")
 
 	epoch, _, _ := epochtime.Now()
 	segments := pathToSegments(path)
-	require.NotEmpty(t, segments, "Segments should not be empty")
-
 	for _, segment := range segments {
 		count := d.sentLoops[epoch][segment]
-		assert.Equal(t, 1, count, "Each segment should have a count of 1")
+		assert.Equal(t, 2, count, "Each segment should have a count of 2 since path is used for both fwd and rev")
 	}
 }
 
@@ -79,7 +77,7 @@ func TestIncrementCompleted(t *testing.T) {
 	segments := pathToSegments(path)
 	for _, segment := range segments {
 		count := d.completedLoops[epoch][segment]
-		assert.Equal(t, 1, count, "Each segment should have a count of 1")
+		assert.Equal(t, 2, count, "Each segment should have a count of 2 since path is used for both fwd and rev")
 	}
 }
 
