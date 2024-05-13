@@ -67,7 +67,7 @@ var (
 )
 
 func DoubleRatchetPayloadLength(geo *geo.Geometry) int {
-       return common.SpoolPayloadLength(geo) - ratchet.DoubleRatchetOverhead
+	return common.SpoolPayloadLength(geo) - ratchet.DoubleRatchetOverhead
 }
 
 // Client is the mixnet client which interacts with other clients
@@ -219,6 +219,7 @@ func (c *Client) Start() {
 		c.client.Wait()
 		c.Shutdown()
 	}()
+
 }
 
 func (c *Client) initKeyExchange(contact *Contact) error {
