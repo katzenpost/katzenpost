@@ -85,7 +85,7 @@ func (s *smsg) Priority() uint64 {
 }
 
 type Stream struct {
-	sync.Mutex
+	l *sync.Mutex
 	worker.Worker
 
 	startOnce *sync.Once
@@ -191,7 +191,7 @@ func (r *ReTx) Push(i client.Item) error {
 func (s *Stream) reader() {
 	backoff := minBackoffDelay
 	for {
-		s.Lock()
+		s.l.Lock()
 		switch s.RState {
 		case StreamClosed:
 			// No more frames will be sent by peer
@@ -202,7 +202,7 @@ func (s *Stream) reader() {
 					s.doFlush()
 				}
 			}
-			s.Unlock()
+			s.l.Unlock()
 			s.doFlush()
 			return
 		case StreamOpen:
@@ -212,7 +212,7 @@ func (s *Stream) reader() {
 				s.doFlush()
 			}
 		}
-		s.Unlock()
+		s.l.Unlock()
 
 		// read next frame
 		f, err := s.readFrame()
@@ -255,7 +255,7 @@ func (s *Stream) reader() {
 
 		// process Acks
 		s.processAck(f)
-		s.Lock()
+		s.l.Lock()
 		n, _ := s.ReadBuf.Write(f.Payload)
 
 		// If this is the last Frame in the stream, set RState to StreamClosed
@@ -266,11 +266,11 @@ func (s *Stream) reader() {
 		}
 		// signal to a caller blocked on Read() that there is data or EOF
 		if f.Type == StreamEnd || n > 0 {
-			s.Unlock()
+			s.l.Unlock()
 			s.doOnRead()
 			s.doFlush() // prod sleeping writer
 		} else {
-			s.Unlock()
+			s.l.Unlock()
 		}
 	}
 	s.Done()
@@ -278,14 +278,14 @@ func (s *Stream) reader() {
 
 // Read impl io.Reader
 func (s *Stream) Read(p []byte) (n int, err error) {
-	s.Lock()
+	s.l.Lock()
 	if s.ReadBuf.Len() == 0 {
 		if s.RState == StreamClosed {
-			s.Unlock()
+			s.l.Unlock()
 			return 0, io.EOF
 		}
 		s.log.Debugf("Read() sleeping until unblocked")
-		s.Unlock()
+		s.l.Unlock()
 		select {
 		case <-time.After(s.Timeout):
 			return 0, os.ErrDeadlineExceeded
@@ -294,10 +294,10 @@ func (s *Stream) Read(p []byte) (n int, err error) {
 		case <-s.onRead:
 			// awaken on StreamData or StreamEnd
 		}
-		s.Lock()
+		s.l.Lock()
 	}
 	n, err = s.ReadBuf.Read(p)
-	s.Unlock()
+	s.l.Unlock()
 	// ignore io.EOF on short reads from ReadBuf
 	if err == io.EOF {
 		if s.RState != StreamClosed || n > 0 {
@@ -310,10 +310,10 @@ func (s *Stream) Read(p []byte) (n int, err error) {
 // Write impl io.Writer
 func (s *Stream) Write(p []byte) (n int, err error) {
 	// writes message with our last read pointer as header
-	s.Lock()
+	s.l.Lock()
 	// buffer data to bytes.Buffer
 	if s.WState == StreamClosed || s.WState == StreamClosing {
-		s.Unlock()
+		s.l.Unlock()
 		return 0, io.EOF
 	}
 	// take MaxWriteBufSize as ... a guideline rather than a hard limit
@@ -321,7 +321,7 @@ func (s *Stream) Write(p []byte) (n int, err error) {
 	// properly, so just rate limit calls to write by waiting until
 	// a frame has been transmitted before returning
 	if s.WriteBuf.Len() >= s.MaxWriteBufSize {
-		s.Unlock()
+		s.l.Unlock()
 		select {
 		case <-time.After(s.Timeout):
 			return 0, os.ErrDeadlineExceeded
@@ -329,9 +329,9 @@ func (s *Stream) Write(p []byte) (n int, err error) {
 			return 0, io.EOF
 		case <-s.onWrite:
 		}
-		s.Lock()
+		s.l.Lock()
 	}
-	defer s.Unlock()
+	defer s.l.Unlock()
 	// if stream closed, abort Write
 	if s.WState == StreamClosed || s.WState == StreamClosing {
 		<-s.onStreamClose
@@ -344,40 +344,40 @@ func (s *Stream) Write(p []byte) (n int, err error) {
 
 // Sync() blocks until Stream.WriteBuf is flushed
 func (s *Stream) Sync() error {
-	s.Lock()
+	s.l.Lock()
 	if s.WState != StreamOpen {
-		s.Unlock()
+		s.l.Unlock()
 		return ErrStreamClosed
 	}
-	s.Unlock()
+	s.l.Unlock()
 	for {
 		select {
 		case <-s.onWrite:
 		case <-s.HaltCh():
 			return ErrHalted
 		}
-		s.Lock()
+		s.l.Lock()
 		if s.WriteBuf.Len() == 0 {
-			s.Unlock()
+			s.l.Unlock()
 			return nil
 		}
-		s.Unlock()
+		s.l.Unlock()
 	}
 }
 
 // Close terminates the Stream with a final Frame and blocks future Writes
 // it does *not* drain WriteBuf, call Sync() to flush WriteBuf first.
 func (s *Stream) Close() error {
-	s.Lock()
+	s.l.Lock()
 	if s.WState == StreamOpen {
 		s.WState = StreamClosing
-		s.Unlock()
+		s.l.Unlock()
 		s.log.Debugf("Close() doFlush()")
 		s.doFlush()       // wake up a sleeping writer !
 		<-s.onStreamClose // block until writer has finalized
 		return nil
 	}
-	s.Unlock()
+	s.l.Unlock()
 	return nil
 }
 
@@ -393,12 +393,12 @@ func (s *Stream) writer() {
 		mustAck := false
 		mustWaitForAck := false
 		mustTeardown := false
-		s.Lock()
+		s.l.Lock()
 		switch s.WState {
 		case StreamClosed:
 			s.log.Debugf("writer() StreamClosed")
 			close(s.onStreamClose)
-			s.Unlock()
+			s.l.Unlock()
 			return
 		case StreamOpen, StreamClosing:
 			if s.WState == StreamOpen {
@@ -440,7 +440,7 @@ func (s *Stream) writer() {
 				s.R.Unlock()
 				if mustWait {
 					s.log.Debugf("writer() sleeping")
-					s.Unlock()
+					s.l.Unlock()
 					select {
 					case <-s.onFlush:
 						s.log.Debugf("writer() woke onFlush")
@@ -475,7 +475,7 @@ func (s *Stream) writer() {
 		f.Payload = make([]byte, s.PayloadSize)
 		// Read up to the maximum frame payload size
 		n, err := s.WriteBuf.Read(f.Payload)
-		s.Unlock()
+		s.l.Unlock()
 		switch err {
 		case nil, io.ErrUnexpectedEOF, io.EOF:
 		default:
@@ -556,7 +556,7 @@ func (s *Stream) txFrame(frame *Frame) (err error) {
 		return err
 	}
 	//_, _, til := epochtime.Now()
-	s.Lock()
+	s.l.Lock()
 	// Retransmit unacknowledged blocks every few epochs
 	//m := &smsg{f: frame, priority: uint64(time.Now().Add(til + 2*epochtime.Period).UnixNano())}
 	m := &smsg{f: frame, priority: uint64(time.Now().Add(10 * time.Second).UnixNano())}
@@ -567,7 +567,7 @@ func (s *Stream) txFrame(frame *Frame) (err error) {
 		// update retransmitted frame to point at last read payload (ReadIdx points at next frame)
 		frame.Ack = s.ReadIdx - 1
 	}
-	s.Unlock()
+	s.l.Unlock()
 
 	// zero extend ciphertext until maximum PayloadSize
 	if s.PayloadSize-len(serialized) > 0 {
@@ -588,14 +588,14 @@ func (s *Stream) txFrame(frame *Frame) (err error) {
 		s.log.Debugf("txFrame: setting priority to %s for retry", time.Unix(0, int64(newPriority)))
 		m.priority = newPriority
 	}
-	s.Lock()
+	s.l.Lock()
 	s.txEnqueue(m)
 	if frame.id == s.WriteIdx {
 		// do not increment WriteIdx unless frame tx'd is tip
 		s.WriteIdx += 1
 	}
 	s.AckIdx = frame.Ack
-	s.Unlock()
+	s.l.Unlock()
 	return err
 }
 
@@ -759,9 +759,9 @@ func (s *Stream) doOnWrite() {
 }
 
 func (s *Stream) readFrame() (*Frame, error) {
-	s.Lock()
+	s.l.Lock()
 	idx := s.ReadIdx
-	s.Unlock()
+	s.l.Unlock()
 	frame_id := s.rxFrameID(idx)
 	fc := make(chan interface{}, 1)
 	// s.c.Get() is a blocking call, so wrap in a goroutine so
@@ -822,12 +822,12 @@ func (s *Stream) processAck(f *Frame) {
 	}
 	s.R.Unlock()
 	// update last_ack from peer
-	s.Lock()
+	s.l.Lock()
 	if f.Ack > s.PeerAckIdx {
 		s.log.Debugf("Got Ack %d > PeerAckIdx: %d", f.Ack, s.PeerAckIdx)
 		s.PeerAckIdx = f.Ack
 	}
-	s.Unlock()
+	s.l.Unlock()
 	// prod writer() waiting on Ack
 	if ackD {
 		select {
@@ -869,6 +869,7 @@ func newStream(c Transport) *Stream {
 	s := new(Stream)
 	s.c = c
 	s.PayloadSize = PayloadSize(c)
+	s.l = new(sync.Mutex)
 	s.startOnce = new(sync.Once)
 	s.RState = StreamOpen
 	s.WState = StreamOpen
@@ -928,9 +929,9 @@ func LoadStream(s *client.Session, state []byte) (*Stream, error) {
 
 // Save serializes the current state of the Stream
 func (s *Stream) Save() ([]byte, error) {
-	s.Lock()
+	s.l.Lock()
 	s.R.Lock()
-	defer s.Unlock()
+	defer s.l.Unlock()
 	defer s.R.Unlock()
 	return cbor.Marshal(s)
 }
