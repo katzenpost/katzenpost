@@ -2,6 +2,12 @@ package decoy
 
 import (
 	"fmt"
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/katzenpost/hpqc/kem/schemes"
 	ecdh "github.com/katzenpost/hpqc/nike/x25519"
 	"github.com/katzenpost/hpqc/rand"
@@ -13,95 +19,73 @@ import (
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/sphinx/path"
 	"github.com/katzenpost/katzenpost/loops"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-	"testing"
-	"time"
 )
 
 var testingSchemeName = "xwing"
 var testingScheme = schemes.ByName(testingSchemeName)
 
-// Helper function to create a realistic path of hops within the network.
-func createPathHops(t *testing.T, numMixes, numProviders int) ([]*sphinx.PathHop, error) {
-	require := require.New(t)
-
-	// Generate a realistic PKI document simulating network structure
-	epoch, _, _ := epochtime.Now()
-	doc, err := generateMixnet(numMixes, numProviders, epoch)
-	require.NoError(err, "Failed to generate mixnet for testing")
-
-	// Ensure a provider is available for the test
-	require.Greater(len(doc.Providers), 0, "No providers available in the topology")
-
-	// Setup geometric data for packet path calculations
-	nike := ecdh.Scheme(rand.Reader)
-	geo := geo.GeometryFromUserForwardPayloadLength(nike, 1024, true, 5) // Adjust size as needed
-
-	// Choose source and destination nodes for the path
-	src := doc.Topology[0][0]
-	dst := doc.Providers[0]
-
-	recipient := []byte("recipient")
-	surbID := &[constants.SURBIDLength]byte{}
-
-	// Create a path using Sphinx path generation logic
-	path, _, err := path.New(rand.NewMath(), geo, doc, recipient, src, dst, surbID, time.Now(), false, true)
-	return path, err
-}
-
-// TestIncrementSentSegments ensures that sent segments are counted correctly.
 func TestIncrementSentSegments(t *testing.T) {
 	d := newTestDecoy()
-	path, err := createPathHops(t, 5, 2)
-	require.NoError(t, err)
+	fwdPath, revPath, err := createPaths(5, 2)
+	require.NoError(t, err, "failed to create paths")
 
-	// Increment sent segments for both forward and reverse paths
-	d.incrementSentSegments(path, path)
-	require.NotNil(t, path, "Path should not be nil")
+	// Increment sent segments
+	d.incrementSentSegments(fwdPath, revPath)
 
 	epoch, _, _ := epochtime.Now()
-	segments := pathToSegments(path)
-	for _, segment := range segments {
-		count := d.sentLoops[epoch][segment]
-		assert.Equal(t, 2, count, "Each segment should have a count of 2 since path is used for both fwd and rev")
-	}
+	// Check both forward and reverse paths
+	checkSegments(t, d.sentLoops[epoch], fwdPath, revPath, "sent")
 }
 
-// TestIncrementCompleted checks that completed segments are handled correctly.
-func TestIncrementCompleted(t *testing.T) {
+func TestIncrementSentAndCompletedSegments(t *testing.T) {
 	d := newTestDecoy()
-	path, err := createPathHops(t, 5, 2)
-	require.NoError(t, err)
+	fwdPath, revPath, err := createPaths(5, 2)
+	require.NoError(t, err, "failed to create paths")
 
-	// Increment completed segments for both forward and reverse paths
-	d.incrementCompleted(path, path)
+	// Increment sent and completed segments
+	d.incrementSentSegments(fwdPath, revPath)
+	d.incrementCompleted(fwdPath, revPath)
 
 	epoch, _, _ := epochtime.Now()
-	segments := pathToSegments(path)
-	for _, segment := range segments {
-		count := d.completedLoops[epoch][segment]
-		assert.Equal(t, 2, count, "Each segment should have a count of 2 since path is used for both fwd and rev")
-	}
+	// Check both forward and reverse paths
+	checkSegments(t, d.sentLoops[epoch], fwdPath, revPath, "sent")
+	checkSegments(t, d.completedLoops[epoch], fwdPath, revPath, "completed")
+}
+
+func TestIncrementCompletedSegments(t *testing.T) {
+	d := newTestDecoy()
+	fwdPath, revPath, err := createPaths(5, 2)
+	require.NoError(t, err, "failed to create paths")
+
+	// Increment completed segments
+	d.incrementCompleted(fwdPath, revPath)
+
+	epoch, _, _ := epochtime.Now()
+	// Verify both forward and reverse paths
+	checkSegments(t, d.completedLoops[epoch], fwdPath, revPath, "completed")
 }
 
 // TestDecoyGarbageCollection ensures that garbage collection is functioning correctly.
 func TestDecoyGarbageCollection(t *testing.T) {
 	d := newTestDecoy()
-	path, err := createPathHops(t, 5, 2)
-	require.NoError(t, err)
+	fwdPath, revPath, err := createPaths(5, 2)
+	require.NoError(t, err, "failed to create paths")
 
-	// Simulate several epochs of activity
-	d.incrementSentSegments(path, path)
-	d.incrementCompleted(path, path)
+	// Simulate traffic and completion for paths
+	d.incrementSentSegments(fwdPath, revPath)
+	d.incrementCompleted(fwdPath, revPath)
 
-	// Move time forward and trigger garbage collection
-	epoch, _, _ := epochtime.Now()
-	d.gc(epoch - 7) // simulate passage of 7 epochs
+	currentEpoch, _, _ := epochtime.Now()
+	// Force garbage collection for past epochs
+	for pastEpoch := currentEpoch - 10; pastEpoch <= currentEpoch; pastEpoch++ {
+		d.gc(pastEpoch - 7) // Collect data older than 7 epochs
+	}
 
-	// Check if old data has been cleaned up
-	assert.Empty(t, d.sentLoops[epoch-7], "Old sent loops should be garbage collected")
-	assert.Empty(t, d.completedLoops[epoch-7], "Old completed loops should be garbage collected")
+	// Assert that old epochs have been cleaned up
+	for pastEpoch := currentEpoch - 10; pastEpoch <= currentEpoch-7; pastEpoch++ {
+		assert.Empty(t, d.sentLoops[pastEpoch], "Old sent loops should be cleaned up")
+		assert.Empty(t, d.completedLoops[pastEpoch], "Old completed loops should be cleaned up")
+	}
 }
 
 // NewTestDecoy creates a decoy instance with initialized maps for unit testing.
@@ -110,6 +94,57 @@ func newTestDecoy() *decoy {
 		sentLoops:      make(map[uint64]map[[loops.SegmentIDSize]byte]int),
 		completedLoops: make(map[uint64]map[[loops.SegmentIDSize]byte]int),
 	}
+}
+
+func checkSegments(t *testing.T, data map[[loops.SegmentIDSize]byte]int, fwdPath, revPath []*sphinx.PathHop, label string) {
+	fwdSegments := pathToSegments(fwdPath)
+	revSegments := pathToSegments(revPath)
+
+	for _, segment := range fwdSegments {
+		count, exists := data[segment]
+		require.True(t, exists, fmt.Sprintf("Segment should exist in %s loops: %v", label, segment))
+		assert.Equal(t, 1, count, fmt.Sprintf("Forward segment should have a count of 1 in %s", label))
+	}
+
+	for _, segment := range revSegments {
+		count, exists := data[segment]
+		require.True(t, exists, fmt.Sprintf("Segment should exist in %s loops: %v", label, segment))
+		assert.Equal(t, 1, count, fmt.Sprintf("Reverse segment should have a count of 1 in %s", label))
+	}
+}
+
+func createPaths(numMixes, numProviders int) ([]*sphinx.PathHop, []*sphinx.PathHop, error) {
+	epoch, _, _ := epochtime.Now()
+	doc, err := generateMixnet(numMixes, numProviders, epoch)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to generate mixnet for testing: %w", err)
+	}
+	if len(doc.Providers) == 0 {
+		return nil, nil, fmt.Errorf("no providers available in the topology")
+	}
+
+	nike := ecdh.Scheme(rand.Reader)
+	geo := geo.GeometryFromUserForwardPayloadLength(nike, 1024, true, 5)
+
+	src := doc.Topology[0][0]
+	dst := doc.Providers[0]
+
+	recipient := []byte("recipient")
+	surbID := &[constants.SURBIDLength]byte{}
+
+	// Create forward path
+	fwdPath, _, err := path.New(rand.NewMath(), geo, doc, recipient, src, dst, surbID, time.Now(), false, true)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// Create reverse path
+	revPath, _, err := path.New(rand.NewMath(), geo, doc, recipient, dst, src, surbID, time.Now(), false, false)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return fwdPath, revPath, nil
 }
 
 func generateMixnet(numMixes, numProviders int, epoch uint64) (*pki.Document, error) {
