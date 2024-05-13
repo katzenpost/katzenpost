@@ -213,12 +213,7 @@ func (c *Client) Start() {
 	c.garbageCollectConversations()
 	c.Go(c.eventSinkWorker)
 	c.Go(c.worker)
-	for nickname, contact := range c.GetContacts() {
-		msgs := c.GetSortedConversation(nickname)
-		if len(msgs) > 0 {
-			contact.LastMessage = msgs[len(msgs)-1]
-		}
-	}
+
 	// Shutdown if the client halts for some reason
 	go func() {
 		c.client.Wait()
