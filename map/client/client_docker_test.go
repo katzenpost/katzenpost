@@ -119,10 +119,20 @@ func TestCreateDuplex(t *testing.T) {
 	a := DuplexFromSeed(mapClient, true, []byte("secret"))
 	b := DuplexFromSeed(mapClient, false, []byte("secret"))
 
-	err = a.Put([]byte("hello"), []byte("world"))
+	ahello := []byte("hello from a")
+	bhello := []byte("hello from b")
+	addr := []byte("address")
+	err = a.Put(addr, ahello)
 	require.NoError(err)
 
-	resp, err := b.Get([]byte("hello"))
+	err = b.Put(addr, bhello)
 	require.NoError(err)
-	require.Equal(resp, []byte("world"))
+
+	resp, err := b.Get(addr)
+	require.NoError(err)
+	require.Equal(resp, ahello)
+
+	resp, err = b.Get(addr)
+	require.NoError(err)
+	require.Equal(resp, bhello)
 }
