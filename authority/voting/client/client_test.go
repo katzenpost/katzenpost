@@ -254,7 +254,8 @@ func (d *mockDialer) waitUntilDialed(address string) {
 	<-dc
 }
 
-func (d *mockDialer) mockServer(address string, linkPrivateKey kem.PrivateKey, identityPrivateKey sign.PrivateKey, identityPublicKey sign.PublicKey, wg *sync.WaitGroup) {
+func (d *mockDialer) mockServer(address string, linkPrivateKey kem.PrivateKey, identityPrivateKey sign.PrivateKey,
+	identityPublicKey sign.PublicKey, wg *sync.WaitGroup, mygeo *geo.Geometry) {
 	d.Lock()
 	clientConn, serverConn := net.Pipe()
 	d.netMap[address] = &conn{
@@ -266,9 +267,6 @@ func (d *mockDialer) mockServer(address string, linkPrivateKey kem.PrivateKey, i
 	}
 	d.Unlock()
 	wg.Done()
-
-	mynike := ecdh.Scheme(rand.Reader)
-	mygeo := geo.GeometryFromUserForwardPayloadLength(mynike, 2000, true, 5)
 
 	d.waitUntilDialed(address)
 	identityHash := hash.Sum256From(identityPublicKey)
@@ -364,13 +362,16 @@ func TestClient(t *testing.T) {
 	dialer := newMockDialer(logBackend)
 	peers := []*config.Authority{}
 
+	mynike := ecdh.Scheme(rand.Reader)
+	mygeo := geo.GeometryFromUserForwardPayloadLength(mynike, 2000, true, 5)
+
 	var wg sync.WaitGroup
 	for i := 0; i < 10; i++ {
 		peer, idPrivKey, idPubKey, linkPrivKey, err := generatePeer(i)
 		require.NoError(err)
 		peers = append(peers, peer)
 		wg.Add(1)
-		go dialer.mockServer(peer.Addresses[0], linkPrivKey, idPrivKey, idPubKey, &wg)
+		go dialer.mockServer(peer.Addresses[0], linkPrivKey, idPrivKey, idPubKey, &wg, mygeo)
 	}
 	wg.Wait()
 	cfg := &Config{
@@ -378,6 +379,7 @@ func TestClient(t *testing.T) {
 		LogBackend:    logBackend,
 		Authorities:   peers,
 		DialContextFn: dialer.dial,
+		Geo:           mygeo,
 	}
 	client, err := New(cfg)
 	require.NoError(err)
