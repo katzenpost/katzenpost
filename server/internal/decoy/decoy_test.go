@@ -115,19 +115,22 @@ func checkSegments(t *testing.T, data map[[loops.SegmentIDSize]byte]int, fwdPath
 
 func createPaths(numMixes, numProviders int) ([]*sphinx.PathHop, []*sphinx.PathHop, error) {
 	epoch, _, _ := epochtime.Now()
-	doc, err := generateMixnet(numMixes, numProviders, epoch)
+	doc, err := generateMixnet(numMixes, numProviders, numProviders, epoch)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to generate mixnet for testing: %w", err)
 	}
-	if len(doc.Providers) == 0 {
-		return nil, nil, fmt.Errorf("no providers available in the topology")
+	if len(doc.ServiceNodes) == 0 {
+		return nil, nil, fmt.Errorf("no service nodes available in the topology")
+	}
+	if len(doc.GatewayNodes) == 0 {
+		return nil, nil, fmt.Errorf("no gateway nodes available in the topology")
 	}
 
 	nike := ecdh.Scheme(rand.Reader)
 	geo := geo.GeometryFromUserForwardPayloadLength(nike, 1024, true, 5)
 
 	src := doc.Topology[0][0]
-	dst := doc.Providers[0]
+	dst := doc.ServiceNodes[0]
 
 	recipient := []byte("recipient")
 	surbID := &[constants.SURBIDLength]byte{}
@@ -147,18 +150,23 @@ func createPaths(numMixes, numProviders int) ([]*sphinx.PathHop, []*sphinx.PathH
 	return fwdPath, revPath, nil
 }
 
-func generateMixnet(numMixes, numProviders int, epoch uint64) (*pki.Document, error) {
-	mixes, err := generateNodes(false, numMixes, epoch)
+func generateMixnet(numMixes, numServiceNodes, numGatewayNodes int, epoch uint64) (*pki.Document, error) {
+	mixes, err := generateNodes(false, false, numMixes, epoch)
 	if err != nil {
 		return nil, err
 	}
-	providers, err := generateNodes(true, numProviders, epoch)
+	serviceNodes, err := generateNodes(false, true, numServiceNodes, epoch)
 	if err != nil {
 		return nil, err
 	}
-	pdescs := make([]*pki.MixDescriptor, len(providers))
-	for i, p := range providers {
-		pdescs[i] = p
+	gatewayNodes, err := generateNodes(true, false, numGatewayNodes, epoch)
+	if err != nil {
+		return nil, err
+	}
+
+	serviceNodeDescs := make([]*pki.MixDescriptor, len(serviceNodes))
+	for i, p := range serviceNodes {
+		serviceNodeDescs[i] = p
 	}
 	topology := generateRandomTopology(mixes, 3)
 
@@ -172,14 +180,15 @@ func generateMixnet(numMixes, numProviders int, epoch uint64) (*pki.Document, er
 		LambdaP:            1.2,
 		LambdaPMaxDelay:    300,
 		Topology:           topology,
-		Providers:          pdescs,
+		ServiceNodes:       serviceNodeDescs,
+		GatewayNodes:       gatewayNodes,
 		SharedRandomCommit: sharedRandomCommit,
 		SharedRandomValue:  make([]byte, pki.SharedRandomValueLength),
 	}
 	return doc, nil
 }
 
-func generateNodes(isProvider bool, num int, epoch uint64) ([]*pki.MixDescriptor, error) {
+func generateNodes(isGatewayNode, isServiceNode bool, num int, epoch uint64) ([]*pki.MixDescriptor, error) {
 	mixes := []*pki.MixDescriptor{}
 	for i := 0; i < num; i++ {
 		mixIdentityPublicKey, _, err := cert.Scheme.GenerateKey()
@@ -191,7 +200,7 @@ func generateNodes(isProvider bool, num int, epoch uint64) ([]*pki.MixDescriptor
 			return nil, err
 		}
 		var name string
-		if isProvider {
+		if isServiceNode {
 			name = fmt.Sprintf("NSA_Spy_Satelite_Provider%d", i)
 		} else {
 			name = fmt.Sprintf("NSA_Spy_Satelite_Mix%d", i)
@@ -222,9 +231,10 @@ func generateNodes(isProvider bool, num int, epoch uint64) ([]*pki.MixDescriptor
 			Addresses: map[pki.Transport][]string{
 				pki.Transport("tcp4"): []string{fmt.Sprintf("127.0.0.1:%d", i+1)},
 			},
-			Kaetzchen:  nil,
-			Provider:   isProvider,
-			LoadWeight: 0,
+			Kaetzchen:     nil,
+			IsServiceNode: isServiceNode,
+			IsGatewayNode: isGatewayNode,
+			LoadWeight:    0,
 		}
 		mixes = append(mixes, mix)
 	}
