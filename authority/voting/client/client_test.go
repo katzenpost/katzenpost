@@ -79,8 +79,9 @@ func generateMixKeys(epoch uint64) (map[uint64][]byte, error) {
 	return m, nil
 }
 
-func generateNodes(isProvider bool, num int, epoch uint64) ([]*pki.MixDescriptor, error) {
+func generateNodes(isServiceNode, isGateway bool, num int, epoch uint64) ([]*pki.MixDescriptor, error) {
 	mixes := []*pki.MixDescriptor{}
+
 	for i := 0; i < num; i++ {
 		mixIdentityPublicKey, _, err := cert.Scheme.GenerateKey()
 		if err != nil {
@@ -91,7 +92,7 @@ func generateNodes(isProvider bool, num int, epoch uint64) ([]*pki.MixDescriptor
 			return nil, err
 		}
 		var name string
-		if isProvider {
+		if isGateway {
 			name = fmt.Sprintf("NSA_Spy_Satelite_Provider%d", i)
 		} else {
 			name = fmt.Sprintf("NSA_Spy_Satelite_Mix%d", i)
@@ -122,9 +123,10 @@ func generateNodes(isProvider bool, num int, epoch uint64) ([]*pki.MixDescriptor
 			Addresses: map[pki.Transport][]string{
 				pki.Transport("tcp4"): []string{fmt.Sprintf("127.0.0.1:%d", i+1)},
 			},
-			Kaetzchen:  nil,
-			Provider:   isProvider,
-			LoadWeight: 0,
+			Kaetzchen:     nil,
+			IsGatewayNode: isGateway,
+			IsServiceNode: isServiceNode,
+			LoadWeight:    0,
 		}
 		mixes = append(mixes, mix)
 	}
@@ -132,18 +134,29 @@ func generateNodes(isProvider bool, num int, epoch uint64) ([]*pki.MixDescriptor
 }
 
 func generateMixnet(numMixes, numProviders int, epoch uint64) (*pki.Document, error) {
-	mixes, err := generateNodes(false, numMixes, epoch)
+	mixes, err := generateNodes(false, false, numMixes, epoch)
 	if err != nil {
 		return nil, err
 	}
-	providers, err := generateNodes(true, numProviders, epoch)
+	serviceNodes, err := generateNodes(true, false, numProviders, epoch)
 	if err != nil {
 		return nil, err
 	}
-	pdescs := make([]*pki.MixDescriptor, len(providers))
-	for i, p := range providers {
-		pdescs[i] = p
+	gateways, err := generateNodes(false, true, numProviders, epoch)
+	if err != nil {
+		return nil, err
 	}
+
+	gatewayDescriptors := make([]*pki.MixDescriptor, len(gateways))
+	for i, p := range gateways {
+		gatewayDescriptors[i] = p
+	}
+
+	serviceDescriptors := make([]*pki.MixDescriptor, len(serviceNodes))
+	for i, p := range serviceNodes {
+		serviceDescriptors[i] = p
+	}
+
 	topology := generateRandomTopology(mixes, 3)
 
 	sharedRandomCommit := make(map[[pki.PublicKeyHashSize]byte][]byte)
@@ -156,7 +169,8 @@ func generateMixnet(numMixes, numProviders int, epoch uint64) (*pki.Document, er
 		LambdaP:            1.2,
 		LambdaPMaxDelay:    300,
 		Topology:           topology,
-		Providers:          pdescs,
+		GatewayNodes:       gatewayDescriptors,
+		ServiceNodes:       serviceDescriptors,
 		SharedRandomCommit: sharedRandomCommit,
 		SharedRandomValue:  make([]byte, pki.SharedRandomValueLength),
 	}

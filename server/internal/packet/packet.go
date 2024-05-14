@@ -119,12 +119,6 @@ func (pkt *Packet) IsToUser() bool {
 	return pkt.NextNodeHop == nil && pkt.NodeDelay != nil && pkt.Recipient != nil && pkt.SurbReply == nil
 }
 
-// IsUnreliableToUser returns true iff the packet has routing commands
-// indicating it is an unreliable forward packet destined for a local user.
-func (pkt *Packet) IsUnreliableToUser() bool {
-	return pkt.NextNodeHop == nil && pkt.NodeDelay == nil && pkt.Recipient != nil && pkt.SurbReply == nil
-}
-
 // IsSURBReply returns true iff the packet has routing commands indicating it
 // is a SURB Reply destined for a local user.
 func (pkt *Packet) IsSURBReply() bool {

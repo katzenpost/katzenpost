@@ -29,7 +29,6 @@ import (
 
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
-	"github.com/katzenpost/katzenpost/core/thwack"
 	"github.com/katzenpost/katzenpost/server/config"
 	"github.com/katzenpost/katzenpost/server/internal/glue"
 	"github.com/katzenpost/katzenpost/server/internal/packet"
@@ -71,18 +70,19 @@ func (m *mockGlue) Listeners() []glue.Listener {
 func (m *mockGlue) LogBackend() *log.Backend {
 	return nil
 }
-func (m *mockGlue) Management() *thwack.Server {
-	return nil
-}
 func (m *mockGlue) MixKeys() glue.MixKeys {
 	return nil
 }
 func (m *mockGlue) PKI() glue.PKI {
 	return nil
 }
-func (m *mockGlue) Provider() glue.Provider {
+func (m *mockGlue) Gateway() glue.Gateway {
 	return nil
 }
+func (m *mockGlue) ServiceNode() glue.ServiceNode {
+	return nil
+}
+
 func (m *mockGlue) Scheduler() glue.Scheduler {
 	return nil
 }

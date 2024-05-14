@@ -43,12 +43,13 @@ import (
 )
 
 const (
-	basePort      = 30000
-	bindAddr      = "127.0.0.1"
-	nrLayers      = 3
-	nrNodes       = 6
-	nrProviders   = 2
-	nrAuthorities = 3
+	basePort       = 30000
+	bindAddr       = "127.0.0.1"
+	nrLayers       = 3
+	nrNodes        = 6
+	nrGateways     = 1
+	nrServiceNodes = 1
+	nrAuthorities  = 3
 )
 
 type katzenpost struct {
@@ -64,14 +65,15 @@ type katzenpost struct {
 	authorities       map[[32]byte]*vConfig.Authority
 	authIdentity      sign.PublicKey
 
-	nodeConfigs []*sConfig.Config
-	basePort    uint16
-	lastPort    uint16
-	bindAddr    string
-	nodeIdx     int
-	clientIdx   int
-	providerIdx int
-	hasPanda    bool
+	nodeConfigs    []*sConfig.Config
+	basePort       uint16
+	lastPort       uint16
+	bindAddr       string
+	nodeIdx        int
+	clientIdx      int
+	gatewayIdx     int
+	serviceNodeIdx int
+	hasPanda       bool
 }
 
 type AuthById []*vConfig.Authority
@@ -130,12 +132,14 @@ func write(f *os.File, str string, args ...interface{}) {
 	}
 }
 
-func (s *katzenpost) genNodeConfig(isProvider bool, isVoting bool) error {
+func (s *katzenpost) genNodeConfig(isGateway, isServiceNode bool, isVoting bool) error {
 	const serverLogFile = "katzenpost.log"
 
 	n := fmt.Sprintf("mix%d", s.nodeIdx+1)
-	if isProvider {
-		n = fmt.Sprintf("provider%d", s.providerIdx+1)
+	if isGateway {
+		n = fmt.Sprintf("gateway%d", s.gatewayIdx+1)
+	} else if isServiceNode {
+		n = fmt.Sprintf("servicenode%d", s.serviceNodeIdx+1)
 	}
 	cfg := new(sConfig.Config)
 
@@ -147,9 +151,12 @@ func (s *katzenpost) genNodeConfig(isProvider bool, isVoting bool) error {
 	cfg.Server.Identifier = n
 	cfg.Server.Addresses = []string{fmt.Sprintf("%s:%d", s.bindAddr, s.lastPort)}
 	cfg.Server.DataDir = filepath.Join(s.baseDir, n)
+
 	os.Mkdir(filepath.Join(s.outDir, cfg.Server.Identifier), 0700)
-	cfg.Server.IsProvider = isProvider
-	if isProvider {
+
+	cfg.Server.IsGatewayNode = isGateway
+	cfg.Server.IsServiceNode = isServiceNode
+	if isGateway {
 		cfg.Server.AltAddresses = map[string][]string{
 			"TCP": []string{fmt.Sprintf("localhost:%d", s.lastPort)},
 		}
@@ -184,70 +191,46 @@ func (s *katzenpost) genNodeConfig(isProvider bool, isVoting bool) error {
 	cfg.Logging.File = serverLogFile
 	cfg.Logging.Level = s.logLevel
 
-	if isProvider {
+	if isServiceNode {
 		// Enable the thwack interface.
-		cfg.Management = new(sConfig.Management)
-		cfg.Management.Enable = true
+		s.serviceNodeIdx++
 
-		s.providerIdx++
-
-		cfg.Provider = new(sConfig.Provider)
 		// configure an entry provider or a spool storage provider
-		if s.providerIdx%2 == 0 {
-			cfg.Provider.TrustOnFirstUse = true
-			cfg.Provider.EnableEphemeralClients = true
-		} else {
-			spoolCfg := &sConfig.CBORPluginKaetzchen{
-				Capability:     "spool",
-				Endpoint:       "+spool",
-				Command:        s.baseDir + "/memspool" + s.binSuffix,
+		cfg.ServiceNode = &sConfig.ServiceNode{}
+		spoolCfg := &sConfig.CBORPluginKaetzchen{
+			Capability:     "spool",
+			Endpoint:       "+spool",
+			Command:        s.baseDir + "/memspool" + s.binSuffix,
+			MaxConcurrency: 1,
+			Config: map[string]interface{}{
+				"data_store": s.baseDir + "/" + cfg.Server.Identifier + "/memspool.storage",
+				"log_dir":    s.baseDir + "/" + cfg.Server.Identifier,
+			},
+		}
+		cfg.ServiceNode.CBORPluginKaetzchen = []*sConfig.CBORPluginKaetzchen{spoolCfg}
+		if !s.hasPanda {
+			pandaCfg := &sConfig.CBORPluginKaetzchen{
+				Capability:     "panda",
+				Endpoint:       "+panda",
+				Command:        s.baseDir + "/panda_server" + s.binSuffix,
 				MaxConcurrency: 1,
 				Config: map[string]interface{}{
-					"data_store": s.baseDir + "/" + cfg.Server.Identifier + "/memspool.storage",
-					"log_dir":    s.baseDir + "/" + cfg.Server.Identifier,
+					"fileStore": s.baseDir + "/" + cfg.Server.Identifier + "/panda.storage",
+					"log_dir":   s.baseDir + "/" + cfg.Server.Identifier,
+					"log_level": s.logLevel,
 				},
 			}
-			cfg.Provider.CBORPluginKaetzchen = []*sConfig.CBORPluginKaetzchen{spoolCfg}
-			if !s.hasPanda {
-				pandaCfg := &sConfig.CBORPluginKaetzchen{
-					Capability:     "panda",
-					Endpoint:       "+panda",
-					Command:        s.baseDir + "/panda_server" + s.binSuffix,
-					MaxConcurrency: 1,
-					Config: map[string]interface{}{
-						"fileStore": s.baseDir + "/" + cfg.Server.Identifier + "/panda.storage",
-						"log_dir":   s.baseDir + "/" + cfg.Server.Identifier,
-						"log_level": s.logLevel,
-					},
-				}
-				cfg.Provider.CBORPluginKaetzchen = append(cfg.Provider.CBORPluginKaetzchen, pandaCfg)
-				s.hasPanda = true
-			}
+			cfg.ServiceNode.CBORPluginKaetzchen = append(cfg.ServiceNode.CBORPluginKaetzchen, pandaCfg)
+			s.hasPanda = true
 		}
 
 		echoCfg := new(sConfig.Kaetzchen)
 		echoCfg.Capability = "echo"
 		echoCfg.Endpoint = "+echo"
-		cfg.Provider.Kaetzchen = append(cfg.Provider.Kaetzchen, echoCfg)
-
-		/*
-			keysvrCfg := new(sConfig.Kaetzchen)
-			keysvrCfg.Capability = "keyserver"
-			keysvrCfg.Endpoint = "+keyserver"
-			cfg.Provider.Kaetzchen = append(cfg.Provider.Kaetzchen, keysvrCfg)
-
-				if s.providerIdx == 1 {
-					cfg.Debug.NumProviderWorkers = 10
-					cfg.Provider.SQLDB = new(sConfig.SQLDB)
-					cfg.Provider.SQLDB.Backend = "pgx"
-					cfg.Provider.SQLDB.DataSourceName = "host=localhost port=5432 database=katzenpost sslmode=disable"
-					cfg.Provider.UserDB = new(sConfig.UserDB)
-					cfg.Provider.UserDB.Backend = sConfig.BackendSQL
-
-					cfg.Provider.SpoolDB = new(sConfig.SpoolDB)
-					cfg.Provider.SpoolDB.Backend = sConfig.BackendSQL
-				}
-		*/
+		cfg.ServiceNode.Kaetzchen = append(cfg.ServiceNode.Kaetzchen, echoCfg)
+	} else if isGateway {
+		s.gatewayIdx++
+		cfg.Gateway = &sConfig.Gateway{}
 	} else {
 		s.nodeIdx++
 	}
@@ -311,31 +294,38 @@ func (s *katzenpost) genVotingAuthoritiesCfg(numAuthorities int, parameters *vCo
 	return nil
 }
 
-func (s *katzenpost) genAuthorizedNodes() ([]*vConfig.Node, []*vConfig.Node, error) {
+func (s *katzenpost) genAuthorizedNodes() ([]*vConfig.Node, []*vConfig.Node, []*vConfig.Node, error) {
 	mixes := []*vConfig.Node{}
-	providers := []*vConfig.Node{}
+	gateways := []*vConfig.Node{}
+	serviceNodes := []*vConfig.Node{}
 	for _, nodeCfg := range s.nodeConfigs {
 		node := &vConfig.Node{
 			Identifier:           nodeCfg.Server.Identifier,
 			IdentityPublicKeyPem: filepath.Join("../", nodeCfg.Server.Identifier, "identity.public.pem"),
 		}
-		if nodeCfg.Server.IsProvider {
-			providers = append(providers, node)
+		if nodeCfg.Server.IsGatewayNode {
+			gateways = append(gateways, node)
+		} else if nodeCfg.Server.IsServiceNode {
+			serviceNodes = append(serviceNodes, node)
 		} else {
 			mixes = append(mixes, node)
 		}
 	}
 	sort.Sort(NodeById(mixes))
-	sort.Sort(NodeById(providers))
+	sort.Sort(NodeById(gateways))
+	sort.Sort(NodeById(serviceNodes))
 
-	return providers, mixes, nil
+	return gateways, serviceNodes, mixes, nil
 }
 
 func main() {
 	var err error
 	nrLayers := flag.Int("L", nrLayers, "Number of layers.")
 	nrNodes := flag.Int("n", nrNodes, "Number of mixes.")
-	nrProviders := flag.Int("p", nrProviders, "Number of providers.")
+
+	nrGateways := flag.Int("gateways", nrGateways, "Number of gateways.")
+	nrServiceNodes := flag.Int("serviceNodes", nrServiceNodes, "Number of providers.")
+
 	voting := flag.Bool("v", false, "Generate voting configuration")
 	nrVoting := flag.Int("nv", nrAuthorities, "Generate voting configuration")
 	baseDir := flag.String("b", "", "Path to use as baseDir option")
@@ -362,6 +352,7 @@ func main() {
 	lDMax := flag.Uint64("lDMax", 3000, "Maximum delay for LambaD")
 	lM := flag.Float64("lM", 0.2, "Inverse of mean of mix decoy send rate")
 	lMMax := flag.Uint64("lMMax", 100, "Maximum delay for LambdaM")
+	lGMax := flag.Uint64("lGMax", 100, "Maximum delay for LambdaM")
 
 	flag.Parse()
 
@@ -388,6 +379,7 @@ func main() {
 		LambdaDMaxDelay:   *lDMax,
 		LambdaM:           *lM,
 		LambdaMMaxDelay:   *lMMax,
+		LambdaGMaxDelay:   *lGMax,
 	}
 
 	s := &katzenpost{}
@@ -443,28 +435,35 @@ func main() {
 		}
 	}
 
-	// Generate the provider configs.
-	for i := 0; i < *nrProviders; i++ {
-		if err = s.genNodeConfig(true, *voting); err != nil {
+	// Generate the gateway configs.
+	for i := 0; i < *nrGateways; i++ {
+		if err = s.genNodeConfig(true, false, *voting); err != nil {
+			log.Fatalf("Failed to generate provider config: %v", err)
+		}
+	}
+	// Generate the service node configs.
+	for i := 0; i < *nrServiceNodes; i++ {
+		if err = s.genNodeConfig(false, true, *voting); err != nil {
 			log.Fatalf("Failed to generate provider config: %v", err)
 		}
 	}
 
-	// Generate the node configs.
+	// Generate the mix node configs.
 	for i := 0; i < *nrNodes; i++ {
-		if err = s.genNodeConfig(false, *voting); err != nil {
+		if err = s.genNodeConfig(false, false, *voting); err != nil {
 			log.Fatalf("Failed to generate node config: %v", err)
 		}
 	}
 	// Generate the authority config
 	if *voting {
-		providers, mixes, err := s.genAuthorizedNodes()
+		gateways, serviceNodes, mixes, err := s.genAuthorizedNodes()
 		if err != nil {
 			panic(err)
 		}
 		for _, vCfg := range s.votingAuthConfigs {
 			vCfg.Mixes = mixes
-			vCfg.Providers = providers
+			vCfg.GatewayNodes = gateways
+			vCfg.ServiceNodes = serviceNodes
 			if *omitTopology == false {
 				vCfg.Topology = new(vConfig.Topology)
 				vCfg.Topology.Layers = make([]vConfig.Layer, 0)
@@ -487,7 +486,7 @@ func main() {
 	// write the mixes keys and configs to disk
 	for _, v := range s.nodeConfigs {
 		if err := saveCfg(v, *outDir); err != nil {
-			log.Fatalf("%s", err)
+			log.Fatalf("saveCfg failure: %s", err)
 		}
 	}
 
@@ -540,7 +539,7 @@ func saveCfg(cfg interface{}, outDir string) error {
 	log.Printf("writing %s", fileName)
 	f, err := os.Create(fileName)
 	if err != nil {
-		return err
+		return fmt.Errorf("os.Create(%s) failed: %s", fileName, err)
 	}
 	defer f.Close()
 
@@ -642,7 +641,7 @@ func (s *katzenpost) genDockerCompose(dockerImage string) error {
 
 	defer f.Close()
 
-	providers, mixes, err := s.genAuthorizedNodes()
+	gateways, serviceNodes, mixes, err := s.genAuthorizedNodes()
 
 	if err != nil {
 		log.Fatal(err)
@@ -652,7 +651,24 @@ func (s *katzenpost) genDockerCompose(dockerImage string) error {
 
 services:
 `)
-	for _, p := range providers {
+	for _, p := range gateways {
+		write(f, `
+  %s:
+    restart: "no"
+    image: %s
+    volumes:
+      - ./:%s
+    command: %s/server%s -f %s/%s/katzenpost.toml
+    network_mode: host
+
+    depends_on:`, p.Identifier, dockerImage, s.baseDir, s.baseDir, s.binSuffix, s.baseDir, p.Identifier)
+		for _, authCfg := range s.votingAuthConfigs {
+			write(f, `
+      - %s`, authCfg.Server.Identifier)
+		}
+	}
+
+	for _, p := range serviceNodes {
 		write(f, `
   %s:
     restart: "no"
