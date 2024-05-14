@@ -63,7 +63,7 @@ func (c *Client) GetConfig() *config.Config {
 // PKIBootstrap returns a pkiClient and fetches a consensus.
 func PKIBootstrap(ctx context.Context, c *Client, linkKey kem.PrivateKey) (pki.Client, *pki.Document, error) {
 	// Retrieve a copy of the PKI consensus document.
-	pkiClient, err := c.cfg.NewPKIClient(c.logBackend, c.cfg.UpstreamProxyConfig(), linkKey)
+	pkiClient, err := c.cfg.NewPKIClient(c.logBackend, c.cfg.UpstreamProxyConfig(), linkKey, c.cfg.SphinxGeometry)
 	if err != nil {
 		return nil, nil, err
 	}
