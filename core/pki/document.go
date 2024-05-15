@@ -73,27 +73,6 @@ var (
 
 	// Create reusable EncMode interface with immutable options, safe for concurrent use.
 	ccbor cbor.EncMode
-
-	// TransportInvalid is the invalid transport.
-	TransportInvalid string
-
-	// TransportTCP is TCP, with the IP version determined by the results of
-	// a name server lookup.
-	TransportTCP string = "tcp"
-
-	// TransportTCPv4 is TCP over IPv4.
-	TransportTCPv4 string = "tcp4"
-
-	// TransportTCPv6 is TCP over IPv6.
-	TransportTCPv6 string = "tcp6"
-
-	// InternalTransports is the list of transports used for non-client related
-	// communications.
-	InternalTransports = []string{TransportTCPv4, TransportTCPv6}
-
-	// ClientTransports is the list of transports used by default for client
-	// to provider communication.
-	ClientTransports = []string{TransportTCP, TransportTCPv4, TransportTCPv6}
 )
 
 // Document is a PKI document.
@@ -191,70 +170,6 @@ type Document struct {
 
 // document contains fields from Document but not the encoding.BinaryMarshaler methods
 type document Document
-
-// CopyWithoutSignatures returns a copy of Document without
-// the following fields:
-// Signatures
-// SharedRandomCommit
-// SharedRandomReveal
-func (d *Document) CopyWithoutSignatures() *Document {
-	topology := make([][]*MixDescriptor, len(d.Topology))
-	for i := 0; i < len(d.Topology); i++ {
-		topology[i] = make([]*MixDescriptor, len(d.Topology[i]))
-		for j := 0; j < len(topology[i]); j++ {
-			topology[i][j] = d.Topology[i][j].ShallowCopyWithoutSignature()
-		}
-	}
-
-	providers := make([]*MixDescriptor, len(d.Providers))
-	for i := 0; i < len(d.Providers); i++ {
-		providers[i] = d.Providers[i].ShallowCopyWithoutSignature()
-	}
-	doc := &Document{
-		Epoch:              d.Epoch,
-		GenesisEpoch:       d.GenesisEpoch,
-		SendRatePerMinute:  d.SendRatePerMinute,
-		Mu:                 d.Mu,
-		MuMaxDelay:         d.MuMaxDelay,
-		LambdaP:            d.LambdaP,
-		LambdaPMaxDelay:    d.LambdaPMaxDelay,
-		LambdaL:            d.LambdaL,
-		LambdaLMaxDelay:    d.LambdaLMaxDelay,
-		LambdaD:            d.LambdaD,
-		LambdaDMaxDelay:    d.LambdaDMaxDelay,
-		LambdaM:            d.LambdaM,
-		LambdaMMaxDelay:    d.LambdaMMaxDelay,
-		Topology:           topology,
-		Providers:          providers,
-		Signatures:         nil,
-		SharedRandomCommit: nil,
-		SharedRandomReveal: nil,
-		SharedRandomValue:  nil,
-		PriorSharedRandom:  nil,
-		SphinxGeometryHash: nil,
-		Version:            d.Version,
-	}
-
-	doc.Signatures = make(map[[PublicKeyHashSize]byte]cert.Signature)
-	for key, value := range d.Signatures {
-		doc.Signatures[key] = value
-	}
-
-	doc.SharedRandomValue = make([]byte, len(d.SharedRandomValue))
-	copy(doc.SharedRandomValue, d.SharedRandomValue)
-
-	doc.PriorSharedRandom = make([][]byte, len(d.PriorSharedRandom))
-	for i := 0; i < len(doc.PriorSharedRandom); i++ {
-		doc.PriorSharedRandom[i] = make([]byte, len(d.PriorSharedRandom[i]))
-	}
-
-	doc.SphinxGeometryHash = make([]byte, len(d.SphinxGeometryHash))
-	copy(doc.SphinxGeometryHash, d.SphinxGeometryHash)
-
-	doc.Version = d.Version
-
-	return doc
-}
 
 // String returns a string representation of a Document.
 func (d *Document) String() string {
@@ -445,6 +360,32 @@ func (d *Document) GetNodeByKeyHash(keyhash *[32]byte) (*MixDescriptor, error) {
 	return nil, fmt.Errorf("pki: node not found")
 }
 
+// Transport is a link transport protocol.
+type Transport string
+
+var (
+	// TransportInvalid is the invalid transport.
+	TransportInvalid Transport
+
+	// TransportTCP is TCP, with the IP version determined by the results of
+	// a name server lookup.
+	TransportTCP Transport = "tcp"
+
+	// TransportTCPv4 is TCP over IPv4.
+	TransportTCPv4 Transport = "tcp4"
+
+	// TransportTCPv6 is TCP over IPv6.
+	TransportTCPv6 Transport = "tcp6"
+
+	// InternalTransports is the list of transports used for non-client related
+	// communications.
+	InternalTransports = []Transport{TransportTCPv4, TransportTCPv6}
+
+	// ClientTransports is the list of transports used by default for client
+	// to provider communication.
+	ClientTransports = []Transport{TransportTCP, TransportTCPv4, TransportTCPv6}
+)
+
 // FromPayload deserializes, then verifies a Document, and returns the Document or error.
 func FromPayload(verifier sign.PublicKey, payload []byte) (*Document, error) {
 	_, err := cert.Verify(verifier, payload)
@@ -455,7 +396,6 @@ func FromPayload(verifier sign.PublicKey, payload []byte) (*Document, error) {
 	if err := d.UnmarshalBinary(payload); err != nil {
 		return nil, err
 	}
-
 	return d, nil
 }
 
@@ -684,21 +624,6 @@ func (d *Document) UnmarshalBinary(data []byte) error {
 		d.Signatures[s.PublicKeySum256] = s
 	}
 	err = cbor.Unmarshal(certified, (*document)(d))
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
-func (d *Document) Serialize() ([]byte, error) {
-	return ccbor.Marshal((*document)(d))
-}
-
-// UnmarshalBinary implements encoding.BinaryUnmarshaler interface
-// and populates Document with detached Signatures
-func (d *Document) Deserialize(data []byte) error {
-	d.Signatures = make(map[[PublicKeyHashSize]byte]cert.Signature)
-	err := cbor.Unmarshal(data, (*document)(d))
 	if err != nil {
 		return err
 	}
