@@ -150,7 +150,7 @@ func newPgxImpl(db *SQLDB, dataSourceName string, scheme kem.Scheme) (dbImpl, er
 	// will default to 5 if unspecified.  At a minimum all of the provider
 	// workers should be able to hit up the database simultaneously, while
 	// allowing for sufficient connections to authenticate.
-	numConns := 2 * db.glue.Config().Debug.NumProviderWorkers
+	numConns := 2 * db.glue.Config().Debug.NumGatewayWorkers
 	if numConns < 5 {
 		numConns = 5
 	}

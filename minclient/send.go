@@ -34,7 +34,7 @@ func (c *Client) SendSphinxPacket(pkt []byte) error {
 }
 
 // ComposeSphinxPacket is used to compose Sphinx packets.
-func (c *Client) ComposeSphinxPacket(recipient, provider string, surbID *[sConstants.SURBIDLength]byte, b []byte) ([]byte, []byte, time.Duration, error) {
+func (c *Client) ComposeSphinxPacket(recipient, gateway string, surbID *[sConstants.SURBIDLength]byte, b []byte) ([]byte, []byte, time.Duration, error) {
 	if len(recipient) > sConstants.RecipientIDLength {
 		return nil, nil, 0, fmt.Errorf("minclient: invalid recipient: '%v'", recipient)
 	}
@@ -54,14 +54,14 @@ func (c *Client) ComposeSphinxPacket(recipient, provider string, surbID *[sConst
 		// Select the forward path.
 		now := time.Unix(unixTime, 0)
 
-		fwdPath, then, err := c.makePath(recipient, provider, surbID, now, true)
+		fwdPath, then, err := c.makePath(recipient, gateway, surbID, now, true)
 		if err != nil {
 			return nil, nil, 0, err
 		}
 
 		revPath := make([]*sphinx.PathHop, 0)
 		if surbID != nil {
-			revPath, then, err = c.makePath(c.cfg.User, provider, surbID, then, false)
+			revPath, then, err = c.makePath(c.cfg.User, gateway, surbID, then, false)
 			if err != nil {
 				return nil, nil, 0, err
 			}
@@ -126,10 +126,10 @@ func (c *Client) SendCiphertext(recipient, provider string, surbID *[sConstants.
 	return k, rtt, err
 }
 
-func (c *Client) makePath(recipient, provider string, surbID *[sConstants.SURBIDLength]byte, baseTime time.Time, isForward bool) ([]*sphinx.PathHop, time.Time, error) {
-	srcProvider, dstProvider := c.cfg.Provider, provider
+func (c *Client) makePath(recipient, destNode string, surbID *[sConstants.SURBIDLength]byte, baseTime time.Time, isForward bool) ([]*sphinx.PathHop, time.Time, error) {
+	srcNode, dstNode := c.cfg.Gateway, destNode
 	if !isForward {
-		srcProvider, dstProvider = dstProvider, srcProvider
+		srcNode, dstNode = dstNode, srcNode
 	}
 
 	// Get the current PKI document.
@@ -139,13 +139,27 @@ func (c *Client) makePath(recipient, provider string, surbID *[sConstants.SURBID
 	}
 
 	// Get the descriptors.
-	src, err := doc.GetProvider(srcProvider)
-	if err != nil {
-		return nil, time.Time{}, newPKIError("minclient: failed to find source Provider: %v", err)
-	}
-	dst, err := doc.GetProvider(dstProvider)
-	if err != nil {
-		return nil, time.Time{}, newPKIError("minclient: failed to find destination Provider: %v", err)
+	var src *cpki.MixDescriptor
+	var dst *cpki.MixDescriptor
+	var err error
+	if isForward {
+		src, err = doc.GetGateway(srcNode)
+		if err != nil {
+			return nil, time.Time{}, newPKIError("minclient: failed to find source Gateway: %v", err)
+		}
+		dst, err = doc.GetServiceNode(dstNode)
+		if err != nil {
+			return nil, time.Time{}, newPKIError("minclient: failed to find destination Provider: %v", err)
+		}
+	} else {
+		src, err = doc.GetServiceNode(srcNode)
+		if err != nil {
+			return nil, time.Time{}, newPKIError("minclient: failed to find destination Provider: %v", err)
+		}
+		dst, err = doc.GetGateway(dstNode)
+		if err != nil {
+			return nil, time.Time{}, newPKIError("minclient: failed to find source Gateway: %v", err)
+		}
 	}
 
 	p, t, err := path.New(c.rng, c.cfg.SphinxGeometry, doc, []byte(recipient), src, dst, surbID, baseTime, true, isForward)

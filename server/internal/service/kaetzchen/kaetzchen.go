@@ -44,20 +44,20 @@ const ParameterEndpoint = "endpoint"
 var ErrNoResponse = errors.New("kaetzchen: message has no response")
 
 // Parameters is the map describing each Kaetzchen's parameters to
-// be published in the Provider's descriptor.
+// be published in the ServiceNode's descriptor.
 type Parameters map[string]interface{}
 
 // Kaetzchen is the interface implemented by each auto-responder agent.
 type Kaetzchen interface {
 	// Capability returns the agent's functionality for publication in
-	// the Provider's descriptor.
+	// the ServiceNode's descriptor.
 	Capability() string
 
 	// Parameters returns the agent's paramenters for publication in
-	// the Provider's descriptor.
+	// the ServiceNode's descriptor.
 	Parameters() Parameters
 
-	// OnRequest is the method that is called when the Provider receives
+	// OnRequest is the method that is called when the ServiceNode receives
 	// a request designed for a particular agent.  The caller will handle
 	// extracting the payload component of the message.
 	//
@@ -258,7 +258,7 @@ func New(glue glue.Glue) (*KaetzchenWorker, error) {
 
 	// Initialize the internal Kaetzchen.
 	capaMap := make(map[string]bool)
-	for _, v := range glue.Config().Provider.Kaetzchen {
+	for _, v := range glue.Config().ServiceNode.Kaetzchen {
 		capa := v.Capability
 		if v.Disable {
 			kaetzchenWorker.log.Noticef("Skipping disabled Kaetzchen: '%v'.", capa)
