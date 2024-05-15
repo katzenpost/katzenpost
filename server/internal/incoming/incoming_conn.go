@@ -69,9 +69,9 @@ type incomingConn struct {
 }
 
 func (c *incomingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
-	provider := c.l.glue.Provider()
+	gateway := c.l.glue.Gateway()
 	// this node is a provider
-	if provider != nil {
+	if gateway != nil {
 		// see if it is from a Mix
 		_, canSend, isValid := c.l.glue.PKI().AuthenticateConnection(creds, false)
 		if isValid {
@@ -80,7 +80,7 @@ func (c *incomingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 			c.canSend = canSend
 			return isValid
 		}
-		isClient := provider.AuthenticateClient(creds)
+		isClient := gateway.AuthenticateClient(creds)
 		if !isClient && c.fromClient {
 			// This used to be a client, but is no longer listed in
 			// the user db.  Reject.
@@ -374,7 +374,7 @@ func (c *incomingConn) onRetrieveMessage(cmd *commands.RetrieveMessage) error {
 	if err != nil {
 		return err
 	}
-	msg, surbID, remaining, err := c.l.glue.Provider().Spool().Get(creds.AdditionalData, advance)
+	msg, surbID, remaining, err := c.l.glue.Gateway().Spool().Get(creds.AdditionalData, advance)
 	if err != nil {
 		return err
 	}
@@ -442,7 +442,7 @@ func (c *incomingConn) onSendPacket(cmd *commands.SendPacket) error {
 	// to try to loop traffic back into the mix net, and sending packets
 	// that bypass the mix net.
 	pkt.MustForward = c.fromClient
-	pkt.MustTerminate = c.l.glue.Config().Server.IsProvider && !c.fromClient
+	pkt.MustTerminate = c.l.glue.Config().Server.IsServiceNode && !c.fromClient
 
 	// If the packet was from the client, and there is a SendShift for the
 	// current epoch, enforce SendShift based rate limits.

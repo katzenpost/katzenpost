@@ -122,28 +122,35 @@ type Parameters struct {
 	LambdaPMaxDelay uint64
 
 	// LambdaL is the inverse of the mean of the exponential distribution
-	// that is used to select the delay between clients sending from their egress
-	// FIFO queue or drop decoy message.
+	// that is used to select the delay between clients sending loop decoys.
 	LambdaL float64
 
 	// LambdaLMaxDelay sets the maximum delay for LambdaP.
 	LambdaLMaxDelay uint64
 
 	// LambdaD is the inverse of the mean of the exponential distribution
-	// that is used to select the delay between clients sending from their egress
-	// FIFO queue or drop decoy message.
+	// that is used to select the delay between clients sending deop decoys.
 	LambdaD float64
 
 	// LambdaDMaxDelay sets the maximum delay for LambdaP.
 	LambdaDMaxDelay uint64
 
 	// LambdaM is the inverse of the mean of the exponential distribution
-	// that is used to select the delay between clients sending from their egress
-	// FIFO queue or drop decoy message.
+	// that is used to select the delay between sending mix node decoys.
 	LambdaM float64
+
+	// LambdaG is the inverse of the mean of the exponential distribution
+	// that is used to select the delay between sending gateway node decoys.
+	//
+	// WARNING: This is not used via the TOML config file; this field is only
+	// used internally by the dirauth server state machine.
+	LambdaG float64
 
 	// LambdaMMaxDelay sets the maximum delay for LambdaP.
 	LambdaMMaxDelay uint64
+
+	// LambdaGMaxDelay sets the maximum delay for LambdaG.
+	LambdaGMaxDelay uint64
 }
 
 func (pCfg *Parameters) validate() error {
@@ -176,6 +183,12 @@ func (pCfg *Parameters) validate() error {
 	}
 	if pCfg.LambdaMMaxDelay > absoluteMaxDelay {
 		return fmt.Errorf("config: Parameters: LambdaMMaxDelay %v is out of range", pCfg.LambdaPMaxDelay)
+	}
+	if pCfg.LambdaGMaxDelay > absoluteMaxDelay {
+		return fmt.Errorf("config: Parameters: LambdaGMaxDelay %v is out of range", pCfg.LambdaPMaxDelay)
+	}
+	if pCfg.LambdaGMaxDelay == 0 {
+		return errors.New("LambdaGMaxDelay must be set")
 	}
 
 	return nil
@@ -441,9 +454,10 @@ type Config struct {
 	Parameters  *Parameters
 	Debug       *Debug
 
-	Mixes     []*Node
-	Providers []*Node
-	Topology  *Topology
+	Mixes        []*Node
+	GatewayNodes []*Node
+	ServiceNodes []*Node
+	Topology     *Topology
 
 	SphinxGeometry *geo.Geometry
 }
@@ -527,11 +541,14 @@ func (cfg *Config) FixupAndValidate(forceGenOnly bool) error {
 	cfg.Parameters.applyDefaults()
 	cfg.Debug.applyDefaults()
 
-	allNodes := make([]*Node, 0, len(cfg.Mixes)+len(cfg.Providers))
+	allNodes := make([]*Node, 0, len(cfg.Mixes)+len(cfg.GatewayNodes)+len(cfg.ServiceNodes))
 	for _, v := range cfg.Mixes {
 		allNodes = append(allNodes, v)
 	}
-	for _, v := range cfg.Providers {
+	for _, v := range cfg.GatewayNodes {
+		allNodes = append(allNodes, v)
+	}
+	for _, v := range cfg.ServiceNodes {
 		allNodes = append(allNodes, v)
 	}
 

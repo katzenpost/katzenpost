@@ -81,18 +81,18 @@ func TestServerStartShutdown(t *testing.T) {
 	cfg := config.Config{
 		SphinxGeometry: geo,
 		Server: &config.Server{
-			WireKEM:    testingSchemeName,
-			Identifier: "testserver",
-			Addresses:  []string{"127.0.0.1:1234"},
-			DataDir:    datadir,
-			IsProvider: false,
+			WireKEM:       testingSchemeName,
+			Identifier:    "testserver",
+			Addresses:     []string{"127.0.0.1:1234"},
+			DataDir:       datadir,
+			IsGatewayNode: false,
 		},
 		Logging: &config.Logging{
 			Disable: false,
 			File:    "",
 			Level:   "DEBUG",
 		},
-		Provider: nil,
+		Gateway: nil,
 		PKI: &config.PKI{
 			Voting: &config.Voting{
 				Authorities: []*aconfig.Authority{
@@ -106,19 +106,17 @@ func TestServerStartShutdown(t *testing.T) {
 				},
 			},
 		},
-		Management: &config.Management{
-			Enable: false,
-			Path:   "",
-		},
 		Debug: &config.Debug{
 			NumSphinxWorkers:             1,
-			NumProviderWorkers:           0,
+			NumGatewayWorkers:            0,
+			NumServiceWorkers:            0,
 			NumKaetzchenWorkers:          1,
 			SchedulerExternalMemoryQueue: false,
 			SchedulerQueueSize:           0,
 			SchedulerMaxBurst:            16,
 			UnwrapDelay:                  10,
-			ProviderDelay:                0,
+			GatewayDelay:                 0,
+			ServiceDelay:                 0,
 			KaetzchenDelay:               750,
 			SchedulerSlack:               10,
 			SendSlack:                    50,

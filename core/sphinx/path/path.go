@@ -151,18 +151,20 @@ func selectHops(rng *mRand.Rand, doc *pki.Document, src, dst *pki.MixDescriptor,
 		return nil, err
 	}
 	if isForward {
-		if !dst.Provider {
-			return nil, fmt.Errorf("path: invalid destination (non provider): %x", hash.Sum256(dst.IdentityKey))
+		if !dst.IsServiceNode {
+			return nil, fmt.Errorf("path: invalid destination (non service node): %x", hash.Sum256(dst.IdentityKey))
 		}
 		if isFromClient {
 			// Client packets must span provider to provider.
-			if !src.Provider {
-				return nil, fmt.Errorf("path: invalid source from client (non provider): %x", hash.Sum256(src.IdentityKey))
+			if !src.IsGatewayNode {
+				return nil, fmt.Errorf("path: invalid source from client (non gateway node): %x", hash.Sum256(src.IdentityKey))
 			}
 			nHops = len(doc.Topology) + 2
 		} else {
 			switch int(srcLayer) {
-			case pki.LayerProvider:
+			case pki.LayerGateway:
+				startLayer = 0
+			case pki.LayerService:
 				startLayer = 0
 			case len(doc.Topology) - 1:
 				return []*pki.MixDescriptor{dst}, nil
@@ -172,12 +174,14 @@ func selectHops(rng *mRand.Rand, doc *pki.Document, src, dst *pki.MixDescriptor,
 			nHops = len(doc.Topology) - startLayer
 		}
 	} else {
-		if srcLayer != pki.LayerProvider {
+		if srcLayer != pki.LayerService {
 			return nil, fmt.Errorf("path: invalid source layer: %v", srcLayer)
 		}
 
 		switch int(dstLayer) {
-		case pki.LayerProvider:
+		case pki.LayerGateway:
+			nHops = len(doc.Topology) + 1
+		case pki.LayerService:
 			nHops = len(doc.Topology) + 1
 		case 0:
 			return []*pki.MixDescriptor{dst}, nil

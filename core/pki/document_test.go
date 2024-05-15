@@ -34,13 +34,14 @@ import (
 var testingSchemeName = "xwing"
 var testingScheme = schemes.ByName(testingSchemeName)
 
-func genDescriptor(require *require.Assertions, idx int, provider bool) *MixDescriptor {
+func genDescriptor(require *require.Assertions, idx int, isGatewayNode, isServiceNode bool) *MixDescriptor {
 	d := new(MixDescriptor)
 	d.Name = fmt.Sprintf("gen%d.example.net", idx)
 	d.Addresses = map[string][]string{
 		TransportTCPv4: []string{fmt.Sprintf("192.0.2.%d:4242", idx)},
 	}
-	d.Provider = provider
+	d.IsGatewayNode = isGatewayNode
+	d.IsServiceNode = isServiceNode
 	d.Epoch = debugTestEpoch
 	d.Version = DescriptorVersion
 	d.LoadWeight = 23
@@ -62,7 +63,7 @@ func genDescriptor(require *require.Assertions, idx int, provider bool) *MixDesc
 		require.NoError(err, "[%d]: ecdh.NewKeypair()", e)
 		d.MixKeys[uint64(e)] = mPriv.Public().Bytes()
 	}
-	if provider {
+	if isServiceNode {
 		d.Kaetzchen = make(map[string]map[string]interface{})
 		d.Kaetzchen["miau"] = map[string]interface{}{
 			"endpoint":  "+miau",
@@ -105,20 +106,20 @@ func TestDocument(t *testing.T) {
 	idx := 1
 	for l := 0; l < 3; l++ {
 		for i := 0; i < 5; i++ {
-			provider := false
-			d := genDescriptor(require, idx, provider)
-			_, err := d.MarshalBinary()
-			require.NoError(err)
+			isGatewayNode := false
+			isServiceNode := false
+			d := genDescriptor(require, idx, isGatewayNode, isServiceNode)
 			doc.Topology[l] = append(doc.Topology[l], d)
 			idx++
 		}
 	}
 	for i := 0; i < 3; i++ {
-		provider := true
-		d := genDescriptor(require, idx, provider)
+		isGatewayNode := false
+		isServiceNode := true
+		d := genDescriptor(require, idx, isGatewayNode, isServiceNode)
 		_, err := d.MarshalBinary()
 		require.NoError(err)
-		doc.Providers = append(doc.Providers, d)
+		doc.GatewayNodes = append(doc.GatewayNodes, d)
 		idx++
 	}
 
@@ -173,10 +174,10 @@ func TestDocument(t *testing.T) {
 	}
 
 	// check that Providers are the same
-	for i, provider := range ddoc.Providers {
+	for i, provider := range ddoc.GatewayNodes {
 		d, err := provider.MarshalBinary()
 		require.NoError(err)
-		d2, err := doc.Providers[i].MarshalBinary()
+		d2, err := doc.GatewayNodes[i].MarshalBinary()
 		require.NoError(err)
 		require.True(bytes.Equal(d, d2))
 	}

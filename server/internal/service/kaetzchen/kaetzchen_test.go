@@ -37,7 +37,6 @@ import (
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
-	"github.com/katzenpost/katzenpost/core/thwack"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/loops"
 	"github.com/katzenpost/katzenpost/server/config"
@@ -130,6 +129,10 @@ type mockDecoy struct{}
 
 func (d *mockDecoy) Halt() {}
 
+func (d *mockDecoy) ExpectReply(pkt *packet.Packet) bool {
+	return false
+}
+
 func (d *mockDecoy) OnNewDocument(*pkicache.Entry) {}
 
 func (d *mockDecoy) OnPacket(*packet.Packet) {}
@@ -144,10 +147,10 @@ type mockServer struct {
 	identityKey       sign.PrivateKey
 	identityPublicKey sign.PublicKey
 	linkKey           kem.PrivateKey
-	management        *thwack.Server
 	mixKeys           glue.MixKeys
 	pki               glue.PKI
-	provider          glue.Provider
+	gateway           glue.Gateway
+	service           glue.ServiceNode
 	scheduler         glue.Scheduler
 	connector         glue.Connector
 	listeners         []glue.Listener
@@ -177,10 +180,6 @@ func (g *mockGlue) LinkKey() kem.PrivateKey {
 	return g.s.linkKey
 }
 
-func (g *mockGlue) Management() *thwack.Server {
-	return g.s.management
-}
-
 func (g *mockGlue) MixKeys() glue.MixKeys {
 	return g.s.mixKeys
 }
@@ -189,8 +188,12 @@ func (g *mockGlue) PKI() glue.PKI {
 	return g.s.pki
 }
 
-func (g *mockGlue) Provider() glue.Provider {
-	return g.s.provider
+func (g *mockGlue) Gateway() glue.Gateway {
+	return g.s.gateway
+}
+
+func (g *mockGlue) ServiceNode() glue.ServiceNode {
+	return g.s.service
 }
 
 func (g *mockGlue) Scheduler() glue.Scheduler {
@@ -262,12 +265,13 @@ func TestKaetzchenWorker(t *testing.T) {
 	goo := &mockGlue{
 		s: &mockServer{
 			logBackend: logBackend,
-			provider:   mockProvider,
+			gateway:    mockProvider,
+			service:    mockProvider,
 			linkKey:    linkKey,
 			cfg: &config.Config{
 				Server:  &config.Server{},
 				Logging: &config.Logging{},
-				Provider: &config.Provider{
+				ServiceNode: &config.ServiceNode{
 					Kaetzchen: []*config.Kaetzchen{
 						&config.Kaetzchen{
 							Capability: "echo",
@@ -277,8 +281,7 @@ func TestKaetzchenWorker(t *testing.T) {
 						},
 					},
 				},
-				PKI:        &config.PKI{},
-				Management: &config.Management{},
+				PKI: &config.PKI{},
 				Debug: &config.Debug{
 					NumKaetzchenWorkers: 3,
 					KaetzchenDelay:      300,
