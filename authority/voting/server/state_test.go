@@ -555,6 +555,7 @@ func genMixConfig(name string, pki *sConfig.PKI, port uint16) (*identityKey, *sC
 	// Server section.
 	cfg.Server = new(sConfig.Server)
 	cfg.Server.WireKEM = testingSchemeName
+	cfg.Server.PKISignatureScheme = testingSchemeName
 	cfg.Server.Identifier = name
 	cfg.Server.Addresses = []string{fmt.Sprintf("127.0.0.1:%d", port)}
 	cfg.Server.IsProvider = false
