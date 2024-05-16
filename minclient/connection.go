@@ -302,7 +302,7 @@ func (c *connection) doConnect(dialCtx context.Context) {
 			}
 		}
 		for i := 0; i < len(transports); i++ {
-			if v, ok := c.descriptor.Addresses[cpki.Transport(transports[i])]; ok {
+			if v, ok := c.descriptor.Addresses[transports[i]]; ok {
 				dstAddrs = append(dstAddrs, v...)
 			}
 		}
