@@ -37,7 +37,7 @@ var testingScheme = schemes.ByName(testingSchemeName)
 func genDescriptor(require *require.Assertions, idx int, isGatewayNode, isServiceNode bool) *MixDescriptor {
 	d := new(MixDescriptor)
 	d.Name = fmt.Sprintf("gen%d.example.net", idx)
-	d.Addresses = map[string][]string{
+	d.Addresses = map[Transport][]string{
 		TransportTCPv4: []string{fmt.Sprintf("192.0.2.%d:4242", idx)},
 	}
 	d.IsGatewayNode = isGatewayNode
@@ -181,12 +181,4 @@ func TestDocument(t *testing.T) {
 		require.NoError(err)
 		require.True(bytes.Equal(d, d2))
 	}
-
-	// test that we can unmarshal a document
-	docblob, err := doc.Serialize()
-	require.NoError(err)
-
-	doc2 := &Document{}
-	err = doc2.Deserialize(docblob)
-	require.NoError(err)
 }

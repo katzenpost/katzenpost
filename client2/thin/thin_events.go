@@ -127,8 +127,7 @@ type NewPKIDocumentEvent struct {
 
 // String returns a string representation of a NewDocumentEvent.
 func (e *NewPKIDocumentEvent) String() string {
-	doc := &cpki.Document{}
-	err := doc.Deserialize(e.Payload)
+	doc, err := cpki.ParseDocument(e.Payload)
 	if err != nil {
 		panic(err)
 	}

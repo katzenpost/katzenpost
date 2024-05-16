@@ -43,8 +43,8 @@ func (c *Client) ComposeSphinxPacket(request *Request) (pkt []byte, surbkey []by
 		// Select the forward path.
 		now := time.Unix(unixTime, 0)
 
-		if c.conn.provider == nil {
-			panic("source provider cannot be nil")
+		if c.conn.gateway == nil {
+			panic("source gateway cannot be nil")
 		}
 
 		fwdPath, then, err := c.makePath(request.RecipientQueueID, request.DestinationIdHash, request.SURBID, now, true)
@@ -129,17 +129,17 @@ func (c *Client) SendPacket(pkt []byte) error {
 	return err
 }
 
-func (c *Client) makePath(recipient []byte, provider *[32]byte, surbID *[sConstants.SURBIDLength]byte, baseTime time.Time, isForward bool) ([]*path.PathHop, time.Time, error) {
-	if c.conn.provider == nil {
-		panic("c.conn.provider is nil")
+func (c *Client) makePath(recipient []byte, gateway *[32]byte, surbID *[sConstants.SURBIDLength]byte, baseTime time.Time, isForward bool) ([]*path.PathHop, time.Time, error) {
+	if c.conn.gateway == nil {
+		panic("c.conn.gateway is nil")
 	}
-	if provider == nil {
-		panic("provider is nil")
+	if gateway == nil {
+		panic("gateway is nil")
 	}
 
-	srcProvider, dstProvider := c.conn.provider, provider
+	srcGateway, dstGateway := c.conn.gateway, gateway
 	if !isForward {
-		srcProvider, dstProvider = dstProvider, srcProvider
+		srcGateway, dstGateway = dstGateway, srcGateway
 	}
 
 	// Get the current PKI document.
@@ -149,13 +149,13 @@ func (c *Client) makePath(recipient []byte, provider *[32]byte, surbID *[sConsta
 	}
 
 	// Get the descriptors.
-	src, err := doc.GetProviderByKeyHash(srcProvider)
+	src, err := doc.GetGatewayByKeyHash(srcGateway)
 	if err != nil {
-		return nil, time.Time{}, newPKIError("client2: failed to find source Provider: %v", err)
+		return nil, time.Time{}, newPKIError("client2: failed to find source Gateway: %v", err)
 	}
-	dst, err := doc.GetProviderByKeyHash(dstProvider)
+	dst, err := doc.GetGatewayByKeyHash(dstGateway)
 	if err != nil {
-		return nil, time.Time{}, newPKIError("client2: failed to find destination Provider: %v", err)
+		return nil, time.Time{}, newPKIError("client2: failed to find destination Gateway: %v", err)
 	}
 
 	rng := rand.NewMath()

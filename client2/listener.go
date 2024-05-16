@@ -129,8 +129,8 @@ func (l *listener) onNewConn(conn *net.UnixConn) {
 	}
 
 	l.log.Debug("send pki doc")
-	mydoc := doc.CopyWithoutSignatures()
-	docBlob, err := mydoc.Serialize()
+	mydoc := doc
+	docBlob, err := mydoc.MarshalBinary()
 	if err != nil {
 		l.log.Errorf("cbor fail: %s", err)
 	}
@@ -191,8 +191,8 @@ func (l *listener) doUpdateConnectionStatus(status error) {
 func (l *listener) doUpdateFromPKIDoc(doc *cpki.Document) {
 	// send doc to all thin clients
 
-	mydoc := doc.CopyWithoutSignatures()
-	docBlob, err := mydoc.Serialize()
+	mydoc := doc
+	docBlob, err := mydoc.MarshalBinary()
 	if err != nil {
 		l.log.Errorf("cbor marshal failed: %s", err.Error())
 		return

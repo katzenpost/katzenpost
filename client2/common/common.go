@@ -7,21 +7,21 @@ import (
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 )
 
-// ServiceDescriptor describe a mixnet Provider-side service.
+// ServiceDescriptor describe a mixnet Gateway-side service.
 type ServiceDescriptor struct {
 	// RecipientQueueID is the service name or queue ID.
 	RecipientQueueID []byte
-	// Provider name.
+	// Gateway name.
 	MixDescriptor *cpki.MixDescriptor
 }
 
-// FindServices is a helper function for finding Provider-side services in the PKI document.
+// FindServices is a helper function for finding Gateway-side services in the PKI document.
 func FindServices(capability string, doc *cpki.Document) []*ServiceDescriptor {
 	if doc == nil {
 		panic("pki doc is nil")
 	}
 	services := []*ServiceDescriptor{}
-	for _, provider := range doc.Providers {
+	for _, provider := range doc.GatewayNodes {
 		for cap := range provider.Kaetzchen {
 			if cap == capability {
 				serviceID := &ServiceDescriptor{

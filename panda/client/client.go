@@ -26,6 +26,7 @@ import (
 	"github.com/charmbracelet/log"
 	"github.com/ugorji/go/codec"
 
+	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/katzenpost/client2/thin"
 	"github.com/katzenpost/katzenpost/panda/common"
 )
@@ -75,11 +76,12 @@ func (p *Panda) Exchange(id, message []byte, shutdown <-chan interface{}) ([]byt
 		p.log.Debugf("PANDA exchange sending kaetzchen query to %s@%s", p.recipient, p.provider)
 		mesgID := p.session.NewMessageID()
 		doc := p.session.PKIDocument()
-		providerKey, err := doc.GetProviderKeyHash(p.provider)
+		providerKey, err := doc.GetServiceNode(p.provider)
 		if err != nil {
 			return nil, err
 		}
-		reply, err := p.session.BlockingSendReliableMessage(mesgID, rawRequest, providerKey, p.recipient)
+		id := hash.Sum256(providerKey.IdentityKey)
+		reply, err := p.session.BlockingSendReliableMessage(mesgID, rawRequest, &id, p.recipient)
 		if err != nil {
 			// do not spin on error and retry connection
 			goto Sleep

@@ -14,7 +14,6 @@ import (
 	"github.com/katzenpost/katzenpost/core/cert"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/pki"
-	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/sphinx/path"
@@ -96,7 +95,7 @@ func newTestDecoy() *decoy {
 	}
 }
 
-func checkSegments(t *testing.T, data map[[loops.SegmentIDSize]byte]int, fwdPath, revPath []*sphinx.PathHop, label string) {
+func checkSegments(t *testing.T, data map[[loops.SegmentIDSize]byte]int, fwdPath, revPath []*path.PathHop, label string) {
 	fwdSegments := pathToSegments(fwdPath)
 	revSegments := pathToSegments(revPath)
 
@@ -113,7 +112,7 @@ func checkSegments(t *testing.T, data map[[loops.SegmentIDSize]byte]int, fwdPath
 	}
 }
 
-func createPaths(numMixes, numProviders int) ([]*sphinx.PathHop, []*sphinx.PathHop, error) {
+func createPaths(numMixes, numProviders int) ([]*path.PathHop, []*path.PathHop, error) {
 	epoch, _, _ := epochtime.Now()
 	doc, err := generateMixnet(numMixes, numProviders, numProviders, epoch)
 	if err != nil {

@@ -25,6 +25,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/katzenpost/client2/thin"
 	"github.com/katzenpost/katzenpost/reunion/commands"
 )
@@ -64,7 +65,7 @@ func (k *Transport) CurrentEpochs() ([]uint64, error) {
 	}
 
 	// Verify the service is still advertising valid epochs in the current PKI
-	doc := k.Session.CurrentDocument()
+	doc := k.Session.PKIDocument()
 	p, err := doc.GetGateway(k.Provider)
 	if err != nil {
 		return nil, errors.New("Provider not found in PKI")
@@ -86,11 +87,12 @@ func (k *Transport) CurrentEpochs() ([]uint64, error) {
 func (k *Transport) Query(command commands.Command) (commands.Command, error) {
 	mesgID := k.Session.NewMessageID()
 	doc := k.Session.PKIDocument()
-	providerKey, err := doc.GetProviderKeyHash(k.Provider)
+	providerKey, err := doc.GetServiceNode(k.Provider)
 	if err != nil {
 		return nil, err
 	}
-	reply, err := k.Session.BlockingSendReliableMessage(mesgID, command.ToBytes(), providerKey, k.Recipient)
+	id := hash.Sum256(providerKey.IdentityKey)
+	reply, err := k.Session.BlockingSendReliableMessage(mesgID, command.ToBytes(), &id, k.Recipient)
 	if err != nil {
 		return nil, err
 	}

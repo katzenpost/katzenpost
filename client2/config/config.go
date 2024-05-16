@@ -81,7 +81,7 @@ type Debug struct {
 
 	// PollingInterval is the interval in seconds that will be used to
 	// poll the receive queue.  By default this is 10 seconds.  Reducing
-	// the value too far WILL result in unnecessary Provider load, and
+	// the value too far WILL result in unnecessary Gateway load, and
 	// increasing the value too far WILL adversely affect large message
 	// transmit performance.
 	PollingInterval int
@@ -137,10 +137,10 @@ func (uCfg *UpstreamProxy) toProxyConfig() (*proxy.Config, error) {
 	return cfg, nil
 }
 
-// Provider describes all necessary Provider connection information
-// so that clients can connect to the Provider and use the mixnet
+// Gateway describes all necessary Gateway connection information
+// so that clients can connect to the Gateway and use the mixnet
 // and retrieve cached PKI documents.
-type Provider struct {
+type Gateway struct {
 	// WireKEMScheme specifies which KEM to use with our PQ Noise based wire protocol.
 	WireKEMScheme string
 
@@ -158,7 +158,7 @@ type Provider struct {
 	Addresses map[string][]string
 }
 
-func (p *Provider) UnmarshalTOML(v interface{}) error {
+func (p *Gateway) UnmarshalTOML(v interface{}) error {
 
 	data, _ := v.(map[string]interface{})
 	p.Name = data["Name"].(string)
@@ -205,8 +205,8 @@ type VotingAuthority struct {
 	Peers []*vServerConfig.Authority
 }
 
-type Providers struct {
-	Providers []*Provider
+type Gateways struct {
+	Gateways []*Gateway
 }
 
 type Callbacks struct {
@@ -265,13 +265,13 @@ type Config struct {
 	Debug *Debug
 
 	// CachedDocument is a PKI Document that has a MixDescriptor
-	// containg the Addresses and LinkKeys of minclient's Provider
+	// containg the Addresses and LinkKeys of minclient's Gateway
 	// so that it can connect directly without contacting an Authority.
 	CachedDocument *cpki.Document
 
-	// PinnedProviders is information about a set of Providers; the required information that lets clients initially
+	// PinnedGateways is information about a set of Gateways; the required information that lets clients initially
 	// connect and download a cached PKI document.
-	PinnedProviders *Providers
+	PinnedGateways *Gateways
 
 	// VotingAuthority contains the voting authority peer public configuration.
 	VotingAuthority *VotingAuthority
@@ -302,8 +302,8 @@ func (c *Config) FixupAndValidate() error {
 	if kemscheme == nil {
 		return errors.New("WireKEMScheme is nil")
 	}
-	if c.PinnedProviders == nil {
-		return errors.New("config: No PinnedProviders block was present")
+	if c.PinnedGateways == nil {
+		return errors.New("config: No PinnedGateways block was present")
 	}
 	if c.SphinxGeometry == nil {
 		return errors.New("config: No SphinxGeometry block was present")

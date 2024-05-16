@@ -107,16 +107,16 @@ func (s *katzenpost) genClient2Cfg() error {
 	cfg.Debug = &cConfig2.Debug{DisableDecoyTraffic: false}
 
 	log.Debug("before gathering providers")
-	providers := make([]*cConfig2.Provider, 0)
+	providers := make([]*cConfig2.Gateway, 0)
 	for i := 0; i < len(s.nodeConfigs); i++ {
-		if s.nodeConfigs[i].Provider == nil {
+		if s.nodeConfigs[i].Gateway == nil {
 			continue
 		}
 
 		idPubKey := cfgIdKey(s.nodeConfigs[i], s.outDir)
 		linkPubKey := cfgLinkKey(s.nodeConfigs[i], s.outDir, cfg.WireKEMScheme)
 
-		provider := &cConfig2.Provider{
+		provider := &cConfig2.Gateway{
 			WireKEMScheme: s.wireKEMScheme,
 			Name:          s.nodeConfigs[i].Server.Identifier,
 			IdentityKey:   idPubKey,
@@ -131,8 +131,8 @@ func (s *katzenpost) genClient2Cfg() error {
 		panic("wtf 0 providers")
 	}
 	log.Debug("after gathering providers")
-	cfg.PinnedProviders = &cConfig2.Providers{
-		Providers: providers,
+	cfg.PinnedGateways = &cConfig2.Gateways{
+		Gateways: providers,
 	}
 
 	log.Debug("before save config")

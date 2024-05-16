@@ -128,9 +128,10 @@ func (vACfg *VotingAuthority) New(l *log.Backend, pCfg *proxy.Config, linkKey ke
 	}
 	linkHash := blake2b.Sum256(blob)
 	cfg := &vClient.Config{
-		KEMScheme:     scheme,
-		LinkKey:       linkKey,
-		LogBackend:    l.GetLogWriter("client", "info"),
+		KEMScheme: scheme,
+		LinkKey:   linkKey,
+		// XXX FIXME
+		//LogBackend:    l.GetLogWriter("client", "info"),
 		Authorities:   vACfg.Peers,
 		DialContextFn: pCfg.ToDialContext(fmt.Sprintf("voting: %x", linkHash)),
 		Geo:           mygeo,

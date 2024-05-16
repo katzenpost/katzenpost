@@ -27,8 +27,8 @@ import (
 
 var (
 	// ErrNotConnected is the error returned when an operation fails due to the
-	// client not currently being connected to the Provider.
-	ErrNotConnected = errors.New("client/conn: not connected to the Provider")
+	// client not currently being connected to the Gateway.
+	ErrNotConnected = errors.New("client/conn: not connected to the Gateway")
 
 	// ErrShutdown is the error returned when the connection is closed due to
 	// a call to Shutdown().
@@ -108,8 +108,8 @@ type connection struct {
 	isConnectedLock sync.RWMutex
 	isConnected     bool
 
-	provider *[32]byte
-	queueID  []byte
+	gateway *[32]byte
+	queueID []byte
 
 	isShutdown bool
 }
@@ -160,30 +160,30 @@ func (c *connection) getDescriptor() error {
 	doc := c.client.CurrentDocument()
 	if doc == nil && c.client.cfg.CachedDocument == nil {
 		c.log.Debugf("No PKI document for current epoch or cached PKI document provide.")
-		n := len(c.client.cfg.PinnedProviders.Providers)
+		n := len(c.client.cfg.PinnedGateways.Gateways)
 		if n == 0 {
-			return errors.New("No PinnedProviders")
+			return errors.New("No PinnedGateways")
 		}
-		provider := c.client.cfg.PinnedProviders.Providers[rand.NewMath().Intn(n)]
-		idHash := hash.Sum256From(provider.IdentityKey)
-		c.provider = &idHash
+		gateway := c.client.cfg.PinnedGateways.Gateways[rand.NewMath().Intn(n)]
+		idHash := hash.Sum256From(gateway.IdentityKey)
+		c.gateway = &idHash
 
-		idkey, err := provider.IdentityKey.MarshalBinary()
+		idkey, err := gateway.IdentityKey.MarshalBinary()
 		if err != nil {
 			return err
 		}
 
-		linkkey, err := provider.LinkKey.MarshalBinary()
+		linkkey, err := gateway.LinkKey.MarshalBinary()
 		if err != nil {
 			return err
 		}
 
 		c.descriptor = &cpki.MixDescriptor{
-			Name:        provider.Name,
-			IdentityKey: idkey,
-			LinkKey:     linkkey,
-			Addresses:   provider.Addresses,
-			Provider:    true,
+			Name:          gateway.Name,
+			IdentityKey:   idkey,
+			LinkKey:       linkkey,
+			Addresses:     gateway.Addresses,
+			IsGatewayNode: true,
 		}
 		ok = true
 		return nil
@@ -191,21 +191,21 @@ func (c *connection) getDescriptor() error {
 		doc = c.client.cfg.CachedDocument
 	}
 	if doc != nil {
-		n := len(doc.Providers)
+		n := len(doc.GatewayNodes)
 		if n == 0 {
-			return errors.New("invalid PKI doc, zero Providers")
+			return errors.New("invalid PKI doc, zero Gateways")
 		}
-		provider := doc.Providers[rand.NewMath().Intn(n)]
-		idHash := hash.Sum256(provider.IdentityKey)
-		c.provider = &idHash
-		desc, err := doc.GetProvider(provider.Name)
+		gateway := doc.GatewayNodes[rand.NewMath().Intn(n)]
+		idHash := hash.Sum256(gateway.IdentityKey)
+		c.gateway = &idHash
+		desc, err := doc.GetGateway(gateway.Name)
 		if err != nil {
-			c.log.Debugf("Failed to find descriptor for Provider: %v", err)
-			return newPKIError("failed to find descriptor for Provider: %v", err)
+			c.log.Debugf("Failed to find descriptor for Gateway: %v", err)
+			return newPKIError("failed to find descriptor for Gateway: %v", err)
 		}
-		if !hmac.Equal(provider.IdentityKey, desc.IdentityKey) {
-			c.log.Errorf("Provider identity key does not match pinned key: %v", desc.IdentityKey)
-			return newPKIError("identity key for Provider does not match pinned key: %v", desc.IdentityKey)
+		if !hmac.Equal(gateway.IdentityKey, desc.IdentityKey) {
+			c.log.Errorf("Gateway identity key does not match pinned key: %v", desc.IdentityKey)
+			return newPKIError("identity key for Gateway does not match pinned key: %v", desc.IdentityKey)
 		}
 		if desc != c.descriptor {
 			c.log.Debugf("Descriptor for epoch %v: %+v", doc.Epoch, desc)
@@ -595,7 +595,7 @@ func (c *connection) onWireConn(w *wire.Session) {
 		// Update the cached descriptor, and re-validate the connection.
 		if !c.IsPeerValid(creds) {
 			c.log.Warnf("No longer have a descriptor for current peer.")
-			wireErr = newProtocolError("current consensus no longer lists the Provider")
+			wireErr = newProtocolError("current consensus no longer lists the Gateway")
 			return
 		}
 
