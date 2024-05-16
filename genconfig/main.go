@@ -144,6 +144,7 @@ func (s *katzenpost) genNodeConfig(isProvider bool, isVoting bool) error {
 	// Server section.
 	cfg.Server = new(sConfig.Server)
 	cfg.Server.WireKEM = s.wireKEMScheme
+	cfg.Server.PKISignatureScheme = "Ed25519 Sphincs+" // todo: make this configurable
 	cfg.Server.Identifier = n
 	cfg.Server.Addresses = []string{fmt.Sprintf("%s:%d", s.bindAddr, s.lastPort)}
 	cfg.Server.DataDir = filepath.Join(s.baseDir, n)
