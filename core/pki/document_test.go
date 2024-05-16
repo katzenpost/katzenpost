@@ -101,6 +101,7 @@ func TestDocument(t *testing.T) {
 		SharedRandomReveal: make(map[[PublicKeyHashSize]byte][]byte),
 		SharedRandomValue:  make([]byte, SharedRandomValueLength),
 		Version:            DocumentVersion,
+		PKISignatureScheme: testDocumentSignatureScheme.Name(),
 	}
 	idx := 1
 	for l := 0; l < 3; l++ {
