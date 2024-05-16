@@ -297,7 +297,7 @@ func (s *katzenpost) genVotingAuthoritiesCfg(numAuthorities int, parameters *vCo
 			IdentityPublicKey:  idKey,
 			LinkPublicKey:      linkKey,
 			WireKEMScheme:      wirekem,
-			PKISignatureScheme: pkiSignatureScheme, // todo: make this configurable
+			PKISignatureScheme: pkiSignatureScheme.Name(), // todo: make this configurable
 			Addresses:          cfg.Server.Addresses,
 		}
 		s.authorities[hash.Sum256From(idKey)] = authority

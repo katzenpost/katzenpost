@@ -152,7 +152,7 @@ func TestVote(t *testing.T) {
 		require.NoError(err)
 		auth := &config.Authority{Addresses: aCfg.Server.Addresses,
 			WireKEMScheme:      testingSchemeName,
-			PKISignatureScheme: testSignatureScheme,
+			PKISignatureScheme: testSignatureScheme.Name(),
 			IdentityPublicKey:  peerKeys[i].idPubKey,
 			LinkPublicKey:      peerKeys[i].linkKey.Public(),
 		}
@@ -432,7 +432,7 @@ func genVotingAuthoritiesCfg(parameters *config.Parameters, numAuthorities int) 
 		}
 		configs = append(configs, cfg)
 		authorityPeer := &config.Authority{
-			PKISignatureScheme: testSignatureScheme,
+			PKISignatureScheme: testSignatureScheme.Name(),
 			IdentityPublicKey:  idPubKey,
 			LinkPublicKey:      linkPubKey,
 			Addresses:          cfg.Server.Addresses,

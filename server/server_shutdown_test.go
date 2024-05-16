@@ -100,7 +100,7 @@ func TestServerStartShutdown(t *testing.T) {
 				Authorities: []*aconfig.Authority{
 					&aconfig.Authority{
 						WireKEMScheme:      testingSchemeName,
-						PKISignatureScheme: testSignatureScheme,
+						PKISignatureScheme: testSignatureScheme.Name(),
 						Identifier:         "auth1",
 						IdentityPublicKey:  authPubkey,
 						LinkPublicKey:      authLinkPubKey,

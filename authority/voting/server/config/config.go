@@ -258,7 +258,7 @@ type Authority struct {
 	// the public identity key key.
 	IdentityPublicKey sign.PublicKey
 
-	PKISignatureScheme sign.Scheme
+	PKISignatureScheme string
 
 	// LinkPublicKeyPem is string containing the PEM format of the peer's public link layer key.
 	LinkPublicKey kem.PublicKey
@@ -277,19 +277,19 @@ func (a *Authority) UnmarshalTOML(v interface{}) error {
 		return errors.New("type assertion failed")
 	}
 
-	pkiSignatureScheme, ok := data["PKISignatureScheme"].(string)
+	pkiSignatureSchemeStr, ok := data["PKISignatureScheme"].(string)
 	if !ok {
 		return errors.New("PKISignatureScheme failed type assertion")
 	}
-
-	a.PKISignatureScheme = signSchemes.ByName(pkiSignatureScheme)
-	if a.PKISignatureScheme == nil {
+	pkiSignatureScheme := signSchemes.ByName(pkiSignatureSchemeStr)
+	if pkiSignatureScheme == nil {
 		return fmt.Errorf("pki signature scheme `%s` not found", pkiSignatureScheme)
 	}
+	a.PKISignatureScheme = pkiSignatureSchemeStr
 
 	// identifier
 	var err error
-	a.IdentityPublicKey, _, err = a.PKISignatureScheme.GenerateKey()
+	a.IdentityPublicKey, _, err = pkiSignatureScheme.GenerateKey()
 	if err != nil {
 		return err
 	}
@@ -301,7 +301,7 @@ func (a *Authority) UnmarshalTOML(v interface{}) error {
 	// identity key
 	idPublicKeyString, _ := data["IdentityPublicKey"].(string)
 
-	a.IdentityPublicKey, err = signpem.FromPublicPEMString(idPublicKeyString, a.PKISignatureScheme)
+	a.IdentityPublicKey, err = signpem.FromPublicPEMString(idPublicKeyString, pkiSignatureScheme)
 	if err != nil {
 		return err
 	}
