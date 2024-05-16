@@ -227,8 +227,8 @@ func generateNodes(isGatewayNode, isServiceNode bool, num int, epoch uint64) ([]
 			IdentityKey: blob,
 			LinkKey:     linkKeyBlob,
 			MixKeys:     mixKeys,
-			Addresses: map[pki.Transport][]string{
-				pki.Transport("tcp4"): []string{fmt.Sprintf("127.0.0.1:%d", i+1)},
+			Addresses: map[string][]string{
+				"tcp4": []string{fmt.Sprintf("127.0.0.1:%d", i+1)},
 			},
 			Kaetzchen:     nil,
 			IsServiceNode: isServiceNode,
