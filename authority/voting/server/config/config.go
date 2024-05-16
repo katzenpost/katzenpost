@@ -567,7 +567,7 @@ func (cfg *Config) FixupAndValidate(forceGenOnly bool) error {
 
 	pkiSignatureScheme := signSchemes.ByName(cfg.Server.PKISignatureScheme)
 
-	allNodes := make([]*Node, 0, len(cfg.Mixes)+len(cfg.Providers))
+	allNodes := make([]*Node, 0, len(cfg.Mixes)+len(cfg.GatewayNodes)+len(cfg.ServiceNodes))
 	for _, v := range cfg.Mixes {
 		allNodes = append(allNodes, v)
 	}
