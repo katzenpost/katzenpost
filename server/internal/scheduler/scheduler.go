@@ -1,18 +1,5 @@
-// scheduler.go - Katzenpost server scheduler.
-// Copyright (C) 2017  Yawning Angel.
-//
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU Affero General Public License as
-// published by the Free Software Foundation, either version 3 of the
-// License, or (at your option) any later version.
-//
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU Affero General Public License for more details.
-//
-// You should have received a copy of the GNU Affero General Public License
-// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+// SPDX-FileCopyrightText: Copyright (C) 2017  Yawning Angel.
+// SPDX-License-Identifier: AGPL 3.0
 
 // Package scheduler implements the Katzenpost server scheduler.
 package scheduler
@@ -21,6 +8,8 @@ import (
 	"math"
 	"time"
 
+	"gopkg.in/op/go-logging.v1"
+
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/katzenpost/katzenpost/server/internal/constants"
@@ -28,9 +17,9 @@ import (
 	"github.com/katzenpost/katzenpost/server/internal/glue"
 	"github.com/katzenpost/katzenpost/server/internal/instrument"
 	"github.com/katzenpost/katzenpost/server/internal/packet"
-	"gopkg.in/eapache/channels.v1"
-	"gopkg.in/op/go-logging.v1"
 )
+
+const InboundPacketsChannelSize = 1000
 
 type queueImpl interface {
 	Halt()
@@ -46,14 +35,14 @@ type scheduler struct {
 	log  *logging.Logger
 
 	q          queueImpl
-	inCh       *channels.InfiniteChannel
-	outCh      *channels.BatchingChannel
+	inCh       chan interface{}
+	outCh      *BatchingChannel
 	maxDelayCh chan uint64
 }
 
 func (sch *scheduler) Halt() {
 	sch.Worker.Halt()
-	sch.inCh.Close()
+	close(sch.inCh)
 	sch.q.Halt()
 }
 
@@ -62,7 +51,7 @@ func (sch *scheduler) OnNewMixMaxDelay(newMixMaxDelay uint64) {
 }
 
 func (sch *scheduler) OnPacket(pkt *packet.Packet) {
-	sch.inCh.In() <- pkt
+	sch.inCh <- pkt
 }
 
 func (sch *scheduler) worker() {
@@ -204,6 +193,27 @@ func (sch *scheduler) worker() {
 	// NOTREACHED
 }
 
+func (sch *scheduler) pipeWorker() {
+loop:
+	for {
+		select {
+		case <-sch.HaltCh():
+			sch.log.Debugf("mix server's scheduler's pipe worker: Terminating gracefully.")
+			return
+		case elem, ok := <-sch.inCh:
+			if !ok {
+				break loop
+			}
+			select {
+			case <-sch.HaltCh():
+				sch.log.Debugf("mix server's scheduler's pipe worker: Terminating gracefully.")
+				return
+			case sch.outCh.In() <- elem:
+			}
+		}
+	}
+}
+
 // New constructs a new scheduler instance.
 func New(glue glue.Glue) (glue.Scheduler, error) {
 	const maxBatchSize = 64 // XXX: Tune.
@@ -211,8 +221,8 @@ func New(glue glue.Glue) (glue.Scheduler, error) {
 	sch := &scheduler{
 		glue:       glue,
 		log:        glue.LogBackend().GetLogger("scheduler"),
-		inCh:       channels.NewInfiniteChannel(),
-		outCh:      channels.NewBatchingChannel(maxBatchSize),
+		inCh:       make(chan interface{}, InboundPacketsChannelSize),
+		outCh:      NewBatchingChannel(maxBatchSize),
 		maxDelayCh: make(chan uint64),
 	}
 
@@ -227,8 +237,8 @@ func New(glue glue.Glue) (glue.Scheduler, error) {
 		sch.log.Noticef("Initializing memory queue.")
 		sch.q = newMemoryQueue(glue, sch.log)
 	}
-	channels.Pipe(sch.inCh, sch.outCh)
 
+	sch.Go(sch.pipeWorker)
 	sch.Go(sch.worker)
 	return sch, nil
 }

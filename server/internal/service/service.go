@@ -8,7 +8,6 @@ import (
 	"sync"
 	"time"
 
-	"gopkg.in/eapache/channels.v1"
 	"gopkg.in/op/go-logging.v1"
 
 	"github.com/katzenpost/katzenpost/core/worker"
@@ -18,6 +17,8 @@ import (
 	"github.com/katzenpost/katzenpost/server/internal/service/kaetzchen"
 )
 
+const InboundPacketsChannelSize = 1000
+
 type serviceNode struct {
 	sync.Mutex
 	worker.Worker
@@ -25,7 +26,7 @@ type serviceNode struct {
 	glue glue.Glue
 	log  *logging.Logger
 
-	ch *channels.InfiniteChannel
+	ch chan interface{}
 
 	kaetzchenWorker           *kaetzchen.KaetzchenWorker
 	cborPluginKaetzchenWorker *kaetzchen.CBORPluginWorker
@@ -34,13 +35,13 @@ type serviceNode struct {
 func (p *serviceNode) Halt() {
 	p.Worker.Halt()
 
-	p.ch.Close()
+	close(p.ch)
 	p.kaetzchenWorker.Halt()
 	p.cborPluginKaetzchenWorker.Halt()
 }
 
 func (p *serviceNode) OnPacket(pkt *packet.Packet) {
-	p.ch.In() <- pkt
+	p.ch <- pkt
 }
 
 func (p *serviceNode) KaetzchenForPKI() (map[string]map[string]interface{}, error) {
@@ -72,7 +73,7 @@ func (p *serviceNode) worker() {
 
 	defer p.log.Debugf("Halting Service worker.")
 
-	ch := p.ch.Out()
+	ch := p.ch
 
 	for {
 		var pkt *packet.Packet
@@ -146,7 +147,7 @@ func New(glue glue.Glue) (glue.ServiceNode, error) {
 	p := &serviceNode{
 		glue:                      glue,
 		log:                       glue.LogBackend().GetLogger("provider"),
-		ch:                        channels.NewInfiniteChannel(),
+		ch:                        make(chan interface{}, InboundPacketsChannelSize),
 		kaetzchenWorker:           kaetzchenWorker,
 		cborPluginKaetzchenWorker: cborPluginWorker,
 	}
