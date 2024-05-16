@@ -151,9 +151,10 @@ func TestVote(t *testing.T) {
 	for i, aCfg := range authCfgs {
 		require.NoError(err)
 		auth := &config.Authority{Addresses: aCfg.Server.Addresses,
-			WireKEMScheme:     testingSchemeName,
-			IdentityPublicKey: peerKeys[i].idPubKey,
-			LinkPublicKey:     peerKeys[i].linkKey.Public(),
+			WireKEMScheme:      testingSchemeName,
+			PKISignatureScheme: testSignatureScheme,
+			IdentityPublicKey:  peerKeys[i].idPubKey,
+			LinkPublicKey:      peerKeys[i].linkKey.Public(),
 		}
 		if len(aCfg.Server.Addresses) == 0 {
 			panic("wtf")
@@ -430,9 +431,10 @@ func genVotingAuthoritiesCfg(parameters *config.Parameters, numAuthorities int) 
 		}
 		configs = append(configs, cfg)
 		authorityPeer := &config.Authority{
-			IdentityPublicKey: idPubKey,
-			LinkPublicKey:     linkPubKey,
-			Addresses:         cfg.Server.Addresses,
+			PKISignatureScheme: testSignatureScheme,
+			IdentityPublicKey:  idPubKey,
+			LinkPublicKey:      linkPubKey,
+			Addresses:          cfg.Server.Addresses,
 		}
 		peersMap[hash.Sum256From(idPubKey)] = authorityPeer
 	}
