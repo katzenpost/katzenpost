@@ -406,6 +406,7 @@ func genVotingAuthoritiesCfg(parameters *config.Parameters, numAuthorities int) 
 		cfg.Server.Identifier = fmt.Sprintf("authority-%v", i)
 		cfg.Server.Addresses = []string{fmt.Sprintf("127.0.0.1:%d", lastPort)}
 		cfg.Server.DataDir = datadir
+		cfg.Server.PKISignatureScheme = testSignatureScheme.Name()
 		lastPort += 1
 
 		scheme := testingScheme
