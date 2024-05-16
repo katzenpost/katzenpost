@@ -287,6 +287,7 @@ func (s *state) getVote(epoch uint64) (*pki.Document, error) {
 		s.log.Debugf("Restoring genesisEpoch %d from document cache", d.GenesisEpoch)
 		s.genesisEpoch = d.GenesisEpoch
 		s.priorSRV = d.PriorSharedRandom
+		d.PKISignatureScheme = s.s.cfg.Server.PKISignatureScheme
 	} else {
 		s.log.Debugf("Setting genesisEpoch %d from votingEpoch", s.votingEpoch)
 		s.genesisEpoch = s.votingEpoch
@@ -544,6 +545,7 @@ func (s *state) getDocument(descriptors []*pki.MixDescriptor, params *config.Par
 		SharedRandomValue:  srv,
 		PriorSharedRandom:  s.priorSRV,
 		SphinxGeometryHash: s.geo.Hash(),
+		PKISignatureScheme: s.s.cfg.Server.PKISignatureScheme,
 	}
 	return doc
 }
