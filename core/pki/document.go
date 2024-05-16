@@ -163,7 +163,7 @@ type Document struct {
 	// Sphinx Geometry.
 	SphinxGeometryHash []byte
 
-	o // Version uniquely identifies the document format as being for the
+	// Version uniquely identifies the document format as being for the
 	// specified version so that it can be rejected if the format changes.
 	Version string
 }
