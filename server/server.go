@@ -20,7 +20,6 @@ package server
 import (
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 	"sync"
 
