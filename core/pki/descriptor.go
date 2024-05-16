@@ -125,8 +125,15 @@ type MixDescriptor struct {
 	// to parameters.
 	Kaetzchen map[string]map[string]interface{} `cbor:"omitempty"`
 
-	// Provider indicates that this Mix is a Provider
-	Provider bool
+	// IsGatewayNode indicates that this Mix is a gateway node.
+	// Essentially a gateway allows clients to interact with the mixnet.
+	// This option being set to true is mutually exclusive with
+	// `IsServiceNode` being set to true.
+	IsGatewayNode bool
+
+	// IsServiceNode indicates that this Mix is a service node.
+	// Service nodes run services which the mixnet interacts with.
+	IsServiceNode bool
 
 	// LoadWeight is the node's load balancing weight (unused).
 	LoadWeight uint8
@@ -222,9 +229,9 @@ func IsDescriptorWellFormed(d *MixDescriptor, epoch uint64) error {
 			expectedIPVer = 6
 		default:
 			// Unknown transports are only supported between the client and
-			// provider.
-			if !d.Provider {
-				return fmt.Errorf("Non-provider published Transport '%v'", transport)
+			// gateway.
+			if !d.IsGatewayNode {
+				return fmt.Errorf("Non-gateway published Transport '%v'", transport)
 			}
 			if transport != TransportTCP {
 				// Ignore transports that don't have validation logic.
@@ -266,7 +273,7 @@ func IsDescriptorWellFormed(d *MixDescriptor, epoch uint64) error {
 	if len(d.Addresses[TransportTCPv4]) == 0 {
 		return fmt.Errorf("Descriptor contains no TCPv4 addresses")
 	}
-	if !d.Provider {
+	if !d.IsServiceNode {
 		if d.Kaetzchen != nil {
 			return fmt.Errorf("Descriptor contains Kaetzchen when a mix")
 		}

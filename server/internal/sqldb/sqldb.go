@@ -72,7 +72,7 @@ func New(glue glue.Glue) (*SQLDB, error) {
 		log:  glue.LogBackend().GetLogger("sqldb"),
 	}
 
-	sCfg := glue.Config().Provider.SQLDB
+	sCfg := glue.Config().Gateway.SQLDB
 
 	switch sCfg.Backend {
 	case implPgx:

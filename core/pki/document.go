@@ -35,8 +35,12 @@ import (
 )
 
 const (
-	// LayerProvider is the Layer that providers list in their MixDescriptors.
-	LayerProvider           = 255
+	// LayerGateway is the Layer that gateways list in their MixDescriptors.
+	LayerGateway = 255
+
+	// LayerService is the Layer that service nodes list in their MixDescriptors.
+	LayerService = 254
+
 	PublicKeyHashSize       = 32
 	SharedRandomLength      = 40
 	SharedRandomValueLength = 32
@@ -122,12 +126,23 @@ type Document struct {
 	// LambdaMMaxDelay is the maximum send interval in milliseconds.
 	LambdaMMaxDelay uint64
 
+	// LambdaG is the inverse of the mean of the exponential distribution
+	// that mixes will sample to determine send timing of gateway node loop decoy traffic.
+	LambdaG float64
+
+	// LambdaMMaxDelay is the maximum send interval in milliseconds.
+	LambdaGMaxDelay uint64
+
 	// Topology is the mix network topology, excluding providers.
 	Topology [][]*MixDescriptor
 
-	// Providers is the list of providers that can interact with the mix
-	// network.
-	Providers []*MixDescriptor
+	// GatewayNodes is the list of nodes that can allow clients to interact
+	// with the mix network.
+	GatewayNodes []*MixDescriptor
+
+	// ServiceNodes is the list of nodes that can allow services to interact
+	// with tehe mix network.
+	ServiceNodes []*MixDescriptor
 
 	// Signatures holds detached Signatures from deserializing a signed Document
 	Signatures map[[PublicKeyHashSize]byte]cert.Signature `cbor:"-"`
@@ -178,7 +193,11 @@ func (d *Document) String() string {
 	}
 
 	s += "}\n"
-	s += fmt.Sprintf("Providers:[]{%v}", d.Providers)
+	s += fmt.Sprintf("GatewayNodes:[]{%v}", d.GatewayNodes)
+	s += "}}\n"
+
+	s += "}\n"
+	s += fmt.Sprintf("ServiceNodes:[]{%v}", d.ServiceNodes)
 	s += "}}\n"
 
 	for id, signedCommit := range d.SharedRandomCommit {
@@ -201,20 +220,30 @@ func (d *Document) String() string {
 	return s
 }
 
-// GetProvider returns the MixDescriptor for the given provider Name.
-func (d *Document) GetProvider(name string) (*MixDescriptor, error) {
-	for _, v := range d.Providers {
+// GetGateway returns the MixDescriptor for the given gateway Name.
+func (d *Document) GetGateway(name string) (*MixDescriptor, error) {
+	for _, v := range d.GatewayNodes {
 		if v.Name == name {
 			return v, nil
 		}
 	}
-	return nil, fmt.Errorf("pki: provider '%v' not found", name)
+	return nil, fmt.Errorf("pki: gateway node '%v' not found", name)
 }
 
-// GetProviderByKeyHash returns the specific provider descriptor corresponding
+// GetService returns the MixDescriptor for the given service Name.
+func (d *Document) GetServiceNode(name string) (*MixDescriptor, error) {
+	for _, v := range d.ServiceNodes {
+		if v.Name == name {
+			return v, nil
+		}
+	}
+	return nil, fmt.Errorf("pki: service node '%v' not found", name)
+}
+
+// GetGatewayByKeyHash returns the specific gateway descriptor corresponding
 // to the specified IdentityKey hash.
-func (d *Document) GetProviderByKeyHash(keyhash *[32]byte) (*MixDescriptor, error) {
-	for _, v := range d.Providers {
+func (d *Document) GetGatewayByKeyHash(keyhash *[32]byte) (*MixDescriptor, error) {
+	for _, v := range d.GatewayNodes {
 		if v.IdentityKey == nil {
 			return nil, fmt.Errorf("pki: document contains invalid descriptors")
 		}
@@ -223,7 +252,22 @@ func (d *Document) GetProviderByKeyHash(keyhash *[32]byte) (*MixDescriptor, erro
 			return v, nil
 		}
 	}
-	return nil, fmt.Errorf("pki: provider not found")
+	return nil, fmt.Errorf("pki: gateway not found")
+}
+
+// GetServiceByKeyHash returns the specific service descriptor corresponding
+// to the specified IdentityKey hash.
+func (d *Document) GetServiceNodeByKeyHash(keyhash *[32]byte) (*MixDescriptor, error) {
+	for _, v := range d.ServiceNodes {
+		if v.IdentityKey == nil {
+			return nil, fmt.Errorf("pki: document contains invalid descriptors")
+		}
+		idKeyHash := hash.Sum256(v.IdentityKey)
+		if hmac.Equal(idKeyHash[:], keyhash[:]) {
+			return v, nil
+		}
+	}
+	return nil, fmt.Errorf("pki: service not found")
 }
 
 // GetMix returns the MixDescriptor for the given mix Name.
@@ -240,10 +284,16 @@ func (d *Document) GetMix(name string) (*MixDescriptor, error) {
 
 // GetMixLayer returns the assigned layer for the given mix from Topology
 func (d *Document) GetMixLayer(keyhash *[32]byte) (uint8, error) {
-	for _, p := range d.Providers {
+	for _, p := range d.GatewayNodes {
 		idKeyHash := hash.Sum256(p.IdentityKey)
 		if hmac.Equal(idKeyHash[:], keyhash[:]) {
-			return LayerProvider, nil
+			return LayerGateway, nil
+		}
+	}
+	for _, p := range d.ServiceNodes {
+		idKeyHash := hash.Sum256(p.IdentityKey)
+		if hmac.Equal(idKeyHash[:], keyhash[:]) {
+			return LayerService, nil
 		}
 	}
 	for n, l := range d.Topology {
@@ -288,7 +338,10 @@ func (d *Document) GetNode(name string) (*MixDescriptor, error) {
 	if m, err := d.GetMix(name); err == nil {
 		return m, nil
 	}
-	if m, err := d.GetProvider(name); err == nil {
+	if m, err := d.GetGateway(name); err == nil {
+		return m, nil
+	}
+	if m, err := d.GetServiceNode(name); err == nil {
 		return m, nil
 	}
 	return nil, fmt.Errorf("pki: node not found")
@@ -300,7 +353,10 @@ func (d *Document) GetNodeByKeyHash(keyhash *[32]byte) (*MixDescriptor, error) {
 	if m, err := d.GetMixByKeyHash(keyhash); err == nil {
 		return m, nil
 	}
-	if m, err := d.GetProviderByKeyHash(keyhash); err == nil {
+	if m, err := d.GetGatewayByKeyHash(keyhash); err == nil {
+		return m, nil
+	}
+	if m, err := d.GetServiceNodeByKeyHash(keyhash); err == nil {
 		return m, nil
 	}
 	return nil, fmt.Errorf("pki: node not found")
@@ -494,15 +550,33 @@ func IsDocumentWellFormed(d *Document, verifiers []sign.PublicKey) error {
 			pks[pk] = true
 		}
 	}
-	if len(d.Providers) == 0 {
-		return fmt.Errorf("Document contains no Providers")
+	if len(d.GatewayNodes) == 0 {
+		return fmt.Errorf("Document contains no Gateway Nodes")
 	}
-	for _, desc := range d.Providers {
+	if len(d.ServiceNodes) == 0 {
+		return fmt.Errorf("Document contains no Service Nodes")
+	}
+
+	for _, desc := range d.GatewayNodes {
 		if err := IsDescriptorWellFormed(desc, d.Epoch); err != nil {
 			return err
 		}
-		if !desc.Provider {
-			return fmt.Errorf("Document lists %v as a Provider with desc.Provider = false %v", desc.IdentityKey, desc.Provider)
+		if !desc.IsGatewayNode {
+			return fmt.Errorf("Document lists %v as a Provider with desc.IsGatewayNode = %v", desc.IdentityKey, desc.IsGatewayNode)
+		}
+		pk := hash.Sum256(desc.IdentityKey)
+		if _, ok := pks[pk]; ok {
+			return fmt.Errorf("Document contains multiple entries for %v", desc.IdentityKey)
+		}
+		pks[pk] = true
+	}
+
+	for _, desc := range d.ServiceNodes {
+		if err := IsDescriptorWellFormed(desc, d.Epoch); err != nil {
+			return err
+		}
+		if !desc.IsServiceNode {
+			return fmt.Errorf("Document lists %v as a Provider with desc.IsServiceNode = %v", desc.IdentityKey, desc.IsServiceNode)
 		}
 		pk := hash.Sum256(desc.IdentityKey)
 		if _, ok := pks[pk]; ok {

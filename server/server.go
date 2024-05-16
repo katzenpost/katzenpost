@@ -20,7 +20,6 @@ package server
 import (
 	"errors"
 	"fmt"
-	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 	"os"
 	"path/filepath"
 	"sync"
@@ -39,20 +38,21 @@ import (
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/hpqc/sign"
 	signpem "github.com/katzenpost/hpqc/sign/pem"
+	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 
 	"github.com/katzenpost/katzenpost/core/log"
-	"github.com/katzenpost/katzenpost/core/thwack"
 	"github.com/katzenpost/katzenpost/core/utils"
 	"github.com/katzenpost/katzenpost/server/config"
 	"github.com/katzenpost/katzenpost/server/internal/cryptoworker"
 	"github.com/katzenpost/katzenpost/server/internal/decoy"
+	"github.com/katzenpost/katzenpost/server/internal/gateway"
 	"github.com/katzenpost/katzenpost/server/internal/glue"
 	"github.com/katzenpost/katzenpost/server/internal/incoming"
 	"github.com/katzenpost/katzenpost/server/internal/instrument"
 	"github.com/katzenpost/katzenpost/server/internal/outgoing"
 	"github.com/katzenpost/katzenpost/server/internal/pki"
-	"github.com/katzenpost/katzenpost/server/internal/provider"
 	"github.com/katzenpost/katzenpost/server/internal/scheduler"
+	"github.com/katzenpost/katzenpost/server/internal/service"
 )
 
 // ErrGenerateOnly is the error returned when the server initialization
@@ -79,9 +79,9 @@ type Server struct {
 	pki           glue.PKI
 	listeners     []glue.Listener
 	connector     glue.Connector
-	provider      glue.Provider
+	gateway       glue.Gateway
+	serviceNode   glue.ServiceNode
 	decoy         glue.Decoy
-	management    *thwack.Server
 
 	fatalErrCh chan error
 	haltedCh   chan interface{}
@@ -148,12 +148,6 @@ func (s *Server) halt() {
 		s.periodic = nil
 	}
 
-	// Stop the management interface.
-	if s.management != nil {
-		s.management.Halt()
-		s.management = nil
-	}
-
 	// Stop the decoy source/sink.
 	if s.decoy != nil {
 		s.decoy.Halt()
@@ -182,10 +176,16 @@ func (s *Server) halt() {
 		}
 	}
 
-	// Provider specific cleanup.
-	if s.provider != nil {
-		s.provider.Halt()
-		s.provider = nil
+	// Gateway specific cleanup.
+	if s.gateway != nil {
+		s.gateway.Halt()
+		s.gateway = nil
+	}
+
+	// ServiceNode specific cleanup.
+	if s.serviceNode != nil {
+		s.serviceNode.Halt()
+		s.serviceNode = nil
 	}
 
 	// Stop the scheduler.
@@ -365,46 +365,23 @@ func New(cfg *config.Config) (*Server, error) {
 		s.Shutdown()
 	}()
 
-	// Initialize the management interface if enabled.
-	//
-	// Note: This is done first so that other subsystems may register commands.
-	if _, err := os.Stat(s.cfg.Management.Path); !os.IsNotExist(err) {
-		s.log.Warningf("Warning: management socket file '%s' already exists, deleting it.", s.cfg.Management.Path)
-		err := os.Remove(s.cfg.Management.Path)
-		if err != nil {
-			s.fatalErrCh <- fmt.Errorf("failed to delete mgmt socket file, shutting down now")
-			return nil, err
-		}
-	}
-	if s.cfg.Management.Enable {
-		mgmtCfg := &thwack.Config{
-			Net:         "unix",
-			Addr:        s.cfg.Management.Path,
-			ServiceName: s.cfg.Server.Identifier + " Katzenpost Management Interface",
-			LogModule:   "mgmt",
-			NewLoggerFn: s.logBackend.GetLogger,
-		}
-		if s.management, err = thwack.New(mgmtCfg); err != nil {
-			s.log.Errorf("Failed to initialize management interface: %v", err)
-			return nil, err
-		}
-
-		const shutdownCmd = "SHUTDOWN"
-		s.management.RegisterCommand(shutdownCmd, func(c *thwack.Conn, l string) error {
-			s.fatalErrCh <- fmt.Errorf("user requested shutdown via mgmt interface")
-			return nil
-		})
-	}
-
 	// Initialize the PKI interface.
 	if s.pki, err = pki.New(goo); err != nil {
 		s.log.Errorf("Failed to initialize PKI client: %v", err)
 		return nil, err
 	}
 
+	// Initialize the gateway backend.
+	if s.cfg.Server.IsGatewayNode {
+		if s.gateway, err = gateway.New(goo); err != nil {
+			s.log.Errorf("Failed to initialize gateway backend: %v", err)
+			return nil, err
+		}
+	}
+
 	// Initialize the provider backend.
-	if s.cfg.Server.IsProvider {
-		if s.provider, err = provider.New(goo); err != nil {
+	if s.cfg.Server.IsServiceNode {
+		if s.serviceNode, err = service.New(goo); err != nil {
 			s.log.Errorf("Failed to initialize provider backend: %v", err)
 			return nil, err
 		}
@@ -448,13 +425,6 @@ func New(cfg *config.Config) (*Server, error) {
 	// Start the periodic 1 Hz utility timer.
 	s.periodic = newPeriodicTimer(s)
 
-	// Start listening on the management interface if enabled, now that every
-	// subsystem that wants to register commands has had the opportunity to do
-	// so.
-	if s.management != nil {
-		s.management.Start()
-	}
-
 	isOk = true
 	return s, nil
 }
@@ -483,10 +453,6 @@ func (g *serverGlue) LinkKey() kem.PrivateKey {
 	return g.s.linkKey
 }
 
-func (g *serverGlue) Management() *thwack.Server {
-	return g.s.management
-}
-
 func (g *serverGlue) MixKeys() glue.MixKeys {
 	return g.s.mixKeys
 }
@@ -495,8 +461,12 @@ func (g *serverGlue) PKI() glue.PKI {
 	return g.s.pki
 }
 
-func (g *serverGlue) Provider() glue.Provider {
-	return g.s.provider
+func (g *serverGlue) Gateway() glue.Gateway {
+	return g.s.gateway
+}
+
+func (g *serverGlue) ServiceNode() glue.ServiceNode {
+	return g.s.serviceNode
 }
 
 func (g *serverGlue) Scheduler() glue.Scheduler {

@@ -24,7 +24,6 @@ import (
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
-	"github.com/katzenpost/katzenpost/core/thwack"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/loops"
 	"github.com/katzenpost/katzenpost/server/config"
@@ -43,10 +42,10 @@ type Glue interface {
 	IdentityPublicKey() sign.PublicKey
 	LinkKey() kem.PrivateKey
 
-	Management() *thwack.Server
 	MixKeys() MixKeys
 	PKI() PKI
-	Provider() Provider
+	Gateway() Gateway
+	ServiceNode() ServiceNode
 	Scheduler() Scheduler
 	Connector() Connector
 	Listeners() []Listener
@@ -71,11 +70,16 @@ type PKI interface {
 	GetRawConsensus(uint64) ([]byte, error)
 }
 
-type Provider interface {
+type Gateway interface {
 	Halt()
 	UserDB() userdb.UserDB
 	Spool() spool.Spool
 	AuthenticateClient(*wire.PeerCredentials) bool
+	OnPacket(*packet.Packet)
+}
+
+type ServiceNode interface {
+	Halt()
 	OnPacket(*packet.Packet)
 	KaetzchenForPKI() (map[string]map[string]interface{}, error)
 }
@@ -105,5 +109,6 @@ type Decoy interface {
 	Halt()
 	OnNewDocument(*pkicache.Entry)
 	OnPacket(*packet.Packet)
+	ExpectReply(pkt *packet.Packet) bool
 	GetStats(doPublishEpoch uint64) *loops.LoopStats
 }

@@ -57,7 +57,7 @@ type Session struct {
 	cfg       *config.Config
 	pkiClient pki.Client
 	minclient *minclient.Client
-	provider  *pki.MixDescriptor
+	gateway   *pki.MixDescriptor
 	log       *logging.Logger
 
 	fatalErrCh chan error
@@ -91,9 +91,9 @@ func NewSession(
 	logBackend *log.Backend,
 	cfg *config.Config,
 	linkKey kem.PrivateKey,
-	provider *pki.MixDescriptor) (*Session, error) {
+	gateway *pki.MixDescriptor) (*Session, error) {
 
-	clientLog := logBackend.GetLogger(fmt.Sprintf("%s_client", provider.Name))
+	clientLog := logBackend.GetLogger(fmt.Sprintf("%s_client", gateway.Name))
 
 	mysphinx, err := sphinx.FromGeometry(cfg.SphinxGeometry)
 	if err != nil {
@@ -105,7 +105,7 @@ func NewSession(
 		sphinx:      mysphinx,
 		cfg:         cfg,
 		linkKey:     linkKey,
-		provider:    provider,
+		gateway:     gateway,
 		pkiClient:   pkiClient,
 		log:         clientLog,
 		fatalErrCh:  fatalErrCh,
@@ -127,7 +127,7 @@ func NewSession(
 	proxyContext := fmt.Sprintf("session %d", rand.NewMath().Uint64())
 
 	pkiSignatureScheme := signSchemes.ByName(s.cfg.PKISignatureScheme)
-	idpubkey, err := pkiSignatureScheme.UnmarshalBinaryPublicKey(s.provider.IdentityKey)
+	idpubkey, err := pkiSignatureScheme.UnmarshalBinaryPublicKey(s.gateway.IdentityKey)
 	if err != nil {
 		return nil, err
 	}
@@ -140,8 +140,8 @@ func NewSession(
 	clientCfg := &minclient.ClientConfig{
 		SphinxGeometry:      cfg.SphinxGeometry,
 		User:                string(idHash[:]),
-		Provider:            s.provider.Name,
-		ProviderKeyPin:      idpubkey,
+		Gateway:             s.gateway.Name,
+		GatewayKeyPin:       idpubkey,
 		LinkKemScheme:       kemScheme,
 		LinkKey:             s.linkKey,
 		LogBackend:          logBackend,

@@ -45,7 +45,8 @@ import (
 const (
 	defaultAddress             = ":3219"
 	defaultLogLevel            = "NOTICE"
-	defaultNumProviderWorkers  = 1
+	defaultNumGatewayWorkers   = 1
+	defaultNumServiceWorkers   = 1
 	defaultNumKaetzchenWorkers = 3
 	defaultUnwrapDelay         = 10 // 10 ms.
 	defaultSchedulerSlack      = 10 // 10 ms.
@@ -55,11 +56,11 @@ const (
 	defaultConnectTimeout      = 60 * 1000 // 60 sec.
 	defaultHandshakeTimeout    = 30 * 1000 // 30 sec.
 	defaultReauthInterval      = 30 * 1000 // 30 sec.
-	defaultProviderDelay       = 500       // 500 ms.
+	defaultGatewayDelay        = 500       // 500 ms.
+	defaultServiceDelay        = 500       // 500 ms.
 	defaultKaetzchenDelay      = 750       // 750 ms.
 	defaultUserDB              = "users.db"
 	defaultSpoolDB             = "spool.db"
-	defaultManagementSocket    = "management_sock"
 
 	backendPgx = "pgx"
 
@@ -109,8 +110,11 @@ type Server struct {
 	// DataDir is the absolute path to the server's state files.
 	DataDir string
 
-	// IsProvider specifies if the server is a provider (vs a mix).
-	IsProvider bool
+	// IsGatewayNode specifies if the server is a gateway or not.
+	IsGatewayNode bool
+
+	// IsServiceNode specifies if the server is a service node or not.
+	IsServiceNode bool
 }
 
 func (sCfg *Server) applyDefaults() {
@@ -194,9 +198,13 @@ type Debug struct {
 	// inbound Sphinx packet processing.
 	NumSphinxWorkers int
 
-	// NumProviderWorkers specifies the number of worker instances to use for
+	// NumServiceWorkers specifies the number of worker instances to use for
 	// provider specific packet processing.
-	NumProviderWorkers int
+	NumServiceWorkers int
+
+	// NumGatewayWorkers specifies the number of worker instances to use for
+	// provider specific packet processing.
+	NumGatewayWorkers int
 
 	// NumKaetzchenWorkers specifies the number of worker instances to use for
 	// Kaetzchen specific packet processing.
@@ -219,9 +227,13 @@ type Debug struct {
 	// milliseconds.
 	UnwrapDelay int
 
-	// ProviderDelay is the maximum allowed provider delay due to queueing
+	// GatewayDelay is the maximum allowed gateway node worker delay due to queueing
 	// in milliseconds.
-	ProviderDelay int
+	GatewayDelay int
+
+	// ServiceDelay is the maximum allowed service node worker delay due to queueing
+	// in milliseconds.
+	ServiceDelay int
 
 	// KaetzchenDelay is the maximum allowed kaetzchen delay due to queueing
 	// in milliseconds.
@@ -275,20 +287,30 @@ func (dCfg *Debug) applyDefaults() {
 		// the AES-NI unit is a per-core resource.
 		dCfg.NumSphinxWorkers = runtime.NumCPU()
 	}
-	if dCfg.NumProviderWorkers <= 0 {
+	if dCfg.NumGatewayWorkers <= 0 {
 		// TODO/perf: This should do something clever as well, though 1 is
 		// the right number for something that uses the boltspool due to all
 		// write spool operations being serialized.
-		dCfg.NumProviderWorkers = defaultNumProviderWorkers
+		dCfg.NumGatewayWorkers = defaultNumGatewayWorkers
 	}
+	if dCfg.NumServiceWorkers <= 0 {
+		// TODO/perf: This should do something clever as well, though 1 is
+		// the right number for something that uses the boltspool due to all
+		// write spool operations being serialized.
+		dCfg.NumServiceWorkers = defaultNumServiceWorkers
+	}
+
 	if dCfg.NumKaetzchenWorkers <= 0 {
 		dCfg.NumKaetzchenWorkers = defaultNumKaetzchenWorkers
 	}
 	if dCfg.UnwrapDelay <= 0 {
 		dCfg.UnwrapDelay = defaultUnwrapDelay
 	}
-	if dCfg.ProviderDelay <= 0 {
-		dCfg.ProviderDelay = defaultProviderDelay
+	if dCfg.GatewayDelay <= 0 {
+		dCfg.GatewayDelay = defaultGatewayDelay
+	}
+	if dCfg.ServiceDelay <= 0 {
+		dCfg.ServiceDelay = defaultServiceDelay
 	}
 	if dCfg.KaetzchenDelay <= 0 {
 		dCfg.KaetzchenDelay = defaultKaetzchenDelay
@@ -344,13 +366,19 @@ func (lCfg *Logging) validate() error {
 	return nil
 }
 
-// Provider is the Katzenpost provider configuration.
-type Provider struct {
-	// EnableEphemeralhClients is set to true in order to
-	// allow ephemeral clients to be created when the Provider
-	// first receives a given user identity string.
-	EnableEphemeralClients bool
+// ServiceNode is the service node configuration.
+type ServiceNode struct {
+	// Kaetzchen is the list of configured internal Kaetzchen (auto-responder agents)
+	// for this provider.
+	Kaetzchen []*Kaetzchen
 
+	// CBORPluginKaetzchen is the list of configured external CBOR Kaetzchen plugins
+	// for this provider.
+	CBORPluginKaetzchen []*CBORPluginKaetzchen
+}
+
+// Gateway is the Katzenpost gateway configuration.
+type Gateway struct {
 	// AltAddresses is the map of extra transports and addresses at which
 	// the Provider is reachable by clients.  The most useful alternative
 	// transport is likely ("tcp") (`core/pki.TransportTCP`).
@@ -364,19 +392,6 @@ type Provider struct {
 
 	// SpoolDB is the user message spool configuration.
 	SpoolDB *SpoolDB
-
-	// Kaetzchen is the list of configured internal Kaetzchen (auto-responder agents)
-	// for this provider.
-	Kaetzchen []*Kaetzchen
-
-	// CBORPluginKaetzchen is the list of configured external CBOR Kaetzchen plugins
-	// for this provider.
-	CBORPluginKaetzchen []*CBORPluginKaetzchen
-
-	// TrustOnFirstUse indicates whether or not to trust client's wire protocol keys
-	// on first use. If set to true then first seen keys cause an entry in the userDB
-	// to be created. It will later be garbage collected.
-	TrustOnFirstUse bool
 }
 
 // SQLDB is the SQL database backend configuration.
@@ -427,9 +442,9 @@ type BoltUserDB struct {
 
 // ExternUserDB is the external http user authentication.
 type ExternUserDB struct {
-	// ProviderURL is the base url used for the external provider authentication API.
+	// GatewayURL is the base url used for the external provider authentication API.
 	// It should be in the form `http://localhost:8080/`
-	ProviderURL string
+	GatewayURL string
 }
 
 // SpoolDB is the user message spool configuration.
@@ -538,7 +553,7 @@ func (kCfg *CBORPluginKaetzchen) validate() error {
 	return nil
 }
 
-func (pCfg *Provider) applyDefaults(sCfg *Server) {
+func (pCfg *Gateway) applyDefaults(sCfg *Server) {
 	if pCfg.UserDB == nil {
 		pCfg.UserDB = &UserDB{}
 	}
@@ -574,7 +589,30 @@ func (pCfg *Provider) applyDefaults(sCfg *Server) {
 	}
 }
 
-func (pCfg *Provider) validate() error {
+func (pCfg *ServiceNode) validate() error {
+	capaMap := make(map[string]bool)
+	for _, v := range pCfg.Kaetzchen {
+		if err := v.validate(); err != nil {
+			return err
+		}
+		if capaMap[v.Capability] {
+			return fmt.Errorf("config: Kaetzchen: '%v' configured multiple times", v.Capability)
+		}
+		capaMap[v.Capability] = true
+	}
+	for _, v := range pCfg.CBORPluginKaetzchen {
+		if err := v.validate(); err != nil {
+			return err
+		}
+		if capaMap[v.Capability] {
+			return fmt.Errorf("config: Kaetzchen: '%v' configured multiple times", v.Capability)
+		}
+		capaMap[v.Capability] = true
+	}
+	return nil
+}
+
+func (pCfg *Gateway) validate() error {
 	internalTransports := make(map[string]bool)
 	for _, v := range pki.InternalTransports {
 		internalTransports[strings.ToLower(string(v))] = true
@@ -620,10 +658,10 @@ func (pCfg *Provider) validate() error {
 		if pCfg.UserDB.Extern == nil {
 			return fmt.Errorf("config: Provider: Extern section should be defined")
 		}
-		if pCfg.UserDB.Extern.ProviderURL == "" {
+		if pCfg.UserDB.Extern.GatewayURL == "" {
 			return fmt.Errorf("config: Provider: ProviderURL should be defined for Extern")
 		}
-		providerURL, err := url.Parse(pCfg.UserDB.Extern.ProviderURL)
+		providerURL, err := url.Parse(pCfg.UserDB.Extern.GatewayURL)
 		if err != nil {
 			return fmt.Errorf("config: Provider: ProviderURL should be a valid url: %v", err)
 		}
@@ -651,26 +689,6 @@ func (pCfg *Provider) validate() error {
 		}
 	default:
 		return fmt.Errorf("config: Provider: Invalid SpoolDB Backend: '%v'", pCfg.SpoolDB.Backend)
-	}
-
-	capaMap := make(map[string]bool)
-	for _, v := range pCfg.Kaetzchen {
-		if err := v.validate(); err != nil {
-			return err
-		}
-		if capaMap[v.Capability] {
-			return fmt.Errorf("config: Kaetzchen: '%v' configured multiple times", v.Capability)
-		}
-		capaMap[v.Capability] = true
-	}
-	for _, v := range pCfg.CBORPluginKaetzchen {
-		if err := v.validate(); err != nil {
-			return err
-		}
-		if capaMap[v.Capability] {
-			return fmt.Errorf("config: Kaetzchen: '%v' configured multiple times", v.Capability)
-		}
-		capaMap[v.Capability] = true
 	}
 
 	return nil
@@ -706,39 +724,13 @@ func (vCfg *Voting) validate(datadir string) error {
 	return nil
 }
 
-// Management is the Katzenpost management interface configuration.
-type Management struct {
-	// Enable enables the management interface.
-	Enable bool
-
-	// Path specifies the path to the manaagment interface socket.  If left
-	// empty it will use `management_sock` under the DataDir.
-	Path string
-}
-
-func (mCfg *Management) applyDefaults(sCfg *Server) {
-	if mCfg.Path == "" {
-		mCfg.Path = filepath.Join(sCfg.DataDir, defaultManagementSocket)
-	}
-}
-
-func (mCfg *Management) validate() error {
-	if !mCfg.Enable {
-		return nil
-	}
-	if !filepath.IsAbs(mCfg.Path) {
-		return fmt.Errorf("config: Management: Path '%v' is not an absolute path", mCfg.Path)
-	}
-	return nil
-}
-
 // Config is the top level Katzenpost server configuration.
 type Config struct {
 	Server         *Server
 	Logging        *Logging
-	Provider       *Provider
+	ServiceNode    *ServiceNode
+	Gateway        *Gateway
 	PKI            *PKI
-	Management     *Management
 	SphinxGeometry *geo.Geometry
 
 	Debug *Debug
@@ -771,9 +763,6 @@ func (cfg *Config) FixupAndValidate() error {
 	if cfg.PKI == nil {
 		return errors.New("config: No PKI block was present")
 	}
-	if cfg.Management == nil {
-		cfg.Management = &Management{}
-	}
 
 	// Perform basic validation.
 	cfg.Server.applyDefaults()
@@ -783,22 +772,30 @@ func (cfg *Config) FixupAndValidate() error {
 	if err := cfg.PKI.validate(cfg.Server.DataDir); err != nil {
 		return err
 	}
-	if cfg.Server.IsProvider {
-		if cfg.Provider == nil {
-			cfg.Provider = &Provider{}
+	if cfg.Server.IsGatewayNode {
+		if cfg.Gateway == nil {
+			cfg.Gateway = &Gateway{}
 		}
-		cfg.Provider.applyDefaults(cfg.Server)
-		if err := cfg.Provider.validate(); err != nil {
+		cfg.Gateway.applyDefaults(cfg.Server)
+		if err := cfg.Gateway.validate(); err != nil {
 			return err
 		}
-	} else if cfg.Provider != nil {
-		return errors.New("config: Provider block set when not a Provider")
+	} else if cfg.Gateway != nil {
+		return errors.New("config: Gateway block set when not a Gateway")
 	}
+
+	if cfg.Server.IsServiceNode {
+		if cfg.ServiceNode == nil {
+			cfg.ServiceNode = &ServiceNode{}
+		}
+		if err := cfg.ServiceNode.validate(); err != nil {
+			return err
+		}
+	} else if cfg.ServiceNode != nil {
+		return errors.New("config: Service node block set when not a Service node")
+	}
+
 	if err = cfg.Logging.validate(); err != nil {
-		return err
-	}
-	cfg.Management.applyDefaults(cfg.Server)
-	if err := cfg.Management.validate(); err != nil {
 		return err
 	}
 	cfg.Debug.applyDefaults()

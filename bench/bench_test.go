@@ -175,7 +175,7 @@ func (b *MinclientBench) setup() {
 	if err != nil {
 		panic(err)
 	}
-	desc, err := client.SelectProvider(doc)
+	desc, err := client.SelectGatewayNode(doc)
 	if err != nil {
 		panic(err)
 	}
@@ -188,8 +188,8 @@ func (b *MinclientBench) setup() {
 		LinkKemScheme:       myScheme,
 		SphinxGeometry:      cfg.SphinxGeometry,
 		User:                string(idHash[:]),
-		Provider:            b.provider.Name,
-		ProviderKeyPin:      idkey,
+		Gateway:             b.provider.Name,
+		GatewayKeyPin:       idkey,
 		LinkKey:             b.linkKey,
 		LogBackend:          logBackend,
 		PKIClient:           pkiClient,

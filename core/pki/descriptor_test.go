@@ -45,12 +45,11 @@ func TestDescriptor(t *testing.T) {
 	// Build a well formed descriptor.
 	d.Name = "hydra-dominatus.example.net"
 	d.Addresses = map[Transport][]string{
-		TransportTCPv4:     []string{"192.0.2.1:4242", "192.0.2.1:1234", "198.51.100.2:4567"},
-		TransportTCPv6:     []string{"[2001:DB8::1]:8901"},
-		Transport("torv2"): []string{"thisisanoldonion.onion:2323"},
-		TransportTCP:       []string{"example.com:4242"},
+		TransportTCPv4: []string{"192.0.2.1:4242", "192.0.2.1:1234", "198.51.100.2:4567"},
+		TransportTCPv6: []string{"[2001:DB8::1]:8901"},
 	}
-	d.Provider = true
+	d.IsGatewayNode = false
+	d.IsServiceNode = true
 	d.LoadWeight = 23
 
 	identityPub, identityPriv, err := testDescriptorSignatureScheme.GenerateKey()
@@ -94,7 +93,7 @@ func TestDescriptor(t *testing.T) {
 	// Ensure the base and de-serialized descriptors match.
 	assert.Equal(d.Name, dd.Name, "Name")
 	assert.Equal(d.Addresses, dd.Addresses, "Addresses")
-	assert.Equal(d.Provider, dd.Provider, "Provider")
+	assert.Equal(d.IsGatewayNode, dd.IsGatewayNode, "IsGatewayNode")
 	assert.Equal(d.LoadWeight, dd.LoadWeight, "LoadWeight")
 
 	assert.Equal(d.IdentityKey, dd.IdentityKey, "IdentityKey")

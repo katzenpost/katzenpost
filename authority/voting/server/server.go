@@ -21,7 +21,7 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
-	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
+	"math"
 	"net"
 	"os"
 	"path/filepath"
@@ -35,6 +35,7 @@ import (
 	"github.com/katzenpost/hpqc/kem/schemes"
 	"github.com/katzenpost/hpqc/sign"
 	signpem "github.com/katzenpost/hpqc/sign/pem"
+	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/katzenpost/core/log"
@@ -66,6 +67,14 @@ type Server struct {
 	fatalErrCh chan error
 	haltedCh   chan interface{}
 	haltOnce   sync.Once
+}
+
+func computeLambdaG(cfg *config.Config) float64 {
+	n := float64(len(cfg.Topology.Layers[0].Nodes))
+	if n == 1 {
+		n = 2
+	}
+	return n * math.Log(n)
 }
 
 func (s *Server) initDataDir() error {
@@ -307,8 +316,11 @@ func New(cfg *config.Config) (*Server, error) {
 
 	// Ensure that there are enough mixes and providers whitelisted to form
 	// a topology, assuming all of them post a descriptor.
-	if len(cfg.Providers) < 1 {
-		return nil, fmt.Errorf("server: No Providers specified in the config")
+	if len(cfg.GatewayNodes) < 1 {
+		return nil, fmt.Errorf("server: No GatewayNodes specified in the config")
+	}
+	if len(cfg.ServiceNodes) < 1 {
+		return nil, fmt.Errorf("server: No ServiceNodes specified in the config")
 	}
 	if len(cfg.Mixes) < cfg.Debug.Layers*cfg.Debug.MinNodesPerLayer {
 		return nil, fmt.Errorf("server: Insufficient nodes whitelisted, got %v , need %v", len(cfg.Mixes), cfg.Debug.Layers*cfg.Debug.MinNodesPerLayer)
