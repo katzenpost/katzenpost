@@ -1793,6 +1793,7 @@ func newState(s *Server) (*state, error) {
 	st.threshold = len(st.verifiers)/2 + 1
 	st.dissenters = len(s.cfg.Authorities)/2 - 1
 
+	st.s.cfg.Server.PKISignatureScheme = s.cfg.Server.PKISignatureScheme
 	pkiSignatureScheme := signSchemes.ByName(s.cfg.Server.PKISignatureScheme)
 
 	// Initialize the authorized peer tables.
