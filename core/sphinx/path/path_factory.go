@@ -35,11 +35,11 @@ func (d *PathFactory) ComposePath(
 	baseTime time.Time,
 	isForward bool) (outputPath []*PathHop, rtt time.Time, err error) {
 
-	src, err := doc.GetProviderByKeyHash(srcMix)
+	src, err := doc.GetGatewayByKeyHash(srcMix)
 	if err != nil {
 		return nil, time.Time{}, errors.New("failed to find entry mix in pki doc")
 	}
-	dst, err := doc.GetProviderByKeyHash(dstMix)
+	dst, err := doc.GetServiceNodeByKeyHash(dstMix)
 	if err != nil {
 		return nil, time.Time{}, errors.New("failed to find service mix in pki doc")
 	}

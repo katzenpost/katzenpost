@@ -20,8 +20,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/katzenpost/core/sphinx"
 	"github.com/katzenpost/hpqc/rand"
+
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
@@ -126,7 +126,7 @@ func (c *Client) SendCiphertext(recipient, provider string, surbID *[sConstants.
 	return k, rtt, err
 }
 
-func (c *Client) makePath(recipient, destNode string, surbID *[sConstants.SURBIDLength]byte, baseTime time.Time, isForward bool) ([]*sphinx.PathHop, time.Time, error) {
+func (c *Client) makePath(recipient, destNode string, surbID *[sConstants.SURBIDLength]byte, baseTime time.Time, isForward bool) ([]*path.PathHop, time.Time, error) {
 	srcNode, dstNode := c.cfg.Gateway, destNode
 	if !isForward {
 		srcNode, dstNode = dstNode, srcNode

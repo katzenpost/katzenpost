@@ -297,10 +297,12 @@ func (c *connection) doConnect(dialCtx context.Context) {
 		var dstAddrs []string
 		transports := c.c.cfg.PreferedTransports
 		if transports == nil {
-			transports = cpki.ClientTransports
+			for i := 0; i < len(cpki.ClientTransports); i++ {
+				transports = append(transports, string(cpki.ClientTransports[i]))
+			}
 		}
-		for _, t := range transports {
-			if v, ok := c.descriptor.Addresses[t]; ok {
+		for i := 0; i < len(transports); i++ {
+			if v, ok := c.descriptor.Addresses[cpki.Transport(transports[i])]; ok {
 				dstAddrs = append(dstAddrs, v...)
 			}
 		}
