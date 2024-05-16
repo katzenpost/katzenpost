@@ -1890,13 +1890,13 @@ func newState(s *Server) (*state, error) {
 		var err error
 
 		if filepath.IsAbs(v.IdentityPublicKeyPem) {
-			identityPublicKey, err = signpem.FromPublicPEMFile(v.IdentityPublicKeyPem, cert.Scheme)
+			identityPublicKey, err = signpem.FromPublicPEMFile(v.IdentityPublicKeyPem, pkiSignatureScheme)
 			if err != nil {
 				panic(err)
 			}
 		} else {
 			pemFilePath := filepath.Join(s.cfg.Server.DataDir, v.IdentityPublicKeyPem)
-			identityPublicKey, err = signpem.FromPublicPEMFile(pemFilePath, cert.Scheme)
+			identityPublicKey, err = signpem.FromPublicPEMFile(pemFilePath, pkiSignatureScheme)
 			if err != nil {
 				panic(err)
 			}
