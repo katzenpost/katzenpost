@@ -27,12 +27,12 @@ import (
 
 	"github.com/katzenpost/hpqc/kem/schemes"
 	ecdh "github.com/katzenpost/hpqc/nike/x25519"
-
-	"github.com/katzenpost/katzenpost/core/cert"
+	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 )
 
 var testingSchemeName = "xwing"
 var testingScheme = schemes.ByName(testingSchemeName)
+var testDocumentSignatureScheme = signSchemes.ByName("Ed25519 Sphincs+")
 
 func genDescriptor(require *require.Assertions, idx int, provider bool) *MixDescriptor {
 	d := new(MixDescriptor)
@@ -45,7 +45,7 @@ func genDescriptor(require *require.Assertions, idx int, provider bool) *MixDesc
 	d.Version = DescriptorVersion
 	d.LoadWeight = 23
 
-	identityPub, _, err := cert.Scheme.GenerateKey()
+	identityPub, _, err := testDocumentSignatureScheme.GenerateKey()
 	require.NoError(err)
 
 	d.IdentityKey, err = identityPub.MarshalBinary()
@@ -80,7 +80,7 @@ func TestDocument(t *testing.T) {
 	require := require.New(t)
 
 	// Generate a random signing key.
-	idPub, k, err := cert.Scheme.GenerateKey()
+	idPub, k, err := testDocumentSignatureScheme.GenerateKey()
 	require.NoError(err)
 
 	testSendRate := uint64(3)

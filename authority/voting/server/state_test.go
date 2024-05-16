@@ -37,6 +37,7 @@ import (
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/hpqc/sign"
 	signpem "github.com/katzenpost/hpqc/sign/pem"
+	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/katzenpost/core/cert"
@@ -49,6 +50,7 @@ import (
 
 var testingSchemeName = "xwing"
 var testingScheme = schemes.ByName(testingSchemeName)
+var testSignatureScheme = signSchemes.ByName("Ed25519 Sphincs+")
 
 var sphinxGeometry = geo.GeometryFromUserForwardPayloadLength(
 	x25519.Scheme(rand.Reader),
@@ -409,7 +411,7 @@ func genVotingAuthoritiesCfg(parameters *config.Parameters, numAuthorities int) 
 		if err != nil {
 			return nil, nil, err
 		}
-		idPubKey, idKey, err := cert.Scheme.GenerateKey()
+		idPubKey, idKey, err := testSignatureScheme.GenerateKey()
 		if err != nil {
 			return nil, nil, err
 		}
@@ -477,7 +479,7 @@ func genProviderConfig(name string, pki *sConfig.PKI, port uint16) (*identityKey
 	cfg.Debug = new(sConfig.Debug)
 
 	// Generate keys
-	idPubKey, idKey, err := cert.Scheme.GenerateKey()
+	idPubKey, idKey, err := testSignatureScheme.GenerateKey()
 	if err != nil {
 		panic(err)
 	}
@@ -568,7 +570,7 @@ func genMixConfig(name string, pki *sConfig.PKI, port uint16) (*identityKey, *sC
 	cfg.Debug = new(sConfig.Debug)
 
 	// Generate keys
-	idPubKey, idKey, err := cert.Scheme.GenerateKey()
+	idPubKey, idKey, err := testSignatureScheme.GenerateKey()
 	if err != nil {
 		return nil, nil, err
 	}

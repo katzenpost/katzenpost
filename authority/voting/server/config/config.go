@@ -37,8 +37,7 @@ import (
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/hpqc/sign"
 	signpem "github.com/katzenpost/hpqc/sign/pem"
-
-	"github.com/katzenpost/katzenpost/core/cert"
+	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/utils"
 )
@@ -258,6 +257,9 @@ type Authority struct {
 	// IdentityPublicKeyPem is a string in PEM format containing
 	// the public identity key key.
 	IdentityPublicKey sign.PublicKey
+
+	PKISignatureScheme sign.Scheme
+
 	// LinkPublicKeyPem is string containing the PEM format of the peer's public link layer key.
 	LinkPublicKey kem.PublicKey
 	// WireKEMScheme is the wire protocol KEM scheme to use.
@@ -275,9 +277,19 @@ func (a *Authority) UnmarshalTOML(v interface{}) error {
 		return errors.New("type assertion failed")
 	}
 
+	pkiSignatureScheme, ok := data["PKISignatureScheme"].(string)
+	if !ok {
+		return errors.New("PKISignatureScheme failed type assertion")
+	}
+
+	a.PKISignatureScheme = signSchemes.ByName(pkiSignatureScheme)
+	if a.PKISignatureScheme == nil {
+		return fmt.Errorf("pki signature scheme `%s` not found", pkiSignatureScheme)
+	}
+
 	// identifier
 	var err error
-	a.IdentityPublicKey, _, err = cert.Scheme.GenerateKey()
+	a.IdentityPublicKey, _, err = a.PKISignatureScheme.GenerateKey()
 	if err != nil {
 		return err
 	}
@@ -289,7 +301,7 @@ func (a *Authority) UnmarshalTOML(v interface{}) error {
 	// identity key
 	idPublicKeyString, _ := data["IdentityPublicKey"].(string)
 
-	a.IdentityPublicKey, err = signpem.FromPublicPEMString(idPublicKeyString, cert.Scheme)
+	a.IdentityPublicKey, err = signpem.FromPublicPEMString(idPublicKeyString, a.PKISignatureScheme)
 	if err != nil {
 		return err
 	}
@@ -393,6 +405,8 @@ type Server struct {
 	// WireKEMScheme is the wire protocol KEM scheme to use.
 	WireKEMScheme string
 
+	PKISignatureScheme string
+
 	// Addresses are the IP address/port combinations that the server will bind
 	// to for incoming connections.
 	Addresses []string
@@ -411,6 +425,16 @@ func (sCfg *Server) validate() error {
 			return errors.New("KEM Scheme not found")
 		}
 	}
+
+	if sCfg.PKISignatureScheme == "" {
+		return errors.New("PKISignatureScheme was not set")
+	} else {
+		s := signSchemes.ByName(sCfg.PKISignatureScheme)
+		if s == nil {
+			return errors.New("PKI Signature Scheme not found")
+		}
+	}
+
 	if sCfg.Addresses != nil {
 		for _, v := range sCfg.Addresses {
 			if err := utils.EnsureAddrIPPort(v); err != nil {
@@ -527,6 +551,8 @@ func (cfg *Config) FixupAndValidate(forceGenOnly bool) error {
 	cfg.Parameters.applyDefaults()
 	cfg.Debug.applyDefaults()
 
+	pkiSignatureScheme := signSchemes.ByName(cfg.Server.PKISignatureScheme)
+
 	allNodes := make([]*Node, 0, len(cfg.Mixes)+len(cfg.Providers))
 	for _, v := range cfg.Mixes {
 		allNodes = append(allNodes, v)
@@ -552,7 +578,7 @@ func (cfg *Config) FixupAndValidate(forceGenOnly bool) error {
 		}
 		idMap[v.Identifier] = v
 
-		identityKey, err = signpem.FromPublicPEMFile(filepath.Join(cfg.Server.DataDir, v.IdentityPublicKeyPem), cert.Scheme)
+		identityKey, err = signpem.FromPublicPEMFile(filepath.Join(cfg.Server.DataDir, v.IdentityPublicKeyPem), pkiSignatureScheme)
 		if err != nil {
 			return err
 		}
@@ -577,7 +603,7 @@ func (cfg *Config) FixupAndValidate(forceGenOnly bool) error {
 		return err
 	}
 
-	ourPubKey, err := signpem.FromPublicPEMBytes(pemData, cert.Scheme)
+	ourPubKey, err := signpem.FromPublicPEMBytes(pemData, pkiSignatureScheme)
 	if err != nil {
 		return err
 	}

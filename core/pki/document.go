@@ -151,6 +151,8 @@ type Document struct {
 	// Version uniquely identifies the document format as being for the
 	// specified version so that it can be rejected if the format changes.
 	Version string
+
+	PKISignatureScheme string
 }
 
 // document contains fields from Document but not the encoding.BinaryMarshaler methods
@@ -524,7 +526,7 @@ func (d *Document) MarshalBinary() ([]byte, error) {
 	certified := cert.Certificate{
 		Version:    cert.CertVersion,
 		Expiration: d.Epoch + 5,
-		KeyType:    cert.Scheme.Name(),
+		KeyType:    d.PKISignatureScheme,
 		Certified:  payload,
 		Signatures: d.Signatures,
 	}

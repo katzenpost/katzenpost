@@ -195,13 +195,14 @@ func (uCfg *UpstreamProxy) toProxyConfig() (*proxy.Config, error) {
 
 // Config is the top level client configuration.
 type Config struct {
-	WireKEMScheme   string
-	SphinxGeometry  *geo.Geometry
-	Logging         *Logging
-	UpstreamProxy   *UpstreamProxy
-	Debug           *Debug
-	VotingAuthority *VotingAuthority
-	upstreamProxy   *proxy.Config
+	WireKEMScheme      string
+	PKISignatureScheme string
+	SphinxGeometry     *geo.Geometry
+	Logging            *Logging
+	UpstreamProxy      *UpstreamProxy
+	Debug              *Debug
+	VotingAuthority    *VotingAuthority
+	upstreamProxy      *proxy.Config
 }
 
 // UpstreamProxyConfig returns the configured upstream proxy, suitable for
@@ -215,6 +216,9 @@ func (c *Config) UpstreamProxyConfig() *proxy.Config {
 func (c *Config) FixupAndValidate() error {
 	if c.WireKEMScheme == "" {
 		return errors.New("config: WireKEMScheme was not set")
+	}
+	if c.PKISignatureScheme == "" {
+		return errors.New("config: PKISignatureScheme was not set")
 	}
 	if c.SphinxGeometry == nil {
 		return errors.New("config: No SphinxGeometry block was present")

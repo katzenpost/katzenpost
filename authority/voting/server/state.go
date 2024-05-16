@@ -25,6 +25,7 @@ import (
 	"encoding/gob"
 	"errors"
 	"fmt"
+	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 	"net"
 	"path/filepath"
 	"sort"
@@ -1168,6 +1169,8 @@ func (s *state) generateFixedTopology(nodes []*pki.MixDescriptor, srv []byte) []
 		nodeMap[id] = v
 	}
 
+	pkiSignatureScheme := signSchemes.ByName(s.s.cfg.Server.PKISignatureScheme)
+
 	// range over the keys in the configuration file and collect the descriptors for each layer
 	topology := make([][]*pki.MixDescriptor, len(s.s.cfg.Topology.Layers))
 	for strata, layer := range s.s.cfg.Topology.Layers {
@@ -1176,13 +1179,13 @@ func (s *state) generateFixedTopology(nodes []*pki.MixDescriptor, srv []byte) []
 			var identityPublicKey sign.PublicKey
 			var err error
 			if filepath.IsAbs(node.IdentityPublicKeyPem) {
-				identityPublicKey, err = signpem.FromPublicPEMFile(node.IdentityPublicKeyPem, cert.Scheme)
+				identityPublicKey, err = signpem.FromPublicPEMFile(node.IdentityPublicKeyPem, pkiSignatureScheme)
 				if err != nil {
 					panic(err)
 				}
 			} else {
 				pemFilePath := filepath.Join(s.s.cfg.Server.DataDir, node.IdentityPublicKeyPem)
-				identityPublicKey, err = signpem.FromPublicPEMFile(pemFilePath, cert.Scheme)
+				identityPublicKey, err = signpem.FromPublicPEMFile(pemFilePath, pkiSignatureScheme)
 				if err != nil {
 					panic(err)
 				}
@@ -1790,6 +1793,8 @@ func newState(s *Server) (*state, error) {
 	st.threshold = len(st.verifiers)/2 + 1
 	st.dissenters = len(s.cfg.Authorities)/2 - 1
 
+	pkiSignatureScheme := signSchemes.ByName(s.cfg.Server.PKISignatureScheme)
+
 	// Initialize the authorized peer tables.
 	st.reverseHash = make(map[[publicKeyHashSize]byte]sign.PublicKey)
 	st.authorizedMixes = make(map[[publicKeyHashSize]byte]bool)
@@ -1797,13 +1802,13 @@ func newState(s *Server) (*state, error) {
 		var identityPublicKey sign.PublicKey
 		var err error
 		if filepath.IsAbs(v.IdentityPublicKeyPem) {
-			identityPublicKey, err = signpem.FromPublicPEMFile(v.IdentityPublicKeyPem, cert.Scheme)
+			identityPublicKey, err = signpem.FromPublicPEMFile(v.IdentityPublicKeyPem, pkiSignatureScheme)
 			if err != nil {
 				panic(err)
 			}
 		} else {
 			pemFilePath := filepath.Join(s.cfg.Server.DataDir, v.IdentityPublicKeyPem)
-			identityPublicKey, err = signpem.FromPublicPEMFile(pemFilePath, cert.Scheme)
+			identityPublicKey, err = signpem.FromPublicPEMFile(pemFilePath, pkiSignatureScheme)
 			if err != nil {
 				panic(err)
 			}
@@ -1819,13 +1824,13 @@ func newState(s *Server) (*state, error) {
 		var err error
 
 		if filepath.IsAbs(v.IdentityPublicKeyPem) {
-			identityPublicKey, err = signpem.FromPublicPEMFile(v.IdentityPublicKeyPem, cert.Scheme)
+			identityPublicKey, err = signpem.FromPublicPEMFile(v.IdentityPublicKeyPem, pkiSignatureScheme)
 			if err != nil {
 				panic(err)
 			}
 		} else {
 			pemFilePath := filepath.Join(s.cfg.Server.DataDir, v.IdentityPublicKeyPem)
-			identityPublicKey, err = signpem.FromPublicPEMFile(pemFilePath, cert.Scheme)
+			identityPublicKey, err = signpem.FromPublicPEMFile(pemFilePath, pkiSignatureScheme)
 			if err != nil {
 				panic(err)
 			}

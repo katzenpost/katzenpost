@@ -34,10 +34,10 @@ import (
 	"github.com/katzenpost/hpqc/nike/schemes"
 	"github.com/katzenpost/hpqc/sign"
 	signpem "github.com/katzenpost/hpqc/sign/pem"
+	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 
 	vConfig "github.com/katzenpost/katzenpost/authority/voting/server/config"
 	cConfig "github.com/katzenpost/katzenpost/client/config"
-	"github.com/katzenpost/katzenpost/core/cert"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	sConfig "github.com/katzenpost/katzenpost/server/config"
 )
@@ -551,22 +551,30 @@ func saveCfg(cfg interface{}, outDir string) error {
 
 func cfgIdKey(cfg interface{}, outDir string) sign.PublicKey {
 	var priv, public string
+	var pkiSignatureScheme string
 	switch cfg.(type) {
 	case *sConfig.Config:
 		priv = filepath.Join(outDir, cfg.(*sConfig.Config).Server.Identifier, "identity.private.pem")
 		public = filepath.Join(outDir, cfg.(*sConfig.Config).Server.Identifier, "identity.public.pem")
+		pkiSignatureScheme = cfg.(*sConfig.Config).Server.PKISignatureScheme
 	case *vConfig.Config:
 		priv = filepath.Join(outDir, cfg.(*vConfig.Config).Server.Identifier, "identity.private.pem")
 		public = filepath.Join(outDir, cfg.(*vConfig.Config).Server.Identifier, "identity.public.pem")
+		pkiSignatureScheme = cfg.(*vConfig.Config).Server.PKISignatureScheme
 	default:
 		panic("wrong type")
 	}
 
-	idPubKey, err := signpem.FromPublicPEMFile(public, cert.Scheme)
+	scheme := signSchemes.ByName(pkiSignatureScheme)
+	if scheme == nil {
+		panic("invalid PKI signature scheme " + pkiSignatureScheme)
+	}
+
+	idPubKey, err := signpem.FromPublicPEMFile(public, scheme)
 	if err == nil {
 		return idPubKey
 	}
-	idPubKey, idKey, err := cert.Scheme.GenerateKey()
+	idPubKey, idKey, err := scheme.GenerateKey()
 	log.Printf("writing %s", priv)
 	signpem.PrivateKeyToFile(priv, idKey)
 	log.Printf("writing %s", public)

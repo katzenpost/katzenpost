@@ -30,15 +30,16 @@ import (
 	ecdh "github.com/katzenpost/hpqc/nike/x25519"
 	"github.com/katzenpost/hpqc/rand"
 	signpem "github.com/katzenpost/hpqc/sign/pem"
+	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 
 	aconfig "github.com/katzenpost/katzenpost/authority/voting/server/config"
-	"github.com/katzenpost/katzenpost/core/cert"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/server/config"
 )
 
 var testingSchemeName = "xwing"
 var testingScheme = schemes.ByName(testingSchemeName)
+var testSignatureScheme = signSchemes.ByName("Ed25519 Sphincs+")
 
 func TestServerStartShutdown(t *testing.T) {
 	assert := assert.New(t)
@@ -55,7 +56,7 @@ func TestServerStartShutdown(t *testing.T) {
 	err = kempem.PublicKeyToFile(filepath.Join(datadir, authLinkPubKeyPem), authLinkPubKey)
 	require.NoError(t, err)
 
-	authPubkey, _, err := cert.Scheme.GenerateKey()
+	authPubkey, _, err := testSignatureScheme.GenerateKey()
 	require.NoError(t, err)
 
 	authIDPubKeyPem := "auth_id_pub_key.pem"
@@ -64,7 +65,7 @@ func TestServerStartShutdown(t *testing.T) {
 	err = signpem.PublicKeyToFile(authkeyPath, authPubkey)
 	require.NoError(t, err)
 
-	mixIdPublicKey, mixIdPrivateKey, err := cert.Scheme.GenerateKey()
+	mixIdPublicKey, mixIdPrivateKey, err := testSignatureScheme.GenerateKey()
 	require.NoError(t, err)
 	err = signpem.PrivateKeyToFile(filepath.Join(datadir, "identity.private.pem"), mixIdPrivateKey)
 	require.NoError(t, err)

@@ -22,6 +22,7 @@ import (
 	"crypto/hmac"
 	"errors"
 	"fmt"
+	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 	"net"
 
 	"gopkg.in/op/go-logging.v1"
@@ -167,12 +168,13 @@ func (p *connector) initSession(ctx context.Context, doneCh <-chan interface{}, 
 		ad = keyHash[:]
 	}
 	cfg := &wire.SessionConfig{
-		KEMScheme:         schemes.ByName(peer.WireKEMScheme),
-		Geometry:          p.cfg.Geo,
-		Authenticator:     peerAuthenticator,
-		AdditionalData:    ad,
-		AuthenticationKey: linkKey,
-		RandomReader:      rand.Reader,
+		KEMScheme:          schemes.ByName(peer.WireKEMScheme),
+		Geometry:           p.cfg.Geo,
+		Authenticator:      peerAuthenticator,
+		AdditionalData:     ad,
+		AuthenticationKey:  linkKey,
+		RandomReader:       rand.Reader,
+		PKISignatureScheme: signSchemes.ByName(signingKey.Scheme().Name()),
 	}
 	s, err := wire.NewPKISession(cfg, true)
 	if err != nil {

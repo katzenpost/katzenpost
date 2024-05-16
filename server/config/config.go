@@ -88,6 +88,8 @@ type Server struct {
 	// with the mixnet and dirauth nodes.
 	WireKEM string
 
+	PKISignatureScheme string
+
 	// Addresses are the IP address/port combinations that the server will bind
 	// to for incoming connections.
 	Addresses []string
@@ -124,6 +126,10 @@ func (sCfg *Server) validate() error {
 
 	if sCfg.WireKEM == "" {
 		return errors.New("config: Server: WireKEM is not set")
+	}
+
+	if sCfg.PKISignatureScheme == "" {
+		return errors.New("config: Server: PKISignatureScheme is not set")
 	}
 
 	if sCfg.Addresses != nil {

@@ -34,10 +34,10 @@ import (
 	"github.com/katzenpost/hpqc/kem/schemes"
 	"github.com/katzenpost/hpqc/rand"
 
+	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 	"github.com/katzenpost/katzenpost/client/config"
 	cConstants "github.com/katzenpost/katzenpost/client/constants"
 	"github.com/katzenpost/katzenpost/client/utils"
-	"github.com/katzenpost/katzenpost/core/cert"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx"
@@ -126,7 +126,8 @@ func NewSession(
 	// A per-connection tag (for Tor SOCKS5 stream isloation)
 	proxyContext := fmt.Sprintf("session %d", rand.NewMath().Uint64())
 
-	idpubkey, err := cert.Scheme.UnmarshalBinaryPublicKey(s.provider.IdentityKey)
+	pkiSignatureScheme := signSchemes.ByName(s.cfg.PKISignatureScheme)
+	idpubkey, err := pkiSignatureScheme.UnmarshalBinaryPublicKey(s.provider.IdentityKey)
 	if err != nil {
 		return nil, err
 	}

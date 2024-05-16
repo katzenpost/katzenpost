@@ -20,6 +20,7 @@ package server
 import (
 	"errors"
 	"fmt"
+	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 	"os"
 	"path/filepath"
 	"sync"
@@ -39,7 +40,6 @@ import (
 	"github.com/katzenpost/hpqc/sign"
 	signpem "github.com/katzenpost/hpqc/sign/pem"
 
-	"github.com/katzenpost/katzenpost/core/cert"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/thwack"
 	"github.com/katzenpost/katzenpost/core/utils"
@@ -257,14 +257,18 @@ func New(cfg *config.Config) (*Server, error) {
 	identityPublicKeyFile := filepath.Join(s.cfg.Server.DataDir, "identity.public.pem")
 
 	var err error
-	s.identityPublicKey, s.identityPrivateKey, err = cert.Scheme.GenerateKey()
+	pkiSignatureScheme := signSchemes.ByName(s.cfg.Server.PKISignatureScheme)
+	if s == nil {
+		return nil, errors.New("PKI Signature Scheme not found")
+	}
+	s.identityPublicKey, s.identityPrivateKey, err = pkiSignatureScheme.GenerateKey()
 
 	if utils.BothExists(identityPrivateKeyFile, identityPublicKeyFile) {
-		s.identityPrivateKey, err = signpem.FromPrivatePEMFile(identityPrivateKeyFile, cert.Scheme)
+		s.identityPrivateKey, err = signpem.FromPrivatePEMFile(identityPrivateKeyFile, pkiSignatureScheme)
 		if err != nil {
 			return nil, err
 		}
-		s.identityPublicKey, err = signpem.FromPublicPEMFile(identityPublicKeyFile, cert.Scheme)
+		s.identityPublicKey, err = signpem.FromPublicPEMFile(identityPublicKeyFile, pkiSignatureScheme)
 		if err != nil {
 			return nil, err
 		}
