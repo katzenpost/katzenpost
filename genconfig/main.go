@@ -91,6 +91,7 @@ func (s *katzenpost) genClientCfg() error {
 	cfg := new(cConfig.Config)
 
 	cfg.WireKEMScheme = s.wireKEMScheme
+	cfg.PKISignatureScheme = "Ed25519 Sphincs+" // todo refactor this
 	cfg.SphinxGeometry = s.sphinxGeometry
 
 	s.clientIdx++
