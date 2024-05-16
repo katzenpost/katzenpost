@@ -57,12 +57,13 @@ func (s *Server) onConn(conn net.Conn) {
 	}
 
 	cfg := &wire.SessionConfig{
-		KEMScheme:         kemscheme,
-		Geometry:          s.geo,
-		Authenticator:     auth,
-		AdditionalData:    keyHash[:],
-		AuthenticationKey: s.linkKey,
-		RandomReader:      rand.Reader,
+		KEMScheme:          kemscheme,
+		PKISignatureScheme: signSchemes.ByName(s.cfg.Server.PKISignatureScheme),
+		Geometry:           s.geo,
+		Authenticator:      auth,
+		AdditionalData:     keyHash[:],
+		AuthenticationKey:  s.linkKey,
+		RandomReader:       rand.Reader,
 	}
 	wireConn, err := wire.NewPKISession(cfg, false)
 	if err != nil {
