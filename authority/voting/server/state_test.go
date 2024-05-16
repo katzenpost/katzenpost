@@ -393,7 +393,6 @@ func genVotingAuthoritiesCfg(parameters *config.Parameters, numAuthorities int) 
 	for i := 0; i < numAuthorities; i++ {
 		cfg := new(config.Config)
 		cfg.SphinxGeometry = sphinxGeometry
-		cfg.Server.PKISignatureScheme = testSignatureScheme.Name()
 		cfg.Logging = &config.Logging{Disable: false, File: "", Level: "DEBUG"}
 		cfg.Parameters = parameters
 
