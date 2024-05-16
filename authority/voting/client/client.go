@@ -22,7 +22,6 @@ import (
 	"crypto/hmac"
 	"errors"
 	"fmt"
-	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 	"net"
 
 	"gopkg.in/op/go-logging.v1"
@@ -33,6 +32,7 @@ import (
 	"github.com/katzenpost/hpqc/kem/schemes"
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/hpqc/sign"
+	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/katzenpost/core/cert"
@@ -163,9 +163,13 @@ func (p *connector) initSession(ctx context.Context, doneCh <-chan interface{}, 
 
 	// Initialize the wire protocol session.
 	var ad []byte
+	var pkiSignatureScheme sign.Scheme
 	if signingKey != nil {
 		keyHash := hash.Sum256From(signingKey)
 		ad = keyHash[:]
+		pkiSignatureScheme = signSchemes.ByName(signingKey.Scheme().Name())
+	} else {
+		pkiSignatureScheme = signSchemes.ByName("Ed25519 Sphincs+") // todo fix me
 	}
 	cfg := &wire.SessionConfig{
 		KEMScheme:          schemes.ByName(peer.WireKEMScheme),
@@ -174,7 +178,7 @@ func (p *connector) initSession(ctx context.Context, doneCh <-chan interface{}, 
 		AdditionalData:     ad,
 		AuthenticationKey:  linkKey,
 		RandomReader:       rand.Reader,
-		PKISignatureScheme: signSchemes.ByName(signingKey.Scheme().Name()),
+		PKISignatureScheme: pkiSignatureScheme,
 	}
 	s, err := wire.NewPKISession(cfg, true)
 	if err != nil {
