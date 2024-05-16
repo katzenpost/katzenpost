@@ -123,7 +123,7 @@ func (s *Session) doSend(msg *Message) {
 			return
 		}
 	}
-	s.eventCh.In() <- &MessageSentEvent{
+	s.eventCh <- &MessageSentEvent{
 		MessageID: msg.ID,
 		Err:       err,
 		SentAt:    msg.SentAt,

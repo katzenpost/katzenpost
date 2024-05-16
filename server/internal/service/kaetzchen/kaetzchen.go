@@ -32,7 +32,6 @@ import (
 	"github.com/katzenpost/katzenpost/server/internal/instrument"
 	"github.com/katzenpost/katzenpost/server/internal/packet"
 	"golang.org/x/text/secure/precis"
-	"gopkg.in/eapache/channels.v1"
 	"gopkg.in/op/go-logging.v1"
 )
 
@@ -94,7 +93,7 @@ type KaetzchenWorker struct {
 	glue glue.Glue
 	log  *logging.Logger
 
-	ch        *channels.InfiniteChannel
+	ch        chan interface{}
 	kaetzchen map[[sConstants.RecipientIDLength]byte]Kaetzchen
 
 	dropCounter uint64
@@ -142,7 +141,7 @@ func (k *KaetzchenWorker) registerKaetzchen(service Kaetzchen) error {
 }
 
 func (k *KaetzchenWorker) OnKaetzchen(pkt *packet.Packet) {
-	k.ch.In() <- pkt
+	k.ch <- pkt
 }
 
 func (k *KaetzchenWorker) getDropCounter() uint64 {
@@ -159,7 +158,7 @@ func (k *KaetzchenWorker) worker() {
 
 	defer k.log.Debugf("Halting Kaetzchen internal worker.")
 
-	ch := k.ch.Out()
+	ch := k.ch
 
 	for {
 		var pkt *packet.Packet
@@ -253,7 +252,7 @@ func New(glue glue.Glue) (*KaetzchenWorker, error) {
 	kaetzchenWorker := KaetzchenWorker{
 		glue:      glue,
 		log:       glue.LogBackend().GetLogger("kaetzchen_worker"),
-		ch:        channels.NewInfiniteChannel(),
+		ch:        make(chan interface{}, InboundPacketsChannelSize),
 		kaetzchen: make(map[[sConstants.RecipientIDLength]byte]Kaetzchen),
 	}
 

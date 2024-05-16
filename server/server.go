@@ -23,9 +23,9 @@ import (
 	"path/filepath"
 	"sync"
 
-	"gitlab.com/yawning/aez.git"
-	"gopkg.in/eapache/channels.v1"
 	"gopkg.in/op/go-logging.v1"
+
+	"gitlab.com/yawning/aez.git"
 
 	nyquistkem "github.com/katzenpost/nyquist/kem"
 	"github.com/katzenpost/nyquist/seec"
@@ -58,6 +58,8 @@ import (
 // terminates due to the `GenerateOnly` debug config option.
 var ErrGenerateOnly = errors.New("server: GenerateOnly set")
 
+const InboundPacketsChannelSize = 1000
+
 // Server is a Katzenpost server instance.
 type Server struct {
 	cfg *config.Config
@@ -69,7 +71,7 @@ type Server struct {
 	logBackend *log.Backend
 	log        *logging.Logger
 
-	inboundPackets *channels.InfiniteChannel
+	inboundPackets chan interface{}
 
 	scheduler     glue.Scheduler
 	cryptoWorkers []*cryptoworker.Worker
@@ -211,7 +213,7 @@ func (s *Server) halt() {
 
 	// Clean up the top level components.
 	if s.inboundPackets != nil {
-		s.inboundPackets.Close()
+		close(s.inboundPackets)
 	}
 
 	close(s.fatalErrCh)
@@ -393,10 +395,10 @@ func New(cfg *config.Config) (*Server, error) {
 	}
 
 	// Initialize and start the Sphinx workers.
-	s.inboundPackets = channels.NewInfiniteChannel()
+	s.inboundPackets = make(chan interface{}, InboundPacketsChannelSize)
 	s.cryptoWorkers = make([]*cryptoworker.Worker, 0, s.cfg.Debug.NumSphinxWorkers)
 	for i := 0; i < s.cfg.Debug.NumSphinxWorkers; i++ {
-		w := cryptoworker.New(goo, s.inboundPackets.Out(), i)
+		w := cryptoworker.New(goo, s.inboundPackets, i)
 		s.cryptoWorkers = append(s.cryptoWorkers, w)
 	}
 
@@ -411,7 +413,7 @@ func New(cfg *config.Config) (*Server, error) {
 	// Bring the listener(s) online.
 	s.listeners = make([]glue.Listener, 0, len(s.cfg.Server.Addresses))
 	for i, addr := range s.cfg.Server.Addresses {
-		l, err := incoming.New(goo, s.inboundPackets.In(), i, addr)
+		l, err := incoming.New(goo, s.inboundPackets, i, addr)
 		if err != nil {
 			s.log.Errorf("Failed to spawn listener on address: %v (%v).", addr, err)
 			return nil, err
