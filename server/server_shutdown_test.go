@@ -82,11 +82,12 @@ func TestServerStartShutdown(t *testing.T) {
 	cfg := config.Config{
 		SphinxGeometry: geo,
 		Server: &config.Server{
-			WireKEM:    testingSchemeName,
-			Identifier: "testserver",
-			Addresses:  []string{"127.0.0.1:1234"},
-			DataDir:    datadir,
-			IsProvider: false,
+			WireKEM:            testingSchemeName,
+			PKISignatureScheme: testSignatureScheme.Name(),
+			Identifier:         "testserver",
+			Addresses:          []string{"127.0.0.1:1234"},
+			DataDir:            datadir,
+			IsProvider:         false,
 		},
 		Logging: &config.Logging{
 			Disable: false,
@@ -98,11 +99,12 @@ func TestServerStartShutdown(t *testing.T) {
 			Voting: &config.Voting{
 				Authorities: []*aconfig.Authority{
 					&aconfig.Authority{
-						WireKEMScheme:     testingSchemeName,
-						Identifier:        "auth1",
-						IdentityPublicKey: authPubkey,
-						LinkPublicKey:     authLinkPubKey,
-						Addresses:         []string{"127.0.0.1:1234"},
+						WireKEMScheme:      testingSchemeName,
+						PKISignatureScheme: testSignatureScheme,
+						Identifier:         "auth1",
+						IdentityPublicKey:  authPubkey,
+						LinkPublicKey:      authLinkPubKey,
+						Addresses:          []string{"127.0.0.1:1234"},
 					},
 				},
 			},

@@ -63,6 +63,7 @@ func TestConfig(t *testing.T) {
 
 [server]
   WireKEM = "%s"
+  PKISignatureScheme = "Ed25519 Sphincs+"
   Identifier = "katzenpost.example.com"
   Addresses = [ "127.0.0.1:29483", "[::1]:29483" ]
   DataDir = "%s"
@@ -85,6 +86,7 @@ Level = "DEBUG"
   [PKI.Voting]
     [[PKI.Voting.Authorities]]
       WireKEMScheme = "%s"
+      PKISignatureScheme = "Ed25519 Sphincs+"
       Identifier = "auth1"
       IdentityPublicKey = "-----BEGIN ED25519 SPHINCS+ PUBLIC KEY-----\n+4Q2LKzxmrOo3X6CTEbuECJu2v3YUZltsJO9bfQykoVL1SiwVAqkEy4BoDotwKrJ\nDPDKXF4yRfqdQWNFsi14XH31Wlxl1Ik+WD6l1c8UGPeSfRAzRAgKAjScDC3/qrYS\n-----END ED25519 SPHINCS+ PUBLIC KEY-----\n"
       LinkPublicKey = "%s"
