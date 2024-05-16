@@ -579,7 +579,7 @@ func genServiceNodeConfig(name string, pki *sConfig.PKI, port uint16) (*identity
 	cfg.Debug = new(sConfig.Debug)
 
 	// Generate keys
-	idPubKey, idKey, err := cert.Scheme.GenerateKey()
+	idPubKey, idKey, err := testSignatureScheme.GenerateKey()
 	if err != nil {
 		panic(err)
 	}
