@@ -261,6 +261,7 @@ func (s *katzenpost) genNodeConfig(isProvider bool, isVoting bool) error {
 
 func (s *katzenpost) genVotingAuthoritiesCfg(numAuthorities int, parameters *vConfig.Parameters, nrLayers int, wirekem string) error {
 
+	pkiSignatureScheme := signSchemes.ByName("Ed25519 Sphincs+")
 	configs := []*vConfig.Config{}
 
 	// initial generation of key material for each authority
@@ -270,7 +271,7 @@ func (s *katzenpost) genVotingAuthoritiesCfg(numAuthorities int, parameters *vCo
 		cfg.SphinxGeometry = s.sphinxGeometry
 		cfg.Server = &vConfig.Server{
 			WireKEMScheme:      s.wireKEMScheme,
-			PKISignatureScheme: "Ed25519 Sphincs+", // todo: make this configurable
+			PKISignatureScheme: pkiSignatureScheme.Name(), // todo: make this configurable
 			Identifier:         fmt.Sprintf("auth%d", i),
 			Addresses:          []string{fmt.Sprintf("%s:%d", s.bindAddr, s.lastPort)},
 			DataDir:            filepath.Join(s.baseDir, fmt.Sprintf("auth%d", i)),
@@ -292,11 +293,12 @@ func (s *katzenpost) genVotingAuthoritiesCfg(numAuthorities int, parameters *vCo
 		idKey := cfgIdKey(cfg, s.outDir)
 		linkKey := cfgLinkKey(cfg, s.outDir, wirekem)
 		authority := &vConfig.Authority{
-			Identifier:        fmt.Sprintf("auth%d", i),
-			IdentityPublicKey: idKey,
-			LinkPublicKey:     linkKey,
-			WireKEMScheme:     wirekem,
-			Addresses:         cfg.Server.Addresses,
+			Identifier:         fmt.Sprintf("auth%d", i),
+			IdentityPublicKey:  idKey,
+			LinkPublicKey:      linkKey,
+			WireKEMScheme:      wirekem,
+			PKISignatureScheme: pkiSignatureScheme, // todo: make this configurable
+			Addresses:          cfg.Server.Addresses,
 		}
 		s.authorities[hash.Sum256From(idKey)] = authority
 	}
