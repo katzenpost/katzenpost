@@ -1011,7 +1011,7 @@ func (c *Client) sendReadInbox() {
 	}
 
 	doc := c.session.PKIDocument()
-	providerDesc, err := doc.GetProviderByKeyHash(c.spoolReadDescriptor.Provider)
+	providerDesc, err := doc.GetGatewayByKeyHash(c.spoolReadDescriptor.Provider)
 	if err != nil {
 		c.log.Errorf("failed to get provider key hash: %s", err)
 		return
