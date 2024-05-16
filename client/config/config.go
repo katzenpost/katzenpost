@@ -96,7 +96,7 @@ type Debug struct {
 
 	// PreferedTransports is a list of the transports will be used to make
 	// outgoing network connections, with the most prefered first.
-	PreferedTransports []pki.Transport
+	PreferedTransports []string
 }
 
 func (d *Debug) fixup() {
