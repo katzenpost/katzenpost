@@ -11,14 +11,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/charmbracelet/log"
-
 	vServer "github.com/katzenpost/katzenpost/authority/voting/server"
 	"github.com/katzenpost/katzenpost/core/epochtime"
-	"github.com/katzenpost/katzenpost/core/log2"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"github.com/katzenpost/katzenpost/core/worker"
+	"gopkg.in/op/go-logging.v1"
 )
 
 var (
@@ -42,7 +40,7 @@ type pki struct {
 	c               *Client
 	consensusGetter ConsensusGetter
 
-	log *log.Logger
+	log *logging.Logger
 
 	docs          sync.Map
 	failedFetches map[uint64]error
@@ -169,7 +167,7 @@ func (p *pki) worker() {
 
 			err := p.updateDocument(epoch)
 			if err != nil {
-				p.log.Warnf("Failed to fetch PKI for epoch %v: %v", epoch, err)
+				p.log.Warningf("Failed to fetch PKI for epoch %v: %v", epoch, err)
 				switch err {
 				case cpki.ErrNoDocument:
 					p.failedFetches[epoch] = err
@@ -213,7 +211,7 @@ func (p *pki) updateDocument(epoch uint64) error {
 	d, err := p.getDocument(pkiCtx, epoch)
 	cancelFn()
 	if err != nil {
-		p.log.Warnf("Failed to fetch PKI for epoch %v: %v", epoch, err)
+		p.log.Warningf("Failed to fetch PKI for epoch %v: %v", epoch, err)
 		return err
 	}
 	if !hmac.Equal(d.SphinxGeometryHash, p.c.cfg.SphinxGeometry.Hash()) {
@@ -292,11 +290,8 @@ func (p *pki) start() {
 
 func newPKI(c *Client) *pki {
 	p := &pki{
-		c: c,
-		log: log.NewWithOptions(c.logbackend, log.Options{
-			Prefix: "client2/pki",
-			Level:  log2.ParseLevel(c.cfg.Logging.Level),
-		}),
+		c:               c,
+		log:             c.logbackend.GetLogger("client2/pki"),
 		failedFetches:   make(map[uint64]error),
 		forceUpdateCh:   make(chan interface{}, 1),
 		consensusGetter: c.conn,

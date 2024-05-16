@@ -8,8 +8,8 @@ import (
 	"fmt"
 	"net"
 
-	"github.com/charmbracelet/log"
 	"github.com/fxamacker/cbor/v2"
+	"gopkg.in/op/go-logging.v1"
 
 	"github.com/katzenpost/hpqc/rand"
 
@@ -21,7 +21,7 @@ var incomingConnID uint64
 // incomingConn type is used along with listener type
 type incomingConn struct {
 	listener *listener
-	log      *log.Logger
+	log      *logging.Logger
 
 	unixConn *net.UnixConn
 	appID    *[AppIDLength]byte
@@ -176,16 +176,7 @@ func newIncomingConn(l *listener, conn *net.UnixConn) *incomingConn {
 		sendToClientCh: make(chan *Response, 2),
 	}
 
-	logLevel, err := log.ParseLevel(l.client.cfg.Logging.Level)
-	if err != nil {
-		panic(err)
-	}
-	c.log = log.NewWithOptions(l.logbackend, log.Options{
-		ReportTimestamp: true,
-		Level:           logLevel,
-		Prefix:          fmt.Sprintf("incoming:%x", c.appID[:]),
-	})
-
+	c.log = l.logBackend.GetLogger("client2/incomingConn")
 	c.log.Debugf("New incoming connection. Remove addr: %v assigned App ID: %x", conn.RemoteAddr(), appid[:])
 
 	// Note: Unlike most other things, this does not spawn the worker here,

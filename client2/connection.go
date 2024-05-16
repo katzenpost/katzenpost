@@ -13,10 +13,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/charmbracelet/log"
-
 	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/rand"
+	"gopkg.in/op/go-logging.v1"
 
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
@@ -94,7 +93,7 @@ type connection struct {
 	worker.Worker
 
 	client *Client
-	log    *log.Logger
+	log    *logging.Logger
 
 	pkiEpoch   uint64
 	descriptor *cpki.MixDescriptor
@@ -296,7 +295,7 @@ func (c *connection) doConnect(dialCtx context.Context) {
 			}
 		}
 		if len(dstAddrs) == 0 {
-			c.log.Warnf("Aborting connect loop, no suitable addresses found.")
+			c.log.Warningf("Aborting connect loop, no suitable addresses found.")
 			c.descriptor = nil // Give up till the next PKI fetch.
 			connErr = newConnectError("no suitable addreses found")
 			return
@@ -329,7 +328,7 @@ func (c *connection) doConnect(dialCtx context.Context) {
 				return
 			default:
 				if err != nil {
-					c.log.Warnf("Failed to connect to %v: %v", addrPort, err)
+					c.log.Warningf("Failed to connect to %v: %v", addrPort, err)
 					if c.client.cfg.Callbacks.OnConnFn != nil {
 						c.client.cfg.Callbacks.OnConnFn(&ConnectError{Err: err})
 					}
@@ -594,7 +593,7 @@ func (c *connection) onWireConn(w *wire.Session) {
 		}
 		// Update the cached descriptor, and re-validate the connection.
 		if !c.IsPeerValid(creds) {
-			c.log.Warnf("No longer have a descriptor for current peer.")
+			c.log.Warningf("No longer have a descriptor for current peer.")
 			wireErr = newProtocolError("current consensus no longer lists the Gateway")
 			return
 		}
@@ -837,17 +836,8 @@ func (c *connection) start() {
 func newConnection(c *Client) *connection {
 	k := new(connection)
 	k.client = c
-	logLevel, err := log.ParseLevel(c.cfg.Logging.Level)
-	if err != nil {
-		panic(err)
-	}
-	k.log = log.NewWithOptions(c.logbackend, log.Options{
-		Prefix: "client2/conn",
-		Level:  logLevel,
-	})
-
+	k.log = c.logbackend.GetLogger("client2/conn")
 	k.log.Debug("newConnection")
-
 	k.fetchCh = make(chan interface{}, 1)
 	k.sendCh = make(chan *connSendCtx)
 	k.getConsensusCh = make(chan *getConsensusCtx, 1)

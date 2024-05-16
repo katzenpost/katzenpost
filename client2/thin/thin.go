@@ -7,16 +7,16 @@ import (
 	"errors"
 	"fmt"
 	"net"
-	"os"
 	"sync"
 
-	"github.com/charmbracelet/log"
 	"github.com/fxamacker/cbor/v2"
+	"gopkg.in/op/go-logging.v1"
 
 	"github.com/katzenpost/hpqc/rand"
 
 	"github.com/katzenpost/katzenpost/client2/common"
 	"github.com/katzenpost/katzenpost/client2/config"
+	"github.com/katzenpost/katzenpost/core/log"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/worker"
@@ -49,8 +49,9 @@ type ThinClient struct {
 
 	cfg *config.Config
 
-	log          *log.Logger
-	logBackend   *log.Logger
+	log        *logging.Logger
+	logBackend *log.Backend
+
 	unixConn     *net.UnixConn
 	destUnixAddr *net.UnixAddr
 
@@ -72,17 +73,14 @@ type ThinClient struct {
 
 // NewThinClient creates a new thing client.
 func NewThinClient(cfg *config.Config) *ThinClient {
-	logLevel, err := log.ParseLevel(cfg.Logging.Level)
+	logBackend, err := log.New(cfg.Logging.File, cfg.Logging.Level, cfg.Logging.Disable)
 	if err != nil {
 		panic(err)
 	}
 	return &ThinClient{
-		cfg: cfg,
-		log: log.NewWithOptions(os.Stderr, log.Options{
-			Prefix: "thin_client",
-			Level:  logLevel,
-		}),
-		logBackend: log.WithPrefix("backend"),
+		cfg:        cfg,
+		log:        logBackend.GetLogger("thinclient"),
+		logBackend: logBackend,
 		eventSink:  make(chan Event, 2),
 		drainStop:  make(chan interface{}),
 	}
@@ -92,8 +90,8 @@ func (t *ThinClient) GetConfig() *config.Config {
 	return t.cfg
 }
 
-func (t *ThinClient) GetLogger(prefix string) *log.Logger {
-	return t.logBackend.WithPrefix(prefix)
+func (t *ThinClient) GetLogger(prefix string) *logging.Logger {
+	return t.logBackend.GetLogger(prefix)
 }
 
 // Close halts the thin client worker thread and closes the socket

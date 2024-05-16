@@ -12,6 +12,7 @@ import (
 
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
+	"github.com/katzenpost/katzenpost/core/sphinx"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/sphinx/path"
 )
@@ -52,7 +53,7 @@ func (c *Client) ComposeSphinxPacket(request *Request) (pkt []byte, surbkey []by
 			return nil, nil, 0, err
 		}
 
-		revPath := make([]*path.PathHop, 0)
+		revPath := make([]*sphinx.PathHop, 0)
 		if request.SURBID != nil {
 			if c.conn.queueID == nil {
 				panic("sender queueID cannot be nil")
@@ -124,12 +125,12 @@ func (c *Client) SendCiphertext(request *Request) ([]byte, time.Duration, error)
 func (c *Client) SendPacket(pkt []byte) error {
 	err := c.conn.sendPacket(pkt)
 	if err != nil {
-		c.log.Warnf("failed to send packet %s", err)
+		c.log.Warningf("failed to send packet %s", err)
 	}
 	return err
 }
 
-func (c *Client) makePath(recipient []byte, gateway *[32]byte, surbID *[sConstants.SURBIDLength]byte, baseTime time.Time, isForward bool) ([]*path.PathHop, time.Time, error) {
+func (c *Client) makePath(recipient []byte, gateway *[32]byte, surbID *[sConstants.SURBIDLength]byte, baseTime time.Time, isForward bool) ([]*sphinx.PathHop, time.Time, error) {
 	if c.conn.gateway == nil {
 		panic("c.conn.gateway is nil")
 	}
@@ -172,7 +173,7 @@ func (c *Client) makePath(recipient []byte, gateway *[32]byte, surbID *[sConstan
 	return p, t, err
 }
 
-func (c *Client) logPath(doc *cpki.Document, p []*path.PathHop) error {
+func (c *Client) logPath(doc *cpki.Document, p []*sphinx.PathHop) error {
 	s, err := path.ToString(doc, p)
 	if err != nil {
 		return err

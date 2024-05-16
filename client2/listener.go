@@ -4,14 +4,13 @@
 package client2
 
 import (
-	"io"
 	"net"
 	"sync"
 
-	"github.com/charmbracelet/log"
-
+	"github.com/katzenpost/katzenpost/core/log"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/worker"
+	"gopkg.in/op/go-logging.v1"
 )
 
 type listener struct {
@@ -19,8 +18,8 @@ type listener struct {
 
 	client *Client
 
-	log        *log.Logger
-	logbackend io.Writer
+	logBackend *log.Backend
+	log        *logging.Logger
 
 	listener *net.UnixListener
 
@@ -224,20 +223,11 @@ func (l *listener) getConnection(appID *[AppIDLength]byte) *incomingConn {
 }
 
 // New creates a new listener.
-func NewListener(client *Client, rates *Rates, egressCh chan *Request, logbackend io.Writer) (*listener, error) {
-	var err error
-	logLevel, err := log.ParseLevel(client.cfg.Logging.Level)
-	if err != nil {
-		return nil, err
-	}
+func NewListener(client *Client, rates *Rates, egressCh chan *Request, logBackend *log.Backend) (*listener, error) {
 	ingressSize := 200
 	l := &listener{
-		client: client,
-		log: log.NewWithOptions(logbackend, log.Options{
-			Prefix: "listener",
-			Level:  logLevel,
-		}),
-		logbackend:     logbackend,
+		client:         client,
+		logBackend:     logBackend,
 		conns:          make(map[[AppIDLength]byte]*incomingConn),
 		connsLock:      new(sync.RWMutex),
 		closeAllCh:     make(chan interface{}),
@@ -246,7 +236,9 @@ func NewListener(client *Client, rates *Rates, egressCh chan *Request, logbacken
 		updateStatusCh: make(chan error, 2),
 	}
 
-	l.decoySender = newSender(l.ingressCh, egressCh, client.cfg.Debug.DisableDecoyTraffic, logbackend, client.cfg.Logging.Level)
+	l.log = l.logBackend.GetLogger("client2/listener")
+
+	l.decoySender = newSender(l.ingressCh, egressCh, client.cfg.Debug.DisableDecoyTraffic, logBackend)
 
 	network := "unixpacket"
 	address := "@katzenpost"

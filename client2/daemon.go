@@ -6,21 +6,19 @@ package client2
 import (
 	"crypto/hmac"
 	"errors"
-	"fmt"
-	"io"
 	mrand "math/rand"
-	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
-	"github.com/charmbracelet/log"
-
 	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/rand"
+	"gopkg.in/op/go-logging.v1"
 
 	"github.com/katzenpost/katzenpost/client2/common"
 	"github.com/katzenpost/katzenpost/client2/config"
 	"github.com/katzenpost/katzenpost/client2/thin"
+	"github.com/katzenpost/katzenpost/core/log"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
@@ -51,12 +49,13 @@ type replyDescriptor struct {
 type Daemon struct {
 	worker.Worker
 
-	logbackend io.Writer
-	log        *log.Logger
-	cfg        *config.Config
-	client     *Client
-	listener   *listener
-	egressCh   chan *Request
+	logbackend *log.Backend
+	log        *logging.Logger
+
+	cfg      *config.Config
+	client   *Client
+	listener *listener
+	egressCh chan *Request
 
 	replies   map[[sConstants.SURBIDLength]byte]replyDescriptor
 	decoys    map[[sConstants.SURBIDLength]byte]replyDescriptor
@@ -77,38 +76,9 @@ type Daemon struct {
 }
 
 func NewDaemon(cfg *config.Config) (*Daemon, error) {
-	var err error
-	var logbackend io.Writer
-
-	if cfg.Logging.Disable {
-		fmt.Println("WARNING: disabling logging")
-		logbackend, err = os.OpenFile("/dev/null", os.O_WRONLY, 0600)
-		if err != nil {
-			return nil, err
-		}
-	} else {
-		if cfg.Logging.File == "" {
-			logbackend = os.Stderr
-		} else {
-			logbackend, err = os.OpenFile(cfg.Logging.File, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0600)
-			if err != nil {
-				return nil, err
-			}
-		}
-	}
-	logLevel, err := log.ParseLevel(cfg.Logging.Level)
-	if err != nil {
-		return nil, err
-	}
 	egressSize := 2
 	ingressSize := 200
 	d := &Daemon{
-		logbackend: logbackend,
-		log: log.NewWithOptions(logbackend, log.Options{
-			ReportTimestamp: true,
-			Prefix:          "client2_daemon",
-			Level:           logLevel,
-		}),
 		cfg:          cfg,
 		egressCh:     make(chan *Request, egressSize),
 		ingressCh:    make(chan *sphinxReply, ingressSize),
@@ -120,8 +90,27 @@ func NewDaemon(cfg *config.Config) (*Daemon, error) {
 		arqSurbIDMap: make(map[[sConstants.SURBIDLength]byte]*ARQMessage),
 		arqResendCh:  make(chan *[sConstants.SURBIDLength]byte, 2),
 	}
-
+	err := d.initLogging()
+	if err != nil {
+		return nil, err
+	}
 	return d, nil
+}
+
+func (d *Daemon) initLogging() error {
+	f := d.cfg.Logging.File
+	if !d.cfg.Logging.Disable && d.cfg.Logging.File != "" {
+		if !filepath.IsAbs(f) {
+			return errors.New("log file path must be absolute path")
+		}
+	}
+
+	var err error
+	d.logbackend, err = log.New(f, d.cfg.Logging.Level, d.cfg.Logging.Disable)
+	if err == nil {
+		d.log = d.logbackend.GetLogger("katzenpost/client2")
+	}
+	return err
 }
 
 // Shutdown cleanly shuts down a given Server instance.
@@ -184,9 +173,9 @@ func (d *Daemon) Start() error {
 		if !ok {
 			panic("wtf, failed type assertion!")
 		}
-		d.log.Warn("BEFORE ARQ resend")
+		d.log.Warning("BEFORE ARQ resend")
 		d.arqResend(surbID)
-		d.log.Warn("AFTER ARQ resend")
+		d.log.Warning("AFTER ARQ resend")
 	})
 	d.arqTimerQueue.Start()
 	d.gctimerQueue = NewTimerQueue(func(rawGCReply interface{}) {
@@ -518,12 +507,12 @@ func (d *Daemon) arqDoResend(surbID *[sConstants.SURBIDLength]byte) {
 	// it means that HandleAck was already called with the
 	// given SURB ID.
 	if !ok {
-		d.log.Warnf("SURB ID %x NOT FOUND. Aborting resend.", surbID[:])
+		d.log.Warningf("SURB ID %x NOT FOUND. Aborting resend.", surbID[:])
 		d.replyLock.Unlock()
 		return
 	}
 	if (message.Retransmissions + 1) > MaxRetransmissions {
-		d.log.Warn("ARQ Max retries met.")
+		d.log.Warning("ARQ Max retries met.")
 		response := &Response{
 			AppID: message.AppID,
 			MessageReplyEvent: &thin.MessageReplyEvent{
@@ -539,12 +528,12 @@ func (d *Daemon) arqDoResend(surbID *[sConstants.SURBIDLength]byte) {
 		}
 		err := incomingConn.sendResponse(response)
 		if err != nil {
-			d.log.Warnf("failed to send MessageReplyEvent with max retry failure")
+			d.log.Warningf("failed to send MessageReplyEvent with max retry failure")
 		}
 		d.replyLock.Unlock()
 		return
 	}
-	d.log.Warnf("resend ----------------- REMOVING SURB ID %x", surbID[:])
+	d.log.Warningf("resend ----------------- REMOVING SURB ID %x", surbID[:])
 	delete(d.arqSurbIDMap, *surbID)
 
 	newsurbID := &[sConstants.SURBIDLength]byte{}
@@ -574,7 +563,7 @@ func (d *Daemon) arqDoResend(surbID *[sConstants.SURBIDLength]byte) {
 	d.arqSurbIDMap[*newsurbID] = message
 	d.replyLock.Unlock()
 
-	d.log.Warnf("resend PUTTING INTO MAP, NEW SURB ID %x", newsurbID[:])
+	d.log.Warningf("resend PUTTING INTO MAP, NEW SURB ID %x", newsurbID[:])
 	myRtt := message.SentAt.Add(message.ReplyETA)
 	myRtt = myRtt.Add(RoundTripTimeSlop)
 	priority := uint64(myRtt.UnixNano())
@@ -582,6 +571,6 @@ func (d *Daemon) arqDoResend(surbID *[sConstants.SURBIDLength]byte) {
 
 	err = d.client.SendPacket(pkt)
 	if err != nil {
-		d.log.Warnf("ARQ resend failure: %s", err)
+		d.log.Warningf("ARQ resend failure: %s", err)
 	}
 }
