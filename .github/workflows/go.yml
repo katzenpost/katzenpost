@@ -114,6 +114,10 @@ jobs:
         run: |
           cd docker && sudo -E make start
 
+      - name: Allow mixnet to settle
+        run: |
+          sleep 240
+
       - name: run ping
         run: cd docker && sudo -E make wait run-ping
 
