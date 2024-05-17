@@ -59,11 +59,12 @@ type katzenpost struct {
 	logLevel  string
 	logWriter io.Writer
 
-	wireKEMScheme     string
-	sphinxGeometry    *geo.Geometry
-	votingAuthConfigs []*vConfig.Config
-	authorities       map[[32]byte]*vConfig.Authority
-	authIdentity      sign.PublicKey
+	wireKEMScheme      string
+	pkiSignatureScheme sign.Scheme
+	sphinxGeometry     *geo.Geometry
+	votingAuthConfigs  []*vConfig.Config
+	authorities        map[[32]byte]*vConfig.Authority
+	authIdentity       sign.PublicKey
 
 	nodeConfigs    []*sConfig.Config
 	basePort       uint16
@@ -93,7 +94,7 @@ func (s *katzenpost) genClientCfg() error {
 	cfg := new(cConfig.Config)
 
 	cfg.WireKEMScheme = s.wireKEMScheme
-	cfg.PKISignatureScheme = "Ed25519 Sphincs+" // todo refactor this
+	cfg.PKISignatureScheme = s.pkiSignatureScheme.Name()
 	cfg.SphinxGeometry = s.sphinxGeometry
 
 	s.clientIdx++
@@ -149,7 +150,7 @@ func (s *katzenpost) genNodeConfig(isGateway, isServiceNode bool, isVoting bool)
 	// Server section.
 	cfg.Server = new(sConfig.Server)
 	cfg.Server.WireKEM = s.wireKEMScheme
-	cfg.Server.PKISignatureScheme = "Ed25519 Sphincs+" // todo: make this configurable
+	cfg.Server.PKISignatureScheme = s.pkiSignatureScheme.Name()
 	cfg.Server.Identifier = n
 	cfg.Server.Addresses = []string{fmt.Sprintf("%s:%d", s.bindAddr, s.lastPort)}
 	cfg.Server.DataDir = filepath.Join(s.baseDir, n)
@@ -345,6 +346,7 @@ func main() {
 	kem := flag.String("kem", "", "Name of the KEM Scheme to be used with Sphinx")
 	nike := flag.String("nike", "x25519", "Name of the NIKE Scheme to be used with Sphinx")
 	UserForwardPayloadLength := flag.Int("UserForwardPayloadLength", 2000, "UserForwardPayloadLength")
+	pkiSignatureScheme := flag.String("pkiScheme", "Ed25519 Sphincs+", "PKI Signature Scheme to be used")
 
 	sr := flag.Uint64("sr", 0, "Sendrate limit")
 	mu := flag.Float64("mu", 0.005, "Inverse of mean of per hop delay.")
@@ -427,6 +429,13 @@ func main() {
 			true,
 			nrHops,
 		)
+	}
+	if *pkiSignatureScheme != "" {
+		signScheme := signSchemes.ByName(*pkiSignatureScheme)
+		if signScheme == nil {
+			log.Fatalf("failed to resolve pki signature scheme %s", *pkiSignatureScheme)
+		}
+		s.pkiSignatureScheme = signScheme
 	}
 
 	os.Mkdir(s.outDir, 0700)

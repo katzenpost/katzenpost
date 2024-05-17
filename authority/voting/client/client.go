@@ -73,6 +73,8 @@ type Config struct {
 	// KEMScheme indicates the KEM scheme used for the LinkKey/wire protocol.
 	KEMScheme kem.Scheme
 
+	PKISignatureScheme sign.Scheme
+
 	// LinkKey is the link key for the client's wire connections.
 	LinkKey kem.PrivateKey
 
@@ -163,22 +165,19 @@ func (p *connector) initSession(ctx context.Context, doneCh <-chan interface{}, 
 
 	// Initialize the wire protocol session.
 	var ad []byte
-	var pkiSignatureScheme sign.Scheme
 	if signingKey != nil {
 		keyHash := hash.Sum256From(signingKey)
 		ad = keyHash[:]
-		pkiSignatureScheme = signSchemes.ByName(signingKey.Scheme().Name())
-	} else {
-		pkiSignatureScheme = signSchemes.ByName("Ed25519 Sphincs+") // todo fix me
 	}
+
 	cfg := &wire.SessionConfig{
 		KEMScheme:          schemes.ByName(peer.WireKEMScheme),
+		PKISignatureScheme: signSchemes.ByName(peer.PKISignatureScheme),
 		Geometry:           p.cfg.Geo,
 		Authenticator:      peerAuthenticator,
 		AdditionalData:     ad,
 		AuthenticationKey:  linkKey,
 		RandomReader:       rand.Reader,
-		PKISignatureScheme: pkiSignatureScheme,
 	}
 	s, err := wire.NewPKISession(cfg, true)
 	if err != nil {

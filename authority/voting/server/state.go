@@ -1959,14 +1959,19 @@ func (s *state) backgroundFetchConsensus(epoch uint64) {
 		if kemscheme == nil {
 			panic("kem scheme not found in registry")
 		}
+		pkiSignatureScheme := signSchemes.ByName(s.s.cfg.Server.PKISignatureScheme)
+		if pkiSignatureScheme == nil {
+			panic("pki signature scheme not found in registry")
+		}
 		go func() {
 			cfg := &client.Config{
-				KEMScheme:     kemscheme,
-				LinkKey:       s.s.linkKey,
-				LogBackend:    s.s.logBackend,
-				Authorities:   s.s.cfg.Authorities,
-				DialContextFn: nil,
-				Geo:           s.geo,
+				KEMScheme:          kemscheme,
+				PKISignatureScheme: pkiSignatureScheme,
+				LinkKey:            s.s.linkKey,
+				LogBackend:         s.s.logBackend,
+				Authorities:        s.s.cfg.Authorities,
+				DialContextFn:      nil,
+				Geo:                s.geo,
 			}
 			c, err := client.New(cfg)
 			if err != nil {
