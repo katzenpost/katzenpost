@@ -23,8 +23,6 @@ import (
 
 	"github.com/katzenpost/hpqc/kem"
 	"github.com/katzenpost/hpqc/sign"
-
-	"github.com/katzenpost/katzenpost/core/cert"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/server/config"
 )
@@ -54,7 +52,7 @@ func getGlue(logBackend *log.Backend, provider *mockProvider, linkKey kem.Privat
 func TestCBORInvalidCommandWithPluginKaetzchenWorker(t *testing.T) {
 	require := require.New(t)
 
-	_, idKey, err := cert.Scheme.GenerateKey()
+	_, idKey, err := testSignatureScheme.GenerateKey()
 
 	logBackend, err := log.New("", "DEBUG", false)
 	require.NoError(err)

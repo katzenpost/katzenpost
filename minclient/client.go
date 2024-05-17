@@ -56,6 +56,8 @@ type ClientConfig struct {
 
 	LinkKemScheme kem.Scheme
 
+	PKISignatureScheme sign.Scheme
+
 	// LinkKey is the user's ECDH link authentication private key.
 	LinkKey kem.PrivateKey
 

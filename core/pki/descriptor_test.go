@@ -24,11 +24,12 @@ import (
 
 	ecdh "github.com/katzenpost/hpqc/nike/x25519"
 	"github.com/katzenpost/hpqc/rand"
-
-	"github.com/katzenpost/katzenpost/core/cert"
+	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 )
 
 const debugTestEpoch = 0xFFFFFFFF
+
+var testDescriptorSignatureScheme = signSchemes.ByName("Ed25519 Sphincs+")
 
 func TestDescriptor(t *testing.T) {
 	t.Parallel()
@@ -51,7 +52,7 @@ func TestDescriptor(t *testing.T) {
 	d.IsServiceNode = true
 	d.LoadWeight = 23
 
-	identityPub, identityPriv, err := cert.Scheme.GenerateKey()
+	identityPub, identityPriv, err := testDescriptorSignatureScheme.GenerateKey()
 	require.NoError(err)
 
 	d.IdentityKey, err = identityPub.MarshalBinary()

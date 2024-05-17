@@ -29,6 +29,7 @@ import (
 	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/kem"
 	"github.com/katzenpost/hpqc/rand"
+	"github.com/katzenpost/hpqc/sign"
 
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
@@ -41,7 +42,8 @@ import (
 var incomingConnID uint64
 
 type incomingConn struct {
-	scheme kem.Scheme
+	scheme        kem.Scheme
+	pkiSignScheme sign.Scheme
 
 	l   *listener
 	log *logging.Logger
@@ -390,7 +392,7 @@ func (c *incomingConn) onRetrieveMessage(cmd *commands.RetrieveMessage) error {
 		// This was a SURBReply.
 		surbCmd := &commands.MessageACK{
 			Geo:  c.geo,
-			Cmds: commands.NewCommands(c.geo),
+			Cmds: commands.NewCommands(c.geo, c.pkiSignScheme),
 
 			QueueSizeHint: hint,
 			Sequence:      cmd.Sequence,
@@ -406,7 +408,7 @@ func (c *incomingConn) onRetrieveMessage(cmd *commands.RetrieveMessage) error {
 		// This was a message.
 		respCmd = &commands.Message{
 			Geo:  c.geo,
-			Cmds: commands.NewCommands(c.geo),
+			Cmds: commands.NewCommands(c.geo, c.pkiSignScheme),
 
 			QueueSizeHint: hint,
 			Sequence:      cmd.Sequence,
@@ -423,7 +425,7 @@ func (c *incomingConn) onRetrieveMessage(cmd *commands.RetrieveMessage) error {
 			c.log.Errorf("BUG: Get() failed to return a message, and the queue is not empty.")
 		}
 		respCmd = &commands.MessageEmpty{
-			Cmds:     commands.NewCommands(c.geo),
+			Cmds:     commands.NewCommands(c.geo, c.pkiSignScheme),
 			Sequence: cmd.Sequence,
 		}
 	}
@@ -482,9 +484,10 @@ func (c *incomingConn) onSendPacket(cmd *commands.SendPacket) error {
 	return nil
 }
 
-func newIncomingConn(l *listener, conn net.Conn, geo *geo.Geometry, scheme kem.Scheme) *incomingConn {
+func newIncomingConn(l *listener, conn net.Conn, geo *geo.Geometry, scheme kem.Scheme, pkiSignScheme sign.Scheme) *incomingConn {
 	c := &incomingConn{
 		scheme:            scheme,
+		pkiSignScheme:     pkiSignScheme,
 		l:                 l,
 		c:                 conn,
 		id:                atomic.AddUint64(&incomingConnID, 1), // Diagnostic only, wrapping is fine.

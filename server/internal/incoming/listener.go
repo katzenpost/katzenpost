@@ -29,6 +29,7 @@ import (
 	"gopkg.in/op/go-logging.v1"
 
 	"github.com/katzenpost/hpqc/kem/schemes"
+	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/worker"
@@ -109,7 +110,11 @@ func (l *listener) onNewConn(conn net.Conn) {
 	if scheme == nil {
 		panic("KEM scheme not found in registry")
 	}
-	c := newIncomingConn(l, conn, l.glue.Config().SphinxGeometry, scheme)
+	pkiScheme := signSchemes.ByName(l.glue.Config().Server.PKISignatureScheme)
+	if pkiScheme == nil {
+		panic("PKI signature scheme not found in registry")
+	}
+	c := newIncomingConn(l, conn, l.glue.Config().SphinxGeometry, scheme, pkiScheme)
 
 	l.closeAllWg.Add(1)
 	l.Lock()
