@@ -7,12 +7,13 @@ before:
 builds:
  - id: mixserver
    main: ./server/cmd/server
-   binary: gno
+   binary: mixserver
    env:
       - CGO_ENABLED=0
    goos:
       - linux
       - darwin
+      - windows
    goarch:
       - amd64
       - arm64
@@ -22,10 +23,52 @@ builds:
       - 7
  - id: dirauth
    main: ./authority/cmd/voting
+   binary: dirauth
+   env:
+      - CGO_ENABLED=0
+   goos:
+      - linux
+      - darwin
+      - windows
+   goarch:
+      - amd64
+      - arm64
+      - arm
+   goarm:
+      - 6
+      - 7
  - id: fetch
    main: ./authority/cmd/fetch
+   binary: fetch
+   env:
+      - CGO_ENABLED=0
+   goos:
+      - linux
+      - darwin
+      - windows
+   goarch:
+      - amd64
+      - arm64
+      - arm
+   goarm:
+      - 6
+      - 7
  - id: ping
    main: ./ping
+   binary: ping
+   env:
+      - CGO_ENABLED=0
+   goos:
+      - linux
+      - darwin
+      - windows
+   goarch:
+      - amd64
+      - arm64
+      - arm
+   goarm:
+      - 6
+      - 7
 
 archives:
   - format: tar.gz
