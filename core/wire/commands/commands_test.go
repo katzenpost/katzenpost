@@ -23,9 +23,9 @@ import (
 
 	ecdh "github.com/katzenpost/hpqc/nike/x25519"
 	"github.com/katzenpost/hpqc/rand"
+	"github.com/katzenpost/hpqc/sign/schemes"
 	"github.com/katzenpost/hpqc/util"
 
-	"github.com/katzenpost/hpqc/sign/schemes"
 	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
