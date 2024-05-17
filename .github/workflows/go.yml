@@ -114,12 +114,8 @@ jobs:
         run: |
           cd docker && sudo -E make start
 
-      - name: Allow mixnet to settle
-        run: |
-          sleep 240
-
       - name: run ping
-        run: cd docker && sudo -E make run-ping
+        run: cd docker && sudo -E make wait run-ping
 
       - name: run client end to end tests
         run: cd client2 && sudo -E make testargs=-coverprofile=coverage.part dockerdockertest && cat coverage.part >> ../coverage.out
