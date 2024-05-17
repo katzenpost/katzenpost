@@ -1,18 +1,5 @@
-// genconfig.go - Katzenpost self contained test network.
-// Copyright (C) 2022  Yawning Angel, David Stainton, Masala
-//
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU Affero General Public License as
-// published by the Free Software Foundation, either version 3 of the
-// License, or (at your option) any later version.
-//
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU Affero General Public License for more details.
-//
-// You should have received a copy of the GNU Affero General Public License
-// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+// SPDX-FileCopyrightText: Copyright (C) 2022  Yawning Angel, David Stainton, Masala
+// SPDX-License-Identifier: AGPL-3.0-only
 
 package main
 
@@ -37,6 +24,7 @@ import (
 
 	vConfig "github.com/katzenpost/katzenpost/authority/voting/server/config"
 	cConfig "github.com/katzenpost/katzenpost/client/config"
+	cConfig2 "github.com/katzenpost/katzenpost/client2/config"
 	"github.com/katzenpost/katzenpost/core/cert"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	sConfig "github.com/katzenpost/katzenpost/server/config"
@@ -87,6 +75,76 @@ type NodeById []*vConfig.Node
 func (a NodeById) Len() int           { return len(a) }
 func (a NodeById) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
 func (a NodeById) Less(i, j int) bool { return a[i].Identifier < a[j].Identifier }
+
+func (s *katzenpost) genClient2Cfg() error {
+	log.Print("genClient2Cfg begin")
+	os.Mkdir(filepath.Join(s.outDir, "client2"), 0700)
+	cfg := new(cConfig2.Config)
+
+	cfg.WireKEMScheme = s.wireKEMScheme
+	cfg.SphinxGeometry = s.sphinxGeometry
+
+	// Logging section.
+	cfg.Logging = &cConfig2.Logging{File: "", Level: "DEBUG"}
+
+	// UpstreamProxy section
+	cfg.UpstreamProxy = &cConfig2.UpstreamProxy{Type: "none"}
+
+	cfg.PreferedTransports = []string{"tcp"}
+
+	// VotingAuthority section
+
+	peers := make([]*vConfig.Authority, 0)
+	for _, peer := range s.authorities {
+		peers = append(peers, peer)
+	}
+
+	sort.Sort(AuthById(peers))
+
+	cfg.VotingAuthority = &cConfig2.VotingAuthority{Peers: peers}
+
+	// Debug section
+	cfg.Debug = &cConfig2.Debug{DisableDecoyTraffic: false}
+
+	log.Print("before gathering providers")
+	gateways := make([]*cConfig2.Gateway, 0)
+	for i := 0; i < len(s.nodeConfigs); i++ {
+		if s.nodeConfigs[i].Gateway == nil {
+			continue
+		}
+
+		idPubKey := cfgIdKey(s.nodeConfigs[i], s.outDir)
+		linkPubKey := cfgLinkKey(s.nodeConfigs[i], s.outDir, cfg.WireKEMScheme)
+
+		gateway := &cConfig2.Gateway{
+			WireKEMScheme: s.wireKEMScheme,
+			Name:          s.nodeConfigs[i].Server.Identifier,
+			IdentityKey:   idPubKey,
+			LinkKey:       linkPubKey,
+			Addresses: map[string][]string{
+				"tcp": s.nodeConfigs[i].Server.Addresses,
+			},
+		}
+		gateways = append(gateways, gateway)
+	}
+	if len(gateways) == 0 {
+		panic("wtf 0 providers")
+	}
+	log.Print("after gathering providers")
+	cfg.PinnedGateways = &cConfig2.Gateways{
+		Gateways: gateways,
+	}
+
+	log.Print("before save config")
+	err := saveCfg(cfg, s.outDir)
+	if err != nil {
+		log.Printf("save config failure %s", err.Error())
+		return err
+	}
+	log.Print("after save config")
+	log.Print("genClient2Cfg end")
+	return nil
+}
 
 func (s *katzenpost) genClientCfg() error {
 	os.Mkdir(filepath.Join(s.outDir, "client"), 0700)
@@ -237,6 +295,8 @@ func (s *katzenpost) genNodeConfig(isGateway, isServiceNode bool, isVoting bool)
 	s.nodeConfigs = append(s.nodeConfigs, cfg)
 	s.lastPort++
 	_ = cfgIdKey(cfg, s.outDir)
+	_ = cfgLinkKey(cfg, s.outDir, s.wireKEMScheme)
+	log.Print("genNodeConfig end")
 	return cfg.FixupAndValidate()
 }
 
@@ -495,11 +555,15 @@ func main() {
 		log.Fatalf("%s", err)
 	}
 
-	err = s.genDockerCompose(*dockerImage)
+	err = s.genClient2Cfg()
 	if err != nil {
 		log.Fatalf("%s", err)
 	}
 
+	err = s.genDockerCompose(*dockerImage)
+	if err != nil {
+		log.Fatalf("%s", err)
+	}
 	err = s.genPrometheus()
 	if err != nil {
 		log.Fatalf("%s", err)
@@ -510,6 +574,8 @@ func identifier(cfg interface{}) string {
 	switch cfg.(type) {
 	case *cConfig.Config:
 		return "client"
+	case *cConfig2.Config:
+		return "client2"
 	case *sConfig.Config:
 		return cfg.(*sConfig.Config).Server.Identifier
 	case *vConfig.Config:
