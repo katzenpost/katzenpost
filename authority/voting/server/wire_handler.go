@@ -26,7 +26,7 @@ import (
 	ecdh "github.com/katzenpost/hpqc/nike/x25519"
 	"github.com/katzenpost/hpqc/rand"
 
-	"github.com/katzenpost/katzenpost/core/cert"
+	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/wire"
@@ -57,12 +57,13 @@ func (s *Server) onConn(conn net.Conn) {
 	}
 
 	cfg := &wire.SessionConfig{
-		KEMScheme:         kemscheme,
-		Geometry:          s.geo,
-		Authenticator:     auth,
-		AdditionalData:    keyHash[:],
-		AuthenticationKey: s.linkKey,
-		RandomReader:      rand.Reader,
+		KEMScheme:          kemscheme,
+		PKISignatureScheme: signSchemes.ByName(s.cfg.Server.PKISignatureScheme),
+		Geometry:           s.geo,
+		Authenticator:      auth,
+		AdditionalData:     keyHash[:],
+		AuthenticationKey:  s.linkKey,
+		RandomReader:       rand.Reader,
 	}
 	wireConn, err := wire.NewPKISession(cfg, false)
 	if err != nil {
@@ -208,8 +209,9 @@ func (s *Server) onPostDescriptor(rAddr net.Addr, cmd *commands.PostDescriptor, 
 		resp.ErrorCode = commands.DescriptorForbidden
 		return resp
 	}
+	pkiSignatureScheme := signSchemes.ByName(s.cfg.Server.PKISignatureScheme)
 
-	descIdPubKey, err := cert.Scheme.UnmarshalBinaryPublicKey(desc.IdentityKey)
+	descIdPubKey, err := pkiSignatureScheme.UnmarshalBinaryPublicKey(desc.IdentityKey)
 	if err != nil {
 		s.log.Error("failed to unmarshal descriptor IdentityKey")
 		resp.ErrorCode = commands.DescriptorForbidden

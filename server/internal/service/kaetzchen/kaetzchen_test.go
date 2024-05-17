@@ -30,8 +30,8 @@ import (
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/hpqc/sign"
 	signpem "github.com/katzenpost/hpqc/sign/pem"
+	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 
-	"github.com/katzenpost/katzenpost/core/cert"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/sphinx/commands"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
@@ -49,6 +49,7 @@ import (
 
 var testingSchemeName = "x25519"
 var testingScheme = schemes.ByName(testingSchemeName)
+var testSignatureScheme = signSchemes.ByName("Ed25519 Sphincs+")
 
 type mockUserDB struct {
 	provider *mockProvider
@@ -239,7 +240,7 @@ func TestKaetzchenWorker(t *testing.T) {
 
 	datadir := os.TempDir()
 
-	idPubKey, idKey, err := cert.Scheme.GenerateKey()
+	idPubKey, idKey, err := testSignatureScheme.GenerateKey()
 	require.NoError(t, err)
 
 	err = signpem.PrivateKeyToFile(filepath.Join(datadir, "identity.private.pem"), idKey)

@@ -369,12 +369,13 @@ func (c *connection) onTCPConn(conn net.Conn) {
 
 	// Allocate the session struct.
 	cfg := &wire.SessionConfig{
-		KEMScheme:         c.c.cfg.LinkKemScheme,
-		Geometry:          c.c.cfg.SphinxGeometry,
-		Authenticator:     c,
-		AdditionalData:    []byte(c.c.cfg.User),
-		AuthenticationKey: c.c.cfg.LinkKey,
-		RandomReader:      rand.Reader,
+		KEMScheme:          c.c.cfg.LinkKemScheme,
+		PKISignatureScheme: c.c.cfg.PKISignatureScheme,
+		Geometry:           c.c.cfg.SphinxGeometry,
+		Authenticator:      c,
+		AdditionalData:     []byte(c.c.cfg.User),
+		AuthenticationKey:  c.c.cfg.LinkKey,
+		RandomReader:       rand.Reader,
 	}
 	w, err := wire.NewSession(cfg, true)
 	if err != nil {
