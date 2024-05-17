@@ -32,6 +32,7 @@ import (
 	"github.com/katzenpost/hpqc/kem/schemes"
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/hpqc/sign"
+	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/katzenpost/core/cert"
@@ -71,6 +72,9 @@ func (a *authorityAuthenticator) IsPeerValid(creds *wire.PeerCredentials) bool {
 type Config struct {
 	// KEMScheme indicates the KEM scheme used for the LinkKey/wire protocol.
 	KEMScheme kem.Scheme
+
+	// PKISignatureScheme specifies the cryptographic signature scheme
+	PKISignatureScheme sign.Scheme
 
 	// LinkKey is the link key for the client's wire connections.
 	LinkKey kem.PrivateKey
@@ -166,13 +170,15 @@ func (p *connector) initSession(ctx context.Context, doneCh <-chan interface{}, 
 		keyHash := hash.Sum256From(signingKey)
 		ad = keyHash[:]
 	}
+
 	cfg := &wire.SessionConfig{
-		KEMScheme:         schemes.ByName(peer.WireKEMScheme),
-		Geometry:          p.cfg.Geo,
-		Authenticator:     peerAuthenticator,
-		AdditionalData:    ad,
-		AuthenticationKey: linkKey,
-		RandomReader:      rand.Reader,
+		KEMScheme:          schemes.ByName(peer.WireKEMScheme),
+		PKISignatureScheme: signSchemes.ByName(peer.PKISignatureScheme),
+		Geometry:           p.cfg.Geo,
+		Authenticator:      peerAuthenticator,
+		AdditionalData:     ad,
+		AuthenticationKey:  linkKey,
+		RandomReader:       rand.Reader,
 	}
 	s, err := wire.NewPKISession(cfg, true)
 	if err != nil {

@@ -27,6 +27,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/katzenpost/hpqc/sign"
 	"github.com/katzenpost/nyquist"
 	"github.com/katzenpost/nyquist/cipher"
 	"github.com/katzenpost/nyquist/hash"
@@ -591,7 +592,7 @@ func NewPKISession(cfg *SessionConfig, isInitiator bool) (*Session, error) {
 		state:          stateInit,
 		rxKeyMutex:     new(sync.RWMutex),
 		txKeyMutex:     new(sync.RWMutex),
-		commands:       commands.NewCommands(cfg.Geometry),
+		commands:       commands.NewCommands(cfg.Geometry, cfg.PKISignatureScheme),
 	}
 	s.authenticationKEMKey = cfg.AuthenticationKey
 
@@ -630,7 +631,7 @@ func NewSession(cfg *SessionConfig, isInitiator bool) (*Session, error) {
 		state:          stateInit,
 		rxKeyMutex:     new(sync.RWMutex),
 		txKeyMutex:     new(sync.RWMutex),
-		commands:       commands.NewCommands(cfg.Geometry),
+		commands:       commands.NewCommands(cfg.Geometry, cfg.PKISignatureScheme),
 	}
 	s.authenticationKEMKey = cfg.AuthenticationKey
 
@@ -642,6 +643,9 @@ type SessionConfig struct {
 
 	// KEMScheme wire/link protocol KEM scheme.
 	KEMScheme kem.Scheme
+
+	// PKISignatureScheme specifies the cryptographic signature scheme
+	PKISignatureScheme sign.Scheme
 
 	// Authenticator is the PeerAuthenticator instance that will be used to
 	// authenticate the remote peer for the newly created Session.
