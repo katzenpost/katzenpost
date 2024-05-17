@@ -23,13 +23,15 @@ import (
 
 	ecdh "github.com/katzenpost/hpqc/nike/x25519"
 	"github.com/katzenpost/hpqc/rand"
+	"github.com/katzenpost/hpqc/sign/schemes"
 	"github.com/katzenpost/hpqc/util"
 
-	"github.com/katzenpost/katzenpost/core/cert"
 	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 )
+
+var testCertScheme = schemes.ByName("Ed25519 Sphincs+")
 
 func TestNoOp(t *testing.T) {
 	t.Parallel()
@@ -41,9 +43,7 @@ func TestNoOp(t *testing.T) {
 
 	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
 	s := sphinx.NewSphinx(geo)
-	cmds := &Commands{
-		geo: s.Geometry(),
-	}
+	cmds := NewCommands(s.Geometry(), testCertScheme)
 
 	cmd := &NoOp{
 		Cmds: cmds,
@@ -67,9 +67,7 @@ func TestDisconnect(t *testing.T) {
 
 	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
 	s := sphinx.NewSphinx(geo)
-	cmds := &Commands{
-		geo: s.Geometry(),
-	}
+	cmds := NewCommands(s.Geometry(), testCertScheme)
 
 	cmd := &Disconnect{
 		Cmds: cmds,
@@ -94,9 +92,7 @@ func TestSendPacket(t *testing.T) {
 	nrHops := 5
 	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
 	s := sphinx.NewSphinx(geo)
-	cmds := &Commands{
-		geo: s.Geometry(),
-	}
+	cmds := NewCommands(s.Geometry(), testCertScheme)
 
 	cmd := &SendPacket{SphinxPacket: []byte(payload), Cmds: cmds}
 	b := cmd.ToBytes()
@@ -123,9 +119,7 @@ func TestRetrieveMessage(t *testing.T) {
 	nrHops := 5
 	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
 	s := sphinx.NewSphinx(geo)
-	cmds := &Commands{
-		geo: s.Geometry(),
-	}
+	cmds := NewCommands(s.Geometry(), testCertScheme)
 
 	cmd := &RetrieveMessage{Sequence: seq, Cmds: cmds}
 	b := cmd.ToBytes()
@@ -148,9 +142,7 @@ func TestMessage(t *testing.T) {
 	forwardPayloadLength := 2000
 	nrHops := 5
 	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
-	cmds := &Commands{
-		geo: geo,
-	}
+	cmds := NewCommands(geo, testCertScheme)
 
 	var expectedLen = cmdOverhead + cmds.messageEmptyLength()
 	const (
@@ -245,9 +237,7 @@ func TestGetConsensus(t *testing.T) {
 	nrHops := 5
 	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
 	s := sphinx.NewSphinx(geo)
-	cmds := &Commands{
-		geo: s.Geometry(),
-	}
+	cmds := NewCommands(s.Geometry(), testCertScheme)
 
 	cmd := &GetConsensus{
 		Epoch:              123,
@@ -290,9 +280,7 @@ func TestConsensus(t *testing.T) {
 	nrHops := 5
 	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
 	s := sphinx.NewSphinx(geo)
-	cmds := &Commands{
-		geo: s.Geometry(),
-	}
+	cmds := NewCommands(s.Geometry(), testCertScheme)
 
 	c, err := cmds.FromBytes(b)
 	require.NoError(err, "Consensus: FromBytes() failed")
@@ -331,9 +319,7 @@ func TestPostDescriptor(t *testing.T) {
 	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
 	s := sphinx.NewSphinx(geo)
 
-	cmds := &Commands{
-		geo: s.Geometry(),
-	}
+	cmds := NewCommands(s.Geometry(), testCertScheme)
 
 	c, err := cmds.FromBytes(b)
 	require.NoError(err, "PostDescriptor: FromBytes() failed")
@@ -360,9 +346,7 @@ func TestPostDescriptorStatus(t *testing.T) {
 	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
 	s := sphinx.NewSphinx(geo)
 
-	cmds := &Commands{
-		geo: s.Geometry(),
-	}
+	cmds := NewCommands(s.Geometry(), testCertScheme)
 
 	c, err := cmds.FromBytes(b)
 	require.NoError(err, "PostDescriptorStatus: FromBytes() failed")
@@ -375,7 +359,7 @@ func TestGetVote(t *testing.T) {
 	t.Parallel()
 	require := require.New(t)
 
-	alicePub, _, err := cert.Scheme.GenerateKey()
+	alicePub, _, err := testCertScheme.GenerateKey()
 	require.NoError(err)
 
 	cmd := &GetVote{
@@ -383,7 +367,7 @@ func TestGetVote(t *testing.T) {
 		PublicKey: alicePub,
 	}
 	b := cmd.ToBytes()
-	require.Equal(voteOverhead+cmdOverhead, len(b), "GetVote: ToBytes() length")
+	require.Equal(voteOverhead(testCertScheme)+cmdOverhead, len(b), "GetVote: ToBytes() length")
 
 	nike := ecdh.Scheme(rand.Reader)
 	forwardPayloadLength := 123
@@ -392,9 +376,7 @@ func TestGetVote(t *testing.T) {
 	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
 	s := sphinx.NewSphinx(geo)
 
-	cmds := &Commands{
-		geo: s.Geometry(),
-	}
+	cmds := NewCommands(s.Geometry(), testCertScheme)
 
 	c, err := cmds.FromBytes(b)
 	require.NoError(err, "GetVote: FromBytes() failed")
@@ -405,7 +387,7 @@ func TestVote(t *testing.T) {
 	t.Parallel()
 	require := require.New(t)
 
-	alicePub, _, err := cert.Scheme.GenerateKey()
+	alicePub, _, err := testCertScheme.GenerateKey()
 	require.NoError(err)
 	cmd := &Vote{
 		Epoch:     3141,
@@ -413,7 +395,7 @@ func TestVote(t *testing.T) {
 		Payload:   []byte{1, 2, 3, 4},
 	}
 	b := cmd.ToBytes()
-	require.Len(b, cmdOverhead+voteOverhead+len(cmd.Payload), "Vote: ToBytes() length")
+	require.Len(b, cmdOverhead+voteOverhead(testCertScheme)+len(cmd.Payload), "Vote: ToBytes() length")
 
 	nike := ecdh.Scheme(rand.Reader)
 	forwardPayloadLength := 123
@@ -422,9 +404,7 @@ func TestVote(t *testing.T) {
 	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
 	s := sphinx.NewSphinx(geo)
 
-	cmds := &Commands{
-		geo: s.Geometry(),
-	}
+	cmds := NewCommands(s.Geometry(), testCertScheme)
 
 	c, err := cmds.FromBytes(b)
 	require.NoError(err, "Vote: FromBytes() failed")
@@ -457,9 +437,7 @@ func TestVoteStatus(t *testing.T) {
 	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
 	s := sphinx.NewSphinx(geo)
 
-	cmds := &Commands{
-		geo: s.Geometry(),
-	}
+	cmds := NewCommands(s.Geometry(), testCertScheme)
 
 	c, err := cmds.FromBytes(b)
 	require.NoError(err, "VoteStatus: FromBytes() failed")
@@ -472,7 +450,7 @@ func TestReveal(t *testing.T) {
 	t.Parallel()
 	require := require.New(t)
 
-	alicePub, _, err := cert.Scheme.GenerateKey()
+	alicePub, _, err := testCertScheme.GenerateKey()
 	require.NoError(err)
 	digest := make([]byte, 32)
 	for i := 0; i < 32; i++ {
@@ -484,7 +462,7 @@ func TestReveal(t *testing.T) {
 		Payload:   digest,
 	}
 	b := cmd.ToBytes()
-	require.Len(b, cmdOverhead+revealOverhead+32, "Reveal: ToBytes() length")
+	require.Len(b, cmdOverhead+revealOverhead(testCertScheme)+32, "Reveal: ToBytes() length")
 
 	nike := ecdh.Scheme(rand.Reader)
 	forwardPayloadLength := 123
@@ -493,9 +471,7 @@ func TestReveal(t *testing.T) {
 	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
 	s := sphinx.NewSphinx(geo)
 
-	cmds := &Commands{
-		geo: s.Geometry(),
-	}
+	cmds := NewCommands(s.Geometry(), testCertScheme)
 
 	c, err := cmds.FromBytes(b)
 	require.NoError(err, "Reveal: FromBytes() failed")
@@ -527,9 +503,7 @@ func TestRevealtatus(t *testing.T) {
 	nrHops := 5
 	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
 	s := sphinx.NewSphinx(geo)
-	cmds := &Commands{
-		geo: s.Geometry(),
-	}
+	cmds := NewCommands(s.Geometry(), testCertScheme)
 
 	c, err := cmds.FromBytes(b)
 	require.NoError(err, "RevealStatus: FromBytes() failed")
@@ -542,7 +516,7 @@ func TestCert(t *testing.T) {
 	t.Parallel()
 	require := require.New(t)
 
-	alicePub, _, err := cert.Scheme.GenerateKey()
+	alicePub, _, err := testCertScheme.GenerateKey()
 	require.NoError(err)
 
 	cmd := &Cert{
@@ -551,7 +525,7 @@ func TestCert(t *testing.T) {
 		Payload:   []byte{1, 2, 3, 4},
 	}
 	b := cmd.ToBytes()
-	require.Len(b, cmdOverhead+certOverhead+len(cmd.Payload), "Cert: ToBytes() length")
+	require.Len(b, cmdOverhead+certOverhead(testCertScheme)+len(cmd.Payload), "Cert: ToBytes() length")
 
 	nike := ecdh.Scheme(rand.Reader)
 	forwardPayloadLength := 123
@@ -560,9 +534,7 @@ func TestCert(t *testing.T) {
 	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
 	s := sphinx.NewSphinx(geo)
 
-	cmds := &Commands{
-		geo: s.Geometry(),
-	}
+	cmds := NewCommands(s.Geometry(), testCertScheme)
 
 	c, err := cmds.FromBytes(b)
 	require.NoError(err, "Reveal: FromBytes() failed")
@@ -594,9 +566,7 @@ func TestCertStatus(t *testing.T) {
 	nrHops := 5
 	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
 	s := sphinx.NewSphinx(geo)
-	cmds := &Commands{
-		geo: s.Geometry(),
-	}
+	cmds := NewCommands(s.Geometry(), testCertScheme)
 
 	c, err := cmds.FromBytes(b)
 	require.NoError(err, "CertStatus: FromBytes() failed")
@@ -609,7 +579,7 @@ func TestSig(t *testing.T) {
 	t.Parallel()
 	require := require.New(t)
 
-	alicePub, _, err := cert.Scheme.GenerateKey()
+	alicePub, _, err := testCertScheme.GenerateKey()
 	require.NoError(err)
 
 	cmd := &Sig{
@@ -618,7 +588,7 @@ func TestSig(t *testing.T) {
 		Payload:   []byte{1, 2, 3, 4},
 	}
 	b := cmd.ToBytes()
-	require.Len(b, cmdOverhead+sigOverhead+len(cmd.Payload), "Sig: ToBytes() length")
+	require.Len(b, cmdOverhead+sigOverhead(testCertScheme)+len(cmd.Payload), "Sig: ToBytes() length")
 
 	nike := ecdh.Scheme(rand.Reader)
 	forwardPayloadLength := 123
@@ -627,9 +597,7 @@ func TestSig(t *testing.T) {
 	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
 	s := sphinx.NewSphinx(geo)
 
-	cmds := &Commands{
-		geo: s.Geometry(),
-	}
+	cmds := NewCommands(s.Geometry(), testCertScheme)
 
 	c, err := cmds.FromBytes(b)
 	require.NoError(err, "Sig: FromBytes() failed")
@@ -661,9 +629,7 @@ func TestSigStatus(t *testing.T) {
 	nrHops := 5
 	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
 	s := sphinx.NewSphinx(geo)
-	cmds := &Commands{
-		geo: s.Geometry(),
-	}
+	cmds := NewCommands(s.Geometry(), testCertScheme)
 
 	c, err := cmds.FromBytes(b)
 	require.NoError(err, "SigStatus: FromBytes() failed")
