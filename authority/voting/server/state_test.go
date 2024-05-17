@@ -222,7 +222,7 @@ func TestVote(t *testing.T) {
 	serviceDescs := make([]*pki.MixDescriptor, 0)
 	for i := 0; i < len(mixCfgs); i++ {
 		mkeys := genMixKeys(votingEpoch)
-		addr := make(map[pki.Transport][]string)
+		addr := make(map[string][]string)
 		addr[pki.TransportTCPv4] = []string{"127.0.0.1:1234"}
 		linkPubKey, _, err := testingScheme.GenerateKeyPair()
 		linkBlob, err := linkPubKey.MarshalBinary()

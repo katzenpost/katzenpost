@@ -119,7 +119,7 @@ type MixDescriptor struct {
 
 	// Addresses is the map of transport to address combinations that can
 	// be used to reach the node.
-	Addresses map[Transport][]string
+	Addresses map[string][]string
 
 	// Kaetzchen is the map of provider autoresponder agents by capability
 	// to parameters.
