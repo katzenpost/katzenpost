@@ -73,6 +73,7 @@ type Config struct {
 	// KEMScheme indicates the KEM scheme used for the LinkKey/wire protocol.
 	KEMScheme kem.Scheme
 
+	// PKISignatureScheme specifies the cryptographic signature scheme
 	PKISignatureScheme sign.Scheme
 
 	// LinkKey is the link key for the client's wire connections.

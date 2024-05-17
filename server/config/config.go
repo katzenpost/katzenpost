@@ -89,6 +89,7 @@ type Server struct {
 	// with the mixnet and dirauth nodes.
 	WireKEM string
 
+	// PKISignatureScheme specifies the cryptographic signature scheme
 	PKISignatureScheme string
 
 	// Addresses are the IP address/port combinations that the server will bind

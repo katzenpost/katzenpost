@@ -644,6 +644,7 @@ type SessionConfig struct {
 	// KEMScheme wire/link protocol KEM scheme.
 	KEMScheme kem.Scheme
 
+	// PKISignatureScheme specifies the cryptographic signature scheme
 	PKISignatureScheme sign.Scheme
 
 	// Authenticator is the PeerAuthenticator instance that will be used to

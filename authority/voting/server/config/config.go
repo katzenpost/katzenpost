@@ -271,6 +271,7 @@ type Authority struct {
 	// the public identity key key.
 	IdentityPublicKey sign.PublicKey
 
+	// PKISignatureScheme specifies the cryptographic signature scheme
 	PKISignatureScheme string
 
 	// LinkPublicKeyPem is string containing the PEM format of the peer's public link layer key.
@@ -418,6 +419,7 @@ type Server struct {
 	// WireKEMScheme is the wire protocol KEM scheme to use.
 	WireKEMScheme string
 
+	// PKISignatureScheme specifies the cryptographic signature scheme
 	PKISignatureScheme string
 
 	// Addresses are the IP address/port combinations that the server will bind

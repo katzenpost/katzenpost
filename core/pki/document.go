@@ -167,6 +167,7 @@ type Document struct {
 	// specified version so that it can be rejected if the format changes.
 	Version string
 
+	// PKISignatureScheme specifies the cryptographic signature scheme
 	PKISignatureScheme string
 }
 
