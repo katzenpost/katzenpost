@@ -109,10 +109,10 @@ func testDockerMultiplexClients(t *testing.T) {
 	require.NotEqual(t, doc.LambdaP, 0.0)
 
 	pingTargets := []*cpki.MixDescriptor{}
-	for i := 0; i < len(doc.Providers); i++ {
-		_, ok := doc.Providers[i].Kaetzchen["testdest"]
+	for i := 0; i < len(doc.ServiceNodes); i++ {
+		_, ok := doc.ServiceNodes[i].Kaetzchen["testdest"]
 		if ok {
-			pingTargets = append(pingTargets, doc.Providers[i])
+			pingTargets = append(pingTargets, doc.ServiceNodes[i])
 		}
 	}
 	require.True(t, len(pingTargets) > 0)
@@ -151,10 +151,10 @@ func testDockerClientARQSendReceive(t *testing.T) {
 	require.NotEqual(t, doc.LambdaP, 0.0)
 
 	pingTargets := []*cpki.MixDescriptor{}
-	for i := 0; i < len(doc.Providers); i++ {
-		_, ok := doc.Providers[i].Kaetzchen["testdest"]
+	for i := 0; i < len(doc.ServiceNodes); i++ {
+		_, ok := doc.ServiceNodes[i].Kaetzchen["testdest"]
 		if ok {
-			pingTargets = append(pingTargets, doc.Providers[i])
+			pingTargets = append(pingTargets, doc.ServiceNodes[i])
 		}
 	}
 	require.True(t, len(pingTargets) > 0)
@@ -224,10 +224,10 @@ func testDockerClientSendReceive(t *testing.T) {
 	require.NotEqual(t, doc.LambdaP, 0.0)
 
 	pingTargets := []*cpki.MixDescriptor{}
-	for i := 0; i < len(doc.Providers); i++ {
-		_, ok := doc.Providers[i].Kaetzchen["testdest"]
+	for i := 0; i < len(doc.ServiceNodes); i++ {
+		_, ok := doc.ServiceNodes[i].Kaetzchen["testdest"]
 		if ok {
-			pingTargets = append(pingTargets, doc.Providers[i])
+			pingTargets = append(pingTargets, doc.ServiceNodes[i])
 		}
 	}
 	require.True(t, len(pingTargets) > 0)
