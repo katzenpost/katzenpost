@@ -644,6 +644,9 @@ func cfgLinkKey(cfg interface{}, outDir string, kemScheme string) kem.PublicKey 
 	var linkpublic string
 
 	switch cfg.(type) {
+	case *sConfig.Config:
+		linkpriv = filepath.Join(outDir, cfg.(*sConfig.Config).Server.Identifier, "link.private.pem")
+		linkpublic = filepath.Join(outDir, cfg.(*sConfig.Config).Server.Identifier, "link.public.pem")
 	case *vConfig.Config:
 		linkpriv = filepath.Join(outDir, cfg.(*vConfig.Config).Server.Identifier, "link.private.pem")
 		linkpublic = filepath.Join(outDir, cfg.(*vConfig.Config).Server.Identifier, "link.public.pem")
