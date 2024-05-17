@@ -5,11 +5,11 @@ package client2
 
 import (
 	"errors"
-	"os"
 	"testing"
 
 	"github.com/katzenpost/katzenpost/client2/config"
 	"github.com/katzenpost/katzenpost/core/epochtime"
+	"github.com/katzenpost/katzenpost/core/log"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/stretchr/testify/require"
 )
@@ -29,8 +29,8 @@ func TestListenerBasic(t *testing.T) {
 	egressSize := 123
 	egressCh := make(chan *Request, egressSize)
 
-	logBackend := os.Stderr
-
+	logBackend, err := log.New("", "debug", false)
+	require.NoError(t, err)
 	listener, err := NewListener(client, rates, egressCh, logBackend)
 	require.NoError(t, err)
 

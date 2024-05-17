@@ -155,7 +155,7 @@ type Gateway struct {
 
 	// Addresses is the map of transport to address combinations that can
 	// be used to reach the node.
-	Addresses map[cpki.Transport][]string
+	Addresses map[string][]string
 }
 
 func (p *Gateway) UnmarshalTOML(v interface{}) error {
@@ -181,8 +181,8 @@ func (p *Gateway) UnmarshalTOML(v interface{}) error {
 		return err
 	}
 
-	m := data["Addresses"].(map[cpki.Transport]interface{})
-	p.Addresses = make(map[cpki.Transport][]string)
+	m := data["Addresses"].(map[string]interface{})
+	p.Addresses = make(map[string][]string)
 
 	for k, v := range m {
 		values := make([]string, 0)
@@ -281,7 +281,7 @@ type Config struct {
 
 	// PreferedTransports is a list of the transports will be used to make
 	// outgoing network connections, with the most prefered first.
-	PreferedTransports []cpki.Transport
+	PreferedTransports []string
 
 	upstreamProxy *proxy.Config
 }

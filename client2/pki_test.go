@@ -14,6 +14,7 @@ import (
 
 	"github.com/katzenpost/katzenpost/client2/config"
 	"github.com/katzenpost/katzenpost/core/epochtime"
+	"github.com/katzenpost/katzenpost/core/log"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"github.com/katzenpost/katzenpost/loops"
@@ -47,9 +48,12 @@ func TestClientPKIStartStop(t *testing.T) {
 	require.NoError(t, err)
 
 	myMockPKIClient := new(mockPKIClient)
+	logbackend, err := log.New("", "debug", false)
+	require.NoError(t, err)
 	c := &Client{
-		cfg:       cfg,
-		PKIClient: myMockPKIClient,
+		logbackend: logbackend,
+		cfg:        cfg,
+		PKIClient:  myMockPKIClient,
 	}
 
 	p := newPKI(c)
@@ -65,9 +69,12 @@ func TestPKIGetDocument(t *testing.T) {
 	require.NoError(t, err)
 
 	myMockPKIClient := new(mockPKIClient)
+	logbackend, err := log.New("", "debug", false)
+	require.NoError(t, err)
 	c := &Client{
-		cfg:       cfg,
-		PKIClient: myMockPKIClient,
+		logbackend: logbackend,
+		cfg:        cfg,
+		PKIClient:  myMockPKIClient,
 	}
 
 	p := newPKI(c)
@@ -98,9 +105,12 @@ func TestPKIUpdateDocumentBadSphinxHash(t *testing.T) {
 	require.NoError(t, err)
 
 	myMockPKIClient := new(mockPKIClient)
+	logbackend, err := log.New("", "debug", false)
+	require.NoError(t, err)
 	c := &Client{
-		cfg:       cfg,
-		PKIClient: myMockPKIClient,
+		logbackend: logbackend,
+		cfg:        cfg,
+		PKIClient:  myMockPKIClient,
 	}
 
 	p := newPKI(c)
@@ -134,9 +144,12 @@ func TestPKIUpdateDocument(t *testing.T) {
 	require.NoError(t, err)
 
 	myMockPKIClient := new(mockPKIClient)
+	logbackend, err := log.New("", "debug", false)
+	require.NoError(t, err)
 	c := &Client{
-		cfg:       cfg,
-		PKIClient: myMockPKIClient,
+		logbackend: logbackend,
+		cfg:        cfg,
+		PKIClient:  myMockPKIClient,
 	}
 
 	p := newPKI(c)
@@ -171,9 +184,12 @@ func TestPKIWaitForDocument(t *testing.T) {
 	require.NoError(t, err)
 
 	myMockPKIClient := new(mockPKIClient)
+	logbackend, err := log.New("", "debug", false)
+	require.NoError(t, err)
 	c := &Client{
-		cfg:       cfg,
-		PKIClient: myMockPKIClient,
+		logbackend: logbackend,
+		cfg:        cfg,
+		PKIClient:  myMockPKIClient,
 	}
 
 	p := newPKI(c)
@@ -200,9 +216,12 @@ func TestPKIClockSkew(t *testing.T) {
 	require.NoError(t, err)
 
 	myMockPKIClient := new(mockPKIClient)
+	logbackend, err := log.New("", "debug", false)
+	require.NoError(t, err)
 	c := &Client{
-		cfg:       cfg,
-		PKIClient: myMockPKIClient,
+		logbackend: logbackend,
+		cfg:        cfg,
+		PKIClient:  myMockPKIClient,
 	}
 	p := newPKI(c)
 	c.pki = p
@@ -241,9 +260,12 @@ func TestPKICachedDoc(t *testing.T) {
 	require.NoError(t, err)
 
 	myMockPKIClient := new(mockPKIClient)
+	logbackend, err := log.New("", "debug", false)
+	require.NoError(t, err)
 	c := &Client{
-		cfg:       cfg,
-		PKIClient: myMockPKIClient,
+		logbackend: logbackend,
+		cfg:        cfg,
+		PKIClient:  myMockPKIClient,
 	}
 	p := newPKI(c)
 	require.Equal(t, 0, lenSyncMap(&p.docs))
