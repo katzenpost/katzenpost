@@ -590,6 +590,8 @@ func toml_name(cfg interface{}) string {
 	switch cfg.(type) {
 	case *cConfig.Config:
 		return "client"
+	case *cConfig2.Config:
+		return "client"
 	case *sConfig.Config:
 		return "katzenpost"
 	case *vConfig.Config:
