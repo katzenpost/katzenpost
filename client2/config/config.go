@@ -19,9 +19,9 @@ import (
 	"github.com/katzenpost/hpqc/kem/schemes"
 	"github.com/katzenpost/hpqc/sign"
 	signpem "github.com/katzenpost/hpqc/sign/pem"
+	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 
 	vServerConfig "github.com/katzenpost/katzenpost/authority/voting/server/config"
-	"github.com/katzenpost/katzenpost/core/cert"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
@@ -153,6 +153,9 @@ type Gateway struct {
 	// LinkKey is the node's wire protocol public key.
 	LinkKey kem.PublicKey
 
+	// PKISignatureScheme specifies the signature scheme to use with the PKI protocol.
+	PKISignatureScheme string
+
 	// Addresses is the map of transport to address combinations that can
 	// be used to reach the node.
 	Addresses map[string][]string
@@ -160,10 +163,20 @@ type Gateway struct {
 
 func (p *Gateway) UnmarshalTOML(v interface{}) error {
 
+	if p.PKISignatureScheme == "" {
+		panic("PKISignatureScheme is an empty string")
+	}
+
+	sigScheme := signSchemes.ByName(p.PKISignatureScheme)
+	if sigScheme == nil {
+		panic("pki signature scheme is nil")
+	}
+
 	data, _ := v.(map[string]interface{})
 	p.Name = data["Name"].(string)
 	var err error
-	p.IdentityKey, err = signpem.FromPublicPEMString(data["IdentityKey"].(string), cert.Scheme)
+
+	p.IdentityKey, err = signpem.FromPublicPEMString(data["IdentityKey"].(string), sigScheme)
 	if err != nil {
 		return err
 	}
@@ -249,6 +262,9 @@ type Callbacks struct {
 
 // Config is the top level client configuration.
 type Config struct {
+	// PKISignatureScheme specifies the signature scheme to use with the PKI protocol.
+	PKISignatureScheme string
+
 	// WireKEMScheme specifies which KEM to use with our PQ Noise based wire protocol.
 	WireKEMScheme string
 

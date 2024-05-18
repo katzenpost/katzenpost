@@ -82,6 +82,7 @@ func (s *katzenpost) genClient2Cfg() error {
 	os.Mkdir(filepath.Join(s.outDir, "client2"), 0700)
 	cfg := new(cConfig2.Config)
 
+	cfg.PKISignatureScheme = s.pkiSignatureScheme.Name()
 	cfg.WireKEMScheme = s.wireKEMScheme
 	cfg.SphinxGeometry = s.sphinxGeometry
 
@@ -118,10 +119,11 @@ func (s *katzenpost) genClient2Cfg() error {
 		linkPubKey := cfgLinkKey(s.nodeConfigs[i], s.outDir, cfg.WireKEMScheme)
 
 		gateway := &cConfig2.Gateway{
-			WireKEMScheme: s.wireKEMScheme,
-			Name:          s.nodeConfigs[i].Server.Identifier,
-			IdentityKey:   idPubKey,
-			LinkKey:       linkPubKey,
+			PKISignatureScheme: s.pkiSignatureScheme.Name(),
+			WireKEMScheme:      s.wireKEMScheme,
+			Name:               s.nodeConfigs[i].Server.Identifier,
+			IdentityKey:        idPubKey,
+			LinkKey:            linkPubKey,
 			Addresses: map[string][]string{
 				"tcp": s.nodeConfigs[i].Server.Addresses,
 			},
