@@ -162,19 +162,18 @@ type Gateway struct {
 }
 
 func (p *Gateway) UnmarshalTOML(v interface{}) error {
-
-	if p.PKISignatureScheme == "" {
-		panic("PKISignatureScheme is an empty string")
-	}
-
-	sigScheme := signSchemes.ByName(p.PKISignatureScheme)
-	if sigScheme == nil {
-		panic("pki signature scheme is nil")
-	}
-
 	data, _ := v.(map[string]interface{})
 	p.Name = data["Name"].(string)
 	var err error
+
+	if data["PKISignatureScheme"].(string) == "" {
+		panic("PKISignatureScheme is an empty string")
+	}
+
+	sigScheme := signSchemes.ByName(data["PKISignatureScheme"].(string))
+	if sigScheme == nil {
+		panic("pki signature scheme is nil")
+	}
 
 	p.IdentityKey, err = signpem.FromPublicPEMString(data["IdentityKey"].(string), sigScheme)
 	if err != nil {
