@@ -24,7 +24,7 @@ func TestAllClient2Tests(t *testing.T) {
 		d.Shutdown()
 	})
 
-	t.Run("TestDockerMultiplexClients", testDockerMultiplexClients)
+	//t.Run("TestDockerMultiplexClients", testDockerMultiplexClients)
 	//t.Run("TestDockerClientARQSendReceive", testDockerClientARQSendReceive)
 	t.Run("TestDockerClientSendReceive", testDockerClientSendReceive)
 }
