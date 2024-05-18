@@ -21,7 +21,7 @@ func FindServices(capability string, doc *cpki.Document) []*ServiceDescriptor {
 		panic("pki doc is nil")
 	}
 	services := []*ServiceDescriptor{}
-	for _, provider := range doc.GatewayNodes {
+	for _, provider := range doc.ServiceNodes {
 		for cap := range provider.Kaetzchen {
 			if cap == capability {
 				serviceID := &ServiceDescriptor{
