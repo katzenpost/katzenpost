@@ -238,7 +238,19 @@ func New(glue glue.Glue) (glue.Scheduler, error) {
 		sch.q = newMemoryQueue(glue, sch.log)
 	}
 
+	// monitor channel length
+	go sch.monitorChannelLen()
+
 	sch.Go(sch.pipeWorker)
 	sch.Go(sch.worker)
 	return sch, nil
+}
+
+func (sch *scheduler) monitorChannelLen() {
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		instrument.GaugeChannelLength("server.scheduler.inCh", len(sch.inCh))
+	}
 }

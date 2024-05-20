@@ -22,10 +22,10 @@ import (
 	"fmt"
 	"path/filepath"
 	"sync"
-
-	"gopkg.in/op/go-logging.v1"
+	"time"
 
 	"gitlab.com/yawning/aez.git"
+	"gopkg.in/op/go-logging.v1"
 
 	nyquistkem "github.com/katzenpost/nyquist/kem"
 	"github.com/katzenpost/nyquist/seec"
@@ -426,8 +426,20 @@ func New(cfg *config.Config) (*Server, error) {
 	// Start the periodic 1 Hz utility timer.
 	s.periodic = newPeriodicTimer(s)
 
+	// monitor channel length
+	go s.monitorChannelLen()
+
 	isOk = true
 	return s, nil
+}
+
+func (s *Server) monitorChannelLen() {
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		instrument.GaugeChannelLength("server.inboundPackets", len(s.inboundPackets))
+	}
 }
 
 type serverGlue struct {

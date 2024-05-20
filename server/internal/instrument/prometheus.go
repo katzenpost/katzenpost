@@ -158,11 +158,17 @@ var (
 		},
 		[]string{"epoch"},
 	)
+	channelUsage = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "katzenpost_channel_usage",
+			Help: "Current number of items in the channel",
+		},
+		[]string{"channel_name"},
+	)
 )
 
 // StartPrometheusListener starts the Prometheus metrics TCP/HTTP Listener
 func StartPrometheusListener(glue glue.Glue) {
-
 	prometheus.MustRegister(deadlineBlownPacketsDropped)
 	prometheus.MustRegister(incomingConns)
 	prometheus.MustRegister(invalidPacketsDropped)
@@ -186,6 +192,7 @@ func StartPrometheusListener(glue glue.Glue) {
 	prometheus.MustRegister(failedFetchPKIDocs)
 	prometheus.MustRegister(failedPKICacheGeneration)
 	prometheus.MustRegister(invalidPKICache)
+	prometheus.MustRegister(channelUsage)
 
 	metricsAddress := glue.Config().Server.MetricsAddress
 	if metricsAddress != "" {
@@ -299,4 +306,8 @@ func FailedPKICacheGeneration(epoch string) {
 // InvalidPKICache increments the counter for the number of invalid cached PKI docs per epoch
 func InvalidPKICache(epoch string) {
 	invalidPKICache.With(prometheus.Labels{"epoch": epoch})
+}
+
+func GaugeChannelLength(channelName string, length int) {
+	channelUsage.With(prometheus.Labels{"channel_name": channelName}).Set(float64(length))
 }

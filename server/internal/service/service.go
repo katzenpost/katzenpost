@@ -166,6 +166,18 @@ func New(glue glue.Glue) (glue.ServiceNode, error) {
 		p.Go(p.worker)
 	}
 
+	// monitor channel length
+	go p.monitorChannelLen()
+
 	isOk = true
 	return p, nil
+}
+
+func (p *serviceNode) monitorChannelLen() {
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		instrument.GaugeChannelLength("server.service.ch", len(p.ch))
+	}
 }
