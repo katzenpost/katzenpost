@@ -25,7 +25,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/katzenpost/katzenpost/core/monotime"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/katzenpost/katzenpost/server/config"
@@ -33,7 +32,6 @@ import (
 	"github.com/katzenpost/katzenpost/server/internal/instrument"
 	"github.com/katzenpost/katzenpost/server/internal/packet"
 	"golang.org/x/text/secure/precis"
-	"gopkg.in/eapache/channels.v1"
 	"gopkg.in/op/go-logging.v1"
 )
 
@@ -46,20 +44,20 @@ const ParameterEndpoint = "endpoint"
 var ErrNoResponse = errors.New("kaetzchen: message has no response")
 
 // Parameters is the map describing each Kaetzchen's parameters to
-// be published in the Provider's descriptor.
+// be published in the ServiceNode's descriptor.
 type Parameters map[string]interface{}
 
 // Kaetzchen is the interface implemented by each auto-responder agent.
 type Kaetzchen interface {
 	// Capability returns the agent's functionality for publication in
-	// the Provider's descriptor.
+	// the ServiceNode's descriptor.
 	Capability() string
 
 	// Parameters returns the agent's paramenters for publication in
-	// the Provider's descriptor.
+	// the ServiceNode's descriptor.
 	Parameters() Parameters
 
-	// OnRequest is the method that is called when the Provider receives
+	// OnRequest is the method that is called when the ServiceNode receives
 	// a request designed for a particular agent.  The caller will handle
 	// extracting the payload component of the message.
 	//
@@ -95,7 +93,7 @@ type KaetzchenWorker struct {
 	glue glue.Glue
 	log  *logging.Logger
 
-	ch        *channels.InfiniteChannel
+	ch        chan interface{}
 	kaetzchen map[[sConstants.RecipientIDLength]byte]Kaetzchen
 
 	dropCounter uint64
@@ -143,7 +141,7 @@ func (k *KaetzchenWorker) registerKaetzchen(service Kaetzchen) error {
 }
 
 func (k *KaetzchenWorker) OnKaetzchen(pkt *packet.Packet) {
-	k.ch.In() <- pkt
+	k.ch <- pkt
 }
 
 func (k *KaetzchenWorker) getDropCounter() uint64 {
@@ -160,7 +158,7 @@ func (k *KaetzchenWorker) worker() {
 
 	defer k.log.Debugf("Halting Kaetzchen internal worker.")
 
-	ch := k.ch.Out()
+	ch := k.ch
 
 	for {
 		var pkt *packet.Packet
@@ -170,7 +168,7 @@ func (k *KaetzchenWorker) worker() {
 			return
 		case e := <-ch:
 			pkt = e.(*packet.Packet)
-			if dwellTime := monotime.Now() - pkt.DispatchAt; dwellTime > maxDwell {
+			if dwellTime := time.Now().Sub(pkt.DispatchAt); dwellTime > maxDwell {
 				count := k.incrementDropCounter()
 				k.log.Debugf("Dropping packet: %v (Spend %v in queue), total drops %d", pkt.ID, dwellTime, count)
 				instrument.PacketsDropped()
@@ -254,13 +252,13 @@ func New(glue glue.Glue) (*KaetzchenWorker, error) {
 	kaetzchenWorker := KaetzchenWorker{
 		glue:      glue,
 		log:       glue.LogBackend().GetLogger("kaetzchen_worker"),
-		ch:        channels.NewInfiniteChannel(),
+		ch:        make(chan interface{}, InboundPacketsChannelSize),
 		kaetzchen: make(map[[sConstants.RecipientIDLength]byte]Kaetzchen),
 	}
 
 	// Initialize the internal Kaetzchen.
 	capaMap := make(map[string]bool)
-	for _, v := range glue.Config().Provider.Kaetzchen {
+	for _, v := range glue.Config().ServiceNode.Kaetzchen {
 		capa := v.Capability
 		if v.Disable {
 			kaetzchenWorker.log.Noticef("Skipping disabled Kaetzchen: '%v'.", capa)

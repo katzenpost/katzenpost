@@ -27,6 +27,8 @@ import (
 	"golang.org/x/crypto/blake2b"
 
 	"github.com/katzenpost/hpqc/kem"
+	"github.com/katzenpost/hpqc/kem/schemes"
+
 	vClient "github.com/katzenpost/katzenpost/authority/voting/client"
 	vServerConfig "github.com/katzenpost/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/katzenpost/client/internal/proxy"
@@ -94,7 +96,7 @@ type Debug struct {
 
 	// PreferedTransports is a list of the transports will be used to make
 	// outgoing network connections, with the most prefered first.
-	PreferedTransports []pki.Transport
+	PreferedTransports []string
 }
 
 func (d *Debug) fixup() {
@@ -115,17 +117,23 @@ type VotingAuthority struct {
 }
 
 // New constructs a pki.Client with the specified voting authority config.
-func (vACfg *VotingAuthority) New(l *log.Backend, pCfg *proxy.Config, linkKey kem.PrivateKey) (pki.Client, error) {
+func (vACfg *VotingAuthority) New(l *log.Backend, pCfg *proxy.Config, linkKey kem.PrivateKey, scheme kem.Scheme, mygeo *geo.Geometry) (pki.Client, error) {
+	if scheme == nil {
+		return nil, errors.New("KEM scheme cannot be nil")
+	}
+
 	blob, err := linkKey.Public().MarshalBinary()
 	if err != nil {
 		return nil, err
 	}
 	linkHash := blake2b.Sum256(blob)
 	cfg := &vClient.Config{
+		KEMScheme:     scheme,
 		LinkKey:       linkKey,
 		LogBackend:    l,
 		Authorities:   vACfg.Peers,
 		DialContextFn: pCfg.ToDialContext(fmt.Sprintf("voting: %x", linkHash)),
+		Geo:           mygeo,
 	}
 	return vClient.New(cfg)
 }
@@ -143,10 +151,10 @@ func (vACfg *VotingAuthority) validate() error {
 }
 
 // NewPKIClient returns a voting or nonvoting implementation of pki.Client or error
-func (c *Config) NewPKIClient(l *log.Backend, pCfg *proxy.Config, linkKey kem.PrivateKey) (pki.Client, error) {
+func (c *Config) NewPKIClient(l *log.Backend, pCfg *proxy.Config, linkKey kem.PrivateKey, mygeo *geo.Geometry) (pki.Client, error) {
 	switch {
 	case c.VotingAuthority != nil:
-		return c.VotingAuthority.New(l, pCfg, linkKey)
+		return c.VotingAuthority.New(l, pCfg, linkKey, schemes.ByName(c.WireKEMScheme), mygeo)
 	}
 	return nil, errors.New("no Authority found")
 }
@@ -187,12 +195,14 @@ func (uCfg *UpstreamProxy) toProxyConfig() (*proxy.Config, error) {
 
 // Config is the top level client configuration.
 type Config struct {
-	SphinxGeometry  *geo.Geometry
-	Logging         *Logging
-	UpstreamProxy   *UpstreamProxy
-	Debug           *Debug
-	VotingAuthority *VotingAuthority
-	upstreamProxy   *proxy.Config
+	WireKEMScheme      string
+	PKISignatureScheme string
+	SphinxGeometry     *geo.Geometry
+	Logging            *Logging
+	UpstreamProxy      *UpstreamProxy
+	Debug              *Debug
+	VotingAuthority    *VotingAuthority
+	upstreamProxy      *proxy.Config
 }
 
 // UpstreamProxyConfig returns the configured upstream proxy, suitable for
@@ -204,6 +214,12 @@ func (c *Config) UpstreamProxyConfig() *proxy.Config {
 // FixupAndValidate applies defaults to config entries and validates the
 // configuration sections.
 func (c *Config) FixupAndValidate() error {
+	if c.WireKEMScheme == "" {
+		return errors.New("config: WireKEMScheme was not set")
+	}
+	if c.PKISignatureScheme == "" {
+		return errors.New("config: PKISignatureScheme was not set")
+	}
 	if c.SphinxGeometry == nil {
 		return errors.New("config: No SphinxGeometry block was present")
 	}

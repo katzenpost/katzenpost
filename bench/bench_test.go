@@ -37,18 +37,18 @@ import (
 	"gopkg.in/op/go-logging.v1"
 
 	"github.com/katzenpost/hpqc/kem"
+	"github.com/katzenpost/hpqc/kem/schemes"
 	"github.com/katzenpost/hpqc/rand"
 
+	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 	"github.com/katzenpost/katzenpost/client"
 	"github.com/katzenpost/katzenpost/client/config"
 	cConstants "github.com/katzenpost/katzenpost/client/constants"
 	"github.com/katzenpost/katzenpost/client/utils"
-	"github.com/katzenpost/katzenpost/core/cert"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
-	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/katzenpost/katzenpost/minclient"
 )
@@ -96,6 +96,8 @@ var (
 		},
 	)
 )
+
+var testSignatureScheme = signSchemes.ByName("Ed25519 Sphincs+")
 
 func getClientCfg(f string) *config.Config {
 	cfg, err := config.LoadFile(f)
@@ -153,14 +155,19 @@ func (b *MinclientBench) setup() {
 
 	b.log = logBackend.GetLogger("MinclientBench")
 
-	_, b.linkKey, err = wire.DefaultScheme.GenerateKeyPair()
+	myScheme := schemes.ByName(cfg.WireKEMScheme)
+	if myScheme == nil {
+		panic("WireKEMScheme is invalid")
+	}
+
+	_, b.linkKey, err = schemes.ByName(cfg.WireKEMScheme).GenerateKeyPair()
 	blob, err := b.linkKey.Public().MarshalBinary()
 	if err != nil {
 		panic(err)
 	}
 	idHash := blake2b.Sum256(blob)
 	proxyContext := fmt.Sprintf("session %d", rand.NewMath().Uint64())
-	pkiClient, err := cfg.NewPKIClient(logBackend, cfg.UpstreamProxyConfig(), b.linkKey)
+	pkiClient, err := cfg.NewPKIClient(logBackend, cfg.UpstreamProxyConfig(), b.linkKey, cfg.SphinxGeometry)
 	currentEpoch, _, _ := epochtime.Now()
 	ctx, cancel := context.WithTimeout(context.Background(), initialPKIConsensusTimeout)
 	defer cancel()
@@ -168,20 +175,21 @@ func (b *MinclientBench) setup() {
 	if err != nil {
 		panic(err)
 	}
-	desc, err := client.SelectProvider(doc)
+	desc, err := client.SelectGatewayNode(doc)
 	if err != nil {
 		panic(err)
 	}
 	b.provider = desc
-	idkey, err := cert.Scheme.UnmarshalBinaryPublicKey(b.provider.IdentityKey)
+	idkey, err := testSignatureScheme.UnmarshalBinaryPublicKey(b.provider.IdentityKey)
 	if err != nil {
 		panic(err)
 	}
 	b.minclientConfig = &minclient.ClientConfig{
+		LinkKemScheme:       myScheme,
 		SphinxGeometry:      cfg.SphinxGeometry,
 		User:                string(idHash[:]),
-		Provider:            b.provider.Name,
-		ProviderKeyPin:      idkey,
+		Gateway:             b.provider.Name,
+		GatewayKeyPin:       idkey,
 		LinkKey:             b.linkKey,
 		LogBackend:          logBackend,
 		PKIClient:           pkiClient,
@@ -203,7 +211,7 @@ func (b *MinclientBench) setup() {
 
 func (b *MinclientBench) Start(t *testing.T) {
 	b.setup()
-	<-b.onDoc
+	<-b.onConn
 	// TODO: start benchmark timers
 	b.Go(b.sendWorker)
 }

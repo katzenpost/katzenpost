@@ -27,8 +27,6 @@ import (
 
 	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/sign"
-	"github.com/katzenpost/hpqc/sign/schemes"
-
 	"github.com/katzenpost/katzenpost/core/epochtime"
 )
 
@@ -76,9 +74,6 @@ var (
 
 	// ErrThresholdNotMet indicates that there were not enough valid signatures to meet the threshold.
 	ErrThresholdNotMet = errors.New("threshold failure")
-
-	// Scheme is the signature scheme we are using throughout various components of the network.
-	Scheme = schemes.ByName("Ed25519 Sphincs+")
 
 	// Create reusable EncMode interface with immutable options, safe for concurrent use.
 	ccbor cbor.EncMode

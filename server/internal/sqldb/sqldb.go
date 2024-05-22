@@ -20,10 +20,13 @@ package sqldb
 import (
 	"fmt"
 
+	"gopkg.in/op/go-logging.v1"
+
+	"github.com/katzenpost/hpqc/kem/schemes"
+
 	"github.com/katzenpost/katzenpost/server/internal/glue"
 	"github.com/katzenpost/katzenpost/server/spool"
 	"github.com/katzenpost/katzenpost/server/userdb"
-	"gopkg.in/op/go-logging.v1"
 )
 
 type dbImpl interface {
@@ -69,12 +72,12 @@ func New(glue glue.Glue) (*SQLDB, error) {
 		log:  glue.LogBackend().GetLogger("sqldb"),
 	}
 
-	sCfg := glue.Config().Provider.SQLDB
+	sCfg := glue.Config().Gateway.SQLDB
 
 	switch sCfg.Backend {
 	case implPgx:
 		var err error
-		db.impl, err = newPgxImpl(db, sCfg.DataSourceName)
+		db.impl, err = newPgxImpl(db, sCfg.DataSourceName, schemes.ByName(glue.Config().Server.WireKEM))
 		if err != nil {
 			return nil, err
 		}

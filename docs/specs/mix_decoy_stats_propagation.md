@@ -25,28 +25,19 @@ observing.
 
 Nodes (mixes, gateways, and providers) need upload packet-loss
 statistics to the directory authorities, so that authorities can
-remove malfunctioning nodes from the consensus in the next epoch.
+label malfunctioning nodes as such in the consensus in the next epoch.
 
 Nodes currently sign and upload a Descriptor in each epoch.
 
-In the future, they should instead upload a "DescriptorUploadDocument"
-(fixme, better name) containing:
+In the future, they would instead upload a "UploadDescStats" containing:
     * Descriptor
     * Stats
     * Signature
 
 Stats contains:
-	* a map from pairs-of-mixes to the ratio of count-of-loops-sent vs count-of-loops-received
+    * a map from pairs-of-mixes to the ratio of count-of-loops-sent vs count-of-loops-received
 
-Authorities can now detect failing mixes and remove them from the next
-epoch, or later potentially adjust their bandwidth weights. Clients do
-not need nodes' stats or their signatures over their descriptor,
-because they are reliant on the directory authorities anyway.
-
-
-### 1.2 Cryptographic primitives
-
-For our cryptographic signature scheme we have chosen the hybrid post quantum signature scheme with the smallest signature size, `Ed25519-Dilithium2`.
+**refer to our non-existent document on Provider orignated deocy loop traffic design discussion**
 
 ### 1.3 Terminology
 
@@ -118,9 +109,9 @@ to the dirauth nodes, of the struct type:
 
 ```
 type LoopStats struct {
-	Epoch           uint64
-	MixIdentityHash *[32]byte
-	Ratios          map[[64]byte]float64
+    Epoch           uint64
+    MixIdentityHash *[32]byte
+    Ratios          map[[64]byte]float64
 }
 ```
 
@@ -137,7 +128,7 @@ Stats reports are uploaded along with the mix descriptor every Epoch.
 A cryptographic signature covers both of these fields:
 
 ```
-type Upload struct {
+type UploadDescStats struct {
          Descriptor []byte
          StatsReport []byte
          Signature []byte
@@ -159,6 +150,3 @@ the network:
 | ----------- UD_N+1 ---------------------- | ------------ UD N+2 ----------------------- | ----------- UD N+3 ------------------------ |
          | ------------------ XXX ---------------- |
 ```
-
-
-
