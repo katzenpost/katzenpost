@@ -130,17 +130,17 @@ func (c *Client) SendPacket(pkt []byte) error {
 	return err
 }
 
-func (c *Client) makePath(recipient []byte, gateway *[32]byte, surbID *[sConstants.SURBIDLength]byte, baseTime time.Time, isForward bool) ([]*sphinx.PathHop, time.Time, error) {
+func (c *Client) makePath(recipient []byte, destination *[32]byte, surbID *[sConstants.SURBIDLength]byte, baseTime time.Time, isForward bool) ([]*sphinx.PathHop, time.Time, error) {
 	if c.conn.gateway == nil {
 		panic("c.conn.gateway is nil")
 	}
-	if gateway == nil {
-		panic("gateway is nil")
+	if destination == nil {
+		panic("destination is nil")
 	}
 
-	srcGateway, dstGateway := c.conn.gateway, gateway
+	srcGateway, dstServiceNode := c.conn.gateway, destination
 	if !isForward {
-		srcGateway, dstGateway = dstGateway, srcGateway
+		srcGateway, dstServiceNode = dstServiceNode, srcGateway
 	}
 
 	// Get the current PKI document.
@@ -154,7 +154,7 @@ func (c *Client) makePath(recipient []byte, gateway *[32]byte, surbID *[sConstan
 	if err != nil {
 		return nil, time.Time{}, newPKIError("client2: failed to find source Gateway: %v", err)
 	}
-	dst, err := doc.GetGatewayByKeyHash(dstGateway)
+	dst, err := doc.GetServiceNodeByKeyHash(dstServiceNode)
 	if err != nil {
 		return nil, time.Time{}, newPKIError("client2: failed to find destination Gateway: %v", err)
 	}
