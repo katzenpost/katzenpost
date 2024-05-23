@@ -85,3 +85,5 @@ func FailedPKICacheGeneration(epoch string) {}
 
 // InvalidPKICache increments the counter for the number of invalid cached PKI docs per epoch
 func InvalidPKICache(epoch string) {}
+
+func GaugeChannelLength(c string, length int) {}
