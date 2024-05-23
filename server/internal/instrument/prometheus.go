@@ -6,7 +6,6 @@ package instrument
 import (
 	"fmt"
 	"net/http"
-	"sync"
 	"time"
 
 	"github.com/katzenpost/katzenpost/core/wire/commands"
@@ -169,29 +168,21 @@ var (
 	)
 )
 
-var monitoredChannels = struct {
-	sync.Mutex
-	channels map[string]chan interface{}
-}{
-	channels: make(map[string]chan interface{}),
+func MonitorChannelLen(name string, haltCh <-chan interface{}, ch chan interface{}) {
+	go doMonitorChannelLen(name, haltCh, ch)
 }
 
-func startChannelLenMonitor() {
+func doMonitorChannelLen(name string, haltCh <-chan interface{}, ch chan interface{}) {
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
-	for range ticker.C {
-		monitoredChannels.Lock()
-		for name, ch := range monitoredChannels.channels {
+	for {
+		select {
+		case <-haltCh:
+			return
+		case <-ticker.C:
 			channelUsage.With(prometheus.Labels{"channel_name": name}).Set(float64(len(ch)))
 		}
-		monitoredChannels.Unlock()
 	}
-}
-
-func MonitorChannelLen(name string, ch chan interface{}) {
-	monitoredChannels.Lock()
-	monitoredChannels.channels[name] = ch
-	monitoredChannels.Unlock()
 }
 
 // StartPrometheusListener starts the Prometheus metrics TCP/HTTP Listener
@@ -227,8 +218,6 @@ func StartPrometheusListener(glue glue.Glue) {
 		http.Handle("/metrics", promhttp.Handler())
 		go http.ListenAndServe(metricsAddress, nil)
 	}
-
-	go startChannelLenMonitor()
 }
 
 // Incoming increments the counter for incoming requests

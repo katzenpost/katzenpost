@@ -426,7 +426,7 @@ func New(cfg *config.Config) (*Server, error) {
 	s.periodic = newPeriodicTimer(s)
 
 	// monitor channel length
-	instrument.MonitorChannelLen("server.inboundPackets", s.inboundPackets)
+	instrument.MonitorChannelLen("server.inboundPackets", s.haltedCh, s.inboundPackets)
 
 	isOk = true
 	return s, nil

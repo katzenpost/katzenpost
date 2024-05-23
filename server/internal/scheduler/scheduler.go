@@ -239,7 +239,7 @@ func New(glue glue.Glue) (glue.Scheduler, error) {
 	}
 
 	// monitor channel length
-	instrument.MonitorChannelLen("server.scheduler.inCh", sch.inCh)
+	instrument.MonitorChannelLen("server.scheduler.inCh", sch.HaltCh(), sch.inCh)
 
 	sch.Go(sch.pipeWorker)
 	sch.Go(sch.worker)

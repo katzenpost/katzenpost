@@ -312,7 +312,7 @@ func New(glue glue.Glue) (glue.Gateway, error) {
 	}
 
 	// monitor channel length
-	instrument.MonitorChannelLen("server.gateway.ch", p.ch)
+	instrument.MonitorChannelLen("server.gateway.ch", p.HaltCh(), p.ch)
 
 	isOk = true
 	return p, nil
