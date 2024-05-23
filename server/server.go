@@ -23,9 +23,8 @@ import (
 	"path/filepath"
 	"sync"
 
-	"gopkg.in/op/go-logging.v1"
-
 	"gitlab.com/yawning/aez.git"
+	"gopkg.in/op/go-logging.v1"
 
 	nyquistkem "github.com/katzenpost/nyquist/kem"
 	"github.com/katzenpost/nyquist/seec"
@@ -425,6 +424,9 @@ func New(cfg *config.Config) (*Server, error) {
 
 	// Start the periodic 1 Hz utility timer.
 	s.periodic = newPeriodicTimer(s)
+
+	// monitor channel length
+	instrument.MonitorChannelLen("server.inboundPackets", s.haltedCh, s.inboundPackets)
 
 	isOk = true
 	return s, nil
