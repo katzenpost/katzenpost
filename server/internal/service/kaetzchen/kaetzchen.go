@@ -290,5 +290,8 @@ func New(glue glue.Glue) (*KaetzchenWorker, error) {
 		kaetzchenWorker.Go(kaetzchenWorker.worker)
 	}
 
+	// monitor channel length
+	instrument.MonitorChannelLen("server.kaetzchen.ch", kaetzchenWorker.HaltCh(), kaetzchenWorker.ch)
+
 	return &kaetzchenWorker, nil
 }
