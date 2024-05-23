@@ -22,7 +22,6 @@ import (
 	"fmt"
 	"path/filepath"
 	"sync"
-	"time"
 
 	"gitlab.com/yawning/aez.git"
 	"gopkg.in/op/go-logging.v1"
@@ -427,19 +426,10 @@ func New(cfg *config.Config) (*Server, error) {
 	s.periodic = newPeriodicTimer(s)
 
 	// monitor channel length
-	go s.monitorChannelLen()
+	instrument.MonitorChannelLen("server.inboundPackets", s.inboundPackets)
 
 	isOk = true
 	return s, nil
-}
-
-func (s *Server) monitorChannelLen() {
-	ticker := time.NewTicker(time.Second)
-	defer ticker.Stop()
-
-	for range ticker.C {
-		instrument.GaugeChannelLength("server.inboundPackets", len(s.inboundPackets))
-	}
 }
 
 type serverGlue struct {

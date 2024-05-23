@@ -239,18 +239,9 @@ func New(glue glue.Glue) (glue.Scheduler, error) {
 	}
 
 	// monitor channel length
-	go sch.monitorChannelLen()
+	instrument.MonitorChannelLen("server.scheduler.inCh", sch.inCh)
 
 	sch.Go(sch.pipeWorker)
 	sch.Go(sch.worker)
 	return sch, nil
-}
-
-func (sch *scheduler) monitorChannelLen() {
-	ticker := time.NewTicker(time.Second)
-	defer ticker.Stop()
-
-	for range ticker.C {
-		instrument.GaugeChannelLength("server.scheduler.inCh", len(sch.inCh))
-	}
 }

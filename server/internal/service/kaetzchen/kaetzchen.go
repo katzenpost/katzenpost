@@ -291,16 +291,7 @@ func New(glue glue.Glue) (*KaetzchenWorker, error) {
 	}
 
 	// monitor channel length
-	go kaetzchenWorker.monitorChannelLen()
+	instrument.MonitorChannelLen("server.kaetzchen.ch", kaetzchenWorker.ch)
 
 	return &kaetzchenWorker, nil
-}
-
-func (k *KaetzchenWorker) monitorChannelLen() {
-	ticker := time.NewTicker(time.Second)
-	defer ticker.Stop()
-
-	for range ticker.C {
-		instrument.GaugeChannelLength("server.kaetzchen.ch", len(k.ch))
-	}
 }

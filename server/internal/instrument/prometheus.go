@@ -6,6 +6,8 @@ package instrument
 import (
 	"fmt"
 	"net/http"
+	"sync"
+	"time"
 
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"github.com/katzenpost/katzenpost/server/internal/glue"
@@ -167,6 +169,31 @@ var (
 	)
 )
 
+var monitoredChannels = struct {
+	sync.Mutex
+	channels map[string]chan interface{}
+}{
+	channels: make(map[string]chan interface{}),
+}
+
+func startChannelLenMonitor() {
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+	for range ticker.C {
+		monitoredChannels.Lock()
+		for name, ch := range monitoredChannels.channels {
+			channelUsage.With(prometheus.Labels{"channel_name": name}).Set(float64(len(ch)))
+		}
+		monitoredChannels.Unlock()
+	}
+}
+
+func MonitorChannelLen(name string, ch chan interface{}) {
+	monitoredChannels.Lock()
+	monitoredChannels.channels[name] = ch
+	monitoredChannels.Unlock()
+}
+
 // StartPrometheusListener starts the Prometheus metrics TCP/HTTP Listener
 func StartPrometheusListener(glue glue.Glue) {
 	prometheus.MustRegister(deadlineBlownPacketsDropped)
@@ -200,6 +227,8 @@ func StartPrometheusListener(glue glue.Glue) {
 		http.Handle("/metrics", promhttp.Handler())
 		go http.ListenAndServe(metricsAddress, nil)
 	}
+
+	go startChannelLenMonitor()
 }
 
 // Incoming increments the counter for incoming requests
@@ -306,8 +335,4 @@ func FailedPKICacheGeneration(epoch string) {
 // InvalidPKICache increments the counter for the number of invalid cached PKI docs per epoch
 func InvalidPKICache(epoch string) {
 	invalidPKICache.With(prometheus.Labels{"epoch": epoch})
-}
-
-func GaugeChannelLength(channelName string, length int) {
-	channelUsage.With(prometheus.Labels{"channel_name": channelName}).Set(float64(length))
 }
