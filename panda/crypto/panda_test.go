@@ -4,11 +4,12 @@ import (
 	"bytes"
 	"crypto/rand"
 	"errors"
+	"sync"
+	"testing"
+
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/op/go-logging.v1"
-	"sync"
-	"testing"
 )
 
 const paddingSize = 1 << 16
