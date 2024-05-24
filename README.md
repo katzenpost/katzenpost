@@ -36,10 +36,6 @@ You can watch our progress being tracked, here:
 https://github.com/orgs/katzenpost/projects/6/views/5
 
 
-There are essentially two types of interaction with a Katzenpost mixnet:
-1. clients talk to mixnet services and their traffic stays in the mixnet
-2. clients talk to Internet services; proxying through the mixnet onto the Internet.
-
 # Building Katzenpost
 
 To build all server related components, type "make" when inside this repo:
@@ -95,17 +91,41 @@ mixing strategy with client selected exponential delays and a stratified (layere
 
 Our documentation is in progress, but we have some resources for experts:
 
-* Our threat model document, work-in-progress, can be found [here.](https://raw.githubusercontent.com/katzenpost/katzenpost/add_threat_model_doc/docs/specs/threat_model.rst)
+* Out mix net design literature review, can be found [here.](https://katzenpost.network/research/Literature_overview__website_version.pdf)
+
+* Our threat model document, work-in-progress, can be found [here.](https://katzenpost.network/research/Threat_Model_Doc.pdf)
 
 * Our design specification documents are available [here.](https://github.com/katzenpost/katzenpost/tree/main/docs/specs)
 
-## Wire protocol based on Noise
 
-Every component in a Katzenpost mix network uses our "wire" protocol, the protocol that sits on top of either TCP or QUIC, is a cryptographic protocol based on Noise:
+## Cryptographic Agility
 
-[The Noise Protocol Framework](https://noiseprotocol.org/)
+Katzenpost consists of 3 core cryptographic protocols all of which have cryptographic agility
+with respect to the KEM, NIKE or signature scheme being used:
 
-We believe in the Noise cryptographic protocol framework, that it is
+1. Wire protocol based on Noise/PQ Noise
+2. Sphinx
+3. PKI
+
+Each of these protocols makes use of our golang cryptography library called HPQC (hybrid post quantum cryptography):
+
+https://github.com/katzenpost/hpqc
+
+Firstly, for each of the protocols we make use of a small set of
+golang interfaces for KEM, NIKE and signature schemes respectively
+allowing us to build protocols that are completely agnostic to the
+specific cryptographic primitive being used.  Secondly, each of these
+protocol implementations allows for the selection of the cryptographic
+primitive via it's TOML configuration file.
+
+
+## Wire protocol based on Noise/PQ Noise
+
+All Katzenpost components communicate with one another using our
+"wire" protocol which currently only works on TCP but hopefully soon also QUIC.
+This wire protocol is traffic padded as a redundant measure against traffic analysis.
+
+We believe in [The Noise Protocol Framework](https://noiseprotocol.org/), that it is
 good to use it instead of TLS, whenever possible. Noise places all of
 the protocol decision making during the design phase of the protocol
 instead of during protocol runtime. This means there are no protocol
@@ -125,13 +145,11 @@ However, we use a variation of Noise called [Post Quantum Noise](https://eprint.
 }
 ```
 
-The precise Noise protocol descriptor string we use is:
+Our wire protocol implementation let's you select any KEM and if you
+happened to have selected Xwing then the precise Noise protocol
+descriptor string for the protocol would be:
 
-``Noise_pqXX_Kyber768X25519_ChaChaPoly_BLAKE2s``
-
-However the hybrid KEM Kyber768X25519 is constructed using a security
-preserving KEM combiner and a NIKE to KEM adapter with semantic
-security so that the resulting hybrid KEM is IND-CCA2 in QROM.
+``Noise_pqXX_Xwing_ChaChaPoly_BLAKE2s``
 
 Here's a diagram of the pqXX pattern which we use:
 
@@ -199,18 +217,8 @@ keys and network connection information.
 The mix descriptors are signed by the mix nodes. Each dirauth also signs their
 interactions in the voting protocol and the final published PKI document.
 
-Mix nodes and dirauth (directory authority) nodes use our hybrid post quantum signature
-scheme which is currently:
-
-* ed25519 + Sphincs+
-
-Note that we could have just used Sphincs+ since hash based signature schemes have a
-solid theoretical foundation, however there can still be mistakes in the hyper tree design
-and so pairing it with ed25519 is prudent defense in dept.
-
-Clients also use this signature scheme to verify PKI documents.
-
-We are using the *SHAKE-256f* parameterization of Sphincs+ via the reference implementation.
+Mix nodes and dirauth (directory authority) nodes use whichever signature scheme selected
+by the dirauth configuration. Clients also use this signature scheme to verify PKI documents.
 
 # License
 
