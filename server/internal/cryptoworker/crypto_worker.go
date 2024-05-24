@@ -102,10 +102,10 @@ func (w *Worker) doUnwrap(pkt *packet.Packet) error {
 
 		w.log.Debugf("Packet: %v (Unwrap took: %v)", pkt.ID, unwrapAt.Sub(startAt))
 
+		lastErr = err
 		// Decryption failures can result from picking the wrong key.
 		if err != nil {
 			// So save the error and try the next key if possible.
-			lastErr = err
 			continue
 		}
 
