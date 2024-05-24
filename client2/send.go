@@ -138,9 +138,9 @@ func (c *Client) makePath(recipient []byte, destination *[32]byte, surbID *[sCon
 		panic("destination is nil")
 	}
 
-	srcGateway, dstServiceNode := c.conn.gateway, destination
+	srcNode, dstNode := c.conn.gateway, destination
 	if !isForward {
-		srcGateway, dstServiceNode = dstServiceNode, srcGateway
+		srcNode, dstNode = dstNode, srcNode
 	}
 
 	// Get the current PKI document.
@@ -149,14 +149,28 @@ func (c *Client) makePath(recipient []byte, destination *[32]byte, surbID *[sCon
 		return nil, time.Time{}, newPKIError("client2: no PKI document for current epoch")
 	}
 
-	// Get the descriptors.
-	src, err := doc.GetGatewayByKeyHash(srcGateway)
-	if err != nil {
-		return nil, time.Time{}, newPKIError("client2: failed to find source Gateway: %v", err)
-	}
-	dst, err := doc.GetServiceNodeByKeyHash(dstServiceNode)
-	if err != nil {
-		return nil, time.Time{}, newPKIError("client2: failed to find destination Gateway: %v", err)
+	var src *cpki.MixDescriptor
+	var dst *cpki.MixDescriptor
+	var err error
+
+	if isForward {
+		src, err = doc.GetGatewayByKeyHash(srcNode)
+		if err != nil {
+			return nil, time.Time{}, newPKIError("client2: failed to find source Gateway: %v", err)
+		}
+		dst, err = doc.GetServiceNodeByKeyHash(dstNode)
+		if err != nil {
+			return nil, time.Time{}, newPKIError("client2: failed to find destination service node: %v", err)
+		}
+	} else {
+		src, err = doc.GetServiceNodeByKeyHash(srcNode)
+		if err != nil {
+			return nil, time.Time{}, newPKIError("client2: failed to find source service node: %v", err)
+		}
+		dst, err = doc.GetGatewayByKeyHash(dstNode)
+		if err != nil {
+			return nil, time.Time{}, newPKIError("client2: failed to find destination gateway node: %v", err)
+		}
 	}
 
 	rng := rand.NewMath()
