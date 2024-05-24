@@ -4,12 +4,11 @@ import (
 	"bytes"
 	"crypto/rand"
 	"errors"
-	"sync"
-	"testing"
-
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/op/go-logging.v1"
+	"sync"
+	"testing"
 )
 
 const paddingSize = 1 << 16
@@ -228,23 +227,26 @@ func runKXWithSerialize(resultChan chan interface{}, log *logging.Logger, mp Mee
 	go func() {
 		var reply []byte
 		for {
-			pandaUpdate := <-pandaChan
-			close(shutdownChan)
-			shutdownChan = make(chan interface{})
-			sr := kx.Marshal()
-			kx, err = UnmarshalKeyExchange(rand.Reader, log, mp, sr, contactID, pandaChan, shutdownChan)
-			kx.pandaChan = pandaChan
-			kx.shutdownChan = shutdownChan
-			kx.contactID = contactID
-			if err != nil {
-				resultChan <- err
-				return
-			}
-			go kx.Run()
+			select {
+			case pandaUpdate := <-pandaChan:
+				close(shutdownChan)
+				shutdownChan = make(chan interface{})
+				sr := kx.Marshal()
+				kx, err = UnmarshalKeyExchange(rand.Reader, log, mp, sr, contactID, pandaChan, shutdownChan)
+				kx.pandaChan = pandaChan
+				kx.shutdownChan = shutdownChan
+				kx.contactID = contactID
+				if err != nil {
+					resultChan <- err
+					return
+				}
+				go kx.Run()
 
-			reply = pandaUpdate.Result
-			if reply != nil {
-				resultChan <- reply
+				reply = pandaUpdate.Result
+				if reply != nil {
+					resultChan <- reply
+				}
+			default:
 			}
 		}
 	}()
