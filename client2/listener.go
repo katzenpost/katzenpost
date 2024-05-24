@@ -128,8 +128,7 @@ func (l *listener) onNewConn(conn *net.UnixConn) {
 	}
 
 	l.log.Debug("send pki doc")
-	mydoc := doc
-	docBlob, err := mydoc.MarshalBinary()
+	docBlob, err := doc.MarshalBinary()
 	if err != nil {
 		l.log.Errorf("cbor fail: %s", err)
 	}
