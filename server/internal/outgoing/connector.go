@@ -64,7 +64,6 @@ func (co *connector) ForceUpdate() {
 	// periodic timer serves as a fallback.
 	select {
 	case co.forceUpdateCh <- true:
-	default:
 	}
 }
 
