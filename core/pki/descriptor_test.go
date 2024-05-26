@@ -29,7 +29,7 @@ import (
 
 const debugTestEpoch = 0xFFFFFFFF
 
-var testDescriptorSignatureScheme = signSchemes.ByName("Ed25519 Sphincs+")
+var testDescriptorSignatureScheme = signSchemes.ByName("Ed25519")
 
 func TestDescriptor(t *testing.T) {
 	t.Parallel()
