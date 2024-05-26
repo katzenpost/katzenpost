@@ -42,8 +42,10 @@ func main() {
 		return
 	}
 
-	// Set the umask to something "paranoid".
-	syscall.Umask(0077)
+	if runtime.GOOS != "windows" {
+		// Set the umask to something "paranoid".
+		syscall.Umask(0077)
+	}
 
 	// Ensure that a sane number of OS threads is allowed.
 	if os.Getenv("GOMAXPROCS") == "" {
