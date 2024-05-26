@@ -30,7 +30,7 @@ import (
 )
 
 var (
-	testSignatureScheme = schemes.ByName("Ed25519 Sphincs+")
+	testSignatureScheme = schemes.ByName("Ed25519")
 )
 
 func TestExpiredCertificate(t *testing.T) {
