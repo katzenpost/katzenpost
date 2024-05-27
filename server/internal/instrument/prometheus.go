@@ -6,6 +6,7 @@ package instrument
 import (
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"github.com/katzenpost/katzenpost/server/internal/glue"
@@ -158,11 +159,34 @@ var (
 		},
 		[]string{"epoch"},
 	)
+	channelUsage = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "katzenpost_channel_usage",
+			Help: "Current number of items in the channel",
+		},
+		[]string{"channel_name"},
+	)
 )
+
+func MonitorChannelLen(name string, haltCh <-chan interface{}, ch chan interface{}) {
+	go doMonitorChannelLen(name, haltCh, ch)
+}
+
+func doMonitorChannelLen(name string, haltCh <-chan interface{}, ch chan interface{}) {
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-haltCh:
+			return
+		case <-ticker.C:
+			channelUsage.With(prometheus.Labels{"channel_name": name}).Set(float64(len(ch)))
+		}
+	}
+}
 
 // StartPrometheusListener starts the Prometheus metrics TCP/HTTP Listener
 func StartPrometheusListener(glue glue.Glue) {
-
 	prometheus.MustRegister(deadlineBlownPacketsDropped)
 	prometheus.MustRegister(incomingConns)
 	prometheus.MustRegister(invalidPacketsDropped)
@@ -186,6 +210,7 @@ func StartPrometheusListener(glue glue.Glue) {
 	prometheus.MustRegister(failedFetchPKIDocs)
 	prometheus.MustRegister(failedPKICacheGeneration)
 	prometheus.MustRegister(invalidPKICache)
+	prometheus.MustRegister(channelUsage)
 
 	metricsAddress := glue.Config().Server.MetricsAddress
 	if metricsAddress != "" {

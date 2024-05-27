@@ -166,6 +166,9 @@ func New(glue glue.Glue) (glue.ServiceNode, error) {
 		p.Go(p.worker)
 	}
 
+	// monitor channel length
+	instrument.MonitorChannelLen("server.service.ch", p.HaltCh(), p.ch)
+
 	isOk = true
 	return p, nil
 }

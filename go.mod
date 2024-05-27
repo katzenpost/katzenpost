@@ -4,14 +4,13 @@ go 1.21.3
 
 require (
 	github.com/BurntSushi/toml v1.3.2
-	github.com/awnumar/memguard v0.22.3
 	github.com/carlmjohnson/versioninfo v0.22.4
 	github.com/fxamacker/cbor/v2 v2.5.0
 	github.com/golang/protobuf v1.5.3
 	github.com/henrydcase/nobs v0.0.0-20230313231516-25b66236df73
 	github.com/jackc/pgx v3.6.2+incompatible
 	github.com/katzenpost/chacha20poly1305 v0.0.0-20211026103954-7b6fb2fc0129
-	github.com/katzenpost/hpqc v0.0.29
+	github.com/katzenpost/hpqc v0.0.31
 	github.com/katzenpost/nyquist v0.0.10
 	github.com/prometheus/client_golang v1.18.0
 	github.com/stretchr/testify v1.8.4
@@ -32,7 +31,6 @@ require (
 	codeberg.org/vula/highctidh v1.0.2024050500 // indirect
 	filippo.io/edwards25519 v1.0.0 // indirect
 	filippo.io/mlkem768 v0.0.0-20240221181710-5ce91625fdc1 // indirect
-	github.com/awnumar/memcall v0.1.2 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cespare/xxhash/v2 v2.2.0 // indirect
 	github.com/cockroachdb/apd v1.1.0 // indirect

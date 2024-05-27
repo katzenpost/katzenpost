@@ -195,6 +195,7 @@ func (uCfg *UpstreamProxy) toProxyConfig() (*proxy.Config, error) {
 
 // Config is the top level client configuration.
 type Config struct {
+	RatchetNIKEScheme  string
 	WireKEMScheme      string
 	PKISignatureScheme string
 	SphinxGeometry     *geo.Geometry

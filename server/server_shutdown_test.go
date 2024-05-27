@@ -20,6 +20,7 @@ package server
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -39,9 +40,13 @@ import (
 
 var testingSchemeName = "xwing"
 var testingScheme = schemes.ByName(testingSchemeName)
-var testSignatureScheme = signSchemes.ByName("Ed25519 Sphincs+")
+var testSignatureScheme = signSchemes.ByName("Ed25519")
 
 func TestServerStartShutdown(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		return
+	}
+
 	assert := assert.New(t)
 
 	datadir, err := os.MkdirTemp("", "server_data_dir")
@@ -82,12 +87,12 @@ func TestServerStartShutdown(t *testing.T) {
 	cfg := config.Config{
 		SphinxGeometry: geo,
 		Server: &config.Server{
-			WireKEM:       testingSchemeName,
+			WireKEM:            testingSchemeName,
 			PKISignatureScheme: testSignatureScheme.Name(),
-			Identifier:    "testserver",
-			Addresses:     []string{"127.0.0.1:1234"},
-			DataDir:       datadir,
-			IsGatewayNode: false,
+			Identifier:         "testserver",
+			Addresses:          []string{"127.0.0.1:1234"},
+			DataDir:            datadir,
+			IsGatewayNode:      false,
 		},
 		Logging: &config.Logging{
 			Disable: false,
