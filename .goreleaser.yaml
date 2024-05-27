@@ -9,7 +9,7 @@ builds:
    main: ./server/cmd/server
    binary: mixserver
    env:
-      - CGO_ENABLED=0
+      - CGO_ENABLED=1
    goos:
       - linux
       - darwin
@@ -17,7 +17,6 @@ builds:
    goarch:
       - amd64
       - arm64
-      - arm
    goarm:
       - 6
       - 7
@@ -25,7 +24,7 @@ builds:
    main: ./authority/cmd/voting
    binary: dirauth
    env:
-      - CGO_ENABLED=0
+      - CGO_ENABLED=1
    goos:
       - linux
       - darwin
@@ -33,7 +32,6 @@ builds:
    goarch:
       - amd64
       - arm64
-      - arm
    goarm:
       - 6
       - 7
@@ -41,7 +39,7 @@ builds:
    main: ./authority/cmd/fetch
    binary: fetch
    env:
-      - CGO_ENABLED=0
+      - CGO_ENABLED=1
    goos:
       - linux
       - darwin
@@ -49,7 +47,6 @@ builds:
    goarch:
       - amd64
       - arm64
-      - arm
    goarm:
       - 6
       - 7
@@ -57,7 +54,7 @@ builds:
    main: ./ping
    binary: ping
    env:
-      - CGO_ENABLED=0
+      - CGO_ENABLED=1
    goos:
       - linux
       - darwin
@@ -65,7 +62,6 @@ builds:
    goarch:
       - amd64
       - arm64
-      - arm
    goarm:
       - 6
       - 7
