@@ -93,7 +93,9 @@ Level = "DEBUG"
       Addresses = ["127.0.0.1:30001"]
 `
 
-	config := fmt.Sprintf(basicConfig, testingSchemeName, os.TempDir(), testingSchemeName, strings.Replace(pem.ToPublicPEMString(linkPubKey), "\n", "\\n", -1))
+	tempDir, err := os.MkdirTemp("", "server_config_test")
+	require.NoError(err)
+	config := fmt.Sprintf(basicConfig, testingSchemeName, tempDir, testingSchemeName, strings.Replace(pem.ToPublicPEMString(linkPubKey), "\n", "\\n", -1))
 
 	cfg, err := Load([]byte(config))
 	require.NoError(err)
