@@ -24,7 +24,6 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/awnumar/memguard"
 	"github.com/fxamacker/cbor/v2"
 	"golang.org/x/crypto/argon2"
 	"golang.org/x/crypto/nacl/secretbox"
@@ -72,10 +71,9 @@ type StateWriter struct {
 
 	log *logging.Logger
 
-	stateCh   chan *memguard.LockedBuffer
+	stateCh   chan []byte
 	stateFile string
 
-	// TODO: memguard.LockedBuffer
 	key *[32]byte
 }
 
@@ -174,7 +172,7 @@ func encryptStateFile(stateFile string, state []byte, key *[32]byte) error {
 func LoadStateWriter(log *logging.Logger, stateFile string, passphrase []byte) (*StateWriter, *State, error) {
 	worker := &StateWriter{
 		log:       log,
-		stateCh:   make(chan *memguard.LockedBuffer),
+		stateCh:   make(chan []byte),
 		stateFile: stateFile,
 	}
 	key := stretchKey(passphrase)
@@ -192,7 +190,7 @@ func NewStateWriter(log *logging.Logger, stateFile string, passphrase []byte) (*
 	key := stretchKey(passphrase)
 	worker := &StateWriter{
 		log:       log,
-		stateCh:   make(chan *memguard.LockedBuffer),
+		stateCh:   make(chan []byte),
 		stateFile: stateFile,
 		key:       key,
 	}
@@ -216,12 +214,11 @@ func (w *StateWriter) worker() {
 			w.log.Debugf("Terminating gracefully.")
 			return
 		case newState := <-w.stateCh:
-			err := w.writeState(newState.Bytes())
+			err := w.writeState(newState)
 			if err != nil {
 				w.log.Errorf("Failure to write state to disk: %s", err)
 				panic(err)
 			}
-			newState.Destroy()
 		}
 	}
 }
