@@ -144,6 +144,9 @@ type Contact struct {
 // NewContact creates a new Contact or returns an error.
 func NewContact(nickname string, id uint64, secret []byte, nikeSchemeName string) (*Contact, error) {
 	nikeScheme := schemes.ByName(nikeSchemeName)
+	if nikeScheme == nil {
+		panic("NewContact: nike scheme cannot be nike")
+	}
 	ratchet, err := ratchet.InitRatchet(rand.Reader, nikeScheme)
 	if err != nil {
 		return nil, err
