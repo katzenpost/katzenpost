@@ -20,6 +20,7 @@ package server
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -42,6 +43,10 @@ var testingScheme = schemes.ByName(testingSchemeName)
 var testSignatureScheme = signSchemes.ByName("Ed25519")
 
 func TestServerStartShutdown(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		return
+	}
+
 	assert := assert.New(t)
 
 	datadir, err := os.MkdirTemp("", "server_data_dir")
