@@ -285,6 +285,9 @@ func (r *Ratchet) randBytes(buf []byte) {
 // wiped afterwards. The new *Ratchet is returned unless
 // there's an error.
 func NewRatchetFromBytes(rand io.Reader, data []byte, scheme nike.Scheme) (*Ratchet, error) {
+	if scheme == nil {
+		panic("NewRatchetFromBytes: nike scheme cannot be nil")
+	}
 	defer utils.ExplicitBzero(data)
 	state := state{}
 	if err := cbor.Unmarshal(data, &state); err != nil {
@@ -302,9 +305,6 @@ func NewRatchetFromBytes(rand io.Reader, data []byte, scheme nike.Scheme) (*Ratc
 // newRatchetFromState unmarshals state into a new ratchet.
 // state's fields are wiped in the process of copying them.
 func newRatchetFromState(rand io.Reader, s *state, scheme nike.Scheme) (*Ratchet, error) {
-	if scheme == nil {
-		panic("newRatchetFromState: nike scheme cannot be nil")
-	}
 	r := &Ratchet{
 		rand:              rand,
 		scheme:            scheme,

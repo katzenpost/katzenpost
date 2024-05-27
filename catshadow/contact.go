@@ -209,12 +209,13 @@ func (c *Contact) UnmarshalBinary(data []byte) error {
 		return err
 	}
 
+	c.nikeScheme = schemes.ByName(s.NIKEScheme)
+
 	r, err := ratchet.NewRatchetFromBytes(rand.Reader, s.Ratchet, c.nikeScheme)
 	if err != nil {
 		return err
 	}
 
-	c.nikeScheme = schemes.ByName(s.NIKEScheme)
 	c.id = s.ID
 	c.Nickname = s.Nickname
 	c.IsPending = s.IsPending
