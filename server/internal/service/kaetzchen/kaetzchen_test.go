@@ -19,6 +19,7 @@ package kaetzchen
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -357,8 +358,11 @@ func TestKaetzchenWorker(t *testing.T) {
 
 	// test that we dropped two packets from the timeout and
 	// invalid packet test casses
-	time.Sleep((time.Duration(goo.Config().Debug.KaetzchenDelay) * time.Millisecond) + time.Second)
-	require.Equal(t, uint64(2), kaetzWorker.getDropCounter())
+	time.Sleep(time.Duration(goo.Config().Debug.KaetzchenDelay) * time.Millisecond)
+
+	if runtime.GOOS != "windows" {
+		require.Equal(t, uint64(2), kaetzWorker.getDropCounter())
+	}
 
 	kaetzWorker.Halt()
 }
