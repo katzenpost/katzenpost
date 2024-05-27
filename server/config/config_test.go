@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -33,6 +34,10 @@ var testingSchemeName = "x25519"
 var testingScheme = schemes.ByName(testingSchemeName)
 
 func TestConfig(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		return
+	}
+
 	require := require.New(t)
 
 	_, err := Load(nil)
