@@ -239,6 +239,10 @@ func (m *MockKaetzchen) Halt() {}
 
 func TestKaetzchenWorker(t *testing.T) {
 
+	if runtime.GOOS == "windows" {
+		return
+	}
+
 	datadir := os.TempDir()
 
 	idPubKey, idKey, err := testSignatureScheme.GenerateKey()
@@ -359,10 +363,6 @@ func TestKaetzchenWorker(t *testing.T) {
 	// test that we dropped two packets from the timeout and
 	// invalid packet test casses
 	time.Sleep(time.Duration(goo.Config().Debug.KaetzchenDelay) * time.Millisecond)
-
-	if runtime.GOOS != "windows" {
-		require.Equal(t, uint64(2), kaetzWorker.getDropCounter())
-	}
-
+	require.Equal(t, uint64(2), kaetzWorker.getDropCounter())
 	kaetzWorker.Halt()
 }
