@@ -19,6 +19,7 @@
 package catshadow
 
 import (
+	"bytes"
 	"context"
 	"encoding/binary"
 	"errors"
@@ -26,8 +27,6 @@ import (
 	"sort"
 	"sync"
 	"time"
-
-	"github.com/awnumar/memguard"
 
 	"github.com/fxamacker/cbor/v2"
 	"gopkg.in/op/go-logging.v1"
@@ -823,7 +822,7 @@ func (c *Client) save() {
 	}
 }
 
-func (c *Client) marshal() (*memguard.LockedBuffer, error) {
+func (c *Client) marshal() ([]byte, error) {
 	contacts := []*Contact{}
 	for _, contact := range c.contacts {
 		contacts = append(contacts, contact)
@@ -838,11 +837,11 @@ func (c *Client) marshal() (*memguard.LockedBuffer, error) {
 	}
 	defer c.conversationsMutex.Unlock()
 	// XXX: shouldn't we also obtain the ratchet locks as well?
-	ms := memguard.NewStream()
+	ms := new(bytes.Buffer)
 	em, _ := cbor.EncOptions{Time: cbor.TimeUnixDynamic}.EncMode()
 	e := em.NewEncoder(ms)
 	e.Encode(s)
-	return ms.Flush()
+	return ms.Bytes(), nil
 }
 
 func (c *Client) haltKeyExchanges() {
