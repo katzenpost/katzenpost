@@ -5,7 +5,6 @@ package client2
 
 import (
 	"net"
-	"runtime"
 	"sync"
 
 	"github.com/katzenpost/katzenpost/core/log"
@@ -22,7 +21,7 @@ type listener struct {
 	logBackend *log.Backend
 	log        *logging.Logger
 
-	listener *net.UnixListener
+	listener net.Listener
 
 	connsLock *sync.RWMutex
 	conns     map[[AppIDLength]byte]*incomingConn // appID -> *incomingConn
@@ -240,20 +239,33 @@ func NewListener(client *Client, rates *Rates, egressCh chan *Request, logBacken
 
 	l.decoySender = newSender(l.ingressCh, egressCh, client.cfg.Debug.DisableDecoyTraffic, logBackend)
 
-	network := "unixpacket"
-	address := "@katzenpost"
+	network := client.cfg.ListenNetwork
+	address := client.cfg.ListenAddress
 
-	if runtime.GOOS != "linux" {
-		address = "katzenpost"
-	}
-
-	unixAddr, err := net.ResolveUnixAddr(network, address)
-	if err != nil {
-		return nil, err
-	}
-	l.listener, err = net.ListenUnix(network, unixAddr)
-	if err != nil {
-		return nil, err
+	switch network {
+	case "tcp6":
+		fallthrough
+	case "tcp4":
+		fallthrough
+	case "tcp":
+		tcpAddr, err := net.ResolveTCPAddr(network, address)
+		if err != nil {
+			return nil, err
+		}
+		l.listener, err = net.ListenTCP(network, tcpAddr)
+	case "unix":
+		fallthrough
+	case "unixgram":
+		fallthrough
+	case "unixpacket":
+		unixAddr, err := net.ResolveUnixAddr(network, address)
+		if err != nil {
+			return nil, err
+		}
+		l.listener, err = net.ListenUnix(network, unixAddr)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	l.Go(l.worker)

@@ -261,6 +261,13 @@ type Callbacks struct {
 
 // Config is the top level client configuration.
 type Config struct {
+
+	// ListenNetwork is the network type that the daemon should listen on for thin client connections.
+	ListenNetwork string
+
+	// ListenAddress is the network address that the daemon should listen on for thin client connections.
+	ListenAddress string
+
 	// PKISignatureScheme specifies the signature scheme to use with the PKI protocol.
 	PKISignatureScheme string
 
