@@ -32,7 +32,7 @@ import (
 
 var testingSchemeName = "xwing"
 var testingScheme = schemes.ByName(testingSchemeName)
-var testDocumentSignatureScheme = signSchemes.ByName("Ed25519 Sphincs+")
+var testDocumentSignatureScheme = signSchemes.ByName("Ed25519")
 
 func genDescriptor(require *require.Assertions, idx int, isGatewayNode, isServiceNode bool) *MixDescriptor {
 	d := new(MixDescriptor)

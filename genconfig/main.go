@@ -59,6 +59,7 @@ type katzenpost struct {
 	logLevel  string
 	logWriter io.Writer
 
+	ratchetNIKEScheme  string
 	wireKEMScheme      string
 	pkiSignatureScheme sign.Scheme
 	sphinxGeometry     *geo.Geometry
@@ -93,6 +94,7 @@ func (s *katzenpost) genClientCfg() error {
 	os.Mkdir(filepath.Join(s.outDir, "client"), 0700)
 	cfg := new(cConfig.Config)
 
+	cfg.RatchetNIKEScheme = s.ratchetNIKEScheme
 	cfg.WireKEMScheme = s.wireKEMScheme
 	cfg.PKISignatureScheme = s.pkiSignatureScheme.Name()
 	cfg.SphinxGeometry = s.sphinxGeometry
@@ -344,8 +346,9 @@ func main() {
 	wirekem := flag.String("wirekem", "", "Name of the KEM Scheme to be used with wire protocol")
 	kem := flag.String("kem", "", "Name of the KEM Scheme to be used with Sphinx")
 	nike := flag.String("nike", "x25519", "Name of the NIKE Scheme to be used with Sphinx")
+	ratchetNike := flag.String("ratchetNike", "x25519", "Name of the NIKE Scheme to be used with the doubleratchet")
 	UserForwardPayloadLength := flag.Int("UserForwardPayloadLength", 2000, "UserForwardPayloadLength")
-	pkiSignatureScheme := flag.String("pkiScheme", "Ed25519 Sphincs+", "PKI Signature Scheme to be used")
+	pkiSignatureScheme := flag.String("pkiScheme", "Ed25519", "PKI Signature Scheme to be used")
 
 	sr := flag.Uint64("sr", 0, "Sendrate limit")
 	mu := flag.Float64("mu", 0.005, "Inverse of mean of per hop delay.")
@@ -373,6 +376,10 @@ func main() {
 		log.Fatal("nike and kem flags cannot both be set")
 	}
 
+	if *ratchetNike == "" {
+		log.Fatal("ratchetNike must be set")
+	}
+
 	parameters := &vConfig.Parameters{
 		SendRatePerMinute: *sr,
 		Mu:                *mu,
@@ -389,6 +396,8 @@ func main() {
 	}
 
 	s := &katzenpost{}
+
+	s.ratchetNIKEScheme = *ratchetNike
 
 	s.wireKEMScheme = *wirekem
 	if kemschemes.ByName(*wirekem) == nil {

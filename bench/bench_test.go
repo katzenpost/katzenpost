@@ -97,7 +97,7 @@ var (
 	)
 )
 
-var testSignatureScheme = signSchemes.ByName("Ed25519 Sphincs+")
+var testSignatureScheme = signSchemes.ByName("Ed25519")
 
 func getClientCfg(f string) *config.Config {
 	cfg, err := config.LoadFile(f)
