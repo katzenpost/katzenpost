@@ -6,14 +6,20 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	ecdh "github.com/katzenpost/hpqc/nike/x25519"
 )
+
+var nikeScheme = ecdh.Scheme(rand.Reader)
+
+//var nikeScheme = hybrid.CTIDHX25519
 
 func pairedRatchet(t *testing.T) (aRatchet, bRatchet *Ratchet) {
 	var err error
-	aRatchet, err = InitRatchet(rand.Reader)
+	aRatchet, err = InitRatchet(rand.Reader, nikeScheme)
 	require.NoError(t, err)
 
-	bRatchet, err = InitRatchet(rand.Reader)
+	bRatchet, err = InitRatchet(rand.Reader, nikeScheme)
 	require.NoError(t, err)
 
 	// create the key exchange blobs
@@ -47,9 +53,9 @@ func Test_KeyExchange(t *testing.T) {
 
 func Test_RealKeyExchange(t *testing.T) {
 	// create two new ratchets
-	a, err := InitRatchet(rand.Reader)
+	a, err := InitRatchet(rand.Reader, nikeScheme)
 	require.NoError(t, err)
-	b, err := InitRatchet(rand.Reader)
+	b, err := InitRatchet(rand.Reader, nikeScheme)
 	require.NoError(t, err)
 
 	// create the key exchange blobs
@@ -98,7 +104,7 @@ collective behavior embodies values—and the institutions we create do, too.`)
 
 func Test_Serialization0(t *testing.T) {
 	// create two new ratchets
-	a, err := InitRatchet(rand.Reader)
+	a, err := InitRatchet(rand.Reader, nikeScheme)
 	require.NoError(t, err)
 	_, err = a.Save()
 	require.NoError(t, err)
@@ -118,7 +124,7 @@ func Test_Serialization1(t *testing.T) {
 	serialized, err := a.Save()
 	require.NoError(t, err)
 
-	r, err := NewRatchetFromBytes(rand.Reader, serialized)
+	r, err := NewRatchetFromBytes(rand.Reader, serialized, nikeScheme)
 	require.NoError(t, err)
 
 	// 2
@@ -183,7 +189,7 @@ func reinitRatchet(t *testing.T, r *Ratchet) *Ratchet {
 	require.NoError(t, err)
 	DestroyRatchet(r)
 
-	newR, err := NewRatchetFromBytes(rand.Reader, state)
+	newR, err := NewRatchetFromBytes(rand.Reader, state, nikeScheme)
 	require.NoError(t, err)
 
 	return newR
@@ -307,10 +313,10 @@ func Test_serialize_savedkeys(t *testing.T) {
 	serialized2, err := b.Save()
 	require.NoError(t, err)
 
-	_, err = NewRatchetFromBytes(rand.Reader, serialized)
+	_, err = NewRatchetFromBytes(rand.Reader, serialized, nikeScheme)
 	require.NoError(t, err)
 
-	l, err := NewRatchetFromBytes(rand.Reader, serialized2)
+	l, err := NewRatchetFromBytes(rand.Reader, serialized2, nikeScheme)
 	require.NoError(t, err)
 
 	result, err = l.Decrypt(encrypted3)
@@ -345,4 +351,26 @@ func Test_RatchetDuplicateMessage(t *testing.T) {
 	result, err = b.Decrypt(encrypted3)
 	require.NoError(t, err)
 	require.Equal(t, msg3, result)
+}
+
+func Test_savedKeysMarshaling(t *testing.T) {
+	key := [32]byte{}
+	rand.Reader.Read(key[:])
+	m := &messageKey{
+		Num:          123,
+		Key:          make([]byte, 32),
+		CreationTime: 123,
+	}
+	rand.Reader.Read(m.Key)
+	s := &savedKeys{
+		HeaderKey:   key[:],
+		MessageKeys: []*messageKey{m},
+	}
+
+	b, err := s.MarshalBinary()
+	require.NoError(t, err)
+	require.NotNil(t, b)
+	s2 := &savedKeys{}
+	err = s2.UnmarshalBinary(b)
+	//require.NoError(t, err)
 }

@@ -27,6 +27,7 @@ import (
 
 	"github.com/katzenpost/katzenpost/authority/voting/server"
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
+	"github.com/katzenpost/katzenpost/core/compat"
 )
 
 func main() {
@@ -42,7 +43,7 @@ func main() {
 	}
 
 	// Set the umask to something "paranoid".
-	syscall.Umask(0077)
+	compat.Umask(0077)
 
 	cfg, err := config.LoadFile(*cfgFile, *genOnly)
 	if err != nil {

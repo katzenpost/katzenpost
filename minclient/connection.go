@@ -191,7 +191,13 @@ func (c *connection) getDescriptor() error {
 		c.log.Debugf("Failed to find descriptor for Gateway: %v", err)
 		return newPKIError("failed to find descriptor for Gateway: %v", err)
 	}
-	if c.c.cfg.GatewayKeyPin != nil && !c.c.cfg.GatewayKeyPin.Equal(desc.IdentityKey) {
+
+	gatewayKeyPinBlob, err := c.c.cfg.GatewayKeyPin.MarshalBinary()
+	if err != nil {
+		return err
+	}
+
+	if c.c.cfg.GatewayKeyPin != nil && !hmac.Equal(desc.IdentityKey, gatewayKeyPinBlob) {
 		c.log.Errorf("Gateway identity key does not match pinned key: %v", desc.IdentityKey)
 		return newPKIError("identity key for Gateway does not match pinned key: %v", desc.IdentityKey)
 	}

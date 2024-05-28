@@ -32,9 +32,9 @@ import (
 	"encoding/hex"
 	"fmt"
 
-	"github.com/awnumar/memguard"
 	"github.com/fxamacker/cbor/v2"
 	"github.com/katzenpost/hpqc/rand"
+	"github.com/katzenpost/katzenpost/core/utils"
 	"golang.org/x/crypto/curve25519"
 )
 
@@ -179,16 +179,17 @@ func (repr *Representative) ToPublic() *PublicKey {
 
 // PrivateKey is a Curve25519 private key in little-endian byte order.
 type PrivateKey struct {
-	privBuf *memguard.LockedBuffer
+	privBuf *[32]byte
 }
 
 // NewEmptyPrivateKey creates a new PrivateKey with the lockedBuffer
 // initialized to the correct size but not yet initialized to random
 // bytes.
 func NewEmptyPrivateKey() *PrivateKey {
-	pkb, err := memguard.NewBufferFromReader(rand.Reader, PrivateKeyLength)
+	pkb := &[32]byte{}
+	_, err := rand.Reader.Read(pkb[:])
 	if err != nil {
-		memguard.SafePanic(err)
+		panic(err)
 	}
 	p := &PrivateKey{
 		privBuf: pkb,
@@ -199,21 +200,20 @@ func NewEmptyPrivateKey() *PrivateKey {
 // NewRandomPrivateKey creates a new PrivateKey with the lockedBuffer
 // initialized to PrivateKeyLength random bytes.
 func NewRandomPrivateKey() *PrivateKey {
-	pkb, err := memguard.NewBufferFromReader(rand.Reader, PrivateKeyLength)
+	pkb := &[32]byte{}
+	_, err := rand.Reader.Read(pkb[:])
 	if err != nil {
-		memguard.SafePanic(err)
+		panic(err)
 	}
 	p := &PrivateKey{
 		privBuf: pkb,
 	}
-	r := p.privBuf.Bytes()
+	r := p.privBuf[:]
 	digest := sha256.Sum256(r)
 	digest[0] &= 248
 	digest[31] &= 127
 	digest[31] |= 64
-	p.privBuf.Melt()
 	copy(r, digest[:])
-	p.privBuf.Freeze()
 	return p
 }
 
@@ -233,20 +233,18 @@ func (k *PrivateKey) FromBytes(b []byte) error {
 	if len(b) != PrivateKeyLength {
 		return PrivateKeyLengthError(len(b))
 	}
-	k.privBuf.Melt()
-	copy(k.privBuf.Bytes(), b)
-	k.privBuf.Freeze()
+	copy(k.privBuf[:], b)
 	return nil
 }
 
 // Destroy destroys the private key material and frees up the memory.
 func (k *PrivateKey) Destroy() {
-	k.privBuf.Destroy()
+	utils.ExplicitBzero(k.privBuf[:])
 }
 
 // Bytes returns a pointer to the raw Curve25519 private key.
 func (k *PrivateKey) Bytes() []byte {
-	return k.privBuf.Bytes()
+	return k.privBuf[:]
 }
 
 // MarshalBinary is an implementation of a method on the
@@ -263,7 +261,7 @@ func (k *PrivateKey) UnmarshalBinary(data []byte) error {
 
 // ByteArray32 returns a pointer to the raw Curve25519 private key.
 func (k *PrivateKey) ByteArray32() *[32]byte {
-	return k.privBuf.ByteArray32()
+	return k.privBuf
 }
 
 // Hex returns the hexdecimal representation of the Curve25519 private key.
@@ -330,12 +328,10 @@ func (keypair *Keypair) UnmarshalBinary(data []byte) error {
 	k := &KeypairSerializable{
 		Public: &PublicKey{},
 		Private: &PrivateKey{
-			privBuf: memguard.NewBuffer(PrivateKeyLength),
+			privBuf: &[PrivateKeyLength]byte{},
 		},
 		Representative: &Representative{},
 	}
-	k.Private.privBuf.Melt()
-	defer k.Private.privBuf.Freeze()
 	err := cbor.Unmarshal(data, k)
 	if err != nil {
 		return err
