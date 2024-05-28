@@ -21,3 +21,9 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      -
+        name: Upload artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: katzenpost
+          path: katzenpost/dist/*
