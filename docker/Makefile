@@ -22,6 +22,9 @@ auths=3
 gateways=1
 serviceNodes=1
 
+pings=1
+ping_concurrency=$(pings)
+
 # Parameters
 sr=0
 mu=0.005
@@ -202,7 +205,7 @@ clean: clean-images clean-local
 
 run-ping: $(net_name)/ping.$(distro) $(net_name)/running.stamp
 	$(docker) run --network=host ${docker_args} $(mount_net_name) --rm  katzenpost-$(distro)_go_mod \
-        /$(net_name)/ping.$(distro) -c /go/katzenpost/docker/$(net_name)/client/client.toml -s echo -printDiff -n 1
+        /$(net_name)/ping.$(distro) -c /go/katzenpost/docker/$(net_name)/client/client.toml -s echo -printDiff -n $(pings) -C $(ping_concurrency)
 
 shell: $(distro)_go_mod.stamp
 	$(docker) run --network=host ${docker_args} $(mount_net_name) -w /go/katzenpost/docker/$(net_name) --rm -it katzenpost-$(distro)_go_mod $(sh)
