@@ -34,6 +34,8 @@ import (
 	ratchet "github.com/katzenpost/katzenpost/doubleratchet"
 
 	"github.com/katzenpost/hpqc/rand"
+	"github.com/katzenpost/hpqc/nike"
+	"github.com/katzenpost/hpqc/nike/schemes"
 	"github.com/katzenpost/katzenpost/client"
 	cConstants "github.com/katzenpost/katzenpost/client/constants"
 	cUtils "github.com/katzenpost/katzenpost/client/utils"
@@ -66,8 +68,8 @@ var (
 
 const EventChannelSize = 1000
 
-func DoubleRatchetPayloadLength(geo *geo.Geometry) int {
-	return common.SpoolPayloadLength(geo) - ratchet.DoubleRatchetOverhead
+func DoubleRatchetPayloadLength(geo *geo.Geometry, scheme nike.Scheme) int {
+	return common.SpoolPayloadLength(geo) - ratchet.DoubleRatchetOverhead(scheme)
 }
 
 // Client is the mixnet client which interacts with other clients
@@ -859,14 +861,20 @@ func (c *Client) Shutdown() {
 }
 
 func (c *Client) DoubleRatchetPayloadLength() int {
-	return DoubleRatchetPayloadLength(c.client.GetConfig().SphinxGeometry)
+	cfg := c.client.GetConfig()
+
+	nikeScheme := schemes.ByName(cfg.RatchetNIKEScheme)
+
+	return DoubleRatchetPayloadLength(cfg.SphinxGeometry, nikeScheme)
 }
 
 // SendMessage sends a message to the Client contact with the given nickname.
 func (c *Client) SendMessage(nickname string, message []byte) MessageID {
 	cfg := c.client.GetConfig()
 
-	if len(message)+4 > DoubleRatchetPayloadLength(cfg.SphinxGeometry) {
+	nikeScheme := schemes.ByName(cfg.RatchetNIKEScheme)
+
+	if len(message)+4 > DoubleRatchetPayloadLength(cfg.SphinxGeometry, nikeScheme) {
 		return MessageID{}
 	}
 	convoMesgID := MessageID{}
