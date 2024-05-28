@@ -13,6 +13,7 @@ import (
 	"bytes"
 	"crypto/hmac"
 	"encoding/binary"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"hash"
@@ -294,13 +295,31 @@ func NewRatchetFromBytes(rand io.Reader, data []byte, scheme nike.Scheme) (*Ratc
 	if err := cbor.Unmarshal(data, &state); err != nil {
 		return nil, err
 	}
+	f, err := json.MarshalIndent(state, "", "  ") 
+	if err != nil {
+		panic("wtf")
+	}
+	fmt.Println("deserialized ratchet")
+	fmt.Println(string(f))
+
 	if state.PQPrivate0 != nil && state.PQPrivate1 != nil {
+		fmt.Println("doing upgrade")
 		err := state.Upgrade(scheme.(*hybrid.Scheme))
+		fmt.Println("did upgrade")
 		if err != nil {
 			return nil, fmt.Errorf("key upgrade failure: %s", err)
 		}
+		fmt.Println("init ratchet from state")
+		r, err := newRatchetFromState(rand, &state, scheme)
+		fmt.Println("ratchet initialized")
+		if err != nil  {
+			return r, err
+		}
+		r.scheme = scheme
+		return r, nil
+	} else {
+		return newRatchetFromState(rand, &state, scheme)
 	}
-	return newRatchetFromState(rand, &state, scheme)
 }
 
 // newRatchetFromState unmarshals state into a new ratchet.

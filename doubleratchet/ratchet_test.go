@@ -5,6 +5,10 @@ import (
 	"fmt"
 	"testing"
 
+	"net/http"
+	_ "net/http/pprof"
+	"runtime"
+
 	"github.com/stretchr/testify/require"
 
 	//ecdh "github.com/katzenpost/hpqc/nike/x25519"
@@ -374,4 +378,13 @@ func Test_savedKeysMarshaling(t *testing.T) {
 	s2 := &savedKeys{}
 	err = s2.UnmarshalBinary(b)
 	//require.NoError(t, err)
+}
+
+func init() {
+	go func() {
+		http.ListenAndServe("localhost:1234", nil)
+	}()
+	runtime.SetMutexProfileFraction(1)
+	runtime.SetBlockProfileRate(1)
+
 }

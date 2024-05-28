@@ -21,11 +21,15 @@ package catshadow
 import (
 	"sync"
 	"time"
+	"fmt"
+
+	"encoding/json"
 
 	"github.com/fxamacker/cbor/v2"
 
 	"github.com/katzenpost/hpqc/nike"
 	"github.com/katzenpost/hpqc/nike/schemes"
+	"github.com/katzenpost/hpqc/nike/hybrid"
 	"github.com/katzenpost/hpqc/rand"
 
 	cConstants "github.com/katzenpost/katzenpost/client/constants"
@@ -208,12 +212,21 @@ func (c *Contact) UnmarshalBinary(data []byte) error {
 	if _, err := cbor.UnmarshalFirst(data, &s); err != nil {
 		return err
 	}
+	// pretty print serialized contact
+	f, err := json.MarshalIndent(s, "", "  ") 
+	if err != nil {
+		panic("wtf")
+	}
+	fmt.Println("deserialized")
+	fmt.Println(string(f))
 
 	// XXX TODO: assume legacy scheme if unset in statefile
 	if s.NIKEScheme == "" {
 		s.NIKEScheme = "NOBS_CSIDH-X25519"
+		c.nikeScheme = hybrid.NOBS_CSIDH512X25519
+	} else {
+		c.nikeScheme = schemes.ByName(s.NIKEScheme)
 	}
-	c.nikeScheme = schemes.ByName(s.NIKEScheme)
 
 	r, err := ratchet.NewRatchetFromBytes(rand.Reader, s.Ratchet, c.nikeScheme)
 	if err != nil {
