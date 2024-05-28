@@ -1,0 +1,23 @@
+name: release
+on:
+  push:
+    tags:
+      - v*
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: checkout code
+        uses: actions/checkout@v4
+        with:
+	  fetch-depth: 0
+      - name: setup go
+        uses: actions/setup-go@v4
+      - name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@v5
+        with:
+          distribution: goreleaser
+	  version: "~> v1"
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
