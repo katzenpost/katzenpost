@@ -5,6 +5,7 @@ package client2
 
 import (
 	"net"
+	"runtime"
 	"sync"
 
 	"github.com/katzenpost/katzenpost/core/log"
@@ -241,6 +242,11 @@ func NewListener(client *Client, rates *Rates, egressCh chan *Request, logBacken
 
 	network := "unixpacket"
 	address := "@katzenpost"
+
+	if runtime.GOOS != "linux" {
+		address = "katzenpost"
+	}
+
 	unixAddr, err := net.ResolveUnixAddr(network, address)
 	if err != nil {
 		return nil, err
