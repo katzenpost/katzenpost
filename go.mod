@@ -23,7 +23,6 @@ require (
 	golang.org/x/net v0.23.0
 	golang.org/x/text v0.14.0
 	google.golang.org/protobuf v1.33.0
-	gopkg.in/eapache/channels.v1 v1.1.0
 	gopkg.in/op/go-logging.v1 v1.0.0-20160211212156-b2cb9fa56473
 )
 
@@ -36,7 +35,6 @@ require (
 	github.com/cockroachdb/apd v1.1.0 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/dchest/siphash v1.2.3 // indirect
-	github.com/eapache/queue v1.1.0 // indirect
 	github.com/go-faster/xor v1.0.0 // indirect
 	github.com/gofrs/uuid v4.4.0+incompatible // indirect
 	github.com/henrydcase/nobs v0.0.0-20230313231516-25b66236df73 // indirect
