@@ -269,7 +269,8 @@ type Ratchet struct {
 	kxPrivate0 nike.PrivateKey
 	kxPrivate1 nike.PrivateKey
 
-	scheme nike.Scheme
+	scheme                       nike.Scheme
+	headerSize, sealedHeaderSize int
 
 	rand io.Reader
 }
@@ -308,6 +309,8 @@ func newRatchetFromState(rand io.Reader, s *state, scheme nike.Scheme) (*Ratchet
 	r := &Ratchet{
 		rand:              rand,
 		scheme:            scheme,
+		headerSize:        headerSize(scheme),
+		sealedHeaderSize:  sealedHeaderSize(scheme),
 		saved:             make(map[[32]byte]map[uint32]savedKey),
 		sendCount:         s.SendCount,
 		recvCount:         s.RecvCount,
@@ -372,11 +375,12 @@ func newRatchetFromState(rand io.Reader, s *state, scheme nike.Scheme) (*Ratchet
 // InitRatchet initializes a ratchet struct
 func InitRatchet(rand io.Reader, scheme nike.Scheme) (*Ratchet, error) {
 	r := &Ratchet{
-		rand:   rand,
-		saved:  make(map[[32]byte]map[uint32]savedKey),
-		scheme: scheme,
+		rand:             rand,
+		saved:            make(map[[32]byte]map[uint32]savedKey),
+		scheme:           scheme,
+		headerSize:       headerSize(scheme),
+		sealedHeaderSize: sealedHeaderSize(scheme),
 	}
-
 	var err error
 	_, r.kxPrivate0, err = scheme.GenerateKeyPairFromEntropy(rand)
 	if err != nil {
@@ -555,7 +559,7 @@ func (r *Ratchet) Encrypt(out, msg []byte) ([]byte, error) {
 
 	sendRatchetPublic := r.scheme.DerivePublicKey(r.sendRatchetPrivate)
 
-	var header [headerSize]byte
+	header := make([]byte, r.headerSize)
 	var headerNonce, messageNonce [nonceSize]byte
 	r.randBytes(headerNonce[:])
 	r.randBytes(messageNonce[:])
@@ -573,11 +577,11 @@ func (r *Ratchet) Encrypt(out, msg []byte) ([]byte, error) {
 
 // trySavedKeys tries to decrypt the ciphertext using keys saved for delayed messages.
 func (r *Ratchet) trySavedKeys(ciphertext []byte) ([]byte, error) {
-	if len(ciphertext) < sealedHeaderSize {
+	if len(ciphertext) < r.sealedHeaderSize {
 		return nil, ErrRatchetHeaderTooSmall
 	}
 
-	sealedHeader := ciphertext[:sealedHeaderSize]
+	sealedHeader := ciphertext[:r.sealedHeaderSize]
 	var nonce [nonceSize]byte
 	copy(nonce[:], sealedHeader)
 	sealedHeader = sealedHeader[len(nonce):]
@@ -587,7 +591,7 @@ func (r *Ratchet) trySavedKeys(ciphertext []byte) ([]byte, error) {
 		if !ok {
 			continue
 		}
-		if len(header) != headerSize {
+		if len(header) != r.headerSize {
 			continue
 		}
 		msgNum := binary.LittleEndian.Uint32(header[:4])
@@ -599,7 +603,7 @@ func (r *Ratchet) trySavedKeys(ciphertext []byte) ([]byte, error) {
 			return nil, nil
 		}
 
-		sealedMessage := ciphertext[sealedHeaderSize:]
+		sealedMessage := ciphertext[r.sealedHeaderSize:]
 		copy(nonce[:], header[nonceInHeaderOffset:])
 		msg, ok := secretbox.Open(nil, sealedMessage, &nonce, array32p(msgKey.key))
 		if !ok {
@@ -711,8 +715,8 @@ func (r *Ratchet) Decrypt(ciphertext []byte) ([]byte, error) {
 		return msg, err
 	}
 
-	sealedHeader := ciphertext[:sealedHeaderSize]
-	sealedMessage := ciphertext[sealedHeaderSize:]
+	sealedHeader := ciphertext[:r.sealedHeaderSize]
+	sealedMessage := ciphertext[r.sealedHeaderSize:]
 	var nonce [nonceSize]byte
 	copy(nonce[:], sealedHeader)
 	sealedHeader = sealedHeader[len(nonce):]
@@ -721,7 +725,7 @@ func (r *Ratchet) Decrypt(ciphertext []byte) ([]byte, error) {
 	ok = ok && !utils.CtIsZero(r.recvHeaderKey)
 
 	if ok {
-		if len(header) != headerSize {
+		if len(header) != r.headerSize {
 			return nil, ErrIncorrectHeaderSize
 		}
 
@@ -748,7 +752,7 @@ func (r *Ratchet) Decrypt(ciphertext []byte) ([]byte, error) {
 	if !ok {
 		return nil, ErrCannotDecrypt
 	}
-	if len(header) != headerSize {
+	if len(header) != r.headerSize {
 		return nil, ErrIncorrectHeaderSize
 	}
 
@@ -883,4 +887,22 @@ func DestroyRatchet(r *Ratchet) {
 		r.kxPrivate1.Reset()
 	}
 	r.wipeSavedKeys()
+}
+
+// headerSize is the size, in bytes, of a header's plaintext contents.
+func headerSize(scheme nike.Scheme) int {
+	return 4 + /* uint32 message count */
+		4 + /* uint32 previous message count */
+		24 + /* nonce for message */
+		scheme.PublicKeySize()
+}
+
+func sealedHeaderSize(scheme nike.Scheme) int {
+	// sealedHeader is the size, in bytes, of an encrypted header.
+	return 24 + headerSize(scheme) + secretbox.Overhead
+}
+
+// DoubleRatchetOverhead is the number of bytes the ratchet adds in ciphertext.
+func DoubleRatchetOverhead(scheme nike.Scheme) int {
+	return doubleRatchetOverheadSansPubKey + scheme.PublicKeySize()
 }
