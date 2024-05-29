@@ -24,5 +24,5 @@ const (
 	RatchetKeyMaxLifetime = time.Hour * 672
 
 	// doubleRatchetOverheadSansPubKey is the number of bytes the ratchet adds in ciphertext overhead without nike.PublicKeySize
-	doubleRatchetOverheadSansPubKey = 120
+	doubleRatchetOverheadSansPubKey = 88
 )
