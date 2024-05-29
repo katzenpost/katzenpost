@@ -9,7 +9,6 @@ import (
 	"sync"
 	"time"
 
-	"gopkg.in/eapache/channels.v1"
 	"gopkg.in/op/go-logging.v1"
 
 	"github.com/katzenpost/hpqc/hash"
@@ -32,6 +31,8 @@ import (
 	"github.com/katzenpost/katzenpost/server/userdb/externuserdb"
 )
 
+const InboundPacketsChannelSize = 1000
+
 type gateway struct {
 	sync.Mutex
 	worker.Worker
@@ -39,7 +40,7 @@ type gateway struct {
 	glue glue.Glue
 	log  *logging.Logger
 
-	ch     *channels.InfiniteChannel
+	ch     chan interface{}
 	sqlDB  *sqldb.SQLDB
 	userDB userdb.UserDB
 	spool  spool.Spool
@@ -48,7 +49,7 @@ type gateway struct {
 func (p *gateway) Halt() {
 	p.Worker.Halt()
 
-	p.ch.Close()
+	close(p.ch)
 	if p.userDB != nil {
 		p.userDB.Close()
 		p.userDB = nil
@@ -87,7 +88,7 @@ func (p *gateway) AuthenticateClient(c *wire.PeerCredentials) bool {
 }
 
 func (p *gateway) OnPacket(pkt *packet.Packet) {
-	p.ch.In() <- pkt
+	p.ch <- pkt
 }
 
 func (p *gateway) connectedClients() (map[[sConstants.RecipientIDLength]byte]interface{}, error) {
@@ -124,7 +125,7 @@ func (p *gateway) worker() {
 
 	defer p.log.Debugf("Halting Gateway worker.")
 
-	ch := p.ch.Out()
+	ch := p.ch
 
 	// Here we optionally set this GC timer. If unset the
 	// channel remains nil and has no effect on the select
@@ -242,7 +243,7 @@ func New(glue glue.Glue) (glue.Gateway, error) {
 	p := &gateway{
 		glue: glue,
 		log:  glue.LogBackend().GetLogger("gateway"),
-		ch:   channels.NewInfiniteChannel(),
+		ch:   make(chan interface{}, InboundPacketsChannelSize),
 	}
 
 	cfg := glue.Config()
@@ -309,6 +310,9 @@ func New(glue glue.Glue) (glue.Gateway, error) {
 	for i := 0; i < cfg.Debug.NumGatewayWorkers; i++ {
 		p.Go(p.worker)
 	}
+
+	// monitor channel length
+	instrument.MonitorChannelLen("server.gateway.ch", p.HaltCh(), p.ch)
 
 	isOk = true
 	return p, nil
