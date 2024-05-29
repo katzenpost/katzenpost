@@ -227,27 +227,27 @@ func (s *state) Upgrade(scheme *hybrid.Scheme) error {
 		if err != nil {
 			return err
 		}
-		csidhp0, err := scheme.Second().UnmarshalBinaryPrivateKey(s.PQPrivate0)
+		kxcsidhp0, err := scheme.Second().UnmarshalBinaryPrivateKey(s.PQPrivate0)
 		if err != nil {
 			return err
 		}
 
-		hybridp0 := scheme.PrivateKeyFromKeys(kx25519p0, csidhp0)
+		kxhybridp0 := scheme.PrivateKeyFromKeys(kx25519p0, kxcsidhp0)
 
-		s.Private0 = hybridp0.Bytes()
+		s.Private0 = kxhybridp0.Bytes()
 
-		kx25519p1, err := scheme.First().UnmarshalBinaryPrivateKey(s.Private0)
+		kx25519p1, err := scheme.First().UnmarshalBinaryPrivateKey(s.Private1)
 		if err != nil {
 			return err
 		}
-		csidhp1, err := scheme.Second().UnmarshalBinaryPrivateKey(s.PQPrivate0)
+		kxcsidhp1, err := scheme.Second().UnmarshalBinaryPrivateKey(s.PQPrivate1)
 		if err != nil {
 			return err
 		}
 
-		hybridp1 := scheme.PrivateKeyFromKeys(kx25519p1, csidhp1)
+		kxhybridp1 := scheme.PrivateKeyFromKeys(kx25519p1, kxcsidhp1)
 
-		s.Private1 = hybridp1.Bytes()
+		s.Private1 = kxhybridp1.Bytes()
 
 		utils.ExplicitBzero(s.PQPrivate0)
 		utils.ExplicitBzero(s.PQPrivate1)
