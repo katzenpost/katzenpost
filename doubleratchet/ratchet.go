@@ -221,7 +221,7 @@ func (s *state) Upgrade(scheme *hybrid.Scheme) error {
 	s.SendPQRatchetPrivate = []byte{}
 	s.RecvPQRatchetPublic = []byte{}
 
-	if s.Ratchet != true {
+	if s.Private0 != nil && s.Private1 != nil && s.PQPrivate0 != nil && s.PQPrivate1 != nil {
 
 		kx25519p0, err := scheme.First().UnmarshalBinaryPrivateKey(s.Private0)
 		if err != nil {
