@@ -1,27 +1,11 @@
-// provider.go - Katzenpost server provider backend.
-// Copyright (C) 2017  Yawning Angel and David Stainton
-//
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU Affero General Public License as
-// published by the Free Software Foundation, either version 3 of the
-// License, or (at your option) any later version.
-//
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU Affero General Public License for more details.
-//
-// You should have received a copy of the GNU Affero General Public License
-// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+// SPDX-FileCopyrightText: (c) 2024 David Stainton
+// SPDX-License-Identifier: AGPL-3.0-only
 
-// Package provider implements the Katzenpost sever provider.
-package provider
+package gateway
 
 import (
 	"errors"
 	"fmt"
-	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -29,13 +13,10 @@ import (
 	"gopkg.in/op/go-logging.v1"
 
 	"github.com/katzenpost/hpqc/hash"
-	"github.com/katzenpost/hpqc/kem"
-	kempem "github.com/katzenpost/hpqc/kem/pem"
 	"github.com/katzenpost/hpqc/kem/schemes"
 
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
-	"github.com/katzenpost/katzenpost/core/thwack"
 	"github.com/katzenpost/katzenpost/core/utils"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/worker"
@@ -43,7 +24,6 @@ import (
 	"github.com/katzenpost/katzenpost/server/internal/glue"
 	"github.com/katzenpost/katzenpost/server/internal/instrument"
 	"github.com/katzenpost/katzenpost/server/internal/packet"
-	"github.com/katzenpost/katzenpost/server/internal/provider/kaetzchen"
 	"github.com/katzenpost/katzenpost/server/internal/sqldb"
 	"github.com/katzenpost/katzenpost/server/spool"
 	"github.com/katzenpost/katzenpost/server/spool/boltspool"
@@ -52,7 +32,7 @@ import (
 	"github.com/katzenpost/katzenpost/server/userdb/externuserdb"
 )
 
-type provider struct {
+type gateway struct {
 	sync.Mutex
 	worker.Worker
 
@@ -63,17 +43,12 @@ type provider struct {
 	sqlDB  *sqldb.SQLDB
 	userDB userdb.UserDB
 	spool  spool.Spool
-
-	kaetzchenWorker           *kaetzchen.KaetzchenWorker
-	cborPluginKaetzchenWorker *kaetzchen.CBORPluginWorker
 }
 
-func (p *provider) Halt() {
+func (p *gateway) Halt() {
 	p.Worker.Halt()
 
 	p.ch.Close()
-	p.kaetzchenWorker.Halt()
-	p.cborPluginKaetzchenWorker.Halt()
 	if p.userDB != nil {
 		p.userDB.Close()
 		p.userDB = nil
@@ -87,15 +62,15 @@ func (p *provider) Halt() {
 	}
 }
 
-func (p *provider) Spool() spool.Spool {
+func (p *gateway) Spool() spool.Spool {
 	return p.spool
 }
 
-func (p *provider) UserDB() userdb.UserDB {
+func (p *gateway) UserDB() userdb.UserDB {
 	return p.userDB
 }
 
-func (p *provider) AuthenticateClient(c *wire.PeerCredentials) bool {
+func (p *gateway) AuthenticateClient(c *wire.PeerCredentials) bool {
 	isValid := p.userDB.IsValid(c.AdditionalData, c.PublicKey)
 	if !isValid {
 		blob, err := c.PublicKey.MarshalBinary()
@@ -111,35 +86,11 @@ func (p *provider) AuthenticateClient(c *wire.PeerCredentials) bool {
 	return isValid
 }
 
-func (p *provider) OnPacket(pkt *packet.Packet) {
+func (p *gateway) OnPacket(pkt *packet.Packet) {
 	p.ch.In() <- pkt
 }
 
-func (p *provider) KaetzchenForPKI() (map[string]map[string]interface{}, error) {
-	map1 := p.kaetzchenWorker.KaetzchenForPKI()
-	map2 := p.cborPluginKaetzchenWorker.KaetzchenForPKI()
-
-	// merge sets, panic on duplicate
-	setsToMerge := []map[kaetzchen.PluginName]kaetzchen.PluginParameters{
-		map1, map2,
-	}
-
-	merged := make(map[kaetzchen.PluginName]kaetzchen.PluginParameters)
-
-	for _, currentSet := range setsToMerge {
-		for k, v := range currentSet {
-			if _, ok := merged[k]; ok {
-				p.log.Debug("WARNING: duplicate plugin entries")
-				panic("WARNING: duplicate plugin entries")
-			}
-			merged[k] = v
-		}
-	}
-
-	return merged, nil
-}
-
-func (p *provider) connectedClients() (map[[sConstants.RecipientIDLength]byte]interface{}, error) {
+func (p *gateway) connectedClients() (map[[sConstants.RecipientIDLength]byte]interface{}, error) {
 	identities := make(map[[sConstants.RecipientIDLength]byte]interface{})
 	for _, listener := range p.glue.Listeners() {
 		listenerIdentities, err := listener.GetConnIdentities()
@@ -154,24 +105,24 @@ func (p *provider) connectedClients() (map[[sConstants.RecipientIDLength]byte]in
 	return identities, nil
 }
 
-func (p *provider) gcEphemeralClients() {
-	p.log.Debug("garbage collecting expired ephemeral clients")
-	connectedClients, err := p.connectedClients()
+func (g *gateway) gcEphemeralClients() {
+	g.log.Debug("garbage collecting expired ephemeral clients")
+	connectedClients, err := g.connectedClients()
 	if err != nil {
-		p.log.Errorf("wtf: %s", err)
+		g.log.Errorf("wtf: %s", err)
 		return
 	}
-	err = p.Spool().VacuumExpired(p.UserDB(), connectedClients)
+	err = g.Spool().VacuumExpired(g.UserDB(), connectedClients)
 	if err != nil {
-		p.log.Errorf("wtf: %s", err)
+		g.log.Errorf("wtf: %s", err)
 		return
 	}
 }
 
-func (p *provider) worker() {
-	maxDwell := time.Duration(p.glue.Config().Debug.ProviderDelay) * time.Millisecond
+func (p *gateway) worker() {
+	maxDwell := time.Duration(p.glue.Config().Debug.GatewayDelay) * time.Millisecond
 
-	defer p.log.Debugf("Halting Provider worker.")
+	defer p.log.Debugf("Halting Gateway worker.")
 
 	ch := p.ch.Out()
 
@@ -211,64 +162,38 @@ func (p *provider) worker() {
 			continue
 		}
 
-		if p.glue.Config().ServiceNode != nil {
-			// Kaetzchen endpoints are published in the PKI and are never
-			// user-facing, so omit the recipient-post processing.  If clients
-			// are written under the assumption that Kaetzchen addresses are
-			// normalized, that's their problem.
-			if p.kaetzchenWorker.IsKaetzchen(pkt.Recipient.ID) {
-				// Packet is destined for a Kaetzchen auto-responder agent, and
-				// can't be a SURB-Reply.
-				if pkt.IsSURBReply() {
-					p.log.Debugf("Dropping packet: %v (SURB-Reply for Kaetzchen)", pkt.ID)
-					instrument.PacketsDropped()
-					pkt.Dispose()
-				} else {
-					// Note that we pass ownership of pkt to p.kaetzchenWorker
-					// which will take care to dispose of it.
-					p.kaetzchenWorker.OnKaetzchen(pkt)
-				}
-				continue
-			}
+		// Post-process the recipient.
+		recipient := pkt.Recipient.ID[:]
 
-			if p.cborPluginKaetzchenWorker.IsKaetzchen(pkt.Recipient.ID) {
-				if pkt.IsSURBReply() {
-					p.log.Debugf("Dropping packet: %v (SURB-Reply for Kaetzchen)", pkt.ID)
-					instrument.PacketsDropped()
-					pkt.Dispose()
-				} else {
-					// Note that we pass ownership of pkt to p.kaetzchenWorker
-					// which will take care to dispose of it.
-					p.cborPluginKaetzchenWorker.OnKaetzchen(pkt)
-				}
-				continue
-			}
-		} else {
-			// Post-process the recipient.
-			recipient := pkt.Recipient.ID[:]
-
-			// Ensure the packet is for a valid recipient.
-			if !p.userDB.Exists(recipient) {
-				p.log.Debugf("Dropping packet: %v (Invalid Recipient: '%v')", pkt.ID, utils.ASCIIBytesToPrintString(recipient))
-				instrument.PacketsDropped()
-				pkt.Dispose()
-				continue
-			}
-
-			// Process the packet based on type.
-			if pkt.IsSURBReply() {
-				p.onSURBReply(pkt, recipient)
-			} else {
-				// Caller checks that the packet is either a SURB-Reply or a user
-				// message, so this must be the latter.
-				p.onToUser(pkt, recipient)
-			}
+		// Ensure the packet is for a valid recipient.
+		if !p.userDB.Exists(recipient) {
+			p.log.Debugf("Dropping packet: %v (Invalid Recipient: '%v')", pkt.ID, utils.ASCIIBytesToPrintString(recipient))
+			instrument.PacketsDropped()
 			pkt.Dispose()
+			continue
 		}
+
+		// Process the packet based on type.
+		if pkt.IsSURBReply() {
+			p.onSURBReply(pkt, recipient)
+			pkt.Dispose()
+			continue
+		} else {
+			// Caller checks that the packet is either a SURB-Reply or a user
+			// message, so this must be the latter.
+			p.onToUser(pkt, recipient)
+			pkt.Dispose()
+			continue
+		}
+
+		p.log.Debugf("Dropping packet: %v (Invalid Recipient: '%x')", pkt.ID, recipient)
+		instrument.PacketsDropped()
+		pkt.Dispose()
+
 	}
 }
 
-func (p *provider) onSURBReply(pkt *packet.Packet, recipient []byte) {
+func (p *gateway) onSURBReply(pkt *packet.Packet, recipient []byte) {
 	geo := p.glue.Config().SphinxGeometry
 	if len(pkt.Payload) != geo.PayloadTagLength+geo.ForwardPayloadLength {
 		p.log.Debugf("Refusing to store mis-sized SURB-Reply: %v (%v)", pkt.ID, len(pkt.Payload))
@@ -283,7 +208,7 @@ func (p *provider) onSURBReply(pkt *packet.Packet, recipient []byte) {
 	}
 }
 
-func (p *provider) onToUser(pkt *packet.Packet, recipient []byte) {
+func (p *gateway) onToUser(pkt *packet.Packet, recipient []byte) {
 	ct, surb, err := packet.ParseForwardPacket(pkt)
 	if err != nil {
 		p.log.Debugf("Dropping packet: %v (%v)", pkt.ID, err)
@@ -312,221 +237,12 @@ func (p *provider) onToUser(pkt *packet.Packet, recipient []byte) {
 	}
 }
 
-func (p *provider) onAddUser(c *thwack.Conn, l string) error {
-	return p.doAddUpdate(c, l, false)
-}
-
-func (p *provider) onUpdateUser(c *thwack.Conn, l string) error {
-	return p.doAddUpdate(c, l, true)
-}
-
-func (p *provider) doAddUpdate(c *thwack.Conn, l string, isUpdate bool) error {
-	p.Lock()
-	defer p.Unlock()
-
-	sp := strings.Split(l, " ")
-	if len(sp) != 3 {
-		c.Log().Debugf("[ADD/UPDATE]_USER invalid syntax: '%v'", l)
-		return c.WriteReply(thwack.StatusSyntaxError)
-	}
-
-	// Deserialize the public key.
-	pubKey, err := kempem.FromPublicPEMString(sp[2], schemes.ByName(p.glue.Config().Server.WireKEM))
-	if err != nil {
-		c.Log().Errorf("[ADD/UPDATE]_USER invalid public key: %v", err)
-		return c.WriteReply(thwack.StatusSyntaxError)
-	}
-
-	// Attempt to add or update the user.
-	u := []byte(sp[1])
-	if err = p.userDB.Add(u, pubKey, isUpdate); err != nil {
-		c.Log().Errorf("Failed to add/update user: %v", err)
-		return c.WriteReply(thwack.StatusTransactionFailed)
-	}
-
-	return c.WriteReply(thwack.StatusOk)
-}
-
-func (p *provider) onRemoveUser(c *thwack.Conn, l string) error {
-	p.Lock()
-	defer p.Unlock()
-
-	sp := strings.Split(l, " ")
-	if len(sp) != 2 {
-		c.Log().Debugf("REMOVE_USER invalid syntax: '%v'", l)
-		return c.WriteReply(thwack.StatusSyntaxError)
-	}
-
-	u := []byte(sp[1])
-	// Remove the user from the UserDB.
-	if err := p.userDB.Remove(u); err != nil {
-		c.Log().Errorf("Failed to remove user '%v': %v", u, err)
-		return c.WriteReply(thwack.StatusTransactionFailed)
-	}
-
-	// Remove the user's spool.
-	if err := p.spool.Remove(u); err != nil {
-		// Log an error, but don't return a failed status, because the
-		// user has been obliterated from the UserDB at this point.
-		c.Log().Errorf("Failed to remove spool '%v': %v", u, err)
-	}
-
-	return c.WriteReply(thwack.StatusOk)
-}
-
-func (p *provider) onRemoveUserIdentity(c *thwack.Conn, l string) error {
-	p.Lock()
-	defer p.Unlock()
-
-	sp := strings.Split(l, " ")
-	switch len(sp) {
-	case 2:
-	default:
-		c.Log().Debugf("REMOVE_USER_IDENTITY invalid syntax: '%v'", l)
-		return c.WriteReply(thwack.StatusSyntaxError)
-	}
-
-	u := []byte(sp[1])
-	if err := p.userDB.SetIdentity(u, nil); err != nil {
-		c.Log().Errorf("Failed to set identity for user '%v': %v", u, err)
-		return c.WriteReply(thwack.StatusTransactionFailed)
-	}
-
-	return c.WriteReply(thwack.StatusOk)
-}
-
-func (p *provider) onSetUserIdentity(c *thwack.Conn, l string) error {
-	p.Lock()
-	defer p.Unlock()
-
-	var err error
-	var pubKey kem.PublicKey
-
-	sp := strings.Split(l, " ")
-	switch len(sp) {
-	case 2:
-	case 3:
-		pubKey, err = kempem.FromPublicPEMString(sp[2], schemes.ByName(p.glue.Config().Server.WireKEM))
-		if err != nil {
-			c.Log().Errorf("SET_USER_IDENTITY invalid public key: %v", err)
-			return c.WriteReply(thwack.StatusSyntaxError)
-		}
-	default:
-		c.Log().Debugf("SET_USER_IDENTITY invalid syntax: '%v'", l)
-		return c.WriteReply(thwack.StatusSyntaxError)
-	}
-
-	u := []byte(sp[1])
-	if err = p.userDB.SetIdentity(u, pubKey); err != nil {
-		c.Log().Errorf("Failed to set identity for user '%v': %v", u, err)
-		return c.WriteReply(thwack.StatusTransactionFailed)
-	}
-
-	return c.WriteReply(thwack.StatusOk)
-}
-
-func (p *provider) onUserLink(c *thwack.Conn, l string) error {
-	p.Lock()
-	defer p.Unlock()
-
-	sp := strings.Split(l, " ")
-	if len(sp) != 2 {
-		c.Log().Debugf("USER_LINK invalid syntax: '%v'", l)
-		return c.WriteReply(thwack.StatusSyntaxError)
-	}
-
-	u := []byte(sp[1])
-	pubKey, err := p.userDB.Link(u)
-	if err != nil {
-		c.Log().Errorf("Failed to query link key for user '%s': %v", string(u), err)
-		return c.WriteReply(thwack.StatusTransactionFailed)
-	}
-
-	return c.Writer().PrintfLine("%v %v", thwack.StatusOk, pubKey)
-}
-
-func (p *provider) onUserIdentity(c *thwack.Conn, l string) error {
-	p.Lock()
-	defer p.Unlock()
-
-	sp := strings.Split(l, " ")
-	if len(sp) != 2 {
-		c.Log().Debugf("USER_IDENTITY invalid syntax: '%v'", l)
-		return c.WriteReply(thwack.StatusSyntaxError)
-	}
-
-	u := []byte(sp[1])
-	pubKey, err := p.userDB.Identity(u)
-	if err != nil {
-		c.Log().Errorf("Failed to query identity for user '%v': %v", u, err)
-		return c.WriteReply(thwack.StatusTransactionFailed)
-	}
-
-	return c.Writer().PrintfLine("%v %v", thwack.StatusOk, pubKey)
-}
-
-func (p *provider) onSendRate(c *thwack.Conn, l string) error {
-	p.Lock()
-	defer p.Unlock()
-
-	sp := strings.Split(l, " ")
-	if len(sp) != 2 {
-		c.Log().Debugf("SEND_RATE invalid syntax: '%v'", l)
-		return c.WriteReply(thwack.StatusSyntaxError)
-	}
-
-	rate, err := strconv.ParseUint(sp[1], 10, 64)
-	if err != nil {
-		c.Log().Errorf("SEND_RATE invalid duration: %v", err)
-		return c.WriteReply(thwack.StatusSyntaxError)
-	}
-
-	for _, l := range p.glue.Listeners() {
-		l.OnNewSendRatePerMinute(rate)
-	}
-
-	return c.Writer().PrintfLine("%v %v", thwack.StatusOk, rate)
-}
-
-func (p *provider) onSendBurst(c *thwack.Conn, l string) error {
-	p.Lock()
-	defer p.Unlock()
-
-	sp := strings.Split(l, " ")
-	if len(sp) != 2 {
-		c.Log().Debugf("SEND_BURST invalid syntax: '%v'", l)
-		return c.WriteReply(thwack.StatusSyntaxError)
-	}
-
-	burst, err := strconv.ParseUint(sp[1], 10, 64)
-	if err != nil {
-		c.Log().Errorf("SEND_BURST invalid integer: %v", err)
-		return c.WriteReply(thwack.StatusSyntaxError)
-	}
-
-	for _, l := range p.glue.Listeners() {
-		l.OnNewSendBurst(burst)
-	}
-
-	return c.Writer().PrintfLine("%v %v", thwack.StatusOk, burst)
-}
-
 // New constructs a new provider instance.
-func New(glue glue.Glue) (glue.Provider, error) {
-	kaetzchenWorker, err := kaetzchen.New(glue)
-	if err != nil {
-		return nil, err
-	}
-	cborPluginWorker, err := kaetzchen.NewCBORPluginWorker(glue)
-	if err != nil {
-		return nil, err
-	}
-	p := &provider{
-		glue:                      glue,
-		log:                       glue.LogBackend().GetLogger("provider"),
-		ch:                        channels.NewInfiniteChannel(),
-		kaetzchenWorker:           kaetzchenWorker,
-		cborPluginKaetzchenWorker: cborPluginWorker,
+func New(glue glue.Glue) (glue.Gateway, error) {
+	p := &gateway{
+		glue: glue,
+		log:  glue.LogBackend().GetLogger("gateway"),
+		ch:   channels.NewInfiniteChannel(),
 	}
 
 	cfg := glue.Config()
@@ -538,84 +254,59 @@ func New(glue glue.Glue) (glue.Provider, error) {
 		}
 	}()
 
-	if cfg.Gateway != nil {
-		if cfg.Gateway.SQLDB != nil {
-			if cfg.Gateway.UserDB.Backend == config.BackendSQL || cfg.Gateway.SpoolDB.Backend == config.BackendSQL {
-				p.sqlDB, err = sqldb.New(glue)
-				if err != nil {
-					return nil, err
-				}
-			} else {
-				p.log.Warningf("SQL database configured but not used for the User or Spool databases.")
+	var err error
+	if cfg.Gateway.SQLDB != nil {
+		if cfg.Gateway.UserDB.Backend == config.BackendSQL || cfg.Gateway.SpoolDB.Backend == config.BackendSQL {
+			p.sqlDB, err = sqldb.New(glue)
+			if err != nil {
+				return nil, err
 			}
-		}
-
-		switch cfg.Gateway.UserDB.Backend {
-		case config.BackendBolt:
-			p.userDB, err = boltuserdb.New(cfg.Gateway.UserDB.Bolt.UserDB, schemes.ByName(cfg.Server.WireKEM), boltuserdb.WithTrustOnFirstUse())
-		case config.BackendExtern:
-			p.userDB, err = externuserdb.New(cfg.Gateway.UserDB.Extern.ProviderURL, schemes.ByName(cfg.Server.WireKEM))
-		case config.BackendSQL:
-			if p.sqlDB != nil {
-				p.userDB, err = p.sqlDB.UserDB()
-			} else {
-				err = errors.New("gateway: SQL UserDB backend with no SQL database")
-			}
-		default:
-			return nil, fmt.Errorf("gateway: Unknown UserDB backend: %v", cfg.Gateway.UserDB.Backend)
-		}
-		if err != nil {
-			return nil, err
-		}
-
-		switch cfg.Gateway.SpoolDB.Backend {
-		case config.BackendBolt:
-			p.spool, err = boltspool.New(cfg.Gateway.SpoolDB.Bolt.SpoolDB)
-		case config.BackendSQL:
-			if p.sqlDB != nil {
-				p.spool = p.sqlDB.Spool()
-			} else {
-				err = errors.New("gateway: SQL SpoolDB backend with no SQL database")
-			}
-		default:
-			err = fmt.Errorf("gateway: Unknown SpoolDB backend: %v", cfg.Gateway.SpoolDB.Backend)
-		}
-		if err != nil {
-			return nil, err
+		} else {
+			p.log.Warningf("SQL database configured but not used for the User or Spool databases.")
 		}
 	}
+
+	switch cfg.Gateway.UserDB.Backend {
+	case config.BackendBolt:
+		p.userDB, err = boltuserdb.New(cfg.Gateway.UserDB.Bolt.UserDB, schemes.ByName(cfg.Server.WireKEM), boltuserdb.WithTrustOnFirstUse())
+	case config.BackendExtern:
+		p.userDB, err = externuserdb.New(cfg.Gateway.UserDB.Extern.GatewayURL, schemes.ByName(cfg.Server.WireKEM))
+	case config.BackendSQL:
+		if p.sqlDB != nil {
+			p.userDB, err = p.sqlDB.UserDB()
+		} else {
+			err = errors.New("gateway: SQL UserDB backend with no SQL database")
+		}
+	default:
+		return nil, fmt.Errorf("gateway: Unknown UserDB backend: %v", cfg.Gateway.UserDB.Backend)
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	switch cfg.Gateway.SpoolDB.Backend {
+	case config.BackendBolt:
+		p.spool, err = boltspool.New(cfg.Gateway.SpoolDB.Bolt.SpoolDB)
+	case config.BackendSQL:
+		if p.sqlDB != nil {
+			p.spool = p.sqlDB.Spool()
+		} else {
+			err = errors.New("gateway: SQL SpoolDB backend with no SQL database")
+		}
+	default:
+		err = fmt.Errorf("gateway: Unknown SpoolDB backend: %v", cfg.Gateway.SpoolDB.Backend)
+	}
+	if err != nil {
+		return nil, err
+	}
+
 	// Purge spools that belong to users that no longer exist in the user db.
 	if err = p.spool.Vacuum(p.userDB); err != nil {
 		return nil, err
 	}
 
-	// Wire in the management related commands.
-	if cfg.Management.Enable {
-		const (
-			cmdAddUser            = "ADD_USER"
-			cmdUpdateUser         = "UPDATE_USER"
-			cmdRemoveUser         = "REMOVE_USER"
-			cmdSetUserIdentity    = "SET_USER_IDENTITY"
-			cmdRemoveUserIdentity = "REMOVE_USER_IDENTITY"
-			cmdUserIdentity       = "USER_IDENTITY"
-			cmdUserLink           = "USER_LINK"
-			cmdSendRate           = "SEND_RATE"
-			cmdSendBurst          = "SEND_BURST"
-		)
-
-		glue.Management().RegisterCommand(cmdAddUser, p.onAddUser)
-		glue.Management().RegisterCommand(cmdUpdateUser, p.onUpdateUser)
-		glue.Management().RegisterCommand(cmdRemoveUser, p.onRemoveUser)
-		glue.Management().RegisterCommand(cmdSetUserIdentity, p.onSetUserIdentity)
-		glue.Management().RegisterCommand(cmdRemoveUserIdentity, p.onRemoveUserIdentity)
-		glue.Management().RegisterCommand(cmdUserIdentity, p.onUserIdentity)
-		glue.Management().RegisterCommand(cmdUserLink, p.onUserLink)
-		glue.Management().RegisterCommand(cmdSendRate, p.onSendRate)
-		glue.Management().RegisterCommand(cmdSendBurst, p.onSendBurst)
-	}
-
 	// Start the workers.
-	for i := 0; i < cfg.Debug.NumProviderWorkers; i++ {
+	for i := 0; i < cfg.Debug.NumGatewayWorkers; i++ {
 		p.Go(p.worker)
 	}
 
