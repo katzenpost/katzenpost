@@ -12,10 +12,10 @@ const (
 	receivingChainKeySize          = 32
 	messageKeySize                 = 32
 	nonceSize                      = 24
-	RatchetPublicKeyInHeaderOffset = 4 + 4 + 24
 	// nonceInHeaderOffset is the offset of the message nonce in the
 	// header's plaintext.
-	nonceInHeaderOffset = 4 + 4
+	nonceInHeaderOffset = 4 + 4 // sendCount + prevSendCount Uint32
+	RatchetPublicKeyInHeaderOffset = 4 + 4 + nonceSize
 	// MaxMissingMessages is the maximum number of missing messages that
 	// we'll keep track of.
 	MaxMissingMessages = 8
