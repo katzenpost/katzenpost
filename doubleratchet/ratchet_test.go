@@ -373,5 +373,5 @@ func Test_savedKeysMarshaling(t *testing.T) {
 	require.NotNil(t, b)
 	s2 := &savedKeys{}
 	err = s2.UnmarshalBinary(b)
-	//require.NoError(t, err)
+	require.NoError(t, err)
 }
