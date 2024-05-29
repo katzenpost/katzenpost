@@ -27,17 +27,16 @@ import (
 	"time"
 
 	"golang.org/x/crypto/blake2b"
-	"gopkg.in/eapache/channels.v1"
 	"gopkg.in/op/go-logging.v1"
 
 	"github.com/katzenpost/hpqc/kem"
 	"github.com/katzenpost/hpqc/kem/schemes"
 	"github.com/katzenpost/hpqc/rand"
 
+	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 	"github.com/katzenpost/katzenpost/client/config"
 	cConstants "github.com/katzenpost/katzenpost/client/constants"
 	"github.com/katzenpost/katzenpost/client/utils"
-	"github.com/katzenpost/katzenpost/core/cert"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx"
@@ -63,7 +62,7 @@ type Session struct {
 	fatalErrCh chan error
 	opCh       chan workerOp
 
-	eventCh   channels.Channel
+	eventCh   chan interface{}
 	EventSink chan Event
 
 	linkKey   kem.PrivateKey
@@ -80,6 +79,8 @@ type Session struct {
 
 	decoyLoopTally uint64
 }
+
+const EventChannelSize = 1000
 
 // New establishes a session with provider using key.
 // This method will block until session is connected to the Provider.
@@ -109,7 +110,7 @@ func NewSession(
 		pkiClient:   pkiClient,
 		log:         clientLog,
 		fatalErrCh:  fatalErrCh,
-		eventCh:     channels.NewInfiniteChannel(),
+		eventCh:     make(chan interface{}, EventChannelSize),
 		newPKIDoc:   make(chan bool),
 		EventSink:   make(chan Event),
 		opCh:        make(chan workerOp, 8),
@@ -126,7 +127,8 @@ func NewSession(
 	// A per-connection tag (for Tor SOCKS5 stream isloation)
 	proxyContext := fmt.Sprintf("session %d", rand.NewMath().Uint64())
 
-	idpubkey, err := cert.Scheme.UnmarshalBinaryPublicKey(s.gateway.IdentityKey)
+	pkiSignatureScheme := signSchemes.ByName(s.cfg.PKISignatureScheme)
+	idpubkey, err := pkiSignatureScheme.UnmarshalBinaryPublicKey(s.gateway.IdentityKey)
 	if err != nil {
 		return nil, err
 	}
@@ -192,7 +194,7 @@ func (s *Session) eventSinkWorker() {
 		case <-s.HaltCh():
 			s.log.Debugf("Event sink worker terminating gracefully.")
 			return
-		case e := <-s.eventCh.Out():
+		case e := <-s.eventCh:
 			select {
 			case s.EventSink <- e.(Event):
 			case <-s.HaltCh():
@@ -227,7 +229,7 @@ func (s *Session) garbageCollect() {
 		if time.Now().After(message.SentAt.Add(message.ReplyETA).Add(cConstants.RoundTripTimeSlop)) {
 			s.log.Debug("Garbage collecting SURB ID Map entry for Message ID %x", message.ID)
 			s.surbIDMap.Delete(surbID)
-			s.eventCh.In() <- &MessageIDGarbageCollected{
+			s.eventCh <- &MessageIDGarbageCollected{
 				MessageID: message.ID,
 			}
 		}
@@ -271,7 +273,7 @@ func (s *Session) GetService(serviceName string) (*utils.ServiceDescriptor, erro
 // upon connection change status to the Provider
 func (s *Session) onConnection(err error) {
 	s.log.Debugf("onConnection %v", err)
-	s.eventCh.In() <- &ConnectionStatusEvent{
+	s.eventCh <- &ConnectionStatusEvent{
 		IsConnected: err == nil,
 		Err:         err,
 	}
@@ -339,7 +341,7 @@ func (s *Session) onACK(surbID *[sConstants.SURBIDLength]byte, ciphertext []byte
 			close(replyWaitChan)
 		}
 	} else {
-		s.eventCh.In() <- &MessageReplyEvent{
+		s.eventCh <- &MessageReplyEvent{
 			MessageID: msg.ID,
 			Payload:   plaintext,
 			Err:       nil,
@@ -363,7 +365,7 @@ func (s *Session) onDocument(doc *pki.Document) {
 		doc: doc,
 	}:
 	}
-	s.eventCh.In() <- &NewDocumentEvent{
+	s.eventCh <- &NewDocumentEvent{
 		Document: doc,
 	}
 	select {

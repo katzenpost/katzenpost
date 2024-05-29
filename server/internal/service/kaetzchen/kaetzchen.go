@@ -32,7 +32,6 @@ import (
 	"github.com/katzenpost/katzenpost/server/internal/instrument"
 	"github.com/katzenpost/katzenpost/server/internal/packet"
 	"golang.org/x/text/secure/precis"
-	"gopkg.in/eapache/channels.v1"
 	"gopkg.in/op/go-logging.v1"
 )
 
@@ -45,20 +44,20 @@ const ParameterEndpoint = "endpoint"
 var ErrNoResponse = errors.New("kaetzchen: message has no response")
 
 // Parameters is the map describing each Kaetzchen's parameters to
-// be published in the Provider's descriptor.
+// be published in the ServiceNode's descriptor.
 type Parameters map[string]interface{}
 
 // Kaetzchen is the interface implemented by each auto-responder agent.
 type Kaetzchen interface {
 	// Capability returns the agent's functionality for publication in
-	// the Provider's descriptor.
+	// the ServiceNode's descriptor.
 	Capability() string
 
 	// Parameters returns the agent's paramenters for publication in
-	// the Provider's descriptor.
+	// the ServiceNode's descriptor.
 	Parameters() Parameters
 
-	// OnRequest is the method that is called when the Provider receives
+	// OnRequest is the method that is called when the ServiceNode receives
 	// a request designed for a particular agent.  The caller will handle
 	// extracting the payload component of the message.
 	//
@@ -94,7 +93,7 @@ type KaetzchenWorker struct {
 	glue glue.Glue
 	log  *logging.Logger
 
-	ch        *channels.InfiniteChannel
+	ch        chan interface{}
 	kaetzchen map[[sConstants.RecipientIDLength]byte]Kaetzchen
 
 	dropCounter uint64
@@ -142,7 +141,7 @@ func (k *KaetzchenWorker) registerKaetzchen(service Kaetzchen) error {
 }
 
 func (k *KaetzchenWorker) OnKaetzchen(pkt *packet.Packet) {
-	k.ch.In() <- pkt
+	k.ch <- pkt
 }
 
 func (k *KaetzchenWorker) getDropCounter() uint64 {
@@ -159,7 +158,7 @@ func (k *KaetzchenWorker) worker() {
 
 	defer k.log.Debugf("Halting Kaetzchen internal worker.")
 
-	ch := k.ch.Out()
+	ch := k.ch
 
 	for {
 		var pkt *packet.Packet
@@ -253,7 +252,7 @@ func New(glue glue.Glue) (*KaetzchenWorker, error) {
 	kaetzchenWorker := KaetzchenWorker{
 		glue:      glue,
 		log:       glue.LogBackend().GetLogger("kaetzchen_worker"),
-		ch:        channels.NewInfiniteChannel(),
+		ch:        make(chan interface{}, InboundPacketsChannelSize),
 		kaetzchen: make(map[[sConstants.RecipientIDLength]byte]Kaetzchen),
 	}
 
@@ -290,6 +289,9 @@ func New(glue glue.Glue) (*KaetzchenWorker, error) {
 		kaetzchenWorker.log.Noticef("Starting Kaetzchen worker: %d", i)
 		kaetzchenWorker.Go(kaetzchenWorker.worker)
 	}
+
+	// monitor channel length
+	instrument.MonitorChannelLen("server.kaetzchen.ch", kaetzchenWorker.HaltCh(), kaetzchenWorker.ch)
 
 	return &kaetzchenWorker, nil
 }

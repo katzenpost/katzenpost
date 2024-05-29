@@ -19,6 +19,7 @@
 package catshadow
 
 import (
+	"bytes"
 	"context"
 	"encoding/binary"
 	"errors"
@@ -27,10 +28,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/awnumar/memguard"
-
 	"github.com/fxamacker/cbor/v2"
-	"gopkg.in/eapache/channels.v1"
 	"gopkg.in/op/go-logging.v1"
 
 	ratchet "github.com/katzenpost/katzenpost/doubleratchet"
@@ -66,6 +64,8 @@ var (
 	pandaBlobSize             = 1000
 )
 
+const EventChannelSize = 1000
+
 func DoubleRatchetPayloadLength(geo *geo.Geometry) int {
 	return common.SpoolPayloadLength(geo) - ratchet.DoubleRatchetOverhead
 }
@@ -75,7 +75,7 @@ func DoubleRatchetPayloadLength(geo *geo.Geometry) int {
 type Client struct {
 	worker.Worker
 
-	eventCh              channels.Channel
+	eventCh              chan interface{}
 	EventSink            chan interface{}
 	opCh                 chan interface{}
 	pandaChan            chan panda.PandaUpdate
@@ -159,7 +159,7 @@ func New(logBackend *log.Backend, mixnetClient *client.Client, stateWorker *Stat
 		state.Blob = make(map[string][]byte)
 	}
 	c := &Client{
-		eventCh:             channels.NewInfiniteChannel(),
+		eventCh:             make(chan interface{}, EventChannelSize),
 		EventSink:           make(chan interface{}),
 		opCh:                make(chan interface{}, 8),
 		reunionChan:         make(chan rClient.ReunionUpdate),
@@ -304,7 +304,7 @@ func (c *Client) eventSinkWorker() {
 		select {
 		case <-c.HaltCh():
 			return
-		case event = <-c.eventCh.Out():
+		case event = <-c.eventCh:
 		}
 		select {
 		case c.EventSink <- event:
@@ -579,7 +579,7 @@ func (c *Client) createContact(nickname string, sharedSecret []byte) error {
 	if _, ok := c.contactNicknames[nickname]; ok {
 		return fmt.Errorf("Contact with nickname %s, already exists.", nickname)
 	}
-	contact, err := NewContact(nickname, c.randID(), sharedSecret)
+	contact, err := NewContact(nickname, c.randID(), sharedSecret, c.client.GetConfig().RatchetNIKEScheme)
 	if err != nil {
 		return err
 	}
@@ -822,7 +822,7 @@ func (c *Client) save() {
 	}
 }
 
-func (c *Client) marshal() (*memguard.LockedBuffer, error) {
+func (c *Client) marshal() ([]byte, error) {
 	contacts := []*Contact{}
 	for _, contact := range c.contacts {
 		contacts = append(contacts, contact)
@@ -837,11 +837,11 @@ func (c *Client) marshal() (*memguard.LockedBuffer, error) {
 	}
 	defer c.conversationsMutex.Unlock()
 	// XXX: shouldn't we also obtain the ratchet locks as well?
-	ms := memguard.NewStream()
+	ms := new(bytes.Buffer)
 	em, _ := cbor.EncOptions{Time: cbor.TimeUnixDynamic}.EncMode()
 	e := em.NewEncoder(ms)
 	e.Encode(s)
-	return ms.Flush()
+	return ms.Bytes(), nil
 }
 
 func (c *Client) haltKeyExchanges() {
@@ -891,7 +891,7 @@ func (c *Client) doSendMessage(convoMesgID MessageID, nickname string, message [
 	contact, ok := c.contactNicknames[nickname]
 	if !ok {
 		c.log.Errorf("contact %s not found", nickname)
-		c.eventCh.In() <- &MessageNotSentEvent{
+		c.eventCh <- &MessageNotSentEvent{
 			Nickname:  nickname,
 			MessageID: convoMesgID,
 			Err:       ErrContactNotFound,
@@ -900,7 +900,7 @@ func (c *Client) doSendMessage(convoMesgID MessageID, nickname string, message [
 	}
 	if contact.IsPending {
 		c.log.Errorf("cannot send message, contact %s is pending a key exchange", nickname)
-		c.eventCh.In() <- &MessageNotSentEvent{
+		c.eventCh <- &MessageNotSentEvent{
 			Nickname:  nickname,
 			MessageID: convoMesgID,
 			Err:       ErrPendingKeyExchange,
@@ -915,7 +915,7 @@ func (c *Client) doSendMessage(convoMesgID MessageID, nickname string, message [
 
 	serialized, err := cbor.Marshal(outMessage)
 	if err != nil {
-		c.eventCh.In() <- &MessageNotSentEvent{
+		c.eventCh <- &MessageNotSentEvent{
 			Nickname:  nickname,
 			MessageID: convoMesgID,
 			Err:       err,
@@ -927,7 +927,7 @@ func (c *Client) doSendMessage(convoMesgID MessageID, nickname string, message [
 	if err != nil {
 		c.log.Errorf("failed to encrypt: %s", err)
 		contact.ratchetMutex.Unlock()
-		c.eventCh.In() <- &MessageNotSentEvent{
+		c.eventCh <- &MessageNotSentEvent{
 			Nickname:  nickname,
 			MessageID: convoMesgID,
 			Err:       err,
@@ -940,7 +940,7 @@ func (c *Client) doSendMessage(convoMesgID MessageID, nickname string, message [
 	appendCmd, err := common.AppendToSpool(contact.spoolWriteDescriptor.ID, ciphertext, cfg.SphinxGeometry)
 	if err != nil {
 		c.log.Errorf("failed to compute spool append command: %s", err)
-		c.eventCh.In() <- &MessageNotSentEvent{
+		c.eventCh <- &MessageNotSentEvent{
 			Nickname:  nickname,
 			MessageID: convoMesgID,
 			Err:       err,
@@ -962,7 +962,7 @@ func (c *Client) doSendMessage(convoMesgID MessageID, nickname string, message [
 	}
 	if err := contact.outbound.Push(item); err != nil {
 		c.log.Debugf("Failed to enqueue message!")
-		c.eventCh.In() <- &MessageNotSentEvent{
+		c.eventCh <- &MessageNotSentEvent{
 			Nickname:  nickname,
 			MessageID: convoMesgID,
 			Err:       err,
@@ -1055,7 +1055,7 @@ func (c *Client) handleSent(sentEvent *client.MessageSentEvent) {
 			} else {
 				if sentEvent.Err != nil {
 					c.log.Debugf("message send for %s failed with err: %s", tp.Nickname, sentEvent.Err)
-					c.eventCh.In() <- &MessageNotSentEvent{
+					c.eventCh <- &MessageNotSentEvent{
 						Nickname:  tp.Nickname,
 						MessageID: tp.MessageID,
 						Err:       sentEvent.Err,
@@ -1068,7 +1068,7 @@ func (c *Client) handleSent(sentEvent *client.MessageSentEvent) {
 
 			c.log.Debugf("MessageSentEvent for %x", *sentEvent.MessageID)
 			c.setMessageSent(tp.Nickname, tp.MessageID)
-			c.eventCh.In() <- &MessageSentEvent{
+			c.eventCh <- &MessageSentEvent{
 				Nickname:  tp.Nickname,
 				MessageID: tp.MessageID,
 			}
@@ -1088,7 +1088,7 @@ func (c *Client) handleReply(replyEvent *client.MessageReplyEvent) {
 			_, err := cbor.UnmarshalFirst(replyEvent.Payload, &spoolResponse)
 			if err != nil {
 				c.log.Errorf("Could not deserialize SpoolResponse to message ID %d: %s", tp.MessageID, err)
-				c.eventCh.In() <- &MessageNotDeliveredEvent{Nickname: tp.Nickname, MessageID: tp.MessageID,
+				c.eventCh <- &MessageNotDeliveredEvent{Nickname: tp.Nickname, MessageID: tp.MessageID,
 					Err: fmt.Errorf("Invalid spool response: %s", err),
 				}
 				return
@@ -1098,7 +1098,7 @@ func (c *Client) handleReply(replyEvent *client.MessageReplyEvent) {
 				c.log.Errorf("Spool response ID %d status error: %s for SpoolID %x",
 					spoolResponse.MessageID, spoolResponse.Status, spoolResponse.SpoolID)
 
-				c.eventCh.In() <- &MessageNotDeliveredEvent{Nickname: tp.Nickname, MessageID: tp.MessageID,
+				c.eventCh <- &MessageNotDeliveredEvent{Nickname: tp.Nickname, MessageID: tp.MessageID,
 					Err: spoolResponse.StatusAsError(),
 				}
 				return
@@ -1122,7 +1122,7 @@ func (c *Client) handleReply(replyEvent *client.MessageReplyEvent) {
 				c.log.Debugf("Sending MessageDeliveredEvent for %s", tp.Nickname)
 				c.setMessageDelivered(tp.Nickname, tp.MessageID)
 				c.save()
-				c.eventCh.In() <- &MessageDeliveredEvent{Nickname: tp.Nickname, MessageID: tp.MessageID}
+				c.eventCh <- &MessageDeliveredEvent{Nickname: tp.Nickname, MessageID: tp.MessageID}
 				return
 			}
 		case *ReadMessageDescriptor:
@@ -1318,7 +1318,7 @@ func (c *Client) decryptMessage(messageID *[cConstants.MessageIDLength]byte, cip
 		c.conversationsMutex.Unlock()
 		c.save()
 
-		c.eventCh.In() <- &MessageReceivedEvent{
+		c.eventCh <- &MessageReceivedEvent{
 			Nickname:  nickname,
 			Message:   message.Plaintext,
 			Timestamp: message.Timestamp,

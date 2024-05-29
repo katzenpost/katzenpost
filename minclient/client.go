@@ -56,6 +56,8 @@ type ClientConfig struct {
 
 	LinkKemScheme kem.Scheme
 
+	PKISignatureScheme sign.Scheme
+
 	// LinkKey is the user's ECDH link authentication private key.
 	LinkKey kem.PrivateKey
 
@@ -108,7 +110,7 @@ type ClientConfig struct {
 
 	// PreferedTransports is a list of the transports will be used to make
 	// outgoing network connections, with the most prefered first.
-	PreferedTransports []cpki.Transport
+	PreferedTransports []string
 
 	// MessagePollInterval is the interval at which the server will be
 	// polled for new messages if the queue is belived to be empty.

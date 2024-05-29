@@ -45,7 +45,8 @@ import (
 const (
 	defaultAddress             = ":3219"
 	defaultLogLevel            = "NOTICE"
-	defaultNumProviderWorkers  = 1
+	defaultNumGatewayWorkers   = 1
+	defaultNumServiceWorkers   = 1
 	defaultNumKaetzchenWorkers = 3
 	defaultUnwrapDelay         = 10 // 10 ms.
 	defaultSchedulerSlack      = 10 // 10 ms.
@@ -55,11 +56,11 @@ const (
 	defaultConnectTimeout      = 60 * 1000 // 60 sec.
 	defaultHandshakeTimeout    = 30 * 1000 // 30 sec.
 	defaultReauthInterval      = 30 * 1000 // 30 sec.
-	defaultProviderDelay       = 500       // 500 ms.
+	defaultGatewayDelay        = 500       // 500 ms.
+	defaultServiceDelay        = 500       // 500 ms.
 	defaultKaetzchenDelay      = 750       // 750 ms.
 	defaultUserDB              = "users.db"
 	defaultSpoolDB             = "spool.db"
-	defaultManagementSocket    = "management_sock"
 
 	backendPgx = "pgx"
 
@@ -87,6 +88,9 @@ type Server struct {
 	// WireKEM is the KEM string representing the chosen KEM scheme with which to communicate
 	// with the mixnet and dirauth nodes.
 	WireKEM string
+
+	// PKISignatureScheme specifies the cryptographic signature scheme
+	PKISignatureScheme string
 
 	// Addresses are the IP address/port combinations that the server will bind
 	// to for incoming connections.
@@ -129,6 +133,10 @@ func (sCfg *Server) validate() error {
 		return errors.New("config: Server: WireKEM is not set")
 	}
 
+	if sCfg.PKISignatureScheme == "" {
+		return errors.New("config: Server: PKISignatureScheme is not set")
+	}
+
 	if sCfg.Addresses != nil {
 		for _, v := range sCfg.Addresses {
 			if err := utils.EnsureAddrIPPort(v); err != nil {
@@ -154,7 +162,7 @@ func (sCfg *Server) validate() error {
 
 	for k, v := range sCfg.AltAddresses {
 		lowkey := strings.ToLower(k)
-		switch pki.Transport(lowkey) {
+		switch lowkey {
 		case pki.TransportTCP:
 			for _, a := range v {
 				h, p, err := net.SplitHostPort(a)
@@ -191,9 +199,13 @@ type Debug struct {
 	// inbound Sphinx packet processing.
 	NumSphinxWorkers int
 
-	// NumProviderWorkers specifies the number of worker instances to use for
+	// NumServiceWorkers specifies the number of worker instances to use for
 	// provider specific packet processing.
-	NumProviderWorkers int
+	NumServiceWorkers int
+
+	// NumGatewayWorkers specifies the number of worker instances to use for
+	// provider specific packet processing.
+	NumGatewayWorkers int
 
 	// NumKaetzchenWorkers specifies the number of worker instances to use for
 	// Kaetzchen specific packet processing.
@@ -216,9 +228,13 @@ type Debug struct {
 	// milliseconds.
 	UnwrapDelay int
 
-	// ProviderDelay is the maximum allowed provider delay due to queueing
+	// GatewayDelay is the maximum allowed gateway node worker delay due to queueing
 	// in milliseconds.
-	ProviderDelay int
+	GatewayDelay int
+
+	// ServiceDelay is the maximum allowed service node worker delay due to queueing
+	// in milliseconds.
+	ServiceDelay int
 
 	// KaetzchenDelay is the maximum allowed kaetzchen delay due to queueing
 	// in milliseconds.
@@ -272,20 +288,30 @@ func (dCfg *Debug) applyDefaults() {
 		// the AES-NI unit is a per-core resource.
 		dCfg.NumSphinxWorkers = runtime.NumCPU()
 	}
-	if dCfg.NumProviderWorkers <= 0 {
+	if dCfg.NumGatewayWorkers <= 0 {
 		// TODO/perf: This should do something clever as well, though 1 is
 		// the right number for something that uses the boltspool due to all
 		// write spool operations being serialized.
-		dCfg.NumProviderWorkers = defaultNumProviderWorkers
+		dCfg.NumGatewayWorkers = defaultNumGatewayWorkers
 	}
+	if dCfg.NumServiceWorkers <= 0 {
+		// TODO/perf: This should do something clever as well, though 1 is
+		// the right number for something that uses the boltspool due to all
+		// write spool operations being serialized.
+		dCfg.NumServiceWorkers = defaultNumServiceWorkers
+	}
+
 	if dCfg.NumKaetzchenWorkers <= 0 {
 		dCfg.NumKaetzchenWorkers = defaultNumKaetzchenWorkers
 	}
 	if dCfg.UnwrapDelay <= 0 {
 		dCfg.UnwrapDelay = defaultUnwrapDelay
 	}
-	if dCfg.ProviderDelay <= 0 {
-		dCfg.ProviderDelay = defaultProviderDelay
+	if dCfg.GatewayDelay <= 0 {
+		dCfg.GatewayDelay = defaultGatewayDelay
+	}
+	if dCfg.ServiceDelay <= 0 {
+		dCfg.ServiceDelay = defaultServiceDelay
 	}
 	if dCfg.KaetzchenDelay <= 0 {
 		dCfg.KaetzchenDelay = defaultKaetzchenDelay
@@ -417,9 +443,9 @@ type BoltUserDB struct {
 
 // ExternUserDB is the external http user authentication.
 type ExternUserDB struct {
-	// ProviderURL is the base url used for the external provider authentication API.
+	// GatewayURL is the base url used for the external provider authentication API.
 	// It should be in the form `http://localhost:8080/`
-	ProviderURL string
+	GatewayURL string
 }
 
 // SpoolDB is the user message spool configuration.
@@ -598,7 +624,7 @@ func (pCfg *Gateway) validate() error {
 		if internalTransports[kLower] {
 			return fmt.Errorf("config: Provider: AltAddress is overriding internal transport: %v", kLower)
 		}
-		switch pki.Transport(kLower) {
+		switch kLower {
 		case pki.TransportTCP:
 			for _, a := range v {
 				h, p, err := net.SplitHostPort(a)
@@ -633,10 +659,10 @@ func (pCfg *Gateway) validate() error {
 		if pCfg.UserDB.Extern == nil {
 			return fmt.Errorf("config: Provider: Extern section should be defined")
 		}
-		if pCfg.UserDB.Extern.ProviderURL == "" {
+		if pCfg.UserDB.Extern.GatewayURL == "" {
 			return fmt.Errorf("config: Provider: ProviderURL should be defined for Extern")
 		}
-		providerURL, err := url.Parse(pCfg.UserDB.Extern.ProviderURL)
+		providerURL, err := url.Parse(pCfg.UserDB.Extern.GatewayURL)
 		if err != nil {
 			return fmt.Errorf("config: Provider: ProviderURL should be a valid url: %v", err)
 		}
@@ -699,32 +725,6 @@ func (vCfg *Voting) validate(datadir string) error {
 	return nil
 }
 
-// Management is the Katzenpost management interface configuration.
-type Management struct {
-	// Enable enables the management interface.
-	Enable bool
-
-	// Path specifies the path to the manaagment interface socket.  If left
-	// empty it will use `management_sock` under the DataDir.
-	Path string
-}
-
-func (mCfg *Management) applyDefaults(sCfg *Server) {
-	if mCfg.Path == "" {
-		mCfg.Path = filepath.Join(sCfg.DataDir, defaultManagementSocket)
-	}
-}
-
-func (mCfg *Management) validate() error {
-	if !mCfg.Enable {
-		return nil
-	}
-	if !filepath.IsAbs(mCfg.Path) {
-		return fmt.Errorf("config: Management: Path '%v' is not an absolute path", mCfg.Path)
-	}
-	return nil
-}
-
 // Config is the top level Katzenpost server configuration.
 type Config struct {
 	Server         *Server
@@ -732,7 +732,6 @@ type Config struct {
 	ServiceNode    *ServiceNode
 	Gateway        *Gateway
 	PKI            *PKI
-	Management     *Management
 	SphinxGeometry *geo.Geometry
 
 	Debug *Debug
@@ -764,9 +763,6 @@ func (cfg *Config) FixupAndValidate() error {
 	}
 	if cfg.PKI == nil {
 		return errors.New("config: No PKI block was present")
-	}
-	if cfg.Management == nil {
-		cfg.Management = &Management{}
 	}
 
 	// Perform basic validation.
@@ -801,10 +797,6 @@ func (cfg *Config) FixupAndValidate() error {
 	}
 
 	if err = cfg.Logging.validate(); err != nil {
-		return err
-	}
-	cfg.Management.applyDefaults(cfg.Server)
-	if err := cfg.Management.validate(); err != nil {
 		return err
 	}
 	cfg.Debug.applyDefaults()

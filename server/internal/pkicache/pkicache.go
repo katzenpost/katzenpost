@@ -102,23 +102,23 @@ func (e *Entry) Outgoing() []*pki.MixDescriptor {
 	return l
 }
 
-func (e *Entry) isOurLayerSane(isGateway, isServiceNode bool) bool {
-	if isGateway && isServiceNode {
+func (e *Entry) isOurLayerSane(isGatewayNode, isServiceNode bool) bool {
+	if isGatewayNode && isServiceNode {
 		return false
 	}
-	if isGateway && !e.self.IsGatewayNode {
+	if isGatewayNode && !e.self.IsGatewayNode {
 		return false
 	}
 	if isServiceNode && !e.self.IsServiceNode {
 		return false
 	}
-	if !isGateway {
+	if !isGatewayNode {
 		idHash := hash.Sum256(e.self.IdentityKey)
 		layer, err := e.doc.GetMixLayer(&idHash)
 		if err != nil || layer == pki.LayerGateway {
 			return false
 		}
-		if int(layer) >= len(e.doc.Topology) {
+		if !isServiceNode && int(layer) >= len(e.doc.Topology) {
 			return false
 		}
 	}
@@ -128,29 +128,31 @@ func (e *Entry) isOurLayerSane(isGateway, isServiceNode bool) bool {
 		if err != nil || layer == pki.LayerService {
 			return false
 		}
-		if int(layer) >= len(e.doc.Topology) {
+		if !isGatewayNode && int(layer) >= len(e.doc.Topology) {
 			return false
 		}
 	}
 	return true
 }
 
-func (e *Entry) incomingLayer() uint8 {
+func (e *Entry) incomingLayer() []uint8 {
 	idHash := hash.Sum256(e.self.IdentityKey)
 	layer, err := e.doc.GetMixLayer(&idHash)
 	if err != nil {
 		panic(err)
 	}
 	switch layer {
+	case pki.LayerGateway:
+		fallthrough
 	case pki.LayerService:
-		return uint8(len(e.doc.Topology)) - 1
+		return []uint8{uint8(len(e.doc.Topology)) - 1}
 	case 0:
-		return pki.LayerGateway
+		return []uint8{pki.LayerGateway, pki.LayerService}
 	}
-	return layer - 1
+	return []uint8{layer - 1}
 }
 
-func (e *Entry) outgoingLayer() uint8 {
+func (e *Entry) outgoingLayer() []uint8 {
 	idHash := hash.Sum256(e.self.IdentityKey)
 	layer, err := e.doc.GetMixLayer(&idHash)
 	if err != nil {
@@ -158,11 +160,35 @@ func (e *Entry) outgoingLayer() uint8 {
 	}
 	switch int(layer) {
 	case len(e.doc.Topology) - 1:
-		return pki.LayerService
+		return []uint8{pki.LayerService, pki.LayerGateway}
+	case pki.LayerService:
+		return []uint8{0}
 	case pki.LayerGateway:
-		return 0
+		return []uint8{0}
 	}
-	return layer + 1
+	return []uint8{layer + 1}
+}
+
+// Build the maps of peers that will connect to us, and that we will
+// connect to.
+func (e *Entry) appendMap(layers []uint8, m map[[constants.NodeIDLength]byte]*pki.MixDescriptor) {
+	for i := 0; i < len(layers); i++ {
+		var nodes []*pki.MixDescriptor
+		switch layers[i] {
+		case pki.LayerGateway:
+			nodes = e.doc.GatewayNodes
+		case pki.LayerService:
+			nodes = e.doc.ServiceNodes
+		default:
+			nodes = e.doc.Topology[layers[i]]
+		}
+		for _, v := range nodes {
+			// The concrete PKI implementation is responsible for ensuring
+			// that documents only contain one descriptor per identity key.
+			nodeID := hash.Sum256(v.IdentityKey)
+			m[nodeID] = v
+		}
+	}
 }
 
 // New constructs a new Entry from a given document.
@@ -190,33 +216,21 @@ func New(d *pki.Document, identityKey sign.PublicKey, isGateway, isServiceNode b
 		return nil, fmt.Errorf("pkicache: self layer is invalid: %d", layer)
 	}
 
-	// Build the maps of peers that will connect to us, and that we will
-	// connect to.
-	appendMap := func(layer uint8, m map[[constants.NodeIDLength]byte]*pki.MixDescriptor) {
-		var nodes []*pki.MixDescriptor
-		switch layer {
-		case pki.LayerGateway:
-			nodes = e.doc.GatewayNodes
-		case pki.LayerService:
-			nodes = e.doc.ServiceNodes
-		default:
-			nodes = e.doc.Topology[layer]
-		}
-		for _, v := range nodes {
-			// The concrete PKI implementation is responsible for ensuring
-			// that documents only contain one descriptor per identity key.
-			nodeID := hash.Sum256(v.IdentityKey)
-			m[nodeID] = v
-		}
-	}
-	appendMap(e.incomingLayer(), e.incoming)
-	appendMap(e.outgoingLayer(), e.outgoing)
+	// Note that there are two edge cases where we append two layers to the given
+	// map via our `appendMap` method, the first layer of mix nodes has two input layers:
+	// gateway nodes and service nodes. Likewise the last layer of mix nodes has two
+	// output layers: gateway nodes and service nodes.
+
+	incomingLayers := e.incomingLayer()
+	e.appendMap(incomingLayers, e.incoming)
+	outgoingLayers := e.outgoingLayer()
+	e.appendMap(outgoingLayers, e.outgoing)
 
 	// Build the list of all nodes.
 	for i := 0; i < len(e.doc.Topology); i++ {
-		appendMap(uint8(i), e.all)
+		e.appendMap([]uint8{uint8(i)}, e.all)
 	}
-	appendMap(pki.LayerGateway, e.all)
-	appendMap(pki.LayerService, e.all)
+	e.appendMap([]uint8{pki.LayerGateway}, e.all)
+	e.appendMap([]uint8{pki.LayerService}, e.all)
 	return e, nil
 }

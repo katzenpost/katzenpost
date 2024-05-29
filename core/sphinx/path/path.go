@@ -152,6 +152,8 @@ func selectHops(rng *mRand.Rand, doc *pki.Document, src, dst *pki.MixDescriptor,
 			switch int(srcLayer) {
 			case pki.LayerGateway:
 				startLayer = 0
+			case pki.LayerService:
+				startLayer = 0
 			case len(doc.Topology) - 1:
 				return []*pki.MixDescriptor{dst}, nil
 			default:
@@ -165,6 +167,8 @@ func selectHops(rng *mRand.Rand, doc *pki.Document, src, dst *pki.MixDescriptor,
 		}
 
 		switch int(dstLayer) {
+		case pki.LayerGateway:
+			nHops = len(doc.Topology) + 1
 		case pki.LayerService:
 			nHops = len(doc.Topology) + 1
 		case 0:

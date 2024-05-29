@@ -27,17 +27,17 @@ import (
 
 	"github.com/katzenpost/hpqc/kem/schemes"
 	ecdh "github.com/katzenpost/hpqc/nike/x25519"
-
-	"github.com/katzenpost/katzenpost/core/cert"
+	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 )
 
 var testingSchemeName = "xwing"
 var testingScheme = schemes.ByName(testingSchemeName)
+var testDocumentSignatureScheme = signSchemes.ByName("Ed25519")
 
 func genDescriptor(require *require.Assertions, idx int, isGatewayNode, isServiceNode bool) *MixDescriptor {
 	d := new(MixDescriptor)
 	d.Name = fmt.Sprintf("gen%d.example.net", idx)
-	d.Addresses = map[Transport][]string{
+	d.Addresses = map[string][]string{
 		TransportTCPv4: []string{fmt.Sprintf("192.0.2.%d:4242", idx)},
 	}
 	d.IsGatewayNode = isGatewayNode
@@ -46,7 +46,7 @@ func genDescriptor(require *require.Assertions, idx int, isGatewayNode, isServic
 	d.Version = DescriptorVersion
 	d.LoadWeight = 23
 
-	identityPub, _, err := cert.Scheme.GenerateKey()
+	identityPub, _, err := testDocumentSignatureScheme.GenerateKey()
 	require.NoError(err)
 
 	d.IdentityKey, err = identityPub.MarshalBinary()
@@ -81,7 +81,7 @@ func TestDocument(t *testing.T) {
 	require := require.New(t)
 
 	// Generate a random signing key.
-	idPub, k, err := cert.Scheme.GenerateKey()
+	idPub, k, err := testDocumentSignatureScheme.GenerateKey()
 	require.NoError(err)
 
 	testSendRate := uint64(3)
@@ -102,6 +102,7 @@ func TestDocument(t *testing.T) {
 		SharedRandomReveal: make(map[[PublicKeyHashSize]byte][]byte),
 		SharedRandomValue:  make([]byte, SharedRandomValueLength),
 		Version:            DocumentVersion,
+		PKISignatureScheme: testDocumentSignatureScheme.Name(),
 	}
 	idx := 1
 	for l := 0; l < 3; l++ {

@@ -18,7 +18,6 @@ package crypto
 
 import (
 	"gitlab.com/yawning/aez.git"
-	"github.com/awnumar/memguard"
 )
 
 const (
@@ -45,7 +44,7 @@ func SPRPDecrypt(key *[SPRPKeyLength]byte, iv *[SPRPIVLength]byte, msg []byte) [
 	if !ok {
 		// Not covered by unit tests because this indicates a bug in the AEZ
 		// implementation, that is hard to force.
-		memguard.SafePanic("crypto/SPRPDecrypt: BUG - aez.Decrypt failed with tau = 0")
+		panic("crypto/SPRPDecrypt: BUG - aez.Decrypt failed with tau = 0")
 
 	}
 	return dst

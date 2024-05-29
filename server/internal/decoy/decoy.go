@@ -18,6 +18,7 @@
 package decoy
 
 import (
+	"crypto/hmac"
 	"crypto/subtle"
 	"encoding/binary"
 	"errors"
@@ -28,8 +29,12 @@ import (
 	"sync"
 	"time"
 
+	"gitlab.com/yawning/avl.git"
+	"gopkg.in/op/go-logging.v1"
+
 	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/rand"
+
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx"
@@ -44,9 +49,7 @@ import (
 	"github.com/katzenpost/katzenpost/server/internal/instrument"
 	"github.com/katzenpost/katzenpost/server/internal/packet"
 	"github.com/katzenpost/katzenpost/server/internal/pkicache"
-	"github.com/katzenpost/katzenpost/server/internal/provider/kaetzchen"
-	"gitlab.com/yawning/avl.git"
-	"gopkg.in/op/go-logging.v1"
+	"github.com/katzenpost/katzenpost/server/internal/service/kaetzchen"
 )
 
 const maxAttempts = 3
@@ -224,6 +227,10 @@ func (d *decoy) OnNewDocument(ent *pkicache.Entry) {
 	d.docCh <- ent
 }
 
+func (d *decoy) ExpectReply(pkt *packet.Packet) bool {
+	return hmac.Equal(pkt.Recipient.ID[:], d.recipient)
+}
+
 func (d *decoy) OnPacket(pkt *packet.Packet) {
 	// Note: This is called from the crypto worker context, which is "fine".
 	defer pkt.Dispose()
@@ -294,16 +301,6 @@ func (d *decoy) worker() {
 				instrument.IgnoredPKIDocs()
 				continue
 			}
-			if d.glue.Config().Server.IsGatewayNode {
-				d.log.Debugf("Received PKI document when Gateway, ignoring (not supported yet).")
-				instrument.IgnoredPKIDocs()
-				continue
-			}
-			if d.glue.Config().Server.IsServiceNode {
-				d.log.Debugf("Received PKI document when Service Node, ignoring (not supported yet).")
-				instrument.IgnoredPKIDocs()
-				continue
-			}
 			d.log.Debugf("Received new PKI document for epoch: %v", now)
 			instrument.PKIDocs(fmt.Sprintf("%v", now))
 			docCache = newEnt
@@ -327,10 +324,26 @@ func (d *decoy) worker() {
 			// outgoing sends, except that the SendShift value is ignored.
 			//
 			// TODO: Eventually this should use separate parameters.
+			isGatewayNode := d.glue.Config().Server.IsGatewayNode
+
+			var lambda float64
+			var max uint64
 			doc := docCache.Document()
-			wakeMsec := uint64(rand.Exp(d.rng, doc.LambdaM))
-			if wakeMsec > doc.LambdaMMaxDelay {
-				wakeMsec = doc.LambdaMMaxDelay
+
+			if !isGatewayNode {
+				max = doc.LambdaMMaxDelay
+				lambda = doc.LambdaM
+			}
+			if isGatewayNode {
+				max = doc.LambdaGMaxDelay
+				lambda = doc.LambdaG
+			}
+
+			d.log.Debug("DECOY LAMBDA %f", lambda)
+
+			wakeMsec := uint64(rand.Exp(d.rng, lambda))
+			if wakeMsec > max {
+				wakeMsec = max
 			}
 			wakeInterval = time.Duration(wakeMsec) * time.Millisecond
 			d.log.Debugf("Next wakeInterval: %v", wakeInterval)
@@ -353,11 +366,6 @@ func (d *decoy) sendDecoyPacket(ent *pkicache.Entry) {
 	// TODO: (#52) Do nothing if the rate limiter would discard the packet(?).
 
 	selfDesc := ent.Self()
-	if selfDesc.IsGatewayNode || selfDesc.IsServiceNode {
-		// The code doesn't handle this correctly yet.  It does need to
-		// happen eventually though.
-		panic("BUG: Provider generated decoy traffic not supported yet")
-	}
 	doc := ent.Document()
 
 	// TODO: The path selection maybe should be more strategic/systematic

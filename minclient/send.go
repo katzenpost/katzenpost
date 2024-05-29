@@ -139,13 +139,27 @@ func (c *Client) makePath(recipient, destNode string, surbID *[sConstants.SURBID
 	}
 
 	// Get the descriptors.
-	src, err := doc.GetGateway(srcNode)
-	if err != nil {
-		return nil, time.Time{}, newPKIError("minclient: failed to find source Provider: %v", err)
-	}
-	dst, err := doc.GetServiceNode(dstNode)
-	if err != nil {
-		return nil, time.Time{}, newPKIError("minclient: failed to find destination Provider: %v", err)
+	var src *cpki.MixDescriptor
+	var dst *cpki.MixDescriptor
+	var err error
+	if isForward {
+		src, err = doc.GetGateway(srcNode)
+		if err != nil {
+			return nil, time.Time{}, newPKIError("minclient: failed to find source Gateway: %v", err)
+		}
+		dst, err = doc.GetServiceNode(dstNode)
+		if err != nil {
+			return nil, time.Time{}, newPKIError("minclient: failed to find destination Provider: %v", err)
+		}
+	} else {
+		src, err = doc.GetServiceNode(srcNode)
+		if err != nil {
+			return nil, time.Time{}, newPKIError("minclient: failed to find destination Provider: %v", err)
+		}
+		dst, err = doc.GetGateway(dstNode)
+		if err != nil {
+			return nil, time.Time{}, newPKIError("minclient: failed to find source Gateway: %v", err)
+		}
 	}
 
 	p, t, err := path.New(c.rng, c.cfg.SphinxGeometry, doc, []byte(recipient), src, dst, surbID, baseTime, true, isForward)

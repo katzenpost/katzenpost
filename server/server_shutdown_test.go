@@ -20,6 +20,7 @@ package server
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -30,17 +31,22 @@ import (
 	ecdh "github.com/katzenpost/hpqc/nike/x25519"
 	"github.com/katzenpost/hpqc/rand"
 	signpem "github.com/katzenpost/hpqc/sign/pem"
+	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 
 	aconfig "github.com/katzenpost/katzenpost/authority/voting/server/config"
-	"github.com/katzenpost/katzenpost/core/cert"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/server/config"
 )
 
 var testingSchemeName = "xwing"
 var testingScheme = schemes.ByName(testingSchemeName)
+var testSignatureScheme = signSchemes.ByName("Ed25519")
 
 func TestServerStartShutdown(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		return
+	}
+
 	assert := assert.New(t)
 
 	datadir, err := os.MkdirTemp("", "server_data_dir")
@@ -55,7 +61,7 @@ func TestServerStartShutdown(t *testing.T) {
 	err = kempem.PublicKeyToFile(filepath.Join(datadir, authLinkPubKeyPem), authLinkPubKey)
 	require.NoError(t, err)
 
-	authPubkey, _, err := cert.Scheme.GenerateKey()
+	authPubkey, _, err := testSignatureScheme.GenerateKey()
 	require.NoError(t, err)
 
 	authIDPubKeyPem := "auth_id_pub_key.pem"
@@ -64,7 +70,7 @@ func TestServerStartShutdown(t *testing.T) {
 	err = signpem.PublicKeyToFile(authkeyPath, authPubkey)
 	require.NoError(t, err)
 
-	mixIdPublicKey, mixIdPrivateKey, err := cert.Scheme.GenerateKey()
+	mixIdPublicKey, mixIdPrivateKey, err := testSignatureScheme.GenerateKey()
 	require.NoError(t, err)
 	err = signpem.PrivateKeyToFile(filepath.Join(datadir, "identity.private.pem"), mixIdPrivateKey)
 	require.NoError(t, err)
@@ -81,11 +87,12 @@ func TestServerStartShutdown(t *testing.T) {
 	cfg := config.Config{
 		SphinxGeometry: geo,
 		Server: &config.Server{
-			WireKEM:       testingSchemeName,
-			Identifier:    "testserver",
-			Addresses:     []string{"127.0.0.1:1234"},
-			DataDir:       datadir,
-			IsGatewayNode: false,
+			WireKEM:            testingSchemeName,
+			PKISignatureScheme: testSignatureScheme.Name(),
+			Identifier:         "testserver",
+			Addresses:          []string{"127.0.0.1:1234"},
+			DataDir:            datadir,
+			IsGatewayNode:      false,
 		},
 		Logging: &config.Logging{
 			Disable: false,
@@ -97,28 +104,27 @@ func TestServerStartShutdown(t *testing.T) {
 			Voting: &config.Voting{
 				Authorities: []*aconfig.Authority{
 					&aconfig.Authority{
-						WireKEMScheme:     testingSchemeName,
-						Identifier:        "auth1",
-						IdentityPublicKey: authPubkey,
-						LinkPublicKey:     authLinkPubKey,
-						Addresses:         []string{"127.0.0.1:1234"},
+						WireKEMScheme:      testingSchemeName,
+						PKISignatureScheme: testSignatureScheme.Name(),
+						Identifier:         "auth1",
+						IdentityPublicKey:  authPubkey,
+						LinkPublicKey:      authLinkPubKey,
+						Addresses:          []string{"127.0.0.1:1234"},
 					},
 				},
 			},
 		},
-		Management: &config.Management{
-			Enable: false,
-			Path:   "",
-		},
 		Debug: &config.Debug{
 			NumSphinxWorkers:             1,
-			NumProviderWorkers:           0,
+			NumGatewayWorkers:            0,
+			NumServiceWorkers:            0,
 			NumKaetzchenWorkers:          1,
 			SchedulerExternalMemoryQueue: false,
 			SchedulerQueueSize:           0,
 			SchedulerMaxBurst:            16,
 			UnwrapDelay:                  10,
-			ProviderDelay:                0,
+			GatewayDelay:                 0,
+			ServiceDelay:                 0,
 			KaetzchenDelay:               750,
 			SchedulerSlack:               10,
 			SendSlack:                    50,

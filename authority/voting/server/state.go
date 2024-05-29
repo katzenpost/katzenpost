@@ -25,6 +25,7 @@ import (
 	"encoding/gob"
 	"errors"
 	"fmt"
+	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 	"net"
 	"path/filepath"
 	"sort"
@@ -287,6 +288,7 @@ func (s *state) getVote(epoch uint64) (*pki.Document, error) {
 		s.log.Debugf("Restoring genesisEpoch %d from document cache", d.GenesisEpoch)
 		s.genesisEpoch = d.GenesisEpoch
 		s.priorSRV = d.PriorSharedRandom
+		d.PKISignatureScheme = s.s.cfg.Server.PKISignatureScheme
 	} else {
 		s.log.Debugf("Setting genesisEpoch %d from votingEpoch", s.votingEpoch)
 		s.genesisEpoch = s.votingEpoch
@@ -528,6 +530,9 @@ func (s *state) getDocument(descriptors []*pki.MixDescriptor, params *config.Par
 		}
 	}
 
+	lambdaG := computeLambdaG(s.s.cfg)
+	s.log.Debugf("computed lambdaG is %f", lambdaG)
+
 	// Build the Document.
 	doc := &pki.Document{
 		Epoch:              s.votingEpoch,
@@ -543,12 +548,15 @@ func (s *state) getDocument(descriptors []*pki.MixDescriptor, params *config.Par
 		LambdaDMaxDelay:    params.LambdaDMaxDelay,
 		LambdaM:            params.LambdaM,
 		LambdaMMaxDelay:    params.LambdaMMaxDelay,
+		LambdaG:            lambdaG,
+		LambdaGMaxDelay:    params.LambdaGMaxDelay,
 		Topology:           topology,
 		GatewayNodes:       gateways,
 		ServiceNodes:       serviceNodes,
 		SharedRandomValue:  srv,
 		PriorSharedRandom:  s.priorSRV,
 		SphinxGeometryHash: s.geo.Hash(),
+		PKISignatureScheme: s.s.cfg.Server.PKISignatureScheme,
 	}
 	return doc
 }
@@ -720,7 +728,7 @@ func (s *state) sendCommandToPeer(peer *config.Authority, cmd commands.Command) 
 
 	cfg := &wire.SessionConfig{
 		KEMScheme:         kemscheme,
-		Geometry:          nil,
+		Geometry:          s.geo,
 		Authenticator:     s,
 		AdditionalData:    identityHash[:],
 		AuthenticationKey: s.s.linkKey,
@@ -962,6 +970,8 @@ func (s *state) tallyVotes(epoch uint64) ([]*pki.MixDescriptor, *config.Paramete
 			LambdaDMaxDelay:   vote.LambdaDMaxDelay,
 			LambdaM:           vote.LambdaM,
 			LambdaMMaxDelay:   vote.LambdaMMaxDelay,
+			LambdaG:           computeLambdaG(s.s.cfg),
+			LambdaGMaxDelay:   vote.LambdaGMaxDelay,
 		}
 		b := bytes.Buffer{}
 		e := gob.NewEncoder(&b)
@@ -1192,6 +1202,8 @@ func (s *state) generateFixedTopology(nodes []*pki.MixDescriptor, srv []byte) []
 		nodeMap[id] = v
 	}
 
+	pkiSignatureScheme := signSchemes.ByName(s.s.cfg.Server.PKISignatureScheme)
+
 	// range over the keys in the configuration file and collect the descriptors for each layer
 	topology := make([][]*pki.MixDescriptor, len(s.s.cfg.Topology.Layers))
 	for strata, layer := range s.s.cfg.Topology.Layers {
@@ -1200,13 +1212,13 @@ func (s *state) generateFixedTopology(nodes []*pki.MixDescriptor, srv []byte) []
 			var identityPublicKey sign.PublicKey
 			var err error
 			if filepath.IsAbs(node.IdentityPublicKeyPem) {
-				identityPublicKey, err = signpem.FromPublicPEMFile(node.IdentityPublicKeyPem, cert.Scheme)
+				identityPublicKey, err = signpem.FromPublicPEMFile(node.IdentityPublicKeyPem, pkiSignatureScheme)
 				if err != nil {
 					panic(err)
 				}
 			} else {
 				pemFilePath := filepath.Join(s.s.cfg.Server.DataDir, node.IdentityPublicKeyPem)
-				identityPublicKey, err = signpem.FromPublicPEMFile(pemFilePath, cert.Scheme)
+				identityPublicKey, err = signpem.FromPublicPEMFile(pemFilePath, pkiSignatureScheme)
 				if err != nil {
 					panic(err)
 				}
@@ -1824,6 +1836,9 @@ func newState(s *Server) (*state, error) {
 	st.threshold = len(st.verifiers)/2 + 1
 	st.dissenters = len(s.cfg.Authorities)/2 - 1
 
+	st.s.cfg.Server.PKISignatureScheme = s.cfg.Server.PKISignatureScheme
+	pkiSignatureScheme := signSchemes.ByName(s.cfg.Server.PKISignatureScheme)
+
 	// Initialize the authorized peer tables.
 	st.reverseHash = make(map[[publicKeyHashSize]byte]sign.PublicKey)
 	st.authorizedMixes = make(map[[publicKeyHashSize]byte]bool)
@@ -1831,13 +1846,13 @@ func newState(s *Server) (*state, error) {
 		var identityPublicKey sign.PublicKey
 		var err error
 		if filepath.IsAbs(v.IdentityPublicKeyPem) {
-			identityPublicKey, err = signpem.FromPublicPEMFile(v.IdentityPublicKeyPem, cert.Scheme)
+			identityPublicKey, err = signpem.FromPublicPEMFile(v.IdentityPublicKeyPem, pkiSignatureScheme)
 			if err != nil {
 				panic(err)
 			}
 		} else {
 			pemFilePath := filepath.Join(s.cfg.Server.DataDir, v.IdentityPublicKeyPem)
-			identityPublicKey, err = signpem.FromPublicPEMFile(pemFilePath, cert.Scheme)
+			identityPublicKey, err = signpem.FromPublicPEMFile(pemFilePath, pkiSignatureScheme)
 			if err != nil {
 				panic(err)
 			}
@@ -1853,13 +1868,13 @@ func newState(s *Server) (*state, error) {
 		var err error
 
 		if filepath.IsAbs(v.IdentityPublicKeyPem) {
-			identityPublicKey, err = signpem.FromPublicPEMFile(v.IdentityPublicKeyPem, cert.Scheme)
+			identityPublicKey, err = signpem.FromPublicPEMFile(v.IdentityPublicKeyPem, pkiSignatureScheme)
 			if err != nil {
 				panic(err)
 			}
 		} else {
 			pemFilePath := filepath.Join(s.cfg.Server.DataDir, v.IdentityPublicKeyPem)
-			identityPublicKey, err = signpem.FromPublicPEMFile(pemFilePath, cert.Scheme)
+			identityPublicKey, err = signpem.FromPublicPEMFile(pemFilePath, pkiSignatureScheme)
 			if err != nil {
 				panic(err)
 			}
@@ -1875,13 +1890,13 @@ func newState(s *Server) (*state, error) {
 		var err error
 
 		if filepath.IsAbs(v.IdentityPublicKeyPem) {
-			identityPublicKey, err = signpem.FromPublicPEMFile(v.IdentityPublicKeyPem, cert.Scheme)
+			identityPublicKey, err = signpem.FromPublicPEMFile(v.IdentityPublicKeyPem, pkiSignatureScheme)
 			if err != nil {
 				panic(err)
 			}
 		} else {
 			pemFilePath := filepath.Join(s.cfg.Server.DataDir, v.IdentityPublicKeyPem)
-			identityPublicKey, err = signpem.FromPublicPEMFile(pemFilePath, cert.Scheme)
+			identityPublicKey, err = signpem.FromPublicPEMFile(pemFilePath, pkiSignatureScheme)
 			if err != nil {
 				panic(err)
 			}
@@ -1944,13 +1959,19 @@ func (s *state) backgroundFetchConsensus(epoch uint64) {
 		if kemscheme == nil {
 			panic("kem scheme not found in registry")
 		}
+		pkiSignatureScheme := signSchemes.ByName(s.s.cfg.Server.PKISignatureScheme)
+		if pkiSignatureScheme == nil {
+			panic("pki signature scheme not found in registry")
+		}
 		go func() {
 			cfg := &client.Config{
-				KEMScheme:     kemscheme,
-				LinkKey:       s.s.linkKey,
-				LogBackend:    s.s.logBackend,
-				Authorities:   s.s.cfg.Authorities,
-				DialContextFn: nil,
+				KEMScheme:          kemscheme,
+				PKISignatureScheme: pkiSignatureScheme,
+				LinkKey:            s.s.linkKey,
+				LogBackend:         s.s.logBackend,
+				Authorities:        s.s.cfg.Authorities,
+				DialContextFn:      nil,
+				Geo:                s.geo,
 			}
 			c, err := client.New(cfg)
 			if err != nil {

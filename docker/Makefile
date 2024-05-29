@@ -34,6 +34,7 @@ lD=0.0005
 lDMax=3000
 lM=0.0005
 lMMax=100
+lGMax=1000
 
 UserForwardPayloadLength=2000
 
@@ -58,7 +59,7 @@ log_level=DEBUG
 
 docker=$(shell if which podman|grep -q .; then echo podman; else echo docker; fi)
 
-ldflags="-buildid= -X github.com/katzenpost/katzenpost/core/epochtime.WarpedEpoch=${warped} -X github.com/katzenpost/katzenpost/server/internal/pki.WarpedEpoch=${warped} -X github.com/katzenpost/katzenpost/minclient/pki.WarpedEpoch=${warped}"
+ldflags="-buildid= -X github.com/katzenpost/katzenpost/core/epochtime.WarpedEpoch=${warped}"
 
 uid?=$(shell [ "$$SUDO_UID" != "" ] && echo "$$SUDO_UID" || id -u)
 gid?=$(shell [ "$$SUDO_GID" != "" ] && echo "$$SUDO_GID" || id -g)
@@ -70,9 +71,13 @@ replace_name=$(shell if echo ${docker}|grep -q podman; then echo " --replace --n
 i_if_podman=$(shell if echo ${docker}|grep -q podman; then echo " -i"; else echo; fi)
 mount_net_name=-v `pwd`/$(net_name):/$(net_name)
 
-docker_compose?= $(shell if echo ${docker}|grep -q podman; then echo DOCKER_HOST="unix://$$XDG_RUNTIME_DIR/podman/podman.sock" docker-compose; else echo docker-compose; fi)
+docker_compose_v1_or_v2?= $(shell [ -e /usr/libexec/docker/cli-plugins/docker-compose ] && echo /usr/libexec/docker/cli-plugins/docker-compose || echo docker-compose)
+docker_compose?= $(shell if which podman|grep -q .; then echo DOCKER_HOST="unix://$$XDG_RUNTIME_DIR/podman/podman.sock" $(docker_compose_v1_or_v2); else echo $(docker_compose_v1_or_v2); fi)
 
 make_args=--no-print-directory net_name=$(net_name) docker=$(docker) distro=$(distro) warped=$(warped) docker_user=$(docker_user)
+
+$(net_name):
+	mkdir -p $(net_name)
 
 $(docker_compose_yml): ../genconfig/main.go $(distro)_go_mod.stamp
 	mkdir -p $(net_name)
@@ -203,7 +208,7 @@ run-ping: $(net_name)/ping.$(distro) $(net_name)/running.stamp
 	$(docker) run --network=host ${docker_args} $(mount_net_name) --rm  katzenpost-$(distro)_go_mod \
         /$(net_name)/ping.$(distro) -c /go/katzenpost/docker/$(net_name)/client/client.toml -s echo -printDiff -n 1
 
-shell: $(distro)_go_mod.stamp
+shell: $(distro)_go_mod.stamp $(net_name)
 	$(docker) run --network=host ${docker_args} $(mount_net_name) -w /go/katzenpost/docker/$(net_name) --rm -it katzenpost-$(distro)_go_mod $(sh)
 
 # this is for running with docker, where we are root outside and (except for

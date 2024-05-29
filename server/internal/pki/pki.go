@@ -48,7 +48,6 @@ import (
 var (
 	errNotCached         = errors.New("pki: requested epoch document not in cache")
 	recheckInterval      = epochtime.Period / 32
-	WarpedEpoch          = "false"
 	pkiEarlyConnectSlack = epochtime.Period / 8
 	PublishDeadline      = vServer.MixPublishDeadline
 	nextFetchTill        = epochtime.Period - PublishDeadline
@@ -62,7 +61,7 @@ type pki struct {
 	log  *logging.Logger
 
 	impl               cpki.Client
-	descAddrMap        map[cpki.Transport][]string
+	descAddrMap        map[string][]string
 	docs               map[uint64]*pkicache.Entry
 	rawDocs            map[uint64][]byte
 	failedFetches      map[uint64]error
@@ -93,6 +92,7 @@ func (p *pki) worker() {
 		case <-p.HaltCh():
 			cancelFn()
 		case <-pkiCtx.Done():
+			p.log.Debug("<-pkiCtx.Done()")
 		}
 	}()
 	isCanceled := func() bool {
@@ -114,15 +114,21 @@ func (p *pki) worker() {
 		var timerFired bool
 		select {
 		case <-p.HaltCh():
-			p.log.Debugf("Terminating gracefully.")
+			p.log.Debug("Terminating gracefully.")
 			return
 		case <-pkiCtx.Done():
+			p.log.Debug("pkiCtx.Done")
 			return
 		case <-timer.C:
 			timerFired = true
 		}
 		if !timerFired && !timer.Stop() {
-			<-timer.C
+			select {
+			case <-p.HaltCh():
+				p.log.Debug("Terminating gracefully.")
+				return
+			case <-timer.C:
+			}
 		}
 
 		// Check to see if we need to publish the descriptor, and do so, along
@@ -130,12 +136,12 @@ func (p *pki) worker() {
 		err := p.publishDescriptorIfNeeded(pkiCtx)
 		if isCanceled() {
 			// Canceled mid-post
+			p.log.Debug("Canceled mid-post")
 			return
 		}
 		if err != nil {
 			p.log.Warningf("Failed to post to PKI: %v", err)
 		}
-
 		// Fetch the PKI documents as required.
 		var didUpdate bool
 		for _, epoch := range p.documentsToFetch() {
@@ -150,6 +156,7 @@ func (p *pki) worker() {
 			d, rawDoc, err := p.impl.Get(pkiCtx, epoch)
 			if isCanceled() {
 				// Canceled mid-fetch.
+				p.log.Debug("Canceled mid-fetch")
 				return
 			}
 			if err != nil {
@@ -168,7 +175,7 @@ func (p *pki) worker() {
 
 			ent, err := pkicache.New(d, p.glue.IdentityPublicKey(), p.glue.Config().Server.IsGatewayNode, p.glue.Config().Server.IsServiceNode)
 			if err != nil {
-				p.log.Warningf("Failed to generate PKI cache for epoch %v: %v", epoch, err)
+				p.log.Debugf("Failed to generate PKI cache for epoch %v: %v", epoch, err)
 				p.setFailedFetch(epoch, err)
 				instrument.FailedPKICacheGeneration(fmt.Sprintf("%v", epoch))
 				continue
@@ -224,7 +231,6 @@ func (p *pki) worker() {
 				lastUpdateEpoch = now
 			}
 		}
-
 		p.updateTimer(timer)
 	}
 }
@@ -405,7 +411,7 @@ func (p *pki) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 
 		// Publish currently running Kaetzchen.
 		var err error
-		desc.Kaetzchen, err = p.glue.Provider().KaetzchenForPKI()
+		desc.Kaetzchen, err = p.glue.ServiceNode().KaetzchenForPKI()
 		if err != nil {
 			return err
 		}
@@ -680,7 +686,7 @@ func New(glue glue.Glue) (glue.PKI, error) {
 
 	var err error
 	if glue.Config().Server.OnlyAdvertiseAltAddresses {
-		p.descAddrMap = make(map[cpki.Transport][]string)
+		p.descAddrMap = make(map[string][]string)
 	} else {
 		if p.descAddrMap, err = makeDescAddrMap(glue.Config().Server.Addresses); err != nil {
 			return nil, err
@@ -692,7 +698,7 @@ func New(glue glue.Glue) (glue.PKI, error) {
 		if len(v) == 0 {
 			continue
 		}
-		kTransport := cpki.Transport(strings.ToLower(k))
+		kTransport := string(strings.ToLower(k))
 		if _, ok := p.descAddrMap[kTransport]; ok {
 			return nil, fmt.Errorf("BUG: pki: AltAddresses overrides existing transport: '%v'", k)
 		}
@@ -713,6 +719,7 @@ func New(glue glue.Glue) (glue.PKI, error) {
 		LinkKey:     glue.LinkKey(),
 		LogBackend:  glue.LogBackend(),
 		Authorities: glue.Config().PKI.Voting.Authorities,
+		Geo:         glue.Config().SphinxGeometry,
 	}
 	p.impl, err = vClient.New(pkiCfg)
 	if err != nil {
@@ -728,8 +735,8 @@ func New(glue glue.Glue) (glue.PKI, error) {
 	return p, nil
 }
 
-func makeDescAddrMap(addrs []string) (map[cpki.Transport][]string, error) {
-	m := make(map[cpki.Transport][]string)
+func makeDescAddrMap(addrs []string) (map[string][]string, error) {
+	m := make(map[string][]string)
 	for _, addr := range addrs {
 		h, p, err := net.SplitHostPort(addr)
 		if err != nil {
@@ -739,7 +746,7 @@ func makeDescAddrMap(addrs []string) (map[cpki.Transport][]string, error) {
 			return nil, err
 		}
 
-		var t cpki.Transport
+		var t string
 		ip := net.ParseIP(h)
 		if ip == nil {
 			return nil, fmt.Errorf("address '%v' is not an IP", h)
