@@ -861,14 +861,20 @@ func (c *Client) Shutdown() {
 }
 
 func (c *Client) DoubleRatchetPayloadLength() int {
-	return DoubleRatchetPayloadLength(c.client.GetConfig().SphinxGeometry, schemes.ByName(c.client.GetConfig().RatchetNIKEScheme))
+	cfg := c.client.GetConfig()
+
+	nikeScheme := schemes.ByName(cfg.RatchetNIKEScheme)
+
+	return DoubleRatchetPayloadLength(cfg.SphinxGeometry, nikeScheme)
 }
 
 // SendMessage sends a message to the Client contact with the given nickname.
 func (c *Client) SendMessage(nickname string, message []byte) MessageID {
 	cfg := c.client.GetConfig()
 
-	if len(message)+4 > DoubleRatchetPayloadLength(cfg.SphinxGeometry, schemes.ByName(c.client.GetConfig().RatchetNIKEScheme)) {
+	nikeScheme := schemes.ByName(cfg.RatchetNIKEScheme)
+
+	if len(message)+4 > DoubleRatchetPayloadLength(cfg.SphinxGeometry, nikeScheme) {
 		return MessageID{}
 	}
 	convoMesgID := MessageID{}

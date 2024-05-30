@@ -187,32 +187,33 @@ type state struct {
 	Ratchet              bool
 }
 
+// this method upgrades from the previously-deployed pre-hpqc-nike hybrid doubleratchet
 func (s *state) Upgrade(scheme *hybrid.Scheme) error {
-	first1, err := scheme.First().UnmarshalBinaryPrivateKey(s.SendRatchetPrivate)
+	x25519SendPrivate, err := scheme.First().UnmarshalBinaryPrivateKey(s.SendRatchetPrivate)
 	if err != nil {
 		return err
 	}
-	second1, err := scheme.Second().UnmarshalBinaryPrivateKey(s.SendPQRatchetPrivate)
-	if err != nil {
-		return err
-	}
-
-	hybridKey1 := scheme.PrivateKeyFromKeys(first1, second1)
-
-	s.SendRatchetPrivate = hybridKey1.Bytes()
-
-	first2, err := scheme.First().UnmarshalBinaryPublicKey(s.RecvRatchetPublic)
-	if err != nil {
-		return err
-	}
-	second2, err := scheme.Second().UnmarshalBinaryPublicKey(s.RecvPQRatchetPublic)
+	csidhSendPrivate, err := scheme.Second().UnmarshalBinaryPrivateKey(s.SendPQRatchetPrivate)
 	if err != nil {
 		return err
 	}
 
-	hybridKey2 := scheme.PublicKeyFromKeys(first2, second2)
+	hybridSendPrivate := scheme.PrivateKeyFromKeys(x25519SendPrivate, csidhSendPrivate)
 
-	s.RecvRatchetPublic = hybridKey2.Bytes()
+	s.SendRatchetPrivate = hybridSendPrivate.Bytes()
+
+	x25519RecvPublic, err := scheme.First().UnmarshalBinaryPublicKey(s.RecvRatchetPublic)
+	if err != nil {
+		return err
+	}
+	csidhRecvPublic, err := scheme.Second().UnmarshalBinaryPublicKey(s.RecvPQRatchetPublic)
+	if err != nil {
+		return err
+	}
+
+	hybridRecvPublic := scheme.PublicKeyFromKeys(x25519RecvPublic, csidhRecvPublic)
+
+	s.RecvRatchetPublic = hybridRecvPublic.Bytes()
 
 	utils.ExplicitBzero(s.SendPQRatchetPrivate)
 	utils.ExplicitBzero(s.RecvPQRatchetPublic)
@@ -220,9 +221,41 @@ func (s *state) Upgrade(scheme *hybrid.Scheme) error {
 	s.SendPQRatchetPrivate = []byte{}
 	s.RecvPQRatchetPublic = []byte{}
 
-	s.Private0 = hybridKey1.Bytes()
-	s.Private1 = hybridKey2.Bytes()
+	if s.Private0 != nil && s.Private1 != nil && s.PQPrivate0 != nil && s.PQPrivate1 != nil {
 
+		kx25519p0, err := scheme.First().UnmarshalBinaryPrivateKey(s.Private0)
+		if err != nil {
+			return err
+		}
+		kxcsidhp0, err := scheme.Second().UnmarshalBinaryPrivateKey(s.PQPrivate0)
+		if err != nil {
+			return err
+		}
+
+		kxhybridp0 := scheme.PrivateKeyFromKeys(kx25519p0, kxcsidhp0)
+
+		s.Private0 = kxhybridp0.Bytes()
+
+		kx25519p1, err := scheme.First().UnmarshalBinaryPrivateKey(s.Private1)
+		if err != nil {
+			return err
+		}
+		kxcsidhp1, err := scheme.Second().UnmarshalBinaryPrivateKey(s.PQPrivate1)
+		if err != nil {
+			return err
+		}
+
+		kxhybridp1 := scheme.PrivateKeyFromKeys(kx25519p1, kxcsidhp1)
+
+		s.Private1 = kxhybridp1.Bytes()
+
+		utils.ExplicitBzero(s.PQPrivate0)
+		utils.ExplicitBzero(s.PQPrivate1)
+
+		s.PQPrivate0 = []byte{}
+		s.PQPrivate1 = []byte{}
+
+	}
 	return nil
 }
 

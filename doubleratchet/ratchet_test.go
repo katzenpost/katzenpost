@@ -11,7 +11,9 @@ import (
 	"github.com/katzenpost/hpqc/nike/hybrid"
 )
 
-var nikeScheme = hybrid.CTIDH512X25519
+//var nikeScheme = ecdh.Scheme(rand.Reader)
+
+var nikeScheme = hybrid.CTIDH1024X25519
 
 func pairedRatchet(t *testing.T) (aRatchet, bRatchet *Ratchet) {
 	var err error
@@ -371,5 +373,5 @@ func Test_savedKeysMarshaling(t *testing.T) {
 	require.NotNil(t, b)
 	s2 := &savedKeys{}
 	err = s2.UnmarshalBinary(b)
-	//require.NoError(t, err)
+	require.NoError(t, err)
 }
