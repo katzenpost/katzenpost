@@ -11,9 +11,7 @@ import (
 	"github.com/katzenpost/hpqc/nike/hybrid"
 )
 
-//var nikeScheme = ecdh.Scheme(rand.Reader)
-
-var nikeScheme = hybrid.CTIDH2048X25519
+var nikeScheme = hybrid.CTIDH512X25519
 
 func pairedRatchet(t *testing.T) (aRatchet, bRatchet *Ratchet) {
 	var err error
