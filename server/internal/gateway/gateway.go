@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: (c) 2024 David Stainton
+// SPDX-FileCopyrightText: Copyright (C) 2017  Yawning Angel and David Stainton
 // SPDX-License-Identifier: AGPL-3.0-only
 
 package gateway
