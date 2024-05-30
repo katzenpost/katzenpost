@@ -37,9 +37,6 @@ jobs:
         run: |
           cd docker && sudo -E make stop
 
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v3
-
   test_e2e_memspool:
     env:
       warped: true
@@ -72,9 +69,6 @@ jobs:
         run: |
           cd docker && sudo -E make stop
 
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v3
-
   test_e2e_catshadow:
     env:
       warped: true
@@ -106,9 +100,6 @@ jobs:
       - name: Stop the mixnet
         run: |
           cd docker && sudo -E make stop
-
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v3
 
   test_benchmark:
     env:
