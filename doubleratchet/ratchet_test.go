@@ -38,12 +38,33 @@ func pairedRatchet(t *testing.T) (aRatchet, bRatchet *Ratchet) {
 	return
 }
 
+func Test_CiphertextOverhead(t *testing.T) {
+	a, b := pairedRatchet(t)
+
+	msg := []byte("test message")
+	encrypted, err := a.Encrypt(nil, msg)
+	require.NoError(t, err)
+
+	delta := (len(encrypted) - len(msg)) - a.scheme.PublicKeySize()
+
+	// doubleRatchetOverheadSansPubKey is the number of bytes the ratchet adds in ciphertext overhead without nike.PublicKeySize
+	require.Equal(t, delta, doubleRatchetOverheadSansPubKey)
+
+	result, err := b.Decrypt(encrypted)
+	require.NoError(t, err)
+	require.Equal(t, msg, result)
+
+	DestroyRatchet(a)
+	DestroyRatchet(b)
+}
+
 func Test_KeyExchange(t *testing.T) {
 	a, b := pairedRatchet(t)
 
 	msg := []byte("test message")
 	encrypted, err := a.Encrypt(nil, msg)
 	require.NoError(t, err)
+
 	result, err := b.Decrypt(encrypted)
 	require.NoError(t, err)
 	require.Equal(t, msg, result)
