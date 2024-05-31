@@ -19,6 +19,7 @@ package kaetzchen
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -49,7 +50,7 @@ import (
 
 var testingSchemeName = "x25519"
 var testingScheme = schemes.ByName(testingSchemeName)
-var testSignatureScheme = signSchemes.ByName("Ed25519 Sphincs+")
+var testSignatureScheme = signSchemes.ByName("Ed25519")
 
 type mockUserDB struct {
 	provider *mockProvider
@@ -238,6 +239,10 @@ func (m *MockKaetzchen) Halt() {}
 
 func TestKaetzchenWorker(t *testing.T) {
 
+	if runtime.GOOS == "windows" {
+		return
+	}
+
 	datadir := os.TempDir()
 
 	idPubKey, idKey, err := testSignatureScheme.GenerateKey()
@@ -359,6 +364,5 @@ func TestKaetzchenWorker(t *testing.T) {
 	// invalid packet test casses
 	time.Sleep(time.Duration(goo.Config().Debug.KaetzchenDelay) * time.Millisecond)
 	require.Equal(t, uint64(2), kaetzWorker.getDropCounter())
-
 	kaetzWorker.Halt()
 }

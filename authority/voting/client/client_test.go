@@ -49,7 +49,7 @@ import (
 
 var testingSchemeName = "xwing"
 var testingScheme = schemes.ByName(testingSchemeName)
-var testSignatureScheme = signSchemes.ByName("Ed25519 Sphincs+")
+var testSignatureScheme = signSchemes.ByName("Ed25519")
 
 type descriptor struct {
 	desc *pki.MixDescriptor

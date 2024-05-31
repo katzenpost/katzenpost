@@ -272,7 +272,7 @@ func (w *Worker) worker() {
 				// to recieve a packet would be if it's a SURB reply to our
 				// mix loop decoys.
 				if pkt.IsSURBReply() {
-					w.log.Errorf("Handing off decoy response packet: %v", pkt.ID)
+					w.log.Debugf("Handing off decoy response packet: %v", pkt.ID)
 					w.glue.Decoy().OnPacket(pkt)
 					continue
 				}

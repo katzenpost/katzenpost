@@ -238,9 +238,6 @@ func New(glue glue.Glue) (glue.Scheduler, error) {
 		sch.q = newMemoryQueue(glue, sch.log)
 	}
 
-	// monitor channel length
-	instrument.MonitorChannelLen("server.scheduler.inCh", sch.HaltCh(), sch.inCh)
-
 	sch.Go(sch.pipeWorker)
 	sch.Go(sch.worker)
 	return sch, nil

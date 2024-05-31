@@ -50,7 +50,7 @@ import (
 
 var testingSchemeName = "xwing"
 var testingScheme = schemes.ByName(testingSchemeName)
-var testSignatureScheme = signSchemes.ByName("Ed25519 Sphincs+")
+var testSignatureScheme = signSchemes.ByName("Ed25519")
 
 var sphinxGeometry = geo.GeometryFromUserForwardPayloadLength(
 	x25519.Scheme(rand.Reader),

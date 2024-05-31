@@ -425,9 +425,6 @@ func New(cfg *config.Config) (*Server, error) {
 	// Start the periodic 1 Hz utility timer.
 	s.periodic = newPeriodicTimer(s)
 
-	// monitor channel length
-	instrument.MonitorChannelLen("server.inboundPackets", s.haltedCh, s.inboundPackets)
-
 	isOk = true
 	return s, nil
 }

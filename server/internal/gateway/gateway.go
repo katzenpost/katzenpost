@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: (c) 2024 David Stainton
+// SPDX-FileCopyrightText: Copyright (C) 2017  Yawning Angel and David Stainton
 // SPDX-License-Identifier: AGPL-3.0-only
 
 package gateway
@@ -310,9 +310,6 @@ func New(glue glue.Glue) (glue.Gateway, error) {
 	for i := 0; i < cfg.Debug.NumGatewayWorkers; i++ {
 		p.Go(p.worker)
 	}
-
-	// monitor channel length
-	instrument.MonitorChannelLen("server.gateway.ch", p.HaltCh(), p.ch)
 
 	isOk = true
 	return p, nil

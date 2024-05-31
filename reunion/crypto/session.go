@@ -17,11 +17,13 @@
 package crypto
 
 import (
-	"github.com/awnumar/memguard"
-	"github.com/fxamacker/cbor/v2"
-	"github.com/katzenpost/hpqc/rand"
 	"golang.org/x/crypto/argon2"
 	"golang.org/x/crypto/hkdf"
+
+	"github.com/fxamacker/cbor/v2"
+
+	"github.com/katzenpost/hpqc/rand"
+	"github.com/katzenpost/katzenpost/core/utils"
 )
 
 const (
@@ -55,9 +57,9 @@ type Session struct {
 	sharedRandomValue []byte
 	keypair1          *Keypair
 	keypair2          *Keypair
-	sessionKey1       *memguard.LockedBuffer
-	sessionKey2       *memguard.LockedBuffer
-	sharedEpochKey    *memguard.LockedBuffer
+	sessionKey1       *[32]byte
+	sessionKey2       *[32]byte
+	sharedEpochKey    *[32]byte
 }
 
 // NewSessionFromKey creates a new client given a shared epoch key.
@@ -70,13 +72,15 @@ func NewSessionFromKey(sharedEpochKey *[SharedEpochKeySize]byte, sharedRandomVal
 	if err != nil {
 		return nil, err
 	}
-	sk1, err := memguard.NewBufferFromReader(rand.Reader, 32)
+	sk1 := &[32]byte{}
+	_, err = rand.Reader.Read(sk1[:])
 	if err != nil {
-		memguard.SafePanic(err)
+		return nil, err
 	}
-	sk2, err := memguard.NewBufferFromReader(rand.Reader, 32)
+	sk2 := &[32]byte{}
+	_, err = rand.Reader.Read(sk2[:])
 	if err != nil {
-		memguard.SafePanic(err)
+		return nil, err
 	}
 	client := &Session{
 		epoch:             epoch,
@@ -85,7 +89,7 @@ func NewSessionFromKey(sharedEpochKey *[SharedEpochKeySize]byte, sharedRandomVal
 		keypair2:          keypair2,
 		sessionKey1:       sk1,
 		sessionKey2:       sk2,
-		sharedEpochKey:    memguard.NewBufferFromBytes(sharedEpochKey[:]),
+		sharedEpochKey:    sharedEpochKey,
 	}
 	return client, nil
 }
@@ -101,7 +105,7 @@ func NewSession(passphrase []byte, sharedRandomValue []byte, epoch uint64) (*Ses
 	key := argon2.IDKey(passphrase, salt, t, memory, threads, SharedEpochKeySize)
 	k := [SharedEpochKeySize]byte{}
 	copy(k[:], key)
-	memguard.WipeBytes(key)
+
 	return NewSessionFromKey(&k, sharedRandomValue, epoch)
 }
 
@@ -120,27 +124,27 @@ func (c *Session) SharedRandom() []byte {
 func (c *Session) Destroy() {
 	c.keypair1.Destroy()
 	c.keypair2.Destroy()
-	c.sessionKey1.Destroy()
-	c.sessionKey2.Destroy()
-	c.sharedEpochKey.Destroy()
+	utils.ExplicitBzero(c.sessionKey1[:])
+	utils.ExplicitBzero(c.sessionKey2[:])
+	utils.ExplicitBzero(c.sharedEpochKey[:])
 }
 
 // GenerateType1Message generates a Type 1 message.
 func (c *Session) GenerateType1Message(payload []byte) ([]byte, error) {
 	keypair1ElligatorPub := c.keypair1.Representative().Bytes()
-	k1, _, err := deriveSprpKey(type1Message, c.sharedRandomValue, c.epoch, c.sharedEpochKey.Bytes())
+	k1, _, err := deriveSprpKey(type1Message, c.sharedRandomValue, c.epoch, c.sharedEpochKey[:])
 	if err != nil {
 		return nil, err
 	}
 	iv := [SPRPIVLength]byte{}
 	alpha := SPRPEncrypt(k1, &iv, keypair1ElligatorPub[:])
 
-	beta, err := newT1Beta(c.keypair2.Public().Bytes(), c.sessionKey1.ByteArray32())
+	beta, err := newT1Beta(c.keypair2.Public().Bytes(), c.sessionKey1)
 	if err != nil {
 		return nil, err
 	}
 
-	gamma, err := newT1Gamma(payload[:], c.sessionKey2.ByteArray32())
+	gamma, err := newT1Gamma(payload[:], c.sessionKey2)
 	if err != nil {
 		return nil, err
 	}
@@ -155,7 +159,7 @@ func (c *Session) GenerateType1Message(payload []byte) ([]byte, error) {
 // ProcessType1MessageAlpha processes the alpha portion of a type one message.
 func (c *Session) ProcessType1MessageAlpha(alpha []byte) ([]byte, *PublicKey, error) {
 
-	k1, _, err := deriveSprpKey(type1Message, c.sharedRandomValue, c.epoch, c.sharedEpochKey.Bytes())
+	k1, _, err := deriveSprpKey(type1Message, c.sharedRandomValue, c.epoch, c.sharedEpochKey[:])
 	if err != nil {
 		return nil, nil, err
 	}
@@ -169,7 +173,7 @@ func (c *Session) ProcessType1MessageAlpha(alpha []byte) ([]byte, *PublicKey, er
 	b1PubKey := r.ToPublic()
 
 	// T2 message construction:
-	k2Outer, hkdfContext, err := deriveSprpKey(type2Message, c.sharedRandomValue, c.epoch, c.sharedEpochKey.Bytes())
+	k2Outer, hkdfContext, err := deriveSprpKey(type2Message, c.sharedRandomValue, c.epoch, c.sharedEpochKey[:])
 	if err != nil {
 		return nil, nil, err
 	}
@@ -189,14 +193,14 @@ func (c *Session) ProcessType1MessageAlpha(alpha []byte) ([]byte, *PublicKey, er
 
 	k2InnerIV := [SPRPIVLength]byte{}
 	k2OuterIV := [SPRPIVLength]byte{}
-	t2 := SPRPEncrypt(k2Outer, &k2OuterIV, SPRPEncrypt(&k2Inner, &k2InnerIV, c.sessionKey1.Bytes()))
+	t2 := SPRPEncrypt(k2Outer, &k2OuterIV, SPRPEncrypt(&k2Inner, &k2InnerIV, c.sessionKey1[:]))
 
 	return t2, b1PubKey, nil
 }
 
 // GetCandidateKey extracts a candidate key from a type two message.
 func (c *Session) GetCandidateKey(t2 []byte, alpha *PublicKey) ([]byte, error) {
-	k3Outer, hkdfContext, err := deriveSprpKey(type2Message, c.sharedRandomValue, c.epoch, c.sharedEpochKey.Bytes())
+	k3Outer, hkdfContext, err := deriveSprpKey(type2Message, c.sharedRandomValue, c.epoch, c.sharedEpochKey[:])
 	if err != nil {
 		return nil, err
 	}
@@ -224,7 +228,7 @@ func (c *Session) GetCandidateKey(t2 []byte, alpha *PublicKey) ([]byte, error) {
 
 // ComposeType3Message composes a type three message.
 func (c *Session) ComposeType3Message(beta2 *PublicKey) ([]byte, error) {
-	k3Outer, hkdfContext, err := deriveSprpKey(type3Message, c.sharedRandomValue, c.epoch, c.sharedEpochKey.Bytes())
+	k3Outer, hkdfContext, err := deriveSprpKey(type3Message, c.sharedRandomValue, c.epoch, c.sharedEpochKey[:])
 	if err != nil {
 		return nil, err
 	}
@@ -243,13 +247,13 @@ func (c *Session) ComposeType3Message(beta2 *PublicKey) ([]byte, error) {
 
 	k3InnerIV := [SPRPIVLength]byte{}
 	k3OuterIV := [SPRPIVLength]byte{}
-	t3 := SPRPEncrypt(k3Outer, &k3OuterIV, SPRPEncrypt(&k3Inner, &k3InnerIV, c.sessionKey2.Bytes()))
+	t3 := SPRPEncrypt(k3Outer, &k3OuterIV, SPRPEncrypt(&k3Inner, &k3InnerIV, c.sessionKey2[:]))
 	return t3, nil
 }
 
 // ProcessType3Message processes a type three message.
 func (c *Session) ProcessType3Message(t3, gamma []byte, beta2 *PublicKey) ([]byte, error) {
-	k3Outer, hkdfContext, err := deriveSprpKey(type3Message, c.sharedRandomValue, c.epoch, c.sharedEpochKey.Bytes())
+	k3Outer, hkdfContext, err := deriveSprpKey(type3Message, c.sharedRandomValue, c.epoch, c.sharedEpochKey[:])
 	if err != nil {
 		return nil, err
 	}
@@ -284,9 +288,9 @@ func (c *Session) MarshalBinary() ([]byte, error) {
 		SharedRandomValue: c.sharedRandomValue,
 		Keypair1:          c.keypair1,
 		Keypair2:          c.keypair2,
-		SessionKey1:       c.sessionKey1.Bytes(),
-		SessionKey2:       c.sessionKey2.Bytes(),
-		SharedEpochKey:    c.sharedEpochKey.Bytes(),
+		SessionKey1:       c.sessionKey1[:],
+		SessionKey2:       c.sessionKey2[:],
+		SharedEpochKey:    c.sharedEpochKey[:],
 	}
 	return cbor.Marshal(cc)
 }
@@ -302,8 +306,11 @@ func (c *Session) UnmarshalBinary(data []byte) error {
 	c.sharedRandomValue = cc.SharedRandomValue
 	c.keypair1 = cc.Keypair1
 	c.keypair2 = cc.Keypair2
-	c.sessionKey1 = memguard.NewBufferFromBytes(cc.SessionKey1)
-	c.sessionKey2 = memguard.NewBufferFromBytes(cc.SessionKey2)
-	c.sharedEpochKey = memguard.NewBufferFromBytes(cc.SharedEpochKey)
+	c.sessionKey1 = &[32]byte{}
+	c.sessionKey2 = &[32]byte{}
+	c.sharedEpochKey = &[32]byte{}
+	copy(c.sessionKey1[:], cc.SessionKey1)
+	copy(c.sessionKey2[:], cc.SessionKey2)
+	copy(c.sharedEpochKey[:], cc.SharedEpochKey)
 	return nil
 }
