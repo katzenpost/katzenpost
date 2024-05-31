@@ -1,4 +1,4 @@
-name: build
+name: docker mixnet integration tests
 on: [push, pull_request]
 jobs:
 
@@ -13,7 +13,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Configure podman socket
         run: |
@@ -37,9 +37,6 @@ jobs:
         run: |
           cd docker && sudo -E make stop
 
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v3
-
   test_e2e_memspool:
     env:
       warped: true
@@ -51,7 +48,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Configure podman socket
         run: |
@@ -72,9 +69,6 @@ jobs:
         run: |
           cd docker && sudo -E make stop
 
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v3
-
   test_e2e_catshadow:
     env:
       warped: true
@@ -86,7 +80,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Configure podman socket
         run: |
@@ -107,9 +101,6 @@ jobs:
         run: |
           cd docker && sudo -E make stop
 
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v3
-
   test_benchmark:
     env:
       warped: true
@@ -121,7 +112,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Configure podman socket
         run: |

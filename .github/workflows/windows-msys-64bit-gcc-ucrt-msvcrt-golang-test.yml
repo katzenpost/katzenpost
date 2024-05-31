@@ -1,4 +1,4 @@
-name: Windows Msys2 64bit (cygwin,msvcrt,ucrt) gcc golang build and test
+name: Windows Msys2 64bit unit tests test
 
 on: [push]
 
@@ -7,10 +7,10 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        OS: ["windows-2022"]
+        OS: ["windows-2019", "windows-2022"]
         CC: ["gcc"]
         ENVIRONMENT: ["MINGW64"] # https://www.msys2.org/docs/environments/
-        go-version: ["1.21.x", "1.22.x"]
+        go-version: [ "1.21.x", "1.22.x"]
       fail-fast: false
     steps:
       - uses: actions/checkout@v4
@@ -24,9 +24,7 @@ jobs:
             mingw-w64-x86_64-toolchain
             mingw-w64-x86_64-pkg-config
             mingw-w64-x86_64-gcc
-            mingw-w64-ucrt-x86_64-gcc
             mingw-w64-x86_64-go
-            mingw-w64-ucrt-x86_64-go
             make
             git
             gcc
@@ -45,22 +43,6 @@ jobs:
          ${{ matrix.CC }} -v
          go version
 
-      - name: Install golang dependencies
-        shell: msys2 {0}
-        run: |
-          export HIGHCTIDH_PORTABLE=1
-          export CGO_ENABLED=1
-          go get -v ./...
-
-      - name: Build golang
-        shell: msys2 {0}
-        run: |
-          export HIGHCTIDH_PORTABLE=1
-          export CGO_ENABLED=1
-          export GOEXPERIMENT=cgocheck2
-          export GODEBUG=cgocheck=1
-          go build -v ./...
-
       - name: Golang test
         shell: msys2 {0}
         run: |
@@ -69,4 +51,4 @@ jobs:
           export GOEXPERIMENT=cgocheck2
           export GODEBUG=cgocheck=1
           export CGO_LDFLAGS="-Wl,--no-as-needed -Wl,-allow-multiple-definition"
-          go test -v ./...
+          go test -v ./...;
