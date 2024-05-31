@@ -241,7 +241,7 @@ func New(cfg *config.Config) (*Server, error) {
 	}
 	instrument.StartPrometheusListener(goo)
 
-	if err := profiling.Start(); err != nil {
+	if err := profiling.Start(s.log); err != nil {
 		return nil, fmt.Errorf("failed to start profiling: %w", err)
 	}
 

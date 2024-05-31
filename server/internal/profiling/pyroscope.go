@@ -5,13 +5,16 @@ package profiling
 
 import (
 	"errors"
+	"gopkg.in/op/go-logging.v1"
 	"os"
 
 	"github.com/grafana/pyroscope-go"
 )
 
 // Start initializes Pyroscope profiling.
-func Start() error {
+func Start(log *logging.Logger) error {
+	log.Info("Starting Pyroscope")
+
 	serverAddress := os.Getenv("PYROSCOPE_SERVER_ADDRESS")
 	if serverAddress == "" {
 		return errors.New("PYROSCOPE_SERVER_ADDRESS is not set")
@@ -35,5 +38,9 @@ func Start() error {
 			"service": serviceTag,
 		},
 	})
-	return err
+	if err != nil {
+		return err
+	}
+	log.Infof("Pyroscope started successfully at %s, app name: %s, service tag: %s", serverAddress, appName, serviceTag)
+	return nil
 }
