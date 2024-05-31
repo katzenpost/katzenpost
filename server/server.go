@@ -49,6 +49,7 @@ import (
 	"github.com/katzenpost/katzenpost/server/internal/instrument"
 	"github.com/katzenpost/katzenpost/server/internal/outgoing"
 	"github.com/katzenpost/katzenpost/server/internal/pki"
+	"github.com/katzenpost/katzenpost/server/internal/profiling"
 	"github.com/katzenpost/katzenpost/server/internal/scheduler"
 	"github.com/katzenpost/katzenpost/server/internal/service"
 )
@@ -239,6 +240,10 @@ func New(cfg *config.Config) (*Server, error) {
 		return nil, err
 	}
 	instrument.StartPrometheusListener(goo)
+
+	if err := profiling.Start(); err != nil {
+		return nil, fmt.Errorf("failed to start profiling: %w", err)
+	}
 
 	s.log.Notice("Katzenpost is still pre-alpha.  DO NOT DEPEND ON IT FOR STRONG SECURITY OR ANONYMITY.")
 	if s.cfg.Logging.Level == "DEBUG" {
