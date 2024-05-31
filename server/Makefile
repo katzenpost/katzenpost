@@ -3,7 +3,7 @@ ldflags="-buildid= -X github.com/katzenpost/katzenpost/core/epochtime.WarpedEpoc
 
 testnet-build:
 	go mod verify
-	cd cmd/server ; go build -trimpath -ldflags ${ldflags}
+	cd cmd/server ; go build -tags pyroscope -trimpath -ldflags ${ldflags}
 	cd ../memspool/server/cmd/memspool ; go build -trimpath -ldflags ${ldflags}
 	cd ../reunion/servers/reunion_katzenpost_server ; go build -trimpath -ldflags ${ldflags}
 	cd ../panda/server/cmd/panda_server ; go build -trimpath -ldflags ${ldflags}
