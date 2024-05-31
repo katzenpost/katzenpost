@@ -209,6 +209,10 @@ func (c *Contact) UnmarshalBinary(data []byte) error {
 		return err
 	}
 
+	// XXX TODO: assume legacy scheme if unset in statefile
+	if s.NIKEScheme == "" {
+		s.NIKEScheme = "NOBS_CSIDH-X25519"
+	}
 	c.nikeScheme = schemes.ByName(s.NIKEScheme)
 
 	r, err := ratchet.NewRatchetFromBytes(rand.Reader, s.Ratchet, c.nikeScheme)

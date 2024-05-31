@@ -1,4 +1,4 @@
-name: build
+name: darwin unit tests
 on: [push, pull_request]
 jobs:
   test:
@@ -11,12 +11,12 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - name: Install Go
-        uses: actions/setup-go@v3
+        uses: actions/setup-go@v5
         with:
           go-version: ${{ matrix.go-version }}
 
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Generate mixnet configuration
         run: cd genconfig && go build && ./genconfig -wirekem xwing -v -b /conf -o ../docker/voting_mixnet/
@@ -50,6 +50,3 @@ jobs:
 
       - name: Run server unit tests
         run: sudo sh -c "cd server && ulimit -l 64435 && GORACE=history_size=7 go test -coverprofile=coverage.out -race -v -failfast -timeout 30m ./..."
-
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v3

@@ -187,32 +187,33 @@ type state struct {
 	Ratchet              bool
 }
 
+// this method upgrades from the previously-deployed pre-hpqc-nike hybrid doubleratchet
 func (s *state) Upgrade(scheme *hybrid.Scheme) error {
-	first1, err := scheme.First().UnmarshalBinaryPrivateKey(s.SendRatchetPrivate)
+	x25519SendPrivate, err := scheme.First().UnmarshalBinaryPrivateKey(s.SendRatchetPrivate)
 	if err != nil {
 		return err
 	}
-	second1, err := scheme.Second().UnmarshalBinaryPrivateKey(s.SendPQRatchetPrivate)
-	if err != nil {
-		return err
-	}
-
-	hybridKey1 := scheme.PrivateKeyFromKeys(first1, second1)
-
-	s.SendRatchetPrivate = hybridKey1.Bytes()
-
-	first2, err := scheme.First().UnmarshalBinaryPublicKey(s.RecvRatchetPublic)
-	if err != nil {
-		return err
-	}
-	second2, err := scheme.Second().UnmarshalBinaryPublicKey(s.RecvPQRatchetPublic)
+	csidhSendPrivate, err := scheme.Second().UnmarshalBinaryPrivateKey(s.SendPQRatchetPrivate)
 	if err != nil {
 		return err
 	}
 
-	hybridKey2 := scheme.PublicKeyFromKeys(first2, second2)
+	hybridSendPrivate := scheme.PrivateKeyFromKeys(x25519SendPrivate, csidhSendPrivate)
 
-	s.RecvRatchetPublic = hybridKey2.Bytes()
+	s.SendRatchetPrivate = hybridSendPrivate.Bytes()
+
+	x25519RecvPublic, err := scheme.First().UnmarshalBinaryPublicKey(s.RecvRatchetPublic)
+	if err != nil {
+		return err
+	}
+	csidhRecvPublic, err := scheme.Second().UnmarshalBinaryPublicKey(s.RecvPQRatchetPublic)
+	if err != nil {
+		return err
+	}
+
+	hybridRecvPublic := scheme.PublicKeyFromKeys(x25519RecvPublic, csidhRecvPublic)
+
+	s.RecvRatchetPublic = hybridRecvPublic.Bytes()
 
 	utils.ExplicitBzero(s.SendPQRatchetPrivate)
 	utils.ExplicitBzero(s.RecvPQRatchetPublic)
@@ -220,9 +221,41 @@ func (s *state) Upgrade(scheme *hybrid.Scheme) error {
 	s.SendPQRatchetPrivate = []byte{}
 	s.RecvPQRatchetPublic = []byte{}
 
-	s.Private0 = hybridKey1.Bytes()
-	s.Private1 = hybridKey2.Bytes()
+	if s.Private0 != nil && s.Private1 != nil && s.PQPrivate0 != nil && s.PQPrivate1 != nil {
 
+		kx25519p0, err := scheme.First().UnmarshalBinaryPrivateKey(s.Private0)
+		if err != nil {
+			return err
+		}
+		kxcsidhp0, err := scheme.Second().UnmarshalBinaryPrivateKey(s.PQPrivate0)
+		if err != nil {
+			return err
+		}
+
+		kxhybridp0 := scheme.PrivateKeyFromKeys(kx25519p0, kxcsidhp0)
+
+		s.Private0 = kxhybridp0.Bytes()
+
+		kx25519p1, err := scheme.First().UnmarshalBinaryPrivateKey(s.Private1)
+		if err != nil {
+			return err
+		}
+		kxcsidhp1, err := scheme.Second().UnmarshalBinaryPrivateKey(s.PQPrivate1)
+		if err != nil {
+			return err
+		}
+
+		kxhybridp1 := scheme.PrivateKeyFromKeys(kx25519p1, kxcsidhp1)
+
+		s.Private1 = kxhybridp1.Bytes()
+
+		utils.ExplicitBzero(s.PQPrivate0)
+		utils.ExplicitBzero(s.PQPrivate1)
+
+		s.PQPrivate0 = []byte{}
+		s.PQPrivate1 = []byte{}
+
+	}
 	return nil
 }
 
@@ -269,7 +302,8 @@ type Ratchet struct {
 	kxPrivate0 nike.PrivateKey
 	kxPrivate1 nike.PrivateKey
 
-	scheme nike.Scheme
+	scheme                       nike.Scheme
+	headerSize, sealedHeaderSize int
 
 	rand io.Reader
 }
@@ -308,6 +342,8 @@ func newRatchetFromState(rand io.Reader, s *state, scheme nike.Scheme) (*Ratchet
 	r := &Ratchet{
 		rand:              rand,
 		scheme:            scheme,
+		headerSize:        headerSize(scheme),
+		sealedHeaderSize:  sealedHeaderSize(scheme),
 		saved:             make(map[[32]byte]map[uint32]savedKey),
 		sendCount:         s.SendCount,
 		recvCount:         s.RecvCount,
@@ -372,11 +408,12 @@ func newRatchetFromState(rand io.Reader, s *state, scheme nike.Scheme) (*Ratchet
 // InitRatchet initializes a ratchet struct
 func InitRatchet(rand io.Reader, scheme nike.Scheme) (*Ratchet, error) {
 	r := &Ratchet{
-		rand:   rand,
-		saved:  make(map[[32]byte]map[uint32]savedKey),
-		scheme: scheme,
+		rand:             rand,
+		saved:            make(map[[32]byte]map[uint32]savedKey),
+		scheme:           scheme,
+		headerSize:       headerSize(scheme),
+		sealedHeaderSize: sealedHeaderSize(scheme),
 	}
-
 	var err error
 	_, r.kxPrivate0, err = scheme.GenerateKeyPairFromEntropy(rand)
 	if err != nil {
@@ -555,7 +592,7 @@ func (r *Ratchet) Encrypt(out, msg []byte) ([]byte, error) {
 
 	sendRatchetPublic := r.scheme.DerivePublicKey(r.sendRatchetPrivate)
 
-	var header [headerSize]byte
+	header := make([]byte, r.headerSize)
 	var headerNonce, messageNonce [nonceSize]byte
 	r.randBytes(headerNonce[:])
 	r.randBytes(messageNonce[:])
@@ -573,11 +610,11 @@ func (r *Ratchet) Encrypt(out, msg []byte) ([]byte, error) {
 
 // trySavedKeys tries to decrypt the ciphertext using keys saved for delayed messages.
 func (r *Ratchet) trySavedKeys(ciphertext []byte) ([]byte, error) {
-	if len(ciphertext) < sealedHeaderSize {
+	if len(ciphertext) < r.sealedHeaderSize {
 		return nil, ErrRatchetHeaderTooSmall
 	}
 
-	sealedHeader := ciphertext[:sealedHeaderSize]
+	sealedHeader := ciphertext[:r.sealedHeaderSize]
 	var nonce [nonceSize]byte
 	copy(nonce[:], sealedHeader)
 	sealedHeader = sealedHeader[len(nonce):]
@@ -587,7 +624,7 @@ func (r *Ratchet) trySavedKeys(ciphertext []byte) ([]byte, error) {
 		if !ok {
 			continue
 		}
-		if len(header) != headerSize {
+		if len(header) != r.headerSize {
 			continue
 		}
 		msgNum := binary.LittleEndian.Uint32(header[:4])
@@ -599,7 +636,7 @@ func (r *Ratchet) trySavedKeys(ciphertext []byte) ([]byte, error) {
 			return nil, nil
 		}
 
-		sealedMessage := ciphertext[sealedHeaderSize:]
+		sealedMessage := ciphertext[r.sealedHeaderSize:]
 		copy(nonce[:], header[nonceInHeaderOffset:])
 		msg, ok := secretbox.Open(nil, sealedMessage, &nonce, array32p(msgKey.key))
 		if !ok {
@@ -711,8 +748,8 @@ func (r *Ratchet) Decrypt(ciphertext []byte) ([]byte, error) {
 		return msg, err
 	}
 
-	sealedHeader := ciphertext[:sealedHeaderSize]
-	sealedMessage := ciphertext[sealedHeaderSize:]
+	sealedHeader := ciphertext[:r.sealedHeaderSize]
+	sealedMessage := ciphertext[r.sealedHeaderSize:]
 	var nonce [nonceSize]byte
 	copy(nonce[:], sealedHeader)
 	sealedHeader = sealedHeader[len(nonce):]
@@ -721,7 +758,7 @@ func (r *Ratchet) Decrypt(ciphertext []byte) ([]byte, error) {
 	ok = ok && !utils.CtIsZero(r.recvHeaderKey)
 
 	if ok {
-		if len(header) != headerSize {
+		if len(header) != r.headerSize {
 			return nil, ErrIncorrectHeaderSize
 		}
 
@@ -748,7 +785,7 @@ func (r *Ratchet) Decrypt(ciphertext []byte) ([]byte, error) {
 	if !ok {
 		return nil, ErrCannotDecrypt
 	}
-	if len(header) != headerSize {
+	if len(header) != r.headerSize {
 		return nil, ErrIncorrectHeaderSize
 	}
 
@@ -883,4 +920,22 @@ func DestroyRatchet(r *Ratchet) {
 		r.kxPrivate1.Reset()
 	}
 	r.wipeSavedKeys()
+}
+
+// headerSize is the size, in bytes, of a header's plaintext contents.
+func headerSize(scheme nike.Scheme) int {
+	return 4 + /* uint32 message count */
+		4 + /* uint32 previous message count */
+		24 + /* nonce for message */
+		scheme.PublicKeySize()
+}
+
+func sealedHeaderSize(scheme nike.Scheme) int {
+	// sealedHeader is the size, in bytes, of an encrypted header.
+	return 24 + headerSize(scheme) + secretbox.Overhead
+}
+
+// DoubleRatchetOverhead is the number of bytes the ratchet adds in ciphertext.
+func DoubleRatchetOverhead(scheme nike.Scheme) int {
+	return doubleRatchetOverheadSansPubKey + scheme.PublicKeySize()
 }

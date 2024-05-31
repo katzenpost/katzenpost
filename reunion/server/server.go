@@ -19,6 +19,8 @@ package server
 
 import (
 	"errors"
+	"fmt"
+	"os"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -267,7 +269,12 @@ func (s *Server) maybeFlush() {
 	}
 	err := s.doFlush()
 	if err != nil {
-		panic("flush to disk failure, aborting...") // XXX should we panic here or what?
+		// FIXME(david): doFlush fails on windows and thus crashes here.
+		// For now let's just print a warning to stderr and the log.
+		//panic("flush to disk failure, aborting...")
+
+		fmt.Fprintf(os.Stderr, "WARNING: doFlush failed: %s\n", err)
+		s.log.Warningf("WARNING: doFlush failed: %s", err)
 	}
 	atomic.StoreUint64(&s.nDirtyEntries, 0)
 }

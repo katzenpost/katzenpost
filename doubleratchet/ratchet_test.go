@@ -7,12 +7,13 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	ecdh "github.com/katzenpost/hpqc/nike/x25519"
+	//ecdh "github.com/katzenpost/hpqc/nike/x25519"
+	"github.com/katzenpost/hpqc/nike/hybrid"
 )
 
-var nikeScheme = ecdh.Scheme(rand.Reader)
+//var nikeScheme = ecdh.Scheme(rand.Reader)
 
-//var nikeScheme = hybrid.CTIDHX25519
+var nikeScheme = hybrid.CTIDH1024X25519
 
 func pairedRatchet(t *testing.T) (aRatchet, bRatchet *Ratchet) {
 	var err error
@@ -372,5 +373,5 @@ func Test_savedKeysMarshaling(t *testing.T) {
 	require.NotNil(t, b)
 	s2 := &savedKeys{}
 	err = s2.UnmarshalBinary(b)
-	//require.NoError(t, err)
+	require.NoError(t, err)
 }
