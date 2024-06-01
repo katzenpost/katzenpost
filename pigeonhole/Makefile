@@ -10,4 +10,4 @@ docker_args=--user ${docker_user} -v $(shell readlink -f ..):/go/katzenpost -e G
 
 dockerdockertest:
 	$(docker) run ${docker_args} $(image) \
-		sh -c 'cd /go/katzenpost/map/client; GORACE=history_size=7 go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 0 -failfast'
+		sh -c 'cd /go/katzenpost/pigeonhole/client; GORACE=history_size=7 go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 0 -failfast'

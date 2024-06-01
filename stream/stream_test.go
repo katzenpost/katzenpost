@@ -1,4 +1,4 @@
-// stream_test.go - map service stream tests
+// stream_test.go - pigeonhole service stream tests
 // Copyright (C) 2022  Masala
 //
 // This program is free software: you can redistribute it and/or modify
@@ -33,7 +33,7 @@ import (
 	"github.com/katzenpost/katzenpost/client/config"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/pki"
-	mClient "github.com/katzenpost/katzenpost/map/client"
+	mClient "github.com/katzenpost/katzenpost/pigeonhole/client"
 	"github.com/stretchr/testify/require"
 )
 
