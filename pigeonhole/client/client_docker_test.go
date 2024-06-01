@@ -1,4 +1,4 @@
-// client_test.go - map service client tests
+// client_test.go - pigeonhole service client tests
 // Copyright (C) 2021  Masala
 //
 // This program is free software: you can redistribute it and/or modify
@@ -27,11 +27,11 @@ import (
 	"github.com/katzenpost/hpqc/sign/ed25519"
 	"github.com/katzenpost/katzenpost/client"
 	"github.com/katzenpost/katzenpost/client/config"
-	"github.com/katzenpost/katzenpost/map/common"
+	"github.com/katzenpost/katzenpost/pigeonhole/common"
 	"github.com/stretchr/testify/require"
 )
 
-func TestCreateMap(t *testing.T) {
+func TestCreatePigeonhole(t *testing.T) {
 	require := require.New(t)
 
 	cfg, err := config.LoadFile("testdata/client.toml")
@@ -112,12 +112,12 @@ func TestCreateDuplex(t *testing.T) {
 	require.NoError(err)
 	session.WaitForDocument(ctx)
 
-	mapClient, err := NewClient(session)
+	pigeonholeClient, err := NewClient(session)
 	require.NoError(err)
-	require.NotNil(mapClient)
+	require.NotNil(pigeonholeClient)
 
-	a := DuplexFromSeed(mapClient, true, []byte("secret"))
-	b := DuplexFromSeed(mapClient, false, []byte("secret"))
+	a := DuplexFromSeed(pigeonholeClient, true, []byte("secret"))
+	b := DuplexFromSeed(pigeonholeClient, false, []byte("secret"))
 
 	err = a.Put([]byte("hello"), []byte("world"))
 	require.NoError(err)
