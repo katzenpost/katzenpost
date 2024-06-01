@@ -317,6 +317,33 @@ func TestKaetzchenWorker(t *testing.T) {
 	_, ok := pkiMap["test"]
 	require.True(t, ok)
 
+	// register another service
+	params2 := make(Parameters)
+	params2[ParameterEndpoint] = "+test2"
+	mockService2 := &MockKaetzchen{
+		capability: "test2",
+		parameters: params2,
+		receivedCh: make(chan bool),
+	}
+
+	kaetzWorker.registerKaetzchen(mockService2)
+
+	recipient2 := [sConstants.RecipientIDLength]byte{}
+	copy(recipient2[:], []byte("+test2"))
+	require.True(t, kaetzWorker.IsKaetzchen(recipient2))
+
+	pkiMap = kaetzWorker.KaetzchenForPKI()
+	_, ok = pkiMap["test2"]
+	require.True(t, ok)
+
+	// unregister service and verify it no longer exists
+	kaetzWorker.unregisterKaetzchen(mockService2)
+	// verify it no longer exists
+	require.False(t, kaetzWorker.IsKaetzchen(recipient2))
+	pkiMap = kaetzWorker.KaetzchenForPKI()
+	_, ok = pkiMap["test2"]
+	require.False(t, ok)
+
 	geo := geo.GeometryFromUserForwardPayloadLength(
 		ecdh.Scheme(rand.Reader),
 		2000,
