@@ -20,10 +20,11 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
+	"time"
+
 	"github.com/fxamacker/cbor/v2"
 	bolt "go.etcd.io/bbolt"
 	"gopkg.in/op/go-logging.v1"
-	"time"
 
 	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/katzenpost/katzenpost/map/common"
@@ -43,6 +44,8 @@ type Map struct {
 
 	mapSize int // number of entries to keep
 	gcSize  int // number of entries to place in each garbage bucket
+
+	write func(cborplugin.Command)
 }
 
 // Get retrieves an item from the db
@@ -182,23 +185,23 @@ func NewMap(fileStore string, log *logging.Logger, gcSize int, mapSize int) (*Ma
 	return m, nil
 }
 
-func (m *Map) OnCommand(cmd cborplugin.Command) (cborplugin.Command, error) {
+func (m *Map) OnCommand(cmd cborplugin.Command) error {
 	switch r := cmd.(type) {
 	case *cborplugin.Request:
-		if !r.HasSURB {
-			return nil, errors.New("no SURB, cannot reply")
+		if r.SURB == nil {
+			return errors.New("no SURB, cannot reply")
 		}
 		req := &common.MapRequest{}
 		dec := cbor.NewDecoder(bytes.NewReader(r.Payload))
 		err := dec.Decode(req)
 		if err != nil {
-			return nil, err
+			return err
 		}
 
 		// validate the capabilities of MapRequest
 		if !validateCap(req) {
 			m.log.Errorf("validateCap failed with error %s", err)
-			return nil, errors.New("failed to verify capability")
+			return errors.New("failed to verify capability")
 		}
 
 		resp := &common.MapResponse{}
@@ -226,12 +229,13 @@ func (m *Map) OnCommand(cmd cborplugin.Command) (cborplugin.Command, error) {
 		}
 		rawResp, err := resp.Marshal()
 		if err != nil {
-			return nil, err
+			return err
 		}
-		return &cborplugin.Response{Payload: rawResp}, nil
+		m.write(&cborplugin.Response{ID: r.ID, SURB: r.SURB, Payload: rawResp})
+		return nil
 	default:
 		m.log.Errorf("OnCommand called with unknown Command type")
-		return nil, errors.New("invalid Command type")
+		return errors.New("invalid Command type")
 	}
 }
 
@@ -248,5 +252,5 @@ func validateCap(req *common.MapRequest) bool {
 }
 
 func (m *Map) RegisterConsumer(svr *cborplugin.Server) {
-	m.log.Debugf("RegisterConsumer called")
+	m.write = svr.Write
 }
