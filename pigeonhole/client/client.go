@@ -115,7 +115,7 @@ func (c *Client) Put(ID common.MessageID, signature, payload []byte) error {
 		return err
 	}
 
-	_, err = c.Session.SendUnreliableMessage(loc.Name(), loc.Provider(), serialized)
+	_, err = c.Session.SendReliableMessage(loc.Name(), loc.Provider(), serialized)
 	// XXX: do we need to track msgId and see if it was delivered or not ???
 	return err
 }
