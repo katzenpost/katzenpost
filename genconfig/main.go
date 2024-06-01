@@ -145,8 +145,8 @@ func (s *katzenpost) genNodeConfig(isGateway, isServiceNode bool, isVoting bool)
 	} else if isServiceNode {
 		n = fmt.Sprintf("servicenode%d", s.serviceNodeIdx+1)
 	}
-	cfg := new(sConfig.Config)
 
+	cfg := new(sConfig.Config)
 	cfg.SphinxGeometry = s.sphinxGeometry
 
 	// Server section.
@@ -162,9 +162,15 @@ func (s *katzenpost) genNodeConfig(isGateway, isServiceNode bool, isVoting bool)
 	cfg.Server.IsGatewayNode = isGateway
 	cfg.Server.IsServiceNode = isServiceNode
 	if isGateway {
+		cfg.Management = new(sConfig.Management)
+		cfg.Management.Enable = true
 		cfg.Server.AltAddresses = map[string][]string{
 			"TCP": []string{fmt.Sprintf("localhost:%d", s.lastPort)},
 		}
+	}
+	if isServiceNode {
+		cfg.Management = new(sConfig.Management)
+		cfg.Management.Enable = true
 	}
 	// Enable Metrics endpoint
 	s.lastPort += 1
