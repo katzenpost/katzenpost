@@ -792,6 +792,9 @@ func (cfg *Config) FixupAndValidate() error {
 	if cfg.PKI == nil {
 		return errors.New("config: No PKI block was present")
 	}
+	if cfg.Management == nil {
+		cfg.Management = &Management{}
+	}
 
 	// Perform basic validation.
 	cfg.Server.applyDefaults()
