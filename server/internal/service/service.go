@@ -5,11 +5,14 @@
 package service
 
 import (
+	"strings"
 	"sync"
 	"time"
 
 	"gopkg.in/op/go-logging.v1"
 
+	"github.com/katzenpost/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/core/thwack"
 	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/katzenpost/katzenpost/server/internal/glue"
 	"github.com/katzenpost/katzenpost/server/internal/instrument"
@@ -134,6 +137,116 @@ func (p *serviceNode) worker() {
 	}
 }
 
+func (p *serviceNode) isKaetzchenConfigured(capa string) bool {
+	for _, v := range p.glue.Config().ServiceNode.Kaetzchen {
+		// do not enable a plugin explicitely disabled by configuration
+		if v.Capability == capa && !v.Disable {
+			return true
+		}
+	}
+	return false
+}
+
+func (p *serviceNode) isKaetzchenRegistered(capa string) bool {
+	kpki := p.kaetzchenWorker.KaetzchenForPKI()
+	if _, ok := kpki[capa]; ok {
+		return true
+	}
+	return false
+}
+
+func (p *serviceNode) isCBORKaetzchenConfigured(capa string) bool {
+	// check whether the capability is a CBORPlugin
+	for _, pluginConf := range p.glue.Config().ServiceNode.CBORPluginKaetzchen {
+		if capa == pluginConf.Capability && !pluginConf.Disable {
+			return true
+		}
+	}
+	return false
+}
+
+func (p *serviceNode) isCBORKaetzchenRegistered(capa string) bool {
+	// get endpoint from config
+	for _, pluginConf := range p.glue.Config().ServiceNode.CBORPluginKaetzchen {
+		if capa == pluginConf.Capability && !pluginConf.Disable {
+			var endpoint [constants.RecipientIDLength]byte
+			copy(endpoint[:], []byte(pluginConf.Endpoint))
+			return p.cborPluginKaetzchenWorker.IsKaetzchen(endpoint)
+		}
+	}
+	return false
+}
+
+// handler for STOP_KAETZCHEN
+func (p *serviceNode) onStopKaetzchen(c *thwack.Conn, l string) error {
+	p.Lock()
+	defer p.Unlock()
+
+	sp := strings.Split(l, " ")
+
+	if len(sp) != 2 {
+		c.Log().Debugf("STOP_KAETZCHEN invalid syntax: '%v'", l)
+		return c.WriteReply(thwack.StatusSyntaxError)
+	}
+	capa := sp[1]
+	// check internal plugins
+	if p.isKaetzchenConfigured(capa) && p.isKaetzchenRegistered(capa) {
+		err := p.kaetzchenWorker.UnregisterKaetzchen(capa)
+		if err != nil {
+			p.log.Errorf("provider: Kaetzchen: '%v'", err)
+			return c.WriteReply(thwack.StatusTransactionFailed)
+		}
+		return c.Writer().PrintfLine("%v %v", thwack.StatusOk, capa)
+	}
+	// check external plugins
+	if p.isCBORKaetzchenConfigured(capa) && !p.isCBORKaetzchenRegistered(capa) {
+		c.Log().Debugf("START_KAETZCHEN failed: %v not running", capa)
+		return c.WriteReply(thwack.StatusTransactionFailed)
+	}
+	err := p.cborPluginKaetzchenWorker.UnregisterKaetzchen(capa)
+	if err != nil {
+		p.log.Errorf("provider: Kaetzchen: '%v'", err)
+		return c.WriteReply(thwack.StatusTransactionFailed)
+	}
+	return c.Writer().PrintfLine("%v %v", thwack.StatusOk, capa)
+}
+
+// handler for START_KAETZCHEN
+func (p *serviceNode) onStartKaetzchen(c *thwack.Conn, l string) error {
+	p.Lock()
+	defer p.Unlock()
+
+	sp := strings.Split(l, " ")
+
+	if len(sp) != 2 {
+		c.Log().Debugf("START_KAETZCHEN invalid syntax: '%v'", l)
+		return c.WriteReply(thwack.StatusSyntaxError)
+	}
+
+	capa := sp[1]
+
+	// check internal plugins
+	if p.isKaetzchenConfigured(capa) && !p.isKaetzchenRegistered(capa) {
+		err := p.kaetzchenWorker.RegisterKaetzchen(capa)
+		if err != nil {
+			p.log.Errorf("provider: Kaetzchen: '%v'", err)
+			return c.WriteReply(thwack.StatusTransactionFailed)
+		}
+		return c.Writer().PrintfLine("%v %v", thwack.StatusOk, capa)
+	}
+	// check external plugins
+	if p.isCBORKaetzchenConfigured(capa) && p.isCBORKaetzchenRegistered(capa) {
+		c.Log().Debugf("START_KAETZCHEN failed: %v already running", capa)
+		return c.WriteReply(thwack.StatusTransactionFailed)
+	}
+	err := p.cborPluginKaetzchenWorker.RegisterKaetzchen(capa)
+	if err != nil {
+		p.log.Errorf("provider: Kaetzchen: '%v'", err)
+		return c.WriteReply(thwack.StatusTransactionFailed)
+	}
+	return c.Writer().PrintfLine("%v %v", thwack.StatusOk, capa)
+}
+
 // New constructs a new provider instance.
 func New(glue glue.Glue) (glue.ServiceNode, error) {
 	kaetzchenWorker, err := kaetzchen.New(glue)
@@ -160,6 +273,17 @@ func New(glue glue.Glue) (glue.ServiceNode, error) {
 			p.Halt()
 		}
 	}()
+
+	// Wire in the management related commands.
+	if cfg.Management.Enable {
+		const (
+			cmdStopKaetzchen  = "STOP_KAETZCHEN"
+			cmdStartKaetzchen = "START_KAETZCHEN"
+		)
+
+		glue.Management().RegisterCommand(cmdStopKaetzchen, p.onStopKaetzchen)
+		glue.Management().RegisterCommand(cmdStartKaetzchen, p.onStartKaetzchen)
+	}
 
 	// Start the workers.
 	for i := 0; i < cfg.Debug.NumServiceWorkers; i++ {

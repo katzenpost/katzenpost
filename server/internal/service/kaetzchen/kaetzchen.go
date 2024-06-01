@@ -158,7 +158,7 @@ func (k *KaetzchenWorker) RegisterKaetzchen(capa string) error {
 		return fmt.Errorf("provider: Kaetzchen: Unsupported capability: '%v'", capa)
 	}
 
-	for _, kaetzchenConfig := range k.glue.Config().Provider.Kaetzchen {
+	for _, kaetzchenConfig := range k.glue.Config().ServiceNode.Kaetzchen {
 		if kaetzchenConfig.Capability == capa {
 			kaetzchen, err := ctor(kaetzchenConfig, k.glue)
 			if err != nil {
