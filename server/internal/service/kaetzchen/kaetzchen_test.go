@@ -38,6 +38,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
+	"github.com/katzenpost/katzenpost/core/thwack"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/loops"
 	"github.com/katzenpost/katzenpost/server/config"
@@ -214,6 +215,10 @@ func (g *mockGlue) ReshadowCryptoWorkers() {}
 
 func (g *mockGlue) Decoy() glue.Decoy {
 	return &mockDecoy{}
+}
+
+func (m *mockGlue) Management() *thwack.Server {
+	return nil
 }
 
 type MockKaetzchen struct {
