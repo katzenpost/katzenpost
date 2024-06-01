@@ -20,10 +20,10 @@ import (
 )
 
 const (
-	MapServiceName = "map"
+	PigeonHoleServiceName = "pigeonhole"
 )
 
-type MapRequest struct {
+type PigeonHoleRequest struct {
 	// ID is the ID of the block which is a ed25519 PublicKey
 	ID MessageID
 
@@ -38,31 +38,31 @@ type MapRequest struct {
 	Payload []byte
 }
 
-func (m *MapRequest) Marshal() ([]byte, error) {
+func (m *PigeonHoleRequest) Marshal() ([]byte, error) {
 	return cbor.Marshal(m)
 }
 
-func (m *MapRequest) Unmarshal(b []byte) error {
+func (m *PigeonHoleRequest) Unmarshal(b []byte) error {
 	return cbor.Unmarshal(b, m)
 }
 
-type MapStatus uint8
+type PigeonHoleStatus uint8
 
 const (
-	StatusOK MapStatus = iota
+	StatusOK PigeonHoleStatus = iota
 	StatusNotFound
 	StatusFailed
 )
 
-type MapResponse struct {
-	Status  MapStatus
+type PigeonHoleResponse struct {
+	Status  PigeonHoleStatus
 	Payload []byte
 }
 
-func (m *MapResponse) Marshal() ([]byte, error) {
+func (m *PigeonHoleResponse) Marshal() ([]byte, error) {
 	return cbor.Marshal(m)
 }
 
-func (m *MapResponse) Unmarshal(b []byte) error {
+func (m *PigeonHoleResponse) Unmarshal(b []byte) error {
 	return cbor.Unmarshal(b, m)
 }
