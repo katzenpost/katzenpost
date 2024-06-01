@@ -22,8 +22,9 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"github.com/katzenpost/katzenpost/client"
+
 	"github.com/katzenpost/hpqc/rand"
+	"github.com/katzenpost/katzenpost/client"
 	pclient "github.com/katzenpost/katzenpost/panda/client"
 	pCommon "github.com/katzenpost/katzenpost/panda/common"
 	panda "github.com/katzenpost/katzenpost/panda/crypto"
@@ -100,14 +101,14 @@ func (c *Client) processPANDAUpdate(update *panda.PandaUpdate) {
 		contact.pandaResult = update.Err.Error()
 		contact.pandaShutdownChan = nil
 		c.log.Infof("Key exchange with %s failed: %s", contact.Nickname, update.Err)
-		c.eventCh.In() <- &KeyExchangeCompletedEvent{
+		c.eventCh <- &KeyExchangeCompletedEvent{
 			Nickname: contact.Nickname,
 			Err:      update.Err,
 		}
 	case update.Serialised != nil:
 		if bytes.Equal(contact.pandaKeyExchange, update.Serialised) {
 			c.log.Infof("Strange, our PANDA key exchange echoed our exchange bytes: %s", contact.Nickname)
-			c.eventCh.In() <- &KeyExchangeCompletedEvent{
+			c.eventCh <- &KeyExchangeCompletedEvent{
 				Nickname: contact.Nickname,
 				Err:      errors.New("strange, our PANDA key exchange echoed our exchange bytes"),
 			}
@@ -124,7 +125,7 @@ func (c *Client) processPANDAUpdate(update *panda.PandaUpdate) {
 			contact.pandaResult = err.Error()
 			contact.IsPending = false
 			c.save()
-			c.eventCh.In() <- &KeyExchangeCompletedEvent{
+			c.eventCh <- &KeyExchangeCompletedEvent{
 				Nickname: contact.Nickname,
 				Err:      err,
 			}
@@ -139,7 +140,7 @@ func (c *Client) processPANDAUpdate(update *panda.PandaUpdate) {
 			contact.pandaResult = err.Error()
 			contact.IsPending = false
 			c.save()
-			c.eventCh.In() <- &KeyExchangeCompletedEvent{
+			c.eventCh <- &KeyExchangeCompletedEvent{
 				Nickname: contact.Nickname,
 				Err:      err,
 			}
@@ -149,7 +150,7 @@ func (c *Client) processPANDAUpdate(update *panda.PandaUpdate) {
 		contact.IsPending = false
 		c.log.Info("Double ratchet key exchange completed!")
 		contact.sharedSecret = nil
-		c.eventCh.In() <- &KeyExchangeCompletedEvent{
+		c.eventCh <- &KeyExchangeCompletedEvent{
 			Nickname: contact.Nickname,
 		}
 	}

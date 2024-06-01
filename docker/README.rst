@@ -10,7 +10,7 @@ mix network components as part of the core Katzenpost developer work flow.
 0. Requirements
 
 * Podman or Docker
-* docker-compose (tested with 1.29.2, among other versions)
+* either docker-compose (v1) or docker compose v2
 * GNU Make
 
 1. Run a test network

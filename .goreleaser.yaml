@@ -1,0 +1,94 @@
+project_name: katzenpost
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+ - id: mixserver
+   main: ./server/cmd/server
+   binary: mixserver
+   env:
+      - CGO_ENABLED=1
+   goos:
+      - linux
+      - darwin
+      - windows
+   goarch:
+      - amd64
+      - arm64
+   goarm:
+      - 6
+      - 7
+ - id: dirauth
+   main: ./authority/cmd/voting
+   binary: dirauth
+   env:
+      - CGO_ENABLED=1
+   goos:
+      - linux
+      - darwin
+      - windows
+   goarch:
+      - amd64
+      - arm64
+   goarm:
+      - 6
+      - 7
+ - id: fetch
+   main: ./authority/cmd/fetch
+   binary: fetch
+   env:
+      - CGO_ENABLED=1
+   goos:
+      - linux
+      - darwin
+      - windows
+   goarch:
+      - amd64
+      - arm64
+   goarm:
+      - 6
+      - 7
+ - id: ping
+   main: ./ping
+   binary: ping
+   env:
+      - CGO_ENABLED=1
+   goos:
+      - linux
+      - darwin
+      - windows
+   goarch:
+      - amd64
+      - arm64
+   goarm:
+      - 6
+      - 7
+
+archives:
+  - format: tar.gz
+    name_template: >-
+      {{ .ProjectName }}_
+      {{ title .Os }}_
+      {{ if eq .Arch "amd64" }}x86_64
+      {{ else if eq .Arch "arm64" }}arm64
+      {{ if .Arm }}v{{ .Arm }}{{ end }}{{ end }}
+    format_overrides:
+      - goos: windows
+        format: zip
+    files:
+      - LICENSE
+      - README.md
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+
+release:
+  github:
+    owner: david415
+    name: katzenpost

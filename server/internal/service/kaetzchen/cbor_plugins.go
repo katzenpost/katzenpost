@@ -25,7 +25,6 @@ import (
 	"time"
 
 	"golang.org/x/text/secure/precis"
-	"gopkg.in/eapache/channels.v1"
 	"gopkg.in/op/go-logging.v1"
 
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
@@ -37,8 +36,10 @@ import (
 	"github.com/katzenpost/katzenpost/server/internal/packet"
 )
 
+const InboundPacketsChannelSize = 1000
+
 // PluginChans maps from Recipient ID to channel.
-type PluginChans = map[[constants.RecipientIDLength]byte]*channels.InfiniteChannel
+type PluginChans = map[[constants.RecipientIDLength]byte]chan interface{}
 
 // PluginName is the name of a plugin.
 type PluginName = string
@@ -76,7 +77,7 @@ func (k *CBORPluginWorker) OnKaetzchen(pkt *packet.Packet) {
 		k.log.Debugf("Failed to find handler. Dropping Kaetzchen request: %v", pkt.ID)
 		return
 	}
-	handlerCh.In() <- pkt
+	handlerCh <- pkt
 }
 
 func (k *CBORPluginWorker) worker(recipient [constants.RecipientIDLength]byte, pluginClient *cborplugin.Client) {
@@ -91,7 +92,7 @@ func (k *CBORPluginWorker) worker(recipient [constants.RecipientIDLength]byte, p
 		instrument.KaetzchenRequestsDropped(1)
 		return
 	}
-	ch := handlerCh.Out()
+	ch := handlerCh
 
 	for {
 		var pkt *packet.Packet
@@ -260,7 +261,7 @@ func NewCBORPluginWorker(glue glue.Glue) (*CBORPluginWorker, error) {
 
 	capaMap := make(map[string]bool)
 
-	for _, pluginConf := range glue.Config().Provider.CBORPluginKaetzchen {
+	for _, pluginConf := range glue.Config().ServiceNode.CBORPluginKaetzchen {
 		kaetzchenWorker.log.Noticef("Configuring plugin handler for %s", pluginConf.Capability)
 
 		// Ensure no duplicates.
@@ -292,7 +293,7 @@ func NewCBORPluginWorker(glue glue.Glue) (*CBORPluginWorker, error) {
 		// Add an infinite channel for this plugin.
 		var endpoint [constants.RecipientIDLength]byte
 		copy(endpoint[:], rawEp)
-		kaetzchenWorker.pluginChans[endpoint] = channels.NewInfiniteChannel()
+		kaetzchenWorker.pluginChans[endpoint] = make(chan interface{}, InboundPacketsChannelSize)
 		kaetzchenWorker.log.Noticef("Starting Kaetzchen plugin client: %s", capa)
 
 		var args []string

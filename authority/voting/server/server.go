@@ -21,6 +21,7 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"math"
 	"net"
 	"os"
 	"path/filepath"
@@ -31,19 +32,15 @@ import (
 	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/kem"
 	kempem "github.com/katzenpost/hpqc/kem/pem"
-	"github.com/katzenpost/hpqc/rand"
+	"github.com/katzenpost/hpqc/kem/schemes"
 	"github.com/katzenpost/hpqc/sign"
 	signpem "github.com/katzenpost/hpqc/sign/pem"
-
-	nyquistkem "github.com/katzenpost/nyquist/kem"
-	"github.com/katzenpost/nyquist/seec"
+	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
-	"github.com/katzenpost/katzenpost/core/cert"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/utils"
-	"github.com/katzenpost/katzenpost/core/wire"
 )
 
 // ErrGenerateOnly is the error returned when the server initialization
@@ -70,6 +67,14 @@ type Server struct {
 	fatalErrCh chan error
 	haltedCh   chan interface{}
 	haltOnce   sync.Once
+}
+
+func computeLambdaG(cfg *config.Config) float64 {
+	n := float64(len(cfg.Topology.Layers[0].Nodes))
+	if n == 1 {
+		n = 2
+	}
+	return n * math.Log(n)
 }
 
 func (s *Server) initDataDir() error {
@@ -213,6 +218,8 @@ func New(cfg *config.Config) (*Server, error) {
 		s.log.Warning("Unsafe Debug logging is enabled.")
 	}
 
+	pkiSignatureScheme := signSchemes.ByName(cfg.Server.PKISignatureScheme)
+
 	// Initialize the authority identity key.
 	identityPrivateKeyFile := filepath.Join(s.cfg.Server.DataDir, "identity.private.pem")
 	identityPublicKeyFile := filepath.Join(s.cfg.Server.DataDir, "identity.public.pem")
@@ -220,16 +227,16 @@ func New(cfg *config.Config) (*Server, error) {
 	var err error
 
 	if utils.BothExists(identityPrivateKeyFile, identityPublicKeyFile) {
-		s.identityPrivateKey, err = signpem.FromPrivatePEMFile(identityPrivateKeyFile, cert.Scheme)
+		s.identityPrivateKey, err = signpem.FromPrivatePEMFile(identityPrivateKeyFile, pkiSignatureScheme)
 		if err != nil {
 			return nil, err
 		}
-		s.identityPublicKey, err = signpem.FromPublicPEMFile(identityPublicKeyFile, cert.Scheme)
+		s.identityPublicKey, err = signpem.FromPublicPEMFile(identityPublicKeyFile, pkiSignatureScheme)
 		if err != nil {
 			return nil, err
 		}
 	} else if utils.BothNotExists(identityPrivateKeyFile, identityPublicKeyFile) {
-		s.identityPublicKey, s.identityPrivateKey, err = cert.Scheme.GenerateKey()
+		s.identityPublicKey, s.identityPrivateKey, err = pkiSignatureScheme.GenerateKey()
 		if err != nil {
 			return nil, err
 		}
@@ -245,14 +252,12 @@ func New(cfg *config.Config) (*Server, error) {
 		return nil, fmt.Errorf("%s and %s must either both exist or not exist", identityPrivateKeyFile, identityPublicKeyFile)
 	}
 
-	scheme := wire.DefaultScheme
+	scheme := schemes.ByName(cfg.Server.WireKEMScheme)
+	if scheme == nil {
+		return nil, errors.New("KEM scheme not found in registry")
+	}
 	linkPrivateKeyFile := filepath.Join(s.cfg.Server.DataDir, "link.private.pem")
 	linkPublicKeyFile := filepath.Join(s.cfg.Server.DataDir, "link.public.pem")
-
-	genRand, err := seec.GenKeyPRPAES(rand.Reader, 256)
-	if err != nil {
-		return nil, err
-	}
 
 	var linkPrivateKey kem.PrivateKey
 
@@ -279,7 +284,10 @@ func New(cfg *config.Config) (*Server, error) {
 		}
 		*/
 	} else if utils.BothNotExists(linkPrivateKeyFile, linkPublicKeyFile) {
-		linkPublicKey, linkPrivateKey := nyquistkem.GenerateKeypair(scheme, genRand)
+		linkPublicKey, linkPrivateKey, err := scheme.GenerateKeyPair()
+		if err != nil {
+			return nil, err
+		}
 
 		err = kempem.PrivateKeyToFile(linkPrivateKeyFile, linkPrivateKey)
 		if err != nil {
@@ -308,8 +316,11 @@ func New(cfg *config.Config) (*Server, error) {
 
 	// Ensure that there are enough mixes and providers whitelisted to form
 	// a topology, assuming all of them post a descriptor.
-	if len(cfg.Providers) < 1 {
-		return nil, fmt.Errorf("server: No Providers specified in the config")
+	if len(cfg.GatewayNodes) < 1 {
+		return nil, fmt.Errorf("server: No GatewayNodes specified in the config")
+	}
+	if len(cfg.ServiceNodes) < 1 {
+		return nil, fmt.Errorf("server: No ServiceNodes specified in the config")
 	}
 	if len(cfg.Mixes) < cfg.Debug.Layers*cfg.Debug.MinNodesPerLayer {
 		return nil, fmt.Errorf("server: Insufficient nodes whitelisted, got %v , need %v", len(cfg.Mixes), cfg.Debug.Layers*cfg.Debug.MinNodesPerLayer)

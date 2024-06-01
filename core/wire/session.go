@@ -27,6 +27,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/katzenpost/hpqc/sign"
 	"github.com/katzenpost/nyquist"
 	"github.com/katzenpost/nyquist/cipher"
 	"github.com/katzenpost/nyquist/hash"
@@ -34,7 +35,6 @@ import (
 	"github.com/katzenpost/nyquist/seec"
 
 	"github.com/katzenpost/hpqc/kem"
-	"github.com/katzenpost/hpqc/kem/schemes"
 	"github.com/katzenpost/hpqc/rand"
 
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
@@ -55,8 +55,6 @@ const (
 
 var (
 	prologue = []byte{0x03} // Prologue indicates version 3.
-
-	DefaultScheme = schemes.ByName("Kyber768-X25519")
 )
 
 const (
@@ -160,6 +158,10 @@ type Session struct {
 	clockSkew   time.Duration
 	state       uint32
 	isInitiator bool
+}
+
+func (s *Session) GetCommands() *commands.Commands {
+	return s.commands
 }
 
 func (s *Session) handshake() error {
@@ -386,7 +388,9 @@ func (s *Session) finalizeHandshake() error {
 
 	// Responder: The peer is authenticated at this point, so dispatch
 	// a NoOp so the peer can distinguish authentication failures.
-	noOpCmd := &commands.NoOp{}
+	noOpCmd := &commands.NoOp{
+		Cmds: s.commands,
+	}
 	return s.SendCommand(noOpCmd)
 }
 
@@ -570,10 +574,14 @@ func NewPKISession(cfg *SessionConfig, isInitiator bool) (*Session, error) {
 		return nil, errors.New("wire/session: missing RandomReader")
 	}
 
+	if cfg.KEMScheme == nil {
+		return nil, errors.New("wire/session: missing KEM Scheme")
+	}
+
 	s := &Session{
 		protocol: &nyquist.Protocol{
 			Pattern: pattern.PqXX,
-			KEM:     DefaultScheme,
+			KEM:     cfg.KEMScheme,
 			Cipher:  cipher.ChaChaPoly,
 			Hash:    hash.BLAKE2b,
 		},
@@ -584,7 +592,7 @@ func NewPKISession(cfg *SessionConfig, isInitiator bool) (*Session, error) {
 		state:          stateInit,
 		rxKeyMutex:     new(sync.RWMutex),
 		txKeyMutex:     new(sync.RWMutex),
-		commands:       commands.NewPKICommands(),
+		commands:       commands.NewCommands(cfg.Geometry, cfg.PKISignatureScheme),
 	}
 	s.authenticationKEMKey = cfg.AuthenticationKey
 
@@ -612,7 +620,7 @@ func NewSession(cfg *SessionConfig, isInitiator bool) (*Session, error) {
 	s := &Session{
 		protocol: &nyquist.Protocol{
 			Pattern: pattern.PqXX,
-			KEM:     DefaultScheme,
+			KEM:     cfg.KEMScheme,
 			Cipher:  cipher.ChaChaPoly,
 			Hash:    hash.BLAKE2b,
 		},
@@ -623,7 +631,7 @@ func NewSession(cfg *SessionConfig, isInitiator bool) (*Session, error) {
 		state:          stateInit,
 		rxKeyMutex:     new(sync.RWMutex),
 		txKeyMutex:     new(sync.RWMutex),
-		commands:       commands.NewCommands(cfg.Geometry),
+		commands:       commands.NewCommands(cfg.Geometry, cfg.PKISignatureScheme),
 	}
 	s.authenticationKEMKey = cfg.AuthenticationKey
 
@@ -632,6 +640,13 @@ func NewSession(cfg *SessionConfig, isInitiator bool) (*Session, error) {
 
 // SessionConfig is the configuration used to create new Sessions.
 type SessionConfig struct {
+
+	// KEMScheme wire/link protocol KEM scheme.
+	KEMScheme kem.Scheme
+
+	// PKISignatureScheme specifies the cryptographic signature scheme
+	PKISignatureScheme sign.Scheme
+
 	// Authenticator is the PeerAuthenticator instance that will be used to
 	// authenticate the remote peer for the newly created Session.
 	Authenticator PeerAuthenticator

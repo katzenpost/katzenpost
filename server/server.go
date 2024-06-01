@@ -20,12 +20,10 @@ package server
 import (
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 	"sync"
 
 	"gitlab.com/yawning/aez.git"
-	"gopkg.in/eapache/channels.v1"
 	"gopkg.in/op/go-logging.v1"
 
 	nyquistkem "github.com/katzenpost/nyquist/kem"
@@ -34,30 +32,32 @@ import (
 	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/kem"
 	pemkem "github.com/katzenpost/hpqc/kem/pem"
+	"github.com/katzenpost/hpqc/kem/schemes"
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/hpqc/sign"
 	signpem "github.com/katzenpost/hpqc/sign/pem"
+	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 
-	"github.com/katzenpost/katzenpost/core/cert"
 	"github.com/katzenpost/katzenpost/core/log"
-	"github.com/katzenpost/katzenpost/core/thwack"
 	"github.com/katzenpost/katzenpost/core/utils"
-	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/server/config"
 	"github.com/katzenpost/katzenpost/server/internal/cryptoworker"
 	"github.com/katzenpost/katzenpost/server/internal/decoy"
+	"github.com/katzenpost/katzenpost/server/internal/gateway"
 	"github.com/katzenpost/katzenpost/server/internal/glue"
 	"github.com/katzenpost/katzenpost/server/internal/incoming"
 	"github.com/katzenpost/katzenpost/server/internal/instrument"
 	"github.com/katzenpost/katzenpost/server/internal/outgoing"
 	"github.com/katzenpost/katzenpost/server/internal/pki"
-	"github.com/katzenpost/katzenpost/server/internal/provider"
 	"github.com/katzenpost/katzenpost/server/internal/scheduler"
+	"github.com/katzenpost/katzenpost/server/internal/service"
 )
 
 // ErrGenerateOnly is the error returned when the server initialization
 // terminates due to the `GenerateOnly` debug config option.
 var ErrGenerateOnly = errors.New("server: GenerateOnly set")
+
+const InboundPacketsChannelSize = 1000
 
 // Server is a Katzenpost server instance.
 type Server struct {
@@ -70,7 +70,7 @@ type Server struct {
 	logBackend *log.Backend
 	log        *logging.Logger
 
-	inboundPackets *channels.InfiniteChannel
+	inboundPackets chan interface{}
 
 	scheduler     glue.Scheduler
 	cryptoWorkers []*cryptoworker.Worker
@@ -79,9 +79,9 @@ type Server struct {
 	pki           glue.PKI
 	listeners     []glue.Listener
 	connector     glue.Connector
-	provider      glue.Provider
+	gateway       glue.Gateway
+	serviceNode   glue.ServiceNode
 	decoy         glue.Decoy
-	management    *thwack.Server
 
 	fatalErrCh chan error
 	haltedCh   chan interface{}
@@ -148,12 +148,6 @@ func (s *Server) halt() {
 		s.periodic = nil
 	}
 
-	// Stop the management interface.
-	if s.management != nil {
-		s.management.Halt()
-		s.management = nil
-	}
-
 	// Stop the decoy source/sink.
 	if s.decoy != nil {
 		s.decoy.Halt()
@@ -182,10 +176,16 @@ func (s *Server) halt() {
 		}
 	}
 
-	// Provider specific cleanup.
-	if s.provider != nil {
-		s.provider.Halt()
-		s.provider = nil
+	// Gateway specific cleanup.
+	if s.gateway != nil {
+		s.gateway.Halt()
+		s.gateway = nil
+	}
+
+	// ServiceNode specific cleanup.
+	if s.serviceNode != nil {
+		s.serviceNode.Halt()
+		s.serviceNode = nil
 	}
 
 	// Stop the scheduler.
@@ -212,7 +212,7 @@ func (s *Server) halt() {
 
 	// Clean up the top level components.
 	if s.inboundPackets != nil {
-		s.inboundPackets.Close()
+		close(s.inboundPackets)
 	}
 
 	close(s.fatalErrCh)
@@ -257,14 +257,18 @@ func New(cfg *config.Config) (*Server, error) {
 	identityPublicKeyFile := filepath.Join(s.cfg.Server.DataDir, "identity.public.pem")
 
 	var err error
-	s.identityPublicKey, s.identityPrivateKey, err = cert.Scheme.GenerateKey()
+	pkiSignatureScheme := signSchemes.ByName(s.cfg.Server.PKISignatureScheme)
+	if s == nil {
+		return nil, errors.New("PKI Signature Scheme not found")
+	}
+	s.identityPublicKey, s.identityPrivateKey, err = pkiSignatureScheme.GenerateKey()
 
 	if utils.BothExists(identityPrivateKeyFile, identityPublicKeyFile) {
-		s.identityPrivateKey, err = signpem.FromPrivatePEMFile(identityPrivateKeyFile, cert.Scheme)
+		s.identityPrivateKey, err = signpem.FromPrivatePEMFile(identityPrivateKeyFile, pkiSignatureScheme)
 		if err != nil {
 			return nil, err
 		}
-		s.identityPublicKey, err = signpem.FromPublicPEMFile(identityPublicKeyFile, cert.Scheme)
+		s.identityPublicKey, err = signpem.FromPublicPEMFile(identityPublicKeyFile, pkiSignatureScheme)
 		if err != nil {
 			return nil, err
 		}
@@ -285,14 +289,16 @@ func New(cfg *config.Config) (*Server, error) {
 	s.log.Noticef("Server identity public key hash is: %x", idPubKeyHash[:])
 	linkPrivateKeyFile := filepath.Join(s.cfg.Server.DataDir, "link.private.pem")
 	linkPublicKeyFile := filepath.Join(s.cfg.Server.DataDir, "link.public.pem")
-	scheme := wire.DefaultScheme
+	scheme := schemes.ByName(cfg.Server.WireKEM)
+	if scheme == nil {
+		panic("KEM scheme not found")
+	}
 
 	//GenerateKeypair
-	rng, err := seec.GenKeyPassthrough(rand.Reader, 0)
+	linkPublicKey, linkPrivateKey, err := scheme.GenerateKeyPair()
 	if err != nil {
 		panic(err)
 	}
-	linkPublicKey, linkPrivateKey := nyquistkem.GenerateKeypair(scheme, rng)
 	if utils.BothExists(linkPrivateKeyFile, linkPublicKeyFile) {
 		linkPrivateKey, err = pemkem.FromPrivatePEMFile(linkPrivateKeyFile, scheme)
 		if err != nil {
@@ -359,46 +365,23 @@ func New(cfg *config.Config) (*Server, error) {
 		s.Shutdown()
 	}()
 
-	// Initialize the management interface if enabled.
-	//
-	// Note: This is done first so that other subsystems may register commands.
-	if _, err := os.Stat(s.cfg.Management.Path); !os.IsNotExist(err) {
-		s.log.Warningf("Warning: management socket file '%s' already exists, deleting it.", s.cfg.Management.Path)
-		err := os.Remove(s.cfg.Management.Path)
-		if err != nil {
-			s.fatalErrCh <- fmt.Errorf("failed to delete mgmt socket file, shutting down now")
-			return nil, err
-		}
-	}
-	if s.cfg.Management.Enable {
-		mgmtCfg := &thwack.Config{
-			Net:         "unix",
-			Addr:        s.cfg.Management.Path,
-			ServiceName: s.cfg.Server.Identifier + " Katzenpost Management Interface",
-			LogModule:   "mgmt",
-			NewLoggerFn: s.logBackend.GetLogger,
-		}
-		if s.management, err = thwack.New(mgmtCfg); err != nil {
-			s.log.Errorf("Failed to initialize management interface: %v", err)
-			return nil, err
-		}
-
-		const shutdownCmd = "SHUTDOWN"
-		s.management.RegisterCommand(shutdownCmd, func(c *thwack.Conn, l string) error {
-			s.fatalErrCh <- fmt.Errorf("user requested shutdown via mgmt interface")
-			return nil
-		})
-	}
-
 	// Initialize the PKI interface.
 	if s.pki, err = pki.New(goo); err != nil {
 		s.log.Errorf("Failed to initialize PKI client: %v", err)
 		return nil, err
 	}
 
+	// Initialize the gateway backend.
+	if s.cfg.Server.IsGatewayNode {
+		if s.gateway, err = gateway.New(goo); err != nil {
+			s.log.Errorf("Failed to initialize gateway backend: %v", err)
+			return nil, err
+		}
+	}
+
 	// Initialize the provider backend.
-	if s.cfg.Server.IsProvider {
-		if s.provider, err = provider.New(goo); err != nil {
+	if s.cfg.Server.IsServiceNode {
+		if s.serviceNode, err = service.New(goo); err != nil {
 			s.log.Errorf("Failed to initialize provider backend: %v", err)
 			return nil, err
 		}
@@ -411,10 +394,10 @@ func New(cfg *config.Config) (*Server, error) {
 	}
 
 	// Initialize and start the Sphinx workers.
-	s.inboundPackets = channels.NewInfiniteChannel()
+	s.inboundPackets = make(chan interface{}, InboundPacketsChannelSize)
 	s.cryptoWorkers = make([]*cryptoworker.Worker, 0, s.cfg.Debug.NumSphinxWorkers)
 	for i := 0; i < s.cfg.Debug.NumSphinxWorkers; i++ {
-		w := cryptoworker.New(goo, s.inboundPackets.Out(), i)
+		w := cryptoworker.New(goo, s.inboundPackets, i)
 		s.cryptoWorkers = append(s.cryptoWorkers, w)
 	}
 
@@ -429,7 +412,7 @@ func New(cfg *config.Config) (*Server, error) {
 	// Bring the listener(s) online.
 	s.listeners = make([]glue.Listener, 0, len(s.cfg.Server.Addresses))
 	for i, addr := range s.cfg.Server.Addresses {
-		l, err := incoming.New(goo, s.inboundPackets.In(), i, addr)
+		l, err := incoming.New(goo, s.inboundPackets, i, addr)
 		if err != nil {
 			s.log.Errorf("Failed to spawn listener on address: %v (%v).", addr, err)
 			return nil, err
@@ -441,13 +424,6 @@ func New(cfg *config.Config) (*Server, error) {
 
 	// Start the periodic 1 Hz utility timer.
 	s.periodic = newPeriodicTimer(s)
-
-	// Start listening on the management interface if enabled, now that every
-	// subsystem that wants to register commands has had the opportunity to do
-	// so.
-	if s.management != nil {
-		s.management.Start()
-	}
 
 	isOk = true
 	return s, nil
@@ -477,10 +453,6 @@ func (g *serverGlue) LinkKey() kem.PrivateKey {
 	return g.s.linkKey
 }
 
-func (g *serverGlue) Management() *thwack.Server {
-	return g.s.management
-}
-
 func (g *serverGlue) MixKeys() glue.MixKeys {
 	return g.s.mixKeys
 }
@@ -489,8 +461,12 @@ func (g *serverGlue) PKI() glue.PKI {
 	return g.s.pki
 }
 
-func (g *serverGlue) Provider() glue.Provider {
-	return g.s.provider
+func (g *serverGlue) Gateway() glue.Gateway {
+	return g.s.gateway
+}
+
+func (g *serverGlue) ServiceNode() glue.ServiceNode {
+	return g.s.serviceNode
 }
 
 func (g *serverGlue) Scheduler() glue.Scheduler {

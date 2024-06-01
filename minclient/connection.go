@@ -186,18 +186,20 @@ func (c *connection) getDescriptor() error {
 	} else if c.c.cfg.CachedDocument != nil {
 		doc = c.c.cfg.CachedDocument
 	}
-	desc, err := doc.GetProvider(c.c.cfg.Provider)
+	desc, err := doc.GetGateway(c.c.cfg.Gateway)
 	if err != nil {
-		c.log.Debugf("Failed to find descriptor for Provider: %v", err)
-		return newPKIError("failed to find descriptor for Provider: %v", err)
+		c.log.Debugf("Failed to find descriptor for Gateway: %v", err)
+		return newPKIError("failed to find descriptor for Gateway: %v", err)
 	}
-	providerPinKeyBlob, err := c.c.cfg.ProviderKeyPin.MarshalBinary()
+
+	gatewayKeyPinBlob, err := c.c.cfg.GatewayKeyPin.MarshalBinary()
 	if err != nil {
 		return err
 	}
-	if c.c.cfg.ProviderKeyPin != nil && !hmac.Equal(providerPinKeyBlob, desc.IdentityKey) {
-		c.log.Errorf("Provider identity key does not match pinned key: %x", desc.IdentityKey)
-		return newPKIError("identity key for Provider does not match pinned key: %x", desc.IdentityKey)
+
+	if c.c.cfg.GatewayKeyPin != nil && !hmac.Equal(desc.IdentityKey, gatewayKeyPinBlob) {
+		c.log.Errorf("Gateway identity key does not match pinned key: %v", desc.IdentityKey)
+		return newPKIError("identity key for Gateway does not match pinned key: %v", desc.IdentityKey)
 	}
 	if desc != c.descriptor {
 		c.log.Debugf("Descriptor for epoch %v: %+v", doc.Epoch, desc)
@@ -373,11 +375,13 @@ func (c *connection) onTCPConn(conn net.Conn) {
 
 	// Allocate the session struct.
 	cfg := &wire.SessionConfig{
-		Geometry:          c.c.cfg.SphinxGeometry,
-		Authenticator:     c,
-		AdditionalData:    []byte(c.c.cfg.User),
-		AuthenticationKey: c.c.cfg.LinkKey,
-		RandomReader:      rand.Reader,
+		KEMScheme:          c.c.cfg.LinkKemScheme,
+		PKISignatureScheme: c.c.cfg.PKISignatureScheme,
+		Geometry:           c.c.cfg.SphinxGeometry,
+		Authenticator:      c,
+		AdditionalData:     []byte(c.c.cfg.User),
+		AuthenticationKey:  c.c.cfg.LinkKey,
+		RandomReader:       rand.Reader,
 	}
 	w, err := wire.NewSession(cfg, true)
 	if err != nil {
@@ -513,7 +517,9 @@ func (c *connection) onWireConn(w *wire.Session) {
 			} else {
 				consensusCtx = ctx
 				cmd := &commands.GetConsensus{
-					Epoch: ctx.epoch,
+					Epoch:              ctx.epoch,
+					Cmds:               w.GetCommands(),
+					MixnetTransmission: true, // Enable padding for mixnet transmission
 				}
 				wireErr = w.SendCommand(cmd)
 				ctx.doneFn(wireErr)
@@ -530,6 +536,7 @@ func (c *connection) onWireConn(w *wire.Session) {
 			c.log.Debugf("Dequeued packet for send.")
 			cmd := &commands.SendPacket{
 				SphinxPacket: ctx.pkt,
+				Cmds:         w.GetCommands(),
 			}
 			wireErr = w.SendCommand(cmd)
 			ctx.doneFn(wireErr)
@@ -566,6 +573,7 @@ func (c *connection) onWireConn(w *wire.Session) {
 			if nrReqs == nrResps {
 				cmd := &commands.RetrieveMessage{
 					Sequence: seq,
+					Cmds:     w.GetCommands(),
 				}
 				if wireErr = w.SendCommand(cmd); wireErr != nil {
 					c.log.Debugf("Failed to send RetrieveMessage: %v", wireErr)
@@ -746,6 +754,9 @@ func (c *connection) sendPacket(pkt []byte) error {
 
 	select {
 	case err := <-errCh:
+		if err != nil {
+			c.log.Debugf("sendPacket failed: %s", err)
+		}
 		return err
 	case <-c.HaltCh():
 		return ErrShutdown
