@@ -46,15 +46,17 @@ type ClientConfig struct {
 	// User is the user identifier used to connect to the Provider.
 	User string
 
-	// Provider is the provider identifier to connect to.
-	Provider string
+	// Gateway is the provider identifier to connect to.
+	Gateway string
 
-	// ProviderKeyPin is the optional pinned provider signing key.
-	// If specified, the client will refuse to accept provider descriptors
+	// GatewayKeyPin is the optional pinned gateway signing key.
+	// If specified, the client will refuse to accept gateway descriptors
 	// in PKI documents unless they are signed by the pinned key.
-	ProviderKeyPin sign.PublicKey
+	GatewayKeyPin sign.PublicKey
 
 	LinkKemScheme kem.Scheme
+
+	PKISignatureScheme sign.Scheme
 
 	// LinkKey is the user's ECDH link authentication private key.
 	LinkKey kem.PrivateKey
@@ -66,7 +68,7 @@ type ClientConfig struct {
 	PKIClient cpki.Client
 
 	// CachedDocument is a PKI Document that has a MixDescriptor
-	// containg the Addresses and LinkKeys of minclient's Provider
+	// containg the Addresses and LinkKeys of minclient's Gateway
 	// so that it can connect directly without contacting an Authority.
 	CachedDocument *cpki.Document
 
@@ -108,14 +110,14 @@ type ClientConfig struct {
 
 	// PreferedTransports is a list of the transports will be used to make
 	// outgoing network connections, with the most prefered first.
-	PreferedTransports []cpki.Transport
+	PreferedTransports []string
 
 	// MessagePollInterval is the interval at which the server will be
 	// polled for new messages if the queue is belived to be empty.
 	// If left unset, an interval of 1 minute will be used.
 	MessagePollInterval time.Duration
 
-	// EnableTimeSync enables the use of skewed remote provider time
+	// EnableTimeSync enables the use of skewed remote gateway time
 	// instead of system time when available.
 	EnableTimeSync bool
 }
@@ -131,8 +133,8 @@ func (cfg *ClientConfig) validate() error {
 	if cfg.User == "" || len(cfg.User) > wire.MaxAdditionalDataLength {
 		return fmt.Errorf("minclient: invalid User: '%v'", cfg.User)
 	}
-	if cfg.Provider == "" {
-		return fmt.Errorf("minclient: invalid Provider: '%v'", cfg.Provider)
+	if cfg.Gateway == "" {
+		return fmt.Errorf("minclient: invalid Gateway: '%v'", cfg.Gateway)
 	}
 	if cfg.LinkKey == nil {
 		return fmt.Errorf("minclient: no LinkKey provided")
@@ -223,12 +225,12 @@ func New(cfg *ClientConfig) (*Client, error) {
 		return nil, err
 	}
 	c.cfg = cfg
-	c.displayName = fmt.Sprintf("%x@%s", c.cfg.User, c.cfg.Provider)
+	c.displayName = fmt.Sprintf("%s", c.cfg.Gateway)
 	c.log = cfg.LogBackend.GetLogger("minclient:" + c.displayName)
 	c.haltedCh = make(chan interface{})
 
 	c.log.Notice("Katzenpost is still pre-alpha.  DO NOT DEPEND ON IT FOR STRONG SECURITY OR ANONYMITY.")
-	c.log.Debugf("User/Provider is: %v", c.displayName)
+	c.log.Debugf("Gateway is: %v", c.displayName)
 
 	c.rng = rand.NewMath()
 

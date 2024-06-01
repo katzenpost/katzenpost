@@ -46,7 +46,8 @@ type Glue interface {
 	Management() *thwack.Server
 	MixKeys() MixKeys
 	PKI() PKI
-	Provider() Provider
+	Gateway() Gateway
+	ServiceNode() ServiceNode
 	Scheduler() Scheduler
 	Connector() Connector
 	Listeners() []Listener
@@ -69,13 +70,19 @@ type PKI interface {
 	OutgoingDestinations() map[[constants.NodeIDLength]byte]*pki.MixDescriptor
 	AuthenticateConnection(*wire.PeerCredentials, bool) (*pki.MixDescriptor, bool, bool)
 	GetRawConsensus(uint64) ([]byte, error)
+	CurrentDocument() (*pki.Document, error)
 }
 
-type Provider interface {
+type Gateway interface {
 	Halt()
 	UserDB() userdb.UserDB
 	Spool() spool.Spool
 	AuthenticateClient(*wire.PeerCredentials) bool
+	OnPacket(*packet.Packet)
+}
+
+type ServiceNode interface {
+	Halt()
 	OnPacket(*packet.Packet)
 	KaetzchenForPKI() (map[string]map[string]interface{}, error)
 }
@@ -105,5 +112,6 @@ type Decoy interface {
 	Halt()
 	OnNewDocument(*pkicache.Entry)
 	OnPacket(*packet.Packet)
+	ExpectReply(pkt *packet.Packet) bool
 	GetStats(doPublishEpoch uint64) *loops.LoopStats
 }

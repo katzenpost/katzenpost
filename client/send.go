@@ -20,12 +20,13 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"github.com/katzenpost/katzenpost/client/utils"
 	"io"
 	"time"
 
 	"github.com/katzenpost/hpqc/rand"
+
 	cConstants "github.com/katzenpost/katzenpost/client/constants"
+	"github.com/katzenpost/katzenpost/client/utils"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 )
 
@@ -59,6 +60,7 @@ func (s *Session) doRetransmit(msg *Message) {
 }
 
 func (s *Session) doSend(msg *Message) {
+
 	surbID := [sConstants.SURBIDLength]byte{}
 	_, err := io.ReadFull(rand.Reader, surbID[:])
 	if err != nil {
@@ -73,11 +75,16 @@ func (s *Session) doSend(msg *Message) {
 		surbIdStr := fmt.Sprintf("[%v]", hex.EncodeToString(surbID[:]))
 		s.log.Debugf("doSend %s with SURB ID %s", msgIdStr, surbIdStr)
 		key, eta, err = s.minclient.SendCiphertext(msg.Recipient, msg.Provider, &surbID, msg.Payload)
+		if err != nil {
+			s.log.Debugf("SendCiphertext failed with error: %s", err)
+		}
 	} else {
 		s.log.Debugf("doSend %s without SURB", msgIdStr)
 		err = s.minclient.SendUnreliableCiphertext(msg.Recipient, msg.Provider, msg.Payload)
+		if err != nil {
+			s.log.Debugf("SendUnreliableCiphertext failed with error: %s", err)
+		}
 	}
-
 	// message was sent
 	if err == nil {
 		msg.SentAt = time.Now()
@@ -117,7 +124,7 @@ func (s *Session) doSend(msg *Message) {
 			return
 		}
 	}
-	s.eventCh.In() <- &MessageSentEvent{
+	s.eventCh <- &MessageSentEvent{
 		MessageID: msg.ID,
 		Err:       err,
 		SentAt:    msg.SentAt,

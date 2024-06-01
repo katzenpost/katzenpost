@@ -12,10 +12,7 @@ Double Ratchet Library
 This library is a fork of agl's double ratchet in his pond messaging system https://github.com/agl/pond/.
 We have made several changes in this fork:
 
-* "post-quantum hybrid ratchet"; CSIDH and ECDH ratchets progress together and both computed shared
-  secrets are feed into the root KDF chain
-* uses memguard to protect and wipe the memory used to store cryptographic
-  key material
+* "post-quantum hybrid ratchet"; uses generic NIKE interfaces from hpqc
 * serialization in CBOR instead of protobufs
 * this library takes ownership of all key material used
 * added methods to perform the complete key exchange

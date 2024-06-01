@@ -29,6 +29,7 @@ import (
 	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/kem"
 	"github.com/katzenpost/hpqc/rand"
+	"github.com/katzenpost/hpqc/sign"
 
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
@@ -41,7 +42,8 @@ import (
 var incomingConnID uint64
 
 type incomingConn struct {
-	scheme kem.Scheme
+	scheme        kem.Scheme
+	pkiSignScheme sign.Scheme
 
 	l   *listener
 	log *logging.Logger
@@ -69,9 +71,9 @@ type incomingConn struct {
 }
 
 func (c *incomingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
-	provider := c.l.glue.Provider()
+	gateway := c.l.glue.Gateway()
 	// this node is a provider
-	if provider != nil {
+	if gateway != nil {
 		// see if it is from a Mix
 		_, canSend, isValid := c.l.glue.PKI().AuthenticateConnection(creds, false)
 		if isValid {
@@ -80,7 +82,7 @@ func (c *incomingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 			c.canSend = canSend
 			return isValid
 		}
-		isClient := provider.AuthenticateClient(creds)
+		isClient := gateway.AuthenticateClient(creds)
 		if !isClient && c.fromClient {
 			// This used to be a client, but is no longer listed in
 			// the user db.  Reject.
@@ -374,7 +376,7 @@ func (c *incomingConn) onRetrieveMessage(cmd *commands.RetrieveMessage) error {
 	if err != nil {
 		return err
 	}
-	msg, surbID, remaining, err := c.l.glue.Provider().Spool().Get(creds.AdditionalData, advance)
+	msg, surbID, remaining, err := c.l.glue.Gateway().Spool().Get(creds.AdditionalData, advance)
 	if err != nil {
 		return err
 	}
@@ -390,7 +392,7 @@ func (c *incomingConn) onRetrieveMessage(cmd *commands.RetrieveMessage) error {
 		// This was a SURBReply.
 		surbCmd := &commands.MessageACK{
 			Geo:  c.geo,
-			Cmds: commands.NewCommands(c.geo),
+			Cmds: commands.NewCommands(c.geo, c.pkiSignScheme),
 
 			QueueSizeHint: hint,
 			Sequence:      cmd.Sequence,
@@ -406,7 +408,7 @@ func (c *incomingConn) onRetrieveMessage(cmd *commands.RetrieveMessage) error {
 		// This was a message.
 		respCmd = &commands.Message{
 			Geo:  c.geo,
-			Cmds: commands.NewCommands(c.geo),
+			Cmds: commands.NewCommands(c.geo, c.pkiSignScheme),
 
 			QueueSizeHint: hint,
 			Sequence:      cmd.Sequence,
@@ -423,7 +425,7 @@ func (c *incomingConn) onRetrieveMessage(cmd *commands.RetrieveMessage) error {
 			c.log.Errorf("BUG: Get() failed to return a message, and the queue is not empty.")
 		}
 		respCmd = &commands.MessageEmpty{
-			Cmds:     commands.NewCommands(c.geo),
+			Cmds:     commands.NewCommands(c.geo, c.pkiSignScheme),
 			Sequence: cmd.Sequence,
 		}
 	}
@@ -442,7 +444,7 @@ func (c *incomingConn) onSendPacket(cmd *commands.SendPacket) error {
 	// to try to loop traffic back into the mix net, and sending packets
 	// that bypass the mix net.
 	pkt.MustForward = c.fromClient
-	pkt.MustTerminate = c.l.glue.Config().Server.IsProvider && !c.fromClient
+	pkt.MustTerminate = c.l.glue.Config().Server.IsServiceNode && !c.fromClient
 
 	// If the packet was from the client, and there is a SendShift for the
 	// current epoch, enforce SendShift based rate limits.
@@ -482,9 +484,10 @@ func (c *incomingConn) onSendPacket(cmd *commands.SendPacket) error {
 	return nil
 }
 
-func newIncomingConn(l *listener, conn net.Conn, geo *geo.Geometry, scheme kem.Scheme) *incomingConn {
+func newIncomingConn(l *listener, conn net.Conn, geo *geo.Geometry, scheme kem.Scheme, pkiSignScheme sign.Scheme) *incomingConn {
 	c := &incomingConn{
 		scheme:            scheme,
+		pkiSignScheme:     pkiSignScheme,
 		l:                 l,
 		c:                 conn,
 		id:                atomic.AddUint64(&incomingConnID, 1), // Diagnostic only, wrapping is fine.
