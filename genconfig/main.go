@@ -221,9 +221,9 @@ func (s *katzenpost) genNodeConfig(isGateway, isServiceNode bool, isVoting bool)
 		cfg.ServiceNode.CBORPluginKaetzchen = []*sConfig.CBORPluginKaetzchen{spoolCfg}
 		if !s.hasPanda {
 			mapCfg := &sConfig.CBORPluginKaetzchen{
-				Capability:     "map",
-				Endpoint:       "+map",
-				Command:        s.baseDir + "/map" + s.binSuffix,
+				Capability:     "pigeonhole",
+				Endpoint:       "+pigeonhole",
+				Command:        s.baseDir + "/pigeonhole" + s.binSuffix,
 				MaxConcurrency: 1,
 				Config: map[string]interface{}{
 					"db":      s.baseDir + "/" + cfg.Server.Identifier + "/map.storage",
