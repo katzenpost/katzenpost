@@ -85,6 +85,9 @@ func TestServerStartShutdown(t *testing.T) {
 	)
 
 	cfg := config.Config{
+		Management: &config.Management{
+			Enable: false,
+		},
 		SphinxGeometry: geo,
 		Server: &config.Server{
 			WireKEM:            testingSchemeName,
