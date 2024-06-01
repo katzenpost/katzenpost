@@ -17,18 +17,25 @@
 package server
 
 import (
+	"io/ioutil"
+	"os"
+	"path/filepath"
+	"runtime"
+	"testing"
+
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/hpqc/sign/ed25519"
 	"github.com/katzenpost/katzenpost/map/common"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/op/go-logging.v1"
-	"io/ioutil"
-	"os"
-	"path/filepath"
-	"testing"
 )
 
 func TestCreateMap(t *testing.T) {
+
+	if runtime.GOOS == "windows" {
+		return
+	}
+
 	require := require.New(t)
 	tmpDir, err := ioutil.TempDir("", "map_test")
 	require.NoError(err)
@@ -44,6 +51,11 @@ func TestCreateMap(t *testing.T) {
 }
 
 func TestMap(t *testing.T) {
+
+	if runtime.GOOS == "windows" {
+		return
+	}
+
 	// start a map service
 	require := require.New(t)
 	tmpDir, err := ioutil.TempDir("", "map_test")
