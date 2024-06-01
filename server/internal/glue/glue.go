@@ -24,6 +24,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/core/thwack"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/loops"
 	"github.com/katzenpost/katzenpost/server/config"
@@ -42,6 +43,7 @@ type Glue interface {
 	IdentityPublicKey() sign.PublicKey
 	LinkKey() kem.PrivateKey
 
+	Management() *thwack.Server
 	MixKeys() MixKeys
 	PKI() PKI
 	Gateway() Gateway

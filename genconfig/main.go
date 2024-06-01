@@ -145,8 +145,8 @@ func (s *katzenpost) genNodeConfig(isGateway, isServiceNode bool, isVoting bool)
 	} else if isServiceNode {
 		n = fmt.Sprintf("servicenode%d", s.serviceNodeIdx+1)
 	}
-	cfg := new(sConfig.Config)
 
+	cfg := new(sConfig.Config)
 	cfg.SphinxGeometry = s.sphinxGeometry
 
 	// Server section.
@@ -162,9 +162,15 @@ func (s *katzenpost) genNodeConfig(isGateway, isServiceNode bool, isVoting bool)
 	cfg.Server.IsGatewayNode = isGateway
 	cfg.Server.IsServiceNode = isServiceNode
 	if isGateway {
+		cfg.Management = new(sConfig.Management)
+		cfg.Management.Enable = true
 		cfg.Server.AltAddresses = map[string][]string{
 			"TCP": []string{fmt.Sprintf("localhost:%d", s.lastPort)},
 		}
+	}
+	if isServiceNode {
+		cfg.Management = new(sConfig.Management)
+		cfg.Management.Enable = true
 	}
 	// Enable Metrics endpoint
 	s.lastPort += 1
@@ -346,7 +352,7 @@ func main() {
 	wirekem := flag.String("wirekem", "", "Name of the KEM Scheme to be used with wire protocol")
 	kem := flag.String("kem", "", "Name of the KEM Scheme to be used with Sphinx")
 	nike := flag.String("nike", "x25519", "Name of the NIKE Scheme to be used with Sphinx")
-	ratchetNike := flag.String("ratchetNike", "NOBS_CSIDH-x25519", "Name of the NIKE Scheme to be used with the doubleratchet")
+	ratchetNike := flag.String("ratchetNike", "CTIDH512-X25519", "Name of the NIKE Scheme to be used with the doubleratchet")
 	UserForwardPayloadLength := flag.Int("UserForwardPayloadLength", 2000, "UserForwardPayloadLength")
 	pkiSignatureScheme := flag.String("pkiScheme", "Ed25519", "PKI Signature Scheme to be used")
 

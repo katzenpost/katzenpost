@@ -31,6 +31,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/katzenpost/katzenpost/server/cborplugin"
+	"github.com/katzenpost/katzenpost/server/config"
 	"github.com/katzenpost/katzenpost/server/internal/glue"
 	"github.com/katzenpost/katzenpost/server/internal/instrument"
 	"github.com/katzenpost/katzenpost/server/internal/packet"
@@ -86,7 +87,9 @@ func (k *CBORPluginWorker) worker(recipient [constants.RecipientIDLength]byte, p
 
 	defer k.haltOnce.Do(k.haltAllClients)
 
+	k.Lock()
 	handlerCh, ok := k.pluginChans[recipient]
+	k.Unlock()
 	if !ok {
 		k.log.Debugf("Failed to find handler. Dropping Kaetzchen request: %v", recipient)
 		instrument.KaetzchenRequestsDropped(1)
@@ -214,6 +217,11 @@ func (k *CBORPluginWorker) KaetzchenForPKI() ServiceMap {
 func (k *CBORPluginWorker) IsKaetzchen(recipient [constants.RecipientIDLength]byte) bool {
 	k.Lock()
 	defer k.Unlock()
+	return k.isKaetzchen(recipient)
+}
+
+// isKaetzchen returns true if the given recipient is one of our workers.
+func (k *CBORPluginWorker) isKaetzchen(recipient [constants.RecipientIDLength]byte) bool {
 	_, ok := k.pluginChans[recipient]
 	return ok
 }
@@ -255,10 +263,6 @@ func NewCBORPluginWorker(glue glue.Glue) (*CBORPluginWorker, error) {
 		clients:     make([]*cborplugin.Client, 0),
 	}
 
-	// hold lock while mutating pluginChans and clients
-	kaetzchenWorker.Lock()
-	defer kaetzchenWorker.Unlock()
-
 	capaMap := make(map[string]bool)
 
 	for _, pluginConf := range glue.Config().ServiceNode.CBORPluginKaetzchen {
@@ -290,48 +294,104 @@ func NewCBORPluginWorker(glue glue.Glue) (*CBORPluginWorker, error) {
 			return nil, fmt.Errorf("provider: Kaetzchen: '%v' invalid endpoint, length out of bounds", capa)
 		}
 
-		// Add an infinite channel for this plugin.
-		var endpoint [constants.RecipientIDLength]byte
-		copy(endpoint[:], rawEp)
-		kaetzchenWorker.pluginChans[endpoint] = make(chan interface{}, InboundPacketsChannelSize)
-		kaetzchenWorker.log.Noticef("Starting Kaetzchen plugin client: %s", capa)
+		err := kaetzchenWorker.register(pluginConf)
 
-		var args []string
-		if len(pluginConf.Config) > 0 {
-			args = []string{}
-			for key, val := range pluginConf.Config {
-				args = append(args, fmt.Sprintf("-%s", key), val.(string))
-			}
-		}
-
-		pluginClient, err := kaetzchenWorker.launch(pluginConf.Command, pluginConf.Capability, pluginConf.Endpoint, args)
 		if err != nil {
-			kaetzchenWorker.log.Error("Failed to start a plugin client: %s", err)
 			return nil, err
 		}
 
-		// Accumulate a list of all clients to facilitate clean shutdown.
-		kaetzchenWorker.clients = append(kaetzchenWorker.clients, pluginClient)
-
-		// Start the workers _after_ we have added all of the entries to pluginChans
-		// otherwise the worker() goroutines race this thread.
-		defer kaetzchenWorker.Go(func() {
-			kaetzchenWorker.worker(endpoint, pluginClient)
-		})
-
-		// start the sendworker
-		defer kaetzchenWorker.Go(func() {
-			kaetzchenWorker.sendworker(pluginClient)
-		})
-
-		// Unregister pluginClient when it halts
-		defer kaetzchenWorker.Go(func() {
-			<-pluginClient.HaltCh()
-			kaetzchenWorker.unregister(endpoint, pluginClient)
-		})
-
 		capaMap[capa] = true
 	}
-
 	return &kaetzchenWorker, nil
+}
+
+// RegisterKaetzchen adds a Kaetzchen service to the set of available Kaetzchen
+func (k *CBORPluginWorker) RegisterKaetzchen(capa string) error {
+	for _, kaetzchenConfig := range k.glue.Config().ServiceNode.CBORPluginKaetzchen {
+		if kaetzchenConfig.Capability == capa {
+			// verify that the plugin isn't already registered
+			var endpoint [constants.RecipientIDLength]byte
+			copy(endpoint[:], []byte(kaetzchenConfig.Endpoint))
+			return k.register(kaetzchenConfig)
+		}
+	}
+	return fmt.Errorf("provider: kaetzchen: '%v' not found in config", capa)
+}
+
+// UnregisterKaetzchen stops a CBORPluginKaetzczhen and removes it from the set of available Kaetzchen
+func (k *CBORPluginWorker) UnregisterKaetzchen(capa string) error {
+	k.Lock()
+	defer k.Unlock()
+	for _, kaetzchenConfig := range k.glue.Config().ServiceNode.CBORPluginKaetzchen {
+		if kaetzchenConfig.Capability == capa {
+			// verify that the plugin is already registered
+			var endpoint [constants.RecipientIDLength]byte
+			copy(endpoint[:], []byte(kaetzchenConfig.Endpoint))
+			if !k.isKaetzchen(endpoint) {
+				return fmt.Errorf("provider: kaetzchen: '%v' is not registered", capa)
+			}
+
+			// find the client plugin and halt it
+			for _, client := range k.clients {
+				if client.Capability() == capa {
+					k.log.Debugf("Halting plugin client: %s", capa)
+					go client.Halt() // unregister is called after the plugin has Halted
+					return nil
+				}
+			}
+		}
+	}
+	return fmt.Errorf("provider: CBORPluginKaetzchen: '%v' not found", capa)
+}
+
+func (k *CBORPluginWorker) register(pluginConf *config.CBORPluginKaetzchen) error {
+	// hold lock while mutating pluginChans and clients
+	k.Lock()
+	defer k.Unlock()
+	var endpoint [constants.RecipientIDLength]byte
+	copy(endpoint[:], []byte(pluginConf.Endpoint))
+
+	if k.isKaetzchen(endpoint) {
+		return fmt.Errorf("provider: kaetzchen: '%v' is already registered", pluginConf.Capability)
+	}
+
+	// Add an infinite channel for this plugin.
+	k.pluginChans[endpoint] = make(chan interface{}, InboundPacketsChannelSize)
+	k.log.Noticef("Starting Kaetzchen plugin client: %s", pluginConf.Capability)
+
+	var args []string
+	if len(pluginConf.Config) > 0 {
+		args = []string{}
+		for key, val := range pluginConf.Config {
+			args = append(args, fmt.Sprintf("-%s", key), val.(string))
+		}
+	}
+
+	pluginClient, err := k.launch(pluginConf.Command, pluginConf.Capability, pluginConf.Endpoint, args)
+	if err != nil {
+		k.log.Error("Failed to start a plugin client: %s", err)
+		return err
+	}
+
+	// Accumulate a list of all clients to facilitate clean shutdown.
+	k.clients = append(k.clients, pluginClient)
+
+	// Start the workers _after_ we have added all of the entries to pluginChans
+	// otherwise the worker() goroutines race this thread.
+	defer k.Go(func() {
+		// pluginChans must exist for worker routine and OnKaetzchen
+		k.worker(endpoint, pluginClient)
+	})
+
+	// start the sendworker
+	defer k.Go(func() {
+		k.sendworker(pluginClient)
+	})
+
+	// Unregister pluginClient when it halts
+	defer k.Go(func() {
+		<-pluginClient.HaltCh()
+		k.unregister(endpoint, pluginClient)
+	})
+	return nil
 }

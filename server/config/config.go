@@ -61,6 +61,7 @@ const (
 	defaultKaetzchenDelay      = 750       // 750 ms.
 	defaultUserDB              = "users.db"
 	defaultSpoolDB             = "spool.db"
+	defaultManagementSocket    = "management_sock"
 
 	backendPgx = "pgx"
 
@@ -725,6 +726,32 @@ func (vCfg *Voting) validate(datadir string) error {
 	return nil
 }
 
+// Management is the Katzenpost management interface configuration.
+type Management struct {
+	// Enable enables the management interface.
+	Enable bool
+
+	// Path specifies the path to the manaagment interface socket.  If left
+	// empty it will use `management_sock` under the DataDir.
+	Path string
+}
+
+func (mCfg *Management) applyDefaults(sCfg *Server) {
+	if mCfg.Path == "" {
+		mCfg.Path = filepath.Join(sCfg.DataDir, defaultManagementSocket)
+	}
+}
+
+func (mCfg *Management) validate() error {
+	if !mCfg.Enable {
+		return nil
+	}
+	if !filepath.IsAbs(mCfg.Path) {
+		return fmt.Errorf("config: Management: Path '%v' is not an absolute path", mCfg.Path)
+	}
+	return nil
+}
+
 // Config is the top level Katzenpost server configuration.
 type Config struct {
 	Server         *Server
@@ -732,6 +759,7 @@ type Config struct {
 	ServiceNode    *ServiceNode
 	Gateway        *Gateway
 	PKI            *PKI
+	Management     *Management
 	SphinxGeometry *geo.Geometry
 
 	Debug *Debug
@@ -763,6 +791,9 @@ func (cfg *Config) FixupAndValidate() error {
 	}
 	if cfg.PKI == nil {
 		return errors.New("config: No PKI block was present")
+	}
+	if cfg.Management == nil {
+		cfg.Management = &Management{}
 	}
 
 	// Perform basic validation.

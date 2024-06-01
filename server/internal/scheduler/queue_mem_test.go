@@ -16,6 +16,7 @@ import (
 
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
+	"github.com/katzenpost/katzenpost/core/thwack"
 	"github.com/katzenpost/katzenpost/server/config"
 	"github.com/katzenpost/katzenpost/server/internal/glue"
 	"github.com/katzenpost/katzenpost/server/internal/packet"
@@ -74,6 +75,10 @@ func (m *mockGlue) Scheduler() glue.Scheduler {
 	return nil
 }
 func (m *mockGlue) ReshadowCryptoWorkers() {}
+
+func (m *mockGlue) Management() *thwack.Server {
+	return nil
+}
 
 // TestMemoryQueueBulkEnqueue verifies that the queue orders packets by delay
 func TestMemoryQueueBulkEnqueue(t *testing.T) {
