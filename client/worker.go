@@ -19,13 +19,13 @@ package client
 import (
 	"errors"
 	"math"
+	mrand "math/rand"
 	"time"
 
-	mrand "math/rand"
+	"github.com/katzenpost/hpqc/rand"
 
 	"github.com/katzenpost/katzenpost/client/constants"
 	"github.com/katzenpost/katzenpost/client/utils"
-	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/katzenpost/core/pki"
 )
 

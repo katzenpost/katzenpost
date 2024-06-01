@@ -39,7 +39,7 @@ import (
 // Kaetzchen's endpoint.
 const ParameterEndpoint = "endpoint"
 
-// ErrNoResponse is the error returned from OnMessage() when there is no
+// ErrNoResponse is the error returned from OnRequest() when there is no
 // response to be sent (rather than an empty response).
 var ErrNoResponse = errors.New("kaetzchen: message has no response")
 
@@ -69,7 +69,7 @@ type Kaetzchen interface {
 	//    byte slice and nil error will result in a response with a 0 byte
 	//    payload being sent.
 	//
-	//  * NOT assume payload will be valid past the call to OnMessage.
+	//  * NOT assume payload will be valid past the call to OnRequest.
 	//    Any contents that need to be preserved, MUST be copied out,
 	//    except if it is only used as a part of the response body.
 	OnRequest(id uint64, payload []byte, hasSURB bool) ([]byte, error)
