@@ -225,7 +225,7 @@ func (p *gateway) onToUser(pkt *packet.Packet, recipient []byte) {
 
 	// Iff there is a SURB, generate a SURB-ACK and schedule.
 	if surb != nil {
-		ackPkt, err := packet.NewPacketFromSURB(pkt, surb, nil, p.glue.Config().SphinxGeometry)
+		ackPkt, err := packet.NewPacketFromSURB(surb, nil, p.glue.Config().SphinxGeometry)
 		if err != nil {
 			p.log.Debugf("Failed to generate SURB-ACK: %v (%v)", pkt.ID, err)
 			return

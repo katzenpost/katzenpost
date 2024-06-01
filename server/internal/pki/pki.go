@@ -654,6 +654,17 @@ func (p *pki) OutgoingDestinations() map[[sConstants.NodeIDLength]byte]*cpki.Mix
 	return descMap
 }
 
+func (p *pki) CurrentDocument() (*cpki.Document, error) {
+	epoch, _, _ := epochtime.Now()
+	p.RLock()
+	defer p.RUnlock()
+	val, ok := p.docs[epoch]
+	if ok {
+		return val.Document(), nil
+	}
+	return nil, cpki.ErrNoDocument
+}
+
 func (p *pki) GetRawConsensus(epoch uint64) ([]byte, error) {
 	if ok, err := p.getFailedFetch(epoch); ok {
 		p.log.Debugf("GetRawConsensus failure: no cached PKI document for epoch %v: %v", epoch, err)

@@ -133,39 +133,57 @@ func (k *CBORPluginWorker) processKaetzchen(pkt *packet.Packet, pluginClient *cb
 	}
 
 	pluginClient.WriteChan() <- &cborplugin.Request{
-		ID:           pkt.ID,
-		Payload:      payload,
-		ResponseSize: k.geo.UserForwardPayloadLength,
-		HasSURB:      surb != nil,
+		ID:        pkt.ID,
+		RequestAt: time.Now(),
+		Delay:     pkt.Delay,
+		Payload:   payload,
+		SURB:      surb,
 	}
-	cborResponse := <-pluginClient.ReadChan()
-	switch r := cborResponse.(type) {
-	case *cborplugin.Response:
-		if len(r.Payload) > k.geo.UserForwardPayloadLength {
-			// response is probably invalid, so drop it
-			k.log.Errorf("%v: Got response too long: %d > max (%d)",
-				pluginCap, len(r.Payload), k.geo.UserForwardPayloadLength)
-			instrument.KaetzchenRequestsDropped(1)
-			return
-		}
-		// Iff there is a SURB, generate a SURB-Reply and schedule.
-		if surb != nil {
-			respPkt, err := packet.NewPacketFromSURB(pkt, surb, r.Payload, k.glue.Config().SphinxGeometry)
-			if err != nil {
-				k.log.Debugf("%v: Failed to generate SURB-Reply: %v (%v)", pluginCap, pkt.ID, err)
-				return
-			}
+}
 
-			k.log.Debugf("%v: Handing off newly generated SURB-Reply: %v (Src:%v)", pluginCap, respPkt.ID, pkt.ID)
-			k.glue.Scheduler().OnPacket(respPkt)
+func (k *CBORPluginWorker) sendworker(pluginClient *cborplugin.Client) {
+	pluginCap := pluginClient.Capability()
+	surbLength := k.geo.SURBLength
+	for {
+		select {
+		case <-k.HaltCh():
 			return
+		case cborResponse := <-pluginClient.ReadChan():
+			switch r := cborResponse.(type) {
+			case *cborplugin.Response:
+				if len(r.Payload) > k.geo.UserForwardPayloadLength {
+					// response is probably invalid, so drop it
+					k.log.Errorf("%v: Got response too long: %d > max (%d)",
+						pluginCap, len(r.Payload), k.geo.UserForwardPayloadLength)
+					instrument.KaetzchenRequestsDropped(1)
+					continue
+				}
+				// Iff there is a SURB, generate a SURB-Reply and schedule.
+				if len(r.SURB) == surbLength {
+					respPkt, err := packet.NewPacketFromSURB(r.SURB, r.Payload, k.geo)
+					if err != nil {
+						k.log.Debugf("%v: Failed to generate SURB-Reply: %v (%v)", pluginCap, r.ID, err)
+						continue
+					}
+					// Set the packet queue delay
+					delay := r.Delay - time.Since(r.RequestAt)
+					if delay < 0 {
+						respPkt.Delay = 0
+					} else {
+						respPkt.Delay = delay
+					}
+
+					k.log.Debugf("%v: Handing off newly generated SURB-Reply: %v (Src:%v)", pluginCap, respPkt.ID, r.ID)
+					k.glue.Scheduler().OnPacket(respPkt)
+				} else {
+					k.log.Debugf("No SURB provided: %v", r.ID)
+				}
+			default:
+				// received some unknown command type
+				k.log.Errorf("%v: Failed to handle Kaetzchen request, unknown command type: (%v), response: %s", pluginCap, r, cborResponse)
+				instrument.KaetzchenRequestsDropped(1)
+			}
 		}
-		k.log.Debugf("No SURB provided: %v", pkt.ID)
-	default:
-		// received some unknown command type
-		k.log.Errorf("%v: Failed to handle Kaetzchen request: %v (%v), response: %s", pluginCap, pkt.ID, err, cborResponse)
-		instrument.KaetzchenRequestsDropped(1)
-		return
 	}
 }
 
@@ -299,6 +317,11 @@ func NewCBORPluginWorker(glue glue.Glue) (*CBORPluginWorker, error) {
 		// otherwise the worker() goroutines race this thread.
 		defer kaetzchenWorker.Go(func() {
 			kaetzchenWorker.worker(endpoint, pluginClient)
+		})
+
+		// start the sendworker
+		defer kaetzchenWorker.Go(func() {
+			kaetzchenWorker.sendworker(pluginClient)
 		})
 
 		// Unregister pluginClient when it halts
