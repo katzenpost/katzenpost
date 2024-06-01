@@ -25,13 +25,14 @@ import (
 	"encoding/gob"
 	"errors"
 	"fmt"
-	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 	"net"
 	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
 	"time"
+
+	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 
 	bolt "go.etcd.io/bbolt"
 	"golang.org/x/crypto/blake2b"

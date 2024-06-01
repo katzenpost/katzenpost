@@ -90,6 +90,7 @@ $(docker_compose_yml): ../genconfig/main.go $(distro)_go_mod.stamp
 		-S .$(distro) -v -o ./$(net_name) -b /$(net_name) -P $(base_port) \
 		-nike "$(nike)" -kem "$(kem)" -d katzenpost-$(distro)_go_mod \
 		-UserForwardPayloadLength $(UserForwardPayloadLength) -log_level $(log_level)'
+	ln -sf client/client.toml client.toml
 
 $(net_name)/running.stamp:
 	make $(make_args) start
@@ -128,13 +129,13 @@ wait: $(net_name)/running.stamp
 	/$(net_name)/fetch.$(distro) -f /$(net_name)/client/client.toml
 
 debian_base.stamp:
-	$(docker) run $(replace_name) katzenpost_debian_base docker.io/golang:bullseye $(sh) -c 'adduser katzenpost --gecos "" --disabled-password --uid ${uid} && apt update && apt upgrade -y'
+	$(docker) run $(replace_name) katzenpost_debian_base docker.io/golang:bullseye $(sh) -c "echo -e 'deb https://deb.debian.org/debian bullseye main\ndeb https://deb.debian.org/debian bullseye-updates main\ndeb https://deb.debian.org/debian-security bullseye-security main' > /etc/apt/sources.list && cat /etc/apt/sources.list && apt update && apt upgrade -y && apt install -y pv && adduser katzenpost --gecos '' --disabled-password && apt update && apt upgrade -y"
 	$(docker) commit katzenpost_debian_base katzenpost-debian_base
 	$(docker) rm katzenpost_debian_base
 	touch $@
 
 alpine_base.stamp:
-	$(docker) run $(replace_name) katzenpost_alpine_base docker.io/golang:1.21-alpine sh -c 'adduser katzenpost --gecos "" --disabled-password  && apk update && apk upgrade && apk add gcc musl-dev make' \
+	$(docker) run $(replace_name) katzenpost_alpine_base docker.io/golang:alpine sh -c 'adduser katzenpost --gecos "" --disabled-password  && apk update && apk upgrade && apk add gcc musl-dev make pv' \
 	&& $(docker) commit katzenpost_alpine_base katzenpost-alpine_base \
 	&& $(docker) rm katzenpost_alpine_base
 	touch $@
@@ -173,6 +174,11 @@ $(net_name)/ping.$(distro): $(distro)_go_mod.stamp
 		$(docker) run ${docker_args} $(mount_net_name) --rm katzenpost-$(distro)_go_mod \
 			$(sh) -c 'cd ping && go mod verify && go build -ldflags ${ldflags} && \
 			mv ping /$(net_name)/ping.$(distro)'
+
+$(net_name)/katzencat.$(distro): $(distro)_go_mod.stamp $(net_name)
+		$(docker) run ${docker_args} $(mount_net_name) --rm katzenpost-$(distro)_go_mod \
+			$(sh) -c 'cd katzencat && go mod verify && go build -ldflags ${ldflags} && \
+			mv katzencat /$(net_name)/katzencat.$(distro)'
 
 clean-images: stop
 	@-for distro in $(DISTROS); do \
