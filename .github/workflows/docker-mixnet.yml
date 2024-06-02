@@ -8,7 +8,7 @@ jobs:
       XDG_RUNTIME_DIR: /run
     strategy:
       matrix:
-        go-version: [1.21.x]
+        go-version: [1.22.x]
         os: [ubuntu-latest]
     runs-on: ${{ matrix.os }}
     steps:
@@ -43,7 +43,7 @@ jobs:
       XDG_RUNTIME_DIR: /run
     strategy:
       matrix:
-        go-version: [1.21.x]
+        go-version: [1.22.x]
         os: [ubuntu-latest]
     runs-on: ${{ matrix.os }}
     steps:
@@ -75,7 +75,7 @@ jobs:
       XDG_RUNTIME_DIR: /run
     strategy:
       matrix:
-        go-version: [1.21.x]
+        go-version: [1.22.x]
         os: [ubuntu-latest]
     runs-on: ${{ matrix.os }}
     steps:
@@ -107,7 +107,7 @@ jobs:
       XDG_RUNTIME_DIR: /run
     strategy:
       matrix:
-        go-version: [1.21.x]
+        go-version: [1.22.x]
         os: [ubuntu-latest]
     runs-on: ${{ matrix.os }}
     steps:
@@ -138,8 +138,8 @@ jobs:
       XDG_RUNTIME_DIR: /run
     strategy:
       matrix:
-        go-version: [1.19.x]
-        os: [ubuntu-22.04]
+        go-version: [1.22.x]
+        os: [ubuntu-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout code
