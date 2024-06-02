@@ -45,11 +45,11 @@ import (
 const (
 	defaultAddress             = ":3219"
 	defaultLogLevel            = "NOTICE"
-	defaultNumGatewayWorkers   = 1
-	defaultNumServiceWorkers   = 1
+	defaultNumGatewayWorkers   = 3
+	defaultNumServiceWorkers   = 3
 	defaultNumKaetzchenWorkers = 3
-	defaultUnwrapDelay         = 10 // 10 ms.
-	defaultSchedulerSlack      = 10 // 10 ms.
+	defaultUnwrapDelay         = 250 // 250 ms.
+	defaultSchedulerSlack      = 150 // 150 ms.
 	defaultSchedulerMaxBurst   = 16
 	defaultSendSlack           = 50        // 50 ms.
 	defaultDecoySlack          = 15 * 1000 // 15 sec.

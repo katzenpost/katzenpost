@@ -1143,8 +1143,9 @@ func (c *Client) handleReply(replyEvent *client.MessageReplyEvent) {
 			}
 			if !spoolResponse.IsOK() {
 				// no new messages were returned
+
 				c.log.Debugf("Spool response ID %d status error: %s for SpoolID %x",
-					spoolResponse.MessageID, spoolResponse.Status, spoolResponse.SpoolID)
+					spoolResponse.MessageID, spoolResponse.Status, spoolResponse.SpoolID[:])
 
 				return
 			}
