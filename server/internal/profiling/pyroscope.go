@@ -36,7 +36,7 @@ func Start(log *logging.Logger) error {
 		Logger:          pyroscope.StandardLogger,
 		Tags: map[string]string{
 			"service": serviceTag,
-			"env":     "test",
+			"env":     "test1",
 		},
 		ProfileTypes: []pyroscope.ProfileType{
 			pyroscope.ProfileCPU,
