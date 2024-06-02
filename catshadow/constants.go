@@ -33,4 +33,7 @@ const (
 	// GarbageCollectionInterval is the time interval between garbage collecting
 	// old messages.
 	GarbageCollectionInterval = 120 * time.Minute
+
+	// CBORMessageOverhead is the serialized CBOR overhead added by our Message type which our ratchet payload is encapsulated within. TO understand how we arrived at this 54 hardcoded value, please see doubleratchet test Test_DoSendMessageOverhead.
+	CBORMessageOverhead = 54
 )

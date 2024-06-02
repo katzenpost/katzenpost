@@ -197,11 +197,15 @@ func (c *Client) halt() {
 		// nil out after the PKI is torn down due to a dependency.
 	}
 
+	// hold lock when making c.pki nil or this can race callers of
+	// Client.CurrentDocument will and crash with nil ptr
+	c.Lock()
 	if c.pki != nil {
 		c.pki.Halt()
 		c.pki = nil
 	}
 	c.conn = nil
+	c.Unlock()
 
 	c.log.Notice("Shutdown complete.")
 	close(c.haltedCh)

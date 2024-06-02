@@ -1,5 +1,5 @@
-// main.go - echo service using cbor plugin system
-// Copyright (C) 2018  David Stainton.
+// main.go - pigeonhole katzenpost service daemon
+// Copyright (C) 2021  Masala
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as
@@ -17,43 +17,41 @@
 package main
 
 import (
-	"errors"
 	"flag"
 	"fmt"
+	"io/ioutil"
 	"os"
 	"path"
 	"path/filepath"
 
 	"github.com/katzenpost/katzenpost/core/log"
+	"github.com/katzenpost/katzenpost/pigeonhole/server"
 	"github.com/katzenpost/katzenpost/server/cborplugin"
 )
 
-type Echo struct{
-	write func(cborplugin.Command)
-}
-
-func (e *Echo) OnCommand(cmd cborplugin.Command) error {
-	switch r := cmd.(type) {
-	case *cborplugin.Request:
-		go func() {
-			e.write(&cborplugin.Response{ID: r.ID, SURB: r.SURB, Payload: r.Payload})
-		}()
-		return nil
-	default:
-		return errors.New("echo-plugin: Invalid Command type")
-	}
-}
-
-func (e *Echo) RegisterConsumer(s *cborplugin.Server) {
-	e.write = s.Write
-}
+const (
+	defaultPigeonHoleSize = 0x1 << 32 // 4B entries
+	defaultGCSize         = 0x1 << 30 // 1B entries
+)
 
 func main() {
 	var logLevel string
 	var logDir string
+	var dbFile string
+	var pigeonHoleSize int
+	var gcSize int
+	flag.StringVar(&dbFile, "db", "", "database file")
 	flag.StringVar(&logDir, "log_dir", "", "logging directory")
 	flag.StringVar(&logLevel, "log_level", "DEBUG", "logging level could be set to: DEBUG, INFO, NOTICE, WARNING, ERROR, CRITICAL")
+	flag.IntVar(&pigeonHoleSize, "size", defaultPigeonHoleSize, "number of entries to retain")
+	flag.IntVar(&gcSize, "gc", defaultGCSize, "number of entries to batch garbage collect")
 	flag.Parse()
+
+	// Verify that a storage path is provided.
+	if dbFile == "" {
+		fmt.Println("Must specify a data storage file path.")
+		os.Exit(1)
+	}
 
 	// Ensure that the log directory exists.
 	s, err := os.Stat(logDir)
@@ -67,28 +65,29 @@ func main() {
 	}
 
 	// Log to a file.
-	logFile := path.Join(logDir, fmt.Sprintf("echo.%d.log", os.Getpid()))
+	logFile := path.Join(logDir, fmt.Sprintf("pigeonHole.%d.log", os.Getpid()))
 	logBackend, err := log.New(logFile, logLevel, false)
 	if err != nil {
 		panic(err)
 	}
-	serverLog := logBackend.GetLogger("echo_server")
+	serverLog := logBackend.GetLogger("pigeonHole_server")
 
 	// start service
-	tmpDir, err := os.MkdirTemp("", "echo_server")
+	tmpDir, err := ioutil.TempDir("", "pigeonHole_server")
 	if err != nil {
 		panic(err)
 	}
-	socketFile := filepath.Join(tmpDir, fmt.Sprintf("%d.echo.socket", os.Getpid()))
-	echo := new(Echo)
+	socketFile := filepath.Join(tmpDir, fmt.Sprintf("%d.pigeonHole.socket", os.Getpid()))
 
-	var server *cborplugin.Server
-	server = cborplugin.NewServer(serverLog, socketFile, new(cborplugin.RequestFactory), echo)
-	fmt.Printf("%s\n", socketFile)
+	pigeonHoleServer, err := server.NewPigeonHole(dbFile, serverLog, gcSize, pigeonHoleSize)
+	if err != nil {
+		panic(err)
+	}
+	cmdBuilder := new(cborplugin.RequestFactory)
+	server := cborplugin.NewServer(serverLog, socketFile, cmdBuilder, pigeonHoleServer)
+	fmt.Printf("%s\n", socketFile) // are you for fucking real right now
 	server.Accept()
 	server.Wait()
-	err = os.Remove(socketFile)
-	if err != nil {
-		panic(err)
-	}
+	pigeonHoleServer.Shutdown()
+	os.Remove(socketFile)
 }

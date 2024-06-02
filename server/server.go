@@ -20,6 +20,7 @@ package server
 import (
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"sync"
 
@@ -39,6 +40,7 @@ import (
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 
 	"github.com/katzenpost/katzenpost/core/log"
+	"github.com/katzenpost/katzenpost/core/thwack"
 	"github.com/katzenpost/katzenpost/core/utils"
 	"github.com/katzenpost/katzenpost/server/config"
 	"github.com/katzenpost/katzenpost/server/internal/cryptoworker"
@@ -83,6 +85,7 @@ type Server struct {
 	gateway       glue.Gateway
 	serviceNode   glue.ServiceNode
 	decoy         glue.Decoy
+	management    *thwack.Server
 
 	fatalErrCh chan error
 	haltedCh   chan interface{}
@@ -370,6 +373,37 @@ func New(cfg *config.Config) (*Server, error) {
 		s.Shutdown()
 	}()
 
+	// Initialize the management interface if enabled.
+	//
+	// Note: This is done first so that other subsystems may register commands.
+	if _, err := os.Stat(s.cfg.Management.Path); !os.IsNotExist(err) {
+		s.log.Warningf("Warning: management socket file '%s' already exists, deleting it.", s.cfg.Management.Path)
+		err := os.Remove(s.cfg.Management.Path)
+		if err != nil {
+			s.fatalErrCh <- fmt.Errorf("failed to delete mgmt socket file, shutting down now")
+			return nil, err
+		}
+	}
+	if s.cfg.Management.Enable {
+		mgmtCfg := &thwack.Config{
+			Net:         "unix",
+			Addr:        s.cfg.Management.Path,
+			ServiceName: s.cfg.Server.Identifier + " Katzenpost Management Interface",
+			LogModule:   "mgmt",
+			NewLoggerFn: s.logBackend.GetLogger,
+		}
+		if s.management, err = thwack.New(mgmtCfg); err != nil {
+			s.log.Errorf("Failed to initialize management interface: %v", err)
+			return nil, err
+		}
+
+		const shutdownCmd = "SHUTDOWN"
+		s.management.RegisterCommand(shutdownCmd, func(c *thwack.Conn, l string) error {
+			s.fatalErrCh <- fmt.Errorf("user requested shutdown via mgmt interface")
+			return nil
+		})
+	}
+
 	// Initialize the PKI interface.
 	if s.pki, err = pki.New(goo); err != nil {
 		s.log.Errorf("Failed to initialize PKI client: %v", err)
@@ -430,6 +464,13 @@ func New(cfg *config.Config) (*Server, error) {
 	// Start the periodic 1 Hz utility timer.
 	s.periodic = newPeriodicTimer(s)
 
+	// Start listening on the management interface if enabled, now that every
+	// subsystem that wants to register commands has had the opportunity to do
+	// so.
+	if s.management != nil {
+		s.management.Start()
+	}
+
 	isOk = true
 	return s, nil
 }
@@ -456,6 +497,10 @@ func (g *serverGlue) IdentityPublicKey() sign.PublicKey {
 
 func (g *serverGlue) LinkKey() kem.PrivateKey {
 	return g.s.linkKey
+}
+
+func (g *serverGlue) Management() *thwack.Server {
+	return g.s.management
 }
 
 func (g *serverGlue) MixKeys() glue.MixKeys {

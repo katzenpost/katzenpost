@@ -874,7 +874,7 @@ func (c *Client) SendMessage(nickname string, message []byte) MessageID {
 
 	nikeScheme := schemes.ByName(cfg.RatchetNIKEScheme)
 
-	if len(message)+4 > DoubleRatchetPayloadLength(cfg.SphinxGeometry, nikeScheme) {
+	if len(message)+4 > CBORMessageOverhead+DoubleRatchetPayloadLength(cfg.SphinxGeometry, nikeScheme) {
 		return MessageID{}
 	}
 	convoMesgID := MessageID{}
