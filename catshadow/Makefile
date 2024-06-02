@@ -6,7 +6,7 @@ docker_user?=$(shell if echo ${docker}|grep -q podman; then echo 0:0; else echo 
 docker=$(shell if which podman|grep -q .; then echo podman; else echo docker; fi)
 distro=alpine
 image=katzenpost-$(distro)_base
-cache_dir=$(readlink -f ../docker)/cache
+cache_dir=$(shell readlink -f ../docker)/cache
 docker_args=--user ${docker_user} -v $(shell readlink -f ..):/go/katzenpost --network=host --rm -v $(cache_dir)/go:/go/ -v $(cache_dir)/root_cache:/root/.cache
 
 dockerdockertest:
