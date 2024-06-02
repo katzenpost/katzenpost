@@ -53,6 +53,9 @@ bind_addr=127.0.0.1
 docker_compose_yml=$(net_name)/docker-compose.yml
 sh=$(shell if echo ${distro}|grep -q alpine; then echo sh; else echo bash; fi)
 SHELL=/bin/bash
+
+# note: overriding cache dir won't work when calling the test_* targets in this makefile
+# because it doesn't pass it through to the other makefiles it calls.
 cache_dir=cache
 
 # log_level can be DEBUG, INFO, NOTICE, WARNING, ERROR, CRITICAL
@@ -142,7 +145,7 @@ debian_base.stamp:
 	$(docker) rm katzenpost_debian_base
 	touch $@
 
-alpine_base.stamp:
+alpine_base.stamp: | $(cache_dir)
 	$(docker) run $(replace_name) katzenpost_alpine_base docker.io/golang:alpine sh -c 'adduser katzenpost --gecos "" --disabled-password  && apk update && apk upgrade && apk add gcc musl-dev make pv' \
 	&& $(docker) commit katzenpost_alpine_base katzenpost-alpine_base \
 	&& $(docker) rm katzenpost_alpine_base
@@ -214,9 +217,10 @@ rootshell: $(distro)_base.stamp
 	$(docker) run --network=host --user 0:0 -v $(shell readlink -f ..):/go/katzenpost --rm -it katzenpost-$(distro)_base $(sh)
 
 test: wait
-	cd ../client    && make $(make_args) testargs=$(testargs) dockerdockertest
-	cd ../catshadow && make $(make_args) testargs=$(testargs) dockerdockertest
-	cd ../memspool  && make $(make_args) testargs=$(testargs) dockerdockertest
+	make $(make_args) -j 5 test_client test_memspool test_catshadow test_pigeonhole test_benchmark
+
+test_%:
+	cd ../$(patsubst test_%,%,$@) && make $(make_args) testargs=-coverprofile=coverage.part dockerdockertest && cat coverage.part >> ../coverage.out
 
 check-go-version:
-	podman run --rm katzenpost-alpine_base go version
+	podman run --rm katzenpost-$(distro)_base go version
