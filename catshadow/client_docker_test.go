@@ -27,14 +27,15 @@ import (
 	"testing"
 	"time"
 
+	"net/http"
+	_ "net/http/pprof"
+	"runtime"
+
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/katzenpost/client"
 	"github.com/katzenpost/katzenpost/client/config"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/stretchr/testify/require"
-	"net/http"
-	_ "net/http/pprof"
-	"runtime"
 )
 
 func getClientState(c *Client) *State {
@@ -669,8 +670,11 @@ loop4:
 	err = a.RemoveContact("b")
 	require.Error(err, ErrContactNotFound)
 
+	a.conversationsMutex.Lock()
 	c := a.conversations["b"]
 	require.Equal(len(c), 0)
+	a.conversationsMutex.Unlock()
+
 	// verify that contact data is gone
 	t.Log("Sending message to b, must fail")
 	a.SendMessage("b", []byte("must fail"))
