@@ -19,7 +19,6 @@ package crypto
 import (
 	"testing"
 
-	"github.com/awnumar/memguard"
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/stretchr/testify/require"
 )
@@ -70,8 +69,8 @@ func TestClientBasics(t *testing.T) {
 	client2CandidateKey, err := client2.GetCandidateKey(client1T2, client1B1)
 	require.NoError(err)
 
-	require.Equal(client2CandidateKey, client1.sessionKey1.Bytes())
-	require.Equal(client1CandidateKey, client2.sessionKey1.Bytes())
+	require.Equal(client2CandidateKey, client1.sessionKey1[:])
+	require.Equal(client1CandidateKey, client2.sessionKey1[:])
 
 	client1B2, err := DecryptT1Beta(client1CandidateKey, client2T1Beta)
 	require.NoError(err)
@@ -95,8 +94,6 @@ func TestClientBasics(t *testing.T) {
 
 	require.Equal(payload1, plaintext2)
 	require.Equal(payload2, plaintext1)
-
-	memguard.Purge()
 }
 
 func TestClientSerialization(t *testing.T) {
@@ -140,6 +137,4 @@ func TestClientSerialization(t *testing.T) {
 	require.NoError(err)
 
 	require.Equal(serialized2, serialized3)
-
-	memguard.Purge()
 }

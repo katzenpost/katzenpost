@@ -39,8 +39,6 @@ var (
 	mixServerCacheDelay     = epochtime.Period / 16
 	nextFetchTill           = epochtime.Period - (PublishDeadline + mixServerCacheDelay)
 	recheckInterval         = epochtime.Period / 16
-	// WarpedEpoch is a build time flag that accelerates the recheckInterval
-	WarpedEpoch = "false"
 )
 
 type pki struct {
@@ -72,6 +70,11 @@ func (c *Client) ClockSkew() time.Duration {
 // CurrentDocument returns the current pki.Document, or nil iff one does not
 // exist.  The caller MUST NOT modify the returned object in any way.
 func (c *Client) CurrentDocument() *cpki.Document {
+	c.RLock()
+	defer c.RUnlock()
+	if c.pki == nil {
+		return nil
+	}
 	return c.pki.currentDocument()
 }
 

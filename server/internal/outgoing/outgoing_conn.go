@@ -405,7 +405,7 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 		if !c.canSend {
 			// This is presumably a early connect, and we aren't allowed to
 			// actually send packets to the peer yet.
-			c.log.Debugf("Dropping packet: %v (Out of epoch)", pkt.ID)
+			c.log.Debugf("Dropping packet: %v (Not yet connected to outbound mix node.)", pkt.ID)
 			instrument.OutgoingPacketsDropped()
 			instrument.PacketsDropped()
 			pkt.Dispose()

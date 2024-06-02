@@ -23,8 +23,6 @@ import (
 
 	"github.com/katzenpost/hpqc/kem"
 	"github.com/katzenpost/hpqc/sign"
-
-	"github.com/katzenpost/katzenpost/core/cert"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/server/config"
 )
@@ -33,14 +31,14 @@ func getGlue(logBackend *log.Backend, provider *mockProvider, linkKey kem.Privat
 	goo := &mockGlue{
 		s: &mockServer{
 			logBackend: logBackend,
-			provider:   provider,
+			gateway:    provider,
+			service:    provider,
 			linkKey:    linkKey,
 			cfg: &config.Config{
-				Server:     &config.Server{},
-				Logging:    &config.Logging{},
-				Provider:   &config.Provider{},
-				PKI:        &config.PKI{},
-				Management: &config.Management{},
+				Server:      &config.Server{},
+				Logging:     &config.Logging{},
+				ServiceNode: &config.ServiceNode{},
+				PKI:         &config.PKI{},
 				Debug: &config.Debug{
 					NumKaetzchenWorkers: 3,
 					KaetzchenDelay:      300,
@@ -54,7 +52,7 @@ func getGlue(logBackend *log.Backend, provider *mockProvider, linkKey kem.Privat
 func TestCBORInvalidCommandWithPluginKaetzchenWorker(t *testing.T) {
 	require := require.New(t)
 
-	_, idKey, err := cert.Scheme.GenerateKey()
+	_, idKey, err := testSignatureScheme.GenerateKey()
 
 	logBackend, err := log.New("", "DEBUG", false)
 	require.NoError(err)
@@ -71,7 +69,7 @@ func TestCBORInvalidCommandWithPluginKaetzchenWorker(t *testing.T) {
 	}
 
 	goo := getGlue(logBackend, mockProvider, linkKey, idKey)
-	goo.s.cfg.Provider.CBORPluginKaetzchen = []*config.CBORPluginKaetzchen{
+	goo.s.cfg.ServiceNode.CBORPluginKaetzchen = []*config.CBORPluginKaetzchen{
 		&config.CBORPluginKaetzchen{
 			Capability:     "echo",
 			Endpoint:       "echo",

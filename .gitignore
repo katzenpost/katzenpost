@@ -13,3 +13,5 @@ reunion/servers/reunion_katzenpost_server/reunion_katzenpost_server
 server/cmd/server/server
 server_plugins/cbor_plugins/echo-go/echo_server
 .idea
+
+dist/

@@ -25,7 +25,6 @@ import (
 	"sync"
 
 	"gitlab.com/yawning/aez.git"
-	"gopkg.in/eapache/channels.v1"
 	"gopkg.in/op/go-logging.v1"
 
 	nyquistkem "github.com/katzenpost/nyquist/kem"
@@ -38,26 +37,29 @@ import (
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/hpqc/sign"
 	signpem "github.com/katzenpost/hpqc/sign/pem"
+	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 
-	"github.com/katzenpost/katzenpost/core/cert"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/thwack"
 	"github.com/katzenpost/katzenpost/core/utils"
 	"github.com/katzenpost/katzenpost/server/config"
 	"github.com/katzenpost/katzenpost/server/internal/cryptoworker"
 	"github.com/katzenpost/katzenpost/server/internal/decoy"
+	"github.com/katzenpost/katzenpost/server/internal/gateway"
 	"github.com/katzenpost/katzenpost/server/internal/glue"
 	"github.com/katzenpost/katzenpost/server/internal/incoming"
 	"github.com/katzenpost/katzenpost/server/internal/instrument"
 	"github.com/katzenpost/katzenpost/server/internal/outgoing"
 	"github.com/katzenpost/katzenpost/server/internal/pki"
-	"github.com/katzenpost/katzenpost/server/internal/provider"
 	"github.com/katzenpost/katzenpost/server/internal/scheduler"
+	"github.com/katzenpost/katzenpost/server/internal/service"
 )
 
 // ErrGenerateOnly is the error returned when the server initialization
 // terminates due to the `GenerateOnly` debug config option.
 var ErrGenerateOnly = errors.New("server: GenerateOnly set")
+
+const InboundPacketsChannelSize = 1000
 
 // Server is a Katzenpost server instance.
 type Server struct {
@@ -70,7 +72,7 @@ type Server struct {
 	logBackend *log.Backend
 	log        *logging.Logger
 
-	inboundPackets *channels.InfiniteChannel
+	inboundPackets chan interface{}
 
 	scheduler     glue.Scheduler
 	cryptoWorkers []*cryptoworker.Worker
@@ -79,7 +81,8 @@ type Server struct {
 	pki           glue.PKI
 	listeners     []glue.Listener
 	connector     glue.Connector
-	provider      glue.Provider
+	gateway       glue.Gateway
+	serviceNode   glue.ServiceNode
 	decoy         glue.Decoy
 	management    *thwack.Server
 
@@ -151,12 +154,6 @@ func (s *Server) halt() {
 		s.periodic = nil
 	}
 
-	// Stop the management interface.
-	if s.management != nil {
-		s.management.Halt()
-		s.management = nil
-	}
-
 	// Stop the decoy source/sink.
 	if s.decoy != nil {
 		s.decoy.Halt()
@@ -185,10 +182,16 @@ func (s *Server) halt() {
 		}
 	}
 
-	// Provider specific cleanup.
-	if s.provider != nil {
-		s.provider.Halt()
-		s.provider = nil
+	// Gateway specific cleanup.
+	if s.gateway != nil {
+		s.gateway.Halt()
+		s.gateway = nil
+	}
+
+	// ServiceNode specific cleanup.
+	if s.serviceNode != nil {
+		s.serviceNode.Halt()
+		s.serviceNode = nil
 	}
 
 	// Stop the scheduler.
@@ -215,7 +218,7 @@ func (s *Server) halt() {
 
 	// Clean up the top level components.
 	if s.inboundPackets != nil {
-		s.inboundPackets.Close()
+		close(s.inboundPackets)
 	}
 
 	close(s.fatalErrCh)
@@ -260,14 +263,18 @@ func New(cfg *config.Config) (*Server, error) {
 	identityPublicKeyFile := filepath.Join(s.cfg.Server.DataDir, "identity.public.pem")
 
 	var err error
-	s.identityPublicKey, s.identityPrivateKey, err = cert.Scheme.GenerateKey()
+	pkiSignatureScheme := signSchemes.ByName(s.cfg.Server.PKISignatureScheme)
+	if s == nil {
+		return nil, errors.New("PKI Signature Scheme not found")
+	}
+	s.identityPublicKey, s.identityPrivateKey, err = pkiSignatureScheme.GenerateKey()
 
 	if utils.BothExists(identityPrivateKeyFile, identityPublicKeyFile) {
-		s.identityPrivateKey, err = signpem.FromPrivatePEMFile(identityPrivateKeyFile, cert.Scheme)
+		s.identityPrivateKey, err = signpem.FromPrivatePEMFile(identityPrivateKeyFile, pkiSignatureScheme)
 		if err != nil {
 			return nil, err
 		}
-		s.identityPublicKey, err = signpem.FromPublicPEMFile(identityPublicKeyFile, cert.Scheme)
+		s.identityPublicKey, err = signpem.FromPublicPEMFile(identityPublicKeyFile, pkiSignatureScheme)
 		if err != nil {
 			return nil, err
 		}
@@ -401,9 +408,17 @@ func New(cfg *config.Config) (*Server, error) {
 		return nil, err
 	}
 
+	// Initialize the gateway backend.
+	if s.cfg.Server.IsGatewayNode {
+		if s.gateway, err = gateway.New(goo); err != nil {
+			s.log.Errorf("Failed to initialize gateway backend: %v", err)
+			return nil, err
+		}
+	}
+
 	// Initialize the provider backend.
-	if s.cfg.Server.IsProvider {
-		if s.provider, err = provider.New(goo); err != nil {
+	if s.cfg.Server.IsServiceNode {
+		if s.serviceNode, err = service.New(goo); err != nil {
 			s.log.Errorf("Failed to initialize provider backend: %v", err)
 			return nil, err
 		}
@@ -416,10 +431,10 @@ func New(cfg *config.Config) (*Server, error) {
 	}
 
 	// Initialize and start the Sphinx workers.
-	s.inboundPackets = channels.NewInfiniteChannel()
+	s.inboundPackets = make(chan interface{}, InboundPacketsChannelSize)
 	s.cryptoWorkers = make([]*cryptoworker.Worker, 0, s.cfg.Debug.NumSphinxWorkers)
 	for i := 0; i < s.cfg.Debug.NumSphinxWorkers; i++ {
-		w := cryptoworker.New(goo, s.inboundPackets.Out(), i)
+		w := cryptoworker.New(goo, s.inboundPackets, i)
 		s.cryptoWorkers = append(s.cryptoWorkers, w)
 	}
 
@@ -434,7 +449,7 @@ func New(cfg *config.Config) (*Server, error) {
 	// Bring the listener(s) online.
 	s.listeners = make([]glue.Listener, 0, len(s.cfg.Server.Addresses))
 	for i, addr := range s.cfg.Server.Addresses {
-		l, err := incoming.New(goo, s.inboundPackets.In(), i, addr)
+		l, err := incoming.New(goo, s.inboundPackets, i, addr)
 		if err != nil {
 			s.log.Errorf("Failed to spawn listener on address: %v (%v).", addr, err)
 			return nil, err
@@ -494,8 +509,12 @@ func (g *serverGlue) PKI() glue.PKI {
 	return g.s.pki
 }
 
-func (g *serverGlue) Provider() glue.Provider {
-	return g.s.provider
+func (g *serverGlue) Gateway() glue.Gateway {
+	return g.s.gateway
+}
+
+func (g *serverGlue) ServiceNode() glue.ServiceNode {
+	return g.s.serviceNode
 }
 
 func (g *serverGlue) Scheduler() glue.Scheduler {

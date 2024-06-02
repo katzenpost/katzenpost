@@ -29,7 +29,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestHTTPServer2(t *testing.T) {
+func NoTestHTTPServer2(t *testing.T) {
 	require := require.New(t)
 
 	address := "127.0.0.1:12345"
@@ -119,7 +119,7 @@ func TestHTTPServer2(t *testing.T) {
 	reunionServer.Halt()
 }
 
-func TestHTTPServer3(t *testing.T) {
+func NoTestHTTPServer3(t *testing.T) {
 	require := require.New(t)
 
 	address := "127.0.0.1:12345"

@@ -43,6 +43,8 @@ const (
 
 // Client handles sending and receiving messages over the mix network
 type Client struct {
+	sync.Mutex
+
 	cfg        *config.Config
 	logBackend *log.Backend
 	log        *logging.Logger
@@ -50,7 +52,7 @@ type Client struct {
 	haltedCh   chan interface{}
 	haltOnce   *sync.Once
 
-	session *Session
+	sessions []*Session
 }
 
 // GetConfig returns the client configuration
@@ -73,20 +75,18 @@ func PKIBootstrap(ctx context.Context, c *Client, linkKey kem.PrivateKey) (pki.C
 	return pkiClient, doc, nil
 }
 
-// SelectProvider returns a provider descriptor or error.
-func SelectProvider(doc *pki.Document) (*pki.MixDescriptor, error) {
+// SelectGatewayNode returns a descriptor of a gateway or an error.
+func SelectGatewayNode(doc *pki.Document) (*pki.MixDescriptor, error) {
 	// Pick a Provider that supports TrustOnFirstUse
-	providers := []*pki.MixDescriptor{}
-	for _, provider := range doc.Providers {
-		if provider.AuthenticationType == pki.TrustOnFirstUseAuth {
-			providers = append(providers, provider)
-		}
+	gateways := []*pki.MixDescriptor{}
+	for _, provider := range doc.GatewayNodes {
+		gateways = append(gateways, provider)
 	}
-	if len(providers) == 0 {
+	if len(gateways) == 0 {
 		return nil, errors.New("no Providers supporting tofu-authenticated connections found in the consensus")
 	}
-	provider := providers[rand.NewMath().Intn(len(providers))]
-	return provider, nil
+	gateway := gateways[rand.NewMath().Intn(len(gateways))]
+	return gateway, nil
 }
 
 // New creates a new Client with the provided configuration.
@@ -104,15 +104,17 @@ func New(cfg *config.Config) (*Client, error) {
 	c.log.Noticef("😼 Katzenpost is still pre-alpha.  DO NOT DEPEND ON IT FOR STRONG SECURITY OR ANONYMITY. 😼")
 
 	// Start the fatal error watcher.
-	go func() {
-		err, ok := <-c.fatalErrCh
-		if !ok {
-			return
-		}
-		c.log.Warningf("Shutting down due to error: %v", err)
-		c.Shutdown()
-	}()
+	go c.fatalErr()
 	return c, nil
+}
+
+func (c *Client) fatalErr() {
+	err, ok := <-c.fatalErrCh
+	if !ok {
+		return
+	}
+	c.log.Warningf("Shutting down due to error: %v", err)
+	c.Shutdown()
 }
 
 func (c *Client) initLogging() error {
@@ -152,8 +154,10 @@ func (c *Client) Wait() {
 
 func (c *Client) halt() {
 	c.log.Noticef("Starting graceful shutdown.")
-	if c.session != nil {
-		c.session.Shutdown()
+	c.Lock()
+	defer c.Unlock()
+	for _, s := range c.sessions {
+		s.Shutdown()
 	}
 	close(c.fatalErrCh)
 	close(c.haltedCh)
@@ -162,18 +166,18 @@ func (c *Client) halt() {
 // NewTOFUSession creates and returns a new ephemeral session or an error.
 func (c *Client) NewTOFUSession(ctx context.Context) (*Session, error) {
 	var (
-		err      error
-		doc      *pki.Document
-		provider *pki.MixDescriptor
-		linkKey  kem.PrivateKey
+		err     error
+		doc     *pki.Document
+		gateway *pki.MixDescriptor
+		linkKey kem.PrivateKey
 	)
 
 	// generate a linkKey
-	s := schemes.ByName(c.cfg.WireKEMScheme)
-	if s == nil {
+	sch := schemes.ByName(c.cfg.WireKEMScheme)
+	if sch == nil {
 		return nil, fmt.Errorf("config specified scheme `%s` not found", c.cfg.WireKEMScheme)
 	}
-	_, linkKey, err = s.GenerateKeyPair()
+	_, linkKey, err = sch.GenerateKeyPair()
 	if err != nil {
 		return nil, err
 	}
@@ -183,11 +187,28 @@ func (c *Client) NewTOFUSession(ctx context.Context) (*Session, error) {
 	if err != nil {
 		return nil, err
 	}
-	// choose a provider
-	if provider, err = SelectProvider(doc); err != nil {
+	// choose a gateway
+	if gateway, err = SelectGatewayNode(doc); err != nil {
 		return nil, err
 	}
 
-	c.session, err = NewSession(ctx, pkiclient, doc, c.fatalErrCh, c.logBackend, c.cfg, linkKey, provider)
-	return c.session, err
+	c.Lock()
+	defer c.Unlock()
+	sess, err := NewSession(ctx, pkiclient, doc, c.fatalErrCh, c.logBackend, c.cfg, linkKey, gateway)
+	if err != nil {
+		return nil, err
+	}
+	c.sessions = append(c.sessions, sess)
+	return sess, err
+}
+
+// Returns a random Session from sessions
+func (c *Client) Session() *Session {
+	c.Lock()
+	defer c.Unlock()
+	if len(c.sessions) == 0 {
+		return nil
+	}
+	s := c.sessions[rand.NewMath().Intn(len(c.sessions))]
+	return s
 }
