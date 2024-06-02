@@ -1,5 +1,5 @@
 name: linux unit tests
-on: [push, pull_request]
+on: [pull_request]
 jobs:
   test:
     strategy:
@@ -7,7 +7,7 @@ jobs:
       matrix:
         os: [ubuntu-latest]
         arch: [amd64]
-        go-version: [ "1.21.x", "1.22.x"]
+        go-version: [ "1.22.x"]
     runs-on: ${{ matrix.os }}
     steps:
       - name: Install Go
