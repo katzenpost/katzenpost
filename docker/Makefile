@@ -80,8 +80,12 @@ make_args=--no-print-directory net_name=$(net_name) docker=$(docker) distro=$(di
 $(net_name):
 	mkdir -vp $(net_name)
 
-$(cache_dir):
+$(cache_dir): $(cache_dir)/go $(cache_dir)/root_cache
+
+$(cache_dir)/go:
 	mkdir -vp $(cache_dir)/go
+
+$(cache_dir)/root_cache:
 	mkdir -vp $(cache_dir)/root_cache
 
 $(docker_compose_yml): ../genconfig/main.go $(distro)_base.stamp | $(net_name) $(cache_dir)
@@ -109,7 +113,7 @@ start: $(docker_compose_yml) $(net_name)/server.$(distro) $(net_name)/voting.$(d
 	touch $(net_name)/running.stamp
 
 stop:
-	cd $(net_name) && $(docker_compose) down --remove-orphans; rm -fv running.stamp
+	[ -e $(net_name) ] && cd $(net_name) && $(docker_compose) down --remove-orphans; rm -fv running.stamp
 
 watch:
 	tail -F $(net_name)/*/*.log
