@@ -53,6 +53,7 @@ bind_addr=127.0.0.1
 docker_compose_yml=$(net_name)/docker-compose.yml
 sh=$(shell if echo ${distro}|grep -q alpine; then echo sh; else echo bash; fi)
 SHELL=/bin/bash
+cache_dir=cache
 
 # log_level can be DEBUG, INFO, NOTICE, WARNING, ERROR, CRITICAL
 log_level=DEBUG
@@ -65,7 +66,7 @@ uid?=$(shell [ "$$SUDO_UID" != "" ] && echo "$$SUDO_UID" || id -u)
 gid?=$(shell [ "$$SUDO_GID" != "" ] && echo "$$SUDO_GID" || id -g)
 
 docker_user?=$(shell if echo ${docker}|grep -q podman; then echo 0:0; else echo ${uid}:${gid}; fi)
-docker_args=--user ${docker_user} --volume $(shell readlink -f ..):/go/katzenpost --workdir /go/katzenpost
+docker_args=--user ${docker_user} --volume $(shell readlink -f ..):/go/katzenpost --workdir /go/katzenpost -v $(shell readlink -f .)/$(cache_dir)/go:/go/ -v $(shell readlink -f .)/$(cache_dir)/root_cache:/root/.cache
 
 replace_name=$(shell if echo ${docker}|grep -q podman; then echo " --replace --name"; else echo " --name"; fi)
 i_if_podman=$(shell if echo ${docker}|grep -q podman; then echo " -i"; else echo; fi)
@@ -77,10 +78,13 @@ docker_compose?= $(shell if which podman|grep -q .; then echo DOCKER_HOST="unix:
 make_args=--no-print-directory net_name=$(net_name) docker=$(docker) distro=$(distro) warped=$(warped) docker_user=$(docker_user)
 
 $(net_name):
-	mkdir -p $(net_name)
+	mkdir -vp $(net_name)
 
-$(docker_compose_yml): ../genconfig/main.go $(distro)_go_mod.stamp
-	mkdir -p $(net_name)
+$(cache_dir):
+	mkdir -vp $(cache_dir)/go
+	mkdir -vp $(cache_dir)/root_cache
+
+$(docker_compose_yml): ../genconfig/main.go $(distro)_go_mod.stamp | $(net_name) $(cache_dir)
 	$(docker) run ${docker_args} --rm katzenpost-$(distro)_go_mod \
 		$(sh) -c 'cd genconfig && go build && cd ../docker \
 		&& ../genconfig/genconfig -wirekem $(wirekem) -a ${bind_addr} -nv ${auths} -n ${mixes} -gateways ${gateways} \
@@ -124,7 +128,7 @@ status:
 show-latest-vote:
 	@grep -A30 'Ready to send' voting_mixnet/auth1/katzenpost.log |tail -30|sed /Sending/q
 
-wait: $(net_name)/running.stamp
+wait: $(net_name)/running.stamp | $(cache_dir)
 	$(docker) run --network=host ${docker_args} $(mount_net_name) --rm  katzenpost-$(distro)_go_mod \
 	/$(net_name)/fetch.$(distro) -f /$(net_name)/client/client.toml
 
@@ -140,7 +144,7 @@ alpine_base.stamp:
 	&& $(docker) rm katzenpost_alpine_base
 	touch $@
 
-$(distro)_go_mod.stamp: $(distro)_base.stamp
+$(distro)_go_mod.stamp: $(distro)_base.stamp | $(net_name) $(cache_dir)
 	$(docker) run ${docker_args} $(replace_name) \
 		katzenpost_$(distro)_go_mod katzenpost-$(distro)_base \
 		sh -c 'go mod download'
@@ -148,37 +152,32 @@ $(distro)_go_mod.stamp: $(distro)_base.stamp
 	$(docker) rm katzenpost_$(distro)_go_mod
 	touch $@
 
-go-mod-tidy: $(distro)_go_mod.stamp
+go-mod-tidy: $(distro)_go_mod.stamp | $(net_name) $(cache_dir)
 	$(docker) run ${docker_args} $(replace_name) katzenpost_$(distro)_go_mod katzenpost-$(distro)_go_mod \
 			$(sh) -c "go mod tidy" \
 		&& $(docker) commit katzenpost_$(distro)_go_mod katzenpost-$(distro)_go_mod \
 		&& $(docker) rm katzenpost_$(distro)_go_mod
 
-go-mod-upgrade: $(distro)_go_mod.stamp
+go-mod-upgrade: $(distro)_go_mod.stamp | $(net_name) $(cache_dir)
 	$(docker) run ${docker_args} $(replace_name) katzenpost_$(distro)_go_mod katzenpost-$(distro)_go_mod \
 			$(sh) -c 'go get -d -u ./... && go mod tidy' \
 		&& $(docker) commit katzenpost_$(distro)_go_mod katzenpost-$(distro)_go_mod \
 		&& $(docker) rm katzenpost_$(distro)_go_mod
 
-$(net_name)/server.$(distro): $(distro)_go_mod.stamp $(docker_compose_yml)
+$(net_name)/server.$(distro): $(distro)_go_mod.stamp $(docker_compose_yml) | $(net_name) $(cache_dir)
 		$(docker) run ${docker_args} $(mount_net_name) --rm katzenpost-$(distro)_go_mod \
 			$(sh) -c 'cd server && make $(make_args) testnet-build testnet-install'
 
-$(net_name)/voting.$(distro): $(distro)_go_mod.stamp $(docker_compose_yml)
+$(net_name)/voting.$(distro): $(distro)_go_mod.stamp $(docker_compose_yml) | $(net_name) $(cache_dir)
 		$(docker) run ${docker_args} $(mount_net_name) --rm katzenpost-$(distro)_go_mod \
 			$(sh) -c 'cd authority && make $(make_args) cmd/voting/voting cmd/fetch/fetch && \
 			mv cmd/voting/voting /$(net_name)/voting.$(distro) && \
 			mv cmd/fetch/fetch /$(net_name)/fetch.$(distro)'
 
-$(net_name)/ping.$(distro): $(distro)_go_mod.stamp
+$(net_name)/ping.$(distro): $(distro)_go_mod.stamp | $(net_name) $(cache_dir)
 		$(docker) run ${docker_args} $(mount_net_name) --rm katzenpost-$(distro)_go_mod \
 			$(sh) -c 'cd ping && go mod verify && go build -ldflags ${ldflags} && \
 			mv ping /$(net_name)/ping.$(distro)'
-
-$(net_name)/katzencat.$(distro): $(distro)_go_mod.stamp $(net_name)
-		$(docker) run ${docker_args} $(mount_net_name) --rm katzenpost-$(distro)_go_mod \
-			$(sh) -c 'cd katzencat && go mod verify && go build -ldflags ${ldflags} && \
-			mv katzencat /$(net_name)/katzencat.$(distro)'
 
 clean-images: stop
 	@-for distro in $(DISTROS); do \
@@ -207,14 +206,15 @@ clean-local-dryrun:
 	git clean -n -x $(net_name)
 
 clean: clean-images clean-local
+	rm -rfv $(cache_dir)
 	-$(docker) ps -a|grep katzenpost|cat
 	-$(docker) images|grep katzenpost|cat
 
-run-ping: $(net_name)/ping.$(distro) $(net_name)/running.stamp
+run-ping: $(net_name)/ping.$(distro) $(net_name)/running.stamp | $(cache_dir)
 	$(docker) run --network=host ${docker_args} $(mount_net_name) --rm  katzenpost-$(distro)_go_mod \
         /$(net_name)/ping.$(distro) -c /go/katzenpost/docker/$(net_name)/client/client.toml -s echo -printDiff -n 1
 
-shell: $(distro)_go_mod.stamp $(net_name)
+shell: $(distro)_go_mod.stamp | $(net_name) $(cache_dir)
 	$(docker) run --network=host ${docker_args} $(mount_net_name) -w /go/katzenpost/docker/$(net_name) --rm -it katzenpost-$(distro)_go_mod $(sh)
 
 # this is for running with docker, where we are root outside and (except for
