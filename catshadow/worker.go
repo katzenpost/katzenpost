@@ -110,7 +110,11 @@ func (c *Client) worker() {
 			case *opSendMessage:
 				c.doSendMessage(op.id, op.name, op.payload)
 			case *opGetContacts:
-				op.responseChan <- c.contactNicknames
+				mymap := make(map[string]*Contact)
+				for k, v := range c.contactNicknames {
+					mymap[k] = v
+				}
+				op.responseChan <- mymap
 			case *opGetConversation:
 				c.doGetConversation(op.name, op.responseChan)
 			case *opWipeConversation:
