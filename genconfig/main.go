@@ -181,7 +181,7 @@ func (s *katzenpost) genClientCfg() error {
 	cfg.VotingAuthority = &cConfig.VotingAuthority{Peers: peers}
 
 	// Debug section
-	cfg.Debug = &cConfig.Debug{DisableDecoyTraffic: false}
+	cfg.Debug = &cConfig.Debug{DisableDecoyTraffic: true}
 	err := saveCfg(cfg, s.outDir)
 	if err != nil {
 		return err
@@ -207,8 +207,8 @@ func (s *katzenpost) genNodeConfig(isGateway, isServiceNode bool, isVoting bool)
 	} else if isServiceNode {
 		n = fmt.Sprintf("servicenode%d", s.serviceNodeIdx+1)
 	}
-	cfg := new(sConfig.Config)
 
+	cfg := new(sConfig.Config)
 	cfg.SphinxGeometry = s.sphinxGeometry
 
 	// Server section.
@@ -224,9 +224,15 @@ func (s *katzenpost) genNodeConfig(isGateway, isServiceNode bool, isVoting bool)
 	cfg.Server.IsGatewayNode = isGateway
 	cfg.Server.IsServiceNode = isServiceNode
 	if isGateway {
+		cfg.Management = new(sConfig.Management)
+		cfg.Management.Enable = true
 		cfg.Server.AltAddresses = map[string][]string{
 			"TCP": []string{fmt.Sprintf("localhost:%d", s.lastPort)},
 		}
+	}
+	if isServiceNode {
+		cfg.Management = new(sConfig.Management)
+		cfg.Management.Enable = true
 	}
 	// Enable Metrics endpoint
 	s.lastPort += 1
@@ -234,7 +240,7 @@ func (s *katzenpost) genNodeConfig(isGateway, isServiceNode bool, isVoting bool)
 
 	// Debug section.
 	cfg.Debug = new(sConfig.Debug)
-	cfg.Debug.SendDecoyTraffic = true
+	cfg.Debug.SendDecoyTraffic = false
 
 	// PKI section.
 	if isVoting {
@@ -276,19 +282,34 @@ func (s *katzenpost) genNodeConfig(isGateway, isServiceNode bool, isVoting bool)
 		}
 		cfg.ServiceNode.CBORPluginKaetzchen = []*sConfig.CBORPluginKaetzchen{spoolCfg}
 		if !s.hasPanda {
-			pandaCfg := &sConfig.CBORPluginKaetzchen{
-				Capability:     "panda",
-				Endpoint:       "+panda",
-				Command:        s.baseDir + "/panda_server" + s.binSuffix,
+			mapCfg := &sConfig.CBORPluginKaetzchen{
+				Capability:     "pigeonhole",
+				Endpoint:       "+pigeonhole",
+				Command:        s.baseDir + "/pigeonhole" + s.binSuffix,
 				MaxConcurrency: 1,
 				Config: map[string]interface{}{
-					"fileStore": s.baseDir + "/" + cfg.Server.Identifier + "/panda.storage",
-					"log_dir":   s.baseDir + "/" + cfg.Server.Identifier,
-					"log_level": s.logLevel,
+					"db":      s.baseDir + "/" + cfg.Server.Identifier + "/map.storage",
+					"log_dir": s.baseDir + "/" + cfg.Server.Identifier,
 				},
 			}
-			cfg.ServiceNode.CBORPluginKaetzchen = append(cfg.ServiceNode.CBORPluginKaetzchen, pandaCfg)
-			s.hasPanda = true
+
+			cfg.ServiceNode.CBORPluginKaetzchen = []*sConfig.CBORPluginKaetzchen{spoolCfg, mapCfg}
+			if !s.hasPanda {
+				pandaCfg := &sConfig.CBORPluginKaetzchen{
+					Capability:     "panda",
+					Endpoint:       "+panda",
+					Command:        s.baseDir + "/panda_server" + s.binSuffix,
+					MaxConcurrency: 1,
+					Config: map[string]interface{}{
+						"fileStore": s.baseDir + "/" + cfg.Server.Identifier + "/panda.storage",
+						"log_dir":   s.baseDir + "/" + cfg.Server.Identifier,
+						"log_level": s.logLevel,
+					},
+				}
+				cfg.ServiceNode.CBORPluginKaetzchen = append(cfg.ServiceNode.CBORPluginKaetzchen, pandaCfg)
+				s.hasPanda = true
+			}
+			cfg.Debug.NumKaetzchenWorkers = 4
 		}
 
 		echoCfg := new(sConfig.Kaetzchen)
@@ -410,7 +431,7 @@ func main() {
 	wirekem := flag.String("wirekem", "", "Name of the KEM Scheme to be used with wire protocol")
 	kem := flag.String("kem", "", "Name of the KEM Scheme to be used with Sphinx")
 	nike := flag.String("nike", "x25519", "Name of the NIKE Scheme to be used with Sphinx")
-	ratchetNike := flag.String("ratchetNike", "x25519", "Name of the NIKE Scheme to be used with the doubleratchet")
+	ratchetNike := flag.String("ratchetNike", "CTIDH512-X25519", "Name of the NIKE Scheme to be used with the doubleratchet")
 	UserForwardPayloadLength := flag.Int("UserForwardPayloadLength", 2000, "UserForwardPayloadLength")
 	pkiSignatureScheme := flag.String("pkiScheme", "Ed25519", "PKI Signature Scheme to be used")
 

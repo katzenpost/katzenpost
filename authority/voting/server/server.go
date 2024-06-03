@@ -72,7 +72,7 @@ type Server struct {
 func computeLambdaG(cfg *config.Config) float64 {
 	n := float64(len(cfg.Topology.Layers[0].Nodes))
 	if n == 1 {
-		n = 2
+		return cfg.Parameters.LambdaP + cfg.Parameters.LambdaL + cfg.Parameters.LambdaD
 	}
 	return n * math.Log(n)
 }

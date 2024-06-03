@@ -103,10 +103,10 @@ func (w *Worker) doUnwrap(pkt *packet.Packet) error {
 
 		w.log.Debugf("Packet: %v (Unwrap took: %v)", pkt.ID, unwrapAt.Sub(startAt))
 
+		lastErr = err
 		// Decryption failures can result from picking the wrong key.
 		if err != nil {
 			// So save the error and try the next key if possible.
-			lastErr = err
 			continue
 		}
 
@@ -272,7 +272,7 @@ func (w *Worker) worker() {
 				// to recieve a packet would be if it's a SURB reply to our
 				// mix loop decoys.
 				if pkt.IsSURBReply() {
-					w.log.Errorf("Handing off decoy response packet: %v", pkt.ID)
+					w.log.Debugf("Handing off decoy response packet: %v", pkt.ID)
 					w.glue.Decoy().OnPacket(pkt)
 					continue
 				}
