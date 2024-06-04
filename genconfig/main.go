@@ -83,8 +83,12 @@ func (s *katzenpost) genClient2Cfg() error {
 	os.Mkdir(filepath.Join(s.outDir, "client2"), 0700)
 	cfg := new(cConfig2.Config)
 
-	cfg.ListenNetwork = "unixpacket"
-	cfg.ListenAddress = "@katzenpost"
+	//cfg.ListenNetwork = "unixpacket"
+	//cfg.ListenAddress = "@katzenpost"
+
+	cfg.ListenNetwork = "tcp"
+	cfg.ListenAddress = "localhost:64331"
+
 	cfg.PKISignatureScheme = s.pkiSignatureScheme.Name()
 	cfg.WireKEMScheme = s.wireKEMScheme
 	cfg.SphinxGeometry = s.sphinxGeometry

@@ -4,9 +4,12 @@
 package thin
 
 import (
+	"encoding/binary"
 	"errors"
 	"fmt"
+	"io"
 	"net"
+	"strings"
 	"sync"
 
 	"github.com/fxamacker/cbor/v2"
@@ -47,12 +50,13 @@ type ThinResponse struct {
 type ThinClient struct {
 	worker.Worker
 
-	cfg *config.Config
+	cfg   *config.Config
+	isTCP bool
 
 	log        *logging.Logger
 	logBackend *log.Backend
 
-	unixConn     *net.UnixConn
+	conn         net.Conn
 	destUnixAddr *net.UnixAddr
 
 	pkidoc      *cpki.Document
@@ -78,6 +82,7 @@ func NewThinClient(cfg *config.Config) *ThinClient {
 		panic(err)
 	}
 	return &ThinClient{
+		isTCP:      strings.HasPrefix(strings.ToLower(cfg.ListenNetwork), "tcp"),
 		cfg:        cfg,
 		log:        logBackend.GetLogger("thinclient"),
 		logBackend: logBackend,
@@ -105,48 +110,63 @@ func (t *ThinClient) Close() error {
 	if err != nil {
 		return err
 	}
-	count, _, err := t.unixConn.WriteMsgUnix(blob, nil, t.destUnixAddr)
-	if err != nil {
-		return err
-	}
-	if count != len(blob) {
-		return fmt.Errorf("SendMessage error: wrote %d instead of %d bytes", count, len(blob))
+
+	if t.isTCP {
+		count, _, err := t.conn.(*net.UnixConn).WriteMsgUnix(blob, nil, t.destUnixAddr)
+		if err != nil {
+			return err
+		}
+		if count != len(blob) {
+			return fmt.Errorf("SendMessage error: wrote %d instead of %d bytes", count, len(blob))
+		}
+	} else {
+
 	}
 
-	err = t.unixConn.Close()
+	err = t.conn.Close()
 	t.Worker.Halt()
 	t.Worker.Wait()
 	return err
 }
 
-// Dial dials the client daemon via our agreed upon abstract unix domain socket.
+// Dial dials the client daemon
 func (t *ThinClient) Dial() error {
 	t.log.Debug("Dial begin")
-	uniqueID := make([]byte, 4)
-	_, err := rand.Reader.Read(uniqueID)
-	if err != nil {
-		return err
-	}
 
-	srcUnixAddr, err := net.ResolveUnixAddr("unixpacket", fmt.Sprintf("@katzenpost_golang_thin_client_%x", uniqueID))
-	if err != nil {
-		return err
-	}
+	network := t.cfg.ListenNetwork
+	address := t.cfg.ListenAddress
 
-	t.destUnixAddr, err = net.ResolveUnixAddr("unixpacket", "@katzenpost")
-	if err != nil {
-		return err
-	}
+	if t.isTCP {
+		var err error
+		t.conn, err = net.Dial(network, address)
+		if err != nil {
+			return err
+		}
+	} else { // abstract unix domain socket
+		uniqueID := make([]byte, 4)
+		_, err := rand.Reader.Read(uniqueID)
+		if err != nil {
+			return err
+		}
+		srcUnixAddr, err := net.ResolveUnixAddr(network, fmt.Sprintf("@katzenpost_golang_thin_client_%x", uniqueID))
+		if err != nil {
+			return err
+		}
+		t.destUnixAddr, err = net.ResolveUnixAddr(network, address)
+		if err != nil {
+			return err
+		}
 
-	t.log.Debugf("Dial unixpacket %s %s", srcUnixAddr, t.destUnixAddr)
-	t.unixConn, err = net.DialUnix("unixpacket", srcUnixAddr, t.destUnixAddr)
-	if err != nil {
-		return err
+		t.log.Debugf("Dial unixpacket %s %s", srcUnixAddr, t.destUnixAddr)
+		t.conn, err = net.DialUnix("unixpacket", srcUnixAddr, t.destUnixAddr)
+		if err != nil {
+			return err
+		}
 	}
 
 	// WAIT UNTIL we have a Noise cryptographic connection with an edge node
 	t.log.Debugf("Waiting for a connection status message")
-	message1, err := t.readNextMessage()
+	message1, err := t.readMessage()
 	if err != nil {
 		return err
 	}
@@ -158,7 +178,7 @@ func (t *ThinClient) Dial() error {
 	}
 
 	t.log.Debugf("Waiting for a PKI doc message")
-	message2, err := t.readNextMessage()
+	message2, err := t.readMessage()
 	if err != nil {
 		return err
 	}
@@ -172,6 +192,74 @@ func (t *ThinClient) Dial() error {
 	return nil
 }
 
+func (t *ThinClient) writeMessage(message []byte) error {
+	if t.isTCP {
+		const messagePrefixLen = 4
+
+		prefix := [messagePrefixLen]byte{}
+		binary.BigEndian.PutUint32(prefix[:], uint32(len(message)))
+		toSend := append(prefix[:], message...)
+		count, err := t.conn.Write(toSend)
+		if err != nil {
+			return err
+		}
+		if count != 4 {
+			return errors.New("send error: failed to write length prefix")
+		}
+		return nil
+	} else {
+		count, _, err := t.conn.(*net.UnixConn).WriteMsgUnix(message, nil, t.destUnixAddr)
+		if err != nil {
+			return err
+		}
+		if count != len(message) {
+			return fmt.Errorf("SendMessage error: wrote %d instead of %d bytes", count, len(message))
+		}
+		return nil
+	}
+	// not reached
+}
+
+func (t *ThinClient) readMessage() (*Response, error) {
+	if t.isTCP {
+		const messagePrefixLen = 4
+
+		prefix := make([]byte, messagePrefixLen)
+		_, err := io.ReadFull(t.conn, prefix)
+		if err != nil {
+			return nil, err
+		}
+
+		prefixLen := binary.BigEndian.Uint32(prefix)
+		message := make([]byte, prefixLen)
+		_, err = io.ReadFull(t.conn, message)
+		if err != nil {
+			return nil, err
+		}
+
+		response := Response{}
+		err = cbor.Unmarshal(message, &response)
+		if err != nil {
+			return nil, err
+		}
+		return &response, nil
+	} else { // abstract UNIX domain socket
+		buff := make([]byte, 65536)
+		msgLen, _, _, _, err := t.conn.(*net.UnixConn).ReadMsgUnix(buff, nil)
+		if err != nil {
+			return nil, err
+		}
+
+		response := Response{}
+		err = cbor.Unmarshal(buff[:msgLen], &response)
+		if err != nil {
+			return nil, err
+		}
+		return &response, nil
+	}
+	// not reached
+}
+
 func (t *ThinClient) worker() {
 	for {
 		select {
@@ -180,7 +268,7 @@ func (t *ThinClient) worker() {
 		default:
 		}
 
-		message, err := t.readNextMessage()
+		message, err := t.readMessage()
 		if err != nil {
 			t.log.Infof("thin client ReceiveMessage failed: %v", err)
 			continue
@@ -381,14 +469,8 @@ func (t *ThinClient) SendMessageWithoutReply(payload []byte, destNode *[32]byte,
 	if err != nil {
 		return err
 	}
-	count, _, err := t.unixConn.WriteMsgUnix(blob, nil, t.destUnixAddr)
-	if err != nil {
-		return err
-	}
-	if count != len(blob) {
-		return fmt.Errorf("SendMessage error: wrote %d instead of %d bytes", count, len(blob))
-	}
-	return nil
+
+	return t.writeMessage(blob)
 }
 
 // SendMessage takes a message payload, a destination node, destination queue ID and a SURB ID and sends a message
@@ -412,14 +494,7 @@ func (t *ThinClient) SendMessage(surbID *[sConstants.SURBIDLength]byte, payload 
 	if err != nil {
 		return err
 	}
-	count, _, err := t.unixConn.WriteMsgUnix(blob, nil, t.destUnixAddr)
-	if err != nil {
-		return err
-	}
-	if count != len(blob) {
-		return fmt.Errorf("SendMessage error: wrote %d instead of %d bytes", count, len(blob))
-	}
-	return nil
+	return t.writeMessage(blob)
 }
 
 func (t *ThinClient) SendReliableMessage(messageID *[MessageIDLength]byte, payload []byte, destNode *[32]byte, destQueue []byte) error {
@@ -435,29 +510,7 @@ func (t *ThinClient) SendReliableMessage(messageID *[MessageIDLength]byte, paylo
 	if err != nil {
 		return err
 	}
-	count, _, err := t.unixConn.WriteMsgUnix(blob, nil, t.destUnixAddr)
-	if err != nil {
-		return err
-	}
-	if count != len(blob) {
-		return fmt.Errorf("SendReliableMessage error: wrote %d instead of %d bytes", count, len(blob))
-	}
-	return nil
-}
-
-func (t *ThinClient) readNextMessage() (*Response, error) {
-	buff := make([]byte, 65536)
-	msgLen, _, _, _, err := t.unixConn.ReadMsgUnix(buff, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	response := Response{}
-	err = cbor.Unmarshal(buff[:msgLen], &response)
-	if err != nil {
-		return nil, err
-	}
-	return &response, nil
+	return t.writeMessage(blob)
 }
 
 // BlockingSendReliableMessage blocks until the message is reliably sent and the ARQ reply is received.
@@ -484,12 +537,9 @@ func (t *ThinClient) BlockingSendReliableMessage(messageID *[MessageIDLength]byt
 	t.replyWaitChanMap.Store(*messageID, replyWaitChan)
 	defer t.replyWaitChanMap.Delete(*messageID)
 
-	count, _, err := t.unixConn.WriteMsgUnix(blob, nil, t.destUnixAddr)
+	err = t.writeMessage(blob)
 	if err != nil {
 		return nil, err
-	}
-	if count != len(blob) {
-		return nil, fmt.Errorf("SendMessage error: wrote %d instead of %d bytes", count, len(blob))
 	}
 
 	select {
