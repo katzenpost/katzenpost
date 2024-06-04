@@ -65,6 +65,7 @@ jobs:
     env:
       warped: true
       XDG_RUNTIME_DIR: /run
+      ACTIONS_RUNNER_DEBUG: true
     strategy:
       matrix:
         go-version: [1.22.x]
@@ -73,17 +74,48 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-      - name: Configure podman socket
+      - name: Print runner information
         run: |
-          sudo systemctl restart dbus && sudo systemctl enable --now podman.socket
+          echo "CPU information:"
+          lscpu
+          echo "Memory information:"
+          free -h
+
       - name: Build and start the mixnet
         run: |
           cd docker && sudo -E make start wait
-      - name: run catshadow end to end tests
+
+      - name: Monitor Podman container resource usage
+        run: |
+          podman stats --no-stream --format "{{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}" > podman_stats_before.txt &
+          sleep 5
+
+      - name: Run catshadow end to end tests
         run: cd catshadow && sudo -E make testargs=-coverprofile=coverage.part dockerdockertest && cat coverage.part >> ../coverage.out
+
+      - name: Stop Podman stats monitoring
+        run: |
+          pkill -f "podman stats"
+          cat podman_stats_before.txt
+
+      - name: Upload Podman stats
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: podman-stats
+          path: podman_stats_before.txt
+
       - name: Stop the mixnet
+        if: always()
         run: |
           cd docker && sudo -E make stop
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          file: ./coverage.out
+          flags: unittests  # Optional, this is to categorize the uploaded data.
+          name: codecov-umbrella  # Optional, gives a name to this specific upload.
 
   test_benchmark:
     env:
