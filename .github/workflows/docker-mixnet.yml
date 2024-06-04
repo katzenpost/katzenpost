@@ -74,19 +74,24 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set custom XDG_RUNTIME_DIR
+      - name: Set custom XDG_RUNTIME_DIR and prepare runtime
         run: |
-          # Create a new directory for runtime
-          mkdir -p ${{ github.workspace }}/runtime
-          # Set the XDG_RUNTIME_DIR to the new directory
+          mkdir -p ${{ github.workspace }}/runtime/podman
           echo "XDG_RUNTIME_DIR=${{ github.workspace }}/runtime" >> $GITHUB_ENV
+          echo "DOCKER_HOST=unix://${{ github.workspace }}/runtime/podman/podman.sock" >> $GITHUB_ENV
 
-      - name: Print runner information
+      - name: Configure and start Podman
         run: |
-          echo "CPU information:"
-          lscpu
-          echo "Memory information:"
-          free -h
+          sudo systemctl restart dbus
+          sudo systemctl enable --now podman.socket
+          sudo systemctl start podman.service
+          sudo ln -s /run/podman/podman.sock ${{ github.workspace }}/runtime/podman/podman.sock
+
+      - name: Check Podman status
+        run: |
+          podman info
+          systemctl status podman.socket
+          ls -lah ${{ github.workspace }}/runtime/podman/
 
       - name: Build and start the mixnet
         run: |
