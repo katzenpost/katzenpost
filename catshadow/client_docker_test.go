@@ -314,24 +314,24 @@ func TestDockerSendReceive(t *testing.T) {
 			}
 			switch event := ev.(type) {
 			case *KeyExchangeCompletedEvent:
-				balice.log.Debugf("CSTDSR: ALICE GOT KEYEX COMPLETED")
+				alice.log.Debugf("CSTDSR: ALICE GOT KEYEX COMPLETED")
 				require.Nil(event.Err)
 				aliceKXFinishedChan <- true
 				break
 			case *MessageDeliveredEvent:
-				balice.log.Debugf("CSTDSR: ALICE GOT DELIVERED EVENT")
+				alice.log.Debugf("CSTDSR: ALICE GOT DELIVERED EVENT")
 				require.Equal(event.Nickname, "bob")
 				aliceDeliveredChan <- true
 			case *MessageSentEvent:
 				if _, ok = sentEventSeenIds[event.MessageID]; ok {
-					balice.log.Debugf("CSTDSR: ALICE GOT DUPE SENT MESSAGE %x to %s", event.MessageID, event.Nickname)
+					alice.log.Debugf("CSTDSR: ALICE GOT DUPE SENT MESSAGE %x to %s", event.MessageID, event.Nickname)
 					continue
 				}
-				balice.log.Debugf("CSTDSR: ALICE SENT MESSAGE %x to %s", event.MessageID, event.Nickname)
+				alice.log.Debugf("CSTDSR: ALICE SENT MESSAGE %x to %s", event.MessageID, event.Nickname)
 				require.Equal(event.Nickname, "bob")
 				aliceSentChan <- true
 			default:
-				balice.log.Debugf("CSTDSR: ALICE EVENTSINK GOT EVENT %t", ev)
+				alice.log.Debugf("CSTDSR: ALICE EVENTSINK GOT EVENT %t", ev)
 			}
 		}
 	}()
@@ -450,7 +450,7 @@ and can readily scale to millions of users.
 	}
 
 	newBob := reloadCatshadowState(t, bobStateFilePath)
-	newbob.log.Debug("LOADING BOB'S CONVERSATION WITH ALICE")
+	newBob.log.Debug("LOADING BOB'S CONVERSATION WITH ALICE")
 	bobConvesation = newBob.conversations["alice"]
 	for i, mesg := range bobConvesation {
 		newbob.log.Debugf("%d outbound %v message:\n%s\n", i, mesg.Outbound, mesg.Plaintext)
@@ -460,7 +460,7 @@ and can readily scale to millions of users.
 	newMal.log.Debug("LOADING MAL'S CONVERSATION WITH BOB")
 	malBobConversation := newMal.conversations["bob"]
 	for i, mesg := range malBobConversation {
-		newmal.log.Debugf("%d outbound %v message:\n%s\n", i, mesg.Outbound, mesg.Plaintext)
+		newMal.log.Debugf("%d outbound %v message:\n%s\n", i, mesg.Outbound, mesg.Plaintext)
 		if !mesg.Outbound {
 			require.True(bytes.Equal(mesg.Plaintext, []byte(`Hello mal`)))
 		} else {
@@ -468,7 +468,7 @@ and can readily scale to millions of users.
 		}
 	}
 
-	newbob.log.Debug("LOADING BOB'S CONVERSATION WITH MAL")
+	newBob.log.Debug("LOADING BOB'S CONVERSATION WITH MAL")
 	bobMalConversation := newBob.conversations["mal"]
 	for i, mesg := range bobMalConversation {
 		newBob.log.Debugf("%d outbound %v message:\n%s\n", i, mesg.Outbound, mesg.Plaintext)
@@ -746,7 +746,7 @@ loop2:
 		}
 	}
 
-	t.Log(" Sending message to b")
+	t.Log("Sending message to b")
 	a.SendMessage("b", []byte("a->b"))
 	// wait for message to be delivered to spool
 loop3:
@@ -754,11 +754,11 @@ loop3:
 		ev := <-a.EventSink
 		switch event := ev.(type) {
 		case *MessageDeliveredEvent:
-			t.Log(" Message delivered to b")
+			t.Log("Message delivered to b")
 			if event.Nickname == "b" {
 				break loop3
 			} else {
-				t.Log("", event)
+				t.Log(event)
 			}
 		default:
 		}
@@ -807,7 +807,7 @@ loop4a:
 	}
 
 	// rename the contacts
-	t.Log(" Renaming contact b")
+	t.Log("Renaming contact b")
 	err = a.RenameContact("b", "b2")
 	require.NoError(err)
 
@@ -815,7 +815,7 @@ loop4a:
 	require.Equal(len(c), 0)
 
 	// verify that contact data is gone
-	t.Log(" Sending message to b, must fail")
+	t.Log("Sending message to b, must fail")
 	a.SendMessage("b", []byte("must fail"))
 
 	// wait for failure sending message
@@ -839,11 +839,11 @@ loop6:
 		ev := <-a.EventSink
 		switch event := ev.(type) {
 		case *MessageDeliveredEvent:
-			t.Log(" Message delivered to b2")
+			t.Log("Message delivered to b2")
 			if event.Nickname == "b2" {
 				break loop6
 			} else {
-				t.Log("", event)
+				t.Log(event)
 			}
 		default:
 		}
@@ -854,11 +854,11 @@ loop7:
 		ev := <-b.EventSink
 		switch event := ev.(type) {
 		case *MessageReceivedEvent:
-			t.Log(" Message received by b2")
+			t.Log("Message received by b2")
 			if event.Nickname == "a" {
 				break loop7
 			} else {
-				t.Log("", event)
+				t.Log(event)
 			}
 		default:
 		}
@@ -885,11 +885,11 @@ loop7:
 	b.WipeConversation("a")
 	c = b.conversations["a"]
 	require.Equal(len(c), 0)
-	t.Log(" shutting down...")
+	t.Log("shutting down...")
 
 	a.Shutdown()
 	b.Shutdown()
-	t.Log(" finished...")
+	t.Log("finished...")
 
 }
 
