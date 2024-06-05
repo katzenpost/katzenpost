@@ -124,7 +124,6 @@ jobs:
     env:
       warped: true
       XDG_RUNTIME_DIR: /run
-      ACTIONS_RUNNER_DEBUG: true
     strategy:
       matrix:
         go-version: [1.22.x]
