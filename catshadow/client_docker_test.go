@@ -453,7 +453,7 @@ and can readily scale to millions of users.
 	newBob.log.Debug("LOADING BOB'S CONVERSATION WITH ALICE")
 	bobConvesation = newBob.conversations["alice"]
 	for i, mesg := range bobConvesation {
-		newbob.log.Debugf("%d outbound %v message:\n%s\n", i, mesg.Outbound, mesg.Plaintext)
+		newBob.log.Debugf("%d outbound %v message:\n%s\n", i, mesg.Outbound, mesg.Plaintext)
 	}
 
 	newMal := reloadCatshadowState(t, malStateFilePath)
