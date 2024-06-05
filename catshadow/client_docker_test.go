@@ -275,28 +275,28 @@ func TestDockerSendReceive(t *testing.T) {
 			}
 			switch event := ev.(type) {
 			case *KeyExchangeCompletedEvent:
-				bob.log.Debugf("TestDockerSendReceive CSTDSR: BOB GOT KEYEX COMPLETED")
+				bob.log.Debugf("CSTDSR: BOB GOT KEYEX COMPLETED")
 				require.Nil(event.Err)
 				bobKXFinishedChan <- true
 			case *MessageReceivedEvent:
 				// fields: Nickname, Message, Timestamp
-				bob.log.Debugf("TestDockerSendReceive CSTDSR: BOB RECEIVED MESSAGE from %s:\n%s", event.Nickname, string(event.Message))
+				bob.log.Debugf("CSTDSR: BOB RECEIVED MESSAGE from %s:\n%s", event.Nickname, string(event.Message))
 				bobReceivedMessageChan <- true
 			case *MessageDeliveredEvent:
-				bob.log.Debugf("TestDockerSendReceive CSTDSR: BOB GOT DELIVERED EVENT")
+				bob.log.Debugf("CSTDSR: BOB GOT DELIVERED EVENT")
 				require.Equal(event.Nickname, "mal")
 				bobDeliveredChan <- true
 			case *MessageSentEvent:
 				if _, ok = sentEventSeenIds[event.MessageID]; ok {
-					bob.log.Debugf("TestDockerSendReceive CSTDSR: BOB GOT DUPE SENT MESSAGE %x to %s", event.MessageID, event.Nickname)
+					bob.log.Debugf("CSTDSR: BOB GOT DUPE SENT MESSAGE %x to %s", event.MessageID, event.Nickname)
 					continue
 				}
 				sentEventSeenIds[event.MessageID] = true
-				bob.log.Debugf("TestDockerSendReceive CSTDSR: BOB SENT MESSAGE %x to %s", event.MessageID, event.Nickname)
+				bob.log.Debugf("CSTDSR: BOB SENT MESSAGE %x to %s", event.MessageID, event.Nickname)
 				require.Equal(event.Nickname, "mal")
 				bobSentChan <- true
 			default:
-				bob.log.Debugf("TestDockerSendReceive CSTDSR: BOB EVENTSINK GOT EVENT %t", ev)
+				bob.log.Debugf("CSTDSR: BOB EVENTSINK GOT EVENT %t", ev)
 			}
 		}
 	}()
@@ -314,24 +314,24 @@ func TestDockerSendReceive(t *testing.T) {
 			}
 			switch event := ev.(type) {
 			case *KeyExchangeCompletedEvent:
-				alice.log.Debugf("TestDockerSendReceive CSTDSR: ALICE GOT KEYEX COMPLETED")
+				balice.log.Debugf("CSTDSR: ALICE GOT KEYEX COMPLETED")
 				require.Nil(event.Err)
 				aliceKXFinishedChan <- true
 				break
 			case *MessageDeliveredEvent:
-				alice.log.Debugf("TestDockerSendReceive CSTDSR: ALICE GOT DELIVERED EVENT")
+				balice.log.Debugf("CSTDSR: ALICE GOT DELIVERED EVENT")
 				require.Equal(event.Nickname, "bob")
 				aliceDeliveredChan <- true
 			case *MessageSentEvent:
 				if _, ok = sentEventSeenIds[event.MessageID]; ok {
-					alice.log.Debugf("TestDockerSendReceive CSTDSR: ALICE GOT DUPE SENT MESSAGE %x to %s", event.MessageID, event.Nickname)
+					balice.log.Debugf("CSTDSR: ALICE GOT DUPE SENT MESSAGE %x to %s", event.MessageID, event.Nickname)
 					continue
 				}
-				alice.log.Debugf("TestDockerSendReceive CSTDSR: ALICE SENT MESSAGE %x to %s", event.MessageID, event.Nickname)
+				balice.log.Debugf("CSTDSR: ALICE SENT MESSAGE %x to %s", event.MessageID, event.Nickname)
 				require.Equal(event.Nickname, "bob")
 				aliceSentChan <- true
 			default:
-				alice.log.Debugf("TestDockerSendReceive CSTDSR: ALICE EVENTSINK GOT EVENT %t", ev)
+				balice.log.Debugf("CSTDSR: ALICE EVENTSINK GOT EVENT %t", ev)
 			}
 		}
 	}()
@@ -350,29 +350,29 @@ func TestDockerSendReceive(t *testing.T) {
 			}
 			switch event := ev.(type) {
 			case *KeyExchangeCompletedEvent:
-				mal.log.Debugf("TestDockerSendReceive CSTDSR: MAL GOT KEYEX COMPLETED")
+				mal.log.Debugf("CSTDSR: MAL GOT KEYEX COMPLETED")
 				require.Nil(event.Err)
 				malKXFinishedChan <- true
 			case *MessageReceivedEvent:
 				// fields: Nickname, Message, Timestamp
 				require.Equal(event.Nickname, "bob")
-				mal.log.Debugf("TestDockerSendReceive CSTDSR: MAL RECEIVED MESSAGE:\n%s", string(event.Message))
+				mal.log.Debugf("CSTDSR: MAL RECEIVED MESSAGE:\n%s", string(event.Message))
 				malReceivedMessageChan <- true
 			case *MessageDeliveredEvent:
-				mal.log.Debugf("TestDockerSendReceive CSTDSR: MAL GOT DELIVERED EVENT")
+				mal.log.Debugf("CSTDSR: MAL GOT DELIVERED EVENT")
 				require.Equal(event.Nickname, "bob")
 				malDeliveredChan <- true
 			case *MessageSentEvent:
 				if _, ok = sentEventSeenIds[event.MessageID]; ok {
-					mal.log.Debugf("TestDockerSendReceive CSTDSR: MAL GOT DUPE SENT MESSAGE %x to %s", event.MessageID, event.Nickname)
+					mal.log.Debugf("CSTDSR: MAL GOT DUPE SENT MESSAGE %x to %s", event.MessageID, event.Nickname)
 					continue
 				}
-				mal.log.Debugf("TestDockerSendReceive CSTDSR: MAL SENT MESSAGE %x to %s", event.MessageID, event.Nickname)
+				mal.log.Debugf("CSTDSR: MAL SENT MESSAGE %x to %s", event.MessageID, event.Nickname)
 				require.Equal(event.Nickname, "bob")
 				malSentChan <- true
 
 			default:
-				mal.log.Debugf("TestDockerSendReceive CSTDSR: MAL EVENTSINK GOT EVENT %t", ev)
+				mal.log.Debugf("CSTDSR: MAL EVENTSINK GOT EVENT %t", ev)
 			}
 		}
 	}()
@@ -426,13 +426,13 @@ and can readily scale to millions of users.
 		require.True(msg.Delivered)
 	}
 
-	bob.log.Debug("TestDockerSendReceive LOADING BOB'S CONVERSATION")
+	bob.log.Debug("LOADING BOB'S CONVERSATION")
 	bobConvesation := bob.conversations["alice"]
 	for i, mesg := range bobConvesation {
 		bob.log.Debugf("%d outbound %v message:\n%s\n", i, mesg.Outbound, mesg.Plaintext)
 	}
 
-	mal.log.Debug("TestDockerSendReceive LOADING MAL'S CONVERSATION")
+	mal.log.Debug("LOADING MAL'S CONVERSATION")
 	malConvesation := mal.conversations["bob"]
 	for i, mesg := range malConvesation {
 		bob.log.Debugf("%d outbound %v message:\n%s\n", i, mesg.Outbound, mesg.Plaintext)
@@ -443,24 +443,24 @@ and can readily scale to millions of users.
 	mal.Shutdown()
 
 	newAlice := reloadCatshadowState(t, aliceStateFilePath)
-	newAlice.log.Debug("TestDockerSendReceive LOADING ALICE'S CONVERSATION WITH BOB")
+	newAlice.log.Debug("LOADING ALICE'S CONVERSATION WITH BOB")
 	aliceConvesation = newAlice.conversations["bob"]
 	for i, mesg := range aliceConvesation {
 		newAlice.log.Debugf("%d outbound %v message:\n%s\n", i, mesg.Outbound, mesg.Plaintext)
 	}
 
 	newBob := reloadCatshadowState(t, bobStateFilePath)
-	newBob.log.Debug("TestDockerSendReceive LOADING BOB'S CONVERSATION WITH ALICE")
+	newbob.log.Debug("LOADING BOB'S CONVERSATION WITH ALICE")
 	bobConvesation = newBob.conversations["alice"]
 	for i, mesg := range bobConvesation {
-		newBob.log.Debugf("TestDockerSendReceive %d outbound %v message:\n%s\n", i, mesg.Outbound, mesg.Plaintext)
+		newbob.log.Debugf("%d outbound %v message:\n%s\n", i, mesg.Outbound, mesg.Plaintext)
 	}
 
 	newMal := reloadCatshadowState(t, malStateFilePath)
-	newMal.log.Debug("TestDockerSendReceive LOADING MAL'S CONVERSATION WITH BOB")
+	newMal.log.Debug("LOADING MAL'S CONVERSATION WITH BOB")
 	malBobConversation := newMal.conversations["bob"]
 	for i, mesg := range malBobConversation {
-		newMal.log.Debugf("TestDockerSendReceive %d outbound %v message:\n%s\n", i, mesg.Outbound, mesg.Plaintext)
+		newmal.log.Debugf("%d outbound %v message:\n%s\n", i, mesg.Outbound, mesg.Plaintext)
 		if !mesg.Outbound {
 			require.True(bytes.Equal(mesg.Plaintext, []byte(`Hello mal`)))
 		} else {
@@ -468,7 +468,7 @@ and can readily scale to millions of users.
 		}
 	}
 
-	newBob.log.Debug("TestDockerSendReceive LOADING BOB'S CONVERSATION WITH MAL")
+	newbob.log.Debug("LOADING BOB'S CONVERSATION WITH MAL")
 	bobMalConversation := newBob.conversations["mal"]
 	for i, mesg := range bobMalConversation {
 		newBob.log.Debugf("%d outbound %v message:\n%s\n", i, mesg.Outbound, mesg.Plaintext)
@@ -543,7 +543,7 @@ loop1:
 		switch event := ev.(type) {
 		case *KeyExchangeCompletedEvent:
 			// XXX: we do multiple exchanges, some will fail
-			alice.log.Debugf("TestDockerReunionSuccess reunion ALICE RECEIVED event: %v\n", event)
+			alice.log.Debugf("reunion ALICE RECEIVED event: %v\n", event)
 			if event.Err != nil {
 				afails++
 				require.True(afails < 6)
@@ -561,7 +561,7 @@ loop2:
 		switch event := ev.(type) {
 		case *KeyExchangeCompletedEvent:
 			// XXX: we do multiple exchanges, some will fail
-			bob.log.Debugf("TestDockerReunionSuccess reunion BOB RECEIVED event: %v\n", event)
+			bob.log.Debugf("reunion BOB RECEIVED event: %v\n", event)
 			if event.Err != nil {
 				bfails++
 				require.True(bfails < 6)
@@ -641,14 +641,14 @@ loop2:
 		}
 	}
 
-	t.Log("TestDockerAddRemoveContact Sending message to b")
+	t.Log("Sending message to b")
 	a.SendMessage("b", []byte{0})
 loop3:
 	for {
 		ev := <-a.EventSink
 		switch event := ev.(type) {
 		case *MessageDeliveredEvent:
-			t.Log("TestDockerAddRemoveContact Message delivered to b")
+			t.Log("Message delivered to b")
 			if event.Nickname == "b" {
 				break loop3
 			} else {
@@ -658,7 +658,7 @@ loop3:
 		}
 	}
 
-	t.Log("TestDockerAddRemoveContact Sending message to a")
+	t.Log("Sending message to a")
 	b.SendMessage("a", []byte{0})
 
 loop4:
@@ -666,7 +666,7 @@ loop4:
 		ev := <-b.EventSink
 		switch event := ev.(type) {
 		case *MessageDeliveredEvent:
-			t.Log("TestDockerAddRemoveContact Message delivered to a")
+			t.Log("Message delivered to a")
 			if event.Nickname == "a" {
 				break loop4
 			}
@@ -674,12 +674,12 @@ loop4:
 		}
 	}
 
-	t.Log("TestDockerAddRemoveContact Removing contact b")
+	t.Log("Removing contact b")
 	err = a.RemoveContact("b")
 	require.NoError(err)
 	require.Equal(len(a.GetContacts()), 0)
 
-	t.Log("TestDockerAddRemoveContact Removing contact b again, checking for err")
+	t.Log("Removing contact b again, checking for err")
 	err = a.RemoveContact("b")
 	require.Error(err, ErrContactNotFound)
 
@@ -689,7 +689,7 @@ loop4:
 	a.conversationsMutex.Unlock()
 
 	// verify that contact data is gone
-	t.Log("TestDockerAddRemoveContact Sending message to b, must fail")
+	t.Log("Sending message to b, must fail")
 	a.SendMessage("b", []byte("must fail"))
 loop5:
 	for {
@@ -702,11 +702,11 @@ loop5:
 		default:
 		}
 	}
-	t.Log("TestDockerAddRemoveContact shutting down...")
+	t.Log("shutting down...")
 
 	a.Shutdown()
 	b.Shutdown()
-	t.Log("TestDockerAddRemoveContact finished...")
+	t.Log("finished...")
 }
 
 func TestDockerRenameContact(t *testing.T) {
@@ -746,7 +746,7 @@ loop2:
 		}
 	}
 
-	t.Log("TestDockerRenameContact Sending message to b")
+	t.Log(" Sending message to b")
 	a.SendMessage("b", []byte("a->b"))
 	// wait for message to be delivered to spool
 loop3:
@@ -754,11 +754,11 @@ loop3:
 		ev := <-a.EventSink
 		switch event := ev.(type) {
 		case *MessageDeliveredEvent:
-			t.Log("TestDockerRenameContact Message delivered to b")
+			t.Log(" Message delivered to b")
 			if event.Nickname == "b" {
 				break loop3
 			} else {
-				t.Log("TestDockerRenameContact", event)
+				t.Log("", event)
 			}
 		default:
 		}
@@ -770,14 +770,14 @@ loop3a:
 		ev := <-b.EventSink
 		switch event := ev.(type) {
 		case *MessageReceivedEvent:
-			t.Log("TestDockerRenameContact, Message received by b")
+			t.Log(", Message received by b")
 			if event.Nickname == "a" {
 				break loop3a
 			}
 		default:
 		}
 	}
-	t.Log("TestDockerRenameContact, Sending message to a")
+	t.Log(", Sending message to a")
 	b.SendMessage("a", []byte("b->a"))
 	// wait for message to be delivered to spool
 loop4:
@@ -785,7 +785,7 @@ loop4:
 		ev := <-b.EventSink
 		switch event := ev.(type) {
 		case *MessageDeliveredEvent:
-			t.Log("TestDockerRenameContact, Message delivered to a")
+			t.Log(", Message delivered to a")
 			if event.Nickname == "a" {
 				break loop4
 			}
@@ -798,7 +798,7 @@ loop4a:
 		ev := <-a.EventSink
 		switch event := ev.(type) {
 		case *MessageReceivedEvent:
-			t.Log("TestDockerRenameContact, Message received by a")
+			t.Log(", Message received by a")
 			if event.Nickname == "b" {
 				break loop4a
 			}
@@ -807,7 +807,7 @@ loop4a:
 	}
 
 	// rename the contacts
-	t.Log("TestDockerRenameContact Renaming contact b")
+	t.Log(" Renaming contact b")
 	err = a.RenameContact("b", "b2")
 	require.NoError(err)
 
@@ -815,7 +815,7 @@ loop4a:
 	require.Equal(len(c), 0)
 
 	// verify that contact data is gone
-	t.Log("TestDockerRenameContact Sending message to b, must fail")
+	t.Log(" Sending message to b, must fail")
 	a.SendMessage("b", []byte("must fail"))
 
 	// wait for failure sending message
@@ -839,11 +839,11 @@ loop6:
 		ev := <-a.EventSink
 		switch event := ev.(type) {
 		case *MessageDeliveredEvent:
-			t.Log("TestDockerRenameContact Message delivered to b2")
+			t.Log(" Message delivered to b2")
 			if event.Nickname == "b2" {
 				break loop6
 			} else {
-				t.Log("TestDockerRenameContact", event)
+				t.Log("", event)
 			}
 		default:
 		}
@@ -854,11 +854,11 @@ loop7:
 		ev := <-b.EventSink
 		switch event := ev.(type) {
 		case *MessageReceivedEvent:
-			t.Log("TestDockerRenameContact Message received by b2")
+			t.Log(" Message received by b2")
 			if event.Nickname == "a" {
 				break loop7
 			} else {
-				t.Log("TestDockerRenameContact", event)
+				t.Log("", event)
 			}
 		default:
 		}
@@ -885,11 +885,11 @@ loop7:
 	b.WipeConversation("a")
 	c = b.conversations["a"]
 	require.Equal(len(c), 0)
-	t.Log("TestDockerRenameContact shutting down...")
+	t.Log(" shutting down...")
 
 	a.Shutdown()
 	b.Shutdown()
-	t.Log("TestDockerRenameContact finished...")
+	t.Log(" finished...")
 
 }
 
