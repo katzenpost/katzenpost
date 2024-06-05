@@ -24,6 +24,7 @@ package catshadow
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -148,8 +149,10 @@ loop2:
 		}
 	}
 
+	fmt.Println("TestDockerPandaSuccess shutting down...")
 	alice.Shutdown()
 	bob.Shutdown()
+	fmt.Println("TestDockerPandaSuccess finished...")
 }
 
 func TestDockerPandaTagContendedError(t *testing.T) {
@@ -227,8 +230,11 @@ loop4:
 		}
 	}
 
+	fmt.Println("TestDockerPandaTagContendedError shutting down...")
 	ada.Shutdown()
 	jeff.Shutdown()
+	fmt.Println("TestDockerPandaTagContendedError finished...")
+
 }
 
 func TestDockerSendReceive(t *testing.T) {
@@ -488,8 +494,12 @@ and can readily scale to millions of users.
 		require.True(bytes.Equal(message.Plaintext, aliceBobConvo2[i].Plaintext))
 		// XXX require.True(message.Timestamp.Equal(aliceBobConvo2[i].Timestamp))
 	}
+
+	fmt.Println("TestDockerSendReceive shutting down...")
 	newAlice.Shutdown()
 	newBob.Shutdown()
+	fmt.Println("TestDockerSendReceive finished...")
+
 }
 
 func TestDockerReunionSuccess(t *testing.T) {
@@ -564,8 +574,11 @@ loop2:
 		}
 	}
 
+	fmt.Println("TestDockerReunionSuccess shutting down...")
 	alice.Shutdown()
 	bob.Shutdown()
+	fmt.Println("TestDockerReunionSuccess finished...")
+
 }
 
 func TestDockerChangeExpiration(t *testing.T) {
@@ -589,6 +602,7 @@ func TestDockerChangeExpiration(t *testing.T) {
 	require.Equal(exp, time.Duration(123))
 	_, err = a.GetExpiration("c")
 	require.Error(err, ErrContactNotFound)
+	fmt.Println("TestDockerChangeExpiration finished...")
 
 }
 
@@ -689,9 +703,12 @@ loop5:
 		default:
 		}
 	}
+	fmt.Println("TestDockerAddRemoveContact shutting down...")
 
 	a.Shutdown()
 	b.Shutdown()
+	fmt.Println("TestDockerAddRemoveContact finished...")
+
 }
 
 func TestDockerRenameContact(t *testing.T) {
@@ -870,9 +887,12 @@ loop7:
 	b.WipeConversation("a")
 	c = b.conversations["a"]
 	require.Equal(len(c), 0)
+	fmt.Println("TestDockerRenameContact shutting down...")
 
 	a.Shutdown()
 	b.Shutdown()
+	fmt.Println("TestDockerRenameContact finished...")
+
 }
 
 func init() {
