@@ -64,7 +64,7 @@ jobs:
   test_e2e_catshadow:
     env:
       warped: true
-      ACTIONS_RUNNER_DEBUG: true
+      XDG_RUNTIME_DIR: /run
     strategy:
       matrix:
         go-version: [1.22.x]
@@ -74,38 +74,18 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set custom XDG_RUNTIME_DIR and prepare runtime
+      - name: Configure podman socket
         run: |
-          mkdir -p ${{ github.workspace }}/runtime/podman
-          echo "XDG_RUNTIME_DIR=${{ github.workspace }}/runtime" >> $GITHUB_ENV
-          echo "DOCKER_HOST=unix://${{ github.workspace }}/runtime/podman/podman.sock" >> $GITHUB_ENV
-
-      - name: Configure and start Podman
-        run: |
-          sudo systemctl restart dbus
-          sudo systemctl enable --now podman.socket
-          sudo systemctl start podman.service
-          sudo ln -s /run/podman/podman.sock ${{ github.workspace }}/runtime/podman/podman.sock
-
-      - name: Check Podman status
-        run: |
-          podman info
-          systemctl status podman.socket
-          ls -lah ${{ github.workspace }}/runtime/podman/
+          sudo systemctl restart dbus && sudo systemctl enable --now podman.socket
 
       - name: Build and start the mixnet
         run: |
           cd docker && sudo -E make start wait
 
-      - name: Monitor Podman container resource usage
-        run: |
-          podman stats --no-stream --format "{{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}"
-
-      - name: Run catshadow end to end tests
+      - name: run catshadow end to end tests
         run: cd catshadow && sudo -E make testargs=-coverprofile=coverage.part dockerdockertest && cat coverage.part >> ../coverage.out
 
       - name: Stop the mixnet
-        if: always()
         run: |
           cd docker && sudo -E make stop
 
@@ -144,6 +124,7 @@ jobs:
     env:
       warped: true
       XDG_RUNTIME_DIR: /run
+      ACTIONS_RUNNER_DEBUG: true
     strategy:
       matrix:
         go-version: [1.22.x]
