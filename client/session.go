@@ -314,6 +314,8 @@ func (s *Session) onACK(surbID *[sConstants.SURBIDLength]byte, ciphertext []byte
 		s.log.Debug("Strange, received reply with unexpected SURBID")
 		return nil
 	}
+	s.log.Infof("OnACK with SURBID %s rawMessage loaded", idStr)
+
 	s.surbIDMap.Delete(*surbID)
 	msg := rawMessage.(*Message)
 	plaintext, err := s.sphinx.DecryptSURBPayload(ciphertext, msg.Key)
@@ -327,7 +329,7 @@ func (s *Session) onACK(surbID *[sConstants.SURBIDLength]byte, ciphertext []byte
 	}
 	if msg.WithSURB && msg.IsDecoy {
 		s.decrementDecoyLoopTally()
-		s.log.Debugf("Decoy loop tally decremented")
+		s.log.Infof("Decoy loop tally decremented")
 		return nil
 	}
 
@@ -348,15 +350,15 @@ func (s *Session) onACK(surbID *[sConstants.SURBIDLength]byte, ciphertext []byte
 			close(replyWaitChan)
 		}
 	} else {
-		s.log.Debugf("Received a reply for message %x", msg.ID)
+		s.log.Infof("Received a reply for message %x", msg.ID)
 		s.eventCh <- &MessageReplyEvent{
 			MessageID: msg.ID,
 			Payload:   plaintext,
 			Err:       nil,
 		}
-		s.log.Debugf("MessageReplyEvent sent")
+		s.log.Infof("MessageReplyEvent sent")
 	}
-	s.log.Debugf("OnACK with SURBID %s done", idStr)
+	s.log.Infof("OnACK with SURBID %s done", idStr)
 	return nil
 }
 
