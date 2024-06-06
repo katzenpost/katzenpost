@@ -327,6 +327,7 @@ func (s *Session) onACK(surbID *[sConstants.SURBIDLength]byte, ciphertext []byte
 	}
 	if msg.WithSURB && msg.IsDecoy {
 		s.decrementDecoyLoopTally()
+		s.log.Debugf("Decoy loop tally decremented")
 		return nil
 	}
 
@@ -347,12 +348,15 @@ func (s *Session) onACK(surbID *[sConstants.SURBIDLength]byte, ciphertext []byte
 			close(replyWaitChan)
 		}
 	} else {
+		s.log.Debugf("Received a reply for message %x", msg.ID)
 		s.eventCh <- &MessageReplyEvent{
 			MessageID: msg.ID,
 			Payload:   plaintext,
 			Err:       nil,
 		}
+		s.log.Debugf("MessageReplyEvent sent")
 	}
+	s.log.Debugf("OnACK with SURBID %s done", idStr)
 	return nil
 }
 

@@ -24,6 +24,7 @@ package catshadow
 import (
 	"bytes"
 	"context"
+	golog "log"
 	"testing"
 	"time"
 
@@ -895,7 +896,15 @@ loop7:
 
 func init() {
 	go func() {
-		http.ListenAndServe("localhost:8080", nil)
+		defer func() {
+			if r := recover(); r != nil {
+				golog.Printf("Recovered init() from panic: %v", r)
+			}
+		}()
+
+		if err := http.ListenAndServe("localhost:8080", nil); err != nil && err != http.ErrServerClosed {
+			golog.Printf("HTTP server stopped listening and serving: %v", err)
+		}
 	}()
 	runtime.SetMutexProfileFraction(1)
 	runtime.SetBlockProfileRate(1)
