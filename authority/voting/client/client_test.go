@@ -294,7 +294,10 @@ func (d *mockDialer) mockServer(address string, linkPrivateKey kem.PrivateKey, i
 		AuthenticationKey: linkPrivateKey,
 		RandomReader:      rand.Reader,
 	}
-	session, err := wire.NewSession(cfg, false)
+
+	// was previously session, err := wire.NewSession(cfg, false)
+	// see ticket https://github.com/katzenpost/katzenpost/issues/630
+	session, err := wire.NewSession(cfg, true)
 	if err != nil {
 		d.log.Errorf("mockServer NewSession failure: %s", err)
 		return
