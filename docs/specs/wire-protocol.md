@@ -61,11 +61,44 @@ Noise_pqXX_Xwing_ChaChaPoly_BLAKE2b
 ```
 
 The protocol string is a very condensed description of our protocol.
-We use the pqXX two way Noise pattern which is described as follows:
+We use the pqXX two way Noise pattern which is described as follows
+using the algebraic token system from the PQ Noise paper that very
+closely resembles the Noise algebraic token system:
 
 ```
-pqXX: -> e <- ekem, s -> skem, s <- skem
+-> e
+<- ekem, s
+-> skem, s
+<- skem
 ```
+
+However let us remark that usually `e` is first sent over by the
+client. However in our case the serer is the Noise protocol initiator
+after the connection is made via the client initiating the connection.
+To be clear, clients connec to servers as usually, and then the client
+waits for a message, while the server sends the first PQ Noise
+message. The reason for this modification is so that the server authenticates itself to the client first
+just like classical Noise XX pattern.
+
+Classical Noise XX pattern:
+
+```
+  -> e
+  <- e, ee, s, es
+  -> s, se
+```
+
+Therefore our solution is to annotate the pqXX pattern differently than the expected interpretation:
+
+```
+server: -> e
+client: <- ekem, s
+server: -> skem, s
+client: <- skem
+```
+
+Thus, the client initiates the TCP or QUIC connection to the server, however once connected,
+the client waits for a PQ Noise message and the server immediately sends the first PQ Noise message.
 
 The next part of the protocol string specifies the KEM,
 `Xwing` which is a hybrid KEM where the share
