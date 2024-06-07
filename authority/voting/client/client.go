@@ -180,7 +180,11 @@ func (p *connector) initSession(ctx context.Context, doneCh <-chan interface{}, 
 		AuthenticationKey:  linkKey,
 		RandomReader:       rand.Reader,
 	}
-	s, err := wire.NewPKISession(cfg, true)
+
+	// was previously s, err := wire.NewPKISession(cfg, true)
+	// where true indicates initiator
+	// see ticket https://github.com/katzenpost/katzenpost/issues/630
+	s, err := wire.NewPKISession(cfg, false)
 	if err != nil {
 		return nil, err
 	}

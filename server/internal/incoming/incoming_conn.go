@@ -180,7 +180,10 @@ func (c *incomingConn) worker() {
 	}
 	var err error
 	c.l.Lock()
-	c.w, err = wire.NewSession(cfg, false)
+	// was previously false for responder
+	// c.w, err = wire.NewSession(cfg, false)
+	// see ticket https://github.com/katzenpost/katzenpost/issues/630
+	c.w, err = wire.NewSession(cfg, true)
 	c.l.Unlock()
 	if err != nil {
 		c.log.Errorf("Failed to allocate session: %v", err)

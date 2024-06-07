@@ -65,7 +65,11 @@ func (s *Server) onConn(conn net.Conn) {
 		AuthenticationKey:  s.linkKey,
 		RandomReader:       rand.Reader,
 	}
-	wireConn, err := wire.NewPKISession(cfg, false)
+
+	// was preivously wireConn, err := wire.NewPKISession(cfg, false)
+	// where false indicates responder
+	// see ticket https://github.com/katzenpost/katzenpost/issues/630
+	wireConn, err := wire.NewPKISession(cfg, true)
 	if err != nil {
 		s.log.Debugf("Peer %v: Failed to initialize session: %v", rAddr, err)
 		return

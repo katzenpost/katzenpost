@@ -383,7 +383,11 @@ func (c *connection) onTCPConn(conn net.Conn) {
 		AuthenticationKey:  c.c.cfg.LinkKey,
 		RandomReader:       rand.Reader,
 	}
-	w, err := wire.NewSession(cfg, true)
+
+	// was previously true for initiator
+	// w, err := wire.NewSession(cfg, true)
+	// see ticket https://github.com/katzenpost/katzenpost/issues/630
+	w, err := wire.NewSession(cfg, false)
 	if err != nil {
 		c.log.Errorf("Failed to allocate session: %v", err)
 		if c.c.cfg.OnConnFn != nil {
