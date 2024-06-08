@@ -106,7 +106,8 @@ func TestSessionIntegration(t *testing.T) {
 		AuthenticationKey: authKEMKeyAlice,
 		RandomReader:      rand.Reader,
 	}
-	sAlice, err := NewSession(cfgAlice, true)
+	// was previously sAlice, err := NewSession(cfgAlice, true)
+	sAlice, err := NewSession(cfgAlice, false)
 	require.NoError(err, "Integration: Alice NewSession()")
 
 	// Bob's session setup.
@@ -118,7 +119,8 @@ func TestSessionIntegration(t *testing.T) {
 		AuthenticationKey: authKEMKeyBob,
 		RandomReader:      rand.Reader,
 	}
-	sBob, err := NewSession(cfgBob, false)
+	// was previously sBob, err := NewSession(cfgBob, false)
+	sBob, err := NewSession(cfgBob, true)
 	require.NoError(err, "Integration: Bob NewSession()")
 
 	t.Log("before Pipe")
