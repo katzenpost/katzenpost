@@ -735,7 +735,9 @@ func (s *state) sendCommandToPeer(peer *config.Authority, cmd commands.Command) 
 		AuthenticationKey: s.s.linkKey,
 		RandomReader:      rand.Reader,
 	}
-	session, err := wire.NewPKISession(cfg, true)
+	// previously session, err := wire.NewPKISession(cfg, true)
+	// see ticket https://github.com/katzenpost/katzenpost/issues/630
+	session, err := wire.NewPKISession(cfg, false)
 	if err != nil {
 		return nil, err
 	}
