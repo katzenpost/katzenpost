@@ -1,5 +1,5 @@
 name: docker mixnet integration tests
-on: [push, pull_request]
+on: [pull_request]
 jobs:
 
   test_e2e_client:
@@ -8,7 +8,7 @@ jobs:
       XDG_RUNTIME_DIR: /run
     strategy:
       matrix:
-        go-version: [1.21.x]
+        go-version: [1.22.x]
         os: [ubuntu-latest]
     runs-on: ${{ matrix.os }}
     steps:
@@ -21,11 +21,7 @@ jobs:
 
       - name: Build and start the mixnet
         run: |
-          cd docker && sudo -E make start
-
-      - name: Allow mixnet to settle
-        run: |
-          sleep 240
+          cd docker && sudo -E make start wait
 
       - name: run ping
         run: cd docker && sudo -E make run-ping
@@ -43,7 +39,7 @@ jobs:
       XDG_RUNTIME_DIR: /run
     strategy:
       matrix:
-        go-version: [1.21.x]
+        go-version: [1.22.x]
         os: [ubuntu-latest]
     runs-on: ${{ matrix.os }}
     steps:
@@ -56,11 +52,7 @@ jobs:
 
       - name: Build and start the mixnet
         run: |
-          cd docker && sudo -E make start
-
-      - name: Allow mixnet to settle
-        run: |
-          sleep 240
+          cd docker && sudo -E make start wait
 
       - name: run memspool end to end tests
         run: cd memspool && sudo -E make testargs=-coverprofile=coverage.part dockerdockertest && cat client/coverage.part >> ../coverage.out
@@ -75,7 +67,7 @@ jobs:
       XDG_RUNTIME_DIR: /run
     strategy:
       matrix:
-        go-version: [1.21.x]
+        go-version: [1.22.x]
         os: [ubuntu-latest]
     runs-on: ${{ matrix.os }}
     steps:
@@ -88,11 +80,7 @@ jobs:
 
       - name: Build and start the mixnet
         run: |
-          cd docker && sudo -E make start
-
-      - name: Allow mixnet to settle
-        run: |
-          sleep 240
+          cd docker && sudo -E make start wait
 
       - name: run catshadow end to end tests
         run: cd catshadow && sudo -E make testargs=-coverprofile=coverage.part dockerdockertest && cat coverage.part >> ../coverage.out
@@ -107,7 +95,7 @@ jobs:
       XDG_RUNTIME_DIR: /run
     strategy:
       matrix:
-        go-version: [1.21.x]
+        go-version: [1.22.x]
         os: [ubuntu-latest]
     runs-on: ${{ matrix.os }}
     steps:
@@ -138,8 +126,8 @@ jobs:
       XDG_RUNTIME_DIR: /run
     strategy:
       matrix:
-        go-version: [1.19.x]
-        os: [ubuntu-22.04]
+        go-version: [1.22.x]
+        os: [ubuntu-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout code
@@ -151,11 +139,7 @@ jobs:
 
       - name: Build and start the mixnet
         run: |
-          cd docker && sudo -E make start
-
-      - name: Allow mixnet to settle
-        run: |
-          sleep 240
+          cd docker && sudo -E make start wait
 
       - name: run pigeonhole end to end tests
         run: cd pigeonhole && sudo -E make testargs=-coverprofile=coverage.part dockerdockertest && cat client/coverage.part >> ../coverage.out
