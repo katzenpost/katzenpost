@@ -54,7 +54,7 @@ func (s *Session) sendNext() {
 
 func (s *Session) doRetransmit(msg *Message) {
 	msg.Retransmissions++
-	msgIdStr := fmt.Sprintf("[%v]", hex.EncodeToString(msg.ID[:]))
+	msgIdStr := fmt.Sprintf("[%s]", hex.EncodeToString(msg.ID[:]))
 	s.log.Debugf("doRetransmit: %d for %s", msg.Retransmissions, msgIdStr)
 	s.egressQueue.Push(msg)
 }
