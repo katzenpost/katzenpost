@@ -548,8 +548,10 @@ func (s *Session) PeerCredentials() (*PeerCredentials, error) {
 // from a session that has successfully completed Initialize(), and the peer is
 // the responder.
 func (s *Session) ClockSkew() time.Duration {
-	if !s.isInitiator {
-		panic("wire/session: ClockSkew() call by responder")
+	// was previously if !s.isInitiator {
+	// see ticket https://github.com/katzenpost/katzenpost/issues/630
+	if s.isInitiator {
+		panic("wire/session: ClockSkew() call by initiator")
 	}
 	if atomic.LoadUint32(&s.state) != stateEstablished {
 		panic("wire/session: ClockSkew() call in invalid state")
