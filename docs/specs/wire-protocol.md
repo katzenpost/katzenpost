@@ -87,8 +87,35 @@ Classical Noise XX pattern:
   <- e, ee, s, es
   -> s, se
 ```
+Which by default, everyone presumes will be used as follows:
 
-Therefore our solution is to annotate the pqXX pattern differently than the expected interpretation:
+```
+client:  -> e
+server:  <- e, ee, s, es
+client:  -> s, se
+```
+
+Therefore the XX handshake pattern has the client authenticating the
+server as soon as it receives "e, ee, s, es" from the server in the
+second handshake message. Only AFTER that does the server authenticate
+the client when it receives "s, se" from the client in the last
+handshake message.
+
+The default interpretation of the pqXX pattern is as follows:
+
+```
+client: -> e
+server: <- ekem, s
+client: -> skem, s
+server: <- skem
+```
+
+The very last pqXX message is used to authenticate the server to the client. The second to last message
+authenticates the client to the server. Wrong ordering!
+
+Therefore our solution is to have the client connect to the server as usual, however the client would then
+await a Noise message instead of sending one. And the server would immediately send the first PQ Noise message
+upon receiving a client connection, like this:
 
 ```
 server: -> e
@@ -97,8 +124,14 @@ server: -> skem, s
 client: <- skem
 ```
 
-Thus, the client initiates the TCP or QUIC connection to the server, however once connected,
-the client waits for a PQ Noise message and the server immediately sends the first PQ Noise message.
+Thus, the above implies that the client connect via TCP or QUIC to the server which accepts the connection.
+The client awaits a message, and the server sends the first PQ Noise message, "e". Once the clients receives
+the "e" message it responds with "ekem, s"; which means that the client uses the server's ephemeral key to encrypt
+it's static key and sends that ciphertext to the server. The server response with "skem, s". Since the client has the
+corresponding private key, it's able to decrypt skem and retreive the encapsulated "s" within. The client then uses that
+public key "s" from the server to send "skem" to the server, proving that the client was able to decrypt the previous
+KEM ciphertext, thus proving ownership of the client's static key.
+
 
 The next part of the protocol string specifies the KEM,
 `Xwing` which is a hybrid KEM where the share
