@@ -60,7 +60,6 @@ require (
 	github.com/rfjakob/eme v1.1.2 // indirect
 	github.com/shopspring/decimal v1.3.1 // indirect
 	github.com/spf13/jwalterweatherman v1.1.0 // indirect
-	github.com/stretchr/objx v0.5.0 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	gitlab.com/elixxir/crypto v0.0.9 // indirect
 	gitlab.com/xx_network/crypto v0.0.6 // indirect
