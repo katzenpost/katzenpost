@@ -73,12 +73,13 @@ closely resembles the Noise algebraic token system:
 ```
 
 However let us remark that usually `e` is first sent over by the
-client. However in our case the serer is the Noise protocol initiator
-after the connection is made via the client initiating the connection.
-To be clear, clients connec to servers as usually, and then the client
-waits for a message, while the server sends the first PQ Noise
-message. The reason for this modification is so that the server authenticates itself to the client first
-just like classical Noise XX pattern.
+client. However in our case the server is the Noise protocol initiator
+after the connection is made via the client initiating the underlying
+TCP or QUIC connection. To be clear, clients connect to servers as
+usual, and then the client waits for a message, while the server sends
+the first PQ Noise message. The reason for this modification is so
+that the server authenticates itself to the client first just like
+classical Noise XX pattern.
 
 Classical Noise XX pattern:
 
