@@ -11,14 +11,18 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/katzenpost/katzenpost/core/log"
+	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/thwack"
+	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/loops"
 	"github.com/katzenpost/katzenpost/server/config"
 	"github.com/katzenpost/katzenpost/server/internal/glue"
 	"github.com/katzenpost/katzenpost/server/internal/mixkeys"
 	"github.com/katzenpost/katzenpost/server/internal/packet"
 	"github.com/katzenpost/katzenpost/server/internal/pkicache"
+	"github.com/katzenpost/katzenpost/server/spool"
+	"github.com/katzenpost/katzenpost/server/userdb"
 )
 
 type mockServer struct {
@@ -37,7 +41,8 @@ type mockServer struct {
 }
 
 type mockGlue struct {
-	s *mockServer
+	s     *mockServer
+	decoy *mockDecoy
 }
 
 func (g *mockGlue) Config() *config.Config {
@@ -91,14 +96,16 @@ func (g *mockGlue) Listeners() []glue.Listener {
 func (g *mockGlue) ReshadowCryptoWorkers() {}
 
 func (g *mockGlue) Decoy() glue.Decoy {
-	return &mockDecoy{}
+	return g.decoy
 }
 
 func (m *mockGlue) Management() *thwack.Server {
 	return nil
 }
 
-type mockDecoy struct{}
+type mockDecoy struct {
+	count int
+}
 
 func (d *mockDecoy) Halt() {}
 
@@ -126,6 +133,95 @@ func (s *mockScheduler) OnPacket(pkt *packet.Packet) {
 	s.count++
 }
 
+type mockService struct {
+	count int
+}
+
+func (s *mockService) Halt() {}
+
+func (s *mockService) OnPacket(*packet.Packet) {
+	s.count++
+}
+
+func (s *mockService) KaetzchenForPKI() (map[string]map[string]interface{}, error) {
+	return nil, nil
+}
+
+type mockGateway struct {
+	count int
+
+	userName string
+	userKey  kem.PublicKey
+}
+
+func (p *mockGateway) Halt() {}
+
+func (p *mockGateway) UserDB() userdb.UserDB {
+	return &mockUserDB{
+		gateway: p,
+	}
+}
+
+func (p *mockGateway) Spool() spool.Spool {
+	return &mockSpool{}
+}
+
+func (p *mockGateway) AuthenticateClient(*wire.PeerCredentials) bool {
+	return true
+}
+
+func (p *mockGateway) OnPacket(*packet.Packet) {
+	p.count++
+}
+
+type mockUserDB struct {
+	gateway *mockGateway
+}
+
+func (u *mockUserDB) Exists([]byte) bool {
+	return true
+}
+
+func (u *mockUserDB) IsValid([]byte, kem.PublicKey) bool { return true }
+
+func (u *mockUserDB) Add([]byte, kem.PublicKey, bool) error { return nil }
+
+func (u *mockUserDB) SetIdentity([]byte, kem.PublicKey) error { return nil }
+
+func (u *mockUserDB) Link([]byte) (kem.PublicKey, error) {
+	return nil, nil
+}
+
+func (u *mockUserDB) Identity([]byte) (kem.PublicKey, error) {
+	return u.gateway.userKey, nil
+}
+
+func (u *mockUserDB) Remove([]byte) error { return nil }
+
+func (u *mockUserDB) Close() {}
+
+type mockSpool struct{}
+
+func (s *mockSpool) StoreMessage(u, msg []byte) error { return nil }
+
+func (s *mockSpool) StoreSURBReply(u []byte, id *[constants.SURBIDLength]byte, msg []byte) error {
+	return nil
+}
+
+func (s *mockSpool) Get(u []byte, advance bool) (msg, surbID []byte, remaining int, err error) {
+	return []byte{1, 2, 3}, nil, 1, nil
+}
+
+func (s *mockSpool) Remove(u []byte) error { return nil }
+
+func (s *mockSpool) VacuumExpired(udb userdb.UserDB, ignoreIdentities map[[32]byte]interface{}) error {
+	return nil
+}
+
+func (s *mockSpool) Vacuum(udb userdb.UserDB) error { return nil }
+
+func (s *mockSpool) Close() {}
+
 // routing results
 const (
 	SentToDecoy = iota
@@ -144,9 +240,12 @@ func TestRoutePacket(t *testing.T) {
 
 	mixNodeConfig := &config.Config{
 		SphinxGeometry: mygeo,
-		Server:         &config.Server{},
-		Logging:        &config.Logging{},
-		PKI:            &config.PKI{},
+		Server: &config.Server{
+			IsGatewayNode: false,
+			IsServiceNode: false,
+		},
+		Logging: &config.Logging{},
+		PKI:     &config.PKI{},
 		Debug: &config.Debug{
 			NumKaetzchenWorkers: 3,
 			KaetzchenDelay:      300,
@@ -225,14 +324,13 @@ func testRouting(t *testing.T, nodeCfg *config.Config, inputPacket *packet.Packe
 	require.NoError(t, err)
 
 	goo := &mockGlue{
+		decoy: new(mockDecoy),
 		s: &mockServer{
+			cfg:        nodeCfg,
 			logBackend: logBackend,
 			scheduler:  new(mockScheduler),
-
-			// XXX FIX ME
-			//gateway:    mockProvider,
-			//service:    mockProvider,
-			cfg: nodeCfg,
+			gateway:    new(mockGateway),
+			service:    new(mockService),
 		},
 	}
 
@@ -248,9 +346,18 @@ func testRouting(t *testing.T, nodeCfg *config.Config, inputPacket *packet.Packe
 
 	cryptoworker.routePacket(pkt, startAt)
 
-	if goo.s.scheduler.(*mockScheduler).count == 1 {
+	switch {
+	case goo.s.scheduler.(*mockScheduler).count == 1:
 		return SentToScheduler
+	case goo.decoy.count == 1:
+		return SentToDecoy
+	case goo.s.gateway.(*mockGateway).count == 1:
+		return SentToGateway
+	case goo.s.service.(*mockService).count == 1:
+		return SentToService
+	default:
+		return Dropped
 	}
 
-	return 0 // XXX FIX ME
+	// unreachable
 }
