@@ -470,6 +470,10 @@ func New(cfg *config.Config) (*Server, error) {
 	return s, nil
 }
 
+func NewServerGlue(s *Server) glue.Glue {
+	return &serverGlue{s}
+}
+
 type serverGlue struct {
 	s *Server
 }

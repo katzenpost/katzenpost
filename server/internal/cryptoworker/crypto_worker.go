@@ -353,3 +353,7 @@ func New(glue glue.Glue, incomingCh <-chan interface{}, id int) *Worker {
 	w.Go(w.worker)
 	return w
 }
+
+func (w *Worker) DoUnwrap(pkt *packet.Packet) error {
+	return w.doUnwrap(pkt)
+}

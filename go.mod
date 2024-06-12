@@ -37,6 +37,7 @@ require (
 	github.com/dchest/siphash v1.2.3 // indirect
 	github.com/go-faster/xor v1.0.0 // indirect
 	github.com/gofrs/uuid v4.4.0+incompatible // indirect
+	github.com/google/go-cmp v0.6.0 // indirect
 	github.com/henrydcase/nobs v0.0.0-20230313231516-25b66236df73 // indirect
 	github.com/jackc/fake v0.0.0-20150926172116-812a484cc733 // indirect
 	github.com/katzenpost/chacha20 v0.0.0-20190910113340-7ce890d6a556 // indirect
