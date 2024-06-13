@@ -119,7 +119,7 @@ func (s *katzenpost) genClientCfg() error {
 	cfg.VotingAuthority = &cConfig.VotingAuthority{Peers: peers}
 
 	// Debug section
-	cfg.Debug = &cConfig.Debug{DisableDecoyTraffic: true}
+	cfg.Debug = &cConfig.Debug{DisableDecoyTraffic: false}
 	err := saveCfg(cfg, s.outDir)
 	if err != nil {
 		return err
