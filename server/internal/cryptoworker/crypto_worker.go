@@ -220,7 +220,7 @@ func (w *Worker) routePacket(pkt *packet.Packet, startAt time.Time) {
 		// Check and adjust the delay for queue dwell time.
 		pkt.Delay = time.Duration(pkt.NodeDelay.Delay) * time.Millisecond
 		if pkt.Delay > constants.NumMixKeys*epochtime.Period {
-			w.log.Debugf("Dropping packet: %v (Delay %v is past what is possible)", pkt.ID, pkt.Delay)
+			w.log.Debugf("Dropping packet: %v (Delay1 %v is past what is possible)", pkt.ID, pkt.Delay)
 			instrument.PacketsDropped()
 			pkt.Dispose()
 			return
@@ -245,7 +245,7 @@ func (w *Worker) routePacket(pkt *packet.Packet, startAt time.Time) {
 				// where the load shedding has kicked in, the dwell
 				// time appears to be "excessive".  Discard the packet,
 				// the client is doing something non-standard anyway.
-				w.log.Debugf("Dropping packet: %v (Delay 0 queue delay: %v)", pkt.ID, dwellTime)
+				w.log.Debugf("Dropping packet: %v (Delay2 0 queue delay: %v)", pkt.ID, dwellTime)
 				instrument.PacketsDropped()
 				pkt.Dispose()
 				return

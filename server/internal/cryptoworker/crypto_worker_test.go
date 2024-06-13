@@ -252,6 +252,12 @@ const (
 	Dropped
 )
 
+const (
+	GatewayPacket = iota
+	MixPacket
+	ServicePacket
+)
+
 func routeResultToString(result int) string {
 	switch result {
 	case SentToDecoy:
@@ -329,50 +335,32 @@ func TestRoutePacket(t *testing.T) {
 		},
 	}
 
-	goo := newTestGoo(t)
-
-	mixkeys, err := mixkeys.NewMixKeys(goo, mygeo)
-	require.NoError(t, err)
-	goo.s.mixKeys = mixkeys
-
-	epoch, _, _ := epochtime.Now()
-	mixkeyblob, ok := mixkeys.Get(epoch)
-	require.True(t, ok)
-
-	nikeScheme := schemes.ByName(mygeo.NIKEName)
-	nodePubKey, err := nikeScheme.UnmarshalBinaryPublicKey(mixkeyblob)
-	require.NoError(t, err)
-
-	mixPacket := createTestPacket(t, nodePubKey, true, false, false, mygeo)
-	servicePacket := createTestPacket(t, nodePubKey, false, false, true, mygeo)
-	gatewayPacket := createTestPacket(t, nodePubKey, false, true, false, mygeo)
-
 	/* table driven tests for the win!
 	 */
 
 	testCases := []struct {
 		name          string
 		nodeCfg       *config.Config
-		inputPacket   []byte
+		packetType    int
 		routingResult int
 	}{
 		// test cases for Gateway Node's routing logic:
 		{
 			name:          "gw_gwpacket",
 			nodeCfg:       gatewayNodeConfig,
-			inputPacket:   gatewayPacket,
-			routingResult: SentToGateway,
+			packetType:    GatewayPacket,
+			routingResult: SentToScheduler,
 		},
 		{
 			name:          "gw_mixpacket",
 			nodeCfg:       gatewayNodeConfig,
-			inputPacket:   mixPacket,
-			routingResult: SentToGateway,
+			packetType:    MixPacket,
+			routingResult: SentToScheduler,
 		},
 		{
 			name:          "gw_srvpacket",
 			nodeCfg:       gatewayNodeConfig,
-			inputPacket:   servicePacket,
+			packetType:    ServicePacket,
 			routingResult: SentToGateway,
 		},
 
@@ -380,19 +368,19 @@ func TestRoutePacket(t *testing.T) {
 		{
 			name:          "mix_gwpacket",
 			nodeCfg:       mixNodeConfig,
-			inputPacket:   gatewayPacket,
-			routingResult: Dropped,
+			packetType:    GatewayPacket,
+			routingResult: SentToScheduler,
 		},
 		{
 			name:          "mix_mixpacket",
 			nodeCfg:       mixNodeConfig,
-			inputPacket:   mixPacket,
-			routingResult: Dropped,
+			packetType:    MixPacket,
+			routingResult: SentToScheduler,
 		},
 		{
 			name:          "mix_srvpacket",
 			nodeCfg:       mixNodeConfig,
-			inputPacket:   servicePacket,
+			packetType:    ServicePacket,
 			routingResult: Dropped,
 		},
 
@@ -400,25 +388,25 @@ func TestRoutePacket(t *testing.T) {
 		{
 			name:          "srv_gwpacket",
 			nodeCfg:       serviceNodeConfig,
-			inputPacket:   gatewayPacket,
-			routingResult: SentToService,
+			packetType:    GatewayPacket,
+			routingResult: SentToScheduler,
 		},
 		{
 			name:          "srv_mixpacket",
 			nodeCfg:       serviceNodeConfig,
-			inputPacket:   mixPacket,
-			routingResult: SentToService,
+			packetType:    MixPacket,
+			routingResult: SentToScheduler,
 		},
 		{
 			name:          "srv_srvpacket",
 			nodeCfg:       serviceNodeConfig,
-			inputPacket:   servicePacket,
+			packetType:    ServicePacket,
 			routingResult: SentToService,
 		},
 	}
 
 	for i := 0; i < len(testCases); i++ {
-		result := testRouting(t, testCases[i].nodeCfg, testCases[i].inputPacket, mixkeys)
+		result := testRouting(t, testCases[i].nodeCfg, testCases[i].packetType)
 		routingResult := routeResultToString(result)
 		t.Logf("test case %s returns %s", testCases[i].name, routingResult)
 
@@ -480,8 +468,8 @@ func newNikeNode(t *testing.T, mynike nike.Scheme) *nodeParams {
 }
 
 func createTestRoute(t *testing.T, geo *geo.Geometry, nodePubKey nike.PublicKey, isMixNode bool, isGatewayNode bool, isServiceNode bool) ([]*nodeParams, []*sphinx.PathHop) {
-	const delayBase = 0xdeadbabe
 	isSURB := true
+	delayBase := uint32(1000)
 
 	// Generate the keypairs and node identifiers for the "nodes", except the one we pass in.
 	nodes := make([]*nodeParams, geo.NrHops-1)
@@ -520,6 +508,10 @@ func createTestRoute(t *testing.T, geo *geo.Geometry, nodePubKey nike.PublicKey,
 		panic("creaTestRoute: invalid arguments")
 	}
 
+	if len(nodes) != geo.NrHops {
+		panic("nodes must be NrNops in length")
+	}
+
 	// Assemble the path vector.
 	path := make([]*sphinx.PathHop, geo.NrHops)
 	for i := range path {
@@ -529,7 +521,7 @@ func createTestRoute(t *testing.T, geo *geo.Geometry, nodePubKey nike.PublicKey,
 		if i < geo.NrHops-1 {
 			// Non-terminal hop, add the delay.
 			delay := new(commands.NodeDelay)
-			delay.Delay = delayBase * uint32(i+1)
+			delay.Delay = delayBase + uint32(i+1)
 			path[i].Commands = append(path[i].Commands, delay)
 		} else {
 			// Terminal hop, add the recipient.
@@ -551,15 +543,43 @@ func createTestRoute(t *testing.T, geo *geo.Geometry, nodePubKey nike.PublicKey,
 	return nodes, path
 }
 
-func testRouting(t *testing.T, nodeCfg *config.Config, rawPacket []byte, mixkeys glue.MixKeys) int {
+func testRouting(t *testing.T, nodeCfg *config.Config, packetType int) int {
+
 	goo := newTestGoo(t)
 	goo.s.cfg = nodeCfg
-	goo.s.mixKeys = mixkeys
+
+	testNodeMixkeys, err := mixkeys.NewMixKeys(goo, nodeCfg.SphinxGeometry)
+	require.NoError(t, err)
+	goo.s.mixKeys = testNodeMixkeys
+
+	epoch, _, _ := epochtime.Now()
+	mixkeyblob, ok := testNodeMixkeys.Get(epoch)
+	require.True(t, ok)
+
+	nikeScheme := schemes.ByName(nodeCfg.SphinxGeometry.NIKEName)
+	nodePubKey, err := nikeScheme.UnmarshalBinaryPublicKey(mixkeyblob)
+	require.NoError(t, err)
+
+	var rawPacket []byte
+	switch packetType {
+	case GatewayPacket:
+		rawPacket = createTestPacket(t, nodePubKey, false, true, false, nodeCfg.SphinxGeometry)
+	case MixPacket:
+		rawPacket = createTestPacket(t, nodePubKey, true, false, false, nodeCfg.SphinxGeometry)
+	case ServicePacket:
+		rawPacket = createTestPacket(t, nodePubKey, false, false, true, nodeCfg.SphinxGeometry)
+
+	default:
+		panic("invalid packet type")
+	}
 
 	incomingCh := make(chan interface{})
 	cryptoworker := New(goo, incomingCh, 123)
 
 	pkt, err := packet.New(rawPacket, nodeCfg.SphinxGeometry)
+	require.NoError(t, err)
+
+	err = cryptoworker.doUnwrap(pkt)
 	require.NoError(t, err)
 
 	startAt := time.Now()
