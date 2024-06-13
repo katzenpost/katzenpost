@@ -256,7 +256,9 @@ const (
 	GatewayPacket = iota
 	MixPacket
 	ServicePacket
-	SURBReplyPacket
+	SURBReplyGatewayPacket
+	SURBReplyMixPacket
+	SURBReplyServicePacket
 )
 
 func routeResultToString(result int) string {
@@ -365,10 +367,22 @@ func TestRoutePacket(t *testing.T) {
 			routingResult: SentToGateway,
 		},
 		{
-			name:          "gw_surbpacket",
+			name:          "gw_surbpacket1",
 			nodeCfg:       gatewayNodeConfig,
-			packetType:    SURBReplyPacket,
+			packetType:    SURBReplyGatewayPacket,
 			routingResult: SentToScheduler,
+		},
+		{
+			name:          "gw_surbpacket2",
+			nodeCfg:       gatewayNodeConfig,
+			packetType:    SURBReplyMixPacket,
+			routingResult: SentToScheduler,
+		},
+		{
+			name:          "gw_surbpacket3",
+			nodeCfg:       gatewayNodeConfig,
+			packetType:    SURBReplyServicePacket,
+			routingResult: SentToGateway,
 		},
 
 		// test cases for Mix Node's routing logic:
@@ -391,10 +405,22 @@ func TestRoutePacket(t *testing.T) {
 			routingResult: Dropped,
 		},
 		{
-			name:          "mix_surbpacket",
+			name:          "mix_surbpacket1",
 			nodeCfg:       mixNodeConfig,
-			packetType:    SURBReplyPacket,
+			packetType:    SURBReplyGatewayPacket,
 			routingResult: SentToScheduler,
+		},
+		{
+			name:          "mix_surbpacket2",
+			nodeCfg:       mixNodeConfig,
+			packetType:    SURBReplyMixPacket,
+			routingResult: SentToScheduler,
+		},
+		{
+			name:          "mix_surbpacket3",
+			nodeCfg:       mixNodeConfig,
+			packetType:    SURBReplyServicePacket,
+			routingResult: Dropped,
 		},
 
 		// test cases for Service Node's routing logic:
@@ -417,10 +443,22 @@ func TestRoutePacket(t *testing.T) {
 			routingResult: SentToService,
 		},
 		{
-			name:          "srv_surbpacket",
+			name:          "srv_surbpacket1",
 			nodeCfg:       serviceNodeConfig,
-			packetType:    SURBReplyPacket,
+			packetType:    SURBReplyGatewayPacket,
 			routingResult: SentToScheduler,
+		},
+		{
+			name:          "srv_surbpacket2",
+			nodeCfg:       serviceNodeConfig,
+			packetType:    SURBReplyMixPacket,
+			routingResult: SentToScheduler,
+		},
+		{
+			name:          "srv_surbpacket3",
+			nodeCfg:       serviceNodeConfig,
+			packetType:    SURBReplyServicePacket,
+			routingResult: SentToService,
 		},
 	}
 
@@ -586,8 +624,12 @@ func testRouting(t *testing.T, nodeCfg *config.Config, packetType int) int {
 		rawPacket = createTestPacket(t, nodePubKey, true, false, false, false, nodeCfg.SphinxGeometry)
 	case ServicePacket:
 		rawPacket = createTestPacket(t, nodePubKey, false, false, true, false, nodeCfg.SphinxGeometry)
-	case SURBReplyPacket:
+	case SURBReplyGatewayPacket:
 		rawPacket = createTestPacket(t, nodePubKey, false, true, false, true, nodeCfg.SphinxGeometry)
+	case SURBReplyMixPacket:
+		rawPacket = createTestPacket(t, nodePubKey, true, false, false, true, nodeCfg.SphinxGeometry)
+	case SURBReplyServicePacket:
+		rawPacket = createTestPacket(t, nodePubKey, false, false, true, true, nodeCfg.SphinxGeometry)
 	default:
 		panic("invalid packet type")
 	}
