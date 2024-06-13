@@ -6,11 +6,16 @@ import (
 	"time"
 
 	"github.com/katzenpost/hpqc/kem"
+	"github.com/katzenpost/hpqc/nike"
+	"github.com/katzenpost/hpqc/nike/schemes"
 	"github.com/katzenpost/hpqc/nike/x25519"
 	"github.com/katzenpost/hpqc/sign"
 	"github.com/stretchr/testify/require"
 
+	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/log"
+	"github.com/katzenpost/katzenpost/core/sphinx"
+	"github.com/katzenpost/katzenpost/core/sphinx/commands"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/thwack"
@@ -231,6 +236,23 @@ const (
 	Dropped
 )
 
+func routeResultToString(result int) string {
+	switch result {
+	case SentToDecoy:
+		return "SentToDecoy"
+	case SentToGateway:
+		return "SentToGateway"
+	case SentToService:
+		return "SentToService"
+	case SentToScheduler:
+		return "SentToScheduler"
+	case Dropped:
+		return "Dropped"
+	default:
+		panic("wtf")
+	}
+}
+
 func TestRoutePacket(t *testing.T) {
 	nrHops := 5
 	withSURB := true
@@ -289,61 +311,256 @@ func TestRoutePacket(t *testing.T) {
 		},
 	}
 
-	testCases := []struct {
-		nodeCfg       *config.Config
-		inputPacket   *packet.Packet
-		routingResult int
-	}{
-		// XXX FIX ME: write multiple test cases for each node type.
-		{
-			nodeCfg:       serviceNodeConfig,
-			inputPacket:   packet1,
-			routingResult: 1,
-		},
-		{
-			nodeCfg:       gatewayNodeConfig,
-			inputPacket:   packet1,
-			routingResult: 1,
-		},
-		{
-			nodeCfg:       mixNodeConfig,
-			inputPacket:   packet1,
-			routingResult: 1,
-		},
-	}
-
-	for i := 0; i < len(testCases); i++ {
-		result := testRouting(t, testCases[i].nodeCfg, testCases[i].inputPacket, mygeo)
-		require.Equal(t, result, testCases[i].routingResult)
-	}
-}
-
-func testRouting(t *testing.T, nodeCfg *config.Config, inputPacket *packet.Packet, mygeo *geo.Geometry) int {
-
 	logBackend, err := log.New("", "DEBUG", false)
 	require.NoError(t, err)
 
 	goo := &mockGlue{
 		decoy: new(mockDecoy),
 		s: &mockServer{
-			cfg:        nodeCfg,
+			//cfg:        nodeCfg,
 			logBackend: logBackend,
 			scheduler:  new(mockScheduler),
 			gateway:    new(mockGateway),
 			service:    new(mockService),
 		},
 	}
-
+	epoch, _, _ := epochtime.Now()
 	mixkeys, err := mixkeys.NewMixKeys(goo, mygeo)
 	require.NoError(t, err)
-
 	goo.s.mixKeys = mixkeys
+
+	if mygeo.NIKEName == "" {
+		panic("KEM Sphinx not yet handled by test")
+	}
+	if mygeo.KEMName != "" {
+		panic("test must use NIKE Sphinx")
+	}
+
+	nikeScheme := schemes.ByName(mygeo.NIKEName)
+	mixkeyblob, ok := mixkeys.Get(epoch)
+	require.True(t, ok)
+
+	nodePubKey, err := nikeScheme.UnmarshalBinaryPublicKey(mixkeyblob)
+	require.NoError(t, err)
+
+	mixPacket := createTestPacket(t, nodePubKey, true, false, false, mygeo)
+	servicePacket := createTestPacket(t, nodePubKey, false, false, true, mygeo)
+	gatewayPacket := createTestPacket(t, nodePubKey, false, true, false, mygeo)
+
+	/* table driven tests for the win!
+	 */
+
+	testCases := []struct {
+		name          string
+		nodeCfg       *config.Config
+		inputPacket   []byte
+		routingResult int
+	}{
+		// test cases for Gateway Node's routing logic:
+		{
+			name:          "gw_gwpacket",
+			nodeCfg:       gatewayNodeConfig,
+			inputPacket:   gatewayPacket,
+			routingResult: SentToGateway,
+		},
+		{
+			name:          "gw_mixpacket",
+			nodeCfg:       gatewayNodeConfig,
+			inputPacket:   mixPacket,
+			routingResult: Dropped,
+		},
+		{
+			name:          "gw_srvpacket",
+			nodeCfg:       gatewayNodeConfig,
+			inputPacket:   servicePacket,
+			routingResult: Dropped,
+		},
+
+		// test cases for Mix Node's routing logic:
+		{
+			name:          "mix_gwpacket",
+			nodeCfg:       mixNodeConfig,
+			inputPacket:   gatewayPacket,
+			routingResult: Dropped,
+		},
+		{
+			name:          "mix_mixpacket",
+			nodeCfg:       mixNodeConfig,
+			inputPacket:   mixPacket,
+			routingResult: SentToScheduler,
+		},
+		{
+			name:          "mix_srvpacket",
+			nodeCfg:       mixNodeConfig,
+			inputPacket:   servicePacket,
+			routingResult: SentToScheduler,
+		},
+
+		// test cases for Service Node's routing logic:
+		{
+			name:          "srv_gwpacket",
+			nodeCfg:       serviceNodeConfig,
+			inputPacket:   gatewayPacket,
+			routingResult: Dropped,
+		},
+		{
+			name:          "srv_mixpacket",
+			nodeCfg:       serviceNodeConfig,
+			inputPacket:   mixPacket,
+			routingResult: Dropped,
+		},
+		{
+			name:          "srv_srvpacket",
+			nodeCfg:       serviceNodeConfig,
+			inputPacket:   servicePacket,
+			routingResult: SentToService,
+		},
+	}
+
+	for i := 0; i < len(testCases); i++ {
+		result := testRouting(t, testCases[i].nodeCfg, testCases[i].inputPacket, goo)
+		routingResult := routeResultToString(result)
+		t.Logf("test case %s returns %s", testCases[i].name, routingResult)
+
+		require.Equal(t, result, testCases[i].routingResult)
+	}
+}
+
+func createTestPacket(t *testing.T, nodePubKey nike.PublicKey, isMixNode, isGatewayNode, isServiceNode bool, mygeo *geo.Geometry) []byte {
+	nodes, path := createTestRoute(t, mygeo, nodePubKey, isMixNode, isGatewayNode, isServiceNode)
+
+	payload := make([]byte, mygeo.ForwardPayloadLength)
+	payload[32] = 0x0a
+	payload[33] = 0x0b
+
+	mysphinx, err := sphinx.FromGeometry(mygeo)
+	require.NoError(t, err)
+
+	pkt, err := mysphinx.NewPacket(rand.Reader, path, payload)
+	require.NoError(t, err)
+
+	for i := 0; i < len(nodes); i++ {
+		if nodes[i].privateKey == nil {
+			break
+		}
+		b, _, cmds, err := mysphinx.Unwrap(nodes[i].privateKey, pkt)
+		require.NoError(t, err)
+
+		if i == len(path)-1 {
+			require.Equal(t, 1, len(cmds))
+			require.EqualValues(t, path[i].Commands[0], cmds[0])
+			require.Equal(t, b, payload)
+		} else {
+			require.Equal(t, mysphinx.Geometry().PacketLength, len(pkt))
+			require.Equal(t, 2, len(cmds))
+			require.EqualValues(t, path[i].Commands[0], cmds[0])
+
+			nextNode, ok := cmds[1].(*commands.NextNodeHop)
+			require.True(t, ok)
+			require.Equal(t, path[i+1].ID, nextNode.ID)
+			require.Nil(t, b)
+		}
+	}
+	return pkt
+}
+
+type nodeParams struct {
+	id         [constants.NodeIDLength]byte
+	privateKey nike.PrivateKey
+	publicKey  nike.PublicKey
+}
+
+func newNikeNode(t *testing.T, mynike nike.Scheme) *nodeParams {
+	n := new(nodeParams)
+	_, err := rand.Read(n.id[:])
+	require.NoError(t, err)
+	n.publicKey, n.privateKey, err = mynike.GenerateKeyPair()
+	require.NoError(t, err)
+	return n
+}
+
+func createTestRoute(t *testing.T, geo *geo.Geometry, nodePubKey nike.PublicKey, isMixNode bool, isGatewayNode bool, isServiceNode bool) ([]*nodeParams, []*sphinx.PathHop) {
+	const delayBase = 0xdeadbabe
+	isSURB := true
+
+	// Generate the keypairs and node identifiers for the "nodes", except the one we pass in.
+	nodes := make([]*nodeParams, geo.NrHops-1)
+	mynike := schemes.ByName(geo.NIKEName)
+	require.NotNil(t, mynike)
+
+	for i := 0; i < len(nodes); i++ {
+		nodes[i] = newNikeNode(t, mynike)
+	}
+
+	// Our test node, `myTestNode` is the only node in our slice of nodes whose `privateKey` field is nil;
+	// this is simply because we don't need it and we cannot easily retrieve it without modifying code.
+	myTestNode := new(nodeParams)
+	myTestNode.publicKey = nodePubKey
+	_, err := rand.Read(myTestNode.id[:])
+	require.NoError(t, err)
+
+	switch {
+	case isMixNode == true:
+		slice := []*nodeParams{}
+		slice = append(slice, nodes[0])
+		slice = append(slice, myTestNode)
+		slice = append(slice, nodes[1:]...)
+		nodes = slice
+	case isGatewayNode == true:
+		slice := []*nodeParams{}
+		slice = append(slice, myTestNode)
+		slice = append(slice, nodes...)
+		nodes = slice
+	case isServiceNode == true:
+		slice := []*nodeParams{}
+		slice = append(slice, nodes...)
+		slice = append(slice, myTestNode)
+		nodes = slice
+	default:
+		panic("creaTestRoute: invalid arguments")
+	}
+
+	// Assemble the path vector.
+	path := make([]*sphinx.PathHop, geo.NrHops)
+	for i := range path {
+		path[i] = new(sphinx.PathHop)
+		copy(path[i].ID[:], nodes[i].id[:])
+		path[i].NIKEPublicKey = nodes[i].publicKey
+		if i < geo.NrHops-1 {
+			// Non-terminal hop, add the delay.
+			delay := new(commands.NodeDelay)
+			delay.Delay = delayBase * uint32(i+1)
+			path[i].Commands = append(path[i].Commands, delay)
+		} else {
+			// Terminal hop, add the recipient.
+			recipient := new(commands.Recipient)
+			_, err := rand.Read(recipient.ID[:])
+			require.NoError(t, err)
+			path[i].Commands = append(path[i].Commands, recipient)
+
+			// This is a SURB, add a surb_reply.
+			if isSURB {
+				surbReply := new(commands.SURBReply)
+				_, err := rand.Read(surbReply.ID[:])
+				require.NoError(t, err)
+				path[i].Commands = append(path[i].Commands, surbReply)
+			}
+		}
+	}
+
+	return nodes, path
+}
+
+func testRouting(t *testing.T, nodeCfg *config.Config, rawPacket []byte, goo *mockGlue) int {
+	goo.s.cfg = nodeCfg
+
 	incomingCh := make(chan interface{})
 	cryptoworker := New(goo, incomingCh, 123)
 
-	startAt := time.Now()
-	pkt := &packet.Packet{}
+	pkt, err := packet.New(rawPacket, nodeCfg.SphinxGeometry)
+	require.NoError(t, err)
 
+	startAt := time.Now()
 	cryptoworker.routePacket(pkt, startAt)
 
 	switch {
