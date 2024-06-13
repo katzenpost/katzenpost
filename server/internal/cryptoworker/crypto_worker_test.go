@@ -253,11 +253,8 @@ const (
 )
 
 const (
-	GatewayPacket = iota
-	MixPacket
+	NextHopPacket = iota
 	ServicePacket
-	SURBReplyGatewayPacket
-	SURBReplyMixPacket
 	SURBReplyServicePacket
 )
 
@@ -351,13 +348,7 @@ func TestRoutePacket(t *testing.T) {
 		{
 			name:          "gw_gwpacket",
 			nodeCfg:       gatewayNodeConfig,
-			packetType:    GatewayPacket,
-			routingResult: SentToScheduler,
-		},
-		{
-			name:          "gw_mixpacket",
-			nodeCfg:       gatewayNodeConfig,
-			packetType:    MixPacket,
+			packetType:    NextHopPacket,
 			routingResult: SentToScheduler,
 		},
 		{
@@ -365,18 +356,6 @@ func TestRoutePacket(t *testing.T) {
 			nodeCfg:       gatewayNodeConfig,
 			packetType:    ServicePacket,
 			routingResult: SentToGateway,
-		},
-		{
-			name:          "gw_surbpacket1",
-			nodeCfg:       gatewayNodeConfig,
-			packetType:    SURBReplyGatewayPacket,
-			routingResult: SentToScheduler,
-		},
-		{
-			name:          "gw_surbpacket2",
-			nodeCfg:       gatewayNodeConfig,
-			packetType:    SURBReplyMixPacket,
-			routingResult: SentToScheduler,
 		},
 		{
 			name:          "gw_surbpacket3",
@@ -389,13 +368,7 @@ func TestRoutePacket(t *testing.T) {
 		{
 			name:          "mix_gwpacket",
 			nodeCfg:       mixNodeConfig,
-			packetType:    GatewayPacket,
-			routingResult: SentToScheduler,
-		},
-		{
-			name:          "mix_mixpacket",
-			nodeCfg:       mixNodeConfig,
-			packetType:    MixPacket,
+			packetType:    NextHopPacket,
 			routingResult: SentToScheduler,
 		},
 		{
@@ -403,18 +376,6 @@ func TestRoutePacket(t *testing.T) {
 			nodeCfg:       mixNodeConfig,
 			packetType:    ServicePacket,
 			routingResult: Dropped,
-		},
-		{
-			name:          "mix_surbpacket1",
-			nodeCfg:       mixNodeConfig,
-			packetType:    SURBReplyGatewayPacket,
-			routingResult: SentToScheduler,
-		},
-		{
-			name:          "mix_surbpacket2",
-			nodeCfg:       mixNodeConfig,
-			packetType:    SURBReplyMixPacket,
-			routingResult: SentToScheduler,
 		},
 		{
 			name:          "mix_surbpacket3",
@@ -427,13 +388,7 @@ func TestRoutePacket(t *testing.T) {
 		{
 			name:          "srv_gwpacket",
 			nodeCfg:       serviceNodeConfig,
-			packetType:    GatewayPacket,
-			routingResult: SentToScheduler,
-		},
-		{
-			name:          "srv_mixpacket",
-			nodeCfg:       serviceNodeConfig,
-			packetType:    MixPacket,
+			packetType:    NextHopPacket,
 			routingResult: SentToScheduler,
 		},
 		{
@@ -441,18 +396,6 @@ func TestRoutePacket(t *testing.T) {
 			nodeCfg:       serviceNodeConfig,
 			packetType:    ServicePacket,
 			routingResult: SentToService,
-		},
-		{
-			name:          "srv_surbpacket1",
-			nodeCfg:       serviceNodeConfig,
-			packetType:    SURBReplyGatewayPacket,
-			routingResult: SentToScheduler,
-		},
-		{
-			name:          "srv_surbpacket2",
-			nodeCfg:       serviceNodeConfig,
-			packetType:    SURBReplyMixPacket,
-			routingResult: SentToScheduler,
 		},
 		{
 			name:          "srv_surbpacket3",
@@ -618,16 +561,12 @@ func testRouting(t *testing.T, nodeCfg *config.Config, packetType int) int {
 
 	var rawPacket []byte
 	switch packetType {
-	case GatewayPacket:
+	case NextHopPacket:
 		rawPacket = createTestPacket(t, nodePubKey, false, true, false, false, nodeCfg.SphinxGeometry)
-	case MixPacket:
-		rawPacket = createTestPacket(t, nodePubKey, true, false, false, false, nodeCfg.SphinxGeometry)
+		// either of these works for creating a sphinx packet with a next hop command in it
+		//rawPacket = createTestPacket(t, nodePubKey, true, false, false, false, nodeCfg.SphinxGeometry)
 	case ServicePacket:
 		rawPacket = createTestPacket(t, nodePubKey, false, false, true, false, nodeCfg.SphinxGeometry)
-	case SURBReplyGatewayPacket:
-		rawPacket = createTestPacket(t, nodePubKey, false, true, false, true, nodeCfg.SphinxGeometry)
-	case SURBReplyMixPacket:
-		rawPacket = createTestPacket(t, nodePubKey, true, false, false, true, nodeCfg.SphinxGeometry)
 	case SURBReplyServicePacket:
 		rawPacket = createTestPacket(t, nodePubKey, false, false, true, true, nodeCfg.SphinxGeometry)
 	default:
