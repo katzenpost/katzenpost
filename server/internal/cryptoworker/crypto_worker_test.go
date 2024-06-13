@@ -227,6 +227,22 @@ func (s *mockSpool) Vacuum(udb userdb.UserDB) error { return nil }
 
 func (s *mockSpool) Close() {}
 
+func newTestGoo(t *testing.T) *mockGlue {
+	logBackend, err := log.New("", "DEBUG", false)
+	require.NoError(t, err)
+	goo := &mockGlue{
+		decoy: new(mockDecoy),
+		s: &mockServer{
+			// cfg field is set in testRouting function below
+			logBackend: logBackend,
+			scheduler:  new(mockScheduler),
+			gateway:    new(mockGateway),
+			service:    new(mockService),
+		},
+	}
+	return goo
+}
+
 // routing results
 const (
 	SentToDecoy = iota
@@ -277,6 +293,7 @@ func TestRoutePacket(t *testing.T) {
 	serviceNodeConfig := &config.Config{
 		SphinxGeometry: mygeo,
 		Server: &config.Server{
+			IsGatewayNode: false,
 			IsServiceNode: true,
 		},
 		Logging: &config.Logging{},
@@ -301,6 +318,7 @@ func TestRoutePacket(t *testing.T) {
 		Gateway:        &config.Gateway{},
 		SphinxGeometry: mygeo,
 		Server: &config.Server{
+			IsServiceNode: false,
 			IsGatewayNode: true,
 		},
 		Logging: &config.Logging{},
@@ -311,35 +329,17 @@ func TestRoutePacket(t *testing.T) {
 		},
 	}
 
-	logBackend, err := log.New("", "DEBUG", false)
-	require.NoError(t, err)
+	goo := newTestGoo(t)
 
-	goo := &mockGlue{
-		decoy: new(mockDecoy),
-		s: &mockServer{
-			//cfg:        nodeCfg,
-			logBackend: logBackend,
-			scheduler:  new(mockScheduler),
-			gateway:    new(mockGateway),
-			service:    new(mockService),
-		},
-	}
-	epoch, _, _ := epochtime.Now()
 	mixkeys, err := mixkeys.NewMixKeys(goo, mygeo)
 	require.NoError(t, err)
 	goo.s.mixKeys = mixkeys
 
-	if mygeo.NIKEName == "" {
-		panic("KEM Sphinx not yet handled by test")
-	}
-	if mygeo.KEMName != "" {
-		panic("test must use NIKE Sphinx")
-	}
-
-	nikeScheme := schemes.ByName(mygeo.NIKEName)
+	epoch, _, _ := epochtime.Now()
 	mixkeyblob, ok := mixkeys.Get(epoch)
 	require.True(t, ok)
 
+	nikeScheme := schemes.ByName(mygeo.NIKEName)
 	nodePubKey, err := nikeScheme.UnmarshalBinaryPublicKey(mixkeyblob)
 	require.NoError(t, err)
 
@@ -367,13 +367,13 @@ func TestRoutePacket(t *testing.T) {
 			name:          "gw_mixpacket",
 			nodeCfg:       gatewayNodeConfig,
 			inputPacket:   mixPacket,
-			routingResult: Dropped,
+			routingResult: SentToGateway,
 		},
 		{
 			name:          "gw_srvpacket",
 			nodeCfg:       gatewayNodeConfig,
 			inputPacket:   servicePacket,
-			routingResult: Dropped,
+			routingResult: SentToGateway,
 		},
 
 		// test cases for Mix Node's routing logic:
@@ -387,13 +387,13 @@ func TestRoutePacket(t *testing.T) {
 			name:          "mix_mixpacket",
 			nodeCfg:       mixNodeConfig,
 			inputPacket:   mixPacket,
-			routingResult: SentToScheduler,
+			routingResult: Dropped,
 		},
 		{
 			name:          "mix_srvpacket",
 			nodeCfg:       mixNodeConfig,
 			inputPacket:   servicePacket,
-			routingResult: SentToScheduler,
+			routingResult: Dropped,
 		},
 
 		// test cases for Service Node's routing logic:
@@ -401,13 +401,13 @@ func TestRoutePacket(t *testing.T) {
 			name:          "srv_gwpacket",
 			nodeCfg:       serviceNodeConfig,
 			inputPacket:   gatewayPacket,
-			routingResult: Dropped,
+			routingResult: SentToService,
 		},
 		{
 			name:          "srv_mixpacket",
 			nodeCfg:       serviceNodeConfig,
 			inputPacket:   mixPacket,
-			routingResult: Dropped,
+			routingResult: SentToService,
 		},
 		{
 			name:          "srv_srvpacket",
@@ -418,11 +418,11 @@ func TestRoutePacket(t *testing.T) {
 	}
 
 	for i := 0; i < len(testCases); i++ {
-		result := testRouting(t, testCases[i].nodeCfg, testCases[i].inputPacket, goo)
+		result := testRouting(t, testCases[i].nodeCfg, testCases[i].inputPacket, mixkeys)
 		routingResult := routeResultToString(result)
 		t.Logf("test case %s returns %s", testCases[i].name, routingResult)
 
-		require.Equal(t, result, testCases[i].routingResult)
+		require.Equal(t, testCases[i].routingResult, result)
 	}
 }
 
@@ -551,8 +551,10 @@ func createTestRoute(t *testing.T, geo *geo.Geometry, nodePubKey nike.PublicKey,
 	return nodes, path
 }
 
-func testRouting(t *testing.T, nodeCfg *config.Config, rawPacket []byte, goo *mockGlue) int {
+func testRouting(t *testing.T, nodeCfg *config.Config, rawPacket []byte, mixkeys glue.MixKeys) int {
+	goo := newTestGoo(t)
 	goo.s.cfg = nodeCfg
+	goo.s.mixKeys = mixkeys
 
 	incomingCh := make(chan interface{})
 	cryptoworker := New(goo, incomingCh, 123)
