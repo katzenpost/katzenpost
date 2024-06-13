@@ -254,8 +254,8 @@ const (
 
 const (
 	NextHopPacket = iota
-	ServicePacket
-	SURBReplyServicePacket
+	RecipientPacket
+	SURBReplyPacket
 )
 
 func routeResultToString(result int) string {
@@ -354,13 +354,13 @@ func TestRoutePacket(t *testing.T) {
 		{
 			name:          "gw_srvpacket",
 			nodeCfg:       gatewayNodeConfig,
-			packetType:    ServicePacket,
+			packetType:    RecipientPacket,
 			routingResult: SentToGateway,
 		},
 		{
 			name:          "gw_surbpacket3",
 			nodeCfg:       gatewayNodeConfig,
-			packetType:    SURBReplyServicePacket,
+			packetType:    SURBReplyPacket,
 			routingResult: SentToGateway,
 		},
 
@@ -374,13 +374,13 @@ func TestRoutePacket(t *testing.T) {
 		{
 			name:          "mix_srvpacket",
 			nodeCfg:       mixNodeConfig,
-			packetType:    ServicePacket,
+			packetType:    RecipientPacket,
 			routingResult: Dropped,
 		},
 		{
 			name:          "mix_surbpacket3",
 			nodeCfg:       mixNodeConfig,
-			packetType:    SURBReplyServicePacket,
+			packetType:    SURBReplyPacket,
 			routingResult: Dropped,
 		},
 
@@ -394,13 +394,13 @@ func TestRoutePacket(t *testing.T) {
 		{
 			name:          "srv_srvpacket",
 			nodeCfg:       serviceNodeConfig,
-			packetType:    ServicePacket,
+			packetType:    RecipientPacket,
 			routingResult: SentToService,
 		},
 		{
 			name:          "srv_surbpacket3",
 			nodeCfg:       serviceNodeConfig,
-			packetType:    SURBReplyServicePacket,
+			packetType:    SURBReplyPacket,
 			routingResult: SentToService,
 		},
 	}
@@ -565,9 +565,9 @@ func testRouting(t *testing.T, nodeCfg *config.Config, packetType int) int {
 		rawPacket = createTestPacket(t, nodePubKey, false, true, false, false, nodeCfg.SphinxGeometry)
 		// either of these works for creating a sphinx packet with a next hop command in it
 		//rawPacket = createTestPacket(t, nodePubKey, true, false, false, false, nodeCfg.SphinxGeometry)
-	case ServicePacket:
+	case RecipientPacket:
 		rawPacket = createTestPacket(t, nodePubKey, false, false, true, false, nodeCfg.SphinxGeometry)
-	case SURBReplyServicePacket:
+	case SURBReplyPacket:
 		rawPacket = createTestPacket(t, nodePubKey, false, false, true, true, nodeCfg.SphinxGeometry)
 	default:
 		panic("invalid packet type")
