@@ -1,6 +1,7 @@
 package cryptoworker
 
 import (
+	"crypto/hmac"
 	"crypto/rand"
 	"testing"
 	"time"
@@ -109,18 +110,33 @@ func (m *mockGlue) Management() *thwack.Server {
 }
 
 type mockDecoy struct {
-	count int
+	count     int
+	recipient []byte
+}
+
+func newMockDecoy() *mockDecoy {
+	id := make([]byte, constants.RecipientIDLength)
+	_, err := rand.Reader.Read(id)
+	if err != nil {
+		panic(err)
+	}
+	return &mockDecoy{
+		count:     0,
+		recipient: id,
+	}
 }
 
 func (d *mockDecoy) Halt() {}
 
 func (d *mockDecoy) ExpectReply(pkt *packet.Packet) bool {
-	return false
+	return hmac.Equal(pkt.Recipient.ID[:], d.recipient)
 }
 
 func (d *mockDecoy) OnNewDocument(*pkicache.Entry) {}
 
-func (d *mockDecoy) OnPacket(*packet.Packet) {}
+func (d *mockDecoy) OnPacket(*packet.Packet) {
+	d.count++
+}
 
 func (d *mockDecoy) GetStats(doPublishEpoch uint64) *loops.LoopStats {
 	return nil
@@ -231,7 +247,7 @@ func newTestGoo(t *testing.T) *mockGlue {
 	logBackend, err := log.New("", "DEBUG", false)
 	require.NoError(t, err)
 	goo := &mockGlue{
-		decoy: new(mockDecoy),
+		decoy: newMockDecoy(),
 		s: &mockServer{
 			// cfg field is set in testRouting function below
 			logBackend: logBackend,
@@ -256,6 +272,7 @@ const (
 	NextHopPacket = iota
 	RecipientPacket
 	SURBReplyPacket
+	SURBReplyDecoyPacket
 )
 
 func routeResultToString(result int) string {
@@ -346,62 +363,80 @@ func TestRoutePacket(t *testing.T) {
 	}{
 		// test cases for Gateway Node's routing logic:
 		{
-			name:          "gw_gwpacket",
+			name:          "gw_nextHop",
 			nodeCfg:       gatewayNodeConfig,
 			packetType:    NextHopPacket,
 			routingResult: SentToScheduler,
 		},
 		{
-			name:          "gw_srvpacket",
+			name:          "gw_recipient",
 			nodeCfg:       gatewayNodeConfig,
 			packetType:    RecipientPacket,
 			routingResult: SentToGateway,
 		},
 		{
-			name:          "gw_surbpacket3",
+			name:          "gw_SURBReply",
 			nodeCfg:       gatewayNodeConfig,
 			packetType:    SURBReplyPacket,
 			routingResult: SentToGateway,
+		},
+		{
+			name:          "gw_SURBDecoyReply",
+			nodeCfg:       gatewayNodeConfig,
+			packetType:    SURBReplyDecoyPacket,
+			routingResult: SentToDecoy,
 		},
 
 		// test cases for Mix Node's routing logic:
 		{
-			name:          "mix_gwpacket",
+			name:          "mix_nextHop",
 			nodeCfg:       mixNodeConfig,
 			packetType:    NextHopPacket,
 			routingResult: SentToScheduler,
 		},
 		{
-			name:          "mix_srvpacket",
+			name:          "mix_recipient",
 			nodeCfg:       mixNodeConfig,
 			packetType:    RecipientPacket,
 			routingResult: Dropped,
 		},
 		{
-			name:          "mix_surbpacket3",
+			name:          "mix_SURBReply",
 			nodeCfg:       mixNodeConfig,
 			packetType:    SURBReplyPacket,
 			routingResult: Dropped,
+		},
+		{
+			name:          "mix_SURBDecoyReply",
+			nodeCfg:       mixNodeConfig,
+			packetType:    SURBReplyDecoyPacket,
+			routingResult: SentToDecoy,
 		},
 
 		// test cases for Service Node's routing logic:
 		{
-			name:          "srv_gwpacket",
+			name:          "srv_nextHop",
 			nodeCfg:       serviceNodeConfig,
 			packetType:    NextHopPacket,
 			routingResult: SentToScheduler,
 		},
 		{
-			name:          "srv_srvpacket",
+			name:          "srv_recipient",
 			nodeCfg:       serviceNodeConfig,
 			packetType:    RecipientPacket,
 			routingResult: SentToService,
 		},
 		{
-			name:          "srv_surbpacket3",
+			name:          "srv_SURBReply",
 			nodeCfg:       serviceNodeConfig,
 			packetType:    SURBReplyPacket,
 			routingResult: SentToService,
+		},
+		{
+			name:          "srv_SURBDecoyReply",
+			nodeCfg:       serviceNodeConfig,
+			packetType:    SURBReplyDecoyPacket,
+			routingResult: SentToDecoy,
 		},
 	}
 
@@ -560,6 +595,8 @@ func testRouting(t *testing.T, nodeCfg *config.Config, packetType int) int {
 	require.NoError(t, err)
 
 	var rawPacket []byte
+	isDecoy := false
+
 	switch packetType {
 	case NextHopPacket:
 		rawPacket = createTestPacket(t, nodePubKey, false, true, false, false, nodeCfg.SphinxGeometry)
@@ -569,6 +606,9 @@ func testRouting(t *testing.T, nodeCfg *config.Config, packetType int) int {
 		rawPacket = createTestPacket(t, nodePubKey, false, false, true, false, nodeCfg.SphinxGeometry)
 	case SURBReplyPacket:
 		rawPacket = createTestPacket(t, nodePubKey, false, false, true, true, nodeCfg.SphinxGeometry)
+	case SURBReplyDecoyPacket:
+		rawPacket = createTestPacket(t, nodePubKey, false, false, true, true, nodeCfg.SphinxGeometry)
+		isDecoy = true
 	default:
 		panic("invalid packet type")
 	}
@@ -581,6 +621,10 @@ func testRouting(t *testing.T, nodeCfg *config.Config, packetType int) int {
 
 	err = cryptoworker.doUnwrap(pkt)
 	require.NoError(t, err)
+
+	if isDecoy {
+		copy(goo.decoy.recipient, pkt.Recipient.ID[:])
+	}
 
 	startAt := time.Now()
 	cryptoworker.routePacket(pkt, startAt)
