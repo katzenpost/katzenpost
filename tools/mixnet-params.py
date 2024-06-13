@@ -4,10 +4,8 @@
 # SPDX-FileCopyrightText: (c) 2024 Eva Infeld
 # SPDX-License-Identifier: AGPL-3.0-only
 
-
 import math
 import sys
-
 
 
 def main():
@@ -43,8 +41,6 @@ def main():
     if t > max_ops(benchmark):
         print("WARNING: Sphinx unwrap per second mix node capacity is too low.")
 
-            
-
 
 def max_ops(benchmark):
     # nanosecond to second
@@ -65,9 +61,5 @@ def traffic_per_node(users, user_loops, user_traffic, nodes, node_loops, gateway
     b=traffic_per_layer(users, user_loops, user_traffic, nodes, node_loops)/a
     return b
 
-
-
-
 if __name__ == "__main__":
     main()
-
