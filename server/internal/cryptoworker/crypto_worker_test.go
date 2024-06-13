@@ -256,6 +256,7 @@ const (
 	GatewayPacket = iota
 	MixPacket
 	ServicePacket
+	SURBReplyPacket
 )
 
 func routeResultToString(result int) string {
@@ -363,6 +364,12 @@ func TestRoutePacket(t *testing.T) {
 			packetType:    ServicePacket,
 			routingResult: SentToGateway,
 		},
+		{
+			name:          "gw_surbpacket",
+			nodeCfg:       gatewayNodeConfig,
+			packetType:    SURBReplyPacket,
+			routingResult: SentToScheduler,
+		},
 
 		// test cases for Mix Node's routing logic:
 		{
@@ -382,6 +389,12 @@ func TestRoutePacket(t *testing.T) {
 			nodeCfg:       mixNodeConfig,
 			packetType:    ServicePacket,
 			routingResult: Dropped,
+		},
+		{
+			name:          "mix_surbpacket",
+			nodeCfg:       mixNodeConfig,
+			packetType:    SURBReplyPacket,
+			routingResult: SentToScheduler,
 		},
 
 		// test cases for Service Node's routing logic:
@@ -403,6 +416,12 @@ func TestRoutePacket(t *testing.T) {
 			packetType:    ServicePacket,
 			routingResult: SentToService,
 		},
+		{
+			name:          "srv_surbpacket",
+			nodeCfg:       serviceNodeConfig,
+			packetType:    SURBReplyPacket,
+			routingResult: SentToScheduler,
+		},
 	}
 
 	for i := 0; i < len(testCases); i++ {
@@ -414,8 +433,8 @@ func TestRoutePacket(t *testing.T) {
 	}
 }
 
-func createTestPacket(t *testing.T, nodePubKey nike.PublicKey, isMixNode, isGatewayNode, isServiceNode bool, mygeo *geo.Geometry) []byte {
-	nodes, path := createTestRoute(t, mygeo, nodePubKey, isMixNode, isGatewayNode, isServiceNode)
+func createTestPacket(t *testing.T, nodePubKey nike.PublicKey, isMixNode, isGatewayNode, isServiceNode bool, isSURB bool, mygeo *geo.Geometry) []byte {
+	nodes, path := createTestRoute(t, mygeo, nodePubKey, isMixNode, isGatewayNode, isServiceNode, isSURB)
 
 	payload := make([]byte, mygeo.ForwardPayloadLength)
 	payload[32] = 0x0a
@@ -467,8 +486,7 @@ func newNikeNode(t *testing.T, mynike nike.Scheme) *nodeParams {
 	return n
 }
 
-func createTestRoute(t *testing.T, geo *geo.Geometry, nodePubKey nike.PublicKey, isMixNode bool, isGatewayNode bool, isServiceNode bool) ([]*nodeParams, []*sphinx.PathHop) {
-	isSURB := true
+func createTestRoute(t *testing.T, geo *geo.Geometry, nodePubKey nike.PublicKey, isMixNode bool, isGatewayNode bool, isServiceNode bool, isSURB bool) ([]*nodeParams, []*sphinx.PathHop) {
 	delayBase := uint32(1000)
 
 	// Generate the keypairs and node identifiers for the "nodes", except the one we pass in.
@@ -563,12 +581,13 @@ func testRouting(t *testing.T, nodeCfg *config.Config, packetType int) int {
 	var rawPacket []byte
 	switch packetType {
 	case GatewayPacket:
-		rawPacket = createTestPacket(t, nodePubKey, false, true, false, nodeCfg.SphinxGeometry)
+		rawPacket = createTestPacket(t, nodePubKey, false, true, false, false, nodeCfg.SphinxGeometry)
 	case MixPacket:
-		rawPacket = createTestPacket(t, nodePubKey, true, false, false, nodeCfg.SphinxGeometry)
+		rawPacket = createTestPacket(t, nodePubKey, true, false, false, false, nodeCfg.SphinxGeometry)
 	case ServicePacket:
-		rawPacket = createTestPacket(t, nodePubKey, false, false, true, nodeCfg.SphinxGeometry)
-
+		rawPacket = createTestPacket(t, nodePubKey, false, false, true, false, nodeCfg.SphinxGeometry)
+	case SURBReplyPacket:
+		rawPacket = createTestPacket(t, nodePubKey, false, true, false, true, nodeCfg.SphinxGeometry)
 	default:
 		panic("invalid packet type")
 	}
