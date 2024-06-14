@@ -7,24 +7,34 @@
 
 import math
 import sys
+import click
 
 
-
-def main():
-    #benchmark=sys.argv[0]
-    benchmark=385069
-    average_delay = 0.2 # per second
-    gateways = 2
-    nodes_per_layer = 2
-    services = 2
-
-    #user traffic generation
-    users = 2000
-    user_loops = 0.5 #users send 0.5 loops per second
-    user_traffic = 1 #users send 1 decoys or messages per second
-    node_loops = 0.5 #nodes send 0.5 loops per second
-    hops = 11
-
+@click.command()
+@click.option("--benchmark", default=385069)
+@click.option("--average_delay", default=0.2, help="per second")
+@click.option("--gateways", default=2)
+@click.option("--nodes-per-layer", default=2)
+@click.option("--services", default=2)
+@click.option("--users", default=2000)
+@click.option("--user_loops", default=0.5, help="users send 0.5 loops per second")
+@click.option(
+    "--user_traffic", default=1, help="users send 1 decoys or messages per second"
+)
+@click.option("--node_loops", default=0.5, help="nodes send 0.5 loops per second")
+@click.option("--hops", default=11)
+def main(
+    benchmark,
+    average_delay,
+    gateways,
+    nodes_per_layer,
+    services,
+    users,
+    user_loops,
+    user_traffic,
+    node_loops,
+    hops,
+):
     mu = 10**(-3)/average_delay
     IP = 10**(-3)*user_traffic
     IL = 10**(-3)*user_loops
@@ -42,9 +52,6 @@ def main():
 
     if t > max_ops(benchmark):
         print("WARNING: Sphinx unwrap per second mix node capacity is too low.")
-
-            
-
 
 def max_ops(benchmark):
     # nanosecond to second
@@ -65,9 +72,5 @@ def traffic_per_node(users, user_loops, user_traffic, nodes, node_loops, gateway
     b=traffic_per_layer(users, user_loops, user_traffic, nodes, node_loops)/a
     return b
 
-
-
-
 if __name__ == "__main__":
     main()
-
