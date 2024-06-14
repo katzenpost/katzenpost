@@ -68,17 +68,17 @@ def main(
 ):
 
     if LambdaP is None:
-        LambdaP = 10 ** (-3) * user_traffic
+        LambdaP = 10 ** -3 * user_traffic
     else:
         user_traffic = LambdaP / 10**-3
 
     if LambdaL is None:
-        LambdaL = 10 ** (-3) * user_loops
+        LambdaL = 10 ** -3 * user_loops
     else:
         user_loops = LambdaL / 10**-3
 
     if LambdaM is None:
-        LambdaM = 10 ** (-3) * node_loops
+        LambdaM = 10 ** -3 * node_loops
     else:
         node_loops = LambdaM / 10**-3
 
@@ -98,9 +98,7 @@ def main(
         services,
     )
 
-    #    for (
-    #        key
-    #    ) in "average_delay user_traffic LambdaP user_loops LambdaL node_loops LambdaM gateways nodes_per_layer services hops users".split():
+    # print copy-pastable commandline invocation showing computed inverse values
     print(
         sys.argv[0]
         + " \\\n"
