@@ -23,7 +23,7 @@ func BenchmarkSphinxUnwrap(b *testing.B) {
 	}{
 		// NIKEs
 		{
-			name:        "X25519 NIKE Sphinx",
+			name:        "X25519 NIKE",
 			isNIKE:      true,
 			nikeName:    "x25519",
 			kemName:     "",
@@ -31,7 +31,7 @@ func BenchmarkSphinxUnwrap(b *testing.B) {
 			payloadSize: 2000,
 		},
 		{
-			name:        "X448 NIKE Sphinx",
+			name:        "X448 NIKE",
 			isNIKE:      true,
 			nikeName:    "x448",
 			kemName:     "",
@@ -39,7 +39,7 @@ func BenchmarkSphinxUnwrap(b *testing.B) {
 			payloadSize: 2000,
 		},
 		{
-			name:        "CTIDH512-X25519 PQ Hybrid NIKE Sphinx",
+			name:        "CTIDH512-X25519 PQ Hybrid NIKE",
 			isNIKE:      true,
 			nikeName:    "CTIDH512-X25519",
 			kemName:     "",
@@ -49,7 +49,7 @@ func BenchmarkSphinxUnwrap(b *testing.B) {
 
 		// NIKEs adapted as KEMs (via adhoc hashed elgamal construction)
 		{
-			name:        "X25519 KEM Sphinx",
+			name:        "X25519 KEM",
 			isNIKE:      false,
 			nikeName:    "",
 			kemName:     "x25519",
@@ -57,7 +57,7 @@ func BenchmarkSphinxUnwrap(b *testing.B) {
 			payloadSize: 2000,
 		},
 		{
-			name:        "X448 KEM Sphinx",
+			name:        "X448 KEM",
 			isNIKE:      false,
 			nikeName:    "",
 			kemName:     "x448",
@@ -67,7 +67,7 @@ func BenchmarkSphinxUnwrap(b *testing.B) {
 
 		// more KEMs
 		{
-			name:        "Xwing KEM Sphinx",
+			name:        "Xwing KEM",
 			isNIKE:      false,
 			nikeName:    "",
 			kemName:     "Xwing",
@@ -75,7 +75,7 @@ func BenchmarkSphinxUnwrap(b *testing.B) {
 			payloadSize: 2000,
 		},
 		{
-			name:        "MLKEM768-X25519 KEM Sphinx",
+			name:        "MLKEM768-X25519 KEM",
 			isNIKE:      false,
 			nikeName:    "",
 			kemName:     "MLKEM768-X25519",
