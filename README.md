@@ -220,19 +220,25 @@ interactions in the voting protocol and the final published PKI document.
 Mix nodes and dirauth (directory authority) nodes use whichever signature scheme selected
 by the dirauth configuration. Clients also use this signature scheme to verify PKI documents.
 
+
 # Debugging/Profiling Katzenpost
 
 We can optionally enable the use of pyroscope pprof profiling within the mix server
-by building with the "pyroscope" build tag.
+by building with the "pyroscope" build tag:
 
-export PYROSCOPE_APPLICATION_NAME=katzenpost_mix_server
-export PYROSCOPE_SERVER_ADDRESS=http://localhost:4040
-
+cd server/cmd/server; go build --tags pyroscope
 
 You'll have to setup a pyroscope server via these instructions, here:
 
 https://grafana.com/docs/pyroscope/latest/get-started/
 
+And you can point the mix server at the pyroscope server via environment variables:
+
+```bash
+export PYROSCOPE_APPLICATION_NAME=katzenpost_mix_server
+export PYROSCOPE_SERVER_ADDRESS=http://localhost:4040
+./server -f katzenpost-server.toml
+```
 
 
 # License
