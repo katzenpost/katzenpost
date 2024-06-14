@@ -12,17 +12,45 @@ import click
 
 @click.command()
 @click.option("--benchmark", default=385069)
-@click.option("--average_delay", default=0.2, help="per second")
+@click.option("--average-delay", default=0.2, help="per second")
 @click.option("--gateways", default=2)
 @click.option("--nodes-per-layer", default=2)
 @click.option("--services", default=2)
 @click.option("--users", default=2000)
-@click.option("--user_loops", default=0.5, help="users send 0.5 loops per second")
 @click.option(
-    "--user_traffic", default=1, help="users send 1 decoys or messages per second"
+    "--user-loops", default=0.5, help="rate of decoy loops per second sent by users"
 )
-@click.option("--node_loops", default=0.5, help="nodes send 0.5 loops per second")
+@click.option(
+    "--user-traffic", default=1, help="rate of real messages per second sent by user"
+)
+@click.option(
+    "--node-loops", default=0.5, help="rate of decoy loops per second sent by nodes"
+)
 @click.option("--hops", default=11)
+@click.option(
+    "-P",
+    "--LambdaP",
+    "LambdaP",
+    type=float,
+    default=None,
+    help="LambdaP (overrides --user-traffic)",
+)
+@click.option(
+    "-L",
+    "--LambdaL",
+    "LambdaL",
+    type=float,
+    default=None,
+    help="LambdaL (overrides --user-loops)",
+)
+@click.option(
+    "-M",
+    "--LambdaM",
+    "LambdaM",
+    type=float,
+    default=None,
+    help="LambdaP (overrides --node-loops)",
+)
 def main(
     benchmark,
     average_delay,
@@ -34,11 +62,25 @@ def main(
     user_traffic,
     node_loops,
     hops,
+    LambdaP,
+    LambdaL,
+    LambdaM,
 ):
-    mu = 10 ** (-3) / average_delay
-    IP = 10 ** (-3) * user_traffic
-    IL = 10 ** (-3) * user_loops
-    IM = 10 ** (-3) * node_loops
+
+    if LambdaP is None:
+        LambdaP = 10 ** (-3) * user_traffic
+    else:
+        user_traffic = LambdaP / 10**-3
+
+    if LambdaL is None:
+        LambdaL = 10 ** (-3) * user_loops
+    else:
+        user_loops = LambdaL / 10**-3
+
+    if LambdaM is None:
+        LambdaM = 10 ** (-3) * node_loops
+    else:
+        node_loops = LambdaM / 10**-3
 
     l = 1 / average_delay
 
@@ -56,12 +98,29 @@ def main(
         services,
     )
 
-    print(f"Parameters: nodes={nodes} l={l} args={kwargs}")
+    #    for (
+    #        key
+    #    ) in "average_delay user_traffic LambdaP user_loops LambdaL node_loops LambdaM gateways nodes_per_layer services hops users".split():
+    print(
+        sys.argv[0]
+        + " \\\n"
+        + "\n".join(
+            f"{'--'+key.replace('_','-'):>15} {value} \\"
+            for key, value in {
+                key: locals()[key]
+                for key in dict(
+                    click.get_current_context().params,
+                    **{f"Lambda{x}": None for x in "PLM"},
+                )
+            }.items()
+        )
+    )
+
     print(
         f"The traffic per node at these settings averages {t} messages per second in the layer with fewest nodes."
     )
     print("The maximum number of Sphinx operations is ", max_ops(benchmark))
-    print(f"parameters for genconfig: -mu {mu} -lP {IP} -lL {IL} -lM {IM}")
+    print(f"parameters for genconfig: -lP {LambdaP} -lL {LambdaL} -lM {LambdaM}")
 
     if t > max_ops(benchmark):
         print("WARNING: Sphinx unwrap per second mix node capacity is too low.")
