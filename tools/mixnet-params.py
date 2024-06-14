@@ -35,42 +35,68 @@ def main(
     node_loops,
     hops,
 ):
-    mu = 10**(-3)/average_delay
-    IP = 10**(-3)*user_traffic
-    IL = 10**(-3)*user_loops
-    IM = 10**(-3)*node_loops
-    
-    l=1/average_delay
+    mu = 10 ** (-3) / average_delay
+    IP = 10 ** (-3) * user_traffic
+    IL = 10 ** (-3) * user_loops
+    IM = 10 ** (-3) * node_loops
+
+    l = 1 / average_delay
 
     # total number of nodes producing node loops
-    nodes = gateways+services+nodes_per_layer*3
+    nodes = gateways + services + nodes_per_layer * 3
 
-    t = traffic_per_node(users, user_loops, user_traffic, nodes, node_loops, gateways, nodes_per_layer, services)
-    
-    print("The traffic per node at these settings averages ",t," per second in the layer with fewest nodes.")
-    print("The maximum number of Sphinx operations is ",max_ops(benchmark))
+    t = traffic_per_node(
+        users,
+        user_loops,
+        user_traffic,
+        nodes,
+        node_loops,
+        gateways,
+        nodes_per_layer,
+        services,
+    )
+
+    print(
+        "The traffic per node at these settings averages ",
+        t,
+        " per second in the layer with fewest nodes.",
+    )
+    print("The maximum number of Sphinx operations is ", max_ops(benchmark))
 
     if t > max_ops(benchmark):
         print("WARNING: Sphinx unwrap per second mix node capacity is too low.")
 
+
 def max_ops(benchmark):
     # nanosecond to second
-    b=10**(-9)*benchmark
-    return 1/b
+    b = 10 ** (-9) * benchmark
+    return 1 / b
 
-# total user traffic entering the network per second times 2, 
+
+# total user traffic entering the network per second times 2,
 # the 2 is because every client packet crosses each layer twice
 # node loops only need to pass a layer once
 def traffic_per_layer(users, user_loops, user_traffic, nodes, node_loops):
-    per_user=user_traffic+user_loops
-    total_user_traffic = 2*(users*per_user)
-    total_traffic = total_user_traffic + (nodes*node_loops)
+    per_user = user_traffic + user_loops
+    total_user_traffic = 2 * (users * per_user)
+    total_traffic = total_user_traffic + (nodes * node_loops)
     return total_traffic
 
-def traffic_per_node(users, user_loops, user_traffic, nodes, node_loops, gateways, nodes_per_layer, services):
-    a=min(gateways,nodes_per_layer,services)
-    b=traffic_per_layer(users, user_loops, user_traffic, nodes, node_loops)/a
+
+def traffic_per_node(
+    users,
+    user_loops,
+    user_traffic,
+    nodes,
+    node_loops,
+    gateways,
+    nodes_per_layer,
+    services,
+):
+    a = min(gateways, nodes_per_layer, services)
+    b = traffic_per_layer(users, user_loops, user_traffic, nodes, node_loops) / a
     return b
+
 
 if __name__ == "__main__":
     main()
