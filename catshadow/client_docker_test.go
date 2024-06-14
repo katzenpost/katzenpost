@@ -24,9 +24,9 @@ package catshadow
 import (
 	"bytes"
 	"context"
+	"io/ioutil"
 	"testing"
 	"time"
-    "io/ioutil"
 
 	"github.com/katzenpost/katzenpost/client"
 	"github.com/katzenpost/katzenpost/client/config"
@@ -39,12 +39,12 @@ import (
 )
 
 func copyFile(src string, dst string) error {
-    data, err := ioutil.ReadFile(src)
-    if err != nil {
-        return err
-    }
-    err = ioutil.WriteFile(dst, data, 0644)
-    return err
+	data, err := ioutil.ReadFile(src)
+	if err != nil {
+		return err
+	}
+	err = ioutil.WriteFile(dst, data, 0644)
+	return err
 }
 
 func getClientState(c *Client) *State {
@@ -377,67 +377,73 @@ and can readily scale to millions of users.
 
 	alice.Shutdown()
 	bob.Shutdown()
-    err = copyFile(aliceStateFilePath, "testdata/alice_state")
-    require.NoError(err)
-    err = copyFile(bobStateFilePath, "testdata/bob_state")
-    require.NoError(err)
+	err = copyFile(aliceStateFilePath, "testdata/alice_state")
+	require.NoError(err)
+	err = copyFile(bobStateFilePath, "testdata/bob_state")
+	require.NoError(err)
 	bob.log.Debug("copied state")
 
-/*
-	newAlice := reloadCatshadowState(t, aliceStateFilePath)
-	newAlice.log.Debug("LOADING ALICE'S CONVERSATION WITH BOB")
-	aliceConvesation = newAlice.conversations["bob"]
-	for i, mesg := range aliceConvesation {
-		newAlice.log.Debugf("%d outbound %v message:\n%s\n", i, mesg.Outbound, mesg.Plaintext)
-	}
+	/*
+	   newAlice := reloadCatshadowState(t, aliceStateFilePath)
+	   newAlice.log.Debug("LOADING ALICE'S CONVERSATION WITH BOB")
+	   aliceConvesation = newAlice.conversations["bob"]
 
-	newBob := reloadCatshadowState(t, bobStateFilePath)
-	newBob.log.Debug("LOADING BOB'S CONVERSATION WITH ALICE")
-	bobConvesation = newBob.conversations["alice"]
-	for i, mesg := range bobConvesation {
-		newBob.log.Debugf("%d outbound %v message:\n%s\n", i, mesg.Outbound, mesg.Plaintext)
-	}
+	   	for i, mesg := range aliceConvesation {
+	   		newAlice.log.Debugf("%d outbound %v message:\n%s\n", i, mesg.Outbound, mesg.Plaintext)
+	   	}
 
-	newMal := reloadCatshadowState(t, malStateFilePath)
-	newMal.log.Debug("LOADING MAL'S CONVERSATION WITH BOB")
-	malBobConversation := newMal.conversations["bob"]
-	for i, mesg := range malBobConversation {
-		newMal.log.Debugf("%d outbound %v message:\n%s\n", i, mesg.Outbound, mesg.Plaintext)
-		if !mesg.Outbound {
-			require.True(bytes.Equal(mesg.Plaintext, []byte(`Hello mal`)))
-		} else {
-			require.True(bytes.Equal(mesg.Plaintext, []byte(`Hello bob`)))
-		}
-	}
+	   newBob := reloadCatshadowState(t, bobStateFilePath)
+	   newBob.log.Debug("LOADING BOB'S CONVERSATION WITH ALICE")
+	   bobConvesation = newBob.conversations["alice"]
 
-	newBob.log.Debug("LOADING BOB'S CONVERSATION WITH MAL")
-	bobMalConversation := newBob.conversations["mal"]
-	for i, mesg := range bobMalConversation {
-		newBob.log.Debugf("%d outbound %v message:\n%s\n", i, mesg.Outbound, mesg.Plaintext)
-		if !mesg.Outbound {
-			require.True(bytes.Equal(mesg.Plaintext, []byte(`Hello bob`)))
-		} else {
-			require.True(bytes.Equal(mesg.Plaintext, []byte(`Hello mal`)))
-		}
-	}
+	   	for i, mesg := range bobConvesation {
+	   		newBob.log.Debugf("%d outbound %v message:\n%s\n", i, mesg.Outbound, mesg.Plaintext)
+	   	}
 
-	newAliceState := getClientState(newAlice)
-	aliceState := getClientState(alice)
-	aliceBobConvo1 := aliceState.Conversations["bob"]
-	aliceBobConvo2 := newAliceState.Conversations["bob"]
+	   newMal := reloadCatshadowState(t, malStateFilePath)
+	   newMal.log.Debug("LOADING MAL'S CONVERSATION WITH BOB")
+	   malBobConversation := newMal.conversations["bob"]
 
-	time.Sleep(3 * time.Second)
+	   	for i, mesg := range malBobConversation {
+	   		newMal.log.Debugf("%d outbound %v message:\n%s\n", i, mesg.Outbound, mesg.Plaintext)
+	   		if !mesg.Outbound {
+	   			require.True(bytes.Equal(mesg.Plaintext, []byte(`Hello mal`)))
+	   		} else {
+	   			require.True(bytes.Equal(mesg.Plaintext, []byte(`Hello bob`)))
+	   		}
+	   	}
 
-	require.NotNil(aliceBobConvo1)
-	require.NotNil(aliceBobConvo2)
-	newAlice.log.Debug("convo1\n")
-	for i, message := range aliceBobConvo1 {
-		require.True(bytes.Equal(message.Plaintext, aliceBobConvo2[i].Plaintext))
-		// XXX require.True(message.Timestamp.Equal(aliceBobConvo2[i].Timestamp))
-	}
-	newAlice.Shutdown()
-	newBob.Shutdown()
-*/
+	   newBob.log.Debug("LOADING BOB'S CONVERSATION WITH MAL")
+	   bobMalConversation := newBob.conversations["mal"]
+
+	   	for i, mesg := range bobMalConversation {
+	   		newBob.log.Debugf("%d outbound %v message:\n%s\n", i, mesg.Outbound, mesg.Plaintext)
+	   		if !mesg.Outbound {
+	   			require.True(bytes.Equal(mesg.Plaintext, []byte(`Hello bob`)))
+	   		} else {
+	   			require.True(bytes.Equal(mesg.Plaintext, []byte(`Hello mal`)))
+	   		}
+	   	}
+
+	   newAliceState := getClientState(newAlice)
+	   aliceState := getClientState(alice)
+	   aliceBobConvo1 := aliceState.Conversations["bob"]
+	   aliceBobConvo2 := newAliceState.Conversations["bob"]
+
+	   time.Sleep(3 * time.Second)
+
+	   require.NotNil(aliceBobConvo1)
+	   require.NotNil(aliceBobConvo2)
+	   newAlice.log.Debug("convo1\n")
+
+	   	for i, message := range aliceBobConvo1 {
+	   		require.True(bytes.Equal(message.Plaintext, aliceBobConvo2[i].Plaintext))
+	   		// XXX require.True(message.Timestamp.Equal(aliceBobConvo2[i].Timestamp))
+	   	}
+
+	   newAlice.Shutdown()
+	   newBob.Shutdown()
+	*/
 }
 
 func TestDockerSendReceive(t *testing.T) {
