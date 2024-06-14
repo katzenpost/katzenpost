@@ -35,14 +35,11 @@ as opaque byte vectors.
 
 `x | y` denotes the concatenation of x and y.
 
-### 1.2 Kyber Key Encapsulation Mechanism
+### 1.2 Key Encapsulation Mechanism
 
-This protocol uses the Kyber Key Encapsulation Mechanism
-[KYBER](#KYBER) (NIST round 3). Kyber is one of the
-finalists in the NIST post-quantum cryptography project. Please see
-the Kyber project page for more information:
-
-- https://pq-crystals.org/kyber/
+This protocol uses ANY Key Encapsulation Mechanism.  However it's
+recommended that most users select a hybrid post quantum KEM such as
+Xwing. [XWING](#XWING)
 
 ## 2. Core Protocol
 
@@ -56,10 +53,11 @@ Our transport protocol begins with a prologue, Noise handshake,
 followed by a stream of Noise Transport messages in a minimal framing
 layer, over a TCP/IP connection.
 
-Our Noise protocol string:
+Our Noise protocol is configurable via the KEM selection in the TOML configuration files,
+here's an example PQ Noise protocol string:
 
 ```
-Noise_pqXX_Kyber768X25519_ChaChaPoly_BLAKE2b
+Noise_pqXX_Xwing_ChaChaPoly_BLAKE2b
 ```
 
 The protocol string is a very condensed description of our protocol.
@@ -70,8 +68,8 @@ pqXX: -> e <- ekem, s -> skem, s <- skem
 ```
 
 The next part of the protocol string specifies the KEM,
-`Kyber768X25519` which is a hybrid KEM where the share
-secret outputs of both X25519 and Kyber768 are combined.
+`Xwing` which is a hybrid KEM where the share
+secret outputs of both X25519 and MLKEM768 are combined.
 
 Finally the `ChaChaPoly_BLAKE2b` parts of the protocol
 string indicate which stream cipher and hash function we are using.
@@ -82,7 +80,7 @@ messages over our Noise protocol because of our using the Sphincs+
 signature scheme which has signatures that are about 49k bytes.
 
 It is assumed that all parties using the KMNWP protocol have a fixed long or
-short lived `Kyber768X25519` keypair ([KYBER](#KYBER) and [RFC7748](#RFC7748)),
+short lived `Xwing` keypair [XWING](#XWING),
 the public component of which is known to the other party in advance. How such
 keys are distributed is beyond the scope of this document.
 
@@ -274,7 +272,49 @@ is the Sphinx Packet destined for the responder.
 Initiators MUST terminate the session immediately upon reception of a
 `send_packet` command.
 
-## 4. Anonymity Considerations
+## 4. Command Padding
+
+We use traffic padding to hide from a passive network observer which
+command has been sent or received. 
+
+Among the set of padded commands we exclude the `Consensus` command because
+it's contents are a very large payload which is usually many times larger
+than our Sphinx packets. Therefore we only pad these commands:
+
+GetConsensus
+NoOp
+Disconnect
+SendPacket
+RetrieveMessage
+MessageACK
+Message
+MessageEmpty
+
+However we split them up into two directions,
+client to server and server to client because they differ in size
+due to the difference in size between `SendPacket` and `Message`:
+
+Client to Server commands:
+
+NoOp
+SendPacket
+Disconnect
+RetrieveMessage
+GetConsensus
+
+Server to client commands:
+
+Message
+MessageACK
+MessageEmpty
+
+The `GetConsensus` command is a special case because we only want to pad
+it when it's sent over the mixnet. We don't want to pad it when
+sending to the dirauths. Although it would not be so terrible if it's
+padded when sent to the dirauths... it would just needlessly take up
+bandwidth without providing any privacy benefits.
+
+## 5. Anonymity Considerations
 
 Adversaries being able to determine that two parties are communicating
 via KMNWP is beyond the threat model of this protocol. At a minimum,
@@ -282,7 +322,7 @@ it is trivial to determine that a KMNWP handshake is being performed,
 due to the length of each handshake message, and the fixed positions
 of the various public keys.
 
-## 5. Security Considerations
+## 6. Security Considerations
 
 It is imperative that implementations use ephemeral keys for every
 handshake as the security properties of the Kyber KEM are totally lost
@@ -294,7 +334,7 @@ software. It is hoped that the addition of a quantum resistant
 algorithm will provide forward secrecy even in the event that large
 scale quantum computers are applied to historical intercepts.
 
-## 6. Acknowledgments
+## 7. Acknowledgments
 
 I would like to thank Trevor Perrin for providing feedback during the
 design of this protocol, and answering questions regarding Noise.
@@ -321,11 +361,11 @@ year = {2017}
 }
 ```
 
-**KYBER**
+**XWING**
 
-Joppe Bos, Léo Ducas, Eike Kiltz, Tancrède Lepoint, Vadim Lyubashevsky, John M. Schanck, Peter Schwabe, Gregor Seiler, Damien Stehlé
-"CRYSTALS -- Kyber: a CCA-secure module-lattice-based KEM",
-https://cryptojedi.org/papers/kyber-20180716.pdf
+Manuel Barbosa, Deirdre Connolly, João Diogo Duarte, Aaron Kaiser, Peter Schwabe, Karoline Varner, Bas Westerbaan
+"X-Wing: The Hybrid KEM You’ve Been Looking For",
+https://eprint.iacr.org/2024/039.pdf
 
 **NOISE**
 

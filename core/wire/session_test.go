@@ -150,6 +150,7 @@ func TestSessionIntegration(t *testing.T) {
 
 		cmd := &commands.SendPacket{
 			SphinxPacket: []byte(testPayload1),
+			Cmds:         s.GetCommands(),
 		}
 		err = s.SendCommand(cmd)
 		require.NoError(err, "Integration: Alice SendCommand() 1")

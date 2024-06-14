@@ -19,6 +19,7 @@
 package catshadow
 
 import (
+	"bytes"
 	"context"
 	"encoding/binary"
 	"errors"
@@ -27,14 +28,13 @@ import (
 	"sync"
 	"time"
 
-	"github.com/awnumar/memguard"
-
 	"github.com/fxamacker/cbor/v2"
-	"gopkg.in/eapache/channels.v1"
 	"gopkg.in/op/go-logging.v1"
 
 	ratchet "github.com/katzenpost/katzenpost/doubleratchet"
 
+	"github.com/katzenpost/hpqc/nike"
+	"github.com/katzenpost/hpqc/nike/schemes"
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/katzenpost/client"
 	cConstants "github.com/katzenpost/katzenpost/client/constants"
@@ -66,16 +66,10 @@ var (
 	pandaBlobSize             = 1000
 )
 
-type ConnectedState uint8
+const EventChannelSize = 1000
 
-const (
-	StateOffline ConnectedState = iota
-	StateConnecting
-	StateOnline
-)
-
-func DoubleRatchetPayloadLength(geo *geo.Geometry) int {
-	return common.SpoolPayloadLength(geo) - ratchet.DoubleRatchetOverhead
+func DoubleRatchetPayloadLength(geo *geo.Geometry, scheme nike.Scheme) int {
+	return common.SpoolPayloadLength(geo) - ratchet.DoubleRatchetOverhead(scheme)
 }
 
 // Client is the mixnet client which interacts with other clients
@@ -83,7 +77,7 @@ func DoubleRatchetPayloadLength(geo *geo.Geometry) int {
 type Client struct {
 	worker.Worker
 
-	eventCh              channels.Channel
+	eventCh              chan interface{}
 	EventSink            chan interface{}
 	opCh                 chan interface{}
 	pandaChan            chan panda.PandaUpdate
@@ -104,7 +98,8 @@ type Client struct {
 	blobMutex           *sync.Mutex
 	connMutex           *sync.RWMutex
 
-	connected ConnectedState
+	online     bool
+	connecting bool
 
 	client    *client.Client
 	session   *client.Session
@@ -166,7 +161,7 @@ func New(logBackend *log.Backend, mixnetClient *client.Client, stateWorker *Stat
 		state.Blob = make(map[string][]byte)
 	}
 	c := &Client{
-		eventCh:             channels.NewInfiniteChannel(),
+		eventCh:             make(chan interface{}, EventChannelSize),
 		EventSink:           make(chan interface{}),
 		opCh:                make(chan interface{}, 8),
 		reunionChan:         make(chan rClient.ReunionUpdate),
@@ -226,6 +221,7 @@ func (c *Client) Start() {
 		c.client.Wait()
 		c.Shutdown()
 	}()
+
 }
 
 func (c *Client) initKeyExchange(contact *Contact) error {
@@ -255,7 +251,7 @@ func (c *Client) restartKeyExchanges() {
 	defer c.connMutex.RUnlock()
 
 	c.haltKeyExchanges()
-	if c.connected != StateOnline {
+	if !c.online {
 		return
 	}
 	if c.spoolReadDescriptor == nil {
@@ -310,7 +306,7 @@ func (c *Client) eventSinkWorker() {
 		select {
 		case <-c.HaltCh():
 			return
-		case event = <-c.eventCh.Out():
+		case event = <-c.eventCh:
 		}
 		select {
 		case c.EventSink <- event:
@@ -391,7 +387,7 @@ func (c *Client) doGetPKIDocument() interface{} {
 	c.connMutex.RLock()
 	defer c.connMutex.RUnlock()
 
-	if c.connected != StateOnline {
+	if !c.online {
 		return ErrNotOnline
 
 	} else {
@@ -431,7 +427,7 @@ func (c *Client) doGetSpoolProviders() interface{} {
 	c.connMutex.RLock()
 	defer c.connMutex.RUnlock()
 
-	if c.connected != StateOnline {
+	if !c.online || c.session == nil {
 		return ErrNotOnline
 	}
 	doc := c.session.CurrentDocument()
@@ -496,7 +492,7 @@ func (c *Client) doCreateRemoteSpool(provider string, responseChan chan error) {
 		responseChan <- errors.New("Already have a remote spool")
 		return
 	}
-	if c.connected != StateOnline {
+	if !c.online {
 		responseChan <- ErrNotOnline
 		return
 	}
@@ -585,7 +581,7 @@ func (c *Client) createContact(nickname string, sharedSecret []byte) error {
 	if _, ok := c.contactNicknames[nickname]; ok {
 		return fmt.Errorf("Contact with nickname %s, already exists.", nickname)
 	}
-	contact, err := NewContact(nickname, c.randID(), sharedSecret)
+	contact, err := NewContact(nickname, c.randID(), sharedSecret, c.client.GetConfig().RatchetNIKEScheme)
 	if err != nil {
 		return err
 	}
@@ -598,7 +594,7 @@ func (c *Client) createContact(nickname string, sharedSecret []byte) error {
 	c.connMutex.RLock()
 	defer c.connMutex.RUnlock()
 
-	if c.connected == StateOnline {
+	if c.online {
 		c.initKeyExchange(contact)
 		err = c.doPANDAExchange(contact)
 		if err != nil {
@@ -828,7 +824,7 @@ func (c *Client) save() {
 	}
 }
 
-func (c *Client) marshal() (*memguard.LockedBuffer, error) {
+func (c *Client) marshal() ([]byte, error) {
 	contacts := []*Contact{}
 	for _, contact := range c.contacts {
 		contacts = append(contacts, contact)
@@ -843,11 +839,11 @@ func (c *Client) marshal() (*memguard.LockedBuffer, error) {
 	}
 	defer c.conversationsMutex.Unlock()
 	// XXX: shouldn't we also obtain the ratchet locks as well?
-	ms := memguard.NewStream()
+	ms := new(bytes.Buffer)
 	em, _ := cbor.EncOptions{Time: cbor.TimeUnixDynamic}.EncMode()
 	e := em.NewEncoder(ms)
 	e.Encode(s)
-	return ms.Flush()
+	return ms.Bytes(), nil
 }
 
 func (c *Client) haltKeyExchanges() {
@@ -865,14 +861,20 @@ func (c *Client) Shutdown() {
 }
 
 func (c *Client) DoubleRatchetPayloadLength() int {
-	return DoubleRatchetPayloadLength(c.client.GetConfig().SphinxGeometry)
+	cfg := c.client.GetConfig()
+
+	nikeScheme := schemes.ByName(cfg.RatchetNIKEScheme)
+
+	return DoubleRatchetPayloadLength(cfg.SphinxGeometry, nikeScheme)
 }
 
 // SendMessage sends a message to the Client contact with the given nickname.
 func (c *Client) SendMessage(nickname string, message []byte) MessageID {
 	cfg := c.client.GetConfig()
 
-	if len(message)+4 > DoubleRatchetPayloadLength(cfg.SphinxGeometry) {
+	nikeScheme := schemes.ByName(cfg.RatchetNIKEScheme)
+
+	if len(message)+4 > CBORMessageOverhead+DoubleRatchetPayloadLength(cfg.SphinxGeometry, nikeScheme) {
 		return MessageID{}
 	}
 	convoMesgID := MessageID{}
@@ -897,7 +899,7 @@ func (c *Client) doSendMessage(convoMesgID MessageID, nickname string, message [
 	contact, ok := c.contactNicknames[nickname]
 	if !ok {
 		c.log.Errorf("contact %s not found", nickname)
-		c.eventCh.In() <- &MessageNotSentEvent{
+		c.eventCh <- &MessageNotSentEvent{
 			Nickname:  nickname,
 			MessageID: convoMesgID,
 			Err:       ErrContactNotFound,
@@ -906,7 +908,7 @@ func (c *Client) doSendMessage(convoMesgID MessageID, nickname string, message [
 	}
 	if contact.IsPending {
 		c.log.Errorf("cannot send message, contact %s is pending a key exchange", nickname)
-		c.eventCh.In() <- &MessageNotSentEvent{
+		c.eventCh <- &MessageNotSentEvent{
 			Nickname:  nickname,
 			MessageID: convoMesgID,
 			Err:       ErrPendingKeyExchange,
@@ -921,7 +923,7 @@ func (c *Client) doSendMessage(convoMesgID MessageID, nickname string, message [
 
 	serialized, err := cbor.Marshal(outMessage)
 	if err != nil {
-		c.eventCh.In() <- &MessageNotSentEvent{
+		c.eventCh <- &MessageNotSentEvent{
 			Nickname:  nickname,
 			MessageID: convoMesgID,
 			Err:       err,
@@ -933,7 +935,7 @@ func (c *Client) doSendMessage(convoMesgID MessageID, nickname string, message [
 	if err != nil {
 		c.log.Errorf("failed to encrypt: %s", err)
 		contact.ratchetMutex.Unlock()
-		c.eventCh.In() <- &MessageNotSentEvent{
+		c.eventCh <- &MessageNotSentEvent{
 			Nickname:  nickname,
 			MessageID: convoMesgID,
 			Err:       err,
@@ -946,7 +948,7 @@ func (c *Client) doSendMessage(convoMesgID MessageID, nickname string, message [
 	appendCmd, err := common.AppendToSpool(contact.spoolWriteDescriptor.ID, ciphertext, cfg.SphinxGeometry)
 	if err != nil {
 		c.log.Errorf("failed to compute spool append command: %s", err)
-		c.eventCh.In() <- &MessageNotSentEvent{
+		c.eventCh <- &MessageNotSentEvent{
 			Nickname:  nickname,
 			MessageID: convoMesgID,
 			Err:       err,
@@ -962,13 +964,13 @@ func (c *Client) doSendMessage(convoMesgID MessageID, nickname string, message [
 		// no messages already queued, so call sendMessage immediately
 		c.connMutex.RLock()
 		defer c.connMutex.RUnlock()
-		if c.connected == StateOnline {
+		if c.online {
 			defer c.sendMessage(contact)
 		}
 	}
 	if err := contact.outbound.Push(item); err != nil {
 		c.log.Debugf("Failed to enqueue message!")
-		c.eventCh.In() <- &MessageNotSentEvent{
+		c.eventCh <- &MessageNotSentEvent{
 			Nickname:  nickname,
 			MessageID: convoMesgID,
 			Err:       err,
@@ -1061,7 +1063,7 @@ func (c *Client) handleSent(sentEvent *client.MessageSentEvent) {
 			} else {
 				if sentEvent.Err != nil {
 					c.log.Debugf("message send for %s failed with err: %s", tp.Nickname, sentEvent.Err)
-					c.eventCh.In() <- &MessageNotSentEvent{
+					c.eventCh <- &MessageNotSentEvent{
 						Nickname:  tp.Nickname,
 						MessageID: tp.MessageID,
 						Err:       sentEvent.Err,
@@ -1074,7 +1076,7 @@ func (c *Client) handleSent(sentEvent *client.MessageSentEvent) {
 
 			c.log.Debugf("MessageSentEvent for %x", *sentEvent.MessageID)
 			c.setMessageSent(tp.Nickname, tp.MessageID)
-			c.eventCh.In() <- &MessageSentEvent{
+			c.eventCh <- &MessageSentEvent{
 				Nickname:  tp.Nickname,
 				MessageID: tp.MessageID,
 			}
@@ -1094,7 +1096,7 @@ func (c *Client) handleReply(replyEvent *client.MessageReplyEvent) {
 			_, err := cbor.UnmarshalFirst(replyEvent.Payload, &spoolResponse)
 			if err != nil {
 				c.log.Errorf("Could not deserialize SpoolResponse to message ID %d: %s", tp.MessageID, err)
-				c.eventCh.In() <- &MessageNotDeliveredEvent{Nickname: tp.Nickname, MessageID: tp.MessageID,
+				c.eventCh <- &MessageNotDeliveredEvent{Nickname: tp.Nickname, MessageID: tp.MessageID,
 					Err: fmt.Errorf("Invalid spool response: %s", err),
 				}
 				return
@@ -1104,7 +1106,7 @@ func (c *Client) handleReply(replyEvent *client.MessageReplyEvent) {
 				c.log.Errorf("Spool response ID %d status error: %s for SpoolID %x",
 					spoolResponse.MessageID, spoolResponse.Status, spoolResponse.SpoolID)
 
-				c.eventCh.In() <- &MessageNotDeliveredEvent{Nickname: tp.Nickname, MessageID: tp.MessageID,
+				c.eventCh <- &MessageNotDeliveredEvent{Nickname: tp.Nickname, MessageID: tp.MessageID,
 					Err: spoolResponse.StatusAsError(),
 				}
 				return
@@ -1128,7 +1130,7 @@ func (c *Client) handleReply(replyEvent *client.MessageReplyEvent) {
 				c.log.Debugf("Sending MessageDeliveredEvent for %s", tp.Nickname)
 				c.setMessageDelivered(tp.Nickname, tp.MessageID)
 				c.save()
-				c.eventCh.In() <- &MessageDeliveredEvent{Nickname: tp.Nickname, MessageID: tp.MessageID}
+				c.eventCh <- &MessageDeliveredEvent{Nickname: tp.Nickname, MessageID: tp.MessageID}
 				return
 			}
 		case *ReadMessageDescriptor:
@@ -1141,8 +1143,9 @@ func (c *Client) handleReply(replyEvent *client.MessageReplyEvent) {
 			}
 			if !spoolResponse.IsOK() {
 				// no new messages were returned
+
 				c.log.Debugf("Spool response ID %d status error: %s for SpoolID %x",
-					spoolResponse.MessageID, spoolResponse.Status, spoolResponse.SpoolID)
+					spoolResponse.MessageID, spoolResponse.Status, spoolResponse.SpoolID[:])
 
 				return
 			}
@@ -1324,7 +1327,7 @@ func (c *Client) decryptMessage(messageID *[cConstants.MessageIDLength]byte, cip
 		c.conversationsMutex.Unlock()
 		c.save()
 
-		c.eventCh.In() <- &MessageReceivedEvent{
+		c.eventCh <- &MessageReceivedEvent{
 			Nickname:  nickname,
 			Message:   message.Plaintext,
 			Timestamp: message.Timestamp,
@@ -1397,13 +1400,6 @@ func (c *Client) GetBlob(id string) ([]byte, error) {
 	return b, nil
 }
 
-// Status() returns ConnectedState
-func (c *Client) Status() ConnectedState {
-	c.connMutex.RLock()
-	defer c.connMutex.RUnlock()
-	return c.connected
-}
-
 // Online() brings catshadow online or returns an error
 func (c *Client) Online(ctx context.Context) error {
 	// XXX: block until connection or error ?
@@ -1423,7 +1419,7 @@ func (c *Client) Online(ctx context.Context) error {
 // goOnline is called by worker routine when a goOnline is received. currently only a single session is supported.
 func (c *Client) goOnline(ctx context.Context) error {
 	c.connMutex.RLock()
-	if c.connected == StateOnline || c.connected == StateConnecting {
+	if c.online || c.connecting || c.session != nil {
 		c.connMutex.RUnlock()
 		return errors.New("Already Connected")
 	}
@@ -1431,7 +1427,7 @@ func (c *Client) goOnline(ctx context.Context) error {
 
 	// set connecting status
 	c.connMutex.Lock()
-	c.connected = StateConnecting
+	c.connecting = true
 	c.connMutex.Unlock()
 
 	// try to connect
@@ -1439,13 +1435,14 @@ func (c *Client) goOnline(ctx context.Context) error {
 
 	// re-obtain lock
 	c.connMutex.Lock()
+	c.connecting = false
 	if err != nil {
-		c.connected = StateOffline
+		c.online = false
 		c.connMutex.Unlock()
 		return err
 	}
 	c.session = s
-	c.connected = StateOnline
+	c.online = true
 	c.connMutex.Unlock()
 	// wait for pki document to arrive
 	err = s.WaitForDocument(ctx)
@@ -1485,16 +1482,16 @@ func (c *Client) getSpoolWriteDescriptor() *memspoolclient.SpoolWriteDescriptor 
 func (c *Client) goOffline() error {
 	c.connMutex.Lock()
 	defer c.connMutex.Unlock()
-	if c.connected == StateConnecting {
+	if c.connecting {
 		return errors.New("Offline() does not cancel Online()")
 	}
 
-	if c.connected == StateOffline {
+	if !c.online || c.session == nil {
 		return errors.New("Already Offline")
 	}
 
 	c.session.Shutdown()
-	c.connected = StateOffline
+	c.online = false
 	c.session = nil
 	return nil
 }

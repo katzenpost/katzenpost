@@ -63,7 +63,7 @@ func (c *Client) GetConfig() *config.Config {
 // PKIBootstrap returns a pkiClient and fetches a consensus.
 func PKIBootstrap(ctx context.Context, c *Client, linkKey kem.PrivateKey) (pki.Client, *pki.Document, error) {
 	// Retrieve a copy of the PKI consensus document.
-	pkiClient, err := c.cfg.NewPKIClient(c.logBackend, c.cfg.UpstreamProxyConfig(), linkKey)
+	pkiClient, err := c.cfg.NewPKIClient(c.logBackend, c.cfg.UpstreamProxyConfig(), linkKey, c.cfg.SphinxGeometry)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -75,20 +75,18 @@ func PKIBootstrap(ctx context.Context, c *Client, linkKey kem.PrivateKey) (pki.C
 	return pkiClient, doc, nil
 }
 
-// SelectProvider returns a provider descriptor or error.
-func SelectProvider(doc *pki.Document) (*pki.MixDescriptor, error) {
+// SelectGatewayNode returns a descriptor of a gateway or an error.
+func SelectGatewayNode(doc *pki.Document) (*pki.MixDescriptor, error) {
 	// Pick a Provider that supports TrustOnFirstUse
-	providers := []*pki.MixDescriptor{}
-	for _, provider := range doc.Providers {
-		if provider.AuthenticationType == pki.TrustOnFirstUseAuth {
-			providers = append(providers, provider)
-		}
+	gateways := []*pki.MixDescriptor{}
+	for _, provider := range doc.GatewayNodes {
+		gateways = append(gateways, provider)
 	}
-	if len(providers) == 0 {
+	if len(gateways) == 0 {
 		return nil, errors.New("no Providers supporting tofu-authenticated connections found in the consensus")
 	}
-	provider := providers[rand.NewMath().Intn(len(providers))]
-	return provider, nil
+	gateway := gateways[rand.NewMath().Intn(len(gateways))]
+	return gateway, nil
 }
 
 // New creates a new Client with the provided configuration.
@@ -168,10 +166,10 @@ func (c *Client) halt() {
 // NewTOFUSession creates and returns a new ephemeral session or an error.
 func (c *Client) NewTOFUSession(ctx context.Context) (*Session, error) {
 	var (
-		err      error
-		doc      *pki.Document
-		provider *pki.MixDescriptor
-		linkKey  kem.PrivateKey
+		err     error
+		doc     *pki.Document
+		gateway *pki.MixDescriptor
+		linkKey kem.PrivateKey
 	)
 
 	// generate a linkKey
@@ -189,14 +187,14 @@ func (c *Client) NewTOFUSession(ctx context.Context) (*Session, error) {
 	if err != nil {
 		return nil, err
 	}
-	// choose a provider
-	if provider, err = SelectProvider(doc); err != nil {
+	// choose a gateway
+	if gateway, err = SelectGatewayNode(doc); err != nil {
 		return nil, err
 	}
 
 	c.Lock()
 	defer c.Unlock()
-	sess, err := NewSession(ctx, pkiclient, doc, c.fatalErrCh, c.logBackend, c.cfg, linkKey, provider)
+	sess, err := NewSession(ctx, pkiclient, doc, c.fatalErrCh, c.logBackend, c.cfg, linkKey, gateway)
 	if err != nil {
 		return nil, err
 	}

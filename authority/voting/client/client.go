@@ -32,11 +32,13 @@ import (
 	"github.com/katzenpost/hpqc/kem/schemes"
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/hpqc/sign"
+	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/katzenpost/core/cert"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"github.com/katzenpost/katzenpost/loops"
@@ -71,6 +73,9 @@ type Config struct {
 	// KEMScheme indicates the KEM scheme used for the LinkKey/wire protocol.
 	KEMScheme kem.Scheme
 
+	// PKISignatureScheme specifies the cryptographic signature scheme
+	PKISignatureScheme sign.Scheme
+
 	// LinkKey is the link key for the client's wire connections.
 	LinkKey kem.PrivateKey
 
@@ -83,6 +88,9 @@ type Config struct {
 	// DialContextFn is the optional alternative Dialer.DialContext function
 	// to be used when creating outgoing network connections.
 	DialContextFn func(ctx context.Context, network, address string) (net.Conn, error)
+
+	// Geo is the geometry used for the Sphinx packet construction.
+	Geo *geo.Geometry
 }
 
 func (cfg *Config) validate() error {
@@ -162,13 +170,15 @@ func (p *connector) initSession(ctx context.Context, doneCh <-chan interface{}, 
 		keyHash := hash.Sum256From(signingKey)
 		ad = keyHash[:]
 	}
+
 	cfg := &wire.SessionConfig{
-		KEMScheme:         schemes.ByName(peer.WireKEMScheme),
-		Geometry:          nil,
-		Authenticator:     peerAuthenticator,
-		AdditionalData:    ad,
-		AuthenticationKey: linkKey,
-		RandomReader:      rand.Reader,
+		KEMScheme:          schemes.ByName(peer.WireKEMScheme),
+		PKISignatureScheme: signSchemes.ByName(peer.PKISignatureScheme),
+		Geometry:           p.cfg.Geo,
+		Authenticator:      peerAuthenticator,
+		AdditionalData:     ad,
+		AuthenticationKey:  linkKey,
+		RandomReader:       rand.Reader,
 	}
 	s, err := wire.NewPKISession(cfg, true)
 	if err != nil {
@@ -245,7 +255,7 @@ func (p *connector) fetchConsensus(ctx context.Context, linkKey kem.PrivateKey, 
 			return nil, err
 		}
 		p.log.Noticef("sending getConsensus to %s", auth.Identifier)
-		cmd := &commands.GetConsensus{Epoch: epoch}
+		cmd := &commands.GetConsensus{Epoch: epoch, Cmds: conn.session.GetCommands()}
 		resp, err := p.roundTrip(conn.session, cmd)
 
 		if err != nil {
