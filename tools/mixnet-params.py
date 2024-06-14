@@ -6,41 +6,46 @@
 
 import math
 import sys
+import click
 
+@click.group()
+@click.option('--verbose', default=False)
+def cli(verbose):
+    if verbose:
+        click.echo("verbose mode is on")
 
-def main():
-    #benchmark=sys.argv[0]
-    benchmark=385069
-    average_delay = 0.2 # per second
-    gateways = 2
-    nodes_per_layer = 2
-    services = 2
+@cli.command()
+@click.argument('users')
+@click.argument('mu')
+@click.argument('lambda_m')
+@click.argument('lambda_p')
+@click.argument('lambda_d')
+@click.argument('lambda_l')
+@click.argument('gateway_nodes')
+@click.argument('service_nodes')
+@click.argument('mixes_per_layer')
+@click.option('--sphinx_benchmark', default=0, help='nanosecond benchmark timing of one Sphinx unwrap operation.')
+def traffic_per_node(users, mu, lambda_m, lambda_p, lambda_d, lambda_l, gateway_nodes, service_nodes, mixes_per_layer, sphinx_benchmark):
 
-    #user traffic generation
-    users = 2000
-    user_loops = 0.5 #users send 0.5 loops per second
-    user_traffic = 1 #users send 1 decoys or messages per second
-    node_loops = 0.5 #nodes send 0.5 loops per second
-    hops = 11
+    # XXX FIXME: Do something with lambda_d.
+    # XXX Do something with mu?
 
-    mu = 10**(-3)/average_delay
-    IP = 10**(-3)*user_traffic
-    IL = 10**(-3)*user_loops
-    IM = 10**(-3)*node_loops
+    user_traffic = 1/float(lambda_p)
+    user_loops = 1/float(lambda_l)
     
-    l=1/average_delay
-
     # total number of nodes producing node loops
-    nodes = gateways+services+nodes_per_layer*3
+    nodes = gateway_nodes + service_nodes + (mixes_per_layer * 3)
 
-    t = traffic_per_node(users, user_loops, user_traffic, nodes, node_loops, gateways, nodes_per_layer, services)
+    node_loops = 1/float(lambda_m)
     
-    print("The traffic per node at these settings averages ",t," per second in the layer with fewest nodes.")
-    print("The maximum number of Sphinx operations is ",max_ops(benchmark))
+    t = calc_traffic_per_node(users, user_loops, user_traffic, nodes, node_loops, gateway_nodes, mixes_per_layer, service_nodes)
+    click.echo("Per node traffic is {}".format(t))
 
-    if t > max_ops(benchmark):
-        print("WARNING: Sphinx unwrap per second mix node capacity is too low.")
-
+    if sphinx_benchmark != 0:
+        if t > max_ops(sphinx_benchmark):
+            click.echo("WARNING: Sphinx unwrap per second mix node capacity is too low.")
+        else:
+            click.echo("Sphinx performance is within range.")
 
 def max_ops(benchmark):
     # nanosecond to second
@@ -51,15 +56,18 @@ def max_ops(benchmark):
 # the 2 is because every client packet crosses each layer twice
 # node loops only need to pass a layer once
 def traffic_per_layer(users, user_loops, user_traffic, nodes, node_loops):
-    per_user=user_traffic+user_loops
-    total_user_traffic = 2*(users*per_user)
-    total_traffic = total_user_traffic + (nodes*node_loops)
+    per_user=user_traffic + user_loops
+    total_user_traffic = 2 * (float(users) * per_user)
+    total_traffic = total_user_traffic + (float(nodes) * node_loops)
     return total_traffic
 
-def traffic_per_node(users, user_loops, user_traffic, nodes, node_loops, gateways, nodes_per_layer, services):
-    a=min(gateways,nodes_per_layer,services)
+def calc_traffic_per_node(users, user_loops, user_traffic, nodes, node_loops, gateways, nodes_per_layer, services):
+    a=float(min(gateways,nodes_per_layer,services))
     b=traffic_per_layer(users, user_loops, user_traffic, nodes, node_loops)/a
     return b
 
-if __name__ == "__main__":
-    main()
+def main():
+   cli(prog_name="cli")
+
+if __name__ == '__main__':
+   main()
