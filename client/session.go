@@ -307,7 +307,7 @@ func (s *Session) decrementDecoyLoopTally() {
 // OnACK is called by the minclient api when we receive a SURB reply message.
 func (s *Session) onACK(surbID *[sConstants.SURBIDLength]byte, ciphertext []byte) error {
 	idStr := fmt.Sprintf("[%v]", hex.EncodeToString(surbID[:]))
-	s.log.Infof("OnACK with SURBID %s", idStr)
+	s.log.Debugf("OnACK with SURBID %s", idStr)
 
 	rawMessage, ok := s.surbIDMap.Load(*surbID)
 	if !ok {

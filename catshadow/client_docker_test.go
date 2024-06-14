@@ -241,7 +241,7 @@ loop4:
 	jeff.Shutdown()
 }
 
-func TestDocker2PartySR(t *testing.T) {
+func TestCreateStateFilesForUpgrade(t *testing.T) {
 	require := require.New(t)
 
 	aliceStateFilePath := createRandomStateFile(t)
