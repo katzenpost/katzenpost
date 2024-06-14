@@ -23,10 +23,18 @@ import click
 )
 @click.option("--node_loops", default=0.5, help="nodes send 0.5 loops per second")
 @click.option("--hops", default=11)
-def main(**kwargs):
-
-    globals().update(**kwargs)
-
+def main(
+    benchmark,
+    average_delay,
+    gateways,
+    nodes_per_layer,
+    services,
+    users,
+    user_loops,
+    user_traffic,
+    node_loops,
+    hops,
+):
     mu = 10 ** (-3) / average_delay
     IP = 10 ** (-3) * user_traffic
     IL = 10 ** (-3) * user_loops
@@ -34,11 +42,19 @@ def main(**kwargs):
 
     l = 1 / average_delay
 
-    global nodes
     # total number of nodes producing node loops
     nodes = gateways + services + nodes_per_layer * 3
 
-    t = traffic_per_node()
+    t = traffic_per_node(
+        users,
+        user_loops,
+        user_traffic,
+        nodes,
+        node_loops,
+        gateways,
+        nodes_per_layer,
+        services,
+    )
 
     print(f"Parameters: nodes={nodes} l={l} args={kwargs}")
     print(
@@ -60,16 +76,25 @@ def max_ops(benchmark):
 # total user traffic entering the network per second times 2,
 # the 2 is because every client packet crosses each layer twice
 # node loops only need to pass a layer once
-def traffic_per_layer():
+def traffic_per_layer(users, user_loops, user_traffic, nodes, node_loops):
     per_user = user_traffic + user_loops
     total_user_traffic = 2 * (users * per_user)
     total_traffic = total_user_traffic + (nodes * node_loops)
     return total_traffic
 
 
-def traffic_per_node():
+def traffic_per_node(
+    users,
+    user_loops,
+    user_traffic,
+    nodes,
+    node_loops,
+    gateways,
+    nodes_per_layer,
+    services,
+):
     a = min(gateways, nodes_per_layer, services)
-    b = traffic_per_layer() / a
+    b = traffic_per_layer(users, user_loops, user_traffic, nodes, node_loops) / a
     return b
 
 
