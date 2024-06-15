@@ -51,4 +51,5 @@ jobs:
           export GOEXPERIMENT=cgocheck2
           export GODEBUG=cgocheck=1
           export CGO_LDFLAGS="-Wl,--no-as-needed -Wl,-allow-multiple-definition"
+          go generate ./server/internal/... && 
           go test -v ./...;
