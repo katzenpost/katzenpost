@@ -67,6 +67,11 @@ def traffic_per_node(
     LambdaM,
 ):
 
+    if hops == 0:
+        ctx = click.get_current_context()
+        click.echo(ctx.get_help())
+        ctx.fail("hops must be set.")
+
     if users == 0:
         ctx = click.get_current_context()
         click.echo(ctx.get_help())
