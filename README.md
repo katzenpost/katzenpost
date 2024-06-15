@@ -237,6 +237,7 @@ And you can point the mix server at the pyroscope server via environment variabl
 ```bash
 export PYROSCOPE_APPLICATION_NAME=katzenpost_mix_server
 export PYROSCOPE_SERVER_ADDRESS=http://localhost:4040
+export PYROSCOPE_SERVICE_TAG=mix1
 ./server -f katzenpost-server.toml
 ```
 
