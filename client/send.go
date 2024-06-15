@@ -20,16 +20,18 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"github.com/katzenpost/katzenpost/client/utils"
 	"io"
 	"time"
 
-	cConstants "github.com/katzenpost/katzenpost/client/constants"
 	"github.com/katzenpost/hpqc/rand"
+
+	cConstants "github.com/katzenpost/katzenpost/client/constants"
+	"github.com/katzenpost/katzenpost/client/utils"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 )
 
 var ErrReplyTimeout = errors.New("failure waiting for reply, timeout reached")
+var ErrHalted = errors.New("Halted")
 var ErrMessageNotSent = errors.New("failure sending message")
 
 func (s *Session) sendNext() {
@@ -58,6 +60,7 @@ func (s *Session) doRetransmit(msg *Message) {
 }
 
 func (s *Session) doSend(msg *Message) {
+
 	surbID := [sConstants.SURBIDLength]byte{}
 	_, err := io.ReadFull(rand.Reader, surbID[:])
 	if err != nil {
@@ -72,11 +75,16 @@ func (s *Session) doSend(msg *Message) {
 		surbIdStr := fmt.Sprintf("[%v]", hex.EncodeToString(surbID[:]))
 		s.log.Debugf("doSend %s with SURB ID %s", msgIdStr, surbIdStr)
 		key, eta, err = s.minclient.SendCiphertext(msg.Recipient, msg.Provider, &surbID, msg.Payload)
+		if err != nil {
+			s.log.Debugf("SendCiphertext failed with error: %s", err)
+		}
 	} else {
 		s.log.Debugf("doSend %s without SURB", msgIdStr)
 		err = s.minclient.SendUnreliableCiphertext(msg.Recipient, msg.Provider, msg.Payload)
+		if err != nil {
+			s.log.Debugf("SendUnreliableCiphertext failed with error: %s", err)
+		}
 	}
-
 	// message was sent
 	if err == nil {
 		msg.SentAt = time.Now()
@@ -116,7 +124,7 @@ func (s *Session) doSend(msg *Message) {
 			return
 		}
 	}
-	s.eventCh.In() <- &MessageSentEvent{
+	s.eventCh <- &MessageSentEvent{
 		MessageID: msg.ID,
 		Err:       err,
 		SentAt:    msg.SentAt,
@@ -244,7 +252,8 @@ func (s *Session) BlockingSendUnreliableMessage(recipient, provider string, mess
 	select {
 	case reply := <-replyWaitChan:
 		return reply, nil
-	// these timeouts are often far too aggressive
+	case <-s.HaltCh():
+		return nil, ErrHalted
 	case <-time.After(sentMessage.ReplyETA + cConstants.RoundTripTimeSlop):
 		return nil, ErrReplyTimeout
 	}
@@ -279,13 +288,12 @@ func (s *Session) BlockingSendReliableMessage(recipient, provider string, messag
 		return nil, ErrMessageNotSent
 	}
 
-	// TODO: it would be better to have the message automatically retransmitted a configurable number of times before emitting a failure to this channel
-	// wait for reply or round trip timeout
+	// XXX: may block forever
 	select {
 	case reply := <-replyWaitChan:
 		return reply, nil
-	case <-time.After(cConstants.RoundTripTimeSlop):
-		return nil, ErrReplyTimeout
+	case <-s.HaltCh():
+		return nil, ErrHalted
 	}
 	// unreachable
 }

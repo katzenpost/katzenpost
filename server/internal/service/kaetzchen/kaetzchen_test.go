@@ -19,26 +19,28 @@ package kaetzchen
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/katzenpost/hpqc/kem"
+	"github.com/katzenpost/hpqc/kem/schemes"
 	ecdh "github.com/katzenpost/hpqc/nike/x25519"
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/hpqc/sign"
 	signpem "github.com/katzenpost/hpqc/sign/pem"
+	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 
-	"github.com/katzenpost/katzenpost/core/cert"
 	"github.com/katzenpost/katzenpost/core/log"
-	"github.com/katzenpost/katzenpost/core/monotime"
 	"github.com/katzenpost/katzenpost/core/sphinx/commands"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/thwack"
 	"github.com/katzenpost/katzenpost/core/wire"
+	"github.com/katzenpost/katzenpost/loops"
 	"github.com/katzenpost/katzenpost/server/config"
 	"github.com/katzenpost/katzenpost/server/internal/glue"
 	"github.com/katzenpost/katzenpost/server/internal/packet"
@@ -46,6 +48,10 @@ import (
 	"github.com/katzenpost/katzenpost/server/spool"
 	"github.com/katzenpost/katzenpost/server/userdb"
 )
+
+var testingSchemeName = "x25519"
+var testingScheme = schemes.ByName(testingSchemeName)
+var testSignatureScheme = signSchemes.ByName("Ed25519")
 
 type mockUserDB struct {
 	provider *mockProvider
@@ -126,9 +132,17 @@ type mockDecoy struct{}
 
 func (d *mockDecoy) Halt() {}
 
+func (d *mockDecoy) ExpectReply(pkt *packet.Packet) bool {
+	return false
+}
+
 func (d *mockDecoy) OnNewDocument(*pkicache.Entry) {}
 
 func (d *mockDecoy) OnPacket(*packet.Packet) {}
+
+func (d *mockDecoy) GetStats(doPublishEpoch uint64) *loops.LoopStats {
+	return nil
+}
 
 type mockServer struct {
 	cfg               *config.Config
@@ -136,10 +150,10 @@ type mockServer struct {
 	identityKey       sign.PrivateKey
 	identityPublicKey sign.PublicKey
 	linkKey           kem.PrivateKey
-	management        *thwack.Server
 	mixKeys           glue.MixKeys
 	pki               glue.PKI
-	provider          glue.Provider
+	gateway           glue.Gateway
+	service           glue.ServiceNode
 	scheduler         glue.Scheduler
 	connector         glue.Connector
 	listeners         []glue.Listener
@@ -169,10 +183,6 @@ func (g *mockGlue) LinkKey() kem.PrivateKey {
 	return g.s.linkKey
 }
 
-func (g *mockGlue) Management() *thwack.Server {
-	return g.s.management
-}
-
 func (g *mockGlue) MixKeys() glue.MixKeys {
 	return g.s.mixKeys
 }
@@ -181,8 +191,12 @@ func (g *mockGlue) PKI() glue.PKI {
 	return g.s.pki
 }
 
-func (g *mockGlue) Provider() glue.Provider {
-	return g.s.provider
+func (g *mockGlue) Gateway() glue.Gateway {
+	return g.s.gateway
+}
+
+func (g *mockGlue) ServiceNode() glue.ServiceNode {
+	return g.s.service
 }
 
 func (g *mockGlue) Scheduler() glue.Scheduler {
@@ -201,6 +215,10 @@ func (g *mockGlue) ReshadowCryptoWorkers() {}
 
 func (g *mockGlue) Decoy() glue.Decoy {
 	return &mockDecoy{}
+}
+
+func (m *mockGlue) Management() *thwack.Server {
+	return nil
 }
 
 type MockKaetzchen struct {
@@ -226,9 +244,13 @@ func (m *MockKaetzchen) Halt() {}
 
 func TestKaetzchenWorker(t *testing.T) {
 
+	if runtime.GOOS == "windows" {
+		return
+	}
+
 	datadir := os.TempDir()
 
-	idPubKey, idKey, err := cert.Scheme.GenerateKey()
+	idPubKey, idKey, err := testSignatureScheme.GenerateKey()
 	require.NoError(t, err)
 
 	err = signpem.PrivateKeyToFile(filepath.Join(datadir, "identity.private.pem"), idKey)
@@ -240,7 +262,7 @@ func TestKaetzchenWorker(t *testing.T) {
 	logBackend, err := log.New("", "DEBUG", false)
 	require.NoError(t, err)
 
-	scheme := wire.DefaultScheme
+	scheme := testingScheme
 	_, userKey, err := scheme.GenerateKeyPair()
 	require.NoError(t, err)
 	_, linkKey, err := scheme.GenerateKeyPair()
@@ -254,12 +276,13 @@ func TestKaetzchenWorker(t *testing.T) {
 	goo := &mockGlue{
 		s: &mockServer{
 			logBackend: logBackend,
-			provider:   mockProvider,
+			gateway:    mockProvider,
+			service:    mockProvider,
 			linkKey:    linkKey,
 			cfg: &config.Config{
 				Server:  &config.Server{},
 				Logging: &config.Logging{},
-				Provider: &config.Provider{
+				ServiceNode: &config.ServiceNode{
 					Kaetzchen: []*config.Kaetzchen{
 						&config.Kaetzchen{
 							Capability: "echo",
@@ -269,8 +292,7 @@ func TestKaetzchenWorker(t *testing.T) {
 						},
 					},
 				},
-				PKI:        &config.PKI{},
-				Management: &config.Management{},
+				PKI: &config.PKI{},
 				Debug: &config.Debug{
 					NumKaetzchenWorkers: 3,
 					KaetzchenDelay:      300,
@@ -300,6 +322,33 @@ func TestKaetzchenWorker(t *testing.T) {
 	_, ok := pkiMap["test"]
 	require.True(t, ok)
 
+	// register another service
+	params2 := make(Parameters)
+	params2[ParameterEndpoint] = "+test2"
+	mockService2 := &MockKaetzchen{
+		capability: "test2",
+		parameters: params2,
+		receivedCh: make(chan bool),
+	}
+
+	kaetzWorker.registerKaetzchen(mockService2)
+
+	recipient2 := [sConstants.RecipientIDLength]byte{}
+	copy(recipient2[:], []byte("+test2"))
+	require.True(t, kaetzWorker.IsKaetzchen(recipient2))
+
+	pkiMap = kaetzWorker.KaetzchenForPKI()
+	_, ok = pkiMap["test2"]
+	require.True(t, ok)
+
+	// unregister service and verify it no longer exists
+	kaetzWorker.unregisterKaetzchen(mockService2)
+	// verify it no longer exists
+	require.False(t, kaetzWorker.IsKaetzchen(recipient2))
+	pkiMap = kaetzWorker.KaetzchenForPKI()
+	_, ok = pkiMap["test2"]
+	require.False(t, ok)
+
 	geo := geo.GeometryFromUserForwardPayloadLength(
 		ecdh.Scheme(rand.Reader),
 		2000,
@@ -314,7 +363,7 @@ func TestKaetzchenWorker(t *testing.T) {
 	testPacket.Recipient = &commands.Recipient{
 		ID: recipient,
 	}
-	testPacket.DispatchAt = monotime.Now()
+	testPacket.DispatchAt = time.Now()
 
 	testPacket.Payload = make([]byte, geo.ForwardPayloadLength-1) // off by one erroneous size
 	kaetzWorker.OnKaetzchen(testPacket)
@@ -326,7 +375,7 @@ func TestKaetzchenWorker(t *testing.T) {
 	testPacket.Recipient = &commands.Recipient{
 		ID: recipient,
 	}
-	testPacket.DispatchAt = monotime.Now() - time.Duration(goo.Config().Debug.KaetzchenDelay)*time.Millisecond
+	testPacket.DispatchAt = time.Now().Add(-time.Duration(goo.Config().Debug.KaetzchenDelay) * time.Millisecond)
 	testPacket.Payload = make([]byte, geo.ForwardPayloadLength)
 	kaetzWorker.OnKaetzchen(testPacket)
 
@@ -337,7 +386,7 @@ func TestKaetzchenWorker(t *testing.T) {
 	testPacket.Recipient = &commands.Recipient{
 		ID: recipient,
 	}
-	testPacket.DispatchAt = monotime.Now()
+	testPacket.DispatchAt = time.Now()
 	testPacket.Payload = make([]byte, geo.ForwardPayloadLength)
 
 	kaetzWorker.OnKaetzchen(testPacket)
@@ -347,6 +396,5 @@ func TestKaetzchenWorker(t *testing.T) {
 	// invalid packet test casses
 	time.Sleep(time.Duration(goo.Config().Debug.KaetzchenDelay) * time.Millisecond)
 	require.Equal(t, uint64(2), kaetzWorker.getDropCounter())
-
 	kaetzWorker.Halt()
 }

@@ -29,29 +29,34 @@ type Item interface {
 	Priority() uint64
 }
 
-type nqueue interface {
+type Nqueue interface {
 	Push(Item) error
 }
 
 // TimerQueue is a queue that delays messages before forwarding to another queue
 type TimerQueue struct {
-	sync.Mutex
-	sync.Cond
-	worker.Worker
+	sync.Mutex    `cbor:"-"`
+	sync.Cond     `cbor:"-"`
+	worker.Worker `cbor:"-"`
 
-	priq  *queue.PriorityQueue
-	nextQ nqueue
+	Priq  *queue.PriorityQueue
+	NextQ Nqueue `cbor:"-"`
 
-	timer  *time.Timer
+	Timer  *time.Timer `cbor:"-"`
 	wakech chan struct{}
 }
 
+// Start starts the worker routine
+func (a *TimerQueue) Start() {
+	a.Go(a.worker)
+}
+
 // NewTimerQueue intantiates a new TimerQueue and starts the worker routine
-func NewTimerQueue(nextQueue nqueue) *TimerQueue {
+func NewTimerQueue(nextQueue Nqueue) *TimerQueue {
 	a := &TimerQueue{
-		nextQ: nextQueue,
-		timer: time.NewTimer(0),
-		priq:  queue.New(),
+		NextQ: nextQueue,
+		Timer: time.NewTimer(0),
+		Priq:  queue.New(),
 	}
 	a.L = new(sync.Mutex)
 	return a
@@ -60,7 +65,7 @@ func NewTimerQueue(nextQueue nqueue) *TimerQueue {
 // Push adds a message to the TimerQueue
 func (a *TimerQueue) Push(i Item) {
 	a.Lock()
-	a.priq.Enqueue(i.Priority(), i)
+	a.Priq.Enqueue(i.Priority(), i)
 	a.Unlock()
 	a.Signal()
 }
@@ -92,13 +97,13 @@ func (a *TimerQueue) wakeupCh() chan struct{} {
 // pop top item from queue and forward to next queue
 func (a *TimerQueue) forward() {
 	a.Lock()
-	m := heap.Pop(a.priq)
+	m := heap.Pop(a.Priq)
 	a.Unlock()
 	if m == nil {
 		return
 	}
 	item := m.(*queue.Entry).Value.(Item)
-	if err := a.nextQ.Push(item); err != nil {
+	if err := a.NextQ.Push(item); err != nil {
 		panic(err)
 	}
 }
@@ -107,7 +112,7 @@ func (a *TimerQueue) worker() {
 	for {
 		var c <-chan time.Time
 		a.Lock()
-		if m := a.priq.Peek(); m != nil {
+		if m := a.Priq.Peek(); m != nil {
 			// Figure out if the message needs to be handled now.
 			timeLeft := int64(m.Priority) - time.Now().UnixNano()
 			if timeLeft < 0 || m.Priority < uint64(time.Now().UnixNano()) {

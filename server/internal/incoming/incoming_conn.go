@@ -24,21 +24,27 @@ import (
 	"sync/atomic"
 	"time"
 
+	"gopkg.in/op/go-logging.v1"
+
 	"github.com/katzenpost/hpqc/hash"
+	"github.com/katzenpost/hpqc/kem"
 	"github.com/katzenpost/hpqc/rand"
-	"github.com/katzenpost/katzenpost/core/monotime"
+	"github.com/katzenpost/hpqc/sign"
+
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"github.com/katzenpost/katzenpost/server/internal/instrument"
 	"github.com/katzenpost/katzenpost/server/internal/packet"
-	"gopkg.in/op/go-logging.v1"
 )
 
 var incomingConnID uint64
 
 type incomingConn struct {
+	scheme        kem.Scheme
+	pkiSignScheme sign.Scheme
+
 	l   *listener
 	log *logging.Logger
 
@@ -54,7 +60,7 @@ type incomingConn struct {
 	maxSendTokens uint64
 
 	sendTokenIncr time.Duration
-	sendTokenLast time.Duration
+	sendTokenLast time.Time
 
 	isInitialized bool // Set by listener.
 	fromClient    bool
@@ -65,9 +71,9 @@ type incomingConn struct {
 }
 
 func (c *incomingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
-	provider := c.l.glue.Provider()
+	gateway := c.l.glue.Gateway()
 	// this node is a provider
-	if provider != nil {
+	if gateway != nil {
 		// see if it is from a Mix
 		_, canSend, isValid := c.l.glue.PKI().AuthenticateConnection(creds, false)
 		if isValid {
@@ -76,7 +82,7 @@ func (c *incomingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 			c.canSend = canSend
 			return isValid
 		}
-		isClient := provider.AuthenticateClient(creds)
+		isClient := gateway.AuthenticateClient(creds)
 		if !isClient && c.fromClient {
 			// This used to be a client, but is no longer listed in
 			// the user db.  Reject.
@@ -111,7 +117,7 @@ func (c *incomingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 			// If there was no previous limit start at 1 send credit.
 			if c.sendTokenIncr == 0 {
 				c.sendTokens = 1
-				c.sendTokenLast = monotime.Now()
+				c.sendTokenLast = time.Now()
 			}
 			c.sendTokenIncr = time.Duration(sendTokenDuration) * time.Millisecond
 
@@ -165,6 +171,7 @@ func (c *incomingConn) worker() {
 	// Allocate the session struct.
 	identityHash := hash.Sum256From(c.l.glue.IdentityPublicKey())
 	cfg := &wire.SessionConfig{
+		KEMScheme:         c.scheme,
 		Geometry:          c.geo,
 		Authenticator:     c,
 		AdditionalData:    identityHash[:],
@@ -369,7 +376,7 @@ func (c *incomingConn) onRetrieveMessage(cmd *commands.RetrieveMessage) error {
 	if err != nil {
 		return err
 	}
-	msg, surbID, remaining, err := c.l.glue.Provider().Spool().Get(creds.AdditionalData, advance)
+	msg, surbID, remaining, err := c.l.glue.Gateway().Spool().Get(creds.AdditionalData, advance)
 	if err != nil {
 		return err
 	}
@@ -384,7 +391,8 @@ func (c *incomingConn) onRetrieveMessage(cmd *commands.RetrieveMessage) error {
 	if surbID != nil {
 		// This was a SURBReply.
 		surbCmd := &commands.MessageACK{
-			Geo: c.geo,
+			Geo:  c.geo,
+			Cmds: commands.NewCommands(c.geo, c.pkiSignScheme),
 
 			QueueSizeHint: hint,
 			Sequence:      cmd.Sequence,
@@ -400,7 +408,7 @@ func (c *incomingConn) onRetrieveMessage(cmd *commands.RetrieveMessage) error {
 		// This was a message.
 		respCmd = &commands.Message{
 			Geo:  c.geo,
-			Cmds: commands.NewCommands(c.geo),
+			Cmds: commands.NewCommands(c.geo, c.pkiSignScheme),
 
 			QueueSizeHint: hint,
 			Sequence:      cmd.Sequence,
@@ -417,7 +425,7 @@ func (c *incomingConn) onRetrieveMessage(cmd *commands.RetrieveMessage) error {
 			c.log.Errorf("BUG: Get() failed to return a message, and the queue is not empty.")
 		}
 		respCmd = &commands.MessageEmpty{
-			Cmds:     commands.NewCommands(c.geo),
+			Cmds:     commands.NewCommands(c.geo, c.pkiSignScheme),
 			Sequence: cmd.Sequence,
 		}
 	}
@@ -436,17 +444,17 @@ func (c *incomingConn) onSendPacket(cmd *commands.SendPacket) error {
 	// to try to loop traffic back into the mix net, and sending packets
 	// that bypass the mix net.
 	pkt.MustForward = c.fromClient
-	pkt.MustTerminate = c.l.glue.Config().Server.IsProvider && !c.fromClient
+	pkt.MustTerminate = c.l.glue.Config().Server.IsServiceNode && !c.fromClient
 
 	// If the packet was from the client, and there is a SendShift for the
 	// current epoch, enforce SendShift based rate limits.
 	if c.fromClient && c.sendTokenIncr != 0 {
 		// Update the token bucket for the time that we were idle.
-		deltaT := monotime.Now() - c.sendTokenLast
+		deltaT := time.Now().Sub(c.sendTokenLast)
 		c.log.Debugf("Rate limit: DeltaT: %v Tokens: %v", deltaT, c.sendTokens)
 		incrCount := uint64(deltaT / c.sendTokenIncr)
 		if incrCount > 0 {
-			c.sendTokenLast += c.sendTokenIncr * time.Duration(incrCount)
+			c.sendTokenLast = c.sendTokenLast.Add(c.sendTokenIncr * time.Duration(incrCount))
 			c.sendTokens += incrCount
 
 			// Leaky bucket.
@@ -470,18 +478,20 @@ func (c *incomingConn) onSendPacket(cmd *commands.SendPacket) error {
 	// For purposes of fudging the scheduling delay based on queue dwell
 	// time, we treat the moment the packet is inserted into the crypto
 	// worker queue as the time the packet was received.
-	pkt.RecvAt = monotime.Now()
+	pkt.RecvAt = time.Now()
 	c.l.incomingCh <- pkt
 
 	return nil
 }
 
-func newIncomingConn(l *listener, conn net.Conn, geo *geo.Geometry) *incomingConn {
+func newIncomingConn(l *listener, conn net.Conn, geo *geo.Geometry, scheme kem.Scheme, pkiSignScheme sign.Scheme) *incomingConn {
 	c := &incomingConn{
+		scheme:            scheme,
+		pkiSignScheme:     pkiSignScheme,
 		l:                 l,
 		c:                 conn,
 		id:                atomic.AddUint64(&incomingConnID, 1), // Diagnostic only, wrapping is fine.
-		sendTokenLast:     monotime.Now(),
+		sendTokenLast:     time.Now(),
 		maxSendTokens:     4, // Reasonable burst to avoid some unnecessary rate limiting.
 		closeConnectionCh: make(chan bool),
 		geo:               geo,

@@ -1,5 +1,5 @@
-// monotime_linux_generic.go - Generic Linux stubs.
-// Copyright (C) 2017  Yawning Angel.
+// client_test.go - map service client tests
+// Copyright (C) 2021  Masala
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as
@@ -14,16 +14,22 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-// +build linux,!amd64 linux,amd64,noasm !go1.9
+package client
 
-package monotime
+import (
+	"testing"
 
-import "errors"
+	"github.com/stretchr/testify/require"
+)
 
-func vdsoClockGettimeTrampoline(clkID uint64, res uintptr, fn uintptr) {
-	panic("monotime: vDSO call on unsupported architecture")
-}
+func TestDuplexCapsFromSeed(t *testing.T) {
+	require := require.New(t)
 
-func initArchDep() error {
-	return errors.New("monotime: unsupported architecture for vDSO calls")
+	alice_read, alice_write := duplexCapsFromSeed(true, []byte("secret"))
+	bob_read, bob_write := duplexCapsFromSeed(false, []byte("secret"))
+
+	require.Equal(alice_read.Addr([]byte("address1")), bob_write.Addr([]byte("address1")))
+	require.Equal(bob_read.Addr([]byte("address1")), alice_write.Addr([]byte("address1")))
+	require.NotEqual(alice_read.Addr([]byte("address1")), alice_write.Addr([]byte("address1")))
+
 }

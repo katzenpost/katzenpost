@@ -22,8 +22,9 @@ import (
 	"fmt"
 	"time"
 
+	"gopkg.in/op/go-logging.v1"
+
 	"github.com/katzenpost/katzenpost/core/epochtime"
-	"github.com/katzenpost/katzenpost/core/monotime"
 	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/katzenpost/katzenpost/server/internal/constants"
@@ -31,7 +32,6 @@ import (
 	"github.com/katzenpost/katzenpost/server/internal/instrument"
 	"github.com/katzenpost/katzenpost/server/internal/mixkey"
 	"github.com/katzenpost/katzenpost/server/internal/packet"
-	"gopkg.in/op/go-logging.v1"
 )
 
 // Worker is a Sphinx crypto worker instance.
@@ -94,19 +94,19 @@ func (w *Worker) doUnwrap(pkt *packet.Packet) error {
 
 	var lastErr error
 	for _, k = range keys {
-		startAt := monotime.Now()
+		startAt := time.Now()
 
 		// TODO/perf: payload is a new heap allocation if it's returned,
 		// though that should only happen if this is a provider.
 		payload, tag, cmds, err := w.sphinx.Unwrap(k.PrivateKey(), pkt.Raw)
-		unwrapAt := monotime.Now()
+		unwrapAt := time.Now()
 
-		w.log.Debugf("Packet: %v (Unwrap took: %v)", pkt.ID, unwrapAt-startAt)
+		w.log.Debugf("Packet: %v (Unwrap took: %v)", pkt.ID, unwrapAt.Sub(startAt))
 
+		lastErr = err
 		// Decryption failures can result from picking the wrong key.
 		if err != nil {
 			// So save the error and try the next key if possible.
-			lastErr = err
 			continue
 		}
 
@@ -127,7 +127,7 @@ func (w *Worker) doUnwrap(pkt *packet.Packet) error {
 			break
 		}
 
-		w.log.Debugf("Packet: %v (IsReplay took: %v)", pkt.ID, monotime.Now()-unwrapAt)
+		w.log.Debugf("Packet: %v (IsReplay took: %v)", pkt.ID, time.Since(unwrapAt))
 
 		return nil
 	}
@@ -142,7 +142,8 @@ func (w *Worker) doUnwrap(pkt *packet.Packet) error {
 func (w *Worker) worker() {
 	const absoluteMinimumDelay = 1 * time.Millisecond
 
-	isProvider := w.glue.Config().Server.IsProvider
+	isGatewayNode := w.glue.Config().Server.IsGatewayNode
+	isServiceNode := w.glue.Config().Server.IsServiceNode
 	unwrapSlack := time.Duration(w.glue.Config().Debug.UnwrapDelay) * time.Millisecond
 	defer w.derefKeys()
 
@@ -167,11 +168,11 @@ func (w *Worker) worker() {
 		// it (should) be constant across packets, and I'll go crazy trying
 		// to account for everything that impacts the actual delay vs
 		// requested.
-		now := monotime.Now()
+		startAt := time.Now()
 
 		// Drop the packet if it has been sitting in the queue waiting to
 		// be unwrapped for way too long.
-		dwellTime := now - pkt.RecvAt
+		dwellTime := startAt.Sub(pkt.RecvAt)
 		if dwellTime > unwrapSlack {
 			w.log.Debugf("Dropping packet: %v (Spent %v waiting for Unwrap())", pkt.ID, dwellTime)
 			instrument.PacketsDropped()
@@ -189,7 +190,7 @@ func (w *Worker) worker() {
 			pkt.Dispose()
 			continue
 		}
-		w.log.Debugf("Packet: %v (doUnwrap took: %v)", pkt.ID, monotime.Now()-now)
+		w.log.Debugf("Packet: %v (doUnwrap took: %v)", pkt.ID, time.Since(startAt))
 
 		// The common (in the both most likely, and done by all modes) case
 		// is that the packet is destined for another node.
@@ -264,19 +265,24 @@ func (w *Worker) worker() {
 			w.log.Debugf("Dispatching packet: %v", pkt.ID)
 			w.glue.Scheduler().OnPacket(pkt)
 			continue
-		} else if !isProvider {
-			// This may be a decoy traffic response.
-			if pkt.IsSURBReply() {
-				w.log.Debugf("Handing off decoy response packet: %v", pkt.ID)
-				w.glue.Decoy().OnPacket(pkt)
+		} else {
+			if !isGatewayNode && !isServiceNode {
+				// We're not a Gateway or Service node and this packet doesn't
+				// need to be routed to the next hop so the only legit reason
+				// to recieve a packet would be if it's a SURB reply to our
+				// mix loop decoys.
+				if pkt.IsSURBReply() {
+					w.log.Debugf("Handing off decoy response packet: %v", pkt.ID)
+					w.glue.Decoy().OnPacket(pkt)
+					continue
+				}
+
+				// Mixes will only ever see forward commands.
+				w.log.Errorf("Dropping mix packet that should not have been received: %v (%v)", pkt.ID, pkt.CmdsToString())
+				instrument.PacketsDropped()
+				pkt.Dispose()
 				continue
 			}
-
-			// Mixes will only ever see forward commands.
-			w.log.Debugf("Dropping mix packet: %v (%v)", pkt.ID, pkt.CmdsToString())
-			instrument.PacketsDropped()
-			pkt.Dispose()
-			continue
 		}
 
 		// This node is a provider and the packet is not destined for another
@@ -285,23 +291,38 @@ func (w *Worker) worker() {
 		// packet processing does not get blocked.
 
 		if pkt.MustForward {
-			w.log.Debugf("Dropping client packet: %v (Send to local user)", pkt.ID)
+			w.log.Errorf("Dropping client packet: %v (Send to local user)", pkt.ID)
 			instrument.PacketsDropped()
 			pkt.Dispose()
 			continue
 		}
 
-		// Toss the packets over to the provider backend.
+		// Toss the packets over to the gateway/serviceNode backend.
 		// Note: Callee takes ownership of pkt.
-		if pkt.IsToUser() || pkt.IsUnreliableToUser() || pkt.IsSURBReply() {
-			w.log.Debugf("Handing off user destined packet: %v", pkt.ID)
-			pkt.DispatchAt = now
-			w.glue.Provider().OnPacket(pkt)
-		} else {
-			w.log.Debugf("Dropping user packet: %v (%v)", pkt.ID, pkt.CmdsToString())
-			instrument.PacketsDropped()
-			pkt.Dispose()
+
+		if pkt.IsSURBReply() && w.glue.Decoy().ExpectReply(pkt) {
+			w.log.Debugf("Handing off decoy response packet: %v", pkt.ID)
+			w.glue.Decoy().OnPacket(pkt)
+			continue
 		}
+
+		if isGatewayNode {
+			w.log.Debugf("Handing off user destined packet: %v", pkt.ID)
+			pkt.DispatchAt = startAt
+			w.glue.Gateway().OnPacket(pkt)
+			continue
+		}
+
+		if isServiceNode {
+			w.log.Debugf("Handing off service destined packet: %v", pkt.ID)
+			pkt.DispatchAt = startAt
+			w.glue.ServiceNode().OnPacket(pkt)
+			continue
+		}
+
+		w.log.Errorf("Invalid packet, dropping packet: %v (%v)", pkt.ID, pkt.CmdsToString())
+		instrument.PacketsDropped()
+		pkt.Dispose()
 	}
 
 	// NOTREACHED
