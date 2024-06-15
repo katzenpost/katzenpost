@@ -85,11 +85,11 @@ jobs:
 #      - name: run catshadow end to end tests
 #        run: cd catshadow && sudo -E make testargs=-coverprofile=coverage.part dockerdockertest && cat coverage.part >> ../coverage.out
 #
-      - name: run catshadow end to end upgrade_test_use_saved test
-        run: cd catshadow && sudo -E make testargs=-coverprofile=coverage.part upgrade_test_use_saved && cat coverage.part >> ../coverage.out
+      - name: run catshadow end to end upgrade_test_use_saved v30 test
+        run: cd catshadow && sudo -E make testargs=-coverprofile=coverage.part test_version=v30 upgrade_test_use_saved && cat coverage.part >> ../coverage.out
 
-      - name: run catshadow end to end upgrade_test_recreate
-        run: cd catshadow && sudo -E make testargs=-coverprofile=coverage.part upgrade_test_recreate && cat coverage.part >> ../coverage.out
+      - name: run catshadow end to end upgrade_test_recreate and use latest saved
+        run: cd catshadow && sudo -E make testargs=-coverprofile=coverage.part test_version=latest upgrade_test_recreate upgrade_test_use_saved && cat coverage.part >> ../coverage.out
 
       - name: Stop the mixnet
         run: |
