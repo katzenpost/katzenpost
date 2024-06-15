@@ -22,6 +22,7 @@ import (
 	"context"
 	"io"
 	"testing"
+	"time"
 
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/hpqc/sign/ed25519"
@@ -125,4 +126,50 @@ func TestCreateDuplex(t *testing.T) {
 	resp, err := b.Get([]byte("hello"))
 	require.NoError(err)
 	require.Equal(resp, []byte("world"))
+}
+
+func TestAsyncGetPigeonHole(t *testing.T) {
+	require := require.New(t)
+
+	cfg, err := config.LoadFile("testdata/client.toml")
+	require.NoError(err)
+
+	client, err := client.New(cfg)
+	require.NoError(err)
+
+	ctx := context.Background()
+	session, err := client.NewTOFUSession(ctx)
+	require.NoError(err)
+	session.WaitForDocument(ctx)
+
+	c, err := NewClient(session)
+	require.NoError(err)
+	require.NotNil(c)
+
+	// test retrieving and putting an item
+
+	// create a capability key
+	pk, _, err := ed25519.NewKeypair(rand.Reader)
+	require.NoError(err)
+	rwCap := common.NewRWCap(pk)
+
+	// get the id and writeKey for an addrress
+	addr := make([]byte, 32)
+	payload := []byte("asynchronously respond to Get")
+	_, err = io.ReadFull(rand.Reader, addr)
+	require.NoError(err)
+	id := rwCap.Addr(addr)
+	wKey := rwCap.WriteKey(addr)
+	rKey := rwCap.ReadKey(addr)
+	go func() {
+		// send the Put after the Get
+		<-time.After(4 * time.Second)
+		err = c.Put(id, wKey.Sign(payload), payload)
+	}()
+
+	t.Logf("Sending Get()")
+	resp, err := c.Get(id, rKey.Sign(id.Bytes()))
+	require.NoError(err)
+	require.Equal(resp, payload)
+	t.Logf("Got Response")
 }

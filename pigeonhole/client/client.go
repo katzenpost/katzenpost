@@ -17,6 +17,7 @@
 package client
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/binary"
 	"errors"
@@ -138,7 +139,8 @@ func (c *Client) Get(ID common.MessageID, signature []byte) ([]byte, error) {
 		return nil, err
 	}
 
-	r, err := c.Session.BlockingSendUnreliableMessage(loc.Name(), loc.Provider(), serialized)
+	ctx := context.Background()
+	r, err := c.Session.BlockingSendUnreliableMessageWithContext(ctx, loc.Name(), loc.Provider(), serialized)
 	if err != nil {
 		return nil, err
 	}
