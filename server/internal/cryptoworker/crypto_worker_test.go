@@ -212,37 +212,91 @@ func createTestRoute(geo *geo.Geometry, nodePubKey nike.PublicKey, isMixNode boo
 }
 
 func TestRoutePacket(t *testing.T) {
-	// Test environment setup
-	logBackend, _ := log.New("", "DEBUG", false)
 	nrHops := 5
 	withSURB := true
 	userForwardPayloadLength := 2000
+
 	mygeo := geo.GeometryFromUserForwardPayloadLength(x25519.Scheme(rand.Reader), userForwardPayloadLength, withSURB, nrHops)
+
+	mixNodeConfig := &config.Config{
+		SphinxGeometry: mygeo,
+		Server: &config.Server{
+			IsGatewayNode: false,
+			IsServiceNode: false,
+		},
+		Logging: &config.Logging{},
+		PKI:     &config.PKI{},
+		Debug: &config.Debug{
+			NumKaetzchenWorkers: 3,
+			KaetzchenDelay:      300,
+		},
+	}
+
+	serviceNodeConfig := &config.Config{
+		SphinxGeometry: mygeo,
+		Server: &config.Server{
+			IsGatewayNode: false,
+			IsServiceNode: true,
+		},
+		Logging: &config.Logging{},
+		ServiceNode: &config.ServiceNode{
+			Kaetzchen: []*config.Kaetzchen{
+				&config.Kaetzchen{
+					Capability: "echo",
+					Endpoint:   "echo",
+					Config:     map[string]interface{}{},
+					Disable:    false,
+				},
+			},
+		},
+		PKI: &config.PKI{},
+		Debug: &config.Debug{
+			NumKaetzchenWorkers: 3,
+			KaetzchenDelay:      300,
+		},
+	}
+
+	gatewayNodeConfig := &config.Config{
+		Gateway:        &config.Gateway{},
+		SphinxGeometry: mygeo,
+		Server: &config.Server{
+			IsServiceNode: false,
+			IsGatewayNode: true,
+		},
+		Logging: &config.Logging{},
+		PKI:     &config.PKI{},
+		Debug: &config.Debug{
+			NumKaetzchenWorkers: 3,
+			KaetzchenDelay:      300,
+		},
+	}
+
+	logBackend, _ := log.New("", "DEBUG", false)
 
 	// Test cases with specific node configurations and routing outcomes
 	testCases := []struct {
 		name          string
-		serverCfg     *config.Server
+		nodeCfg       *config.Config
 		packetType    int
 		routingResult int
 	}{
-		// Gateway node's routing logic
-		{"gw_nextHop", &config.Server{IsGatewayNode: true}, NextHopPacket, SentToScheduler},
-		{"gw_recipient", &config.Server{IsGatewayNode: true}, RecipientPacket, SentToGateway},
-		{"gw_SURBReply", &config.Server{IsGatewayNode: true}, SURBReplyPacket, SentToGateway},
-		{"gw_SURBDecoyReply", &config.Server{IsGatewayNode: true}, SURBReplyDecoyPacket, SentToDecoy},
+		// test cases for Gateway Node's routing logic:
+		{"gw_nextHop", gatewayNodeConfig, NextHopPacket, SentToScheduler},
+		{"gw_recipient", gatewayNodeConfig, RecipientPacket, SentToGateway},
+		{"gw_SURBReply", gatewayNodeConfig, SURBReplyPacket, SentToGateway},
+		{"gw_SURBDecoyReply", gatewayNodeConfig, SURBReplyDecoyPacket, SentToDecoy},
 
-		// Mix node's routing logic
-		{"mix_nextHop", &config.Server{}, NextHopPacket, SentToScheduler},
-		{"mix_recipient", &config.Server{}, RecipientPacket, Dropped},
-		{"mix_SURBReply", &config.Server{}, SURBReplyPacket, Dropped},
-		{"mix_SURBDecoyReply", &config.Server{}, SURBReplyDecoyPacket, SentToDecoy},
+		// test cases for Mix Node's routing logic:
+		{"mix_nextHop", mixNodeConfig, NextHopPacket, SentToScheduler},
+		{"mix_recipient", mixNodeConfig, RecipientPacket, Dropped},
+		{"mix_SURBReply", mixNodeConfig, SURBReplyPacket, Dropped},
+		{"mix_SURBDecoyReply", mixNodeConfig, SURBReplyDecoyPacket, SentToDecoy},
 
-		// Service node's routing logic
-		{"srv_nextHop", &config.Server{IsServiceNode: true}, NextHopPacket, SentToScheduler},
-		{"srv_recipient", &config.Server{IsServiceNode: true}, RecipientPacket, SentToService},
-		{"srv_SURBReply", &config.Server{IsServiceNode: true}, SURBReplyPacket, SentToService},
-		{"srv_SURBDecoyReply", &config.Server{IsServiceNode: true}, SURBReplyDecoyPacket, SentToDecoy},
+		// test cases for Service Node's routing logic:
+		{"srv_nextHop", serviceNodeConfig, NextHopPacket, SentToScheduler},
+		{"srv_recipient", serviceNodeConfig, RecipientPacket, SentToService},
+		{"srv_SURBReply", serviceNodeConfig, SURBReplyPacket, SentToService},
+		{"srv_SURBDecoyReply", serviceNodeConfig, SURBReplyDecoyPacket, SentToDecoy},
 	}
 
 	for _, tc := range testCases {
@@ -262,14 +316,7 @@ func TestRoutePacket(t *testing.T) {
 			fakeGlue.ServiceNodeReturns(fakeServiceNode)
 			fakeGlue.DecoyReturns(fakeDecoy)
 
-			nodeCfg := &config.Config{
-				Gateway:        &config.Gateway{},
-				SphinxGeometry: mygeo,
-				Server:         tc.serverCfg,
-				Logging:        &config.Logging{},
-				PKI:            &config.PKI{},
-				Debug:          &config.Debug{},
-			}
+			nodeCfg := tc.nodeCfg
 
 			fakeGlue.ConfigReturns(nodeCfg)
 
@@ -281,7 +328,7 @@ func TestRoutePacket(t *testing.T) {
 			require.NoError(t, err)
 
 			var rawPacket []byte
-			//isDecoy := false
+			isDecoy := false
 
 			switch tc.packetType {
 			case NextHopPacket:
@@ -294,7 +341,7 @@ func TestRoutePacket(t *testing.T) {
 				rawPacket, err = createTestPacket(nodePubKey, false, false, true, true, nodeCfg.SphinxGeometry)
 			case SURBReplyDecoyPacket:
 				rawPacket, err = createTestPacket(nodePubKey, false, false, true, true, nodeCfg.SphinxGeometry)
-				//isDecoy = true
+				isDecoy = true
 			default:
 				t.Fatalf("invalid packet type")
 			}
@@ -306,6 +353,14 @@ func TestRoutePacket(t *testing.T) {
 
 			incomingCh := make(chan interface{})
 			cryptoWorker := New(fakeGlue, incomingCh, 123)
+
+			err = cryptoWorker.doUnwrap(pkt)
+			require.NoError(t, err)
+
+			if isDecoy {
+				//copy(goo.decoy.recipient, pkt.Recipient.ID[:]) // fixme
+			}
+
 			cryptoWorker.routePacket(pkt, time.Now())
 
 			// Verify routing logic
