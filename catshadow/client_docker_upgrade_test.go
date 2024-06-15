@@ -101,6 +101,12 @@ func TestUpgradeResume(t *testing.T) {
 		require.NoError(err)
 	}
 
+	// start bob
+	bob = reloadCatshadowState(t, "testdata/bob_state")
+
+	// bob writes to alice
+	bob.SendMessage("alice", []byte("blah"))
+
 	// start alice
 	alice = reloadCatshadowState(t, "testdata/alice_state")
 
@@ -117,9 +123,6 @@ func TestUpgradeResume(t *testing.T) {
 
 	// alice writes to bob
 	alice.SendMessage("bob", []byte("blah"))
-
-	// start bob
-	bob = reloadCatshadowState(t, "testdata/bob_state")
 
 	// bob receives alice's message
 	ctx, cancelFn = context.WithTimeout(context.Background(), time.Minute)
