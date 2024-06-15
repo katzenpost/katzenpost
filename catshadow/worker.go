@@ -74,9 +74,15 @@ func (c *Client) worker() {
 			}
 		case qo = <-c.opCh:
 			switch op := qo.(type) {
+			case *opNop:
+				// re-evaluate the select cases, particularly c.sessionEvents()
+				continue
 			case *opOnline:
 				// this operation is run in another goroutine, and is thread safe
-				go func() { op.responseChan <- c.goOnline(op.context) }()
+				go func() {
+					op.responseChan <- c.goOnline(op.context)
+					c.opCh <- &opNop{}
+				}()
 			case *opOffline:
 				op.responseChan <- c.goOffline()
 				isConnected = false

@@ -40,14 +40,21 @@ func TestUpgradeResume(t *testing.T) {
 	// if testdata/alice_state exists, load it, otherwise, create it
 	// if testdata/bob_state exists, load it, otherwise, create it
 	var alice, bob *Client
+	aliceStateFilePath := createRandomStateFile(t)
+	bobStateFilePath := createRandomStateFile(t)
 	_, aErr := os.Open("testdata/alice_state")
 	_, bErr := os.Open("testdata/bob_state")
+
 	if aErr == nil && bErr == nil {
+		// copy testdata state into the temporary statefile location
+		// because the client will mutate the statefile when started
+		err := copyFile("testdata/alice_state", aliceStateFilePath)
+		require.NoError(err)
+		err = copyFile("testdata/bob_state", bobStateFilePath)
+		require.NoError(err)
 	} else {
 		// create 2 statefiles for a pair of contacts
-		aliceStateFilePath := createRandomStateFile(t)
 		alice = createCatshadowClientWithState(t, aliceStateFilePath)
-		bobStateFilePath := createRandomStateFile(t)
 		bob = createCatshadowClientWithState(t, bobStateFilePath)
 
 		sharedSecret := []byte("wait for key exchange")
@@ -59,39 +66,69 @@ func TestUpgradeResume(t *testing.T) {
 		alice.NewContact("bob", sharedSecret)
 		bob.NewContact("alice", sharedSecret)
 
-		ctx, _ /*cancelFn*/ := context.WithTimeout(context.Background(), time.Minute)
+		ctx, cancelFn := context.WithTimeout(context.Background(), time.Minute)
 		evt := waitForEvent(ctx,  alice.EventSink, &KeyExchangeCompletedEvent{})
+		cancelFn()
 		ev, ok := evt.(*KeyExchangeCompletedEvent)
 		require.True(ok)
 		require.NoError(ev.Err)
 
-		ctx, _ /*cancelFn*/ = context.WithTimeout(context.Background(), time.Minute)
+		ctx, cancelFn = context.WithTimeout(context.Background(), time.Minute)
 		evt = waitForEvent(ctx, bob.EventSink, &KeyExchangeCompletedEvent{})
+		cancelFn()
 		ev, ok = evt.(*KeyExchangeCompletedEvent)
 		require.True(ok)
 		require.NoError(ev.Err)
 
-		// save the statefiles.
-		//alice.Shutdown()
-		//bob.Shutdown()
+		// alice halts her client
+		alice.Shutdown()
 
-		//err = copyFile(aliceStateFilePath, "testdata/alice_state")
-		//require.NoError(err)
-		//err = copyFile(bobStateFilePath, "testdata/bob_state")
-		//require.NoError(err)
+		// bob sends a message
+		bob.SendMessage("alice", []byte("blah"))
+		ctx, cancelFn = context.WithTimeout(context.Background(), time.Minute)
+		evt = waitForEvent(ctx, bob.EventSink, &MessageDeliveredEvent{})
+		cancelFn()
+		_, ok = evt.(*MessageDeliveredEvent)
+		require.True(ok)
+
+		// bob halts his client
+		bob.Shutdown()
+
+		// save the statefiles into testdata for using with later versions of catshadow
+		err = copyFile(aliceStateFilePath, "testdata/alice_state")
+		require.NoError(err)
+		err = copyFile(bobStateFilePath, "testdata/bob_state")
+		require.NoError(err)
 	}
-	//alice = reloadCatshadowState(t, "testdata/alice_state")
-	//bob = reloadCatshadowState(t, "testdata/bob_state")
 
-	bob.SendMessage("alice", []byte("blah"))
+	// start alice
+	alice = reloadCatshadowState(t, "testdata/alice_state")
 
-	ctx, _ /*cancelFn*/ := context.WithTimeout(context.Background(), 2*time.Minute)
+	// receive bob's message
+	ctx, cancelFn := context.WithTimeout(context.Background(), time.Minute)
 	evt := waitForEvent(ctx,  alice.EventSink, &MessageReceivedEvent{})
+	cancelFn()
 	switch ev := evt.(type) {
 	case *MessageReceivedEvent:
 		require.Equal(ev.Nickname, "bob")
 	default:
 		t.Fail()
 	}
-}
 
+	// alice writes to bob
+	alice.SendMessage("bob", []byte("blah"))
+
+	// start bob
+	bob = reloadCatshadowState(t, "testdata/bob_state")
+
+	// bob receives alice's message
+	ctx, cancelFn = context.WithTimeout(context.Background(), time.Minute)
+	evt = waitForEvent(ctx,  bob.EventSink, &MessageReceivedEvent{})
+	cancelFn()
+	switch ev := evt.(type) {
+	case *MessageReceivedEvent:
+		require.Equal(ev.Nickname, "alice")
+	default:
+		t.Fail()
+	}
+}
