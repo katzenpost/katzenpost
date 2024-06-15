@@ -223,7 +223,7 @@ func TestRoutePacket(t *testing.T) {
 			isServiceNode: false,
 			isSURB:        false,
 			expectFunction: func(s *gluefakes.FakeScheduler, g *gluefakes.FakeGateway, sn *gluefakes.FakeServiceNode, d *gluefakes.FakeDecoy) {
-				require.Equal(t, 1, s.OnPacketCallCount(), "Packet should be routed to the scheduler")
+				assert.Equal(t, 1, s.OnPacketCallCount(), "Packet should be routed to the scheduler")
 			},
 		},
 		{
@@ -237,7 +237,7 @@ func TestRoutePacket(t *testing.T) {
 			isServiceNode: true,
 			isSURB:        false,
 			expectFunction: func(s *gluefakes.FakeScheduler, g *gluefakes.FakeGateway, sn *gluefakes.FakeServiceNode, d *gluefakes.FakeDecoy) {
-				require.Equal(t, 1, sn.OnPacketCallCount(), "Packet should be routed to the service node")
+				assert.Equal(t, 1, sn.OnPacketCallCount(), "Packet should be routed to the service node")
 			},
 		},
 		{
@@ -251,7 +251,7 @@ func TestRoutePacket(t *testing.T) {
 			isServiceNode: false,
 			isSURB:        true,
 			expectFunction: func(s *gluefakes.FakeScheduler, g *gluefakes.FakeGateway, sn *gluefakes.FakeServiceNode, d *gluefakes.FakeDecoy) {
-				require.Equal(t, 1, d.OnPacketCallCount(), "Packet should be routed to the decoy node")
+				assert.Equal(t, 1, d.OnPacketCallCount(), "Packet should be routed to the decoy node")
 			},
 		},
 		{
@@ -265,7 +265,7 @@ func TestRoutePacket(t *testing.T) {
 			isServiceNode: false,
 			isSURB:        true,
 			expectFunction: func(s *gluefakes.FakeScheduler, g *gluefakes.FakeGateway, sn *gluefakes.FakeServiceNode, d *gluefakes.FakeDecoy) {
-				require.Equal(t, 1, g.OnPacketCallCount(), "Packet should be handled directly by the gateway node")
+				assert.Equal(t, 1, g.OnPacketCallCount(), "Packet should be handled directly by the gateway node")
 			},
 		},
 	}
