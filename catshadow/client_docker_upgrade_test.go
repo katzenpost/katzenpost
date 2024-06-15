@@ -74,15 +74,22 @@ func TestUpgradeResume(t *testing.T) {
 		require.NoError(ev.Err)
 
 		// save the statefiles.
-		//alice.Shutdown()
-		//bob.Shutdown()
+		alice.Shutdown()
 
-		//err = copyFile(aliceStateFilePath, "testdata/alice_state")
-		//require.NoError(err)
-		//err = copyFile(bobStateFilePath, "testdata/bob_state")
-		//require.NoError(err)
+		bob.SendMessage("alice", []byte("blah"))
+		ctx, cancelFn = context.WithTimeout(context.Background(), time.Minute)
+		evt = waitForEvent(ctx, bob.EventSink, &MessageDeliveredEvent{})
+		cancelFn()
+		_, ok = evt.(*MessageDeliveredEvent)
+		require.True(ok)
+		bob.Shutdown()
+
+		err = copyFile(aliceStateFilePath, "testdata/alice_state")
+		require.NoError(err)
+		err = copyFile(bobStateFilePath, "testdata/bob_state")
+		require.NoError(err)
 	}
-	//alice = reloadCatshadowState(t, "testdata/alice_state")
+	alice = reloadCatshadowState(t, "testdata/alice_state")
 	//bob = reloadCatshadowState(t, "testdata/bob_state")
 
 	bob.SendMessage("alice", []byte("blah"))
@@ -96,4 +103,3 @@ func TestUpgradeResume(t *testing.T) {
 		t.Fail()
 	}
 }
-
