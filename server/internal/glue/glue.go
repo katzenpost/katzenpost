@@ -36,6 +36,9 @@ import (
 )
 
 // Glue is the structure that binds the internal components together.
+//
+//go:generate go run github.com/maxbrunsfeld/counterfeiter/v6 -generate
+//counterfeiter:generate . Glue
 type Glue interface {
 	Config() *config.Config
 	LogBackend() *log.Backend
@@ -73,6 +76,8 @@ type PKI interface {
 	CurrentDocument() (*pki.Document, error)
 }
 
+//go:generate go run github.com/maxbrunsfeld/counterfeiter/v6 -generate
+//counterfeiter:generate . Gateway
 type Gateway interface {
 	Halt()
 	UserDB() userdb.UserDB
@@ -87,6 +92,8 @@ type ServiceNode interface {
 	KaetzchenForPKI() (map[string]map[string]interface{}, error)
 }
 
+//go:generate go run github.com/maxbrunsfeld/counterfeiter/v6 -generate
+//counterfeiter:generate . Scheduler
 type Scheduler interface {
 	Halt()
 	OnNewMixMaxDelay(uint64)

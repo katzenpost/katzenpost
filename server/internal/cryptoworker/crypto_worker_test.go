@@ -3,6 +3,7 @@ package cryptoworker
 import (
 	"crypto/hmac"
 	"crypto/rand"
+	"github.com/katzenpost/katzenpost/server/internal/glue/gluefakes"
 	"testing"
 	"time"
 
@@ -643,4 +644,48 @@ func testRouting(t *testing.T, nodeCfg *config.Config, packetType int) int {
 	}
 
 	// unreachable
+}
+
+func TestRoutePacketGateway(t *testing.T) {
+	fakeGlue := new(gluefakes.FakeGlue)
+
+	// Example configuration setup for testing
+	testConfig := &config.Config{
+		Server: &config.Server{
+			IsGatewayNode: true,
+		},
+	}
+	fakeGlue.ConfigReturns(testConfig)
+
+	// Setup for Scheduler mock
+	fakeScheduler := new(gluefakes.FakeScheduler)
+	fakeGlue.SchedulerReturns(fakeScheduler)
+
+	fakeGateway := new(gluefakes.FakeGateway)
+	fakeGlue.GatewayReturns(fakeGateway)
+
+	// Create a simplified packet for testing
+	rawPacket := []byte{0x01, 0x02, 0x03}
+	pkt, err := packet.New(rawPacket, nil) // Assume packet.New is adjusted to use fake glue or simplified for testing
+	require.NoError(t, err)
+
+	// This is a placeholder for where your actual routing function would be called
+	// Assume routePacket is a function that uses the scheduler to process packets
+	// routePacket(fakeGlue, pkt)
+	incomingCh := make(chan interface{})
+	cryptoWorker := New(fakeGlue, incomingCh, 123)
+	cryptoWorker.routePacket(pkt, time.Now())
+
+	// Assert `OnPacket` was called once
+	require.Equal(t, 1, fakeScheduler.OnPacketCallCount(), "Scheduler should have processed exactly one packet")
+
+	// Assert `OnPacket` was called once
+	require.Equal(t, 1, fakeGateway.OnPacketCallCount(), "Gateway should have processed exactly one packet")
+
+	// Further, verify that `OnPacket` was called with the correct packet
+	// We capture the arguments passed to OnPacket
+	actualPacket := fakeScheduler.OnPacketArgsForCall(0)
+	require.Equal(t, pkt, actualPacket, "The packet passed to OnPacket should match the created packet")
+
+	// Additional assertions can be made here depending on the expected outcomes of routing the packet
 }
