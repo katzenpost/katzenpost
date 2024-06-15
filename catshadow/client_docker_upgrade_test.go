@@ -25,7 +25,6 @@ import (
 	"context"
 	"testing"
 	"time"
-	"os"
 
 	_ "net/http/pprof"
 
@@ -34,9 +33,14 @@ import (
 )
 
 func TestUpgradeCreate(t *testing.T) {
+	require := require.New(t)
+
+	aliceStateFilePath := createRandomStateFile(t)
+	bobStateFilePath := createRandomStateFile(t)
+
 	// create 2 statefiles for a pair of contacts
-	alice = createCatshadowClientWithState(t, aliceStateFilePath)
-	bob = createCatshadowClientWithState(t, bobStateFilePath)
+	alice := createCatshadowClientWithState(t, aliceStateFilePath)
+	bob := createCatshadowClientWithState(t, bobStateFilePath)
 
 	sharedSecret := []byte("wait for key exchange")
 	randBytes := [8]byte{}
@@ -87,9 +91,6 @@ func TestUpgradeResume(t *testing.T) {
 	t.Parallel()
 	require := require.New(t)
 
-	// if testdata/alice_state exists, load it, otherwise, create it
-	// if testdata/bob_state exists, load it, otherwise, create it
-	var alice, bob *Client
 	aliceStateFilePath := createRandomStateFile(t)
 	bobStateFilePath := createRandomStateFile(t)
 
@@ -101,13 +102,13 @@ func TestUpgradeResume(t *testing.T) {
 	require.NoError(err)
 
 	// start bob
-	bob = reloadCatshadowState(t, bobStateFilePath)
+	bob := reloadCatshadowState(t, bobStateFilePath)
 
 	// bob writes to alice
 	bob.SendMessage("alice", []byte("blah"))
 
 	// start alice
-	alice = reloadCatshadowState(t, aliceStateFilePath)
+	alice := reloadCatshadowState(t, aliceStateFilePath)
 
 	// receive bob's message
 	ctx, cancelFn := context.WithTimeout(context.Background(), time.Minute)
