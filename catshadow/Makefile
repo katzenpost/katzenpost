@@ -9,10 +9,24 @@ image=katzenpost-$(distro)_base
 cache_dir=$(shell readlink -f ../docker)/cache
 docker_args=--user ${docker_user} -v $(shell readlink -f ..):/go/katzenpost --network=host --rm -v $(cache_dir)/go:/go/ -v $(cache_dir)/root_cache:/root/.cache
 
+test_version=v30
+
 dockerdockertest:
 	$(docker) run ${docker_args} $(image) \
 		sh -c 'cd /go/katzenpost/catshadow/; GORACE=history_size=7 go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 0 -failfast -run Docker'
 
-upgrade_test:
+upgrade_test_use_saved: testdata/$(test_version)/alice_state testdata/$(test_version)/bob_state testdata/$(test_version)/memspool.storage
+	cp -v testdata/$(test_version)/bob_state testdata/bob_state
+	cp -v testdata/$(test_version)/alice_state testdata/alice_state
+	cd ../docker && make stop && cp -v ../catshadow/testdata/$(test_version)/memspool.storage voting_mixnet/servicenode1/ && make start wait
 	$(docker) run ${docker_args} $(image) \
 		sh -c 'cd /go/katzenpost/catshadow/; GORACE=history_size=7 go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 0 -failfast -run Upgrade'
+
+upgrade_test_recreate:
+	rm -fv testdata/alice_state testdata/bob_state
+	$(docker) run ${docker_args} $(image) \
+		sh -c 'cd /go/katzenpost/catshadow/; GORACE=history_size=7 go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 0 -failfast -run Upgrade'
+	cd ../docker && make stop && cd ../catshadow && mv -v ../docker/voting_mixnet/servicenode1/memspool.storage testdata/alice_state testdata/bob_state testdata/
+
+clean:
+	rm -fv testdata/alice_state testdata/bob_state testdata/mempool.storage
