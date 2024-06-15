@@ -79,7 +79,7 @@ make_args=--no-print-directory net_name=$(net_name) docker=$(docker) distro=$(di
 
 docker_run_sh=$(docker) run ${docker_args} $(mount_net_name) --rm katzenpost-$(distro)_base $(sh) -c
 
-testnet_binaries: $(net_name)/server.$(distro) $(net_name)/memspool.$(distro) $(net_name)/pigeonhole.$(distro) $(net_name)/panda_server.$(distro) $(net_name)/echo_server.$(distro) $(net_name)/voting.$(distro) | $(net_name) $(cache_dir)
+testnet_binaries: $(net_name)/server.$(distro) $(net_name)/proxy_server.$(distro) $(net_name)/proxy_client.$(distro) $(net_name)/memspool.$(distro) $(net_name)/pigeonhole.$(distro) $(net_name)/panda_server.$(distro) $(net_name)/echo_server.$(distro) $(net_name)/voting.$(distro) | $(net_name) $(cache_dir)
 
 $(net_name):
 	mkdir -vp $(net_name)
@@ -168,7 +168,7 @@ $(net_name)/server.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
 
 $(net_name)/proxy_client.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
 		cd $(net_name); for i in $(shell seq $(serviceNodes)); do DOCKER_USER=${docker_user} $(docker_compose) down servicenode$$i; done
-		$(docker_run_sh) 'cd http/proxy/client; go build -trimpath -ldflags ${ldflags} && mv server /$(net_name)/proxy_client.$(distro)'
+		$(docker_run_sh) 'cd http/proxy/client; go build -trimpath -ldflags ${ldflags} && mv client /$(net_name)/proxy_client.$(distro)'
 
 $(net_name)/proxy_server.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
 		cd $(net_name); for i in $(shell seq $(serviceNodes)); do DOCKER_USER=${docker_user} $(docker_compose) down servicenode$$i; done
