@@ -18,6 +18,8 @@
 // subpackages together.
 package glue
 
+//go:generate go run github.com/maxbrunsfeld/counterfeiter/v6 -generate
+
 import (
 	"github.com/katzenpost/hpqc/kem"
 	"github.com/katzenpost/hpqc/sign"
@@ -37,7 +39,6 @@ import (
 
 // Glue is the structure that binds the internal components together.
 //
-//go:generate go run github.com/maxbrunsfeld/counterfeiter/v6 -generate
 //counterfeiter:generate . Glue
 type Glue interface {
 	Config() *config.Config
@@ -59,7 +60,6 @@ type Glue interface {
 	ReshadowCryptoWorkers()
 }
 
-//go:generate go run github.com/maxbrunsfeld/counterfeiter/v6 -generate
 //counterfeiter:generate . MixKeys
 type MixKeys interface {
 	Halt()
@@ -78,7 +78,6 @@ type PKI interface {
 	CurrentDocument() (*pki.Document, error)
 }
 
-//go:generate go run github.com/maxbrunsfeld/counterfeiter/v6 -generate
 //counterfeiter:generate . Gateway
 type Gateway interface {
 	Halt()
@@ -88,13 +87,13 @@ type Gateway interface {
 	OnPacket(*packet.Packet)
 }
 
+//counterfeiter:generate . ServiceNode
 type ServiceNode interface {
 	Halt()
 	OnPacket(*packet.Packet)
 	KaetzchenForPKI() (map[string]map[string]interface{}, error)
 }
 
-//go:generate go run github.com/maxbrunsfeld/counterfeiter/v6 -generate
 //counterfeiter:generate . Scheduler
 type Scheduler interface {
 	Halt()
@@ -117,6 +116,7 @@ type Listener interface {
 	OnNewSendBurst(uint64)
 }
 
+//counterfeiter:generate . Decoy
 type Decoy interface {
 	Halt()
 	OnNewDocument(*pkicache.Entry)

@@ -1,7 +1,6 @@
 package cryptoworker
 
 import (
-	"crypto/hmac"
 	"crypto/rand"
 	"errors"
 	"fmt"
@@ -10,448 +9,19 @@ import (
 	"testing"
 	"time"
 
-	"github.com/katzenpost/hpqc/kem"
 	"github.com/katzenpost/hpqc/nike"
 	"github.com/katzenpost/hpqc/nike/schemes"
 	"github.com/katzenpost/hpqc/nike/x25519"
-	"github.com/katzenpost/hpqc/sign"
 	"github.com/stretchr/testify/require"
 
-	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/katzenpost/katzenpost/core/sphinx/commands"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
-	"github.com/katzenpost/katzenpost/core/thwack"
-	"github.com/katzenpost/katzenpost/core/wire"
-	"github.com/katzenpost/katzenpost/loops"
 	"github.com/katzenpost/katzenpost/server/config"
-	"github.com/katzenpost/katzenpost/server/internal/glue"
-	"github.com/katzenpost/katzenpost/server/internal/mixkeys"
 	"github.com/katzenpost/katzenpost/server/internal/packet"
-	"github.com/katzenpost/katzenpost/server/internal/pkicache"
-	"github.com/katzenpost/katzenpost/server/spool"
-	"github.com/katzenpost/katzenpost/server/userdb"
 )
-
-type mockServer struct {
-	cfg               *config.Config
-	logBackend        *log.Backend
-	identityKey       sign.PrivateKey
-	identityPublicKey sign.PublicKey
-	linkKey           kem.PrivateKey
-	mixKeys           glue.MixKeys
-	pki               glue.PKI
-	gateway           glue.Gateway
-	service           glue.ServiceNode
-	scheduler         glue.Scheduler
-	connector         glue.Connector
-	listeners         []glue.Listener
-}
-
-type mockGlue struct {
-	s     *mockServer
-	decoy *mockDecoy
-}
-
-func (g *mockGlue) Config() *config.Config {
-	return g.s.cfg
-}
-
-func (g *mockGlue) LogBackend() *log.Backend {
-	return g.s.logBackend
-}
-
-func (g *mockGlue) IdentityKey() sign.PrivateKey {
-	return g.s.identityKey
-}
-
-func (g *mockGlue) IdentityPublicKey() sign.PublicKey {
-	return g.s.identityPublicKey
-}
-
-func (g *mockGlue) LinkKey() kem.PrivateKey {
-	return g.s.linkKey
-}
-
-func (g *mockGlue) MixKeys() glue.MixKeys {
-	return g.s.mixKeys
-}
-
-func (g *mockGlue) PKI() glue.PKI {
-	return g.s.pki
-}
-
-func (g *mockGlue) Gateway() glue.Gateway {
-	return g.s.gateway
-}
-
-func (g *mockGlue) ServiceNode() glue.ServiceNode {
-	return g.s.service
-}
-
-func (g *mockGlue) Scheduler() glue.Scheduler {
-	return g.s.scheduler
-}
-
-func (g *mockGlue) Connector() glue.Connector {
-	return g.s.connector
-}
-
-func (g *mockGlue) Listeners() []glue.Listener {
-	return g.s.listeners
-}
-
-func (g *mockGlue) ReshadowCryptoWorkers() {}
-
-func (g *mockGlue) Decoy() glue.Decoy {
-	return g.decoy
-}
-
-func (m *mockGlue) Management() *thwack.Server {
-	return nil
-}
-
-type mockDecoy struct {
-	count     int
-	recipient []byte
-}
-
-func newMockDecoy() *mockDecoy {
-	id := make([]byte, constants.RecipientIDLength)
-	_, err := rand.Reader.Read(id)
-	if err != nil {
-		panic(err)
-	}
-	return &mockDecoy{
-		count:     0,
-		recipient: id,
-	}
-}
-
-func (d *mockDecoy) Halt() {}
-
-func (d *mockDecoy) ExpectReply(pkt *packet.Packet) bool {
-	return hmac.Equal(pkt.Recipient.ID[:], d.recipient)
-}
-
-func (d *mockDecoy) OnNewDocument(*pkicache.Entry) {}
-
-func (d *mockDecoy) OnPacket(*packet.Packet) {
-	d.count++
-}
-
-func (d *mockDecoy) GetStats(doPublishEpoch uint64) *loops.LoopStats {
-	return nil
-}
-
-type mockScheduler struct {
-	count int
-}
-
-func (s *mockScheduler) Halt() {}
-
-func (s *mockScheduler) OnNewMixMaxDelay(delay uint64) {}
-
-func (s *mockScheduler) OnPacket(pkt *packet.Packet) {
-	s.count++
-}
-
-type mockService struct {
-	count int
-}
-
-func (s *mockService) Halt() {}
-
-func (s *mockService) OnPacket(*packet.Packet) {
-	s.count++
-}
-
-func (s *mockService) KaetzchenForPKI() (map[string]map[string]interface{}, error) {
-	return nil, nil
-}
-
-type mockGateway struct {
-	count int
-
-	userName string
-	userKey  kem.PublicKey
-}
-
-func (p *mockGateway) Halt() {}
-
-func (p *mockGateway) UserDB() userdb.UserDB {
-	return &mockUserDB{
-		gateway: p,
-	}
-}
-
-func (p *mockGateway) Spool() spool.Spool {
-	return &mockSpool{}
-}
-
-func (p *mockGateway) AuthenticateClient(*wire.PeerCredentials) bool {
-	return true
-}
-
-func (p *mockGateway) OnPacket(*packet.Packet) {
-	p.count++
-}
-
-type mockUserDB struct {
-	gateway *mockGateway
-}
-
-func (u *mockUserDB) Exists([]byte) bool {
-	return true
-}
-
-func (u *mockUserDB) IsValid([]byte, kem.PublicKey) bool { return true }
-
-func (u *mockUserDB) Add([]byte, kem.PublicKey, bool) error { return nil }
-
-func (u *mockUserDB) SetIdentity([]byte, kem.PublicKey) error { return nil }
-
-func (u *mockUserDB) Link([]byte) (kem.PublicKey, error) {
-	return nil, nil
-}
-
-func (u *mockUserDB) Identity([]byte) (kem.PublicKey, error) {
-	return u.gateway.userKey, nil
-}
-
-func (u *mockUserDB) Remove([]byte) error { return nil }
-
-func (u *mockUserDB) Close() {}
-
-type mockSpool struct{}
-
-func (s *mockSpool) StoreMessage(u, msg []byte) error { return nil }
-
-func (s *mockSpool) StoreSURBReply(u []byte, id *[constants.SURBIDLength]byte, msg []byte) error {
-	return nil
-}
-
-func (s *mockSpool) Get(u []byte, advance bool) (msg, surbID []byte, remaining int, err error) {
-	return []byte{1, 2, 3}, nil, 1, nil
-}
-
-func (s *mockSpool) Remove(u []byte) error { return nil }
-
-func (s *mockSpool) VacuumExpired(udb userdb.UserDB, ignoreIdentities map[[32]byte]interface{}) error {
-	return nil
-}
-
-func (s *mockSpool) Vacuum(udb userdb.UserDB) error { return nil }
-
-func (s *mockSpool) Close() {}
-
-func newTestGoo(t *testing.T) *mockGlue {
-	logBackend, err := log.New("", "DEBUG", false)
-	require.NoError(t, err)
-	goo := &mockGlue{
-		decoy: newMockDecoy(),
-		s: &mockServer{
-			// cfg field is set in testRouting function below
-			logBackend: logBackend,
-			scheduler:  new(mockScheduler),
-			gateway:    new(mockGateway),
-			service:    new(mockService),
-		},
-	}
-	return goo
-}
-
-// routing results
-const (
-	SentToDecoy = iota
-	SentToGateway
-	SentToService
-	SentToScheduler
-	Dropped
-)
-
-const (
-	NextHopPacket = iota
-	RecipientPacket
-	SURBReplyPacket
-	SURBReplyDecoyPacket
-)
-
-func routeResultToString(result int) string {
-	switch result {
-	case SentToDecoy:
-		return "SentToDecoy"
-	case SentToGateway:
-		return "SentToGateway"
-	case SentToService:
-		return "SentToService"
-	case SentToScheduler:
-		return "SentToScheduler"
-	case Dropped:
-		return "Dropped"
-	default:
-		panic("wtf")
-	}
-}
-
-func TestRoutePacket(t *testing.T) {
-	nrHops := 5
-	withSURB := true
-	userForwardPayloadLength := 2000
-
-	mygeo := geo.GeometryFromUserForwardPayloadLength(x25519.Scheme(rand.Reader), userForwardPayloadLength, withSURB, nrHops)
-
-	mixNodeConfig := &config.Config{
-		SphinxGeometry: mygeo,
-		Server: &config.Server{
-			IsGatewayNode: false,
-			IsServiceNode: false,
-		},
-		Logging: &config.Logging{},
-		PKI:     &config.PKI{},
-		Debug: &config.Debug{
-			NumKaetzchenWorkers: 3,
-			KaetzchenDelay:      300,
-		},
-	}
-
-	serviceNodeConfig := &config.Config{
-		SphinxGeometry: mygeo,
-		Server: &config.Server{
-			IsGatewayNode: false,
-			IsServiceNode: true,
-		},
-		Logging: &config.Logging{},
-		ServiceNode: &config.ServiceNode{
-			Kaetzchen: []*config.Kaetzchen{
-				&config.Kaetzchen{
-					Capability: "echo",
-					Endpoint:   "echo",
-					Config:     map[string]interface{}{},
-					Disable:    false,
-				},
-			},
-		},
-		PKI: &config.PKI{},
-		Debug: &config.Debug{
-			NumKaetzchenWorkers: 3,
-			KaetzchenDelay:      300,
-		},
-	}
-
-	gatewayNodeConfig := &config.Config{
-		Gateway:        &config.Gateway{},
-		SphinxGeometry: mygeo,
-		Server: &config.Server{
-			IsServiceNode: false,
-			IsGatewayNode: true,
-		},
-		Logging: &config.Logging{},
-		PKI:     &config.PKI{},
-		Debug: &config.Debug{
-			NumKaetzchenWorkers: 3,
-			KaetzchenDelay:      300,
-		},
-	}
-
-	/* table driven tests for the win!
-	 */
-
-	testCases := []struct {
-		name          string
-		nodeCfg       *config.Config
-		packetType    int
-		routingResult int
-	}{
-		// test cases for Gateway Node's routing logic:
-		{
-			name:          "gw_nextHop",
-			nodeCfg:       gatewayNodeConfig,
-			packetType:    NextHopPacket,
-			routingResult: SentToScheduler,
-		},
-		{
-			name:          "gw_recipient",
-			nodeCfg:       gatewayNodeConfig,
-			packetType:    RecipientPacket,
-			routingResult: SentToGateway,
-		},
-		{
-			name:          "gw_SURBReply",
-			nodeCfg:       gatewayNodeConfig,
-			packetType:    SURBReplyPacket,
-			routingResult: SentToGateway,
-		},
-		{
-			name:          "gw_SURBDecoyReply",
-			nodeCfg:       gatewayNodeConfig,
-			packetType:    SURBReplyDecoyPacket,
-			routingResult: SentToDecoy,
-		},
-
-		// test cases for Mix Node's routing logic:
-		{
-			name:          "mix_nextHop",
-			nodeCfg:       mixNodeConfig,
-			packetType:    NextHopPacket,
-			routingResult: SentToScheduler,
-		},
-		{
-			name:          "mix_recipient",
-			nodeCfg:       mixNodeConfig,
-			packetType:    RecipientPacket,
-			routingResult: Dropped,
-		},
-		{
-			name:          "mix_SURBReply",
-			nodeCfg:       mixNodeConfig,
-			packetType:    SURBReplyPacket,
-			routingResult: Dropped,
-		},
-		{
-			name:          "mix_SURBDecoyReply",
-			nodeCfg:       mixNodeConfig,
-			packetType:    SURBReplyDecoyPacket,
-			routingResult: SentToDecoy,
-		},
-
-		// test cases for Service Node's routing logic:
-		{
-			name:          "srv_nextHop",
-			nodeCfg:       serviceNodeConfig,
-			packetType:    NextHopPacket,
-			routingResult: SentToScheduler,
-		},
-		{
-			name:          "srv_recipient",
-			nodeCfg:       serviceNodeConfig,
-			packetType:    RecipientPacket,
-			routingResult: SentToService,
-		},
-		{
-			name:          "srv_SURBReply",
-			nodeCfg:       serviceNodeConfig,
-			packetType:    SURBReplyPacket,
-			routingResult: SentToService,
-		},
-		{
-			name:          "srv_SURBDecoyReply",
-			nodeCfg:       serviceNodeConfig,
-			packetType:    SURBReplyDecoyPacket,
-			routingResult: SentToDecoy,
-		},
-	}
-
-	for i := 0; i < len(testCases); i++ {
-		result := testRouting(t, testCases[i].nodeCfg, testCases[i].packetType)
-		routingResult := routeResultToString(result)
-		t.Logf("test case %s returns %s", testCases[i].name, routingResult)
-
-		require.Equal(t, testCases[i].routingResult, result)
-	}
-}
 
 func createTestPacket(nodePubKey nike.PublicKey, isMixNode, isGatewayNode, isServiceNode bool, isSURB bool, mygeo *geo.Geometry) ([]byte, error) {
 	nodes, path, err := createTestRoute(mygeo, nodePubKey, isMixNode, isGatewayNode, isServiceNode, isSURB)
@@ -502,9 +72,6 @@ func createTestPacket(nodePubKey nike.PublicKey, isMixNode, isGatewayNode, isSer
 			}
 
 			nextNode, ok := cmds[1].(*commands.NextNodeHop)
-			//require.True(t, ok)
-			//require.Equal(t, path[i+1].ID, nextNode.ID)
-			//require.Nil(t, b)
 			if !ok {
 				return nil, fmt.Errorf("expected nextNodeHop, got %T", cmds[1])
 			}
@@ -627,129 +194,130 @@ func createTestRoute(geo *geo.Geometry, nodePubKey nike.PublicKey, isMixNode boo
 	return nodes, path, nil
 }
 
-func testRouting(t *testing.T, nodeCfg *config.Config, packetType int) int {
-
-	goo := newTestGoo(t)
-	goo.s.cfg = nodeCfg
-
-	testNodeMixkeys, err := mixkeys.NewMixKeys(goo, nodeCfg.SphinxGeometry)
-	require.NoError(t, err)
-	goo.s.mixKeys = testNodeMixkeys
-
-	epoch, _, _ := epochtime.Now()
-	mixkeyblob, ok := testNodeMixkeys.Get(epoch)
-	require.True(t, ok)
-
-	nikeScheme := schemes.ByName(nodeCfg.SphinxGeometry.NIKEName)
-	nodePubKey, err := nikeScheme.UnmarshalBinaryPublicKey(mixkeyblob)
-	require.NoError(t, err)
-
-	var rawPacket []byte
-	isDecoy := false
-
-	switch packetType {
-	case NextHopPacket:
-		rawPacket, err = createTestPacket(nodePubKey, false, true, false, false, nodeCfg.SphinxGeometry)
-		// either of these works for creating a sphinx packet with a next hop command in it
-		//rawPacket = createTestPacket(t, nodePubKey, true, false, false, false, nodeCfg.SphinxGeometry)
-	case RecipientPacket:
-		rawPacket, err = createTestPacket(nodePubKey, false, false, true, false, nodeCfg.SphinxGeometry)
-	case SURBReplyPacket:
-		rawPacket, err = createTestPacket(nodePubKey, false, false, true, true, nodeCfg.SphinxGeometry)
-	case SURBReplyDecoyPacket:
-		rawPacket, err = createTestPacket(nodePubKey, false, false, true, true, nodeCfg.SphinxGeometry)
-		isDecoy = true
-	default:
-		panic("invalid packet type")
-	}
-
-	require.NoError(t, err)
-
-	incomingCh := make(chan interface{})
-	cryptoworker := New(goo, incomingCh, 123)
-
-	pkt, err := packet.New(rawPacket, nodeCfg.SphinxGeometry)
-	require.NoError(t, err)
-
-	err = cryptoworker.doUnwrap(pkt)
-	require.NoError(t, err)
-
-	if isDecoy {
-		copy(goo.decoy.recipient, pkt.Recipient.ID[:])
-	}
-
-	startAt := time.Now()
-	cryptoworker.routePacket(pkt, startAt)
-
-	switch {
-	case goo.s.scheduler.(*mockScheduler).count == 1:
-		return SentToScheduler
-	case goo.decoy.count == 1:
-		return SentToDecoy
-	case goo.s.gateway.(*mockGateway).count == 1:
-		return SentToGateway
-	case goo.s.service.(*mockService).count == 1:
-		return SentToService
-	default:
-		return Dropped
-	}
-
-	// unreachable
-}
-
-func TestRoutePacketGateway(t *testing.T) {
+func TestRoutePacket(t *testing.T) {
 	logBackend, err := log.New("", "DEBUG", false)
 	require.NoError(t, err)
-	// Setting up the fake glue with configuration for a gateway node
-	fakeGlue := new(gluefakes.FakeGlue)
-	fakeScheduler := new(gluefakes.FakeScheduler)
-	fakeGateway := new(gluefakes.FakeGateway)
-	fakeMixKeys := new(gluefakes.FakeMixKeys)
-	fakeGlue.LogBackendReturns(logBackend)
 
 	nrHops := 5
 	withSURB := true
 	userForwardPayloadLength := 2000
-
 	mygeo := geo.GeometryFromUserForwardPayloadLength(x25519.Scheme(rand.Reader), userForwardPayloadLength, withSURB, nrHops)
 
-	gatewayNodeConfig := &config.Config{
-		Gateway:        &config.Gateway{},
-		SphinxGeometry: mygeo,
-		Server: &config.Server{
-			IsServiceNode: false,
-			IsGatewayNode: true,
+	testCases := []struct {
+		name           string
+		configModifier func(*config.Config)
+		isMixNode      bool
+		isGatewayNode  bool
+		isServiceNode  bool
+		isSURB         bool
+		expectFunction func(*gluefakes.FakeScheduler, *gluefakes.FakeGateway, *gluefakes.FakeServiceNode, *gluefakes.FakeDecoy)
+	}{
+		{
+			name: "Gateway node routing to scheduler",
+			configModifier: func(cfg *config.Config) {
+				cfg.Server.IsGatewayNode = true
+				cfg.Server.IsServiceNode = false
+			},
+			isMixNode:     false,
+			isGatewayNode: true,
+			isServiceNode: false,
+			isSURB:        false,
+			expectFunction: func(s *gluefakes.FakeScheduler, g *gluefakes.FakeGateway, sn *gluefakes.FakeServiceNode, d *gluefakes.FakeDecoy) {
+				require.Equal(t, 1, s.OnPacketCallCount(), "Packet should be routed to the scheduler")
+			},
 		},
-		Logging: &config.Logging{},
-		PKI:     &config.PKI{},
-		Debug: &config.Debug{
-			NumKaetzchenWorkers: 3,
-			KaetzchenDelay:      300,
+		{
+			name: "Service node handling recipient packet",
+			configModifier: func(cfg *config.Config) {
+				cfg.Server.IsGatewayNode = false
+				cfg.Server.IsServiceNode = true
+			},
+			isMixNode:     false,
+			isGatewayNode: false,
+			isServiceNode: true,
+			isSURB:        false,
+			expectFunction: func(s *gluefakes.FakeScheduler, g *gluefakes.FakeGateway, sn *gluefakes.FakeServiceNode, d *gluefakes.FakeDecoy) {
+				require.Equal(t, 1, sn.OnPacketCallCount(), "Packet should be routed to the service node")
+			},
+		},
+		{
+			name: "Decoy node receiving SURB-Reply",
+			configModifier: func(cfg *config.Config) {
+				cfg.Server.IsGatewayNode = false
+				cfg.Server.IsServiceNode = false
+			},
+			isMixNode:     true,
+			isGatewayNode: false,
+			isServiceNode: false,
+			isSURB:        true,
+			expectFunction: func(s *gluefakes.FakeScheduler, g *gluefakes.FakeGateway, sn *gluefakes.FakeServiceNode, d *gluefakes.FakeDecoy) {
+				require.Equal(t, 1, d.OnPacketCallCount(), "Packet should be routed to the decoy node")
+			},
+		},
+		{
+			name: "Gateway node handling SURB-Reply directly",
+			configModifier: func(cfg *config.Config) {
+				cfg.Server.IsGatewayNode = true
+				cfg.Server.IsServiceNode = false
+			},
+			isMixNode:     false,
+			isGatewayNode: true,
+			isServiceNode: false,
+			isSURB:        true,
+			expectFunction: func(s *gluefakes.FakeScheduler, g *gluefakes.FakeGateway, sn *gluefakes.FakeServiceNode, d *gluefakes.FakeDecoy) {
+				require.Equal(t, 1, g.OnPacketCallCount(), "Packet should be handled directly by the gateway node")
+			},
 		},
 	}
 
-	fakeGlue.ConfigReturns(gatewayNodeConfig)
-	fakeGlue.SchedulerReturns(fakeScheduler)
-	fakeGlue.GatewayReturns(fakeGateway)
-	fakeGlue.MixKeysReturns(fakeMixKeys)
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			fakeGlue := new(gluefakes.FakeGlue)
+			fakeScheduler := new(gluefakes.FakeScheduler)
+			fakeGateway := new(gluefakes.FakeGateway)
+			fakeMixKeys := new(gluefakes.FakeMixKeys)
+			fakeServiceNode := new(gluefakes.FakeServiceNode)
+			fakeDecoy := new(gluefakes.FakeDecoy)
 
-	mixkeyblob := make([]byte, 32)
-	rand.Read(mixkeyblob)
-	fakeMixKeys.GetReturns(mixkeyblob, true)
+			fakeGlue.LogBackendReturns(logBackend)
+			fakeGlue.SchedulerReturns(fakeScheduler)
+			fakeGlue.GatewayReturns(fakeGateway)
+			fakeGlue.MixKeysReturns(fakeMixKeys)
+			fakeGlue.ServiceNodeReturns(fakeServiceNode)
+			fakeGlue.DecoyReturns(fakeDecoy)
 
-	nikeScheme := schemes.ByName("x25519") // Use appropriate scheme based on your system's configuration
-	nodePubKey, err := nikeScheme.UnmarshalBinaryPublicKey(mixkeyblob)
-	require.NoError(t, err)
+			nodeCfg := &config.Config{
+				Gateway:        &config.Gateway{},
+				SphinxGeometry: mygeo,
+				Server:         &config.Server{},
+				Logging:        &config.Logging{},
+				PKI:            &config.PKI{},
+				Debug: &config.Debug{
+					NumKaetzchenWorkers: 3,
+					KaetzchenDelay:      300,
+				},
+			}
+			tc.configModifier(nodeCfg)
+			fakeGlue.ConfigReturns(nodeCfg)
 
-	rawPacket, err := createTestPacket(nodePubKey, false, true, false, false, gatewayNodeConfig.SphinxGeometry)
-	require.NoError(t, err)
+			mixkeyblob := make([]byte, 32)
+			rand.Read(mixkeyblob)
+			fakeMixKeys.GetReturns(mixkeyblob, true)
+			nikeScheme := schemes.ByName("x25519")
+			nodePubKey, err := nikeScheme.UnmarshalBinaryPublicKey(mixkeyblob)
+			require.NoError(t, err)
 
-	pkt, err := packet.New(rawPacket, gatewayNodeConfig.SphinxGeometry)
-	require.NoError(t, err)
+			rawPacket, err := createTestPacket(nodePubKey, tc.isMixNode, tc.isGatewayNode, tc.isServiceNode, tc.isSURB, mygeo)
+			require.NoError(t, err)
 
-	incomingCh := make(chan interface{})
-	cryptoworker := New(fakeGlue, incomingCh, 123)
-	cryptoworker.routePacket(pkt, time.Now())
+			pkt, err := packet.New(rawPacket, mygeo)
+			require.NoError(t, err)
 
-	require.Equal(t, 1, fakeGateway.OnPacketCallCount(), "Gateway should have processed exactly one packet")
+			incomingCh := make(chan interface{})
+			cryptoWorker := New(fakeGlue, incomingCh, 123)
+			cryptoWorker.routePacket(pkt, time.Now())
+
+			tc.expectFunction(fakeScheduler, fakeGateway, fakeServiceNode, fakeDecoy)
+		})
+	}
 }
