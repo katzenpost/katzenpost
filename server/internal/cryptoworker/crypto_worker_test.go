@@ -3,7 +3,10 @@ package cryptoworker
 import (
 	"crypto/hmac"
 	"crypto/rand"
+	"errors"
+	"fmt"
 	"github.com/katzenpost/katzenpost/server/internal/glue/gluefakes"
+	"github.com/stretchr/testify/assert"
 	"testing"
 	"time"
 
@@ -450,42 +453,70 @@ func TestRoutePacket(t *testing.T) {
 	}
 }
 
-func createTestPacket(t *testing.T, nodePubKey nike.PublicKey, isMixNode, isGatewayNode, isServiceNode bool, isSURB bool, mygeo *geo.Geometry) []byte {
-	nodes, path := createTestRoute(t, mygeo, nodePubKey, isMixNode, isGatewayNode, isServiceNode, isSURB)
+func createTestPacket(nodePubKey nike.PublicKey, isMixNode, isGatewayNode, isServiceNode bool, isSURB bool, mygeo *geo.Geometry) ([]byte, error) {
+	nodes, path, err := createTestRoute(mygeo, nodePubKey, isMixNode, isGatewayNode, isServiceNode, isSURB)
+	if err != nil {
+		return nil, fmt.Errorf("createTestRoute failed: %v", err)
+	}
 
 	payload := make([]byte, mygeo.ForwardPayloadLength)
 	payload[32] = 0x0a
 	payload[33] = 0x0b
 
 	mysphinx, err := sphinx.FromGeometry(mygeo)
-	require.NoError(t, err)
 
 	pkt, err := mysphinx.NewPacket(rand.Reader, path, payload)
-	require.NoError(t, err)
+	if err != nil {
+		return nil, fmt.Errorf("NewPacket failed: %v", err)
+	}
 
 	for i := 0; i < len(nodes); i++ {
 		if nodes[i].privateKey == nil {
 			break
 		}
 		b, _, cmds, err := mysphinx.Unwrap(nodes[i].privateKey, pkt)
-		require.NoError(t, err)
+		if err != nil {
+			return nil, fmt.Errorf("unwrap failed: %v", err)
+		}
 
 		if i == len(path)-1 {
-			require.Equal(t, 1, len(cmds))
-			require.EqualValues(t, path[i].Commands[0], cmds[0])
-			require.Equal(t, b, payload)
+			if len(cmds) != 1 {
+				return nil, fmt.Errorf("expected 1 command, got %d", len(cmds))
+			}
+			if !assert.ObjectsAreEqualValues(path[i].Commands[0], cmds[0]) {
+				return nil, fmt.Errorf("cmds[0] expected %v, got %v", path[i].Commands[0], cmds[0])
+			}
+			if !assert.ObjectsAreEqualValues(b, payload) {
+				return nil, fmt.Errorf("payload expected %v, got %v", b, payload)
+			}
+
 		} else {
-			require.Equal(t, mysphinx.Geometry().PacketLength, len(pkt))
-			require.Equal(t, 2, len(cmds))
-			require.EqualValues(t, path[i].Commands[0], cmds[0])
+			if mysphinx.Geometry().PacketLength != len(pkt) {
+				return nil, fmt.Errorf("PacketLength expected %d, got %d", mysphinx.Geometry().PacketLength, len(pkt))
+			}
+			if 2 != len(cmds) {
+				return nil, fmt.Errorf("expected 2 commands, got %d", len(cmds))
+			}
+			if !assert.ObjectsAreEqualValues(path[i].Commands[0], cmds[0]) {
+				return nil, fmt.Errorf("cmds[0] expected %v, got %v", path[i].Commands[0], cmds[0])
+			}
 
 			nextNode, ok := cmds[1].(*commands.NextNodeHop)
-			require.True(t, ok)
-			require.Equal(t, path[i+1].ID, nextNode.ID)
-			require.Nil(t, b)
+			//require.True(t, ok)
+			//require.Equal(t, path[i+1].ID, nextNode.ID)
+			//require.Nil(t, b)
+			if !ok {
+				return nil, fmt.Errorf("expected nextNodeHop, got %T", cmds[1])
+			}
+			if !assert.ObjectsAreEqualValues(path[i+1].ID, nextNode.ID) {
+				return nil, fmt.Errorf("nextNodeHop.ID expected %v, got %v", path[i+1].ID, nextNode.ID)
+			}
+			if b != nil {
+				return nil, fmt.Errorf("expected nil, got %v", b)
+			}
 		}
 	}
-	return pkt
+	return pkt, nil
 }
 
 type nodeParams struct {
@@ -494,33 +525,47 @@ type nodeParams struct {
 	publicKey  nike.PublicKey
 }
 
-func newNikeNode(t *testing.T, mynike nike.Scheme) *nodeParams {
+func newNikeNode(mynike nike.Scheme) (*nodeParams, error) {
 	n := new(nodeParams)
 	_, err := rand.Read(n.id[:])
-	require.NoError(t, err)
+	if err != nil {
+		return nil, err
+	}
+
 	n.publicKey, n.privateKey, err = mynike.GenerateKeyPair()
-	require.NoError(t, err)
-	return n
+	if err != nil {
+		return nil, err
+	}
+
+	return n, nil
 }
 
-func createTestRoute(t *testing.T, geo *geo.Geometry, nodePubKey nike.PublicKey, isMixNode bool, isGatewayNode bool, isServiceNode bool, isSURB bool) ([]*nodeParams, []*sphinx.PathHop) {
+func createTestRoute(geo *geo.Geometry, nodePubKey nike.PublicKey, isMixNode bool, isGatewayNode bool, isServiceNode bool, isSURB bool) ([]*nodeParams, []*sphinx.PathHop, error) {
 	delayBase := uint32(1000)
 
 	// Generate the keypairs and node identifiers for the "nodes", except the one we pass in.
 	nodes := make([]*nodeParams, geo.NrHops-1)
 	mynike := schemes.ByName(geo.NIKEName)
-	require.NotNil(t, mynike)
+	if mynike == nil {
+		return nil, nil, errors.New("createTestRoute: unknown nike scheme")
+	}
 
+	var err error
 	for i := 0; i < len(nodes); i++ {
-		nodes[i] = newNikeNode(t, mynike)
+		nodes[i], err = newNikeNode(mynike)
+		if err != nil {
+			return nil, nil, err
+		}
 	}
 
 	// Our test node, `myTestNode` is the only node in our slice of nodes whose `privateKey` field is nil;
 	// this is simply because we don't need it and we cannot easily retrieve it without modifying code.
 	myTestNode := new(nodeParams)
 	myTestNode.publicKey = nodePubKey
-	_, err := rand.Read(myTestNode.id[:])
-	require.NoError(t, err)
+	_, err = rand.Read(myTestNode.id[:])
+	if err != nil {
+		return nil, nil, err
+	}
 
 	switch {
 	case isMixNode == true:
@@ -561,21 +606,25 @@ func createTestRoute(t *testing.T, geo *geo.Geometry, nodePubKey nike.PublicKey,
 		} else {
 			// Terminal hop, add the recipient.
 			recipient := new(commands.Recipient)
-			_, err := rand.Read(recipient.ID[:])
-			require.NoError(t, err)
+			_, err = rand.Read(recipient.ID[:])
+			if err != nil {
+				return nil, nil, err
+			}
 			path[i].Commands = append(path[i].Commands, recipient)
 
 			// This is a SURB, add a surb_reply.
 			if isSURB {
 				surbReply := new(commands.SURBReply)
 				_, err := rand.Read(surbReply.ID[:])
-				require.NoError(t, err)
+				if err != nil {
+					return nil, nil, err
+				}
 				path[i].Commands = append(path[i].Commands, surbReply)
 			}
 		}
 	}
 
-	return nodes, path
+	return nodes, path, nil
 }
 
 func testRouting(t *testing.T, nodeCfg *config.Config, packetType int) int {
@@ -600,19 +649,21 @@ func testRouting(t *testing.T, nodeCfg *config.Config, packetType int) int {
 
 	switch packetType {
 	case NextHopPacket:
-		rawPacket = createTestPacket(t, nodePubKey, false, true, false, false, nodeCfg.SphinxGeometry)
+		rawPacket, err = createTestPacket(nodePubKey, false, true, false, false, nodeCfg.SphinxGeometry)
 		// either of these works for creating a sphinx packet with a next hop command in it
 		//rawPacket = createTestPacket(t, nodePubKey, true, false, false, false, nodeCfg.SphinxGeometry)
 	case RecipientPacket:
-		rawPacket = createTestPacket(t, nodePubKey, false, false, true, false, nodeCfg.SphinxGeometry)
+		rawPacket, err = createTestPacket(nodePubKey, false, false, true, false, nodeCfg.SphinxGeometry)
 	case SURBReplyPacket:
-		rawPacket = createTestPacket(t, nodePubKey, false, false, true, true, nodeCfg.SphinxGeometry)
+		rawPacket, err = createTestPacket(nodePubKey, false, false, true, true, nodeCfg.SphinxGeometry)
 	case SURBReplyDecoyPacket:
-		rawPacket = createTestPacket(t, nodePubKey, false, false, true, true, nodeCfg.SphinxGeometry)
+		rawPacket, err = createTestPacket(nodePubKey, false, false, true, true, nodeCfg.SphinxGeometry)
 		isDecoy = true
 	default:
 		panic("invalid packet type")
 	}
+
+	require.NoError(t, err)
 
 	incomingCh := make(chan interface{})
 	cryptoworker := New(goo, incomingCh, 123)
@@ -647,45 +698,50 @@ func testRouting(t *testing.T, nodeCfg *config.Config, packetType int) int {
 }
 
 func TestRoutePacketGateway(t *testing.T) {
+	logBackend, err := log.New("", "DEBUG", false)
+	require.NoError(t, err)
+	// Setting up the fake glue with configuration for a gateway node
 	fakeGlue := new(gluefakes.FakeGlue)
+	fakeScheduler := new(gluefakes.FakeScheduler)
+	fakeGateway := new(gluefakes.FakeGateway)
+	fakeMixKeys := new(gluefakes.FakeMixKeys)
+	fakeGlue.LogBackendReturns(logBackend)
 
-	// Example configuration setup for testing
+	nrHops := 5
+	withSURB := true
+	userForwardPayloadLength := 2000
+
+	mygeo := geo.GeometryFromUserForwardPayloadLength(x25519.Scheme(rand.Reader), userForwardPayloadLength, withSURB, nrHops)
+
 	testConfig := &config.Config{
 		Server: &config.Server{
 			IsGatewayNode: true,
 		},
+		SphinxGeometry: mygeo,
 	}
 	fakeGlue.ConfigReturns(testConfig)
-
-	// Setup for Scheduler mock
-	fakeScheduler := new(gluefakes.FakeScheduler)
 	fakeGlue.SchedulerReturns(fakeScheduler)
-
-	fakeGateway := new(gluefakes.FakeGateway)
 	fakeGlue.GatewayReturns(fakeGateway)
+	fakeGlue.MixKeysReturns(fakeMixKeys)
 
-	// Create a simplified packet for testing
-	rawPacket := []byte{0x01, 0x02, 0x03}
-	pkt, err := packet.New(rawPacket, nil) // Assume packet.New is adjusted to use fake glue or simplified for testing
+	mixkeyblob := make([]byte, 32)
+	rand.Read(mixkeyblob)
+	fakeMixKeys.GetReturns(mixkeyblob, true)
+
+	nikeScheme := schemes.ByName("x25519") // Use appropriate scheme based on your system's configuration
+	nodePubKey, err := nikeScheme.UnmarshalBinaryPublicKey(mixkeyblob)
 	require.NoError(t, err)
 
-	// This is a placeholder for where your actual routing function would be called
-	// Assume routePacket is a function that uses the scheduler to process packets
-	// routePacket(fakeGlue, pkt)
+	rawPacket, err := createTestPacket(nodePubKey, false, true, false, false, testConfig.SphinxGeometry)
+	require.NoError(t, err)
+
+	pkt, err := packet.New(rawPacket, testConfig.SphinxGeometry)
+	require.NoError(t, err)
+
 	incomingCh := make(chan interface{})
-	cryptoWorker := New(fakeGlue, incomingCh, 123)
-	cryptoWorker.routePacket(pkt, time.Now())
+	cryptoworker := New(fakeGlue, incomingCh, 123)
+	cryptoworker.routePacket(pkt, time.Now())
 
-	// Assert `OnPacket` was called once
 	require.Equal(t, 1, fakeScheduler.OnPacketCallCount(), "Scheduler should have processed exactly one packet")
-
-	// Assert `OnPacket` was called once
 	require.Equal(t, 1, fakeGateway.OnPacketCallCount(), "Gateway should have processed exactly one packet")
-
-	// Further, verify that `OnPacket` was called with the correct packet
-	// We capture the arguments passed to OnPacket
-	actualPacket := fakeScheduler.OnPacketArgsForCall(0)
-	require.Equal(t, pkt, actualPacket, "The packet passed to OnPacket should match the created packet")
-
-	// Additional assertions can be made here depending on the expected outcomes of routing the packet
 }

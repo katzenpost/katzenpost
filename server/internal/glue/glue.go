@@ -59,6 +59,8 @@ type Glue interface {
 	ReshadowCryptoWorkers()
 }
 
+//go:generate go run github.com/maxbrunsfeld/counterfeiter/v6 -generate
+//counterfeiter:generate . MixKeys
 type MixKeys interface {
 	Halt()
 	Generate(uint64) (bool, error)
