@@ -24,6 +24,22 @@ import (
 	"github.com/katzenpost/katzenpost/server/internal/packet"
 )
 
+// routing results
+const (
+	SentToDecoy = iota
+	SentToGateway
+	SentToService
+	SentToScheduler
+	Dropped
+)
+
+const (
+	NextHopPacket = iota
+	RecipientPacket
+	SURBReplyPacket
+	SURBReplyDecoyPacket
+)
+
 func createTestPacket(nodePubKey nike.PublicKey, isMixNode, isGatewayNode, isServiceNode bool, isSURB bool, mygeo *geo.Geometry) ([]byte, error) {
 	nodes, path, err := createTestRoute(mygeo, nodePubKey, isMixNode, isGatewayNode, isServiceNode, isSURB)
 	if err != nil {
@@ -196,83 +212,42 @@ func createTestRoute(geo *geo.Geometry, nodePubKey nike.PublicKey, isMixNode boo
 }
 
 func TestRoutePacket(t *testing.T) {
-	logBackend, err := log.New("", "DEBUG", false)
-	require.NoError(t, err)
-
+	// Test environment setup
+	logBackend, _ := log.New("", "DEBUG", false)
 	nrHops := 5
 	withSURB := true
 	userForwardPayloadLength := 2000
 	mygeo := geo.GeometryFromUserForwardPayloadLength(x25519.Scheme(rand.Reader), userForwardPayloadLength, withSURB, nrHops)
 
+	// Test cases with specific node configurations and routing outcomes
 	testCases := []struct {
-		name           string
-		configModifier func(*config.Config)
-		isMixNode      bool
-		isGatewayNode  bool
-		isServiceNode  bool
-		isSURB         bool
-		expectFunction func(*gluefakes.FakeScheduler, *gluefakes.FakeGateway, *gluefakes.FakeServiceNode, *gluefakes.FakeDecoy)
+		name          string
+		serverCfg     *config.Server
+		packetType    int
+		routingResult int
 	}{
-		{
-			name: "Gateway node routing to scheduler",
-			configModifier: func(cfg *config.Config) {
-				cfg.Server.IsGatewayNode = true
-				cfg.Server.IsServiceNode = false
-			},
-			isMixNode:     false,
-			isGatewayNode: true,
-			isServiceNode: false,
-			isSURB:        false,
-			expectFunction: func(s *gluefakes.FakeScheduler, g *gluefakes.FakeGateway, sn *gluefakes.FakeServiceNode, d *gluefakes.FakeDecoy) {
-				assert.Equal(t, 1, s.OnPacketCallCount(), "Packet should be routed to the scheduler")
-			},
-		},
-		{
-			name: "Service node handling recipient packet",
-			configModifier: func(cfg *config.Config) {
-				cfg.Server.IsGatewayNode = false
-				cfg.Server.IsServiceNode = true
-			},
-			isMixNode:     false,
-			isGatewayNode: false,
-			isServiceNode: true,
-			isSURB:        false,
-			expectFunction: func(s *gluefakes.FakeScheduler, g *gluefakes.FakeGateway, sn *gluefakes.FakeServiceNode, d *gluefakes.FakeDecoy) {
-				assert.Equal(t, 1, sn.OnPacketCallCount(), "Packet should be routed to the service node")
-			},
-		},
-		{
-			name: "Decoy node receiving SURB-Reply",
-			configModifier: func(cfg *config.Config) {
-				cfg.Server.IsGatewayNode = false
-				cfg.Server.IsServiceNode = false
-			},
-			isMixNode:     true,
-			isGatewayNode: false,
-			isServiceNode: false,
-			isSURB:        true,
-			expectFunction: func(s *gluefakes.FakeScheduler, g *gluefakes.FakeGateway, sn *gluefakes.FakeServiceNode, d *gluefakes.FakeDecoy) {
-				assert.Equal(t, 1, d.OnPacketCallCount(), "Packet should be routed to the decoy node")
-			},
-		},
-		{
-			name: "Gateway node handling SURB-Reply directly",
-			configModifier: func(cfg *config.Config) {
-				cfg.Server.IsGatewayNode = true
-				cfg.Server.IsServiceNode = false
-			},
-			isMixNode:     false,
-			isGatewayNode: true,
-			isServiceNode: false,
-			isSURB:        true,
-			expectFunction: func(s *gluefakes.FakeScheduler, g *gluefakes.FakeGateway, sn *gluefakes.FakeServiceNode, d *gluefakes.FakeDecoy) {
-				assert.Equal(t, 1, g.OnPacketCallCount(), "Packet should be handled directly by the gateway node")
-			},
-		},
+		// Gateway node's routing logic
+		{"gw_nextHop", &config.Server{IsGatewayNode: true}, NextHopPacket, SentToScheduler},
+		{"gw_recipient", &config.Server{IsGatewayNode: true}, RecipientPacket, SentToGateway},
+		{"gw_SURBReply", &config.Server{IsGatewayNode: true}, SURBReplyPacket, SentToGateway},
+		{"gw_SURBDecoyReply", &config.Server{IsGatewayNode: true}, SURBReplyDecoyPacket, SentToDecoy},
+
+		// Mix node's routing logic
+		{"mix_nextHop", &config.Server{}, NextHopPacket, SentToScheduler},
+		{"mix_recipient", &config.Server{}, RecipientPacket, Dropped},
+		{"mix_SURBReply", &config.Server{}, SURBReplyPacket, Dropped},
+		{"mix_SURBDecoyReply", &config.Server{}, SURBReplyDecoyPacket, SentToDecoy},
+
+		// Service node's routing logic
+		{"srv_nextHop", &config.Server{IsServiceNode: true}, NextHopPacket, SentToScheduler},
+		{"srv_recipient", &config.Server{IsServiceNode: true}, RecipientPacket, SentToService},
+		{"srv_SURBReply", &config.Server{IsServiceNode: true}, SURBReplyPacket, SentToService},
+		{"srv_SURBDecoyReply", &config.Server{IsServiceNode: true}, SURBReplyDecoyPacket, SentToDecoy},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			// Mock setup
 			fakeGlue := new(gluefakes.FakeGlue)
 			fakeScheduler := new(gluefakes.FakeScheduler)
 			fakeGateway := new(gluefakes.FakeGateway)
@@ -290,15 +265,12 @@ func TestRoutePacket(t *testing.T) {
 			nodeCfg := &config.Config{
 				Gateway:        &config.Gateway{},
 				SphinxGeometry: mygeo,
-				Server:         &config.Server{},
+				Server:         tc.serverCfg,
 				Logging:        &config.Logging{},
 				PKI:            &config.PKI{},
-				Debug: &config.Debug{
-					NumKaetzchenWorkers: 3,
-					KaetzchenDelay:      300,
-				},
+				Debug:          &config.Debug{},
 			}
-			tc.configModifier(nodeCfg)
+
 			fakeGlue.ConfigReturns(nodeCfg)
 
 			mixkeyblob := make([]byte, 32)
@@ -308,7 +280,25 @@ func TestRoutePacket(t *testing.T) {
 			nodePubKey, err := nikeScheme.UnmarshalBinaryPublicKey(mixkeyblob)
 			require.NoError(t, err)
 
-			rawPacket, err := createTestPacket(nodePubKey, tc.isMixNode, tc.isGatewayNode, tc.isServiceNode, tc.isSURB, mygeo)
+			var rawPacket []byte
+			//isDecoy := false
+
+			switch tc.packetType {
+			case NextHopPacket:
+				rawPacket, err = createTestPacket(nodePubKey, false, true, false, false, nodeCfg.SphinxGeometry)
+				// either of these works for creating a sphinx packet with a next hop command in it
+				//rawPacket = createTestPacket(t, nodePubKey, true, false, false, false, nodeCfg.SphinxGeometry)
+			case RecipientPacket:
+				rawPacket, err = createTestPacket(nodePubKey, false, false, true, false, nodeCfg.SphinxGeometry)
+			case SURBReplyPacket:
+				rawPacket, err = createTestPacket(nodePubKey, false, false, true, true, nodeCfg.SphinxGeometry)
+			case SURBReplyDecoyPacket:
+				rawPacket, err = createTestPacket(nodePubKey, false, false, true, true, nodeCfg.SphinxGeometry)
+				//isDecoy = true
+			default:
+				t.Fatalf("invalid packet type")
+			}
+
 			require.NoError(t, err)
 
 			pkt, err := packet.New(rawPacket, mygeo)
@@ -318,7 +308,27 @@ func TestRoutePacket(t *testing.T) {
 			cryptoWorker := New(fakeGlue, incomingCh, 123)
 			cryptoWorker.routePacket(pkt, time.Now())
 
-			tc.expectFunction(fakeScheduler, fakeGateway, fakeServiceNode, fakeDecoy)
+			// Verify routing logic
+			fakeSchedulerOnPacketCallCount := 0
+			fakeGatewayOnPacketCallCount := 0
+			fakeServiceNodeOnPacketCallCount := 0
+			fakeDecoyOnPacketCallCount := 0
+
+			switch tc.routingResult {
+			case SentToScheduler:
+				fakeSchedulerOnPacketCallCount = 1
+			case SentToGateway:
+				fakeGatewayOnPacketCallCount = 1
+			case SentToService:
+				fakeServiceNodeOnPacketCallCount = 1
+			case SentToDecoy:
+				fakeDecoyOnPacketCallCount = 1
+			}
+
+			assert.Equal(t, fakeSchedulerOnPacketCallCount, fakeScheduler.OnPacketCallCount())
+			assert.Equal(t, fakeGatewayOnPacketCallCount, fakeGateway.OnPacketCallCount())
+			assert.Equal(t, fakeServiceNodeOnPacketCallCount, fakeServiceNode.OnPacketCallCount())
+			assert.Equal(t, fakeDecoyOnPacketCallCount, fakeDecoy.OnPacketCallCount())
 		})
 	}
 }
