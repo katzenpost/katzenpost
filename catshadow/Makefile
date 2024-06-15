@@ -27,7 +27,7 @@ upgrade_test_recreate:
 	rm -fv testdata/alice_state testdata/bob_state
 	$(docker) run ${docker_args} $(image) \
 		sh -c 'cd /go/katzenpost/catshadow/; CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f GORACE=history_size=7 go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 0 -failfast -run Upgrade'
-	cd ../docker && make stop && cd ../catshadow && mv -v ../docker/voting_mixnet/servicenode1/memspool.storage testdata/alice_state testdata/bob_state testdata/
+	cd ../docker && make stop && cd ../catshadow && mv -v ../docker/voting_mixnet/servicenode1/memspool.storage testdata/alice_state testdata/bob_state testdata/$(test_version)/
 
 clean:
 	rm -fv testdata/alice_state testdata/bob_state testdata/mempool.storage
