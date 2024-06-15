@@ -29,7 +29,7 @@ upgrade_test_use_saved: testdata/$(test_version)/alice1_state testdata/$(test_ve
 		sh -c 'cd /go/katzenpost/catshadow/; CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f GORACE=history_size=7 go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 0 -failfast -run UpgradeResume_2'
 
 upgrade_test_recreate:
-	cd ../docker && make start wait
+	cd ../docker && make clean-local start wait
 	mkdir -p testdata/$(test_version)
 	$(docker) run ${docker_args} $(image) \
 		sh -c 'cd /go/katzenpost/catshadow/; CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f GORACE=history_size=7 go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 0 -failfast -run UpgradeCreate'
