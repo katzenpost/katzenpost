@@ -33,6 +33,56 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestUpgradeCreate(t *testing.T) {
+	// create 2 statefiles for a pair of contacts
+	alice = createCatshadowClientWithState(t, aliceStateFilePath)
+	bob = createCatshadowClientWithState(t, bobStateFilePath)
+
+	sharedSecret := []byte("wait for key exchange")
+	randBytes := [8]byte{}
+	_, err := rand.Reader.Read(randBytes[:])
+	require.NoError(err)
+	sharedSecret = append(sharedSecret, randBytes[:]...)
+
+	alice.NewContact("bob", sharedSecret)
+	bob.NewContact("alice", sharedSecret)
+
+	ctx, cancelFn := context.WithTimeout(context.Background(), time.Minute)
+	evt := waitForEvent(ctx,  alice.EventSink, &KeyExchangeCompletedEvent{})
+	cancelFn()
+	ev, ok := evt.(*KeyExchangeCompletedEvent)
+	require.True(ok)
+	require.NoError(ev.Err)
+
+	ctx, cancelFn = context.WithTimeout(context.Background(), time.Minute)
+	evt = waitForEvent(ctx, bob.EventSink, &KeyExchangeCompletedEvent{})
+	cancelFn()
+	ev, ok = evt.(*KeyExchangeCompletedEvent)
+	require.True(ok)
+	require.NoError(ev.Err)
+
+	// alice halts her client
+	alice.Shutdown()
+
+	// bob sends a message
+	bob.SendMessage("alice", []byte("blah"))
+	ctx, cancelFn = context.WithTimeout(context.Background(), time.Minute)
+	evt = waitForEvent(ctx, bob.EventSink, &MessageDeliveredEvent{})
+	cancelFn()
+	_, ok = evt.(*MessageDeliveredEvent)
+	require.True(ok)
+
+	// bob halts his client
+	bob.Shutdown()
+
+	// save the statefiles into testdata for using with later versions of catshadow
+	err = copyFile(aliceStateFilePath, "testdata/alice_state")
+	require.NoError(err)
+	err = copyFile(bobStateFilePath, "testdata/bob_state")
+	require.NoError(err)
+
+}
+
 func TestUpgradeResume(t *testing.T) {
 	t.Parallel()
 	require := require.New(t)
@@ -42,64 +92,13 @@ func TestUpgradeResume(t *testing.T) {
 	var alice, bob *Client
 	aliceStateFilePath := createRandomStateFile(t)
 	bobStateFilePath := createRandomStateFile(t)
-	_, aErr := os.Open("testdata/alice_state")
-	_, bErr := os.Open("testdata/bob_state")
 
-	if aErr == nil && bErr == nil {
-		// copy testdata state into the temporary statefile location
-		// because the client will mutate the statefile when started
-		err := copyFile("testdata/alice_state", aliceStateFilePath)
-		require.NoError(err)
-		err = copyFile("testdata/bob_state", bobStateFilePath)
-		require.NoError(err)
-	} else {
-		// create 2 statefiles for a pair of contacts
-		alice = createCatshadowClientWithState(t, aliceStateFilePath)
-		bob = createCatshadowClientWithState(t, bobStateFilePath)
-
-		sharedSecret := []byte("wait for key exchange")
-		randBytes := [8]byte{}
-		_, err := rand.Reader.Read(randBytes[:])
-		require.NoError(err)
-		sharedSecret = append(sharedSecret, randBytes[:]...)
-
-		alice.NewContact("bob", sharedSecret)
-		bob.NewContact("alice", sharedSecret)
-
-		ctx, cancelFn := context.WithTimeout(context.Background(), time.Minute)
-		evt := waitForEvent(ctx,  alice.EventSink, &KeyExchangeCompletedEvent{})
-		cancelFn()
-		ev, ok := evt.(*KeyExchangeCompletedEvent)
-		require.True(ok)
-		require.NoError(ev.Err)
-
-		ctx, cancelFn = context.WithTimeout(context.Background(), time.Minute)
-		evt = waitForEvent(ctx, bob.EventSink, &KeyExchangeCompletedEvent{})
-		cancelFn()
-		ev, ok = evt.(*KeyExchangeCompletedEvent)
-		require.True(ok)
-		require.NoError(ev.Err)
-
-		// alice halts her client
-		alice.Shutdown()
-
-		// bob sends a message
-		bob.SendMessage("alice", []byte("blah"))
-		ctx, cancelFn = context.WithTimeout(context.Background(), time.Minute)
-		evt = waitForEvent(ctx, bob.EventSink, &MessageDeliveredEvent{})
-		cancelFn()
-		_, ok = evt.(*MessageDeliveredEvent)
-		require.True(ok)
-
-		// bob halts his client
-		bob.Shutdown()
-
-		// save the statefiles into testdata for using with later versions of catshadow
-		err = copyFile(aliceStateFilePath, "testdata/alice_state")
-		require.NoError(err)
-		err = copyFile(bobStateFilePath, "testdata/bob_state")
-		require.NoError(err)
-	}
+	// copy testdata state into the temporary statefile location
+	// because the client will mutate the statefile when started
+	err := copyFile("testdata/alice_state", aliceStateFilePath)
+	require.NoError(err)
+	err = copyFile("testdata/bob_state", bobStateFilePath)
+	require.NoError(err)
 
 	// start bob
 	bob = reloadCatshadowState(t, bobStateFilePath)
