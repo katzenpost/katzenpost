@@ -87,7 +87,7 @@ func HandleSpoolRequest(spoolMap *MemSpoolMap, request *common.SpoolRequest, log
 		}
 		spoolResponse.Status = common.StatusOK
 	case common.AppendMessageCommand:
-		log.Debugf("append to spool, with spool ID: %d", request.SpoolID)
+		log.Debugf("append to spool, with spool ID: %x", request.SpoolID)
 		err := spoolMap.AppendToSpool(spoolID, request.Message)
 		spoolResponse.SpoolID = spoolID
 		if err != nil {
@@ -97,7 +97,7 @@ func HandleSpoolRequest(spoolMap *MemSpoolMap, request *common.SpoolRequest, log
 		}
 		spoolResponse.Status = common.StatusOK
 	case common.RetrieveMessageCommand:
-		log.Debugf("read from spool, with spool ID: %d", request.SpoolID)
+		log.Debugf("read from spool, with spool ID: %x", request.SpoolID)
 		message, err := spoolMap.ReadFromSpool(spoolID, request.Signature, request.MessageID)
 		spoolResponse.SpoolID = spoolID
 		spoolResponse.MessageID = request.MessageID
