@@ -28,7 +28,6 @@ import (
 	"testing"
 	"time"
 	"reflect"
-	"io/ioutil"
 
 	"github.com/katzenpost/katzenpost/client"
 	"github.com/katzenpost/katzenpost/client/config"

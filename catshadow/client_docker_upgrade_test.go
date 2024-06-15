@@ -29,7 +29,7 @@ import (
 
 	_ "net/http/pprof"
 
-	"github.com/katzenpost/hpqc/rand"
+	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/stretchr/testify/require"
 )
 
