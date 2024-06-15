@@ -127,7 +127,7 @@ wait: $(net_name)/running.stamp
 	#
 	tail -F $(net_name)/auth1/katzenpost.log |while read line; do \
         echo "$$line"; \
-        if echo "$$line"|grep -q Genesis; then \
+        if echo "$$line"|grep -qE '^\S+ \S+ GenesisEpoch: \S+'; then \
             while read a b c d; do \
                 echo "$$(date) Network has been running for $$(($$b - $$d)) epochs"; \
                 if [ $$(($$b - $$d)) -gt 1 ]; then \
