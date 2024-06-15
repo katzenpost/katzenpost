@@ -102,13 +102,13 @@ func TestUpgradeResume(t *testing.T) {
 	}
 
 	// start bob
-	bob = reloadCatshadowState(t, "testdata/bob_state")
+	bob = reloadCatshadowState(t, bobStateFilePath)
 
 	// bob writes to alice
 	bob.SendMessage("alice", []byte("blah"))
 
 	// start alice
-	alice = reloadCatshadowState(t, "testdata/alice_state")
+	alice = reloadCatshadowState(t, aliceStateFilePath)
 
 	// receive bob's message
 	ctx, cancelFn := context.WithTimeout(context.Background(), time.Minute)
