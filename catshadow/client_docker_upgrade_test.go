@@ -73,32 +73,54 @@ func TestUpgradeResume(t *testing.T) {
 		require.True(ok)
 		require.NoError(ev.Err)
 
-		// save the statefiles.
+		// alice halts her client
 		alice.Shutdown()
 
+		// bob sends a message
 		bob.SendMessage("alice", []byte("blah"))
 		ctx, cancelFn = context.WithTimeout(context.Background(), time.Minute)
 		evt = waitForEvent(ctx, bob.EventSink, &MessageDeliveredEvent{})
 		cancelFn()
 		_, ok = evt.(*MessageDeliveredEvent)
 		require.True(ok)
+
+		// bob halts his client
 		bob.Shutdown()
 
+		// save the statefiles
 		err = copyFile(aliceStateFilePath, "testdata/alice_state")
 		require.NoError(err)
 		err = copyFile(bobStateFilePath, "testdata/bob_state")
 		require.NoError(err)
 	}
+
+	// start alice
 	alice = reloadCatshadowState(t, "testdata/alice_state")
-	//bob = reloadCatshadowState(t, "testdata/bob_state")
 
-	bob.SendMessage("alice", []byte("blah"))
-
-	ctx, _ /*cancelFn*/ := context.WithTimeout(context.Background(), 2*time.Minute)
+	// receive bob's message
+	ctx, cancelFn := context.WithTimeout(context.Background(), time.Minute)
 	evt := waitForEvent(ctx,  alice.EventSink, &MessageReceivedEvent{})
+	cancelFn()
 	switch ev := evt.(type) {
 	case *MessageReceivedEvent:
 		require.Equal(ev.Nickname, "bob")
+	default:
+		t.Fail()
+	}
+
+	// alice writes to bob
+	alice.SendMessage("bob", []byte("blah"))
+
+	// start bob
+	bob = reloadCatshadowState(t, "testdata/bob_state")
+
+	// bob receives alice's message
+	ctx, cancelFn = context.WithTimeout(context.Background(), time.Minute)
+	evt = waitForEvent(ctx,  bob.EventSink, &MessageReceivedEvent{})
+	cancelFn()
+	switch ev := evt.(type) {
+	case *MessageReceivedEvent:
+		require.Equal(ev.Nickname, "alice")
 	default:
 		t.Fail()
 	}
