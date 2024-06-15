@@ -94,20 +94,14 @@ func createAliceAndBob(t *testing.T) (*Client, *Client, string, string) {
 }
 
 func TestUpgradeCreate_1(t *testing.T) {
-
+	t.Parallel()
 	require := require.New(t)
 
 	alice, bob, aliceStateFilePath, bobStateFilePath := createAliceAndBob(t)
 
-	sendMessage(t, alice, "bob", []byte("message 1 from alice"))
-	receiveMessage(t, bob, "alice", []byte("message 1 from alice"))
-
-	sendMessage(t, bob, "alice", []byte("message 1 from bob"))
-	receiveMessage(t, alice, "bob", []byte("message 1 from bob"))
-
 	alice.Shutdown()
 
-	sendMessage(t, bob, "alice", []byte("message 2 from bob"))
+	sendMessage(t, bob, "alice", []byte("message 1 from bob"))
 
 	bob.Shutdown()
 
@@ -139,6 +133,58 @@ func TestUpgradeResume_1(t *testing.T) {
 	// start alice
 	alice := reloadCatshadowState(t, aliceStateFilePath)
 
+	receiveMessage(t, alice, "bob", []byte("message 1 from bob"))
+
+	alice.Shutdown()
+	bob.Shutdown()
+}
+
+func TestUpgradeCreate_2(t *testing.T) {
+
+	require := require.New(t)
+
+	alice, bob, aliceStateFilePath, bobStateFilePath := createAliceAndBob(t)
+
+	sendMessage(t, alice, "bob", []byte("message 1 from alice"))
+	receiveMessage(t, bob, "alice", []byte("message 1 from alice"))
+
+	sendMessage(t, bob, "alice", []byte("message 1 from bob"))
+	receiveMessage(t, alice, "bob", []byte("message 1 from bob"))
+
+	alice.Shutdown()
+
+	sendMessage(t, bob, "alice", []byte("message 2 from bob"))
+
+	bob.Shutdown()
+
+	// save the statefiles into testdata for using with later versions of catshadow
+	err := copyFile(aliceStateFilePath, "testdata/alice2_state")
+	require.NoError(err)
+	err = copyFile(bobStateFilePath, "testdata/bob2_state")
+	require.NoError(err)
+
+}
+
+func TestUpgradeResume_2(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+
+	aliceStateFilePath := createRandomStateFile(t)
+	bobStateFilePath := createRandomStateFile(t)
+
+	// copy testdata state into the temporary statefile location
+	// because the client will mutate the statefile when started
+	err := copyFile("testdata/alice2_state", aliceStateFilePath)
+	require.NoError(err)
+	err = copyFile("testdata/bob2_state", bobStateFilePath)
+	require.NoError(err)
+
+	// start bob
+	bob := reloadCatshadowState(t, bobStateFilePath)
+
+	// start alice
+	alice := reloadCatshadowState(t, aliceStateFilePath)
+
 	receiveMessage(t, alice, "bob", []byte("message 2 from bob"))
 
 	sendMessage(t, alice, "bob", []byte("message 2 from alice"))
@@ -147,14 +193,6 @@ func TestUpgradeResume_1(t *testing.T) {
 	sendMessage(t, bob, "alice", []byte("message 3 from bob"))
 	receiveMessage(t, alice, "bob", []byte("message 3 from bob"))
 
-	// bob receives alice's message
-	ctx, cancelFn := context.WithTimeout(context.Background(), time.Minute)
-	evt := waitForEvent(ctx, bob.EventSink, &MessageReceivedEvent{})
-	cancelFn()
-	switch ev := evt.(type) {
-	case *MessageReceivedEvent:
-		require.Equal(ev.Nickname, "alice")
-	default:
-		t.Fail()
-	}
+	alice.Shutdown()
+	bob.Shutdown()
 }

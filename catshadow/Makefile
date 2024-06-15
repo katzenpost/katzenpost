@@ -16,12 +16,20 @@ dockerdockertest:
 		sh -c 'cd /go/katzenpost/catshadow/; CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f GORACE=history_size=7 go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 0 -failfast -run Docker'
 
 upgrade_test_use_saved: testdata/$(test_version)/alice1_state testdata/$(test_version)/bob1_state testdata/$(test_version)/memspool.storage
-	cd ../docker && make stop clean-local && mkdir -p voting_mixnet/servicenode1/ && cp -v ../catshadow/testdata/$(test_version)/memspool.storage voting_mixnet/servicenode1/ && make start wait
+	# we clean-local here because there is a bug where the network restarts and
+	# gets consensus but loses it in the next one, so the wait command lets the
+	# test run while consensus is lost.
+	cd ../docker && make stop clean-local && \
+		mkdir -p voting_mixnet/servicenode1/ && \
+		chmod 700 voting_mixnet/servicenode1/ && \
+		cp -v ../catshadow/testdata/$(test_version)/memspool.storage voting_mixnet/servicenode1/ && \
+		make start wait
 	cp -v testdata/$(test_version)/*state testdata/
 	$(docker) run ${docker_args} $(image) \
-		sh -c 'cd /go/katzenpost/catshadow/; CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f GORACE=history_size=7 go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 0 -failfast -run UpgradeResume'
+		sh -c 'cd /go/katzenpost/catshadow/; CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f GORACE=history_size=7 go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 0 -failfast -run UpgradeResume_2'
 
 upgrade_test_recreate:
+	cd ../docker && make start wait
 	mkdir -p testdata/$(test_version)
 	$(docker) run ${docker_args} $(image) \
 		sh -c 'cd /go/katzenpost/catshadow/; CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f GORACE=history_size=7 go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 0 -failfast -run UpgradeCreate'
