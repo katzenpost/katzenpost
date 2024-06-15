@@ -15,20 +15,19 @@ dockerdockertest:
 	$(docker) run ${docker_args} $(image) \
 		sh -c 'cd /go/katzenpost/catshadow/; CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f GORACE=history_size=7 go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 0 -failfast -run Docker'
 
-testdata/alice_state:
-	cp -v testdata/$(test_version)/alice_state testdata/alice_state
-testdata/bob_state:
+upgrade_test_use_saved: testdata/$(test_version)/alice_state testdata/$(test_version)/bob_state testdata/$(test_version)/memspool.storage
 	cp -v testdata/$(test_version)/bob_state testdata/bob_state
-testdata/memspool.storage:
-	cp -v testdata/$(test_version)/memspool.storage testdata/memspool.storage
-
-testdata.stamp: testdata/alice_state testdata/bob_state testdata/memspool.storage
-	cd ../docker && make stop && cp -v ../catshadow/testdata/memspool.storage voting_mixnet/servicenode1/ && make start wait
-	touch testdata.stamp
-
-upgrade_test: testdata.stamp
+	cp -v testdata/$(test_version)/alice_state testdata/alice_state
+	cd ../docker && make stop && cp -v ../catshadow/testdata/$(test_version)/memspool.storage voting_mixnet/servicenode1/ && make start wait
 	$(docker) run ${docker_args} $(image) \
 		sh -c 'cd /go/katzenpost/catshadow/; CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f GORACE=history_size=7 go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 0 -failfast -run Upgrade'
+	rm -fv testdata/mempool.storage
+
+upgrade_test_recreate:
+	rm -fv testdata/alice_state testdata/bob_state
+	$(docker) run ${docker_args} $(image) \
+		sh -c 'cd /go/katzenpost/catshadow/; CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f GORACE=history_size=7 go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 0 -failfast -run Upgrade'
+	cd ../docker && make stop && cd ../catshadow && mv -v ../docker/voting_mixnet/servicenode1/memspool.storage testdata/alice_state testdata/bob_state testdata/
 
 clean:
-	rm -fv testdata/alice_state testdata/bob_state testdata/memspool.storage testdata.stamp
+	rm -fv testdata/alice_state testdata/bob_state testdata/mempool.storage
