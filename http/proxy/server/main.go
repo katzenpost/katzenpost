@@ -40,16 +40,18 @@ import (
 type proxy struct {
 	allowedHost map[string]struct{}
 	log         *logging.Logger
+
+	write func(cborplugin.Command)
 }
 
-func (p proxy) OnCommand(cmd cborplugin.Command) (cborplugin.Command, error) {
+func (p proxy) OnCommand(cmd cborplugin.Command) error {
 	switch r := cmd.(type) {
 	case *cborplugin.Request:
 		// deserialize the HTTP/1.1 wire-format request from the kaetzchen payload
 		req, err := http.ReadRequest(bufio.NewReader(bytes.NewBuffer(r.Payload)))
 		if err != nil {
 			p.log.Errorf("http.ReadRequest: %s", err)
-			return nil, err
+			return err
 		}
 		p.log.Debugf("got request for %s", req.URL)
 		// make the request
@@ -57,7 +59,7 @@ func (p proxy) OnCommand(cmd cborplugin.Command) (cborplugin.Command, error) {
 			if _, ok := p.allowedHost["*"]; !ok {
 				// ignore request or send a http.Response
 				p.log.Errorf("invalid AllowedHost: %s", req.Host)
-				return nil, errors.New("requested host invalid")
+				return errors.New("requested host invalid")
 			}
 		}
 		p.log.Debugf("doing round trip with %s", req.URL)
@@ -65,12 +67,12 @@ func (p proxy) OnCommand(cmd cborplugin.Command) (cborplugin.Command, error) {
 		if err != nil {
 			p.log.Errorf("http.Request: %v", req)
 			p.log.Errorf("DefaultTransport: %s", err)
-			return nil, err
+			return err
 		}
 		p.log.Debugf("writing raw response")
 		rawResp, err := httputil.DumpResponse(resp, true)
 		if err != nil {
-			return nil, err
+			return err
 		}
 
 		/*
@@ -83,13 +85,14 @@ func (p proxy) OnCommand(cmd cborplugin.Command) (cborplugin.Command, error) {
 		cr := &common.Response{Payload: rawResp}
 		serialized, err := cbor.Marshal(cr)
 		if err != nil {
-			return nil, err
+			return err
 		}
 
-		return &cborplugin.Response{Payload: serialized}, nil
+		p.write(&cborplugin.Response{ID: r.ID, SURB: r.SURB, Payload: serialized})
+		return nil
 	default:
 		p.log.Errorf("OnCommand called with unknown Command type")
-		return nil, errors.New("invalid command type")
+		return errors.New("invalid command type")
 	}
 }
 
@@ -140,6 +143,7 @@ func main() {
 	os.Remove(socketFile)
 }
 
-func (p proxy) RegisterConsumer(svr *cborplugin.Server) {
+func (p *proxy) RegisterConsumer(svr *cborplugin.Server) {
 	p.log.Debugf("RegisterConsumer called")
+	p.write = svr.Write
 }
