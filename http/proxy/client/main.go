@@ -105,7 +105,7 @@ func (k *kttp) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// decode payload from response
 	proxyResponse := &common.Response{}
-	err = cbor.Unmarshal(response, proxyResponse)
+	_, err = cbor.UnmarshalFirst(response, proxyResponse)
 	if err != nil {
 		// send http error response
 		k.log.Errorf("Err unmarshalling kaetzchen response: %v", err)
