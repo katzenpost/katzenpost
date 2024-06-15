@@ -108,7 +108,7 @@ func (s *katzenpost) genClientCfg() error {
 	cfg.VotingAuthority = &cConfig.VotingAuthority{Peers: peers}
 
 	// Debug section
-	cfg.Debug = &cConfig.Debug{DisableDecoyTraffic: false}
+	cfg.Debug = &cConfig.Debug{DisableDecoyTraffic: true}
 	err := saveCfg(cfg, s.outDir)
 	if err != nil {
 		return err
@@ -130,7 +130,7 @@ func (s *katzenpost) genNodeConfig(isProvider bool, isVoting bool) error {
 
 	n := fmt.Sprintf("mix%d", s.nodeIdx+1)
 	if isProvider {
-		n = fmt.Sprintf("provider%d", s.providerIdx+1)
+		n = fmt.Sprintf("servicenode%d", s.providerIdx+1)
 	}
 	cfg := new(sConfig.Config)
 
@@ -151,7 +151,7 @@ func (s *katzenpost) genNodeConfig(isProvider bool, isVoting bool) error {
 
 	// Debug section.
 	cfg.Debug = new(sConfig.Debug)
-	cfg.Debug.SendDecoyTraffic = true
+	cfg.Debug.SendDecoyTraffic = false
 
 	// PKI section.
 	if isVoting {
