@@ -59,14 +59,16 @@ func TestUpgradeResume(t *testing.T) {
 		alice.NewContact("bob", sharedSecret)
 		bob.NewContact("alice", sharedSecret)
 
-		ctx, _ /*cancelFn*/ := context.WithTimeout(context.Background(), time.Minute)
+		ctx, cancelFn := context.WithTimeout(context.Background(), time.Minute)
 		evt := waitForEvent(ctx,  alice.EventSink, &KeyExchangeCompletedEvent{})
+		cancelFn()
 		ev, ok := evt.(*KeyExchangeCompletedEvent)
 		require.True(ok)
 		require.NoError(ev.Err)
 
-		ctx, _ /*cancelFn*/ = context.WithTimeout(context.Background(), time.Minute)
+		ctx, cancelFn = context.WithTimeout(context.Background(), time.Minute)
 		evt = waitForEvent(ctx, bob.EventSink, &KeyExchangeCompletedEvent{})
+		cancelFn()
 		ev, ok = evt.(*KeyExchangeCompletedEvent)
 		require.True(ok)
 		require.NoError(ev.Err)
