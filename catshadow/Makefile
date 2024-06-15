@@ -15,20 +15,17 @@ dockerdockertest:
 	$(docker) run ${docker_args} $(image) \
 		sh -c 'cd /go/katzenpost/catshadow/; GORACE=history_size=7 go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 0 -failfast -run Docker'
 
-upgrade_test_use_saved: testdata/$(test_version)/alice_state testdata/$(test_version)/bob_state testdata/$(test_version)/memspool.storage
-	cd ../docker && make stop && cp -v ../catshadow/testdata/$(test_version)/memspool.storage voting_mixnet/servicenode1/ && make start wait
-	cp -v testdata/$(test_version)/bob_state testdata/bob_state
-	cp -v testdata/$(test_version)/alice_state testdata/alice_state
+upgrade_test_use_saved: testdata/$(test_version)/alice1_state testdata/$(test_version)/bob1_state testdata/$(test_version)/memspool.storage
+	cd ../docker && make stop clean-local && mkdir -p voting_mixnet/servicenode1/ && cp -v ../catshadow/testdata/$(test_version)/memspool.storage voting_mixnet/servicenode1/ && make start wait
+	cp -v testdata/$(test_version)/*state testdata/
 	$(docker) run ${docker_args} $(image) \
 		sh -c 'cd /go/katzenpost/catshadow/; GORACE=history_size=7 go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 0 -failfast -run UpgradeResume'
 
 upgrade_test_recreate:
-	cd ../docker && make start wait
-	rm -fv testdata/alice_state testdata/bob_state
 	mkdir -p testdata/$(test_version)
 	$(docker) run ${docker_args} $(image) \
 		sh -c 'cd /go/katzenpost/catshadow/; GORACE=history_size=7 go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 0 -failfast -run UpgradeCreate'
-	cd ../docker && make stop && cd ../catshadow && mv -v ../docker/voting_mixnet/servicenode1/memspool.storage testdata/alice_state testdata/bob_state testdata/$(test_version)/
+	cd ../docker && make stop && cd ../catshadow && mv -v ../docker/voting_mixnet/servicenode1/memspool.storage testdata/*state testdata/$(test_version)/
 
 clean:
-	rm -fv testdata/alice_state testdata/bob_state testdata/mempool.storage
+	rm -fv testdata/*state testdata/*.storage

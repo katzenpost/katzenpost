@@ -32,7 +32,32 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestUpgradeCreate(t *testing.T) {
+func sendMessage(t *testing.T, sender *Client, recipient string, message []byte) {
+	require := require.New(t)
+	sender.SendMessage(recipient, message)
+	ctx, cancelFn := context.WithTimeout(context.Background(), time.Minute)
+	evt := waitForEvent(ctx, sender.EventSink, &MessageDeliveredEvent{})
+	cancelFn()
+	_, ok := evt.(*MessageDeliveredEvent)
+	require.True(ok)
+
+}
+
+func receiveMessage(t *testing.T, receiver *Client, sender string, message []byte) {
+	require := require.New(t)
+	ctx, cancelFn := context.WithTimeout(context.Background(), time.Minute)
+	evt := waitForEvent(ctx, receiver.EventSink, &MessageReceivedEvent{})
+	cancelFn()
+	switch ev := evt.(type) {
+	case *MessageReceivedEvent:
+		require.Equal(ev.Nickname, sender)
+		require.Equal(ev.Message, message)
+	default:
+		t.Fail()
+	}
+}
+
+func createAliceAndBob(t *testing.T) (*Client, *Client, string, string) {
 	require := require.New(t)
 
 	aliceStateFilePath := createRandomStateFile(t)
@@ -52,7 +77,7 @@ func TestUpgradeCreate(t *testing.T) {
 	bob.NewContact("alice", sharedSecret)
 
 	ctx, cancelFn := context.WithTimeout(context.Background(), time.Minute)
-	evt := waitForEvent(ctx,  alice.EventSink, &KeyExchangeCompletedEvent{})
+	evt := waitForEvent(ctx, alice.EventSink, &KeyExchangeCompletedEvent{})
 	cancelFn()
 	ev, ok := evt.(*KeyExchangeCompletedEvent)
 	require.True(ok)
@@ -65,29 +90,36 @@ func TestUpgradeCreate(t *testing.T) {
 	require.True(ok)
 	require.NoError(ev.Err)
 
-	// alice halts her client
+	return alice, bob, aliceStateFilePath, bobStateFilePath
+}
+
+func TestUpgradeCreate_1(t *testing.T) {
+
+	require := require.New(t)
+
+	alice, bob, aliceStateFilePath, bobStateFilePath := createAliceAndBob(t)
+
+	sendMessage(t, alice, "bob", []byte("message 1 from alice"))
+	receiveMessage(t, bob, "alice", []byte("message 1 from alice"))
+
+	sendMessage(t, bob, "alice", []byte("message 1 from bob"))
+	receiveMessage(t, alice, "bob", []byte("message 1 from bob"))
+
 	alice.Shutdown()
 
-	// bob sends a message
-	bob.SendMessage("alice", []byte("blah"))
-	ctx, cancelFn = context.WithTimeout(context.Background(), time.Minute)
-	evt = waitForEvent(ctx, bob.EventSink, &MessageDeliveredEvent{})
-	cancelFn()
-	_, ok = evt.(*MessageDeliveredEvent)
-	require.True(ok)
+	sendMessage(t, bob, "alice", []byte("message 2 from bob"))
 
-	// bob halts his client
 	bob.Shutdown()
 
 	// save the statefiles into testdata for using with later versions of catshadow
-	err = copyFile(aliceStateFilePath, "testdata/alice_state")
+	err := copyFile(aliceStateFilePath, "testdata/alice1_state")
 	require.NoError(err)
-	err = copyFile(bobStateFilePath, "testdata/bob_state")
+	err = copyFile(bobStateFilePath, "testdata/bob1_state")
 	require.NoError(err)
 
 }
 
-func TestUpgradeResume(t *testing.T) {
+func TestUpgradeResume_1(t *testing.T) {
 	t.Parallel()
 	require := require.New(t)
 
@@ -96,37 +128,28 @@ func TestUpgradeResume(t *testing.T) {
 
 	// copy testdata state into the temporary statefile location
 	// because the client will mutate the statefile when started
-	err := copyFile("testdata/alice_state", aliceStateFilePath)
+	err := copyFile("testdata/alice1_state", aliceStateFilePath)
 	require.NoError(err)
-	err = copyFile("testdata/bob_state", bobStateFilePath)
+	err = copyFile("testdata/bob1_state", bobStateFilePath)
 	require.NoError(err)
 
 	// start bob
 	bob := reloadCatshadowState(t, bobStateFilePath)
 
-	// bob writes to alice
-	bob.SendMessage("alice", []byte("blah"))
-
 	// start alice
 	alice := reloadCatshadowState(t, aliceStateFilePath)
 
-	// receive bob's message
-	ctx, cancelFn := context.WithTimeout(context.Background(), time.Minute)
-	evt := waitForEvent(ctx,  alice.EventSink, &MessageReceivedEvent{})
-	cancelFn()
-	switch ev := evt.(type) {
-	case *MessageReceivedEvent:
-		require.Equal(ev.Nickname, "bob")
-	default:
-		t.Fail()
-	}
+	receiveMessage(t, alice, "bob", []byte("message 2 from bob"))
 
-	// alice writes to bob
-	alice.SendMessage("bob", []byte("blah"))
+	sendMessage(t, alice, "bob", []byte("message 2 from alice"))
+	receiveMessage(t, bob, "alice", []byte("message 2 from alice"))
+
+	sendMessage(t, bob, "alice", []byte("message 3 from bob"))
+	receiveMessage(t, alice, "bob", []byte("message 3 from bob"))
 
 	// bob receives alice's message
-	ctx, cancelFn = context.WithTimeout(context.Background(), time.Minute)
-	evt = waitForEvent(ctx,  bob.EventSink, &MessageReceivedEvent{})
+	ctx, cancelFn := context.WithTimeout(context.Background(), time.Minute)
+	evt := waitForEvent(ctx, bob.EventSink, &MessageReceivedEvent{})
 	cancelFn()
 	switch ev := evt.(type) {
 	case *MessageReceivedEvent:
