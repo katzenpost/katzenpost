@@ -40,14 +40,21 @@ func TestUpgradeResume(t *testing.T) {
 	// if testdata/alice_state exists, load it, otherwise, create it
 	// if testdata/bob_state exists, load it, otherwise, create it
 	var alice, bob *Client
+	aliceStateFilePath := createRandomStateFile(t)
+	bobStateFilePath := createRandomStateFile(t)
 	_, aErr := os.Open("testdata/alice_state")
 	_, bErr := os.Open("testdata/bob_state")
+
 	if aErr == nil && bErr == nil {
+		// copy testdata state into the temporary statefile location
+		// because the client will mutate the statefile when started
+		err := copyFile("testdata/alice_state", aliceStateFilePath)
+		require.NoError(err)
+		err = copyFile("testdata/bob_state", bobStateFilePath)
+		require.NoError(err)
 	} else {
 		// create 2 statefiles for a pair of contacts
-		aliceStateFilePath := createRandomStateFile(t)
 		alice = createCatshadowClientWithState(t, aliceStateFilePath)
-		bobStateFilePath := createRandomStateFile(t)
 		bob = createCatshadowClientWithState(t, bobStateFilePath)
 
 		sharedSecret := []byte("wait for key exchange")
@@ -87,7 +94,7 @@ func TestUpgradeResume(t *testing.T) {
 		// bob halts his client
 		bob.Shutdown()
 
-		// save the statefiles
+		// save the statefiles into testdata for using with later versions of catshadow
 		err = copyFile(aliceStateFilePath, "testdata/alice_state")
 		require.NoError(err)
 		err = copyFile(bobStateFilePath, "testdata/bob_state")
