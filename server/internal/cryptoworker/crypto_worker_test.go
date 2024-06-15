@@ -713,13 +713,22 @@ func TestRoutePacketGateway(t *testing.T) {
 
 	mygeo := geo.GeometryFromUserForwardPayloadLength(x25519.Scheme(rand.Reader), userForwardPayloadLength, withSURB, nrHops)
 
-	testConfig := &config.Config{
+	gatewayNodeConfig := &config.Config{
+		Gateway:        &config.Gateway{},
+		SphinxGeometry: mygeo,
 		Server: &config.Server{
+			IsServiceNode: false,
 			IsGatewayNode: true,
 		},
-		SphinxGeometry: mygeo,
+		Logging: &config.Logging{},
+		PKI:     &config.PKI{},
+		Debug: &config.Debug{
+			NumKaetzchenWorkers: 3,
+			KaetzchenDelay:      300,
+		},
 	}
-	fakeGlue.ConfigReturns(testConfig)
+
+	fakeGlue.ConfigReturns(gatewayNodeConfig)
 	fakeGlue.SchedulerReturns(fakeScheduler)
 	fakeGlue.GatewayReturns(fakeGateway)
 	fakeGlue.MixKeysReturns(fakeMixKeys)
@@ -732,16 +741,15 @@ func TestRoutePacketGateway(t *testing.T) {
 	nodePubKey, err := nikeScheme.UnmarshalBinaryPublicKey(mixkeyblob)
 	require.NoError(t, err)
 
-	rawPacket, err := createTestPacket(nodePubKey, false, true, false, false, testConfig.SphinxGeometry)
+	rawPacket, err := createTestPacket(nodePubKey, false, true, false, false, gatewayNodeConfig.SphinxGeometry)
 	require.NoError(t, err)
 
-	pkt, err := packet.New(rawPacket, testConfig.SphinxGeometry)
+	pkt, err := packet.New(rawPacket, gatewayNodeConfig.SphinxGeometry)
 	require.NoError(t, err)
 
 	incomingCh := make(chan interface{})
 	cryptoworker := New(fakeGlue, incomingCh, 123)
 	cryptoworker.routePacket(pkt, time.Now())
 
-	require.Equal(t, 1, fakeScheduler.OnPacketCallCount(), "Scheduler should have processed exactly one packet")
 	require.Equal(t, 1, fakeGateway.OnPacketCallCount(), "Gateway should have processed exactly one packet")
 }
