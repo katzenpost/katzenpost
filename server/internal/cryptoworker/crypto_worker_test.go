@@ -4,15 +4,15 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
-	"github.com/katzenpost/katzenpost/server/internal/glue/gluefakes"
-	"github.com/stretchr/testify/assert"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/katzenpost/hpqc/nike"
 	"github.com/katzenpost/hpqc/nike/schemes"
 	"github.com/katzenpost/hpqc/nike/x25519"
-	"github.com/stretchr/testify/require"
 
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/sphinx"
@@ -20,6 +20,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/server/config"
+	"github.com/katzenpost/katzenpost/server/internal/glue/gluefakes"
 	"github.com/katzenpost/katzenpost/server/internal/packet"
 )
 
