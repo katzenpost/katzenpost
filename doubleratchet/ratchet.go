@@ -26,6 +26,7 @@ import (
 
 	"github.com/katzenpost/hpqc/nike"
 	"github.com/katzenpost/hpqc/nike/hybrid"
+	"github.com/katzenpost/hpqc/util"
 
 	"github.com/katzenpost/katzenpost/doubleratchet/utils"
 )
@@ -211,9 +212,19 @@ func (s *state) Upgrade(scheme *hybrid.Scheme) error {
 		return err
 	}
 
-	hybridRecvPublic := scheme.PublicKeyFromKeys(x25519RecvPublic, csidhRecvPublic)
+	if util.CtIsZero(x25519RecvPublic.Bytes()) {
+		panic("x25519RecvPublic is all zeros")
+	}
+	if util.CtIsZero(csidhRecvPublic.Bytes()) {
+		panic("csidhRecvPublic is all zeros")
+	}
 
+	hybridRecvPublic := scheme.PublicKeyFromKeys(x25519RecvPublic, csidhRecvPublic)
 	s.RecvRatchetPublic = hybridRecvPublic.Bytes()
+
+	if util.CtIsZero(s.RecvRatchetPublic) {
+		panic("hybridRecvPublic is all zeros")
+	}
 
 	utils.ExplicitBzero(s.SendPQRatchetPrivate)
 	utils.ExplicitBzero(s.RecvPQRatchetPublic)
