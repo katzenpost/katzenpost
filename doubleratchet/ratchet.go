@@ -208,13 +208,6 @@ func (s *state) Upgrade(scheme *hybrid.Scheme) error {
 
 	s.SendRatchetPrivate = hybridSendPrivate.Bytes()
 
-	if util.CtIsZero(s.RecvRatchetPublic) {
-		panic("RecvRatchetPublic is all zeros")
-	}
-	if util.CtIsZero(s.RecvPQRatchetPublic) {
-		panic("RecvPQRatchetPublic is all zeros")
-	}
-
 	x25519RecvPublic, err := scheme.First().UnmarshalBinaryPublicKey(s.RecvRatchetPublic)
 	if err != nil {
 		return err
