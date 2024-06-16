@@ -76,6 +76,7 @@ type katzenpost struct {
 	gatewayIdx     int
 	serviceNodeIdx int
 	hasPanda       bool
+	hasProxy       bool
 }
 
 type AuthById []*vConfig.Authority
@@ -246,6 +247,24 @@ func (s *katzenpost) genNodeConfig(isGateway, isServiceNode bool, isVoting bool)
 				}
 				cfg.ServiceNode.CBORPluginKaetzchen = append(cfg.ServiceNode.CBORPluginKaetzchen, pandaCfg)
 				s.hasPanda = true
+			}
+
+			// Add a single instance of a http proxy for a service listening on port 4242
+			if !s.hasProxy {
+				proxyCfg := &sConfig.CBORPluginKaetzchen{
+					Capability:     "http",
+					Endpoint:       "+http",
+					Command:        s.baseDir + "/proxy_server" + s.binSuffix,
+					MaxConcurrency: 1,
+					Config: map[string]interface{}{
+						// allow connections to localhost:4242
+						"host":      "localhost:4242",
+						"log_dir":   s.baseDir + "/" + cfg.Server.Identifier,
+						"log_level": "DEBUG",
+					},
+				}
+				cfg.ServiceNode.CBORPluginKaetzchen = append(cfg.ServiceNode.CBORPluginKaetzchen, proxyCfg)
+				s.hasProxy = true
 			}
 			cfg.Debug.NumKaetzchenWorkers = 4
 		}
