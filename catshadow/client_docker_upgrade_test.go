@@ -44,7 +44,7 @@ func sendMessage(n int, t *testing.T, sender *Client, recipient string, message 
 	sender.log.Infof("Test %d gpt DeliveredEvent for essage '%s' to %s", n, string(message), recipient)
 }
 
-func receiveMessage(1, n int, t *testing.T, receiver *Client, sender string, message []byte) {
+func receiveMessage(n int, t *testing.T, receiver *Client, sender string, message []byte) {
 	require := require.New(t)
 	ctx, cancelFn := context.WithTimeout(context.Background(), time.Minute)
 	receiver.log.Infof("Test %d waiting for message '%s' from %s", n, string(message), sender)
