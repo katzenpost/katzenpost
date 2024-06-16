@@ -17,7 +17,7 @@ import (
 
 //var nikeScheme = ecdh.Scheme(rand.Reader)
 
-var nikeScheme = hybrid.CTIDH1024X25519
+var nikeScheme = hybrid.NOBS_CSIDH512X25519
 
 func pairedRatchet(t *testing.T) (aRatchet, bRatchet *Ratchet) {
 	var err error
