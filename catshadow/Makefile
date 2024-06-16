@@ -21,9 +21,9 @@ upgrade_test_use_saved:
 	# test run while consensus is lost.
 	cd ../docker && make wait && cd ../catshadow && \
 	cp -v testdata/$(test_version)/*state testdata/ && \
-		echo STOP_KAETZCHEN spool|socat - unix:../docker/voting_mixnet/servicenode1.sock && \
+		echo STOP_KAETZCHEN spool|socat - unix:../docker/voting_mixnet/servicenode1/management_sock && \
 		cp -v testdata/$(test_version)/memspool.storage ../docker/voting_mixnet/servicenode1/ && \
-		echo START_KAETZCHEN spool|socat - unix:../docker/voting_mixnet/servicenode1.sock && \
+		echo START_KAETZCHEN spool|socat - unix:../docker/voting_mixnet/servicenode1/management_sock && \
 	$(docker) run ${docker_args} $(image) \
 		sh -c 'cd /go/katzenpost/catshadow/; GORACE=history_size=7 go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 0 -failfast -run UpgradeResume_2'
 	$(docker) run ${docker_args} $(image) \
@@ -31,15 +31,15 @@ upgrade_test_use_saved:
 
 upgrade_test_recreate:
 	cd ../docker && make wait && \
-	echo STOP_KAETZCHEN spool|socat - unix:../docker/voting_mixnet/servicenode1.sock && \
+	echo STOP_KAETZCHEN spool|socat - unix:../docker/voting_mixnet/servicenode1/management_sock && \
 	rm -fv ../docker/voting_mixnet/servicenode1/memspool.storage && \
-	echo START_KAETZCHEN spool|socat - unix:../docker/voting_mixnet/servicenode1.sock && \
+	echo START_KAETZCHEN spool|socat - unix:../docker/voting_mixnet/servicenode1/management_sock && \
 	$(docker) run ${docker_args} $(image) \
 		sh -c 'cd /go/katzenpost/catshadow/; GORACE=history_size=7 go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 0 -failfast -run UpgradeCreate'
-	echo STOP_KAETZCHEN spool|socat - unix:../docker/voting_mixnet/servicenode1.sock && \
+	echo STOP_KAETZCHEN spool|socat - unix:../docker/voting_mixnet/servicenode1/management_sock && \
 	cp -v ../docker/voting_mixnet/servicenode1/memspool.storage \
           testdata/*state testdata/$(test_version)/ && \
-	echo START_KAETZCHEN spool|socat - unix:../docker/voting_mixnet/servicenode1.sock
+	echo START_KAETZCHEN spool|socat - unix:../docker/voting_mixnet/servicenode1/management_sock
 
 clean:
 	rm -fv testdata/*state testdata/*.storage
