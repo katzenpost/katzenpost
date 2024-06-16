@@ -19,7 +19,7 @@ upgrade_test_use_saved:
 	# we clean-local here because there is a bug where the network restarts and
 	# gets consensus but loses it in the next one, so the wait command lets the
 	# test run while consensus is lost.
-	cd ../docker && make wait && \
+	cd ../docker && make wait && cd ../catshadow && \
 	cp -v testdata/$(test_version)/*state testdata/ && \
 		echo STOP_KAETZCHEN spool|socat - unix:../docker/voting_mixnet/servicenode1.sock && \
 		cp -v testdata/$(test_version)/memspool.storage ../docker/voting_mixnet/servicenode1/ && \
