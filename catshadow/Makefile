@@ -36,7 +36,10 @@ upgrade_test_recreate:
 	echo START_KAETZCHEN spool|socat - unix:../docker/voting_mixnet/servicenode1.sock && \
 	$(docker) run ${docker_args} $(image) \
 		sh -c 'cd /go/katzenpost/catshadow/; GORACE=history_size=7 go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 0 -failfast -run UpgradeCreate'
-	cd ../docker && make stop && cd ../catshadow && mv -v ../docker/voting_mixnet/servicenode1/memspool.storage testdata/*state testdata/$(test_version)/
+	echo STOP_KAETZCHEN spool|socat - unix:../docker/voting_mixnet/servicenode1.sock && \
+	cp -v ../docker/voting_mixnet/servicenode1/memspool.storage \
+          testdata/*state testdata/$(test_version)/ && \
+	echo START_KAETZCHEN spool|socat - unix:../docker/voting_mixnet/servicenode1.sock
 
 clean:
 	rm -fv testdata/*state testdata/*.storage
