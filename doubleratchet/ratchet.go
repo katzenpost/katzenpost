@@ -13,7 +13,9 @@ import (
 	"bytes"
 	"crypto/hmac"
 	"encoding/binary"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"hash"
 	"io"
 	"time"
@@ -125,6 +127,8 @@ func (s *savedKeys) UnmarshalBinary(data []byte) error {
 	if err != nil {
 		return err
 	}
+	b, _ := json.MarshalIndent(tmp, "", " ")
+	fmt.Printf("Unmarshaled ratchet:\n%s", b)
 	if len(tmp.HeaderKey) == keySize {
 		s.HeaderKey = memguard.NewBufferFromBytes(tmp.HeaderKey)
 		for _, m := range tmp.MessageKeys {
