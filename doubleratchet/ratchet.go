@@ -961,6 +961,9 @@ func (r *Ratchet) marshal(now time.Time, lifetime time.Duration) (*state, error)
 			MessageKeys: keys,
 		})
 	}
+	b_r, _ := json.MarshalIndent(r, "", " ")
+	b_s, _ := json.MarshalIndent(s, "", " ")
+	fmt.Printf("Marshaling r:\n%s\b.......into s:\n%s\n", b_r, b_s)
 
 	return s, nil
 }
