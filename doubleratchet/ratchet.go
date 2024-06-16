@@ -128,7 +128,7 @@ func (s *savedKeys) UnmarshalBinary(data []byte) error {
 		return err
 	}
 	b, _ := json.MarshalIndent(tmp, "", " ")
-	fmt.Printf("Unmarshaled ratchet:\n%s", b)
+	fmt.Printf("Unmarshaled ratchet in UnmarshalBinary:\n%s", b)
 	if len(tmp.HeaderKey) == keySize {
 		s.HeaderKey = memguard.NewBufferFromBytes(tmp.HeaderKey)
 		for _, m := range tmp.MessageKeys {
@@ -236,6 +236,8 @@ func NewRatchetFromBytes(rand io.Reader, data []byte) (*Ratchet, error) {
 	if err := cbor.Unmarshal(data, &state); err != nil {
 		return nil, err
 	}
+	b, _ := json.MarshalIndent(state, "", " ")
+	fmt.Printf("Unmarshaled ratchet in NewRatchetFromBytes:\n%s", b)
 	return newRatchetFromState(rand, &state)
 }
 
