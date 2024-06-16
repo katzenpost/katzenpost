@@ -101,6 +101,8 @@ func TestUpgradeCreate_1(t *testing.T) {
 
 	alice.Shutdown()
 
+	<-time.After(10 * time.Second)
+
 	sendMessage(t, bob, "alice", []byte("message 1 from bob"))
 
 	bob.Shutdown()
@@ -130,10 +132,18 @@ func TestUpgradeResume_1(t *testing.T) {
 	// start bob
 	bob := reloadCatshadowState(t, bobStateFilePath)
 
+	// bob writes to alice
+	sendMessage(t, bob, "alice", []byte("message 2 from bob"))
+
 	// start alice
 	alice := reloadCatshadowState(t, aliceStateFilePath)
 
 	receiveMessage(t, alice, "bob", []byte("message 1 from bob"))
+//	receiveMessage(t, alice, "bob", []byte("message 2 from bob"))
+
+//	sendMessage(t, alice, "bob", []byte("message 1 from alice"))
+
+//	receiveMessage(t, bob, "alice", []byte("message 1 from alice"))
 
 	alice.Shutdown()
 	bob.Shutdown()
