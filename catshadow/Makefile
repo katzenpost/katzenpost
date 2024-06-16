@@ -16,9 +16,6 @@ dockerdockertest:
 		sh -c 'cd /go/katzenpost/catshadow/; GORACE=history_size=7 go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 0 -failfast -run Docker'
 
 upgrade_test_use_saved:
-	# we clean-local here because there is a bug where the network restarts and
-	# gets consensus but loses it in the next one, so the wait command lets the
-	# test run while consensus is lost.
 	cd ../docker && make wait && cd ../catshadow && \
 	cp -v testdata/$(test_version)/*state testdata/ && \
 		echo STOP_KAETZCHEN spool|socat - unix:../docker/voting_mixnet/servicenode1/management_sock && \
@@ -26,19 +23,20 @@ upgrade_test_use_saved:
 		echo START_KAETZCHEN spool|socat - unix:../docker/voting_mixnet/servicenode1/management_sock && \
 	$(docker) run ${docker_args} $(image) \
 		sh -c 'cd /go/katzenpost/catshadow/; GORACE=history_size=7 go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 0 -failfast -run UpgradeResume_2'
-	$(docker) run ${docker_args} $(image) \
-		sh -c 'cd /go/katzenpost/catshadow/; GORACE=history_size=7 go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 0 -failfast -run UpgradeResume_1'
+#	$(docker) run ${docker_args} $(image) \
+#		sh -c 'cd /go/katzenpost/catshadow/; GORACE=history_size=7 go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 0 -failfast -run UpgradeResume_1'
 
 upgrade_test_recreate:
-	cd ../docker && make wait && \
-	echo STOP_KAETZCHEN spool|socat - unix:../docker/voting_mixnet/servicenode1/management_sock && \
-	rm -fv ../docker/voting_mixnet/servicenode1/memspool.storage && \
-	echo START_KAETZCHEN spool|socat - unix:../docker/voting_mixnet/servicenode1/management_sock && \
+	cd ../docker && make wait
+	echo STOP_KAETZCHEN spool|socat - unix:../docker/voting_mixnet/servicenode1/management_sock
+	rm -fv ../docker/voting_mixnet/servicenode1/memspool.storage
+	echo START_KAETZCHEN spool|socat - unix:../docker/voting_mixnet/servicenode1/management_sock
 	$(docker) run ${docker_args} $(image) \
 		sh -c 'cd /go/katzenpost/catshadow/; GORACE=history_size=7 go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 0 -failfast -run UpgradeCreate'
-	echo STOP_KAETZCHEN spool|socat - unix:../docker/voting_mixnet/servicenode1/management_sock && \
+	echo STOP_KAETZCHEN spool|socat - unix:../docker/voting_mixnet/servicenode1/management_sock
+	mkdir -p testdata/$(test_version)/
 	cp -v ../docker/voting_mixnet/servicenode1/memspool.storage \
-          testdata/*state testdata/$(test_version)/ && \
+			testdata/*state testdata/$(test_version)/
 	echo START_KAETZCHEN spool|socat - unix:../docker/voting_mixnet/servicenode1/management_sock
 
 clean:

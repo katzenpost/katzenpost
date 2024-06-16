@@ -211,6 +211,7 @@ func (m *MemSpoolMap) load(tx *bolt.Tx, spoolsBucket *bolt.Bucket) error {
 			panic("wtf")
 		}
 		k, _ := cur.Last() // obtain the latest MessageID
+		m.log.Debugf("Loaded spool %x with %v last messageid", spoolID[:], k)
 		if k != nil {
 			raw_spool.(*MemSpool).current = binary.BigEndian.Uint32(k[:])
 		} // empty spool...

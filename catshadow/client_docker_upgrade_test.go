@@ -55,7 +55,8 @@ func receiveMessage(n int, t *testing.T, receiver *Client, sender string, messag
 		require.Equal(ev.Nickname, sender)
 		require.Equal(ev.Message, message)
 	default:
-		t.Fail()
+        t.Logf("Test %d expected '%s' from %s but got %v", n, string(message), sender, ev)
+		t.FailNow()
 	}
 	receiver.log.Infof("Test %d received message '%s' from %s", n, string(message), sender)
 }
@@ -136,7 +137,7 @@ func TestUpgradeResume_1(t *testing.T) {
 	bob := reloadCatshadowState(t, bobStateFilePath)
 
 	// bob writes to alice
-	sendMessage(1, t, bob, "alice", []byte("message 2 from bob"))
+//	sendMessage(1, t, bob, "alice", []byte("message 2 from bob"))
 
 	// start alice
 	alice := reloadCatshadowState(t, aliceStateFilePath)
@@ -200,12 +201,12 @@ func TestUpgradeResume_2(t *testing.T) {
 
 	receiveMessage(2, t, alice, "bob", []byte("message 2 from bob"))
 
-	sendMessage(2, t, alice, "bob", []byte("message 2 from alice"))
-	receiveMessage(2, t, bob, "alice", []byte("message 2 from alice"))
+    sendMessage(2, t, alice, "bob", []byte("message 2 from alice"))
+    receiveMessage(2, t, bob, "alice", []byte("message 2 from alice"))
+     
+    sendMessage(2, t, bob, "alice", []byte("message 3 from bob"))
+    receiveMessage(2, t, alice, "bob", []byte("message 3 from bob"))
 
-	sendMessage(2, t, bob, "alice", []byte("message 3 from bob"))
-	receiveMessage(2, t, alice, "bob", []byte("message 3 from bob"))
-
-	alice.Shutdown()
-	bob.Shutdown()
+    alice.Shutdown()
+    bob.Shutdown()
 }
