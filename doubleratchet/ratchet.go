@@ -13,7 +13,6 @@ import (
 	"bytes"
 	"crypto/hmac"
 	"encoding/binary"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"hash"
@@ -147,8 +146,6 @@ func (s *savedKeys) UnmarshalBinary(data []byte) error {
 	if err != nil {
 		return err
 	}
-	b, _ := json.MarshalIndent(tmp, "", " ")
-	fmt.Printf("Unmarshaled keys in UnmarshalBinary, pre-unpack:\n%s", b)
 
 	if len(tmp.HeaderKey) == keySize {
 		s.HeaderKey = tmp.HeaderKey
@@ -163,9 +160,6 @@ func (s *savedKeys) UnmarshalBinary(data []byte) error {
 			}
 		}
 	}
-	b, _ = json.MarshalIndent(s, "", " ")
-	fmt.Printf("Unmarshaled keys in UnmarshalBinary post-unpack:\n%s", b)
-
 	return err
 }
 
@@ -339,8 +333,6 @@ func NewRatchetFromBytes(rand io.Reader, data []byte, scheme nike.Scheme) (*Ratc
 			return nil, fmt.Errorf("key upgrade failure: %s", err)
 		}
 	}
-	b, _ := json.MarshalIndent(state, "", " ")
-	fmt.Printf("Unmarshaled ratchet in NewRatchetFromBytes:\n%s", b)
 	return newRatchetFromState(rand, &state, scheme)
 }
 
@@ -904,9 +896,6 @@ func (r *Ratchet) marshal(now time.Time, lifetime time.Duration) (*state, error)
 			MessageKeys: keys,
 		})
 	}
-
-	b, _ := json.MarshalIndent(s, "", " ")
-	fmt.Printf("Marshaling:\n%s\n", b)
 
 	return s, nil
 }
