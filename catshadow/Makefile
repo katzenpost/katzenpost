@@ -19,20 +19,21 @@ upgrade_test_use_saved:
 	# we clean-local here because there is a bug where the network restarts and
 	# gets consensus but loses it in the next one, so the wait command lets the
 	# test run while consensus is lost.
-	cd ../docker && make stop clean-local && \
-		mkdir -p voting_mixnet/servicenode1/ && \
-		chmod 700 voting_mixnet/servicenode1/ && \
-		cp -v ../catshadow/testdata/$(test_version)/memspool.storage voting_mixnet/servicenode1/ && \
-		make log_level=INFO start wait
-	cp -v testdata/$(test_version)/*state testdata/
+	cd ../docker && make wait && \
+	cp -v testdata/$(test_version)/*state testdata/ && \
+		echo STOP_KAETZCHEN spool|socat - unix:../docker/voting_mixnet/servicenode1.sock && \
+		cp -v testdata/$(test_version)/memspool.storage ../docker/voting_mixnet/servicenode1/ && \
+		echo START_KAETZCHEN spool|socat - unix:../docker/voting_mixnet/servicenode1.sock && \
 	$(docker) run ${docker_args} $(image) \
 		sh -c 'cd /go/katzenpost/catshadow/; GORACE=history_size=7 go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 0 -failfast -run UpgradeResume_2'
 	$(docker) run ${docker_args} $(image) \
 		sh -c 'cd /go/katzenpost/catshadow/; GORACE=history_size=7 go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 0 -failfast -run UpgradeResume_1'
 
 upgrade_test_recreate:
-	cd ../docker && make clean-local start wait
-	mkdir -p testdata/$(test_version)
+	cd ../docker && make wait && \
+	echo STOP_KAETZCHEN spool|socat - unix:../docker/voting_mixnet/servicenode1.sock && \
+	rm -fv ../docker/voting_mixnet/servicenode1/memspool.storage && \
+	echo START_KAETZCHEN spool|socat - unix:../docker/voting_mixnet/servicenode1.sock && \
 	$(docker) run ${docker_args} $(image) \
 		sh -c 'cd /go/katzenpost/catshadow/; GORACE=history_size=7 go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 0 -failfast -run UpgradeCreate'
 	cd ../docker && make stop && cd ../catshadow && mv -v ../docker/voting_mixnet/servicenode1/memspool.storage testdata/*state testdata/$(test_version)/
