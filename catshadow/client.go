@@ -923,6 +923,15 @@ func (c *Client) doSendMessage(convoMesgID MessageID, nickname string, message [
 		return
 	}
 	contact.ratchetMutex.Lock()
+	recvpubkey := contact.ratchet.GetRecvRatchetPublic()
+	if recvpubkey == nil {
+		panic("contact ratchet recv pub key is nil")
+	}
+	blob := recvpubkey.Bytes()
+	if utils.CtIsZero(blob) {
+		panic("contact ratchet recv pub key is all zero bytes")
+	}
+
 	ciphertext, err := contact.ratchet.Encrypt(nil, serialized)
 	if err != nil {
 		c.log.Errorf("failed to encrypt: %s", err)
