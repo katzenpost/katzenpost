@@ -36,6 +36,7 @@ import (
 	"github.com/katzenpost/hpqc/nike"
 	"github.com/katzenpost/hpqc/nike/schemes"
 	"github.com/katzenpost/hpqc/rand"
+	"github.com/katzenpost/hpqc/util"
 	"github.com/katzenpost/katzenpost/client"
 	cConstants "github.com/katzenpost/katzenpost/client/constants"
 	cUtils "github.com/katzenpost/katzenpost/client/utils"
@@ -931,6 +932,15 @@ func (c *Client) doSendMessage(convoMesgID MessageID, nickname string, message [
 		return
 	}
 	contact.ratchetMutex.Lock()
+	recvpubkey := contact.ratchet.GetRecvRatchetPublic()
+	if recvpubkey == nil {
+		panic("contact ratchet recv pub key is nil")
+	}
+	blob := recvpubkey.Bytes()
+	if util.CtIsZero(blob) {
+		panic("contact ratchet recv pub key is all zero bytes")
+	}
+
 	ciphertext, err := contact.ratchet.Encrypt(nil, serialized)
 	if err != nil {
 		c.log.Errorf("failed to encrypt: %s", err)
