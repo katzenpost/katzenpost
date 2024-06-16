@@ -70,11 +70,7 @@ jobs:
 
       - name: Build and start the mixnet
         run: |
-          cd docker && sudo -E make start
-
-      - name: Allow mixnet to settle
-        run: |
-          sleep 240
+          cd docker && sudo -E make start wait
 
       - name: run ping
         run: cd docker && sudo -E make run-ping
@@ -108,11 +104,7 @@ jobs:
 
       - name: Build and start the mixnet
         run: |
-          cd docker && sudo -E make start
-
-      - name: Allow mixnet to settle
-        run: |
-          sleep 240
+          cd docker && sudo -E make start wait
 
       - name: run memspool end to end tests
         run: cd memspool && sudo -E make testargs=-coverprofile=coverage.part dockerdockertest && cat client/coverage.part >> ../coverage.out
@@ -143,11 +135,7 @@ jobs:
 
       - name: Build and start the mixnet
         run: |
-          cd docker && sudo -E make start
-
-      - name: Allow mixnet to settle
-        run: |
-          sleep 240
+          cd docker && sudo -E make start wait
 
       - name: run catshadow end to end tests
         run: cd catshadow && sudo -E make testargs=-coverprofile=coverage.part dockerdockertest && cat coverage.part >> ../coverage.out
@@ -184,11 +172,7 @@ jobs:
 
       - name: Build and start the mixnet
         run: |
-          cd docker && sudo -E make start
-
-      - name: Allow mixnet to settle
-        run: |
-          sleep 240
+          cd docker && sudo -E make start wait
 
       - name: run benchmark tests
         run: cd bench && sudo -E make testargs=-coverprofile=coverage.part dockerdockertest && cat coverage.part >> ../coverage.out
