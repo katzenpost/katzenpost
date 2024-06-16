@@ -132,7 +132,7 @@ func TestCreateDuplex(t *testing.T) {
 	require.NoError(err)
 	require.Equal(resp, ahello)
 
-	resp, err = b.Get(addr)
+	resp, err = a.Get(addr)
 	require.NoError(err)
 	require.Equal(resp, bhello)
 }
