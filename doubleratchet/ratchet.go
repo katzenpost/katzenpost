@@ -332,10 +332,6 @@ type Ratchet struct {
 	rand io.Reader
 }
 
-func (r *Ratchet) GetRecvRatchetPublic() nike.PublicKey {
-	return r.recvRatchetPublic
-}
-
 func (r *Ratchet) randBytes(buf []byte) {
 	if _, err := io.ReadFull(r.rand, buf); err != nil {
 		panic(err)
