@@ -928,7 +928,7 @@ func (c *Client) doSendMessage(convoMesgID MessageID, nickname string, message [
 		panic("contact ratchet recv pub key is nil")
 	}
 	blob := recvpubkey.Bytes()
-	if util.CtIsZero(blob) {
+	if utils.CtIsZero(blob) {
 		panic("contact ratchet recv pub key is all zero bytes")
 	}
 
