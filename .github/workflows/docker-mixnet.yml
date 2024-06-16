@@ -76,7 +76,7 @@ jobs:
 
       - name: Install socat, for talking to management socket
         run: |
-          sudo apt update && apt install -y socat
+          sudo apt update && sudo apt install -y socat
 
       - name: Configure podman socket
         run: |
