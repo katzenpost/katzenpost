@@ -55,7 +55,8 @@ func receiveMessage(n int, t *testing.T, receiver *Client, sender string, messag
 		require.Equal(ev.Nickname, sender)
 		require.Equal(ev.Message, message)
 	default:
-		t.Fail()
+		t.Logf("Test %d expected '%s' from %s but got %v", n, string(message), sender, ev)
+		t.FailNow()
 	}
 	receiver.log.Infof("Test %d received message '%s' from %s", n, string(message), sender)
 }
