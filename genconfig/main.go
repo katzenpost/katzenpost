@@ -173,7 +173,7 @@ func (s *katzenpost) genNodeConfig(isGateway, isServiceNode bool, isVoting bool)
 	if isServiceNode {
 		cfg.Management = new(sConfig.Management)
 		cfg.Management.Enable = true
-		cfg.Management.Path = filepath.Join(s.baseDir, fmt.Sprintf("servicenode%d_sock", s.serviceNodeIdx+1))
+		cfg.Management.Path = filepath.Join(s.baseDir, fmt.Sprintf("servicenode%d.sock", s.serviceNodeIdx+1))
 	}
 	// Enable Metrics endpoint
 	s.lastPort += 1
