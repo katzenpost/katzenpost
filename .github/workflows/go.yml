@@ -51,70 +51,70 @@ jobs:
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v3
 
-#  test_e2e_client:
-#    env:
-#      warped: true
-#      XDG_RUNTIME_DIR: /run
-#    strategy:
-#      matrix:
-#        go-version: [1.19.x]
-#        os: [ubuntu-22.04]
-#    runs-on: ${{ matrix.os }}
-#    steps:
-#      - name: Checkout code
-#        uses: actions/checkout@v3
-#
-#      - name: Configure podman socket
-#        run: |
-#          sudo systemctl restart dbus && sudo systemctl enable --now podman.socket
-#
-#      - name: Build and start the mixnet
-#        run: |
-#          cd docker && sudo -E make start wait
-#
-#      - name: run ping
-#        run: cd docker && sudo -E make run-ping
-#
-#      - name: run client end to end tests
-#        run: cd client && sudo -E make testargs=-coverprofile=coverage.part dockerdockertest && cat coverage.part >> ../coverage.out
-#
-#      - name: Stop the mixnet
-#        run: |
-#          cd docker && sudo -E make stop
-#
-#      - name: Upload coverage to Codecov
-#        uses: codecov/codecov-action@v3
-#
-#  test_e2e_memspool:
-#    env:
-#      warped: true
-#      XDG_RUNTIME_DIR: /run
-#    strategy:
-#      matrix:
-#        go-version: [1.19.x]
-#        os: [ubuntu-22.04]
-#    runs-on: ${{ matrix.os }}
-#    steps:
-#      - name: Checkout code
-#        uses: actions/checkout@v3
-#
-#      - name: Configure podman socket
-#        run: |
-#          sudo systemctl restart dbus && sudo systemctl enable --now podman.socket
-#
-#      - name: Build and start the mixnet
-#        run: |
-#          cd docker && sudo -E make start wait
-#
-#      - name: run memspool end to end tests
-#        run: cd memspool && sudo -E make testargs=-coverprofile=coverage.part dockerdockertest && cat client/coverage.part >> ../coverage.out
-#
-#      - name: Stop the mixnet
-#        run: |
-#          cd docker && sudo -E make stop
-#
-#      - name: Upload coverage to Codecov
-#        uses: codecov/codecov-action@v3
+  test_e2e_client:
+    env:
+      warped: true
+      XDG_RUNTIME_DIR: /run
+    strategy:
+      matrix:
+        go-version: [1.19.x]
+        os: [ubuntu-22.04]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Configure podman socket
+        run: |
+          sudo systemctl restart dbus && sudo systemctl enable --now podman.socket
+
+      - name: Build and start the mixnet
+        run: |
+          cd docker && sudo -E make start wait
+
+      - name: run ping
+        run: cd docker && sudo -E make run-ping
+
+      - name: run client end to end tests
+        run: cd client && sudo -E make testargs=-coverprofile=coverage.part dockerdockertest && cat coverage.part >> ../coverage.out
+
+      - name: Stop the mixnet
+        run: |
+          cd docker && sudo -E make stop
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
+
+  test_e2e_memspool:
+    env:
+      warped: true
+      XDG_RUNTIME_DIR: /run
+    strategy:
+      matrix:
+        go-version: [1.19.x]
+        os: [ubuntu-22.04]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Configure podman socket
+        run: |
+          sudo systemctl restart dbus && sudo systemctl enable --now podman.socket
+
+      - name: Build and start the mixnet
+        run: |
+          cd docker && sudo -E make start wait
+
+      - name: run memspool end to end tests
+        run: cd memspool && sudo -E make testargs=-coverprofile=coverage.part dockerdockertest && cat client/coverage.part >> ../coverage.out
+
+      - name: Stop the mixnet
+        run: |
+          cd docker && sudo -E make stop
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
 
   test_e2e_catshadow:
     env:
@@ -137,8 +137,8 @@ jobs:
         run: |
           cd docker && sudo -E make start wait
 
-#      - name: run catshadow end to end tests
-#        run: cd catshadow && sudo -E make testargs=-coverprofile=coverage.part dockerdockertest && cat coverage.part >> ../coverage.out
+      - name: run catshadow end to end tests
+        run: cd catshadow && sudo -E make testargs=-coverprofile=coverage.part dockerdockertest && cat coverage.part >> ../coverage.out
 
       - name: run catshadow end to end upgrade_test_use_saved test
         run: cd catshadow && sudo -E make testargs=-coverprofile=coverage.part upgrade_test_use_saved && cat coverage.part >> ../coverage.out
@@ -153,30 +153,30 @@ jobs:
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v3
 
-#  test_benchmark:
-#    env:
-#      warped: true
-#      XDG_RUNTIME_DIR: /run
-#    strategy:
-#      matrix:
-#        go-version: [1.19.x]
-#        os: [ubuntu-22.04]
-#    runs-on: ${{ matrix.os }}
-#    steps:
-#      - name: Checkout code
-#        uses: actions/checkout@v3
-#
-#      - name: Configure podman socket
-#        run: |
-#          sudo systemctl restart dbus && sudo systemctl enable --now podman.socket
-#
-#      - name: Build and start the mixnet
-#        run: |
-#          cd docker && sudo -E make start wait
-#
-#      - name: run benchmark tests
-#        run: cd bench && sudo -E make testargs=-coverprofile=coverage.part dockerdockertest && cat coverage.part >> ../coverage.out
-#
-#      - name: Stop the mixnet
-#        run: |
-#          cd docker && sudo -E make stop
+  test_benchmark:
+    env:
+      warped: true
+      XDG_RUNTIME_DIR: /run
+    strategy:
+      matrix:
+        go-version: [1.19.x]
+        os: [ubuntu-22.04]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Configure podman socket
+        run: |
+          sudo systemctl restart dbus && sudo systemctl enable --now podman.socket
+
+      - name: Build and start the mixnet
+        run: |
+          cd docker && sudo -E make start wait
+
+      - name: run benchmark tests
+        run: cd bench && sudo -E make testargs=-coverprofile=coverage.part dockerdockertest && cat coverage.part >> ../coverage.out
+
+      - name: Stop the mixnet
+        run: |
+          cd docker && sudo -E make stop
