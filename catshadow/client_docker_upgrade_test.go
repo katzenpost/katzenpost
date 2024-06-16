@@ -32,20 +32,22 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func sendMessage(t *testing.T, sender *Client, recipient string, message []byte) {
+func sendMessage(n int, t *testing.T, sender *Client, recipient string, message []byte) {
 	require := require.New(t)
+	sender.log.Infof("Test %d Sending message '%s' to %s", n, string(message), recipient)
 	sender.SendMessage(recipient, message)
 	ctx, cancelFn := context.WithTimeout(context.Background(), time.Minute)
 	evt := waitForEvent(ctx, sender.EventSink, &MessageDeliveredEvent{})
 	cancelFn()
 	_, ok := evt.(*MessageDeliveredEvent)
 	require.True(ok)
-
+	sender.log.Infof("Test %d gpt DeliveredEvent for essage '%s' to %s", n, string(message), recipient)
 }
 
-func receiveMessage(t *testing.T, receiver *Client, sender string, message []byte) {
+func receiveMessage(1, n int, t *testing.T, receiver *Client, sender string, message []byte) {
 	require := require.New(t)
 	ctx, cancelFn := context.WithTimeout(context.Background(), time.Minute)
+	receiver.log.Infof("Test %d waiting for message '%s' from %s", n, string(message), sender)
 	evt := waitForEvent(ctx, receiver.EventSink, &MessageReceivedEvent{})
 	cancelFn()
 	switch ev := evt.(type) {
@@ -55,6 +57,7 @@ func receiveMessage(t *testing.T, receiver *Client, sender string, message []byt
 	default:
 		t.Fail()
 	}
+	receiver.log.Infof("Test %d received message '%s' from %s", n, string(message), sender)
 }
 
 func createAliceAndBob(t *testing.T) (*Client, *Client, string, string) {
@@ -103,7 +106,7 @@ func TestUpgradeCreate_1(t *testing.T) {
 
 	<-time.After(10 * time.Second)
 
-	sendMessage(t, bob, "alice", []byte("message 1 from bob"))
+	sendMessage(1, t, bob, "alice", []byte("message 1 from bob"))
 
 	bob.Shutdown()
 
@@ -133,17 +136,17 @@ func TestUpgradeResume_1(t *testing.T) {
 	bob := reloadCatshadowState(t, bobStateFilePath)
 
 	// bob writes to alice
-	sendMessage(t, bob, "alice", []byte("message 2 from bob"))
+	sendMessage(1, t, bob, "alice", []byte("message 2 from bob"))
 
 	// start alice
 	alice := reloadCatshadowState(t, aliceStateFilePath)
 
-	receiveMessage(t, alice, "bob", []byte("message 1 from bob"))
-//	receiveMessage(t, alice, "bob", []byte("message 2 from bob"))
+	receiveMessage(1, 1, t, alice, "bob", []byte("message 1 from bob"))
+//	receiveMessage(1, t, alice, "bob", []byte("message 2 from bob"))
 
-//	sendMessage(t, alice, "bob", []byte("message 1 from alice"))
+//	sendMessage(1, t, alice, "bob", []byte("message 1 from alice"))
 
-//	receiveMessage(t, bob, "alice", []byte("message 1 from alice"))
+//	receiveMessage(1, t, bob, "alice", []byte("message 1 from alice"))
 
 	alice.Shutdown()
 	bob.Shutdown()
@@ -155,15 +158,15 @@ func TestUpgradeCreate_2(t *testing.T) {
 
 	alice, bob, aliceStateFilePath, bobStateFilePath := createAliceAndBob(t)
 
-	sendMessage(t, alice, "bob", []byte("message 1 from alice"))
-	receiveMessage(t, bob, "alice", []byte("message 1 from alice"))
+	sendMessage(2, t, alice, "bob", []byte("message 1 from alice"))
+	receiveMessage(2, t, bob, "alice", []byte("message 1 from alice"))
 
-	sendMessage(t, bob, "alice", []byte("message 1 from bob"))
-	receiveMessage(t, alice, "bob", []byte("message 1 from bob"))
+	sendMessage(2, t, bob, "alice", []byte("message 1 from bob"))
+	receiveMessage(2, t, alice, "bob", []byte("message 1 from bob"))
 
 	alice.Shutdown()
 
-	sendMessage(t, bob, "alice", []byte("message 2 from bob"))
+	sendMessage(2, t, bob, "alice", []byte("message 2 from bob"))
 
 	bob.Shutdown()
 
@@ -195,13 +198,13 @@ func TestUpgradeResume_2(t *testing.T) {
 	// start alice
 	alice := reloadCatshadowState(t, aliceStateFilePath)
 
-	receiveMessage(t, alice, "bob", []byte("message 2 from bob"))
+	receiveMessage(2, t, alice, "bob", []byte("message 2 from bob"))
 
-	sendMessage(t, alice, "bob", []byte("message 2 from alice"))
-	receiveMessage(t, bob, "alice", []byte("message 2 from alice"))
+	sendMessage(2, t, alice, "bob", []byte("message 2 from alice"))
+	receiveMessage(2, t, bob, "alice", []byte("message 2 from alice"))
 
-	sendMessage(t, bob, "alice", []byte("message 3 from bob"))
-	receiveMessage(t, alice, "bob", []byte("message 3 from bob"))
+	sendMessage(2, t, bob, "alice", []byte("message 3 from bob"))
+	receiveMessage(2, t, alice, "bob", []byte("message 3 from bob"))
 
 	alice.Shutdown()
 	bob.Shutdown()
