@@ -216,7 +216,7 @@ type Ratchet struct {
 	rand io.Reader
 }
 
-func (r *Ratchet) GetRecvRatchetPublic() nike.PublicKey {
+func (r *Ratchet) GetRecvRatchetPublic() *memguard.LockedBuffer {
 	return r.recvRatchetPublic
 }
 
