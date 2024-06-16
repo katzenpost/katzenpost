@@ -23,10 +23,12 @@ upgrade_test_use_saved:
 		mkdir -p voting_mixnet/servicenode1/ && \
 		chmod 700 voting_mixnet/servicenode1/ && \
 		cp -v ../catshadow/testdata/$(test_version)/memspool.storage voting_mixnet/servicenode1/ && \
-		make start wait
+		make log_level=INFO start wait
 	cp -v testdata/$(test_version)/*state testdata/
 	$(docker) run ${docker_args} $(image) \
-		sh -c 'cd /go/katzenpost/catshadow/; CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f GORACE=history_size=7 go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 0 -failfast -run UpgradeResume'
+		sh -c 'cd /go/katzenpost/catshadow/; CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f GORACE=history_size=7 go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 0 -failfast -run UpgradeResume_1'
+	$(docker) run ${docker_args} $(image) \
+		sh -c 'cd /go/katzenpost/catshadow/; CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f GORACE=history_size=7 go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 0 -failfast -run UpgradeResume_2'
 
 upgrade_test_recreate:
 	cd ../docker && make clean-local start wait
