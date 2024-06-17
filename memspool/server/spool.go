@@ -69,22 +69,22 @@ func HandleSpoolRequest(spoolMap *MemSpoolMap, request *common.SpoolRequest, log
 		spoolResponse.Status = common.StatusOK
 		newSpoolID, err := spoolMap.CreateSpool(publicKey, request.Signature)
 		if err != nil {
-			log.Error(spoolResponse.Status)
-			log.Errorf("%x create: error: %v", newSpoolID[:], spoolResponse.Status)
+			spoolResponse.Status = err.Error()
+			log.Errorf("%x create: error: %v", newSpoolID[:], err.Error())
 			return &spoolResponse
 		}
 		spoolResponse.SpoolID = *newSpoolID
 		log.Debug("%x create: OK", newSpoolID[:])
 		spoolMap.doFlush()
 	case common.PurgeSpoolCommand:
-		log.Debug("purge spool")
 		err := spoolMap.PurgeSpool(spoolID, request.Signature)
 		spoolResponse.SpoolID = spoolID
 		if err != nil {
 			spoolResponse.Status = err.Error()
-			log.Error(spoolResponse.Status)
+			log.Errorf("%x purge: error: %v", spoolID, err.Error())
 			return &spoolResponse
 		}
+		log.Debugf("%x purge: OK", spoolID)
 		spoolResponse.Status = common.StatusOK
 	case common.AppendMessageCommand:
 		err := spoolMap.AppendToSpool(spoolID, request.Message)
@@ -100,8 +100,8 @@ func HandleSpoolRequest(spoolMap *MemSpoolMap, request *common.SpoolRequest, log
 		spoolResponse.SpoolID = spoolID
 		spoolResponse.MessageID = request.MessageID
 		if err != nil {
-			log.Errorf("%x read %d: %v", request.SpoolID, request.MessageID, err)
 			spoolResponse.Status = err.Error()
+			log.Errorf("%x read %d: %v", request.SpoolID, request.MessageID, err.Error())
 			return &spoolResponse
 		}
 		log.Debugf("%x read %d: OK", request.SpoolID, request.MessageID)
@@ -318,7 +318,7 @@ func (m *MemSpoolMap) AppendToSpool(spoolID [common.SpoolIDSize]byte, message []
 		return errors.New("invalid spool found")
 	}
 	spool.Append(message)
-	m.log.Debugf("%x write %d", spoolID, spool.GetCurrent())
+	m.log.Debugf("%x write: %d: OK", spoolID, spool.GetCurrent())
 	m.doFlush()
 	return nil
 }

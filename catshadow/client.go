@@ -527,7 +527,7 @@ func (c *Client) doCreateRemoteSpool(provider string, responseChan chan error) {
 		// NewSpoolReadDescriptor blocks, so we run this in another thread and then use
 		// another workerOp to save the spool descriptor.
 		spool, err := memspoolclient.NewSpoolReadDescriptor(desc.Name, desc.Provider, c.session)
-		c.log.Infof("Created new spool %x on %s (%s)", spool.ID, spool.Provider, spool.Receiver)
+		c.log.Debugf("Created new spool %x on %s (%s)", spool.ID, spool.Provider, spool.Receiver)
 		if err != nil {
 			select {
 			case <-c.HaltCh():
@@ -958,7 +958,7 @@ func (c *Client) doSendMessage(convoMesgID MessageID, nickname string, message [
 	}
 
 	// enqueue the message for sending
-	c.log.Infof("Sending spool write to %x on %s", contact.spoolWriteDescriptor.ID, contact.spoolWriteDescriptor.Receiver)
+	c.log.Debugf("Sending spool write to %s spool %x on %s", contact.Nickname, contact.spoolWriteDescriptor.ID, contact.spoolWriteDescriptor.Receiver)
 	item := &queuedSpoolCommand{Receiver: contact.spoolWriteDescriptor.Receiver,
 		Provider: contact.spoolWriteDescriptor.Provider,
 		Command:  appendCmd, ID: convoMesgID}
@@ -1307,7 +1307,7 @@ func (c *Client) decryptMessage(messageID *[cConstants.MessageIDLength]byte, cip
 			break
 		default:
 			// every other type of error indicates an invalid message
-			c.log.Debugf("Decryption err for %s: %s", contact.Nickname, err.Error())
+			c.log.Errorf("Decryption err for %s: %s", contact.Nickname, err.Error())
 			return err
 		}
 	}
@@ -1336,7 +1336,7 @@ func (c *Client) decryptMessage(messageID *[cConstants.MessageIDLength]byte, cip
 		}
 		return nil
 	}
-	c.log.Debugf("trial ratchet decryption failure for message ID %x reported ratchet error: %s", *messageID, err)
+	c.log.Errorf("trial ratchet decryption failure for message ID %x reported ratchet error: %s", *messageID, err)
 	return ErrTrialDecryptionFailed
 }
 
