@@ -16,28 +16,29 @@ dockerdockertest:
 		sh -c 'cd /go/katzenpost/catshadow/; GORACE=history_size=7 go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 0 -failfast -run Docker'
 
 upgrade_test_use_saved:
-	cd ../docker && make wait && cd ../catshadow && \
+	cd ../docker && make wait stop-memspool
+	sleep 1
+	cp -v testdata/$(test_version)/memspool.storage ../docker/voting_mixnet/servicenode1/
+	cd ../docker && make start-memspool
 	cp -v testdata/$(test_version)/*state testdata/ && \
-		echo STOP_KAETZCHEN spool|socat - unix:../docker/voting_mixnet/servicenode1/management_sock && \
-		cp -v testdata/$(test_version)/memspool.storage ../docker/voting_mixnet/servicenode1/ && \
-		echo START_KAETZCHEN spool|socat - unix:../docker/voting_mixnet/servicenode1/management_sock && \
 	$(docker) run ${docker_args} $(image) \
 		sh -c 'cd /go/katzenpost/catshadow/; GORACE=history_size=7 go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 0 -failfast -run UpgradeResume'
 #	$(docker) run ${docker_args} $(image) \
 #		sh -c 'cd /go/katzenpost/catshadow/; GORACE=history_size=7 go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 0 -failfast -run UpgradeResume_1'
 
 upgrade_test_recreate:
-	cd ../docker && make wait
-	echo STOP_KAETZCHEN spool|socat - unix:../docker/voting_mixnet/servicenode1/management_sock
+	cd ../docker && make wait stop-memspool
+	sleep 1
 	rm -fv ../docker/voting_mixnet/servicenode1/memspool.storage
-	echo START_KAETZCHEN spool|socat - unix:../docker/voting_mixnet/servicenode1/management_sock
+	cd ../docker && make start-memspool
 	$(docker) run ${docker_args} $(image) \
 		sh -c 'cd /go/katzenpost/catshadow/; GORACE=history_size=7 go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 0 -failfast -run UpgradeCreate'
-	echo STOP_KAETZCHEN spool|socat - unix:../docker/voting_mixnet/servicenode1/management_sock
+	cd ../docker && make stop-memspool
+	sleep 1
 	mkdir -p testdata/$(test_version)/
 	cp -v ../docker/voting_mixnet/servicenode1/memspool.storage \
 			testdata/*state testdata/$(test_version)/
-	echo START_KAETZCHEN spool|socat - unix:../docker/voting_mixnet/servicenode1/management_sock
+	cd ../docker && make start-memspool
 
 clean:
 	rm -fv testdata/*state testdata/*.storage

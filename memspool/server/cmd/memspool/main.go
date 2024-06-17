@@ -59,7 +59,7 @@ func main() {
 	}
 
 	// Log to a file.
-	logFile := path.Join(logDir, fmt.Sprintf("memspool.%d.log", os.Getpid()))
+	logFile := path.Join(logDir, fmt.Sprintf("memspool.log"))
 	logBackend, err := log.New(logFile, logLevel, false)
 	if err != nil {
 		panic(err)

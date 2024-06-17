@@ -160,36 +160,27 @@ go-mod-upgrade: $(distro)_base.stamp | $(net_name) $(cache_dir)
 			$(sh) -c 'go get -d -u ./... && go mod tidy'
 
 $(net_name)/server.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
-		cd $(net_name); for i in $(shell seq $(serviceNodes)); do DOCKER_USER=${docker_user} $(docker_compose) down servicenode$$i; done
-		cd $(net_name); for i in $(shell seq $(gateways)); do DOCKER_USER=${docker_user} $(docker_compose) down gateway$$i; done
-		cd $(net_name); for i in $(shell seq $(mixes)); do DOCKER_USER=${docker_user} $(docker_compose) down mix$$i; done
 		$(docker_run_sh) 'cd server/cmd/server ; go build -trimpath -ldflags ${ldflags} && mv server /$(net_name)/server.$(distro)'
 
 $(net_name)/proxy_client.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
 		$(docker_run_sh) 'cd http/proxy/client; go build -trimpath -ldflags ${ldflags} && mv client /$(net_name)/proxy_client.$(distro)'
 
 $(net_name)/proxy_server.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
-		cd $(net_name); for i in $(shell seq $(serviceNodes)); do DOCKER_USER=${docker_user} $(docker_compose) down servicenode$$i; done
 		$(docker_run_sh) 'cd http/proxy/server; go build -trimpath -ldflags ${ldflags} && mv server /$(net_name)/proxy_server.$(distro)'
 
 $(net_name)/memspool.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
-		cd $(net_name); for i in $(shell seq $(serviceNodes)); do DOCKER_USER=${docker_user} $(docker_compose) down servicenode$$i; done
 		$(docker_run_sh) 'cd memspool/server/cmd/memspool ; go build -trimpath -ldflags ${ldflags} && mv memspool /$(net_name)/memspool.$(distro)'
 
 $(net_name)/pigeonhole.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
-		cd $(net_name); for i in $(shell seq $(serviceNodes)); do DOCKER_USER=${docker_user} $(docker_compose) down servicenode$$i; done
 		$(docker_run_sh) 'cd pigeonhole/server/cmd/pigeonhole ; go build -trimpath -ldflags ${ldflags} && mv pigeonhole /$(net_name)/pigeonhole.$(distro)'
 
 $(net_name)/panda_server.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
-		cd $(net_name); for i in $(shell seq $(serviceNodes)); do DOCKER_USER=${docker_user} $(docker_compose) down servicenode$$i; done
 		$(docker_run_sh) 'cd panda/server/cmd/panda_server ; go build -trimpath -ldflags ${ldflags} && mv panda_server /$(net_name)/panda_server.$(distro)'
 
 $(net_name)/echo_server.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
-		cd $(net_name); for i in $(shell seq $(serviceNodes)); do DOCKER_USER=${docker_user} $(docker_compose) down servicenode$$i; done
 		$(docker_run_sh) 'cd server_plugins/cbor_plugins/echo-go ; go build -trimpath -ldflags ${ldflags} && mv echo-go /$(net_name)/echo_server.$(distro)'
 
 $(net_name)/voting.$(distro): $(distro)_base.stamp $(docker_compose_yml) | $(net_name) $(cache_dir)
-		cd $(net_name); for i in $(shell seq $(auths)); do DOCKER_USER=${docker_user} $(docker_compose) down auth$$i; done
 		$(docker_run_sh) 'cd authority && make $(make_args) cmd/voting/voting cmd/fetch/fetch && \
 			mv cmd/voting/voting /$(net_name)/voting.$(distro) && \
 			mv cmd/fetch/fetch /$(net_name)/fetch.$(distro)'
@@ -230,6 +221,15 @@ clean: clean-images clean-local
 run-ping: $(net_name)/ping.$(distro) $(net_name)/running.stamp | $(cache_dir)
 	$(docker) run --network=host ${docker_args} $(mount_net_name) --rm  katzenpost-$(distro)_base \
         /$(net_name)/ping.$(distro) -c /go/katzenpost/docker/$(net_name)/client/client.toml -s echo -printDiff -n 10
+
+restart-memspool: $(net_name)/running.stamp stop-memspool start-memspool
+
+stop-memspool:
+	@echo STOP_KAETZCHEN spool|socat - unix:$(net_name)/servicenode1/management_sock|grep "250 spool" && echo stopped memspool || echo failed to stop memspool
+
+start-memspool: $(net_name)/memspool.$(distro)
+	@echo START_KAETZCHEN spool|socat - unix:$(net_name)/servicenode1/management_sock|grep "250 spool"
+	@echo started memspool
 
 shell: $(distro)_base.stamp | $(net_name) $(cache_dir)
 	$(docker) run --network=host ${docker_args} $(mount_net_name) -w /go/katzenpost/docker/$(net_name) --rm -it katzenpost-$(distro)_base $(sh)
