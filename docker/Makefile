@@ -73,7 +73,7 @@ i_if_podman=$(shell if echo ${docker}|grep -q podman; then echo " -i"; else echo
 mount_net_name=-v `pwd`/$(net_name):/$(net_name)
 
 docker_compose_v1_or_v2?= $(shell [ -e /usr/libexec/docker/cli-plugins/docker-compose ] && echo /usr/libexec/docker/cli-plugins/docker-compose || echo docker-compose)
-docker_compose?= $(shell if which podman|grep -q .; then echo DOCKER_HOST="unix://$$XDG_RUNTIME_DIR/podman/podman.sock" $(docker_compose_v1_or_v2); else echo $(docker_compose_v1_or_v2); fi)
+docker_compose?= DOCKER_USER=$(docker_user) $(shell if which podman|grep -q .; then echo DOCKER_HOST="unix://$$XDG_RUNTIME_DIR/podman/podman.sock" $(docker_compose_v1_or_v2); else echo $(docker_compose_v1_or_v2); fi)
 
 make_args=--no-print-directory net_name=$(net_name) docker=$(docker) distro=$(distro) warped=$(warped) docker_user=$(docker_user)
 
@@ -108,11 +108,11 @@ $(net_name)/running.stamp:
 
 run: $(docker_compose_yml) testnet_binaries
 	cd $(net_name) && touch running.stamp \
-	&& DOCKER_USER=${docker_user} $(docker_compose) up --remove-orphans
+	&& $(docker_compose) up --remove-orphans
 	cd $(net_name) && rm -v running.stamp
 
 start: $(docker_compose_yml) testnet_binaries
-	cd $(net_name); DOCKER_USER=${docker_user} $(docker_compose) up --remove-orphans -d; $(docker_compose) top
+	cd $(net_name); $(docker_compose) up --remove-orphans -d; $(docker_compose) top
 	touch $(net_name)/running.stamp
 
 stop:
@@ -120,6 +120,9 @@ stop:
 
 watch:
 	tail -F $(net_name)/*/*.log
+
+ps:
+	cd $(net_name); $(docker_compose) ps
 
 status:
 	@[ -d $(net_name) ] || (echo "./$(net_name)/ does not exist" && false)
