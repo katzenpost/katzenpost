@@ -157,8 +157,10 @@ func (s *katzenpost) genNodeConfig(isGateway, isServiceNode bool, isVoting bool)
 	cfg.Server.Identifier = n
 	if isGateway {
 		cfg.Server.Addresses = []string{fmt.Sprintf("http://127.0.0.1:%d", s.lastPort), fmt.Sprintf("tcp://127.0.0.1:%d", s.lastPort+1)}
+		s.lastPort += 2
 	} else {
 		cfg.Server.Addresses = []string{fmt.Sprintf("http://127.0.0.1:%d", s.lastPort)}
+		s.lastPort += 1
 	}
 	cfg.Server.DataDir = filepath.Join(s.baseDir, n)
 
@@ -175,8 +177,8 @@ func (s *katzenpost) genNodeConfig(isGateway, isServiceNode bool, isVoting bool)
 		cfg.Management.Enable = true
 	}
 	// Enable Metrics endpoint
-	s.lastPort += 1
 	cfg.Server.MetricsAddress = fmt.Sprintf("127.0.0.1:%d", s.lastPort)
+	s.lastPort += 1
 
 	// Debug section.
 	cfg.Debug = new(sConfig.Debug)
@@ -281,7 +283,6 @@ func (s *katzenpost) genNodeConfig(isGateway, isServiceNode bool, isVoting bool)
 		s.nodeIdx++
 	}
 	s.nodeConfigs = append(s.nodeConfigs, cfg)
-	s.lastPort += 2
 	_ = cfgIdKey(cfg, s.outDir)
 	return cfg.FixupAndValidate()
 }
@@ -303,7 +304,7 @@ func (s *katzenpost) genVotingAuthoritiesCfg(numAuthorities int, parameters *vCo
 			DataDir:            filepath.Join(s.baseDir, fmt.Sprintf("auth%d", i)),
 		}
 		os.Mkdir(filepath.Join(s.outDir, cfg.Server.Identifier), 0700)
-		s.lastPort += 3
+		s.lastPort += 1
 		cfg.Logging = &vConfig.Logging{
 			Disable: false,
 			File:    "katzenpost.log",
