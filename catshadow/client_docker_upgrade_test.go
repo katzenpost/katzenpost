@@ -106,22 +106,20 @@ func TestUpgradeCreate_1(t *testing.T) {
 	alice, bob, aliceStateFilePath, bobStateFilePath := createAliceAndBob(t)
 
 	alice.Shutdown()
-
-	<-time.After(10 * time.Second)
+	t.Logf("Calling alice.Wait()")
+	alice.Wait()
 
 	sendMessage(1, t, bob, "alice", []byte("message 1 from bob"))
 
 	bob.Shutdown()
-
-	<-time.After(10 * time.Second)
+	t.Logf("Calling bob.Wait()")
+	bob.Wait()
 
 	// save the statefiles into testdata for using with later versions of catshadow
 	err := copyFile(aliceStateFilePath, "testdata/alice1_state")
 	require.NoError(err)
 	err = copyFile(bobStateFilePath, "testdata/bob1_state")
 	require.NoError(err)
-
-	<-time.After(10 * time.Second)
 }
 
 func TestUpgradeResume_1(t *testing.T) {
@@ -155,7 +153,12 @@ func TestUpgradeResume_1(t *testing.T) {
 	receiveMessage(1, t, bob, "alice", []byte("message 1 from alice"))
 
 	alice.Shutdown()
+	t.Logf("Calling alice.Wait()")
+	alice.Wait()
+
 	bob.Shutdown()
+	t.Logf("Calling bob.Wait()")
+	bob.Wait()
 }
 
 func TestUpgradeCreate_2(t *testing.T) {
@@ -171,18 +174,20 @@ func TestUpgradeCreate_2(t *testing.T) {
 	receiveMessage(2, t, alice, "bob", []byte("message 1 from bob"))
 
 	alice.Shutdown()
+	t.Logf("Calling alice.Wait()")
+	alice.Wait()
 
 	sendMessage(2, t, bob, "alice", []byte("message 2 from bob"))
 
 	bob.Shutdown()
+	t.Logf("Calling bob.Wait()")
+	bob.Wait()
 
 	// save the statefiles into testdata for using with later versions of catshadow
 	err := copyFile(aliceStateFilePath, "testdata/alice2_state")
 	require.NoError(err)
 	err = copyFile(bobStateFilePath, "testdata/bob2_state")
 	require.NoError(err)
-
-	<-time.After(10 * time.Second)
 }
 
 func TestUpgradeResume_2(t *testing.T) {
