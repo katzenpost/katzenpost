@@ -43,7 +43,6 @@ import (
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/utils"
-	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/http/common"
 	"github.com/quic-go/quic-go"
 )
@@ -441,8 +440,8 @@ func New(cfg *config.Config) (*Server, error) {
 				// Wrap quic.Listener with common.QuicListener
 				// so it implements like net.Listener for a
 				// single QUIC Stream
-				ql := &common.QuicListener{Listener: l}
-				s.listeners = append(s.listeners, ql)
+				ql := common.QuicListener{Listener: l}
+				s.listeners = append(s.listeners, &ql)
 				s.Add(1)
 				// XXX: is there any HTTP3 specific stuff that we want to do?
 				go s.listenQUICWorker(ql)

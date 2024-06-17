@@ -28,7 +28,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"gopkg.in/op/go-logging.v1"
 
 	"github.com/katzenpost/hpqc/kem/schemes"
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"

@@ -82,12 +82,12 @@ func (q *QuicConn) Write(b []byte) (n int, err error) {
 
 // QuicListener implements net.Listener
 type QuicListener struct {
-	Listener quic.Listener
+	Listener *quic.Listener
 }
 
 // Accept implements net.Listener. It starts a single QUIC Stream and returns a
 // QuicConn that implements net.Conn for this single Stream.
-func (l *QuicListener) Accept() (net.Conn, error) {
+func (l QuicListener) Accept() (net.Conn, error) {
 	ctx := context.Background()
 	conn, err := l.Listener.Accept(ctx)
 	if err != nil {
@@ -100,11 +100,11 @@ func (l *QuicListener) Accept() (net.Conn, error) {
 	return &QuicConn{Conn: conn, Stream: stream}, nil
 }
 
-func (l *QuicListener) Addr() net.Addr {
+func (l QuicListener) Addr() net.Addr {
 	return l.Listener.Addr()
 }
 
-func (l *QuicListener) Close() error {
+func (l QuicListener) Close() error {
 	return l.Listener.Close()
 }
 
