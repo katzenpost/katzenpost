@@ -300,7 +300,6 @@ func (s *katzenpost) genVotingAuthoritiesCfg(numAuthorities int, parameters *vCo
 			PKISignatureScheme: s.pkiSignatureScheme.Name(),
 			Identifier:         fmt.Sprintf("auth%d", i),
 			Addresses:          []string{fmt.Sprintf("http://127.0.0.1:%d", s.lastPort)},
-			Addresses:          []string{fmt.Sprintf("%s:%d", s.bindAddr, s.lastPort)},
 			DataDir:            filepath.Join(s.baseDir, fmt.Sprintf("auth%d", i)),
 		}
 		os.Mkdir(filepath.Join(s.outDir, cfg.Server.Identifier), 0700)
