@@ -225,7 +225,7 @@ func TestVote(t *testing.T) {
 	serviceDescs := make([]*pki.MixDescriptor, 0)
 	for i := 0; i < len(mixCfgs); i++ {
 		mkeys := genMixKeys(votingEpoch)
-		addr := make(map[pki.Transport][]string)
+		addr := make(map[string][]string)
 		addr[pki.TransportTCPv4] = []string{"tcp4://127.0.0.1:1234"}
 		linkPubKey, _, err := testingScheme.GenerateKeyPair()
 		linkBlob, err := linkPubKey.MarshalBinary()
@@ -559,10 +559,7 @@ func genServiceNodeConfig(name string, pki *sConfig.PKI, port uint16) (*identity
 	cfg.Server.WireKEM = testingSchemeName
 	cfg.Server.PKISignatureScheme = testSignatureScheme.Name()
 	cfg.Server.Identifier = name
-	cfg.Server.Addresses = []string{fmt.Sprintf("127.0.0.1:%d", port)}
-	cfg.Server.AltAddresses = map[string][]string{
-		"TCP": []string{fmt.Sprintf("localhost:%d", port)},
-	}
+	cfg.Server.Addresses = []string{fmt.Sprintf("http://127.0.0.1:%d", port)}
 
 	datadir, err := os.MkdirTemp("", fmt.Sprintf("provider_%s", name))
 	if err != nil {

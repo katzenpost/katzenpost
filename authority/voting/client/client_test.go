@@ -274,13 +274,10 @@ func (d *mockDialer) waitUntilDialed(address string) {
 func (d *mockDialer) mockServer(address string, linkPrivateKey kem.PrivateKey, identityPrivateKey sign.PrivateKey,
 	identityPublicKey sign.PublicKey, wg *sync.WaitGroup, mygeo *geo.Geometry) {
 	d.Lock()
-	u, err := url.Parse(address)
-	if err != nil {
-		panic(err)
-	}
+	d.log.Debugf("mockServer(%s)", address)
 
 	clientConn, serverConn := net.Pipe()
-	d.netMap[u.Host] = &conn{
+	d.netMap[address] = &conn{
 		serverConn:    serverConn,
 		clientConn:    clientConn,
 		dialCh:        make(chan interface{}, 0),
@@ -307,7 +304,7 @@ func (d *mockDialer) mockServer(address string, linkPrivateKey kem.PrivateKey, i
 	}
 	defer session.Close()
 	d.Lock()
-	err = session.Initialize(d.netMap[u.Host].serverConn)
+	err = session.Initialize(d.netMap[address].serverConn)
 	d.Unlock()
 	if err != nil {
 		d.log.Errorf("mockServer session Initialize failure: %s", err)
@@ -393,7 +390,8 @@ func TestClient(t *testing.T) {
 		require.NoError(err)
 		peers = append(peers, peer)
 		wg.Add(1)
-		go dialer.mockServer(peer.Addresses[0], linkPrivKey, idPrivKey, idPubKey, &wg, mygeo)
+		u, _ := url.Parse(peer.Addresses[0])
+		go dialer.mockServer(u.Host, linkPrivKey, idPrivKey, idPubKey, &wg, mygeo)
 	}
 	wg.Wait()
 	cfg := &Config{
