@@ -52,7 +52,7 @@ sh=$(shell if echo ${distro}|grep -q alpine; then echo sh; else echo bash; fi)
 SHELL=/bin/bash
 
 # log_level can be DEBUG, INFO, NOTICE, WARNING, ERROR, CRITICAL
-log_level=DEBUG
+log_level=INFO
 
 docker=$(shell if which podman|grep -q .; then echo podman; else echo docker; fi)
 
