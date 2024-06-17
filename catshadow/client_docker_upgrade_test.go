@@ -214,5 +214,7 @@ func TestUpgradeResume_2(t *testing.T) {
 	receiveMessage(2, t, alice, "bob", []byte("message 3 from bob"))
 
 	alice.Shutdown()
+	alice.Wait()
 	bob.Shutdown()
+	bob.Wait()
 }
