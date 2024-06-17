@@ -29,7 +29,6 @@ upgrade_test_use_saved:
 		sh -c 'cd /go/katzenpost/catshadow/; CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f GORACE=history_size=7 go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 0 -failfast -run UpgradeResume_1'
 	$(docker) run ${docker_args} $(image) \
 		sh -c 'cd /go/katzenpost/catshadow/; CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f GORACE=history_size=7 go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 0 -failfast -run UpgradeResume_2'
-	cat ../docker/voting_mixnet/servicenode11/memspool.log >> testdata/memspool.log
 
 upgrade_test_recreate:
 	cd ../docker && make clean-local start wait
