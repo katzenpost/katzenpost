@@ -612,8 +612,13 @@ func (r *Ratchet) Encrypt(out, msg []byte) ([]byte, error) {
 
 	binary.LittleEndian.PutUint32(header[0:4], r.sendCount)
 	binary.LittleEndian.PutUint32(header[4:8], r.prevSendCount)
+
 	copy(header[8:], sendRatchetPublic[:])
 	copy(header[PQRatchetPublicKeyInHeaderOffset:], sendPQRatchetPublicBytes)
+
+	fmt.Printf("XXX writing sendRatchetPublic to header: %x\n", sendRatchetPublic.Bytes())
+	fmt.Printf("XXX writing sendPQRatchetPublicBytes to header: %x at offset %d\n", sendPQRatchetPublicBytes, PQRatchetPublicKeyInHeaderOffset)
+
 	copy(header[nonceInHeaderOffset:], messageNonce[:])
 	out = append(out, headerNonce[:]...)
 	out = secretbox.Seal(out, header[:], &headerNonce, r.sendHeaderKey.ByteArray32())
@@ -823,12 +828,14 @@ func (r *Ratchet) Decrypt(ciphertext []byte) ([]byte, error) {
 	sharedKey := memguard.NewBuffer(keySize)
 	keyMaterial := memguard.NewBuffer(keySize)
 	dhPublic.Copy(header[8:])
+	fmt.Printf("XXX dhPublic (later theirRatchetPublic) %x\n", theirRatchetPublic.Bytes())
 
 	curve25519.ScalarMult(sharedKey.ByteArray32(), r.sendRatchetPrivate.ByteArray32(), dhPublic.ByteArray32())
 
 	pqSharedKey := memguard.NewBuffer(csidh.SharedSecretSize)
 	theirPQRatchetPublic := new(csidh.PublicKey)
 	theirPQRatchetPublic.Import(header[PQRatchetPublicKeyInHeaderOffset : PQRatchetPublicKeyInHeaderOffset+csidh.PublicKeySize])
+	fmt.Printf("XXX theirPQRatchetPublic %x\n", theirPQRatchetPublic.Bytes())
 	ok = csidh.Validate(theirPQRatchetPublic, r.rand)
 	if !ok {
 		return nil, ErrCSIDHInvalidPublicKey

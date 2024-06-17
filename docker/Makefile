@@ -104,6 +104,9 @@ stop:
 watch:
 	tail -F $(net_name)/*/*.log
 
+ps:
+	cd $(net_name); $(docker_compose) ps
+
 status:
 	@[ -d $(net_name) ] || (echo "./$(net_name)/ does not exist" && false)
 	tail -10 $(net_name)/auth1/katzenpost.log

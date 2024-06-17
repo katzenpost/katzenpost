@@ -924,6 +924,7 @@ func (c *Client) doSendMessage(convoMesgID MessageID, nickname string, message [
 	}
 	contact.ratchetMutex.Lock()
 	ciphertext, err := contact.ratchet.Encrypt(nil, serialized)
+	c.log.Infof("XXX encrypted to %s", contact.Nickname)
 	if err != nil {
 		c.log.Errorf("failed to encrypt: %s", err)
 		contact.ratchetMutex.Unlock()
@@ -1155,7 +1156,7 @@ func (c *Client) handleReply(replyEvent *client.MessageReplyEvent) {
 					// has already completed the key exchange and sent a first message, before we have
 					// completed our key exchange.
 					// XXX: this could break things if a contact key exchange never completes...
-					c.log.Debugf("failure to decrypt tip of spool - MessageID: %x", *replyEvent.MessageID)
+					c.log.Errorf("failure to decrypt tip of spool - unknown conatct? - MessageID: %x", *replyEvent.MessageID)
 					for _, contact := range c.contacts {
 						if contact.IsPending {
 							c.log.Warning("received message we could not decrypt while key exchange pending, delaying spool read descriptor increment")
@@ -1168,7 +1169,7 @@ func (c *Client) handleReply(replyEvent *client.MessageReplyEvent) {
 					c.log.Debugf("successfully decrypted tip of spool - MessageID: %x", *replyEvent.MessageID)
 				default:
 					// received an error, likely due to retransmission
-					c.log.Debugf("failure to decrypt tip of spool - MessageID: %x, err: %s", *replyEvent.MessageID, err.Error())
+					c.log.Errorf("failure to decrypt tip of spool 'likely due to retransmission'? - MessageID: %x, err: %s", *replyEvent.MessageID, err.Error())
 				}
 				// in all other cases, advance the spool read descriptor
 				c.spoolReadDescriptor.IncrementOffset()
@@ -1259,6 +1260,7 @@ func (c *Client) decryptMessage(messageID *[cConstants.MessageIDLength]byte, cip
 			continue
 		}
 		contact.ratchetMutex.Lock()
+		c.log.Infof("XXX decrypting from %s", contact.Nickname)
 		plaintext, err := contact.ratchet.Decrypt(ciphertext)
 		contact.ratchetMutex.Unlock()
 		switch err {
