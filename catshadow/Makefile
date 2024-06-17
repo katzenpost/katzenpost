@@ -29,8 +29,6 @@ upgrade_test_use_saved:
 		sh -c 'cd /go/katzenpost/catshadow/; CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f GORACE=history_size=7 go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 0 -failfast -run UpgradeResume_1' | tee testdata/$(test_version)/test1.resume.log
 	$(docker) run ${docker_args} $(image) \
 		sh -c 'cd /go/katzenpost/catshadow/; CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f GORACE=history_size=7 go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 0 -failfast -run UpgradeResume_2' | tee testdata/$(test_version)/test2.resume.log
-	cp -v ../docker/voting_mixnet/servicenode1/memspool.log testdata/$(test_version)/memspool.resume.log
-	mv -v testdata/$(test_version)/test*log testdata/$(test_version)/
 
 upgrade_test_recreate:
 	cd ../docker && make clean-local start wait
@@ -44,6 +42,7 @@ upgrade_test_recreate:
 	cp -v ../docker/voting_mixnet/servicenode1/memspool.log testdata/$(test_version)/memspool.create.log
 	echo; echo; echo; echo DONE RECREATING, now using test states; echo; echo; echo
 	make upgrade_test_use_saved
+	cp -v ../docker/voting_mixnet/servicenode1/memspool.log testdata/$(test_version)/memspool.resume.log
 
 clean:
 	rm -fv testdata/*state testdata/*.storage

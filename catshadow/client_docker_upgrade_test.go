@@ -43,7 +43,7 @@ func sendMessage(n int, t *testing.T, sender *Client, recipient string, message 
 	cancelFn()
 	_, ok = evt.(*MessageDeliveredEvent)
 	require.True(ok)
-	sender.log.Infof("Test %d gpt DeliveredEvent for essage '%s' to %s", n, string(message), recipient)
+	sender.log.Infof("Test %d got DeliveredEvent for message '%s' to %s", n, string(message), recipient)
 }
 
 func receiveMessage(n int, t *testing.T, receiver *Client, sender string, message []byte) {
