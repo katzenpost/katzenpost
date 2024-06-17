@@ -15,6 +15,9 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Install socat, for talking to management socket
+        run: sudo apt update && sudo apt install -y socat
+
       - name: Configure podman socket
         run: |
           sudo systemctl restart dbus && sudo systemctl enable --now podman.socket
