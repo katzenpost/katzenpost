@@ -24,10 +24,10 @@ package catshadow
 import (
 	"bytes"
 	"context"
+	"io/ioutil"
+	"reflect"
 	"testing"
 	"time"
-	"reflect"
-	"io/ioutil"
 
 	"net/http"
 	_ "net/http/pprof"
@@ -41,12 +41,12 @@ import (
 )
 
 func copyFile(src string, dst string) error {
-    data, err := ioutil.ReadFile(src)
-    if err != nil {
-        return err
-    }
-    err = ioutil.WriteFile(dst, data, 0644)
-    return err
+	data, err := ioutil.ReadFile(src)
+	if err != nil {
+		return err
+	}
+	err = ioutil.WriteFile(dst, data, 0644)
+	return err
 }
 
 func getClientState(c *Client) *State {
@@ -119,7 +119,7 @@ func reloadCatshadowState(t *testing.T, stateFile string) *Client {
 	return catShadowClient
 }
 
-func waitForEvent(ctx context.Context, eventCh chan interface{}, eventType interface {}) interface {}{
+func waitForEvent(ctx context.Context, eventCh chan interface{}, eventType interface{}) interface{} {
 	for {
 		select {
 		case ev := <-eventCh:
@@ -152,7 +152,7 @@ func TestWaitForEvent(t *testing.T) {
 	bob.NewContact("alice", sharedSecret)
 
 	ctx, _ /*cancelFn*/ := context.WithTimeout(context.Background(), time.Minute)
-	evt := waitForEvent(ctx,  alice.EventSink, &KeyExchangeCompletedEvent{})
+	evt := waitForEvent(ctx, alice.EventSink, &KeyExchangeCompletedEvent{})
 	ev, ok := evt.(*KeyExchangeCompletedEvent)
 	require.True(ok)
 	require.NoError(ev.Err)
