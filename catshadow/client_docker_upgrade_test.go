@@ -34,12 +34,14 @@ import (
 
 func sendMessage(n int, t *testing.T, sender *Client, recipient string, message []byte) {
 	require := require.New(t)
-	sender.log.Infof("Test %d Sending message '%s' to %s", n, string(message), recipient)
+	contact, ok := sender.contactNicknames[recipient]
+	require.True(ok)
+	sender.log.Infof("Test %d Sending message '%s' to %s on %x", n, string(message), recipient, contact.spoolWriteDescriptor.ID)
 	sender.SendMessage(recipient, message)
 	ctx, cancelFn := context.WithTimeout(context.Background(), time.Minute)
 	evt := waitForEvent(ctx, sender.EventSink, &MessageDeliveredEvent{})
 	cancelFn()
-	_, ok := evt.(*MessageDeliveredEvent)
+	_, ok = evt.(*MessageDeliveredEvent)
 	require.True(ok)
 	sender.log.Infof("Test %d gpt DeliveredEvent for essage '%s' to %s", n, string(message), recipient)
 }
@@ -47,7 +49,7 @@ func sendMessage(n int, t *testing.T, sender *Client, recipient string, message 
 func receiveMessage(n int, t *testing.T, receiver *Client, sender string, message []byte) {
 	require := require.New(t)
 	ctx, cancelFn := context.WithTimeout(context.Background(), time.Minute)
-	receiver.log.Infof("Test %d waiting for message '%s' from %s", n, string(message), sender)
+	receiver.log.Infof("Test %d waiting for message '%s' from %s on %x", n, string(message), sender, receiver.spoolReadDescriptor.ID)
 	evt := waitForEvent(ctx, receiver.EventSink, &MessageReceivedEvent{})
 	cancelFn()
 	switch ev := evt.(type) {
@@ -104,19 +106,20 @@ func TestUpgradeCreate_1(t *testing.T) {
 	alice, bob, aliceStateFilePath, bobStateFilePath := createAliceAndBob(t)
 
 	alice.Shutdown()
-
-	<-time.After(10 * time.Second)
+	t.Logf("Calling alice.Wait()")
+	alice.Wait()
 
 	sendMessage(1, t, bob, "alice", []byte("message 1 from bob"))
 
 	bob.Shutdown()
+	t.Logf("Calling bob.Wait()")
+	bob.Wait()
 
 	// save the statefiles into testdata for using with later versions of catshadow
 	err := copyFile(aliceStateFilePath, "testdata/alice1_state")
 	require.NoError(err)
 	err = copyFile(bobStateFilePath, "testdata/bob1_state")
 	require.NoError(err)
-
 }
 
 func TestUpgradeResume_1(t *testing.T) {
@@ -136,21 +139,26 @@ func TestUpgradeResume_1(t *testing.T) {
 	// start bob
 	bob := reloadCatshadowState(t, bobStateFilePath)
 
-	// bob writes to alice
-	sendMessage(1, t, bob, "alice", []byte("message 2 from bob"))
-
 	// start alice
 	alice := reloadCatshadowState(t, aliceStateFilePath)
 
 	receiveMessage(1, t, alice, "bob", []byte("message 1 from bob"))
-//	receiveMessage(1, t, alice, "bob", []byte("message 2 from bob"))
+	receiveMessage(1, t, alice, "bob", []byte("message 2 from bob"))
 
-//	sendMessage(1, t, alice, "bob", []byte("message 1 from alice"))
+	// bob writes to alice
+	sendMessage(1, t, bob, "alice", []byte("message 2 from bob"))
 
-//	receiveMessage(1, t, bob, "alice", []byte("message 1 from alice"))
+	sendMessage(1, t, alice, "bob", []byte("message 1 from alice"))
+
+	receiveMessage(1, t, bob, "alice", []byte("message 1 from alice"))
 
 	alice.Shutdown()
+	t.Logf("Calling alice.Wait()")
+	alice.Wait()
+
 	bob.Shutdown()
+	t.Logf("Calling bob.Wait()")
+	bob.Wait()
 }
 
 func TestUpgradeCreate_2(t *testing.T) {
@@ -166,17 +174,20 @@ func TestUpgradeCreate_2(t *testing.T) {
 	receiveMessage(2, t, alice, "bob", []byte("message 1 from bob"))
 
 	alice.Shutdown()
+	t.Logf("Calling alice.Wait()")
+	alice.Wait()
 
 	sendMessage(2, t, bob, "alice", []byte("message 2 from bob"))
 
 	bob.Shutdown()
+	t.Logf("Calling bob.Wait()")
+	bob.Wait()
 
 	// save the statefiles into testdata for using with later versions of catshadow
 	err := copyFile(aliceStateFilePath, "testdata/alice2_state")
 	require.NoError(err)
 	err = copyFile(bobStateFilePath, "testdata/bob2_state")
 	require.NoError(err)
-
 }
 
 func TestUpgradeResume_2(t *testing.T) {
@@ -208,5 +219,7 @@ func TestUpgradeResume_2(t *testing.T) {
 	receiveMessage(2, t, alice, "bob", []byte("message 3 from bob"))
 
 	alice.Shutdown()
+	alice.Wait()
 	bob.Shutdown()
+	bob.Wait()
 }
