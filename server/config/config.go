@@ -647,6 +647,7 @@ func (pCfg *PKI) validate(datadir string) error {
 	if pCfg.Voting == nil {
 		return errors.New("Voting is nil")
 	}
+	return nil
 }
 
 // Voting is a set of Authorities that vote on a threshold consensus PKI
