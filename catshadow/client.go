@@ -527,6 +527,7 @@ func (c *Client) doCreateRemoteSpool(provider string, responseChan chan error) {
 		// NewSpoolReadDescriptor blocks, so we run this in another thread and then use
 		// another workerOp to save the spool descriptor.
 		spool, err := memspoolclient.NewSpoolReadDescriptor(desc.Name, desc.Provider, c.session)
+		c.log.Infof("Created new spool %x on %s (%s)", spool.ID, spool.Provider, spool.Receiver)
 		if err != nil {
 			select {
 			case <-c.HaltCh():
@@ -957,6 +958,7 @@ func (c *Client) doSendMessage(convoMesgID MessageID, nickname string, message [
 	}
 
 	// enqueue the message for sending
+	c.log.Infof("Sending spool write to %x on %s", contact.spoolWriteDescriptor.ID, contact.spoolWriteDescriptor.Receiver)
 	item := &queuedSpoolCommand{Receiver: contact.spoolWriteDescriptor.Receiver,
 		Provider: contact.spoolWriteDescriptor.Provider,
 		Command:  appendCmd, ID: convoMesgID}

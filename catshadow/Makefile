@@ -22,7 +22,7 @@ upgrade_test_use_saved:
 		cp -v testdata/$(test_version)/memspool.storage ../docker/voting_mixnet/servicenode1/ && \
 		echo START_KAETZCHEN spool|socat - unix:../docker/voting_mixnet/servicenode1/management_sock && \
 	$(docker) run ${docker_args} $(image) \
-		sh -c 'cd /go/katzenpost/catshadow/; GORACE=history_size=7 go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 0 -failfast -run UpgradeResume_2'
+		sh -c 'cd /go/katzenpost/catshadow/; GORACE=history_size=7 go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 0 -failfast -run UpgradeResume'
 #	$(docker) run ${docker_args} $(image) \
 #		sh -c 'cd /go/katzenpost/catshadow/; GORACE=history_size=7 go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 0 -failfast -run UpgradeResume_1'
 
