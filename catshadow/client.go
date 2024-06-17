@@ -933,7 +933,6 @@ func (c *Client) doSendMessage(convoMesgID MessageID, nickname string, message [
 	}
 	contact.ratchetMutex.Lock()
 	ciphertext, err := contact.ratchet.Encrypt(nil, serialized)
-	c.log.Infof("XXX encrypted to %s", contact.Nickname)
 	if err != nil {
 		c.log.Errorf("failed to encrypt: %s", err)
 		contact.ratchetMutex.Unlock()
@@ -1271,7 +1270,6 @@ func (c *Client) decryptMessage(messageID *[cConstants.MessageIDLength]byte, cip
 			continue
 		}
 		contact.ratchetMutex.Lock()
-		c.log.Infof("XXX decrypting from %s", contact.Nickname)
 		plaintext, err := contact.ratchet.Decrypt(ciphertext)
 		contact.ratchetMutex.Unlock()
 		switch err {
