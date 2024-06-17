@@ -599,7 +599,6 @@ func (r *Ratchet) Encrypt(out, msg []byte) ([]byte, error) {
 
 	binary.LittleEndian.PutUint32(header[0:4], r.sendCount)
 	binary.LittleEndian.PutUint32(header[4:8], r.prevSendCount)
-	fmt.Printf("XXX writing sendRatchetPublic to header: %x\n", sendRatchetPublic.Bytes())
 
 	copy(header[RatchetPublicKeyInHeaderOffset:], sendRatchetPublic.Bytes())
 	copy(header[nonceInHeaderOffset(r.scheme):], messageNonce[:])
@@ -805,7 +804,6 @@ func (r *Ratchet) Decrypt(ciphertext []byte) ([]byte, error) {
 
 	theirRatchetPublic := r.scheme.NewEmptyPublicKey()
 	err = theirRatchetPublic.FromBytes(header[RatchetPublicKeyInHeaderOffset : RatchetPublicKeyInHeaderOffset+r.scheme.PublicKeySize()])
-	fmt.Printf("XXX theirRatchetPublic %x\n", theirRatchetPublic.Bytes())
 	if err != nil {
 		return nil, err
 	}
