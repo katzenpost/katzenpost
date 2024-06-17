@@ -57,7 +57,6 @@ func (s *Server) Accept() {
 
 func (s *Server) worker() {
 	for {
-		s.log.Debug("server_worker")
 		select {
 		case <-s.HaltCh():
 			return
