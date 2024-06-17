@@ -381,6 +381,7 @@ func New(cfg *config.Config) (*Server, error) {
 		}
 	}
 	if s.cfg.Management.Enable {
+		s.log.Infof("s.cfg.Management.Path %s", s.cfg.Management.Path)
 		mgmtCfg := &thwack.Config{
 			Net:         "unix",
 			Addr:        s.cfg.Management.Path,
