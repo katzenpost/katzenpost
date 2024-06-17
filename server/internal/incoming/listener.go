@@ -26,7 +26,6 @@ import (
 	"net/url"
 	"sync"
 	"sync/atomic"
-	"time"
 
 
 	"github.com/katzenpost/hpqc/kem/schemes"
@@ -240,11 +239,7 @@ func New(glue glue.Glue, incomingCh chan<- interface{}, id int, addr string) (gl
 				return nil, err
 			}
 		case "http":
-			qcfg := &quic.Config{
-				HandshakeIdleTimeout: time.Duration(glue.Config().Debug.HandshakeTimeout),
-				KeepAlivePeriod:      time.Duration(glue.Config().Debug.ReauthInterval >> 1),
-			}
-			ql, err := quic.ListenAddr(u.Host, common.GenerateTLSConfig(), qcfg)
+			ql, err := quic.ListenAddr(u.Host, common.GenerateTLSConfig(), nil)
 			if err != nil {
 				l.log.Errorf("Failed to start listener '%v': %v", addr, err)
 				return nil, err

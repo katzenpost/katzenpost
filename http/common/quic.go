@@ -166,7 +166,7 @@ func DialURL(u *url.URL, ctx context.Context, dialFn func(ctx context.Context, n
 		qconn, err := quic.DialAddr(ctx, u.Host, tlsConf, nil)
 		if err == nil {
 			// open a quic stream
-			stream, err := qconn.OpenStreamSync(ctx)
+			stream, err := qconn.OpenStream()
 			if err == nil {
 				// wrap the stream and conn to implement net.Conn
 				return &QuicConn{Stream: stream, Conn: qconn}, nil
