@@ -1,0 +1,46 @@
+18:52:52.282 DEBU memspool_server: loading existing db from disk
+18:52:52.282 DEBU memspool_server: 192718c3f76b482e6746e8ab loaded spool with [] messages
+18:52:52.282 DEBU memspool_server: 3e98f623fdc1fe27e66f5f97 loaded spool with [0 0 0 1] messages
+18:52:52.282 DEBU memspool_server: 500e91ae664ea9cbf928bfa1 loaded spool with [0 0 0 1] messages
+18:52:52.282 DEBU memspool_server: 8732560e23771c40325591ce loaded spool with [0 0 0 2] messages
+18:52:52.287 DEBU memspool_server: listening to unix domain socket file: /tmp/memspool_server4123164837/11.memspool.socket
+18:53:22.317 DEBU memspool_server: MemSpoolMap.doFlush()
+18:53:52.317 DEBU memspool_server: MemSpoolMap.doFlush()
+18:54:22.316 DEBU memspool_server: MemSpoolMap.doFlush()
+18:54:52.316 DEBU memspool_server: MemSpoolMap.doFlush()
+18:55:22.316 DEBU memspool_server: MemSpoolMap.doFlush()
+18:55:52.317 DEBU memspool_server: MemSpoolMap.doFlush()
+18:56:22.321 DEBU memspool_server: MemSpoolMap.doFlush()
+18:56:52.316 DEBU memspool_server: MemSpoolMap.doFlush()
+18:57:22.316 DEBU memspool_server: MemSpoolMap.doFlush()
+18:57:32.038 DEBU memspool_server: 3e98f623fdc1fe27e66f5f97 write 2
+18:57:32.038 DEBU memspool_server: MemSpoolMap.doFlush()
+18:57:37.891 ERRO memspool_server: 192718c3f76b482e6746e8ab read 1: message ID 1 not found
+18:57:38.633 ERRO memspool_server: 192718c3f76b482e6746e8ab read 1: message ID 1 not found
+18:57:40.515 DEBU memspool_server: 3e98f623fdc1fe27e66f5f97 read 1: OK
+18:57:43.722 DEBU memspool_server: 3e98f623fdc1fe27e66f5f97 read 2: OK
+18:57:48.004 ERRO memspool_server: 192718c3f76b482e6746e8ab read 1: message ID 1 not found
+18:57:48.528 ERRO memspool_server: 192718c3f76b482e6746e8ab read 1: message ID 1 not found
+18:57:49.287 DEBU memspool_server: 192718c3f76b482e6746e8ab write 1
+18:57:49.287 DEBU memspool_server: MemSpoolMap.doFlush()
+18:57:49.546 ERRO memspool_server: 3e98f623fdc1fe27e66f5f97 read 3: message ID 3 not found
+18:57:52.289 DEBU memspool_server: MemSpoolMap.doFlush()
+18:57:54.737 DEBU memspool_server: 192718c3f76b482e6746e8ab read 1: OK
+18:57:57.187 DEBU memspool_server: 192718c3f76b482e6746e8ab read 1: OK
+18:58:22.312 DEBU memspool_server: MemSpoolMap.doFlush()
+18:58:52.316 DEBU memspool_server: MemSpoolMap.doFlush()
+18:59:22.297 DEBU memspool_server: MemSpoolMap.doFlush()
+18:59:28.645 ERRO memspool_server: 500e91ae664ea9cbf928bfa1 read 2: message ID 2 not found
+18:59:30.506 DEBU memspool_server: 8732560e23771c40325591ce read 2: OK
+18:59:34.324 DEBU memspool_server: 500e91ae664ea9cbf928bfa1 write 2
+18:59:34.324 DEBU memspool_server: MemSpoolMap.doFlush()
+18:59:37.130 DEBU memspool_server: 500e91ae664ea9cbf928bfa1 read 2: OK
+18:59:39.879 ERRO memspool_server: 8732560e23771c40325591ce read 3: message ID 3 not found
+18:59:40.214 DEBU memspool_server: 500e91ae664ea9cbf928bfa1 read 2: OK
+18:59:40.864 DEBU memspool_server: 8732560e23771c40325591ce write 3
+18:59:40.864 DEBU memspool_server: MemSpoolMap.doFlush()
+18:59:40.877 DEBU memspool_server: 500e91ae664ea9cbf928bfa1 read 2: OK
+18:59:46.372 ERRO memspool_server: 500e91ae664ea9cbf928bfa1 read 3: message ID 3 not found
+18:59:49.779 DEBU memspool_server: 8732560e23771c40325591ce read 3: OK
+18:59:50.769 DEBU memspool_server: 8732560e23771c40325591ce read 3: OK
+18:59:52.288 DEBU memspool_server: MemSpoolMap.doFlush()
