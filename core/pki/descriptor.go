@@ -228,15 +228,14 @@ func IsDescriptorWellFormed(d *MixDescriptor, epoch uint64) error {
 		case TransportTCPv6:
 			expectedIPVer = 6
 		case TransportHTTP:
+		case TransportTCP:
+			// Ignore transports that don't have validation logic.
+			continue
 		default:
 			// Unknown transports are only supported between the client and
 			// gateway.
 			if !d.IsGatewayNode {
 				return fmt.Errorf("Non-gateway published Transport '%v'", transport)
-			}
-			if transport != TransportTCP {
-				// Ignore transports that don't have validation logic.
-				continue
 			}
 		}
 
