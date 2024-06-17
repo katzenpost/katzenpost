@@ -198,15 +198,16 @@ func TestUpgradeResume_2(t *testing.T) {
 	// start alice
 	alice := reloadCatshadowState(t, aliceStateFilePath)
 
+	receiveMessage(2, t, alice, "bob", []byte("message 2 from bob"))
+
 	sendMessage(2, t, alice, "bob", []byte("message 2 from alice"))
 	receiveMessage(2, t, bob, "alice", []byte("message 2 from alice"))
 
 	sendMessage(2, t, bob, "alice", []byte("message 3 from bob"))
-	receiveMessage(2, t, alice, "bob", []byte("message 2 from bob"))
+	receiveMessage(2, t, alice, "bob", []byte("message 3 from bob"))
 
 	alice.Shutdown()
 	alice.Wait()
-
 	bob.Shutdown()
 	bob.Wait()
 }
