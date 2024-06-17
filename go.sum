@@ -46,10 +46,6 @@ github.com/katzenpost/chacha20poly1305 v0.0.0-20211026103954-7b6fb2fc0129 h1:BkX
 github.com/katzenpost/chacha20poly1305 v0.0.0-20211026103954-7b6fb2fc0129/go.mod h1:moU3dWG1uk4xayUNdUPs2Q3dx2Zsk5i9Ysfx+ujQrwM=
 github.com/katzenpost/circl v1.3.9-0.20240222183521-1cd9a34e9a0c h1:FYy03rLIjdyjklBOI6YSCb3q7OubTx0dVDWYOgDsvA8=
 github.com/katzenpost/circl v1.3.9-0.20240222183521-1cd9a34e9a0c/go.mod h1:+EBrwiGYs9S+qZqaqxujN1CReTNCMAG6p+31KkEDeeA=
-github.com/katzenpost/hpqc v0.0.35 h1:5o6KC2lCG2t7QUOpLloQn4sdSEZ8CH8HdWrdRw5LrLI=
-github.com/katzenpost/hpqc v0.0.35/go.mod h1:QxsoI3+qXXmDAzAy7FkPZtVAUR4/KiG2bkdt+/9t42Y=
-github.com/katzenpost/hpqc v0.0.36-0.20240616193325-5391979eb54b h1:2MM0TAQFBVb4HbAvIXv5Wj0Jx06vV+/Pp50CksZNUp8=
-github.com/katzenpost/hpqc v0.0.36-0.20240616193325-5391979eb54b/go.mod h1:QxsoI3+qXXmDAzAy7FkPZtVAUR4/KiG2bkdt+/9t42Y=
 github.com/katzenpost/hpqc v0.0.36 h1:ZdVSX1aMmy6fjZUk3f5TCQr36L/ynJwEo/IimU/Udbs=
 github.com/katzenpost/hpqc v0.0.36/go.mod h1:QxsoI3+qXXmDAzAy7FkPZtVAUR4/KiG2bkdt+/9t42Y=
 github.com/katzenpost/hpqc v0.0.37 h1:IFAmTZU+ko92GvtXrJcotNosKClj3TwrPljZigKQ1BY=
