@@ -10,7 +10,7 @@ require (
 	github.com/golang/protobuf v1.5.3
 	github.com/jackc/pgx v3.6.2+incompatible
 	github.com/katzenpost/chacha20poly1305 v0.0.0-20211026103954-7b6fb2fc0129
-	github.com/katzenpost/hpqc v0.0.36
+	github.com/katzenpost/hpqc v0.0.37
 	github.com/katzenpost/nyquist v0.0.10
 	github.com/prometheus/client_golang v1.19.1
 	github.com/quic-go/quic-go v0.45.0
