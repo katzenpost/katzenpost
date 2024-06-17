@@ -23,6 +23,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/katzenpost/katzenpost/core/sphinx/commands"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
@@ -36,6 +37,7 @@ var (
 		},
 	}
 	pktID uint64
+	rng   = rand.NewMath()
 )
 
 type Packet struct {
@@ -52,13 +54,22 @@ type Packet struct {
 
 	ID         uint64
 	Delay      time.Duration
-	RecvAt     time.Duration
-	DispatchAt time.Duration
+	RecvAt     time.Time
+	DispatchAt time.Time
 
 	MustForward   bool
 	MustTerminate bool
 
 	rawPacketPool sync.Pool
+}
+
+// NewDelay returns the new Delay from time.Now and pkt.RecvAt
+func (pkt *Packet) NewDelay() time.Duration {
+	delay := pkt.Delay - time.Since(pkt.RecvAt)
+	if delay < 0 {
+		return time.Duration(0)
+	}
+	return delay
 }
 
 // Set sets the Packet's internal components.
@@ -119,12 +130,6 @@ func (pkt *Packet) IsToUser() bool {
 	return pkt.NextNodeHop == nil && pkt.NodeDelay != nil && pkt.Recipient != nil && pkt.SurbReply == nil
 }
 
-// IsUnreliableToUser returns true iff the packet has routing commands
-// indicating it is an unreliable forward packet destined for a local user.
-func (pkt *Packet) IsUnreliableToUser() bool {
-	return pkt.NextNodeHop == nil && pkt.NodeDelay == nil && pkt.Recipient != nil && pkt.SurbReply == nil
-}
-
 // IsSURBReply returns true iff the packet has routing commands indicating it
 // is a SURB Reply destined for a local user.
 func (pkt *Packet) IsSURBReply() bool {
@@ -151,8 +156,8 @@ func (pkt *Packet) Dispose() {
 	pkt.SurbReply = nil
 	pkt.ID = 0
 	pkt.Delay = 0
-	pkt.RecvAt = 0
-	pkt.DispatchAt = 0
+	pkt.RecvAt = time.Time{}
+	pkt.DispatchAt = time.Time{}
 	pkt.MustForward = false
 	pkt.MustTerminate = false
 
@@ -163,7 +168,9 @@ func (pkt *Packet) Dispose() {
 func (pkt *Packet) copyToRaw(b []byte) error {
 	if len(b) != pkt.Geometry.PacketLength {
 		// TODO: When we have actual large packets, handle them.
-		return fmt.Errorf("invalid Sphinx packet size: %v", len(b))
+		errInfo := fmt.Sprintf("My Sphinx Geometry: %s\n%s\n", pkt.Geometry.String(),
+			pkt.Geometry.Display())
+		return fmt.Errorf("invalid Sphinx packet size: %v\n%s", len(b), errInfo)
 	}
 
 	// The common case of standard packet sizes uses a pool allocator
@@ -244,6 +251,7 @@ func ParseForwardPacket(pkt *Packet) ([]byte, []byte, error) {
 	}
 	ct := b[hdrLength:]
 	var surb []byte
+	// what does the pubsub spec say about the packet format ?
 	switch b[0] {
 	case flagsPadding:
 	case flagsSURB:
@@ -255,19 +263,16 @@ func ParseForwardPacket(pkt *Packet) ([]byte, []byte, error) {
 		return nil, nil, fmt.Errorf("mis-sized user payload: %v", len(ct))
 	}
 
+	// return set of surbs
 	return ct, surb, nil
 }
 
-func NewPacketFromSURB(pkt *Packet, surb, payload []byte, geo *geo.Geometry) (*Packet, error) {
-	if !pkt.IsToUser() {
-		return nil, fmt.Errorf("invalid commands to generate a SURB reply")
-	}
-
+func NewPacketFromSURB(surb, payload []byte, geo *geo.Geometry) (*Packet, error) {
 	// Pad out payloads to the full packet size.
-	respPayload := make([]byte, pkt.Geometry.ForwardPayloadLength)
+	respPayload := make([]byte, geo.ForwardPayloadLength)
 	switch {
 	case len(payload) == 0:
-	case len(payload) > pkt.Geometry.ForwardPayloadLength:
+	case len(payload) > geo.ForwardPayloadLength:
 		return nil, fmt.Errorf("oversized response payload: %v", len(payload))
 	default:
 		copy(respPayload, payload)
@@ -281,8 +286,7 @@ func NewPacketFromSURB(pkt *Packet, surb, payload []byte, geo *geo.Geometry) (*P
 	// packet processing doesn't constantly utilize the AES-NI units due
 	// to the non-AEZ components of a Sphinx Unwrap operation.
 
-	pkt.Geometry = geo
-	s, err := sphinx.FromGeometry(pkt.Geometry)
+	s, err := sphinx.FromGeometry(geo)
 	if err != nil {
 		return nil, err
 	}
@@ -298,23 +302,28 @@ func NewPacketFromSURB(pkt *Packet, surb, payload []byte, geo *geo.Geometry) (*P
 	copy(nextHopCmd.ID[:], firstHop[:])
 	cmds = append(cmds, nextHopCmd)
 
+	// Delay is set to 0, caller must set the appropriate Delay in order to
+	// respect the senders delay assumptions, after any processing delay
+	// has been accounted for.
 	nodeDelayCmd := new(commands.NodeDelay)
-	nodeDelayCmd.Delay = pkt.NodeDelay.Delay
+	nodeDelayCmd.Delay = 0
 	cmds = append(cmds, nodeDelayCmd)
 
 	// Assemble the response packet.
-	respPkt, _ := New(rawRespPkt, geo)
-	respPkt.Geometry = pkt.Geometry
-	respPkt.Set(nil, cmds)
+	respPkt, err := New(rawRespPkt, geo)
+	if err != nil {
+		return nil, err
+	}
+	respPkt.Geometry = geo
+	err = respPkt.Set(nil, cmds)
+	if err != nil {
+		return nil, err
+	}
 
-	respPkt.RecvAt = pkt.RecvAt
-	// XXX: This should probably fudge the delay to account for processing
-	// time.
-	respPkt.Delay = time.Duration(nodeDelayCmd.Delay) * time.Millisecond
 	respPkt.MustForward = true
 	respPkt.rawPacketPool = sync.Pool{
 		New: func() interface{} {
-			b := make([]byte, pkt.Geometry.PacketLength)
+			b := make([]byte, geo.PacketLength)
 			return b
 		},
 	}

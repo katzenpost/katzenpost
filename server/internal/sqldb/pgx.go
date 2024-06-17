@@ -22,10 +22,11 @@ import (
 	"strings"
 
 	"github.com/jackc/pgx"
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
+
+	"github.com/katzenpost/hpqc/kem"
+
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/utils"
-	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/server/spool"
 	"github.com/katzenpost/katzenpost/server/userdb"
 )
@@ -45,11 +46,10 @@ const (
 )
 
 type pgxImpl struct {
-	d *SQLDB
-
-	pool *pgx.ConnPool
-
+	d         *SQLDB
+	pool      *pgx.ConnPool
 	spoolOnly bool
+	scheme    kem.Scheme
 }
 
 func (p *pgxImpl) IsSpoolOnly() bool {
@@ -60,7 +60,7 @@ func (p *pgxImpl) UserDB() (userdb.UserDB, error) {
 	if p.IsSpoolOnly() {
 		return nil, errors.New("sql/pgx: UserDB() called for spool only database")
 	}
-	return newPgxUserDB(p), nil
+	return newPgxUserDB(p, p.scheme), nil
 }
 
 func (p *pgxImpl) Spool() spool.Spool {
@@ -145,18 +145,19 @@ func (p *pgxImpl) doUserDelete(u []byte) error {
 	return err
 }
 
-func newPgxImpl(db *SQLDB, dataSourceName string) (dbImpl, error) {
+func newPgxImpl(db *SQLDB, dataSourceName string, scheme kem.Scheme) (dbImpl, error) {
 	// The pgx connection pool code requires at least 2 conns, and internally
 	// will default to 5 if unspecified.  At a minimum all of the provider
 	// workers should be able to hit up the database simultaneously, while
 	// allowing for sufficient connections to authenticate.
-	numConns := 2 * db.glue.Config().Debug.NumProviderWorkers
+	numConns := 2 * db.glue.Config().Debug.NumGatewayWorkers
 	if numConns < 5 {
 		numConns = 5
 	}
 
 	p := &pgxImpl{
-		d: db,
+		d:      db,
+		scheme: scheme,
 	}
 
 	connCfg, err := pgx.ParseConnectionString(dataSourceName)
@@ -194,7 +195,8 @@ func newPgxImpl(db *SQLDB, dataSourceName string) (dbImpl, error) {
 }
 
 type pgxUserDB struct {
-	pgx *pgxImpl
+	pgx    *pgxImpl
+	scheme kem.Scheme
 }
 
 func (d *pgxUserDB) Exists(u []byte) bool {
@@ -204,7 +206,7 @@ func (d *pgxUserDB) Exists(u []byte) bool {
 	return d.getAuthKey(u) != nil
 }
 
-func (d *pgxUserDB) IsValid(u []byte, k wire.PublicKey) bool {
+func (d *pgxUserDB) IsValid(u []byte, k kem.PublicKey) bool {
 	dbKey := d.getAuthKey(u)
 	if dbKey == nil {
 		return false
@@ -212,15 +214,14 @@ func (d *pgxUserDB) IsValid(u []byte, k wire.PublicKey) bool {
 	return dbKey.Equal(k)
 }
 
-func (d *pgxUserDB) getAuthKey(u []byte) wire.PublicKey {
+func (d *pgxUserDB) getAuthKey(u []byte) kem.PublicKey {
 	var raw []byte
 	if err := d.pgx.pool.QueryRow(pgxTagUserGetAuthKey, u).Scan(&raw); err != nil {
 		d.pgx.d.log.Debugf("user_get_authentication_key() failed: %v", err)
 		return nil
 	}
 
-	_, pk := wire.DefaultScheme.GenerateKeypair(rand.Reader)
-	err := pk.UnmarshalBinary(raw)
+	pk, err := d.scheme.UnmarshalBinaryPublicKey(raw)
 	if err != nil {
 		d.pgx.d.log.Warningf("Failed to deserialize authentication key for user '%v': %v", utils.ASCIIBytesToPrintString(u), err)
 		return nil
@@ -229,20 +230,24 @@ func (d *pgxUserDB) getAuthKey(u []byte) wire.PublicKey {
 	return pk
 }
 
-func (d *pgxUserDB) Add(u []byte, k wire.PublicKey, update bool) error {
-	_, err := d.pgx.pool.Exec(pgxTagUserSetAuthKey, u, k.Bytes(), update)
+func (d *pgxUserDB) Add(u []byte, k kem.PublicKey, update bool) error {
+	keyblob, err := k.MarshalBinary()
+	if err != nil {
+		return err
+	}
+	_, err = d.pgx.pool.Exec(pgxTagUserSetAuthKey, u, keyblob, update)
 	if err != nil && isPgNoDataFound(err) {
 		return userdb.ErrNoSuchUser
 	}
 	return err
 }
 
-func (d *pgxUserDB) SetIdentity(u []byte, k wire.PublicKey) error {
-	var kBytes []byte
-	if k != nil {
-		kBytes = k.Bytes()
-	}
+func (d *pgxUserDB) SetIdentity(u []byte, k kem.PublicKey) error {
 
+	kBytes, err := k.MarshalBinary()
+	if err != nil {
+		return err
+	}
 	if _, err := d.pgx.pool.Exec(pgxTagUserSetIdentKey, u, kBytes); err != nil {
 		if isPgNoDataFound(err) {
 			return userdb.ErrNoSuchUser
@@ -252,7 +257,7 @@ func (d *pgxUserDB) SetIdentity(u []byte, k wire.PublicKey) error {
 	return nil
 }
 
-func (d *pgxUserDB) Link(u []byte) (wire.PublicKey, error) {
+func (d *pgxUserDB) Link(u []byte) (kem.PublicKey, error) {
 	key := d.getAuthKey(u)
 	if key == nil {
 		return nil, userdb.ErrNoSuchUser
@@ -260,7 +265,7 @@ func (d *pgxUserDB) Link(u []byte) (wire.PublicKey, error) {
 	return key, nil
 }
 
-func (d *pgxUserDB) Identity(u []byte) (wire.PublicKey, error) {
+func (d *pgxUserDB) Identity(u []byte) (kem.PublicKey, error) {
 	var raw []byte
 	if err := d.pgx.pool.QueryRow(pgxTagUserGetIdentKey, u).Scan(&raw); err != nil {
 		if isPgNoDataFound(err) {
@@ -272,8 +277,7 @@ func (d *pgxUserDB) Identity(u []byte) (wire.PublicKey, error) {
 		return nil, userdb.ErrNoIdentity
 	}
 
-	_, pk := wire.DefaultScheme.GenerateKeypair(rand.Reader)
-	err := pk.UnmarshalBinary(raw)
+	pk, err := d.scheme.UnmarshalBinaryPublicKey(raw)
 	if err != nil {
 		return nil, err
 	}
@@ -289,9 +293,10 @@ func (d *pgxUserDB) Close() {
 	// Nothing to do.
 }
 
-func newPgxUserDB(p *pgxImpl) *pgxUserDB {
+func newPgxUserDB(p *pgxImpl, scheme kem.Scheme) *pgxUserDB {
 	return &pgxUserDB{
-		pgx: p,
+		pgx:    p,
+		scheme: scheme,
 	}
 }
 

@@ -27,7 +27,9 @@ import (
 	"sync"
 	"time"
 
-	nClient "github.com/katzenpost/katzenpost/authority/nonvoting/client"
+	"github.com/katzenpost/hpqc/hash"
+	"github.com/katzenpost/hpqc/kem/schemes"
+
 	vClient "github.com/katzenpost/katzenpost/authority/voting/client"
 	vServer "github.com/katzenpost/katzenpost/authority/voting/server"
 	"github.com/katzenpost/katzenpost/core/epochtime"
@@ -45,7 +47,6 @@ import (
 var (
 	errNotCached         = errors.New("pki: requested epoch document not in cache")
 	recheckInterval      = epochtime.Period / 32
-	WarpedEpoch          = "false"
 	pkiEarlyConnectSlack = epochtime.Period / 8
 	PublishDeadline      = vServer.MixPublishDeadline
 	nextFetchTill        = epochtime.Period - PublishDeadline
@@ -59,7 +60,7 @@ type pki struct {
 	log  *logging.Logger
 
 	impl               cpki.Client
-	descAddrMap        map[cpki.Transport][]string
+	descAddrMap        map[string][]string
 	docs               map[uint64]*pkicache.Entry
 	rawDocs            map[uint64][]byte
 	failedFetches      map[uint64]error
@@ -90,6 +91,7 @@ func (p *pki) worker() {
 		case <-p.HaltCh():
 			cancelFn()
 		case <-pkiCtx.Done():
+			p.log.Debug("<-pkiCtx.Done()")
 		}
 	}()
 	isCanceled := func() bool {
@@ -111,21 +113,37 @@ func (p *pki) worker() {
 		var timerFired bool
 		select {
 		case <-p.HaltCh():
-			p.log.Debugf("Terminating gracefully.")
+			p.log.Debug("Terminating gracefully.")
 			return
 		case <-pkiCtx.Done():
+			p.log.Debug("pkiCtx.Done")
 			return
 		case <-timer.C:
 			timerFired = true
 		}
 		if !timerFired && !timer.Stop() {
-			<-timer.C
+			select {
+			case <-p.HaltCh():
+				p.log.Debug("Terminating gracefully.")
+				return
+			case <-timer.C:
+			}
 		}
 
+		// Check to see if we need to publish the descriptor, and do so, along
+		// with all the key rotation bits.
+		err := p.publishDescriptorIfNeeded(pkiCtx)
+		if isCanceled() {
+			// Canceled mid-post
+			p.log.Debug("Canceled mid-post")
+			return
+		}
+		if err != nil {
+			p.log.Warningf("Failed to post to PKI: %v", err)
+		}
 		// Fetch the PKI documents as required.
 		var didUpdate bool
 		for _, epoch := range p.documentsToFetch() {
-			instrument.SetFetchedPKIDocsTimer()
 			// Certain errors in fetching documents are treated as hard
 			// failures that suppress further attempts to fetch the document
 			// for the epoch.
@@ -137,6 +155,7 @@ func (p *pki) worker() {
 			d, rawDoc, err := p.impl.Get(pkiCtx, epoch)
 			if isCanceled() {
 				// Canceled mid-fetch.
+				p.log.Debug("Canceled mid-fetch")
 				return
 			}
 			if err != nil {
@@ -153,9 +172,9 @@ func (p *pki) worker() {
 				panic("Sphinx Geometry mismatch!")
 			}
 
-			ent, err := pkicache.New(d, p.glue.IdentityPublicKey(), p.glue.Config().Server.IsProvider)
+			ent, err := pkicache.New(d, p.glue.IdentityPublicKey(), p.glue.Config().Server.IsGatewayNode, p.glue.Config().Server.IsServiceNode)
 			if err != nil {
-				p.log.Warningf("Failed to generate PKI cache for epoch %v: %v", epoch, err)
+				p.log.Debugf("Failed to generate PKI cache for epoch %v: %v", epoch, err)
 				p.setFailedFetch(epoch, err)
 				instrument.FailedPKICacheGeneration(fmt.Sprintf("%v", epoch))
 				continue
@@ -173,7 +192,6 @@ func (p *pki) worker() {
 			p.Unlock()
 			didUpdate = true
 			instrument.FetchedPKIDocs(fmt.Sprintf("%v", epoch))
-			instrument.TimeFetchedPKIDocsDuration()
 		}
 
 		p.pruneFailures()
@@ -183,17 +201,6 @@ func (p *pki) worker() {
 
 			// If the PKI document map changed, kick the connector worker.
 			p.glue.Connector().ForceUpdate()
-		}
-
-		// Check to see if we need to publish the descriptor, and do so, along
-		// with all the key rotation bits.
-		err := p.publishDescriptorIfNeeded(pkiCtx)
-		if isCanceled() {
-			// Canceled mid-post
-			return
-		}
-		if err != nil {
-			p.log.Warningf("Failed to post to PKI: %v", err)
 		}
 
 		// Internal component depend on network wide paramemters, and or the
@@ -223,7 +230,6 @@ func (p *pki) worker() {
 				lastUpdateEpoch = now
 			}
 		}
-
 		p.updateTimer(timer)
 	}
 }
@@ -267,10 +273,18 @@ func (p *pki) validateCacheEntry(ent *pkicache.Entry) error {
 	if desc.Name != p.glue.Config().Server.Identifier {
 		return fmt.Errorf("self Name field does not match Identifier")
 	}
-	if !desc.IdentityKey.Equal(p.glue.IdentityPublicKey()) {
+	blob, err := p.glue.IdentityPublicKey().MarshalBinary()
+	if err != nil {
+		return err
+	}
+	if !hmac.Equal(desc.IdentityKey, blob) {
 		return fmt.Errorf("self identity key mismatch")
 	}
-	if !desc.LinkKey.Equal(p.glue.LinkKey().PublicKey()) {
+	blob, err = p.glue.LinkKey().Public().MarshalBinary()
+	if err != nil {
+		return err
+	}
+	if !hmac.Equal(desc.LinkKey, blob) {
 		return fmt.Errorf("self link key mismatch")
 	}
 	return nil
@@ -366,32 +380,42 @@ func (p *pki) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 	// probably not worth it.
 
 	// Generate the non-key parts of the descriptor.
+	linkblob, err := p.glue.LinkKey().Public().MarshalBinary()
+	if err != nil {
+		return err
+	}
+	idkeyblob, err := p.glue.IdentityPublicKey().MarshalBinary()
+	if err != nil {
+		return err
+	}
 	desc := &cpki.MixDescriptor{
 		Name:        p.glue.Config().Server.Identifier,
-		IdentityKey: p.glue.IdentityPublicKey(),
-		LinkKey:     p.glue.LinkKey().PublicKey(),
+		IdentityKey: idkeyblob,
+		LinkKey:     linkblob,
 		Addresses:   p.descAddrMap,
 		Epoch:       epoch,
 	}
-	if p.glue.Config().Server.IsProvider {
+	if p.glue.Config().Server.IsGatewayNode {
 		// Only set the layer if the node is a provider.  Otherwise, nodes
 		// shouldn't be self assigning this.
-		desc.Provider = true
+		desc.IsGatewayNode = true
+
+		// Publish the AuthenticationType
+		desc.AuthenticationType = cpki.TrustOnFirstUseAuth
+	}
+	if p.glue.Config().Server.IsServiceNode {
+		// Only set the layer if the node is a provider.  Otherwise, nodes
+		// shouldn't be self assigning this.
+		desc.IsServiceNode = true
 
 		// Publish currently running Kaetzchen.
 		var err error
-		desc.Kaetzchen, err = p.glue.Provider().KaetzchenForPKI()
+		desc.Kaetzchen, err = p.glue.ServiceNode().KaetzchenForPKI()
 		if err != nil {
 			return err
 		}
-
-		// Publish the AuthenticationType
-		if p.glue.Config().Provider.TrustOnFirstUse && p.glue.Config().Provider.EnableEphemeralClients {
-			desc.AuthenticationType = cpki.TrustOnFirstUseAuth
-		} else {
-			desc.AuthenticationType = cpki.OutOfBandAuth
-		}
 	}
+
 	desc.MixKeys = make(map[uint64][]byte)
 
 	// Ensure that there are mix keys for the epochs [e, ..., e+2],
@@ -426,7 +450,7 @@ func (p *pki) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 	}
 
 	// Post the descriptor to all the authorities.
-	err := p.impl.Post(pkiCtx, doPublishEpoch, p.glue.IdentityKey(), p.glue.IdentityPublicKey(), desc)
+	err = p.impl.Post(pkiCtx, doPublishEpoch, p.glue.IdentityKey(), p.glue.IdentityPublicKey(), desc, p.glue.Decoy().GetStats(doPublishEpoch))
 	switch err {
 	case nil:
 		p.log.Debugf("Posted descriptor for epoch: %v", doPublishEpoch)
@@ -548,9 +572,13 @@ func (p *pki) AuthenticateConnection(c *wire.PeerCredentials, isOutgoing bool) (
 		// The LinkKey that is being used for authentication should
 		// match what is listed in the descriptor in the document, or
 		// the most recent descriptor we have for the node.
-		if !m.LinkKey.Equal(c.PublicKey) {
-			if desc == m || !desc.LinkKey.Equal(c.PublicKey) {
-				p.log.Warningf("%v: '%x' Public Key mismatch: '%x'", dirStr, c.AdditionalData, c.PublicKey.Sum256())
+		blob, err := c.PublicKey.MarshalBinary()
+		if err != nil {
+			panic(err)
+		}
+		if !hmac.Equal(m.LinkKey, blob) {
+			if desc == m || !hmac.Equal(m.LinkKey, blob) {
+				p.log.Warningf("%v: '%x' Public Key mismatch: '%x'", dirStr, c.AdditionalData, hash.Sum256(blob))
 				continue
 			}
 		}
@@ -608,7 +636,7 @@ func (p *pki) OutgoingDestinations() map[[sConstants.NodeIDLength]byte]*cpki.Mix
 		}
 
 		for _, v := range d.Outgoing() {
-			nodeID := v.IdentityKey.Sum256()
+			nodeID := hash.Sum256(v.IdentityKey)
 
 			// Ignore nodes from past epochs that are not listed in the
 			// current document.
@@ -623,6 +651,17 @@ func (p *pki) OutgoingDestinations() map[[sConstants.NodeIDLength]byte]*cpki.Mix
 		}
 	}
 	return descMap
+}
+
+func (p *pki) CurrentDocument() (*cpki.Document, error) {
+	epoch, _, _ := epochtime.Now()
+	p.RLock()
+	defer p.RUnlock()
+	val, ok := p.docs[epoch]
+	if ok {
+		return val.Document(), nil
+	}
+	return nil, cpki.ErrNoDocument
 }
 
 func (p *pki) GetRawConsensus(epoch uint64) ([]byte, error) {
@@ -670,29 +709,23 @@ func New(glue glue.Glue) (glue.PKI, error) {
 		return nil, errors.New("Descriptor address map is zero size.")
 	}
 
-	if glue.Config().PKI.Nonvoting != nil {
-		pkiCfg := &nClient.Config{
-			LinkKey:              glue.LinkKey(),
-			LogBackend:           glue.LogBackend(),
-			Address:              glue.Config().PKI.Nonvoting.Address,
-			AuthorityIdentityKey: glue.Config().PKI.Nonvoting.PublicKey,
-			AuthorityLinkKey:     glue.Config().PKI.Nonvoting.LinkPublicKey,
-		}
-		p.impl, err = nClient.New(pkiCfg)
-		if err != nil {
-			return nil, err
-		}
-	} else {
-		pkiCfg := &vClient.Config{
-			LinkKey:     glue.LinkKey(),
-			LogBackend:  glue.LogBackend(),
-			Authorities: glue.Config().PKI.Voting.Authorities,
-		}
-		p.impl, err = vClient.New(pkiCfg)
-		if err != nil {
-			return nil, err
-		}
+	kemscheme := schemes.ByName(glue.Config().Server.WireKEM)
+	if kemscheme == nil {
+		return nil, errors.New("kem scheme not found in registry")
 	}
+
+	pkiCfg := &vClient.Config{
+		KEMScheme:   kemscheme,
+		LinkKey:     glue.LinkKey(),
+		LogBackend:  glue.LogBackend(),
+		Authorities: glue.Config().PKI.Voting.Authorities,
+		Geo:         glue.Config().SphinxGeometry,
+	}
+	p.impl, err = vClient.New(pkiCfg)
+	if err != nil {
+		return nil, err
+	}
+
 	// TODO: Wire in a real PKI implementation in addition to the test one.
 
 	// Note: This does not start the worker immediately since the worker can
@@ -702,8 +735,8 @@ func New(glue glue.Glue) (glue.PKI, error) {
 	return p, nil
 }
 
-func makeDescAddrMap(addrs []string) (map[cpki.Transport][]string, error) {
-	m := make(map[cpki.Transport][]string)
+func makeDescAddrMap(addrs []string) (map[string][]string, error) {
+	m := make(map[string][]string)
 	for _, addr := range addrs {
 		u, err := url.Parse(addr)
 		if err != nil {

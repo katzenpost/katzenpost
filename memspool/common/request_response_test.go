@@ -19,20 +19,20 @@ package common
 import (
 	"testing"
 
-	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/stretchr/testify/require"
+
+	eddsa "github.com/katzenpost/hpqc/sign/ed25519"
 )
 
 func TestCommandSerialization(t *testing.T) {
 	require := require.New(t)
-	pk, err := eddsa.NewKeypair(rand.Reader)
-	signature := pk.Sign(pk.PublicKey().Bytes())
+	_, pk, err := eddsa.Scheme().GenerateKey()
+	signature := eddsa.Scheme().Sign(pk, pk.Public().(*eddsa.PublicKey).Bytes(), nil)
 	require.NoError(err)
 	cmd, err := CreateSpool(pk)
 	require.NoError(err)
 	sr := new(SpoolRequest)
-	sr.Unmarshal(cmd)
+	require.NoError(sr.Unmarshal(cmd))
 	require.Equal(sr.Command, uint8(CreateSpoolCommand))
 	require.NotNil(sr.Signature)
 	require.Equal(sr.Signature, signature)

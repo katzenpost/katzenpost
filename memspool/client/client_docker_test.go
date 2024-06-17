@@ -26,7 +26,7 @@ import (
 
 	cc "github.com/katzenpost/katzenpost/client"
 	"github.com/katzenpost/katzenpost/client/config"
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/katzenpost/memspool/common"
 	"github.com/stretchr/testify/require"
 )

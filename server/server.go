@@ -25,32 +25,42 @@ import (
 	"sync"
 
 	"gitlab.com/yawning/aez.git"
-	"gopkg.in/eapache/channels.v1"
 	"gopkg.in/op/go-logging.v1"
 
-	"github.com/katzenpost/katzenpost/core/crypto/cert"
-	"github.com/katzenpost/katzenpost/core/crypto/pem"
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
-	"github.com/katzenpost/katzenpost/core/crypto/sign"
+	nyquistkem "github.com/katzenpost/nyquist/kem"
+	"github.com/katzenpost/nyquist/seec"
+
+	"github.com/katzenpost/hpqc/hash"
+	"github.com/katzenpost/hpqc/kem"
+	pemkem "github.com/katzenpost/hpqc/kem/pem"
+	"github.com/katzenpost/hpqc/kem/schemes"
+	"github.com/katzenpost/hpqc/rand"
+	"github.com/katzenpost/hpqc/sign"
+	signpem "github.com/katzenpost/hpqc/sign/pem"
+	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
+
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/thwack"
 	"github.com/katzenpost/katzenpost/core/utils"
-	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/server/config"
 	"github.com/katzenpost/katzenpost/server/internal/cryptoworker"
 	"github.com/katzenpost/katzenpost/server/internal/decoy"
+	"github.com/katzenpost/katzenpost/server/internal/gateway"
 	"github.com/katzenpost/katzenpost/server/internal/glue"
 	"github.com/katzenpost/katzenpost/server/internal/incoming"
 	"github.com/katzenpost/katzenpost/server/internal/instrument"
+	"github.com/katzenpost/katzenpost/server/internal/mixkeys"
 	"github.com/katzenpost/katzenpost/server/internal/outgoing"
 	"github.com/katzenpost/katzenpost/server/internal/pki"
-	"github.com/katzenpost/katzenpost/server/internal/provider"
 	"github.com/katzenpost/katzenpost/server/internal/scheduler"
+	"github.com/katzenpost/katzenpost/server/internal/service"
 )
 
 // ErrGenerateOnly is the error returned when the server initialization
 // terminates due to the `GenerateOnly` debug config option.
 var ErrGenerateOnly = errors.New("server: GenerateOnly set")
+
+const InboundPacketsChannelSize = 1000
 
 // Server is a Katzenpost server instance.
 type Server struct {
@@ -58,12 +68,12 @@ type Server struct {
 
 	identityPrivateKey sign.PrivateKey
 	identityPublicKey  sign.PublicKey
-	linkKey            wire.PrivateKey
+	linkKey            kem.PrivateKey
 
 	logBackend *log.Backend
 	log        *logging.Logger
 
-	inboundPackets *channels.InfiniteChannel
+	inboundPackets chan interface{}
 
 	scheduler     glue.Scheduler
 	cryptoWorkers []*cryptoworker.Worker
@@ -72,7 +82,8 @@ type Server struct {
 	pki           glue.PKI
 	listeners     []glue.Listener
 	connector     glue.Connector
-	provider      glue.Provider
+	gateway       glue.Gateway
+	serviceNode   glue.ServiceNode
 	decoy         glue.Decoy
 	management    *thwack.Server
 
@@ -141,12 +152,6 @@ func (s *Server) halt() {
 		s.periodic = nil
 	}
 
-	// Stop the management interface.
-	if s.management != nil {
-		s.management.Halt()
-		s.management = nil
-	}
-
 	// Stop the decoy source/sink.
 	if s.decoy != nil {
 		s.decoy.Halt()
@@ -175,10 +180,16 @@ func (s *Server) halt() {
 		}
 	}
 
-	// Provider specific cleanup.
-	if s.provider != nil {
-		s.provider.Halt()
-		s.provider = nil
+	// Gateway specific cleanup.
+	if s.gateway != nil {
+		s.gateway.Halt()
+		s.gateway = nil
+	}
+
+	// ServiceNode specific cleanup.
+	if s.serviceNode != nil {
+		s.serviceNode.Halt()
+		s.serviceNode = nil
 	}
 
 	// Stop the scheduler.
@@ -205,11 +216,9 @@ func (s *Server) halt() {
 
 	// Clean up the top level components.
 	if s.inboundPackets != nil {
-		s.inboundPackets.Close()
+		close(s.inboundPackets)
 	}
-	s.linkKey.Reset()
-	s.identityPrivateKey.Reset()
-	s.identityPublicKey.Reset()
+
 	close(s.fatalErrCh)
 
 	s.log.Noticef("Shutdown complete.")
@@ -233,7 +242,7 @@ func New(cfg *config.Config) (*Server, error) {
 	if err := s.initLogging(); err != nil {
 		return nil, err
 	}
-	instrument.Init()
+	instrument.StartPrometheusListener(goo)
 
 	s.log.Notice("Katzenpost is still pre-alpha.  DO NOT DEPEND ON IT FOR STRONG SECURITY OR ANONYMITY.")
 	if s.cfg.Logging.Level == "DEBUG" {
@@ -245,28 +254,34 @@ func New(cfg *config.Config) (*Server, error) {
 		s.log.Warningf("AEZv5 implementation IS NOT hardware accelerated.")
 	}
 	s.log.Noticef("Server identifier is: '%v'", s.cfg.Server.Identifier)
+	s.log.Noticef("Sphinx Geometry: %s", cfg.SphinxGeometry.Display())
 
 	// Initialize the server identity and link keys.
 	identityPrivateKeyFile := filepath.Join(s.cfg.Server.DataDir, "identity.private.pem")
 	identityPublicKeyFile := filepath.Join(s.cfg.Server.DataDir, "identity.public.pem")
 
-	s.identityPrivateKey, s.identityPublicKey = cert.Scheme.NewKeypair()
+	var err error
+	pkiSignatureScheme := signSchemes.ByName(s.cfg.Server.PKISignatureScheme)
+	if s == nil {
+		return nil, errors.New("PKI Signature Scheme not found")
+	}
+	s.identityPublicKey, s.identityPrivateKey, err = pkiSignatureScheme.GenerateKey()
 
-	if pem.BothExists(identityPrivateKeyFile, identityPublicKeyFile) {
-		err := pem.FromFile(identityPrivateKeyFile, s.identityPrivateKey)
+	if utils.BothExists(identityPrivateKeyFile, identityPublicKeyFile) {
+		s.identityPrivateKey, err = signpem.FromPrivatePEMFile(identityPrivateKeyFile, pkiSignatureScheme)
 		if err != nil {
 			return nil, err
 		}
-		err = pem.FromFile(identityPublicKeyFile, s.identityPublicKey)
+		s.identityPublicKey, err = signpem.FromPublicPEMFile(identityPublicKeyFile, pkiSignatureScheme)
 		if err != nil {
 			return nil, err
 		}
-	} else if pem.BothNotExists(identityPrivateKeyFile, identityPublicKeyFile) {
-		err := pem.ToFile(identityPrivateKeyFile, s.identityPrivateKey)
+	} else if utils.BothNotExists(identityPrivateKeyFile, identityPublicKeyFile) {
+		err = signpem.PrivateKeyToFile(identityPrivateKeyFile, s.identityPrivateKey)
 		if err != nil {
 			return nil, err
 		}
-		err = pem.ToFile(identityPublicKeyFile, s.identityPublicKey)
+		err = signpem.PublicKeyToFile(identityPublicKeyFile, s.identityPublicKey)
 		if err != nil {
 			return nil, err
 		}
@@ -274,30 +289,40 @@ func New(cfg *config.Config) (*Server, error) {
 		return nil, fmt.Errorf("%s and %s must either both exist or not exist", identityPrivateKeyFile, identityPublicKeyFile)
 	}
 
-	var err error
-	idPubKeyHash := s.identityPublicKey.Sum256()
+	idPubKeyHash := hash.Sum256From(s.identityPublicKey)
 	s.log.Noticef("Server identity public key hash is: %x", idPubKeyHash[:])
 	linkPrivateKeyFile := filepath.Join(s.cfg.Server.DataDir, "link.private.pem")
 	linkPublicKeyFile := filepath.Join(s.cfg.Server.DataDir, "link.public.pem")
-	scheme := wire.DefaultScheme
+	scheme := schemes.ByName(cfg.Server.WireKEM)
+	if scheme == nil {
+		panic("KEM scheme not found")
+	}
 
-	linkPrivateKey, linkPublicKey := scheme.GenerateKeypair(rand.Reader)
-	if pem.BothExists(linkPrivateKeyFile, linkPublicKeyFile) {
-		err = pem.FromFile(linkPrivateKeyFile, linkPrivateKey)
+	//GenerateKeypair
+	linkPublicKey, linkPrivateKey, err := scheme.GenerateKeyPair()
+	if err != nil {
+		panic(err)
+	}
+	if utils.BothExists(linkPrivateKeyFile, linkPublicKeyFile) {
+		linkPrivateKey, err = pemkem.FromPrivatePEMFile(linkPrivateKeyFile, scheme)
 		if err != nil {
 			return nil, err
 		}
-		err = pem.FromFile(linkPublicKeyFile, linkPublicKey)
+		linkPublicKey, err = pemkem.FromPublicPEMFile(linkPublicKeyFile, scheme)
 		if err != nil {
 			return nil, err
 		}
-	} else if pem.BothNotExists(linkPrivateKeyFile, linkPublicKeyFile) {
-		linkPrivateKey, linkPublicKey = scheme.GenerateKeypair(rand.Reader)
-		err = pem.ToFile(linkPrivateKeyFile, linkPrivateKey)
+	} else if utils.BothNotExists(linkPrivateKeyFile, linkPublicKeyFile) {
+		rng, err := seec.GenKeyPassthrough(rand.Reader, 0)
+		if err != nil {
+			panic(err)
+		}
+		linkPublicKey, linkPrivateKey := nyquistkem.GenerateKeypair(scheme, rng)
+		err = pemkem.PrivateKeyToFile(linkPrivateKeyFile, linkPrivateKey)
 		if err != nil {
 			return nil, err
 		}
-		err = pem.ToFile(linkPublicKeyFile, linkPublicKey)
+		err = pemkem.PublicKeyToFile(linkPublicKeyFile, linkPublicKey)
 		if err != nil {
 			return nil, err
 		}
@@ -306,8 +331,11 @@ func New(cfg *config.Config) (*Server, error) {
 	}
 
 	s.linkKey = linkPrivateKey
-
-	linkPubKeyHash := linkPublicKey.Sum256()
+	blob, err := linkPublicKey.MarshalBinary()
+	if err != nil {
+		panic(err)
+	}
+	linkPubKeyHash := hash.Sum256(blob)
 	s.log.Noticef("Server link public key hash is: %x", linkPubKeyHash[:])
 
 	if s.cfg.Debug.GenerateOnly {
@@ -315,7 +343,7 @@ func New(cfg *config.Config) (*Server, error) {
 	}
 
 	// Load and or generate mix keys.
-	if s.mixKeys, err = newMixKeys(goo, cfg.SphinxGeometry); err != nil {
+	if s.mixKeys, err = mixkeys.NewMixKeys(goo, cfg.SphinxGeometry); err != nil {
 		s.log.Errorf("Failed to initialize mix keys: %v", err)
 		return nil, err
 	}
@@ -353,6 +381,7 @@ func New(cfg *config.Config) (*Server, error) {
 		}
 	}
 	if s.cfg.Management.Enable {
+		s.log.Infof("s.cfg.Management.Path %s", s.cfg.Management.Path)
 		mgmtCfg := &thwack.Config{
 			Net:         "unix",
 			Addr:        s.cfg.Management.Path,
@@ -378,9 +407,17 @@ func New(cfg *config.Config) (*Server, error) {
 		return nil, err
 	}
 
+	// Initialize the gateway backend.
+	if s.cfg.Server.IsGatewayNode {
+		if s.gateway, err = gateway.New(goo); err != nil {
+			s.log.Errorf("Failed to initialize gateway backend: %v", err)
+			return nil, err
+		}
+	}
+
 	// Initialize the provider backend.
-	if s.cfg.Server.IsProvider {
-		if s.provider, err = provider.New(goo); err != nil {
+	if s.cfg.Server.IsServiceNode {
+		if s.serviceNode, err = service.New(goo); err != nil {
 			s.log.Errorf("Failed to initialize provider backend: %v", err)
 			return nil, err
 		}
@@ -393,10 +430,10 @@ func New(cfg *config.Config) (*Server, error) {
 	}
 
 	// Initialize and start the Sphinx workers.
-	s.inboundPackets = channels.NewInfiniteChannel()
+	s.inboundPackets = make(chan interface{}, InboundPacketsChannelSize)
 	s.cryptoWorkers = make([]*cryptoworker.Worker, 0, s.cfg.Debug.NumSphinxWorkers)
 	for i := 0; i < s.cfg.Debug.NumSphinxWorkers; i++ {
-		w := cryptoworker.New(goo, s.inboundPackets.Out(), i)
+		w := cryptoworker.New(goo, s.inboundPackets, i)
 		s.cryptoWorkers = append(s.cryptoWorkers, w)
 	}
 
@@ -411,7 +448,7 @@ func New(cfg *config.Config) (*Server, error) {
 	// Bring the listener(s) online.
 	s.listeners = make([]glue.Listener, 0, len(s.cfg.Server.Addresses))
 	for i, addr := range s.cfg.Server.Addresses {
-		l, err := incoming.New(goo, s.inboundPackets.In(), i, addr)
+		l, err := incoming.New(goo, s.inboundPackets, i, addr)
 		if err != nil {
 			s.log.Errorf("Failed to spawn listener on address: %v (%v).", addr, err)
 			return nil, err
@@ -455,7 +492,7 @@ func (g *serverGlue) IdentityPublicKey() sign.PublicKey {
 	return g.s.identityPublicKey
 }
 
-func (g *serverGlue) LinkKey() wire.PrivateKey {
+func (g *serverGlue) LinkKey() kem.PrivateKey {
 	return g.s.linkKey
 }
 
@@ -471,8 +508,12 @@ func (g *serverGlue) PKI() glue.PKI {
 	return g.s.pki
 }
 
-func (g *serverGlue) Provider() glue.Provider {
-	return g.s.provider
+func (g *serverGlue) Gateway() glue.Gateway {
+	return g.s.gateway
+}
+
+func (g *serverGlue) ServiceNode() glue.ServiceNode {
+	return g.s.serviceNode
 }
 
 func (g *serverGlue) Scheduler() glue.Scheduler {

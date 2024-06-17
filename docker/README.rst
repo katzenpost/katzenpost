@@ -10,7 +10,7 @@ mix network components as part of the core Katzenpost developer work flow.
 0. Requirements
 
 * Podman or Docker
-* docker-compose (tested with 1.29.2, among other versions)
+* either docker-compose (v1) or docker compose v2
 * GNU Make
 
 1. Run a test network
@@ -25,6 +25,13 @@ to ``sudo`` to use docker, you will need to prefix all of the ``make`` commands
 in this directory with ``sudo``. If you have both podman and docker installed,
 you can override the automatic choice of podman over docker by prefixing the
 ``make`` argument list with ``docker=docker``.
+
+Also note that if you are using podman, you'll need to have the podman system
+service running, and pointed to by DOCKER_HOST environment variable.
+::
+
+   export DOCKER_HOST=unix:///var/run/user/$(id -u)/podman/podman.sock
+   podman system service -t 0 $DOCKER_HOST &
 
 At this point, you should have a locally running network. You can hit ctrl-C to
 stop it, or use another terminal to observe the logs with ``tail -F voting_mixnet/*/*log``.

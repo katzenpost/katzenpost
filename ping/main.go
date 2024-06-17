@@ -22,9 +22,10 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/carlmjohnson/versioninfo"
 	"github.com/katzenpost/katzenpost/client"
 	"github.com/katzenpost/katzenpost/client/config"
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/hpqc/rand"
 )
 
 const (
@@ -53,7 +54,13 @@ func main() {
 	flag.IntVar(&timeout, "t", 45, "timeout")
 	flag.IntVar(&concurrency, "C", 1, "concurrency")
 	flag.BoolVar(&printDiff, "printDiff", false, "print payload contents if reply is different than original")
+	version := flag.Bool("v", false, "Get version info.")
 	flag.Parse()
+
+	if *version {
+		fmt.Printf("version is %s\n", versioninfo.Short())
+		return
+	}
 
 	if service == "" {
 		panic("must specify service name with -s")

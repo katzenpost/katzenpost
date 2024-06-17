@@ -20,7 +20,7 @@ import (
 	"crypto/rand"
 	"testing"
 
-	"github.com/katzenpost/katzenpost/core/crypto/nike"
+	"github.com/katzenpost/hpqc/nike"
 	"github.com/katzenpost/katzenpost/core/sphinx/commands"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 )
@@ -28,8 +28,16 @@ import (
 func benchmarkSphinxUnwrap(b *testing.B, mynike nike.Scheme) {
 	const testPayload = "It is the stillest words that bring on the storm.  Thoughts that come on doves’ feet guide the world."
 
+	if mynike == nil {
+		panic("nike cannot be nil")
+	}
+
 	g := geo.GeometryFromUserForwardPayloadLength(mynike, len(testPayload), false, 5)
-	sphinx := NewSphinx(g)
+	sphinx := NewNIKESphinx(mynike, g)
+
+	if sphinx.nike == nil {
+		panic("sphinx.nike cannot be nil")
+	}
 
 	nodes, path := benchNewPathVector(g.NrHops, false, mynike)
 	payload := []byte(testPayload)
@@ -47,7 +55,7 @@ func benchmarkSphinxUnwrap(b *testing.B, mynike nike.Scheme) {
 		copy(testPacket, pkt)
 		_, _, _, err := sphinx.Unwrap(nodes[0].privateKey, testPacket)
 		if err != nil {
-			panic("wtf")
+			panic(err)
 		}
 	}
 }
@@ -56,11 +64,11 @@ func benchNewNode(mynike nike.Scheme) *nodeParams {
 	n := new(nodeParams)
 	_, err := rand.Read(n.id[:])
 	if err != nil {
-		panic("wtf")
+		panic(err)
 	}
 	n.publicKey, n.privateKey, err = mynike.GenerateKeyPair()
 	if err != nil {
-		panic("wtf")
+		panic(err)
 	}
 	return n
 }

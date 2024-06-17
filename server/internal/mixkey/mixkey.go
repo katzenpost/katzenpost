@@ -19,46 +19,22 @@ package mixkey
 
 import (
 	"crypto/sha512"
-	"encoding/binary"
-	"fmt"
-	"math"
-	"os"
-	"path/filepath"
 	"sync"
 	"sync/atomic"
-	"time"
 
-	"github.com/cloudflare/circl/kem"
-	"github.com/katzenpost/katzenpost/core/crypto/nike"
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
-	"github.com/katzenpost/katzenpost/core/epochtime"
-	"github.com/katzenpost/katzenpost/core/sphinx/geo"
-	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/yawning/bloom"
 	bolt "go.etcd.io/bbolt"
+
+	"github.com/katzenpost/hpqc/kem"
+	"github.com/katzenpost/hpqc/nike"
+	"github.com/katzenpost/hpqc/rand"
+
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 )
 
 const (
-	replayBucket   = "replay"
-	metadataBucket = "metadata"
-
-	// Note: maximum at 1gbit ~ 10**9*60 / 2*1024*8  ~ 3.6 *10**6
-	// Or, approximately 100MB a minute of tags
-	// TODO: check that the replayBucket is dropped after the epoch has rotated
-
-	writeBackInterval = 60 * time.Second
-	writeBackSize     = 131072 // TODO/perf: Tune this.
-
 	// TagLength is the replay tag length in bytes.
 	TagLength = sha512.Size256
-
-	// KeyGlob is the pattern that matches the filenames for keys that have
-	// been persisted to disk.
-	KeyGlob = "mixkey-*.db"
-
-	// KeyFmt is the format string corresponding to filenames for keys that
-	// have been persisted to disk.
-	KeyFmt = "mixkey-%d.db"
 )
 
 var dbOptions = &bolt.Options{
@@ -68,17 +44,13 @@ var dbOptions = &bolt.Options{
 // MixKey is a Katzenpost server mix key.
 type MixKey struct {
 	sync.Mutex
-	worker.Worker
 
-	db          *bolt.DB
 	nikeKeypair nike.PrivateKey
 	nikePubKey  nike.PublicKey
 	kemKeypair  kem.PrivateKey
 	epoch       uint64
 
-	f         *bloom.Filter
-	writeBack map[[TagLength]byte]bool
-	flushCh   chan interface{}
+	f *bloom.Filter
 
 	refCount        int32
 	unlinkIfExpired bool
@@ -136,136 +108,18 @@ func (k *MixKey) IsReplay(rawTag []byte) bool {
 	var tag [TagLength]byte
 	copy(tag[:], rawTag)
 
-	// Check the bloom filter for the tag, to see if it might be a replay.
-	maybeReplay, inWriteBack := k.testAndSetTagMemory(&tag)
-	if !maybeReplay {
-		// k.isNotReplay() will add the tag to the write-back cache, so
-		// just poke the flush routine and return.
-		select {
-		case k.flushCh <- true:
-		default:
-			// Non-blocking channel write, because the channel is buffered
-			// and has a timer fallback.
-		}
-		return false
-	}
-
-	// Slow path, either a false positive or a replay.
-	//
-	// Note: It alternatively would be acceptable to just drop the packet,
-	// but k.isNotReplay()'s behavior will need to change on filter
-	// saturation.
-
-	isReplay := inWriteBack
-	if !isReplay {
-		// Well, it's not in the write-back cache, so query the database.
-		//
-		// Since we're stuck hitting the database anyway, might as well
-		// bypass the cache and save ourselves some pain by doing the
-		// insertion here.
-		if err := k.db.Update(func(tx *bolt.Tx) error {
-			bkt := tx.Bucket([]byte(replayBucket))
-			isReplay = testAndSetTagDB(bkt, tag[:])
-			return nil
-		}); err != nil {
-			panic("BUG: mixkey: Failed to query the replay filter: " + err.Error())
-		}
-	}
-	return isReplay
-}
-
-func testAndSetTagDB(bkt *bolt.Bucket, tag []byte) bool {
-	// Retrieve the counter from the database for the tag if it exists.
-	//
-	// XXX: The counter isn't actually used for anything since it isn't
-	// returned.  Not sure if it makes sense to keep it, but I don't think
-	// it costs us anything substantial to do so.
-	var seenCount uint64
-	if b := bkt.Get(tag); b != nil {
-		if len(b) == 8 {
-			seenCount = binary.LittleEndian.Uint64(b)
-		} else {
-			// Treat invalid but present entries as being seen.
-			seenCount = 1
-		}
-	}
-	seenCount++         // Increment the counter by 1.
-	if seenCount == 0 { // Should never happen ever, but handle correctly.
-		seenCount = math.MaxUint64
-	}
-
-	// Write the (potentially incremented) counter.
-	var seenBytes [8]byte
-	binary.LittleEndian.PutUint64(seenBytes[:], seenCount)
-	bkt.Put(tag, seenBytes[:])
-	return seenCount != 1
-}
-
-func (k *MixKey) testAndSetTagMemory(tag *[TagLength]byte) (bool, bool) {
 	k.Lock()
 	defer k.Unlock()
 
-	// TODO/perf: Perhaps the lock should only cover the bloom filter,
-	// and a sync.Map used for the pending write-back entries.
-
-	// If the filter is saturated then force a database lookup.
+	// If the filter is saturated then probability of a false replay is increased
+	// XXX: the filter size should be tuned for the maximum line rate expected so that this does not happen
 	if k.f.Entries() >= k.f.MaxEntries() {
-		return true, k.writeBack[*tag]
+		panic("MixKey bloom filter size too small")
 	}
 	if !k.f.TestAndSet(tag[:]) {
-		// The tag is not in the bloom filter, so by definition it is not a replay.
-
-		// Insert it into the write-back cache.
-		k.writeBack[*tag] = true
-		return false, true
+		return false
 	}
-
-	// Do the write-back cache lookup while we hold the lock.
-	return true, k.writeBack[*tag]
-}
-
-func (k *MixKey) worker() {
-	// XXX: will not actually flush entries if nEntries < writeBackSize
-	defer k.doFlush(true)
-
-	ticker := time.NewTicker(writeBackInterval)
-	defer ticker.Stop()
-
-	for {
-		forceFlush := false
-		select {
-		case <-k.HaltCh():
-			return
-		case <-k.flushCh:
-		case <-ticker.C:
-			forceFlush = true
-		}
-		k.doFlush(forceFlush)
-	}
-}
-
-func (k *MixKey) doFlush(forceFlush bool) {
-	k.Lock()
-
-	// Accumulate up to writeBackSize entries.
-	nEntries := len(k.writeBack)
-	if nEntries == 0 || (!forceFlush && nEntries < writeBackSize) {
-		k.Unlock()
-		return
-	}
-
-	writeBack := k.writeBack
-	k.writeBack = make(map[[TagLength]byte]bool)
-	k.Unlock()
-	if err := k.db.Update(func(tx *bolt.Tx) error {
-		bkt := tx.Bucket([]byte(replayBucket))
-		for tag := range writeBack {
-			testAndSetTagDB(bkt, tag[:])
-		}
-		return nil
-	}); err != nil {
-		panic("BUG: mixkey: Failed to flush write-back cache: " + err.Error())
-	}
+	return true
 }
 
 // Deref reduces the refcount by one, and closes the key if the refcount hits
@@ -288,30 +142,6 @@ func (k *MixKey) Ref() {
 }
 
 func (k *MixKey) forceClose() {
-	if k.db != nil {
-		f := k.db.Path() // Cache so we can unlink after Close().
-
-		// Gracefully terminate the worker.
-		k.Halt()
-
-		// Force the DB to disk, and close.
-		k.db.Sync()
-		k.db.Close()
-		k.db = nil
-
-		// Delete the database if the key is expired, and the owner requested
-		// full cleanup.
-		epoch, _, _ := epochtime.Now()
-		if k.unlinkIfExpired && k.epoch < epoch-1 {
-			// People will probably complain that this doesn't attempt
-			// "secure" deletion, but that's fundamentally a lost cause
-			// given how many levels of indirection there are to files vs
-			// the raw physical media, and the cleanup process being slightly
-			// race prone around epoch transitions.  Use FDE.
-			os.Remove(f)
-		}
-	}
-
 	if k.nikeKeypair != nil {
 		k.nikeKeypair.Reset()
 		k.nikePubKey.Reset()
@@ -325,138 +155,32 @@ func (k *MixKey) forceClose() {
 
 // New creates (or loads) a mix key in the provided data directory, for the
 // given epoch.
-func New(dataDir string, epoch uint64, g *geo.Geometry) (*MixKey, error) {
-	const (
-		versionKey = "version"
-		pkKey      = "privateKey"
-		epochKey   = "epochKey"
-	)
+func New(epoch uint64, g *geo.Geometry) (*MixKey, error) {
 	var err error
 
 	// Initialize the structure and create or open the database.
 	k := &MixKey{
-		epoch:     epoch,
-		refCount:  1,
-		writeBack: make(map[[TagLength]byte]bool),
-		flushCh:   make(chan interface{}, 1),
+		epoch:    epoch,
+		refCount: 1,
 	}
 
-	f := filepath.Join(dataDir, fmt.Sprintf(KeyFmt, epoch))
-	k.db, err = bolt.Open(f, 0600, dbOptions)
-	if err != nil {
-		return nil, err
-	}
 	k.f, err = bloom.New(rand.Reader, 29, 0.001) // 64 MiB, 37,240,820 entries.
 	if err != nil {
 		return nil, err
 	}
 
-	didCreate := false
-	if err := k.db.Update(func(tx *bolt.Tx) error {
-		// Ensure that all the buckets exist.
-		bkt, err := tx.CreateBucketIfNotExists([]byte(metadataBucket))
+	nikeScheme, kemScheme := g.Scheme()
+	if nikeScheme != nil {
+		k.nikePubKey, k.nikeKeypair, err = nikeScheme.GenerateKeyPair()
 		if err != nil {
-			return err
+			return nil, err
 		}
-		replayBkt, err := tx.CreateBucketIfNotExists([]byte(replayBucket))
+	} else {
+		_, k.kemKeypair, err = kemScheme.GenerateKeyPair()
 		if err != nil {
-			return err
+			return nil, err
 		}
-
-		if b := bkt.Get([]byte(versionKey)); b != nil {
-			// Well, looks like we loaded as opposed to created.
-			if len(b) != 1 || b[0] != 0 {
-				return fmt.Errorf("mixkey: incompatible version: %d", uint(b[0]))
-			}
-
-			// Deserialize the key.
-			if b = bkt.Get([]byte(pkKey)); b == nil {
-				return fmt.Errorf("mixkey: db missing privateKey entry")
-			}
-
-			nikeScheme, kemScheme := g.Scheme()
-
-			if nikeScheme != nil {
-				k.nikeKeypair, err = nikeScheme.UnmarshalBinaryPrivateKey(b)
-				if err != nil {
-					return err
-				}
-				k.nikePubKey = k.nikeKeypair.Public()
-			} else {
-				k.kemKeypair, err = kemScheme.UnmarshalBinaryPrivateKey(b)
-				if err != nil {
-					return err
-				}
-			}
-			getUint64 := func(key string) (uint64, error) {
-				var buf []byte
-				if buf = bkt.Get([]byte(key)); buf == nil {
-					return 0, fmt.Errorf("mixkey: db missing entry '%v'", key)
-				}
-				if len(buf) != 8 {
-					return 0, fmt.Errorf("mixkey: db corrupted entry '%v'", key)
-				}
-				return binary.LittleEndian.Uint64(buf), nil
-			}
-
-			// Ensure the epoch is sane.
-			var dbEpoch uint64
-			dbEpoch, err = getUint64(epochKey)
-			if err != nil {
-				return err
-			} else if dbEpoch != epoch {
-				return fmt.Errorf("mixkey: db epoch mismatch")
-			}
-
-			// Rebuild the bloom filter.
-			replayBkt.ForEach(func(tag, rawCount []byte) error {
-				k.f.TestAndSet(tag)
-				return nil
-			})
-
-			return nil
-		}
-
-		// If control reaches here, then a new key needs to be created.
-		didCreate = true
-		nikeScheme, kemScheme := g.Scheme()
-		var keypairBytes []byte
-		if nikeScheme != nil {
-			k.nikePubKey, k.nikeKeypair, err = nikeScheme.GenerateKeyPair()
-			if err != nil {
-				return err
-			}
-			keypairBytes = k.nikeKeypair.Bytes()
-		} else {
-			_, k.kemKeypair, err = kemScheme.GenerateKeyPair()
-			if err != nil {
-				return err
-			}
-			keypairBytes, err = k.kemKeypair.MarshalBinary()
-			if err != nil {
-				return err
-			}
-		}
-
-		var epochBytes [8]byte
-		binary.LittleEndian.PutUint64(epochBytes[:], epoch)
-
-		// Stash the version/key/epoch in the metadata bucket.
-		bkt.Put([]byte(versionKey), []byte{0})
-		bkt.Put([]byte(pkKey), keypairBytes)
-		bkt.Put([]byte(epochKey), epochBytes[:])
-
-		return nil
-	}); err != nil {
-		k.db.Close()
-		return nil, err
 	}
-	if didCreate {
-		// Flush the newly created database to disk.
-		k.db.Sync()
-	}
-
-	k.Go(k.worker)
 
 	return k, nil
 }

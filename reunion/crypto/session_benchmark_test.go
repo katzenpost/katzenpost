@@ -19,7 +19,7 @@ package crypto
 import (
 	"testing"
 
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/hpqc/rand"
 	"github.com/stretchr/testify/require"
 )
 
@@ -35,6 +35,7 @@ func BenchmarkBasicTwoClientExchange(b *testing.B) {
 
 	sharedEpochKey1 := [SharedEpochKeySize]byte{}
 	_, err = rand.Reader.Read(sharedEpochKey1[:])
+	require.NoError(err)
 	sharedEpochKey2 := [SharedEpochKeySize]byte{}
 	copy(sharedEpochKey2[:], sharedEpochKey1[:])
 
@@ -67,8 +68,8 @@ func BenchmarkBasicTwoClientExchange(b *testing.B) {
 		client2CandidateKey, err := client2.GetCandidateKey(client1T2, client1B1)
 		require.NoError(err)
 
-		require.Equal(client2CandidateKey, client1.sessionKey1.Bytes())
-		require.Equal(client1CandidateKey, client2.sessionKey1.Bytes())
+		require.Equal(client2CandidateKey, client1.sessionKey1)
+		require.Equal(client1CandidateKey, client2.sessionKey1)
 
 		client1B2, err := DecryptT1Beta(client1CandidateKey, client2T1Beta)
 		require.NoError(err)
@@ -184,6 +185,7 @@ func createMultiClientBenchmarkData(b *testing.B, n int) *testData {
 		candidateKey, err := tests.sessions[0].GetCandidateKey(state.t2, beta2PubKey)
 		require.NoError(err)
 		_, err = DecryptT1Beta(candidateKey, state.beta)
+		require.NoError(err)
 	}
 	return &tests
 }
@@ -212,6 +214,7 @@ func BenchmarkPhases(b *testing.B) {
 				candidateKey, err := tests.sessions[0].GetCandidateKey(state.t2, beta2PubKey)
 				require.NoError(err)
 				_, err = DecryptT1Beta(candidateKey, state.beta)
+				require.NoError(err)
 				_, err = tests.sessions[0].ComposeType3Message(beta2PubKey)
 				require.NoError(err)
 			}

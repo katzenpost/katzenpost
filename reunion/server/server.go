@@ -19,6 +19,8 @@ package server
 
 import (
 	"errors"
+	"fmt"
+	"os"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -48,6 +50,7 @@ type Server struct {
 	epochClock    epochtime.EpochClock
 	log           *logging.Logger
 	logBackend    *log.Backend
+	write         func(cborplugin.Command)
 }
 
 // NewServerFromStatefile loads the state from a file.
@@ -188,36 +191,37 @@ func (s *Server) sendT3(sendT3 *commands.SendT3) (*commands.MessageResponse, err
 	return response, nil
 }
 
-// RegisterConsumers implemenets cborplugin.PluginClient
-func (s *Server) RegisterConsumer(*cborplugin.Server) {
-	return
+// RegisterConsumers implements cborplugin.PluginClient
+func (s *Server) RegisterConsumer(svr *cborplugin.Server) {
+	s.write = svr.Write
 }
 
 // OnCommand implemenets cborplugin.PluginClient
-func (s *Server) OnCommand(cmd cborplugin.Command) (cborplugin.Command, error) {
+func (s *Server) OnCommand(cmd cborplugin.Command) error {
 	switch r := cmd.(type) {
 	case *cborplugin.Request:
 		cmd, err := commands.FromBytes(r.Payload)
 		var replyCmd commands.Command
 		if err != nil {
-			replyCmd = &commands.MessageResponse{ErrorCode: commands.ResponseInvalidCommand}
 			s.log.Errorf("invalid Reunion query command found in request Payload len %d: %s", len(r.Payload), err.Error())
-			return nil, err
+			return err
 		}
-		replyCmd, err = s.ProcessQuery(cmd)
-		if err != nil {
-			s.log.Errorf("reunion HTTP server invalid reply command: %s", err.Error())
-			// XXX: this is also triggered by an expired epoch... and does not return error to client
-			replyCmd = &commands.MessageResponse{ErrorCode: commands.ResponseInvalidCommand}
-		}
+		s.Go(func() {
+			replyCmd, err = s.ProcessQuery(cmd)
+			if err != nil {
+				s.log.Errorf("reunion server invalid reply command: %s", err.Error())
+				// XXX: this is also triggered by an expired epoch... and does not return error to client
+				replyCmd = &commands.MessageResponse{ErrorCode: commands.ResponseInvalidCommand}
+			}
 
-		rawReply := replyCmd.ToBytes()
-		reply := &cborplugin.Response{Payload: rawReply}
-		return reply, nil
+			rawReply := replyCmd.ToBytes()
+			s.write(&cborplugin.Response{ID: r.ID, SURB: r.SURB, Payload: rawReply})
+		})
 	default:
 		s.log.Errorf("OnCommand called with unknown Command type")
-		return nil, errors.New("Invalid Command type")
+		return errors.New("Invalid Command type")
 	}
+	return nil
 }
 
 // ProcessQuery processes the given query command and returns a response command or an error.
@@ -267,7 +271,12 @@ func (s *Server) maybeFlush() {
 	}
 	err := s.doFlush()
 	if err != nil {
-		panic("flush to disk failure, aborting...") // XXX should we panic here or what?
+		// FIXME(david): doFlush fails on windows and thus crashes here.
+		// For now let's just print a warning to stderr and the log.
+		//panic("flush to disk failure, aborting...")
+
+		fmt.Fprintf(os.Stderr, "WARNING: doFlush failed: %s\n", err)
+		s.log.Warningf("WARNING: doFlush failed: %s", err)
 	}
 	atomic.StoreUint64(&s.nDirtyEntries, 0)
 }

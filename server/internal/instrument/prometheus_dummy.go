@@ -1,14 +1,15 @@
-//go:build !prometheus
-// +build !prometheus
+//go:build noprometheus
+// +build noprometheus
 
 package instrument
 
 import (
 	"github.com/katzenpost/katzenpost/core/wire/commands"
+	"github.com/katzenpost/katzenpost/server/internal/glue"
 )
 
-// Init instrumentation
-func Init() {}
+// StartPrometheusListener does nothing
+func StartPrometheusListener(glue glue.Glue) {}
 
 // Incoming increments the counter for incoming requests
 func Incoming(cmd commands.Command) {}
@@ -52,6 +53,15 @@ func MixPacketsDropped() {}
 // MixQueueSize observes the size of the mix queue
 func MixQueueSize(size uint64) {}
 
+// OutgoingPacketsDropped increments the counter for the number of packets dropped by outgoing worker
+func OutgoingPacketsDropped() {}
+
+// DeadlineBlownPacketsDropped increments the counter for the number of packets dropped due to excessive dwell.
+func DeadlineBlownPacketsDropped() {}
+
+// InvalidPacketsDropped increments the counter for the number of invalid packets dropped.
+func InvalidPacketsDropped() {}
+
 // PKIDocs increments the counter for the number of PKI docs per epoch
 func PKIDocs(epoch string) {}
 
@@ -75,3 +85,5 @@ func FailedPKICacheGeneration(epoch string) {}
 
 // InvalidPKICache increments the counter for the number of invalid cached PKI docs per epoch
 func InvalidPKICache(epoch string) {}
+
+func GaugeChannelLength(c string, length int) {}

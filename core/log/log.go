@@ -139,8 +139,8 @@ func (b *Backend) Rotate() error {
 	if err != nil {
 		return err
 	}
-	b.newBackend()
-	return nil
+	err = b.newBackend()
+	return err
 }
 
 func (b *Backend) newBackend() error {

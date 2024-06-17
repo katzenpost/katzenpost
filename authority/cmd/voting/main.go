@@ -1,5 +1,5 @@
-// main.go - Katzenpost nonvoting-authrity binary.
-// Copyright (C) 2017  Yawning Angel.
+// main.go - Katzenpost voting-authority binary.
+// Copyright (C) 2023  Yawning Angel, Masala
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as
@@ -23,17 +23,27 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/carlmjohnson/versioninfo"
+
 	"github.com/katzenpost/katzenpost/authority/voting/server"
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
+	"github.com/katzenpost/katzenpost/core/compat"
 )
 
 func main() {
 	cfgFile := flag.String("f", "katzenpost-authority.toml", "Path to the authority config file.")
 	genOnly := flag.Bool("g", false, "Generate the keys and exit immediately.")
+	version := flag.Bool("v", false, "Get version info.")
+
 	flag.Parse()
 
+	if *version {
+		fmt.Printf("version is %s\n", versioninfo.Short())
+		return
+	}
+
 	// Set the umask to something "paranoid".
-	syscall.Umask(0077)
+	compat.Umask(0077)
 
 	cfg, err := config.LoadFile(*cfgFile, *genOnly)
 	if err != nil {

@@ -18,8 +18,10 @@
 package server
 
 import (
+	"crypto/sha256"
 	"errors"
 	"fmt"
+	"math"
 	"net"
 	"net/url"
 	"os"
@@ -29,13 +31,18 @@ import (
 	"gopkg.in/op/go-logging.v1"
 
 	"github.com/gobwas/ws"
+	"github.com/katzenpost/hpqc/hash"
+	"github.com/katzenpost/hpqc/kem"
+	kempem "github.com/katzenpost/hpqc/kem/pem"
+	"github.com/katzenpost/hpqc/kem/schemes"
+	"github.com/katzenpost/hpqc/sign"
+	signpem "github.com/katzenpost/hpqc/sign/pem"
+	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
+
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
-	"github.com/katzenpost/katzenpost/core/crypto/cert"
-	"github.com/katzenpost/katzenpost/core/crypto/pem"
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
-	"github.com/katzenpost/katzenpost/core/crypto/sign"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
+	"github.com/katzenpost/katzenpost/core/utils"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/http/common"
 	"github.com/quic-go/quic-go"
@@ -54,7 +61,7 @@ type Server struct {
 
 	identityPrivateKey sign.PrivateKey
 	identityPublicKey  sign.PublicKey
-	linkKey            wire.PrivateKey
+	linkKey            kem.PrivateKey
 
 	logBackend *log.Backend
 	log        *logging.Logger
@@ -65,6 +72,14 @@ type Server struct {
 	fatalErrCh chan error
 	haltedCh   chan interface{}
 	haltOnce   sync.Once
+}
+
+func computeLambdaG(cfg *config.Config) float64 {
+	n := float64(len(cfg.Topology.Layers[0].Nodes))
+	if n == 1 {
+		return cfg.Parameters.LambdaP + cfg.Parameters.LambdaL + cfg.Parameters.LambdaD
+	}
+	return n * math.Log(n)
 }
 
 func (s *Server) initDataDir() error {
@@ -232,9 +247,6 @@ func (s *Server) halt() {
 		s.state = nil
 	}
 
-	s.identityPublicKey.Reset()
-	s.identityPrivateKey.Reset()
-	s.linkKey.Reset()
 	close(s.fatalErrCh)
 
 	s.log.Notice("Shutdown complete.")
@@ -264,27 +276,33 @@ func New(cfg *config.Config) (*Server, error) {
 		s.log.Warning("Unsafe Debug logging is enabled.")
 	}
 
+	pkiSignatureScheme := signSchemes.ByName(cfg.Server.PKISignatureScheme)
+
 	// Initialize the authority identity key.
 	identityPrivateKeyFile := filepath.Join(s.cfg.Server.DataDir, "identity.private.pem")
 	identityPublicKeyFile := filepath.Join(s.cfg.Server.DataDir, "identity.public.pem")
 
-	s.identityPrivateKey, s.identityPublicKey = cert.Scheme.NewKeypair()
 	var err error
-	if pem.BothExists(identityPrivateKeyFile, identityPublicKeyFile) {
-		err = pem.FromFile(identityPrivateKeyFile, s.identityPrivateKey)
+
+	if utils.BothExists(identityPrivateKeyFile, identityPublicKeyFile) {
+		s.identityPrivateKey, err = signpem.FromPrivatePEMFile(identityPrivateKeyFile, pkiSignatureScheme)
 		if err != nil {
 			return nil, err
 		}
-		err = pem.FromFile(identityPublicKeyFile, s.identityPublicKey)
+		s.identityPublicKey, err = signpem.FromPublicPEMFile(identityPublicKeyFile, pkiSignatureScheme)
 		if err != nil {
 			return nil, err
 		}
-	} else if pem.BothNotExists(identityPrivateKeyFile, identityPublicKeyFile) {
-		err = pem.ToFile(identityPrivateKeyFile, s.identityPrivateKey)
+	} else if utils.BothNotExists(identityPrivateKeyFile, identityPublicKeyFile) {
+		s.identityPublicKey, s.identityPrivateKey, err = pkiSignatureScheme.GenerateKey()
 		if err != nil {
 			return nil, err
 		}
-		err = pem.ToFile(identityPublicKeyFile, s.identityPublicKey)
+		err = signpem.PrivateKeyToFile(identityPrivateKeyFile, s.identityPrivateKey)
+		if err != nil {
+			return nil, err
+		}
+		err = signpem.PublicKeyToFile(identityPublicKeyFile, s.identityPublicKey)
 		if err != nil {
 			return nil, err
 		}
@@ -292,27 +310,48 @@ func New(cfg *config.Config) (*Server, error) {
 		return nil, fmt.Errorf("%s and %s must either both exist or not exist", identityPrivateKeyFile, identityPublicKeyFile)
 	}
 
-	scheme := wire.DefaultScheme
+	scheme := schemes.ByName(cfg.Server.WireKEMScheme)
+	if scheme == nil {
+		return nil, errors.New("KEM scheme not found in registry")
+	}
 	linkPrivateKeyFile := filepath.Join(s.cfg.Server.DataDir, "link.private.pem")
 	linkPublicKeyFile := filepath.Join(s.cfg.Server.DataDir, "link.public.pem")
 
-	linkPrivateKey, linkPublicKey := scheme.GenerateKeypair(rand.Reader)
-	if pem.BothExists(linkPrivateKeyFile, linkPublicKeyFile) {
-		err = pem.FromFile(linkPrivateKeyFile, linkPrivateKey)
+	var linkPrivateKey kem.PrivateKey
+
+	if utils.BothExists(linkPrivateKeyFile, linkPublicKeyFile) {
+		linkPrivateKey, err = kempem.FromPrivatePEMFile(linkPrivateKeyFile, scheme)
 		if err != nil {
 			return nil, err
 		}
-		err = pem.FromFile(linkPublicKeyFile, linkPublicKey)
+		_, err = kempem.FromPublicPEMFile(linkPublicKeyFile, scheme)
 		if err != nil {
 			return nil, err
 		}
-	} else if pem.BothNotExists(linkPrivateKeyFile, linkPublicKeyFile) {
-		linkPrivateKey, linkPublicKey = scheme.GenerateKeypair(rand.Reader)
-		err = pem.ToFile(linkPrivateKeyFile, linkPrivateKey)
+
+		/* NOTE(david): enable this check after we get things working again?
+		linkpubkey, err := kempem.FromPublicPEMFile(linkPublicKeyFile, scheme)
 		if err != nil {
 			return nil, err
 		}
-		err = pem.ToFile(linkPublicKeyFile, linkPublicKey)
+		s.log.Warning("attempting to call validate our config's peers against our own link public key")
+		err = cfg.ValidateAuthorities(linkpubkey)
+		if err != nil {
+			s.log.Error("config's peers validation failure. must be your own peer!")
+			return nil, err
+		}
+		*/
+	} else if utils.BothNotExists(linkPrivateKeyFile, linkPublicKeyFile) {
+		linkPublicKey, linkPrivateKey, err := scheme.GenerateKeyPair()
+		if err != nil {
+			return nil, err
+		}
+
+		err = kempem.PrivateKeyToFile(linkPrivateKeyFile, linkPrivateKey)
+		if err != nil {
+			return nil, err
+		}
+		err = kempem.PublicKeyToFile(linkPublicKeyFile, linkPublicKey)
 		if err != nil {
 			return nil, err
 		}
@@ -322,8 +361,12 @@ func New(cfg *config.Config) (*Server, error) {
 
 	s.linkKey = linkPrivateKey
 
-	s.log.Noticef("Authority identity public key hash is: %x", s.identityPublicKey.Sum256())
-	s.log.Noticef("Authority link public key hash is: %x", s.linkKey.PublicKey().Sum256())
+	s.log.Noticef("Authority identity public key hash is: %x", hash.Sum256From(s.identityPublicKey))
+	linkBlob, err := s.linkKey.Public().MarshalBinary()
+	if err != nil {
+		return nil, err
+	}
+	s.log.Noticef("Authority link public key hash is: %x", sha256.Sum256(linkBlob))
 
 	if s.cfg.Debug.GenerateOnly {
 		return nil, ErrGenerateOnly
@@ -331,8 +374,11 @@ func New(cfg *config.Config) (*Server, error) {
 
 	// Ensure that there are enough mixes and providers whitelisted to form
 	// a topology, assuming all of them post a descriptor.
-	if len(cfg.Providers) < 1 {
-		return nil, fmt.Errorf("server: No Providers specified in the config")
+	if len(cfg.GatewayNodes) < 1 {
+		return nil, fmt.Errorf("server: No GatewayNodes specified in the config")
+	}
+	if len(cfg.ServiceNodes) < 1 {
+		return nil, fmt.Errorf("server: No ServiceNodes specified in the config")
 	}
 	if len(cfg.Mixes) < cfg.Debug.Layers*cfg.Debug.MinNodesPerLayer {
 		return nil, fmt.Errorf("server: Insufficient nodes whitelisted, got %v , need %v", len(cfg.Mixes), cfg.Debug.Layers*cfg.Debug.MinNodesPerLayer)

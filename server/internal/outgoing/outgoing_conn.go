@@ -25,27 +25,30 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/katzenpost/katzenpost/server/internal/instrument"
+	"gopkg.in/op/go-logging.v1"
 
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/hpqc/hash"
+	"github.com/katzenpost/hpqc/kem"
+	"github.com/katzenpost/hpqc/rand"
+
 	"github.com/katzenpost/katzenpost/core/epochtime"
-	"github.com/katzenpost/katzenpost/core/monotime"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"github.com/katzenpost/katzenpost/http/common"
 	"github.com/katzenpost/katzenpost/server/internal/constants"
+	"github.com/katzenpost/katzenpost/server/internal/instrument"
 	"github.com/katzenpost/katzenpost/server/internal/packet"
-	"gopkg.in/op/go-logging.v1"
 )
 
 var outgoingConnID uint64
 
 type outgoingConn struct {
-	geo *geo.Geometry
-	co  *connector
-	log *logging.Logger
+	scheme kem.Scheme
+	geo    *geo.Geometry
+	co     *connector
+	log    *logging.Logger
 
 	dst *cpki.MixDescriptor
 	ch  chan *packet.Packet
@@ -59,12 +62,16 @@ func (c *outgoingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 	// At a minimum, the peer's credentials should match what we started out
 	// with.  This is enforced even if mix authentication is disabled.
 
-	idHash := c.dst.IdentityKey.Sum256()
+	idHash := hash.Sum256(c.dst.IdentityKey)
 	if !hmac.Equal(idHash[:], creds.AdditionalData) {
 		c.log.Debug("IsPeerValid false, identity hash mismatch")
 		return false
 	}
-	if !c.dst.LinkKey.Equal(creds.PublicKey) {
+	keyblob, err := creds.PublicKey.MarshalBinary()
+	if err != nil {
+		panic(err)
+	}
+	if !hmac.Equal(c.dst.LinkKey, keyblob) {
 		c.log.Debug("IsPeerValid false, link key mismatch")
 		return false
 	}
@@ -132,10 +139,14 @@ func (c *outgoingConn) worker() {
 		}
 	}()
 
-	identityHash := c.dst.IdentityKey.Sum256()
+	identityHash := hash.Sum256(c.dst.IdentityKey)
+	linkPubKey, err := c.scheme.UnmarshalBinaryPublicKey(c.dst.LinkKey)
+	if err != nil {
+		panic(err)
+	}
 	dialCheckCreds := wire.PeerCredentials{
 		AdditionalData: identityHash[:],
-		PublicKey:      c.dst.LinkKey,
+		PublicKey:      linkPubKey,
 	}
 
 	// Establish the outgoing connection.
@@ -151,7 +162,11 @@ func (c *outgoingConn) worker() {
 			// the cached pointer.
 			if desc != nil {
 				c.dst = desc
-				dialCheckCreds.PublicKey = c.dst.LinkKey
+				linkPubKey, err := c.scheme.UnmarshalBinaryPublicKey(c.dst.LinkKey)
+				if err != nil {
+					panic(err)
+				}
+				dialCheckCreds.PublicKey = linkPubKey
 			}
 		} else {
 			c.log.Debugf("Bailing out of Dial loop, no longer in PKI.")
@@ -243,8 +258,9 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 	}()
 
 	// Allocate the session struct.
-	identityHash := c.co.glue.IdentityPublicKey().Sum256()
+	identityHash := hash.Sum256From(c.co.glue.IdentityPublicKey())
 	cfg := &wire.SessionConfig{
+		KEMScheme:         c.scheme,
 		Geometry:          c.geo,
 		Authenticator:     c,
 		AdditionalData:    identityHash[:],
@@ -298,10 +314,12 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 			}
 			cmd := commands.SendPacket{
 				SphinxPacket: pkt.Raw,
+				Cmds:         w.GetCommands(),
 			}
 			if err := w.SendCommand(&cmd); err != nil {
 				c.log.Debugf("Dropping packet: %v (SendCommand failed: %v)", pkt.ID, err)
 				instrument.PacketsDropped()
+				instrument.OutgoingPacketsDropped()
 				pkt.Dispose()
 				return
 			}
@@ -340,9 +358,11 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 			continue
 		case pkt = <-c.ch:
 			// Check the packet queue dwell time and drop it if it is excessive.
-			now := monotime.Now()
-			if now-pkt.DispatchAt > time.Duration(c.co.glue.Config().Debug.SendSlack)*time.Millisecond {
-				c.log.Debugf("Dropping packet: %v (Deadline blown by %v)", pkt.ID, now-pkt.DispatchAt)
+			now := time.Now()
+			if now.Sub(pkt.DispatchAt) > time.Duration(c.co.glue.Config().Debug.SendSlack)*time.Millisecond {
+				c.log.Debugf("Dropping packet: %v (Deadline blown by %v)", pkt.ID, now.Sub(pkt.DispatchAt))
+				instrument.DeadlineBlownPacketsDropped()
+				instrument.OutgoingPacketsDropped()
 				instrument.PacketsDropped()
 				pkt.Dispose()
 				continue
@@ -352,7 +372,8 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 		if !c.canSend {
 			// This is presumably a early connect, and we aren't allowed to
 			// actually send packets to the peer yet.
-			c.log.Debugf("Dropping packet: %v (Out of epoch)", pkt.ID)
+			c.log.Debugf("Dropping packet: %v (Not yet connected to outbound mix node.)", pkt.ID)
+			instrument.OutgoingPacketsDropped()
 			instrument.PacketsDropped()
 			pkt.Dispose()
 			continue
@@ -374,15 +395,16 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 	}
 }
 
-func newOutgoingConn(co *connector, dst *cpki.MixDescriptor, geo *geo.Geometry) *outgoingConn {
+func newOutgoingConn(co *connector, dst *cpki.MixDescriptor, geo *geo.Geometry, scheme kem.Scheme) *outgoingConn {
 	const maxQueueSize = 64 // TODO/perf: Tune this.
 
 	c := &outgoingConn{
-		geo: geo,
-		co:  co,
-		dst: dst,
-		ch:  make(chan *packet.Packet, maxQueueSize),
-		id:  atomic.AddUint64(&outgoingConnID, 1), // Diagnostic only, wrapping is fine.
+		scheme: scheme,
+		geo:    geo,
+		co:     co,
+		dst:    dst,
+		ch:     make(chan *packet.Packet, maxQueueSize),
+		id:     atomic.AddUint64(&outgoingConnID, 1), // Diagnostic only, wrapping is fine.
 	}
 	c.log = co.glue.LogBackend().GetLogger(fmt.Sprintf("outgoing:%d", c.id))
 

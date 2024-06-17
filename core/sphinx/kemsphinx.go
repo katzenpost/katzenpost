@@ -22,9 +22,9 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/cloudflare/circl/kem"
+	"github.com/katzenpost/hpqc/kem"
 
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/katzenpost/core/sphinx/commands"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/sphinx/internal/crypto"
@@ -37,6 +37,9 @@ import (
 // But since we no longer use 2400 maude modems let's rock out with
 // our Hybrid Classical + PQ KEM Sphinx.
 func NewKEMSphinx(k kem.Scheme, geometry *geo.Geometry) *Sphinx {
+	if k == nil {
+		panic("KEM Scheme is nil")
+	}
 	s := &Sphinx{
 		kem:      k,
 		geometry: geometry,
@@ -128,6 +131,10 @@ func (s *Sphinx) createKEMHeader(r io.Reader, path []*PathHop) ([]byte, []*sprpK
 	var sharedSecret []byte
 	kemElements := make([][]byte, nrHops)
 	keys := make([]*crypto.PacketKeys, nrHops)
+
+	if s.kem == nil {
+		panic("sphinx: KEM object is nil")
+	}
 
 	for i := 0; i < nrHops; i++ {
 		kemElements[i], sharedSecret, err = s.kem.Encapsulate(path[i].KEMPublicKey)

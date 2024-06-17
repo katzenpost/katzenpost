@@ -24,15 +24,17 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/awnumar/memguard"
 	"github.com/fxamacker/cbor/v2"
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
-	"github.com/katzenpost/katzenpost/core/pki"
-	"github.com/katzenpost/katzenpost/core/worker"
-	"github.com/katzenpost/katzenpost/memspool/client"
 	"golang.org/x/crypto/argon2"
 	"golang.org/x/crypto/nacl/secretbox"
 	"gopkg.in/op/go-logging.v1"
+
+	"github.com/katzenpost/hpqc/rand"
+	"github.com/katzenpost/hpqc/sign/ed25519"
+
+	"github.com/katzenpost/katzenpost/core/pki"
+	"github.com/katzenpost/katzenpost/core/worker"
+	"github.com/katzenpost/katzenpost/memspool/client"
 )
 
 const (
@@ -54,6 +56,14 @@ type State struct {
 	Blob                map[string][]byte
 }
 
+type CBORState struct {
+	SpoolReadDescriptor *client.CBORSpoolReadDescriptor
+	Contacts            []*Contact
+	Providers           []*pki.MixDescriptor
+	Conversations       map[string]map[MessageID]*Message
+	Blob                map[string][]byte
+}
+
 // StateWriter takes ownership of the Client's encrypted statefile
 // and has a worker goroutine which writes updates to disk.
 type StateWriter struct {
@@ -61,10 +71,9 @@ type StateWriter struct {
 
 	log *logging.Logger
 
-	stateCh   chan *memguard.LockedBuffer
+	stateCh   chan []byte
 	stateFile string
 
-	// TODO: memguard.LockedBuffer
 	key *[32]byte
 }
 
@@ -107,7 +116,12 @@ func decryptStateFile(stateFile string, key *[32]byte) (*State, error) {
 		return nil, err
 	}
 	state := new(State)
-	if err = cbor.Unmarshal(plaintext, &state); err != nil {
+	state.SpoolReadDescriptor = new(client.SpoolReadDescriptor)
+	_, state.SpoolReadDescriptor.PrivateKey, err = ed25519.Scheme().GenerateKey()
+	if err != nil {
+		return nil, err
+	}
+	if _, err = cbor.UnmarshalFirst(plaintext, &state); err != nil {
 		return nil, err
 	}
 	return state, nil
@@ -158,7 +172,7 @@ func encryptStateFile(stateFile string, state []byte, key *[32]byte) error {
 func LoadStateWriter(log *logging.Logger, stateFile string, passphrase []byte) (*StateWriter, *State, error) {
 	worker := &StateWriter{
 		log:       log,
-		stateCh:   make(chan *memguard.LockedBuffer),
+		stateCh:   make(chan []byte),
 		stateFile: stateFile,
 	}
 	key := stretchKey(passphrase)
@@ -176,7 +190,7 @@ func NewStateWriter(log *logging.Logger, stateFile string, passphrase []byte) (*
 	key := stretchKey(passphrase)
 	worker := &StateWriter{
 		log:       log,
-		stateCh:   make(chan *memguard.LockedBuffer),
+		stateCh:   make(chan []byte),
 		stateFile: stateFile,
 		key:       key,
 	}
@@ -200,12 +214,11 @@ func (w *StateWriter) worker() {
 			w.log.Debugf("Terminating gracefully.")
 			return
 		case newState := <-w.stateCh:
-			err := w.writeState(newState.Bytes())
+			err := w.writeState(newState)
 			if err != nil {
 				w.log.Errorf("Failure to write state to disk: %s", err)
 				panic(err)
 			}
-			newState.Destroy()
 		}
 	}
 }

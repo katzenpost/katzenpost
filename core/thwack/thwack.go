@@ -173,7 +173,7 @@ func (s *Server) Halt() {
 
 func cmdQuitImpl(c *Conn, l string) error {
 	// Ignore the error writing the reply since we're disconnecting anyway.
-	c.WriteReply(StatusOk)
+	_ = c.WriteReply(StatusOk)
 	return fmt.Errorf("peer requested disconnection")
 }
 

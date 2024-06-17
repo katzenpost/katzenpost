@@ -25,11 +25,14 @@ import (
 	"time"
 
 	sha512 "crypto/sha512"
-	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
-	"github.com/katzenpost/katzenpost/core/worker"
-	"github.com/katzenpost/katzenpost/memspool/common"
+
 	bolt "go.etcd.io/bbolt"
 	"gopkg.in/op/go-logging.v1"
+
+	eddsa "github.com/katzenpost/hpqc/sign/ed25519"
+
+	"github.com/katzenpost/katzenpost/core/worker"
+	"github.com/katzenpost/katzenpost/memspool/common"
 )
 
 const (
@@ -150,8 +153,7 @@ func NewMemSpoolMap(fileStore string, log *logging.Logger) (*MemSpoolMap, error)
 			return err
 		}
 		// database created
-		metaBucket.Put([]byte(versionKey), []byte{SpoolStorageVersion})
-		return nil
+		return metaBucket.Put([]byte(versionKey), []byte{SpoolStorageVersion})
 	}); err != nil {
 		m.db.Close()
 		return nil, err
@@ -424,7 +426,9 @@ func (m *MemSpoolMap) worker() {
 func (m *MemSpoolMap) Shutdown() {
 	m.log.Debug("halting spool worker and persisting db to disk")
 	m.Halt()
-	m.db.Sync()
+	if err := m.db.Sync(); err != nil {
+		panic(err)
+	}
 	m.db.Close()
 }
 

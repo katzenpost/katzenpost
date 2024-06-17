@@ -24,15 +24,20 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/katzenpost/katzenpost/core/wire"
+	"github.com/stretchr/testify/require"
+
+	"github.com/katzenpost/hpqc/kem/schemes"
 )
+
+var testingSchemeName = "x25519"
+var testingScheme = schemes.ByName(testingSchemeName)
 
 func TestExists(t *testing.T) {
 	t.Parallel()
 	ts := httpMock("{\"exists\": true}")
 	defer ts.Close()
 
-	e, _ := New(ts.URL)
+	e, _ := New(ts.URL, testingScheme)
 
 	u := []byte("testuser")
 	if !e.Exists(u) {
@@ -45,7 +50,7 @@ func TestNotExists(t *testing.T) {
 	ts := httpMock("{\"exists\": false}")
 	defer ts.Close()
 
-	e, _ := New(ts.URL)
+	e, _ := New(ts.URL, testingScheme)
 
 	u := []byte("testuser")
 	if e.Exists(u) {
@@ -58,18 +63,13 @@ func TestIsValid(t *testing.T) {
 	ts := httpMock("{\"isvalid\": true}")
 	defer ts.Close()
 
-	e, _ := New(ts.URL)
+	e, _ := New(ts.URL, testingScheme)
 
-	scheme := wire.DefaultScheme
-	key, err := scheme.UnmarshalTextPublicKey([]byte("+YlLke0dvNvCDjtKnUTCsOGg7hQpE3FFtivO5FM6zRs8/AGtbEm74X8JQj3dcos29TCiprAMdU6aLHpnm8gKw2amciXlcawAMApQIQoSsBBkAVlNehZmiWqw+KstbHJsyUL6BpJj/JPUcFM+QSZqo3fBURrstpAOBKddqs6calQ3+ZF9MxI8aV3hzJ3RMSCXB7W3WRNps8LcfIAvWaHyia/nFcpBWVOvDGxVSXmyrBUkALUOkHIDlyso6BKmRB/7RgiSFJfwwaZRKl2GlcNW2KiZUCTL6KlKgoy5mZyCSK9GMonAyIKRaw7zVTK2iLudKoRXFMNdmXfv1VGygWpmNT33C59fa0kScQrgM1S3qizA9waQ5pbeWUcn+7vz141TO7wQ8LAIE6ZlpnWoJ7DFps5jU2fngUyMs88FQiUPqzx8iSkU/GuSMhwqFGpdykk3FGfqVLrcs1im9onOIZyOwW5Pos8dNwFyGbfOqoJldphv2cd+VDvZJIkDq3n3s4+X+n4OtyL6ipEr8AkBFHtPgEm8iA9RhjoOInO3hIPT0sAp2rQ8NxDqegYfSo2uLBuT1m1YAAnu2sHDkDJxWkBMk81X+wBT0qJF9c+vjEDP7HvRYzXgJQv9dgMcoM/WmyzFGZAamLdHiIjk+m+CzKyTFqqCeB4U+z0UcURY0IFj8iNkPFVbUmTzAjO3arNNJp41sjP7Os8RDFMzKQU8ZrEHioeP5E/yE3Pq58gXIZbw1Vb+rDkEQ5LCGB/W9rHEWb8tyzoyFSfvDB8TM24oKnYFZcmnUMRLfFXSqSvYqwpiOTP09D5zgQ6QJB4ZZXy1eIL0ZDkVtEPqm1eySytgl4kvBG+IhrfISk678rhG+7oEmC5vSjir1mEoowaQphzgZSIxkgTW6k3o5j2h1wJIMSKAFpULNFJuKT3aZonP6TctgVLzYsvRyYBhUwfpt27wFM0RphtPibbwBhvarJxBMr+bQxSU6sM9ebKJOwU863sPt0L5AxzZ9mBJioeO1MZIM5QoO3CJFGmDtTBKZTOcjFpqRzNGukRxwcGBFaEpaquDNQZhU2ilDJhedIV390i86UuIFFliNBXCiF/69r9qUyc5Gct+Gq9KkXnM56MOHBW9eEXgxkBSLJew02PhIq9zIm4AZmztI5VuE3oeBhE5lDVmK4BYtiV20yhmuzIglV9XUK1EmcZ0InCXioR6F78ZyTrf6kH2trJTp1mfyyOlOlyaJhkwRql5CDtKJFa4smJ+l0TPzL4N5yANg7uJp1Z+wV6tCy/0w222WpSld4saSC/w4Z+hKDIAd1zCUKpd6CB0DEzAGs2NgFCrxWJ0VFW4bJIk7Elh6ETo5qmXVrqI0T9mAWJygzlgaLHTJzUIQmFPGTjFqVeIdq4I4kozA2go6wNqGS8/GjdnM3tEKkWUpH26vEPy2h3scANW5AayfDt09skORpvPKn3ftivXzJRe0UlNm0skeA62QMers8WZs3WfFXDku6i9aWh/mAZNZDvjPB/KdB30GQs38Sfh+aGHMyyvtZSdMwZ+4Btpcg7LirNJyTYPoEILFyleya/PQreNCHRIAQVNKKgj2VtieS0vYa9ZM+xy2IJJxxWtur6ww/AU6Q=="))
-	if err != nil {
-		t.Fatal(err)
-	}
+	key, _, err := testingScheme.GenerateKeyPair()
+	require.NoError(t, err)
+
 	u := []byte("testuser")
-	if !e.IsValid(u, key) {
-		t.Errorf("user should be valid")
-	}
-
+	require.True(t, e.IsValid(u, key))
 }
 
 func TestIsNotValid(t *testing.T) {
@@ -77,18 +77,13 @@ func TestIsNotValid(t *testing.T) {
 	ts := httpMock("{\"isvalid\": false}")
 	defer ts.Close()
 
-	e, _ := New(ts.URL)
+	e, _ := New(ts.URL, testingScheme)
 
-	scheme := wire.DefaultScheme
-	key, err := scheme.UnmarshalTextPublicKey([]byte("+YlLke0dvNvCDjtKnUTCsOGg7hQpE3FFtivO5FM6zRs8/AGtbEm74X8JQj3dcos29TCiprAMdU6aLHpnm8gKw2amciXlcawAMApQIQoSsBBkAVlNehZmiWqw+KstbHJsyUL6BpJj/JPUcFM+QSZqo3fBURrstpAOBKddqs6calQ3+ZF9MxI8aV3hzJ3RMSCXB7W3WRNps8LcfIAvWaHyia/nFcpBWVOvDGxVSXmyrBUkALUOkHIDlyso6BKmRB/7RgiSFJfwwaZRKl2GlcNW2KiZUCTL6KlKgoy5mZyCSK9GMonAyIKRaw7zVTK2iLudKoRXFMNdmXfv1VGygWpmNT33C59fa0kScQrgM1S3qizA9waQ5pbeWUcn+7vz141TO7wQ8LAIE6ZlpnWoJ7DFps5jU2fngUyMs88FQiUPqzx8iSkU/GuSMhwqFGpdykk3FGfqVLrcs1im9onOIZyOwW5Pos8dNwFyGbfOqoJldphv2cd+VDvZJIkDq3n3s4+X+n4OtyL6ipEr8AkBFHtPgEm8iA9RhjoOInO3hIPT0sAp2rQ8NxDqegYfSo2uLBuT1m1YAAnu2sHDkDJxWkBMk81X+wBT0qJF9c+vjEDP7HvRYzXgJQv9dgMcoM/WmyzFGZAamLdHiIjk+m+CzKyTFqqCeB4U+z0UcURY0IFj8iNkPFVbUmTzAjO3arNNJp41sjP7Os8RDFMzKQU8ZrEHioeP5E/yE3Pq58gXIZbw1Vb+rDkEQ5LCGB/W9rHEWb8tyzoyFSfvDB8TM24oKnYFZcmnUMRLfFXSqSvYqwpiOTP09D5zgQ6QJB4ZZXy1eIL0ZDkVtEPqm1eySytgl4kvBG+IhrfISk678rhG+7oEmC5vSjir1mEoowaQphzgZSIxkgTW6k3o5j2h1wJIMSKAFpULNFJuKT3aZonP6TctgVLzYsvRyYBhUwfpt27wFM0RphtPibbwBhvarJxBMr+bQxSU6sM9ebKJOwU863sPt0L5AxzZ9mBJioeO1MZIM5QoO3CJFGmDtTBKZTOcjFpqRzNGukRxwcGBFaEpaquDNQZhU2ilDJhedIV390i86UuIFFliNBXCiF/69r9qUyc5Gct+Gq9KkXnM56MOHBW9eEXgxkBSLJew02PhIq9zIm4AZmztI5VuE3oeBhE5lDVmK4BYtiV20yhmuzIglV9XUK1EmcZ0InCXioR6F78ZyTrf6kH2trJTp1mfyyOlOlyaJhkwRql5CDtKJFa4smJ+l0TPzL4N5yANg7uJp1Z+wV6tCy/0w222WpSld4saSC/w4Z+hKDIAd1zCUKpd6CB0DEzAGs2NgFCrxWJ0VFW4bJIk7Elh6ETo5qmXVrqI0T9mAWJygzlgaLHTJzUIQmFPGTjFqVeIdq4I4kozA2go6wNqGS8/GjdnM3tEKkWUpH26vEPy2h3scANW5AayfDt09skORpvPKn3ftivXzJRe0UlNm0skeA62QMers8WZs3WfFXDku6i9aWh/mAZNZDvjPB/KdB30GQs38Sfh+aGHMyyvtZSdMwZ+4Btpcg7LirNJyTYPoEILFyleya/PQreNCHRIAQVNKKgj2VtieS0vYa9ZM+xy2IJJxxWtur6ww/AU6Q=="))
-	if err != nil {
-		t.Fatal(err)
-	}
+	key, _, err := testingScheme.GenerateKeyPair()
+	require.NoError(t, err)
 
 	u := []byte("testuser")
-	if e.IsValid(u, key) {
-		t.Errorf("user should not be valid")
-	}
+	require.False(t, e.IsValid(u, key))
 }
 
 func httpMock(response string) *httptest.Server {

@@ -1,1 +1,0 @@
-../ref/hash_sha2.c

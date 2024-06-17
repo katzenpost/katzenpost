@@ -83,7 +83,10 @@ func (k *Panda) OnRequest(id uint64, payload []byte, hasSURB bool) ([]byte, erro
 		defer storedPosting.Unlock()
 	}
 	if err == common.ErrNoSuchPandaTag || err == nil && storedPosting.Expired(k.expiration) {
-		k.store.Put(tag, newPosting)
+		err = k.store.Put(tag, newPosting)
+		if err != nil {
+			return nil, err
+		}
 		resp.StatusCode = common.PandaStatusReceived1
 		return k.encodeResp(&resp), nil
 	}
@@ -126,7 +129,9 @@ func (k *Panda) OnRequest(id uint64, payload []byte, hasSURB bool) ([]byte, erro
 func (k *Panda) encodeResp(resp *common.PandaResponse) []byte {
 	var out []byte
 	enc := codec.NewEncoderBytes(&out, &k.jsonHandle)
-	enc.Encode(resp)
+	if err := enc.Encode(resp); err != nil {
+		panic(err)
+	}
 	return out
 }
 

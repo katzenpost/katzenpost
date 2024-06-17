@@ -1,6 +1,3 @@
-//go:build ctidh1024
-// +build ctidh1024
-
 // ctidh1024_benchmark_test.go - Sphinx Packet Format benchmarks.
 // Copyright (C) 2022 David Stainton.
 //
@@ -22,9 +19,17 @@ package sphinx
 import (
 	"testing"
 
-	ctidhnike "github.com/katzenpost/katzenpost/core/crypto/nike/ctidh"
+	"github.com/katzenpost/hpqc/kem/adapter"
+	ctidh "github.com/katzenpost/hpqc/nike/ctidh/ctidh1024"
 )
 
 func BenchmarkCtidh1024SphinxUnwrap(b *testing.B) {
-	benchmarkSphinxUnwrap(b, ctidhnike.NewCtidhNike())
+	if ctidh.Scheme() == nil {
+		panic("ctidh.CTIDH1024Scheme is NIL")
+	}
+	benchmarkSphinxUnwrap(b, ctidh.Scheme())
+}
+
+func BenchmarkKEMSphinxUnwrapCTIDH1024(b *testing.B) {
+	benchmarkKEMSphinxUnwrap(b, adapter.FromNIKE(ctidh.Scheme()))
 }

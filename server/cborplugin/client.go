@@ -1,5 +1,5 @@
 // client.go - client of new cbor plugin system for kaetzchen services
-// Copyright (C) 2021  David Stainton.
+// Copyright (C) 2021  David Stainton, Masala
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as
@@ -26,9 +26,9 @@ package cborplugin
 import (
 	"bufio"
 	"io"
-	"net"
 	"os/exec"
 	"syscall"
+	"time"
 
 	"github.com/fxamacker/cbor/v2"
 	"github.com/katzenpost/katzenpost/core/log"
@@ -38,9 +38,16 @@ import (
 
 // Request is the struct type used in service query requests to plugins.
 type Request struct {
-	ID      uint64
+	// RequestAt is the time when the Request corresponding to this Response was received
+	RequestAt time.Time
+	// Delay is the amount of time that the Response should be delayed before transmission
+	Delay time.Duration // the Delay specififed for this hop
+	// ID is the Request's packet ID
+	ID uint64
+	// Payload is the encrypted Request
 	Payload []byte
-	HasSURB bool
+	// SURB is the routing header used to return the Response to the requesting client
+	SURB []byte
 }
 
 // Marshal serializes Request
@@ -62,9 +69,18 @@ func (r *RequestFactory) Build() Command {
 	return new(Request)
 }
 
-// Response is the response received after sending a Request to the plugin.
+// Response is the response received after sending a Request to the plugin
 type Response struct {
+	// RequestAt is the time when the Request corresponding to this Response was received
+	RequestAt time.Time
+	// Delay is the amount of time that the Response should be delayed before transmission
+	Delay time.Duration
+	// ID is the Request's packet ID
+	ID uint64
+	// Payload is the encrypted response
 	Payload []byte
+	// SURB is the routing header used to return the Response to the requesting client
+	SURB []byte
 }
 
 // Marshal serializes Response
@@ -132,7 +148,7 @@ type Client struct {
 
 	socketFile string
 	cmd        *exec.Cmd
-	conn       net.Conn
+	//conn       net.Conn
 
 	commandBuilder CommandBuilder
 
@@ -179,8 +195,11 @@ func (c *Client) Start(command string, args []string) error {
 
 func (c *Client) reaper() {
 	<-c.HaltCh()
-	c.cmd.Process.Signal(syscall.SIGTERM)
-	err := c.cmd.Wait()
+	err := c.cmd.Process.Signal(syscall.SIGTERM)
+	if err != nil {
+		c.log.Errorf("CBOR plugin worker, error sending SIGTERM: %s\n", err)
+	}
+	err = c.cmd.Wait()
 	if err != nil {
 		c.log.Errorf("CBOR plugin worker, command exec error: %s\n", err)
 	}
@@ -215,6 +234,7 @@ func (c *Client) launch(command string, args []string) error {
 	}
 
 	// proxy stderr to our debug log
+	// also calls Halt() when stderr closes, if the program crashes or is killed
 	c.Go(func() {
 		c.logPluginStderr(stderr)
 	})

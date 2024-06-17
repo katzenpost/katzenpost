@@ -17,9 +17,10 @@
 package client
 
 import (
+	"github.com/katzenpost/hpqc/sign"
+	"github.com/katzenpost/hpqc/sign/ed25519"
+
 	"github.com/katzenpost/katzenpost/client"
-	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/memspool/common"
 )
 
@@ -38,7 +39,39 @@ type SpoolWriteDescriptor struct {
 // SpoolReadDescriptor describes a remotely readable spool.
 type SpoolReadDescriptor struct {
 	// PrivateKey is the key material required for reading the described spool.
-	PrivateKey *eddsa.PrivateKey
+	PrivateKey sign.PrivateKey
+
+	// ID is the identity of the described spool.
+	ID [common.SpoolIDSize]byte
+
+	// Receiver is the responding service name of the SURB based spool service.
+	Receiver string
+
+	// Provider is the name of the Provider hosting the spool.
+	Provider string
+
+	// ReadOffset is the number of messages to offset the next read from this
+	// described spool.
+	ReadOffset uint32
+}
+
+func (s *SpoolReadDescriptor) ToCBOR() *CBORSpoolReadDescriptor {
+	privkey, err := s.PrivateKey.MarshalBinary()
+	if err != nil {
+		panic(err)
+	}
+	return &CBORSpoolReadDescriptor{
+		PrivateKey: privkey,
+		ID:         s.ID,
+		Receiver:   s.Receiver,
+		Provider:   s.Provider,
+		ReadOffset: s.ReadOffset,
+	}
+}
+
+type CBORSpoolReadDescriptor struct {
+	// PrivateKey is the key material required for reading the described spool.
+	PrivateKey []byte
 
 	// ID is the identity of the described spool.
 	ID [common.SpoolIDSize]byte
@@ -72,7 +105,7 @@ func (r *SpoolReadDescriptor) GetWriteDescriptor() *SpoolWriteDescriptor {
 // NewSpoolReadDescriptor blocks until the remote spool is created
 // or the round trip timeout is reached.
 func NewSpoolReadDescriptor(receiver, provider string, session *client.Session) (*SpoolReadDescriptor, error) {
-	privateKey, err := eddsa.NewKeypair(rand.Reader)
+	_, privateKey, err := ed25519.Scheme().GenerateKey()
 	if err != nil {
 		return nil, err
 	}

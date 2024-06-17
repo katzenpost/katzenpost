@@ -1,5 +1,5 @@
-//go:build prometheus
-// +build prometheus
+//go:build !noprometheus
+// +build !noprometheus
 
 package instrument
 
@@ -8,6 +8,7 @@ import (
 	"net/http"
 
 	"github.com/katzenpost/katzenpost/core/wire/commands"
+	"github.com/katzenpost/katzenpost/server/internal/glue"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
@@ -36,6 +37,24 @@ var (
 		prometheus.CounterOpts{
 			Name: "katzenpost_dropped_packets_total",
 			Help: "Number of dropped packets",
+		},
+	)
+	outgoingPacketsDropped = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name: "katzenpost_dropped_outgoing_packets_total",
+			Help: "Number of dropped packets",
+		},
+	)
+	invalidPacketsDropped = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name: "katzenpost_dropped_invalid_packets_total",
+			Help: "Number of dropped invalid packets",
+		},
+	)
+	deadlineBlownPacketsDropped = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name: "katzenpost_dropped_deadline_blown_packets_total",
+			Help: "Number of dropped deadline blown packets",
 		},
 	)
 	packetsReplayed = prometheus.NewCounter(
@@ -139,17 +158,23 @@ var (
 		},
 		[]string{"epoch"},
 	)
+	channelUsage = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "katzenpost_channel_usage",
+			Help: "Current number of items in the channel",
+		},
+		[]string{"channel_name"},
+	)
 )
 
-var kaetzchenRequestsTimer *prometheus.Timer
-var fetchedPKIDocsTimer *prometheus.Timer
-
-// Init initialize instrumentation
-func Init() {
-	// Register metrics
+// StartPrometheusListener starts the Prometheus metrics TCP/HTTP Listener
+func StartPrometheusListener(glue glue.Glue) {
+	prometheus.MustRegister(deadlineBlownPacketsDropped)
 	prometheus.MustRegister(incomingConns)
+	prometheus.MustRegister(invalidPacketsDropped)
 	prometheus.MustRegister(outgoingConns)
 	prometheus.MustRegister(ingressQueueSize)
+	prometheus.MustRegister(outgoingPacketsDropped)
 	prometheus.MustRegister(packetsDropped)
 	prometheus.MustRegister(packetsReplayed)
 	prometheus.MustRegister(ignoredPKIDocs)
@@ -167,10 +192,14 @@ func Init() {
 	prometheus.MustRegister(failedFetchPKIDocs)
 	prometheus.MustRegister(failedPKICacheGeneration)
 	prometheus.MustRegister(invalidPKICache)
+	prometheus.MustRegister(channelUsage)
 
-	// Expose registered metrics via HTTP
-	http.Handle("/metrics", promhttp.Handler())
-	go http.ListenAndServe("127.0.0.1:6543", nil)
+	metricsAddress := glue.Config().Server.MetricsAddress
+	if metricsAddress != "" {
+		// Expose registered metrics via HTTP
+		http.Handle("/metrics", promhttp.Handler())
+		go http.ListenAndServe(metricsAddress, nil)
+	}
 }
 
 // Incoming increments the counter for incoming requests
@@ -182,7 +211,6 @@ func Incoming(cmd commands.Command) {
 // Outgoing increments the counter for outgoing connections
 func Outgoing() {
 	outgoingConns.Inc()
-
 }
 
 // IngressQueue observes the size of the ingress queue
@@ -215,16 +243,6 @@ func KaetzchenRequests() {
 	kaetzchenRequests.Inc()
 }
 
-// SetKaetzchenRequestsTimer sets the kaetzchen requests timer struct
-func SetKaetzchenRequestsTimer() {
-	kaetzchenRequestsTimer = prometheus.NewTimer(kaetzchenRequestsDuration)
-}
-
-// TimeKaetzchenRequestsDuration times how long it takes for a ketzchen request to execute
-func TimeKaetzchenRequestsDuration() {
-	kaetzchenRequestsTimer.ObserveDuration()
-}
-
 // KaetzchenRequestsDropped increments the counter for the number of dropped kaetzchen requests
 func KaetzchenRequestsDropped(dropCounter uint64) {
 	kaetzchenRequestsDropped.Add(float64(dropCounter))
@@ -238,6 +256,21 @@ func KaetzchenRequestsFailed() {
 // MixPacketsDropped increments the counter for the number of mix packets dropped
 func MixPacketsDropped() {
 	mixPacketsDropped.Inc()
+}
+
+// OutgoingPacketsDropped increments the counter for the number of packets dropped in the outgoing worker.
+func OutgoingPacketsDropped() {
+	outgoingPacketsDropped.Inc()
+}
+
+// DeadlineBlownPacketsDropped increments the counter for the number of packets dropped due to excessive dwell.
+func DeadlineBlownPacketsDropped() {
+	deadlineBlownPacketsDropped.Inc()
+}
+
+// InvalidPacketsDropped increments the counter for the number of invalid packets dropped.
+func InvalidPacketsDropped() {
+	invalidPacketsDropped.Inc()
 }
 
 // MixQueueSize observes the size of the mix queue
@@ -258,16 +291,6 @@ func CancelledOutgoing() {
 // FetchedPKIDocs increments the counter for the number of fetched PKI docs per epoch
 func FetchedPKIDocs(epoch string) {
 	fetchedPKIDocs.With(prometheus.Labels{"epoch": epoch})
-}
-
-// SetFetchedPKIDocsTimer sets a timer for the fetchedPKIDocs variable
-func SetFetchedPKIDocsTimer() {
-	fetchedPKIDocsTimer = prometheus.NewTimer(fetchedPKIDocsDuration)
-}
-
-// TimeFetchedPKIDocsDuration times the duration of how long it takes to fetch a PKI Doc
-func TimeFetchedPKIDocsDuration() {
-	fetchedPKIDocsTimer.ObserveDuration()
 }
 
 // FailedFetchPKIDocs increments the counter for the number of times fetching a PKI doc failed per epoch

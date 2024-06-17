@@ -17,32 +17,36 @@
 package sphinx
 
 import (
-	"crypto/rand"
 	"testing"
 
-	"github.com/cloudflare/circl/kem"
-	"github.com/cloudflare/circl/kem/hybrid"
-	"github.com/cloudflare/circl/kem/kyber/kyber1024"
-	"github.com/cloudflare/circl/kem/kyber/kyber512"
-	"github.com/cloudflare/circl/kem/kyber/kyber768"
+	"github.com/katzenpost/hpqc/kem"
+	"github.com/katzenpost/hpqc/kem/adapter"
+	"github.com/katzenpost/hpqc/kem/schemes"
+	ecdh "github.com/katzenpost/hpqc/nike/x25519"
+	"github.com/katzenpost/hpqc/rand"
+
 	"github.com/katzenpost/katzenpost/core/sphinx/commands"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 )
 
+func BenchmarkKEMSphinxUnwrapX25519(b *testing.B) {
+	benchmarkKEMSphinxUnwrap(b, adapter.FromNIKE(ecdh.Scheme(rand.Reader)))
+}
+
 func BenchmarkKEMSphinxUnwrapKyber512(b *testing.B) {
-	benchmarkKEMSphinxUnwrap(b, kyber512.Scheme())
+	benchmarkKEMSphinxUnwrap(b, schemes.ByName("Kyber512"))
 }
 
 func BenchmarkKEMSphinxUnwrapKyber768(b *testing.B) {
-	benchmarkKEMSphinxUnwrap(b, kyber768.Scheme())
+	benchmarkKEMSphinxUnwrap(b, schemes.ByName("Kyber768"))
 }
 
 func BenchmarkKEMSphinxUnwrapKyber1024(b *testing.B) {
-	benchmarkKEMSphinxUnwrap(b, kyber1024.Scheme())
+	benchmarkKEMSphinxUnwrap(b, schemes.ByName("Kyber1024"))
 }
 
 func BenchmarkKEMSphinxUnwrapKyber768X25519(b *testing.B) {
-	benchmarkKEMSphinxUnwrap(b, hybrid.Kyber768X25519())
+	benchmarkKEMSphinxUnwrap(b, schemes.ByName("Kyber768-X25519"))
 }
 
 func benchmarkKEMSphinxUnwrap(b *testing.B, mykem kem.Scheme) {
@@ -75,7 +79,7 @@ func benchmarkKEMSphinxUnwrap(b *testing.B, mykem kem.Scheme) {
 func benchNewKEMNode(mykem kem.Scheme) *kemNodeParams {
 	n := new(kemNodeParams)
 
-	_, err := rand.Read(n.id[:])
+	_, err := rand.Reader.Read(n.id[:])
 	if err != nil {
 		panic("wtf")
 	}
@@ -109,7 +113,7 @@ func newBenchKEMPathVector(mykem kem.Scheme, nrHops int, isSURB bool) ([]*kemNod
 		} else {
 			// Terminal hop, add the recipient.
 			recipient := new(commands.Recipient)
-			_, err := rand.Read(recipient.ID[:])
+			_, err := rand.Reader.Read(recipient.ID[:])
 			if err != nil {
 				panic(err)
 			}
@@ -118,7 +122,7 @@ func newBenchKEMPathVector(mykem kem.Scheme, nrHops int, isSURB bool) ([]*kemNod
 			// This is a SURB, add a surb_reply.
 			if isSURB {
 				surbReply := new(commands.SURBReply)
-				_, err := rand.Read(surbReply.ID[:])
+				_, err := rand.Reader.Read(surbReply.ID[:])
 				if err != nil {
 					panic(err)
 				}

@@ -24,6 +24,9 @@ import (
 	"runtime"
 	"syscall"
 
+	"github.com/carlmjohnson/versioninfo"
+
+	"github.com/katzenpost/katzenpost/core/compat"
 	"github.com/katzenpost/katzenpost/server"
 	"github.com/katzenpost/katzenpost/server/config"
 )
@@ -31,10 +34,17 @@ import (
 func main() {
 	cfgFile := flag.String("f", "katzenpost.toml", "Path to the server config file.")
 	genOnly := flag.Bool("g", false, "Generate the keys and exit immediately.")
+	version := flag.Bool("v", false, "Get version info.")
+
 	flag.Parse()
 
+	if *version {
+		fmt.Printf("version is %s\n", versioninfo.Short())
+		return
+	}
+
 	// Set the umask to something "paranoid".
-	syscall.Umask(0077)
+	compat.Umask(0077)
 
 	// Ensure that a sane number of OS threads is allowed.
 	if os.Getenv("GOMAXPROCS") == "" {

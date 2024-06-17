@@ -176,6 +176,7 @@ func TestMessageResponseCommand2(t *testing.T) {
 
 	c, err := FromBytes(b)
 	require.Error(err)
+	require.Equal(nil, c)
 
 	c, err = FromBytes(b[:messageResponseLength])
 	require.NoError(err)

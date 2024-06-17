@@ -19,8 +19,10 @@
 package config
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -29,13 +31,16 @@ import (
 	"github.com/BurntSushi/toml"
 	"golang.org/x/net/idna"
 
-	"github.com/katzenpost/katzenpost/core/crypto/cert"
-	"github.com/katzenpost/katzenpost/core/crypto/pem"
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
-	"github.com/katzenpost/katzenpost/core/crypto/sign"
+	"github.com/katzenpost/hpqc/hash"
+	"github.com/katzenpost/hpqc/kem"
+	kempem "github.com/katzenpost/hpqc/kem/pem"
+	"github.com/katzenpost/hpqc/kem/schemes"
+	"github.com/katzenpost/hpqc/rand"
+	"github.com/katzenpost/hpqc/sign"
+	signpem "github.com/katzenpost/hpqc/sign/pem"
+	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/utils"
-	"github.com/katzenpost/katzenpost/core/wire"
 )
 
 const (
@@ -117,28 +122,35 @@ type Parameters struct {
 	LambdaPMaxDelay uint64
 
 	// LambdaL is the inverse of the mean of the exponential distribution
-	// that is used to select the delay between clients sending from their egress
-	// FIFO queue or drop decoy message.
+	// that is used to select the delay between clients sending loop decoys.
 	LambdaL float64
 
 	// LambdaLMaxDelay sets the maximum delay for LambdaP.
 	LambdaLMaxDelay uint64
 
 	// LambdaD is the inverse of the mean of the exponential distribution
-	// that is used to select the delay between clients sending from their egress
-	// FIFO queue or drop decoy message.
+	// that is used to select the delay between clients sending deop decoys.
 	LambdaD float64
 
 	// LambdaDMaxDelay sets the maximum delay for LambdaP.
 	LambdaDMaxDelay uint64
 
 	// LambdaM is the inverse of the mean of the exponential distribution
-	// that is used to select the delay between clients sending from their egress
-	// FIFO queue or drop decoy message.
+	// that is used to select the delay between sending mix node decoys.
 	LambdaM float64
+
+	// LambdaG is the inverse of the mean of the exponential distribution
+	// that is used to select the delay between sending gateway node decoys.
+	//
+	// WARNING: This is not used via the TOML config file; this field is only
+	// used internally by the dirauth server state machine.
+	LambdaG float64
 
 	// LambdaMMaxDelay sets the maximum delay for LambdaP.
 	LambdaMMaxDelay uint64
+
+	// LambdaGMaxDelay sets the maximum delay for LambdaG.
+	LambdaGMaxDelay uint64
 }
 
 func (pCfg *Parameters) validate() error {
@@ -171,6 +183,12 @@ func (pCfg *Parameters) validate() error {
 	}
 	if pCfg.LambdaMMaxDelay > absoluteMaxDelay {
 		return fmt.Errorf("config: Parameters: LambdaMMaxDelay %v is out of range", pCfg.LambdaPMaxDelay)
+	}
+	if pCfg.LambdaGMaxDelay > absoluteMaxDelay {
+		return fmt.Errorf("config: Parameters: LambdaGMaxDelay %v is out of range", pCfg.LambdaPMaxDelay)
+	}
+	if pCfg.LambdaGMaxDelay == 0 {
+		return errors.New("LambdaGMaxDelay must be set")
 	}
 
 	return nil
@@ -253,32 +271,83 @@ type Authority struct {
 	// IdentityPublicKeyPem is a string in PEM format containing
 	// the public identity key key.
 	IdentityPublicKey sign.PublicKey
+
+	// PKISignatureScheme specifies the cryptographic signature scheme
+	PKISignatureScheme string
+
 	// LinkPublicKeyPem is string containing the PEM format of the peer's public link layer key.
-	LinkPublicKey wire.PublicKey
+	LinkPublicKey kem.PublicKey
+	// WireKEMScheme is the wire protocol KEM scheme to use.
+	WireKEMScheme string
 	// Addresses are the IP address/port combinations that the peer authority
 	// uses for the Directory Authority service.
 	Addresses []string
 }
 
-// UnmarshalTOML deserializes into non-nil instances of sign.PublicKey and wire.PublicKey
+// UnmarshalTOML deserializes into non-nil instances of sign.PublicKey and kem.PublicKey
 func (a *Authority) UnmarshalTOML(v interface{}) error {
-	_, a.IdentityPublicKey = cert.Scheme.NewKeypair()
-	_, a.LinkPublicKey = wire.DefaultScheme.GenerateKeypair(rand.Reader)
 
-	data, _ := v.(map[string]interface{})
-	a.Identifier, _ = data["Identifier"].(string)
+	data, ok := v.(map[string]interface{})
+	if !ok {
+		return errors.New("type assertion failed")
+	}
+
+	pkiSignatureSchemeStr, ok := data["PKISignatureScheme"].(string)
+	if !ok {
+		return errors.New("PKISignatureScheme failed type assertion")
+	}
+	pkiSignatureScheme := signSchemes.ByName(pkiSignatureSchemeStr)
+	if pkiSignatureScheme == nil {
+		return fmt.Errorf("pki signature scheme `%s` not found", pkiSignatureScheme)
+	}
+	a.PKISignatureScheme = pkiSignatureSchemeStr
+
+	// identifier
+	var err error
+	a.IdentityPublicKey, _, err = pkiSignatureScheme.GenerateKey()
+	if err != nil {
+		return err
+	}
+	a.Identifier, ok = data["Identifier"].(string)
+	if !ok {
+		return errors.New("Authority.Identifier type assertion failed")
+	}
+
+	// identity key
 	idPublicKeyString, _ := data["IdentityPublicKey"].(string)
-	err := a.IdentityPublicKey.UnmarshalText([]byte(idPublicKeyString))
+
+	a.IdentityPublicKey, err = signpem.FromPublicPEMString(idPublicKeyString, pkiSignatureScheme)
 	if err != nil {
 		return err
 	}
-	linkPublicKeyString, _ := data["LinkPublicKey"].(string)
-	err = a.LinkPublicKey.UnmarshalText([]byte(linkPublicKeyString))
+
+	// link key
+	linkPublicKeyString, ok := data["LinkPublicKey"].(string)
+	if !ok {
+		return errors.New("type assertion failed")
+	}
+
+	kemSchemeName, ok := data["WireKEMScheme"].(string)
+	if !ok {
+		return errors.New("WireKEMScheme failed type assertion")
+	}
+
+	a.WireKEMScheme = kemSchemeName
+	s := schemes.ByName(kemSchemeName)
+	if s == nil {
+		return fmt.Errorf("scheme `%s` not found", a.WireKEMScheme)
+	}
+	a.LinkPublicKey, err = kempem.FromPublicPEMString(linkPublicKeyString, s)
 	if err != nil {
 		return err
 	}
+
+	// address
 	addresses := make([]string, 0)
-	pos, _ := data["Addresses"]
+	pos, ok := data["Addresses"]
+	if !ok {
+		return errors.New("map entry not found")
+	}
 	for _, addr := range pos.([]interface{}) {
 		addresses = append(addresses, addr.(string))
 	}
@@ -288,6 +357,14 @@ func (a *Authority) UnmarshalTOML(v interface{}) error {
 
 // Validate parses and checks the Authority configuration.
 func (a *Authority) Validate() error {
+	if a.WireKEMScheme == "" {
+		return errors.New("WireKEMScheme is not set")
+	} else {
+		s := schemes.ByName(a.WireKEMScheme)
+		if s == nil {
+			return errors.New("KEM Scheme not found")
+		}
+	}
 	for _, v := range a.Addresses {
 		if u, err := url.Parse(v); err != nil {
 			return fmt.Errorf("config: Authority: Address '%v' is invalid: %v", v, err)
@@ -342,6 +419,12 @@ type Server struct {
 	// Identifier is the human readable identifier for the node (eg: FQDN).
 	Identifier string
 
+	// WireKEMScheme is the wire protocol KEM scheme to use.
+	WireKEMScheme string
+
+	// PKISignatureScheme specifies the cryptographic signature scheme
+	PKISignatureScheme string
+
 	// Addresses are the IP address/port combinations that the server will bind
 	// to for incoming connections.
 	Addresses []string
@@ -352,6 +435,24 @@ type Server struct {
 
 // Validate parses and checks the Server configuration.
 func (sCfg *Server) validate() error {
+	if sCfg.WireKEMScheme == "" {
+		return errors.New("WireKEMScheme was not set")
+	} else {
+		s := schemes.ByName(sCfg.WireKEMScheme)
+		if s == nil {
+			return errors.New("KEM Scheme not found")
+		}
+	}
+
+	if sCfg.PKISignatureScheme == "" {
+		return errors.New("PKISignatureScheme was not set")
+	} else {
+		s := signSchemes.ByName(sCfg.PKISignatureScheme)
+		if s == nil {
+			return errors.New("PKI Signature Scheme not found")
+		}
+	}
+
 	if sCfg.Addresses != nil {
 		for _, v := range sCfg.Addresses {
 			if u, err := url.Parse(v); err != nil {
@@ -384,9 +485,10 @@ type Config struct {
 	Parameters  *Parameters
 	Debug       *Debug
 
-	Mixes     []*Node
-	Providers []*Node
-	Topology  *Topology
+	Mixes        []*Node
+	GatewayNodes []*Node
+	ServiceNodes []*Node
+	Topology     *Topology
 
 	SphinxGeometry *geo.Geometry
 }
@@ -401,10 +503,34 @@ type Topology struct {
 	Layers []Layer
 }
 
+// ValidateAuthorities takes as an argument the dirauth server's own public key
+// and tries to find a match in the dirauth peers. Returns an error if no
+// match is found. Dirauths must be their own peer.
+func (cfg *Config) ValidateAuthorities(linkPubKey kem.PublicKey) error {
+	linkblob1, err := linkPubKey.MarshalText()
+	if err != nil {
+		return err
+	}
+	match := false
+	for i := 0; i < len(cfg.Authorities); i++ {
+		linkblob, err := cfg.Authorities[i].LinkPublicKey.MarshalText()
+		if err != nil {
+			return err
+		}
+		if bytes.Equal(linkblob1, linkblob) {
+			match = true
+		}
+	}
+	if !match {
+		return errors.New("Authority must be it's own peer")
+	}
+	return nil
+}
+
 // FixupAndValidate applies defaults to config entries and validates the
 // supplied configuration.  Most people should call one of the Load variants
 // instead.
-func (cfg *Config) FixupAndValidate() error {
+func (cfg *Config) FixupAndValidate(forceGenOnly bool) error {
 
 	if cfg.SphinxGeometry == nil {
 		return errors.New("config: No SphinxGeometry block was present")
@@ -446,14 +572,25 @@ func (cfg *Config) FixupAndValidate() error {
 	cfg.Parameters.applyDefaults()
 	cfg.Debug.applyDefaults()
 
-	allNodes := make([]*Node, 0, len(cfg.Mixes)+len(cfg.Providers))
+	pkiSignatureScheme := signSchemes.ByName(cfg.Server.PKISignatureScheme)
+
+	allNodes := make([]*Node, 0, len(cfg.Mixes)+len(cfg.GatewayNodes)+len(cfg.ServiceNodes))
 	for _, v := range cfg.Mixes {
 		allNodes = append(allNodes, v)
 	}
-	for _, v := range cfg.Providers {
+	for _, v := range cfg.GatewayNodes {
 		allNodes = append(allNodes, v)
 	}
-	_, identityKey := cert.Scheme.NewKeypair()
+	for _, v := range cfg.ServiceNodes {
+		allNodes = append(allNodes, v)
+	}
+
+	var identityKey sign.PublicKey
+
+	if forceGenOnly {
+		return nil
+	}
+
 	idMap := make(map[string]*Node)
 	pkMap := make(map[[publicKeyHashSize]byte]*Node)
 	for _, v := range allNodes {
@@ -465,25 +602,49 @@ func (cfg *Config) FixupAndValidate() error {
 		}
 		idMap[v.Identifier] = v
 
-		err := pem.FromFile(filepath.Join(cfg.Server.DataDir, v.IdentityPublicKeyPem), identityKey)
+		identityKey, err = signpem.FromPublicPEMFile(filepath.Join(cfg.Server.DataDir, v.IdentityPublicKeyPem), pkiSignatureScheme)
 		if err != nil {
 			return err
 		}
 
-		tmp := identityKey.Sum256()
+		tmp := hash.Sum256From(identityKey)
 		if _, ok := pkMap[tmp]; ok {
 			return fmt.Errorf("config: Nodes: IdentityPublicKeyPem '%v' is present more than once", v.IdentityPublicKeyPem)
 		}
 		pkMap[tmp] = v
 	}
 
+	// if our own identity is not in cfg.Authorities return error
+	selfInAuthorities := false
+
+	ourPubKeyFile := filepath.Join(cfg.Server.DataDir, "identity.public.pem")
+	f, err := os.Open(ourPubKeyFile)
+	if err != nil {
+		return err
+	}
+	pemData, err := io.ReadAll(f)
+	if err != nil {
+		return err
+	}
+
+	ourPubKey, err := signpem.FromPublicPEMBytes(pemData, pkiSignatureScheme)
+	if err != nil {
+		return err
+	}
+	ourPubKeyHash := hash.Sum256From(ourPubKey)
 	for _, auth := range cfg.Authorities {
 		err := auth.Validate()
 		if err != nil {
 			return err
 		}
-	}
 
+		if hash.Sum256From(auth.IdentityPublicKey) == ourPubKeyHash {
+			selfInAuthorities = true
+		}
+	}
+	if !selfInAuthorities {
+		return errors.New("Authorities section must contain self")
+	}
 	return nil
 }
 
@@ -495,7 +656,7 @@ func Load(b []byte, forceGenOnly bool) (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := cfg.FixupAndValidate(); err != nil {
+	if err := cfg.FixupAndValidate(forceGenOnly); err != nil {
 		return nil, err
 	}
 

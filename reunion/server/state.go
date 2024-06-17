@@ -448,6 +448,10 @@ func (s *ReunionState) Serializable() (*SerializableReunionState, error) {
 			return false
 		}
 		messageList, ok := messages.(*LockedList)
+		if !ok {
+			err = errors.New("messages not *LockedList, is it nil?")
+			return false
+		}
 		messagesSlice, err := messageList.Serializable()
 		if err != nil {
 			return false

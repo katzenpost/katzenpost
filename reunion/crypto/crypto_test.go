@@ -20,7 +20,6 @@ import (
 	"crypto/rand"
 	"testing"
 
-	"github.com/awnumar/memguard"
 	"github.com/stretchr/testify/require"
 )
 
@@ -40,8 +39,7 @@ func TestMessageTypeT1Decoding(t *testing.T) {
 	t1j := [Type1MessageSize - 1]byte{}
 	alpha, beta, gamma, err = DecodeT1Message(t1j[:])
 	require.Error(err)
-
-	memguard.Purge()
+	_, _, _ = alpha, beta, gamma
 }
 
 func TestT1Beta(t *testing.T) {
@@ -62,5 +60,4 @@ func TestT1Beta(t *testing.T) {
 	require.NoError(err)
 
 	require.Equal(pubKey[:], outputKey.Bytes()[:])
-	memguard.Purge()
 }

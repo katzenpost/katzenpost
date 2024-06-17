@@ -19,8 +19,8 @@ package sphinx
 import (
 	"io"
 
-	"github.com/cloudflare/circl/kem"
-	"github.com/katzenpost/katzenpost/core/crypto/nike"
+	"github.com/katzenpost/hpqc/kem"
+	"github.com/katzenpost/hpqc/nike"
 	"github.com/katzenpost/katzenpost/core/sphinx/commands"
 )
 

@@ -3,3 +3,15 @@
 *.storage
 *.swp
 *~
+
+docker/alpine_base.stamp
+docker/alpine_go_mod.stamp
+genconfig/genconfig
+memspool/server/cmd/memspool/memspool
+panda/server/cmd/panda_server/panda_server
+reunion/servers/reunion_katzenpost_server/reunion_katzenpost_server
+server/cmd/server/server
+server_plugins/cbor_plugins/echo-go/echo_server
+.idea
+
+dist/

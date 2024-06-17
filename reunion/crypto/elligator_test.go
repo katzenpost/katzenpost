@@ -30,7 +30,7 @@ package crypto
 import (
 	"testing"
 
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/hpqc/rand"
 	"github.com/stretchr/testify/require"
 )
 
@@ -52,7 +52,8 @@ func TestPublicKey(t *testing.T) {
 	_, err := rand.Reader.Read(fu[:])
 	require.NoError(err)
 
-	publicKey.FromBytes(fu[:])
+	err = publicKey.FromBytes(fu[:])
+	require.NoError(err)
 	publicKey2 := new(PublicKey)
 	err = publicKey2.FromBytes(publicKey.Bytes()[:])
 	require.NoError(err)
@@ -67,7 +68,8 @@ func TestRepresentativeKey(t *testing.T) {
 	_, err := rand.Reader.Read(fu[:])
 	require.NoError(err)
 
-	representativeKey.FromBytes(fu[:])
+	err = representativeKey.FromBytes(fu[:])
+	require.NoError(err)
 	representativeKey2 := new(Representative)
 	err = representativeKey2.FromBytes(representativeKey.Bytes()[:])
 	require.NoError(err)

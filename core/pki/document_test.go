@@ -23,46 +23,57 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/katzenpost/katzenpost/core/crypto/cert"
-	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
-	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/stretchr/testify/require"
+
+	"github.com/katzenpost/hpqc/kem/schemes"
+	ecdh "github.com/katzenpost/hpqc/nike/x25519"
+	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 )
 
-func genDescriptor(require *require.Assertions, idx int, provider bool) (*MixDescriptor, []byte) {
+var testingSchemeName = "xwing"
+var testingScheme = schemes.ByName(testingSchemeName)
+var testDocumentSignatureScheme = signSchemes.ByName("Ed25519")
+
+func genDescriptor(require *require.Assertions, idx int, isGatewayNode, isServiceNode bool) *MixDescriptor {
 	d := new(MixDescriptor)
 	d.Name = fmt.Sprintf("gen%d.example.net", idx)
-	d.Addresses = map[Transport][]string{
+	d.Addresses = map[string][]string{
 		TransportTCPv4: []string{fmt.Sprintf("tcp4://192.0.2.%d:4242", idx)},
 	}
-	d.Provider = provider
+	d.IsGatewayNode = isGatewayNode
+	d.IsServiceNode = isServiceNode
 	d.Epoch = debugTestEpoch
 	d.Version = DescriptorVersion
 	d.LoadWeight = 23
-	identityPriv, identityPub := cert.Scheme.NewKeypair()
-	d.IdentityKey = identityPub
-	scheme := wire.DefaultScheme
-	_, d.LinkKey = scheme.GenerateKeypair(rand.Reader)
+
+	identityPub, _, err := testDocumentSignatureScheme.GenerateKey()
+	require.NoError(err)
+
+	d.IdentityKey, err = identityPub.MarshalBinary()
+	require.NoError(err)
+
+	scheme := testingScheme
+	linkKey, _, err := scheme.GenerateKeyPair()
+	require.NoError(err)
+	d.LinkKey, err = linkKey.MarshalBinary()
+	require.NoError(err)
 	d.MixKeys = make(map[uint64][]byte)
 	for e := debugTestEpoch; e < debugTestEpoch+3; e++ {
 		mPriv, err := ecdh.NewKeypair(rand.Reader)
 		require.NoError(err, "[%d]: ecdh.NewKeypair()", e)
-		d.MixKeys[uint64(e)] = mPriv.PublicKey().Bytes()
+		d.MixKeys[uint64(e)] = mPriv.Public().Bytes()
 	}
-	if provider {
+	if isServiceNode {
 		d.Kaetzchen = make(map[string]map[string]interface{})
 		d.Kaetzchen["miau"] = map[string]interface{}{
 			"endpoint":  "+miau",
 			"miauCount": idx,
 		}
 	}
-	err := IsDescriptorWellFormed(d, debugTestEpoch)
+	err = IsDescriptorWellFormed(d, debugTestEpoch)
 	require.NoError(err, "IsDescriptorWellFormed(good)")
 
-	signed, err := SignDescriptor(identityPriv, identityPub, d)
-	require.NoError(err, "SignDescriptor()")
-
-	return d, []byte(signed)
+	return d
 }
 
 func TestDocument(t *testing.T) {
@@ -70,7 +81,8 @@ func TestDocument(t *testing.T) {
 	require := require.New(t)
 
 	// Generate a random signing key.
-	k, idPub := cert.Scheme.NewKeypair()
+	idPub, k, err := testDocumentSignatureScheme.GenerateKey()
+	require.NoError(err)
 
 	testSendRate := uint64(3)
 	sharedRandomCommit := make([]byte, SharedRandomLength)
@@ -90,32 +102,25 @@ func TestDocument(t *testing.T) {
 		SharedRandomReveal: make(map[[PublicKeyHashSize]byte][]byte),
 		SharedRandomValue:  make([]byte, SharedRandomValueLength),
 		Version:            DocumentVersion,
+		PKISignatureScheme: testDocumentSignatureScheme.Name(),
 	}
 	idx := 1
 	for l := 0; l < 3; l++ {
 		for i := 0; i < 5; i++ {
-			provider := false
-			_, rawDesc := genDescriptor(require, idx, provider)
-			d := new(MixDescriptor)
-			err := d.UnmarshalBinary(rawDesc)
-			require.NoError(err)
-			foo, err := d.MarshalBinary()
-			require.NoError(err)
-			require.True(bytes.Equal(foo, rawDesc))
+			isGatewayNode := false
+			isServiceNode := false
+			d := genDescriptor(require, idx, isGatewayNode, isServiceNode)
 			doc.Topology[l] = append(doc.Topology[l], d)
 			idx++
 		}
 	}
 	for i := 0; i < 3; i++ {
-		provider := true
-		_, rawDesc := genDescriptor(require, idx, provider)
-		d := new(MixDescriptor)
-		err := d.UnmarshalBinary(rawDesc)
+		isGatewayNode := false
+		isServiceNode := true
+		d := genDescriptor(require, idx, isGatewayNode, isServiceNode)
+		_, err := d.MarshalBinary()
 		require.NoError(err)
-		foo, err := d.MarshalBinary()
-		require.NoError(err)
-		require.True(bytes.Equal(foo, rawDesc))
-		doc.Providers = append(doc.Providers, d)
+		doc.GatewayNodes = append(doc.GatewayNodes, d)
 		idx++
 	}
 
@@ -144,6 +149,19 @@ func TestDocument(t *testing.T) {
 	require.Equal(doc.SharedRandomReveal, ddoc.SharedRandomReveal, "ParseDocument(): SharedRandomReveal")
 	require.Equal(doc.Version, ddoc.Version, "ParseDocument(): Version")
 
+	// Test that marshalling doesn't mutate the document:
+	// (It would have been nice to check that SignDocument was idempotent,
+	// but it seems SPHINCS+ uses randomness?
+	tmpDocBytes := signed
+	for i := 0; i < 4; i++ {
+		tmpDoc, err := ParseDocument(tmpDocBytes)
+		require.Equal(nil, err)
+		require.Equal(ddoc, tmpDoc)
+		tmpDocBytes, err := tmpDoc.MarshalBinary()
+		require.Equal(nil, err)
+		require.Equal(signed, tmpDocBytes)
+	}
+
 	// check that MixDescriptors are signed correctly and can be deserialized and reserialized from the Document
 	for l, layer := range ddoc.Topology {
 		for i, node := range layer {
@@ -152,19 +170,15 @@ func TestDocument(t *testing.T) {
 			require.NoError(err)
 			rawDesc, err := node.MarshalBinary()
 			require.NoError(err)
-			_, err = VerifyDescriptor(rawDesc)
-			require.NoError(err)
-			_, err = VerifyDescriptor(otherDesc)
-			require.NoError(err)
 			require.True(bytes.Equal(otherDesc, rawDesc)) // require the serialization be the same
 		}
 	}
 
 	// check that Providers are the same
-	for i, provider := range ddoc.Providers {
+	for i, provider := range ddoc.GatewayNodes {
 		d, err := provider.MarshalBinary()
 		require.NoError(err)
-		d2, err := doc.Providers[i].MarshalBinary()
+		d2, err := doc.GatewayNodes[i].MarshalBinary()
 		require.NoError(err)
 		require.True(bytes.Equal(d, d2))
 	}

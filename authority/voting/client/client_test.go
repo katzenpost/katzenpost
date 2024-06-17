@@ -30,11 +30,16 @@ import (
 	"github.com/stretchr/testify/require"
 	"gopkg.in/op/go-logging.v1"
 
+	"github.com/katzenpost/hpqc/hash"
+	"github.com/katzenpost/hpqc/kem"
+	"github.com/katzenpost/hpqc/kem/schemes"
+	ecdh "github.com/katzenpost/hpqc/nike/x25519"
+	"github.com/katzenpost/hpqc/rand"
+	"github.com/katzenpost/hpqc/sign"
+	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
+
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
-	"github.com/katzenpost/katzenpost/core/crypto/cert"
-	"github.com/katzenpost/katzenpost/core/crypto/nike/ecdh"
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
-	"github.com/katzenpost/katzenpost/core/crypto/sign"
+	"github.com/katzenpost/katzenpost/core/cert"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
@@ -43,18 +48,22 @@ import (
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 )
 
+var testingSchemeName = "xwing"
+var testingScheme = schemes.ByName(testingSchemeName)
+var testSignatureScheme = signSchemes.ByName("Ed25519")
+
 type descriptor struct {
 	desc *pki.MixDescriptor
 	raw  []byte
 }
 
-func generateRandomTopology(nodes []*descriptor, layers int) [][]*pki.MixDescriptor {
+func generateRandomTopology(nodes []*pki.MixDescriptor, layers int) [][]*pki.MixDescriptor {
 	rng := rand.NewMath()
 	nodeIndexes := rng.Perm(len(nodes))
 	topology := make([][]*pki.MixDescriptor, layers)
 	for idx, layer := 0, 0; idx < len(nodes); idx++ {
 		n := nodes[nodeIndexes[idx]]
-		topology[layer] = append(topology[layer], n.desc)
+		topology[layer] = append(topology[layer], n)
 		layer++
 		layer = layer % len(topology)
 	}
@@ -64,7 +73,7 @@ func generateRandomTopology(nodes []*descriptor, layers int) [][]*pki.MixDescrip
 func generateMixKeys(epoch uint64) (map[uint64][]byte, error) {
 	m := make(map[uint64][]byte)
 	for i := epoch; i < epoch+3; i++ {
-		publickey, _, err := ecdh.EcdhScheme.GenerateKeyPairFromEntropy(rand.Reader)
+		publickey, _, err := ecdh.Scheme(rand.Reader).GenerateKeyPairFromEntropy(rand.Reader)
 		if err != nil {
 			return nil, err
 		}
@@ -73,63 +82,84 @@ func generateMixKeys(epoch uint64) (map[uint64][]byte, error) {
 	return m, nil
 }
 
-func generateNodes(isProvider bool, num int, epoch uint64) ([]*descriptor, error) {
-	mixes := []*descriptor{}
+func generateNodes(isServiceNode, isGateway bool, num int, epoch uint64) ([]*pki.MixDescriptor, error) {
+	mixes := []*pki.MixDescriptor{}
+
 	for i := 0; i < num; i++ {
-		mixIdentityPrivateKey, mixIdentityPublicKey := cert.Scheme.NewKeypair()
+		mixIdentityPublicKey, _, err := testSignatureScheme.GenerateKey()
+		if err != nil {
+			return nil, err
+		}
 		mixKeys, err := generateMixKeys(epoch)
 		if err != nil {
 			return nil, err
 		}
 		var name string
-		if isProvider {
+		if isGateway {
 			name = fmt.Sprintf("NSA_Spy_Satelite_Provider%d", i)
 		} else {
 			name = fmt.Sprintf("NSA_Spy_Satelite_Mix%d", i)
 		}
 
-		scheme := wire.DefaultScheme
-		_, linkPubKey := scheme.GenerateKeypair(rand.Reader)
+		scheme := testingScheme
+		linkPubKey, _, err := scheme.GenerateKeyPair()
+		if err != nil {
+			return nil, err
+		}
+
+		linkKeyBlob, err := linkPubKey.MarshalBinary()
+		if err != nil {
+			return nil, err
+		}
+
+		blob, err := mixIdentityPublicKey.MarshalBinary()
+		if err != nil {
+			return nil, err
+		}
 
 		mix := &pki.MixDescriptor{
 			Name:        name,
 			Epoch:       epoch,
-			IdentityKey: mixIdentityPublicKey,
-			LinkKey:     linkPubKey,
+			IdentityKey: blob,
+			LinkKey:     linkKeyBlob,
 			MixKeys:     mixKeys,
 			Addresses: map[pki.Transport][]string{
 				pki.Transport("tcp4"): []string{fmt.Sprintf("tcp4://127.0.0.1:%d", i+1)},
 			},
-			Kaetzchen:  nil,
-			Provider:   isProvider,
-			LoadWeight: 0,
+			Kaetzchen:     nil,
+			IsGatewayNode: isGateway,
+			IsServiceNode: isServiceNode,
+			LoadWeight:    0,
 		}
-		signed, err := pki.SignDescriptor(mixIdentityPrivateKey, mixIdentityPublicKey, mix)
-		if err != nil {
-			return nil, err
-		}
-		desc := &descriptor{
-			raw:  []byte(signed),
-			desc: mix,
-		}
-		mixes = append(mixes, desc)
+		mixes = append(mixes, mix)
 	}
 	return mixes, nil
 }
 
 func generateMixnet(numMixes, numProviders int, epoch uint64) (*pki.Document, error) {
-	mixes, err := generateNodes(false, numMixes, epoch)
+	mixes, err := generateNodes(false, false, numMixes, epoch)
 	if err != nil {
 		return nil, err
 	}
-	providers, err := generateNodes(true, numProviders, epoch)
+	serviceNodes, err := generateNodes(true, false, numProviders, epoch)
 	if err != nil {
 		return nil, err
 	}
-	pdescs := make([]*pki.MixDescriptor, len(providers))
-	for i, p := range providers {
-		pdescs[i] = p.desc
+	gateways, err := generateNodes(false, true, numProviders, epoch)
+	if err != nil {
+		return nil, err
 	}
+
+	gatewayDescriptors := make([]*pki.MixDescriptor, len(gateways))
+	for i, p := range gateways {
+		gatewayDescriptors[i] = p
+	}
+
+	serviceDescriptors := make([]*pki.MixDescriptor, len(serviceNodes))
+	for i, p := range serviceNodes {
+		serviceDescriptors[i] = p
+	}
+
 	topology := generateRandomTopology(mixes, 3)
 
 	sharedRandomCommit := make(map[[pki.PublicKeyHashSize]byte][]byte)
@@ -142,7 +172,8 @@ func generateMixnet(numMixes, numProviders int, epoch uint64) (*pki.Document, er
 		LambdaP:            1.2,
 		LambdaPMaxDelay:    300,
 		Topology:           topology,
-		Providers:          pdescs,
+		GatewayNodes:       gatewayDescriptors,
+		ServiceNodes:       serviceDescriptors,
 		SharedRandomCommit: sharedRandomCommit,
 		SharedRandomValue:  make([]byte, pki.SharedRandomValueLength),
 	}
@@ -240,7 +271,8 @@ func (d *mockDialer) waitUntilDialed(address string) {
 	<-dc
 }
 
-func (d *mockDialer) mockServer(address string, linkPrivateKey wire.PrivateKey, identityPrivateKey sign.PrivateKey, identityPublicKey sign.PublicKey, wg *sync.WaitGroup) {
+func (d *mockDialer) mockServer(address string, linkPrivateKey kem.PrivateKey, identityPrivateKey sign.PrivateKey,
+	identityPublicKey sign.PublicKey, wg *sync.WaitGroup, mygeo *geo.Geometry) {
 	d.Lock()
 	u, err := url.Parse(address)
 	if err != nil {
@@ -258,12 +290,10 @@ func (d *mockDialer) mockServer(address string, linkPrivateKey wire.PrivateKey, 
 	d.Unlock()
 	wg.Done()
 
-	mynike := ecdh.EcdhScheme
-	mygeo := geo.GeometryFromUserForwardPayloadLength(mynike, 2000, true, 5)
-
-	d.waitUntilDialed(u.Host)
-	identityHash := identityPublicKey.Sum256()
+	d.waitUntilDialed(address)
+	identityHash := hash.Sum256From(identityPublicKey)
 	cfg := &wire.SessionConfig{
+		KEMScheme:         testingScheme,
 		Geometry:          mygeo,
 		Authenticator:     d,
 		AdditionalData:    identityHash[:],
@@ -320,20 +350,27 @@ func (d *mockDialer) IsPeerValid(creds *wire.PeerCredentials) bool {
 	return true
 }
 
-func generatePeer(peerNum int) (*config.Authority, sign.PrivateKey, sign.PublicKey, wire.PrivateKey, error) {
-	identityPrivateKey, identityPublicKey := cert.Scheme.NewKeypair()
+func generatePeer(peerNum int) (*config.Authority, sign.PrivateKey, sign.PublicKey, kem.PrivateKey, error) {
+	identityPublicKey, identityPrivateKey, err := testSignatureScheme.GenerateKey()
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
 
-	scheme := wire.DefaultScheme
-	linkPrivateKey, linkPublicKey := scheme.GenerateKeypair(rand.Reader)
+	scheme := testingScheme
+	linkPublicKey, linkPrivateKey, err := scheme.GenerateKeyPair()
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
 
 	authPeer := &config.Authority{
+		WireKEMScheme:     testingSchemeName,
 		IdentityPublicKey: identityPublicKey,
 		LinkPublicKey:     linkPublicKey,
 		Addresses:         []string{fmt.Sprintf("tcp://127.0.0.1:%d", peerNum)},
 	}
-	err := authPeer.Validate()
+	err = authPeer.Validate()
 	if err != nil {
-		panic(err)
+		return nil, nil, nil, nil, err
 	}
 	return authPeer, identityPrivateKey, identityPublicKey, linkPrivateKey, nil
 }
@@ -347,19 +384,24 @@ func TestClient(t *testing.T) {
 	dialer := newMockDialer(logBackend)
 	peers := []*config.Authority{}
 
+	mynike := ecdh.Scheme(rand.Reader)
+	mygeo := geo.GeometryFromUserForwardPayloadLength(mynike, 2000, true, 5)
+
 	var wg sync.WaitGroup
 	for i := 0; i < 10; i++ {
 		peer, idPrivKey, idPubKey, linkPrivKey, err := generatePeer(i)
 		require.NoError(err)
 		peers = append(peers, peer)
 		wg.Add(1)
-		go dialer.mockServer(peer.Addresses[0], linkPrivKey, idPrivKey, idPubKey, &wg)
+		go dialer.mockServer(peer.Addresses[0], linkPrivKey, idPrivKey, idPubKey, &wg, mygeo)
 	}
 	wg.Wait()
 	cfg := &Config{
+		KEMScheme:     testingScheme,
 		LogBackend:    logBackend,
 		Authorities:   peers,
 		DialContextFn: dialer.dial,
+		Geo:           mygeo,
 	}
 	client, err := New(cfg)
 	require.NoError(err)

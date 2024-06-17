@@ -8,13 +8,13 @@ import (
 
 	"github.com/BurntSushi/toml"
 	"github.com/fxamacker/cbor/v2"
-	"golang.org/x/crypto/sha3"
+	"golang.org/x/crypto/blake2b"
 
-	"github.com/cloudflare/circl/kem"
-	kemschemes "github.com/cloudflare/circl/kem/schemes"
+	"github.com/katzenpost/hpqc/kem"
+	kemschemes "github.com/katzenpost/hpqc/kem/schemes"
 
-	"github.com/katzenpost/katzenpost/core/crypto/nike"
-	"github.com/katzenpost/katzenpost/core/crypto/nike/schemes"
+	"github.com/katzenpost/hpqc/nike"
+	"github.com/katzenpost/hpqc/nike/schemes"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/sphinx/internal/crypto"
 )
@@ -106,8 +106,11 @@ func (g *Geometry) bytes() []byte {
 }
 
 func (g *Geometry) Hash() []byte {
-	h := sha3.New256()
-	_, err := h.Write(g.bytes())
+	h, err := blake2b.New256(nil)
+	if err != nil {
+		panic(err)
+	}
+	_, err = h.Write(g.bytes())
 	if err != nil {
 		panic(err)
 	}

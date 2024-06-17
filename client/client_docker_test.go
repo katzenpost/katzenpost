@@ -27,9 +27,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/katzenpost/client/config"
 	"github.com/katzenpost/katzenpost/client/constants"
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/katzenpost/core/epochtime"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/stretchr/testify/require"
 )
@@ -223,7 +224,8 @@ func TestDockerClientTestIntegrationGarbageCollection(t *testing.T) {
 						return true
 					}
 					clientSession.surbIDMap.Range(surbIDMapRange)
-					duration := time.Duration(event.ReplyETA + constants.RoundTripTimeSlop + (5 * time.Second))
+					_, _, till := epochtime.Now()
+					duration := time.Duration(till + 1 * epochtime.Period)
 					t.Logf("Sleeping for %s so that the SURB ID Map entry will get garbage collected.", duration)
 					time.Sleep(duration)
 					wg.Done()

@@ -20,25 +20,24 @@ import (
 	"crypto/rand"
 	"testing"
 
-	"github.com/cloudflare/circl/kem"
-	"github.com/cloudflare/circl/kem/hybrid"
-	"github.com/cloudflare/circl/kem/kyber/kyber1024"
-	"github.com/cloudflare/circl/kem/kyber/kyber512"
-	"github.com/cloudflare/circl/kem/kyber/kyber768"
+	"github.com/katzenpost/hpqc/kem"
+	"github.com/katzenpost/hpqc/kem/schemes"
+
 	"github.com/katzenpost/katzenpost/core/sphinx/commands"
+	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/stretchr/testify/require"
 )
 
 type kemNodeParams struct {
-	id         []byte
+	id         [constants.NodeIDLength]byte
 	privateKey kem.PrivateKey
 	publicKey  kem.PublicKey
 }
 
 func TestKEMSphinxSimple(t *testing.T) {
 	t.Parallel()
-	mykem := hybrid.Kyber768X25519()
+	mykem := schemes.ByName("Kyber768-X25519")
 	withSURB := false
 	g := geo.KEMGeometryFromUserForwardPayloadLength(mykem, 512, withSURB, 5)
 	sphinx := NewKEMSphinx(mykem, g)
@@ -50,26 +49,26 @@ func TestKEMSphinxGeometry(t *testing.T) {
 	require := require.New(t)
 
 	withSURB := false
-	g := geo.KEMGeometryFromUserForwardPayloadLength(kyber512.Scheme(), 512, withSURB, 5)
+	g := geo.KEMGeometryFromUserForwardPayloadLength(schemes.ByName("Kyber512"), 512, withSURB, 5)
 	t.Logf("KEMSphinx Kyber512 5 hops: HeaderLength = %d", g.HeaderLength)
-	g = geo.KEMGeometryFromUserForwardPayloadLength(kyber512.Scheme(), 512, withSURB, 10)
+	g = geo.KEMGeometryFromUserForwardPayloadLength(schemes.ByName("Kyber512"), 512, withSURB, 10)
 	t.Logf("KEMSphinx Kyber512 10 hops: HeaderLength = %d", g.HeaderLength)
-	g = geo.KEMGeometryFromUserForwardPayloadLength(kyber768.Scheme(), 512, withSURB, 5)
+	g = geo.KEMGeometryFromUserForwardPayloadLength(schemes.ByName("Kyber768"), 512, withSURB, 5)
 	t.Logf("KEMSphinx Kyber768 5 hops: HeaderLength = %d", g.HeaderLength)
-	g = geo.KEMGeometryFromUserForwardPayloadLength(kyber768.Scheme(), 512, withSURB, 10)
+	g = geo.KEMGeometryFromUserForwardPayloadLength(schemes.ByName("Kyber768"), 512, withSURB, 10)
 	t.Logf("KEMSphinx Kyber768 10 hops: HeaderLength = %d", g.HeaderLength)
-	g = geo.KEMGeometryFromUserForwardPayloadLength(kyber1024.Scheme(), 512, withSURB, 5)
+	g = geo.KEMGeometryFromUserForwardPayloadLength(schemes.ByName("Kyber1024"), 512, withSURB, 5)
 	t.Logf("KEMSphinx Kyber1024 5 hops: HeaderLength = %d", g.HeaderLength)
-	g = geo.KEMGeometryFromUserForwardPayloadLength(kyber1024.Scheme(), 512, withSURB, 10)
+	g = geo.KEMGeometryFromUserForwardPayloadLength(schemes.ByName("Kyber1024"), 512, withSURB, 10)
 	t.Logf("KEMSphinx Kyber1024 10 hops: HeaderLength = %d", g.HeaderLength)
-	g = geo.KEMGeometryFromUserForwardPayloadLength(hybrid.Kyber768X25519(), 512, withSURB, 5)
+	g = geo.KEMGeometryFromUserForwardPayloadLength(schemes.ByName("Kyber768-X25519"), 512, withSURB, 5)
 	t.Logf("KEMSphinx Kyber768X25519 5 hops: HeaderLength = %d", g.HeaderLength)
-	g = geo.KEMGeometryFromUserForwardPayloadLength(hybrid.Kyber768X25519(), 512, withSURB, 10)
+	g = geo.KEMGeometryFromUserForwardPayloadLength(schemes.ByName("Kyber768-X25519"), 512, withSURB, 10)
 	t.Logf("KEMSphinx Kyber768X25519 10 hops: HeaderLength = %d", g.HeaderLength)
-	g = geo.KEMGeometryFromUserForwardPayloadLength(hybrid.Kyber768X25519(), 512, withSURB, 20)
-	t.Logf("KEMSphinx Kyber768X25519 10 hops: HeaderLength = %d", g.HeaderLength)
+	g = geo.KEMGeometryFromUserForwardPayloadLength(schemes.ByName("Kyber768-X25519"), 512, withSURB, 20)
+	t.Logf("KEMSphinx Kyber768X25519 20 hops: HeaderLength = %d", g.HeaderLength)
 
-	mykem := hybrid.Kyber768X25519()
+	mykem := schemes.ByName("Kyber768-X25519")
 	withSURB = true
 	payloadLen := 2000
 
@@ -97,11 +96,21 @@ func TestKEMForwardSphinx(t *testing.T) {
 	t.Parallel()
 	const testPayload = "Only the mob and the elite can be attracted by the momentum of totalitarianism itself. The masses have to be won by propaganda."
 
-	mykem := hybrid.Kyber768X25519()
+	mykem := schemes.ByName("Kyber768-X25519")
 
 	g := geo.KEMGeometryFromUserForwardPayloadLength(mykem, len(testPayload), false, 20)
 	sphinx := NewKEMSphinx(mykem, g)
 	testForwardKEMSphinx(t, mykem, sphinx, []byte(testPayload))
+}
+
+func TestKEMSphinxSURB(t *testing.T) {
+	t.Parallel()
+	const testPayload = "The smallest minority on earth is the individual.  Those who deny individual rights cannot claim to be defenders of minorities."
+
+	mykem := schemes.ByName("Kyber768-X25519")
+	g := geo.KEMGeometryFromUserForwardPayloadLength(mykem, len(testPayload), false, 20)
+	sphinx := NewKEMSphinx(mykem, g)
+	testSURBKEMSphinx(t, mykem, sphinx, []byte(testPayload))
 }
 
 func newKEMNode(require *require.Assertions, mykem kem.Scheme) *kemNodeParams {
@@ -171,7 +180,7 @@ func testForwardKEMSphinx(t *testing.T, mykem kem.Scheme, sphinx *Sphinx, testPa
 
 		// Unwrap the packet, validating the output.
 		for i := range nodes {
-			b, _, cmds, err := sphinx.unwrapKem(nodes[i].privateKey, pkt)
+			b, _, cmds, err := sphinx.Unwrap(nodes[i].privateKey, pkt)
 			require.NoErrorf(err, "Hop %d: Unwrap failed", i)
 
 			if i == len(path)-1 {
@@ -180,6 +189,7 @@ func testForwardKEMSphinx(t *testing.T, mykem kem.Scheme, sphinx *Sphinx, testPa
 
 				require.Equalf(b, payload, "Hop %d: payload mismatch", i)
 			} else {
+				require.Equal(sphinx.Geometry().PacketLength, len(pkt))
 				require.Equalf(2, len(cmds), "Hop %d: Unexpected number of commands", i)
 				require.EqualValuesf(path[i].Commands[0], cmds[0], "Hop %d: delay mismatch", i)
 
@@ -188,6 +198,62 @@ func testForwardKEMSphinx(t *testing.T, mykem kem.Scheme, sphinx *Sphinx, testPa
 				require.Equalf(path[i+1].ID, nextNode.ID, "Hop %d: NextNodeHop.ID mismatch", i)
 
 				require.Nil(b, "Hop %d: returned payload", i)
+			}
+		}
+	}
+}
+
+func testSURBKEMSphinx(t *testing.T, mykem kem.Scheme, sphinx *Sphinx, testPayload []byte) {
+	require := require.New(t)
+
+	require.Equal(sphinx.Geometry().NIKEName, "")
+	require.NotEqual(sphinx.Geometry().KEMName, "")
+	require.Nil(sphinx.nike)
+	require.NotNil(sphinx.kem)
+
+	for nrHops := 1; nrHops <= sphinx.Geometry().NrHops; nrHops++ {
+		t.Logf("Testing %d hop(s).", nrHops)
+
+		// Generate the "nodes" and path for the SURB.
+		nodes, path := newKEMPathVector(require, mykem, nrHops, true)
+
+		// Create the SURB.
+		surb, surbKeys, err := sphinx.NewSURB(rand.Reader, path)
+		require.NoError(err, "NewSURB failed")
+		require.Equal(sphinx.Geometry().SURBLength, len(surb), "SURB length")
+
+		// Create a reply packet using the SURB.
+		payload := []byte(testPayload)
+		pkt, firstHop, err := sphinx.NewPacketFromSURB(surb, payload)
+		require.NoError(err, "NewPacketFromSURB failed")
+		//require.EqualValues(&nodes[0].id, firstHop, "NewPacketFromSURB: 0th hop")
+		require.NotNil(firstHop)
+		require.NotNil(nodes[0].id)
+
+		// Unwrap the packet, valdiating the output.
+		for i := range nodes {
+			// There's no sensible way to validate that `tag` is correct.
+			b, _, cmds, err := sphinx.Unwrap(nodes[i].privateKey, pkt)
+			require.NoErrorf(err, "SURB Hop %d: Unwrap failed", i)
+
+			if i == len(path)-1 {
+				require.Equalf(2, len(cmds), "SURB Hop %d: Unexpected number of commands", i)
+				require.EqualValuesf(path[i].Commands[0], cmds[0], "SURB Hop %d: recipient mismatch", i)
+				require.EqualValuesf(path[i].Commands[1], cmds[1], "SURB Hop %d: surb_reply mismatch", i)
+
+				b, err = sphinx.DecryptSURBPayload(b, surbKeys)
+				require.NoError(err, "DecrytSURBPayload")
+				require.Equalf(b, payload, "SURB Hop %d: payload mismatch", i)
+			} else {
+				require.Equal(sphinx.Geometry().PacketLength, len(pkt))
+				require.Equalf(2, len(cmds), "SURB Hop %d: Unexpected number of commands", i)
+				require.EqualValuesf(path[i].Commands[0], cmds[0], "SURB Hop %d: delay mismatch", i)
+
+				nextNode, ok := cmds[1].(*commands.NextNodeHop)
+				require.Truef(ok, "SURB Hop %d: cmds[1] is not a NextNodeHop", i)
+				require.Equalf(path[i+1].ID, nextNode.ID, "SURB Hop %d: NextNodeHop.ID mismatch", i)
+
+				require.Nil(b, "SURB Hop %d: returned payload", i)
 			}
 		}
 	}

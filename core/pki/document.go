@@ -28,13 +28,19 @@ import (
 	"github.com/fxamacker/cbor/v2"
 	"golang.org/x/crypto/blake2b"
 
-	"github.com/katzenpost/katzenpost/core/crypto/cert"
-	"github.com/katzenpost/katzenpost/core/crypto/sign"
+	"github.com/katzenpost/hpqc/hash"
+	"github.com/katzenpost/hpqc/sign"
+
+	"github.com/katzenpost/katzenpost/core/cert"
 )
 
 const (
-	// LayerProvider is the Layer that providers list in their MixDescriptors.
-	LayerProvider           = 255
+	// LayerGateway is the Layer that gateways list in their MixDescriptors.
+	LayerGateway = 255
+
+	// LayerService is the Layer that service nodes list in their MixDescriptors.
+	LayerService = 254
+
 	PublicKeyHashSize       = 32
 	SharedRandomLength      = 40
 	SharedRandomValueLength = 32
@@ -120,12 +126,23 @@ type Document struct {
 	// LambdaMMaxDelay is the maximum send interval in milliseconds.
 	LambdaMMaxDelay uint64
 
+	// LambdaG is the inverse of the mean of the exponential distribution
+	// that mixes will sample to determine send timing of gateway node loop decoy traffic.
+	LambdaG float64
+
+	// LambdaMMaxDelay is the maximum send interval in milliseconds.
+	LambdaGMaxDelay uint64
+
 	// Topology is the mix network topology, excluding providers.
 	Topology [][]*MixDescriptor
 
-	// Providers is the list of providers that can interact with the mix
-	// network.
-	Providers []*MixDescriptor
+	// GatewayNodes is the list of nodes that can allow clients to interact
+	// with the mix network.
+	GatewayNodes []*MixDescriptor
+
+	// ServiceNodes is the list of nodes that can allow services to interact
+	// with tehe mix network.
+	ServiceNodes []*MixDescriptor
 
 	// Signatures holds detached Signatures from deserializing a signed Document
 	Signatures map[[PublicKeyHashSize]byte]cert.Signature `cbor:"-"`
@@ -149,6 +166,9 @@ type Document struct {
 	// Version uniquely identifies the document format as being for the
 	// specified version so that it can be rejected if the format changes.
 	Version string
+
+	// PKISignatureScheme specifies the cryptographic signature scheme
+	PKISignatureScheme string
 }
 
 // document contains fields from Document but not the encoding.BinaryMarshaler methods
@@ -174,7 +194,11 @@ func (d *Document) String() string {
 	}
 
 	s += "}\n"
-	s += fmt.Sprintf("Providers:[]{%v}", d.Providers)
+	s += fmt.Sprintf("GatewayNodes:[]{%v}", d.GatewayNodes)
+	s += "}}\n"
+
+	s += "}\n"
+	s += fmt.Sprintf("ServiceNodes:[]{%v}", d.ServiceNodes)
 	s += "}}\n"
 
 	for id, signedCommit := range d.SharedRandomCommit {
@@ -197,29 +221,54 @@ func (d *Document) String() string {
 	return s
 }
 
-// GetProvider returns the MixDescriptor for the given provider Name.
-func (d *Document) GetProvider(name string) (*MixDescriptor, error) {
-	for _, v := range d.Providers {
+// GetGateway returns the MixDescriptor for the given gateway Name.
+func (d *Document) GetGateway(name string) (*MixDescriptor, error) {
+	for _, v := range d.GatewayNodes {
 		if v.Name == name {
 			return v, nil
 		}
 	}
-	return nil, fmt.Errorf("pki: provider '%v' not found", name)
+	return nil, fmt.Errorf("pki: gateway node '%v' not found", name)
 }
 
-// GetProviderByKeyHash returns the specific provider descriptor corresponding
+// GetService returns the MixDescriptor for the given service Name.
+func (d *Document) GetServiceNode(name string) (*MixDescriptor, error) {
+	for _, v := range d.ServiceNodes {
+		if v.Name == name {
+			return v, nil
+		}
+	}
+	return nil, fmt.Errorf("pki: service node '%v' not found", name)
+}
+
+// GetGatewayByKeyHash returns the specific gateway descriptor corresponding
 // to the specified IdentityKey hash.
-func (d *Document) GetProviderByKeyHash(keyhash *[32]byte) (*MixDescriptor, error) {
-	for _, v := range d.Providers {
+func (d *Document) GetGatewayByKeyHash(keyhash *[32]byte) (*MixDescriptor, error) {
+	for _, v := range d.GatewayNodes {
 		if v.IdentityKey == nil {
 			return nil, fmt.Errorf("pki: document contains invalid descriptors")
 		}
-		idKeyHash := v.IdentityKey.Sum256()
+		idKeyHash := hash.Sum256(v.IdentityKey)
 		if hmac.Equal(idKeyHash[:], keyhash[:]) {
 			return v, nil
 		}
 	}
-	return nil, fmt.Errorf("pki: provider not found")
+	return nil, fmt.Errorf("pki: gateway not found")
+}
+
+// GetServiceByKeyHash returns the specific service descriptor corresponding
+// to the specified IdentityKey hash.
+func (d *Document) GetServiceNodeByKeyHash(keyhash *[32]byte) (*MixDescriptor, error) {
+	for _, v := range d.ServiceNodes {
+		if v.IdentityKey == nil {
+			return nil, fmt.Errorf("pki: document contains invalid descriptors")
+		}
+		idKeyHash := hash.Sum256(v.IdentityKey)
+		if hmac.Equal(idKeyHash[:], keyhash[:]) {
+			return v, nil
+		}
+	}
+	return nil, fmt.Errorf("pki: service not found")
 }
 
 // GetMix returns the MixDescriptor for the given mix Name.
@@ -236,15 +285,21 @@ func (d *Document) GetMix(name string) (*MixDescriptor, error) {
 
 // GetMixLayer returns the assigned layer for the given mix from Topology
 func (d *Document) GetMixLayer(keyhash *[32]byte) (uint8, error) {
-	for _, p := range d.Providers {
-		idKeyHash := p.IdentityKey.Sum256()
+	for _, p := range d.GatewayNodes {
+		idKeyHash := hash.Sum256(p.IdentityKey)
 		if hmac.Equal(idKeyHash[:], keyhash[:]) {
-			return LayerProvider, nil
+			return LayerGateway, nil
+		}
+	}
+	for _, p := range d.ServiceNodes {
+		idKeyHash := hash.Sum256(p.IdentityKey)
+		if hmac.Equal(idKeyHash[:], keyhash[:]) {
+			return LayerService, nil
 		}
 	}
 	for n, l := range d.Topology {
 		for _, v := range l {
-			idKeyHash := v.IdentityKey.Sum256()
+			idKeyHash := hash.Sum256(v.IdentityKey)
 			if hmac.Equal(idKeyHash[:], keyhash[:]) {
 				return uint8(n), nil
 			}
@@ -269,7 +324,7 @@ func (d *Document) GetMixByKeyHash(keyhash *[32]byte) (*MixDescriptor, error) {
 			if v.IdentityKey == nil {
 				return nil, fmt.Errorf("pki: document contains invalid descriptors")
 			}
-			idKeyHash := v.IdentityKey.Sum256()
+			idKeyHash := hash.Sum256(v.IdentityKey)
 			if hmac.Equal(idKeyHash[:], keyhash[:]) {
 				return v, nil
 			}
@@ -284,7 +339,10 @@ func (d *Document) GetNode(name string) (*MixDescriptor, error) {
 	if m, err := d.GetMix(name); err == nil {
 		return m, nil
 	}
-	if m, err := d.GetProvider(name); err == nil {
+	if m, err := d.GetGateway(name); err == nil {
+		return m, nil
+	}
+	if m, err := d.GetServiceNode(name); err == nil {
 		return m, nil
 	}
 	return nil, fmt.Errorf("pki: node not found")
@@ -296,47 +354,47 @@ func (d *Document) GetNodeByKeyHash(keyhash *[32]byte) (*MixDescriptor, error) {
 	if m, err := d.GetMixByKeyHash(keyhash); err == nil {
 		return m, nil
 	}
-	if m, err := d.GetProviderByKeyHash(keyhash); err == nil {
+	if m, err := d.GetGatewayByKeyHash(keyhash); err == nil {
+		return m, nil
+	}
+	if m, err := d.GetServiceNodeByKeyHash(keyhash); err == nil {
 		return m, nil
 	}
 	return nil, fmt.Errorf("pki: node not found")
 }
 
-// Transport is a link transport protocol.
-type Transport string
-
 var (
 	// TransportInvalid is the invalid transport.
-	TransportInvalid Transport
+	TransportInvalid string
 
 	// TransportTCP is TCP, with the IP version determined by the results of
 	// a name server lookup.
-	TransportTCP Transport = "tcp"
+	TransportTCP string = "tcp"
 
 	// TransportWS is Websocket
-	TransportWS Transport = "ws"
+	TransportWS string = "ws"
 
 	// TransportTCPv4 is TCP over IPv4.
-	TransportTCPv4 Transport = "tcp4"
+	TransportTCPv4 string = "tcp4"
 
 	// TransportTCPv6 is TCP over IPv6.
-	TransportTCPv6 Transport = "tcp6"
+	TransportTCPv6 string = "tcp6"
 
 	// TransportHTTP is QUIC, with the IP version determined by the results
 	// of a name server lookup
-	TransportHTTP Transport = "http"
+	TransportHTTP string = "http"
 
 	// InternalTransports is the list of transports used for non-client related
 	// communications.
-	InternalTransports = []Transport{TransportTCPv4, TransportTCPv6, TransportHTTP}
+	InternalTransports = []string{TransportTCPv4, TransportTCPv6, TransportHTTP}
 
 	// ClientTransports is the list of transports used by default for client
 	// to provider communication.
-	ClientTransports = []Transport{TransportTCP, TransportTCPv4, TransportTCPv6, TransportHTTP, TransportWS}
+	ClientTransports = []string{TransportTCP, TransportTCPv4, TransportTCPv6, TransportHTTP, TransportWS}
 )
 
 // FromPayload deserializes, then verifies a Document, and returns the Document or error.
-func FromPayload(verifier cert.Verifier, payload []byte) (*Document, error) {
+func FromPayload(verifier sign.PublicKey, payload []byte) (*Document, error) {
 	_, err := cert.Verify(verifier, payload)
 	if err != nil {
 		return nil, err
@@ -349,29 +407,28 @@ func FromPayload(verifier cert.Verifier, payload []byte) (*Document, error) {
 }
 
 // SignDocument signs and serializes the document with the provided signing key.
-func SignDocument(signer cert.Signer, verifier cert.Verifier, d *Document) ([]byte, error) {
+func SignDocument(signer sign.PrivateKey, verifier sign.PublicKey, d *Document) ([]byte, error) {
 	d.Version = DocumentVersion
-	// Serialize the document.
-	payload, err := ccbor.Marshal((*document)(d))
+	// Marshal the document including any existing d.Signatures
+	certified, err := d.MarshalBinary()
+	if err != nil {
+		panic("failed to marshal our own doc")
+	}
+	recertified, err := cert.SignMulti(signer, verifier, certified)
+	if err != nil {
+		panic("failed to add our own sig to certified doc")
+	}
+	// re-deserialize the recertified certificate to extract our own signature
+	// to d.Signatures etc:
+	err = d.UnmarshalBinary(recertified)
 	if err != nil {
 		return nil, err
 	}
-	// Sign the document.
-	signed, err := cert.Sign(signer, verifier, payload, d.Epoch+5)
-	if err != nil {
-		return nil, err
-	}
-
-	// update Document
-	err = d.UnmarshalBinary(signed)
-	if err != nil {
-		return nil, err
-	}
-	return signed, nil
+	return recertified, nil
 }
 
 // MultiSignDocument signs and serializes the document with the provided signing key, adding the signature to the existing signatures.
-func MultiSignDocument(signer cert.Signer, verifier cert.Verifier, peerSignatures []*cert.Signature, verifiers map[[32]byte]cert.Verifier, d *Document) ([]byte, error) {
+func MultiSignDocument(signer sign.PrivateKey, verifier sign.PublicKey, peerSignatures []*cert.Signature, verifiers map[[32]byte]sign.PublicKey, d *Document) ([]byte, error) {
 	d.Version = DocumentVersion
 
 	// Serialize the document.
@@ -412,7 +469,7 @@ func ParseDocument(b []byte) (*Document, error) {
 
 // IsDocumentWellFormed validates the document and returns a descriptive error
 // iff there are any problems that invalidates the document.
-func IsDocumentWellFormed(d *Document, verifiers []cert.Verifier) error {
+func IsDocumentWellFormed(d *Document, verifiers []sign.PublicKey) error {
 	// Ensure the document is well formed.
 	if d.Version != DocumentVersion {
 		return fmt.Errorf("Invalid Document Version: '%v'", d.Version)
@@ -425,9 +482,9 @@ func IsDocumentWellFormed(d *Document, verifiers []cert.Verifier) error {
 	}
 	// If there is a SharedRandomCommit, verify the Epoch contained in
 	// SharedRandomCommit matches the Epoch in the Document.
-	vmap := make(map[[PublicKeyHashSize]byte]cert.Verifier)
+	vmap := make(map[[PublicKeyHashSize]byte]sign.PublicKey)
 	for _, v := range verifiers {
-		vmap[v.Sum256()] = v
+		vmap[hash.Sum256From(v)] = v
 	}
 
 	for id, signedCommit := range d.SharedRandomCommit {
@@ -482,7 +539,7 @@ func IsDocumentWellFormed(d *Document, verifiers []cert.Verifier) error {
 	if len(d.Topology) == 0 {
 		return fmt.Errorf("Document contains no Topology")
 	}
-	pks := make(map[[sign.PublicKeyHashSize]byte]bool)
+	pks := make(map[[hash.HashSize]byte]bool)
 	for layer, nodes := range d.Topology {
 		if len(nodes) == 0 {
 			return fmt.Errorf("Document Topology layer %d contains no nodes", layer)
@@ -491,24 +548,42 @@ func IsDocumentWellFormed(d *Document, verifiers []cert.Verifier) error {
 			if err := IsDescriptorWellFormed(desc, d.Epoch); err != nil {
 				return err
 			}
-			pk := desc.IdentityKey.Sum256()
+			pk := hash.Sum256(desc.IdentityKey)
 			if _, ok := pks[pk]; ok {
 				return fmt.Errorf("Document contains multiple entries for %v", desc.IdentityKey)
 			}
 			pks[pk] = true
 		}
 	}
-	if len(d.Providers) == 0 {
-		return fmt.Errorf("Document contains no Providers")
+	if len(d.GatewayNodes) == 0 {
+		return fmt.Errorf("Document contains no Gateway Nodes")
 	}
-	for _, desc := range d.Providers {
+	if len(d.ServiceNodes) == 0 {
+		return fmt.Errorf("Document contains no Service Nodes")
+	}
+
+	for _, desc := range d.GatewayNodes {
 		if err := IsDescriptorWellFormed(desc, d.Epoch); err != nil {
 			return err
 		}
-		if !desc.Provider {
-			return fmt.Errorf("Document lists %v as a Provider with desc.Provider = false %v", desc.IdentityKey, desc.Provider)
+		if !desc.IsGatewayNode {
+			return fmt.Errorf("Document lists %v as a Provider with desc.IsGatewayNode = %v", desc.IdentityKey, desc.IsGatewayNode)
 		}
-		pk := desc.IdentityKey.Sum256()
+		pk := hash.Sum256(desc.IdentityKey)
+		if _, ok := pks[pk]; ok {
+			return fmt.Errorf("Document contains multiple entries for %v", desc.IdentityKey)
+		}
+		pks[pk] = true
+	}
+
+	for _, desc := range d.ServiceNodes {
+		if err := IsDescriptorWellFormed(desc, d.Epoch); err != nil {
+			return err
+		}
+		if !desc.IsServiceNode {
+			return fmt.Errorf("Document lists %v as a Provider with desc.IsServiceNode = %v", desc.IdentityKey, desc.IsServiceNode)
+		}
+		pk := hash.Sum256(desc.IdentityKey)
 		if _, ok := pks[pk]; ok {
 			return fmt.Errorf("Document contains multiple entries for %v", desc.IdentityKey)
 		}
@@ -527,11 +602,10 @@ func (d *Document) MarshalBinary() ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	pk, _ := cert.Scheme.NewKeypair()
 	certified := cert.Certificate{
 		Version:    cert.CertVersion,
 		Expiration: d.Epoch + 5,
-		KeyType:    pk.KeyType(),
+		KeyType:    d.PKISignatureScheme,
 		Certified:  payload,
 		Signatures: d.Signatures,
 	}
@@ -564,7 +638,7 @@ func (d *Document) UnmarshalBinary(data []byte) error {
 }
 
 // AddSignature will add a Signature over this Document if it is signed by verifier.
-func (d *Document) AddSignature(verifier cert.Verifier, signature cert.Signature) error {
+func (d *Document) AddSignature(verifier sign.PublicKey, signature cert.Signature) error {
 	// Serialize this Document
 	payload, err := d.MarshalBinary()
 	if err != nil {
@@ -576,7 +650,7 @@ func (d *Document) AddSignature(verifier cert.Verifier, signature cert.Signature
 	if err != nil {
 		return err
 	}
-	d.Signatures[verifier.Sum256()] = signature
+	d.Signatures[hash.Sum256From(verifier)] = signature
 	return nil
 }
 

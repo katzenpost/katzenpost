@@ -21,6 +21,7 @@ package catshadow
 import (
 	"errors"
 	"fmt"
+
 	rClient "github.com/katzenpost/katzenpost/reunion/client"
 	rTrans "github.com/katzenpost/katzenpost/reunion/transports/katzenpost"
 )
@@ -53,7 +54,7 @@ func (c *Client) processReunionUpdate(update *rClient.ReunionUpdate) {
 		}
 		// XXX: if there are other reunion key exchanges pending for this client, we probably do not want to emit an error event just yet...
 		if len(contact.reunionKeyExchange) == 0 {
-			c.eventCh.In() <- &KeyExchangeCompletedEvent{
+			c.eventCh <- &KeyExchangeCompletedEvent{
 				Nickname: contact.Nickname,
 				Err:      update.Error,
 			}
@@ -78,7 +79,7 @@ func (c *Client) processReunionUpdate(update *rClient.ReunionUpdate) {
 			c.log.Error(err.Error())
 			contact.reunionResult[update.ExchangeID] = err.Error()
 			c.save()
-			c.eventCh.In() <- &KeyExchangeCompletedEvent{
+			c.eventCh <- &KeyExchangeCompletedEvent{
 				Nickname: contact.Nickname,
 				Err:      err,
 			}
@@ -93,7 +94,7 @@ func (c *Client) processReunionUpdate(update *rClient.ReunionUpdate) {
 			c.log.Error(err.Error())
 			contact.reunionResult[update.ExchangeID] = err.Error()
 			c.save()
-			c.eventCh.In() <- &KeyExchangeCompletedEvent{
+			c.eventCh <- &KeyExchangeCompletedEvent{
 				Nickname: contact.Nickname,
 				Err:      err,
 			}
@@ -103,7 +104,7 @@ func (c *Client) processReunionUpdate(update *rClient.ReunionUpdate) {
 		contact.keyExchange = nil
 		contact.IsPending = false
 		c.log.Info("Reunion double ratchet key exchange completed by exchange %v!", update.ExchangeID)
-		c.eventCh.In() <- &KeyExchangeCompletedEvent{
+		c.eventCh <- &KeyExchangeCompletedEvent{
 			Nickname: contact.Nickname,
 		}
 	}
@@ -161,7 +162,7 @@ func (c *Client) getReunionTransports() ([]*rTrans.Transport, error) {
 	transports := make([]*rTrans.Transport, 0)
 
 	// Get reunion endpoints and epoch values
-	for _, p := range doc.Providers {
+	for _, p := range doc.ServiceNodes {
 		if r, ok := p.Kaetzchen["reunion"]; ok {
 			if ep, ok := r["endpoint"]; ok {
 				ep := ep.(string)
