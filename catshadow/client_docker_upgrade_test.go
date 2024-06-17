@@ -36,8 +36,9 @@ func sendMessage(n int, t *testing.T, sender *Client, recipient string, message 
 	require := require.New(t)
 	sender.log.Infof("Test %d Sending message '%s' to %s", n, string(message), recipient)
 	sender.SendMessage(recipient, message)
-	ctx, _ := context.WithTimeout(context.Background(), time.Minute)
+	ctx, cancelFn := context.WithTimeout(context.Background(), time.Minute)
 	evt := waitForEvent(ctx, sender.EventSink, &MessageDeliveredEvent{})
+	cancelFn()
 	_, ok := evt.(*MessageDeliveredEvent)
 	require.True(ok)
 	sender.log.Infof("Test %d gpt DeliveredEvent for essage '%s' to %s", n, string(message), recipient)
@@ -45,9 +46,10 @@ func sendMessage(n int, t *testing.T, sender *Client, recipient string, message 
 
 func receiveMessage(n int, t *testing.T, receiver *Client, sender string, message []byte) {
 	require := require.New(t)
-	ctx, _ := context.WithTimeout(context.Background(), time.Minute)
+	ctx, cancelFn := context.WithTimeout(context.Background(), time.Minute)
 	receiver.log.Infof("Test %d waiting for message '%s' from %s", n, string(message), sender)
 	evt := waitForEvent(ctx, receiver.EventSink, &MessageReceivedEvent{})
+	cancelFn()
 	switch ev := evt.(type) {
 	case *MessageReceivedEvent:
 		require.Equal(ev.Nickname, sender)
