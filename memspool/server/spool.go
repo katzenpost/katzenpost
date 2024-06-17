@@ -70,7 +70,7 @@ func HandleSpoolRequest(spoolMap *MemSpoolMap, request *common.SpoolRequest, log
 		newSpoolID, err := spoolMap.CreateSpool(publicKey, request.Signature)
 		if err != nil {
 			spoolResponse.Status = err.Error()
-			log.Errorf("%x create: error: %v", newSpoolID[:], err.Error())
+			log.Errorf("error creating spool: %v", err.Error())
 			return &spoolResponse
 		}
 		spoolResponse.SpoolID = *newSpoolID
@@ -81,7 +81,8 @@ func HandleSpoolRequest(spoolMap *MemSpoolMap, request *common.SpoolRequest, log
 		spoolResponse.SpoolID = spoolID
 		if err != nil {
 			spoolResponse.Status = err.Error()
-			log.Errorf("%x purge: error: %v", spoolID, err.Error())
+			log.Debugf("%x purge error: %v", spoolID, err.Error())
+			log.Errorf("purge error: %v", err.Error())
 			return &spoolResponse
 		}
 		log.Debugf("%x purge: OK", spoolID)
@@ -101,7 +102,8 @@ func HandleSpoolRequest(spoolMap *MemSpoolMap, request *common.SpoolRequest, log
 		spoolResponse.MessageID = request.MessageID
 		if err != nil {
 			spoolResponse.Status = err.Error()
-			log.Errorf("%x read %d: %v", request.SpoolID, request.MessageID, err.Error())
+			log.Debugf("%x read %d: %v", request.SpoolID, request.MessageID, err.Error())
+			log.Errorf("read error: %v", err.Error())
 			return &spoolResponse
 		}
 		log.Debugf("%x read %d: OK", request.SpoolID, request.MessageID)
