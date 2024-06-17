@@ -102,7 +102,6 @@ $(docker_compose_yml): ../genconfig/main.go $(distro)_base.stamp | $(net_name) $
 		-S .$(distro) -v -o ./$(net_name) -b /$(net_name) -P $(base_port) \
 		-nike "$(nike)" -kem "$(kem)" -d katzenpost-$(distro)_base \
 		-UserForwardPayloadLength $(UserForwardPayloadLength) -log_level $(log_level)'
-	ln -sf client/client.toml client.toml
 
 $(net_name)/running.stamp:
 	make $(make_args) start
