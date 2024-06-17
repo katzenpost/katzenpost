@@ -57,7 +57,7 @@ func receiveMessage(n int, t *testing.T, receiver *Client, sender string, messag
 		require.Equal(ev.Nickname, sender)
 		require.Equal(ev.Message, message)
 	default:
-        t.Logf("Test %d expected '%s' from %s but got %v", n, string(message), sender, ev)
+		t.Logf("Test %d expected '%s' from %s but got %v", n, string(message), sender, ev)
 		t.FailNow()
 	}
 	receiver.log.Infof("Test %d received message '%s' from %s", n, string(message), sender)
@@ -113,7 +113,7 @@ func TestUpgradeCreate_1(t *testing.T) {
 
 	bob.Shutdown()
 
-	<- time.After(10 * time.Second)
+	<-time.After(10 * time.Second)
 
 	// save the statefiles into testdata for using with later versions of catshadow
 	err := copyFile(aliceStateFilePath, "testdata/alice1_state")
@@ -121,7 +121,7 @@ func TestUpgradeCreate_1(t *testing.T) {
 	err = copyFile(bobStateFilePath, "testdata/bob1_state")
 	require.NoError(err)
 
-	<- time.After(10 * time.Second)
+	<-time.After(10 * time.Second)
 }
 
 func TestUpgradeResume_1(t *testing.T) {
@@ -141,7 +141,6 @@ func TestUpgradeResume_1(t *testing.T) {
 	// start bob
 	bob := reloadCatshadowState(t, bobStateFilePath)
 
-
 	// start alice
 	alice := reloadCatshadowState(t, aliceStateFilePath)
 
@@ -157,7 +156,6 @@ func TestUpgradeResume_1(t *testing.T) {
 
 	alice.Shutdown()
 	bob.Shutdown()
-	<- time.After(10 * time.Second)
 }
 
 func TestUpgradeCreate_2(t *testing.T) {
@@ -183,6 +181,8 @@ func TestUpgradeCreate_2(t *testing.T) {
 	require.NoError(err)
 	err = copyFile(bobStateFilePath, "testdata/bob2_state")
 	require.NoError(err)
+
+	<-time.After(10 * time.Second)
 }
 
 func TestUpgradeResume_2(t *testing.T) {
@@ -207,12 +207,12 @@ func TestUpgradeResume_2(t *testing.T) {
 
 	receiveMessage(2, t, alice, "bob", []byte("message 2 from bob"))
 
-    sendMessage(2, t, alice, "bob", []byte("message 2 from alice"))
-    receiveMessage(2, t, bob, "alice", []byte("message 2 from alice"))
-     
-    sendMessage(2, t, bob, "alice", []byte("message 3 from bob"))
-    receiveMessage(2, t, alice, "bob", []byte("message 3 from bob"))
+	sendMessage(2, t, alice, "bob", []byte("message 2 from alice"))
+	receiveMessage(2, t, bob, "alice", []byte("message 2 from alice"))
 
-    alice.Shutdown()
-    bob.Shutdown()
+	sendMessage(2, t, bob, "alice", []byte("message 3 from bob"))
+	receiveMessage(2, t, alice, "bob", []byte("message 3 from bob"))
+
+	alice.Shutdown()
+	bob.Shutdown()
 }
