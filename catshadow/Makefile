@@ -9,7 +9,7 @@ distro=alpine
 image=katzenpost-$(distro)_go_mod
 docker_args=--user ${docker_user} -v $(shell readlink -f ..):/go/katzenpost -e GOCACHE=/tmp/gocache --network=host --rm
 
-test_version=v30
+test_version=latest
 
 dockerdockertest:
 	$(docker) run ${docker_args} $(image) \
@@ -26,18 +26,24 @@ upgrade_test_use_saved:
 		make log_level=INFO start wait
 	cp -v testdata/$(test_version)/*state testdata/
 	$(docker) run ${docker_args} $(image) \
-		sh -c 'cd /go/katzenpost/catshadow/; CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f GORACE=history_size=7 go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 0 -failfast -run UpgradeResume_1'
+		sh -c 'cd /go/katzenpost/catshadow/; CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f GORACE=history_size=7 go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 0 -failfast -run UpgradeResume_1' | tee testdata/$(test_version)/test1.resume.log
 	$(docker) run ${docker_args} $(image) \
-		sh -c 'cd /go/katzenpost/catshadow/; CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f GORACE=history_size=7 go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 0 -failfast -run UpgradeResume_2'
+		sh -c 'cd /go/katzenpost/catshadow/; CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f GORACE=history_size=7 go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 0 -failfast -run UpgradeResume_2' | tee testdata/$(test_version)/test2.resume.log
+	cp -v ../docker/voting_mixnet/servicenode1/memspool.log testdata/$(test_version)/memspool.resume.log
+	mv -v testdata/$(test_version)/test*log testdata/$(test_version)/
 
 upgrade_test_recreate:
 	cd ../docker && make clean-local start wait
 	mkdir -p testdata/$(test_version)
 	$(docker) run ${docker_args} $(image) \
-		sh -c 'cd /go/katzenpost/catshadow/; CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f GORACE=history_size=7 go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 0 -failfast -run UpgradeCreate_1'
+		sh -c 'cd /go/katzenpost/catshadow/; CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f GORACE=history_size=7 go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 0 -failfast -run UpgradeCreate_1' | tee testdata/$(test_version)/test1.create.log
 	$(docker) run ${docker_args} $(image) \
-		sh -c 'cd /go/katzenpost/catshadow/; CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f GORACE=history_size=7 go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 0 -failfast -run UpgradeCreate_2'
-	cd ../docker && make stop && cd ../catshadow && mv -v ../docker/voting_mixnet/servicenode1/memspool.storage testdata/*state testdata/$(test_version)/
+		sh -c 'cd /go/katzenpost/catshadow/; CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f GORACE=history_size=7 go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 0 -failfast -run UpgradeCreate_2' | tee testdata/$(test_version)/test2.create.log
+	cd ../docker && make stop
+	mv -v ../docker/voting_mixnet/servicenode1/memspool.storage testdata/*state testdata/$(test_version)/
+	cp -v ../docker/voting_mixnet/servicenode1/memspool.log testdata/$(test_version)/memspool.create.log
+	echo; echo; echo; echo DONE RECREATING, now using test states; echo; echo; echo
+	make upgrade_test_use_saved
 
 clean:
 	rm -fv testdata/*state testdata/*.storage
