@@ -52,7 +52,6 @@ base_port=30000
 bind_addr=127.0.0.1
 docker_compose_yml=$(net_name)/docker-compose.yml
 sh=$(shell if echo ${distro}|grep -q alpine; then echo sh; else echo bash; fi)
-SHELL=/bin/bash
 cache_dir=cache
 
 # log_level can be DEBUG, INFO, NOTICE, WARNING, ERROR, CRITICAL

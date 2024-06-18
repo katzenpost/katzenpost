@@ -38,7 +38,7 @@ func genDescriptor(require *require.Assertions, idx int, isGatewayNode, isServic
 	d := new(MixDescriptor)
 	d.Name = fmt.Sprintf("gen%d.example.net", idx)
 	d.Addresses = map[string][]string{
-		TransportTCPv4: []string{fmt.Sprintf("192.0.2.%d:4242", idx)},
+		TransportTCPv4: []string{fmt.Sprintf("tcp4://192.0.2.%d:4242", idx)},
 	}
 	d.IsGatewayNode = isGatewayNode
 	d.IsServiceNode = isServiceNode

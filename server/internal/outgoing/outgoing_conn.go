@@ -21,6 +21,7 @@ import (
 	"crypto/hmac"
 	"fmt"
 	"net"
+	"net/url"
 	"sync/atomic"
 	"time"
 
@@ -35,6 +36,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
+	"github.com/katzenpost/katzenpost/http/common"
 	"github.com/katzenpost/katzenpost/server/internal/constants"
 	"github.com/katzenpost/katzenpost/server/internal/instrument"
 	"github.com/katzenpost/katzenpost/server/internal/packet"
@@ -185,7 +187,7 @@ func (c *outgoingConn) worker() {
 			return
 		}
 
-		for _, addrPort := range dstAddrs {
+		for _, addr := range dstAddrs {
 			select {
 			case <-time.After(c.retryDelay):
 				// Back off incrementally on reconnects.
@@ -204,8 +206,14 @@ func (c *outgoingConn) worker() {
 			}
 
 			// Dial.
-			c.log.Debugf("Dialing: %v", addrPort)
-			conn, err := dialer.DialContext(dialCtx, "tcp", addrPort)
+			u, err := url.Parse(addr)
+			if err != nil {
+				c.log.Warningf("Failed to parse addr: %v", err)
+				continue
+			}
+			c.log.Debugf("Dialing: %v", u.Host)
+
+			conn, err := common.DialURL(u, dialCtx, dialer.DialContext)
 			select {
 			case <-dialCtx.Done():
 				// Canceled.
@@ -215,11 +223,11 @@ func (c *outgoingConn) worker() {
 				return
 			default:
 				if err != nil {
-					c.log.Warningf("Failed to connect to '%v': %v", addrPort, err)
+					c.log.Warningf("Failed to connect to '%v': %v", u.Host, err)
 					continue
 				}
 			}
-			c.log.Debugf("TCP connection established.")
+			c.log.Debugf("%v connection established.", u.Scheme)
 			instrument.Outgoing()
 			start := time.Now()
 
