@@ -4,8 +4,10 @@
 package client2
 
 import (
+	"encoding/binary"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 
 	"github.com/fxamacker/cbor/v2"
@@ -23,23 +25,49 @@ type incomingConn struct {
 	listener *listener
 	log      *logging.Logger
 
-	unixConn *net.UnixConn
-	appID    *[AppIDLength]byte
+	conn  net.Conn
+	appID *[AppIDLength]byte
 
 	sendToClientCh chan *Response
 }
 
 func (c *incomingConn) recvRequest() (*Request, error) {
-	buff := make([]byte, 65536)
-	reqLen, _, _, _, err := c.unixConn.ReadMsgUnix(buff, nil)
-	if err != nil {
-		return nil, err
-	}
+	const prefixLength = 4
+
 	req := new(thin.Request)
-	err = cbor.Unmarshal(buff[:reqLen], &req)
-	if err != nil {
-		fmt.Printf("error decoding cbor from client: %s\n", err)
-		return nil, err
+	if c.listener.isTCP {
+		lenPrefix := [prefixLength]byte{}
+		count, err := io.ReadFull(c.conn, lenPrefix[:])
+		if err != nil {
+			return nil, err
+		}
+		if count != prefixLength {
+			return nil, errors.New("failed to read length prefix")
+		}
+		blobLen := binary.BigEndian.Uint32(lenPrefix[:])
+		blob := make([]byte, blobLen)
+		if count, err = io.ReadFull(c.conn, blob); err != nil {
+			return nil, err
+		}
+		if uint32(count) != blobLen {
+			return nil, errors.New("failed to read blob")
+		}
+		err = cbor.Unmarshal(blob[:count], &req)
+		if err != nil {
+			fmt.Printf("error decoding cbor from client: %s\n", err)
+			return nil, err
+		}
+	} else {
+		buff := make([]byte, 65536)
+		reqLen, _, _, _, err := c.conn.(*net.UnixConn).ReadMsgUnix(buff, nil)
+		if err != nil {
+			return nil, err
+		}
+		err = cbor.Unmarshal(buff[:reqLen], &req)
+		if err != nil {
+			fmt.Printf("error decoding cbor from client: %s\n", err)
+			return nil, err
+		}
 	}
 	return FromThinRequest(req, c.appID), nil
 }
@@ -78,7 +106,7 @@ func (c *incomingConn) sendResponse(r *Response) error {
 	if err != nil {
 		return err
 	}
-	count, err := c.unixConn.Write(blob)
+	count, err := c.conn.Write(blob)
 	if err != nil {
 		return err
 	}
@@ -95,7 +123,7 @@ func (c *incomingConn) start() {
 func (c *incomingConn) worker() {
 	defer func() {
 		c.log.Debugf("Closing.")
-		c.unixConn.Close()
+		c.conn.Close()
 		c.listener.onClosedConn(c) // Remove from the connection list.
 	}()
 
@@ -161,7 +189,7 @@ func (c *incomingConn) worker() {
 	// NOTREACHED
 }
 
-func newIncomingConn(l *listener, conn *net.UnixConn) *incomingConn {
+func newIncomingConn(l *listener, conn net.Conn) *incomingConn {
 
 	appid := new([AppIDLength]byte)
 	_, err := rand.Reader.Read(appid[:])
@@ -171,7 +199,7 @@ func newIncomingConn(l *listener, conn *net.UnixConn) *incomingConn {
 
 	c := &incomingConn{
 		listener:       l,
-		unixConn:       conn,
+		conn:           conn,
 		appID:          appid,
 		sendToClientCh: make(chan *Response, 2),
 	}

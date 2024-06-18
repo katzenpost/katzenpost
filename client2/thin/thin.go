@@ -136,13 +136,23 @@ func (t *ThinClient) Dial() error {
 	network := t.cfg.ListenNetwork
 	address := t.cfg.ListenAddress
 
-	if t.isTCP {
+	switch network {
+	case "tcp6":
+		fallthrough
+	case "tcp4":
+		fallthrough
+	case "tcp":
+
 		var err error
 		t.conn, err = net.Dial(network, address)
 		if err != nil {
 			return err
 		}
-	} else { // abstract unix domain socket
+	case "unix":
+		fallthrough
+	case "unixgram":
+		fallthrough
+	case "unixpacket":
 		uniqueID := make([]byte, 4)
 		_, err := rand.Reader.Read(uniqueID)
 		if err != nil {
@@ -455,6 +465,32 @@ func (t *ThinClient) NewSURBID() *[sConstants.SURBIDLength]byte {
 	return id
 }
 
+func (t *ThinClient) send(payload []byte) error {
+	var err error
+	count := 0
+	if t.isTCP {
+		prefix := [4]byte{}
+		binary.BigEndian.PutUint32(prefix[:], uint32(len(payload)))
+		count, err = t.conn.Write(prefix[:])
+		if err != nil {
+			return err
+		}
+		if count != 4 {
+			return errors.New("send error: failed to write length prefix")
+		}
+		count, err = t.conn.Write(payload)
+	} else {
+		count, _, err = t.conn.(*net.UnixConn).WriteMsgUnix(payload, nil, t.destUnixAddr)
+	}
+	if err != nil {
+		return err
+	}
+	if count != len(payload) {
+		return fmt.Errorf("send error: wrote %d instead of %d bytes", count, len(payload))
+	}
+	return nil
+}
+
 // SendMessageWithoutReply sends a message encapsulated in a Sphinx packet, without any SURB.
 // No reply will be possible.
 func (t *ThinClient) SendMessageWithoutReply(payload []byte, destNode *[32]byte, destQueue []byte) error {
@@ -494,6 +530,7 @@ func (t *ThinClient) SendMessage(surbID *[sConstants.SURBIDLength]byte, payload 
 	if err != nil {
 		return err
 	}
+
 	return t.writeMessage(blob)
 }
 
@@ -510,6 +547,7 @@ func (t *ThinClient) SendReliableMessage(messageID *[MessageIDLength]byte, paylo
 	if err != nil {
 		return err
 	}
+
 	return t.writeMessage(blob)
 }
 
