@@ -17,6 +17,7 @@
 package client
 
 import (
+	"context"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -223,6 +224,10 @@ func (s *Session) SendUnreliableMessage(recipient, provider string, message []by
 }
 
 func (s *Session) BlockingSendUnreliableMessage(recipient, provider string, message []byte) ([]byte, error) {
+	return s.BlockingSendUnreliableMessageWithContext(nil, recipient, provider, message)
+}
+
+func (s *Session) BlockingSendUnreliableMessageWithContext(ctx context.Context, recipient, provider string, message []byte) ([]byte, error) {
 	msg, err := s.composeMessage(recipient, provider, message, true)
 	if err != nil {
 		return nil, err
@@ -248,14 +253,21 @@ func (s *Session) BlockingSendUnreliableMessage(recipient, provider string, mess
 		return nil, ErrMessageNotSent
 	}
 
+	// use a default context with the estimated replyETA if one is not specified
+	var cancelFn func()
+	if ctx == nil {
+		ctx, cancelFn = context.WithTimeout(context.Background(), sentMessage.ReplyETA+cConstants.RoundTripTimeSlop)
+		defer cancelFn()
+	}
+
 	// wait for reply or round trip timeout
 	select {
 	case reply := <-replyWaitChan:
 		return reply, nil
 	case <-s.HaltCh():
 		return nil, ErrHalted
-	case <-time.After(sentMessage.ReplyETA + cConstants.RoundTripTimeSlop):
-		return nil, ErrReplyTimeout
+	case <-ctx.Done():
+		return nil, ctx.Err()
 	}
 	// unreachable
 }

@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-package server
+package mixkeys
 
 import (
 	"sync"
@@ -148,7 +148,7 @@ func (m *mixKeys) Halt() {
 	}
 }
 
-func newMixKeys(glue glue.Glue, geo *geo.Geometry) (glue.MixKeys, error) {
+func NewMixKeys(glue glue.Glue, geo *geo.Geometry) (glue.MixKeys, error) {
 	m := &mixKeys{
 		geo:  geo,
 		glue: glue,

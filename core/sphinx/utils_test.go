@@ -1,5 +1,5 @@
-// kemsphinx_test.go - KEMSphinx tests.
-// Copyright (C) 2022  David Stainton.
+// sphinx_test.go - Sphinx Packet Format tests.
+// Copyright (C) 2022  Yawning Angel and David Stainton.
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as
@@ -20,116 +20,36 @@ import (
 	"crypto/rand"
 	"testing"
 
-	"github.com/katzenpost/hpqc/kem"
-	"github.com/katzenpost/hpqc/kem/schemes"
+	"github.com/stretchr/testify/require"
 
+	"github.com/katzenpost/hpqc/nike"
 	"github.com/katzenpost/katzenpost/core/sphinx/commands"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
-	"github.com/katzenpost/katzenpost/core/sphinx/geo"
-	"github.com/stretchr/testify/require"
 )
 
-type kemNodeParams struct {
+type nodeParams struct {
 	id         [constants.NodeIDLength]byte
-	privateKey kem.PrivateKey
-	publicKey  kem.PublicKey
+	privateKey nike.PrivateKey
+	publicKey  nike.PublicKey
 }
 
-func TestKEMSphinxSimple(t *testing.T) {
-	t.Parallel()
-	mykem := schemes.ByName("Kyber768-X25519")
-	withSURB := false
-	g := geo.KEMGeometryFromUserForwardPayloadLength(mykem, 512, withSURB, 5)
-	sphinx := NewKEMSphinx(mykem, g)
-	require.NotNil(t, sphinx)
-}
-
-func TestKEMSphinxGeometry(t *testing.T) {
-	t.Parallel()
-	require := require.New(t)
-
-	withSURB := false
-	g := geo.KEMGeometryFromUserForwardPayloadLength(schemes.ByName("Kyber512"), 512, withSURB, 5)
-	t.Logf("KEMSphinx Kyber512 5 hops: HeaderLength = %d", g.HeaderLength)
-	g = geo.KEMGeometryFromUserForwardPayloadLength(schemes.ByName("Kyber512"), 512, withSURB, 10)
-	t.Logf("KEMSphinx Kyber512 10 hops: HeaderLength = %d", g.HeaderLength)
-	g = geo.KEMGeometryFromUserForwardPayloadLength(schemes.ByName("Kyber768"), 512, withSURB, 5)
-	t.Logf("KEMSphinx Kyber768 5 hops: HeaderLength = %d", g.HeaderLength)
-	g = geo.KEMGeometryFromUserForwardPayloadLength(schemes.ByName("Kyber768"), 512, withSURB, 10)
-	t.Logf("KEMSphinx Kyber768 10 hops: HeaderLength = %d", g.HeaderLength)
-	g = geo.KEMGeometryFromUserForwardPayloadLength(schemes.ByName("Kyber1024"), 512, withSURB, 5)
-	t.Logf("KEMSphinx Kyber1024 5 hops: HeaderLength = %d", g.HeaderLength)
-	g = geo.KEMGeometryFromUserForwardPayloadLength(schemes.ByName("Kyber1024"), 512, withSURB, 10)
-	t.Logf("KEMSphinx Kyber1024 10 hops: HeaderLength = %d", g.HeaderLength)
-	g = geo.KEMGeometryFromUserForwardPayloadLength(schemes.ByName("Kyber768-X25519"), 512, withSURB, 5)
-	t.Logf("KEMSphinx Kyber768X25519 5 hops: HeaderLength = %d", g.HeaderLength)
-	g = geo.KEMGeometryFromUserForwardPayloadLength(schemes.ByName("Kyber768-X25519"), 512, withSURB, 10)
-	t.Logf("KEMSphinx Kyber768X25519 10 hops: HeaderLength = %d", g.HeaderLength)
-	g = geo.KEMGeometryFromUserForwardPayloadLength(schemes.ByName("Kyber768-X25519"), 512, withSURB, 20)
-	t.Logf("KEMSphinx Kyber768X25519 20 hops: HeaderLength = %d", g.HeaderLength)
-
-	mykem := schemes.ByName("Kyber768-X25519")
-	withSURB = true
-	payloadLen := 2000
-
-	g = geo.KEMGeometryFromUserForwardPayloadLength(mykem, payloadLen, withSURB, 5)
-
-	t.Logf("\n[SphinxGeometry]\n%s", g.Display())
-
-	err := g.Validate()
-	require.NoError(err)
-
-	sphinx := NewKEMSphinx(mykem, g)
-	nrHops := 5
-	_, path := newKEMPathVector(require, mykem, nrHops, true)
-	payload := make([]byte, g.ForwardPayloadLength)
-
-	pkt, err := sphinx.NewPacket(rand.Reader, path, payload)
-	require.NoError(err)
-
-	t.Logf("packet length %d", len(pkt))
-	t.Logf("geometry packet length %d", g.PacketLength)
-	require.Equal(len(pkt), g.PacketLength)
-}
-
-func TestKEMForwardSphinx(t *testing.T) {
-	t.Parallel()
-	const testPayload = "Only the mob and the elite can be attracted by the momentum of totalitarianism itself. The masses have to be won by propaganda."
-
-	mykem := schemes.ByName("Kyber768-X25519")
-
-	g := geo.KEMGeometryFromUserForwardPayloadLength(mykem, len(testPayload), false, 20)
-	sphinx := NewKEMSphinx(mykem, g)
-	testForwardKEMSphinx(t, mykem, sphinx, []byte(testPayload))
-}
-
-func TestKEMSphinxSURB(t *testing.T) {
-	t.Parallel()
-	const testPayload = "The smallest minority on earth is the individual.  Those who deny individual rights cannot claim to be defenders of minorities."
-
-	mykem := schemes.ByName("Kyber768-X25519")
-	g := geo.KEMGeometryFromUserForwardPayloadLength(mykem, len(testPayload), false, 20)
-	sphinx := NewKEMSphinx(mykem, g)
-	testSURBKEMSphinx(t, mykem, sphinx, []byte(testPayload))
-}
-
-func newKEMNode(require *require.Assertions, mykem kem.Scheme) *kemNodeParams {
-	n := new(kemNodeParams)
+func newNikeNode(require *require.Assertions, mynike nike.Scheme) *nodeParams {
+	n := new(nodeParams)
 
 	_, err := rand.Read(n.id[:])
-	require.NoError(err)
-	n.publicKey, n.privateKey, err = mykem.GenerateKeyPair()
-	require.NoError(err)
+	require.NoError(err, "newNikeNode(): failed to generate ID")
+	n.publicKey, n.privateKey, err = mynike.GenerateKeyPair()
+	require.NoError(err, "newNikeNode(): NewKeypair() failed")
 	return n
 }
 
-func newKEMPathVector(require *require.Assertions, mykem kem.Scheme, nrHops int, isSURB bool) ([]*kemNodeParams, []*PathHop) {
+func newNikePathVector(require *require.Assertions, mynike nike.Scheme, nrHops int, isSURB bool) ([]*nodeParams, []*PathHop) {
 	const delayBase = 0xdeadbabe
 
 	// Generate the keypairs and node identifiers for the "nodes".
-	nodes := make([]*kemNodeParams, nrHops)
+	nodes := make([]*nodeParams, nrHops)
 	for i := range nodes {
-		nodes[i] = newKEMNode(require, mykem)
+		nodes[i] = newNikeNode(require, mynike)
 	}
 
 	// Assemble the path vector.
@@ -137,7 +57,7 @@ func newKEMPathVector(require *require.Assertions, mykem kem.Scheme, nrHops int,
 	for i := range path {
 		path[i] = new(PathHop)
 		copy(path[i].ID[:], nodes[i].id[:])
-		path[i].KEMPublicKey = nodes[i].publicKey
+		path[i].NIKEPublicKey = nodes[i].publicKey
 		if i < nrHops-1 {
 			// Non-terminal hop, add the delay.
 			delay := new(commands.NodeDelay)
@@ -163,23 +83,24 @@ func newKEMPathVector(require *require.Assertions, mykem kem.Scheme, nrHops int,
 	return nodes, path
 }
 
-func testForwardKEMSphinx(t *testing.T, mykem kem.Scheme, sphinx *Sphinx, testPayload []byte) {
+func testForwardSphinx(t *testing.T, mynike nike.Scheme, sphinx *Sphinx, testPayload []byte) {
 	require := require.New(t)
 
 	for nrHops := 1; nrHops <= sphinx.Geometry().NrHops; nrHops++ {
 		t.Logf("Testing %d hop(s).", nrHops)
 
 		// Generate the "nodes" and path for the forward sphinx packet.
-		nodes, path := newKEMPathVector(require, mykem, nrHops, false)
+		nodes, path := newNikePathVector(require, mynike, nrHops, false)
 
 		// Create the packet.
 		payload := []byte(testPayload)
 		pkt, err := sphinx.NewPacket(rand.Reader, path, payload)
-		require.NoError(err, "NewKEMPacket failed")
-		require.Equal(len(pkt), sphinx.Geometry().HeaderLength+sphinx.Geometry().PayloadTagLength+len(payload), "Packet Length")
+		require.NoError(err)
+		require.Equal(sphinx.Geometry().PacketLength, len(pkt))
 
 		// Unwrap the packet, validating the output.
 		for i := range nodes {
+			// There's no sensible way to validate that `tag` is correct.
 			b, _, cmds, err := sphinx.Unwrap(nodes[i].privateKey, pkt)
 			require.NoErrorf(err, "Hop %d: Unwrap failed", i)
 
@@ -203,19 +124,14 @@ func testForwardKEMSphinx(t *testing.T, mykem kem.Scheme, sphinx *Sphinx, testPa
 	}
 }
 
-func testSURBKEMSphinx(t *testing.T, mykem kem.Scheme, sphinx *Sphinx, testPayload []byte) {
+func testSURB(t *testing.T, mynike nike.Scheme, sphinx *Sphinx, testPayload []byte) {
 	require := require.New(t)
-
-	require.Equal(sphinx.Geometry().NIKEName, "")
-	require.NotEqual(sphinx.Geometry().KEMName, "")
-	require.Nil(sphinx.nike)
-	require.NotNil(sphinx.kem)
 
 	for nrHops := 1; nrHops <= sphinx.Geometry().NrHops; nrHops++ {
 		t.Logf("Testing %d hop(s).", nrHops)
 
 		// Generate the "nodes" and path for the SURB.
-		nodes, path := newKEMPathVector(require, mykem, nrHops, true)
+		nodes, path := newNikePathVector(require, mynike, nrHops, true)
 
 		// Create the SURB.
 		surb, surbKeys, err := sphinx.NewSURB(rand.Reader, path)
@@ -226,9 +142,7 @@ func testSURBKEMSphinx(t *testing.T, mykem kem.Scheme, sphinx *Sphinx, testPaylo
 		payload := []byte(testPayload)
 		pkt, firstHop, err := sphinx.NewPacketFromSURB(surb, payload)
 		require.NoError(err, "NewPacketFromSURB failed")
-		//require.EqualValues(&nodes[0].id, firstHop, "NewPacketFromSURB: 0th hop")
-		require.NotNil(firstHop)
-		require.NotNil(nodes[0].id)
+		require.EqualValues(&nodes[0].id, firstHop, "NewPacketFromSURB: 0th hop")
 
 		// Unwrap the packet, valdiating the output.
 		for i := range nodes {
