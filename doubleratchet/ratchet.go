@@ -599,8 +599,9 @@ func (r *Ratchet) Encrypt(out, msg []byte) ([]byte, error) {
 
 	binary.LittleEndian.PutUint32(header[0:4], r.sendCount)
 	binary.LittleEndian.PutUint32(header[4:8], r.prevSendCount)
+
 	copy(header[RatchetPublicKeyInHeaderOffset:], sendRatchetPublic.Bytes())
-	copy(header[nonceInHeaderOffset:], messageNonce[:])
+	copy(header[nonceInHeaderOffset(r.scheme):], messageNonce[:])
 	out = append(out, headerNonce[:]...)
 	out = secretbox.Seal(out, header[:], &headerNonce, array32p(r.sendHeaderKey))
 	r.sendCount++
@@ -637,7 +638,7 @@ func (r *Ratchet) trySavedKeys(ciphertext []byte) ([]byte, error) {
 		}
 
 		sealedMessage := ciphertext[r.sealedHeaderSize:]
-		copy(nonce[:], header[nonceInHeaderOffset:])
+		copy(nonce[:], header[nonceInHeaderOffset(r.scheme):])
 		msg, ok := secretbox.Open(nil, sealedMessage, &nonce, array32p(msgKey.key))
 		if !ok {
 			return nil, ErrCorruptMessage
@@ -768,7 +769,7 @@ func (r *Ratchet) Decrypt(ciphertext []byte) ([]byte, error) {
 			return nil, err
 		}
 
-		copy(nonce[:], header[nonceInHeaderOffset:])
+		copy(nonce[:], header[nonceInHeaderOffset(r.scheme):])
 		msg, ok := secretbox.Open(nil, sealedMessage, &nonce, array32p(messageKey))
 		if !ok {
 			return nil, ErrCorruptMessage
@@ -827,7 +828,7 @@ func (r *Ratchet) Decrypt(ciphertext []byte) ([]byte, error) {
 		return nil, err
 	}
 
-	copy(nonce[:], header[nonceInHeaderOffset:])
+	copy(nonce[:], header[nonceInHeaderOffset(r.scheme):])
 	msg, ok = secretbox.Open(nil, sealedMessage, &nonce, array32p(messageKey))
 	if !ok {
 		return nil, ErrCorruptMessage
@@ -927,6 +928,12 @@ func headerSize(scheme nike.Scheme) int {
 	return 4 + /* uint32 message count */
 		4 + /* uint32 previous message count */
 		24 + /* nonce for message */
+		scheme.PublicKeySize()
+}
+
+func nonceInHeaderOffset(scheme nike.Scheme) int {
+	return 4 + /* uint32 message count */
+		4 + /* uint32 previous message count */
 		scheme.PublicKeySize()
 }
 
