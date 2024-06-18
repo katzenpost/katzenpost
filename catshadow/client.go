@@ -527,6 +527,7 @@ func (c *Client) doCreateRemoteSpool(provider string, responseChan chan error) {
 		// NewSpoolReadDescriptor blocks, so we run this in another thread and then use
 		// another workerOp to save the spool descriptor.
 		spool, err := memspoolclient.NewSpoolReadDescriptor(desc.Name, desc.Provider, c.session)
+		c.log.Debugf("Created new spool %x on %s (%s)", spool.ID, spool.Provider, spool.Receiver)
 		if err != nil {
 			select {
 			case <-c.HaltCh():
@@ -957,6 +958,7 @@ func (c *Client) doSendMessage(convoMesgID MessageID, nickname string, message [
 	}
 
 	// enqueue the message for sending
+	c.log.Debugf("Sending spool write to %s spool %x on %s", contact.Nickname, contact.spoolWriteDescriptor.ID, contact.spoolWriteDescriptor.Receiver)
 	item := &queuedSpoolCommand{Receiver: contact.spoolWriteDescriptor.Receiver,
 		Provider: contact.spoolWriteDescriptor.Provider,
 		Command:  appendCmd, ID: convoMesgID}
@@ -1164,7 +1166,7 @@ func (c *Client) handleReply(replyEvent *client.MessageReplyEvent) {
 					// has already completed the key exchange and sent a first message, before we have
 					// completed our key exchange.
 					// XXX: this could break things if a contact key exchange never completes...
-					c.log.Debugf("failure to decrypt tip of spool - MessageID: %x", *replyEvent.MessageID)
+					c.log.Errorf("failure to decrypt tip of spool - unknown conatct? - MessageID: %x", *replyEvent.MessageID)
 					for _, contact := range c.contacts {
 						if contact.IsPending {
 							c.log.Warning("received message we could not decrypt while key exchange pending, delaying spool read descriptor increment")
@@ -1177,7 +1179,7 @@ func (c *Client) handleReply(replyEvent *client.MessageReplyEvent) {
 					c.log.Debugf("successfully decrypted tip of spool - MessageID: %x", *replyEvent.MessageID)
 				default:
 					// received an error, likely due to retransmission
-					c.log.Debugf("failure to decrypt tip of spool - MessageID: %x, err: %s", *replyEvent.MessageID, err.Error())
+					c.log.Errorf("failure to decrypt tip of spool 'likely due to retransmission'? - MessageID: %x, err: %s", *replyEvent.MessageID, err.Error())
 				}
 				// in all other cases, advance the spool read descriptor
 				c.spoolReadDescriptor.IncrementOffset()
@@ -1305,7 +1307,7 @@ func (c *Client) decryptMessage(messageID *[cConstants.MessageIDLength]byte, cip
 			break
 		default:
 			// every other type of error indicates an invalid message
-			c.log.Debugf("Decryption err for %s: %s", contact.Nickname, err.Error())
+			c.log.Errorf("Decryption err for %s: %s", contact.Nickname, err.Error())
 			return err
 		}
 	}
@@ -1334,7 +1336,7 @@ func (c *Client) decryptMessage(messageID *[cConstants.MessageIDLength]byte, cip
 		}
 		return nil
 	}
-	c.log.Debugf("trial ratchet decryption failure for message ID %x reported ratchet error: %s", *messageID, err)
+	c.log.Errorf("trial ratchet decryption failure for message ID %x reported ratchet error: %s", *messageID, err)
 	return ErrTrialDecryptionFailed
 }
 
