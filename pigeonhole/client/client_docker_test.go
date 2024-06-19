@@ -120,12 +120,22 @@ func TestCreateDuplex(t *testing.T) {
 	a := DuplexFromSeed(pigeonholeClient, true, []byte("secret"))
 	b := DuplexFromSeed(pigeonholeClient, false, []byte("secret"))
 
-	err = a.Put([]byte("hello"), []byte("world"))
+	ahello := []byte("hello from a")
+	bhello := []byte("hello from b")
+	addr := []byte("address")
+	err = a.Put(addr, ahello)
 	require.NoError(err)
 
-	resp, err := b.Get([]byte("hello"))
+	err = b.Put(addr, bhello)
 	require.NoError(err)
-	require.Equal(resp, []byte("world"))
+
+	resp, err := b.Get(addr)
+	require.NoError(err)
+	require.Equal(resp, ahello)
+
+	resp, err = a.Get(addr)
+	require.NoError(err)
+	require.Equal(resp, bhello)
 }
 
 func TestAsyncGetPigeonHole(t *testing.T) {

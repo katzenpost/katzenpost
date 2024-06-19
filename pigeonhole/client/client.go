@@ -109,15 +109,12 @@ func (c *Client) Put(ID common.MessageID, signature, payload []byte) error {
 		return err
 	}
 	b := common.PigeonHoleRequest{ID: ID, Signature: signature, Payload: payload}
-	// XXX: ideally we limit the number of retries
-	// so that it doesn't keep trying to deliver to a stale/missing service forever...
 	serialized, err := cbor.Marshal(b)
 	if err != nil {
 		return err
 	}
 
 	_, err = c.Session.SendReliableMessage(loc.Name(), loc.Provider(), serialized)
-	// XXX: do we need to track msgId and see if it was delivered or not ???
 	return err
 }
 
