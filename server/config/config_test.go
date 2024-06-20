@@ -66,6 +66,10 @@ func TestConfig(t *testing.T) {
   NIKEName = "x25519"
   KEMName = ""
 
+[Management]
+  Enable = true
+  Path = ""
+
 [server]
   WireKEM = "%s"
   PKISignatureScheme = "Ed25519"
@@ -104,6 +108,11 @@ Level = "DEBUG"
 
 	cfg, err := Load([]byte(config))
 	require.NoError(err)
+
+	require.True(cfg.Management.Enable)
+	if cfg.Management.Path == "" {
+		panic("cfg.Management.Path is empty string")
+	}
 
 	_, err = json.Marshal(cfg)
 	require.NoError(err)
