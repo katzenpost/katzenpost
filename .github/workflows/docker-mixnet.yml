@@ -132,7 +132,7 @@ jobs:
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v3
 
-  test_e2e_pigeonhole:
+  test_e2e_stream:
     env:
       warped: true
       XDG_RUNTIME_DIR: /run
@@ -155,6 +155,9 @@ jobs:
 
       - name: run pigeonhole end to end tests
         run: cd pigeonhole && sudo -E make testargs=-coverprofile=coverage.part dockerdockertest && cat client/coverage.part >> ../coverage.out
+
+      - name: run stream end to end tests
+        run: cd stream && sudo -E make testargs=-coverprofile=coverage.part dockerdockertest && cat coverage.part >> ../coverage.out
 
       - name: Stop the mixnet
         run: |
