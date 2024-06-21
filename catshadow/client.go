@@ -612,6 +612,21 @@ func (c *Client) createContact(nickname string, sharedSecret []byte) error {
 	return err
 }
 
+func (c *Client) getConversation(nickname string) map[MessageID]*Message {
+	c.conversationsMutex.Lock()
+	defer c.conversationsMutex.Unlock()
+	conv, ok := c.conversations[nickname]
+	if !ok {
+		return nil
+	}
+
+	conversationsCopy := make(map[MessageID]*Message)
+	for k, v := range conv {
+		conversationsCopy[k] = v
+	}
+	return conversationsCopy
+}
+
 func (c *Client) doGetConversation(nickname string, responseChan chan Messages) {
 	var msg Messages
 

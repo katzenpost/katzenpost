@@ -459,9 +459,7 @@ and can readily scale to millions of users.
 	// Test statefile persistence of conversation.
 
 	alice.log.Debug("LOADING ALICE'S CONVERSATION")
-	alice.conversationsMutex.Lock()
-	aliceConvesation := alice.conversations["bob"]
-	alice.conversationsMutex.Unlock()
+	aliceConvesation := alice.getConversation("bob")
 
 	for i, mesg := range aliceConvesation {
 		alice.log.Debugf("%d outbound %v message:\n%s\n", i, mesg.Outbound, mesg.Plaintext)
@@ -475,17 +473,15 @@ and can readily scale to millions of users.
 	}
 
 	bob.log.Debug("LOADING BOB'S CONVERSATION")
-	bob.conversationsMutex.Lock()
-	bobConvesation := bob.conversations["alice"]
-	bob.conversationsMutex.Unlock()
+	bobConvesation := bob.getConversation("alice")
+
 	for i, mesg := range bobConvesation {
 		bob.log.Debugf("%d outbound %v message:\n%s\n", i, mesg.Outbound, mesg.Plaintext)
 	}
 
 	mal.log.Debug("LOADING MAL'S CONVERSATION")
-	mal.conversationsMutex.Lock()
-	malConvesation := mal.conversations["bob"]
-	mal.conversationsMutex.Unlock()
+	malConvesation := mal.getConversation("bob")
+
 	for i, mesg := range malConvesation {
 		bob.log.Debugf("%d outbound %v message:\n%s\n", i, mesg.Outbound, mesg.Plaintext)
 	}
@@ -496,27 +492,24 @@ and can readily scale to millions of users.
 
 	newAlice := reloadCatshadowState(t, aliceStateFilePath)
 	newAlice.log.Debug("LOADING ALICE'S CONVERSATION WITH BOB")
-	newAlice.conversationsMutex.Lock()
-	aliceConvesation = newAlice.conversations["bob"]
-	newAlice.conversationsMutex.Unlock()
+	aliceConvesation = newAlice.getConversation("bob")
+
 	for i, mesg := range aliceConvesation {
 		newAlice.log.Debugf("%d outbound %v message:\n%s\n", i, mesg.Outbound, mesg.Plaintext)
 	}
 
 	newBob := reloadCatshadowState(t, bobStateFilePath)
 	newBob.log.Debug("LOADING BOB'S CONVERSATION WITH ALICE")
-	newBob.conversationsMutex.Lock()
-	bobConvesation = newBob.conversations["alice"]
-	newBob.conversationsMutex.Unlock()
+	bobConvesation = newBob.getConversation("alice")
+
 	for i, mesg := range bobConvesation {
 		newBob.log.Debugf("%d outbound %v message:\n%s\n", i, mesg.Outbound, mesg.Plaintext)
 	}
 
 	newMal := reloadCatshadowState(t, malStateFilePath)
 	newMal.log.Debug("LOADING MAL'S CONVERSATION WITH BOB")
-	newMal.conversationsMutex.Lock()
-	malBobConversation := newMal.conversations["bob"]
-	newMal.conversationsMutex.Unlock()
+	malBobConversation := newMal.getConversation("bob")
+
 	for i, mesg := range malBobConversation {
 		newMal.log.Debugf("%d outbound %v message:\n%s\n", i, mesg.Outbound, mesg.Plaintext)
 		if !mesg.Outbound {
@@ -527,9 +520,7 @@ and can readily scale to millions of users.
 	}
 
 	newBob.log.Debug("LOADING BOB'S CONVERSATION WITH MAL")
-	newBob.conversationsMutex.Lock()
-	bobMalConversation := newBob.conversations["mal"]
-	newBob.conversationsMutex.Unlock()
+	bobMalConversation := newBob.getConversation("mal")
 	for i, mesg := range bobMalConversation {
 		newBob.log.Debugf("%d outbound %v message:\n%s\n", i, mesg.Outbound, mesg.Plaintext)
 		if !mesg.Outbound {
@@ -735,10 +726,8 @@ loop4:
 	err = a.RemoveContact("b")
 	require.Error(err, ErrContactNotFound)
 
-	a.conversationsMutex.Lock()
-	c := a.conversations["b"]
+	c := a.getConversation("b")
 	require.Equal(len(c), 0)
-	a.conversationsMutex.Unlock()
 
 	// verify that contact data is gone
 	t.Log("Sending message to b, must fail")
@@ -861,10 +850,7 @@ loop4a:
 	err = a.RenameContact("b", "b2")
 	require.NoError(err)
 
-	a.conversationsMutex.Lock()
-	c := a.conversations["b"]
-	a.conversationsMutex.Unlock()
-
+	c := a.getConversation("b")
 	require.Equal(len(c), 0)
 
 	// verify that contact data is gone
@@ -918,9 +904,7 @@ loop7:
 	}
 
 	// verify that b2 has sent 1 message and received 2 messages
-	b.conversationsMutex.Lock()
-	c = b.conversations["a"]
-	b.conversationsMutex.Unlock()
+	c = b.getConversation("a")
 
 	sent := 0
 	received := 0
@@ -933,8 +917,8 @@ loop7:
 	}
 	require.Equal(1, sent)
 	require.Equal(2, received)
-	require.Equal(1, len(a.conversations))
-	require.Equal(1, len(b.conversations))
+	require.Equal(1, len(a.getConversation("b")))
+	require.Equal(1, len(b.getConversation("a")))
 
 	// clear conversation history
 	b.conversationsMutex.Lock()
