@@ -921,8 +921,9 @@ loop7:
 	require.Equal(1, len(b.getConversation("a")))
 
 	// clear conversation history
-	b.conversationsMutex.Lock()
 	b.WipeConversation("a")
+
+	b.conversationsMutex.Lock()
 	c = b.conversations["a"]
 	b.conversationsMutex.Unlock()
 	require.Equal(len(c), 0)
