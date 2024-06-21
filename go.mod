@@ -10,7 +10,7 @@ require (
 	github.com/grafana/pyroscope-go v1.1.1
 	github.com/jackc/pgx v3.6.2+incompatible
 	github.com/katzenpost/chacha20poly1305 v0.0.0-20211026103954-7b6fb2fc0129
-	github.com/katzenpost/hpqc v0.0.38
+	github.com/katzenpost/hpqc v0.0.39
 	github.com/katzenpost/nyquist v0.0.10
 	github.com/prometheus/client_golang v1.18.0
 	github.com/stretchr/testify v1.8.4
@@ -28,7 +28,7 @@ require (
 )
 
 require (
-	codeberg.org/vula/highctidh v1.0.2024052900 // indirect
+	codeberg.org/vula/highctidh v1.0.2024053000 // indirect
 	filippo.io/edwards25519 v1.0.0 // indirect
 	filippo.io/mlkem768 v0.0.0-20240221181710-5ce91625fdc1 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
