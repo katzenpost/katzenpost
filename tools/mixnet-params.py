@@ -13,6 +13,7 @@ def cli():
     pass
 
 @cli.command()
+@click.option("--display", default=False)
 @click.option("--benchmark", default=385069)
 @click.option("--gateways", default=2)
 @click.option("--nodes-per-layer", default=2)
@@ -53,6 +54,7 @@ def cli():
     help="LambdaM (overrides --node-loops)",
 )
 def traffic_per_node(
+    display,
     benchmark,
     gateways,
     nodes_per_layer,
@@ -138,6 +140,23 @@ def traffic_per_node(
     if benchmark > 0:
         if t > max_ops(benchmark):
             print("WARNING: Sphinx unwrap per second mix node capacity is too low.")
+
+    if display:
+        # print copy-pastable commandline invocation showing computed inverse values
+        print(
+            sys.argv[0]
+            + " \\\n"
+            + "\n".join(
+                f"{'--'+key.replace('_','-'):>15} {value} \\"
+                for key, value in {
+                        key: locals()[key]
+                        for key in dict(
+                                click.get_current_context().params,
+                                **{f"Lambda{x}": None for x in "PLM"},
+                        )
+                }.items()
+            )
+        )
 
 def max_ops(benchmark):
     # nanosecond to second
