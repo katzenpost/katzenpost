@@ -13,21 +13,21 @@ def cli():
     pass
 
 @cli.command()
-@click.option("--benchmark", default=0)
-@click.option("--gateways", default=0)
-@click.option("--nodes-per-layer", default=0)
-@click.option("--services", default=0)
-@click.option("--users", default=0)
+@click.option("--benchmark", default=385069)
+@click.option("--gateways", default=2)
+@click.option("--nodes-per-layer", default=2)
+@click.option("--services", default=2)
+@click.option("--users", default=2000)
 @click.option(
-    "--user-loops", default=0, type=float, help="rate of decoy loops per second sent by users"
+    "--user-loops", default=0.5, type=float, help="rate of decoy loops per second sent by users"
 )
 @click.option(
-    "--user-traffic", default=0, type=float, help="rate of real messages per second sent by user"
+    "--user-traffic", default=1, type=float, help="rate of real messages per second sent by user"
 )
 @click.option(
-    "--node-loops", default=0, type=float, help="rate of decoy loops per second sent by nodes"
+    "--node-loops", default=0.5, type=float, help="rate of decoy loops per second sent by nodes"
 )
-@click.option("--hops", default=0)
+@click.option("--hops", default=11)
 @click.option(
     "-P",
     "--LambdaP",
