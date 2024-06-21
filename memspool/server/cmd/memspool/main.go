@@ -90,8 +90,8 @@ func main() {
 }
 
 type spoolRequestHandler struct {
-	m   *server.MemSpoolMap
-	log *logging.Logger
+	m     *server.MemSpoolMap
+	log   *logging.Logger
 	write func(cborplugin.Command)
 }
 

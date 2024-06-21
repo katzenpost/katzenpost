@@ -49,6 +49,7 @@ import (
 	"github.com/katzenpost/katzenpost/server/internal/glue"
 	"github.com/katzenpost/katzenpost/server/internal/incoming"
 	"github.com/katzenpost/katzenpost/server/internal/instrument"
+	"github.com/katzenpost/katzenpost/server/internal/mixkeys"
 	"github.com/katzenpost/katzenpost/server/internal/outgoing"
 	"github.com/katzenpost/katzenpost/server/internal/pki"
 	"github.com/katzenpost/katzenpost/server/internal/profiling"
@@ -347,7 +348,7 @@ func New(cfg *config.Config) (*Server, error) {
 	}
 
 	// Load and or generate mix keys.
-	if s.mixKeys, err = newMixKeys(goo, cfg.SphinxGeometry); err != nil {
+	if s.mixKeys, err = mixkeys.NewMixKeys(goo, cfg.SphinxGeometry); err != nil {
 		s.log.Errorf("Failed to initialize mix keys: %v", err)
 		return nil, err
 	}
@@ -385,6 +386,7 @@ func New(cfg *config.Config) (*Server, error) {
 		}
 	}
 	if s.cfg.Management.Enable {
+		s.log.Infof("s.cfg.Management.Path %s", s.cfg.Management.Path)
 		mgmtCfg := &thwack.Config{
 			Net:         "unix",
 			Addr:        s.cfg.Management.Path,
