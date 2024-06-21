@@ -1,8 +1,5 @@
-//go:build ecdh
-// +build ecdh
-
-// sphinx_ecdh_benchmark_test.go - Sphinx Packet Format benchmarks.
-// Copyright (C) 2022 David Stainton.
+// commands.go - http proxy command types
+// Copyright (C) 2023 Masala.
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as
@@ -17,15 +14,9 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-package sphinx
+package common
 
-import (
-	"crypto/rand"
-	"testing"
-
-	ecdhnike "github.com/katzenpost/hpqc/nike/x25519"
-)
-
-func BenchmarkEcdhSphinxUnwrap(b *testing.B) {
-	benchmarkSphinxUnwrap(b, ecdhnike.Scheme(rand.Reader))
+// Request just wraps a Payload
+type Response struct {
+	Payload []byte
 }

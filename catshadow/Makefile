@@ -8,7 +8,33 @@ distro=alpine
 image=katzenpost-$(distro)_base
 cache_dir=$(shell readlink -f ../docker)/cache
 docker_args=--user ${docker_user} -v $(shell readlink -f ..):/go/katzenpost --network=host --rm -v $(cache_dir)/go:/go/ -v $(cache_dir)/root_cache:/root/.cache
+run_docker_test=$(docker) run ${docker_args} $(image) sh -c 'cd /go/katzenpost/catshadow/; GORACE=history_size=7 go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 0 -failfast -run '
+
+test_version=v30
 
 dockerdockertest:
-	$(docker) run ${docker_args} $(image) \
-		sh -c 'cd /go/katzenpost/catshadow/; GORACE=history_size=7 go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 0 -failfast -run Docker'
+	$(run_docker_test)Docker
+
+upgrade_test_use_saved:
+	cd ../docker && make wait stop-memspool
+	sleep 1
+	cp -v testdata/$(test_version)/memspool.storage ../docker/voting_mixnet/servicenode1/
+	cd ../docker && make start-memspool
+	cp -v testdata/$(test_version)/*state testdata/ && \
+	$(run_docker_test)UpgradeResume
+
+upgrade_test_recreate:
+	cd ../docker && make wait stop-memspool
+	sleep 1
+	rm -fv ../docker/voting_mixnet/servicenode1/memspool.storage
+	cd ../docker && make start-memspool
+	$(run_docker_test)UpgradeCreate
+	cd ../docker && make stop-memspool
+	sleep 1
+	mkdir -p testdata/$(test_version)/
+	cp -v ../docker/voting_mixnet/servicenode1/memspool.storage \
+			testdata/*state testdata/$(test_version)/
+	cd ../docker && make start-memspool
+
+clean:
+	rm -fv testdata/*state testdata/*.storage
