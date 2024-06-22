@@ -917,8 +917,14 @@ loop7:
 	}
 	require.Equal(1, sent)
 	require.Equal(2, received)
-	require.Equal(1, len(a.getConversation("b")))
-	require.Equal(1, len(b.getConversation("a")))
+
+	a.conversationsMutex.Lock()
+	require.Equal(1, len(a.conversations))
+	a.conversationsMutex.Unlock()
+
+	b.conversationsMutex.Lock()
+	require.Equal(1, len(b.conversations))
+	b.conversationsMutex.Unlock()
 
 	// clear conversation history
 	b.WipeConversation("a")
