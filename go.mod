@@ -10,7 +10,7 @@ require (
 	github.com/grafana/pyroscope-go v1.1.1
 	github.com/jackc/pgx v3.6.2+incompatible
 	github.com/katzenpost/chacha20poly1305 v0.0.0-20211026103954-7b6fb2fc0129
-	github.com/katzenpost/hpqc v0.0.39
+	github.com/katzenpost/hpqc v0.0.40
 	github.com/katzenpost/nyquist v0.0.10
 	github.com/prometheus/client_golang v1.18.0
 	github.com/stretchr/testify v1.8.4
@@ -45,7 +45,6 @@ require (
 	github.com/katzenpost/circl v1.3.9-0.20240222183521-1cd9a34e9a0c // indirect
 	github.com/katzenpost/sntrup4591761 v0.0.0-20231024131303-8755eb1986b8 // indirect
 	github.com/katzenpost/sphincsplus v0.0.2-0.20240114192234-1dc77b544e31 // indirect
-	github.com/katzenpost/x448 v0.0.0-20240620191025-0d4bb125d9c5 // indirect
 	github.com/klauspost/compress v1.17.3 // indirect
 	github.com/kr/text v0.2.0 // indirect
 	github.com/lib/pq v1.10.9 // indirect
