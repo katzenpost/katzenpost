@@ -613,17 +613,16 @@ func (c *Client) createContact(nickname string, sharedSecret []byte) error {
 }
 
 func (c *Client) getConversation(nickname string) map[MessageID]*Message {
+	conversationsCopy := make(map[MessageID]*Message)
 	c.conversationsMutex.Lock()
-	defer c.conversationsMutex.Unlock()
 	conv, ok := c.conversations[nickname]
 	if !ok {
 		return nil
 	}
-
-	conversationsCopy := make(map[MessageID]*Message)
 	for k, v := range conv {
 		conversationsCopy[k] = v
 	}
+	c.conversationsMutex.Unlock()
 	return conversationsCopy
 }
 
