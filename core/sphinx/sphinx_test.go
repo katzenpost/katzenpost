@@ -231,8 +231,6 @@ func TestSphinx(t *testing.T) {
 			endHop:    7,
 			isForward: false,
 		},
-
-		/* FIXME(david): test case disabled because bug in hpqc x448
 		{
 			name:     "X448 NIKE",
 			isNIKE:   true,
@@ -241,7 +239,6 @@ func TestSphinx(t *testing.T) {
 			startHop: 5,
 			endHop:   7,
 		},
-		*/
 
 		/* NOTE(david): test case disabled because it's too damn slow
 		{
