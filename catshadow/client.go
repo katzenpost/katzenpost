@@ -617,6 +617,7 @@ func (c *Client) getConversation(nickname string) map[MessageID]*Message {
 	c.conversationsMutex.Lock()
 	conv, ok := c.conversations[nickname]
 	if !ok {
+		c.conversationsMutex.Unlock()
 		return nil
 	}
 	for k, v := range conv {
