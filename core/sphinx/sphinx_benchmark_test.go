@@ -82,6 +82,14 @@ func BenchmarkSphinxUnwrap(b *testing.B) {
 			nrHops:      5,
 			payloadSize: 2000,
 		},
+		{
+			name:        "MLKEM768-X448 KEM",
+			isNIKE:      false,
+			nikeName:    "",
+			kemName:     "MLKEM768-X448",
+			nrHops:      5,
+			payloadSize: 2000,
+		},
 	}
 
 	for _, bm := range benchmarks {
