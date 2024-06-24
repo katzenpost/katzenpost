@@ -97,7 +97,7 @@ func (l *listener) worker() {
 			continue
 		}
 		l.log.Debugf("Accepted new connection: %v", conn.RemoteAddr())
-		l.onNewConn(conn.(*net.UnixConn))
+		l.onNewConn(conn)
 	}
 	// NOTREACHED
 }
