@@ -43,6 +43,9 @@ jobs:
          ${{ matrix.CC }} -v
          go version
 
+      - name: Generate mixnet configuration
+        run: cd genconfig && go build && ./genconfig -wirekem xwing -v -b /conf -o ../docker/voting_mixnet/
+
       - name: Golang test
         shell: msys2 {0}
         run: |
