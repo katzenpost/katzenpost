@@ -7,7 +7,6 @@ import (
 	"net"
 	"sync"
 
-	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/log"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/worker"
@@ -39,9 +38,6 @@ type listener struct {
 
 	updatePKIDocCh chan *cpki.Document
 	updateStatusCh chan error
-
-	currentDocBlobLock *sync.RWMutex
-	currentDocBlob     []byte
 }
 
 func (l *listener) Halt() {
@@ -197,13 +193,6 @@ func (l *listener) doUpdateFromPKIDoc(doc *cpki.Document) {
 		return
 	}
 
-	now, _, _ := epochtime.Now()
-	if doc.Epoch == now {
-		l.currentDocBlobLock.Lock()
-		l.currentDocBlob = docBlob
-		l.currentDocBlobLock.Unlock()
-	}
-
 	l.connsLock.RLock()
 	conns := l.conns
 	for key, _ := range conns {
@@ -233,16 +222,14 @@ func (l *listener) getConnection(appID *[AppIDLength]byte) *incomingConn {
 func NewListener(client *Client, rates *Rates, egressCh chan *Request, logBackend *log.Backend) (*listener, error) {
 	ingressSize := 200
 	l := &listener{
-		client:             client,
-		logBackend:         logBackend,
-		conns:              make(map[[AppIDLength]byte]*incomingConn),
-		connsLock:          new(sync.RWMutex),
-		closeAllCh:         make(chan interface{}),
-		ingressCh:          make(chan *Request, ingressSize),
-		updatePKIDocCh:     make(chan *cpki.Document, 2),
-		updateStatusCh:     make(chan error, 2),
-		currentDocBlobLock: new(sync.RWMutex),
-		currentDocBlob:     []byte{},
+		client:         client,
+		logBackend:     logBackend,
+		conns:          make(map[[AppIDLength]byte]*incomingConn),
+		connsLock:      new(sync.RWMutex),
+		closeAllCh:     make(chan interface{}),
+		ingressCh:      make(chan *Request, ingressSize),
+		updatePKIDocCh: make(chan *cpki.Document, 2),
+		updateStatusCh: make(chan error, 2),
 	}
 
 	l.log = l.logBackend.GetLogger("client2/listener")
