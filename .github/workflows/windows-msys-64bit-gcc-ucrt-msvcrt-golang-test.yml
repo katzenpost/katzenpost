@@ -44,7 +44,14 @@ jobs:
          go version
 
       - name: Generate mixnet configuration
-        run: cd genconfig && go build && ./genconfig -wirekem xwing -v -b /conf -o ../docker/voting_mixnet/
+        shell: msys2 {0}
+        run: |
+          export HIGHCTIDH_PORTABLE=1
+          export CGO_ENABLED=1
+          export GOEXPERIMENT=cgocheck2
+          export GODEBUG=cgocheck=1
+          export CGO_LDFLAGS="-Wl,--no-as-needed -Wl,-allow-multiple-definition"
+	  cd genconfig && go build && ./genconfig -wirekem xwing -v -b /conf -o ../docker/voting_mixnet/
 
       - name: Golang test
         shell: msys2 {0}
