@@ -437,7 +437,7 @@ func (d *Daemon) send(request *Request) {
 func (d *Daemon) sendLoopDecoy(request *Request) {
 	// XXX FIXME consume statistics on our echo decoys for n-1 detection
 
-	doc := d.client.CurrentDocument()
+	_, doc := d.client.CurrentDocument()
 	if doc == nil {
 		panic("doc is nil")
 	}
@@ -466,7 +466,7 @@ func (d *Daemon) sendLoopDecoy(request *Request) {
 }
 
 func (d *Daemon) sendDropDecoy() {
-	doc := d.client.CurrentDocument()
+	_, doc := d.client.CurrentDocument()
 	if doc == nil {
 		panic("doc is nil")
 	}

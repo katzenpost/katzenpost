@@ -156,7 +156,7 @@ func (c *connection) getDescriptor() error {
 		}
 	}()
 
-	doc := c.client.CurrentDocument()
+	_, doc := c.client.CurrentDocument()
 	if doc == nil && c.client.cfg.CachedDocument == nil {
 		c.log.Debugf("No PKI document for current epoch or cached PKI document provide.")
 		n := len(c.client.cfg.PinnedGateways.Gateways)
