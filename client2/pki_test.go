@@ -87,7 +87,7 @@ func TestPKIGetDocument(t *testing.T) {
 		Epoch: epoch,
 	}
 
-	doc, err := p.getDocument(ctx, epoch)
+	_, doc, err := p.getDocument(ctx, epoch)
 	require.NoError(t, err)
 	require.NotNil(t, doc)
 	require.Equal(t, doc.Epoch, epoch)
@@ -95,7 +95,7 @@ func TestPKIGetDocument(t *testing.T) {
 	wrongEpoch := uint64(1234567)
 	ctx = context.TODO()
 
-	doc, err = p.getDocument(ctx, wrongEpoch)
+	_, doc, err = p.getDocument(ctx, wrongEpoch)
 	require.Error(t, err)
 	require.Nil(t, doc)
 }
@@ -163,8 +163,8 @@ func TestPKIUpdateDocument(t *testing.T) {
 	}
 
 	myMockPKIClient.doc = testDoc
-
-	require.Nil(t, p.currentDocument())
+	_, currentDoc := p.currentDocument()
+	require.Nil(t, currentDoc)
 
 	// panic with bad sphinx geometry hash
 	err = p.updateDocument(epoch)
@@ -174,7 +174,7 @@ func TestPKIUpdateDocument(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Log("currentDocument works if Sphinx Geometry Hash is correctly set:")
-	doc := p.currentDocument()
+	_, doc := p.currentDocument()
 	require.NotNil(t, doc)
 	require.Equal(t, testDoc, doc)
 }
@@ -205,10 +205,11 @@ func TestPKIWaitForDocument(t *testing.T) {
 
 	myMockPKIClient.doc = testDoc
 
-	require.Nil(t, p.currentDocument())
+	_, currentDoc := p.currentDocument()
+	require.Nil(t, currentDoc)
 	c.WaitForCurrentDocument()
-	require.NotNil(t, p.currentDocument())
-	require.Equal(t, p.currentDocument(), testDoc)
+	require.NotNil(t, currentDoc)
+	require.Equal(t, currentDoc, testDoc)
 }
 
 func TestPKIClockSkew(t *testing.T) {
@@ -234,7 +235,7 @@ func TestPKIClockSkew(t *testing.T) {
 		Epoch: epoch,
 	}
 
-	doc, err := p.getDocument(ctx, epoch)
+	_, doc, err := p.getDocument(ctx, epoch)
 	require.NoError(t, err)
 	require.NotNil(t, doc)
 	require.Equal(t, doc.Epoch, epoch)
@@ -300,13 +301,13 @@ func TestPKICachedDoc(t *testing.T) {
 	myMockPKIClient.doc = doc2
 	ctx := context.TODO()
 	p.consensusGetter = new(mockConsensusGetter)
-	doc, err := p.getDocument(ctx, doc2.Epoch)
+	_, doc, err := p.getDocument(ctx, doc2.Epoch)
 	require.NoError(t, err)
 	require.Equal(t, doc2, doc)
 
 	myMockPKIClient.doc = doc3
 	ctx = context.TODO()
-	doc, err = p.getDocument(ctx, doc3.Epoch)
+	_, doc, err = p.getDocument(ctx, doc3.Epoch)
 	require.NoError(t, err)
 	require.Equal(t, doc3, doc)
 }
