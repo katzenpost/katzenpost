@@ -30,6 +30,11 @@ var (
 	WarpedEpoch = "false"
 )
 
+type CachedDoc struct {
+	Doc  *cpki.Document
+	Blob []byte
+}
+
 type ConsensusGetter interface {
 	GetConsensus(ctx context.Context, epoch uint64) (*commands.Consensus, error)
 }
@@ -65,13 +70,14 @@ func (c *Client) ClockSkew() time.Duration {
 
 // CurrentDocument returns the current pki.Document, or nil iff one does not
 // exist.  The caller MUST NOT modify the returned object in any way.
-func (c *Client) CurrentDocument() *cpki.Document {
+func (c *Client) CurrentDocument() ([]byte, *cpki.Document) {
 	c.WaitForCurrentDocument()
 	return c.pki.currentDocument()
 }
 
 func (c *Client) WaitForCurrentDocument() {
-	if c.pki.currentDocument() != nil {
+	_, doc := c.pki.currentDocument()
+	if doc != nil {
 		return
 	}
 	epoch, _, _ := epochtime.Now()
@@ -105,13 +111,14 @@ func (p *pki) skewedUnixTime() int64 {
 	return time.Now().Unix() + p.clockSkew
 }
 
-func (p *pki) currentDocument() *cpki.Document {
+func (p *pki) currentDocument() ([]byte, *cpki.Document) {
 	now, _, _ := epochtime.FromUnix(p.skewedUnixTime())
 	if d, _ := p.docs.Load(now); d != nil {
-		return d.(*cpki.Document)
+		cached := d.(*CachedDoc)
+		return cached.Blob, cached.Doc
 	}
 
-	return nil
+	return nil, nil
 }
 
 func (p *pki) worker() {
@@ -187,8 +194,9 @@ func (p *pki) worker() {
 		}
 		if now != lastCallbackEpoch && p.c.cfg.Callbacks.OnDocumentFn != nil {
 			if d, ok := p.docs.Load(now); ok {
+				cached := d.(*CachedDoc)
 				lastCallbackEpoch = now
-				p.c.cfg.Callbacks.OnDocumentFn(d.(*cpki.Document))
+				p.c.cfg.Callbacks.OnDocumentFn(cached.Doc)
 			}
 		}
 		timer.Reset(recheckInterval)
@@ -208,7 +216,7 @@ func (p *pki) updateDocument(epoch uint64) error {
 		}
 	}()
 
-	d, err := p.getDocument(pkiCtx, epoch)
+	docBlob, d, err := p.getDocument(pkiCtx, epoch)
 	cancelFn()
 	if err != nil {
 		p.log.Warningf("Failed to fetch PKI for epoch %v: %v", epoch, err)
@@ -218,11 +226,14 @@ func (p *pki) updateDocument(epoch uint64) error {
 		p.log.Errorf("Sphinx Geometry mismatch is set to: \n %s\n", p.c.cfg.SphinxGeometry.Display())
 		panic("Sphinx Geometry mismatch!")
 	}
-	p.docs.Store(epoch, d)
+	p.docs.Store(epoch, &CachedDoc{
+		Doc:  d,
+		Blob: docBlob,
+	})
 	return nil
 }
 
-func (p *pki) getDocument(ctx context.Context, epoch uint64) (*cpki.Document, error) {
+func (p *pki) getDocument(ctx context.Context, epoch uint64) ([]byte, *cpki.Document, error) {
 	p.log.Debug("getDocument")
 	var d *cpki.Document
 	var err error
@@ -232,33 +243,33 @@ func (p *pki) getDocument(ctx context.Context, epoch uint64) (*cpki.Document, er
 	switch err {
 	case nil:
 	case cpki.ErrNoDocument:
-		return nil, err
+		return nil, nil, err
 	default:
 		p.log.Infof("Failed to fetch PKI doc for epoch %v from Provider: %v", epoch, err)
-		return nil, err
+		return nil, nil, err
 	}
 
 	switch resp.ErrorCode {
 	case commands.ConsensusOk:
 	case commands.ConsensusGone:
-		return nil, cpki.ErrNoDocument
+		return nil, nil, cpki.ErrNoDocument
 	case commands.ConsensusNotFound:
-		return nil, errConsensusNotFound
+		return nil, nil, errConsensusNotFound
 	default:
-		return nil, fmt.Errorf("client/pki: GetConsensus failed: %v", resp.ErrorCode)
+		return nil, nil, fmt.Errorf("client/pki: GetConsensus failed: %v", resp.ErrorCode)
 	}
 
 	d, err = p.c.PKIClient.Deserialize(resp.Payload)
 	if err != nil {
 		p.log.Errorf("Failed to deserialize consensus received from provider: %v", err)
-		return nil, cpki.ErrNoDocument
+		return nil, nil, cpki.ErrNoDocument
 	}
 	if d.Epoch != epoch {
 		p.log.Errorf("BUG: Provider returned document for incorrect epoch: %v", d.Epoch)
-		return nil, fmt.Errorf("BUG: Provider returned document for incorrect epoch: %v", d.Epoch)
+		return nil, nil, fmt.Errorf("BUG: Provider returned document for incorrect epoch: %v", d.Epoch)
 	}
 
-	return d, err
+	return resp.Payload, d, err
 }
 
 func (p *pki) pruneDocuments(now uint64) {

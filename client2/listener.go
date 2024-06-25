@@ -7,6 +7,7 @@ import (
 	"net"
 	"sync"
 
+	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/log"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/worker"
@@ -38,6 +39,9 @@ type listener struct {
 
 	updatePKIDocCh chan *cpki.Document
 	updateStatusCh chan error
+
+	currentDocBlobLock *sync.RWMutex
+	currentDocBlob     []byte
 }
 
 func (l *listener) Halt() {
@@ -123,17 +127,14 @@ func (l *listener) onNewConn(conn net.Conn) {
 	l.log.Debug("getting current pki doc")
 
 	l.client.WaitForCurrentDocument()
-	doc := l.client.CurrentDocument()
+	docBlob, doc := l.client.CurrentDocument()
 	if doc == nil {
 		panic("doc is nil")
 	}
 
 	l.log.Debug("send pki doc")
-	docBlob, err := doc.MarshalBinary()
-	if err != nil {
-		l.log.Errorf("cbor fail: %s", err)
-	}
 	c.sendPKIDoc(docBlob)
+
 	l.log.Debug("onNewConn end")
 }
 
@@ -189,7 +190,6 @@ func (l *listener) doUpdateConnectionStatus(status error) {
 
 func (l *listener) doUpdateFromPKIDoc(doc *cpki.Document) {
 	// send doc to all thin clients
-
 	mydoc := doc
 	docBlob, err := mydoc.MarshalBinary()
 	if err != nil {
@@ -197,9 +197,15 @@ func (l *listener) doUpdateFromPKIDoc(doc *cpki.Document) {
 		return
 	}
 
+	now, _, _ := epochtime.Now()
+	if doc.Epoch == now {
+		l.currentDocBlobLock.Lock()
+		l.currentDocBlob = docBlob
+		l.currentDocBlobLock.Unlock()
+	}
+
 	l.connsLock.RLock()
 	conns := l.conns
-	defer l.connsLock.RUnlock()
 	for key, _ := range conns {
 		err = l.conns[key].sendPKIDoc(docBlob)
 		if err != nil {
@@ -207,6 +213,7 @@ func (l *listener) doUpdateFromPKIDoc(doc *cpki.Document) {
 			return
 		}
 	}
+	l.connsLock.RUnlock()
 
 	// update our send rates from PKI doc
 	l.decoySender.UpdateRates(ratesFromPKIDoc(doc))
@@ -226,14 +233,16 @@ func (l *listener) getConnection(appID *[AppIDLength]byte) *incomingConn {
 func NewListener(client *Client, rates *Rates, egressCh chan *Request, logBackend *log.Backend) (*listener, error) {
 	ingressSize := 200
 	l := &listener{
-		client:         client,
-		logBackend:     logBackend,
-		conns:          make(map[[AppIDLength]byte]*incomingConn),
-		connsLock:      new(sync.RWMutex),
-		closeAllCh:     make(chan interface{}),
-		ingressCh:      make(chan *Request, ingressSize),
-		updatePKIDocCh: make(chan *cpki.Document, 2),
-		updateStatusCh: make(chan error, 2),
+		client:             client,
+		logBackend:         logBackend,
+		conns:              make(map[[AppIDLength]byte]*incomingConn),
+		connsLock:          new(sync.RWMutex),
+		closeAllCh:         make(chan interface{}),
+		ingressCh:          make(chan *Request, ingressSize),
+		updatePKIDocCh:     make(chan *cpki.Document, 2),
+		updateStatusCh:     make(chan error, 2),
+		currentDocBlobLock: new(sync.RWMutex),
+		currentDocBlob:     []byte{},
 	}
 
 	l.log = l.logBackend.GetLogger("client2/listener")
