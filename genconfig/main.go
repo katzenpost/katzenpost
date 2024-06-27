@@ -339,6 +339,11 @@ func (s *katzenpost) genNodeConfig(isGateway, isServiceNode bool, isVoting bool)
 		echoCfg.Capability = "echo"
 		echoCfg.Endpoint = "+echo"
 		cfg.ServiceNode.Kaetzchen = append(cfg.ServiceNode.Kaetzchen, echoCfg)
+		testdestCfg := new(sConfig.Kaetzchen)
+		testdestCfg.Capability = "testdest"
+		testdestCfg.Endpoint = "+testdest"
+		cfg.ServiceNode.Kaetzchen = append(cfg.ServiceNode.Kaetzchen, testdestCfg)
+
 	} else if isGateway {
 		s.gatewayIdx++
 		cfg.Gateway = &sConfig.Gateway{}
