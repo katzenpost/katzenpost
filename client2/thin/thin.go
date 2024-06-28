@@ -106,21 +106,9 @@ func (t *ThinClient) Close() error {
 	req := &Request{
 		IsThinClose: true,
 	}
-	blob, err := cbor.Marshal(req)
+	err := t.writeMessage(req)
 	if err != nil {
 		return err
-	}
-
-	if t.isTCP {
-		count, _, err := t.conn.(*net.UnixConn).WriteMsgUnix(blob, nil, t.destUnixAddr)
-		if err != nil {
-			return err
-		}
-		if count != len(blob) {
-			return fmt.Errorf("SendMessage error: wrote %d instead of %d bytes", count, len(blob))
-		}
-	} else {
-
 	}
 
 	err = t.conn.Close()
@@ -149,9 +137,9 @@ func (t *ThinClient) Dial() error {
 			return err
 		}
 	case "unix":
-		fallthrough
+		panic("unix socket not supported, use unixpacket instead")
 	case "unixgram":
-		fallthrough
+		panic("unixgram socket not supported, use unixpacket instead")
 	case "unixpacket":
 		uniqueID := make([]byte, 4)
 		_, err := rand.Reader.Read(uniqueID)
@@ -202,13 +190,18 @@ func (t *ThinClient) Dial() error {
 	return nil
 }
 
-func (t *ThinClient) writeMessage(message []byte) error {
-	if t.isTCP {
-		const messagePrefixLen = 4
+func (t *ThinClient) writeMessage(request *Request) error {
+	blob, err := cbor.Marshal(request)
+	if err != nil {
+		return err
+	}
 
-		prefix := [messagePrefixLen]byte{}
-		binary.BigEndian.PutUint32(prefix[:], uint32(len(message)))
-		toSend := append(prefix[:], message...)
+	if t.isTCP {
+		const blobPrefixLen = 4
+
+		prefix := [blobPrefixLen]byte{}
+		binary.BigEndian.PutUint32(prefix[:], uint32(len(blob)))
+		toSend := append(prefix[:], blob...)
 		count, err := t.conn.Write(toSend)
 		if err != nil {
 			return err
@@ -218,12 +211,12 @@ func (t *ThinClient) writeMessage(message []byte) error {
 		}
 		return nil
 	} else {
-		count, _, err := t.conn.(*net.UnixConn).WriteMsgUnix(message, nil, t.destUnixAddr)
+		count, _, err := t.conn.(*net.UnixConn).WriteMsgUnix(blob, nil, t.destUnixAddr)
 		if err != nil {
 			return err
 		}
-		if count != len(message) {
-			return fmt.Errorf("SendMessage error: wrote %d instead of %d bytes", count, len(message))
+		if count != len(blob) {
+			return fmt.Errorf("writeMessage error: wrote %d instead of %d bytes", count, len(blob))
 		}
 		return nil
 	}
@@ -465,32 +458,6 @@ func (t *ThinClient) NewSURBID() *[sConstants.SURBIDLength]byte {
 	return id
 }
 
-func (t *ThinClient) send(payload []byte) error {
-	var err error
-	count := 0
-	if t.isTCP {
-		prefix := [4]byte{}
-		binary.BigEndian.PutUint32(prefix[:], uint32(len(payload)))
-		count, err = t.conn.Write(prefix[:])
-		if err != nil {
-			return err
-		}
-		if count != 4 {
-			return errors.New("send error: failed to write length prefix")
-		}
-		count, err = t.conn.Write(payload)
-	} else {
-		count, _, err = t.conn.(*net.UnixConn).WriteMsgUnix(payload, nil, t.destUnixAddr)
-	}
-	if err != nil {
-		return err
-	}
-	if count != len(payload) {
-		return fmt.Errorf("send error: wrote %d instead of %d bytes", count, len(payload))
-	}
-	return nil
-}
-
 // SendMessageWithoutReply sends a message encapsulated in a Sphinx packet, without any SURB.
 // No reply will be possible.
 func (t *ThinClient) SendMessageWithoutReply(payload []byte, destNode *[32]byte, destQueue []byte) error {
@@ -501,12 +468,8 @@ func (t *ThinClient) SendMessageWithoutReply(payload []byte, destNode *[32]byte,
 		DestinationIdHash: destNode,
 		RecipientQueueID:  destQueue,
 	}
-	blob, err := cbor.Marshal(req)
-	if err != nil {
-		return err
-	}
 
-	return t.writeMessage(blob)
+	return t.writeMessage(req)
 }
 
 // SendMessage takes a message payload, a destination node, destination queue ID and a SURB ID and sends a message
@@ -526,12 +489,8 @@ func (t *ThinClient) SendMessage(surbID *[sConstants.SURBIDLength]byte, payload 
 		DestinationIdHash: destNode,
 		RecipientQueueID:  destQueue,
 	}
-	blob, err := cbor.Marshal(req)
-	if err != nil {
-		return err
-	}
 
-	return t.writeMessage(blob)
+	return t.writeMessage(req)
 }
 
 func (t *ThinClient) SendReliableMessage(messageID *[MessageIDLength]byte, payload []byte, destNode *[32]byte, destQueue []byte) error {
@@ -543,12 +502,8 @@ func (t *ThinClient) SendReliableMessage(messageID *[MessageIDLength]byte, paylo
 		DestinationIdHash: destNode,
 		RecipientQueueID:  destQueue,
 	}
-	blob, err := cbor.Marshal(req)
-	if err != nil {
-		return err
-	}
 
-	return t.writeMessage(blob)
+	return t.writeMessage(req)
 }
 
 // BlockingSendReliableMessage blocks until the message is reliably sent and the ARQ reply is received.
@@ -562,11 +517,6 @@ func (t *ThinClient) BlockingSendReliableMessage(messageID *[MessageIDLength]byt
 		RecipientQueueID:  destQueue,
 	}
 
-	blob, err := cbor.Marshal(req)
-	if err != nil {
-		return nil, err
-	}
-
 	sentWaitChan := make(chan error)
 	t.sentWaitChanMap.Store(*messageID, sentWaitChan)
 	defer t.sentWaitChanMap.Delete(*messageID)
@@ -575,7 +525,7 @@ func (t *ThinClient) BlockingSendReliableMessage(messageID *[MessageIDLength]byt
 	t.replyWaitChanMap.Store(*messageID, replyWaitChan)
 	defer t.replyWaitChanMap.Delete(*messageID)
 
-	err = t.writeMessage(blob)
+	err = t.writeMessage(req)
 	if err != nil {
 		return nil, err
 	}
