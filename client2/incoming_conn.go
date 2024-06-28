@@ -117,6 +117,7 @@ func (c *incomingConn) sendResponse(r *Response) error {
 }
 
 func (c *incomingConn) start() {
+	c.log.Debug("STARTING incomingConn")
 	go c.worker()
 }
 
@@ -139,6 +140,7 @@ func (c *incomingConn) worker() {
 				c.log.Debugf("Failed to receive command: %v", err)
 				return
 			}
+			c.log.Debug("incomingConn received message")
 			select {
 			case requestCh <- rawCmd:
 			case <-requestCloseCh:
@@ -205,7 +207,7 @@ func newIncomingConn(l *listener, conn net.Conn) *incomingConn {
 	}
 
 	c.log = l.logBackend.GetLogger("client2/incomingConn")
-	c.log.Debugf("New incoming connection. Remove addr: %v assigned App ID: %x", conn.RemoteAddr(), appid[:])
+	c.log.Debugf("New incoming connection. Remote addr: %v assigned App ID: %x", conn.RemoteAddr(), appid[:])
 
 	// Note: Unlike most other things, this does not spawn the worker here,
 	// because the worker needs to be spawned after the struct is added to

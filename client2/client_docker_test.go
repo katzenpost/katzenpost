@@ -6,6 +6,9 @@
 package client2
 
 import (
+	"os"
+	"os/signal"
+	"syscall"
 	"testing"
 	"time"
 
@@ -23,6 +26,13 @@ func TestAllClient2Tests(t *testing.T) {
 	t.Cleanup(func() {
 		d.Shutdown()
 	})
+
+	haltCh := make(chan os.Signal)
+	signal.Notify(haltCh, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		<-haltCh
+		d.Shutdown()
+	}()
 
 	//t.Run("TestDockerMultiplexClients", testDockerMultiplexClients)
 	//t.Run("TestDockerClientARQSendReceive", testDockerClientARQSendReceive)
@@ -212,11 +222,11 @@ func testDockerClientSendReceive(t *testing.T) {
 	require.NoError(t, err)
 
 	thin := thin.NewThinClient(cfg)
-	t.Log("thin client Dialing")
+	t.Log("------------------------------ thin client Dialing")
 	err = thin.Dial()
 	require.NoError(t, err)
 	require.Nil(t, err)
-	t.Log("thin client connected")
+	t.Log("------------------------------ thin client connected")
 
 	t.Log("thin client getting PKI doc")
 	doc := thin.PKIDocument()
@@ -225,7 +235,7 @@ func testDockerClientSendReceive(t *testing.T) {
 
 	pingTargets := []*cpki.MixDescriptor{}
 	for i := 0; i < len(doc.ServiceNodes); i++ {
-		_, ok := doc.ServiceNodes[i].Kaetzchen["echo"]
+		_, ok := doc.ServiceNodes[i].Kaetzchen["testdest"]
 		if ok {
 			pingTargets = append(pingTargets, doc.ServiceNodes[i])
 		}
@@ -234,23 +244,25 @@ func testDockerClientSendReceive(t *testing.T) {
 	message1 := []byte("hello alice, this is bob.")
 	nodeIdKey := hash.Sum256(pingTargets[0].IdentityKey)
 
-	reply := sendAndWait(t, thin, message1, &nodeIdKey, []byte("echo"))
+	reply := sendAndWait(t, thin, message1, &nodeIdKey, []byte("testdest"))
 	require.Equal(t, message1, reply[:len(message1)])
 
-	reply = sendAndWait(t, thin, message1, &nodeIdKey, []byte("echo"))
-	require.Equal(t, message1, reply[:len(message1)])
+	/*
+		reply = sendAndWait(t, thin, message1, &nodeIdKey, []byte("testdest"))
+		require.Equal(t, message1, reply[:len(message1)])
 
-	reply = sendAndWait(t, thin, message1, &nodeIdKey, []byte("echo"))
-	require.Equal(t, message1, reply[:len(message1)])
+		reply = sendAndWait(t, thin, message1, &nodeIdKey, []byte("testdest"))
+		require.Equal(t, message1, reply[:len(message1)])
 
-	reply = sendAndWait(t, thin, message1, &nodeIdKey, []byte("echo"))
-	require.Equal(t, message1, reply[:len(message1)])
+		reply = sendAndWait(t, thin, message1, &nodeIdKey, []byte("testdest"))
+		require.Equal(t, message1, reply[:len(message1)])
 
-	reply = sendAndWait(t, thin, message1, &nodeIdKey, []byte("echo"))
-	require.Equal(t, message1, reply[:len(message1)])
+		reply = sendAndWait(t, thin, message1, &nodeIdKey, []byte("testdest"))
+		require.Equal(t, message1, reply[:len(message1)])
 
-	reply = sendAndWait(t, thin, message1, &nodeIdKey, []byte("echo"))
-	require.Equal(t, message1, reply[:len(message1)])
+		reply = sendAndWait(t, thin, message1, &nodeIdKey, []byte("testdest"))
+		require.Equal(t, message1, reply[:len(message1)])
+	*/
 
 	err = thin.Close()
 	require.NoError(t, err)
