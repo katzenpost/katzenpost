@@ -69,7 +69,6 @@ func (c *Client) halt() {
 		c.pki.Halt()
 		c.log.Info("waiting for stopped PKI worker to exit")
 		c.pki.Wait()
-		c.pki = nil
 	}
 
 	c.log.Info("Shutdown complete.")
