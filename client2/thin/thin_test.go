@@ -11,20 +11,28 @@ import (
 
 	"github.com/fxamacker/cbor/v2"
 	"github.com/katzenpost/hpqc/rand"
+	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/stretchr/testify/require"
 )
 
 func TestThinTCPSendRecv(t *testing.T) {
+
+	// test writeMessage
+
 	const messagePrefixLen = 4
+
+	logBackend, err := log.New("", "DEBUG", false)
+	require.NoError(t, err)
 
 	client, server := net.Pipe()
 	thin := ThinClient{
+		log:   logBackend.GetLogger("thinclient"),
 		isTCP: true,
 		conn:  client,
 	}
 
 	id := &[MessageIDLength]byte{}
-	_, err := rand.Reader.Read(id[:])
+	_, err = rand.Reader.Read(id[:])
 	require.NoError(t, err)
 
 	request := &Request{
@@ -49,13 +57,7 @@ func TestThinTCPSendRecv(t *testing.T) {
 
 	require.Equal(t, serverRequest.ID[:], request.ID[:])
 
-	sem1 := make(chan bool)
-	response := new(Response)
-	go func() {
-		response, err = thin.readMessage()
-		require.NoError(t, err)
-		sem1 <- true
-	}()
+	// test readMessage
 
 	serverResponse := &Response{
 		ConnectionStatusEvent: &ConnectionStatusEvent{
@@ -72,10 +74,16 @@ func TestThinTCPSendRecv(t *testing.T) {
 
 	serverMessage = append(prefix, serverMessage...)
 
-	_, err = server.Write(serverMessage)
+	go func() {
+		_, err = server.Write(serverMessage)
+		require.NoError(t, err)
+	}()
+
+	response := new(Response)
+	response, err = thin.readMessage()
 	require.NoError(t, err)
 
-	<-sem1
 	require.Equal(t, response.ConnectionStatusEvent.IsConnected, true)
 	require.Equal(t, serverResponse.ConnectionStatusEvent.IsConnected, true)
+
 }
