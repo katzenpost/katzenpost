@@ -32,19 +32,21 @@ type incomingConn struct {
 }
 
 func (c *incomingConn) recvRequest() (*Request, error) {
-	const prefixLength = 4
-
 	req := new(thin.Request)
 	if c.listener.isTCP {
+		c.log.Debug("recvRequest TCP")
+		const prefixLength = 4
 		lenPrefix := [prefixLength]byte{}
 		count, err := io.ReadFull(c.conn, lenPrefix[:])
 		if err != nil {
 			return nil, err
 		}
+		c.log.Debug("read length prefix")
 		if count != prefixLength {
 			return nil, errors.New("failed to read length prefix")
 		}
 		blobLen := binary.BigEndian.Uint32(lenPrefix[:])
+		c.log.Debugf("length prefix is %d", blobLen)
 		blob := make([]byte, blobLen)
 		if count, err = io.ReadFull(c.conn, blob); err != nil {
 			return nil, err
@@ -58,6 +60,7 @@ func (c *incomingConn) recvRequest() (*Request, error) {
 			return nil, err
 		}
 	} else {
+		c.log.Debug("recvRequest UNIX socket")
 		buff := make([]byte, 65536)
 		reqLen, _, _, _, err := c.conn.(*net.UnixConn).ReadMsgUnix(buff, nil)
 		if err != nil {
@@ -106,12 +109,24 @@ func (c *incomingConn) sendResponse(r *Response) error {
 	if err != nil {
 		return err
 	}
-	count, err := c.conn.Write(blob)
+
+	var toSend []byte
+	if c.listener.isTCP {
+		const blobPrefixLen = 4
+		prefix := [blobPrefixLen]byte{}
+		binary.BigEndian.PutUint32(prefix[:], uint32(len(blob)))
+
+		toSend = append(prefix[:], blob...)
+	} else {
+		toSend = blob
+	}
+
+	count, err := c.conn.Write(toSend)
 	if err != nil {
 		return err
 	}
-	if count != len(blob) {
-		return fmt.Errorf("sendResponse error: only wrote %d bytes whereas buffer is size %d", count, len(blob))
+	if count != len(toSend) {
+		return fmt.Errorf("sendResponse error: only wrote %d bytes whereas buffer is size %d", count, len(toSend))
 	}
 	return nil
 }
@@ -157,7 +172,9 @@ func (c *incomingConn) worker() {
 			case <-c.listener.closeAllCh:
 				return
 			case message := <-c.sendToClientCh:
+				c.log.Debug("SEND TO THIN CLIENT THREAD")
 				err := c.sendResponse(message)
+				c.log.Debug("AFTER sendResponse")
 				if err != nil {
 					c.log.Infof("received error sending client a message: %s", err.Error())
 				}
