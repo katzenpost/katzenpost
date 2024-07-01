@@ -235,6 +235,11 @@ func testDockerClientSendReceive(t *testing.T) {
 
 	pingTargets := []*cpki.MixDescriptor{}
 	for i := 0; i < len(doc.ServiceNodes); i++ {
+
+		for k, _ := range doc.ServiceNodes[i].Kaetzchen {
+			t.Logf("Key %s", k)
+		}
+
 		_, ok := doc.ServiceNodes[i].Kaetzchen["echo"]
 		if ok {
 			pingTargets = append(pingTargets, doc.ServiceNodes[i])
@@ -244,7 +249,9 @@ func testDockerClientSendReceive(t *testing.T) {
 	message1 := []byte("hello alice, this is bob.")
 	nodeIdKey := hash.Sum256(pingTargets[0].IdentityKey)
 
+	t.Log("BEFORE sendAndWait")
 	reply := sendAndWait(t, thin, message1, &nodeIdKey, []byte("echo"))
+	t.Log("AFTER sendAndWait")
 	require.Equal(t, message1, reply[:len(message1)])
 
 	/*

@@ -201,6 +201,7 @@ func (t *ThinClient) writeMessage(request *Request) error {
 
 		prefix := [blobPrefixLen]byte{}
 		binary.BigEndian.PutUint32(prefix[:], uint32(len(blob)))
+		t.log.Debugf("THIN LEN PREFIX %d", len(blob))
 		toSend := append(prefix[:], blob...)
 		count, err := t.conn.Write(toSend)
 		if err != nil {

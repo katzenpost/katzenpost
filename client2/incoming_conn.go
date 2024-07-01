@@ -32,6 +32,7 @@ type incomingConn struct {
 }
 
 func (c *incomingConn) recvRequest() (*Request, error) {
+
 	req := new(thin.Request)
 	if c.listener.isTCP {
 		c.log.Debug("recvRequest TCP")
@@ -51,14 +52,17 @@ func (c *incomingConn) recvRequest() (*Request, error) {
 		if count, err = io.ReadFull(c.conn, blob); err != nil {
 			return nil, err
 		}
+		c.log.Debug("after blob read")
 		if uint32(count) != blobLen {
 			return nil, errors.New("failed to read blob")
 		}
+		c.log.Debug("before Unmarshal")
 		err = cbor.Unmarshal(blob[:count], &req)
 		if err != nil {
 			fmt.Printf("error decoding cbor from client: %s\n", err)
 			return nil, err
 		}
+		c.log.Debug("after Unmarshal")
 	} else {
 		c.log.Debug("recvRequest UNIX socket")
 		buff := make([]byte, 65536)
@@ -121,7 +125,9 @@ func (c *incomingConn) sendResponse(r *Response) error {
 		toSend = blob
 	}
 
+	c.log.Debug("sendResponse BEFORE conn.Write")
 	count, err := c.conn.Write(toSend)
+	c.log.Debug("sendResponse AFTER conn.Write")
 	if err != nil {
 		return err
 	}
