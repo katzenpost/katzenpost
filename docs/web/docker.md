@@ -633,23 +633,22 @@ are, etc.
 []{#d5e308}
 
 **Table 1.2.  `<!--Network hosts-->`{=html}
-`<!--author="dwrob" timestamp="20240617T174147-0700" comment="I will define/describe each of these component types in a separate section, because they are general and not specific to the testnet. These host types will be linked to that."-->`{=html}
+`<!--author="dwrob" timestamp="20240617T174147-0700" comment="I will define/describe each of these component types in a separate section, because they are general and not specific to the testnet. These host types will be linked to that. Deferring discussion of Spool.DB and User.DB until documentations for indivdual components; not relevant for Docker image. "-->`{=html}
 Network hosts**
 
 ::: table-contents
-  Host type             Identifier   IP          Port    Spool.DB   User.DB   Panda
-  --------------------- ------------ ----------- ------- ---------- --------- -------
-  Directory authority   auth1        127.0.0.1   30001                        
-  Directory authority   auth2        127.0.0.1   30002                        
-  Directory authority   auth3        127.0.0.1   30003                        
-  Service provider      provider1    127.0.0.1   30004   ✓          ✓         ✓
-  Service provider      provider2    127.0.0.1   30005   ✓          ✓         
-  Mix                   mix1         127.0.0.1   30006                        
-  Mix                   mix2         127.0.0.1   30007                        
-  Mix                   mix3         127.0.0.1   30008                        
+  Host type             Identifier   IP          Port     Panda
+  --------------------- ------------ ----------- ------- -------
+  Directory authority   auth1        127.0.0.1   30001     
+  Directory authority   auth2        127.0.0.1   30002     
+  Directory authority   auth3        127.0.0.1   30003          
+  Gateway node          ???          ???         ???                       
+  Service node          provider1    127.0.0.1   30004   ✓      
+  Service node          provider2    127.0.0.1   30005   
+  Mix node              mix1         127.0.0.1   30006   
+  Mix node              mix2         127.0.0.1   30007   
+  Mix node              mix3         127.0.0.1   30008   
 :::
 :::
-
-\
 :::
 :::
