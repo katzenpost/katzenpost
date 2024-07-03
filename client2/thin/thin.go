@@ -199,16 +199,15 @@ func (t *ThinClient) writeMessage(request *Request) error {
 	if t.isTCP {
 		const blobPrefixLen = 4
 
-		prefix := [blobPrefixLen]byte{}
-		binary.BigEndian.PutUint32(prefix[:], uint32(len(blob)))
-		t.log.Debugf("THIN LEN PREFIX %d", len(blob))
-		toSend := append(prefix[:], blob...)
+		prefix := make([]byte, blobPrefixLen)
+		binary.BigEndian.PutUint32(prefix, uint32(len(blob)))
+		toSend := append(prefix, blob...)
 		count, err := t.conn.Write(toSend)
 		if err != nil {
 			return err
 		}
-		if count != 4 {
-			return errors.New("send error: failed to write length prefix")
+		if count != len(toSend) {
+			return fmt.Errorf("send error: failed to write length prefix: %d != %d", count, len(toSend))
 		}
 		return nil
 	} else {
