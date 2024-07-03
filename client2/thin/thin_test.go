@@ -39,7 +39,10 @@ func TestThinTCPSendRecv(t *testing.T) {
 		ID:      id,
 		Payload: []byte("abc123"),
 	}
-	go thin.writeMessage(request)
+	go func() {
+		err = thin.writeMessage(request)
+		require.NoError(t, err)
+	}()
 
 	prefix := make([]byte, messagePrefixLen)
 	_, err = io.ReadFull(server, prefix)
