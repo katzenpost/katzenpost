@@ -245,7 +245,7 @@ func (s *katzenpost) genNodeConfig(isGateway, isServiceNode bool, isVoting bool)
 
 	// Debug section.
 	cfg.Debug = new(sConfig.Debug)
-	cfg.Debug.SendDecoyTraffic = false
+	cfg.Debug.SendDecoyTraffic = true
 
 	// PKI section.
 	if isVoting {
