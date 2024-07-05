@@ -85,8 +85,12 @@ const TestDestCapability = "testdest"
 
 // BuiltInCtors are the constructors for all built-in Kaetzchen.
 var BuiltInCtors = map[string]BuiltInCtorFn{
-	EchoCapability:     NewEcho,
-	TestDestCapability: NewEcho,
+	EchoCapability: func(cfg *config.Kaetzchen, glue glue.Glue) (Kaetzchen, error) {
+		return NewEcho(cfg, glue, EchoCapability)
+	},
+	TestDestCapability: func(cfg *config.Kaetzchen, glue glue.Glue) (Kaetzchen, error) {
+		return NewEcho(cfg, glue, TestDestCapability)
+	},
 }
 
 type KaetzchenWorker struct {
