@@ -77,6 +77,7 @@ type katzenpost struct {
 	serviceNodeIdx int
 	hasPanda       bool
 	hasProxy       bool
+	noDecoy		   bool
 }
 
 type AuthById []*vConfig.Authority
@@ -120,7 +121,7 @@ func (s *katzenpost) genClientCfg() error {
 	cfg.VotingAuthority = &cConfig.VotingAuthority{Peers: peers}
 
 	// Debug section
-	cfg.Debug = &cConfig.Debug{DisableDecoyTraffic: false}
+	cfg.Debug = &cConfig.Debug{DisableDecoyTraffic: s.noDecoy}
 	err := saveCfg(cfg, s.outDir)
 	if err != nil {
 		return err
@@ -389,6 +390,7 @@ func main() {
 	ratchetNike := flag.String("ratchetNike", "CTIDH512-X25519", "Name of the NIKE Scheme to be used with the doubleratchet")
 	UserForwardPayloadLength := flag.Int("UserForwardPayloadLength", 2000, "UserForwardPayloadLength")
 	pkiSignatureScheme := flag.String("pkiScheme", "Ed25519", "PKI Signature Scheme to be used")
+	noDecoy := flag.Bool("noDecoy", true, "Disable decoy traffic for the client")
 
 	sr := flag.Uint64("sr", 0, "Sendrate limit")
 	mu := flag.Float64("mu", 0.005, "Inverse of mean of per hop delay.")
@@ -451,6 +453,7 @@ func main() {
 	s.lastPort = s.basePort + 1
 	s.bindAddr = *bindAddr
 	s.logLevel = *logLevel
+	s.noDecoy = *noDecoy
 
 	nrHops := *nrLayers + 2
 
