@@ -77,7 +77,7 @@ type katzenpost struct {
 	serviceNodeIdx int
 	hasPanda       bool
 	hasProxy       bool
-	noDecoy		   bool
+	noDecoy        bool
 }
 
 type AuthById []*vConfig.Authority
