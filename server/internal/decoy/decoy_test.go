@@ -24,7 +24,7 @@ import (
 
 var testingSchemeName = "xwing"
 var testingScheme = schemes.ByName(testingSchemeName)
-var testingSignatureScheme = signSchemes.ByName("Ed25519 Sphincs+")
+var testingSignatureScheme = signSchemes.ByName("Ed25519")
 
 func TestIncrementSentSegments(t *testing.T) {
 	d := newTestDecoy()

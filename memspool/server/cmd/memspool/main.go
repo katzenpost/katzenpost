@@ -90,12 +90,13 @@ func main() {
 }
 
 type spoolRequestHandler struct {
-	m   *server.MemSpoolMap
-	log *logging.Logger
+	m     *server.MemSpoolMap
+	log   *logging.Logger
+	write func(cborplugin.Command)
 }
 
 // OnCommand processes a SpoolRequest and returns a SpoolResponse
-func (s *spoolRequestHandler) OnCommand(cmd cborplugin.Command) (cborplugin.Command, error) {
+func (s *spoolRequestHandler) OnCommand(cmd cborplugin.Command) error {
 	switch r := cmd.(type) {
 	case *cborplugin.Request:
 		// the padding bytes were not stripped because
@@ -107,20 +108,28 @@ func (s *spoolRequestHandler) OnCommand(cmd cborplugin.Command) (cborplugin.Comm
 		dec := cbor.NewDecoder(bytes.NewReader(r.Payload))
 		err := dec.Decode(req)
 		if err != nil {
-			return nil, err
+			return err
 		}
-		resp := server.HandleSpoolRequest(s.m, req, s.log)
-		rawResp, err := resp.Marshal()
-		if err != nil {
-			s.log.Errorf("OnCommand called with invalid request")
-			return nil, err
+		if s.write == nil {
+			return errors.New("Plugin not registered")
 		}
-		return &cborplugin.Response{Payload: rawResp}, nil
+
+		go func() {
+			resp := server.HandleSpoolRequest(s.m, req, s.log)
+			rawResp, err := resp.Marshal()
+			if err != nil {
+				return
+			}
+			s.write(&cborplugin.Response{ID: r.ID, SURB: r.SURB, Payload: rawResp})
+		}()
+		return nil
 	default:
 		s.log.Errorf("OnCommand called with unknown Command type")
-		return nil, errors.New("Invalid Command type")
+		return errors.New("Invalid Command type")
 	}
 }
 
 func (s *spoolRequestHandler) RegisterConsumer(svr *cborplugin.Server) {
+	// save the handle to the cborplugin Write method, in order to send responses async
+	s.write = svr.Write
 }

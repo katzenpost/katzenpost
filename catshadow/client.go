@@ -19,6 +19,7 @@
 package catshadow
 
 import (
+	"bytes"
 	"context"
 	"encoding/binary"
 	"errors"
@@ -27,13 +28,13 @@ import (
 	"sync"
 	"time"
 
-	"github.com/awnumar/memguard"
-
 	"github.com/fxamacker/cbor/v2"
 	"gopkg.in/op/go-logging.v1"
 
 	ratchet "github.com/katzenpost/katzenpost/doubleratchet"
 
+	"github.com/katzenpost/hpqc/nike"
+	"github.com/katzenpost/hpqc/nike/schemes"
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/katzenpost/client"
 	cConstants "github.com/katzenpost/katzenpost/client/constants"
@@ -67,8 +68,8 @@ var (
 
 const EventChannelSize = 1000
 
-func DoubleRatchetPayloadLength(geo *geo.Geometry) int {
-	return common.SpoolPayloadLength(geo) - ratchet.DoubleRatchetOverhead
+func DoubleRatchetPayloadLength(geo *geo.Geometry, scheme nike.Scheme) int {
+	return common.SpoolPayloadLength(geo) - ratchet.DoubleRatchetOverhead(scheme)
 }
 
 // Client is the mixnet client which interacts with other clients
@@ -526,6 +527,7 @@ func (c *Client) doCreateRemoteSpool(provider string, responseChan chan error) {
 		// NewSpoolReadDescriptor blocks, so we run this in another thread and then use
 		// another workerOp to save the spool descriptor.
 		spool, err := memspoolclient.NewSpoolReadDescriptor(desc.Name, desc.Provider, c.session)
+		c.log.Debugf("Created new spool %x on %s (%s)", spool.ID, spool.Provider, spool.Receiver)
 		if err != nil {
 			select {
 			case <-c.HaltCh():
@@ -580,7 +582,7 @@ func (c *Client) createContact(nickname string, sharedSecret []byte) error {
 	if _, ok := c.contactNicknames[nickname]; ok {
 		return fmt.Errorf("Contact with nickname %s, already exists.", nickname)
 	}
-	contact, err := NewContact(nickname, c.randID(), sharedSecret)
+	contact, err := NewContact(nickname, c.randID(), sharedSecret, c.client.GetConfig().RatchetNIKEScheme)
 	if err != nil {
 		return err
 	}
@@ -823,7 +825,7 @@ func (c *Client) save() {
 	}
 }
 
-func (c *Client) marshal() (*memguard.LockedBuffer, error) {
+func (c *Client) marshal() ([]byte, error) {
 	contacts := []*Contact{}
 	for _, contact := range c.contacts {
 		contacts = append(contacts, contact)
@@ -838,11 +840,11 @@ func (c *Client) marshal() (*memguard.LockedBuffer, error) {
 	}
 	defer c.conversationsMutex.Unlock()
 	// XXX: shouldn't we also obtain the ratchet locks as well?
-	ms := memguard.NewStream()
+	ms := new(bytes.Buffer)
 	em, _ := cbor.EncOptions{Time: cbor.TimeUnixDynamic}.EncMode()
 	e := em.NewEncoder(ms)
 	e.Encode(s)
-	return ms.Flush()
+	return ms.Bytes(), nil
 }
 
 func (c *Client) haltKeyExchanges() {
@@ -860,14 +862,20 @@ func (c *Client) Shutdown() {
 }
 
 func (c *Client) DoubleRatchetPayloadLength() int {
-	return DoubleRatchetPayloadLength(c.client.GetConfig().SphinxGeometry)
+	cfg := c.client.GetConfig()
+
+	nikeScheme := schemes.ByName(cfg.RatchetNIKEScheme)
+
+	return DoubleRatchetPayloadLength(cfg.SphinxGeometry, nikeScheme)
 }
 
 // SendMessage sends a message to the Client contact with the given nickname.
 func (c *Client) SendMessage(nickname string, message []byte) MessageID {
 	cfg := c.client.GetConfig()
 
-	if len(message)+4 > DoubleRatchetPayloadLength(cfg.SphinxGeometry) {
+	nikeScheme := schemes.ByName(cfg.RatchetNIKEScheme)
+
+	if len(message)+4 > CBORMessageOverhead+DoubleRatchetPayloadLength(cfg.SphinxGeometry, nikeScheme) {
 		return MessageID{}
 	}
 	convoMesgID := MessageID{}
@@ -950,6 +958,7 @@ func (c *Client) doSendMessage(convoMesgID MessageID, nickname string, message [
 	}
 
 	// enqueue the message for sending
+	c.log.Debugf("Sending spool write to %s spool %x on %s", contact.Nickname, contact.spoolWriteDescriptor.ID, contact.spoolWriteDescriptor.Receiver)
 	item := &queuedSpoolCommand{Receiver: contact.spoolWriteDescriptor.Receiver,
 		Provider: contact.spoolWriteDescriptor.Provider,
 		Command:  appendCmd, ID: convoMesgID}
@@ -1136,8 +1145,9 @@ func (c *Client) handleReply(replyEvent *client.MessageReplyEvent) {
 			}
 			if !spoolResponse.IsOK() {
 				// no new messages were returned
+
 				c.log.Debugf("Spool response ID %d status error: %s for SpoolID %x",
-					spoolResponse.MessageID, spoolResponse.Status, spoolResponse.SpoolID)
+					spoolResponse.MessageID, spoolResponse.Status, spoolResponse.SpoolID[:])
 
 				return
 			}
@@ -1156,7 +1166,7 @@ func (c *Client) handleReply(replyEvent *client.MessageReplyEvent) {
 					// has already completed the key exchange and sent a first message, before we have
 					// completed our key exchange.
 					// XXX: this could break things if a contact key exchange never completes...
-					c.log.Debugf("failure to decrypt tip of spool - MessageID: %x", *replyEvent.MessageID)
+					c.log.Errorf("failure to decrypt tip of spool - unknown conatct? - MessageID: %x", *replyEvent.MessageID)
 					for _, contact := range c.contacts {
 						if contact.IsPending {
 							c.log.Warning("received message we could not decrypt while key exchange pending, delaying spool read descriptor increment")
@@ -1169,7 +1179,7 @@ func (c *Client) handleReply(replyEvent *client.MessageReplyEvent) {
 					c.log.Debugf("successfully decrypted tip of spool - MessageID: %x", *replyEvent.MessageID)
 				default:
 					// received an error, likely due to retransmission
-					c.log.Debugf("failure to decrypt tip of spool - MessageID: %x, err: %s", *replyEvent.MessageID, err.Error())
+					c.log.Errorf("failure to decrypt tip of spool 'likely due to retransmission'? - MessageID: %x, err: %s", *replyEvent.MessageID, err.Error())
 				}
 				// in all other cases, advance the spool read descriptor
 				c.spoolReadDescriptor.IncrementOffset()
@@ -1297,7 +1307,7 @@ func (c *Client) decryptMessage(messageID *[cConstants.MessageIDLength]byte, cip
 			break
 		default:
 			// every other type of error indicates an invalid message
-			c.log.Debugf("Decryption err for %s: %s", contact.Nickname, err.Error())
+			c.log.Errorf("Decryption err for %s: %s", contact.Nickname, err.Error())
 			return err
 		}
 	}
@@ -1326,7 +1336,7 @@ func (c *Client) decryptMessage(messageID *[cConstants.MessageIDLength]byte, cip
 		}
 		return nil
 	}
-	c.log.Debugf("trial ratchet decryption failure for message ID %x reported ratchet error: %s", *messageID, err)
+	c.log.Errorf("trial ratchet decryption failure for message ID %x reported ratchet error: %s", *messageID, err)
 	return ErrTrialDecryptionFailed
 }
 

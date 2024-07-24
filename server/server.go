@@ -20,6 +20,7 @@ package server
 import (
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"sync"
 
@@ -39,6 +40,7 @@ import (
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 
 	"github.com/katzenpost/katzenpost/core/log"
+	"github.com/katzenpost/katzenpost/core/thwack"
 	"github.com/katzenpost/katzenpost/core/utils"
 	"github.com/katzenpost/katzenpost/server/config"
 	"github.com/katzenpost/katzenpost/server/internal/cryptoworker"
@@ -47,8 +49,10 @@ import (
 	"github.com/katzenpost/katzenpost/server/internal/glue"
 	"github.com/katzenpost/katzenpost/server/internal/incoming"
 	"github.com/katzenpost/katzenpost/server/internal/instrument"
+	"github.com/katzenpost/katzenpost/server/internal/mixkeys"
 	"github.com/katzenpost/katzenpost/server/internal/outgoing"
 	"github.com/katzenpost/katzenpost/server/internal/pki"
+	"github.com/katzenpost/katzenpost/server/internal/profiling"
 	"github.com/katzenpost/katzenpost/server/internal/scheduler"
 	"github.com/katzenpost/katzenpost/server/internal/service"
 )
@@ -82,6 +86,7 @@ type Server struct {
 	gateway       glue.Gateway
 	serviceNode   glue.ServiceNode
 	decoy         glue.Decoy
+	management    *thwack.Server
 
 	fatalErrCh chan error
 	haltedCh   chan interface{}
@@ -240,6 +245,10 @@ func New(cfg *config.Config) (*Server, error) {
 	}
 	instrument.StartPrometheusListener(goo)
 
+	if err := profiling.Start(s.log); err != nil {
+		return nil, fmt.Errorf("failed to start profiling: %w", err)
+	}
+
 	s.log.Notice("Katzenpost is still pre-alpha.  DO NOT DEPEND ON IT FOR STRONG SECURITY OR ANONYMITY.")
 	if s.cfg.Logging.Level == "DEBUG" {
 		s.log.Warning("Unsafe Debug logging is enabled.")
@@ -339,7 +348,7 @@ func New(cfg *config.Config) (*Server, error) {
 	}
 
 	// Load and or generate mix keys.
-	if s.mixKeys, err = newMixKeys(goo, cfg.SphinxGeometry); err != nil {
+	if s.mixKeys, err = mixkeys.NewMixKeys(goo, cfg.SphinxGeometry); err != nil {
 		s.log.Errorf("Failed to initialize mix keys: %v", err)
 		return nil, err
 	}
@@ -364,6 +373,38 @@ func New(cfg *config.Config) (*Server, error) {
 		s.log.Warningf("Shutting down due to error: %v", err)
 		s.Shutdown()
 	}()
+
+	// Initialize the management interface if enabled.
+	//
+	// Note: This is done first so that other subsystems may register commands.
+	if _, err := os.Stat(s.cfg.Management.Path); !os.IsNotExist(err) {
+		s.log.Warningf("Warning: management socket file '%s' already exists, deleting it.", s.cfg.Management.Path)
+		err := os.Remove(s.cfg.Management.Path)
+		if err != nil {
+			s.fatalErrCh <- fmt.Errorf("failed to delete mgmt socket file, shutting down now")
+			return nil, err
+		}
+	}
+	if s.cfg.Management.Enable {
+		s.log.Infof("s.cfg.Management.Path %s", s.cfg.Management.Path)
+		mgmtCfg := &thwack.Config{
+			Net:         "unix",
+			Addr:        s.cfg.Management.Path,
+			ServiceName: s.cfg.Server.Identifier + " Katzenpost Management Interface",
+			LogModule:   "mgmt",
+			NewLoggerFn: s.logBackend.GetLogger,
+		}
+		if s.management, err = thwack.New(mgmtCfg); err != nil {
+			s.log.Errorf("Failed to initialize management interface: %v", err)
+			return nil, err
+		}
+
+		const shutdownCmd = "SHUTDOWN"
+		s.management.RegisterCommand(shutdownCmd, func(c *thwack.Conn, l string) error {
+			s.fatalErrCh <- fmt.Errorf("user requested shutdown via mgmt interface")
+			return nil
+		})
+	}
 
 	// Initialize the PKI interface.
 	if s.pki, err = pki.New(goo); err != nil {
@@ -425,8 +466,12 @@ func New(cfg *config.Config) (*Server, error) {
 	// Start the periodic 1 Hz utility timer.
 	s.periodic = newPeriodicTimer(s)
 
-	// monitor channel length
-	instrument.MonitorChannelLen("server.inboundPackets", s.haltedCh, s.inboundPackets)
+	// Start listening on the management interface if enabled, now that every
+	// subsystem that wants to register commands has had the opportunity to do
+	// so.
+	if s.management != nil {
+		s.management.Start()
+	}
 
 	isOk = true
 	return s, nil
@@ -454,6 +499,10 @@ func (g *serverGlue) IdentityPublicKey() sign.PublicKey {
 
 func (g *serverGlue) LinkKey() kem.PrivateKey {
 	return g.s.linkKey
+}
+
+func (g *serverGlue) Management() *thwack.Server {
+	return g.s.management
 }
 
 func (g *serverGlue) MixKeys() glue.MixKeys {

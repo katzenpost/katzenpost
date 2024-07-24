@@ -1,5 +1,5 @@
-// ctidh1024_benchmark_test.go - Sphinx Packet Format benchmarks.
-// Copyright (C) 2022 David Stainton.
+// client_test.go - map service client tests
+// Copyright (C) 2021  Masala
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as
@@ -14,22 +14,22 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-package sphinx
+package client
 
 import (
 	"testing"
 
-	"github.com/katzenpost/hpqc/kem/adapter"
-	ctidh "github.com/katzenpost/hpqc/nike/ctidh/ctidh1024"
+	"github.com/stretchr/testify/require"
 )
 
-func BenchmarkCtidh1024SphinxUnwrap(b *testing.B) {
-	if ctidh.Scheme() == nil {
-		panic("ctidh.CTIDH1024Scheme is NIL")
-	}
-	benchmarkSphinxUnwrap(b, ctidh.Scheme())
-}
+func TestDuplexCapsFromSeed(t *testing.T) {
+	require := require.New(t)
 
-func BenchmarkKEMSphinxUnwrapCTIDH1024(b *testing.B) {
-	benchmarkKEMSphinxUnwrap(b, adapter.FromNIKE(ctidh.Scheme()))
+	alice_read, alice_write := duplexCapsFromSeed(true, []byte("secret"))
+	bob_read, bob_write := duplexCapsFromSeed(false, []byte("secret"))
+
+	require.Equal(alice_read.Addr([]byte("address1")), bob_write.Addr([]byte("address1")))
+	require.Equal(bob_read.Addr([]byte("address1")), alice_write.Addr([]byte("address1")))
+	require.NotEqual(alice_read.Addr([]byte("address1")), alice_write.Addr([]byte("address1")))
+
 }

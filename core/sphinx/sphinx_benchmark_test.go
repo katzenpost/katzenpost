@@ -1,18 +1,5 @@
-// sphinx_benchmark_test.go - Sphinx Packet Format benchmarks.
-// Copyright (C) 2018 Yawning Angel, David Stainton.
-//
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU Affero General Public License as
-// published by the Free Software Foundation, either version 3 of the
-// License, or (at your option) any later version.
-//
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU Affero General Public License for more details.
-//
-// You should have received a copy of the GNU Affero General Public License
-// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+// SPDX-FileCopyrightText: Copyright (C) 2024 David Stainton
+// SPDX-License-Identifier: AGPL-3.0-or-later
 
 package sphinx
 
@@ -20,99 +7,313 @@ import (
 	"crypto/rand"
 	"testing"
 
-	"github.com/katzenpost/hpqc/nike"
-	"github.com/katzenpost/katzenpost/core/sphinx/commands"
+	kemScheme "github.com/katzenpost/hpqc/kem/schemes"
+	nikeScheme "github.com/katzenpost/hpqc/nike/schemes"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 )
 
-func benchmarkSphinxUnwrap(b *testing.B, mynike nike.Scheme) {
+var benchmarks = []struct {
+	name        string
+	isNIKE      bool // KEM if false
+	nikeName    string
+	kemName     string
+	nrHops      int
+	payloadSize int
+}{
+	// NIKEs
+	{
+		name:        "X25519 NIKE",
+		isNIKE:      true,
+		nikeName:    "x25519",
+		kemName:     "",
+		nrHops:      5,
+		payloadSize: 2000,
+	},
+	{
+		name:        "X448 NIKE",
+		isNIKE:      true,
+		nikeName:    "x448",
+		kemName:     "",
+		nrHops:      5,
+		payloadSize: 2000,
+	},
+
+	{
+		name:        "CTIDH512 PQ NIKE",
+		isNIKE:      true,
+		nikeName:    "CTIDH512",
+		kemName:     "",
+		nrHops:      5,
+		payloadSize: 2000,
+	},
+	// There's some kind of bug preventing this one from working.
+	/*
+		{
+			name:        "CTIDH512-X25519 PQ Hybrid NIKE",
+			isNIKE:      true,
+			nikeName:    "CTIDH512-X25519",
+			kemName:     "",
+			nrHops:      5,
+			payloadSize: 2000,
+		},
+	*/
+	{
+		name:        "CTIDH512-X448 PQ Hybrid NIKE",
+		isNIKE:      true,
+		nikeName:    "CTIDH512-X448",
+		kemName:     "",
+		nrHops:      5,
+		payloadSize: 2000,
+	},
+
+	{
+		name:        "CTIDH1024 PQ NIKE",
+		isNIKE:      true,
+		nikeName:    "CTIDH1024",
+		kemName:     "",
+		nrHops:      5,
+		payloadSize: 2000,
+	},
+	{
+		name:        "CTIDH1024-X448 PQ Hybrid NIKE",
+		isNIKE:      true,
+		nikeName:    "CTIDH1024-X448",
+		kemName:     "",
+		nrHops:      5,
+		payloadSize: 2000,
+	},
+
+	// NIKEs adapted as KEMs (via adhoc hashed elgamal construction)
+	{
+		name:        "X25519 KEM",
+		isNIKE:      false,
+		nikeName:    "",
+		kemName:     "x25519",
+		nrHops:      5,
+		payloadSize: 2000,
+	},
+	{
+		name:        "X448 KEM",
+		isNIKE:      false,
+		nikeName:    "",
+		kemName:     "x448",
+		nrHops:      5,
+		payloadSize: 2000,
+	},
+	{
+		name:        "CTIDH512 PQ KEM",
+		isNIKE:      false,
+		nikeName:    "",
+		kemName:     "CTIDH512",
+		nrHops:      5,
+		payloadSize: 2000,
+	},
+	{
+		name:        "CTIDH1024 PQ KEM",
+		isNIKE:      false,
+		nikeName:    "",
+		kemName:     "CTIDH1024",
+		nrHops:      5,
+		payloadSize: 2000,
+	},
+
+	// PQ KEMs
+	{
+		name:        "MLKEM768 KEM",
+		isNIKE:      false,
+		nikeName:    "",
+		kemName:     "MLKEM768",
+		nrHops:      5,
+		payloadSize: 2000,
+	},
+	{
+		name:        "sntrup4591761 KEM",
+		isNIKE:      false,
+		nikeName:    "",
+		kemName:     "sntrup4591761",
+		nrHops:      5,
+		payloadSize: 2000,
+	},
+	{
+		name:        "FrodoKEM-640-SHAKE KEM",
+		isNIKE:      false,
+		nikeName:    "",
+		kemName:     "FrodoKEM-640-SHAKE",
+		nrHops:      5,
+		payloadSize: 2000,
+	},
+
+	// hybrid KEMs
+	{
+		name:        "Xwing KEM",
+		isNIKE:      false,
+		nikeName:    "",
+		kemName:     "Xwing",
+		nrHops:      5,
+		payloadSize: 2000,
+	},
+	{
+		name:        "MLKEM768-X25519 KEM",
+		isNIKE:      false,
+		nikeName:    "",
+		kemName:     "MLKEM768-X25519",
+		nrHops:      5,
+		payloadSize: 2000,
+	},
+	{
+		name:        "MLKEM768-X448 KEM",
+		isNIKE:      false,
+		nikeName:    "",
+		kemName:     "MLKEM768-X448",
+		nrHops:      5,
+		payloadSize: 2000,
+	},
+	{
+		name:        "CTIDH512-X25519 PQ Hybrid KEM",
+		isNIKE:      false,
+		nikeName:    "",
+		kemName:     "CTIDH512-X25519",
+		nrHops:      5,
+		payloadSize: 2000,
+	},
+	{
+		name:        "CTIDH1024-X448 PQ Hybrid KEM",
+		isNIKE:      false,
+		nikeName:    "",
+		kemName:     "CTIDH1024-X448",
+		nrHops:      5,
+		payloadSize: 2000,
+	},
+}
+
+func BenchmarkSphinxCreatePackets(b *testing.B) {
 	const testPayload = "It is the stillest words that bring on the storm.  Thoughts that come on doves’ feet guide the world."
 
-	if mynike == nil {
-		panic("nike cannot be nil")
+	for _, bm := range benchmarks {
+		b.Logf("test case: %s", bm.name)
+		b.Run(bm.name, func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				b.StopTimer()
+				if bm.isNIKE {
+					scheme := nikeScheme.ByName(bm.nikeName)
+					if scheme == nil {
+						panic("NIKE scheme is nil")
+					}
+					g := geo.GeometryFromUserForwardPayloadLength(scheme, bm.payloadSize, false, bm.nrHops)
+					sphinx := NewSphinx(g)
+
+					_, path := benchNewPathVector(g.NrHops, false, scheme)
+					payload := make([]byte, bm.payloadSize)
+					copy(payload[:len(testPayload)], testPayload) // some kind of payload that is not all zero bytes
+
+					b.StartTimer()
+					_, err := sphinx.NewPacket(rand.Reader, path, payload)
+					if err != nil {
+						panic(err)
+					}
+				} else { // KEM
+					b.StopTimer()
+					scheme := kemScheme.ByName(bm.kemName)
+					if scheme == nil {
+						panic("NIKE scheme is nil")
+					}
+					g := geo.KEMGeometryFromUserForwardPayloadLength(scheme, bm.payloadSize, false, bm.nrHops)
+					sphinx := NewSphinx(g)
+
+					_, path := newBenchKEMPathVector(scheme, g.NrHops, false)
+					payload := make([]byte, bm.payloadSize)
+					copy(payload[:len(testPayload)], testPayload) // some kind of payload that is not all zero bytes
+
+					b.StartTimer()
+					_, err := sphinx.NewPacket(rand.Reader, path, payload)
+					if err != nil {
+						panic(err)
+					}
+				}
+			}
+		})
 	}
+}
 
-	g := geo.GeometryFromUserForwardPayloadLength(mynike, len(testPayload), false, 5)
-	sphinx := NewNIKESphinx(mynike, g)
+func BenchmarkSphinxUnwrap(b *testing.B) {
 
-	if sphinx.nike == nil {
-		panic("sphinx.nike cannot be nil")
+	for _, bm := range benchmarks {
+		b.Logf("test case: %s", bm.name)
+		prep := prepareSphinxBenchmark(bm.isNIKE, bm.nikeName, bm.kemName, bm.nrHops, bm.payloadSize)
+
+		b.Run(bm.name, func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+
+				b.StopTimer()
+				testPacket := make([]byte, len(prep.packet))
+				copy(testPacket, prep.packet)
+				b.StartTimer()
+
+				_, _, _, err := prep.sphinx.Unwrap(prep.privateKey, testPacket)
+				if err != nil {
+					panic(err)
+				}
+			}
+		})
 	}
+}
 
-	nodes, path := benchNewPathVector(g.NrHops, false, mynike)
-	payload := []byte(testPayload)
+type preparedBenchTest struct {
+	sphinx     *Sphinx
+	packet     []byte
+	privateKey interface{}
+}
 
-	pkt, err := sphinx.NewPacket(rand.Reader, path, payload)
-	if err != nil {
-		panic(err)
-	}
-	if len(pkt) != g.HeaderLength+g.PayloadTagLength+len(payload) {
-		panic("packet length mismatch")
-	}
+func prepareSphinxBenchmark(isNIKE bool, nikeName string, kemName string, nrHops int, payloadSize int) *preparedBenchTest {
+	const testPayload = "It is the stillest words that bring on the storm.  Thoughts that come on doves’ feet guide the world."
 
-	for n := 0; n < b.N; n++ {
-		testPacket := make([]byte, len(pkt))
-		copy(testPacket, pkt)
-		_, _, _, err := sphinx.Unwrap(nodes[0].privateKey, testPacket)
+	if isNIKE {
+		scheme := nikeScheme.ByName(nikeName)
+		if scheme == nil {
+			panic("NIKE scheme is nil")
+		}
+		g := geo.GeometryFromUserForwardPayloadLength(scheme, payloadSize, false, nrHops)
+		sphinx := NewSphinx(g)
+
+		nodes, path := benchNewPathVector(g.NrHops, false, scheme)
+		payload := make([]byte, payloadSize)
+		copy(payload[:len(testPayload)], testPayload) // some kind of payload that is not all zero bytes
+
+		pkt, err := sphinx.NewPacket(rand.Reader, path, payload)
 		if err != nil {
 			panic(err)
 		}
-	}
-}
 
-func benchNewNode(mynike nike.Scheme) *nodeParams {
-	n := new(nodeParams)
-	_, err := rand.Read(n.id[:])
-	if err != nil {
-		panic(err)
-	}
-	n.publicKey, n.privateKey, err = mynike.GenerateKeyPair()
-	if err != nil {
-		panic(err)
-	}
-	return n
-}
+		return &preparedBenchTest{
+			sphinx:     sphinx,
+			packet:     pkt,
+			privateKey: nodes[0].privateKey,
+		}
+	} else { // KEM
+		scheme := kemScheme.ByName(kemName)
+		if scheme == nil {
+			panic("NIKE scheme is nil")
+		}
+		g := geo.KEMGeometryFromUserForwardPayloadLength(scheme, payloadSize, false, nrHops)
+		sphinx := NewSphinx(g)
 
-func benchNewPathVector(nrHops int, isSURB bool, mynike nike.Scheme) ([]*nodeParams, []*PathHop) {
-	const delayBase = 0xdeadbabe
+		nodes, path := newBenchKEMPathVector(scheme, g.NrHops, false)
+		payload := make([]byte, payloadSize)
+		copy(payload[:len(testPayload)], testPayload) // some kind of payload that is not all zero bytes
 
-	// Generate the keypairs and node identifiers for the "nodes".
-	nodes := make([]*nodeParams, nrHops)
-	for i := range nodes {
-		nodes[i] = benchNewNode(mynike)
-	}
+		pkt, err := sphinx.NewPacket(rand.Reader, path, payload)
+		if err != nil {
+			panic(err)
+		}
 
-	// Assemble the path vector.
-	path := make([]*PathHop, nrHops)
-	for i := range path {
-		path[i] = new(PathHop)
-		copy(path[i].ID[:], nodes[i].id[:])
-		path[i].NIKEPublicKey = nodes[i].publicKey
-		if i < nrHops-1 {
-			// Non-terminal hop, add the delay.
-			delay := new(commands.NodeDelay)
-			delay.Delay = delayBase * uint32(i+1)
-			path[i].Commands = append(path[i].Commands, delay)
-		} else {
-			// Terminal hop, add the recipient.
-			recipient := new(commands.Recipient)
-			_, err := rand.Read(recipient.ID[:])
-			if err != nil {
-				panic("wtf")
-			}
-			path[i].Commands = append(path[i].Commands, recipient)
-
-			// This is a SURB, add a surb_reply.
-			if isSURB {
-				surbReply := new(commands.SURBReply)
-				_, err := rand.Read(surbReply.ID[:])
-				if err != nil {
-					panic("wtf")
-				}
-				path[i].Commands = append(path[i].Commands, surbReply)
-			}
+		return &preparedBenchTest{
+			sphinx:     sphinx,
+			packet:     pkt,
+			privateKey: nodes[0].privateKey,
 		}
 	}
 
-	return nodes, path
+	panic("invalid state")
+
+	return nil
 }

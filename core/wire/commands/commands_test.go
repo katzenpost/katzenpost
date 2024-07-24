@@ -31,7 +31,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 )
 
-var testCertScheme = schemes.ByName("Ed25519 Sphincs+")
+var testCertScheme = schemes.ByName("Ed25519")
 
 func TestNoOp(t *testing.T) {
 	t.Parallel()

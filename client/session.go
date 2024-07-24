@@ -32,11 +32,12 @@ import (
 	"github.com/katzenpost/hpqc/kem"
 	"github.com/katzenpost/hpqc/kem/schemes"
 	"github.com/katzenpost/hpqc/rand"
-
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
+
 	"github.com/katzenpost/katzenpost/client/config"
 	cConstants "github.com/katzenpost/katzenpost/client/constants"
 	"github.com/katzenpost/katzenpost/client/utils"
+	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx"
@@ -53,11 +54,12 @@ type Session struct {
 	geo    *geo.Geometry
 	sphinx *sphinx.Sphinx
 
-	cfg       *config.Config
-	pkiClient pki.Client
-	minclient *minclient.Client
-	gateway   *pki.MixDescriptor
-	log       *logging.Logger
+	cfg        *config.Config
+	pkiClient  pki.Client
+	minclient  *minclient.Client
+	gateway    *pki.MixDescriptor
+	log        *logging.Logger
+	logBackend *log.Backend
 
 	fatalErrCh chan error
 	opCh       chan workerOp
@@ -108,6 +110,7 @@ func NewSession(
 		linkKey:     linkKey,
 		gateway:     gateway,
 		pkiClient:   pkiClient,
+		logBackend:  logBackend,
 		log:         clientLog,
 		fatalErrCh:  fatalErrCh,
 		eventCh:     make(chan interface{}, EventChannelSize),
@@ -158,7 +161,7 @@ func NewSession(
 		EnableTimeSync:      false, // Be explicit about it.
 	}
 
-	s.timerQ.Go(s.timerQ.worker)
+	s.timerQ.Start()
 	s.Go(s.eventSinkWorker)
 	s.Go(s.garbageCollectionWorker)
 
@@ -223,10 +226,13 @@ func (s *Session) garbageCollectionWorker() {
 func (s *Session) garbageCollect() {
 	s.log.Debug("Running garbage collection process.")
 	// [sConstants.SURBIDLength]byte -> *Message
+	currentEpoch, _, _ := epochtime.Now()
+
 	surbIDMapRange := func(rawSurbID, rawMessage interface{}) bool {
 		surbID := rawSurbID.([sConstants.SURBIDLength]byte)
 		message := rawMessage.(*Message)
-		if time.Now().After(message.SentAt.Add(message.ReplyETA).Add(cConstants.RoundTripTimeSlop)) {
+		sentEpoch := uint64(message.SentAt.Sub(epochtime.Epoch) / epochtime.Period)
+		if sentEpoch < currentEpoch-1 {
 			s.log.Debug("Garbage collecting SURB ID Map entry for Message ID %x", message.ID)
 			s.surbIDMap.Delete(surbID)
 			s.eventCh <- &MessageIDGarbageCollected{
@@ -301,7 +307,7 @@ func (s *Session) decrementDecoyLoopTally() {
 // OnACK is called by the minclient api when we receive a SURB reply message.
 func (s *Session) onACK(surbID *[sConstants.SURBIDLength]byte, ciphertext []byte) error {
 	idStr := fmt.Sprintf("[%v]", hex.EncodeToString(surbID[:]))
-	s.log.Infof("OnACK with SURBID %s", idStr)
+	s.log.Debugf("OnACK with SURBID %s", idStr)
 
 	rawMessage, ok := s.surbIDMap.Load(*surbID)
 	if !ok {
@@ -392,6 +398,10 @@ func (s *Session) Push(i Item) error {
 		s.opCh <- opRetransmit{msg: m}
 	}
 	return nil
+}
+
+func (s *Session) GetLogger(component string) *logging.Logger {
+	return s.logBackend.GetLogger(component)
 }
 
 func (s *Session) ForceFetchPKI() {
