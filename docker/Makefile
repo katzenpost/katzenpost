@@ -56,7 +56,7 @@ SHELL=/bin/bash
 cache_dir=cache
 
 # log_level can be DEBUG, INFO, NOTICE, WARNING, ERROR, CRITICAL
-log_level=INFO
+log_level=DEBUG
 
 docker=$(shell if which podman|grep -q .; then echo podman; else echo docker; fi)
 
@@ -73,13 +73,9 @@ i_if_podman=$(shell if echo ${docker}|grep -q podman; then echo " -i"; else echo
 mount_net_name=-v `pwd`/$(net_name):/$(net_name)
 
 docker_compose_v1_or_v2?= $(shell [ -e /usr/libexec/docker/cli-plugins/docker-compose ] && echo /usr/libexec/docker/cli-plugins/docker-compose || echo docker-compose)
-docker_compose?= DOCKER_USER=$(docker_user) $(shell if which podman|grep -q .; then echo DOCKER_HOST="unix://$$XDG_RUNTIME_DIR/podman/podman.sock" $(docker_compose_v1_or_v2); else echo $(docker_compose_v1_or_v2); fi)
+docker_compose?= $(shell if which podman|grep -q .; then echo DOCKER_HOST="unix://$$XDG_RUNTIME_DIR/podman/podman.sock" $(docker_compose_v1_or_v2); else echo $(docker_compose_v1_or_v2); fi)
 
 make_args=--no-print-directory net_name=$(net_name) docker=$(docker) distro=$(distro) warped=$(warped) docker_user=$(docker_user)
-
-docker_run_sh=$(docker) run ${docker_args} $(mount_net_name) --rm katzenpost-$(distro)_base $(sh) -c
-
-testnet_binaries: $(net_name)/server.$(distro) $(net_name)/proxy_server.$(distro) $(net_name)/proxy_client.$(distro) $(net_name)/memspool.$(distro) $(net_name)/pigeonhole.$(distro) $(net_name)/panda_server.$(distro) $(net_name)/echo_server.$(distro) $(net_name)/voting.$(distro) | $(net_name) $(cache_dir)
 
 $(net_name):
 	mkdir -vp $(net_name)
@@ -102,17 +98,18 @@ $(docker_compose_yml): ../genconfig/main.go $(distro)_base.stamp | $(net_name) $
 		-S .$(distro) -v -o ./$(net_name) -b /$(net_name) -P $(base_port) \
 		-nike "$(nike)" -kem "$(kem)" -d katzenpost-$(distro)_base \
 		-UserForwardPayloadLength $(UserForwardPayloadLength) -log_level $(log_level)'
+	ln -sf client/client.toml client.toml
 
 $(net_name)/running.stamp:
 	make $(make_args) start
 
-run: $(docker_compose_yml) testnet_binaries
+run: $(docker_compose_yml) $(net_name)/server.$(distro) $(net_name)/voting.$(distro)
 	cd $(net_name) && touch running.stamp \
-	&& $(docker_compose) up --remove-orphans
+	&& DOCKER_USER=${docker_user} $(docker_compose) up --remove-orphans
 	cd $(net_name) && rm -v running.stamp
 
-start: $(docker_compose_yml) testnet_binaries
-	cd $(net_name); $(docker_compose) up --remove-orphans -d; $(docker_compose) top
+start: $(docker_compose_yml) $(net_name)/server.$(distro) $(net_name)/voting.$(distro)
+	cd $(net_name); DOCKER_USER=${docker_user} $(docker_compose) up --remove-orphans -d; $(docker_compose) top
 	touch $(net_name)/running.stamp
 
 stop:
@@ -120,9 +117,6 @@ stop:
 
 watch:
 	tail -F $(net_name)/*/*.log
-
-ps:
-	cd $(net_name); $(docker_compose) ps
 
 status:
 	@[ -d $(net_name) ] || (echo "./$(net_name)/ does not exist" && false)
@@ -162,34 +156,19 @@ go-mod-upgrade: $(distro)_base.stamp | $(net_name) $(cache_dir)
 	$(docker) run ${docker_args} katzenpost-$(distro)_base \
 			$(sh) -c 'go get -d -u ./... && go mod tidy'
 
-$(net_name)/server.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
-		$(docker_run_sh) 'cd server/cmd/server ; go build -trimpath -ldflags ${ldflags} && mv server /$(net_name)/server.$(distro)'
-
-$(net_name)/proxy_client.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
-		$(docker_run_sh) 'cd http/proxy/client; go build -trimpath -ldflags ${ldflags} && mv client /$(net_name)/proxy_client.$(distro)'
-
-$(net_name)/proxy_server.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
-		$(docker_run_sh) 'cd http/proxy/server; go build -trimpath -ldflags ${ldflags} && mv server /$(net_name)/proxy_server.$(distro)'
-
-$(net_name)/memspool.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
-		$(docker_run_sh) 'cd memspool/server/cmd/memspool ; go build -trimpath -ldflags ${ldflags} && mv memspool /$(net_name)/memspool.$(distro)'
-
-$(net_name)/pigeonhole.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
-		$(docker_run_sh) 'cd pigeonhole/server/cmd/pigeonhole ; go build -trimpath -ldflags ${ldflags} && mv pigeonhole /$(net_name)/pigeonhole.$(distro)'
-
-$(net_name)/panda_server.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
-		$(docker_run_sh) 'cd panda/server/cmd/panda_server ; go build -trimpath -ldflags ${ldflags} && mv panda_server /$(net_name)/panda_server.$(distro)'
-
-$(net_name)/echo_server.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
-		$(docker_run_sh) 'cd server_plugins/cbor_plugins/echo-go ; go build -trimpath -ldflags ${ldflags} && mv echo-go /$(net_name)/echo_server.$(distro)'
+$(net_name)/server.$(distro): $(distro)_base.stamp $(docker_compose_yml) | $(net_name) $(cache_dir)
+		$(docker) run ${docker_args} $(mount_net_name) --rm katzenpost-$(distro)_base \
+			$(sh) -c 'cd server && make $(make_args) testnet-build testnet-install'
 
 $(net_name)/voting.$(distro): $(distro)_base.stamp $(docker_compose_yml) | $(net_name) $(cache_dir)
-		$(docker_run_sh) 'cd authority && make $(make_args) cmd/voting/voting cmd/fetch/fetch && \
+		$(docker) run ${docker_args} $(mount_net_name) --rm katzenpost-$(distro)_base \
+			$(sh) -c 'cd authority && make $(make_args) cmd/voting/voting cmd/fetch/fetch && \
 			mv cmd/voting/voting /$(net_name)/voting.$(distro) && \
 			mv cmd/fetch/fetch /$(net_name)/fetch.$(distro)'
 
 $(net_name)/ping.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
-		$(docker_run_sh) 'cd ping && go mod verify && go build -ldflags ${ldflags} && \
+		$(docker) run ${docker_args} $(mount_net_name) --rm katzenpost-$(distro)_base \
+			$(sh) -c 'cd ping && go mod verify && go build -ldflags ${ldflags} && \
 			mv ping /$(net_name)/ping.$(distro)'
 
 clean-images: stop
@@ -223,16 +202,7 @@ clean: clean-images clean-local
 
 run-ping: $(net_name)/ping.$(distro) $(net_name)/running.stamp | $(cache_dir)
 	$(docker) run --network=host ${docker_args} $(mount_net_name) --rm  katzenpost-$(distro)_base \
-        /$(net_name)/ping.$(distro) -c /go/katzenpost/docker/$(net_name)/client/client.toml -s echo -printDiff -n 10
-
-restart-memspool: $(net_name)/running.stamp stop-memspool start-memspool
-
-stop-memspool:
-	@echo STOP_KAETZCHEN spool|socat - unix:$(net_name)/servicenode1/management_sock|grep "250 spool" && echo stopped memspool || echo failed to stop memspool
-
-start-memspool: $(net_name)/memspool.$(distro)
-	@echo START_KAETZCHEN spool|socat - unix:$(net_name)/servicenode1/management_sock|grep "250 spool"
-	@echo started memspool
+        /$(net_name)/ping.$(distro) -c /go/katzenpost/docker/$(net_name)/client/client.toml -s echo -printDiff -n 1
 
 shell: $(distro)_base.stamp | $(net_name) $(cache_dir)
 	$(docker) run --network=host ${docker_args} $(mount_net_name) -w /go/katzenpost/docker/$(net_name) --rm -it katzenpost-$(distro)_base $(sh)
