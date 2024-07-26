@@ -1,0 +1,52 @@
+name: darwin unit tests
+on: [pull_request]
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest]
+        arch: [amd64, arm64]
+        go-version: ["1.22.x"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Install Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go-version }}
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Generate mixnet configuration
+        run: cd genconfig && go build && ./genconfig -wirekem xwing -v -b /conf -o ../docker/voting_mixnet/
+
+      - name: Run authority unit tests
+        run: cd authority && GORACE=history_size=7 go test -coverprofile=coverage.out -race -v -failfast -timeout 30m ./...
+
+      - name: Run catshadow unit tests
+        run: cd catshadow && GORACE=history_size=7 go test -coverprofile=coverage.out -race -v -failfast -timeout 30m ./...
+
+      - name: Run client unit tests
+        run: cd client && GORACE=history_size=7 go test -coverprofile=coverage.out -race -v -failfast -timeout 30m ./...
+
+      - name: Run core unit tests
+        run: cd core && GORACE=history_size=7 go test -coverprofile=coverage.out -race -v -failfast -timeout 30m ./...
+
+      - name: Run NIKE Sphinx unit tests with CTIDH
+        run: cd core/sphinx && GORACE=history_size=7 go test -coverprofile=coverage.out -race -v -failfast -timeout 30m ./...
+
+      - name: Run doubleratchet unit tests
+        run:  cd doubleratchet && GORACE=history_size=7 go test -coverprofile=coverage.out -race -v -failfast -timeout 30m ./...
+
+      - name: Run memspool unit tests
+        run:  cd memspool && GORACE=history_size=7 go test -coverprofile=coverage.out -race -v -failfast -timeout 30m ./...
+
+      - name: Run panda unit tests
+        run:  cd panda && GORACE=history_size=7 go test -coverprofile=coverage.out -race -v -failfast -timeout 30m ./...
+
+      - name: Run reunion unit tests
+        run:  cd reunion && GORACE=history_size=7 go test -coverprofile=coverage.out -race -v -failfast -timeout 30m ./...
+
+      - name: Run server unit tests
+        run:  cd server && GORACE=history_size=7 go test -coverprofile=coverage.out -race -v -failfast -timeout 30m ./...

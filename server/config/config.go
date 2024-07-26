@@ -45,11 +45,11 @@ import (
 const (
 	defaultAddress             = ":3219"
 	defaultLogLevel            = "NOTICE"
-	defaultNumGatewayWorkers   = 1
-	defaultNumServiceWorkers   = 1
+	defaultNumGatewayWorkers   = 3
+	defaultNumServiceWorkers   = 3
 	defaultNumKaetzchenWorkers = 3
-	defaultUnwrapDelay         = 10 // 10 ms.
-	defaultSchedulerSlack      = 10 // 10 ms.
+	defaultUnwrapDelay         = 250 // 250 ms.
+	defaultSchedulerSlack      = 150 // 150 ms.
 	defaultSchedulerMaxBurst   = 16
 	defaultSendSlack           = 50        // 50 ms.
 	defaultDecoySlack          = 15 * 1000 // 15 sec.
@@ -61,6 +61,7 @@ const (
 	defaultKaetzchenDelay      = 750       // 750 ms.
 	defaultUserDB              = "users.db"
 	defaultSpoolDB             = "spool.db"
+	defaultManagementSocket    = "management_sock"
 
 	backendPgx = "pgx"
 
@@ -88,6 +89,9 @@ type Server struct {
 	// WireKEM is the KEM string representing the chosen KEM scheme with which to communicate
 	// with the mixnet and dirauth nodes.
 	WireKEM string
+
+	// PKISignatureScheme specifies the cryptographic signature scheme
+	PKISignatureScheme string
 
 	// Addresses are the IP address/port combinations that the server will bind
 	// to for incoming connections.
@@ -130,6 +134,10 @@ func (sCfg *Server) validate() error {
 		return errors.New("config: Server: WireKEM is not set")
 	}
 
+	if sCfg.PKISignatureScheme == "" {
+		return errors.New("config: Server: PKISignatureScheme is not set")
+	}
+
 	if sCfg.Addresses != nil {
 		for _, v := range sCfg.Addresses {
 			if err := utils.EnsureAddrIPPort(v); err != nil {
@@ -155,7 +163,7 @@ func (sCfg *Server) validate() error {
 
 	for k, v := range sCfg.AltAddresses {
 		lowkey := strings.ToLower(k)
-		switch pki.Transport(lowkey) {
+		switch lowkey {
 		case pki.TransportTCP:
 			for _, a := range v {
 				h, p, err := net.SplitHostPort(a)
@@ -617,7 +625,7 @@ func (pCfg *Gateway) validate() error {
 		if internalTransports[kLower] {
 			return fmt.Errorf("config: Provider: AltAddress is overriding internal transport: %v", kLower)
 		}
-		switch pki.Transport(kLower) {
+		switch kLower {
 		case pki.TransportTCP:
 			for _, a := range v {
 				h, p, err := net.SplitHostPort(a)
@@ -718,6 +726,32 @@ func (vCfg *Voting) validate(datadir string) error {
 	return nil
 }
 
+// Management is the Katzenpost management interface configuration.
+type Management struct {
+	// Enable enables the management interface.
+	Enable bool
+
+	// Path specifies the path to the manaagment interface socket.  If left
+	// empty it will use `management_sock` under the DataDir.
+	Path string
+}
+
+func (mCfg *Management) applyDefaults(sCfg *Server) {
+	if mCfg.Path == "" {
+		mCfg.Path = filepath.Join(sCfg.DataDir, defaultManagementSocket)
+	}
+}
+
+func (mCfg *Management) validate() error {
+	if !mCfg.Enable {
+		return nil
+	}
+	if !filepath.IsAbs(mCfg.Path) {
+		return fmt.Errorf("config: Management: Path '%v' is not an absolute path", mCfg.Path)
+	}
+	return nil
+}
+
 // Config is the top level Katzenpost server configuration.
 type Config struct {
 	Server         *Server
@@ -725,6 +759,7 @@ type Config struct {
 	ServiceNode    *ServiceNode
 	Gateway        *Gateway
 	PKI            *PKI
+	Management     *Management
 	SphinxGeometry *geo.Geometry
 
 	Debug *Debug
@@ -757,6 +792,10 @@ func (cfg *Config) FixupAndValidate() error {
 	if cfg.PKI == nil {
 		return errors.New("config: No PKI block was present")
 	}
+	if cfg.Management == nil {
+		cfg.Management = &Management{}
+	}
+	cfg.Management.applyDefaults(cfg.Server)
 
 	// Perform basic validation.
 	cfg.Server.applyDefaults()

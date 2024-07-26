@@ -40,11 +40,11 @@ import (
 	"github.com/katzenpost/hpqc/kem/schemes"
 	"github.com/katzenpost/hpqc/rand"
 
+	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 	"github.com/katzenpost/katzenpost/client"
 	"github.com/katzenpost/katzenpost/client/config"
 	cConstants "github.com/katzenpost/katzenpost/client/constants"
 	"github.com/katzenpost/katzenpost/client/utils"
-	"github.com/katzenpost/katzenpost/core/cert"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
@@ -96,6 +96,8 @@ var (
 		},
 	)
 )
+
+var testSignatureScheme = signSchemes.ByName("Ed25519")
 
 func getClientCfg(f string) *config.Config {
 	cfg, err := config.LoadFile(f)
@@ -178,7 +180,7 @@ func (b *MinclientBench) setup() {
 		panic(err)
 	}
 	b.provider = desc
-	idkey, err := cert.Scheme.UnmarshalBinaryPublicKey(b.provider.IdentityKey)
+	idkey, err := testSignatureScheme.UnmarshalBinaryPublicKey(b.provider.IdentityKey)
 	if err != nil {
 		panic(err)
 	}

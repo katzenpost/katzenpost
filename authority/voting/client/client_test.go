@@ -35,6 +35,7 @@ import (
 	ecdh "github.com/katzenpost/hpqc/nike/x25519"
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/hpqc/sign"
+	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/katzenpost/core/cert"
@@ -48,6 +49,7 @@ import (
 
 var testingSchemeName = "xwing"
 var testingScheme = schemes.ByName(testingSchemeName)
+var testSignatureScheme = signSchemes.ByName("Ed25519")
 
 type descriptor struct {
 	desc *pki.MixDescriptor
@@ -83,7 +85,7 @@ func generateNodes(isServiceNode, isGateway bool, num int, epoch uint64) ([]*pki
 	mixes := []*pki.MixDescriptor{}
 
 	for i := 0; i < num; i++ {
-		mixIdentityPublicKey, _, err := cert.Scheme.GenerateKey()
+		mixIdentityPublicKey, _, err := testSignatureScheme.GenerateKey()
 		if err != nil {
 			return nil, err
 		}
@@ -120,8 +122,8 @@ func generateNodes(isServiceNode, isGateway bool, num int, epoch uint64) ([]*pki
 			IdentityKey: blob,
 			LinkKey:     linkKeyBlob,
 			MixKeys:     mixKeys,
-			Addresses: map[pki.Transport][]string{
-				pki.Transport("tcp4"): []string{fmt.Sprintf("127.0.0.1:%d", i+1)},
+			Addresses: map[string][]string{
+				"tcp4": []string{fmt.Sprintf("127.0.0.1:%d", i+1)},
 			},
 			Kaetzchen:     nil,
 			IsGatewayNode: isGateway,
@@ -343,7 +345,7 @@ func (d *mockDialer) IsPeerValid(creds *wire.PeerCredentials) bool {
 }
 
 func generatePeer(peerNum int) (*config.Authority, sign.PrivateKey, sign.PublicKey, kem.PrivateKey, error) {
-	identityPublicKey, identityPrivateKey, err := cert.Scheme.GenerateKey()
+	identityPublicKey, identityPrivateKey, err := testSignatureScheme.GenerateKey()
 	if err != nil {
 		return nil, nil, nil, nil, err
 	}

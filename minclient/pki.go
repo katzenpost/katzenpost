@@ -70,6 +70,11 @@ func (c *Client) ClockSkew() time.Duration {
 // CurrentDocument returns the current pki.Document, or nil iff one does not
 // exist.  The caller MUST NOT modify the returned object in any way.
 func (c *Client) CurrentDocument() *cpki.Document {
+	c.RLock()
+	defer c.RUnlock()
+	if c.pki == nil {
+		return nil
+	}
 	return c.pki.currentDocument()
 }
 

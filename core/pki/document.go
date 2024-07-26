@@ -166,6 +166,9 @@ type Document struct {
 	// Version uniquely identifies the document format as being for the
 	// specified version so that it can be rejected if the format changes.
 	Version string
+
+	// PKISignatureScheme specifies the cryptographic signature scheme
+	PKISignatureScheme string
 }
 
 // document contains fields from Document but not the encoding.BinaryMarshaler methods
@@ -360,30 +363,27 @@ func (d *Document) GetNodeByKeyHash(keyhash *[32]byte) (*MixDescriptor, error) {
 	return nil, fmt.Errorf("pki: node not found")
 }
 
-// Transport is a link transport protocol.
-type Transport string
-
 var (
 	// TransportInvalid is the invalid transport.
-	TransportInvalid Transport
+	TransportInvalid string
 
 	// TransportTCP is TCP, with the IP version determined by the results of
 	// a name server lookup.
-	TransportTCP Transport = "tcp"
+	TransportTCP string = "tcp"
 
 	// TransportTCPv4 is TCP over IPv4.
-	TransportTCPv4 Transport = "tcp4"
+	TransportTCPv4 string = "tcp4"
 
 	// TransportTCPv6 is TCP over IPv6.
-	TransportTCPv6 Transport = "tcp6"
+	TransportTCPv6 string = "tcp6"
 
 	// InternalTransports is the list of transports used for non-client related
 	// communications.
-	InternalTransports = []Transport{TransportTCPv4, TransportTCPv6}
+	InternalTransports = []string{TransportTCPv4, TransportTCPv6}
 
 	// ClientTransports is the list of transports used by default for client
 	// to provider communication.
-	ClientTransports = []Transport{TransportTCP, TransportTCPv4, TransportTCPv6}
+	ClientTransports = []string{TransportTCP, TransportTCPv4, TransportTCPv6}
 )
 
 // FromPayload deserializes, then verifies a Document, and returns the Document or error.
@@ -598,7 +598,7 @@ func (d *Document) MarshalBinary() ([]byte, error) {
 	certified := cert.Certificate{
 		Version:    cert.CertVersion,
 		Expiration: d.Epoch + 5,
-		KeyType:    cert.Scheme.Name(),
+		KeyType:    d.PKISignatureScheme,
 		Certified:  payload,
 		Signatures: d.Signatures,
 	}

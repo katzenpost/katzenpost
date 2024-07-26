@@ -11,7 +11,8 @@ import (
 	"github.com/katzenpost/hpqc/kem/schemes"
 	ecdh "github.com/katzenpost/hpqc/nike/x25519"
 	"github.com/katzenpost/hpqc/rand"
-	"github.com/katzenpost/katzenpost/core/cert"
+	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
+
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx"
@@ -23,6 +24,7 @@ import (
 
 var testingSchemeName = "xwing"
 var testingScheme = schemes.ByName(testingSchemeName)
+var testingSignatureScheme = signSchemes.ByName("Ed25519")
 
 func TestIncrementSentSegments(t *testing.T) {
 	d := newTestDecoy()
@@ -184,6 +186,7 @@ func generateMixnet(numMixes, numServiceNodes, numGatewayNodes int, epoch uint64
 		GatewayNodes:       gatewayNodes,
 		SharedRandomCommit: sharedRandomCommit,
 		SharedRandomValue:  make([]byte, pki.SharedRandomValueLength),
+		PKISignatureScheme: testingSignatureScheme.Name(),
 	}
 	return doc, nil
 }
@@ -191,7 +194,7 @@ func generateMixnet(numMixes, numServiceNodes, numGatewayNodes int, epoch uint64
 func generateNodes(isGatewayNode, isServiceNode bool, num int, epoch uint64) ([]*pki.MixDescriptor, error) {
 	mixes := []*pki.MixDescriptor{}
 	for i := 0; i < num; i++ {
-		mixIdentityPublicKey, _, err := cert.Scheme.GenerateKey()
+		mixIdentityPublicKey, _, err := testingSignatureScheme.GenerateKey()
 		if err != nil {
 			return nil, err
 		}
@@ -228,8 +231,8 @@ func generateNodes(isGatewayNode, isServiceNode bool, num int, epoch uint64) ([]
 			IdentityKey: blob,
 			LinkKey:     linkKeyBlob,
 			MixKeys:     mixKeys,
-			Addresses: map[pki.Transport][]string{
-				pki.Transport("tcp4"): []string{fmt.Sprintf("127.0.0.1:%d", i+1)},
+			Addresses: map[string][]string{
+				"tcp4": []string{fmt.Sprintf("127.0.0.1:%d", i+1)},
 			},
 			Kaetzchen:     nil,
 			IsServiceNode: isServiceNode,

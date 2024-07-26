@@ -24,11 +24,12 @@ import (
 
 	ecdh "github.com/katzenpost/hpqc/nike/x25519"
 	"github.com/katzenpost/hpqc/rand"
-
-	"github.com/katzenpost/katzenpost/core/cert"
+	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 )
 
 const debugTestEpoch = 0xFFFFFFFF
+
+var testDescriptorSignatureScheme = signSchemes.ByName("Ed25519")
 
 func TestDescriptor(t *testing.T) {
 	t.Parallel()
@@ -43,7 +44,7 @@ func TestDescriptor(t *testing.T) {
 
 	// Build a well formed descriptor.
 	d.Name = "hydra-dominatus.example.net"
-	d.Addresses = map[Transport][]string{
+	d.Addresses = map[string][]string{
 		TransportTCPv4: []string{"192.0.2.1:4242", "192.0.2.1:1234", "198.51.100.2:4567"},
 		TransportTCPv6: []string{"[2001:DB8::1]:8901"},
 	}
@@ -51,7 +52,7 @@ func TestDescriptor(t *testing.T) {
 	d.IsServiceNode = true
 	d.LoadWeight = 23
 
-	identityPub, identityPriv, err := cert.Scheme.GenerateKey()
+	identityPub, identityPriv, err := testDescriptorSignatureScheme.GenerateKey()
 	require.NoError(err)
 
 	d.IdentityKey, err = identityPub.MarshalBinary()

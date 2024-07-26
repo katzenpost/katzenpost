@@ -1,0 +1,164 @@
+name: docker mixnet integration tests
+on: [pull_request, push]
+jobs:
+
+  test_e2e_client:
+    env:
+      warped: true
+      XDG_RUNTIME_DIR: /run
+    strategy:
+      matrix:
+        go-version: [1.22.x]
+        os: [ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure podman socket
+        run: |
+          sudo systemctl restart dbus && sudo systemctl enable --now podman.socket
+
+      - name: Build and start the mixnet
+        run: |
+          cd docker && sudo -E make start wait
+
+      - name: run ping
+        run: cd docker && sudo -E make run-ping
+
+      - name: run client end to end tests
+        run: cd client && sudo -E make testargs=-coverprofile=coverage.part dockerdockertest && cat coverage.part >> ../coverage.out
+
+      - name: Stop the mixnet
+        run: |
+          cd docker && sudo -E make stop
+
+  test_e2e_memspool:
+    env:
+      warped: true
+      XDG_RUNTIME_DIR: /run
+    strategy:
+      matrix:
+        go-version: [1.22.x]
+        os: [ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure podman socket
+        run: |
+          sudo systemctl restart dbus && sudo systemctl enable --now podman.socket
+
+      - name: Build and start the mixnet
+        run: |
+          cd docker && sudo -E make start wait
+
+      - name: run memspool end to end tests
+        run: cd memspool && sudo -E make testargs=-coverprofile=coverage.part dockerdockertest && cat client/coverage.part >> ../coverage.out
+
+      - name: Stop the mixnet
+        run: |
+          cd docker && sudo -E make stop
+
+  test_e2e_catshadow:
+    env:
+      warped: true
+      XDG_RUNTIME_DIR: /run
+    strategy:
+      matrix:
+        go-version: [1.22.x]
+        os: [ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install socat, for talking to management socket
+        run: sudo apt update && sudo apt install -y socat
+
+      - name: Configure podman socket
+        run: |
+          sudo systemctl restart dbus && sudo systemctl enable --now podman.socket
+
+      - name: Build and start the mixnet
+        run: |
+          cd docker && sudo -E make start wait
+
+      - name: test creating upgrade test state files
+        run: cd catshadow && sudo -E make testargs=-coverprofile=coverage.part test_version=latest upgrade_test_recreate && cat coverage.part >> ../coverage.out
+
+      - name: test upgrade using newly-created state files
+        run: cd catshadow && sudo -E make testargs=-coverprofile=coverage.part test_version=latest upgrade_test_use_saved && cat coverage.part >> ../coverage.out
+
+      - name: test upgrade using saved state files from v0.0.30
+        run: cd catshadow && sudo -E make testargs=-coverprofile=coverage.part test_version=v30 upgrade_test_use_saved && cat coverage.part >> ../coverage.out
+
+      - name: run catshadow end to end tests
+        run: cd catshadow && sudo -E make testargs=-coverprofile=coverage.part dockerdockertest && cat coverage.part >> ../coverage.out
+
+      - name: Stop the mixnet
+        run: |
+          cd docker && sudo -E make stop
+
+  test_benchmark:
+    env:
+      warped: true
+      XDG_RUNTIME_DIR: /run
+    strategy:
+      matrix:
+        go-version: [1.22.x]
+        os: [ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure podman socket
+        run: |
+          sudo systemctl restart dbus && sudo systemctl enable --now podman.socket
+
+      - name: Build and start the mixnet
+        run: |
+          cd docker && sudo -E make start wait run-ping
+
+      - name: run benchmark tests
+        run: cd bench && sudo -E make testargs=-coverprofile=coverage.part dockerdockertest && cat coverage.part >> ../coverage.out
+
+      - name: Stop the mixnet
+        run: |
+          cd docker && sudo -E make stop
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
+
+  test_e2e_pigeonhole:
+    env:
+      warped: true
+      XDG_RUNTIME_DIR: /run
+    strategy:
+      matrix:
+        go-version: [1.22.x]
+        os: [ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Configure podman socket
+        run: |
+          sudo systemctl restart dbus && sudo systemctl enable --now podman.socket
+
+      - name: Build and start the mixnet
+        run: |
+          cd docker && sudo -E make start wait
+
+      - name: run pigeonhole end to end tests
+        run: cd pigeonhole && sudo -E make testargs=-coverprofile=coverage.part dockerdockertest && cat client/coverage.part >> ../coverage.out
+
+      - name: Stop the mixnet
+        run: |
+          cd docker && sudo -E make stop
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v3

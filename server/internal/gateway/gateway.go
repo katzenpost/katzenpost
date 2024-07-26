@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: (c) 2024 David Stainton
+// SPDX-FileCopyrightText: Copyright (C) 2017  Yawning Angel and David Stainton
 // SPDX-License-Identifier: AGPL-3.0-only
 
 package gateway
@@ -6,6 +6,8 @@ package gateway
 import (
 	"errors"
 	"fmt"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -16,6 +18,7 @@ import (
 
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/core/thwack"
 	"github.com/katzenpost/katzenpost/core/utils"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/worker"
@@ -194,6 +197,52 @@ func (p *gateway) worker() {
 	}
 }
 
+func (p *gateway) onSendRate(c *thwack.Conn, l string) error {
+	p.Lock()
+	defer p.Unlock()
+
+	sp := strings.Split(l, " ")
+	if len(sp) != 2 {
+		c.Log().Debugf("SEND_RATE invalid syntax: '%v'", l)
+		return c.WriteReply(thwack.StatusSyntaxError)
+	}
+
+	rate, err := strconv.ParseUint(sp[1], 10, 64)
+	if err != nil {
+		c.Log().Errorf("SEND_RATE invalid duration: %v", err)
+		return c.WriteReply(thwack.StatusSyntaxError)
+	}
+
+	for _, l := range p.glue.Listeners() {
+		l.OnNewSendRatePerMinute(rate)
+	}
+
+	return c.Writer().PrintfLine("%v %v", thwack.StatusOk, rate)
+}
+
+func (p *gateway) onSendBurst(c *thwack.Conn, l string) error {
+	p.Lock()
+	defer p.Unlock()
+
+	sp := strings.Split(l, " ")
+	if len(sp) != 2 {
+		c.Log().Debugf("SEND_BURST invalid syntax: '%v'", l)
+		return c.WriteReply(thwack.StatusSyntaxError)
+	}
+
+	burst, err := strconv.ParseUint(sp[1], 10, 64)
+	if err != nil {
+		c.Log().Errorf("SEND_BURST invalid integer: %v", err)
+		return c.WriteReply(thwack.StatusSyntaxError)
+	}
+
+	for _, l := range p.glue.Listeners() {
+		l.OnNewSendBurst(burst)
+	}
+
+	return c.Writer().PrintfLine("%v %v", thwack.StatusOk, burst)
+}
+
 func (p *gateway) onSURBReply(pkt *packet.Packet, recipient []byte) {
 	geo := p.glue.Config().SphinxGeometry
 	if len(pkt.Payload) != geo.PayloadTagLength+geo.ForwardPayloadLength {
@@ -225,7 +274,7 @@ func (p *gateway) onToUser(pkt *packet.Packet, recipient []byte) {
 
 	// Iff there is a SURB, generate a SURB-ACK and schedule.
 	if surb != nil {
-		ackPkt, err := packet.NewPacketFromSURB(pkt, surb, nil, p.glue.Config().SphinxGeometry)
+		ackPkt, err := packet.NewPacketFromSURB(surb, nil, p.glue.Config().SphinxGeometry)
 		if err != nil {
 			p.log.Debugf("Failed to generate SURB-ACK: %v (%v)", pkt.ID, err)
 			return
@@ -304,6 +353,17 @@ func New(glue glue.Glue) (glue.Gateway, error) {
 	// Purge spools that belong to users that no longer exist in the user db.
 	if err = p.spool.Vacuum(p.userDB); err != nil {
 		return nil, err
+	}
+
+	// Wire in the management related commands.
+	if cfg.Management.Enable {
+		const (
+			cmdSendRate  = "SEND_RATE"
+			cmdSendBurst = "SEND_BURST"
+		)
+
+		glue.Management().RegisterCommand(cmdSendRate, p.onSendRate)
+		glue.Management().RegisterCommand(cmdSendBurst, p.onSendBurst)
 	}
 
 	// Start the workers.

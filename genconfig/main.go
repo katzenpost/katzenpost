@@ -34,10 +34,10 @@ import (
 	"github.com/katzenpost/hpqc/nike/schemes"
 	"github.com/katzenpost/hpqc/sign"
 	signpem "github.com/katzenpost/hpqc/sign/pem"
+	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 
 	vConfig "github.com/katzenpost/katzenpost/authority/voting/server/config"
 	cConfig "github.com/katzenpost/katzenpost/client/config"
-	"github.com/katzenpost/katzenpost/core/cert"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	sConfig "github.com/katzenpost/katzenpost/server/config"
 )
@@ -59,11 +59,13 @@ type katzenpost struct {
 	logLevel  string
 	logWriter io.Writer
 
-	wireKEMScheme     string
-	sphinxGeometry    *geo.Geometry
-	votingAuthConfigs []*vConfig.Config
-	authorities       map[[32]byte]*vConfig.Authority
-	authIdentity      sign.PublicKey
+	ratchetNIKEScheme  string
+	wireKEMScheme      string
+	pkiSignatureScheme sign.Scheme
+	sphinxGeometry     *geo.Geometry
+	votingAuthConfigs  []*vConfig.Config
+	authorities        map[[32]byte]*vConfig.Authority
+	authIdentity       sign.PublicKey
 
 	nodeConfigs    []*sConfig.Config
 	basePort       uint16
@@ -74,6 +76,7 @@ type katzenpost struct {
 	gatewayIdx     int
 	serviceNodeIdx int
 	hasPanda       bool
+	hasProxy       bool
 }
 
 type AuthById []*vConfig.Authority
@@ -92,7 +95,9 @@ func (s *katzenpost) genClientCfg() error {
 	os.Mkdir(filepath.Join(s.outDir, "client"), 0700)
 	cfg := new(cConfig.Config)
 
+	cfg.RatchetNIKEScheme = s.ratchetNIKEScheme
 	cfg.WireKEMScheme = s.wireKEMScheme
+	cfg.PKISignatureScheme = s.pkiSignatureScheme.Name()
 	cfg.SphinxGeometry = s.sphinxGeometry
 
 	s.clientIdx++
@@ -141,13 +146,14 @@ func (s *katzenpost) genNodeConfig(isGateway, isServiceNode bool, isVoting bool)
 	} else if isServiceNode {
 		n = fmt.Sprintf("servicenode%d", s.serviceNodeIdx+1)
 	}
-	cfg := new(sConfig.Config)
 
+	cfg := new(sConfig.Config)
 	cfg.SphinxGeometry = s.sphinxGeometry
 
 	// Server section.
 	cfg.Server = new(sConfig.Server)
 	cfg.Server.WireKEM = s.wireKEMScheme
+	cfg.Server.PKISignatureScheme = s.pkiSignatureScheme.Name()
 	cfg.Server.Identifier = n
 	cfg.Server.Addresses = []string{fmt.Sprintf("%s:%d", s.bindAddr, s.lastPort)}
 	cfg.Server.DataDir = filepath.Join(s.baseDir, n)
@@ -157,9 +163,15 @@ func (s *katzenpost) genNodeConfig(isGateway, isServiceNode bool, isVoting bool)
 	cfg.Server.IsGatewayNode = isGateway
 	cfg.Server.IsServiceNode = isServiceNode
 	if isGateway {
+		cfg.Management = new(sConfig.Management)
+		cfg.Management.Enable = true
 		cfg.Server.AltAddresses = map[string][]string{
 			"TCP": []string{fmt.Sprintf("localhost:%d", s.lastPort)},
 		}
+	}
+	if isServiceNode {
+		cfg.Management = new(sConfig.Management)
+		cfg.Management.Enable = true
 	}
 	// Enable Metrics endpoint
 	s.lastPort += 1
@@ -167,7 +179,7 @@ func (s *katzenpost) genNodeConfig(isGateway, isServiceNode bool, isVoting bool)
 
 	// Debug section.
 	cfg.Debug = new(sConfig.Debug)
-	cfg.Debug.SendDecoyTraffic = true
+	cfg.Debug.SendDecoyTraffic = false
 
 	// PKI section.
 	if isVoting {
@@ -209,19 +221,52 @@ func (s *katzenpost) genNodeConfig(isGateway, isServiceNode bool, isVoting bool)
 		}
 		cfg.ServiceNode.CBORPluginKaetzchen = []*sConfig.CBORPluginKaetzchen{spoolCfg}
 		if !s.hasPanda {
-			pandaCfg := &sConfig.CBORPluginKaetzchen{
-				Capability:     "panda",
-				Endpoint:       "+panda",
-				Command:        s.baseDir + "/panda_server" + s.binSuffix,
+			mapCfg := &sConfig.CBORPluginKaetzchen{
+				Capability:     "pigeonhole",
+				Endpoint:       "+pigeonhole",
+				Command:        s.baseDir + "/pigeonhole" + s.binSuffix,
 				MaxConcurrency: 1,
 				Config: map[string]interface{}{
-					"fileStore": s.baseDir + "/" + cfg.Server.Identifier + "/panda.storage",
-					"log_dir":   s.baseDir + "/" + cfg.Server.Identifier,
-					"log_level": s.logLevel,
+					"db":      s.baseDir + "/" + cfg.Server.Identifier + "/map.storage",
+					"log_dir": s.baseDir + "/" + cfg.Server.Identifier,
 				},
 			}
-			cfg.ServiceNode.CBORPluginKaetzchen = append(cfg.ServiceNode.CBORPluginKaetzchen, pandaCfg)
-			s.hasPanda = true
+
+			cfg.ServiceNode.CBORPluginKaetzchen = []*sConfig.CBORPluginKaetzchen{spoolCfg, mapCfg}
+			if !s.hasPanda {
+				pandaCfg := &sConfig.CBORPluginKaetzchen{
+					Capability:     "panda",
+					Endpoint:       "+panda",
+					Command:        s.baseDir + "/panda_server" + s.binSuffix,
+					MaxConcurrency: 1,
+					Config: map[string]interface{}{
+						"fileStore": s.baseDir + "/" + cfg.Server.Identifier + "/panda.storage",
+						"log_dir":   s.baseDir + "/" + cfg.Server.Identifier,
+						"log_level": s.logLevel,
+					},
+				}
+				cfg.ServiceNode.CBORPluginKaetzchen = append(cfg.ServiceNode.CBORPluginKaetzchen, pandaCfg)
+				s.hasPanda = true
+			}
+
+			// Add a single instance of a http proxy for a service listening on port 4242
+			if !s.hasProxy {
+				proxyCfg := &sConfig.CBORPluginKaetzchen{
+					Capability:     "http",
+					Endpoint:       "+http",
+					Command:        s.baseDir + "/proxy_server" + s.binSuffix,
+					MaxConcurrency: 1,
+					Config: map[string]interface{}{
+						// allow connections to localhost:4242
+						"host":      "localhost:4242",
+						"log_dir":   s.baseDir + "/" + cfg.Server.Identifier,
+						"log_level": "DEBUG",
+					},
+				}
+				cfg.ServiceNode.CBORPluginKaetzchen = append(cfg.ServiceNode.CBORPluginKaetzchen, proxyCfg)
+				s.hasProxy = true
+			}
+			cfg.Debug.NumKaetzchenWorkers = 4
 		}
 
 		echoCfg := new(sConfig.Kaetzchen)
@@ -250,10 +295,11 @@ func (s *katzenpost) genVotingAuthoritiesCfg(numAuthorities int, parameters *vCo
 		cfg := new(vConfig.Config)
 		cfg.SphinxGeometry = s.sphinxGeometry
 		cfg.Server = &vConfig.Server{
-			WireKEMScheme: s.wireKEMScheme,
-			Identifier:    fmt.Sprintf("auth%d", i),
-			Addresses:     []string{fmt.Sprintf("%s:%d", s.bindAddr, s.lastPort)},
-			DataDir:       filepath.Join(s.baseDir, fmt.Sprintf("auth%d", i)),
+			WireKEMScheme:      s.wireKEMScheme,
+			PKISignatureScheme: s.pkiSignatureScheme.Name(),
+			Identifier:         fmt.Sprintf("auth%d", i),
+			Addresses:          []string{fmt.Sprintf("%s:%d", s.bindAddr, s.lastPort)},
+			DataDir:            filepath.Join(s.baseDir, fmt.Sprintf("auth%d", i)),
 		}
 		os.Mkdir(filepath.Join(s.outDir, cfg.Server.Identifier), 0700)
 		s.lastPort += 1
@@ -272,11 +318,12 @@ func (s *katzenpost) genVotingAuthoritiesCfg(numAuthorities int, parameters *vCo
 		idKey := cfgIdKey(cfg, s.outDir)
 		linkKey := cfgLinkKey(cfg, s.outDir, wirekem)
 		authority := &vConfig.Authority{
-			Identifier:        fmt.Sprintf("auth%d", i),
-			IdentityPublicKey: idKey,
-			LinkPublicKey:     linkKey,
-			WireKEMScheme:     wirekem,
-			Addresses:         cfg.Server.Addresses,
+			Identifier:         fmt.Sprintf("auth%d", i),
+			IdentityPublicKey:  idKey,
+			LinkPublicKey:      linkKey,
+			WireKEMScheme:      wirekem,
+			PKISignatureScheme: s.pkiSignatureScheme.Name(),
+			Addresses:          cfg.Server.Addresses,
 		}
 		s.authorities[hash.Sum256From(idKey)] = authority
 	}
@@ -339,7 +386,9 @@ func main() {
 	wirekem := flag.String("wirekem", "", "Name of the KEM Scheme to be used with wire protocol")
 	kem := flag.String("kem", "", "Name of the KEM Scheme to be used with Sphinx")
 	nike := flag.String("nike", "x25519", "Name of the NIKE Scheme to be used with Sphinx")
+	ratchetNike := flag.String("ratchetNike", "CTIDH512-X25519", "Name of the NIKE Scheme to be used with the doubleratchet")
 	UserForwardPayloadLength := flag.Int("UserForwardPayloadLength", 2000, "UserForwardPayloadLength")
+	pkiSignatureScheme := flag.String("pkiScheme", "Ed25519", "PKI Signature Scheme to be used")
 
 	sr := flag.Uint64("sr", 0, "Sendrate limit")
 	mu := flag.Float64("mu", 0.005, "Inverse of mean of per hop delay.")
@@ -367,6 +416,10 @@ func main() {
 		log.Fatal("nike and kem flags cannot both be set")
 	}
 
+	if *ratchetNike == "" {
+		log.Fatal("ratchetNike must be set")
+	}
+
 	parameters := &vConfig.Parameters{
 		SendRatePerMinute: *sr,
 		Mu:                *mu,
@@ -383,6 +436,8 @@ func main() {
 	}
 
 	s := &katzenpost{}
+
+	s.ratchetNIKEScheme = *ratchetNike
 
 	s.wireKEMScheme = *wirekem
 	if kemschemes.ByName(*wirekem) == nil {
@@ -422,6 +477,13 @@ func main() {
 			true,
 			nrHops,
 		)
+	}
+	if *pkiSignatureScheme != "" {
+		signScheme := signSchemes.ByName(*pkiSignatureScheme)
+		if signScheme == nil {
+			log.Fatalf("failed to resolve pki signature scheme %s", *pkiSignatureScheme)
+		}
+		s.pkiSignatureScheme = signScheme
 	}
 
 	os.Mkdir(s.outDir, 0700)
@@ -550,22 +612,30 @@ func saveCfg(cfg interface{}, outDir string) error {
 
 func cfgIdKey(cfg interface{}, outDir string) sign.PublicKey {
 	var priv, public string
+	var pkiSignatureScheme string
 	switch cfg.(type) {
 	case *sConfig.Config:
 		priv = filepath.Join(outDir, cfg.(*sConfig.Config).Server.Identifier, "identity.private.pem")
 		public = filepath.Join(outDir, cfg.(*sConfig.Config).Server.Identifier, "identity.public.pem")
+		pkiSignatureScheme = cfg.(*sConfig.Config).Server.PKISignatureScheme
 	case *vConfig.Config:
 		priv = filepath.Join(outDir, cfg.(*vConfig.Config).Server.Identifier, "identity.private.pem")
 		public = filepath.Join(outDir, cfg.(*vConfig.Config).Server.Identifier, "identity.public.pem")
+		pkiSignatureScheme = cfg.(*vConfig.Config).Server.PKISignatureScheme
 	default:
 		panic("wrong type")
 	}
 
-	idPubKey, err := signpem.FromPublicPEMFile(public, cert.Scheme)
+	scheme := signSchemes.ByName(pkiSignatureScheme)
+	if scheme == nil {
+		panic("invalid PKI signature scheme " + pkiSignatureScheme)
+	}
+
+	idPubKey, err := signpem.FromPublicPEMFile(public, scheme)
 	if err == nil {
 		return idPubKey
 	}
-	idPubKey, idKey, err := cert.Scheme.GenerateKey()
+	idPubKey, idKey, err := scheme.GenerateKey()
 	log.Printf("writing %s", priv)
 	signpem.PrivateKeyToFile(priv, idKey)
 	log.Printf("writing %s", public)

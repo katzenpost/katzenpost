@@ -191,7 +191,13 @@ func (c *connection) getDescriptor() error {
 		c.log.Debugf("Failed to find descriptor for Gateway: %v", err)
 		return newPKIError("failed to find descriptor for Gateway: %v", err)
 	}
-	if c.c.cfg.GatewayKeyPin != nil && !c.c.cfg.GatewayKeyPin.Equal(desc.IdentityKey) {
+
+	gatewayKeyPinBlob, err := c.c.cfg.GatewayKeyPin.MarshalBinary()
+	if err != nil {
+		return err
+	}
+
+	if c.c.cfg.GatewayKeyPin != nil && !hmac.Equal(desc.IdentityKey, gatewayKeyPinBlob) {
 		c.log.Errorf("Gateway identity key does not match pinned key: %v", desc.IdentityKey)
 		return newPKIError("identity key for Gateway does not match pinned key: %v", desc.IdentityKey)
 	}
@@ -369,12 +375,13 @@ func (c *connection) onTCPConn(conn net.Conn) {
 
 	// Allocate the session struct.
 	cfg := &wire.SessionConfig{
-		KEMScheme:         c.c.cfg.LinkKemScheme,
-		Geometry:          c.c.cfg.SphinxGeometry,
-		Authenticator:     c,
-		AdditionalData:    []byte(c.c.cfg.User),
-		AuthenticationKey: c.c.cfg.LinkKey,
-		RandomReader:      rand.Reader,
+		KEMScheme:          c.c.cfg.LinkKemScheme,
+		PKISignatureScheme: c.c.cfg.PKISignatureScheme,
+		Geometry:           c.c.cfg.SphinxGeometry,
+		Authenticator:      c,
+		AdditionalData:     []byte(c.c.cfg.User),
+		AuthenticationKey:  c.c.cfg.LinkKey,
+		RandomReader:       rand.Reader,
 	}
 	w, err := wire.NewSession(cfg, true)
 	if err != nil {
@@ -572,7 +579,6 @@ func (c *connection) onWireConn(w *wire.Session) {
 					c.log.Debugf("Failed to send RetrieveMessage: %v", wireErr)
 					return
 				}
-				c.log.Debugf("Sent RetrieveMessage: %d", seq)
 				nrReqs++
 			}
 			fetchDelay = c.c.getPollInterval()
@@ -602,7 +608,6 @@ func (c *connection) onWireConn(w *wire.Session) {
 			wireErr = newProtocolError("peer send Disconnect")
 			return
 		case *commands.MessageEmpty:
-			c.log.Debugf("Received MessageEmpty: %v", cmd.Sequence)
 			if wireErr = checkSeq(cmd.Sequence); wireErr != nil {
 				c.log.Errorf("MessageEmpty sequence unexpected: %v", cmd.Sequence)
 				return

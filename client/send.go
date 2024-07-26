@@ -17,20 +17,22 @@
 package client
 
 import (
+	"context"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
 	"time"
 
-	"github.com/katzenpost/katzenpost/client/utils"
-
 	"github.com/katzenpost/hpqc/rand"
+
 	cConstants "github.com/katzenpost/katzenpost/client/constants"
+	"github.com/katzenpost/katzenpost/client/utils"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 )
 
 var ErrReplyTimeout = errors.New("failure waiting for reply, timeout reached")
+var ErrHalted = errors.New("Halted")
 var ErrMessageNotSent = errors.New("failure sending message")
 
 func (s *Session) sendNext() {
@@ -222,6 +224,10 @@ func (s *Session) SendUnreliableMessage(recipient, provider string, message []by
 }
 
 func (s *Session) BlockingSendUnreliableMessage(recipient, provider string, message []byte) ([]byte, error) {
+	return s.BlockingSendUnreliableMessageWithContext(nil, recipient, provider, message)
+}
+
+func (s *Session) BlockingSendUnreliableMessageWithContext(ctx context.Context, recipient, provider string, message []byte) ([]byte, error) {
 	msg, err := s.composeMessage(recipient, provider, message, true)
 	if err != nil {
 		return nil, err
@@ -247,13 +253,21 @@ func (s *Session) BlockingSendUnreliableMessage(recipient, provider string, mess
 		return nil, ErrMessageNotSent
 	}
 
+	// use a default context with the estimated replyETA if one is not specified
+	var cancelFn func()
+	if ctx == nil {
+		ctx, cancelFn = context.WithTimeout(context.Background(), sentMessage.ReplyETA+cConstants.RoundTripTimeSlop)
+		defer cancelFn()
+	}
+
 	// wait for reply or round trip timeout
 	select {
 	case reply := <-replyWaitChan:
 		return reply, nil
-	// these timeouts are often far too aggressive
-	case <-time.After(sentMessage.ReplyETA + cConstants.RoundTripTimeSlop):
-		return nil, ErrReplyTimeout
+	case <-s.HaltCh():
+		return nil, ErrHalted
+	case <-ctx.Done():
+		return nil, ctx.Err()
 	}
 	// unreachable
 }
@@ -286,13 +300,12 @@ func (s *Session) BlockingSendReliableMessage(recipient, provider string, messag
 		return nil, ErrMessageNotSent
 	}
 
-	// TODO: it would be better to have the message automatically retransmitted a configurable number of times before emitting a failure to this channel
-	// wait for reply or round trip timeout
+	// XXX: may block forever
 	select {
 	case reply := <-replyWaitChan:
 		return reply, nil
-	case <-time.After(cConstants.RoundTripTimeSlop):
-		return nil, ErrReplyTimeout
+	case <-s.HaltCh():
+		return nil, ErrHalted
 	}
 	// unreachable
 }

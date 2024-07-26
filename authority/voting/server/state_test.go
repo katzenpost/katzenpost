@@ -37,6 +37,7 @@ import (
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/hpqc/sign"
 	signpem "github.com/katzenpost/hpqc/sign/pem"
+	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/katzenpost/core/cert"
@@ -49,6 +50,7 @@ import (
 
 var testingSchemeName = "xwing"
 var testingScheme = schemes.ByName(testingSchemeName)
+var testSignatureScheme = signSchemes.ByName("Ed25519")
 
 var sphinxGeometry = geo.GeometryFromUserForwardPayloadLength(
 	x25519.Scheme(rand.Reader),
@@ -149,9 +151,10 @@ func TestVote(t *testing.T) {
 	for i, aCfg := range authCfgs {
 		require.NoError(err)
 		auth := &config.Authority{Addresses: aCfg.Server.Addresses,
-			WireKEMScheme:     testingSchemeName,
-			IdentityPublicKey: peerKeys[i].idPubKey,
-			LinkPublicKey:     peerKeys[i].linkKey.Public(),
+			WireKEMScheme:      testingSchemeName,
+			PKISignatureScheme: testSignatureScheme.Name(),
+			IdentityPublicKey:  peerKeys[i].idPubKey,
+			LinkPublicKey:      peerKeys[i].linkKey.Public(),
 		}
 		if len(aCfg.Server.Addresses) == 0 {
 			panic("wtf")
@@ -222,7 +225,7 @@ func TestVote(t *testing.T) {
 	serviceDescs := make([]*pki.MixDescriptor, 0)
 	for i := 0; i < len(mixCfgs); i++ {
 		mkeys := genMixKeys(votingEpoch)
-		addr := make(map[pki.Transport][]string)
+		addr := make(map[string][]string)
 		addr[pki.TransportTCPv4] = []string{"127.0.0.1:1234"}
 		linkPubKey, _, err := testingScheme.GenerateKeyPair()
 		linkBlob, err := linkPubKey.MarshalBinary()
@@ -420,6 +423,7 @@ func genVotingAuthoritiesCfg(parameters *config.Parameters, numAuthorities int) 
 		cfg.Server.Identifier = fmt.Sprintf("authority-%v", i)
 		cfg.Server.Addresses = []string{fmt.Sprintf("127.0.0.1:%d", lastPort)}
 		cfg.Server.DataDir = datadir
+		cfg.Server.PKISignatureScheme = testSignatureScheme.Name()
 		lastPort += 1
 
 		scheme := testingScheme
@@ -427,7 +431,7 @@ func genVotingAuthoritiesCfg(parameters *config.Parameters, numAuthorities int) 
 		if err != nil {
 			return nil, nil, err
 		}
-		idPubKey, idKey, err := cert.Scheme.GenerateKey()
+		idPubKey, idKey, err := testSignatureScheme.GenerateKey()
 		if err != nil {
 			return nil, nil, err
 		}
@@ -446,9 +450,10 @@ func genVotingAuthoritiesCfg(parameters *config.Parameters, numAuthorities int) 
 		}
 		configs = append(configs, cfg)
 		authorityPeer := &config.Authority{
-			IdentityPublicKey: idPubKey,
-			LinkPublicKey:     linkPubKey,
-			Addresses:         cfg.Server.Addresses,
+			PKISignatureScheme: testSignatureScheme.Name(),
+			IdentityPublicKey:  idPubKey,
+			LinkPublicKey:      linkPubKey,
+			Addresses:          cfg.Server.Addresses,
 		}
 		peersMap[hash.Sum256From(idPubKey)] = authorityPeer
 	}
@@ -477,6 +482,7 @@ func genGatewayConfig(name string, pki *sConfig.PKI, port uint16) (*identityKey,
 	// Server section.
 	cfg.Server = new(sConfig.Server)
 	cfg.Server.WireKEM = testingSchemeName
+	cfg.Server.PKISignatureScheme = testSignatureScheme.Name()
 	cfg.Server.Identifier = name
 	cfg.Server.Addresses = []string{fmt.Sprintf("127.0.0.1:%d", port)}
 	cfg.Server.AltAddresses = map[string][]string{
@@ -496,7 +502,7 @@ func genGatewayConfig(name string, pki *sConfig.PKI, port uint16) (*identityKey,
 	cfg.Debug = new(sConfig.Debug)
 
 	// Generate keys
-	idPubKey, idKey, err := cert.Scheme.GenerateKey()
+	idPubKey, idKey, err := testSignatureScheme.GenerateKey()
 	if err != nil {
 		panic(err)
 	}
@@ -554,6 +560,7 @@ func genServiceNodeConfig(name string, pki *sConfig.PKI, port uint16) (*identity
 	// Server section.
 	cfg.Server = new(sConfig.Server)
 	cfg.Server.WireKEM = testingSchemeName
+	cfg.Server.PKISignatureScheme = testSignatureScheme.Name()
 	cfg.Server.Identifier = name
 	cfg.Server.Addresses = []string{fmt.Sprintf("127.0.0.1:%d", port)}
 	cfg.Server.AltAddresses = map[string][]string{
@@ -573,7 +580,7 @@ func genServiceNodeConfig(name string, pki *sConfig.PKI, port uint16) (*identity
 	cfg.Debug = new(sConfig.Debug)
 
 	// Generate keys
-	idPubKey, idKey, err := cert.Scheme.GenerateKey()
+	idPubKey, idKey, err := testSignatureScheme.GenerateKey()
 	if err != nil {
 		panic(err)
 	}
@@ -648,6 +655,7 @@ func genMixConfig(name string, pki *sConfig.PKI, port uint16) (*identityKey, *sC
 	// Server section.
 	cfg.Server = new(sConfig.Server)
 	cfg.Server.WireKEM = testingSchemeName
+	cfg.Server.PKISignatureScheme = testingSchemeName
 	cfg.Server.Identifier = name
 	cfg.Server.Addresses = []string{fmt.Sprintf("127.0.0.1:%d", port)}
 	cfg.Server.IsGatewayNode = false
@@ -664,7 +672,7 @@ func genMixConfig(name string, pki *sConfig.PKI, port uint16) (*identityKey, *sC
 	cfg.Debug = new(sConfig.Debug)
 
 	// Generate keys
-	idPubKey, idKey, err := cert.Scheme.GenerateKey()
+	idPubKey, idKey, err := testSignatureScheme.GenerateKey()
 	if err != nil {
 		return nil, nil, err
 	}
