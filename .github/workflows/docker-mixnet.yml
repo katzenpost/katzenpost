@@ -33,6 +33,37 @@ jobs:
         run: |
           cd docker && sudo -E make stop
 
+  test_e2e_client2:
+    env:
+      warped: true
+      XDG_RUNTIME_DIR: /run
+    strategy:
+      matrix:
+        go-version: [1.22.x]
+        os: [ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure podman socket
+        run: |
+          sudo systemctl restart dbus && sudo systemctl enable --now podman.socket
+
+      - name: Build and start the mixnet
+        run: |
+          cd docker && sudo -E make start wait
+
+      - name: run ping
+        run: cd docker && sudo -E make run-ping
+
+      - name: run client end to end tests
+        run: cd client2 && sudo -E make testargs=-coverprofile=coverage.part dockerdockertest && cat coverage.part >> ../coverage.out
+
+      - name: Stop the mixnet
+        run: |
+          cd docker && sudo -E make stop
+
   test_e2e_memspool:
     env:
       warped: true
