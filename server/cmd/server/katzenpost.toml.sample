@@ -11,7 +11,7 @@
 
   # Addresses are the IP address/port combinations that the server will bind
   # to for incoming connections.
-  Addresses = [ "192.0.2.1:29483", "[2001:DB8::1]:29483" ]
+  Addresses = [ "tcp://192.0.2.1:29483", "tcp://[2001:DB8::1]:29483" ]
 
   # DataDir is the absolute path to the server's state files.
   DataDir = "/var/lib/katzenpost"
@@ -29,10 +29,10 @@
   [PKI.Nonvoting]
 
     # Address is the IP address/port combination of the directory authority.
-    Address = "192.0.2.2:2323"
+    Address = "tcp://192.0.2.2:2323"
 
-    # PublicKey is the directory authority's public key in Base64 or Base16 format.
-    PublicKeyPem = "auth_pub_key.pem"
+    # AuthorityIdentityKey is the directory authority's public key in Base64 or Base16 format.
+    AuthorityIdentityKey = "-----BEGIN ED25519 SPHINCS+ PUBLIC KEY-----\nApGe2ZixZnzbJK8BNX/WwpiDZrDgTJahEBjn/cVkr7d5X4UvzZiUctriDChjXzTO\nfSGD9e8miPu3DTTwmK+IISGErHZA2jE/GQAH4ThS1JJJbDkpFazPTUiylhmvpBnJ\n-----END ED25519 SPHINCS+ PUBLIC KEY-----\n"
 
 #
 # The Logging section controls the logging.

@@ -23,18 +23,21 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/url"
 	"sync"
 	"sync/atomic"
 
-	"gopkg.in/op/go-logging.v1"
 
 	"github.com/katzenpost/hpqc/kem/schemes"
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/worker"
+	"github.com/katzenpost/katzenpost/http/common"
 	"github.com/katzenpost/katzenpost/server/internal/constants"
 	"github.com/katzenpost/katzenpost/server/internal/glue"
+	"github.com/quic-go/quic-go"
+	"gopkg.in/op/go-logging.v1"
 )
 
 type listener struct {
@@ -84,18 +87,25 @@ func (l *listener) worker() {
 		l.l.Close() // Usually redundant, but harmless.
 	}()
 	for {
+		select {
+		case <-l.closeAllCh:
+			return
+		default:
+		}
 		conn, err := l.l.Accept()
 		if err != nil {
 			if e, ok := err.(net.Error); ok && !e.Temporary() {
-				l.log.Errorf("Critical accept failure: %v", err)
+				l.log.Errorf("accept failure: %v", err)
 				return
 			}
 			continue
 		}
 
-		tcpConn := conn.(*net.TCPConn)
-		tcpConn.SetKeepAlive(true)
-		tcpConn.SetKeepAlivePeriod(constants.KeepAliveInterval)
+		tcpConn, ok := conn.(*net.TCPConn)
+		if ok {
+			tcpConn.SetKeepAlive(true)
+			tcpConn.SetKeepAlivePeriod(constants.KeepAliveInterval)
+		}
 
 		l.log.Debugf("Accepted new connection: %v", conn.RemoteAddr())
 
@@ -218,9 +228,29 @@ func New(glue glue.Glue, incomingCh chan<- interface{}, id int, addr string) (gl
 		closeAllCh: make(chan interface{}),
 	}
 
-	l.l, err = net.Listen("tcp", addr)
-	if err != nil {
-		return nil, err
+	// parse the Address line as a URL
+	u, err := url.Parse(addr)
+	if err == nil {
+		switch u.Scheme {
+		case "tcp", "tcp4", "tcp6":
+			l.l, err = net.Listen(u.Scheme, u.Host)
+			if err != nil {
+				l.log.Errorf("Failed to start listener '%v': %v", addr, err)
+				return nil, err
+			}
+		case "http":
+			ql, err := quic.ListenAddr(u.Host, common.GenerateTLSConfig(), nil)
+			if err != nil {
+				l.log.Errorf("Failed to start listener '%v': %v", addr, err)
+				return nil, err
+			}
+			// Wrap quic.Listener with common.QuicListener
+			// so it implements like net.Listener for a
+			// single QUIC Stream
+			l.l = &common.QuicListener{Listener: ql}
+		default:
+			return nil, fmt.Errorf("Unsupported listener scheme '%v': %v", addr, err)
+		}
 	}
 
 	l.Go(l.worker)
