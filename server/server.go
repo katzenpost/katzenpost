@@ -49,8 +49,10 @@ import (
 	"github.com/katzenpost/katzenpost/server/internal/glue"
 	"github.com/katzenpost/katzenpost/server/internal/incoming"
 	"github.com/katzenpost/katzenpost/server/internal/instrument"
+	"github.com/katzenpost/katzenpost/server/internal/mixkeys"
 	"github.com/katzenpost/katzenpost/server/internal/outgoing"
 	"github.com/katzenpost/katzenpost/server/internal/pki"
+	"github.com/katzenpost/katzenpost/server/internal/profiling"
 	"github.com/katzenpost/katzenpost/server/internal/scheduler"
 	"github.com/katzenpost/katzenpost/server/internal/service"
 )
@@ -243,6 +245,10 @@ func New(cfg *config.Config) (*Server, error) {
 	}
 	instrument.StartPrometheusListener(goo)
 
+	if err := profiling.Start(s.log); err != nil {
+		return nil, fmt.Errorf("failed to start profiling: %w", err)
+	}
+
 	s.log.Notice("Katzenpost is still pre-alpha.  DO NOT DEPEND ON IT FOR STRONG SECURITY OR ANONYMITY.")
 	if s.cfg.Logging.Level == "DEBUG" {
 		s.log.Warning("Unsafe Debug logging is enabled.")
@@ -342,7 +348,7 @@ func New(cfg *config.Config) (*Server, error) {
 	}
 
 	// Load and or generate mix keys.
-	if s.mixKeys, err = newMixKeys(goo, cfg.SphinxGeometry); err != nil {
+	if s.mixKeys, err = mixkeys.NewMixKeys(goo, cfg.SphinxGeometry); err != nil {
 		s.log.Errorf("Failed to initialize mix keys: %v", err)
 		return nil, err
 	}
@@ -380,6 +386,7 @@ func New(cfg *config.Config) (*Server, error) {
 		}
 	}
 	if s.cfg.Management.Enable {
+		s.log.Infof("s.cfg.Management.Path %s", s.cfg.Management.Path)
 		mgmtCfg := &thwack.Config{
 			Net:         "unix",
 			Addr:        s.cfg.Management.Path,

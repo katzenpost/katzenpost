@@ -795,6 +795,7 @@ func (cfg *Config) FixupAndValidate() error {
 	if cfg.Management == nil {
 		cfg.Management = &Management{}
 	}
+	cfg.Management.applyDefaults(cfg.Server)
 
 	// Perform basic validation.
 	cfg.Server.applyDefaults()

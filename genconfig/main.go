@@ -76,6 +76,8 @@ type katzenpost struct {
 	gatewayIdx     int
 	serviceNodeIdx int
 	hasPanda       bool
+	hasProxy       bool
+	debugConfig    *cConfig.Debug
 }
 
 type AuthById []*vConfig.Authority
@@ -119,7 +121,7 @@ func (s *katzenpost) genClientCfg() error {
 	cfg.VotingAuthority = &cConfig.VotingAuthority{Peers: peers}
 
 	// Debug section
-	cfg.Debug = &cConfig.Debug{DisableDecoyTraffic: true}
+	cfg.Debug = s.debugConfig
 	err := saveCfg(cfg, s.outDir)
 	if err != nil {
 		return err
@@ -247,6 +249,24 @@ func (s *katzenpost) genNodeConfig(isGateway, isServiceNode bool, isVoting bool)
 				cfg.ServiceNode.CBORPluginKaetzchen = append(cfg.ServiceNode.CBORPluginKaetzchen, pandaCfg)
 				s.hasPanda = true
 			}
+
+			// Add a single instance of a http proxy for a service listening on port 4242
+			if !s.hasProxy {
+				proxyCfg := &sConfig.CBORPluginKaetzchen{
+					Capability:     "http",
+					Endpoint:       "+http",
+					Command:        s.baseDir + "/proxy_server" + s.binSuffix,
+					MaxConcurrency: 1,
+					Config: map[string]interface{}{
+						// allow connections to localhost:4242
+						"host":      "localhost:4242",
+						"log_dir":   s.baseDir + "/" + cfg.Server.Identifier,
+						"log_level": "DEBUG",
+					},
+				}
+				cfg.ServiceNode.CBORPluginKaetzchen = append(cfg.ServiceNode.CBORPluginKaetzchen, proxyCfg)
+				s.hasProxy = true
+			}
 			cfg.Debug.NumKaetzchenWorkers = 4
 		}
 
@@ -370,6 +390,10 @@ func main() {
 	ratchetNike := flag.String("ratchetNike", "CTIDH512-X25519", "Name of the NIKE Scheme to be used with the doubleratchet")
 	UserForwardPayloadLength := flag.Int("UserForwardPayloadLength", 2000, "UserForwardPayloadLength")
 	pkiSignatureScheme := flag.String("pkiScheme", "Ed25519", "PKI Signature Scheme to be used")
+	noDecoy := flag.Bool("noDecoy", false, "Disable decoy traffic for the client")
+	dialTimeout := flag.Int("dialTimeout", 0, "Session dial timeout")
+	maxPKIDelay := flag.Int("maxPKIDelay", 0, "Initial maximum PKI retrieval delay")
+	pollingIntvl := flag.Int("pollingIntvl", 0, "Polling interval")
 
 	sr := flag.Uint64("sr", 0, "Sendrate limit")
 	mu := flag.Float64("mu", 0.005, "Inverse of mean of per hop delay.")
@@ -432,6 +456,12 @@ func main() {
 	s.lastPort = s.basePort + 1
 	s.bindAddr = *bindAddr
 	s.logLevel = *logLevel
+	s.debugConfig = &cConfig.Debug{
+		DisableDecoyTraffic:         *noDecoy,
+		SessionDialTimeout:          *dialTimeout,
+		InitialMaxPKIRetrievalDelay: *maxPKIDelay,
+		PollingInterval:             *pollingIntvl,
+	}
 
 	nrHops := *nrLayers + 2
 

@@ -173,26 +173,22 @@ because it only requires one public key operation per hop instead of
 two. However it has the packet header overhead size penalty that grows
 linearly with the number of hops.
 
-And here are some Sphinx benchmarks using different KEMs and NIKEs:
+And here are some Sphinx benchmarks using different KEMs and NIKEs, computed on David's laptop:
 
-| Primitive | Sphinx type | nanoseconds/op | seconds/op |
-| :---      |  :---:      |     ---:       | ---:       |
-| X25519 | KEM | 80093 | 8.009×10−5 |
-| X25519 | NIKE | 160233 | 0.000160233 |
-| Kyber512 | KEM | 43758 | 4.3758e-5 |
-| Kyber768 | KEM | 57049 | 5.7049e-5 |
-| Kyber1024 | KEM | 72173 | 7.2173e-5 |
-| Kyber768 X25519 Hybrid | KEM | 87816 | 8.7816e-5 |
-| CTIDH512 | NIKE | 336995975 | 0.336995975 |
-| CTIDH1024 | NIKE | 18599579037 | 18.599579037 |
-| CTIDH2048 | NIKE | 17056742100 | 17.0567421 |
-| CTIDH1024 | KEM | 11408217346 | 11.408217346 |
+| Primitive | Sphinx type | nanoseconds/op |
+| :---      |  :---:      |     ---:       |
+| X25519 | NIKE | 144064 |
+| X448 | NIKE | 131322 |
+| X25519 CTIDH512 | NIKE | 256711856 |
+| X25519 | KEM | 55718 |
+| Xwing | KEM | 172559 |
+| MLKEM768-X25519 | KEM | 173413 |
 
 We can draw several conclusions from this table of benchmarks:
 
 1. KEM Sphinx is about twice as fast as NIKE Sphinx
-2. Kyber768 is faster than X25519
-3. Kyber768 X25519 Hybrid KEM Sphinx is almost as fast as X25519 NIKE
+2. MLKEM768 is faster than X25519
+3. Xwing KEM Sphinx is almost as fast as X25519 NIKE
    Sphinx but probably a lot more secure given that it's a post quantum
    hybrid construction which still uses the classically secure X25519
    NIKE.
@@ -201,9 +197,8 @@ We can draw several conclusions from this table of benchmarks:
    encryption.
 
 Please also note that hybrid KEMs referred to above are constructed
-using a security preserving KEM combiner and a NIKE to KEM adapter
-with semantic security so that the resulting hybrid KEM is IND-CCA2 in
-QROM.
+using a security preserving KEM combiner and a NIKE to KEM adapter (adhoc elgamal construction)
+with semantic security so that the resulting hybrid KEM is IND-CCA2 in the QROM.
 
 ## PKI/Directory Authority
 
@@ -219,6 +214,28 @@ interactions in the voting protocol and the final published PKI document.
 
 Mix nodes and dirauth (directory authority) nodes use whichever signature scheme selected
 by the dirauth configuration. Clients also use this signature scheme to verify PKI documents.
+
+
+# Debugging/Profiling Katzenpost
+
+We can optionally enable the use of pyroscope pprof profiling within the mix server
+by building with the "pyroscope" build tag:
+
+cd server/cmd/server; go build --tags pyroscope
+
+You'll have to setup a pyroscope server via these instructions, here:
+
+https://grafana.com/docs/pyroscope/latest/get-started/
+
+And you can point the mix server at the pyroscope server via environment variables:
+
+```bash
+export PYROSCOPE_APPLICATION_NAME=katzenpost_mix_server
+export PYROSCOPE_SERVER_ADDRESS=http://localhost:4040
+export PYROSCOPE_SERVICE_TAG=mix1
+./server -f katzenpost-server.toml
+```
+
 
 # License
 
