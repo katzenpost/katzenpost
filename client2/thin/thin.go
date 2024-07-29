@@ -56,7 +56,7 @@ type ThinClient struct {
 	log        *logging.Logger
 	logBackend *log.Backend
 
-	conn         net.Conn
+	Conn         net.Conn
 	destUnixAddr *net.UnixAddr
 
 	pkidoc      *cpki.Document
@@ -106,12 +106,12 @@ func (t *ThinClient) Close() error {
 	req := &Request{
 		IsThinClose: true,
 	}
-	err := t.writeMessage(req)
+	err := t.WriteMessage(req)
 	if err != nil {
 		return err
 	}
 
-	err = t.conn.Close()
+	err = t.Conn.Close()
 	t.Worker.Halt()
 	t.Worker.Wait()
 	return err
@@ -132,7 +132,7 @@ func (t *ThinClient) Dial() error {
 	case "tcp":
 
 		var err error
-		t.conn, err = net.Dial(network, address)
+		t.Conn, err = net.Dial(network, address)
 		if err != nil {
 			return err
 		}
@@ -156,7 +156,7 @@ func (t *ThinClient) Dial() error {
 		}
 
 		t.log.Debugf("Dial unixpacket %s %s", srcUnixAddr, t.destUnixAddr)
-		t.conn, err = net.DialUnix("unixpacket", srcUnixAddr, t.destUnixAddr)
+		t.Conn, err = net.DialUnix("unixpacket", srcUnixAddr, t.destUnixAddr)
 		if err != nil {
 			return err
 		}
@@ -190,7 +190,7 @@ func (t *ThinClient) Dial() error {
 	return nil
 }
 
-func (t *ThinClient) writeMessage(request *Request) error {
+func (t *ThinClient) WriteMessage(request *Request) error {
 	blob, err := cbor.Marshal(request)
 	if err != nil {
 		return err
@@ -202,7 +202,7 @@ func (t *ThinClient) writeMessage(request *Request) error {
 		prefix := make([]byte, blobPrefixLen)
 		binary.BigEndian.PutUint32(prefix, uint32(len(blob)))
 		toSend := append(prefix, blob...)
-		count, err := t.conn.Write(toSend)
+		count, err := t.Conn.Write(toSend)
 		if err != nil {
 			return err
 		}
@@ -211,7 +211,7 @@ func (t *ThinClient) writeMessage(request *Request) error {
 		}
 		return nil
 	} else {
-		count, _, err := t.conn.(*net.UnixConn).WriteMsgUnix(blob, nil, t.destUnixAddr)
+		count, _, err := t.Conn.(*net.UnixConn).WriteMsgUnix(blob, nil, t.destUnixAddr)
 		if err != nil {
 			return err
 		}
@@ -228,14 +228,14 @@ func (t *ThinClient) readMessage() (*Response, error) {
 		const messagePrefixLen = 4
 
 		prefix := make([]byte, messagePrefixLen)
-		_, err := io.ReadFull(t.conn, prefix)
+		_, err := io.ReadFull(t.Conn, prefix)
 		if err != nil {
 			return nil, err
 		}
 
 		prefixLen := binary.BigEndian.Uint32(prefix)
 		message := make([]byte, prefixLen)
-		_, err = io.ReadFull(t.conn, message)
+		_, err = io.ReadFull(t.Conn, message)
 		if err != nil {
 			return nil, err
 		}
@@ -248,7 +248,7 @@ func (t *ThinClient) readMessage() (*Response, error) {
 		return &response, nil
 	} else { // abstract UNIX domain socket
 		buff := make([]byte, 65536)
-		msgLen, _, _, _, err := t.conn.(*net.UnixConn).ReadMsgUnix(buff, nil)
+		msgLen, _, _, _, err := t.Conn.(*net.UnixConn).ReadMsgUnix(buff, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -469,7 +469,7 @@ func (t *ThinClient) SendMessageWithoutReply(payload []byte, destNode *[32]byte,
 		RecipientQueueID:  destQueue,
 	}
 
-	return t.writeMessage(req)
+	return t.WriteMessage(req)
 }
 
 // SendMessage takes a message payload, a destination node, destination queue ID and a SURB ID and sends a message
@@ -490,7 +490,7 @@ func (t *ThinClient) SendMessage(surbID *[sConstants.SURBIDLength]byte, payload 
 		RecipientQueueID:  destQueue,
 	}
 
-	return t.writeMessage(req)
+	return t.WriteMessage(req)
 }
 
 func (t *ThinClient) SendReliableMessage(messageID *[MessageIDLength]byte, payload []byte, destNode *[32]byte, destQueue []byte) error {
@@ -503,7 +503,7 @@ func (t *ThinClient) SendReliableMessage(messageID *[MessageIDLength]byte, paylo
 		RecipientQueueID:  destQueue,
 	}
 
-	return t.writeMessage(req)
+	return t.WriteMessage(req)
 }
 
 // BlockingSendReliableMessage blocks until the message is reliably sent and the ARQ reply is received.
@@ -525,7 +525,7 @@ func (t *ThinClient) BlockingSendReliableMessage(messageID *[MessageIDLength]byt
 	t.replyWaitChanMap.Store(*messageID, replyWaitChan)
 	defer t.replyWaitChanMap.Delete(*messageID)
 
-	err = t.writeMessage(req)
+	err = t.WriteMessage(req)
 	if err != nil {
 		return nil, err
 	}
