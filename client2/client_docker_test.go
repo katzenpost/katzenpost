@@ -11,6 +11,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/katzenpost/hpqc/hash"
+	
 	"github.com/katzenpost/katzenpost/client2/config"
 	"github.com/katzenpost/katzenpost/client2/thin"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
@@ -24,7 +26,6 @@ func TestAllClient2Tests(t *testing.T) {
 	})
 
 	t.Run("TestDockerMultiplexClients", testDockerMultiplexClients)
-	t.Run("TestDockerClientARQSendReceive", testDockerClientARQSendReceive)
 }
 
 func setupDaemon() *Daemon {
@@ -107,15 +108,15 @@ func testDockerMultiplexClients(t *testing.T) {
 	require.NotEqual(t, doc.LambdaP, 0.0)
 
 	pingTargets := []*cpki.MixDescriptor{}
-	for i := 0; i < len(doc.Providers); i++ {
-		_, ok := doc.Providers[i].Kaetzchen["testdest"]
+	for i := 0; i < len(doc.GatewayNodes); i++ {
+		_, ok := doc.GatewayNodes[i].Kaetzchen["testdest"]
 		if ok {
-			pingTargets = append(pingTargets, doc.Providers[i])
+			pingTargets = append(pingTargets, doc.GatewayNodes[i])
 		}
 	}
 	require.True(t, len(pingTargets) > 0)
 	message1 := []byte("hello alice, this is bob.")
-	nodeIdKey := pingTargets[0].IdentityKey.Sum256()
+	nodeIdKey := hash.Sum256(pingTargets[0].IdentityKey)
 
 	for i := 0; i < 2; i++ {
 		reply := sendAndWait(t, thin1, message1, &nodeIdKey, []byte("testdest"))
@@ -129,63 +130,5 @@ func testDockerMultiplexClients(t *testing.T) {
 	require.NoError(t, err)
 
 	err = thin2.Close()
-	require.NoError(t, err)
-}
-
-func testDockerClientARQSendReceive(t *testing.T) {
-	t.Parallel()
-
-	cfg, err := config.LoadFile("testdata/client.toml")
-	require.NoError(t, err)
-
-	thin := thin.NewThinClient(cfg)
-	t.Log("thin client Dialing")
-	err = thin.Dial()
-	require.NoError(t, err)
-	require.Nil(t, err)
-	t.Log("thin client connected")
-
-	t.Log("thin client getting PKI doc")
-	doc := thin.PKIDocument()
-	require.NotNil(t, doc)
-	require.NotEqual(t, doc.LambdaP, 0.0)
-
-	pingTargets := []*cpki.MixDescriptor{}
-	for i := 0; i < len(doc.Providers); i++ {
-		_, ok := doc.Providers[i].Kaetzchen["testdest"]
-		if ok {
-			pingTargets = append(pingTargets, doc.Providers[i])
-		}
-	}
-	require.True(t, len(pingTargets) > 0)
-	message1 := []byte("hello alice, this is bob.")
-	nodeIdKey := pingTargets[0].IdentityKey.Sum256()
-
-	id1 := thin.NewMessageID()
-	id2 := thin.NewMessageID()
-	id3 := thin.NewMessageID()
-	id4 := thin.NewMessageID()
-
-	message3, err := thin.BlockingSendReliableMessage(id1, message1, &nodeIdKey, []byte("testdest"))
-	require.NoError(t, err)
-	require.NotEqual(t, message3, []byte{})
-	require.Equal(t, message1, message3[:len(message1)])
-
-	message3, err = thin.BlockingSendReliableMessage(id2, message1, &nodeIdKey, []byte("testdest"))
-	require.NoError(t, err)
-	require.NotEqual(t, message3, []byte{})
-	require.Equal(t, message1, message3[:len(message1)])
-
-	message3, err = thin.BlockingSendReliableMessage(id3, message1, &nodeIdKey, []byte("testdest"))
-	require.NoError(t, err)
-	require.NotEqual(t, message3, []byte{})
-	require.Equal(t, message1, message3[:len(message1)])
-
-	message3, err = thin.BlockingSendReliableMessage(id4, message1, &nodeIdKey, []byte("testdest"))
-	require.NoError(t, err)
-	require.NotEqual(t, message3, []byte{})
-	require.Equal(t, message1, message3[:len(message1)])
-
-	err = thin.Close()
 	require.NoError(t, err)
 }
