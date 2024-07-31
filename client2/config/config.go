@@ -14,14 +14,17 @@ import (
 
 	"github.com/BurntSushi/toml"
 
+	"github.com/katzenpost/hpqc/kem"
+	kempem "github.com/katzenpost/hpqc/kem/pem"
+	"github.com/katzenpost/hpqc/kem/schemes"
+	"github.com/katzenpost/hpqc/sign"
+	signpem "github.com/katzenpost/hpqc/sign/pem"
+	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
+
 	vServerConfig "github.com/katzenpost/katzenpost/authority/voting/server/config"
-	"github.com/katzenpost/katzenpost/core/crypto/cert"
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
-	"github.com/katzenpost/katzenpost/core/crypto/sign"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
-	"github.com/katzenpost/katzenpost/core/wire"
 
 	"github.com/katzenpost/katzenpost/client2/internal/proxy"
 )
@@ -78,7 +81,7 @@ type Debug struct {
 
 	// PollingInterval is the interval in seconds that will be used to
 	// poll the receive queue.  By default this is 10 seconds.  Reducing
-	// the value too far WILL result in unnecessary Provider load, and
+	// the value too far WILL result in unnecessary Gateway load, and
 	// increasing the value too far WILL adversely affect large message
 	// transmit performance.
 	PollingInterval int
@@ -134,10 +137,13 @@ func (uCfg *UpstreamProxy) toProxyConfig() (*proxy.Config, error) {
 	return cfg, nil
 }
 
-// Provider describes all necessary Provider connection information
-// so that clients can connect to the Provider and use the mixnet
+// Gateway describes all necessary Gateway connection information
+// so that clients can connect to the Gateway and use the mixnet
 // and retrieve cached PKI documents.
-type Provider struct {
+type Gateway struct {
+	// WireKEMScheme specifies which KEM to use with our PQ Noise based wire protocol.
+	WireKEMScheme string
+
 	// Name is the human readable (descriptive) node identifier.
 	Name string
 
@@ -145,24 +151,44 @@ type Provider struct {
 	IdentityKey sign.PublicKey
 
 	// LinkKey is the node's wire protocol public key.
-	LinkKey wire.PublicKey
+	LinkKey kem.PublicKey
+
+	// PKISignatureScheme specifies the signature scheme to use with the PKI protocol.
+	PKISignatureScheme string
 
 	// Addresses is the map of transport to address combinations that can
 	// be used to reach the node.
 	Addresses map[string][]string
 }
 
-func (p *Provider) UnmarshalTOML(v interface{}) error {
-	_, p.IdentityKey = cert.Scheme.NewKeypair()
-	_, p.LinkKey = wire.DefaultScheme.GenerateKeypair(rand.Reader)
-
+func (p *Gateway) UnmarshalTOML(v interface{}) error {
 	data, _ := v.(map[string]interface{})
 	p.Name = data["Name"].(string)
-	err := p.IdentityKey.UnmarshalText([]byte(data["IdentityKey"].(string)))
+	var err error
+
+	if data["PKISignatureScheme"].(string) == "" {
+		panic("PKISignatureScheme is an empty string")
+	}
+
+	sigScheme := signSchemes.ByName(data["PKISignatureScheme"].(string))
+	if sigScheme == nil {
+		panic("pki signature scheme is nil")
+	}
+
+	p.IdentityKey, err = signpem.FromPublicPEMString(data["IdentityKey"].(string), sigScheme)
 	if err != nil {
 		return err
 	}
-	err = p.LinkKey.UnmarshalText([]byte(data["LinkKey"].(string)))
+
+	if data["WireKEMScheme"].(string) == "" {
+		return errors.New("WireKEMScheme is empty string")
+	}
+
+	kemscheme := schemes.ByName(data["WireKEMScheme"].(string))
+	if kemscheme == nil {
+		return errors.New("WireKEMScheme is nil")
+	}
+	p.LinkKey, err = kempem.FromPublicPEMString(data["LinkKey"].(string), kemscheme)
 	if err != nil {
 		return err
 	}
@@ -191,8 +217,8 @@ type VotingAuthority struct {
 	Peers []*vServerConfig.Authority
 }
 
-type Providers struct {
-	Providers []*Provider
+type Gateways struct {
+	Gateways []*Gateway
 }
 
 type Callbacks struct {
@@ -236,6 +262,18 @@ type Callbacks struct {
 // Config is the top level client configuration.
 type Config struct {
 
+	// ListenNetwork is the network type that the daemon should listen on for thin client connections.
+	ListenNetwork string
+
+	// ListenAddress is the network address that the daemon should listen on for thin client connections.
+	ListenAddress string
+
+	// PKISignatureScheme specifies the signature scheme to use with the PKI protocol.
+	PKISignatureScheme string
+
+	// WireKEMScheme specifies which KEM to use with our PQ Noise based wire protocol.
+	WireKEMScheme string
+
 	// SphinxGeometry
 	SphinxGeometry *geo.Geometry
 
@@ -249,13 +287,13 @@ type Config struct {
 	Debug *Debug
 
 	// CachedDocument is a PKI Document that has a MixDescriptor
-	// containg the Addresses and LinkKeys of minclient's Provider
+	// containg the Addresses and LinkKeys of minclient's Gateway
 	// so that it can connect directly without contacting an Authority.
 	CachedDocument *cpki.Document
 
-	// PinnedProviders is information about a set of Providers; the required information that lets clients initially
+	// PinnedGateways is information about a set of Gateways; the required information that lets clients initially
 	// connect and download a cached PKI document.
-	PinnedProviders *Providers
+	PinnedGateways *Gateways
 
 	// VotingAuthority contains the voting authority peer public configuration.
 	VotingAuthority *VotingAuthority
@@ -279,8 +317,15 @@ func (c *Config) UpstreamProxyConfig() *proxy.Config {
 // FixupAndValidate applies defaults to config entries and validates the
 // configuration sections.
 func (c *Config) FixupAndValidate() error {
-	if c.PinnedProviders == nil {
-		return errors.New("config: No PinnedProviders block was present")
+	if c.WireKEMScheme == "" {
+		return errors.New("WireKEMScheme is empty string")
+	}
+	kemscheme := schemes.ByName(c.WireKEMScheme)
+	if kemscheme == nil {
+		return errors.New("WireKEMScheme is nil")
+	}
+	if c.PinnedGateways == nil {
+		return errors.New("config: No PinnedGateways block was present")
 	}
 	if c.SphinxGeometry == nil {
 		return errors.New("config: No SphinxGeometry block was present")

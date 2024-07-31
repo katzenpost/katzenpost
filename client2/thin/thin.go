@@ -7,15 +7,16 @@ import (
 	"errors"
 	"fmt"
 	"net"
-	"os"
 	"sync"
 
-	"github.com/charmbracelet/log"
 	"github.com/fxamacker/cbor/v2"
+	"gopkg.in/op/go-logging.v1"
 
+	"github.com/katzenpost/hpqc/rand"
+
+	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/client2/common"
 	"github.com/katzenpost/katzenpost/client2/config"
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/worker"
@@ -48,8 +49,8 @@ type ThinClient struct {
 
 	cfg *config.Config
 
-	log          *log.Logger
-	logBackend   *log.Logger
+	log          *logging.Logger
+	logBackend   *log.Backend
 	unixConn     *net.UnixConn
 	destUnixAddr *net.UnixAddr
 
@@ -71,17 +72,14 @@ type ThinClient struct {
 
 // NewThinClient creates a new thing client.
 func NewThinClient(cfg *config.Config) *ThinClient {
-	logLevel, err := log.ParseLevel(cfg.Logging.Level)
+	logBackend, err := log.New(cfg.Logging.File, cfg.Logging.Level, cfg.Logging.Disable)
 	if err != nil {
 		panic(err)
 	}
 	return &ThinClient{
 		cfg: cfg,
-		log: log.NewWithOptions(os.Stderr, log.Options{
-			Prefix: "thin_client",
-			Level:  logLevel,
-		}),
-		logBackend: log.WithPrefix("backend"),
+		log:        logBackend.GetLogger("thinclient"),
+		logBackend: logBackend,
 		eventSink:  make(chan Event, 2),
 		drainStop:  make(chan interface{}),
 	}
@@ -91,8 +89,8 @@ func (t *ThinClient) GetConfig() *config.Config {
 	return t.cfg
 }
 
-func (t *ThinClient) GetLogger(prefix string) *log.Logger {
-	return t.logBackend.WithPrefix(prefix)
+func (t *ThinClient) GetLogger(prefix string) *logging.Logger {
+	return t.logBackend.GetLogger(prefix)
 }
 
 // Close halts the thin client worker thread and closes the socket
@@ -291,8 +289,7 @@ func (t *ThinClient) eventSinkDrain() {
 }
 
 func (t *ThinClient) parsePKIDoc(payload []byte) (*cpki.Document, error) {
-	doc := &cpki.Document{}
-	err := doc.Deserialize(payload)
+	doc, err := cpki.ParseDocument(payload)
 	if err != nil {
 		t.log.Errorf("failed to unmarshal CBOR PKI doc: %s", err.Error())
 		return nil, err
@@ -405,29 +402,6 @@ func (t *ThinClient) SendMessage(surbID *[sConstants.SURBIDLength]byte, payload 
 	return nil
 }
 
-func (t *ThinClient) SendReliableMessage(messageID *[MessageIDLength]byte, payload []byte, destNode *[32]byte, destQueue []byte) error {
-	req := &Request{
-		ID:                messageID,
-		WithSURB:          true,
-		IsARQSendOp:       true,
-		Payload:           payload,
-		DestinationIdHash: destNode,
-		RecipientQueueID:  destQueue,
-	}
-	blob, err := cbor.Marshal(req)
-	if err != nil {
-		return err
-	}
-	count, _, err := t.unixConn.WriteMsgUnix(blob, nil, t.destUnixAddr)
-	if err != nil {
-		return err
-	}
-	if count != len(blob) {
-		return fmt.Errorf("SendReliableMessage error: wrote %d instead of %d bytes", count, len(blob))
-	}
-	return nil
-}
-
 func (t *ThinClient) readNextMessage() (*Response, error) {
 	buff := make([]byte, 65536)
 	msgLen, _, _, _, err := t.unixConn.ReadMsgUnix(buff, nil)
@@ -441,55 +415,4 @@ func (t *ThinClient) readNextMessage() (*Response, error) {
 		return nil, err
 	}
 	return &response, nil
-}
-
-// BlockingSendReliableMessage blocks until the message is reliably sent and the ARQ reply is received.
-func (t *ThinClient) BlockingSendReliableMessage(messageID *[MessageIDLength]byte, payload []byte, destNode *[32]byte, destQueue []byte) (reply []byte, err error) {
-	req := &Request{
-		ID:                messageID,
-		WithSURB:          true,
-		IsARQSendOp:       true,
-		Payload:           payload,
-		DestinationIdHash: destNode,
-		RecipientQueueID:  destQueue,
-	}
-
-	blob, err := cbor.Marshal(req)
-	if err != nil {
-		return nil, err
-	}
-
-	sentWaitChan := make(chan error)
-	t.sentWaitChanMap.Store(*messageID, sentWaitChan)
-	defer t.sentWaitChanMap.Delete(*messageID)
-
-	replyWaitChan := make(chan []byte)
-	t.replyWaitChanMap.Store(*messageID, replyWaitChan)
-	defer t.replyWaitChanMap.Delete(*messageID)
-
-	count, _, err := t.unixConn.WriteMsgUnix(blob, nil, t.destUnixAddr)
-	if err != nil {
-		return nil, err
-	}
-	if count != len(blob) {
-		return nil, fmt.Errorf("SendMessage error: wrote %d instead of %d bytes", count, len(blob))
-	}
-
-	select {
-	case err = <-sentWaitChan:
-		if err != nil {
-			return nil, err
-		}
-	case <-t.HaltCh():
-		return nil, errors.New("halting")
-	}
-
-	select {
-	case reply := <-replyWaitChan:
-		return reply, nil
-	case <-t.HaltCh():
-		return nil, errors.New("halting")
-	}
-
-	// unreachable
 }

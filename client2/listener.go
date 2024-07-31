@@ -4,14 +4,14 @@
 package client2
 
 import (
-	"io"
 	"net"
 	"sync"
 
-	"github.com/charmbracelet/log"
+	"gopkg.in/op/go-logging.v1"
 
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/worker"
+	"github.com/katzenpost/katzenpost/core/log"
 )
 
 type listener struct {
@@ -19,8 +19,8 @@ type listener struct {
 
 	client *Client
 
-	log        *log.Logger
-	logbackend io.Writer
+	logbackend *log.Backend
+	log        *logging.Logger 
 
 	listener *net.UnixListener
 
@@ -123,17 +123,12 @@ func (l *listener) onNewConn(conn *net.UnixConn) {
 	l.log.Debug("getting current pki doc")
 
 	l.client.WaitForCurrentDocument()
-	doc := l.client.CurrentDocument()
+	docBlob, doc := l.client.CurrentDocument()
 	if doc == nil {
 		panic("doc is nil")
 	}
 
 	l.log.Debug("send pki doc")
-	mydoc := doc.CopyWithoutSignatures()
-	docBlob, err := mydoc.Serialize()
-	if err != nil {
-		l.log.Errorf("cbor fail: %s", err)
-	}
 	c.sendPKIDoc(docBlob)
 	l.log.Debug("onNewConn end")
 }
@@ -191,8 +186,7 @@ func (l *listener) doUpdateConnectionStatus(status error) {
 func (l *listener) doUpdateFromPKIDoc(doc *cpki.Document) {
 	// send doc to all thin clients
 
-	mydoc := doc.CopyWithoutSignatures()
-	docBlob, err := mydoc.Serialize()
+	docBlob, err := doc.MarshalBinary()
 	if err != nil {
 		l.log.Errorf("cbor marshal failed: %s", err.Error())
 		return
@@ -200,15 +194,15 @@ func (l *listener) doUpdateFromPKIDoc(doc *cpki.Document) {
 
 	l.connsLock.RLock()
 	conns := l.conns
-	defer l.connsLock.RUnlock()
 	for key, _ := range conns {
 		err = l.conns[key].sendPKIDoc(docBlob)
 		if err != nil {
 			l.log.Errorf("sendPKIDoc failure: %s", err)
+			l.connsLock.RUnlock()
 			return
 		}
 	}
-
+	l.connsLock.RUnlock()
 	// update our send rates from PKI doc
 	l.decoySender.UpdateRates(ratesFromPKIDoc(doc))
 }
@@ -224,18 +218,10 @@ func (l *listener) getConnection(appID *[AppIDLength]byte) *incomingConn {
 }
 
 // New creates a new listener.
-func NewListener(client *Client, rates *Rates, egressCh chan *Request, logbackend io.Writer) (*listener, error) {
-	var err error
-	logLevel, err := log.ParseLevel(client.cfg.Logging.Level)
-	if err != nil {
-		return nil, err
-	}
+func NewListener(client *Client, rates *Rates, egressCh chan *Request, logbackend *log.Backend) (*listener, error) {
 	l := &listener{
 		client: client,
-		log: log.NewWithOptions(logbackend, log.Options{
-			Prefix: "listener",
-			Level:  logLevel,
-		}),
+		log: logbackend.GetLogger("client2/listener"),
 		logbackend:     logbackend,
 		conns:          make(map[[AppIDLength]byte]*incomingConn),
 		connsLock:      new(sync.RWMutex),
@@ -245,7 +231,7 @@ func NewListener(client *Client, rates *Rates, egressCh chan *Request, logbacken
 		updateStatusCh: make(chan error, 2),
 	}
 
-	l.decoySender = newSender(l.ingressCh, egressCh, client.cfg.Debug.DisableDecoyTraffic)
+	l.decoySender = newSender(l.ingressCh, egressCh, client.cfg.Debug.DisableDecoyTraffic, logbackend)
 
 	network := "unixpacket"
 	address := "@katzenpost"

@@ -57,4 +57,8 @@ type Request struct {
 	// IsDropDecoy is set to true to indicate that this message shall
 	// be a drop decoy message.
 	IsDropDecoy bool `cbor:is_drop_decoy`
+
+	// IsThinClose is set to true to indicate that the thin client
+	// is disconnecting from the daemon.
+	IsThinClose bool `cbor:"is_thin_close"`
 }

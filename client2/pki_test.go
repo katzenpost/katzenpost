@@ -9,12 +9,15 @@ import (
 	"testing"
 	"time"
 
+	"github.com/katzenpost/hpqc/rand"
+	"github.com/katzenpost/hpqc/sign"
+
 	"github.com/katzenpost/katzenpost/client2/config"
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
-	"github.com/katzenpost/katzenpost/core/crypto/sign"
 	"github.com/katzenpost/katzenpost/core/epochtime"
+	"github.com/katzenpost/katzenpost/core/log"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
+	"github.com/katzenpost/katzenpost/loops"
 	"github.com/stretchr/testify/require"
 )
 
@@ -32,7 +35,7 @@ func (c *mockPKIClient) Get(ctx context.Context, epoch uint64) (*cpki.Document, 
 	return nil, nil, nil // XXX
 }
 
-func (c *mockPKIClient) Post(ctx context.Context, epoch uint64, signingPrivateKey sign.PrivateKey, signingPublicKey sign.PublicKey, d *cpki.MixDescriptor) error {
+func (c *mockPKIClient) Post(ctx context.Context, epoch uint64, signingPrivateKey sign.PrivateKey, signingPublicKey sign.PublicKey, d *cpki.MixDescriptor, loopstats *loops.LoopStats) error {
 	return nil
 }
 
@@ -45,9 +48,12 @@ func TestClientPKIStartStop(t *testing.T) {
 	require.NoError(t, err)
 
 	myMockPKIClient := new(mockPKIClient)
+	logbackend, err := log.New("", "debug", false)
+	require.NoError(t, err)
 	c := &Client{
-		cfg:       cfg,
-		PKIClient: myMockPKIClient,
+		logbackend: logbackend,
+		cfg:        cfg,
+		PKIClient:  myMockPKIClient,
 	}
 
 	p := newPKI(c)
@@ -63,9 +69,12 @@ func TestPKIGetDocument(t *testing.T) {
 	require.NoError(t, err)
 
 	myMockPKIClient := new(mockPKIClient)
+	logbackend, err := log.New("", "debug", false)
+	require.NoError(t, err)
 	c := &Client{
-		cfg:       cfg,
-		PKIClient: myMockPKIClient,
+		logbackend: logbackend,
+		cfg:        cfg,
+		PKIClient:  myMockPKIClient,
 	}
 
 	p := newPKI(c)
@@ -78,7 +87,7 @@ func TestPKIGetDocument(t *testing.T) {
 		Epoch: epoch,
 	}
 
-	doc, err := p.getDocument(ctx, epoch)
+	_, doc, err := p.getDocument(ctx, epoch)
 	require.NoError(t, err)
 	require.NotNil(t, doc)
 	require.Equal(t, doc.Epoch, epoch)
@@ -86,7 +95,7 @@ func TestPKIGetDocument(t *testing.T) {
 	wrongEpoch := uint64(1234567)
 	ctx = context.TODO()
 
-	doc, err = p.getDocument(ctx, wrongEpoch)
+	_, doc, err = p.getDocument(ctx, wrongEpoch)
 	require.Error(t, err)
 	require.Nil(t, doc)
 }
@@ -96,9 +105,12 @@ func TestPKIUpdateDocumentBadSphinxHash(t *testing.T) {
 	require.NoError(t, err)
 
 	myMockPKIClient := new(mockPKIClient)
+	logbackend, err := log.New("", "debug", false)
+	require.NoError(t, err)
 	c := &Client{
-		cfg:       cfg,
-		PKIClient: myMockPKIClient,
+		logbackend: logbackend,
+		cfg:        cfg,
+		PKIClient:  myMockPKIClient,
 	}
 
 	p := newPKI(c)
@@ -132,9 +144,12 @@ func TestPKIUpdateDocument(t *testing.T) {
 	require.NoError(t, err)
 
 	myMockPKIClient := new(mockPKIClient)
+	logbackend, err := log.New("", "debug", false)
+	require.NoError(t, err)
 	c := &Client{
-		cfg:       cfg,
-		PKIClient: myMockPKIClient,
+		logbackend: logbackend,
+		cfg:        cfg,
+		PKIClient:  myMockPKIClient,
 	}
 
 	p := newPKI(c)
@@ -148,8 +163,8 @@ func TestPKIUpdateDocument(t *testing.T) {
 	}
 
 	myMockPKIClient.doc = testDoc
-
-	require.Nil(t, p.currentDocument())
+	_, currentDoc := p.currentDocument()
+	require.Nil(t, currentDoc)
 
 	// panic with bad sphinx geometry hash
 	err = p.updateDocument(epoch)
@@ -159,7 +174,7 @@ func TestPKIUpdateDocument(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Log("currentDocument works if Sphinx Geometry Hash is correctly set:")
-	doc := p.currentDocument()
+	_, doc := p.currentDocument()
 	require.NotNil(t, doc)
 	require.Equal(t, testDoc, doc)
 }
@@ -169,9 +184,12 @@ func TestPKIWaitForDocument(t *testing.T) {
 	require.NoError(t, err)
 
 	myMockPKIClient := new(mockPKIClient)
+	logbackend, err := log.New("", "debug", false)
+	require.NoError(t, err)
 	c := &Client{
-		cfg:       cfg,
-		PKIClient: myMockPKIClient,
+		logbackend: logbackend,
+		cfg:        cfg,
+		PKIClient:  myMockPKIClient,
 	}
 
 	p := newPKI(c)
@@ -187,10 +205,11 @@ func TestPKIWaitForDocument(t *testing.T) {
 
 	myMockPKIClient.doc = testDoc
 
-	require.Nil(t, p.currentDocument())
+	_, currentDoc := p.currentDocument()
+	require.Nil(t, currentDoc)
 	c.WaitForCurrentDocument()
-	require.NotNil(t, p.currentDocument())
-	require.Equal(t, p.currentDocument(), testDoc)
+	require.NotNil(t, currentDoc)
+	require.Equal(t, currentDoc, testDoc)
 }
 
 func TestPKIClockSkew(t *testing.T) {
@@ -198,9 +217,12 @@ func TestPKIClockSkew(t *testing.T) {
 	require.NoError(t, err)
 
 	myMockPKIClient := new(mockPKIClient)
+	logbackend, err := log.New("", "debug", false)
+	require.NoError(t, err)
 	c := &Client{
-		cfg:       cfg,
-		PKIClient: myMockPKIClient,
+		logbackend: logbackend,
+		cfg:        cfg,
+		PKIClient:  myMockPKIClient,
 	}
 	p := newPKI(c)
 	c.pki = p
@@ -213,7 +235,7 @@ func TestPKIClockSkew(t *testing.T) {
 		Epoch: epoch,
 	}
 
-	doc, err := p.getDocument(ctx, epoch)
+	_, doc, err := p.getDocument(ctx, epoch)
 	require.NoError(t, err)
 	require.NotNil(t, doc)
 	require.Equal(t, doc.Epoch, epoch)
@@ -239,9 +261,12 @@ func TestPKICachedDoc(t *testing.T) {
 	require.NoError(t, err)
 
 	myMockPKIClient := new(mockPKIClient)
+	logbackend, err := log.New("", "debug", false)
+	require.NoError(t, err)
 	c := &Client{
-		cfg:       cfg,
-		PKIClient: myMockPKIClient,
+		logbackend: logbackend,
+		cfg:        cfg,
+		PKIClient:  myMockPKIClient,
 	}
 	p := newPKI(c)
 	require.Equal(t, 0, lenSyncMap(&p.docs))
@@ -276,13 +301,13 @@ func TestPKICachedDoc(t *testing.T) {
 	myMockPKIClient.doc = doc2
 	ctx := context.TODO()
 	p.consensusGetter = new(mockConsensusGetter)
-	doc, err := p.getDocument(ctx, doc2.Epoch)
+	_, doc, err := p.getDocument(ctx, doc2.Epoch)
 	require.NoError(t, err)
 	require.Equal(t, doc2, doc)
 
 	myMockPKIClient.doc = doc3
 	ctx = context.TODO()
-	doc, err = p.getDocument(ctx, doc3.Epoch)
+	_, doc, err = p.getDocument(ctx, doc3.Epoch)
 	require.NoError(t, err)
 	require.Equal(t, doc3, doc)
 }

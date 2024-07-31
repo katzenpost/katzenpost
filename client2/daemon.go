@@ -5,19 +5,20 @@ package client2
 
 import (
 	"errors"
-	"fmt"
-	"io"
 	mrand "math/rand"
-	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
-	"github.com/charmbracelet/log"
+	"gopkg.in/op/go-logging.v1"
 
+	"github.com/katzenpost/hpqc/rand"
+	"github.com/katzenpost/hpqc/hash"
+	
+	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/client2/common"
 	"github.com/katzenpost/katzenpost/client2/config"
 	"github.com/katzenpost/katzenpost/client2/thin"
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
@@ -49,8 +50,9 @@ type replyDescriptor struct {
 type Daemon struct {
 	worker.Worker
 
-	logbackend io.Writer
-	log        *log.Logger
+	logbackend *log.Backend
+	log        *logging.Logger
+
 	cfg        *config.Config
 	client     *Client
 	listener   *listener
@@ -58,7 +60,6 @@ type Daemon struct {
 
 	replies   map[[sConstants.SURBIDLength]byte]*replyDescriptor
 	decoys    map[[sConstants.SURBIDLength]byte]*replyDescriptor
-	arq       *ARQ
 	replyLock *sync.Mutex
 
 	timerQueue *TimerQueue
@@ -72,37 +73,8 @@ type Daemon struct {
 }
 
 func NewDaemon(cfg *config.Config) (*Daemon, error) {
-	var err error
-	var logbackend io.Writer
-
-	if cfg.Logging.Disable {
-		fmt.Println("WARNING: disabling logging")
-		logbackend, err = os.OpenFile("/dev/null", os.O_WRONLY, 0600)
-		if err != nil {
-			return nil, err
-		}
-	} else {
-		if cfg.Logging.File == "" {
-			logbackend = os.Stderr
-		} else {
-			logbackend, err = os.OpenFile(cfg.Logging.File, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0600)
-			if err != nil {
-				return nil, err
-			}
-		}
-	}
-	logLevel, err := log.ParseLevel(cfg.Logging.Level)
-	if err != nil {
-		return nil, err
-	}
 	egressSize := 2
 	d := &Daemon{
-		logbackend: logbackend,
-		log: log.NewWithOptions(logbackend, log.Options{
-			ReportTimestamp: true,
-			Prefix:          "client2_daemon",
-			Level:           logLevel,
-		}),
 		cfg:        cfg,
 		egressCh:   make(chan *Request, egressSize),
 		replyCh:    make(chan *sphinxReply, 2),
@@ -112,8 +84,27 @@ func NewDaemon(cfg *config.Config) (*Daemon, error) {
 		gcReplyCh:  make(chan *gcReply),
 		replyLock:  new(sync.Mutex),
 	}
-
+	err := d.initLogging()
+	if err != nil {
+		return nil, err
+	}
 	return d, nil
+}
+
+func (d *Daemon) initLogging() error {
+	f := d.cfg.Logging.File
+	if !d.cfg.Logging.Disable && d.cfg.Logging.File != "" {
+		if !filepath.IsAbs(f) {
+			return errors.New("log file path must be absolute path")
+		}
+	}
+
+	var err error
+	d.logbackend, err = log.New(f, d.cfg.Logging.Level, d.cfg.Logging.Disable)
+	if err == nil {
+		d.log = d.logbackend.GetLogger("katzenpost/client2")
+	}
+	return err
 }
 
 // Shutdown cleanly shuts down a given Server instance.
@@ -125,9 +116,6 @@ func (d *Daemon) halt() {
 	d.log.Debug("Stopping timerQueues")
 	d.timerQueue.Halt()
 	d.gctimerQueue.Halt()
-
-	d.log.Debug("Stopping ARQ worker")
-	d.arq.Stop()
 
 	d.log.Debug("Stopping thin client listener")
 	d.listener.Halt()
@@ -156,9 +144,6 @@ func (d *Daemon) Start() error {
 	if err != nil {
 		return err
 	}
-
-	d.arq = NewARQ(d.client, d, d.log)
-	d.arq.Start()
 
 	d.listener, err = NewListener(d.client, rates, d.egressCh, d.logbackend)
 	if err != nil {
@@ -230,8 +215,6 @@ func (d *Daemon) egressWorker() {
 				d.sendDropDecoy()
 			case request.IsSendOp == true:
 				d.send(request)
-			case request.IsARQSendOp == true:
-				d.sendARQMessage(request)
 			default:
 				panic("send operation not fully specified")
 			}
@@ -288,19 +271,11 @@ func (d *Daemon) getReplyDesc(surbID *[sConstants.SURBIDLength]byte) (*replyDesc
 	if isDecoy {
 		return desc, isDecoy, nil
 	}
-	if desc == nil {
-		if d.arq.Has(surbID) {
-			myDesc, err := d.arq.HandleAck(surbID)
-			if err == nil {
-				return myDesc, false, nil
-			}
-		}
-	}
 	return nil, false, errors.New("replyDescriptor not found for the given SURB ID")
 }
 
 func (d *Daemon) handleReply(reply *sphinxReply) {
-	d.log.Warn("Reply Received")
+	d.log.Warning("Reply Received")
 	desc, isDecoy, err := d.getReplyDesc(reply.surbID)
 	if err != nil {
 		d.log.Errorf("handleReply failure: %s", err)
@@ -335,24 +310,6 @@ func (d *Daemon) handleReply(reply *sphinxReply) {
 			Payload:   plaintext,
 		},
 	})
-}
-
-func (d *Daemon) sendARQMessage(request *Request) {
-	if request.AppID == nil {
-		panic("request.AppID is nil")
-	}
-	rtt, err := d.arq.Send(request.AppID, request.ID, request.Payload, request.DestinationIdHash, request.RecipientQueueID)
-	if err != nil {
-		panic(err)
-	}
-
-	slop := time.Minute * 5 // very conservative
-	replyArrivalTime := time.Now().Add(rtt + slop)
-	d.gctimerQueue.Push(uint64(replyArrivalTime.UnixNano()), &gcReply{
-		id:    request.ID,
-		appID: request.AppID,
-	})
-
 }
 
 func (d *Daemon) SentEvent(response *Response) {
@@ -429,7 +386,7 @@ func (d *Daemon) send(request *Request) {
 func (d *Daemon) sendLoopDecoy(request *Request) {
 	// XXX FIXME consume statistics on our echo decoys for n-1 detection
 
-	doc := d.client.CurrentDocument()
+	_, doc := d.client.CurrentDocument()
 	if doc == nil {
 		panic("doc is nil")
 	}
@@ -439,7 +396,7 @@ func (d *Daemon) sendLoopDecoy(request *Request) {
 	}
 	echoService := echoServices[mrand.Intn(len(echoServices))]
 
-	serviceIdHash := echoService.MixDescriptor.IdentityKey.Sum256()
+	serviceIdHash := hash.Sum256(echoService.MixDescriptor.IdentityKey)
 	payload := make([]byte, d.client.geo.UserForwardPayloadLength)
 	surbID := &[sConstants.SURBIDLength]byte{}
 	_, err := rand.Reader.Read(surbID[:])
@@ -458,14 +415,14 @@ func (d *Daemon) sendLoopDecoy(request *Request) {
 }
 
 func (d *Daemon) sendDropDecoy() {
-	doc := d.client.CurrentDocument()
+	_, doc := d.client.CurrentDocument()
 	echoServices := common.FindServices(EchoService, doc)
 	if len(echoServices) == 0 {
 		panic("wtf no echo services")
 	}
 	echoService := echoServices[mrand.Intn(len(echoServices))]
 
-	serviceIdHash := echoService.MixDescriptor.IdentityKey.Sum256()
+	serviceIdHash := hash.Sum256(echoService.MixDescriptor.IdentityKey)
 	payload := make([]byte, d.client.geo.UserForwardPayloadLength)
 
 	request := &Request{}

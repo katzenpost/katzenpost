@@ -13,12 +13,15 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/charmbracelet/log"
-
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"gopkg.in/op/go-logging.v1"
+	
+	"github.com/katzenpost/hpqc/rand"
+	"github.com/katzenpost/hpqc/hash"
+	
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/wire"
+	//"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"github.com/katzenpost/katzenpost/core/worker"
 )
@@ -92,8 +95,8 @@ type connection struct {
 	worker.Worker
 
 	client *Client
-	log    *log.Logger
-
+	log    *logging.Logger
+	
 	pkiEpoch   uint64
 	descriptor *cpki.MixDescriptor
 
@@ -106,7 +109,7 @@ type connection struct {
 	isConnectedLock sync.RWMutex
 	isConnected     bool
 
-	provider *[32]byte
+	gateway *[32]byte
 	queueID  []byte
 
 	isShutdown bool
@@ -155,22 +158,33 @@ func (c *connection) getDescriptor() error {
 		}
 	}()
 
-	doc := c.client.CurrentDocument()
+	_, doc := c.client.CurrentDocument()
 	if doc == nil && c.client.cfg.CachedDocument == nil {
 		c.log.Debugf("No PKI document for current epoch or cached PKI document provide.")
-		n := len(c.client.cfg.PinnedProviders.Providers)
+		n := len(c.client.cfg.PinnedGateways.Gateways)
 		if n == 0 {
-			return errors.New("No PinnedProviders")
+			return errors.New("No PinnedGateways")
 		}
-		provider := c.client.cfg.PinnedProviders.Providers[rand.NewMath().Intn(n)]
-		idHash := provider.IdentityKey.Sum256()
-		c.provider = &idHash
+		gateway := c.client.cfg.PinnedGateways.Gateways[rand.NewMath().Intn(n)]
+		idHash := hash.Sum256From(gateway.IdentityKey)
+		c.gateway = &idHash
+
+		idkey, err := gateway.IdentityKey.MarshalBinary()
+		if err != nil {
+			return err
+		}
+
+		linkkey, err := gateway.LinkKey.MarshalBinary()
+		if err != nil {
+			return err
+		}
+		
 		c.descriptor = &cpki.MixDescriptor{
-			Name:        provider.Name,
-			IdentityKey: provider.IdentityKey,
-			LinkKey:     provider.LinkKey,
-			Addresses:   provider.Addresses,
-			Provider:    true,
+			Name:        gateway.Name,
+			IdentityKey: idkey,
+			LinkKey:     linkkey,
+			Addresses:   gateway.Addresses,
+			IsGatewayNode:    true,
 		}
 		ok = true
 		return nil
@@ -178,21 +192,21 @@ func (c *connection) getDescriptor() error {
 		doc = c.client.cfg.CachedDocument
 	}
 	if doc != nil {
-		n := len(doc.Providers)
+		n := len(doc.GatewayNodes)
 		if n == 0 {
-			return errors.New("invalid PKI doc, zero Providers")
+			return errors.New("invalid PKI doc, zero Gateways")
 		}
-		provider := doc.Providers[rand.NewMath().Intn(n)]
-		idHash := provider.IdentityKey.Sum256()
-		c.provider = &idHash
-		desc, err := doc.GetProvider(provider.Name)
+		gateway := doc.GatewayNodes[rand.NewMath().Intn(n)]
+		idHash := hash.Sum256(gateway.IdentityKey)
+		c.gateway = &idHash
+		desc, err := doc.GetGateway(gateway.Name)
 		if err != nil {
-			c.log.Debugf("Failed to find descriptor for Provider: %v", err)
-			return newPKIError("failed to find descriptor for Provider: %v", err)
+			c.log.Debugf("Failed to find descriptor for Gateway: %v", err)
+			return newPKIError("failed to find descriptor for Gateway: %v", err)
 		}
-		if !provider.IdentityKey.Equal(desc.IdentityKey) {
-			c.log.Errorf("Provider identity key does not match pinned key: %v", desc.IdentityKey)
-			return newPKIError("identity key for Provider does not match pinned key: %v", desc.IdentityKey)
+		if !hmac.Equal(gateway.IdentityKey, desc.IdentityKey) {
+			c.log.Errorf("Gateway identity key does not match pinned key: %v", desc.IdentityKey)
+			return newPKIError("identity key for Gateway does not match pinned key: %v", desc.IdentityKey)
 		}
 		if desc != c.descriptor {
 			c.log.Debugf("Descriptor for epoch %v: %+v", doc.Epoch, desc)
@@ -283,7 +297,7 @@ func (c *connection) doConnect(dialCtx context.Context) {
 			}
 		}
 		if len(dstAddrs) == 0 {
-			c.log.Warnf("Aborting connect loop, no suitable addresses found.")
+			c.log.Warningf("Aborting connect loop, no suitable addresses found.")
 			c.descriptor = nil // Give up till the next PKI fetch.
 			connErr = newConnectError("no suitable addreses found")
 			return
@@ -316,7 +330,7 @@ func (c *connection) doConnect(dialCtx context.Context) {
 				return
 			default:
 				if err != nil {
-					c.log.Warnf("Failed to connect to %v: %v", addrPort, err)
+					c.log.Warningf("Failed to connect to %v: %v", addrPort, err)
 					if c.client.cfg.Callbacks.OnConnFn != nil {
 						c.client.cfg.Callbacks.OnConnFn(&ConnectError{Err: err})
 					}
@@ -349,8 +363,11 @@ func (c *connection) onTCPConn(conn net.Conn) {
 	}()
 
 	c.log.Debug("onTCPConn: GenerateKeypair")
-	linkKey, _ := wire.DefaultScheme.GenerateKeypair(rand.Reader)
-
+	_, linkKey, err := c.client.wireKEMScheme.GenerateKeyPair()
+	if err != nil {
+		panic(err)
+	}
+	
 	// Allocate the session struct.
 	userId := make([]byte, 16)
 	_, err = rand.Reader.Read(userId)
@@ -571,8 +588,8 @@ func (c *connection) onWireConn(w *wire.Session) {
 		}
 		// Update the cached descriptor, and re-validate the connection.
 		if !c.IsPeerValid(creds) {
-			c.log.Warnf("No longer have a descriptor for current peer.")
-			wireErr = newProtocolError("current consensus no longer lists the Provider")
+			c.log.Warningf("No longer have a descriptor for current peer.")
+			wireErr = newProtocolError("current consensus no longer lists the Gateway")
 			return
 		}
 
@@ -658,11 +675,15 @@ func (c *connection) onWireConn(w *wire.Session) {
 }
 
 func (c *connection) IsPeerValid(creds *wire.PeerCredentials) bool {
-	if !c.descriptor.LinkKey.Equal(creds.PublicKey) {
+	credsKey, err := creds.PublicKey.MarshalBinary()
+	if err != nil {
+		panic(err)
+	}
+	if !hmac.Equal(c.descriptor.LinkKey, credsKey) {
 		return false
 	}
 
-	identityHash := c.descriptor.IdentityKey.Sum256()
+	identityHash := hash.Sum256(c.descriptor.IdentityKey)
 	if !hmac.Equal(identityHash[:], creds.AdditionalData) {
 		return false
 	}
@@ -796,17 +817,8 @@ func (c *connection) start() {
 func newConnection(c *Client) *connection {
 	k := new(connection)
 	k.client = c
-	logLevel, err := log.ParseLevel(c.cfg.Logging.Level)
-	if err != nil {
-		panic(err)
-	}
-	k.log = log.NewWithOptions(c.logbackend, log.Options{
-		Prefix: "client2/conn",
-		Level:  logLevel,
-	})
-
+	k.log = c.logbackend.GetLogger("client2/conn")
 	k.log.Debug("newConnection")
-
 	k.fetchCh = make(chan interface{}, 1)
 	k.sendCh = make(chan *connSendCtx)
 	k.getConsensusCh = make(chan *getConsensusCtx, 1)

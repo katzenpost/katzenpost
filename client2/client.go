@@ -4,27 +4,27 @@
 package client2
 
 import (
-	"io"
 	"sync"
 	"time"
 
-	"github.com/charmbracelet/log"
+	"gopkg.in/op/go-logging.v1"
 
+	"github.com/katzenpost/hpqc/kem"
+	"github.com/katzenpost/hpqc/kem/schemes"
 	"github.com/katzenpost/katzenpost/authority/voting/client"
 	"github.com/katzenpost/katzenpost/client2/config"
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/katzenpost/core/log"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
-	"github.com/katzenpost/katzenpost/core/wire"
 )
 
 // Client manages startup, shutdow, creating new connections and reconnecting.
 type Client struct {
 	sync.RWMutex
 
-	log        *log.Logger
-	logbackend io.Writer
+	log        *logging.Logger
+	logbackend *log.Backend
 
 	// messagePollInterval is the interval at which the server will be
 	// polled for new messages if the queue is believed to be empty.
@@ -36,8 +36,9 @@ type Client struct {
 
 	conn *connection
 
-	sphinx *sphinx.Sphinx
-	geo    *geo.Geometry
+	sphinx        *sphinx.Sphinx
+	geo           *geo.Geometry
+	wireKEMScheme kem.Scheme
 
 	haltedCh chan interface{}
 	haltOnce sync.Once
@@ -93,14 +94,13 @@ func (c *Client) Start() error {
 
 	c.conn = newConnection(c)
 
-	pkilinkKey, _ := wire.DefaultScheme.GenerateKeypair(rand.Reader)
+	_, pkilinkKey, err := c.wireKEMScheme.GenerateKeyPair()
 	pkiClientConfig := &client.Config{
 		LinkKey:       pkilinkKey,
 		LogBackend:    c.logbackend,
 		Authorities:   c.cfg.VotingAuthority.Peers,
 		DialContextFn: nil,
 	}
-	var err error
 	c.PKIClient, err = client.New(pkiClientConfig)
 	if err != nil {
 		return err
@@ -112,13 +112,14 @@ func (c *Client) Start() error {
 }
 
 // New creates a new Client with the provided configuration.
-func New(cfg *config.Config, logbackend io.Writer) (*Client, error) {
+func New(cfg *config.Config, logbackend *log.Backend) (*Client, error) {
 	if err := cfg.FixupAndValidate(); err != nil {
 		return nil, err
 	}
 
 	c := new(Client)
 	c.logbackend = logbackend
+	c.wireKEMScheme = schemes.ByName(cfg.WireKEMScheme)
 	c.geo = cfg.SphinxGeometry
 	var err error
 	c.sphinx, err = sphinx.FromGeometry(cfg.SphinxGeometry)
@@ -126,16 +127,7 @@ func New(cfg *config.Config, logbackend io.Writer) (*Client, error) {
 		return nil, err
 	}
 	c.cfg = cfg
-	logLevel, err := log.ParseLevel(cfg.Logging.Level)
-	if err != nil {
-		return nil, err
-	}
-	c.log = log.NewWithOptions(logbackend, log.Options{
-		ReportTimestamp: true,
-		Prefix:          "client2",
-		Level:           logLevel,
-	})
-
+	c.log = c.logbackend.GetLogger("katzenpost/client2")
 	c.haltedCh = make(chan interface{})
 
 	return c, nil

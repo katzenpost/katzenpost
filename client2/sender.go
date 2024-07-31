@@ -4,11 +4,15 @@
 package client2
 
 import (
+	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/worker"
+	"gopkg.in/op/go-logging.v1"
 )
 
 type sender struct {
 	worker.Worker
+
+	log *logging.Logger
 
 	in  chan *Request
 	out chan *Request
@@ -24,8 +28,9 @@ type sender struct {
 // methods UpdateConnectionStatus and UpdateRates are called.
 // The worker only works when we have a connection and when we have
 // a rate set.
-func newSender(in chan *Request, out chan *Request, disableDecoys bool) *sender {
+func newSender(in chan *Request, out chan *Request, disableDecoys bool, logBackend *log.Backend) *sender {
 	s := &sender{
+		log:               logBackend.GetLogger("client2/daemon"),
 		in:                in,
 		out:               out,
 		sendMessageOrDrop: NewExpDist(),

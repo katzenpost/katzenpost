@@ -7,6 +7,8 @@ import (
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 )
 
+const MessageIDLength = 16
+
 func IntoThinResponse(r *Response) *thin.Response {
 	return &thin.Response{
 		ConnectionStatusEvent:     r.ConnectionStatusEvent,
@@ -20,15 +22,15 @@ func IntoThinResponse(r *Response) *thin.Response {
 type Response struct {
 	// AppID must be a unique identity for the client application
 	// that is receiving this Response.
-	AppID *[AppIDLength]byte `cbor:app_id`
+	AppID *[AppIDLength]byte
 
-	ConnectionStatusEvent *thin.ConnectionStatusEvent `cbor:connection_status_event`
+	ConnectionStatusEvent *thin.ConnectionStatusEvent
 
-	NewPKIDocumentEvent *thin.NewPKIDocumentEvent `cbor:new_pki_document_event`
+	NewPKIDocumentEvent *thin.NewPKIDocumentEvent
 
-	MessageSentEvent *thin.MessageSentEvent `cbor:message_sent_event`
+	MessageSentEvent *thin.MessageSentEvent
 
-	MessageReplyEvent *thin.MessageReplyEvent `cbor:message_reply_event`
+	MessageReplyEvent *thin.MessageReplyEvent
 
 	MessageIDGarbageCollected *thin.MessageIDGarbageCollected
 }
@@ -46,49 +48,54 @@ func FromThinRequest(r *thin.Request, appid *[AppIDLength]byte) *Request {
 		IsARQSendOp:       r.IsARQSendOp,
 		IsLoopDecoy:       r.IsLoopDecoy,
 		IsDropDecoy:       r.IsDropDecoy,
+		IsThinClose:       r.IsThinClose,
 	}
 }
 
 type Request struct {
 	// ID is the unique identifier with respect to the Payload.
 	// This is only used by the ARQ.
-	ID *[MessageIDLength]byte `cbor:id`
+	ID *[MessageIDLength]byte
 
 	// WithSURB indicates if the message should be sent with a SURB
 	// in the Sphinx payload.
-	WithSURB bool `cbor:with_surb`
+	WithSURB bool
 
 	// SURBID must be a unique identity for each request.
 	// This field should be nil if WithSURB is false.
-	SURBID *[sConstants.SURBIDLength]byte `cbor:surbid`
+	SURBID *[sConstants.SURBIDLength]byte
 
 	// AppID must be a unique identity for the client application
 	// that is sending this Request.
-	AppID *[AppIDLength]byte `cbor:app_id`
+	AppID *[AppIDLength]byte
 
 	// DestinationIdHash is 32 byte hash of the destination Provider's
 	// identity public key.
-	DestinationIdHash *[32]byte `cbor:destination_id_hash`
+	DestinationIdHash *[32]byte
 
 	// RecipientQueueID is the queue identity which will receive the message.
-	RecipientQueueID []byte `cbor:recipient_queue_id`
+	RecipientQueueID []byte
 
 	// Payload is the actual Sphinx packet.
-	Payload []byte `cbor:payload`
+	Payload []byte
 
 	// IsSendOp is set to true if the intent is to send a message through
 	// the mix network.
-	IsSendOp bool `cbor:is_send_op`
+	IsSendOp bool
 
 	// IsARQSendOp is set to true if the intent is to send a message through
 	// the mix network using the naive ARQ error correction scheme.
-	IsARQSendOp bool `cbor:is_arq_send_op`
+	IsARQSendOp bool
 
 	// IsLoopDecoy is set to true to indicate that this message shall
 	// be a loop decoy message.
-	IsLoopDecoy bool `cbor:is_loop_decoy`
+	IsLoopDecoy bool
 
 	// IsDropDecoy is set to true to indicate that this message shall
 	// be a drop decoy message.
-	IsDropDecoy bool `cbor:is_drop_decoy`
+	IsDropDecoy bool
+
+	// IsThinClose is set to true to indicate that the thin client
+	// is disconnecting from the daemon.
+	IsThinClose bool
 }

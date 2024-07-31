@@ -8,9 +8,11 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/hpqc/rand"
+
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
+	"github.com/katzenpost/katzenpost/core/sphinx"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/sphinx/path"
 )
@@ -19,6 +21,9 @@ import (
 func (c *Client) ComposeSphinxPacket(request *Request) (pkt []byte, surbkey []byte, rtt time.Duration, err error) {
 	if request.DestinationIdHash == nil {
 		return nil, nil, 0, errors.New("request.DestinationIdHash is nil")
+	}
+	if len(request.RecipientQueueID) == 0 {
+		return nil, nil, 0, errors.New("client2: recipient is nil")
 	}
 	if len(request.RecipientQueueID) > sConstants.RecipientIDLength {
 		return nil, nil, 0, fmt.Errorf("client2: invalid recipient: '%v'", request.RecipientQueueID)
@@ -39,8 +44,8 @@ func (c *Client) ComposeSphinxPacket(request *Request) (pkt []byte, surbkey []by
 		// Select the forward path.
 		now := time.Unix(unixTime, 0)
 
-		if c.conn.provider == nil {
-			panic("source provider cannot be nil")
+		if c.conn.gateway == nil {
+			panic("source gateway cannot be nil")
 		}
 
 		fwdPath, then, err := c.makePath(request.RecipientQueueID, request.DestinationIdHash, request.SURBID, now, true)
@@ -48,7 +53,7 @@ func (c *Client) ComposeSphinxPacket(request *Request) (pkt []byte, surbkey []by
 			return nil, nil, 0, err
 		}
 
-		revPath := make([]*path.PathHop, 0)
+		revPath := make([]*sphinx.PathHop, 0)
 		if request.SURBID != nil {
 			if c.conn.queueID == nil {
 				panic("sender queueID cannot be nil")
@@ -120,41 +125,52 @@ func (c *Client) SendCiphertext(request *Request) ([]byte, time.Duration, error)
 func (c *Client) SendPacket(pkt []byte) error {
 	err := c.conn.sendPacket(pkt)
 	if err != nil {
-		c.log.Warnf("failed to send packet %s", err)
+		c.log.Warningf("failed to send packet %s", err)
 	}
 	return err
 }
 
-func (c *Client) makePath(recipient []byte, provider *[32]byte, surbID *[sConstants.SURBIDLength]byte, baseTime time.Time, isForward bool) ([]*path.PathHop, time.Time, error) {
-	if c.conn.provider == nil {
-		panic("source provider cannot be nil")
+func (c *Client) makePath(recipient []byte, destination *[32]byte, surbID *[sConstants.SURBIDLength]byte, baseTime time.Time, isForward bool) ([]*sphinx.PathHop, time.Time, error) {
+	if c.conn.gateway == nil {
+		panic("c.conn.gateway is nil")
 	}
-	if c.conn.provider == nil {
-		panic("c.conn.provider is nil")
-	}
-	if provider == nil {
-		panic("provider is nil")
+	if destination == nil {
+		panic("destination is nil")
 	}
 
-	srcProvider, dstProvider := c.conn.provider, provider
+	srcNode, dstNode := c.conn.gateway, destination
 	if !isForward {
-		srcProvider, dstProvider = dstProvider, srcProvider
+		srcNode, dstNode = dstNode, srcNode
 	}
 
 	// Get the current PKI document.
-	doc := c.CurrentDocument()
+	_, doc := c.CurrentDocument()
 	if doc == nil {
 		return nil, time.Time{}, newPKIError("client2: no PKI document for current epoch")
 	}
 
-	// Get the descriptors.
-	src, err := doc.GetProviderByKeyHash(srcProvider)
-	if err != nil {
-		return nil, time.Time{}, newPKIError("client2: failed to find source Provider: %v", err)
-	}
-	dst, err := doc.GetProviderByKeyHash(dstProvider)
-	if err != nil {
-		return nil, time.Time{}, newPKIError("client2: failed to find destination Provider: %v", err)
+	var src *cpki.MixDescriptor
+	var dst *cpki.MixDescriptor
+	var err error
+
+	if isForward {
+		src, err = doc.GetGatewayByKeyHash(srcNode)
+		if err != nil {
+			return nil, time.Time{}, newPKIError("client2: failed to find source Gateway: %v", err)
+		}
+		dst, err = doc.GetServiceNodeByKeyHash(dstNode)
+		if err != nil {
+			return nil, time.Time{}, newPKIError("client2: failed to find destination service node: %v", err)
+		}
+	} else {
+		src, err = doc.GetServiceNodeByKeyHash(srcNode)
+		if err != nil {
+			return nil, time.Time{}, newPKIError("client2: failed to find source service node: %v", err)
+		}
+		dst, err = doc.GetGatewayByKeyHash(dstNode)
+		if err != nil {
+			return nil, time.Time{}, newPKIError("client2: failed to find destination gateway node: %v", err)
+		}
 	}
 
 	rng := rand.NewMath()
@@ -164,10 +180,14 @@ func (c *Client) makePath(recipient []byte, provider *[32]byte, surbID *[sConsta
 		// c.logPath(doc, p)
 	}
 
+	if len(p) == 0 {
+		panic("path is zero length")
+	}
+
 	return p, t, err
 }
 
-func (c *Client) logPath(doc *cpki.Document, p []*path.PathHop) error {
+func (c *Client) logPath(doc *cpki.Document, p []*sphinx.PathHop) error {
 	s, err := path.ToString(doc, p)
 	if err != nil {
 		return err

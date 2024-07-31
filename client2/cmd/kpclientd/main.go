@@ -45,11 +45,11 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	defer d.Halt()
+	defer d.Shutdown()
 
 	go func() {
 		<-haltCh
-		d.Halt()
+		d.Shutdown()
 	}()
 
 	d.Wait()
