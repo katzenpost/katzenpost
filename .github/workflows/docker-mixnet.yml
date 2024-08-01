@@ -21,7 +21,7 @@ jobs:
 
       - name: Build and start the mixnet
         run: |
-          cd docker && sudo -E make start wait
+          cd docker && sudo -E make run-background wait
 
       - name: run ping
         run: cd docker && sudo -E make run-ping
@@ -52,7 +52,7 @@ jobs:
 
       - name: Build and start the mixnet
         run: |
-          cd docker && sudo -E make start wait
+          cd docker && sudo -E make run-background wait
 
       - name: run memspool end to end tests
         run: cd memspool && sudo -E make testargs=-coverprofile=coverage.part dockerdockertest && cat client/coverage.part >> ../coverage.out
@@ -83,7 +83,7 @@ jobs:
 
       - name: Build and start the mixnet
         run: |
-          cd docker && sudo -E make start wait
+          cd docker && sudo -E make run-background wait
 
       - name: test creating upgrade test state files
         run: cd catshadow && sudo -E make testargs=-coverprofile=coverage.part test_version=latest upgrade_test_recreate && cat coverage.part >> ../coverage.out
@@ -120,7 +120,7 @@ jobs:
 
       - name: Build and start the mixnet
         run: |
-          cd docker && sudo -E make start wait run-ping
+          cd docker && sudo -E make run-background wait run-ping
 
       - name: run benchmark tests
         run: cd bench && sudo -E make testargs=-coverprofile=coverage.part dockerdockertest && cat coverage.part >> ../coverage.out
@@ -151,7 +151,7 @@ jobs:
 
       - name: Build and start the mixnet
         run: |
-          cd docker && sudo -E make start wait
+          cd docker && sudo -E make run-background wait
 
       - name: run pigeonhole end to end tests
         run: cd pigeonhole && sudo -E make testargs=-coverprofile=coverage.part dockerdockertest && cat client/coverage.part >> ../coverage.out
