@@ -28,7 +28,7 @@ func TestThinTCPSendRecv(t *testing.T) {
 	thin := ThinClient{
 		log:   logBackend.GetLogger("thinclient"),
 		isTCP: true,
-		conn:  client,
+		Conn:  client,
 	}
 
 	id := &[MessageIDLength]byte{}
@@ -40,7 +40,7 @@ func TestThinTCPSendRecv(t *testing.T) {
 		Payload: []byte("abc123"),
 	}
 	go func() {
-		err = thin.writeMessage(request)
+		err = thin.WriteMessage(request)
 		require.NoError(t, err)
 	}()
 
