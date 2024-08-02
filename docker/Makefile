@@ -24,17 +24,17 @@ serviceNodes=1
 
 # Parameters
 sr=0
-mu=0.0005
-muMax=2000
-lP=0.0005
-lPMax=2000
+mu=0.005
+muMax=1000
+lP=0.001
+lPMax=1000
 lL=0.0005
-lLMax=2000
+lLMax=1000
 lD=0.0005
-lDMax=2000
+lDMax=3000
 lM=0.0005
-lMMax=2000
-lGMax=5000
+lMMax=100
+lGMax=1000
 
 UserForwardPayloadLength=2000
 
