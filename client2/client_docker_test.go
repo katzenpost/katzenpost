@@ -8,6 +8,7 @@ package client2
 import (
 	"os"
 	"os/signal"
+	"runtime"
 	"syscall"
 	"testing"
 	"time"
@@ -18,6 +19,9 @@ import (
 	"github.com/katzenpost/katzenpost/client2/config"
 	"github.com/katzenpost/katzenpost/client2/thin"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
+
+	"net/http"
+	_ "net/http/pprof"
 )
 
 func TestAllClient2Tests(t *testing.T) {
@@ -273,4 +277,12 @@ func testDockerClientSendReceive(t *testing.T) {
 
 	err = thin.Close()
 	require.NoError(t, err)
+}
+
+func init() {
+	go func() {
+		http.ListenAndServe("localhost:9090", nil)
+	}()
+	runtime.SetMutexProfileFraction(1)
+	runtime.SetBlockProfileRate(1)
 }
