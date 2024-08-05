@@ -63,10 +63,10 @@ func setupDaemon() (*Daemon, error) {
 
 func sendAndWait(t *testing.T, client *thin.ThinClient, message []byte, nodeID *[32]byte, queueID []byte) []byte {
 	surbID := client.NewSURBID()
+	eventSink := client.EventSink()
 	err := client.SendMessage(surbID, message, nodeID, queueID)
 	require.NoError(t, err)
 
-	eventSink := client.EventSink()
 Loop:
 	for {
 		event := <-eventSink
