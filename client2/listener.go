@@ -251,6 +251,9 @@ func NewListener(client *Client, rates *Rates, egressCh chan *Request, logBacken
 			return nil, err
 		}
 		l.listener, err = net.ListenTCP(network, tcpAddr)
+		if err != nil {
+			return nil, err
+		}
 	case "unix":
 		fallthrough
 	case "unixgram":
