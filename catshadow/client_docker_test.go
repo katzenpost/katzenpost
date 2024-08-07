@@ -846,7 +846,10 @@ loop4a:
 	err = a.RenameContact("b", "b2")
 	require.NoError(err)
 
+	// XXX: a.conversations["b"] - panics with bad map state
+	a.conversationsMutex.Lock()
 	c := a.conversations["b"]
+	a.conversationsMutex.Unlock()
 	require.Equal(len(c), 0)
 
 	// verify that contact data is gone
