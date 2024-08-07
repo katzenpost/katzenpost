@@ -23,6 +23,7 @@ coverage-html:
 
 
 dockerdockertest:
+	cd ../docker && make $(distro)_base.stamp
 	$(docker) run -w /go/katzenpost/client2 ${docker_args} $(image) \
 		go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 1h -run TestAllClient2Tests
 
