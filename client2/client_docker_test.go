@@ -297,7 +297,7 @@ func testDockerClientSendReceive(t *testing.T) {
 func init() {
 	shutdownCh = make(chan interface{})
 	go func() {
-		http.ListenAndServe("localhost:9090", nil)
+		http.ListenAndServe("localhost:4242", nil)
 	}()
 	runtime.SetMutexProfileFraction(1)
 	runtime.SetBlockProfileRate(1)
