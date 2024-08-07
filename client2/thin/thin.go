@@ -75,6 +75,11 @@ type ThinClient struct {
 	closeOnce sync.Once
 }
 
+func (t *ThinClient) Shutdown() {
+	// do other stuff here
+	t.Halt()
+}
+
 // NewThinClient creates a new thing client.
 func NewThinClient(cfg *config.Config) *ThinClient {
 	logBackend, err := log.New(cfg.Logging.File, cfg.Logging.Level, cfg.Logging.Disable)
@@ -112,8 +117,8 @@ func (t *ThinClient) Close() error {
 	}
 
 	err = t.conn.Close()
-	t.Worker.Halt()
-	t.Worker.Wait()
+	t.Halt()
+	close(t.eventSink)
 	return err
 }
 
@@ -273,7 +278,10 @@ func (t *ThinClient) worker() {
 
 		message, err := t.readMessage()
 		if err != nil {
-			t.log.Infof("thin client ReceiveMessage failed: %v", err)
+			t.log.Errorf("thin client ReceiveMessage failed: %v", err)
+			if err == io.EOF {
+				return
+			}
 			continue
 		}
 		if message == nil {

@@ -42,6 +42,17 @@ func newSender(in chan *Request, out chan *Request, disableDecoys bool, logBacke
 	return s
 }
 
+// halt is called by the worker() routine when it exits
+func (s *sender) halt() {
+	s.log.Debug("sender stopping ExpDist workers")
+	s.sendMessageOrDrop.Halt()
+	s.log.Debug("sendMessageOrDrop stopped")
+	s.sendLoop.Halt()
+	s.log.Debug("sendLoop stopped")
+	s.sendDrop.Halt()
+	s.log.Debug("sendDrop stopped")
+}
+
 func (s *sender) worker() {
 	dropDecoyCh := s.sendDrop.OutCh()
 	loopDecoyCh := s.sendLoop.OutCh()
@@ -49,6 +60,7 @@ func (s *sender) worker() {
 		loopDecoyCh = make(<-chan struct{})
 		dropDecoyCh = make(<-chan struct{})
 	}
+	defer s.halt() // shutdown expdist workers on return after read from HaltCh()
 	for {
 		select {
 		case <-s.sendMessageOrDrop.OutCh():

@@ -46,7 +46,6 @@ func (l *listener) Halt() {
 	// Close the listener, wait for worker() to return.
 	l.listener.Close()
 	l.Worker.Halt()
-	l.Worker.Wait()
 	// Close all connections belonging to the listener.
 	//
 	// Note: Worst case this can take up to the handshake timeout to
@@ -104,6 +103,13 @@ func (l *listener) worker() {
 
 func (l *listener) onNewConn(conn net.Conn) {
 	l.log.Debug("onNewConn begin")
+	// make sure we can serve a document before anything else
+	docBlob, doc := l.client.CurrentDocument()
+	if doc == nil {
+		l.log.Error("no pki document to serve")
+		return
+	}
+
 	c := newIncomingConn(l, conn)
 
 	l.closeAllWg.Add(1)
@@ -121,12 +127,6 @@ func (l *listener) onNewConn(conn net.Conn) {
 	l.log.Debug("send connection status")
 	c.updateConnectionStatus(status)
 	l.log.Debug("getting current pki doc")
-
-	l.client.WaitForCurrentDocument()
-	docBlob, doc := l.client.CurrentDocument()
-	if doc == nil {
-		panic("doc is nil")
-	}
 
 	l.log.Debug("send pki doc")
 	c.sendPKIDoc(docBlob)

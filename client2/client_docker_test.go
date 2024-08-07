@@ -24,6 +24,10 @@ import (
 	_ "net/http/pprof"
 )
 
+var (
+	shutdownCh chan interface{}
+)
+
 func TestAllClient2Tests(t *testing.T) {
 	d, err := setupDaemon()
 	require.NoError(t, err)
@@ -32,10 +36,12 @@ func TestAllClient2Tests(t *testing.T) {
 		d.Shutdown()
 	})
 
-	haltCh := make(chan os.Signal)
+	haltCh := make(chan os.Signal, 1)
 	signal.Notify(haltCh, os.Interrupt, syscall.SIGTERM)
 	go func() {
 		<-haltCh
+		close(shutdownCh)
+		t.Log("Interrupt caught. Shutdown")
 		d.Shutdown()
 	}()
 
@@ -71,9 +77,17 @@ func sendAndWait(t *testing.T, client *thin.ThinClient, message []byte, nodeID *
 	err := client.SendMessage(surbID, message, nodeID, queueID)
 	require.NoError(t, err)
 
-Loop:
 	for {
-		event := <-eventSink
+		var event thin.Event
+		select {
+		case event = <-eventSink:
+		case <-shutdownCh: // exit if halted
+			// interrupt caught, shutdown client
+			t.Log("Interrupt caught - shutting down client")
+			client.Halt()
+			return nil
+		}
+
 		switch v := event.(type) {
 		case *thin.MessageIDGarbageCollected:
 			t.Log("MessageIDGarbageCollected")
@@ -90,7 +104,6 @@ Loop:
 			t.Log("MessageReplyEvent")
 			require.Equal(t, surbID[:], v.SURBID[:])
 			return v.Payload
-			break Loop
 		default:
 			panic("impossible event type")
 		}
@@ -257,6 +270,7 @@ func testDockerClientSendReceive(t *testing.T) {
 	t.Log("BEFORE sendAndWait")
 	reply := sendAndWait(t, thin, message1, &nodeIdKey, []byte("testdest"))
 	t.Log("AFTER sendAndWait")
+	require.Equal(t, len(message1), len(reply))
 	require.Equal(t, message1, reply[:len(message1)])
 
 	/*
@@ -281,6 +295,7 @@ func testDockerClientSendReceive(t *testing.T) {
 }
 
 func init() {
+	shutdownCh = make(chan interface{})
 	go func() {
 		http.ListenAndServe("localhost:9090", nil)
 	}()
