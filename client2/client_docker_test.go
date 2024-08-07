@@ -25,7 +25,8 @@ import (
 )
 
 func TestAllClient2Tests(t *testing.T) {
-	d := setupDaemon()
+	d, err := setupDaemon()
+	require.NoError(t, err)
 
 	t.Cleanup(func() {
 		d.Shutdown()
@@ -43,25 +44,25 @@ func TestAllClient2Tests(t *testing.T) {
 	t.Run("TestDockerClientSendReceive", testDockerClientSendReceive)
 }
 
-func setupDaemon() *Daemon {
+func setupDaemon() (*Daemon, error) {
 	cfg, err := config.LoadFile("testdata/client.toml")
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 
 	d, err := NewDaemon(cfg)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 	err = d.Start()
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 
 	// maybe we need to sleep first to ensure the daemon is listening first before dialing
 	time.Sleep(time.Second * 3)
 
-	return d
+	return d, nil
 }
 
 func sendAndWait(t *testing.T, client *thin.ThinClient, message []byte, nodeID *[32]byte, queueID []byte) []byte {
