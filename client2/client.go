@@ -18,10 +18,12 @@ import (
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
+	"github.com/katzenpost/katzenpost/core/worker"
 )
 
 // Client manages startup, shutdow, creating new connections and reconnecting.
 type Client struct {
+	worker.Worker
 	sync.RWMutex
 
 	log        *logging.Logger
@@ -41,38 +43,24 @@ type Client struct {
 	geo           *geo.Geometry
 	wireKEMScheme kem.Scheme
 
-	haltedCh chan interface{}
-	haltOnce sync.Once
-
 	PKIClient cpki.Client
 }
 
 // Shutdown cleanly shuts down a given Client instance.
 func (c *Client) Shutdown() {
-	c.haltOnce.Do(func() { c.halt() })
-}
-
-// Wait waits till the Client is terminated for any reason.
-func (c *Client) Wait() {
-	<-c.haltedCh
-}
-
-func (c *Client) halt() {
 	c.log.Info("Starting graceful shutdown.")
+	c.Halt()
 
 	if c.conn != nil {
-		c.conn.halt()
+		c.conn.Shutdown()
 	}
 
 	if c.pki != nil {
 		c.log.Info("stopping PKI worker")
 		c.pki.Halt()
 		c.log.Info("waiting for stopped PKI worker to exit")
-		c.pki.Wait()
 	}
-
 	c.log.Info("Shutdown complete.")
-	close(c.haltedCh)
 }
 
 // XXX This will go away once we get rid of polling.
@@ -132,7 +120,6 @@ func New(cfg *config.Config, logBackend *log.Backend) (*Client, error) {
 	c.cfg = cfg
 
 	c.log = c.logbackend.GetLogger("katzenpost/client2")
-	c.haltedCh = make(chan interface{})
 
 	return c, nil
 }

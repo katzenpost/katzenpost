@@ -65,7 +65,7 @@ type Daemon struct {
 	ingressCh  chan *sphinxReply
 	gcSurbIDCh chan *[sConstants.SURBIDLength]byte
 
-	gctimerQueue *TimerQueue
+	gcTimerQueue *TimerQueue
 	gcReplyCh    chan *gcReply
 
 	arqTimerQueue *TimerQueue
@@ -119,17 +119,19 @@ func (d *Daemon) Shutdown() {
 }
 
 func (d *Daemon) halt() {
-	d.log.Debug("Stopping timerQueues")
+	d.Halt() // shutdown ingressWorker and egressWorker
+	d.log.Debug("Stopping timerQueue")
 	d.timerQueue.Halt()
-	d.gctimerQueue.Halt()
+	d.log.Debug("Stopping gcTimerQueue")
+	d.gcTimerQueue.Halt()
+	d.log.Debug("Stopping arqTimerQueue")
+	d.arqTimerQueue.Halt()
 
 	d.log.Debug("Stopping thin client listener")
 	d.listener.Halt()
 
 	d.log.Debug("Stopping client")
 	d.client.Shutdown()
-	d.log.Debug("waiting for stopped client to exit")
-	d.client.Wait()
 }
 
 func (d *Daemon) Start() error {
@@ -178,7 +180,7 @@ func (d *Daemon) Start() error {
 		d.log.Warning("AFTER ARQ resend")
 	})
 	d.arqTimerQueue.Start()
-	d.gctimerQueue = NewTimerQueue(func(rawGCReply interface{}) {
+	d.gcTimerQueue = NewTimerQueue(func(rawGCReply interface{}) {
 		myGcReply, ok := rawGCReply.(*gcReply)
 		if !ok {
 			panic("wtf, failed type assertion!")
@@ -189,7 +191,7 @@ func (d *Daemon) Start() error {
 			return
 		}
 	})
-	d.gctimerQueue.Start()
+	d.gcTimerQueue.Start()
 
 	d.Go(d.ingressWorker)
 	d.Go(d.egressWorker)
@@ -216,7 +218,7 @@ func (d *Daemon) egressWorker() {
 	for {
 		select {
 		case <-d.HaltCh():
-			d.Shutdown()
+			d.log.Debug("egressWorker shutting down")
 			return
 		case surbID := <-d.arqResendCh:
 			d.arqDoResend(surbID)
@@ -241,7 +243,6 @@ func (d *Daemon) ingressWorker() {
 	for {
 		select {
 		case <-d.HaltCh():
-			d.Shutdown()
 			return
 		case mygcreply := <-d.gcReplyCh:
 			response := &Response{
@@ -408,7 +409,7 @@ func (d *Daemon) send(request *Request) {
 		// ensure that we send the thin client an arq gc event so it cleans up it's arq specific book keeping
 		slop := time.Minute * 5 // very conservative
 		replyArrivalTime := time.Now().Add(rtt + slop)
-		d.gctimerQueue.Push(uint64(replyArrivalTime.UnixNano()), &gcReply{
+		d.gcTimerQueue.Push(uint64(replyArrivalTime.UnixNano()), &gcReply{
 			id:    request.ID,
 			appID: request.AppID,
 		})

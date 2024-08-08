@@ -5,9 +5,9 @@ gid=$(shell [ "$$SUDO_GID" != "" ] && echo "$$SUDO_GID" || id -g)
 docker_user?=$(shell if echo ${docker}|grep -q podman; then echo 0:0; else echo ${uid}:${gid}; fi)
 docker=$(shell if which podman|grep -q .; then echo podman; else echo docker; fi)
 distro=alpine
-image=katzenpost-$(distro)_base
+image=localhost/katzenpost-$(distro)_base
 cache_dir=$(shell readlink -f ../docker)/cache
-docker_args=--user ${docker_user} -v $(shell readlink -f ..):/go/katzenpost --network=host --rm -v $(cache_dir)/go:/go/ -v $(cache_dir)/root_cache:/root/.cache
+docker_args=--init -it --user ${docker_user} -v $(shell readlink -f ..):/go/katzenpost --network=host --rm -v $(cache_dir)/go:/go/ -v $(cache_dir)/root_cache:/root/.cache -e GORACE=history_size=7
 
 test:
 	go test -v -race -timeout 0 -ldflags ${ldflags} .
@@ -23,8 +23,9 @@ coverage-html:
 
 
 dockerdockertest:
-	$(docker) run ${docker_args} $(image) \
-		sh -c 'cd /go/katzenpost/client2/; GORACE=history_size=7 go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 1h -run TestAllClient2Tests'
+	cd ../docker && make $(distro)_base.stamp
+	$(docker) run -w /go/katzenpost/client2 ${docker_args} $(image) \
+		go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 1h -run TestAllClient2Tests
 
 warpedclientdaemon:
 	cd cmd/kpclientd; go build -ldflags ${ldflags}

@@ -822,10 +822,11 @@ func (c *connection) GetConsensus(ctx context.Context, epoch uint64) (*commands.
 	// NOTREACHED
 }
 
-func (c *connection) halt() {
+func (c *connection) Shutdown() {
 	c.isShutdown = true
-	c.Worker.Halt()
-	c = nil
+	c.Halt()
+	close(c.fetchCh)
+	close(c.sendCh)
 }
 
 func (c *connection) start() {
