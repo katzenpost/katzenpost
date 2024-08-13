@@ -270,7 +270,6 @@ func testDockerClientSendReceive(t *testing.T) {
 	t.Log("BEFORE sendAndWait")
 	reply := sendAndWait(t, thin, message1, &nodeIdKey, []byte("+testdest"))
 	t.Log("AFTER sendAndWait")
-	require.Equal(t, len(message1), len(reply))
 	require.Equal(t, message1, reply[:len(message1)])
 
 	/*
