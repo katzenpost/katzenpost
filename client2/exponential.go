@@ -46,15 +46,19 @@ func (e *ExpDist) OutCh() <-chan struct{} {
 }
 
 func (e *ExpDist) UpdateRate(averageRate uint64, maxDelay uint64) {
-	e.opCh <- opExpNewRate{
+	select {
+	case <-e.HaltCh():
+	case e.opCh <- opExpNewRate{
 		averageRate: averageRate,
 		maxDelay:    maxDelay,
+	}:
 	}
 }
 
 func (e *ExpDist) UpdateConnectionStatus(isConnected bool) {
-	e.opCh <- opConnStatusChanged{
-		isConnected: isConnected,
+	select {
+	case <-e.HaltCh():
+	case e.opCh <- opConnStatusChanged{isConnected: isConnected}:
 	}
 }
 
