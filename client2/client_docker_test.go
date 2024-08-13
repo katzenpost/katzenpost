@@ -147,10 +147,10 @@ func testDockerMultiplexClients(t *testing.T) {
 	message1 := []byte("hello alice, this is bob.")
 	nodeIdKey := hash.Sum256(pingTargets[0].IdentityKey)
 
-	reply := sendAndWait(t, thin1, message1, &nodeIdKey, []byte("echo"))
+	reply := sendAndWait(t, thin1, message1, &nodeIdKey, []byte("+echo"))
 	require.Equal(t, message1, reply[:len(message1)])
 
-	reply = sendAndWait(t, thin2, message1, &nodeIdKey, []byte("echo"))
+	reply = sendAndWait(t, thin2, message1, &nodeIdKey, []byte("+echo"))
 	require.Equal(t, message1, reply[:len(message1)])
 
 	err = thin1.Close()
@@ -274,19 +274,19 @@ func testDockerClientSendReceive(t *testing.T) {
 	require.Equal(t, message1, reply[:len(message1)])
 
 	/*
-		reply = sendAndWait(t, thin, message1, &nodeIdKey, []byte("testdest"))
+		reply = sendAndWait(t, thin, message1, &nodeIdKey, []byte("+testdest"))
 		require.Equal(t, message1, reply[:len(message1)])
 
-		reply = sendAndWait(t, thin, message1, &nodeIdKey, []byte("testdest"))
+		reply = sendAndWait(t, thin, message1, &nodeIdKey, []byte("+testdest"))
 		require.Equal(t, message1, reply[:len(message1)])
 
-		reply = sendAndWait(t, thin, message1, &nodeIdKey, []byte("testdest"))
+		reply = sendAndWait(t, thin, message1, &nodeIdKey, []byte("+testdest"))
 		require.Equal(t, message1, reply[:len(message1)])
 
-		reply = sendAndWait(t, thin, message1, &nodeIdKey, []byte("testdest"))
+		reply = sendAndWait(t, thin, message1, &nodeIdKey, []byte("+testdest"))
 		require.Equal(t, message1, reply[:len(message1)])
 
-		reply = sendAndWait(t, thin, message1, &nodeIdKey, []byte("testdest"))
+		reply = sendAndWait(t, thin, message1, &nodeIdKey, []byte("+testdest"))
 		require.Equal(t, message1, reply[:len(message1)])
 	*/
 
