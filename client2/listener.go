@@ -41,18 +41,12 @@ type listener struct {
 }
 
 func (l *listener) Shutdown() {
+	// stop the decoy Sender
 	l.decoySender.Halt()
 	// Close the listener, wait for worker() to return.
 	l.listener.Close()
-
 	// stop listener, and stop Accepting connections
 	l.Halt()
-
-// Close all connections belonging to the listener.
-	//
-	// Note: Worst case this can take up to the handshake timeout to
-	// actually complete, since the channel isn't checked mid-handshake.
-
 }
 
 func (l *listener) updateFromPKIDoc(doc *cpki.Document) {
