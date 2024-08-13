@@ -438,7 +438,7 @@ func (c *connection) onWireConn(w *wire.Session) {
 
 	// Start the peer reader.
 	cmdCh := make(chan interface{})
-	go func() {
+	c.Go(func() {
 		defer close(cmdCh)
 		for {
 			rawCmd, err := w.RecvCommand()
@@ -459,7 +459,7 @@ func (c *connection) onWireConn(w *wire.Session) {
 				return
 			}
 		}
-	}()
+	})
 
 	dispatchOnEmpty := func() error {
 		if c.client.cfg.Callbacks.OnEmptyFn != nil {
