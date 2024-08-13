@@ -493,7 +493,7 @@ func (c *connection) onWireConn(w *wire.Session) {
 		if deltaT := sendAt.Sub(selectAt); deltaT < fetchDelay {
 			fetchDelay = fetchDelay - deltaT
 		} else {
-			fetchDelay = time.Second * 3
+			fetchDelay = 0 // fetch immediately
 		}
 	}
 	var seq uint32

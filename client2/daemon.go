@@ -199,6 +199,9 @@ func (d *Daemon) Start() error {
 }
 
 func (d *Daemon) onDocument(doc *cpki.Document) {
+	slopFactor := 0.8
+	pollProviderMsec := time.Duration((1.0 / (doc.LambdaP + doc.LambdaL)) * slopFactor * float64(time.Millisecond))
+	d.client.SetPollInterval(pollProviderMsec)
 	d.listener.updateFromPKIDoc(doc)
 }
 
@@ -358,7 +361,11 @@ func (d *Daemon) send(request *Request) {
 
 	if request.WithSURB {
 		now = time.Now()
-		duration := rtt
+		// XXX  this is too aggressive, and must be at least the fetchInterval + rtt + some slopfactor to account for path delays
+	
+		fetchInterval := d.client.GetPollInterval()
+		slop := time.Second
+		duration := rtt + fetchInterval + slop
 		replyArrivalTime := now.Add(duration)
 
 		d.timerQueue.Push(uint64(replyArrivalTime.UnixNano()), request.SURBID)
