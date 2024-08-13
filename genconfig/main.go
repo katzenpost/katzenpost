@@ -116,7 +116,7 @@ func (s *katzenpost) genClient2Cfg() error {
 	cfg.VotingAuthority = &cConfig2.VotingAuthority{Peers: peers}
 
 	// Debug section
-	cfg.Debug = &cConfig2.Debug{DisableDecoyTraffic: false}
+	cfg.Debug = &cConfig2.Debug{DisableDecoyTraffic: s.debugConfig.DisableDecoyTraffic}
 
 	log.Print("before gathering providers")
 	gateways := make([]*cConfig2.Gateway, 0)
@@ -644,7 +644,7 @@ func main() {
 		log.Fatalf("%s", err)
 	}
 
-	err = s.genClient2Cfg()
+	err = s.genClient2Cfg() // depends on genClientCfg()
 	if err != nil {
 		log.Fatalf("%s", err)
 	}
