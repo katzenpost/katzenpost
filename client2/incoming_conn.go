@@ -172,10 +172,10 @@ func (c *incomingConn) worker() {
 		}
 	}()
 
-	go func() {
+	c.listener.Go(func() {
 		for {
 			select {
-			case <-c.listener.closeAllCh:
+			case <-c.listener.HaltCh():
 				return
 			case message := <-c.sendToClientCh:
 				c.log.Debug("SEND TO THIN CLIENT THREAD")
@@ -186,7 +186,7 @@ func (c *incomingConn) worker() {
 				}
 			}
 		}
-	}()
+	})
 
 	for {
 		var rawReq *Request

@@ -226,13 +226,13 @@ func (c *connection) connectWorker() {
 	defer c.log.Debugf("Terminating connect worker.")
 
 	dialCtx, cancelFn := context.WithCancel(context.Background())
-	go func() {
+	c.Go(func() {
 		select {
 		case <-c.HaltCh():
 			cancelFn()
 		case <-dialCtx.Done():
 		}
-	}()
+	})
 
 	for {
 		select {
@@ -464,13 +464,13 @@ func (c *connection) onWireConn(w *wire.Session) {
 	dispatchOnEmpty := func() error {
 		if c.client.cfg.Callbacks.OnEmptyFn != nil {
 			cbWg.Add(1)
-			go func() {
+			c.Go(func() {
 				defer cbWg.Done()
 				if err := c.client.cfg.Callbacks.OnEmptyFn(); err != nil {
 					c.log.Debugf("Caller failed to handle MessageEmpty: %v", err)
 					forceCloseConn(err)
 				}
-			}()
+			})
 		}
 		return nil
 	}
