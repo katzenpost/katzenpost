@@ -8,6 +8,7 @@ package client2
 import (
 	"os"
 	"os/signal"
+	"runtime"
 	"syscall"
 	"testing"
 	"time"
@@ -18,6 +19,9 @@ import (
 	"github.com/katzenpost/katzenpost/client2/config"
 	"github.com/katzenpost/katzenpost/client2/thin"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
+
+	"net/http"
+	_ "net/http/pprof"
 )
 
 var (
@@ -292,4 +296,9 @@ func testDockerClientSendReceive(t *testing.T) {
 
 func init() {
 	shutdownCh = make(chan interface{})
+	go func() {
+		http.ListenAndServe("localhost:4242", nil)
+	}()
+	runtime.SetMutexProfileFraction(1)
+	runtime.SetBlockProfileRate(1)
 }
