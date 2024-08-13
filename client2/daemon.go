@@ -119,7 +119,8 @@ func (d *Daemon) Shutdown() {
 }
 
 func (d *Daemon) halt() {
-	d.Halt() // shutdown ingressWorker and egressWorker
+	d.log.Debug("Stopping thin client listener")
+	d.listener.Shutdown()
 	d.log.Debug("Stopping timerQueue")
 	d.timerQueue.Halt()
 	d.log.Debug("Stopping gcTimerQueue")
@@ -127,11 +128,9 @@ func (d *Daemon) halt() {
 	d.log.Debug("Stopping arqTimerQueue")
 	d.arqTimerQueue.Halt()
 
-	d.log.Debug("Stopping thin client listener")
-	d.listener.Halt()
-
 	d.log.Debug("Stopping client")
 	d.client.Shutdown()
+	d.Halt() // shutdown ingressWorker and egressWorker
 }
 
 func (d *Daemon) Start() error {

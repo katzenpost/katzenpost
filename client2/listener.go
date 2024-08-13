@@ -40,17 +40,19 @@ type listener struct {
 	updateStatusCh chan error
 }
 
-func (l *listener) Halt() {
+func (l *listener) Shutdown() {
 	l.decoySender.Halt()
 	// Close the listener, wait for worker() to return.
 	l.listener.Close()
-	l.Worker.Halt()
-	// Close all connections belonging to the listener.
+
+	// stop listener, and stop Accepting connections
+	l.Halt()
+
+// Close all connections belonging to the listener.
 	//
 	// Note: Worst case this can take up to the handshake timeout to
 	// actually complete, since the channel isn't checked mid-handshake.
-	close(l.closeAllCh)
-	l.closeAllWg.Wait()
+
 }
 
 func (l *listener) updateFromPKIDoc(doc *cpki.Document) {

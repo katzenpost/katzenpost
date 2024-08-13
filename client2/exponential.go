@@ -45,10 +45,6 @@ func (e *ExpDist) OutCh() <-chan struct{} {
 	return e.outCh
 }
 
-func (e *ExpDist) Stop() {
-	e.Halt()
-}
-
 func (e *ExpDist) UpdateRate(averageRate uint64, maxDelay uint64) {
 	e.opCh <- opExpNewRate{
 		averageRate: averageRate,

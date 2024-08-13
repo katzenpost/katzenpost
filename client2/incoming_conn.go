@@ -87,7 +87,7 @@ func (c *incomingConn) sendPKIDoc(doc []byte) error {
 	}
 	select {
 	case c.sendToClientCh <- message:
-	case <-c.listener.closeAllCh:
+	case <-c.listener.HaltCh():
 		return errors.New("shutting down")
 	}
 	return nil
@@ -102,7 +102,7 @@ func (c *incomingConn) updateConnectionStatus(status error) {
 	}
 	select {
 	case c.sendToClientCh <- message:
-	case <-c.listener.closeAllCh:
+	case <-c.listener.HaltCh():
 		return
 	}
 }
@@ -193,7 +193,7 @@ func (c *incomingConn) worker() {
 		var ok bool
 
 		select {
-		case <-c.listener.closeAllCh:
+		case <-c.listener.HaltCh():
 			return
 		case rawReq, ok = <-requestCh:
 			if !ok {
@@ -206,7 +206,7 @@ func (c *incomingConn) worker() {
 			c.log.Infof("Received Request from peer application.")
 			select {
 			case c.listener.ingressCh <- rawReq:
-			case <-c.listener.closeAllCh:
+			case <-c.listener.HaltCh():
 				return
 			}
 		}
