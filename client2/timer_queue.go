@@ -64,9 +64,12 @@ func (t *TimerQueue) Len() int {
 }
 
 func (t *TimerQueue) Push(priority uint64, value interface{}) {
-	t.pushCh <- &pushedItem{
+	select {
+	case t.pushCh <- &pushedItem{
 		priority: priority,
 		value:    value,
+	}:
+	case <-t.HaltCh():
 	}
 }
 
@@ -88,7 +91,9 @@ func (t *TimerQueue) worker() {
 			t.queue.Pop()
 			t.mutex.Unlock()
 			if m != nil {
-				t.action(m.Value)
+				t.Go(func() {
+					t.action(m.Value)
+				})
 			}
 		case item := <-t.pushCh:
 			t.mutex.Lock()
