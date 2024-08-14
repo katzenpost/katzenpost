@@ -139,7 +139,7 @@ func (c *incomingConn) sendResponse(r *Response) error {
 
 func (c *incomingConn) start() {
 	c.log.Debug("STARTING incomingConn")
-	go c.worker()
+	c.listener.Go(c.worker)
 }
 
 func (c *incomingConn) worker() {
@@ -153,7 +153,7 @@ func (c *incomingConn) worker() {
 	requestCh := make(chan *Request)
 	requestCloseCh := make(chan interface{})
 	defer close(requestCloseCh)
-	go func() {
+	c.listener.Go(func() {
 		defer close(requestCh)
 		for {
 			rawCmd, err := c.recvRequest()
@@ -170,7 +170,7 @@ func (c *incomingConn) worker() {
 				return
 			}
 		}
-	}()
+	})
 
 	c.listener.Go(func() {
 		for {
