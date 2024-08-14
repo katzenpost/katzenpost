@@ -194,37 +194,37 @@ func testDockerClientARQSendReceive(t *testing.T) {
 	id3 := thin.NewMessageID()
 	id4 := thin.NewMessageID()
 
-	message3, err := thin.BlockingSendReliableMessage(id1, message1, &nodeIdKey, []byte("echo"))
+	message3, err := thin.BlockingSendReliableMessage(id1, message1, &nodeIdKey, []byte("+echo"))
 	require.NoError(t, err)
 	require.NotEqual(t, message3, []byte{})
 	require.Equal(t, message1, message3[:len(message1)])
 
-	message3, err = thin.BlockingSendReliableMessage(id2, message1, &nodeIdKey, []byte("echo"))
+	message3, err = thin.BlockingSendReliableMessage(id2, message1, &nodeIdKey, []byte("+echo"))
 	require.NoError(t, err)
 	require.NotEqual(t, message3, []byte{})
 	require.Equal(t, message1, message3[:len(message1)])
 
-	message3, err = thin.BlockingSendReliableMessage(id3, message1, &nodeIdKey, []byte("echo"))
+	message3, err = thin.BlockingSendReliableMessage(id3, message1, &nodeIdKey, []byte("+echo"))
 	require.NoError(t, err)
 	require.NotEqual(t, message3, []byte{})
 	require.Equal(t, message1, message3[:len(message1)])
 
-	message3, err = thin.BlockingSendReliableMessage(id4, message1, &nodeIdKey, []byte("echo"))
+	message3, err = thin.BlockingSendReliableMessage(id4, message1, &nodeIdKey, []byte("+echo"))
 	require.NoError(t, err)
 	require.NotEqual(t, message3, []byte{})
 	require.Equal(t, message1, message3[:len(message1)])
 
-	message3, err = thin.BlockingSendReliableMessage(id4, message1, &nodeIdKey, []byte("echo"))
+	message3, err = thin.BlockingSendReliableMessage(id4, message1, &nodeIdKey, []byte("+echo"))
 	require.NoError(t, err)
 	require.NotEqual(t, message3, []byte{})
 	require.Equal(t, message1, message3[:len(message1)])
 
-	message3, err = thin.BlockingSendReliableMessage(id4, message1, &nodeIdKey, []byte("echo"))
+	message3, err = thin.BlockingSendReliableMessage(id4, message1, &nodeIdKey, []byte("+echo"))
 	require.NoError(t, err)
 	require.NotEqual(t, message3, []byte{})
 	require.Equal(t, message1, message3[:len(message1)])
 
-	message3, err = thin.BlockingSendReliableMessage(id4, message1, &nodeIdKey, []byte("echo"))
+	message3, err = thin.BlockingSendReliableMessage(id4, message1, &nodeIdKey, []byte("+echo"))
 	require.NoError(t, err)
 	require.NotEqual(t, message3, []byte{})
 	require.Equal(t, message1, message3[:len(message1)])
@@ -272,22 +272,20 @@ func testDockerClientSendReceive(t *testing.T) {
 	t.Log("AFTER sendAndWait")
 	require.Equal(t, message1, reply[:len(message1)])
 
-	/*
-		reply = sendAndWait(t, thin, message1, &nodeIdKey, []byte("+testdest"))
-		require.Equal(t, message1, reply[:len(message1)])
+	reply = sendAndWait(t, thin, message1, &nodeIdKey, []byte("+testdest"))
+	require.Equal(t, message1, reply[:len(message1)])
 
-		reply = sendAndWait(t, thin, message1, &nodeIdKey, []byte("+testdest"))
-		require.Equal(t, message1, reply[:len(message1)])
+	reply = sendAndWait(t, thin, message1, &nodeIdKey, []byte("+testdest"))
+	require.Equal(t, message1, reply[:len(message1)])
 
-		reply = sendAndWait(t, thin, message1, &nodeIdKey, []byte("+testdest"))
-		require.Equal(t, message1, reply[:len(message1)])
+	reply = sendAndWait(t, thin, message1, &nodeIdKey, []byte("+testdest"))
+	require.Equal(t, message1, reply[:len(message1)])
 
-		reply = sendAndWait(t, thin, message1, &nodeIdKey, []byte("+testdest"))
-		require.Equal(t, message1, reply[:len(message1)])
+	reply = sendAndWait(t, thin, message1, &nodeIdKey, []byte("+testdest"))
+	require.Equal(t, message1, reply[:len(message1)])
 
-		reply = sendAndWait(t, thin, message1, &nodeIdKey, []byte("+testdest"))
-		require.Equal(t, message1, reply[:len(message1)])
-	*/
+	reply = sendAndWait(t, thin, message1, &nodeIdKey, []byte("+testdest"))
+	require.Equal(t, message1, reply[:len(message1)])
 
 	err = thin.Close()
 	require.NoError(t, err)
