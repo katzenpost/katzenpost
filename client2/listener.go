@@ -30,9 +30,6 @@ type listener struct {
 	ingressCh   chan *Request
 	decoySender *sender
 
-	closeAllCh chan interface{}
-	closeAllWg sync.WaitGroup
-
 	connectionStatusMutex sync.Mutex
 	connectionStatus      error
 
@@ -107,7 +104,6 @@ func (l *listener) onNewConn(conn net.Conn) {
 
 	c := newIncomingConn(l, conn)
 
-	l.closeAllWg.Add(1)
 
 	defer func() {
 		c.start()
@@ -133,7 +129,6 @@ func (l *listener) onClosedConn(c *incomingConn) {
 	l.connsLock.Lock()
 	delete(l.conns, *c.appID)
 	l.connsLock.Unlock()
-	l.closeAllWg.Done()
 }
 
 func (l *listener) getConnectionStatus() error {
@@ -221,7 +216,6 @@ func NewListener(client *Client, rates *Rates, egressCh chan *Request, logBacken
 		logBackend:     logBackend,
 		conns:          make(map[[AppIDLength]byte]*incomingConn),
 		connsLock:      new(sync.RWMutex),
-		closeAllCh:     make(chan interface{}),
 		ingressCh:      make(chan *Request, ingressSize),
 		updatePKIDocCh: make(chan *cpki.Document, 2),
 		updateStatusCh: make(chan error, 2),
