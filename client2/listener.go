@@ -30,9 +30,6 @@ type listener struct {
 	ingressCh   chan *Request
 	decoySender *sender
 
-	closeAllCh chan interface{}
-	closeAllWg sync.WaitGroup
-
 	connectionStatusMutex sync.Mutex
 	connectionStatus      error
 
@@ -40,18 +37,13 @@ type listener struct {
 	updateStatusCh chan error
 }
 
-func (l *listener) Halt() {
-	l.decoySender.Halt()
-	l.decoySender.Wait()
+func (l *listener) Shutdown() {
 	// Close the listener, wait for worker() to return.
 	l.listener.Close()
-	l.Worker.Halt()
-	// Close all connections belonging to the listener.
-	//
-	// Note: Worst case this can take up to the handshake timeout to
-	// actually complete, since the channel isn't checked mid-handshake.
-	close(l.closeAllCh)
-	l.closeAllWg.Wait()
+	// stop listener, and stop Accepting connections
+	l.Halt()
+	// stop the decoy Sender
+	l.decoySender.Halt()
 }
 
 func (l *listener) updateFromPKIDoc(doc *cpki.Document) {
@@ -112,7 +104,6 @@ func (l *listener) onNewConn(conn net.Conn) {
 
 	c := newIncomingConn(l, conn)
 
-	l.closeAllWg.Add(1)
 
 	defer func() {
 		c.start()
@@ -138,7 +129,6 @@ func (l *listener) onClosedConn(c *incomingConn) {
 	l.connsLock.Lock()
 	delete(l.conns, *c.appID)
 	l.connsLock.Unlock()
-	l.closeAllWg.Done()
 }
 
 func (l *listener) getConnectionStatus() error {
@@ -226,7 +216,6 @@ func NewListener(client *Client, rates *Rates, egressCh chan *Request, logBacken
 		logBackend:     logBackend,
 		conns:          make(map[[AppIDLength]byte]*incomingConn),
 		connsLock:      new(sync.RWMutex),
-		closeAllCh:     make(chan interface{}),
 		ingressCh:      make(chan *Request, ingressSize),
 		updatePKIDocCh: make(chan *cpki.Document, 2),
 		updateStatusCh: make(chan error, 2),

@@ -207,14 +207,14 @@ func (p *pki) worker() {
 
 func (p *pki) updateDocument(epoch uint64) error {
 	pkiCtx, cancelFn := context.WithCancel(context.Background())
-	go func() {
+	p.Go(func() {
 		select {
 		case <-p.HaltCh():
 			p.log.Debugf("Terminating gracefully.")
 			cancelFn()
 		case <-pkiCtx.Done():
 		}
-	}()
+	})
 
 	docBlob, d, err := p.getDocument(pkiCtx, epoch)
 	cancelFn()

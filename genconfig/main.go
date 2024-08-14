@@ -65,6 +65,7 @@ type katzenpost struct {
 	serviceNodeIdx int
 	hasPanda       bool
 	hasProxy       bool
+	noMixDecoy     bool
 	debugConfig    *cConfig.Debug
 }
 
@@ -115,7 +116,7 @@ func (s *katzenpost) genClient2Cfg() error {
 	cfg.VotingAuthority = &cConfig2.VotingAuthority{Peers: peers}
 
 	// Debug section
-	cfg.Debug = &cConfig2.Debug{DisableDecoyTraffic: false}
+	cfg.Debug = &cConfig2.Debug{DisableDecoyTraffic: s.debugConfig.DisableDecoyTraffic}
 
 	log.Print("before gathering providers")
 	gateways := make([]*cConfig2.Gateway, 0)
@@ -246,7 +247,7 @@ func (s *katzenpost) genNodeConfig(isGateway, isServiceNode bool, isVoting bool)
 
 	// Debug section.
 	cfg.Debug = new(sConfig.Debug)
-	cfg.Debug.SendDecoyTraffic = true
+	cfg.Debug.SendDecoyTraffic = !s.noMixDecoy
 
 	// PKI section.
 	if isVoting {
@@ -464,6 +465,7 @@ func main() {
 	UserForwardPayloadLength := flag.Int("UserForwardPayloadLength", 2000, "UserForwardPayloadLength")
 	pkiSignatureScheme := flag.String("pkiScheme", "Ed25519", "PKI Signature Scheme to be used")
 	noDecoy := flag.Bool("noDecoy", false, "Disable decoy traffic for the client")
+	noMixDecoy := flag.Bool("noMixDecoy", false, "Disable decoy traffic for the mixes")
 	dialTimeout := flag.Int("dialTimeout", 0, "Session dial timeout")
 	maxPKIDelay := flag.Int("maxPKIDelay", 0, "Initial maximum PKI retrieval delay")
 	pollingIntvl := flag.Int("pollingIntvl", 0, "Polling interval")
@@ -535,6 +537,7 @@ func main() {
 		InitialMaxPKIRetrievalDelay: *maxPKIDelay,
 		PollingInterval:             *pollingIntvl,
 	}
+	s.noMixDecoy = *noMixDecoy
 
 	nrHops := *nrLayers + 2
 
@@ -641,7 +644,7 @@ func main() {
 		log.Fatalf("%s", err)
 	}
 
-	err = s.genClient2Cfg()
+	err = s.genClient2Cfg() // depends on genClientCfg()
 	if err != nil {
 		log.Fatalf("%s", err)
 	}
