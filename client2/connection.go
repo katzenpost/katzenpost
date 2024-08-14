@@ -417,7 +417,6 @@ func (c *connection) onWireConn(w *wire.Session) {
 
 	var wireErr error
 
-	var cbWg sync.WaitGroup
 	closeConnCh := make(chan error, 1)
 	forceCloseConn := func(err error) {
 		// We only care about the first error from a callback.
@@ -432,8 +431,6 @@ func (c *connection) onWireConn(w *wire.Session) {
 			panic("BUG: wireErr is nil on connection teardown.")
 		}
 		c.onConnStatusChange(wireErr)
-		close(cmdCloseCh)
-		cbWg.Wait()
 	}()
 
 	// Start the peer reader.
@@ -463,9 +460,7 @@ func (c *connection) onWireConn(w *wire.Session) {
 
 	dispatchOnEmpty := func() error {
 		if c.client.cfg.Callbacks.OnEmptyFn != nil {
-			cbWg.Add(1)
 			c.Go(func() {
-				defer cbWg.Done()
 				if err := c.client.cfg.Callbacks.OnEmptyFn(); err != nil {
 					c.log.Debugf("Caller failed to handle MessageEmpty: %v", err)
 					forceCloseConn(err)
@@ -623,14 +618,13 @@ func (c *connection) onWireConn(w *wire.Session) {
 			}
 			nrResps++
 			if c.client.cfg.Callbacks.OnMessageFn != nil {
-				cbWg.Add(1)
-				go func() {
-					defer cbWg.Done()
+				c.Go(func() {
+					// this is without a cancelFn... can block ? XXX
 					if err := c.client.cfg.Callbacks.OnMessageFn(cmd.Payload); err != nil {
 						c.log.Debugf("Caller failed to handle Message: %v", err)
 						forceCloseConn(err)
 					}
-				}()
+				})
 			}
 			seq++
 			if cmd.QueueSizeHint == 0 {
@@ -647,14 +641,12 @@ func (c *connection) onWireConn(w *wire.Session) {
 			}
 			nrResps++
 			if c.client.cfg.Callbacks.OnACKFn != nil {
-				cbWg.Add(1)
-				go func() {
-					defer cbWg.Done()
+				c.Go(func() {
 					if err := c.client.cfg.Callbacks.OnACKFn(&cmd.ID, cmd.Payload); err != nil {
 						c.log.Debugf("Caller failed to handle MessageACK: %v", err)
 						forceCloseConn(err)
 					}
-				}()
+				})
 			} else {
 				panic("client.cfg.Callbacks.OnACKFn must not be nil")
 			}
