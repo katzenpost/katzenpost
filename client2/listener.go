@@ -38,12 +38,12 @@ type listener struct {
 }
 
 func (l *listener) Shutdown() {
-	// stop the decoy Sender
-	l.decoySender.Halt()
 	// Close the listener, wait for worker() to return.
 	l.listener.Close()
 	// stop listener, and stop Accepting connections
 	l.Halt()
+	// stop the decoy Sender
+	l.decoySender.Halt()
 }
 
 func (l *listener) updateFromPKIDoc(doc *cpki.Document) {
