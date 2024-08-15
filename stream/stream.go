@@ -60,7 +60,7 @@ const (
 type Frame struct {
 	Type FrameType
 	// Ack is the sequence number of last consequtive frame seen by peer
-	id      uint64
+	Id      uint64
 	Ack     uint64
 	Payload []byte // transported data
 }
@@ -171,7 +171,7 @@ func (r *ReTx) Push(i client.Item) error {
 	}
 
 	r.Lock()
-	_, ok = r.Wack[m.f.id]
+	_, ok = r.Wack[m.f.Id]
 	r.Unlock()
 	if !ok {
 		// Already Acknowledged
@@ -457,7 +457,7 @@ func (s *Stream) writer() {
 
 		f := new(Frame)
 		s.log.Debugf("Sending frame for %d", s.WriteIdx)
-		f.id = s.WriteIdx
+		f.Id = s.WriteIdx
 
 		if s.ReadIdx == 0 {
 			// have not read any data from peer yet so Ack = 0 is special case
@@ -560,8 +560,8 @@ func (s *Stream) txFrame(frame *Frame) (err error) {
 	// Retransmit unacknowledged blocks every few epochs
 	//m := &smsg{f: frame, priority: uint64(time.Now().Add(til + 2*epochtime.Period).UnixNano())}
 	m := &smsg{f: frame, priority: uint64(time.Now().Add(10 * time.Second).UnixNano())}
-	frame_id := s.txFrameID(frame.id)
-	frame_key := s.txFrameKey(frame.id)
+	frame_id := s.txFrameID(frame.Id)
+	frame_key := s.txFrameKey(frame.Id)
 	// Update reference to last acknowledged message on retransmit
 	if s.ReadIdx > 0 {
 		// update retransmitted frame to point at last read payload (ReadIdx points at next frame)
@@ -590,7 +590,7 @@ func (s *Stream) txFrame(frame *Frame) (err error) {
 	}
 	s.l.Lock()
 	s.txEnqueue(m)
-	if frame.id == s.WriteIdx {
+	if frame.Id == s.WriteIdx {
 		// do not increment WriteIdx unless frame tx'd is tip
 		s.WriteIdx += 1
 	}
@@ -602,7 +602,7 @@ func (s *Stream) txFrame(frame *Frame) (err error) {
 func (s *Stream) txEnqueue(m *smsg) {
 	// use a timerqueue here and set an acknowledgement retransmit timeout; ideally we would know the effective durability of the storage medium and maximize the retransmission delay so that we retransmit a message as little as possible.
 	s.R.Lock()
-	s.R.Wack[m.f.id] = struct{}{}
+	s.R.Wack[m.f.Id] = struct{}{}
 	s.R.Unlock()
 	s.TQ.Push(m)
 }
@@ -783,7 +783,7 @@ func (s *Stream) readFrame() (*Frame, error) {
 				return
 			}
 			f := new(Frame)
-			f.id = idx
+			f.Id = idx
 			_, err = cbor.UnmarshalFirst(plaintext, f)
 			if err != nil {
 				// TODO: indicate serious error somehow
