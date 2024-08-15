@@ -273,7 +273,6 @@ func (s *Stream) reader() {
 			s.l.Unlock()
 		}
 	}
-	s.Done()
 }
 
 // Read impl io.Reader
@@ -517,7 +516,6 @@ func (s *Stream) writer() {
 			}
 		}
 	}
-	s.Done()
 }
 
 // derive the reader frame ID for frame_num
