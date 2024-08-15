@@ -43,7 +43,7 @@ const (
 
 // Client handles sending and receiving messages over the mix network
 type Client struct {
-	sync.Mutex
+	l          *sync.Mutex
 
 	cfg        *config.Config
 	logBackend *log.Backend
@@ -93,6 +93,7 @@ func SelectGatewayNode(doc *pki.Document) (*pki.MixDescriptor, error) {
 func New(cfg *config.Config) (*Client, error) {
 	c := new(Client)
 	c.cfg = cfg
+	c.l = new(sync.Mutex)
 	c.fatalErrCh = make(chan error)
 	c.haltedCh = make(chan interface{})
 	c.haltOnce = new(sync.Once)
@@ -154,8 +155,8 @@ func (c *Client) Wait() {
 
 func (c *Client) halt() {
 	c.log.Noticef("Starting graceful shutdown.")
-	c.Lock()
-	defer c.Unlock()
+	c.l.Lock()
+	defer c.l.Unlock()
 	for _, s := range c.sessions {
 		s.Shutdown()
 	}
@@ -192,8 +193,8 @@ func (c *Client) NewTOFUSession(ctx context.Context) (*Session, error) {
 		return nil, err
 	}
 
-	c.Lock()
-	defer c.Unlock()
+	c.l.Lock()
+	defer c.l.Unlock()
 	sess, err := NewSession(ctx, pkiclient, doc, c.fatalErrCh, c.logBackend, c.cfg, linkKey, gateway)
 	if err != nil {
 		return nil, err
@@ -204,8 +205,8 @@ func (c *Client) NewTOFUSession(ctx context.Context) (*Session, error) {
 
 // Returns a random Session from sessions
 func (c *Client) Session() *Session {
-	c.Lock()
-	defer c.Unlock()
+	c.l.Lock()
+	defer c.l.Unlock()
 	if len(c.sessions) == 0 {
 		return nil
 	}

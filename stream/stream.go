@@ -905,6 +905,7 @@ func NewStream(s *client.Session) *Stream {
 // LoadStream initializes a Stream from state saved by Save()
 func LoadStream(s *client.Session, state []byte) (*Stream, error) {
 	st := new(Stream)
+	st.l = new(sync.Mutex)
 	st.log = s.GetLogger(fmt.Sprintf("Stream %p", st))
 	st.startOnce = new(sync.Once)
 	_, err := cbor.UnmarshalFirst(state, st)
