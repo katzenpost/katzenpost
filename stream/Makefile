@@ -10,7 +10,7 @@ distro=alpine
 image=katzenpost-$(distro)_go_mod
 # mount the package cache from ../docker/cache/go into /go
 go_package_cache_arg := -v $(shell readlink -f ../docker)/$(cache_dir)/go:/go/ -e GOCACHE=/go/cache
-docker_args=--user ${docker_user} -v $(shell readlink -f ..):/go/katzenpost $(go_package_cache_arg) --network=host --rm -w /go/katzenpost/stream
+docker_args=--init -it --user ${docker_user} -v $(shell readlink -f ..):/go/katzenpost $(go_package_cache_arg) --network=host --rm -w /go/katzenpost/stream
 
 dockerdockertest:
 	$(docker) run -e GORACE=history_size=7 ${docker_args} $(image) \
