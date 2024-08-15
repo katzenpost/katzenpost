@@ -65,6 +65,7 @@ type Frame struct {
 	Payload []byte // transported data
 }
 
+// StreamState are the states that the reader and writer routines can be in
 type StreamState uint8
 
 const (
