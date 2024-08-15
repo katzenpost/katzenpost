@@ -85,6 +85,24 @@ func (s *frameWithPriority) Priority() uint64 {
 	return s.priority
 }
 
+// nextEpoch returns a frameWithPriority for next epoch
+func nextEpoch(f *Frame) *frameWithPriority {
+	_, _, til := epochtime.Now()
+	return &frameWithPriority{f: f, priority: uint64(time.Now().Add(til).UnixNano())}
+}
+
+// nextSRV returns a frameWithPriority for the next shared random epoch
+func nextSRV(f *Frame) *frameWithPriority {
+	epoch, _, til := epochtime.Now()
+	// XXX: this isn't how we define the weekly srv rotation yet, #689
+	epochsLeft := epochtime.WeekOfEpochs - (epoch % epochtime.WeekOfEpochs)
+	timeLeft := til + time.Duration(epochsLeft*uint64(epochtime.Period))
+	when := time.Now().Add(timeLeft).UnixNano()
+
+	// XXX: add some noise to avoid stampeding herd
+	return &frameWithPriority{f: f, priority: uint64(when)}
+}
+
 type Stream struct {
 	l *sync.Mutex
 	worker.Worker
@@ -556,9 +574,8 @@ func (s *Stream) txFrame(frame *Frame) (err error) {
 	}
 	//_, _, til := epochtime.Now()
 	s.l.Lock()
-	// Retransmit unacknowledged blocks every few epochs
-	//m := &smsg{f: frame, priority: uint64(time.Now().Add(til + 2*epochtime.Period).UnixNano())}
-	m := &smsg{f: frame, priority: uint64(time.Now().Add(10 * time.Second).UnixNano())}
+	// Retransmit unacknowledged Frames every epoch
+	m := nextEpoch(frame)
 	frame_id := s.txFrameID(frame.Id)
 	frame_key := s.txFrameKey(frame.Id)
 	// Update reference to last acknowledged message on retransmit
