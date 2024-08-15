@@ -74,14 +74,14 @@ const (
 	StreamClosed
 )
 
-// smsg is some sort of container for written messages pending acknowledgement
-type smsg struct {
+// frameWithPriority implmeents client.Item and holds the retransmit deadline and Frame for use with a TimerQueue
+type frameWithPriority struct {
 	f        *Frame // payload of message
 	priority uint64 // timeout, for when to retransmit if the message is not acknowledged
 }
 
 // Priority implements client.Item interface; used by TimerQueue for retransmissions
-func (s *smsg) Priority() uint64 {
+func (s *frameWithPriority) Priority() uint64 {
 	return s.priority
 }
 
@@ -166,9 +166,9 @@ type ReTx struct {
 // Push is called by the TimerQueue (Stream.TQ) with a client.Item when its deadline expires.
 func (r *ReTx) Push(i client.Item) error {
 	// time to retransmit a block that has not been acknowledged yet
-	m, ok := i.(*smsg)
+	m, ok := i.(*frameWithPriority)
 	if !ok {
-		panic("must be smsg")
+		panic("must be frameWithPriority")
 	}
 
 	r.Lock()
@@ -598,7 +598,7 @@ func (s *Stream) txFrame(frame *Frame) (err error) {
 	return err
 }
 
-func (s *Stream) txEnqueue(m *smsg) {
+func (s *Stream) txEnqueue(m *frameWithPriority) {
 	// use a timerqueue here and set an acknowledgement retransmit timeout; ideally we would know the effective durability of the storage medium and maximize the retransmission delay so that we retransmit a message as little as possible.
 	s.R.Lock()
 	s.R.Wack[m.f.Id] = struct{}{}
