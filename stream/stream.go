@@ -155,14 +155,14 @@ type Stream struct {
 	onStreamClose chan struct{}
 }
 
-// glue for timerQ
+// ReTx implmements client.nqueue and re-transmits unacknowledged frames
 type ReTx struct {
 	sync.Mutex
 	s    *Stream
 	Wack map[uint64]struct{}
 }
 
-// Push implements the client.nqueue interface
+// Push is called by the TimerQueue (Stream.TQ) with a client.Item when its deadline expires.
 func (r *ReTx) Push(i client.Item) error {
 	// time to retransmit a block that has not been acknowledged yet
 	m, ok := i.(*smsg)
