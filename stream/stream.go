@@ -33,7 +33,7 @@ var (
 	cborFrameOverhead  = 0
 	retryDelay         = epochtime.Period / 16
 	minBackoffDelay    = 1 * time.Millisecond
-	maxBackoffDelay    = 200 * time.Millisecond // epochtime.Period
+	maxBackoffDelay    = epochtime.Period / 4
 	defaultTimeout     = 5 * time.Minute
 	ErrStreamClosed    = errors.New("Stream Closed")
 	ErrFrameDecrypt    = errors.New("Failed to decrypt")
