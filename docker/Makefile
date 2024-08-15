@@ -58,6 +58,12 @@ cache_dir=cache
 # log_level can be DEBUG, INFO, NOTICE, WARNING, ERROR, CRITICAL
 log_level=INFO
 
+no_decoy?=false
+no_mixdecoy?=false
+
+noDecoy=$(shell if [[ $no_decoy ]]; then echo -noDecoy; fi)
+noMixDecoy=$(shell if [[ $no_mixdecoy ]]; then echo -noMixDecoy; fi)
+
 docker=$(shell if which podman|grep -q .; then echo podman; else echo docker; fi)
 
 ldflags="-buildid= -X github.com/katzenpost/katzenpost/core/epochtime.WarpedEpoch=${warped}"
@@ -101,6 +107,7 @@ $(docker_compose_yml): ../genconfig/main.go $(distro)_base.stamp | $(net_name) $
 		-lLMax ${lLMax} -lD ${lD} -lDMax ${lDMax} -lM ${lM} -lMMax ${lMMax} \
 		-S .$(distro) -v -o ./$(net_name) -b /$(net_name) -P $(base_port) \
 		-nike "$(nike)" -kem "$(kem)" -d katzenpost-$(distro)_base \
+		$(noDecoy) $(noMixDecoy) \
 		-UserForwardPayloadLength $(UserForwardPayloadLength) -log_level $(log_level)'
 
 $(net_name)/running.stamp:
