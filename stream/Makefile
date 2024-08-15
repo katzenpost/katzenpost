@@ -7,7 +7,7 @@ docker_user?=$(shell if echo ${docker}|grep -q podman; then echo 0:0; else echo 
 docker=$(shell if which podman|grep -q .; then echo podman; else echo docker; fi)
 cache_dir=cache
 distro=alpine
-image=katzenpost-$(distro)_go_mod
+image=katzenpost-$(distro)_base
 # mount the package cache from ../docker/cache/go into /go
 go_package_cache_arg := -v $(shell readlink -f ../docker)/$(cache_dir)/go:/go/ -e GOCACHE=/go/cache
 docker_args=--init -it --user ${docker_user} -v $(shell readlink -f ..):/go/katzenpost $(go_package_cache_arg) --network=host --rm -w /go/katzenpost/stream
