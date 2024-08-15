@@ -21,7 +21,7 @@ const (
 	progressChunkSize = 4096 // 4kb
 )
 
-var cConf = flag.String("cfg", "namenlos.toml", "config file")
+var cConf = flag.String("cfg", "client.toml", "config file")
 var outFile = flag.String("o", "", "file to write to")
 var inFile = flag.String("i", "", "file to write to")
 
