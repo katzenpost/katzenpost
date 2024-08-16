@@ -258,11 +258,11 @@ func (s *Stream) reader() {
 			continue
 		default:
 			s.log.Errorf("readFrame Got err %s", err)
-			s.log.Errorf("retrying in %s", backoff)
 			backoff = backoff << 1
 			if backoff > maxBackoffDelay {
 				backoff = maxBackoffDelay
 			}
+			s.log.Errorf("retrying in %s", backoff)
 			// rate limit spinning if client is offline, error returns immediately
 			select {
 			case <-s.HaltCh():
