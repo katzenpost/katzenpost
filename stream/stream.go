@@ -294,28 +294,55 @@ func (s *Stream) reader() {
 	}
 }
 
-// Read impl io.Reader
-func (s *Stream) Read(p []byte) (n int, err error) {
-	s.l.Lock()
+// caller must hold s.l.Lock, and returns with lock held
+// sleepReader sleeps until a Timeout occurs, data is available, or the
+func (s *Stream) sleepReader() error {
 	if s.ReadBuf.Len() == 0 {
 		if s.RState == StreamClosed {
-			s.l.Unlock()
-			return 0, io.EOF
-		}
-		s.log.Debugf("Read() sleeping until unblocked")
+			return io.EOF
+		} // otherwise continue below, and wait for data to be available
+	} else {
+		return nil // do not block Read, data is available
+	}
+
+	s.log.Debugf("Read() sleeping until unblocked")
+
+	defer s.l.Lock() // in either case, return holding mutex
+	// Timeout == 0 is a special case that doesn't need a time.Timer
+	if s.Timeout != 0 {
 		s.l.Unlock()
 		select {
 		case <-time.After(s.Timeout):
-			return 0, os.ErrDeadlineExceeded
+			return os.ErrDeadlineExceeded
 		case <-s.HaltCh():
-			return 0, io.EOF
+			return io.EOF
 		case <-s.onRead:
 			// awaken on StreamData or StreamEnd
 		}
-		s.l.Lock()
+	} else {
+		s.l.Unlock()
+		select {
+		case <-s.HaltCh():
+			return io.EOF
+		case <-s.onRead:
+			// awaken on StreamData or StreamEnd
+		}
 	}
+	return nil
+}
+
+// Read impl io.Reader
+func (s *Stream) Read(p []byte) (n int, err error) {
+	s.l.Lock()
+	defer s.l.Unlock()
+	err = s.sleepReader() // sleepReader returns holding mutex
+	if err != nil {
+		return
+	}
+	// if sleepReader returns in RState.StreamClosed, check if there are
+	// any bytes to drain to the caller of Read, and subsequent calls to
+	// Read will return io.EOF when the ReadBuf is drained.
 	n, err = s.ReadBuf.Read(p)
-	s.l.Unlock()
 	// ignore io.EOF on short reads from ReadBuf
 	if err == io.EOF {
 		if s.RState != StreamClosed || n > 0 {
@@ -323,6 +350,33 @@ func (s *Stream) Read(p []byte) (n int, err error) {
 		}
 	}
 	return n, err
+}
+
+// caller must hold s.l mutex, and returns with mutex held
+func (s *Stream) sleepWriter() error {
+	// only sleep if there is nothing to do
+	if s.WriteBuf.Len() >= s.MaxWriteBufSize {
+		defer s.l.Lock() // in either case, return holding mutex
+		// Timeout == 0 blocks until there is a write or the stream is halted
+		if s.Timeout != 0 {
+			s.l.Unlock()
+			select {
+			case <-time.After(s.Timeout):
+				return os.ErrDeadlineExceeded
+			case <-s.HaltCh():
+				return io.EOF
+			case <-s.onWrite:
+			}
+		} else {
+			s.l.Unlock()
+			select {
+			case <-s.HaltCh():
+				return io.EOF
+			case <-s.onWrite:
+			}
+		}
+	}
+	return nil
 }
 
 // Write impl io.Writer
@@ -334,30 +388,25 @@ func (s *Stream) Write(p []byte) (n int, err error) {
 		s.l.Unlock()
 		return 0, io.EOF
 	}
-	// take MaxWriteBufSize as ... a guideline rather than a hard limit
-	// because many users of io.Writer do not seem to handle short writes
-	// properly, so just rate limit calls to write by waiting until
-	// a frame has been transmitted before returning
-	if s.WriteBuf.Len() >= s.MaxWriteBufSize {
+	// sleepWriter sleeps until woken; and returns holding s.l.Lock
+	err = s.sleepWriter()
+	if err != nil {
 		s.l.Unlock()
-		select {
-		case <-time.After(s.Timeout):
-			return 0, os.ErrDeadlineExceeded
-		case <-s.HaltCh():
-			return 0, io.EOF
-		case <-s.onWrite:
-		}
-		s.l.Lock()
+		return 0, err
 	}
-	defer s.l.Unlock()
+
 	// if stream closed, abort Write
 	if s.WState == StreamClosed || s.WState == StreamClosing {
+		s.l.Unlock()
 		<-s.onStreamClose
 		return 0, io.EOF
 	}
+	n, err = s.WriteBuf.Write(p)
+	// doFlush must not be called holding mutex
+	s.l.Unlock()
 	s.log.Debugf("Write() doFlush()")
-	defer s.doFlush()
-	return s.WriteBuf.Write(p)
+	s.doFlush()
+	return
 }
 
 // Sync() blocks until Stream.WriteBuf is flushed
