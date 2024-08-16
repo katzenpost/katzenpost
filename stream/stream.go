@@ -34,7 +34,7 @@ var (
 	retryDelay         = epochtime.Period / 16
 	minBackoffDelay    = 1 * time.Millisecond
 	maxBackoffDelay    = epochtime.Period / 4
-	defaultTimeout     = 5 * time.Minute
+	defaultTimeout     = 0 * time.Second
 	ErrStreamClosed    = errors.New("Stream Closed")
 	ErrFrameDecrypt    = errors.New("Failed to decrypt")
 	ErrGeometryChanged = errors.New("Stream Payload Geometry Change")
