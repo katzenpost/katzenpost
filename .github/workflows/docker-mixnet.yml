@@ -130,7 +130,7 @@ jobs:
           cd docker && sudo -E make stop
 
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v3
+        uses: codecov/codecov-action@v4
 
   test_e2e_pigeonhole:
     env:
@@ -143,7 +143,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Configure podman socket
         run: |
@@ -161,4 +161,4 @@ jobs:
           cd docker && sudo -E make stop
 
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v3
+        uses: codecov/codecov-action@v4
