@@ -5,7 +5,6 @@ jobs:
   test_e2e_client:
     env:
       warped: true
-      XDG_RUNTIME_DIR: /run
     strategy:
       matrix:
         go-version: [1.22.x]
@@ -20,11 +19,11 @@ jobs:
 
       - name: Check systemctl status
         run: |
-          sudo systemctl status podman.socket
+          systemctl --user status podman.socket
 
       - name: Configure podman socket
         run: |
-          sudo systemctl start podman.socket
+          systemctl --user start podman.socket
 
       - name: Build and start the mixnet
         run: |
@@ -46,7 +45,6 @@ jobs:
   test_e2e_memspool:
     env:
       warped: true
-      XDG_RUNTIME_DIR: /run
     strategy:
       matrix:
         go-version: [1.22.x]
@@ -61,7 +59,7 @@ jobs:
 
       - name: Configure podman socket
         run: |
-          systemctl start podman.socket
+          systemctl --user start podman.socket
 
       - name: Build and start the mixnet
         run: |
@@ -80,7 +78,6 @@ jobs:
   test_e2e_catshadow:
     env:
       warped: true
-      XDG_RUNTIME_DIR: /run
     strategy:
       matrix:
         go-version: [1.22.x]
@@ -98,7 +95,7 @@ jobs:
 
       - name: Configure podman socket
         run: |
-          systemctl start podman.socket
+          systemctl --user start podman.socket
 
       - name: Build and start the mixnet
         run: |
@@ -126,7 +123,6 @@ jobs:
   test_benchmark:
     env:
       warped: true
-      XDG_RUNTIME_DIR: /run
     strategy:
       matrix:
         go-version: [1.22.x]
@@ -141,7 +137,7 @@ jobs:
 
       - name: Configure podman socket
         run: |
-          systemctl start podman.socket
+          systemctl --user start podman.socket
 
       - name: Build and start the mixnet
         run: |
@@ -160,7 +156,6 @@ jobs:
   test_e2e_pigeonhole:
     env:
       warped: true
-      XDG_RUNTIME_DIR: /run
     strategy:
       matrix:
         go-version: [1.22.x]
@@ -175,7 +170,7 @@ jobs:
 
       - name: Configure podman socket
         run: |
-          sudo systemctl start podman.socket
+          systemctl --user start podman.socket
 
       - name: Build and start the mixnet
         run: |
