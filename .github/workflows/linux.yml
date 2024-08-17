@@ -18,6 +18,9 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Install codecov-cli
+        run: pip install codecov-cli
+
       - name: Generate mixnet configuration
         run: cd genconfig && go build && ./genconfig -wirekem xwing -v -b /conf -o ../docker/voting_mixnet/
 
@@ -50,3 +53,6 @@ jobs:
 
       - name: Run server unit tests
         run: cd server && GORACE=history_size=7 go test -coverprofile=coverage.out -race -v -failfast -timeout 30m ./...
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4

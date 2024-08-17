@@ -15,6 +15,9 @@ jobs:
         with:
           go-version: ${{ matrix.go-version }}
 
+      - name: Install codecov-cli
+        run: pip install codecov-cli
+
       - name: Checkout code
         uses: actions/checkout@v4
 
@@ -50,3 +53,6 @@ jobs:
 
       - name: Run server unit tests
         run:  cd server && GORACE=history_size=7 go test -coverprofile=coverage.out -race -v -failfast -timeout 30m ./...
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4

@@ -15,6 +15,9 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Install codecov-cli
+        run: pip install codecov-cli
+
       - name: Configure podman socket
         run: |
           sudo systemctl restart dbus && sudo systemctl enable --now podman.socket
@@ -33,6 +36,9 @@ jobs:
         run: |
           cd docker && sudo -E make stop
 
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+
   test_e2e_memspool:
     env:
       warped: true
@@ -45,6 +51,9 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Install codecov-cli
+        run: pip install codecov-cli
 
       - name: Configure podman socket
         run: |
@@ -61,6 +70,9 @@ jobs:
         run: |
           cd docker && sudo -E make stop
 
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+
   test_e2e_catshadow:
     env:
       warped: true
@@ -73,6 +85,9 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Install codecov-cli
+        run: pip install codecov-cli
 
       - name: Install socat, for talking to management socket
         run: sudo apt update && sudo apt install -y socat
@@ -101,6 +116,9 @@ jobs:
         run: |
           cd docker && sudo -E make stop
 
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+
   test_benchmark:
     env:
       warped: true
@@ -113,6 +131,9 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Install codecov-cli
+        run: pip install codecov-cli
 
       - name: Configure podman socket
         run: |
@@ -144,6 +165,9 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Install codecov-cli
+        run: pip install codecov-cli
 
       - name: Configure podman socket
         run: |
