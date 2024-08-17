@@ -20,7 +20,7 @@ jobs:
 
       - name: Configure podman socket
         run: |
-          systemctl --user enable --now podman.socket
+          systemctl --user start podman.socket
 
       - name: Build and start the mixnet
         run: |
@@ -57,7 +57,7 @@ jobs:
 
       - name: Configure podman socket
         run: |
-          systemctl --user enable --now podman.socket
+          systemctl --user start podman.socket
 
       - name: Build and start the mixnet
         run: |
@@ -94,7 +94,7 @@ jobs:
 
       - name: Configure podman socket
         run: |
-          systemctl --user enable --now podman.socket
+          systemctl --user start podman.socket
 
       - name: Build and start the mixnet
         run: |
@@ -137,7 +137,7 @@ jobs:
 
       - name: Configure podman socket
         run: |
-          systemctl --user enable --now podman.socket
+          systemctl --user start podman.socket
 
       - name: Build and start the mixnet
         run: |
@@ -171,7 +171,7 @@ jobs:
 
       - name: Configure podman socket
         run: |
-          systemctl --user enable --now podman.socket
+          systemctl --user start podman.socket
 
       - name: Build and start the mixnet
         run: |
