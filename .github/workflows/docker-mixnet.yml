@@ -130,7 +130,7 @@ jobs:
           cd docker && sudo -E make stop
 
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v3
+        uses: codecov/codecov-action@v4
 
   test_e2e_stream:
     env:
@@ -164,4 +164,4 @@ jobs:
           cd docker && sudo -E make stop
 
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v3
+        uses: codecov/codecov-action@v4
