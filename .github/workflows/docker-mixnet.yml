@@ -18,6 +18,10 @@ jobs:
       - name: Install codecov-cli
         run: pip install codecov-cli
 
+      - name: Check systemctl status
+        run: |
+          systemctl --user status podman.socket
+
       - name: Configure podman socket
         run: |
           systemctl --user start podman.socket
