@@ -3,7 +3,7 @@ module github.com/katzenpost/katzenpost
 go 1.22.3
 
 require (
-	github.com/BurntSushi/toml v1.3.2
+	github.com/BurntSushi/toml v1.4.0
 	github.com/carlmjohnson/versioninfo v0.22.4
 	github.com/fxamacker/cbor/v2 v2.5.0
 	github.com/golang/protobuf v1.5.3
