@@ -643,7 +643,7 @@ func TestDockerChangeExpiration(t *testing.T) {
 }
 
 func TestDockerAddRemoveContact(t *testing.T) {
-	t.Parallel()
+	//t.Parallel()
 	require := require.New(t)
 
 	a := createCatshadowClientWithState(t, createRandomStateFile(t))
