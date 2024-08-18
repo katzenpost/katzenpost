@@ -39,6 +39,12 @@ jobs:
         run: |
           cd docker && make stop
 
+      - name: Upload testnet state
+        uses: actions/upload-artifact@v4
+        with:
+          name: network_state
+          path: docker/voting_mixnet/
+
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
 
@@ -71,6 +77,12 @@ jobs:
       - name: Stop the mixnet
         run: |
           cd docker && make stop
+
+      - name: Upload testnet state
+        uses: actions/upload-artifact@v4
+        with:
+          name: network_state
+          path: docker/voting_mixnet/
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
@@ -117,6 +129,12 @@ jobs:
         run: |
           cd docker && make stop
 
+      - name: Upload testnet state
+        uses: actions/upload-artifact@v4
+        with:
+          name: network_state
+          path: docker/voting_mixnet/
+
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
 
@@ -150,6 +168,12 @@ jobs:
         run: |
           cd docker && make stop
 
+      - name: Upload testnet state
+        uses: actions/upload-artifact@v4
+        with:
+          name: network_state
+          path: docker/voting_mixnet/
+
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
 
@@ -182,6 +206,12 @@ jobs:
       - name: Stop the mixnet
         run: |
           cd docker && make stop
+
+      - name: Upload testnet state
+        uses: actions/upload-artifact@v4
+        with:
+          name: network_state
+          path: docker/voting_mixnet/
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
