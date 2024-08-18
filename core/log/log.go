@@ -59,8 +59,8 @@ type Backend struct {
 // Log is used to log a message as per
 // the logging.Backend interface.
 func (b *Backend) Log(level logging.Level, calldepth int, record *logging.Record) error {
-	b.RLock()
-	defer b.RUnlock()
+	b.Lock()
+	defer b.Unlock()
 	return b._backend.Log(level, calldepth, record)
 }
 
@@ -77,8 +77,8 @@ func (b *Backend) GetLevel(level string) logging.Level {
 // We use this function as part of our implementation of the
 // logging.Leveled interface.
 func (b *Backend) SetLevel(level logging.Level, module string) {
-	b.RLock()
-	defer b.RUnlock()
+	b.Lock()
+	defer b.Unlock()
 	b._backend.SetLevel(level, module)
 }
 
