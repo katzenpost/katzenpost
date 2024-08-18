@@ -76,7 +76,7 @@ func (a *TimerQueue) wakeupCh() chan struct{} {
 		return a.wakech
 	}
 	c := make(chan struct{})
-	go func() {
+	a.Go(func() {
 		defer close(c)
 		var v struct{}
 		for {
@@ -89,7 +89,7 @@ func (a *TimerQueue) wakeupCh() chan struct{} {
 			case c <- v:
 			}
 		}
-	}()
+	})
 	a.wakech = c
 	return c
 }
