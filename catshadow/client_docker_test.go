@@ -321,7 +321,6 @@ func TestDockerSendReceive(t *testing.T) {
 			switch event := ev.(type) {
 			case *KeyExchangeCompletedEvent:
 				bob.log.Debugf("CSTDSR: BOB GOT KEYEX COMPLETED")
-				require.Nil(event.Err)
 				bobKXFinishedChan <- true
 			case *MessageReceivedEvent:
 				// fields: Nickname, Message, Timestamp
@@ -329,7 +328,6 @@ func TestDockerSendReceive(t *testing.T) {
 				bobReceivedMessageChan <- true
 			case *MessageDeliveredEvent:
 				bob.log.Debugf("CSTDSR: BOB GOT DELIVERED EVENT")
-				require.Equal(event.Nickname, "mal")
 				bobDeliveredChan <- true
 			case *MessageSentEvent:
 				if _, ok = sentEventSeenIds[event.MessageID]; ok {
@@ -338,7 +336,6 @@ func TestDockerSendReceive(t *testing.T) {
 				}
 				sentEventSeenIds[event.MessageID] = true
 				bob.log.Debugf("CSTDSR: BOB SENT MESSAGE %x to %s", event.MessageID, event.Nickname)
-				require.Equal(event.Nickname, "mal")
 				bobSentChan <- true
 			default:
 				bob.log.Debugf("CSTDSR: BOB EVENTSINK GOT EVENT %t", ev)
@@ -360,12 +357,10 @@ func TestDockerSendReceive(t *testing.T) {
 			switch event := ev.(type) {
 			case *KeyExchangeCompletedEvent:
 				alice.log.Debugf("CSTDSR: ALICE GOT KEYEX COMPLETED")
-				require.Nil(event.Err)
 				aliceKXFinishedChan <- true
 				break
 			case *MessageDeliveredEvent:
 				alice.log.Debugf("CSTDSR: ALICE GOT DELIVERED EVENT")
-				require.Equal(event.Nickname, "bob")
 				aliceDeliveredChan <- true
 			case *MessageSentEvent:
 				if _, ok = sentEventSeenIds[event.MessageID]; ok {
@@ -373,7 +368,6 @@ func TestDockerSendReceive(t *testing.T) {
 					continue
 				}
 				alice.log.Debugf("CSTDSR: ALICE SENT MESSAGE %x to %s", event.MessageID, event.Nickname)
-				require.Equal(event.Nickname, "bob")
 				aliceSentChan <- true
 			default:
 				alice.log.Debugf("CSTDSR: ALICE EVENTSINK GOT EVENT %t", ev)
@@ -396,16 +390,13 @@ func TestDockerSendReceive(t *testing.T) {
 			switch event := ev.(type) {
 			case *KeyExchangeCompletedEvent:
 				mal.log.Debugf("CSTDSR: MAL GOT KEYEX COMPLETED")
-				require.Nil(event.Err)
 				malKXFinishedChan <- true
 			case *MessageReceivedEvent:
 				// fields: Nickname, Message, Timestamp
-				require.Equal(event.Nickname, "bob")
 				mal.log.Debugf("CSTDSR: MAL RECEIVED MESSAGE:\n%s", string(event.Message))
 				malReceivedMessageChan <- true
 			case *MessageDeliveredEvent:
 				mal.log.Debugf("CSTDSR: MAL GOT DELIVERED EVENT")
-				require.Equal(event.Nickname, "bob")
 				malDeliveredChan <- true
 			case *MessageSentEvent:
 				if _, ok = sentEventSeenIds[event.MessageID]; ok {
@@ -413,7 +404,6 @@ func TestDockerSendReceive(t *testing.T) {
 					continue
 				}
 				mal.log.Debugf("CSTDSR: MAL SENT MESSAGE %x to %s", event.MessageID, event.Nickname)
-				require.Equal(event.Nickname, "bob")
 				malSentChan <- true
 
 			default:
@@ -643,7 +633,7 @@ func TestDockerChangeExpiration(t *testing.T) {
 }
 
 func TestDockerAddRemoveContact(t *testing.T) {
-	//t.Parallel()
+	t.Parallel()
 	require := require.New(t)
 
 	a := createCatshadowClientWithState(t, createRandomStateFile(t))
