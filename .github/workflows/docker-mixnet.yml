@@ -36,8 +36,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: mixnet-${{ github.run_id }}-${{ github.job }}
-          path: docker/voting_mixnet/
-                !docker/voting_mixnet/*/management_sock
+          path: |
+            docker/voting_mixnet/
+            !docker/voting_mixnet/*/management_sock
 
   test_e2e_memspool:
     env:
@@ -70,8 +71,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: mixnet-${{ github.run_id }}-${{ github.job }}
-          path: docker/voting_mixnet/
-                !docker/voting_mixnet/*/management_sock
+          path: |
+            docker/voting_mixnet/
+            !docker/voting_mixnet/*/management_sock
 
   test_e2e_catshadow:
     env:
@@ -116,8 +118,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: mixnet-${{ github.run_id }}-${{ github.job }}
-          path: docker/voting_mixnet/
-                !docker/voting_mixnet/*/management_sock
+          path: |
+            docker/voting_mixnet/
+            !docker/voting_mixnet/*/management_sock
 
   test_benchmark:
     env:
@@ -150,8 +153,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: mixnet-${{ github.run_id }}-${{ github.job }}
-          path: docker/voting_mixnet/
-                !docker/voting_mixnet/*/management_sock
+          path: |
+            docker/voting_mixnet/
+            !docker/voting_mixnet/*/management_sock
 
   test_e2e_pigeonhole:
     env:
@@ -184,5 +188,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: mixnet-${{ github.run_id }}-${{ github.job }}
-          path: docker/voting_mixnet/
-                !docker/voting_mixnet/*/management_sock
+          path: |
+            docker/voting_mixnet/
+            !docker/voting_mixnet/*/management_sock
