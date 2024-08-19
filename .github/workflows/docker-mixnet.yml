@@ -20,7 +20,7 @@ jobs:
 
       - name: Build and start the mixnet
         run: |
-          cd docker && make start wait
+          cd docker && make log_level=DEBUG start wait
 
       - name: run ping
         run: cd docker && make run-ping
@@ -58,7 +58,7 @@ jobs:
 
       - name: Build and start the mixnet
         run: |
-          cd docker && make start wait
+          cd docker && make log_level=DEBUG start wait
 
       - name: run memspool end to end tests
         run: cd memspool && make testargs=-coverprofile=coverage.part dockerdockertest && cat client/coverage.part >> ../coverage.out
@@ -96,7 +96,7 @@ jobs:
 
       - name: Build and start the mixnet
         run: |
-          cd docker && make start wait
+          cd docker && make log_level=DEBUG start wait
 
       - name: test creating upgrade test state files
         run: cd catshadow && make testargs=-coverprofile=coverage.part test_version=latest upgrade_test_recreate && cat coverage.part >> ../coverage.out
@@ -140,7 +140,7 @@ jobs:
 
       - name: Build and start the mixnet
         run: |
-          cd docker && make start wait run-ping
+          cd docker && make log_level=DEBUG start wait run-ping
 
       - name: run benchmark tests
         run: cd bench && make testargs=-coverprofile=coverage.part dockerdockertest && cat coverage.part >> ../coverage.out
@@ -175,7 +175,7 @@ jobs:
 
       - name: Build and start the mixnet
         run: |
-          cd docker && make start wait
+          cd docker && make log_level=DEBUG start wait
 
       - name: run pigeonhole end to end tests
         run: cd pigeonhole && make testargs=-coverprofile=coverage.part dockerdockertest && cat client/coverage.part >> ../coverage.out
