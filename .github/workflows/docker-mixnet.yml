@@ -32,6 +32,13 @@ jobs:
         run: |
           cd docker && make stop
 
+      - name: Upload testnet state
+        uses: actions/upload-artifact@v4
+        with:
+          name: mixnet-${{ github.run_id }}-${{ github.job }}
+          path: docker/voting_mixnet/
+                !docker/voting_mixnet/*/management_sock
+
   test_e2e_memspool:
     env:
       warped: true
@@ -58,6 +65,13 @@ jobs:
       - name: Stop the mixnet
         run: |
           cd docker && make stop
+
+      - name: Upload testnet state
+        uses: actions/upload-artifact@v4
+        with:
+          name: mixnet-${{ github.run_id }}-${{ github.job }}
+          path: docker/voting_mixnet/
+                !docker/voting_mixnet/*/management_sock
 
   test_e2e_catshadow:
     env:
@@ -98,6 +112,13 @@ jobs:
         run: |
           cd docker && make stop
 
+      - name: Upload testnet state
+        uses: actions/upload-artifact@v4
+        with:
+          name: mixnet-${{ github.run_id }}-${{ github.job }}
+          path: docker/voting_mixnet/
+                !docker/voting_mixnet/*/management_sock
+
   test_benchmark:
     env:
       warped: true
@@ -125,8 +146,12 @@ jobs:
         run: |
           cd docker && make stop
 
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v4
+      - name: Upload testnet state
+        uses: actions/upload-artifact@v4
+        with:
+          name: mixnet-${{ github.run_id }}-${{ github.job }}
+          path: docker/voting_mixnet/
+                !docker/voting_mixnet/*/management_sock
 
   test_e2e_pigeonhole:
     env:
@@ -154,3 +179,10 @@ jobs:
       - name: Stop the mixnet
         run: |
           cd docker && make stop
+
+      - name: Upload testnet state
+        uses: actions/upload-artifact@v4
+        with:
+          name: mixnet-${{ github.run_id }}-${{ github.job }}
+          path: docker/voting_mixnet/
+                !docker/voting_mixnet/*/management_sock
