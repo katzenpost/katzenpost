@@ -34,6 +34,7 @@ jobs:
 
       - name: Upload testnet state
         uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: mixnet-${{ github.run_id }}-${{ github.job }}
           path: |
@@ -68,6 +69,7 @@ jobs:
 
       - name: Upload testnet state
         uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: mixnet-${{ github.run_id }}-${{ github.job }}
           path: |
@@ -114,6 +116,7 @@ jobs:
 
       - name: Upload testnet state
         uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: mixnet-${{ github.run_id }}-${{ github.job }}
           path: |
@@ -148,6 +151,7 @@ jobs:
 
       - name: Upload testnet state
         uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: mixnet-${{ github.run_id }}-${{ github.job }}
           path: |
@@ -182,6 +186,7 @@ jobs:
 
       - name: Upload testnet state
         uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: mixnet-${{ github.run_id }}-${{ github.job }}
           path: |
