@@ -37,8 +37,7 @@ jobs:
         with:
           name: mixnet-${{ github.run_id }}-${{ github.job }}
           path: |
-            docker/voting_mixnet/
-            !docker/voting_mixnet/*/management_sock
+            docker/voting_mixnet/*/*.log
 
   test_e2e_memspool:
     env:
@@ -72,8 +71,7 @@ jobs:
         with:
           name: mixnet-${{ github.run_id }}-${{ github.job }}
           path: |
-            docker/voting_mixnet/
-            !docker/voting_mixnet/*/management_sock
+            docker/voting_mixnet/*/*.log
 
   test_e2e_catshadow:
     env:
@@ -119,8 +117,7 @@ jobs:
         with:
           name: mixnet-${{ github.run_id }}-${{ github.job }}
           path: |
-            docker/voting_mixnet/
-            !docker/voting_mixnet/*/management_sock
+            docker/voting_mixnet/*/*.log
 
   test_benchmark:
     env:
@@ -154,8 +151,7 @@ jobs:
         with:
           name: mixnet-${{ github.run_id }}-${{ github.job }}
           path: |
-            docker/voting_mixnet/
-            !docker/voting_mixnet/*/management_sock
+            docker/voting_mixnet/*/*.log
 
   test_e2e_pigeonhole:
     env:
@@ -189,5 +185,4 @@ jobs:
         with:
           name: mixnet-${{ github.run_id }}-${{ github.job }}
           path: |
-            docker/voting_mixnet/
-            !docker/voting_mixnet/*/management_sock
+            docker/voting_mixnet/*/*.log
