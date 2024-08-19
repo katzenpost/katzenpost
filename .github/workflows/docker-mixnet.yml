@@ -154,6 +154,3 @@ jobs:
       - name: Stop the mixnet
         run: |
           cd docker && make stop
-
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v4
