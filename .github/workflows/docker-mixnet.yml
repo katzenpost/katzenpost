@@ -5,6 +5,8 @@ jobs:
   test_e2e_client:
     env:
       warped: true
+      no_mixdecoy: false
+      no_decoy: false
     strategy:
       matrix:
         go-version: [1.22.x]
@@ -35,6 +37,8 @@ jobs:
   test_e2e_memspool:
     env:
       warped: true
+      no_mixdecoy: false
+      no_decoy: false
     strategy:
       matrix:
         go-version: [1.22.x]
@@ -62,6 +66,8 @@ jobs:
   test_e2e_catshadow:
     env:
       warped: true
+      no_mixdecoy: false
+      no_decoy: false
     strategy:
       matrix:
         go-version: [1.22.x]
@@ -101,6 +107,8 @@ jobs:
   test_benchmark:
     env:
       warped: true
+      no_mixdecoy: false
+      no_decoy: false
     strategy:
       matrix:
         go-version: [1.22.x]
@@ -131,6 +139,8 @@ jobs:
   test_e2e_pigeonhole:
     env:
       warped: true
+      no_mixdecoy: false
+      no_decoy: false
     strategy:
       matrix:
         go-version: [1.22.x]
