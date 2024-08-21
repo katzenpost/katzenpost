@@ -87,7 +87,7 @@ func (c *incomingConn) sendPKIDoc(doc []byte) error {
 	}
 	select {
 	case c.sendToClientCh <- message:
-	case <-c.listener.closeAllCh:
+	case <-c.listener.HaltCh():
 		return errors.New("shutting down")
 	}
 	return nil
@@ -102,7 +102,7 @@ func (c *incomingConn) updateConnectionStatus(status error) {
 	}
 	select {
 	case c.sendToClientCh <- message:
-	case <-c.listener.closeAllCh:
+	case <-c.listener.HaltCh():
 		return
 	}
 }
@@ -139,7 +139,7 @@ func (c *incomingConn) sendResponse(r *Response) error {
 
 func (c *incomingConn) start() {
 	c.log.Debug("STARTING incomingConn")
-	go c.worker()
+	c.listener.Go(c.worker)
 }
 
 func (c *incomingConn) worker() {
@@ -153,7 +153,7 @@ func (c *incomingConn) worker() {
 	requestCh := make(chan *Request)
 	requestCloseCh := make(chan interface{})
 	defer close(requestCloseCh)
-	go func() {
+	c.listener.Go(func() {
 		defer close(requestCh)
 		for {
 			rawCmd, err := c.recvRequest()
@@ -170,12 +170,12 @@ func (c *incomingConn) worker() {
 				return
 			}
 		}
-	}()
+	})
 
-	go func() {
+	c.listener.Go(func() {
 		for {
 			select {
-			case <-c.listener.closeAllCh:
+			case <-c.listener.HaltCh():
 				return
 			case message := <-c.sendToClientCh:
 				c.log.Debug("SEND TO THIN CLIENT THREAD")
@@ -186,14 +186,14 @@ func (c *incomingConn) worker() {
 				}
 			}
 		}
-	}()
+	})
 
 	for {
 		var rawReq *Request
 		var ok bool
 
 		select {
-		case <-c.listener.closeAllCh:
+		case <-c.listener.HaltCh():
 			return
 		case rawReq, ok = <-requestCh:
 			if !ok {
@@ -206,7 +206,7 @@ func (c *incomingConn) worker() {
 			c.log.Infof("Received Request from peer application.")
 			select {
 			case c.listener.ingressCh <- rawReq:
-			case <-c.listener.closeAllCh:
+			case <-c.listener.HaltCh():
 				return
 			}
 		}

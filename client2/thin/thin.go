@@ -280,6 +280,8 @@ func (t *ThinClient) worker() {
 		if err != nil {
 			t.log.Errorf("thin client ReceiveMessage failed: %v", err)
 			if err == io.EOF {
+				// XXX: should we halt ThinClient on EOF??
+				go t.Halt()
 				return
 			}
 			continue

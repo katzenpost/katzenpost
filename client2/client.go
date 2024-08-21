@@ -49,7 +49,6 @@ type Client struct {
 // Shutdown cleanly shuts down a given Client instance.
 func (c *Client) Shutdown() {
 	c.log.Info("Starting graceful shutdown.")
-	c.Halt()
 
 	if c.conn != nil {
 		c.conn.Shutdown()
@@ -60,6 +59,7 @@ func (c *Client) Shutdown() {
 		c.pki.Halt()
 		c.log.Info("waiting for stopped PKI worker to exit")
 	}
+	c.Halt()
 	c.log.Info("Shutdown complete.")
 }
 
