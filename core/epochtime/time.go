@@ -28,6 +28,9 @@ var WarpedEpoch string
 // Epoch is the Katzenpost epoch expressed in UTC.
 var Epoch = time.Date(2017, 6, 1, 0, 0, 0, 0, time.UTC)
 
+// WeekOfEpochs is the number of epochs in a week
+var WeekOfEpochs = uint64(time.Duration(time.Hour*24*7) / Period)
+
 // Now returns the current Katzenpost epoch, time since the start of the
 // current epoch, and time till the next epoch.
 func Now() (current uint64, elapsed, till time.Duration) {
