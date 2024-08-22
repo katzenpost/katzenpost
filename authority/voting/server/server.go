@@ -187,11 +187,14 @@ func (s *Server) listenQUICWorker(l net.Listener) {
 			if e, ok := err.(net.Error); ok && !e.Temporary() {
 				s.log.Errorf("Critical accept failure: %v", err)
 				return
+			} else {
+				s.log.Errorf("Accept failure: %v, continuing", err)
 			}
 			continue
 		}
 		s.Add(1)
 		s.onConn(conn)
+		s.log.Debugf("onConn returned: %v", conn)
 	}
 	// NOTREACHED
 }
