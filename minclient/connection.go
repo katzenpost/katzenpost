@@ -533,7 +533,7 @@ func (c *connection) onWireConn(w *wire.Session) {
 				wireErr = w.SendCommand(cmd)
 				ctx.doneFn(wireErr)
 				if wireErr != nil {
-					c.log.Debugf("Failed to send GetConsensus: %v", wireErr)
+					c.log.Errorf("Failed to send GetConsensus: %v", wireErr)
 					return
 				}
 				c.log.Debugf("Sent GetConsensus.")
@@ -550,7 +550,7 @@ func (c *connection) onWireConn(w *wire.Session) {
 			wireErr = w.SendCommand(cmd)
 			ctx.doneFn(wireErr)
 			if wireErr != nil {
-				c.log.Debugf("Failed to send SendPacket: %v", wireErr)
+				c.log.Errorf("Failed to send SendPacket: %v", wireErr)
 				return
 			}
 			c.log.Debugf("Sent SendPacket.")
@@ -573,7 +573,7 @@ func (c *connection) onWireConn(w *wire.Session) {
 			wireErr = ErrShutdown
 			return
 		case wireErr = <-closeConnCh:
-			c.log.Debugf("Closing connection due to callback error: %v", wireErr)
+			c.log.Errorf("Closing connection due to callback error: %v", wireErr)
 			return
 		}
 
@@ -585,7 +585,7 @@ func (c *connection) onWireConn(w *wire.Session) {
 					Cmds:     w.GetCommands(),
 				}
 				if wireErr = w.SendCommand(cmd); wireErr != nil {
-					c.log.Debugf("Failed to send RetrieveMessage: %v", wireErr)
+					c.log.Errorf("Failed to send RetrieveMessage: %v", wireErr)
 					return
 				}
 				nrReqs++
