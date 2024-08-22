@@ -424,7 +424,9 @@ func New(cfg *config.Config) (*Server, error) {
 				}
 				s.listeners = append(s.listeners, l)
 				s.Add(1)
-				go s.listenWSWorker(l)
+				s.state.Go(func() {
+					s.listenWSWorker(l)
+				})
 			case "tcp":
 				l, err := net.Listen("tcp", u.Host)
 				if err != nil {
@@ -433,7 +435,9 @@ func New(cfg *config.Config) (*Server, error) {
 				}
 				s.listeners = append(s.listeners, l)
 				s.Add(1)
-				go s.listenWorker(l)
+				s.state.Go(func() {
+					s.listenWorker(l)
+				})
 			case "http":
 				l, err := quic.ListenAddr(u.Host, common.GenerateTLSConfig(), nil)
 				if err != nil {
@@ -447,7 +451,10 @@ func New(cfg *config.Config) (*Server, error) {
 				s.listeners = append(s.listeners, &ql)
 				s.Add(1)
 				// XXX: is there any HTTP3 specific stuff that we want to do?
-				go s.listenQUICWorker(&ql)
+				s.state.Go(func() {
+					s.listenQUICWorker(&ql)
+				})
+
 			default:
 				s.log.Errorf("Unsupported listener scheme '%v': %v", v, err)
 				continue
