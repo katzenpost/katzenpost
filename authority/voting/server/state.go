@@ -621,7 +621,7 @@ func (s *state) verifyCommits(epoch uint64) (map[[publicKeyHashSize]byte][]byte,
 			if err != nil {
 				// pk didn't validate commit in its certificate!
 				badnodes[pk] = true
-				s.log.Errorf("Invalid signature over commit from %s in certificate from %s, rejecting %s from consensus", pk2, pk, pk)
+				s.log.Errorf("Invalid signature over commit from %x in certificate from %x, rejecting %x from consensus", pk2, pk, pk)
 				// do not bother checking any more of pk's SharedRandomCommits
 				break
 			}
