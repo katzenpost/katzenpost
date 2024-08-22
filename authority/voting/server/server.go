@@ -359,7 +359,9 @@ func New(cfg *config.Config) (*Server, error) {
 		}
 		s.listeners = append(s.listeners, l)
 		s.Add(1)
-		go s.listenWorker(l)
+		s.state.Go(func () {
+			s.listenWorker(l)
+		})
 	}
 	if len(s.listeners) == 0 {
 		s.log.Errorf("Failed to start all listeners.")
