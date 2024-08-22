@@ -145,10 +145,13 @@ func (c *Client) Get(ID common.MessageID, signature []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	if resp.Status == common.StatusNotFound {
+	switch resp.Status {
+	case common.StatusOK:
+		return resp.Payload, nil
+	}
+	default:
 		return nil, ErrStatusNotFound
 	}
-	return resp.Payload, nil
 }
 
 // ReadWriteClient has both Get and Put
