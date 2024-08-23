@@ -23,10 +23,12 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/katzenpost/katzenpost/client"
-	"github.com/katzenpost/katzenpost/panda/common"
 	"github.com/ugorji/go/codec"
 	"gopkg.in/op/go-logging.v1"
+
+	"github.com/katzenpost/hpqc/hash"
+	"github.com/katzenpost/katzenpost/client2/thin"
+	"github.com/katzenpost/katzenpost/panda/common"
 )
 
 type Error string
@@ -43,12 +45,12 @@ const (
 // Panda is a PANDA client that uses our mixnet client library
 // to communicate with the PANDA kaetzchen service.
 type Panda struct {
-	session    *client.Session
+	session    *thin.ThinClient
 	log        *logging.Logger
 	blobSize   int
 	jsonHandle codec.JsonHandle
-	recipient  string
-	provider   string
+	recipient  []byte
+	provider   *[32]byte
 }
 
 // Padding returns the size of the ciphertext blobs
@@ -72,7 +74,16 @@ func (p *Panda) Exchange(id, message []byte, shutdown <-chan interface{}) ([]byt
 		enc := codec.NewEncoderBytes(&rawRequest, &p.jsonHandle)
 		enc.Encode(request)
 		p.log.Debugf("PANDA exchange sending kaetzchen query to %s@%s", p.recipient, p.provider)
-		reply, err := p.session.BlockingSendReliableMessage(p.recipient, p.provider, rawRequest)
+		mesgID := p.session.NewMessageID()
+		doc := p.session.PKIDocument()
+
+		serviceNode, err := doc.GetServiceNodeByKeyHash(p.provider)
+		if err != nil {
+			return nil, err
+		}
+
+		destHash := hash.Sum256(serviceNode.IdentityKey)
+		reply, err := p.session.BlockingSendReliableMessage(mesgID, rawRequest, &destHash, p.recipient)
 		if err != nil {
 			// do not spin on error and retry connection
 			goto Sleep
@@ -129,7 +140,7 @@ func (p *Panda) Exchange(id, message []byte, shutdown <-chan interface{}) ([]byt
 }
 
 // New creates a new Panda instance.
-func New(blobSize int, s *client.Session, log *logging.Logger, recipient, provider string) *Panda {
+func New(blobSize int, s *thin.ThinClient, log *logging.Logger, recipient []byte, provider *[32]byte) *Panda {
 	p := &Panda{
 		session:   s,
 		blobSize:  blobSize,
