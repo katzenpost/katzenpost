@@ -626,13 +626,13 @@ func (c *Client) doGetConversation(nickname string, responseChan chan Messages) 
 		msg = append(msg, m)
 	}
 	// do not block the worker
-	go func() {
+	c.Go(func() {
 		sort.Sort(msg)
 		select {
 		case <-c.HaltCh():
 		case responseChan <- msg:
 		}
-	}()
+	})
 }
 
 // GetContacts returns the contacts map.
