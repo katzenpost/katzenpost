@@ -24,7 +24,6 @@ import (
 	"fmt"
 	"math/rand"
 
-	"github.com/katzenpost/katzenpost/client"
 	"github.com/katzenpost/katzenpost/reunion/commands"
 	"github.com/katzenpost/katzenpost/reunion/crypto"
 	"github.com/katzenpost/katzenpost/reunion/server"
@@ -557,9 +556,7 @@ func (e *Exchange) Run() {
 		// 2:A -> DB: transmit א message
 		for {
 			err := e.sendT1()
-			if err == client.ErrReplyTimeout {
-				continue
-			} else if err != nil {
+			if err != nil {
 				defer haltedfn()
 				return
 			}
@@ -581,9 +578,6 @@ func (e *Exchange) Run() {
 			// 3:A <- DB: fetch epoch state
 			err := e.fetchState()
 			// if failure due to timeout, retransmit
-			if err == client.ErrReplyTimeout {
-				continue
-			}
 			if err != nil {
 				e.log.Error(err.Error())
 				defer haltedfn()
