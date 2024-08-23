@@ -6,7 +6,6 @@ require (
 	github.com/BurntSushi/toml v1.4.0
 	github.com/carlmjohnson/versioninfo v0.22.5
 	github.com/fxamacker/cbor/v2 v2.7.0
-	github.com/gobwas/ws v1.1.0
 	github.com/golang/protobuf v1.5.4
 	github.com/grafana/pyroscope-go v1.1.2
 	github.com/jackc/pgx v3.6.2+incompatible
@@ -41,8 +40,6 @@ require (
 	github.com/dchest/siphash v1.2.3 // indirect
 	github.com/go-faster/xor v1.0.0 // indirect
 	github.com/go-task/slim-sprig v0.0.0-20230315185526-52ccab3ef572 // indirect
-	github.com/gobwas/httphead v0.1.0 // indirect
-	github.com/gobwas/pool v0.2.1 // indirect
 	github.com/gofrs/uuid v4.4.0+incompatible // indirect
 	github.com/google/pprof v0.0.0-20210407192527-94a9f03dee38 // indirect
 	github.com/grafana/pyroscope-go/godeltaprof v0.1.8 // indirect

@@ -30,7 +30,6 @@ import (
 
 	"gopkg.in/op/go-logging.v1"
 
-	"github.com/gobwas/ws"
 	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/kem"
 	kempem "github.com/katzenpost/hpqc/kem/pem"
@@ -190,36 +189,6 @@ func (s *Server) listenQUICWorker(l net.Listener) {
 			}
 			continue
 		}
-		s.Add(1)
-		s.onConn(conn)
-	}
-	// NOTREACHED
-}
-
-func (s *Server) listenWSWorker(l net.Listener) {
-	addr := l.Addr()
-	s.log.Noticef("Websocket Listening on: %v", addr)
-	defer func() {
-		s.log.Noticef("Stopping listening on: %v", addr)
-		l.Close()
-		s.Done()
-	}()
-	u := new(ws.Upgrader)
-	for {
-		conn, err := l.Accept()
-		if err != nil {
-			if e, ok := err.(net.Error); ok && !e.Temporary() {
-				s.log.Errorf("Critical accept failure: %v", err)
-				return
-			}
-			continue
-		}
-		_, err = u.Upgrade(conn)
-		if err != nil {
-			s.log.Noticef("Upgrading connection to websocket failed: %s", err)
-			continue
-		}
-
 		s.Add(1)
 		s.onConn(conn)
 	}
@@ -413,15 +382,6 @@ func New(cfg *config.Config) (*Server, error) {
 		u, err := url.Parse(v)
 		if err == nil {
 			switch u.Scheme {
-			case "ws":
-				l, err := net.Listen("tcp", u.Host)
-				if err != nil {
-					s.log.Errorf("Failed to start listener '%v': %v", v, err)
-					continue
-				}
-				s.listeners = append(s.listeners, l)
-				s.Add(1)
-				go s.listenWSWorker(l)
 			case "tcp":
 				l, err := net.Listen("tcp", u.Host)
 				if err != nil {
