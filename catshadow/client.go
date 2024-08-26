@@ -523,7 +523,7 @@ func (c *Client) doCreateRemoteSpool(provider string, responseChan chan error) {
 			return
 		}
 	}
-	go func() {
+	c.Go(func() {
 		// NewSpoolReadDescriptor blocks, so we run this in another thread and then use
 		// another workerOp to save the spool descriptor.
 		spool, err := memspoolclient.NewSpoolReadDescriptor(desc.Name, desc.Provider, c.session)
@@ -540,7 +540,7 @@ func (c *Client) doCreateRemoteSpool(provider string, responseChan chan error) {
 		case <-c.HaltCh():
 		case c.opCh <- &opUpdateSpool{descriptor: spool, responseChan: responseChan}:
 		}
-	}()
+	})
 }
 
 // NewContact adds a new contact to the Client's state. This starts
