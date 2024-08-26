@@ -71,7 +71,7 @@ uid?=$(shell [ "$$SUDO_UID" != "" ] && echo "$$SUDO_UID" || id -u)
 gid?=$(shell [ "$$SUDO_GID" != "" ] && echo "$$SUDO_GID" || id -g)
 
 docker_user?=$(shell if echo ${docker}|grep -q podman; then echo 0:0; else echo ${uid}:${gid}; fi)
-docker_args=--user ${docker_user} --volume $(shell readlink -f ..):/go/katzenpost --workdir /go/katzenpost -v $(shell readlink -f .)/$(cache_dir)/go:/go/ -v $(shell readlink -f .)/$(cache_dir)/root_cache:/root/.cache
+docker_args=--user ${docker_user} --volume $(shell readlink -f ..):/go/katzenpost --workdir /go/katzenpost -v $(shell readlink -f .)/$(cache_dir)/go:/go/ -e GOCACHE=/go/cache
 
 replace_name=$(shell if echo ${docker}|grep -q podman; then echo " --replace --name"; else echo " --name"; fi)
 i_if_podman=$(shell if echo ${docker}|grep -q podman; then echo " -i"; else echo; fi)
@@ -89,13 +89,10 @@ testnet_binaries: $(net_name)/server.$(distro) $(net_name)/proxy_server.$(distro
 $(net_name):
 	mkdir -vp $(net_name)
 
-$(cache_dir): $(cache_dir)/go $(cache_dir)/root_cache
+$(cache_dir): $(cache_dir)/go
 
 $(cache_dir)/go:
 	mkdir -vp $(cache_dir)/go
-
-$(cache_dir)/root_cache:
-	mkdir -vp $(cache_dir)/root_cache
 
 $(docker_compose_yml): ../genconfig/main.go $(distro)_base.stamp | $(net_name) $(cache_dir)
 	$(docker) run ${docker_args} --rm katzenpost-$(distro)_base \
