@@ -34,6 +34,7 @@ var (
 	cborFrameOverhead = 0 // overhead is determined by init()
 	hash              = sha256.New
 	ErrStatusNotFound = errors.New("StatusNotFound")
+	ErrStatusFailed   = errors.New("StatusFailed")
 )
 
 type Client struct {
@@ -113,8 +114,28 @@ func (c *Client) Put(ID common.MessageID, signature, payload []byte) error {
 		return err
 	}
 
-	_, err = c.Session.SendReliableMessage(loc.Name(), loc.Provider(), serialized)
-	return err
+	// SendReliableMessage returns when the message is queued, but we don't learn
+	// whether the command succeeded or not...
+	r, err := c.Session.BlockingSendReliableMessage(loc.Name(), loc.Provider(), serialized)
+	if err != nil {
+		return err
+	}
+
+	resp := &common.PigeonHoleResponse{}
+	_, err = cbor.UnmarshalFirst(r, resp)
+	if err != nil {
+		return err
+	}
+	switch resp.Status {
+	case common.StatusNotFound:
+		return ErrStatusNotFound
+	case common.StatusFailed:
+		return ErrStatusFailed
+	case common.StatusOK:
+		return nil
+	default:
+		return ErrStatusFailed
+	}
 }
 
 // PayloadSize returns the size of the user payload
