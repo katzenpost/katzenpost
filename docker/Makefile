@@ -16,6 +16,8 @@ help:
 	@echo
 
 warped?=true
+no_decoy?=true
+no_mixdecoy?=true
 mixes=3
 auths=3
 gateways=1
@@ -53,6 +55,10 @@ docker_compose_yml=$(net_name)/docker-compose.yml
 sh=$(shell if echo ${distro}|grep -q alpine; then echo sh; else echo bash; fi)
 SHELL=/bin/bash
 cache_dir=cache
+
+# no_decoy and no_mixdecoy control enabling dockerized mixnets with or without decoy traffic
+noMixDecoy=$(shell if [[ $no_mixdecoy ]]; then echo -noMixDecoy; fi)
+noDecoy=$(shell if [[ $no_decoy ]]; then echo -noDecoy; fi)
 
 # log_level can be DEBUG, INFO, NOTICE, WARNING, ERROR, CRITICAL
 log_level=INFO
@@ -100,6 +106,7 @@ $(docker_compose_yml): ../genconfig/main.go $(distro)_base.stamp | $(net_name) $
 		-lLMax ${lLMax} -lD ${lD} -lDMax ${lDMax} -lM ${lM} -lMMax ${lMMax} \
 		-S .$(distro) -v -o ./$(net_name) -b /$(net_name) -P $(base_port) \
 		-nike "$(nike)" -kem "$(kem)" -d katzenpost-$(distro)_base \
+		${noMixDecoy} ${noDecoy} \
 		-UserForwardPayloadLength $(UserForwardPayloadLength) -log_level $(log_level)'
 
 $(net_name)/running.stamp:
