@@ -14,7 +14,7 @@ test_version=v30
 
 dockerdockertest:
 	cd ../docker && make $(distro)_base.stamp
-	$(run_docker_test)Docker
+	$(run_docker_test) Docker
 
 upgrade_test_use_saved:
 	cd ../docker && make wait stop-memspool
@@ -22,14 +22,14 @@ upgrade_test_use_saved:
 	cp -v testdata/$(test_version)/memspool.storage ../docker/voting_mixnet/servicenode1/
 	cd ../docker && make start-memspool
 	cp -v testdata/$(test_version)/*state testdata/ && \
-	$(run_docker_test)UpgradeResume
+	$(run_docker_test) UpgradeResume
 
 upgrade_test_recreate:
 	cd ../docker && make wait stop-memspool
 	sleep 1
 	rm -fv ../docker/voting_mixnet/servicenode1/memspool.storage
 	cd ../docker && make start-memspool
-	$(run_docker_test)UpgradeCreate
+	$(run_docker_test) UpgradeCreate
 	cd ../docker && make stop-memspool
 	sleep 1
 	mkdir -p testdata/$(test_version)/
