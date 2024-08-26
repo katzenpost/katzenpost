@@ -361,8 +361,12 @@ func (c *Client) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, 
 		case commands.ConsensusGone:
 			c.log.Errorf("GetConsensus from %s returned ConsensusGone", auth.Identifier)
 			continue
+		case commands.ConsensusNotFound:
+			c.log.Errorf("GetConsensus from %s returned ConsensusGone", auth.Identifier)
+			continue
 		default:
 			c.log.Errorf("GetConsensus from %s rejected with %v", auth.Identifier, getErrorToString(r.ErrorCode))
+			continue
 		}
 
 		// Verify document signatures.
