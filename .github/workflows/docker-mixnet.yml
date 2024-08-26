@@ -22,7 +22,7 @@ jobs:
 
       - name: Build and start the mixnet
         run: |
-          cd docker && make start wait
+          cd docker && make log_level=DEBUG start wait
 
       - name: run ping
         run: cd docker && make run-ping
@@ -33,6 +33,14 @@ jobs:
       - name: Stop the mixnet
         run: |
           cd docker && make stop
+
+      - name: Upload testnet state
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mixnet-${{ github.run_id }}-${{ github.job }}
+          path: |
+            docker/voting_mixnet/*/*.log
 
   test_e2e_memspool:
     env:
@@ -54,7 +62,7 @@ jobs:
 
       - name: Build and start the mixnet
         run: |
-          cd docker && make start wait
+          cd docker && make log_level=DEBUG start wait
 
       - name: run memspool end to end tests
         run: cd memspool && make testargs=-coverprofile=coverage.part dockerdockertest && cat client/coverage.part >> ../coverage.out
@@ -62,6 +70,14 @@ jobs:
       - name: Stop the mixnet
         run: |
           cd docker && make stop
+
+      - name: Upload testnet state
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mixnet-${{ github.run_id }}-${{ github.job }}
+          path: |
+            docker/voting_mixnet/*/*.log
 
   test_e2e_catshadow:
     env:
@@ -86,7 +102,7 @@ jobs:
 
       - name: Build and start the mixnet
         run: |
-          cd docker && make start wait
+          cd docker && make log_level=DEBUG start wait
 
       - name: test creating upgrade test state files
         run: cd catshadow && make testargs=-coverprofile=coverage.part test_version=latest upgrade_test_recreate && cat coverage.part >> ../coverage.out
@@ -103,6 +119,14 @@ jobs:
       - name: Stop the mixnet
         run: |
           cd docker && make stop
+
+      - name: Upload testnet state
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mixnet-${{ github.run_id }}-${{ github.job }}
+          path: |
+            docker/voting_mixnet/*/*.log
 
   test_benchmark:
     env:
@@ -124,7 +148,7 @@ jobs:
 
       - name: Build and start the mixnet
         run: |
-          cd docker && make start wait run-ping
+          cd docker && make log_level=DEBUG start wait run-ping
 
       - name: run benchmark tests
         run: cd bench && make testargs=-coverprofile=coverage.part dockerdockertest && cat coverage.part >> ../coverage.out
@@ -133,8 +157,13 @@ jobs:
         run: |
           cd docker && make stop
 
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v4
+      - name: Upload testnet state
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mixnet-${{ github.run_id }}-${{ github.job }}
+          path: |
+            docker/voting_mixnet/*/*.log
 
   test_e2e_pigeonhole:
     env:
@@ -156,7 +185,7 @@ jobs:
 
       - name: Build and start the mixnet
         run: |
-          cd docker && make start wait
+          cd docker && make log_level=DEBUG start wait
 
       - name: run pigeonhole end to end tests
         run: cd pigeonhole && make testargs=-coverprofile=coverage.part dockerdockertest && cat client/coverage.part >> ../coverage.out
@@ -164,3 +193,11 @@ jobs:
       - name: Stop the mixnet
         run: |
           cd docker && make stop
+
+      - name: Upload testnet state
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mixnet-${{ github.run_id }}-${{ github.job }}
+          path: |
+            docker/voting_mixnet/*/*.log
