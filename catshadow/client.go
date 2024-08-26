@@ -206,24 +206,21 @@ func (c *Client) sessionEvents() chan client.Event {
 func (c *Client) Start() {
 	// Start the fatal error watcher.
 	go func() {
-		err, ok := <-c.fatalErrCh
-		if !ok {
-			return
+		select {
+		case err := <-c.fatalErrCh:
+			panic(err)
+			c.log.Warningf("Shutting down due to error: %v", err)
+			c.Shutdown()
+		case <-c.HaltCh():
+		case <-c.client.HaltCh():
+			c.log.Warningf("Shutting down due to client shutdown")
+			c.Shutdown()
 		}
-		c.log.Warningf("Shutting down due to error: %v", err)
-		c.Shutdown()
 	}()
 
 	c.garbageCollectConversations()
 	c.Go(c.eventSinkWorker)
 	c.Go(c.worker)
-
-	// Shutdown if the client halts for some reason
-	go func() {
-		c.client.Wait()
-		c.Shutdown()
-	}()
-
 }
 
 func (c *Client) initKeyExchange(contact *Contact) error {
