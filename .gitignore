@@ -6,7 +6,10 @@
 
 docker/alpine_base.stamp
 docker/alpine_go_mod.stamp
+docker/debian_base.stamp
+docker/debian_go_mod.stamp
 docker/cache
+docker/voting_mixnet
 genconfig/genconfig
 memspool/server/cmd/memspool/memspool
 panda/server/cmd/panda_server/panda_server
