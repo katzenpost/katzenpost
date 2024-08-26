@@ -107,6 +107,7 @@ type state struct {
 	authorizedServiceNodes map[[publicKeyHashSize]byte]string
 	authorizedAuthorities  map[[publicKeyHashSize]byte]bool
 	authorityLinkKeys      map[[publicKeyHashSize]byte]kem.PublicKey
+	authorityNames         map[[publicKeyHashSize]byte]string
 
 	documents    map[uint64]*pki.Document
 	myconsensus  map[uint64]*pki.Document
@@ -465,10 +466,10 @@ func (s *state) getThresholdConsensus(epoch uint64) (*pki.Document, error) {
 	}
 	_, good, bad, err := cert.VerifyThreshold(s.getVerifiers(), s.threshold, signedConsensus)
 	for _, b := range bad {
-		s.log.Errorf("Consensus NOT signed by %x", hash.Sum256From(b))
+		s.log.Errorf("Consensus NOT signed by %s", s.authorityNames[hash.Sum256From(b)])
 	}
 	for _, g := range good {
-		s.log.Noticef("Consensus signed by %x", hash.Sum256From(g))
+		s.log.Noticef("Consensus signed by %s", s.authorityNames[hash.Sum256From(g)])
 	}
 	if err == nil {
 		s.log.Noticef("Consensus made for epoch %d with %d/%d signatures: %v", epoch, len(good), len(s.verifiers), ourConsensus)
@@ -610,7 +611,7 @@ func (s *state) verifyCommits(epoch uint64) (map[[publicKeyHashSize]byte][]byte,
 			// verify that pk2 is authorized
 			v, ok := s.reverseHash[pk2]
 			if !ok {
-				s.log.Errorf("Commit from invaid peer %x in certificate from %x", pk2, pk)
+				s.log.Errorf("Commit from invaid peer %x in certificate from %s", pk2, s.authorityNames[pk])
 				badnodes[pk] = true
 				break
 			}
@@ -619,14 +620,14 @@ func (s *state) verifyCommits(epoch uint64) (map[[publicKeyHashSize]byte][]byte,
 			if err != nil {
 				// pk didn't validate commit in its certificate!
 				badnodes[pk] = true
-				s.log.Errorf("Invalid signature over commit from %s in certificate from %s, rejecting %s from consensus", pk2, pk, pk)
+				s.log.Errorf("Invalid signature over commit from %s in certificate from %s, rejecting %s from consensus", s.authorityNames[pk2], s.authorityNames[pk], s.authorityNames[pk])
 				// do not bother checking any more of pk's SharedRandomCommits
 				break
 			}
 			// verify that the commit is accompanied by a reaveal
 			signedReveal, ok := certificate.SharedRandomReveal[pk2]
 			if !ok {
-				s.log.Errorf("Certificate from %x has Commit for %x but not Reveal", pk, pk2)
+				s.log.Errorf("Certificate from %s has Commit for %s but not Reveal", s.authorityNames[pk], s.authorityNames[pk2])
 				badnodes[pk] = true
 				// do not bother checking any more of pk's SharedRandomCommits
 				break
@@ -634,7 +635,7 @@ func (s *state) verifyCommits(epoch uint64) (map[[publicKeyHashSize]byte][]byte,
 			// verify that the alleged reveal is signed by pk2
 			reveal, err := cert.Verify(v, signedReveal)
 			if err != nil {
-				s.log.Errorf("Reveal in certificate from %x has invalid signature on reveal from %x", pk, pk2)
+				s.log.Errorf("Reveal in certificate from %s has invalid signature on reveal from %s", s.authorityNames[pk], s.authorityNames[pk2])
 				badnodes[pk] = true
 				// do not bother checking any more of pk's SharedRandomCommits
 				break
@@ -643,7 +644,7 @@ func (s *state) verifyCommits(epoch uint64) (map[[publicKeyHashSize]byte][]byte,
 			srv.SetCommit(commit)
 			// verify that the SharedRandom is for the correct epoch
 			if srv.GetEpoch() != epoch {
-				s.log.Errorf("SharedRandomCommit in certificate from %x contains bad Epoch from %x", pk, pk2)
+				s.log.Errorf("SharedRandomCommit in certificate from %s contains bad Epoch from %s", s.authorityNames[pk], s.authorityNames[pk2])
 				badnodes[pk] = true
 				badnodes[pk2] = true
 				// do not bother checking any more of pk's SharedRandomCommits
@@ -652,7 +653,7 @@ func (s *state) verifyCommits(epoch uint64) (map[[publicKeyHashSize]byte][]byte,
 
 			// verify that the commit is validate by the revealed value
 			if !srv.Verify(reveal) {
-				s.log.Errorf("Reveal in certificate from %x has invalid reveal from %x", pk, pk2)
+				s.log.Errorf("Reveal in certificate from %s has invalid reveal from %s", s.authorityNames[pk], s.authorityNames[pk2])
 				// pk should have validated the Reveal, and pk2 signed an invalid Reveal
 				badnodes[pk] = true
 				badnodes[pk2] = true
@@ -663,7 +664,7 @@ func (s *state) verifyCommits(epoch uint64) (map[[publicKeyHashSize]byte][]byte,
 			if ok {
 				// check that the commits were the same
 				if !bytes.Equal(signedCommit, signedCommit2) {
-					s.log.Errorf("%x submitted commit %x to %x and previously submitted %x", pk2, signedCommit[:32], pk, signedCommit2[:32])
+					s.log.Errorf("%s submitted commit %x to %s and previously submitted %x", s.authorityNames[pk2], signedCommit[:32], s.authorityNames[pk], signedCommit2[:32])
 					badnodes[pk2] = true
 				}
 			} else {
@@ -674,7 +675,7 @@ func (s *state) verifyCommits(epoch uint64) (map[[publicKeyHashSize]byte][]byte,
 			signedReveal2, ok := revealed[pk2]
 			if ok {
 				if !bytes.Equal(signedReveal, signedReveal2) {
-					s.log.Errorf("%x submitted commit %x to %x and previously submitted %x", pk2, signedReveal, pk, signedReveal2)
+					s.log.Errorf("%s submitted commit %x to %s and previously submitted %x", s.authorityNames[pk2], signedReveal, s.authorityNames[pk], signedReveal2)
 					badnodes[pk2] = true
 				}
 			} else {
@@ -684,7 +685,7 @@ func (s *state) verifyCommits(epoch uint64) (map[[publicKeyHashSize]byte][]byte,
 	}
 	// ensure we have enough commits to make a threshold consensus
 	for pk, _ := range badnodes {
-		s.log.Warningf("Found bad node %x", pk)
+		s.log.Warningf("Found bad node %s", s.authorityNames[pk])
 		delete(comitted, pk)
 		delete(revealed, pk)
 	}
@@ -977,7 +978,7 @@ func (s *state) tallyVotes(epoch uint64) ([]*pki.MixDescriptor, *config.Paramete
 		e := gob.NewEncoder(&b)
 		err := e.Encode(params)
 		if err != nil {
-			s.log.Errorf("Skipping vote from Authority %x whose MixParameters failed to encode?! %v", id, err)
+			s.log.Errorf("Skipping vote from Authority %s whose MixParameters failed to encode?! %v", s.authorityNames[id], err)
 			continue
 		}
 		bs := b.String()
@@ -990,7 +991,7 @@ func (s *state) tallyVotes(epoch uint64) ([]*pki.MixDescriptor, *config.Paramete
 		for _, desc := range vote.GatewayNodes {
 			rawDesc, err := desc.MarshalBinary()
 			if err != nil {
-				s.log.Errorf("Skipping vote from Authority whose MixDescriptor failed to encode?! %v", err)
+				s.log.Errorf("Skipping vote from Authority %s whose MixDescriptor failed to encode?! %v", s.authorityNames[id], err)
 				continue
 			}
 			k := string(rawDesc)
@@ -1002,7 +1003,7 @@ func (s *state) tallyVotes(epoch uint64) ([]*pki.MixDescriptor, *config.Paramete
 		for _, desc := range vote.ServiceNodes {
 			rawDesc, err := desc.MarshalBinary()
 			if err != nil {
-				s.log.Errorf("Skipping vote from Authority whose MixDescriptor failed to encode?! %v", err)
+				s.log.Errorf("Skipping vote from Authority %s whose MixDescriptor failed to encode?! %v", s.authorityNames[id], err)
 				continue
 			}
 			k := string(rawDesc)
@@ -1016,7 +1017,7 @@ func (s *state) tallyVotes(epoch uint64) ([]*pki.MixDescriptor, *config.Paramete
 			for _, desc := range l {
 				rawDesc, err := desc.MarshalBinary()
 				if err != nil {
-					s.log.Errorf("Skipping vote from Authority whose MixDescriptor failed to encode?! %v", err)
+					s.log.Errorf("Skipping vote from Authority %s whose MixDescriptor failed to encode?! %v", s.authorityNames[id], err)
 					continue
 				}
 
@@ -1346,9 +1347,10 @@ func (s *state) onCertUpload(certificate *commands.Cert) commands.Command {
 	s.Lock()
 	defer s.Unlock()
 	resp := commands.CertStatus{}
+	pk := hash.Sum256From(certificate.PublicKey)
 
 	// if not authorized
-	_, ok := s.authorizedAuthorities[hash.Sum256From(certificate.PublicKey)]
+	_, ok := s.authorizedAuthorities[pk]
 	if !ok {
 		s.log.Error("Voter not authorized.")
 		resp.ErrorCode = commands.CertNotAuthorized
@@ -1358,12 +1360,12 @@ func (s *state) onCertUpload(certificate *commands.Cert) commands.Command {
 	// XXX: this ought to use state, to prevent out-of-order protocol events, in case
 	// we have any bugs in our implmementation
 	if certificate.Epoch < s.votingEpoch {
-		s.log.Errorf("Received Certificate too early: %d < %d", certificate.Epoch, s.votingEpoch)
+		s.log.Errorf("Certificate from %s received too early: %d < %d", s.authorityNames[pk], certificate.Epoch, s.votingEpoch)
 		resp.ErrorCode = commands.CertTooEarly
 		return &resp
 	}
 	if certificate.Epoch > s.votingEpoch {
-		s.log.Errorf("Received Certificate too late: %d > %d", certificate.Epoch, s.votingEpoch)
+		s.log.Errorf("Certificate from %s too late: %d > %d", s.authorityNames[pk], certificate.Epoch, s.votingEpoch)
 		resp.ErrorCode = commands.CertTooLate
 		return &resp
 	}
@@ -1371,7 +1373,7 @@ func (s *state) onCertUpload(certificate *commands.Cert) commands.Command {
 	// ensure certificate.PublicKey verifies the payload (ie Vote has a signature from this peer)
 	_, err := cert.Verify(certificate.PublicKey, certificate.Payload)
 	if err != nil {
-		s.log.Error("Cert from %s failed to verify.", certificate.PublicKey)
+		s.log.Error("Certificate from %s failed to verify.", s.authorityNames[pk])
 		resp.ErrorCode = commands.CertNotSigned
 		return &resp
 	}
@@ -1379,14 +1381,14 @@ func (s *state) onCertUpload(certificate *commands.Cert) commands.Command {
 	// verify the structure of the certificate
 	doc, err := s.doParseDocument(certificate.Payload)
 	if err != nil {
-		s.log.Error("Cert from %x failed to verify: %s", certificate.PublicKey, err)
+		s.log.Error("Certficate from %s failed to verify: %s", s.authorityNames[pk], certificate.PublicKey, err)
 		resp.ErrorCode = commands.CertNotSigned
 		return &resp
 	}
 
 	// haven't received a vote from this peer yet for this epoch
-	if _, ok := s.votes[s.votingEpoch][hash.Sum256From(certificate.PublicKey)]; !ok {
-		s.log.Error("Cert received before peer's vote?.")
+	if _, ok := s.votes[s.votingEpoch][pk]; !ok {
+		s.log.Errorf("Certficate from %s received before peer's vote?.", s.authorityNames[pk])
 		resp.ErrorCode = commands.CertTooEarly
 		return &resp
 	}
@@ -1397,13 +1399,13 @@ func (s *state) onCertUpload(certificate *commands.Cert) commands.Command {
 	}
 
 	// already received a certificate for this round
-	if _, ok := s.certificates[s.votingEpoch][hash.Sum256From(certificate.PublicKey)]; ok {
-		s.log.Error("Another Cert received from peer %x", hash.Sum256From(certificate.PublicKey))
+	if _, ok := s.certificates[s.votingEpoch][pk]; ok {
+		s.log.Error("Another Cert received from peer %s", s.authorityNames[pk])
 		resp.ErrorCode = commands.CertAlreadyReceived
 		return &resp
 	}
-	s.log.Noticef("Cert OK from: %x\n%s", hash.Sum256From(certificate.PublicKey), doc)
-	s.certificates[s.votingEpoch][hash.Sum256From(certificate.PublicKey)] = doc
+	s.log.Noticef("Cert OK from: %s\n%s", s.authorityNames[pk], doc)
+	s.certificates[s.votingEpoch][pk] = doc
 	resp.ErrorCode = commands.CertOk
 	return &resp
 }
@@ -1412,9 +1414,10 @@ func (s *state) onRevealUpload(reveal *commands.Reveal) commands.Command {
 	s.Lock()
 	defer s.Unlock()
 	resp := commands.RevealStatus{}
+	pk := hash.Sum256From(reveal.PublicKey)
 
 	// if not authorized
-	_, ok := s.authorizedAuthorities[hash.Sum256From(reveal.PublicKey)]
+	_, ok := s.authorizedAuthorities[pk]
 	if !ok {
 		s.log.Error("Voter not authorized.")
 		resp.ErrorCode = commands.RevealNotAuthorized
@@ -1424,7 +1427,7 @@ func (s *state) onRevealUpload(reveal *commands.Reveal) commands.Command {
 	// verify the signature on the payload
 	certified, err := cert.Verify(reveal.PublicKey, reveal.Payload)
 	if err != nil {
-		s.log.Error("Reveal from %s failed to verify.", reveal.PublicKey)
+		s.log.Error("Reveal from %s failed to verify.", s.authorityNames[pk])
 		resp.ErrorCode = commands.RevealNotSigned
 		return &resp
 	}
@@ -1432,28 +1435,28 @@ func (s *state) onRevealUpload(reveal *commands.Reveal) commands.Command {
 	e := epochFromBytes(certified[:8])
 	// received too late
 	if e < s.votingEpoch {
-		s.log.Errorf("Received Reveal too late: %d < %d", e, s.votingEpoch)
+		s.log.Errorf("Reveal from %s received too late: %d < %d", s.authorityNames[pk], e, s.votingEpoch)
 		resp.ErrorCode = commands.RevealTooLate
 		return &resp
 	}
 
 	// received too early
 	if e > s.votingEpoch {
-		s.log.Errorf("Received Reveal too early: %d > %d", e, s.votingEpoch)
+		s.log.Errorf("Reveal from %s received too early: %d > %d", s.authorityNames[pk], e, s.votingEpoch)
 		resp.ErrorCode = commands.RevealTooEarly
 		return &resp
 	}
 
 	// haven't received a commit yet for this epoch
 	if _, ok := s.commits[s.votingEpoch]; !ok {
-		s.log.Error("Reveal received before any commit.")
+		s.log.Errorf("Reveal from %s received before any commit.", s.authorityNames[pk])
 		resp.ErrorCode = commands.RevealTooEarly
 		return &resp
 	}
 
 	// haven't received a commit from this peer yet for this epoch
-	if _, ok := s.commits[s.votingEpoch][hash.Sum256From(reveal.PublicKey)]; !ok {
-		s.log.Error("Reveal received before peer's vote?.")
+	if _, ok := s.commits[s.votingEpoch][pk]; !ok {
+		s.log.Errorf("Reveal from %s received before peer's vote.", s.authorityNames[pk])
 		resp.ErrorCode = commands.RevealTooEarly
 		return &resp
 	}
@@ -1464,13 +1467,13 @@ func (s *state) onRevealUpload(reveal *commands.Reveal) commands.Command {
 	}
 
 	// already received a reveal for this round
-	if _, ok := s.reveals[s.votingEpoch][hash.Sum256From(reveal.PublicKey)]; ok {
-		s.log.Error("Another Reveal received from peer's vote?.")
+	if _, ok := s.reveals[s.votingEpoch][pk]; ok {
+		s.log.Errorf("Reveal from %s already received", s.authorityNames[pk])
 		resp.ErrorCode = commands.RevealAlreadyReceived
 		return &resp
 	}
-	s.log.Noticef("Reveal OK from: %x\n%x", hash.Sum256From(reveal.PublicKey), certified)
-	s.reveals[s.votingEpoch][hash.Sum256From(reveal.PublicKey)] = reveal.Payload
+	s.log.Noticef("Reveal OK from: %s\n%x", s.authorityNames[pk], certified)
+	s.reveals[s.votingEpoch][pk] = reveal.Payload
 	resp.ErrorCode = commands.RevealOk
 	return &resp
 }
@@ -1479,9 +1482,10 @@ func (s *state) onVoteUpload(vote *commands.Vote) commands.Command {
 	s.Lock()
 	defer s.Unlock()
 	resp := commands.VoteStatus{}
+	pk := hash.Sum256From(vote.PublicKey)
 
 	// if not authorized
-	_, ok := s.authorizedAuthorities[hash.Sum256From(vote.PublicKey)]
+	_, ok := s.authorizedAuthorities[pk]
 	if !ok {
 		s.log.Error("Voter not authorized.")
 		resp.ErrorCode = commands.VoteNotAuthorized
@@ -1491,12 +1495,12 @@ func (s *state) onVoteUpload(vote *commands.Vote) commands.Command {
 	// XXX: this ought to use state, to prevent out-of-order protocol events, in case
 	// we have any bugs in our implmementation
 	if vote.Epoch < s.votingEpoch {
-		s.log.Errorf("Received Vote too early: %d < %d", vote.Epoch, s.votingEpoch)
+		s.log.Errorf("Vote from %s received too early: %d < %d", s.authorityNames[pk], vote.Epoch, s.votingEpoch)
 		resp.ErrorCode = commands.VoteTooEarly
 		return &resp
 	}
 	if vote.Epoch > s.votingEpoch {
-		s.log.Errorf("Received Vote too late: %d > %d", vote.Epoch, s.votingEpoch)
+		s.log.Errorf("Vote from %s received too late: %d > %d", s.authorityNames[pk], vote.Epoch, s.votingEpoch)
 		resp.ErrorCode = commands.VoteTooLate
 		return &resp
 	}
@@ -1512,9 +1516,9 @@ func (s *state) onVoteUpload(vote *commands.Vote) commands.Command {
 	}
 
 	// peer has already voted for this epoch
-	_, ok = s.votes[s.votingEpoch][hash.Sum256From(vote.PublicKey)]
+	_, ok = s.votes[s.votingEpoch][pk]
 	if ok {
-		s.log.Error("Vote command invalid: more than one vote from same peer is not allowed.")
+		s.log.Errorf("Vote from %s already received", s.authorityNames[pk])
 		resp.ErrorCode = commands.VoteAlreadyReceived
 		return &resp
 	}
@@ -1522,21 +1526,21 @@ func (s *state) onVoteUpload(vote *commands.Vote) commands.Command {
 	// ensure vote.PublicKey verifies the payload (ie Vote has a signature from this peer)
 	_, err := cert.Verify(vote.PublicKey, vote.Payload)
 	if err != nil {
-		s.log.Error("Vote from %s failed to verify.", vote.PublicKey)
+		s.log.Errorf("Vote from %s failed to verify.", s.authorityNames[pk])
 		resp.ErrorCode = commands.VoteNotSigned
 		return &resp
 	}
 
 	doc, err := s.doParseDocument(vote.Payload)
 	if err != nil {
-		s.log.Error("Vote failed signature verification.")
+		s.log.Errorf("Vote from %s failed signature verification.", s.authorityNames[pk])
 		resp.ErrorCode = commands.VoteNotSigned
 		return &resp
 	}
 
 	// Check that the deserialiezd payload was signed for the correct Epoch
 	if doc.Epoch != s.votingEpoch {
-		s.log.Error("Authority %x lying about Vote Payload Epoch", hash.Sum256From(vote.PublicKey))
+		s.log.Errorf("Vote from %s contains wrong Epoch %d", s.authorityNames[pk], doc.Epoch)
 		resp.ErrorCode = commands.VoteMalformed
 		return &resp
 	}
@@ -1544,19 +1548,19 @@ func (s *state) onVoteUpload(vote *commands.Vote) commands.Command {
 	// extract commit from document and verify that it was signed by this peer
 	// IsDocumentWellFormed has already verified that any commit is for
 	// this Epoch and is signed by a known verifier
-	commit, ok := doc.SharedRandomCommit[hash.Sum256From(vote.PublicKey)]
+	commit, ok := doc.SharedRandomCommit[pk]
 	if !ok {
 		// It's possible that an authority submitted another authoritys vote on its behalf,
 		// but we are not going to allow that behavior as it is not specified.
-		s.log.Error("Vote did not contain SharedRandom Commit from %x.", hash.Sum256From(vote.PublicKey))
+		s.log.Error("Vote from %s did not contain SharedRandom Commit.", s.authorityNames[pk])
 		resp.ErrorCode = commands.VoteMalformed
 		return &resp
 	}
 	// save the vote
-	s.votes[s.votingEpoch][hash.Sum256From(vote.PublicKey)] = doc
+	s.votes[s.votingEpoch][pk] = doc
 	// save the commit
-	s.commits[s.votingEpoch][hash.Sum256From(vote.PublicKey)] = commit
-	s.log.Noticef("Vote OK from: %x\n%s", hash.Sum256From(vote.PublicKey), doc)
+	s.commits[s.votingEpoch][pk] = commit
+	s.log.Noticef("Vote OK from: %s\n%s", s.authorityNames[pk], doc)
 	resp.ErrorCode = commands.VoteOk
 	return &resp
 }
@@ -1565,24 +1569,24 @@ func (s *state) onSigUpload(sig *commands.Sig) commands.Command {
 	s.Lock()
 	defer s.Unlock()
 	resp := commands.SigStatus{}
+	pk := hash.Sum256From(sig.PublicKey)
 
+	_, ok := s.authorizedAuthorities[pk]
+	if !ok {
+		s.log.Error("Signature not authorized.")
+		resp.ErrorCode = commands.SigNotAuthorized
+		return &resp
+	}
 	if sig.Epoch < s.votingEpoch {
-		s.log.Errorf("Received Sig too early: %d < %d", sig.Epoch, s.votingEpoch)
+		s.log.Errorf("Signature from %s received too early: %d < %d", s.authorityNames[pk], sig.Epoch, s.votingEpoch)
 		resp.ErrorCode = commands.SigTooEarly
 		return &resp
 	}
 	if sig.Epoch > s.votingEpoch {
-		s.log.Errorf("Received Sig too late: %d > %d", sig.Epoch, s.votingEpoch)
+		s.log.Errorf("Signature from %s received too late: %d > %d", s.authorityNames[pk], sig.Epoch, s.votingEpoch)
 		resp.ErrorCode = commands.SigTooLate
 		return &resp
 	}
-	_, ok := s.authorizedAuthorities[hash.Sum256From(sig.PublicKey)]
-	if !ok {
-		s.log.Error("Sigr not authorized.")
-		resp.ErrorCode = commands.SigNotAuthorized
-		return &resp
-	}
-
 	verified, err := cert.Verify(sig.PublicKey, sig.Payload)
 	if err != nil {
 		s.log.Error("Sig failed signature verification.")
@@ -1601,10 +1605,10 @@ func (s *state) onSigUpload(sig *commands.Sig) commands.Command {
 		err := csig.Unmarshal(verified)
 		if err != nil {
 			resp.ErrorCode = commands.SigInvalid
-			s.log.Errorf("Signature failed to deserialize from: %x", hash.Sum256From(sig.PublicKey))
+			s.log.Errorf("Signature failed to deserialize from: %s", s.authorityNames[pk])
 			return &resp
 		}
-		s.log.Noticef("Signature OK from: %x", hash.Sum256From(sig.PublicKey))
+		s.log.Noticef("Signature OK from: %s", s.authorityNames[pk])
 		s.signatures[s.votingEpoch][hash.Sum256From(sig.PublicKey)] = csig
 		resp.ErrorCode = commands.SigOk
 		return &resp
@@ -1907,18 +1911,16 @@ func newState(s *Server) (*state, error) {
 		st.reverseHash[pk] = identityPublicKey
 	}
 	st.authorizedAuthorities = make(map[[publicKeyHashSize]byte]bool)
+	st.authorityLinkKeys = make(map[[publicKeyHashSize]byte]kem.PublicKey)
+	st.authorityNames = make(map[[publicKeyHashSize]byte]string)
 	for _, v := range st.s.cfg.Authorities {
 		pk := hash.Sum256From(v.IdentityPublicKey)
 		st.authorizedAuthorities[pk] = true
+		st.authorityLinkKeys[pk] = v.LinkPublicKey
 		st.reverseHash[pk] = v.IdentityPublicKey
+		st.authorityNames[pk] = v.Identifier
 	}
 	st.reverseHash[hash.Sum256From(st.s.identityPublicKey)] = st.s.identityPublicKey
-
-	st.authorityLinkKeys = make(map[[publicKeyHashSize]byte]kem.PublicKey)
-	for _, v := range st.s.cfg.Authorities {
-		pk := hash.Sum256From(v.IdentityPublicKey)
-		st.authorityLinkKeys[pk] = v.LinkPublicKey
-	}
 
 	st.documents = make(map[uint64]*pki.Document)
 	st.myconsensus = make(map[uint64]*pki.Document)
