@@ -86,6 +86,14 @@ func TestDisplaySphinxGeometries(t *testing.T) {
 			nrHops:      5,
 			payloadSize: 2000,
 		},
+		{
+			name:        "MLKEM768-X448 KEM",
+			isNIKE:      false,
+			nikeName:    "",
+			kemName:     "MLKEM768-X448",
+			nrHops:      5,
+			payloadSize: 2000,
+		},
 	}
 
 	for i := 0; i < len(tests); i++ {
@@ -181,6 +189,15 @@ func TestDisplaySphinxGeometryRanges(t *testing.T) {
 			startHop:    6,
 			endHop:      10,
 		},
+		{
+			name:        "MLKEM768-X448 KEM",
+			isNIKE:      false,
+			nikeName:    "",
+			kemName:     "MLKEM768-X448",
+			payloadSize: 2000,
+			startHop:    6,
+			endHop:      10,
+		},
 	}
 
 	for i := 0; i < len(tests); i++ {
@@ -231,17 +248,24 @@ func TestSphinx(t *testing.T) {
 			endHop:    7,
 			isForward: false,
 		},
-
-		/* FIXME(david): test case disabled because bug in hpqc x448
 		{
-			name:     "X448 NIKE",
-			isNIKE:   true,
-			nikeName: "x448",
-			kemName:  "",
-			startHop: 5,
-			endHop:   7,
+			name:      "X448 NIKE forward",
+			isNIKE:    true,
+			nikeName:  "x448",
+			kemName:   "",
+			startHop:  5,
+			endHop:    7,
+			isForward: false,
 		},
-		*/
+		{
+			name:      "X448 NIKE SURB reply",
+			isNIKE:    true,
+			nikeName:  "x448",
+			kemName:   "",
+			startHop:  5,
+			endHop:    7,
+			isForward: true,
+		},
 
 		/* NOTE(david): test case disabled because it's too damn slow
 		{
@@ -325,6 +349,24 @@ func TestSphinx(t *testing.T) {
 			isNIKE:    false,
 			nikeName:  "",
 			kemName:   "MLKEM768-X25519",
+			startHop:  5,
+			endHop:    7,
+			isForward: false,
+		},
+		{
+			name:      "MLKEM768-X448 KEM forward",
+			isNIKE:    false,
+			nikeName:  "",
+			kemName:   "MLKEM768-X448",
+			startHop:  5,
+			endHop:    7,
+			isForward: true,
+		},
+		{
+			name:      "MLKEM768-X448 KEM SURB reply",
+			isNIKE:    false,
+			nikeName:  "",
+			kemName:   "MLKEM768-X448",
 			startHop:  5,
 			endHop:    7,
 			isForward: false,
