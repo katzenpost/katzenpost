@@ -36,6 +36,7 @@ import (
 
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/katzenpost/core/cert"
+	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
@@ -408,7 +409,12 @@ func (c *Client) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, 
 		c.log.Debugf("voting/Client: Get() document:\n%s", doc)
 		return doc, r.Payload, nil
 	}
-	return nil, nil, pki.ErrNoDocument
+	e, _, _ := epochtime.Now()
+	if epoch <= e {
+		return nil, nil, pki.ErrDocumentGone
+	} else {
+		return nil, nil, pki.ErrNoDocument
+	}
 }
 
 // Deserialize returns PKI document given the raw bytes.
