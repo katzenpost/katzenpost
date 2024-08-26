@@ -80,7 +80,8 @@ func TestCreatePigeonhole(t *testing.T) {
 	// verify that writing with wrong key fails:
 	badpayload := []byte("write fails")
 	err = c.Put(id, rKey.Sign(badpayload), badpayload)
-	require.NoError(err) // send must succeed
+	require.Error(err) // must fail to write
+	require.Equal(err, ErrStatusFailed)
 
 	// verify that Reading with the ROKey interface works
 	roKey := rwCap.ReadOnly().ReadKey(addr)

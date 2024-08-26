@@ -198,35 +198,36 @@ func (m *PigeonHole) OnCommand(cmd cborplugin.Command) error {
 			return err
 		}
 
+		resp := &common.PigeonHoleResponse{}
 		// validate the capabilities of PigeonHoleRequest
-		if !validateCap(req) {
-			m.log.Errorf("validateCap failed with error %s", err)
-			return errors.New("failed to verify capability")
+		if validateCap(req) {
+			// Write data if payload present
+			if len(req.Payload) > 0 {
+				err := m.Put(req.ID, req.Payload)
+				if err != nil {
+					m.log.Debugf("Put(%x): Failed", req.ID)
+					resp.Status = common.StatusFailed
+				} else {
+					m.log.Debugf("Put(%x): OK", req.ID)
+					resp.Status = common.StatusOK
+				}
+				// Otherwise request data
+			} else {
+				p, err := m.Get(req.ID)
+				if err != nil {
+					m.log.Debugf("Get(%x): NotFound", req.ID)
+					resp.Status = common.StatusNotFound
+				} else {
+					m.log.Debugf("Get(%x): OK", req.ID)
+					resp.Status = common.StatusOK
+					resp.Payload = p
+				}
+			}
+		} else { // did not verify capability
+			m.log.Error("validateCap failed")
+			resp.Status = common.StatusFailed
 		}
 
-		resp := &common.PigeonHoleResponse{}
-		// Write data if payload present
-		if len(req.Payload) > 0 {
-			err := m.Put(req.ID, req.Payload)
-			if err != nil {
-				m.log.Debugf("Put(%x): Failed", req.ID)
-				resp.Status = common.StatusFailed
-			} else {
-				m.log.Debugf("Put(%x): OK", req.ID)
-				resp.Status = common.StatusOK
-			}
-			// Otherwise request data
-		} else {
-			p, err := m.Get(req.ID)
-			if err != nil {
-				m.log.Debugf("Get(%x): NotFound", req.ID)
-				resp.Status = common.StatusNotFound
-			} else {
-				m.log.Debugf("Get(%x): OK", req.ID)
-				resp.Status = common.StatusOK
-				resp.Payload = p
-			}
-		}
 		rawResp, err := resp.Marshal()
 		if err != nil {
 			return err
