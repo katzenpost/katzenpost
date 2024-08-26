@@ -6,6 +6,7 @@
 
 docker/alpine_base.stamp
 docker/alpine_go_mod.stamp
+docker/cache
 genconfig/genconfig
 memspool/server/cmd/memspool/memspool
 panda/server/cmd/panda_server/panda_server
