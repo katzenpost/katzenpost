@@ -24,8 +24,8 @@ import (
 	"math"
 	"time"
 
+	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/katzenpost/client"
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
 )
 
 // ReadInboxLambdaPDivisor is used to divide our LambdaP parameter
@@ -74,9 +74,15 @@ func (c *Client) worker() {
 			}
 		case qo = <-c.opCh:
 			switch op := qo.(type) {
+			case *opNop:
+				// re-evaluate the select cases, particularly c.sessionEvents()
+				continue
 			case *opOnline:
 				// this operation is run in another goroutine, and is thread safe
-				go func() { op.responseChan <- c.goOnline(op.context) }()
+				go func() {
+					op.responseChan <- c.goOnline(op.context)
+					c.opCh <- &opNop{}
+				}()
 			case *opOffline:
 				op.responseChan <- c.goOffline()
 				isConnected = false
@@ -110,7 +116,11 @@ func (c *Client) worker() {
 			case *opSendMessage:
 				c.doSendMessage(op.id, op.name, op.payload)
 			case *opGetContacts:
-				op.responseChan <- c.contactNicknames
+				mymap := make(map[string]*Contact)
+				for k, v := range c.contactNicknames {
+					mymap[k] = v
+				}
+				op.responseChan <- mymap
 			case *opGetConversation:
 				c.doGetConversation(op.name, op.responseChan)
 			case *opWipeConversation:
@@ -144,7 +154,7 @@ func (c *Client) worker() {
 					isConnected = event.IsConnected
 					c.restartSending()
 					c.restartKeyExchanges()
-					c.eventCh.In() <- event
+					c.eventCh <- event
 					continue
 				}
 				isConnected = event.IsConnected
@@ -153,7 +163,7 @@ func (c *Client) worker() {
 					readInboxTimer.Reset(maxDuration)
 					c.haltKeyExchanges()
 				}
-				c.eventCh.In() <- event
+				c.eventCh <- event
 			case *client.MessageSentEvent:
 				c.handleSent(event)
 				continue

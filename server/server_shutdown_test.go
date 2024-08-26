@@ -20,21 +20,33 @@ package server
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/katzenpost/katzenpost/core/crypto/cert"
-	"github.com/katzenpost/katzenpost/core/crypto/nike/ecdh"
-	"github.com/katzenpost/katzenpost/core/crypto/pem"
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	kempem "github.com/katzenpost/hpqc/kem/pem"
+	"github.com/katzenpost/hpqc/kem/schemes"
+	ecdh "github.com/katzenpost/hpqc/nike/x25519"
+	"github.com/katzenpost/hpqc/rand"
+	signpem "github.com/katzenpost/hpqc/sign/pem"
+	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
+
+	aconfig "github.com/katzenpost/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
-	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/server/config"
 )
 
+var testingSchemeName = "xwing"
+var testingScheme = schemes.ByName(testingSchemeName)
+var testSignatureScheme = signSchemes.ByName("Ed25519")
+
 func TestServerStartShutdown(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		return
+	}
+
 	assert := assert.New(t)
 
 	datadir, err := os.MkdirTemp("", "server_data_dir")
@@ -42,66 +54,80 @@ func TestServerStartShutdown(t *testing.T) {
 
 	authLinkPubKeyPem := "auth_link_pub_key.pem"
 
-	scheme := wire.DefaultScheme
-	_, authLinkPubKey := scheme.GenerateKeypair(rand.Reader)
-	err = pem.ToFile(filepath.Join(datadir, authLinkPubKeyPem), authLinkPubKey)
+	scheme := testingScheme
+	authLinkPubKey, _, err := scheme.GenerateKeyPair()
 	require.NoError(t, err)
 
-	_, authPubkey := cert.Scheme.NewKeypair()
+	err = kempem.PublicKeyToFile(filepath.Join(datadir, authLinkPubKeyPem), authLinkPubKey)
+	require.NoError(t, err)
+
+	authPubkey, _, err := testSignatureScheme.GenerateKey()
+	require.NoError(t, err)
 
 	authIDPubKeyPem := "auth_id_pub_key.pem"
 	authkeyPath := filepath.Join(datadir, authIDPubKeyPem)
 
-	err = pem.ToFile(authkeyPath, authPubkey)
+	err = signpem.PublicKeyToFile(authkeyPath, authPubkey)
 	require.NoError(t, err)
 
-	mixIdPrivateKey, mixIdPublicKey := cert.Scheme.NewKeypair()
-	err = pem.ToFile(filepath.Join(datadir, "identity.private.pem"), mixIdPrivateKey)
+	mixIdPublicKey, mixIdPrivateKey, err := testSignatureScheme.GenerateKey()
 	require.NoError(t, err)
-	err = pem.ToFile(filepath.Join(datadir, "identity.public.pem"), mixIdPublicKey)
+	err = signpem.PrivateKeyToFile(filepath.Join(datadir, "identity.private.pem"), mixIdPrivateKey)
+	require.NoError(t, err)
+	err = signpem.PublicKeyToFile(filepath.Join(datadir, "identity.public.pem"), mixIdPublicKey)
 	require.NoError(t, err)
 
 	geo := geo.GeometryFromUserForwardPayloadLength(
-		ecdh.NewEcdhNike(rand.Reader),
+		ecdh.Scheme(rand.Reader),
 		2000,
 		true,
 		5,
 	)
 
 	cfg := config.Config{
+		Management: &config.Management{
+			Enable: false,
+		},
 		SphinxGeometry: geo,
 		Server: &config.Server{
-			Identifier: "testserver",
-			Addresses:  []string{"127.0.0.1:1234"},
-			DataDir:    datadir,
-			IsProvider: false,
+			WireKEM:            testingSchemeName,
+			PKISignatureScheme: testSignatureScheme.Name(),
+			Identifier:         "testserver",
+			Addresses:          []string{"127.0.0.1:1234"},
+			DataDir:            datadir,
+			IsGatewayNode:      false,
 		},
 		Logging: &config.Logging{
 			Disable: false,
 			File:    "",
 			Level:   "DEBUG",
 		},
-		Provider: nil,
+		Gateway: nil,
 		PKI: &config.PKI{
-			Nonvoting: &config.Nonvoting{
-				Address:       "127.0.0.1:3321",
-				PublicKey:     authPubkey,
-				LinkPublicKey: authLinkPubKey,
+			Voting: &config.Voting{
+				Authorities: []*aconfig.Authority{
+					&aconfig.Authority{
+						WireKEMScheme:      testingSchemeName,
+						PKISignatureScheme: testSignatureScheme.Name(),
+						Identifier:         "auth1",
+						IdentityPublicKey:  authPubkey,
+						LinkPublicKey:      authLinkPubKey,
+						Addresses:          []string{"127.0.0.1:1234"},
+					},
+				},
 			},
-		},
-		Management: &config.Management{
-			Enable: false,
-			Path:   "",
 		},
 		Debug: &config.Debug{
 			NumSphinxWorkers:             1,
-			NumProviderWorkers:           0,
+			NumGatewayWorkers:            0,
+			NumServiceWorkers:            0,
 			NumKaetzchenWorkers:          1,
 			SchedulerExternalMemoryQueue: false,
 			SchedulerQueueSize:           0,
 			SchedulerMaxBurst:            16,
 			UnwrapDelay:                  10,
-			ProviderDelay:                0,
+			GatewayDelay:                 0,
+			ServiceDelay:                 0,
 			KaetzchenDelay:               750,
 			SchedulerSlack:               10,
 			SendSlack:                    50,

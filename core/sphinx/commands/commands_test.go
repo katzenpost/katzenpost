@@ -20,9 +20,10 @@ import (
 	"encoding/binary"
 	"testing"
 
-	"github.com/katzenpost/katzenpost/core/crypto/nike"
-	"github.com/katzenpost/katzenpost/core/crypto/nike/ecdh"
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/hpqc/nike"
+	ecdh "github.com/katzenpost/hpqc/nike/x25519"
+	"github.com/katzenpost/hpqc/rand"
+
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/stretchr/testify/assert"
@@ -65,7 +66,7 @@ func TestCommands(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 
-	nike := nike.Scheme(ecdh.NewEcdhNike(rand.Reader))
+	nike := nike.Scheme(ecdh.Scheme(rand.Reader))
 	payloadLen := 2000
 	nrHops := 5
 	g := geo.GeometryFromUserForwardPayloadLength(nike, payloadLen, true, nrHops)

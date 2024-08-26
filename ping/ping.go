@@ -26,7 +26,7 @@ import (
 	"github.com/katzenpost/katzenpost/client"
 	"github.com/katzenpost/katzenpost/client/constants"
 	"github.com/katzenpost/katzenpost/client/utils"
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/hpqc/rand"
 )
 
 var basePayload = []byte(`Data encryption is used widely to protect the content of Internet
@@ -72,7 +72,7 @@ func sendPing(session *client.Session, serviceDesc *utils.ServiceDescriptor, pri
 
 	var replyPayload []byte
 
-	err = cbor.Unmarshal(reply, &replyPayload)
+	_, err = cbor.UnmarshalFirst(reply, &replyPayload)
 	if err != nil {
 		fmt.Printf("Failed to unmarshal: %s\n", err)
 		panic(err)

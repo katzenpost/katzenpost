@@ -1,18 +1,5 @@
-// queue_mem_test.go - Katzenpost scheduler memory queue tests.
-// Copyright (C) 2019 Masala.
-//
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU Affero General Public License as
-// published by the Free Software Foundation, either version 3 of the
-// License, or (at your option) any later version.
-//
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU Affero General Public License for more details.
-//
-// You should have received a copy of the GNU Affero General Public License
-// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+// SPDX-FileCopyrightText: Copyright (C) 2019 Masala.
+// SPDX-License-Identifier: AGPL 3.0
 
 package scheduler
 
@@ -20,17 +7,19 @@ import (
 	"testing"
 	"time"
 
-	"github.com/katzenpost/katzenpost/core/crypto/nike/ecdh"
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
-	"github.com/katzenpost/katzenpost/core/crypto/sign"
+	"github.com/stretchr/testify/require"
+
+	"github.com/katzenpost/hpqc/kem"
+	ecdh "github.com/katzenpost/hpqc/nike/x25519"
+	"github.com/katzenpost/hpqc/rand"
+	"github.com/katzenpost/hpqc/sign"
+
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/thwack"
-	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/server/config"
 	"github.com/katzenpost/katzenpost/server/internal/glue"
 	"github.com/katzenpost/katzenpost/server/internal/packet"
-	"github.com/stretchr/testify/require"
 )
 
 type mockServer struct {
@@ -60,7 +49,7 @@ func (m *mockGlue) IdentityPublicKey() sign.PublicKey {
 	return nil
 }
 
-func (m *mockGlue) LinkKey() wire.PrivateKey {
+func (m *mockGlue) LinkKey() kem.PrivateKey {
 	return nil
 }
 func (m *mockGlue) Listeners() []glue.Listener {
@@ -69,22 +58,27 @@ func (m *mockGlue) Listeners() []glue.Listener {
 func (m *mockGlue) LogBackend() *log.Backend {
 	return nil
 }
-func (m *mockGlue) Management() *thwack.Server {
-	return nil
-}
 func (m *mockGlue) MixKeys() glue.MixKeys {
 	return nil
 }
 func (m *mockGlue) PKI() glue.PKI {
 	return nil
 }
-func (m *mockGlue) Provider() glue.Provider {
+func (m *mockGlue) Gateway() glue.Gateway {
 	return nil
 }
+func (m *mockGlue) ServiceNode() glue.ServiceNode {
+	return nil
+}
+
 func (m *mockGlue) Scheduler() glue.Scheduler {
 	return nil
 }
 func (m *mockGlue) ReshadowCryptoWorkers() {}
+
+func (m *mockGlue) Management() *thwack.Server {
+	return nil
+}
 
 // TestMemoryQueueBulkEnqueue verifies that the queue orders packets by delay
 func TestMemoryQueueBulkEnqueue(t *testing.T) {
@@ -96,7 +90,7 @@ func TestMemoryQueueBulkEnqueue(t *testing.T) {
 	pkts := make([]*packet.Packet, 100)
 
 	geo := geo.GeometryFromUserForwardPayloadLength(
-		ecdh.NewEcdhNike(rand.Reader),
+		ecdh.Scheme(rand.Reader),
 		2000,
 		true,
 		5,

@@ -29,76 +29,61 @@ type Item interface {
 	Priority() uint64
 }
 
-type nqueue interface {
+type Nqueue interface {
 	Push(Item) error
 }
 
 // TimerQueue is a queue that delays messages before forwarding to another queue
 type TimerQueue struct {
-	sync.Mutex
-	sync.Cond
-	worker.Worker
+	worker.Worker `cbor:"-"`
 
-	priq  *queue.PriorityQueue
-	nextQ nqueue
+	Priq  *queue.PriorityQueue
+	NextQ Nqueue `cbor:"-"`
 
-	timer  *time.Timer
+	Timer  *time.Timer `cbor:"-"`
+	l      *sync.Mutex
 	wakech chan struct{}
 }
 
+// Start starts the worker routine
+func (a *TimerQueue) Start() {
+	a.Go(a.worker)
+}
+
 // NewTimerQueue intantiates a new TimerQueue and starts the worker routine
-func NewTimerQueue(nextQueue nqueue) *TimerQueue {
+func NewTimerQueue(nextQueue Nqueue) *TimerQueue {
 	a := &TimerQueue{
-		nextQ: nextQueue,
-		timer: time.NewTimer(0),
-		priq:  queue.New(),
+		NextQ:  nextQueue,
+		Timer:  time.NewTimer(0),
+		Priq:   queue.New(),
+		wakech: make(chan struct{}),
+		l:      new(sync.Mutex),
 	}
-	a.L = new(sync.Mutex)
 	return a
 }
 
 // Push adds a message to the TimerQueue
 func (a *TimerQueue) Push(i Item) {
-	a.Lock()
-	a.priq.Enqueue(i.Priority(), i)
-	a.Unlock()
-	a.Signal()
-}
-
-// wakeupCh() returns the channel that fires upon Signal of the TimerQueue's sync.Cond
-func (a *TimerQueue) wakeupCh() chan struct{} {
-	if a.wakech != nil {
-		return a.wakech
+	a.l.Lock()
+	a.Priq.Enqueue(i.Priority(), i)
+	a.l.Unlock()
+	select {
+	case a.wakech <- struct{}{}:
+	case <-a.HaltCh():
+		// don't block at shutdown
 	}
-	c := make(chan struct{})
-	go func() {
-		defer close(c)
-		var v struct{}
-		for {
-			a.L.Lock()
-			a.Wait()
-			a.L.Unlock()
-			select {
-			case <-a.HaltCh():
-				return
-			case c <- v:
-			}
-		}
-	}()
-	a.wakech = c
-	return c
 }
 
 // pop top item from queue and forward to next queue
 func (a *TimerQueue) forward() {
-	a.Lock()
-	m := heap.Pop(a.priq)
-	a.Unlock()
+	a.l.Lock()
+	m := heap.Pop(a.Priq)
+	a.l.Unlock()
 	if m == nil {
 		return
 	}
 	item := m.(*queue.Entry).Value.(Item)
-	if err := a.nextQ.Push(item); err != nil {
+	if err := a.NextQ.Push(item); err != nil {
 		panic(err)
 	}
 }
@@ -106,26 +91,25 @@ func (a *TimerQueue) forward() {
 func (a *TimerQueue) worker() {
 	for {
 		var c <-chan time.Time
-		a.Lock()
-		if m := a.priq.Peek(); m != nil {
+		a.l.Lock()
+		if m := a.Priq.Peek(); m != nil {
 			// Figure out if the message needs to be handled now.
 			timeLeft := int64(m.Priority) - time.Now().UnixNano()
 			if timeLeft < 0 || m.Priority < uint64(time.Now().UnixNano()) {
-				a.Unlock()
+				a.l.Unlock()
 				a.forward()
 				continue
 			} else {
 				c = time.After(time.Duration(timeLeft))
 			}
 		}
-		a.Unlock()
+		a.l.Unlock()
 		select {
 		case <-a.HaltCh():
-			a.Signal()
 			return
 		case <-c:
 			a.forward()
-		case <-a.wakeupCh():
+		case <-a.wakech:
 		}
 	}
 }

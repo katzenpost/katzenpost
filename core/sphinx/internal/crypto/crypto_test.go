@@ -26,12 +26,12 @@ import (
 	"encoding/hex"
 	"testing"
 
-	"github.com/katzenpost/katzenpost/core/crypto/nike/ecdh"
+	ecdh "github.com/katzenpost/hpqc/nike/x25519"
+
+	ourVeryOwnRand "github.com/katzenpost/hpqc/rand"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/crypto/hkdf"
-	ourVeryOwnRand "github.com/katzenpost/katzenpost/core/crypto/rand"
-
 )
 
 func TestHash(t *testing.T) {
@@ -211,7 +211,7 @@ func TestKDF(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, count, okmLength)
 
-	k := KDF(ikm, ecdh.EcdhScheme)
+	k := KDF(ikm, ecdh.Scheme(rand.Reader))
 	require.Equal(t, okm[:MACKeyLength], k.HeaderMAC[:])
 	okm = okm[MACKeyLength:]
 	assert.Equal(okm[:StreamKeyLength], k.HeaderEncryption[:])
@@ -223,7 +223,7 @@ func TestKDF(t *testing.T) {
 
 	priv_reader, err := ourVeryOwnRand.NewDeterministicRandReader(okm[:privateKeySeedSize])
 	require.NoError(t, err)
-	tmpBlindingFactor := ecdh.EcdhScheme.GeneratePrivateKey(priv_reader)
+	tmpBlindingFactor := ecdh.Scheme(rand.Reader).GeneratePrivateKey(priv_reader)
 	assert.Equal(k.BlindingFactor.Bytes(), tmpBlindingFactor.Bytes())
 	okm = okm[privateKeySeedSize:]
 
@@ -244,7 +244,7 @@ func TestVectorKDFWithECDHNike(t *testing.T) {
 	rawInput, err := hex.DecodeString("9dd74a26535e05ba0ddb62e06ef9b3b29b089707b4652b9172d91e529c938b51")
 	assert.NoError(err)
 	copy(ikm[:], rawInput)
-	k := KDF(ikm, ecdh.EcdhScheme)
+	k := KDF(ikm, ecdh.Scheme(rand.Reader))
 
 	rawHeaderMAC, err := hex.DecodeString("56a3cca100da21fa9823df7884132e89e2155dadbf425e62ba43392c81581a69")
 	assert.NoError(err)

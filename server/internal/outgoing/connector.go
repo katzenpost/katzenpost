@@ -21,6 +21,11 @@ import (
 	"sync"
 	"time"
 
+	"gopkg.in/op/go-logging.v1"
+
+	"github.com/katzenpost/hpqc/hash"
+	"github.com/katzenpost/hpqc/kem/schemes"
+
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/worker"
@@ -28,7 +33,6 @@ import (
 	"github.com/katzenpost/katzenpost/server/internal/glue"
 	"github.com/katzenpost/katzenpost/server/internal/instrument"
 	"github.com/katzenpost/katzenpost/server/internal/packet"
-	"gopkg.in/op/go-logging.v1"
 )
 
 type connector struct {
@@ -145,13 +149,19 @@ func (co *connector) spawnNewConns() {
 	// Spawn the new outgoingConn objects.
 	for id, v := range newPeerMap {
 		co.log.Debugf("Spawning connection to: '%x'.", id)
-		c := newOutgoingConn(co, v, co.glue.Config().SphinxGeometry)
+
+		scheme := schemes.ByName(co.glue.Config().Server.WireKEM)
+		if scheme == nil {
+			panic("KEM scheme not found in registry")
+		}
+
+		c := newOutgoingConn(co, v, co.glue.Config().SphinxGeometry, scheme)
 		co.onNewConn(c)
 	}
 }
 
 func (co *connector) onNewConn(c *outgoingConn) {
-	nodeID := c.dst.IdentityKey.Sum256()
+	nodeID := hash.Sum256(c.dst.IdentityKey)
 
 	co.closeAllWg.Add(1)
 	co.Lock()
@@ -167,7 +177,7 @@ func (co *connector) onNewConn(c *outgoingConn) {
 }
 
 func (co *connector) onClosedConn(c *outgoingConn) {
-	nodeID := c.dst.IdentityKey.Sum256()
+	nodeID := hash.Sum256(c.dst.IdentityKey)
 
 	co.Lock()
 	defer func() {

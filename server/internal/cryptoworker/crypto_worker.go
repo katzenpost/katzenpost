@@ -22,8 +22,9 @@ import (
 	"fmt"
 	"time"
 
+	"gopkg.in/op/go-logging.v1"
+
 	"github.com/katzenpost/katzenpost/core/epochtime"
-	"github.com/katzenpost/katzenpost/core/monotime"
 	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/katzenpost/katzenpost/server/internal/constants"
@@ -31,7 +32,6 @@ import (
 	"github.com/katzenpost/katzenpost/server/internal/instrument"
 	"github.com/katzenpost/katzenpost/server/internal/mixkey"
 	"github.com/katzenpost/katzenpost/server/internal/packet"
-	"gopkg.in/op/go-logging.v1"
 )
 
 // Worker is a Sphinx crypto worker instance.
@@ -94,19 +94,19 @@ func (w *Worker) doUnwrap(pkt *packet.Packet) error {
 
 	var lastErr error
 	for _, k = range keys {
-		startAt := monotime.Now()
+		startAt := time.Now()
 
 		// TODO/perf: payload is a new heap allocation if it's returned,
 		// though that should only happen if this is a provider.
 		payload, tag, cmds, err := w.sphinx.Unwrap(k.PrivateKey(), pkt.Raw)
-		unwrapAt := monotime.Now()
+		unwrapAt := time.Now()
 
-		w.log.Debugf("Packet: %v (Unwrap took: %v)", pkt.ID, unwrapAt-startAt)
+		w.log.Debugf("Packet: %v (Unwrap took: %v)", pkt.ID, unwrapAt.Sub(startAt))
 
+		lastErr = err
 		// Decryption failures can result from picking the wrong key.
 		if err != nil {
 			// So save the error and try the next key if possible.
-			lastErr = err
 			continue
 		}
 
@@ -127,7 +127,7 @@ func (w *Worker) doUnwrap(pkt *packet.Packet) error {
 			break
 		}
 
-		w.log.Debugf("Packet: %v (IsReplay took: %v)", pkt.ID, monotime.Now()-unwrapAt)
+		w.log.Debugf("Packet: %v (IsReplay took: %v)", pkt.ID, time.Since(unwrapAt))
 
 		return nil
 	}
@@ -140,9 +140,6 @@ func (w *Worker) doUnwrap(pkt *packet.Packet) error {
 }
 
 func (w *Worker) worker() {
-	const absoluteMinimumDelay = 1 * time.Millisecond
-
-	isProvider := w.glue.Config().Server.IsProvider
 	unwrapSlack := time.Duration(w.glue.Config().Debug.UnwrapDelay) * time.Millisecond
 	defer w.derefKeys()
 
@@ -167,11 +164,11 @@ func (w *Worker) worker() {
 		// it (should) be constant across packets, and I'll go crazy trying
 		// to account for everything that impacts the actual delay vs
 		// requested.
-		now := monotime.Now()
+		startAt := time.Now()
 
 		// Drop the packet if it has been sitting in the queue waiting to
 		// be unwrapped for way too long.
-		dwellTime := now - pkt.RecvAt
+		dwellTime := startAt.Sub(pkt.RecvAt)
 		if dwellTime > unwrapSlack {
 			w.log.Debugf("Dropping packet: %v (Spent %v waiting for Unwrap())", pkt.ID, dwellTime)
 			instrument.PacketsDropped()
@@ -189,122 +186,152 @@ func (w *Worker) worker() {
 			pkt.Dispose()
 			continue
 		}
-		w.log.Debugf("Packet: %v (doUnwrap took: %v)", pkt.ID, monotime.Now()-now)
+		w.log.Debugf("Packet: %v (doUnwrap took: %v)", pkt.ID, time.Since(startAt))
 
-		// The common (in the both most likely, and done by all modes) case
-		// is that the packet is destined for another node.
-		if pkt.IsForward() {
-			if pkt.Payload != nil {
-				w.log.Debugf("Dropping packet: %v (Unwrap() returned payload)", pkt.ID)
-				instrument.PacketsDropped()
-				pkt.Dispose()
-				continue
-			}
-			if pkt.MustTerminate {
-				w.log.Debugf("Dropping packet: %v (Provider received forward packet from mix)", pkt.ID)
-				instrument.PacketsDropped()
-				pkt.Dispose()
-				continue
-			}
-
-			// Check and adjust the delay for queue dwell time.
-			pkt.Delay = time.Duration(pkt.NodeDelay.Delay) * time.Millisecond
-			if pkt.Delay > constants.NumMixKeys*epochtime.Period {
-				w.log.Debugf("Dropping packet: %v (Delay %v is past what is possible)", pkt.ID, pkt.Delay)
-				instrument.PacketsDropped()
-				pkt.Dispose()
-				continue
-			}
-			if pkt.Delay > dwellTime {
-				pkt.Delay -= dwellTime
-			} else if pkt.NodeDelay.Delay == 0 {
-				// If the packet has exactly 0 ms delay, then it is flat out
-				// impossible to adjust for the dwell because the client wants
-				// the packet dispatched immediately.
-				//
-				// Note: The reference client will NEVER do this, so despite
-				// the general crypto worker load shedding not kicking in,
-				// a more stringent limit on queue dwell time is applied.
-				if dwellTime < absoluteMinimumDelay {
-					// If the dwellTime is "small" (in the non-overload case),
-					// treat the packet as if it had a 1 ms delay to force
-					// some amount of mixing.
-					pkt.Delay = absoluteMinimumDelay - dwellTime
-				} else {
-					// Although the node isn't overloaded to the point
-					// where the load shedding has kicked in, the dwell
-					// time appears to be "excessive".  Discard the packet,
-					// the client is doing something non-standard anyway.
-					w.log.Debugf("Dropping packet: %v (Delay 0 queue delay: %v)", pkt.ID, dwellTime)
-					instrument.PacketsDropped()
-					pkt.Dispose()
-					continue
-				}
-			} else {
-				// The dwell time has exceeded the client requested delay.
-				//
-				// Under normal operation this should NEVER happen, because
-				// the dwell time should be extremely small, and the
-				// accounting here explicitly excludes the time taken for
-				// the Unwrap operation.
-				//
-				// The right thing to do here might be to dispose of the
-				// packet, but the adjustment is primarily a "best effort"
-				// attempt to honor the delay, and the queue backlog hasn't
-				// gotten to the point where the worker is aggressively
-				// shedding load.
-				//
-				// Do the closest thing to "dispatch immediately" that
-				// ensures that some mixing occurs.  The adjustment is
-				// "best effort" anyway.
-				pkt.Delay = absoluteMinimumDelay
-			}
-
-			// Hand off to the scheduler.
-			w.log.Debugf("Dispatching packet: %v", pkt.ID)
-			w.glue.Scheduler().OnPacket(pkt)
-			continue
-		} else if !isProvider {
-			// This may be a decoy traffic response.
-			if pkt.IsSURBReply() {
-				w.log.Debugf("Handing off decoy response packet: %v", pkt.ID)
-				w.glue.Decoy().OnPacket(pkt)
-				continue
-			}
-
-			// Mixes will only ever see forward commands.
-			w.log.Debugf("Dropping mix packet: %v (%v)", pkt.ID, pkt.CmdsToString())
-			instrument.PacketsDropped()
-			pkt.Dispose()
-			continue
-		}
-
-		// This node is a provider and the packet is not destined for another
-		// node.  Both of the operations here end up hitting up disk among
-		// other things, so are just shunted off to a separate worker so that
-		// packet processing does not get blocked.
-
-		if pkt.MustForward {
-			w.log.Debugf("Dropping client packet: %v (Send to local user)", pkt.ID)
-			instrument.PacketsDropped()
-			pkt.Dispose()
-			continue
-		}
-
-		// Toss the packets over to the provider backend.
-		// Note: Callee takes ownership of pkt.
-		if pkt.IsToUser() || pkt.IsUnreliableToUser() || pkt.IsSURBReply() {
-			w.log.Debugf("Handing off user destined packet: %v", pkt.ID)
-			pkt.DispatchAt = now
-			w.glue.Provider().OnPacket(pkt)
-		} else {
-			w.log.Debugf("Dropping user packet: %v (%v)", pkt.ID, pkt.CmdsToString())
-			instrument.PacketsDropped()
-			pkt.Dispose()
-		}
+		w.routePacket(pkt, startAt)
 	}
 
 	// NOTREACHED
+}
+
+func (w *Worker) routePacket(pkt *packet.Packet, startAt time.Time) {
+	const absoluteMinimumDelay = 1 * time.Millisecond
+
+	isGatewayNode := w.glue.Config().Server.IsGatewayNode
+	isServiceNode := w.glue.Config().Server.IsServiceNode
+	dwellTime := startAt.Sub(pkt.RecvAt)
+
+	// The common (in the both most likely, and done by all modes) case
+	// is that the packet is destined for another node.
+	if pkt.IsForward() {
+		if pkt.Payload != nil {
+			w.log.Debugf("Dropping packet: %v (Unwrap() returned payload)", pkt.ID)
+			instrument.PacketsDropped()
+			pkt.Dispose()
+			return
+		}
+		if pkt.MustTerminate {
+			w.log.Debugf("Dropping packet: %v (Provider received forward packet from mix)", pkt.ID)
+			instrument.PacketsDropped()
+			pkt.Dispose()
+			return
+		}
+
+		// Check and adjust the delay for queue dwell time.
+		pkt.Delay = time.Duration(pkt.NodeDelay.Delay) * time.Millisecond
+		if pkt.Delay > constants.NumMixKeys*epochtime.Period {
+			w.log.Debugf("Dropping packet: %v (Delay1 %v is past what is possible)", pkt.ID, pkt.Delay)
+			instrument.PacketsDropped()
+			pkt.Dispose()
+			return
+		}
+		if pkt.Delay > dwellTime {
+			pkt.Delay -= dwellTime
+		} else if pkt.NodeDelay.Delay == 0 {
+			// If the packet has exactly 0 ms delay, then it is flat out
+			// impossible to adjust for the dwell because the client wants
+			// the packet dispatched immediately.
+			//
+			// Note: The reference client will NEVER do this, so despite
+			// the general crypto worker load shedding not kicking in,
+			// a more stringent limit on queue dwell time is applied.
+			if dwellTime < absoluteMinimumDelay {
+				// If the dwellTime is "small" (in the non-overload case),
+				// treat the packet as if it had a 1 ms delay to force
+				// some amount of mixing.
+				pkt.Delay = absoluteMinimumDelay - dwellTime
+			} else {
+				// Although the node isn't overloaded to the point
+				// where the load shedding has kicked in, the dwell
+				// time appears to be "excessive".  Discard the packet,
+				// the client is doing something non-standard anyway.
+				w.log.Debugf("Dropping packet: %v (Delay2 0 queue delay: %v)", pkt.ID, dwellTime)
+				instrument.PacketsDropped()
+				pkt.Dispose()
+				return
+			}
+		} else {
+			// The dwell time has exceeded the client requested delay.
+			//
+			// Under normal operation this should NEVER happen, because
+			// the dwell time should be extremely small, and the
+			// accounting here explicitly excludes the time taken for
+			// the Unwrap operation.
+			//
+			// The right thing to do here might be to dispose of the
+			// packet, but the adjustment is primarily a "best effort"
+			// attempt to honor the delay, and the queue backlog hasn't
+			// gotten to the point where the worker is aggressively
+			// shedding load.
+			//
+			// Do the closest thing to "dispatch immediately" that
+			// ensures that some mixing occurs.  The adjustment is
+			// "best effort" anyway.
+			pkt.Delay = absoluteMinimumDelay
+		}
+
+		// Hand off to the scheduler.
+		w.log.Debugf("Dispatching packet: %v", pkt.ID)
+		w.glue.Scheduler().OnPacket(pkt)
+		return
+	} else {
+		if !isGatewayNode && !isServiceNode {
+			// We're not a Gateway or Service node and this packet doesn't
+			// need to be routed to the next hop so the only legit reason
+			// to recieve a packet would be if it's a SURB reply to our
+			// mix loop decoys.
+			if pkt.IsSURBReply() && w.glue.Decoy().ExpectReply(pkt) {
+				w.log.Debugf("Handing off decoy response packet: %v", pkt.ID)
+				w.glue.Decoy().OnPacket(pkt)
+				return
+			}
+
+			// Mixes will only ever see forward commands.
+			w.log.Errorf("Dropping mix packet that should not have been received: %v (%v)", pkt.ID, pkt.CmdsToString())
+			instrument.PacketsDropped()
+			pkt.Dispose()
+			return
+		}
+	}
+
+	// This node is a provider and the packet is not destined for another
+	// node.  Both of the operations here end up hitting up disk among
+	// other things, so are just shunted off to a separate worker so that
+	// packet processing does not get blocked.
+
+	if pkt.MustForward {
+		w.log.Errorf("Dropping client packet: %v (Send to local user)", pkt.ID)
+		instrument.PacketsDropped()
+		pkt.Dispose()
+		return
+	}
+
+	// Toss the packets over to the gateway/serviceNode backend.
+	// Note: Callee takes ownership of pkt.
+
+	if pkt.IsSURBReply() && w.glue.Decoy().ExpectReply(pkt) {
+		w.log.Debugf("Handing off decoy response packet: %v", pkt.ID)
+		w.glue.Decoy().OnPacket(pkt)
+		return
+	}
+
+	if isGatewayNode {
+		w.log.Debugf("Handing off user destined packet: %v", pkt.ID)
+		pkt.DispatchAt = startAt
+		w.glue.Gateway().OnPacket(pkt)
+		return
+	}
+
+	if isServiceNode {
+		w.log.Debugf("Handing off service destined packet: %v", pkt.ID)
+		pkt.DispatchAt = startAt
+		w.glue.ServiceNode().OnPacket(pkt)
+		return
+	}
+
+	w.log.Errorf("Invalid packet, dropping packet: %v (%v)", pkt.ID, pkt.CmdsToString())
+	instrument.PacketsDropped()
+	pkt.Dispose()
 }
 
 func (w *Worker) derefKeys() {

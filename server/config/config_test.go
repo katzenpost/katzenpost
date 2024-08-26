@@ -20,17 +20,31 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/katzenpost/hpqc/kem/pem"
+	"github.com/katzenpost/hpqc/kem/schemes"
 )
 
+var testingSchemeName = "x25519"
+var testingScheme = schemes.ByName(testingSchemeName)
+
 func TestConfig(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		return
+	}
+
 	require := require.New(t)
 
 	_, err := Load(nil)
 	require.Error(err, "no Load() with nil config")
 	require.EqualError(err, "No nil buffer as config file")
+	linkPubKey, _, err := testingScheme.GenerateKeyPair()
+	require.NoError(err)
 
 	basicConfig := `# A basic configuration example.
 [SphinxGeometry]
@@ -52,12 +66,18 @@ func TestConfig(t *testing.T) {
   NIKEName = "x25519"
   KEMName = ""
 
+[Management]
+  Enable = true
+  Path = ""
+
 [server]
-Identifier = "katzenpost.example.com"
-Addresses = [ "127.0.0.1:29483", "[::1]:29483" ]
-DataDir = "%s"
-IsProvider = true
-MetricsAddress = "127.0.0.1:6543"
+  WireKEM = "%s"
+  PKISignatureScheme = "Ed25519"
+  Identifier = "katzenpost.example.com"
+  Addresses = [ "127.0.0.1:29483", "[::1]:29483" ]
+  DataDir = "%s"
+  IsProvider = true
+  MetricsAddress = "127.0.0.1:6543"
 
 [Provider]
   [[Provider.Kaetzchen]]
@@ -72,15 +92,27 @@ MetricsAddress = "127.0.0.1:6543"
 Level = "DEBUG"
 
 [PKI]
-[PKI.Nonvoting]
-Address = "127.0.0.1:6999"
-PublicKeyPem = "id_pub_key.pem"
+  [PKI.Voting]
+    [[PKI.Voting.Authorities]]
+      WireKEMScheme = "%s"
+      PKISignatureScheme = "Ed25519"
+      Identifier = "auth1"
+      IdentityPublicKey = "-----BEGIN ED25519 PUBLIC KEY-----\nxwPliuI1LbUbWbkDYQsL8gwYfYzsaxhdcY4kwp+f2W8=\n-----END ED25519 PUBLIC KEY-----\n"
+      LinkPublicKey = "%s"
+      Addresses = ["127.0.0.1:30001"]
 `
 
-	config := fmt.Sprintf(basicConfig, os.TempDir())
+	tempDir, err := os.MkdirTemp("", "server_config_test")
+	require.NoError(err)
+	config := fmt.Sprintf(basicConfig, testingSchemeName, tempDir, testingSchemeName, strings.Replace(pem.ToPublicPEMString(linkPubKey), "\n", "\\n", -1))
 
 	cfg, err := Load([]byte(config))
-	require.NoError(err, "Load() with basic config")
+	require.NoError(err)
+
+	require.True(cfg.Management.Enable)
+	if cfg.Management.Path == "" {
+		panic("cfg.Management.Path is empty string")
+	}
 
 	_, err = json.Marshal(cfg)
 	require.NoError(err)

@@ -24,18 +24,30 @@ package catshadow
 import (
 	"bytes"
 	"context"
+	"io/ioutil"
+	"reflect"
 	"testing"
 	"time"
 
-	"github.com/katzenpost/katzenpost/client"
-	"github.com/katzenpost/katzenpost/client/config"
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
-	"github.com/katzenpost/katzenpost/core/log"
-	"github.com/stretchr/testify/require"
 	"net/http"
 	_ "net/http/pprof"
 	"runtime"
+
+	"github.com/katzenpost/hpqc/rand"
+	"github.com/katzenpost/katzenpost/client"
+	"github.com/katzenpost/katzenpost/client/config"
+	"github.com/katzenpost/katzenpost/core/log"
+	"github.com/stretchr/testify/require"
 )
+
+func copyFile(src string, dst string) error {
+	data, err := ioutil.ReadFile(src)
+	if err != nil {
+		return err
+	}
+	err = ioutil.WriteFile(dst, data, 0644)
+	return err
+}
 
 func getClientState(c *Client) *State {
 	contacts := []*Contact{}
@@ -105,6 +117,45 @@ func reloadCatshadowState(t *testing.T, stateFile string) *Client {
 	catShadowClient.Online(context.Background())
 
 	return catShadowClient
+}
+
+func waitForEvent(ctx context.Context, eventCh chan interface{}, eventType interface{}) interface{} {
+	for {
+		select {
+		case ev := <-eventCh:
+			if reflect.TypeOf(ev) == reflect.TypeOf(eventType) {
+				return ev
+			}
+			continue
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+}
+
+func TestWaitForEvent(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+
+	aliceState := createRandomStateFile(t)
+	alice := createCatshadowClientWithState(t, aliceState)
+	bobState := createRandomStateFile(t)
+	bob := createCatshadowClientWithState(t, bobState)
+
+	sharedSecret := []byte("wait for key exchange")
+	randBytes := [8]byte{}
+	_, err := rand.Reader.Read(randBytes[:])
+	require.NoError(err)
+	sharedSecret = append(sharedSecret, randBytes[:]...)
+
+	alice.NewContact("bob", sharedSecret)
+	bob.NewContact("alice", sharedSecret)
+
+	ctx, _ /*cancelFn*/ := context.WithTimeout(context.Background(), time.Minute)
+	evt := waitForEvent(ctx, alice.EventSink, &KeyExchangeCompletedEvent{})
+	ev, ok := evt.(*KeyExchangeCompletedEvent)
+	require.True(ok)
+	require.NoError(ev.Err)
 }
 
 func TestDockerPandaSuccess(t *testing.T) {
@@ -477,6 +528,11 @@ and can readily scale to millions of users.
 	aliceState := getClientState(alice)
 	aliceBobConvo1 := aliceState.Conversations["bob"]
 	aliceBobConvo2 := newAliceState.Conversations["bob"]
+
+	time.Sleep(3 * time.Second)
+
+	require.NotNil(aliceBobConvo1)
+	require.NotNil(aliceBobConvo2)
 	newAlice.log.Debug("convo1\n")
 	for i, message := range aliceBobConvo1 {
 		require.True(bytes.Equal(message.Plaintext, aliceBobConvo2[i].Plaintext))
@@ -664,8 +720,11 @@ loop4:
 	err = a.RemoveContact("b")
 	require.Error(err, ErrContactNotFound)
 
+	a.conversationsMutex.Lock()
 	c := a.conversations["b"]
 	require.Equal(len(c), 0)
+	a.conversationsMutex.Unlock()
+
 	// verify that contact data is gone
 	t.Log("Sending message to b, must fail")
 	a.SendMessage("b", []byte("must fail"))

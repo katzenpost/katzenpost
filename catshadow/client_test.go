@@ -22,12 +22,13 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"testing"
 
+	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/katzenpost/client"
 	"github.com/katzenpost/katzenpost/client/config"
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/stretchr/testify/require"
 )
@@ -47,6 +48,12 @@ func createRandomStateFile(t *testing.T) string {
 }
 
 func TestBlobStorage(t *testing.T) {
+
+	if runtime.GOOS == "windows" {
+		t.Log("aborting TestBlobStorage on windows")
+		return
+	}
+
 	t.Parallel()
 	require := require.New(t)
 

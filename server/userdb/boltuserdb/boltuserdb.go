@@ -24,10 +24,12 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
-	"github.com/katzenpost/katzenpost/core/wire"
-	"github.com/katzenpost/katzenpost/server/userdb"
 	bolt "go.etcd.io/bbolt"
+
+	"github.com/katzenpost/hpqc/kem"
+	"github.com/katzenpost/hpqc/kem/pem"
+
+	"github.com/katzenpost/katzenpost/server/userdb"
 )
 
 const (
@@ -51,7 +53,7 @@ type boltUserDB struct {
 
 	trustOnFirstUse bool
 
-	scheme wire.Scheme
+	scheme kem.Scheme
 }
 
 func (d *boltUserDB) Exists(u []byte) bool {
@@ -67,7 +69,7 @@ func (d *boltUserDB) Exists(u []byte) bool {
 	return d.userCache[k]
 }
 
-func (d *boltUserDB) IsValid(u []byte, k wire.PublicKey) bool {
+func (d *boltUserDB) IsValid(u []byte, k kem.PublicKey) bool {
 	if !userOk(u) {
 		return false
 	}
@@ -88,7 +90,11 @@ func (d *boltUserDB) IsValid(u []byte, k wire.PublicKey) bool {
 				return errors.New("user does not exist")
 			}
 		} else {
-			isValid = subtle.ConstantTimeCompare(rawPubKey, k.Bytes()) == 1
+			kblob, err := k.MarshalBinary()
+			if err != nil {
+				panic(err)
+			}
+			isValid = subtle.ConstantTimeCompare(rawPubKey, kblob) == 1
 			if isValid {
 				return nil
 			} else {
@@ -107,7 +113,7 @@ func (d *boltUserDB) IsValid(u []byte, k wire.PublicKey) bool {
 	return true
 }
 
-func (d *boltUserDB) Add(u []byte, k wire.PublicKey, update bool) error {
+func (d *boltUserDB) Add(u []byte, k kem.PublicKey, update bool) error {
 	if !userOk(u) {
 		return fmt.Errorf("userdb: invalid username: `%v`", u)
 	}
@@ -124,10 +130,13 @@ func (d *boltUserDB) Add(u []byte, k wire.PublicKey, update bool) error {
 			return userdb.ErrNoSuchUser
 		}
 	}
-
-	err := d.db.Update(func(tx *bolt.Tx) error {
+	kblob, err := k.MarshalBinary()
+	if err != nil {
+		return err
+	}
+	err = d.db.Update(func(tx *bolt.Tx) error {
 		bkt := tx.Bucket([]byte(usersBucket))
-		return bkt.Put(u, k.Bytes())
+		return bkt.Put(u, kblob)
 	})
 	if err == nil {
 		k := userToCacheKey(u)
@@ -141,7 +150,7 @@ func (d *boltUserDB) Add(u []byte, k wire.PublicKey, update bool) error {
 	return err
 }
 
-func (d *boltUserDB) SetIdentity(u []byte, k wire.PublicKey) error {
+func (d *boltUserDB) SetIdentity(u []byte, k kem.PublicKey) error {
 	if !userOk(u) {
 		return fmt.Errorf("userdb: invalid username: `%v`", u)
 	}
@@ -156,11 +165,15 @@ func (d *boltUserDB) SetIdentity(u []byte, k wire.PublicKey) error {
 		if k == nil {
 			return iBkt.Delete(u)
 		}
-		return iBkt.Put(u, k.Bytes())
+		kblob, err := k.MarshalBinary()
+		if err != nil {
+			return err
+		}
+		return iBkt.Put(u, kblob)
 	})
 }
 
-func (d *boltUserDB) Link(u []byte) (wire.PublicKey, error) {
+func (d *boltUserDB) Link(u []byte) (kem.PublicKey, error) {
 	if !userOk(u) {
 		return nil, fmt.Errorf("userdb: invalid username: `%v`", u)
 	}
@@ -168,7 +181,7 @@ func (d *boltUserDB) Link(u []byte) (wire.PublicKey, error) {
 		return nil, fmt.Errorf("userdb: user does not exist")
 	}
 
-	var pubKey wire.PublicKey
+	var pubKey kem.PublicKey
 	err := d.db.View(func(tx *bolt.Tx) error {
 		bkt := tx.Bucket([]byte(usersBucket))
 		rawPubKey := bkt.Get(u)
@@ -176,19 +189,22 @@ func (d *boltUserDB) Link(u []byte) (wire.PublicKey, error) {
 			return fmt.Errorf("userdb: user %s does not have a link key", u)
 		}
 		var err error
-		pubKey, err = d.scheme.PublicKeyFromBytes(rawPubKey)
+		pubKey, err = d.scheme.UnmarshalBinaryPublicKey(rawPubKey)
 		return err
 	})
 	return pubKey, err
 }
 
-func (d *boltUserDB) Identity(u []byte) (wire.PublicKey, error) {
+func (d *boltUserDB) Identity(u []byte) (kem.PublicKey, error) {
 	if !userOk(u) {
 		return nil, fmt.Errorf("userdb: invalid username: `%v`", u)
 	}
 
-	_, pubKey := d.scheme.GenerateKeypair(rand.Reader)
-	err := d.db.View(func(tx *bolt.Tx) error {
+	pubKey, _, err := d.scheme.GenerateKeyPair()
+	if err != nil {
+		return nil, err
+	}
+	err = d.db.View(func(tx *bolt.Tx) error {
 		uBkt := tx.Bucket([]byte(usersBucket))
 		if uEnt := uBkt.Get(u); uEnt == nil {
 			return userdb.ErrNoSuchUser
@@ -200,7 +216,9 @@ func (d *boltUserDB) Identity(u []byte) (wire.PublicKey, error) {
 			return userdb.ErrNoIdentity
 		}
 
-		return pubKey.UnmarshalText(rawPubKey)
+		pubKey, err = pem.FromPublicPEMString(string(rawPubKey), d.scheme)
+
+		return err
 	})
 
 	return pubKey, err
@@ -237,7 +255,7 @@ func (d *boltUserDB) Close() {
 }
 
 // New creates (or loads) a user database with the given file name f.
-func New(f string, opts ...BoltUserDBOption) (userdb.UserDB, error) {
+func New(f string, kemscheme kem.Scheme, opts ...BoltUserDBOption) (userdb.UserDB, error) {
 	const (
 		metadataBucket = "metadata"
 		versionKey     = "version"
@@ -251,7 +269,7 @@ func New(f string, opts ...BoltUserDBOption) (userdb.UserDB, error) {
 		opt(d)
 	}
 
-	d.scheme = wire.DefaultScheme
+	d.scheme = kemscheme
 	d.db, err = bolt.Open(f, 0600, nil)
 	if err != nil {
 		return nil, err

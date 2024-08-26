@@ -29,22 +29,31 @@ import (
 	"github.com/stretchr/testify/require"
 	bolt "go.etcd.io/bbolt"
 
+	"github.com/katzenpost/hpqc/hash"
+	"github.com/katzenpost/hpqc/kem"
+	kempem "github.com/katzenpost/hpqc/kem/pem"
+	"github.com/katzenpost/hpqc/kem/schemes"
+	"github.com/katzenpost/hpqc/nike/x25519"
+	"github.com/katzenpost/hpqc/rand"
+	"github.com/katzenpost/hpqc/sign"
+	signpem "github.com/katzenpost/hpqc/sign/pem"
+	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
+
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
-	"github.com/katzenpost/katzenpost/core/crypto/cert"
-	"github.com/katzenpost/katzenpost/core/crypto/nike/ecdh"
-	"github.com/katzenpost/katzenpost/core/crypto/pem"
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
-	"github.com/katzenpost/katzenpost/core/crypto/sign"
+	"github.com/katzenpost/katzenpost/core/cert"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
-	"github.com/katzenpost/katzenpost/core/wire"
 	sConfig "github.com/katzenpost/katzenpost/server/config"
 )
 
+var testingSchemeName = "xwing"
+var testingScheme = schemes.ByName(testingSchemeName)
+var testSignatureScheme = signSchemes.ByName("Ed25519")
+
 var sphinxGeometry = geo.GeometryFromUserForwardPayloadLength(
-	ecdh.NewEcdhNike(rand.Reader),
+	x25519.Scheme(rand.Reader),
 	2000,
 	true,
 	5,
@@ -77,9 +86,9 @@ func TestVote(t *testing.T) {
 		st := new(state)
 		st.votingEpoch = votingEpoch
 		cfg := authCfgs[i]
-		st.verifiers = make(map[[publicKeyHashSize]byte]cert.Verifier)
+		st.verifiers = make(map[[publicKeyHashSize]byte]sign.PublicKey)
 		for j, _ := range peerKeys {
-			st.verifiers[peerKeys[j].idPubKey.Sum256()] = cert.Verifier(peerKeys[j].idPubKey)
+			st.verifiers[hash.Sum256From(peerKeys[j].idPubKey)] = sign.PublicKey(peerKeys[j].idPubKey)
 		}
 		st.threshold = len(st.verifiers)/2 + 1
 		st.dissenters = len(cfg.Authorities)/2 - 1
@@ -91,7 +100,7 @@ func TestVote(t *testing.T) {
 			fatalErrCh:         make(chan error),
 			haltedCh:           make(chan interface{}),
 		}
-		reverseHash[peerKeys[i].idPubKey.Sum256()] = peerKeys[i].idPubKey
+		reverseHash[hash.Sum256From(peerKeys[i].idPubKey)] = peerKeys[i].idPubKey
 
 		go func() {
 			for {
@@ -114,16 +123,16 @@ func TestVote(t *testing.T) {
 
 		st.documents = make(map[uint64]*pki.Document)
 		st.myconsensus = make(map[uint64]*pki.Document)
-		st.descriptors = make(map[uint64]map[[sign.PublicKeyHashSize]byte]*pki.MixDescriptor)
-		st.votes = make(map[uint64]map[[sign.PublicKeyHashSize]byte]*pki.Document)
-		st.votes[votingEpoch] = make(map[[sign.PublicKeyHashSize]byte]*pki.Document)
-		st.certificates = make(map[uint64]map[[sign.PublicKeyHashSize]byte]*pki.Document)
-		st.certificates[st.votingEpoch] = make(map[[sign.PublicKeyHashSize]byte]*pki.Document)
-		st.commits = make(map[uint64]map[[sign.PublicKeyHashSize]byte][]byte)
-		st.reveals = make(map[uint64]map[[sign.PublicKeyHashSize]byte][]byte)
-		st.signatures = make(map[uint64]map[[sign.PublicKeyHashSize]byte]*cert.Signature)
-		st.signatures[st.votingEpoch] = make(map[[sign.PublicKeyHashSize]byte]*cert.Signature)
-		st.reveals[st.votingEpoch] = make(map[[sign.PublicKeyHashSize]byte][]byte)
+		st.descriptors = make(map[uint64]map[[hash.HashSize]byte]*pki.MixDescriptor)
+		st.votes = make(map[uint64]map[[hash.HashSize]byte]*pki.Document)
+		st.votes[votingEpoch] = make(map[[hash.HashSize]byte]*pki.Document)
+		st.certificates = make(map[uint64]map[[hash.HashSize]byte]*pki.Document)
+		st.certificates[st.votingEpoch] = make(map[[hash.HashSize]byte]*pki.Document)
+		st.commits = make(map[uint64]map[[hash.HashSize]byte][]byte)
+		st.reveals = make(map[uint64]map[[hash.HashSize]byte][]byte)
+		st.signatures = make(map[uint64]map[[hash.HashSize]byte]*cert.Signature)
+		st.signatures[st.votingEpoch] = make(map[[hash.HashSize]byte]*cert.Signature)
+		st.reveals[st.votingEpoch] = make(map[[hash.HashSize]byte][]byte)
 		st.reverseHash = make(map[[publicKeyHashSize]byte]sign.PublicKey)
 		stateAuthority[i] = st
 		tmpDir, err := os.MkdirTemp("", cfg.Server.Identifier)
@@ -142,15 +151,21 @@ func TestVote(t *testing.T) {
 	for i, aCfg := range authCfgs {
 		require.NoError(err)
 		auth := &config.Authority{Addresses: aCfg.Server.Addresses,
-			IdentityPublicKey: peerKeys[i].idPubKey,
-			LinkPublicKey:     peerKeys[i].linkKey.PublicKey(),
+			WireKEMScheme:      testingSchemeName,
+			PKISignatureScheme: testSignatureScheme.Name(),
+			IdentityPublicKey:  peerKeys[i].idPubKey,
+			LinkPublicKey:      peerKeys[i].linkKey.Public(),
 		}
 		if len(aCfg.Server.Addresses) == 0 {
 			panic("wtf")
 		}
 		authorities = append(authorities, auth)
 	}
-	votingPKI := &sConfig.PKI{Voting: &sConfig.Voting{Authorities: authorities}}
+	votingPKI := &sConfig.PKI{
+		Voting: &sConfig.Voting{
+			Authorities: authorities,
+		},
+	}
 
 	// generate mixes
 	n := 3 * 2 // 3 layer, 2 nodes per layer
@@ -164,7 +179,7 @@ func TestVote(t *testing.T) {
 		mixCfgs = append(mixCfgs, c)
 		idKeys = append(idKeys, idKey)
 		port++
-		reverseHash[idKey.pubKey.Sum256()] = idKey.pubKey
+		reverseHash[hash.Sum256From(idKey.pubKey)] = idKey.pubKey
 	}
 
 	// generate a Topology section
@@ -181,14 +196,23 @@ func TestVote(t *testing.T) {
 	authCfgs[1].Topology = &topology
 	authCfgs[2].Topology = &topology
 
-	// generate providers
+	// generate gateways
 	for i := 0; i < m; i++ {
-		idKey, c, err := genProviderConfig(fmt.Sprintf("provider-%d", i), votingPKI, port)
+		idKey, c, err := genGatewayConfig(fmt.Sprintf("gateway-%d", i), votingPKI, port)
 		require.NoError(err)
 		mixCfgs = append(mixCfgs, c)
 		idKeys = append(idKeys, idKey)
 		port++
-		reverseHash[idKey.pubKey.Sum256()] = idKey.pubKey
+		reverseHash[hash.Sum256From(idKey.pubKey)] = idKey.pubKey
+	}
+	// generate serviceNodes
+	for i := 0; i < m; i++ {
+		idKey, c, err := genServiceNodeConfig(fmt.Sprintf("serviceNode-%d", i), votingPKI, port)
+		require.NoError(err)
+		mixCfgs = append(mixCfgs, c)
+		idKeys = append(idKeys, idKey)
+		port++
+		reverseHash[hash.Sum256From(idKey.pubKey)] = idKey.pubKey
 	}
 
 	for i := 0; i < len(stateAuthority); i++ {
@@ -197,72 +221,84 @@ func TestVote(t *testing.T) {
 
 	// post descriptors from nodes
 	mixDescs := make([]*pki.MixDescriptor, 0)
-	providerDescs := make([]*pki.MixDescriptor, 0)
+	gatewayDescs := make([]*pki.MixDescriptor, 0)
+	serviceDescs := make([]*pki.MixDescriptor, 0)
 	for i := 0; i < len(mixCfgs); i++ {
 		mkeys := genMixKeys(votingEpoch)
-		addr := make(map[pki.Transport][]string)
+		addr := make(map[string][]string)
 		addr[pki.TransportTCPv4] = []string{"127.0.0.1:1234"}
-		_, linkPubKey := wire.DefaultScheme.GenerateKeypair(rand.Reader)
+		linkPubKey, _, err := testingScheme.GenerateKeyPair()
+		linkBlob, err := linkPubKey.MarshalBinary()
+		if err != nil {
+			panic(err)
+		}
+		idkeyblob, err := idKeys[i].pubKey.MarshalBinary()
+		require.NoError(err)
 
 		desc := &pki.MixDescriptor{
-			Name:        mixCfgs[i].Server.Identifier,
-			Epoch:       votingEpoch,
-			IdentityKey: idKeys[i].pubKey,
-			LinkKey:     linkPubKey,
-			MixKeys:     mkeys,
-			Provider:    mixCfgs[i].Server.IsProvider,
-			Addresses:   addr,
+			Name:          mixCfgs[i].Server.Identifier,
+			Epoch:         votingEpoch,
+			IdentityKey:   idkeyblob,
+			LinkKey:       linkBlob,
+			MixKeys:       mkeys,
+			IsGatewayNode: mixCfgs[i].Server.IsGatewayNode,
+			IsServiceNode: mixCfgs[i].Server.IsServiceNode,
+			Addresses:     addr,
 		}
 
 		err = pki.IsDescriptorWellFormed(desc, votingEpoch)
 		require.NoError(err)
-		// Make a serialized + signed + serialized descriptor.
-		_, err := pki.SignDescriptor(idKeys[i].privKey, idKeys[i].pubKey, desc)
-		require.NoError(err)
 
-		if mixCfgs[i].Server.IsProvider {
-			providerDescs = append(mixDescs, desc)
+		if mixCfgs[i].Server.IsServiceNode {
+			serviceDescs = append(serviceDescs, desc)
+		} else if mixCfgs[i].Server.IsGatewayNode {
+			gatewayDescs = append(gatewayDescs, desc)
 		} else {
 			mixDescs = append(mixDescs, desc)
 		}
 	}
 
 	// create and exchange signed commits and reveals
-	commits := make(map[uint64]map[[sign.PublicKeyHashSize]byte][]byte)
-	commits[votingEpoch] = make(map[[sign.PublicKeyHashSize]byte][]byte)
+	commits := make(map[uint64]map[[hash.HashSize]byte][]byte)
+	commits[votingEpoch] = make(map[[hash.HashSize]byte][]byte)
 
 	// exchange commit and create reveals
 	for _, s := range stateAuthority {
-		reveals := make(map[uint64]map[[sign.PublicKeyHashSize]byte][]byte)
-		reveals[votingEpoch] = make(map[[sign.PublicKeyHashSize]byte][]byte)
+		reveals := make(map[uint64]map[[hash.HashSize]byte][]byte)
+		reveals[votingEpoch] = make(map[[hash.HashSize]byte][]byte)
 
 		srv := new(pki.SharedRandom)
 		commit, err := srv.Commit(votingEpoch)
 		require.NoError(err)
 		signedCommit, err := cert.Sign(s.s.identityPrivateKey, s.s.identityPublicKey, commit, votingEpoch+1)
 		require.NoError(err)
-		commits[votingEpoch][s.s.identityPublicKey.Sum256()] = signedCommit
+		commits[votingEpoch][hash.Sum256From(s.s.identityPublicKey)] = signedCommit
 		s.commits = commits
 
 		reveal := srv.Reveal()
 		signedReveal, err := cert.Sign(s.s.identityPrivateKey, s.s.identityPublicKey, reveal, votingEpoch+1)
 		require.NoError(err)
-		reveals[votingEpoch][s.s.identityPublicKey.Sum256()] = signedReveal
+		reveals[votingEpoch][hash.Sum256From(s.s.identityPublicKey)] = signedReveal
 		s.reveals = reveals
 	}
 
 	// populate the authorities with the descriptors
 	for _, s := range stateAuthority {
-		s.descriptors[votingEpoch] = make(map[[sign.PublicKeyHashSize]byte]*pki.MixDescriptor)
-		s.authorizedMixes = make(map[[sign.PublicKeyHashSize]byte]bool)
-		s.authorizedProviders = make(map[[sign.PublicKeyHashSize]byte]string)
+		s.descriptors[votingEpoch] = make(map[[hash.HashSize]byte]*pki.MixDescriptor)
+		s.authorizedMixes = make(map[[hash.HashSize]byte]bool)
+		s.authorizedGatewayNodes = make(map[[hash.HashSize]byte]string)
+		s.authorizedServiceNodes = make(map[[hash.HashSize]byte]string)
 		for _, d := range mixDescs {
-			s.descriptors[votingEpoch][d.IdentityKey.Sum256()] = d
-			s.authorizedMixes[d.IdentityKey.Sum256()] = true
+			s.descriptors[votingEpoch][hash.Sum256(d.IdentityKey)] = d
+			s.authorizedMixes[hash.Sum256(d.IdentityKey)] = true
 		}
-		for _, d := range providerDescs {
-			s.descriptors[votingEpoch][d.IdentityKey.Sum256()] = d
-			s.authorizedProviders[d.IdentityKey.Sum256()] = d.Name
+		for _, d := range gatewayDescs {
+			s.descriptors[votingEpoch][hash.Sum256(d.IdentityKey)] = d
+			s.authorizedGatewayNodes[hash.Sum256(d.IdentityKey)] = d.Name
+		}
+		for _, d := range serviceDescs {
+			s.descriptors[votingEpoch][hash.Sum256(d.IdentityKey)] = d
+			s.authorizedServiceNodes[hash.Sum256(d.IdentityKey)] = d.Name
 		}
 	}
 
@@ -283,7 +319,7 @@ func TestVote(t *testing.T) {
 			if j == i {
 				continue
 			}
-			a.votes[s.votingEpoch][s.s.identityPublicKey.Sum256()] = myVote
+			a.votes[s.votingEpoch][hash.Sum256From(s.s.identityPublicKey)] = myVote
 		}
 	}
 
@@ -295,7 +331,7 @@ func TestVote(t *testing.T) {
 			if j == i {
 				continue
 			}
-			a.reveals[a.votingEpoch][s.s.identityPublicKey.Sum256()] = c
+			a.reveals[a.votingEpoch][hash.Sum256From(s.s.identityPublicKey)] = c
 			t.Logf("%s sent %s reveal", authCfgs[i].Server.Identifier, authCfgs[j].Server.Identifier)
 		}
 
@@ -313,7 +349,7 @@ func TestVote(t *testing.T) {
 			if j == i {
 				continue
 			}
-			a.certificates[s.votingEpoch][s.s.identityPublicKey.Sum256()] = myCertificate
+			a.certificates[s.votingEpoch][hash.Sum256From(s.s.identityPublicKey)] = myCertificate
 		}
 		s.Unlock()
 	}
@@ -329,7 +365,7 @@ func TestVote(t *testing.T) {
 	// exchange signatures over the consensus
 	for i, s := range stateAuthority {
 		s.state = stateAcceptSignature
-		id := s.s.identityPublicKey.Sum256()
+		id := hash.Sum256From(s.s.identityPublicKey)
 		mySignature, ok := s.myconsensus[s.votingEpoch].Signatures[id]
 		require.True(ok)
 
@@ -337,7 +373,7 @@ func TestVote(t *testing.T) {
 			if j == i {
 				continue
 			}
-			a.signatures[s.votingEpoch][s.s.identityPublicKey.Sum256()] = &mySignature
+			a.signatures[s.votingEpoch][hash.Sum256From(s.s.identityPublicKey)] = &mySignature
 		}
 	}
 	// verify that each authority produced an identital consensus
@@ -357,7 +393,7 @@ func TestVote(t *testing.T) {
 }
 
 type peerKeys struct {
-	linkKey  wire.PrivateKey
+	linkKey  kem.PrivateKey
 	idKey    sign.PrivateKey
 	idPubKey sign.PublicKey
 	datadir  string
@@ -371,7 +407,7 @@ func genVotingAuthoritiesCfg(parameters *config.Parameters, numAuthorities int) 
 	myPeerKeys := make([]peerKeys, numAuthorities)
 
 	// initial generation of key material for each authority
-	peersMap := make(map[[sign.PublicKeyHashSize]byte]*config.Authority)
+	peersMap := make(map[[hash.HashSize]byte]*config.Authority)
 	for i := 0; i < numAuthorities; i++ {
 		cfg := new(config.Config)
 		cfg.SphinxGeometry = sphinxGeometry
@@ -387,11 +423,18 @@ func genVotingAuthoritiesCfg(parameters *config.Parameters, numAuthorities int) 
 		cfg.Server.Identifier = fmt.Sprintf("authority-%v", i)
 		cfg.Server.Addresses = []string{fmt.Sprintf("127.0.0.1:%d", lastPort)}
 		cfg.Server.DataDir = datadir
+		cfg.Server.PKISignatureScheme = testSignatureScheme.Name()
 		lastPort += 1
 
-		scheme := wire.DefaultScheme
-		linkKey, linkPubKey := scheme.GenerateKeypair(rand.Reader)
-		idKey, idPubKey := cert.Scheme.NewKeypair()
+		scheme := testingScheme
+		linkPubKey, linkKey, err := scheme.GenerateKeyPair()
+		if err != nil {
+			return nil, nil, err
+		}
+		idPubKey, idKey, err := testSignatureScheme.GenerateKey()
+		if err != nil {
+			return nil, nil, err
+		}
 
 		myPeerKeys[i] = peerKeys{
 			linkKey:  linkKey,
@@ -407,18 +450,19 @@ func genVotingAuthoritiesCfg(parameters *config.Parameters, numAuthorities int) 
 		}
 		configs = append(configs, cfg)
 		authorityPeer := &config.Authority{
-			IdentityPublicKey: idPubKey,
-			LinkPublicKey:     linkPubKey,
-			Addresses:         cfg.Server.Addresses,
+			PKISignatureScheme: testSignatureScheme.Name(),
+			IdentityPublicKey:  idPubKey,
+			LinkPublicKey:      linkPubKey,
+			Addresses:          cfg.Server.Addresses,
 		}
-		peersMap[idPubKey.Sum256()] = authorityPeer
+		peersMap[hash.Sum256From(idPubKey)] = authorityPeer
 	}
 
 	// tell each authority about it's peers
 	for i := 0; i < numAuthorities; i++ {
 		peers := []*config.Authority{}
 		for id, peer := range peersMap {
-			idHash := myPeerKeys[i].idPubKey.Sum256()
+			idHash := hash.Sum256From(myPeerKeys[i].idPubKey)
 			if !bytes.Equal(id[:], idHash[:]) {
 				peers = append(peers, peer)
 			}
@@ -428,7 +472,7 @@ func genVotingAuthoritiesCfg(parameters *config.Parameters, numAuthorities int) 
 	return myPeerKeys, configs, nil
 }
 
-func genProviderConfig(name string, pki *sConfig.PKI, port uint16) (*identityKey, *sConfig.Config, error) {
+func genGatewayConfig(name string, pki *sConfig.PKI, port uint16) (*identityKey, *sConfig.Config, error) {
 	const serverLogFile = ""
 
 	cfg := new(sConfig.Config)
@@ -437,6 +481,8 @@ func genProviderConfig(name string, pki *sConfig.PKI, port uint16) (*identityKey
 
 	// Server section.
 	cfg.Server = new(sConfig.Server)
+	cfg.Server.WireKEM = testingSchemeName
+	cfg.Server.PKISignatureScheme = testSignatureScheme.Name()
 	cfg.Server.Identifier = name
 	cfg.Server.Addresses = []string{fmt.Sprintf("127.0.0.1:%d", port)}
 	cfg.Server.AltAddresses = map[string][]string{
@@ -449,36 +495,40 @@ func genProviderConfig(name string, pki *sConfig.PKI, port uint16) (*identityKey
 	}
 
 	cfg.Server.DataDir = datadir
-	cfg.Server.IsProvider = true
+	cfg.Server.IsGatewayNode = true
+	cfg.Server.IsServiceNode = false
 
 	// Debug section.
 	cfg.Debug = new(sConfig.Debug)
 
 	// Generate keys
-	idKey, idPubKey := cert.Scheme.NewKeypair()
+	idPubKey, idKey, err := testSignatureScheme.GenerateKey()
+	if err != nil {
+		panic(err)
+	}
 
-	scheme := wire.DefaultScheme
-	linkKey, linkPubKey := scheme.GenerateKeypair(rand.Reader)
+	scheme := testingScheme
+	linkPubKey, linkKey, err := scheme.GenerateKeyPair()
 	linkPublicKeyPem := "link.public.pem"
 
 	idprivkeypem := filepath.Join(datadir, "identity.private.pem")
 
-	err = pem.ToFile(idprivkeypem, idKey)
+	err = signpem.PrivateKeyToFile(idprivkeypem, idKey)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	err = pem.ToFile(filepath.Join(datadir, "identity.public.pem"), idPubKey)
+	err = signpem.PublicKeyToFile(filepath.Join(datadir, "identity.public.pem"), idPubKey)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	err = pem.ToFile(filepath.Join(datadir, "link.private.pem"), linkKey)
+	err = kempem.PrivateKeyToFile(filepath.Join(datadir, "link.private.pem"), linkKey)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	err = pem.ToFile(filepath.Join(datadir, linkPublicKeyPem), linkPubKey)
+	err = kempem.PublicKeyToFile(filepath.Join(datadir, linkPublicKeyPem), linkPubKey)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -486,16 +536,93 @@ func genProviderConfig(name string, pki *sConfig.PKI, port uint16) (*identityKey
 	// PKI section.
 	cfg.PKI = pki
 
-	// Enable the thwack interface.
-	cfg.Management = new(sConfig.Management)
-	cfg.Management.Enable = true
+	cfg.Gateway = new(sConfig.Gateway)
+	err = cfg.FixupAndValidate()
+	if err != nil {
+		return nil, nil, err
+	}
+	return &identityKey{
+		publicPemFile:         filepath.Join(datadir, "identity.public.pem"),
+		privatePemFile:        filepath.Join(datadir, "identity.private.pem"),
+		identityPrivateKeyPem: idprivkeypem,
+		privKey:               idKey,
+		pubKey:                idPubKey,
+	}, cfg, nil
+}
 
-	cfg.Provider = new(sConfig.Provider)
+func genServiceNodeConfig(name string, pki *sConfig.PKI, port uint16) (*identityKey, *sConfig.Config, error) {
+	const serverLogFile = ""
+
+	cfg := new(sConfig.Config)
+
+	cfg.SphinxGeometry = sphinxGeometry
+
+	// Server section.
+	cfg.Server = new(sConfig.Server)
+	cfg.Server.WireKEM = testingSchemeName
+	cfg.Server.PKISignatureScheme = testSignatureScheme.Name()
+	cfg.Server.Identifier = name
+	cfg.Server.Addresses = []string{fmt.Sprintf("127.0.0.1:%d", port)}
+	cfg.Server.AltAddresses = map[string][]string{
+		"TCP": []string{fmt.Sprintf("localhost:%d", port)},
+	}
+
+	datadir, err := os.MkdirTemp("", fmt.Sprintf("provider_%s", name))
+	if err != nil {
+		panic(err)
+	}
+
+	cfg.Server.DataDir = datadir
+	cfg.Server.IsGatewayNode = false
+	cfg.Server.IsServiceNode = true
+
+	// Debug section.
+	cfg.Debug = new(sConfig.Debug)
+
+	// Generate keys
+	idPubKey, idKey, err := testSignatureScheme.GenerateKey()
+	if err != nil {
+		panic(err)
+	}
+	scheme := testingScheme
+	linkPubKey, linkKey, err := scheme.GenerateKeyPair()
+	if err != nil {
+		panic(err)
+	}
+
+	linkPublicKeyPem := "link.public.pem"
+
+	idprivkeypem := filepath.Join(datadir, "identity.private.pem")
+
+	err = signpem.PrivateKeyToFile(idprivkeypem, idKey)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	err = signpem.PublicKeyToFile(filepath.Join(datadir, "identity.public.pem"), idPubKey)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	err = kempem.PrivateKeyToFile(filepath.Join(datadir, "link.private.pem"), linkKey)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	err = kempem.PublicKeyToFile(filepath.Join(datadir, linkPublicKeyPem), linkPubKey)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// PKI section.
+	cfg.PKI = pki
+
+	cfg.ServiceNode = new(sConfig.ServiceNode)
 
 	echoCfg := new(sConfig.Kaetzchen)
 	echoCfg.Capability = "echo"
 	echoCfg.Endpoint = "+echo"
-	cfg.Provider.Kaetzchen = append(cfg.Provider.Kaetzchen, echoCfg)
+	cfg.ServiceNode.Kaetzchen = append(cfg.ServiceNode.Kaetzchen, echoCfg)
 	err = cfg.FixupAndValidate()
 	if err != nil {
 		return nil, nil, err
@@ -527,9 +654,12 @@ func genMixConfig(name string, pki *sConfig.PKI, port uint16) (*identityKey, *sC
 
 	// Server section.
 	cfg.Server = new(sConfig.Server)
+	cfg.Server.WireKEM = testingSchemeName
+	cfg.Server.PKISignatureScheme = testingSchemeName
 	cfg.Server.Identifier = name
 	cfg.Server.Addresses = []string{fmt.Sprintf("127.0.0.1:%d", port)}
-	cfg.Server.IsProvider = false
+	cfg.Server.IsGatewayNode = false
+	cfg.Server.IsServiceNode = false
 
 	datadir, err := os.MkdirTemp("", fmt.Sprintf("mix_%s", name))
 	if err != nil {
@@ -542,31 +672,34 @@ func genMixConfig(name string, pki *sConfig.PKI, port uint16) (*identityKey, *sC
 	cfg.Debug = new(sConfig.Debug)
 
 	// Generate keys
-	idKey, idPubKey := cert.Scheme.NewKeypair()
+	idPubKey, idKey, err := testSignatureScheme.GenerateKey()
+	if err != nil {
+		return nil, nil, err
+	}
 
-	scheme := wire.DefaultScheme
-	linkKey, linkPubKey := scheme.GenerateKeypair(rand.Reader)
+	scheme := testingScheme
+	linkPubKey, linkKey, err := scheme.GenerateKeyPair()
 	linkPublicKeyPem := "link.public.pem"
 
 	idprivkeypem := filepath.Join(datadir, "identity.private.pem")
 	idpubkeypem := filepath.Join(datadir, "identity.public.pem")
 
-	err = pem.ToFile(idprivkeypem, idKey)
+	err = signpem.PrivateKeyToFile(idprivkeypem, idKey)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	err = pem.ToFile(idpubkeypem, idPubKey)
+	err = signpem.PublicKeyToFile(idpubkeypem, idPubKey)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	err = pem.ToFile(filepath.Join(datadir, "link.private.pem"), linkKey)
+	err = kempem.PrivateKeyToFile(filepath.Join(datadir, "link.private.pem"), linkKey)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	err = pem.ToFile(filepath.Join(datadir, linkPublicKeyPem), linkPubKey)
+	err = kempem.PublicKeyToFile(filepath.Join(datadir, linkPublicKeyPem), linkPubKey)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -596,7 +729,7 @@ func genMixConfig(name string, pki *sConfig.PKI, port uint16) (*identityKey, *sC
 func genMixKeys(votingEpoch uint64) map[uint64][]byte {
 	mixKeys := make(map[uint64][]byte)
 	for i := votingEpoch; i < votingEpoch+2; i++ {
-		pubkey, _, err := ecdh.EcdhScheme.GenerateKeyPairFromEntropy(rand.Reader)
+		pubkey, _, err := x25519.Scheme(rand.Reader).GenerateKeyPairFromEntropy(rand.Reader)
 		if err != nil {
 			panic(err)
 		}

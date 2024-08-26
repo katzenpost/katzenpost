@@ -25,7 +25,7 @@ import (
 
 	"golang.org/x/crypto/blake2b"
 
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/hpqc/rand"
 )
 
 // SharedRandom is a container for commit-and-reveal protocol messages

@@ -25,6 +25,9 @@ import (
 	"github.com/katzenpost/katzenpost/memspool/client"
 )
 
+type opNop struct {
+}
+
 type opOnline struct {
 	context context.Context
 	responseChan chan error

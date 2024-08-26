@@ -25,8 +25,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/katzenpost/katzenpost/core/crypto/nike"
-	ecdhnike "github.com/katzenpost/katzenpost/core/crypto/nike/ecdh"
+	"github.com/katzenpost/hpqc/nike"
+	ecdhnike "github.com/katzenpost/hpqc/nike/x25519"
+
 	"github.com/katzenpost/katzenpost/core/sphinx/commands"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 )
@@ -56,7 +57,7 @@ type hexSphinxTest struct {
 func NoTestBuildFileVectorSphinx(t *testing.T) {
 	require := require.New(t)
 
-	mynike := ecdhnike.NewEcdhNike(rand.Reader)
+	mynike := ecdhnike.Scheme(rand.Reader)
 
 	withSURB := false
 	g := geo.GeometryFromUserForwardPayloadLength(mynike, 103, withSURB, 5)
@@ -78,7 +79,7 @@ func NoTestBuildFileVectorSphinx(t *testing.T) {
 
 func TestVectorSphinx(t *testing.T) {
 	require := require.New(t)
-	mynike := ecdhnike.NewEcdhNike(rand.Reader)
+	mynike := ecdhnike.Scheme(rand.Reader)
 
 	serialized, err := os.ReadFile(sphinxVectorsFile)
 	require.NoError(err)
@@ -101,7 +102,7 @@ func TestVectorSphinx(t *testing.T) {
 		// Unwrap the packet, validating the output.
 		for i := range test.Nodes {
 			// There's no sensible way to validate that `tag` is correct.
-			privateKey := ecdhnike.EcdhScheme.NewEmptyPrivateKey()
+			privateKey := ecdhnike.Scheme(rand.Reader).NewEmptyPrivateKey()
 			rawKey, err := hex.DecodeString(test.Nodes[i].PrivateKey)
 			require.NoError(err)
 			err = privateKey.FromBytes(rawKey)

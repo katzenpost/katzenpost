@@ -23,10 +23,12 @@ import (
 	"net/http"
 	"net/url"
 
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
-	"github.com/katzenpost/katzenpost/core/wire"
-	"github.com/katzenpost/katzenpost/server/userdb"
 	"github.com/ugorji/go/codec"
+
+	"github.com/katzenpost/hpqc/kem"
+	"github.com/katzenpost/hpqc/kem/pem"
+
+	"github.com/katzenpost/katzenpost/server/userdb"
 )
 
 var (
@@ -37,6 +39,7 @@ var (
 
 type externAuth struct {
 	provider string
+	scheme   kem.Scheme
 }
 
 func (e *externAuth) doPost(endpoint string, data url.Values) bool {
@@ -56,12 +59,8 @@ func (e *externAuth) doPost(endpoint string, data url.Values) bool {
 	return rsp.StatusCode == 200 && response[endpoint]
 }
 
-func (e *externAuth) IsValid(u []byte, k wire.PublicKey) bool {
-	keyText, err := k.MarshalText()
-	if err != nil {
-		panic(err)
-	}
-	form := url.Values{"user": {string(u)}, "key": {string(keyText)}}
+func (e *externAuth) IsValid(u []byte, k kem.PublicKey) bool {
+	form := url.Values{"user": {string(u)}, "key": {pem.ToPublicPEMString(k)}}
 	return e.doPost("isvalid", form)
 }
 
@@ -70,19 +69,19 @@ func (e *externAuth) Exists(u []byte) bool {
 	return e.doPost("exists", form)
 }
 
-func (e *externAuth) Add(u []byte, k wire.PublicKey, update bool) error {
+func (e *externAuth) Add(u []byte, k kem.PublicKey, update bool) error {
 	return errCantModify
 }
 
-func (e *externAuth) Link(u []byte) (wire.PublicKey, error) {
+func (e *externAuth) Link(u []byte) (kem.PublicKey, error) {
 	return nil, errNotSupported
 }
 
-func (e *externAuth) SetIdentity(u []byte, k wire.PublicKey) error {
+func (e *externAuth) SetIdentity(u []byte, k kem.PublicKey) error {
 	return errNotSupported
 }
 
-func (e *externAuth) Identity(u []byte) (wire.PublicKey, error) {
+func (e *externAuth) Identity(u []byte) (kem.PublicKey, error) {
 	endpoint := "getidkey"
 	uri := e.provider + "/" + endpoint
 	form := url.Values{"user": {string(u)}}
@@ -100,8 +99,10 @@ func (e *externAuth) Identity(u []byte) (wire.PublicKey, error) {
 		}
 
 		if idkey, ok := response[endpoint]; ok {
-			_, pubKey := wire.DefaultScheme.GenerateKeypair(rand.Reader)
-			err = pubKey.UnmarshalText([]byte(idkey))
+			pubKey, err := pem.FromPublicPEMString(idkey, e.scheme)
+			if err != nil {
+				return nil, err
+			}
 			if err == nil {
 				return pubKey, nil
 			}
@@ -118,6 +119,9 @@ func (e *externAuth) Close() {
 }
 
 // New creates an external user database with the given provider
-func New(provider string) (userdb.UserDB, error) {
-	return &externAuth{provider}, nil
+func New(provider string, scheme kem.Scheme) (userdb.UserDB, error) {
+	return &externAuth{
+		provider: provider,
+		scheme:   scheme,
+	}, nil
 }

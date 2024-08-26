@@ -24,19 +24,21 @@ import (
 	"net"
 	"strconv"
 
-	"github.com/cloudflare/circl/kem"
 	"github.com/fxamacker/cbor/v2"
+
 	"golang.org/x/net/idna"
 
-	kemschemes "github.com/cloudflare/circl/kem/schemes"
+	"github.com/katzenpost/hpqc/hash"
+	"github.com/katzenpost/hpqc/kem"
+	kemschemes "github.com/katzenpost/hpqc/kem/schemes"
+	"github.com/katzenpost/hpqc/nike"
+	"github.com/katzenpost/hpqc/nike/schemes"
+	"github.com/katzenpost/hpqc/sign"
 
-	"github.com/katzenpost/katzenpost/core/crypto/cert"
-	"github.com/katzenpost/katzenpost/core/crypto/nike"
-	"github.com/katzenpost/katzenpost/core/crypto/nike/schemes"
-	"github.com/katzenpost/katzenpost/core/crypto/sign"
+	"github.com/katzenpost/katzenpost/core/cert"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
-	"github.com/katzenpost/katzenpost/core/wire"
+	"github.com/katzenpost/katzenpost/loops"
 )
 
 const (
@@ -49,6 +51,55 @@ var (
 	ErrTooManySignatures = errors.New("MixDescriptor has more than one signature")
 )
 
+type SignedUpload struct {
+	// Signature is the signature over the serialized SignedUpload.
+	Signature *cert.Signature
+
+	// MixDescriptor is the mix descriptor.
+	MixDescriptor *MixDescriptor
+
+	// LoopStats is the mix loop statistics.
+	LoopStats *loops.LoopStats
+}
+
+func (s *SignedUpload) Marshal() ([]byte, error) {
+	return ccbor.Marshal(s)
+}
+
+func (s *SignedUpload) Unmarshal(data []byte) error {
+	return cbor.Unmarshal(data, s)
+}
+
+func (s *SignedUpload) Sign(privKey sign.PrivateKey, pubKey sign.PublicKey) error {
+	if s.Signature != nil {
+		return errors.New("SignedUpload already has a signature")
+	}
+	blob, err := s.Marshal()
+	if err != nil {
+		return err
+	}
+	sig := &cert.Signature{
+		PublicKeySum256: hash.Sum256From(pubKey),
+		Payload:         privKey.Scheme().Sign(privKey, blob, nil),
+	}
+	s.Signature = sig
+	return nil
+}
+
+func (s *SignedUpload) Verify(pubKey sign.PublicKey) bool {
+	ss := &SignedUpload{
+		Signature:     nil,
+		MixDescriptor: s.MixDescriptor,
+		LoopStats:     s.LoopStats,
+	}
+	blob, err := ss.Marshal()
+	if err != nil {
+		return false
+	}
+
+	return pubKey.Scheme().Verify(pubKey, blob, s.Signature.Payload, nil)
+}
+
 // MixDescriptor is a description of a given Mix or Provider (node).
 type MixDescriptor struct {
 	// Name is the human readable (descriptive) node identifier.
@@ -58,27 +109,31 @@ type MixDescriptor struct {
 	Epoch uint64
 
 	// IdentityKey is the node's identity (signing) key.
-	IdentityKey sign.PublicKey
-
-	// Signature is the raw cert.Signature over the serialized MixDescriptor
-	Signature *cert.Signature `cbor:"-"`
+	IdentityKey []byte
 
 	// LinkKey is the node's wire protocol public key.
-	LinkKey wire.PublicKey
+	LinkKey []byte
 
 	// MixKeys is a map of epochs to Sphinx keys.
 	MixKeys map[uint64][]byte
 
 	// Addresses is the map of transport to address combinations that can
 	// be used to reach the node.
-	Addresses map[Transport][]string
+	Addresses map[string][]string
 
 	// Kaetzchen is the map of provider autoresponder agents by capability
 	// to parameters.
 	Kaetzchen map[string]map[string]interface{} `cbor:"omitempty"`
 
-	// Provider indicates that this Mix is a Provider
-	Provider bool
+	// IsGatewayNode indicates that this Mix is a gateway node.
+	// Essentially a gateway allows clients to interact with the mixnet.
+	// This option being set to true is mutually exclusive with
+	// `IsServiceNode` being set to true.
+	IsGatewayNode bool
+
+	// IsServiceNode indicates that this Mix is a service node.
+	// Service nodes run services which the mixnet interacts with.
+	IsServiceNode bool
 
 	// LoadWeight is the node's load balancing weight (unused).
 	LoadWeight uint8
@@ -115,7 +170,7 @@ func (d *MixDescriptor) String() string {
 	if len(d.Kaetzchen) > 0 {
 		kaetzchen = fmt.Sprintf("%v", d.Kaetzchen)
 	}
-	id := d.IdentityKey.Sum256()
+	id := hash.Sum256(d.IdentityKey)
 	s := fmt.Sprintf("{%s %x %v", d.Name, id, d.Addresses)
 	s += kaetzchen + d.AuthenticationType + "}"
 	return s
@@ -123,126 +178,12 @@ func (d *MixDescriptor) String() string {
 
 // UnmarshalBinary implements encoding.BinaryUnmarshaler interface
 func (d *MixDescriptor) UnmarshalBinary(data []byte) error {
-	// extract the embedded IdentityKey and verify it signs the payload
-	certified, err := cert.GetCertified(data)
-	if err != nil {
-		return err
-	}
-	sigs, err := cert.GetSignatures(data)
-	if err != nil {
-		return err
-	}
-	switch len(sigs) {
-	case 0:
-		return ErrNoSignature
-	case 1:
-		// must have only 1 signature
-	default:
-		return ErrTooManySignatures
-	}
-
-	// Instantiate concrete instances so we deserialize into the right types
-	idPublicKey := cert.Scheme.NewEmptyPublicKey()
-	d.IdentityKey = idPublicKey
-	linkPub := wire.DefaultScheme.NewEmptyPublicKey()
-	d.LinkKey = linkPub
-
-	// encoding type is cbor
-	err = cbor.Unmarshal(certified, (*mixdescriptor)(d))
-	if err != nil {
-		return err
-	}
-	_, err = cert.Verify(d.IdentityKey, data)
-	if err != nil {
-		return err
-	}
-	d.Signature = &sigs[0]
-	return nil
+	return cbor.Unmarshal(data, (*mixdescriptor)(d))
 }
 
 // MarshalBinary implmements encoding.BinaryMarshaler
 func (d *MixDescriptor) MarshalBinary() ([]byte, error) {
-	// reconstruct a serialized certificate from the detached Signature
-	rawDesc, err := ccbor.Marshal((*mixdescriptor)(d))
-	if err != nil {
-		return nil, err
-	}
-
-	// If the descriptor was signed, add the Signature
-	signatures := make(map[[32]byte]cert.Signature)
-	if d.Signature != nil {
-		signatures[d.IdentityKey.Sum256()] = *d.Signature
-	}
-	pk, _ := cert.Scheme.NewKeypair()
-	certified := cert.Certificate{
-		Version:    cert.CertVersion,
-		Expiration: d.Epoch + 5,
-		KeyType:    pk.KeyType(),
-		Certified:  rawDesc,
-		Signatures: signatures,
-	}
-	data, err := certified.Marshal()
-	if err != nil {
-		panic(err)
-	}
-	return data, err
-}
-
-// SignDescriptor signs and serializes the descriptor with the provided signing
-// key.
-func SignDescriptor(signer cert.Signer, verifier cert.Verifier, desc *MixDescriptor) ([]byte, error) {
-	// Serialize the descriptor.
-	payload, err := ccbor.Marshal((*mixdescriptor)(desc))
-	if err != nil {
-		return nil, err
-	}
-
-	// Sign the descriptor. Descriptor will become valid in the next epoch, for 3 epochs.
-	epoch := desc.Epoch
-	signed, err := cert.Sign(signer, verifier, payload, epoch+5)
-	if err != nil {
-		return nil, err
-	}
-
-	// Update Signature field of desc
-	idPublic := verifier.Sum256()
-	sig, err := cert.GetSignature(idPublic[:], signed)
-	if err != nil {
-		return nil, err
-	}
-	desc.Signature = sig
-	return signed, nil
-}
-
-// VerifyDescriptor parses a self-signed MixDescriptor and returns an instance
-// of MixDescriptor or error
-func VerifyDescriptor(rawDesc []byte) (*MixDescriptor, error) {
-	// make a MixDescriptor and initialize throwaway concrete instances so
-	// that rawDesc will deserialize into the right type
-	d := new(MixDescriptor)
-	_, idPubKey := cert.Scheme.NewKeypair()
-	linkPub := wire.DefaultScheme.NewEmptyPublicKey()
-	d.IdentityKey = idPubKey
-	d.LinkKey = linkPub
-	err := d.UnmarshalBinary(rawDesc)
-	if err != nil {
-		return nil, err
-	}
-	if d.Version != DescriptorVersion {
-		return nil, fmt.Errorf("Invalid Document Version: '%v'", d.Version)
-	}
-	return d, nil
-}
-
-// GetVerifierFromDescriptor returns a verifier for the given
-// mix descriptor certificate.
-func GetVerifierFromDescriptor(rawDesc []byte) (cert.Verifier, error) {
-	d := new(MixDescriptor)
-	err := d.UnmarshalBinary(rawDesc)
-	if err != nil {
-		return nil, err
-	}
-	return d.IdentityKey, nil
+	return ccbor.Marshal((*mixdescriptor)(d))
 }
 
 // IsDescriptorWellFormed validates the descriptor and returns a descriptive
@@ -288,9 +229,9 @@ func IsDescriptorWellFormed(d *MixDescriptor, epoch uint64) error {
 			expectedIPVer = 6
 		default:
 			// Unknown transports are only supported between the client and
-			// provider.
-			if !d.Provider {
-				return fmt.Errorf("Non-provider published Transport '%v'", transport)
+			// gateway.
+			if !d.IsGatewayNode {
+				return fmt.Errorf("Non-gateway published Transport '%v'", transport)
 			}
 			if transport != TransportTCP {
 				// Ignore transports that don't have validation logic.
@@ -332,7 +273,7 @@ func IsDescriptorWellFormed(d *MixDescriptor, epoch uint64) error {
 	if len(d.Addresses[TransportTCPv4]) == 0 {
 		return fmt.Errorf("Descriptor contains no TCPv4 addresses")
 	}
-	if !d.Provider {
+	if !d.IsServiceNode {
 		if d.Kaetzchen != nil {
 			return fmt.Errorf("Descriptor contains Kaetzchen when a mix")
 		}

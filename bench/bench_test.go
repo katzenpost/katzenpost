@@ -21,21 +21,6 @@
 package bench
 
 import (
-	"github.com/katzenpost/katzenpost/client"
-	"github.com/katzenpost/katzenpost/client/config"
-	cConstants "github.com/katzenpost/katzenpost/client/constants"
-	"github.com/katzenpost/katzenpost/client/utils"
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
-	"github.com/katzenpost/katzenpost/core/epochtime"
-	"github.com/katzenpost/katzenpost/core/log"
-	"github.com/katzenpost/katzenpost/core/pki"
-
-	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
-
-	"github.com/katzenpost/katzenpost/core/wire"
-	"github.com/katzenpost/katzenpost/core/worker"
-	"github.com/katzenpost/katzenpost/minclient"
-
 	"context"
 	"errors"
 	"fmt"
@@ -48,7 +33,24 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/crypto/blake2b"
 	"gopkg.in/op/go-logging.v1"
+
+	"github.com/katzenpost/hpqc/kem"
+	"github.com/katzenpost/hpqc/kem/schemes"
+	"github.com/katzenpost/hpqc/rand"
+
+	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
+	"github.com/katzenpost/katzenpost/client"
+	"github.com/katzenpost/katzenpost/client/config"
+	cConstants "github.com/katzenpost/katzenpost/client/constants"
+	"github.com/katzenpost/katzenpost/client/utils"
+	"github.com/katzenpost/katzenpost/core/epochtime"
+	"github.com/katzenpost/katzenpost/core/log"
+	"github.com/katzenpost/katzenpost/core/pki"
+	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/core/worker"
+	"github.com/katzenpost/katzenpost/minclient"
 )
 
 var (
@@ -95,6 +97,8 @@ var (
 	)
 )
 
+var testSignatureScheme = signSchemes.ByName("Ed25519")
+
 func getClientCfg(f string) *config.Config {
 	cfg, err := config.LoadFile(f)
 	if err != nil {
@@ -124,7 +128,7 @@ type MinclientBench struct {
 	sync.Mutex
 	cfg             *config.Config
 	log             *logging.Logger
-	linkKey         wire.PrivateKey
+	linkKey         kem.PrivateKey
 	minclientConfig *minclient.ClientConfig
 	minclient       *minclient.Client
 	provider        *pki.MixDescriptor
@@ -151,10 +155,19 @@ func (b *MinclientBench) setup() {
 
 	b.log = logBackend.GetLogger("MinclientBench")
 
-	b.linkKey, _ = wire.DefaultScheme.GenerateKeypair(rand.Reader)
-	idHash := b.linkKey.PublicKey().Sum256()
+	myScheme := schemes.ByName(cfg.WireKEMScheme)
+	if myScheme == nil {
+		panic("WireKEMScheme is invalid")
+	}
+
+	_, b.linkKey, err = schemes.ByName(cfg.WireKEMScheme).GenerateKeyPair()
+	blob, err := b.linkKey.Public().MarshalBinary()
+	if err != nil {
+		panic(err)
+	}
+	idHash := blake2b.Sum256(blob)
 	proxyContext := fmt.Sprintf("session %d", rand.NewMath().Uint64())
-	pkiClient, err := cfg.NewPKIClient(logBackend, cfg.UpstreamProxyConfig(), b.linkKey)
+	pkiClient, err := cfg.NewPKIClient(logBackend, cfg.UpstreamProxyConfig(), b.linkKey, cfg.SphinxGeometry)
 	currentEpoch, _, _ := epochtime.Now()
 	ctx, cancel := context.WithTimeout(context.Background(), initialPKIConsensusTimeout)
 	defer cancel()
@@ -162,17 +175,21 @@ func (b *MinclientBench) setup() {
 	if err != nil {
 		panic(err)
 	}
-	desc, err := client.SelectProvider(doc)
+	desc, err := client.SelectGatewayNode(doc)
 	if err != nil {
 		panic(err)
 	}
 	b.provider = desc
-
+	idkey, err := testSignatureScheme.UnmarshalBinaryPublicKey(b.provider.IdentityKey)
+	if err != nil {
+		panic(err)
+	}
 	b.minclientConfig = &minclient.ClientConfig{
+		LinkKemScheme:       myScheme,
 		SphinxGeometry:      cfg.SphinxGeometry,
 		User:                string(idHash[:]),
-		Provider:            b.provider.Name,
-		ProviderKeyPin:      b.provider.IdentityKey,
+		Gateway:             b.provider.Name,
+		GatewayKeyPin:       idkey,
 		LinkKey:             b.linkKey,
 		LogBackend:          logBackend,
 		PKIClient:           pkiClient,
@@ -194,7 +211,7 @@ func (b *MinclientBench) setup() {
 
 func (b *MinclientBench) Start(t *testing.T) {
 	b.setup()
-	<-b.onDoc
+	<-b.onConn
 	// TODO: start benchmark timers
 	b.Go(b.sendWorker)
 }

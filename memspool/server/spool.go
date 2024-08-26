@@ -25,11 +25,14 @@ import (
 	"time"
 
 	sha512 "crypto/sha512"
-	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
-	"github.com/katzenpost/katzenpost/core/worker"
-	"github.com/katzenpost/katzenpost/memspool/common"
+
 	bolt "go.etcd.io/bbolt"
 	"gopkg.in/op/go-logging.v1"
+
+	eddsa "github.com/katzenpost/hpqc/sign/ed25519"
+
+	"github.com/katzenpost/katzenpost/core/worker"
+	"github.com/katzenpost/katzenpost/memspool/common"
 )
 
 const (
@@ -51,13 +54,11 @@ var (
 )
 
 func HandleSpoolRequest(spoolMap *MemSpoolMap, request *common.SpoolRequest, log *logging.Logger) *common.SpoolResponse {
-	log.Debug("start of handle spool request")
 	spoolResponse := common.SpoolResponse{}
 	spoolID := [common.SpoolIDSize]byte{}
 	copy(spoolID[:], request.SpoolID[:])
 	switch request.Command {
 	case common.CreateSpoolCommand:
-		log.Debug("create spool")
 		publicKey := new(eddsa.PublicKey)
 		err := publicKey.FromBytes(request.PublicKey)
 		if err != nil {
@@ -69,24 +70,25 @@ func HandleSpoolRequest(spoolMap *MemSpoolMap, request *common.SpoolRequest, log
 		newSpoolID, err := spoolMap.CreateSpool(publicKey, request.Signature)
 		if err != nil {
 			spoolResponse.Status = err.Error()
-			log.Error(spoolResponse.Status)
+			log.Errorf("error creating spool: %v", err.Error())
 			return &spoolResponse
 		}
 		spoolResponse.SpoolID = *newSpoolID
+		log.Debug("%x create: OK", newSpoolID[:])
+		spoolMap.doFlush()
 	case common.PurgeSpoolCommand:
-		log.Debug("purge spool")
 		err := spoolMap.PurgeSpool(spoolID, request.Signature)
 		spoolResponse.SpoolID = spoolID
 		if err != nil {
 			spoolResponse.Status = err.Error()
-			log.Error(spoolResponse.Status)
+			log.Debugf("%x purge error: %v", spoolID, err.Error())
+			log.Errorf("purge error: %v", err.Error())
 			return &spoolResponse
 		}
+		log.Debugf("%x purge: OK", spoolID)
 		spoolResponse.Status = common.StatusOK
 	case common.AppendMessageCommand:
-		log.Debugf("append to spool, with spool ID: %d", request.SpoolID)
 		err := spoolMap.AppendToSpool(spoolID, request.Message)
-		log.Debug("after call to AppendToSpool")
 		spoolResponse.SpoolID = spoolID
 		if err != nil {
 			spoolResponse.Status = err.Error()
@@ -95,21 +97,19 @@ func HandleSpoolRequest(spoolMap *MemSpoolMap, request *common.SpoolRequest, log
 		}
 		spoolResponse.Status = common.StatusOK
 	case common.RetrieveMessageCommand:
-		log.Debug("read from spool")
-		log.Debugf("before ReadFromSpool with message ID %d", request.MessageID)
 		message, err := spoolMap.ReadFromSpool(spoolID, request.Signature, request.MessageID)
-		log.Debug("after ReadFromSpool")
 		spoolResponse.SpoolID = spoolID
 		spoolResponse.MessageID = request.MessageID
 		if err != nil {
 			spoolResponse.Status = err.Error()
-			log.Error(spoolResponse.Status)
+			log.Debugf("%x read %d: %v", request.SpoolID, request.MessageID, err.Error())
+			log.Errorf("read error: %v", err.Error())
 			return &spoolResponse
 		}
+		log.Debugf("%x read %d: OK", request.SpoolID, request.MessageID)
 		spoolResponse.Status = common.StatusOK
 		spoolResponse.Message = message
 	}
-	log.Debug("end of handle spool request")
 	return &spoolResponse
 }
 
@@ -212,6 +212,7 @@ func (m *MemSpoolMap) load(tx *bolt.Tx, spoolsBucket *bolt.Bucket) error {
 			panic("wtf")
 		}
 		k, _ := cur.Last() // obtain the latest MessageID
+		m.log.Debugf("%x loaded spool with %v messages", spoolID[:], k)
 		if k != nil {
 			raw_spool.(*MemSpool).current = binary.BigEndian.Uint32(k[:])
 		} // empty spool...
@@ -319,6 +320,8 @@ func (m *MemSpoolMap) AppendToSpool(spoolID [common.SpoolIDSize]byte, message []
 		return errors.New("invalid spool found")
 	}
 	spool.Append(message)
+	m.log.Debugf("%x write: %d: OK", spoolID, spool.GetCurrent())
+	m.doFlush()
 	return nil
 }
 
@@ -342,6 +345,7 @@ func (m *MemSpoolMap) ReadFromSpool(spoolID [common.SpoolIDSize]byte, signature 
 }
 
 func (m *MemSpoolMap) doFlush() {
+	m.log.Debugf("MemSpoolMap.doFlush()")
 	spoolsRange := func(rawSpoolID, rawSpool interface{}) bool {
 		spool, ok := rawSpool.(*MemSpool)
 		if !ok {
@@ -455,6 +459,10 @@ func (s *MemSpool) PublicKey() *eddsa.PublicKey {
 func (s *MemSpool) Append(message []byte) {
 	current := atomic.AddUint32(&s.current, 1)
 	s.Put(current, message, true)
+}
+
+func (s *MemSpool) GetCurrent() uint32 {
+	return s.current
 }
 
 func (s *MemSpool) Put(messageID uint32, message []byte, dirty bool) {

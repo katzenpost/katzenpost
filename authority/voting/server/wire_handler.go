@@ -21,9 +21,12 @@ import (
 	"net"
 	"time"
 
-	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
-	"github.com/katzenpost/katzenpost/core/crypto/sign"
+	"github.com/katzenpost/hpqc/hash"
+	"github.com/katzenpost/hpqc/kem/schemes"
+	ecdh "github.com/katzenpost/hpqc/nike/x25519"
+	"github.com/katzenpost/hpqc/rand"
+
+	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/wire"
@@ -46,13 +49,21 @@ func (s *Server) onConn(conn net.Conn) {
 
 	// Initialize the wire protocol session.
 	auth := &wireAuthenticator{s: s}
-	keyHash := s.identityPublicKey.Sum256()
+	keyHash := hash.Sum256From(s.identityPublicKey)
+
+	kemscheme := schemes.ByName(s.cfg.Server.WireKEMScheme)
+	if kemscheme == nil {
+		panic("kem scheme not found in registry")
+	}
+
 	cfg := &wire.SessionConfig{
-		Geometry:          nil,
-		Authenticator:     auth,
-		AdditionalData:    keyHash[:],
-		AuthenticationKey: s.linkKey,
-		RandomReader:      rand.Reader,
+		KEMScheme:          kemscheme,
+		PKISignatureScheme: signSchemes.ByName(s.cfg.Server.PKISignatureScheme),
+		Geometry:           s.geo,
+		Authenticator:      auth,
+		AdditionalData:     keyHash[:],
+		AuthenticationKey:  s.linkKey,
+		RandomReader:       rand.Reader,
 	}
 	wireConn, err := wire.NewPKISession(cfg, false)
 	if err != nil {
@@ -181,28 +192,46 @@ func (s *Server) onPostDescriptor(rAddr net.Addr, cmd *commands.PostDescriptor, 
 		return resp
 	}
 
-	// Validate and deserialize the descriptor.
-	desc := new(pki.MixDescriptor)
-	err := desc.UnmarshalBinary(cmd.Payload)
+	// Validate and deserialize the SignedUpload.
+	signedUpload := new(pki.SignedUpload)
+	err := signedUpload.Unmarshal(cmd.Payload)
 	if err != nil {
 		s.log.Errorf("Peer %v: Invalid descriptor: %v", rAddr, err)
 		return resp
 	}
 
+	desc := signedUpload.MixDescriptor
+
 	// Ensure that the descriptor is signed by the peer that is posting.
-	identityKeyHash := desc.IdentityKey.Sum256()
+	identityKeyHash := hash.Sum256(desc.IdentityKey)
 	if !hmac.Equal(identityKeyHash[:], pubKeyHash) {
-		s.log.Errorf("Peer %v: Identity key hash '%x' is not link key '%v'.", rAddr, desc.IdentityKey.Sum256(), pubKeyHash)
+		s.log.Errorf("Peer %v: Identity key hash '%x' is not link key '%v'.", rAddr, hash.Sum256(desc.IdentityKey), pubKeyHash)
+		resp.ErrorCode = commands.DescriptorForbidden
+		return resp
+	}
+	pkiSignatureScheme := signSchemes.ByName(s.cfg.Server.PKISignatureScheme)
+
+	descIdPubKey, err := pkiSignatureScheme.UnmarshalBinaryPublicKey(desc.IdentityKey)
+	if err != nil {
+		s.log.Error("failed to unmarshal descriptor IdentityKey")
+		resp.ErrorCode = commands.DescriptorForbidden
+		return resp
+	}
+
+	if !signedUpload.Verify(descIdPubKey) {
+		s.log.Error("PostDescriptorStatus contained a SignedUpload with an invalid signature")
 		resp.ErrorCode = commands.DescriptorForbidden
 		return resp
 	}
 
 	// Ensure that the descriptor is from an allowed peer.
 	if !s.state.isDescriptorAuthorized(desc) {
-		s.log.Errorf("Peer %v: Identity key hash '%x' not authorized", rAddr, desc.IdentityKey.Sum256)
+		s.log.Errorf("Peer %v: Identity key hash '%x' not authorized", rAddr, hash.Sum256(desc.IdentityKey))
 		resp.ErrorCode = commands.DescriptorForbidden
 		return resp
 	}
+
+	// TODO(david): Use the packet loss statistics to make decisions about how to generate the consensus document.
 
 	// Hand the descriptor off to the state worker.  As long as this returns
 	// a nil, the authority "accepts" the descriptor.
@@ -236,7 +265,7 @@ func (a *wireAuthenticator) IsPeerValid(creds *wire.PeerCredentials) bool {
 	case 0:
 		a.isClient = true
 		return true
-	case sign.PublicKeyHashSize:
+	case hash.HashSize:
 	default:
 		a.s.log.Warning("Rejecting authentication, invalid AD size.")
 		return false
@@ -244,15 +273,16 @@ func (a *wireAuthenticator) IsPeerValid(creds *wire.PeerCredentials) bool {
 
 	a.peerIdentityKeyHash = creds.AdditionalData
 
-	pk := [sign.PublicKeyHashSize]byte{}
-	copy(pk[:], creds.AdditionalData[:sign.PublicKeyHashSize])
+	pk := [hash.HashSize]byte{}
+	copy(pk[:], creds.AdditionalData[:hash.HashSize])
 
 	_, isMix := a.s.state.authorizedMixes[pk]
-	_, isProvider := a.s.state.authorizedProviders[pk]
+	_, isGatewayNode := a.s.state.authorizedGatewayNodes[pk]
+	_, isServiceNode := a.s.state.authorizedServiceNodes[pk]
 	_, isAuthority := a.s.state.authorizedAuthorities[pk]
 
-	if isMix || isProvider {
-		a.isMix = true // Providers and mixes are both mixes. :)
+	if isMix || isGatewayNode || isServiceNode {
+		a.isMix = true // Gateways and service nodes and mixes are all mixes.
 		return true
 	} else if isAuthority {
 		linkKey, ok := a.s.state.authorityLinkKeys[pk]

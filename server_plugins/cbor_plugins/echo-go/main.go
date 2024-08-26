@@ -28,19 +28,24 @@ import (
 	"github.com/katzenpost/katzenpost/server/cborplugin"
 )
 
-type Echo struct{}
+type Echo struct{
+	write func(cborplugin.Command)
+}
 
-func (e *Echo) OnCommand(cmd cborplugin.Command) (cborplugin.Command, error) {
+func (e *Echo) OnCommand(cmd cborplugin.Command) error {
 	switch r := cmd.(type) {
 	case *cborplugin.Request:
-		return &cborplugin.Response{Payload: r.Payload}, nil
+		go func() {
+			e.write(&cborplugin.Response{ID: r.ID, SURB: r.SURB, Payload: r.Payload})
+		}()
+		return nil
 	default:
-		return nil, errors.New("echo-plugin: Invalid Command type")
+		return errors.New("echo-plugin: Invalid Command type")
 	}
 }
 
 func (e *Echo) RegisterConsumer(s *cborplugin.Server) {
-	// noop
+	e.write = s.Write
 }
 
 func main() {

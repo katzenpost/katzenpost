@@ -22,11 +22,13 @@ import (
 	"os"
 	"testing"
 
-	"github.com/katzenpost/katzenpost/core/crypto/nike"
-	"github.com/katzenpost/katzenpost/core/crypto/nike/ecdh"
-	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/katzenpost/hpqc/nike"
+	"github.com/katzenpost/hpqc/nike/x25519"
+
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 )
 
 const testEpoch = 0x23 // Way in the past on systems with correct time.
@@ -35,7 +37,7 @@ var (
 	tmpDir string
 
 	testKeyPath string
-	testKey     *ecdh.PrivateKey
+	testKey     *x25519.PrivateKey
 
 	testPositiveTags, testNegativeTags map[[TagLength]byte]bool
 )
@@ -44,7 +46,7 @@ func TestCreateMixKey(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 
-	mynike := ecdh.EcdhScheme
+	mynike := x25519.Scheme(rand.Reader)
 	geo := geo.GeometryFromUserForwardPayloadLength(mynike, 2000, true, 5)
 
 	k, err := New(testEpoch, geo)
@@ -98,7 +100,7 @@ func BenchmarkMixKey(b *testing.B) {
 }
 
 func doBenchIsReplayMiss(b *testing.B) {
-	mynike := ecdh.EcdhScheme
+	mynike := x25519.Scheme(rand.Reader)
 	geo := geo.GeometryFromUserForwardPayloadLength(mynike, 2000, true, 5)
 	k, err := New(testEpoch, geo)
 	if err != nil {
@@ -130,7 +132,7 @@ func doBenchIsReplayMiss(b *testing.B) {
 }
 
 func doBenchIsReplayHit(b *testing.B) {
-	mynike := ecdh.EcdhScheme
+	mynike := x25519.Scheme(rand.Reader)
 	geo := geo.GeometryFromUserForwardPayloadLength(mynike, 2000, true, 5)
 	k, err := New(testEpoch, geo)
 	if err != nil {
@@ -160,12 +162,12 @@ func doBenchIsReplayHit(b *testing.B) {
 }
 
 func init() {
-	_, privkey, err := ecdh.EcdhScheme.GenerateKeyPair()
+	_, privkey, err := x25519.Scheme(rand.Reader).GenerateKeyPair()
 	if err != nil {
 		panic(err)
 	}
 
-	testKey = privkey.(*ecdh.PrivateKey)
+	testKey = privkey.(*x25519.PrivateKey)
 
 	tmpDir, err = os.MkdirTemp("", "mixkey_tests")
 	if err != nil {

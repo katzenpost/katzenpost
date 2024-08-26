@@ -23,9 +23,13 @@ import (
 	"time"
 
 	"github.com/fxamacker/cbor/v2"
-	ratchet "github.com/katzenpost/katzenpost/doubleratchet"
+
+	"github.com/katzenpost/hpqc/nike"
+	"github.com/katzenpost/hpqc/nike/schemes"
+	"github.com/katzenpost/hpqc/rand"
+
 	cConstants "github.com/katzenpost/katzenpost/client/constants"
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	ratchet "github.com/katzenpost/katzenpost/doubleratchet"
 	memspoolClient "github.com/katzenpost/katzenpost/memspool/client"
 )
 
@@ -45,13 +49,14 @@ func NewContactExchangeBytes(spoolWriteDescriptor *memspoolClient.SpoolWriteDesc
 
 func parseContactExchangeBytes(contactExchangeBytes []byte) (*contactExchange, error) {
 	exchange := new(contactExchange)
-	if err := cbor.Unmarshal(contactExchangeBytes, &exchange); err != nil {
+	if _, err := cbor.UnmarshalFirst(contactExchangeBytes, &exchange); err != nil {
 		return nil, err
 	}
 	return exchange, nil
 }
 
 type serializedContact struct {
+	NIKEScheme           string
 	ID                   uint64
 	Nickname             string
 	IsPending            bool
@@ -76,6 +81,8 @@ type boundExchange struct {
 // Contact is a communications contact that we have bidirectional
 // communication with.
 type Contact struct {
+	nikeScheme nike.Scheme
+
 	// id is the local unique contact ID.
 	id uint64
 
@@ -135,12 +142,17 @@ type Contact struct {
 }
 
 // NewContact creates a new Contact or returns an error.
-func NewContact(nickname string, id uint64, secret []byte) (*Contact, error) {
-	ratchet, err := ratchet.InitRatchet(rand.Reader)
+func NewContact(nickname string, id uint64, secret []byte, nikeSchemeName string) (*Contact, error) {
+	nikeScheme := schemes.ByName(nikeSchemeName)
+	if nikeScheme == nil {
+		panic("NewContact: nike scheme cannot be nike")
+	}
+	ratchet, err := ratchet.InitRatchet(rand.Reader, nikeScheme)
 	if err != nil {
 		return nil, err
 	}
 	return &Contact{
+		nikeScheme:          nikeScheme,
 		Nickname:            nickname,
 		id:                  id,
 		IsPending:           true,
@@ -170,6 +182,7 @@ func (c *Contact) MarshalBinary() ([]byte, error) {
 		return nil, err
 	}
 	s := &serializedContact{
+		NIKEScheme:           c.nikeScheme.Name(),
 		ID:                   c.id,
 		Nickname:             c.Nickname,
 		IsPending:            c.IsPending,
@@ -192,11 +205,17 @@ func (c *Contact) MarshalBinary() ([]byte, error) {
 // from the given binary blob.
 func (c *Contact) UnmarshalBinary(data []byte) error {
 	s := new(serializedContact)
-	if err := cbor.Unmarshal(data, &s); err != nil {
+	if _, err := cbor.UnmarshalFirst(data, &s); err != nil {
 		return err
 	}
 
-	r, err := ratchet.NewRatchetFromBytes(rand.Reader, s.Ratchet)
+	// XXX TODO: assume legacy scheme if unset in statefile
+	if s.NIKEScheme == "" {
+		s.NIKEScheme = "NOBS_CSIDH-X25519"
+	}
+	c.nikeScheme = schemes.ByName(s.NIKEScheme)
+
+	r, err := ratchet.NewRatchetFromBytes(rand.Reader, s.Ratchet, c.nikeScheme)
 	if err != nil {
 		return err
 	}

@@ -22,19 +22,19 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/katzenpost/circl/kem/kyber/kyber768"
+
 	"github.com/katzenpost/nyquist"
 	"github.com/katzenpost/nyquist/cipher"
 	"github.com/katzenpost/nyquist/hash"
-	"github.com/katzenpost/nyquist/kem"
+	nyquistkem "github.com/katzenpost/nyquist/kem"
 	"github.com/katzenpost/nyquist/pattern"
 	"github.com/katzenpost/nyquist/seec"
 
-	"github.com/cloudflare/circl/kem/kyber/kyber768"
-
-	"github.com/katzenpost/katzenpost/core/crypto/kem/adapter"
-	kemhybrid "github.com/katzenpost/katzenpost/core/crypto/kem/hybrid"
-	"github.com/katzenpost/katzenpost/core/crypto/nike/ecdh"
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/hpqc/kem/adapter"
+	kemhybrid "github.com/katzenpost/hpqc/kem/hybrid"
+	ecdh "github.com/katzenpost/hpqc/nike/x25519"
+	"github.com/katzenpost/hpqc/rand"
 )
 
 func TestNyquistPqNoiseParams2(t *testing.T) {
@@ -44,12 +44,10 @@ func TestNyquistPqNoiseParams2(t *testing.T) {
 
 	protocol := &nyquist.Protocol{
 		Pattern: pattern.PqXX,
-		KEM: kem.FromKEM(
-			kemhybrid.New(
-				"Kyber768-X25519",
-				adapter.FromNIKE(ecdh.NewEcdhNike(rand.Reader)),
-				kyber768.Scheme(),
-			),
+		KEM: kemhybrid.New(
+			"Kyber768-X25519",
+			adapter.FromNIKE(ecdh.Scheme(rand.Reader)),
+			kyber768.Scheme(),
 		),
 		Cipher: cipher.ChaChaPoly,
 		Hash:   hash.BLAKE2s,
@@ -58,8 +56,7 @@ func TestNyquistPqNoiseParams2(t *testing.T) {
 	t.Logf("KEM public key size: %d", protocol.KEM.PublicKeySize())
 	t.Logf("KEM ciphertext size: %d", protocol.KEM.CiphertextSize())
 
-	clientStatic, err := protocol.KEM.GenerateKeypair(seecGenRand)
-	require.NoError(t, err)
+	_, clientStatic := nyquistkem.GenerateKeypair(protocol.KEM, seecGenRand)
 
 	wireVersion := []byte{0x03} // Prologue indicates version 3.
 	maxMsgLen := 1048576
@@ -76,8 +73,7 @@ func TestNyquistPqNoiseParams2(t *testing.T) {
 		IsInitiator: true,
 	}
 
-	serverStatic, err := protocol.KEM.GenerateKeypair(seecGenRand)
-	require.NoError(t, err)
+	_, serverStatic := nyquistkem.GenerateKeypair(protocol.KEM, seecGenRand)
 	serverCfg := &nyquist.HandshakeConfig{
 		Protocol:       protocol,
 		Rng:            rand.Reader,
@@ -149,9 +145,25 @@ func TestNyquistPqNoiseParams2(t *testing.T) {
 	serverStatus := serverHs.GetStatus()
 
 	require.Equal(t, clientStatus.HandshakeHash, serverStatus.HandshakeHash)
-	require.Equal(t, clientStatus.KEM.LocalEphemeral.Bytes(), serverStatus.KEM.RemoteEphemeral.Bytes())
-	require.Equal(t, clientStatus.KEM.RemoteStatic.Bytes(), serverStatic.Public().Bytes())
-	require.Equal(t, serverStatus.KEM.RemoteStatic.Bytes(), clientStatic.Public().Bytes())
+
+	blob1, err := clientStatus.KEM.LocalEphemeral.MarshalBinary()
+	require.NoError(t, err)
+	blob2, err := serverStatus.KEM.RemoteEphemeral.MarshalBinary()
+	require.NoError(t, err)
+	require.Equal(t, blob1, blob2)
+
+	blob1, err = clientStatus.KEM.RemoteStatic.MarshalBinary()
+	require.NoError(t, err)
+	blob2, err = serverStatic.Public().MarshalBinary()
+	require.NoError(t, err)
+	require.Equal(t, blob1, blob2)
+
+	blob1, err = serverStatus.KEM.RemoteStatic.MarshalBinary()
+	require.NoError(t, err)
+	blob2, err = clientStatic.Public().MarshalBinary()
+	require.NoError(t, err)
+	require.Equal(t, blob1, blob2)
+
 	// Note: Unlike in normal XX, server does not generate `e`.
 	require.Nil(t, clientStatus.KEM.RemoteEphemeral)
 	require.Nil(t, serverStatus.KEM.LocalEphemeral)

@@ -23,7 +23,8 @@ import (
 	mRand "math/rand"
 	"time"
 
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/hpqc/hash"
+	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx"
@@ -65,7 +66,7 @@ selectLoop:
 		path = make([]*sphinx.PathHop, 0, len(descs))
 		for idx, desc := range descs {
 			h := &sphinx.PathHop{}
-			idHash := desc.IdentityKey.Sum256()
+			idHash := hash.Sum256(desc.IdentityKey)
 			copy(h.ID[:], idHash[:])
 			epoch, _, _ := epochtime.FromUnix(then.Unix())
 			if _, ok := desc.MixKeys[epoch]; !ok {
@@ -127,29 +128,31 @@ func selectHops(rng *mRand.Rand, doc *pki.Document, src, dst *pki.MixDescriptor,
 	var hops []*pki.MixDescriptor
 
 	var startLayer, nHops int
-	idHash := src.IdentityKey.Sum256()
+	idHash := hash.Sum256(src.IdentityKey)
 	srcLayer, err := doc.GetMixLayer(&idHash)
 	if err != nil {
 		return nil, err
 	}
-	idHash = dst.IdentityKey.Sum256()
+	idHash = hash.Sum256(dst.IdentityKey)
 	dstLayer, err := doc.GetMixLayer(&idHash)
 	if err != nil {
 		return nil, err
 	}
 	if isForward {
-		if !dst.Provider {
-			return nil, fmt.Errorf("path: invalid destination (non provider): %x", dst.IdentityKey.Sum256())
+		if !dst.IsServiceNode {
+			return nil, fmt.Errorf("path: invalid destination (non service node): %x", hash.Sum256(dst.IdentityKey))
 		}
 		if isFromClient {
 			// Client packets must span provider to provider.
-			if !src.Provider {
-				return nil, fmt.Errorf("path: invalid source from client (non provider): %x", src.IdentityKey.Sum256())
+			if !src.IsGatewayNode {
+				return nil, fmt.Errorf("path: invalid source from client (non gateway node): %x", hash.Sum256(src.IdentityKey))
 			}
 			nHops = len(doc.Topology) + 2
 		} else {
 			switch int(srcLayer) {
-			case pki.LayerProvider:
+			case pki.LayerGateway:
+				startLayer = 0
+			case pki.LayerService:
 				startLayer = 0
 			case len(doc.Topology) - 1:
 				return []*pki.MixDescriptor{dst}, nil
@@ -159,12 +162,14 @@ func selectHops(rng *mRand.Rand, doc *pki.Document, src, dst *pki.MixDescriptor,
 			nHops = len(doc.Topology) - startLayer
 		}
 	} else {
-		if srcLayer != pki.LayerProvider {
+		if srcLayer != pki.LayerService {
 			return nil, fmt.Errorf("path: invalid source layer: %v", srcLayer)
 		}
 
 		switch int(dstLayer) {
-		case pki.LayerProvider:
+		case pki.LayerGateway:
+			nHops = len(doc.Topology) + 1
+		case pki.LayerService:
 			nHops = len(doc.Topology) + 1
 		case 0:
 			return []*pki.MixDescriptor{dst}, nil
