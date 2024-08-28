@@ -64,6 +64,8 @@ var (
 	ErrAlreadyHaveKeyExchange = errors.New("Already created KeyExchange with contact")
 	ErrHalted                 = errors.New("Halted")
 	pandaBlobSize             = 1000
+	encWithTimeMicro          cbor.EncMode
+	roundTimestampsBy         = 200 * time.Millisecond
 )
 
 const EventChannelSize = 1000
@@ -915,11 +917,11 @@ func (c *Client) doSendMessage(convoMesgID MessageID, nickname string, message [
 	}
 	outMessage := Message{
 		Plaintext: message,
-		Timestamp: time.Now(),
+		Timestamp: time.Now().Round(roundTimestampsBy),
 		Outbound:  true,
 	}
 
-	serialized, err := cbor.Marshal(outMessage)
+	serialized, err := encWithTimeMicro.Marshal(outMessage)
 	if err != nil {
 		c.eventCh <- &MessageNotSentEvent{
 			Nickname:  nickname,
@@ -1493,4 +1495,10 @@ func (c *Client) goOffline() error {
 	c.online = false
 	c.session = nil
 	return nil
+}
+
+func init() {
+	opts := cbor.CanonicalEncOptions()
+	opts.Time = cbor.TimeUnixMicro
+	encWithTimeMicro, _ = opts.EncMode()
 }
