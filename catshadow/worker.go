@@ -79,10 +79,10 @@ func (c *Client) worker() {
 				continue
 			case *opOnline:
 				// this operation is run in another goroutine, and is thread safe
-				go func() {
+				c.Go(func() {
 					op.responseChan <- c.goOnline(op.context)
 					c.opCh <- &opNop{}
-				}()
+				})
 			case *opOffline:
 				op.responseChan <- c.goOffline()
 				isConnected = false
