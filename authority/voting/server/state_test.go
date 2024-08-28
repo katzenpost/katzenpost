@@ -80,6 +80,7 @@ func TestVote(t *testing.T) {
 	require.NoError(err)
 
 	reverseHash := make(map[[publicKeyHashSize]byte]sign.PublicKey)
+	authorityNames := make(map[[publicKeyHashSize]byte]string)
 
 	// set up authorities from configuration
 	for i := 0; i < authNum; i++ {
@@ -100,7 +101,9 @@ func TestVote(t *testing.T) {
 			fatalErrCh:         make(chan error),
 			haltedCh:           make(chan interface{}),
 		}
-		reverseHash[hash.Sum256From(peerKeys[i].idPubKey)] = peerKeys[i].idPubKey
+		pk := hash.Sum256From(peerKeys[i].idPubKey)
+		reverseHash[pk] = peerKeys[i].idPubKey
+		authorityNames[pk] = authCfgs[i].Server.Identifier
 
 		go func() {
 			for {
@@ -217,6 +220,7 @@ func TestVote(t *testing.T) {
 
 	for i := 0; i < len(stateAuthority); i++ {
 		stateAuthority[i].reverseHash = reverseHash
+		stateAuthority[i].authorityNames = authorityNames
 	}
 
 	// post descriptors from nodes
@@ -450,6 +454,7 @@ func genVotingAuthoritiesCfg(parameters *config.Parameters, numAuthorities int) 
 		}
 		configs = append(configs, cfg)
 		authorityPeer := &config.Authority{
+			Identifier:         cfg.Server.Identifier,
 			PKISignatureScheme: testSignatureScheme.Name(),
 			IdentityPublicKey:  idPubKey,
 			LinkPublicKey:      linkPubKey,
