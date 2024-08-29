@@ -16,6 +16,8 @@ help:
 	@echo
 
 warped?=true
+no_decoy?=true
+no_mixdecoy?=true
 mixes=3
 auths=3
 gateways=1
@@ -54,6 +56,10 @@ sh=$(shell if echo ${distro}|grep -q alpine; then echo sh; else echo bash; fi)
 SHELL=/bin/bash
 cache_dir=cache
 
+# no_decoy and no_mixdecoy control enabling dockerized mixnets with or without decoy traffic
+noMixDecoy=$(shell if [[ $no_mixdecoy ]]; then echo -noMixDecoy; fi)
+noDecoy=$(shell if [[ $no_decoy ]]; then echo -noDecoy; fi)
+
 # log_level can be DEBUG, INFO, NOTICE, WARNING, ERROR, CRITICAL
 log_level=INFO
 
@@ -71,7 +77,7 @@ uid?=$(shell [ "$$SUDO_UID" != "" ] && echo "$$SUDO_UID" || id -u)
 gid?=$(shell [ "$$SUDO_GID" != "" ] && echo "$$SUDO_GID" || id -g)
 
 docker_user?=$(shell if echo ${docker}|grep -q podman; then echo 0:0; else echo ${uid}:${gid}; fi)
-docker_args=--user ${docker_user} --volume $(shell readlink -f ..):/go/katzenpost --workdir /go/katzenpost -v $(shell readlink -f .)/$(cache_dir)/go:/go/ -v $(shell readlink -f .)/$(cache_dir)/root_cache:/root/.cache
+docker_args=--user ${docker_user} --volume $(shell readlink -f ..):/go/katzenpost --workdir /go/katzenpost -v $(shell readlink -f .)/$(cache_dir)/go:/go/ -e GOCACHE=/go/cache
 
 replace_name=$(shell if echo ${docker}|grep -q podman; then echo " --replace --name"; else echo " --name"; fi)
 i_if_podman=$(shell if echo ${docker}|grep -q podman; then echo " -i"; else echo; fi)
@@ -89,13 +95,10 @@ testnet_binaries: $(net_name)/server.$(distro) $(net_name)/proxy_server.$(distro
 $(net_name):
 	mkdir -vp $(net_name)
 
-$(cache_dir): $(cache_dir)/go $(cache_dir)/root_cache
+$(cache_dir): $(cache_dir)/go
 
 $(cache_dir)/go:
 	mkdir -vp $(cache_dir)/go
-
-$(cache_dir)/root_cache:
-	mkdir -vp $(cache_dir)/root_cache
 
 $(docker_compose_yml): ../genconfig/main.go $(distro)_base.stamp | $(net_name) $(cache_dir)
 	$(docker) run ${docker_args} --rm katzenpost-$(distro)_base \
@@ -106,7 +109,7 @@ $(docker_compose_yml): ../genconfig/main.go $(distro)_base.stamp | $(net_name) $
 		-lLMax ${lLMax} -lD ${lD} -lDMax ${lDMax} -lM ${lM} -lMMax ${lMMax} \
 		-S .$(distro) -v -o ./$(net_name) -b /$(net_name) -P $(base_port) \
 		-nike "$(nike)" -kem "$(kem)" -d katzenpost-$(distro)_base \
-		$(noDecoy) $(noMixDecoy) \
+		${noMixDecoy} ${noDecoy} \
 		-UserForwardPayloadLength $(UserForwardPayloadLength) -log_level $(log_level)'
 
 $(net_name)/running.stamp:

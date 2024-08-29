@@ -35,6 +35,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
+	"github.com/katzenpost/katzenpost/core/worker"
 )
 
 const (
@@ -43,16 +44,16 @@ const (
 
 // Client handles sending and receiving messages over the mix network
 type Client struct {
-	l          *sync.Mutex
+	worker.Worker
 
 	cfg        *config.Config
 	logBackend *log.Backend
 	log        *logging.Logger
 	fatalErrCh chan error
-	haltedCh   chan interface{}
 	haltOnce   *sync.Once
 
-	sessions []*Session
+	sessions     []*Session
+	sessionMutex *sync.Mutex
 }
 
 // GetConfig returns the client configuration
@@ -95,7 +96,7 @@ func New(cfg *config.Config) (*Client, error) {
 	c.cfg = cfg
 	c.l = new(sync.Mutex)
 	c.fatalErrCh = make(chan error)
-	c.haltedCh = make(chan interface{})
+	c.sessionMutex = new(sync.Mutex)
 	c.haltOnce = new(sync.Once)
 
 	if err := c.initLogging(); err != nil {
@@ -105,17 +106,19 @@ func New(cfg *config.Config) (*Client, error) {
 	c.log.Noticef("😼 Katzenpost is still pre-alpha.  DO NOT DEPEND ON IT FOR STRONG SECURITY OR ANONYMITY. 😼")
 
 	// Start the fatal error watcher.
+	// must not run under worker.Worker.Go because fatalErr calls Halt() which
+	// blocks until all routines have returned, which would deadlock.
 	go c.fatalErr()
 	return c, nil
 }
 
 func (c *Client) fatalErr() {
-	err, ok := <-c.fatalErrCh
-	if !ok {
-		return
+	select {
+	case <-c.HaltCh():
+	case err := <-c.fatalErrCh:
+		c.log.Warningf("Shutting down due to error: %v", err)
+		c.Shutdown()
 	}
-	c.log.Warningf("Shutting down due to error: %v", err)
-	c.Shutdown()
 }
 
 func (c *Client) initLogging() error {
@@ -148,20 +151,15 @@ func (c *Client) Shutdown() {
 	c.haltOnce.Do(func() { c.halt() })
 }
 
-// Wait waits till the Client is terminated for any reason.
-func (c *Client) Wait() {
-	<-c.haltedCh
-}
-
 func (c *Client) halt() {
 	c.log.Noticef("Starting graceful shutdown.")
-	c.l.Lock()
-	defer c.l.Unlock()
+	c.sessionMutex.Lock()
 	for _, s := range c.sessions {
 		s.Shutdown()
 	}
+	c.sessionMutex.Unlock()
 	close(c.fatalErrCh)
-	close(c.haltedCh)
+	c.Halt()
 }
 
 // NewTOFUSession creates and returns a new ephemeral session or an error.
@@ -193,8 +191,8 @@ func (c *Client) NewTOFUSession(ctx context.Context) (*Session, error) {
 		return nil, err
 	}
 
-	c.l.Lock()
-	defer c.l.Unlock()
+	c.sessionMutex.Lock()
+	defer c.sessionMutex.Unlock()
 	sess, err := NewSession(ctx, pkiclient, doc, c.fatalErrCh, c.logBackend, c.cfg, linkKey, gateway)
 	if err != nil {
 		return nil, err
@@ -205,8 +203,8 @@ func (c *Client) NewTOFUSession(ctx context.Context) (*Session, error) {
 
 // Returns a random Session from sessions
 func (c *Client) Session() *Session {
-	c.l.Lock()
-	defer c.l.Unlock()
+	c.sessionMutex.Lock()
+	defer c.sessionMutex.Unlock()
 	if len(c.sessions) == 0 {
 		return nil
 	}
