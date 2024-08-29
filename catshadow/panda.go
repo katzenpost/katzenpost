@@ -64,7 +64,7 @@ func (c *Client) doPANDAExchange(contact *Contact) error {
 	}
 	contact.pandaKeyExchange = kx.Marshal()
 	contact.keyExchange = nil
-	go kx.Run()
+	c.Go(kx.Run)
 	c.save()
 
 	c.log.Info("New PANDA key exchange in progress.")
