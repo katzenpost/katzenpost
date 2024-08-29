@@ -114,7 +114,8 @@ func reloadCatshadowState(t *testing.T, stateFile string) *Client {
 	catShadowClient.Start()
 
 	// Bring catshadow online
-	catShadowClient.Online(context.Background())
+	err = catShadowClient.Online(context.Background())
+	require.NoError(err)
 
 	return catShadowClient
 }

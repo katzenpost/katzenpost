@@ -267,6 +267,7 @@ func (dCfg *Debug) applyDefaults() {
 type Authority struct {
 	// Identifier is the human readable identifier for the node (eg: FQDN).
 	Identifier string
+
 	// IdentityPublicKeyPem is a string in PEM format containing
 	// the public identity key key.
 	IdentityPublicKey sign.PublicKey
