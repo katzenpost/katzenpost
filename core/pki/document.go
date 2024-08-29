@@ -409,7 +409,8 @@ func SignDocument(signer sign.PrivateKey, verifier sign.PublicKey, d *Document) 
 	}
 	recertified, err := cert.SignMulti(signer, verifier, certified)
 	if err != nil {
-		panic("failed to add our own sig to certified doc")
+		return nil, err
+		//panic("failed to add our own sig to certified doc")
 	}
 	// re-deserialize the recertified certificate to extract our own signature
 	// to d.Signatures etc:
