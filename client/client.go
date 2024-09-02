@@ -94,7 +94,6 @@ func SelectGatewayNode(doc *pki.Document) (*pki.MixDescriptor, error) {
 func New(cfg *config.Config) (*Client, error) {
 	c := new(Client)
 	c.cfg = cfg
-	c.l = new(sync.Mutex)
 	c.fatalErrCh = make(chan error)
 	c.sessionMutex = new(sync.Mutex)
 	c.haltOnce = new(sync.Once)
