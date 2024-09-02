@@ -23,7 +23,6 @@ import (
 	"bytes"
 	"context"
 	"io"
-	"sync"
 	"testing"
 	"time"
 
@@ -76,30 +75,21 @@ func TestDockerClientAsyncSendReceive(t *testing.T) {
 	require.NoError(err)
 	t.Logf("sent message ID %x", msgID)
 
-	var wg sync.WaitGroup
-	wg.Add(2)
-	go func() {
-		for eventRaw := range clientSession.EventSink {
-			switch event := eventRaw.(type) {
-			case *MessageSentEvent:
-				if bytes.Equal(msgID[:], event.MessageID[:]) {
-					require.NoError(event.Err)
-					wg.Done()
-				}
-			case *MessageReplyEvent:
-				if bytes.Equal(msgID[:], event.MessageID[:]) {
-					require.NoError(event.Err)
-					require.True(bytes.Equal([]byte("hello"), event.Payload[:5])) // padding
-					wg.Done()
-					return
-				}
-			default:
-				continue
+loop1:
+	for eventRaw := range clientSession.EventSink {
+		switch event := eventRaw.(type) {
+		case *MessageSentEvent:
+			require.NoError(event.Err)
+		case *MessageReplyEvent:
+			require.NoError(event.Err)
+			if bytes.Equal(msgID[:], event.MessageID[:]) {
+				require.True(bytes.Equal([]byte("hello"), event.Payload[:5]))
+				break loop1
 			}
+		default:
+			continue
 		}
-	}()
-	wg.Wait()
-
+	}
 	client.Shutdown()
 	client.Wait()
 }
@@ -127,29 +117,23 @@ func TestDockerClientAsyncSendReceiveWithDecoyTraffic(t *testing.T) {
 	require.NoError(err)
 	t.Logf("sent message ID %x", msgID)
 
-	var wg sync.WaitGroup
-	wg.Add(2)
-	go func() {
-		for eventRaw := range clientSession.EventSink {
-			switch event := eventRaw.(type) {
-			case *MessageSentEvent:
-				if bytes.Equal(msgID[:], event.MessageID[:]) {
-					require.NoError(event.Err)
-					wg.Done()
-				}
-			case *MessageReplyEvent:
-				if bytes.Equal(msgID[:], event.MessageID[:]) {
-					require.NoError(event.Err)
-					require.True(bytes.Equal([]byte("hello"), event.Payload[:5])) // padding
-					wg.Done()
-					return
-				}
-			default:
-				continue
+loop1:
+	for eventRaw := range clientSession.EventSink {
+		switch event := eventRaw.(type) {
+		case *MessageSentEvent:
+			if bytes.Equal(msgID[:], event.MessageID[:]) {
+				require.NoError(event.Err)
 			}
+		case *MessageReplyEvent:
+			if bytes.Equal(msgID[:], event.MessageID[:]) {
+				require.NoError(event.Err)
+				require.True(bytes.Equal([]byte("hello"), event.Payload[:5])) // padding
+				break loop1
+			}
+		default:
+			continue
 		}
-	}()
-	wg.Wait()
+	}
 
 	client.Shutdown()
 	client.Wait()
@@ -211,32 +195,27 @@ func TestDockerClientTestIntegrationGarbageCollection(t *testing.T) {
 	t.Logf("sent message ID %x", msgID)
 
 	var surbID [sConstants.SURBIDLength]byte
-	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		for eventRaw := range clientSession.EventSink {
-			switch event := eventRaw.(type) {
-			case *MessageSentEvent:
-				if bytes.Equal(msgID[:], event.MessageID[:]) {
-					require.NoError(event.Err)
-					surbIDMapRange := func(rawSurbID, rawMessage interface{}) bool {
-						surbID = rawSurbID.([sConstants.SURBIDLength]byte)
-						return true
-					}
-					clientSession.surbIDMap.Range(surbIDMapRange)
-					_, _, till := epochtime.Now()
-					duration := time.Duration(till + 1 * epochtime.Period)
-					t.Logf("Sleeping for %s so that the SURB ID Map entry will get garbage collected.", duration)
-					time.Sleep(duration)
-					wg.Done()
-					return
+loop1:
+	for eventRaw := range clientSession.EventSink {
+		switch event := eventRaw.(type) {
+		case *MessageSentEvent:
+			if bytes.Equal(msgID[:], event.MessageID[:]) {
+				require.NoError(event.Err)
+				surbIDMapRange := func(rawSurbID, rawMessage interface{}) bool {
+					surbID = rawSurbID.([sConstants.SURBIDLength]byte)
+					return true
 				}
-			default:
-				continue
+				clientSession.surbIDMap.Range(surbIDMapRange)
+				_, _, till := epochtime.Now()
+				duration := time.Duration(till + 1*epochtime.Period)
+				t.Logf("Sleeping for %s so that the SURB ID Map entry will get garbage collected.", duration)
+				time.Sleep(duration)
+				break loop1
 			}
+		default:
+			continue
 		}
-	}()
-	wg.Wait()
+	}
 
 	clientSession.garbageCollect()
 	_, ok := clientSession.surbIDMap.Load(surbID)
