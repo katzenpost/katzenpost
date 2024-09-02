@@ -50,9 +50,12 @@ const (
 )
 
 var (
-	// ErrNoDocument is the error returned when there never will be a document
+	// ErrDocumentGone is the error returned when there never will be a document
 	// for a given epoch.
-	ErrNoDocument = errors.New("pki: requested epoch will never get a document")
+	ErrDocumentGone = errors.New("pki: requested epoch will never get a document")
+
+	// ErrNoDocument is the error returned when there was no consensus found
+	ErrNoDocument = errors.New("pki: requested epoch has no document")
 
 	// ErrInvalidPostEpoch is the error returned when the server rejects a
 	// descriptor upload for a given epoch due to time reasons.
