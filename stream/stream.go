@@ -74,6 +74,20 @@ const (
 	StreamClosed
 )
 
+// StreamMode is the type of stream.
+//
+//	EndToEnd streams require the reader to acknowledge frames of data read
+//	  before a sender will continue transmitting.
+//	Multicast streams are suitable for multiple readers and do not
+//	  ACK frames nor block the writer by waiting for ACKs.
+//	The default StreamMode is EndToEnd.
+type StreamMode uint8
+
+const (
+	Multicast StreamMode = iota // no Acknowledgements
+	EndToEnd                    // requires interactive Acknowledge
+)
+
 // frameWithPriority implmeents client.Item and holds the retransmit deadline and Frame for use with a TimerQueue
 type frameWithPriority struct {
 	f        *Frame // payload of message
@@ -115,6 +129,10 @@ type Stream struct {
 	Initiator bool
 	log       *logging.Logger
 
+	// Mode indicates what type of Stream, e.g. EndToEnd or Finite
+	Mode StreamMode
+
+	// Transport provides Put and Get
 	c Transport
 	// frame encryption secrets
 	WriteKey *[keySize]byte // secretbox key to encrypt with
@@ -215,10 +233,12 @@ func (s *Stream) reader() {
 		case StreamClosed:
 			// No more frames will be sent by peer
 			// If ReliableStream, send final Ack
-			if s.ReadIdx > 0 {
-				if s.ReadIdx-1 > s.AckIdx {
-					s.log.Debugf("reader mustAck at StreamClosed() doFlush()")
-					s.doFlush()
+			if s.Mode == EndToEnd {
+				if s.ReadIdx > 0 {
+					if s.ReadIdx-1 > s.AckIdx {
+						s.log.Debugf("reader mustAck at StreamClosed() doFlush()")
+						s.doFlush()
+					}
 				}
 			}
 			s.l.Unlock()
@@ -226,9 +246,11 @@ func (s *Stream) reader() {
 			return
 		case StreamOpen:
 			// prod writer to Ack
-			if s.ReadIdx-s.AckIdx > s.WindowSize {
-				s.log.Debugf("reader() doFlush: s.ReadIdx-s.AckIdx = %d", s.ReadIdx-s.AckIdx)
-				s.doFlush()
+			if s.Mode == EndToEnd {
+				if s.ReadIdx-s.AckIdx > s.WindowSize {
+					s.log.Debugf("reader() doFlush: s.ReadIdx-s.AckIdx = %d", s.ReadIdx-s.AckIdx)
+					s.doFlush()
+				}
 			}
 		}
 		s.l.Unlock()
@@ -273,7 +295,9 @@ func (s *Stream) reader() {
 		}
 
 		// process Acks
-		s.processAck(f)
+		if s.Mode == EndToEnd {
+			s.processAck(f)
+		}
 		s.l.Lock()
 		n, _ := s.ReadBuf.Write(f.Payload)
 
@@ -473,9 +497,11 @@ func (s *Stream) writer() {
 			} else {
 				s.log.Debugf("writer() StreamClosing")
 			}
-			if s.ReadIdx-s.AckIdx > s.WindowSize {
-				s.log.Debugf("writer() WindowSize: mustAck")
-				mustAck = true
+			if s.Mode == EndToEnd {
+				if s.ReadIdx-s.AckIdx > s.WindowSize {
+					s.log.Debugf("writer() WindowSize: mustAck")
+					mustAck = true
+				}
 			}
 			if s.RState == StreamClosed || s.WState == StreamClosing {
 				mustTeardown = true
@@ -483,23 +509,29 @@ func (s *Stream) writer() {
 					s.log.Debugf("Rstate == StreamClosed, setting WState == StreamClosing")
 					s.WState = StreamClosing
 				}
-				if s.ReadIdx-s.AckIdx > 1 {
-					mustAck = true
+				if s.Mode == EndToEnd {
+					// When tearing down, we must ACK
+					if s.ReadIdx-s.AckIdx > 1 {
+						mustAck = true
+					}
 				}
 			}
 			if !mustAck && !mustTeardown {
 				s.R.Lock()
 
 				// must wait for Ack before continuing to transmit
-				if s.WriteIdx > s.PeerAckIdx+s.WindowSize {
-					mustWaitForAck = true
-					s.log.Debugf("mustWaitForAck: s.WriteIdx - PeerAckIdx : %d > %d", int(s.WriteIdx)-int(s.PeerAckIdx), s.WindowSize)
+				if s.Mode == EndToEnd {
+					if s.WriteIdx > s.PeerAckIdx+s.WindowSize {
+						mustWaitForAck = true
+						s.log.Debugf("mustWaitForAck: s.WriteIdx - PeerAckIdx : %d > %d", int(s.WriteIdx)-int(s.PeerAckIdx), s.WindowSize)
+					}
 				}
 				mustWaitForData := s.WriteBuf.Len() == 0
 				if mustWaitForData {
 					s.log.Debugf("mustWaitForData")
 				}
 				mustWait := mustWaitForAck || mustWaitForData
+
 				if s.WState == StreamClosing {
 					s.log.Debugf("writer() StreamClosing !mustWait")
 					mustWait = false
@@ -530,7 +562,9 @@ func (s *Stream) writer() {
 			// have not read any data from peer yet so Ack = 0 is special case
 			f.Ack = 0
 		} else {
-			f.Ack = s.ReadIdx - 1 // ReadIdx points at next frame, which we haven't read
+			if s.Mode == EndToEnd {
+				f.Ack = s.ReadIdx - 1 // ReadIdx points at next frame, which we haven't read
+			}
 		}
 
 		if mustTeardown {
@@ -659,7 +693,9 @@ func (s *Stream) txFrame(frame *Frame) (err error) {
 		// do not increment WriteIdx unless frame tx'd is tip
 		s.WriteIdx += 1
 	}
-	s.AckIdx = frame.Ack
+	if s.Mode == EndToEnd {
+		s.AckIdx = frame.Ack
+	}
 	s.l.Unlock()
 	return err
 }
@@ -951,7 +987,23 @@ func newStream(c Transport) *Stream {
 	return s
 }
 
-// NewStream generates a new address and starts the read/write workers
+// NewMulticastStream generates a new address and starts the read/write workers with Multicast mode
+func NewMulticastStream(s *client.Session) *Stream {
+	c, _ := mClient.NewClient(s)
+	addr := &StreamAddr{network: "", address: generate()}
+	t := mClient.DuplexFromSeed(c, true, []byte(addr.String()))
+	st := newStream(t)
+	st.log = s.GetLogger(fmt.Sprintf("Stream %p", st))
+	err := st.keyAsListener(addr)
+	if err != nil {
+		panic(err)
+	}
+	st.Mode = Multicast
+	st.Start()
+	return st
+}
+
+// NewStream generates a new address and starts the read/write workers with End to End mode
 // func NewStream(c Transport, identity sign.PrivateKey, sign.PublicKey) *Stream {
 func NewStream(s *client.Session) *Stream {
 	c, _ := mClient.NewClient(s)
@@ -963,6 +1015,7 @@ func NewStream(s *client.Session) *Stream {
 	if err != nil {
 		panic(err)
 	}
+	st.Mode = EndToEnd
 	st.Start()
 	return st
 }

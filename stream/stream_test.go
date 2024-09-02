@@ -354,3 +354,33 @@ func TestStreamSerialize(t *testing.T) {
 	err = r.Close()
 	require.NoError(err)
 }
+
+func TestCreateMulticastStream(t *testing.T) {
+	require := require.New(t)
+	session := getSession(t)
+	require.NotNil(session)
+
+	// listener (initiator) of stream
+	s := NewMulticastStream(session) // could experiment with different MaxWriteBufSize values
+	// create a buffer of data
+	buf := make([]byte, 42*1024)
+	_, err := io.ReadFull(rand.Reader, buf)
+	require.NoError(err)
+	message := base64.StdEncoding.EncodeToString(buf)
+	// send buffer of data
+	_, err = s.Write([]byte(message))
+	require.NoError(err)
+	// really send buffer of data
+	err = s.Sync()
+	require.NoError(err)
+	err = s.Close()
+	require.NoError(err)
+
+	// receiver (dialer) of stream
+	r, err := DialDuplex(session, "", s.RemoteAddr().String())
+	require.NoError(err)
+	buf2 := make([]byte, len(message))
+	n, err := io.ReadFull(r, buf2)
+	require.NoError(err)
+	require.Equal(n, len(message))
+}
