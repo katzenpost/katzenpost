@@ -64,6 +64,8 @@ var (
 	ErrAlreadyHaveKeyExchange = errors.New("Already created KeyExchange with contact")
 	ErrHalted                 = errors.New("Halted")
 	pandaBlobSize             = 1000
+	encWithTimeMicro          cbor.EncMode
+	roundTimestampsBy         = 200 * time.Millisecond
 )
 
 const EventChannelSize = 1000
@@ -204,24 +206,21 @@ func (c *Client) sessionEvents() chan client.Event {
 func (c *Client) Start() {
 	// Start the fatal error watcher.
 	go func() {
-		err, ok := <-c.fatalErrCh
-		if !ok {
-			return
+		select {
+		case err := <-c.fatalErrCh:
+			panic(err)
+			c.log.Warningf("Shutting down due to error: %v", err)
+			c.Shutdown()
+		case <-c.HaltCh():
+		case <-c.client.HaltCh():
+			c.log.Warningf("Shutting down due to client shutdown")
+			c.Shutdown()
 		}
-		c.log.Warningf("Shutting down due to error: %v", err)
-		c.Shutdown()
 	}()
 
 	c.garbageCollectConversations()
 	c.Go(c.eventSinkWorker)
 	c.Go(c.worker)
-
-	// Shutdown if the client halts for some reason
-	go func() {
-		c.client.Wait()
-		c.Shutdown()
-	}()
-
 }
 
 func (c *Client) initKeyExchange(contact *Contact) error {
@@ -523,7 +522,7 @@ func (c *Client) doCreateRemoteSpool(provider string, responseChan chan error) {
 			return
 		}
 	}
-	go func() {
+	c.Go(func() {
 		// NewSpoolReadDescriptor blocks, so we run this in another thread and then use
 		// another workerOp to save the spool descriptor.
 		spool, err := memspoolclient.NewSpoolReadDescriptor(desc.Name, desc.Provider, c.session)
@@ -540,7 +539,7 @@ func (c *Client) doCreateRemoteSpool(provider string, responseChan chan error) {
 		case <-c.HaltCh():
 		case c.opCh <- &opUpdateSpool{descriptor: spool, responseChan: responseChan}:
 		}
-	}()
+	})
 }
 
 // NewContact adds a new contact to the Client's state. This starts
@@ -612,6 +611,21 @@ func (c *Client) createContact(nickname string, sharedSecret []byte) error {
 	return err
 }
 
+func (c *Client) getConversation(nickname string) map[MessageID]*Message {
+	conversationsCopy := make(map[MessageID]*Message)
+	c.conversationsMutex.Lock()
+	conv, ok := c.conversations[nickname]
+	if !ok {
+		c.conversationsMutex.Unlock()
+		return nil
+	}
+	for k, v := range conv {
+		conversationsCopy[k] = v
+	}
+	c.conversationsMutex.Unlock()
+	return conversationsCopy
+}
+
 func (c *Client) doGetConversation(nickname string, responseChan chan Messages) {
 	var msg Messages
 
@@ -626,13 +640,13 @@ func (c *Client) doGetConversation(nickname string, responseChan chan Messages) 
 		msg = append(msg, m)
 	}
 	// do not block the worker
-	go func() {
+	c.Go(func() {
 		sort.Sort(msg)
 		select {
 		case <-c.HaltCh():
 		case responseChan <- msg:
 		}
-	}()
+	})
 }
 
 // GetContacts returns the contacts map.
@@ -918,11 +932,11 @@ func (c *Client) doSendMessage(convoMesgID MessageID, nickname string, message [
 	}
 	outMessage := Message{
 		Plaintext: message,
-		Timestamp: time.Now(),
+		Timestamp: time.Now().Round(roundTimestampsBy),
 		Outbound:  true,
 	}
 
-	serialized, err := cbor.Marshal(outMessage)
+	serialized, err := encWithTimeMicro.Marshal(outMessage)
 	if err != nil {
 		c.eventCh <- &MessageNotSentEvent{
 			Nickname:  nickname,
@@ -1496,4 +1510,10 @@ func (c *Client) goOffline() error {
 	c.online = false
 	c.session = nil
 	return nil
+}
+
+func init() {
+	opts := cbor.CanonicalEncOptions()
+	opts.Time = cbor.TimeUnixMicro
+	encWithTimeMicro, _ = opts.EncMode()
 }
