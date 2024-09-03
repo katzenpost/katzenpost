@@ -4,6 +4,7 @@
 package thin
 
 import (
+	"crypto/hmac"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -501,6 +502,51 @@ func (t *ThinClient) SendMessage(surbID *[sConstants.SURBIDLength]byte, payload 
 	}
 
 	return t.writeMessage(req)
+}
+
+// BlockingSendMessage blocks until a reply is received and returns it or an error.
+func (t *ThinClient) BlockingSendMessage(payload []byte, destNode *[32]byte, destQueue []byte) ([]byte, error) {
+	surbID := t.NewSURBID()
+	eventSink := t.EventSink()
+	err := t.SendMessage(surbID, payload, destNode, destQueue)
+	if err != nil {
+		return nil, err
+	}
+
+	cancelCh := make(chan interface{})
+	for {
+		var event Event
+		select {
+		case event = <-eventSink:
+		case <-cancelCh:
+			t.log.Info("BlockingSendMessage cancelled")
+			return nil, errors.New("Interrupt caught")
+		}
+
+		switch v := event.(type) {
+		case *MessageIDGarbageCollected:
+			t.log.Info("MessageIDGarbageCollected")
+		case *ConnectionStatusEvent:
+			t.log.Info("ConnectionStatusEvent")
+			if !v.IsConnected {
+				panic("socket connection lost")
+			}
+		case *NewDocumentEvent:
+			t.log.Info("NewPKIDocumentEvent")
+		case *MessageSentEvent:
+			t.log.Info("MessageSentEvent")
+		case *MessageReplyEvent:
+			t.log.Info("MessageReplyEvent")
+			if hmac.Equal(surbID[:], v.SURBID[:]) {
+				return v.Payload, nil
+			} else {
+				return nil, errors.New("received MessageReplyEvent with unexpected SURB ID")
+			}
+		default:
+			panic("impossible event type")
+		}
+	}
+	// unreachable
 }
 
 func (t *ThinClient) SendReliableMessage(messageID *[MessageIDLength]byte, payload []byte, destNode *[32]byte, destQueue []byte) error {
