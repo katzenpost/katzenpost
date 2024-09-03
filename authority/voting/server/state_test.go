@@ -230,7 +230,7 @@ func TestVote(t *testing.T) {
 	for i := 0; i < len(mixCfgs); i++ {
 		mkeys := genMixKeys(votingEpoch)
 		addr := make(map[string][]string)
-		addr[pki.TransportTCPv4] = []string{"127.0.0.1:1234"}
+		addr[pki.TransportTCPv4] = []string{"tcp4://127.0.0.1:1234"}
 		linkPubKey, _, err := testingScheme.GenerateKeyPair()
 		linkBlob, err := linkPubKey.MarshalBinary()
 		if err != nil {
@@ -425,7 +425,7 @@ func genVotingAuthoritiesCfg(parameters *config.Parameters, numAuthorities int) 
 
 		cfg.Server = new(config.Server)
 		cfg.Server.Identifier = fmt.Sprintf("authority-%v", i)
-		cfg.Server.Addresses = []string{fmt.Sprintf("127.0.0.1:%d", lastPort)}
+		cfg.Server.Addresses = []string{fmt.Sprintf("tcp://127.0.0.1:%d", lastPort)}
 		cfg.Server.DataDir = datadir
 		cfg.Server.PKISignatureScheme = testSignatureScheme.Name()
 		lastPort += 1
@@ -489,10 +489,7 @@ func genGatewayConfig(name string, pki *sConfig.PKI, port uint16) (*identityKey,
 	cfg.Server.WireKEM = testingSchemeName
 	cfg.Server.PKISignatureScheme = testSignatureScheme.Name()
 	cfg.Server.Identifier = name
-	cfg.Server.Addresses = []string{fmt.Sprintf("127.0.0.1:%d", port)}
-	cfg.Server.AltAddresses = map[string][]string{
-		"TCP": []string{fmt.Sprintf("localhost:%d", port)},
-	}
+	cfg.Server.Addresses = []string{fmt.Sprintf("tcp://127.0.0.1:%d", port)}
 
 	datadir, err := os.MkdirTemp("", fmt.Sprintf("provider_%s", name))
 	if err != nil {
@@ -567,10 +564,7 @@ func genServiceNodeConfig(name string, pki *sConfig.PKI, port uint16) (*identity
 	cfg.Server.WireKEM = testingSchemeName
 	cfg.Server.PKISignatureScheme = testSignatureScheme.Name()
 	cfg.Server.Identifier = name
-	cfg.Server.Addresses = []string{fmt.Sprintf("127.0.0.1:%d", port)}
-	cfg.Server.AltAddresses = map[string][]string{
-		"TCP": []string{fmt.Sprintf("localhost:%d", port)},
-	}
+	cfg.Server.Addresses = []string{fmt.Sprintf("http://127.0.0.1:%d", port)}
 
 	datadir, err := os.MkdirTemp("", fmt.Sprintf("provider_%s", name))
 	if err != nil {
@@ -662,7 +656,7 @@ func genMixConfig(name string, pki *sConfig.PKI, port uint16) (*identityKey, *sC
 	cfg.Server.WireKEM = testingSchemeName
 	cfg.Server.PKISignatureScheme = testingSchemeName
 	cfg.Server.Identifier = name
-	cfg.Server.Addresses = []string{fmt.Sprintf("127.0.0.1:%d", port)}
+	cfg.Server.Addresses = []string{fmt.Sprintf("tcp://127.0.0.1:%d", port)}
 	cfg.Server.IsGatewayNode = false
 	cfg.Server.IsServiceNode = false
 

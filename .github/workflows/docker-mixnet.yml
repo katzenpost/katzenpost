@@ -165,7 +165,7 @@ jobs:
           path: |
             docker/voting_mixnet/*/*.log
 
-  test_e2e_pigeonhole:
+  test_e2e_stream:
     env:
       warped: true
       no_mixdecoy: false
@@ -189,6 +189,9 @@ jobs:
 
       - name: run pigeonhole end to end tests
         run: cd pigeonhole && make testargs=-coverprofile=coverage.part dockerdockertest && cat client/coverage.part >> ../coverage.out
+
+      - name: run stream end to end tests
+        run: cd stream && sudo -E make testargs=-coverprofile=coverage.part dockerdockertest && cat coverage.part >> ../coverage.out
 
       - name: Stop the mixnet
         run: |

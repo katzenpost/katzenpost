@@ -23,6 +23,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/url"
 
 	"gopkg.in/op/go-logging.v1"
 
@@ -42,6 +43,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
+	"github.com/katzenpost/katzenpost/http/common"
 	"github.com/katzenpost/katzenpost/loops"
 )
 
@@ -150,11 +152,15 @@ func (p *connector) initSession(ctx context.Context, doneCh <-chan interface{}, 
 
 	// try each Address until a connection is successful or fail
 	for i, idx := range idxs {
-		conn, err = dialFn(ctx, "tcp", peer.Addresses[idx])
+		u, err := url.Parse(peer.Addresses[idx])
+		if err != nil {
+			continue
+		}
+		conn, err = common.DialURL(u, ctx, dialFn)
 		if err == nil {
 			break
 		}
-		if i == len(idxs)-1 {
+		if i == len(peer.Addresses)-1 {
 			return nil, err
 		}
 	}

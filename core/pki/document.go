@@ -374,19 +374,26 @@ var (
 	// a name server lookup.
 	TransportTCP string = "tcp"
 
+	// TransportWS is Websocket
+	TransportWS string = "ws"
+
 	// TransportTCPv4 is TCP over IPv4.
 	TransportTCPv4 string = "tcp4"
 
 	// TransportTCPv6 is TCP over IPv6.
 	TransportTCPv6 string = "tcp6"
 
+	// TransportHTTP is QUIC, with the IP version determined by the results
+	// of a name server lookup
+	TransportHTTP string = "http"
+
 	// InternalTransports is the list of transports used for non-client related
 	// communications.
-	InternalTransports = []string{TransportTCPv4, TransportTCPv6}
+	InternalTransports = []string{TransportTCPv4, TransportTCPv6, TransportHTTP}
 
 	// ClientTransports is the list of transports used by default for client
 	// to provider communication.
-	ClientTransports = []string{TransportTCP, TransportTCPv4, TransportTCPv6}
+	ClientTransports = []string{TransportTCP, TransportTCPv4, TransportTCPv6, TransportHTTP, TransportWS}
 )
 
 // FromPayload deserializes, then verifies a Document, and returns the Document or error.
