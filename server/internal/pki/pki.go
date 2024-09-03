@@ -162,7 +162,7 @@ func (p *pki) worker() {
 			if err != nil {
 				p.log.Warningf("Failed to fetch PKI for epoch %v: %v", epoch, err)
 				instrument.FailedFetchPKIDocs(fmt.Sprintf("%v", epoch))
-				if err == cpki.ErrNoDocument {
+				if err == cpki.ErrDocumentGone {
 					p.setFailedFetch(epoch, err)
 				}
 				continue

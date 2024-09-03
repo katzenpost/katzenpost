@@ -307,134 +307,59 @@ func TestDockerSendReceive(t *testing.T) {
 	bob.NewContact("mal", sharedSecret2)
 	mal.NewContact("bob", sharedSecret2)
 
-	bobKXFinishedChan := make(chan bool)
-	bobReceivedMessageChan := make(chan bool)
-	bobSentChan := make(chan bool)
-	bobDeliveredChan := make(chan bool)
+	// wait for the key exchange completed event between bob and alice, and that it completed
+	ctx, _ /*cancelFn*/ := context.WithTimeout(context.Background(), time.Minute)
+	evt := waitForEvent(ctx, bob.EventSink, &KeyExchangeCompletedEvent{})
+	if evt, ok := evt.(*KeyExchangeCompletedEvent); ok {
+		require.Nil(evt.Err)
+	}
 
-	go func() {
-		sentEventSeenIds := make(map[MessageID]bool)
-		for {
-			ev, ok := <-bob.EventSink
-			if !ok {
-				return
-			}
-			switch event := ev.(type) {
-			case *KeyExchangeCompletedEvent:
-				bob.log.Debugf("CSTDSR: BOB GOT KEYEX COMPLETED")
-				require.Nil(event.Err)
-				bobKXFinishedChan <- true
-			case *MessageReceivedEvent:
-				// fields: Nickname, Message, Timestamp
-				bob.log.Debugf("CSTDSR: BOB RECEIVED MESSAGE from %s:\n%s", event.Nickname, string(event.Message))
-				bobReceivedMessageChan <- true
-			case *MessageDeliveredEvent:
-				bob.log.Debugf("CSTDSR: BOB GOT DELIVERED EVENT")
-				require.Equal(event.Nickname, "mal")
-				bobDeliveredChan <- true
-			case *MessageSentEvent:
-				if _, ok = sentEventSeenIds[event.MessageID]; ok {
-					bob.log.Debugf("CSTDSR: BOB GOT DUPE SENT MESSAGE %x to %s", event.MessageID, event.Nickname)
-					continue
-				}
-				sentEventSeenIds[event.MessageID] = true
-				bob.log.Debugf("CSTDSR: BOB SENT MESSAGE %x to %s", event.MessageID, event.Nickname)
-				require.Equal(event.Nickname, "mal")
-				bobSentChan <- true
-			default:
-				bob.log.Debugf("CSTDSR: BOB EVENTSINK GOT EVENT %t", ev)
-			}
-		}
-	}()
+	// wait for the key exchange completed event between bob and mal, and that it completed
+	ctx, _ /*cancelFn*/ = context.WithTimeout(context.Background(), time.Minute)
+	evt = waitForEvent(ctx, bob.EventSink, &KeyExchangeCompletedEvent{})
+	if evt, ok := evt.(*KeyExchangeCompletedEvent); ok {
+		require.Nil(evt.Err)
+	}
 
-	aliceKXFinishedChan := make(chan bool)
-	aliceSentChan := make(chan bool)
-	aliceDeliveredChan := make(chan bool)
+	// wait for the key exchange completed event between alice and bob
+	ctx, _ /*cancelFn*/ = context.WithTimeout(context.Background(), time.Minute)
+	evt = waitForEvent(ctx, alice.EventSink, &KeyExchangeCompletedEvent{})
+	if evt, ok := evt.(*KeyExchangeCompletedEvent); ok {
+		require.Nil(evt.Err)
+	}
 
-	go func() {
-		sentEventSeenIds := make(map[MessageID]bool)
-		for {
-			ev, ok := <-alice.EventSink
-			if !ok {
-				return
-			}
-			switch event := ev.(type) {
-			case *KeyExchangeCompletedEvent:
-				alice.log.Debugf("CSTDSR: ALICE GOT KEYEX COMPLETED")
-				require.Nil(event.Err)
-				aliceKXFinishedChan <- true
-				break
-			case *MessageDeliveredEvent:
-				alice.log.Debugf("CSTDSR: ALICE GOT DELIVERED EVENT")
-				require.Equal(event.Nickname, "bob")
-				aliceDeliveredChan <- true
-			case *MessageSentEvent:
-				if _, ok = sentEventSeenIds[event.MessageID]; ok {
-					alice.log.Debugf("CSTDSR: ALICE GOT DUPE SENT MESSAGE %x to %s", event.MessageID, event.Nickname)
-					continue
-				}
-				alice.log.Debugf("CSTDSR: ALICE SENT MESSAGE %x to %s", event.MessageID, event.Nickname)
-				require.Equal(event.Nickname, "bob")
-				aliceSentChan <- true
-			default:
-				alice.log.Debugf("CSTDSR: ALICE EVENTSINK GOT EVENT %t", ev)
-			}
-		}
-	}()
+	// wait for the key exchange completed event between mal and bob
+	ctx, _ /*cancelFn*/ = context.WithTimeout(context.Background(), time.Minute)
+	evt = waitForEvent(ctx, mal.EventSink, &KeyExchangeCompletedEvent{})
+	if evt, ok := evt.(*KeyExchangeCompletedEvent); ok {
+		require.Nil(evt.Err)
+	}
 
-	malKXFinishedChan := make(chan bool)
-	malSentChan := make(chan bool)
-	malReceivedMessageChan := make(chan bool)
-	malDeliveredChan := make(chan bool)
-
-	go func() {
-		sentEventSeenIds := make(map[MessageID]bool)
-		for {
-			ev, ok := <-mal.EventSink
-			if !ok {
-				return
-			}
-			switch event := ev.(type) {
-			case *KeyExchangeCompletedEvent:
-				mal.log.Debugf("CSTDSR: MAL GOT KEYEX COMPLETED")
-				require.Nil(event.Err)
-				malKXFinishedChan <- true
-			case *MessageReceivedEvent:
-				// fields: Nickname, Message, Timestamp
-				require.Equal(event.Nickname, "bob")
-				mal.log.Debugf("CSTDSR: MAL RECEIVED MESSAGE:\n%s", string(event.Message))
-				malReceivedMessageChan <- true
-			case *MessageDeliveredEvent:
-				mal.log.Debugf("CSTDSR: MAL GOT DELIVERED EVENT")
-				require.Equal(event.Nickname, "bob")
-				malDeliveredChan <- true
-			case *MessageSentEvent:
-				if _, ok = sentEventSeenIds[event.MessageID]; ok {
-					mal.log.Debugf("CSTDSR: MAL GOT DUPE SENT MESSAGE %x to %s", event.MessageID, event.Nickname)
-					continue
-				}
-				mal.log.Debugf("CSTDSR: MAL SENT MESSAGE %x to %s", event.MessageID, event.Nickname)
-				require.Equal(event.Nickname, "bob")
-				malSentChan <- true
-
-			default:
-				mal.log.Debugf("CSTDSR: MAL EVENTSINK GOT EVENT %t", ev)
-			}
-		}
-	}()
-
-	<-bobKXFinishedChan
-	<-aliceKXFinishedChan
-	<-malKXFinishedChan
-	<-bobKXFinishedChan
 	alice.SendMessage("bob", []byte(`Data encryption is used widely to protect the content of Internet
 communications and enables the myriad of activities that are popular today,
 from online banking to chatting with loved ones. However, encryption is not
 sufficient to protect the meta-data associated with the communications.
 `))
-	<-aliceSentChan
-	<-aliceDeliveredChan
-	<-bobReceivedMessageChan
+	// wait for the message sent event between alice and bob
+	ctx, _ /*cancelFn*/ = context.WithTimeout(context.Background(), time.Minute)
+	evt = waitForEvent(ctx, alice.EventSink, &MessageSentEvent{})
+	if evt, ok := evt.(*MessageSentEvent); ok {
+		require.Equal(evt.Nickname, "bob")
+	}
+
+	// wait for the message delivered event between alice and bob
+	ctx, _ /*cancelFn*/ = context.WithTimeout(context.Background(), time.Minute)
+	evt = waitForEvent(ctx, alice.EventSink, &MessageDeliveredEvent{})
+	if evt, ok := evt.(*MessageDeliveredEvent); ok {
+		require.Equal(evt.Nickname, "bob")
+	}
+
+	// wait for the message received event between bob and alice
+	ctx, _ /*cancelFn*/ = context.WithTimeout(context.Background(), time.Minute)
+	evt = waitForEvent(ctx, bob.EventSink, &MessageReceivedEvent{})
+	if evt, ok := evt.(*MessageReceivedEvent); ok {
+		require.Equal(evt.Nickname, "alice")
+	}
 
 	alice.log.Debugf("CSTDSR: ALICE SENDING SECOND MESSAGE to bob")
 	alice.SendMessage("bob", []byte(`Since 1979, there has been active academic research into communication
@@ -442,25 +367,35 @@ meta-data protection, also called anonymous communication networking, that has
 produced various designs. Of these, mix networks are among the most practical
 and can readily scale to millions of users.
 `))
-	<-aliceSentChan
-	<-aliceDeliveredChan
-	<-bobReceivedMessageChan
+	// wait for the second message received event between bob and alice
+	ctx, _ /*cancelFn*/ = context.WithTimeout(context.Background(), time.Minute)
+	evt = waitForEvent(ctx, bob.EventSink, &MessageReceivedEvent{})
+	if evt, ok := evt.(*MessageReceivedEvent); ok {
+		require.Equal(evt.Nickname, "alice")
+	}
 
 	mal.SendMessage("bob", []byte(`Hello bob`))
-	<-malSentChan
-	<-malDeliveredChan
-	<-bobReceivedMessageChan
+	// wait for the second message received event between bob and alice
+	ctx, _ /*cancelFn*/ = context.WithTimeout(context.Background(), time.Minute)
+	evt = waitForEvent(ctx, bob.EventSink, &MessageReceivedEvent{})
+	if evt, ok := evt.(*MessageReceivedEvent); ok {
+		require.Equal(evt.Nickname, "mal")
+	}
 
 	// bob replies to mal
 	bob.SendMessage("mal", []byte(`Hello mal`))
-	<-bobSentChan
-	<-bobDeliveredChan
-	<-malReceivedMessageChan
+
+	// wait for the message received event between mal and bob
+	ctx, _ /*cancelFn*/ = context.WithTimeout(context.Background(), time.Minute)
+	evt = waitForEvent(ctx, mal.EventSink, &MessageReceivedEvent{})
+	if evt, ok := evt.(*MessageReceivedEvent); ok {
+		require.Equal(evt.Nickname, "bob")
+	}
 
 	// Test statefile persistence of conversation.
-
 	alice.log.Debug("LOADING ALICE'S CONVERSATION")
-	aliceConvesation := alice.conversations["bob"]
+	aliceConvesation := alice.getConversation("bob")
+
 	for i, mesg := range aliceConvesation {
 		alice.log.Debugf("%d outbound %v message:\n%s\n", i, mesg.Outbound, mesg.Plaintext)
 	}
@@ -473,13 +408,15 @@ and can readily scale to millions of users.
 	}
 
 	bob.log.Debug("LOADING BOB'S CONVERSATION")
-	bobConvesation := bob.conversations["alice"]
+	bobConvesation := bob.getConversation("alice")
+
 	for i, mesg := range bobConvesation {
 		bob.log.Debugf("%d outbound %v message:\n%s\n", i, mesg.Outbound, mesg.Plaintext)
 	}
 
 	mal.log.Debug("LOADING MAL'S CONVERSATION")
-	malConvesation := mal.conversations["bob"]
+	malConvesation := mal.getConversation("bob")
+
 	for i, mesg := range malConvesation {
 		bob.log.Debugf("%d outbound %v message:\n%s\n", i, mesg.Outbound, mesg.Plaintext)
 	}
@@ -490,21 +427,24 @@ and can readily scale to millions of users.
 
 	newAlice := reloadCatshadowState(t, aliceStateFilePath)
 	newAlice.log.Debug("LOADING ALICE'S CONVERSATION WITH BOB")
-	aliceConvesation = newAlice.conversations["bob"]
+	aliceConvesation = newAlice.getConversation("bob")
+
 	for i, mesg := range aliceConvesation {
 		newAlice.log.Debugf("%d outbound %v message:\n%s\n", i, mesg.Outbound, mesg.Plaintext)
 	}
 
 	newBob := reloadCatshadowState(t, bobStateFilePath)
 	newBob.log.Debug("LOADING BOB'S CONVERSATION WITH ALICE")
-	bobConvesation = newBob.conversations["alice"]
+	bobConvesation = newBob.getConversation("alice")
+
 	for i, mesg := range bobConvesation {
 		newBob.log.Debugf("%d outbound %v message:\n%s\n", i, mesg.Outbound, mesg.Plaintext)
 	}
 
 	newMal := reloadCatshadowState(t, malStateFilePath)
 	newMal.log.Debug("LOADING MAL'S CONVERSATION WITH BOB")
-	malBobConversation := newMal.conversations["bob"]
+	malBobConversation := newMal.getConversation("bob")
+
 	for i, mesg := range malBobConversation {
 		newMal.log.Debugf("%d outbound %v message:\n%s\n", i, mesg.Outbound, mesg.Plaintext)
 		if !mesg.Outbound {
@@ -515,7 +455,7 @@ and can readily scale to millions of users.
 	}
 
 	newBob.log.Debug("LOADING BOB'S CONVERSATION WITH MAL")
-	bobMalConversation := newBob.conversations["mal"]
+	bobMalConversation := newBob.getConversation("mal")
 	for i, mesg := range bobMalConversation {
 		newBob.log.Debugf("%d outbound %v message:\n%s\n", i, mesg.Outbound, mesg.Plaintext)
 		if !mesg.Outbound {
@@ -721,10 +661,8 @@ loop4:
 	err = a.RemoveContact("b")
 	require.Error(err, ErrContactNotFound)
 
-	a.conversationsMutex.Lock()
-	c := a.conversations["b"]
+	c := a.getConversation("b")
 	require.Equal(len(c), 0)
-	a.conversationsMutex.Unlock()
 
 	// verify that contact data is gone
 	t.Log("Sending message to b, must fail")
@@ -847,7 +785,7 @@ loop4a:
 	err = a.RenameContact("b", "b2")
 	require.NoError(err)
 
-	c := a.conversations["b"]
+	c := a.getConversation("b")
 	require.Equal(len(c), 0)
 
 	// verify that contact data is gone
@@ -901,7 +839,7 @@ loop7:
 	}
 
 	// verify that b2 has sent 1 message and received 2 messages
-	c = b.conversations["a"]
+	c = b.getConversation("a")
 
 	sent := 0
 	received := 0
@@ -914,12 +852,21 @@ loop7:
 	}
 	require.Equal(1, sent)
 	require.Equal(2, received)
+
+	a.conversationsMutex.Lock()
 	require.Equal(1, len(a.conversations))
+	a.conversationsMutex.Unlock()
+
+	b.conversationsMutex.Lock()
 	require.Equal(1, len(b.conversations))
+	b.conversationsMutex.Unlock()
 
 	// clear conversation history
 	b.WipeConversation("a")
+
+	b.conversationsMutex.Lock()
 	c = b.conversations["a"]
+	b.conversationsMutex.Unlock()
 	require.Equal(len(c), 0)
 
 	a.Shutdown()
