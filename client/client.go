@@ -114,9 +114,11 @@ func New(cfg *config.Config) (*Client, error) {
 func (c *Client) fatalErr() {
 	select {
 	case <-c.HaltCh():
-	case err := <-c.fatalErrCh:
-		c.log.Warningf("Shutting down due to error: %v", err)
-		c.Shutdown()
+	case err, ok := <-c.fatalErrCh:
+		if ok {
+			c.log.Warningf("Shutting down due to error: %v", err)
+			c.Shutdown()
+		}
 	}
 }
 
