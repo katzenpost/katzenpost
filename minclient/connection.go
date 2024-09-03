@@ -22,6 +22,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/url"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -35,6 +36,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"github.com/katzenpost/katzenpost/core/worker"
+	"github.com/katzenpost/katzenpost/http/common"
 )
 
 var (
@@ -317,7 +319,7 @@ func (c *connection) doConnect(dialCtx context.Context) {
 			return
 		}
 
-		for _, addrPort := range dstAddrs {
+		for _, addr := range dstAddrs {
 			select {
 			case <-time.After(time.Duration(atomic.LoadInt64(&c.retryDelay))):
 				// Back off the reconnect delay.
@@ -331,8 +333,15 @@ func (c *connection) doConnect(dialCtx context.Context) {
 				return
 			}
 
-			c.log.Debugf("Dialing: %v", addrPort)
-			conn, err := dialFn(dialCtx, "tcp", addrPort)
+			c.log.Debugf("Dialing: %v", addr)
+
+			u, err := url.Parse(addr)
+			if err != nil {
+				c.log.Warning("invalid addr '%v'", addr)
+				continue
+			}
+
+			conn, err := common.DialURL(u, dialCtx, dialFn)
 			select {
 			case <-c.HaltCh():
 				if conn != nil {
@@ -342,17 +351,17 @@ func (c *connection) doConnect(dialCtx context.Context) {
 				return
 			default:
 				if err != nil {
-					c.log.Warningf("Failed to connect to %v: %v", addrPort, err)
+					c.log.Warningf("Failed to connect to %v: %v", addr, err)
 					if c.c.cfg.OnConnFn != nil {
 						c.c.cfg.OnConnFn(&ConnectError{Err: err})
 					}
 					continue
 				}
 			}
-			c.log.Debugf("TCP connection established.")
+			c.log.Debugf("%v connection established.", u.Scheme)
 
 			// Do something with the connection.
-			c.onTCPConn(conn)
+			c.onNetConn(conn)
 
 			// Re-iterate through the address/ports on a sucessful connect.
 			c.log.Debugf("Connection terminated, will reconnect.")
@@ -364,12 +373,12 @@ func (c *connection) doConnect(dialCtx context.Context) {
 	}
 }
 
-func (c *connection) onTCPConn(conn net.Conn) {
+func (c *connection) onNetConn(conn net.Conn) {
 	const handshakeTimeout = 1 * time.Minute
 	var err error
 
 	defer func() {
-		c.log.Debugf("TCP connection closed.")
+		c.log.Debugf("connection closed.")
 		conn.Close()
 	}()
 
