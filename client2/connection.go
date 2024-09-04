@@ -183,7 +183,7 @@ func (c *connection) getDescriptor() error {
 			Name:          gateway.Name,
 			IdentityKey:   idkey,
 			LinkKey:       linkkey,
-			Addresses:     gateway.Addresses,
+			Addresses:     addressesFromURLs(gateway.Addresses),
 			IsGatewayNode: true,
 		}
 		ok = true
@@ -844,4 +844,24 @@ func newConnection(c *Client) *connection {
 	k.sendCh = make(chan *connSendCtx)
 	k.getConsensusCh = make(chan *getConsensusCtx, 1)
 	return k
+}
+
+func addressesFromURLs(addrs []string) map[string][]string {
+	addresses := make(map[string][]string)
+	for _, addr := range addrs {
+		u, err := url.Parse(addr)
+		if err != nil {
+			continue
+		}
+		switch u.Scheme {
+		case cpki.TransportTCP, cpki.TransportTCPv4, cpki.TransportTCPv6, cpki.TransportHTTP:
+			if _, ok := addresses[u.Scheme]; !ok {
+				addresses[u.Scheme] = make([]string, 0)
+			}
+			addresses[u.Scheme] = append(addresses[u.Scheme], u.String())
+		default:
+			continue
+		}
+	}
+	return addresses
 }

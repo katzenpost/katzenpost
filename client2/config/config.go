@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"net"
 	"os"
 	"strings"
@@ -156,9 +157,9 @@ type Gateway struct {
 	// PKISignatureScheme specifies the signature scheme to use with the PKI protocol.
 	PKISignatureScheme string
 
-	// Addresses is the map of transport to address combinations that can
-	// be used to reach the node.
-	Addresses map[string][]string
+	// Addresses are the URLs specifying the endpoints that can be used to reach the node.
+	// Valid schemes are tcp:// and http:// for TCP and quic (UDP)
+	Addresses []string
 }
 
 func (p *Gateway) UnmarshalTOML(v interface{}) error {
@@ -193,23 +194,42 @@ func (p *Gateway) UnmarshalTOML(v interface{}) error {
 		return err
 	}
 
-	m := data["Addresses"].(map[string]interface{})
-	p.Addresses = make(map[string][]string)
-
-	for k, v := range m {
-		values := make([]string, 0)
-		if v == nil {
-			return fmt.Errorf("error: KEY %s has nil value\n", k)
-		} else {
-			vals := v.([]interface{})
-			for i := 0; i < len(vals); i++ {
-				values = append(values, vals[i].(string))
-			}
-		}
-		p.Addresses[k] = values
+	// XXX toml.Decode does not return []string for this field :-(
+	addrs, ok := data["Addresses"].([]interface{})
+	if !ok {
+		return fmt.Errorf("%v", data)
 	}
-
+	addresses, err := getAddresses(addrs)
+	if err != nil {
+		return err
+	}
+	p.Addresses = addresses
 	return nil
+}
+
+// getAddresses extacts valid Address lines from toml interface soup
+func getAddresses(addrs []interface{}) ([]string, error) {
+	addresses := make([]string, 0)
+	for _, addr := range addrs {
+		addr, ok := addr.(string)
+		if !ok {
+			return addresses, fmt.Errorf("Address decode failure, not a string: %v", addr)
+		}
+		u, err := url.Parse(addr)
+		if err != nil {
+			return addresses, fmt.Errorf("Address URL decode failure: %v", err)
+		}
+		switch u.Scheme {
+		case cpki.TransportTCP, cpki.TransportTCPv4, cpki.TransportTCPv6, cpki.TransportHTTP:
+			addresses = append(addresses, u.String())
+		default:
+			return addresses, fmt.Errorf("Address Invalid Scheme: %v", u.String())
+		}
+	}
+	if len(addresses) == 0 {
+		return addresses, fmt.Errorf("No valid Addresses in %v", addrs)
+	}
+	return addresses, nil
 }
 
 // VotingAuthority is a voting authority peer public configuration: key material, connection info etc.

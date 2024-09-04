@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -26,6 +27,7 @@ import (
 	vConfig "github.com/katzenpost/katzenpost/authority/voting/server/config"
 	cConfig "github.com/katzenpost/katzenpost/client/config"
 	cConfig2 "github.com/katzenpost/katzenpost/client2/config"
+	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	sConfig "github.com/katzenpost/katzenpost/server/config"
 )
@@ -81,6 +83,26 @@ func (a NodeById) Len() int           { return len(a) }
 func (a NodeById) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
 func (a NodeById) Less(i, j int) bool { return a[i].Identifier < a[j].Identifier }
 
+func addressesFromURLs(addrs []string) map[string][]string {
+	addresses := make(map[string][]string)
+	for _, addr := range addrs {
+		u, err := url.Parse(addr)
+		if err != nil {
+			continue
+		}
+		switch u.Scheme {
+		case cpki.TransportTCP, cpki.TransportTCPv4, cpki.TransportTCPv6, cpki.TransportHTTP:
+			if _, ok := addresses[u.Scheme]; !ok {
+				addresses[u.Scheme] = make([]string, 0)
+			}
+			addresses[u.Scheme] = append(addresses[u.Scheme], u.String())
+		default:
+			continue
+		}
+	}
+	return addresses
+}
+
 func (s *katzenpost) genClient2Cfg() error {
 	log.Print("genClient2Cfg begin")
 	os.Mkdir(filepath.Join(s.outDir, "client2"), 0700)
@@ -134,9 +156,7 @@ func (s *katzenpost) genClient2Cfg() error {
 			Name:               s.nodeConfigs[i].Server.Identifier,
 			IdentityKey:        idPubKey,
 			LinkKey:            linkPubKey,
-			Addresses: map[string][]string{
-				"tcp": s.nodeConfigs[i].Server.Addresses,
-			},
+			Addresses:          s.nodeConfigs[i].Server.Addresses,
 		}
 		gateways = append(gateways, gateway)
 	}
