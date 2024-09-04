@@ -23,8 +23,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
-	"strconv"
-	"strings"
+	"net/url"
 	"sync"
 	"time"
 
@@ -162,7 +161,7 @@ func (p *pki) worker() {
 			if err != nil {
 				p.log.Warningf("Failed to fetch PKI for epoch %v: %v", epoch, err)
 				instrument.FailedFetchPKIDocs(fmt.Sprintf("%v", epoch))
-				if err == cpki.ErrNoDocument {
+				if err == cpki.ErrDocumentGone {
 					p.setFailedFetch(epoch, err)
 				}
 				continue
@@ -696,24 +695,14 @@ func New(glue glue.Glue) (glue.PKI, error) {
 	}
 
 	var err error
-	if glue.Config().Server.OnlyAdvertiseAltAddresses {
+	if len(glue.Config().Server.OnlyAdvertiseAddresses) > 0 {
 		p.descAddrMap = make(map[string][]string)
+		// XXX: parse each address and update descAddrMap
+		panic("NotImplemented")
 	} else {
 		if p.descAddrMap, err = makeDescAddrMap(glue.Config().Server.Addresses); err != nil {
 			return nil, err
 		}
-	}
-
-	for k, v := range glue.Config().Server.AltAddresses {
-		p.log.Debugf("AltAddresses map entry: %v %v", k, v)
-		if len(v) == 0 {
-			continue
-		}
-		kTransport := string(strings.ToLower(k))
-		if _, ok := p.descAddrMap[kTransport]; ok {
-			return nil, fmt.Errorf("BUG: pki: AltAddresses overrides existing transport: '%v'", k)
-		}
-		p.descAddrMap[kTransport] = v
 	}
 
 	if len(p.descAddrMap) == 0 {
@@ -749,29 +738,38 @@ func New(glue glue.Glue) (glue.PKI, error) {
 func makeDescAddrMap(addrs []string) (map[string][]string, error) {
 	m := make(map[string][]string)
 	for _, addr := range addrs {
-		h, p, err := net.SplitHostPort(addr)
+		u, err := url.Parse(addr)
 		if err != nil {
 			return nil, err
 		}
-		if _, err = strconv.ParseUint(p, 10, 16); err != nil {
-			return nil, err
-		}
-
-		var t string
-		ip := net.ParseIP(h)
-		if ip == nil {
-			return nil, fmt.Errorf("address '%v' is not an IP", h)
-		}
-		switch {
-		case ip.To4() != nil:
-			t = cpki.TransportTCPv4
-		case ip.To16() != nil:
-			t = cpki.TransportTCPv6
+		switch u.Scheme {
+		case string(cpki.TransportHTTP):
+			m[cpki.TransportHTTP] = append(m[cpki.TransportHTTP], addr)
+		case string(cpki.TransportTCP):
+			// See if the URL contains an IP
+			var ips = []net.IP{}
+			var err error
+			ip := net.ParseIP(u.Hostname())
+			if ip == nil {
+				// otherwise attempt to resolve a FQDN
+				ips, err = net.LookupIP(u.Hostname())
+				if err != nil {
+					return nil, fmt.Errorf("address '%v' failed to resolve: %v", u.Hostname(), err)
+				}
+			} else {
+				ips = append(ips, ip)
+			}
+			for _, ip := range ips {
+				if ip.To4() != nil {
+					m[cpki.TransportTCPv4] = append(m[cpki.TransportTCPv4], "tcp://"+ip.String()+":"+u.Port())
+				} else if ip.To16() != nil {
+					m[cpki.TransportTCPv6] = append(m[cpki.TransportTCPv6], "tcp://"+ip.String()+":"+u.Port())
+				}
+			}
 		default:
-			return nil, fmt.Errorf("address '%v' is neither IPv4 nor IPv6", h)
+			return nil, fmt.Errorf("address '%v' is invalid", addr)
 		}
 
-		m[t] = append(m[t], addr)
 	}
 	return m, nil
 }

@@ -23,6 +23,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -267,6 +268,7 @@ func (dCfg *Debug) applyDefaults() {
 type Authority struct {
 	// Identifier is the human readable identifier for the node (eg: FQDN).
 	Identifier string
+
 	// IdentityPublicKeyPem is a string in PEM format containing
 	// the public identity key key.
 	IdentityPublicKey sign.PublicKey
@@ -365,8 +367,10 @@ func (a *Authority) Validate() error {
 		}
 	}
 	for _, v := range a.Addresses {
-		if err := utils.EnsureAddrIPPort(v); err != nil {
-			return fmt.Errorf("config: Authority : Address '%v' is invalid: %v", v, err)
+		if u, err := url.Parse(v); err != nil {
+			return fmt.Errorf("config: Authority: Address '%v' is invalid: %v", v, err)
+		} else if u.Port() == "" {
+			return fmt.Errorf("config: Authority: Address '%v' is invalid: Must contain Port", v)
 		}
 	}
 	if a.IdentityPublicKey == nil {
@@ -452,8 +456,10 @@ func (sCfg *Server) validate() error {
 
 	if sCfg.Addresses != nil {
 		for _, v := range sCfg.Addresses {
-			if err := utils.EnsureAddrIPPort(v); err != nil {
+			if u, err := url.Parse(v); err != nil {
 				return fmt.Errorf("config: Authority: Address '%v' is invalid: %v", v, err)
+			} else if u.Port() == "" {
+				return fmt.Errorf("config: Authority: Address '%v' is invalid: Must contain Port", v)
 			}
 		}
 	} else {
