@@ -7,7 +7,7 @@ docker=$(shell if which podman|grep -q .; then echo podman; else echo docker; fi
 distro=alpine
 image=localhost/katzenpost-$(distro)_base
 cache_dir=$(shell readlink -f ../docker)/cache
-docker_args=--init -it --user ${docker_user} -v $(shell readlink -f ..):/go/katzenpost --network=host --rm -v $(cache_dir)/go:/go/ -v $(cache_dir)/root_cache:/root/.cache -e GORACE=history_size=7
+docker_args=--init -it --user ${docker_user} -v $(shell readlink -f ..):/go/katzenpost --network=host --rm -v $(cache_dir)/go:/go/ -e GORACE=history_size=7 -e GOCACHE=/go/cache
 
 test:
 	go test -v -race -timeout 0 -ldflags ${ldflags} .
