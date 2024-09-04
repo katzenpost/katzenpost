@@ -124,8 +124,6 @@ func (s *katzenpost) genClient2Cfg() error {
 	// UpstreamProxy section
 	cfg.UpstreamProxy = &cConfig2.UpstreamProxy{Type: "none"}
 
-	cfg.PreferedTransports = []string{"tcp"}
-
 	// VotingAuthority section
 
 	peers := make([]*vConfig.Authority, 0)
