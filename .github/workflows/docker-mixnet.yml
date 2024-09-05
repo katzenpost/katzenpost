@@ -222,7 +222,7 @@ jobs:
         run: cd pigeonhole && make testargs=-coverprofile=coverage.part dockerdockertest && cat client/coverage.part >> ../coverage.out
 
       - name: run stream end to end tests
-        run: cd stream && sudo -E make testargs=-coverprofile=coverage.part dockerdockertest && cat coverage.part >> ../coverage.out
+        run: cd stream && make testargs=-coverprofile=coverage.part dockerdockertest && cat coverage.part >> ../coverage.out
 
       - name: Stop the mixnet
         run: |
