@@ -162,12 +162,14 @@ func (c *Client) GetWithContext(ctx context.Context, ID common.MessageID, signat
 type ReadWriteClient interface {
 	Put(addr []byte, payload []byte) error
 	Get(addr []byte) ([]byte, error)
+	GetWithContext(ctx context.Context, addr []byte) ([]byte, error)
 	PayloadSize() int
 }
 
 // ReadOnlyClient only has Get
 type ReadOnlyClient interface {
 	Get(addr []byte) ([]byte, error)
+	GetWithContext(ctx context.Context, addr []byte) ([]byte, error)
 	PayloadSize() int
 }
 
@@ -190,6 +192,13 @@ func (r *rwPigeonHole) Get(addr []byte) ([]byte, error) {
 	i := r.rwCap.Addr(addr)
 	k := r.rwCap.ReadKey(addr)
 	return r.c.Get(i, k.Sign(i.Bytes()))
+}
+
+// GetWithContext implements ReadWriteClient.GetWithContext
+func (r *rwPigeonHole) GetWithContext(ctx context.Context, addr []byte) ([]byte, error) {
+	i := r.rwCap.Addr(addr)
+	k := r.rwCap.ReadKey(addr)
+	return r.c.GetWithContext(ctx, i, k.Sign(i.Bytes()))
 }
 
 // Put implements ReadWriteClient.Put
@@ -215,6 +224,13 @@ func (r *roPigeonHole) Get(addr []byte) ([]byte, error) {
 	i := r.roCap.Addr(addr)
 	k := r.roCap.ReadKey(addr)
 	return r.c.Get(i, k.Sign(i.Bytes()))
+}
+
+// GetWithContext implements ReadOnlyClient.GetWithContext
+func (r *roPigeonHole) GetWithContext(ctx context.Context, addr []byte) ([]byte, error) {
+	i := r.roCap.Addr(addr)
+	k := r.roCap.ReadKey(addr)
+	return r.c.GetWithContext(ctx, i, k.Sign(i.Bytes()))
 }
 
 // PayloadSize implements ReadOnlyClient.PayloadSize
@@ -314,9 +330,14 @@ func (s *duplex) Put(addr []byte, payload []byte) error {
 	return s.wo.Put(addr, payload)
 }
 
-// Put implements ReadWriteClient.Get
+// Get implements ReadWriteClient.Get
 func (s *duplex) Get(addr []byte) ([]byte, error) {
 	return s.ro.Get(addr)
+}
+
+// GetWithContext implements ReadWriteClient.GetWithContext
+func (s *duplex) GetWithContext(ctx context.Context, addr []byte) ([]byte, error) {
+	return s.ro.GetWithContext(ctx, addr)
 }
 
 // PayloadSize implements ReadWriteClient.PayloadSize
