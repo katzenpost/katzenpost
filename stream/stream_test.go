@@ -22,11 +22,14 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"runtime"
 	"sync"
 	"testing"
 	"time"
 
 	"encoding/base64"
+	_ "net/http/pprof"
+	"net/http"
 	"github.com/fxamacker/cbor/v2"
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/katzenpost/client"
@@ -383,4 +386,12 @@ func TestCreateMulticastStream(t *testing.T) {
 	n, err := io.ReadFull(r, buf2)
 	require.NoError(err)
 	require.Equal(n, len(message))
+}
+
+func init() {
+	go func() {
+		http.ListenAndServe("localhost:4242", nil)
+	}()
+	runtime.SetMutexProfileFraction(1)
+	runtime.SetBlockProfileRate(1)
 }
