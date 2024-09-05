@@ -1040,9 +1040,7 @@ func LoadStream(s *client.Session, state []byte) (*Stream, error) {
 	}
 
 	st.R.s = st
-	st.TQ.NextQ = st.R
-	st.TQ.Timer = time.NewTimer(0)
-	st.TQ.L = new(sync.Mutex)
+	st.TQ = client.NewTimerQueue(st.R)
 	return st, nil
 }
 
