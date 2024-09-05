@@ -2,6 +2,7 @@ package stream
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/binary"
@@ -10,6 +11,7 @@ import (
 	"github.com/fxamacker/cbor/v2"
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/katzenpost/client"
+	"github.com/katzenpost/katzenpost/client2"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/worker"
 	mClient "github.com/katzenpost/katzenpost/pigeonhole/client"
@@ -32,6 +34,7 @@ var (
 	hash               = sha256.New
 	cborFrameOverhead  = 0
 	retryDelay         = epochtime.Period / 16
+	averageRetryRate   = epochtime.Period / 4 // how often to retransmit Get requests for unresponsive requests
 	minBackoffDelay    = 1 * time.Millisecond
 	maxBackoffDelay    = epochtime.Period / 4
 	defaultTimeout     = 0 * time.Second
@@ -131,6 +134,8 @@ type Stream struct {
 
 	// Mode indicates what type of Stream, e.g. EndToEnd or Finite
 	Mode StreamMode
+
+	retryExpDist *client2.ExpDist
 
 	// Transport provides Put and Get
 	c Transport
@@ -864,51 +869,39 @@ func (s *Stream) readFrame() (*Frame, error) {
 	idx := s.ReadIdx
 	s.l.Unlock()
 	frame_id := s.rxFrameID(idx)
-	fc := make(chan interface{}, 1)
-	// s.c.Get() is a blocking call, so wrap in a goroutine so
-	// we can select on s.HaltCh() and
-	f := func() {
-		ciphertext, err := s.c.Get(frame_id[:])
-		if err != nil {
-			fc <- err
+	ctx, cancelFn := context.WithCancel(context.Background())
+	s.Go(func() {
+		select {
+		case <-ctx.Done():
 			return
-		} else {
-			// use frame_id bytes as nonce
-			nonce := [nonceSize]byte{}
-			copy(nonce[:], frame_id[:nonceSize])
-			plaintext, ok := secretbox.Open(nil, ciphertext, &nonce, s.rxFrameKey(idx))
-			if !ok {
-				// damaged Stream, abort / retry / fail ?
-				// TODO: indicate serious error somehow
-				fc <- ErrFrameDecrypt
-				return
-			}
-			f := new(Frame)
-			f.Id = idx
-			_, err = cbor.UnmarshalFirst(plaintext, f)
-			if err != nil {
-				// TODO: indicate serious error somehow
-				fc <- err
-				return
-			}
-			fc <- f
+		case <-s.HaltCh():
+		case <-s.retryExpDist.OutCh(): // retransmit unacknowledged requests periodically
+			s.log.Debugf("retryExpDist fired, cancelling context")
 		}
+		cancelFn()
+	})
+
+	ciphertext, err := s.c.GetWithContext(ctx, frame_id[:])
+	if err != nil {
+		return nil, err
 	}
-	s.Go(f)
-	select {
-	case f := <-fc:
-		switch v := f.(type) {
-		case *Frame:
-			return v, nil
-		case error:
-			return nil, v
-		default:
-			panic("unknown type")
-		}
-	case <-s.HaltCh():
-		return nil, ErrHalted
+	cancelFn()
+	// use frame_id bytes as nonce
+	nonce := [nonceSize]byte{}
+	copy(nonce[:], frame_id[:nonceSize])
+	plaintext, ok := secretbox.Open(nil, ciphertext, &nonce, s.rxFrameKey(idx))
+	if !ok {
+		// damaged Stream, abort / retry / fail ?
+		// TODO: indicate serious error somehow
+		return nil, ErrFrameDecrypt
 	}
-	panic("NotReached")
+	f := new(Frame)
+	f.Id = idx
+	_, err = cbor.UnmarshalFirst(plaintext, f)
+	if err != nil {
+		return nil, err
+	}
+	return f, nil
 }
 
 func (s *Stream) processAck(f *Frame) {
@@ -979,6 +972,8 @@ func newStream(c Transport) *Stream {
 	s.R = &ReTx{s: s}
 	s.R.Wack = make(map[uint64]struct{})
 	s.TQ = client.NewTimerQueue(s.R)
+	s.retryExpDist = client2.NewExpDist()
+	s.retryExpDist.UpdateRate(uint64(averageRetryRate/time.Millisecond), uint64(epochtime.Period/time.Millisecond))
 	s.WriteBuf = new(bytes.Buffer)
 	s.ReadBuf = new(bytes.Buffer)
 

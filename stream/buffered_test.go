@@ -1,6 +1,7 @@
 package stream
 
 import (
+	"context"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -95,6 +96,10 @@ func (m mockTransport) Get(addr []byte) ([]byte, error) {
 		return nil, errors.New("NotFound")
 	}
 	return d, nil
+}
+
+func (m mockTransport) GetWithContext(ctx context.Context, addr []byte) ([]byte, error) {
+	return m.Get(addr)
 }
 
 func (m mockTransport) PayloadSize() int {

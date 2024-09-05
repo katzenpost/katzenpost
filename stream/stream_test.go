@@ -28,8 +28,6 @@ import (
 	"time"
 
 	"encoding/base64"
-	_ "net/http/pprof"
-	"net/http"
 	"github.com/fxamacker/cbor/v2"
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/katzenpost/client"
@@ -38,6 +36,8 @@ import (
 	"github.com/katzenpost/katzenpost/core/pki"
 	mClient "github.com/katzenpost/katzenpost/pigeonhole/client"
 	"github.com/stretchr/testify/require"
+	"net/http"
+	_ "net/http/pprof"
 )
 
 // getSession waits until pki.Document is available and returns a *client.Session
