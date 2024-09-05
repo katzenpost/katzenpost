@@ -258,7 +258,7 @@ func (m *PigeonHole) OnCommand(cmd cborplugin.Command) error {
 				pigeonHoleResponse := &common.PigeonHoleResponse{Status: common.StatusOK, Payload: req.Payload}
 				rawResp, err := pigeonHoleResponse.Marshal()
 				if err != nil {
-					return nil
+					continue
 				}
 				pluginResponse.Payload = rawResp
 				m.write(pluginResponse)
