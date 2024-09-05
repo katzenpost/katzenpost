@@ -66,6 +66,7 @@ func (m *PigeonHole) Wake(msgID common.MessageID) []*cborplugin.Response {
 		return []*cborplugin.Response{}
 	}
 	delete(m.waiting, msgID)
+	m.log.Debugf("Woke: %x: %v", msgID, w)
 	return w
 }
 

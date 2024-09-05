@@ -22,11 +22,13 @@ import (
 	"encoding/binary"
 	"errors"
 	"sort"
+	"time"
 
 	"github.com/fxamacker/cbor/v2"
 	"github.com/katzenpost/hpqc/sign/ed25519"
 	"github.com/katzenpost/katzenpost/client"
 	"github.com/katzenpost/katzenpost/client/utils"
+	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/pigeonhole/common"
 	"golang.org/x/crypto/hkdf"
 )
@@ -136,7 +138,17 @@ func (c *Client) Get(ID common.MessageID, signature []byte) ([]byte, error) {
 		return nil, err
 	}
 
-	ctx := context.Background()
+	ctx, cancelFn := context.WithCancel(context.Background())
+	go func() {
+		_, _, till := epochtime.Now()
+		select {
+		case <-c.Session.HaltCh():
+		case <-ctx.Done():
+		case <-time.After(till): // SURB expired
+		}
+		cancelFn()
+	}()
+
 	r, err := c.Session.BlockingSendUnreliableMessageWithContext(ctx, loc.Name(), loc.Provider(), serialized)
 	if err != nil {
 		return nil, err
