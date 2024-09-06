@@ -60,6 +60,11 @@ func getSession(t *testing.T) *client.Session {
 		}
 	}
 	session.WaitForDocument(context.Background())
+	// shut down the client with the session
+	go func() {
+		<-session.HaltCh()
+		cc.Shutdown()
+	}()
 	return session
 }
 
@@ -85,6 +90,7 @@ func TestFrameKey(t *testing.T) {
 func TestCreateStream(t *testing.T) {
 	require := require.New(t)
 	session := getSession(t)
+	defer session.Shutdown()
 	require.NotNil(session)
 
 	// listener (initiator) of stream
@@ -144,6 +150,7 @@ func TestCreateStream(t *testing.T) {
 func TestStreamFragmentation(t *testing.T) {
 	require := require.New(t)
 	session := getSession(t)
+	defer session.Shutdown()
 	require.NotNil(session)
 
 	c, err := mClient.NewClient(session)
@@ -251,6 +258,7 @@ func TestStreamFragmentation(t *testing.T) {
 func TestCBORSerialization(t *testing.T) {
 	require := require.New(t)
 	session := getSession(t)
+	defer session.Shutdown()
 	require.NotNil(session)
 
 	// our view of stream
@@ -293,11 +301,14 @@ func TestCBORSerialization(t *testing.T) {
 	require.NoError(err)
 	err = r.Close()
 	require.NoError(err)
+	s.Halt()
+	r.Halt()
 }
 
 func TestStreamSerialize(t *testing.T) {
 	require := require.New(t)
 	session := getSession(t)
+	defer session.Shutdown()
 	require.NotNil(session)
 
 	// Initialize a capability backed stream (Duplex) as listener
@@ -361,6 +372,7 @@ func TestStreamSerialize(t *testing.T) {
 func TestCreateMulticastStream(t *testing.T) {
 	require := require.New(t)
 	session := getSession(t)
+	defer session.Shutdown()
 	require.NotNil(session)
 
 	// listener (initiator) of stream
