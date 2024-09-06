@@ -1051,6 +1051,11 @@ func (s *Stream) Save() ([]byte, error) {
 // Start starts the reader and writer workers
 func (s *Stream) Start() {
 	s.startOnce.Do(func() {
+		s.retryExpDist.UpdateConnectionStatus(true)
+		s.Go(func() {
+			<-s.HaltCh()
+			s.retryExpDist.Halt()
+		})
 		s.WindowSize = 7
 		s.MaxWriteBufSize = int(s.WindowSize)
 		s.onFlush = make(chan struct{}, 1)
