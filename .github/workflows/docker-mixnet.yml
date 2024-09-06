@@ -45,7 +45,8 @@ jobs:
   test_e2e_client2:
     env:
       warped: true
-      XDG_RUNTIME_DIR: /run
+      no_mixdecoy: false
+      no_decoy: false
     strategy:
       matrix:
         go-version: [1.22.x]
@@ -57,21 +58,26 @@ jobs:
 
       - name: Configure podman socket
         run: |
-          sudo systemctl restart dbus && sudo systemctl enable --now podman.socket
+          systemctl --user start podman.socket
 
       - name: Build and start the mixnet
         run: |
-          cd docker && sudo -E make start wait
-
-      - name: run ping
-        run: cd docker && sudo -E make run-ping
+          cd docker && make start wait
 
       - name: run client end to end tests
-        run: cd client2 && sudo -E make testargs=-coverprofile=coverage.part dockerdockertest && cat coverage.part >> ../coverage.out
+        run: cd client2 && make testargs=-coverprofile=coverage.part dockerdockertest && cat coverage.part >> ../coverage.out
 
       - name: Stop the mixnet
         run: |
-          cd docker && sudo -E make stop
+          cd docker && make stop
+
+      - name: Upload testnet state
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mixnet-${{ github.run_id }}-${{ github.job }}
+          path: |
+            docker/voting_mixnet/*/*.log
 
   test_e2e_memspool:
     env:
