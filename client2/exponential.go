@@ -45,6 +45,7 @@ func NewExpDist() *ExpDist {
 	return e
 }
 
+// OutCh returns channel that receives at the rate specified by UpdateRate
 func (e *ExpDist) OutCh() <-chan struct{} {
 	return e.outCh
 }
