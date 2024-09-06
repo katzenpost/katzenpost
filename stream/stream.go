@@ -1055,6 +1055,7 @@ func (s *Stream) Start() {
 		s.Go(func() {
 			<-s.HaltCh()
 			s.retryExpDist.Halt()
+			s.TQ.Halt()
 		})
 		s.WindowSize = 7
 		s.MaxWriteBufSize = int(s.WindowSize)
