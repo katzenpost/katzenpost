@@ -22,6 +22,9 @@ type opExpNewRate struct {
 	maxDelay    uint64
 }
 
+// ExpDist provides a pseudorandom ticker with an average and maximum delay
+// The channel returned by OutCh() is written at an average rate specified
+// with UpdateRate(average, max uint64), in units of milliseconds.
 type ExpDist struct {
 	worker.Worker
 
@@ -32,6 +35,7 @@ type ExpDist struct {
 	outCh chan struct{}
 }
 
+// NewExpDist returns an ExpDist with running worker routine.
 func NewExpDist() *ExpDist {
 	e := &ExpDist{
 		opCh:  make(chan interface{}),
@@ -45,6 +49,8 @@ func (e *ExpDist) OutCh() <-chan struct{} {
 	return e.outCh
 }
 
+// UpdateRate is a value in milliseconds and specifies the average and
+// maximum delay between writes to the channel returned by OutCh.
 func (e *ExpDist) UpdateRate(averageRate uint64, maxDelay uint64) {
 	select {
 	case <-e.HaltCh():
@@ -55,6 +61,8 @@ func (e *ExpDist) UpdateRate(averageRate uint64, maxDelay uint64) {
 	}
 }
 
+// UpdateConnectionStatus(true) starts sending to OutCh
+// and UpdateConnectionStatus(false) stops sending to OutCh
 func (e *ExpDist) UpdateConnectionStatus(isConnected bool) {
 	select {
 	case <-e.HaltCh():
