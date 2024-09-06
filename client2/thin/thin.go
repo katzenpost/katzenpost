@@ -4,6 +4,7 @@
 package thin
 
 import (
+	"context"
 	"crypto/hmac"
 	"encoding/binary"
 	"errors"
@@ -505,7 +506,10 @@ func (t *ThinClient) SendMessage(surbID *[sConstants.SURBIDLength]byte, payload 
 }
 
 // BlockingSendMessage blocks until a reply is received and returns it or an error.
-func (t *ThinClient) BlockingSendMessage(payload []byte, destNode *[32]byte, destQueue []byte) ([]byte, error) {
+func (t *ThinClient) BlockingSendMessage(ctx context.Context, payload []byte, destNode *[32]byte, destQueue []byte) ([]byte, error) {
+	if ctx == nil {
+		return nil, errors.New("context cannot be nil")
+	}
 	surbID := t.NewSURBID()
 	eventSink := t.EventSink()
 	err := t.SendMessage(surbID, payload, destNode, destQueue)
@@ -513,14 +517,12 @@ func (t *ThinClient) BlockingSendMessage(payload []byte, destNode *[32]byte, des
 		return nil, err
 	}
 
-	cancelCh := make(chan interface{})
 	for {
 		var event Event
 		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
 		case event = <-eventSink:
-		case <-cancelCh:
-			t.log.Info("BlockingSendMessage cancelled")
-			return nil, errors.New("Interrupt caught")
 		}
 
 		switch v := event.(type) {
@@ -563,7 +565,10 @@ func (t *ThinClient) SendReliableMessage(messageID *[MessageIDLength]byte, paylo
 }
 
 // BlockingSendReliableMessage blocks until the message is reliably sent and the ARQ reply is received.
-func (t *ThinClient) BlockingSendReliableMessage(messageID *[MessageIDLength]byte, payload []byte, destNode *[32]byte, destQueue []byte) (reply []byte, err error) {
+func (t *ThinClient) BlockingSendReliableMessage(ctx context.Context, messageID *[MessageIDLength]byte, payload []byte, destNode *[32]byte, destQueue []byte) (reply []byte, err error) {
+	if ctx == nil {
+		return nil, errors.New("context cannot be nil")
+	}
 	req := &Request{
 		ID:                messageID,
 		WithSURB:          true,
@@ -587,6 +592,8 @@ func (t *ThinClient) BlockingSendReliableMessage(messageID *[MessageIDLength]byt
 	}
 
 	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
 	case err = <-sentWaitChan:
 		if err != nil {
 			return nil, err
