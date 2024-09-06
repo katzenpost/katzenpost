@@ -973,7 +973,6 @@ func newStream(c Transport) *Stream {
 	s.R.Wack = make(map[uint64]struct{})
 	s.TQ = client.NewTimerQueue(s.R)
 	s.retryExpDist = client2.NewExpDist()
-	s.retryExpDist.UpdateRate(uint64(averageRetryRate/time.Millisecond), uint64(epochtime.Period/time.Millisecond))
 	s.WriteBuf = new(bytes.Buffer)
 	s.ReadBuf = new(bytes.Buffer)
 
@@ -1051,6 +1050,7 @@ func (s *Stream) Save() ([]byte, error) {
 // Start starts the reader and writer workers
 func (s *Stream) Start() {
 	s.startOnce.Do(func() {
+		s.retryExpDist.UpdateRate(uint64(averageRetryRate/time.Millisecond), uint64(epochtime.Period/time.Millisecond))
 		s.retryExpDist.UpdateConnectionStatus(true)
 		s.Go(func() {
 			<-s.HaltCh()
