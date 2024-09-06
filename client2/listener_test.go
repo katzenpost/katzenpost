@@ -58,5 +58,5 @@ func TestListenerBasic(t *testing.T) {
 	//time.Sleep(1 * time.Second)
 	//require.Nil(t, listener.getConnectionStatus())
 
-	listener.Halt()
+	listener.Shutdown()
 }
