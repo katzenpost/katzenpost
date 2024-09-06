@@ -4,6 +4,7 @@
 package client2
 
 import (
+	"github.com/katzenpost/katzenpost/core/log"
 	"testing"
 )
 
@@ -19,8 +20,12 @@ func TestSender(t *testing.T) {
 
 	in := make(chan *Request)
 	out := make(chan *Request)
+	logBackend, err := log.New("", "debug", false)
+	if err != nil {
+		t.FailNow()
+	}
 
-	s := newSender(in, out, false)
+	s := newSender(in, out, false, logBackend)
 	defer s.Halt()
 
 	s.UpdateConnectionStatus(true)
