@@ -873,19 +873,19 @@ func (s *Stream) readFrame() (*Frame, error) {
 	s.Go(func() {
 		select {
 		case <-ctx.Done():
-			return
 		case <-s.HaltCh():
+			cancelFn()
 		case <-s.retryExpDist.OutCh(): // retransmit unacknowledged requests periodically
-			s.log.Debugf("retryExpDist fired, cancelling context")
+			cancelFn()
 		}
-		cancelFn()
 	})
 
+	s.log.Debugf("readFrame: %d", s.ReadIdx)
 	ciphertext, err := s.c.GetWithContext(ctx, frame_id[:])
+	cancelFn()
 	if err != nil {
 		return nil, err
 	}
-	cancelFn()
 	// use frame_id bytes as nonce
 	nonce := [nonceSize]byte{}
 	copy(nonce[:], frame_id[:nonceSize])
