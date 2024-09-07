@@ -234,18 +234,11 @@ func (s *Stream) reader() {
 	backoff := minBackoffDelay
 	for {
 		s.l.Lock()
+		doFlush := false
 		switch s.RState {
 		case StreamClosed:
 			// No more frames will be sent by peer
 			// If ReliableStream, send final Ack
-			if s.Mode == EndToEnd {
-				if s.ReadIdx > 0 {
-					if s.ReadIdx-1 > s.AckIdx {
-						s.log.Debugf("reader mustAck at StreamClosed() doFlush()")
-						s.doFlush()
-					}
-				}
-			}
 			s.l.Unlock()
 			s.doFlush()
 			return
@@ -254,11 +247,14 @@ func (s *Stream) reader() {
 			if s.Mode == EndToEnd {
 				if s.ReadIdx-s.AckIdx > s.WindowSize {
 					s.log.Debugf("reader() doFlush: s.ReadIdx-s.AckIdx = %d", s.ReadIdx-s.AckIdx)
-					s.doFlush()
+					doFlush = true
 				}
 			}
 		}
 		s.l.Unlock()
+		if doFlush {
+			s.doFlush()
+		}
 
 		// read next frame
 		f, err := s.readFrame()
