@@ -37,7 +37,8 @@ var (
 	hash               = sha256.New
 	cborFrameOverhead  = 0
 	retryDelay         = epochtime.Period / 16
-	averageRetryRate   = epochtime.Period / 4 // how often to retransmit Get requests for unresponsive requests
+	averageRetryRate   = epochtime.Period / 4  // how often to retransmit Get requests for unresponsive requests
+	averageReadRate    = epochtime.Period / 16 // how often to send Get requests
 	minBackoffDelay    = 1 * time.Millisecond
 	maxBackoffDelay    = epochtime.Period / 4
 	defaultTimeout     = 0 * time.Second
@@ -139,6 +140,7 @@ type Stream struct {
 	Mode StreamMode
 
 	retryExpDist *client2.ExpDist
+	readerExpDist *client2.ExpDist
 
 	// Transport provides Put and Get
 	transport Transport
@@ -259,12 +261,23 @@ func (s *Stream) reader() {
 		}
 
 		// read next frame
+		select {
+		case <-s.HaltCh():
+			return
+		case <-s.readerExpDist.OutCh():
+		}
 		f, err := s.readFrame()
 		switch err {
 		case nil:
 			s.log.Debugf("reader() got Frame: %d", f.Id)
 		default:
 			s.log.Debugf("reader() got Error: %s", err)
+			select {
+			case <-s.HaltCh():
+				s.log.Debugf("reader() halting!")
+				return
+			default:
+			}
 			continue
 		}
 
@@ -911,6 +924,7 @@ func newStream(transport Transport, mode StreamMode) *Stream {
 	s.R.Wack = make(map[uint64]struct{})
 	s.TQ = client.NewTimerQueue(s.R)
 	s.retryExpDist = client2.NewExpDist()
+	s.readerExpDist = client2.NewExpDist()
 	s.WriteBuf = new(bytes.Buffer)
 	s.ReadBuf = new(bytes.Buffer)
 
@@ -987,11 +1001,14 @@ func (s *Stream) Save() ([]byte, error) {
 // Start starts the reader and writer workers
 func (s *Stream) Start() {
 	s.startOnce.Do(func() {
-		s.retryExpDist.UpdateRate(uint64(averageRetryRate/time.Millisecond), uint64(epochtime.Period/time.Millisecond))
 		s.retryExpDist.UpdateConnectionStatus(true)
+		s.readerExpDist.UpdateConnectionStatus(true)
+		s.retryExpDist.UpdateRate(uint64(averageRetryRate/time.Millisecond), uint64(epochtime.Period/time.Millisecond))
+		s.readerExpDist.UpdateRate(uint64(averageReadRate/time.Millisecond), uint64(epochtime.Period/time.Millisecond))
 		s.Go(func() {
 			<-s.HaltCh()
 			s.retryExpDist.Halt()
+			s.readerExpDist.Halt()
 			s.TQ.Halt()
 		})
 		s.WindowSize = defaultWindowSize
