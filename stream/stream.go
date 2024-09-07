@@ -38,9 +38,8 @@ var (
 	cborFrameOverhead  = 0
 	retryDelay         = epochtime.Period / 16
 	averageRetryRate   = epochtime.Period / 4  // how often to retransmit Get requests for unresponsive requests
-	averageReadRate    = epochtime.Period / 16 // how often to send Get requests
-	minBackoffDelay    = 1 * time.Millisecond
-	maxBackoffDelay    = epochtime.Period / 4
+	averageReadRate    = epochtime.Period / 256 // how often to send Get requests
+	averageSendRate    = epochtime.Period / 256 // how often to send Get requests
 	defaultTimeout     = 0 * time.Second
 	ErrStreamClosed    = errors.New("Stream Closed")
 	ErrFrameDecrypt    = errors.New("Failed to decrypt")
@@ -141,6 +140,7 @@ type Stream struct {
 
 	retryExpDist *client2.ExpDist
 	readerExpDist *client2.ExpDist
+	senderExpDist *client2.ExpDist
 
 	// Transport provides Put and Get
 	transport Transport
@@ -466,7 +466,7 @@ func (s *Stream) writer() {
 		select {
 		case <-s.HaltCh():
 			return
-		default:
+		case <-s.senderExpDist.OutCh():
 		}
 		mustAck := false
 		mustWaitForAck := false
@@ -925,6 +925,7 @@ func newStream(transport Transport, mode StreamMode) *Stream {
 	s.TQ = client.NewTimerQueue(s.R)
 	s.retryExpDist = client2.NewExpDist()
 	s.readerExpDist = client2.NewExpDist()
+	s.senderExpDist = client2.NewExpDist()
 	s.WriteBuf = new(bytes.Buffer)
 	s.ReadBuf = new(bytes.Buffer)
 
@@ -1003,12 +1004,15 @@ func (s *Stream) Start() {
 	s.startOnce.Do(func() {
 		s.retryExpDist.UpdateConnectionStatus(true)
 		s.readerExpDist.UpdateConnectionStatus(true)
+		s.senderExpDist.UpdateConnectionStatus(true)
 		s.retryExpDist.UpdateRate(uint64(averageRetryRate/time.Millisecond), uint64(epochtime.Period/time.Millisecond))
 		s.readerExpDist.UpdateRate(uint64(averageReadRate/time.Millisecond), uint64(epochtime.Period/time.Millisecond))
+		s.senderExpDist.UpdateRate(uint64(averageSendRate/time.Millisecond), uint64(epochtime.Period/time.Millisecond))
 		s.Go(func() {
 			<-s.HaltCh()
 			s.retryExpDist.Halt()
 			s.readerExpDist.Halt()
+			s.senderExpDist.Halt()
 			s.TQ.Halt()
 		})
 		s.WindowSize = defaultWindowSize
