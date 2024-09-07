@@ -96,7 +96,7 @@ const (
 // frameWithPriority implmeents client.Item and holds the retransmit deadline and Frame for use with a TimerQueue
 type frameWithPriority struct {
 	f        *Frame // payload of message
-	priority uint64 // timeout, for when to retransmit if the message is not acknowledged
+	priority uint64 // the time in nanoseconds of when to retransmit an unacknowledged message
 }
 
 // Priority implements client.Item interface; used by TimerQueue for retransmissions
