@@ -131,6 +131,8 @@ func TestCreateStream(t *testing.T) {
 	n, err = s.Write(msg)
 	require.NoError(err)
 	require.Equal(n, len(msg))
+	err = s.Sync()
+	require.NoError(err)
 	err = s.Close()
 	require.NoError(err)
 
