@@ -19,6 +19,7 @@ import (
 	"golang.org/x/crypto/hkdf"
 	"golang.org/x/crypto/nacl/secretbox"
 	"gopkg.in/op/go-logging.v1"
+	"math"
 	"io"
 	"os"
 	"sync"
@@ -28,6 +29,7 @@ import (
 const (
 	keySize   = 32
 	nonceSize = 24
+	no_ack    = math.MaxUint64
 )
 
 var (
@@ -522,13 +524,13 @@ func (s *Stream) writer() {
 		s.log.Debugf("Sending frame for %d", s.WriteIdx)
 		f.Id = s.WriteIdx
 
-		if s.ReadIdx == 0 {
+		// Set frame Ack if EndToEnd
+		if s.Mode == EndToEnd {
 			// have not read any data from peer yet so Ack = 0 is special case
-			f.Ack = 0
-		} else {
-			if s.Mode == EndToEnd {
-				f.Ack = s.ReadIdx - 1 // ReadIdx points at next frame, which we haven't read
+			if s.ReadIdx == 0 {
+				f.Ack = no_ack
 			}
+			f.Ack = s.ReadIdx - 1 // ReadIdx points at next frame, which we haven't read
 		}
 
 		if mustTeardown {
@@ -859,6 +861,10 @@ func (s *Stream) readFrame() (*Frame, error) {
 }
 
 func (s *Stream) processAck(f *Frame) {
+	// Nothing is acknowledged
+	if f.Ack == no_ack {
+		return
+	}
 	ackD := false
 	s.R.Lock()
 	// ack all frames predecessor to peer ack
