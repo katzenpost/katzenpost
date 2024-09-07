@@ -58,11 +58,11 @@ func (m lossyMockTransport) Put(addr []byte, payload []byte) error {
 // newStreams returns an initialized pair of Streams
 func newStreams(t Transport) (*Stream, *Stream) {
 
-	a := newStream(t)
+	a := newStream(t, EndToEnd)
 	a.log = logBackend.GetLogger(fmt.Sprintf("Stream %p", a))
 	addr := &StreamAddr{address: generate()}
 	a.keyAsListener(addr)
-	b := newStream(t)
+	b := newStream(t, EndToEnd)
 	b.log = logBackend.GetLogger(fmt.Sprintf("Stream %p", b))
 	b.keyAsDialer(addr)
 
