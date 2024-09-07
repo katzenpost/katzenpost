@@ -229,7 +229,6 @@ func (r *ReTx) Push(i client.Item) error {
 
 // reader polls receive window of messages and adds to the reader queue
 func (s *Stream) reader() {
-	backoff := minBackoffDelay
 	for {
 		s.l.Lock()
 		doFlush := false
@@ -258,38 +257,9 @@ func (s *Stream) reader() {
 		f, err := s.readFrame()
 		switch err {
 		case nil:
-			backoff = backoff / 4
-			if backoff < minBackoffDelay {
-				backoff = minBackoffDelay
-			}
-			s.log.Debugf("reader() got Frame: resetting backoff: %s", backoff)
-		case mClient.ErrStatusNotFound:
-			s.log.Debugf("%s for frame: %d", err, s.ReadIdx)
-			backoff = backoff << 1
-			if backoff > maxBackoffDelay {
-				backoff = maxBackoffDelay
-			}
-			s.log.Debugf("reader() backoff: wait for %s", backoff)
-			// we got a response from the pigeonhole service but no data
-			select {
-			case <-time.After(backoff):
-			case <-s.HaltCh():
-				return
-			}
-			continue
+			s.log.Debugf("reader() got Frame: %d", f.Id)
 		default:
-			s.log.Errorf("readFrame Got err %s", err)
-			backoff = backoff << 1
-			if backoff > maxBackoffDelay {
-				backoff = maxBackoffDelay
-			}
-			s.log.Errorf("retrying in %s", backoff)
-			// rate limit spinning if client is offline, error returns immediately
-			select {
-			case <-s.HaltCh():
-				return
-			case <-time.After(backoff):
-			}
+			s.log.Debugf("reader() got Error: %s", err)
 			continue
 		}
 
