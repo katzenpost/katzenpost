@@ -535,8 +535,10 @@ func (s *Stream) writer() {
 			// have not read any data from peer yet so Ack = 0 is special case
 			if s.ReadIdx == 0 {
 				f.Ack = no_ack
+			} else {
+				f.Ack = s.ReadIdx - 1 // ReadIdx points at next frame, which we haven't read
+				s.AckIdx = f.Ack
 			}
-			f.Ack = s.ReadIdx - 1 // ReadIdx points at next frame, which we haven't read
 		}
 
 		if mustTeardown {
