@@ -222,9 +222,7 @@ func (r *ReTx) Push(i client.Item) error {
 	// XXX: causes panic in TimerQueue if an error is returned
 	err := r.s.txFrame(m.f)
 	if err != nil {
-		// try again later
-		m.priority = uint64(time.Now().Add(retryDelay).UnixNano())
-		r.s.txEnqueue(m)
+		r.s.log.Debugf("ReTx.Push(): txFrame err: %v", err)
 	}
 	return nil
 }
