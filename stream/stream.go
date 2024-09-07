@@ -140,7 +140,7 @@ type Stream struct {
 	retryExpDist *client2.ExpDist
 
 	// Transport provides Put and Get
-	c Transport
+	transport Transport
 	// frame encryption secrets
 	WriteKey *[keySize]byte // secretbox key to encrypt with
 	ReadKey  *[keySize]byte // secretbox key to decrypt with
@@ -637,7 +637,7 @@ func (s *Stream) txFrame(frame *Frame) (err error) {
 	copy(nonce[:], frame_id[:nonceSize])
 	ciphertext := secretbox.Seal(nil, serialized, &nonce, frame_key)
 	s.log.Debugf("txFrame: %d Acks: %d", frame.Id, frame.Ack)
-	return s.c.Put(frame_id[:], ciphertext)
+	return s.transport.Put(frame_id[:], ciphertext)
 }
 
 func (s *Stream) txEnqueue(m *frameWithPriority) {
@@ -816,7 +816,7 @@ func (s *Stream) readFrame() (*Frame, error) {
 	})
 
 	s.log.Debugf("readFrame: %d", s.ReadIdx)
-	ciphertext, err := s.c.GetWithContext(ctx, frame_id[:])
+	ciphertext, err := s.transport.GetWithContext(ctx, frame_id[:])
 	cancelFn()
 	if err != nil {
 		return nil, err
@@ -898,11 +898,11 @@ func (s *Stream) RemoteAddr() *StreamAddr {
 // Transport describes the interface to Get or Put Frames
 type Transport mClient.ReadWriteClient
 
-func newStream(c Transport, mode StreamMode) *Stream {
+func newStream(transport Transport, mode StreamMode) *Stream {
 	s := new(Stream)
 	s.Mode = mode
-	s.c = c
-	s.PayloadSize = PayloadSize(c)
+	s.transport = transport
+	s.PayloadSize = PayloadSize(transport)
 	s.l = new(sync.Mutex)
 	s.startOnce = new(sync.Once)
 	s.RState = StreamOpen
@@ -963,12 +963,12 @@ func LoadStream(s *client.Session, state []byte) (*Stream, error) {
 	if err != nil {
 		return nil, err
 	}
-	c, _ := mClient.NewClient(s)
-	st.c = mClient.DuplexFromSeed(c, st.Initiator, []byte(st.LocalAddr().String()))
+	transport, _ := mClient.NewClient(s)
+	st.transport = mClient.DuplexFromSeed(transport, st.Initiator, []byte(st.LocalAddr().String()))
 
 	// Ensure that the frame geometry cannot change an active stream
 	// FIXME: Streams should support resetting sender/receivers on Geometry changes.
-	if st.PayloadSize != PayloadSize(st.c) {
+	if st.PayloadSize != PayloadSize(st.transport) {
 		panic(ErrGeometryChanged)
 	}
 
@@ -997,7 +997,7 @@ func (s *Stream) Start() {
 			s.TQ.Halt()
 		})
 		s.WindowSize = 7
-		s.MaxWriteBufSize = s.WindowSize * PayloadSize(c)
+		s.MaxWriteBufSize = int(s.WindowSize) * PayloadSize(s.transport)
 		s.onFlush = make(chan struct{}, 1)
 		s.onAck = make(chan struct{}, 1)
 		s.onStreamClose = make(chan struct{}, 1)
