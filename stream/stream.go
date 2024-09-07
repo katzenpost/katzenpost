@@ -528,6 +528,7 @@ func (s *Stream) writer() {
 		f := new(Frame)
 		s.log.Debugf("Sending frame for %d", s.WriteIdx)
 		f.Id = s.WriteIdx
+		s.WriteIdx += 1
 
 		// Set frame Ack if EndToEnd
 		if s.Mode == EndToEnd {
@@ -578,15 +579,9 @@ func (s *Stream) writer() {
 					// do not wake blocked Write() if no data frames were sent
 				}
 			default:
-				s.log.Debugf("txFrame err: do.OnWrite()")
-				select {
-				case <-s.HaltCh():
-					return
-				case <-time.After(retryDelay):
-					s.log.Debugf("txFrame err: after retryDelay")
-				}
-				continue
+				s.log.Debugf("txFrame Error: %v enqueue %d for next epoch", err, f.Id)
 			}
+			s.txEnqueue(nextEpoch(f))
 		}
 	}
 }
@@ -626,9 +621,6 @@ func (s *Stream) txFrame(frame *Frame) (err error) {
 	if err != nil {
 		return err
 	}
-	//_, _, til := epochtime.Now()
-	// Retransmit unacknowledged Frames every epoch
-	m := nextEpoch(frame)
 	frame_id := s.txFrameID(frame.Id)
 	frame_key := s.txFrameKey(frame.Id)
 
@@ -642,28 +634,8 @@ func (s *Stream) txFrame(frame *Frame) (err error) {
 	nonce := [nonceSize]byte{}
 	copy(nonce[:], frame_id[:nonceSize])
 	ciphertext := secretbox.Seal(nil, serialized, &nonce, frame_key)
-	err = s.c.Put(frame_id[:], ciphertext)
-	if err != nil {
-		s.log.Debugf("txFrame: Put() failed with %s", err)
-		// reschedule packet for transmission after retryDelay
-		// rather than 2 * epochtime.Period
-		newPriority := uint64(time.Now().Add(retryDelay).UnixNano())
-		s.log.Debugf("txFrame: setting priority to %s for retry", time.Unix(0, int64(newPriority)))
-		m.priority = newPriority
-	}
-	s.l.Lock()
-	if frame.Id == s.WriteIdx {
-		// do not increment WriteIdx unless frame tx'd is tip
-		s.WriteIdx += 1
-	}
-	if s.Mode == EndToEnd {
-		if frame.Ack > s.AckIdx {
-			s.AckIdx = frame.Ack // retransmitted frames shouldn't change AckIdx
-		}
-	}
-	s.l.Unlock()
-	s.txEnqueue(m) // do not hold mutex while calling txEnqueue as TQ also calls txEnq
-	return err
+	s.log.Debugf("txFrame: %d Acks: %d", frame.Id, frame.Ack)
+	return s.c.Put(frame_id[:], ciphertext)
 }
 
 func (s *Stream) txEnqueue(m *frameWithPriority) {
