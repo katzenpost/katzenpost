@@ -11,6 +11,7 @@ import (
 	"runtime"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/fxamacker/cbor/v2"
 	"github.com/katzenpost/hpqc/rand"
@@ -90,9 +91,10 @@ func (m mockTransport) Put(addr []byte, payload []byte) error {
 
 func (m mockTransport) Get(addr []byte) ([]byte, error) {
 	m.l.Lock()
-	defer m.l.Unlock()
 	d, ok := m.data[string(addr)]
+	m.l.Unlock()
 	if !ok {
+		<-time.After(2 * time.Second)
 		return nil, errors.New("NotFound")
 	}
 	return d, nil
