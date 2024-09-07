@@ -468,8 +468,10 @@ func (s *Stream) writer() {
 			}
 			if s.Mode == EndToEnd {
 				if s.ReadIdx-s.AckIdx > s.WindowSize {
-					s.log.Debugf("writer() WindowSize: mustAck")
 					mustAck = true
+				}
+				if s.WriteIdx-s.PeerAckIdx > s.WindowSize {
+					mustWaitForAck = true
 				}
 			}
 			if s.RState == StreamClosed || s.WState == StreamClosing {
@@ -486,18 +488,12 @@ func (s *Stream) writer() {
 				}
 			}
 			if !mustAck && !mustTeardown {
-				s.R.Lock()
-
-				// must wait for Ack before continuing to transmit
-				if s.Mode == EndToEnd {
-					if s.WriteIdx > s.PeerAckIdx+s.WindowSize {
-						mustWaitForAck = true
-						s.log.Debugf("mustWaitForAck: s.WriteIdx - PeerAckIdx : %d > %d", int(s.WriteIdx)-int(s.PeerAckIdx), s.WindowSize)
-					}
-				}
 				mustWaitForData := s.WriteBuf.Len() == 0
 				if mustWaitForData {
 					s.log.Debugf("mustWaitForData")
+				}
+				if mustWaitForAck {
+					s.log.Debugf("mustWaitForAck")
 				}
 				mustWait := mustWaitForAck || mustWaitForData
 
@@ -505,7 +501,6 @@ func (s *Stream) writer() {
 					s.log.Debugf("writer() StreamClosing !mustWait")
 					mustWait = false
 				}
-				s.R.Unlock()
 				if mustWait {
 					s.log.Debugf("writer() sleeping")
 					s.l.Unlock()
