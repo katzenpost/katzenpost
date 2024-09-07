@@ -997,7 +997,7 @@ func (s *Stream) Start() {
 			s.TQ.Halt()
 		})
 		s.WindowSize = 7
-		s.MaxWriteBufSize = int(s.WindowSize)
+		s.MaxWriteBufSize = s.WindowSize * PayloadSize(c)
 		s.onFlush = make(chan struct{}, 1)
 		s.onAck = make(chan struct{}, 1)
 		s.onStreamClose = make(chan struct{}, 1)
