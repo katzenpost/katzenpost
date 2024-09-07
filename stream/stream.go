@@ -222,15 +222,12 @@ func (r *ReTx) Push(i client.Item) error {
 		r.s.log.Debugf("%d already ACKedd", m.f.Id)
 		return nil
 	}
-	r.s.log.Debugf("ReTx.Push(): txFrame %d %v", m.f.Id, time.Until(time.Unix(0, int64(m.priority))))
 	m.priority = uint64(time.Now().Add(retryDelay).UnixNano())
-	err := r.s.txFrame(m.f)
-	if err != nil {
-		r.s.log.Errorf("ReTx.Push(): txFrame %d err: %v", m.f.Id, err)
-		r.s.Go(func() {
-			r.s.txEnqueue(m) // XXX: deadlocks TQ if called from this routine
-		})
-	}
+	r.s.log.Debugf("ReTx.Push(): txFrame %d %v", m.f.Id, time.Until(time.Unix(0, int64(m.priority))))
+	r.s.txFrame(m.f)
+	r.s.Go(func() {
+		r.s.txEnqueue(m) // XXX: deadlocks TQ if called from this routine
+	})
 	return nil
 }
 
