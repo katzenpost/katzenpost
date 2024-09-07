@@ -693,15 +693,17 @@ func (s *Stream) txFrame(frame *Frame) (err error) {
 		m.priority = newPriority
 	}
 	s.l.Lock()
-	s.txEnqueue(m)
 	if frame.Id == s.WriteIdx {
 		// do not increment WriteIdx unless frame tx'd is tip
 		s.WriteIdx += 1
 	}
 	if s.Mode == EndToEnd {
-		s.AckIdx = frame.Ack
+		if frame.Ack > s.AckIdx {
+			s.AckIdx = frame.Ack // retransmitted frames shouldn't change AckIdx
+		}
 	}
 	s.l.Unlock()
+	s.txEnqueue(m) // do not hold mutex while calling txEnqueue as TQ also calls txEnq
 	return err
 }
 
