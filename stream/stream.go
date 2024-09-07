@@ -30,6 +30,7 @@ const (
 	keySize   = 32
 	nonceSize = 24
 	no_ack    = math.MaxUint64
+	defaultWindowSize = 42
 )
 
 var (
@@ -993,7 +994,7 @@ func (s *Stream) Start() {
 			s.retryExpDist.Halt()
 			s.TQ.Halt()
 		})
-		s.WindowSize = 7
+		s.WindowSize = defaultWindowSize
 		s.MaxWriteBufSize = int(s.WindowSize) * PayloadSize(s.transport)
 		s.onFlush = make(chan struct{}, 1)
 		s.onAck = make(chan struct{}, 1)
