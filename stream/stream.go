@@ -620,17 +620,10 @@ func (s *Stream) txFrame(frame *Frame) (err error) {
 		return err
 	}
 	//_, _, til := epochtime.Now()
-	s.l.Lock()
 	// Retransmit unacknowledged Frames every epoch
 	m := nextEpoch(frame)
 	frame_id := s.txFrameID(frame.Id)
 	frame_key := s.txFrameKey(frame.Id)
-	// Update reference to last acknowledged message on retransmit
-	if s.ReadIdx > 0 {
-		// update retransmitted frame to point at last read payload (ReadIdx points at next frame)
-		frame.Ack = s.ReadIdx - 1
-	}
-	s.l.Unlock()
 
 	// zero extend ciphertext until maximum PayloadSize
 	if s.PayloadSize-len(serialized) > 0 {
