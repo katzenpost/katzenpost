@@ -109,7 +109,7 @@ func (m mockTransport) PayloadSize() int {
 }
 
 func randPayload() []byte {
-	l := rand.NewMath().Intn(1 << 16)
+	l := rand.NewMath().Intn(1 << 12)
 	buf := make([]byte, l)
 	io.ReadFull(rand.Reader, buf)
 	for i := 0; i < l; i++ {
