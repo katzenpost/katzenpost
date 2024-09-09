@@ -136,7 +136,7 @@ func newConnector(cfg *Config) *connector {
 	return p
 }
 
-func (p *connector) initSession(ctx context.Context, doneCh <-chan interface{}, linkKey kem.PrivateKey, signingKey sign.PublicKey, peer *config.Authority) (*connection, error) {
+func (p *connector) initSession(ctx context.Context, linkKey kem.PrivateKey, signingKey sign.PublicKey, peer *config.Authority) (*connection, error) {
 	var conn net.Conn
 	var err error
 
@@ -156,7 +156,9 @@ func (p *connector) initSession(ctx context.Context, doneCh <-chan interface{}, 
 		if err != nil {
 			continue
 		}
-		conn, err = common.DialURL(u, ctx, dialFn)
+		ictx, cancelFn := context.WithCancel(ctx)
+		conn, err = common.DialURL(u, ictx, dialFn)
+		defer cancelFn()
 		if err == nil {
 			break
 		}
@@ -192,15 +194,6 @@ func (p *connector) initSession(ctx context.Context, doneCh <-chan interface{}, 
 		return nil, err
 	}
 
-	go func() {
-		select {
-		case <-ctx.Done():
-			p.log.Warning("closing connection due to context Done event... most likely a timeout")
-			conn.Close()
-		case <-doneCh:
-		}
-	}()
-
 	// Handshake.
 	if err = s.Initialize(conn); err != nil {
 		conn.Close()
@@ -221,11 +214,11 @@ func (p *connector) roundTrip(s *wire.Session, cmd commands.Command) (commands.C
 }
 
 func (p *connector) allPeersRoundTrip(ctx context.Context, linkKey kem.PrivateKey, signingKey sign.PublicKey, cmd commands.Command) ([]commands.Command, error) {
-	doneCh := make(chan interface{})
-	defer close(doneCh)
 	responses := []commands.Command{}
 	for _, peer := range p.cfg.Authorities {
-		conn, err := p.initSession(ctx, doneCh, linkKey, signingKey, peer)
+		ictx, cancelFn := context.WithCancel(ctx)
+		defer cancelFn()
+		conn, err := p.initSession(ictx, linkKey, signingKey, peer)
 		if err != nil {
 			p.log.Noticef("pki/voting/client: failure to connect to Authority %s (%x)\n", peer.Identifier, hash.Sum256From(peer.IdentityPublicKey))
 			continue
@@ -244,14 +237,11 @@ func (p *connector) allPeersRoundTrip(ctx context.Context, linkKey kem.PrivateKe
 }
 
 func (p *connector) fetchConsensus(auth *config.Authority, ctx context.Context, linkKey kem.PrivateKey, epoch uint64) (commands.Command, error) {
-	doneCh := make(chan interface{})
-	defer close(doneCh)
-
 	if len(p.cfg.Authorities) == 0 {
 		return nil, errors.New("error: zero Authorities specified in configuration")
 	}
 
-	conn, err := p.initSession(ctx, doneCh, linkKey, nil, auth)
+	conn, err := p.initSession(ctx, linkKey, nil, auth)
 	if err != nil {
 		return nil, err
 	}
@@ -341,17 +331,15 @@ func (c *Client) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, 
 		return nil, nil, err
 	}
 
-	// Initialize the TCP/IP connection, and wire session.
-	doneCh := make(chan interface{})
-	defer close(doneCh)
-
 	// permute the order the client tries Authorities
 	r := rand.NewMath()
 	idxs := r.Perm(len(c.cfg.Authorities))
 
 	for _, idx := range idxs {
 		auth := c.cfg.Authorities[idx]
+		ctx, cancelFn := context.WithCancel(ctx)
 		resp, err := c.pool.fetchConsensus(auth, ctx, linkKey, epoch)
+		defer cancelFn()
 		if err != nil {
 			c.log.Errorf("GetConsensus from %s failed: %s", auth.Identifier, err)
 			continue
