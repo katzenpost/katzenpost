@@ -716,15 +716,19 @@ func (s *state) sendCommandToPeer(peer *config.Authority, cmd commands.Command) 
 			continue
 		}
 		defaultDialer := &net.Dialer{}
-		conn, err = common.DialURL(u, context.Background(), defaultDialer.DialContext)
+		ctx, cancelFn := context.WithCancel(context.Background())
+		conn, err = common.DialURL(u, ctx, defaultDialer.DialContext)
+		defer cancelFn()
 		if err == nil {
+			defer conn.Close()
 			break
+		} else {
+			s.log.Errorf("Got err from Peer: %v", err)
 		}
 		if i == len(peer.Addresses)-1 {
 			return nil, err
 		}
 	}
-	defer conn.Close()
 	s.s.Add(1)
 	defer s.s.Done()
 	identityHash := hash.Sum256From(s.s.identityPublicKey)
