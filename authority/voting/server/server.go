@@ -166,7 +166,10 @@ func (s *Server) listenWorker(l net.Listener) {
 		}
 
 		s.Add(1)
-		s.onConn(conn)
+		go func() {
+			s.onConn(conn)
+			// onConn calls s.Done()
+		}()
 	}
 
 	// NOTREACHED
@@ -190,7 +193,10 @@ func (s *Server) listenQUICWorker(l net.Listener) {
 			continue
 		}
 		s.Add(1)
-		s.onConn(conn)
+		go func() {
+			s.onConn(conn)
+			// onConn calls s.Done()
+		}()
 	}
 	// NOTREACHED
 }
