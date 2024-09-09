@@ -117,7 +117,7 @@ func (s *Server) initLogging() error {
 	var err error
 	s.logBackend, err = log.New(p, s.cfg.Logging.Level, s.cfg.Logging.Disable)
 	if err == nil {
-		s.log = s.logBackend.GetLogger("authority")
+		s.log = s.logBackend.GetLogger(s.cfg.Server.Identifier)
 	}
 	return err
 }
