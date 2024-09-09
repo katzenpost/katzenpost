@@ -780,7 +780,7 @@ func (s *state) sendCertToAuthorities(cert []byte, epoch uint64) {
 		if peer.IdentityPublicKey.Equal(s.s.identityPublicKey) {
 			continue // skip self
 		}
-		go func() {
+		s.Go(func() {
 			s.log.Noticef("Sending cert to %s", peer.Identifier)
 			resp, err := s.sendCommandToPeer(peer, cmd)
 			if err != nil {
@@ -808,7 +808,7 @@ func (s *state) sendCertToAuthorities(cert []byte, epoch uint64) {
 			default:
 				s.log.Warningf("Cert rejected with unknown error code received by %s", peer.Identifier)
 			}
-		}()
+		})
 	}
 }
 
@@ -831,7 +831,7 @@ func (s *state) sendVoteToAuthorities(vote []byte, epoch uint64) {
 		if peer.IdentityPublicKey.Equal(s.s.identityPublicKey) {
 			continue // skip self
 		}
-		go func() {
+		s.Go(func() {
 			s.log.Noticef("Sending Vote to %s", peer.Identifier)
 			resp, err := s.sendCommandToPeer(peer, cmd)
 			if err != nil {
@@ -853,7 +853,7 @@ func (s *state) sendVoteToAuthorities(vote []byte, epoch uint64) {
 			default:
 				s.log.Warningf("Vote rejected with unknown error code received by %s", peer.Identifier)
 			}
-		}()
+		})
 	}
 }
 
@@ -872,7 +872,7 @@ func (s *state) sendRevealToAuthorities(reveal []byte, epoch uint64) {
 		if peer.IdentityPublicKey.Equal(s.s.identityPublicKey) {
 			continue // skip self
 		}
-		go func() {
+		s.Go(func() {
 			s.log.Noticef("Sending Reveal to %s", peer.Identifier)
 			resp, err := s.sendCommandToPeer(peer, cmd)
 			if err != nil {
@@ -900,7 +900,7 @@ func (s *state) sendRevealToAuthorities(reveal []byte, epoch uint64) {
 			default:
 				s.log.Warningf("reveal rejected with unknown error code received by %s", peer.Identifier)
 			}
-		}()
+		})
 	}
 }
 
@@ -922,7 +922,7 @@ func (s *state) sendSigToAuthorities(sig []byte, epoch uint64) {
 		if peer.IdentityPublicKey.Equal(s.s.identityPublicKey) {
 			continue // skip self
 		}
-		go func() {
+		s.Go(func() {
 			s.log.Noticef("Sending Signature to %s", peer.Identifier)
 			resp, err := s.sendCommandToPeer(peer, cmd)
 			if err != nil {
@@ -944,7 +944,7 @@ func (s *state) sendSigToAuthorities(sig []byte, epoch uint64) {
 			default:
 				s.log.Warningf("Signature rejected with unknown error code received by %s", peer.Identifier)
 			}
-		}()
+		})
 	}
 }
 
@@ -1972,7 +1972,7 @@ func (s *state) backgroundFetchConsensus(epoch uint64) {
 		if pkiSignatureScheme == nil {
 			panic("pki signature scheme not found in registry")
 		}
-		go func() {
+		s.Go(func() {
 			cfg := &client.Config{
 				KEMScheme:          kemscheme,
 				PKISignatureScheme: pkiSignatureScheme,
@@ -2001,7 +2001,7 @@ func (s *state) backgroundFetchConsensus(epoch uint64) {
 			if _, ok := s.documents[epoch]; !ok {
 				s.documents[epoch] = doc
 			}
-		}()
+		})
 	}
 }
 
