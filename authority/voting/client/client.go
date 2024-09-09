@@ -248,14 +248,21 @@ func (p *connector) fetchConsensus(auth *config.Authority, ctx context.Context, 
 	p.log.Debugf("sending getConsensus to %s", auth.Identifier)
 	cmd := &commands.GetConsensus{Epoch: epoch}
 	resp, err := p.roundTrip(conn.session, cmd)
+	if err != nil {
+		r, ok := resp.(*commands.Consensus)
+		if !ok {
+			return nil, fmt.Errorf("voting/Client: GetConsensus() from %s: %v", auth.Identifier, err)
+		} else {
+
+			p.log.Noticef("got response from %s to GetConsensus(%d) (err=%vr res=%s)", auth.Identifier, epoch, err, getErrorToString(r.ErrorCode))
+			return nil, err
+		}
+	}
 	r, ok := resp.(*commands.Consensus)
 	if !ok {
-		return nil, fmt.Errorf("voting/Client: GetConsensus() unexpected reply from %s %T", auth.Identifier, resp)
+		return nil, fmt.Errorf("voting/Client: GetConsensus() %s: invalid command %T", auth.Identifier, resp)
 	}
-	if err != nil {
-		p.log.Noticef("got response from %s to GetConsensus(%d) (err=%vr res=%s)", auth.Identifier, epoch, err, getErrorToString(r.ErrorCode))
-		return nil, err
-	}
+
 	return r, nil
 }
 
