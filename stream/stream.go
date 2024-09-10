@@ -19,17 +19,17 @@ import (
 	"golang.org/x/crypto/hkdf"
 	"golang.org/x/crypto/nacl/secretbox"
 	"gopkg.in/op/go-logging.v1"
-	"math"
 	"io"
+	"math"
 	"os"
 	"sync"
 	"time"
 )
 
 const (
-	keySize   = 32
-	nonceSize = 24
-	no_ack    = math.MaxUint64
+	keySize           = 32
+	nonceSize         = 24
+	no_ack            = math.MaxUint64
 	defaultWindowSize = 42
 )
 
@@ -37,7 +37,7 @@ var (
 	hash               = sha256.New
 	cborFrameOverhead  = 0
 	retryDelay         = epochtime.Period / 16
-	averageRetryRate   = epochtime.Period / 4  // how often to retransmit Get requests for unresponsive requests
+	averageRetryRate   = epochtime.Period / 4   // how often to retransmit Get requests for unresponsive requests
 	averageReadRate    = epochtime.Period / 256 // how often to send Get requests
 	averageSendRate    = epochtime.Period / 256 // how often to send Get requests
 	defaultTimeout     = 0 * time.Second
@@ -138,7 +138,7 @@ type Stream struct {
 	// Mode indicates what type of Stream, e.g. EndToEnd or Finite
 	Mode StreamMode
 
-	retryExpDist *client2.ExpDist
+	retryExpDist  *client2.ExpDist
 	readerExpDist *client2.ExpDist
 	senderExpDist *client2.ExpDist
 
@@ -968,16 +968,14 @@ func NewStream(s *client.Session) *Stream {
 
 // LoadStream initializes a Stream from state saved by Save()
 func LoadStream(s *client.Session, state []byte) (*Stream, error) {
-	st := new(Stream)
-	st.l = new(sync.Mutex)
-	st.log = s.GetLogger(fmt.Sprintf("Stream %p", st))
-	st.startOnce = new(sync.Once)
+	c, _ := mClient.NewClient(s)
+	st := newStream(nil, EndToEnd)
 	_, err := cbor.UnmarshalFirst(state, st)
 	if err != nil {
 		return nil, err
 	}
-	transport, _ := mClient.NewClient(s)
-	st.transport = mClient.DuplexFromSeed(transport, st.Initiator, []byte(st.LocalAddr().String()))
+
+	st.transport = mClient.DuplexFromSeed(c, st.Initiator, []byte(st.LocalAddr().String()))
 
 	// Ensure that the frame geometry cannot change an active stream
 	// FIXME: Streams should support resetting sender/receivers on Geometry changes.
@@ -985,8 +983,6 @@ func LoadStream(s *client.Session, state []byte) (*Stream, error) {
 		panic(ErrGeometryChanged)
 	}
 
-	st.R.s = st
-	st.TQ = client.NewTimerQueue(st.R)
 	return st, nil
 }
 
