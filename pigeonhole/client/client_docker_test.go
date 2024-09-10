@@ -171,15 +171,29 @@ func TestAsyncGetPigeonHole(t *testing.T) {
 	id := rwCap.Addr(addr)
 	wKey := rwCap.WriteKey(addr)
 	rKey := rwCap.ReadKey(addr)
+	senderErrCh := make(chan error, 0)
+	receiverResultCh := make(chan interface{}, 0)
 	go func() {
 		// send the Put after the Get
 		<-time.After(4 * time.Second)
-		err = c.Put(id, wKey.Sign(payload), payload)
+		senderErrCh <-c.Put(id, wKey.Sign(payload), payload)
 	}()
 
-	t.Logf("Sending Get()")
-	resp, err := c.Get(id, rKey.Sign(id.Bytes()))
-	require.NoError(err)
-	require.Equal(resp, payload)
+	go func() {
+		t.Logf("Sending Get()")
+		resp, err := c.Get(id, rKey.Sign(id.Bytes()))
+		if err != nil {
+			receiverResultCh <- err
+		} else {
+			receiverResultCh <- resp
+		}
+	}()
+
+	e := <- senderErrCh
+	require.NoError(e)
+	r := <-receiverResultCh
+	r, ok := r.([]byte)
+	require.True(ok)
+	require.Equal(r, payload)
 	t.Logf("Got Response")
 }
