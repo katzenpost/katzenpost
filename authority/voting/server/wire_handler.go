@@ -42,11 +42,6 @@ func (s *Server) onConn(conn net.Conn) {
 	rAddr := conn.RemoteAddr()
 	s.log.Debugf("Accepted new connection: %v", rAddr)
 
-	defer func() {
-		conn.Close()
-		s.Done()
-	}()
-
 	// Initialize the wire protocol session.
 	auth := &wireAuthenticator{s: s}
 	keyHash := hash.Sum256From(s.identityPublicKey)

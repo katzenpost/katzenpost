@@ -162,14 +162,14 @@ func (s *Server) listenWorker(l net.Listener) {
 				s.log.Errorf("Critical accept failure: %v", err)
 				return
 			}
+			s.log.Errorf("Accept failure: %v", err)
 			continue
 		}
 
-		s.Add(1)
-		go func() {
+		s.state.Go(func() {
 			s.onConn(conn)
-			// onConn calls s.Done()
-		}()
+			conn.Close()
+		})
 	}
 
 	// NOTREACHED
@@ -188,15 +188,16 @@ func (s *Server) listenQUICWorker(l net.Listener) {
 		if err != nil {
 			if e, ok := err.(net.Error); ok && !e.Temporary() {
 				s.log.Errorf("Critical accept failure: %v", err)
+				panic(err)
 				return
 			}
+			s.log.Errorf("Accept failure: %v", err)
 			continue
 		}
-		s.Add(1)
-		go func() {
+		s.state.Go(func() {
 			s.onConn(conn)
-			// onConn calls s.Done()
-		}()
+			conn.Close()
+		})
 	}
 	// NOTREACHED
 }
