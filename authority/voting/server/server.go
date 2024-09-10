@@ -168,7 +168,6 @@ func (s *Server) listenWorker(l net.Listener) {
 
 		s.state.Go(func() {
 			s.onConn(conn)
-			conn.Close()
 		})
 	}
 
@@ -196,7 +195,6 @@ func (s *Server) listenQUICWorker(l net.Listener) {
 		}
 		s.state.Go(func() {
 			s.onConn(conn)
-			conn.Close()
 		})
 	}
 	// NOTREACHED
