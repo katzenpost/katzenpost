@@ -6,6 +6,7 @@
 package client2
 
 import (
+	"context"
 	"os"
 	"os/signal"
 	"runtime"
@@ -194,37 +195,37 @@ func testDockerClientARQSendReceive(t *testing.T) {
 	id3 := thin.NewMessageID()
 	id4 := thin.NewMessageID()
 
-	message3, err := thin.BlockingSendReliableMessage(id1, message1, &nodeIdKey, []byte("+echo"))
+	message3, err := thin.BlockingSendReliableMessage(context.Background(), id1, message1, &nodeIdKey, []byte("+echo"))
 	require.NoError(t, err)
 	require.NotEqual(t, message3, []byte{})
 	require.Equal(t, message1, message3[:len(message1)])
 
-	message3, err = thin.BlockingSendReliableMessage(id2, message1, &nodeIdKey, []byte("+echo"))
+	message3, err = thin.BlockingSendReliableMessage(context.Background(), id2, message1, &nodeIdKey, []byte("+echo"))
 	require.NoError(t, err)
 	require.NotEqual(t, message3, []byte{})
 	require.Equal(t, message1, message3[:len(message1)])
 
-	message3, err = thin.BlockingSendReliableMessage(id3, message1, &nodeIdKey, []byte("+echo"))
+	message3, err = thin.BlockingSendReliableMessage(context.Background(), id3, message1, &nodeIdKey, []byte("+echo"))
 	require.NoError(t, err)
 	require.NotEqual(t, message3, []byte{})
 	require.Equal(t, message1, message3[:len(message1)])
 
-	message3, err = thin.BlockingSendReliableMessage(id4, message1, &nodeIdKey, []byte("+echo"))
+	message3, err = thin.BlockingSendReliableMessage(context.Background(), id4, message1, &nodeIdKey, []byte("+echo"))
 	require.NoError(t, err)
 	require.NotEqual(t, message3, []byte{})
 	require.Equal(t, message1, message3[:len(message1)])
 
-	message3, err = thin.BlockingSendReliableMessage(id4, message1, &nodeIdKey, []byte("+echo"))
+	message3, err = thin.BlockingSendReliableMessage(context.Background(), id4, message1, &nodeIdKey, []byte("+echo"))
 	require.NoError(t, err)
 	require.NotEqual(t, message3, []byte{})
 	require.Equal(t, message1, message3[:len(message1)])
 
-	message3, err = thin.BlockingSendReliableMessage(id4, message1, &nodeIdKey, []byte("+echo"))
+	message3, err = thin.BlockingSendReliableMessage(context.Background(), id4, message1, &nodeIdKey, []byte("+echo"))
 	require.NoError(t, err)
 	require.NotEqual(t, message3, []byte{})
 	require.Equal(t, message1, message3[:len(message1)])
 
-	message3, err = thin.BlockingSendReliableMessage(id4, message1, &nodeIdKey, []byte("+echo"))
+	message3, err = thin.BlockingSendReliableMessage(context.Background(), id4, message1, &nodeIdKey, []byte("+echo"))
 	require.NoError(t, err)
 	require.NotEqual(t, message3, []byte{})
 	require.Equal(t, message1, message3[:len(message1)])
