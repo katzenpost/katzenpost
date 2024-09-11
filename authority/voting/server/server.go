@@ -157,6 +157,12 @@ func (s *Server) listenWorker(l net.Listener) {
 		s.Done()
 	}()
 	for {
+		select {
+		case <-s.haltedCh:
+			s.log.Notice("listenWorker Shutting down")
+			return
+		default:
+		}
 		conn, err := l.Accept()
 		if err != nil {
 			if e, ok := err.(net.Error); ok && !e.Temporary() {
@@ -184,6 +190,12 @@ func (s *Server) listenQUICWorker(l net.Listener) {
 		s.Done()
 	}()
 	for {
+		select {
+		case <-s.haltedCh:
+			s.log.Notice("listenQUICWorker Shutting down")
+			return
+		default:
+		}
 		conn, err := l.Accept()
 		if err != nil {
 			if e, ok := err.(net.Error); ok && !e.Temporary() {
@@ -191,7 +203,7 @@ func (s *Server) listenQUICWorker(l net.Listener) {
 				return
 			}
 			s.log.Errorf("Accept failure: %v", err)
-			<-time.After(1*time.Second)
+			<-time.After(1 * time.Second)
 			continue
 		}
 		s.state.Go(func() {
