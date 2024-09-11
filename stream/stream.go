@@ -967,10 +967,26 @@ func NewStream(s *client.Session) *Stream {
 	return st
 }
 
+type nilTransport int
+
+func (*nilTransport) Put(addr, payload []byte) error {
+	panic("NilTransport")
+}
+func (*nilTransport) GetWithContext(ctx context.Context, addr []byte) ([]byte, error) {
+	panic("NilTransport")
+}
+func (*nilTransport) Get(addr []byte) ([]byte, error) {
+	panic("NilTransport")
+}
+func (*nilTransport) PayloadSize() int {
+	return 0
+}
+
 // LoadStream initializes a Stream from state saved by Save()
 func LoadStream(s *client.Session, state []byte) (*Stream, error) {
 	c, _ := mClient.NewClient(s)
-	st := newStream(nil, EndToEnd)
+	st := newStream(new(nilTransport), EndToEnd)
+	st.log = s.GetLogger(fmt.Sprintf("Stream %p", st))
 	_, err := cbor.UnmarshalFirst(state, st)
 	if err != nil {
 		return nil, err
