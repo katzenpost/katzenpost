@@ -27,6 +27,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"gopkg.in/op/go-logging.v1"
 
@@ -187,10 +188,10 @@ func (s *Server) listenQUICWorker(l net.Listener) {
 		if err != nil {
 			if e, ok := err.(net.Error); ok && !e.Temporary() {
 				s.log.Errorf("Critical accept failure: %v", err)
-				panic(err)
 				return
 			}
 			s.log.Errorf("Accept failure: %v", err)
+			<-time.After(1*time.Second)
 			continue
 		}
 		s.state.Go(func() {
