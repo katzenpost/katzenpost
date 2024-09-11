@@ -374,6 +374,8 @@ func TestStreamSerialize(t *testing.T) {
 	require.NoError(err)
 	err = r.Close()
 	require.NoError(err)
+	s.Halt()
+	r.Halt()
 }
 
 func TestCreateMulticastStream(t *testing.T) {
@@ -406,6 +408,10 @@ func TestCreateMulticastStream(t *testing.T) {
 	n, err := io.ReadFull(r, buf2)
 	require.NoError(err)
 	require.Equal(n, len(message))
+	err = r.Close()
+	require.NoError(err)
+	r.Halt()
+	s.Halt()
 }
 
 func init() {
