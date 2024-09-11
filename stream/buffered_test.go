@@ -119,6 +119,7 @@ func randPayload() []byte {
 }
 
 func TestMockTransport(t *testing.T) {
+	t.Parallel()
 	garbage := NewMockTransport()
 	wg := new(sync.WaitGroup)
 	wg.Add(2)
@@ -148,6 +149,7 @@ type msg struct {
 }
 
 func TestBufferedStream(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	trans := NewMockTransport()
 	a, b := newStreams(trans)
@@ -198,6 +200,7 @@ func TestBufferedStream(t *testing.T) {
 }
 
 func TestLossyStream(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	trans := NewLossyMockTransport(0.1)
 	a, b := newStreams(trans)

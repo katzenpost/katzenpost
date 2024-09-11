@@ -69,6 +69,7 @@ func getSession(t *testing.T) *client.Session {
 }
 
 func TestFrameKey(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 
 	// the same key should be returned for every idx
@@ -88,6 +89,7 @@ func TestFrameKey(t *testing.T) {
 }
 
 func TestCreateStream(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	session := getSession(t)
 	defer session.Shutdown()
@@ -150,6 +152,7 @@ func TestCreateStream(t *testing.T) {
 }
 
 func TestStreamFragmentation(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	session := getSession(t)
 	defer session.Shutdown()
@@ -258,6 +261,7 @@ func TestStreamFragmentation(t *testing.T) {
 }
 
 func TestCBORSerialization(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	session := getSession(t)
 	defer session.Shutdown()
@@ -308,6 +312,7 @@ func TestCBORSerialization(t *testing.T) {
 }
 
 func TestStreamSerialize(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	session := getSession(t)
 	defer session.Shutdown()
@@ -372,6 +377,7 @@ func TestStreamSerialize(t *testing.T) {
 }
 
 func TestCreateMulticastStream(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	session := getSession(t)
 	defer session.Shutdown()
