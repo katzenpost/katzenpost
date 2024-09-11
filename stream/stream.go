@@ -822,6 +822,7 @@ func (s *Stream) readFrame() (*Frame, error) {
 			cancelFn()
 		case <-s.retryExpDist.OutCh(): // retransmit unacknowledged requests periodically
 			cancelFn()
+		case <-ctx.Done():
 		}
 	})
 
