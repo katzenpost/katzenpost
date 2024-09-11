@@ -95,7 +95,7 @@ func (a *TimerQueue) worker() {
 		if m := a.Priq.Peek(); m != nil {
 			// Figure out if the message needs to be handled now.
 			until := time.Until(time.Unix(0, int64(m.Priority)))
-			if until == 0 {
+			if until <= 0 {
 				a.l.Unlock()
 				a.forward()
 				continue
