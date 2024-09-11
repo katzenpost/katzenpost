@@ -30,7 +30,7 @@ const (
 	keySize           = 32
 	nonceSize         = 24
 	no_ack            = math.MaxUint64
-	defaultWindowSize = 42
+	defaultWindowSize = 7
 )
 
 var (
