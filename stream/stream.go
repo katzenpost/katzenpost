@@ -858,12 +858,17 @@ func (s *Stream) processAck(f *Frame) {
 	}
 	ackD := false
 	s.R.Lock()
+
+	todelete := []uint64{}
 	// ack all frames predecessor to peer ack
 	for i, _ := range s.R.Wack {
 		if i <= f.Ack {
-			delete(s.R.Wack, i)
+			todelete = append(todelete, i)
 			ackD = true
 		}
+	}
+	for _, i := range todelete {
+		delete(s.R.Wack, i)
 	}
 	s.R.Unlock()
 	// update last_ack from peer
