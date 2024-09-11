@@ -45,7 +45,28 @@ type PigeonHole struct {
 	pigeonHoleSize int // number of entries to keep
 	gcSize         int // number of entries to place in each garbage bucket
 
-	write func(cborplugin.Command)
+	waiting map[common.MessageID][]*cborplugin.Response
+	write   func(cborplugin.Command)
+}
+
+// Wait adds pending cborplugin.Responses (with SURBs) by MessageID to a waiting map
+func (m *PigeonHole) Wait(msgID common.MessageID, response *cborplugin.Response) {
+	_, ok := m.waiting[msgID]
+	if !ok {
+		m.waiting[msgID] = []*cborplugin.Response{response}
+	} else {
+		m.waiting[msgID] = append(m.waiting[msgID], response)
+	}
+}
+
+// Wake returns the pending responses from the waiting map and removes the entries
+func (m *PigeonHole) Wake(msgID common.MessageID) []*cborplugin.Response {
+	w, ok := m.waiting[msgID]
+	if !ok {
+		return []*cborplugin.Response{}
+	}
+	delete(m.waiting, msgID)
+	return w
 }
 
 // Get retrieves an item from the db
@@ -70,7 +91,7 @@ func (m *PigeonHole) Get(msgID common.MessageID) ([]byte, error) {
 
 // Put places an item in the db
 func (m *PigeonHole) Put(msgID common.MessageID, payload []byte) error {
-	return m.db.Update(func(tx *bolt.Tx) error {
+	err := m.db.Update(func(tx *bolt.Tx) error {
 		bkt := tx.Bucket([]byte(pigeonHoleBucket))
 		p := bkt.Get(msgID[:])
 		if p != nil {
@@ -116,6 +137,22 @@ func (m *PigeonHole) Put(msgID common.MessageID, payload []byte) error {
 		// store msgID under gcBkt
 		return nil
 	})
+	if err != nil {
+		return err
+	}
+
+	// respond to any Get's that were waiting for this Put
+	pigeonHoleResponse := &common.PigeonHoleResponse{Status: common.StatusOK, Payload: payload}
+	rawResp, err := pigeonHoleResponse.Marshal()
+	if err != nil {
+		return nil
+	}
+
+	for _, pluginResponse := range m.Wake(msgID) {
+		pluginResponse.Payload = rawResp
+		m.write(pluginResponse)
+	}
+	return nil
 }
 
 // GarbageCollect prunes the oldest bucket of entries when the pigeonHole size limit is exceeded
@@ -161,6 +198,7 @@ func NewPigeonHole(fileStore string, log *logging.Logger, gcSize int, pigeonHole
 		log:            log,
 		pigeonHoleSize: pigeonHoleSize,
 		gcSize:         gcSize,
+		waiting:        make(map[common.MessageID][]*cborplugin.Response),
 	}
 	db, err := bolt.Open(fileStore, 0600, nil)
 	if err != nil {
@@ -215,12 +253,23 @@ func (m *PigeonHole) OnCommand(cmd cborplugin.Command) error {
 				m.log.Debugf("Put(%x): OK", req.ID)
 				resp.Status = common.StatusOK
 			}
+			waiting := m.Wake(req.ID)
+			for _, pluginResponse := range waiting {
+				pigeonHoleResponse := &common.PigeonHoleResponse{Status: common.StatusOK, Payload: req.Payload}
+				rawResp, err := pigeonHoleResponse.Marshal()
+				if err != nil {
+					return nil
+				}
+				pluginResponse.Payload = rawResp
+				m.write(pluginResponse)
+			}
 			// Otherwise request data
 		} else {
 			p, err := m.Get(req.ID)
 			if err != nil {
-				m.log.Debugf("Get(%x): NotFound", req.ID)
-				resp.Status = common.StatusNotFound
+				m.log.Debugf("Get(%x): Wait", req.ID)
+				m.Wait(req.ID, &cborplugin.Response{ID: r.ID, SURB: r.SURB})
+				return nil
 			} else {
 				m.log.Debugf("Get(%x): OK", req.ID)
 				resp.Status = common.StatusOK

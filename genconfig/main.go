@@ -77,6 +77,7 @@ type katzenpost struct {
 	serviceNodeIdx int
 	hasPanda       bool
 	hasProxy       bool
+	noMixDecoy     bool
 	debugConfig    *cConfig.Debug
 }
 
@@ -156,7 +157,13 @@ func (s *katzenpost) genNodeConfig(isGateway, isServiceNode bool, isVoting bool)
 	cfg.Server.WireKEM = s.wireKEMScheme
 	cfg.Server.PKISignatureScheme = s.pkiSignatureScheme.Name()
 	cfg.Server.Identifier = n
-	cfg.Server.Addresses = []string{fmt.Sprintf("%s:%d", s.bindAddr, s.lastPort)}
+	if isGateway {
+		cfg.Server.Addresses = []string{fmt.Sprintf("http://127.0.0.1:%d", s.lastPort), fmt.Sprintf("tcp://127.0.0.1:%d", s.lastPort+1)}
+		s.lastPort += 2
+	} else {
+		cfg.Server.Addresses = []string{fmt.Sprintf("http://127.0.0.1:%d", s.lastPort)}
+		s.lastPort += 1
+	}
 	cfg.Server.DataDir = filepath.Join(s.baseDir, n)
 
 	os.Mkdir(filepath.Join(s.outDir, cfg.Server.Identifier), 0700)
@@ -166,21 +173,18 @@ func (s *katzenpost) genNodeConfig(isGateway, isServiceNode bool, isVoting bool)
 	if isGateway {
 		cfg.Management = new(sConfig.Management)
 		cfg.Management.Enable = true
-		cfg.Server.AltAddresses = map[string][]string{
-			"TCP": []string{fmt.Sprintf("localhost:%d", s.lastPort)},
-		}
 	}
 	if isServiceNode {
 		cfg.Management = new(sConfig.Management)
 		cfg.Management.Enable = true
 	}
 	// Enable Metrics endpoint
-	s.lastPort += 1
 	cfg.Server.MetricsAddress = fmt.Sprintf("127.0.0.1:%d", s.lastPort)
+	s.lastPort += 1
 
 	// Debug section.
 	cfg.Debug = new(sConfig.Debug)
-	cfg.Debug.SendDecoyTraffic = false
+	cfg.Debug.SendDecoyTraffic = !s.noMixDecoy
 
 	// PKI section.
 	if isVoting {
@@ -281,7 +285,6 @@ func (s *katzenpost) genNodeConfig(isGateway, isServiceNode bool, isVoting bool)
 		s.nodeIdx++
 	}
 	s.nodeConfigs = append(s.nodeConfigs, cfg)
-	s.lastPort++
 	_ = cfgIdKey(cfg, s.outDir)
 	return cfg.FixupAndValidate()
 }
@@ -299,7 +302,7 @@ func (s *katzenpost) genVotingAuthoritiesCfg(numAuthorities int, parameters *vCo
 			WireKEMScheme:      s.wireKEMScheme,
 			PKISignatureScheme: s.pkiSignatureScheme.Name(),
 			Identifier:         fmt.Sprintf("auth%d", i),
-			Addresses:          []string{fmt.Sprintf("%s:%d", s.bindAddr, s.lastPort)},
+			Addresses:          []string{fmt.Sprintf("http://127.0.0.1:%d", s.lastPort)},
 			DataDir:            filepath.Join(s.baseDir, fmt.Sprintf("auth%d", i)),
 		}
 		os.Mkdir(filepath.Join(s.outDir, cfg.Server.Identifier), 0700)
@@ -390,7 +393,8 @@ func main() {
 	ratchetNike := flag.String("ratchetNike", "CTIDH512-X25519", "Name of the NIKE Scheme to be used with the doubleratchet")
 	UserForwardPayloadLength := flag.Int("UserForwardPayloadLength", 2000, "UserForwardPayloadLength")
 	pkiSignatureScheme := flag.String("pkiScheme", "Ed25519", "PKI Signature Scheme to be used")
-	noDecoy := flag.Bool("noDecoy", false, "Disable decoy traffic for the client")
+	noDecoy := flag.Bool("noDecoy", true, "Disable decoy traffic for the client")
+	noMixDecoy := flag.Bool("noMixDecoy", true, "Disable decoy traffic for the mixes")
 	dialTimeout := flag.Int("dialTimeout", 0, "Session dial timeout")
 	maxPKIDelay := flag.Int("maxPKIDelay", 0, "Initial maximum PKI retrieval delay")
 	pollingIntvl := flag.Int("pollingIntvl", 0, "Polling interval")
@@ -462,6 +466,7 @@ func main() {
 		InitialMaxPKIRetrievalDelay: *maxPKIDelay,
 		PollingInterval:             *pollingIntvl,
 	}
+	s.noMixDecoy = *noMixDecoy
 
 	nrHops := *nrLayers + 2
 

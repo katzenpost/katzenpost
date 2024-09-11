@@ -22,7 +22,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
-	"strconv"
+	"net/url"
 
 	"github.com/fxamacker/cbor/v2"
 
@@ -227,35 +227,33 @@ func IsDescriptorWellFormed(d *MixDescriptor, epoch uint64) error {
 			expectedIPVer = 4
 		case TransportTCPv6:
 			expectedIPVer = 6
+		case TransportHTTP:
+		case TransportTCP:
+			// Ignore transports that don't have validation logic.
+			continue
 		default:
 			// Unknown transports are only supported between the client and
 			// gateway.
 			if !d.IsGatewayNode {
 				return fmt.Errorf("Non-gateway published Transport '%v'", transport)
 			}
-			if transport != TransportTCP {
-				// Ignore transports that don't have validation logic.
-				continue
-			}
 		}
 
 		// Validate all addresses belonging to the TCP variants.
 		for _, v := range addrs {
-			h, p, err := net.SplitHostPort(v)
+			u, err := url.Parse(v)
 			if err != nil {
-				return fmt.Errorf("Descriptor contains invalid address ['%v']'%v': %v", transport, v, err)
+				return err
 			}
-			if len(h) == 0 {
-				return fmt.Errorf("Descriptor contains invalid address ['%v']'%v'", transport, v)
+			switch u.Scheme {
+			case TransportWS, TransportTCP, TransportTCPv4, TransportTCPv6, TransportHTTP:
+			default:
+				return fmt.Errorf("Unsupported listener scheme '%v': %v", v, u.Scheme)
 			}
-			if port, err := strconv.ParseUint(p, 10, 16); err != nil {
-				return fmt.Errorf("Descriptor contains invalid address ['%v']'%v': %v", transport, v, err)
-			} else if port == 0 {
-				return fmt.Errorf("Descriptor contains invalid address ['%v']'%v': port is 0", transport, v)
-			}
+
 			switch expectedIPVer {
 			case 4, 6:
-				if ver, err := getIPVer(h); err != nil {
+				if ver, err := getIPVer(u.Hostname()); err != nil {
 					return fmt.Errorf("Descriptor contains invalid address ['%v']'%v': %v", transport, v, err)
 				} else if ver != expectedIPVer {
 					return fmt.Errorf("Descriptor contains invalid address ['%v']'%v': IP version mismatch", transport, v)
@@ -264,14 +262,14 @@ func IsDescriptorWellFormed(d *MixDescriptor, epoch uint64) error {
 				// This must be TransportTCP or something else that supports
 				// "sensible" DNS style hostnames.  Validate that they are
 				// at least somewhat well formed.
-				if _, err := idna.Lookup.ToASCII(h); err != nil {
+				if _, err := idna.Lookup.ToASCII(u.Hostname()); err != nil {
 					return fmt.Errorf("Descriptor contains invalid address ['%v']'%v': %v", transport, v, err)
 				}
 			}
 		}
 	}
-	if len(d.Addresses[TransportTCPv4]) == 0 {
-		return fmt.Errorf("Descriptor contains no TCPv4 addresses")
+	if len(d.Addresses) == 0 {
+		return fmt.Errorf("Descriptor contains no addresses")
 	}
 	if !d.IsServiceNode {
 		if d.Kaetzchen != nil {

@@ -20,14 +20,12 @@ package config
 import (
 	"errors"
 	"fmt"
-	"net"
 	"net/mail"
 	"net/netip"
 	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
-	"strconv"
 	"strings"
 
 	"golang.org/x/net/idna"
@@ -97,14 +95,9 @@ type Server struct {
 	// to for incoming connections.
 	Addresses []string
 
-	// AltAddresses is the map of extra transports and addresses at which
-	// the mix is reachable by clients.  The most useful alternative
-	// transport is likely ("tcp") (`core/pki.TransportTCP`).
-	AltAddresses map[string][]string
-
-	// If set to true then only advertise to the PKI the AltAddresses
+	// If present then only advertise to the PKI these Addresses
 	// and do NOT send any of the Addresses.
-	OnlyAdvertiseAltAddresses bool
+	OnlyAdvertiseAddresses []string
 
 	// MetricsAddress is the address/port to bind the prometheus metrics endpoint to.
 	MetricsAddress string
@@ -117,12 +110,6 @@ type Server struct {
 
 	// IsServiceNode specifies if the server is a service node or not.
 	IsServiceNode bool
-}
-
-func (sCfg *Server) applyDefaults() {
-	if sCfg.AltAddresses == nil {
-		sCfg.AltAddresses = make(map[string][]string)
-	}
 }
 
 func (sCfg *Server) validate() error {
@@ -140,8 +127,10 @@ func (sCfg *Server) validate() error {
 
 	if sCfg.Addresses != nil {
 		for _, v := range sCfg.Addresses {
-			if err := utils.EnsureAddrIPPort(v); err != nil {
-				return fmt.Errorf("config: Server: Address '%v' is invalid: %v", v, err)
+			if u, err := url.Parse(v); err != nil {
+				return fmt.Errorf("config: Authority: Address '%v' is invalid: %v", v, err)
+			} else if u.Port() == "" {
+				return fmt.Errorf("config: Authority: Address '%v' is invalid: Must contain Port", v)
 			}
 		}
 	} else {
@@ -153,34 +142,12 @@ func (sCfg *Server) validate() error {
 			return err
 		}
 
-		sCfg.Addresses = []string{addr.String() + defaultAddress}
+		sCfg.Addresses = []string{"tcp://" + addr.String() + defaultAddress}
 	}
 
 	internalTransports := make(map[string]bool)
 	for _, v := range pki.InternalTransports {
 		internalTransports[strings.ToLower(string(v))] = true
-	}
-
-	for k, v := range sCfg.AltAddresses {
-		lowkey := strings.ToLower(k)
-		switch lowkey {
-		case pki.TransportTCP:
-			for _, a := range v {
-				h, p, err := net.SplitHostPort(a)
-				if err != nil {
-					return fmt.Errorf("config: Provider: AltAddress '%v' is invalid: %v", a, err)
-				}
-				if len(h) == 0 {
-					return fmt.Errorf("config: Provider: AltAddress '%v' is invalid: missing host", a)
-				}
-				if port, err := strconv.ParseUint(p, 10, 16); err != nil {
-					return fmt.Errorf("config: Provider: AltAddress '%v' is invalid: %v", a, err)
-				} else if port == 0 {
-					return fmt.Errorf("config: Provider: AltAddress '%v' is invalid: missing port", a)
-				}
-			}
-		default:
-		}
 	}
 
 	if !filepath.IsAbs(sCfg.DataDir) {
@@ -620,31 +587,6 @@ func (pCfg *Gateway) validate() error {
 		internalTransports[strings.ToLower(string(v))] = true
 	}
 
-	for k, v := range pCfg.AltAddresses {
-		kLower := strings.ToLower(k)
-		if internalTransports[kLower] {
-			return fmt.Errorf("config: Provider: AltAddress is overriding internal transport: %v", kLower)
-		}
-		switch kLower {
-		case pki.TransportTCP:
-			for _, a := range v {
-				h, p, err := net.SplitHostPort(a)
-				if err != nil {
-					return fmt.Errorf("config: Provider: AltAddress '%v' is invalid: %v", a, err)
-				}
-				if len(h) == 0 {
-					return fmt.Errorf("config: Provider: AltAddress '%v' is invalid: missing host", a)
-				}
-				if port, err := strconv.ParseUint(p, 10, 16); err != nil {
-					return fmt.Errorf("config: Provider: AltAddress '%v' is invalid: %v", a, err)
-				} else if port == 0 {
-					return fmt.Errorf("config: Provider: AltAddress '%v' is invalid: missing port", a)
-				}
-			}
-		default:
-		}
-	}
-
 	if pCfg.SQLDB != nil {
 		if err := pCfg.SQLDB.validate(); err != nil {
 			return err
@@ -705,7 +647,7 @@ func (pCfg *PKI) validate(datadir string) error {
 	if pCfg.Voting == nil {
 		return errors.New("Voting is nil")
 	}
-	return pCfg.Voting.validate(datadir)
+	return nil
 }
 
 // Voting is a set of Authorities that vote on a threshold consensus PKI
@@ -798,7 +740,6 @@ func (cfg *Config) FixupAndValidate() error {
 	cfg.Management.applyDefaults(cfg.Server)
 
 	// Perform basic validation.
-	cfg.Server.applyDefaults()
 	if err := cfg.Server.validate(); err != nil {
 		return err
 	}

@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"math"
 	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sync"
@@ -41,6 +42,8 @@ import (
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/utils"
+	"github.com/katzenpost/katzenpost/http/common"
+	"github.com/quic-go/quic-go"
 )
 
 // ErrGenerateOnly is the error returned when the server initialization
@@ -166,6 +169,29 @@ func (s *Server) listenWorker(l net.Listener) {
 		s.onConn(conn)
 	}
 
+	// NOTREACHED
+}
+
+func (s *Server) listenQUICWorker(l net.Listener) {
+	addr := l.Addr()
+	s.log.Noticef("QUIC Listening on: %v", addr)
+	defer func() {
+		s.log.Noticef("Stopping listening on: %v", addr)
+		l.Close()
+		s.Done()
+	}()
+	for {
+		conn, err := l.Accept()
+		if err != nil {
+			if e, ok := err.(net.Error); ok && !e.Temporary() {
+				s.log.Errorf("Critical accept failure: %v", err)
+				return
+			}
+			continue
+		}
+		s.Add(1)
+		s.onConn(conn)
+	}
 	// NOTREACHED
 }
 
@@ -352,14 +378,42 @@ func New(cfg *config.Config) (*Server, error) {
 
 	// Start up the listeners.
 	for _, v := range s.cfg.Server.Addresses {
-		l, err := net.Listen("tcp", v)
-		if err != nil {
-			s.log.Errorf("Failed to start listener '%v': %v", v, err)
-			continue
+		// parse the Address line as a URL
+		u, err := url.Parse(v)
+		if err == nil {
+			switch u.Scheme {
+			case "tcp":
+				l, err := net.Listen("tcp", u.Host)
+				if err != nil {
+					s.log.Errorf("Failed to start listener '%v': %v", v, err)
+					continue
+				}
+				s.listeners = append(s.listeners, l)
+				s.Add(1)
+				s.state.Go(func() {
+					s.listenWorker(l)
+				})
+			case "http":
+				l, err := quic.ListenAddr(u.Host, common.GenerateTLSConfig(), nil)
+				if err != nil {
+					s.log.Errorf("Failed to start listener '%v': %v", v, err)
+					continue
+				}
+				// Wrap quic.Listener with common.QuicListener
+				// so it implements like net.Listener for a
+				// single QUIC Stream
+				ql := common.QuicListener{Listener: l}
+				s.listeners = append(s.listeners, &ql)
+				s.Add(1)
+				// XXX: is there any HTTP3 specific stuff that we want to do?
+				s.state.Go(func() {
+					s.listenQUICWorker(&ql)
+				})
+			default:
+				s.log.Errorf("Unsupported listener scheme '%v': %v", v, err)
+				continue
+			}
 		}
-		s.listeners = append(s.listeners, l)
-		s.Add(1)
-		go s.listenWorker(l)
 	}
 	if len(s.listeners) == 0 {
 		s.log.Errorf("Failed to start all listeners.")
