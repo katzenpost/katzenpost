@@ -98,10 +98,12 @@ func NewThinClient(cfg *config.Config) *ThinClient {
 	}
 }
 
+// GetConfig returns the config
 func (t *ThinClient) GetConfig() *config.Config {
 	return t.cfg
 }
 
+// GetLogger(prefix) returns a logger with prefix
 func (t *ThinClient) GetLogger(prefix string) *logging.Logger {
 	return t.logBackend.GetLogger(prefix)
 }
