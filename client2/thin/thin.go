@@ -571,6 +571,15 @@ func (t *ThinClient) BlockingSendReliableMessage(ctx context.Context, messageID 
 	if ctx == nil {
 		return nil, errors.New("context cannot be nil")
 	}
+
+	if messageID == nil {
+		messageID = new([MessageIDLength]byte)
+		_, err := io.ReadFull(rand.Reader, messageID[:])
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	req := &Request{
 		ID:                messageID,
 		WithSURB:          true,
