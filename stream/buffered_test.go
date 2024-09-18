@@ -221,7 +221,8 @@ func TestLossyStream(t *testing.T) {
 			require.NoError(err)
 			t.Logf("sent data %d", i)
 		}
-		//a.Close() // XXX: Stream.WriteBuf isn't drained yet!
+		a.Sync()
+		a.Close()
 		wg.Done()
 	}()
 	bs := BufferedStream{Stream: b}
@@ -246,6 +247,8 @@ func TestLossyStream(t *testing.T) {
 	for i := 0; i < numEntries; i++ {
 		require.Equal(sent[i], recv[i])
 	}
+	a.Halt()
+	b.Halt()
 }
 
 func init() {
