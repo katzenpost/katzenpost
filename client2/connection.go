@@ -538,9 +538,9 @@ func (c *connection) onWireConn(w *wire.Session) {
 			adjFetchDelay()
 			continue
 		case ctx := <-c.sendCh:
-			cmd := &commands.SendPacket{
-				SphinxPacket: ctx.pkt,
+			cmd := &commands.SendRetrievePacket{
 				Cmds:         w.GetCommands(),
+				SphinxPacket: ctx.pkt,
 			}
 			wireErr = w.SendCommand(cmd)
 			ctx.doneFn(wireErr)
@@ -574,9 +574,9 @@ func (c *connection) onWireConn(w *wire.Session) {
 		// Send a fetch if there is not one outstanding.
 		if doFetch {
 			if nrReqs == nrResps {
-				cmd := &commands.RetrieveMessage{
-					Sequence: seq,
-					Cmds:     w.GetCommands(),
+				cmd := &commands.SendRetrievePacket{
+					Cmds: w.GetCommands(),
+					// decoy
 				}
 				if wireErr = w.SendCommand(cmd); wireErr != nil {
 					c.log.Debugf("Failed to send RetrieveMessage: %v", wireErr)
@@ -610,6 +610,17 @@ func (c *connection) onWireConn(w *wire.Session) {
 			c.log.Debugf("Received Disconnect.")
 			wireErr = newProtocolError("peer send Disconnect")
 			return
+		case *commands.SendRetrievePacketReply:
+			if c.client.cfg.Callbacks.OnACKFn != nil {
+				c.Go(func() {
+					if err := c.client.cfg.Callbacks.OnACKFn(&cmd.SURBID, cmd.Payload); err != nil {
+						c.log.Debugf("Caller failed to handle MessageACK: %v", err)
+						forceCloseConn(err)
+					}
+				})
+			} else {
+				panic("client.cfg.Callbacks.OnACKFn must not be nil")
+			}
 		case *commands.MessageEmpty:
 			if wireErr = checkSeq(cmd.Sequence); wireErr != nil {
 				c.log.Errorf("MessageEmpty sequence unexpected: %v", cmd.Sequence)
