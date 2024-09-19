@@ -78,7 +78,6 @@ func (b *BufferedStream) CBORDecodeAsync(instance interface{}) chan interface{} 
 			}
 			select {
 			case <-b.HaltCh():
-				b.Stream.Halt()
 				return
 			case result <- instance:
 			}

@@ -20,23 +20,26 @@ import (
 	"golang.org/x/crypto/nacl/secretbox"
 	"gopkg.in/op/go-logging.v1"
 	"io"
+	"math"
 	"os"
 	"sync"
 	"time"
 )
 
 const (
-	keySize   = 32
-	nonceSize = 24
+	keySize           = 32
+	nonceSize         = 24
+	no_ack            = math.MaxUint64
+	defaultWindowSize = 7
 )
 
 var (
 	hash               = sha256.New
 	cborFrameOverhead  = 0
 	retryDelay         = epochtime.Period / 16
-	averageRetryRate   = epochtime.Period / 4 // how often to retransmit Get requests for unresponsive requests
-	minBackoffDelay    = 1 * time.Millisecond
-	maxBackoffDelay    = epochtime.Period / 4
+	averageRetryRate   = epochtime.Period / 4   // how often to retransmit Get requests for unresponsive requests
+	averageReadRate    = epochtime.Period / 256 // how often to send Get requests
+	averageSendRate    = epochtime.Period / 256 // how often to send Get requests
 	defaultTimeout     = 0 * time.Second
 	ErrStreamClosed    = errors.New("Stream Closed")
 	ErrFrameDecrypt    = errors.New("Failed to decrypt")
@@ -94,7 +97,7 @@ const (
 // frameWithPriority implmeents client.Item and holds the retransmit deadline and Frame for use with a TimerQueue
 type frameWithPriority struct {
 	f        *Frame // payload of message
-	priority uint64 // timeout, for when to retransmit if the message is not acknowledged
+	priority uint64 // the time in nanoseconds of when to retransmit an unacknowledged message
 }
 
 // Priority implements client.Item interface; used by TimerQueue for retransmissions
@@ -135,10 +138,12 @@ type Stream struct {
 	// Mode indicates what type of Stream, e.g. EndToEnd or Finite
 	Mode StreamMode
 
-	retryExpDist *client2.ExpDist
+	retryExpDist  *client2.ExpDist
+	readerExpDist *client2.ExpDist
+	senderExpDist *client2.ExpDist
 
 	// Transport provides Put and Get
-	c Transport
+	transport Transport
 	// frame encryption secrets
 	WriteKey *[keySize]byte // secretbox key to encrypt with
 	ReadKey  *[keySize]byte // secretbox key to decrypt with
@@ -217,35 +222,27 @@ func (r *ReTx) Push(i client.Item) error {
 	r.Unlock()
 	if !ok {
 		// Already Acknowledged
+		r.s.log.Debugf("%d already ACKedd", m.f.Id)
 		return nil
 	}
-	// XXX: causes panic in TimerQueue if an error is returned
-	err := r.s.txFrame(m.f)
-	if err != nil {
-		// try again later
-		m.priority = uint64(time.Now().Add(retryDelay).UnixNano())
-		r.s.txEnqueue(m)
-	}
+	m.priority = uint64(time.Now().Add(retryDelay).UnixNano())
+	r.s.log.Debugf("ReTx.Push(): txFrame %d %v", m.f.Id, time.Until(time.Unix(0, int64(m.priority))))
+	r.s.txFrame(m.f)
+	r.s.Go(func() {
+		r.s.txEnqueue(m) // XXX: deadlocks TQ if called from this routine
+	})
 	return nil
 }
 
 // reader polls receive window of messages and adds to the reader queue
 func (s *Stream) reader() {
-	backoff := minBackoffDelay
 	for {
 		s.l.Lock()
+		doFlush := false
 		switch s.RState {
 		case StreamClosed:
 			// No more frames will be sent by peer
 			// If ReliableStream, send final Ack
-			if s.Mode == EndToEnd {
-				if s.ReadIdx > 0 {
-					if s.ReadIdx-1 > s.AckIdx {
-						s.log.Debugf("reader mustAck at StreamClosed() doFlush()")
-						s.doFlush()
-					}
-				}
-			}
 			s.l.Unlock()
 			s.doFlush()
 			return
@@ -254,47 +251,32 @@ func (s *Stream) reader() {
 			if s.Mode == EndToEnd {
 				if s.ReadIdx-s.AckIdx > s.WindowSize {
 					s.log.Debugf("reader() doFlush: s.ReadIdx-s.AckIdx = %d", s.ReadIdx-s.AckIdx)
-					s.doFlush()
+					doFlush = true
 				}
 			}
 		}
 		s.l.Unlock()
+		if doFlush {
+			s.doFlush()
+		}
 
 		// read next frame
+		select {
+		case <-s.HaltCh():
+			return
+		case <-s.readerExpDist.OutCh():
+		}
 		f, err := s.readFrame()
 		switch err {
 		case nil:
-			backoff = backoff / 4
-			if backoff < minBackoffDelay {
-				backoff = minBackoffDelay
-			}
-			s.log.Debugf("reader() got Frame: resetting backoff: %s", backoff)
-		case mClient.ErrStatusNotFound:
-			s.log.Debugf("%s for frame: %d", err, s.ReadIdx)
-			backoff = backoff << 1
-			if backoff > maxBackoffDelay {
-				backoff = maxBackoffDelay
-			}
-			s.log.Debugf("reader() backoff: wait for %s", backoff)
-			// we got a response from the pigeonhole service but no data
-			select {
-			case <-time.After(backoff):
-			case <-s.HaltCh():
-				return
-			}
-			continue
+			s.log.Debugf("reader() got Frame: %d", f.Id)
 		default:
-			s.log.Errorf("readFrame Got err %s", err)
-			backoff = backoff << 1
-			if backoff > maxBackoffDelay {
-				backoff = maxBackoffDelay
-			}
-			s.log.Errorf("retrying in %s", backoff)
-			// rate limit spinning if client is offline, error returns immediately
+			s.log.Debugf("reader() got Error: %s", err)
 			select {
 			case <-s.HaltCh():
+				s.log.Debugf("reader() halting!")
 				return
-			case <-time.After(backoff):
+			default:
 			}
 			continue
 		}
@@ -484,7 +466,7 @@ func (s *Stream) writer() {
 		select {
 		case <-s.HaltCh():
 			return
-		default:
+		case <-s.senderExpDist.OutCh():
 		}
 		mustAck := false
 		mustWaitForAck := false
@@ -504,8 +486,10 @@ func (s *Stream) writer() {
 			}
 			if s.Mode == EndToEnd {
 				if s.ReadIdx-s.AckIdx > s.WindowSize {
-					s.log.Debugf("writer() WindowSize: mustAck")
 					mustAck = true
+				}
+				if s.WriteIdx-s.PeerAckIdx > s.WindowSize {
+					mustWaitForAck = true
 				}
 			}
 			if s.RState == StreamClosed || s.WState == StreamClosing {
@@ -522,18 +506,12 @@ func (s *Stream) writer() {
 				}
 			}
 			if !mustAck && !mustTeardown {
-				s.R.Lock()
-
-				// must wait for Ack before continuing to transmit
-				if s.Mode == EndToEnd {
-					if s.WriteIdx > s.PeerAckIdx+s.WindowSize {
-						mustWaitForAck = true
-						s.log.Debugf("mustWaitForAck: s.WriteIdx - PeerAckIdx : %d > %d", int(s.WriteIdx)-int(s.PeerAckIdx), s.WindowSize)
-					}
-				}
 				mustWaitForData := s.WriteBuf.Len() == 0
 				if mustWaitForData {
 					s.log.Debugf("mustWaitForData")
+				}
+				if mustWaitForAck {
+					s.log.Debugf("mustWaitForAck")
 				}
 				mustWait := mustWaitForAck || mustWaitForData
 
@@ -541,7 +519,6 @@ func (s *Stream) writer() {
 					s.log.Debugf("writer() StreamClosing !mustWait")
 					mustWait = false
 				}
-				s.R.Unlock()
 				if mustWait {
 					s.log.Debugf("writer() sleeping")
 					s.l.Unlock()
@@ -562,13 +539,16 @@ func (s *Stream) writer() {
 		f := new(Frame)
 		s.log.Debugf("Sending frame for %d", s.WriteIdx)
 		f.Id = s.WriteIdx
+		s.WriteIdx += 1
 
-		if s.ReadIdx == 0 {
+		// Set frame Ack if EndToEnd
+		if s.Mode == EndToEnd {
 			// have not read any data from peer yet so Ack = 0 is special case
-			f.Ack = 0
-		} else {
-			if s.Mode == EndToEnd {
+			if s.ReadIdx == 0 {
+				f.Ack = no_ack
+			} else {
 				f.Ack = s.ReadIdx - 1 // ReadIdx points at next frame, which we haven't read
+				s.AckIdx = f.Ack
 			}
 		}
 
@@ -612,15 +592,9 @@ func (s *Stream) writer() {
 					// do not wake blocked Write() if no data frames were sent
 				}
 			default:
-				s.log.Debugf("txFrame err: do.OnWrite()")
-				select {
-				case <-s.HaltCh():
-					return
-				case <-time.After(retryDelay):
-					s.log.Debugf("txFrame err: after retryDelay")
-				}
-				continue
+				s.log.Debugf("txFrame Error: %v enqueue %d for next epoch", err, f.Id)
 			}
+			s.txEnqueue(nextEpoch(f))
 		}
 	}
 }
@@ -660,18 +634,8 @@ func (s *Stream) txFrame(frame *Frame) (err error) {
 	if err != nil {
 		return err
 	}
-	//_, _, til := epochtime.Now()
-	s.l.Lock()
-	// Retransmit unacknowledged Frames every epoch
-	m := nextEpoch(frame)
 	frame_id := s.txFrameID(frame.Id)
 	frame_key := s.txFrameKey(frame.Id)
-	// Update reference to last acknowledged message on retransmit
-	if s.ReadIdx > 0 {
-		// update retransmitted frame to point at last read payload (ReadIdx points at next frame)
-		frame.Ack = s.ReadIdx - 1
-	}
-	s.l.Unlock()
 
 	// zero extend ciphertext until maximum PayloadSize
 	if s.PayloadSize-len(serialized) > 0 {
@@ -683,26 +647,8 @@ func (s *Stream) txFrame(frame *Frame) (err error) {
 	nonce := [nonceSize]byte{}
 	copy(nonce[:], frame_id[:nonceSize])
 	ciphertext := secretbox.Seal(nil, serialized, &nonce, frame_key)
-	err = s.c.Put(frame_id[:], ciphertext)
-	if err != nil {
-		s.log.Debugf("txFrame: Put() failed with %s", err)
-		// reschedule packet for transmission after retryDelay
-		// rather than 2 * epochtime.Period
-		newPriority := uint64(time.Now().Add(retryDelay).UnixNano())
-		s.log.Debugf("txFrame: setting priority to %s for retry", time.Unix(0, int64(newPriority)))
-		m.priority = newPriority
-	}
-	s.l.Lock()
-	s.txEnqueue(m)
-	if frame.Id == s.WriteIdx {
-		// do not increment WriteIdx unless frame tx'd is tip
-		s.WriteIdx += 1
-	}
-	if s.Mode == EndToEnd {
-		s.AckIdx = frame.Ack
-	}
-	s.l.Unlock()
-	return err
+	s.log.Debugf("txFrame: %d Acks: %d", frame.Id, frame.Ack)
+	return s.transport.Put(frame_id[:], ciphertext)
 }
 
 func (s *Stream) txEnqueue(m *frameWithPriority) {
@@ -719,7 +665,7 @@ func H(i []byte) (res common.MessageID) {
 
 // Dial returns a Stream initialized with secret address
 func Dial(c Transport, network, addr string) (*Stream, error) {
-	s := newStream(c)
+	s := newStream(c, EndToEnd)
 	a := &StreamAddr{network: network, address: addr}
 	err := s.keyAsDialer(a)
 	if err != nil {
@@ -800,7 +746,7 @@ func deriveListenerDialerSecrets(addr string) ([]byte, []byte, error) {
 
 // Listen should be net.Listener
 func Listen(c Transport, network string, addr *StreamAddr) (*Stream, error) {
-	s := newStream(c)
+	s := newStream(c, EndToEnd)
 	err := s.keyAsListener(addr)
 	if err != nil {
 		return nil, err
@@ -872,20 +818,21 @@ func (s *Stream) readFrame() (*Frame, error) {
 	ctx, cancelFn := context.WithCancel(context.Background())
 	s.Go(func() {
 		select {
-		case <-ctx.Done():
-			return
 		case <-s.HaltCh():
+			cancelFn()
 		case <-s.retryExpDist.OutCh(): // retransmit unacknowledged requests periodically
-			s.log.Debugf("retryExpDist fired, cancelling context")
+			cancelFn()
+		case <-ctx.Done():
 		}
-		cancelFn()
 	})
 
-	ciphertext, err := s.c.GetWithContext(ctx, frame_id[:])
+	s.log.Debugf("readFrame: %d", s.ReadIdx)
+	ciphertext, err := s.transport.GetWithContext(ctx, frame_id[:])
+	cancelFn()
 	if err != nil {
+		s.log.Debugf("readFrame: err: %v", err)
 		return nil, err
 	}
-	cancelFn()
 	// use frame_id bytes as nonce
 	nonce := [nonceSize]byte{}
 	copy(nonce[:], frame_id[:nonceSize])
@@ -905,14 +852,23 @@ func (s *Stream) readFrame() (*Frame, error) {
 }
 
 func (s *Stream) processAck(f *Frame) {
+	// Nothing is acknowledged
+	if f.Ack == no_ack {
+		return
+	}
 	ackD := false
 	s.R.Lock()
+
+	todelete := []uint64{}
 	// ack all frames predecessor to peer ack
 	for i, _ := range s.R.Wack {
 		if i <= f.Ack {
-			delete(s.R.Wack, i)
+			todelete = append(todelete, i)
 			ackD = true
 		}
+	}
+	for _, i := range todelete {
+		delete(s.R.Wack, i)
 	}
 	s.R.Unlock()
 	// update last_ack from peer
@@ -959,10 +915,11 @@ func (s *Stream) RemoteAddr() *StreamAddr {
 // Transport describes the interface to Get or Put Frames
 type Transport mClient.ReadWriteClient
 
-func newStream(c Transport) *Stream {
+func newStream(transport Transport, mode StreamMode) *Stream {
 	s := new(Stream)
-	s.c = c
-	s.PayloadSize = PayloadSize(c)
+	s.Mode = mode
+	s.transport = transport
+	s.PayloadSize = PayloadSize(transport)
 	s.l = new(sync.Mutex)
 	s.startOnce = new(sync.Once)
 	s.RState = StreamOpen
@@ -973,6 +930,8 @@ func newStream(c Transport) *Stream {
 	s.R.Wack = make(map[uint64]struct{})
 	s.TQ = client.NewTimerQueue(s.R)
 	s.retryExpDist = client2.NewExpDist()
+	s.readerExpDist = client2.NewExpDist()
+	s.senderExpDist = client2.NewExpDist()
 	s.WriteBuf = new(bytes.Buffer)
 	s.ReadBuf = new(bytes.Buffer)
 
@@ -986,7 +945,7 @@ func NewMulticastStream(s *client.Session) *Stream {
 	c, _ := mClient.NewClient(s)
 	addr := &StreamAddr{network: "", address: generate()}
 	t := mClient.DuplexFromSeed(c, true, []byte(addr.String()))
-	st := newStream(t)
+	st := newStream(t, Multicast)
 	st.log = s.GetLogger(fmt.Sprintf("Stream %p", st))
 	err := st.keyAsListener(addr)
 	if err != nil {
@@ -1003,38 +962,49 @@ func NewStream(s *client.Session) *Stream {
 	c, _ := mClient.NewClient(s)
 	addr := &StreamAddr{network: "", address: generate()}
 	t := mClient.DuplexFromSeed(c, true, []byte(addr.String()))
-	st := newStream(t)
+	st := newStream(t, EndToEnd)
 	st.log = s.GetLogger(fmt.Sprintf("Stream %p", st))
 	err := st.keyAsListener(addr)
 	if err != nil {
 		panic(err)
 	}
-	st.Mode = EndToEnd
 	st.Start()
 	return st
 }
 
+type nilTransport int
+
+func (*nilTransport) Put(addr, payload []byte) error {
+	panic("NilTransport")
+}
+func (*nilTransport) GetWithContext(ctx context.Context, addr []byte) ([]byte, error) {
+	panic("NilTransport")
+}
+func (*nilTransport) Get(addr []byte) ([]byte, error) {
+	panic("NilTransport")
+}
+func (*nilTransport) PayloadSize() int {
+	return 0
+}
+
 // LoadStream initializes a Stream from state saved by Save()
 func LoadStream(s *client.Session, state []byte) (*Stream, error) {
-	st := new(Stream)
-	st.l = new(sync.Mutex)
+	c, _ := mClient.NewClient(s)
+	st := newStream(new(nilTransport), EndToEnd)
 	st.log = s.GetLogger(fmt.Sprintf("Stream %p", st))
-	st.startOnce = new(sync.Once)
 	_, err := cbor.UnmarshalFirst(state, st)
 	if err != nil {
 		return nil, err
 	}
-	c, _ := mClient.NewClient(s)
-	st.c = mClient.DuplexFromSeed(c, st.Initiator, []byte(st.LocalAddr().String()))
+
+	st.transport = mClient.DuplexFromSeed(c, st.Initiator, []byte(st.LocalAddr().String()))
 
 	// Ensure that the frame geometry cannot change an active stream
 	// FIXME: Streams should support resetting sender/receivers on Geometry changes.
-	if st.PayloadSize != PayloadSize(st.c) {
+	if st.PayloadSize != PayloadSize(st.transport) {
 		panic(ErrGeometryChanged)
 	}
 
-	st.R.s = st
-	st.TQ = client.NewTimerQueue(st.R)
 	return st, nil
 }
 
@@ -1050,14 +1020,21 @@ func (s *Stream) Save() ([]byte, error) {
 // Start starts the reader and writer workers
 func (s *Stream) Start() {
 	s.startOnce.Do(func() {
-		s.retryExpDist.UpdateRate(uint64(averageRetryRate/time.Millisecond), uint64(epochtime.Period/time.Millisecond))
 		s.retryExpDist.UpdateConnectionStatus(true)
+		s.readerExpDist.UpdateConnectionStatus(true)
+		s.senderExpDist.UpdateConnectionStatus(true)
+		s.retryExpDist.UpdateRate(uint64(averageRetryRate/time.Millisecond), uint64(epochtime.Period/time.Millisecond))
+		s.readerExpDist.UpdateRate(uint64(averageReadRate/time.Millisecond), uint64(epochtime.Period/time.Millisecond))
+		s.senderExpDist.UpdateRate(uint64(averageSendRate/time.Millisecond), uint64(epochtime.Period/time.Millisecond))
 		s.Go(func() {
 			<-s.HaltCh()
 			s.retryExpDist.Halt()
+			s.readerExpDist.Halt()
+			s.senderExpDist.Halt()
+			s.TQ.Halt()
 		})
-		s.WindowSize = 7
-		s.MaxWriteBufSize = int(s.WindowSize)
+		s.WindowSize = defaultWindowSize
+		s.MaxWriteBufSize = int(s.WindowSize) * PayloadSize(s.transport)
 		s.onFlush = make(chan struct{}, 1)
 		s.onAck = make(chan struct{}, 1)
 		s.onStreamClose = make(chan struct{}, 1)
@@ -1076,7 +1053,7 @@ func DialDuplex(s *client.Session, network, addr string) (*Stream, error) {
 		return nil, err
 	}
 	t := mClient.DuplexFromSeed(c, false, []byte(addr))
-	st := newStream(t)
+	st := newStream(t, EndToEnd)
 	a := &StreamAddr{network: network, address: addr}
 	st.log = s.GetLogger(fmt.Sprintf("Stream %p", st))
 	st.log.Debugf("DialDuplex: DuplexFromSeed: %x", []byte(a.String()))
@@ -1092,7 +1069,7 @@ func DialDuplex(s *client.Session, network, addr string) (*Stream, error) {
 // ListenDuplex returns a Stream using capability pigeonhole storage (Duplex) as initiator
 func ListenDuplex(s *client.Session, network, addr string) (*Stream, error) {
 	c, _ := mClient.NewClient(s)
-	st := newStream(mClient.DuplexFromSeed(c, true, []byte(addr)))
+	st := newStream(mClient.DuplexFromSeed(c, true, []byte(addr)), EndToEnd)
 	a := &StreamAddr{network: network, address: addr}
 	st.log = s.GetLogger(fmt.Sprintf("Stream %p", st))
 	st.log.Debugf("ListenDuplex: DuplexFromSeed: %x", []byte(a.String()))
@@ -1111,7 +1088,7 @@ func NewDuplex(s *client.Session) (*Stream, error) {
 		return nil, err
 	}
 	a := &StreamAddr{network: "", address: generate()}
-	st := newStream(mClient.DuplexFromSeed(c, true, []byte(a.String())))
+	st := newStream(mClient.DuplexFromSeed(c, true, []byte(a.String())), EndToEnd)
 	st.log = s.GetLogger(fmt.Sprintf("Stream %p", st))
 	err = st.keyAsListener(a)
 	if err != nil {

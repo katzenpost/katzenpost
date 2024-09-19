@@ -98,10 +98,12 @@ func NewThinClient(cfg *config.Config) *ThinClient {
 	}
 }
 
+// GetConfig returns the config
 func (t *ThinClient) GetConfig() *config.Config {
 	return t.cfg
 }
 
+// GetLogger(prefix) returns a logger with prefix
 func (t *ThinClient) GetLogger(prefix string) *logging.Logger {
 	return t.logBackend.GetLogger(prefix)
 }
@@ -569,6 +571,15 @@ func (t *ThinClient) BlockingSendReliableMessage(ctx context.Context, messageID 
 	if ctx == nil {
 		return nil, errors.New("context cannot be nil")
 	}
+
+	if messageID == nil {
+		messageID = new([MessageIDLength]byte)
+		_, err := io.ReadFull(rand.Reader, messageID[:])
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	req := &Request{
 		ID:                messageID,
 		WithSURB:          true,

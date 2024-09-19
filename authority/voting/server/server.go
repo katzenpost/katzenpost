@@ -27,6 +27,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"gopkg.in/op/go-logging.v1"
 
@@ -117,7 +118,7 @@ func (s *Server) initLogging() error {
 	var err error
 	s.logBackend, err = log.New(p, s.cfg.Logging.Level, s.cfg.Logging.Disable)
 	if err == nil {
-		s.log = s.logBackend.GetLogger("authority")
+		s.log = s.logBackend.GetLogger(s.cfg.Server.Identifier)
 	}
 	return err
 }
@@ -156,17 +157,25 @@ func (s *Server) listenWorker(l net.Listener) {
 		s.Done()
 	}()
 	for {
+		select {
+		case <-s.haltedCh:
+			s.log.Notice("listenWorker Shutting down")
+			return
+		default:
+		}
 		conn, err := l.Accept()
 		if err != nil {
 			if e, ok := err.(net.Error); ok && !e.Temporary() {
 				s.log.Errorf("Critical accept failure: %v", err)
 				return
 			}
+			s.log.Errorf("Accept failure: %v", err)
 			continue
 		}
 
-		s.Add(1)
-		s.onConn(conn)
+		s.state.Go(func() {
+			s.onConn(conn)
+		})
 	}
 
 	// NOTREACHED
@@ -181,16 +190,25 @@ func (s *Server) listenQUICWorker(l net.Listener) {
 		s.Done()
 	}()
 	for {
+		select {
+		case <-s.haltedCh:
+			s.log.Notice("listenQUICWorker Shutting down")
+			return
+		default:
+		}
 		conn, err := l.Accept()
 		if err != nil {
 			if e, ok := err.(net.Error); ok && !e.Temporary() {
 				s.log.Errorf("Critical accept failure: %v", err)
 				return
 			}
+			s.log.Errorf("Accept failure: %v", err)
+			<-time.After(1 * time.Second)
 			continue
 		}
-		s.Add(1)
-		s.onConn(conn)
+		s.state.Go(func() {
+			s.onConn(conn)
+		})
 	}
 	// NOTREACHED
 }

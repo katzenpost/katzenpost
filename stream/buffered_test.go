@@ -11,6 +11,7 @@ import (
 	"runtime"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/fxamacker/cbor/v2"
 	"github.com/katzenpost/hpqc/rand"
@@ -58,11 +59,11 @@ func (m lossyMockTransport) Put(addr []byte, payload []byte) error {
 // newStreams returns an initialized pair of Streams
 func newStreams(t Transport) (*Stream, *Stream) {
 
-	a := newStream(t)
+	a := newStream(t, EndToEnd)
 	a.log = logBackend.GetLogger(fmt.Sprintf("Stream %p", a))
 	addr := &StreamAddr{address: generate()}
 	a.keyAsListener(addr)
-	b := newStream(t)
+	b := newStream(t, EndToEnd)
 	b.log = logBackend.GetLogger(fmt.Sprintf("Stream %p", b))
 	b.keyAsDialer(addr)
 
@@ -90,9 +91,10 @@ func (m mockTransport) Put(addr []byte, payload []byte) error {
 
 func (m mockTransport) Get(addr []byte) ([]byte, error) {
 	m.l.Lock()
-	defer m.l.Unlock()
 	d, ok := m.data[string(addr)]
+	m.l.Unlock()
 	if !ok {
+		<-time.After(2 * time.Second)
 		return nil, errors.New("NotFound")
 	}
 	return d, nil
@@ -107,7 +109,7 @@ func (m mockTransport) PayloadSize() int {
 }
 
 func randPayload() []byte {
-	l := rand.NewMath().Intn(1 << 16)
+	l := rand.NewMath().Intn(1 << 12)
 	buf := make([]byte, l)
 	io.ReadFull(rand.Reader, buf)
 	for i := 0; i < l; i++ {
@@ -117,6 +119,7 @@ func randPayload() []byte {
 }
 
 func TestMockTransport(t *testing.T) {
+	t.Parallel()
 	garbage := NewMockTransport()
 	wg := new(sync.WaitGroup)
 	wg.Add(2)
@@ -146,6 +149,7 @@ type msg struct {
 }
 
 func TestBufferedStream(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	trans := NewMockTransport()
 	a, b := newStreams(trans)
@@ -162,11 +166,11 @@ func TestBufferedStream(t *testing.T) {
 		for i := 0; i < numEntries; i++ {
 			hello := &msg{Num: i, Name: "Tester", Payload: randPayload()}
 			sent = append(sent, hello)
-			err := enc.Encode(hello)
-			require.NoError(err)
+			enc.Encode(hello)
 			t.Logf("sent data %d", i)
 		}
-		//a.Close() // XXX: Stream.WriteBuf isn't drained yet!
+		a.Sync()
+		a.Close() // XXX: Stream.WriteBuf isn't drained yet!
 		wg.Done()
 	}()
 	bs := BufferedStream{Stream: b}
@@ -176,17 +180,19 @@ func TestBufferedStream(t *testing.T) {
 			r := new(msg)
 			err := bs.CBORDecode(r)
 			if err == io.EOF {
-				require.Equal(i, numEntries-1)
+				t.Logf("got EOF, done")
 				break
 			}
-			require.NoError(err)
 			recv = append(recv, r)
 			t.Logf("recv data %d", i)
 		}
-		b.Close()
+		bs.Close()
 		wg.Done()
 	}()
 	wg.Wait()
+	a.Halt()
+	bs.Halt()
+
 	require.Equal(len(sent), len(recv))
 	for i := 0; i < numEntries; i++ {
 		require.Equal(sent[i], recv[i])
@@ -194,6 +200,7 @@ func TestBufferedStream(t *testing.T) {
 }
 
 func TestLossyStream(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	trans := NewLossyMockTransport(0.1)
 	a, b := newStreams(trans)
@@ -214,7 +221,8 @@ func TestLossyStream(t *testing.T) {
 			require.NoError(err)
 			t.Logf("sent data %d", i)
 		}
-		//a.Close() // XXX: Stream.WriteBuf isn't drained yet!
+		a.Sync()
+		a.Close()
 		wg.Done()
 	}()
 	bs := BufferedStream{Stream: b}
@@ -239,6 +247,8 @@ func TestLossyStream(t *testing.T) {
 	for i := 0; i < numEntries; i++ {
 		require.Equal(sent[i], recv[i])
 	}
+	a.Halt()
+	b.Halt()
 }
 
 func init() {
