@@ -32,6 +32,7 @@ import (
 	"github.com/katzenpost/hpqc/sign"
 
 	cpki "github.com/katzenpost/katzenpost/core/pki"
+	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
@@ -295,6 +296,13 @@ func (c *incomingConn) worker() {
 		instrument.Incoming(rawCmd)
 		if c.fromClient {
 			switch cmd := rawCmd.(type) {
+			case *commands.SendRetrievePacket:
+				c.log.Debugf("Received SendRetrievePacket from client.")
+				if err := c.onSendRetrievePacket(cmd); err != nil {
+					c.log.Debugf("Failed to handle RetreiveMessage: %v", err)
+					return
+				}
+				continue
 			case *commands.RetrieveMessage:
 				c.log.Debugf("Received RetrieveMessage from peer.")
 				if err := c.onRetrieveMessage(cmd); err != nil {
@@ -354,6 +362,33 @@ func (c *incomingConn) onGetConsensus(cmd *commands.GetConsensus) error {
 		respCmd.ErrorCode = commands.ConsensusGone
 	default: // Covers errNotCached
 		respCmd.ErrorCode = commands.ConsensusNotFound
+	}
+	return c.w.SendCommand(respCmd)
+}
+
+func (c *incomingConn) onSendRetrievePacket(cmd *commands.SendRetrievePacket) error {
+	pkt, err := packet.New(cmd.SphinxPacket, c.geo)
+	if err != nil {
+		return err
+	}
+	c.l.incomingCh <- pkt
+
+	creds, err := c.w.PeerCredentials()
+	if err != nil {
+		return err
+	}
+	advance := true
+	msg, surbID, _, err := c.l.glue.Gateway().Spool().Get(creds.AdditionalData, advance)
+	if err != nil {
+		return err
+	}
+	surbIDar := [constants.SURBIDLength]byte{}
+	copy(surbIDar[:], surbID)
+	respCmd := &commands.SendRetrievePacketReply{
+		Geo:     c.geo,
+		Cmds:    commands.NewCommands(c.geo, c.pkiSignScheme),
+		SURBID:  surbIDar,
+		Payload: msg,
 	}
 	return c.w.SendCommand(respCmd)
 }
