@@ -7,6 +7,7 @@ package commands
 import (
 	"encoding/binary"
 	"errors"
+	"fmt"
 
 	"github.com/katzenpost/hpqc/sign"
 
@@ -63,10 +64,10 @@ func (c *Commands) maxMessageLenClientToServer() int {
 
 func (c *Commands) maxMessageLen(cmd Command) int {
 	switch cmd.(type) {
-	case *NoOp, *SendPacket, *Disconnect, *RetrieveMessage, *GetConsensus:
+	case *NoOp, *SendPacket, *Disconnect, *RetrieveMessage, *GetConsensus, *SendRetrievePacket:
 		// These are client to server commands
 		return c.maxMessageLenClientToServer()
-	case *Message, *MessageACK, *MessageEmpty:
+	case *Message, *MessageACK, *MessageEmpty, *SendRetrievePacketReply:
 		// These are server to client commands
 		return c.maxMessageLenServerToClient()
 	default:
@@ -116,41 +117,40 @@ func (c *SendRetrievePacket) ToBytes() []byte {
 }
 
 func sendRetrievePacketFromBytes(b []byte, cmds *Commands) (Command, error) {
-	r := new(SendPacket)
+	r := new(SendRetrievePacket)
 	r.SphinxPacket = make([]byte, 0, len(b))
 	r.SphinxPacket = append(r.SphinxPacket, b...)
 	r.Cmds = cmds
+	r.Geo = cmds.geo
 	return r, nil
 }
 
 // SendRetrievePacketReply is the reply command for a previously
 // sent `SendRetrievePacket`
 type SendRetrievePacketReply struct {
-	Geo  *geo.Geometry
 	Cmds *Commands
+	Geo  *geo.Geometry
 
 	SURBID  [constants.SURBIDLength]byte
 	Payload []byte
 }
 
 func (c *SendRetrievePacketReply) ToBytes() []byte {
-	if len(c.Payload) != c.Geo.PayloadTagLength+c.Geo.ForwardPayloadLength {
-		panic("wire: invalid MessageACK payload when serializing")
-	}
-
-	out := make([]byte, constants.SURBIDLength, constants.SURBIDLength+len(c.Payload))
+	out := make([]byte, cmdOverhead+constants.SURBIDLength, cmdOverhead+constants.SURBIDLength+len(c.Payload))
 	out[0] = byte(sendRetrievePacketReply)
-	copy(out[1:1+constants.SURBIDLength], c.SURBID[:])
+	binary.BigEndian.PutUint32(out[2:6], uint32(constants.SURBIDLength+len(c.Payload)))
+	copy(out[cmdOverhead:cmdOverhead+constants.SURBIDLength], c.SURBID[:])
 	out = append(out, c.Payload...)
 	return padToMaxCommandSize(out, c.Cmds.maxMessageLen(c))
 }
 
-func fromSendRetrievePacketReplyBytes(b []byte, cmds *Commands) (Command, error) {
+func sendRetrievePacketReplyFromBytes(b []byte, cmds *Commands) (Command, error) {
 	c := new(SendRetrievePacketReply)
 	copy(c.SURBID[:], b[:constants.SURBIDLength])
 	c.Payload = make([]byte, len(b[constants.SURBIDLength:]))
 	copy(c.Payload, b[constants.SURBIDLength:])
 	c.Cmds = cmds
+	c.Geo = cmds.geo
 	return c, nil
 }
 
@@ -189,7 +189,7 @@ func (c *Commands) FromBytes(b []byte) (Command, error) {
 			return &Disconnect{
 				Cmds: c,
 			}, nil
-		case sendPacket, postDescriptor:
+		case sendPacket, postDescriptor, sendRetrievePacket, sendRetrievePacketReply:
 			// Shouldn't happen, but the caller should reject this, not the
 			// de-serialization.
 		default:
@@ -200,7 +200,13 @@ func (c *Commands) FromBytes(b []byte) (Command, error) {
 	// Handle the commands that require actual parsing.
 	b = b[:cmdLen]
 	switch commandID(id) {
+	case sendRetrievePacket:
+		fmt.Println("sendRetrievePacket")
+		return sendRetrievePacketFromBytes(b, c)
+	case sendRetrievePacketReply:
+		return sendRetrievePacketReplyFromBytes(b, c)
 	case sendPacket:
+		fmt.Println("sendPacket")
 		return sendPacketFromBytes(b, c)
 	case retreiveMessage:
 		return retreiveMessageFromBytes(b, c)

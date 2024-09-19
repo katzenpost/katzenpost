@@ -27,6 +27,7 @@ import (
 	"github.com/katzenpost/hpqc/util"
 
 	"github.com/katzenpost/katzenpost/core/sphinx"
+	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 )
 
@@ -151,4 +152,75 @@ func TestConsensus(t *testing.T) {
 	d = c.(*Consensus)
 	require.Equal(d.Payload, cmd.Payload)
 	require.Equal(d.ErrorCode, cmd.ErrorCode)
+}
+
+func TestSendRetrievePacket(t *testing.T) {
+	t.Parallel()
+	const payload = "A free man must be able to endure it when his fellow men act and live otherwise than he considers proper. He must free himself from the habit, just as soon as something does not please him, of calling for the police."
+
+	require := require.New(t)
+
+	nike := ecdh.Scheme(rand.Reader)
+	forwardPayloadLength := len(payload)
+	nrHops := 5
+
+	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
+	s := sphinx.NewSphinx(geo)
+
+	cmds := NewCommands(s.Geometry(), testCertScheme)
+
+	cmd := &SendRetrievePacket{
+		SphinxPacket: []byte(payload),
+		Cmds:         cmds,
+		Geo:          geo,
+	}
+
+	b := cmd.ToBytes()
+	require.Len(b, cmds.maxMessageLen(cmd))
+	actualDataLength := cmdOverhead + len(payload)
+	require.True(util.CtIsZero(b[actualDataLength:]))
+
+	c, err := cmds.FromBytes(b)
+	require.NoError(err)
+	require.IsType(cmd, c)
+
+	cmd2 := c.(*SendRetrievePacket)
+	require.Equal([]byte(payload), cmd2.SphinxPacket)
+}
+
+func TestSendRetrievePacketReply(t *testing.T) {
+	t.Parallel()
+	const payload = "A free man must be able to endure it when his fellow men act and live otherwise than he considers proper. He must free himself from the habit, just as soon as something does not please him, of calling for the police."
+
+	nike := ecdh.Scheme(rand.Reader)
+	forwardPayloadLength := 1234
+	nrHops := 5
+
+	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
+	s := sphinx.NewSphinx(geo)
+
+	cmds := NewCommands(s.Geometry(), testCertScheme)
+
+	surbid := [constants.SURBIDLength]byte{}
+	_, err := rand.Reader.Read(surbid[:])
+	require.NoError(t, err)
+
+	cmd := &SendRetrievePacketReply{
+		SURBID:  surbid,
+		Payload: []byte(payload),
+		Cmds:    cmds,
+		Geo:     geo,
+	}
+
+	b := cmd.ToBytes()
+	require.Len(t, b, cmds.maxMessageLen(cmd))
+	actualDataLength := cmdOverhead + constants.SURBIDLength + len(payload)
+	require.True(t, util.CtIsZero(b[actualDataLength:]))
+
+	c, err := cmds.FromBytes(b)
+	require.NoError(t, err)
+	require.IsType(t, cmd, c)
+
+	cmd2 := c.(*SendRetrievePacketReply)
+	require.Equal(t, []byte(payload), cmd2.Payload)
 }
