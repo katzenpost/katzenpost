@@ -594,7 +594,11 @@ func (s *Stream) writer() {
 			default:
 				s.log.Debugf("txFrame Error: %v enqueue %d for next epoch", err, f.Id)
 			}
-			s.txEnqueue(nextEpoch(f))
+			if s.Mode == Multicast && err == nil {
+				continue // do not retransmit for end-to-end ACK.
+			} else {
+				s.txEnqueue(nextEpoch(f))
+			}
 		}
 	}
 }
