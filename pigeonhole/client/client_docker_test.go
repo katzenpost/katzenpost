@@ -95,6 +95,8 @@ func TestCreatePigeonhole(t *testing.T) {
 	id = rwCap.WriteOnly().Addr(addr)
 	err = c.Put(id, woKey.Sign(payload2), payload2)
 	require.NoError(err)
+	// XXX: Put is not using a blocking method here, so we're racing Get
+	<-time.After(10 * time.Second)
 	resp, err := c.Get(id, roKey.Sign(id.Bytes()))
 	require.NoError(err)
 	require.Equal(payload2, resp)
@@ -176,7 +178,7 @@ func TestAsyncGetPigeonHole(t *testing.T) {
 	go func() {
 		// send the Put after the Get
 		<-time.After(4 * time.Second)
-		senderErrCh <-c.Put(id, wKey.Sign(payload), payload)
+		senderErrCh <- c.Put(id, wKey.Sign(payload), payload)
 	}()
 
 	go func() {
@@ -189,7 +191,7 @@ func TestAsyncGetPigeonHole(t *testing.T) {
 		}
 	}()
 
-	e := <- senderErrCh
+	e := <-senderErrCh
 	require.NoError(e)
 	r := <-receiverResultCh
 	r, ok := r.([]byte)
