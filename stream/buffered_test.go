@@ -174,6 +174,7 @@ func TestBufferedStream(t *testing.T) {
 		wg.Done()
 	}()
 	bs := BufferedStream{Stream: b}
+	bs.Start()
 	// read data
 	go func() {
 		for i := 0; i < numEntries; i++ {
@@ -226,6 +227,7 @@ func TestLossyStream(t *testing.T) {
 		wg.Done()
 	}()
 	bs := BufferedStream{Stream: b}
+	bs.Start()
 	// read data
 	go func() {
 		for i := 0; i < numEntries; i++ {
