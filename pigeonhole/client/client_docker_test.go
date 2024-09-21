@@ -175,27 +175,38 @@ func TestAsyncGetPigeonHole(t *testing.T) {
 	rKey := rwCap.ReadKey(addr)
 	senderErrCh := make(chan error, 0)
 	receiverResultCh := make(chan interface{}, 0)
+
+	sendAfter := 4 * time.Second
+	timeout := 8 * time.Second
 	go func() {
 		// send the Put after the Get
-		<-time.After(4 * time.Second)
+		<-time.After(sendAfter)
 		senderErrCh <- c.Put(id, wKey.Sign(payload), payload)
 	}()
 
 	go func() {
-		t.Logf("Sending Get()")
-		resp, err := c.Get(id, rKey.Sign(id.Bytes()))
+		t.Logf("Sending GetWithContext(), timeout in %d", timeout)
+		ctx, cancelFn := context.WithTimeout(context.Background(), timeout)
+		resp, err := c.GetWithContext(ctx, id, rKey.Sign(id.Bytes()))
 		if err != nil {
 			receiverResultCh <- err
 		} else {
 			receiverResultCh <- resp
 		}
+		cancelFn()
 	}()
 
 	e := <-senderErrCh
 	require.NoError(e)
 	r := <-receiverResultCh
-	r, ok := r.([]byte)
-	require.True(ok)
-	require.Equal(r, payload)
 	t.Logf("Got Response")
+	switch r := r.(type) {
+	case []byte:
+		require.Equal(r, payload)
+	case error:
+		require.NoError(r)
+	default:
+		t.Logf("Got unexpected type: %T", r)
+		t.FailNow()
+	}
 }
