@@ -1,6 +1,8 @@
 package main
 
 import (
+	"fmt"
+
 	"github.com/linxGnu/grocksdb"
 )
 
@@ -21,10 +23,14 @@ func main() {
 	//ro := grocksdb.NewDefaultReadOptions()
 	wo := grocksdb.NewDefaultWriteOptions()
 
+	fmt.Println("before db put")
+
 	err = db.Put(wo, []byte("foo"), []byte("bar"))
 	if err != nil {
 		panic(err)
 	}
+
+	fmt.Println("after db put")
 
 	db.Close()
 }
