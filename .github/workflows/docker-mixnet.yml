@@ -125,6 +125,8 @@ jobs:
       matrix:
         go-version: [1.22.x]
         os: [ubuntu-latest]
+        ratchetNike: [CTIDH512-X25519, NOBS_CSIDH-X25519]
+      fail-fast: false
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout code
@@ -139,7 +141,7 @@ jobs:
 
       - name: Build and start the mixnet
         run: |
-          cd docker && make log_level=DEBUG start wait
+          cd docker && make ratchetNike=${{ matrix.ratchetNike }} log_level=DEBUG start wait
 
       - name: test creating upgrade test state files
         run: cd catshadow && make testargs=-coverprofile=coverage.part test_version=latest upgrade_test_recreate && cat coverage.part >> ../coverage.out
@@ -161,7 +163,7 @@ jobs:
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: mixnet-${{ github.run_id }}-${{ github.job }}
+          name: mixnet-${{ github.run_id }}-${{ matrix.ratchetNike }}-${{ github.job }}
           path: |
             docker/voting_mixnet/*/*.log
 

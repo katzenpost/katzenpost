@@ -18,7 +18,7 @@ type BufferedStream struct {
 	Buffer *bytes.Buffer
 }
 
-// Start starts BufferedStreams Stream if it isn't already running
+// Start starts BufferedStreams Stream
 func (b *BufferedStream) Start() {
 	// Start/Stop Stream
 	b.Stream.Start()
@@ -104,7 +104,6 @@ func (s *BufferedStream) Close() error {
 
 // CBORDecode deserializes CBOR from Stream into the instance passed
 func (b *BufferedStream) CBORDecode(instance interface{}) error {
-	b.Start() // start if not running
 	result := b.CBORDecodeAsync(instance)
 	select {
 	case <-b.HaltCh():

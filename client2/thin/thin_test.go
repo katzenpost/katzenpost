@@ -39,9 +39,9 @@ func TestThinTCPSendRecv(t *testing.T) {
 		ID:      id,
 		Payload: []byte("abc123"),
 	}
+	thinWriteMessageErrCh := make(chan error, 0)
 	go func() {
-		err = thin.writeMessage(request)
-		require.NoError(t, err)
+		thinWriteMessageErrCh <- thin.writeMessage(request)
 	}()
 
 	prefix := make([]byte, messagePrefixLen)
@@ -53,6 +53,10 @@ func TestThinTCPSendRecv(t *testing.T) {
 	message := make([]byte, prefixLen)
 	_, err = io.ReadFull(server, message)
 	require.NoError(t, err)
+
+	// verify thin writeMessage didn't return error
+	e := <-thinWriteMessageErrCh
+	require.NoError(t, e)
 
 	serverRequest := new(Request)
 	err = cbor.Unmarshal(message, serverRequest)
@@ -77,9 +81,10 @@ func TestThinTCPSendRecv(t *testing.T) {
 
 	serverMessage = append(prefix, serverMessage...)
 
+	serverWriteMessageErrCh := make(chan error, 0)
 	go func() {
-		_, err = server.Write(serverMessage)
-		require.NoError(t, err)
+		_, err := server.Write(serverMessage)
+		serverWriteMessageErrCh <- err
 	}()
 
 	response := new(Response)
@@ -89,4 +94,6 @@ func TestThinTCPSendRecv(t *testing.T) {
 	require.Equal(t, response.ConnectionStatusEvent.IsConnected, true)
 	require.Equal(t, serverResponse.ConnectionStatusEvent.IsConnected, true)
 
+	e = <-serverWriteMessageErrCh
+	require.NoError(t, e)
 }
