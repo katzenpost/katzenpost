@@ -163,4 +163,8 @@ func main() {
 		}
 		s.PKISignatureScheme = signScheme
 	}
+	err := s.GenConfig()
+	if err != nil {
+		log.Fatal(err)
+	}
 }

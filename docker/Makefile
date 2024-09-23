@@ -103,14 +103,14 @@ $(cache_dir): $(cache_dir)/go
 $(cache_dir)/go:
 	mkdir -vp $(cache_dir)/go
 
-$(docker_compose_yml): ../genconfig/main.go $(distro)_base.stamp | $(net_name) $(cache_dir)
+$(docker_compose_yml): ../genconfig/cmd/genconfig/main.go $(distro)_base.stamp | $(net_name) $(cache_dir)
 	$(docker) run ${docker_args} --rm katzenpost-$(distro)_base \
-		$(sh) -c 'cd genconfig && go build && cd ../docker \
-		&& ../genconfig/genconfig -wirekem $(wirekem) -a ${bind_addr} -nv ${auths} -n ${mixes} -gateways ${gateways} \
+		$(sh) -c 'cd genconfig && make && cd ../docker \
+		&& ../genconfig/cmd/genconfig/genconfig -wirekem $(wirekem) -a ${bind_addr} -nv ${auths} -n ${mixes} -gateways ${gateways} \
 		-serviceNodes ${serviceNodes} \
 		-sr ${sr} -mu ${mu} -muMax ${muMax} -lP ${lP} -lPMax ${lPMax} -lL ${lL} \
 		-lLMax ${lLMax} -lD ${lD} -lDMax ${lDMax} -lM ${lM} -lMMax ${lMMax} \
-		-S .$(distro) -v -o ./$(net_name) -b /$(net_name) -P $(base_port) \
+		-S .$(distro) -o ./$(net_name) -b /$(net_name) -P $(base_port) \
 		-nike "$(nike)" -ratchetNike "$(ratchetNike)" -kem "$(kem)" -d katzenpost-$(distro)_base \
 		${noMixDecoy} ${noDecoy} \
 		-UserForwardPayloadLength $(UserForwardPayloadLength) -log_level $(log_level)'
