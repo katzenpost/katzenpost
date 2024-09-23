@@ -39,9 +39,9 @@ func TestThinTCPSendRecv(t *testing.T) {
 		ID:      id,
 		Payload: []byte("abc123"),
 	}
+	thinWriteMessageErrCh := make(chan error, 0)
 	go func() {
-		err = thin.writeMessage(request)
-		require.NoError(t, err)
+		writeMessageErrCh <- thin.writeMessage(request)
 	}()
 
 	prefix := make([]byte, messagePrefixLen)
@@ -77,10 +77,17 @@ func TestThinTCPSendRecv(t *testing.T) {
 
 	serverMessage = append(prefix, serverMessage...)
 
+	serverWriteMessageErrCh := make(chan error, 0)
 	go func() {
-		_, err = server.Write(serverMessage)
-		require.NoError(t, err)
+		_, err := server.Write(serverMessage)
+		serverWriteMessageErrCh <- err
 	}()
+
+	// verify thin writeMessage didn't return error
+	e := <-thinWriteMessageErrCh
+	require.NoEerror(t, e)
+	e := <-serverWriteMessageErrCh
+	require.NoError(t, err)
 
 	response := new(Response)
 	response, err = thin.readMessage()
@@ -88,5 +95,4 @@ func TestThinTCPSendRecv(t *testing.T) {
 
 	require.Equal(t, response.ConnectionStatusEvent.IsConnected, true)
 	require.Equal(t, serverResponse.ConnectionStatusEvent.IsConnected, true)
-
 }
