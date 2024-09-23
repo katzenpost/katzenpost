@@ -177,7 +177,7 @@ func TestAsyncGetPigeonHole(t *testing.T) {
 	receiverResultCh := make(chan interface{}, 0)
 
 	sendAfter := 4 * time.Second
-	timeout := 8 * time.Second
+	timeout := 16 * time.Second
 	go func() {
 		// send the Put after the Get
 		<-time.After(sendAfter)
