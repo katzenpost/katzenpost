@@ -162,7 +162,7 @@ jobs:
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: mixnet-${{ github.job_id }}-${{ matrix.ratchetNike }}-${{ github.job }}
+          name: mixnet-${{ github.run_id }}-${{ matrix.ratchetNike }}-${{ github.job }}
           path: |
             docker/voting_mixnet/*/*.log
 
