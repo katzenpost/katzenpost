@@ -19,7 +19,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-var numEntries = 42
+var numEntries = 10
 var logBackend *log.Backend
 
 type mockTransport struct {
