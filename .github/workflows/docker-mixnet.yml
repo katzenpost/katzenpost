@@ -126,6 +126,7 @@ jobs:
         go-version: [1.22.x]
         os: [ubuntu-latest]
         ratchetNike: [CTIDH512-X25519, NOBS_CSIDH-X25519]
+      fail-fast: false
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout code
