@@ -51,6 +51,7 @@ jobs:
       matrix:
         go-version: [1.22.x]
         os: [ubuntu-latest]
+        ratchetNike: [CTIDH512-X25519, NOBS_CSIDH-X25519]
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout code
@@ -62,7 +63,7 @@ jobs:
 
       - name: Build and start the mixnet
         run: |
-          cd docker && make start wait
+          cd docker && make ratchetNike=${{ matrix.ratchetNike }} start wait
 
       - name: run client end to end tests
         run: cd client2 && make testargs=-coverprofile=coverage.part dockerdockertest && cat coverage.part >> ../coverage.out
