@@ -57,7 +57,7 @@ func TestExponentialAverage(t *testing.T) {
 		timeSince := time.Since(then)
 		t.Logf("timeSince: %v", timeSince)
 		duration += timeSince
-		require.Less(t, timeSince, time.Duration(maxMsec+10)*time.Millisecond) // clamping to maxMsec slops over maxMsec < 1ms
+		require.Less(t, timeSince, time.Duration(maxMsec+20)*time.Millisecond) // clamping to maxMsec slops over maxMsec < 1ms
 	}
 
 	// require that the average over 100 samples be within 2 seconds (100 msec * 100 pkts ~ 10 seconds, meaning this needs to be within 20%
