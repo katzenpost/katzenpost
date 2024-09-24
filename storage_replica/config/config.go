@@ -84,7 +84,55 @@ func (lCfg *Logging) validate() error {
 	return nil
 }
 
+type Replica struct {
+	// Identifier is the human readable identifier for the node (eg: FQDN).
+	Identifier string
+
+	// ReplicaPublicKeyPem is string containing the PEM format of the peer's public replica NIKE key.
+	ReplicaPublicKeyPem string
+
+	// ReplicaNIKEScheme specifies the cryptographic signature scheme
+	ReplicaNIKEScheme string
+
+	// LinkPublicKeyPem is string containing the PEM format of the peer's public link layer key.
+	LinkPublicKeyPem string
+
+	// WireKEMScheme is the wire protocol KEM scheme to use.
+	WireKEMScheme string
+
+	// Addresses are the IP address/port combinations that the peer authority
+	// uses for the Directory Authority service.
+	Addresses []string
+}
+
+func (r *Replica) validate() error {
+	if r.Identifier == "" {
+		return errors.New("Identifier must not be empty")
+	}
+	if r.ReplicaPublicKeyPem == "" {
+		return errors.New("ReplicaPublicKeyPem must not be empty")
+	}
+	if r.ReplicaNIKEScheme == "" {
+		return errors.New("ReplicaNIKEScheme must not be empty")
+	}
+	if r.LinkPublicKeyPem == "" {
+		return errors.New("LinkPublicKey must not be empty")
+	}
+	if r.WireKEMScheme == "" {
+		return errors.New("WireKEMScheme cannot be empty")
+	}
+	if r.Addresses == nil {
+		return errors.New("Addresses cannot be nil")
+	}
+	if len(r.Addresses) == 0 {
+		return errors.New("Addresses cannot be zero length")
+	}
+	return nil
+}
+
 type Config struct {
+	Peers []*Replica
+
 	// PKI is the Katzenpost directory authority client configuration.
 	PKI *PKI
 
@@ -110,16 +158,24 @@ type Config struct {
 	// to for incoming connections.
 	Addresses []string
 
-	// If present then only advertise to the PKI these Addresses
-	// and do NOT send any of the Addresses.
-	OnlyAdvertiseAddresses []string
-
 	// GenerateOnly halts and cleans up the server right after long term
 	// key generation.
 	GenerateOnly bool
 }
 
 func (c *Config) FixupAndValidate(forceGenOnly bool) error {
+	if c.Peers == nil {
+		return errors.New("Peers cannot be nil")
+	}
+	if len(c.Peers) == 0 {
+		return errors.New("Peers cannot be zero length")
+	}
+	for _, peer := range c.Peers {
+		err := peer.validate()
+		if err != nil {
+			return err
+		}
+	}
 	if c.Identifier == "" {
 		return errors.New("config: Server: Identifier is not set")
 	}
