@@ -42,11 +42,6 @@ func (s *Server) onConn(conn net.Conn) {
 	rAddr := conn.RemoteAddr()
 	s.log.Debugf("Accepted new connection: %v", rAddr)
 
-	defer func() {
-		conn.Close()
-		s.Done()
-	}()
-
 	// Initialize the wire protocol session.
 	auth := &wireAuthenticator{s: s}
 	keyHash := hash.Sum256From(s.identityPublicKey)
@@ -70,7 +65,15 @@ func (s *Server) onConn(conn net.Conn) {
 		s.log.Debugf("Peer %v: Failed to initialize session: %v", rAddr, err)
 		return
 	}
-	defer wireConn.Close()
+
+	// wireConn.Close calls conn.Close. In quic, sends are nonblocking and Close
+	// tears down the connection before the response was sent.
+	// So this waits 100ms after the response has been served before closing the connection.
+	defer func () {
+		<-time.After(time.Millisecond*100)
+		wireConn.Close()
+	}()
+
 
 	// Handshake.
 	conn.SetDeadline(time.Now().Add(initialDeadline))

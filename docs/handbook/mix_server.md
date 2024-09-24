@@ -70,13 +70,15 @@ for example:
 ```
 [Server]
     Identifier = "example.com"
-    Addresses = [ "192.0.2.1:29483", "[2001:DB8::1]:29483" ]
+    Addresses = [ "tcp://192.0.2.1:29483", "tcp6://[2001:DB8::1]:29483", "http://192.168.0.2.1:15242", "http://[2001:DB8::1]:24144" ]
     DataDir = "/var/lib/katzenpost"
     IsProvider = true
 ```
 
 - `Identifier` is the human readable identifier for the node (eg: FQDN).
-- `Addresses` are the IP address/port combinations that the server will bind to for incoming connections. IPv4 and/or IPv6 may be specified.
+- `Addresses` are the address URLs that the server will advertise in the PKI and bind to for incoming connections, unless BindAddresses is specifiec.
+   TCP listeners are specified by scheme tcp:// and QUIC (UDP) by http://. IPv4 and/or IPv6 may be specified.
+- `BindAddresses` are the address URLs describing local listeners that the server will bind to for incoming connections, and not advertise in the PKI.
 - `DataDir` is the absolute path to the server\'s state files.
 - `IsProvider` specifies if the server is a provider (vs a mix).
 

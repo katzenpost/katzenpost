@@ -695,14 +695,8 @@ func New(glue glue.Glue) (glue.PKI, error) {
 	}
 
 	var err error
-	if len(glue.Config().Server.OnlyAdvertiseAddresses) > 0 {
-		p.descAddrMap = make(map[string][]string)
-		// XXX: parse each address and update descAddrMap
-		panic("NotImplemented")
-	} else {
-		if p.descAddrMap, err = makeDescAddrMap(glue.Config().Server.Addresses); err != nil {
-			return nil, err
-		}
+	if p.descAddrMap, err = makeDescAddrMap(glue.Config().Server.Addresses); err != nil {
+		return nil, err
 	}
 
 	if len(p.descAddrMap) == 0 {

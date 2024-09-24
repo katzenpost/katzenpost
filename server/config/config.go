@@ -91,13 +91,13 @@ type Server struct {
 	// PKISignatureScheme specifies the cryptographic signature scheme
 	PKISignatureScheme string
 
-	// Addresses are the IP address/port combinations that the server will bind
-	// to for incoming connections.
+	// Addresses are the IP listener addresses that the server will advertise
+	// in the PKI and bind to for incoming connections unless BindAddresses is specified.
 	Addresses []string
 
-	// If present then only advertise to the PKI these Addresses
-	// and do NOT send any of the Addresses.
-	OnlyAdvertiseAddresses []string
+	// BindAddresses are the listener addresses that the server will bind to and accept connections on
+	// These Addresses are not advertised in the PKI.
+	BindAddresses []string
 
 	// MetricsAddress is the address/port to bind the prometheus metrics endpoint to.
 	MetricsAddress string
@@ -126,7 +126,7 @@ func (sCfg *Server) validate() error {
 	}
 
 	if sCfg.Addresses != nil {
-		for _, v := range sCfg.Addresses {
+		for _, v := range append(sCfg.Addresses, sCfg.BindAddresses...) {
 			if u, err := url.Parse(v); err != nil {
 				return fmt.Errorf("config: Authority: Address '%v' is invalid: %v", v, err)
 			} else if u.Port() == "" {

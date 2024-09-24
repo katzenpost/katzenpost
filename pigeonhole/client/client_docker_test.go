@@ -95,6 +95,8 @@ func TestCreatePigeonhole(t *testing.T) {
 	id = rwCap.WriteOnly().Addr(addr)
 	err = c.Put(id, woKey.Sign(payload2), payload2)
 	require.NoError(err)
+	// XXX: Put is not using a blocking method here, so we're racing Get
+	<-time.After(10 * time.Second)
 	resp, err := c.Get(id, roKey.Sign(id.Bytes()))
 	require.NoError(err)
 	require.Equal(payload2, resp)
@@ -171,15 +173,40 @@ func TestAsyncGetPigeonHole(t *testing.T) {
 	id := rwCap.Addr(addr)
 	wKey := rwCap.WriteKey(addr)
 	rKey := rwCap.ReadKey(addr)
+	senderErrCh := make(chan error, 0)
+	receiverResultCh := make(chan interface{}, 0)
+
+	sendAfter := 4 * time.Second
+	timeout := 16 * time.Second
 	go func() {
 		// send the Put after the Get
-		<-time.After(4 * time.Second)
-		err = c.Put(id, wKey.Sign(payload), payload)
+		<-time.After(sendAfter)
+		senderErrCh <- c.Put(id, wKey.Sign(payload), payload)
 	}()
 
-	t.Logf("Sending Get()")
-	resp, err := c.Get(id, rKey.Sign(id.Bytes()))
-	require.NoError(err)
-	require.Equal(resp, payload)
+	go func() {
+		t.Logf("Sending GetWithContext(), timeout in %d", timeout)
+		ctx, cancelFn := context.WithTimeout(context.Background(), timeout)
+		resp, err := c.GetWithContext(ctx, id, rKey.Sign(id.Bytes()))
+		if err != nil {
+			receiverResultCh <- err
+		} else {
+			receiverResultCh <- resp
+		}
+		cancelFn()
+	}()
+
+	e := <-senderErrCh
+	require.NoError(e)
+	r := <-receiverResultCh
 	t.Logf("Got Response")
+	switch r := r.(type) {
+	case []byte:
+		require.Equal(r, payload)
+	case error:
+		require.NoError(r)
+	default:
+		t.Logf("Got unexpected type: %T", r)
+		t.FailNow()
+	}
 }
