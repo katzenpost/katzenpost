@@ -8,7 +8,7 @@ distro=alpine
 image=katzenpost-$(distro)_base
 cache_dir=$(shell readlink -f ../docker)/cache
 docker_args=--init -it --user ${docker_user} -v $(shell readlink -f ..):/go/katzenpost --network=host --rm -v $(cache_dir)/go:/go/ -e GORACE=history_size=7 -w /go/katzenpost/catshadow -e GOCACHE=/go/cache
-run_docker_test=$(docker) run ${docker_args} $(image) go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 1h -failfast -run
+run_docker_test=$(docker) run ${docker_args} $(image) go test -msan $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 1h -failfast -run
 
 test_version=v30
 
