@@ -1,0 +1,49 @@
+
+# example storage replica.toml config file
+
+DataDir = "/var/run/replica"
+Identifier = "replica001"
+WireKEMScheme = "xwing"
+PKISignatureScheme = "Ed25519"
+ReplicaNIKEScheme = "CTIDH1024-X25519"
+Addresses = ["http://127.0.0.1:30013"]
+
+[[Peers]]
+  Identifier = "replica002"
+  ReplicaPublicKeyPem = "XXX"
+  ReplicaNIKEScheme = "CTIDH1024-X25519"
+  LinkPublicKeyPem = "-----BEGIN XWING PUBLIC KEY-----\nyzU/s3mSF3mR70KymVJI7QemO9OSHbdX9kQnzseHQwuSorFRdBk7H4ciNJLBtEKR\nddgsPGeiXGJy0rgNmTW4hbEcq7AFHSx/RQe5NfZwSVK62oUfHWWRusVe1nJikNc+\nzFmeWrsJ7KobgiDBwRhT15itksDNR+RU3uRPOUtCbMdyb9h3tYZDC6HEWskgKBtz\nJ8h//pO85BE3zyyAHORlYBuLS8RBj9vKhVE192GcMvNcTixnYqcqbrlgJOxl2oMP\nKUAgT/Kon0xGjKy8EUpaEbikyGtvxRQV3BonTjEU1nQk9GTJU7V37sJNwpIbw1xz\npDw5pOeDnUolzUE1xNHLcEdn+WqynLWUQjl3NoRF/uRsz0OG9iw747KGJjt8FGAo\nF5ZBHZuvCQSIGbpXuVFhZFJhJFjGlQKE8agltag6GIAd85HLXEU24haF2ZgYSqqi\nO6KLzIYIupqhiaJ8ysyk+TjFK1tnU0QIQEY5uTUetZDH/nbMRTXJ9KFKFRq50ByT\neWq/godtyNHEI+lg1ElKfPQoq9tEthS1/YMi4JdZT/NrS8lKtXW6XPa90BasM9iQ\nbEitCiZNE9HLUosj/Ea/voW5q8M0cLgwcpsy5oq08nmM8EQiJ/I80BnM6vW8PWFv\ncAkUpZnAnhuGpexgHBMprNM3lPl27RGZckqRuLHBPJEwW7ZTl6Mc9NimPrwVxpPF\n+oJWCpdn3lkbRVFVfKJqmPVQz4JXsmGnv1mr4UWXEVEie/UP/slOQog4xcdJjHp7\nZAyBLdwIW7UNShkgFCiX6JuhowpAkWSOAPks6FWllFg0ANVpRLUwizIP70qw/XJC\nEvdDzCAUZrRPgcc2qJaHZzCXrCqWAYaUxNnKGikX4iYzV3ye2UhVE0OqSPF6J7ww\nQGRZ3rDOE6NgoFtVt7VdPcUjhuEnFWthn7e3/WCUoaKXrgpza+cLO2Y3idTN2zMm\nplgBtEuSncxvYIZmX9mAGBtMebd7IpQA2vihnxty44Rg52G9Y9UNMthdYroyE7K9\nVSqdFgW7yGNKydTJ6gckp6J378Ig7vUWmFpNk0rAbKWrosW5ElES+DJO7Fm3CWAz\nxImLuCF4e1CuKXguFUfHdWGMcCIQ7nBGEUGCA7IFc+qZVbkd2ag66cy30JE+HESZ\n9kG6mAq3IKsmjaGjBrNpqxJQnFGDJghYCfAHoRhdYmwzHvaMnsag5ZZLxoMCDSOJ\nXrhvJCQJoZeLHTu873dHdAJAR5XE/mtfgpwUMEZEvqUW1MauYQbBMrUXIqxb9ux7\nSCIpX6cIfphP5IsDv4mnxXyMIatiids72bEK6edy/OLGR8Yv13ed4wS8jVBKExZO\nqtS8mDZLwfsRcXhJYfERpFAPL8WMupQHQUB3YGCjyzSXqbauT0M72ooGy9MkYfCR\naoYdowN8cmcgSLMSy6AHtTtZ13qz3LsS/VmS1sqm7JZPQZGtuhgGTHMHlwSKq7k3\nQyZPYuuRjgM6QGYJ4Tm5BKuKzxEujGvAfHjBRncD27KHpcEoNaDOHWZN2RknMqMy\nFKg/z1sRdFI2zdq7FGq1O4naYQbJbug+rXnEnsjLeEwSq+7QzXEGRQw/5S/xHExb\nT+82Xl3HRn/17txutuz4WA==\n-----END XWING PUBLIC KEY-----\n"
+  WireKEMScheme = "xwing"
+  Addresses = ["http://127.0.0.1:300555"]
+
+[Logging]
+  Disable = false
+  File = "katzenpost-replica.log"
+  Level = "DEBUG"
+
+[PKI]
+  [PKI.Voting]
+
+    [[PKI.Voting.Authorities]]
+      Identifier = "auth1"
+      IdentityPublicKey = "-----BEGIN ED25519 PUBLIC KEY-----\ngmQWm9iKSk5CiLTWV9WPkGWyLdzKX2bhnjmSyml7YgU=\n-----END ED25519 PUBLIC KEY-----\n"
+      PKISignatureScheme = "Ed25519"
+      LinkPublicKey = "-----BEGIN XWING PUBLIC KEY-----\nyzU/s3mSF3mR70KymVJI7QemO9OSHbdX9kQnzseHQwuSorFRdBk7H4ciNJLBtEKR\nddgsPGeiXGJy0rgNmTW4hbEcq7AFHSx/RQe5NfZwSVK62oUfHWWRusVe1nJikNc+\nzFmeWrsJ7KobgiDBwRhT15itksDNR+RU3uRPOUtCbMdyb9h3tYZDC6HEWskgKBtz\nJ8h//pO85BE3zyyAHORlYBuLS8RBj9vKhVE192GcMvNcTixnYqcqbrlgJOxl2oMP\nKUAgT/Kon0xGjKy8EUpaEbikyGtvxRQV3BonTjEU1nQk9GTJU7V37sJNwpIbw1xz\npDw5pOeDnUolzUE1xNHLcEdn+WqynLWUQjl3NoRF/uRsz0OG9iw747KGJjt8FGAo\nF5ZBHZuvCQSIGbpXuVFhZFJhJFjGlQKE8agltag6GIAd85HLXEU24haF2ZgYSqqi\nO6KLzIYIupqhiaJ8ysyk+TjFK1tnU0QIQEY5uTUetZDH/nbMRTXJ9KFKFRq50ByT\neWq/godtyNHEI+lg1ElKfPQoq9tEthS1/YMi4JdZT/NrS8lKtXW6XPa90BasM9iQ\nbEitCiZNE9HLUosj/Ea/voW5q8M0cLgwcpsy5oq08nmM8EQiJ/I80BnM6vW8PWFv\ncAkUpZnAnhuGpexgHBMprNM3lPl27RGZckqRuLHBPJEwW7ZTl6Mc9NimPrwVxpPF\n+oJWCpdn3lkbRVFVfKJqmPVQz4JXsmGnv1mr4UWXEVEie/UP/slOQog4xcdJjHp7\nZAyBLdwIW7UNShkgFCiX6JuhowpAkWSOAPks6FWllFg0ANVpRLUwizIP70qw/XJC\nEvdDzCAUZrRPgcc2qJaHZzCXrCqWAYaUxNnKGikX4iYzV3ye2UhVE0OqSPF6J7ww\nQGRZ3rDOE6NgoFtVt7VdPcUjhuEnFWthn7e3/WCUoaKXrgpza+cLO2Y3idTN2zMm\nplgBtEuSncxvYIZmX9mAGBtMebd7IpQA2vihnxty44Rg52G9Y9UNMthdYroyE7K9\nVSqdFgW7yGNKydTJ6gckp6J378Ig7vUWmFpNk0rAbKWrosW5ElES+DJO7Fm3CWAz\nxImLuCF4e1CuKXguFUfHdWGMcCIQ7nBGEUGCA7IFc+qZVbkd2ag66cy30JE+HESZ\n9kG6mAq3IKsmjaGjBrNpqxJQnFGDJghYCfAHoRhdYmwzHvaMnsag5ZZLxoMCDSOJ\nXrhvJCQJoZeLHTu873dHdAJAR5XE/mtfgpwUMEZEvqUW1MauYQbBMrUXIqxb9ux7\nSCIpX6cIfphP5IsDv4mnxXyMIatiids72bEK6edy/OLGR8Yv13ed4wS8jVBKExZO\nqtS8mDZLwfsRcXhJYfERpFAPL8WMupQHQUB3YGCjyzSXqbauT0M72ooGy9MkYfCR\naoYdowN8cmcgSLMSy6AHtTtZ13qz3LsS/VmS1sqm7JZPQZGtuhgGTHMHlwSKq7k3\nQyZPYuuRjgM6QGYJ4Tm5BKuKzxEujGvAfHjBRncD27KHpcEoNaDOHWZN2RknMqMy\nFKg/z1sRdFI2zdq7FGq1O4naYQbJbug+rXnEnsjLeEwSq+7QzXEGRQw/5S/xHExb\nT+82Xl3HRn/17txutuz4WA==\n-----END XWING PUBLIC KEY-----\n"
+      WireKEMScheme = "xwing"
+      Addresses = ["http://127.0.0.1:30001"]
+
+    [[PKI.Voting.Authorities]]
+      Identifier = "auth2"
+      IdentityPublicKey = "-----BEGIN ED25519 PUBLIC KEY-----\neuZTeDKr5NNr+cgUuH5RBD8TBjkrR45zbhB+3q9VsZI=\n-----END ED25519 PUBLIC KEY-----\n"
+      PKISignatureScheme = "Ed25519"
+      LinkPublicKey = "-----BEGIN XWING PUBLIC KEY-----\nF3dWRKoP45ouaWCLeZu2M7QvbczEPrMHKFmZJtYjPUOcFzmXNNdJzDgtX6ivb+qk\nVBJGHst41Yht2fsxPfxywwREQBljrqQXewcnZowdhPEVCHNTPVtPZ/xVGBk6N8A4\n2TeSmfQl2eFlkLwguHB0nFm4EGJpR9Ge8sM/wBtSZ3sorTaKzrNs7WMn/PBMGmiw\nhuU7zXvKk2o6nZy4A7qQSYhG+imsn8BEmJpjiOM5AhkkeVdaIwcAlfbLMfY2OElx\nXVE4E8elnWazA2I3qUZMK7KuOlutNzZqYtMlUXapIBeTlncRrSMFS/jG/RstXBes\nb8UFVieqIPWzDLWODSASDJBBQcObUnY6EJCiOGBqgtw/GYQuGkzJeLowPmFnMNaH\nV3LPenlVyaMWP7wadNhy7DYDpxwZF8lMneZD6KhMotwMYyOlNaYqedeb87s5k4Z1\nuludIPxCrREsRTMd4DnNanB1t8eamaCFZTMY0YY+yQzLkqRy7RZm65VNCMiWeJYt\ngAqE1eC2FwpcQELJ9MBgvMy/OydJUWYlNATGvIRjKnqtpLxf0DRc6YzK88hi+lQC\nOLMBCtoQ1AIbW3SYAnBXyZaQ/OAPtZkx+/KI+lt/pqS94is6tXZiTvYIbKOSTPRH\nqfQ9Z4c3f/SmBJhsd+AUZhoRXae1SxihcCWmYgtOU7WCAcEoP6N5fVxVYGsep8QS\ndJsS1TWcCje2AZU5nKuM+0yIgIEtLElVHkkDYCsU8/gtrfqz/xJmuQSeJmhZtGke\nR/EBRvVolMAFzdiKqFk8z4CAt0d1dJdMr9QcoNZB1hU0D8BWPekrNTJoKeSZy4Fx\nLCdP1hYDU7AW5wIaY5mxT4E0KCVoE7Y/6RY5ejEZy+SWjNoZzuY5GMCf+5e040tQ\n9qJqBvMkt1QLOwGF1xWBkMIZOFdgd/IwipCupjuOfLmryZOCkqquf8Iv90hd6BK0\noqs+QwYfL/cY48VA1nsKImYQBVw3eeUtUoIwX5yl5HIkuMYBLjHNo9Nm6NwbznMB\nd6tuXsIUtxB3/zBxPAWQmrSBgsak+ZOdtmErvtZLWOIDGIUZQEqCpvExCZzIMzhA\nFeRKE7CgobCAymV7XFNDRIih7JiJXaYpeIacyKACYRlheMoIoXiadZmsilxTomdN\nhuGCKUtrs7IeeSWsqJt1ZEpWgvsYJQe/Tot3/seKZdegGvGwJUJn9YGNuOPCoaB4\nB1lSpbTJa+N6r4KkaMawQEhrzhd1jsx3R2M2ElYb+VA9OlBvTKh4FmQ07Nxukhid\nXPsh35GKcMcpZ5ClodeX90bLk4FZRZYltkpRpRRfp3ybrlyQNCbPygwOXpp6/poI\ndnKt8byyauUdCmBddQGe7oRY7xq6oqCbxGiougWmlUhdW6ERmXZc2BySTLAKipo4\nuFPKenpXivJ0gSJgYUbL1CTNjSaL1kaJGIp6j9S6SJSLfiJWCjmCiJtx9blXiQlP\nqgDGgFsujNJOmrcteLppmdgNOJpHOitDtSiSUYvCK4pOM2K9/UYjeBOicDitvONf\n4A65p0ZYX46ETibS2RfbUH8ptvOUqkRgwCuyxGlcC6We/WcVQgvbEkuLmwXavVSO\n7+XiGfS5dBx79VhSFJOTTg==\n-----END XWING PUBLIC KEY-----\n"
+      WireKEMScheme = "xwing"
+      Addresses = ["http://127.0.0.1:30002"]
+
+    [[PKI.Voting.Authorities]]
+      Identifier = "auth3"
+      IdentityPublicKey = "-----BEGIN ED25519 PUBLIC KEY-----\nCcGP9MxZu/qS3vjVhPmL4vPhY+PNsaBy69EOwpEs+88=\n-----END ED25519 PUBLIC KEY-----\n"
+      PKISignatureScheme = "Ed25519"
+      LinkPublicKey = "-----BEGIN XWING PUBLIC KEY-----\njEu2bYy9u7UQZkN8+EvOqutdxouni1B5xQOYvvI0H7E51MRdHjkeMIV0eKajwuVV\na8pDX9JxMztMeRiWGfDCx9cigUZQqSQaPYmrvzctGEgv+dvG3NZ4p6p2ACays4HL\nmSuI4onMFbSYMPkse0GZl2CaerCiJCNYQQNbC2BWdpQZzWkJsSU94MIqGxd4/Veo\nJIKByhi6wJN/MQA3jWttAQBikZJINpOZsdyST1J4dnjIDvlBGaWqKuxjt8x5X6dg\nt4jL8WdChoA1G/O+olqb1Hq+JhEu6kzJ/KB2S/d8x9Ve2rR5JdF2mPVo9Ct13eRC\n/6GIKMsIdrKrRVKamKYmVWamt2iUDPk/SbtQT1gdFdhSOHNiFIY9YfciVPlf+YSE\nKtRqpBXLQlempTcXtSs8EtzFqoFXxNuWDmQcGkoo5IsA7RZheCdfaUqHLsibyre+\nDZJJ5CxY85SnPkZeuysbCHLFmvRBwOaT4FMaOhCHvldwY0p0oCjNErIizxm80Ww8\npQdZ7KLB4lhN8Yc/NtF1CecY/7FDtjMDHNwpEGWxnOces5qgvKG502UygByzNGCQ\nrNN8ePMhi6EFNwDFT6MCA9ZvRZZ34pYvxjFBcNifnibH0Ii8xvFkXNy0ErcjX2cA\nIcOJ2ubAxsqO6FfAclQnlQwmvooUbtQr1kpVucUEqBEyRaJ6JtocZYYB7UOyyqlm\n9JwfbZFMfpKi0Om0JbrGbQYkRji6k0zMu8G26DxdB9NV1dKZITBVL5SloEALDHwf\nkbi+sLCaX8SiN+VY4EJzC/nE6HZAz9xsVUMFg/ZLqeWDwYAXXIhbs3E97ftKRvW0\nSqxTOAW8EjiNXTYjbKEbtLxG5jwLBErI8DFyfJePttAhP0NKpmakOtOYqOMX7ymK\nZqCvzEkb6awjZQMbiDAJvQVfIUl9abkkCrzB2TgFU7yf0JdNYVlb9yInyGQGkte2\nzFSc71MGfhBmhXOlTpCNURR1NFkoJuNyVNON9FltxJvKs4lZJWxNYQImDoIGgkpE\nH6AI1OZJN3pL5xKNU3a58rtBtpFNEeI2gat3XpoBrQw5Q+xY3ACgILfFh1wRKIJM\n+mu8k7RFtMGRMHmE5MNgz3ZmAlNE79ayLGF04Nm9qIdzmsIGTebOJLi/MEsT/TLB\nqFgT0BWFJgRpsVtS8DLNuDpWK9y4fPKJQjGb1sWkx4C22kiXSaN084IgOnBLDqtD\nVvsjsxWtZYpJT/pzHTAR2zwF2MixSKF8xGp/xZVbXXWls/ERFndLnsO5aiN0nxo7\nA8BPDIy6Auwh24Zr6DNBU0VccUVNPoqRbxO5IgolEgg4d9UV+FXGyrsY9zqzIlCt\nylUOqKRaw8Gs8eeNh8PLAkKvEQZwOskLKpxnKfSu4IMdG2GVf3rGAjuvNskxd1IL\nfqRtqJIxedM/wkARohOtmDLEQ8IbBGFTGQzKl7JKHwgT65ZFXimd41s5ZkBRfOy0\nE2xSG0dqXSJbKPpyTjq/3wkZhpAyqNosLGGFQ/ECNOtjhxZcccQPdDY+qlPDBgCk\nJBF3QlEoked6PZE0RwqVIQz3rh+/Hwm9Ba+7xplgcGM4fzCvYCfffUEYna0mpkbT\nDV6T9Ms3Ku4jP1HLpw/eeg==\n-----END XWING PUBLIC KEY-----\n"
+      WireKEMScheme = "xwing"
+      Addresses = ["http://127.0.0.1:30003"]
