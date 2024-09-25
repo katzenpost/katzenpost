@@ -27,7 +27,6 @@ import (
 	"sync"
 	"sync/atomic"
 
-
 	"github.com/katzenpost/hpqc/kem/schemes"
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 
@@ -238,7 +237,7 @@ func New(glue glue.Glue, incomingCh chan<- interface{}, id int, addr string) (gl
 				l.log.Errorf("Failed to start listener '%v': %v", addr, err)
 				return nil, err
 			}
-		case "http":
+		case "quic":
 			ql, err := quic.ListenAddr(u.Host, common.GenerateTLSConfig(), nil)
 			if err != nil {
 				l.log.Errorf("Failed to start listener '%v': %v", addr, err)
