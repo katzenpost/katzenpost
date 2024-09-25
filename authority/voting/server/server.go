@@ -172,29 +172,6 @@ func (s *Server) listenWorker(l net.Listener) {
 	// NOTREACHED
 }
 
-func (s *Server) listenQUICWorker(l net.Listener) {
-	addr := l.Addr()
-	s.log.Noticef("QUIC Listening on: %v", addr)
-	defer func() {
-		s.log.Noticef("Stopping listening on: %v", addr)
-		l.Close()
-		s.Done()
-	}()
-	for {
-		conn, err := l.Accept()
-		if err != nil {
-			if e, ok := err.(net.Error); ok && !e.Temporary() {
-				s.log.Errorf("Critical accept failure: %v", err)
-				return
-			}
-			continue
-		}
-		s.Add(1)
-		s.onConn(conn)
-	}
-	// NOTREACHED
-}
-
 func (s *Server) halt() {
 	s.log.Notice("Starting graceful shutdown.")
 
@@ -405,9 +382,8 @@ func New(cfg *config.Config) (*Server, error) {
 				ql := common.QuicListener{Listener: l}
 				s.listeners = append(s.listeners, &ql)
 				s.Add(1)
-				// XXX: is there any HTTP3 specific stuff that we want to do?
 				s.state.Go(func() {
-					s.listenQUICWorker(&ql)
+					s.listenWorker(&ql)
 				})
 			default:
 				s.log.Errorf("Unsupported listener scheme '%v': %v", v, err)
