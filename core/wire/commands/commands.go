@@ -14,6 +14,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/utils"
+	wireconstants "github.com/katzenpost/katzenpost/core/wire/constants"
 )
 
 var (
@@ -40,10 +41,14 @@ type Commands struct {
 
 // NewCommands returns a Commands given a sphinx geometry.
 func NewCommands(geo *geo.Geometry, pkiSignatureScheme sign.Scheme) *Commands {
-	return &Commands{
+
+	c := &Commands{
 		geo:                geo,
 		pkiSignatureScheme: pkiSignatureScheme,
 	}
+	_ = c.maxMessageLenServerToClient()
+	_ = c.maxMessageLenClientToServer()
+	return c
 }
 
 func (c *Commands) messageMsgPaddingLength() int {
@@ -55,11 +60,19 @@ func (c *Commands) messageMsgLength() int {
 }
 
 func (c *Commands) maxMessageLenServerToClient() int {
-	return cmdOverhead + c.messageMsgLength() + c.geo.UserForwardPayloadLength
+	t := cmdOverhead + c.messageMsgLength() + c.geo.UserForwardPayloadLength
+	if t > wireconstants.MaxMsgLen {
+		panic("cannot set maxMessageLenServerToClient to exceed MaxMsgLen")
+	}
+	return t
 }
 
 func (c *Commands) maxMessageLenClientToServer() int {
-	return cmdOverhead + c.geo.PacketLength
+	t := cmdOverhead + c.geo.PacketLength
+	if t > wireconstants.MaxMsgLen {
+		panic("cannot set maxMessageLenClientToServer to exceed MaxMsgLen")
+	}
+	return t
 }
 
 func (c *Commands) maxMessageLen(cmd Command) int {
