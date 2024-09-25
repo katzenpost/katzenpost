@@ -28,6 +28,7 @@ import (
 	"path/filepath"
 	"sync"
 
+	"github.com/quic-go/quic-go"
 	"gopkg.in/op/go-logging.v1"
 
 	"github.com/katzenpost/hpqc/hash"
@@ -43,7 +44,6 @@ import (
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/utils"
 	"github.com/katzenpost/katzenpost/http/common"
-	"github.com/quic-go/quic-go"
 )
 
 // ErrGenerateOnly is the error returned when the server initialization
