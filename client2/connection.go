@@ -854,7 +854,7 @@ func addressesFromURLs(addrs []string) map[string][]string {
 			continue
 		}
 		switch u.Scheme {
-		case cpki.TransportTCP, cpki.TransportTCPv4, cpki.TransportTCPv6, cpki.TransportHTTP:
+		case cpki.TransportTCP, cpki.TransportTCPv4, cpki.TransportTCPv6, cpki.TransportQUIC:
 			if _, ok := addresses[u.Scheme]; !ok {
 				addresses[u.Scheme] = make([]string, 0)
 			}
