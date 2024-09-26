@@ -54,7 +54,46 @@ jobs:
         run: |
           cd genconfig && go build && ./genconfig -wirekem xwing -v -b /conf -o ../docker/voting_mixnet/
 
-      - name: Golang test
+      - name: Run authority unit tests
         shell: msys2 {0}
-        run: |
-          go test -race -v -failfast -timeout 1h ./...;
+        run: cd authority && GORACE=history_size=7 go test -coverprofile=coverage.out -race -v -failfast -timeout 30m ./...
+
+      - name: Run catshadow unit tests
+        shell: msys2 {0}
+        run: cd catshadow && GORACE=history_size=7 go test -coverprofile=coverage.out -race -v -failfast -timeout 30m ./...
+
+      - name: Run client unit tests
+        shell: msys2 {0}
+        run: cd client && GORACE=history_size=7 go test -coverprofile=coverage.out -race -v -failfast -timeout 30m ./...
+
+      - name: Run client2 unit tests
+        shell: msys2 {0}
+        run: cd client2 && GORACE=history_size=7 go test -coverprofile=coverage.out -race -v -failfast -timeout 30m ./...
+
+      - name: Run core unit tests
+        shell: msys2 {0}
+        run: cd core && GORACE=history_size=7 go test -coverprofile=coverage.out -race -v -failfast -timeout 30m ./...
+
+      - name: Run NIKE Sphinx unit tests with CTIDH
+        shell: msys2 {0}
+        run: cd core/sphinx && GORACE=history_size=7 go test -coverprofile=coverage.out -race -v -failfast -timeout 30m ./...
+
+      - name: Run doubleratchet unit tests
+        shell: msys2 {0}
+        run:  cd doubleratchet && GORACE=history_size=7 go test -coverprofile=coverage.out -race -v -failfast -timeout 30m ./...
+
+      - name: Run memspool unit tests
+        shell: msys2 {0}
+        run:  cd memspool && GORACE=history_size=7 go test -coverprofile=coverage.out -race -v -failfast -timeout 30m ./...
+
+      - name: Run panda unit tests
+        shell: msys2 {0}
+        run:  cd panda && GORACE=history_size=7 go test -coverprofile=coverage.out -race -v -failfast -timeout 30m ./...
+
+      - name: Run reunion unit tests
+        shell: msys2 {0}
+        run:  cd reunion && GORACE=history_size=7 go test -coverprofile=coverage.out -race -v -failfast -timeout 30m ./...
+
+      - name: Run server unit tests
+        shell: msys2 {0}
+        run:  cd server && GORACE=history_size=7 go test -coverprofile=coverage.out -race -v -failfast -timeout 30m ./...
