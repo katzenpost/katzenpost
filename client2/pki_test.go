@@ -205,10 +205,13 @@ func TestPKIWaitForDocument(t *testing.T) {
 
 	myMockPKIClient.doc = testDoc
 
-	_, currentDoc := p.currentDocument()
+	err, currentDoc := p.currentDocument()
 	require.Nil(t, currentDoc)
+	require.NotNil(err)
 	c.WaitForCurrentDocument()
+	err, currentDoc = p.currentDocument()
 	require.NotNil(t, currentDoc)
+	require.NoError(err)
 	require.Equal(t, currentDoc, testDoc)
 }
 
