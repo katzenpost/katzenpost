@@ -188,7 +188,7 @@ func (c *connection) getDescriptor() error {
 		}
 		ok = true
 		return nil
-	} else {
+	} else if doc == nil {
 		doc = c.client.cfg.CachedDocument
 	}
 	if doc != nil {
