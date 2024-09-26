@@ -242,10 +242,10 @@ func (s *katzenpost) genNodeConfig(isGateway, isServiceNode bool, isVoting bool)
 	cfg.Server.PKISignatureScheme = s.pkiSignatureScheme.Name()
 	cfg.Server.Identifier = n
 	if isGateway {
-		cfg.Server.Addresses = []string{fmt.Sprintf("http://127.0.0.1:%d", s.lastPort), fmt.Sprintf("tcp://127.0.0.1:%d", s.lastPort+1)}
+		cfg.Server.Addresses = []string{fmt.Sprintf("tcp://127.0.0.1:%d", s.lastPort), fmt.Sprintf("tcp://127.0.0.1:%d", s.lastPort+1)}
 		s.lastPort += 2
 	} else {
-		cfg.Server.Addresses = []string{fmt.Sprintf("http://127.0.0.1:%d", s.lastPort)}
+		cfg.Server.Addresses = []string{fmt.Sprintf("tcp://127.0.0.1:%d", s.lastPort)}
 		s.lastPort += 1
 	}
 	cfg.Server.DataDir = filepath.Join(s.baseDir, n)
@@ -393,7 +393,7 @@ func (s *katzenpost) genVotingAuthoritiesCfg(numAuthorities int, parameters *vCo
 			WireKEMScheme:      s.wireKEMScheme,
 			PKISignatureScheme: s.pkiSignatureScheme.Name(),
 			Identifier:         fmt.Sprintf("auth%d", i),
-			Addresses:          []string{fmt.Sprintf("http://127.0.0.1:%d", s.lastPort)},
+			Addresses:          []string{fmt.Sprintf("tcp://127.0.0.1:%d", s.lastPort)},
 			DataDir:            filepath.Join(s.baseDir, fmt.Sprintf("auth%d", i)),
 		}
 		os.Mkdir(filepath.Join(s.outDir, cfg.Server.Identifier), 0700)
