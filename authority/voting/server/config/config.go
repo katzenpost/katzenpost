@@ -280,8 +280,8 @@ type Authority struct {
 	LinkPublicKey kem.PublicKey
 	// WireKEMScheme is the wire protocol KEM scheme to use.
 	WireKEMScheme string
-	// Addresses are the IP address/port combinations that the peer authority
-	// uses for the Directory Authority service.
+	// Addresses are the listener addresses specified by a URL, e.g. tcp://1.2.3.4:1234 or quic://1.2.3.4:1234
+	// Both IPv4 and IPv6 as well as hostnames are valid.
 	Addresses []string
 }
 
