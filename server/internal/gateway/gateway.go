@@ -13,7 +13,6 @@ import (
 
 	"gopkg.in/op/go-logging.v1"
 
-	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/kem/schemes"
 
 	"github.com/katzenpost/katzenpost/core/epochtime"
@@ -77,14 +76,9 @@ func (p *gateway) UserDB() userdb.UserDB {
 func (p *gateway) AuthenticateClient(c *wire.PeerCredentials) bool {
 	isValid := p.userDB.IsValid(c.AdditionalData, c.PublicKey)
 	if !isValid {
-		blob, err := c.PublicKey.MarshalBinary()
+		_, err := c.PublicKey.MarshalBinary()
 		if err != nil {
 			panic(err)
-		}
-		if len(c.AdditionalData) == sConstants.NodeIDLength {
-			p.log.Errorf("Authentication failed: User: '%x', Key: '%x' (Probably a peer)", c.AdditionalData, hash.Sum256(blob))
-		} else {
-			p.log.Errorf("Authentication failed: User: '%x', Key: '%x'", c.AdditionalData, hash.Sum256(blob))
 		}
 	}
 	return isValid

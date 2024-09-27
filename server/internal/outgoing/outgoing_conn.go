@@ -29,6 +29,7 @@ import (
 
 	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/kem"
+	"github.com/katzenpost/hpqc/kem/pem"
 	"github.com/katzenpost/hpqc/rand"
 
 	"github.com/katzenpost/katzenpost/core/epochtime"
@@ -65,6 +66,7 @@ func (c *outgoingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 	idHash := hash.Sum256(c.dst.IdentityKey)
 	if !hmac.Equal(idHash[:], creds.AdditionalData) {
 		c.log.Debug("IsPeerValid false, identity hash mismatch")
+		c.log.Errorf("IsPeerValid false, expect identity hash %x but got %x", idHash[:], creds.AdditionalData)
 		return false
 	}
 	keyblob, err := creds.PublicKey.MarshalBinary()
@@ -73,6 +75,14 @@ func (c *outgoingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 	}
 	if !hmac.Equal(c.dst.LinkKey, keyblob) {
 		c.log.Debug("IsPeerValid false, link key mismatch")
+
+		expectedLinkPubKey, err := c.scheme.UnmarshalBinaryPublicKey(c.dst.LinkKey)
+		if err != nil {
+			panic(err)
+		}
+		expected := pem.ToPublicPEMString(expectedLinkPubKey)
+		got := pem.ToPublicPEMString(creds.PublicKey)
+		c.log.Errorf("IsPeerValid false, link key mismatch, expected %s but got %s", expected, got)
 		return false
 	}
 

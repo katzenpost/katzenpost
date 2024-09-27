@@ -28,6 +28,7 @@ import (
 
 	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/kem"
+	"github.com/katzenpost/hpqc/kem/pem"
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/hpqc/sign"
 
@@ -81,6 +82,10 @@ func (c *incomingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 			c.fromMix = true
 			c.fromClient = false
 			c.canSend = canSend
+			if !isValid {
+				pubkeypem := pem.ToPublicPEMString(creds.PublicKey)
+				c.log.Errorf("incoming_conn IsPeerValid failure, got unrecognized mix node link pub key %s", pubkeypem)
+			}
 			return isValid
 		}
 		isClient := gateway.AuthenticateClient(creds)
@@ -148,11 +153,13 @@ func (c *incomingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 	if isValid {
 		c.fromMix = true
 	} else {
-		blob, err := creds.PublicKey.MarshalBinary()
+		_, err := creds.PublicKey.MarshalBinary()
 		if err != nil {
 			panic(err)
 		}
-		c.log.Debugf("Authentication failed: '%x' (%x)", creds.AdditionalData, hash.Sum256(blob))
+
+		pubkeypem := pem.ToPublicPEMString(creds.PublicKey)
+		c.log.Errorf("incoming_conn IsPeerValid failure, got unrecognized mix node link pub key %s", pubkeypem)
 	}
 
 	return isValid

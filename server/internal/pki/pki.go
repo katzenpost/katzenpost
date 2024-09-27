@@ -538,14 +538,8 @@ func (p *pki) documentsForAuthentication() ([]*pkicache.Entry, *pkicache.Entry, 
 func (p *pki) AuthenticateConnection(c *wire.PeerCredentials, isOutgoing bool) (desc *cpki.MixDescriptor, canSend, isValid bool) {
 	var earlySendSlack = epochtime.Period / 8
 
-	dirStr := "Incoming"
-	if isOutgoing {
-		dirStr = "Outgoing"
-	}
-
 	// Ensure the additional data is valid.
 	if len(c.AdditionalData) != sConstants.NodeIDLength {
-		p.log.Debugf("%v: '%x' AD not an IdentityKey?.", dirStr, c.AdditionalData)
 		return nil, false, false
 	}
 	var nodeID [sConstants.NodeIDLength]byte
@@ -578,7 +572,6 @@ func (p *pki) AuthenticateConnection(c *wire.PeerCredentials, isOutgoing bool) (
 		}
 		if !hmac.Equal(m.LinkKey, blob) {
 			if desc == m || !hmac.Equal(m.LinkKey, blob) {
-				p.log.Warningf("%v: '%x' Public Key mismatch: '%x'", dirStr, c.AdditionalData, hash.Sum256(blob))
 				continue
 			}
 		}
