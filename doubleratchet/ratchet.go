@@ -415,12 +415,12 @@ func InitRatchet(rand io.Reader, scheme nike.Scheme) (*Ratchet, error) {
 		sealedHeaderSize: sealedHeaderSize(scheme),
 	}
 	var err error
-	_, r.kxPrivate0, err = scheme.GenerateKeyPairFromEntropy(rand)
+	_, r.kxPrivate0, err = scheme.GenerateKeyPair()
 	if err != nil {
 		return nil, err
 	}
 
-	_, r.kxPrivate1, err = scheme.GenerateKeyPairFromEntropy(rand)
+	_, r.kxPrivate1, err = scheme.GenerateKeyPair()
 	if err != nil {
 		return nil, err
 	}
@@ -564,7 +564,7 @@ func (r *Ratchet) completeKeyExchange(kx *keyExchange) error {
 func (r *Ratchet) Encrypt(out, msg []byte) ([]byte, error) {
 	if r.ratchet {
 		var err error
-		_, r.sendRatchetPrivate, err = r.scheme.GenerateKeyPairFromEntropy(r.rand)
+		_, r.sendRatchetPrivate, err = r.scheme.GenerateKeyPair()
 		if err != nil {
 			return nil, err
 		}
