@@ -336,12 +336,7 @@ func New(cfg *config.Config) (*Server, error) {
 	}
 
 	s.linkKey = linkPrivateKey
-	blob, err := linkPublicKey.MarshalBinary()
-	if err != nil {
-		panic(err)
-	}
-	linkPubKeyHash := hash.Sum256(blob)
-	s.log.Noticef("Server link public key hash is: %x", linkPubKeyHash[:])
+	s.log.Noticef("Server link public key is: %s", pemkem.ToPublicPEMString(linkPublicKey))
 
 	if s.cfg.Debug.GenerateOnly {
 		return nil, ErrGenerateOnly
@@ -459,7 +454,7 @@ func New(cfg *config.Config) (*Server, error) {
 	}
 	// Bring the listener(s) online.
 	s.listeners = make([]glue.Listener, 0, len(addresses))
-	for i, addr := range addresses  {
+	for i, addr := range addresses {
 		l, err := incoming.New(goo, s.inboundPackets, i, addr)
 		if err != nil {
 			s.log.Errorf("Failed to spawn listener on address: %v (%v).", addr, err)
