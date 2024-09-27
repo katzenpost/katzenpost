@@ -38,8 +38,8 @@ type ExpDist struct {
 // NewExpDist returns an ExpDist with running worker routine.
 func NewExpDist() *ExpDist {
 	e := &ExpDist{
-		opCh:  make(chan interface{}),
-		outCh: make(chan struct{}),
+		opCh:  make(chan interface{}, 1),
+		outCh: make(chan struct{}, 1),
 	}
 	e.Go(e.worker)
 	return e
