@@ -28,6 +28,7 @@ import (
 	"path/filepath"
 	"sync"
 
+	"github.com/quic-go/quic-go"
 	"gopkg.in/op/go-logging.v1"
 
 	"github.com/katzenpost/hpqc/hash"
@@ -43,7 +44,6 @@ import (
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/utils"
 	"github.com/katzenpost/katzenpost/http/common"
-	"github.com/quic-go/quic-go"
 )
 
 // ErrGenerateOnly is the error returned when the server initialization
@@ -117,7 +117,7 @@ func (s *Server) initLogging() error {
 	var err error
 	s.logBackend, err = log.New(p, s.cfg.Logging.Level, s.cfg.Logging.Disable)
 	if err == nil {
-		s.log = s.logBackend.GetLogger("authority")
+		s.log = s.logBackend.GetLogger(s.cfg.Server.Identifier)
 	}
 	return err
 }
@@ -156,42 +156,27 @@ func (s *Server) listenWorker(l net.Listener) {
 		s.Done()
 	}()
 	for {
+		select {
+		case <-s.haltedCh:
+			s.log.Notice("listenWorker Shutting down")
+			return
+		default:
+		}
 		conn, err := l.Accept()
 		if err != nil {
 			if e, ok := err.(net.Error); ok && !e.Temporary() {
 				s.log.Errorf("Critical accept failure: %v", err)
 				return
 			}
+			s.log.Errorf("Accept failure: %v", err)
 			continue
 		}
 
-		s.Add(1)
-		s.onConn(conn)
+		s.state.Go(func() {
+			s.onConn(conn)
+		})
 	}
 
-	// NOTREACHED
-}
-
-func (s *Server) listenQUICWorker(l net.Listener) {
-	addr := l.Addr()
-	s.log.Noticef("QUIC Listening on: %v", addr)
-	defer func() {
-		s.log.Noticef("Stopping listening on: %v", addr)
-		l.Close()
-		s.Done()
-	}()
-	for {
-		conn, err := l.Accept()
-		if err != nil {
-			if e, ok := err.(net.Error); ok && !e.Temporary() {
-				s.log.Errorf("Critical accept failure: %v", err)
-				return
-			}
-			continue
-		}
-		s.Add(1)
-		s.onConn(conn)
-	}
 	// NOTREACHED
 }
 
@@ -393,7 +378,7 @@ func New(cfg *config.Config) (*Server, error) {
 				s.state.Go(func() {
 					s.listenWorker(l)
 				})
-			case "http":
+			case "quic":
 				l, err := quic.ListenAddr(u.Host, common.GenerateTLSConfig(), nil)
 				if err != nil {
 					s.log.Errorf("Failed to start listener '%v': %v", v, err)
@@ -405,9 +390,8 @@ func New(cfg *config.Config) (*Server, error) {
 				ql := common.QuicListener{Listener: l}
 				s.listeners = append(s.listeners, &ql)
 				s.Add(1)
-				// XXX: is there any HTTP3 specific stuff that we want to do?
 				s.state.Go(func() {
-					s.listenQUICWorker(&ql)
+					s.listenWorker(&ql)
 				})
 			default:
 				s.log.Errorf("Unsupported listener scheme '%v': %v", v, err)

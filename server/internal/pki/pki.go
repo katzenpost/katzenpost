@@ -695,14 +695,8 @@ func New(glue glue.Glue) (glue.PKI, error) {
 	}
 
 	var err error
-	if len(glue.Config().Server.OnlyAdvertiseAddresses) > 0 {
-		p.descAddrMap = make(map[string][]string)
-		// XXX: parse each address and update descAddrMap
-		panic("NotImplemented")
-	} else {
-		if p.descAddrMap, err = makeDescAddrMap(glue.Config().Server.Addresses); err != nil {
-			return nil, err
-		}
+	if p.descAddrMap, err = makeDescAddrMap(glue.Config().Server.Addresses); err != nil {
+		return nil, err
 	}
 
 	if len(p.descAddrMap) == 0 {
@@ -743,8 +737,8 @@ func makeDescAddrMap(addrs []string) (map[string][]string, error) {
 			return nil, err
 		}
 		switch u.Scheme {
-		case string(cpki.TransportHTTP):
-			m[cpki.TransportHTTP] = append(m[cpki.TransportHTTP], addr)
+		case string(cpki.TransportQUIC):
+			m[cpki.TransportQUIC] = append(m[cpki.TransportQUIC], addr)
 		case string(cpki.TransportTCP):
 			// See if the URL contains an IP
 			var ips = []net.IP{}

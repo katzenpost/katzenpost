@@ -143,7 +143,7 @@ func TestIncompleteConfig(t *testing.T) {
 
 [server]
 Identifier = "katzenpost.example.com"
-Addresses = [ "http://127.0.0.1:29483", "tcp://[::1]:29483" ]
+Addresses = [ "quic://127.0.0.1:29483", "tcp://[::1]:29483" ]
 DataDir = "/var/lib/katzenpost"
 IsProvider = true
 
@@ -186,7 +186,7 @@ Level = "DEBUG"
 
 [server]
 Identifier = ""
-Addresses = [ "tcp://127.0.0.1:29483", "http://[::1]:29483" ]
+Addresses = [ "tcp://127.0.0.1:29483", "quic://[::1]:29483" ]
 DataDir = "/var/lib/katzenpost"
 IsProvider = true
 

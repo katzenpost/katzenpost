@@ -30,6 +30,9 @@ jobs:
       - name: Run client unit tests
         run: cd client && GORACE=history_size=7 go test -coverprofile=coverage.out -race -v -failfast -timeout 30m ./...
 
+      - name: Run client2 unit tests
+        run: cd client2 && GORACE=history_size=7 go test -coverprofile=coverage.out -race -v -failfast -timeout 30m ./...
+
       - name: Run core unit tests
         run: cd core && GORACE=history_size=7 go test -coverprofile=coverage.out -race -v -failfast -timeout 30m ./...
 

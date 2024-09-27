@@ -22,6 +22,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"runtime"
 	"sync"
 	"testing"
 	"time"
@@ -35,6 +36,8 @@ import (
 	"github.com/katzenpost/katzenpost/core/pki"
 	mClient "github.com/katzenpost/katzenpost/pigeonhole/client"
 	"github.com/stretchr/testify/require"
+	"net/http"
+	_ "net/http/pprof"
 )
 
 // getSession waits until pki.Document is available and returns a *client.Session
@@ -57,10 +60,16 @@ func getSession(t *testing.T) *client.Session {
 		}
 	}
 	session.WaitForDocument(context.Background())
+	// shut down the client with the session
+	go func() {
+		<-session.HaltCh()
+		cc.Shutdown()
+	}()
 	return session
 }
 
 func TestFrameKey(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 
 	// the same key should be returned for every idx
@@ -80,8 +89,10 @@ func TestFrameKey(t *testing.T) {
 }
 
 func TestCreateStream(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	session := getSession(t)
+	defer session.Shutdown()
 	require.NotNil(session)
 
 	// listener (initiator) of stream
@@ -122,6 +133,8 @@ func TestCreateStream(t *testing.T) {
 	n, err = s.Write(msg)
 	require.NoError(err)
 	require.Equal(n, len(msg))
+	err = s.Sync()
+	require.NoError(err)
 	err = s.Close()
 	require.NoError(err)
 
@@ -139,8 +152,10 @@ func TestCreateStream(t *testing.T) {
 }
 
 func TestStreamFragmentation(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	session := getSession(t)
+	defer session.Shutdown()
 	require.NotNil(session)
 
 	c, err := mClient.NewClient(session)
@@ -225,7 +240,7 @@ func TestStreamFragmentation(t *testing.T) {
 				n, err := s.Read(b[readOff:])
 				if err != nil {
 					t.Logf("read %d, total %d", n, readOff)
-					if readOff + n < len(msg) {
+					if readOff+n < len(msg) {
 						t.Errorf("Read() returned incomplete with err: %v", err)
 						return
 					}
@@ -246,8 +261,10 @@ func TestStreamFragmentation(t *testing.T) {
 }
 
 func TestCBORSerialization(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	session := getSession(t)
+	defer session.Shutdown()
 	require.NotNil(session)
 
 	// our view of stream
@@ -277,11 +294,11 @@ func TestCBORSerialization(t *testing.T) {
 		m.Count = i
 		err := enc.Encode(m)
 		require.NoError(err)
-		t.Logf("Wrote CBOR object")
+		t.Logf("Wrote CBOR object %d", i)
 		m2 := new(msg)
 		err = dec.Decode(m2)
 		require.NoError(err)
-		t.Logf("Decoded CBOR object")
+		t.Logf("Decoded CBOR object %d", i)
 		require.Equal(m.Message, m2.Message)
 		require.Equal(m.Name, m2.Name)
 		require.Equal(m.Count, m2.Count)
@@ -290,11 +307,15 @@ func TestCBORSerialization(t *testing.T) {
 	require.NoError(err)
 	err = r.Close()
 	require.NoError(err)
+	s.Halt()
+	r.Halt()
 }
 
 func TestStreamSerialize(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	session := getSession(t)
+	defer session.Shutdown()
 	require.NotNil(session)
 
 	// Initialize a capability backed stream (Duplex) as listener
@@ -324,11 +345,11 @@ func TestStreamSerialize(t *testing.T) {
 		m.Count = i
 		err := enc.Encode(m)
 		require.NoError(err)
-		t.Logf("Wrote CBOR object")
+		t.Logf("Wrote CBOR object %d", i)
 		m2 := new(msg)
 		err = dec.Decode(m2)
 		require.NoError(err)
-		t.Logf("Decoded CBOR object")
+		t.Logf("Decoded CBOR object %d", i)
 		require.Equal(m.Message, m2.Message)
 		require.Equal(m.Name, m2.Name)
 		require.Equal(m.Count, m2.Count)
@@ -353,11 +374,15 @@ func TestStreamSerialize(t *testing.T) {
 	require.NoError(err)
 	err = r.Close()
 	require.NoError(err)
+	s.Halt()
+	r.Halt()
 }
 
 func TestCreateMulticastStream(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	session := getSession(t)
+	defer session.Shutdown()
 	require.NotNil(session)
 
 	// listener (initiator) of stream
@@ -383,4 +408,16 @@ func TestCreateMulticastStream(t *testing.T) {
 	n, err := io.ReadFull(r, buf2)
 	require.NoError(err)
 	require.Equal(n, len(message))
+	err = r.Close()
+	require.NoError(err)
+	r.Halt()
+	s.Halt()
+}
+
+func init() {
+	go func() {
+		http.ListenAndServe("localhost:4242", nil)
+	}()
+	runtime.SetMutexProfileFraction(1)
+	runtime.SetBlockProfileRate(1)
 }

@@ -66,6 +66,7 @@ func (m *PigeonHole) Wake(msgID common.MessageID) []*cborplugin.Response {
 		return []*cborplugin.Response{}
 	}
 	delete(m.waiting, msgID)
+	m.log.Debugf("Woke: %x: %v", msgID, w)
 	return w
 }
 
@@ -258,7 +259,7 @@ func (m *PigeonHole) OnCommand(cmd cborplugin.Command) error {
 				pigeonHoleResponse := &common.PigeonHoleResponse{Status: common.StatusOK, Payload: req.Payload}
 				rawResp, err := pigeonHoleResponse.Marshal()
 				if err != nil {
-					return nil
+					continue
 				}
 				pluginResponse.Payload = rawResp
 				m.write(pluginResponse)

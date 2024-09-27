@@ -67,6 +67,7 @@ func (q *QuicConn) SetWriteDeadline(t time.Time) error {
 
 // Close implements net.Conn; all streams are closed.
 func (q *QuicConn) Close() error {
+	defer q.Conn.CloseWithError(0, "")
 	return q.Stream.Close()
 }
 
@@ -146,7 +147,7 @@ func DialURL(u *url.URL, ctx context.Context, dialFn func(ctx context.Context, n
 		} else {
 			return conn, nil
 		}
-	case "http":
+	case "quic":
 		// http/3 quic connector
 		// XXX: will need to add the TLS certificate
 		// fingerprint to the authority configuration
