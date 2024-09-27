@@ -14,8 +14,6 @@ import (
 	"github.com/katzenpost/hpqc/rand"
 
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
-	"github.com/katzenpost/katzenpost/core/epochtime"
-	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 )
@@ -94,61 +92,11 @@ func (s *Server) onConn(conn net.Conn) {
 	}
 }
 
-func (s *Server) onClient(rAddr net.Addr, cmd commands.Command) commands.Command {
-	s.log.Debug("onClient")
-	var resp commands.Command
-	switch c := cmd.(type) {
-	case *commands.GetConsensus:
-		resp = s.onGetConsensus(rAddr, c)
-	default:
-		s.log.Debugf("Peer %v: Invalid request: %T", rAddr, c)
-		return nil
-	}
-	return resp
-}
-
-func (s *Server) onMix(rAddr net.Addr, cmd commands.Command, peerIdentityKeyHash []byte) commands.Command {
-	s.log.Debug("onMix")
-	var resp commands.Command
-	switch c := cmd.(type) {
-	case *commands.GetConsensus:
-		resp = s.onGetConsensus(rAddr, c)
-	case *commands.PostDescriptor:
-		resp = s.onPostDescriptor(rAddr, c, peerIdentityKeyHash)
-	default:
-		s.log.Debugf("Peer %v: Invalid request: %T", rAddr, c)
-		return nil
-	}
-	return resp
-}
-
-func (s *Server) onAuthority(rAddr net.Addr, cmd commands.Command) commands.Command {
-	var resp commands.Command
-	switch c := cmd.(type) {
-	case *commands.GetConsensus:
-		resp = s.onGetConsensus(rAddr, c)
-	case *commands.Vote:
-		resp = s.state.onVoteUpload(c)
-	case *commands.Cert:
-		resp = s.state.onCertUpload(c)
-	case *commands.Reveal:
-		resp = s.state.onRevealUpload(c)
-	case *commands.Sig:
-		resp = s.state.onSigUpload(c)
-	default:
-		s.log.Debugf("Peer %v: Invalid request: %T", rAddr, c)
-		return nil
-	}
-	return resp
-}
-
 type wireAuthenticator struct {
 	s                   *Server
 	peerLinkKey         *ecdh.PublicKey
 	peerIdentityKeyHash []byte
-	isClient            bool
-	isMix               bool
-	isAuthority         bool
+	isServiceNode       bool
 }
 
 func (a *wireAuthenticator) IsPeerValid(creds *wire.PeerCredentials) bool {
@@ -167,10 +115,7 @@ func (a *wireAuthenticator) IsPeerValid(creds *wire.PeerCredentials) bool {
 	pk := [hash.HashSize]byte{}
 	copy(pk[:], creds.AdditionalData[:hash.HashSize])
 
-	_, isMix := a.s.state.authorizedMixes[pk]
-	_, isGatewayNode := a.s.state.authorizedGatewayNodes[pk]
-	_, isServiceNode := a.s.state.authorizedServiceNodes[pk]
-	_, isAuthority := a.s.state.authorizedAuthorities[pk]
+	_, isServiceNode := a.s.authorizedServiceNodes[pk]
 
 	if isMix || isGatewayNode || isServiceNode {
 		a.isMix = true // Gateways and service nodes and mixes are all mixes.
