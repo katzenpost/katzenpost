@@ -2,6 +2,8 @@ module github.com/katzenpost/katzenpost
 
 go 1.22.3
 
+replace codeberg.org/vula/highctidh => github.com/ioerror/highctidh v1.0.2024060501-0.20240927175539-0728b507422d
+
 require (
 	github.com/BurntSushi/toml v1.4.0
 	github.com/carlmjohnson/versioninfo v0.22.5
@@ -30,7 +32,7 @@ require (
 )
 
 require (
-	codeberg.org/vula/highctidh v1.0.2024053000 // indirect
+	codeberg.org/vula/highctidh v1.0.2024060500 // indirect
 	filippo.io/edwards25519 v1.0.0 // indirect
 	filippo.io/mlkem768 v0.0.0-20240221181710-5ce91625fdc1 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
