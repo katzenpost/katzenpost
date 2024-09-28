@@ -4,7 +4,6 @@
 package main
 
 import (
-	"crypto/hmac"
 	"net"
 	"time"
 
@@ -34,7 +33,6 @@ func (s *Server) onConn(conn net.Conn) {
 
 	// Initialize the wire protocol session.
 	auth := &wireAuthenticator{s: s}
-	keyHash := hash.Sum256From(s.replicaPublicKey)
 
 	kemscheme := schemes.ByName(s.cfg.WireKEMScheme)
 	if kemscheme == nil {
@@ -45,7 +43,7 @@ func (s *Server) onConn(conn net.Conn) {
 		KEMScheme:          kemscheme,
 		PKISignatureScheme: signSchemes.ByName(s.cfg.PKISignatureScheme),
 		Authenticator:      auth,
-		AdditionalData:     keyHash[:],
+		AdditionalData:     []byte{},
 		AuthenticationKey:  s.linkKey,
 		RandomReader:       rand.Reader,
 	}
@@ -72,16 +70,7 @@ func (s *Server) onConn(conn net.Conn) {
 	conn.SetDeadline(time.Time{})
 
 	// Parse the command, and craft the response.
-	var resp commands.Command
-	if auth.isClient {
-		resp = s.onClient(rAddr, cmd)
-	} else if auth.isMix {
-		resp = s.onMix(rAddr, cmd, auth.peerIdentityKeyHash)
-	} else if auth.isAuthority {
-		resp = s.onAuthority(rAddr, cmd)
-	} else {
-		panic("wtf") // should only happen if there is a bug in wireAuthenticator
-	}
+	resp := s.onCommand(rAddr, cmd)
 
 	// Send the response, if any.
 	if resp != nil {
@@ -93,18 +82,17 @@ func (s *Server) onConn(conn net.Conn) {
 }
 
 type wireAuthenticator struct {
-	s                   *Server
-	peerLinkKey         *ecdh.PublicKey
-	peerIdentityKeyHash []byte
-	isServiceNode       bool
+	s *Server
 }
 
 func (a *wireAuthenticator) IsPeerValid(creds *wire.PeerCredentials) bool {
 	switch len(creds.AdditionalData) {
 	case 0:
-		a.isClient = true
+		a.isServiceNode = false
 		return true
 	case hash.HashSize:
+		a.isServiceNode = true
+		return true // XXX FIXME
 	default:
 		a.s.log.Warning("Rejecting authentication, invalid AD size.")
 		return false
