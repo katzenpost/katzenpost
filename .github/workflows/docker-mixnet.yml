@@ -121,7 +121,6 @@ jobs:
       warped: true
       no_mixdecoy: false
       no_decoy: false
-      CGO_LDFLAGS: "-Wl,-z,stack-size=0xFFFFFF"
     strategy:
       matrix:
         go-version: [1.22.x]
