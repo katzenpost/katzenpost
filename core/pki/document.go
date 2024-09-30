@@ -147,6 +147,8 @@ type Document struct {
 	// with tehe mix network.
 	ServiceNodes []*MixDescriptor
 
+	StorageReplicas []*ReplicaDescriptor
+
 	// Signatures holds detached Signatures from deserializing a signed Document
 	Signatures map[[PublicKeyHashSize]byte]cert.Signature `cbor:"-"`
 
