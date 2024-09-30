@@ -118,7 +118,7 @@ jobs:
 
   test_e2e_catshadow:
     env:
-      CGO_LDFLAGS: "-Wl,-z,stack-size=0xFFFFFF"
+      CGO_LDFLAGS: "-Wl,-z,stack-size=0x2000000"
       warped: true
       no_mixdecoy: false
       no_decoy: false
