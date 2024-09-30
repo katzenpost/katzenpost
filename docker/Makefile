@@ -114,9 +114,8 @@ $(docker_compose_yml): ../genconfig/main.go $(distro)_base.stamp | $(net_name) $
 		-sr ${sr} -mu ${mu} -muMax ${muMax} -lP ${lP} -lPMax ${lPMax} -lL ${lL} \
 		-lLMax ${lLMax} -lD ${lD} -lDMax ${lDMax} -lM ${lM} -lMMax ${lMMax} \
 		-S .$(distro) -v -o ./$(net_name) -b /$(net_name) -P $(base_port) \
-		-pkiSignatureScheme $(pkiSignatureScheme) \
-		-nike "$(nike)" -ratchetNike "$(ratchetNike)" -kem "$(kem)" -d katzenpost-$(distro)_base \
-		${noMixDecoy} ${noDecoy} \
+		--pkiScheme $(pkiSignatureScheme) -nike "$(nike)" -ratchetNike "$(ratchetNike)" -kem "$(kem)" \
+		-d katzenpost-$(distro)_base ${noMixDecoy} ${noDecoy} \
 		-UserForwardPayloadLength $(UserForwardPayloadLength) -log_level $(log_level)'
 
 $(net_name)/running.stamp:
