@@ -143,7 +143,7 @@ jobs:
 
       - name: Build and start the mixnet
         run: |
-          cd docker && make ratchetNike=${{ matrix.ratchetNike }} pkiSignatureScheme=${{ matrix.pkiSignatureScheme }} log_level=DEBUG start wait
+          cd docker && make ratchetNike="${{ matrix.ratchetNike }}" pkiSignatureScheme="${{ matrix.pkiSignatureScheme }}" log_level=DEBUG start wait
 
       - name: test creating upgrade test state files
         run: cd catshadow && make testargs=-coverprofile=coverage.part test_version=latest upgrade_test_recreate && cat coverage.part >> ../coverage.out
