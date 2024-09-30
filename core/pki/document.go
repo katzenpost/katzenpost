@@ -385,17 +385,17 @@ var (
 	// TransportTCPv6 is TCP over IPv6.
 	TransportTCPv6 string = "tcp6"
 
-	// TransportHTTP is QUIC, with the IP version determined by the results
+	// TransportQUIC is QUIC, with the IP version determined by the results
 	// of a name server lookup
-	TransportHTTP string = "http"
+	TransportQUIC string = "quic"
 
 	// InternalTransports is the list of transports used for non-client related
 	// communications.
-	InternalTransports = []string{TransportTCPv4, TransportTCPv6, TransportHTTP}
+	InternalTransports = []string{TransportTCPv4, TransportTCPv6, TransportQUIC}
 
 	// ClientTransports is the list of transports used by default for client
 	// to provider communication.
-	ClientTransports = []string{TransportTCP, TransportTCPv4, TransportTCPv6, TransportHTTP, TransportWS}
+	ClientTransports = []string{TransportTCP, TransportTCPv4, TransportTCPv6, TransportQUIC, TransportWS}
 )
 
 // FromPayload deserializes, then verifies a Document, and returns the Document or error.

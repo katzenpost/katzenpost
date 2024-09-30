@@ -53,7 +53,6 @@ func TestTimerQueuePush(t *testing.T) {
 		actionsLock.Lock()
 		actions += 1
 		arrivalTime := surbidMap[*surbId]
-		actionsLock.Unlock()
 
 		now := time.Now()
 		delta := now.Sub(arrivalTime)
@@ -62,7 +61,10 @@ func TestTimerQueuePush(t *testing.T) {
 		require.False(t, delta > (500*time.Millisecond))
 
 		if actions == numItems {
+			actionsLock.Unlock()
 			actionsDoneCh <- struct{}{}
+		} else {
+			actionsLock.Unlock()
 		}
 	}
 	q := NewTimerQueue(noop)

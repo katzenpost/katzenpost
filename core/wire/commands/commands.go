@@ -95,31 +95,31 @@ func NewStorageReplicaCommands() *Commands {
 
 // NewPKICommands creates a Commands instance suitale to be used by PKI nodes.
 func NewPKICommands(pkiSignatureScheme sign.Scheme) *Commands {
-	return &Commands{
+	c := &Commands{
 		geo:                    nil,
 		pkiSignatureScheme:     pkiSignatureScheme,
 		clientToServerCommands: nil,
 		serverToClientCommands: nil,
 		shouldPad:              false,
 	}
+	c.maxMessageLenServerToClient = c.calcMaxMessageLenServerToClient()
+	c.maxMessageLenClientToServer = c.calcMaxMessageLenClientToServer()
+	return c
 }
 
-func (c *Commands) calcMaxMessageLenClientToServer() int {
+func (c *Commands) calcMaxMessageLenServerToClient() int {
 	m := 0
-	for _, c := range c.clientToServerCommands {
-		if c == nil {
-			panic("found nil pointer")
-		}
-		if c.(Command).Length() > m {
+	for _, c := range c.serverToClientCommands {
+		if c.Length() > m {
 			m = c.Length()
 		}
 	}
 	return m
 }
 
-func (c *Commands) calcMaxMessageLenServerToClient() int {
+func (c *Commands) calcMaxMessageLenClientToServer() int {
 	m := 0
-	for _, c := range c.serverToClientCommands {
+	for _, c := range c.clientToServerCommands {
 		if c.Length() > m {
 			m = c.Length()
 		}

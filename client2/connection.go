@@ -15,6 +15,8 @@ import (
 	"time"
 
 	"github.com/katzenpost/hpqc/hash"
+	"github.com/katzenpost/hpqc/kem/pem"
+	"github.com/katzenpost/hpqc/kem/schemes"
 	"github.com/katzenpost/hpqc/rand"
 	"gopkg.in/op/go-logging.v1"
 
@@ -188,7 +190,7 @@ func (c *connection) getDescriptor() error {
 		}
 		ok = true
 		return nil
-	} else {
+	} else if doc == nil {
 		doc = c.client.cfg.CachedDocument
 	}
 	if doc != nil {
@@ -686,11 +688,24 @@ func (c *connection) IsPeerValid(creds *wire.PeerCredentials) bool {
 		panic(err)
 	}
 	if !hmac.Equal(c.descriptor.LinkKey, credsKey) {
+		scheme := schemes.ByName(c.client.cfg.WireKEMScheme)
+		expectedLinkPubKey, err := scheme.UnmarshalBinaryPublicKey(c.descriptor.LinkKey)
+		if err != nil {
+			panic(err)
+		}
+		gotLinkPubKey, err := scheme.UnmarshalBinaryPublicKey(credsKey)
+		if err != nil {
+			panic(err)
+		}
+		expected := pem.ToPublicPEMString(expectedLinkPubKey)
+		got := pem.ToPublicPEMString(gotLinkPubKey)
+		c.log.Debugf("IsPeerValid failure creds.PublicKey mismatch, expected: %s but got %s", expected, got)
 		return false
 	}
 
 	identityHash := hash.Sum256(c.descriptor.IdentityKey)
 	if !hmac.Equal(identityHash[:], creds.AdditionalData) {
+		c.log.Debugf("IsPeerValid failure creds.AdditionalData mismatch, expected: %x but got %x", identityHash[:], creds.AdditionalData)
 		return false
 	}
 	return true
@@ -854,7 +869,7 @@ func addressesFromURLs(addrs []string) map[string][]string {
 			continue
 		}
 		switch u.Scheme {
-		case cpki.TransportTCP, cpki.TransportTCPv4, cpki.TransportTCPv6, cpki.TransportHTTP:
+		case cpki.TransportTCP, cpki.TransportTCPv4, cpki.TransportTCPv6, cpki.TransportQUIC:
 			if _, ok := addresses[u.Scheme]; !ok {
 				addresses[u.Scheme] = make([]string, 0)
 			}

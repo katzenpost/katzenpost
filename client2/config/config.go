@@ -8,8 +8,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/url"
 	"net"
+	"net/url"
 	"os"
 	"strings"
 
@@ -158,7 +158,7 @@ type Gateway struct {
 	PKISignatureScheme string
 
 	// Addresses are the URLs specifying the endpoints that can be used to reach the node.
-	// Valid schemes are tcp:// and http:// for TCP and quic (UDP)
+	// Valid schemes are tcp:// and quic:// for TCP and quic (UDP)
 	Addresses []string
 }
 
@@ -220,7 +220,7 @@ func getAddresses(addrs []interface{}) ([]string, error) {
 			return addresses, fmt.Errorf("Address URL decode failure: %v", err)
 		}
 		switch u.Scheme {
-		case cpki.TransportTCP, cpki.TransportTCPv4, cpki.TransportTCPv6, cpki.TransportHTTP:
+		case cpki.TransportTCP, cpki.TransportTCPv4, cpki.TransportTCPv6, cpki.TransportQUIC:
 			addresses = append(addresses, u.String())
 		default:
 			return addresses, fmt.Errorf("Address Invalid Scheme: %v", u.String())

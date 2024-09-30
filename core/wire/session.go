@@ -39,15 +39,13 @@ import (
 
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
+	"github.com/katzenpost/katzenpost/core/wire/constants"
 )
 
 const (
 	// MaxAdditionalDataLength is the maximum length of the additional data
 	// sent to the peer as part of the handshake authentication.
 	MaxAdditionalDataLength = 255
-
-	// raw pki doc with 10 voting authorities is 1195878
-	maxMsgLen = 1300000
 
 	macLen  = 16
 	authLen = 1 + MaxAdditionalDataLength + 4
@@ -175,7 +173,7 @@ func (s *Session) handshake() error {
 		Protocol:       s.protocol,
 		Rng:            rand.Reader,
 		Prologue:       prologue,
-		MaxMessageSize: maxMsgLen,
+		MaxMessageSize: constants.MaxMsgLen,
 		KEM: &nyquist.KEMConfig{
 			LocalStatic: s.authenticationKEMKey,
 			GenKey:      seec.GenKeyPRPAES,
@@ -424,7 +422,7 @@ func (s *Session) SendCommand(cmd commands.Command) error {
 	// Derive the Ciphertext length.
 	pt := cmd.ToBytes()
 	ctLen := macLen + len(pt)
-	if ctLen > maxMsgLen {
+	if ctLen > constants.MaxMsgLen {
 		return errMsgSize
 	}
 
@@ -487,7 +485,7 @@ func (s *Session) recvCommandImpl() (commands.Command, error) {
 		return nil, err
 	}
 	ctLen := binary.BigEndian.Uint32(ctHdr[:])
-	if ctLen < macLen || ctLen > maxMsgLen {
+	if ctLen < macLen || ctLen > constants.MaxMsgLen {
 		return nil, errMsgSize
 	}
 

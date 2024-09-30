@@ -11,7 +11,7 @@ require (
 	github.com/jackc/pgx v3.6.2+incompatible
 	github.com/katzenpost/chacha20poly1305 v0.0.0-20211026103954-7b6fb2fc0129
 	github.com/katzenpost/circl v1.3.9-0.20240222183521-1cd9a34e9a0c
-	github.com/katzenpost/hpqc v0.0.44
+	github.com/katzenpost/hpqc v0.0.45
 	github.com/katzenpost/nyquist v0.0.10
 	github.com/prometheus/client_golang v1.20.0
 	github.com/quic-go/quic-go v0.47.0
@@ -30,7 +30,7 @@ require (
 )
 
 require (
-	codeberg.org/vula/highctidh v1.0.2024053000 // indirect
+	codeberg.org/vula/highctidh v1.0.2024092800 // indirect
 	filippo.io/edwards25519 v1.0.0 // indirect
 	filippo.io/mlkem768 v0.0.0-20240221181710-5ce91625fdc1 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
