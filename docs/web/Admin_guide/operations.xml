@@ -1,0 +1,159 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?xml-model href="http://docbook.org/xml/5.2/rng/docbook.rng" schematypens="http://relaxng.org/ns/structure/1.0"?>
+<?xml-model href="http://docbook.org/xml/5.2/sch/docbook.sch" type="application/xml" schematypens="http://purl.oclc.org/dsdl/schematron"?>
+<chapter xmlns="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink"
+    version="5.1" xml:id="ops">
+    <title xml:id="ops.title">Managing and tuning Katzenpost</title>
+    <para>
+        <itemizedlist>
+            <listitem>
+                <para><emphasis role="bold">Management</emphasis></para>
+                <para>I'd like to see description of new "Management" feature making it easy to
+                    install/restart service plugins without restarting whole mix net ... management
+                    socket for restarted services without restarting the service node</para>
+            </listitem>
+            <listitem>
+                <para><emphasis role="bold">Production vs. whatever</emphasis></para>
+                <para>could use a section describing difference from a "production" network. Like
+                    how the epoch is (or can be, or not) warped a 2 min vs 20min.</para>
+            </listitem>
+            <listitem>
+                <para><emphasis role="bold">Management</emphasis> struct – a management interface,
+                    off by default – need s to be documented. For restarting plugins without
+                    restarting the whole thing. More for devs than Admins, thoguh.</para>
+
+                                    <para>The <code>socat</code> commandline utility can be use to
+                                        connect to the management socket and issue commands. Connect
+                                        with a commandline like so:</para>
+                                    <programlisting>socat unix:/&lt;path-to-data-dir>/management_sock STDOUT
+</programlisting>
+                                    <para>The following commands are possible:</para>
+                                    <itemizedlist>
+                                        <listitem>
+                                            <para>QUIT - Exit this management socket session.</para>
+                                        </listitem>
+                                        <listitem>
+                                            <para>SHUTDOWN - Cause the server to gracefully
+                                                shutdown.</para>
+                                        </listitem>
+                                        <listitem>
+                                            <para>ADD_USER - Add a user and associate it with the
+                                                given link key in either hex or base64. The syntax
+                                                of the command is as follows:</para>
+                                            <programlisting>ADD_USER alice X25519_public_key_in_hex_or_base64
+</programlisting>
+                                        </listitem>
+                                        <listitem>
+                                            <para>UPDATE_USER - Update the link key of a given user.
+                                                The syntax of the command is as follows:</para>
+                                            <programlisting>UPDATE_USER alice X25519_public_key_in_hex_or_base64
+</programlisting>
+                                        </listitem>
+                                        <listitem>
+                                            <para>REMOVE_USER - Remove a given user. The syntax of
+                                                the command is as follows:</para>
+                                            <programlisting>REMOVE_USER alice
+</programlisting>
+                                        </listitem>
+                                        <listitem>
+                                            <para>SET_USER_IDENTITY - Set a given user's identity
+                                                key. The syntax of the command is as follows:</para>
+                                            <programlisting>SET_USER_IDENTITY alice X25519_public_key_in_hex_or_base64
+</programlisting>
+                                        </listitem>
+                                        <listitem>
+                                            <para>REMOVE_USER_IDENTITY - Remove a given user's
+                                                identity key. MUST be called before removing the
+                                                user with the <code>REMOVE_USER</code> command. The
+                                                synx of this command is as follows:</para>
+                                            <programlisting>REMOVE_USER_IDENTITY alice
+</programlisting>
+                                        </listitem>
+                                        <listitem>
+                                            <para>USER_IDENTITY - Retrieve the identity key of the
+                                                given user. The syntax of the command is as
+                                                follows:</para>
+                                            <programlisting>USER_IDENTITY alice
+</programlisting>
+                                        </listitem>
+                                        <listitem>
+                                            <para>SEND_RATE - Sets the rate limiter to the given
+                                                packets per minute rate.</para>
+                                            <programlisting>SEND_RATE 30
+</programlisting>
+                                        </listitem>
+                                        <listitem>
+                                            <para>SEND_BURST - Sets the rate limiter burst to the
+                                                given maximum.</para>
+                                            <programlisting>SEND_BURST 4
+</programlisting>
+                                        </listitem>
+                                    </itemizedlist>
+
+    <para>
+        <constraintdef>
+            <itemizedlist>
+                <listitem>
+                    <para><emphasis role="bold">configuration</emphasis></para>
+                    <para>yes, perhaps the paper will be helpful. however in my mind these two
+                        source code files are also immediately relevant to our server side
+                        operator</para>
+                    <para>handbook:https://github.com/katzenpost/katzenpost/blob/main/server/config/config.gohttps://github.com/katzenpost/katzenpost/blob/main/authority/voting/server/config/config.go</para>
+                    <para>there probably should be a section that describes each and every
+                        configuration parameter/optionbut also we probably want to give some general
+                        purpose configuration examples that might be useful for getting
+                        started</para>
+                    <para>also... Xen and I while working for 0kn, we "tuned" the mix server debug
+                        settings based on packet loss visible with debug logging turned on... or
+                        with collecting Prometheus metrics</para>
+                    <para>so... for the mix server, we probably need a chapter on tuning in order to
+                        reduce packet loss</para>
+                    <para>i can write most of that... but we should probably collaborate on
+                        it</para>
+                </listitem>
+            </itemizedlist>
+            <para> Parameters (all) in server/config. </para>
+            <para> Go autogeneted docs: go to godocs.org and search for katezenpost/katzenpost. --
+                Baseic dev docs</para>
+            <para>Prometheus logging and graphing is to be recommended (has its own
+                documents)</para>
+            <para/>
+        </constraintdef>
+    </para>
+    <para>
+ 
+            <itemizedlist>
+                <listitem>
+                    <para><emphasis role="bold">tuning</emphasis></para>
+                    <para>Yes we should perhaps have weekly meetings to see if any of us can assist
+                        you in the documentation? My work on Katzenpost is currently being funded by
+                        a commercial crypto company called 0kn and we've had some interesting
+                        experiences "tuning" mixnets for performance by tweaking many of the server
+                        debug configuration parameters. We used performance graphs and debug log
+                        lines to help us track down the various causes for packetloss... and then
+                        one by one we fixed the various causes... tuned the mixnet for higher
+                        performance etc.</para>
+                    <para>I think 0kn can be useful to us for providing an example scenario with
+                        example graphs and log messages</para>
+                    <para>It's useful Info for future ops users </para>
+                    <para>here's an example of one of our "lab reports" where we investigated
+                        packetloss within the mixnet <link
+                            xlink:href="https://dox.0kn.tech/s/snqcrQ_3C"
+                            >https://dox.0kn.tech/s/snqcrQ_3C</link>#</para>
+                </listitem>
+            </itemizedlist>
+            <itemizedlist>
+                <listitem>
+                    <para>we had several rounds of this for weeks actually... one of our prior
+                        graphs show packetloss every 20 minutes... the exact time of the katzenpost
+                        epoch…</para>
+                </listitem>
+            </itemizedlist>
+    </para>
+        <para>Python tuning script exists.</para>
+
+            </listitem>
+        </itemizedlist>
+    </para>
+</chapter>
+
