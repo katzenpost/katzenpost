@@ -118,7 +118,7 @@ jobs:
 
   test_e2e_catshadow:
     env:
-      CGO_LDFLAGS: "-Wl,-z,stack-size=0x2000000"
+      CGO_LDFLAGS: "-Wl,-z,stack-size=0x4000000"
       warped: true
       no_mixdecoy: false
       no_decoy: false
@@ -126,6 +126,7 @@ jobs:
       matrix:
         go-version: [1.22.x]
         os: [ubuntu-latest]
+        containeros: [alpine, debian]
         pkiSignatureScheme: [Ed25519, Sphincs+, Ed25519 Sphincs+, Ed448-Sphincs+, Ed25519-Dilithium2, Ed448-Dilithium3]
         ratchetNike: [CTIDH1024-X25519, CTIDH512-X25519, NOBS_CSIDH-X25519]
       fail-fast: false
@@ -143,19 +144,19 @@ jobs:
 
       - name: Build and start the mixnet
         run: |
-          cd docker && make ratchetNike="${{ matrix.ratchetNike }}" pkiSignatureScheme="${{ matrix.pkiSignatureScheme }}" log_level=DEBUG start wait
+          cd docker && make distro=${{ matrix.containeros }} ratchetNike="${{ matrix.ratchetNike }}" pkiSignatureScheme="${{ matrix.pkiSignatureScheme }}" log_level=DEBUG start wait
 
       - name: test creating upgrade test state files
-        run: cd catshadow && make testargs=-coverprofile=coverage.part test_version=latest upgrade_test_recreate && cat coverage.part >> ../coverage.out
+        run: cd catshadow && make distro=${{ matrix.containeros }} testargs=-coverprofile=coverage.part test_version=latest upgrade_test_recreate && cat coverage.part >> ../coverage.out
 
       - name: test upgrade using newly-created state files
-        run: cd catshadow && make testargs=-coverprofile=coverage.part test_version=latest upgrade_test_use_saved && cat coverage.part >> ../coverage.out
+        run: cd catshadow && make distro=${{ matrix.containeros }} testargs=-coverprofile=coverage.part test_version=latest upgrade_test_use_saved && cat coverage.part >> ../coverage.out
 
       - name: test upgrade using saved state files from v0.0.30
-        run: cd catshadow && make testargs=-coverprofile=coverage.part test_version=v30 upgrade_test_use_saved && cat coverage.part >> ../coverage.out
+        run: cd catshadow && make distro=${{ matrix.containeros }} testargs=-coverprofile=coverage.part test_version=v30 upgrade_test_use_saved && cat coverage.part >> ../coverage.out
 
       - name: run catshadow end to end tests
-        run: cd catshadow && make testargs=-coverprofile=coverage.part dockerdockertest && cat coverage.part >> ../coverage.out
+        run: cd catshadow && make distro=${{ matrix.containeros }} testargs=-coverprofile=coverage.part dockerdockertest && cat coverage.part >> ../coverage.out
 
       - name: Stop the mixnet
         run: |
@@ -165,7 +166,7 @@ jobs:
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: mixnet-${{ github.run_id }}-${{ matrix.ratchetNike }}-${{ matrix.pkiSignatureScheme }}-${{ github.job }}
+          name: mixnet-${{ github.run_id }}-${{ matrix.containeros }}-${{ matrix.ratchetNike }}-${{ matrix.pkiSignatureScheme }}-${{ github.job }}
           path: |
             docker/voting_mixnet/*/*.log
 
