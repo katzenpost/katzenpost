@@ -46,6 +46,9 @@ nike=x25519
 # and defaults to CTIDH512-X25519
 ratchetNike?=CTIDH512-X25519
 
+# pkiSignatureScheme can be Ed25519, Sphincs+, Ed25519 Sphincs+, Ed448-Sphincs+, Ed25519-Dilithium2, Ed448-Dilithium3
+pkiSignatureScheme?=Ed25519
+
 # kem can be Kyber1024-X448 or any of the other schemes at https://github.com/cloudflare/circl/blob/main/kem/schemes/schemes.go (and then nike must be unset)
 kem=
 
@@ -111,6 +114,7 @@ $(docker_compose_yml): ../genconfig/main.go $(distro)_base.stamp | $(net_name) $
 		-sr ${sr} -mu ${mu} -muMax ${muMax} -lP ${lP} -lPMax ${lPMax} -lL ${lL} \
 		-lLMax ${lLMax} -lD ${lD} -lDMax ${lDMax} -lM ${lM} -lMMax ${lMMax} \
 		-S .$(distro) -v -o ./$(net_name) -b /$(net_name) -P $(base_port) \
+		-pkiSignatureScheme $(pkiSignatureScheme) \
 		-nike "$(nike)" -ratchetNike "$(ratchetNike)" -kem "$(kem)" -d katzenpost-$(distro)_base \
 		${noMixDecoy} ${noDecoy} \
 		-UserForwardPayloadLength $(UserForwardPayloadLength) -log_level $(log_level)'
