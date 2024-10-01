@@ -74,7 +74,7 @@ func TestConfig(t *testing.T) {
   WireKEM = "%s"
   PKISignatureScheme = "Ed25519"
   Identifier = "katzenpost.example.com"
-  Addresses = [ "127.0.0.1:29483", "[::1]:29483" ]
+  Addresses = [ "tcp4://127.0.0.1:29483", "tcp6://[::1]:29483" ]
   DataDir = "%s"
   IsProvider = true
   MetricsAddress = "127.0.0.1:6543"
@@ -143,7 +143,7 @@ func TestIncompleteConfig(t *testing.T) {
 
 [server]
 Identifier = "katzenpost.example.com"
-Addresses = [ "127.0.0.1:29483", "[::1]:29483" ]
+Addresses = [ "http://127.0.0.1:29483", "tcp://[::1]:29483" ]
 DataDir = "/var/lib/katzenpost"
 IsProvider = true
 
@@ -186,7 +186,7 @@ Level = "DEBUG"
 
 [server]
 Identifier = ""
-Addresses = [ "127.0.0.1:29483", "[::1]:29483" ]
+Addresses = [ "tcp://127.0.0.1:29483", "http://[::1]:29483" ]
 DataDir = "/var/lib/katzenpost"
 IsProvider = true
 
@@ -204,7 +204,7 @@ Level = "DEBUG"
 
 [PKI]
 [PKI.Nonvoting]
-Address = "127.0.0.1:6999"
+Address = "tcp://127.0.0.1:6999"
 PublicKeyPem = "auth_id_pub_key.pem"
 `
 

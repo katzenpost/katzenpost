@@ -7,7 +7,7 @@ docker=$(shell if which podman|grep -q .; then echo podman; else echo docker; fi
 distro=alpine
 image=katzenpost-$(distro)_base
 cache_dir=$(shell readlink -f ../docker)/cache
-docker_args=--user ${docker_user} -v $(shell readlink -f ..):/go/katzenpost --network=host --rm -v $(cache_dir)/go:/go/ -v $(cache_dir)/root_cache:/root/.cache
+docker_args=--init -it --user ${docker_user} -v $(shell readlink -f ..):/go/katzenpost --network=host --rm -v $(cache_dir)/go:/go/ -e GORACE=history_size=7 -w /go/katzenpost/client
 
 test:
 	go test -v -race -timeout 0 -ldflags ${ldflags} .
@@ -23,5 +23,6 @@ coverage-html:
 
 
 dockerdockertest:
+	cd ../docker && make $(distro)_base.stamp
 	$(docker) run ${docker_args} $(image) \
-		sh -c 'cd /go/katzenpost/client/; GORACE=history_size=7 go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 1h -run Docker'
+		go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 1h -run Docker

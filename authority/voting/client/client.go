@@ -23,6 +23,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/url"
 
 	"gopkg.in/op/go-logging.v1"
 
@@ -36,11 +37,13 @@ import (
 
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/katzenpost/core/cert"
+	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
+	"github.com/katzenpost/katzenpost/http/common"
 	"github.com/katzenpost/katzenpost/loops"
 )
 
@@ -149,11 +152,15 @@ func (p *connector) initSession(ctx context.Context, doneCh <-chan interface{}, 
 
 	// try each Address until a connection is successful or fail
 	for i, idx := range idxs {
-		conn, err = dialFn(ctx, "tcp", peer.Addresses[idx])
+		u, err := url.Parse(peer.Addresses[idx])
+		if err != nil {
+			continue
+		}
+		conn, err = common.DialURL(u, ctx, dialFn)
 		if err == nil {
 			break
 		}
-		if i == len(idxs)-1 {
+		if i == len(peer.Addresses)-1 {
 			return nil, err
 		}
 	}
@@ -236,7 +243,7 @@ func (p *connector) allPeersRoundTrip(ctx context.Context, linkKey kem.PrivateKe
 	return responses, nil
 }
 
-func (p *connector) fetchConsensus(ctx context.Context, linkKey kem.PrivateKey, epoch uint64) (commands.Command, error) {
+func (p *connector) fetchConsensus(auth *config.Authority, ctx context.Context, linkKey kem.PrivateKey, epoch uint64) (commands.Command, error) {
 	doneCh := make(chan interface{})
 	defer close(doneCh)
 
@@ -244,38 +251,22 @@ func (p *connector) fetchConsensus(ctx context.Context, linkKey kem.PrivateKey, 
 		return nil, errors.New("error: zero Authorities specified in configuration")
 	}
 
-	r := rand.NewMath()
-	peerIndex := r.Intn(len(p.cfg.Authorities))
-
-	// try each authority
-	for i := 0; i < len(p.cfg.Authorities); i++ {
-		auth := p.cfg.Authorities[(peerIndex+i)%len(p.cfg.Authorities)]
-		conn, err := p.initSession(ctx, doneCh, linkKey, nil, auth)
-		if err != nil {
-			return nil, err
-		}
-		p.log.Noticef("sending getConsensus to %s", auth.Identifier)
-		cmd := &commands.GetConsensus{Epoch: epoch, Cmds: conn.session.GetCommands()}
-		resp, err := p.roundTrip(conn.session, cmd)
-
-		if err != nil {
-			p.log.Errorf("voting/Client: GetConsensus() error from %v %s", err, auth.Identifier)
-			continue
-		}
-
-		r, ok := resp.(*commands.Consensus)
-		if !ok {
-			p.log.Errorf("voting/Client: GetConsensus() unexpected reply from %s %T", auth.Identifier, resp)
-			continue
-		}
-
-		p.log.Noticef("got response from %s to GetConsensus(%d) (attempt %d, err=%v, res=%s)", auth.Identifier, epoch, i, err, getErrorToString(r.ErrorCode))
-		if err == pki.ErrNoDocument {
-			continue
-		}
-		return resp, err
+	conn, err := p.initSession(ctx, doneCh, linkKey, nil, auth)
+	if err != nil {
+		return nil, err
 	}
-	return nil, pki.ErrNoDocument
+	p.log.Debugf("sending getConsensus to %s", auth.Identifier)
+	cmd := &commands.GetConsensus{Epoch: epoch}
+	resp, err := p.roundTrip(conn.session, cmd)
+	r, ok := resp.(*commands.Consensus)
+	if !ok {
+		return nil, fmt.Errorf("voting/Client: GetConsensus() unexpected reply from %s %T", auth.Identifier, resp)
+	}
+	if err != nil {
+		p.log.Noticef("got response from %s to GetConsensus(%d) (err=%vr res=%s)", auth.Identifier, epoch, err, getErrorToString(r.ErrorCode))
+		return nil, err
+	}
+	return r, nil
 }
 
 // Client is a PKI client.
@@ -354,62 +345,82 @@ func (c *Client) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, 
 	doneCh := make(chan interface{})
 	defer close(doneCh)
 
-	// Dispatch the get_consensus command.
-	resp, err := c.pool.fetchConsensus(ctx, linkKey, epoch)
-	if err != nil {
-		return nil, nil, err
-	}
+	// permute the order the client tries Authorities
+	r := rand.NewMath()
+	idxs := r.Perm(len(c.cfg.Authorities))
 
-	// Parse the consensus command.
-	r, ok := resp.(*commands.Consensus)
-	if !ok {
-		return nil, nil, fmt.Errorf("voting/Client: Get() unexpected reply: %T", resp)
-	}
-	switch r.ErrorCode {
-	case commands.ConsensusOk:
-	case commands.ConsensusGone:
-		return nil, nil, pki.ErrNoDocument
-	default:
-		return nil, nil, fmt.Errorf("voting/Client: Get() rejected by authority: %v", getErrorToString(r.ErrorCode))
-	}
+	for _, idx := range idxs {
+		auth := c.cfg.Authorities[idx]
+		resp, err := c.pool.fetchConsensus(auth, ctx, linkKey, epoch)
+		if err != nil {
+			c.log.Errorf("GetConsensus from %s failed: %s", auth.Identifier, err)
+			continue
+		}
 
-	// Verify document signatures.
-	doc := &pki.Document{}
-	_, good, bad, err := cert.VerifyThreshold(c.verifiers, c.threshold, r.Payload)
-	if err != nil {
-		c.log.Errorf("VerifyThreshold failure: %d good signatures, %d bad signatures: %v", len(good), len(bad), err)
-		return nil, nil, fmt.Errorf("voting/Client: Get() invalid consensus document: %s", err)
-	}
-	if len(good) == len(c.cfg.Authorities) {
-		c.log.Notice("OK, received fully signed consensus document.")
-	} else {
-		c.log.Noticef("OK, received consensus document with %d of %d signatures)", len(good), len(c.cfg.Authorities))
-		for _, auth := range c.cfg.Authorities {
-			for _, badauth := range bad {
-				if badauth == auth.IdentityPublicKey {
-					c.log.Noticef("missing or invalid signature from %s", auth.Identifier)
-					break
+		// Parse the consensus command.
+		r, ok := resp.(*commands.Consensus)
+		if !ok {
+			c.log.Errorf("GetConsensus from %s returned unexpected reply: %T", auth.Identifier, resp)
+			continue
+		}
+		switch r.ErrorCode {
+		case commands.ConsensusOk:
+		case commands.ConsensusGone:
+			c.log.Errorf("GetConsensus from %s returned ConsensusGone", auth.Identifier)
+			continue
+		case commands.ConsensusNotFound:
+			c.log.Errorf("GetConsensus from %s returned ConsensusGone", auth.Identifier)
+			continue
+		default:
+			c.log.Errorf("GetConsensus from %s rejected with %v", auth.Identifier, getErrorToString(r.ErrorCode))
+			continue
+		}
+
+		// Verify document signatures.
+		doc := &pki.Document{}
+		_, good, bad, err := cert.VerifyThreshold(c.verifiers, c.threshold, r.Payload)
+		if err != nil {
+			c.log.Errorf("VerifyThreshold failure: %d good signatures, %d bad signatures: %v", len(good), len(bad), err)
+			continue
+		}
+		if len(good) == len(c.cfg.Authorities) {
+			c.log.Notice("OK, received fully signed consensus document.")
+		} else {
+			c.log.Noticef("OK, received consensus document with %d of %d signatures)", len(good), len(c.cfg.Authorities))
+			for _, auth := range c.cfg.Authorities {
+				for _, badauth := range bad {
+					if badauth == auth.IdentityPublicKey {
+						c.log.Noticef("missing or invalid signature from %s", auth.Identifier)
+						break
+					}
 				}
 			}
 		}
-	}
-	doc, err = pki.ParseDocument(r.Payload)
-	if err != nil {
-		c.log.Errorf("voting/Client: Get() invalid consensus document: %s", err)
-		return nil, nil, err
-	}
+		doc, err = pki.ParseDocument(r.Payload)
+		if err != nil {
+			c.log.Errorf("voting/Client: Get() invalid consensus document: %s", err)
+			continue
+		}
 
-	err = pki.IsDocumentWellFormed(doc, c.verifiers)
-	if err != nil {
-		c.log.Errorf("voting/Client: IsDocumentWellFormed: %s", err)
-		return nil, nil, err
-	}
+		err = pki.IsDocumentWellFormed(doc, c.verifiers)
+		if err != nil {
+			c.log.Errorf("voting/Client: IsDocumentWellFormed: %s", err)
+			continue
+		}
 
-	if doc.Epoch != epoch {
-		return nil, nil, fmt.Errorf("voting/Client: Get() consensus document for WRONG epoch: %v", doc.Epoch)
+		if doc.Epoch != epoch {
+			c.log.Errorf("voting/Client: Get() consensus document for WRONG epoch: %v", doc.Epoch)
+			continue
+		}
+		c.log.Debugf("voting/Client: Get() document:\n%s", doc)
+		return doc, r.Payload, nil
 	}
-	c.log.Noticef("voting/Client: Get() document:\n%s", doc)
-	return doc, r.Payload, nil
+	e, _, _ := epochtime.Now()
+	if epoch <= e {
+		return nil, nil, pki.ErrDocumentGone
+	} else {
+		return nil, nil, pki.ErrNoDocument
+	}
 }
 
 // Deserialize returns PKI document given the raw bytes.
