@@ -109,13 +109,21 @@ reply protocol messages types for our storage replicas.
 Our PQ Noise based authentication will only allow mixnet service nodes or other storage replicas to connect.
 This should prevent clients from directly connecting to storage replicas.
 
-### How do storage replicas find out about the service nodes?
 
-Replicas learn about service nodes from the PKI document. That is,
+## Courier Service
+
+The Courier services will run as a normal service node plugin
+and will be advertized in that service node's descriptor which
+can be viewed by anyone with access to PKI documents.
+
+Replicas learn about Courier Service Nodes from the PKI document. That is,
 replicas can use our client library to connect to a random gateway
-node in order to download cached copies of the PKI document.
+node in order to download cached copies of the PKI document and thus learn
+about all the Courier Services. This information is useful for Storage
+Replica PQ Noise authentication.
 
-### How do storage replicas find out about other replicas?
+
+## Katzenpost dirauth changes
 
 Our PKI document will contain an additional field, a list of
 replica descriptors:
@@ -125,7 +133,10 @@ replica descriptors:
 type ReplicaDescriptor struct {
         // Name is the unique name of the pigeonhole storage replica.
         Name string
-  
+
+        // Epoch ID
+        Epoch uint64
+		  
         // IdentityKey is the node's identity (signing) key.
         IdentityKey []byte
   
@@ -143,3 +154,16 @@ type ReplicaDescriptor struct {
 
 *NOTE* that we could also have reused the `MixDescriptor` struct, however it is missing the `EnvelopeKey` field
 and has lots of other fields we don't need for the storage replicas.
+
+
+## Storage Replica Behavior
+
+Storage replicas MUST periodically rotate their NIKE storage
+keys. This rotation should be done less frequently than mix key
+rotation which are currently set to every 20 minutes. Let's set the
+storage replica key rotation to: once per week.
+
+Replicas must upload their `ReplicaDescriptor` (and signature) for
+each epoch. However only the Epoch field needs to change unless
+there's a key rotation or other fields need to change.
+
