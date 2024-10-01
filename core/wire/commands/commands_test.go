@@ -238,3 +238,41 @@ func TestSendRetrievePacketReply(t *testing.T) {
 	cmd2 := c.(*SendRetrievePacketReply)
 	require.Equal(t, []byte(payload), cmd2.Payload)
 }
+
+func TestReplicaMessage(t *testing.T) {
+	t.Parallel()
+	const payload = "A free man must be able to endure it when his fellow men act and live otherwise than he considers proper. He must free himself from the habit, just as soon as something does not please him, of calling for the police."
+
+	nike := ecdh.Scheme(rand.Reader)
+	forwardPayloadLength := 1234
+	nrHops := 5
+
+	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
+	s := sphinx.NewSphinx(geo)
+
+	cmds := NewStorageReplicaCommands(s.Geometry())
+
+	senderKey := &[HybridKeySize]byte{}
+	_, err := rand.Reader.Read(senderKey[:])
+	require.NoError(t, err)
+
+	dek := &[32]byte{}
+	_, err = rand.Reader.Read(dek[:])
+	require.NoError(t, err)
+
+	replicaMessage1 := &ReplicaMessage{
+		Cmds:          cmds,
+		SenderEPubKey: senderKey,
+		DEK:           dek,
+		Ciphertext:    []byte(payload),
+	}
+	blob := replicaMessage1.ToBytes()
+
+	t.Logf("blob: %x", blob)
+
+	replicaMessage2, err := cmds.FromBytes(blob)
+	require.NoError(t, err)
+
+	require.Equal(t, replicaMessage1.DEK[:], replicaMessage2.(*ReplicaMessage).DEK[:])
+	//require.Equal(t, replicaMessage1.Ciphertext, replicaMessage2.(*ReplicaMessage).Ciphertext)
+}

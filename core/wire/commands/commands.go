@@ -80,14 +80,29 @@ func NewMixnetCommands(geo *geo.Geometry) *Commands {
 }
 
 // NewStorageReplicaCommands creates a Commands instance suitale to be used by storage replica nodes.
-func NewStorageReplicaCommands() *Commands {
+func NewStorageReplicaCommands(geo *geo.Geometry) *Commands {
 	c := &Commands{
-		geo:                    nil,
-		pkiSignatureScheme:     nil,
-		clientToServerCommands: []Command{}, // XXX FIXME, Add new commands for replicas!
-		serverToClientCommands: []Command{}, // XXX
-		shouldPad:              true,
+		geo:                geo,
+		pkiSignatureScheme: nil,
 	}
+	payload := make([]byte, geo.PacketLength) // XXX TODO(David): Pick a more precise size.
+	c.clientToServerCommands = []Command{
+		&ReplicaMessage{
+			Cmds:          c,
+			SenderEPubKey: &[HybridKeySize]byte{},
+			DEK:           &[32]byte{},
+			Ciphertext:    payload,
+		},
+	}
+	c.serverToClientCommands = []Command{
+		&ReplicaMessage{
+			Cmds:          c,
+			SenderEPubKey: &[HybridKeySize]byte{},
+			DEK:           &[32]byte{},
+			Ciphertext:    payload,
+		},
+	}
+	c.shouldPad = true
 	c.maxMessageLenClientToServer = c.calcMaxMessageLenClientToServer()
 	c.maxMessageLenServerToClient = c.calcMaxMessageLenServerToClient()
 	return c
@@ -288,6 +303,8 @@ func (c *Commands) FromBytes(b []byte) (Command, error) {
 	// Handle the commands that require actual parsing.
 	b = b[:cmdLen]
 	switch commandID(id) {
+	case replicaMessage:
+		return replicaMessageFromBytes(b, c)
 	case sendRetrievePacket:
 		return sendRetrievePacketFromBytes(b, c)
 	case sendRetrievePacketReply:

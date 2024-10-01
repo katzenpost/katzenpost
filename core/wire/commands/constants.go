@@ -33,6 +33,8 @@ const (
 	sendRetrievePacket      commandID = 3 // used by client2
 	sendRetrievePacketReply commandID = 4 // used by client2
 
+	replicaMessage commandID = 15 // used by Pigeonhole Couriers and Storage Replicas
+
 	sendPacket      commandID = 2  // used by old client
 	retreiveMessage commandID = 16 // used by old client
 	message         commandID = 17 // used by old client
