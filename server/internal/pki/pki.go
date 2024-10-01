@@ -25,6 +25,7 @@ import (
 	"net"
 	"net/url"
 	"sync"
+	"strings"
 	"time"
 
 	"github.com/katzenpost/hpqc/hash"
@@ -737,6 +738,10 @@ func makeDescAddrMap(addrs []string) (map[string][]string, error) {
 			return nil, err
 		}
 		switch u.Scheme {
+		case string(cpki.TransportOnion):
+			if strings.HasSuffix(u.Hostname(), ".onion") {
+				m[cpki.TransportOnion] = append(m[cpki.TransportOnion], addr)
+			}
 		case string(cpki.TransportQUIC):
 			m[cpki.TransportQUIC] = append(m[cpki.TransportQUIC], addr)
 		case string(cpki.TransportTCP):
