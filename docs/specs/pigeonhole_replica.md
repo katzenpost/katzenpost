@@ -39,16 +39,18 @@ These commands, `ReplicaRead` and `ReplicaWrite` are encrypted and encapsulated 
 
 ```golang
 type ReplicaMessage struct {
+	ReplicaID uint8
 	SenderEPubKey []byte
 	DEK []*[32]byte
 	Ciphertext []byte
 }
 ```
-The above fields are:
-1. sender’s ephemeral public key
-2. envelope DEK encrypted with shared secret between sender private key and replica public key
-3. enveloped message, encrypted with DEK, containing a BACAP message.
 
+The above fields are:
+* `ReplicaID`: a unique identity indicating a specific storage replica
+* `SenderEPubKey`: sender’s ephemeral public key
+* `DEK`: envelope DEK encrypted with shared secret between sender private key and replica public key
+* `Ciphertext`: enveloped message, encrypted with DEK, containing a BACAP message.
 
 Therefore `ReplicaRead` and `ReplicaWrite` commands are exchanged end
 to end between client and storage replicas and storage courier
@@ -94,20 +96,23 @@ func TestMKEMProtocol(t *testing.T) {
 
 ## PQ Noise wire protocol
 
-Replicas communicate with each other directly over the Internet instead of using our mixnet.
-However they will use our PQ Noise based wire protocol on top of either TCP or QUIC.
-We are in a sense composing a new wire protocol for the replicas with these properties:
+Replicas communicate with each other directly over the Internet
+instead of using our mixnet. However they will use our PQ Noise based
+wire protocol on top of either TCP or QUIC. We are in a sense
+composing a new wire protocol for the replicas with these properties:
 
 * padded to a new max size in both directions
 * constant time sending/receiving messages
 * restrict the commands used to just the one needed for this protocol
 
-Our one wire protocol command that the storage replicas will use is defined
-above as `ReplicaMessage`. This command struct will suffice as the request and
-reply protocol messages types for our storage replicas.
+Our PQ Noise based authentication will only allow mixnet service nodes
+or other storage replicas to connect. This should prevent clients
+from directly connecting to storage replicas.
 
-Our PQ Noise based authentication will only allow mixnet service nodes or other storage replicas to connect.
-This should prevent clients from directly connecting to storage replicas.
+Client to Storage Replica communicate via the Courier service
+intermediaries and always use the `ReplicaMessage` wire command. However
+Storage Replicas communicate with one another via the `ReplicaWrite`
+and `ReplicaRead` wire commands.
 
 
 ## Courier Service
@@ -115,12 +120,6 @@ This should prevent clients from directly connecting to storage replicas.
 The Courier services will run as a normal service node plugin
 and will be advertized in that service node's descriptor which
 can be viewed by anyone with access to PKI documents.
-
-Replicas learn about Courier Service Nodes from the PKI document. That is,
-replicas can use our client library to connect to a random gateway
-node in order to download cached copies of the PKI document and thus learn
-about all the Courier Services. This information is useful for Storage
-Replica PQ Noise authentication.
 
 
 ## Katzenpost dirauth changes
@@ -158,10 +157,16 @@ and has lots of other fields we don't need for the storage replicas.
 
 ## Storage Replica Behavior
 
+Replicas learn about Courier Service Nodes from the PKI document. That is,
+replicas can use our client library to connect to a random gateway
+node in order to download cached copies of the PKI document and thus learn
+about all the Courier Services. This information is useful for Storage
+Replica PQ Noise authentication.
+
 Storage replicas MUST periodically rotate their NIKE storage
 keys. This rotation should be done less frequently than mix key
 rotation which are currently set to every 20 minutes. Let's set the
-storage replica key rotation to: once per week.
+storage replica key rotation to: once per day or once per week.
 
 Replicas must upload their `ReplicaDescriptor` (and signature) for
 each epoch. However only the Epoch field needs to change unless
