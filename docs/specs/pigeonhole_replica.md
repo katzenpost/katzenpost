@@ -124,8 +124,46 @@ can be viewed by anyone with access to PKI documents.
 
 ## Katzenpost dirauth changes
 
+The dirauth will have an additional optional configuration field(s),
+the `StorageReplicas`:
+
+```golang
+// Config is the top level authority configuration.
+type Config struct {
+	Server      *Server
+	Authorities []*Authority
+	Logging     *Logging
+	Parameters  *Parameters
+	Debug       *Debug
+
+	Mixes           []*Node
+	GatewayNodes    []*Node
+	ServiceNodes    []*Node
+	StorageReplicas []*Node
+	Topology        *Topology
+
+	SphinxGeometry *geo.Geometry
+}
+```
+
+Therefore in the above `Config` all nodes are defined the same:
+
+```golang
+// Node is an authority mix node or provider entry.
+type Node struct {
+	// Identifier is the human readable node identifier, to be set iff
+	// the node is a Provider.
+	Identifier string
+
+	// IdentityPublicKeyPem is the node's public signing key also known
+	// as the identity key.
+	IdentityPublicKeyPem string
+}
+```
+
 Our PKI document will contain an additional field, a list of
-replica descriptors:
+replica descriptors within the PKI document, they are also optional
+and are defined as the following:
 
 
 ```golang
@@ -151,8 +189,10 @@ type ReplicaDescriptor struct {
 }
 ```
 
-*NOTE* that we could also have reused the `MixDescriptor` struct, however it is missing the `EnvelopeKey` field
-and has lots of other fields we don't need for the storage replicas.
+We'd like to make all these changes to the dirauth such that the
+additions are merely optional; and it should remain possible to
+operate a Katzenpost mixnet without any Storage Replicas.
+
 
 
 ## Storage Replica Behavior
