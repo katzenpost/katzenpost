@@ -147,6 +147,8 @@ type Document struct {
 	// with tehe mix network.
 	ServiceNodes []*MixDescriptor
 
+	// StorageReplicas is the list of Storage Replica nodes that do not talk over the mixnet
+	// but are expected to handle connections from the Service Nodes and the other replicas.
 	StorageReplicas []*ReplicaDescriptor
 
 	// Signatures holds detached Signatures from deserializing a signed Document
