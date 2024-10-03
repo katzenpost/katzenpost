@@ -165,7 +165,7 @@ jobs:
         with:
           name: mixnet-${{ github.run_id }}-${{ matrix.ratchetNike }}-${{ github.job }}
           path: |
-            docker/voting_mixnet/*/*.log
+            docker/voting_mixnet/
 
   test_benchmark:
     env:
