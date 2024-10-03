@@ -143,14 +143,14 @@ jobs:
         run: |
           cd docker && make ratchetNike=${{ matrix.ratchetNike }} log_level=DEBUG start wait
 
+      - name: test upgrade using saved state files from v0.0.30
+        run: cd catshadow && make testargs=-coverprofile=coverage.part test_version=v30 upgrade_test_use_saved && cat coverage.part >> ../coverage.out
+
       - name: test creating upgrade test state files
         run: cd catshadow && make testargs=-coverprofile=coverage.part test_version=latest upgrade_test_recreate && cat coverage.part >> ../coverage.out
 
       - name: test upgrade using newly-created state files
         run: cd catshadow && make testargs=-coverprofile=coverage.part test_version=latest upgrade_test_use_saved && cat coverage.part >> ../coverage.out
-
-      - name: test upgrade using saved state files from v0.0.30
-        run: cd catshadow && make testargs=-coverprofile=coverage.part test_version=v30 upgrade_test_use_saved && cat coverage.part >> ../coverage.out
 
       - name: run catshadow end to end tests
         run: cd catshadow && make testargs=-coverprofile=coverage.part dockerdockertest && cat coverage.part >> ../coverage.out
