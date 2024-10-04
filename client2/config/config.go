@@ -220,7 +220,7 @@ func getAddresses(addrs []interface{}) ([]string, error) {
 			return addresses, fmt.Errorf("Address URL decode failure: %v", err)
 		}
 		switch u.Scheme {
-		case cpki.TransportTCP, cpki.TransportTCPv4, cpki.TransportTCPv6, cpki.TransportQUIC:
+		case cpki.TransportTCP, cpki.TransportTCPv4, cpki.TransportTCPv6, cpki.TransportQUIC, cpki.TransportOnion:
 			addresses = append(addresses, u.String())
 		default:
 			return addresses, fmt.Errorf("Address Invalid Scheme: %v", u.String())
