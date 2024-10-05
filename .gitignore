@@ -19,3 +19,5 @@ server_plugins/cbor_plugins/echo-go/echo_server
 .idea
 
 dist/
+
+docs/web/Admin_guide/target/en/
