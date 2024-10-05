@@ -1,0 +1,181 @@
+<html><head>
+      <meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1">
+   <title>Operating the test mixnet</title><meta name="generator" content="DocBook XSL Stylesheets V1.78.1"><link rel="home" href="index.html" title="Katzenpost Administrator's Guide"><link rel="up" href="ch02.html" title="Chapter&nbsp;2.&nbsp;Using the Katzenpost test network"><link rel="prev" href="ch02s02.html" title="Preparing to run the container image"><link rel="next" href="ch02s04.html" title="Network components and topology"></head><body bgcolor="white" text="black" link="#0000FF" vlink="#840084" alink="#0000FF"><div class="section"><div class="titlepage"><div><div><h2 class="title" style="clear: both"><a name="basic-ops"></a>Operating the test mixnet</h2></div></div></div><p>Navigate to <code class="filename">katzenpost/docker</code>. The <code class="filename">Makefile</code>
+            contains target operations to create, manage, and test the self-contained Katzenpost
+            container network. To invoke a target, run a command with the using the following
+            pattern:</p><pre class="programlisting"> <code class="prompt">~/katzenpost/docker$ </code><span class="command"><strong>make<em class="replaceable"><code> target</code></em></strong></span></pre><p>Running <span class="command"><strong>make</strong></span> with no target specified returns a list of available
+            targets.:</p><div class="table"><a name="d0e2694"></a><p class="title"><b>Table&nbsp;2.1.&nbsp;Makefile targets</b></p><div class="table-contents"><table summary="Makefile targets" border="1" width="100%"><colgroup><col width="50%"><col width="50%"></colgroup><tbody><tr><td>
+                            <p>[none]</p>
+                        </td><td>
+                            <p>Display this list of targets.</p>
+                        </td></tr><tr><td>
+                            <p><span class="bold"><strong>run</strong></span></p>
+                        </td><td>
+                            <p>Run the test network in the background.</p>
+                        </td></tr><tr><td>
+                            <p><span class="bold"><strong>start</strong></span></p>
+                        </td><td>
+                            <p>Run the test network in the foreground until
+                                <span class="command"><strong>Ctrl-C</strong></span>.</p>
+                        </td></tr><tr><td>
+                            <p><span class="bold"><strong>stop</strong></span></p>
+                        </td><td>
+                            <p>Stop the test network.</p>
+                        </td></tr><tr><td>
+                            <p><span class="bold"><strong>wait</strong></span></p>
+                        </td><td>
+                            <p>Wait
+                                for the test network to have consensus.</p>
+                        </td></tr><tr><td><span class="bold"><strong>watch</strong></span></td><td>
+                            <p>Display live log entries until <span class="command"><strong>Ctrl-C</strong></span>.</p>
+                        </td></tr><tr><td>
+                            <p><span class="bold"><strong>status</strong></span></p>
+                        </td><td>
+                            <p>Show test network consensus status.</p>
+                        </td></tr><tr><td>
+                            <p><span class="bold"><strong>show-latest-vote</strong></span></p>
+                        </td><td>
+                            <p>Show latest consensus vote.</p>
+                        </td></tr><tr><td>
+                            <p><span class="bold"><strong>run-ping</strong></span></p>
+                        </td><td>Send a ping over the test network.</td></tr><tr><td>
+                            <p><span class="bold"><strong>clean-bin</strong></span></p>
+                        </td><td>
+                            <p>Stop all components and delete binaries.</p>
+                        </td></tr><tr><td>
+                            <p><span class="bold"><strong>clean-local</strong></span></p>
+                        </td><td>
+                            <p>Stop all components, delete binaries, and delete data..</p>
+                        </td></tr><tr><td>
+                            <p><span class="bold"><strong>clean-local-dryrun</strong></span></p>
+                        </td><td>
+                            <p>Show what clean-local would delete.</p>
+                        </td></tr><tr><td>
+                            <p><span class="bold"><strong>clean</strong></span></p>
+                        </td><td>
+                            <p>The above, plus cleans includes
+                                go_deps
+                                image.</p>
+                        </td></tr></tbody></table></div></div><br class="table-break"><div class="section"><div class="titlepage"><div><div><h3 class="title"><a name="start-mixnet"></a>Starting and monitoring the mixnet</h3></div></div></div><p>Either of two command targets, <span class="command"><strong>run</strong></span> and
+                <span class="command"><strong>start</strong></span>, can be used to start the mix network. The first They
+                differ only in that <span class="command"><strong>start</strong></span> quickly detaches and runs the network
+                in the background, while <span class="command"><strong>run</strong></span> runs the network in the foreground. </p><div class="note" style="margin-left: 0.5in; margin-right: 0.5in;"><table border="0" summary="Note"><tr><td rowspan="2" align="center" valign="top" width="25"><img alt="[Note]" src="assets/images/note.svg"></td><th align="left">Note</th></tr><tr><td align="left" valign="top"><p>When running <span class="command"><strong>run</strong></span> or <span class="command"><strong>start</strong></span> , be aware of
+                    the following considerations:</p><div class="itemizedlist"><ul class="itemizedlist" style="list-style-type: disc; "><li class="listitem"><p>If you intend to use Docker, you need to run <span class="command"><strong>make</strong></span>
+                            as superuser. If you are using <span class="command"><strong>sudo</strong></span> to elevate your
+                            privileges, you need to edit
+                            <code class="filename">katzenpost/docker/Makefile</code> to prepend
+                            <span class="command"><strong>sudo</strong></span> to each command contained in it.</p></li><li class="listitem"><p>If you have Podman installed on your system and you nonetheless want
+                            to run Docker, you can override the default behavior by adding the
+                            argument <span class="command"><strong>docker=docker</strong></span> to the command as in the
+                            following:</p><pre class="programlisting"><code class="prompt">~/katzenpost/docker$ </code><span class="command"><strong>make run docker=docker</strong></span> </pre></li></ul></div></td></tr></table></div><p>The first time that you use <span class="command"><strong>run</strong></span> or <span class="command"><strong>start</strong></span>,
+                the docker image will be downloaded, built, and installed. This takes several
+                minutes. </p><p>Starting the network for the first time with <span class="command"><strong>run</strong></span> lets you
+                observe the installation process as command output:</p><pre class="programlisting"><code class="prompt">~/katzenpost/docker$ </code><span class="command"><strong>make run</strong></span>
+                
+                ...
+                &lt;output&gt;
+                ...</pre><p>Alternatively, you can install using <span class="command"><strong>start</strong></span>, which returns you
+                to a command prompt. You can then use <span class="command"><strong>watch</strong></span> to view the further
+                progress of the installation:</p><p>
+                </p><pre class="programlisting"><code class="prompt">~/katzenpost/docker$ </code><span class="command"><strong>make start</strong></span>
+                    ...
+                    <code class="prompt">~/katzenpost/docker$ </code><span class="command"><strong>make watch</strong></span>
+                    ...
+                    &lt;output&gt;
+                    ...</pre><p>
+            </p><p>Once installation is complete, there is a further delay as the mix servers vote
+                and reach a consensus.</p><p>You can confirm that installation and configuration are complete by issuing the
+                <span class="command"><strong>status</strong></span> command from the same or another terminal. When the
+                network is ready for use, <span class="command"><strong>status</strong></span> begins returning consensus
+                information similar to the following:</p><p>
+                </p><pre class="programlisting"><code class="prompt">~/katzenpost/docker$ </code><span class="command"><strong>make status</strong></span>
+                    ...
+                    00:15:15.003 NOTI state: Consensus made for epoch 1851128 with 3/3 signatures: &amp;{Epoch: 1851128 GenesisEpoch: 1851118
+                    ...</pre><p>
+            </p></div><div class="section"><div class="titlepage"><div><div><h3 class="title"><a name="test-mixnet"></a>Testing the mixnet</h3></div></div></div><p>At this point, you should have a locally running mix network. You can test whether
+                it is working correctly by using <span class="command"><strong>ping</strong></span>, which launches a packet
+                into the network and watches for a successful reply. Run the following
+                command:</p><pre class="programlisting"><code class="prompt">~/katzenpost/docker$ </code><span class="command"><strong>make run-ping</strong></span></pre><p>If the network is functioning properly, the resulting output contains lines
+                similar to the following:</p><pre class="programlisting">19:29:53.541 INFO gateway1_client: sending loop decoy
+                !19:29:54.108 INFO gateway1_client: sending loop decoy
+                19:29:54.632 INFO gateway1_client: sending loop decoy
+                19:29:55.160 INFO gateway1_client: sending loop decoy
+                !19:29:56.071 INFO gateway1_client: sending loop decoy
+                !19:29:59.173 INFO gateway1_client: sending loop decoy
+                !Success rate is 100.000000 percent 10/10)</pre><p>lf <span class="command"><strong>ping</strong></span> fails to receive a reply, it eventually times out with
+                an error message. If this happens, try the command again. </p><div class="note" style="margin-left: 0.5in; margin-right: 0.5in;"><table border="0" summary="Note"><tr><td rowspan="2" align="center" valign="top" width="25"><img alt="[Note]" src="assets/images/note.svg"></td><th align="left">Note</th></tr><tr><td align="left" valign="top"><p>If you attempt use <span class="bold"><strong>ping</strong></span> too quickly after
+                    starting the mixnet, and consensus has not been reached, the utility may crash
+                    with an error message or hang indefinitely. If this happens, issue (if
+                    necessary) a <span class="command"><strong>Ctrl-C</strong></span> key sequence to abort, check the
+                    consensus status with the <span class="command"><strong>status</strong></span> command, and then retry
+                    <span class="command"><strong>ping</strong></span>.</p></td></tr></table></div></div><div class="section"><div class="titlepage"><div><div><h3 class="title"><a name="shutdown-mixnet"></a>Shutting down the mixnet</h3></div></div></div><p>The mix network continues to run in the terminal where you started it until you
+                issue a <span class="command"><strong>Ctrl-C</strong></span> key sequence, or until you issue the following
+                command in another terminal:</p><pre class="programlisting"><code class="prompt">~/katzenpost/docker$ </code><span class="command"><strong>make stop</strong></span></pre><p>When you stop the network, the binaries and data are left in place. This allows
+                for a quick restart.</p></div><div class="section"><div class="titlepage"><div><div><h3 class="title"><a name="uninstall-mixnet"></a>Uninstalling and cleaning up</h3></div></div></div><p>Several command targets can be used to uninstall the Docker image and restore your
+                system to a clean state. The following examples demonstrate the commands and their
+                output.</p><div class="itemizedlist"><ul class="itemizedlist" style="list-style-type: disc; "><li class="listitem"><p><span class="command"><strong>clean-bin</strong></span></p><p>To stop the network and delete the compiled binaries, run the following
+                        command:</p><pre class="programlisting"><code class="prompt">~/katzenpost/docker$ </code><span class="command"><strong>make clean-bin</strong></span>
+                        
+                        [ -e voting_mixnet ] &amp;&amp; cd voting_mixnet &amp;&amp; DOCKER_HOST=unix:///run/user/1000/podman/podman.sock docker-compose down --remove-orphans; rm -fv running.stamp
+                        Stopping voting_mixnet_auth3_1        ... done
+                        Stopping voting_mixnet_servicenode1_1 ... done
+                        Stopping voting_mixnet_metrics_1      ... done
+                        Stopping voting_mixnet_mix3_1         ... done
+                        Stopping voting_mixnet_auth2_1        ... done
+                        Stopping voting_mixnet_mix2_1         ... done
+                        Stopping voting_mixnet_gateway1_1     ... done
+                        Stopping voting_mixnet_auth1_1        ... done
+                        Stopping voting_mixnet_mix1_1         ... done
+                        Removing voting_mixnet_auth3_1        ... done
+                        Removing voting_mixnet_servicenode1_1 ... done
+                        Removing voting_mixnet_metrics_1      ... done
+                        Removing voting_mixnet_mix3_1         ... done
+                        Removing voting_mixnet_auth2_1        ... done
+                        Removing voting_mixnet_mix2_1         ... done
+                        Removing voting_mixnet_gateway1_1     ... done
+                        Removing voting_mixnet_auth1_1        ... done
+                        Removing voting_mixnet_mix1_1         ... done
+                        removed 'running.stamp'
+                        rm -vf ./voting_mixnet/*.alpine
+                        removed './voting_mixnet/echo_server.alpine'
+                        removed './voting_mixnet/fetch.alpine'
+                        removed './voting_mixnet/memspool.alpine'
+                        removed './voting_mixnet/panda_server.alpine'
+                        removed './voting_mixnet/pigeonhole.alpine'
+                        removed './voting_mixnet/ping.alpine'
+                        removed './voting_mixnet/reunion_katzenpost_server.alpine'
+                        removed './voting_mixnet/server.alpine'
+                        removed './voting_mixnet/voting.alpine'</pre><p>This command leaves in place the cryptographic keys, the state data, and
+                        the logs.</p></li><li class="listitem"><p><span class="command"><strong>clean-local</strong></span></p><p>To delete both compiled binaries and data, run the following
+                        command:</p><pre class="programlisting"><code class="prompt">~/katzenpost/docker$ </code><span class="command"><strong>make clean-local</strong></span>
+                        
+                        [ -e voting_mixnet ] &amp;&amp; cd voting_mixnet &amp;&amp; DOCKER_HOST=unix:///run/user/1000/podman/podman.sock docker-compose down --remove-orphans; rm -fv running.stamp
+                        Removing voting_mixnet_mix2_1         ... done
+                        Removing voting_mixnet_auth1_1        ... done
+                        Removing voting_mixnet_auth2_1        ... done
+                        Removing voting_mixnet_gateway1_1     ... done
+                        Removing voting_mixnet_mix1_1         ... done
+                        Removing voting_mixnet_auth3_1        ... done
+                        Removing voting_mixnet_mix3_1         ... done
+                        Removing voting_mixnet_servicenode1_1 ... done
+                        Removing voting_mixnet_metrics_1      ... done
+                        removed 'running.stamp'
+                        rm -vf ./voting_mixnet/*.alpine
+                        removed './voting_mixnet/echo_server.alpine'
+                        removed './voting_mixnet/fetch.alpine'
+                        removed './voting_mixnet/memspool.alpine'
+                        removed './voting_mixnet/panda_server.alpine'
+                        removed './voting_mixnet/pigeonhole.alpine'
+                        removed './voting_mixnet/reunion_katzenpost_server.alpine'
+                        removed './voting_mixnet/server.alpine'
+                        removed './voting_mixnet/voting.alpine'
+                        git clean -f -x voting_mixnet
+                        Removing voting_mixnet/
+                        git status .
+                        On branch main
+                        Your branch is up to date with 'origin/main'.</pre></li><li class="listitem"><p><span class="command"><strong>clean</strong></span></p><p>To stop the the network and delete the binaries, the data, and the go_deps
+                        image, run the following command as superuser: </p><pre class="programlisting"><code class="prompt">~/katzenpost/docker$ </code><span class="command"><strong>sudo make clean</strong></span></pre></li><li class="listitem"><p><span class="command"><strong>clean-local-dryrun</strong></span></p><p></p><pre class="programlisting"><code class="prompt">~/katzenpost/docker$ </code><span class="command"><strong>make clean-local-dryrun</strong></span>
+                        git clean -n -x voting_mixnet
+                        Would remove voting_mixnet/</pre><p></p></li></ul></div><p></p><pre class="programlisting"><code class="prompt">~/katzenpost/docker$ </code><span class="command"><strong>make clean</strong></span></pre><p>For a preview of the components that <span class="command"><strong>clean-local</strong></span> would remove,
+                without actually deleting anything, running <span class="command"><strong>clean-local-dryrun</strong></span>
+                generates output as follows:</p></div></div></body></html>

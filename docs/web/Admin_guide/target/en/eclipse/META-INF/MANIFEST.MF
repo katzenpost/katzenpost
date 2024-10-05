@@ -1,0 +1,5 @@
+Manifest-Version: 1.0
+Bundle-Version: 1.0
+Bundle-Name: DocBook Online Help Sample
+Bundle-SymbolicName: com.example.help
+Bundle-Vendor: Example provider

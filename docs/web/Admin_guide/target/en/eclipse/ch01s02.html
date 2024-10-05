@@ -1,0 +1,17 @@
+<html><head>
+      <meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1">
+   <title>CLI usage for servers</title><meta name="generator" content="DocBook XSL Stylesheets V1.78.1"><link rel="home" href="index.html" title="Chapter&nbsp;1.&nbsp;Quickstart guide"><link rel="up" href="index.html" title="Chapter&nbsp;1.&nbsp;Quickstart guide"><link rel="prev" href="index.html" title="Chapter&nbsp;1.&nbsp;Quickstart guide"><link rel="next" href="ch01s03.html" title="From my runbook"></head><body bgcolor="white" text="black" link="#0000FF" vlink="#840084" alink="#0000FF"><div class="section"><div class="titlepage"><div><div><h2 class="title" style="clear: both"><a name="d2147e21"></a>CLI usage for servers</h2></div></div></div><p>The <code class="code">server</code> commandline usage is as follows:</p><pre class="programlisting">./server -h
+Usage of ./server:
+  -f string
+        Path to the server config file. (default "katzenpost.toml")
+  -g    Generate the keys and exit immediately.
+</pre><p>The command output when generating keys looks like this:</p><pre class="programlisting">./server -f my_katzenpost_mix_server.toml -g
+22:51:55.377 NOTI server: Katzenpost is still pre-alpha.  DO NOT DEPEND ON IT FOR STRONG SECURITY OR ANONYMITY.
+22:51:55.377 NOTI server: AEZv5 implementation is hardware accelerated.
+22:51:55.377 NOTI server: Server identifier is: 'example.com'
+22:51:55.379 NOTI server: Server identity public key is: 2628F87F2806048C95F060DA9CD3D8F9BE7550BFB9EE85F213381BC04C047650
+22:51:55.379 NOTI server: Server link public key is: CCDC5C105E649D543DF1CF397A17638F812F95B7E572288F4602F8EC01EC4F3C
+</pre><p>Note that if you choose to configure logging to a file one disk, you can implement log
+            rotation by moving the log file and then sending the <code class="code">HUP</code> to the authority
+            server process. This will cause the daemon to rewrite the log file in the location
+            specified by the config file.</p></div></body></html>

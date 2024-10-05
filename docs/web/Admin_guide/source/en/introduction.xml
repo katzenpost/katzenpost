@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?xml-model href="http://docbook.org/xml/5.1/rng/docbook.rng" schematypens="http://relaxng.org/ns/structure/1.0"?>
+<?xml-model href="http://docbook.org/xml/5.1/sch/docbook.sch" type="application/xml" schematypens="http://purl.oclc.org/dsdl/schematron"?>
+
+<chapter xmlns="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink"
+    version="5.1" xml:id="introduction">
+    <title xml:id="introduction.title">Introduction</title>
+    <para/>
+    <para><link xlink:href="https://katzenpost.network/blog/2024-04-12-hpqc/"/></para>
+    <para><emphasis role="bold">"hpqc - hybrid post quantum cryptography library"</emphasis></para>
+    <para>(and other things in this blog)</para>
+    <para/>
+    <para>• Why is this the right tool for me? • Most advanced (PD hybrid) crypto, best anonymity,
+        best mixnet protocols. </para>
+    <para>• The Noise Protocol Framework is used end to end in KP., in place of TLS. Too much tech
+        debt. Much simpler and better integrated overlay network. </para>
+    <para>• Threat model document has a one page summeary – use it in the admin guide. Currently in
+        blogpost section. </para>
+    <para>Router defniton: creates ingress and egress queues. KP adds of crytptographui between.
+        Ques with thread pools in between, capable of dynamically dropping packets based. </para>
+    <para>Client2 – description of the protocol should be drawn from the paper. Minimal history
+        about advancements over Loopix.<itemizedlist>
+            <listitem>
+                <para>There are old and new protocols. Katzen currently supports only the old
+                    protocol. What is this referring to? Loopix is the old protocol. Poor anonymity
+                    because direct connections are observable. Typical of the disconnect between
+                    academic s and the real world desired features. The choose the wrong threat
+                    model. </para>
+            </listitem>
+            <listitem>
+                <para>The new protocol has durable streams</para>
+            </listitem>
+        </itemizedlist>
+    </para>
+        
+                <para>OLD</para>
+                <para>Katzenpost can be used as a message oriented transport for a variety of
+                    applications and is in no way limited to the e-mail use case demonstrated by the
+                        <code>mailproxy</code> client/library. Other possible applications of
+                    Katzenpost include but are not limited to: instant messenger applications,
+                    crypto currency transaction transport, bulletin board systems, file sharing and
+                    so forth.</para>
+    <para><emphasis role="bold">Insert somewhere:</emphasis></para>
+    <para>
+        <example>
+            <caption>dawuud<link
+                    xlink:href="https://bench.cr.yp.to:41867/research/pl/mjgbpzht4pdympsqbcmfudcxoe"
+                    xml:id="RHS_ROOT_time_mjgbpzht4pdympsqbcmfudcxoe">1:56
+                    PM</link><para>@jdormansteele we should mention somewhere in the server side
+                    documentation that ALL katzenpost mixnets have packet loss during startup
+                    because mix nodes accept connections before they've connected outbound, so when
+                    they receive packets they get dropped since there is nowhere to send
+                    them.</para></caption>
+        </example>
+    </para>
+    <para/>
+    <para><emphasis role="bold">*** Mine the academic paper ***</emphasis></para>
+   
+
+                
+</chapter>
