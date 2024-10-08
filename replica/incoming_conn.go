@@ -14,6 +14,7 @@ import (
 
 	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/kem"
+	"github.com/katzenpost/hpqc/kem/mkem"
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/hpqc/sign"
 
@@ -226,16 +227,62 @@ func (c *incomingConn) onReplicaCommand(rawCmd commands.Command) bool {
 		return true
 	case *commands.Disconnect:
 		c.log.Debugf("Received disconnect from peer.")
-
-	// XXX FIX ME
+	case *commands.ReplicaRead:
+		c.log.Debugf("Received ReplicaRead from peer.")
+		c.handleReplicaRead(cmd)
+		return true
+	case *commands.ReplicaWrite:
+		c.log.Debugf("Received ReplicaWrite from peer.")
+		c.handleReplicaWrite(cmd)
+		return true
 	case *commands.ReplicaMessage:
 		c.log.Debugf("Received ReplicaMessage from peer.")
+		c.handleReplicaMessage(cmd)
 		return true
 
 	default:
 		c.log.Debugf("Received unexpected command: %T", cmd)
 	}
 	return false
+}
+
+func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMessage) {
+	scheme := mkem.NewScheme()
+	ct, err := mkem.CiphertextFromBytes(scheme, replicaMessage.Ciphertext)
+	if err != nil {
+		c.log.Errorf("handleReplicaMessage CiphertextFromBytes failed: %s", err)
+		return
+	}
+	requestRaw, err := scheme.Decapsulate(c.l.server.replicaPrivateKey, ct.Envelope)
+	if err != nil {
+		c.log.Errorf("handleReplicaMessage Decapsulate failed: %s", err)
+		return
+	}
+	cmds := commands.NewStorageReplicaCommands(c.l.server.cfg.SphinxGeometry)
+	myCmd, err := cmds.FromBytes(requestRaw)
+	if err != nil {
+		c.log.Errorf("handleReplicaMessage Decapsulate failed: %s", err)
+		return
+	}
+	switch myCmd := myCmd.(type) {
+	case *commands.ReplicaRead:
+		c.handleReplicaRead(myCmd)
+		return
+	case *commands.ReplicaWrite:
+		c.handleReplicaWrite(myCmd)
+		return
+	default:
+		c.log.Error("handleReplicaMessage failed: invalid request was decrypted")
+		return
+	}
+}
+
+func (c *incomingConn) handleReplicaRead(replicaRead *commands.ReplicaRead) {
+
+}
+
+func (c *incomingConn) handleReplicaWrite(replicaWrite *commands.ReplicaWrite) {
+
 }
 
 func newIncomingConn(l *Listener, conn net.Conn, geo *geo.Geometry, scheme kem.Scheme, pkiSignScheme sign.Scheme) *incomingConn {
