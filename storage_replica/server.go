@@ -112,7 +112,7 @@ func (s *Server) halt() {
 }
 
 // RotateLog rotates the log file
-// if logging to a file is enabled.
+o// if logging to a file is enabled.
 func (s *Server) RotateLog() {
 	err := s.logBackend.Rotate()
 	if err != nil {

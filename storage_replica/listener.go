@@ -11,7 +11,7 @@ import (
 	"net"
 	"net/url"
 	"sync"
-	"sync/atomic"
+	"time"
 
 	"github.com/quic-go/quic-go"
 	"gopkg.in/op/go-logging.v1"
@@ -24,14 +24,17 @@ import (
 	"github.com/katzenpost/katzenpost/http/common"
 )
 
-type listener struct {
+const KeepAliveInterval = 3 * time.Minute
+
+type Listener struct {
 	sync.Mutex
 	worker.Worker
 
 	log *logging.Logger
 
-	l     net.Listener
-	conns *list.List
+	server *Server
+	l      net.Listener
+	conns  *list.List
 
 	incomingCh chan<- interface{}
 	closeAllCh chan interface{}
@@ -41,12 +44,12 @@ type listener struct {
 	sendBurst         uint64
 }
 
-func (l *listener) Halt() {
-	// Close the listener, wait for worker() to return.
+func (l *Listener) Halt() {
+	// Close the Listener, wait for worker() to return.
 	l.l.Close()
 	l.Worker.Halt()
 
-	// Close all connections belonging to the listener.
+	// Close all connections belonging to the Listener.
 	//
 	// Note: Worst case this can take up to the handshake timeout to
 	// actually complete, since the channel isn't checked mid-handshake.
@@ -54,7 +57,7 @@ func (l *listener) Halt() {
 	l.closeAllWg.Wait()
 }
 
-func (l *listener) worker() {
+func (l *Listener) worker() {
 	addr := l.l.Addr()
 	l.log.Noticef("Listening on: %v", addr)
 	defer func() {
@@ -79,7 +82,7 @@ func (l *listener) worker() {
 		tcpConn, ok := conn.(*net.TCPConn)
 		if ok {
 			tcpConn.SetKeepAlive(true)
-			tcpConn.SetKeepAlivePeriod(constants.KeepAliveInterval)
+			tcpConn.SetKeepAlivePeriod(KeepAliveInterval)
 		}
 
 		l.log.Debugf("Accepted new connection: %v", conn.RemoteAddr())
@@ -90,16 +93,16 @@ func (l *listener) worker() {
 	// NOTREACHED
 }
 
-func (l *listener) onNewConn(conn net.Conn) {
-	scheme := schemes.ByName(l.glue.Config().Server.WireKEM)
-	if scheme == nil {
+func (l *Listener) onNewConn(conn net.Conn) {
+	wireScheme := schemes.ByName(l.server.cfg.WireKEMScheme)
+	if wireScheme == nil {
 		panic("KEM scheme not found in registry")
 	}
-	pkiScheme := signSchemes.ByName(l.glue.Config().Server.PKISignatureScheme)
+	pkiScheme := signSchemes.ByName(l.server.cfg.PKISignatureScheme)
 	if pkiScheme == nil {
 		panic("PKI signature scheme not found in registry")
 	}
-	c := newIncomingConn(l, conn, l.glue.Config().SphinxGeometry, scheme, pkiScheme)
+	c := newIncomingConn(l, conn, l.server.cfg.SphinxGeometry, wireScheme, pkiScheme)
 
 	l.closeAllWg.Add(1)
 	l.Lock()
@@ -110,14 +113,14 @@ func (l *listener) onNewConn(conn net.Conn) {
 	c.e = l.conns.PushFront(c)
 }
 
-func (l *listener) onInitializedConn(c *incomingConn) {
+func (l *Listener) onInitializedConn(c *incomingConn) {
 	l.Lock()
 	defer l.Unlock()
 
 	c.isInitialized = true
 }
 
-func (l *listener) onClosedConn(c *incomingConn) {
+func (l *Listener) onClosedConn(c *incomingConn) {
 	l.Lock()
 	defer func() {
 		l.Unlock()
@@ -128,7 +131,7 @@ func (l *listener) onClosedConn(c *incomingConn) {
 
 // GetConnIdentities returns a slice of byte slices each corresponding
 // to a currently connected client identity.
-func (l *listener) GetConnIdentities() (map[[sConstants.RecipientIDLength]byte]interface{}, error) {
+func (l *Listener) GetConnIdentities() (map[[sConstants.RecipientIDLength]byte]interface{}, error) {
 	l.Lock()
 	defer l.Unlock()
 
@@ -153,7 +156,7 @@ func (l *listener) GetConnIdentities() (map[[sConstants.RecipientIDLength]byte]i
 	return identitySet, nil
 }
 
-func (l *listener) CloseOldConns(ptr interface{}) error {
+func (l *Listener) CloseOldConns(ptr interface{}) error {
 	c := ptr.(*incomingConn)
 
 	l.Lock()
@@ -191,13 +194,13 @@ func (l *listener) CloseOldConns(ptr interface{}) error {
 	return nil
 }
 
-// New creates a new listener.
-func New(glue glue.Glue, incomingCh chan<- interface{}, id int, addr string) (glue.Listener, error) {
+// New creates a new Listener.
+func NewListener(server *Server, incomingCh chan<- interface{}, id int, addr string) (*Listener, error) {
 	var err error
 
-	l := &listener{
-		glue:       glue,
-		log:        glue.LogBackend().GetLogger(fmt.Sprintf("listener:%d", id)),
+	l := &Listener{
+		server:     server,
+		log:        server.logBackend.GetLogger(fmt.Sprintf("Listener:%d", id)),
 		conns:      list.New(),
 		incomingCh: incomingCh,
 		closeAllCh: make(chan interface{}),
@@ -210,13 +213,13 @@ func New(glue glue.Glue, incomingCh chan<- interface{}, id int, addr string) (gl
 		case "tcp", "tcp4", "tcp6":
 			l.l, err = net.Listen(u.Scheme, u.Host)
 			if err != nil {
-				l.log.Errorf("Failed to start listener '%v': %v", addr, err)
+				l.log.Errorf("Failed to start Listener '%v': %v", addr, err)
 				return nil, err
 			}
 		case "quic":
 			ql, err := quic.ListenAddr(u.Host, common.GenerateTLSConfig(), nil)
 			if err != nil {
-				l.log.Errorf("Failed to start listener '%v': %v", addr, err)
+				l.log.Errorf("Failed to start Listener '%v': %v", addr, err)
 				return nil, err
 			}
 			// Wrap quic.Listener with common.QuicListener
@@ -224,7 +227,7 @@ func New(glue glue.Glue, incomingCh chan<- interface{}, id int, addr string) (gl
 			// single QUIC Stream
 			l.l = &common.QuicListener{Listener: ql}
 		default:
-			return nil, fmt.Errorf("Unsupported listener scheme '%v': %v", addr, err)
+			return nil, fmt.Errorf("Unsupported Listener scheme '%v': %v", addr, err)
 		}
 	}
 
