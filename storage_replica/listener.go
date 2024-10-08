@@ -195,14 +195,13 @@ func (l *Listener) CloseOldConns(ptr interface{}) error {
 }
 
 // New creates a new Listener.
-func NewListener(server *Server, incomingCh chan<- interface{}, id int, addr string) (*Listener, error) {
+func newListener(server *Server, id int, addr string) (*Listener, error) {
 	var err error
 
 	l := &Listener{
 		server:     server,
 		log:        server.logBackend.GetLogger(fmt.Sprintf("Listener:%d", id)),
 		conns:      list.New(),
-		incomingCh: incomingCh,
 		closeAllCh: make(chan interface{}),
 	}
 

@@ -15,6 +15,7 @@ import (
 
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/katzenpost/core/pki"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/utils"
 )
 
@@ -106,9 +107,16 @@ type Config struct {
 	// ReplicaNIKEScheme specifies the cryptographic signature scheme
 	ReplicaNIKEScheme string
 
+	// SphinxGeometry is the Sphinx Geometry being used on the mixnet.
+	SphinxGeometry *geo.Geometry
+
 	// Addresses are the IP address/port combinations that the server will bind
 	// to for incoming connections.
 	Addresses []string
+
+	// BindAddresses are the listener addresses that the server will bind to and accept connections on
+	// These Addresses are not advertised in the PKI.
+	BindAddresses []string
 
 	// GenerateOnly halts and cleans up the server right after long term
 	// key generation.

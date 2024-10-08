@@ -597,6 +597,7 @@ func NewPKISession(cfg *SessionConfig, isInitiator bool) (*Session, error) {
 	return s, nil
 }
 
+// NewStorageReplicaSession creates a new session to be used with the storage replicas.
 func NewStorageReplicaSession(cfg *SessionConfig, isInitiator bool) (*Session, error) {
 	if cfg.Geometry == nil {
 		return nil, errors.New("wire/session: missing sphinx packet geometry")

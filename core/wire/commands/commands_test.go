@@ -274,5 +274,4 @@ func TestReplicaMessage(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Equal(t, replicaMessage1.DEK[:], replicaMessage2.(*ReplicaMessage).DEK[:])
-	//require.Equal(t, replicaMessage1.Ciphertext, replicaMessage2.(*ReplicaMessage).Ciphertext)
 }

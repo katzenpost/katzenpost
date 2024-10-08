@@ -6,13 +6,10 @@ package main
 import (
 	"errors"
 	"fmt"
-	"net"
-	"net/url"
 	"os"
 	"path/filepath"
 	"sync"
 
-	"github.com/quic-go/quic-go"
 	"gopkg.in/op/go-logging.v1"
 
 	"github.com/katzenpost/hpqc/kem"
@@ -21,10 +18,13 @@ import (
 	"github.com/katzenpost/hpqc/nike"
 	nikepem "github.com/katzenpost/hpqc/nike/pem"
 	nikeSchemes "github.com/katzenpost/hpqc/nike/schemes"
+	"github.com/katzenpost/hpqc/sign"
+	signpem "github.com/katzenpost/hpqc/sign/pem"
+	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 
 	"github.com/katzenpost/katzenpost/core/log"
+	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/utils"
-	"github.com/katzenpost/katzenpost/http/common"
 	"github.com/katzenpost/katzenpost/storage_replica/config"
 )
 
@@ -32,17 +32,25 @@ import (
 // terminates due to the `GenerateOnly` debug config option.
 var ErrGenerateOnly = errors.New("server: GenerateOnly set")
 
+type GenericListener interface {
+	Halt()
+	CloseOldConns(interface{}) error
+	GetConnIdentities() (map[[constants.RecipientIDLength]byte]interface{}, error)
+}
+
 type Server struct {
 	sync.WaitGroup
 
 	cfg *config.Config
 
-	replicaPrivateKey nike.PrivateKey
-	replicaPublicKey  nike.PublicKey
+	replicaPrivateKey  nike.PrivateKey
+	replicaPublicKey   nike.PublicKey
+	identityPrivateKey sign.PrivateKey
+	identityPublicKey  sign.PublicKey
+	linkKey            kem.PrivateKey
 
 	state     *state
-	linkKey   kem.PrivateKey
-	listeners []net.Listener
+	listeners []GenericListener
 
 	logBackend *log.Backend
 	log        *logging.Logger
@@ -112,37 +120,12 @@ func (s *Server) halt() {
 }
 
 // RotateLog rotates the log file
-o// if logging to a file is enabled.
+// if logging to a file is enabled.
 func (s *Server) RotateLog() {
 	err := s.logBackend.Rotate()
 	if err != nil {
 		s.fatalErrCh <- fmt.Errorf("failed to rotate log file, shutting down server")
 	}
-}
-
-func (s *Server) listenWorker(l net.Listener) {
-	addr := l.Addr()
-	s.log.Noticef("Listening on: %v", addr)
-	defer func() {
-		s.log.Noticef("Stopping listening on: %v", addr)
-		l.Close()
-		s.Done()
-	}()
-	for {
-		conn, err := l.Accept()
-		if err != nil {
-			if e, ok := err.(net.Error); ok && !e.Temporary() {
-				s.log.Errorf("Critical accept failure: %v", err)
-				return
-			}
-			continue
-		}
-
-		s.Add(1)
-		s.onConn(conn)
-	}
-
-	// NOTREACHED
 }
 
 // New returns a new Server instance parameterized with the specific
@@ -167,13 +150,44 @@ func New(cfg *config.Config) (*Server, error) {
 		s.log.Warning("Debug logging is enabled.")
 	}
 
+	// Initialize the server identity and link keys.
+	identityPrivateKeyFile := filepath.Join(s.cfg.DataDir, "identity.private.pem")
+	identityPublicKeyFile := filepath.Join(s.cfg.DataDir, "identity.public.pem")
+
+	var err error
+	pkiSignatureScheme := signSchemes.ByName(s.cfg.PKISignatureScheme)
+	if s == nil {
+		return nil, errors.New("PKI Signature Scheme not found")
+	}
+	s.identityPublicKey, s.identityPrivateKey, err = pkiSignatureScheme.GenerateKey()
+
+	if utils.BothExists(identityPrivateKeyFile, identityPublicKeyFile) {
+		s.identityPrivateKey, err = signpem.FromPrivatePEMFile(identityPrivateKeyFile, pkiSignatureScheme)
+		if err != nil {
+			return nil, err
+		}
+		s.identityPublicKey, err = signpem.FromPublicPEMFile(identityPublicKeyFile, pkiSignatureScheme)
+		if err != nil {
+			return nil, err
+		}
+	} else if utils.BothNotExists(identityPrivateKeyFile, identityPublicKeyFile) {
+		err = signpem.PrivateKeyToFile(identityPrivateKeyFile, s.identityPrivateKey)
+		if err != nil {
+			return nil, err
+		}
+		err = signpem.PublicKeyToFile(identityPublicKeyFile, s.identityPublicKey)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		return nil, fmt.Errorf("%s and %s must either both exist or not exist", identityPrivateKeyFile, identityPublicKeyFile)
+	}
+
 	replicaNikeScheme := nikeSchemes.ByName(cfg.ReplicaNIKEScheme)
 
 	// Initialize the authority replica key.
 	replicaPrivateKeyFile := filepath.Join(s.cfg.DataDir, "replica.private.pem")
 	replicaPublicKeyFile := filepath.Join(s.cfg.DataDir, "replica.public.pem")
-
-	var err error
 
 	if utils.BothExists(replicaPrivateKeyFile, replicaPublicKeyFile) {
 		s.replicaPrivateKey, err = nikepem.FromPrivatePEMFile(replicaPrivateKeyFile, replicaNikeScheme)
@@ -261,50 +275,24 @@ func New(cfg *config.Config) (*Server, error) {
 		s.Shutdown()
 	}()
 
-	// Start up the listeners.
-	for _, v := range s.cfg.Addresses {
-		// parse the Address line as a URL
-		u, err := url.Parse(v)
-		if err == nil {
-			switch u.Scheme {
-			case "tcp":
-				l, err := net.Listen("tcp", u.Host)
-				if err != nil {
-					s.log.Errorf("Failed to start listener '%v': %v", v, err)
-					continue
-				}
-				s.listeners = append(s.listeners, l)
-				s.Add(1)
-				s.state.Go(func() {
-					s.listenWorker(l)
-				})
-			case "quic":
-				l, err := quic.ListenAddr(u.Host, common.GenerateTLSConfig(), nil)
-				if err != nil {
-					s.log.Errorf("Failed to start listener '%v': %v", v, err)
-					continue
-				}
-				// Wrap quic.Listener with common.QuicListener
-				// so it implements like net.Listener for a
-				// single QUIC Stream
-				ql := common.QuicListener{Listener: l}
-				s.listeners = append(s.listeners, &ql)
-				s.Add(1)
-				// XXX: is there any HTTP3 specific stuff that we want to do?
-				s.state.Go(func() {
-					s.listenWorker(&ql)
-				})
-			default:
-				s.log.Errorf("Unsupported listener scheme '%v': %v", v, err)
-				continue
-			}
-		}
-	}
-	if len(s.listeners) == 0 {
-		s.log.Errorf("Failed to start all listeners.")
-		return nil, fmt.Errorf("authority: failed to start all listeners")
+	var addresses []string
+	if len(s.cfg.BindAddresses) > 0 {
+		s.log.Debugf("BindAddresses found")
+		addresses = s.cfg.BindAddresses
+	} else {
+		addresses = s.cfg.Addresses
 	}
 
-	isOk = true
+	// Bring the listener(s) online.
+	s.listeners = make([]GenericListener, 0, len(addresses))
+	for i, addr := range addresses {
+		l, err := newListener(s, i, addr)
+		if err != nil {
+			s.log.Errorf("Failed to spawn listener on address: %v (%v).", addr, err)
+			return nil, err
+		}
+		s.listeners = append(s.listeners, l)
+	}
+
 	return s, nil
 }
