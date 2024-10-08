@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright (C) 2024 David Stainton
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package main
+package replica
 
 import (
 	"errors"
@@ -25,7 +25,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/utils"
-	"github.com/katzenpost/katzenpost/storage_replica/config"
+	"github.com/katzenpost/katzenpost/replica/config"
 )
 
 // ErrGenerateOnly is the error returned when the server initialization
@@ -49,7 +49,6 @@ type Server struct {
 	identityPublicKey  sign.PublicKey
 	linkKey            kem.PrivateKey
 
-	state     *state
 	listeners []GenericListener
 
 	logBackend *log.Backend

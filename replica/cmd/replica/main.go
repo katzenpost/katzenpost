@@ -15,7 +15,8 @@ import (
 	"github.com/linxGnu/grocksdb"
 
 	"github.com/katzenpost/katzenpost/core/compat"
-	"github.com/katzenpost/katzenpost/storage_replica/config"
+	"github.com/katzenpost/katzenpost/replica"
+	"github.com/katzenpost/katzenpost/replica/config"
 )
 
 func main() {
@@ -57,9 +58,9 @@ func main() {
 	signal.Notify(rotateCh, syscall.SIGHUP)
 
 	// Start up the server.
-	svr, err := New(cfg)
+	svr, err := replica.New(cfg)
 	if err != nil {
-		if err == ErrGenerateOnly {
+		if err == replica.ErrGenerateOnly {
 			os.Exit(0)
 		}
 		fmt.Fprintf(os.Stderr, "Failed to spawn server instance: %v\n", err)

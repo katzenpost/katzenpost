@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright (C) 2017  Yawning Angel.
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package main
+package replica
 
 import (
 	"container/list"
@@ -226,10 +226,12 @@ func (c *incomingConn) onReplicaCommand(rawCmd commands.Command) bool {
 		return true
 	case *commands.Disconnect:
 		c.log.Debugf("Received disconnect from peer.")
+
+	// XXX FIX ME
 	case *commands.ReplicaMessage:
 		c.log.Debugf("Received ReplicaMessage from peer.")
-		// XXX FIX ME
 		return true
+
 	default:
 		c.log.Debugf("Received unexpected command: %T", cmd)
 	}
