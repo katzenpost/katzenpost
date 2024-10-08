@@ -391,13 +391,16 @@ var (
 	// of a name server lookup
 	TransportQUIC string = "quic"
 
+	// TransportOnion is a tor hidden service, to be announced in PKI
+	TransportOnion string = "onion"
+
 	// InternalTransports is the list of transports used for non-client related
 	// communications.
 	InternalTransports = []string{TransportTCPv4, TransportTCPv6, TransportQUIC}
 
 	// ClientTransports is the list of transports used by default for client
 	// to provider communication.
-	ClientTransports = []string{TransportTCP, TransportTCPv4, TransportTCPv6, TransportQUIC, TransportWS}
+	ClientTransports = []string{TransportTCP, TransportTCPv4, TransportTCPv6, TransportQUIC, TransportWS, TransportOnion}
 )
 
 // FromPayload deserializes, then verifies a Document, and returns the Document or error.

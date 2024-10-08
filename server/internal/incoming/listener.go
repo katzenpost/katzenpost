@@ -247,6 +247,7 @@ func New(glue glue.Glue, incomingCh chan<- interface{}, id int, addr string) (gl
 			// so it implements like net.Listener for a
 			// single QUIC Stream
 			l.l = &common.QuicListener{Listener: ql}
+		case "onion":
 		default:
 			return nil, fmt.Errorf("Unsupported listener scheme '%v': %v", addr, err)
 		}
