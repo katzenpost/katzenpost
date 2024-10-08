@@ -32,7 +32,7 @@ func (b *BufferedStream) Start() {
 // CBORDecodeAsync is the routine that reads from the Stream until an instance is deserialized
 // or the stream is closed. It returns the deserialiezd instance or error via a channel
 func (b *BufferedStream) CBORDecodeAsync(instance interface{}) chan interface{} {
-	result := make(chan interface{})
+	result := make(chan interface{}, 1)
 	b.Go(func() {
 		b.Lock() // BufferedStreams are not to be shared
 		if b.Buffer == nil {
@@ -78,6 +78,7 @@ func (b *BufferedStream) CBORDecodeAsync(instance interface{}) chan interface{} 
 			}
 			select {
 			case <-b.HaltCh():
+				result <- errors.New("Halted")
 				return
 			case result <- instance:
 			}
