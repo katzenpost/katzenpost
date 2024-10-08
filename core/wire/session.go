@@ -597,6 +597,44 @@ func NewPKISession(cfg *SessionConfig, isInitiator bool) (*Session, error) {
 	return s, nil
 }
 
+func NewStorageReplicaSession(cfg *SessionConfig, isInitiator bool) (*Session, error) {
+	if cfg.Geometry == nil {
+		return nil, errors.New("wire/session: missing sphinx packet geometry")
+	}
+	if cfg.Authenticator == nil {
+		return nil, errors.New("wire/session: missing Authenticator")
+	}
+	if len(cfg.AdditionalData) > MaxAdditionalDataLength {
+		return nil, errors.New("wire/session: oversized AdditionalData")
+	}
+	if cfg.AuthenticationKey == nil {
+		return nil, errors.New("wire/session: missing AuthenticationKEMKey")
+	}
+	if cfg.RandomReader == nil {
+		return nil, errors.New("wire/session: missing RandomReader")
+	}
+
+	s := &Session{
+		protocol: &nyquist.Protocol{
+			Pattern: pattern.PqXX,
+			KEM:     cfg.KEMScheme,
+			Cipher:  cipher.ChaChaPoly,
+			Hash:    hash.BLAKE2b,
+		},
+		authenticator:  cfg.Authenticator,
+		additionalData: cfg.AdditionalData,
+		randReader:     cfg.RandomReader,
+		isInitiator:    isInitiator,
+		state:          stateInit,
+		rxKeyMutex:     new(sync.RWMutex),
+		txKeyMutex:     new(sync.RWMutex),
+		commands:       commands.NewStorageReplicaCommands(cfg.Geometry),
+	}
+	s.authenticationKEMKey = cfg.AuthenticationKey
+
+	return s, nil
+}
+
 // NewSession creates a new Session.
 func NewSession(cfg *SessionConfig, isInitiator bool) (*Session, error) {
 	if cfg.Geometry == nil {
