@@ -29,15 +29,19 @@ const (
 	noOp       commandID = 0
 	disconnect commandID = 1
 
-	// client commands
-	sendRetrievePacket      commandID = 3 // used by client2
-	sendRetrievePacketReply commandID = 4 // used by client2
+	// client2 commands
+	sendRetrievePacket      commandID = 3
+	sendRetrievePacketReply commandID = 4
 
-	replicaMessage commandID = 15 // used by Pigeonhole Couriers and Storage Replicas
+	// used by Pigeonhole Couriers and Storage Replicas
+	replicaWrite   commandID = 13
+	replicaRead    commandID = 14
+	replicaMessage commandID = 15
 
-	sendPacket      commandID = 2  // used by old client
-	retreiveMessage commandID = 16 // used by old client
-	message         commandID = 17 // used by old client
+	// used by old client
+	sendPacket      commandID = 2
+	retreiveMessage commandID = 16
+	message         commandID = 17
 
 	// client Dir-auth commands.
 	getConsensus commandID = 18
