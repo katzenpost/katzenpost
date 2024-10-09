@@ -396,22 +396,16 @@ type Node struct {
 }
 
 func (n *Node) validate(isProvider bool) error {
-	section := "Mixes"
-	if isProvider {
-		section = "Providers"
-		if n.Identifier == "" {
-			return fmt.Errorf("config: %v: Node is missing Identifier", section)
-		}
-		var err error
-		n.Identifier, err = idna.Lookup.ToASCII(n.Identifier)
-		if err != nil {
-			return fmt.Errorf("config: Failed to normalize Identifier: %v", err)
-		}
-	} else if n.Identifier != "" {
-		return fmt.Errorf("config: %v: Node has Identifier set", section)
+	if n.Identifier == "" {
+		return errors.New("config: Node is missing Identifier")
+	}
+	var err error
+	n.Identifier, err = idna.Lookup.ToASCII(n.Identifier)
+	if err != nil {
+		return fmt.Errorf("config: Failed to normalize Identifier: %v", err)
 	}
 	if n.IdentityPublicKeyPem == "" {
-		return fmt.Errorf("config: %v: Node is missing IdentityPublicKeyPem", section)
+		return errors.New("config: Node is missing IdentityPublicKeyPem")
 	}
 	return nil
 }
@@ -486,10 +480,11 @@ type Config struct {
 	Parameters  *Parameters
 	Debug       *Debug
 
-	Mixes        []*Node
-	GatewayNodes []*Node
-	ServiceNodes []*Node
-	Topology     *Topology
+	Mixes           []*Node
+	GatewayNodes    []*Node
+	ServiceNodes    []*Node
+	StorageReplicas []*Node
+	Topology        *Topology
 
 	SphinxGeometry *geo.Geometry
 }
@@ -611,6 +606,29 @@ func (cfg *Config) FixupAndValidate(forceGenOnly bool) error {
 		tmp := hash.Sum256From(identityKey)
 		if _, ok := pkMap[tmp]; ok {
 			return fmt.Errorf("config: Nodes: IdentityPublicKeyPem '%v' is present more than once", v.IdentityPublicKeyPem)
+		}
+		pkMap[tmp] = v
+	}
+
+	idMap = make(map[string]*Node)
+	pkMap = make(map[[publicKeyHashSize]byte]*Node)
+	for _, v := range cfg.StorageReplicas {
+		if _, ok := idMap[v.Identifier]; ok {
+			return fmt.Errorf("config: Storage Replica Node: Identifier '%v' is present more than once", v.Identifier)
+		}
+		if err := v.validate(true); err != nil {
+			return err
+		}
+		idMap[v.Identifier] = v
+
+		identityKey, err = signpem.FromPublicPEMFile(filepath.Join(cfg.Server.DataDir, v.IdentityPublicKeyPem), pkiSignatureScheme)
+		if err != nil {
+			return err
+		}
+
+		tmp := hash.Sum256From(identityKey)
+		if _, ok := pkMap[tmp]; ok {
+			return fmt.Errorf("config: Storage Replica Node: IdentityPublicKeyPem '%v' is present more than once", v.IdentityPublicKeyPem)
 		}
 		pkMap[tmp] = v
 	}

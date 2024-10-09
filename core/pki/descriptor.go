@@ -331,3 +331,21 @@ func getIPVer(h string) (int, error) {
 	}
 	return 0, fmt.Errorf("address is not an IP")
 }
+
+type ReplicaDescriptor struct {
+	// Name is the unique name of the pigeonhole storage replica.
+	Name string
+
+	// IdentityKey is the node's identity (signing) key.
+	IdentityKey []byte
+
+	// LinkKey is our PQ Noise Public Key.
+	LinkKey []byte
+
+	// EnvelopeKey is the Public NIKE Key used with our MKEM scheme.
+	EnvelopeKey []byte
+
+	// Addresses is the map of transport to address combinations that can
+	// be used to reach the node.
+	Addresses map[string][]string
+}
