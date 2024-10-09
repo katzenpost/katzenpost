@@ -117,6 +117,10 @@ func (s *Server) halt() {
 	close(s.fatalErrCh)
 	s.log.Noticef("Shutdown complete.")
 	close(s.haltedCh)
+	s.state.Close()
+	for _, listener := range s.listeners {
+		listener.Halt()
+	}
 }
 
 // RotateLog rotates the log file
@@ -226,7 +230,10 @@ func New(cfg *config.Config) (*Server, error) {
 	linkPrivateKeyFile := filepath.Join(s.cfg.DataDir, "link.private.pem")
 	linkPublicKeyFile := filepath.Join(s.cfg.DataDir, "link.public.pem")
 
-	var linkPrivateKey kem.PrivateKey
+	linkPublicKey, linkPrivateKey, err := scheme.GenerateKeyPair()
+	if err != nil {
+		return nil, err
+	}
 
 	if utils.BothExists(linkPrivateKeyFile, linkPublicKeyFile) {
 		linkPrivateKey, err = kempem.FromPrivatePEMFile(linkPrivateKeyFile, scheme)
@@ -238,11 +245,6 @@ func New(cfg *config.Config) (*Server, error) {
 			return nil, err
 		}
 	} else if utils.BothNotExists(linkPrivateKeyFile, linkPublicKeyFile) {
-		linkPublicKey, linkPrivateKey, err := scheme.GenerateKeyPair()
-		if err != nil {
-			return nil, err
-		}
-
 		err = kempem.PrivateKeyToFile(linkPrivateKeyFile, linkPrivateKey)
 		if err != nil {
 			return nil, err
@@ -298,5 +300,6 @@ func New(cfg *config.Config) (*Server, error) {
 		s.listeners = append(s.listeners, l)
 	}
 
+	isOk = true
 	return s, nil
 }

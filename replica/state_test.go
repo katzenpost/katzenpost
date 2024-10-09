@@ -20,7 +20,7 @@ import (
 func TestState(t *testing.T) {
 	dname, err := os.MkdirTemp("", "replca.testState")
 	require.NoError(t, err)
-	//defer os.RemoveAll(dname)
+	defer os.RemoveAll(dname)
 
 	nike := ecdh.Scheme(rand.Reader)
 	forwardPayloadLength := 1234

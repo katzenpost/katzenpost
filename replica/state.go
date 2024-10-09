@@ -17,6 +17,10 @@ type state struct {
 	db     *grocksdb.DB
 }
 
+func (s *state) Close() {
+	s.db.Close()
+}
+
 func (s *state) dbPath() string {
 	return filepath.Join(s.server.cfg.DataDir, "replica.db")
 }
