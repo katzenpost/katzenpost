@@ -139,7 +139,7 @@ func GenerateTLSConfig() *tls.Config {
 
 func DialURL(u *url.URL, ctx context.Context, dialFn func(ctx context.Context, network, address string) (net.Conn, error)) (net.Conn, error) {
 	switch u.Scheme {
-	case "tcp":
+	case "tcp", "onion":
 		// XXX: make sure to use the supplied dialer for proxy users
 		conn, err := dialFn(ctx, "tcp", u.Host)
 		if err != nil {
