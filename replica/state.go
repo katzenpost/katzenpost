@@ -41,6 +41,11 @@ func (s *state) handleReplicaRead(replicaRead *commands.ReplicaRead) (*commands.
 	data := make([]byte, value.Size())
 	copy(data, value.Data())
 	value.Free()
+
+	if s.server.cfg.SphinxGeometry == nil {
+		panic("s.server.cfg.SphinxGeometry cannot be nil")
+	}
+
 	cmds := commands.NewStorageReplicaCommands(s.server.cfg.SphinxGeometry)
 	rawCmds, err := cmds.FromBytes(data)
 	if err != nil {
@@ -56,5 +61,6 @@ func (s *state) handleReplicaRead(replicaRead *commands.ReplicaRead) (*commands.
 func (s *state) handleReplicaWrite(replicaWrite *commands.ReplicaWrite) error {
 	wo := grocksdb.NewDefaultWriteOptions()
 	defer wo.Destroy()
+
 	return s.db.Put(wo, replicaWrite.ID[:], replicaWrite.ToBytes())
 }
