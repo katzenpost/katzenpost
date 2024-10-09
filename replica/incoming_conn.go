@@ -90,8 +90,7 @@ func (c *incomingConn) worker() {
 	var err error
 	c.l.Lock()
 
-	// XXX FIX ME: use NewStorageReplicaSession
-	c.w, err = wire.NewPKISession(cfg, false)
+	c.w, err = wire.NewStorageReplicaSession(cfg, false)
 
 	c.l.Unlock()
 	if err != nil {
