@@ -7,7 +7,6 @@ package commands
 import (
 	"encoding/binary"
 	"errors"
-	"fmt"
 
 	"github.com/katzenpost/hpqc/sign"
 
@@ -214,12 +213,10 @@ func (c *Commands) FromBytes(b []byte) (Command, error) {
 	b = b[:cmdLen]
 	switch commandID(id) {
 	case sendRetrievePacket:
-		fmt.Println("sendRetrievePacket")
 		return sendRetrievePacketFromBytes(b, c)
 	case sendRetrievePacketReply:
 		return sendRetrievePacketReplyFromBytes(b, c)
 	case sendPacket:
-		fmt.Println("sendPacket")
 		return sendPacketFromBytes(b, c)
 	case retreiveMessage:
 		return retreiveMessageFromBytes(b, c)
