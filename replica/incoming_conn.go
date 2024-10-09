@@ -41,12 +41,6 @@ type incomingConn struct {
 	id      uint64
 	retrSeq uint32
 
-	sendTokens    uint64
-	maxSendTokens uint64
-
-	sendTokenIncr time.Duration
-	sendTokenLast time.Time
-
 	isInitialized bool // Set by listener.
 	fromClient    bool
 	fromMix       bool
@@ -278,11 +272,19 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 }
 
 func (c *incomingConn) handleReplicaRead(replicaRead *commands.ReplicaRead) {
-
+	// XXX FIX ME
+	_, err := c.l.server.state.handleReplicaRead(replicaRead)
+	if err != nil {
+		panic(err) // XXX
+	}
 }
 
 func (c *incomingConn) handleReplicaWrite(replicaWrite *commands.ReplicaWrite) {
-
+	// XXX FIX ME
+	err := c.l.server.state.handleReplicaWrite(replicaWrite)
+	if err != nil {
+		panic(err) // XXX
+	}
 }
 
 func newIncomingConn(l *Listener, conn net.Conn, geo *geo.Geometry, scheme kem.Scheme, pkiSignScheme sign.Scheme) *incomingConn {
@@ -292,13 +294,10 @@ func newIncomingConn(l *Listener, conn net.Conn, geo *geo.Geometry, scheme kem.S
 		l:                 l,
 		c:                 conn,
 		id:                atomic.AddUint64(&incomingConnID, 1), // Diagnostic only, wrapping is fine.
-		sendTokenLast:     time.Now(),
-		maxSendTokens:     4, // Reasonable burst to avoid some unnecessary rate limiting.
 		closeConnectionCh: make(chan bool),
 		geo:               geo,
 	}
 	c.log = l.server.logBackend.GetLogger(fmt.Sprintf("incoming:%d", c.id))
-
 	c.log.Debugf("New incoming connection: %v", conn.RemoteAddr())
 
 	// Note: Unlike most other things, this does not spawn the worker here,

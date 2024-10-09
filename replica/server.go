@@ -50,6 +50,7 @@ type Server struct {
 	linkKey            kem.PrivateKey
 
 	listeners []GenericListener
+	state     *state
 
 	logBackend *log.Backend
 	log        *logging.Logger
@@ -132,6 +133,10 @@ func (s *Server) RotateLog() {
 func New(cfg *config.Config) (*Server, error) {
 	s := new(Server)
 	s.cfg = cfg
+	s.state = &state{
+		server: s,
+	}
+	s.state.initDB()
 
 	s.fatalErrCh = make(chan error)
 	s.haltedCh = make(chan interface{})
