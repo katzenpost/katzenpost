@@ -4,7 +4,7 @@
     xmlns:xlink="http://www.w3.org/1999/xlink" 
     version="5.1"
     xml:id="container">
-    <title xml:id="container.title">Using the Katzenpost test network</title>    
+    <title xml:id="container.title">Using the Katzenpost Docker test network</title>    
     
     <para>Katzenpost provides a ready-to-deploy <link
         xlink:href="https://github.com/katzenpost/katzenpost/tree/main/docker">Docker
