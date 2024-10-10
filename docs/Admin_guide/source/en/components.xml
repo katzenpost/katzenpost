@@ -184,7 +184,7 @@ type Config struct {
     Identifier = "auth1"
     WireKEMScheme = "xwing"
     PKISignatureScheme = "Ed25519"
-    Addresses = ["127.0.0.1:30001"]
+    Addresses = ["tcp://127.0.0.1:30001"]
     DataDir = "/voting_mixnet/auth1"</programlisting>
                 <itemizedlist>
                     <listitem>
