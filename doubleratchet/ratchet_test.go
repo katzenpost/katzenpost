@@ -10,14 +10,31 @@ import (
 	"github.com/stretchr/testify/require"
 
 	//ecdh "github.com/katzenpost/hpqc/nike/x25519"
-	"github.com/katzenpost/hpqc/nike/hybrid"
+	"github.com/katzenpost/hpqc/nike"
+	"github.com/katzenpost/hpqc/nike/schemes"
 )
 
-//var nikeScheme = ecdh.Scheme(rand.Reader)
+func TestAllNikeSchemes(t *testing.T) {
+	for _, scheme := range schemes.All() {
+		scheme := scheme
+		t.Logf("testing ratchet with nike scheme: %s", scheme.Name())
+		require.True(t, t.Run("DoSendMessageOverhead", func(t *testing.T) { test_DoSendMessageOverhead(t, scheme) }))
+		require.True(t, t.Run("CiphertextOverhead", func(t *testing.T) { test_CiphertextOverhead(t, scheme) }))
+		require.True(t, t.Run("KeyExchange", func(t *testing.T) { test_KeyExchange(t, scheme) }))
+		require.True(t, t.Run("RealKeyExchange", func(t *testing.T) { test_RealKeyExchange(t, scheme) }))
+		require.True(t, t.Run("Serialization0", func(t *testing.T) { test_Serialization0(t, scheme) }))
+		require.True(t, t.Run("Serialization1", func(t *testing.T) { test_Serialization1(t, scheme) }))
+		require.True(t, t.Run("RatchetBackAndForth", func(t *testing.T) { test_RatchetBackAndForth(t, scheme) }))
+		require.True(t, t.Run("RatchetReordering", func(t *testing.T) { test_RatchetReordering(t, scheme) }))
+		require.True(t, t.Run("RatchetReorderAfterDHRatchet", func(t *testing.T) { test_RatchetReorderAfterDHRatchet(t, scheme) }))
+		require.True(t, t.Run("RatchetDroppedMessages", func(t *testing.T) { test_RatchetDroppedMessages(t, scheme) }))
+		require.True(t, t.Run("SerializeSavedKeys", func(t *testing.T) { test_serialize_savedkeys(t, scheme) }))
+		require.True(t, t.Run("RatchetDuplicateMessage", func(t *testing.T) { test_RatchetDuplicateMessage(t, scheme) }))
+		require.True(t, t.Run("SavedKeysMarshaling", test_savedKeysMarshaling))
+	}
+}
 
-var nikeScheme = hybrid.NOBS_CSIDH512X25519
-
-func pairedRatchet(t *testing.T) (aRatchet, bRatchet *Ratchet) {
+func pairedRatchet(t *testing.T, nikeScheme nike.Scheme) (aRatchet, bRatchet *Ratchet) {
 	var err error
 	aRatchet, err = InitRatchet(rand.Reader, nikeScheme)
 	require.NoError(t, err)
@@ -49,8 +66,9 @@ type Message struct {
 	Delivered bool
 }
 
-func Test_DoSendMessageOverhead(t *testing.T) {
-	a, b := pairedRatchet(t)
+func test_DoSendMessageOverhead(t *testing.T, nikeScheme nike.Scheme) {
+	t.Parallel()
+	a, b := pairedRatchet(t, nikeScheme)
 
 	msg := []byte("test message")
 
@@ -81,8 +99,9 @@ func Test_DoSendMessageOverhead(t *testing.T) {
 	DestroyRatchet(b)
 }
 
-func Test_CiphertextOverhead(t *testing.T) {
-	a, b := pairedRatchet(t)
+func test_CiphertextOverhead(t *testing.T, nikeScheme nike.Scheme) {
+	t.Parallel()
+	a, b := pairedRatchet(t, nikeScheme)
 
 	msg := []byte("test message")
 	encrypted, err := a.Encrypt(nil, msg)
@@ -101,8 +120,9 @@ func Test_CiphertextOverhead(t *testing.T) {
 	DestroyRatchet(b)
 }
 
-func Test_KeyExchange(t *testing.T) {
-	a, b := pairedRatchet(t)
+func test_KeyExchange(t *testing.T, nikeScheme nike.Scheme) {
+	t.Parallel()
+	a, b := pairedRatchet(t, nikeScheme)
 
 	msg := []byte("test message")
 	encrypted, err := a.Encrypt(nil, msg)
@@ -116,7 +136,8 @@ func Test_KeyExchange(t *testing.T) {
 	DestroyRatchet(b)
 }
 
-func Test_RealKeyExchange(t *testing.T) {
+func test_RealKeyExchange(t *testing.T, nikeScheme nike.Scheme) {
+	t.Parallel()
 	// create two new ratchets
 	a, err := InitRatchet(rand.Reader, nikeScheme)
 	require.NoError(t, err)
@@ -167,7 +188,8 @@ collective behavior embodies values—and the institutions we create do, too.`)
 	require.Error(t, ErrHandshakeAlreadyComplete, err)
 }
 
-func Test_Serialization0(t *testing.T) {
+func test_Serialization0(t *testing.T, nikeScheme nike.Scheme) {
+	t.Parallel()
 	// create two new ratchets
 	a, err := InitRatchet(rand.Reader, nikeScheme)
 	require.NoError(t, err)
@@ -175,8 +197,9 @@ func Test_Serialization0(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func Test_Serialization1(t *testing.T) {
-	a, b := pairedRatchet(t)
+func test_Serialization1(t *testing.T, nikeScheme nike.Scheme) {
+	t.Parallel()
+	a, b := pairedRatchet(t, nikeScheme)
 
 	// 1
 	msg := []byte("test message number one is a short one")
@@ -249,7 +272,7 @@ const (
 	delay
 )
 
-func reinitRatchet(t *testing.T, r *Ratchet) *Ratchet {
+func reinitRatchet(t *testing.T, r *Ratchet, nikeScheme nike.Scheme) *Ratchet {
 	state, err := r.Save()
 	require.NoError(t, err)
 	DestroyRatchet(r)
@@ -260,7 +283,7 @@ func reinitRatchet(t *testing.T, r *Ratchet) *Ratchet {
 	return newR
 }
 
-func testScript(t *testing.T, script []scriptAction) {
+func testScript(t *testing.T, nikeScheme nike.Scheme, script []scriptAction) {
 	type delayedMessage struct {
 		msg       []byte
 		encrypted []byte
@@ -268,7 +291,7 @@ func testScript(t *testing.T, script []scriptAction) {
 	}
 
 	delayedMessages := make(map[int]delayedMessage)
-	a, b := pairedRatchet(t)
+	a, b := pairedRatchet(t, nikeScheme)
 
 	for i, action := range script {
 		switch action.object {
@@ -309,13 +332,14 @@ func testScript(t *testing.T, script []scriptAction) {
 			require.Equal(t, delayed.msg, result, fmt.Sprintf("#%d: bad message: got %x, not %x", i, result, delayed.msg))
 		}
 
-		a = reinitRatchet(t, a)
-		b = reinitRatchet(t, b)
+		a = reinitRatchet(t, a, nikeScheme)
+		b = reinitRatchet(t, b, nikeScheme)
 	}
 }
 
-func Test_RatchetBackAndForth(t *testing.T) {
-	testScript(t, []scriptAction{
+func test_RatchetBackAndForth(t *testing.T, nikeScheme nike.Scheme) {
+	t.Parallel()
+	testScript(t, nikeScheme, []scriptAction{
 		{sendA, deliver, -1},
 		{sendB, deliver, -1},
 		{sendA, deliver, -1},
@@ -325,7 +349,8 @@ func Test_RatchetBackAndForth(t *testing.T) {
 	})
 }
 
-func Test_RatchetReordering(t *testing.T) {
+func test_RatchetReordering(t *testing.T, nikeScheme nike.Scheme) {
+	t.Parallel()
 	script := []scriptAction{}
 	script = append(script, scriptAction{sendA, deliver, -1})
 	for i := 0; i < MaxMissingMessages; i++ {
@@ -335,11 +360,12 @@ func Test_RatchetReordering(t *testing.T) {
 		script = append(script, scriptAction{sendA, deliver, i})
 	}
 
-	testScript(t, script)
+	testScript(t, nikeScheme, script)
 }
 
-func Test_RatchetReorderAfterDHRatchet(t *testing.T) {
-	testScript(t, []scriptAction{
+func test_RatchetReorderAfterDHRatchet(t *testing.T, nikeScheme nike.Scheme) {
+	t.Parallel()
+	testScript(t, nikeScheme, []scriptAction{
 		{sendA, deliver, -1},
 		{sendA, delay, 0},
 		{sendB, deliver, -1},
@@ -349,8 +375,9 @@ func Test_RatchetReorderAfterDHRatchet(t *testing.T) {
 	})
 }
 
-func Test_RatchetDroppedMessages(t *testing.T) {
-	testScript(t, []scriptAction{
+func test_RatchetDroppedMessages(t *testing.T, nikeScheme nike.Scheme) {
+	t.Parallel()
+	testScript(t, nikeScheme, []scriptAction{
 		{sendA, drop, -1},
 		{sendA, drop, -1},
 		{sendA, drop, -1},
@@ -360,8 +387,9 @@ func Test_RatchetDroppedMessages(t *testing.T) {
 	})
 }
 
-func Test_serialize_savedkeys(t *testing.T) {
-	a, b := pairedRatchet(t)
+func test_serialize_savedkeys(t *testing.T, nikeScheme nike.Scheme) {
+	t.Parallel()
+	a, b := pairedRatchet(t, nikeScheme)
 	msg := []byte("test message")
 	encrypted1, err := a.Encrypt(nil, msg)
 	require.NoError(t, err)
@@ -392,8 +420,9 @@ func Test_serialize_savedkeys(t *testing.T) {
 	require.Equal(t, msg, result)
 }
 
-func Test_RatchetDuplicateMessage(t *testing.T) {
-	a, b := pairedRatchet(t)
+func test_RatchetDuplicateMessage(t *testing.T, nikeScheme nike.Scheme) {
+	t.Parallel()
+	a, b := pairedRatchet(t, nikeScheme)
 	msg1 := []byte("test message 1")
 	msg2 := []byte("test message 2")
 	msg3 := []byte("test message 3")
@@ -418,7 +447,8 @@ func Test_RatchetDuplicateMessage(t *testing.T) {
 	require.Equal(t, msg3, result)
 }
 
-func Test_savedKeysMarshaling(t *testing.T) {
+func test_savedKeysMarshaling(t *testing.T) {
+	t.Parallel()
 	key := [32]byte{}
 	rand.Reader.Read(key[:])
 	m := &messageKey{
