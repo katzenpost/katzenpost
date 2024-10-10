@@ -1,9 +1,9 @@
-.PHONY: clean clean-local clean-local-dryrun clean-image-% clean-container-% clean-images test rootshell shell run-ping go-mod-tidy go-mod-upgrade help run-background run-foreground stop
+.PHONY: clean clean-local clean-local-dryrun clean-image-% clean-container-% clean-images test rootshell shell run-ping go-mod-tidy go-mod-upgrade help start run stop
 
 help:
 	@echo "These make targets allow you to control the test network:"
-	@echo " run-foreground     - runs the testnet in the foreground, until ctrl-C"
-	@echo " run-background     - runs the testnet in the background"
+	@echo " run                - run the testnet in the foreground, until ctrl-C"
+	@echo " start              - start the testnet in the background"
 	@echo " stop               - stop the testnet"
 	@echo " wait               - wait for testnet to have consensus"
 	@echo " watch              - tail -F all logs"
@@ -17,8 +17,6 @@ help:
 	@echo
 
 warped?=true
-no_decoy?=true
-no_mixdecoy?=true
 mixes=3
 auths=3
 gateways=1
@@ -43,10 +41,6 @@ UserForwardPayloadLength=2000
 # hybrid ctidh PQ can work here, but requires manually building ctidh.
 nike=x25519
 
-# ratchetNike can be NOBS_CSIDH-X25519, "CTIDH511-X25519", "CTIDH512-X25519", "CTIDH1024-X25519", "CTIDH2048-X25519"
-# and defaults to CTIDH512-X25519
-ratchetNike?=CTIDH512-X25519
-
 # kem can be Kyber1024-X448 or any of the other schemes at https://github.com/cloudflare/circl/blob/main/kem/schemes/schemes.go (and then nike must be unset)
 kem=
 
@@ -58,20 +52,11 @@ base_port=30000
 bind_addr=127.0.0.1
 docker_compose_yml=$(net_name)/docker-compose.yml
 sh=$(shell if echo ${distro}|grep -q alpine; then echo sh; else echo bash; fi)
+SHELL=/bin/bash
 cache_dir=cache
-
-# no_decoy and no_mixdecoy control enabling dockerized mixnets with or without decoy traffic
-noMixDecoy=$(shell if [[ $no_mixdecoy ]]; then echo -noMixDecoy; fi)
-noDecoy=$(shell if [[ $no_decoy ]]; then echo -noDecoy; fi)
 
 # log_level can be DEBUG, INFO, NOTICE, WARNING, ERROR, CRITICAL
 log_level=INFO
-
-no_decoy?=false
-no_mixdecoy?=false
-
-noDecoy=$(shell if [[ $no_decoy ]]; then echo -noDecoy; fi)
-noMixDecoy=$(shell if [[ $no_mixdecoy ]]; then echo -noMixDecoy; fi)
 
 docker=$(shell if which podman|grep -q .; then echo podman; else echo docker; fi)
 
@@ -81,7 +66,7 @@ uid?=$(shell [ "$$SUDO_UID" != "" ] && echo "$$SUDO_UID" || id -u)
 gid?=$(shell [ "$$SUDO_GID" != "" ] && echo "$$SUDO_GID" || id -g)
 
 docker_user?=$(shell if echo ${docker}|grep -q podman; then echo 0:0; else echo ${uid}:${gid}; fi)
-docker_args=--user ${docker_user} --volume $(shell readlink -f ..):/go/katzenpost --workdir /go/katzenpost -v $(shell readlink -f .)/$(cache_dir)/go:/go/ -e GOCACHE=/go/cache
+docker_args=--user ${docker_user} --volume $(shell readlink -f ..):/go/katzenpost --workdir /go/katzenpost -v $(shell readlink -f .)/$(cache_dir)/go:/go/ -v $(shell readlink -f .)/$(cache_dir)/root_cache:/root/.cache
 
 replace_name=$(shell if echo ${docker}|grep -q podman; then echo " --replace --name"; else echo " --name"; fi)
 i_if_podman=$(shell if echo ${docker}|grep -q podman; then echo " -i"; else echo; fi)
@@ -99,10 +84,13 @@ testnet_binaries: $(net_name)/server.$(distro) $(net_name)/proxy_server.$(distro
 $(net_name):
 	mkdir -vp $(net_name)
 
-$(cache_dir): $(cache_dir)/go
+$(cache_dir): $(cache_dir)/go $(cache_dir)/root_cache
 
 $(cache_dir)/go:
 	mkdir -vp $(cache_dir)/go
+
+$(cache_dir)/root_cache:
+	mkdir -vp $(cache_dir)/root_cache
 
 $(docker_compose_yml): ../genconfig/main.go $(distro)_base.stamp | $(net_name) $(cache_dir)
 	$(docker) run ${docker_args} --rm katzenpost-$(distro)_base \
@@ -112,19 +100,18 @@ $(docker_compose_yml): ../genconfig/main.go $(distro)_base.stamp | $(net_name) $
 		-sr ${sr} -mu ${mu} -muMax ${muMax} -lP ${lP} -lPMax ${lPMax} -lL ${lL} \
 		-lLMax ${lLMax} -lD ${lD} -lDMax ${lDMax} -lM ${lM} -lMMax ${lMMax} \
 		-S .$(distro) -v -o ./$(net_name) -b /$(net_name) -P $(base_port) \
-		-nike "$(nike)" -ratchetNike "$(ratchetNike)" -kem "$(kem)" -d katzenpost-$(distro)_base \
-		${noMixDecoy} ${noDecoy} \
+		-nike "$(nike)" -kem "$(kem)" -d katzenpost-$(distro)_base \
 		-UserForwardPayloadLength $(UserForwardPayloadLength) -log_level $(log_level)'
 
 $(net_name)/running.stamp:
-	make $(make_args) run-background
+	make $(make_args) start
 
-run-foreground: $(docker_compose_yml) testnet_binaries
+run: $(docker_compose_yml) testnet_binaries
 	cd $(net_name) && touch running.stamp \
 	&& $(docker_compose) up --remove-orphans
 	cd $(net_name) && rm -v running.stamp
 
-run-background: $(docker_compose_yml) testnet_binaries
+start: $(docker_compose_yml) testnet_binaries
 	cd $(net_name); $(docker_compose) up --remove-orphans -d; $(docker_compose) top
 	touch $(net_name)/running.stamp
 
