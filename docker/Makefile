@@ -1,9 +1,8 @@
-.PHONY: clean clean-local clean-local-dryrun clean-image-% clean-container-% clean-images test rootshell shell run-ping go-mod-tidy go-mod-upgrade help run-background run-foreground stop
+.PHONY: clean clean-local clean-local-dryrun clean-image-% clean-container-% clean-images test rootshell shell run-ping go-mod-tidy go-mod-upgrade help start stop
 
 help:
 	@echo "These make targets allow you to control the test network:"
-	@echo " run                - runs the testnet in the foreground, until ctrl-C"
-	@echo " start	           - runs the testnet in the background"
+	@echo " start              - start the testnet"
 	@echo " stop               - stop the testnet"
 	@echo " wait               - wait for testnet to have consensus"
 	@echo " watch              - tail -F all logs"
@@ -117,12 +116,7 @@ $(docker_compose_yml): ../genconfig/main.go $(distro)_base.stamp | $(net_name) $
 		-UserForwardPayloadLength $(UserForwardPayloadLength) -log_level $(log_level)'
 
 $(net_name)/running.stamp:
-	make $(make_args) run-background
-
-run: $(docker_compose_yml) testnet_binaries
-	cd $(net_name) && touch running.stamp \
-	&& $(docker_compose) up --remove-orphans
-	cd $(net_name) && rm -v running.stamp
+	make $(make_args) start
 
 start: $(docker_compose_yml) testnet_binaries
 	cd $(net_name); $(docker_compose) up --remove-orphans -d; $(docker_compose) top
