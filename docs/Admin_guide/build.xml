@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project name="DocBook" default="All">
+	
+	<property name="docbook.xml.filename" value="*" />
+	<property name="docbook.xml.language" value="en" />
+		
+	<import file="${net.sourceforge.dep4e.resources}/ant/docbook_5-0.xml" />
+	
+</project>

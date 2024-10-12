@@ -26,8 +26,6 @@ import (
 
 	"github.com/fxamacker/cbor/v2"
 
-	"golang.org/x/net/idna"
-
 	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/kem"
 	kemschemes "github.com/katzenpost/hpqc/kem/schemes"
@@ -219,26 +217,6 @@ func IsDescriptorWellFormed(d *MixDescriptor, epoch uint64) error {
 			return fmt.Errorf("Descriptor contains empty Address list for transport '%v'", transport)
 		}
 
-		var expectedIPVer int
-		switch transport {
-		case TransportInvalid:
-			return fmt.Errorf("Descriptor contains invalid Transport")
-		case TransportTCPv4:
-			expectedIPVer = 4
-		case TransportTCPv6:
-			expectedIPVer = 6
-		case TransportQUIC, TransportTCP:
-		case TransportOnion:
-			fallthrough // only GatewyNode can announce TransportOnion
-		default:
-			// Unknown transports are only supported between the client and
-			// gateway.
-			if !d.IsGatewayNode {
-				return fmt.Errorf("Non-gateway published Transport '%v'", transport)
-			}
-			continue
-		}
-
 		// Validate all addresses belonging to the TCP variants.
 		for _, v := range addrs {
 			u, err := url.Parse(v)
@@ -247,24 +225,12 @@ func IsDescriptorWellFormed(d *MixDescriptor, epoch uint64) error {
 			}
 			switch u.Scheme {
 			case TransportWS, TransportTCP, TransportTCPv4, TransportTCPv6, TransportQUIC:
+			case TransportOnion: // Unknown transports are only supported between the client and gateway.
+				if !d.IsGatewayNode {
+					return fmt.Errorf("Non-gateway published Transport '%v'", transport)
+				}
 			default:
 				return fmt.Errorf("Unsupported listener scheme '%v': %v", v, u.Scheme)
-			}
-
-			switch expectedIPVer {
-			case 4, 6:
-				if ver, err := getIPVer(u.Hostname()); err != nil {
-					return fmt.Errorf("Descriptor contains invalid address ['%v']'%v': %v", transport, v, err)
-				} else if ver != expectedIPVer {
-					return fmt.Errorf("Descriptor contains invalid address ['%v']'%v': IP version mismatch", transport, v)
-				}
-			default:
-				// This must be TransportTCP or something else that supports
-				// "sensible" DNS style hostnames.  Validate that they are
-				// at least somewhat well formed.
-				if _, err := idna.Lookup.ToASCII(u.Hostname()); err != nil {
-					return fmt.Errorf("Descriptor contains invalid address ['%v']'%v': %v", transport, v, err)
-				}
 			}
 		}
 	}
