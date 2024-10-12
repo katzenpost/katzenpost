@@ -142,19 +142,20 @@
                     <listitem>
                         <para><emphasis role="bold">Identifier</emphasis></para>
                         <para>Identifier is the human readable identifier for the node (eg:
-                            FQDN).</para>
+                            FQDN) AND must be unique for a given mixnet.</para>
                         <para>Type: string</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">WireKEM</emphasis></para>
-                        <para>// WireKEM is the KEM string representing the chosen KEM scheme with
-                            which to communicate</para>
-                        <para> // with the mixnet and dirauth nodes.</para>
+                        <para>WireKEM is the name of the KEM scheme to use with our PQ Noise based wire protocol
+								which acts like the link layer for our overlay mix network, connecting nodes together.</para>
+						<!-- https://github.com/katzenpost/hpqc/blob/main/kem/schemes/schemes.go -->
                         <para>Type: string</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">PKISignatureScheme</emphasis></para>
-                        <para>PKISignatureScheme specifies the cryptographic signature scheme</para>
+                        <para>PKISignatureScheme specifies the cryptographic signature scheme that is used with the given mix network's PKI system.</para>
+						<!-- https://github.com/katzenpost/hpqc/blob/main/sign/schemes/schemes.go -->
                         <para>Type: string</para>
                     </listitem>
                     <listitem>
