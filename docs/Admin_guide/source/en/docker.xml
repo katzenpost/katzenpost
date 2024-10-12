@@ -99,7 +99,7 @@
                         <para> Set up and start the Podman server (as superuser).</para>
                         <programlisting><prompt>$ </prompt><command>podman system service -t 0 $DOCKER_HOST &amp;</command>
                             <prompt>$ </prompt><command>systemctl --user enable --now podman.socket</command>
-                            <prompt>$ </prompt><command>systemctl --user start podman.socket</command></programlisting>
+                        </programlisting>
                     </step>
                 </procedure>
             </step>
@@ -260,19 +260,9 @@
                     </listitem>
                 </itemizedlist>
             </note>
-            <para>The first time that you use <command>run</command> or <command>start</command>,
+            <para>The first time that you use the <command>start</command> target,
                 the docker image will be downloaded, built, and installed. This takes several
                 minutes. </para>
-            <para>Starting the network for the first time with <command>run</command> lets you
-                observe the installation process as command output:</para>
-            <programlisting><prompt>~/katzenpost/docker$ </prompt><command>make run</command>
-                
-                ...
-                &lt;output&gt;
-                ...</programlisting>
-            <para>Alternatively, you can install using <command>start</command>, which returns you
-                to a command prompt. You can then use <command>watch</command> to view the further
-                progress of the installation:</para>
             <para>
                 <programlisting><prompt>~/katzenpost/docker$ </prompt><command>make start</command>
                     ...
@@ -282,7 +272,16 @@
                     ...</programlisting>
             </para>
             <para>Once installation is complete, there is a further delay as the mix servers vote
-                and reach a consensus.</para>
+                and reach a consensus. You can use the <command>wait</command> target
+                to wait for the mixnet to get consensus and be ready to use. This can also take
+                several minutes:</para>
+
+            <para>
+                <programlisting><prompt>~/katzenpost/docker$ </prompt><command>make wait</command>
+                    ...
+                    &lt;output&gt;
+                    ...</programlisting>
+            </para>
             <para>You can confirm that installation and configuration are complete by issuing the
                 <command>status</command> command from the same or another terminal. When the
                 network is ready for use, <command>status</command> begins returning consensus
