@@ -99,7 +99,7 @@
                         <para> Set up and start the Podman server (as superuser).</para>
                         <programlisting><prompt>$ </prompt><command>podman system service -t 0 $DOCKER_HOST &amp;</command>
                             <prompt>$ </prompt><command>systemctl --user enable --now podman.socket</command>
-                            <prompt>$ </prompt><command>systemctl --user start podman.socket</command></programlisting>
+                        </programlisting>
                     </step>
                 </procedure>
             </step>
