@@ -243,7 +243,7 @@ func (s *katzenpost) genNodeConfig(isGateway, isServiceNode bool, isVoting bool)
 	cfg.Server.Identifier = n
 	if isGateway {
 		cfg.Server.Addresses = []string{fmt.Sprintf("tcp://127.0.0.1:%d", s.lastPort), fmt.Sprintf("quic://[::1]:%d", s.lastPort+1),
-		fmt.Sprintf("onion://thisisjustatestoniontoverifythatconfigandpkiworkproperly.onion:4242")}
+			fmt.Sprintf("onion://thisisjustatestoniontoverifythatconfigandpkiworkproperly.onion:4242")}
 		cfg.Server.BindAddresses = []string{fmt.Sprintf("tcp://127.0.0.1:%d", s.lastPort), fmt.Sprintf("quic://[::1]:%d", s.lastPort+1)}
 		s.lastPort += 2
 	} else {
@@ -485,7 +485,7 @@ func main() {
 	nike := flag.String("nike", "x25519", "Name of the NIKE Scheme to be used with Sphinx")
 	ratchetNike := flag.String("ratchetNike", "CTIDH512-X25519", "Name of the NIKE Scheme to be used with the doubleratchet")
 	UserForwardPayloadLength := flag.Int("UserForwardPayloadLength", 2000, "UserForwardPayloadLength")
-	pkiSignatureScheme := flag.String("pkiScheme", "Ed25519", "PKI Signature Scheme to be used")
+	pkiSignatureScheme := flag.String("pkiScheme", "Ed448-Dilithium3", "PKI Signature Scheme to be used")
 	noDecoy := flag.Bool("noDecoy", true, "Disable decoy traffic for the client")
 	noMixDecoy := flag.Bool("noMixDecoy", true, "Disable decoy traffic for the mixes")
 	dialTimeout := flag.Int("dialTimeout", 0, "Session dial timeout")
