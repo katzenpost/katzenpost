@@ -205,6 +205,15 @@ func (p *pki) worker() {
 	// NOTREACHED
 }
 
+func stripSignatures(doc *cpki.Document) []byte {
+	doc.Signatures = nil
+	certified, err := doc.MarshalBinary()
+	if err != nil {
+		panic(err)
+	}
+	return certified
+}
+
 func (p *pki) updateDocument(epoch uint64) error {
 	pkiCtx, cancelFn := context.WithCancel(context.Background())
 	p.Go(func() {
@@ -216,7 +225,8 @@ func (p *pki) updateDocument(epoch uint64) error {
 		}
 	})
 
-	docBlob, d, err := p.getDocument(pkiCtx, epoch)
+	//docBlob, d, err := p.getDocument(pkiCtx, epoch)
+	_, d, err := p.getDocument(pkiCtx, epoch)
 	cancelFn()
 	if err != nil {
 		p.log.Warningf("Failed to fetch PKI for epoch %v: %v", epoch, err)
@@ -228,7 +238,7 @@ func (p *pki) updateDocument(epoch uint64) error {
 	}
 	p.docs.Store(epoch, &CachedDoc{
 		Doc:  d,
-		Blob: docBlob,
+		Blob: stripSignatures(d),
 	})
 	return nil
 }
