@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"strings"
 	"sync"
 
 	"github.com/fxamacker/cbor/v2"
@@ -52,8 +51,7 @@ type ThinResponse struct {
 type ThinClient struct {
 	worker.Worker
 
-	cfg   *config.Config
-	isTCP bool
+	cfg *config.Config
 
 	log        *logging.Logger
 	logBackend *log.Backend
@@ -89,7 +87,6 @@ func NewThinClient(cfg *config.Config) *ThinClient {
 		panic(err)
 	}
 	return &ThinClient{
-		isTCP:      strings.HasPrefix(strings.ToLower(cfg.ListenNetwork), "tcp"),
 		cfg:        cfg,
 		log:        logBackend.GetLogger("thinclient"),
 		logBackend: logBackend,
@@ -205,71 +202,42 @@ func (t *ThinClient) writeMessage(request *Request) error {
 		return err
 	}
 
-	if t.isTCP {
-		const blobPrefixLen = 4
+	const blobPrefixLen = 4
 
-		prefix := make([]byte, blobPrefixLen)
-		binary.BigEndian.PutUint32(prefix, uint32(len(blob)))
-		toSend := append(prefix, blob...)
-		count, err := t.conn.Write(toSend)
-		if err != nil {
-			return err
-		}
-		if count != len(toSend) {
-			return fmt.Errorf("send error: failed to write length prefix: %d != %d", count, len(toSend))
-		}
-		return nil
-	} else {
-		count, _, err := t.conn.(*net.UnixConn).WriteMsgUnix(blob, nil, t.destUnixAddr)
-		if err != nil {
-			return err
-		}
-		if count != len(blob) {
-			return fmt.Errorf("writeMessage error: wrote %d instead of %d bytes", count, len(blob))
-		}
-		return nil
+	prefix := make([]byte, blobPrefixLen)
+	binary.BigEndian.PutUint32(prefix, uint32(len(blob)))
+	toSend := append(prefix, blob...)
+	count, err := t.conn.Write(toSend)
+	if err != nil {
+		return err
 	}
-	// not reached
+	if count != len(toSend) {
+		return fmt.Errorf("send error: failed to write length prefix: %d != %d", count, len(toSend))
+	}
+	return nil
 }
 
 func (t *ThinClient) readMessage() (*Response, error) {
-	if t.isTCP {
-		const messagePrefixLen = 4
-
-		prefix := make([]byte, messagePrefixLen)
-		_, err := io.ReadFull(t.conn, prefix)
-		if err != nil {
-			return nil, err
-		}
-
-		prefixLen := binary.BigEndian.Uint32(prefix)
-		message := make([]byte, prefixLen)
-		_, err = io.ReadFull(t.conn, message)
-		if err != nil {
-			return nil, err
-		}
-
-		response := Response{}
-		err = cbor.Unmarshal(message, &response)
-		if err != nil {
-			return nil, err
-		}
-		return &response, nil
-	} else { // abstract UNIX domain socket
-		buff := make([]byte, 65536)
-		msgLen, _, _, _, err := t.conn.(*net.UnixConn).ReadMsgUnix(buff, nil)
-		if err != nil {
-			return nil, err
-		}
-
-		response := Response{}
-		err = cbor.Unmarshal(buff[:msgLen], &response)
-		if err != nil {
-			return nil, err
-		}
-		return &response, nil
+	const messagePrefixLen = 4
+	prefix := make([]byte, messagePrefixLen)
+	_, err := io.ReadFull(t.conn, prefix)
+	if err != nil {
+		return nil, err
 	}
-	// not reached
+
+	prefixLen := binary.BigEndian.Uint32(prefix)
+	message := make([]byte, prefixLen)
+	_, err = io.ReadFull(t.conn, message)
+	if err != nil {
+		return nil, err
+	}
+
+	response := Response{}
+	err = cbor.Unmarshal(message, &response)
+	if err != nil {
+		return nil, err
+	}
+	return &response, nil
 }
 
 func (t *ThinClient) worker() {

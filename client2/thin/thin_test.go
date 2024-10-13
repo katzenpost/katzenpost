@@ -26,9 +26,8 @@ func TestThinTCPSendRecv(t *testing.T) {
 
 	client, server := net.Pipe()
 	thin := ThinClient{
-		log:   logBackend.GetLogger("thinclient"),
-		isTCP: true,
-		conn:  client,
+		log:  logBackend.GetLogger("thinclient"),
+		conn: client,
 	}
 
 	id := &[MessageIDLength]byte{}

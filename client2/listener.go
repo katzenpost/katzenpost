@@ -25,7 +25,6 @@ type listener struct {
 
 	connsLock *sync.RWMutex
 	conns     map[[AppIDLength]byte]*incomingConn // appID -> *incomingConn
-	isTCP     bool
 
 	ingressCh   chan *Request
 	decoySender *sender
@@ -103,7 +102,6 @@ func (l *listener) onNewConn(conn net.Conn) {
 	}
 
 	c := newIncomingConn(l, conn)
-
 
 	defer func() {
 		c.start()
@@ -234,7 +232,6 @@ func NewListener(client *Client, rates *Rates, egressCh chan *Request, logBacken
 	case "tcp4":
 		fallthrough
 	case "tcp":
-		l.isTCP = true
 		tcpAddr, err := net.ResolveTCPAddr(network, address)
 		if err != nil {
 			return nil, err
