@@ -65,7 +65,6 @@ func (l *listener) updatePKIDocWorker() {
 }
 
 func (l *listener) worker() {
-	l.log.Debug("Listener worker begin")
 	addr := l.listener.Addr()
 	l.log.Infof("Listening on: %v", addr)
 	defer func() {
@@ -78,9 +77,7 @@ func (l *listener) worker() {
 			return
 		default:
 		}
-		l.log.Debug("BEFORE ACCEPT")
 		conn, err := l.listener.Accept()
-		l.log.Debug("AFTER ACCEPT")
 		if err != nil {
 			if e, ok := err.(net.Error); ok && !e.Temporary() {
 				l.log.Errorf("Critical accept failure: %v", err)
