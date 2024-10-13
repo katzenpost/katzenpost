@@ -78,7 +78,9 @@ func (l *listener) worker() {
 			return
 		default:
 		}
+		l.log.Debug("BEFORE ACCEPT")
 		conn, err := l.listener.Accept()
+		l.log.Debug("AFTER ACCEPT")
 		if err != nil {
 			if e, ok := err.(net.Error); ok && !e.Temporary() {
 				l.log.Errorf("Critical accept failure: %v", err)
@@ -226,33 +228,22 @@ func NewListener(client *Client, rates *Rates, egressCh chan *Request, logBacken
 	network := client.cfg.ListenNetwork
 	address := client.cfg.ListenAddress
 
+	var err error
+
 	switch network {
 	case "tcp6":
 		fallthrough
 	case "tcp4":
 		fallthrough
 	case "tcp":
-		tcpAddr, err := net.ResolveTCPAddr(network, address)
-		if err != nil {
-			return nil, err
-		}
-		l.listener, err = net.ListenTCP(network, tcpAddr)
-		if err != nil {
-			return nil, err
-		}
+		fallthrough
 	case "unix":
-		fallthrough
-	case "unixgram":
-		fallthrough
-	case "unixpacket":
-		unixAddr, err := net.ResolveUnixAddr(network, address)
+		l.listener, err = net.Listen(network, address)
 		if err != nil {
 			return nil, err
 		}
-		l.listener, err = net.ListenUnix(network, unixAddr)
-		if err != nil {
-			return nil, err
-		}
+	default:
+		panic("user error: unsupported network type for thin client")
 	}
 
 	l.Go(l.worker)
