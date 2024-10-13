@@ -108,11 +108,10 @@ func (s *katzenpost) genClient2Cfg() error {
 	os.Mkdir(filepath.Join(s.outDir, "client2"), 0700)
 	cfg := new(cConfig2.Config)
 
-	//cfg.ListenNetwork = "unixpacket"
-	//cfg.ListenAddress = "@katzenpost"
-
-	cfg.ListenNetwork = "tcp"
-	cfg.ListenAddress = "localhost:64331"
+	cfg.ListenNetwork = "unix"
+	cfg.ListenAddress = "@katzenpost"
+	//cfg.ListenNetwork = "tcp"
+	//cfg.ListenAddress = "localhost:64331"
 
 	cfg.PKISignatureScheme = s.pkiSignatureScheme.Name()
 	cfg.WireKEMScheme = s.wireKEMScheme
@@ -243,7 +242,7 @@ func (s *katzenpost) genNodeConfig(isGateway, isServiceNode bool, isVoting bool)
 	cfg.Server.Identifier = n
 	if isGateway {
 		cfg.Server.Addresses = []string{fmt.Sprintf("tcp://127.0.0.1:%d", s.lastPort), fmt.Sprintf("quic://[::1]:%d", s.lastPort+1),
-		fmt.Sprintf("onion://thisisjustatestoniontoverifythatconfigandpkiworkproperly.onion:4242")}
+			fmt.Sprintf("onion://thisisjustatestoniontoverifythatconfigandpkiworkproperly.onion:4242")}
 		cfg.Server.BindAddresses = []string{fmt.Sprintf("tcp://127.0.0.1:%d", s.lastPort), fmt.Sprintf("quic://[::1]:%d", s.lastPort+1)}
 		s.lastPort += 2
 	} else {
