@@ -136,33 +136,10 @@ func (t *ThinClient) Dial() error {
 	case "tcp4":
 		fallthrough
 	case "tcp":
-
+		fallthrough
+	case "unix":
 		var err error
 		t.conn, err = net.Dial(network, address)
-		if err != nil {
-			return err
-		}
-	case "unix":
-		panic("unix socket not supported, use unixpacket instead")
-	case "unixgram":
-		panic("unixgram socket not supported, use unixpacket instead")
-	case "unixpacket":
-		uniqueID := make([]byte, 4)
-		_, err := rand.Reader.Read(uniqueID)
-		if err != nil {
-			return err
-		}
-		srcUnixAddr, err := net.ResolveUnixAddr(network, fmt.Sprintf("@katzenpost_golang_thin_client_%x", uniqueID))
-		if err != nil {
-			return err
-		}
-		t.destUnixAddr, err = net.ResolveUnixAddr(network, address)
-		if err != nil {
-			return err
-		}
-
-		t.log.Debugf("Dial unixpacket %s %s", srcUnixAddr, t.destUnixAddr)
-		t.conn, err = net.DialUnix("unixpacket", srcUnixAddr, t.destUnixAddr)
 		if err != nil {
 			return err
 		}
