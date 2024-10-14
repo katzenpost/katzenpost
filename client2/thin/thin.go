@@ -359,7 +359,8 @@ func (t *ThinClient) eventSinkDrain() {
 }
 
 func (t *ThinClient) parsePKIDoc(payload []byte) (*cpki.Document, error) {
-	doc, err := cpki.ParseDocument(payload)
+	doc := &cpki.Document{}
+	err := doc.UnmarshalBinary(payload)
 	if err != nil {
 		t.log.Errorf("failed to unmarshal CBOR PKI doc: %s", err.Error())
 		return nil, err
