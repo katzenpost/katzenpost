@@ -57,7 +57,7 @@ func (c *incomingConn) recvRequest() (*Request, error) {
 	c.log.Debug("before Unmarshal")
 	err = cbor.Unmarshal(blob[:count], &req)
 	if err != nil {
-		fmt.Printf("error decoding cbor from client: %s\n", err)
+		c.log.Infof("error decoding cbor from client: %s\n", err)
 		return nil, err
 	}
 	c.log.Debug("after Unmarshal")
