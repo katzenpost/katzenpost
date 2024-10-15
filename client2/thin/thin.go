@@ -139,33 +139,10 @@ func (t *ThinClient) Dial() error {
 	case "tcp4":
 		fallthrough
 	case "tcp":
-
+		fallthrough
+	case "unix":
 		var err error
 		t.conn, err = net.Dial(network, address)
-		if err != nil {
-			return err
-		}
-	case "unix":
-		panic("unix socket not supported, use unixpacket instead")
-	case "unixgram":
-		panic("unixgram socket not supported, use unixpacket instead")
-	case "unixpacket":
-		uniqueID := make([]byte, 4)
-		_, err := rand.Reader.Read(uniqueID)
-		if err != nil {
-			return err
-		}
-		srcUnixAddr, err := net.ResolveUnixAddr(network, fmt.Sprintf("@katzenpost_golang_thin_client_%x", uniqueID))
-		if err != nil {
-			return err
-		}
-		t.destUnixAddr, err = net.ResolveUnixAddr(network, address)
-		if err != nil {
-			return err
-		}
-
-		t.log.Debugf("Dial unixpacket %s %s", srcUnixAddr, t.destUnixAddr)
-		t.conn, err = net.DialUnix("unixpacket", srcUnixAddr, t.destUnixAddr)
 		if err != nil {
 			return err
 		}
@@ -205,71 +182,43 @@ func (t *ThinClient) writeMessage(request *Request) error {
 		return err
 	}
 
-	if t.isTCP {
-		const blobPrefixLen = 4
+	const blobPrefixLen = 4
 
-		prefix := make([]byte, blobPrefixLen)
-		binary.BigEndian.PutUint32(prefix, uint32(len(blob)))
-		toSend := append(prefix, blob...)
-		count, err := t.conn.Write(toSend)
-		if err != nil {
-			return err
-		}
-		if count != len(toSend) {
-			return fmt.Errorf("send error: failed to write length prefix: %d != %d", count, len(toSend))
-		}
-		return nil
-	} else {
-		count, _, err := t.conn.(*net.UnixConn).WriteMsgUnix(blob, nil, t.destUnixAddr)
-		if err != nil {
-			return err
-		}
-		if count != len(blob) {
-			return fmt.Errorf("writeMessage error: wrote %d instead of %d bytes", count, len(blob))
-		}
-		return nil
+	prefix := make([]byte, blobPrefixLen)
+	binary.BigEndian.PutUint32(prefix, uint32(len(blob)))
+	toSend := append(prefix, blob...)
+	count, err := t.conn.Write(toSend)
+	if err != nil {
+		return err
 	}
-	// not reached
+	if count != len(toSend) {
+		return fmt.Errorf("send error: failed to write length prefix: %d != %d", count, len(toSend))
+	}
+	return nil
 }
 
 func (t *ThinClient) readMessage() (*Response, error) {
-	if t.isTCP {
-		const messagePrefixLen = 4
+	const messagePrefixLen = 4
 
-		prefix := make([]byte, messagePrefixLen)
-		_, err := io.ReadFull(t.conn, prefix)
-		if err != nil {
-			return nil, err
-		}
-
-		prefixLen := binary.BigEndian.Uint32(prefix)
-		message := make([]byte, prefixLen)
-		_, err = io.ReadFull(t.conn, message)
-		if err != nil {
-			return nil, err
-		}
-
-		response := Response{}
-		err = cbor.Unmarshal(message, &response)
-		if err != nil {
-			return nil, err
-		}
-		return &response, nil
-	} else { // abstract UNIX domain socket
-		buff := make([]byte, 65536)
-		msgLen, _, _, _, err := t.conn.(*net.UnixConn).ReadMsgUnix(buff, nil)
-		if err != nil {
-			return nil, err
-		}
-
-		response := Response{}
-		err = cbor.Unmarshal(buff[:msgLen], &response)
-		if err != nil {
-			return nil, err
-		}
-		return &response, nil
+	prefix := make([]byte, messagePrefixLen)
+	_, err := io.ReadFull(t.conn, prefix)
+	if err != nil {
+		return nil, err
 	}
-	// not reached
+
+	prefixLen := binary.BigEndian.Uint32(prefix)
+	message := make([]byte, prefixLen)
+	_, err = io.ReadFull(t.conn, message)
+	if err != nil {
+		return nil, err
+	}
+
+	response := &Response{}
+	err = cbor.Unmarshal(message, response)
+	if err != nil {
+		return nil, err
+	}
+	return response, nil
 }
 
 func (t *ThinClient) worker() {
@@ -414,7 +363,8 @@ func (t *ThinClient) eventSinkDrain() {
 }
 
 func (t *ThinClient) parsePKIDoc(payload []byte) (*cpki.Document, error) {
-	doc, err := cpki.ParseDocument(payload)
+	doc := &cpki.Document{}
+	err := cbor.Unmarshal(payload, doc)
 	if err != nil {
 		t.log.Errorf("failed to unmarshal CBOR PKI doc: %s", err.Error())
 		return nil, err

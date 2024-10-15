@@ -7,6 +7,8 @@ import (
 	"net"
 	"sync"
 
+	"github.com/fxamacker/cbor/v2"
+
 	"github.com/katzenpost/katzenpost/core/log"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/worker"
@@ -25,7 +27,6 @@ type listener struct {
 
 	connsLock *sync.RWMutex
 	conns     map[[AppIDLength]byte]*incomingConn // appID -> *incomingConn
-	isTCP     bool
 
 	ingressCh   chan *Request
 	decoySender *sender
@@ -104,7 +105,6 @@ func (l *listener) onNewConn(conn net.Conn) {
 
 	c := newIncomingConn(l, conn)
 
-
 	defer func() {
 		c.start()
 	}()
@@ -176,8 +176,7 @@ func (l *listener) doUpdateConnectionStatus(status error) {
 
 func (l *listener) doUpdateFromPKIDoc(doc *cpki.Document) {
 	// send doc to all thin clients
-	mydoc := doc
-	docBlob, err := mydoc.MarshalBinary()
+	docBlob, err := cbor.Marshal(doc)
 	if err != nil {
 		l.log.Errorf("cbor marshal failed: %s", err.Error())
 		return
@@ -234,7 +233,6 @@ func NewListener(client *Client, rates *Rates, egressCh chan *Request, logBacken
 	case "tcp4":
 		fallthrough
 	case "tcp":
-		l.isTCP = true
 		tcpAddr, err := net.ResolveTCPAddr(network, address)
 		if err != nil {
 			return nil, err
