@@ -11,12 +11,13 @@ import (
 	"sync"
 	"time"
 
+	"gopkg.in/op/go-logging.v1"
+
 	vServer "github.com/katzenpost/katzenpost/authority/voting/server"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"github.com/katzenpost/katzenpost/core/worker"
-	"gopkg.in/op/go-logging.v1"
 )
 
 var (
@@ -31,8 +32,7 @@ var (
 )
 
 type CachedDoc struct {
-	Doc  *cpki.Document
-	Blob []byte
+	Doc *cpki.Document
 }
 
 type ConsensusGetter interface {
@@ -70,13 +70,13 @@ func (c *Client) ClockSkew() time.Duration {
 
 // CurrentDocument returns the current pki.Document, or nil iff one does not
 // exist.  The caller MUST NOT modify the returned object in any way.
-func (c *Client) CurrentDocument() ([]byte, *cpki.Document) {
+func (c *Client) CurrentDocument() *cpki.Document {
 	c.WaitForCurrentDocument()
 	return c.pki.currentDocument()
 }
 
 func (c *Client) WaitForCurrentDocument() {
-	_, doc := c.pki.currentDocument()
+	doc := c.pki.currentDocument()
 	if doc != nil {
 		return
 	}
@@ -111,14 +111,14 @@ func (p *pki) skewedUnixTime() int64 {
 	return time.Now().Unix() + p.clockSkew
 }
 
-func (p *pki) currentDocument() ([]byte, *cpki.Document) {
+func (p *pki) currentDocument() *cpki.Document {
 	now, _, _ := epochtime.FromUnix(p.skewedUnixTime())
 	if d, _ := p.docs.Load(now); d != nil {
 		cached := d.(*CachedDoc)
-		return cached.Blob, cached.Doc
+		return cached.Doc
 	}
 
-	return nil, nil
+	return nil
 }
 
 func (p *pki) worker() {
@@ -205,15 +205,6 @@ func (p *pki) worker() {
 	// NOTREACHED
 }
 
-func stripSignatures(doc *cpki.Document) []byte {
-	doc.Signatures = nil
-	certified, err := doc.MarshalBinary()
-	if err != nil {
-		panic(err)
-	}
-	return certified
-}
-
 func (p *pki) updateDocument(epoch uint64) error {
 	pkiCtx, cancelFn := context.WithCancel(context.Background())
 	p.Go(func() {
@@ -225,8 +216,7 @@ func (p *pki) updateDocument(epoch uint64) error {
 		}
 	})
 
-	//docBlob, d, err := p.getDocument(pkiCtx, epoch)
-	_, d, err := p.getDocument(pkiCtx, epoch)
+	d, err := p.getDocument(pkiCtx, epoch)
 	cancelFn()
 	if err != nil {
 		p.log.Warningf("Failed to fetch PKI for epoch %v: %v", epoch, err)
@@ -237,13 +227,12 @@ func (p *pki) updateDocument(epoch uint64) error {
 		panic("Sphinx Geometry mismatch!")
 	}
 	p.docs.Store(epoch, &CachedDoc{
-		Doc:  d,
-		Blob: stripSignatures(d),
+		Doc: d,
 	})
 	return nil
 }
 
-func (p *pki) getDocument(ctx context.Context, epoch uint64) ([]byte, *cpki.Document, error) {
+func (p *pki) getDocument(ctx context.Context, epoch uint64) (*cpki.Document, error) {
 	p.log.Debug("getDocument")
 	var d *cpki.Document
 	var err error
@@ -253,33 +242,34 @@ func (p *pki) getDocument(ctx context.Context, epoch uint64) ([]byte, *cpki.Docu
 	switch err {
 	case nil:
 	case cpki.ErrNoDocument:
-		return nil, nil, err
+		return nil, err
 	default:
 		p.log.Infof("Failed to fetch PKI doc for epoch %v from Provider: %v", epoch, err)
-		return nil, nil, err
+		return nil, err
 	}
 
 	switch resp.ErrorCode {
 	case commands.ConsensusOk:
 	case commands.ConsensusGone:
-		return nil, nil, cpki.ErrNoDocument
+		return nil, cpki.ErrNoDocument
 	case commands.ConsensusNotFound:
-		return nil, nil, errConsensusNotFound
+		return nil, errConsensusNotFound
 	default:
-		return nil, nil, fmt.Errorf("client/pki: GetConsensus failed: %v", resp.ErrorCode)
+		return nil, fmt.Errorf("client/pki: GetConsensus failed: %v", resp.ErrorCode)
 	}
 
 	d, err = p.c.PKIClient.Deserialize(resp.Payload)
 	if err != nil {
 		p.log.Errorf("Failed to deserialize consensus received from provider: %v", err)
-		return nil, nil, cpki.ErrNoDocument
+		return nil, cpki.ErrNoDocument
 	}
+	d.Signatures = nil
 	if d.Epoch != epoch {
 		p.log.Errorf("BUG: Provider returned document for incorrect epoch: %v", d.Epoch)
-		return nil, nil, fmt.Errorf("BUG: Provider returned document for incorrect epoch: %v", d.Epoch)
+		return nil, fmt.Errorf("BUG: Provider returned document for incorrect epoch: %v", d.Epoch)
 	}
 
-	return resp.Payload, d, err
+	return d, err
 }
 
 func (p *pki) pruneDocuments(now uint64) {

@@ -28,22 +28,6 @@ import (
 
 const MessageIDLength = 16
 
-// ThinResponse is used to encapsulate a message response
-// that are passed to the client application.
-type ThinResponse struct {
-
-	// SURBID, a unique indentifier for this response,
-	// which should precisely match the application's chosen
-	// SURBID of the sent message.
-	SURBID *[sConstants.SURBIDLength]byte
-
-	// ID is the unique ID for the corresponding sent message.
-	ID *[MessageIDLength]byte
-
-	// Payload is the decrypted payload plaintext.
-	Payload []byte
-}
-
 // ThinClient is the client that handles communication between the mixnet application
 // and the client daemon. It does not do any encryption or decryption or checking
 // of cryptographic signatures; those responsibilities are left to the client daemon
@@ -166,7 +150,7 @@ func (t *ThinClient) Dial() error {
 	if message2.NewPKIDocumentEvent == nil {
 		panic("bug: thin client protocol sequence violation")
 	}
-	t.parsePKIDoc(message2.NewPKIDocumentEvent.Payload)
+	t.setPKIDoc(message2.NewPKIDocumentEvent.Document)
 	t.Go(t.eventSinkDrain)
 	t.Go(t.worker)
 	t.log.Debug("Dial end")
@@ -262,12 +246,12 @@ func (t *ThinClient) worker() {
 			}
 		case message.NewPKIDocumentEvent != nil:
 			t.log.Debug("NewPKIDocumentEvent")
-			doc, err := t.parsePKIDoc(message.NewPKIDocumentEvent.Payload)
+			err := t.setPKIDoc(message.NewPKIDocumentEvent.Document)
 			if err != nil {
 				t.log.Fatalf("parsePKIDoc %s", err)
 			}
 			event := &NewDocumentEvent{
-				Document: doc,
+				Document: message.NewPKIDocumentEvent.Document,
 			}
 			select {
 			case t.eventSink <- event:
@@ -358,17 +342,11 @@ func (t *ThinClient) eventSinkDrain() {
 	}
 }
 
-func (t *ThinClient) parsePKIDoc(payload []byte) (*cpki.Document, error) {
-	doc := &cpki.Document{}
-	err := doc.UnmarshalBinary(payload)
-	if err != nil {
-		t.log.Errorf("failed to unmarshal CBOR PKI doc: %s", err.Error())
-		return nil, err
-	}
+func (t *ThinClient) setPKIDoc(doc *cpki.Document) error {
 	t.pkidocMutex.Lock()
 	t.pkidoc = doc
 	t.pkidocMutex.Unlock()
-	return doc, nil
+	return nil
 }
 
 // PKIDocument returns the thin client's current reference to the PKI doc

@@ -94,7 +94,7 @@ func (l *listener) worker() {
 func (l *listener) onNewConn(conn net.Conn) {
 	l.log.Debug("onNewConn begin")
 	// make sure we can serve a document before anything else
-	docBlob, doc := l.client.CurrentDocument()
+	doc := l.client.CurrentDocument()
 	if doc == nil {
 		l.log.Error("no pki document to serve")
 		return
@@ -117,7 +117,7 @@ func (l *listener) onNewConn(conn net.Conn) {
 	l.log.Debug("getting current pki doc")
 
 	l.log.Debug("send pki doc")
-	c.sendPKIDoc(docBlob)
+	c.sendPKIDoc(doc)
 
 	l.log.Debug("onNewConn end")
 }
@@ -173,17 +173,11 @@ func (l *listener) doUpdateConnectionStatus(status error) {
 
 func (l *listener) doUpdateFromPKIDoc(doc *cpki.Document) {
 	// send doc to all thin clients
-	mydoc := doc
-	docBlob, err := mydoc.MarshalBinary()
-	if err != nil {
-		l.log.Errorf("cbor marshal failed: %s", err.Error())
-		return
-	}
-
+	var err error
 	l.connsLock.RLock()
 	conns := l.conns
 	for key, _ := range conns {
-		err = l.conns[key].sendPKIDoc(docBlob)
+		err = l.conns[key].sendPKIDoc(doc)
 		if err != nil {
 			l.log.Errorf("sendPKIDoc failure: %s", err)
 			return

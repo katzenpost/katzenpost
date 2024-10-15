@@ -362,7 +362,7 @@ func (d *Daemon) send(request *Request) {
 	if request.WithSURB {
 		now = time.Now()
 		// XXX  this is too aggressive, and must be at least the fetchInterval + rtt + some slopfactor to account for path delays
-	
+
 		fetchInterval := d.client.GetPollInterval()
 		slop := time.Second
 		duration := rtt + fetchInterval + slop
@@ -444,7 +444,7 @@ func (d *Daemon) send(request *Request) {
 func (d *Daemon) sendLoopDecoy(request *Request) {
 	// XXX FIXME consume statistics on our echo decoys for n-1 detection
 
-	_, doc := d.client.CurrentDocument()
+	doc := d.client.CurrentDocument()
 	if doc == nil {
 		panic("doc is nil")
 	}
@@ -473,7 +473,7 @@ func (d *Daemon) sendLoopDecoy(request *Request) {
 }
 
 func (d *Daemon) sendDropDecoy() {
-	_, doc := d.client.CurrentDocument()
+	doc := d.client.CurrentDocument()
 	if doc == nil {
 		panic("doc is nil")
 	}

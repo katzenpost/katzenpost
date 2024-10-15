@@ -122,14 +122,10 @@ func (e *NewDocumentEvent) String() string {
 // by the daemon to tell the thin client about new PKI document events.
 // The payload field contains a CBOR encoded PKI document, stripped of signatures.
 type NewPKIDocumentEvent struct {
-	Payload []byte `cbor:"payload"`
+	Document *cpki.Document `cbor:"document"`
 }
 
 // String returns a string representation of a NewDocumentEvent.
 func (e *NewPKIDocumentEvent) String() string {
-	doc, err := cpki.ParseDocument(e.Payload)
-	if err != nil {
-		panic(err)
-	}
-	return fmt.Sprintf("PKI Document for epoch %d", doc.Epoch)
+	return fmt.Sprintf("PKI Document for epoch %d", e.Document.Epoch)
 }

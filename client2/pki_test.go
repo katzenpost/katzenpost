@@ -87,7 +87,7 @@ func TestPKIGetDocument(t *testing.T) {
 		Epoch: epoch,
 	}
 
-	_, doc, err := p.getDocument(ctx, epoch)
+	doc, err := p.getDocument(ctx, epoch)
 	require.NoError(t, err)
 	require.NotNil(t, doc)
 	require.Equal(t, doc.Epoch, epoch)
@@ -95,7 +95,7 @@ func TestPKIGetDocument(t *testing.T) {
 	wrongEpoch := uint64(1234567)
 	ctx = context.TODO()
 
-	_, doc, err = p.getDocument(ctx, wrongEpoch)
+	doc, err = p.getDocument(ctx, wrongEpoch)
 	require.Error(t, err)
 	require.Nil(t, doc)
 }
@@ -163,7 +163,7 @@ func TestPKIUpdateDocument(t *testing.T) {
 	}
 
 	myMockPKIClient.doc = testDoc
-	_, currentDoc := p.currentDocument()
+	currentDoc := p.currentDocument()
 	require.Nil(t, currentDoc)
 
 	// panic with bad sphinx geometry hash
@@ -174,7 +174,7 @@ func TestPKIUpdateDocument(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Log("currentDocument works if Sphinx Geometry Hash is correctly set:")
-	_, doc := p.currentDocument()
+	doc := p.currentDocument()
 	require.NotNil(t, doc)
 	require.Equal(t, testDoc, doc)
 }
@@ -205,10 +205,10 @@ func TestPKIWaitForDocument(t *testing.T) {
 
 	myMockPKIClient.doc = testDoc
 
-	_, currentDoc := p.currentDocument()
+	currentDoc := p.currentDocument()
 	require.Nil(t, currentDoc)
 	c.WaitForCurrentDocument()
-	_, currentDoc = p.currentDocument()
+	currentDoc = p.currentDocument()
 	require.NotNil(t, currentDoc)
 	require.Equal(t, currentDoc, testDoc)
 }
@@ -236,7 +236,7 @@ func TestPKIClockSkew(t *testing.T) {
 		Epoch: epoch,
 	}
 
-	_, doc, err := p.getDocument(ctx, epoch)
+	doc, err := p.getDocument(ctx, epoch)
 	require.NoError(t, err)
 	require.NotNil(t, doc)
 	require.Equal(t, doc.Epoch, epoch)
@@ -302,13 +302,13 @@ func TestPKICachedDoc(t *testing.T) {
 	myMockPKIClient.doc = doc2
 	ctx := context.TODO()
 	p.consensusGetter = new(mockConsensusGetter)
-	_, doc, err := p.getDocument(ctx, doc2.Epoch)
+	doc, err := p.getDocument(ctx, doc2.Epoch)
 	require.NoError(t, err)
 	require.Equal(t, doc2, doc)
 
 	myMockPKIClient.doc = doc3
 	ctx = context.TODO()
-	_, doc, err = p.getDocument(ctx, doc3.Epoch)
+	doc, err = p.getDocument(ctx, doc3.Epoch)
 	require.NoError(t, err)
 	require.Equal(t, doc3, doc)
 }
