@@ -406,7 +406,7 @@ func FromPayload(verifier sign.PublicKey, payload []byte) (*Document, error) {
 		return nil, err
 	}
 	d := new(Document)
-	if err := d.UnmarshalBinary(payload); err != nil {
+	if err := d.Unmarshal(payload); err != nil {
 		return nil, err
 	}
 	return d, nil
@@ -426,7 +426,7 @@ func SignDocument(signer sign.PrivateKey, verifier sign.PublicKey, d *Document) 
 	}
 	// re-deserialize the recertified certificate to extract our own signature
 	// to d.Signatures etc:
-	err = d.UnmarshalBinary(recertified)
+	err = d.Unmarshal(recertified)
 	if err != nil {
 		return nil, err
 	}
@@ -466,7 +466,7 @@ func MultiSignDocument(signer sign.PrivateKey, verifier sign.PublicKey, peerSign
 func ParseDocument(b []byte) (*Document, error) {
 	// Parse the payload.
 	d := new(Document)
-	err := d.UnmarshalBinary(b)
+	err := d.Unmarshal(b)
 	if err != nil {
 		return nil, err
 	}
@@ -618,9 +618,9 @@ func (d *Document) MarshalBinary() ([]byte, error) {
 	return certified.Marshal()
 }
 
-// UnmarshalBinary implements encoding.BinaryUnmarshaler interface
+// Unmarshal implements encoding.BinaryUnmarshaler interface
 // and populates Document with detached Signatures
-func (d *Document) UnmarshalBinary(data []byte) error {
+func (d *Document) Unmarshal(data []byte) error {
 	d.Signatures = make(map[[PublicKeyHashSize]byte]cert.Signature)
 	certified, err := cert.GetCertified(data)
 	if err != nil {
