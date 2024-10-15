@@ -154,7 +154,7 @@
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">PKISignatureScheme</emphasis></para>
-                        <para>PKISignatureScheme specifies the cryptographic signature scheme that is used with the given mix network's PKI system.</para>
+                        <para>PKISignatureScheme specifies the cryptographic signature scheme that is used with the given mix network PKI system.</para>
 						<!-- https://github.com/katzenpost/hpqc/blob/main/sign/schemes/schemes.go -->
                         <para>Type: string</para>
                     </listitem>
