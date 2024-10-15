@@ -157,7 +157,7 @@ func TestDocument(t *testing.T) {
 		tmpDoc, err := ParseDocument(tmpDocBytes)
 		require.Equal(nil, err)
 		require.Equal(ddoc, tmpDoc)
-		tmpDocBytes, err := tmpDoc.MarshalBinary()
+		tmpDocBytes, err := tmpDoc.MarshalCertificate()
 		require.Equal(nil, err)
 		require.Equal(signed, tmpDocBytes)
 	}

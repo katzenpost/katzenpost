@@ -406,7 +406,7 @@ func FromPayload(verifier sign.PublicKey, payload []byte) (*Document, error) {
 		return nil, err
 	}
 	d := new(Document)
-	if err := d.UnmarshalBinary(payload); err != nil {
+	if err := d.UnmarshalCertificate(payload); err != nil {
 		return nil, err
 	}
 	return d, nil
@@ -416,7 +416,7 @@ func FromPayload(verifier sign.PublicKey, payload []byte) (*Document, error) {
 func SignDocument(signer sign.PrivateKey, verifier sign.PublicKey, d *Document) ([]byte, error) {
 	d.Version = DocumentVersion
 	// Marshal the document including any existing d.Signatures
-	certified, err := d.MarshalBinary()
+	certified, err := d.MarshalCertificate()
 	if err != nil {
 		panic("failed to marshal our own doc")
 	}
@@ -426,7 +426,7 @@ func SignDocument(signer sign.PrivateKey, verifier sign.PublicKey, d *Document) 
 	}
 	// re-deserialize the recertified certificate to extract our own signature
 	// to d.Signatures etc:
-	err = d.UnmarshalBinary(recertified)
+	err = d.UnmarshalCertificate(recertified)
 	if err != nil {
 		return nil, err
 	}
@@ -466,7 +466,7 @@ func MultiSignDocument(signer sign.PrivateKey, verifier sign.PublicKey, peerSign
 func ParseDocument(b []byte) (*Document, error) {
 	// Parse the payload.
 	d := new(Document)
-	err := d.UnmarshalBinary(b)
+	err := d.UnmarshalCertificate(b)
 	if err != nil {
 		return nil, err
 	}
@@ -601,7 +601,7 @@ func IsDocumentWellFormed(d *Document, verifiers []sign.PublicKey) error {
 
 // MarshalBinary implements encoding.BinaryMarshaler interface
 // and wraps a Document with a cert.Certificate
-func (d *Document) MarshalBinary() ([]byte, error) {
+func (d *Document) MarshalCertificate() ([]byte, error) {
 	// Serialize Document without calling this method
 	d.Version = DocumentVersion
 	payload, err := ccbor.Marshal((*document)(d))
@@ -620,7 +620,7 @@ func (d *Document) MarshalBinary() ([]byte, error) {
 
 // UnmarshalBinary implements encoding.BinaryUnmarshaler interface
 // and populates Document with detached Signatures
-func (d *Document) UnmarshalBinary(data []byte) error {
+func (d *Document) UnmarshalCertificate(data []byte) error {
 	d.Signatures = make(map[[PublicKeyHashSize]byte]cert.Signature)
 	certified, err := cert.GetCertified(data)
 	if err != nil {
@@ -646,7 +646,7 @@ func (d *Document) UnmarshalBinary(data []byte) error {
 // AddSignature will add a Signature over this Document if it is signed by verifier.
 func (d *Document) AddSignature(verifier sign.PublicKey, signature cert.Signature) error {
 	// Serialize this Document
-	payload, err := d.MarshalBinary()
+	payload, err := d.MarshalCertificate()
 	if err != nil {
 		return err
 	}
@@ -661,7 +661,7 @@ func (d *Document) AddSignature(verifier sign.PublicKey, signature cert.Signatur
 }
 
 func (d *Document) Sum256() [32]byte {
-	b, err := d.MarshalBinary()
+	b, err := d.MarshalCertificate()
 	if err != nil {
 		panic(err)
 	}

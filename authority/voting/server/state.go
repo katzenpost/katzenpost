@@ -188,7 +188,7 @@ func (s *state) fsm() <-chan time.Time {
 	case stateAcceptDescriptor:
 		signed, err := s.getVote(s.votingEpoch)
 		if err == nil {
-			serialized, err := signed.MarshalBinary()
+			serialized, err := signed.MarshalCertificate()
 			if err == nil {
 				s.sendVoteToAuthorities(serialized, s.votingEpoch)
 			} else {
@@ -209,7 +209,7 @@ func (s *state) fsm() <-chan time.Time {
 	case stateAcceptReveal:
 		signed, err := s.getCertificate(s.votingEpoch)
 		if err == nil {
-			serialized, err := signed.MarshalBinary()
+			serialized, err := signed.MarshalCertificate()
 			if err == nil {
 				s.sendCertToAuthorities(serialized, s.votingEpoch)
 			} else {
@@ -462,7 +462,7 @@ func (s *state) getThresholdConsensus(epoch uint64) (*pki.Document, error) {
 		}
 	}
 	// now see if we managed to get a threshold number of signatures
-	signedConsensus, err := ourConsensus.MarshalBinary()
+	signedConsensus, err := ourConsensus.MarshalCertificate()
 	if err != nil {
 		return nil, err
 	}
@@ -1699,7 +1699,7 @@ func (s *state) documentForEpoch(epoch uint64) ([]byte, error) {
 	// If we have a serialized document, return it.
 	if d, ok := s.documents[epoch]; ok {
 		// XXX We should cache this
-		return d.MarshalBinary()
+		return d.MarshalCertificate()
 	}
 
 	// Otherwise, return an error based on the time.
