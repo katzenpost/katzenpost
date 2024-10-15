@@ -314,7 +314,7 @@ func TestVote(t *testing.T) {
 		require.Equal(len(myVote.Signatures), 1)
 		require.NoError(err)
 		require.NotNil(myVote)
-		raw, err := myVote.MarshalBinary()
+		raw, err := myVote.MarshalCertificate()
 		require.NoError(err)
 		_, err = pki.ParseDocument(raw)
 		require.NoError(err)
