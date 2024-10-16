@@ -100,44 +100,25 @@
     -->
     <section xml:id="auth">
         <title xml:id="auth.title">Directory authorities</title>
-<!--        <para><?oxy_custom_start type="oxy_content_highlight" color="255,255,0"?>Conceptually for
-            dirauths:</para>
-        <para>- every twenty minutes talk to all other manually configured dirauths and sync any
-            information, generate signatures, make consensus documents</para>
-        <para>- listen for descriptors from entry providers, mixes, and service providers</para>
-        <para>- that’s it, they just make and serve the consensus documents</para>
-        <para>Directory authorities are responsible for achieving a consensus on the status of the
-            network, and sharing that information with other components. </para>
-        <para>Most of the mixnet papers are written with the assumption that the mixnet's PKI exists
-            and performs their functions perfectly. Our mixnet PKI is a so called Directory
-            Authority design which is inspired by the Tor's and Mixminion's Directory
-            Authority.</para>
-        <para>For more details about the design of the Katzenpost voting PKI you should see our
-            specification document:</para>
-        <itemizedlist>
-            <listitem>
-                <para>
-                    <link xlink:href="https://github.com/katzenpost/docs/blob/master/specs/pki.rst"
-                        >https://github.com/katzenpost/docs/blob/master/specs/pki.rst</link></para>
-            </listitem>
-        </itemizedlist>
-        <para>As with Katzenpost clients and mixes, this authority server uses our post quantum
-            cryptographic noise based wire protocol as described in the specification
-            document:</para>
-        <itemizedlist>
-            <listitem>
-                <para>
-                    <link
-                        xlink:href="https://github.com/katzenpost/docs/blob/master/specs/wire-protocol.rst"
-                        >https://github.com/katzenpost/docs/blob/master/specs/wire-protocol.rst</link></para>
-            </listitem>
-        </itemizedlist>
-        <para>Each authority's configuration has the public link layer key of each of it's peers for
-            authenticating the wire protocol connection.</para>
-        <para>Peers are also configured with each other's public signing key so that they may verify
-            each other's signatures on votes. The voting system is used to create a document
-            describing the collective view of the network. Mixnet clients download the consensus
-            document so that they may utilize the network to route their Sphinx packets.</para><?oxy_custom_end?>-->
+
+		<para>The public key infrastructure (PKI) protocol for Katzenpost, also known
+as the Directory Authority or dirauth, is a decentralized system of nodes
+which vote for each epoch's consensus document. If we used a BFT protocol instead
+then the dirauth system would fail when 1/3 + 1 nodes failed. Therefore we can
+say that our crash fault tolerant system is more robust because it will fail
+when 1/2 + 1 nodes fail.</para>
+		<para>The Katzenpost PKI is the security root of the entire system because all clients
+and network nodes will depend on the PKI to sign the consensus document for each epoch.
+Currently epoch duration is every 20 minutes. The consensus document is essentially a view of
+the network, it contains all the connection information and all the public cryptographic key materials
+and signatures. Each mix node signs it's descriptor and uploads it to the dirauth nodes. Each dirauth
+node signs the consensus. When clients or nodes download the consensus document they are able to verify
+the dirauth node signatures on the document.</para>
+		<para>The PKI signature scheme is fully configurable by the dir auth nodes. Currently our recommendation is to
+use a hybrid signature scheme consisting of the classical Ed25519 and the
+post quantum stateless hash based signature scheme known as Sphincs+ (with the parameters: `sphincs-shake-256f`); which is
+designated in katzenpost configurations as "Ed25519 Sphincs+" which you can see examples of below.</para>        
+
         <section xml:id="auth-config">
             <title xml:id="auth-config.title">Configuring directory authorities</title>
             <para>The following configuration is drawn from the reference implementation in
@@ -183,36 +164,52 @@ type Config struct {
                 <programlisting>[Server]
     Identifier = "auth1"
     WireKEMScheme = "xwing"
-    PKISignatureScheme = "Ed25519"
+    PKISignatureScheme = "Ed25519 Sphincs+"
     Addresses = ["tcp://127.0.0.1:30001"]
     DataDir = "/voting_mixnet/auth1"</programlisting>
                 <itemizedlist>
                     <listitem>
                         <para><emphasis role="bold">Identifier</emphasis></para>
-                        <para>Identifier is the human readable identifier for the node (eg:
-                            FQDN).</para>
+                        <para>Identifier is the human readable identifier for the node which should be unique per mixnet. It can be an FQDN but certainly doesn't have to be.</para>
                         <para>Type: string</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">WireKEMScheme</emphasis></para>
-                        <para>WireKEMScheme is the wire protocol KEM scheme to use.</para>
+                        <para>WireKEMScheme is the wire protocol KEM scheme to use. This is another configuration point where 
+                        it's possible to use post quantum cryptography to strengthen security. In this case the "Wire" protocol 
+                        refers to our PQ Noise based protocol which is how all the dir auth nodes talk to one another. PQ Noise is a 
+                        variation of the Noise protocol framework where the handshake patterns are algebraically transformed to replace
+						ECDH operations with KEM encapsulate/decapsulate operations.</para>
+						<para>Here are all the KEM scheme names currently supported by Katzenpost:
+							"x25519", "x448", "mlkem768", "sntrup4591761", "frodo640shake", "mceliece348864", "mceliece348864f",
+							"mceliece460896", "mceliece460896f", "mceliece6688128", "mceliece6688128f", "mceliece6960119", "mceliece6960119f",
+							"mceliece8192128", "mceliece8192128f", "xwing", "Kyber768-X25519", "MLKEM768-X25519", "MLKEM768-X448",
+							"CTIDH511", "CTIDH512", "CTIDH1024", "CTIDH2048", "CTIDH512-X25519", "CTIDH512-X25519"
+						</para>						
                         <para>Type: string</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">PKISignatureScheme</emphasis></para>
-                        <para>PKISignatureScheme specifies the cryptographic signature scheme</para>
+                        <para>PKISignatureScheme specifies the cryptographic signature scheme which will be used by all components of the mix network
+                        when interacting with the PKI system. Mix nodes will sign their descriptors using this signature scheme. Likewise PKI documents
+                        will be signed by the dir auth nodes using this signature scheme.</para>
+                        <para>Here are all the signature scheme names currently supported by Katzenpost:
+                        	"ed25519", "ed448", "Ed25519 Sphincs+", "Ed448-Sphincs+", "Ed25519-Dilithium2", "Ed448-Dilithium3"
+                        	</para>
                         <para>Type: string</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">Addresses</emphasis></para>
-                        <para>// Addresses are the IP address/port combinations that the server will
-                            bind</para>
-                        <para> // to for incoming connections.</para>
+                        <para>Addresses specifies a list of one or more Address URLs in a format that contains the transport protocol,
+                        IP address and port number that the server will bind to for incoming connections.
+                        Currently Katzenpost supports URLs with that start with either "tcp://" or "quic://" such as: ["tcp://192.168.1.1:30001"] and ["quic://192.168.1.1:40001"]
+                        </para>
                         <para>Type: []string</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">DataDir</emphasis></para>
-                        <para>DataDir is the absolute path to the server's state files.</para>
+                        <para>DataDir is the absolute path to the directory authority server's state directory where the persistence.db will be written to disk AND
+                        where the server's cryptographic key materials will be written to disk when started with the "-g" commmandline option.</para>
                         <para>Type: string</para>
                     </listitem>
                 </itemizedlist>
@@ -221,66 +218,98 @@ type Config struct {
             <section xml:id="auth-authorities-section-config">
                 <title xml:id="auth-authorities-section-config.title">Authorities section</title>
                 <!--https://github.com/katzenpost/katzenpost/blob/c255fbbf421d5d9820553c18dc5dc6c9881ad547/authority/voting/server/config/config.go#L266-->
-                <para>An Authorities section is configured for each peer authority.</para>
+                <para>An Authorities section is configured for each peer authority. We recommend using TOML's muli-line quotes for key materials.</para>
                 <programlisting>[[Authorities]]
     Identifier = "auth1"
-    IdentityPublicKey = "-----BEGIN ED25519 PUBLIC KEY-----\n/v3qYgh2TvV5ZqEVgwcjJHG026KlRV6HC16xZS3TkiI=\n-----END ED25519 PUBLIC KEY-----\n"
+    IdentityPublicKey = """
+-----BEGIN ED25519 PUBLIC KEY-----
+dYpXpbozjFfqhR45ZC2q97SOOsXMANdHaEdXrP42CJk=
+-----END ED25519 PUBLIC KEY-----
+"""
     PKISignatureScheme = "Ed25519"
-    LinkPublicKey = "-----BEGIN XWING PUBLIC KEY-----\nJeFaZoYQEOO71zPFFWjL7DyDp4gckGiiqLCB2RNwMacZ7wuroYugiXyir+eqvkpe\nw5k3sqm9LlS5xaEqsmJpRxYCOmaHdXARwNA6rOFwEANrZFO>
+    LinkPublicKey = """
+-----BEGIN XWING PUBLIC KEY-----
+ooQBPYNdmfwnxXmvnljPA2mG5gWgurfHhbY87DMRY2tbMeZpinJ5BlSiIecprnmm
+QqxcS9o36IS62SVMlOUkw+XEZGVvc9wJqHpgEgVJRAs1PCR8cUAdM6QIYLWt/lkf
+SPKDCtZ3GiSIOzMuaglo2tarIPEv1AY7r9B0xXOgSKMkGyBkCfw1VBZf46MM26NL
+opKx+rAKBzjKBJgGg9AHt9rNQsBbCVFBO+KKbpHHXFCBztK1Hhei3LeeYxcqL4bC
+Rzi2kfBvQLPNzIuHOktKX7m39CxMByMNm4qL6dSVbtZaMOenpUlsIHOR5vyF2bgX
+syRS3WnPRaIOarkMXUwJpzasNzuPUSAmJyaAQVwgrTSJyXp91usF6wBHKApqlDVY
+dldqH7O90EI1tYNiOYpBCgwGBIK+xOkjoVNY91B/PVbA5ngcXgt8xQp02WXF1lVN
++ixu2XF8ndJXtLmlTIMUb0YwHsEo9UqdN7yLMPqcVScqR+ZKyCpaIPS+dpF20AAu
+fvVVlxKVLqonUkJLCMgR/4morUOXVHwRgkKr0mIuw9RTWwSlSGxasFiVFZM5p6kS
+ElIgPlCX94xV52BjcerPQ1R2TJdlVdWgLUAO7UNhyETCGrdxjxZSYmxNjfsOLHk7
+qFNNDhUqHBjJmYOSDis0qHNXW8oZ9SF6pFN9NlctH8Uq10c/fNltykEbTkgLdMJP
+phWWVQWD1YIU+/ktO5ZNVIVK/CHOqdc41+mRyxh/OmbEWMaaicuijLNR3KV9QoHG
+9JWw9RtrPeE+jbgUX0g0asFf0nibfWqdV5QfAfwV/shYuIJR4nZMb6B4R9t8wYd0
+gCSZg1M7gJW1J5B17cPM6+OCz2JaYhgAHfvJhSYK3zGzWWvGWvKTJrSTjiIhX8wM
+H/KiX5U8+nkWPDiu/nqyRVej8/ELYvg7T2R7tKJzB0Gr5GUFd3B1TzvAcIRBl+yd
+9ma5tRE44cu1yONuc1N8ITp8xqezSjwdavoMeuphryd6xbacZCVCcnM2R5mGOAhI
+xzQWA5teHxoBTnliRQq1HriKX8N8Ogq3GPYu0Lue+MwEkkRkxSJdNpSLE/yzOQkf
+DrlBbbURIfe1T6aeA1SuXeacTzqd6lfPWvjCgXMYriwhAazKwgS+WwcXd5RKbWEN
+PIISgRavtoahEdOVSJJbVMUYptA3+CcY9eEi/rWOc1RgTWGNtWW0FYnFyiq6UdPM
+NiO/z7S9uJJI/2wWMlJi+OoTx9cf3mjIMOPLkzEOhpVRhCZvcSvFIoF6ItcETnda
+HmmOFwFg2reqlPioBORUufk7zdhs0MuuMYlaG+E0OqxTOKiZg0qbgMZqtOlsXkp8
+QdY8R/W4ePiVAI2iZnMzEqMl3LLEDlRdMOkBYzOkR2GSvpYv6tetgoNAu8vFkpc6
+Rma3y7KnihWaYhwEFbEqV2kD2GO9cMV+AcFvuCE9dVGVSatdxsSNX6ZXaFGlmHCp
+gHtNyQJnXski52O03JpZRIhR40pFOhAAcMMAZDpMTVoxlcdR6WA4SlBiSceeJBgY
+Yp9PlGhCimx9am99TrdLoLCdTHB6oowt8tss3POpIOxaSlguyeym/sBhkUrnXOgN
+ldMtDsvvc9KUfE4I0+c+XQ==
+-----END XWING PUBLIC KEY-----
+    """
     WireKEMScheme = "xwing"
-    Addresses = ["127.0.0.1:30001"]
-
-[[Authorities]]
-    Identifier = "auth2"
-    IdentityPublicKey = "-----BEGIN ED25519 PUBLIC KEY-----\n60KQRhG7njt+kLQuwWlfRzJeOp4elM1/k26U/k52SjI=\n-----END ED25519 PUBLIC KEY-----\n"
-    PKISignatureScheme = "Ed25519"
-    LinkPublicKey = "-----BEGIN XWING PUBLIC KEY-----\nHVR2m7i6G6cf1qxUvyEr3KC7JvAMv5Or1rgzvUcllnmhN8BGmOmWhrWLggBNsyyS\nx+gbkfczC8WZr4GDAXOmGchhEYRy9opjqxEBENW9IHU1Dvh>
-    WireKEMScheme = "xwing"
-    Addresses = ["127.0.0.1:30002"]
-
-[[Authorities]]
-    Identifier = "auth3"
-    IdentityPublicKey = "-----BEGIN ED25519 PUBLIC KEY-----\naZUXqznyLO2mKDceIDs0obU6GAFZa3eKUDXo2RyWpBk=\n-----END ED25519 PUBLIC KEY-----\n"
-    PKISignatureScheme = "Ed25519"
-    LinkPublicKey = "-----BEGIN XWING PUBLIC KEY-----\nEZukXtZwHTjGj7tCI0kmUcq0QEtA4HMIz2OPiXQVeaK9XVBDNQUKq8iGRvzJAodM\nmJiEXYw6vvTJhPaik4OgMpZvwQYNn9BmwrcE7VxQfuaD2Zc>
-    WireKEMScheme = "xwing"
-    Addresses = ["127.0.0.1:30003"]</programlisting>
+    Addresses = ["tcp://127.0.0.1:30001"]
+</programlisting>
                 <itemizedlist>
                     <listitem>
                         <para><emphasis role="bold">Identifier</emphasis></para>
-                        <para>Human readable identifier for the node (eg: FQDN)</para>
+                        <para>Identifier is the human readable identifier for the node which should be unique per mixnet. It can be an FQDN but certainly doesn't have to be.</para>
                         <para>Type: string</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">IdentityPublicKey</emphasis></para>
-                        <para>String in PEM format containing the public identity key key.</para>
-                        <para>Type: sign.PublicKey</para>
+                        <para>String in PEM format containing the public identity key. The node's public identity key is
+                        the node's permanent identifier and is used to verify cryptographic signatures produce by node's private identity key.</para>
+                        <para>Type: string</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">PKISignatureScheme</emphasis></para>
-                        <para>PKISignatureScheme specifies the cryptographic signature scheme</para>
+                        <para>PKISignatureScheme specifies the cryptographic signature scheme used by all of the directory authority nodes.
+                        	  This PKISignatureScheme must match the scheme specified in the Server section of the configuration.
+                        </para>
                         <para>Type: string</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">LinkPublicKey</emphasis></para>
                         <para>LinkPublicKeyPem is string containing the PEM format of the peer's
-                            public link layer key.</para>
-                        <para>Type: kem.PublicKey</para>
-                    </listitem>
-                    <listitem>
-                        <para><emphasis role="bold">WireKEMScheme</emphasis></para>
-                        <para>WireKEMScheme is the wire protocol KEM scheme to use.</para>
+                            public link layer key. The Katzenpost "link layer" protocol is the PQ Noise based protocol
+                            which is sometimes also referred to as the "wire protocol". The type of this link public key
+                            must match the specified WireKEMScheme. Our wire protocol is used to secure the transport
+                            between nodes only and in this case it's used between directory authority nodes when they
+                            communicate with each other for the voting rounds and it's also the protocol that clients
+                            use to retrieve published PKI documents from the dir auth nodes.</para>
                         <para>Type: string</para>
                     </listitem>
                     <listitem>
+                        <para><emphasis role="bold">WireKEMScheme</emphasis></para>
+                        <para>WireKEMScheme is the wire protocol KEM scheme to use. This is another configuration point where 
+                        it's possible to use post quantum cryptography to strengthen security. In this case the "Wire" protocol 
+                        refers to our PQ Noise based protocol which is how all the dir auth nodes talk to one another. PQ Noise is a 
+                        variation of the Noise protocol framework where the handshake patterns are algebraically transformed to replace
+						ECDH operations with KEM encapsulate/decapsulate operations.</para>
+						<para>Here are all the KEM scheme names currently supported by Katzenpost:
+							"x25519", "x448", "mlkem768", "sntrup4591761", "frodo640shake", "mceliece348864", "mceliece348864f",
+							"mceliece460896", "mceliece460896f", "mceliece6688128", "mceliece6688128f", "mceliece6960119", "mceliece6960119f",
+							"mceliece8192128", "mceliece8192128f", "xwing", "Kyber768-X25519", "MLKEM768-X25519", "MLKEM768-X448",
+							"CTIDH511", "CTIDH512", "CTIDH1024", "CTIDH2048", "CTIDH512-X25519", "CTIDH512-X25519"
+						</para>						
+                        <para>Type: string</para>                    </listitem>
+                    <listitem>
                         <para><emphasis role="bold">Addresses</emphasis></para>
-                        <para><?oxy_custom_start type="oxy_content_highlight" color="235,192,230"?>One
-                            or more IP addresses that correspond to local network interfaces to
-                            listen for connections on. These can be specified as IPv4 or IPv6
-                            addresses.</para><?oxy_custom_end?>
-                        <para>// Addresses are the IP address/port combinations that the peer
-                            authority</para>
-                        <para> // uses for the Directory Authority service.</para>
+                        <para>Addresses specifies a list of one or more Address URLs in a format that contains the transport protocol,
+                        IP address and port number that the server will bind to for incoming connections.
+                        Currently Katzenpost supports URLs with that start with either "tcp://" or "quic://" such as: ["tcp://192.168.1.1:30001"] and ["quic://192.168.1.1:40001"]
+                        </para>
                         <para>Type: []string</para>
                     </listitem>
                 </itemizedlist>
@@ -311,54 +340,41 @@ type Config struct {
                 <itemizedlist>
                     <listitem>
                         <para><emphasis role="bold">SendRatePerMinute</emphasis></para>
-                        <para><?oxy_custom_start type="oxy_content_highlight" color="235,192,230"?>
-                            is the rate limiter maximum allowed rate of packets per
-                            client.<?oxy_custom_end?></para>
+                        <para>
+                            SendRatePerMinute is the maximum allowed rate of packets per
+                            client per gateway node. Rate limiting is done on the gateway nodes.</para>
                         <para>SendRatePerMinute is the rate per minute.</para>
                         <para>Type: uint64</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">Mu</emphasis></para>
-                        <para>
-                            <?oxy_custom_start type="oxy_content_highlight" color="235,192,230"?>is
-                            the inverse of the mean of the exponential distribution that the Sphinx
-                            packet per-hop mixing delay will be sampled
-                            from.<?oxy_custom_end?></para>
-                        <para>// Mu is the inverse of the mean of the exponential
-                            distribution</para>
-                        <para> // that is used to select the delay for each hop.</para>
+                        <para>Mu is the inverse of the mean of the exponential distribution that the Sphinx
+                            packet per-hop mixing delay will be sampled from.
+                        	Mu is the inverse of the mean of the exponential
+                            distribution that is used to select the delay for each hop.</para>
                         <para>Type: float64</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">MuMaxDelay</emphasis></para>
-                        <para><?oxy_custom_start type="oxy_content_highlight" color="235,192,230"?>
-                            is the maximum Sphinx packet per-hop mixing delay in
-                            milliseconds.</para>
-                        <para><?oxy_custom_end?>MuMaxDelay sets the maximum delay for
-                            Mu<?oxy_custom_start type="oxy_content_highlight" color="235,192,230"?></para><?oxy_custom_end?>
+                        <para>MuMaxDelay is the maximum Sphinx packet per-hop mixing delay in
+                            milliseconds. MuMaxDelay sets the maximum delay for Mu.</para>
                         <para>Type:
                             uint64<?oxy_custom_start type="oxy_content_highlight" color="235,192,230"?></para>
                     </listitem><?oxy_custom_end?>
                     <listitem>
                         <para><emphasis role="bold">LambdaP</emphasis></para>
-                        <para><?oxy_custom_start type="oxy_content_highlight" color="235,192,230"?>
-                            LambdaP is the inverse of the mean of the exponential distribution that
+                        <para>LambdaP is the inverse of the mean of the exponential distribution that
                             clients will sample to determine the time interval between sending
                             messages from it's FIFO egress queue or drop decoy messages if the queue
-                            is empty.<?oxy_custom_end?></para>
-                        <para>// LambdaP is the inverse of the mean of the exponential
-                            distribution</para>
-                        <para> // that is used to select the delay between clients sending from
-                            their egress</para>
-                        <para> // FIFO queue or drop decoy message.</para>
+                            is empty. LambdaP is the inverse of the mean of the exponential
+                            distribution that is used to select the delay between clients sending from
+                            their egress FIFO queue or drop decoy message.</para>
                         <para>Type: float64</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">LambdaPMaxDelay</emphasis></para>
-                        <para>
-                            <?oxy_custom_start type="oxy_content_highlight" color="235,192,230"?>is
-                            the maximum send interval for LambdaP in
-                            milliseconds<?oxy_custom_end?></para>
+                        <para>LambdaPMaxDelay is the maximum send interval for LambdaP in
+                            milliseconds</para>
                         <para>LambdaPMaxDelay sets the maximum delay for LambdaP.</para>
                         <para>Type: uint64</para>
                     </listitem>
@@ -380,54 +396,40 @@ type Config struct {
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">LambdaD</emphasis></para>
-                        <para>
-                            <?oxy_custom_start type="oxy_content_highlight" color="235,192,230"?>is
-                            the inverse of the mean of the exponential distribution that clients
+                        <para>LambdaD is the inverse of the mean of the exponential distribution that clients
                             will sample to determine the time interval between sending decoy drop
-                            messages.<?oxy_custom_end?></para>
-                        <para>// LambdaD is the inverse of the mean of the exponential
-                            distribution</para>
-                        <para> // that is used to select the delay between clients sending deop
+                            messages. LambdaD is the inverse of the mean of the exponential
+                            distribution that is used to select the delay between clients sending deop
                             decoys.</para>
                         <para>Type: float64</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">LambdaDMaxDelay</emphasis></para>
-                        <para><?oxy_custom_start type="oxy_content_highlight" color="235,192,230"?>
-                            is the maximum send interval in milliseconds.<?oxy_custom_end?></para>
-                        <para>LambdaDMaxDelay sets the maximum delay for LambdaP.</para>
+                        <para>LambdaDMaxDelay is the maximum send interval in milliseconds.
+                        LambdaDMaxDelay sets the maximum delay for LambdaP.</para>
                         <para>Type: uint64</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">LambdaM</emphasis></para>
-                        <para>
-                            <?oxy_custom_start type="oxy_content_highlight" color="235,192,230"?>is
-                            the inverse of the mean of the exponential distribution that mixes will
+                        <para>LambdaM is the inverse of the mean of the exponential distribution that mixes will
                             sample to determine send timing of mix loop decoy
-                            traffic.<?oxy_custom_end?></para>
-                        <para>// LambdaM is the inverse of the mean of the exponential
-                            distribution</para>
-                        <para> // that is used to select the delay between sending mix node
+                            traffic. LambdaM is the inverse of the mean of the exponential
+                            distribution that is used to select the delay between sending mix node
                             decoys.</para>
                         <para>Type: float64</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">LambdaG</emphasis></para>
-                        <para>// LambdaG is the inverse of the mean of the exponential
-                            distribution</para>
-                        <para> // that is used to select the delay between sending gateway node
-                            decoys.</para>
-                        <para> //</para>
-                        <para> // WARNING: This is not used via the TOML config file; this field is
-                            only</para>
-                        <para> // used internally by the dirauth server state machine.</para>
+                        <para>LambdaG is the inverse of the mean of the exponential
+                            distribution that is used to select the delay between sending gateway node
+                            decoys. WARNING: DO NOT SET THIS VALUE. This is not used via the TOML config file; this field is
+                            used internally by the dirauth server state machine.</para>
                         <para>Type: float64</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">LambdaMMaxDelay</emphasis></para>
-                        <para><?oxy_custom_start type="oxy_content_highlight" color="235,192,230"?>
-                            sets the maximum delay for LambdaM</para><?oxy_custom_end?>
-                        <para>LambdaMMaxDelay sets the maximum delay for LambdaP.</para>
+                        <para>LambdaMMaxDelay sets the maximum delay for LambdaM
+                        LambdaMMaxDelay sets the maximum delay for LambdaP.</para>
                         <para>Type: uint64</para>
                     </listitem>
                     <listitem>
@@ -493,8 +495,8 @@ type Config struct {
                     </listitem><?oxy_custom_end?>
                     <listitem>
                         <para><emphasis role="bold">IdentityPublicKeyPem</emphasis></para>
-                        <para>Path and file name of a mix node's public EdDSA signing key, also
-                            known as the identity key, in Base16 or Base64 format.</para>
+                        <para>Path and file name of a mix node's public identity signing key, also
+                            known as the identity key, in PEM format.</para>
                         <para>Type: string</para>
                     </listitem>
                 </itemizedlist>
@@ -516,8 +518,8 @@ type Config struct {
                     </listitem><?oxy_custom_end?>
                     <listitem>
                         <para><emphasis role="bold">IdentityPublicKeyPem</emphasis></para>
-                        <para>Path and file name of a gateway node's public EdDSA signing key, also
-                            known as the identity key, in Base16 or Base64 format.</para>
+                        <para>Path and file name of a gateway node's public identity signing key, also
+                            known as the identity key, in PEM format.</para>
                         <para>Type: string</para>
                     </listitem>
                 </itemizedlist>
@@ -539,8 +541,8 @@ type Config struct {
                     </listitem><?oxy_custom_end?>
                     <listitem>
                         <para><emphasis role="bold">IdentityPublicKeyPem</emphasis></para>
-                        <para>Path and file name of a service node's public EdDSA signing key, also
-                            known as the identity key, in Base16 or Base64 format.</para>
+                        <para>Path and file name of a service node's public identity signing key, also
+                            known as the identity key, in PEM format.</para>
                         <para>Type: string</para>
                     </listitem>
                 </itemizedlist>
@@ -577,14 +579,43 @@ type Config struct {
                     </listitem><?oxy_custom_end?>
                     <listitem>
                         <para><emphasis role="bold">IdentityPublicKeyPem</emphasis></para>
-                        <para>Path and file name of a mix node's public EdDSA signing key, also
-                            known as the identity key, in Base16 or Base64 format.</para>
+                        <para>Path and file name of a mix node's public identity signing key, also
+                            known as the identity key, in PEM format.</para>
                         <para>Type: string</para>
                     </listitem>
                 </itemizedlist>
             </section>
             <section xml:id="auth-sphinx-config">
                 <title xml:id="auth-sphinx-config.title">SphinxGeometry section</title>
+                <para>WARNING: The Sphinx Geometry section of the configuration MUST be programmatically generated.
+                Do NOT modify the geometry by hand.
+                </para>
+                <para>The original Sphinx paper introduces the Sphinx nested encrypted packet format
+using a NIKE (NIKE: non-interactive key exchange). NIKE Sphinx can be a hybrid post quantum construction simply by using a hybrid NIKE.
+Our Sphinx implementation also can optionally use a KEM (KEM: key encapsulation mechanism) instead of a NIKE, however the trade-off is that
+the packet's header will take up a lot of overhead because it must store a KEM ciphertext for each hop.
+Katzenpost has a completely configurable Sphinx geometry which allows for any KEM or NIKE to be used.
+                </para>
+                <para>
+                The Sphinx cryptographic packet format also uses these additional cryptographic primitives, the current Katzenpost
+selection is:
+                </para>
+                <itemizedlist>
+                <listitem><para>stream cipher: CTR-AES256</para>
+                </listitem>
+                <listitem><para>MAC: HMAC-SHA256</para>
+                </listitem>
+                <listitem><para>KDF: HKDF-SHA256</para>
+                </listitem>
+                <listitem><para>SPRP: AEZv5</para>
+                </listitem>
+                </itemizedlist>
+                
+				<para>
+In Katzenpost the dirauths select the Sphinx geometry, each dirauth must agree with the other dirauths.
+They publish the hash of the Sphinx Geometry in the PKI document so that the rest of the network entities
+can validate their Sphinx Geometry.
+                </para>
                 &sphinxgeometry;
             </section>
         </section>
@@ -1038,31 +1069,26 @@ https://github.com/katzenpost/katzenpost/blob/main/genconfig/main.go#L207 define
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">Endpoint</emphasis></para>
-                        <para>// Endpoint is the provider side endpoint that the agent will
-                            accept</para>
-                        <para> // requests at. While not required by the spec, this server
-                            only</para>
-                        <para> // supports Endpoints that are lower-case local-parts of an
-                            e-mail</para>
-                        <para> // address.</para>
+                        <para>Endpoint is the provider side endpoint that the agent will
+                            accept requests at. While not required by the spec, this server
+                            only supports Endpoints that are lower-case local-parts of an
+                            e-mail address.</para>
                         <para>Type: string</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">Command</emphasis></para>
-                        <para>// Command is the full file path to the external plugin program</para>
-                        <para> // that implements this Kaetzchen service.</para>
+                        <para>Command is the full file path to the external plugin program
+                        that implements this Kaetzchen service.</para>
                         <para>Type: string</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">MaxConcurrency</emphasis></para>
-                        <para>// MaxConcurrency is the number of worker goroutines to start</para>
-                        <para> // for this service.</para>
+                        <para>MaxConcurrency is the number of worker goroutines to start for this service.</para>
                         <para>Type: int</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">Config</emphasis></para>
-                        <para>The extra per agent arguments to be passed to the agent's
-                            initialization routine.</para>
+                        <para>The extra per agent arguments to be passed to the agent's initialization routine.</para>
                         <para>Type: map[string]interface{}</para>
                     </listitem>
                     <listitem>
