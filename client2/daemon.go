@@ -362,9 +362,9 @@ func (d *Daemon) send(request *Request) {
 	if request.WithSURB {
 		now = time.Now()
 		// XXX  this is too aggressive, and must be at least the fetchInterval + rtt + some slopfactor to account for path delays
-	
+
 		fetchInterval := d.client.GetPollInterval()
-		slop := time.Second
+		slop := 5 * time.Second
 		duration := rtt + fetchInterval + slop
 		replyArrivalTime := now.Add(duration)
 
