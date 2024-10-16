@@ -108,9 +108,16 @@ func (s *katzenpost) genClient2Cfg() error {
 	os.Mkdir(filepath.Join(s.outDir, "client2"), 0700)
 	cfg := new(cConfig2.Config)
 
-	//cfg.ListenNetwork = "unixpacket"
+	// abstract unix domain sockets only work on linux,
+	//cfg.ListenNetwork = "unix"
 	//cfg.ListenAddress = "@katzenpost"
+	// therefore if unix sockets are requires on non-linux platforms
+	// the solution is to specify a unix socket file path instead of
+	// and abstract unix socket name:
+	//cfg.ListenNetwork = "unix"
+	//cfg.ListenAddress = "/tmp/katzenzpost.socket"
 
+	// Use TCP by default so that the CI tests pass on all platforms
 	cfg.ListenNetwork = "tcp"
 	cfg.ListenAddress = "localhost:64331"
 
@@ -242,13 +249,13 @@ func (s *katzenpost) genNodeConfig(isGateway, isServiceNode bool, isVoting bool)
 	cfg.Server.PKISignatureScheme = s.pkiSignatureScheme.Name()
 	cfg.Server.Identifier = n
 	if isGateway {
-		cfg.Server.Addresses = []string{fmt.Sprintf("tcp://127.0.0.1:%d", s.lastPort), fmt.Sprintf("tcp://127.0.0.1:%d", s.lastPort+1),
-		fmt.Sprintf("onion://thisisjustatestoniontoverifythatconfigandpkiworkproperly.onion:4242")}
-		cfg.Server.BindAddresses = []string{fmt.Sprintf("tcp://127.0.0.1:%d", s.lastPort), fmt.Sprintf("tcp://127.0.0.1:%d", s.lastPort+1)}
+		cfg.Server.Addresses = []string{fmt.Sprintf("tcp://127.0.0.1:%d", s.lastPort), fmt.Sprintf("quic://[::1]:%d", s.lastPort+1),
+			fmt.Sprintf("onion://thisisjustatestoniontoverifythatconfigandpkiworkproperly.onion:4242")}
+		cfg.Server.BindAddresses = []string{fmt.Sprintf("tcp://127.0.0.1:%d", s.lastPort), fmt.Sprintf("quic://[::1]:%d", s.lastPort+1)}
 		s.lastPort += 2
 	} else {
-		cfg.Server.Addresses = []string{fmt.Sprintf("tcp://127.0.0.1:%d", s.lastPort)}
-		s.lastPort += 1
+		cfg.Server.Addresses = []string{fmt.Sprintf("tcp://127.0.0.1:%d", s.lastPort), fmt.Sprintf("quic://[::1]:%d", s.lastPort+1)}
+		s.lastPort += 2
 	}
 	cfg.Server.DataDir = filepath.Join(s.baseDir, n)
 
