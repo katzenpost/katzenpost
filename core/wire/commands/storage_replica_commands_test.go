@@ -115,3 +115,24 @@ func TestReplicaWrite(t *testing.T) {
 	blob2 := readCmd2.ToBytes()
 	require.Equal(t, blob1, blob2)
 }
+
+func TestPostReplicaDescriptor(t *testing.T) {
+	nike := ecdh.Scheme(rand.Reader)
+	forwardPayloadLength := 1234
+	nrHops := 5
+	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
+	cmds := NewStorageReplicaCommands(geo)
+
+	d := PostReplicaDescriptor{
+		Epoch:   123,
+		Payload: []byte("hello"),
+	}
+	blob := d.ToBytes()
+
+	rawcmd, err := cmds.FromBytes(blob)
+	require.NoError(t, err)
+	cmd := rawcmd.(*PostReplicaDescriptor)
+
+	require.Equal(t, d.Epoch, cmd.Epoch)
+	require.Equal(t, d.Payload, cmd.Payload)
+}

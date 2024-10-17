@@ -303,6 +303,8 @@ func (c *Commands) FromBytes(b []byte) (Command, error) {
 	// Handle the commands that require actual parsing.
 	b = b[:cmdLen]
 	switch commandID(id) {
+	case postReplicaDescriptor:
+		return postReplicaDescriptorFromBytes(b)
 	case replicaRead:
 		return replicaReadFromBytes(b, c)
 	case replicaWrite:
