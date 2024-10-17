@@ -38,9 +38,13 @@ func (c *GetConsensus) ToBytes() []byte {
 	binary.BigEndian.PutUint64(out[6:14], c.Epoch)
 	if c.MixnetTransmission {
 		// only pad if we are sending over the mixnet
-		return padToMaxCommandSize(out, c.Cmds.maxMessageLen(c))
+		return c.Cmds.padToMaxCommandSize(out, true)
 	}
 	return out
+}
+
+func (c *GetConsensus) Length() int {
+	return cmdOverhead + getConsensusLength
 }
 
 func getConsensusFromBytes(b []byte, cmds *Commands) (Command, error) {
@@ -56,6 +60,8 @@ func getConsensusFromBytes(b []byte, cmds *Commands) (Command, error) {
 
 // GetVote is a de-serialized get_vote command.
 type GetVote struct {
+	Cmds *Commands
+
 	Epoch     uint64
 	PublicKey sign.PublicKey
 }
@@ -72,6 +78,10 @@ func (v *GetVote) ToBytes() []byte {
 	}
 	out = append(out, blob...)
 	return out
+}
+
+func (c *GetVote) Length() int {
+	return cmdOverhead + 8 + c.Cmds.pkiSignatureScheme.PublicKeySize()
 }
 
 func getVoteFromBytes(b []byte, scheme sign.Scheme) (Command, error) {
@@ -105,6 +115,10 @@ func (c *Consensus) ToBytes() []byte {
 	return out
 }
 
+func (c *Consensus) Length() int {
+	return 0
+}
+
 func consensusFromBytes(b []byte) (Command, error) {
 	if len(b) < consensusBaseLength {
 		return nil, errInvalidCommand
@@ -133,6 +147,10 @@ func (c *PostDescriptor) ToBytes() []byte {
 	binary.BigEndian.PutUint64(out[6:14], c.Epoch)
 	out = append(out, c.Payload...)
 	return out
+}
+
+func (c *PostDescriptor) Length() int {
+	return 0
 }
 
 func postDescriptorFromBytes(b []byte) (Command, error) {
@@ -172,6 +190,10 @@ func (c *PostDescriptorStatus) ToBytes() []byte {
 	return out
 }
 
+func (c *PostDescriptorStatus) Length() int {
+	return 0
+}
+
 // Reveal is a de-serialized reveal command exchanged by authorities.
 type Reveal struct {
 	Epoch     uint64
@@ -193,6 +215,10 @@ func (r *Reveal) ToBytes() []byte {
 	copy(out[14:14+r.PublicKey.Scheme().PublicKeySize()], blob)
 	out = append(out, r.Payload...)
 	return out
+}
+
+func (c *Reveal) Length() int {
+	return 0
 }
 
 func revealFromBytes(b []byte, scheme sign.Scheme) (Command, error) {
@@ -236,6 +262,10 @@ func (r *RevealStatus) ToBytes() []byte {
 	return out
 }
 
+func (c *RevealStatus) Length() int {
+	return 0
+}
+
 // Vote is a vote which is exchanged by Directory Authorities.
 type Vote struct {
 	Epoch     uint64
@@ -274,6 +304,10 @@ func (c *Vote) ToBytes() []byte {
 	return out
 }
 
+func (c *Vote) Length() int {
+	return 0
+}
+
 // VoteStatus is a resonse status for a Vote command.
 type VoteStatus struct {
 	ErrorCode uint8
@@ -286,6 +320,10 @@ func (c *VoteStatus) ToBytes() []byte {
 	binary.BigEndian.PutUint32(out[2:6], voteStatusLength)
 	out[6] = c.ErrorCode
 	return out
+}
+
+func (c *VoteStatus) Length() int {
+	return 0
 }
 
 func voteStatusFromBytes(b []byte) (Command, error) {
@@ -336,6 +374,10 @@ func (c *Cert) ToBytes() []byte {
 	return out
 }
 
+func (c *Cert) Length() int {
+	return 0
+}
+
 // CertStatus is a resonse status for a Cert command.
 type CertStatus struct {
 	ErrorCode uint8
@@ -348,6 +390,10 @@ func (c *CertStatus) ToBytes() []byte {
 	binary.BigEndian.PutUint32(out[2:6], certStatusLength)
 	out[6] = c.ErrorCode
 	return out
+}
+
+func (c *CertStatus) Length() int {
+	return 0
 }
 
 func certStatusFromBytes(b []byte) (Command, error) {
@@ -398,6 +444,10 @@ func (c *Sig) ToBytes() []byte {
 	return out
 }
 
+func (c *Sig) Length() int {
+	return 0
+}
+
 // SigStatus is a resonse status for a Sig command.
 type SigStatus struct {
 	ErrorCode uint8
@@ -410,6 +460,10 @@ func (c *SigStatus) ToBytes() []byte {
 	binary.BigEndian.PutUint32(out[2:6], sigStatusLength)
 	out[6] = c.ErrorCode
 	return out
+}
+
+func (c *SigStatus) Length() int {
+	return 0
 }
 
 func sigStatusFromBytes(b []byte) (Command, error) {
