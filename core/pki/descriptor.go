@@ -315,3 +315,58 @@ type ReplicaDescriptor struct {
 	// be used to reach the node.
 	Addresses map[string][]string
 }
+
+// UnmarshalBinary implements encoding.BinaryUnmarshaler interface
+func (d *ReplicaDescriptor) UnmarshalBinary(data []byte) error {
+	return cbor.Unmarshal(data, d)
+}
+
+// MarshalBinary implmements encoding.BinaryMarshaler
+func (d *ReplicaDescriptor) MarshalBinary() ([]byte, error) {
+	return ccbor.Marshal(d)
+}
+
+type SignedReplicaUpload struct {
+	// Signature is the signature over the serialized SignedReplicaUpload.
+	Signature *cert.Signature
+
+	// ReplicaDescriptor is the replica descriptor.
+	ReplicaDescriptor *ReplicaDescriptor
+}
+
+func (s *SignedReplicaUpload) Marshal() ([]byte, error) {
+	return ccbor.Marshal(s)
+}
+
+func (s *SignedReplicaUpload) Unmarshal(data []byte) error {
+	return cbor.Unmarshal(data, s)
+}
+
+func (s *SignedReplicaUpload) Sign(privKey sign.PrivateKey, pubKey sign.PublicKey) error {
+	if s.Signature != nil {
+		return errors.New("SignedReplicaUpload already has a signature")
+	}
+	blob, err := s.Marshal()
+	if err != nil {
+		return err
+	}
+	sig := &cert.Signature{
+		PublicKeySum256: hash.Sum256From(pubKey),
+		Payload:         privKey.Scheme().Sign(privKey, blob, nil),
+	}
+	s.Signature = sig
+	return nil
+}
+
+func (s *SignedReplicaUpload) Verify(pubKey sign.PublicKey) bool {
+	ss := &SignedReplicaUpload{
+		Signature:         nil,
+		ReplicaDescriptor: s.ReplicaDescriptor,
+	}
+	blob, err := ss.Marshal()
+	if err != nil {
+		return false
+	}
+
+	return pubKey.Scheme().Verify(pubKey, blob, s.Signature.Payload, nil)
+}
