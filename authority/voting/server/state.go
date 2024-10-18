@@ -1817,6 +1817,10 @@ func (s *state) restorePersistence() error {
 		if err != nil {
 			return err
 		}
+		replicaDescsBkt, err := tx.CreateBucketIfNotExists([]byte(replicaDescriptorsBucket))
+		if err != nil {
+			return err
+		}
 		docsBkt, err := tx.CreateBucketIfNotExists([]byte(documentsBucket))
 		if err != nil {
 			return err
@@ -1831,6 +1835,46 @@ func (s *state) restorePersistence() error {
 			// Figure out which epochs to restore for.
 			now, _, _ := epochtime.Now()
 			epochs := []uint64{now - 1, now, now + 1}
+
+			// Restore the replica descriptors.
+			for _, epoch := range epochs {
+				epochBytes := epochToBytes(epoch)
+				eDescsBkt := replicaDescsBkt.Bucket(epochBytes)
+				if eDescsBkt == nil {
+					s.log.Debugf("No persisted Descriptors for epoch: %v.", epoch)
+					continue
+				}
+				c := eDescsBkt.Cursor()
+				for wantHash, rawDesc := c.First(); wantHash != nil; wantHash, rawDesc = c.Next() {
+					if len(wantHash) != publicKeyHashSize {
+						panic("stored hash should be 32 bytes")
+					}
+					desc := new(pki.ReplicaDescriptor)
+					err := desc.UnmarshalBinary(rawDesc)
+					if err != nil {
+						s.log.Errorf("Failed to validate persisted descriptor: %v", err)
+						continue
+					}
+					idHash := hash.Sum256(desc.IdentityKey)
+					if !hmac.Equal(wantHash, idHash[:]) {
+						s.log.Errorf("Discarding persisted descriptor: key mismatch")
+						continue
+					}
+
+					if !s.isReplicaDescriptorAuthorized(desc) {
+						s.log.Warningf("Discarding persisted descriptor: %v", desc)
+						continue
+					}
+
+					_, ok := s.replicaDescriptors[epoch]
+					if !ok {
+						s.replicaDescriptors[epoch] = make(map[[publicKeyHashSize]byte]*pki.ReplicaDescriptor)
+					}
+
+					s.replicaDescriptors[epoch][hash.Sum256(desc.IdentityKey)] = desc
+					s.log.Debugf("Restored replica descriptor for epoch %v: %+v", epoch, desc)
+				}
+			}
 
 			// Restore the documents and descriptors.
 			for _, epoch := range epochs {
