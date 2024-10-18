@@ -34,10 +34,11 @@ const (
 	sendRetrievePacketReply commandID = 4
 
 	// used by Pigeonhole Couriers and Storage Replicas
-	postReplicaDescriptor commandID = 12
-	replicaWrite          commandID = 13
-	replicaRead           commandID = 14
-	replicaMessage        commandID = 15
+	postReplicaDescriptorStatus commandID = 12
+	postReplicaDescriptor       commandID = 12
+	replicaWrite                commandID = 13
+	replicaRead                 commandID = 14
+	replicaMessage              commandID = 15
 
 	// used by old client
 	sendPacket      commandID = 2

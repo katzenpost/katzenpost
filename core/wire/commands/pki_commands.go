@@ -10,6 +10,67 @@ import (
 	"github.com/katzenpost/hpqc/sign"
 )
 
+// PostReplicaDescriptorStatus is a de-serialized post_replica_descriptor_status command.
+type PostReplicaDescriptorStatus struct {
+	ErrorCode uint8
+}
+
+func postReplicaDescriptorStatusFromBytes(b []byte) (Command, error) {
+	if len(b) != postDescriptorStatusLength {
+		return nil, errInvalidCommand
+	}
+
+	r := new(PostDescriptorStatus)
+	r.ErrorCode = b[0]
+	return r, nil
+}
+
+// ToBytes serializes the PostReplicaDescriptorStatus and returns the resulting byte
+// slice.
+func (c *PostReplicaDescriptorStatus) ToBytes() []byte {
+	out := make([]byte, cmdOverhead+postDescriptorStatusLength)
+	out[0] = byte(postReplicaDescriptorStatus)
+	binary.BigEndian.PutUint32(out[2:6], postDescriptorStatusLength)
+	out[6] = c.ErrorCode
+	return out
+}
+
+func (c *PostReplicaDescriptorStatus) Length() int {
+	return 0
+}
+
+// PostReplicaDescriptor is a de-serialized post_descriptor command.
+type PostReplicaDescriptor struct {
+	Epoch   uint64
+	Payload []byte
+}
+
+// ToBytes serializes the PostReplicaDescriptor and returns the resulting byte slice.
+func (c *PostReplicaDescriptor) ToBytes() []byte {
+	out := make([]byte, cmdOverhead+postDescriptorLength, cmdOverhead+postDescriptorLength+len(c.Payload))
+	out[0] = byte(postReplicaDescriptor)
+	binary.BigEndian.PutUint32(out[2:6], postDescriptorLength+uint32(len(c.Payload)))
+	binary.BigEndian.PutUint64(out[6:14], c.Epoch)
+	out = append(out, c.Payload...)
+	return out
+}
+
+func (c *PostReplicaDescriptor) Length() int {
+	return 0
+}
+
+func postReplicaDescriptorFromBytes(b []byte) (Command, error) {
+	if len(b) < postDescriptorLength {
+		return nil, errInvalidCommand
+	}
+
+	r := new(PostReplicaDescriptor)
+	r.Epoch = binary.BigEndian.Uint64(b[0:8])
+	r.Payload = make([]byte, 0, len(b)-postDescriptorLength)
+	r.Payload = append(r.Payload, b[postDescriptorLength:]...)
+	return r, nil
+}
+
 func voteOverhead(scheme sign.Scheme) int {
 	return 8 + scheme.PublicKeySize()
 }
