@@ -60,14 +60,15 @@ import (
 )
 
 const (
-	descriptorsBucket     = "descriptors"
-	documentsBucket       = "documents"
-	stateAcceptDescriptor = "accept_desc"
-	stateAcceptVote       = "accept_vote"
-	stateAcceptReveal     = "accept_reveal"
-	stateAcceptCert       = "accept_cert"
-	stateAcceptSignature  = "accept_signature"
-	stateBootstrap        = "bootstrap"
+	descriptorsBucket        = "descriptors"
+	replicaDescriptorsBucket = "replica_descriptors"
+	documentsBucket          = "documents"
+	stateAcceptDescriptor    = "accept_desc"
+	stateAcceptVote          = "accept_vote"
+	stateAcceptReveal        = "accept_reveal"
+	stateAcceptCert          = "accept_cert"
+	stateAcceptSignature     = "accept_signature"
+	stateBootstrap           = "bootstrap"
 
 	publicKeyHashSize = 32
 )
@@ -107,20 +108,22 @@ type state struct {
 	authorizedMixes        map[[publicKeyHashSize]byte]bool
 	authorizedGatewayNodes map[[publicKeyHashSize]byte]string
 	authorizedServiceNodes map[[publicKeyHashSize]byte]string
+	authorizedReplicaNodes map[[publicKeyHashSize]byte]string
 	authorizedAuthorities  map[[publicKeyHashSize]byte]bool
 	authorityLinkKeys      map[[publicKeyHashSize]byte]kem.PublicKey
 	authorityNames         map[[publicKeyHashSize]byte]string
 
-	documents    map[uint64]*pki.Document
-	myconsensus  map[uint64]*pki.Document
-	descriptors  map[uint64]map[[publicKeyHashSize]byte]*pki.MixDescriptor
-	votes        map[uint64]map[[publicKeyHashSize]byte]*pki.Document
-	certificates map[uint64]map[[publicKeyHashSize]byte]*pki.Document
-	signatures   map[uint64]map[[publicKeyHashSize]byte]*cert.Signature
-	priorSRV     [][]byte
-	reveals      map[uint64]map[[publicKeyHashSize]byte][]byte
-	commits      map[uint64]map[[publicKeyHashSize]byte][]byte
-	verifiers    map[[publicKeyHashSize]byte]sign.PublicKey
+	documents          map[uint64]*pki.Document
+	myconsensus        map[uint64]*pki.Document
+	descriptors        map[uint64]map[[publicKeyHashSize]byte]*pki.MixDescriptor
+	replicaDescriptors map[uint64]map[[publicKeyHashSize]byte]*pki.ReplicaDescriptor
+	votes              map[uint64]map[[publicKeyHashSize]byte]*pki.Document
+	certificates       map[uint64]map[[publicKeyHashSize]byte]*pki.Document
+	signatures         map[uint64]map[[publicKeyHashSize]byte]*cert.Signature
+	priorSRV           [][]byte
+	reveals            map[uint64]map[[publicKeyHashSize]byte][]byte
+	commits            map[uint64]map[[publicKeyHashSize]byte][]byte
+	verifiers          map[[publicKeyHashSize]byte]sign.PublicKey
 
 	updateCh chan interface{}
 
@@ -1317,6 +1320,15 @@ func (s *state) pruneDocuments() {
 	}
 }
 
+func (s *state) isReplicaDescriptorAuthorized(desc *pki.ReplicaDescriptor) bool {
+	pk := hash.Sum256(desc.IdentityKey)
+	name, ok := s.authorizedReplicaNodes[pk]
+	if !ok {
+		return false
+	}
+	return name == desc.Name
+}
+
 func (s *state) isDescriptorAuthorized(desc *pki.MixDescriptor) bool {
 	pk := hash.Sum256(desc.IdentityKey)
 	if !desc.IsGatewayNode && !desc.IsServiceNode {
@@ -1632,6 +1644,64 @@ func (s *state) onSigUpload(sig *commands.Sig) commands.Command {
 	}
 }
 
+func (s *state) onReplicaDescriptorUpload(rawDesc []byte, desc *pki.ReplicaDescriptor, epoch uint64) error {
+	s.Lock()
+	defer s.Unlock()
+
+	// Note: Caller ensures that the epoch is the current epoch +- 1.
+	pk := hash.Sum256(desc.IdentityKey)
+
+	// Get the public key -> descriptor map for the epoch.
+	_, ok := s.replicaDescriptors[epoch]
+	if !ok {
+		s.replicaDescriptors[epoch] = make(map[[publicKeyHashSize]byte]*pki.ReplicaDescriptor)
+	}
+
+	// Check for redundant uploads.
+	d, ok := s.replicaDescriptors[epoch][pk]
+	if ok {
+		// If the descriptor changes, then it will be rejected to prevent
+		// nodes from reneging on uploads.
+		serialized, err := d.MarshalBinary()
+		if err != nil {
+			return err
+		}
+		if !hmac.Equal(serialized, rawDesc) {
+			return fmt.Errorf("state: node %s (%x): Conflicting descriptor for epoch %v", desc.Name, hash.Sum256(desc.IdentityKey), epoch)
+		}
+
+		// Redundant uploads that don't change are harmless.
+		return nil
+	}
+
+	// Ok, this is a new descriptor.
+	if s.replicaDescriptors[epoch] != nil {
+		// If there is a document already, the descriptor is late, and will
+		// never appear in a document, so reject it.
+		return fmt.Errorf("state: Node %v: Late descriptor upload for for epoch %v", desc.IdentityKey, epoch)
+	}
+
+	// Persist the raw descriptor to disk.
+	if err := s.db.Update(func(tx *bolt.Tx) error {
+		bkt := tx.Bucket([]byte(replicaDescriptorsBucket))
+		eBkt, err := bkt.CreateBucketIfNotExists(epochToBytes(epoch))
+		if err != nil {
+			return err
+		}
+		return eBkt.Put(pk[:], rawDesc)
+	}); err != nil {
+		// Persistence failures are FATAL.
+		s.s.fatalErrCh <- err
+	}
+
+	// Store the parsed descriptor
+	s.replicaDescriptors[epoch][pk] = desc
+
+	s.log.Noticef("Node %x: Successfully submitted replica descriptor for epoch %v.", pk, epoch)
+	s.onUpdate()
+	return nil
+}
+
 func (s *state) onDescriptorUpload(rawDesc []byte, desc *pki.MixDescriptor, epoch uint64) error {
 	s.Lock()
 	defer s.Unlock()
@@ -1921,6 +1991,28 @@ func newState(s *Server) (*state, error) {
 		st.authorizedServiceNodes[pk] = v.Identifier
 		st.reverseHash[pk] = identityPublicKey
 	}
+	st.authorizedReplicaNodes = make(map[[publicKeyHashSize]byte]string)
+	for _, v := range st.s.cfg.StorageReplicas {
+		var identityPublicKey sign.PublicKey
+		var err error
+
+		if filepath.IsAbs(v.IdentityPublicKeyPem) {
+			identityPublicKey, err = signpem.FromPublicPEMFile(v.IdentityPublicKeyPem, pkiSignatureScheme)
+			if err != nil {
+				panic(err)
+			}
+		} else {
+			pemFilePath := filepath.Join(s.cfg.Server.DataDir, v.IdentityPublicKeyPem)
+			identityPublicKey, err = signpem.FromPublicPEMFile(pemFilePath, pkiSignatureScheme)
+			if err != nil {
+				panic(err)
+			}
+		}
+
+		pk := hash.Sum256From(identityPublicKey)
+		st.authorizedServiceNodes[pk] = v.Identifier
+	}
+
 	st.authorizedAuthorities = make(map[[publicKeyHashSize]byte]bool)
 	st.authorityLinkKeys = make(map[[publicKeyHashSize]byte]kem.PublicKey)
 	st.authorityNames = make(map[[publicKeyHashSize]byte]string)
@@ -1936,6 +2028,7 @@ func newState(s *Server) (*state, error) {
 	st.documents = make(map[uint64]*pki.Document)
 	st.myconsensus = make(map[uint64]*pki.Document)
 	st.descriptors = make(map[uint64]map[[publicKeyHashSize]byte]*pki.MixDescriptor)
+	st.replicaDescriptors = make(map[uint64]map[[publicKeyHashSize]byte]*pki.ReplicaDescriptor)
 	st.votes = make(map[uint64]map[[publicKeyHashSize]byte]*pki.Document)
 	st.certificates = make(map[uint64]map[[publicKeyHashSize]byte]*pki.Document)
 	st.reveals = make(map[uint64]map[[publicKeyHashSize]byte][]byte)
