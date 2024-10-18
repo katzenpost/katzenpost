@@ -305,9 +305,14 @@ func (s *state) getVote(epoch uint64) (*pki.Document, error) {
 		descriptors = append(descriptors, desc)
 	}
 
+	replicaDescriptors := []*pki.ReplicaDescriptor{}
+	for _, desc := range s.replicaDescriptors[epoch] {
+		replicaDescriptors = append(replicaDescriptors, desc)
+	}
+
 	// vote topology is irrelevent.
 	var zeros [32]byte
-	vote := s.getDocument(descriptors, s.s.cfg.Parameters, zeros[:])
+	vote := s.getDocument(descriptors, replicaDescriptors, s.s.cfg.Parameters, zeros[:])
 
 	// create our SharedRandom Commit
 	signedCommit, err := s.doCommit(epoch)
@@ -354,7 +359,7 @@ func (s *state) getCertificate(epoch uint64) (*pki.Document, error) {
 		panic("write lock not held in getCertificate(epoch)")
 	}
 
-	mixes, params, err := s.tallyVotes(epoch)
+	mixes, replicas, params, err := s.tallyVotes(epoch)
 	if err != nil {
 		s.log.Warningf("No document for epoch %v, aborting!, %v", epoch, err)
 		return nil, err
@@ -362,7 +367,7 @@ func (s *state) getCertificate(epoch uint64) (*pki.Document, error) {
 	s.log.Debug("Mixes tallied, now making a document")
 	var zeros [32]byte
 	srv := zeros[:]
-	certificate := s.getDocument(mixes, params, srv)
+	certificate := s.getDocument(mixes, replicas, params, srv)
 	// add the SharedRandomCommit and SharedRandomReveal that we have seen
 	certificate.SharedRandomCommit = s.commits[epoch]
 	certificate.SharedRandomReveal = s.reveals[epoch]
@@ -430,11 +435,11 @@ func (s *state) getMyConsensus(epoch uint64) (*pki.Document, error) {
 		// rotate the weekly epochs if it is time to do so.
 		s.priorSRV = [][]byte{srv, s.priorSRV[0]}
 	}
-	mixes, params, err := s.tallyVotes(epoch)
+	mixes, replicas, params, err := s.tallyVotes(epoch)
 	if err != nil {
 		return nil, err
 	}
-	consensusOfOne := s.getDocument(mixes, params, srv)
+	consensusOfOne := s.getDocument(mixes, replicas, params, srv)
 	_, err = s.doSignDocument(s.s.identityPrivateKey, s.s.identityPublicKey, consensusOfOne)
 	if err != nil {
 		return nil, err
@@ -502,7 +507,7 @@ func (s *state) identityPubKeyHash() [publicKeyHashSize]byte {
 	return hash.Sum256From(s.s.identityPublicKey)
 }
 
-func (s *state) getDocument(descriptors []*pki.MixDescriptor, params *config.Parameters, srv []byte) *pki.Document {
+func (s *state) getDocument(descriptors []*pki.MixDescriptor, replicaDescriptors []*pki.ReplicaDescriptor, params *config.Parameters, srv []byte) *pki.Document {
 	// Carve out the descriptors between providers and nodes.
 	gateways := []*pki.MixDescriptor{}
 	serviceNodes := []*pki.MixDescriptor{}
@@ -559,6 +564,7 @@ func (s *state) getDocument(descriptors []*pki.MixDescriptor, params *config.Par
 		Topology:           topology,
 		GatewayNodes:       gateways,
 		ServiceNodes:       serviceNodes,
+		StorageReplicas:    replicaDescriptors,
 		SharedRandomValue:  srv,
 		PriorSharedRandom:  s.priorSRV,
 		SphinxGeometryHash: s.geo.Hash(),
@@ -955,22 +961,24 @@ func (s *state) sendSigToAuthorities(sig []byte, epoch uint64) {
 	}
 }
 
-func (s *state) tallyVotes(epoch uint64) ([]*pki.MixDescriptor, *config.Parameters, error) {
+func (s *state) tallyVotes(epoch uint64) ([]*pki.MixDescriptor, []*pki.ReplicaDescriptor, *config.Parameters, error) {
 	if s.TryLock() {
 		panic("write lock not held in tallyVotes(epoch)")
 	}
 
 	_, ok := s.votes[epoch]
 	if !ok {
-		return nil, nil, fmt.Errorf("no votes for epoch %v", epoch)
+		return nil, nil, nil, fmt.Errorf("no votes for epoch %v", epoch)
 	}
 	if len(s.votes[epoch]) < s.threshold {
-		return nil, nil, fmt.Errorf("not enough votes for epoch %v", epoch)
+		return nil, nil, nil, fmt.Errorf("not enough votes for epoch %v", epoch)
 	}
 
 	nodes := make([]*pki.MixDescriptor, 0)
 	mixTally := make(map[string][]*pki.Document)
 	mixParams := make(map[string][]*pki.Document)
+	replicaTally := make(map[string][]*pki.Document)
+	replicaNodes := make([]*pki.ReplicaDescriptor, 0)
 	for id, vote := range s.votes[epoch] {
 		// serialize the vote parameters and tally these as well.
 		params := &config.Parameters{
@@ -1042,6 +1050,18 @@ func (s *state) tallyVotes(epoch uint64) ([]*pki.MixDescriptor, *config.Paramete
 				mixTally[k] = append(mixTally[k], vote)
 			}
 		}
+		for _, desc := range vote.StorageReplicas {
+			rawDesc, err := desc.MarshalBinary()
+			if err != nil {
+				s.log.Errorf("Skipping vote from Authority %s whose ReplicaDescriptor failed to encode?! %v", s.authorityNames[id], err)
+				continue
+			}
+			k := string(rawDesc)
+			if _, ok := replicaTally[k]; !ok {
+				replicaTally[k] = make([]*pki.Document, 0)
+			}
+			replicaTally[k] = append(replicaTally[k], vote)
+		}
 	}
 	// include mixes that have a threshold of votes
 	for rawDesc, votes := range mixTally {
@@ -1050,11 +1070,25 @@ func (s *state) tallyVotes(epoch uint64) ([]*pki.MixDescriptor, *config.Paramete
 			desc := new(pki.MixDescriptor)
 			err := desc.UnmarshalBinary([]byte(rawDesc))
 			if err != nil {
-				return nil, nil, err
+				return nil, nil, nil, err
 			}
 			// only add nodes we have authorized
 			if s.isDescriptorAuthorized(desc) {
 				nodes = append(nodes, desc)
+			}
+		}
+	}
+	for rawDesc, votes := range replicaTally {
+		if len(votes) >= s.threshold {
+			// this shouldn't fail as the descriptors have already been verified
+			desc := new(pki.ReplicaDescriptor)
+			err := desc.UnmarshalBinary([]byte(rawDesc))
+			if err != nil {
+				return nil, nil, nil, err
+			}
+			// only add nodes we have authorized
+			if s.isReplicaDescriptorAuthorized(desc) {
+				replicaNodes = append(replicaNodes, desc)
 			}
 		}
 	}
@@ -1070,14 +1104,14 @@ func (s *state) tallyVotes(epoch uint64) ([]*pki.MixDescriptor, *config.Paramete
 		if len(votes) >= s.threshold {
 			sortNodesByPublicKey(nodes)
 			// successful tally
-			return nodes, params, nil
+			return nodes, replicaNodes, params, nil
 		} else if len(votes) >= s.dissenters {
 			s.log.Errorf("tallyVotes: failed threshold with params: %v", params)
 			continue
 		}
 
 	}
-	return nil, nil, errors.New("consensus failure (mixParams empty)")
+	return nil, nil, nil, errors.New("consensus failure (mixParams empty)")
 }
 
 func (s *state) computeSharedRandom(epoch uint64, commits map[[publicKeyHashSize]byte][]byte, reveals map[[publicKeyHashSize]byte][]byte) ([]byte, error) {
