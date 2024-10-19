@@ -701,6 +701,8 @@ func main() {
 
 func identifier(cfg interface{}) string {
 	switch cfg.(type) {
+	case *thin.ThinConfig:
+		return "thinclient"
 	case *cConfig.Config:
 		return "client"
 	case *cConfig2.Config:
