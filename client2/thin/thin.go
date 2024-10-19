@@ -28,7 +28,11 @@ import (
 	"github.com/katzenpost/katzenpost/core/worker"
 )
 
-const MessageIDLength = 16
+const (
+	defaultLogLevel = "NOTICE"
+
+	MessageIDLength = 16
+)
 
 // ThinResponse is used to encapsulate a message response
 // that are passed to the client application.
@@ -90,6 +94,26 @@ type ThinConfig struct {
 	LoggingDisable bool
 	Network        string
 	Address        string
+}
+
+func (c *ThinConfig) FixupAndValidate() error {
+	if c.Network == "" {
+		return errors.New("config: ThinConfig.Network is not set")
+	}
+	if c.Address == "" {
+		return errors.New("config: ThinConfig.Address is not set")
+	}
+
+	lvl := strings.ToUpper(c.LoggingLevel)
+	switch lvl {
+	case "ERROR", "WARNING", "INFO", "DEBUG":
+	case "":
+		c.LoggingLevel = defaultLogLevel
+	default:
+		return fmt.Errorf("config: Logging: Level '%v' is invalid", c.LoggingLevel)
+	}
+	c.LoggingLevel = lvl
+	return nil
 }
 
 // Load parses and validates the provided buffer b as a config file body and
