@@ -107,6 +107,7 @@ func addressesFromURLs(addrs []string) map[string][]string {
 func (s *katzenpost) genClient2Cfg() error {
 	log.Print("genClient2Cfg begin")
 	os.Mkdir(filepath.Join(s.outDir, "client2"), 0700)
+	os.Mkdir(filepath.Join(s.outDir, "thinclient"), 0700)
 	thinCfg := new(thin.ThinConfig)
 	cfg := new(cConfig2.Config)
 
