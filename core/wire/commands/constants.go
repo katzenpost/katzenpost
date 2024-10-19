@@ -21,6 +21,8 @@ const (
 	sigStatusLength    = 1
 	voteStatusLength   = 1
 
+	replicaMessageReplyLength = 1
+
 	messageTypeMessage messageType = 0
 	messageTypeACK     messageType = 1
 	messageTypeEmpty   messageType = 2
@@ -33,17 +35,26 @@ const (
 	sendRetrievePacket      commandID = 3
 	sendRetrievePacketReply commandID = 4
 
-	// used by Pigeonhole Couriers and Storage Replicas
-	postReplicaDescriptorStatus commandID = 12
-	postReplicaDescriptor       commandID = 12
-	replicaWrite                commandID = 13
-	replicaRead                 commandID = 14
-	replicaMessage              commandID = 15
+	// used by Pigeonhole Couriers when talking to the Storage Replicas
+	replicaMessage      commandID = 8
+	replicaMessageReply commandID = 9
+
+	// used by Pigeonhole Storage Replicas when talking to the PKI
+	postReplicaDescriptorStatus commandID = 10
+	postReplicaDescriptor       commandID = 11
+
+	// used by Pigeonhole Storage Replicas when talking amonst themselves
+	replicaWrite commandID = 12
+	replicaRead  commandID = 14
+	// XXX NODE(DAVID): we're at that point in the developement
+	// where we'll soon find out if we need these two read/write reply commands
+	replicaWriteReply commandID = 13
+	replicaReadReply  commandID = 15
 
 	// used by old client
-	sendPacket      commandID = 2
 	retreiveMessage commandID = 16
 	message         commandID = 17
+	sendPacket      commandID = 2
 
 	// client Dir-auth commands.
 	getConsensus commandID = 18

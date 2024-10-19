@@ -119,5 +119,37 @@ func replicaMessageFromBytes(b []byte, cmds *Commands) (Command, error) {
 
 func (c *ReplicaMessage) Length() int {
 	// XXX TODO(David): Pick a more precise size.
-	return cmdOverhead + 1 + HybridKeySize + 32 + c.Cmds.geo.PacketLength
+	const (
+		replicaIdLen = 1
+		dekLen       = 32
+	)
+	return cmdOverhead + replicaIdLen + HybridKeySize + dekLen + c.Cmds.geo.PacketLength
+}
+
+type ReplicaMessageReply struct {
+	Cmds *Commands
+
+	ErrorCode uint8
+}
+
+func (c *ReplicaMessageReply) ToBytes() []byte {
+	out := make([]byte, cmdOverhead+replicaMessageReplyLength)
+	out[0] = byte(postReplicaDescriptorStatus)
+	binary.BigEndian.PutUint32(out[2:6], postDescriptorStatusLength)
+	out[6] = c.ErrorCode
+	return out
+}
+
+func replicaMessageReplyFromBytes(b []byte) (Command, error) {
+	if len(b) != postDescriptorStatusLength {
+		return nil, errInvalidCommand
+	}
+
+	r := new(ReplicaMessageReply)
+	r.ErrorCode = b[0]
+	return r, nil
+}
+
+func (c *ReplicaMessageReply) Length() int {
+	return 0
 }
