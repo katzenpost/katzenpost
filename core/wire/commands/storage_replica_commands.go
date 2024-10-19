@@ -141,15 +141,16 @@ func (c *ReplicaWriteReply) ToBytes() []byte {
 	out[0] = byte(replicaWriteReply)
 	binary.BigEndian.PutUint32(out[2:6], replicaWriteReplyLength)
 	out[6] = c.ErrorCode
-	return out
+	return c.Cmds.padToMaxCommandSize(out, true)
 }
 
-func replicaWriteReplyFromBytes(b []byte) (Command, error) {
+func replicaWriteReplyFromBytes(b []byte, cmds *Commands) (Command, error) {
 	if len(b) != postDescriptorStatusLength {
 		return nil, errInvalidCommand
 	}
 
 	r := new(ReplicaWriteReply)
+	r.Cmds = cmds
 	r.ErrorCode = b[0]
 	return r, nil
 }
@@ -221,7 +222,7 @@ func (c *ReplicaMessageReply) ToBytes() []byte {
 	out[0] = byte(postReplicaDescriptorStatus)
 	binary.BigEndian.PutUint32(out[2:6], replicaMessageReplyLength)
 	out[6] = c.ErrorCode
-	return out
+	return c.Cmds.padToMaxCommandSize(out, true)
 }
 
 func replicaMessageReplyFromBytes(b []byte) (Command, error) {
