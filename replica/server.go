@@ -293,8 +293,13 @@ func New(cfg *config.Config) (*Server, error) {
 	// Use thin client to connect o client2 daemon and gather a PKI document
 	// which we will use for both wire authentication and for getting other replica keys
 	// for use in our replica storage protocol.
-
 	s.thinClient = thin.NewThinClient(s.cfg.ThinConfig)
+	err = s.thinClient.Dial()
+	if err != nil {
+		s.log.Errorf("thinClient.Dial failure: %v", err)
+		isOk = false
+		return nil, err
+	}
 
 	// Bring the listener(s) online.
 	s.listeners = make([]GenericListener, 0, len(addresses))
