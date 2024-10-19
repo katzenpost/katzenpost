@@ -86,22 +86,23 @@ func NewStorageReplicaCommands(geo *geo.Geometry) *Commands {
 		pkiSignatureScheme: nil,
 	}
 	payload := make([]byte, geo.PacketLength) // XXX TODO(David): Pick a more precise size.
-	c.clientToServerCommands = []Command{
-		&ReplicaMessage{
-			Cmds:          c,
-			SenderEPubKey: &[HybridKeySize]byte{},
-			DEK:           &[32]byte{},
-			Ciphertext:    payload,
-		},
-	}
 	c.serverToClientCommands = []Command{
 		&ReplicaMessage{
+			Geo:           geo,
 			Cmds:          c,
 			SenderEPubKey: &[HybridKeySize]byte{},
 			DEK:           &[32]byte{},
 			Ciphertext:    payload,
 		},
+		&ReplicaMessageReply{},
+		&ReplicaRead{},
+		&ReplicaReadReply{
+			Geo: geo,
+		},
+		&ReplicaWrite{},
+		&ReplicaWriteReply{},
 	}
+	c.clientToServerCommands = c.serverToClientCommands
 	c.shouldPad = true
 	c.maxMessageLenClientToServer = c.calcMaxMessageLenClientToServer()
 	c.maxMessageLenServerToClient = c.calcMaxMessageLenServerToClient()
@@ -305,10 +306,16 @@ func (c *Commands) FromBytes(b []byte) (Command, error) {
 	switch commandID(id) {
 	case postReplicaDescriptor:
 		return postReplicaDescriptorFromBytes(b)
+	case postReplicaDescriptorStatus:
+		return postReplicaDescriptorStatusFromBytes(b)
 	case replicaRead:
 		return replicaReadFromBytes(b, c)
+	case replicaReadReply:
+		return replicaReadReplyFromBytes(b, c)
 	case replicaWrite:
 		return replicaWriteFromBytes(b, c)
+	case replicaWriteReply:
+		return replicaWriteReplyFromBytes(b)
 	case replicaMessage:
 		return replicaMessageFromBytes(b, c)
 	case sendRetrievePacket:

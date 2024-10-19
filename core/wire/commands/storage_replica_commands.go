@@ -5,6 +5,8 @@ package commands
 
 import (
 	"encoding/binary"
+
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 )
 
 // NIKE scheme CTIDH1024-X25519 has 160 byte public keys
@@ -33,6 +35,58 @@ func replicaReadFromBytes(b []byte, cmds *Commands) (Command, error) {
 	c.Cmds = cmds
 	c.ID = &[32]byte{}
 	copy(c.ID[:], b[:32])
+	return c, nil
+}
+
+type ReplicaReadReply struct {
+	Cmds *Commands
+	Geo  *geo.Geometry
+
+	ErrorCode uint8
+	ID        *[32]byte
+	Signature *[32]byte
+	Payload   []byte
+}
+
+func (c *ReplicaReadReply) ToBytes() []byte {
+	const (
+		errorCodeLen = 1
+		idLen        = 32
+		sigLen       = 32
+	)
+	out := make([]byte, cmdOverhead, cmdOverhead+errorCodeLen+idLen+sigLen+len(c.Payload))
+	out[0] = byte(replicaReadReply)
+	binary.BigEndian.PutUint32(out[2:6], uint32(c.Length()-cmdOverhead))
+	out = append(out, c.ErrorCode)
+	out = append(out, c.ID[:]...)
+	out = append(out, c.Signature[:]...)
+	out = append(out, c.Payload...)
+
+	return c.Cmds.padToMaxCommandSize(out, true)
+}
+
+func (c *ReplicaReadReply) Length() int {
+	const (
+		errorCodeLen  = 1
+		idLen         = 32
+		sigLen        = 32
+		signatureSize = 32
+	)
+	// XXX replace c.Geo.PacketLength with the precise payload size
+	return cmdOverhead + errorCodeLen + idLen + sigLen + signatureSize + c.Geo.PacketLength
+}
+
+func replicaReadReplyFromBytes(b []byte, cmds *Commands) (Command, error) {
+	c := new(ReplicaReadReply)
+	c.Cmds = cmds
+	c.Geo = cmds.geo
+	c.ID = &[32]byte{}
+	c.ErrorCode = b[0]
+	copy(c.ID[:], b[1:32+1])
+	c.Signature = &[32]byte{}
+	copy(c.Signature[:], b[1+32:1+32+32])
+	c.Payload = make([]byte, len(b[1+32+32:]))
+	copy(c.Payload, b[1+32+32:])
 	return c, nil
 }
 
@@ -76,8 +130,37 @@ func replicaWriteFromBytes(b []byte, cmds *Commands) (Command, error) {
 	return c, nil
 }
 
+type ReplicaWriteReply struct {
+	Cmds *Commands
+
+	ErrorCode uint8
+}
+
+func (c *ReplicaWriteReply) ToBytes() []byte {
+	out := make([]byte, cmdOverhead+replicaMessageReplyLength)
+	out[0] = byte(replicaWriteReply)
+	binary.BigEndian.PutUint32(out[2:6], replicaWriteReplyLength)
+	out[6] = c.ErrorCode
+	return out
+}
+
+func replicaWriteReplyFromBytes(b []byte) (Command, error) {
+	if len(b) != postDescriptorStatusLength {
+		return nil, errInvalidCommand
+	}
+
+	r := new(ReplicaWriteReply)
+	r.ErrorCode = b[0]
+	return r, nil
+}
+
+func (c *ReplicaWriteReply) Length() int {
+	return 0
+}
+
 type ReplicaMessage struct {
 	Cmds *Commands
+	Geo  *geo.Geometry
 
 	ReplicaID     uint8
 	SenderEPubKey *[HybridKeySize]byte
@@ -118,12 +201,13 @@ func replicaMessageFromBytes(b []byte, cmds *Commands) (Command, error) {
 }
 
 func (c *ReplicaMessage) Length() int {
-	// XXX TODO(David): Pick a more precise size.
 	const (
-		replicaIdLen = 1
-		dekLen       = 32
+		idLen         = 32
+		sigLen        = 32
+		signatureSize = 32
 	)
-	return cmdOverhead + replicaIdLen + HybridKeySize + dekLen + c.Cmds.geo.PacketLength
+	// XXX replace c.Geo.PacketLength with the precise payload size
+	return cmdOverhead + idLen + sigLen + signatureSize + c.Geo.PacketLength
 }
 
 type ReplicaMessageReply struct {
@@ -135,7 +219,7 @@ type ReplicaMessageReply struct {
 func (c *ReplicaMessageReply) ToBytes() []byte {
 	out := make([]byte, cmdOverhead+replicaMessageReplyLength)
 	out[0] = byte(postReplicaDescriptorStatus)
-	binary.BigEndian.PutUint32(out[2:6], postDescriptorStatusLength)
+	binary.BigEndian.PutUint32(out[2:6], replicaMessageReplyLength)
 	out[6] = c.ErrorCode
 	return out
 }

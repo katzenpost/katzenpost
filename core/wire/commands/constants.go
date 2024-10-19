@@ -22,6 +22,7 @@ const (
 	voteStatusLength   = 1
 
 	replicaMessageReplyLength = 1
+	replicaWriteReplyLength   = 1
 
 	messageTypeMessage messageType = 0
 	messageTypeACK     messageType = 1
@@ -44,11 +45,9 @@ const (
 	postReplicaDescriptor       commandID = 11
 
 	// used by Pigeonhole Storage Replicas when talking amonst themselves
-	replicaWrite commandID = 12
-	replicaRead  commandID = 14
-	// XXX NODE(DAVID): we're at that point in the developement
-	// where we'll soon find out if we need these two read/write reply commands
+	replicaWrite      commandID = 12
 	replicaWriteReply commandID = 13
+	replicaRead       commandID = 14
 	replicaReadReply  commandID = 15
 
 	// used by old client
