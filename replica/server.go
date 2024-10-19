@@ -22,6 +22,7 @@ import (
 	signpem "github.com/katzenpost/hpqc/sign/pem"
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 
+	"github.com/katzenpost/katzenpost/client2/thin"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/utils"
@@ -42,6 +43,8 @@ type Server struct {
 	sync.WaitGroup
 
 	cfg *config.Config
+
+	thinClient *thin.ThinClient
 
 	replicaPrivateKey  nike.PrivateKey
 	replicaPublicKey   nike.PublicKey
@@ -286,6 +289,12 @@ func New(cfg *config.Config) (*Server, error) {
 	} else {
 		addresses = s.cfg.Addresses
 	}
+
+	// Use thin client to connect o client2 daemon and gather a PKI document
+	// which we will use for both wire authentication and for getting other replica keys
+	// for use in our replica storage protocol.
+
+	s.thinClient = thin.NewThinClient(s.cfg.ThinConfig)
 
 	// Bring the listener(s) online.
 	s.listeners = make([]GenericListener, 0, len(addresses))

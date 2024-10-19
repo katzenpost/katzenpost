@@ -8,6 +8,13 @@ PKISignatureScheme = "Ed25519"
 ReplicaNIKEScheme = "CTIDH1024-X25519"
 Addresses = ["http://127.0.0.1:30013"]
 
+[ThinConfig]
+  LoggingDisable = false
+  LoggingFile = "katzenpost-replica.log"
+  LoggingLevel = "DEBUG"
+  Network = "unix"
+  Address = "@katzenpost"
+
 [[Peers]]
   Identifier = "replica002"
   ReplicaPublicKeyPem = "XXX"

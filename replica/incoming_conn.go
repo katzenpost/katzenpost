@@ -304,10 +304,16 @@ func (c *incomingConn) handleReplicaRead(replicaRead *commands.ReplicaRead) *com
 }
 
 func (c *incomingConn) handleReplicaWrite(replicaWrite *commands.ReplicaWrite) *commands.ReplicaWriteReply {
-	const successCode = 0
+	const (
+		successCode = 0
+		failCode    = 1
+	)
 	err := c.l.server.state.handleReplicaWrite(replicaWrite)
 	if err != nil {
-		panic(err)
+		c.log.Errorf("handleReplicaWrite failed: %v", err)
+		return &commands.ReplicaWriteReply{
+			ErrorCode: failCode,
+		}
 	}
 	return &commands.ReplicaWriteReply{
 		ErrorCode: successCode,

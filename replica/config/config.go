@@ -14,6 +14,7 @@ import (
 	"github.com/BurntSushi/toml"
 
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
+	"github.com/katzenpost/katzenpost/client2/thin"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/utils"
@@ -118,12 +119,22 @@ type Config struct {
 	// These Addresses are not advertised in the PKI.
 	BindAddresses []string
 
+	ThinConfig *thin.ThinConfig
+
 	// GenerateOnly halts and cleans up the server right after long term
 	// key generation.
 	GenerateOnly bool
 }
 
 func (c *Config) FixupAndValidate(forceGenOnly bool) error {
+	if c.ThinConfig == nil {
+		return errors.New("config: ThinConfig is not set")
+	}
+	err := c.ThinConfig.FixupAndValidate()
+	if err != nil {
+		return err
+	}
+
 	if c.Identifier == "" {
 		return errors.New("config: Server: Identifier is not set")
 	}
