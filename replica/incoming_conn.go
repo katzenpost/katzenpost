@@ -26,6 +26,11 @@ import (
 
 var incomingConnID uint64
 
+const (
+	replicaMessageReplyDecapsulationFailure = 123
+	replicaMessageReplyCommandParseFailure  = 122
+)
+
 type incomingConn struct {
 	scheme        kem.Scheme
 	pkiSignScheme sign.Scheme
@@ -204,85 +209,108 @@ func (c *incomingConn) worker() {
 		}
 
 		// Handle all of the storage replica commands.
-		if !c.onReplicaCommand(rawCmd) {
+		resp, allGood := c.onReplicaCommand(rawCmd)
+		if !allGood {
 			// Catastrophic failure in command processing, or a disconnect.
 			return
 		}
+
+		// Send the response, if any.
+		if resp != nil {
+			if err = c.w.SendCommand(resp); err != nil {
+				c.log.Debugf("Peer %v: Failed to send response: %v", hash.Sum256(blob), err)
+			}
+		}
+
 	}
 
 	// NOTREACHED
 }
 
-func (c *incomingConn) onReplicaCommand(rawCmd commands.Command) bool {
+func (c *incomingConn) onReplicaCommand(rawCmd commands.Command) (commands.Command, bool) {
 	switch cmd := rawCmd.(type) {
 	case *commands.NoOp:
 		c.log.Debugf("Received NoOp from peer.")
-		return true
+		return nil, true
 	case *commands.Disconnect:
 		c.log.Debugf("Received disconnect from peer.")
+		return nil, false
 	case *commands.ReplicaRead:
 		c.log.Debugf("Received ReplicaRead from peer.")
-		c.handleReplicaRead(cmd)
-		return true
+		resp := c.handleReplicaRead(cmd)
+		return resp, true
 	case *commands.ReplicaWrite:
 		c.log.Debugf("Received ReplicaWrite from peer.")
-		c.handleReplicaWrite(cmd)
-		return true
+		resp := c.handleReplicaWrite(cmd)
+		return resp, true
 	case *commands.ReplicaMessage:
 		c.log.Debugf("Received ReplicaMessage from peer.")
-		c.handleReplicaMessage(cmd)
-		return true
-
+		resp := c.handleReplicaMessage(cmd)
+		return resp, true
 	default:
 		c.log.Debugf("Received unexpected command: %T", cmd)
+		return nil, false
 	}
-	return false
+	// not reached
 }
 
-func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMessage) {
+func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMessage) commands.Command {
 	scheme := mkem.NewScheme()
 	ct, err := mkem.CiphertextFromBytes(scheme, replicaMessage.Ciphertext)
 	if err != nil {
 		c.log.Errorf("handleReplicaMessage CiphertextFromBytes failed: %s", err)
-		return
+		return nil
 	}
 	requestRaw, err := scheme.Decapsulate(c.l.server.replicaPrivateKey, ct.Envelope)
 	if err != nil {
 		c.log.Errorf("handleReplicaMessage Decapsulate failed: %s", err)
-		return
+		errReply := &commands.ReplicaMessageReply{
+			ErrorCode: replicaMessageReplyDecapsulationFailure,
+		}
+		return errReply
 	}
 	cmds := commands.NewStorageReplicaCommands(c.l.server.cfg.SphinxGeometry)
 	myCmd, err := cmds.FromBytes(requestRaw)
 	if err != nil {
 		c.log.Errorf("handleReplicaMessage Decapsulate failed: %s", err)
-		return
+		errReply := &commands.ReplicaMessageReply{
+			ErrorCode: replicaMessageReplyCommandParseFailure,
+		}
+		return errReply
 	}
 	switch myCmd := myCmd.(type) {
 	case *commands.ReplicaRead:
-		c.handleReplicaRead(myCmd)
-		return
+		return c.handleReplicaRead(myCmd)
 	case *commands.ReplicaWrite:
-		c.handleReplicaWrite(myCmd)
-		return
+		return c.handleReplicaWrite(myCmd)
 	default:
 		c.log.Error("handleReplicaMessage failed: invalid request was decrypted")
-		return
+		return nil
 	}
 }
 
-func (c *incomingConn) handleReplicaRead(replicaRead *commands.ReplicaRead) {
-	// XXX FIX ME
-	_, err := c.l.server.state.handleReplicaRead(replicaRead)
+func (c *incomingConn) handleReplicaRead(replicaRead *commands.ReplicaRead) *commands.ReplicaReadReply {
+	const successCode = 0
+	resp, err := c.l.server.state.handleReplicaRead(replicaRead)
 	if err != nil {
-		panic(err) // XXX
+		return &commands.ReplicaReadReply{}
+	}
+	return &commands.ReplicaReadReply{
+		ErrorCode: successCode,
+		ID:        resp.ID,
+		Signature: resp.Signature,
+		Payload:   resp.Payload,
 	}
 }
 
-func (c *incomingConn) handleReplicaWrite(replicaWrite *commands.ReplicaWrite) {
-	// XXX FIX ME
+func (c *incomingConn) handleReplicaWrite(replicaWrite *commands.ReplicaWrite) *commands.ReplicaWriteReply {
+	const successCode = 0
 	err := c.l.server.state.handleReplicaWrite(replicaWrite)
 	if err != nil {
-		panic(err) // XXX
+		panic(err)
+	}
+	return &commands.ReplicaWriteReply{
+		ErrorCode: successCode,
 	}
 }
 

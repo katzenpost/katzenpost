@@ -137,9 +137,7 @@ func (s *Server) RotateLog() {
 func New(cfg *config.Config) (*Server, error) {
 	s := new(Server)
 	s.cfg = cfg
-	s.state = &state{
-		server: s,
-	}
+	s.state = newState(s)
 	s.state.initDB()
 
 	s.fatalErrCh = make(chan error)

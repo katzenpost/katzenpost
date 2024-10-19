@@ -17,6 +17,15 @@ type state struct {
 	db     *grocksdb.DB
 }
 
+func newState(s *Server) *state {
+	if s.cfg.SphinxGeometry == nil {
+		panic("s.server.cfg.SphinxGeometry cannot be nil")
+	}
+	return &state{
+		server: s,
+	}
+}
+
 func (s *state) Close() {
 	s.db.Close()
 }
@@ -38,6 +47,7 @@ func (s *state) initDB() {
 func (s *state) handleReplicaRead(replicaRead *commands.ReplicaRead) (*commands.ReplicaWrite, error) {
 	ro := grocksdb.NewDefaultReadOptions()
 	defer ro.Destroy()
+
 	value, err := s.db.Get(ro, replicaRead.ID[:])
 	if err != nil {
 		return nil, err
@@ -45,10 +55,6 @@ func (s *state) handleReplicaRead(replicaRead *commands.ReplicaRead) (*commands.
 	data := make([]byte, value.Size())
 	copy(data, value.Data())
 	value.Free()
-
-	if s.server.cfg.SphinxGeometry == nil {
-		panic("s.server.cfg.SphinxGeometry cannot be nil")
-	}
 
 	cmds := commands.NewStorageReplicaCommands(s.server.cfg.SphinxGeometry)
 	rawCmds, err := cmds.FromBytes(data)
