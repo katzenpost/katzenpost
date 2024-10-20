@@ -66,8 +66,7 @@ type ThinClient struct {
 
 	eventSink     chan Event
 	drainAdd      chan chan Event
-	drainStop     chan interface{}
-	drainStopOnce sync.Once
+	drainRemove   chan chan Event
 
 	isConnected bool
 
@@ -90,13 +89,13 @@ func NewThinClient(cfg *config.Config) *ThinClient {
 		panic(err)
 	}
 	return &ThinClient{
-		isTCP:      strings.HasPrefix(strings.ToLower(cfg.ListenNetwork), "tcp"),
-		cfg:        cfg,
-		log:        logBackend.GetLogger("thinclient"),
-		logBackend: logBackend,
-		eventSink:  make(chan Event, 2),
-		drainAdd:   make(chan chan Event),
-		drainStop:  make(chan interface{}),
+		isTCP:       strings.HasPrefix(strings.ToLower(cfg.ListenNetwork), "tcp"),
+		cfg:         cfg,
+		log:         logBackend.GetLogger("thinclient"),
+		logBackend:  logBackend,
+		eventSink:   make(chan Event, 2),
+		drainAdd:    make(chan chan Event),
+		drainRemove: make(chan chan Event),
 	}
 }
 
@@ -343,13 +342,12 @@ func (t *ThinClient) EventSink() chan Event {
 	return ch
 }
 
-func (t *ThinClient) stopDrain() {
-	t.drainStopOnce.Do(func() {
-		close(t.drainStop)
-	})
+// StopEventSink tells eventSinkWorker to stop sending events to ch
+func (t *ThinClient) StopEventSink(ch chan Event) {
+	t.drainRemove <- ch
 }
 
-// drain the eventSink until stopDrain() is called
+// eventSinkWorker adds and removes channels receiving Events
 func (t *ThinClient) eventSinkWorker() {
 	t.log.Debug("STARTING eventSinkWorker")
 	defer t.log.Debug("STOPPING eventSinkWorker")
@@ -361,19 +359,20 @@ func (t *ThinClient) eventSinkWorker() {
 			return
 		case drain := <- t.drainAdd:
 			drains[drain] = struct{}{}
-		case <-t.drainStop:
-			// stop thread on drain stop
-			return
+		case drain := <- t.drainRemove:
+			delete(drains, drain)
 		case event := <-t.eventSink:
 			bad := make([]chan Event, 0)
 			for drain, _ := range drains {
 				select {
+				case <-t.HaltCh():
+					return
 				case drain <- event:
 				default:
 					bad = append(bad, drain)
 				}
 			}
-			// remove closed drains
+			// remove blocked drains
 			for _, drain := range bad {
 				delete(drains, drain)
 			}
@@ -483,7 +482,7 @@ func (t *ThinClient) BlockingSendMessage(ctx context.Context, payload []byte, de
 	}
 	surbID := t.NewSURBID()
 	eventSink := t.EventSink()
-	defer close(eventSink)
+	defer t.StopEventSink(eventSink)
 	err := t.SendMessage(surbID, payload, destNode, destQueue)
 	if err != nil {
 		return nil, err
