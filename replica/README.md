@@ -1,6 +1,8 @@
 # Pigeonhole Storage Replica
 
-This is a work-in-progress.
+
+This storage server requires a Katzenpost client2 daemon in order to download
+fresh PKI documents.
 
 
 ## building / running
