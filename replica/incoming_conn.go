@@ -277,10 +277,15 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 }
 
 func (c *incomingConn) handleReplicaRead(replicaRead *commands.ReplicaRead) *commands.ReplicaReadReply {
-	const successCode = 0
+	const (
+		successCode = 0
+		failCode    = 1
+	)
 	resp, err := c.l.server.state.handleReplicaRead(replicaRead)
 	if err != nil {
-		return &commands.ReplicaReadReply{}
+		return &commands.ReplicaReadReply{
+			ErrorCode: failCode,
+		}
 	}
 	return &commands.ReplicaReadReply{
 		ErrorCode: successCode,
