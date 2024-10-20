@@ -278,6 +278,19 @@ func (d *Document) GetServiceNodeByKeyHash(keyhash *[32]byte) (*MixDescriptor, e
 	return nil, fmt.Errorf("pki: service not found")
 }
 
+func (d *Document) GetReplicaNodeByKeyHash(keyhash *[32]byte) (*ReplicaDescriptor, error) {
+	for _, v := range d.StorageReplicas {
+		if v.IdentityKey == nil {
+			return nil, fmt.Errorf("pki: document contains invalid descriptors")
+		}
+		idKeyHash := hash.Sum256(v.IdentityKey)
+		if hmac.Equal(idKeyHash[:], keyhash[:]) {
+			return v, nil
+		}
+	}
+	return nil, fmt.Errorf("pki: service not found")
+}
+
 // GetMix returns the MixDescriptor for the given mix Name.
 func (d *Document) GetMix(name string) (*MixDescriptor, error) {
 	for _, l := range d.Topology {

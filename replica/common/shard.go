@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright (C) 2024 David Stainton
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package replica
+package common
 
 import (
 	"slices"
@@ -43,4 +43,23 @@ func Shard(boxID *[32]byte, serverIdKeys [][]byte) [][]byte {
 	}
 
 	return result
+}
+
+func Shard2(boxID *[32]byte, serverIdKeys [][]byte) [][]byte {
+	hashes := make([][32]byte, 2, 2)
+	keys := make([][]byte, 2, 2)
+	hashes[0] = [32]byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff}
+	hashes[1] = [32]byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff}
+	for _, key := range serverIdKeys {
+		hash := blake2b.Sum256(append(key[:32], boxID[:32]...))
+		if slices.Compare(hashes[1][:], hash[:]) == -1 {
+			continue // hash[:] > largest kept hashes[1]
+		}
+		cmpidx := (slices.Compare(hashes[0][:], hash[:]) & 2) >> 1
+		hashes[1-cmpidx] = hashes[0]
+		keys[1-cmpidx] = keys[0]
+		hashes[cmpidx] = hash
+		keys[cmpidx] = key
+	}
+	return keys
 }
