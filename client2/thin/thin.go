@@ -369,6 +369,7 @@ func (t *ThinClient) eventSinkWorker() {
 					return
 				case drain <- event:
 				default:
+					t.log.Errorf("BUG: removing unresponsive channel from eventSink drains")
 					bad = append(bad, drain)
 				}
 			}
