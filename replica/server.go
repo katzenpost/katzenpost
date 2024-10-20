@@ -52,6 +52,7 @@ type Server struct {
 	pkiWorker  *PKIWorker
 	listeners  []GenericListener
 	state      *state
+	connector  *Connector
 
 	replicaPrivateKey  nike.PrivateKey
 	replicaPublicKey   nike.PublicKey
@@ -91,6 +92,10 @@ func (s *Server) initDataDir() error {
 	}
 
 	return nil
+}
+
+func (s *Server) LogBackend() *log.Backend {
+	return s.logBackend
 }
 
 func (s *Server) initLogging() error {
@@ -345,6 +350,9 @@ func New(cfg *config.Config) (*Server, error) {
 
 	// Start the PKI worker.
 	s.pkiWorker = newPKIWorker(s, s.logBackend.GetLogger("pkiWorker"))
+
+	// Start the outgoing connection worker
+	s.connector = newConnector(s)
 
 	// Bring the listener(s) online.
 	s.listeners = make([]GenericListener, 0, len(addresses))

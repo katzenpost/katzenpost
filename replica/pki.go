@@ -5,6 +5,7 @@ package replica
 
 import (
 	"crypto/hmac"
+	"sync"
 	"time"
 
 	"golang.org/x/crypto/blake2b"
@@ -26,13 +27,49 @@ var (
 	recheckInterval     = epochtime.Period / 16
 )
 
+type ReplicaMap struct {
+	sync.RWMutex
+	replicas map[[32]byte]*pki.ReplicaDescriptor
+}
+
+func newReplicaMap() *ReplicaMap {
+	return &ReplicaMap{
+		replicas: make(map[[32]byte]*pki.ReplicaDescriptor),
+	}
+}
+
+func (r *ReplicaMap) GetReplicaDescriptor(nodeID *[32]byte) (*pki.ReplicaDescriptor, bool) {
+	r.RLock()
+	ret, ok := r.replicas[*nodeID]
+	r.RUnlock()
+	// NOTE(david): make copy of pki.ReplicaDescriptor? it might be needed, later to avoid
+	// data races if one threat mutates the descriptor.
+	return ret, ok
+}
+
+func (r *ReplicaMap) Replace(newMap map[[32]byte]*pki.ReplicaDescriptor) {
+	r.Lock()
+	r.replicas = newMap
+	r.Unlock()
+}
+
+func (r *ReplicaMap) Copy() map[[32]byte]*pki.ReplicaDescriptor {
+	ret := make(map[[32]byte]*pki.ReplicaDescriptor)
+	r.RLock()
+	for k, v := range r.replicas {
+		ret[k] = v
+	}
+	r.RUnlock()
+	return ret
+}
+
 type PKIWorker struct {
 	worker.Worker
 
 	server *Server
 	log    *logging.Logger
 
-	replicas     map[[32]byte]*pki.ReplicaDescriptor
+	replicas     *ReplicaMap
 	currentEpoch uint64
 }
 
@@ -40,10 +77,10 @@ func newPKIWorker(server *Server, log *logging.Logger) *PKIWorker {
 	p := &PKIWorker{
 		server:   server,
 		log:      log,
-		replicas: make(map[[32]byte]*pki.ReplicaDescriptor),
+		replicas: newReplicaMap(),
 	}
 	doc := p.server.thinClient.PKIDocument()
-	p.replicas = replicaMap(doc)
+	p.replicas.Replace(replicaMap(doc))
 	p.currentEpoch = doc.Epoch
 	return p
 }
@@ -110,14 +147,14 @@ func (p *PKIWorker) worker() {
 		doc := p.server.thinClient.PKIDocument()
 		newReplicas := replicaMap(doc)
 		switch {
-		case equal(p.replicas, newReplicas):
+		case equal(p.replicas.Copy(), newReplicas):
 			// no op
-		case len(difference(p.replicas, newReplicas)) > 0:
+		case len(difference(p.replicas.Copy(), newReplicas)) > 0:
 			// removing replica(s)
 			fallthrough
-		case len(difference(newReplicas, p.replicas)) > 0:
+		case len(difference(newReplicas, p.replicas.Copy())) > 0:
 			// adding replica(s)
-			p.replicas = newReplicas
+			p.replicas.Replace(newReplicas)
 			p.server.state.Rebalance()
 		}
 
@@ -125,37 +162,46 @@ func (p *PKIWorker) worker() {
 	}
 }
 
-func (p *PKIWorker) AuthenticateConnection(c *wire.PeerCredentials) bool {
+func (p *PKIWorker) AuthenticateCourierConnection(c *wire.PeerCredentials) bool {
 	if len(c.AdditionalData) != sConstants.NodeIDLength {
 		p.log.Debugf("AuthenticateConnection: '%x' AD not an IdentityKey?.", c.AdditionalData)
 		return false
 	}
 	var nodeID [sConstants.NodeIDLength]byte
 	copy(nodeID[:], c.AdditionalData)
-
-	replicaDesc, isReplica := p.replicas[nodeID]
-	var isCourier bool
 	doc := p.server.thinClient.PKIDocument()
 	serviceDesc, err := doc.GetServiceNodeByKeyHash(&nodeID)
 	if err != nil {
-		isCourier = true
+		return false
 	}
-
 	blob, err := c.PublicKey.MarshalBinary()
 	if err != nil {
 		panic(err)
 	}
-
-	switch {
-	case isReplica:
-		if !hmac.Equal(replicaDesc.LinkKey, blob) {
-			return false
-		}
-	case isCourier:
-		// TODO(david): perhaps check that it has a courier service
-		if !hmac.Equal(serviceDesc.LinkKey, blob) {
-			return false
-		}
+	// XXX TODO(david): perhaps check that it has a courier service
+	if !hmac.Equal(serviceDesc.LinkKey, blob) {
+		return false
 	}
 	return true
+}
+
+func (p *PKIWorker) AuthenticateReplicaConnection(c *wire.PeerCredentials) (*pki.ReplicaDescriptor, bool) {
+	if len(c.AdditionalData) != sConstants.NodeIDLength {
+		p.log.Debugf("AuthenticateConnection: '%x' AD not an IdentityKey?.", c.AdditionalData)
+		return nil, false
+	}
+	var nodeID [sConstants.NodeIDLength]byte
+	copy(nodeID[:], c.AdditionalData)
+	replicaDesc, isReplica := p.replicas.GetReplicaDescriptor(&nodeID)
+	if !isReplica {
+		return nil, false
+	}
+	blob, err := c.PublicKey.MarshalBinary()
+	if err != nil {
+		panic(err)
+	}
+	if !hmac.Equal(replicaDesc.LinkKey, blob) {
+		return nil, false
+	}
+	return replicaDesc, true
 }

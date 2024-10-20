@@ -21,8 +21,11 @@ import (
 )
 
 const (
-	defaultAddress  = ":3266"
-	defaultLogLevel = "NOTICE"
+	defaultAddress          = ":3266"
+	defaultLogLevel         = "NOTICE"
+	defaultConnectTimeout   = 60 * 1000 // 60 sec.
+	defaultHandshakeTimeout = 30 * 1000 // 30 sec.
+	defaultReauthInterval   = 30 * 1000 // 30 sec.
 )
 
 var defaultLogging = Logging{
@@ -121,12 +124,33 @@ type Config struct {
 
 	ThinConfig *thin.ThinConfig
 
+	// ConnectTimeout specifies the maximum time a connection can take to
+	// establish a TCP/IP connection in milliseconds.
+	ConnectTimeout int
+
+	// HandshakeTimeout specifies the maximum time a connection can take for a
+	// link protocol handshake in milliseconds.
+	HandshakeTimeout int
+
+	// ReauthInterval specifies the interval at which a connection will be
+	// reauthenticated in milliseconds.
+	ReauthInterval int
+
 	// GenerateOnly halts and cleans up the server right after long term
 	// key generation.
 	GenerateOnly bool
 }
 
 func (c *Config) FixupAndValidate(forceGenOnly bool) error {
+	if c.ReauthInterval <= 0 {
+		c.ReauthInterval = defaultReauthInterval
+	}
+	if c.HandshakeTimeout <= 0 {
+		c.HandshakeTimeout = defaultHandshakeTimeout
+	}
+	if c.ConnectTimeout <= 0 {
+		c.ConnectTimeout = defaultConnectTimeout
+	}
 	if c.ThinConfig == nil {
 		return errors.New("config: ThinConfig is not set")
 	}
