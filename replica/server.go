@@ -45,15 +45,15 @@ type Server struct {
 	cfg *config.Config
 
 	thinClient *thin.ThinClient
+	pkiWorker  *PKIWorker
+	listeners  []GenericListener
+	state      *state
 
 	replicaPrivateKey  nike.PrivateKey
 	replicaPublicKey   nike.PublicKey
 	identityPrivateKey sign.PrivateKey
 	identityPublicKey  sign.PublicKey
 	linkKey            kem.PrivateKey
-
-	listeners []GenericListener
-	state     *state
 
 	logBackend *log.Backend
 	log        *logging.Logger
@@ -300,6 +300,9 @@ func New(cfg *config.Config) (*Server, error) {
 		isOk = false
 		return nil, err
 	}
+
+	// Start the PKI worker.
+	s.pkiWorker = newPKIWorker(s, s.logBackend.GetLogger("pkiWorker"))
 
 	// Bring the listener(s) online.
 	s.listeners = make([]GenericListener, 0, len(addresses))

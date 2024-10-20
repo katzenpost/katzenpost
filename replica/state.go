@@ -74,3 +74,10 @@ func (s *state) handleReplicaWrite(replicaWrite *commands.ReplicaWrite) error {
 
 	return s.db.Put(wo, replicaWrite.ID[:], replicaWrite.ToBytes())
 }
+
+func (s *state) Rebalance() {
+	// XXX FIXME(david): scan through all the Box IDs and determine which
+	// shards they belong to. If this replica node is one of the shares,
+	// then just copy the share to the other replica. Otherwise copy
+	// the share to the two replicas.
+}
