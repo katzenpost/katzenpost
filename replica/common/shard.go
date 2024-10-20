@@ -40,6 +40,7 @@ type serverDesc struct {
 // Shard implements our consistent hashing scheme for the sharded pigeonhole database.
 // It returns the first K`th entries from our sorted list of hashes
 // where each hash is the hash of the boxID concatenated with the server ID key.
+/*
 func Shard(boxID *[32]byte, serverIdKeys [][]byte) [][]byte {
 	servers := make([]*serverDesc, 0, len(serverIdKeys))
 	for _, key := range serverIdKeys {
@@ -62,7 +63,12 @@ func Shard(boxID *[32]byte, serverIdKeys [][]byte) [][]byte {
 
 	return result
 }
+*/
 
+// Shard2 implements our consistent hashing scheme for the sharded pigeonhole database
+// where K is fixed to 2.
+// It returns the first K`th entries from our sorted list of hashes
+// where each hash is the hash of the boxID concatenated with the server ID key.
 func Shard2(boxID *[32]byte, serverIdKeys [][]byte) [][]byte {
 	hashes := make([][32]byte, 2, 2)
 	keys := make([][]byte, 2, 2)
@@ -80,4 +86,25 @@ func Shard2(boxID *[32]byte, serverIdKeys [][]byte) [][]byte {
 		keys[cmpidx] = key
 	}
 	return keys
+}
+
+func GetShards(boxid *[32]byte, doc *pki.Document) ([]*pki.ReplicaDescriptor, error) {
+	replicaKeys, err := GetReplicaKeys(doc)
+	if err != nil {
+		return nil, err
+	}
+	orderedKeys := Shard2(boxid, replicaKeys)
+	shards := make([]*pki.ReplicaDescriptor, K)
+	for i, key := range orderedKeys {
+		hash := blake2b.Sum256(key)
+		desc, err := doc.GetReplicaNodeByKeyHash(&hash)
+		if err != nil {
+			return nil, err
+		}
+		shards[i] = desc
+		if i == K-1 {
+			break
+		}
+	}
+	return shards, nil
 }

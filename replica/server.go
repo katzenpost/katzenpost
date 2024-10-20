@@ -11,7 +11,6 @@ import (
 	"path/filepath"
 	"sync"
 
-	"golang.org/x/crypto/blake2b"
 	"gopkg.in/op/go-logging.v1"
 
 	"github.com/katzenpost/hpqc/kem"
@@ -153,33 +152,23 @@ func (s *Server) HasLocalReplica(shards []*pki.ReplicaDescriptor) (bool, error) 
 	return false, nil
 }
 
-func (s *Server) GetRemoteShards(boxid *[32]byte) ([]*pki.ReplicaDescriptor, error) {
-	doc := s.thinClient.PKIDocument()
-	replicaKeys, err := common.GetReplicaKeys(doc)
+func (s *Server) GetRemoteShards(boxid *[32]byte, doc *pki.Document) ([]*pki.ReplicaDescriptor, error) {
+	shards, err := common.GetShards(boxid, doc)
 	if err != nil {
 		return nil, err
 	}
-	orderedKeys := common.Shard(boxid, replicaKeys)
-	shards := make([]*pki.ReplicaDescriptor, common.K)
-	idKey, err := s.identityPublicKey.MarshalBinary()
-	if err != nil {
-		return nil, err
-	}
-	for i, key := range orderedKeys {
-		if hmac.Equal(key, idKey) {
+	ret := make([]*pki.ReplicaDescriptor, 0)
+	for _, desc := range shards {
+		idpubkey, err := s.identityPublicKey.MarshalBinary()
+		if err != nil {
+			panic(err)
+		}
+		if hmac.Equal(desc.IdentityKey, idpubkey) {
 			continue
 		}
-		hash := blake2b.Sum256(key)
-		desc, err := doc.GetReplicaNodeByKeyHash(&hash)
-		if err != nil {
-			return nil, err
-		}
-		shards[i] = desc
-		if i == common.K-1 {
-			break
-		}
+		ret = append(ret, desc)
 	}
-	return shards, nil
+	return ret, nil
 }
 
 // New returns a new Server instance parameterized with the specific
