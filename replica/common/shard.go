@@ -4,15 +4,33 @@
 package common
 
 import (
+	"errors"
 	"slices"
 
 	"golang.org/x/crypto/blake2b"
+
+	"github.com/katzenpost/katzenpost/core/pki"
 )
 
 const (
 	// K represents the number of shards per entry into the system.
 	K = 2
 )
+
+func GetReplicaKeys(doc *pki.Document) ([][]byte, error) {
+	if doc.StorageReplicas == nil {
+		return nil, errors.New("GetReplicaKeys: doc.StorageReplicas is nil")
+	}
+	if len(doc.StorageReplicas) == 0 {
+		return nil, errors.New("GetReplicaKeys: doc.StorageReplicas is empty")
+	}
+	keys := make([][]byte, len(doc.StorageReplicas))
+	for i, replica := range doc.StorageReplicas {
+		keys[i] = make([]byte, len(replica.IdentityKey))
+		copy(keys[i], replica.IdentityKey)
+	}
+	return keys, nil
+}
 
 type serverDesc struct {
 	key  []byte
