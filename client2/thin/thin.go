@@ -11,23 +11,28 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os"
 	"strings"
 	"sync"
 
+	"github.com/BurntSushi/toml"
 	"github.com/fxamacker/cbor/v2"
 	"gopkg.in/op/go-logging.v1"
 
 	"github.com/katzenpost/hpqc/rand"
 
 	"github.com/katzenpost/katzenpost/client2/common"
-	"github.com/katzenpost/katzenpost/client2/config"
 	"github.com/katzenpost/katzenpost/core/log"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/worker"
 )
 
-const MessageIDLength = 16
+const (
+	defaultLogLevel = "NOTICE"
+
+	MessageIDLength = 16
+)
 
 // ThinResponse is used to encapsulate a message response
 // that are passed to the client application.
@@ -52,8 +57,9 @@ type ThinResponse struct {
 type ThinClient struct {
 	worker.Worker
 
-	cfg   *config.Config
-	isTCP bool
+	network string
+	address string
+	isTCP   bool
 
 	log        *logging.Logger
 	logBackend *log.Backend
@@ -82,25 +88,71 @@ func (t *ThinClient) Shutdown() {
 	t.Halt()
 }
 
+type ThinConfig struct {
+	LoggingFile    string
+	LoggingLevel   string
+	LoggingDisable bool
+	Network        string
+	Address        string
+}
+
+func (c *ThinConfig) FixupAndValidate() error {
+	if c.Network == "" {
+		return errors.New("config: ThinConfig.Network is not set")
+	}
+	if c.Address == "" {
+		return errors.New("config: ThinConfig.Address is not set")
+	}
+
+	lvl := strings.ToUpper(c.LoggingLevel)
+	switch lvl {
+	case "ERROR", "WARNING", "INFO", "DEBUG":
+	case "":
+		c.LoggingLevel = defaultLogLevel
+	default:
+		return fmt.Errorf("config: Logging: Level '%v' is invalid", c.LoggingLevel)
+	}
+	c.LoggingLevel = lvl
+	return nil
+}
+
+// Load parses and validates the provided buffer b as a config file body and
+// returns the Config.
+func Load(b []byte) (*ThinConfig, error) {
+	cfg := new(ThinConfig)
+
+	err := toml.Unmarshal(b, cfg)
+	if err != nil {
+		return nil, err
+	}
+	return cfg, nil
+}
+
+// LoadFile loads, parses, and validates the provided file and returns the
+// Config.
+func LoadFile(f string) (*ThinConfig, error) {
+	b, err := os.ReadFile(f)
+	if err != nil {
+		return nil, err
+	}
+	return Load(b)
+}
+
 // NewThinClient creates a new thing client.
-func NewThinClient(cfg *config.Config) *ThinClient {
-	logBackend, err := log.New(cfg.Logging.File, cfg.Logging.Level, cfg.Logging.Disable)
+func NewThinClient(cfg *ThinConfig) *ThinClient {
+	logBackend, err := log.New(cfg.LoggingFile, cfg.LoggingLevel, cfg.LoggingDisable)
 	if err != nil {
 		panic(err)
 	}
 	return &ThinClient{
-		isTCP:      strings.HasPrefix(strings.ToLower(cfg.ListenNetwork), "tcp"),
-		cfg:        cfg,
+		network:    cfg.Network,
+		address:    cfg.Address,
+		isTCP:      strings.HasPrefix(strings.ToLower(cfg.Network), "tcp"),
 		log:        logBackend.GetLogger("thinclient"),
 		logBackend: logBackend,
 		eventSink:  make(chan Event, 2),
 		drainStop:  make(chan interface{}),
 	}
-}
-
-// GetConfig returns the config
-func (t *ThinClient) GetConfig() *config.Config {
-	return t.cfg
 }
 
 // GetLogger(prefix) returns a logger with prefix
@@ -130,10 +182,7 @@ func (t *ThinClient) Close() error {
 func (t *ThinClient) Dial() error {
 	t.log.Debug("Dial begin")
 
-	network := t.cfg.ListenNetwork
-	address := t.cfg.ListenAddress
-
-	switch network {
+	switch t.network {
 	case "tcp6":
 		fallthrough
 	case "tcp4":
@@ -142,7 +191,7 @@ func (t *ThinClient) Dial() error {
 		fallthrough
 	case "unix":
 		var err error
-		t.conn, err = net.Dial(network, address)
+		t.conn, err = net.Dial(t.network, t.address)
 		if err != nil {
 			return err
 		}

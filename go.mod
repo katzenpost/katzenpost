@@ -11,7 +11,7 @@ require (
 	github.com/jackc/pgx v3.6.2+incompatible
 	github.com/katzenpost/chacha20poly1305 v0.0.0-20211026103954-7b6fb2fc0129
 	github.com/katzenpost/circl v1.3.9-0.20240222183521-1cd9a34e9a0c
-	github.com/katzenpost/hpqc v0.0.45
+	github.com/katzenpost/hpqc v0.0.46
 	github.com/katzenpost/nyquist v0.0.10
 	github.com/prometheus/client_golang v1.20.0
 	github.com/quic-go/quic-go v0.47.0
@@ -51,6 +51,7 @@ require (
 	github.com/klauspost/compress v1.17.9 // indirect
 	github.com/kr/text v0.2.0 // indirect
 	github.com/lib/pq v1.10.9 // indirect
+	github.com/linxGnu/grocksdb v1.9.3 // indirect
 	github.com/mattn/go-pointer v0.0.1 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/oasisprotocol/curve25519-voi v0.0.0-20230904125328-1f23a7beb09a // indirect
