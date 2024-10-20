@@ -65,6 +65,7 @@ type ThinClient struct {
 	pkidocMutex sync.RWMutex
 
 	eventSink     chan Event
+	drainAdd      chan chan Event
 	drainStop     chan interface{}
 	drainStopOnce sync.Once
 
@@ -94,6 +95,7 @@ func NewThinClient(cfg *config.Config) *ThinClient {
 		log:        logBackend.GetLogger("thinclient"),
 		logBackend: logBackend,
 		eventSink:  make(chan Event, 2),
+		drainAdd:   make(chan chan Event),
 		drainStop:  make(chan interface{}),
 	}
 }
@@ -170,7 +172,7 @@ func (t *ThinClient) Dial() error {
 		panic("bug: thin client protocol sequence violation")
 	}
 	t.parsePKIDoc(message2.NewPKIDocumentEvent.Payload)
-	t.Go(t.eventSinkDrain)
+	t.Go(t.eventSinkWorker)
 	t.Go(t.worker)
 	t.log.Debug("Dial end")
 	return nil
@@ -333,9 +335,12 @@ func (t *ThinClient) worker() {
 	}
 }
 
+// EventSink returns a channel that receives all Events. The channel should be closed when done.
 func (t *ThinClient) EventSink() chan Event {
-	t.stopDrain()
-	return t.eventSink
+	// add a new event sink receiver
+	ch := make(chan Event, 1)
+	t.drainAdd <- ch
+	return ch
 }
 
 func (t *ThinClient) stopDrain() {
@@ -345,19 +350,33 @@ func (t *ThinClient) stopDrain() {
 }
 
 // drain the eventSink until stopDrain() is called
-func (t *ThinClient) eventSinkDrain() {
-	t.log.Debug("STARTING eventSinkDrain")
-	defer t.log.Debug("STOPPING eventSinkDrain")
+func (t *ThinClient) eventSinkWorker() {
+	t.log.Debug("STARTING eventSinkWorker")
+	defer t.log.Debug("STOPPING eventSinkWorker")
+	drains := make(map[chan Event]struct{}, 0)
 	for {
 		select {
 		case <-t.HaltCh():
 			// stop thread on shutdown
 			return
+		case drain := <- t.drainAdd:
+			drains[drain] = struct{}{}
 		case <-t.drainStop:
 			// stop thread on drain stop
 			return
-		case <-t.eventSink:
-			continue
+		case event := <-t.eventSink:
+			bad := make([]chan Event, 0)
+			for drain, _ := range drains {
+				select {
+				case drain <- event:
+				default:
+					bad = append(bad, drain)
+				}
+			}
+			// remove closed drains
+			for _, drain := range bad {
+				delete(drains, drain)
+			}
 		}
 	}
 }
@@ -464,6 +483,7 @@ func (t *ThinClient) BlockingSendMessage(ctx context.Context, payload []byte, de
 	}
 	surbID := t.NewSURBID()
 	eventSink := t.EventSink()
+	defer close(eventSink)
 	err := t.SendMessage(surbID, payload, destNode, destQueue)
 	if err != nil {
 		return nil, err
@@ -494,7 +514,7 @@ func (t *ThinClient) BlockingSendMessage(ctx context.Context, payload []byte, de
 			if hmac.Equal(surbID[:], v.SURBID[:]) {
 				return v.Payload, nil
 			} else {
-				return nil, errors.New("received MessageReplyEvent with unexpected SURB ID")
+				continue
 			}
 		default:
 			panic("impossible event type")
