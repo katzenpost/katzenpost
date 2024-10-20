@@ -15,6 +15,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/utils"
+	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"github.com/katzenpost/katzenpost/core/worker"
 )
 
@@ -49,6 +50,34 @@ func (co *Connector) ForceUpdate() {
 	case co.forceUpdateCh <- true:
 	default:
 	}
+}
+
+func getBoxID(cmd commands.Command) *[32]byte {
+	switch myCmd := cmd.(type) {
+	case *commands.ReplicaRead:
+		return myCmd.ID
+	case *commands.ReplicaWrite:
+		return myCmd.ID
+	default:
+		panic("invalid command")
+	}
+}
+
+func (co *Connector) DispatchCommand(cmd commands.Command, idHash *[32]byte) {
+	co.RLock()
+	defer co.RUnlock()
+
+	if cmd == nil {
+		co.log.Error("Dropping command: command is nil, wtf")
+		return
+	}
+	c, ok := co.conns[*idHash]
+	if !ok {
+		co.log.Debugf("Dropping command: %v (No connection for destination)", getBoxID(cmd))
+		return
+	}
+
+	c.dispatchCommand(cmd)
 }
 
 func (co *Connector) worker() {

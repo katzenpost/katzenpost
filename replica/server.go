@@ -153,13 +153,13 @@ func (s *Server) HasLocalReplica(shards []*pki.ReplicaDescriptor) (bool, error) 
 	return false, nil
 }
 
-func (s *Server) GetRemoteShards(id *[32]byte) ([]*pki.ReplicaDescriptor, error) {
+func (s *Server) GetRemoteShards(boxid *[32]byte) ([]*pki.ReplicaDescriptor, error) {
 	doc := s.thinClient.PKIDocument()
 	replicaKeys, err := common.GetReplicaKeys(doc)
 	if err != nil {
 		return nil, err
 	}
-	orderedKeys := common.Shard(id, replicaKeys)
+	orderedKeys := common.Shard(boxid, replicaKeys)
 	shards := make([]*pki.ReplicaDescriptor, common.K)
 	idKey, err := s.identityPublicKey.MarshalBinary()
 	if err != nil {

@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"golang.org/x/crypto/blake2b"
 	"gopkg.in/op/go-logging.v1"
 
 	"github.com/katzenpost/hpqc/hash"
@@ -295,10 +296,9 @@ func (c *incomingConn) doReplication(cmd *commands.ReplicaWrite) {
 		c.log.Errorf("handleReplicaMessage failed: GetShards err: %x", err)
 		panic(err)
 	}
-	for _, _ = range descs {
-		// replicaDesc.Addresses
-
-		// XXX FIX ME
+	for _, desc := range descs {
+		idHash := blake2b.Sum256(desc.IdentityKey)
+		c.l.server.connector.DispatchCommand(cmd, &idHash)
 	}
 }
 
