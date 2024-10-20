@@ -4,7 +4,7 @@
 package replica
 
 import (
-	"reflect"
+	"crypto/hmac"
 	"time"
 
 	"golang.org/x/crypto/blake2b"
@@ -13,6 +13,8 @@ import (
 	vServer "github.com/katzenpost/katzenpost/authority/voting/server"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/pki"
+	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/worker"
 )
 
@@ -121,4 +123,39 @@ func (p *PKIWorker) worker() {
 
 		timer.Reset(recheckInterval)
 	}
+}
+
+func (p *PKIWorker) AuthenticateConnection(c *wire.PeerCredentials) bool {
+	if len(c.AdditionalData) != sConstants.NodeIDLength {
+		p.log.Debugf("AuthenticateConnection: '%x' AD not an IdentityKey?.", c.AdditionalData)
+		return false
+	}
+	var nodeID [sConstants.NodeIDLength]byte
+	copy(nodeID[:], c.AdditionalData)
+
+	replicaDesc, isReplica := p.replicas[nodeID]
+	var isCourier bool
+	doc := p.server.thinClient.PKIDocument()
+	serviceDesc, err := doc.GetServiceNodeByKeyHash(&nodeID)
+	if err != nil {
+		isCourier = true
+	}
+
+	blob, err := c.PublicKey.MarshalBinary()
+	if err != nil {
+		panic(err)
+	}
+
+	switch {
+	case isReplica:
+		if !hmac.Equal(replicaDesc.LinkKey, blob) {
+			return false
+		}
+	case isCourier:
+		// TODO(david): perhaps check that it has a courier service
+		if !hmac.Equal(serviceDesc.LinkKey, blob) {
+			return false
+		}
+	}
+	return true
 }

@@ -4,12 +4,14 @@
 package replica
 
 import (
+	"crypto/hmac"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
 
+	"golang.org/x/crypto/blake2b"
 	"gopkg.in/op/go-logging.v1"
 
 	"github.com/katzenpost/hpqc/kem"
@@ -24,8 +26,10 @@ import (
 
 	"github.com/katzenpost/katzenpost/client2/thin"
 	"github.com/katzenpost/katzenpost/core/log"
+	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/utils"
+	"github.com/katzenpost/katzenpost/replica/common"
 	"github.com/katzenpost/katzenpost/replica/config"
 )
 
@@ -133,6 +137,44 @@ func (s *Server) RotateLog() {
 	if err != nil {
 		s.fatalErrCh <- fmt.Errorf("failed to rotate log file, shutting down server")
 	}
+}
+
+func (s *Server) HasLocalReplica(shards []*pki.ReplicaDescriptor) (bool, error) {
+	for _, idKey := range shards {
+		if s.identityPublicKey.Equal(idKey) {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func (s *Server) GetRemoteShards(id *[32]byte) ([]*pki.ReplicaDescriptor, error) {
+	doc := s.thinClient.PKIDocument()
+	replicaKeys, err := common.GetReplicaKeys(doc)
+	if err != nil {
+		return nil, err
+	}
+	orderedKeys := common.Shard(id, replicaKeys)
+	shards := make([]*pki.ReplicaDescriptor, common.K)
+	idKey, err := s.identityPublicKey.MarshalBinary()
+	if err != nil {
+		return nil, err
+	}
+	for i, key := range orderedKeys {
+		if hmac.Equal(key, idKey) {
+			continue
+		}
+		hash := blake2b.Sum256(key)
+		desc, err := doc.GetReplicaNodeByKeyHash(&hash)
+		if err != nil {
+			return nil, err
+		}
+		shards[i] = desc
+		if i == common.K-1 {
+			break
+		}
+	}
+	return shards, nil
 }
 
 // New returns a new Server instance parameterized with the specific

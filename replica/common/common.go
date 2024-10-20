@@ -32,16 +32,6 @@ func ReplicaSort(doc *pki.Document) ([]*pki.ReplicaDescriptor, error) {
 	return replicas, nil
 }
 
-/*
-	func ReplicaMap(doc *pki.Document) (map[[32]byte]*pki.ReplicaDescriptor, error) {
-		replicas, err := ReplicaSort(doc)
-		if err != nil {
-			return nil, err
-		}
-		panic("not done yet")
-	}
-*/
-
 func ReplicaNum(n uint8, doc *pki.Document) (*pki.ReplicaDescriptor, error) {
 	replicas, err := ReplicaSort(doc)
 	if err != nil {

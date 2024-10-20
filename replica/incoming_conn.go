@@ -18,7 +18,6 @@ import (
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/hpqc/sign"
 
-	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
@@ -47,28 +46,13 @@ type incomingConn struct {
 	retrSeq uint32
 
 	isInitialized bool // Set by listener.
-	fromClient    bool
-	fromMix       bool
 	canSend       bool
 
 	closeConnectionCh chan bool
 }
 
 func (c *incomingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
-	_, err := creds.PublicKey.MarshalBinary()
-	if err != nil {
-		panic(err)
-	}
-
-	// Ensure the additional data is valid.
-	if len(creds.AdditionalData) != constants.NodeIDLength {
-		c.log.Debugf("incoming: '%x' AD is not an IdentityKey hash", creds.AdditionalData)
-		return false
-	}
-	var nodeID [constants.NodeIDLength]byte
-	copy(nodeID[:], creds.AdditionalData)
-
-	return true // XXX FIX ME
+	return c.l.server.pkiWorker.AuthenticateConnection(creds)
 }
 
 func (c *incomingConn) Close() {
@@ -123,11 +107,6 @@ func (c *incomingConn) worker() {
 	blob, err := creds.PublicKey.MarshalBinary()
 	if err != nil {
 		panic(err)
-	}
-	if c.fromMix {
-		c.log.Debugf("Peer: '%x' (%x)", creds.AdditionalData, hash.Sum256(blob))
-	} else {
-		c.log.Debugf("User: '%x', Key: '%x'", creds.AdditionalData, hash.Sum256(blob))
 	}
 
 	// Ensure that there's only one incoming conn from any given peer, though
@@ -282,6 +261,7 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 	case *commands.ReplicaRead:
 		return c.handleReplicaRead(myCmd)
 	case *commands.ReplicaWrite:
+		defer c.doReplication(myCmd)
 		return c.handleReplicaWrite(myCmd)
 	default:
 		c.log.Error("handleReplicaMessage failed: invalid request was decrypted")
@@ -300,6 +280,19 @@ func (c *incomingConn) handleReplicaRead(replicaRead *commands.ReplicaRead) *com
 		ID:        resp.ID,
 		Signature: resp.Signature,
 		Payload:   resp.Payload,
+	}
+}
+
+func (c *incomingConn) doReplication(cmd *commands.ReplicaWrite) {
+	descs, err := c.l.server.GetRemoteShards(cmd.ID)
+	if err != nil {
+		c.log.Errorf("handleReplicaMessage failed: GetShards err: %x", err)
+		panic(err)
+	}
+	for _, _ = range descs {
+		// replicaDesc.Addresses
+
+		// XXX FIX ME
 	}
 }
 
