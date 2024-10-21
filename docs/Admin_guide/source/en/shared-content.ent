@@ -17,8 +17,9 @@
     <listitem>
         <para><emphasis role="bold">File</emphasis></para>
         <para>Specifies the log file. If omitted, stdout is used.</para>
-		The absolute file path can be specified. However if a relative path is used then
-		its relative to the DataDir specified in the Server section of the configuration.
+        <para>An absolute or relative file path can be specified. A relative path is 
+        relative to the DataDir specified in the Server section of the 
+        configuration.</para>
         <para>Type: string</para>
     </listitem>
     <listitem>
