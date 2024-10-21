@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
+<!ENTITY program_name 'EchoMix'>
+
 <!ENTITY logging '
 <!--https://github.com/katzenpost/katzenpost/blob/c255fbbf421d5d9820553c18dc5dc6c9881ad547/authority/voting/server/config/config.go#L78-->
 <para>The logging configuration section controls logging.</para>
@@ -59,7 +61,7 @@
     </listitem>
     <listitem>
         <para><emphasis role="bold">NrHops</emphasis></para>
-        <para>NrHops is the number of hops, this indicates the size</para>
+        <para>NrHops is the number of hops through the mixnet, which determines the size</para>
         <para>of the Sphinx packet header.</para>
         <para>Type: int</para>
     </listitem>                    
@@ -108,11 +110,17 @@
         <para>Type: int</para>
     </listitem>                    
     <listitem>
-        <para><emphasis role="bold">NextNodeHopLength</emphasis></para>
+    
+        <!--
+        
+        para><emphasis role="bold">NextNodeHopLength</emphasis></para>
         <para>NextNodeHopLength is derived off the largest routing info</para>
         <para>block that we expect to encounter. Everything else just has
             a NextNodeHop + NodeDelay, or a Recipient, both cases which
-            are shorter.</para>
+            are shorter.</para
+            
+            -->
+            
         <para>Type: int</para>
     </listitem>                    
     <listitem>
@@ -122,8 +130,9 @@
     </listitem>
     <listitem>
         <para><emphasis role="bold">NIKEName</emphasis></para>
-        <para>NIKEName is the name of the NIKE scheme used by the mixnet&apos;s Sphinx
-            packet. NIKEName and KEMName are mutually exclusive.</para>
+        <para>NIKEName is the name of the NIKE (non-interactive key exchange) 
+        scheme used by the mixnet&apos;s Sphinx
+        packets. NIKEName and KEMName are mutually exclusive.</para>
         <para>Type: string</para>
     </listitem>
     <listitem>
@@ -141,18 +150,22 @@
                 <itemizedlist>
                     <listitem>
                         <para><emphasis role="bold">Identifier</emphasis></para>
-                        <para>Identifier is the human readable identifier for the node (eg:
-                            FQDN) AND must be unique for a given mixnet.</para>
+                        <para>Identifier is the human-readable identifier for a node (for example, 
+                        the FQDN) and must be unique for a given mixnet.</para>
                         <para>Type: string</para>
                     </listitem>
                     <listitem>
+                    
+                    <!--
+                    
                         <para><emphasis role="bold">WireKEM</emphasis></para>
-                        <para>WireKEM is the wire protocol KEM scheme to use. This is a configuration option where 
+                        <para>WireKEM is the wire protocol KEM (key encapsulation mechanism) scheme to use.</para>
+                         <para>WireKEM is the wire protocol KEM scheme to use. This is a configuration option where 
                         its possible to use post quantum cryptography to strengthen security. In this case the "Wire" protocol 
                         refers to our PQ Noise based protocol which is how all the dir auth nodes talk to one another. PQ Noise is a 
                         variation of the Noise protocol framework where the handshake patterns are algebraically transformed to replace
-						ECDH operations with KEM encapsulate/decapsulate operations.
-						</para>
+                        ECDH operations with KEM encapsulate/decapsulate operations.
+                        </para>
 						<para>Here are all the KEM scheme names currently supported by Katzenpost:
 							"x25519", "x448", "mlkem768", "sntrup4591761", "frodo640shake", "mceliece348864", "mceliece348864f",
 							"mceliece460896", "mceliece460896f", "mceliece6688128", "mceliece6688128f", "mceliece6960119", "mceliece6960119f",
@@ -160,29 +173,32 @@
 							"CTIDH511", "CTIDH512", "CTIDH1024", "CTIDH2048", "CTIDH512-X25519", "CTIDH512-X25519"
 						</para>
                         <para>Type: string</para>
+                        
+                        -->
+                        
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">PKISignatureScheme</emphasis></para>
-                        <para>PKISignatureScheme specifies the cryptographic signature scheme which will be used by all components of the mix network
-                        when interacting with the PKI system. Mix nodes will sign their descriptors using this signature scheme. Likewise PKI documents
-                        will be signed by the dir auth nodes using this signature scheme.</para>
-                        <para>Here are all the signature scheme names currently supported by Katzenpost:
+                        <para>PKISignatureScheme specifies the cryptographic signature scheme used by all components of the mix network
+                        when interacting with the PKI system. Mix nodes sign their descriptors using this signature scheme. Likewise, PKI documents
+                        are signed by directory authority nodes using this signature scheme.</para>
+                        <para>The following signature schemes are supported by Katzenpost:
                         	"ed25519", "ed448", "Ed25519 Sphincs+", "Ed448-Sphincs+", "Ed25519-Dilithium2", "Ed448-Dilithium3"
                         </para>
                         <para>Type: string</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">Addresses</emphasis></para>
-                        <para>Addresses specifies a list of one or more Address URLs in a format that contains the transport protocol,
-                        IP address and port number that the server will bind to for incoming connections.
+                        <para>Addresses specifies a list of one or more address URLs in a format that includes the transport protocol,
+                        IP address, and port number that the server will bind to for incoming connections.
                         Currently Katzenpost supports URLs with that start with either "tcp://" or "quic://" such as: ["tcp://192.168.1.1:30001"] and ["quic://192.168.1.1:40001"]
                         </para>
                         <para>Type: []string</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">BindAddresses</emphasis></para>
-                        <para>BindAddresses are the listener addresses that the server will bind to and accept connections on
-						These Addresses are not advertised in the PKI.</para>
+                        <para>BindAddresses are listener addresses that the server will bind to and accept connections on.
+						These addresses are not advertised in the PKI.</para>
                         <para>Type: bool</para>
                     </listitem>
                     <listitem>
@@ -193,8 +209,10 @@
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">DataDir</emphasis></para>
-                        <para>DataDir is the absolute path to the directory authority servers state directory where the persistence.db will be written to disk AND
-                        where the servers cryptographic key materials will be written to disk when started with the "-g" commmandline option.</para>
+                        <para>DataDir is the absolute path to the directory authority server state directory 
+                        where persistence.db will be written to disk and
+                        where the servers&apos; cryptographic key materials 
+                        will be written to disk when the serrver is started with the "-g" commmand-line option.</para>
                         <para>Type: string</para>
                     </listitem>
                     <listitem>
@@ -416,7 +434,7 @@
                     <listitem>
                         <para><emphasis role="bold">IdentityPublicKey</emphasis></para>
                         <para>IdentityPublicKeyPem is a string in PEM format containing
-						the public identity key key.</para>
+						the public identity key.</para>
                         <para>Type: string</para>
                     </listitem>
                     <listitem>
