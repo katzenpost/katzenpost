@@ -2,6 +2,7 @@
 *.log
 *.storage
 *.swp
+*.xpr
 *~
 
 docker/alpine_base.stamp
