@@ -153,45 +153,42 @@
                         <para>Identifier is the human-readable identifier for a node (for example, 
                         the FQDN) and must be unique for a given mixnet.</para>
                         <para>Type: string</para>
+                        <para>Required:</para>
                     </listitem>
                     <listitem>
-                    
-                    <!--
-                    
                         <para><emphasis role="bold">WireKEM</emphasis></para>
                         <para>WireKEM is the wire protocol KEM (key encapsulation mechanism) scheme to use.</para>
-                         <para>WireKEM is the wire protocol KEM scheme to use. This is a configuration option where 
+                        <para>This configuration option where 
                         its possible to use post quantum cryptography to strengthen security. In this case the "Wire" protocol 
                         refers to our PQ Noise based protocol which is how all the dir auth nodes talk to one another. PQ Noise is a 
                         variation of the Noise protocol framework where the handshake patterns are algebraically transformed to replace
                         ECDH operations with KEM encapsulate/decapsulate operations.
                         </para>
-						<para>Here are all the KEM scheme names currently supported by Katzenpost:
+						<para>The following KEM schemes are supported:
 							"x25519", "x448", "mlkem768", "sntrup4591761", "frodo640shake", "mceliece348864", "mceliece348864f",
 							"mceliece460896", "mceliece460896f", "mceliece6688128", "mceliece6688128f", "mceliece6960119", "mceliece6960119f",
 							"mceliece8192128", "mceliece8192128f", "xwing", "Kyber768-X25519", "MLKEM768-X25519", "MLKEM768-X448",
 							"CTIDH511", "CTIDH512", "CTIDH1024", "CTIDH2048", "CTIDH512-X25519", "CTIDH512-X25519"
 						</para>
                         <para>Type: string</para>
-                        
-                        -->
-                        
+                        <para>Required:</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">PKISignatureScheme</emphasis></para>
                         <para>PKISignatureScheme specifies the cryptographic signature scheme used by all components of the mix network
                         when interacting with the PKI system. Mix nodes sign their descriptors using this signature scheme. Likewise, PKI documents
                         are signed by directory authority nodes using this signature scheme.</para>
-                        <para>The following signature schemes are supported by Katzenpost:
+                        <para>The following signature schemes are supported:
                         	"ed25519", "ed448", "Ed25519 Sphincs+", "Ed448-Sphincs+", "Ed25519-Dilithium2", "Ed448-Dilithium3"
                         </para>
                         <para>Type: string</para>
+                        <para>Required:</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">Addresses</emphasis></para>
                         <para>Addresses specifies a list of one or more address URLs in a format that includes the transport protocol,
                         IP address, and port number that the server will bind to for incoming connections.
-                        Currently Katzenpost supports URLs with that start with either "tcp://" or "quic://" such as: ["tcp://192.168.1.1:30001"] and ["quic://192.168.1.1:40001"]
+                        Currently &program_name; supports URLs with that start with either "tcp://" or "quic://" such as: ["tcp://192.168.1.1:30001"] and ["quic://192.168.1.1:40001"]
                         </para>
                         <para>Type: []string</para>
                     </listitem>
@@ -206,6 +203,7 @@
                         <para>MetricsAddress is the address/port to bind the prometheus metrics
                             endpoint to.</para>
                         <para>Type: string</para>
+                        <para>Required:</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">DataDir</emphasis></para>
@@ -214,6 +212,7 @@
                         where the servers&apos; cryptographic key materials 
                         will be written to disk when the serrver is started with the "-g" commmand-line option.</para>
                         <para>Type: string</para>
+                        <para>Required:</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">IsGatewayNode</emphasis></para>
@@ -230,7 +229,7 @@
 <!ENTITY serverdebug '
 
 <!--https://github.com/katzenpost/katzenpost/blob/c255fbbf421d5d9820553c18dc5dc6c9881ad547/server/config/config.go-->
-                <para>Debug is the Katzenpost server debug configuration for advanced tuning.</para>   
+                <para>Debug is the &program_name; server debug configuration for advanced tuning.</para>   
                 <programlisting>[Debug]
                     NumSphinxWorkers = 16
                     NumServiceWorkers = 3
@@ -375,7 +374,7 @@
                 
 <!ENTITY  management '
 <!--https://github.com/katzenpost/katzenpost/blob/c255fbbf421d5d9820553c18dc5dc6c9881ad547/server/config/config.go#L729-->
-                <para>Management is the Katzenpost management interface configuration. The management section specifies connectivity information for the Katzenpost
+                <para>Management is the &program_name; management interface configuration. The management section specifies connectivity information for the &program_name;
                     control protocol which can be used to make configuration changes during
                     run-time. An example configuration looks like this:</para>
                 <programlisting>[Management]
@@ -393,6 +392,7 @@
                             <?oxy_comment_start author="dwrob" timestamp="20240814T171718-0700" comment="Confusing wording."?>If
                             left empty, then management_sock will be used under the DataDir.</para><?oxy_comment_end?>
                         <para>Type: string</para>
+                        <para>Required:</para>
                     </listitem>
                 </itemizedlist>'>
                 
@@ -430,28 +430,33 @@
                         <para>Identifier is the human readable identifier for the node (eg:
                             FQDN).</para>
                         <para>Type: string</para>
+                        <para>Required:</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">IdentityPublicKey</emphasis></para>
                         <para>IdentityPublicKeyPem is a string in PEM format containing
 						the public identity key.</para>
                         <para>Type: string</para>
+                        <para>Required:</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">PKISignatureScheme</emphasis></para>
                         <para>PKISignatureScheme specifies the cryptographic signature scheme</para>
                         <para>Type: string</para>
+                        <para>Required:</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">LinkPublicKey</emphasis></para>
                         <para>LinkPublicKeyPem is string containing the PEM format of the peer&apos;s
                             public link layer key.</para>
                         <para>Type: string</para>
+                        <para>Required:</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">WireKEMScheme</emphasis></para>
                         <para>WireKEMScheme is the wire protocol KEM scheme to use.</para>
                         <para>Type: string</para>
+                        <para>Required:</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">Addresses</emphasis></para>

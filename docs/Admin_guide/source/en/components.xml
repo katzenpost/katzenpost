@@ -1,6 +1,9 @@
-<?xml version="1.0" encoding="UTF-8"?>
+<!--<?xml version="1.0" encoding="UTF-8"?>
 <?xml-model href="http://docbook.org/xml/5.2/rng/docbook.rng" schematypens="http://relaxng.org/ns/structure/1.0"?>
 <?xml-model href="http://docbook.org/xml/5.2/sch/docbook.sch" type="application/xml" schematypens="http://purl.oclc.org/dsdl/schematron"?>
+-->
+
+<?xml-model href="http://docbook.org/xml/5.1/rng/docbook.rng" schematypens="http://relaxng.org/ns/structure/1.0"?>
 
 <!--A DOCTYPE declaration declaring a DTD is not need for DocBook 5.x, which uses RelaxNG and  Schematron instead. It is used here as a container for entity declarations.-->
 
@@ -12,7 +15,7 @@
 
 <chapter xmlns="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink"
     version="5.1" xml:id="components">
-    <title xml:id="components.title">Components of the Katzenpost mixnet</title>
+    <title xml:id="components.title">Components of the &program_name; mixnet</title>
 
     <!--
         
@@ -32,12 +35,12 @@
     <section xml:id="auth">
         <title xml:id="auth.title">Directory authorities</title>
 
-		<para>Directory authorities, or <emphasis>dirauths</emphasis>, are nodes in Katzenpost's
+		<para>Directory authorities, or <emphasis>dirauths</emphasis>, are nodes in &program_name;'s
             decentralized public key infrastructure (PKI), which forms the security root of the
-            entire Katzenpost system. Clients and mixnet nodes rely on the PKI to maintain and sign
-            an up-to-date <emphasis>consensus</emphasis> document, providing a view of the entire
-            network including connection information and public cryptographic key materials and
-            signatures. </para>
+            entire &program_name; system. Clients and mixnet nodes rely on the PKI to maintain and
+            sign an up-to-date <emphasis>consensus</emphasis> document, providing a view of the
+            entire network including connection information and public cryptographic key materials
+            and signatures. </para>
         <para>Every 20 minutes (the current value for an <emphasis>epoch</emphasis>), each mix node
             signs a descriptor and uploads it to the dirauth nodes. The dirauths then vote on a new
             consensus document. If consensus is reached, each dirauth signs the document. Clients
@@ -47,16 +50,16 @@
 		<para>The PKI signature scheme is fully configurable by the dirauth nodes. Our recommendation is
             to use a hybrid signature scheme consisting of the classical Ed25519 and the
             post-quantum, stateless, hash-based signature scheme known as Sphincs+ (with the
-            parameters: "sphincs-shake-256f"), which is designated in Katzenpost configurations as
-            "Ed25519 Sphincs+". Examples are provided below.</para>        
+            parameters: "sphincs-shake-256f"), which is designated in &program_name; configurations
+            as "Ed25519 Sphincs+". Examples are provided below.</para>        
 
         <section xml:id="auth-config">
             <title xml:id="auth-config.title">Configuring directory authorities</title>
             <para>The following configuration is drawn from the reference implementation in
-                <filename>katzenpost/docker/voting_mixnet/auth1/authority.toml</filename>. In a
+                    <filename>katzenpost/docker/voting_mixnet/auth1/authority.toml</filename>. In a
                 real-world mixnet, the component hosts would not be sharing a single IP address. For
                 more information about the test mixnet, see <link linkend="container"
-                    endterm="container.title">Using the Katzenpost test network</link>.</para>
+                    endterm="container.title">Using the &program_name; test network</link>.</para>
 <!--General TOML note:
 
 https://toml.io/en/v1.0.0
@@ -101,40 +104,49 @@ type Config struct {
                 <itemizedlist>
                     <listitem>
                         <para><emphasis role="bold">Identifier</emphasis></para>
-                        <para>Identifier is the human readable identifier for the node which should be unique per mixnet. It can be an FQDN but certainly doesn't have to be.</para>
+                        <para>Identifier is the human-readable identifier for a node, and should be unique per mixnet. It can be an FQDN but does not have to be.</para>
                         <para>Type: string</para>
+                        <para>Required:</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">WireKEMScheme</emphasis></para>
-                        <para>WireKEMScheme is the wire protocol KEM scheme to use. This is another configuration point where 
-                        it's possible to use post quantum cryptography to strengthen security. In this case the "Wire" protocol 
-                        refers to our PQ Noise based protocol which is how all the dir auth nodes talk to one another. PQ Noise is a 
-                        variation of the Noise protocol framework where the handshake patterns are algebraically transformed to replace
-						ECDH operations with KEM encapsulate/decapsulate operations.</para>
-						<para>Here are all the KEM scheme names currently supported by Katzenpost:
-							"x25519", "x448", "mlkem768", "sntrup4591761", "frodo640shake", "mceliece348864", "mceliece348864f",
-							"mceliece460896", "mceliece460896f", "mceliece6688128", "mceliece6688128f", "mceliece6960119", "mceliece6960119f",
-							"mceliece8192128", "mceliece8192128f", "xwing", "Kyber768-X25519", "MLKEM768-X25519", "MLKEM768-X448",
-							"CTIDH511", "CTIDH512", "CTIDH1024", "CTIDH2048", "CTIDH512-X25519", "CTIDH512-X25519"
-						</para>						
+                        <para>WireKEMScheme specifies the wire protocol KEM scheme to use. This is
+                            another configuration point where it's possible to use post-quantum
+                            cryptography to strengthen security. In this case the "Wire" protocol
+                            refers to our PQ Noise based protocol which is how all the dir auth
+                            nodes talk to one another. PQ Noise is a variation of the Noise protocol
+                            framework where the handshake patterns are algebraically transformed to
+                            replace ECDH operations with KEM encapsulate/decapsulate
+                            operations.</para>
+                        <para>The following KEM schemes are supported: "x25519",
+                            "x448", "mlkem768", "sntrup4591761", "frodo640shake", "mceliece348864",
+                            "mceliece348864f", "mceliece460896", "mceliece460896f",
+                            "mceliece6688128", "mceliece6688128f", "mceliece6960119",
+                            "mceliece6960119f", "mceliece8192128", "mceliece8192128f", "xwing",
+                            "Kyber768-X25519", "MLKEM768-X25519", "MLKEM768-X448", "CTIDH511",
+                            "CTIDH512", "CTIDH1024", "CTIDH2048", "CTIDH512-X25519",
+                            "CTIDH512-X25519" </para>						
                         <para>Type: string</para>
+                        <para>Required:</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">PKISignatureScheme</emphasis></para>
                         <para>PKISignatureScheme specifies the cryptographic signature scheme which will be used by all components of the mix network
                         when interacting with the PKI system. Mix nodes will sign their descriptors using this signature scheme. Likewise PKI documents
                         will be signed by the dir auth nodes using this signature scheme.</para>
-                        <para>Here are all the signature scheme names currently supported by Katzenpost:
-                        	"ed25519", "ed448", "Ed25519 Sphincs+", "Ed448-Sphincs+", "Ed25519-Dilithium2", "Ed448-Dilithium3"
-                        	</para>
+                        <para>The following signature schemes are supported: "ed25519", "ed448", "Ed25519 Sphincs+",
+                            "Ed448-Sphincs+", "Ed25519-Dilithium2", "Ed448-Dilithium3" </para>
                         <para>Type: string</para>
+                        <para>Required:</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">Addresses</emphasis></para>
-                        <para>Addresses specifies a list of one or more Address URLs in a format that contains the transport protocol,
-                        IP address and port number that the server will bind to for incoming connections.
-                        Currently Katzenpost supports URLs with that start with either "tcp://" or "quic://" such as: ["tcp://192.168.1.1:30001"] and ["quic://192.168.1.1:40001"]
-                        </para>
+                        <para>Addresses specifies a list of one or more Address URLs in a format
+                            that contains the transport protocol, IP address and port number that
+                            the server will bind to for incoming connections. Currently
+                            &program_name; supports URLs with that start with either "tcp://" or
+                            "quic://" such as: ["tcp://192.168.1.1:30001"] and
+                            ["quic://192.168.1.1:40001"] </para>
                         <para>Type: []string</para>
                     </listitem>
                     <listitem>
@@ -142,6 +154,7 @@ type Config struct {
                         <para>DataDir is the absolute path to the directory authority server's state directory where the persistence.db will be written to disk AND
                         where the server's cryptographic key materials will be written to disk when started with the "-g" commmandline option.</para>
                         <para>Type: string</para>
+                        <para>Required:</para>
                     </listitem>
                 </itemizedlist>
                 <para/>
@@ -196,12 +209,14 @@ ldMtDsvvc9KUfE4I0+c+XQ==
                         <para><emphasis role="bold">Identifier</emphasis></para>
                         <para>Identifier is the human readable identifier for the node which should be unique per mixnet. It can be an FQDN but certainly doesn't have to be.</para>
                         <para>Type: string</para>
+                        <para>Required:</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">IdentityPublicKey</emphasis></para>
                         <para>String in PEM format containing the public identity key. The node's public identity key is
                         the node's permanent identifier and is used to verify cryptographic signatures produce by node's private identity key.</para>
                         <para>Type: string</para>
+                        <para>Required:</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">PKISignatureScheme</emphasis></para>
@@ -209,17 +224,21 @@ ldMtDsvvc9KUfE4I0+c+XQ==
                         	  This PKISignatureScheme must match the scheme specified in the Server section of the configuration.
                         </para>
                         <para>Type: string</para>
+                        <para>Required:</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">LinkPublicKey</emphasis></para>
                         <para>LinkPublicKeyPem is string containing the PEM format of the peer's
-                            public link layer key. The Katzenpost "link layer" protocol is the PQ Noise based protocol
-                            which is sometimes also referred to as the "wire protocol". The type of this link public key
-                            must match the specified WireKEMScheme. Our wire protocol is used to secure the transport
-                            between nodes only and in this case it's used between directory authority nodes when they
-                            communicate with each other for the voting rounds and it's also the protocol that clients
-                            use to retrieve published PKI documents from the dir auth nodes.</para>
+                            public link layer key. The &program_name; "link layer" protocol is the
+                            PQ Noise based protocol which is sometimes also referred to as the "wire
+                            protocol". The type of this link public key must match the specified
+                            WireKEMScheme. Our wire protocol is used to secure the transport between
+                            nodes only and in this case it's used between directory authority nodes
+                            when they communicate with each other for the voting rounds and it's
+                            also the protocol that clients use to retrieve published PKI documents
+                            from the dir auth nodes.</para>
                         <para>Type: string</para>
+                        <para>Required:</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">WireKEMScheme</emphasis></para>
@@ -228,19 +247,24 @@ ldMtDsvvc9KUfE4I0+c+XQ==
                         refers to our PQ Noise based protocol which is how all the dir auth nodes talk to one another. PQ Noise is a 
                         variation of the Noise protocol framework where the handshake patterns are algebraically transformed to replace
 						ECDH operations with KEM encapsulate/decapsulate operations.</para>
-						<para>Here are all the KEM scheme names currently supported by Katzenpost:
-							"x25519", "x448", "mlkem768", "sntrup4591761", "frodo640shake", "mceliece348864", "mceliece348864f",
-							"mceliece460896", "mceliece460896f", "mceliece6688128", "mceliece6688128f", "mceliece6960119", "mceliece6960119f",
-							"mceliece8192128", "mceliece8192128f", "xwing", "Kyber768-X25519", "MLKEM768-X25519", "MLKEM768-X448",
-							"CTIDH511", "CTIDH512", "CTIDH1024", "CTIDH2048", "CTIDH512-X25519", "CTIDH512-X25519"
-						</para>						
-                        <para>Type: string</para>                    </listitem>
+						<para>The following KEM schemes are supported: "x25519",
+                            "x448", "mlkem768", "sntrup4591761", "frodo640shake", "mceliece348864",
+                            "mceliece348864f", "mceliece460896", "mceliece460896f",
+                            "mceliece6688128", "mceliece6688128f", "mceliece6960119",
+                            "mceliece6960119f", "mceliece8192128", "mceliece8192128f", "xwing",
+                            "Kyber768-X25519", "MLKEM768-X25519", "MLKEM768-X448", "CTIDH511",
+                            "CTIDH512", "CTIDH1024", "CTIDH2048", "CTIDH512-X25519",
+                            "CTIDH512-X25519" </para>						
+                        <para>Type: string</para>
+                        <para>Required:</para>                    </listitem>
                     <listitem>
                         <para><emphasis role="bold">Addresses</emphasis></para>
-                        <para>Addresses specifies a list of one or more Address URLs in a format that contains the transport protocol,
-                        IP address and port number that the server will bind to for incoming connections.
-                        Currently Katzenpost supports URLs with that start with either "tcp://" or "quic://" such as: ["tcp://192.168.1.1:30001"] and ["quic://192.168.1.1:40001"]
-                        </para>
+                        <para>Addresses specifies a list of one or more Address URLs in a format
+                            that contains the transport protocol, IP address and port number that
+                            the server will bind to for incoming connections. Currently
+                            &program_name; supports URLs with that start with either "tcp://" or
+                            "quic://" such as: ["tcp://192.168.1.1:30001"] and
+                            ["quic://192.168.1.1:40001"] </para>
                         <para>Type: []string</para>
                     </listitem>
                 </itemizedlist>
@@ -429,6 +453,7 @@ ldMtDsvvc9KUfE4I0+c+XQ==
                         <para>Path and file name of a mix node's public identity signing key, also
                             known as the identity key, in PEM format.</para>
                         <para>Type: string</para>
+                        <para>Required:</para>
                     </listitem>
                 </itemizedlist>
             </section>
@@ -452,6 +477,7 @@ ldMtDsvvc9KUfE4I0+c+XQ==
                         <para>Path and file name of a gateway node's public identity signing key, also
                             known as the identity key, in PEM format.</para>
                         <para>Type: string</para>
+                        <para>Required:</para>
                     </listitem>
                 </itemizedlist>
             </section>
@@ -475,6 +501,7 @@ ldMtDsvvc9KUfE4I0+c+XQ==
                         <para>Path and file name of a service node's public identity signing key, also
                             known as the identity key, in PEM format.</para>
                         <para>Type: string</para>
+                        <para>Required:</para>
                     </listitem>
                 </itemizedlist>
             </section>
@@ -513,6 +540,7 @@ ldMtDsvvc9KUfE4I0+c+XQ==
                         <para>Path and file name of a mix node's public identity signing key, also
                             known as the identity key, in PEM format.</para>
                         <para>Type: string</para>
+                        <para>Required:</para>
                     </listitem>
                 </itemizedlist>
             </section>
@@ -522,15 +550,15 @@ ldMtDsvvc9KUfE4I0+c+XQ==
                 Do NOT modify the geometry by hand.
                 </para>
                 <para>The original Sphinx paper introduces the Sphinx nested encrypted packet format
-using a NIKE (NIKE: non-interactive key exchange). NIKE Sphinx can be a hybrid post quantum construction simply by using a hybrid NIKE.
-Our Sphinx implementation also can optionally use a KEM (KEM: key encapsulation mechanism) instead of a NIKE, however the trade-off is that
-the packet's header will take up a lot of overhead because it must store a KEM ciphertext for each hop.
-Katzenpost has a completely configurable Sphinx geometry which allows for any KEM or NIKE to be used.
-                </para>
-                <para>
-                The Sphinx cryptographic packet format also uses these additional cryptographic primitives, the current Katzenpost
-selection is:
-                </para>
+                    using a NIKE (NIKE: non-interactive key exchange). NIKE Sphinx can be a hybrid
+                    post quantum construction simply by using a hybrid NIKE. Our Sphinx
+                    implementation also can optionally use a KEM (KEM: key encapsulation mechanism)
+                    instead of a NIKE, however the trade-off is that the packet's header will take
+                    up a lot of overhead because it must store a KEM ciphertext for each hop.
+                    &program_name; has a completely configurable Sphinx geometry which allows for
+                    any KEM or NIKE to be used. </para>
+                <para> The Sphinx cryptographic packet format also uses these additional
+                    cryptographic primitives, the current &program_name; selection is: </para>
                 <itemizedlist>
                 <listitem><para>stream cipher: CTR-AES256</para>
                 </listitem>
@@ -542,11 +570,10 @@ selection is:
                 </listitem>
                 </itemizedlist>
                 
-				<para>
-In Katzenpost the dirauths select the Sphinx geometry, each dirauth must agree with the other dirauths.
-They publish the hash of the Sphinx Geometry in the PKI document so that the rest of the network entities
-can validate their Sphinx Geometry.
-                </para>
+				<para> In &program_name; the dirauths select the Sphinx geometry, each dirauth must agree with
+                    the other dirauths. They publish the hash of the Sphinx Geometry in the PKI
+                    document so that the rest of the network entities can validate their Sphinx
+                    Geometry. </para>
                 &sphinxgeometry;
             </section>
         </section>
@@ -572,190 +599,14 @@ can validate their Sphinx Geometry.
 -->
         
         
-<!--        <para>Mix, gateway, and service nodes are all instances of a common <code>server</code>
-            binary but using different configurations. They have the following functions</para>
-        <itemizedlist>
-            <listitem>
-                <para>Mix nodes</para>
-                <para>Conceptually for mix servers:</para>
-                <para>- generate keys and send mix public keys to dirauths</para>
-                <para>- listen for sphinx packets</para>
-                <para>- mix, delay, decrypt, and relay sphinx packets</para>
-            </listitem>
-            <listitem>
-                <para>Gateway nodes</para>
-                <para>Conceptually for entry providers:</para>
-                <para>- generate keys and send entry public keys to dirauths (and metadata like
-                    public ips and ports)</para>
-                <para>- listen for sphinx packets</para>
-                <para>- delay, decrypt , and relay sphinx packets</para>
-            </listitem>
-            <listitem>
-                <para>Service nodes</para>
-                <para>Conceptually for service providers:</para>
-                <para>- generate keys and send service public keys to dirauths (and metadata like
-                    services such as ping and spool and public ips and ports)</para>
-                <para>- listen for sphinx packets</para>
-                <para>- decrypt, and respond to sphinx packets by sending responses to mixes</para>
-            </listitem>
-        </itemizedlist>
-        <para>Each node instance of any type must be white-listed by the directory authorities in
-            order to participate in the network.</para>
-        <para>The dirauths generate a consensus document every twenty minutes. The clients fetch it
-            every twenty minutes. The first time is from a randomly selected dirauth. Afterwards it
-            is also possible to fetch this from an entry provider.</para>
-        <para>Clients download the consensus and verify the signatures from the seven dirauths on
-            that document.</para>
-        <para>Then they do things in the network based on the content of the consensus
-            document</para>
-        <para>It has all the various service provider and mix and entry provider public keys</para>
-        <para>It says stuff like the ping service is available on gnunet and anarres</para>
-        <para>DR:</para>
-        <para>Where did the client get the public keys to perform those verifications?</para>
-        <para>JA:</para>
-        <para>So the client then picks one of the ping services</para>
-        <para>The consensus is signed by the dirauths, the public keys for alls servers except the
-            dirauths is contained in this document</para>
-        <para>Your client software has a configuration file with the dirauth public keys</para>
-        <para>So you can chain the signatures together and verify from your trusted set of dirauth
-            public keys</para>
-        <para>And it’s less can and more that is the only way to do it</para>
-        <para>What isn’t in the consensus is say; a Katzen user’s spool ID or the Katzen users
-            public keys for making a double ratchet</para>
-        <para>it’s critical to explain the concept of what exists at the start, what is dynamic, and
-            on what basis do things change, etc</para>
-        <para>So the root of everything is the dirauths and the consensus document</para>
-        <para>From that the rest of the network is dynamically formed every twenty minutes and could
-            change but generally it is static because we have eight people working on running the
-            servers.</para>
-        <para>I would model each layer differently</para>
-        <para>And then merge them</para>
-        <para>That merged set of items is all the things that have to work correctly to finally make
-            an end-to-end-encrypted messenger pass messages to clients</para>
-        <para/>
-        <para><emphasis role="bold">Consensus</emphasis></para>
-        <para>DR:</para>
-        <para>Rather than diving into source code, I was hoping first for a general description of
-            what consensus is being formed about, and what is being "voted" on. </para>
-        <para>JA:</para>
-        <para>Sure, we could talk about it - it would be helpful to look at the configuration for
-            namenlos</para>
-        <para>That should give you the concrete servers and services and types</para>
-        <para>Then we can discuss it</para>
-        <para>In general, a consensus here means that there are directory authorities. Let’s say n
-            of them. X of n must agree for there to be a consensus. They express agreement by making
-            a signature over their view of the network. A client verifies all their signatures and
-            decides the view of the network based on the simple majority. So if x is 5 and n is 7, 5
-            have to agree or there is no consensus. They do this every z minutes where in namenlos
-            its z= 20</para>
-        <para>So that’s “the network consensus”</para>
-        <para>The dirauths are then in software configs like client or server configs.</para>
-        <para>Every entry provider server and mix server and service provider server phone up each
-            dirauth and tell them their metadata (I am a server at hostname and ip foo, bar, I am an
-            entry provider, here are my public keys )</para>
-        <para>They all do this regularly</para>
-        <para>Then clients connect to one dirauth or more, get info on the network at the moment in
-            question, and then they validate it</para>
-        <para>This is how all clients have a uniform view of the network, its centralized around the
-            consensus but no one party controls that - so we can call that distributed and
-            decentralized in a sense</para>
-        <para>Each type of service has different properties, and the consensus tries to take that
-            into account</para>
-        <para>So that’s the general story</para>
-        <para>I would build up a diagram</para>
-        <para>Generalize from text into an object like a graph made up of edges and vertices,
-            labeled with type, then transition to names, then transition to putting the edge on a
-            geographical map, and then we can blank it and add say, servers, do the same thing, then
-            after each type is introduced, we merge the different dots; show the interconnected
-            nature with different colors and fill patterns</para>
-        <para>That’s the chatgpt prompt I would start with</para>
-        <para>I think a model that is computer checkable would be useful, and then we could
-            visualize it</para>
-        <para>But if we think about it like that - its a series of graphs that we merge and then map
-            onto a world map, then it becomes clear what the network is - in a physical and
-            geographical and even political sense</para>
-        <para>DR:</para>
-        <para>So a client can connect directly to any of: entry node, exit node, directory
-            authority?</para>
-        <para>JA:</para>
-        <para>Only to directory authorities (by picking one at random) and then to entry
-            providers</para>
-        <para>They send sphinx packets to the provider which are forwarded to the mixes, from that
-            the final mix forwards packets to a service provider</para>
-        <para>DR:</para>
-        <para>OK. An entry provider is what I meant by entry node; there are also [!exit] providers,
-            right? David S. says not to call them "exit providers".</para>
-        <para>JA:</para>
-        <para>There are no services that exit the network</para>
-        <para>DR:</para>
-        <para>What does the destination service provider do, then?</para>
-        <para>JA:</para>
-        <para>Depends on the service</para>
-        <para>Katzen for example talks to service providers and stores messages in spools</para>
-        <para>DR:</para>
-        <para>Does Katzen periodically poll the service provider, and if so, how does it get that
-            address?</para>
-        <para>JA:</para>
-        <para>So I run a spool provider node, and that means Katzen client software makes a
-            connection to the entry provider, sends sphinx messages through the entry provider to
-            the mixes and the mixes eventually forward it to my spool provider node, it receives the
-            sphinx packets, and then stores some as messages in spools (like a mailbox or a mail
-            spool) or it sends the contents of a spool to a Katzen client reading their
-            mailbox</para>
-        <para>I also run a PANDA service which means two people can use a password to rendezvous,
-            exchange spool locations and public keys, and then after that they anonymously send and
-            receive messages at their respective spools</para>
-        <para>There is also a ping service</para>
-        <para>It is just like the spool service - users enter through a provider node, send messages
-            to the mixes, and then the mix forwards to the ping service provider - say me or gnunet
-            or whoever else runs a pint service. The ping service sends a response immediately. The
-            ping client tracks the time and prints ping messages in the terminal.</para>
-        <para>Ping, panda, and spool are the three main services on the network and all these
-            details are in the consensus document that is signed by the authorities</para>
-        <para>DR:</para>
-        <para>This is making sense. If I have it right, 1) client connects to dir auth, 2) dir auth
-            provides address of entry, 3) client sends a payload to entry, 4) entry wraps payload
-            and sends it to the mixes, 5) at some point the payload is received by the service
-            provider, and 6) the service provider sends the payload to the client.</para>
-        <para>Ping does this without authenticating? And Panda is used to establish a contact with
-            another user, pretty much like Pond.</para>
-        <para>JA:</para>
-        <para>2) dirauth provides consensus</para>
-        <para>3) client selects entry and builds a secure connection to the entry provider, now it
-            can send sphinx packets to and through the provider</para>
-        <para>4 ) entry decrypts messages sent to it, some are for the entry provider, some are
-            addressed to a mix</para>
-        <para>Ping is a concept and a service - the concept here is to send a response and measure
-            time until a reply comes - the sphinx packet is a layered encryption data format</para>
-        <para>So it has authentication</para>
-        <para>The first hop is an encrypted tunnel, all sphinx packets go through the first
-            hop</para>
-        <para>So that connection is authenticated by the client validation of the consensus and the
-            verification of the public key when connecting to the entry provider node</para>
-        <para>Then sphinx packets are encrypted in reverse order</para>
-        <para/>
-        <para><emphasis role="bold">providers, mixes</emphasis></para>
-        <para>Do providers also perform mix functions on the packets they touch?</para>
-        <para>dawuud</para>
-        <para>5:40 PM</para>
-        <para>providers do mix messages but not all of them... we should fix this</para>
-        <para>messages from the mixnet to the Provider services do not get mixed but probably
-            should</para>
-        <para>the services replies send out by the providers do get mixed</para>
-        <para>and i'm not super clear on these other details but i'm prettu sure providers mix
-            messages which the clients send to them. i'm not sure if they mix the replies.</para>
-        <para>5:44 PM</para>
-        <para>i'd have to audit the code to give you better answers... and.. @drquaithe and I have
-            planned to write in great detail the katzenpost evauluation... we haven't started on
-            that because we're trying to do the literature review first... but i can probably figure
-            out the precise answers to this later this week if you need it</para>-->
+
         <section xml:id="mix-config">
             <title xml:id="mix-config.title">Configuring mix nodes</title>
             <para>The following configuration is drawn from the reference implementation in
-                <filename>katzenpost/docker/voting_mixnet/mix1/katzenpost.toml</filename>. In a
+                    <filename>katzenpost/docker/voting_mixnet/mix1/katzenpost.toml</filename>. In a
                 real-world mixnet, the component hosts would not be sharing a single IP address. For
                 more information about the test mixnet, see <link linkend="container"
-                    endterm="container.title">Using the Katzenpost test network</link>.</para>
+                    endterm="container.title">Using the &program_name; test network</link>.</para>
             <section xml:id="mix-server-section-config">
                 <title xml:id="mix-server-section-config.title">Server section</title>
                 <para/>
@@ -801,7 +652,7 @@ can validate their Sphinx Geometry.
                     <filename>katzenpost/docker/voting_mixnet/gateway1/katzenpost.toml</filename>.
                 In a real-world mixnet, the component hosts would not be sharing a single IP
                 address. For more information about the test mixnet, see <link linkend="container"
-                    endterm="container.title">Using the Katzenpost test network</link>.</para>
+                    endterm="container.title">Using the &program_name; test network</link>.</para>
             <section xml:id="gateway-server-section-config">
                 <title xml:id="gateway-server-section-config.title">Server section</title>
                 <para/>
@@ -997,6 +848,7 @@ https://github.com/katzenpost/katzenpost/blob/main/genconfig/main.go#L207 define
                         <para><emphasis role="bold">Capability</emphasis></para>
                         <para>The capability exposed by the agent.</para>
                         <para>Type: string</para>
+                        <para>Required:</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">Endpoint</emphasis></para>
@@ -1005,12 +857,14 @@ https://github.com/katzenpost/katzenpost/blob/main/genconfig/main.go#L207 define
                             only supports Endpoints that are lower-case local-parts of an
                             e-mail address.</para>
                         <para>Type: string</para>
+                        <para>Required:</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">Command</emphasis></para>
                         <para>Command is the full file path to the external plugin program
                         that implements this Kaetzchen service.</para>
                         <para>Type: string</para>
+                        <para>Required:</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">MaxConcurrency</emphasis></para>
@@ -1090,11 +944,13 @@ Package cborplugin is a plugin system allowing mix network services to be added 
                                     <para>Supported values are ERROR | WARNING | NOTICE |INFO |
                                         DEBUG.</para>
                                     <para>Type: string</para>
+                        <para>Required:</para>
                                     <warning>
                                         <para>The DEBUG log level is unsafe for production
                                             use.</para>
                                     </warning>
                                     <para>Type: string</para>
+                        <para>Required:</para>
                                 </listitem>
                             </itemizedlist>
                         </listitem>
@@ -1116,11 +972,13 @@ Package cborplugin is a plugin system allowing mix network services to be added 
                                     <para>Supported values are ERROR | WARNING | NOTICE |INFO |
                                         DEBUG.</para>
                                     <para>Type: string</para>
+                        <para>Required:</para>
                                     <warning>
                                         <para>The DEBUG log level is unsafe for production
                                             use.</para>
                                     </warning>
                                     <para>Type: string</para>
+                        <para>Required:</para>
                                 </listitem>
                             </itemizedlist>
                         </listitem>
@@ -1142,295 +1000,7 @@ Package cborplugin is a plugin system allowing mix network services to be added 
             <section xml:id="service-debug-config">
                 <title xml:id="service-debug-config.title">Debug section</title>
                 &serverdebug;
-            </section>
-<!--            <section>
-                <?oxy_custom_start type="oxy_content_highlight" color="235,192,230"?>
-                <title>Old "Provider" section<?oxy_custom_end?></title>
-                <para><?oxy_custom_start type="oxy_content_highlight" color="235,192,230"?>The
-                    Provider section specifies the Provider configuration. This section of the
-                    configuration has sensible defaults for every field and can therefore be omitted
-                    unless you wish to deviate from the defaults.</para>
-                <para>The top-level Provider configuration parameters include:</para>
-                <itemizedlist>
-                    <listitem>
-                        <para>EnableUserRegistrationHTTP</para>
-                        <para> if set to </para>
-                        <para>true</para>
-                        <para> then the HTTP registration service will be enabled and the </para>
-                        <para>UserRegistrationHTTPAddresses</para>
-                        <para> option must also be set.</para>
-                    </listitem>
-                    <listitem>
-                        <para>UserRegistrationHTTPAddresses</para>
-                        <para> is set to a list of TCP addresses which include the IP address of the
-                            interface to listen on and the TCP port.</para>
-                    </listitem>
-                    <listitem>
-                        <para>BinaryRecipients</para>
-                        <para> if set to </para>
-                        <para>true</para>
-                        <para> disables all Provider side recipient pre-processing, including
-                            removing trailing NUL bytes, case normalization, and delimiter
-                            support.</para>
-                    </listitem>
-                    <listitem>
-                        <para>CaseSensitiveRecipients</para>
-                        <para> if set to </para>
-                        <para>true</para>
-                        <para> disables recipient case normalization. If left unset, all user names
-                            will be converted to lower case.</para>
-                    </listitem>
-                    <listitem>
-                        <para>RecipientDelimiter</para>
-                        <para> is the set of characters that separates a user name from it's
-                            extension (eg: alice+foo).</para>
-                    </listitem>
-                    <listitem>
-                        <para>AltAddresses</para>
-                        <para> is the map of extra transports and addresses at which the Provider is
-                            reachable by clients. The most useful alternative transport is likely
-                            ("tcp") (core/pki.TransportTCP).</para>
-                    </listitem><?oxy_custom_end?>
-                </itemizedlist>
-                <anchor xml:id="user-content-provider-http-registration"/>
-            </section>
-            <?oxy_custom_start type="oxy_content_highlight" color="235,192,230"?>
-            <section>
-                <title>Provider HTTP Registration</title>
-                <para>Here's an example TOML configuration section that demonstrates how to
-                    configure a HTTP Registration service that facilitates account
-                    registration:</para>
-                <programlisting>[Provider]
-                    
-                    EnableUserRegistrationHTTP = true
-                    UserRegistrationHTTPAddresses = [ "127.0.0.1:8080"]
-                </programlisting>
-                <para><emphasis role="bold">Warning</emphasis></para>
-                <para>This configuration example configures the HTTP registration service to listen
-                    on the loopback interface on TCP port 8080. There is NO authentication, TLS
-                    encryption or abuse mitigation at all; this is left as an exercise for the
-                    discerning systems administrator who can utilize some kind of proxy service to
-                    mitigate abuse and provide TLS authentication.</para>
-                <anchor xml:id="user-content-kaetzchen-configuration"/>
-                <section>
-                    <title>Kaetzchen Configuration</title>
-                    <para>Kaetzchen are a simple kind of Provider-side service which receives a
-                        request and replies with a response message. We here discuss built-in
-                        internal kaetzchen services. (see next section for external kaetzchen plugin
-                        system)</para>
-                    <para>Consider the following simple configuration example where we configure the
-                        loop and keyserver services:</para>
-                    <programlisting>[Provider]
-                        
-                        [[Provider.Kaetzchen]]
-                        Capability = "loop"
-                        Endpoint = "+loop"
-                        Disable = false
-                        
-                        [[Provider.Kaetzchen]]
-                        Capability = "keyserver"
-                        Endpoint = "+keyserver"
-                        Disable = false
-                    </programlisting>
-                    <para>The Kaetzchen field is the list of configured Kaetzchen (auto-responder
-                        agents) for this provider. In the above example we configured two Kaetzchen,
-                        keyserver and loop which are required by the mailproxy client.</para>
-                    <para>Lets review the Kaetzchen configuration parameters:</para>
-                    <itemizedlist>
-                        <listitem>
-                            <para>Capability</para>
-                            <para> is the capability exposed by the agent.</para>
-                        </listitem>
-                        <listitem>
-                            <para>Endpoint</para>
-                            <para> is the provider side endpoint that the agent will accept requests
-                                at. While not required by the spec, this server only supports
-                                Endpoints that are lower-case local-parts of an e-mail address. By
-                                convention these endpoint strings begin with </para>
-                            <para>+</para>
-                            <para>.</para>
-                        </listitem>
-                        <listitem>
-                            <para>Config</para>
-                            <para> is the extra per agent arguments to be passed to the agent's
-                                initialization routine.</para>
-                        </listitem>
-                        <listitem>
-                            <para>Disable</para>
-                            <para> disabled a configured agent.</para>
-                        </listitem>
-                    </itemizedlist>
-                    <anchor xml:id="user-content-external-kaetzchen-plugin-configuration"/>
-                </section>
-                <section>
-                    <title>External Kaetzchen Plugin Configuration</title>
-                    <para>Currently the Katzenpost server external kaetzchen plugin system uses CBOR
-                        over HTTP over UNIX domain socket to communicate with plugin programs. That
-                        is to say, the katzenpost server will spin up each plugin program one or
-                        more times as specified by it's <code>MaxConcurrency</code> parameter,
-                        connect to it as a HTTP client and pipeline Kaetzchen queries.</para>
-                    <para>Here's a configuration example for the external currency service</para>
-                    <programlisting>[[Provider.CBORPluginKaetzchen]]
-                        Capability = "zec"
-                        Endpoint = "+zec"
-                        Disable = false
-                        Command = "/home/user/test_mixnet/bin/currency"
-                        MaxConcurrency = 10
-                        [Provider.PluginKaetzchen.Config]
-                        log_dir = "/home/user/test_mixnet/zec_tx_logs"
-                        f = "/home/user/test_mixnet/currency_zec/curreny.toml"
-                    </programlisting>
-                    <para>We've written echo services in golang and rust as an example here: <link
-                        xlink:href="https://github.com/katzenpost/server_plugins"
-                        >https://github.com/katzenpost/server_plugins</link></para>
-                    <anchor xml:id="user-content-provider-user-database-configuration"/>
-                </section>
-                <section>
-                    <title>Provider User Database Configuration</title>
-                    <para><code>UserDB</code> is the user database configuration. If left empty the
-                        simple BoltDB backed user database will be used with the default database. A
-                        simple configuration example:</para>
-                    <programlisting>[Provider.UserDB]
-                        Backend = "bolt"
-                        
-                        [Provider.UserDB.Bolt]
-                        UserDB = "my_users.db"
-                    </programlisting>
-                    <itemizedlist>
-                        <listitem>
-                            <para>Backend</para>
-                            <para> is the active userdb backend. If left empty, the BoltUserDB
-                                backend will be used (bolt).</para>
-                        </listitem>
-                    </itemizedlist>
-                    <para>If the <code>bolt</code> backend is specified there is one configuration
-                        parameter available under this section:</para>
-                    <itemizedlist>
-                        <listitem>
-                            <para>UserDB</para>
-                            <para> is the path to the user database. If left empty it will use
-                                users.db under the DataDir.</para>
-                        </listitem>
-                    </itemizedlist>
-                    <para>Next we will examine a configuration example which demonstrates using a
-                        user database via HTTP:</para>
-                    <programlisting>[Provider.UserDB]
-                        [Provider.UserDB.ExternUserDB]
-                        ProviderURL = "http://localhost:8080/"
-                    </programlisting>
-                    <itemizedlist>
-                        <listitem>
-                            <para>ExternUserDB</para>
-                            <para> is the external http user authentication mechanism.</para>
-                        </listitem>
-                        <listitem>
-                            <para>ProviderURL</para>
-                            <para> is the base url used for the external provider authentication
-                                API.</para>
-                        </listitem>
-                    </itemizedlist>
-                    <anchor xml:id="user-content-provider-spool-database-configuration"/>
-                </section>
-                <section>
-                    <title>Provider Spool Database Configuration</title>
-                    <para>The Provider spool database stores received messages for later retreival
-                        by clients. A simple configuration example follows:</para>
-                    <programlisting>[Provider.SpoolDB]
-                        Backend = "bolt"
-                        
-                        [Provider.SpoolDB.Bolt]
-                        SpoolDB = "my_spool.db"
-                    </programlisting>
-                    <itemizedlist>
-                        <listitem>
-                            <para>SpoolDB</para>
-                            <para> is the path to the user message spool. If left empty, it will
-                                default to spool.db under the DataDir.</para>
-                        </listitem>
-                    </itemizedlist>
-                    <anchor xml:id="user-content-using-the-postgres-sql-database-backend"/>
-                </section>
-                <section>
-                    <title>Using the Postgres SQL Database Backend</title>
-                    <para>Lastly, we will explore how to use a SQL database as the backend for the
-                        user and spool databases, for example:</para>
-                    <programlisting>[Provider]
-                        [Provider.SQLDB]
-                        Backend = "pgx"
-                        DataSourceName = "postgresql://provider:s3cr3tp0stgr355@127.0.0.1:5433/katzenpost"
-                        [Provider.SpoolDB]
-                        Backend = "sql"
-                        [Provider.UserDB]
-                        Backend = "sql"
-                    </programlisting>
-                    <para>This configuration sample demonstrates how to use a Postgres database for
-                        both the user database and the spool database. The <code>Backend</code>
-                        parameter is set to <code>pgx</code> which means "use a postgresql
-                        database".</para>
-                    <itemizedlist>
-                        <listitem>
-                            <para>DataSourceName</para>
-                            <para> is the SQL data source name or URI. The format of this parameter
-                                is dependent on the database driver being used.</para>
-                        </listitem>
-                    </itemizedlist>
-                    <para>Setup the Postgres SQL database backend:</para>
-                    <orderedlist>
-                        <listitem>
-                            <para>Install postgres Postgres 9.5 or later is required. On a debian
-                                system you can install it like so:</para>
-                            <programlisting>apt install postgresql
-                            </programlisting>
-                        </listitem>
-                        <listitem>
-                            <para>Configure postgres access The pg_hba.conf file is the place to
-                                configure access to the databases. It's parsed from top to bottom,
-                                first matching rule is applied. You probably need to add a rule for
-                                your 'provider' user fairly early. On a debian system this file may
-                                be located here:</para>
-                            <programlisting>/etc/postgresql/9.6/main/pg_hba.conf
-                            </programlisting>
-                            <para>Start a shell as the postgres user. If you are superuser you can
-                                use su or sudo to start the shell as postgres like:</para>
-                            <programlisting>sudo -u postgres
-                            </programlisting>
-                            <para>or without sudo:</para>
-                            <programlisting>su - postgres
-                            </programlisting>
-                            <para>Add the database user "provider":</para>
-                            <programlisting>createuser -U postgres provider
-                            </programlisting>
-                            <para>Add a database:</para>
-                            <programlisting>createdb -U postgres -O provider katzenpost
-                            </programlisting>
-                            <para>Start the postgres shell:</para>
-                            <programlisting>psql
-                            </programlisting>
-                            <para>Set the password for your new user:</para>
-                            <programlisting>ALTER USER provider WITH PASSWORD 's3cr3tp0stgr355';
-                            </programlisting>
-                            <para>Test to see if you can connect:</para>
-                            <programlisting>psql -U provider -h 127.0.0.1 katzenpost
-                            </programlisting>
-                            <para>If all goes fine, it's time to load the SQL, that creates the
-                                Katzenpost database schema and stored procedures:</para>
-                            <programlisting>psql -U provider -\-password -d katzenpost -h 127.0.0.1 -f create_database-postgresql.sql
-                            </programlisting>
-                            <para>That sql script is located in our <code>server</code> git
-                                repository, here: <link
-                                    xlink:href="https://github.com/katzenpost/server/blob/master/internal/sqldb/create_database-postgresql.sql"
-                                    >https://github.com/katzenpost/server/blob/master/internal/sqldb/create_database-postgresql.sql</link></para>
-                        </listitem>
-                        <listitem>
-                            <para>Start the Katzenpost server.</para>
-                        </listitem><?oxy_custom_end?>
-                    </orderedlist>
-                </section>
-            </section>-->
+           </section>
         </section>
     </section>
-<!--    <section xml:id="clients">
-        <title xml:id="clients.title">Clients</title>
-        <para/>
-    </section>-->
 </chapter>
