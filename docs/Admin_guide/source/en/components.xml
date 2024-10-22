@@ -13,76 +13,7 @@
 <chapter xmlns="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink"
     version="5.1" xml:id="components">
     <title xml:id="components.title">Components of the Katzenpost mixnet</title>
-<!--    <para>Katzenpost can be used as a message oriented transport for a variety of applications and
-        is in no way limited to the e-mail use case demonstrated by the mailproxy client/library.
-        Other possible applications of Katzenpost include but are not limited to: instant messenger
-        applications, crypto currency transaction transport, bulletin board systems, file sharing
-        and so forth. </para>
-    <para>• client (daemon) </para>
-    <para>The client is a long running process that listen on a unix domain socket for connections
-        from locally running applications on the same computer that want to use the mixnet so it's
-        both a library and a unix daemon.</para>
-    <para>
-        <constraintdef>
-            <para><emphasis role="bold">Client2 – can multiplex. Current client does not multiplex.
-                    An adversary can observe processes and correlete. </emphasis></para>
-            <para><emphasis role="bold">Other C2 feature is language integration capability – thin
-                clients. Using a socket to connect directly to the daemon. Write a thin client,
-                and then you no longer need to do stuff in Go. -\- This stuff could be written in
-                couple of months, but could take a year yet.</emphasis></para>
-        </constraintdef>
-    </para>
-    <para>Architecturally, the Katzenpost system has five component categories: <itemizedlist>
-        <listitem>
-            <para>Directory authorities</para>
-        </listitem>
-        <listitem>
-            <para>Mix nodes</para>
-        </listitem>
-        <listitem>
-            <para>Service nodes</para>
-        </listitem>
-        <listitem>
-            <para>Gateway nodes</para>
-            <para>the spool and user DBs are located on the Gateway nodes</para>
-            <para>the services like Panda are located on the Service nodes</para>
-            <para>when a user connects to the mixnet they only talk to a random Gateway
-                node</para>
-            <para>the Gateway node has to have the spool db... in order to receive messages for
-                the users that are connected to it... those messages are responses to mixnet
-                service queries which run on the service nodes.</para>
-        </listitem>
-        <listitem>
-            <para>Clients</para>
-        </listitem>
-    </itemizedlist></para>
-    <para>Functionally, Katzenpost presently supports several services.  All services use SURBs:<itemizedlist>
-        <listitem>
-            <para>Echo </para>
-            <para>send sent payload back to you; uses the SURB sent in the ping</para>
-        </listitem>
-        <listitem>
-            <para>Panda</para>
-            <para>Reunion and Panda are our only ways of making key exchanges over the mixnet.
-                both of those are Password Authenticated Key Exchange protocols which is a
-                special categories of cryptographic protocols. In the past couple of years the
-                Reunion implementation just stopped working... due to bitrot and not being
-                maintained. So now all we have is Panda. \u0000</para>
-        </listitem>
-        <listitem>
-            <para>Pigeonhole</para>
-            <para>pigeonhole storage service – mailbox pigeonholes. Adeversaries don’t know what
-                box has what messgae. Looks like messages are randomly scattered, but it is a
-                computed permutation, deterministic. BACAP – defined in paper. Whether you can
-                read or right off a box, based on blinded cryptographic signatures. Data is
-                stored that has been sent across the mixnet. Not linakable to events. All new
-                services will proably be buklt on pigeonhole. Paper authors oare inventors of
-                pigeonhole. An existing off the sehld DB will be used to write to disk. PH will
-                be the adressing stratey. REDIS, RockDB, or some other – can be anything.</para>
-            <para>Designed for low latency -\-; not good for video, however. None of the protocls
-                we build require bothparties to be online, though they can be. </para>
-        </listitem>
-    </itemizedlist></para>-->
+
     <!--
         
     AWS model for APIs:
@@ -101,23 +32,23 @@
     <section xml:id="auth">
         <title xml:id="auth.title">Directory authorities</title>
 
-		<para>The public key infrastructure (PKI) protocol for Katzenpost, also known
-as the Directory Authority or dirauth, is a decentralized system of nodes
-which vote for each epoch's consensus document. If we used a BFT protocol instead
-then the dirauth system would fail when 1/3 + 1 nodes failed. Therefore we can
-say that our crash fault tolerant system is more robust because it will fail
-when 1/2 + 1 nodes fail.</para>
-		<para>The Katzenpost PKI is the security root of the entire system because all clients
-and network nodes will depend on the PKI to sign the consensus document for each epoch.
-Currently epoch duration is every 20 minutes. The consensus document is essentially a view of
-the network, it contains all the connection information and all the public cryptographic key materials
-and signatures. Each mix node signs it's descriptor and uploads it to the dirauth nodes. Each dirauth
-node signs the consensus. When clients or nodes download the consensus document they are able to verify
-the dirauth node signatures on the document.</para>
-		<para>The PKI signature scheme is fully configurable by the dir auth nodes. Currently our recommendation is to
-use a hybrid signature scheme consisting of the classical Ed25519 and the
-post quantum stateless hash based signature scheme known as Sphincs+ (with the parameters: `sphincs-shake-256f`); which is
-designated in katzenpost configurations as "Ed25519 Sphincs+" which you can see examples of below.</para>        
+		<para>Directory authorities, or <emphasis>dirauths</emphasis>, are nodes in Katzenpost's
+            decentralized public key infrastructure (PKI), which forms the security root of the
+            entire Katzenpost system. Clients and mixnet nodes rely on the PKI to maintain and sign
+            an up-to-date <emphasis>consensus</emphasis> document, providing a view of the entire
+            network including connection information and public cryptographic key materials and
+            signatures. </para>
+        <para>Every 20 minutes (the current value for an <emphasis>epoch</emphasis>), each mix node
+            signs a descriptor and uploads it to the dirauth nodes. The dirauths then vote on a new
+            consensus document. If consensus is reached, each dirauth signs the document. Clients
+            and nodes download the document as needed and verify the signatures. Consensus fails
+            when 1/2 + 1 nodes fail, which yields greater fault tolerance than, for example,
+            Byzantine Fault Tolerance, which fails when 1/3 + 1 of the nodes fail.</para>
+		<para>The PKI signature scheme is fully configurable by the dirauth nodes. Our recommendation is
+            to use a hybrid signature scheme consisting of the classical Ed25519 and the
+            post-quantum, stateless, hash-based signature scheme known as Sphincs+ (with the
+            parameters: "sphincs-shake-256f"), which is designated in Katzenpost configurations as
+            "Ed25519 Sphincs+". Examples are provided below.</para>        
 
         <section xml:id="auth-config">
             <title xml:id="auth-config.title">Configuring directory authorities</title>
