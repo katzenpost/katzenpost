@@ -148,6 +148,7 @@ type Config struct {
                             "quic://" such as: ["tcp://192.168.1.1:30001"] and
                             ["quic://192.168.1.1:40001"] </para>
                         <para>Type: []string</para>
+                        <para>Required:</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">DataDir</emphasis></para>
@@ -266,6 +267,7 @@ ldMtDsvvc9KUfE4I0+c+XQ==
                             "quic://" such as: ["tcp://192.168.1.1:30001"] and
                             ["quic://192.168.1.1:40001"] </para>
                         <para>Type: []string</para>
+                        <para>Required:</para>
                     </listitem>
                 </itemizedlist>
             </section>
@@ -300,6 +302,7 @@ ldMtDsvvc9KUfE4I0+c+XQ==
                             client per gateway node. Rate limiting is done on the gateway nodes.</para>
                         <para>SendRatePerMinute is the rate per minute.</para>
                         <para>Type: uint64</para>
+                        <para>Required:</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">Mu</emphasis></para>
@@ -308,6 +311,7 @@ ldMtDsvvc9KUfE4I0+c+XQ==
                         	Mu is the inverse of the mean of the exponential
                             distribution that is used to select the delay for each hop.</para>
                         <para>Type: float64</para>
+                        <para>Required:</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">MuMaxDelay</emphasis></para>
@@ -315,6 +319,7 @@ ldMtDsvvc9KUfE4I0+c+XQ==
                             milliseconds. MuMaxDelay sets the maximum delay for Mu.</para>
                         <para>Type:
                             uint64<?oxy_custom_start type="oxy_content_highlight" color="235,192,230"?></para>
+                        <para>Required:</para>
                     </listitem><?oxy_custom_end?>
                     <listitem>
                         <para><emphasis role="bold">LambdaP</emphasis></para>
@@ -325,6 +330,7 @@ ldMtDsvvc9KUfE4I0+c+XQ==
                             distribution that is used to select the delay between clients sending from
                             their egress FIFO queue or drop decoy message.</para>
                         <para>Type: float64</para>
+                        <para>Required:</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">LambdaPMaxDelay</emphasis></para>
@@ -332,6 +338,7 @@ ldMtDsvvc9KUfE4I0+c+XQ==
                             milliseconds</para>
                         <para>LambdaPMaxDelay sets the maximum delay for LambdaP.</para>
                         <para>Type: uint64</para>
+                        <para>Required:</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">LambdaL</emphasis></para>
@@ -339,6 +346,7 @@ ldMtDsvvc9KUfE4I0+c+XQ==
                             that is used to select the delay between clients sending loop
                             decoys.</para>
                         <para>Type: float64</para>
+                        <para>Required:</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">LambdaLMaxDelay</emphasis></para>
@@ -348,6 +356,7 @@ ldMtDsvvc9KUfE4I0+c+XQ==
                             LambdaP.</para>
                         <?oxy_custom_start type="oxy_content_highlight" color="235,192,230"?>
                         <para><?oxy_custom_end?>Type: uint64</para>
+                        <para>Required:</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">LambdaD</emphasis></para>
@@ -357,12 +366,14 @@ ldMtDsvvc9KUfE4I0+c+XQ==
                             distribution that is used to select the delay between clients sending deop
                             decoys.</para>
                         <para>Type: float64</para>
+                        <para>Required:</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">LambdaDMaxDelay</emphasis></para>
                         <para>LambdaDMaxDelay is the maximum send interval in milliseconds.
                         LambdaDMaxDelay sets the maximum delay for LambdaP.</para>
                         <para>Type: uint64</para>
+                        <para>Required:</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">LambdaM</emphasis></para>
@@ -372,6 +383,7 @@ ldMtDsvvc9KUfE4I0+c+XQ==
                             distribution that is used to select the delay between sending mix node
                             decoys.</para>
                         <para>Type: float64</para>
+                        <para>Required:</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">LambdaG</emphasis></para>
@@ -380,17 +392,20 @@ ldMtDsvvc9KUfE4I0+c+XQ==
                             decoys. WARNING: DO NOT SET THIS VALUE. This is not used via the TOML config file; this field is
                             used internally by the dirauth server state machine.</para>
                         <para>Type: float64</para>
+                        <para>Required:</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">LambdaMMaxDelay</emphasis></para>
                         <para>LambdaMMaxDelay sets the maximum delay for LambdaM
                         LambdaMMaxDelay sets the maximum delay for LambdaP.</para>
                         <para>Type: uint64</para>
+                        <para>Required:</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">LambdaGMaxDelay</emphasis></para>
                         <para>LambdaGMaxDelay sets the maximum delay for LambdaG.</para>
                         <para>Type: uint64</para>
+                        <para>Required:</para>
                     </listitem>
                 </itemizedlist>
             </section>
@@ -409,18 +424,21 @@ ldMtDsvvc9KUfE4I0+c+XQ==
                             <?oxy_custom_start type="oxy_content_highlight" color="235,192,230"?>non-provider<?oxy_custom_end?>
                             layers in the network topology.</para>
                         <para>Type: int</para>
+                        <para>Required:</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">MinNodesrPerLayer</emphasis></para>
                         <para> Minimum number of nodes per layer required to form a valid
                             <?oxy_custom_start type="oxy_content_highlight" color="235,192,230"?>document<?oxy_custom_end?>.</para>
                         <para>Type: int</para>
+                        <para>Required:</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">GenerateOnly</emphasis></para>
                         <para>If set to true, the server halts and cleans up the data directory
                             immediately after long-term key generation.</para>
                         <para>Type: bool</para>
+                        <para>Required:</para>
                     </listitem>
                 </itemizedlist>
             </section>
@@ -447,6 +465,7 @@ ldMtDsvvc9KUfE4I0+c+XQ==
                         <para>A human readable mix node identifier.</para>
                         <para>Type:
                             string<?oxy_custom_start type="oxy_content_highlight" color="235,192,230"?></para>
+                        <para>Required:</para>
                     </listitem><?oxy_custom_end?>
                     <listitem>
                         <para><emphasis role="bold">IdentityPublicKeyPem</emphasis></para>
@@ -471,6 +490,7 @@ ldMtDsvvc9KUfE4I0+c+XQ==
                         <para>A human readable gateway node identifier.</para>
                         <para>Type:
                             string<?oxy_custom_start type="oxy_content_highlight" color="235,192,230"?></para>
+                        <para>Required:</para>
                     </listitem><?oxy_custom_end?>
                     <listitem>
                         <para><emphasis role="bold">IdentityPublicKeyPem</emphasis></para>
@@ -495,6 +515,7 @@ ldMtDsvvc9KUfE4I0+c+XQ==
                         <para>A human readable service node identifier.</para>
                         <para>Type:
                             string<?oxy_custom_start type="oxy_content_highlight" color="235,192,230"?></para>
+                        <para>Required:</para>
                     </listitem><?oxy_custom_end?>
                     <listitem>
                         <para><emphasis role="bold">IdentityPublicKeyPem</emphasis></para>
@@ -870,16 +891,19 @@ https://github.com/katzenpost/katzenpost/blob/main/genconfig/main.go#L207 define
                         <para><emphasis role="bold">MaxConcurrency</emphasis></para>
                         <para>MaxConcurrency is the number of worker goroutines to start for this service.</para>
                         <para>Type: int</para>
+                        <para>Required:</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">Config</emphasis></para>
                         <para>The extra per agent arguments to be passed to the agent's initialization routine.</para>
                         <para>Type: map[string]interface{}</para>
+                        <para>Required:</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">Disable</emphasis></para>
                         <para>disabled a configured agent.</para>
                         <para>Type: bool</para>
+                        <para>Required:</para>
                     </listitem>
                 </itemizedlist>
                 <?oxy_comment_start author="dwrob" timestamp="20240816T141621-0700" comment="About CBOR:
@@ -903,11 +927,13 @@ Package cborplugin is a plugin system allowing mix network services to be added 
                                     <para><emphasis role="bold">data_store</emphasis></para>
                                     <para/>
                                     <para>Type: </para>
+                                    <para>Required:</para>
                                 </listitem>
                                 <listitem>
                                     <para><emphasis role="bold">log_dir</emphasis></para>
                                     <para/>
                                     <para>Type: </para>
+                                    <para>Required:</para>
                                 </listitem>
                             </itemizedlist>
                         </listitem>
@@ -918,11 +944,13 @@ Package cborplugin is a plugin system allowing mix network services to be added 
                                     <para><emphasis role="bold">db</emphasis></para>
                                     <para/>
                                     <para>Type: </para>
+                                    <para>Required:</para>
                                 </listitem>
                                 <listitem>
                                     <para><emphasis role="bold">log_dir</emphasis></para>
                                     <para/>
                                     <para>Type: </para>
+                                    <para>Required:</para>
                                 </listitem>
                             </itemizedlist>
                         </listitem>
@@ -933,23 +961,24 @@ Package cborplugin is a plugin system allowing mix network services to be added 
                                     <para><emphasis role="bold">fileStore</emphasis></para>
                                     <para/>
                                     <para>Type: </para>
+                                    <para>Required:</para>
                                 </listitem>
                                 <listitem>
                                     <para><emphasis role="bold">log_dir</emphasis></para>
                                     <para/>
                                     <para>Type: </para>
+                                    <para>Required:</para>
                                 </listitem>
                                 <listitem>
                                     <para><emphasis role="bold">log_level</emphasis></para>
                                     <para>Supported values are ERROR | WARNING | NOTICE |INFO |
                                         DEBUG.</para>
-                                    <para>Type: string</para>
-                        <para>Required:</para>
                                     <warning>
                                         <para>The DEBUG log level is unsafe for production
                                             use.</para>
                                     </warning>
                                     <para>Type: string</para>
+                                    <para>Required:</para>
                         <para>Required:</para>
                                 </listitem>
                             </itemizedlist>
@@ -961,23 +990,27 @@ Package cborplugin is a plugin system allowing mix network services to be added 
                                     <para><emphasis role="bold">host</emphasis></para>
                                     <para/>
                                     <para>Type: </para>
+                                    <para>Required:</para>
                                 </listitem>
                                 <listitem>
                                     <para><emphasis role="bold">log_dir</emphasis></para>
                                     <para/>
                                     <para>Type: </para>
+                                    <para>Required:</para>
                                 </listitem>
                                 <listitem>
                                     <para><emphasis role="bold">log_level</emphasis></para>
                                     <para>Supported values are ERROR | WARNING | NOTICE |INFO |
                                         DEBUG.</para>
                                     <para>Type: string</para>
+                                    <para>Required:</para>
                         <para>Required:</para>
                                     <warning>
                                         <para>The DEBUG log level is unsafe for production
                                             use.</para>
                                     </warning>
                                     <para>Type: string</para>
+                                    <para>Required:</para>
                         <para>Required:</para>
                                 </listitem>
                             </itemizedlist>

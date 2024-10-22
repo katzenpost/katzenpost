@@ -15,6 +15,7 @@
         <para>Disables logging if set to <emphasis role="bold"
             >true</emphasis>.</para>
         <para>Type: bool</para>
+        <para>Required:</para>
     </listitem>
     <listitem>
         <para><emphasis role="bold">File</emphasis></para>
@@ -23,11 +24,13 @@
         relative to the DataDir specified in the Server section of the 
         configuration.</para>
         <para>Type: string</para>
+        <para>Required:</para>
     </listitem>
     <listitem>
         <para><emphasis role="bold">Level</emphasis></para>
         <para>Supported values are ERROR | WARNING | NOTICE |INFO | DEBUG.</para>
         <para>Type: string</para>
+        <para>Required:</para>
         <warning>
             <para>The DEBUG log level is unsafe for
                 production use.</para>
@@ -58,56 +61,66 @@
         <para><emphasis role="bold">PacketLength</emphasis></para>
         <para>PacketLength is the length of a packet.</para>
         <para>Type: int</para>
+        <para>Required:</para>
     </listitem>
     <listitem>
         <para><emphasis role="bold">NrHops</emphasis></para>
         <para>NrHops is the number of hops through the mixnet, which determines the size</para>
         <para>of the Sphinx packet header.</para>
         <para>Type: int</para>
+        <para>Required:</para>
     </listitem>                    
     <listitem>
         <para><emphasis role="bold">HeaderLength</emphasis></para>
         <para>HeaderLength is the length of the Sphinx packet header in
             bytes.</para>
         <para>Type: int</para>
+        <para>Required:</para>
     </listitem>                    
     <listitem>
         <para><emphasis role="bold">RoutingInfoLength</emphasis></para>
         <para>RoutingInfoLength is the length of the routing info portion of the
             header.</para>
         <para>Type: int</para>
+        <para>Required:</para>
     </listitem>                    
     <listitem>
         <para><emphasis role="bold">PerHopRoutingInfoLength</emphasis></para>
         <para>PerHopRoutingInfoLength is the length of the per hop routing
             info.</para>
         <para>Type: int</para>
+        <para>Required:</para>
     </listitem>                    
     <listitem>
         <para><emphasis role="bold">SURBLength</emphasis></para>
         <para>SURBLength is the length of SURB.</para>
         <para>Type: int</para>
+        <para>Required:</para>
     </listitem>                    
     <listitem>
         <para><emphasis role="bold">SphinxPlaintextHeaderLength</emphasis></para>
         <para>SphinxPlaintextHeaderLength is the length of the plaintext
             header.</para>
         <para>Type: int</para>
+        <para>Required:</para>
     </listitem>                    
     <listitem>
         <para><emphasis role="bold">PayloadTagLength</emphasis></para>
         <para>PayloadTagLength is the length of the payload tag.</para>
         <para>Type: int</para>
+        <para>Required:</para>
     </listitem>                    
     <listitem>
         <para><emphasis role="bold">ForwardPayloadLength</emphasis></para>
         <para>ForwardPayloadLength is the size of the payload.</para>
         <para>Type: int</para>
+        <para>Required:</para>
     </listitem>                    
     <listitem>
         <para><emphasis role="bold">UserForwardPayloadLength</emphasis></para>
         <para>the size of the usable payload.</para>
         <para>Type: int</para>
+        <para>Required:</para>
     </listitem>                    
     <listitem>
     
@@ -122,11 +135,13 @@
             -->
             
         <para>Type: int</para>
+        <para>Required:</para>
     </listitem>                    
     <listitem>
         <para><emphasis role="bold">SPRPKeyMaterialLength</emphasis></para>
         <para>SPRPKeyMaterialLength is the length of the SPRP key.</para>
         <para>Type: int</para>
+        <para>Required:</para>
     </listitem>
     <listitem>
         <para><emphasis role="bold">NIKEName</emphasis></para>
@@ -134,12 +149,14 @@
         scheme used by the mixnet&apos;s Sphinx
         packets. NIKEName and KEMName are mutually exclusive.</para>
         <para>Type: string</para>
+        <para>Required:</para>
     </listitem>
     <listitem>
         <para><emphasis role="bold">KEMName</emphasis></para>
         <para>KEMName is the name of the KEM scheme used by the mixnet&apos;s Sphinx
             packet. NIKEName and KEMName are mutually exclusive.</para>
         <para>Type: string</para>
+        <para>Required:</para>
     </listitem>
 </itemizedlist>'>
 
@@ -153,6 +170,7 @@
                         <para>Identifier is the human-readable identifier for a node (for example, 
                         the FQDN) and must be unique for a given mixnet.</para>
                         <para>Type: string</para>
+                        <para>Required:</para>
                         <para>Required:</para>
                     </listitem>
                     <listitem>
@@ -191,12 +209,14 @@
                         Currently &program_name; supports URLs with that start with either "tcp://" or "quic://" such as: ["tcp://192.168.1.1:30001"] and ["quic://192.168.1.1:40001"]
                         </para>
                         <para>Type: []string</para>
+                        <para>Required:</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">BindAddresses</emphasis></para>
                         <para>BindAddresses are listener addresses that the server will bind to and accept connections on.
 						These addresses are not advertised in the PKI.</para>
                         <para>Type: bool</para>
+                        <para>Required:</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">MetricsAddress</emphasis></para>
@@ -218,11 +238,13 @@
                         <para><emphasis role="bold">IsGatewayNode</emphasis></para>
                         <para>IsGatewayNode specifies if the server is a gateway or not.</para>
                         <para>Type: bool</para>
+                        <para>Required:</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">IsServiceNode</emphasis></para>
                         <para>IsServiceNode specifies if the server is a service node or not.</para>
                         <para>Type: bool</para>
+                        <para>Required:</para>
                     </listitem>
                 </itemizedlist>'>
 
@@ -257,24 +279,28 @@
                         <para> specifies the number of worker instances to use for inbound Sphinx
                             packet processing.</para>
                         <para>Type: int</para>
+                        <para>Required:</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">NumProviderWorkers</emphasis></para>
                         <para> specifies the number of worker instances to use for provider specific
                             packet processing.</para>
                         <para>Type: int</para>
+                        <para>Required:</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">NumKaetzchenWorkers</emphasis></para>
                         <para> specifies the number of worker instances to use for Kaetzchen
                             specific packet processing.</para>
                         <para>Type: int</para>
+                        <para>Required:</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">SchedulerExternalMemoryQueue</emphasis></para>
                         <para> will enable the experimental external memory queue that is backed by
                             disk.</para>
                         <para>Type: bool</para>
+                        <para>Required:</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">SchedulerQueueSize</emphasis></para>
@@ -282,48 +308,56 @@
                             will start getting dropped. A value &lt;= 0 is treated as
                             unlimited.</para>
                         <para>Type: int</para>
+                        <para>Required:</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">SchedulerMaxBurst</emphasis></para>
                         <para> is the maximum number of packets that will be dispatched per
                             scheduler wakeup event.</para>
                         <para>Type: </para>
+                        <para>Required:</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">UnwrapDelay</emphasis></para>
                         <para> is the maximum allowed unwrap delay due to queueing in
                             milliseconds.</para>
                         <para>Type: int</para>
+                        <para>Required:</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">GatewayDelay</emphasis></para>
                         <para>the maximum allowed gateway node worker delay due to queueing</para>
                         <para> in milliseconds.</para>
                         <para>Type: int</para>
+                        <para>Required:</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">ServiceDelay</emphasis></para>
                         <para> is the maximum allowed provider delay due to queueing in
                             milliseconds.</para>
                         <para>Type: int</para>
+                        <para>Required:</para> 
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">KaetzchenDelay</emphasis></para>
                         <para> is the maximum allowed kaetzchen delay due to queueing in
                             milliseconds.</para>
                         <para>Type: int</para>
+                        <para>Required:</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">SchedulerSlack</emphasis></para>
                         <para> is the maximum allowed scheduler slack due to queueing and or
                             processing in milliseconds.</para>
                         <para>Type: int</para>
+                        <para>Required:</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">SendSlack</emphasis></para>
                         <para> is the maximum allowed send queue slack due to queueing and or
                             congestion in milliseconds.</para>
                         <para>Type: int</para>
+                        <para>Required:</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">DecoySlack</emphasis><emphasis role="bold"
@@ -332,24 +366,28 @@
                             delays such as latency before a loop decoy packet will be considered
                             lost.</para>
                         <para>Type: int</para>
+                        <para>Required:</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">ConnectTimeout</emphasis></para>
                         <para> specifies the maximum time a connection can take to establish a
                             TCP/IP connection in milliseconds.</para>
                         <para>Type: int</para>
+                        <para>Required:</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">HandshakeTimeout</emphasis></para>
                         <para> specifies the maximum time a connection can take for a link protocol
                             handshake in milliseconds.</para>
                         <para>Type: int</para>
+                        <para>Required:</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">ReauthInterval</emphasis></para>
                         <para> specifies the interval at which a connection will be reauthenticated
                             in milliseconds.</para>
                         <para>Type: int</para>
+                        <para>Required:</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">SendDecoyTraffic</emphasis></para>
@@ -357,18 +395,21 @@
                             and thus is disabled by default. WARNING: This option will go away once
                             decoy traffic is more concrete.</para>
                         <para>Type: bool</para>
+                        <para>Required:</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">DisableRateLimit</emphasis></para>
                         <para> disables the per-client rate limiter. This option should only be used
                             for testing.</para>
                         <para>Type: bool</para>
+                        <para>Required:</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">GenerateOnly</emphasis></para>
                         <para> halts and cleans up the server right after long term key
                             generation.</para>
                         <para>Type: bool</para>
+                        <para>Required:</para>
                     </listitem>
                 </itemizedlist>'>
                 
@@ -385,6 +426,7 @@
                         <para><emphasis role="bold">Enable</emphasis></para>
                         <para>Enables the management interface if set to true.</para>
                         <para>Type: bool</para>
+                        <para>Required:</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">Path</emphasis></para>
@@ -465,5 +507,6 @@
                             peer authority<?oxy_comment_end?></para><?oxy_custom_end?>
                         <para> // uses for the Directory Authority service.</para>
                         <para>Type: []string</para>
+                        <para>Required:</para>
                     </listitem>
                 </itemizedlist>'>
