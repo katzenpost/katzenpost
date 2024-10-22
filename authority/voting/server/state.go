@@ -1051,7 +1051,7 @@ func (s *state) tallyVotes(epoch uint64) ([]*pki.MixDescriptor, []*pki.ReplicaDe
 			}
 		}
 		for _, desc := range vote.StorageReplicas {
-			rawDesc, err := desc.MarshalBinary()
+			rawDesc, err := desc.Marshal()
 			if err != nil {
 				s.log.Errorf("Skipping vote from Authority %s whose ReplicaDescriptor failed to encode?! %v", s.authorityNames[id], err)
 				continue
@@ -1082,7 +1082,7 @@ func (s *state) tallyVotes(epoch uint64) ([]*pki.MixDescriptor, []*pki.ReplicaDe
 		if len(votes) >= s.threshold {
 			// this shouldn't fail as the descriptors have already been verified
 			desc := new(pki.ReplicaDescriptor)
-			err := desc.UnmarshalBinary([]byte(rawDesc))
+			err := desc.Unmarshal([]byte(rawDesc))
 			if err != nil {
 				return nil, nil, nil, err
 			}
@@ -1696,7 +1696,7 @@ func (s *state) onReplicaDescriptorUpload(rawDesc []byte, desc *pki.ReplicaDescr
 	if ok {
 		// If the descriptor changes, then it will be rejected to prevent
 		// nodes from reneging on uploads.
-		serialized, err := d.MarshalBinary()
+		serialized, err := d.Marshal()
 		if err != nil {
 			return err
 		}
@@ -1884,7 +1884,7 @@ func (s *state) restorePersistence() error {
 						panic("stored hash should be 32 bytes")
 					}
 					desc := new(pki.ReplicaDescriptor)
-					err := desc.UnmarshalBinary(rawDesc)
+					err := desc.Unmarshal(rawDesc)
 					if err != nil {
 						s.log.Errorf("Failed to validate persisted descriptor: %v", err)
 						continue
