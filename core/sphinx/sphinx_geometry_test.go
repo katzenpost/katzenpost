@@ -71,7 +71,7 @@ func TestSphinxGeometryCartesianProduct(t *testing.T) {
 		if mycase.isNIKE {
 			scheme := nikeScheme.ByName(mycase.nikeName)
 			require.NotNil(t, scheme)
-			g := geo.GeometryFromUserForwardPayloadLength(scheme, mycase.payloadSize, false, mycase.nrHops)
+			g := geo.GeometryFromUserForwardPayloadLength(scheme, mycase.payloadSize, true, mycase.nrHops)
 			overhead := float64(g.PacketLength) / float64(g.UserForwardPayloadLength)
 			t.Logf("NIKE Sphinx PacketLength: %d UserForwardPayloadLength: %d = overhead %f", g.PacketLength, g.UserForwardPayloadLength, overhead)
 		} else { // KEM
@@ -80,7 +80,7 @@ func TestSphinxGeometryCartesianProduct(t *testing.T) {
 				panic(fmt.Sprintf("failed scheme name %s", mycase.kemName))
 			}
 			require.NotNil(t, scheme)
-			g := geo.KEMGeometryFromUserForwardPayloadLength(scheme, mycase.payloadSize, false, mycase.nrHops)
+			g := geo.KEMGeometryFromUserForwardPayloadLength(scheme, mycase.payloadSize, true, mycase.nrHops)
 			overhead := float64(g.PacketLength) / float64(g.UserForwardPayloadLength)
 			t.Logf("KEM Sphinx PacketLength: %d UserForwardPayloadLength: %d = overhead %f", g.PacketLength, g.UserForwardPayloadLength, overhead)
 		}

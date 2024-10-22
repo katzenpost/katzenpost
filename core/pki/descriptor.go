@@ -317,13 +317,13 @@ type ReplicaDescriptor struct {
 }
 
 // UnmarshalBinary implements encoding.BinaryUnmarshaler interface
-func (d *ReplicaDescriptor) UnmarshalBinary(data []byte) error {
+func (d *ReplicaDescriptor) Unmarshal(data []byte) error {
 	return cbor.Unmarshal(data, d)
 }
 
 // MarshalBinary implmements encoding.BinaryMarshaler
-func (d *ReplicaDescriptor) MarshalBinary() ([]byte, error) {
-	return ccbor.Marshal(d)
+func (d *ReplicaDescriptor) Marshal() ([]byte, error) {
+	return ccbor.Marshal((*ReplicaDescriptor)(d))
 }
 
 type SignedReplicaUpload struct {
