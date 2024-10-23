@@ -108,27 +108,7 @@ type Config struct {
                         <para>Type: string</para>
                         <para>Required:</para>
                     </listitem>
-                    <listitem>
-                        <para><emphasis role="bold">WireKEMScheme</emphasis></para>
-                        <para>WireKEMScheme specifies the wire protocol KEM scheme to use. This is
-                            another configuration point where it's possible to use post-quantum
-                            cryptography to strengthen security. In this case the "Wire" protocol
-                            refers to our PQ Noise based protocol which is how all the dir auth
-                            nodes talk to one another. PQ Noise is a variation of the Noise protocol
-                            framework where the handshake patterns are algebraically transformed to
-                            replace ECDH operations with KEM encapsulate/decapsulate
-                            operations.</para>
-                        <para>The following KEM schemes are supported: "x25519",
-                            "x448", "mlkem768", "sntrup4591761", "frodo640shake", "mceliece348864",
-                            "mceliece348864f", "mceliece460896", "mceliece460896f",
-                            "mceliece6688128", "mceliece6688128f", "mceliece6960119",
-                            "mceliece6960119f", "mceliece8192128", "mceliece8192128f", "xwing",
-                            "Kyber768-X25519", "MLKEM768-X25519", "MLKEM768-X448", "CTIDH511",
-                            "CTIDH512", "CTIDH1024", "CTIDH2048", "CTIDH512-X25519",
-                            "CTIDH512-X25519" </para>						
-                        <para>Type: string</para>
-                        <para>Required:</para>
-                    </listitem>
+                    &WireKEMScheme;
                     <listitem>
                         <para><emphasis role="bold">PKISignatureScheme</emphasis></para>
                         <para>PKISignatureScheme specifies the cryptographic signature scheme which will be used by all components of the mix network
@@ -241,45 +221,7 @@ ldMtDsvvc9KUfE4I0+c+XQ==
                         <para>Type: string</para>
                         <para>Required:</para>
                     </listitem>
-                    
-                    <!--WireKEMScheme …the  link layer-->
-                    
-                    <listitem>
-                        <para><emphasis role="bold">WireKEMScheme</emphasis></para>
-                        <para>WireKEMScheme specifies the key encapsulation mechanism (KEM) scheme
-                            for the <link xlink:href="https://eprint.iacr.org/2022/539">PQ
-                                Noise</link>-based wire protocol (link layer) that dirauth nodes use
-                            to communicate with each other. PQ Noise is a post-quantum variation of
-                            the <link xlink:href="https://noiseprotocol.org/">Noise protocol
-                                framework</link>, which algebraically transforms ECDH handshake
-                            patterns into KEM encapsulate/decapsulate operations.</para>
-                            
-                            <para>This configuration option supports the optional use of
-                            post-quantum cryptography to strengthen security. The following KEM
-                            schemes are supported: <itemizedlist>
-                                <listitem>
-                                    <para><emphasis role="bold">Classical:</emphasis> "x25519",
-                                        "x448"</para>
-                                </listitem>
-                            </itemizedlist><itemizedlist>
-                                <listitem>
-                                    <para><emphasis role="bold"> Post-quantum:</emphasis>
-                                        "mlkem768", "sntrup4591761", "frodo640shake",
-                                        "mceliece348864", "mceliece348864f", "mceliece460896",
-                                        "mceliece460896f", "mceliece6688128", "mceliece6688128f",
-                                        "mceliece6960119", "mceliece6960119f", "mceliece8192128",
-                                        "mceliece8192128f", "xwing", "Kyber768-X25519",
-                                        "MLKEM768-X25519", "MLKEM768-X448", "CTIDH511", "CTIDH512",
-                                        "CTIDH1024", "CTIDH2048", "CTIDH512-X25519",
-                                        "CTIDH512-X25519"</para>
-                                </listitem>
-                            </itemizedlist></para>						
-                        <para>Type: string</para>
-                        <para>Required: Yes</para>                    
-                    </listitem>
-                    
-                    
-                    
+                    &WireKEMScheme;  
                     <listitem>
                         <para><emphasis role="bold">Addresses</emphasis></para>
                         <para>Addresses specifies a list of one or more Address URLs in a format

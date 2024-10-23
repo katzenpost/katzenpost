@@ -532,3 +532,40 @@ also known as our NIKE to KEM "adapter" AND these are the only two classical one
                         <para>Required:</para>
                     </listitem>
                 </itemizedlist>'>
+                
+<!ENTITY WireKEMScheme '                
+                    <!--WireKEMScheme …the  link layer-->
+                    
+                    <listitem>
+                        <para><emphasis role="bold">WireKEMScheme</emphasis></para>
+                        <para>WireKEMScheme specifies the key encapsulation mechanism (KEM) scheme
+                            for the <link xlink:href="https://eprint.iacr.org/2022/539">PQ
+                                Noise</link>-based wire protocol (link layer) that nodes use
+                            to communicate with each other. PQ Noise is a post-quantum variation of
+                            the <link xlink:href="https://noiseprotocol.org/">Noise protocol
+                                framework</link>, which algebraically transforms ECDH handshake
+                            patterns into KEM encapsulate/decapsulate operations.</para>
+                            
+                            <para>This configuration option supports the optional use of
+                            post-quantum cryptography to strengthen security. The following KEM
+                            schemes are supported: <itemizedlist>
+                                <listitem>
+                                    <para><emphasis role="bold">Classical:</emphasis> "x25519",
+                                        "x448"</para>
+                                </listitem>
+                            </itemizedlist><itemizedlist>
+                                <listitem>
+                                    <para><emphasis role="bold"> Post-quantum:</emphasis>
+                                        "mlkem768", "sntrup4591761", "frodo640shake",
+                                        "mceliece348864", "mceliece348864f", "mceliece460896",
+                                        "mceliece460896f", "mceliece6688128", "mceliece6688128f",
+                                        "mceliece6960119", "mceliece6960119f", "mceliece8192128",
+                                        "mceliece8192128f", "xwing", "Kyber768-X25519",
+                                        "MLKEM768-X25519", "MLKEM768-X448", "CTIDH511", "CTIDH512",
+                                        "CTIDH1024", "CTIDH2048", "CTIDH512-X25519",
+                                        "CTIDH512-X25519"</para>
+                                </listitem>
+                            </itemizedlist></para>						
+                        <para>Type: string</para>
+                        <para>Required: Yes</para>                    
+                    </listitem>'>                
