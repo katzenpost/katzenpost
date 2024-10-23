@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!DOCTYPE article>
+<article
+  xmlns="http://docbook.org/ns/docbook" version="5.0"
+  xmlns:xlink="http://www.w3.org/1999/xlink" >
+  <info>
+    <title>Specifications</title>
+  </info>
+  <para>
+    {{% pageinfo %}} These works are licensed under the Creative Commons
+    Attribution-ShareAlike 4.0 International License. {{% /pageinfo %}}
+  </para>
+  <para>
+    The canonical versions of the specifications live in RFC plaintext
+    format at:
+  </para>
+  <itemizedlist spacing="compact">
+    <listitem>
+      <para>
+        https://github.com/katzenpost/katzenpost/tree/master/docs/specs
+      </para>
+    </listitem>
+  </itemizedlist>
+  <para>
+    Pull requests to fix formatting welcome!
+  </para>
+</article>
