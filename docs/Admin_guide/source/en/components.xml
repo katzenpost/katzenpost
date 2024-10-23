@@ -559,18 +559,14 @@ ldMtDsvvc9KUfE4I0+c+XQ==
                     <listitem>
                         <para>SPRP: AEZv5</para>
                     </listitem>                    
-                </itemizedlist>
-                    
+                </itemizedlist>                   
 				<para> In &program_name; the dirauths select the Sphinx geometry, each dirauth must agree with
                     the other dirauths. They publish the hash of the Sphinx Geometry in the PKI
                     document so that the rest of the network entities can validate their Sphinx
                     Geometry. </para>
                 &sphinxgeometry;
             </section>
-            
-            
-            
-        </section>
+         </section>
     </section>
     <section xml:id="server">
         <title xml:id="server.title">Mix, gateway, and service nodes</title>
@@ -591,10 +587,7 @@ ldMtDsvvc9KUfE4I0+c+XQ==
         }        
         
 -->
-        
-        
-
-        <section xml:id="mix-config">
+         <section xml:id="mix-config">
             <title xml:id="mix-config.title">Configuring mix nodes</title>
             <para>The following configuration is drawn from the reference implementation in
                     <filename>katzenpost/docker/voting_mixnet/mix1/katzenpost.toml</filename>. In a
