@@ -75,11 +75,10 @@ func (p proxy) OnCommand(cmd cborplugin.Command) error {
 			return err
 		}
 
-		/*
-			if len(rawResp) > 10240 {// where do we learn our maximum payload size ?
-				return nil, errors.New("Response is too long")
-			}
-		*/
+		// check that the respones size is not too large
+		if len(rawResp) > len(r.Payload)+len(r.SURB) {
+			return errors.New("Response is too long")
+		}
 
 		// wrap response in common.Response to indicate length to client
 		cr := &common.Response{Payload: rawResp}
