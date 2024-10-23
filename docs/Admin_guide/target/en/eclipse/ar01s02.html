@@ -1,0 +1,44 @@
+<html><head>
+      <meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1">
+   <title>2. Document Format</title><meta name="generator" content="DocBook XSL Stylesheets V1.78.1"><link rel="home" href="index.html" title="Certificate Format"><link rel="up" href="index.html" title="Certificate Format"><link rel="prev" href="index.html" title="Certificate Format"><link rel="next" href="ar01s03.html" title="2.1 Certificate Types"></head><body bgcolor="white" text="black" link="#0000FF" vlink="#840084" alink="#0000FF"><div class="section"><div class="titlepage"><div><div><h2 class="title" style="clear: both"><a name="document-format"></a>2. Document Format</h2></div></div></div><p>
+      The CBOR <a class="link" href="">RFC7049</a> serialization
+      format is used to serialize certificates:
+    </p><p>
+      Signature is a cryptographic signature which has an associated
+      signer ID.
+    </p><pre class="programlisting">
+type Signature struct {
+        // Identity is the identity of the signer.
+        Identity []byte
+        // Signature is the actual signature value.
+        Signature []byte
+}
+</pre><p>
+      Certificate structure for serializing certificates.
+    </p><pre class="programlisting">
+type certificate struct {
+    // Version is the certificate format version.
+    Version uint32
+
+    // Expiration is seconds since Unix epoch.
+    Expiration int64
+
+    // KeyType indicates the type of key
+    // that is certified by this certificate.
+    KeyType string
+
+    // Certified is the data that is certified by
+    // this certificate.
+    Certified []byte
+
+    // Signatures are the signature of the certificate.
+    Signatures []Signature
+}
+</pre><p>
+      That is, one or more signatures sign the certificate. However the
+      <code class="literal">Certified</code> field is not the only information
+      that is signed. The <code class="literal">Certified</code> field along with
+      the other non-signature fields are all concatenated together and
+      signed. Before serialization the signatures are sorted by their
+      identity so that the output is binary deterministic.
+    </p></div></body></html>
