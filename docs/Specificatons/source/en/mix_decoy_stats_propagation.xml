@@ -1,0 +1,247 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!DOCTYPE article>
+<article
+  xmlns="http://docbook.org/ns/docbook" version="5.0"
+  xmlns:xlink="http://www.w3.org/1999/xlink" >
+  <info>
+    <title>Propagation of Mix Decoy Loop Statistics</title>
+    <authorgroup>
+      <author>
+        <personname>
+          <firstname>David</firstname>
+          <surname>Stainton</surname>
+        </personname>
+      </author>
+      <author>
+        <personname>
+          <firstname>Eva</firstname>
+          <surname>Infeld</surname>
+        </personname>
+      </author>
+      <author>
+        <personname>
+          <firstname>Leif</firstname>
+          <surname>Ryge</surname>
+        </personname>
+      </author>
+    </authorgroup>
+  </info>
+  <para>
+    <emphasis role="strong">Abstract</emphasis>
+  </para>
+  <para>
+    In the context of continuous time mixing stategies such as the
+    memoryless mix used by Katzenpost, n-1 attacks may use strategic
+    packetloss. Nodes can also fail for benign reasons. Determining
+    whether or not it’s an n-1 attack is outside the scope of this work.
+  </para>
+  <para>
+    This document describes how we will communicate statistics from mix
+    nodes to mix network directory authorities which tells them about
+    the packetloss they are observing.
+  </para>
+  <section xml:id="design-overview">
+    <title>1. Design Overview</title>
+    <para>
+      Nodes (mixes, gateways, and providers) need upload packet-loss
+      statistics to the directory authorities, so that authorities can
+      label malfunctioning nodes as such in the consensus in the next
+      epoch.
+    </para>
+    <para>
+      Nodes currently sign and upload a Descriptor in each epoch.
+    </para>
+    <para>
+      In the future, they would instead upload a
+      <quote>UploadDescStats</quote> containing: * Descriptor * Stats *
+      Signature
+    </para>
+    <para>
+      Stats contains: * a map from pairs-of-mixes to the ratio of
+      count-of-loops-sent vs count-of-loops-received
+    </para>
+    <para>
+      <emphasis role="strong">refer to our non-existent document on
+      Provider orignated deocy loop traffic design discussion</emphasis>
+    </para>
+    <section xml:id="terminology">
+      <title>1.3 Terminology</title>
+      <itemizedlist>
+        <listitem>
+          <para>
+            <literal>wire protocol</literal> - refers to our PQ Noise
+            based protocol which currently uses TCP but in the near
+            future will optionally use QUIC. This protocol has messages
+            known as wire protocol <literal>commands</literal>, which
+            are used for various mixnet functions such as sending or
+            retrieving a message, dirauth voting etc. For more
+            information, please see our design doc:
+            <link xlink:href="https://github.com/katzenpost/katzenpost/blob/main/docs/specs/wire-protocol.md">wire
+            protocol specification</link>
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            <literal>Providers</literal> - refers to a set of node on
+            the edge of the network which have two roles, handle
+            incoming client connections and run mixnet services. Soon we
+            should get rid of <literal>Providers</literal> and replace
+            it with two different sets, <literal>gateway nodes</literal>
+            and <literal>service nodes</literal>.
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            <literal>Epoch</literal> - The Katzenpost epoch is currently
+            set to a 20 minute duration. Each new epoch there is a new
+            PKI document published containing public key material that
+            will only be valid for that epoch.
+          </para>
+        </listitem>
+      </itemizedlist>
+    </section>
+  </section>
+  <section xml:id="tracking-packet-loss-and-detecting-faulty-mixes">
+    <title>2. Tracking Packet Loss and Detecting Faulty Mixes</title>
+    <para>
+      Katzenpost lets different elements in the network track whether
+      other elements are functioning correctly. A node A will do this by
+      sending packets in randomly generated loops through the network,
+      and tracking whether the loop comes back or not. When it comes
+      back, it will mark that as evidence, that the nodes on the path of
+      that loop are functioning correctly.
+    </para>
+    <para>
+      Experimental setup, node A:
+    </para>
+    <itemizedlist spacing="compact">
+      <listitem>
+        <para>
+          Data: each network node <literal>A</literal> collects a record
+          of emitted test loops in a certain epoch, their paths and
+          whether they returned or not. Importantly, each loop is the
+          same length and includes l steps.
+        </para>
+      </listitem>
+      <listitem>
+        <para>
+          A segment is defined as a possible connection from a device in
+          the network to another, for example from a node in the layer
+          <literal>k</literal> to a node in the layer
+          <literal>k+1</literal>. Each loop is a sequence of such
+          segments.
+        </para>
+      </listitem>
+      <listitem>
+        <para>
+          Each node <literal>A</literal> will create 3 hashmaps,
+          <literal>sent_loops_A</literal>,
+          <literal>completed_loops_A</literal> and
+          <literal>ratios_A</literal>. Each of these will use a pair of
+          concatenated mixnode ID’s as the key. The ordering of the ID’s
+          will be from lesser topology layer to greater, e.g. the
+          two-tuple (n, n+1) which is represented here as a 64 byte
+          array:
+        </para>
+      </listitem>
+    </itemizedlist>
+    <programlisting>
+var sent_loops_A map[[64]byte]int
+var completed_loops_A map[[64]byte]int
+var ratios_A map[[64]byte]float64
+</programlisting>
+    <itemizedlist spacing="compact">
+      <listitem>
+        <para>
+          Every time the node A sends out a test loop, for each segment
+          in the loop path, it will increment the value in
+          <literal>sent_loops_A</literal>.
+        </para>
+      </listitem>
+      <listitem>
+        <para>
+          When a test loop returns, for each step in the loop path, it
+          will increment the value in
+          <literal>completed_loops_A</literal>.
+        </para>
+      </listitem>
+      <listitem>
+        <para>
+          Generate a new map entry in <literal>ratios_A</literal> for
+          each mix-node-pair <literal>p</literal>, if
+          <literal>sent_loops_A[p]==0</literal> set
+          <literal>ratios_A[p]=1</literal>. Else
+          <literal>ratios_A[p] =   completed_loops_A[p]/sent_loops_A[p]</literal>
+        </para>
+      </listitem>
+      <listitem>
+        <para>
+          Plot the resulting distribution, and calculate the standard
+          deviation to detect anomalies. Have the node report
+          significant anomalies after a sufficient time period as to not
+          leak information on the route of individual loops.
+        </para>
+      </listitem>
+      <listitem>
+        <para>
+          Anomalies may have to be discarded if the corresponding
+          <literal>sent_loops_A[p]</literal> is small.
+        </para>
+      </listitem>
+    </itemizedlist>
+    <para>
+      You would expect the distribution of values in
+      <literal>completed_loops</literal> to approximate a binomial
+      distribution. In an absence of faulty nodes,
+      <literal>ratios</literal> should be 1, and when there are some
+      faulty nodes values at faulty nodes should approach 0 (if the node
+      doesn’t work at all), and be binomially distributed at nodes that
+      can share a loop with faulty nodes.
+    </para>
+    <para>
+      Therefore each mix node generates a statistics report to upload to
+      the dirauth nodes, of the struct type:
+    </para>
+    <programlisting>
+type LoopStats struct {
+    Epoch           uint64
+    MixIdentityHash *[32]byte
+    Ratios          map[[64]byte]float64
+}
+</programlisting>
+    <para>
+      The report is subsequently uploaded to the directory authorities,
+      which combine the reports of individual nodes into a health status
+      of the network and arrive at a consensus decision about the
+      topology of the network.
+    </para>
+  </section>
+  <section xml:id="uploading-stats-to-dirauths">
+    <title>3. Uploading Stats to Dirauths</title>
+    <para>
+      Stats reports are uploaded along with the mix descriptor every
+      Epoch. A cryptographic signature covers both of these fields:
+    </para>
+    <programlisting>
+type UploadDescStats struct {
+         Descriptor []byte
+         StatsReport []byte
+         Signature []byte
+ }
+</programlisting>
+    <para>
+      Statistics reports collected during the XXX period of time, that
+      is, the time between descriptor N+1 upload and descriptor N+2
+      upload, are what will affect the topology choices in epoch N+2 if
+      the dirauths collectively decide to act on the very latest
+      statistics reports in order to determine for example if a mix node
+      should be removed from the network:
+    </para>
+    <programlisting>
+
+| ---------------- epoch N ---------------- | ---------------- epoch N+1 ---------------- | ---------------- epoch N+2 ---------------- |
+| ----------- UD_N+1 ---------------------- | ------------ UD N+2 ----------------------- | ----------- UD N+3 ------------------------ |
+         | ------------------ XXX ---------------- |
+</programlisting>
+  </section>
+</article>

@@ -1,0 +1,29 @@
+<html><head>
+      <meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1">
+   <title>Certificate Format</title><meta name="generator" content="DocBook XSL Stylesheets V1.78.1"><link rel="home" href="index.html" title="Certificate Format"><link rel="next" href="ar01s02.html" title="2. Document Format"></head><body bgcolor="white" text="black" link="#0000FF" vlink="#840084" alink="#0000FF"><div class="article"><div class="titlepage"><div><div><h1 class="title"><a name="d2488e1"></a>Certificate Format</h1></div><div><div class="authorgroup"><div class="author"><h3 class="author"><span class="firstname">David</span> <span class="surname">Stainton</span></h3></div></div></div></div><hr></div><div class="toc"><p><b>Table of Contents</b></p><dl class="toc"><dt><span class="section"><a href="index.html#introduction">1. Introduction</a></span></dt><dt><span class="section"><a href="ar01s02.html">2. Document Format</a></span></dt><dt><span class="section"><a href="ar01s03.html">2.1 Certificate Types</a></span></dt><dt><span class="section"><a href="ar01s04.html">2.2. Certificate Key Types</a></span></dt><dt><span class="section"><a href="ar01s05.html">3. Golang API</a></span></dt><dt><span class="section"><a href="ar01s06.html">4. Acknowledgments</a></span></dt><dt><span class="section"><a href="ar01s07.html">Appendix A. References</a></span></dt><dt><span class="section"><a href="ar01s08.html">Appendix B. Citing This Document</a></span></dt></dl></div><p>
+    <span class="strong"><strong>Abstract</strong></span>
+  </p><p>
+    This document proposes a certificate format that Katzenpost mix
+    server, directory authority server and clients will use.
+  </p><div class="section"><div class="titlepage"><div><div><h2 class="title" style="clear: both"><a name="introduction"></a>1. Introduction</h2></div></div></div><p>
+      Mixes and Directory Authority servers need to have key agility in
+      the sense of operational abilities such as key rotation and key
+      revocation. That is, we wish for mixes and authorities to
+      periodically utilize a long-term signing key for generating
+      certificates for new short-term signing keys.
+    </p><p>
+      Yet another use-case for these certificate is to replace the use
+      of JOSE <a class="link" href="">RFC7515</a> in the voting
+      Directory Authority system
+      <a class="link" href="">KATZMIXPKI</a> for the
+      multi-signature documents exchanged for voting and consensus.
+    </p><div class="section"><div class="titlepage"><div><div><h3 class="title"><a name="conventions-used-in-this-document"></a>1.1 Conventions Used in This Document</h3></div></div></div><p>
+        The key words <span class="quote">&#8220;<span class="quote">MUST</span>&#8221;</span>, <span class="quote">&#8220;<span class="quote">MUST NOT</span>&#8221;</span>,
+        <span class="quote">&#8220;<span class="quote">REQUIRED</span>&#8221;</span>, <span class="quote">&#8220;<span class="quote">SHALL</span>&#8221;</span>, <span class="quote">&#8220;<span class="quote">SHALL
+        NOT</span>&#8221;</span>, <span class="quote">&#8220;<span class="quote">SHOULD</span>&#8221;</span>, <span class="quote">&#8220;<span class="quote">SHOULD NOT</span>&#8221;</span>,
+        <span class="quote">&#8220;<span class="quote">RECOMMENDED</span>&#8221;</span>, <span class="quote">&#8220;<span class="quote">MAY</span>&#8221;</span>, and
+        <span class="quote">&#8220;<span class="quote">OPTIONAL</span>&#8221;</span> in this document are to be interpreted
+        as described in <a class="link" href="">RFC2119</a>.
+      </p></div><div class="section"><div class="titlepage"><div><div><h3 class="title"><a name="terminology"></a>1.2 Terminology</h3></div></div></div><p>
+        Tbw&#8230;
+      </p></div></div></div></body></html>

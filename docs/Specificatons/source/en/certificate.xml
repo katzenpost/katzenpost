@@ -1,0 +1,275 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!DOCTYPE article>
+<article
+  xmlns="http://docbook.org/ns/docbook" version="5.0"
+  xmlns:xlink="http://www.w3.org/1999/xlink" >
+  <info>
+    <title>Certificate Format</title>
+    <authorgroup>
+      <author>
+        <personname>
+          <firstname>David</firstname>
+          <surname>Stainton</surname>
+        </personname>
+      </author>
+    </authorgroup>
+  </info>
+  <para>
+    <emphasis role="strong">Abstract</emphasis>
+  </para>
+  <para>
+    This document proposes a certificate format that Katzenpost mix
+    server, directory authority server and clients will use.
+  </para>
+  <section xml:id="introduction">
+    <title>1. Introduction</title>
+    <para>
+      Mixes and Directory Authority servers need to have key agility in
+      the sense of operational abilities such as key rotation and key
+      revocation. That is, we wish for mixes and authorities to
+      periodically utilize a long-term signing key for generating
+      certificates for new short-term signing keys.
+    </para>
+    <para>
+      Yet another use-case for these certificate is to replace the use
+      of JOSE <link linkend="RFC7515">RFC7515</link> in the voting
+      Directory Authority system
+      <link linkend="KATZMIXPKI">KATZMIXPKI</link> for the
+      multi-signature documents exchanged for voting and consensus.
+    </para>
+    <section xml:id="conventions-used-in-this-document">
+      <title>1.1 Conventions Used in This Document</title>
+      <para>
+        The key words <quote>MUST</quote>, <quote>MUST NOT</quote>,
+        <quote>REQUIRED</quote>, <quote>SHALL</quote>, <quote>SHALL
+        NOT</quote>, <quote>SHOULD</quote>, <quote>SHOULD NOT</quote>,
+        <quote>RECOMMENDED</quote>, <quote>MAY</quote>, and
+        <quote>OPTIONAL</quote> in this document are to be interpreted
+        as described in <link linkend="RFC2119">RFC2119</link>.
+      </para>
+    </section>
+    <section xml:id="terminology">
+      <title>1.2 Terminology</title>
+      <para>
+        Tbw…
+      </para>
+    </section>
+  </section>
+  <section xml:id="document-format">
+    <title>2. Document Format</title>
+    <para>
+      The CBOR <link linkend="RFC7049">RFC7049</link> serialization
+      format is used to serialize certificates:
+    </para>
+    <para>
+      Signature is a cryptographic signature which has an associated
+      signer ID.
+    </para>
+    <programlisting>
+type Signature struct {
+        // Identity is the identity of the signer.
+        Identity []byte
+        // Signature is the actual signature value.
+        Signature []byte
+}
+</programlisting>
+    <para>
+      Certificate structure for serializing certificates.
+    </para>
+    <programlisting>
+type certificate struct {
+    // Version is the certificate format version.
+    Version uint32
+
+    // Expiration is seconds since Unix epoch.
+    Expiration int64
+
+    // KeyType indicates the type of key
+    // that is certified by this certificate.
+    KeyType string
+
+    // Certified is the data that is certified by
+    // this certificate.
+    Certified []byte
+
+    // Signatures are the signature of the certificate.
+    Signatures []Signature
+}
+</programlisting>
+    <para>
+      That is, one or more signatures sign the certificate. However the
+      <literal>Certified</literal> field is not the only information
+      that is signed. The <literal>Certified</literal> field along with
+      the other non-signature fields are all concatenated together and
+      signed. Before serialization the signatures are sorted by their
+      identity so that the output is binary deterministic.
+    </para>
+  </section>
+  <section xml:id="certificate-types">
+    <title>2.1 Certificate Types</title>
+    <para>
+      The certificate <literal>type</literal> field indicates the type
+      of certificate. So far we have only two types:
+    </para>
+    <itemizedlist spacing="compact">
+      <listitem>
+        <para>
+          identity key certificate
+        </para>
+      </listitem>
+      <listitem>
+        <para>
+          directory authority certificate
+        </para>
+      </listitem>
+    </itemizedlist>
+    <para>
+      Both mixes and directory authority servers have a secret,
+      long-term identity key. This key is ideally stored encrypted and
+      offline, it’s used to sign key certificate documents. Key
+      certificates contain a medium-term signing key that is used to
+      sign other documents. In the case of an <quote>authority signing
+      key</quote>, it is used to sign vote and consensus documents
+      whereas the <quote>mix singing key</quote> is used to sign mix
+      descriptors which are uploaded to the directory authority servers.
+    </para>
+  </section>
+  <section xml:id="certificate-key-types">
+    <title>2.2. Certificate Key Types</title>
+    <para>
+      It’s more practical to continue using Ed25519
+      <link linkend="ED25519">ED25519</link> keys but it’s also possible
+      that in the future we could upgrade to a stateless hash based post
+      quantum cryptographic signature scheme such as SPHINCS-256 or
+      SPHINCS+. <link linkend="SPHINCS256">SPHINCS256</link>
+    </para>
+  </section>
+  <section xml:id="golang-api">
+    <title>3. Golang API</title>
+    <itemizedlist spacing="compact">
+      <listitem>
+        <para>
+          https://godoc.org/github.com/katzenpost/katzenpost/core/crypto/cert
+        </para>
+      </listitem>
+    </itemizedlist>
+    <para>
+      Our golang implementation is agnostic to the specific
+      cryptographic signature scheme which is used. Cert can handle
+      single and multiple signatures per document and has a variety of
+      helper functions that ease use for multi signature use cases.
+    </para>
+  </section>
+  <section xml:id="acknowledgments">
+    <title>4. Acknowledgments</title>
+    <para>
+      This specification was inspired by Tor Project’s certificate
+      format specification document:
+    </para>
+    <itemizedlist spacing="compact">
+      <listitem>
+        <para>
+          https://gitweb.torproject.org/torspec.git/tree/cert-spec.txt
+        </para>
+      </listitem>
+    </itemizedlist>
+  </section>
+  <section xml:id="appendix-a.-references">
+    <title>Appendix A. References</title>
+    <section xml:id="appendix-a.1-normative-references">
+      <title>Appendix A.1 Normative References</title>
+      <para>
+      </para>
+    </section>
+    <section xml:id="appendix-a.2-informative-references">
+      <title>Appendix A.2 Informative References</title>
+      <para>
+      </para>
+    </section>
+  </section>
+  <section xml:id="appendix-b.-citing-this-document">
+    <title>Appendix B. Citing This Document</title>
+    <section xml:id="appendix-b.1-bibtex-entry">
+      <title>Appendix B.1 Bibtex Entry</title>
+      <para>
+        Note that the following bibtex entry is in the IEEEtran bibtex
+        style as described in a document called <quote>How to Use the
+        IEEEtran BIBTEX Style</quote>.
+      </para>
+      <programlisting>
+@online{KatzenCert,
+title = {Certificate Format Specification},
+author = {David Stainton},
+url = {https://github.com/katzenpost/katzenpost/blob/master/docs/specs/certificate.rst},
+year = {2018}
+}
+</programlisting>
+      <para>
+        <emphasis role="strong">ED25519</emphasis>
+      </para>
+      <itemizedlist spacing="compact">
+        <listitem>
+          <para>
+            <link xlink:href="https://tools.ietf.org/html/rfc8032">RFC8032</link>
+          </para>
+        </listitem>
+      </itemizedlist>
+      <para>
+        <emphasis role="strong">KATZMIXPKI</emphasis>
+      </para>
+      <programlisting>
+Angel, Y., Piotrowska, A., Stainton, D.,
+&quot;Katzenpost Mix Network Public Key Infrastructure Specification&quot;,
+December 2017,
+https://github.com/katzenpost/katzenpost/blob/master/docs/specs/pki.md
+</programlisting>
+      <para>
+        <emphasis role="strong">RFC2119</emphasis>
+      </para>
+      <programlisting>
+Bradner, S.,
+&quot;Key words for use in RFCs to Indicate Requirement Levels&quot;,
+BCP 14, RFC 2119, DOI 10.17487/RFC2119,
+March 1997,
+http://www.rfc-editor.org/info/rfc2119
+</programlisting>
+      <para>
+        <emphasis role="strong">RFC7049</emphasis>
+      </para>
+      <programlisting>
+C. Bormannm, P. Hoffman,
+&quot;Concise Binary Object Representation (CBOR)&quot;,
+Internet Engineering Task Force (IETF),
+October 2013,
+https://tools.ietf.org/html/rfc7049
+</programlisting>
+      <para>
+        <emphasis role="strong">RFC7515</emphasis>
+      </para>
+      <programlisting>
+Jones, M., Bradley, J., Sakimura, N.,
+&quot;JSON Web Signature (JWS)&quot;,
+May 2015,
+https://tools.ietf.org/html/rfc7515
+</programlisting>
+      <para>
+        <emphasis role="strong">RFC7693</emphasis>
+      </para>
+      <programlisting>
+Saarinen, M-J., Ed., and J-P. Aumasson,
+&quot;The BLAKE2 Cryptographic Hash and Message Authentication Code (MAC)&quot;,
+RFC 7693, DOI 10.17487/RFC7693,
+November 2015,
+http://www.rfc-editor.org/info/rfc7693
+</programlisting>
+      <para>
+        <emphasis role="strong">SPHINCS256</emphasis>
+      </para>
+      <programlisting>
+Bernstein, D., Hopwood, D., Hulsing, A., Lange, T., Niederhagen, R., Papachristodoulou, L., Schwabe, P., Wilcox O' Hearn, Z.,
+&quot;SPHINCS: practical stateless hash-based signatures&quot;,
+http://sphincs.cr.yp.to/sphincs-20141001.pdf
+</programlisting>
+    </section>
+  </section>
+</article>
