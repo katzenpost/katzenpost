@@ -121,22 +121,23 @@
         <para>the size of the usable payload.</para>
         <para>Type: int</para>
         <para>Required:</para>
-    </listitem>                    
-    <listitem>
+    </listitem>    
     
-        <!--
-        
-        para><emphasis role="bold">NextNodeHopLength</emphasis></para>
+    
+    
+    
+    <listitem>
+        <para><emphasis role="bold">NextNodeHopLength</emphasis></para>
         <para>NextNodeHopLength is derived off the largest routing info</para>
         <para>block that we expect to encounter. Everything else just has
             a NextNodeHop + NodeDelay, or a Recipient, both cases which
-            are shorter.</para
-            
-            -->
-            
+            are shorter.</para>
         <para>Type: int</para>
         <para>Required:</para>
-    </listitem>                    
+    </listitem>  
+    
+    
+    
     <listitem>
         <para><emphasis role="bold">SPRPKeyMaterialLength</emphasis></para>
         <para>SPRPKeyMaterialLength is the length of the SPRP key.</para>
@@ -170,14 +171,25 @@
                         <para>Identifier is the human-readable identifier for a node (for example, 
                         the FQDN) and must be unique for a given mixnet.</para>
                         <para>Type: string</para>
-                        <para>Required:</para>
-                        <para>Required:</para>
+                        <para>Required: Yes</para>
                     </listitem>
+                    
+                    
+                    
+                    
+                    
                     <listitem>
                         <para><emphasis role="bold">WireKEM</emphasis></para>
                         <para>WireKEM is the wire protocol KEM (key encapsulation mechanism) scheme to use.</para>
-                        <para>This configuration option where 
-                        its possible to use post quantum cryptography to strengthen security. In this case the "Wire" protocol 
+                 <!--       
+                        also note that X25519 and X448 are NIKEs not KEMs... however we use a Hashed ElGamal cryptographic construction to convert them from NIKE to KEM
+
+also known as our NIKE to KEM "adapter" AND these are the only two classical ones.-->
+                        
+                        <para>This configuration option supports the use of post-quantum cryptography to strengthen security. 
+                        
+                        
+                        In this case the "Wire" protocol 
                         refers to our PQ Noise based protocol which is how all the dir auth nodes talk to one another. PQ Noise is a 
                         variation of the Noise protocol framework where the handshake patterns are algebraically transformed to replace
                         ECDH operations with KEM encapsulate/decapsulate operations.
@@ -189,8 +201,13 @@
 							"CTIDH511", "CTIDH512", "CTIDH1024", "CTIDH2048", "CTIDH512-X25519", "CTIDH512-X25519"
 						</para>
                         <para>Type: string</para>
-                        <para>Required:</para>
+                        <para>Required: Yes</para>
                     </listitem>
+                    
+                    
+                    
+                    
+                    
                     <listitem>
                         <para><emphasis role="bold">PKISignatureScheme</emphasis></para>
                         <para>PKISignatureScheme specifies the cryptographic signature scheme used by all components of the mix network
@@ -200,8 +217,13 @@
                         	"ed25519", "ed448", "Ed25519 Sphincs+", "Ed448-Sphincs+", "Ed25519-Dilithium2", "Ed448-Dilithium3"
                         </para>
                         <para>Type: string</para>
-                        <para>Required:</para>
+                        <para>Required: Yes</para>
                     </listitem>
+                    
+                    
+                    
+                    
+                    
                     <listitem>
                         <para><emphasis role="bold">Addresses</emphasis></para>
                         <para>Addresses specifies a list of one or more address URLs in a format that includes the transport protocol,
@@ -220,7 +242,7 @@
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">MetricsAddress</emphasis></para>
-                        <para>MetricsAddress is the address/port to bind the prometheus metrics
+                        <para>MetricsAddress is the address/port to bind the Prometheus metrics
                             endpoint to.</para>
                         <para>Type: string</para>
                         <para>Required:</para>
