@@ -627,6 +627,10 @@ also known as our NIKE to KEM "adapter" AND these are the only two classical one
                                 <listitem>
                                     <para><emphasis role="bold">Classical:</emphasis> "x25519",
                                         "x448"</para>
+                                     <note><para>X25519 and X448 are actually non-interactive key-exchanges
+                                            (NIKEs), not KEMs. &program_name; uses
+                                            a Hashed ElGamal cryptographic construction
+                                            to convert them from NIKEs to KEMs.</para></note>
                                 </listitem>
                             </itemizedlist><itemizedlist>
                                 <listitem>
@@ -665,6 +669,10 @@ also known as our NIKE to KEM "adapter" AND these are the only two classical one
                                 <listitem>
                                     <para><emphasis role="bold">Classical:</emphasis> "x25519",
                                         "x448"</para>
+                                     <note><para>X25519 and X448 are actually non-interactive key-exchanges
+                                            (NIKEs), not KEMs. &program_name; uses
+                                            a Hashed ElGamal cryptographic construction
+                                            to convert them from NIKEs to KEMs.</para></note>
                                 </listitem>
                             </itemizedlist><itemizedlist>
                                 <listitem>
