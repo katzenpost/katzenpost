@@ -1,0 +1,412 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!DOCTYPE article>
+<article
+  xmlns="http://docbook.org/ns/docbook" version="5.0"
+  xmlns:xlink="http://www.w3.org/1999/xlink" >
+  <info>
+    <title>LIONESS Wide-Block-Cipher</title>
+    <authorgroup>
+      <author>
+        <personname>
+          <firstname>Yawning</firstname>
+          <surname>Angel</surname>
+        </personname>
+      </author>
+    </authorgroup>
+  </info>
+  <para>
+    <emphasis role="strong">Abstract</emphasis>
+  </para>
+  <para>
+    This document defines the LIONESS Wide-Block-Cipher construct, and
+    provides a concrete parameterization based around the BLAKE2b hash
+    algorithm and ChaCha20 stream cipher.
+  </para>
+  <para>
+    This document does not introduce any new crypto, but is meant to
+    serve as a stable reference and implementation guide.
+  </para>
+  <section xml:id="introduction">
+    <title>1. Introduction</title>
+    <para>
+      LIONESS is a provably secure wide-block-cipher proposed by
+      Anderson and Biham in
+      <link linkend="AB96" role="citation">[AB96]</link>. Internally it
+      is a four round unbalanced Feistel cipher comprised of a keyed
+      hash function and a stream cipher. It supports processing large
+      abitrary sized blocks, with a minimum block size imposed by the
+      choice of primitives, and has the property such that each bit of
+      the ciphertext is dependent on every single bit of the plaintext
+      and vice versa.
+    </para>
+    <section xml:id="conventions-used-in-this-document">
+      <title>1.1 Conventions Used in This Document</title>
+      <para>
+        The key words <quote>MUST</quote>, <quote>MUST NOT</quote>,
+        <quote>REQUIRED</quote>, <quote>SHALL</quote>, <quote>SHALL
+        NOT&quot;,</quote>SHOULD”, <quote>SHOULD NOT</quote>,
+        <quote>RECOMMENDED</quote>, <quote>MAY</quote>, and
+        <quote>OPTIONAL</quote> in this document are to be interpreted
+        as described in <link linkend="RFC2119">RFC2119</link>.
+      </para>
+      <itemizedlist spacing="compact">
+        <listitem>
+          <para>
+            <literal>x | y</literal> is the concatenation of x and y
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            <literal>x ^ y</literal> is the bitwise XOR of x and y
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            A <literal>byte</literal> is an 8-bit octet
+          </para>
+        </listitem>
+      </itemizedlist>
+      <para>
+        <literal>x[a:b]</literal> is the sub-vector of x where a/b
+        denote the start/end byte indexes (inclusive-exclusive). a/b may
+        be omitted to signify the start/end of the vector x
+        respectively.
+      </para>
+    </section>
+  </section>
+  <section xml:id="the-lioness-wide-block-cipher-construct">
+    <title>2. The LIONESS Wide-Block-Cipher Construct</title>
+    <para>
+      LIONESS is parameteriezed with a keyed hash function (MAC) and a
+      stream cipher as follows.
+    </para>
+    <para>
+      <literal>H(k, m)</literal> is a keyed hash function (MAC) with the
+      key <literal>k</literal>, for a message <literal>m</literal> of
+      arbitrary size. Let <literal>HashLength</literal> denote the size
+      of the output and the key in bytes.
+    </para>
+    <para>
+      <literal>H()</literal> MUST be collision resistant or preimage
+      resistant, and implementations SHOULD pick algorithms that provide
+      both properties.
+    </para>
+    <para>
+      <literal>S(k)</literal> is a pseudo random function (stream
+      cipher) which given the <literal>HashLength</literal> sized input
+      <literal>k</literal> will generate an output of arbitrary size.
+    </para>
+    <para>
+      <literal>S()</literal> MUST be key recovery resistant.
+    </para>
+    <section xml:id="lioness-encryption">
+      <title>2.1 LIONESS Encryption</title>
+      <programlisting>
+LIONESS-Encrypt(k1, k2, k3, k4, plaintext) -&gt; ciphertext
+</programlisting>
+      <para>
+        Inputs:
+      </para>
+      <para>
+        <literal>k1,k2,k3,k4</literal> Round keys, each HashLength bytes
+        in size.
+      </para>
+      <para>
+        <literal>plaintext</literal> The plaintext to encrypt, greater
+        than <literal>HashLength</literal> bytes in size.
+      </para>
+      <para>
+        Output:
+      </para>
+      <para>
+        <literal>ciphertext</literal> The resulting ciphertext.
+      </para>
+      <para>
+        The output of LIONESS-Encrypt is calculated as follows:
+      </para>
+      <programlisting>
+L = plaintext[0:HashLength]
+R = plaintext[HashLength:]
+R = R ^ S(L ^ k1)
+L = L ^ H(k2, R)
+R = R ^ S(L ^ k3)
+L = L ^ H(k4, R)
+ciphertext = L | R
+</programlisting>
+    </section>
+    <section xml:id="lioness-decryption">
+      <title>2.2 LIONESS Decryption</title>
+      <programlisting>
+LIONESS-Decrypt(k1, k2, k3, k4, ciphertext) -&gt; plaintext
+</programlisting>
+      <para>
+        Inputs:
+      </para>
+      <para>
+        <literal>k1,k2,k3,k4</literal> Round keys, each
+        <literal>HashLength</literal> bytes in size.
+      </para>
+      <para>
+        <literal>ciphertext</literal> The ciphertext to decrypt, greater
+        than <literal>HashLength</literal> bytes in size.
+      </para>
+      <para>
+        Output:
+      </para>
+      <para>
+        <literal>plaintext</literal> The resulting plaintext.
+      </para>
+      <para>
+        The output of LIONESS-Decrypt is calculated as follows:
+      </para>
+      <programlisting>
+L = ciphertext[0:HashLength]
+R = ciphertext[HashLength:]
+L = L ^ H(k4, R)
+R = R ^ S(L ^ k3)
+L = L ^ H(k2, R)
+R = R ^ S(L ^ k1)
+plaintext = L | R
+</programlisting>
+    </section>
+  </section>
+  <section xml:id="lioness-blake2b-chacha20">
+    <title>3. LIONESS-BLAKE2b-ChaCha20</title>
+    <para>
+      LIONESS-BLAKE2b-ChaCha20 is a concrete parameterization of LIONESS
+      based around the BLAKE2b <link linkend="RFC7693">RFC7693</link>
+      hash algorithm and ChaCha20 <link linkend="RFC7539">RFC7539</link>
+      stream cipher. It provides a security level of at least 256 bits,
+      and supports a per-call initialization vector.
+    </para>
+    <para>
+      Plaintext and Ciphertext MUST NOT exceed
+      <literal>32 + ((1 \&lt;\&lt; 32) \* 64)</literal> bytes.
+    </para>
+    <para>
+      For sections 3.1 and 3.2:
+    </para>
+    <para>
+      Let <literal>BLAKE2b(k, m)</literal> return the BLAKE2b digest
+      calculated with key <literal>k</literal>, and message
+      <literal>m</literal>, truncated to 32 bytes.
+    </para>
+    <para>
+      Let <literal>ChaCha20(k, n, m)</literal> return the ChaCha20
+      encrypted ciphertext with key <literal>k</literal>, nonce
+      <literal>n</literal>, and message <literal>m</literal>, with the
+      counter initialized to <literal>0</literal>.
+    </para>
+    <section xml:id="lioness-blake2b-chacha20-encryption">
+      <title>3.1 LIONESS-BLAKE2b-ChaCha20 Encryption</title>
+      <programlisting>
+LIONESS-BLAKE2b-ChaCha20-Encrypt(key, iv, plaintext) -&gt; ciphertext
+</programlisting>
+      <para>
+        Inputs:
+      </para>
+      <para>
+        <literal>key</literal> The key, 128 bytes in size.
+        <literal>iv</literal> The initialization vector, 48 bytes in
+        size. <literal>plaintext</literal> The plaintext to encrypt,
+        greater than 32 bytes in size.
+      </para>
+      <para>
+        Output:
+      </para>
+      <para>
+        <literal>ciphertext</literal> The resulting ciphertext.
+      </para>
+      <para>
+        The output of LIONESS-BLAKE2b-ChaCha20-Encrypt is calculated as
+        follows:
+      </para>
+      <programlisting>
+k1 = key[0:32]
+k2 = key[32:64]
+k3 = key[64:96]
+k4 = key[96:128]
+iv1 = iv[0:12]
+iv2 = iv[12:24]
+iv3 = iv[24:36]
+iv4 = iv[36:48]
+
+L = ciphertext[0:32]
+R = ciphertext[32:]
+R = ChaCha20(L ^ k1, iv1, R)
+L = L ^ BLAKE2b(k2 | iv2, R)
+R = ChaCha20(L ^ k3, iv3, R)
+L = L ^ BLAKE2b(k4 | iv4, R)
+ciphertext = L | R
+</programlisting>
+    </section>
+    <section xml:id="lioness-blake2b-chacha20-decryption">
+      <title>3.2 LIONESS-BLAKE2b-ChaCha20 Decryption</title>
+      <programlisting>
+LIONESS-BLAKE2b-ChaCha20-Decrypt(key, iv, ciphertext) -&gt; plaintext
+</programlisting>
+      <para>
+        Inputs:
+      </para>
+      <para>
+        <literal>key</literal> The key, 128 bytes in size.
+      </para>
+      <para>
+        <literal>iv</literal> The initialization vector, 48 bytes in
+        size.
+      </para>
+      <para>
+        <literal>ciphertext</literal> The ciphertext to decrypt, greater
+        than 32 bytes in size.
+      </para>
+      <para>
+        Output:
+      </para>
+      <para>
+        <literal>plaintext</literal> The resulting plaintext.
+      </para>
+      <para>
+        The output of LIONESS-BLAKE2b-ChaCha20-Decrypt is calculated as
+        follows:
+      </para>
+      <programlisting>
+k1 = key[0:32]
+k2 = key[32:64]
+k3 = key[64:96]
+k4 = key[96:128]
+iv1 = iv[0:12]
+iv2 = iv[12:24]
+iv3 = iv[24:36]
+iv4 = iv[36:48]
+
+L = ciphertext[0:32]
+R = ciphertext[32:]
+L = L ^ BLAKE2b(k4 | iv4, R)
+R = ChaCha20(L ^ k3, iv3, R)
+L = L ^ BLAKE2b(k2 | iv2, R)
+R = ChaCha20(L ^ k1, iv1, R)
+plaintext = L | R
+</programlisting>
+    </section>
+  </section>
+  <section xml:id="implementation-considerations">
+    <title>4. Implementation Considerations</title>
+    <para>
+      When choosing the underlying stream cipher or MAC, implementors
+      may wish to consider the initialization overhead such as key
+      scheduling, as the performance impact can be non-negligible
+      depending on algorithm choice.
+    </para>
+  </section>
+  <section xml:id="security-considerations">
+    <title>5. Security Considerations</title>
+    <para>
+      When parameterizing the LIONESS construct care MUST be taken to
+      pick cryptographic primitives that meet the requirements specified
+      in Section 2.1. Depending on the primitive chosen for
+      <literal>S()</literal>, there may be a maximum block size imposed
+      by the maximum amount of data that <literal>S()</literal> may
+      encrypt with a given key.
+    </para>
+    <para>
+      Care MUST be taken to avoid leaking sensitive information via
+      side-channels, however this is primarily influenced by the
+      algorithms and implementations selected for <literal>H()</literal>
+      and <literal>S()</literal> than the LIONESS construct itself.
+    </para>
+    <para>
+      No claims are made regarding the security of LIONESS when the same
+      key material is used to encrypt multiple blocks, beyond those made
+      in <link linkend="MPRA11">MPRA11</link>. Conservative users may
+      wish to avoid this behavior, use LIONESS as the building block for
+      standard block cipher constructs that take initialization vectors,
+      or incorporate initialization vectors in the
+      <literal>H()</literal> and <literal>S()</literal> calls.
+    </para>
+    <section xml:id="appendix-a.-references">
+      <title>Appendix A. References</title>
+      <section xml:id="appendix-a.1-normative-references">
+        <title>Appendix A.1 Normative References</title>
+        <para>
+        </para>
+      </section>
+      <section xml:id="appendix-a.2-informative-references">
+        <title>Appendix A.2 Informative References</title>
+        <para>
+        </para>
+      </section>
+    </section>
+    <section xml:id="appendix-b.-lioness-chacha20-blake2b-test-vector">
+      <title>Appendix B. LIONESS-ChaCha20-BLAKE2b Test Vector</title>
+      <para>
+      </para>
+    </section>
+    <section xml:id="appendix-c.-citing-this-document">
+      <title>Appendix C. Citing This Document</title>
+      <section xml:id="appendix-c.1-bibtex-entry">
+        <title>Appendix C.1 Bibtex Entry</title>
+        <para>
+          Note that the following bibtex entry is in the IEEEtran bibtex
+          style as described in a document called <quote>How to Use the
+          IEEEtran BIBTEX Style</quote>.
+        </para>
+        <programlisting>
+@online{LionessSpec,
+title = {The LIONESS Wide-Block-Cipher Specification},
+author = {Yawning Angel},
+url = {https://github.com/katzenpost/katzenpost/blob/main/docs/specs/lioness.md},
+year = {2017}
+}
+</programlisting>
+        <para>
+          <emphasis role="strong">AB96</emphasis>
+        </para>
+        <programlisting>
+Anderson, R., Biham, E.,
+&quot;Two Practical and Provably Secure Block Ciphers: BEAR and LION&quot;,
+1996
+</programlisting>
+        <para>
+          <emphasis role="strong">MPRA11</emphasis>
+        </para>
+        <programlisting>
+Maines, L., Piva, M., Rimoldi, A., Sala, M.,
+&quot;On the provable security of BEAR and LION schemes&quot;,
+arXiv:1105.0259,
+May 2011,
+https://arxiv.org/abs/1105.0259
+</programlisting>
+        <para>
+          <emphasis role="strong">RFC2119</emphasis>
+        </para>
+        <programlisting>
+Bradner, S.,
+&quot;Key words for use in RFCs to Indicate Requirement Levels&quot;,
+BCP 14, RFC 2119, DOI 10.17487/RFC2119,
+March 1997,
+http://www.rfc-editor.org/info/rfc2119
+</programlisting>
+        <para>
+          <emphasis role="strong">RFC7539</emphasis>
+        </para>
+        <programlisting>
+Nir, Y. and A. Langley,
+&quot;ChaCha20 and Poly1305 for IETF Protocols&quot;,
+RFC 7539, DOI 10.17487/RFC7539,
+May 2015,
+http://www.rfc-editor.org/info/rfc7539
+</programlisting>
+        <para>
+          <emphasis role="strong">RFC7693</emphasis>
+        </para>
+        <programlisting>
+Saarinen, M-J., Ed., and J-P. Aumasson,
+&quot;The BLAKE2 Cryptographic Hash and Message Authentication Code (MAC)&quot;,
+RFC 7693, DOI 10.17487/RFC7693,
+November 2015,
+http://www.rfc-editor.org/info/rfc7693
+</programlisting>
+      </section>
+    </section>
+  </section>
+</article>
