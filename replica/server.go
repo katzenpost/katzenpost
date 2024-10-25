@@ -47,11 +47,10 @@ type Server struct {
 
 	cfg *config.Config
 
-	thinClient *thin.ThinClient
-	pkiWorker  *PKIWorker
-	listeners  []GenericListener
-	state      *state
-	connector  *Connector
+	pkiWorker *PKIWorker
+	listeners []GenericListener
+	state     *state
+	connector *Connector
 
 	replicaPrivateKey  nike.PrivateKey
 	replicaPublicKey   nike.PublicKey
@@ -326,19 +325,11 @@ func New(cfg *config.Config) (*Server, error) {
 		addresses = s.cfg.Addresses
 	}
 
-	// Use thin client to connect o client2 daemon and gather a PKI document
-	// which we will use for both wire authentication and for getting other replica keys
-	// for use in our replica storage protocol.
-	s.thinClient = thin.NewThinClient(s.cfg.ThinConfig)
-	err = s.thinClient.Dial()
-	if err != nil {
-		s.log.Errorf("thinClient.Dial failure: %v", err)
-		isOk = false
-		return nil, err
-	}
-
 	// Start the PKI worker.
-	s.pkiWorker = newPKIWorker(s, s.logBackend.GetLogger("pkiWorker"))
+	s.pkiWorker, err = newPKIWorker(s, s.logBackend.GetLogger("pkiWorker"))
+	if err != nil {
+		panic(err)
+	}
 
 	// Start the outgoing connection worker
 	s.connector = newConnector(s)

@@ -70,55 +70,6 @@ func (r *ReplicaMap) Copy() map[[32]byte]*pki.ReplicaDescriptor {
 	return ret
 }
 
-/*
-type Documents struct {
-	sync.RWMutex
-	docs map[uint64]*pki.Document
-}
-
-func newDocuments() *Documents {
-	return &Documents{
-		docs: make(map[uint64]*pki.Document),
-	}
-}
-
-func (d *Documents) HasEpoch(epoch uint64) bool {
-	d.RLock()
-	_, ok := d.docs[epoch]
-	d.RUnlock()
-	return ok
-}
-
-func (d *Documents) SetEpoch(epoch uint64, doc *pki.Document) {
-	d.Lock()
-	d.docs[epoch] = doc
-	d.Unlock()
-}
-
-func (d *Documents) Replace(newDoc map[uint64]*pki.Document) {
-	d.Lock()
-	d.docs = newDoc
-	d.Unlock()
-}
-
-func (d *Documents) DocumentsToFetch() []uint64 {
-	ret := make([]uint64, 0, PKIDocNum)
-	now, _, till := epochtime.Now()
-	start := now
-	if till < nextFetchTill {
-		start = now + 1
-	}
-	d.RLock()
-	defer d.RUnlock()
-	for epoch := start; epoch > now-PKIDocNum; epoch-- {
-		if _, ok := d.docs[epoch]; !ok {
-			ret = append(ret, epoch)
-		}
-	}
-	return ret
-}
-*/
-
 type PKIWorker struct {
 	worker.Worker
 
@@ -148,12 +99,10 @@ func newPKIWorker(server *Server, log *logging.Logger) (*PKIWorker, error) {
 		rawDocs:       make(map[uint64][]byte),
 		failedFetches: make(map[uint64]error),
 	}
-
 	kemscheme := schemes.ByName(server.cfg.WireKEMScheme)
 	if kemscheme == nil {
 		return nil, errors.New("kem scheme not found in registry")
 	}
-
 	pkiCfg := &vClient.Config{
 		KEMScheme:   kemscheme,
 		LinkKey:     server.linkKey,
@@ -161,20 +110,11 @@ func newPKIWorker(server *Server, log *logging.Logger) (*PKIWorker, error) {
 		Authorities: server.cfg.PKI.Voting.Authorities,
 		Geo:         server.cfg.SphinxGeometry,
 	}
-
 	var err error
 	p.impl, err = vClient.New(pkiCfg)
 	if err != nil {
 		return nil, err
 	}
-
-	// XXX we should get rid of our use of the thin client
-	// and instead rely on the dirauth client: p.impl
-	doc := p.server.thinClient.PKIDocument()
-
-	// XXX we can do this later...
-	p.replicas.Replace(replicaMap(doc))
-
 	return p, nil
 }
 
@@ -209,53 +149,6 @@ func equal(a, b map[[32]byte]*pki.ReplicaDescriptor) bool {
 	return true
 }
 
-/*
-func (p *PKIWorker) worker() {
-	var till time.Duration
-	timer := time.NewTimer(till)
-
-	defer func() {
-		p.log.Debug("Halting PKI worker.")
-		timer.Stop()
-	}()
-
-	for {
-		timerFired := false
-		select {
-		case <-p.HaltCh():
-			p.log.Debug("egressWorker shutting down")
-			return
-		case <-timer.C:
-			timerFired = true
-		}
-		if !timerFired && !timer.Stop() {
-			select {
-			case <-timer.C:
-			case <-p.HaltCh():
-				p.log.Debugf("Terminating gracefully.")
-				return
-			}
-		}
-
-		doc := p.server.thinClient.PKIDocument()
-		newReplicas := replicaMap(doc)
-		switch {
-		case equal(p.replicas.Copy(), newReplicas):
-			// no op
-		case len(difference(p.replicas.Copy(), newReplicas)) > 0:
-			// removing replica(s)
-			fallthrough
-		case len(difference(newReplicas, p.replicas.Copy())) > 0:
-			// adding replica(s)
-			p.replicas.Replace(newReplicas)
-			p.server.state.Rebalance()
-		}
-
-		timer.Reset(recheckInterval)
-	}
-}
-*/
-
 func (p *PKIWorker) updateReplicas(doc *pki.Document) {
 	newReplicas := replicaMap(doc)
 	switch {
@@ -278,7 +171,14 @@ func (p *PKIWorker) AuthenticateCourierConnection(c *wire.PeerCredentials) bool 
 	}
 	var nodeID [sConstants.NodeIDLength]byte
 	copy(nodeID[:], c.AdditionalData)
-	doc := p.server.thinClient.PKIDocument()
+
+	epoch, _, _ := epochtime.Now()
+	doc := p.entryForEpoch(epoch)
+	if doc == nil {
+		p.log.Error("PKI doc is nil")
+		return false
+	}
+
 	serviceDesc, err := doc.GetServiceNodeByKeyHash(&nodeID)
 	if err != nil {
 		return false

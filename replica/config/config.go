@@ -122,8 +122,6 @@ type Config struct {
 	// These Addresses are not advertised in the PKI.
 	BindAddresses []string
 
-	ThinConfig *thin.ThinConfig
-
 	// ConnectTimeout specifies the maximum time a connection can take to
 	// establish a TCP/IP connection in milliseconds.
 	ConnectTimeout int
@@ -151,14 +149,6 @@ func (c *Config) FixupAndValidate(forceGenOnly bool) error {
 	if c.ConnectTimeout <= 0 {
 		c.ConnectTimeout = defaultConnectTimeout
 	}
-	if c.ThinConfig == nil {
-		return errors.New("config: ThinConfig is not set")
-	}
-	err := c.ThinConfig.FixupAndValidate()
-	if err != nil {
-		return err
-	}
-
 	if c.Identifier == "" {
 		return errors.New("config: Server: Identifier is not set")
 	}
