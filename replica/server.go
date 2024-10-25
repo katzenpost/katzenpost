@@ -23,7 +23,6 @@ import (
 	signpem "github.com/katzenpost/hpqc/sign/pem"
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 
-	"github.com/katzenpost/katzenpost/client2/thin"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"

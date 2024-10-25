@@ -302,6 +302,9 @@ type ReplicaDescriptor struct {
 	// Name is the unique name of the pigeonhole storage replica.
 	Name string
 
+	// Epoch is the Epoch in which this descriptor was created
+	Epoch uint64
+
 	// IdentityKey is the node's identity (signing) key.
 	IdentityKey []byte
 
