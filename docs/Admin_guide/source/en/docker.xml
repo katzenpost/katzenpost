@@ -1,14 +1,22 @@
 <?xml-model href="http://docbook.org/xml/5.1/rng/docbook.rng" schematypens="http://relaxng.org/ns/structure/1.0"?>
 
+<!--A DOCTYPE declaration declaring a DTD is not need for DocBook 5.x, which uses RelaxNG and  Schematron instead. It is used here as a container for entity declarations.-->
+
+<!DOCTYPE chapter 
+[
+    <!ENTITY % shared-content SYSTEM "shared-content.ent">
+    %shared-content;
+]>
+
 <chapter xmlns="http://docbook.org/ns/docbook"
     xmlns:xlink="http://www.w3.org/1999/xlink" 
     version="5.1"
     xml:id="container">
-    <title xml:id="container.title">Using the Katzenpost test network</title>    
+    <title xml:id="container.title">Using the &program_name; Docker test network</title>    
     
-    <para>Katzenpost provides a ready-to-deploy <link
-        xlink:href="https://github.com/katzenpost/katzenpost/tree/main/docker">Docker
-        image</link> for developers who need a non-production test environment for developing
+    <para>&program_name; provides a ready-to-deploy <link
+            xlink:href="https://github.com/katzenpost/katzenpost/tree/main/docker">Docker
+            image</link> for developers who need a non-production test environment for developing
         and testing client applications. By running this image on a single computer, you avoid the
         need to build and manage a complex multi-node mix net. The image can also be run using <link
             xlink:href="https://podman.io/">Podman</link></para>
@@ -29,7 +37,7 @@
     
     <section xml:id="requirements">         
         <title xml:id="requirements.title">Requirements</title>
-        <para>Before running the Katzenpost docker image, make sure that the
+        <para>Before running the &program_name; docker image, make sure that the
             following<?oxy_comment_start author="dwrob" timestamp="20240607T121424-0700" comment="Add minimum hardware specs?"?>
             software<?oxy_comment_end?> is installed. </para>
         <itemizedlist>
@@ -51,7 +59,7 @@
                     xlink:href="https://docs.docker.com/compose/">Docker Compose</link>, and
                     (optionally) <link xlink:href="https://podman.io">Podman</link></para>
                 <note>
-                    <para>If both Docker and Podman are present on your system, Katzenpost uses
+                    <para>If both Docker and Podman are present on your system, &program_name; uses
                         Podman. Podman is a drop-in daemonless equivalent to Docker that does not
                         require superuser privileges to run.</para>
                 </note>
@@ -65,15 +73,15 @@
     </section>   
     <section xml:id="install_kp">
         <title xml:id="install_kp.title">Preparing to run the container image</title>
-        <para>Complete the following procedure to obtain, build, and deploy the Katzenpost test
+        <para>Complete the following procedure to obtain, build, and deploy the &program_name; test
             network. </para>
         <procedure>
             <step>
-                <para>Install the Katzenpost code repository,  hosted at <link
-                    xlink:href="https://github.com/katzenpost"/>. The main Katzenpost
-                    repository contains code for the server components as well as the docker
-                    image. Clone the repository with the following command (your directory
-                    location may vary):</para>
+                <para>Install the &program_name; code repository, hosted at <link
+                        xlink:href="https://github.com/katzenpost"/>. The main &program_name;
+                    repository contains code for the server components as well as the docker image.
+                    Clone the repository with the following command (your directory location may
+                    vary):</para>
                 <programlisting><prompt>~$ </prompt><command>git clone https://github.com/katzenpost/katzenpost.git</command></programlisting>
             </step>
             <step>
@@ -108,7 +116,7 @@
     <section xml:id="basic-ops">
         <title xml:id="basic-ops.title">Operating the test mixnet</title>
         <para>Navigate to <filename>katzenpost/docker</filename>. The <filename>Makefile</filename>
-            contains target operations to create, manage, and test the self-contained Katzenpost
+            contains target operations to create, manage, and test the self-contained &program_name;
             container network. To invoke a target, run a command with the using the following
             pattern:</para>
         <programlisting> <prompt>~/katzenpost/docker$ </prompt><command>make<replaceable> target</replaceable></command></programlisting>
