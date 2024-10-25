@@ -1,5 +1,4 @@
 <?xml version="1.0" encoding="UTF-8"?>
-
 <!ENTITY program_name 'EchoMix'>
 
 
@@ -10,8 +9,8 @@
                 <itemizedlist>
                     <listitem>
                         <para><emphasis role="bold">Identifier</emphasis></para>
-                        <para>Identifier is the human-readable identifier for a node (for example,
-                        the FQDN) and must be unique for a given mixnet.</para>
+                        <para>Specifies the human-readable identifier for a node, and must be unique per mixnet. 
+                        Identifier can be an FQDN but does not have to be.</para>
                         <para>Type: string</para>
                         <para>Required: Yes</para>
                     </listitem>
@@ -20,9 +19,9 @@
 
                     <listitem>
                         <para><emphasis role="bold">PKISignatureScheme</emphasis></para>
-                        <para>PKISignatureScheme specifies the cryptographic signature scheme used by all components of the mix network
-                        when interacting with the PKI system. Mix nodes sign their descriptors using this signature scheme. Likewise, PKI documents
-                        are signed by directory authority nodes using this signature scheme.</para>
+                        <para>Specifies the cryptographic signature scheme which will be used by all components of the mix network 
+                        when interacting with the PKI system. Mix nodes sign their descriptors using this signature scheme, and 
+                        dirauth nodes similarly sign PKI documents using this signature scheme.</para>
                         <para>The following signature schemes are supported:
                                 "ed25519", "ed448", "Ed25519 Sphincs+", "Ed448-Sphincs+", "Ed25519-Dilithium2", "Ed448-Dilithium3"
                         </para>
@@ -32,10 +31,10 @@
 
                     <listitem>
                         <para><emphasis role="bold">Addresses</emphasis></para>
-                        <para>Addresses specifies a list of one or more address URLs in a format that includes the transport protocol,
-                        IP address, and port number that the server will bind to for incoming connections.
-                        Currently &program_name; supports URLs with that start with either "tcp://" or "quic://" such as: ["tcp://192.168.1.1:30001"] and ["quic://192.168.1.1:40001"]
-                        </para>
+                        <para>Specifies a list of one or more Address URLs in a format that contains the transport protocol, 
+                        IP address, and port number that the server will bind to for incoming connections. EchoMix supports 
+                        URLs with that start with either "tcp://" or "quic://" such as: ["tcp://192.168.1.1:30001"] and 
+                        ["quic://192.168.1.1:40001"].</para>
                         <para>Type: []string</para>
                         <para>Required:</para>
                     </listitem>
@@ -78,7 +77,7 @@
 
 <!ENTITY logging '
 <!--https://github.com/katzenpost/katzenpost/blob/c255fbbf421d5d9820553c18dc5dc6c9881ad547/authority/voting/server/config/config.go#L78-->
-<para>The logging configuration section controls logging.</para>
+<para>The logging configuration section controls logging behavior across &program_name;.</para>
 <programlisting>[Logging]
     Disable = false
     File = "katzenpost.log"
@@ -102,7 +101,7 @@
     </listitem>
     <listitem>
         <para><emphasis role="bold">Level</emphasis></para>
-        <para>Supported values are ERROR | WARNING | NOTICE |INFO | DEBUG.</para>
+        <para>Supported logging level values are ERROR | WARNING | NOTICE |INFO | DEBUG.</para>
         <para>Type: string</para>
         <para>Required:</para>
         <warning>
@@ -195,11 +194,7 @@
         <para>the size of the usable payload.</para>
         <para>Type: int</para>
         <para>Required:</para>
-    </listitem>    
-    
-    
-    
-    
+    </listitem>       
     <listitem>
         <para><emphasis role="bold">NextNodeHopLength</emphasis></para>
         <para>NextNodeHopLength is derived off the largest routing info</para>
@@ -209,9 +204,6 @@
         <para>Type: int</para>
         <para>Required:</para>
     </listitem>  
-    
-    
-    
     <listitem>
         <para><emphasis role="bold">SPRPKeyMaterialLength</emphasis></para>
         <para>SPRPKeyMaterialLength is the length of the SPRP key.</para>
@@ -235,34 +227,21 @@
     </listitem>
 </itemizedlist>'>
 
-
 <!ENTITY serverconfig '
 <!--https://github.com/katzenpost/katzenpost/blob/c255fbbf421d5d9820553c18dc5dc6c9881ad547/server/config/config.go#L84-->
 <!--The config code varies by role so it is not included in this entity.-->    
                 <itemizedlist>
                     <listitem>
                         <para><emphasis role="bold">Identifier</emphasis></para>
-                        <para>Identifier is the human-readable identifier for a node (for example, 
-                        the FQDN) and must be unique for a given mixnet.</para>
+                        <para>Specifies the human-readable identifier for a node, and must be unique per mixnet. 
+                        Identifier can be an FQDN but does not have to be.</para>
                         <para>Type: string</para>
                         <para>Required: Yes</para>
                     </listitem>
-                    
-                    
-                    
-                    
-                    
                     <listitem>
                         <para><emphasis role="bold">WireKEM</emphasis></para>
                         <para>WireKEM is the wire protocol KEM (key encapsulation mechanism) scheme to use.</para>
-                 <!--       
-                        also note that X25519 and X448 are NIKEs not KEMs... however we use a Hashed ElGamal cryptographic construction to convert them from NIKE to KEM
-
-also known as our NIKE to KEM "adapter" AND these are the only two classical ones.-->
-                        
                         <para>This configuration option supports the use of post-quantum cryptography to strengthen security. 
-                        
-                        
                         In this case the "Wire" protocol 
                         refers to our PQ Noise based protocol which is how all the dir auth nodes talk to one another. PQ Noise is a 
                         variation of the Noise protocol framework where the handshake patterns are algebraically transformed to replace
@@ -276,12 +255,7 @@ also known as our NIKE to KEM "adapter" AND these are the only two classical one
 						</para>
                         <para>Type: string</para>
                         <para>Required: Yes</para>
-                    </listitem>
-                    
-                    
-                    
-                    
-                    
+                    </listitem> 
                     <listitem>
                         <para><emphasis role="bold">PKISignatureScheme</emphasis></para>
                         <para>PKISignatureScheme specifies the cryptographic signature scheme used by all components of the mix network
@@ -293,17 +267,12 @@ also known as our NIKE to KEM "adapter" AND these are the only two classical one
                         <para>Type: string</para>
                         <para>Required: Yes</para>
                     </listitem>
-                    
-                    
-                    
-                    
-                    
-                    <listitem>
+                  <listitem>
                         <para><emphasis role="bold">Addresses</emphasis></para>
-                        <para>Addresses specifies a list of one or more address URLs in a format that includes the transport protocol,
-                        IP address, and port number that the server will bind to for incoming connections.
-                        Currently &program_name; supports URLs with that start with either "tcp://" or "quic://" such as: ["tcp://192.168.1.1:30001"] and ["quic://192.168.1.1:40001"]
-                        </para>
+                        <para>Specifies a list of one or more Address URLs in a format that contains the transport protocol, 
+                        IP address, and port number that the server will bind to for incoming connections. EchoMix supports 
+                        URLs with that start with either "tcp://" or "quic://" such as: ["tcp://192.168.1.1:30001"] 
+                        and ["quic://192.168.1.1:40001"].</para>
                         <para>Type: []string</para>
                         <para>Required:</para>
                     </listitem>
@@ -565,28 +534,30 @@ also known as our NIKE to KEM "adapter" AND these are the only two classical one
                 <itemizedlist>
                     <listitem>
                         <para><emphasis role="bold">Identifier</emphasis></para>
-                        <para>Identifier is the human readable identifier for the node (eg:
-                            FQDN).</para>
+                        <para>Specifies the human-readable identifier for a node, and must be unique per mixnet. 
+                        Identifier can be an FQDN but does not have to be.</para>
                         <para>Type: string</para>
                         <para>Required:</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">IdentityPublicKey</emphasis></para>
-                        <para>IdentityPublicKeyPem is a string in PEM format containing
-						the public identity key.</para>
+                        <para>String containing the node&apos;s public identity key in PEM format. IdentityPublicKey is 
+                        the node&apos;s permanent identifier and is used to verify cryptographic signatures produced 
+                        by its private identity key.</para>
                         <para>Type: string</para>
                         <para>Required:</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">PKISignatureScheme</emphasis></para>
-                        <para>PKISignatureScheme specifies the cryptographic signature scheme</para>
+                        <para>Specifies the cryptographic signature scheme which will be used by all components of 
+                        the mix network when interacting with the PKI system. Mix nodes sign their descriptors using 
+                        this signature scheme, and dirauth nodes similarly sign PKI documents using this signature scheme.</para>
                         <para>Type: string</para>
                         <para>Required:</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">LinkPublicKey</emphasis></para>
-                        <para>LinkPublicKeyPem is string containing the PEM format of the peer&apos;s
-                            public link layer key.</para>
+                        <para>String containing the peer&apos;s public link-layer key in PEM format. LinkPublicKey must match the specified WireKEMScheme.</para>
                         <para>Type: string</para>
                         <para>Required:</para>
                     </listitem>
@@ -598,22 +569,22 @@ also known as our NIKE to KEM "adapter" AND these are the only two classical one
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">Addresses</emphasis></para>
-                        <para>// Addresses are the IP address/port combinations that
-                            <?oxy_custom_start type="oxy_content_highlight" color="255,255,0"?>t<?oxy_comment_start author="dwrob" timestamp="20240814T170317-0700" comment="Should be &quot;the service node&quot;?"?>he
-                            peer authority<?oxy_comment_end?></para><?oxy_custom_end?>
-                        <para> // uses for the Directory Authority service.</para>
+                        <para>Specifies a list of one or more Address URLs in a format that contains the transport protocol, 
+                        IP address, and port number that the server will bind to for incoming connections. EchoMix supports 
+                        URLs with that start with either "tcp://" or "quic://" such as: ["tcp://192.168.1.1:30001"] 
+                        and ["quic://192.168.1.1:40001"].</para>
                         <para>Type: []string</para>
                         <para>Required:</para>
                     </listitem>
                 </itemizedlist>'>
                 
 <!ENTITY WireKEMScheme '                
-                    <!-- WireKEMScheme the  link layer -->
+                    <!-- WireKEMScheme ... the link layer -->
                     <!-- This is the API term just for the dirauths. This is a flaw. -->
                     
                     <listitem>
                         <para><emphasis role="bold">WireKEMScheme</emphasis></para>
-                        <para>WireKEMScheme specifies the key encapsulation mechanism (KEM) scheme
+                        <para>Specifies the key encapsulation mechanism (KEM) scheme
                             for the <link xlink:href="https://eprint.iacr.org/2022/539">PQ
                                 Noise</link>-based wire protocol (link layer) that nodes use
                             to communicate with each other. PQ Noise is a post-quantum variation of
@@ -650,7 +621,7 @@ also known as our NIKE to KEM "adapter" AND these are the only two classical one
                     </listitem>'>     
                     
 <!ENTITY WireKEM '                
-                    <!-- WireKEM the  link layer -->
+                    <!-- WireKEM ... the  link layer -->
                     <!-- This is the API term just for the Server options (mix, gateway, service). This is a flaw. -->
                     
                     <listitem>

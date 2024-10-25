@@ -37,10 +37,10 @@
 
 		<para>Directory authorities, or <emphasis>dirauths</emphasis>, are nodes in &program_name;'s
             decentralized public key infrastructure (PKI), which forms the security root of the
-            entire &program_name; system. Clients and mixnet nodes rely on the PKI to maintain and
-            sign an up-to-date <emphasis>consensus</emphasis> document, providing a view of the
-            entire network including connection information and public cryptographic key materials
-            and signatures. </para>
+            &program_name; system. Clients and mixnet nodes rely on the PKI to maintain and sign an
+            up-to-date <emphasis>consensus</emphasis> document, providing a view of the entire
+            network including connection information and public cryptographic key materials and
+            signatures. </para>
         <para>Every 20 minutes (the current value for an <emphasis>epoch</emphasis>), each mix node
             signs a descriptor and uploads it to the dirauth nodes. The dirauths then vote on a new
             consensus document. If consensus is reached, each dirauth signs the document. Clients
@@ -60,7 +60,7 @@
                 real-world mixnet, the component hosts would not be sharing a single IP address. For
                 more information about the test mixnet, see <link linkend="container"
                     endterm="container.title">Using the &program_name; test network</link>.</para>
-<!--General TOML note:
+            <!--General TOML note:
 
 https://toml.io/en/v1.0.0
 
@@ -88,9 +88,7 @@ type Config struct {
 	Topology     *Topology
 
 	SphinxGeometry *geo.Geometry
-}
-            
--->
+}-->
             <section xml:id="auth-server-section-config">
                 <title xml:id="auth-server-section-config.title">Server section</title>
                 <!--https://github.com/katzenpost/katzenpost/blob/c255fbbf421d5d9820553c18dc5dc6c9881ad547/authority/voting/server/config/config.go#L415-->
@@ -104,36 +102,40 @@ type Config struct {
                 <itemizedlist>
                     <listitem>
                         <para><emphasis role="bold">Identifier</emphasis></para>
-                        <para>Identifier is the human-readable identifier for a node, and should be unique per mixnet. It can be an FQDN but does not have to be.</para>
+                        <para>Specifies the human-readable identifier for a node, and must be unique
+                            per mixnet. Identifier can be an FQDN but does not have to be.</para>
                         <para>Type: string</para>
                         <para>Required:</para>
                     </listitem>
                     &WireKEMScheme;
                     <listitem>
                         <para><emphasis role="bold">PKISignatureScheme</emphasis></para>
-                        <para>PKISignatureScheme specifies the cryptographic signature scheme which will be used by all components of the mix network
-                        when interacting with the PKI system. Mix nodes will sign their descriptors using this signature scheme. Likewise PKI documents
-                        will be signed by the dir auth nodes using this signature scheme.</para>
-                        <para>The following signature schemes are supported: "ed25519", "ed448", "Ed25519 Sphincs+",
-                            "Ed448-Sphincs+", "Ed25519-Dilithium2", "Ed448-Dilithium3" </para>
+                        <para>Specifies the cryptographic signature scheme which will be used by all
+                            components of the mix network when interacting with the PKI system. Mix
+                            nodes sign their descriptors using this signature scheme, and dirauth
+                            nodes similarly sign PKI documents using this signature scheme.</para>
+                        <para>The following signature schemes are supported: "ed25519", "ed448",
+                            "Ed25519 Sphincs+", "Ed448-Sphincs+", "Ed25519-Dilithium2",
+                            "Ed448-Dilithium3" </para>
                         <para>Type: string</para>
                         <para>Required:</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">Addresses</emphasis></para>
-                        <para>Addresses specifies a list of one or more Address URLs in a format
-                            that contains the transport protocol, IP address and port number that
-                            the server will bind to for incoming connections. Currently
-                            &program_name; supports URLs with that start with either "tcp://" or
-                            "quic://" such as: ["tcp://192.168.1.1:30001"] and
-                            ["quic://192.168.1.1:40001"] </para>
+                        <para>Specifies a list of one or more Address URLs in a format that contains
+                            the transport protocol, IP address, and port number that the server will
+                            bind to for incoming connections. &program_name; supports URLs with that
+                            start with either "tcp://" or "quic://" such as:
+                            ["tcp://192.168.1.1:30001"] and ["quic://192.168.1.1:40001"].</para>
                         <para>Type: []string</para>
                         <para>Required:</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">DataDir</emphasis></para>
-                        <para>DataDir is the absolute path to the directory authority server's state directory where the persistence.db will be written to disk AND
-                        where the server's cryptographic key materials will be written to disk when started with the "-g" commmandline option.</para>
+                        <para>Specifies the absolute path to the dirauth's state directory where
+                            persistence.db will be written to disk and where the server's
+                            cryptographic key materials will be written to disk when started with
+                            the "-g" commmand-line option.</para>
                         <para>Type: string</para>
                         <para>Required:</para>
                     </listitem>
@@ -143,7 +145,10 @@ type Config struct {
             <section xml:id="auth-authorities-section-config">
                 <title xml:id="auth-authorities-section-config.title">Authorities section</title>
                 <!--https://github.com/katzenpost/katzenpost/blob/c255fbbf421d5d9820553c18dc5dc6c9881ad547/authority/voting/server/config/config.go#L266-->
-                <para>An Authorities section is configured for each peer authority. We recommend using TOML's muli-line quotes for key materials.</para>
+                <para>An Authorities section is configured for each peer authority. We recommend
+                    using
+                    <?oxy_comment_start author="dwrob" timestamp="20241024T125441-0700" comment="provide a ref"?>TOML's
+                    multi-line<?oxy_comment_end?> quotes for key materials.</para>
                 <programlisting>[[Authorities]]
     Identifier = "auth1"
     IdentityPublicKey = """
@@ -183,53 +188,50 @@ ldMtDsvvc9KUfE4I0+c+XQ==
 -----END XWING PUBLIC KEY-----
     """
     WireKEMScheme = "xwing"
-    Addresses = ["tcp://127.0.0.1:30001"]
-</programlisting>
+    Addresses = ["tcp://127.0.0.1:30001"]</programlisting>
                 <itemizedlist>
                     <listitem>
                         <para><emphasis role="bold">Identifier</emphasis></para>
-                        <para>Identifier is the human readable identifier for the node which should be unique per mixnet. It can be an FQDN but certainly doesn't have to be.</para>
+                        <para>Specifies the human-readable identifier for the node which must be
+                            unique per mixnet. Identifier can be an FQDN but does not have to
+                            be.</para>
                         <para>Type: string</para>
                         <para>Required:</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">IdentityPublicKey</emphasis></para>
-                        <para>String in PEM format containing the public identity key. The node's public identity key is
-                        the node's permanent identifier and is used to verify cryptographic signatures produce by node's private identity key.</para>
+                        <para>String containing the node's public identity key in PEM format.
+                            IdentityPublicKey is the node's permanent identifier and is used to
+                            verify cryptographic signatures produced by its private identity
+                            key.</para>
                         <para>Type: string</para>
                         <para>Required:</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">PKISignatureScheme</emphasis></para>
-                        <para>PKISignatureScheme specifies the cryptographic signature scheme used by all of the directory authority nodes.
-                        	  This PKISignatureScheme must match the scheme specified in the Server section of the configuration.
-                        </para>
+                        <para>Specifies the cryptographic signature scheme used by the directory
+                            authority nodes. PKISignatureScheme must match the scheme specified in
+                            the Server section of the configuration. </para>
                         <para>Type: string</para>
                         <para>Required:</para>
                     </listitem>
+                    <?oxy_custom_start type="oxy_content_highlight" color="255,255,0"?>
                     <listitem>
-                        <para><emphasis role="bold">LinkPublicKey</emphasis></para>
-                        <para>LinkPublicKeyPem is string containing the PEM format of the peer's
-                            public link layer key. The &program_name; "link layer" protocol is the
-                            PQ Noise based protocol which is sometimes also referred to as the "wire
-                            protocol". The type of this link public key must match the specified
-                            WireKEMScheme. Our wire protocol is used to secure the transport between
-                            nodes only and in this case it's used between directory authority nodes
-                            when they communicate with each other for the voting rounds and it's
-                            also the protocol that clients use to retrieve published PKI documents
-                            from the dir auth nodes.</para>
+                        <para><?oxy_custom_end?><emphasis role="bold"
+                            >LinkPublicKey</emphasis></para>
+                        <para>String containing the peer's public link-layer key in PEM format.
+                            LinkPublicKey must match the specified WireKEMScheme.</para>
                         <para>Type: string</para>
                         <para>Required:</para>
                     </listitem>
-                    &WireKEMScheme;  
+                    &WireKEMScheme;
                     <listitem>
                         <para><emphasis role="bold">Addresses</emphasis></para>
-                        <para>Addresses specifies a list of one or more Address URLs in a format
-                            that contains the transport protocol, IP address and port number that
-                            the server will bind to for incoming connections. Currently
-                            &program_name; supports URLs with that start with either "tcp://" or
-                            "quic://" such as: ["tcp://192.168.1.1:30001"] and
-                            ["quic://192.168.1.1:40001"] </para>
+                        <para>Specifies a list of one or more Address URLs in a format that contains
+                            the transport protocol, IP address, and port number that the server will
+                            bind to for incoming connections. &program_name; supports URLs with that
+                            start with either "tcp://" or "quic://" such as:
+                            ["tcp://192.168.1.1:30001"] and ["quic://192.168.1.1:40001"].</para>
                         <para>Type: []string</para>
                         <para>Required:</para>
                     </listitem>
@@ -237,13 +239,13 @@ ldMtDsvvc9KUfE4I0+c+XQ==
             </section>
             <section xml:id="auth-logging">
                 <title xml:id="auth-logging.title">Logging section</title>
-                    &logging;
+                &logging;
             </section>
             <section xml:id="auth-parameters">
                 <title xml:id="auth-parameters.title">Parameters section</title>
                 <!--https://github.com/katzenpost/katzenpost/blob/c255fbbf421d5d9820553c18dc5dc6c9881ad547/authority/voting/server/config/config.go#L103
 -->
-                <para>The Parameters section holds the network parameters, for example:</para>
+                <para>The Parameters section contains network parameters.</para>
                 <programlisting>[Parameters]
     SendRatePerMinute = 0
     Mu = 0.005
@@ -261,118 +263,108 @@ ldMtDsvvc9KUfE4I0+c+XQ==
                 <itemizedlist>
                     <listitem>
                         <para><emphasis role="bold">SendRatePerMinute</emphasis></para>
-                        <para>
-                            SendRatePerMinute is the maximum allowed rate of packets per
-                            client per gateway node. Rate limiting is done on the gateway nodes.</para>
-                        <para>SendRatePerMinute is the rate per minute.</para>
+                        <para>Specifies the maximum allowed rate of packets per client per gateway
+                            node. Rate limiting is done on the gateway nodes.</para>
                         <para>Type: uint64</para>
                         <para>Required:</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">Mu</emphasis></para>
-                        <para>Mu is the inverse of the mean of the exponential distribution that the Sphinx
-                            packet per-hop mixing delay will be sampled from.
-                        	Mu is the inverse of the mean of the exponential
-                            distribution that is used to select the delay for each hop.</para>
+                        <para>Specifies the inverse of the mean of the exponential distribution from
+                            which the Sphinx packet per-hop mixing delay will be sampled.</para>
                         <para>Type: float64</para>
                         <para>Required:</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">MuMaxDelay</emphasis></para>
-                        <para>MuMaxDelay is the maximum Sphinx packet per-hop mixing delay in
-                            milliseconds. MuMaxDelay sets the maximum delay for Mu.</para>
+                        <para>Specifies the maximum Sphinx packet per-hop mixing delay in
+                            milliseconds. </para>
                         <para>Type:
                             uint64<?oxy_custom_start type="oxy_content_highlight" color="235,192,230"?></para>
-                        <para>Required:</para>
+                        <para><?oxy_custom_end?>Required:<?oxy_custom_start type="oxy_content_highlight" color="235,192,230"?></para>
                     </listitem><?oxy_custom_end?>
                     <listitem>
                         <para><emphasis role="bold">LambdaP</emphasis></para>
-                        <para>LambdaP is the inverse of the mean of the exponential distribution that
-                            clients will sample to determine the time interval between sending
-                            messages from it's FIFO egress queue or drop decoy messages if the queue
-                            is empty. LambdaP is the inverse of the mean of the exponential
-                            distribution that is used to select the delay between clients sending from
-                            their egress FIFO queue or drop decoy message.</para>
+                        <para>Specifies the inverse of the mean of the exponential distribution that
+                            clients sample to determine the time interval between sending messages,
+                            whether actual messages from the FIFO egress queue or decoy messages if
+                            the queue is empty.</para>
                         <para>Type: float64</para>
                         <para>Required:</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">LambdaPMaxDelay</emphasis></para>
-                        <para>LambdaPMaxDelay is the maximum send interval for LambdaP in
-                            milliseconds</para>
-                        <para>LambdaPMaxDelay sets the maximum delay for LambdaP.</para>
+                        <para>Specifies the maximum send delay interval for LambdaP in
+                            milliseconds.</para>
                         <para>Type: uint64</para>
                         <para>Required:</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">LambdaL</emphasis></para>
-                        <para>LambdaL is the inverse of the mean of the exponential distribution
-                            that is used to select the delay between clients sending loop
+                        <para>Specifies the inverse of the mean of the exponential distribution that
+                            clients sample to determine the delay interval between loop
                             decoys.</para>
                         <para>Type: float64</para>
                         <para>Required:</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">LambdaLMaxDelay</emphasis></para>
-                        <para><?oxy_custom_start type="oxy_content_highlight" color="235,192,230"?>
-                            sets the maximum send interval for LambdaL in milliseconds.</para>
-                        <para><?oxy_custom_end?>LambdaLMaxDelay sets the maximum delay for
-                            LambdaP.</para>
-                        <?oxy_custom_start type="oxy_content_highlight" color="235,192,230"?>
-                        <para><?oxy_custom_end?>Type: uint64</para>
+                        <para>Specifies the maximum send delay interval for LambdaL in
+                            milliseconds.</para>
+                        <para>Type: uint64</para>
                         <para>Required:</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">LambdaD</emphasis></para>
-                        <para>LambdaD is the inverse of the mean of the exponential distribution that clients
-                            will sample to determine the time interval between sending decoy drop
-                            messages. LambdaD is the inverse of the mean of the exponential
-                            distribution that is used to select the delay between clients sending deop
-                            decoys.</para>
+                        <para>LambdaD is the inverse of the mean of the exponential distribution
+                            that clients sample to determine the delay interval between decoy drop
+                            messages. </para>
                         <para>Type: float64</para>
                         <para>Required:</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">LambdaDMaxDelay</emphasis></para>
-                        <para>LambdaDMaxDelay is the maximum send interval in milliseconds.
-                        LambdaDMaxDelay sets the maximum delay for LambdaP.</para>
+                        <para>Specifies the maximum send interval in for LambdaD in milliseconds. </para>
                         <para>Type: uint64</para>
                         <para>Required:</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">LambdaM</emphasis></para>
-                        <para>LambdaM is the inverse of the mean of the exponential distribution that mixes will
-                            sample to determine send timing of mix loop decoy
-                            traffic. LambdaM is the inverse of the mean of the exponential
-                            distribution that is used to select the delay between sending mix node
+                        <para>LambdaM is the inverse of the mean of the exponential distribution
+                            that mix nodes sample to determine the delay between mix loop
                             decoys.</para>
                         <para>Type: float64</para>
                         <para>Required:</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">LambdaG</emphasis></para>
-                        <para>LambdaG is the inverse of the mean of the exponential
-                            distribution that is used to select the delay between sending gateway node
-                            decoys. WARNING: DO NOT SET THIS VALUE. This is not used via the TOML config file; this field is
-                            used internally by the dirauth server state machine.</para>
+                        <para>LambdaG is the inverse of the mean of the exponential distribution
+                            that gateway nodes to select the delay between gateway node
+                            decoys.</para>
+                        <warning>
+                            <para>Do not set this value manually in the TOML configuration file. The
+                                field is used internally by the dirauth server state machine.</para>
+                        </warning>
                         <para>Type: float64</para>
                         <para>Required:</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">LambdaMMaxDelay</emphasis></para>
-                        <para>LambdaMMaxDelay sets the maximum delay for LambdaM
-                        LambdaMMaxDelay sets the maximum delay for LambdaP.</para>
+                        <para>Specifies the maximum delay for LambdaM in milliseconds.</para>
                         <para>Type: uint64</para>
                         <para>Required:</para>
                     </listitem>
+                    <?oxy_custom_start type="oxy_content_highlight" color="255,255,0"?>
                     <listitem>
-                        <para><emphasis role="bold">LambdaGMaxDelay</emphasis></para>
-                        <para>LambdaGMaxDelay sets the maximum delay for LambdaG.</para>
+                        <para><?oxy_custom_end?><emphasis role="bold"
+                            >LambdaGMaxDelay</emphasis></para>
+                        <para>Specifies the maximum delay for LambdaG in milliseconds.</para>
                         <para>Type: uint64</para>
                         <para>Required:</para>
                     </listitem>
                 </itemizedlist>
-            </section>
+                <?oxy_custom_start type="oxy_content_highlight" color="255,255,0"?>
+            </section><?oxy_custom_end?>
             <section xml:id="auth-debug">
                 <title xml:id="auth-debug.title">Debug section</title>
                 <!--https://github.com/katzenpost/katzenpost/blob/c255fbbf421d5d9820553c18dc5dc6c9881ad547/authority/voting/server/config/config.go#L235-->
@@ -384,16 +376,14 @@ ldMtDsvvc9KUfE4I0+c+XQ==
                 <itemizedlist>
                     <listitem>
                         <para><emphasis role="bold">Layers</emphasis></para>
-                        <para> Number of
-                            <?oxy_custom_start type="oxy_content_highlight" color="235,192,230"?>non-provider<?oxy_custom_end?>
-                            layers in the network topology.</para>
+                        <para>Number of non-service-provider layers in the network topology.</para>
                         <para>Type: int</para>
                         <para>Required:</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">MinNodesrPerLayer</emphasis></para>
-                        <para> Minimum number of nodes per layer required to form a valid
-                            <?oxy_custom_start type="oxy_content_highlight" color="235,192,230"?>document<?oxy_custom_end?>.</para>
+                        <para>Minimum number of nodes per layer required to form a valid consensus
+                            document.</para>
                         <para>Type: int</para>
                         <para>Required:</para>
                     </listitem>
@@ -409,9 +399,8 @@ ldMtDsvvc9KUfE4I0+c+XQ==
             <section xml:id="auth-mixes-section-config">
                 <title xml:id="auth-mixes-section-config.title">Mixes sections</title>
                 <!--https://github.com/katzenpost/katzenpost/blob/c255fbbf421d5d9820553c18dc5dc6c9881ad547/authority/voting/server/config/config.go#L383-->
-                <para><?oxy_comment_start author="dwrob" timestamp="20240814T111809-0700" comment="These definitions differ significantly from the code comments."?>The
-                    Mixes configuration section lists mix nodes that are known to the
-                    authority.</para><?oxy_comment_end?>
+                <para>The Mixes configuration sections list mix nodes that are known to the
+                    authority.</para>
                 <programlisting>[[Mixes]]
     Identifier = "mix1"
     IdentityPublicKeyPem = "../mix1/identity.public.pem"
@@ -426,7 +415,8 @@ ldMtDsvvc9KUfE4I0+c+XQ==
                 <itemizedlist>
                     <listitem>
                         <para><emphasis role="bold">Identifier</emphasis></para>
-                        <para>A human readable mix node identifier.</para>
+                        <para>Specifies the human-readable identifier for a node, and must be unique
+                            per mixnet. Identifier can be an FQDN but does not have to be.</para>
                         <para>Type:
                             string<?oxy_custom_start type="oxy_content_highlight" color="235,192,230"?></para>
                         <para>Required:</para>
@@ -441,25 +431,25 @@ ldMtDsvvc9KUfE4I0+c+XQ==
                 </itemizedlist>
             </section>
             <section xml:id="auth-gatewaynodes-section-config">
-                <title xml:id="auth-gatewaynodes-section-config.title">GatewayNodes sections</title>
-                <?oxy_comment_start author="dwrob" timestamp="20240814T111809-0700" comment="These definitions differ significantly from the code comments."?>
-                <para>The GatewayNodes configuration section lists gateway nodes that are known to
-                    the authority.</para><?oxy_comment_end?>
+                <title xml:id="auth-gatewaynodes-section-config.title">GatewayNodes section</title>
+                <para>The GatewayNodes configuration sections list gateway nodes that are known to
+                    the authority.</para>
                 <programlisting>[[GatewayNodes]]
     Identifier = "gateway1"
     IdentityPublicKeyPem = "../gateway1/identity.public.pem"</programlisting>
                 <itemizedlist>
                     <listitem>
                         <para><emphasis role="bold">Identifier</emphasis></para>
-                        <para>A human readable gateway node identifier.</para>
+                        <para>Specifies the human-readable identifier for a node, and must be unique
+                            per mixnet. Identifier can be an FQDN but does not have to be.</para>
                         <para>Type:
                             string<?oxy_custom_start type="oxy_content_highlight" color="235,192,230"?></para>
                         <para>Required:</para>
                     </listitem><?oxy_custom_end?>
                     <listitem>
                         <para><emphasis role="bold">IdentityPublicKeyPem</emphasis></para>
-                        <para>Path and file name of a gateway node's public identity signing key, also
-                            known as the identity key, in PEM format.</para>
+                        <para>Path and file name of a gateway node's public identity signing key,
+                            also known as the identity key, in PEM format.</para>
                         <para>Type: string</para>
                         <para>Required:</para>
                     </listitem>
@@ -467,24 +457,24 @@ ldMtDsvvc9KUfE4I0+c+XQ==
             </section>
             <section xml:id="auth-servicenodes-section-config">
                 <title xml:id="auth-servicenodes-section-config.title">ServiceNodes sections</title>
-                <?oxy_comment_start author="dwrob" timestamp="20240814T111809-0700" comment="These definitions differ significantly from the code comments."?>
-                <para>The ServiceNodes configuration section lists service nodes that are known to
-                    the authority.</para><?oxy_comment_end?>
+                <para>The ServiceNodes configuration sections list service nodes that are known to
+                    the authority.</para>
                 <programlisting>[[ServiceNodes]]
     Identifier = "servicenode1"
     IdentityPublicKeyPem = "../servicenode1/identity.public.pem"</programlisting>
                 <itemizedlist>
                     <listitem>
                         <para><emphasis role="bold">Identifier</emphasis></para>
-                        <para>A human readable service node identifier.</para>
+                        <para>Specifies the human-readable identifier for a node, and must be unique
+                            per mixnet. Identifier can be an FQDN but does not have to be.</para>
                         <para>Type:
                             string<?oxy_custom_start type="oxy_content_highlight" color="235,192,230"?></para>
                         <para>Required:</para>
                     </listitem><?oxy_custom_end?>
                     <listitem>
                         <para><emphasis role="bold">IdentityPublicKeyPem</emphasis></para>
-                        <para>Path and file name of a service node's public identity signing key, also
-                            known as the identity key, in PEM format.</para>
+                        <para>Path and file name of a service node's public identity signing key,
+                            also known as the identity key, in PEM format.</para>
                         <para>Type: string</para>
                         <para>Required:</para>
                     </listitem>
@@ -516,7 +506,8 @@ ldMtDsvvc9KUfE4I0+c+XQ==
                 <itemizedlist>
                     <listitem>
                         <para><emphasis role="bold">Identifier</emphasis></para>
-                        <para>A human readable mix node identifier.</para>
+                        <para>Specifies the human-readable identifier for a node, and must be unique
+                            per mixnet. Identifier can be an FQDN but does not have to be.</para>
                         <para>Type:
                             string<?oxy_custom_start type="oxy_content_highlight" color="235,192,230"?></para>
                     </listitem><?oxy_custom_end?>
@@ -529,24 +520,24 @@ ldMtDsvvc9KUfE4I0+c+XQ==
                     </listitem>
                 </itemizedlist>
             </section>
-            
-            
             <section xml:id="auth-sphinx-config">
                 <title xml:id="auth-sphinx-config.title">SphinxGeometry section</title>
-                <para>WARNING: The Sphinx Geometry section of the configuration MUST be programmatically generated.
-                Do NOT modify the geometry by hand.
-                </para>
-                <para>The original Sphinx paper introduces the Sphinx nested encrypted packet format
-                    using a NIKE (NIKE: non-interactive key exchange). NIKE Sphinx can be a hybrid
-                    post quantum construction simply by using a hybrid NIKE. Our Sphinx
-                    implementation also can optionally use a KEM (KEM: key encapsulation mechanism)
-                    instead of a NIKE, however the trade-off is that the packet's header will take
-                    up a lot of overhead because it must store a KEM ciphertext for each hop.
-                    &program_name; has a completely configurable Sphinx geometry which allows for
-                    any KEM or NIKE to be used. </para>
-                <para> The Sphinx cryptographic packet format also uses these additional
-                    cryptographic primitives, the current &program_name; selection is: </para>
-                <itemizedlist>                
+                <warning>
+                    <para>Do not modify the SphinxGeometry section by hand. This configuration must
+                        be prommatically generated.</para>
+                </warning>
+                <para>The
+                    <?oxy_comment_start author="dwrob" timestamp="20241025T132943-0700" comment="provide reference"?>original
+                    Sphinx paper<?oxy_comment_end?> introduces the Sphinx nested encrypted packet
+                    format using a non-interactive key exchange (NIKE). Sphinx can be turned into a
+                    hybrid post-quantum construction simply by using a hybrid NIKE. The
+                    &program_name; Sphinx implementation has a completely configurable Sphinx
+                    geometry that allows for any NIKE or key encapsulation mechanism (KEM) to be
+                    used. A trade-off when using a KEM is that packet headers have additional
+                    overhead because they must store a KEM ciphertext for each hop.</para>
+                <para>The &program_name; Sphinx implementation also supports the following
+                    additional cryptographic primitives: </para>
+                <itemizedlist>
                     <listitem>
                         <para>stream cipher: CTR-AES256</para>
                     </listitem>
@@ -558,15 +549,14 @@ ldMtDsvvc9KUfE4I0+c+XQ==
                     </listitem>
                     <listitem>
                         <para>SPRP: AEZv5</para>
-                    </listitem>                    
-                </itemizedlist>                   
-				<para> In &program_name; the dirauths select the Sphinx geometry, each dirauth must agree with
-                    the other dirauths. They publish the hash of the Sphinx Geometry in the PKI
-                    document so that the rest of the network entities can validate their Sphinx
-                    Geometry. </para>
+                    </listitem>
+                </itemizedlist>
+                <para>In &program_name;, all dirauths must configure the same SphinxGeometry. Each
+                    dirauth publishes the hash of its SphinxGeometry in the PKI document for
+                    validation by its peer dirauths. </para>
                 &sphinxgeometry;
             </section>
-         </section>
+        </section>
     </section>
     <section xml:id="server">
         <title xml:id="server.title">Mix, gateway, and service nodes</title>
