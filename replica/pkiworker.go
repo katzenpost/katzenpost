@@ -4,7 +4,6 @@
 package replica
 
 import (
-	"context"
 	"crypto/hmac"
 	"errors"
 	"sync"
@@ -213,8 +212,4 @@ func (p *PKIWorker) AuthenticateReplicaConnection(c *wire.PeerCredentials) (*pki
 		return nil, false
 	}
 	return replicaDesc, true
-}
-
-func (p *PKIWorker) publishDescriptorIfNeeded(ctx context.Context) error {
-	return nil // XXX FIX ME
 }

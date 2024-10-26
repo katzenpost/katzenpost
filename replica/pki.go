@@ -82,6 +82,11 @@ func (p *PKIWorker) pruneDocuments() {
 	}
 }
 
+func (p *PKIWorker) PKIDocument() *cpki.Document {
+	epoch, _, _ := epochtime.Now()
+	return p.entryForEpoch(epoch)
+}
+
 func (p *PKIWorker) entryForEpoch(epoch uint64) *cpki.Document {
 	p.lock.RLock()
 	defer p.lock.RUnlock()
@@ -304,6 +309,7 @@ func (p *PKIWorker) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 	if err != nil {
 		return err
 	}
+
 	desc := &cpki.ReplicaDescriptor{
 		Name:        p.server.cfg.Identifier,
 		IdentityKey: idkeyblob,
@@ -311,41 +317,11 @@ func (p *PKIWorker) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 		Addresses:   p.descAddrMap,
 	}
 
-	desc.MixKeys = make(map[uint64][]byte)
-
-	// Ensure that there are mix keys for the epochs [e, ..., e+2],
-	// assuming that key rotation isn't disabled, and fill them into
-	// the descriptor.
-	if didGen, err := p.glue.MixKeys().Generate(doPublishEpoch); err == nil {
-		// Prune off the old mix keys.  Bad things happen if the epoch ever
-		// goes backwards, but everyone uses NTP right?
-		didPrune := p.glue.MixKeys().Prune()
-
-		// Add the keys to the descriptor.
-		for e := doPublishEpoch; e < doPublishEpoch+constants.NumMixKeys; e++ {
-			// Why, yes, this doesn't hold the lock.  The only time the map is
-			// altered is in mixkeys.generateMixKeys(), and mixkeys.pruneMixKeys(),
-			// both of which are only called from this code path serially.
-			k, ok := p.glue.MixKeys().Get(e)
-			if !ok {
-				// The prune pass must have purged a key we intended to publish,
-				// so bail out and try again in a little while.
-				return fmt.Errorf("key that was scheduled for publication got pruned")
-			}
-			desc.MixKeys[e] = k
-		}
-		if didGen || didPrune {
-			// Kick the crypto workers into reshadowing the mix keys,
-			// since there are either new keys, or less old keys.
-			p.glue.ReshadowCryptoWorkers()
-		}
-	} else {
-		// Sad panda, failed to generate the keys.
-		return err
-	}
+	// XXX FIXME: we need a replica NIKE key to publish
+	desc.EnvelopeKeys = make(map[uint64][]byte)
 
 	// Post the descriptor to all the authorities.
-	err = p.impl.Post(pkiCtx, doPublishEpoch, p.glue.IdentityKey(), p.glue.IdentityPublicKey(), desc, p.glue.Decoy().GetStats(doPublishEpoch))
+	err = p.impl.PostReplica(pkiCtx, doPublishEpoch, p.server.identityPrivateKey, p.server.identityPublicKey, desc)
 	switch err {
 	case nil:
 		p.log.Debugf("Posted descriptor for epoch: %v", doPublishEpoch)

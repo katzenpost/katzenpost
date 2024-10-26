@@ -298,6 +298,7 @@ func getIPVer(h string) (int, error) {
 	return 0, fmt.Errorf("address is not an IP")
 }
 
+// ReplicaDescriptor describe pigeonhole storage replica nodes.
 type ReplicaDescriptor struct {
 	// Name is the unique name of the pigeonhole storage replica.
 	Name string
@@ -311,12 +312,66 @@ type ReplicaDescriptor struct {
 	// LinkKey is our PQ Noise Public Key.
 	LinkKey []byte
 
-	// EnvelopeKey is the Public NIKE Key used with our MKEM scheme.
-	EnvelopeKey []byte
+	// EnvelopeKeys is mapping from Epoch ID to Public NIKE Key used with our MKEM scheme.
+	EnvelopeKeys map[uint64][]byte
 
 	// Addresses is the map of transport to address combinations that can
 	// be used to reach the node.
 	Addresses map[string][]string
+}
+
+// IsReplicaDescriptorWellFormed validates the descriptor and returns a descriptive
+// error iff there are any problems that would make it unusable as part of
+// a PKI Document.
+func IsReplicaDescriptorWellFormed(d *ReplicaDescriptor, epoch uint64) error {
+	if d.Name == "" {
+		return fmt.Errorf("Descriptor missing Name")
+	}
+	if len(d.Name) > constants.NodeIDLength {
+		return fmt.Errorf("Descriptor Name '%v' exceeds max length", d.Name)
+	}
+	if d.LinkKey == nil {
+		return fmt.Errorf("Descriptor missing LinkKey")
+	}
+	if d.IdentityKey == nil {
+		return fmt.Errorf("Descriptor missing IdentityKey")
+	}
+	if d.EnvelopeKeys[epoch] == nil {
+		return fmt.Errorf("Descriptor missing MixKey[%v]", epoch)
+	}
+	for e := range d.EnvelopeKeys {
+		// TODO: Should this check that the epochs in MixKey are sequential?
+		if e < epoch || e >= epoch+3 {
+			return fmt.Errorf("ReplicaDescriptor contains EnvelopeKeys for invalid epoch: %v", d)
+		}
+	}
+	if len(d.Addresses) == 0 {
+		return fmt.Errorf("Descriptor missing Addresses")
+	}
+	for transport, addrs := range d.Addresses {
+		if len(addrs) == 0 {
+			return fmt.Errorf("Descriptor contains empty Address list for transport '%v'", transport)
+		}
+
+		// Validate all addresses belonging to the TCP variants.
+		for _, v := range addrs {
+			u, err := url.Parse(v)
+			if err != nil {
+				return err
+			}
+			switch u.Scheme {
+			case TransportWS, TransportTCP, TransportTCPv4, TransportTCPv6, TransportQUIC:
+			case TransportOnion: // Unknown transports are only supported between the client and gateway.
+				return errors.New("Onion Transport not yet supported in pigeonhole storage replica")
+			default:
+				return fmt.Errorf("Unsupported listener scheme '%v': %v", v, u.Scheme)
+			}
+		}
+	}
+	if len(d.Addresses) == 0 {
+		return fmt.Errorf("Descriptor contains no addresses")
+	}
+	return nil
 }
 
 // UnmarshalBinary implements encoding.BinaryUnmarshaler interface

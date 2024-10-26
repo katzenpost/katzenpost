@@ -328,6 +328,58 @@ func (c *Client) Post(ctx context.Context, epoch uint64, signingPrivateKey sign.
 	return fmt.Errorf("failure to Post(%d) to %d Directory Authorities: %v", epoch, len(errs), errs)
 }
 
+// PostReplica posts the node's descriptor to the PKI for the provided epoch.
+func (c *Client) PostReplica(ctx context.Context, epoch uint64, signingPrivateKey sign.PrivateKey, signingPublicKey sign.PublicKey, d *pki.ReplicaDescriptor) error {
+	// Ensure that the descriptor we are about to post is well formed.
+	if err := pki.IsReplicaDescriptorWellFormed(d, epoch); err != nil {
+		return err
+	}
+	signedUpload := &pki.SignedReplicaUpload{
+		ReplicaDescriptor: d,
+	}
+	blob, err := signedUpload.Marshal()
+	if err != nil {
+		return err
+	}
+	signedUpload.Signature = &cert.Signature{
+		PublicKeySum256: hash.Sum256From(signingPublicKey),
+		Payload:         signingPrivateKey.Scheme().Sign(signingPrivateKey, blob, nil),
+	}
+	signed, err := signedUpload.Marshal()
+	if err != nil {
+		return err
+	}
+	// Dispatch the post_descriptor command.
+	cmd := &commands.PostReplicaDescriptor{
+		Epoch:   epoch,
+		Payload: []byte(signed),
+	}
+	responses, err := c.pool.allPeersRoundTrip(ctx, c.cfg.LinkKey, signingPublicKey, cmd)
+	if err != nil {
+		return err
+	}
+	// Parse the post_descriptor_status command.
+	errs := []error{}
+	for _, resp := range responses {
+		r, ok := resp.(*commands.PostDescriptorStatus)
+		if !ok {
+			errs = append(errs, fmt.Errorf("voting/Client: Post() unexpected reply: %T", resp))
+			continue
+		}
+		switch r.ErrorCode {
+		case commands.DescriptorOk:
+		case commands.DescriptorConflict:
+			errs = append(errs, pki.ErrInvalidPostEpoch)
+		default:
+			errs = append(errs, fmt.Errorf("voting/Client: Post() rejected by authority: %v", postErrorToString(r.ErrorCode)))
+		}
+	}
+	if len(errs) == 0 {
+		return nil
+	}
+	return fmt.Errorf("failure to Post(%d) to %d Directory Authorities: %v", epoch, len(errs), errs)
+}
+
 // Get returns the PKI document along with the raw serialized form for the provided epoch.
 func (c *Client) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, error) {
 	c.log.Noticef("Get(ctx, %d)", epoch)
