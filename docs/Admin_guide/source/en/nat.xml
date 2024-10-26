@@ -1,0 +1,37 @@
+<!--<?xml version="1.0" encoding="UTF-8"?>
+<?xml-model href="http://docbook.org/xml/5.2/rng/docbook.rng" schematypens="http://relaxng.org/ns/structure/1.0"?>
+<?xml-model href="http://docbook.org/xml/5.2/sch/docbook.sch" type="application/xml" schematypens="http://purl.oclc.org/dsdl/schematron"?>
+-->
+
+<?xml-model href="http://docbook.org/xml/5.1/rng/docbook.rng" schematypens="http://relaxng.org/ns/structure/1.0"?>
+
+<!--A DOCTYPE declaration declaring a DTD is not need for DocBook 5.x, which uses RelaxNG and  Schematron instead. It is used here as a container for entity declarations.-->
+
+<!DOCTYPE chapter 
+[
+    <!ENTITY % shared-content SYSTEM "shared-content.ent">
+    %shared-content;
+]>
+
+<chapter xmlns="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink"
+    version="5.1" xml:id="components">
+    <title xml:id="components.title">Using &program_name; from behind a NAT device</title>
+    <para>&program_name; can be used from behind NAT devices. Both mix and dirauth nodes … Dirauth
+        needs to config changes.  </para>
+    <para>Dirauths are know about other dirauths already. e.g., an onion dirauth already is
+        configured with a port for that onion resource already. But show and example anyway...with
+        Onion. Refer people to the Tor docs to understand how onions work with loopback/port.   </para>
+    <para/>
+    <para/>
+    <para>Mix have to use the BindAddresses option. </para>
+    <para/>
+    <para>DIAGRAM: ROUTER, IPs, etc.</para>
+    <para>mix node, device NAT device/router; Nat dev has an Internet route. Internall, mix node
+        binds to an internal addrexs (show configuration). This is the same for TOr, but with Onion
+        addess rahter that a static IP  (see Tor and link)</para>
+    <para>NATPMP STUN TURN– these are Nat PENETRATION PROTOCLDS... NOT SUPPORTED</para>
+    <para>Two diagrams...Onion and IPv4/IPv6</para>
+    <para>This confguration only allows for the Gateway nodes (which are also mix nodes).</para>
+    <para>We need a to show an excerpt from a torrc to show where the onion listening port is
+        confuigred.</para>
+</chapter>
