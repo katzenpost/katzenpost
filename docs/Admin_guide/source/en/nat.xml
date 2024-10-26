@@ -29,13 +29,36 @@
     changes to the dirauth configurations and public key materials. Therefore, dirauth operators wishing to
     operate a node behind a NAT device can configure their node to listen on a RFC1918 address such as 192.168.1.22
     and yet tell the other dirauth node operators that their publicly routable address is some other IP address or perhaps a Tor Onion address.
-	We refer you to the Tor onion setup docs for more information: https://community.torproject.org/onion-services/setup/
 	</para>
     <para/>
     <para/>
-    <para>Gateway nodes MUST use the BindAddresses option. This is only supported by the Gateway nodes. The mix nodes and service nodes
-    are not permitted to use the BindAddresses options because the alternate transports that implies are not supported between mix nodes.</para>
-    <para/>
+    <para>Currently, besides dirauth nodes, the only other type of node that can use Tor onion services are Gateway nodes, however
+    ALL mix node types can operate behind a NAT device by using the BindAddresses option which tells the mix node to listen on the
+    "BindAddresses" set of addresses but advertise the other set of addresses denoted by the "Addresses" configuration variable name.
+	In other words, when operating nodes behind NAT devices, be sure to explicitly say which network interfaces to listen on via BindAddresses
+	and also be explicit which addresses to advertise in the PKI document via Addresses.    
+    </para>
+    <para>If you are configuring a Gateway node to listen on a Tor onion service, then you must make sure that the BindAddresses match
+    the listening address and port in your "torrc" file:</para>
+    <programlisting>
+ HiddenServiceDir /var/lib/tor/my_website/
+ HiddenServicePort 1234 127.0.0.1:1234
+    </programlisting>
+    <para>We refer you to the Tor onion setup docs for more information: https://community.torproject.org/onion-services/setup/</para>
+    <para>The corresponding Gateway config Server section might look like this:</para>
+    <programlisting>
+[Server]
+  Identifier = "gnunet"
+  PKISignatureScheme = "Ed25519 Sphincs+"
+  WireKEM = "KYBER768-X25519"
+  Addresses = [ "onion://your-onion-address.onion:1234"]
+  BindAddresses = [ "tcp://127.0.0.1:1234",]
+  DataDir = "/var/lib/pq-katzenpost-mixserver"
+  IsGatewayNode = true
+  IsServiceNode = false
+...
+    </programlisting>
+    
     <para>DIAGRAM: ROUTER, IPs, etc.</para>
     <para>mix node, device NAT device/router; Nat dev has an Internet route. Internall, mix node
         binds to an internal addrexs (show configuration). This is the same for Tor, but with Onion
