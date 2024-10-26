@@ -4,6 +4,7 @@
 package replica
 
 import (
+	"context"
 	"crypto/hmac"
 	"errors"
 	"sync"
@@ -13,6 +14,7 @@ import (
 	"gopkg.in/op/go-logging.v1"
 
 	"github.com/katzenpost/hpqc/kem/schemes"
+	"github.com/katzenpost/hpqc/sign"
 
 	vClient "github.com/katzenpost/katzenpost/authority/voting/client"
 	vServer "github.com/katzenpost/katzenpost/authority/voting/server"
