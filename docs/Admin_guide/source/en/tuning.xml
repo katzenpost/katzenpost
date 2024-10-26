@@ -1,0 +1,18 @@
+<?xml-model href="http://docbook.org/xml/5.1/rng/docbook.rng" schematypens="http://relaxng.org/ns/structure/1.0"?>
+
+<!--A DOCTYPE declaration declaring a DTD is not need for DocBook 5.x, which uses RelaxNG and Schematron instead. 
+    It is used here as a container for entity declarations.-->
+
+<!DOCTYPE chapter 
+[
+    <!ENTITY % shared-content SYSTEM "shared-content.ent">
+    %shared-content;
+]>
+
+<chapter xmlns="http://docbook.org/ns/docbook"
+    xmlns:xlink="http://www.w3.org/1999/xlink" version="5.1"
+    xml:id="tuning">
+    <title xml:id="tuning.title">Tuning the Katzenpost mixnet</title>   
+     <para/>
+</chapter>
+

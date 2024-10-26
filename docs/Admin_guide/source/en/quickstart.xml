@@ -1,0 +1,139 @@
+<?xml-model href="http://docbook.org/xml/5.1/rng/docbook.rng" schematypens="http://relaxng.org/ns/structure/1.0"?>
+
+<!--A DOCTYPE declaration declaring a DTD is not need for DocBook 5.x, which uses RelaxNG and Schematron instead. 
+    It is used here as a container for entity declarations.-->
+
+<!DOCTYPE chapter 
+[
+    <!ENTITY % shared-content SYSTEM "shared-content.ent">
+    %shared-content;
+]>
+
+<chapter xmlns="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink"
+    version="5.1" xml:id="quickstart">
+    <title xml:id="quickstart.title">Quickstart guide</title>
+    <para>common commands. easier to read would be more of the commands and less of their
+        output.</para>
+    <section>
+        <title>CLI usage for directory authorities</title>
+        <para>The voting authority has the following commandline usage:</para>
+        <programlisting>./voting -h
+Usage of ./voting:
+  -f string
+        Path to the authority config file. (default "katzenpost-authority.toml")
+  -g    Generate the keys and exit immediately.
+</programlisting>
+        <para>The <code>-g</code> option is used to generate the public and private signing and link
+            keys.</para>
+        <para/>
+    </section>
+    <section>
+        <title>CLI usage for servers</title>
+        <para>The <code>server</code> commandline usage is as follows:</para>
+        <programlisting>./server -h
+Usage of ./server:
+  -f string
+        Path to the server config file. (default "katzenpost.toml")
+  -g    Generate the keys and exit immediately.
+</programlisting>
+        <para>The command output when generating keys looks like this:</para>
+        <programlisting>./server -f my_katzenpost_mix_server.toml -g
+22:51:55.377 NOTI server: Katzenpost is still pre-alpha.  DO NOT DEPEND ON IT FOR STRONG SECURITY OR ANONYMITY.
+22:51:55.377 NOTI server: AEZv5 implementation is hardware accelerated.
+22:51:55.377 NOTI server: Server identifier is: 'example.com'
+22:51:55.379 NOTI server: Server identity public key is: 2628F87F2806048C95F060DA9CD3D8F9BE7550BFB9EE85F213381BC04C047650
+22:51:55.379 NOTI server: Server link public key is: CCDC5C105E649D543DF1CF397A17638F812F95B7E572288F4602F8EC01EC4F3C
+</programlisting>
+        <para>Note that if you choose to configure logging to a file one disk, you can implement log
+            rotation by moving the log file and then sending the <code>HUP</code> to the authority
+            server process. This will cause the daemon to rewrite the log file in the location
+            specified by the config file.</para>
+    </section>
+    <section>
+        <title>From my runbook</title>
+        <para/>
+        <section>
+            <title><code>4. </code><code>Where are the files?</code></title>
+            <para><code><emphasis role="italic"><emphasis role="bold">root@oneeyedman:/usr/local# ls
+                            -al bin/</emphasis></emphasis></code></para>
+            <para><code>total 23720</code></para>
+            <para><code>drwxr-xr-x 2 root root 4096 Nov 28 23:11 .</code></para>
+            <para><code>drwxr-xr-x 10 root root 4096 Aug 9 11:53 ..</code></para>
+            <para><code>-rwxr-xr-x 1 root root 9802680 Dec 10 17:34
+                pq-katzenpost-authority</code></para>
+            <para><code>-rwxr-xr-x 1 root root 14474976 Dec 10 17:33
+                pq-katzenpost-mixserver</code></para>
+            <para><code><emphasis role="bold">root@oneeyedman:</emphasis></code><code><emphasis
+                        role="bold">~</emphasis></code><code><emphasis role="bold"># ls -al
+                        /etc/pq-katzenpost-mixserver/</emphasis></code></para>
+            <para><code>total 36</code></para>
+            <para><code>drwxr-xr-x 2 root root 4096 Dec 10 21:01 .</code></para>
+            <para><code>drwxr-xr-x 110 root root 4096 Dec 9 06:55 ..</code></para>
+            <para><code>-rw-r--r-- 1 root root 14084 Nov 29 17:00 katzenpost.toml</code></para>
+            <para><code>-rw-r--r-- 1 root root 11848 Nov 29 01:29 katzenpost.toml.old</code></para>
+            <para><code><emphasis role="bold">root@oneeyedman:~# ls -al
+                        /var/lib/pq-katzenpost-mixserver/ </emphasis></code><code><emphasis
+                        role="bold">(my personal keys in red)</emphasis></code></para>
+            <para><code>total 104</code></para>
+            <para><code>drwx------ 2 pq-katzenpost-mixserver pq-katzenpost-mixserver 4096 Dec 11
+                    02:10 .</code></para>
+            <para><code>drwxr-xr-x 47 root root 4096 Dec 5 02:05 ..</code></para>
+            <para><code>-rw------- 1 pq-katzenpost-mixserver pq-katzenpost-mixserver 348 Nov 29
+                    01:09 identity.private.pem</code></para>
+            <para><code>-rw------- 1 pq-katzenpost-mixserver pq-katzenpost-mixserver 216 Nov 29
+                    01:09 identity.public.pem</code></para>
+            <para><code>-rw------- 1 pq-katzenpost-mixserver pq-katzenpost-mixserver 3381 Nov 29
+                    01:09 link.private.pem</code></para>
+            <para><code>-rw------- 1 pq-katzenpost-mixserver pq-katzenpost-mixserver 1734 Nov 29
+                    01:09 link.public.pem</code></para>
+            <para><code>-rw------- 1 pq-katzenpost-mixserver pq-katzenpost-mixserver 20480 Dec 11
+                    02:10 mixkey-145374.db</code></para>
+            <para><code>-rw------- 1 pq-katzenpost-mixserver pq-katzenpost-mixserver 20480 Dec 11
+                    02:10 mixkey-145375.db</code></para>
+            <para><code>-rw------- 1 pq-katzenpost-mixserver pq-katzenpost-mixserver 20480 Dec 11
+                    02:10 mixkey-145376.db</code></para>
+            <para><code>-rw------- 1 pq-katzenpost-mixserver pq-katzenpost-mixserver 20480 Dec 11
+                    02:11 mixkey-145377.db</code></para>
+            <para><emphasis role="bold">Relevant git repositories:</emphasis></para>
+            <para>git clone git@github.com:katzenpost/katzenpost.git</para>
+            <para>git clone git@github.com:katzenpost/katzen.git</para>
+        </section>
+        <section>
+            <title><code>Service management</code></title>
+            <para><code><emphasis role="bold">systemctl start
+                    pq-katzenpost-mixserver</emphasis></code></para>
+            <para><code><emphasis role="bold">systemctl st</emphasis></code><code><emphasis
+                        role="bold">op</emphasis></code><code><emphasis role="bold">
+                        pq-katzenpost-mixserver</emphasis></code></para>
+            <para><code><emphasis role="bold">systemctl </emphasis></code><code><emphasis
+                        role="bold">re</emphasis></code><code><emphasis role="bold">start
+                        pq-katzenpost-mixserver</emphasis></code></para>
+            <para><code><emphasis role="bold">systemctl </emphasis></code><code><emphasis
+                        role="bold">enable</emphasis></code><code><emphasis role="bold">
+                        pq-katzenpost-mixserver</emphasis></code></para>
+        </section>
+        <section>
+            <title><code>Monitoring</code></title>
+            <para><code><emphasis role="bold">journalctl -u pq-katzenpost-mixserver -f -n
+                        2000</emphasis></code></para>
+            <para><code><emphasis role="bold">iftop -t -s 18000 > log.txt
+                &amp;</emphasis></code></para>
+            <para><code><emphasis role="bold">bmon -p ens3</emphasis></code></para>
+            <para><emphasis role="bold">Log the system stats and active process every 5
+                    seconds</emphasis></para>
+            <para> dwrob@hoh:~$ top -i -b -d 5 > top-watchdog.txt</para>
+            <para><emphasis role="bold">Keep an eye on the active updating of that
+                file</emphasis></para>
+            <para> dwrob@hoh:~$ watch -d ls -l </para>
+            <para> Every 2.0s: ls -al top-watchdog.txt hoh: Sun Dec 4 11:06:17 2022</para>
+            <para> -rw-r--r-- 1 dwrob dwrob 16016638 Dec 4 11:06 top-watchdog.txt</para>
+            <para><emphasis role="bold">Watch the actual updates</emphasis></para>
+            <para> dwrob@hoh:~$ tail -f top-watchdog.txt</para>
+            <para><emphasis role="bold">Capture net/disk/sys stats in CSV</emphasis></para>
+            <para> dwrob@hoh:~$ dstat -tndcgy -N enp40s0 --output dstat.csv</para>
+            <para><emphasis role="bold">And in general</emphasis></para>
+            <para><code>dwrob@hoh:~$ bpytop</code></para>
+        </section>
+    </section>
+</chapter>
+
