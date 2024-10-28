@@ -1,8 +1,83 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!ENTITY program_name 'EchoMix'>
+
+
+
+<!ENTITY serverconfig '
+<!--https://github.com/katzenpost/katzenpost/blob/c255fbbf421d5d9820553c18dc5dc6c9881ad547/server/config/config.go#L84-->
+<!--The config code varies by role so it is not included in this entity.-->
+                <itemizedlist>
+                    <listitem>
+                        <para><emphasis role="bold">Identifier</emphasis></para>
+                        <para>Specifies the human-readable identifier for a node, and must be unique per mixnet. 
+                        Identifier can be an FQDN but does not have to be.</para>
+                        <para>Type: string</para>
+                        <para>Required: Yes</para>
+                    </listitem>
+
+                    &WireKEM;
+
+                    <listitem>
+                        <para><emphasis role="bold">PKISignatureScheme</emphasis></para>
+                        <para>Specifies the cryptographic signature scheme which will be used by all components of the mix network 
+                        when interacting with the PKI system. Mix nodes sign their descriptors using this signature scheme, and 
+                        dirauth nodes similarly sign PKI documents using this signature scheme.</para>
+                        <para>The following signature schemes are supported:
+                                "ed25519", "ed448", "Ed25519 Sphincs+", "Ed448-Sphincs+", "Ed25519-Dilithium2", "Ed448-Dilithium3"
+                        </para>
+                        <para>Type: string</para>
+                        <para>Required: Yes</para>
+                    </listitem>
+
+                    <listitem>
+                        <para><emphasis role="bold">Addresses</emphasis></para>
+                        <para>Specifies a list of one or more Address URLs in a format that contains the transport protocol, 
+                        IP address, and port number that the server will bind to for incoming connections. EchoMix supports 
+                        URLs with that start with either "tcp://" or "quic://" such as: ["tcp://192.168.1.1:30001"] and 
+                        ["quic://192.168.1.1:40001"].</para>
+                        <para>Type: []string</para>
+                        <para>Required:</para>
+                    </listitem>
+                    <listitem>
+                        <para><emphasis role="bold">BindAddresses</emphasis></para>
+                        <para>BindAddresses are listener addresses that the server will bind to and accept connections on.
+                                                These addresses are not advertised in the PKI.</para>
+                        <para>Type: bool</para>
+                        <para>Required:</para>
+                    </listitem>
+                    <listitem>
+                        <para><emphasis role="bold">MetricsAddress</emphasis></para>
+                        <para>MetricsAddress is the address/port to bind the Prometheus metrics
+                            endpoint to.</para>
+                        <para>Type: string</para>
+                        <para>Required:</para>
+                    </listitem>
+                    <listitem>
+                        <para><emphasis role="bold">DataDir</emphasis></para>
+                        <para>DataDir is the absolute path to the directory authority server state directory
+                        where persistence.db will be written to disk and
+                        where the servers&apos; cryptographic key materials
+                        will be written to disk when the serrver is started with the "-g" commmand-line option.</para>
+                        <para>Type: string</para>
+                        <para>Required:</para>
+                    </listitem>
+                    <listitem>
+                        <para><emphasis role="bold">IsGatewayNode</emphasis></para>
+                        <para>IsGatewayNode specifies if the server is a gateway or not.</para>
+                        <para>Type: bool</para>
+                        <para>Required:</para>
+                    </listitem>
+                    <listitem>
+                        <para><emphasis role="bold">IsServiceNode</emphasis></para>
+                        <para>IsServiceNode specifies if the server is a service node or not.</para>
+                        <para>Type: bool</para>
+                        <para>Required:</para>
+                    </listitem>
+                </itemizedlist>'>
 
 <!ENTITY logging '
 <!--https://github.com/katzenpost/katzenpost/blob/c255fbbf421d5d9820553c18dc5dc6c9881ad547/authority/voting/server/config/config.go#L78-->
-<para>The logging configuration section controls logging.</para>
+<para>The logging configuration section controls logging behavior across &program_name;.</para>
 <programlisting>[Logging]
     Disable = false
     File = "katzenpost.log"
@@ -13,16 +88,22 @@
         <para>Disables logging if set to <emphasis role="bold"
             >true</emphasis>.</para>
         <para>Type: bool</para>
+        <para>Required:</para>
     </listitem>
     <listitem>
         <para><emphasis role="bold">File</emphasis></para>
         <para>Specifies the log file. If omitted, stdout is used.</para>
+        <para>An absolute or relative file path can be specified. A relative path is 
+        relative to the DataDir specified in the Server section of the 
+        configuration.</para>
         <para>Type: string</para>
+        <para>Required:</para>
     </listitem>
     <listitem>
         <para><emphasis role="bold">Level</emphasis></para>
-        <para>Supported values are ERROR | WARNING | NOTICE |INFO | DEBUG.</para>
+        <para>Supported logging level values are ERROR | WARNING | NOTICE |INFO | DEBUG.</para>
         <para>Type: string</para>
+        <para>Required:</para>
         <warning>
             <para>The DEBUG log level is unsafe for
                 production use.</para>
@@ -53,87 +134,98 @@
         <para><emphasis role="bold">PacketLength</emphasis></para>
         <para>PacketLength is the length of a packet.</para>
         <para>Type: int</para>
+        <para>Required:</para>
     </listitem>
     <listitem>
         <para><emphasis role="bold">NrHops</emphasis></para>
-        <para>// NrHops is the number of hops, this indicates the size</para>
-        <para> // of the Sphinx packet header.</para>
+        <para>NrHops is the number of hops through the mixnet, which determines the size</para>
+        <para>of the Sphinx packet header.</para>
         <para>Type: int</para>
+        <para>Required:</para>
     </listitem>                    
     <listitem>
         <para><emphasis role="bold">HeaderLength</emphasis></para>
-        <para> HeaderLength is the length of the Sphinx packet header in
+        <para>HeaderLength is the length of the Sphinx packet header in
             bytes.</para>
         <para>Type: int</para>
+        <para>Required:</para>
     </listitem>                    
     <listitem>
         <para><emphasis role="bold">RoutingInfoLength</emphasis></para>
         <para>RoutingInfoLength is the length of the routing info portion of the
             header.</para>
         <para>Type: int</para>
+        <para>Required:</para>
     </listitem>                    
     <listitem>
         <para><emphasis role="bold">PerHopRoutingInfoLength</emphasis></para>
         <para>PerHopRoutingInfoLength is the length of the per hop routing
             info.</para>
         <para>Type: int</para>
+        <para>Required:</para>
     </listitem>                    
     <listitem>
         <para><emphasis role="bold">SURBLength</emphasis></para>
         <para>SURBLength is the length of SURB.</para>
         <para>Type: int</para>
+        <para>Required:</para>
     </listitem>                    
     <listitem>
         <para><emphasis role="bold">SphinxPlaintextHeaderLength</emphasis></para>
         <para>SphinxPlaintextHeaderLength is the length of the plaintext
             header.</para>
         <para>Type: int</para>
+        <para>Required:</para>
     </listitem>                    
     <listitem>
         <para><emphasis role="bold">PayloadTagLength</emphasis></para>
         <para>PayloadTagLength is the length of the payload tag.</para>
         <para>Type: int</para>
+        <para>Required:</para>
     </listitem>                    
     <listitem>
         <para><emphasis role="bold">ForwardPayloadLength</emphasis></para>
         <para>ForwardPayloadLength is the size of the payload.</para>
         <para>Type: int</para>
+        <para>Required:</para>
     </listitem>                    
     <listitem>
         <para><emphasis role="bold">UserForwardPayloadLength</emphasis></para>
         <para>the size of the usable payload.</para>
         <para>Type: int</para>
-    </listitem>                    
+        <para>Required:</para>
+    </listitem>       
     <listitem>
         <para><emphasis role="bold">NextNodeHopLength</emphasis></para>
-        <para>// NextNodeHopLength is derived off the largest routing info</para>
-        <para> // block that we expect to encounter. Everything else just has
-            a</para>
-        <para> // NextNodeHop + NodeDelay, or a Recipient, both cases which
-            are</para>
-        <para> // shorter.</para>
+        <para>NextNodeHopLength is derived off the largest routing info</para>
+        <para>block that we expect to encounter. Everything else just has
+            a NextNodeHop + NodeDelay, or a Recipient, both cases which
+            are shorter.</para>
         <para>Type: int</para>
-    </listitem>                    
+        <para>Required:</para>
+    </listitem>  
     <listitem>
         <para><emphasis role="bold">SPRPKeyMaterialLength</emphasis></para>
         <para>SPRPKeyMaterialLength is the length of the SPRP key.</para>
         <para>Type: int</para>
+        <para>Required:</para>
     </listitem>
     <listitem>
         <para><emphasis role="bold">NIKEName</emphasis></para>
-        <para>// NIKEName is the name of the NIKE scheme used by the mixnet&apos;s Sphinx
-            packet.</para>
-        <para> // NIKEName and KEMName are mutually exclusive.</para>
+        <para>NIKEName is the name of the NIKE (non-interactive key exchange) 
+        scheme used by the mixnet&apos;s Sphinx
+        packets. NIKEName and KEMName are mutually exclusive.</para>
         <para>Type: string</para>
+        <para>Required:</para>
     </listitem>
     <listitem>
         <para><emphasis role="bold">KEMName</emphasis></para>
         <para>KEMName is the name of the KEM scheme used by the mixnet&apos;s Sphinx
             packet. NIKEName and KEMName are mutually exclusive.</para>
         <para>Type: string</para>
+        <para>Required:</para>
     </listitem>
 </itemizedlist>'>
-
 
 <!ENTITY serverconfig '
 <!--https://github.com/katzenpost/katzenpost/blob/c255fbbf421d5d9820553c18dc5dc6c9881ad547/server/config/config.go#L84-->
@@ -141,72 +233,90 @@
                 <itemizedlist>
                     <listitem>
                         <para><emphasis role="bold">Identifier</emphasis></para>
-                        <para>Identifier is the human readable identifier for the node (eg:
-                            FQDN).</para>
+                        <para>Specifies the human-readable identifier for a node, and must be unique per mixnet. 
+                        Identifier can be an FQDN but does not have to be.</para>
                         <para>Type: string</para>
+                        <para>Required: Yes</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">WireKEM</emphasis></para>
-                        <para>// WireKEM is the KEM string representing the chosen KEM scheme with
-                            which to communicate</para>
-                        <para> // with the mixnet and dirauth nodes.</para>
+                        <para>WireKEM is the wire protocol KEM (key encapsulation mechanism) scheme to use.</para>
+                        <para>This configuration option supports the use of post-quantum cryptography to strengthen security. 
+                        In this case the "Wire" protocol 
+                        refers to our PQ Noise based protocol which is how all the dir auth nodes talk to one another. PQ Noise is a 
+                        variation of the Noise protocol framework where the handshake patterns are algebraically transformed to replace
+                        ECDH operations with KEM encapsulate/decapsulate operations.
+                        </para>
+						<para>The following KEM schemes are supported:
+							"x25519", "x448", "mlkem768", "sntrup4591761", "frodo640shake", "mceliece348864", "mceliece348864f",
+							"mceliece460896", "mceliece460896f", "mceliece6688128", "mceliece6688128f", "mceliece6960119", "mceliece6960119f",
+							"mceliece8192128", "mceliece8192128f", "xwing", "Kyber768-X25519", "MLKEM768-X25519", "MLKEM768-X448",
+							"CTIDH511", "CTIDH512", "CTIDH1024", "CTIDH2048", "CTIDH512-X25519", "CTIDH512-X25519"
+						</para>
                         <para>Type: string</para>
-                    </listitem>
+                        <para>Required: Yes</para>
+                    </listitem> 
                     <listitem>
                         <para><emphasis role="bold">PKISignatureScheme</emphasis></para>
-                        <para>PKISignatureScheme specifies the cryptographic signature scheme</para>
+                        <para>PKISignatureScheme specifies the cryptographic signature scheme used by all components of the mix network
+                        when interacting with the PKI system. Mix nodes sign their descriptors using this signature scheme. Likewise, PKI documents
+                        are signed by directory authority nodes using this signature scheme.</para>
+                        <para>The following signature schemes are supported:
+                        	"ed25519", "ed448", "Ed25519 Sphincs+", "Ed448-Sphincs+", "Ed25519-Dilithium2", "Ed448-Dilithium3"
+                        </para>
                         <para>Type: string</para>
+                        <para>Required: Yes</para>
                     </listitem>
-                    <listitem>
+                  <listitem>
                         <para><emphasis role="bold">Addresses</emphasis></para>
-                        <para>// Addresses are the IP address/port combinations that the server will
-                            bind</para>
-                        <para> // to for incoming connections.</para>
+                        <para>Specifies a list of one or more Address URLs in a format that contains the transport protocol, 
+                        IP address, and port number that the server will bind to for incoming connections. EchoMix supports 
+                        URLs with that start with either "tcp://" or "quic://" such as: ["tcp://192.168.1.1:30001"] 
+                        and ["quic://192.168.1.1:40001"].</para>
                         <para>Type: []string</para>
+                        <para>Required:</para>
                     </listitem>
                     <listitem>
-                        <para><emphasis role="bold">OnlyAdvertiseAltAddresses</emphasis></para>
-                        <para>// If set to true then only advertise to the PKI the
-                            AltAddresses</para>
-                        <para> // and do NOT send any of the Addresses.</para>
+                        <para><emphasis role="bold">BindAddresses</emphasis></para>
+                        <para>BindAddresses are listener addresses that the server will bind to and accept connections on.
+						These addresses are not advertised in the PKI.</para>
                         <para>Type: bool</para>
+                        <para>Required:</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">MetricsAddress</emphasis></para>
-                        <para>MetricsAddress is the address/port to bind the prometheus metrics
+                        <para>MetricsAddress is the address/port to bind the Prometheus metrics
                             endpoint to.</para>
                         <para>Type: string</para>
+                        <para>Required:</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">DataDir</emphasis></para>
-                        <para> DataDir is the absolute path to the server&apos;s state files.</para>
+                        <para>DataDir is the absolute path to the directory authority server state directory 
+                        where persistence.db will be written to disk and
+                        where the servers&apos; cryptographic key materials 
+                        will be written to disk when the serrver is started with the "-g" commmand-line option.</para>
                         <para>Type: string</para>
+                        <para>Required:</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">IsGatewayNode</emphasis></para>
                         <para>IsGatewayNode specifies if the server is a gateway or not.</para>
                         <para>Type: bool</para>
+                        <para>Required:</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">IsServiceNode</emphasis></para>
                         <para>IsServiceNode specifies if the server is a service node or not.</para>
                         <para>Type: bool</para>
+                        <para>Required:</para>
                     </listitem>
-                    <listitem>
-                        <para><emphasis role="bold">[Server.AltAddresses]</emphasis></para>
-                        <para>Map of additional transport protocols and addresses at which the 
-                        node is reachable by clients, in the 
-                        form<programlisting>[Server.AltAddresses]
-    TCP = ["localhost:30004"]</programlisting></para>
-                        <para>Type:
-                            []string<?oxy_custom_start type="oxy_content_highlight" color="255,255,0"?></para>
-                    </listitem><?oxy_custom_end?>
                 </itemizedlist>'>
 
 <!ENTITY serverdebug '
 
 <!--https://github.com/katzenpost/katzenpost/blob/c255fbbf421d5d9820553c18dc5dc6c9881ad547/server/config/config.go-->
-                <para>Debug is the Katzenpost server debug configuration for advanced tuning.</para>   
+                <para>Debug is the &program_name; server debug configuration for advanced tuning.</para>   
                 <programlisting>[Debug]
                     NumSphinxWorkers = 16
                     NumServiceWorkers = 3
@@ -234,24 +344,28 @@
                         <para> specifies the number of worker instances to use for inbound Sphinx
                             packet processing.</para>
                         <para>Type: int</para>
+                        <para>Required:</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">NumProviderWorkers</emphasis></para>
                         <para> specifies the number of worker instances to use for provider specific
                             packet processing.</para>
                         <para>Type: int</para>
+                        <para>Required:</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">NumKaetzchenWorkers</emphasis></para>
                         <para> specifies the number of worker instances to use for Kaetzchen
                             specific packet processing.</para>
                         <para>Type: int</para>
+                        <para>Required:</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">SchedulerExternalMemoryQueue</emphasis></para>
                         <para> will enable the experimental external memory queue that is backed by
                             disk.</para>
                         <para>Type: bool</para>
+                        <para>Required:</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">SchedulerQueueSize</emphasis></para>
@@ -259,48 +373,56 @@
                             will start getting dropped. A value &lt;= 0 is treated as
                             unlimited.</para>
                         <para>Type: int</para>
+                        <para>Required:</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">SchedulerMaxBurst</emphasis></para>
                         <para> is the maximum number of packets that will be dispatched per
                             scheduler wakeup event.</para>
                         <para>Type: </para>
+                        <para>Required:</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">UnwrapDelay</emphasis></para>
                         <para> is the maximum allowed unwrap delay due to queueing in
                             milliseconds.</para>
                         <para>Type: int</para>
+                        <para>Required:</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">GatewayDelay</emphasis></para>
                         <para>the maximum allowed gateway node worker delay due to queueing</para>
                         <para> in milliseconds.</para>
                         <para>Type: int</para>
+                        <para>Required:</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">ServiceDelay</emphasis></para>
                         <para> is the maximum allowed provider delay due to queueing in
                             milliseconds.</para>
                         <para>Type: int</para>
+                        <para>Required:</para> 
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">KaetzchenDelay</emphasis></para>
                         <para> is the maximum allowed kaetzchen delay due to queueing in
                             milliseconds.</para>
                         <para>Type: int</para>
+                        <para>Required:</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">SchedulerSlack</emphasis></para>
                         <para> is the maximum allowed scheduler slack due to queueing and or
                             processing in milliseconds.</para>
                         <para>Type: int</para>
+                        <para>Required:</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">SendSlack</emphasis></para>
                         <para> is the maximum allowed send queue slack due to queueing and or
                             congestion in milliseconds.</para>
                         <para>Type: int</para>
+                        <para>Required:</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">DecoySlack</emphasis><emphasis role="bold"
@@ -309,24 +431,28 @@
                             delays such as latency before a loop decoy packet will be considered
                             lost.</para>
                         <para>Type: int</para>
+                        <para>Required:</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">ConnectTimeout</emphasis></para>
                         <para> specifies the maximum time a connection can take to establish a
                             TCP/IP connection in milliseconds.</para>
                         <para>Type: int</para>
+                        <para>Required:</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">HandshakeTimeout</emphasis></para>
                         <para> specifies the maximum time a connection can take for a link protocol
                             handshake in milliseconds.</para>
                         <para>Type: int</para>
+                        <para>Required:</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">ReauthInterval</emphasis></para>
                         <para> specifies the interval at which a connection will be reauthenticated
                             in milliseconds.</para>
                         <para>Type: int</para>
+                        <para>Required:</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">SendDecoyTraffic</emphasis></para>
@@ -334,24 +460,27 @@
                             and thus is disabled by default. WARNING: This option will go away once
                             decoy traffic is more concrete.</para>
                         <para>Type: bool</para>
+                        <para>Required:</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">DisableRateLimit</emphasis></para>
                         <para> disables the per-client rate limiter. This option should only be used
                             for testing.</para>
                         <para>Type: bool</para>
+                        <para>Required:</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">GenerateOnly</emphasis></para>
                         <para> halts and cleans up the server right after long term key
                             generation.</para>
                         <para>Type: bool</para>
+                        <para>Required:</para>
                     </listitem>
                 </itemizedlist>'>
                 
 <!ENTITY  management '
 <!--https://github.com/katzenpost/katzenpost/blob/c255fbbf421d5d9820553c18dc5dc6c9881ad547/server/config/config.go#L729-->
-                <para>Management is the Katzenpost management interface configuration. The management section specifies connectivity information for the Katzenpost
+                <para>Management is the &program_name; management interface configuration. The management section specifies connectivity information for the &program_name;
                     control protocol which can be used to make configuration changes during
                     run-time. An example configuration looks like this:</para>
                 <programlisting>[Management]
@@ -362,6 +491,7 @@
                         <para><emphasis role="bold">Enable</emphasis></para>
                         <para>Enables the management interface if set to true.</para>
                         <para>Type: bool</para>
+                        <para>Required:</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">Path</emphasis></para>
@@ -369,6 +499,7 @@
                             <?oxy_comment_start author="dwrob" timestamp="20240814T171718-0700" comment="Confusing wording."?>If
                             left empty, then management_sock will be used under the DataDir.</para><?oxy_comment_end?>
                         <para>Type: string</para>
+                        <para>Required:</para>
                     </listitem>
                 </itemizedlist>'>
                 
@@ -403,38 +534,130 @@
                 <itemizedlist>
                     <listitem>
                         <para><emphasis role="bold">Identifier</emphasis></para>
-                        <para>Identifier is the human readable identifier for the node (eg:
-                            FQDN).</para>
+                        <para>Specifies the human-readable identifier for a node, and must be unique per mixnet. 
+                        Identifier can be an FQDN but does not have to be.</para>
                         <para>Type: string</para>
+                        <para>Required:</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">IdentityPublicKey</emphasis></para>
-                        <para>// IdentityPublicKeyPem is a string in PEM format containing</para>
-                        <para> // the public identity key key.</para>
+                        <para>String containing the node&apos;s public identity key in PEM format. IdentityPublicKey is 
+                        the node&apos;s permanent identifier and is used to verify cryptographic signatures produced 
+                        by its private identity key.</para>
                         <para>Type: string</para>
+                        <para>Required:</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">PKISignatureScheme</emphasis></para>
-                        <para>PKISignatureScheme specifies the cryptographic signature scheme</para>
+                        <para>Specifies the cryptographic signature scheme which will be used by all components of 
+                        the mix network when interacting with the PKI system. Mix nodes sign their descriptors using 
+                        this signature scheme, and dirauth nodes similarly sign PKI documents using this signature scheme.</para>
                         <para>Type: string</para>
+                        <para>Required:</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">LinkPublicKey</emphasis></para>
-                        <para>LinkPublicKeyPem is string containing the PEM format of the peer&apos;s
-                            public link layer key.</para>
+                        <para>String containing the peer&apos;s public link-layer key in PEM format. LinkPublicKey must match the specified WireKEMScheme.</para>
                         <para>Type: string</para>
+                        <para>Required:</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">WireKEMScheme</emphasis></para>
                         <para>WireKEMScheme is the wire protocol KEM scheme to use.</para>
                         <para>Type: string</para>
+                        <para>Required:</para>
                     </listitem>
                     <listitem>
                         <para><emphasis role="bold">Addresses</emphasis></para>
-                        <para>// Addresses are the IP address/port combinations that
-                            <?oxy_custom_start type="oxy_content_highlight" color="255,255,0"?>t<?oxy_comment_start author="dwrob" timestamp="20240814T170317-0700" comment="Should be &quot;the service node&quot;?"?>he
-                            peer authority<?oxy_comment_end?></para><?oxy_custom_end?>
-                        <para> // uses for the Directory Authority service.</para>
+                        <para>Specifies a list of one or more Address URLs in a format that contains the transport protocol, 
+                        IP address, and port number that the server will bind to for incoming connections. EchoMix supports 
+                        URLs with that start with either "tcp://" or "quic://" such as: ["tcp://192.168.1.1:30001"] 
+                        and ["quic://192.168.1.1:40001"].</para>
                         <para>Type: []string</para>
+                        <para>Required:</para>
                     </listitem>
                 </itemizedlist>'>
+                
+<!ENTITY WireKEMScheme '                
+                    <!-- WireKEMScheme ... the link layer -->
+                    <!-- This is the API term just for the dirauths. This is a flaw. -->
+                    
+                    <listitem>
+                        <para><emphasis role="bold">WireKEMScheme</emphasis></para>
+                        <para>Specifies the key encapsulation mechanism (KEM) scheme
+                            for the <link xlink:href="https://eprint.iacr.org/2022/539">PQ
+                                Noise</link>-based wire protocol (link layer) that nodes use
+                            to communicate with each other. PQ Noise is a post-quantum variation of
+                            the <link xlink:href="https://noiseprotocol.org/">Noise protocol
+                                framework</link>, which algebraically transforms ECDH handshake
+                            patterns into KEM encapsulate/decapsulate operations.</para>
+                            
+                            <para>This configuration option supports the optional use of
+                            post-quantum cryptography to strengthen security. The following KEM
+                            schemes are supported: <itemizedlist>
+                                <listitem>
+                                    <para><emphasis role="bold">Classical:</emphasis> "x25519",
+                                        "x448"</para>
+                                     <note><para>X25519 and X448 are actually non-interactive key-exchanges
+                                            (NIKEs), not KEMs. &program_name; uses
+                                            a Hashed ElGamal cryptographic construction
+                                            to convert them from NIKEs to KEMs.</para></note>
+                                </listitem>
+                            </itemizedlist><itemizedlist>
+                                <listitem>
+                                    <para><emphasis role="bold"> Post-quantum:</emphasis>
+                                        "mlkem768", "sntrup4591761", "frodo640shake",
+                                        "mceliece348864", "mceliece348864f", "mceliece460896",
+                                        "mceliece460896f", "mceliece6688128", "mceliece6688128f",
+                                        "mceliece6960119", "mceliece6960119f", "mceliece8192128",
+                                        "mceliece8192128f", "xwing", "Kyber768-X25519",
+                                        "MLKEM768-X25519", "MLKEM768-X448", "CTIDH511", "CTIDH512",
+                                        "CTIDH1024", "CTIDH2048", "CTIDH512-X25519",
+                                        "CTIDH512-X25519"</para>
+                                </listitem>
+                            </itemizedlist></para>						
+                        <para>Type: string</para>
+                        <para>Required: Yes</para>                    
+                    </listitem>'>     
+                    
+<!ENTITY WireKEM '                
+                    <!-- WireKEM ... the  link layer -->
+                    <!-- This is the API term just for the Server options (mix, gateway, service). This is a flaw. -->
+                    
+                    <listitem>
+                        <para><emphasis role="bold">WireKEM</emphasis></para>
+                        <para>WireKEM specifies the key encapsulation mechanism (KEM) scheme
+                            for the <link xlink:href="https://eprint.iacr.org/2022/539">PQ
+                                Noise</link>-based wire protocol (link layer) that nodes use
+                            to communicate with each other. PQ Noise is a post-quantum variation of
+                            the <link xlink:href="https://noiseprotocol.org/">Noise protocol
+                                framework</link>, which algebraically transforms ECDH handshake
+                            patterns into KEM encapsulate/decapsulate operations.</para>
+                            
+                            <para>This configuration option supports the optional use of
+                            post-quantum cryptography to strengthen security. The following KEM
+                            schemes are supported: <itemizedlist>
+                                <listitem>
+                                    <para><emphasis role="bold">Classical:</emphasis> "x25519",
+                                        "x448"</para>
+                                     <note><para>X25519 and X448 are actually non-interactive key-exchanges
+                                            (NIKEs), not KEMs. &program_name; uses
+                                            a Hashed ElGamal cryptographic construction
+                                            to convert them from NIKEs to KEMs.</para></note>
+                                </listitem>
+                            </itemizedlist><itemizedlist>
+                                <listitem>
+                                    <para><emphasis role="bold"> Post-quantum:</emphasis>
+                                        "mlkem768", "sntrup4591761", "frodo640shake",
+                                        "mceliece348864", "mceliece348864f", "mceliece460896",
+                                        "mceliece460896f", "mceliece6688128", "mceliece6688128f",
+                                        "mceliece6960119", "mceliece6960119f", "mceliece8192128",
+                                        "mceliece8192128f", "xwing", "Kyber768-X25519",
+                                        "MLKEM768-X25519", "MLKEM768-X448", "CTIDH511", "CTIDH512",
+                                        "CTIDH1024", "CTIDH2048", "CTIDH512-X25519",
+                                        "CTIDH512-X25519"</para>
+                                </listitem>
+                            </itemizedlist></para>						
+                        <para>Type: string</para>
+                        <para>Required: Yes</para>                    
+                    </listitem>'>                
