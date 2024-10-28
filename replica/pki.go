@@ -333,7 +333,7 @@ func (p *PKIWorker) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 		p.lastPublishedEpoch = doPublishEpoch
 	default:
 		// XXX: the voting authority implementation does not return any of the above error types...
-		// and the mix will continue to fail to submit the same descriptor repeatedly.
+		// and the storage replica will continue to fail to submit the same descriptor repeatedly.
 		p.lastPublishedEpoch = doPublishEpoch
 	}
 

@@ -51,8 +51,6 @@ type Server struct {
 	state     *state
 	connector *Connector
 
-	replicaPrivateKey  nike.PrivateKey
-	replicaPublicKey   nike.PublicKey
 	identityPrivateKey sign.PrivateKey
 	identityPublicKey  sign.PublicKey
 	linkKey            kem.PrivateKey
