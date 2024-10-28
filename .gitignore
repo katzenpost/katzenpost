@@ -3,6 +3,8 @@
 *.storage
 *.swp
 *~
+~*
+.~*
 
 docker/alpine_base.stamp
 docker/alpine_go_mod.stamp
@@ -20,4 +22,4 @@ server_plugins/cbor_plugins/echo-go/echo_server
 
 dist/
 
-docs/web/Admin_guide/target/en/
+docs/web/Admin_guide/target/*
