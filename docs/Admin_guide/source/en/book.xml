@@ -1,6 +1,14 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<?xml-model href="http://docbook.org/xml/5.1/rng/docbookxi.rng" schematypens="http://relaxng.org/ns/structure/1.0"?>
-<?xml-model href="http://docbook.org/xml/5.1/sch/docbook.sch" type="application/xml" schematypens="http://purl.oclc.org/dsdl/schematron"?>
+<?xml-model href="http://docbook.org/xml/5.1/rng/docbook.rng" schematypens="http://relaxng.org/ns/structure/1.0"?>
+
+<!--A DOCTYPE declaration declaring a DTD is not need for DocBook 5.x, which uses RelaxNG and  Schematron instead. 
+    It is used here as a container for entity declarations.-->
+
+<!DOCTYPE chapter 
+[
+    <!ENTITY % shared-content SYSTEM "shared-content.ent">
+    %shared-content;
+]>
 
 <book xmlns="http://docbook.org/ns/docbook" 
         xmlns:xi="http://www.w3.org/2001/XInclude"
@@ -9,10 +17,18 @@
         <title>Katzenpost Administrator's Guide</title>
     </info>
 
-<!--    <xi:include href="quickstart.xml"/>
-    <xi:include href="introduction.xml"/>-->
-    <xi:include href="components.xml"/>
-<!--    <xi:include href="operations.xml"/>-->
+<!--<!-\-    <xi:include href="quickstart.xml"/>
+    <xi:include href="introduction.xml"/>-\->
+    
+    
+    
+<!-\-    <xi:include href="operations.xml"/>-\->
+    
+    -->
+    
     <xi:include href="docker.xml"/>
+    
+    <!--<xi:include href="components.xml"/>-->
+    <xi:include href="tuning.xml"/>
 
 </book>

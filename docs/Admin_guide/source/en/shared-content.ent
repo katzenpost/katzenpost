@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
+
 <!ENTITY program_name 'EchoMix'>
-
-
 
 <!ENTITY serverconfig '
 <!--https://github.com/katzenpost/katzenpost/blob/c255fbbf421d5d9820553c18dc5dc6c9881ad547/server/config/config.go#L84-->
@@ -314,7 +313,6 @@
                 </itemizedlist>'>
 
 <!ENTITY serverdebug '
-
 <!--https://github.com/katzenpost/katzenpost/blob/c255fbbf421d5d9820553c18dc5dc6c9881ad547/server/config/config.go-->
                 <para>Debug is the &program_name; server debug configuration for advanced tuning.</para>   
                 <programlisting>[Debug]

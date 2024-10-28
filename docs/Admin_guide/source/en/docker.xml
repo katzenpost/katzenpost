@@ -1,6 +1,8 @@
-<?xml-model href="http://docbook.org/xml/5.1/rng/docbook.rng" schematypens="http://relaxng.org/ns/structure/1.0"?>
+<?xml version="1.0" encoding="UTF-8"?>
+<?xml-model href="http://docbook.org/xml/5.2/rng/docbook.rng" schematypens="http://relaxng.org/ns/structure/1.0"?>
 
-<!--A DOCTYPE declaration declaring a DTD is not need for DocBook 5.x, which uses RelaxNG and  Schematron instead. It is used here as a container for entity declarations.-->
+<!--A DOCTYPE declaration declaring a DTD is not need for DocBook 5.x, which uses RelaxNG and  Schematron instead. 
+    It is used here as a container for entity declarations.-->
 
 <!DOCTYPE chapter 
 [
@@ -443,7 +445,7 @@
             <title>Test network topology</title>
             <mediaobject>
                 <imageobject>
-                    <imagedata fileref="images/katzenpost-docker-net-4.png"  scale="75"/>
+                    <imagedata fileref="resources/katzenpost-docker-net-4.png"  scale="75"/>
                 </imageobject>
             </mediaobject>
         </figure>
