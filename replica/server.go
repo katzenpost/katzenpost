@@ -16,8 +16,6 @@ import (
 	"github.com/katzenpost/hpqc/kem"
 	kempem "github.com/katzenpost/hpqc/kem/pem"
 	"github.com/katzenpost/hpqc/kem/schemes"
-	"github.com/katzenpost/hpqc/nike"
-	nikepem "github.com/katzenpost/hpqc/nike/pem"
 	nikeSchemes "github.com/katzenpost/hpqc/nike/schemes"
 	"github.com/katzenpost/hpqc/sign"
 	signpem "github.com/katzenpost/hpqc/sign/pem"
@@ -54,6 +52,8 @@ type Server struct {
 	identityPrivateKey sign.PrivateKey
 	identityPublicKey  sign.PublicKey
 	linkKey            kem.PrivateKey
+
+	envelopeKeys *EnvelopeKeys
 
 	logBackend *log.Backend
 	log        *logging.Logger
@@ -224,38 +224,6 @@ func New(cfg *config.Config) (*Server, error) {
 		return nil, fmt.Errorf("%s and %s must either both exist or not exist", identityPrivateKeyFile, identityPublicKeyFile)
 	}
 
-	replicaNikeScheme := nikeSchemes.ByName(cfg.ReplicaNIKEScheme)
-
-	// Initialize the authority replica key.
-	replicaPrivateKeyFile := filepath.Join(s.cfg.DataDir, "replica.private.pem")
-	replicaPublicKeyFile := filepath.Join(s.cfg.DataDir, "replica.public.pem")
-
-	if utils.BothExists(replicaPrivateKeyFile, replicaPublicKeyFile) {
-		s.replicaPrivateKey, err = nikepem.FromPrivatePEMFile(replicaPrivateKeyFile, replicaNikeScheme)
-		if err != nil {
-			return nil, err
-		}
-		s.replicaPublicKey, err = nikepem.FromPublicPEMFile(replicaPublicKeyFile, replicaNikeScheme)
-		if err != nil {
-			return nil, err
-		}
-	} else if utils.BothNotExists(replicaPrivateKeyFile, replicaPublicKeyFile) {
-		s.replicaPublicKey, s.replicaPrivateKey, err = replicaNikeScheme.GenerateKeyPair()
-		if err != nil {
-			return nil, err
-		}
-		err = nikepem.PrivateKeyToFile(replicaPrivateKeyFile, s.replicaPrivateKey, replicaNikeScheme)
-		if err != nil {
-			return nil, err
-		}
-		err = nikepem.PublicKeyToFile(replicaPublicKeyFile, s.replicaPublicKey, replicaNikeScheme)
-		if err != nil {
-			return nil, err
-		}
-	} else {
-		return nil, fmt.Errorf("%s and %s must either both exist or not exist", replicaPrivateKeyFile, replicaPublicKeyFile)
-	}
-
 	scheme := schemes.ByName(cfg.WireKEMScheme)
 	if scheme == nil {
 		return nil, errors.New("KEM scheme not found in registry")
@@ -291,6 +259,14 @@ func New(cfg *config.Config) (*Server, error) {
 	}
 
 	s.linkKey = linkPrivateKey
+
+	// Write replica NIKE keys to files or load them from files.
+	nikeScheme := nikeSchemes.ByName(cfg.ReplicaNIKEScheme)
+	replicaEpoch, _, _ := ReplicaNow()
+	s.envelopeKeys, err = NewEnvelopeKeys(nikeScheme, s.logBackend.GetLogger("envelopeKeys"), cfg.DataDir, replicaEpoch)
+	if err != nil {
+		panic(err)
+	}
 
 	if s.cfg.GenerateOnly {
 		return nil, ErrGenerateOnly

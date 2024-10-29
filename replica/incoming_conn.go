@@ -247,7 +247,14 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 		c.log.Errorf("handleReplicaMessage CiphertextFromBytes failed: %s", err)
 		return nil
 	}
-	requestRaw, err := scheme.Decapsulate(c.l.server.replicaPrivateKey, ct.Envelope)
+
+	replicaEpoch, _, _ := ReplicaNow()
+	replicaPrivateKeypair, err := c.l.server.envelopeKeys.GetKeypair(replicaEpoch)
+	if err != nil {
+		c.log.Errorf("handleReplicaMessage envelopeKeys.GetKeypair failed: %s", err)
+		return nil
+	}
+	requestRaw, err := scheme.Decapsulate(replicaPrivateKeypair.PrivateKey, ct.Envelope)
 	if err != nil {
 		c.log.Errorf("handleReplicaMessage Decapsulate failed: %s", err)
 		errReply := &commands.ReplicaMessageReply{
