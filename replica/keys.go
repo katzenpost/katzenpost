@@ -104,12 +104,12 @@ func NewEnvelopeKey(scheme nike.Scheme) *EnvelopeKey {
 type EnvelopeKeys struct {
 	worker.Worker
 
-	datadir string
 	log     *logging.Logger
+	datadir string
+	scheme  nike.Scheme
 
 	keysLock *sync.RWMutex
 	keys     map[uint64]*EnvelopeKey
-	scheme   nike.Scheme
 }
 
 func NewEnvelopeKeys(scheme nike.Scheme, log *logging.Logger, datadir string, epoch uint64) (*EnvelopeKeys, error) {
@@ -134,6 +134,10 @@ func NewEnvelopeKeys(scheme nike.Scheme, log *logging.Logger, datadir string, ep
 	return e, nil
 }
 
+// NOTE: this is where keys are destroyed.
+// Key creation is triggered by the PKI worker
+// which also uploads our replica descriptor
+// to the dirauth nodes.
 func (k *EnvelopeKeys) worker() {
 	_, _, till := ReplicaNow()
 	gctimer := time.NewTimer(till + GracePeriod)

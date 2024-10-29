@@ -310,21 +310,57 @@ func (p *PKIWorker) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 		return err
 	}
 
-	replicaEpoch, _, _ := ReplicaNow()
-	p.server.envelopeKeys.Generate(replicaEpoch + 1)
+	// handle the replica NIKE keys
 
-	keypair, err := p.server.envelopeKeys.GetKeypair(replicaEpoch + 1)
+	replicaEpoch, _, _ := ReplicaNow()
+	doPublishReplicaEpoch := uint64(0)
+	switch p.lastPublishedReplicaEpoch {
+	case 0:
+		// Initial startup.  Regardless of the deadline, publish.
+		p.log.Debugf("Initial startup or correcting for time jump.")
+		doPublishReplicaEpoch = replicaEpoch
+	case replicaEpoch:
+		// Check the deadline for the next publication time.
+		if till > PublishDeadline {
+			p.log.Debugf("Within the publication time for epoch: %v", replicaEpoch+1)
+			doPublishReplicaEpoch = replicaEpoch + 1
+			break
+		}
+
+		return nil
+	case replicaEpoch + 1:
+		// The next epoch has been published.
+		return nil
+	default:
+		// What the fuck?  The last descriptor that we published is a time
+		// that we don't recognize.  The system's civil time probably jumped,
+		// even though the assumption is that all nodes run NTP.
+		p.log.Warningf("Last published epoch %v is wildly disjointed from %v.", p.lastPublishedReplicaEpoch, replicaEpoch)
+
+		// I don't even know what the sane thing to do here is, just treat it
+		// as if the node's just started and publish for the current I guess.
+		doPublishReplicaEpoch = replicaEpoch
+	}
+	keypair, err := p.server.envelopeKeys.GetKeypair(doPublishReplicaEpoch)
 	if err != nil {
-		return err
+		err = p.server.envelopeKeys.Generate(doPublishReplicaEpoch)
+		if err != nil {
+			return err
+		}
+		keypair, err = p.server.envelopeKeys.GetKeypair(doPublishReplicaEpoch)
+		if err != nil {
+			return err
+		}
+	}
+	envelopeKeys := map[uint64][]byte{
+		doPublishReplicaEpoch: keypair.PublicKey.Bytes(),
 	}
 	desc := &cpki.ReplicaDescriptor{
-		Name:        p.server.cfg.Identifier,
-		IdentityKey: idkeyblob,
-		LinkKey:     linkblob,
-		Addresses:   p.descAddrMap,
-		EnvelopeKeys: map[uint64][]byte{
-			replicaEpoch + 1: keypair.PublicKey.Bytes(),
-		},
+		Name:         p.server.cfg.Identifier,
+		IdentityKey:  idkeyblob,
+		LinkKey:      linkblob,
+		Addresses:    p.descAddrMap,
+		EnvelopeKeys: envelopeKeys,
 	}
 
 	// XXX FIXME: we need a replica NIKE key to publish

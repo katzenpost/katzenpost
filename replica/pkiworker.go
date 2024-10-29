@@ -79,13 +79,14 @@ type PKIWorker struct {
 
 	impl pki.Client
 
-	lock               *sync.RWMutex
-	descAddrMap        map[string][]string
-	docs               map[uint64]*pki.Document
-	rawDocs            map[uint64][]byte
-	failedFetches      map[uint64]error
-	lastPublishedEpoch uint64
-	lastWarnedEpoch    uint64
+	lock                      *sync.RWMutex
+	descAddrMap               map[string][]string
+	docs                      map[uint64]*pki.Document
+	rawDocs                   map[uint64][]byte
+	failedFetches             map[uint64]error
+	lastPublishedEpoch        uint64
+	lastWarnedEpoch           uint64
+	lastPublishedReplicaEpoch uint64
 }
 
 func newPKIWorker(server *Server, log *logging.Logger) (*PKIWorker, error) {
