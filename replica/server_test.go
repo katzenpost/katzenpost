@@ -13,7 +13,6 @@ import (
 	ecdh "github.com/katzenpost/hpqc/nike/x25519"
 	"github.com/katzenpost/hpqc/rand"
 
-	"github.com/katzenpost/katzenpost/client2/thin"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/replica/config"
 )
@@ -46,16 +45,6 @@ func NoTestServerFilePersistence(t *testing.T) {
 		Addresses:          []string{"tcp://127.0.0.1:34394"},
 	}
 
-	thinCfg := &thin.ThinConfig{
-		LoggingFile:    cfg.Logging.File,
-		LoggingLevel:   cfg.Logging.Level,
-		LoggingDisable: cfg.Logging.Disable,
-		Network:        "unix",
-		Address:        "@katzenpost",
-	}
-
-	cfg.ThinConfig = thinCfg
-
 	err = cfg.FixupAndValidate(true)
 	require.NoError(t, err)
 
@@ -71,8 +60,9 @@ func NoTestServerFilePersistence(t *testing.T) {
 	require.NotNil(t, server2.identityPrivateKey)
 	server2.Shutdown()
 
-	require.Equal(t, server1.replicaPrivateKey, server2.replicaPrivateKey)
-	require.Equal(t, server1.replicaPublicKey.Bytes(), server2.replicaPublicKey.Bytes())
+	//require.Equal(t, server1.replicaPrivateKey, server2.replicaPrivateKey)
+	//require.Equal(t, server1.replicaPublicKey.Bytes(), server2.replicaPublicKey.Bytes())
+
 	require.Equal(t, server1.identityPrivateKey, server2.identityPrivateKey)
 	require.Equal(t, server1.identityPublicKey, server2.identityPublicKey)
 

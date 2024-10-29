@@ -15,5 +15,4 @@ func TestReplicaEpoch(t *testing.T) {
 	epoch, _, _ := epochtime.Now()
 	replicaEpoch, _, _ := ReplicaNow()
 	require.Equal(t, replicaEpoch, ConvertNormalToReplicaEpoch(epoch))
-	require.Equal(t, epoch, ConvertReplicaToNormalEpoch(replicaEpoch))
 }

@@ -115,6 +115,9 @@ func newPKIWorker(server *Server, log *logging.Logger) (*PKIWorker, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	p.Go(p.worker)
+
 	return p, nil
 }
 

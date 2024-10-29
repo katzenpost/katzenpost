@@ -30,8 +30,3 @@ func ReplicaNow() (current uint64, elapsed, till time.Duration) {
 func ConvertNormalToReplicaEpoch(normalEpoch uint64) uint64 {
 	return (normalEpoch * uint64(epochtime.Period)) / uint64(ReplicaPeriod)
 }
-
-// ConvertReplicaToNormalEpoch converts a weekly replica epoch number to a 20-minute epoch.
-func ConvertReplicaToNormalEpoch(replicaEpoch uint64) uint64 {
-	return (replicaEpoch * uint64(ReplicaPeriod)) / uint64(epochtime.Period)
-}
