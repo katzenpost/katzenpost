@@ -12,8 +12,8 @@ import (
 	"golang.org/x/crypto/blake2b"
 	"gopkg.in/op/go-logging.v1"
 
+	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
-	"github.com/katzenpost/katzenpost/replica/common"
 )
 
 type state struct {
@@ -92,12 +92,37 @@ func (s *state) handleReplicaWrite(replicaWrite *commands.ReplicaWrite) error {
 	return s.db.Put(wo, intoBoxID(replicaWrite.ID[:]), replicaWrite.ToBytes())
 }
 
+func (s *state) replicaWriteFromBlob(blob []byte) (*commands.ReplicaWrite, error) {
+	cmds := commands.NewStorageReplicaCommands(s.server.cfg.SphinxGeometry)
+	rawCmds, err := cmds.FromBytes(blob)
+	if err != nil {
+		return nil, err
+	}
+	writeCmd, ok := rawCmds.(*commands.ReplicaWrite)
+	if !ok {
+		return nil, errors.New("invalid data retrieved from database")
+	}
+	return writeCmd, nil
+}
+
+func (s *state) getRemoteShards(boxID []byte) ([]*pki.ReplicaDescriptor, error) {
+	doc := s.server.pkiWorker.PKIDocument()
+	boxIDar := new([32]byte)
+	copy(boxIDar[:], boxID)
+	shards, err := s.server.GetRemoteShards(boxIDar, doc)
+	if err != nil {
+		s.log.Errorf("ERROR GetShards for boxID %x has failed: %s", boxID, err)
+		return nil, err
+	}
+	return shards, nil
+}
+
 // Rebalance is called once we've been noticed that one or more
 // storage replicas have been added or removed from the PKI document.
 // We perform a rebalance in order to maintain redundancy of all
 // pigeonhole storage boxes in the system.
 //
-// FIXME(david): scan through all the Box IDs and determine which
+// Scan through all the Box IDs and determine which
 // shards they belong to. If this replica node is one of the shares,
 // then just copy the share to the other replica. Otherwise copy
 // the share to the two replicas.
@@ -112,38 +137,15 @@ func (s *state) Rebalance() error {
 	for it = it; it.Valid(); it.Next() {
 		key := it.Key()
 		value := it.Value()
-		data := make([]byte, value.Size())
-		copy(data, value.Data())
-		cmds := commands.NewStorageReplicaCommands(s.server.cfg.SphinxGeometry)
-		rawCmds, err := cmds.FromBytes(data)
+
+		writeCmd, err := s.replicaWriteFromBlob(value.Data())
 		if err != nil {
 			return err
-		}
-		writeCmd, ok := rawCmds.(*commands.ReplicaWrite)
-		if !ok {
-			return errors.New("invalid data retrieved from database")
 		}
 
 		boxID := fromBoxID(key.Data())
-		doc := s.server.pkiWorker.PKIDocument()
-
-		if doc == nil {
-			panic("pki doc is nil")
-		}
-
-		boxIDar := new([32]byte)
-		copy(boxIDar[:], boxID)
-		shards, err := common.GetShards(boxIDar, doc)
+		remoteShards, err := s.getRemoteShards(boxID)
 		if err != nil {
-			s.log.Errorf("ERROR GetShards for boxID %x has failed: %s", boxID, err)
-			return err
-		}
-
-		s.log.Debugf("boxID %x is associated with the following shards: %v and %v", shards[0], shards[1])
-
-		remoteShards, err := s.server.GetRemoteShards(boxIDar, doc)
-		if err != nil {
-			s.log.Errorf("ERROR GetRemoteShards for boxID %x has failed: %s", boxID, err)
 			return err
 		}
 
