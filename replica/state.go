@@ -149,14 +149,9 @@ func (s *state) Rebalance() error {
 			return err
 		}
 
-		cmd := &commands.ReplicaWrite{
-			ID:        writeCmd.ID,
-			Signature: writeCmd.Signature,
-			Payload:   writeCmd.Payload,
-		}
 		for _, shard := range remoteShards {
 			idHash := blake2b.Sum256(shard.IdentityKey)
-			s.server.connector.DispatchCommand(cmd, &idHash)
+			s.server.connector.DispatchCommand(writeCmd, &idHash)
 		}
 
 		key.Free()
