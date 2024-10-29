@@ -75,6 +75,9 @@ func (s *state) handleReplicaWrite(replicaWrite *commands.ReplicaWrite) error {
 	return s.db.Put(wo, replicaWrite.ID[:], replicaWrite.ToBytes())
 }
 
+// Rebalance is called once we've noticed that one or more storage replicas have
+// been added or removed from the PKI document.
+// We perform a rebalance in order to maintain redundancy of all pigeonhole storage boxes.
 func (s *state) Rebalance() {
 	// XXX FIXME(david): scan through all the Box IDs and determine which
 	// shards they belong to. If this replica node is one of the shares,
