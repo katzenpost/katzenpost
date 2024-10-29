@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"gopkg.in/op/go-logging.v1"
 
@@ -16,10 +17,12 @@ import (
 	nikepem "github.com/katzenpost/hpqc/nike/pem"
 
 	"github.com/katzenpost/katzenpost/core/utils"
+	"github.com/katzenpost/katzenpost/core/worker"
 )
 
 const (
-	EpochsToKeyGeneration = 4320
+	// GracePeriod is the duration after key expirey that we keep the keys.
+	GracePeriod = 3 * time.Hour
 )
 
 type EnvelopeKey struct {
@@ -99,20 +102,23 @@ func NewEnvelopeKey(scheme nike.Scheme) *EnvelopeKey {
 }
 
 type EnvelopeKeys struct {
-	sync.Mutex
+	worker.Worker
 
 	datadir string
 	log     *logging.Logger
-	keys    map[uint64]*EnvelopeKey
-	scheme  nike.Scheme
+
+	keysLock *sync.RWMutex
+	keys     map[uint64]*EnvelopeKey
+	scheme   nike.Scheme
 }
 
 func NewEnvelopeKeys(scheme nike.Scheme, log *logging.Logger, datadir string, epoch uint64) (*EnvelopeKeys, error) {
 	e := &EnvelopeKeys{
-		datadir: datadir,
-		log:     log,
-		keys:    make(map[uint64]*EnvelopeKey),
-		scheme:  scheme,
+		datadir:  datadir,
+		log:      log,
+		keys:     make(map[uint64]*EnvelopeKey),
+		keysLock: new(sync.RWMutex),
+		scheme:   scheme,
 	}
 
 	keypair, err := NewEnvelopeKeyFromFiles(datadir, scheme, epoch)
@@ -124,12 +130,53 @@ func NewEnvelopeKeys(scheme nike.Scheme, log *logging.Logger, datadir string, ep
 			return nil, err
 		}
 	}
+	e.Go(e.worker)
 	return e, nil
 }
 
+func (k *EnvelopeKeys) worker() {
+	_, _, till := ReplicaNow()
+	gctimer := time.NewTimer(till + GracePeriod)
+	defer func() {
+		k.log.Debugf("Halting EnvelopeKeys worker.")
+		gctimer.Stop()
+	}()
+
+	for {
+		var gctimerFired bool
+
+		select {
+		case <-k.HaltCh():
+			k.log.Debug("Terminating gracefully.")
+			return
+		case <-gctimer.C:
+			gctimerFired = true
+		}
+
+		if !gctimerFired && !gctimer.Stop() {
+			select {
+			case <-k.HaltCh():
+				k.log.Debug("Terminating gracefully.")
+				return
+			case <-gctimer.C:
+			}
+		}
+
+		if gctimerFired {
+			didPrune := k.Prune()
+			if didPrune {
+				k.log.Info("EnvelopeKeys GC worker pruned old keys")
+			}
+		}
+
+		_, _, till := ReplicaNow()
+		gctimer.Reset(till + GracePeriod)
+	}
+}
+
 func (k *EnvelopeKeys) Generate(replicaEpoch uint64) error {
-	k.Lock()
-	defer k.Unlock()
+	k.keysLock.Lock()
+	defer k.keysLock.Unlock()
 	keypair := NewEnvelopeKey(k.scheme)
 	err := keypair.WriteKeyFiles(k.datadir, k.scheme, replicaEpoch)
 	if err != nil {
@@ -142,8 +189,8 @@ func (k *EnvelopeKeys) Generate(replicaEpoch uint64) error {
 func (k *EnvelopeKeys) Prune() bool {
 	epoch, _, _ := ReplicaNow()
 	didPrune := false
-	k.Lock()
-	defer k.Unlock()
+	k.keysLock.Lock()
+	defer k.keysLock.Unlock()
 	for key, _ := range k.keys {
 		if key < epoch-1 {
 			k.log.Debugf("Purging expired key for epoch: %v", key)
@@ -155,8 +202,8 @@ func (k *EnvelopeKeys) Prune() bool {
 }
 
 func (k *EnvelopeKeys) GetKeypair(replicaEpoch uint64) (*EnvelopeKey, error) {
-	k.Lock()
-	defer k.Unlock()
+	k.keysLock.RLock()
+	defer k.keysLock.RUnlock()
 	keypair, ok := k.keys[replicaEpoch]
 	if !ok {
 		return nil, errors.New("key for given replica epoch doesn't exist")

@@ -310,11 +310,21 @@ func (p *PKIWorker) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 		return err
 	}
 
+	replicaEpoch, _, _ := ReplicaNow()
+	p.server.envelopeKeys.Generate(replicaEpoch + 1)
+
+	keypair, err := p.server.envelopeKeys.GetKeypair(replicaEpoch + 1)
+	if err != nil {
+		return err
+	}
 	desc := &cpki.ReplicaDescriptor{
 		Name:        p.server.cfg.Identifier,
 		IdentityKey: idkeyblob,
 		LinkKey:     linkblob,
 		Addresses:   p.descAddrMap,
+		EnvelopeKeys: map[uint64][]byte{
+			replicaEpoch + 1: keypair.PublicKey.Bytes(),
+		},
 	}
 
 	// XXX FIXME: we need a replica NIKE key to publish

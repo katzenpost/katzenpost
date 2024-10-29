@@ -128,6 +128,7 @@ func (s *Server) halt() {
 	for _, listener := range s.listeners {
 		listener.Halt()
 	}
+	s.envelopeKeys.Halt()
 }
 
 // RotateLog rotates the log file
