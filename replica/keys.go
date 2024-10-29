@@ -214,3 +214,18 @@ func (k *EnvelopeKeys) GetKeypair(replicaEpoch uint64) (*EnvelopeKey, error) {
 	}
 	return keypair, nil
 }
+
+func (k *EnvelopeKeys) EnsureKey(replicaEpoch uint64) (*EnvelopeKey, error) {
+	keypair, err := k.GetKeypair(replicaEpoch)
+	if err != nil {
+		err = k.Generate(replicaEpoch)
+		if err != nil {
+			return nil, err
+		}
+		keypair, err = k.GetKeypair(replicaEpoch)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return keypair, nil
+}
