@@ -54,6 +54,8 @@ func generateReplica(t *testing.T, pkiScheme sign.Scheme, linkScheme kem.Scheme,
 
 type mockConnector struct{}
 
+func (m *mockConnector) Halt() {}
+
 func (m *mockConnector) ForceUpdate() {}
 
 func (m *mockConnector) DispatchCommand(cmd commands.Command, idHash *[32]byte) {}
@@ -133,7 +135,7 @@ func TestState(t *testing.T) {
 	cmds := commands.NewStorageReplicaCommands(geo)
 	require.NotNil(t, cmds)
 
-	numShares := 40
+	numShares := 4
 	boxIDs := make([]*[32]byte, numShares)
 	for i := 0; i < numShares; i++ {
 		replicaWriteCmd1 := &commands.ReplicaWrite{

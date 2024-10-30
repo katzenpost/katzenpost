@@ -41,6 +41,7 @@ type GenericListener interface {
 }
 
 type GenericConnector interface {
+	Halt()
 	ForceUpdate()
 	DispatchCommand(cmd commands.Command, idHash *[32]byte)
 }
