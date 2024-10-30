@@ -221,10 +221,6 @@ func (c *incomingConn) onReplicaCommand(rawCmd commands.Command) (commands.Comma
 	case *commands.Disconnect:
 		c.log.Debugf("Received disconnect from peer.")
 		return nil, false
-	case *commands.ReplicaRead:
-		c.log.Debugf("Received ReplicaRead from peer.")
-		resp := c.handleReplicaRead(cmd)
-		return resp, true
 	case *commands.ReplicaWrite:
 		c.log.Debugf("Received ReplicaWrite from peer.")
 		resp := c.handleReplicaWrite(cmd)

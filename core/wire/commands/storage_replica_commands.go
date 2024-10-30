@@ -12,6 +12,9 @@ import (
 // NIKE scheme CTIDH1024-X25519 has 160 byte public keys
 const HybridKeySize = 160
 
+// ReplicaRead isn't used directly on the wire protocol
+// but is embedded inside the ReplicaMessage which of course
+// are sent by the couriers to the replicas.
 type ReplicaRead struct {
 	Cmds *Commands
 
@@ -38,6 +41,9 @@ func replicaReadFromBytes(b []byte, cmds *Commands) (Command, error) {
 	return c, nil
 }
 
+// ReplicaReadReply isn't used directly on the wire protocol
+// but is embedded inside the ReplicaMessageReply which of course
+// are sent by the replicas to the couriers.
 type ReplicaReadReply struct {
 	Cmds *Commands
 	Geo  *geo.Geometry
@@ -90,6 +96,10 @@ func replicaReadReplyFromBytes(b []byte, cmds *Commands) (Command, error) {
 	return c, nil
 }
 
+// ReplicaWrite has two distinct uses. Firstly, it is
+// to be used directly on the wire for replication between replicas.
+// Secondly, it can be embedded inside a ReplicaMessage which of course
+// are sent from couriers to replicas.
 type ReplicaWrite struct {
 	Cmds *Commands
 
@@ -130,6 +140,9 @@ func replicaWriteFromBytes(b []byte, cmds *Commands) (Command, error) {
 	return c, nil
 }
 
+// ReplicaWriteReply can facilitate replication between replicas as the
+// reply to the ReplicaWrite command. Otherwise it is embedded in a
+// ReplicaMessageReply and sent from replicas to couriers.
 type ReplicaWriteReply struct {
 	Cmds *Commands
 
@@ -159,7 +172,7 @@ func (c *ReplicaWriteReply) Length() int {
 	return 0
 }
 
-// ReplicaMessage used over wire protocol from Courier to Replica,
+// ReplicaMessage used over wire protocol from couriers to replicas,
 // one replica at a time.
 type ReplicaMessage struct {
 	Cmds *Commands
