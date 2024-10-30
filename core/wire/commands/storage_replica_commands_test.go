@@ -65,13 +65,13 @@ func TestReplicaRead(t *testing.T) {
 	readCmd := &ReplicaRead{
 		Cmds: cmds,
 
-		ID: id,
+		BoxID: id,
 	}
 
 	blob1 := readCmd.ToBytes()
 	readCmd2, err := cmds.FromBytes(blob1)
 	require.NoError(t, err)
-	require.Equal(t, readCmd2.(*ReplicaRead).ID[:], readCmd.ID[:])
+	require.Equal(t, readCmd2.(*ReplicaRead).BoxID[:], readCmd.BoxID[:])
 
 	blob2 := readCmd2.ToBytes()
 	require.Equal(t, blob1, blob2)
@@ -100,7 +100,7 @@ func TestReplicaReadReply(t *testing.T) {
 		Cmds: cmds,
 
 		ErrorCode: 0, // no error
-		ID:        id,
+		BoxID:     id,
 		Signature: signature,
 		Payload:   []byte(payload),
 	}
@@ -108,7 +108,7 @@ func TestReplicaReadReply(t *testing.T) {
 	blob1 := readCmd.ToBytes()
 	readCmd2, err := cmds.FromBytes(blob1)
 	require.NoError(t, err)
-	require.Equal(t, readCmd2.(*ReplicaReadReply).ID[:], readCmd.ID[:])
+	require.Equal(t, readCmd2.(*ReplicaReadReply).BoxID[:], readCmd.BoxID[:])
 	require.Equal(t, readCmd2.(*ReplicaReadReply).Signature[:], readCmd.Signature[:])
 
 	blob2 := readCmd2.ToBytes()
@@ -138,7 +138,7 @@ func TestReplicaWrite(t *testing.T) {
 	readCmd := &ReplicaWrite{
 		Cmds: cmds,
 
-		ID:        id,
+		BoxID:     id,
 		Signature: signature,
 		Payload:   []byte(payload),
 	}
@@ -146,7 +146,7 @@ func TestReplicaWrite(t *testing.T) {
 	blob1 := readCmd.ToBytes()
 	readCmd2, err := cmds.FromBytes(blob1)
 	require.NoError(t, err)
-	require.Equal(t, readCmd2.(*ReplicaWrite).ID[:], readCmd.ID[:])
+	require.Equal(t, readCmd2.(*ReplicaWrite).BoxID[:], readCmd.BoxID[:])
 	require.Equal(t, readCmd2.(*ReplicaWrite).Signature[:], readCmd.Signature[:])
 
 	blob2 := readCmd2.ToBytes()
