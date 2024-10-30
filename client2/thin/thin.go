@@ -70,9 +70,9 @@ type ThinClient struct {
 	pkidoc      *cpki.Document
 	pkidocMutex sync.RWMutex
 
-	eventSink     chan Event
-	drainStop     chan interface{}
-	drainStopOnce sync.Once
+	eventSink   chan Event
+	drainAdd    chan chan Event
+	drainRemove chan chan Event
 
 	isConnected bool
 
@@ -145,13 +145,14 @@ func NewThinClient(cfg *ThinConfig) *ThinClient {
 		panic(err)
 	}
 	return &ThinClient{
-		network:    cfg.Network,
-		address:    cfg.Address,
-		isTCP:      strings.HasPrefix(strings.ToLower(cfg.Network), "tcp"),
-		log:        logBackend.GetLogger("thinclient"),
-		logBackend: logBackend,
-		eventSink:  make(chan Event, 2),
-		drainStop:  make(chan interface{}),
+		network:     cfg.Network,
+		address:     cfg.Address,
+		isTCP:       strings.HasPrefix(strings.ToLower(cfg.Network), "tcp"),
+		log:         logBackend.GetLogger("thinclient"),
+		logBackend:  logBackend,
+		eventSink:   make(chan Event, 2),
+		drainAdd:    make(chan chan Event),
+		drainRemove: make(chan chan Event),
 	}
 }
 
@@ -219,7 +220,7 @@ func (t *ThinClient) Dial() error {
 		panic("bug: thin client protocol sequence violation")
 	}
 	t.parsePKIDoc(message2.NewPKIDocumentEvent.Payload)
-	t.Go(t.eventSinkDrain)
+	t.Go(t.eventSinkWorker)
 	t.Go(t.worker)
 	t.log.Debug("Dial end")
 	return nil
@@ -382,31 +383,49 @@ func (t *ThinClient) worker() {
 	}
 }
 
+// EventSink returns a channel that receives all Events. The channel should be closed when done.
 func (t *ThinClient) EventSink() chan Event {
-	t.stopDrain()
-	return t.eventSink
+	// add a new event sink receiver
+	ch := make(chan Event, 1)
+	t.drainAdd <- ch
+	return ch
 }
 
-func (t *ThinClient) stopDrain() {
-	t.drainStopOnce.Do(func() {
-		close(t.drainStop)
-	})
+// StopEventSink tells eventSinkWorker to stop sending events to ch
+func (t *ThinClient) StopEventSink(ch chan Event) {
+	t.drainRemove <- ch
 }
 
-// drain the eventSink until stopDrain() is called
-func (t *ThinClient) eventSinkDrain() {
-	t.log.Debug("STARTING eventSinkDrain")
-	defer t.log.Debug("STOPPING eventSinkDrain")
+// eventSinkWorker adds and removes channels receiving Events
+func (t *ThinClient) eventSinkWorker() {
+	t.log.Debug("STARTING eventSinkWorker")
+	defer t.log.Debug("STOPPING eventSinkWorker")
+	drains := make(map[chan Event]struct{}, 0)
 	for {
 		select {
 		case <-t.HaltCh():
 			// stop thread on shutdown
 			return
-		case <-t.drainStop:
-			// stop thread on drain stop
-			return
-		case <-t.eventSink:
-			continue
+		case drain := <-t.drainAdd:
+			drains[drain] = struct{}{}
+		case drain := <-t.drainRemove:
+			delete(drains, drain)
+		case event := <-t.eventSink:
+			bad := make([]chan Event, 0)
+			for drain, _ := range drains {
+				select {
+				case <-t.HaltCh():
+					return
+				case drain <- event:
+				default:
+					t.log.Errorf("BUG: removing unresponsive channel from eventSink drains")
+					bad = append(bad, drain)
+				}
+			}
+			// remove blocked drains
+			for _, drain := range bad {
+				delete(drains, drain)
+			}
 		}
 	}
 }
@@ -513,6 +532,7 @@ func (t *ThinClient) BlockingSendMessage(ctx context.Context, payload []byte, de
 	}
 	surbID := t.NewSURBID()
 	eventSink := t.EventSink()
+	defer t.StopEventSink(eventSink)
 	err := t.SendMessage(surbID, payload, destNode, destQueue)
 	if err != nil {
 		return nil, err
@@ -543,7 +563,7 @@ func (t *ThinClient) BlockingSendMessage(ctx context.Context, payload []byte, de
 			if hmac.Equal(surbID[:], v.SURBID[:]) {
 				return v.Payload, nil
 			} else {
-				return nil, errors.New("received MessageReplyEvent with unexpected SURB ID")
+				continue
 			}
 		default:
 			panic("impossible event type")
