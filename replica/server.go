@@ -140,13 +140,13 @@ func (s *Server) RotateLog() {
 	}
 }
 
-func (s *Server) HasLocalReplica(shards []*pki.ReplicaDescriptor) (bool, error) {
+func (s *Server) HasLocalReplica(shards []*pki.ReplicaDescriptor) bool {
 	for _, idKey := range shards {
 		if s.identityPublicKey.Equal(idKey) {
-			return true, nil
+			return true
 		}
 	}
-	return false, nil
+	return false
 }
 
 func (s *Server) GetRemoteShards(boxid *[32]byte, doc *pki.Document) ([]*pki.ReplicaDescriptor, error) {
