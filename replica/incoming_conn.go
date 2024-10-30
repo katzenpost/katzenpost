@@ -296,7 +296,7 @@ func (c *incomingConn) handleReplicaRead(replicaRead *commands.ReplicaRead) *com
 	}
 	return &commands.ReplicaReadReply{
 		ErrorCode: successCode,
-		ID:        resp.ID,
+		BoxID:     resp.BoxID,
 		Signature: resp.Signature,
 		Payload:   resp.Payload,
 	}
@@ -304,7 +304,7 @@ func (c *incomingConn) handleReplicaRead(replicaRead *commands.ReplicaRead) *com
 
 func (c *incomingConn) doReplication(cmd *commands.ReplicaWrite) {
 	doc := c.l.server.pkiWorker.PKIDocument()
-	descs, err := c.l.server.GetRemoteShards(cmd.ID, doc)
+	descs, err := c.l.server.GetRemoteShards(cmd.BoxID, doc)
 	if err != nil {
 		c.log.Errorf("handleReplicaMessage failed: GetShards err: %x", err)
 		panic(err)

@@ -4,7 +4,6 @@
 package replica
 
 import (
-	"crypto/hmac"
 	"errors"
 	"path/filepath"
 
@@ -50,22 +49,11 @@ func (s *state) initDB() {
 	}
 }
 
-func intoBoxID(boxID []byte) []byte {
-	return append([]byte("box"), boxID...)
-}
-
-func fromBoxID(boxID []byte) []byte {
-	if !hmac.Equal(boxID[:3], []byte("box")) {
-		panic("boxID doesn't begin with 'box'")
-	}
-	return boxID[3:]
-}
-
 func (s *state) handleReplicaRead(replicaRead *commands.ReplicaRead) (*commands.ReplicaWrite, error) {
 	ro := grocksdb.NewDefaultReadOptions()
 	defer ro.Destroy()
 
-	value, err := s.db.Get(ro, intoBoxID(replicaRead.ID[:]))
+	value, err := s.db.Get(ro, replicaRead.BoxID[:])
 	if err != nil {
 		return nil, err
 	}
@@ -89,7 +77,7 @@ func (s *state) handleReplicaWrite(replicaWrite *commands.ReplicaWrite) error {
 	wo := grocksdb.NewDefaultWriteOptions()
 	defer wo.Destroy()
 
-	return s.db.Put(wo, intoBoxID(replicaWrite.ID[:]), replicaWrite.ToBytes())
+	return s.db.Put(wo, replicaWrite.BoxID[:], replicaWrite.ToBytes())
 }
 
 func (s *state) replicaWriteFromBlob(blob []byte) (*commands.ReplicaWrite, error) {
@@ -132,18 +120,20 @@ func (s *state) Rebalance() error {
 
 	it := s.db.NewIterator(ro)
 	defer it.Close()
-	it.Seek([]byte("box"))
+	it.Seek([]byte{0})
 
 	for it = it; it.Valid(); it.Next() {
 		key := it.Key()
 		value := it.Value()
+
+		s.log.Debugf("key %v", key)
 
 		writeCmd, err := s.replicaWriteFromBlob(value.Data())
 		if err != nil {
 			return err
 		}
 
-		boxID := fromBoxID(key.Data())
+		boxID := key.Data()
 		remoteShards, err := s.getRemoteShards(boxID)
 		if err != nil {
 			return err

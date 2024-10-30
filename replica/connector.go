@@ -55,9 +55,9 @@ func (co *Connector) ForceUpdate() {
 func getBoxID(cmd commands.Command) *[32]byte {
 	switch myCmd := cmd.(type) {
 	case *commands.ReplicaRead:
-		return myCmd.ID
+		return myCmd.BoxID
 	case *commands.ReplicaWrite:
-		return myCmd.ID
+		return myCmd.BoxID
 	default:
 		panic("invalid command")
 	}

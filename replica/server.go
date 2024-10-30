@@ -25,6 +25,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/utils"
+	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"github.com/katzenpost/katzenpost/replica/common"
 	"github.com/katzenpost/katzenpost/replica/config"
 )
@@ -39,6 +40,11 @@ type GenericListener interface {
 	GetConnIdentities() (map[[constants.RecipientIDLength]byte]interface{}, error)
 }
 
+type GenericConnector interface {
+	ForceUpdate()
+	DispatchCommand(cmd commands.Command, idHash *[32]byte)
+}
+
 type Server struct {
 	sync.WaitGroup
 
@@ -47,7 +53,7 @@ type Server struct {
 	pkiWorker *PKIWorker
 	listeners []GenericListener
 	state     *state
-	connector *Connector
+	connector GenericConnector
 
 	identityPrivateKey sign.PrivateKey
 	identityPublicKey  sign.PublicKey
@@ -320,5 +326,12 @@ func New(cfg *config.Config) (*Server, error) {
 	}
 
 	isOk = true
+
+	// XXX FIXME: perform rebalance after some delay to ensure we're first fully booted up
+	err = s.state.Rebalance()
+	if err != nil {
+		s.log.Errorf("failed to rebalance shares after startup: %s", err)
+	}
+
 	return s, nil
 }

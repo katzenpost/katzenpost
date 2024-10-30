@@ -142,12 +142,29 @@ func difference(a, b map[[32]byte]*pki.ReplicaDescriptor) map[[32]byte]*pki.Repl
 	return out
 }
 
-func equal(a, b map[[32]byte]*pki.ReplicaDescriptor) bool {
-	if len(difference(a, b)) != 0 {
-		return false
+// isSubset returns true is a is a subset of b
+func isSubset(a, b map[[32]byte]*pki.ReplicaDescriptor) bool {
+	for key, _ := range a {
+		_, ok := b[key]
+		if !ok {
+			return false
+		}
 	}
-	if len(difference(b, a)) != 0 {
-		return false
+	return true
+}
+
+func equal(a, b map[[32]byte]*pki.ReplicaDescriptor) bool {
+	for key, _ := range a {
+		_, ok := b[key]
+		if !ok {
+			return false
+		}
+	}
+	for key, _ := range b {
+		_, ok := a[key]
+		if !ok {
+			return false
+		}
 	}
 	return true
 }
@@ -157,10 +174,10 @@ func (p *PKIWorker) updateReplicas(doc *pki.Document) {
 	switch {
 	case equal(p.replicas.Copy(), newReplicas):
 		// no op
-	case len(difference(p.replicas.Copy(), newReplicas)) > 0:
+	case !isSubset(p.replicas.Copy(), newReplicas):
 		// removing replica(s)
 		fallthrough
-	case len(difference(newReplicas, p.replicas.Copy())) > 0:
+	case !isSubset(newReplicas, p.replicas.Copy()):
 		// adding replica(s)
 		p.replicas.Replace(newReplicas)
 		p.server.state.Rebalance()
