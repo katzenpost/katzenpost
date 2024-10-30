@@ -117,11 +117,11 @@ func TestState(t *testing.T) {
 	}
 	s.pkiWorker.lock.Unlock()
 
-	s.pkiWorker.server = s
-	s.pkiWorker.log = s.LogBackend().GetLogger("pki")
-
 	err = s.initLogging()
 	require.NoError(t, err)
+
+	s.pkiWorker.server = s
+	s.pkiWorker.log = s.LogBackend().GetLogger("pki")
 
 	st := &state{
 		server: s,
