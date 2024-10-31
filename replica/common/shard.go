@@ -4,10 +4,13 @@
 package common
 
 import (
+	"crypto/hmac"
 	"errors"
 	"slices"
 
 	"golang.org/x/crypto/blake2b"
+
+	"github.com/katzenpost/hpqc/sign"
 
 	"github.com/katzenpost/katzenpost/core/pki"
 )
@@ -107,4 +110,23 @@ func GetShards(boxid *[32]byte, doc *pki.Document) ([]*pki.ReplicaDescriptor, er
 		}
 	}
 	return shards, nil
+}
+
+func GetRemoteShards(replicaIdPubKey sign.PublicKey, boxid *[32]byte, doc *pki.Document) ([]*pki.ReplicaDescriptor, error) {
+	shards, err := GetShards(boxid, doc)
+	if err != nil {
+		return nil, err
+	}
+	ret := make([]*pki.ReplicaDescriptor, 0)
+	for _, desc := range shards {
+		idpubkey, err := replicaIdPubKey.MarshalBinary()
+		if err != nil {
+			panic(err)
+		}
+		if hmac.Equal(desc.IdentityKey, idpubkey) {
+			continue
+		}
+		ret = append(ret, desc)
+	}
+	return ret, nil
 }

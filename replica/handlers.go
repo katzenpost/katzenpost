@@ -4,8 +4,6 @@
 package replica
 
 import (
-	"golang.org/x/crypto/blake2b"
-
 	"github.com/katzenpost/hpqc/kem/mkem"
 
 	"github.com/katzenpost/katzenpost/core/wire/commands"
@@ -93,19 +91,6 @@ func (c *incomingConn) handleReplicaRead(replicaRead *commands.ReplicaRead) *com
 		BoxID:     resp.BoxID,
 		Signature: resp.Signature,
 		Payload:   resp.Payload,
-	}
-}
-
-func (c *incomingConn) doReplication(cmd *commands.ReplicaWrite) {
-	doc := c.l.server.pkiWorker.PKIDocument()
-	descs, err := c.l.server.GetRemoteShards(cmd.BoxID, doc)
-	if err != nil {
-		c.log.Errorf("handleReplicaMessage failed: GetShards err: %x", err)
-		panic(err)
-	}
-	for _, desc := range descs {
-		idHash := blake2b.Sum256(desc.IdentityKey)
-		c.l.server.connector.DispatchCommand(cmd, &idHash)
 	}
 }
 

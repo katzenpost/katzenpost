@@ -4,7 +4,6 @@
 package replica
 
 import (
-	"crypto/hmac"
 	"errors"
 	"fmt"
 	"os"
@@ -22,11 +21,9 @@ import (
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 
 	"github.com/katzenpost/katzenpost/core/log"
-	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/utils"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
-	"github.com/katzenpost/katzenpost/replica/common"
 	"github.com/katzenpost/katzenpost/replica/config"
 )
 
@@ -145,34 +142,6 @@ func (s *Server) RotateLog() {
 	if err != nil {
 		s.fatalErrCh <- fmt.Errorf("failed to rotate log file, shutting down server")
 	}
-}
-
-func (s *Server) HasLocalReplica(shards []*pki.ReplicaDescriptor) bool {
-	for _, idKey := range shards {
-		if s.identityPublicKey.Equal(idKey) {
-			return true
-		}
-	}
-	return false
-}
-
-func (s *Server) GetRemoteShards(boxid *[32]byte, doc *pki.Document) ([]*pki.ReplicaDescriptor, error) {
-	shards, err := common.GetShards(boxid, doc)
-	if err != nil {
-		return nil, err
-	}
-	ret := make([]*pki.ReplicaDescriptor, 0)
-	for _, desc := range shards {
-		idpubkey, err := s.identityPublicKey.MarshalBinary()
-		if err != nil {
-			panic(err)
-		}
-		if hmac.Equal(desc.IdentityKey, idpubkey) {
-			continue
-		}
-		ret = append(ret, desc)
-	}
-	return ret, nil
 }
 
 // New returns a new Server instance parameterized with the specific

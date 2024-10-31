@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/crypto/blake2b"
 	"gopkg.in/op/go-logging.v1"
 
 	"github.com/katzenpost/hpqc/hash"
@@ -17,7 +18,11 @@ import (
 	"github.com/katzenpost/katzenpost/core/utils"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"github.com/katzenpost/katzenpost/core/worker"
+	"github.com/katzenpost/katzenpost/replica/common"
 )
+
+// XXX FIXME TODO(david): make this a config param?
+const replicationQueueLength = 100
 
 type Connector struct {
 	sync.RWMutex
@@ -28,6 +33,8 @@ type Connector struct {
 
 	conns         map[[constants.NodeIDLength]byte]*outgoingConn
 	forceUpdateCh chan interface{}
+
+	replicationCh chan *commands.ReplicaWrite
 
 	closeAllCh chan interface{}
 	closeAllWg sync.WaitGroup
@@ -80,6 +87,31 @@ func (co *Connector) DispatchCommand(cmd commands.Command, idHash *[32]byte) {
 	c.dispatchCommand(cmd)
 }
 
+func (co *Connector) doReplication(cmd *commands.ReplicaWrite) {
+	doc := co.server.pkiWorker.PKIDocument()
+	descs, err := common.GetRemoteShards(co.server.identityPublicKey, cmd.BoxID, doc)
+	if err != nil {
+		co.log.Errorf("handleReplicaMessage failed: GetShards err: %x", err)
+		panic(err)
+	}
+	for _, desc := range descs {
+		idHash := blake2b.Sum256(desc.IdentityKey)
+		co.server.connector.DispatchCommand(cmd, &idHash)
+	}
+}
+
+func (co *Connector) replicationWorker() {
+	for {
+		select {
+		case <-co.HaltCh():
+			co.log.Debugf("Replication worker terminating gracefully.")
+			return
+		case writeCmd := <-co.replicationCh:
+			co.doReplication(writeCmd)
+		}
+	}
+}
+
 func (co *Connector) worker() {
 	var (
 		initialSpawnDelay = epochtime.Period / 64
@@ -93,7 +125,7 @@ func (co *Connector) worker() {
 		timerFired := false
 		select {
 		case <-co.HaltCh():
-			co.log.Debugf("Terminating gracefully.")
+			co.log.Debugf("Connector worker terminating gracefully.")
 			return
 		case <-co.forceUpdateCh:
 		case <-timer.C:
@@ -184,10 +216,12 @@ func newConnector(server *Server) *Connector {
 		server:        server,
 		log:           server.LogBackend().GetLogger("Connector"),
 		conns:         make(map[[constants.NodeIDLength]byte]*outgoingConn),
+		replicationCh: make(chan *commands.ReplicaWrite, replicationQueueLength),
 		forceUpdateCh: make(chan interface{}, 1), // See forceUpdate().
 		closeAllCh:    make(chan interface{}),
 	}
 
 	co.Go(co.worker)
+	co.Go(co.replicationWorker)
 	return co
 }
