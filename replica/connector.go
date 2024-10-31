@@ -87,6 +87,10 @@ func (co *Connector) DispatchCommand(cmd commands.Command, idHash *[32]byte) {
 	c.dispatchCommand(cmd)
 }
 
+func (co *Connector) DispatchReplication(cmd *commands.ReplicaWrite) {
+	co.replicationCh <- cmd
+}
+
 func (co *Connector) doReplication(cmd *commands.ReplicaWrite) {
 	doc := co.server.pkiWorker.PKIDocument()
 	descs, err := common.GetRemoteShards(co.server.identityPublicKey, cmd.BoxID, doc)
@@ -96,7 +100,7 @@ func (co *Connector) doReplication(cmd *commands.ReplicaWrite) {
 	}
 	for _, desc := range descs {
 		idHash := blake2b.Sum256(desc.IdentityKey)
-		co.server.connector.DispatchCommand(cmd, &idHash)
+		co.DispatchCommand(cmd, &idHash)
 	}
 }
 

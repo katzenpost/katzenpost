@@ -13,6 +13,7 @@ import (
 
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
+	"github.com/katzenpost/katzenpost/replica/common"
 )
 
 type state struct {
@@ -97,7 +98,7 @@ func (s *state) getRemoteShards(boxID []byte) ([]*pki.ReplicaDescriptor, error) 
 	doc := s.server.pkiWorker.PKIDocument()
 	boxIDar := new([32]byte)
 	copy(boxIDar[:], boxID)
-	shards, err := s.server.GetRemoteShards(boxIDar, doc)
+	shards, err := common.GetRemoteShards(s.server.identityPublicKey, boxIDar, doc)
 	if err != nil {
 		s.log.Errorf("ERROR GetShards for boxID %x has failed: %s", boxID, err)
 		return nil, err

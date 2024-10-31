@@ -67,8 +67,9 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 	case *commands.ReplicaRead:
 		return c.handleReplicaRead(myCmd)
 	case *commands.ReplicaWrite:
-		defer c.doReplication(myCmd)
-		return c.handleReplicaWrite(myCmd)
+		c.handleReplicaWrite(myCmd)
+		c.l.server.connector.DispatchReplication(myCmd)
+		return nil
 	default:
 		c.log.Error("handleReplicaMessage failed: invalid request was decrypted")
 		return nil
