@@ -21,6 +21,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
+	"github.com/katzenpost/katzenpost/replica/common"
 	"github.com/katzenpost/katzenpost/replica/config"
 )
 
@@ -132,7 +133,7 @@ func TestGetRemoteShards(t *testing.T) {
 	_, err = rand.Reader.Read(boxid[:])
 	require.NoError(t, err)
 
-	shards, err := s.GetRemoteShards(boxid, doc)
+	shards, err := common.GetRemoteShards(s.identityPublicKey, boxid, doc)
 	require.NoError(t, err)
 
 	t.Logf("SHARDS: %v", shards)

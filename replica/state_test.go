@@ -58,6 +58,8 @@ func (m *mockConnector) Halt() {}
 
 func (m *mockConnector) ForceUpdate() {}
 
+func (m *mockConnector) DispatchReplication(cmd *commands.ReplicaWrite) {}
+
 func (m *mockConnector) DispatchCommand(cmd commands.Command, idHash *[32]byte) {}
 
 func TestState(t *testing.T) {
