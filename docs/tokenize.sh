@@ -48,15 +48,19 @@ mv "${HOME}/.p2-temp/org.eclipse.equinox.p2.engine/profileRegistry/_home_${USER}
 
 echo "* removing history directory, if any"
 
+
+
 rm -r $HOME/Echomix-workspace-temp/.metadata/.plugins/org.eclipse.core.resources/.history/
 
 echo "* tarring, zipping"
 
-tar -czf $HOME/collaborative_eclipse.tar.gz $HOME/eclipse-temp $HOME/.p2-temp $HOME/Echomix-workspace-temp
+cd
+
+tar -czf collaborative_eclipse.tar.gz eclipse-temp .p2-temp Echomix-workspace-temp
 
 echo "* cleaning up temp files"
 
-rm -r $HOME/eclipse-temp $HOME/.p2-temp $HOME/Echomix-workspace-temp
+rm -r eclipse-temp .p2-temp Echomix-workspace-temp
 
 echo
 echo "DONE! Compressed archive collaborative_eclipse.tar.gz is ready for expost."
