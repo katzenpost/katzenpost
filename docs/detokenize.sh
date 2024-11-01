@@ -49,28 +49,40 @@ exit 1
 
 fi
 
-gunzip -dc $HOME/collaborative_eclipse.tar.gz | tar xvf -
+echo "* extracting archive"
+
+gunzip -dc ~/collaborative_eclipse.tar.gz | tar xvf -
 
 # First set the git path
 
-find $HOME/Echomix-workspace-temp/.metadata/.plugins/org.eclipse.core.runtime/.settings/org.eclipse.egit.core.prefs -type f -exec sed -i "s|AAAtokenZZZ|${HOME}/${GITPATH}/|g" {} \;
-find $HOME/Echomix-workspace-temp/.metadata/.plugins/org.eclipse.ui.ide/dialog_settings.xml -type f -exec sed -i "s|AAAtokenZZZ|${HOME}/${GITPATH}/|g" {} \;
+echo "* setting git path"
+
+find ~/Echomix-workspace-temp/.metadata/.plugins/org.eclipse.core.runtime/.settings/org.eclipse.egit.core.prefs -type f -exec sed -i "s|AAAtokenZZZ|${HOME}/${GITPATH}/|g" {} \;
+find ~/Echomix-workspace-temp/.metadata/.plugins/org.eclipse.ui.ide/dialog_settings.xml -type f -exec sed -i "s|AAAtokenZZZ|${HOME}/${GITPATH}/|g" {} \;
 
 # /home/$USER (file content)
 
-find $HOME/eclipse-temp -type f -exec sed -i "s|\/home\/AAAtokenZZZ|${HOME}|g" {} \;
-find $HOME/.p2-temp -type f -exec sed -i "s|\/home\/AAAtokenZZZ|${HOME}|g" {} \;
-find $HOME/Echomix-workspace-temp -type f -exec sed -i "s|\/home\/AAAtokenZZZ|${HOME}|g" {} \;
+echo "* detokenizing file content"
+
+find ~/eclipse-temp -type f -exec sed -i "s|\/home\/AAAtokenZZZ|${HOME}|g" {} \;
+find ~/.p2-temp -type f -exec sed -i "s|\/home\/AAAtokenZZZ|${HOME}|g" {} \;
+find ~/Echomix-workspace-temp -type f -exec sed -i "s|\/home\/AAAtokenZZZ|${HOME}|g" {} \;
 
 # _home_$USER (file content)
 
-find $HOME/eclipse-temp -type f -exec sed -i "s|_home_AAAtokenZZZ|_home_${USER}|g" {} \;
-find $HOME/.p2-temp -type f -exec sed -i "s|_home_AAAtokenZZZ|_home_${USER}|g" {} \;
+find ~/eclipse-temp -type f -exec sed -i "s|_home_AAAtokenZZZ|_home_${USER}|g" {} \;
+find ~/.p2-temp -type f -exec sed -i "s|_home_AAAtokenZZZ|_home_${USER}|g" {} \;
+
+echo "* detokenizing directory names"
 
 # _home_$USER (directory names)
 
 mv "${HOME}/.p2-temp/org.eclipse.equinox.p2.engine/profileRegistry/_home_AAAtokenZZZ_eclipse_~_eclipse_java-2024-09_eclipse.profile" "${HOME}/.p2-temp/org.eclipse.equinox.p2.engine/profileRegistry/_home_${USER}_eclipse_~_eclipse_java-2024-09_eclipse.profile"
 mv "${HOME}/.p2-temp/org.eclipse.equinox.p2.engine/profileRegistry/_home_AAAtokenZZZ_eclipse_java-2024-09_eclipse.profile" "${HOME}/.p2-temp/org.eclipse.equinox.p2.engine/profileRegistry/_home_${USER}_eclipse_java-2024-09_eclipse.profile"
+
+
+
+
 
 mv $HOME/eclipse-temp $HOME/eclipse
 mv $HOME/.p2-temp $HOME/.p2
