@@ -70,25 +70,35 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 	switch myCmd := myCmd.(type) {
 	case *commands.ReplicaRead:
 		replyPayload := c.handleReplicaRead(myCmd).ToBytes()
+		envelopeHash := blake2b.Sum256(replicaMessage.SenderEPubKey[:])
 		senderpubkey, err := nikeScheme.UnmarshalBinaryPublicKey(replicaMessage.SenderEPubKey[:])
 		if err != nil {
 			c.log.Errorf("handleReplicaMessage failed to unmarshal SenderEPubKey: %s", err)
-			return nil
+			return &commands.ReplicaMessageReply{
+				Cmds:          commands.NewStorageReplicaCommands(c.geo),
+				ErrorCode:     1, // One means failure.
+				EnvelopeHash:  &envelopeHash,
+				EnvelopeReply: []byte{},
+			}
 		}
 		keypair, err := c.l.server.envelopeKeys.GetKeypair(replicaEpoch)
 		if err != nil {
 			c.log.Errorf("handleReplicaMessage failed to get envelope keypair: %s", err)
-			return nil
+			return &commands.ReplicaMessageReply{
+				Cmds:          commands.NewStorageReplicaCommands(c.geo),
+				ErrorCode:     1, // One means failure.
+				EnvelopeHash:  &envelopeHash,
+				EnvelopeReply: []byte{},
+			}
 		}
 		envelopeReply := scheme.EnvelopeReply(keypair.PrivateKey, senderpubkey, replyPayload)
-		envelopeHash := blake2b.Sum256(replicaMessage.SenderEPubKey[:])
-		reply := &commands.ReplicaMessageReply{
+
+		return &commands.ReplicaMessageReply{
 			Cmds:          commands.NewStorageReplicaCommands(c.geo),
 			ErrorCode:     0, // Zero means success.
 			EnvelopeHash:  &envelopeHash,
 			EnvelopeReply: envelopeReply,
 		}
-		return reply
 	case *commands.ReplicaWrite:
 		c.handleReplicaWrite(myCmd)
 		c.l.server.connector.DispatchReplication(myCmd)
