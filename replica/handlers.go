@@ -4,7 +4,10 @@
 package replica
 
 import (
+	"golang.org/x/crypto/blake2b"
+
 	"github.com/katzenpost/hpqc/kem/mkem"
+	"github.com/katzenpost/hpqc/nike/schemes"
 
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 )
@@ -33,7 +36,8 @@ func (c *incomingConn) onReplicaCommand(rawCmd commands.Command) (commands.Comma
 }
 
 func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMessage) commands.Command {
-	scheme := mkem.NewScheme()
+	nikeScheme := schemes.ByName(c.l.server.cfg.ReplicaNIKEScheme)
+	scheme := mkem.NewScheme(nikeScheme)
 	ct, err := mkem.CiphertextFromBytes(scheme, replicaMessage.Ciphertext)
 	if err != nil {
 		c.log.Errorf("handleReplicaMessage CiphertextFromBytes failed: %s", err)
@@ -54,7 +58,7 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 		}
 		return errReply
 	}
-	cmds := commands.NewStorageReplicaCommands(c.l.server.cfg.SphinxGeometry)
+	cmds := commands.NewStorageReplicaCommands(c.geo)
 	myCmd, err := cmds.FromBytes(requestRaw)
 	if err != nil {
 		c.log.Errorf("handleReplicaMessage Decapsulate failed: %s", err)
@@ -65,7 +69,26 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 	}
 	switch myCmd := myCmd.(type) {
 	case *commands.ReplicaRead:
-		return c.handleReplicaRead(myCmd)
+		replyPayload := c.handleReplicaRead(myCmd).ToBytes()
+		senderpubkey, err := nikeScheme.UnmarshalBinaryPublicKey(replicaMessage.SenderEPubKey[:])
+		if err != nil {
+			c.log.Errorf("handleReplicaMessage failed to unmarshal SenderEPubKey: %s", err)
+			return nil
+		}
+		keypair, err := c.l.server.envelopeKeys.GetKeypair(replicaEpoch)
+		if err != nil {
+			c.log.Errorf("handleReplicaMessage failed to get envelope keypair: %s", err)
+			return nil
+		}
+		envelopeReply := scheme.EnvelopeReply(keypair.PrivateKey, senderpubkey, replyPayload)
+		envelopeHash := blake2b.Sum256(replicaMessage.SenderEPubKey[:])
+		reply := &commands.ReplicaMessageReply{
+			Cmds:          commands.NewStorageReplicaCommands(c.geo),
+			ErrorCode:     0, // Zero means success.
+			EnvelopeHash:  &envelopeHash,
+			EnvelopeReply: envelopeReply,
+		}
+		return reply
 	case *commands.ReplicaWrite:
 		c.handleReplicaWrite(myCmd)
 		c.l.server.connector.DispatchReplication(myCmd)
@@ -88,6 +111,8 @@ func (c *incomingConn) handleReplicaRead(replicaRead *commands.ReplicaRead) *com
 		}
 	}
 	return &commands.ReplicaReadReply{
+		Cmds:      commands.NewStorageReplicaCommands(c.geo),
+		Geo:       c.geo,
 		ErrorCode: successCode,
 		BoxID:     resp.BoxID,
 		Signature: resp.Signature,
