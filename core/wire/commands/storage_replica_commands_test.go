@@ -7,6 +7,7 @@ import (
 
 	ecdh "github.com/katzenpost/hpqc/nike/x25519"
 	"github.com/katzenpost/hpqc/rand"
+	"github.com/katzenpost/hpqc/sign/schemes"
 
 	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
@@ -184,11 +185,8 @@ func TestReplicaWriteReply(t *testing.T) {
 }
 
 func TestPostReplicaDescriptor(t *testing.T) {
-	nike := ecdh.Scheme(rand.Reader)
-	forwardPayloadLength := 1234
-	nrHops := 5
-	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
-	cmds := NewStorageReplicaCommands(geo)
+	pkiSignatureScheme := schemes.ByName("ed25519")
+	cmds := NewPKICommands(pkiSignatureScheme)
 
 	d := PostReplicaDescriptor{
 		Epoch:   123,

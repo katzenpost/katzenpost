@@ -47,8 +47,11 @@ const (
 	// used by Pigeonhole Storage Replicas when talking amonst themselves
 	replicaWrite      commandID = 12
 	replicaWriteReply commandID = 13
-	replicaRead       commandID = 14
-	replicaReadReply  commandID = 15
+
+	// these commands are only used encapsulated within
+	// replicaMessage and replicaMessageReply respectively
+	replicaRead      commandID = 14
+	replicaReadReply commandID = 15
 
 	// used by old client
 	retreiveMessage commandID = 16

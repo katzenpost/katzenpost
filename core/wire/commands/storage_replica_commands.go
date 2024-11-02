@@ -43,7 +43,9 @@ func replicaReadFromBytes(b []byte, cmds *Commands) (Command, error) {
 
 // ReplicaReadReply isn't used directly on the wire protocol
 // but is embedded inside the ReplicaMessageReply which of course
-// are sent by the replicas to the couriers.
+// are sent by the replicas to the couriers. Therefore the
+// ReplicaReadReply command is never padded because it is always
+// encapsulated by the ReplicaMessageReply which is padded.
 type ReplicaReadReply struct {
 	Cmds *Commands
 	Geo  *geo.Geometry
@@ -60,15 +62,18 @@ func (c *ReplicaReadReply) ToBytes() []byte {
 		idLen        = 32
 		sigLen       = 32
 	)
+	length := errorCodeLen + idLen + sigLen + c.Geo.PacketLength
 	out := make([]byte, cmdOverhead, cmdOverhead+errorCodeLen+idLen+sigLen+len(c.Payload))
 	out[0] = byte(replicaReadReply)
-	binary.BigEndian.PutUint32(out[2:6], uint32(c.Length()-cmdOverhead))
+	binary.BigEndian.PutUint32(out[2:6], uint32(length))
 	out = append(out, c.ErrorCode)
 	out = append(out, c.BoxID[:]...)
 	out = append(out, c.Signature[:]...)
-	out = append(out, c.Payload...)
+	payload := make([]byte, c.Geo.PacketLength)
+	copy(payload, c.Payload)
+	out = append(out, payload...)
 
-	return c.Cmds.padToMaxCommandSize(out, true)
+	return out
 }
 
 func (c *ReplicaReadReply) Length() int {
@@ -79,7 +84,8 @@ func (c *ReplicaReadReply) Length() int {
 		signatureSize = 32
 	)
 	// XXX replace c.Geo.PacketLength with the precise payload size
-	return cmdOverhead + errorCodeLen + idLen + sigLen + signatureSize + c.Geo.PacketLength
+	//return cmdOverhead + errorCodeLen + idLen + sigLen + signatureSize + c.Geo.PacketLength
+	return 0
 }
 
 func replicaReadReplyFromBytes(b []byte, cmds *Commands) (Command, error) {
@@ -258,5 +264,12 @@ func replicaMessageReplyFromBytes(b []byte) (Command, error) {
 }
 
 func (c *ReplicaMessageReply) Length() int {
-	return 0
+	const (
+		errorCodeLen  = 1
+		idLen         = 32
+		sigLen        = 32
+		signatureSize = 32
+	)
+	replicaReadReplyLength := cmdOverhead + errorCodeLen + idLen + sigLen + signatureSize + c.Cmds.geo.PacketLength
+	return cmdOverhead + 1 + 32 + replicaReadReplyLength
 }

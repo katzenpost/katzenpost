@@ -94,13 +94,22 @@ func NewStorageReplicaCommands(geo *geo.Geometry) *Commands {
 			DEK:           &[32]byte{},
 			Ciphertext:    payload,
 		},
-		&ReplicaMessageReply{},
-		&ReplicaRead{},
-		&ReplicaReadReply{
-			Geo: geo,
+		&ReplicaMessageReply{
+			Cmds: c,
 		},
-		&ReplicaWrite{},
-		&ReplicaWriteReply{},
+		&ReplicaRead{
+			Cmds: c,
+		},
+		&ReplicaReadReply{
+			Cmds: c,
+			Geo:  geo,
+		},
+		&ReplicaWrite{
+			Cmds: c,
+		},
+		&ReplicaWriteReply{
+			Cmds: c,
+		},
 	}
 	c.clientToServerCommands = c.serverToClientCommands
 	c.shouldPad = true
@@ -118,8 +127,8 @@ func NewPKICommands(pkiSignatureScheme sign.Scheme) *Commands {
 		serverToClientCommands: nil,
 		shouldPad:              false,
 	}
-	c.maxMessageLenServerToClient = c.calcMaxMessageLenServerToClient()
-	c.maxMessageLenClientToServer = c.calcMaxMessageLenClientToServer()
+	c.maxMessageLenServerToClient = 0
+	c.maxMessageLenClientToServer = 0
 	return c
 }
 
@@ -150,6 +159,9 @@ func (c *Commands) padToMaxCommandSize(data []byte, isUpstream bool) []byte {
 		maxMessageLen = c.maxMessageLenClientToServer
 	} else {
 		maxMessageLen = c.maxMessageLenServerToClient
+	}
+	if maxMessageLen == 0 {
+		return data
 	}
 	paddingSize := maxMessageLen - len(data)
 	if paddingSize <= 0 {
