@@ -1,35 +1,48 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<?xml-model href="http://docbook.org/xml/5.2/rng/docbook.rng" schematypens="http://relaxng.org/ns/structure/1.0"?>
+<?xml version="1.0" encoding="UTF-8" ?> 
 
-<!--A DOCTYPE declaration declaring a DTD is not need for DocBook 5.x, which uses RelaxNG and  Schematron instead. 
-    It is used here as a container for entity declarations.-->
-
-<!DOCTYPE chapter 
+<!DOCTYPE chapter PUBLIC "-//OASIS//DTD DocBook XML V4.5//EN" 
+   "http://www.oasis-open.org/docbook/xml/4.5/docbookx.dtd"    
 [
-    <!ENTITY % shared-content SYSTEM "shared-content.ent">
+   <!ENTITY % shared-content SYSTEM "includes/shared-content.ent">
     %shared-content;
-]>
+ 
+    <!ELEMENT xi:include (xi:fallback?) > 
+    <!ATTLIST xi:include 
+        xmlns:xi CDATA #FIXED "http://www.w3.org/2001/XInclude" 
+    href CDATA #REQUIRED 
+    parse (xml|text) "xml" 
+    xpointer CDATA #IMPLIED 
+    encoding CDATA #IMPLIED 
+    accept CDATA #IMPLIED 
+    accept-charset CDATA #IMPLIED 
+    accept-language CDATA #IMPLIED > 
+    <!ELEMENT xi:fallback ANY > 
+    <!ATTLIST xi:fallback 
+        xmlns:xi CDATA #FIXED "http://www.w3.org/2001/XInclude" > 
+    <!ENTITY % local.preface.class "| xi:include"> 
+    <!ENTITY % local.part.class "| xi:include"> 
+    <!ENTITY % local.chapter.class "| xi:include"> 
+    <!ENTITY % local.divcomponent.mix "| xi:include"> 
+    <!ENTITY % local.para.char.mix "| xi:include"> 
+    <!ENTITY % local.info.class "| xi:include"> 
+    <!ENTITY % local.common.attrib "xml:base CDATA #IMPLIED" > 
+]> 
 
-<chapter xmlns="http://docbook.org/ns/docbook"
-    xmlns:xlink="http://www.w3.org/1999/xlink" 
-    version="5.1"
-    xml:id="container">
-    <title xml:id="container.title">Using the &program_name; Docker test network</title>    
+<chapter id="container">
+    <title id="container.title">Using the &program_name; Docker test network</title>    
     
-    <para>&program_name; provides a ready-to-deploy <link
-            xlink:href="https://github.com/katzenpost/katzenpost/tree/main/docker">Docker
-            image</link> for developers who need a non-production test environment for developing
+    <para>&program_name; provides a ready-to-deploy Docker
+            image for developers who need a non-production test environment for developing
         and testing client applications. By running this image on a single computer, you avoid the
-        need to build and manage a complex multi-node mix net. The image can also be run using <link
-            xlink:href="https://podman.io/">Podman</link></para>
+        need to build and manage a complex multi-node mix net. The image can also be run using <ulink url="https://podman.io/">Podman</ulink></para>
     <para>The test mix network includes the following components:</para>
     <itemizedlist>
         <listitem>
-            <para>Three directory authority (<link
-                xlink:href="https://katzenpost.network/docs/specs/pki/">PKI</link>) nodes</para>
+            <para>Three directory authority (<ulink
+                url="https://katzenpost.network/docs/specs/pki/">PKI</ulink>) nodes</para>
         </listitem>
         <listitem>
-            <para>Six <link xlink:href="https://katzenpost.network/docs/specs/mixnet/">mix</link> nodes,
+            <para>Six <ulink url="https://katzenpost.network/docs/specs/mixnet/">mix</ulink> nodes,
                 including one node serving also as both gateway and service provider</para>
         </listitem>
         <listitem>
@@ -37,29 +50,29 @@
         </listitem>
     </itemizedlist>
     
-    <section xml:id="requirements">         
-        <title xml:id="requirements.title">Requirements</title>
+    <section id="requirements">         
+        <title id="requirements.title">Requirements</title>
         <para>Before running the &program_name; docker image, make sure that the
             following<?oxy_comment_start author="dwrob" timestamp="20240607T121424-0700" comment="Add minimum hardware specs?"?>
             software<?oxy_comment_end?> is installed. </para>
         <itemizedlist>
             <listitem>
-                <para>A <link xlink:href="https://debian.org">Debian GNU Linux</link> or <link
-                    xlink:href="https://ubuntu.com">Ubuntu</link> system</para>
+                <para>A <ulink url="https://debian.org">Debian GNU Linux</ulink> or <ulink
+                    url="https://ubuntu.com">Ubuntu</ulink> system</para>
             </listitem>
             <listitem>
-                <para><link xlink:href="https://git-scm.com/">Git</link></para>
+                <para><ulink url="https://git-scm.com/">Git</ulink></para>
             </listitem>
             <listitem>
-                <para><link xlink:href="https://go.dev/">Go</link></para>
+                <para><ulink url="https://go.dev/">Go</ulink></para>
             </listitem>
             <listitem>
-                <para><link xlink:href="https://www.gnu.org/software/make/">GNU Make</link></para>
+                <para><ulink url="https://www.gnu.org/software/make/">GNU Make</ulink></para>
             </listitem>
             <listitem>
-                <para><link xlink:href="https://www.docker.com">Docker</link>, <link
-                    xlink:href="https://docs.docker.com/compose/">Docker Compose</link>, and
-                    (optionally) <link xlink:href="https://podman.io">Podman</link></para>
+                <para><ulink url="https://www.docker.com">Docker</ulink>, <ulink
+                    url="https://docs.docker.com/compose/">Docker Compose</ulink>, and
+                    (optionally) <ulink url="https://podman.io">Podman</ulink></para>
                 <note>
                     <para>If both Docker and Podman are present on your system, &program_name; uses
                         Podman. Podman is a drop-in daemonless equivalent to Docker that does not
@@ -73,14 +86,14 @@
         <programlisting><prompt># </prompt><command>apt update</command>
             <prompt># </prompt><command>apt install git golang make docker docker-compose podman</command></programlisting>       
     </section>   
-    <section xml:id="install_kp">
-        <title xml:id="install_kp.title">Preparing to run the container image</title>
+    <section id="install_kp">
+        <title id="install_kp.title">Preparing to run the container image</title>
         <para>Complete the following procedure to obtain, build, and deploy the &program_name; test
             network. </para>
         <procedure>
             <step>
-                <para>Install the &program_name; code repository, hosted at <link
-                        xlink:href="https://github.com/katzenpost"/>. The main &program_name;
+                <para>Install the &program_name; code repository, hosted at <ulink
+                    url="https://github.com/katzenpost"/>. The main &program_name;
                     repository contains code for the server components as well as the docker image.
                     Clone the repository with the following command (your directory location may
                     vary):</para>
@@ -115,8 +128,8 @@
             </step>
         </procedure>        
     </section>           
-    <section xml:id="basic-ops">
-        <title xml:id="basic-ops.title">Operating the test mixnet</title>
+    <section id="basic-ops">
+        <title id="basic-ops.title">Operating the test mixnet</title>
         <para>Navigate to <filename>katzenpost/docker</filename>. The <filename>Makefile</filename>
             contains target operations to create, manage, and test the self-contained &program_name;
             container network. To invoke a target, run a command with the using the following
@@ -245,8 +258,8 @@
                 </tbody>
             </tgroup><?oxy_custom_end?>
         </table>
-        <section xml:id="start-mixnet">
-            <title xml:id="start-mixnet.title">Starting and monitoring the mixnet</title>
+        <section id="start-mixnet">
+            <title id="start-mixnet.title">Starting and monitoring the mixnet</title>
             <para>Either of two command targets, <command>run</command> and
                 <command>start</command>, can be used to start the mix network. The first They
                 differ only in that <command>start</command> quickly detaches and runs the network
@@ -303,8 +316,8 @@
                     ...</programlisting>
             </para>
         </section>
-        <section xml:id="test-mixnet">
-            <title xml:id="test-mixnet.title">Testing the mixnet</title>
+        <section id="test-mixnet">
+            <title id="test-mixnet.title">Testing the mixnet</title>
             <para>At this point, you should have a locally running mix network. You can test whether
                 it is working correctly by using <command>ping</command>, which launches a packet
                 into the network and watches for a successful reply. Run the following
@@ -329,8 +342,8 @@
                     <command>ping</command>.</para>
             </note>
         </section>
-        <section xml:id="shutdown-mixnet">
-            <title xml:id="shutdown-mixnet.title">Shutting down the mixnet</title>
+        <section id="shutdown-mixnet">
+            <title id="shutdown-mixnet.title">Shutting down the mixnet</title>
             <para>The mix network continues to run in the terminal where you started it until you
                 issue a <command>Ctrl-C</command> key sequence, or until you issue the following
                 command in another terminal:</para>
@@ -338,8 +351,8 @@
             <para>When you stop the network, the binaries and data are left in place. This allows
                 for a quick restart.</para>
         </section>
-        <section xml:id="uninstall-mixnet">
-            <title xml:id="uninstall-mixnet.title">Uninstalling and cleaning up</title>
+        <section id="uninstall-mixnet">
+            <title id="uninstall-mixnet.title">Uninstalling and cleaning up</title>
             <para>Several command targets can be used to uninstall the Docker image and restore your
                 system to a clean state. The following examples demonstrate the commands and their
                 output.</para>
@@ -437,15 +450,15 @@
                 generates output as follows:</para>
         </section>
     </section>
-    <section xml:id="topology">
-        <title xml:id="topology.title">Network components and topology</title>
+    <section id="topology">
+        <title id="topology.title">Network components and topology</title>
         <para>There needs to be an interpretation of this diagram. including the ways that the
             testnet differs from production network.</para>
         <figure>
             <title>Test network topology</title>
             <mediaobject>
                 <imageobject>
-                    <imagedata fileref="resources/katzenpost-docker-net-4.png"  scale="75"/>
+                    <imagedata fileref="pix/katzenpost-docker-net-4.png"  scale="75"/>
                 </imageobject>
             </mediaobject>
         </figure>
@@ -546,7 +559,7 @@
                             <para>30006 </para>
                         </entry>
                         <entry>
-                            <para>✓</para>
+                            <para>yes</para>
                         </entry>
                     </row>
                     <row>

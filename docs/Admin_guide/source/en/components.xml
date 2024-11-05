@@ -1,21 +1,35 @@
-<!--<?xml version="1.0" encoding="UTF-8"?>
-<?xml-model href="http://docbook.org/xml/5.2/rng/docbook.rng" schematypens="http://relaxng.org/ns/structure/1.0"?>
-<?xml-model href="http://docbook.org/xml/5.2/sch/docbook.sch" type="application/xml" schematypens="http://purl.oclc.org/dsdl/schematron"?>
--->
+<?xml version="1.0" encoding="UTF-8"?>
 
-<?xml-model href="http://docbook.org/xml/5.1/rng/docbook.rng" schematypens="http://relaxng.org/ns/structure/1.0"?>
-
-<!--A DOCTYPE declaration declaring a DTD is not need for DocBook 5.x, which uses RelaxNG and  Schematron instead. It is used here as a container for entity declarations.-->
-
-<!DOCTYPE chapter 
+<!DOCTYPE chapter PUBLIC "-//OASIS//DTD DocBook XML V4.5//EN" 
+   "http://www.oasis-open.org/docbook/xml/4.5/docbookx.dtd"    
 [
-    <!ENTITY % shared-content SYSTEM "shared-content.ent">
+   <!ENTITY % shared-content SYSTEM "includes/shared-content.ent">
     %shared-content;
-]>
-
-<chapter xmlns="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink"
-    version="5.1" xml:id="components">
-    <title xml:id="components.title">Components of the &program_name; mixnet</title>
+ 
+    <!ELEMENT xi:include (xi:fallback?) > 
+    <!ATTLIST xi:include 
+        xmlns:xi CDATA #FIXED "http://www.w3.org/2001/XInclude" 
+    href CDATA #REQUIRED 
+    parse (xml|text) "xml" 
+    xpointer CDATA #IMPLIED 
+    encoding CDATA #IMPLIED 
+    accept CDATA #IMPLIED 
+    accept-charset CDATA #IMPLIED 
+    accept-language CDATA #IMPLIED > 
+    <!ELEMENT xi:fallback ANY > 
+    <!ATTLIST xi:fallback 
+        xmlns:xi CDATA #FIXED "http://www.w3.org/2001/XInclude" > 
+    <!ENTITY % local.preface.class "| xi:include"> 
+    <!ENTITY % local.part.class "| xi:include"> 
+    <!ENTITY % local.chapter.class "| xi:include"> 
+    <!ENTITY % local.divcomponent.mix "| xi:include"> 
+    <!ENTITY % local.para.char.mix "| xi:include"> 
+    <!ENTITY % local.info.class "| xi:include"> 
+    <!ENTITY % local.common.attrib "xml:base CDATA #IMPLIED" > 
+]> 
+    
+<chapter id="components">
+    <title id="components.title">Components of the &program_name; mixnet</title>
 
     <!--
         
@@ -28,12 +42,12 @@
     Length Constraints: Maximum length of 256.
     
     Pattern: ^[A-Za-z0-9+/=]+$
-    
+   
     Required: No
     
     -->
-    <section xml:id="auth">
-        <title xml:id="auth.title">Directory authorities</title>
+    <section id="auth">
+        <title id="auth.title">Directory authorities</title>
 
 		<para>Directory authorities, or <emphasis>dirauths</emphasis>, are nodes in &program_name;'s
             decentralized public key infrastructure (PKI), which forms the security root of the
@@ -53,13 +67,12 @@
             parameters: "sphincs-shake-256f"), which is designated in &program_name; configurations
             as "Ed25519 Sphincs+". Examples are provided below.</para>        
 
-        <section xml:id="auth-config">
-            <title xml:id="auth-config.title">Configuring directory authorities</title>
+        <section id="auth-config">
+            <title id="auth-config.title">Configuring directory authorities</title>
             <para>The following configuration is drawn from the reference implementation in
                     <filename>katzenpost/docker/voting_mixnet/auth1/authority.toml</filename>. In a
                 real-world mixnet, the component hosts would not be sharing a single IP address. For
-                more information about the test mixnet, see <link linkend="container"
-                    endterm="container.title">Using the &program_name; test network</link>.</para>
+                more information about the test mixnet, see <xref linkend="container" endterm="container.title"/>.</para>
             <!--General TOML note:
 
 https://toml.io/en/v1.0.0
@@ -89,8 +102,8 @@ type Config struct {
 
 	SphinxGeometry *geo.Geometry
 }-->
-            <section xml:id="auth-server-section-config">
-                <title xml:id="auth-server-section-config.title">Server section</title>
+            <section id="auth-server-section-config">
+                <title id="auth-server-section-config.title">Server section</title>
                 <!--https://github.com/katzenpost/katzenpost/blob/c255fbbf421d5d9820553c18dc5dc6c9881ad547/authority/voting/server/config/config.go#L415-->
                 <para/>
                 <programlisting>[Server]
@@ -142,8 +155,8 @@ type Config struct {
                 </itemizedlist>
                 <para/>
             </section>
-            <section xml:id="auth-authorities-section-config">
-                <title xml:id="auth-authorities-section-config.title">Authorities section</title>
+            <section id="auth-authorities-section-config">
+                <title id="auth-authorities-section-config.title">Authorities section</title>
                 <!--https://github.com/katzenpost/katzenpost/blob/c255fbbf421d5d9820553c18dc5dc6c9881ad547/authority/voting/server/config/config.go#L266-->
                 <para>An Authorities section is configured for each peer authority. We recommend
                     using
@@ -237,12 +250,15 @@ ldMtDsvvc9KUfE4I0+c+XQ==
                     </listitem>
                 </itemizedlist>
             </section>
-            <section xml:id="auth-logging">
-                <title xml:id="auth-logging.title">Logging section</title>
-                &logging;
+            <section id="auth-logging">
+                <title id="auth-logging.title">Logging section</title>
+                <xi:include  
+                    href="includes/xincludes.xml"
+                    xpointer="XInclude_logging"  
+                    xmlns:xi="http://www.w3.org/2001/XInclude" />     
             </section>
-            <section xml:id="auth-parameters">
-                <title xml:id="auth-parameters.title">Parameters section</title>
+            <section id="auth-parameters">
+                <title id="auth-parameters.title">Parameters section</title>
                 <!--https://github.com/katzenpost/katzenpost/blob/c255fbbf421d5d9820553c18dc5dc6c9881ad547/authority/voting/server/config/config.go#L103
 -->
                 <para>The Parameters section contains network parameters.</para>
@@ -365,8 +381,8 @@ ldMtDsvvc9KUfE4I0+c+XQ==
                 </itemizedlist>
                 <?oxy_custom_start type="oxy_content_highlight" color="255,255,0"?>
             </section><?oxy_custom_end?>
-            <section xml:id="auth-debug">
-                <title xml:id="auth-debug.title">Debug section</title>
+            <section id="auth-debug">
+                <title id="auth-debug.title">Debug section</title>
                 <!--https://github.com/katzenpost/katzenpost/blob/c255fbbf421d5d9820553c18dc5dc6c9881ad547/authority/voting/server/config/config.go#L235-->
                 <para/>
                 <programlisting>[Debug]
@@ -396,8 +412,8 @@ ldMtDsvvc9KUfE4I0+c+XQ==
                     </listitem>
                 </itemizedlist>
             </section>
-            <section xml:id="auth-mixes-section-config">
-                <title xml:id="auth-mixes-section-config.title">Mixes sections</title>
+            <section id="auth-mixes-section-config">
+                <title id="auth-mixes-section-config.title">Mixes sections</title>
                 <!--https://github.com/katzenpost/katzenpost/blob/c255fbbf421d5d9820553c18dc5dc6c9881ad547/authority/voting/server/config/config.go#L383-->
                 <para>The Mixes configuration sections list mix nodes that are known to the
                     authority.</para>
@@ -430,8 +446,8 @@ ldMtDsvvc9KUfE4I0+c+XQ==
                     </listitem>
                 </itemizedlist>
             </section>
-            <section xml:id="auth-gatewaynodes-section-config">
-                <title xml:id="auth-gatewaynodes-section-config.title">GatewayNodes section</title>
+            <section id="auth-gatewaynodes-section-config">
+                <title id="auth-gatewaynodes-section-config.title">GatewayNodes section</title>
                 <para>The GatewayNodes configuration sections list gateway nodes that are known to
                     the authority.</para>
                 <programlisting>[[GatewayNodes]]
@@ -455,8 +471,8 @@ ldMtDsvvc9KUfE4I0+c+XQ==
                     </listitem>
                 </itemizedlist>
             </section>
-            <section xml:id="auth-servicenodes-section-config">
-                <title xml:id="auth-servicenodes-section-config.title">ServiceNodes sections</title>
+            <section id="auth-servicenodes-section-config">
+                <title id="auth-servicenodes-section-config.title">ServiceNodes sections</title>
                 <para>The ServiceNodes configuration sections list service nodes that are known to
                     the authority.</para>
                 <programlisting>[[ServiceNodes]]
@@ -480,8 +496,8 @@ ldMtDsvvc9KUfE4I0+c+XQ==
                     </listitem>
                 </itemizedlist>
             </section>
-            <section xml:id="auth-topology">
-                <title xml:id="auth-topology.title">Topology section</title>
+            <section id="auth-topology">
+                <title id="auth-topology.title">Topology section</title>
                 <para>The Topology configuration section defines the layers of the mix network and
                     the mix nodes in each layer.</para>
                 <programlisting>[Topology]
@@ -520,8 +536,8 @@ ldMtDsvvc9KUfE4I0+c+XQ==
                     </listitem>
                 </itemizedlist>
             </section>
-            <section xml:id="auth-sphinx-config">
-                <title xml:id="auth-sphinx-config.title">SphinxGeometry section</title>
+            <section id="auth-sphinx-config">
+                <title id="auth-sphinx-config.title">SphinxGeometry section</title>
                 <warning>
                     <para>Do not modify the SphinxGeometry section by hand. This configuration must
                         be prommatically generated.</para>
@@ -554,12 +570,15 @@ ldMtDsvvc9KUfE4I0+c+XQ==
                 <para>In &program_name;, all dirauths must configure the same SphinxGeometry. Each
                     dirauth publishes the hash of its SphinxGeometry in the PKI document for
                     validation by its peer dirauths. </para>
-                &sphinxgeometry;
+                <xi:include  
+                    href="includes/xincludes.xml"
+                    xpointer="XInclude_sphinxgeometry"  
+                    xmlns:xi="http://www.w3.org/2001/XInclude" />     
             </section>
         </section>
     </section>
-    <section xml:id="server">
-        <title xml:id="server.title">Mix, gateway, and service nodes</title>
+    <section id="server">
+        <title id="server.title">Mix, gateway, and service nodes</title>
         
 <!--
             https://github.com/katzenpost/katzenpost/blob/c255fbbf421d5d9820553c18dc5dc6c9881ad547/server/config/config.go    
@@ -577,15 +596,15 @@ ldMtDsvvc9KUfE4I0+c+XQ==
         }        
         
 -->
-         <section xml:id="mix-config">
-            <title xml:id="mix-config.title">Configuring mix nodes</title>
+         <section id="mix-config">
+            <title id="mix-config.title">Configuring mix nodes</title>
             <para>The following configuration is drawn from the reference implementation in
                     <filename>katzenpost/docker/voting_mixnet/mix1/katzenpost.toml</filename>. In a
                 real-world mixnet, the component hosts would not be sharing a single IP address. For
                 more information about the test mixnet, see <link linkend="container"
                     endterm="container.title">Using the &program_name; test network</link>.</para>
-            <section xml:id="mix-server-section-config">
-                <title xml:id="mix-server-section-config.title">Server section</title>
+            <section id="mix-server-section-config">
+                <title id="mix-server-section-config.title">Server section</title>
                 <para/>
                 <para>
                     <programlisting>[Server]
@@ -600,38 +619,56 @@ ldMtDsvvc9KUfE4I0+c+XQ==
   IsServiceNode = false
   [Server.AltAddresses]</programlisting>
                 </para>
-                    &serverconfig;
+                <xi:include  
+                    href="includes/xincludes.xml"
+                    xpointer="XInclude_serverconfig"  
+                    xmlns:xi="http://www.w3.org/2001/XInclude" />     
             </section>
-            <section xml:id="mix-logging-config">
-                <title xml:id="mix-logging-config.title">Logging section</title>
-                    &logging;
+            <section id="mix-logging-config">
+                <title id="mix-logging-config.title">Logging section</title>
+                <xi:include  
+                    href="includes/xincludes.xml"
+                    xpointer="XInclude_logging" 
+                    xmlns:xi="http://www.w3.org/2001/XInclude" />     
             </section>
-            <section xml:id="mix-pki-config">
-                <title xml:id="mix-pki-config.title">PKI section</title>
-                    &pki;                
+            <section id="mix-pki-config">
+                <title id="mix-pki-config.title">PKI section</title>
+                <xi:include  
+                    href="includes/xincludes.xml"
+                    xpointer="XInclude_pki"  
+                    xmlns:xi="http://www.w3.org/2001/XInclude" />                      
             </section>
-            <section xml:id="mix-management-config">
-                <title xml:id="mix-management-config.title">Management section</title>
-                    &management;
+            <section id="mix-management-config">
+                <title id="mix-management-config.title">Management section</title>
+                <xi:include  
+                    href="includes/xincludes.xml"
+                    xpointer="XInclude_management"  
+                    xmlns:xi="http://www.w3.org/2001/XInclude" />     
             </section>
-            <section xml:id="mix-sphinx-config">
-                <title xml:id="mix-sphinx-config.title">SphinxGeometry section</title>
-                &sphinxgeometry;
+            <section id="mix-sphinx-config">
+                <title id="mix-sphinx-config.title">SphinxGeometry section</title>
+                <xi:include  
+                    href="includes/xincludes.xml"
+                    xpointer="XInclude_sphinxgeometry"  
+                    xmlns:xi="http://www.w3.org/2001/XInclude" />     
             </section>
-            <section xml:id="mix-debug-config">
-                <title xml:id="mix-debug-config.title">Debug section</title>
-                    &serverdebug;
+            <section id="mix-debug-config">
+                <title id="mix-debug-config.title">Debug section</title>
+                <xi:include  
+                    href="includes/xincludes.xml"
+                    xpointer="XInclude_serverdebug"  
+                    xmlns:xi="http://www.w3.org/2001/XInclude" />   
             </section>
         </section>
-        <section xml:id="gateway-config">
-            <title xml:id="gateway-config.title">Configuring gateway nodes</title>
+        <section id="gateway-config">
+            <title id="gateway-config.title">Configuring gateway nodes</title>
             <para>The following configuration is drawn from the reference implementation in
                     <filename>katzenpost/docker/voting_mixnet/gateway1/katzenpost.toml</filename>.
                 In a real-world mixnet, the component hosts would not be sharing a single IP
                 address. For more information about the test mixnet, see <link linkend="container"
                     endterm="container.title">Using the &program_name; test network</link>.</para>
-            <section xml:id="gateway-server-section-config">
-                <title xml:id="gateway-server-section-config.title">Server section</title>
+            <section id="gateway-server-section-config">
+                <title id="gateway-server-section-config.title">Server section</title>
                 <para/>
                 <programlisting>[Server]
     Identifier = "gateway1"
@@ -645,16 +682,21 @@ ldMtDsvvc9KUfE4I0+c+XQ==
     IsServiceNode = false
     [Server.AltAddresses]
         TCP = ["localhost:30004"]</programlisting>
-                &serverconfig;
-
+                <xi:include  
+                    href="includes/xincludes.xml"
+                    xpointer="XInclude_serverconfig"  
+                    xmlns:xi="http://www.w3.org/2001/XInclude" />     
             </section>
-            <section xml:id="gateway-logging-config">
-                <title xml:id="gateway-logging-config.title">Logging section</title>
-                &logging;
+            <section id="gateway-logging-config">
+                <title id="gateway-logging-config.title">Logging section</title>
+                <xi:include  
+                    href="includes/xincludes.xml"
+                    xpointer="XInclude_logging"  
+                    xmlns:xi="http://www.w3.org/2001/XInclude" />     
             </section>
-            <section xml:id="gateway-gateway-section-config">
+            <section id="gateway-gateway-section-config">
                 <?oxy_comment_start author="dwrob" timestamp="20240816T143000-0700" comment="Information needed."?>
-                <title xml:id="gateway-gateway-section-config.title">Gateway section<?oxy_comment_end?></title>
+                <title id="gateway-gateway-section-config.title">Gateway section<?oxy_comment_end?></title>
                 <para/>
                 <programlisting>[Gateway]
     [Gateway.UserDB]
@@ -716,34 +758,44 @@ ldMtDsvvc9KUfE4I0+c+XQ==
                     </listitem>
                 </itemizedlist>
             </section>
-            <section xml:id="gateway-pki-config">
-                <title xml:id="gateway-pki-config.title">PKI section</title>
-                    &pki;
+            <section id="gateway-pki-config">
+                <title id="gateway-pki-config.title">PKI section</title>
+                <xi:include  
+                    href="includes/xincludes.xml"
+                    xpointer="XInclude_pki"  
+                    xmlns:xi="http://www.w3.org/2001/XInclude" />     
             </section>
-            <section xml:id="gateway-management-config">
-                <title xml:id="gateway-management-config.title">Management section</title>
-                    &management;
+            <section id="gateway-management-config">
+                <title id="gateway-management-config.title">Management section</title>
+                <xi:include  
+                    href="includes/xincludes.xml"
+                    xpointer="XInclude_management"  
+                    xmlns:xi="http://www.w3.org/2001/XInclude" />     
             </section>
-            <section xml:id="gateway-sphinx-config">
-                <title xml:id="gateway-sphinx-config.title">SphinxGeometry section</title>
-                    &sphinxgeometry;
+            <section id="gateway-sphinx-config">
+                <title id="gateway-sphinx-config.title">SphinxGeometry section</title>
+                <xi:include  
+                    href="includes/xincludes.xml"
+                    xpointer="XInclude_sphinxgeometry"  
+                    xmlns:xi="http://www.w3.org/2001/XInclude" />     
             </section>
-            <section xml:id="gateway-debug-config">
-                <title xml:id="gateway-debug-config.title">Debug section</title>
-                &serverdebug;
-
-                
+            <section id="gateway-debug-config">
+                <title id="gateway-debug-config.title">Debug section</title>
+                <xi:include  
+                    href="includes/xincludes.xml"
+                    xpointer="XInclude_serverdebug"  
+                    xmlns:xi="http://www.w3.org/2001/XInclude" />  
             </section>
         </section>
-        <section xml:id="service-config">
-            <title xml:id="service-config.title">Configuring service nodes</title>
+        <section id="service-config">
+            <title id="service-config.title">Configuring service nodes</title>
             <para>The following configuration is drawn from the reference implementation in
                 <filename>katzenpost/docker/voting_mixnet/servicenode1/authority.toml</filename>.
                 In a real-world mixnet, the component hosts would not be sharing a single IP
                 address. For more information about the test mixnet, see <link linkend="container"
                     endterm="container.title">Using the Katzenpost test network</link>.</para>
-            <section xml:id="service-server-section-config">
-                <title xml:id="service-server-section-config.title">Server section</title>
+            <section id="service-server-section-config">
+                <title id="service-server-section-config.title">Server section</title>
                 <para>The Server section contains mandatory information common to all nodes, for
                     example:</para>
                 <programlisting>[Server]
@@ -757,15 +809,20 @@ ldMtDsvvc9KUfE4I0+c+XQ==
     IsGatewayNode = false
     IsServiceNode = true
     [Server.AltAddresses]</programlisting>
-                &serverconfig;
-
+                <xi:include  
+                    href="includes/xincludes.xml"
+                    xpointer="XInclude_serverconfig"  
+                    xmlns:xi="http://www.w3.org/2001/XInclude" />     
             </section>
-            <section xml:id="service-logging-config">
-                <title xml:id="service-logging-config.title">Logging section</title>
-                &logging;
+            <section id="service-logging-config">
+                <title id="service-logging-config.title">Logging section</title>
+                <xi:include  
+                    href="includes/xincludes.xml"
+                    xpointer="XInclude_logging"  
+                    xmlns:xi="http://www.w3.org/2001/XInclude" />     
             </section>
-            <section xml:id="service-servicenode-section-config">
-                <title xml:id="service-servicenode-section-config.title">ServiceNode section</title>
+            <section id="service-servicenode-section-config">
+                <title id="service-servicenode-section-config.title">ServiceNode section</title>
                 <!--https://github.com/katzenpost/katzenpost/blob/main/server/config/config.go#L470 defines the top level configuration.
 https://github.com/katzenpost/katzenpost/blob/main/genconfig/main.go#L207 defines the per-service configurations.-->
                 <para>The service node configuration section contains subsections with settings for
@@ -974,21 +1031,34 @@ Package cborplugin is a plugin system allowing mix network services to be added 
                     </itemizedlist>
                 </para>
             </section>
-            <section xml:id="service-pki-config">
-                <title xml:id="service-pki-config.title">PKI section</title>
-                    &pki;
+            <section id="service-pki-config">
+                <title id="service-pki-config.title">PKI section</title>
+                <xi:include  
+                    href="includes/xincludes.xml"
+                    xpointer="XInclude_pki"  
+                    xmlns:xi="http://www.w3.org/2001/XInclude" />     
             </section>
-            <section xml:id="service-management-config">
-                <title xml:id="service-management-config.title">Management section</title>
-                    &management;
+            <section id="service-management-config">
+                <title id="service-management-config.title">Management section</title>
+                <xi:include  
+                    href="includes/xincludes.xml"
+                    xpointer="XInclude_management"  
+                    xmlns:xi="http://www.w3.org/2001/XInclude" />     
             </section>
-            <section xml:id="service-sphinx-config">
-                <title xml:id="service-sphinx-config.title">SphinxGeometry section</title>
-                    &sphinxgeometry;
+            <section id="service-sphinx-config">
+                <title id="service-sphinx-config.title">SphinxGeometry section</title>
+                <xi:include  
+                    href="includes/xincludes.xml"
+                    xpointer="XInclude_sphinxgeometry"  
+                    xmlns:xi="http://www.w3.org/2001/XInclude" />     
             </section>
-            <section xml:id="service-debug-config">
-                <title xml:id="service-debug-config.title">Debug section</title>
-                &serverdebug;
+            <section id="service-debug-config">
+                <title id="service-debug-config.title">Debug section</title>
+                <para/>
+                <xi:include  
+                    href="includes/xincludes.xml"
+                    xpointer="XInclude_serverdebug"  
+                    xmlns:xi="http://www.w3.org/2001/XInclude" />                
            </section>
         </section>
     </section>

@@ -1,34 +1,43 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<?xml-model href="http://docbook.org/xml/5.1/rng/docbook.rng" schematypens="http://relaxng.org/ns/structure/1.0"?>
+<?xml version='1.0'?> 
 
-<!--A DOCTYPE declaration declaring a DTD is not need for DocBook 5.x, which uses RelaxNG and  Schematron instead. 
-    It is used here as a container for entity declarations.-->
-
-<!DOCTYPE chapter 
+<!DOCTYPE book PUBLIC "-//OASIS//DTD DocBook XML V4.5//EN" 
+   "http://www.oasis-open.org/docbook/xml/4.5/docbookx.dtd"    
 [
-    <!ENTITY % shared-content SYSTEM "shared-content.ent">
+   <!ENTITY % shared-content SYSTEM "includes/shared-content.ent">
     %shared-content;
-]>
+ 
+    <!ELEMENT xi:include (xi:fallback?) > 
+    <!ATTLIST xi:include 
+        xmlns:xi CDATA #FIXED "http://www.w3.org/2001/XInclude" 
+    href CDATA #REQUIRED 
+    parse (xml|text) "xml" 
+    xpointer CDATA #IMPLIED 
+    encoding CDATA #IMPLIED 
+    accept CDATA #IMPLIED 
+    accept-charset CDATA #IMPLIED 
+    accept-language CDATA #IMPLIED > 
+    <!ELEMENT xi:fallback ANY > 
+    <!ATTLIST xi:fallback 
+        xmlns:xi CDATA #FIXED "http://www.w3.org/2001/XInclude" > 
+    <!ENTITY % local.preface.class "| xi:include"> 
+    <!ENTITY % local.part.class "| xi:include"> 
+    <!ENTITY % local.chapter.class "| xi:include"> 
+    <!ENTITY % local.divcomponent.mix "| xi:include"> 
+    <!ENTITY % local.para.char.mix "| xi:include"> 
+    <!ENTITY % local.info.class "| xi:include"> 
+    <!ENTITY % local.common.attrib "xml:base CDATA #IMPLIED" > 
+]> 
 
-<book xmlns="http://docbook.org/ns/docbook" 
-        xmlns:xi="http://www.w3.org/2001/XInclude"
-        xmlns:xlink="http://www.w3.org/1999/xlink" version="5.1">
-    <info>
-        <title>Katzenpost Administrator's Guide</title>
-    </info>
-
-<!--<!-\-    <xi:include href="quickstart.xml"/>
-    <xi:include href="introduction.xml"/>-\->
+<book> 
+    <title>The Whole Thing</title>
+   <preface>
+       <title>Preface</title>
+       <para>blah blah</para>
+       <para>xxxxxx</para>
+   </preface>
     
+   
     
-    
-<!-\-    <xi:include href="operations.xml"/>-\->
-    
-    -->
-    
-    <xi:include href="docker.xml"/>
-    
-    <!--<xi:include href="components.xml"/>-->
-    <xi:include href="tuning.xml"/>
-
-</book>
+    <xi:include href="docker.xml"></xi:include>  
+    <xi:include href="components.xml"></xi:include> 
+</book> 
