@@ -25,8 +25,7 @@ func (c *ReplicaRead) ToBytes() []byte {
 	out := make([]byte, cmdOverhead, cmdOverhead+32)
 	out[0] = byte(replicaRead)
 	binary.BigEndian.PutUint32(out[2:6], uint32(c.Length()-cmdOverhead))
-	out = append(out, c.BoxID[:]...)
-	return c.Cmds.padToMaxCommandSize(out, true)
+	return append(out, c.BoxID[:]...)
 }
 
 func (c *ReplicaRead) Length() int {
@@ -71,9 +70,7 @@ func (c *ReplicaReadReply) ToBytes() []byte {
 	out = append(out, c.Signature[:]...)
 	payload := make([]byte, c.Geo.PacketLength)
 	copy(payload, c.Payload)
-	out = append(out, payload...)
-
-	return out
+	return append(out, payload...)
 }
 
 func (c *ReplicaReadReply) Length() int {
@@ -122,13 +119,17 @@ func (c *ReplicaWrite) ToBytes() []byte {
 	out = append(out, c.Signature[:]...)
 	out = append(out, c.Payload...)
 
+	// optional traffic padding
+	if c.Cmds == nil {
+		return out
+	}
 	return c.Cmds.padToMaxCommandSize(out, true)
 }
 
 func (c *ReplicaWrite) Length() int {
-	const (
+	var (
 		// XXX FIX ME: largest ideal command size goes here
-		payloadSize   = 1000
+		payloadSize   = c.Cmds.geo.PacketLength
 		signatureSize = 32
 	)
 	return cmdOverhead + payloadSize + signatureSize
@@ -160,6 +161,11 @@ func (c *ReplicaWriteReply) ToBytes() []byte {
 	out[0] = byte(replicaWriteReply)
 	binary.BigEndian.PutUint32(out[2:6], replicaWriteReplyLength)
 	out[6] = c.ErrorCode
+
+	// optional traffic padding
+	if c.Cmds == nil {
+		return out
+	}
 	return c.Cmds.padToMaxCommandSize(out, true)
 }
 
