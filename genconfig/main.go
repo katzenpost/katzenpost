@@ -260,6 +260,7 @@ func (s *katzenpost) genReplicaNodeConfig() error {
 	cfg.Identifier = fmt.Sprintf("replica%d", s.replicaNodeIdx+1)
 	cfg.SphinxGeometry = s.sphinxGeometry
 	cfg.WireKEMScheme = s.wireKEMScheme
+	cfg.ReplicaNIKEScheme = s.replicaNIKEScheme.Name()
 	cfg.PKISignatureScheme = s.pkiSignatureScheme.Name()
 
 	cfg.Addresses = []string{fmt.Sprintf("tcp://127.0.0.1:%d", s.lastReplicaPort)}
