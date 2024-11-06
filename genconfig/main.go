@@ -19,6 +19,7 @@ import (
 	"github.com/katzenpost/hpqc/kem"
 	kempem "github.com/katzenpost/hpqc/kem/pem"
 	kemschemes "github.com/katzenpost/hpqc/kem/schemes"
+	"github.com/katzenpost/hpqc/nike"
 	"github.com/katzenpost/hpqc/nike/schemes"
 	"github.com/katzenpost/hpqc/sign"
 	signpem "github.com/katzenpost/hpqc/sign/pem"
@@ -30,6 +31,7 @@ import (
 	"github.com/katzenpost/katzenpost/client2/thin"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
+	rConfig "github.com/katzenpost/katzenpost/replica/config"
 	sConfig "github.com/katzenpost/katzenpost/server/config"
 )
 
@@ -40,6 +42,7 @@ const (
 	nrNodes        = 6
 	nrGateways     = 1
 	nrServiceNodes = 1
+	nrStorageNodes = 3
 	nrAuthorities  = 3
 )
 
@@ -53,23 +56,28 @@ type katzenpost struct {
 	ratchetNIKEScheme  string
 	wireKEMScheme      string
 	pkiSignatureScheme sign.Scheme
+	replicaNIKEScheme  nike.Scheme
 	sphinxGeometry     *geo.Geometry
 	votingAuthConfigs  []*vConfig.Config
 	authorities        map[[32]byte]*vConfig.Authority
 	authIdentity       sign.PublicKey
 
-	nodeConfigs    []*sConfig.Config
-	basePort       uint16
-	lastPort       uint16
-	bindAddr       string
-	nodeIdx        int
-	clientIdx      int
-	gatewayIdx     int
-	serviceNodeIdx int
-	hasPanda       bool
-	hasProxy       bool
-	noMixDecoy     bool
-	debugConfig    *cConfig.Debug
+	nodeConfigs        []*sConfig.Config
+	replicaNodeConfigs []*rConfig.Config
+
+	basePort        uint16
+	lastPort        uint16
+	lastReplicaPort uint16
+	bindAddr        string
+	nodeIdx         int
+	replicaNodeIdx  int
+	clientIdx       int
+	gatewayIdx      int
+	serviceNodeIdx  int
+	hasPanda        bool
+	hasProxy        bool
+	noMixDecoy      bool
+	debugConfig     *cConfig.Debug
 }
 
 type AuthById []*vConfig.Authority
@@ -240,6 +248,50 @@ func write(f *os.File, str string, args ...interface{}) {
 	if err != nil {
 		log.Fatal(err)
 	}
+}
+
+func (s *katzenpost) genReplicaNodeConfig() error {
+	const serverLogFile = "katzenpost.log"
+
+	log.Print("genReplicaNodeConfig")
+
+	cfg := new(rConfig.Config)
+
+	cfg.Identifier = fmt.Sprintf("replica%d", s.replicaNodeIdx+1)
+	cfg.SphinxGeometry = s.sphinxGeometry
+	cfg.WireKEMScheme = s.wireKEMScheme
+	cfg.PKISignatureScheme = s.pkiSignatureScheme.Name()
+
+	cfg.Addresses = []string{fmt.Sprintf("tcp://127.0.0.1:%d", s.lastReplicaPort)}
+	s.lastReplicaPort++
+
+	cfg.DataDir = filepath.Join(s.baseDir, cfg.Identifier)
+	os.Mkdir(filepath.Join(s.outDir, cfg.Identifier), 0700)
+
+	authorities := make([]*vConfig.Authority, 0, len(s.authorities))
+	i := 0
+	for _, auth := range s.authorities {
+		authorities = append(authorities, auth)
+		i += 1
+	}
+
+	sort.Sort(AuthById(authorities))
+	cfg.PKI = &rConfig.PKI{
+		Voting: &rConfig.Voting{
+			Authorities: authorities,
+		},
+	}
+
+	cfg.Logging = new(rConfig.Logging)
+	cfg.Logging.File = serverLogFile
+	cfg.Logging.Level = s.logLevel
+
+	s.replicaNodeConfigs = append(s.replicaNodeConfigs, cfg)
+	_ = cfgIdKey(cfg, s.outDir)
+	_ = cfgLinkKey(cfg, s.outDir, s.wireKEMScheme)
+
+	s.replicaNodeIdx++
+	return cfg.FixupAndValidate(false)
 }
 
 func (s *katzenpost) genNodeConfig(isGateway, isServiceNode bool, isVoting bool) error {
@@ -486,8 +538,9 @@ func main() {
 	nrLayers := flag.Int("L", nrLayers, "Number of layers.")
 	nrNodes := flag.Int("n", nrNodes, "Number of mixes.")
 
-	nrGateways := flag.Int("gateways", nrGateways, "Number of gateways.")
-	nrServiceNodes := flag.Int("serviceNodes", nrServiceNodes, "Number of providers.")
+	nrGateways := flag.Int("gateways", nrGateways, "Number of gateway nodes.")
+	nrServiceNodes := flag.Int("serviceNodes", nrServiceNodes, "Number of service nodes.")
+	nrStorageNodes := flag.Int("storageNodes", nrStorageNodes, "Number of storage replica nodes.")
 
 	voting := flag.Bool("v", false, "Generate voting configuration")
 	nrVoting := flag.Int("nv", nrAuthorities, "Generate voting configuration")
@@ -503,6 +556,7 @@ func main() {
 	kem := flag.String("kem", "", "Name of the KEM Scheme to be used with Sphinx")
 	nike := flag.String("nike", "x25519", "Name of the NIKE Scheme to be used with Sphinx")
 	ratchetNike := flag.String("ratchetNike", "CTIDH512-X25519", "Name of the NIKE Scheme to be used with the doubleratchet")
+	replicaNike := flag.String("replicaNike", "CTIDH1024-X25519", "Name of the NIKE Scheme to be used with the pigeonhole storage replicas")
 	UserForwardPayloadLength := flag.Int("UserForwardPayloadLength", 2000, "UserForwardPayloadLength")
 	pkiSignatureScheme := flag.String("pkiScheme", "Ed25519", "PKI Signature Scheme to be used")
 	noDecoy := flag.Bool("noDecoy", true, "Disable decoy traffic for the client")
@@ -541,6 +595,10 @@ func main() {
 		log.Fatal("ratchetNike must be set")
 	}
 
+	if *replicaNike == "" {
+		log.Fatal("replicaNike must be set")
+	}
+
 	parameters := &vConfig.Parameters{
 		SendRatePerMinute: *sr,
 		Mu:                *mu,
@@ -570,6 +628,7 @@ func main() {
 	s.binSuffix = *binSuffix
 	s.basePort = uint16(*basePort)
 	s.lastPort = s.basePort + 1
+	s.lastReplicaPort = s.basePort + 3000
 	s.bindAddr = *bindAddr
 	s.logLevel = *logLevel
 	s.debugConfig = &cConfig.Debug{
@@ -614,6 +673,14 @@ func main() {
 		s.pkiSignatureScheme = signScheme
 	}
 
+	if *replicaNike != "" {
+		nikeScheme := schemes.ByName(*replicaNike)
+		if nikeScheme == nil {
+			log.Fatalf("failed to resolve replica nike scheme %s", *nike)
+		}
+		s.replicaNIKEScheme = nikeScheme
+	}
+
 	os.Mkdir(s.outDir, 0700)
 	os.Mkdir(filepath.Join(s.outDir, s.baseDir), 0700)
 
@@ -644,6 +711,14 @@ func main() {
 			log.Fatalf("Failed to generate node config: %v", err)
 		}
 	}
+
+	// Pigeonhole storage replica node configs.
+	for i := 0; i < *nrStorageNodes; i++ {
+		if err = s.genReplicaNodeConfig(); err != nil {
+			log.Fatalf("Failed to generate storage replica node config: %v", err)
+		}
+	}
+
 	// Generate the authority config
 	if *voting {
 		gateways, serviceNodes, mixes, err := s.genAuthorizedNodes()
@@ -754,6 +829,10 @@ func cfgIdKey(cfg interface{}, outDir string) sign.PublicKey {
 	var priv, public string
 	var pkiSignatureScheme string
 	switch cfg.(type) {
+	case *rConfig.Config:
+		priv = filepath.Join(outDir, cfg.(*rConfig.Config).Identifier, "identity.private.pem")
+		public = filepath.Join(outDir, cfg.(*rConfig.Config).Identifier, "identity.public.pem")
+		pkiSignatureScheme = cfg.(*rConfig.Config).PKISignatureScheme
 	case *sConfig.Config:
 		priv = filepath.Join(outDir, cfg.(*sConfig.Config).Server.Identifier, "identity.private.pem")
 		public = filepath.Join(outDir, cfg.(*sConfig.Config).Server.Identifier, "identity.public.pem")
@@ -788,6 +867,9 @@ func cfgLinkKey(cfg interface{}, outDir string, kemScheme string) kem.PublicKey 
 	var linkpublic string
 
 	switch cfg.(type) {
+	case *rConfig.Config:
+		linkpriv = filepath.Join(outDir, cfg.(*rConfig.Config).Identifier, "link.private.pem")
+		linkpublic = filepath.Join(outDir, cfg.(*rConfig.Config).Identifier, "link.public.pem")
 	case *sConfig.Config:
 		linkpriv = filepath.Join(outDir, cfg.(*sConfig.Config).Server.Identifier, "link.private.pem")
 		linkpublic = filepath.Join(outDir, cfg.(*sConfig.Config).Server.Identifier, "link.public.pem")
