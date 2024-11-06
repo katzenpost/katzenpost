@@ -772,8 +772,8 @@ func main() {
 	}
 
 	// replicas
-	for _, v := range s.replicaNodeConfigs {
-		if err := saveCfg(v, *outDir); err != nil {
+	for _, r := range s.replicaNodeConfigs {
+		if err := saveCfg(r, *outDir); err != nil {
 			log.Fatalf("saveCfg failure: %s", err)
 		}
 	}
@@ -808,10 +808,12 @@ func identifier(cfg interface{}) string {
 		return "client2"
 	case *sConfig.Config:
 		return cfg.(*sConfig.Config).Server.Identifier
+	case *rConfig.Config:
+		return cfg.(*rConfig.Config).Identifier
 	case *vConfig.Config:
 		return cfg.(*vConfig.Config).Server.Identifier
 	default:
-		log.Fatalf("identifier() passed unexpected type")
+		log.Fatalf("identifier() passed unexpected type %v", cfg)
 		return ""
 	}
 }
