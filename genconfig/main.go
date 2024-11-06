@@ -1036,7 +1036,7 @@ services:
 		// identifier; instead it duplicates the definition of the name format
 		// here.
 		write(f, `
-  mix%d:
+  replica%d:
     restart: "no"
     image: %s
     volumes:
