@@ -510,7 +510,16 @@ func (s *katzenpost) genVotingAuthoritiesCfg(numAuthorities int, parameters *vCo
 	return nil
 }
 
-func (s *katzenpost) genAuthorizedNodes() ([]*vConfig.Node, []*vConfig.Node, []*vConfig.Node, error) {
+func (s *katzenpost) genAuthorizedNodes() ([]*vConfig.Node, []*vConfig.Node, []*vConfig.Node, []*vConfig.Node, error) {
+	replicas := []*vConfig.Node{}
+	for _, replicaCfg := range s.replicaNodeConfigs {
+		node := &vConfig.Node{
+			Identifier:           replicaCfg.Identifier,
+			IdentityPublicKeyPem: filepath.Join("../", replicaCfg.Identifier, "identity.public.pem"),
+		}
+		replicas = append(replicas, node)
+	}
+
 	mixes := []*vConfig.Node{}
 	gateways := []*vConfig.Node{}
 	serviceNodes := []*vConfig.Node{}
@@ -527,11 +536,13 @@ func (s *katzenpost) genAuthorizedNodes() ([]*vConfig.Node, []*vConfig.Node, []*
 			mixes = append(mixes, node)
 		}
 	}
+
+	sort.Sort(NodeById(replicas))
 	sort.Sort(NodeById(mixes))
 	sort.Sort(NodeById(gateways))
 	sort.Sort(NodeById(serviceNodes))
 
-	return gateways, serviceNodes, mixes, nil
+	return replicas, gateways, serviceNodes, mixes, nil
 }
 
 func main() {
@@ -722,11 +733,15 @@ func main() {
 
 	// Generate the authority config
 	if *voting {
-		gateways, serviceNodes, mixes, err := s.genAuthorizedNodes()
+		replicas, gateways, serviceNodes, mixes, err := s.genAuthorizedNodes()
 		if err != nil {
 			panic(err)
 		}
 		for _, vCfg := range s.votingAuthConfigs {
+
+			for _, k := range replicas {
+				vCfg.StorageReplicas = append(vCfg.StorageReplicas, k)
+			}
 			vCfg.Mixes = mixes
 			vCfg.GatewayNodes = gateways
 			vCfg.ServiceNodes = serviceNodes
@@ -751,6 +766,13 @@ func main() {
 	}
 	// write the mixes keys and configs to disk
 	for _, v := range s.nodeConfigs {
+		if err := saveCfg(v, *outDir); err != nil {
+			log.Fatalf("saveCfg failure: %s", err)
+		}
+	}
+
+	// replicas
+	for _, v := range s.replicaNodeConfigs {
 		if err := saveCfg(v, *outDir); err != nil {
 			log.Fatalf("saveCfg failure: %s", err)
 		}
@@ -804,6 +826,8 @@ func toml_name(cfg interface{}) string {
 		return "client"
 	case *sConfig.Config:
 		return "katzenpost"
+	case *rConfig.Config:
+		return "replica"
 	case *vConfig.Config:
 		return "authority"
 	default:
@@ -937,7 +961,7 @@ func (s *katzenpost) genDockerCompose(dockerImage string) error {
 
 	defer f.Close()
 
-	gateways, serviceNodes, mixes, err := s.genAuthorizedNodes()
+	replicas, gateways, serviceNodes, mixes, err := s.genAuthorizedNodes()
 
 	if err != nil {
 		log.Fatal(err)
@@ -1002,6 +1026,30 @@ services:
       - %s`, authCfg.Server.Identifier)
 		}
 	}
+
+	// pigeonhole storage replicas
+	for i := range replicas {
+		// mixes in this form don't have their identifiers, because that isn't
+		// part of the consensus. if/when that is fixed this could use that
+		// identifier; instead it duplicates the definition of the name format
+		// here.
+		write(f, `
+  mix%d:
+    restart: "no"
+    image: %s
+    volumes:
+      - ./:%s
+    command: %s/replica%s -f %s/replica%d/katzenpost.toml
+    network_mode: host
+    depends_on:`, i+1, dockerImage, s.baseDir, s.baseDir, s.binSuffix, s.baseDir, i+1)
+		for _, authCfg := range s.votingAuthConfigs {
+			// is this depends_on stuff actually necessary?
+			// there was a bit more of it before this function was regenerating docker-compose.yaml...
+			write(f, `
+      - %s`, authCfg.Server.Identifier)
+		}
+	}
+
 	for _, authCfg := range s.votingAuthConfigs {
 		write(f, `
   %s:
