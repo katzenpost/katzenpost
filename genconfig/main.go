@@ -969,8 +969,7 @@ func (s *katzenpost) genDockerCompose(dockerImage string) error {
 		log.Fatal(err)
 	}
 
-	write(f, `version: "2"
-
+	write(f, `
 services:
 `)
 	for _, p := range gateways {
