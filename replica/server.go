@@ -150,11 +150,6 @@ func (s *Server) RotateLog() {
 func New(cfg *config.Config) (*Server, error) {
 	s := new(Server)
 	s.cfg = cfg
-	s.state = newState(s)
-	s.state.initDB()
-
-	s.fatalErrCh = make(chan error)
-	s.haltedCh = make(chan interface{})
 
 	// Do the early initialization and bring up logging.
 	if err := s.initDataDir(); err != nil {
@@ -163,6 +158,12 @@ func New(cfg *config.Config) (*Server, error) {
 	if err := s.initLogging(); err != nil {
 		return nil, err
 	}
+
+	s.state = newState(s)
+	s.state.initDB()
+
+	s.fatalErrCh = make(chan error)
+	s.haltedCh = make(chan interface{})
 
 	s.log.Notice("Katzenpost Pigeonhole Storage Replica")
 	if s.cfg.Logging.Level == "DEBUG" {

@@ -6,6 +6,7 @@ package replica
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 
@@ -17,6 +18,7 @@ import (
 	"github.com/katzenpost/hpqc/rand"
 	signschemes "github.com/katzenpost/hpqc/sign/schemes"
 
+	authconfig "github.com/katzenpost/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
@@ -24,6 +26,79 @@ import (
 	"github.com/katzenpost/katzenpost/replica/common"
 	"github.com/katzenpost/katzenpost/replica/config"
 )
+
+func TestInitDataDir(t *testing.T) {
+	s := &Server{
+		cfg: &config.Config{
+			DataDir: t.TempDir(),
+		},
+	}
+	err := s.initDataDir()
+	require.Error(t, err)
+
+	s.cfg.DataDir = filepath.Join(t.TempDir(), "datadir")
+	err = s.initDataDir()
+	require.NoError(t, err)
+
+	err = s.initDataDir()
+	require.NoError(t, err)
+}
+
+func TestNew(t *testing.T) {
+	pkiScheme := signschemes.ByName("Ed25519 Sphincs+")
+	idpubkey, _, err := pkiScheme.GenerateKey()
+	require.NoError(t, err)
+
+	linkScheme := kemschemes.ByName("Xwing")
+	linkpubkey, _, err := linkScheme.GenerateKeyPair()
+	require.NoError(t, err)
+
+	replicaScheme := nikeschemes.ByName("x25519")
+
+	nrHops := 5
+	payloadSize := 5000
+	sphinxScheme := nikeschemes.ByName("x25519")
+
+	geometry := geo.GeometryFromUserForwardPayloadLength(sphinxScheme, payloadSize, true, nrHops)
+
+	cfg := &config.Config{
+		PKI: &config.PKI{
+			Voting: &config.Voting{
+				Authorities: []*authconfig.Authority{
+					&authconfig.Authority{
+						Identifier:         "dirauth1",
+						IdentityPublicKey:  idpubkey,
+						PKISignatureScheme: pkiScheme.Name(),
+						LinkPublicKey:      linkpubkey,
+						WireKEMScheme:      linkScheme.Name(),
+						Addresses:          []string{"tcp://127.0.0.1:1234"},
+					},
+				},
+			},
+		},
+		Logging: &config.Logging{
+			Disable: false,
+			File:    "",
+			Level:   "DEBUG",
+		},
+		DataDir:            filepath.Join(t.TempDir(), "datadir"),
+		Identifier:         "replica1",
+		WireKEMScheme:      linkScheme.Name(),
+		PKISignatureScheme: pkiScheme.Name(),
+		ReplicaNIKEScheme:  replicaScheme.Name(),
+		SphinxGeometry:     geometry,
+		Addresses:          []string{"tcp://127.0.0.1:7483"},
+	}
+	s, err := New(cfg)
+	require.NoError(t, err)
+
+	s.Shutdown()
+
+	s, err = New(cfg)
+	require.NoError(t, err)
+
+	s.Shutdown()
+}
 
 func TestGetRemoteShards(t *testing.T) {
 	dname, err := os.MkdirTemp("", fmt.Sprintf("replica.testState %d", os.Getpid()))

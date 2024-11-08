@@ -130,18 +130,6 @@ func replicaMap(doc *pki.Document) map[[32]byte]*pki.ReplicaDescriptor {
 	return newReplicas
 }
 
-// returns the set of elements in A but not in B
-func difference(a, b map[[32]byte]*pki.ReplicaDescriptor) map[[32]byte]*pki.ReplicaDescriptor {
-	out := make(map[[32]byte]*pki.ReplicaDescriptor)
-	for key, v := range a {
-		_, ok := b[key]
-		if !ok {
-			out[key] = v
-		}
-	}
-	return out
-}
-
 // isSubset returns true is a is a subset of b
 func isSubset(a, b map[[32]byte]*pki.ReplicaDescriptor) bool {
 	for key, _ := range a {
@@ -204,6 +192,7 @@ func (p *PKIWorker) AuthenticateCourierConnection(c *wire.PeerCredentials) bool 
 
 	serviceDesc, err := doc.GetServiceNodeByKeyHash(&nodeID)
 	if err != nil {
+		p.log.Error("courier service not found")
 		return false
 	}
 	blob, err := c.PublicKey.MarshalBinary()
@@ -226,6 +215,7 @@ func (p *PKIWorker) AuthenticateReplicaConnection(c *wire.PeerCredentials) (*pki
 	copy(nodeID[:], c.AdditionalData)
 	replicaDesc, isReplica := p.replicas.GetReplicaDescriptor(&nodeID)
 	if !isReplica {
+		p.log.Debug("wtf1")
 		return nil, false
 	}
 	blob, err := c.PublicKey.MarshalBinary()
@@ -233,6 +223,7 @@ func (p *PKIWorker) AuthenticateReplicaConnection(c *wire.PeerCredentials) (*pki
 		panic(err)
 	}
 	if !hmac.Equal(replicaDesc.LinkKey, blob) {
+		p.log.Debug("wtf2")
 		return nil, false
 	}
 	return replicaDesc, true
