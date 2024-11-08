@@ -26,7 +26,6 @@ import (
 	"fmt"
 
 	"github.com/fxamacker/cbor/v2"
-	"golang.org/x/crypto/blake2b"
 
 	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/sign"
@@ -288,7 +287,7 @@ func (d *Document) GetReplicaNodeByKeyHash(keyhash *[32]byte) (*ReplicaDescripto
 			return v, nil
 		}
 	}
-	return nil, fmt.Errorf("pki: service not found")
+	return nil, fmt.Errorf("pki: replica not found")
 }
 
 // GetMix returns the MixDescriptor for the given mix Name.
@@ -682,7 +681,7 @@ func (d *Document) Sum256() [32]byte {
 	if err != nil {
 		panic(err)
 	}
-	return blake2b.Sum256(b)
+	return hash.Sum256(b)
 }
 
 func init() {

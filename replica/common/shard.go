@@ -35,16 +35,14 @@ func GetReplicaKeys(doc *pki.Document) ([][]byte, error) {
 	return keys, nil
 }
 
-type serverDesc struct {
-	key  []byte
-	hash *[32]byte
-}
-
+// XXX FIXME: this function mutates the serverIdKeys which is a bug and
+// must be fixed before we can use it.
+//
 // Shard2 implements our consistent hashing scheme for the sharded pigeonhole database
 // where K is fixed to 2.
 // It returns the first K`th entries from our sorted list of hashes
 // where each hash is the hash of the boxID concatenated with the server ID key.
-func Shard2(boxID *[32]byte, serverIdKeys [][]byte) [][]byte {
+/*func Shard2(boxID *[32]byte, serverIdKeys [][]byte) [][]byte {
 	hashes := make([][32]byte, 2, 2)
 	keys := make([][]byte, 2, 2)
 	hashes[0] = [32]byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff}
@@ -61,6 +59,34 @@ func Shard2(boxID *[32]byte, serverIdKeys [][]byte) [][]byte {
 		keys[cmpidx] = key
 	}
 	return keys
+}*/
+
+type serverDesc struct {
+	key  []byte
+	hash *[32]byte
+}
+
+func Shard(boxID *[32]byte, serverIdKeys [][]byte) [][]byte {
+	servers := make([]*serverDesc, 0, len(serverIdKeys))
+	for _, key := range serverIdKeys {
+		hash := blake2b.Sum256(append(key, boxID[:]...))
+		d := &serverDesc{
+			key:  key,
+			hash: &hash,
+		}
+		servers = append(servers, d)
+	}
+
+	slices.SortFunc(servers, func(a, b *serverDesc) int {
+		return slices.Compare(a.hash[:], b.hash[:])
+	})
+
+	result := make([][]byte, 0, K)
+	for i := 0; i < K; i++ {
+		result = append(result, servers[i].key)
+	}
+
+	return result
 }
 
 func GetShards(boxid *[32]byte, doc *pki.Document) ([]*pki.ReplicaDescriptor, error) {
@@ -68,7 +94,7 @@ func GetShards(boxid *[32]byte, doc *pki.Document) ([]*pki.ReplicaDescriptor, er
 	if err != nil {
 		return nil, err
 	}
-	orderedKeys := Shard2(boxid, replicaKeys)
+	orderedKeys := Shard(boxid, replicaKeys)
 	shards := make([]*pki.ReplicaDescriptor, K)
 	for i, key := range orderedKeys {
 		hash := blake2b.Sum256(key)
