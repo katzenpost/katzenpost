@@ -42,7 +42,7 @@ func GetReplicaKeys(doc *pki.Document) ([][]byte, error) {
 // where K is fixed to 2.
 // It returns the first K`th entries from our sorted list of hashes
 // where each hash is the hash of the boxID concatenated with the server ID key.
-/*func Shard2(boxID *[32]byte, serverIdKeys [][]byte) [][]byte {
+func Shard2(boxID *[32]byte, serverIdKeys [][]byte) [][]byte {
 	hashes := make([][32]byte, 2, 2)
 	keys := make([][]byte, 2, 2)
 	hashes[0] = [32]byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff}
@@ -56,10 +56,10 @@ func GetReplicaKeys(doc *pki.Document) ([][]byte, error) {
 		hashes[1-cmpidx] = hashes[0]
 		keys[1-cmpidx] = keys[0]
 		hashes[cmpidx] = hash
-		keys[cmpidx] = key
+		keys[cmpidx] = key[:]
 	}
 	return keys
-}*/
+}
 
 type serverDesc struct {
 	key  []byte
