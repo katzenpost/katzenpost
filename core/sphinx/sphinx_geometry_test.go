@@ -1,6 +1,9 @@
 // SPDX-FileCopyrightText: Copyright (C) 2024 David Stainton
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+//go:build cartesian_product_test
+// +build cartesian_product_test
+
 package sphinx
 
 import (
