@@ -43,7 +43,6 @@ type serverDesc struct {
 // Shard implements our consistent hashing scheme for the sharded pigeonhole database.
 // It returns the first K`th entries from our sorted list of hashes
 // where each hash is the hash of the boxID concatenated with the server ID key.
-/*
 func Shard(boxID *[32]byte, serverIdKeys [][]byte) [][]byte {
 	servers := make([]*serverDesc, 0, len(serverIdKeys))
 	for _, key := range serverIdKeys {
@@ -66,7 +65,6 @@ func Shard(boxID *[32]byte, serverIdKeys [][]byte) [][]byte {
 
 	return result
 }
-*/
 
 // Shard2 implements our consistent hashing scheme for the sharded pigeonhole database
 // where K is fixed to 2.

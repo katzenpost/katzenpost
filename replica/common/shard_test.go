@@ -28,8 +28,8 @@ func TestShardSimple(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	shards1 := Shard(boxid1, serverIdKeys)
-	shards2 := Shard(boxid2, serverIdKeys)
+	shards1 := Shard2(boxid1, serverIdKeys)
+	shards2 := Shard2(boxid2, serverIdKeys)
 
 	require.NotEqual(t, shards1, shards2)
 }
@@ -54,30 +54,6 @@ func TestShard2(t *testing.T) {
 	for _, s := range shard {
 		t.Logf("entry: %x", s)
 	}
-}
-
-func BenchmarkShard(b *testing.B) {
-	numServers := 10
-	keySize := 32
-	keys := make([][]byte, numServers)
-	for i := 0; i < numServers; i++ {
-		keys[i] = make([]byte, keySize)
-		_, err := rand.Reader.Read(keys[i])
-		require.NoError(b, err)
-	}
-
-	boxid := &[32]byte{}
-	_, err := rand.Reader.Read(boxid[:])
-	require.NoError(b, err)
-
-	var shard [][]byte
-	var shard2 [][]byte
-	for i := 0; i < b.N; i++ {
-		shard = Shard(boxid, keys)
-	}
-
-	shard2 = shard
-	shard = shard2
 }
 
 func BenchmarkShard2(b *testing.B) {
