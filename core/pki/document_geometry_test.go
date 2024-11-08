@@ -1,6 +1,9 @@
 // SPDX-FileCopyrightText: Copyright (C) 2024 David Stainton
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+//go:build cartesian_product_test
+// +build cartesian_product_test
+
 package pki
 
 import (
@@ -18,6 +21,8 @@ import (
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/hpqc/sign"
 	signschemes "github.com/katzenpost/hpqc/sign/schemes"
+
+	"github.com/katzenpost/katzenpost/core/epochtime"
 )
 
 func generateDescriptor(t *testing.T, pkiScheme sign.Scheme, linkScheme kem.Scheme, sphinxNikeScheme nike.Scheme, sphinxKemScheme kem.Scheme) *MixDescriptor {
@@ -67,12 +72,14 @@ func generateReplica(t *testing.T, pkiScheme sign.Scheme, linkScheme kem.Scheme,
 	_, err = rand.Reader.Read(replicakey)
 	require.NoError(t, err)
 
+	epoch, _, _ := epochtime.Now()
+
 	return &ReplicaDescriptor{
-		Name:        "fake replica name",
-		IdentityKey: idkey,
-		LinkKey:     linkkey,
-		EnvelopeKey: replicakey,
-		Addresses:   map[string][]string{"tcp": []string{"tcp://127.0.0.1:12345"}},
+		Name:         "fake replica name",
+		IdentityKey:  idkey,
+		LinkKey:      linkkey,
+		EnvelopeKeys: map[uint64][]byte{epoch: replicakey},
+		Addresses:    map[string][]string{"tcp": []string{"tcp://127.0.0.1:12345"}},
 	}
 }
 
