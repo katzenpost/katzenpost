@@ -35,9 +35,6 @@ func GetReplicaKeys(doc *pki.Document) ([][]byte, error) {
 	return keys, nil
 }
 
-// XXX FIXME: this function mutates the serverIdKeys which is a bug and
-// must be fixed before we can use it.
-//
 // Shard2 implements our consistent hashing scheme for the sharded pigeonhole database
 // where K is fixed to 2.
 // It returns the first K`th entries from our sorted list of hashes
@@ -48,7 +45,7 @@ func Shard2(boxID *[32]byte, serverIdKeys [][]byte) [][]byte {
 	hashes[0] = [32]byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff}
 	hashes[1] = [32]byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff}
 	for _, key := range serverIdKeys {
-		hash := blake2b.Sum256(append(key[:32], boxID[:32]...))
+		hash := blake2b.Sum256(append(key[:], boxID[:32]...))
 		if slices.Compare(hashes[1][:], hash[:]) == -1 {
 			continue // hash[:] > largest kept hashes[1]
 		}
@@ -66,6 +63,7 @@ type serverDesc struct {
 	hash *[32]byte
 }
 
+// Shard is slower than Shard2. therefore use Shard2 instead.
 func Shard(boxID *[32]byte, serverIdKeys [][]byte) [][]byte {
 	servers := make([]*serverDesc, 0, len(serverIdKeys))
 	for _, key := range serverIdKeys {
@@ -94,7 +92,7 @@ func GetShards(boxid *[32]byte, doc *pki.Document) ([]*pki.ReplicaDescriptor, er
 	if err != nil {
 		return nil, err
 	}
-	orderedKeys := Shard(boxid, replicaKeys)
+	orderedKeys := Shard2(boxid, replicaKeys)
 	shards := make([]*pki.ReplicaDescriptor, K)
 	for i, key := range orderedKeys {
 		hash := blake2b.Sum256(key)

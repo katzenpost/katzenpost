@@ -150,7 +150,7 @@ func TestGetReplicaKeys(t *testing.T) {
 	_, err = rand.Reader.Read(boxid[:])
 	require.NoError(t, err)
 
-	orderedKeys := Shard(boxid, replicaKeys)
+	orderedKeys := Shard2(boxid, replicaKeys)
 	for i := 0; i < len(orderedKeys); i++ {
 		hash := hash.Sum256(orderedKeys[i])
 		_, err := doc.GetReplicaNodeByKeyHash(&hash)
@@ -175,8 +175,8 @@ func TestShardSimple(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	shards1 := Shard(boxid1, serverIdKeys)
-	shards2 := Shard(boxid2, serverIdKeys)
+	shards1 := Shard2(boxid1, serverIdKeys)
+	shards2 := Shard2(boxid2, serverIdKeys)
 	require.NotEqual(t, shards1, shards2)
 }
 
@@ -243,31 +243,6 @@ func TestReplicaNum(t *testing.T) {
 	require.Error(t, err)
 }
 
-/*
-func TestShard2(t *testing.T) {
-	numServers := 10
-	keySize := 32
-	keys := make([][]byte, numServers)
-	for i := 0; i < numServers; i++ {
-		keys[i] = make([]byte, keySize)
-		_, err := rand.Reader.Read(keys[i])
-		require.NoError(t, err)
-	}
-
-	boxid := &[32]byte{}
-	_, err := rand.Reader.Read(boxid[:])
-	require.NoError(t, err)
-
-	shard := Shard2(boxid, keys)
-
-	t.Log("Shard:")
-	for _, s := range shard {
-		t.Logf("entry: %x", s)
-	}
-}
-*/
-
-/*
 func BenchmarkShard2(b *testing.B) {
 	numServers := 10
 	keySize := 32
@@ -291,4 +266,3 @@ func BenchmarkShard2(b *testing.B) {
 	shard2 = shard
 	shard = shard2
 }
-*/
