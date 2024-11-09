@@ -9,17 +9,51 @@ import (
 	"os"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/katzenpost/hpqc/kem"
 	kemschemes "github.com/katzenpost/hpqc/kem/schemes"
 	nikeschemes "github.com/katzenpost/hpqc/nike/schemes"
 	signschemes "github.com/katzenpost/hpqc/sign/schemes"
 
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
+	"github.com/katzenpost/katzenpost/core/wire"
+	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"github.com/katzenpost/katzenpost/replica/config"
 )
+
+type MockSession struct {
+	ad []byte
+	pk kem.PublicKey
+}
+
+func (m *MockSession) Initialize(conn net.Conn) error {
+	return nil
+}
+
+func (m *MockSession) SendCommand(cmd commands.Command) error {
+	return nil
+}
+
+func (m *MockSession) RecvCommand() (commands.Command, error) {
+	return nil, nil
+}
+
+func (m *MockSession) Close() {}
+
+func (m *MockSession) PeerCredentials() (*wire.PeerCredentials, error) {
+	return &wire.PeerCredentials{
+		AdditionalData: m.ad,
+		PublicKey:      m.pk,
+	}, nil
+}
+
+func (m *MockSession) ClockSkew() time.Duration {
+	return time.Second
+}
 
 func TestIncomingConn(t *testing.T) {
 	pkiScheme := signschemes.ByName("Ed25519 Sphincs+")
@@ -68,7 +102,7 @@ func TestIncomingConn(t *testing.T) {
 		},
 	}
 
-	_, linkprivkey, err := linkScheme.GenerateKeyPair()
+	linkpubkey, linkprivkey, err := linkScheme.GenerateKeyPair()
 	require.NoError(t, err)
 	server.linkKey = linkprivkey
 
@@ -91,6 +125,38 @@ func TestIncomingConn(t *testing.T) {
 	listener.Unlock()
 	require.NotNil(t, inConn)
 
+	ad := make([]byte, 32)
+	inConn.w = &MockSession{
+		pk: linkpubkey,
+		ad: ad,
+	}
+
+	ids, err := listener.GetConnIdentities()
+	require.NoError(t, err)
+	require.Equal(t, len(ids), 0)
+
+	listener.onInitializedConn(inConn)
+
+	ids, err = listener.GetConnIdentities()
+	require.NoError(t, err)
+	require.Equal(t, len(ids), 1)
+
+	listener.onClosedConn(inConn)
+
+	ids, err = listener.GetConnIdentities()
+	require.NoError(t, err)
+	require.Equal(t, len(ids), 0)
+
+	listener.onInitializedConn(inConn)
+	err = listener.CloseOldConns(inConn)
+	require.NoError(t, err)
+
+	ids, err = listener.GetConnIdentities()
+	require.NoError(t, err)
+	require.Equal(t, len(ids), 0)
+
+	// 30 seconds is too slow
 	//inConn.Close()
-	//listener.Halt()
+
+	listener.Halt()
 }

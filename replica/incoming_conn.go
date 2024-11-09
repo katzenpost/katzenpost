@@ -38,7 +38,7 @@ type incomingConn struct {
 
 	c   net.Conn
 	e   *list.Element
-	w   *wire.Session
+	w   wire.SessionInterface
 	geo *geo.Geometry
 
 	id      uint64
