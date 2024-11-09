@@ -87,7 +87,7 @@ func TestNew(t *testing.T) {
 		PKISignatureScheme: pkiScheme.Name(),
 		ReplicaNIKEScheme:  replicaScheme.Name(),
 		SphinxGeometry:     geometry,
-		Addresses:          []string{"tcp://127.0.0.1:7483"},
+		Addresses:          []string{"tcp://127.0.0.1:2413"},
 	}
 	s, err := New(cfg)
 	require.NoError(t, err)
