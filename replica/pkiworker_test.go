@@ -1,7 +1,9 @@
 package replica
 
 import (
+	"errors"
 	"path/filepath"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -242,4 +244,55 @@ func TestAuthenticateReplicaConnection(t *testing.T) {
 	require.True(t, ok)
 
 	s.Shutdown()
+}
+
+func TestDocumentsToFetch(t *testing.T) {
+	p := &PKIWorker{
+		lock: new(sync.RWMutex),
+		docs: make(map[uint64]*pki.Document),
+	}
+	epochs := p.documentsToFetch()
+	_, _, till := epochtime.Now()
+	if till < nextFetchTill {
+		require.Equal(t, 4, len(epochs))
+	} else {
+		require.Equal(t, 3, len(epochs))
+	}
+
+	p.lock.Lock()
+	p.docs[epochs[0]] = nil
+	p.lock.Unlock()
+
+	epochs2 := p.documentsToFetch()
+	_, _, till = epochtime.Now()
+	if till < nextFetchTill {
+		require.Equal(t, 3, len(epochs2))
+	} else {
+		require.Equal(t, 2, len(epochs2))
+	}
+
+}
+
+func TestGetFailedFetch(t *testing.T) {
+	p := &PKIWorker{
+		lock:          new(sync.RWMutex),
+		failedFetches: make(map[uint64]error),
+	}
+	epochs := p.documentsToFetch()
+	ok, err := p.getFailedFetch(epochs[0])
+	require.NoError(t, err)
+	require.False(t, ok)
+
+	myepoch := epochs[0] - 10
+	p.setFailedFetch(myepoch, errors.New("wtf"))
+
+	ok, err = p.getFailedFetch(myepoch)
+	require.Error(t, err)
+	require.True(t, ok)
+
+	p.pruneFailures()
+
+	ok, err = p.getFailedFetch(myepoch)
+	require.NoError(t, err)
+	require.False(t, ok)
 }
