@@ -210,6 +210,17 @@ func TestIncomingConn(t *testing.T) {
 	})
 	require.NotNil(t, reply2)
 
+	replicaMessage := &commands.ReplicaMessage{
+		Cmds: commands.NewStorageReplicaCommands(geometry),
+		Geo:  geometry,
+
+		SenderEPubKey: &[commands.HybridKeySize]byte{},
+		DEK:           &[32]byte{},
+		Ciphertext:    make([]byte, 1000),
+	}
+	reply3 := inConn.handleReplicaMessage(replicaMessage)
+	require.Nil(t, reply3)
+
 	// 30 seconds is too slow
 	//inConn.Close()
 	listener.Halt()
