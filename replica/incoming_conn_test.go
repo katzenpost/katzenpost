@@ -16,6 +16,7 @@ import (
 	"github.com/katzenpost/hpqc/kem"
 	kemschemes "github.com/katzenpost/hpqc/kem/schemes"
 	nikeschemes "github.com/katzenpost/hpqc/nike/schemes"
+	"github.com/katzenpost/hpqc/rand"
 	signschemes "github.com/katzenpost/hpqc/sign/schemes"
 
 	"github.com/katzenpost/katzenpost/core/pki"
@@ -39,7 +40,7 @@ func (m *MockSession) SendCommand(cmd commands.Command) error {
 }
 
 func (m *MockSession) RecvCommand() (commands.Command, error) {
-	return nil, nil
+	return new(commands.ReplicaMessageReply), nil
 }
 
 func (m *MockSession) Close() {}
@@ -67,7 +68,7 @@ func TestIncomingConn(t *testing.T) {
 
 	connRx, _ := net.Pipe()
 
-	dname, err := os.MkdirTemp("", fmt.Sprintf("replica.testState %d", os.Getpid()))
+	dname, err := os.MkdirTemp("", fmt.Sprintf("replica.testState_%d", os.Getpid()))
 	require.NoError(t, err)
 	defer os.RemoveAll(dname)
 
@@ -112,6 +113,16 @@ func TestIncomingConn(t *testing.T) {
 	err = server.initLogging()
 	require.NoError(t, err)
 
+	epoch, _, _ := ReplicaNow()
+	server.envelopeKeys, err = NewEnvelopeKeys(replicaScheme, server.logBackend.GetLogger("envelope keys"), dname, epoch)
+
+	st := &state{
+		server: server,
+		log:    server.LogBackend().GetLogger("state"),
+	}
+	server.state = st
+	st.initDB()
+
 	id := 0
 	addr := "tcp://127.0.0.1:1234"
 	listener, err := newListener(server, id, addr)
@@ -130,6 +141,7 @@ func TestIncomingConn(t *testing.T) {
 		pk: linkpubkey,
 		ad: ad,
 	}
+	inConn.l = listener
 
 	ids, err := listener.GetConnIdentities()
 	require.NoError(t, err)
@@ -174,6 +186,29 @@ func TestIncomingConn(t *testing.T) {
 	replyCommand, ok = inConn.onReplicaCommand(new(commands.Consensus))
 	require.False(t, ok)
 	require.Nil(t, replyCommand)
+
+	boxid := &[32]byte{}
+	_, err = rand.Reader.Read(boxid[:])
+	require.NoError(t, err)
+
+	sig := &[32]byte{}
+	_, err = rand.Reader.Read(boxid[:])
+	require.NoError(t, err)
+
+	payload := make([]byte, 1000)
+	reply := inConn.handleReplicaWrite(&commands.ReplicaWrite{
+		Cmds:      commands.NewStorageReplicaCommands(geometry),
+		BoxID:     boxid,
+		Signature: sig,
+		Payload:   payload,
+	})
+	require.NotNil(t, reply)
+
+	reply2 := inConn.handleReplicaRead(&commands.ReplicaRead{
+		Cmds:  commands.NewStorageReplicaCommands(geometry),
+		BoxID: boxid,
+	})
+	require.NotNil(t, reply2)
 
 	// 30 seconds is too slow
 	//inConn.Close()
