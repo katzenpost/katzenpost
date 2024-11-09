@@ -128,7 +128,7 @@ type SessionInterface interface {
 	SendCommand(cmd commands.Command) error
 	RecvCommand() (commands.Command, error)
 	Close()
-	PeerCredentials() *PeerCredentials
+	PeerCredentials() (*PeerCredentials, error)
 	ClockSkew() time.Duration
 }
 
