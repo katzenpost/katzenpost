@@ -155,8 +155,27 @@ func TestIncomingConn(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, len(ids), 0)
 
+	replyCommand, ok := inConn.onReplicaCommand(new(commands.NoOp))
+	require.True(t, ok)
+	require.Nil(t, replyCommand)
+
+	replyCommand, ok = inConn.onReplicaCommand(new(commands.Disconnect))
+	require.False(t, ok)
+	require.Nil(t, replyCommand)
+
+	//replyCommand, ok = inConn.onReplicaCommand(new(commands.ReplicaWrite))
+	//require.True(t, ok)
+	//require.NotNil(t, replyCommand)
+
+	//replyCommand, ok = inConn.onReplicaCommand(new(commands.ReplicaMessage))
+	//require.True(t, ok)
+	//require.NotNil(t, replyCommand)
+
+	replyCommand, ok = inConn.onReplicaCommand(new(commands.Consensus))
+	require.False(t, ok)
+	require.Nil(t, replyCommand)
+
 	// 30 seconds is too slow
 	//inConn.Close()
-
 	listener.Halt()
 }
