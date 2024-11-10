@@ -94,7 +94,7 @@ func (c *incomingConn) worker() {
 	defer c.w.Close()
 
 	// Bind the session to the conn, handshake, authenticate.
-	timeoutMs := time.Duration(30000 * time.Millisecond)
+	timeoutMs := time.Duration(c.l.server.cfg.HandshakeTimeout) * time.Millisecond
 	c.c.SetDeadline(time.Now().Add(timeoutMs))
 	if err = c.w.Initialize(c.c); err != nil {
 		c.log.Errorf("Handshake failed: %v", err)
@@ -125,7 +125,7 @@ func (c *incomingConn) worker() {
 	}
 
 	// Start the reauthenticate ticker.
-	reauthMs := time.Duration(30000 * time.Millisecond)
+	reauthMs := time.Duration(c.l.server.cfg.ReauthInterval) * time.Millisecond
 	reauth := time.NewTicker(reauthMs)
 	defer reauth.Stop()
 
