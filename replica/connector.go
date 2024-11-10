@@ -59,6 +59,10 @@ func (co *Connector) ForceUpdate() {
 	}
 }
 
+func (co *Connector) Server() *Server {
+	return co.server
+}
+
 func getBoxID(cmd commands.Command) *[32]byte {
 	switch myCmd := cmd.(type) {
 	case *commands.ReplicaRead:
@@ -178,6 +182,10 @@ func (co *Connector) spawnNewConns() {
 	}
 }
 
+func (co *Connector) CloseAllCh() chan interface{} {
+	return co.closeAllCh
+}
+
 func (co *Connector) onNewConn(c *outgoingConn) {
 	nodeID := hash.Sum256(c.dst.IdentityKey)
 
@@ -194,7 +202,7 @@ func (co *Connector) onNewConn(c *outgoingConn) {
 	co.conns[nodeID] = c
 }
 
-func (co *Connector) onClosedConn(c *outgoingConn) {
+func (co *Connector) OnClosedConn(c *outgoingConn) {
 	nodeID := hash.Sum256(c.dst.IdentityKey)
 
 	co.Lock()

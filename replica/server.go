@@ -39,6 +39,9 @@ type GenericListener interface {
 
 type GenericConnector interface {
 	Halt()
+	Server() *Server
+	OnClosedConn(conn *outgoingConn)
+	CloseAllCh() chan interface{}
 	ForceUpdate()
 	DispatchCommand(cmd commands.Command, idHash *[32]byte)
 	DispatchReplication(cmd *commands.ReplicaWrite)

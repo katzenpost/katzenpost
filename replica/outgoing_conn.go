@@ -31,7 +31,7 @@ var outgoingConnID uint64
 type outgoingConn struct {
 	scheme kem.Scheme
 	geo    *geo.Geometry
-	co     *Connector
+	co     GenericConnector
 	log    *logging.Logger
 
 	dst *cpki.ReplicaDescriptor
@@ -63,7 +63,7 @@ func (c *outgoingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 	// Query the PKI to figure out if we can send or not, and to ensure that
 	// the peer is listed in a PKI document that's valid.
 	var isValid bool
-	_, isValid = c.co.server.pkiWorker.AuthenticateReplicaConnection(creds)
+	_, isValid = c.co.Server().pkiWorker.AuthenticateReplicaConnection(creds)
 
 	if !isValid {
 		c.log.Debug("failed to authenticate connect via latest PKI doc")
@@ -97,7 +97,7 @@ func (c *outgoingConn) worker() {
 
 	defer func() {
 		c.log.Debugf("Halting connect worker.")
-		c.co.onClosedConn(c)
+		c.co.OnClosedConn(c)
 		close(c.ch)
 	}()
 
@@ -111,13 +111,13 @@ func (c *outgoingConn) worker() {
 	defer cancelFn()
 	dialer := net.Dialer{
 		KeepAlive: KeepAliveInterval,
-		Timeout:   time.Duration(c.co.server.cfg.ConnectTimeout) * time.Millisecond,
+		Timeout:   time.Duration(c.co.Server().cfg.ConnectTimeout) * time.Millisecond,
 	}
 	go func() {
 		// Bolt a bunch of channels to the dial canceler, such that closing
 		// either channel results in the dial context being canceled.
 		select {
-		case <-c.co.closeAllCh:
+		case <-c.co.CloseAllCh():
 			cancelFn()
 		case <-dialCtx.Done():
 		}
@@ -140,7 +140,7 @@ func (c *outgoingConn) worker() {
 		// something like this, stale connections can get stuck in the
 		// dialing state since the Connector relies on outgoingConnection
 		// objects to remove themselves from the connection table.
-		if desc, isValid := c.co.server.pkiWorker.AuthenticateReplicaConnection(&dialCheckCreds); isValid {
+		if desc, isValid := c.co.Server().pkiWorker.AuthenticateReplicaConnection(&dialCheckCreds); isValid {
 			// The list of addresses could have changed, authenticateConnection
 			// will return the most "current" descriptor on success, so update
 			// the cached pointer.
@@ -240,13 +240,13 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 	}()
 
 	// Allocate the session struct.
-	identityHash := hash.Sum256From(c.co.server.identityPublicKey)
+	identityHash := hash.Sum256From(c.co.Server().identityPublicKey)
 	cfg := &wire.SessionConfig{
 		KEMScheme:         c.scheme,
 		Geometry:          c.geo,
 		Authenticator:     c,
 		AdditionalData:    identityHash[:],
-		AuthenticationKey: c.co.server.linkKey,
+		AuthenticationKey: c.co.Server().linkKey,
 		RandomReader:      rand.Reader,
 	}
 	w, err := wire.NewSession(cfg, true)
@@ -257,7 +257,7 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 	defer w.Close()
 
 	// Bind the session to the conn, handshake, authenticate.
-	timeoutMs := time.Duration(c.co.server.cfg.HandshakeTimeout) * time.Millisecond
+	timeoutMs := time.Duration(c.co.Server().cfg.HandshakeTimeout) * time.Millisecond
 	conn.SetDeadline(time.Now().Add(timeoutMs))
 	if err = w.Initialize(conn); err != nil {
 		c.log.Errorf("Handshake failed: %v", err)
@@ -302,7 +302,7 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 	}()
 
 	// Start the reauthenticate ticker.
-	reauthMs := time.Duration(c.co.server.cfg.ReauthInterval) * time.Millisecond
+	reauthMs := time.Duration(c.co.Server().cfg.ReauthInterval) * time.Millisecond
 	reauth := time.NewTicker(reauthMs)
 	defer reauth.Stop()
 
@@ -354,7 +354,7 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 	}
 }
 
-func newOutgoingConn(co *Connector, dst *cpki.ReplicaDescriptor, geo *geo.Geometry, scheme kem.Scheme) *outgoingConn {
+func newOutgoingConn(co GenericConnector, dst *cpki.ReplicaDescriptor, geo *geo.Geometry, scheme kem.Scheme) *outgoingConn {
 	const maxQueueSize = 64 // TODO/perf: Tune this.
 
 	c := &outgoingConn{
@@ -365,7 +365,7 @@ func newOutgoingConn(co *Connector, dst *cpki.ReplicaDescriptor, geo *geo.Geomet
 		ch:     make(chan commands.Command, maxQueueSize),
 		id:     atomic.AddUint64(&outgoingConnID, 1), // Diagnostic only, wrapping is fine.
 	}
-	c.log = co.server.LogBackend().GetLogger(fmt.Sprintf("outgoing:%d", c.id))
+	c.log = co.Server().LogBackend().GetLogger(fmt.Sprintf("outgoing:%d", c.id))
 
 	c.log.Debugf("New outgoing connection: %+v", dst)
 

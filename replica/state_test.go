@@ -52,7 +52,25 @@ func generateReplica(t *testing.T, pkiScheme sign.Scheme, linkScheme kem.Scheme,
 	}
 }
 
-type mockConnector struct{}
+type mockConnector struct {
+	server *Server
+}
+
+func newMockConnector(s *Server) *mockConnector {
+	return &mockConnector{
+		server: s,
+	}
+}
+
+func (m *mockConnector) Server() *Server {
+	return m.server
+}
+
+func (m *mockConnector) CloseAllCh() chan interface{} {
+	return nil
+}
+
+func (m *mockConnector) OnClosedConn(conn *outgoingConn) {}
 
 func (m *mockConnector) Halt() {}
 
