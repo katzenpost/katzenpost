@@ -90,6 +90,8 @@ func TestIncomingConn(t *testing.T) {
 		WireKEMScheme:      linkScheme.Name(),
 		Addresses:          []string{"tcp://127.0.0.1:34394"},
 	}
+	err = cfg.FixupAndValidate(false)
+	require.NoError(t, err)
 
 	server := &Server{
 		identityPublicKey: pk,
