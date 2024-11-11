@@ -335,9 +335,6 @@ func (p *PKIWorker) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 		EnvelopeKeys: envelopeKeys,
 	}
 
-	// XXX FIXME: we need a replica NIKE key to publish
-	desc.EnvelopeKeys = make(map[uint64][]byte)
-
 	// Post the descriptor to all the authorities.
 	err = p.impl.PostReplica(pkiCtx, doPublishEpoch, p.server.identityPrivateKey, p.server.identityPublicKey, desc)
 	switch err {
