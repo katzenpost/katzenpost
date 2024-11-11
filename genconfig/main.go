@@ -1040,7 +1040,7 @@ services:
     image: %s
     volumes:
       - ./:%s
-    command: %s/replica%s -f %s/replica%d/katzenpost.toml
+    command: %s/replica%s -f %s/replica%d/replica.toml
     network_mode: host
     depends_on:`, i+1, dockerImage, s.baseDir, s.baseDir, s.binSuffix, s.baseDir, i+1)
 		for _, authCfg := range s.votingAuthConfigs {
