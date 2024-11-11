@@ -128,6 +128,7 @@ func (p *PKIWorker) updateTimer(timer *time.Timer) {
 }
 
 func (p *PKIWorker) worker() {
+	p.log.Info("PKI worker started")
 	var initialSpawnDelay = epochtime.Period / 64
 
 	timer := time.NewTimer(initialSpawnDelay)
@@ -258,7 +259,7 @@ func (p *PKIWorker) worker() {
 }
 
 func (p *PKIWorker) publishDescriptorIfNeeded(pkiCtx context.Context) error {
-
+	p.log.Debug("publishing replica descriptor")
 	epoch, _, till := epochtime.Now()
 	doPublishEpoch := uint64(0)
 	switch p.lastPublishedEpoch {

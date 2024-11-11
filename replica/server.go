@@ -174,6 +174,7 @@ func New(cfg *config.Config) (*Server, error) {
 	}
 
 	// Initialize the server identity and link keys.
+	s.log.Notice("ensuring identity keypair exists")
 	identityPrivateKeyFile := filepath.Join(s.cfg.DataDir, "identity.private.pem")
 	identityPublicKeyFile := filepath.Join(s.cfg.DataDir, "identity.public.pem")
 
@@ -206,6 +207,7 @@ func New(cfg *config.Config) (*Server, error) {
 		return nil, fmt.Errorf("%s and %s must either both exist or not exist", identityPrivateKeyFile, identityPublicKeyFile)
 	}
 
+	s.log.Notice("ensuring link keypair exists")
 	scheme := schemes.ByName(cfg.WireKEMScheme)
 	if scheme == nil {
 		return nil, errors.New("KEM scheme not found in registry")
@@ -243,6 +245,7 @@ func New(cfg *config.Config) (*Server, error) {
 	s.linkKey = linkPrivateKey
 
 	// Write replica NIKE keys to files or load them from files.
+	s.log.Notice("ensuring replica NIKE keypair exists")
 	nikeScheme := nikeSchemes.ByName(cfg.ReplicaNIKEScheme)
 	replicaEpoch, _, _ := ReplicaNow()
 	s.envelopeKeys, err = NewEnvelopeKeys(nikeScheme, s.logBackend.GetLogger("envelopeKeys"), cfg.DataDir, replicaEpoch)
@@ -281,15 +284,18 @@ func New(cfg *config.Config) (*Server, error) {
 	}
 
 	// Start the PKI worker.
+	s.log.Notice("start PKI worker")
 	s.pkiWorker, err = newPKIWorker(s, s.logBackend.GetLogger("pkiWorker"))
 	if err != nil {
 		panic(err)
 	}
 
 	// Start the outgoing connection worker
+	s.log.Notice("start connector worker")
 	s.connector = newConnector(s)
 
 	// Bring the listener(s) online.
+	s.log.Notice("start listener workers")
 	s.listeners = make([]GenericListener, 0, len(addresses))
 	for i, addr := range addresses {
 		l, err := newListener(s, i, addr)
@@ -303,6 +309,7 @@ func New(cfg *config.Config) (*Server, error) {
 	isOk = true
 
 	// XXX FIXME: perform rebalance after some delay to ensure we're first fully booted up
+	s.log.Notice("performing rebalance after startup")
 	err = s.state.Rebalance()
 	if err != nil {
 		s.log.Errorf("failed to rebalance shares after startup: %s", err)
