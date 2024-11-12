@@ -168,13 +168,13 @@ func New(cfg *config.Config) (*Server, error) {
 	s.fatalErrCh = make(chan error)
 	s.haltedCh = make(chan interface{})
 
-	s.log.Notice("Katzenpost Pigeonhole Storage Replica")
+	s.log.Notice("Starting Katzenpost Pigeonhole Storage Replica")
 	if s.cfg.Logging.Level == "DEBUG" {
 		s.log.Warning("Debug logging is enabled.")
 	}
 
 	// Initialize the server identity and link keys.
-	s.log.Notice("ensuring identity keypair exists")
+	s.log.Debug("ensuring identity keypair exists")
 	identityPrivateKeyFile := filepath.Join(s.cfg.DataDir, "identity.private.pem")
 	identityPublicKeyFile := filepath.Join(s.cfg.DataDir, "identity.public.pem")
 
@@ -207,7 +207,7 @@ func New(cfg *config.Config) (*Server, error) {
 		return nil, fmt.Errorf("%s and %s must either both exist or not exist", identityPrivateKeyFile, identityPublicKeyFile)
 	}
 
-	s.log.Notice("ensuring link keypair exists")
+	s.log.Debug("ensuring link keypair exists")
 	scheme := schemes.ByName(cfg.WireKEMScheme)
 	if scheme == nil {
 		return nil, errors.New("KEM scheme not found in registry")
@@ -245,10 +245,11 @@ func New(cfg *config.Config) (*Server, error) {
 	s.linkKey = linkPrivateKey
 
 	// Write replica NIKE keys to files or load them from files.
-	s.log.Notice("ensuring replica NIKE keypair exists")
+	s.log.Debug("ensuring replica NIKE keypair exists")
 	nikeScheme := nikeSchemes.ByName(cfg.ReplicaNIKEScheme)
 	replicaEpoch, _, _ := ReplicaNow()
 	s.envelopeKeys, err = NewEnvelopeKeys(nikeScheme, s.logBackend.GetLogger("envelopeKeys"), cfg.DataDir, replicaEpoch)
+	s.log.Debug("AFTER ensuring replica NIKE keypair exists")
 	if err != nil {
 		panic(err)
 	}

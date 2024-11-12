@@ -15,6 +15,12 @@ import (
 	"github.com/katzenpost/katzenpost/core/log"
 )
 
+func TestEnvelopeKey(t *testing.T) {
+	nikeScheme := nikeschemes.ByName("CTIDH512-X25519")
+	keys := NewEnvelopeKey(nikeScheme)
+	require.NotNil(t, keys)
+}
+
 func TestEnvelopeKeys(t *testing.T) {
 	logBackend, err := log.New("", "DEBUG", false)
 	require.NoError(t, err)
@@ -23,7 +29,7 @@ func TestEnvelopeKeys(t *testing.T) {
 	require.NoError(t, err)
 	defer os.RemoveAll(dname)
 
-	replicaScheme := nikeschemes.ByName("x25519")
+	replicaScheme := nikeschemes.ByName("CTIDH512-X25519")
 	keys := &EnvelopeKeys{
 		log:      logBackend.GetLogger("envelope keys"),
 		datadir:  dname,

@@ -90,7 +90,11 @@ func (e *EnvelopeKey) WriteKeyFiles(dataDir string, scheme nike.Scheme, epoch ui
 }
 
 func NewEnvelopeKey(scheme nike.Scheme) *EnvelopeKey {
+	if scheme == nil {
+		panic("replica NIKE scheme is nil")
+	}
 	pk, sk, err := scheme.GenerateKeyPair()
+
 	if err != nil {
 		panic(err)
 	}
@@ -120,7 +124,6 @@ func NewEnvelopeKeys(scheme nike.Scheme, log *logging.Logger, datadir string, ep
 		keysLock: new(sync.RWMutex),
 		scheme:   scheme,
 	}
-
 	keypair, err := NewEnvelopeKeyFromFiles(datadir, scheme, epoch)
 	if err == nil {
 		e.keys[epoch] = keypair
