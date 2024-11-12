@@ -52,7 +52,7 @@ kem=
 DISTROS=alpine debian
 distro=alpine
 wirekem=xwing
-replicanike=CTIDH1024-X25519
+replicanike=CTIDH512-X25519
 net_name=voting_mixnet
 base_port=30000
 bind_addr=127.0.0.1
@@ -121,6 +121,10 @@ $(net_name)/running.stamp:
 
 start: $(docker_compose_yml) testnet_binaries
 	cd $(net_name); $(docker_compose) up --remove-orphans -d; $(docker_compose) top
+	touch $(net_name)/running.stamp
+
+start_debug: $(docker_compose_yml) testnet_binaries
+	cd $(net_name); $(docker_compose) up --remove-orphans;
 	touch $(net_name)/running.stamp
 
 stop:
