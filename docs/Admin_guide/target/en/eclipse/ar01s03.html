@@ -1,0 +1,19 @@
+<html><head>
+      <meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1">
+   <title>2.1 Certificate Types</title><meta name="generator" content="DocBook XSL Stylesheets V1.78.1"><link rel="home" href="index.html" title="Certificate Format"><link rel="up" href="index.html" title="Certificate Format"><link rel="prev" href="ar01s02.html" title="2. Document Format"><link rel="next" href="ar01s04.html" title="2.2. Certificate Key Types"></head><body bgcolor="white" text="black" link="#0000FF" vlink="#840084" alink="#0000FF"><div class="section"><div class="titlepage"><div><div><h2 class="title" style="clear: both"><a name="certificate-types"></a>2.1 Certificate Types</h2></div></div></div><p>
+      The certificate <code class="literal">type</code> field indicates the type
+      of certificate. So far we have only two types:
+    </p><div class="itemizedlist"><ul class="itemizedlist compact" style="list-style-type: disc; "><li class="listitem"><p>
+          identity key certificate
+        </p></li><li class="listitem"><p>
+          directory authority certificate
+        </p></li></ul></div><p>
+      Both mixes and directory authority servers have a secret,
+      long-term identity key. This key is ideally stored encrypted and
+      offline, it&#8217;s used to sign key certificate documents. Key
+      certificates contain a medium-term signing key that is used to
+      sign other documents. In the case of an <span class="quote">&#8220;<span class="quote">authority signing
+      key</span>&#8221;</span>, it is used to sign vote and consensus documents
+      whereas the <span class="quote">&#8220;<span class="quote">mix singing key</span>&#8221;</span> is used to sign mix
+      descriptors which are uploaded to the directory authority servers.
+    </p></div></body></html>

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8" standalone="no"?>
+<toc label="Certificate Format" topic="index.html">
+   <topic label="1. Introduction" href="index.html#introduction">
+      <topic label="1.1 Conventions Used in This Document" href="index.html#conventions-used-in-this-document"/>
+      <topic label="1.2 Terminology" href="index.html#terminology"/>
+   </topic>
+   <topic label="2. Document Format" href="ar01s02.html"/>
+   <topic label="2.1 Certificate Types" href="ar01s03.html"/>
+   <topic label="2.2. Certificate Key Types" href="ar01s04.html"/>
+   <topic label="3. Golang API" href="ar01s05.html"/>
+   <topic label="4. Acknowledgments" href="ar01s06.html"/>
+   <topic label="Appendix A. References" href="ar01s07.html">
+      <topic label="Appendix A.1 Normative References" href="ar01s07.html#appendix-a.1-normative-references"/>
+      <topic label="Appendix A.2 Informative References" href="ar01s07.html#appendix-a.2-informative-references"/>
+   </topic>
+   <topic label="Appendix B. Citing This Document" href="ar01s08.html">
+      <topic label="Appendix B.1 Bibtex Entry" href="ar01s08.html#appendix-b.1-bibtex-entry"/>
+   </topic>
+</toc>
