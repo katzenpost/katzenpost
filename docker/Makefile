@@ -52,7 +52,7 @@ kem=
 DISTROS=alpine debian
 distro=alpine
 wirekem=xwing
-replicanike=CTIDH512-X25519
+replicanike=CTIDH1024-X25519
 net_name=voting_mixnet
 base_port=30000
 bind_addr=127.0.0.1
@@ -75,7 +75,7 @@ noMixDecoy=$(shell if [[ $no_mixdecoy ]]; then echo -noMixDecoy; fi)
 
 docker=$(shell if which podman|grep -q .; then echo podman; else echo docker; fi)
 
-ldflags="-buildid= -X github.com/katzenpost/katzenpost/core/epochtime.WarpedEpoch=${warped}"
+ldflags="-extldflags '-Wl,-z,stack-size=0x1F40000' -buildid= -X github.com/katzenpost/katzenpost/core/epochtime.WarpedEpoch=${warped}"
 
 uid?=$(shell [ "$$SUDO_UID" != "" ] && echo "$$SUDO_UID" || id -u)
 gid?=$(shell [ "$$SUDO_GID" != "" ] && echo "$$SUDO_GID" || id -g)
