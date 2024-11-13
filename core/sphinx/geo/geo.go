@@ -184,13 +184,21 @@ func (g *Geometry) String() string {
 }
 
 func (g *Geometry) Display() string {
+	blob, err := g.Marshal()
+	if err != nil {
+		panic(err)
+	}
+	return string(blob)
+}
+
+func (g *Geometry) Marshal() ([]byte, error) {
 	buf := new(bytes.Buffer)
 	encoder := toml.NewEncoder(buf)
 	err := encoder.Encode(g)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
-	return string(buf.Bytes())
+	return buf.Bytes(), nil
 }
 
 type geometryFactory struct {
