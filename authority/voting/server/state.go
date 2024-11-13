@@ -1709,7 +1709,7 @@ func (s *state) onReplicaDescriptorUpload(rawDesc []byte, desc *pki.ReplicaDescr
 	}
 
 	// Ok, this is a new descriptor.
-	if s.replicaDescriptors[epoch] != nil {
+	if s.documents[epoch] != nil {
 		// If there is a document already, the descriptor is late, and will
 		// never appear in a document, so reject it.
 		return fmt.Errorf("state: Node %v: Late descriptor upload for for epoch %v", desc.IdentityKey, epoch)
