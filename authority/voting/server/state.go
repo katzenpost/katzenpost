@@ -2088,7 +2088,7 @@ func newState(s *Server) (*state, error) {
 		}
 
 		pk := hash.Sum256From(identityPublicKey)
-		st.authorizedServiceNodes[pk] = v.Identifier
+		st.authorizedReplicaNodes[pk] = v.Identifier
 	}
 
 	st.authorizedAuthorities = make(map[[publicKeyHashSize]byte]bool)
