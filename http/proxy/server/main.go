@@ -31,7 +31,9 @@ import (
 
 	cbor "github.com/fxamacker/cbor/v2"
 	"github.com/katzenpost/katzenpost/core/log"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/http/proxy/common"
+	"github.com/katzenpost/katzenpost/http/proxy/server/config"
 	"github.com/katzenpost/katzenpost/server/cborplugin"
 
 	"gopkg.in/op/go-logging.v1"
@@ -40,8 +42,19 @@ import (
 type proxy struct {
 	allowedHost map[string]struct{}
 	log         *logging.Logger
+	geo         *geo.Geometry
 
 	write func(cborplugin.Command)
+}
+
+func newProxy(log *logging.Logger, host string, geo *geo.Geometry) *proxy {
+	p := &proxy{
+		allowedHost: make(map[string]struct{}),
+		log:         log,
+		geo:         geo,
+	}
+	p.allowedHost[host] = struct{}{}
+	return p
 }
 
 func (p proxy) OnCommand(cmd cborplugin.Command) error {
@@ -75,11 +88,10 @@ func (p proxy) OnCommand(cmd cborplugin.Command) error {
 			return err
 		}
 
-		/*
-			if len(rawResp) > 10240 {// where do we learn our maximum payload size ?
-				return nil, errors.New("Response is too long")
-			}
-		*/
+		// check that the respones size is not too large
+		if len(rawResp) > p.geo.UserForwardPayloadLength {
+			return errors.New("Response exceeds Sphinx Geometry's UserForwardPayloadLength")
+		}
 
 		// wrap response in common.Response to indicate length to client
 		cr := &common.Response{Payload: rawResp}
@@ -100,10 +112,21 @@ func main() {
 	var logLevel string
 	var logDir string
 	var host string
+	var configPath string
 	flag.StringVar(&logDir, "log_dir", "", "logging directory")
 	flag.StringVar(&logLevel, "log_level", "DEBUG", "logging level could be set to: DEBUG, INFO, NOTICE, WARNING, ERROR, CRITICAL")
 	flag.StringVar(&host, "host", "*", "wildcard allow proxy to any http.Request.Host")
+	flag.StringVar(&configPath, "config", "", "file path to the TOML configuration file")
 	flag.Parse()
+
+	if configPath == "" {
+		panic("config must be specified")
+	}
+
+	cfg, err := config.LoadFile(configPath)
+	if err != nil {
+		panic(err)
+	}
 
 	// Ensure that the log directory exists.
 	s, err := os.Stat(logDir)
@@ -131,9 +154,7 @@ func main() {
 	}
 	socketFile := filepath.Join(tmpDir, fmt.Sprintf("%d.http_proxy.socket", os.Getpid()))
 
-	p := &proxy{allowedHost: make(map[string]struct{}), log: serverLog}
-	// TODO: support csv host arg
-	p.allowedHost[host] = struct{}{}
+	p := newProxy(serverLog, host, cfg.SphinxGeometry)
 
 	cmdBuilder := new(cborplugin.RequestFactory)
 	server := cborplugin.NewServer(serverLog, socketFile, cmdBuilder, p)
