@@ -336,15 +336,14 @@ func IsReplicaDescriptorWellFormed(d *ReplicaDescriptor, epoch uint64) error {
 	if d.IdentityKey == nil {
 		return fmt.Errorf("ReplicaDescriptor missing IdentityKey")
 	}
-	if d.EnvelopeKeys[epoch] == nil {
-		return fmt.Errorf("ReplicaDescriptor missing EnvelopeKeys[%v]", epoch)
+
+	if d.EnvelopeKeys == nil {
+		return errors.New("ReplicaDescriptor EnvelopeKeys is nil")
 	}
-	for e := range d.EnvelopeKeys {
-		// TODO: Should this check that the epochs in MixKey are sequential?
-		if e < epoch || e >= epoch+3 {
-			return fmt.Errorf("ReplicaDescriptor contains EnvelopeKeys for invalid epoch: %v", d)
-		}
+	if len(d.EnvelopeKeys) == 0 {
+		return errors.New("ReplicaDescriptor EnvelopeKeys is zero size")
 	}
+
 	if len(d.Addresses) == 0 {
 		return fmt.Errorf("ReplicaDescriptor missing Addresses")
 	}
