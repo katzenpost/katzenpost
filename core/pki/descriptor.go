@@ -325,19 +325,19 @@ type ReplicaDescriptor struct {
 // a PKI Document.
 func IsReplicaDescriptorWellFormed(d *ReplicaDescriptor, epoch uint64) error {
 	if d.Name == "" {
-		return fmt.Errorf("Descriptor missing Name")
+		return fmt.Errorf("ReplicaDescriptor missing Name")
 	}
 	if len(d.Name) > constants.NodeIDLength {
-		return fmt.Errorf("Descriptor Name '%v' exceeds max length", d.Name)
+		return fmt.Errorf("ReplicaDescriptor Name '%v' exceeds max length", d.Name)
 	}
 	if d.LinkKey == nil {
-		return fmt.Errorf("Descriptor missing LinkKey")
+		return fmt.Errorf("ReplicaDescriptor missing LinkKey")
 	}
 	if d.IdentityKey == nil {
-		return fmt.Errorf("Descriptor missing IdentityKey")
+		return fmt.Errorf("ReplicaDescriptor missing IdentityKey")
 	}
 	if d.EnvelopeKeys[epoch] == nil {
-		return fmt.Errorf("Descriptor missing MixKey[%v]", epoch)
+		return fmt.Errorf("ReplicaDescriptor missing EnvelopeKeys[%v]", epoch)
 	}
 	for e := range d.EnvelopeKeys {
 		// TODO: Should this check that the epochs in MixKey are sequential?
@@ -346,11 +346,11 @@ func IsReplicaDescriptorWellFormed(d *ReplicaDescriptor, epoch uint64) error {
 		}
 	}
 	if len(d.Addresses) == 0 {
-		return fmt.Errorf("Descriptor missing Addresses")
+		return fmt.Errorf("ReplicaDescriptor missing Addresses")
 	}
 	for transport, addrs := range d.Addresses {
 		if len(addrs) == 0 {
-			return fmt.Errorf("Descriptor contains empty Address list for transport '%v'", transport)
+			return fmt.Errorf("ReplicaDescriptor contains empty Address list for transport '%v'", transport)
 		}
 
 		// Validate all addresses belonging to the TCP variants.
@@ -369,7 +369,7 @@ func IsReplicaDescriptorWellFormed(d *ReplicaDescriptor, epoch uint64) error {
 		}
 	}
 	if len(d.Addresses) == 0 {
-		return fmt.Errorf("Descriptor contains no addresses")
+		return fmt.Errorf("ReplicaDescriptor contains no addresses")
 	}
 	return nil
 }

@@ -612,6 +612,12 @@ func IsDocumentWellFormed(d *Document, verifiers []sign.PublicKey) error {
 		pks[pk] = true
 	}
 
+	for _, desc := range d.StorageReplicas {
+		if err := IsReplicaDescriptorWellFormed(desc, d.Epoch); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
