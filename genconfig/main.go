@@ -401,7 +401,13 @@ func (s *katzenpost) genProxyServerCfg(identifier string) (string, error) {
 	cfg := &pConfig.Config{
 		SphinxGeometry: s.sphinxGeometry,
 	}
-	err := saveCfg(cfg, s.outDir)
+	f, err := os.Create(outPath)
+	if err != nil {
+		return "", fmt.Errorf("os.Create(%s) failed: %s", outPath, err)
+	}
+	defer f.Close()
+	enc := toml.NewEncoder(f)
+	err = enc.Encode(cfg)
 	if err != nil {
 		return "", err
 	}
