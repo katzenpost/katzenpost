@@ -259,7 +259,6 @@ func (p *PKIWorker) worker() {
 }
 
 func (p *PKIWorker) publishDescriptorIfNeeded(pkiCtx context.Context) error {
-	p.log.Debug("publishing replica descriptor")
 	epoch, _, till := epochtime.Now()
 	doPublishEpoch := uint64(0)
 	switch p.lastPublishedEpoch {
@@ -336,6 +335,7 @@ func (p *PKIWorker) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 	}
 
 	// Post the descriptor to all the authorities.
+	p.log.Debug("publishing replica descriptor")
 	err = p.impl.PostReplica(pkiCtx, doPublishEpoch, p.server.identityPrivateKey, p.server.identityPublicKey, desc)
 	switch err {
 	case nil:
