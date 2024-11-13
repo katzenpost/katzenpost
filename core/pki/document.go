@@ -207,6 +207,10 @@ func (d *Document) String() string {
 	s += fmt.Sprintf("ServiceNodes:[]{%v}", d.ServiceNodes)
 	s += "}}\n"
 
+	s += "}\n"
+	s += fmt.Sprintf("StorageReplicas:[]{%v}", d.StorageReplicas)
+	s += "}}\n"
+
 	for id, signedCommit := range d.SharedRandomCommit {
 		commit, err := cert.GetCertified(signedCommit)
 		if err != nil {

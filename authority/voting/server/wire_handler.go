@@ -261,7 +261,7 @@ func (s *Server) onPostReplicaDescriptor(rAddr net.Addr, cmd *commands.PostRepli
 	}
 
 	// Return a successful response.
-	s.log.Debugf("Peer %v: Accepted descriptor for epoch %v: '%v'", rAddr, cmd.Epoch, desc)
+	s.log.Debugf("Peer %v: Accepted replica descriptor for epoch %v", rAddr, cmd.Epoch)
 	resp.ErrorCode = commands.DescriptorOk
 	return resp
 }
