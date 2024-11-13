@@ -6,6 +6,7 @@ package replica
 import (
 	"crypto/hmac"
 	"errors"
+	"net/url"
 	"sync"
 	"time"
 
@@ -95,10 +96,24 @@ func newPKIWorker(server *Server, log *logging.Logger) (*PKIWorker, error) {
 		log:           log,
 		replicas:      newReplicaMap(),
 		lock:          new(sync.RWMutex),
+		descAddrMap:   make(map[string][]string),
 		docs:          make(map[uint64]*pki.Document),
 		rawDocs:       make(map[uint64][]byte),
 		failedFetches: make(map[uint64]error),
 	}
+
+	for _, v := range server.cfg.Addresses {
+		u, err := url.Parse(v)
+		if err != nil {
+			return nil, err
+		}
+		if _, ok := p.descAddrMap[u.Scheme]; ok {
+			p.descAddrMap[u.Scheme] = append(p.descAddrMap[u.Scheme], v)
+		} else {
+			p.descAddrMap[u.Scheme] = []string{v}
+		}
+	}
+
 	kemscheme := schemes.ByName(server.cfg.WireKEMScheme)
 	if kemscheme == nil {
 		return nil, errors.New("kem scheme not found in registry")
