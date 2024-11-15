@@ -7,7 +7,7 @@ server:
 	cd server/cmd/server; go build
 
 dirauth:
-	cd authority/cmd/voting; go build
+	cd authority/cmd/dirauth; go build
 
 genconfig:
 	cd genconfig; go build
@@ -16,7 +16,7 @@ ping:
 	cd ping; go build
 
 clean:
-	rm -f server/cmd/server/server authority/cmd/voting/voting genconfig/genconfig ping/ping
+	rm -f server/cmd/server/server authority/cmd/dirauth/dirauth genconfig/genconfig ping/ping
 
 sphincsplus:
 	cd sphincsplus/ref && go test -v -race -timeout 0 ./...

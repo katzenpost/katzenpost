@@ -910,7 +910,7 @@ services:
     image: %s
     volumes:
       - ./:%s
-    command: %s/voting%s -f %s/%s/authority.toml
+    command: %s/dirauth%s -f %s/%s/authority.toml
     network_mode: host
 `, authCfg.Server.Identifier, dockerImage, s.baseDir, s.baseDir, s.binSuffix, s.baseDir, authCfg.Server.Identifier)
 	}
