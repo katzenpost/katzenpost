@@ -94,7 +94,7 @@ make_args=--no-print-directory net_name=$(net_name) docker=$(docker) distro=$(di
 
 docker_run_sh=$(docker) run ${docker_args} $(mount_net_name) --rm katzenpost-$(distro)_base $(sh) -c
 
-testnet_binaries: $(net_name)/server.$(distro) $(net_name)/proxy_server.$(distro) $(net_name)/proxy_client.$(distro) $(net_name)/memspool.$(distro) $(net_name)/pigeonhole.$(distro) $(net_name)/panda_server.$(distro) $(net_name)/echo_server.$(distro) $(net_name)/voting.$(distro) $(net_name)/replica.$(distro) | $(net_name) $(cache_dir)
+testnet_binaries: $(net_name)/server.$(distro) $(net_name)/proxy_server.$(distro) $(net_name)/proxy_client.$(distro) $(net_name)/memspool.$(distro) $(net_name)/pigeonhole.$(distro) $(net_name)/panda_server.$(distro) $(net_name)/echo_server.$(distro) $(net_name)/dirauth.$(distro) $(net_name)/replica.$(distro) | $(net_name) $(cache_dir)
 
 $(net_name):
 	mkdir -vp $(net_name)
@@ -198,9 +198,9 @@ $(net_name)/panda_server.$(distro): $(distro)_base.stamp | $(net_name) $(cache_d
 $(net_name)/echo_server.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
 		$(docker_run_sh) 'cd server_plugins/cbor_plugins/echo-go ; go build -trimpath -ldflags ${ldflags} && mv echo-go /$(net_name)/echo_server.$(distro)'
 
-$(net_name)/voting.$(distro): $(distro)_base.stamp $(docker_compose_yml) | $(net_name) $(cache_dir)
-		$(docker_run_sh) 'cd authority && make $(make_args) cmd/voting/voting cmd/fetch/fetch && \
-			mv cmd/voting/voting /$(net_name)/voting.$(distro) && \
+$(net_name)/dirauth.$(distro): $(distro)_base.stamp $(docker_compose_yml) | $(net_name) $(cache_dir)
+		$(docker_run_sh) 'cd authority && make $(make_args) cmd/dirauth/dirauth cmd/fetch/fetch && \
+			mv cmd/dirauth/dirauth /$(net_name)/dirauth.$(distro) && \
 			mv cmd/fetch/fetch /$(net_name)/fetch.$(distro)'
 
 $(net_name)/ping.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
