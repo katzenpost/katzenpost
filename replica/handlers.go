@@ -58,7 +58,7 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 		}
 		return errReply
 	}
-	cmds := commands.NewStorageReplicaCommands(c.geo)
+	cmds := commands.NewStorageReplicaCommands(c.geo, nikeScheme)
 	myCmd, err := cmds.FromBytes(requestRaw)
 	if err != nil {
 		c.log.Errorf("handleReplicaMessage Decapsulate failed: %s", err)
@@ -75,7 +75,7 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 		if err != nil {
 			c.log.Errorf("handleReplicaMessage failed to unmarshal SenderEPubKey: %s", err)
 			return &commands.ReplicaMessageReply{
-				Cmds:          commands.NewStorageReplicaCommands(c.geo),
+				Cmds:          commands.NewStorageReplicaCommands(c.geo, nikeScheme),
 				ErrorCode:     1, // One means failure.
 				EnvelopeHash:  &envelopeHash,
 				EnvelopeReply: []byte{},
@@ -85,7 +85,7 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 		if err != nil {
 			c.log.Errorf("handleReplicaMessage failed to get envelope keypair: %s", err)
 			return &commands.ReplicaMessageReply{
-				Cmds:          commands.NewStorageReplicaCommands(c.geo),
+				Cmds:          commands.NewStorageReplicaCommands(c.geo, nikeScheme),
 				ErrorCode:     1, // One means failure.
 				EnvelopeHash:  &envelopeHash,
 				EnvelopeReply: []byte{},
@@ -94,7 +94,7 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 		envelopeReply := scheme.EnvelopeReply(keypair.PrivateKey, senderpubkey, replyPayload)
 
 		return &commands.ReplicaMessageReply{
-			Cmds:          commands.NewStorageReplicaCommands(c.geo),
+			Cmds:          commands.NewStorageReplicaCommands(c.geo, nikeScheme),
 			ErrorCode:     0, // Zero means success.
 			EnvelopeHash:  &envelopeHash,
 			EnvelopeReply: envelopeReply,
@@ -120,8 +120,9 @@ func (c *incomingConn) handleReplicaRead(replicaRead *commands.ReplicaRead) *com
 			ErrorCode: failCode,
 		}
 	}
+	nikeScheme := schemes.ByName(c.l.server.cfg.ReplicaNIKEScheme)
 	return &commands.ReplicaReadReply{
-		Cmds:      commands.NewStorageReplicaCommands(c.geo),
+		Cmds:      commands.NewStorageReplicaCommands(c.geo, nikeScheme),
 		Geo:       c.geo,
 		ErrorCode: successCode,
 		BoxID:     resp.BoxID,

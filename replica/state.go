@@ -11,6 +11,8 @@ import (
 	"golang.org/x/crypto/blake2b"
 	"gopkg.in/op/go-logging.v1"
 
+	"github.com/katzenpost/hpqc/nike/schemes"
+
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"github.com/katzenpost/katzenpost/replica/common"
@@ -62,7 +64,8 @@ func (s *state) handleReplicaRead(replicaRead *commands.ReplicaRead) (*commands.
 	copy(data, value.Data())
 	value.Free()
 
-	cmds := commands.NewStorageReplicaCommands(s.server.cfg.SphinxGeometry)
+	nikeScheme := schemes.ByName(s.server.cfg.ReplicaNIKEScheme)
+	cmds := commands.NewStorageReplicaCommands(s.server.cfg.SphinxGeometry, nikeScheme)
 	rawCmds, err := cmds.FromBytes(data)
 	if err != nil {
 		return nil, err
@@ -82,7 +85,8 @@ func (s *state) handleReplicaWrite(replicaWrite *commands.ReplicaWrite) error {
 }
 
 func (s *state) replicaWriteFromBlob(blob []byte) (*commands.ReplicaWrite, error) {
-	cmds := commands.NewStorageReplicaCommands(s.server.cfg.SphinxGeometry)
+	nikeScheme := schemes.ByName(s.server.cfg.ReplicaNIKEScheme)
+	cmds := commands.NewStorageReplicaCommands(s.server.cfg.SphinxGeometry, nikeScheme)
 	rawCmds, err := cmds.FromBytes(blob)
 	if err != nil {
 		return nil, err

@@ -24,9 +24,9 @@ func TestReplicaMessage(t *testing.T) {
 	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
 	s := sphinx.NewSphinx(geo)
 
-	cmds := NewStorageReplicaCommands(s.Geometry())
+	cmds := NewStorageReplicaCommands(s.Geometry(), nike)
 
-	senderKey := &[HybridKeySize]byte{}
+	senderKey := make([]byte, HybridKeySize(nike))
 	_, err := rand.Reader.Read(senderKey[:])
 	require.NoError(t, err)
 
@@ -35,8 +35,10 @@ func TestReplicaMessage(t *testing.T) {
 	require.NoError(t, err)
 
 	replicaMessage1 := &ReplicaMessage{
-		Geo:           geo,
-		Cmds:          cmds,
+		Geo:    geo,
+		Cmds:   cmds,
+		Scheme: nike,
+
 		SenderEPubKey: senderKey,
 		DEK:           dek,
 		Ciphertext:    []byte(payload),
@@ -58,7 +60,7 @@ func TestReplicaRead(t *testing.T) {
 	nrHops := 5
 
 	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
-	cmds := NewStorageReplicaCommands(geo)
+	cmds := NewStorageReplicaCommands(geo, nike)
 	id := &[32]byte{}
 	_, err := rand.Reader.Read(id[:])
 	require.NoError(t, err)
@@ -87,7 +89,7 @@ func TestReplicaReadReply(t *testing.T) {
 	nrHops := 5
 
 	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
-	cmds := NewStorageReplicaCommands(geo)
+	cmds := NewStorageReplicaCommands(geo, nike)
 	id := &[32]byte{}
 	_, err := rand.Reader.Read(id[:])
 	require.NoError(t, err)
@@ -127,7 +129,7 @@ func TestReplicaWrite(t *testing.T) {
 	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
 	s := sphinx.NewSphinx(geo)
 
-	cmds := NewStorageReplicaCommands(s.Geometry())
+	cmds := NewStorageReplicaCommands(s.Geometry(), nike)
 	id := &[32]byte{}
 	_, err := rand.Reader.Read(id[:])
 	require.NoError(t, err)
@@ -163,7 +165,7 @@ func TestReplicaWriteReply(t *testing.T) {
 	nrHops := 5
 
 	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
-	cmds := NewStorageReplicaCommands(geo)
+	cmds := NewStorageReplicaCommands(geo, nike)
 	id := &[32]byte{}
 	_, err := rand.Reader.Read(id[:])
 	require.NoError(t, err)

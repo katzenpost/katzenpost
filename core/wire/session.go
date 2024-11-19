@@ -27,7 +27,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/katzenpost/hpqc/sign"
 	"github.com/katzenpost/nyquist"
 	"github.com/katzenpost/nyquist/cipher"
 	"github.com/katzenpost/nyquist/hash"
@@ -35,7 +34,9 @@ import (
 	"github.com/katzenpost/nyquist/seec"
 
 	"github.com/katzenpost/hpqc/kem"
+	"github.com/katzenpost/hpqc/nike"
 	"github.com/katzenpost/hpqc/rand"
+	"github.com/katzenpost/hpqc/sign"
 
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
@@ -598,7 +599,7 @@ func NewPKISession(cfg *SessionConfig, isInitiator bool) (*Session, error) {
 }
 
 // NewStorageReplicaSession creates a new session to be used with the storage replicas.
-func NewStorageReplicaSession(cfg *SessionConfig, isInitiator bool) (*Session, error) {
+func NewStorageReplicaSession(cfg *SessionConfig, scheme nike.Scheme, isInitiator bool) (*Session, error) {
 	if cfg.Geometry == nil {
 		return nil, errors.New("wire/session: missing sphinx packet geometry")
 	}
@@ -629,7 +630,7 @@ func NewStorageReplicaSession(cfg *SessionConfig, isInitiator bool) (*Session, e
 		state:          stateInit,
 		rxKeyMutex:     new(sync.RWMutex),
 		txKeyMutex:     new(sync.RWMutex),
-		commands:       commands.NewStorageReplicaCommands(cfg.Geometry),
+		commands:       commands.NewStorageReplicaCommands(cfg.Geometry, scheme),
 	}
 	s.authenticationKEMKey = cfg.AuthenticationKey
 

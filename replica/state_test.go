@@ -99,8 +99,9 @@ func TestState(t *testing.T) {
 	require.NoError(t, err)
 
 	cfg := &config.Config{
-		DataDir:        dname,
-		SphinxGeometry: geo,
+		ReplicaNIKEScheme: "X25519",
+		DataDir:           dname,
+		SphinxGeometry:    geo,
 		Logging: &config.Logging{
 			Disable: false,
 			File:    "",
@@ -152,7 +153,7 @@ func TestState(t *testing.T) {
 
 	st.initDB()
 
-	cmds := commands.NewStorageReplicaCommands(geo)
+	cmds := commands.NewStorageReplicaCommands(geo, replicaScheme)
 	require.NotNil(t, cmds)
 
 	numShares := 4

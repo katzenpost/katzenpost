@@ -14,6 +14,7 @@ import (
 
 	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/kem"
+	"github.com/katzenpost/hpqc/nike/schemes"
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/hpqc/sign"
 
@@ -84,7 +85,8 @@ func (c *incomingConn) worker() {
 	var err error
 	c.l.Lock()
 
-	c.w, err = wire.NewStorageReplicaSession(cfg, false)
+	nikeScheme := schemes.ByName(c.l.server.cfg.ReplicaNIKEScheme)
+	c.w, err = wire.NewStorageReplicaSession(cfg, nikeScheme, false)
 
 	c.l.Unlock()
 	if err != nil {

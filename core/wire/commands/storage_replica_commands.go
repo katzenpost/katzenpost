@@ -6,11 +6,16 @@ package commands
 import (
 	"encoding/binary"
 
+	"github.com/katzenpost/hpqc/nike"
+
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 )
 
-// NIKE scheme CTIDH1024-X25519 has 160 byte public keys
-const HybridKeySize = 160
+func HybridKeySize(scheme nike.Scheme) int {
+	// NIKE scheme CTIDH1024-X25519 has 160 byte public keys
+	return scheme.PublicKeySize()
+
+}
 
 // ReplicaRead isn't used directly on the wire protocol
 // but is embedded inside the ReplicaMessage which of course
@@ -187,10 +192,11 @@ func (c *ReplicaWriteReply) Length() int {
 // ReplicaMessage used over wire protocol from couriers to replicas,
 // one replica at a time.
 type ReplicaMessage struct {
-	Cmds *Commands
-	Geo  *geo.Geometry
+	Cmds   *Commands
+	Geo    *geo.Geometry
+	Scheme nike.Scheme
 
-	SenderEPubKey *[HybridKeySize]byte
+	SenderEPubKey []byte
 	DEK           *[32]byte
 	Ciphertext    []byte
 }
@@ -210,16 +216,17 @@ func (c *ReplicaMessage) ToBytes() []byte {
 func replicaMessageFromBytes(b []byte, cmds *Commands) (Command, error) {
 	c := new(ReplicaMessage)
 	c.Cmds = cmds
+	c.Scheme = cmds.replicaNikeScheme
 
-	c.SenderEPubKey = &[160]byte{}
-	copy(c.SenderEPubKey[:], b[:HybridKeySize])
+	c.SenderEPubKey = make([]byte, HybridKeySize(c.Scheme))
+	copy(c.SenderEPubKey[:], b[:HybridKeySize(c.Scheme)])
 
 	c.DEK = &[32]byte{}
-	copy(c.DEK[:], b[HybridKeySize:HybridKeySize+32])
+	copy(c.DEK[:], b[HybridKeySize(c.Scheme):HybridKeySize(c.Scheme)+32])
 
 	// c.Cmds.geo.PacketLength
-	c.Ciphertext = make([]byte, len(b[HybridKeySize+32:]))
-	copy(c.Ciphertext, b[HybridKeySize+32:])
+	c.Ciphertext = make([]byte, len(b[HybridKeySize(c.Scheme)+32:]))
+	copy(c.Ciphertext, b[HybridKeySize(c.Scheme)+32:])
 
 	return c, nil
 }
@@ -227,7 +234,7 @@ func replicaMessageFromBytes(b []byte, cmds *Commands) (Command, error) {
 func (c *ReplicaMessage) Length() int {
 	// XXX replace c.Geo.PacketLength with the precise payload size
 	const dekLen = 32
-	return cmdOverhead + dekLen + HybridKeySize + c.Geo.PacketLength
+	return cmdOverhead + dekLen + HybridKeySize(c.Scheme) + c.Geo.PacketLength
 }
 
 // ReplicaMessageReply is sent by replicas to couriers as a reply

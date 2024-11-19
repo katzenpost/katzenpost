@@ -180,7 +180,7 @@ func TestGetRemoteShards(t *testing.T) {
 	s.state = st
 	st.initDB()
 
-	cmds := commands.NewStorageReplicaCommands(geo)
+	cmds := commands.NewStorageReplicaCommands(geo, replicaScheme)
 	require.NotNil(t, cmds)
 
 	numShares := 4

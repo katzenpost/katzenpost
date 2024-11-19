@@ -199,7 +199,7 @@ func TestIncomingConn(t *testing.T) {
 
 	payload := make([]byte, 1000)
 	reply := inConn.handleReplicaWrite(&commands.ReplicaWrite{
-		Cmds:      commands.NewStorageReplicaCommands(geometry),
+		Cmds:      commands.NewStorageReplicaCommands(geometry, replicaScheme),
 		BoxID:     boxid,
 		Signature: sig,
 		Payload:   payload,
@@ -207,16 +207,16 @@ func TestIncomingConn(t *testing.T) {
 	require.NotNil(t, reply)
 
 	reply2 := inConn.handleReplicaRead(&commands.ReplicaRead{
-		Cmds:  commands.NewStorageReplicaCommands(geometry),
+		Cmds:  commands.NewStorageReplicaCommands(geometry, replicaScheme),
 		BoxID: boxid,
 	})
 	require.NotNil(t, reply2)
 
 	replicaMessage := &commands.ReplicaMessage{
-		Cmds: commands.NewStorageReplicaCommands(geometry),
+		Cmds: commands.NewStorageReplicaCommands(geometry, replicaScheme),
 		Geo:  geometry,
 
-		SenderEPubKey: &[commands.HybridKeySize]byte{},
+		SenderEPubKey: make([]byte, commands.HybridKeySize(replicaScheme)),
 		DEK:           &[32]byte{},
 		Ciphertext:    make([]byte, 1000),
 	}

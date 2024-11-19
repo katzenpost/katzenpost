@@ -8,6 +8,7 @@ import (
 	"encoding/binary"
 	"errors"
 
+	"github.com/katzenpost/hpqc/nike"
 	"github.com/katzenpost/hpqc/sign"
 
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
@@ -38,6 +39,7 @@ type Command interface {
 type Commands struct {
 	geo                         *geo.Geometry
 	pkiSignatureScheme          sign.Scheme
+	replicaNikeScheme           nike.Scheme
 	clientToServerCommands      []Command
 	serverToClientCommands      []Command
 	maxMessageLenServerToClient int
@@ -80,17 +82,20 @@ func NewMixnetCommands(geo *geo.Geometry) *Commands {
 }
 
 // NewStorageReplicaCommands creates a Commands instance suitale to be used by storage replica nodes.
-func NewStorageReplicaCommands(geo *geo.Geometry) *Commands {
+func NewStorageReplicaCommands(geo *geo.Geometry, scheme nike.Scheme) *Commands {
 	c := &Commands{
 		geo:                geo,
 		pkiSignatureScheme: nil,
+		replicaNikeScheme:  scheme,
 	}
 	payload := make([]byte, geo.PacketLength) // XXX TODO(David): Pick a more precise size.
 	c.serverToClientCommands = []Command{
 		&ReplicaMessage{
-			Geo:           geo,
-			Cmds:          c,
-			SenderEPubKey: &[HybridKeySize]byte{},
+			Geo:    geo,
+			Cmds:   c,
+			Scheme: scheme,
+
+			SenderEPubKey: make([]byte, HybridKeySize(scheme)),
 			DEK:           &[32]byte{},
 			Ciphertext:    payload,
 		},
