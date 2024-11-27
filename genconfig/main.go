@@ -852,6 +852,8 @@ services:
 		write(f, `
   %s:
     restart: "no"
+    environment:
+        KATZENPOST_EPOCH_DURATION: ${KATZENPOST_EPOCH_DURATION}
     image: %s
     volumes:
       - ./:%s
@@ -869,6 +871,8 @@ services:
 		write(f, `
   %s:
     restart: "no"
+    environment:
+        KATZENPOST_EPOCH_DURATION: ${KATZENPOST_EPOCH_DURATION}
     image: %s
     volumes:
       - ./:%s
@@ -890,6 +894,8 @@ services:
 		write(f, `
   mix%d:
     restart: "no"
+    environment:
+        KATZENPOST_EPOCH_DURATION: ${KATZENPOST_EPOCH_DURATION}
     image: %s
     volumes:
       - ./:%s
@@ -907,6 +913,8 @@ services:
 		write(f, `
   %s:
     restart: "no"
+    environment:
+        KATZENPOST_EPOCH_DURATION: ${KATZENPOST_EPOCH_DURATION}
     image: %s
     volumes:
       - ./:%s
@@ -918,6 +926,8 @@ services:
 	write(f, `
   %s:
     restart: "no"
+    environment:
+        KATZENPOST_EPOCH_DURATION: ${KATZENPOST_EPOCH_DURATION}
     image: %s
     volumes:
       - ./:%s
