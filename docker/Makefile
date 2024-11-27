@@ -15,8 +15,6 @@ help:
 	@echo " clean              - the above, plus cleans includes go_deps images"
 	@echo
 
-warped=false
-export KATZENPOST_EPOCH_DURATION=4m
 no_decoy?=true
 no_mixdecoy?=true
 mixes=3
@@ -74,8 +72,6 @@ noDecoy=$(shell if [[ $no_decoy ]]; then echo -noDecoy; fi)
 noMixDecoy=$(shell if [[ $no_mixdecoy ]]; then echo -noMixDecoy; fi)
 
 docker=$(shell if which podman|grep -q .; then echo podman; else echo docker; fi)
-
-ldflags="-buildid= -X github.com/katzenpost/katzenpost/core/epochtime.WarpedEpoch=${warped}"
 
 uid?=$(shell [ "$$SUDO_UID" != "" ] && echo "$$SUDO_UID" || id -u)
 gid?=$(shell [ "$$SUDO_GID" != "" ] && echo "$$SUDO_GID" || id -g)
@@ -173,25 +169,25 @@ go-mod-upgrade: $(distro)_base.stamp | $(net_name) $(cache_dir)
 			$(sh) -c 'go get -d -u ./... && go mod tidy'
 
 $(net_name)/server.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
-		$(docker_run_sh) 'cd server/cmd/server ; go build -trimpath -ldflags ${ldflags} && mv server /$(net_name)/server.$(distro)'
+		$(docker_run_sh) 'cd server/cmd/server ; go build -trimpath && mv server /$(net_name)/server.$(distro)'
 
 $(net_name)/proxy_client.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
-		$(docker_run_sh) 'cd http/proxy/client; go build -trimpath -ldflags ${ldflags} && mv client /$(net_name)/proxy_client.$(distro)'
+		$(docker_run_sh) 'cd http/proxy/client; go build -trimpath && mv client /$(net_name)/proxy_client.$(distro)'
 
 $(net_name)/proxy_server.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
-		$(docker_run_sh) 'cd http/proxy/server; go build -trimpath -ldflags ${ldflags} && mv server /$(net_name)/proxy_server.$(distro)'
+		$(docker_run_sh) 'cd http/proxy/server; go build -trimpath && mv server /$(net_name)/proxy_server.$(distro)'
 
 $(net_name)/memspool.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
-		$(docker_run_sh) 'cd memspool/server/cmd/memspool ; go build -trimpath -ldflags ${ldflags} && mv memspool /$(net_name)/memspool.$(distro)'
+		$(docker_run_sh) 'cd memspool/server/cmd/memspool ; go build -trimpath && mv memspool /$(net_name)/memspool.$(distro)'
 
 $(net_name)/pigeonhole.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
-		$(docker_run_sh) 'cd pigeonhole/server/cmd/pigeonhole ; go build -trimpath -ldflags ${ldflags} && mv pigeonhole /$(net_name)/pigeonhole.$(distro)'
+		$(docker_run_sh) 'cd pigeonhole/server/cmd/pigeonhole ; go build -trimpath && mv pigeonhole /$(net_name)/pigeonhole.$(distro)'
 
 $(net_name)/panda_server.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
-		$(docker_run_sh) 'cd panda/server/cmd/panda_server ; go build -trimpath -ldflags ${ldflags} && mv panda_server /$(net_name)/panda_server.$(distro)'
+		$(docker_run_sh) 'cd panda/server/cmd/panda_server ; go build -trimpath && mv panda_server /$(net_name)/panda_server.$(distro)'
 
 $(net_name)/echo_server.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
-		$(docker_run_sh) 'cd server_plugins/cbor_plugins/echo-go ; go build -trimpath -ldflags ${ldflags} && mv echo-go /$(net_name)/echo_server.$(distro)'
+		$(docker_run_sh) 'cd server_plugins/cbor_plugins/echo-go ; go build -trimpath && mv echo-go /$(net_name)/echo_server.$(distro)'
 
 $(net_name)/dirauth.$(distro): $(distro)_base.stamp $(docker_compose_yml) | $(net_name) $(cache_dir)
 		$(docker_run_sh) 'cd authority && make $(make_args) cmd/dirauth/dirauth cmd/fetch/fetch && \
@@ -199,7 +195,7 @@ $(net_name)/dirauth.$(distro): $(distro)_base.stamp $(docker_compose_yml) | $(ne
 			mv cmd/fetch/fetch /$(net_name)/fetch.$(distro)'
 
 $(net_name)/ping.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
-		$(docker_run_sh) 'cd ping && go mod verify && go build -ldflags ${ldflags} && \
+		$(docker_run_sh) 'cd ping && go mod verify && go build && \
 			mv ping /$(net_name)/ping.$(distro)'
 
 clean-images: stop
