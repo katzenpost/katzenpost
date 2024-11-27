@@ -15,7 +15,8 @@ help:
 	@echo " clean              - the above, plus cleans includes go_deps images"
 	@echo
 
-warped?=true
+warped=false
+export KATZENPOST_EPOCH_DURATION=4m
 no_decoy?=true
 no_mixdecoy?=true
 mixes=3
