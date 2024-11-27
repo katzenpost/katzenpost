@@ -412,7 +412,7 @@ func (c *Client) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, 
 	}
 	e, _, _ := epochtime.Now()
 	if epoch <= e {
-		return nil, nil, pki.ErrDocumentGone
+		return nil, nil, fmt.Errorf("pki: requested epoch %d will never get a document", epoch)
 	} else {
 		return nil, nil, pki.ErrNoDocument
 	}
