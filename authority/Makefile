@@ -1,4 +1,4 @@
-warped?=false
+warped=false
 ldflags="-buildid= -X github.com/katzenpost/katzenpost/core/epochtime.WarpedEpoch=${warped}"
 
 test:
