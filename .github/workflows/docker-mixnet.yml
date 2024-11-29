@@ -7,6 +7,7 @@ jobs:
       warped: true
       no_mixdecoy: false
       no_decoy: false
+      KATZENPOST_EPOCH_DURATION: 4m
     strategy:
       matrix:
         go-version: [1.22.x]
@@ -47,6 +48,7 @@ jobs:
       warped: true
       no_mixdecoy: false
       no_decoy: false
+      KATZENPOST_EPOCH_DURATION: 4m
     strategy:
       matrix:
         go-version: [1.22.x]
@@ -84,6 +86,7 @@ jobs:
       warped: true
       no_mixdecoy: false
       no_decoy: false
+      KATZENPOST_EPOCH_DURATION: 4m
     strategy:
       matrix:
         go-version: [1.22.x]
@@ -121,6 +124,7 @@ jobs:
       warped: true
       no_mixdecoy: false
       no_decoy: false
+      KATZENPOST_EPOCH_DURATION: 4m
     strategy:
       matrix:
         go-version: [1.22.x]
@@ -173,6 +177,7 @@ jobs:
       warped: true
       no_mixdecoy: false
       no_decoy: false
+      KATZENPOST_EPOCH_DURATION: 4m
     strategy:
       matrix:
         go-version: [1.22.x]
@@ -210,6 +215,7 @@ jobs:
       warped: true
       no_mixdecoy: false
       no_decoy: false
+      KATZENPOST_EPOCH_DURATION: 4m
     strategy:
       matrix:
         go-version: [1.22.x]
