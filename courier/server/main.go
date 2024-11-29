@@ -28,6 +28,10 @@ func (e *Courier) OnCommand(cmd cborplugin.Command) error {
 			return err
 		}
 
+		for _, replicaID := range courierMessage.Replicas {
+
+		}
+
 		replyPayload := []byte{} // XXX FIX ME
 		go func() {
 			// send reply

@@ -9,6 +9,7 @@ import (
 
 type CourierMessage struct {
 	SenderEPubKey [2][]byte
+	Replicas      [2]uint8
 	DEK           [2]*[32]byte
 	Ciphertext    []byte
 }
