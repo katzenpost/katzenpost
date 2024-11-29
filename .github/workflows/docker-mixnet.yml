@@ -4,7 +4,6 @@ jobs:
 
   test_e2e_client:
     env:
-      warped: true
       no_mixdecoy: false
       no_decoy: false
       KATZENPOST_EPOCH_DURATION: 4m
@@ -26,10 +25,10 @@ jobs:
           cd docker && make log_level=DEBUG start wait
 
       - name: run ping
-        run: cd docker && make run-ping
+        run: cd docker && KATZENPOST_EPOCH_DURATION=4m make run-ping
 
       - name: run client end to end tests
-        run: cd client && make testargs=-coverprofile=coverage.part dockerdockertest && cat coverage.part >> ../coverage.out
+        run: cd client && KATZENPOST_EPOCH_DURATION=4m make testargs=-coverprofile=coverage.part dockerdockertest && cat coverage.part >> ../coverage.out
 
       - name: Stop the mixnet
         run: |
@@ -45,7 +44,6 @@ jobs:
 
   test_e2e_client2:
     env:
-      warped: true
       no_mixdecoy: false
       no_decoy: false
       KATZENPOST_EPOCH_DURATION: 4m
@@ -83,7 +81,6 @@ jobs:
 
   test_e2e_memspool:
     env:
-      warped: true
       no_mixdecoy: false
       no_decoy: false
       KATZENPOST_EPOCH_DURATION: 4m
@@ -121,7 +118,6 @@ jobs:
 
   test_e2e_catshadow:
     env:
-      warped: true
       no_mixdecoy: false
       no_decoy: false
       KATZENPOST_EPOCH_DURATION: 4m
@@ -174,7 +170,6 @@ jobs:
 
   test_benchmark:
     env:
-      warped: true
       no_mixdecoy: false
       no_decoy: false
       KATZENPOST_EPOCH_DURATION: 4m
@@ -212,7 +207,6 @@ jobs:
 
   test_e2e_stream:
     env:
-      warped: true
       no_mixdecoy: false
       no_decoy: false
       KATZENPOST_EPOCH_DURATION: 4m
