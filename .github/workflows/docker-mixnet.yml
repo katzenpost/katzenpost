@@ -22,7 +22,7 @@ jobs:
 
       - name: Build and start the mixnet
         run: |
-          cd docker && make log_level=DEBUG start wait
+          cd docker && KATZENPOST_EPOCH_DURATION=4m make log_level=DEBUG start wait
 
       - name: run ping
         run: cd docker && KATZENPOST_EPOCH_DURATION=4m make run-ping
