@@ -4,4 +4,4 @@
 package constants
 
 // MaxMsgLen is the maximum we're willing to send in one message.
-const MaxMsgLen = 1300000
+const MaxMsgLen = 2300000
