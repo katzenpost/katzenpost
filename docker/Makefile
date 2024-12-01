@@ -51,7 +51,7 @@ kem="mceliece348864"
 
 DISTROS=alpine debian
 distro=alpine
-wirekem=xwing
+wirekem=mceliece348864
 net_name=voting_mixnet
 base_port=30000
 bind_addr=127.0.0.1
