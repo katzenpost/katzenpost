@@ -21,6 +21,7 @@ import (
 	"crypto/subtle"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"sync"
@@ -64,7 +65,9 @@ const (
 var (
 	errInvalidState         = errors.New("wire/session: invalid state")
 	errAuthenticationFailed = errors.New("wire/session: authentication failed")
-	errMsgSize              = errors.New("wire/session: invalid message size")
+	errMsgSize              = func(size int) error {
+		return fmt.Errorf("wire/session: %d is an invalid because it's not equal to %d, message size", size, constants.MaxMsgLen)
+	}
 )
 
 type authenticateMessage struct {
@@ -423,7 +426,7 @@ func (s *Session) SendCommand(cmd commands.Command) error {
 	pt := cmd.ToBytes()
 	ctLen := macLen + len(pt)
 	if ctLen > constants.MaxMsgLen {
-		return errMsgSize
+		return errMsgSize(ctLen)
 	}
 
 	// Build the CiphertextHeader.
@@ -486,7 +489,7 @@ func (s *Session) recvCommandImpl() (commands.Command, error) {
 	}
 	ctLen := binary.BigEndian.Uint32(ctHdr[:])
 	if ctLen < macLen || ctLen > constants.MaxMsgLen {
-		return nil, errMsgSize
+		return nil, errMsgSize(int(ctLen))
 	}
 
 	// Read and decrypt the Ciphertext.
