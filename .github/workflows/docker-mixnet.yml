@@ -22,13 +22,13 @@ jobs:
 
       - name: Build and start the mixnet
         run: |
-          cd docker && KATZENPOST_EPOCH_DURATION=4m make log_level=DEBUG start wait
+          cd docker && make log_level=DEBUG start wait
 
       - name: run ping
-        run: cd docker && KATZENPOST_EPOCH_DURATION=4m make run-ping
+        run: cd docker && make run-ping
 
       - name: run client end to end tests
-        run: cd client && KATZENPOST_EPOCH_DURATION=4m make testargs=-coverprofile=coverage.part dockerdockertest && cat coverage.part >> ../coverage.out
+        run: cd client && make testargs=-coverprofile=coverage.part dockerdockertest && cat coverage.part >> ../coverage.out
 
       - name: Stop the mixnet
         run: |
