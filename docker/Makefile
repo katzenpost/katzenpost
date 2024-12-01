@@ -40,14 +40,14 @@ lGMax=1000
 UserForwardPayloadLength=2000
 
 # hybrid ctidh PQ can work here, but requires manually building ctidh.
-nike=x25519
+nike=""
 
 # ratchetNike can be NOBS_CSIDH-X25519, "CTIDH511-X25519", "CTIDH512-X25519", "CTIDH1024-X25519", "CTIDH2048-X25519"
 # and defaults to CTIDH512-X25519
 ratchetNike?=CTIDH512-X25519
 
 # kem can be Kyber1024-X448 or any of the other schemes at https://github.com/cloudflare/circl/blob/main/kem/schemes/schemes.go (and then nike must be unset)
-kem=
+kem="mceliece348864"
 
 DISTROS=alpine debian
 distro=alpine
