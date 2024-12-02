@@ -297,9 +297,9 @@ func (d *mockDialer) mockServer(address string, linkPrivateKey kem.PrivateKey, i
 		AuthenticationKey: linkPrivateKey,
 		RandomReader:      rand.Reader,
 	}
-	session, err := wire.NewSession(cfg, false)
+	session, err := wire.NewPKISession(cfg, false)
 	if err != nil {
-		d.log.Errorf("mockServer NewSession failure: %s", err)
+		d.log.Errorf("mockServer NewPKISession failure: %s", err)
 		return
 	}
 	defer session.Close()
