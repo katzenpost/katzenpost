@@ -386,7 +386,7 @@ func (c *incomingConn) onSendRetrievePacket(cmd *commands.SendRetrievePacket) er
 	copy(surbIDar[:], surbID)
 	respCmd := &commands.SendRetrievePacketReply{
 		Geo:     c.geo,
-		Cmds:    commands.NewCommands(c.geo, c.pkiSignScheme),
+		Cmds:    commands.NewMixnetCommands(c.geo),
 		SURBID:  surbIDar,
 		Payload: msg,
 	}
@@ -427,7 +427,7 @@ func (c *incomingConn) onRetrieveMessage(cmd *commands.RetrieveMessage) error {
 		// This was a SURBReply.
 		surbCmd := &commands.MessageACK{
 			Geo:  c.geo,
-			Cmds: commands.NewCommands(c.geo, c.pkiSignScheme),
+			Cmds: commands.NewMixnetCommands(c.geo),
 
 			QueueSizeHint: hint,
 			Sequence:      cmd.Sequence,
@@ -443,7 +443,7 @@ func (c *incomingConn) onRetrieveMessage(cmd *commands.RetrieveMessage) error {
 		// This was a message.
 		respCmd = &commands.Message{
 			Geo:  c.geo,
-			Cmds: commands.NewCommands(c.geo, c.pkiSignScheme),
+			Cmds: commands.NewMixnetCommands(c.geo),
 
 			QueueSizeHint: hint,
 			Sequence:      cmd.Sequence,
@@ -460,7 +460,7 @@ func (c *incomingConn) onRetrieveMessage(cmd *commands.RetrieveMessage) error {
 			c.log.Errorf("BUG: Get() failed to return a message, and the queue is not empty.")
 		}
 		respCmd = &commands.MessageEmpty{
-			Cmds:     commands.NewCommands(c.geo, c.pkiSignScheme),
+			Cmds:     commands.NewMixnetCommands(c.geo),
 			Sequence: cmd.Sequence,
 		}
 	}
