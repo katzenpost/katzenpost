@@ -60,17 +60,16 @@ sh=$(shell if echo ${distro}|grep -q alpine; then echo sh; else echo bash; fi)
 cache_dir=cache
 
 # no_decoy and no_mixdecoy control enabling dockerized mixnets with or without decoy traffic
-noMixDecoy=$(shell if [[ $no_mixdecoy ]]; then echo -noMixDecoy; fi)
-noDecoy=$(shell if [[ $no_decoy ]]; then echo -noDecoy; fi)
+ifeq ($(no_mixdecoy),true)
+  noMixDecoy=-noMixDecoy
+endif
+
+ifeq ($(no_decoy),true)
+  noDecoy=-noDecoy
+endif
 
 # log_level can be DEBUG, INFO, NOTICE, WARNING, ERROR, CRITICAL
 log_level=INFO
-
-no_decoy?=false
-no_mixdecoy?=false
-
-noDecoy=$(shell if [[ $no_decoy ]]; then echo -noDecoy; fi)
-noMixDecoy=$(shell if [[ $no_mixdecoy ]]; then echo -noMixDecoy; fi)
 
 docker=$(shell if which podman|grep -q .; then echo podman; else echo docker; fi)
 
