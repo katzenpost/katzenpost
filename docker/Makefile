@@ -119,7 +119,7 @@ $(net_name)/running.stamp:
 	make $(make_args) start
 
 start: $(docker_compose_yml) testnet_binaries
-	cd $(net_name); $(docker_compose) up --remove-orphans -d; $(docker_compose) top
+	cd $(net_name); $(docker_compose) up --remove-orphans -d; $(docker_compose) ps
 	touch $(net_name)/running.stamp
 
 stop:
