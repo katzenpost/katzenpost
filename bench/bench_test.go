@@ -97,7 +97,7 @@ var (
 	)
 )
 
-var testSignatureScheme = signSchemes.ByName("Ed25519")
+var testSignatureScheme = signSchemes.ByName("Ed448-Dilithium3")
 
 func getClientCfg(f string) *config.Config {
 	cfg, err := config.LoadFile(f)
