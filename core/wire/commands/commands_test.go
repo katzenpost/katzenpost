@@ -60,7 +60,7 @@ func TestNoOp(t *testing.T) {
 		Cmds: cmds,
 	}
 	b := cmd.ToBytes()
-	require.Len(b, cmds.maxMessageLenClientToServer, "NoOp: ToBytes() length")
+	require.Len(b, cmds.MaxMessageLenClientToServer, "NoOp: ToBytes() length")
 	require.True(util.CtIsZero(b[cmdOverhead:]), "NoOp: ToBytes() padding must be zero")
 
 	c, err := cmds.FromBytes(b)
@@ -84,7 +84,7 @@ func TestDisconnect(t *testing.T) {
 		Cmds: cmds,
 	}
 	b := cmd.ToBytes()
-	require.Len(b, cmds.maxMessageLenClientToServer, "Disconnect: ToBytes() length")
+	require.Len(b, cmds.MaxMessageLenClientToServer, "Disconnect: ToBytes() length")
 	require.True(util.CtIsZero(b[cmdOverhead:]), "Disconnect: ToBytes() padding must be zero")
 
 	c, err := cmds.FromBytes(b)
@@ -119,7 +119,7 @@ func TestGetConsensus(t *testing.T) {
 	cmd.MixnetTransmission = true
 	b = cmd.ToBytes()
 
-	require.Len(b, cmds.maxMessageLenClientToServer, "GetConsensus without Mixnet: ToBytes() length")
+	require.Len(b, cmds.MaxMessageLenClientToServer, "GetConsensus without Mixnet: ToBytes() length")
 	actualDataLength := cmdOverhead + getConsensusLength
 	require.True(util.CtIsZero(b[actualDataLength:]), "GetConsensus without Mixnet: No padding expected")
 
@@ -190,7 +190,7 @@ func TestSendRetrievePacket(t *testing.T) {
 	}
 
 	b := cmd.ToBytes()
-	require.Len(b, cmds.maxMessageLenClientToServer)
+	require.Len(b, cmds.MaxMessageLenClientToServer)
 	actualDataLength := cmdOverhead + len(packet)
 	require.True(util.CtIsZero(b[actualDataLength:]))
 
@@ -227,7 +227,7 @@ func TestSendRetrievePacketReply(t *testing.T) {
 	}
 
 	b := cmd.ToBytes()
-	require.Len(t, b, cmds.maxMessageLenServerToClient)
+	require.Len(t, b, cmds.MaxMessageLenServerToClient)
 	actualDataLength := cmdOverhead + constants.SURBIDLength + len(payload)
 	require.True(t, util.CtIsZero(b[actualDataLength:]))
 
