@@ -125,15 +125,18 @@ func NewStorageReplicaCommands(geo *geo.Geometry, scheme nike.Scheme) *Commands 
 
 // NewPKICommands creates a Commands instance suitale to be used by PKI nodes.
 func NewPKICommands(pkiSignatureScheme sign.Scheme) *Commands {
+	const defaultReplicaDescriptorSize = 123
 	c := &Commands{
 		geo:                    nil,
 		pkiSignatureScheme:     pkiSignatureScheme,
 		clientToServerCommands: nil,
 		serverToClientCommands: nil,
 		shouldPad:              false,
+
+		// XXX arbitrarily set to 500MB max
+		MaxMessageLenClientToServer: 500000,
+		MaxMessageLenServerToClient: 500000,
 	}
-	c.MaxMessageLenServerToClient = 0
-	c.MaxMessageLenClientToServer = 0
 	return c
 }
 
