@@ -31,7 +31,7 @@ func TestSendPacket(t *testing.T) {
 	copy(packet[:len(payload)], payload)
 	cmd := &SendPacket{SphinxPacket: packet, Cmds: cmds}
 	b := cmd.ToBytes()
-	require.Len(b, cmds.maxMessageLenClientToServer, "SendPacket: ToBytes() length")
+	require.Len(b, cmds.MaxMessageLenClientToServer, "SendPacket: ToBytes() length")
 	actualDataLength := cmdOverhead + len(payload)
 	require.True(util.CtIsZero(b[actualDataLength:]), "SendPacket: ToBytes() padding must be zero")
 
@@ -58,7 +58,7 @@ func TestRetrieveMessage(t *testing.T) {
 
 	cmd := &RetrieveMessage{Sequence: seq, Cmds: cmds}
 	b := cmd.ToBytes()
-	require.Len(b, cmds.maxMessageLenClientToServer, "RetrieveMessage: ToBytes() length")
+	require.Len(b, cmds.MaxMessageLenClientToServer, "RetrieveMessage: ToBytes() length")
 	actualDataLength := cmdOverhead + 4
 	require.True(util.CtIsZero(b[actualDataLength:]), "RetrieveMessage: ToBytes() padding must be zero")
 
@@ -98,7 +98,7 @@ func TestMessage(t *testing.T) {
 		Sequence: seq,
 	}
 	b := cmdEmpty.ToBytes()
-	require.Len(b, cmds.maxMessageLenServerToClient, "MessageEmpty: ToBytes() length")
+	require.Len(b, cmds.MaxMessageLenServerToClient, "MessageEmpty: ToBytes() length")
 	require.True(util.CtIsZero(b[expectedLen:]), "MessageEmpty: ToBytes() padding must be zero")
 
 	c, err := cmds.FromBytes(b)
@@ -119,7 +119,7 @@ func TestMessage(t *testing.T) {
 		Payload:       msgPayload,
 	}
 	b = cmdMessage.ToBytes()
-	require.Len(b, cmds.maxMessageLenServerToClient, "Message: ToBytes() length")
+	require.Len(b, cmds.MaxMessageLenServerToClient, "Message: ToBytes() length")
 	require.True(util.CtIsZero(b[expectedLen:]), "Message: ToBytes() padding must be zero")
 
 	c, err = cmds.FromBytes(b)
@@ -149,7 +149,7 @@ func TestMessage(t *testing.T) {
 	}
 	copy(cmdMessageACK.ID[:], id[:])
 	b = cmdMessageACK.ToBytes()
-	require.Len(b, cmds.maxMessageLenServerToClient, "MessageACK: ToBytes() length")
+	require.Len(b, cmds.MaxMessageLenServerToClient, "MessageACK: ToBytes() length")
 	require.True(util.CtIsZero(b[expectedLen:]), "MessageACK: ToBytes() padding must be zero")
 
 	c, err = cmds.FromBytes(b)

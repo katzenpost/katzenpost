@@ -42,8 +42,8 @@ type Commands struct {
 	replicaNikeScheme           nike.Scheme
 	clientToServerCommands      []Command
 	serverToClientCommands      []Command
-	maxMessageLenServerToClient int
-	maxMessageLenClientToServer int
+	MaxMessageLenServerToClient int
+	MaxMessageLenClientToServer int
 	shouldPad                   bool
 }
 
@@ -76,8 +76,8 @@ func NewMixnetCommands(geo *geo.Geometry) *Commands {
 			Cmds: c,
 		},
 	}
-	c.maxMessageLenClientToServer = c.calcMaxMessageLenClientToServer()
-	c.maxMessageLenServerToClient = c.calcMaxMessageLenServerToClient()
+	c.MaxMessageLenClientToServer = c.calcMaxMessageLenClientToServer()
+	c.MaxMessageLenServerToClient = c.calcMaxMessageLenServerToClient()
 	return c
 }
 
@@ -118,8 +118,8 @@ func NewStorageReplicaCommands(geo *geo.Geometry, scheme nike.Scheme) *Commands 
 	}
 	c.clientToServerCommands = c.serverToClientCommands
 	c.shouldPad = true
-	c.maxMessageLenClientToServer = c.calcMaxMessageLenClientToServer()
-	c.maxMessageLenServerToClient = c.calcMaxMessageLenServerToClient()
+	c.MaxMessageLenClientToServer = c.calcMaxMessageLenClientToServer()
+	c.MaxMessageLenServerToClient = c.calcMaxMessageLenServerToClient()
 	return c
 }
 
@@ -132,9 +132,16 @@ func NewPKICommands(pkiSignatureScheme sign.Scheme) *Commands {
 		serverToClientCommands: nil,
 		shouldPad:              false,
 	}
-	c.maxMessageLenServerToClient = 0
-	c.maxMessageLenClientToServer = 0
+	c.MaxMessageLenServerToClient = 0
+	c.MaxMessageLenClientToServer = 0
 	return c
+}
+
+func (c *Commands) MaxCommandSize() int {
+	if c.MaxMessageLenServerToClient > c.MaxMessageLenClientToServer {
+		return c.MaxMessageLenServerToClient
+	}
+	return c.MaxMessageLenClientToServer
 }
 
 func (c *Commands) calcMaxMessageLenServerToClient() int {
@@ -161,9 +168,9 @@ func (c *Commands) calcMaxMessageLenClientToServer() int {
 func (c *Commands) padToMaxCommandSize(data []byte, isUpstream bool) []byte {
 	var maxMessageLen int
 	if isUpstream {
-		maxMessageLen = c.maxMessageLenClientToServer
+		maxMessageLen = c.MaxMessageLenClientToServer
 	} else {
-		maxMessageLen = c.maxMessageLenServerToClient
+		maxMessageLen = c.MaxMessageLenServerToClient
 	}
 	if maxMessageLen == 0 {
 		return data

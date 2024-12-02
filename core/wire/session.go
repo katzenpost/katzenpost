@@ -40,7 +40,6 @@ import (
 
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
-	"github.com/katzenpost/katzenpost/core/wire/constants"
 )
 
 const (
@@ -174,7 +173,7 @@ func (s *Session) handshake() error {
 		Protocol:       s.protocol,
 		Rng:            rand.Reader,
 		Prologue:       prologue,
-		MaxMessageSize: constants.MaxMsgLen,
+		MaxMessageSize: s.commands.MaxCommandSize(),
 		KEM: &nyquist.KEMConfig{
 			LocalStatic: s.authenticationKEMKey,
 			GenKey:      seec.GenKeyPRPAES,
@@ -423,7 +422,7 @@ func (s *Session) SendCommand(cmd commands.Command) error {
 	// Derive the Ciphertext length.
 	pt := cmd.ToBytes()
 	ctLen := macLen + len(pt)
-	if ctLen > constants.MaxMsgLen {
+	if ctLen > s.commands.MaxCommandSize() {
 		return errMsgSize
 	}
 
@@ -486,7 +485,7 @@ func (s *Session) recvCommandImpl() (commands.Command, error) {
 		return nil, err
 	}
 	ctLen := binary.BigEndian.Uint32(ctHdr[:])
-	if ctLen < macLen || ctLen > constants.MaxMsgLen {
+	if ctLen < macLen || ctLen > uint32(s.commands.MaxCommandSize()) {
 		return nil, errMsgSize
 	}
 
