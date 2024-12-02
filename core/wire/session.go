@@ -27,7 +27,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/katzenpost/hpqc/sign"
 	"github.com/katzenpost/nyquist"
 	"github.com/katzenpost/nyquist/cipher"
 	"github.com/katzenpost/nyquist/hash"
@@ -35,7 +34,9 @@ import (
 	"github.com/katzenpost/nyquist/seec"
 
 	"github.com/katzenpost/hpqc/kem"
+	"github.com/katzenpost/hpqc/nike"
 	"github.com/katzenpost/hpqc/rand"
+	"github.com/katzenpost/hpqc/sign"
 
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
@@ -128,7 +129,7 @@ type SessionInterface interface {
 	SendCommand(cmd commands.Command) error
 	RecvCommand() (commands.Command, error)
 	Close()
-	PeerCredentials() *PeerCredentials
+	PeerCredentials() (*PeerCredentials, error)
 	ClockSkew() time.Duration
 }
 
@@ -590,7 +591,46 @@ func NewPKISession(cfg *SessionConfig, isInitiator bool) (*Session, error) {
 		state:          stateInit,
 		rxKeyMutex:     new(sync.RWMutex),
 		txKeyMutex:     new(sync.RWMutex),
-		commands:       commands.NewCommands(cfg.Geometry, cfg.PKISignatureScheme),
+		commands:       commands.NewPKICommands(cfg.PKISignatureScheme),
+	}
+	s.authenticationKEMKey = cfg.AuthenticationKey
+
+	return s, nil
+}
+
+// NewStorageReplicaSession creates a new session to be used with the storage replicas.
+func NewStorageReplicaSession(cfg *SessionConfig, scheme nike.Scheme, isInitiator bool) (*Session, error) {
+	if cfg.Geometry == nil {
+		return nil, errors.New("wire/session: missing sphinx packet geometry")
+	}
+	if cfg.Authenticator == nil {
+		return nil, errors.New("wire/session: missing Authenticator")
+	}
+	if len(cfg.AdditionalData) > MaxAdditionalDataLength {
+		return nil, errors.New("wire/session: oversized AdditionalData")
+	}
+	if cfg.AuthenticationKey == nil {
+		return nil, errors.New("wire/session: missing AuthenticationKEMKey")
+	}
+	if cfg.RandomReader == nil {
+		return nil, errors.New("wire/session: missing RandomReader")
+	}
+
+	s := &Session{
+		protocol: &nyquist.Protocol{
+			Pattern: pattern.PqXX,
+			KEM:     cfg.KEMScheme,
+			Cipher:  cipher.ChaChaPoly,
+			Hash:    hash.BLAKE2b,
+		},
+		authenticator:  cfg.Authenticator,
+		additionalData: cfg.AdditionalData,
+		randReader:     cfg.RandomReader,
+		isInitiator:    isInitiator,
+		state:          stateInit,
+		rxKeyMutex:     new(sync.RWMutex),
+		txKeyMutex:     new(sync.RWMutex),
+		commands:       commands.NewStorageReplicaCommands(cfg.Geometry, scheme),
 	}
 	s.authenticationKEMKey = cfg.AuthenticationKey
 
@@ -629,7 +669,7 @@ func NewSession(cfg *SessionConfig, isInitiator bool) (*Session, error) {
 		state:          stateInit,
 		rxKeyMutex:     new(sync.RWMutex),
 		txKeyMutex:     new(sync.RWMutex),
-		commands:       commands.NewCommands(cfg.Geometry, cfg.PKISignatureScheme),
+		commands:       commands.NewMixnetCommands(cfg.Geometry),
 	}
 	s.authenticationKEMKey = cfg.AuthenticationKey
 

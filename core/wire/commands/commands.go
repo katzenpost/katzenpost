@@ -8,12 +8,12 @@ import (
 	"encoding/binary"
 	"errors"
 
+	"github.com/katzenpost/hpqc/nike"
 	"github.com/katzenpost/hpqc/sign"
 
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/utils"
-	wireconstants "github.com/katzenpost/katzenpost/core/wire/constants"
 )
 
 var (
@@ -29,62 +29,152 @@ type (
 type Command interface {
 	// ToBytes serializes the command and returns the resulting slice.
 	ToBytes() []byte
+
+	// Length returns the length in bytes of the given command.
+	Length() int
 }
 
 // Commands encapsulates all of the wire protocol commands so that it can
 // pass around a sphinx geometry where needed.
 type Commands struct {
-	geo                *geo.Geometry
-	pkiSignatureScheme sign.Scheme
+	geo                         *geo.Geometry
+	pkiSignatureScheme          sign.Scheme
+	replicaNikeScheme           nike.Scheme
+	clientToServerCommands      []Command
+	serverToClientCommands      []Command
+	maxMessageLenServerToClient int
+	maxMessageLenClientToServer int
+	shouldPad                   bool
 }
 
-// NewCommands returns a Commands given a sphinx geometry.
-func NewCommands(geo *geo.Geometry, pkiSignatureScheme sign.Scheme) *Commands {
-
+// NewMixnetCommands creates a Commands instance suitale to be used by mixnet nodes.
+func NewMixnetCommands(geo *geo.Geometry) *Commands {
 	c := &Commands{
 		geo:                geo,
-		pkiSignatureScheme: pkiSignatureScheme,
+		pkiSignatureScheme: nil,
+		shouldPad:          true,
 	}
-	_ = c.maxMessageLenServerToClient()
-	_ = c.maxMessageLenClientToServer()
+	c.clientToServerCommands = []Command{
+		&NoOp{}, &SendPacket{
+			Cmds: c,
+		}, &Disconnect{}, &RetrieveMessage{}, &GetConsensus{}, &SendRetrievePacket{
+			Geo:  geo,
+			Cmds: c,
+		},
+	}
+	c.serverToClientCommands = []Command{
+		&Message{
+			Geo:  geo,
+			Cmds: c,
+		}, &MessageACK{
+			Geo:  geo,
+			Cmds: c,
+		}, &MessageEmpty{
+			Cmds: c,
+		}, &SendRetrievePacketReply{
+			Geo:  geo,
+			Cmds: c,
+		},
+	}
+	c.maxMessageLenClientToServer = c.calcMaxMessageLenClientToServer()
+	c.maxMessageLenServerToClient = c.calcMaxMessageLenServerToClient()
 	return c
 }
 
-func (c *Commands) messageMsgPaddingLength() int {
-	return constants.SURBIDLength + c.geo.SphinxPlaintextHeaderLength + c.geo.SURBLength + c.geo.PayloadTagLength
-}
-
-func (c *Commands) messageMsgLength() int {
-	return messageBaseLength + c.messageMsgPaddingLength()
-}
-
-func (c *Commands) maxMessageLenServerToClient() int {
-	t := cmdOverhead + c.messageMsgLength() + c.geo.UserForwardPayloadLength
-	if t > wireconstants.MaxMsgLen {
-		panic("cannot set maxMessageLenServerToClient to exceed MaxMsgLen")
+// NewStorageReplicaCommands creates a Commands instance suitale to be used by storage replica nodes.
+func NewStorageReplicaCommands(geo *geo.Geometry, scheme nike.Scheme) *Commands {
+	c := &Commands{
+		geo:                geo,
+		pkiSignatureScheme: nil,
+		replicaNikeScheme:  scheme,
 	}
-	return t
+	payload := make([]byte, geo.PacketLength) // XXX TODO(David): Pick a more precise size.
+	c.serverToClientCommands = []Command{
+		&ReplicaMessage{
+			Geo:    geo,
+			Cmds:   c,
+			Scheme: scheme,
+
+			SenderEPubKey: make([]byte, HybridKeySize(scheme)),
+			DEK:           &[32]byte{},
+			Ciphertext:    payload,
+		},
+		&ReplicaMessageReply{
+			Cmds: c,
+		},
+		&ReplicaRead{
+			Cmds: c,
+		},
+		&ReplicaReadReply{
+			Cmds: c,
+			Geo:  geo,
+		},
+		&ReplicaWrite{
+			Cmds: c,
+		},
+		&ReplicaWriteReply{
+			Cmds: c,
+		},
+	}
+	c.clientToServerCommands = c.serverToClientCommands
+	c.shouldPad = true
+	c.maxMessageLenClientToServer = c.calcMaxMessageLenClientToServer()
+	c.maxMessageLenServerToClient = c.calcMaxMessageLenServerToClient()
+	return c
 }
 
-func (c *Commands) maxMessageLenClientToServer() int {
-	t := cmdOverhead + c.geo.PacketLength
-	if t > wireconstants.MaxMsgLen {
-		panic("cannot set maxMessageLenClientToServer to exceed MaxMsgLen")
+// NewPKICommands creates a Commands instance suitale to be used by PKI nodes.
+func NewPKICommands(pkiSignatureScheme sign.Scheme) *Commands {
+	c := &Commands{
+		geo:                    nil,
+		pkiSignatureScheme:     pkiSignatureScheme,
+		clientToServerCommands: nil,
+		serverToClientCommands: nil,
+		shouldPad:              false,
 	}
-	return t
+	c.maxMessageLenServerToClient = 0
+	c.maxMessageLenClientToServer = 0
+	return c
 }
 
-func (c *Commands) maxMessageLen(cmd Command) int {
-	switch cmd.(type) {
-	case *NoOp, *SendPacket, *Disconnect, *RetrieveMessage, *GetConsensus, *SendRetrievePacket:
-		// These are client to server commands
-		return c.maxMessageLenClientToServer()
-	case *Message, *MessageACK, *MessageEmpty, *SendRetrievePacketReply:
-		// These are server to client commands
-		return c.maxMessageLenServerToClient()
-	default:
-		panic("unhandled command type passed to maxMessageLen")
+func (c *Commands) calcMaxMessageLenServerToClient() int {
+	m := 0
+	for _, c := range c.serverToClientCommands {
+		if c.Length() > m {
+			m = c.Length()
+		}
 	}
+	return m
+}
+
+func (c *Commands) calcMaxMessageLenClientToServer() int {
+	m := 0
+	for _, c := range c.clientToServerCommands {
+		if c.Length() > m {
+			m = c.Length()
+		}
+	}
+	return m
+}
+
+// padToMaxCommandSize takes a slice of bytes representing a serialized command and pads it to maxCommandSize.
+func (c *Commands) padToMaxCommandSize(data []byte, isUpstream bool) []byte {
+	var maxMessageLen int
+	if isUpstream {
+		maxMessageLen = c.maxMessageLenClientToServer
+	} else {
+		maxMessageLen = c.maxMessageLenServerToClient
+	}
+	if maxMessageLen == 0 {
+		return data
+	}
+	paddingSize := maxMessageLen - len(data)
+	if paddingSize <= 0 {
+		return data
+	}
+
+	padding := make([]byte, paddingSize)
+	return append(data, padding...)
 }
 
 // NoOp is a de-serialized noop command.
@@ -96,7 +186,11 @@ type NoOp struct {
 func (c *NoOp) ToBytes() []byte {
 	out := make([]byte, cmdOverhead)
 	out[0] = byte(noOp)
-	return padToMaxCommandSize(out, c.Cmds.maxMessageLen(c))
+	return c.Cmds.padToMaxCommandSize(out, true)
+}
+
+func (c *NoOp) Length() int {
+	return cmdOverhead
 }
 
 // Disconnect is a de-serialized disconnect command.
@@ -108,7 +202,11 @@ type Disconnect struct {
 func (c *Disconnect) ToBytes() []byte {
 	out := make([]byte, cmdOverhead)
 	out[0] = byte(disconnect)
-	return padToMaxCommandSize(out, c.Cmds.maxMessageLen(c))
+	return c.Cmds.padToMaxCommandSize(out, true)
+}
+
+func (c *Disconnect) Length() int {
+	return cmdOverhead
 }
 
 // SendRetrievePacket is a command that sends a message
@@ -121,11 +219,18 @@ type SendRetrievePacket struct {
 }
 
 func (c *SendRetrievePacket) ToBytes() []byte {
+	if len(c.SphinxPacket) != c.Geo.PacketLength {
+		panic("SphinxPacket must be set to Geo.PacketLength")
+	}
 	out := make([]byte, cmdOverhead, cmdOverhead+len(c.SphinxPacket))
 	out[0] = byte(sendRetrievePacket)
 	binary.BigEndian.PutUint32(out[2:6], uint32(len(c.SphinxPacket)))
 	out = append(out, c.SphinxPacket...)
-	return padToMaxCommandSize(out, c.Cmds.maxMessageLen(c))
+	return c.Cmds.padToMaxCommandSize(out, true)
+}
+
+func (c *SendRetrievePacket) Length() int {
+	return cmdOverhead + c.Geo.PacketLength
 }
 
 func sendRetrievePacketFromBytes(b []byte, cmds *Commands) (Command, error) {
@@ -153,7 +258,11 @@ func (c *SendRetrievePacketReply) ToBytes() []byte {
 	binary.BigEndian.PutUint32(out[2:6], uint32(constants.SURBIDLength+len(c.Payload)))
 	copy(out[cmdOverhead:cmdOverhead+constants.SURBIDLength], c.SURBID[:])
 	out = append(out, c.Payload...)
-	return padToMaxCommandSize(out, c.Cmds.maxMessageLen(c))
+	return c.Cmds.padToMaxCommandSize(out, false)
+}
+
+func (c *SendRetrievePacketReply) Length() int {
+	return cmdOverhead + constants.SURBIDLength + c.Geo.UserForwardPayloadLength
 }
 
 func sendRetrievePacketReplyFromBytes(b []byte, cmds *Commands) (Command, error) {
@@ -212,6 +321,20 @@ func (c *Commands) FromBytes(b []byte) (Command, error) {
 	// Handle the commands that require actual parsing.
 	b = b[:cmdLen]
 	switch commandID(id) {
+	case postReplicaDescriptor:
+		return postReplicaDescriptorFromBytes(b)
+	case postReplicaDescriptorStatus:
+		return postReplicaDescriptorStatusFromBytes(b)
+	case replicaRead:
+		return replicaReadFromBytes(b, c)
+	case replicaReadReply:
+		return replicaReadReplyFromBytes(b, c)
+	case replicaWrite:
+		return replicaWriteFromBytes(b, c)
+	case replicaWriteReply:
+		return replicaWriteReplyFromBytes(b, c)
+	case replicaMessage:
+		return replicaMessageFromBytes(b, c)
 	case sendRetrievePacket:
 		return sendRetrievePacketFromBytes(b, c)
 	case sendRetrievePacketReply:
@@ -251,15 +374,4 @@ func (c *Commands) FromBytes(b []byte) (Command, error) {
 	default:
 		return nil, errInvalidCommand
 	}
-}
-
-// padToMaxCommandSize takes a slice of bytes representing a serialized command and pads it to maxCommandSize.
-func padToMaxCommandSize(data []byte, maxMessageLen int) []byte {
-	paddingSize := maxMessageLen - len(data)
-	if paddingSize <= 0 {
-		return data
-	}
-
-	padding := make([]byte, paddingSize)
-	return append(data, padding...)
 }
