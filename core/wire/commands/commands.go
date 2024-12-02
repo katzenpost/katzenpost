@@ -134,6 +134,11 @@ func NewPKICommands(pkiSignatureScheme sign.Scheme) *Commands {
 		shouldPad:              false,
 
 		// XXX arbitrarily set to 500MB max
+		// such that we have a reasonable chance
+		// of our Vote/Consensus commands fitting within this size maximum.
+		// These larger commands contain the entire PKI document and can be
+		// very large depending on the ciphersuites, the Sphinx KEM/NIKE and PKI Signature scheme.
+		// Increase the size if your PKI doc doesn't fit.
 		MaxMessageLenClientToServer: 500000,
 		MaxMessageLenServerToClient: 500000,
 	}
