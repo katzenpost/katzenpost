@@ -139,8 +139,8 @@ func NewPKICommands(pkiSignatureScheme sign.Scheme) *Commands {
 		// These larger commands contain the entire PKI document and can be
 		// very large depending on the ciphersuites, the Sphinx KEM/NIKE and PKI Signature scheme.
 		// Increase the size if your PKI doc doesn't fit.
-		MaxMessageLenClientToServer: 500000,
-		MaxMessageLenServerToClient: 500000,
+		MaxMessageLenClientToServer: 500000000,
+		MaxMessageLenServerToClient: 500000000,
 	}
 	return c
 }
