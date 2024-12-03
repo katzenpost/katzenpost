@@ -851,6 +851,11 @@ services:
 	for _, p := range gateways {
 		write(f, `
   %s:
+    environment:
+        - PYROSCOPE_APPLICATION_NAME=Katzenpost
+        - PYROSCOPE_SERVER_ADDRESS=http://localhost:4040
+        - PYROSCOPE_SERVICE_TAG=%s
+
     restart: "no"
     image: %s
     volumes:
@@ -858,7 +863,7 @@ services:
     command: %s/server%s -f %s/%s/katzenpost.toml
     network_mode: host
 
-    depends_on:`, p.Identifier, dockerImage, s.baseDir, s.baseDir, s.binSuffix, s.baseDir, p.Identifier)
+    depends_on:`, p.Identifier, p.Identifier, dockerImage, s.baseDir, s.baseDir, s.binSuffix, s.baseDir, p.Identifier)
 		for _, authCfg := range s.votingAuthConfigs {
 			write(f, `
       - %s`, authCfg.Server.Identifier)
@@ -906,13 +911,17 @@ services:
 	for _, authCfg := range s.votingAuthConfigs {
 		write(f, `
   %s:
+    environment:
+        - PYROSCOPE_APPLICATION_NAME=Katzenpost
+        - PYROSCOPE_SERVER_ADDRESS=http://localhost:4040
+        - PYROSCOPE_SERVICE_TAG=%s
     restart: "no"
     image: %s
     volumes:
       - ./:%s
     command: %s/dirauth%s -f %s/%s/authority.toml
     network_mode: host
-`, authCfg.Server.Identifier, dockerImage, s.baseDir, s.baseDir, s.binSuffix, s.baseDir, authCfg.Server.Identifier)
+`, authCfg.Server.Identifier, authCfg.Server.Identifier, dockerImage, s.baseDir, s.baseDir, s.binSuffix, s.baseDir, authCfg.Server.Identifier)
 	}
 
 	write(f, `

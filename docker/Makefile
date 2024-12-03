@@ -169,7 +169,7 @@ go-mod-upgrade: $(distro)_base.stamp | $(net_name) $(cache_dir)
 			$(sh) -c 'go get -d -u ./... && go mod tidy'
 
 $(net_name)/server.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
-		$(docker_run_sh) 'cd server/cmd/server ; go build -trimpath -ldflags ${ldflags} && mv server /$(net_name)/server.$(distro)'
+		$(docker_run_sh) 'cd server/cmd/server ; go build --tags pyroscope -trimpath -ldflags ${ldflags} && mv server /$(net_name)/server.$(distro)'
 
 $(net_name)/proxy_client.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
 		$(docker_run_sh) 'cd http/proxy/client; go build -trimpath -ldflags ${ldflags} && mv client /$(net_name)/proxy_client.$(distro)'

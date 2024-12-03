@@ -114,7 +114,8 @@ type connection struct {
 	gateway *[32]byte
 	queueID []byte
 
-	isShutdown bool
+	isShutdownLock sync.RWMutex
+	isShutdown     bool
 }
 
 type getConsensusCtx struct {

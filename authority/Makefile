@@ -24,7 +24,7 @@ coverage-html:
 	go tool cover -html=coverage.out
 
 cmd/dirauth/dirauth: clean
-	cd cmd/dirauth && go build -trimpath -ldflags ${ldflags}
+	cd cmd/dirauth && go build --tags pyroscope -trimpath -ldflags ${ldflags}
 
 cmd/fetch/fetch: clean
 	cd cmd/fetch && go build -trimpath -ldflags ${ldflags}
