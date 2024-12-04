@@ -74,8 +74,8 @@ const (
 var (
 	errInvalidState         = errors.New("wire/session: invalid state")
 	errAuthenticationFailed = errors.New("wire/session: authentication failed")
-	errMsgSize              = func(size int) error {
-		return fmt.Errorf("wire/session: %d is an invalid because it's not equal to %d, message size", size, constants.MaxMsgLen)
+	errMsgSize              = func(size, max int) error {
+		return fmt.Errorf("wire/session: %d is an invalid because it's not equal to %d, message size", size, max)
 	}
 )
 
@@ -466,7 +466,7 @@ func (s *Session) SendCommand(cmd commands.Command) error {
 	pt := cmd.ToBytes()
 	ctLen := macLen + len(pt)
 	if ctLen > s.MaxMesgSize() {
-		return errMsgSize
+		return errMsgSize(ctLen, s.MaxMesgSize())
 	}
 
 	// Build the CiphertextHeader.
@@ -530,7 +530,7 @@ func (s *Session) recvCommandImpl() (commands.Command, error) {
 	ctLen := binary.BigEndian.Uint32(ctHdr[:])
 
 	if ctLen < macLen || ctLen > uint32(s.MaxMesgSize()) {
-		return nil, errMsgSize(int(ctLen))
+		return nil, errMsgSize(int(ctLen), s.MaxMesgSize())
 	}
 
 	// Read and decrypt the Ciphertext.
