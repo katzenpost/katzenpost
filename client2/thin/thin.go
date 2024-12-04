@@ -544,6 +544,8 @@ func (t *ThinClient) BlockingSendMessage(ctx context.Context, payload []byte, de
 		case <-ctx.Done():
 			return nil, ctx.Err()
 		case event = <-eventSink:
+		case <-t.HaltCh():
+			return nil, errors.New("halting")
 		}
 
 		switch v := event.(type) {
@@ -633,6 +635,8 @@ func (t *ThinClient) BlockingSendReliableMessage(ctx context.Context, messageID 
 	}
 
 	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
 	case reply := <-replyWaitChan:
 		if reply.Err != nil {
 			return nil, reply.Err

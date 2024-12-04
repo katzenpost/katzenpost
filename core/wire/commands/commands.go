@@ -42,8 +42,8 @@ type Commands struct {
 	replicaNikeScheme           nike.Scheme
 	clientToServerCommands      []Command
 	serverToClientCommands      []Command
-	maxMessageLenServerToClient int
-	maxMessageLenClientToServer int
+	MaxMessageLenServerToClient int
+	MaxMessageLenClientToServer int
 	shouldPad                   bool
 }
 
@@ -63,6 +63,7 @@ func NewMixnetCommands(geo *geo.Geometry) *Commands {
 		},
 	}
 	c.serverToClientCommands = []Command{
+		&Consensus{}, // can be arbitrarily large
 		&Message{
 			Geo:  geo,
 			Cmds: c,
@@ -76,8 +77,8 @@ func NewMixnetCommands(geo *geo.Geometry) *Commands {
 			Cmds: c,
 		},
 	}
-	c.maxMessageLenClientToServer = c.calcMaxMessageLenClientToServer()
-	c.maxMessageLenServerToClient = c.calcMaxMessageLenServerToClient()
+	c.MaxMessageLenClientToServer = c.calcMaxMessageLenClientToServer()
+	c.MaxMessageLenServerToClient = c.calcMaxMessageLenServerToClient()
 	return c
 }
 
@@ -118,23 +119,38 @@ func NewStorageReplicaCommands(geo *geo.Geometry, scheme nike.Scheme) *Commands 
 	}
 	c.clientToServerCommands = c.serverToClientCommands
 	c.shouldPad = true
-	c.maxMessageLenClientToServer = c.calcMaxMessageLenClientToServer()
-	c.maxMessageLenServerToClient = c.calcMaxMessageLenServerToClient()
+	c.MaxMessageLenClientToServer = c.calcMaxMessageLenClientToServer()
+	c.MaxMessageLenServerToClient = c.calcMaxMessageLenServerToClient()
 	return c
 }
 
 // NewPKICommands creates a Commands instance suitale to be used by PKI nodes.
 func NewPKICommands(pkiSignatureScheme sign.Scheme) *Commands {
+	const defaultReplicaDescriptorSize = 123
 	c := &Commands{
 		geo:                    nil,
 		pkiSignatureScheme:     pkiSignatureScheme,
 		clientToServerCommands: nil,
 		serverToClientCommands: nil,
 		shouldPad:              false,
+
+		// XXX arbitrarily set to some large max
+		// such that we have a reasonable chance
+		// of our Vote/Consensus commands fitting within this size maximum.
+		// These larger commands contain the entire PKI document and can be
+		// very large depending on the ciphersuites, the Sphinx KEM/NIKE and PKI Signature scheme.
+		// Increase the size if your PKI doc doesn't fit.
+		MaxMessageLenClientToServer: 50000000,
+		MaxMessageLenServerToClient: 50000000,
 	}
-	c.maxMessageLenServerToClient = 0
-	c.maxMessageLenClientToServer = 0
 	return c
+}
+
+func (c *Commands) MaxCommandSize() int {
+	if c.MaxMessageLenServerToClient > c.MaxMessageLenClientToServer {
+		return c.MaxMessageLenServerToClient
+	}
+	return c.MaxMessageLenClientToServer
 }
 
 func (c *Commands) calcMaxMessageLenServerToClient() int {
@@ -161,9 +177,9 @@ func (c *Commands) calcMaxMessageLenClientToServer() int {
 func (c *Commands) padToMaxCommandSize(data []byte, isUpstream bool) []byte {
 	var maxMessageLen int
 	if isUpstream {
-		maxMessageLen = c.maxMessageLenClientToServer
+		maxMessageLen = c.MaxMessageLenClientToServer
 	} else {
-		maxMessageLen = c.maxMessageLenServerToClient
+		maxMessageLen = c.MaxMessageLenServerToClient
 	}
 	if maxMessageLen == 0 {
 		return data

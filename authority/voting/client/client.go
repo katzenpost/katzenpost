@@ -246,7 +246,11 @@ func (p *connector) fetchConsensus(auth *config.Authority, ctx context.Context, 
 		return nil, err
 	}
 	p.log.Debugf("sending getConsensus to %s", auth.Identifier)
-	cmd := &commands.GetConsensus{Epoch: epoch}
+	cmd := &commands.GetConsensus{
+		Epoch:              epoch,
+		Cmds:               commands.NewPKICommands(p.cfg.PKISignatureScheme),
+		MixnetTransmission: false, // Disable padding for direct dirauth transmission
+	}
 	resp, err := p.roundTrip(conn.session, cmd)
 	if err != nil {
 		r, ok := resp.(*commands.Consensus)

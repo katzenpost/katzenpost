@@ -22,7 +22,7 @@ jobs:
 
       - name: Build and start the mixnet
         run: |
-          cd docker && make log_level=DEBUG start wait
+          cd docker && make no_decoy=false no_mixdecoy=false log_level=DEBUG start wait
 
       - name: run ping
         run: cd docker && make run-ping

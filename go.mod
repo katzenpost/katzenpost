@@ -14,7 +14,7 @@ require (
 	github.com/katzenpost/hpqc v0.0.49
 	github.com/katzenpost/nyquist v0.0.10
 	github.com/prometheus/client_golang v1.20.0
-	github.com/quic-go/quic-go v0.47.0
+	github.com/quic-go/quic-go v0.48.2
 	github.com/stretchr/testify v1.9.0
 	github.com/ugorji/go/codec v1.2.12
 	github.com/yawning/bloom v0.0.0-20181019144233-44d6c5c71ed1
