@@ -49,6 +49,13 @@ const (
 
 	macLen  = 16
 	authLen = 1 + MaxAdditionalDataLength + 4
+
+	// MaxMessageSize is the maximum allowed message size we are willing to send or receive.
+	// Note that this doesn't apply Storage Replicas because they have command sets which are fixed size.
+	// Everyone else besides the storage servers DO NOT have fixed sized command sets because they
+	// send arbitrary sized PKI documents and the like. Therefore this maximum constant is only applicable
+	// to wire protocol connections among the dirauths and among the mix nodes.
+	MaxMessageSize = 500000000
 )
 
 var (
@@ -187,6 +194,10 @@ func (s *Session) msg4Len() int {
 }
 
 func (s *Session) MaxMesgSize() int {
+	if s.maxMesgSize < 0 {
+		s.maxMesgSize = MaxMessageSize
+		return s.maxMesgSize
+	}
 	if s.maxMesgSize != 0 {
 		return s.maxMesgSize
 	}
@@ -451,7 +462,7 @@ func (s *Session) SendCommand(cmd commands.Command) error {
 	// Derive the Ciphertext length.
 	pt := cmd.ToBytes()
 	ctLen := macLen + len(pt)
-	if s.MaxMesgSize() > 0 && ctLen > s.MaxMesgSize() {
+	if ctLen > s.MaxMesgSize() {
 		return errMsgSize
 	}
 
@@ -517,7 +528,7 @@ func (s *Session) recvCommandImpl() (commands.Command, error) {
 	if ctLen < macLen {
 		return nil, errMsgSize
 	}
-	if s.MaxMesgSize() > 0 && ctLen > uint32(s.MaxMesgSize()) {
+	if ctLen > uint32(s.MaxMesgSize()) {
 		return nil, errMsgSize
 	}
 
