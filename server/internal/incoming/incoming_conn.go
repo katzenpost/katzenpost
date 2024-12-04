@@ -385,14 +385,9 @@ func (c *incomingConn) onSendRetrievePacket(cmd *commands.SendRetrievePacket) er
 	surbIDar := [constants.SURBIDLength]byte{}
 	copy(surbIDar[:], surbID)
 	respCmd := &commands.SendRetrievePacketReply{
-<<<<<<< HEAD
 		Geo:  c.geo,
 		Cmds: commands.NewMixnetCommands(c.geo),
 
-=======
-		Geo:     c.geo,
-		Cmds:    commands.NewMixnetCommands(c.geo),
->>>>>>> main
 		SURBID:  surbIDar,
 		Payload: msg,
 	}
