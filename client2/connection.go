@@ -114,7 +114,8 @@ type connection struct {
 	gateway *[32]byte
 	queueID []byte
 
-	isShutdown bool
+	isShutdownLock sync.RWMutex
+	isShutdown     bool
 }
 
 type getConsensusCtx struct {
@@ -269,7 +270,10 @@ func (c *connection) doConnect(dialCtx context.Context) {
 
 		if c.client.cfg.Callbacks != nil {
 			if c.client.cfg.Callbacks.OnConnFn != nil {
-				if !c.isShutdown {
+				c.isShutdownLock.RLock()
+				isShutdown := c.isShutdown
+				c.isShutdownLock.RUnlock()
+				if !isShutdown {
 					c.client.cfg.Callbacks.OnConnFn(connErr)
 				} else {
 					c.log.Debug("already shutting down, skipping OnConnFn callback")
@@ -712,7 +716,11 @@ func (c *connection) IsPeerValid(creds *wire.PeerCredentials) bool {
 }
 
 func (c *connection) onConnStatusChange(err error) {
-	if c.isShutdown {
+	c.isShutdownLock.RLock()
+	isShutdown := c.isShutdown
+	c.isShutdownLock.RUnlock()
+
+	if isShutdown {
 		return
 	}
 	c.log.Info("onConnStatusChange")
@@ -839,7 +847,10 @@ func (c *connection) GetConsensus(ctx context.Context, epoch uint64) (*commands.
 }
 
 func (c *connection) Shutdown() {
+	c.isShutdownLock.Lock()
 	c.isShutdown = true
+	c.isShutdownLock.Unlock()
+
 	c.Halt()
 	close(c.fetchCh)
 	close(c.sendCh)
