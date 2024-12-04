@@ -26,6 +26,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/katzenpost/hpqc/nike/schemes"
 	ecdh "github.com/katzenpost/hpqc/nike/x25519"
 
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
@@ -367,4 +368,72 @@ func TestErrorInvalidStateClockSkew(t *testing.T) {
 		_ = s.ClockSkew()
 	}
 	require.Panics(t, f)
+}
+
+func TestSessionMaxMessageSize(t *testing.T) {
+	require := require.New(t)
+
+	// Helper for packet comparison.
+
+	// Generate the credentials used for authentication.  In a real deployment,
+	// this information is conveyed out of band somehow to the peer a priori.
+	scheme := testingScheme
+	authKEMKeyAlicePub, authKEMKeyAlice, err := scheme.GenerateKeyPair()
+	require.NoError(err)
+
+	credsAlice := &PeerCredentials{
+		AdditionalData: []byte("alice@example.com"),
+		PublicKey:      authKEMKeyAlicePub,
+	}
+
+	authKEMKeyBobPub, _, err := scheme.GenerateKeyPair()
+	require.NoError(err)
+
+	credsBob := &PeerCredentials{
+		AdditionalData: []byte("katzenpost.example.com"),
+		PublicKey:      authKEMKeyBobPub,
+	}
+
+	nike := ecdh.Scheme(rand.Reader)
+	userForwardPayloadLength := 3000
+	withSURB := true
+	nrHops := 5
+	geometry := geo.GeometryFromUserForwardPayloadLength(nike,
+		userForwardPayloadLength,
+		withSURB,
+		nrHops,
+	)
+
+	// Alice's session setup.
+	cfgAlice := &SessionConfig{
+		KEMScheme:         testingScheme,
+		Geometry:          geometry,
+		Authenticator:     &stubAuthenticator{creds: credsBob},
+		AdditionalData:    credsAlice.AdditionalData,
+		AuthenticationKey: authKEMKeyAlice,
+		RandomReader:      rand.Reader,
+	}
+	sAlice, err := NewSession(cfgAlice, true)
+	require.NoError(err, "Integration: Alice NewSession()")
+
+	size := sAlice.MaxMesgSize()
+	t.Logf("max message size %d", size)
+	t.Logf("yo %d", sAlice.commands.MaxCommandSize())
+	require.NotZero(size)
+
+	sAlice, err = NewPKISession(cfgAlice, true)
+	require.NoError(err)
+	size = sAlice.MaxMesgSize()
+	t.Logf("max message size %d", size)
+	t.Logf("yo %d", sAlice.commands.MaxCommandSize())
+	require.NotZero(size)
+
+	nikeScheme := schemes.ByName("X25519")
+	sAlice, err = NewStorageReplicaSession(cfgAlice, nikeScheme, true)
+	require.NoError(err)
+	size = sAlice.MaxMesgSize()
+	t.Logf("max message size %d", size)
+	t.Logf("yo %d", sAlice.commands.MaxCommandSize())
+	require.NotZero(size)
+
 }

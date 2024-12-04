@@ -263,6 +263,11 @@ func (p *pki) getDocument(ctx context.Context, epoch uint64) ([]byte, *cpki.Docu
 		p.log.Errorf("Failed to deserialize consensus received from Gateway: %v", err)
 		return nil, nil, cpki.ErrNoDocument
 	}
+	if d == nil {
+		p.log.Error("Failed to deserialize consensus received from Gateway")
+		return nil, nil, cpki.ErrNoDocument
+	}
+
 	if d.Epoch != epoch {
 		p.log.Errorf("BUG: Provider returned document for incorrect epoch: %v", d.Epoch)
 		return nil, nil, fmt.Errorf("BUG: Provider returned document for incorrect epoch: %v", d.Epoch)
