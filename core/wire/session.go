@@ -451,7 +451,7 @@ func (s *Session) SendCommand(cmd commands.Command) error {
 	// Derive the Ciphertext length.
 	pt := cmd.ToBytes()
 	ctLen := macLen + len(pt)
-	if ctLen > s.MaxMesgSize() {
+	if s.MaxMesgSize() > 0 && ctLen > s.MaxMesgSize() {
 		return errMsgSize
 	}
 
@@ -514,7 +514,10 @@ func (s *Session) recvCommandImpl() (commands.Command, error) {
 		return nil, err
 	}
 	ctLen := binary.BigEndian.Uint32(ctHdr[:])
-	if ctLen < macLen || ctLen > uint32(s.MaxMesgSize()) {
+	if ctLen < macLen {
+		return nil, errMsgSize
+	}
+	if s.MaxMesgSize() > 0 && ctLen > uint32(s.MaxMesgSize()) {
 		return nil, errMsgSize
 	}
 
@@ -620,6 +623,7 @@ func NewPKISession(cfg *SessionConfig, isInitiator bool) (*Session, error) {
 		rxKeyMutex:     new(sync.RWMutex),
 		txKeyMutex:     new(sync.RWMutex),
 		commands:       commands.NewPKICommands(cfg.PKISignatureScheme),
+		maxMesgSize:    -1,
 	}
 	s.authenticationKEMKey = cfg.AuthenticationKey
 
@@ -698,6 +702,7 @@ func NewSession(cfg *SessionConfig, isInitiator bool) (*Session, error) {
 		rxKeyMutex:     new(sync.RWMutex),
 		txKeyMutex:     new(sync.RWMutex),
 		commands:       commands.NewMixnetCommands(cfg.Geometry),
+		maxMesgSize:    -1,
 	}
 	s.authenticationKEMKey = cfg.AuthenticationKey
 
