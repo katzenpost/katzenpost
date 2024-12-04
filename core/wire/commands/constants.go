@@ -21,6 +21,9 @@ const (
 	sigStatusLength    = 1
 	voteStatusLength   = 1
 
+	replicaMessageReplyLength = 1
+	replicaWriteReplyLength   = 1
+
 	messageTypeMessage messageType = 0
 	messageTypeACK     messageType = 1
 	messageTypeEmpty   messageType = 2
@@ -29,13 +32,31 @@ const (
 	noOp       commandID = 0
 	disconnect commandID = 1
 
-	// client commands
-	sendRetrievePacket      commandID = 3 // used by client2
-	sendRetrievePacketReply commandID = 4 // used by client2
+	// client2 commands
+	sendRetrievePacket      commandID = 3
+	sendRetrievePacketReply commandID = 4
 
-	sendPacket      commandID = 2  // used by old client
-	retreiveMessage commandID = 16 // used by old client
-	message         commandID = 17 // used by old client
+	// used by Pigeonhole Couriers when talking to the Storage Replicas
+	replicaMessage      commandID = 8
+	replicaMessageReply commandID = 9
+
+	// used by Pigeonhole Storage Replicas when talking to the PKI
+	postReplicaDescriptorStatus commandID = 10
+	postReplicaDescriptor       commandID = 11
+
+	// used by Pigeonhole Storage Replicas when talking amonst themselves
+	replicaWrite      commandID = 12
+	replicaWriteReply commandID = 13
+
+	// these commands are only used encapsulated within
+	// replicaMessage and replicaMessageReply respectively
+	replicaRead      commandID = 14
+	replicaReadReply commandID = 15
+
+	// used by old client
+	retreiveMessage commandID = 16
+	message         commandID = 17
+	sendPacket      commandID = 2
 
 	// client Dir-auth commands.
 	getConsensus commandID = 18
