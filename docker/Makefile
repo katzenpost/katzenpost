@@ -74,7 +74,7 @@ log_level=INFO
 
 docker=$(shell if which podman|grep -q .; then echo podman; else echo docker; fi)
 
-ldflags="-extldflags '-Wl,-z,stack-size=0x1F40000' -buildid= "
+ldflags="-extldflags '-Wl,-z,stack-size=0x1F40000' "
 
 uid?=$(shell [ "$$SUDO_UID" != "" ] && echo "$$SUDO_UID" || id -u)
 gid?=$(shell [ "$$SUDO_GID" != "" ] && echo "$$SUDO_GID" || id -g)

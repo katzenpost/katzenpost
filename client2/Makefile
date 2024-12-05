@@ -9,7 +9,7 @@ cache_dir=$(shell readlink -f ../docker)/cache
 docker_args=--init -it --user ${docker_user} -v $(shell readlink -f ..):/go/katzenpost --network=host --rm -v $(cache_dir)/go:/go/ -e GORACE=history_size=7 -e GOCACHE=/go/cache
 
 test:
-	go test -v -race -timeout 0 -ldflags ${ldflags} .
+	go test -v -race -timeout 0 .
 
 lint:
 	golint ./...
@@ -24,10 +24,10 @@ coverage-html:
 dockerdockertest:
 	cd ../docker && make $(distro)_base.stamp
 	$(docker) run -w /go/katzenpost/client2 ${docker_args} $(image) \
-		go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 1h -run TestAllClient2Tests
+		go test $(testargs) -tags=docker_test -race -v -timeout 1h -run TestAllClient2Tests
 
 warpedclientdaemon:
-	cd cmd/kpclientd; go build -ldflags ${ldflags}
+	cd cmd/kpclientd; go build
 
 clientdaemon:
 	cd cmd/kpclientd; go build
