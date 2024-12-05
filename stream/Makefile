@@ -13,4 +13,4 @@ docker_args=--init -it --user ${docker_user} -v $(shell readlink -f ..):/go/katz
 dockerdockertest:
 	cd ../docker && make $(distro)_base.stamp
 	$(docker) run ${docker_args} $(image) \
-		go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 1h -failfast
+		go test $(testargs) -tags=docker_test -race -v -timeout 1h -failfast

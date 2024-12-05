@@ -1,5 +1,4 @@
 warped?=false
-ldflags="-buildid= "
 
 test:
 	go test -race -cover -v ./...
@@ -24,10 +23,10 @@ coverage-html:
 	go tool cover -html=coverage.out
 
 cmd/dirauth/dirauth: clean
-	cd cmd/dirauth && go build -trimpath -ldflags ${ldflags}
+	cd cmd/dirauth && go build -trimpath
 
 cmd/fetch/fetch: clean
-	cd cmd/fetch && go build -trimpath -ldflags ${ldflags}
+	cd cmd/fetch && go build -trimpath
 
 clean:
 	rm -f cmd/fetch/fetch cmd/voting/voting cmd/nonvoting/nonvoting

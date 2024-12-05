@@ -11,4 +11,4 @@ docker_args=--user ${docker_user} -v $(shell readlink -f ..):/go/katzenpost --ne
 dockerdockertest:
 	cd ../docker && make $(distro)_base.stamp
 	$(docker) run ${docker_args} $(image) \
-		go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 30m -failfast
+		go test $(testargs) -tags=docker_test -race -v -timeout 30m -failfast
