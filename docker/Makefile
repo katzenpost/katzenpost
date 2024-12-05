@@ -22,7 +22,7 @@ auths=3
 gateways=1
 serviceNodes=1
 
-KATZENPOST_EPOCH_DURATION?=20s
+KATZENPOST_EPOCH_DURATION?=2m
 
 # Parameters
 sr=0
