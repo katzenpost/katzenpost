@@ -1,5 +1,5 @@
 warped?=false
-ldflags="-buildid= -X github.com/katzenpost/katzenpost/core/epochtime.WarpedEpoch=${warped}"
+ldflags="-buildid= "
 
 server:
 	cd cmd/server; go build -trimpath ;

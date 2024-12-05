@@ -26,9 +26,6 @@ import (
 // if no environment variable is set.
 var Period = 20 * time.Minute
 
-// WarpedEpoch is a flag that can be passed at build time to set the epoch Period
-var WarpedEpoch string
-
 // Epoch is the Katzenpost epoch expressed in UTC.
 var Epoch = time.Date(2017, 6, 1, 0, 0, 0, 0, time.UTC)
 
@@ -79,9 +76,6 @@ func getEpoch(t time.Time) (current uint64, elapsed, till time.Duration) {
 }
 
 func init() {
-	if WarpedEpoch == "true" {
-		Period = 2 * time.Minute
-	}
 
 	durationText := os.Getenv("KATZENPOST_EPOCH_DURATION")
 	if durationText == "" {

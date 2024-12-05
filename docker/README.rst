@@ -41,11 +41,7 @@ You can send pings through the network with ``make ping``.
 While the docker-compose test network is running, you can use the ``make
 dockerdockertest`` targets in the ``client`` and ``catshadow`` directories to
 run their docker tests (also in docker, but without docker-compose managing the
-instance where the tests are running). When running the docker tests, it may be
-desirable to add the ``warped=true`` to the make commands (eg, ``make
-warped=true run-nonvoting-testnet`` here in the docker directory, and ``make
-warped=true dockerdockertest`` in the client directory) to set the WarpedEpoch
-build flag.
+instance where the tests are running).
 
 You can also connect to the test network with a catshadow client by telling it
 to use the ``docker/voting_mixnet/client/client.toml`` configuration file.
