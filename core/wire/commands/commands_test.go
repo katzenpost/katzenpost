@@ -33,6 +33,17 @@ import (
 
 var testCertScheme = schemes.ByName("Ed25519")
 
+func TestWTF(t *testing.T) {
+	nike := ecdh.Scheme(rand.Reader)
+	forwardPayloadLength := 123
+	nrHops := 5
+
+	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
+	s := sphinx.NewSphinx(geo)
+	cmds := NewMixnetCommands(s.Geometry())
+	require.NotNil(t, cmds)
+}
+
 func TestNoOp(t *testing.T) {
 	t.Parallel()
 	require := require.New(t)
@@ -43,13 +54,13 @@ func TestNoOp(t *testing.T) {
 
 	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
 	s := sphinx.NewSphinx(geo)
-	cmds := NewCommands(s.Geometry(), testCertScheme)
+	cmds := NewMixnetCommands(s.Geometry())
 
 	cmd := &NoOp{
 		Cmds: cmds,
 	}
 	b := cmd.ToBytes()
-	require.Len(b, cmds.maxMessageLen(cmd), "NoOp: ToBytes() length")
+	require.Len(b, cmds.MaxMessageLenClientToServer, "NoOp: ToBytes() length")
 	require.True(util.CtIsZero(b[cmdOverhead:]), "NoOp: ToBytes() padding must be zero")
 
 	c, err := cmds.FromBytes(b)
@@ -67,13 +78,13 @@ func TestDisconnect(t *testing.T) {
 
 	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
 	s := sphinx.NewSphinx(geo)
-	cmds := NewCommands(s.Geometry(), testCertScheme)
+	cmds := NewMixnetCommands(s.Geometry())
 
 	cmd := &Disconnect{
 		Cmds: cmds,
 	}
 	b := cmd.ToBytes()
-	require.Len(b, cmds.maxMessageLen(cmd), "Disconnect: ToBytes() length")
+	require.Len(b, cmds.MaxMessageLenClientToServer, "Disconnect: ToBytes() length")
 	require.True(util.CtIsZero(b[cmdOverhead:]), "Disconnect: ToBytes() padding must be zero")
 
 	c, err := cmds.FromBytes(b)
@@ -90,7 +101,7 @@ func TestGetConsensus(t *testing.T) {
 	nrHops := 5
 	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
 	s := sphinx.NewSphinx(geo)
-	cmds := NewCommands(s.Geometry(), testCertScheme)
+	cmds := NewMixnetCommands(s.Geometry())
 
 	cmd := &GetConsensus{
 		Epoch:              123,
@@ -108,7 +119,7 @@ func TestGetConsensus(t *testing.T) {
 	cmd.MixnetTransmission = true
 	b = cmd.ToBytes()
 
-	require.Len(b, cmds.maxMessageLen(cmd), "GetConsensus without Mixnet: ToBytes() length")
+	require.Len(b, cmds.MaxMessageLenClientToServer, "GetConsensus without Mixnet: ToBytes() length")
 	actualDataLength := cmdOverhead + getConsensusLength
 	require.True(util.CtIsZero(b[actualDataLength:]), "GetConsensus without Mixnet: No padding expected")
 
@@ -133,7 +144,7 @@ func TestConsensus(t *testing.T) {
 	nrHops := 5
 	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
 	s := sphinx.NewSphinx(geo)
-	cmds := NewCommands(s.Geometry(), testCertScheme)
+	cmds := NewMixnetCommands(s.Geometry())
 
 	c, err := cmds.FromBytes(b)
 	require.NoError(err, "Consensus: FromBytes() failed")
@@ -167,17 +178,20 @@ func TestSendRetrievePacket(t *testing.T) {
 	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
 	s := sphinx.NewSphinx(geo)
 
-	cmds := NewCommands(s.Geometry(), testCertScheme)
+	cmds := NewMixnetCommands(s.Geometry())
+
+	packet := make([]byte, geo.PacketLength)
+	copy(packet[:len(payload)], payload)
 
 	cmd := &SendRetrievePacket{
-		SphinxPacket: []byte(payload),
+		SphinxPacket: packet,
 		Cmds:         cmds,
 		Geo:          geo,
 	}
 
 	b := cmd.ToBytes()
-	require.Len(b, cmds.maxMessageLen(cmd))
-	actualDataLength := cmdOverhead + len(payload)
+	require.Len(b, cmds.MaxMessageLenClientToServer)
+	actualDataLength := cmdOverhead + len(packet)
 	require.True(util.CtIsZero(b[actualDataLength:]))
 
 	c, err := cmds.FromBytes(b)
@@ -185,7 +199,7 @@ func TestSendRetrievePacket(t *testing.T) {
 	require.IsType(cmd, c)
 
 	cmd2 := c.(*SendRetrievePacket)
-	require.Equal([]byte(payload), cmd2.SphinxPacket)
+	require.Equal([]byte(packet), cmd2.SphinxPacket)
 }
 
 func TestSendRetrievePacketReply(t *testing.T) {
@@ -199,7 +213,7 @@ func TestSendRetrievePacketReply(t *testing.T) {
 	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
 	s := sphinx.NewSphinx(geo)
 
-	cmds := NewCommands(s.Geometry(), testCertScheme)
+	cmds := NewMixnetCommands(s.Geometry())
 
 	surbid := [constants.SURBIDLength]byte{}
 	_, err := rand.Reader.Read(surbid[:])
@@ -213,7 +227,7 @@ func TestSendRetrievePacketReply(t *testing.T) {
 	}
 
 	b := cmd.ToBytes()
-	require.Len(t, b, cmds.maxMessageLen(cmd))
+	require.Len(t, b, cmds.MaxMessageLenServerToClient)
 	actualDataLength := cmdOverhead + constants.SURBIDLength + len(payload)
 	require.True(t, util.CtIsZero(b[actualDataLength:]))
 

@@ -492,7 +492,7 @@ func main() {
 	nike := flag.String("nike", "x25519", "Name of the NIKE Scheme to be used with Sphinx")
 	ratchetNike := flag.String("ratchetNike", "CTIDH512-X25519", "Name of the NIKE Scheme to be used with the doubleratchet")
 	UserForwardPayloadLength := flag.Int("UserForwardPayloadLength", 2000, "UserForwardPayloadLength")
-	pkiSignatureScheme := flag.String("pkiScheme", "Ed448-Dilithium3", "PKI Signature Scheme to be used")
+	pkiSignatureScheme := flag.String("pkiScheme", "ed25519", "PKI Signature Scheme to be used")
 	noDecoy := flag.Bool("noDecoy", true, "Disable decoy traffic for the client")
 	noMixDecoy := flag.Bool("noMixDecoy", true, "Disable decoy traffic for the mixes")
 	dialTimeout := flag.Int("dialTimeout", 0, "Session dial timeout")

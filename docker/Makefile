@@ -60,28 +60,27 @@ sh=$(shell if echo ${distro}|grep -q alpine; then echo sh; else echo bash; fi)
 cache_dir=cache
 
 # no_decoy and no_mixdecoy control enabling dockerized mixnets with or without decoy traffic
-noMixDecoy=$(shell if [[ $no_mixdecoy ]]; then echo -noMixDecoy; fi)
-noDecoy=$(shell if [[ $no_decoy ]]; then echo -noDecoy; fi)
+ifeq ($(no_mixdecoy),true)
+  noMixDecoy=-noMixDecoy
+endif
+
+ifeq ($(no_decoy),true)
+  noDecoy=-noDecoy
+endif
 
 # log_level can be DEBUG, INFO, NOTICE, WARNING, ERROR, CRITICAL
 log_level=INFO
 
-no_decoy?=false
-no_mixdecoy?=false
-
-noDecoy=$(shell if [[ $no_decoy ]]; then echo -noDecoy; fi)
-noMixDecoy=$(shell if [[ $no_mixdecoy ]]; then echo -noMixDecoy; fi)
-
 docker=$(shell if which podman|grep -q .; then echo podman; else echo docker; fi)
 
-ldflags="-buildid= -X github.com/katzenpost/katzenpost/core/epochtime.WarpedEpoch=${warped}"
+ldflags="-extldflags '-Wl,-z,stack-size=0x1F40000' -buildid= -X github.com/katzenpost/katzenpost/core/epochtime.WarpedEpoch=${warped}"
 
 uid?=$(shell [ "$$SUDO_UID" != "" ] && echo "$$SUDO_UID" || id -u)
 gid?=$(shell [ "$$SUDO_GID" != "" ] && echo "$$SUDO_GID" || id -g)
 
 docker_user?=$(shell if echo ${docker}|grep -q podman; then echo 0:0; else echo ${uid}:${gid}; fi)
 
-docker_args=--user ${docker_user} --volume $(shell readlink -f ..):/go/katzenpost --workdir /go/katzenpost -v $(shell readlink -f .)/$(cache_dir)/go:/go/ -e GOCACHE=/go/cache -e KATZENPOST_EPOCH_DURATION=${KATZENPOST_EPOCH_DURATION}
+docker_args=--memory=6g --memory-swap=6g --user ${docker_user} --volume $(shell readlink -f ..):/go/katzenpost --workdir /go/katzenpost -v $(shell readlink -f .)/$(cache_dir)/go:/go/ -e GOCACHE=/go/cache -e KATZENPOST_EPOCH_DURATION=${KATZENPOST_EPOCH_DURATION}
 # note: the docker_args are *not* used by the containers running under docker-compose, but only for the intermediate and shell containers etc!
 
 replace_name=$(shell if echo ${docker}|grep -q podman; then echo " --replace --name"; else echo " --name"; fi)
@@ -121,7 +120,7 @@ $(net_name)/running.stamp:
 	make $(make_args) start
 
 start: $(docker_compose_yml) testnet_binaries
-	cd $(net_name); $(docker_compose) up --remove-orphans -d; $(docker_compose) top
+	cd $(net_name); $(docker_compose) up --remove-orphans -d; $(docker_compose) ps
 	touch $(net_name)/running.stamp
 
 stop:
