@@ -47,11 +47,11 @@ nike=""
 ratchetNike?=CTIDH512-X25519
 
 # kem can be Kyber1024-X448 or any of the other schemes at https://github.com/cloudflare/circl/blob/main/kem/schemes/schemes.go (and then nike must be unset)
-kem="mceliece348864"
+kem=mceliece348864
 
 DISTROS=alpine debian
 distro=alpine
-wirekem=mceliece348864
+wirekem=Xwing
 net_name=voting_mixnet
 base_port=30000
 bind_addr=127.0.0.1
