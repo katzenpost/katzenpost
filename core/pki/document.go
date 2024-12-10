@@ -26,7 +26,6 @@ import (
 	"fmt"
 
 	"github.com/fxamacker/cbor/v2"
-	"golang.org/x/crypto/blake2b"
 
 	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/sign"
@@ -147,6 +146,10 @@ type Document struct {
 	// with tehe mix network.
 	ServiceNodes []*MixDescriptor
 
+	// StorageReplicas is the list of Storage Replica nodes that do not talk over the mixnet
+	// but are expected to handle connections from the Service Nodes and the other replicas.
+	StorageReplicas []*ReplicaDescriptor
+
 	// Signatures holds detached Signatures from deserializing a signed Document
 	Signatures map[[PublicKeyHashSize]byte]cert.Signature `cbor:"-"`
 
@@ -202,6 +205,10 @@ func (d *Document) String() string {
 
 	s += "}\n"
 	s += fmt.Sprintf("ServiceNodes:[]{%v}", d.ServiceNodes)
+	s += "}}\n"
+
+	s += "}\n"
+	s += fmt.Sprintf("StorageReplicas:[]{%v}", d.StorageReplicas)
 	s += "}}\n"
 
 	for id, signedCommit := range d.SharedRandomCommit {
@@ -272,6 +279,19 @@ func (d *Document) GetServiceNodeByKeyHash(keyhash *[32]byte) (*MixDescriptor, e
 		}
 	}
 	return nil, fmt.Errorf("pki: service not found")
+}
+
+func (d *Document) GetReplicaNodeByKeyHash(keyhash *[32]byte) (*ReplicaDescriptor, error) {
+	for _, v := range d.StorageReplicas {
+		if v.IdentityKey == nil {
+			return nil, fmt.Errorf("pki: document contains invalid descriptors")
+		}
+		idKeyHash := hash.Sum256(v.IdentityKey)
+		if hmac.Equal(idKeyHash[:], keyhash[:]) {
+			return v, nil
+		}
+	}
+	return nil, fmt.Errorf("pki: replica not found")
 }
 
 // GetMix returns the MixDescriptor for the given mix Name.
@@ -596,6 +616,12 @@ func IsDocumentWellFormed(d *Document, verifiers []sign.PublicKey) error {
 		pks[pk] = true
 	}
 
+	for _, desc := range d.StorageReplicas {
+		if err := IsReplicaDescriptorWellFormed(desc, d.Epoch); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -665,7 +691,7 @@ func (d *Document) Sum256() [32]byte {
 	if err != nil {
 		panic(err)
 	}
-	return blake2b.Sum256(b)
+	return hash.Sum256(b)
 }
 
 func init() {

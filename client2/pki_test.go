@@ -31,6 +31,10 @@ type mockPKIClient struct {
 	doc *cpki.Document
 }
 
+func (c *mockPKIClient) PostReplica(ctx context.Context, epoch uint64, signingPrivateKey sign.PrivateKey, signingPublicKey sign.PublicKey, d *cpki.ReplicaDescriptor) error {
+	return nil
+}
+
 func (c *mockPKIClient) Get(ctx context.Context, epoch uint64) (*cpki.Document, []byte, error) {
 	return nil, nil, nil // XXX
 }
