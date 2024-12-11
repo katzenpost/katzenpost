@@ -10,8 +10,9 @@ const (
 	retreiveMessageLength = 4
 	messageBaseLength     = 1 + 1 + 4
 
-	getConsensusLength  = 8
-	consensusBaseLength = 1
+	getConsensusLength   = 8
+	consensusBaseLength  = 1         // len of ErrorCode
+	consensus2BaseLength = 1 + 4 + 4 // len of ErrorCode + ChunkNum + ChunkTotal
 
 	postDescriptorStatusLength = 1
 	postDescriptorLength       = 8
@@ -61,6 +62,7 @@ const (
 	// client Dir-auth commands.
 	getConsensus commandID = 18
 	consensus    commandID = 19
+	consensus2   commandID = 31
 
 	// Dir-auth commands that are only used by the dir-auth nodes.
 	postDescriptor       commandID = 20
