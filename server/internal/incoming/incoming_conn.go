@@ -17,6 +17,8 @@
 package incoming
 
 import (
+	"bytes"
+	"compress/gzip"
 	"container/list"
 	"fmt"
 	"math"
@@ -317,6 +319,13 @@ func (c *incomingConn) worker() {
 					return
 				}
 				continue
+			case *commands.GetConsensus2:
+				c.log.Debugf("Received GetConsensus from peer.")
+				if err := c.onGetConsensus2(cmd); err != nil {
+					c.log.Debugf("Failed to handle GetConsensus: %v", err)
+					return
+				}
+				continue
 			default:
 				// Probably a common command, like SendPacket.
 			}
@@ -364,6 +373,52 @@ func (c *incomingConn) onGetConsensus(cmd *commands.GetConsensus) error {
 		respCmd.ErrorCode = commands.ConsensusNotFound
 	}
 	return c.w.SendCommand(respCmd)
+}
+
+func (c *incomingConn) onGetConsensus2(cmd *commands.GetConsensus2) error {
+	respCmd := &commands.Consensus2{}
+	rawDoc, err := c.l.glue.PKI().GetRawConsensus(cmd.Epoch)
+	switch err {
+	case nil:
+		respCmd.ErrorCode = commands.ConsensusOk
+		respCmd.Payload = rawDoc
+	case cpki.ErrNoDocument:
+		respCmd.ErrorCode = commands.ConsensusGone
+	default: // Covers errNotCached
+		respCmd.ErrorCode = commands.ConsensusNotFound
+	}
+
+	// compress rawDoc
+	var buf bytes.Buffer
+	zw := gzip.NewWriter(&buf)
+	_, err = zw.Write(rawDoc)
+	if err != nil {
+		return err
+	}
+	err = zw.Close()
+	if err != nil {
+		return err
+	}
+	compressedRawDoc := buf.Bytes()
+
+	chunkSize := cmd.Cmds.MaxMessageLenServerToClient
+	total := len(compressedRawDoc) / chunkSize
+
+	for i := 0; i < total; i++ {
+		chunk := compressedRawDoc[:chunkSize]
+		chunkCmd := &commands.Consensus2{
+			Cmds:       cmd.Cmds,
+			ErrorCode:  0,
+			ChunkNum:   uint32(i),
+			ChunkTotal: uint32(total),
+			Payload:    chunk,
+		}
+		err := c.w.SendCommand(chunkCmd)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (c *incomingConn) onSendRetrievePacket(cmd *commands.SendRetrievePacket) error {
