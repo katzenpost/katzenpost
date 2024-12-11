@@ -4,10 +4,13 @@
 package client2
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
 	"crypto/hmac"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/url"
 	"sync"
@@ -432,6 +435,10 @@ func (c *connection) onWireConn(w *wire.Session) {
 
 	var wireErr error
 
+	chunkNum := 0
+	chunkTotal := 0
+	var chunks bytes.Buffer
+
 	closeConnCh := make(chan error, 1)
 	forceCloseConn := func(err error) {
 		// We only care about the first error from a callback.
@@ -528,10 +535,9 @@ func (c *connection) onWireConn(w *wire.Session) {
 				ctx.doneFn(fmt.Errorf("outstanding GetConsensus already exists: %v", consensusCtx.epoch))
 			} else {
 				consensusCtx = ctx
-				cmd := &commands.GetConsensus{
-					Epoch:              ctx.epoch,
-					Cmds:               w.GetCommands(),
-					MixnetTransmission: true, // Enable padding for mixnet transmission
+				cmd := &commands.GetConsensus2{
+					Cmds:  w.GetCommands(),
+					Epoch: ctx.epoch,
 				}
 				wireErr = w.SendCommand(cmd)
 				ctx.doneFn(wireErr)
@@ -666,11 +672,36 @@ func (c *connection) onWireConn(w *wire.Session) {
 				panic("client.cfg.Callbacks.OnACKFn must not be nil")
 			}
 			seq++
-		case *commands.Consensus:
+		case *commands.Consensus2:
 			if consensusCtx != nil {
-				c.log.Debugf("Received Consensus: ErrorCode: %v, Payload %v bytes", cmd.ErrorCode, len(cmd.Payload))
-				consensusCtx.replyCh <- cmd
-				consensusCtx = nil
+				c.log.Debugf("Received Consensus2: ErrorCode: %v, ChunkNum: %d, ChunkTotal: %d, Payload %v bytes", cmd.ErrorCode, cmd.ChunkNum, cmd.ChunkTotal, len(cmd.Payload))
+
+				if chunkNum != 0 {
+					if int(cmd.ChunkTotal) != chunkTotal {
+						c.log.Errorf("Receive invalid Consensus2.ChunkTotal")
+						return
+					}
+				}
+				chunks.Write(cmd.Payload)
+				if int(cmd.ChunkNum) == (chunkTotal - 1) {
+					// last chunk
+					zr, err := gzip.NewReader(&chunks)
+					if err != nil {
+						c.log.Errorf("Received Consensus2: decompression error: %s", err)
+						return
+					}
+					var acc bytes.Buffer
+					io.Copy(&acc, zr)
+					cmd.Payload = acc.Bytes()
+					consensusCtx.replyCh <- cmd
+					consensusCtx = nil
+					chunkNum = 0
+					chunkTotal = 0
+				}
+
+				chunkNum = int(cmd.ChunkNum)
+				chunkTotal = int(cmd.ChunkTotal)
+
 			} else {
 				// Spurious Consensus replies are a protocol violation.
 				c.log.Errorf("Received spurious Consensus.")
