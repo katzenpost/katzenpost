@@ -10,6 +10,90 @@ import (
 	"github.com/katzenpost/hpqc/sign"
 )
 
+// TRAFFIC PADDED START
+
+type GetConsensus2 struct {
+	Cmds  *Commands
+	Epoch uint64
+}
+
+// ToBytes serializes the GetConsensus and returns the resulting byte slice.
+func (c *GetConsensus2) ToBytes() []byte {
+	out := make([]byte, cmdOverhead+getConsensusLength)
+	out[0] = byte(getConsensus)
+	binary.BigEndian.PutUint32(out[2:6], getConsensusLength)
+	binary.BigEndian.PutUint64(out[6:14], c.Epoch)
+
+	// only pad if we are sending over the mixnet
+	return c.Cmds.padToMaxCommandSize(out, true)
+}
+
+func (c *GetConsensus2) Length() int {
+	return cmdOverhead + getConsensusLength
+}
+
+func getConsensus2FromBytes(b []byte, cmds *Commands) (Command, error) {
+	if len(b) != getConsensusLength {
+		return nil, errInvalidCommand
+	}
+
+	r := new(GetConsensus)
+	r.Epoch = binary.BigEndian.Uint64(b[0:8])
+	r.Cmds = cmds
+	return r, nil
+}
+
+// Consensus2 is used to send a PKI document in compressed binary chunks.
+type Consensus2 struct {
+	Cmds *Commands
+
+	ErrorCode  uint8
+	ChunkNum   uint32
+	ChunkTotal uint32
+	Payload    []byte
+}
+
+// ToBytes serializes the Consensus and returns the resulting byte slice.
+func (c *Consensus2) ToBytes() []byte {
+	consensusLength := uint32(consensus2BaseLength + len(c.Payload))
+	out := make([]byte, cmdOverhead+consensus2BaseLength)
+	out[0] = byte(consensus2) // out[1] is reserved
+	binary.BigEndian.PutUint32(out[2:6], consensusLength)
+	out[6] = c.ErrorCode
+	binary.BigEndian.PutUint32(out[7:11], c.ChunkNum)
+	binary.BigEndian.PutUint32(out[11:15], c.ChunkTotal)
+	out = append(out, c.Payload...)
+	return c.Cmds.padToMaxCommandSize(out, false)
+}
+
+func (c *Consensus2) Length() int {
+	// NOTE(david): we can return zero here because we know this command
+	// will transmit variable length chunks depending on
+	// the traffic padding threshold size vs the pki doc size.
+	// The other commands in the command set will be used to determine
+	// the traffic padding threshold.
+	return 0
+}
+
+func consensus2FromBytes(b []byte) (Command, error) {
+	if len(b) < consensusBaseLength {
+		return nil, errInvalidCommand
+	}
+
+	r := new(Consensus2)
+	r.ErrorCode = b[0]
+	r.ChunkNum = binary.BigEndian.Uint32(b[1:5])
+	r.ChunkTotal = binary.BigEndian.Uint32(b[5:9])
+
+	if payloadLength := len(b) - consensus2BaseLength; payloadLength > 0 {
+		r.Payload = make([]byte, 0, payloadLength)
+		r.Payload = append(r.Payload, b[consensus2BaseLength:]...)
+	}
+	return r, nil
+}
+
+// TRAFFIC PADDED END
+
 // PostReplicaDescriptorStatus is a de-serialized post_replica_descriptor_status command.
 type PostReplicaDescriptorStatus struct {
 	ErrorCode uint8
