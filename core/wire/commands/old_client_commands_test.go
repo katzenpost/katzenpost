@@ -25,11 +25,13 @@ func TestSendPacket(t *testing.T) {
 	nrHops := 5
 	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
 	s := sphinx.NewSphinx(geo)
-	cmds := NewCommands(s.Geometry(), testCertScheme)
+	cmds := NewMixnetCommands(s.Geometry())
 
-	cmd := &SendPacket{SphinxPacket: []byte(payload), Cmds: cmds}
+	packet := make([]byte, geo.PacketLength)
+	copy(packet[:len(payload)], payload)
+	cmd := &SendPacket{SphinxPacket: packet, Cmds: cmds}
 	b := cmd.ToBytes()
-	require.Len(b, cmds.maxMessageLen(cmd), "SendPacket: ToBytes() length")
+	require.Len(b, cmds.MaxMessageLenClientToServer, "SendPacket: ToBytes() length")
 	actualDataLength := cmdOverhead + len(payload)
 	require.True(util.CtIsZero(b[actualDataLength:]), "SendPacket: ToBytes() padding must be zero")
 
@@ -38,7 +40,7 @@ func TestSendPacket(t *testing.T) {
 	require.IsType(cmd, c, "SendPacket: FromBytes() invalid type")
 
 	cmd = c.(*SendPacket)
-	require.Equal([]byte(payload), cmd.SphinxPacket, "SendPacket: FromBytes() SphinxPacket")
+	require.Equal([]byte(packet), cmd.SphinxPacket, "SendPacket: FromBytes() SphinxPacket")
 }
 
 func TestRetrieveMessage(t *testing.T) {
@@ -52,11 +54,11 @@ func TestRetrieveMessage(t *testing.T) {
 	nrHops := 5
 	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
 	s := sphinx.NewSphinx(geo)
-	cmds := NewCommands(s.Geometry(), testCertScheme)
+	cmds := NewMixnetCommands(s.Geometry())
 
 	cmd := &RetrieveMessage{Sequence: seq, Cmds: cmds}
 	b := cmd.ToBytes()
-	require.Len(b, cmds.maxMessageLen(cmd), "RetrieveMessage: ToBytes() length")
+	require.Len(b, cmds.MaxMessageLenClientToServer, "RetrieveMessage: ToBytes() length")
 	actualDataLength := cmdOverhead + 4
 	require.True(util.CtIsZero(b[actualDataLength:]), "RetrieveMessage: ToBytes() padding must be zero")
 
@@ -75,7 +77,7 @@ func TestMessage(t *testing.T) {
 	forwardPayloadLength := 2000
 	nrHops := 5
 	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
-	cmds := NewCommands(geo, testCertScheme)
+	cmds := NewMixnetCommands(geo)
 
 	var expectedLen = cmdOverhead + cmds.messageEmptyLength()
 	const (
@@ -96,7 +98,7 @@ func TestMessage(t *testing.T) {
 		Sequence: seq,
 	}
 	b := cmdEmpty.ToBytes()
-	require.Len(b, cmds.maxMessageLen(cmdEmpty), "MessageEmpty: ToBytes() length")
+	require.Len(b, cmds.MaxMessageLenServerToClient, "MessageEmpty: ToBytes() length")
 	require.True(util.CtIsZero(b[expectedLen:]), "MessageEmpty: ToBytes() padding must be zero")
 
 	c, err := cmds.FromBytes(b)
@@ -117,7 +119,7 @@ func TestMessage(t *testing.T) {
 		Payload:       msgPayload,
 	}
 	b = cmdMessage.ToBytes()
-	require.Len(b, cmds.maxMessageLen(cmdMessage), "Message: ToBytes() length")
+	require.Len(b, cmds.MaxMessageLenServerToClient, "Message: ToBytes() length")
 	require.True(util.CtIsZero(b[expectedLen:]), "Message: ToBytes() padding must be zero")
 
 	c, err = cmds.FromBytes(b)
@@ -147,7 +149,7 @@ func TestMessage(t *testing.T) {
 	}
 	copy(cmdMessageACK.ID[:], id[:])
 	b = cmdMessageACK.ToBytes()
-	require.Len(b, cmds.maxMessageLen(cmdMessageACK), "MessageACK: ToBytes() length")
+	require.Len(b, cmds.MaxMessageLenServerToClient, "MessageACK: ToBytes() length")
 	require.True(util.CtIsZero(b[expectedLen:]), "MessageACK: ToBytes() padding must be zero")
 
 	c, err = cmds.FromBytes(b)

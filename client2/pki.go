@@ -176,7 +176,6 @@ func (p *pki) worker() {
 
 			err := p.updateDocument(epoch)
 			if err != nil {
-				p.log.Warningf("Failed to fetch PKI for epoch %v: %v", epoch, err)
 				switch err {
 				case cpki.ErrNoDocument:
 					p.failedFetches[epoch] = err
@@ -221,7 +220,6 @@ func (p *pki) updateDocument(epoch uint64) error {
 	docBlob, d, err := p.getDocument(pkiCtx, epoch)
 	cancelFn()
 	if err != nil {
-		p.log.Warningf("Failed to fetch PKI for epoch %v: %v", epoch, err)
 		return err
 	}
 	if !hmac.Equal(d.SphinxGeometryHash, p.c.cfg.SphinxGeometry.Hash()) {
@@ -247,7 +245,6 @@ func (p *pki) getDocument(ctx context.Context, epoch uint64) ([]byte, *cpki.Docu
 	case cpki.ErrNoDocument:
 		return nil, nil, err
 	default:
-		p.log.Infof("Failed to fetch PKI doc for epoch %v from Provider: %v", epoch, err)
 		return nil, nil, err
 	}
 
@@ -263,9 +260,14 @@ func (p *pki) getDocument(ctx context.Context, epoch uint64) ([]byte, *cpki.Docu
 
 	d, err = p.c.PKIClient.Deserialize(resp.Payload)
 	if err != nil {
-		p.log.Errorf("Failed to deserialize consensus received from provider: %v", err)
+		p.log.Errorf("Failed to deserialize consensus received from Gateway: %v", err)
 		return nil, nil, cpki.ErrNoDocument
 	}
+	if d == nil {
+		p.log.Error("Failed to deserialize consensus received from Gateway")
+		return nil, nil, cpki.ErrNoDocument
+	}
+
 	if d.Epoch != epoch {
 		p.log.Errorf("BUG: Provider returned document for incorrect epoch: %v", d.Epoch)
 		return nil, nil, fmt.Errorf("BUG: Provider returned document for incorrect epoch: %v", d.Epoch)

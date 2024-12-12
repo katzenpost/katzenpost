@@ -27,7 +27,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/katzenpost/hpqc/sign"
 	"github.com/katzenpost/nyquist"
 	"github.com/katzenpost/nyquist/cipher"
 	"github.com/katzenpost/nyquist/hash"
@@ -35,11 +34,12 @@ import (
 	"github.com/katzenpost/nyquist/seec"
 
 	"github.com/katzenpost/hpqc/kem"
+	"github.com/katzenpost/hpqc/nike"
 	"github.com/katzenpost/hpqc/rand"
+	"github.com/katzenpost/hpqc/sign"
 
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
-	"github.com/katzenpost/katzenpost/core/wire/constants"
 )
 
 const (
@@ -49,10 +49,19 @@ const (
 
 	macLen  = 16
 	authLen = 1 + MaxAdditionalDataLength + 4
+
+	// MaxMessageSize is the maximum allowed message size we are willing to send or receive.
+	// Note that this doesn't apply Storage Replicas because they have command sets which are fixed size.
+	// Everyone else besides the storage servers DO NOT have fixed sized command sets because they
+	// send arbitrary sized PKI documents and the like. Therefore this maximum constant is only applicable
+	// to wire protocol connections among the dirauths and among the mix nodes.
+	MaxMessageSize = 500000000
 )
 
 var (
-	prologue = []byte{0x03} // Prologue indicates version 3.
+	prologue    = []byte{0x03} // Prologue indicates version 3.
+	prologueLen = 1
+	keyLen      = nyquist.SymmetricKeySize
 )
 
 const (
@@ -128,7 +137,7 @@ type SessionInterface interface {
 	SendCommand(cmd commands.Command) error
 	RecvCommand() (commands.Command, error)
 	Close()
-	PeerCredentials() *PeerCredentials
+	PeerCredentials() (*PeerCredentials, error)
 	ClockSkew() time.Duration
 }
 
@@ -156,6 +165,57 @@ type Session struct {
 	clockSkew   time.Duration
 	state       uint32
 	isInitiator bool
+
+	maxMesgSize int
+}
+
+// client
+// -> (prologue), e
+func (s *Session) msg1Len() int {
+	return prologueLen + s.protocol.KEM.PublicKeySize()
+}
+
+// server
+// -> ekem, s, (auth)
+func (s *Session) msg2Len() int {
+	return s.protocol.KEM.PublicKeySize() + s.protocol.KEM.CiphertextSize() + keyLen + authLen
+}
+
+// client
+// -> skem, s, (auth)
+func (s *Session) msg3Len() int {
+	return s.protocol.KEM.PublicKeySize() + s.protocol.KEM.CiphertextSize() + keyLen + macLen + authLen
+}
+
+// server
+// -> skem
+func (s *Session) msg4Len() int {
+	return s.protocol.KEM.CiphertextSize() + keyLen
+}
+
+func (s *Session) MaxMesgSize() int {
+	if s.maxMesgSize < 0 {
+		s.maxMesgSize = MaxMessageSize
+		return s.maxMesgSize
+	}
+	if s.maxMesgSize != 0 {
+		return s.maxMesgSize
+	}
+	mesgLenths := []int{
+		s.commands.MaxCommandSize() + macLen,
+		s.msg1Len(),
+		s.msg2Len(),
+		s.msg3Len(),
+		s.msg4Len(),
+	}
+	max := 0
+	for i := 0; i < len(mesgLenths); i++ {
+		if mesgLenths[i] > max {
+			max = mesgLenths[i]
+		}
+	}
+	s.maxMesgSize = max
+	return s.maxMesgSize
 }
 
 func (s *Session) GetCommands() *commands.Commands {
@@ -173,7 +233,7 @@ func (s *Session) handshake() error {
 		Protocol:       s.protocol,
 		Rng:            rand.Reader,
 		Prologue:       prologue,
-		MaxMessageSize: constants.MaxMsgLen,
+		MaxMessageSize: s.MaxMesgSize(),
 		KEM: &nyquist.KEMConfig{
 			LocalStatic: s.authenticationKEMKey,
 			GenKey:      seec.GenKeyPRPAES,
@@ -186,30 +246,10 @@ func (s *Session) handshake() error {
 		return err
 	}
 	defer handshake.Reset()
-	var (
-		prologueLen = 1
-		keyLen      = nyquist.SymmetricKeySize
-
-		// client
-		// -> (prologue), e
-		msg1Len = prologueLen + s.protocol.KEM.PublicKeySize()
-
-		// server
-		// -> ekem, s, (auth)
-		msg2Len = s.protocol.KEM.PublicKeySize() + s.protocol.KEM.CiphertextSize() + keyLen + authLen
-
-		// client
-		// -> skem, s, (auth)
-		msg3Len = s.protocol.KEM.PublicKeySize() + s.protocol.KEM.CiphertextSize() + keyLen + macLen + authLen
-
-		// server
-		// -> skem
-		msg4Len = s.protocol.KEM.CiphertextSize() + keyLen
-	)
 
 	if s.isInitiator {
 		// -> (prologue), e
-		msg1 := make([]byte, 0, msg1Len)
+		msg1 := make([]byte, 0, s.msg1Len())
 		msg1 = append(msg1, prologue...)
 		msg1, err = handshake.WriteMessage(msg1, nil)
 		if err != nil {
@@ -220,7 +260,7 @@ func (s *Session) handshake() error {
 		}
 
 		// -> ekem, s, (auth)
-		msg2 := make([]byte, msg2Len)
+		msg2 := make([]byte, s.msg2Len())
 		if _, err = io.ReadFull(s.conn, msg2); err != nil {
 			return err
 		}
@@ -258,7 +298,7 @@ func (s *Session) handshake() error {
 		ourAuth := &authenticateMessage{ad: s.additionalData}
 		rawAuth = make([]byte, 0, authLen)
 		rawAuth = ourAuth.ToBytes(rawAuth)
-		msg3 := make([]byte, 0, msg3Len)
+		msg3 := make([]byte, 0, s.msg3Len())
 		msg3, err = handshake.WriteMessage(msg3, rawAuth)
 		if err != nil {
 			return err
@@ -268,7 +308,7 @@ func (s *Session) handshake() error {
 		}
 
 		// -> skem
-		msg4 := make([]byte, msg4Len)
+		msg4 := make([]byte, s.msg4Len())
 		if _, err = io.ReadFull(s.conn, msg4); err != nil {
 			return err
 		}
@@ -283,7 +323,7 @@ func (s *Session) handshake() error {
 		}
 	} else {
 		// -> (prologue), e
-		msg1 := make([]byte, msg1Len)
+		msg1 := make([]byte, s.msg1Len())
 		if _, err = io.ReadFull(s.conn, msg1); err != nil {
 			return err
 		}
@@ -302,7 +342,7 @@ func (s *Session) handshake() error {
 		}
 		rawAuth := make([]byte, 0, authLen)
 		rawAuth = ourAuth.ToBytes(rawAuth)
-		msg2 := make([]byte, 0, msg2Len)
+		msg2 := make([]byte, 0, s.msg2Len())
 		msg2, err = handshake.WriteMessage(msg2, rawAuth)
 		if err != nil {
 			return err
@@ -312,7 +352,7 @@ func (s *Session) handshake() error {
 		}
 
 		// -> skem, s, (auth)
-		msg3 := make([]byte, msg3Len)
+		msg3 := make([]byte, s.msg3Len())
 		rawAuth = make([]byte, 0, authLen)
 		if _, err = io.ReadFull(s.conn, msg3); err != nil {
 			return err
@@ -342,7 +382,7 @@ func (s *Session) handshake() error {
 		}
 
 		// -> skem
-		msg4 := make([]byte, 0, msg4Len)
+		msg4 := make([]byte, 0, s.msg4Len())
 		msg4, err = handshake.WriteMessage(msg4, nil)
 
 		switch err {
@@ -422,7 +462,7 @@ func (s *Session) SendCommand(cmd commands.Command) error {
 	// Derive the Ciphertext length.
 	pt := cmd.ToBytes()
 	ctLen := macLen + len(pt)
-	if ctLen > constants.MaxMsgLen {
+	if ctLen > s.MaxMesgSize() {
 		return errMsgSize
 	}
 
@@ -485,7 +525,10 @@ func (s *Session) recvCommandImpl() (commands.Command, error) {
 		return nil, err
 	}
 	ctLen := binary.BigEndian.Uint32(ctHdr[:])
-	if ctLen < macLen || ctLen > constants.MaxMsgLen {
+	if ctLen < macLen {
+		return nil, errMsgSize
+	}
+	if ctLen > uint32(s.MaxMesgSize()) {
 		return nil, errMsgSize
 	}
 
@@ -590,7 +633,47 @@ func NewPKISession(cfg *SessionConfig, isInitiator bool) (*Session, error) {
 		state:          stateInit,
 		rxKeyMutex:     new(sync.RWMutex),
 		txKeyMutex:     new(sync.RWMutex),
-		commands:       commands.NewCommands(cfg.Geometry, cfg.PKISignatureScheme),
+		commands:       commands.NewPKICommands(cfg.PKISignatureScheme),
+		maxMesgSize:    -1,
+	}
+	s.authenticationKEMKey = cfg.AuthenticationKey
+
+	return s, nil
+}
+
+// NewStorageReplicaSession creates a new session to be used with the storage replicas.
+func NewStorageReplicaSession(cfg *SessionConfig, scheme nike.Scheme, isInitiator bool) (*Session, error) {
+	if cfg.Geometry == nil {
+		return nil, errors.New("wire/session: missing sphinx packet geometry")
+	}
+	if cfg.Authenticator == nil {
+		return nil, errors.New("wire/session: missing Authenticator")
+	}
+	if len(cfg.AdditionalData) > MaxAdditionalDataLength {
+		return nil, errors.New("wire/session: oversized AdditionalData")
+	}
+	if cfg.AuthenticationKey == nil {
+		return nil, errors.New("wire/session: missing AuthenticationKEMKey")
+	}
+	if cfg.RandomReader == nil {
+		return nil, errors.New("wire/session: missing RandomReader")
+	}
+
+	s := &Session{
+		protocol: &nyquist.Protocol{
+			Pattern: pattern.PqXX,
+			KEM:     cfg.KEMScheme,
+			Cipher:  cipher.ChaChaPoly,
+			Hash:    hash.BLAKE2b,
+		},
+		authenticator:  cfg.Authenticator,
+		additionalData: cfg.AdditionalData,
+		randReader:     cfg.RandomReader,
+		isInitiator:    isInitiator,
+		state:          stateInit,
+		rxKeyMutex:     new(sync.RWMutex),
+		txKeyMutex:     new(sync.RWMutex),
+		commands:       commands.NewStorageReplicaCommands(cfg.Geometry, scheme),
 	}
 	s.authenticationKEMKey = cfg.AuthenticationKey
 
@@ -629,7 +712,8 @@ func NewSession(cfg *SessionConfig, isInitiator bool) (*Session, error) {
 		state:          stateInit,
 		rxKeyMutex:     new(sync.RWMutex),
 		txKeyMutex:     new(sync.RWMutex),
-		commands:       commands.NewCommands(cfg.Geometry, cfg.PKISignatureScheme),
+		commands:       commands.NewMixnetCommands(cfg.Geometry),
+		maxMesgSize:    -1,
 	}
 	s.authenticationKEMKey = cfg.AuthenticationKey
 

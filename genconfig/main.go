@@ -492,7 +492,7 @@ func main() {
 	nike := flag.String("nike", "x25519", "Name of the NIKE Scheme to be used with Sphinx")
 	ratchetNike := flag.String("ratchetNike", "CTIDH512-X25519", "Name of the NIKE Scheme to be used with the doubleratchet")
 	UserForwardPayloadLength := flag.Int("UserForwardPayloadLength", 2000, "UserForwardPayloadLength")
-	pkiSignatureScheme := flag.String("pkiScheme", "Ed25519", "PKI Signature Scheme to be used")
+	pkiSignatureScheme := flag.String("pkiScheme", "ed25519", "PKI Signature Scheme to be used")
 	noDecoy := flag.Bool("noDecoy", true, "Disable decoy traffic for the client")
 	noMixDecoy := flag.Bool("noMixDecoy", true, "Disable decoy traffic for the mixes")
 	dialTimeout := flag.Int("dialTimeout", 0, "Session dial timeout")
@@ -910,7 +910,7 @@ services:
     image: %s
     volumes:
       - ./:%s
-    command: %s/voting%s -f %s/%s/authority.toml
+    command: %s/dirauth%s -f %s/%s/authority.toml
     network_mode: host
 `, authCfg.Server.Identifier, dockerImage, s.baseDir, s.baseDir, s.binSuffix, s.baseDir, authCfg.Server.Identifier)
 	}

@@ -11,6 +11,14 @@ import (
 	"github.com/katzenpost/katzenpost/core/utils"
 )
 
+func (c *Commands) messageMsgPaddingLength() int {
+	return constants.SURBIDLength + c.geo.SphinxPlaintextHeaderLength + c.geo.SURBLength + c.geo.PayloadTagLength
+}
+
+func (c *Commands) messageMsgLength() int {
+	return messageBaseLength + c.messageMsgPaddingLength()
+}
+
 func messageACKLength() int {
 	return messageBaseLength + constants.SURBIDLength
 }
@@ -31,7 +39,11 @@ func (c *SendPacket) ToBytes() []byte {
 	out[0] = byte(sendPacket)
 	binary.BigEndian.PutUint32(out[2:6], uint32(len(c.SphinxPacket)))
 	out = append(out, c.SphinxPacket...)
-	return padToMaxCommandSize(out, c.Cmds.maxMessageLen(c))
+	return c.Cmds.padToMaxCommandSize(out, true)
+}
+
+func (c *SendPacket) Length() int {
+	return cmdOverhead + c.Cmds.geo.PacketLength
 }
 
 func sendPacketFromBytes(b []byte, cmds *Commands) (Command, error) {
@@ -54,7 +66,11 @@ func (c *RetrieveMessage) ToBytes() []byte {
 	out[0] = byte(retreiveMessage)
 	binary.BigEndian.PutUint32(out[2:6], retreiveMessageLength)
 	binary.BigEndian.PutUint32(out[6:10], c.Sequence)
-	return padToMaxCommandSize(out, c.Cmds.maxMessageLen(c))
+	return c.Cmds.padToMaxCommandSize(out, true)
+}
+
+func (c *RetrieveMessage) Length() int {
+	return cmdOverhead + 4
 }
 
 func retreiveMessageFromBytes(b []byte, cmds *Commands) (Command, error) {
@@ -94,7 +110,11 @@ func (c *MessageACK) ToBytes() []byte {
 	binary.BigEndian.PutUint32(out[8:12], c.Sequence)
 	copy(out[12:12+constants.SURBIDLength], c.ID[:])
 	out = append(out, c.Payload...)
-	return padToMaxCommandSize(out, c.Cmds.maxMessageLen(c))
+	return c.Cmds.padToMaxCommandSize(out, false)
+}
+
+func (c *MessageACK) Length() int {
+	return cmdOverhead + 1 + 4 + constants.SURBIDLength + c.Geo.PacketLength
 }
 
 // Message is a de-serialized message command containing a message.
@@ -120,7 +140,11 @@ func (c *Message) ToBytes() []byte {
 	out[7] = c.QueueSizeHint
 	binary.BigEndian.PutUint32(out[8:12], c.Sequence)
 	copy(out[12:], c.Payload)
-	return padToMaxCommandSize(out, c.Cmds.maxMessageLen(c))
+	return c.Cmds.padToMaxCommandSize(out, false)
+}
+
+func (c *Message) Length() int {
+	return cmdOverhead + 1 + 4 + c.Geo.PacketLength
 }
 
 // MessageEmpty is a de-serialized message command signifying a empty queue.
@@ -138,7 +162,11 @@ func (c *MessageEmpty) ToBytes() []byte {
 	binary.BigEndian.PutUint32(out[2:6], uint32(c.Cmds.messageEmptyLength()))
 	out[6] = byte(messageTypeEmpty)
 	binary.BigEndian.PutUint32(out[8:12], c.Sequence)
-	return padToMaxCommandSize(out, c.Cmds.maxMessageLen(c))
+	return c.Cmds.padToMaxCommandSize(out, false)
+}
+
+func (c *MessageEmpty) Length() int {
+	return cmdOverhead + 4 + c.Cmds.geo.PacketLength
 }
 
 func (c *Commands) messageFromBytes(b []byte, cmds *Commands) (Command, error) {
