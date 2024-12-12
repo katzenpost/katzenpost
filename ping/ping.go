@@ -98,7 +98,7 @@ func sendPing(session *thin.ThinClient, serviceDesc *common.ServiceDescriptor, p
 
 func sendPings(session *thin.ThinClient, serviceDesc *common.ServiceDescriptor, count int, concurrency int, printDiff bool) {
 	id := hash.Sum256(serviceDesc.MixDescriptor.IdentityKey)
-	fmt.Printf("Sending %d Sphinx packets to %s@%x\n", count, id, serviceDesc.RecipientQueueID)
+	fmt.Printf("Sending %d Sphinx packets to %x@%x\n", count, id, serviceDesc.RecipientQueueID)
 
 	var passed, failed uint64
 

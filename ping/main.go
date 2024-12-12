@@ -82,11 +82,16 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+
+	fmt.Println("Sleeping for 3 seconds to let the client daemon startup...")
+	time.Sleep(time.Second * 3)
+
 	thin := thin.NewThinClient(cfg)
 	err = thin.Dial()
 	if err != nil {
 		panic(err)
 	}
+
 	desc, err := thin.GetService(service)
 	if err != nil {
 		panic(err)
