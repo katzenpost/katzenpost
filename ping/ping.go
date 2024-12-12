@@ -18,15 +18,18 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"sync"
 	"sync/atomic"
 
 	"github.com/fxamacker/cbor/v2"
-	"github.com/katzenpost/katzenpost/client"
-	"github.com/katzenpost/katzenpost/client/constants"
-	"github.com/katzenpost/katzenpost/client/utils"
+
+	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/rand"
+
+	"github.com/katzenpost/katzenpost/client2/common"
+	"github.com/katzenpost/katzenpost/client2/thin"
 )
 
 var basePayload = []byte(`Data encryption is used widely to protect the content of Internet
@@ -45,7 +48,7 @@ produced various designs. Of these, mix networks are among the most practical
 and can readily scale to millions of users.
 `)
 
-func sendPing(session *client.Session, serviceDesc *utils.ServiceDescriptor, printDiff bool) bool {
+func sendPing(session *thin.ThinClient, serviceDesc *common.ServiceDescriptor, printDiff bool) bool {
 	var nonce [32]byte
 
 	_, err := rand.Reader.Read(nonce[:])
@@ -62,8 +65,10 @@ func sendPing(session *client.Session, serviceDesc *utils.ServiceDescriptor, pri
 		panic(err)
 	}
 
-	reply, err := session.BlockingSendUnreliableMessage(serviceDesc.Name, serviceDesc.Provider, cborPayload)
+	id := hash.Sum256(serviceDesc.MixDescriptor.IdentityKey)
 
+	ctx := context.TODO()
+	reply, err := session.BlockingSendMessage(ctx, cborPayload, &id, serviceDesc.RecipientQueueID)
 	if err != nil {
 		fmt.Printf("\nerror: %v\n", err)
 		fmt.Printf(".") // Fail, did not receive a reply.
@@ -79,7 +84,7 @@ func sendPing(session *client.Session, serviceDesc *utils.ServiceDescriptor, pri
 	}
 
 	if bytes.Equal(replyPayload, pingPayload) {
-		// OK, received identical payload in reply.
+		// OK, received identical payload in reply.hash.Sum256(serviceDesc.MixDescriptor.IdentityKey)
 		return true
 	} else {
 		// Fail, received unexpected payload in reply.
@@ -91,12 +96,9 @@ func sendPing(session *client.Session, serviceDesc *utils.ServiceDescriptor, pri
 	}
 }
 
-func sendPings(session *client.Session, serviceDesc *utils.ServiceDescriptor, count int, concurrency int, printDiff bool) {
-	if concurrency > constants.MaxEgressQueueSize {
-		fmt.Printf("error: concurrency cannot be greater than MaxEgressQueueSize (%d)\n", constants.MaxEgressQueueSize)
-		return
-	}
-	fmt.Printf("Sending %d Sphinx packets to %s@%s\n", count, serviceDesc.Name, serviceDesc.Provider)
+func sendPings(session *thin.ThinClient, serviceDesc *common.ServiceDescriptor, count int, concurrency int, printDiff bool) {
+	id := hash.Sum256(serviceDesc.MixDescriptor.IdentityKey)
+	fmt.Printf("Sending %d Sphinx packets to %s@%x\n", count, id, serviceDesc.RecipientQueueID)
 
 	var passed, failed uint64
 

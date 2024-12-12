@@ -17,15 +17,17 @@
 package main
 
 import (
-	"context"
 	"flag"
 	"fmt"
 	"time"
 
 	"github.com/carlmjohnson/versioninfo"
-	"github.com/katzenpost/katzenpost/client"
-	"github.com/katzenpost/katzenpost/client/config"
+
 	"github.com/katzenpost/hpqc/rand"
+
+	"github.com/katzenpost/katzenpost/client2"
+	"github.com/katzenpost/katzenpost/client2/config"
+	"github.com/katzenpost/katzenpost/client2/thin"
 )
 
 const (
@@ -71,28 +73,26 @@ func main() {
 		panic(fmt.Errorf("failed to open config: %s", err))
 	}
 
-	// create a client and connect to the mixnet Provider
-	c, err := client.New(cfg)
-	if err != nil {
-		panic(fmt.Errorf("failed to create client: %s", err))
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeout)*time.Second)
-	session, err := c.NewTOFUSession(ctx)
-	if err != nil {
-		panic(fmt.Errorf("failed to create session: %s", err))
-	}
-
-	err = session.WaitForDocument(ctx)
+	// create a client and connect to the mixnet Gateway
+	d, err := client2.NewDaemon(cfg)
 	if err != nil {
 		panic(err)
 	}
-	cancel()
-	serviceDesc, err := session.GetService(service)
+	err = d.Start()
+	if err != nil {
+		panic(err)
+	}
+	thin := thin.NewThinClient(cfg)
+	err = thin.Dial()
+	if err != nil {
+		panic(err)
+	}
+	desc, err := thin.GetService(service)
 	if err != nil {
 		panic(err)
 	}
 
-	sendPings(session, serviceDesc, count, concurrency, printDiff)
+	sendPings(thin, desc, count, concurrency, printDiff)
 
-	c.Shutdown()
+	d.Shutdown()
 }
