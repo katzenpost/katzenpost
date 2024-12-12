@@ -28,8 +28,6 @@ var (
 	mixServerCacheDelay     = epochtime.Period / 16
 	nextFetchTill           = epochtime.Period - (PublishDeadline + mixServerCacheDelay)
 	recheckInterval         = epochtime.Period / 16
-	// WarpedEpoch is a build time flag that accelerates the recheckInterval
-	WarpedEpoch = "false"
 )
 
 type CachedDoc struct {
