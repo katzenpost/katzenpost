@@ -400,9 +400,13 @@ func (c *incomingConn) onGetConsensus2(cmd *commands.GetConsensus2) error {
 		return err
 	}
 	compressedRawDoc := buf.Bytes()
-
+	docSize := len(compressedRawDoc)
 	chunkSize := cmd.Cmds.MaxMessageLenServerToClient
 	total := len(compressedRawDoc) / chunkSize
+	size := chunkSize * total
+	if size < docSize {
+		total += 1
+	}
 
 	for i := 0; i < total; i++ {
 		chunk := compressedRawDoc[:chunkSize]
