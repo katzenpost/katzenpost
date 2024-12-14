@@ -17,8 +17,6 @@
 package incoming
 
 import (
-	"bytes"
-	"compress/gzip"
 	"container/list"
 	"fmt"
 	"math"
@@ -388,33 +386,18 @@ func (c *incomingConn) onGetConsensus2(cmd *commands.GetConsensus2) error {
 		respCmd.ErrorCode = commands.ConsensusNotFound
 	}
 
-	// compress rawDoc
-	var buf bytes.Buffer
-	zw := gzip.NewWriter(&buf)
-	_, err = zw.Write(rawDoc)
-	if err != nil {
-		return err
-	}
-	err = zw.Close()
-	if err != nil {
-		return err
-	}
-	compressedRawDoc := buf.Bytes()
-	docSize := len(compressedRawDoc)
 	chunkSize := cmd.Cmds.MaxMessageLenServerToClient
-	total := len(compressedRawDoc) / chunkSize
-	size := chunkSize * total
-	if size < docSize {
-		total += 1
+	chunks, err := cpki.Chunk(rawDoc, chunkSize)
+	if err != nil {
+		return err
 	}
-
-	for i := 0; i < total; i++ {
-		chunk := compressedRawDoc[:chunkSize]
+	for i := 0; i < len(chunks); i++ {
+		chunk := chunks[i]
 		chunkCmd := &commands.Consensus2{
 			Cmds:       cmd.Cmds,
 			ErrorCode:  0,
 			ChunkNum:   uint32(i),
-			ChunkTotal: uint32(total),
+			ChunkTotal: uint32(len(chunks)),
 			Payload:    chunk,
 		}
 		err := c.w.SendCommand(chunkCmd)
