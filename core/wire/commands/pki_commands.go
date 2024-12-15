@@ -20,7 +20,7 @@ type GetConsensus2 struct {
 // ToBytes serializes the GetConsensus and returns the resulting byte slice.
 func (c *GetConsensus2) ToBytes() []byte {
 	out := make([]byte, cmdOverhead+getConsensusLength)
-	out[0] = byte(getConsensus)
+	out[0] = byte(getConsensus2)
 	binary.BigEndian.PutUint32(out[2:6], getConsensusLength)
 	binary.BigEndian.PutUint64(out[6:14], c.Epoch)
 
