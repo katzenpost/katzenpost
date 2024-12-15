@@ -668,7 +668,7 @@ func (c *connection) onWireConn(w *wire.Session) {
 			}
 			seq++
 		case *commands.Consensus:
-			panic("receive Consensus when we asked for Consensus2")
+			c.log.Info("receive Consensus when we are supposed to receive Consensus2")
 		case *commands.Consensus2:
 			if consensusCtx != nil {
 				c.log.Infof("Received Consensus2: ErrorCode: %v, ChunkNum: %d, ChunkTotal: %d, Payload %v bytes", cmd.ErrorCode, cmd.ChunkNum, cmd.ChunkTotal, len(cmd.Payload))
