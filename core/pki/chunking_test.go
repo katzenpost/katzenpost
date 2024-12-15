@@ -17,7 +17,7 @@ func TestChunking(t *testing.T) {
 	_, err := rand.Reader.Read(payload1)
 	require.NoError(t, err)
 
-	chunkSize := 200
+	chunkSize := 179
 	chunks, err := Chunk(payload1, chunkSize)
 	require.NoError(t, err)
 

@@ -311,16 +311,16 @@ func (c *incomingConn) worker() {
 				}
 				continue
 			case *commands.GetConsensus:
-				c.log.Debugf("Received GetConsensus from peer.")
+				c.log.Infof("Received GetConsensus from peer.")
 				if err := c.onGetConsensus(cmd); err != nil {
 					c.log.Debugf("Failed to handle GetConsensus: %v", err)
 					return
 				}
 				continue
 			case *commands.GetConsensus2:
-				c.log.Debugf("Received GetConsensus from peer.")
+				c.log.Infof("Received GetConsensus2 from peer.")
 				if err := c.onGetConsensus2(cmd); err != nil {
-					c.log.Debugf("Failed to handle GetConsensus: %v", err)
+					c.log.Infof("Failed to handle GetConsensus2: %v", err)
 					return
 				}
 				continue
@@ -392,6 +392,7 @@ func (c *incomingConn) onGetConsensus2(cmd *commands.GetConsensus2) error {
 		return err
 	}
 	for i := 0; i < len(chunks); i++ {
+		c.log.Infof("Sending chunk %d", i)
 		chunk := chunks[i]
 		chunkCmd := &commands.Consensus2{
 			Cmds:       cmd.Cmds,

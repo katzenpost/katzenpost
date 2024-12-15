@@ -667,9 +667,11 @@ func (c *connection) onWireConn(w *wire.Session) {
 				panic("client.cfg.Callbacks.OnACKFn must not be nil")
 			}
 			seq++
+		case *commands.Consensus:
+			panic("receive Consensus when we asked for Consensus2")
 		case *commands.Consensus2:
 			if consensusCtx != nil {
-				c.log.Debugf("Received Consensus2: ErrorCode: %v, ChunkNum: %d, ChunkTotal: %d, Payload %v bytes", cmd.ErrorCode, cmd.ChunkNum, cmd.ChunkTotal, len(cmd.Payload))
+				c.log.Infof("Received Consensus2: ErrorCode: %v, ChunkNum: %d, ChunkTotal: %d, Payload %v bytes", cmd.ErrorCode, cmd.ChunkNum, cmd.ChunkTotal, len(cmd.Payload))
 				if dechunker.ChunkNum != 0 {
 					if int(cmd.ChunkTotal) != dechunker.ChunkTotal {
 						c.log.Errorf("Receive invalid Consensus2.ChunkTotal")

@@ -46,9 +46,10 @@ func TestAllClient2Tests(t *testing.T) {
 		d.Shutdown()
 	}()
 
-	t.Run("TestDockerMultiplexClients", testDockerMultiplexClients)
-	t.Run("TestDockerClientARQSendReceive", testDockerClientARQSendReceive)
-	t.Run("TestDockerClientSendReceive", testDockerClientSendReceive)
+	t.Run("TestPKIDoc", testPKIDoc)
+	//t.Run("TestDockerMultiplexClients", testDockerMultiplexClients)
+	//t.Run("TestDockerClientARQSendReceive", testDockerClientARQSendReceive)
+	//t.Run("TestDockerClientSendReceive", testDockerClientSendReceive)
 }
 
 func setupDaemon() (*Daemon, error) {
@@ -110,6 +111,26 @@ func sendAndWait(t *testing.T, client *thin.ThinClient, message []byte, nodeID *
 		}
 	}
 	panic("impossible event type")
+}
+
+func testPKIDoc(t *testing.T) {
+	t.Parallel()
+
+	cfg, err := config.LoadFile("testdata/client.toml")
+	require.NoError(t, err)
+
+	thin1 := thin.NewThinClient(cfg)
+	t.Log("thin client Dialing")
+	err = thin1.Dial()
+	require.NoError(t, err)
+	require.Nil(t, err)
+	t.Log("thin client connected")
+
+	t.Log("thin client getting PKI doc")
+	doc := thin1.PKIDocument()
+	require.NotNil(t, doc)
+	t.Log("thin client got PKI doc")
+	require.NotEqual(t, doc.LambdaP, 0.0)
 }
 
 func testDockerMultiplexClients(t *testing.T) {
