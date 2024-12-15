@@ -359,6 +359,7 @@ func (c *incomingConn) onMixCommand(rawCmd commands.Command) bool {
 }
 
 func (c *incomingConn) onGetConsensus(cmd *commands.GetConsensus) error {
+	c.log.Info("onGetConsensus")
 	respCmd := &commands.Consensus{}
 	rawDoc, err := c.l.glue.PKI().GetRawConsensus(cmd.Epoch)
 	switch err {
@@ -374,19 +375,29 @@ func (c *incomingConn) onGetConsensus(cmd *commands.GetConsensus) error {
 }
 
 func (c *incomingConn) onGetConsensus2(cmd *commands.GetConsensus2) error {
+	c.log.Info("onGetConsensus2")
 	respCmd := &commands.Consensus2{}
+
+	c.log.Info("BEFORE calling GetRawConsensus")
 	rawDoc, err := c.l.glue.PKI().GetRawConsensus(cmd.Epoch)
+	c.log.Info("AFTER calling GetRawConsensus")
+
 	switch err {
 	case nil:
+		c.log.Info("err is nil")
 		respCmd.ErrorCode = commands.ConsensusOk
 		respCmd.Payload = rawDoc
 	case cpki.ErrNoDocument:
+		c.log.Infof("err ConsensusGone : %s", err)
 		respCmd.ErrorCode = commands.ConsensusGone
 	default: // Covers errNotCached
+		c.log.Infof("err ConsensusNotFound : %s", err)
 		respCmd.ErrorCode = commands.ConsensusNotFound
 	}
 
 	chunkSize := cmd.Cmds.MaxMessageLenServerToClient
+	c.log.Infof("chunk size %d", chunkSize)
+
 	chunks, err := cpki.Chunk(rawDoc, chunkSize)
 	if err != nil {
 		return err
