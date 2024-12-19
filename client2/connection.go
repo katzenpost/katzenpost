@@ -432,6 +432,8 @@ func (c *connection) onWireConn(w *wire.Session) {
 
 	var wireErr error
 
+	dechunker := new(cpki.Dechunker)
+
 	closeConnCh := make(chan error, 1)
 	forceCloseConn := func(err error) {
 		// We only care about the first error from a callback.
@@ -528,10 +530,9 @@ func (c *connection) onWireConn(w *wire.Session) {
 				ctx.doneFn(fmt.Errorf("outstanding GetConsensus already exists: %v", consensusCtx.epoch))
 			} else {
 				consensusCtx = ctx
-				cmd := &commands.GetConsensus{
-					Epoch:              ctx.epoch,
-					Cmds:               w.GetCommands(),
-					MixnetTransmission: true, // Enable padding for mixnet transmission
+				cmd := &commands.GetConsensus2{
+					Cmds:  w.GetCommands(),
+					Epoch: ctx.epoch,
 				}
 				wireErr = w.SendCommand(cmd)
 				ctx.doneFn(wireErr)
@@ -667,10 +668,28 @@ func (c *connection) onWireConn(w *wire.Session) {
 			}
 			seq++
 		case *commands.Consensus:
+			c.log.Info("receive Consensus when we are supposed to receive Consensus2")
+		case *commands.Consensus2:
 			if consensusCtx != nil {
-				c.log.Debugf("Received Consensus: ErrorCode: %v, Payload %v bytes", cmd.ErrorCode, len(cmd.Payload))
-				consensusCtx.replyCh <- cmd
-				consensusCtx = nil
+				c.log.Infof("Received Consensus2: ErrorCode: %v, ChunkNum: %d, ChunkTotal: %d, Payload %v bytes", cmd.ErrorCode, cmd.ChunkNum, cmd.ChunkTotal, len(cmd.Payload))
+				if dechunker.ChunkNum != 0 {
+					if int(cmd.ChunkTotal) != dechunker.ChunkTotal {
+						c.log.Errorf("Receive invalid Consensus2.ChunkTotal")
+						return
+					}
+				}
+				dechunker.Consume(cmd.Payload, int(cmd.ChunkNum), int(cmd.ChunkTotal))
+				if int(cmd.ChunkNum) == (dechunker.ChunkTotal - 1) {
+					// last chunk
+					cmd.Payload = dechunker.Output
+					consensusCtx.replyCh <- cmd
+					consensusCtx = nil
+					dechunker.ChunkNum = 0
+					dechunker.ChunkTotal = 0
+				}
+				dechunker.ChunkNum = int(cmd.ChunkNum)
+				dechunker.ChunkTotal = int(cmd.ChunkTotal)
+
 			} else {
 				// Spurious Consensus replies are a protocol violation.
 				c.log.Errorf("Received spurious Consensus.")

@@ -57,13 +57,14 @@ func NewMixnetCommands(geo *geo.Geometry) *Commands {
 	c.clientToServerCommands = []Command{
 		&NoOp{}, &SendPacket{
 			Cmds: c,
-		}, &Disconnect{}, &RetrieveMessage{}, &GetConsensus{}, &SendRetrievePacket{
+		}, &Disconnect{}, &RetrieveMessage{}, &GetConsensus{}, &GetConsensus2{}, &SendRetrievePacket{
 			Geo:  geo,
 			Cmds: c,
 		},
 	}
 	c.serverToClientCommands = []Command{
 		&Consensus{}, // can be arbitrarily large
+		&Consensus2{},
 		&Message{
 			Geo:  geo,
 			Cmds: c,
@@ -337,6 +338,8 @@ func (c *Commands) FromBytes(b []byte) (Command, error) {
 	// Handle the commands that require actual parsing.
 	b = b[:cmdLen]
 	switch commandID(id) {
+	case consensus2:
+		return consensus2FromBytes(b)
 	case postReplicaDescriptor:
 		return postReplicaDescriptorFromBytes(b)
 	case postReplicaDescriptorStatus:
