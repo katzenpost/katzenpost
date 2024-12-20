@@ -24,7 +24,6 @@ import (
 
 	vServerConfig "github.com/katzenpost/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/katzenpost/client2/config"
-	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/log"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
@@ -72,30 +71,6 @@ func generateDescriptor(t *testing.T, pkiScheme sign.Scheme, linkScheme kem.Sche
 		LinkKey:     linkkey,
 		MixKeys:     map[uint64][]byte{0: mixkey0, 1: mixkey1},
 		Addresses:   map[string][]string{"tcp": []string{"tcp://127.0.0.1:12345"}},
-	}
-}
-
-func generateReplica(t *testing.T, pkiScheme sign.Scheme, linkScheme kem.Scheme, replicaScheme nike.Scheme) *cpki.ReplicaDescriptor {
-	idkey := make([]byte, pkiScheme.PublicKeySize())
-	_, err := rand.Reader.Read(idkey)
-	require.NoError(t, err)
-
-	linkkey := make([]byte, linkScheme.PublicKeySize())
-	_, err = rand.Reader.Read(linkkey)
-	require.NoError(t, err)
-
-	replicakey := make([]byte, replicaScheme.PublicKeySize())
-	_, err = rand.Reader.Read(replicakey)
-	require.NoError(t, err)
-
-	epoch, _, _ := epochtime.Now()
-
-	return &cpki.ReplicaDescriptor{
-		Name:         "fake replica name",
-		IdentityKey:  idkey,
-		LinkKey:      linkkey,
-		EnvelopeKeys: map[uint64][]byte{epoch: replicakey},
-		Addresses:    map[string][]string{"tcp": []string{"tcp://127.0.0.1:12345"}},
 	}
 }
 
