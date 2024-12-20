@@ -111,18 +111,18 @@ func TestConnection(t *testing.T) {
 
 			switch cmd.(type) {
 			case *commands.NoOp:
-				t.Log("NoOp")
+				t.Log("-- NoOp")
 			case *commands.Disconnect:
-				t.Log("Disconnect")
+				t.Log("-- Disconnect")
 				break loop
 			case *commands.SendPacket:
-				t.Log("SendPacket")
+				t.Log("-- SendPacket")
 			case *commands.RetrieveMessage:
-				t.Log("RetrieveMessage")
+				t.Log("-- RetrieveMessage")
 			case *commands.SendRetrievePacket:
-				t.Log("SendRetrievePacket")
+				t.Log("-- SendRetrievePacket")
 			case *commands.GetConsensus2:
-				t.Log("GetConsensus2")
+				t.Log("-- GetConsensus2")
 				resp := &commands.Consensus2{
 					Cmds: commands.NewMixnetCommands(g),
 
@@ -133,9 +133,9 @@ func TestConnection(t *testing.T) {
 				}
 				wireConn.SendCommand(resp)
 			case *commands.GetConsensus:
-				t.Log("GetConsensus")
+				t.Log("-- GetConsensus")
 			default:
-				t.Log("invalid wire command")
+				t.Log("-- invalid wire command")
 				break loop
 			}
 		}
