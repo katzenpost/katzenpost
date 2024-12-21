@@ -366,6 +366,8 @@ func (c *Commands) FromBytes(b []byte) (Command, error) {
 		return c.messageFromBytes(b, c)
 	case getConsensus:
 		return getConsensusFromBytes(b, c)
+	case getConsensus2:
+		return getConsensus2FromBytes(b, c)
 	case consensus:
 		return consensusFromBytes(b)
 	case postDescriptor:

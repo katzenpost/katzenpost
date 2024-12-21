@@ -23,8 +23,6 @@ func (c *GetConsensus2) ToBytes() []byte {
 	out[0] = byte(getConsensus2)
 	binary.BigEndian.PutUint32(out[2:6], getConsensusLength)
 	binary.BigEndian.PutUint64(out[6:14], c.Epoch)
-
-	// only pad if we are sending over the mixnet
 	return c.Cmds.padToMaxCommandSize(out, true)
 }
 
@@ -36,8 +34,7 @@ func getConsensus2FromBytes(b []byte, cmds *Commands) (Command, error) {
 	if len(b) != getConsensusLength {
 		return nil, errInvalidCommand
 	}
-
-	r := new(GetConsensus)
+	r := new(GetConsensus2)
 	r.Epoch = binary.BigEndian.Uint64(b[0:8])
 	r.Cmds = cmds
 	return r, nil
