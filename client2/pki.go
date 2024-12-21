@@ -30,6 +30,8 @@ var (
 	recheckInterval         = epochtime.Period / 16
 	// WarpedEpoch is a build time flag that accelerates the recheckInterval
 	WarpedEpoch = "false"
+
+	ccbor cbor.EncMode
 )
 
 type CachedDoc struct {
@@ -239,7 +241,9 @@ func (p *pki) getDocument(ctx context.Context, epoch uint64) ([]byte, *cpki.Docu
 	var err error
 
 	p.log.Debugf("Fetching PKI doc for epoch %v from Provider.", epoch)
+	p.log.Debugf("BEFORE GetConsensus")
 	resp, err := p.consensusGetter.GetConsensus(ctx, epoch)
+	p.log.Debugf("AFTER GetConsensus")
 	switch err {
 	case nil:
 	case cpki.ErrNoDocument:
@@ -324,4 +328,13 @@ func newPKI(c *Client) *pki {
 		p.docs.Store(d.Epoch, d)
 	}
 	return p
+}
+
+func init() {
+	var err error
+	opts := cbor.CanonicalEncOptions()
+	ccbor, err = opts.EncMode()
+	if err != nil {
+		panic(err)
+	}
 }

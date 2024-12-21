@@ -670,6 +670,7 @@ func (c *connection) onWireConn(w *wire.Session) {
 		case *commands.Consensus:
 			c.log.Info("receive Consensus when we are supposed to receive Consensus2")
 		case *commands.Consensus2:
+			c.log.Debug("-- received Consensus2")
 			if consensusCtx != nil {
 				c.log.Infof("Received Consensus2: ErrorCode: %v, ChunkNum: %d, ChunkTotal: %d, Payload %v bytes", cmd.ErrorCode, cmd.ChunkNum, cmd.ChunkTotal, len(cmd.Payload))
 				if dechunker.ChunkNum != 0 {
@@ -692,7 +693,7 @@ func (c *connection) onWireConn(w *wire.Session) {
 
 			} else {
 				// Spurious Consensus replies are a protocol violation.
-				c.log.Errorf("Received spurious Consensus.")
+				c.log.Errorf("Received spurious Consensus2.")
 				wireErr = newProtocolError("received spurious Consensus")
 				return
 			}
@@ -817,6 +818,8 @@ func (c *connection) GetConsensus(ctx context.Context, epoch uint64) (*commands.
 
 	errCh := make(chan error)
 	replyCh := make(chan interface{})
+
+	c.log.Debug("BEFORE send channel c.getConsensusCh")
 	select {
 	case c.getConsensusCh <- &getConsensusCtx{
 		replyCh: replyCh,
@@ -825,21 +828,29 @@ func (c *connection) GetConsensus(ctx context.Context, epoch uint64) (*commands.
 			errCh <- err
 		},
 	}:
+	case <-ctx.Done():
+		// Canceled mid-fetch.
+		return nil, errGetConsensusCanceled
 	case <-c.HaltCh():
 		return nil, ErrShutdown
 	}
+	c.log.Debug("AFTER send channel c.getConsensusCh")
+
 	c.log.Debug("Enqueued GetConsensus command for send.")
 
 	// Ensure the dispatch succeeded.
 	select {
 	case <-c.HaltCh():
+		c.log.Debug("-- FAIL 1")
 		return nil, ErrShutdown
 	case err := <-errCh:
 		if err != nil {
+			c.log.Debug("-- FAIL 2")
 			c.log.Debugf("Failed to dispatch GetConsensus: %v", err)
 			return nil, err
 		}
 	case <-ctx.Done():
+		c.log.Debug("-- FAIL 3")
 		// Canceled mid-fetch.
 		return nil, errGetConsensusCanceled
 	}
@@ -852,7 +863,7 @@ func (c *connection) GetConsensus(ctx context.Context, epoch uint64) (*commands.
 		switch resp := rawResp.(type) {
 		case error:
 			return nil, resp
-		case *commands.Consensus:
+		case *commands.Consensus2:
 			return resp, nil
 		default:
 			panic("BUG: Worker returned invalid Consensus response")
