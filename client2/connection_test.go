@@ -355,7 +355,7 @@ func TestConnection(t *testing.T) {
 	t.Logf("blob %x", blob)
 	t.Logf("doc %v", doc)
 
-	require.Equal(t, pkiDocBlob[:len(pkiDocBlob)-7], blob[:len(pkiDocBlob)-7])
+	require.Equal(t, pkiDocBlob, blob)
 
 	c.Shutdown()
 }
