@@ -34,7 +34,7 @@ func Chunk(blob []byte, chunkSize int) ([][]byte, error) {
 		total += 1
 	}
 
-	chunks := make([][]byte, total)
+	chunks := make([][]byte, 0, total)
 	offset := 0
 	for i := 0; i < total; i++ {
 		var chunk []byte
