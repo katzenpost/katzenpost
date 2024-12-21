@@ -806,6 +806,9 @@ func (c *connection) GetConsensus(ctx context.Context, epoch uint64) (*commands.
 			errCh <- err
 		},
 	}:
+	case <-ctx.Done():
+		// Canceled mid-fetch.
+		return nil, errGetConsensusCanceled
 	case <-c.HaltCh():
 		return nil, ErrShutdown
 	}

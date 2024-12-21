@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/fxamacker/cbor/v2"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/op/go-logging.v1"
 
@@ -31,6 +32,13 @@ import (
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 )
+
+var (
+	ccbor cbor.EncMode
+)
+
+// document contains fields from Document but not the encoding.BinaryMarshaler methods
+type document cpki.Document
 
 type mixKeys struct {
 	idpubkey  []sign.PublicKey
@@ -88,13 +96,31 @@ func generateDocument(t *testing.T, pkiScheme sign.Scheme, linkScheme kem.Scheme
 	oldhashes := [][]byte{srv, srv}
 
 	return &cpki.Document{
-		Epoch:              epoch,
+		Epoch:        epoch,
+		GenesisEpoch: epoch,
+
+		SendRatePerMinute: 0,
+		Mu:                1,
+		MuMaxDelay:        1,
+		LambdaP:           1,
+		LambdaPMaxDelay:   1,
+		LambdaL:           1,
+		LambdaLMaxDelay:   1,
+		LambdaD:           1,
+		LambdaDMaxDelay:   1,
+		LambdaM:           1,
+		LambdaMMaxDelay:   1,
+		LambdaG:           1,
+		LambdaGMaxDelay:   1,
+
 		Topology:           topology,
 		StorageReplicas:    []*cpki.ReplicaDescriptor{},
 		SharedRandomValue:  srv,
 		PriorSharedRandom:  oldhashes,
 		SphinxGeometryHash: geo.Hash(),
 		PKISignatureScheme: pkiScheme.Name(),
+
+		Version: cpki.DocumentVersion,
 	}
 }
 
@@ -111,6 +137,8 @@ func (a *authenticator) IsPeerValid(creds *wire.PeerCredentials) bool {
 }
 
 func TestConnection(t *testing.T) {
+
+	pkiDocBlob := []byte{}
 
 	logbackend, err := log.New("", "DEBUG", false)
 	require.NoError(t, err)
@@ -209,6 +237,12 @@ func TestConnection(t *testing.T) {
 				t.Log("-- GetConsensus")
 
 				doc := generateDocument(t, pkiScheme, linkScheme, replicaScheme, sphinxNikeScheme, nil, numDirAuths, numMixNodes, numStorageReplicas, g, mycmd.Epoch)
+
+				t.Logf("CREATED PKI DOC: %v", doc)
+
+				pkiDocBlob, err = ccbor.Marshal((*document)(doc))
+				require.NoError(t, err)
+				t.Logf("PKI DOC BLOB %x", pkiDocBlob)
 
 				signed, _ := cpki.SignDocument(auth1IdPrivKey, auth1IdPubKey, doc)
 				//require.NoError(t, err)
@@ -313,5 +347,24 @@ func TestConnection(t *testing.T) {
 
 	time.Sleep(time.Second * 3)
 
+	blob, doc := c.CurrentDocument()
+
+	require.NotNil(t, blob)
+	require.NotNil(t, doc)
+
+	t.Logf("blob %x", blob)
+	t.Logf("doc %v", doc)
+
+	require.Equal(t, pkiDocBlob[:len(pkiDocBlob)-7], blob[:len(pkiDocBlob)-7])
+
 	c.Shutdown()
+}
+
+func init() {
+	var err error
+	opts := cbor.CanonicalEncOptions()
+	ccbor, err = opts.EncMode()
+	if err != nil {
+		panic(err)
+	}
 }
