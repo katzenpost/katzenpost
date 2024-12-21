@@ -14,6 +14,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/fxamacker/cbor/v2"
+
 	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/kem/pem"
 	"github.com/katzenpost/hpqc/kem/schemes"
@@ -45,6 +47,8 @@ var (
 	keepAliveInterval   = 3 * time.Minute
 	connectTimeout      = 1 * time.Minute
 	pkiFallbackInterval = epochtime.Period / 16
+
+	ccbor cbor.EncMode
 )
 
 // ConnectError is the error used to indicate that a connect attempt has failed.
@@ -893,4 +897,13 @@ func addressesFromURLs(addrs []string) map[string][]string {
 		}
 	}
 	return addresses
+}
+
+func init() {
+	var err error
+	opts := cbor.CanonicalEncOptions()
+	ccbor, err = opts.EncMode()
+	if err != nil {
+		panic(err)
+	}
 }

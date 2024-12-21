@@ -10,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/fxamacker/cbor/v2"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/op/go-logging.v1"
 
@@ -31,10 +30,6 @@ import (
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
-)
-
-var (
-	ccbor cbor.EncMode
 )
 
 // document contains fields from Document but not the encoding.BinaryMarshaler methods
@@ -358,13 +353,4 @@ func TestConnection(t *testing.T) {
 	require.Equal(t, pkiDocBlob, blob)
 
 	c.Shutdown()
-}
-
-func init() {
-	var err error
-	opts := cbor.CanonicalEncOptions()
-	ccbor, err = opts.EncMode()
-	if err != nil {
-		panic(err)
-	}
 }
