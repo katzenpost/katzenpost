@@ -57,6 +57,13 @@ type Dechunker struct {
 	Output     []byte
 }
 
+func NewDechunker() *Dechunker {
+	return &Dechunker{
+		Chunks: new(bytes.Buffer),
+		Output: []byte{},
+	}
+}
+
 func (d *Dechunker) Consume(payload []byte, num, total int) error {
 	if d.ChunkNum != 0 {
 		if int(total) != d.ChunkTotal {
