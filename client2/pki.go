@@ -273,7 +273,7 @@ func (p *pki) getDocument(ctx context.Context, epoch uint64) ([]byte, *cpki.Docu
 		return nil, nil, fmt.Errorf("BUG: Provider returned document for incorrect epoch: %v", d.Epoch)
 	}
 	d.Signatures = nil
-	docBlob, err := cbor.Marshal(d)
+	docBlob, err := ccbor.Marshal(d)
 	if err != nil {
 		p.log.Errorf("BUG: failed to cbor marshal pki doc: %v", err)
 		return nil, nil, err
@@ -324,4 +324,13 @@ func newPKI(c *Client) *pki {
 		p.docs.Store(d.Epoch, d)
 	}
 	return p
+}
+
+func init() {
+	var err error
+	opts := cbor.CanonicalEncOptions()
+	ccbor, err = opts.EncMode()
+	if err != nil {
+		panic(err)
+	}
 }
