@@ -128,7 +128,6 @@ type authenticator struct {
 }
 
 func (a *authenticator) IsPeerValid(creds *wire.PeerCredentials) bool {
-	a.log.Debug(" --- IsPeerValid --- ")
 	return true // XXX
 }
 
@@ -282,13 +281,10 @@ func TestConnection(t *testing.T) {
 
 			switch mycmd := cmd.(type) {
 			case *commands.NoOp:
-				t.Log("-- NoOp")
 				continue
 			case *commands.Disconnect:
-				t.Log("-- Disconnect")
 				break loop
 			case *commands.SendPacket:
-				t.Log("-- SendPacket")
 				panic("SendPacket wtf")
 			case *commands.RetrieveMessage:
 				resp := &commands.MessageEmpty{
@@ -298,14 +294,10 @@ func TestConnection(t *testing.T) {
 				err = wireConn.SendCommand(resp)
 				require.NoError(t, err)
 			case *commands.SendRetrievePacket:
-				t.Log("-- SendRetrievePacket")
 				panic("SendRetrievePacket wtf")
 			case *commands.GetConsensus:
-				t.Log("-- GetConsensus")
 				panic("GetConsensus wtf")
 			case *commands.GetConsensus2:
-				t.Log("-- GetConsensus2")
-
 				doc := generateDocument(t, pkiScheme, linkScheme, replicaScheme, sphinxNikeScheme, nil, numDirAuths, numMixNodes, numStorageReplicas, g, mycmd.Epoch)
 
 				docs[mycmd.Epoch], err = ccbor.Marshal((*document)(doc))
@@ -332,7 +324,6 @@ func TestConnection(t *testing.T) {
 				err = wireConn.SendCommand(resp)
 				require.NoError(t, err)
 			default:
-				t.Logf("-- invalid wire command: %v", mycmd)
 				break loop
 			}
 		}
