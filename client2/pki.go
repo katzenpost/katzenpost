@@ -127,8 +127,6 @@ func (p *pki) currentDocument() ([]byte, *cpki.Document) {
 }
 
 func (p *pki) worker() {
-	p.log.Debug("worker")
-	defer p.log.Debug("stopping worker")
 	timer := time.NewTimer(0)
 	defer func() {
 		p.log.Debug("Halting PKI worker.")
@@ -177,9 +175,7 @@ func (p *pki) worker() {
 				continue
 			}
 
-			p.log.Debug("BEFORE calling updateDocument")
 			err := p.updateDocument(epoch)
-			p.log.Debug("AFTER calling updateDocument")
 			if err != nil {
 				switch err {
 				case cpki.ErrNoDocument:
@@ -239,11 +235,10 @@ func (p *pki) updateDocument(epoch uint64) error {
 }
 
 func (p *pki) getDocument(ctx context.Context, epoch uint64) ([]byte, *cpki.Document, error) {
-	p.log.Debug("getDocument")
 	var d *cpki.Document
 	var err error
 
-	p.log.Debugf("Fetching PKI doc for epoch %v from Provider.", epoch)
+	p.log.Debugf("Fetching PKI doc for epoch %v from Gateway.", epoch)
 
 	resp, err := p.consensusGetter.GetConsensus(ctx, epoch)
 	switch err {
@@ -311,7 +306,6 @@ func (p *pki) pruneFailures(now uint64) {
 }
 
 func (p *pki) start() {
-	p.log.Debug("start")
 	p.Go(p.worker)
 }
 
