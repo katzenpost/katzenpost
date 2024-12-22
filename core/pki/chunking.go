@@ -66,7 +66,7 @@ func NewDechunker() *Dechunker {
 
 func (d *Dechunker) Consume(payload []byte, num, total int) error {
 	if d.ChunkNum != 0 {
-		if int(total) != d.ChunkTotal {
+		if total != d.ChunkTotal {
 			return errors.New("Receive invalid Consensus2.ChunkTotal")
 		}
 	}

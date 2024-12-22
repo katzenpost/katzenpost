@@ -31,13 +31,9 @@ func TestChunkingSimple(t *testing.T) {
 		Output:     nil,
 	}
 
-	for i := 0; i < len(chunks); i++ {
-		err = dechunker.Consume(chunks[i], i, total)
-		require.NoError(t, err)
-	}
-
-	payload2 := dechunker.Output
-	require.Equal(t, payload1, payload2)
+	err = dechunker.Consume(chunks[0], 0, 1)
+	require.NoError(t, err)
+	require.Equal(t, payload1, dechunker.Output)
 }
 
 func TestChunking(t *testing.T) {

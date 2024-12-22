@@ -4,7 +4,6 @@
 package client2
 
 import (
-	"fmt"
 	"net"
 	"net/url"
 	"testing"
@@ -24,6 +23,8 @@ import (
 
 	vServerConfig "github.com/katzenpost/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/katzenpost/client2/config"
+	"github.com/katzenpost/katzenpost/core/cert"
+	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/log"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
@@ -132,8 +133,7 @@ func (a *authenticator) IsPeerValid(creds *wire.PeerCredentials) bool {
 }
 
 func TestConnection(t *testing.T) {
-
-	pkiDocBlob := []byte{}
+	docs := make(map[uint64][]byte)
 
 	logbackend, err := log.New("", "DEBUG", false)
 	require.NoError(t, err)
@@ -180,99 +180,7 @@ func TestConnection(t *testing.T) {
 	numMixNodes := 3
 	numStorageReplicas := 0
 
-	go func() {
-		u, err := url.Parse(gwAddr)
-		require.NoError(t, err)
-
-		t.Logf("listening on %s", u.Host)
-		l, err := net.Listen("tcp", u.Host)
-		require.NoError(t, err)
-
-		conn, err := l.Accept()
-		require.NoError(t, err)
-
-		cfg := &wire.SessionConfig{
-			KEMScheme:          linkScheme,
-			PKISignatureScheme: pkiScheme,
-			Geometry:           g,
-			Authenticator:      auth,
-			AdditionalData:     id[:],
-			AuthenticationKey:  gwlinkPrivKey,
-			RandomReader:       rand.Reader,
-		}
-		wireConn, err := wire.NewSession(cfg, false)
-		require.NoError(t, err)
-
-		err = wireConn.Initialize(conn)
-		require.NoError(t, err)
-
-	loop:
-		for {
-			t.Log("BEFORE RecvCommand")
-			cmd, _ := wireConn.RecvCommand()
-			//require.NoError(t, _)
-
-			if cmd == nil {
-				return
-			}
-
-			switch mycmd := cmd.(type) {
-			case *commands.NoOp:
-				t.Log("-- NoOp")
-			case *commands.Disconnect:
-				t.Log("-- Disconnect")
-				break loop
-			case *commands.SendPacket:
-				t.Log("-- SendPacket")
-			case *commands.RetrieveMessage:
-				t.Log("-- RetrieveMessage")
-			case *commands.SendRetrievePacket:
-				t.Log("-- SendRetrievePacket")
-			case *commands.GetConsensus2:
-				t.Log("-- GetConsensus2")
-
-				doc := generateDocument(t, pkiScheme, linkScheme, replicaScheme, sphinxNikeScheme, nil, numDirAuths, numMixNodes, numStorageReplicas, g, mycmd.Epoch)
-
-				t.Logf("CREATED PKI DOC: %v", doc)
-
-				pkiDocBlob, err = ccbor.Marshal((*document)(doc))
-				require.NoError(t, err)
-				t.Logf("PKI DOC BLOB %x", pkiDocBlob)
-
-				signed, _ := cpki.SignDocument(auth1IdPrivKey, auth1IdPubKey, doc)
-				//require.NoError(t, err)
-
-				signed, _ = cpki.SignDocument(auth2IdPrivKey, auth2IdPubKey, doc)
-				//require.NoError(t, err)
-
-				signed, _ = cpki.SignDocument(auth3IdPrivKey, auth3IdPubKey, doc)
-				//require.NoError(t, err)
-
-				resp := &commands.Consensus2{
-					ErrorCode:  0,
-					ChunkNum:   0,
-					ChunkTotal: 1,
-					Payload:    signed,
-				}
-				_ = wireConn.SendCommand(resp)
-				//require.NoError(t, err)
-
-			case *commands.GetConsensus:
-				t.Log("-- GetConsensus")
-
-			default:
-				t.Logf("-- invalid wire command: %v", mycmd)
-				break loop
-			}
-		}
-
-		wireConn.Close()
-		_ = conn.Close()
-		//require.NoError(t, err)
-
-	}()
-
-	cfg := &config.Config{
+	clientCfg := &config.Config{
 		ListenNetwork:      "tcp",
 		ListenAddress:      "127.0.0.1:63445",
 		PKISignatureScheme: "ed25519",
@@ -308,7 +216,23 @@ func TestConnection(t *testing.T) {
 					PKISignatureScheme: pkiSchemeName,
 					LinkPublicKey:      authlinkPubKey,
 					WireKEMScheme:      WireKEMSchemeName,
-					Addresses:          []string{"tcp://127.0.0.1:1224"},
+					Addresses:          []string{"tcp://127.0.0.1:1301"},
+				},
+				&vServerConfig.Authority{
+					Identifier:         "auth2",
+					IdentityPublicKey:  auth2IdPubKey,
+					PKISignatureScheme: pkiSchemeName,
+					LinkPublicKey:      authlinkPubKey,
+					WireKEMScheme:      WireKEMSchemeName,
+					Addresses:          []string{"tcp://127.0.0.1:1302"},
+				},
+				&vServerConfig.Authority{
+					Identifier:         "auth3",
+					IdentityPublicKey:  auth3IdPubKey,
+					PKISignatureScheme: pkiSchemeName,
+					LinkPublicKey:      authlinkPubKey,
+					WireKEMScheme:      WireKEMSchemeName,
+					Addresses:          []string{"tcp://127.0.0.1:1303"},
 				},
 			},
 		},
@@ -316,29 +240,127 @@ func TestConnection(t *testing.T) {
 		PreferedTransports: nil,
 	}
 
-	cfg.Callbacks = &config.Callbacks{}
-	cfg.Callbacks.OnConnFn = func(err error) {
-		fmt.Println("OnConnFn")
+	go func() {
+		u, err := url.Parse(gwAddr)
+		require.NoError(t, err)
+
+		t.Logf("listening on %s", u.Host)
+		l, err := net.Listen("tcp", u.Host)
+		require.NoError(t, err)
+
+		conn, err := l.Accept()
+		require.NoError(t, err)
+
+		cfg := &wire.SessionConfig{
+			KEMScheme:          linkScheme,
+			PKISignatureScheme: pkiScheme,
+			Geometry:           g,
+			Authenticator:      auth,
+			AdditionalData:     id[:],
+			AuthenticationKey:  gwlinkPrivKey,
+			RandomReader:       rand.Reader,
+		}
+		wireConn, err := wire.NewSession(cfg, false)
+		require.NoError(t, err)
+
+		err = wireConn.Initialize(conn)
+		require.NoError(t, err)
+
+		cmds := commands.NewMixnetCommands(g)
+
+	loop:
+		for {
+			cmd, err := wireConn.RecvCommand()
+			//require.NoError(t, err)
+			if err != nil {
+				return
+			}
+
+			if cmd == nil {
+				return
+			}
+
+			switch mycmd := cmd.(type) {
+			case *commands.NoOp:
+				t.Log("-- NoOp")
+				continue
+			case *commands.Disconnect:
+				t.Log("-- Disconnect")
+				break loop
+			case *commands.SendPacket:
+				t.Log("-- SendPacket")
+				panic("SendPacket wtf")
+			case *commands.RetrieveMessage:
+				resp := &commands.MessageEmpty{
+					Cmds:     cmds,
+					Sequence: 0,
+				}
+				err = wireConn.SendCommand(resp)
+				require.NoError(t, err)
+			case *commands.SendRetrievePacket:
+				t.Log("-- SendRetrievePacket")
+				panic("SendRetrievePacket wtf")
+			case *commands.GetConsensus:
+				t.Log("-- GetConsensus")
+				panic("GetConsensus wtf")
+			case *commands.GetConsensus2:
+				t.Log("-- GetConsensus2")
+
+				doc := generateDocument(t, pkiScheme, linkScheme, replicaScheme, sphinxNikeScheme, nil, numDirAuths, numMixNodes, numStorageReplicas, g, mycmd.Epoch)
+
+				docs[mycmd.Epoch], err = ccbor.Marshal((*document)(doc))
+				require.NoError(t, err)
+
+				rawcert, err := cert.Sign(auth1IdPrivKey, auth1IdPubKey, docs[mycmd.Epoch], mycmd.Epoch+5)
+				require.NoError(t, err)
+				rawcert, err = cert.SignMulti(auth2IdPrivKey, auth2IdPubKey, rawcert)
+				require.NoError(t, err)
+				rawcert, err = cert.SignMulti(auth3IdPrivKey, auth3IdPubKey, rawcert)
+				require.NoError(t, err)
+
+				chunkSize := cmds.MaxMessageLenServerToClient
+				chunks, err := cpki.Chunk(rawcert, chunkSize)
+				require.NoError(t, err)
+
+				resp := &commands.Consensus2{
+					Cmds:       cmds,
+					ErrorCode:  0,
+					ChunkNum:   0,
+					ChunkTotal: 1,
+					Payload:    chunks[0],
+				}
+				err = wireConn.SendCommand(resp)
+				require.NoError(t, err)
+			default:
+				t.Logf("-- invalid wire command: %v", mycmd)
+				break loop
+			}
+		}
+
+		wireConn.Close()
+		_ = conn.Close()
+		//require.NoError(t, err)
+
+	}()
+
+	clientCfg.Callbacks = &config.Callbacks{}
+	clientCfg.Callbacks.OnConnFn = func(err error) {
 		return
 	}
-	cfg.Callbacks.OnDocumentFn = func(*cpki.Document) {
-		fmt.Println("OnDocumentFn")
+	clientCfg.Callbacks.OnDocumentFn = func(*cpki.Document) {
 		return
 	}
-	cfg.Callbacks.OnEmptyFn = func() error {
-		fmt.Println("OnEmptyFn")
+	clientCfg.Callbacks.OnEmptyFn = func() error {
 		return nil
 	}
-	cfg.Callbacks.OnMessageFn = func([]byte) error {
-		fmt.Println("OnMessageFn")
+	clientCfg.Callbacks.OnMessageFn = func([]byte) error {
 		return nil
 	}
-	cfg.Callbacks.OnACKFn = func(*[constants.SURBIDLength]byte, []byte) error {
-		fmt.Println("OnACKFn")
+	clientCfg.Callbacks.OnACKFn = func(*[constants.SURBIDLength]byte, []byte) error {
 		return nil
 	}
 
-	c, err := New(cfg, logbackend)
+	c, err := New(clientCfg, logbackend)
 	require.NoError(t, err)
 
 	time.Sleep(time.Second)
@@ -353,10 +375,8 @@ func TestConnection(t *testing.T) {
 	require.NotNil(t, blob)
 	require.NotNil(t, doc)
 
-	//t.Logf("blob %x", blob)
-	//t.Logf("doc %v", doc)
+	epoch, _, _ := epochtime.Now()
+	require.Equal(t, docs[epoch], blob)
 
-	//require.Equal(t, pkiDocBlob, blob)
-
-	//c.Shutdown()
+	c.Shutdown()
 }

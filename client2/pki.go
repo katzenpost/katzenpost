@@ -40,7 +40,7 @@ type CachedDoc struct {
 }
 
 type ConsensusGetter interface {
-	GetConsensus(ctx context.Context, epoch uint64) (*commands.Consensus, error)
+	GetConsensus(ctx context.Context, epoch uint64) (*commands.Consensus2, error)
 }
 
 type pki struct {
@@ -51,7 +51,8 @@ type pki struct {
 
 	log *logging.Logger
 
-	docs          sync.Map
+	docs sync.Map // epoch -> doc
+
 	failedFetches map[uint64]error
 
 	clockSkewLock sync.RWMutex
@@ -176,7 +177,9 @@ func (p *pki) worker() {
 				continue
 			}
 
+			p.log.Debug("BEFORE calling updateDocument")
 			err := p.updateDocument(epoch)
+			p.log.Debug("AFTER calling updateDocument")
 			if err != nil {
 				switch err {
 				case cpki.ErrNoDocument:
@@ -241,9 +244,8 @@ func (p *pki) getDocument(ctx context.Context, epoch uint64) ([]byte, *cpki.Docu
 	var err error
 
 	p.log.Debugf("Fetching PKI doc for epoch %v from Provider.", epoch)
-	p.log.Debugf("BEFORE GetConsensus")
+
 	resp, err := p.consensusGetter.GetConsensus(ctx, epoch)
-	p.log.Debugf("AFTER GetConsensus")
 	switch err {
 	case nil:
 	case cpki.ErrNoDocument:
@@ -277,7 +279,7 @@ func (p *pki) getDocument(ctx context.Context, epoch uint64) ([]byte, *cpki.Docu
 		return nil, nil, fmt.Errorf("BUG: Provider returned document for incorrect epoch: %v", d.Epoch)
 	}
 	d.Signatures = nil
-	docBlob, err := cbor.Marshal(d)
+	docBlob, err := ccbor.Marshal(d)
 	if err != nil {
 		p.log.Errorf("BUG: failed to cbor marshal pki doc: %v", err)
 		return nil, nil, err

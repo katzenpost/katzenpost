@@ -105,9 +105,7 @@ func (c *incomingConn) sendResponse(r *Response) error {
 	binary.BigEndian.PutUint32(prefix[:], uint32(len(blob)))
 	toSend = append(prefix[:], blob...)
 
-	c.log.Debug("sendResponse BEFORE conn.Write")
 	count, err := c.conn.Write(toSend)
-	c.log.Debug("sendResponse AFTER conn.Write")
 	if err != nil {
 		return err
 	}
@@ -118,7 +116,6 @@ func (c *incomingConn) sendResponse(r *Response) error {
 }
 
 func (c *incomingConn) start() {
-	c.log.Debug("STARTING incomingConn")
 	c.listener.Go(c.worker)
 }
 
@@ -141,7 +138,6 @@ func (c *incomingConn) worker() {
 				c.log.Debugf("Failed to receive command: %v", err)
 				return
 			}
-			c.log.Debug("incomingConn received message")
 			select {
 			case requestCh <- rawCmd:
 			case <-requestCloseCh:
@@ -158,9 +154,7 @@ func (c *incomingConn) worker() {
 			case <-c.listener.HaltCh():
 				return
 			case message := <-c.sendToClientCh:
-				c.log.Debug("SEND TO THIN CLIENT THREAD")
 				err := c.sendResponse(message)
-				c.log.Debug("AFTER sendResponse")
 				if err != nil {
 					c.log.Infof("received error sending client a message: %s", err.Error())
 				}
