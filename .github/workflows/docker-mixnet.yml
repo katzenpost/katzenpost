@@ -1,5 +1,5 @@
 name: docker mixnet integration tests
-on: [pull_request, push]
+on: [pull_request]
 jobs:
 
   test_e2e_client:
