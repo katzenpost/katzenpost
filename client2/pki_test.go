@@ -23,8 +23,8 @@ import (
 
 type mockConsensusGetter struct{}
 
-func (m *mockConsensusGetter) GetConsensus(ctx context.Context, epoch uint64) (*commands.Consensus, error) {
-	return &commands.Consensus{}, nil
+func (m *mockConsensusGetter) GetConsensus(ctx context.Context, epoch uint64) (*commands.Consensus2, error) {
+	return &commands.Consensus2{}, nil
 }
 
 type mockPKIClient struct {
