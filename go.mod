@@ -13,8 +13,10 @@ require (
 	github.com/katzenpost/circl v1.3.9-0.20240222183521-1cd9a34e9a0c
 	github.com/katzenpost/hpqc v0.0.49
 	github.com/katzenpost/nyquist v0.0.10
+	github.com/linxGnu/grocksdb v1.9.3
 	github.com/prometheus/client_golang v1.20.0
 	github.com/quic-go/quic-go v0.48.2
+	github.com/schwarmco/go-cartesian-product v0.0.0-20230921023625-e02d1c150053
 	github.com/stretchr/testify v1.9.0
 	github.com/ugorji/go/codec v1.2.12
 	github.com/yawning/bloom v0.0.0-20181019144233-44d6c5c71ed1
@@ -51,7 +53,6 @@ require (
 	github.com/klauspost/compress v1.17.9 // indirect
 	github.com/kr/text v0.2.0 // indirect
 	github.com/lib/pq v1.10.9 // indirect
-	github.com/linxGnu/grocksdb v1.9.3 // indirect
 	github.com/mattn/go-pointer v0.0.1 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/oasisprotocol/curve25519-voi v0.0.0-20230904125328-1f23a7beb09a // indirect
@@ -64,7 +65,6 @@ require (
 	github.com/prometheus/procfs v0.15.1 // indirect
 	github.com/quic-go/qpack v0.5.1 // indirect
 	github.com/rfjakob/eme v1.1.2 // indirect
-	github.com/schwarmco/go-cartesian-product v0.0.0-20230921023625-e02d1c150053 // indirect
 	github.com/shopspring/decimal v1.4.0 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	gitlab.com/yawning/x448.git v0.0.0-20221003101044-617eb9b7d9b7 // indirect
@@ -73,6 +73,6 @@ require (
 	golang.org/x/mod v0.21.0 // indirect
 	golang.org/x/sync v0.10.0 // indirect
 	golang.org/x/sys v0.28.0 // indirect
-	golang.org/x/tools v0.24.0 // indirect
+	golang.org/x/tools v0.25.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
