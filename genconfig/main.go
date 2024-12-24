@@ -31,6 +31,7 @@ import (
 	"github.com/katzenpost/katzenpost/client2/thin"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
+	courierConfig "github.com/katzenpost/katzenpost/courier/server/config"
 	rConfig "github.com/katzenpost/katzenpost/replica/config"
 	sConfig "github.com/katzenpost/katzenpost/server/config"
 )
@@ -250,6 +251,32 @@ func write(f *os.File, str string, args ...interface{}) {
 	}
 }
 
+func (s *katzenpost) genCourierConfig(identifier string) *courierConfig.Config {
+	authorities := make([]*vConfig.Authority, 0, len(s.authorities))
+	i := 0
+	for _, auth := range s.authorities {
+		authorities = append(authorities, auth)
+		i += 1
+	}
+	sort.Sort(AuthById(authorities))
+	pki := &courierConfig.PKI{
+		Voting: &courierConfig.Voting{
+			Authorities: authorities,
+		},
+	}
+	datadir := filepath.Join(s.baseDir, identifier)
+	os.Mkdir(datadir, 0700)
+	const logFile = "courier.log"
+	logPath := filepath.Join(datadir, logFile)
+	return &courierConfig.Config{
+		PKI:            pki,
+		Logging:        &courierConfig.Logging{File: logPath, Level: "DEBUG"},
+		WireKEMScheme:  s.wireKEMScheme,
+		DataDir:        datadir,
+		SphinxGeometry: s.sphinxGeometry,
+	}
+}
+
 func (s *katzenpost) genReplicaNodeConfig() error {
 	const serverLogFile = "katzenpost.log"
 
@@ -383,6 +410,27 @@ func (s *katzenpost) genNodeConfig(isGateway, isServiceNode bool, isVoting bool)
 			},
 		}
 		cfg.ServiceNode.CBORPluginKaetzchen = []*sConfig.CBORPluginKaetzchen{spoolCfg}
+
+		// Courier service
+		courierName := fmt.Sprintf("%s_courier", cfg.Server.Identifier)
+		courierCfg := s.genCourierConfig(courierName)
+		courierDataDir := filepath.Join(s.baseDir, courierName)
+		err := saveCfg(courierCfg, courierDataDir)
+		if err != nil {
+			return err
+		}
+		courierCfgPath := filepath.Join(courierDataDir, "courier.toml")
+		courierPluginCfg := &sConfig.CBORPluginKaetzchen{
+			Capability:     "courier",
+			Endpoint:       "courier",
+			Command:        s.baseDir + "/courier" + s.binSuffix,
+			MaxConcurrency: 1,
+			Config: map[string]interface{}{
+				"c": courierCfgPath,
+			},
+		}
+		cfg.ServiceNode.CBORPluginKaetzchen = []*sConfig.CBORPluginKaetzchen{courierPluginCfg}
+
 		if !s.hasPanda {
 			mapCfg := &sConfig.CBORPluginKaetzchen{
 				Capability:     "pigeonhole",
@@ -806,12 +854,14 @@ func identifier(cfg interface{}) string {
 		return "client"
 	case *cConfig2.Config:
 		return "client2"
+	case *vConfig.Config:
+		return cfg.(*vConfig.Config).Server.Identifier
 	case *sConfig.Config:
 		return cfg.(*sConfig.Config).Server.Identifier
 	case *rConfig.Config:
 		return cfg.(*rConfig.Config).Identifier
-	case *vConfig.Config:
-		return cfg.(*vConfig.Config).Server.Identifier
+	case courierConfig.Config:
+		return "courier"
 	default:
 		log.Fatalf("identifier() passed unexpected type %v", cfg)
 		return ""
@@ -830,6 +880,8 @@ func toml_name(cfg interface{}) string {
 		return "katzenpost"
 	case *rConfig.Config:
 		return "replica"
+	case courierConfig.Config:
+		return "courier"
 	case *vConfig.Config:
 		return "authority"
 	default:
