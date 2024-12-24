@@ -11,13 +11,9 @@ import (
 )
 
 func main() {
-	var logLevel string
-	var logDir string
 	var configFile string
 
 	flag.StringVar(&configFile, "c", "", "configuration file")
-	flag.StringVar(&logDir, "log_dir", "", "logging directory")
-	flag.StringVar(&logLevel, "log_level", "DEBUG", "logging level could be set to: DEBUG, INFO, NOTICE, WARNING, ERROR, CRITICAL")
 	flag.Parse()
 
 	// TODO: start listener for storage replica connections
