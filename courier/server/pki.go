@@ -1,12 +1,12 @@
 // SPDX-FileCopyrightText: © 2024 David Stainton
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package main
+package server
 
 import (
 	"context"
 	"crypto/hmac"
-	"fmt"
+	"errors"
 	"sync"
 	"time"
 
@@ -14,11 +14,15 @@ import (
 
 	"github.com/katzenpost/hpqc/kem/schemes"
 
+	vClient "github.com/katzenpost/katzenpost/authority/voting/client"
 	vServer "github.com/katzenpost/katzenpost/authority/voting/server"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/pki"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
+	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/worker"
+	"github.com/katzenpost/katzenpost/replica"
 )
 
 const NumPKIDocsToFetch = 3
@@ -27,7 +31,6 @@ var (
 	PublishDeadline     = vServer.PublishConsensusDeadline
 	mixServerCacheDelay = epochtime.Period / 16
 	nextFetchTill       = epochtime.Period - (PublishDeadline + mixServerCacheDelay)
-	client2FetchDelay   = 2 * time.Minute
 	recheckInterval     = epochtime.Period / 16
 )
 
@@ -37,6 +40,8 @@ type PKIWorker struct {
 	server *Server
 	log    *logging.Logger
 	impl   pki.Client
+
+	replicas *replica.ReplicaMap
 
 	lock                      *sync.RWMutex
 	docs                      map[uint64]*pki.Document
@@ -55,6 +60,7 @@ func newPKIWorker(server *Server, log *logging.Logger) (*PKIWorker, error) {
 		docs:          make(map[uint64]*pki.Document),
 		rawDocs:       make(map[uint64][]byte),
 		failedFetches: make(map[uint64]error),
+		replicas:      replica.NewReplicaMap(),
 	}
 
 	kemscheme := schemes.ByName(server.cfg.WireKEMScheme)
@@ -63,7 +69,7 @@ func newPKIWorker(server *Server, log *logging.Logger) (*PKIWorker, error) {
 	}
 	pkiCfg := &vClient.Config{
 		KEMScheme:   kemscheme,
-		LinkKey:     server.linkKey,
+		LinkKey:     server.linkPrivKey,
 		LogBackend:  server.LogBackend(),
 		Authorities: server.cfg.PKI.Voting.Authorities,
 		Geo:         server.cfg.SphinxGeometry,
@@ -297,4 +303,27 @@ func (p *PKIWorker) worker() {
 		}
 		p.updateTimer(timer)
 	}
+}
+
+func (p *PKIWorker) AuthenticateReplicaConnection(c *wire.PeerCredentials) (*pki.ReplicaDescriptor, bool) {
+	if len(c.AdditionalData) != sConstants.NodeIDLength {
+		p.log.Debugf("AuthenticateConnection: '%x' AD not an IdentityKey?.", c.AdditionalData)
+		return nil, false
+	}
+	var nodeID [sConstants.NodeIDLength]byte
+	copy(nodeID[:], c.AdditionalData)
+	replicaDesc, isReplica := p.replicas.GetReplicaDescriptor(&nodeID)
+	if !isReplica {
+		p.log.Debug("wtf1")
+		return nil, false
+	}
+	blob, err := c.PublicKey.MarshalBinary()
+	if err != nil {
+		panic(err)
+	}
+	if !hmac.Equal(replicaDesc.LinkKey, blob) {
+		p.log.Debug("wtf2")
+		return nil, false
+	}
+	return replicaDesc, true
 }

@@ -163,6 +163,9 @@ func (c *Config) FixupAndValidate(forceGenOnly bool) error {
 	if c.ReplicaNIKEScheme == "" {
 		return errors.New("config: Server: ReplicaNIKEScheme is not set")
 	}
+	if c.SphinxGeometry == nil {
+		return errors.New("config: SphinxGeometry must not be nil")
+	}
 
 	if c.Addresses != nil {
 		for _, v := range c.Addresses {

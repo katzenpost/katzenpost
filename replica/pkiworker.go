@@ -39,7 +39,7 @@ type ReplicaMap struct {
 	replicas map[[32]byte]*pki.ReplicaDescriptor
 }
 
-func newReplicaMap() *ReplicaMap {
+func NewReplicaMap() *ReplicaMap {
 	return &ReplicaMap{
 		replicas: make(map[[32]byte]*pki.ReplicaDescriptor),
 	}
@@ -94,7 +94,7 @@ func newPKIWorker(server *Server, log *logging.Logger) (*PKIWorker, error) {
 	p := &PKIWorker{
 		server:        server,
 		log:           log,
-		replicas:      newReplicaMap(),
+		replicas:      NewReplicaMap(),
 		lock:          new(sync.RWMutex),
 		descAddrMap:   make(map[string][]string),
 		docs:          make(map[uint64]*pki.Document),

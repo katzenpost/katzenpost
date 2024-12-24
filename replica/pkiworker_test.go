@@ -24,7 +24,7 @@ import (
 )
 
 func TestReplicaMap(t *testing.T) {
-	r := newReplicaMap()
+	r := NewReplicaMap()
 	newMap := make(map[[32]byte]*pki.ReplicaDescriptor)
 	replica := &pki.ReplicaDescriptor{
 		Name: "replica1",

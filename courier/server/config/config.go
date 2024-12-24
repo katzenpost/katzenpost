@@ -7,15 +7,20 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/BurntSushi/toml"
 
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 )
 
 const (
-	defaultLogLevel = "NOTICE"
+	defaultLogLevel         = "NOTICE"
+	defaultConnectTimeout   = 60 * 1000 // 60 sec.
+	defaultHandshakeTimeout = 30 * 1000 // 30 sec.
+	defaultReauthInterval   = 30 * 1000 // 30 sec.
 )
 
 var defaultLogging = Logging{
@@ -85,22 +90,58 @@ type Config struct {
 
 	// Logging is the logging configuration.
 	Logging *Logging
+
+	// WireKEMScheme is the wire protocol KEM scheme to be used.
+	WireKEMScheme string
+
+	// DataDir is the absolute path to the server's directory for storing files
+	// like the wire protocol keys for example.
+	DataDir string
+
+	// SphinxGeometry is used for our wire protocol connection to the dirauths.
+	SphinxGeometry *geo.Geometry
+
+	// ConnectTimeout specifies the maximum time a connection can take to
+	// establish a TCP/IP connection in milliseconds.
+	ConnectTimeout int
+
+	// HandshakeTimeout specifies the maximum time a connection can take for a
+	// link protocol handshake in milliseconds.
+	HandshakeTimeout int
+
+	// ReauthInterval specifies the interval at which a connection will be
+	// reauthenticated in milliseconds.
+	ReauthInterval int
 }
 
 func (c *Config) FixupAndValidate() error {
 	if c.PKI == nil {
 		return errors.New("config: No PKI block was present")
 	}
-
-	// Handle missing sections if possible.
 	if c.Logging == nil {
 		c.Logging = &defaultLogging
 	}
-
 	if err := c.Logging.validate(); err != nil {
 		return err
 	}
-
+	if c.WireKEMScheme == "" {
+		return errors.New("config: Server: WireKEMScheme is not set")
+	}
+	if !filepath.IsAbs(c.DataDir) {
+		return fmt.Errorf("config: Server: DataDir '%v' is not an absolute path", c.DataDir)
+	}
+	if c.SphinxGeometry == nil {
+		return errors.New("config: SphinxGeometry must not be nil")
+	}
+	if c.ReauthInterval <= 0 {
+		c.ReauthInterval = defaultReauthInterval
+	}
+	if c.HandshakeTimeout <= 0 {
+		c.HandshakeTimeout = defaultHandshakeTimeout
+	}
+	if c.ConnectTimeout <= 0 {
+		c.ConnectTimeout = defaultConnectTimeout
+	}
 	return nil
 }
 
