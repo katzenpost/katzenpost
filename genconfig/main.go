@@ -411,7 +411,9 @@ func (s *katzenpost) genNodeConfig(isGateway, isServiceNode bool, isVoting bool)
 		courierName := fmt.Sprintf("%s_courier", cfg.Server.Identifier)
 		serviceNodeDataDir := filepath.Join(s.outDir, cfg.Server.Identifier)
 		courierDataDir := filepath.Join(serviceNodeDataDir, "courier")
-		courierCfg := s.genCourierConfig(serviceNodeDataDir, courierName)
+
+		absServiceNodeDataDir := "/" + s.outDir + "/" + cfg.Server.Identifier
+		courierCfg := s.genCourierConfig(absServiceNodeDataDir, courierName)
 		os.Mkdir(courierDataDir, 0700)
 		err := saveCfg(courierCfg, serviceNodeDataDir)
 		if err != nil {

@@ -85,6 +85,10 @@ func newPKIWorker(server *Server, log *logging.Logger) (*PKIWorker, error) {
 	return p, nil
 }
 
+func (p *PKIWorker) ReplicasCopy() map[[32]byte]*pki.ReplicaDescriptor {
+	return p.replicas.Copy()
+}
+
 func (p *PKIWorker) documentsToFetch() []uint64 {
 	ret := make([]uint64, 0, NumPKIDocsToFetch+1)
 	now, _, till := epochtime.Now()

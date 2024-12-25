@@ -13,7 +13,9 @@ import (
 	"github.com/katzenpost/hpqc/kem/schemes"
 
 	"github.com/katzenpost/katzenpost/core/log"
+	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/utils"
+	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"github.com/katzenpost/katzenpost/courier/server/config"
 )
@@ -28,6 +30,12 @@ type GenericConnector interface {
 	DispatchMessage(dest uint8, message *commands.ReplicaMessage)
 }
 
+type PKI interface {
+	AuthenticateReplicaConnection(c *wire.PeerCredentials) (*pki.ReplicaDescriptor, bool)
+	PKIDocument() *pki.Document
+	ReplicasCopy() map[[32]byte]*pki.ReplicaDescriptor
+}
+
 type Server struct {
 	cfg *config.Config
 
@@ -37,11 +45,19 @@ type Server struct {
 	linkPrivKey kem.PrivateKey
 	linkPubKey  kem.PublicKey
 
-	pki       *PKIWorker
+	pki       PKI
 	connector GenericConnector
 }
 
-func New(cfg *config.Config) (*Server, error) {
+func defaultPKIFactory(s *Server) {
+	var err error
+	s.pki, err = newPKIWorker(s, s.logBackend.GetLogger("pkiclient"))
+	if err != nil {
+		panic(err)
+	}
+}
+
+func New(cfg *config.Config, pkiFactory func(*Server)) (*Server, error) {
 	s := &Server{
 		cfg: cfg,
 	}
@@ -83,9 +99,10 @@ func New(cfg *config.Config) (*Server, error) {
 	s.linkPrivKey = linkPrivateKey
 	s.linkPubKey = linkPublicKey
 
-	s.pki, err = newPKIWorker(s, s.logBackend.GetLogger("pkiclient"))
-	if err != nil {
-		return nil, err
+	if pkiFactory == nil {
+		defaultPKIFactory(s)
+	} else {
+		pkiFactory(s)
 	}
 
 	s.connector = newConnector(s)

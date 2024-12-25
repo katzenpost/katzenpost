@@ -119,7 +119,7 @@ func (co *Connector) worker() {
 }
 
 func (co *Connector) spawnNewConns() {
-	newPeerMap := co.server.pki.replicas.Copy()
+	newPeerMap := co.server.pki.ReplicasCopy()
 
 	// Traverse the connection table, to figure out which peers are actually
 	// new.  Each outgoingConn object is responsible for determining when
