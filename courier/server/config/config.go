@@ -18,9 +18,9 @@ import (
 
 const (
 	defaultLogLevel         = "NOTICE"
-	defaultConnectTimeout   = 60 * 1000 // 60 sec.
-	defaultHandshakeTimeout = 30 * 1000 // 30 sec.
-	defaultReauthInterval   = 30 * 1000 // 30 sec.
+	DefaultConnectTimeout   = 60 * 1000 // 60 sec.
+	DefaultHandshakeTimeout = 30 * 1000 // 30 sec.
+	DefaultReauthInterval   = 30 * 1000 // 30 sec.
 )
 
 var defaultLogging = Logging{
@@ -134,13 +134,13 @@ func (c *Config) FixupAndValidate() error {
 		return errors.New("config: SphinxGeometry must not be nil")
 	}
 	if c.ReauthInterval <= 0 {
-		c.ReauthInterval = defaultReauthInterval
+		c.ReauthInterval = DefaultReauthInterval
 	}
 	if c.HandshakeTimeout <= 0 {
-		c.HandshakeTimeout = defaultHandshakeTimeout
+		c.HandshakeTimeout = DefaultHandshakeTimeout
 	}
 	if c.ConnectTimeout <= 0 {
-		c.ConnectTimeout = defaultConnectTimeout
+		c.ConnectTimeout = DefaultConnectTimeout
 	}
 	return nil
 }
