@@ -16,7 +16,6 @@ func main() {
 	flag.StringVar(&configFile, "c", "", "configuration file")
 	flag.Parse()
 
-	// TODO: start listener for storage replica connections
 	cfg, err := config.LoadFile(configFile)
 	if err != nil {
 		panic(err)
