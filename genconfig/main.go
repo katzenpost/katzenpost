@@ -406,7 +406,6 @@ func (s *katzenpost) genNodeConfig(isGateway, isServiceNode bool, isVoting bool)
 		// Courier service
 		courierName := fmt.Sprintf("%s_courier", cfg.Server.Identifier)
 		courierCfg := s.genCourierConfig(courierName)
-
 		courierHostDir := filepath.Join(s.outDir, cfg.Server.Identifier)
 		courierDataDir := filepath.Join(courierHostDir, "courier")
 		os.Mkdir(courierDataDir, 0700)
@@ -414,14 +413,14 @@ func (s *katzenpost) genNodeConfig(isGateway, isServiceNode bool, isVoting bool)
 		if err != nil {
 			return fmt.Errorf("failed to write courier config: %s", err)
 		}
-		courierCfgPath := filepath.Join(courierDataDir, "courier.toml")
+		advertizeableCourierCfgPath := s.baseDir + cfg.Server.Identifier + "/courier/courier.toml"
 		courierPluginCfg := &sConfig.CBORPluginKaetzchen{
 			Capability:     "courier",
 			Endpoint:       "courier",
 			Command:        s.baseDir + "/courier" + s.binSuffix,
 			MaxConcurrency: 1,
 			Config: map[string]interface{}{
-				"c": courierCfgPath,
+				"c": advertizeableCourierCfgPath,
 			},
 		}
 		cfg.ServiceNode.CBORPluginKaetzchen = []*sConfig.CBORPluginKaetzchen{courierPluginCfg}
