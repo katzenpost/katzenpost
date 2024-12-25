@@ -161,7 +161,6 @@ func (s *katzenpost) genClient2Cfg() error {
 	// Debug section
 	cfg.Debug = &cConfig2.Debug{DisableDecoyTraffic: s.debugConfig.DisableDecoyTraffic}
 
-	log.Print("before gathering providers")
 	gateways := make([]*cConfig2.Gateway, 0)
 	for i := 0; i < len(s.nodeConfigs); i++ {
 		if s.nodeConfigs[i].Gateway == nil {
@@ -182,14 +181,11 @@ func (s *katzenpost) genClient2Cfg() error {
 		gateways = append(gateways, gateway)
 	}
 	if len(gateways) == 0 {
-		panic("wtf 0 providers")
+		panic("wtf 0 gateways")
 	}
-	log.Print("after gathering providers")
 	cfg.PinnedGateways = &cConfig2.Gateways{
 		Gateways: gateways,
 	}
-
-	log.Print("before save config")
 	err := saveCfg(thinCfg, s.outDir)
 	if err != nil {
 		log.Printf("save thin client config failure %s", err.Error())
@@ -200,8 +196,6 @@ func (s *katzenpost) genClient2Cfg() error {
 		log.Printf("save client2 config failure %s", err.Error())
 		return err
 	}
-	log.Print("after save config")
-	log.Print("genClient2Cfg end")
 	return nil
 }
 
@@ -265,7 +259,6 @@ func (s *katzenpost) genCourierConfig(identifier string) *courierConfig.Config {
 		},
 	}
 	datadir := filepath.Join(s.baseDir, identifier)
-	os.Mkdir(datadir, 0700)
 	const logFile = "courier.log"
 	logPath := filepath.Join(datadir, logFile)
 	return &courierConfig.Config{
@@ -397,7 +390,6 @@ func (s *katzenpost) genNodeConfig(isGateway, isServiceNode bool, isVoting bool)
 		// Enable the thwack interface.
 		s.serviceNodeIdx++
 
-		// configure an entry provider or a spool storage provider
 		cfg.ServiceNode = &sConfig.ServiceNode{}
 		spoolCfg := &sConfig.CBORPluginKaetzchen{
 			Capability:     "spool",
@@ -414,10 +406,13 @@ func (s *katzenpost) genNodeConfig(isGateway, isServiceNode bool, isVoting bool)
 		// Courier service
 		courierName := fmt.Sprintf("%s_courier", cfg.Server.Identifier)
 		courierCfg := s.genCourierConfig(courierName)
-		courierDataDir := filepath.Join(s.baseDir, courierName)
-		err := saveCfg(courierCfg, courierDataDir)
+
+		courierHostDir := filepath.Join(s.outDir, cfg.Server.Identifier)
+		courierDataDir := filepath.Join(courierHostDir, "courier")
+		os.Mkdir(courierDataDir, 0700)
+		err := saveCfg(courierCfg, courierHostDir)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to write courier config: %s", err)
 		}
 		courierCfgPath := filepath.Join(courierDataDir, "courier.toml")
 		courierPluginCfg := &sConfig.CBORPluginKaetzchen{
@@ -755,20 +750,20 @@ func main() {
 	// Generate the gateway configs.
 	for i := 0; i < *nrGateways; i++ {
 		if err = s.genNodeConfig(true, false, *voting); err != nil {
-			log.Fatalf("Failed to generate provider config: %v", err)
+			log.Fatalf("Failed to generate gateway config: %v", err)
 		}
 	}
 	// Generate the service node configs.
 	for i := 0; i < *nrServiceNodes; i++ {
 		if err = s.genNodeConfig(false, true, *voting); err != nil {
-			log.Fatalf("Failed to generate provider config: %v", err)
+			log.Fatalf("Failed to generate service node config: %v", err)
 		}
 	}
 
 	// Generate the mix node configs.
 	for i := 0; i < *nrNodes; i++ {
 		if err = s.genNodeConfig(false, false, *voting); err != nil {
-			log.Fatalf("Failed to generate node config: %v", err)
+			log.Fatalf("Failed to generate mix node config: %v", err)
 		}
 	}
 
@@ -860,7 +855,7 @@ func identifier(cfg interface{}) string {
 		return cfg.(*sConfig.Config).Server.Identifier
 	case *rConfig.Config:
 		return cfg.(*rConfig.Config).Identifier
-	case courierConfig.Config:
+	case *courierConfig.Config:
 		return "courier"
 	default:
 		log.Fatalf("identifier() passed unexpected type %v", cfg)
@@ -880,7 +875,7 @@ func toml_name(cfg interface{}) string {
 		return "katzenpost"
 	case *rConfig.Config:
 		return "replica"
-	case courierConfig.Config:
+	case *courierConfig.Config:
 		return "courier"
 	case *vConfig.Config:
 		return "authority"
