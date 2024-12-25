@@ -9,8 +9,6 @@ import (
 	"os"
 	"path/filepath"
 
-	"gopkg.in/op/go-logging.v1"
-
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"github.com/katzenpost/katzenpost/courier/common"
 	"github.com/katzenpost/katzenpost/server/cborplugin"
@@ -18,22 +16,20 @@ import (
 
 // StartPlugin starts the CBOR plugin service which listens for socket connections
 // from the service node.
-func StartPlugin(serverLog *logging.Logger) {
-	tmpDir, err := os.MkdirTemp("", "courier_server")
-	if err != nil {
-		panic(err)
-	}
-	socketFile := filepath.Join(tmpDir, fmt.Sprintf("%d.courier.socket", os.Getpid()))
+func (s *Server) StartPlugin() {
+	socketFile := filepath.Join(s.cfg.DataDir, fmt.Sprintf("%d.courier.socket", os.Getpid()))
 	courier := new(Courier)
 	var server *cborplugin.Server
-	server = cborplugin.NewServer(serverLog, socketFile, new(cborplugin.RequestFactory), courier)
+
+	server = cborplugin.NewServer(s.LogBackend().GetLogger("courier_plugin"), socketFile, new(cborplugin.RequestFactory), courier)
 	fmt.Printf("%s\n", socketFile)
 	server.Accept()
 	server.Wait()
-	err = os.Remove(socketFile)
+	err := os.Remove(socketFile)
 	if err != nil {
 		panic(err)
 	}
+
 }
 
 type Courier struct {

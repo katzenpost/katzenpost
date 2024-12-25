@@ -54,17 +54,18 @@ func New(cfg *config.Config) (*Server, error) {
 		return nil, err
 	}
 
-	linkPrivateKeyFile := filepath.Join(s.cfg.DataDir, "link.private.pem")
-	linkPublicKeyFile := filepath.Join(s.cfg.DataDir, "link.public.pem")
+	// read our service node's link keys
+	linkPrivateKeyFile := filepath.Join(s.cfg.ServiceNodeDataDir, "link.private.pem")
+	linkPublicKeyFile := filepath.Join(s.cfg.ServiceNodeDataDir, "link.public.pem")
 
 	scheme := schemes.ByName(cfg.WireKEMScheme)
 	if scheme == nil {
 		panic("KEM scheme not found")
 	}
-	linkPublicKey, linkPrivateKey, err := scheme.GenerateKeyPair()
-	if err != nil {
-		return nil, err
-	}
+
+	var linkPublicKey kem.PublicKey
+	var linkPrivateKey kem.PrivateKey
+
 	if utils.BothExists(linkPrivateKeyFile, linkPublicKeyFile) {
 		linkPrivateKey, err = pemkem.FromPrivatePEMFile(linkPrivateKeyFile, scheme)
 		if err != nil {
@@ -75,14 +76,7 @@ func New(cfg *config.Config) (*Server, error) {
 			return nil, err
 		}
 	} else if utils.BothNotExists(linkPrivateKeyFile, linkPublicKeyFile) {
-		err = pemkem.PrivateKeyToFile(linkPrivateKeyFile, linkPrivateKey)
-		if err != nil {
-			return nil, err
-		}
-		err = pemkem.PublicKeyToFile(linkPublicKeyFile, linkPublicKey)
-		if err != nil {
-			return nil, err
-		}
+		panic("No link keys found.")
 	} else {
 		panic("Improbable: Only found one link PEM file.")
 	}

@@ -27,8 +27,6 @@ func main() {
 		panic(err)
 	}
 
-	// block on listening for the mix server's dialing our unix socket listener
-	logBackend := s.LogBackend()
-	serverLog := logBackend.GetLogger("courier_service")
-	server.StartPlugin(serverLog)
+	// blocks until service node disconnect
+	s.StartPlugin()
 }

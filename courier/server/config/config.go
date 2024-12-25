@@ -98,6 +98,11 @@ type Config struct {
 	// like the wire protocol keys for example.
 	DataDir string
 
+	// ServiceNodeDataDir is the absolute path to our service node's data dir.
+	// We need read access to this path so that we can read the private and public
+	// wire protocol keys (link layer keys).
+	ServiceNodeDataDir string
+
 	// SphinxGeometry is used for our wire protocol connection to the dirauths.
 	SphinxGeometry *geo.Geometry
 
@@ -128,6 +133,9 @@ func (c *Config) FixupAndValidate() error {
 		return errors.New("config: Server: WireKEMScheme is not set")
 	}
 	if !filepath.IsAbs(c.DataDir) {
+		return fmt.Errorf("config: Server: DataDir '%v' is not an absolute path", c.DataDir)
+	}
+	if !filepath.IsAbs(c.ServiceNodeDataDir) {
 		return fmt.Errorf("config: Server: DataDir '%v' is not an absolute path", c.DataDir)
 	}
 	if c.SphinxGeometry == nil {

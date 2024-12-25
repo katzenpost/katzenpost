@@ -314,7 +314,6 @@ func (p *PKIWorker) AuthenticateReplicaConnection(c *wire.PeerCredentials) (*pki
 	copy(nodeID[:], c.AdditionalData)
 	replicaDesc, isReplica := p.replicas.GetReplicaDescriptor(&nodeID)
 	if !isReplica {
-		p.log.Debug("wtf1")
 		return nil, false
 	}
 	blob, err := c.PublicKey.MarshalBinary()
@@ -322,7 +321,6 @@ func (p *PKIWorker) AuthenticateReplicaConnection(c *wire.PeerCredentials) (*pki
 		panic(err)
 	}
 	if !hmac.Equal(replicaDesc.LinkKey, blob) {
-		p.log.Debug("wtf2")
 		return nil, false
 	}
 	return replicaDesc, true

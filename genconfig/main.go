@@ -245,7 +245,7 @@ func write(f *os.File, str string, args ...interface{}) {
 	}
 }
 
-func (s *katzenpost) genCourierConfig(identifier string) *courierConfig.Config {
+func (s *katzenpost) genCourierConfig(serviceNodeDataDir, identifier string) *courierConfig.Config {
 	authorities := make([]*vConfig.Authority, 0, len(s.authorities))
 	i := 0
 	for _, auth := range s.authorities {
@@ -262,11 +262,15 @@ func (s *katzenpost) genCourierConfig(identifier string) *courierConfig.Config {
 	const logFile = "courier.log"
 	logPath := filepath.Join(datadir, logFile)
 	return &courierConfig.Config{
-		PKI:            pki,
-		Logging:        &courierConfig.Logging{File: logPath, Level: "DEBUG"},
-		WireKEMScheme:  s.wireKEMScheme,
-		DataDir:        datadir,
-		SphinxGeometry: s.sphinxGeometry,
+		PKI:                pki,
+		Logging:            &courierConfig.Logging{File: logPath, Level: "DEBUG"},
+		WireKEMScheme:      s.wireKEMScheme,
+		DataDir:            datadir,
+		ServiceNodeDataDir: serviceNodeDataDir,
+		SphinxGeometry:     s.sphinxGeometry,
+		ConnectTimeout:     courierConfig.DefaultConnectTimeout,
+		HandshakeTimeout:   courierConfig.DefaultHandshakeTimeout,
+		ReauthInterval:     courierConfig.DefaultReauthInterval,
 	}
 }
 
@@ -405,11 +409,11 @@ func (s *katzenpost) genNodeConfig(isGateway, isServiceNode bool, isVoting bool)
 
 		// Courier service
 		courierName := fmt.Sprintf("%s_courier", cfg.Server.Identifier)
-		courierCfg := s.genCourierConfig(courierName)
-		courierHostDir := filepath.Join(s.outDir, cfg.Server.Identifier)
-		courierDataDir := filepath.Join(courierHostDir, "courier")
+		serviceNodeDataDir := filepath.Join(s.outDir, cfg.Server.Identifier)
+		courierDataDir := filepath.Join(serviceNodeDataDir, "courier")
+		courierCfg := s.genCourierConfig(serviceNodeDataDir, courierName)
 		os.Mkdir(courierDataDir, 0700)
-		err := saveCfg(courierCfg, courierHostDir)
+		err := saveCfg(courierCfg, serviceNodeDataDir)
 		if err != nil {
 			return fmt.Errorf("failed to write courier config: %s", err)
 		}
