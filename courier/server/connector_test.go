@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/fxamacker/cbor/v2"
 	"github.com/stretchr/testify/require"
 
 	"github.com/katzenpost/hpqc/hash"
@@ -34,6 +35,13 @@ import (
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"github.com/katzenpost/katzenpost/courier/server/config"
 )
+
+var (
+	ccbor cbor.EncMode
+)
+
+// document contains fields from Document but not the encoding.BinaryMarshaler methods
+type document pki.Document
 
 type mockPKI struct {
 	t                *testing.T
@@ -150,6 +158,52 @@ func (m *mockPKI) spawnReplica(replicaNum int) {
 	err = wireConn.Initialize(conn)
 	require.NoError(m.t, err)
 
+	t := m.t
+loop:
+	for {
+		t.Log("BEFORE RecvCommand")
+		cmd, _ := wireConn.RecvCommand()
+		//require.NoError(t, _)
+
+		if cmd == nil {
+			return
+		}
+
+		switch mycmd := cmd.(type) {
+		case *commands.NoOp:
+			t.Log("-- NoOp")
+		case *commands.Disconnect:
+			t.Log("-- Disconnect")
+			break loop
+		case *commands.ReplicaMessage:
+			t.Log("-- ReplicaMessage")
+			resp := &commands.ReplicaMessageReply{
+				Cmds: commands.NewStorageReplicaCommands(m.geo, m.replicaScheme),
+
+				ErrorCode:     0,
+				EnvelopeHash:  blah,
+				EnvelopeReply: blah,
+			}
+			_ = wireConn.SendCommand(resp)
+		case *commands.ReplicaMessageReply:
+			t.Log("-- ReplicaMessageReply")
+		case *commands.ReplicaRead:
+			t.Log("-- ReplicaRead")
+		case *commands.ReplicaReadReply:
+			t.Log("-- ReplicaReadReply")
+		case *commands.ReplicaWrite:
+			t.Log("-- ReplicaWrite")
+		case *commands.ReplicaWriteReply:
+			t.Log("-- ReplicaWriteReply")
+		default:
+			t.Logf("-- invalid wire command: %v", mycmd)
+			break loop
+		}
+	}
+
+	wireConn.Close()
+	_ = conn.Close()
+	//require.NoError(t, err)
 }
 
 func (m *mockPKI) generateReplicaDescriptors(t *testing.T, epoch uint64) (*pki.ReplicaDescriptor, *pki.ReplicaDescriptor) {
