@@ -484,4 +484,6 @@ func TestConnector(t *testing.T) {
 		Ciphertext:    envelope1.Envelope,
 	}
 	connector.DispatchMessage(dest, mesg)
+
+	time.Sleep(time.Second * 3)
 }
