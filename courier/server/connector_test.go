@@ -181,20 +181,30 @@ loop:
 				Cmds: commands.NewStorageReplicaCommands(m.geo, m.replicaScheme),
 
 				ErrorCode:     0,
-				EnvelopeHash:  blah,
-				EnvelopeReply: blah,
+				EnvelopeHash:  &[32]byte{},
+				EnvelopeReply: []byte{},
 			}
 			_ = wireConn.SendCommand(resp)
-		case *commands.ReplicaMessageReply:
-			t.Log("-- ReplicaMessageReply")
 		case *commands.ReplicaRead:
 			t.Log("-- ReplicaRead")
-		case *commands.ReplicaReadReply:
-			t.Log("-- ReplicaReadReply")
+			resp := &commands.ReplicaReadReply{
+				Cmds: commands.NewStorageReplicaCommands(m.geo, m.replicaScheme),
+				Geo:  m.geo,
+
+				ErrorCode: 0,
+				BoxID:     &[32]byte{},
+				Signature: &[32]byte{},
+				Payload:   []byte{},
+			}
+			_ = wireConn.SendCommand(resp)
 		case *commands.ReplicaWrite:
 			t.Log("-- ReplicaWrite")
-		case *commands.ReplicaWriteReply:
-			t.Log("-- ReplicaWriteReply")
+			resp := &commands.ReplicaWriteReply{
+				Cmds: commands.NewStorageReplicaCommands(m.geo, m.replicaScheme),
+
+				ErrorCode: 0,
+			}
+			_ = wireConn.SendCommand(resp)
 		default:
 			t.Logf("-- invalid wire command: %v", mycmd)
 			break loop
@@ -413,6 +423,8 @@ func TestConnector(t *testing.T) {
 
 	go m.spawnReplica(0)
 	go m.spawnReplica(1)
+
+	time.Sleep(time.Second * 3)
 
 	epoch, _, _ := epochtime.Now()
 	numStorageReplicas := 2
