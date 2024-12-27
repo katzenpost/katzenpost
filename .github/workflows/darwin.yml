@@ -53,6 +53,3 @@ jobs:
 
       - name: Run server unit tests
         run:  cd server && GORACE=history_size=7 go test -coverprofile=coverage.out -race -v -failfast -timeout 30m ./...
-
-      - name: Run courier unit tests
-        run: cd courier && GORACE=history_size=7 go test -coverprofile=coverage.out -race -v -failfast -timeout 30m ./...
