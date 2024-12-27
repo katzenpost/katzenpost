@@ -22,7 +22,7 @@ import (
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/worker"
-	"github.com/katzenpost/katzenpost/replica"
+	"github.com/katzenpost/katzenpost/replica/common"
 )
 
 const NumPKIDocsToFetch = 3
@@ -41,7 +41,7 @@ type PKIWorker struct {
 	log    *logging.Logger
 	impl   pki.Client
 
-	replicas *replica.ReplicaMap
+	replicas *common.ReplicaMap
 
 	lock                      *sync.RWMutex
 	docs                      map[uint64]*pki.Document
@@ -60,7 +60,7 @@ func newPKIWorker(server *Server, log *logging.Logger) (*PKIWorker, error) {
 		docs:          make(map[uint64]*pki.Document),
 		rawDocs:       make(map[uint64][]byte),
 		failedFetches: make(map[uint64]error),
-		replicas:      replica.NewReplicaMap(),
+		replicas:      common.NewReplicaMap(),
 	}
 
 	kemscheme := schemes.ByName(server.cfg.WireKEMScheme)

@@ -22,6 +22,7 @@ import (
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/worker"
+	"github.com/katzenpost/katzenpost/replica/common"
 )
 
 const PKIDocNum = 3
@@ -34,49 +35,13 @@ var (
 	recheckInterval     = epochtime.Period / 16
 )
 
-type ReplicaMap struct {
-	sync.RWMutex
-	replicas map[[32]byte]*pki.ReplicaDescriptor
-}
-
-func NewReplicaMap() *ReplicaMap {
-	return &ReplicaMap{
-		replicas: make(map[[32]byte]*pki.ReplicaDescriptor),
-	}
-}
-
-func (r *ReplicaMap) GetReplicaDescriptor(nodeID *[32]byte) (*pki.ReplicaDescriptor, bool) {
-	r.RLock()
-	ret, ok := r.replicas[*nodeID]
-	r.RUnlock()
-	// NOTE(david): make copy of pki.ReplicaDescriptor? it might be needed, later to avoid
-	// data races if one threat mutates the descriptor.
-	return ret, ok
-}
-
-func (r *ReplicaMap) Replace(newMap map[[32]byte]*pki.ReplicaDescriptor) {
-	r.Lock()
-	r.replicas = newMap
-	r.Unlock()
-}
-
-func (r *ReplicaMap) Copy() map[[32]byte]*pki.ReplicaDescriptor {
-	ret := make(map[[32]byte]*pki.ReplicaDescriptor)
-	r.RLock()
-	for k, v := range r.replicas {
-		ret[k] = v
-	}
-	r.RUnlock()
-	return ret
-}
-
 type PKIWorker struct {
 	worker.Worker
 
 	server *Server
 	log    *logging.Logger
 
-	replicas *ReplicaMap
+	replicas *common.ReplicaMap
 
 	impl pki.Client
 
@@ -94,7 +59,7 @@ func newPKIWorker(server *Server, log *logging.Logger) (*PKIWorker, error) {
 	p := &PKIWorker{
 		server:        server,
 		log:           log,
-		replicas:      NewReplicaMap(),
+		replicas:      common.NewReplicaMap(),
 		lock:          new(sync.RWMutex),
 		descAddrMap:   make(map[string][]string),
 		docs:          make(map[uint64]*pki.Document),
