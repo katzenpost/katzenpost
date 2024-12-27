@@ -483,8 +483,9 @@ type CBORPluginKaetzchen struct {
 	// address.
 	Endpoint string
 
-	// Config is the extra per agent arguments to be passed to the agent's
-	// initialization routine.
+	// Config contains optional per plugin arguments. They are transposed
+	// into commandline arguments to be passed to the plugin executable binary.
+	// Each map key must not begin with "-" and a "-" will be prepended to each key.
 	Config map[string]interface{}
 
 	// Command is the full file path to the external plugin program

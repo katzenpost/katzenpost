@@ -19,6 +19,7 @@ import (
 	"github.com/katzenpost/hpqc/kem"
 	kempem "github.com/katzenpost/hpqc/kem/pem"
 	kemschemes "github.com/katzenpost/hpqc/kem/schemes"
+	"github.com/katzenpost/hpqc/nike"
 	"github.com/katzenpost/hpqc/nike/schemes"
 	"github.com/katzenpost/hpqc/sign"
 	signpem "github.com/katzenpost/hpqc/sign/pem"
@@ -27,8 +28,11 @@ import (
 	vConfig "github.com/katzenpost/katzenpost/authority/voting/server/config"
 	cConfig "github.com/katzenpost/katzenpost/client/config"
 	cConfig2 "github.com/katzenpost/katzenpost/client2/config"
+	"github.com/katzenpost/katzenpost/client2/thin"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
+	courierConfig "github.com/katzenpost/katzenpost/courier/server/config"
+	rConfig "github.com/katzenpost/katzenpost/replica/config"
 	sConfig "github.com/katzenpost/katzenpost/server/config"
 )
 
@@ -39,6 +43,7 @@ const (
 	nrNodes        = 6
 	nrGateways     = 1
 	nrServiceNodes = 1
+	nrStorageNodes = 3
 	nrAuthorities  = 3
 )
 
@@ -52,23 +57,28 @@ type katzenpost struct {
 	ratchetNIKEScheme  string
 	wireKEMScheme      string
 	pkiSignatureScheme sign.Scheme
+	replicaNIKEScheme  nike.Scheme
 	sphinxGeometry     *geo.Geometry
 	votingAuthConfigs  []*vConfig.Config
 	authorities        map[[32]byte]*vConfig.Authority
 	authIdentity       sign.PublicKey
 
-	nodeConfigs    []*sConfig.Config
-	basePort       uint16
-	lastPort       uint16
-	bindAddr       string
-	nodeIdx        int
-	clientIdx      int
-	gatewayIdx     int
-	serviceNodeIdx int
-	hasPanda       bool
-	hasProxy       bool
-	noMixDecoy     bool
-	debugConfig    *cConfig.Debug
+	nodeConfigs        []*sConfig.Config
+	replicaNodeConfigs []*rConfig.Config
+
+	basePort        uint16
+	lastPort        uint16
+	lastReplicaPort uint16
+	bindAddr        string
+	nodeIdx         int
+	replicaNodeIdx  int
+	clientIdx       int
+	gatewayIdx      int
+	serviceNodeIdx  int
+	hasPanda        bool
+	hasProxy        bool
+	noMixDecoy      bool
+	debugConfig     *cConfig.Debug
 }
 
 type AuthById []*vConfig.Authority
@@ -106,6 +116,8 @@ func addressesFromURLs(addrs []string) map[string][]string {
 func (s *katzenpost) genClient2Cfg() error {
 	log.Print("genClient2Cfg begin")
 	os.Mkdir(filepath.Join(s.outDir, "client2"), 0700)
+	os.Mkdir(filepath.Join(s.outDir, "thinclient"), 0700)
+	thinCfg := new(thin.ThinConfig)
 	cfg := new(cConfig2.Config)
 
 	// abstract unix domain sockets only work on linux,
@@ -121,31 +133,34 @@ func (s *katzenpost) genClient2Cfg() error {
 	cfg.ListenNetwork = "tcp"
 	cfg.ListenAddress = "localhost:64331"
 
+	// Logging section.
+	cfg.Logging = &cConfig2.Logging{File: "", Level: "DEBUG"}
+
+	// Thin Client Config
+	thinCfg.Network = cfg.ListenNetwork
+	thinCfg.Address = cfg.ListenAddress
+	thinCfg.LoggingFile = cfg.Logging.File
+	thinCfg.LoggingLevel = cfg.Logging.Level
+	thinCfg.LoggingDisable = cfg.Logging.Disable
+
 	cfg.PKISignatureScheme = s.pkiSignatureScheme.Name()
 	cfg.WireKEMScheme = s.wireKEMScheme
 	cfg.SphinxGeometry = s.sphinxGeometry
-
-	// Logging section.
-	cfg.Logging = &cConfig2.Logging{File: "", Level: "DEBUG"}
 
 	// UpstreamProxy section
 	cfg.UpstreamProxy = &cConfig2.UpstreamProxy{Type: "none"}
 
 	// VotingAuthority section
-
 	peers := make([]*vConfig.Authority, 0)
 	for _, peer := range s.authorities {
 		peers = append(peers, peer)
 	}
-
 	sort.Sort(AuthById(peers))
-
 	cfg.VotingAuthority = &cConfig2.VotingAuthority{Peers: peers}
 
 	// Debug section
 	cfg.Debug = &cConfig2.Debug{DisableDecoyTraffic: s.debugConfig.DisableDecoyTraffic}
 
-	log.Print("before gathering providers")
 	gateways := make([]*cConfig2.Gateway, 0)
 	for i := 0; i < len(s.nodeConfigs); i++ {
 		if s.nodeConfigs[i].Gateway == nil {
@@ -166,21 +181,21 @@ func (s *katzenpost) genClient2Cfg() error {
 		gateways = append(gateways, gateway)
 	}
 	if len(gateways) == 0 {
-		panic("wtf 0 providers")
+		panic("wtf 0 gateways")
 	}
-	log.Print("after gathering providers")
 	cfg.PinnedGateways = &cConfig2.Gateways{
 		Gateways: gateways,
 	}
-
-	log.Print("before save config")
-	err := saveCfg(cfg, s.outDir)
+	err := saveCfg(thinCfg, s.outDir)
 	if err != nil {
-		log.Printf("save config failure %s", err.Error())
+		log.Printf("save thin client config failure %s", err.Error())
 		return err
 	}
-	log.Print("after save config")
-	log.Print("genClient2Cfg end")
+	err = saveCfg(cfg, s.outDir)
+	if err != nil {
+		log.Printf("save client2 config failure %s", err.Error())
+		return err
+	}
 	return nil
 }
 
@@ -228,6 +243,80 @@ func write(f *os.File, str string, args ...interface{}) {
 	if err != nil {
 		log.Fatal(err)
 	}
+}
+
+func (s *katzenpost) genCourierConfig(serviceNodeDataDir, identifier string) *courierConfig.Config {
+	authorities := make([]*vConfig.Authority, 0, len(s.authorities))
+	i := 0
+	for _, auth := range s.authorities {
+		authorities = append(authorities, auth)
+		i += 1
+	}
+	sort.Sort(AuthById(authorities))
+	pki := &courierConfig.PKI{
+		Voting: &courierConfig.Voting{
+			Authorities: authorities,
+		},
+	}
+	datadir := filepath.Join(s.baseDir, identifier)
+	const logFile = "courier.log"
+	logPath := filepath.Join(datadir, logFile)
+	return &courierConfig.Config{
+		PKI:                pki,
+		Logging:            &courierConfig.Logging{File: logPath, Level: "DEBUG"},
+		WireKEMScheme:      s.wireKEMScheme,
+		DataDir:            datadir,
+		ServiceNodeDataDir: serviceNodeDataDir,
+		SphinxGeometry:     s.sphinxGeometry,
+		ConnectTimeout:     courierConfig.DefaultConnectTimeout,
+		HandshakeTimeout:   courierConfig.DefaultHandshakeTimeout,
+		ReauthInterval:     courierConfig.DefaultReauthInterval,
+	}
+}
+
+func (s *katzenpost) genReplicaNodeConfig() error {
+	const serverLogFile = "katzenpost.log"
+
+	log.Print("genReplicaNodeConfig")
+
+	cfg := new(rConfig.Config)
+
+	cfg.Identifier = fmt.Sprintf("replica%d", s.replicaNodeIdx+1)
+	cfg.SphinxGeometry = s.sphinxGeometry
+	cfg.WireKEMScheme = s.wireKEMScheme
+	cfg.ReplicaNIKEScheme = s.replicaNIKEScheme.Name()
+	cfg.PKISignatureScheme = s.pkiSignatureScheme.Name()
+
+	cfg.Addresses = []string{fmt.Sprintf("tcp://127.0.0.1:%d", s.lastReplicaPort)}
+	s.lastReplicaPort++
+
+	cfg.DataDir = filepath.Join(s.baseDir, cfg.Identifier)
+	os.Mkdir(filepath.Join(s.outDir, cfg.Identifier), 0700)
+
+	authorities := make([]*vConfig.Authority, 0, len(s.authorities))
+	i := 0
+	for _, auth := range s.authorities {
+		authorities = append(authorities, auth)
+		i += 1
+	}
+
+	sort.Sort(AuthById(authorities))
+	cfg.PKI = &rConfig.PKI{
+		Voting: &rConfig.Voting{
+			Authorities: authorities,
+		},
+	}
+
+	cfg.Logging = new(rConfig.Logging)
+	cfg.Logging.File = serverLogFile
+	cfg.Logging.Level = s.logLevel
+
+	s.replicaNodeConfigs = append(s.replicaNodeConfigs, cfg)
+	_ = cfgIdKey(cfg, s.outDir)
+	_ = cfgLinkKey(cfg, s.outDir, s.wireKEMScheme)
+
+	s.replicaNodeIdx++
+	return cfg.FixupAndValidate(false)
 }
 
 func (s *katzenpost) genNodeConfig(isGateway, isServiceNode bool, isVoting bool) error {
@@ -304,7 +393,6 @@ func (s *katzenpost) genNodeConfig(isGateway, isServiceNode bool, isVoting bool)
 		// Enable the thwack interface.
 		s.serviceNodeIdx++
 
-		// configure an entry provider or a spool storage provider
 		cfg.ServiceNode = &sConfig.ServiceNode{}
 		spoolCfg := &sConfig.CBORPluginKaetzchen{
 			Capability:     "spool",
@@ -317,6 +405,31 @@ func (s *katzenpost) genNodeConfig(isGateway, isServiceNode bool, isVoting bool)
 			},
 		}
 		cfg.ServiceNode.CBORPluginKaetzchen = []*sConfig.CBORPluginKaetzchen{spoolCfg}
+
+		// Courier service
+		courierName := fmt.Sprintf("%s_courier", cfg.Server.Identifier)
+		serviceNodeDataDir := filepath.Join(s.outDir, cfg.Server.Identifier)
+		courierDataDir := filepath.Join(serviceNodeDataDir, "courier")
+
+		absServiceNodeDataDir := "/" + s.outDir + "/" + cfg.Server.Identifier
+		courierCfg := s.genCourierConfig(absServiceNodeDataDir, courierName)
+		os.Mkdir(courierDataDir, 0700)
+		err := saveCfg(courierCfg, serviceNodeDataDir)
+		if err != nil {
+			return fmt.Errorf("failed to write courier config: %s", err)
+		}
+		advertizeableCourierCfgPath := s.baseDir + cfg.Server.Identifier + "/courier/courier.toml"
+		courierPluginCfg := &sConfig.CBORPluginKaetzchen{
+			Capability:     "courier",
+			Endpoint:       "courier",
+			Command:        s.baseDir + "/courier" + s.binSuffix,
+			MaxConcurrency: 1,
+			Config: map[string]interface{}{
+				"c": advertizeableCourierCfgPath,
+			},
+		}
+		cfg.ServiceNode.CBORPluginKaetzchen = []*sConfig.CBORPluginKaetzchen{courierPluginCfg}
+
 		if !s.hasPanda {
 			mapCfg := &sConfig.CBORPluginKaetzchen{
 				Capability:     "pigeonhole",
@@ -444,7 +557,16 @@ func (s *katzenpost) genVotingAuthoritiesCfg(numAuthorities int, parameters *vCo
 	return nil
 }
 
-func (s *katzenpost) genAuthorizedNodes() ([]*vConfig.Node, []*vConfig.Node, []*vConfig.Node, error) {
+func (s *katzenpost) genAuthorizedNodes() ([]*vConfig.Node, []*vConfig.Node, []*vConfig.Node, []*vConfig.Node, error) {
+	replicas := []*vConfig.Node{}
+	for _, replicaCfg := range s.replicaNodeConfigs {
+		node := &vConfig.Node{
+			Identifier:           replicaCfg.Identifier,
+			IdentityPublicKeyPem: filepath.Join("../", replicaCfg.Identifier, "identity.public.pem"),
+		}
+		replicas = append(replicas, node)
+	}
+
 	mixes := []*vConfig.Node{}
 	gateways := []*vConfig.Node{}
 	serviceNodes := []*vConfig.Node{}
@@ -461,11 +583,13 @@ func (s *katzenpost) genAuthorizedNodes() ([]*vConfig.Node, []*vConfig.Node, []*
 			mixes = append(mixes, node)
 		}
 	}
+
+	sort.Sort(NodeById(replicas))
 	sort.Sort(NodeById(mixes))
 	sort.Sort(NodeById(gateways))
 	sort.Sort(NodeById(serviceNodes))
 
-	return gateways, serviceNodes, mixes, nil
+	return replicas, gateways, serviceNodes, mixes, nil
 }
 
 func main() {
@@ -473,8 +597,9 @@ func main() {
 	nrLayers := flag.Int("L", nrLayers, "Number of layers.")
 	nrNodes := flag.Int("n", nrNodes, "Number of mixes.")
 
-	nrGateways := flag.Int("gateways", nrGateways, "Number of gateways.")
-	nrServiceNodes := flag.Int("serviceNodes", nrServiceNodes, "Number of providers.")
+	nrGateways := flag.Int("gateways", nrGateways, "Number of gateway nodes.")
+	nrServiceNodes := flag.Int("serviceNodes", nrServiceNodes, "Number of service nodes.")
+	nrStorageNodes := flag.Int("storageNodes", nrStorageNodes, "Number of storage replica nodes.")
 
 	voting := flag.Bool("v", false, "Generate voting configuration")
 	nrVoting := flag.Int("nv", nrAuthorities, "Generate voting configuration")
@@ -490,6 +615,7 @@ func main() {
 	kem := flag.String("kem", "", "Name of the KEM Scheme to be used with Sphinx")
 	nike := flag.String("nike", "x25519", "Name of the NIKE Scheme to be used with Sphinx")
 	ratchetNike := flag.String("ratchetNike", "CTIDH512-X25519", "Name of the NIKE Scheme to be used with the doubleratchet")
+	replicaNike := flag.String("replicaNike", "CTIDH1024-X25519", "Name of the NIKE Scheme to be used with the pigeonhole storage replicas")
 	UserForwardPayloadLength := flag.Int("UserForwardPayloadLength", 2000, "UserForwardPayloadLength")
 	pkiSignatureScheme := flag.String("pkiScheme", "ed25519", "PKI Signature Scheme to be used")
 	noDecoy := flag.Bool("noDecoy", true, "Disable decoy traffic for the client")
@@ -528,6 +654,10 @@ func main() {
 		log.Fatal("ratchetNike must be set")
 	}
 
+	if *replicaNike == "" {
+		log.Fatal("replicaNike must be set")
+	}
+
 	parameters := &vConfig.Parameters{
 		SendRatePerMinute: *sr,
 		Mu:                *mu,
@@ -557,6 +687,7 @@ func main() {
 	s.binSuffix = *binSuffix
 	s.basePort = uint16(*basePort)
 	s.lastPort = s.basePort + 1
+	s.lastReplicaPort = s.basePort + 3000
 	s.bindAddr = *bindAddr
 	s.logLevel = *logLevel
 	s.debugConfig = &cConfig.Debug{
@@ -601,6 +732,14 @@ func main() {
 		s.pkiSignatureScheme = signScheme
 	}
 
+	if *replicaNike != "" {
+		nikeScheme := schemes.ByName(*replicaNike)
+		if nikeScheme == nil {
+			log.Fatalf("failed to resolve replica nike scheme %s", *nike)
+		}
+		s.replicaNIKEScheme = nikeScheme
+	}
+
 	os.Mkdir(s.outDir, 0700)
 	os.Mkdir(filepath.Join(s.outDir, s.baseDir), 0700)
 
@@ -615,29 +754,41 @@ func main() {
 	// Generate the gateway configs.
 	for i := 0; i < *nrGateways; i++ {
 		if err = s.genNodeConfig(true, false, *voting); err != nil {
-			log.Fatalf("Failed to generate provider config: %v", err)
+			log.Fatalf("Failed to generate gateway config: %v", err)
 		}
 	}
 	// Generate the service node configs.
 	for i := 0; i < *nrServiceNodes; i++ {
 		if err = s.genNodeConfig(false, true, *voting); err != nil {
-			log.Fatalf("Failed to generate provider config: %v", err)
+			log.Fatalf("Failed to generate service node config: %v", err)
 		}
 	}
 
 	// Generate the mix node configs.
 	for i := 0; i < *nrNodes; i++ {
 		if err = s.genNodeConfig(false, false, *voting); err != nil {
-			log.Fatalf("Failed to generate node config: %v", err)
+			log.Fatalf("Failed to generate mix node config: %v", err)
 		}
 	}
+
+	// Pigeonhole storage replica node configs.
+	for i := 0; i < *nrStorageNodes; i++ {
+		if err = s.genReplicaNodeConfig(); err != nil {
+			log.Fatalf("Failed to generate storage replica node config: %v", err)
+		}
+	}
+
 	// Generate the authority config
 	if *voting {
-		gateways, serviceNodes, mixes, err := s.genAuthorizedNodes()
+		replicas, gateways, serviceNodes, mixes, err := s.genAuthorizedNodes()
 		if err != nil {
 			panic(err)
 		}
 		for _, vCfg := range s.votingAuthConfigs {
+
+			for _, k := range replicas {
+				vCfg.StorageReplicas = append(vCfg.StorageReplicas, k)
+			}
 			vCfg.Mixes = mixes
 			vCfg.GatewayNodes = gateways
 			vCfg.ServiceNodes = serviceNodes
@@ -667,6 +818,13 @@ func main() {
 		}
 	}
 
+	// replicas
+	for _, r := range s.replicaNodeConfigs {
+		if err := saveCfg(r, *outDir); err != nil {
+			log.Fatalf("saveCfg failure: %s", err)
+		}
+	}
+
 	err = s.genClientCfg()
 	if err != nil {
 		log.Fatalf("%s", err)
@@ -689,28 +847,40 @@ func main() {
 
 func identifier(cfg interface{}) string {
 	switch cfg.(type) {
+	case *thin.ThinConfig:
+		return "thinclient"
 	case *cConfig.Config:
 		return "client"
 	case *cConfig2.Config:
 		return "client2"
-	case *sConfig.Config:
-		return cfg.(*sConfig.Config).Server.Identifier
 	case *vConfig.Config:
 		return cfg.(*vConfig.Config).Server.Identifier
+	case *sConfig.Config:
+		return cfg.(*sConfig.Config).Server.Identifier
+	case *rConfig.Config:
+		return cfg.(*rConfig.Config).Identifier
+	case *courierConfig.Config:
+		return "courier"
 	default:
-		log.Fatalf("identifier() passed unexpected type")
+		log.Fatalf("identifier() passed unexpected type %v", cfg)
 		return ""
 	}
 }
 
 func toml_name(cfg interface{}) string {
 	switch cfg.(type) {
+	case *thin.ThinConfig:
+		return "thinclient"
 	case *cConfig.Config:
 		return "client"
 	case *cConfig2.Config:
 		return "client"
 	case *sConfig.Config:
 		return "katzenpost"
+	case *rConfig.Config:
+		return "replica"
+	case *courierConfig.Config:
+		return "courier"
 	case *vConfig.Config:
 		return "authority"
 	default:
@@ -737,6 +907,10 @@ func cfgIdKey(cfg interface{}, outDir string) sign.PublicKey {
 	var priv, public string
 	var pkiSignatureScheme string
 	switch cfg.(type) {
+	case *rConfig.Config:
+		priv = filepath.Join(outDir, cfg.(*rConfig.Config).Identifier, "identity.private.pem")
+		public = filepath.Join(outDir, cfg.(*rConfig.Config).Identifier, "identity.public.pem")
+		pkiSignatureScheme = cfg.(*rConfig.Config).PKISignatureScheme
 	case *sConfig.Config:
 		priv = filepath.Join(outDir, cfg.(*sConfig.Config).Server.Identifier, "identity.private.pem")
 		public = filepath.Join(outDir, cfg.(*sConfig.Config).Server.Identifier, "identity.public.pem")
@@ -771,6 +945,9 @@ func cfgLinkKey(cfg interface{}, outDir string, kemScheme string) kem.PublicKey 
 	var linkpublic string
 
 	switch cfg.(type) {
+	case *rConfig.Config:
+		linkpriv = filepath.Join(outDir, cfg.(*rConfig.Config).Identifier, "link.private.pem")
+		linkpublic = filepath.Join(outDir, cfg.(*rConfig.Config).Identifier, "link.public.pem")
 	case *sConfig.Config:
 		linkpriv = filepath.Join(outDir, cfg.(*sConfig.Config).Server.Identifier, "link.private.pem")
 		linkpublic = filepath.Join(outDir, cfg.(*sConfig.Config).Server.Identifier, "link.public.pem")
@@ -837,14 +1014,13 @@ func (s *katzenpost) genDockerCompose(dockerImage string) error {
 
 	defer f.Close()
 
-	gateways, serviceNodes, mixes, err := s.genAuthorizedNodes()
+	replicas, gateways, serviceNodes, mixes, err := s.genAuthorizedNodes()
 
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	write(f, `version: "2"
-
+	write(f, `
 services:
 `)
 	for _, p := range gateways {
@@ -902,6 +1078,30 @@ services:
       - %s`, authCfg.Server.Identifier)
 		}
 	}
+
+	// pigeonhole storage replicas
+	for i := range replicas {
+		// mixes in this form don't have their identifiers, because that isn't
+		// part of the consensus. if/when that is fixed this could use that
+		// identifier; instead it duplicates the definition of the name format
+		// here.
+		write(f, `
+  replica%d:
+    restart: "no"
+    image: %s
+    volumes:
+      - ./:%s
+    command: %s/replica%s -f %s/replica%d/replica.toml
+    network_mode: host
+    depends_on:`, i+1, dockerImage, s.baseDir, s.baseDir, s.binSuffix, s.baseDir, i+1)
+		for _, authCfg := range s.votingAuthConfigs {
+			// is this depends_on stuff actually necessary?
+			// there was a bit more of it before this function was regenerating docker-compose.yaml...
+			write(f, `
+      - %s`, authCfg.Server.Identifier)
+		}
+	}
+
 	for _, authCfg := range s.votingAuthConfigs {
 		write(f, `
   %s:

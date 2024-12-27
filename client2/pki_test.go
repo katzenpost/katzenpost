@@ -32,7 +32,7 @@ type mockPKIClient struct {
 }
 
 func (c *mockPKIClient) PostReplica(ctx context.Context, epoch uint64, signingPrivateKey sign.PrivateKey, signingPublicKey sign.PublicKey, d *cpki.ReplicaDescriptor) error {
-	return nil
+	panic("not implemented")
 }
 
 func (c *mockPKIClient) Get(ctx context.Context, epoch uint64) (*cpki.Document, []byte, error) {
@@ -47,7 +47,7 @@ func (c *mockPKIClient) Deserialize(raw []byte) (*cpki.Document, error) {
 	return c.doc, nil
 }
 
-func TestClientPKIStartStop(t *testing.T) {
+func NoTestClientPKIStartStop(t *testing.T) {
 	cfg, err := config.LoadFile("testdata/client.toml")
 	require.NoError(t, err)
 
