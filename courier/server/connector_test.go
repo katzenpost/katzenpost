@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -44,6 +45,7 @@ var (
 type document pki.Document
 
 type mockPKI struct {
+	lock             *sync.RWMutex
 	t                *testing.T
 	pkiScheme        sign.Scheme
 	linkScheme       kem.Scheme
@@ -78,6 +80,7 @@ func newMockPKI(t *testing.T,
 	geo *geo.Geometry) *mockPKI {
 
 	return &mockPKI{
+		lock:             new(sync.RWMutex),
 		t:                t,
 		docs:             make(map[uint64]*pki.Document),
 		pkiScheme:        pkiScheme,
@@ -217,6 +220,7 @@ loop:
 }
 
 func (m *mockPKI) generateReplicaDescriptors(t *testing.T, epoch uint64) (*pki.ReplicaDescriptor, *pki.ReplicaDescriptor) {
+	m.lock.Lock()
 	var err error
 
 	replica1name := "replica1"
@@ -274,6 +278,7 @@ func (m *mockPKI) generateReplicaDescriptors(t *testing.T, epoch uint64) (*pki.R
 		EnvelopeKeys: envelopeKeys2,
 		Addresses:    m.replica2Addresses,
 	}
+	m.lock.Unlock()
 	return desc1, desc2
 }
 
@@ -308,7 +313,9 @@ func (m *mockPKI) generateDocument(t *testing.T, numDirAuths, numMixNodes, numSt
 		PKISignatureScheme: m.pkiScheme.Name(),
 		Version:            pki.DocumentVersion,
 	}
+	m.lock.Lock()
 	m.docs[epoch] = doc
+	m.lock.Unlock()
 	return doc
 }
 
