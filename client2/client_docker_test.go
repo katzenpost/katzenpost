@@ -115,7 +115,7 @@ func sendAndWait(t *testing.T, client *thin.ThinClient, message []byte, nodeID *
 func testDockerMultiplexClients(t *testing.T) {
 	t.Parallel()
 
-	cfg, err := thin.LoadFile("testdata/thinclient.toml")
+	cfg, err := config.LoadFile("testdata/client.toml")
 	require.NoError(t, err)
 
 	thin1 := thin.NewThinClient(cfg)
@@ -164,7 +164,7 @@ func testDockerMultiplexClients(t *testing.T) {
 func testDockerClientARQSendReceive(t *testing.T) {
 	t.Parallel()
 
-	cfg, err := thin.LoadFile("testdata/thinclient.toml")
+	cfg, err := config.LoadFile("testdata/client.toml")
 	require.NoError(t, err)
 
 	thin := thin.NewThinClient(cfg)
@@ -237,7 +237,7 @@ func testDockerClientARQSendReceive(t *testing.T) {
 func testDockerClientSendReceive(t *testing.T) {
 	t.Parallel()
 
-	cfg, err := thin.LoadFile("testdata/thinclient.toml")
+	cfg, err := config.LoadFile("testdata/client.toml")
 	require.NoError(t, err)
 
 	thin := thin.NewThinClient(cfg)

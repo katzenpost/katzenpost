@@ -28,7 +28,6 @@ import (
 	vConfig "github.com/katzenpost/katzenpost/authority/voting/server/config"
 	cConfig "github.com/katzenpost/katzenpost/client/config"
 	cConfig2 "github.com/katzenpost/katzenpost/client2/config"
-	"github.com/katzenpost/katzenpost/client2/thin"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	courierConfig "github.com/katzenpost/katzenpost/courier/server/config"
@@ -117,7 +116,7 @@ func (s *katzenpost) genClient2Cfg() error {
 	log.Print("genClient2Cfg begin")
 	os.Mkdir(filepath.Join(s.outDir, "client2"), 0700)
 	os.Mkdir(filepath.Join(s.outDir, "thinclient"), 0700)
-	thinCfg := new(thin.ThinConfig)
+
 	cfg := new(cConfig2.Config)
 
 	// abstract unix domain sockets only work on linux,
@@ -135,13 +134,6 @@ func (s *katzenpost) genClient2Cfg() error {
 
 	// Logging section.
 	cfg.Logging = &cConfig2.Logging{File: "", Level: "DEBUG"}
-
-	// Thin Client Config
-	thinCfg.Network = cfg.ListenNetwork
-	thinCfg.Address = cfg.ListenAddress
-	thinCfg.LoggingFile = cfg.Logging.File
-	thinCfg.LoggingLevel = cfg.Logging.Level
-	thinCfg.LoggingDisable = cfg.Logging.Disable
 
 	cfg.PKISignatureScheme = s.pkiSignatureScheme.Name()
 	cfg.WireKEMScheme = s.wireKEMScheme
@@ -186,12 +178,7 @@ func (s *katzenpost) genClient2Cfg() error {
 	cfg.PinnedGateways = &cConfig2.Gateways{
 		Gateways: gateways,
 	}
-	err := saveCfg(thinCfg, s.outDir)
-	if err != nil {
-		log.Printf("save thin client config failure %s", err.Error())
-		return err
-	}
-	err = saveCfg(cfg, s.outDir)
+	err := saveCfg(cfg, s.outDir)
 	if err != nil {
 		log.Printf("save client2 config failure %s", err.Error())
 		return err
@@ -848,8 +835,6 @@ func main() {
 
 func identifier(cfg interface{}) string {
 	switch cfg.(type) {
-	case *thin.ThinConfig:
-		return "thinclient"
 	case *cConfig.Config:
 		return "client"
 	case *cConfig2.Config:
@@ -870,8 +855,6 @@ func identifier(cfg interface{}) string {
 
 func toml_name(cfg interface{}) string {
 	switch cfg.(type) {
-	case *thin.ThinConfig:
-		return "thinclient"
 	case *cConfig.Config:
 		return "client"
 	case *cConfig2.Config:
