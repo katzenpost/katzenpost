@@ -71,8 +71,8 @@ func New(cfg *config.Config, pkiFactory func(*Server)) (*Server, error) {
 	}
 
 	// read our service node's link keys
-	linkPrivateKeyFile := filepath.Join(s.cfg.ServiceNodeDataDir, "link.private.pem")
-	linkPublicKeyFile := filepath.Join(s.cfg.ServiceNodeDataDir, "link.public.pem")
+	linkPrivateKeyFile := filepath.Join(s.cfg.DataDir, "link.private.pem")
+	linkPublicKeyFile := filepath.Join(s.cfg.DataDir, "link.public.pem")
 
 	scheme := schemes.ByName(cfg.WireKEMScheme)
 	if scheme == nil {

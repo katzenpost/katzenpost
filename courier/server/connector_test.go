@@ -368,9 +368,6 @@ func TestConnector(t *testing.T) {
 	datadir, err := os.MkdirTemp("", "courier_connector_test_datadir")
 	require.NoError(t, err)
 
-	serviceNodeDatadir, err := os.MkdirTemp("", "courier_connector_test_servicenode_datadir")
-	require.NoError(t, err)
-
 	mkemNikeScheme := schemes.ByName("x25519")
 	mkemScheme := mkem.NewScheme(mkemNikeScheme)
 
@@ -383,8 +380,8 @@ func TestConnector(t *testing.T) {
 	linkpubkey, linkprivkey, err := linkScheme.GenerateKeyPair()
 	require.NoError(t, err)
 
-	linkPrivateKeyFile := filepath.Join(serviceNodeDatadir, "link.private.pem")
-	linkPublicKeyFile := filepath.Join(serviceNodeDatadir, "link.public.pem")
+	linkPrivateKeyFile := filepath.Join(datadir, "link.private.pem")
+	linkPublicKeyFile := filepath.Join(datadir, "link.public.pem")
 	err = pemkem.PrivateKeyToFile(linkPrivateKeyFile, linkprivkey)
 	err = pemkem.PublicKeyToFile(linkPublicKeyFile, linkpubkey)
 
@@ -417,13 +414,12 @@ func TestConnector(t *testing.T) {
 			File:    "",
 			Level:   "DEBUG",
 		},
-		WireKEMScheme:      WireKEMSchemeName,
-		DataDir:            datadir,
-		ServiceNodeDataDir: serviceNodeDatadir,
-		SphinxGeometry:     g,
-		ConnectTimeout:     config.DefaultConnectTimeout,
-		HandshakeTimeout:   config.DefaultHandshakeTimeout,
-		ReauthInterval:     config.DefaultReauthInterval,
+		WireKEMScheme:    WireKEMSchemeName,
+		DataDir:          datadir,
+		SphinxGeometry:   g,
+		ConnectTimeout:   config.DefaultConnectTimeout,
+		HandshakeTimeout: config.DefaultHandshakeTimeout,
+		ReauthInterval:   config.DefaultReauthInterval,
 	}
 
 	m := newMockPKI(t, pkiScheme, linkScheme, mkemNikeScheme, nikeScheme, g)
