@@ -156,34 +156,33 @@ func (p *PKIWorker) updateReplicas(doc *pki.Document) {
 }
 
 func (p *PKIWorker) AuthenticateCourierConnection(c *wire.PeerCredentials) bool {
-	if len(c.AdditionalData) != sConstants.NodeIDLength {
-		p.log.Debugf("AuthenticateConnection: '%x' AD not an IdentityKey?.", c.AdditionalData)
+	const keyEndpoint = "endpoint"
+	if len(c.AdditionalData) != 0 {
+		p.log.Debugf("AuthenticateConnection: '%x' AD should be zero bytes.", c.AdditionalData)
 		return false
 	}
-	var nodeID [sConstants.NodeIDLength]byte
-	copy(nodeID[:], c.AdditionalData)
-
 	epoch, _, _ := epochtime.Now()
 	doc := p.entryForEpoch(epoch)
 	if doc == nil {
 		p.log.Error("PKI doc is nil")
 		return false
 	}
-
-	serviceDesc, err := doc.GetServiceNodeByKeyHash(&nodeID)
-	if err != nil {
-		p.log.Error("courier service not found")
-		return false
+	isCourier := false
+	for _, desc := range doc.ServiceNodes {
+		if desc.Kaetzchen == nil {
+			continue
+		}
+		rawLinkPubKey := desc.GetRawCourierLinkKey()
+		linkScheme := schemes.ByName(p.server.cfg.PKISignatureScheme)
+		linkPubKey, err := linkScheme.UnmarshalBinaryPublicKey(rawLinkPubKey)
+		if err != nil {
+			p.log.Errorf("AuthenticateCourierConnection failed to unmarshal courier link key: %s", err)
+		}
+		if c.PublicKey.Equal(linkPubKey) {
+			isCourier = true
+		}
 	}
-	blob, err := c.PublicKey.MarshalBinary()
-	if err != nil {
-		panic(err)
-	}
-	// XXX TODO(david): perhaps check that it has a courier service
-	if !hmac.Equal(serviceDesc.LinkKey, blob) {
-		return false
-	}
-	return true
+	return isCourier
 }
 
 func (p *PKIWorker) AuthenticateReplicaConnection(c *wire.PeerCredentials) (*pki.ReplicaDescriptor, bool) {

@@ -123,6 +123,12 @@ type MixDescriptor struct {
 	// to parameters.
 	Kaetzchen map[string]map[string]interface{} `cbor:"omitempty"`
 
+	// KaetzchenAdvertizedData is used by the operator to advertize
+	// additional information about specific services. This is different
+	// from the above Kaetzchen map in that these keys will never be
+	// modified or passed over commandline to the plugin.
+	KaetzchenAdvertizedData map[string]map[string]interface{} `cbor:"omitempty"`
+
 	// IsGatewayNode indicates that this Mix is a gateway node.
 	// Essentially a gateway allows clients to interact with the mixnet.
 	// This option being set to true is mutually exclusive with
@@ -182,6 +188,14 @@ func (d *MixDescriptor) UnmarshalBinary(data []byte) error {
 // MarshalBinary implmements encoding.BinaryMarshaler
 func (d *MixDescriptor) MarshalBinary() ([]byte, error) {
 	return ccbor.Marshal((*mixdescriptor)(d))
+}
+
+func (d *MixDescriptor) GetRawCourierLinkKey() []byte {
+	v, ok := d.KaetzchenAdvertizedData["courier"]["linkPublicKey"].([]byte)
+	if !ok {
+		panic("malformed KaetzchenAdvertizedData in MixDescriptor")
+	}
+	return v
 }
 
 // IsDescriptorWellFormed validates the descriptor and returns a descriptive

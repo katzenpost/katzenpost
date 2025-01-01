@@ -47,7 +47,7 @@ func (p *serviceNode) OnPacket(pkt *packet.Packet) {
 	p.ch <- pkt
 }
 
-func (p *serviceNode) KaetzchenForPKI() (map[string]map[string]interface{}, error) {
+func (p *serviceNode) KaetzchenForPKI() (map[string]map[string]interface{}, map[string]map[string]interface{}, error) {
 	map1 := p.kaetzchenWorker.KaetzchenForPKI()
 	map2 := p.cborPluginKaetzchenWorker.KaetzchenForPKI()
 
@@ -68,7 +68,13 @@ func (p *serviceNode) KaetzchenForPKI() (map[string]map[string]interface{}, erro
 		}
 	}
 
-	return merged, nil
+	kaetzchenAdvertizedData := make(map[string]map[string]interface{})
+	cfg := p.glue.Config()
+	for _, v := range cfg.ServiceNode.CBORPluginKaetzchen {
+		kaetzchenAdvertizedData[v.Endpoint] = v.PKIAdvertizedData
+	}
+
+	return kaetzchenAdvertizedData, merged, nil
 }
 
 func (p *serviceNode) worker() {

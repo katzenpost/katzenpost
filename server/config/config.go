@@ -483,6 +483,11 @@ type CBORPluginKaetzchen struct {
 	// address.
 	Endpoint string
 
+	// PKIAdvertizedData is data that is specific to a given service and
+	// should be advertized in the PKI doc along with the other service
+	// information in the `KaetzchenAdvertizedData` field of the descriptor.
+	PKIAdvertizedData map[string]interface{}
+
 	// Config contains optional per plugin arguments. They are transposed
 	// into commandline arguments to be passed to the plugin executable binary.
 	// Each map key must not begin with "-" and a "-" will be prepended to each key.

@@ -9,10 +9,51 @@ version: 1
 
 **Abstract**
 
-This document describes the design details of the Pigeohole storage replica.
+This document describes the design details of the Pigeohole storage replica
+and it's associated Courier service.
 
 
-## Design
+## Courier Service Design
+
+The Courier service will be like any other Katzenpost mixnet service; a given Courier service
+will be associated with a Service node. This Service node receives mixnet queries and forwards
+appropriate queries to the Courier service over a Unix domain socket as detailed in our
+**"Provider-side Autoresponder Extension"** specification document.
+
+However the Courier service differs from all the other mixnet services we've created
+to date in that each Courier Service must make it's own PQ Noise connections to the Storage Replicas.
+The Storage Replicas need to be able to look up all the Courier services from the PKI document and 
+gather the Courier service's public link keys so that they can authenticate the Courier Service's
+connections to the replicas.
+
+There are several ways to accomplish this. However we've chosen an approach that doesn't allow
+the Courier Services to upload their own descriptors to the dirauths, this would be more work 
+and too much deviation from how we normally setup mixnet services. Instead, the Courier Service
+operator must use a CLI tool to generate the Courier Service link keys and place them in that
+Courier Service's data directory. Next, the operator must configure the Courier Service so that
+it can find it's own configuration file:
+
+```golang
+CBORPluginKaetzchen{
+			Capability:     "courier",
+			Endpoint:       "courier",
+			Command:        s.baseDir + "/courier" + s.binSuffix,
+			MaxConcurrency: 1,
+			Config: map[string]interface{}{
+				"c": advertizeableCourierCfgPath,
+			},
+}
+```
+
+Doing it this way means that the Courier Service will NOT be able to programmatically
+update it's PQ Noise link key pair. If that's a feature we later decide that we must
+have then at that time we can make the necessary diruath feature additions to accomodate
+Courier Identity keys and everything that implies.
+
+
+
+
+## Storage Replica Design
 
 Like all Katzenpost components we will implement the Pigeonhole replicas in golang.
 However Boltdb is not ideal for the persistent storage, we instead select [Rocks DB](https://rocksdb.org/).
