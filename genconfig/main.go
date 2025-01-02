@@ -412,7 +412,7 @@ func (s *katzenpost) genNodeConfig(isGateway, isServiceNode bool, isVoting bool)
 		advert := make(map[string]map[string]interface{})
 		advert["courier"] = make(map[string]interface{})
 		advert["courier"]["linkPublicKey"] = linkBlob
-		courierPluginCfg := &sConfig.CBORPluginKaetzchen{
+		_ = &sConfig.CBORPluginKaetzchen{
 			Capability:        "courier",
 			Endpoint:          "courier",
 			Command:           s.baseDir + "/courier" + s.binSuffix,
@@ -456,7 +456,8 @@ func (s *katzenpost) genNodeConfig(isGateway, isServiceNode bool, isVoting bool)
 			},
 		}
 
-		cfg.ServiceNode.CBORPluginKaetzchen = []*sConfig.CBORPluginKaetzchen{courierPluginCfg, spoolCfg, mapCfg, pandaCfg, proxyCfg}
+		//cfg.ServiceNode.CBORPluginKaetzchen = []*sConfig.CBORPluginKaetzchen{courierPluginCfg, spoolCfg, mapCfg, pandaCfg, proxyCfg}
+		cfg.ServiceNode.CBORPluginKaetzchen = []*sConfig.CBORPluginKaetzchen{spoolCfg, mapCfg, pandaCfg, proxyCfg}
 
 		cfg.Debug.NumKaetzchenWorkers = 4
 
