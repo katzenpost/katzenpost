@@ -74,8 +74,6 @@ type katzenpost struct {
 	clientIdx       int
 	gatewayIdx      int
 	serviceNodeIdx  int
-	hasPanda        bool
-	hasProxy        bool
 	noMixDecoy      bool
 	debugConfig     *cConfig.Debug
 }
@@ -424,56 +422,43 @@ func (s *katzenpost) genNodeConfig(isGateway, isServiceNode bool, isVoting bool)
 				"c": advertizeableCourierCfgPath,
 			},
 		}
-		cfg.ServiceNode.CBORPluginKaetzchen = []*sConfig.CBORPluginKaetzchen{courierPluginCfg}
-
-		if !s.hasPanda {
-			mapCfg := &sConfig.CBORPluginKaetzchen{
-				Capability:     "pigeonhole",
-				Endpoint:       "+pigeonhole",
-				Command:        s.baseDir + "/pigeonhole" + s.binSuffix,
-				MaxConcurrency: 1,
-				Config: map[string]interface{}{
-					"db":      s.baseDir + "/" + cfg.Server.Identifier + "/map.storage",
-					"log_dir": s.baseDir + "/" + cfg.Server.Identifier,
-				},
-			}
-
-			cfg.ServiceNode.CBORPluginKaetzchen = []*sConfig.CBORPluginKaetzchen{spoolCfg, mapCfg}
-			if !s.hasPanda {
-				pandaCfg := &sConfig.CBORPluginKaetzchen{
-					Capability:     "panda",
-					Endpoint:       "+panda",
-					Command:        s.baseDir + "/panda_server" + s.binSuffix,
-					MaxConcurrency: 1,
-					Config: map[string]interface{}{
-						"fileStore": s.baseDir + "/" + cfg.Server.Identifier + "/panda.storage",
-						"log_dir":   s.baseDir + "/" + cfg.Server.Identifier,
-						"log_level": s.logLevel,
-					},
-				}
-				cfg.ServiceNode.CBORPluginKaetzchen = append(cfg.ServiceNode.CBORPluginKaetzchen, pandaCfg)
-				s.hasPanda = true
-			}
-
-			// Add a single instance of a http proxy for a service listening on port 4242
-			if !s.hasProxy {
-				proxyCfg := &sConfig.CBORPluginKaetzchen{
-					Capability:     "http",
-					Endpoint:       "+http",
-					Command:        s.baseDir + "/proxy_server" + s.binSuffix,
-					MaxConcurrency: 1,
-					Config: map[string]interface{}{
-						// allow connections to localhost:4242
-						"host":      "localhost:4242",
-						"log_dir":   s.baseDir + "/" + cfg.Server.Identifier,
-						"log_level": "DEBUG",
-					},
-				}
-				cfg.ServiceNode.CBORPluginKaetzchen = append(cfg.ServiceNode.CBORPluginKaetzchen, proxyCfg)
-				s.hasProxy = true
-			}
-			cfg.Debug.NumKaetzchenWorkers = 4
+		mapCfg := &sConfig.CBORPluginKaetzchen{
+			Capability:     "pigeonhole",
+			Endpoint:       "+pigeonhole",
+			Command:        s.baseDir + "/pigeonhole" + s.binSuffix,
+			MaxConcurrency: 1,
+			Config: map[string]interface{}{
+				"db":      s.baseDir + "/" + cfg.Server.Identifier + "/map.storage",
+				"log_dir": s.baseDir + "/" + cfg.Server.Identifier,
+			},
 		}
+		pandaCfg := &sConfig.CBORPluginKaetzchen{
+			Capability:     "panda",
+			Endpoint:       "+panda",
+			Command:        s.baseDir + "/panda_server" + s.binSuffix,
+			MaxConcurrency: 1,
+			Config: map[string]interface{}{
+				"fileStore": s.baseDir + "/" + cfg.Server.Identifier + "/panda.storage",
+				"log_dir":   s.baseDir + "/" + cfg.Server.Identifier,
+				"log_level": s.logLevel,
+			},
+		}
+		proxyCfg := &sConfig.CBORPluginKaetzchen{
+			Capability:     "http",
+			Endpoint:       "+http",
+			Command:        s.baseDir + "/proxy_server" + s.binSuffix,
+			MaxConcurrency: 1,
+			Config: map[string]interface{}{
+				// allow connections to localhost:4242
+				"host":      "localhost:4242",
+				"log_dir":   s.baseDir + "/" + cfg.Server.Identifier,
+				"log_level": "DEBUG",
+			},
+		}
+
+		cfg.ServiceNode.CBORPluginKaetzchen = []*sConfig.CBORPluginKaetzchen{courierPluginCfg, spoolCfg, mapCfg, pandaCfg, proxyCfg}
+
+		cfg.Debug.NumKaetzchenWorkers = 4
 
 		echoCfg := new(sConfig.Kaetzchen)
 		echoCfg.Capability = "echo"
