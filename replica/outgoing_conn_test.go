@@ -23,6 +23,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
+	"github.com/katzenpost/katzenpost/replica/common"
 	"github.com/katzenpost/katzenpost/replica/config"
 )
 
@@ -86,7 +87,7 @@ func TestOutgoingConn(t *testing.T) {
 		identityPublicKey: pk,
 		cfg:               cfg,
 		pkiWorker: &PKIWorker{
-			replicas:      newReplicaMap(),
+			replicas:      common.NewReplicaMap(),
 			lock:          new(sync.RWMutex),
 			docs:          make(map[uint64]*pki.Document),
 			rawDocs:       make(map[uint64][]byte),

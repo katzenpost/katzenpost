@@ -13,6 +13,7 @@ import (
 	"golang.org/x/crypto/blake2b"
 	"gopkg.in/op/go-logging.v1"
 
+	"github.com/katzenpost/hpqc/kem/pem"
 	"github.com/katzenpost/hpqc/kem/schemes"
 
 	vClient "github.com/katzenpost/katzenpost/authority/voting/client"
@@ -172,9 +173,13 @@ func (p *PKIWorker) AuthenticateCourierConnection(c *wire.PeerCredentials) bool 
 		if desc.Kaetzchen == nil {
 			continue
 		}
-		rawLinkPubKey := desc.GetRawCourierLinkKey()
-		linkScheme := schemes.ByName(p.server.cfg.PKISignatureScheme)
-		linkPubKey, err := linkScheme.UnmarshalBinaryPublicKey(rawLinkPubKey)
+		rawLinkPubKey, err := desc.GetRawCourierLinkKey()
+		if err != nil {
+			p.log.Errorf("desc.GetRawCourierLinkKey() failure: %s", err)
+			return false
+		}
+		linkScheme := schemes.ByName(p.server.cfg.WireKEMScheme)
+		linkPubKey, err := pem.FromPublicPEMString(rawLinkPubKey, linkScheme)
 		if err != nil {
 			p.log.Errorf("AuthenticateCourierConnection failed to unmarshal courier link key: %s", err)
 		}

@@ -190,12 +190,20 @@ func (d *MixDescriptor) MarshalBinary() ([]byte, error) {
 	return ccbor.Marshal((*mixdescriptor)(d))
 }
 
-func (d *MixDescriptor) GetRawCourierLinkKey() []byte {
-	v, ok := d.KaetzchenAdvertizedData["courier"]["linkPublicKey"].([]byte)
+func (d *MixDescriptor) GetRawCourierLinkKey() (string, error) {
+	courierData, ok := d.KaetzchenAdvertizedData["courier"]
 	if !ok {
-		panic("malformed KaetzchenAdvertizedData in MixDescriptor")
+		return "", errors.New("KaetzchenAdvertizedData does not have an entry for 'courier'")
 	}
-	return v
+	linkPubKey, ok := courierData["linkPublicKey"]
+	if !ok {
+		return "", errors.New("courier data does not have an entry for linkPublicKey")
+	}
+	ret, ok := linkPubKey.(string)
+	if !ok {
+		return "", errors.New("cannot type cast courier linkPubKey into string")
+	}
+	return ret, nil
 }
 
 // IsDescriptorWellFormed validates the descriptor and returns a descriptive

@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/katzenpost/hpqc/hash"
+	kempem "github.com/katzenpost/hpqc/kem/pem"
 	kemschemes "github.com/katzenpost/hpqc/kem/schemes"
 	nikeschemes "github.com/katzenpost/hpqc/nike/schemes"
 	"github.com/katzenpost/hpqc/rand"
@@ -20,11 +21,12 @@ import (
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
+	"github.com/katzenpost/katzenpost/replica/common"
 	"github.com/katzenpost/katzenpost/replica/config"
 )
 
 func TestReplicaMap(t *testing.T) {
-	r := NewReplicaMap()
+	r := common.NewReplicaMap()
 	newMap := make(map[[32]byte]*pki.ReplicaDescriptor)
 	replica := &pki.ReplicaDescriptor{
 		Name: "replica1",
@@ -88,31 +90,39 @@ func TestAuthenticateCourierConnection(t *testing.T) {
 	s, err := New(cfg)
 	require.NoError(t, err)
 
-	ad := make([]byte, sConstants.NodeIDLength)
 	idpubkeyblob, err := idpubkey.MarshalBinary()
 	require.NoError(t, err)
+
+	libpubkeypem := kempem.ToPublicPEMString(linkpubkey)
 
 	libpubkeyblob, err := linkpubkey.MarshalBinary()
 	require.NoError(t, err)
 
-	id := hash.Sum256From(idpubkey)
-	copy(ad, id[:])
-
 	creds := &wire.PeerCredentials{
-		AdditionalData: ad,
+		AdditionalData: []byte{},
 		PublicKey:      linkpubkey,
 	}
 
 	epoch, _, _ := epochtime.Now()
 	s.pkiWorker.lock.Lock()
+
+	advertMap := make(map[string]map[string]interface{})
+	advertMap["courier"] = make(map[string]interface{})
+	advertMap["courier"]["linkPublicKey"] = libpubkeypem
+
+	kaetzchen := make(map[string]map[string]interface{})
+	kaetzchen["courier"] = make(map[string]interface{})
+
 	s.pkiWorker.docs[epoch] = &pki.Document{
 		Epoch: epoch,
 		ServiceNodes: []*pki.MixDescriptor{
 			&pki.MixDescriptor{
-				Name:        "servicenode1",
-				Epoch:       epoch,
-				IdentityKey: idpubkeyblob,
-				LinkKey:     libpubkeyblob,
+				Name:                    "servicenode1",
+				Epoch:                   epoch,
+				IdentityKey:             idpubkeyblob,
+				LinkKey:                 libpubkeyblob,
+				Kaetzchen:               kaetzchen,
+				KaetzchenAdvertizedData: advertMap,
 			},
 		},
 	}
@@ -376,4 +386,6 @@ func TestPruneDocuments(t *testing.T) {
 	s.pkiWorker.lock.Lock()
 	require.Zero(t, len(s.pkiWorker.docs))
 	s.pkiWorker.lock.Unlock()
+
+	s.Shutdown()
 }

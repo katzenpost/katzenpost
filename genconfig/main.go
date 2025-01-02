@@ -232,7 +232,7 @@ func write(f *os.File, str string, args ...interface{}) {
 	}
 }
 
-func (s *katzenpost) genCourierConfig(serviceNodeDataDir, identifier string) *courierConfig.Config {
+func (s *katzenpost) genCourierConfig(identifier string) *courierConfig.Config {
 	authorities := make([]*vConfig.Authority, 0, len(s.authorities))
 	i := 0
 	for _, auth := range s.authorities {
@@ -249,15 +249,14 @@ func (s *katzenpost) genCourierConfig(serviceNodeDataDir, identifier string) *co
 	const logFile = "courier.log"
 	logPath := filepath.Join(datadir, logFile)
 	return &courierConfig.Config{
-		PKI:                pki,
-		Logging:            &courierConfig.Logging{File: logPath, Level: "DEBUG"},
-		WireKEMScheme:      s.wireKEMScheme,
-		DataDir:            datadir,
-		ServiceNodeDataDir: serviceNodeDataDir,
-		SphinxGeometry:     s.sphinxGeometry,
-		ConnectTimeout:     courierConfig.DefaultConnectTimeout,
-		HandshakeTimeout:   courierConfig.DefaultHandshakeTimeout,
-		ReauthInterval:     courierConfig.DefaultReauthInterval,
+		PKI:              pki,
+		Logging:          &courierConfig.Logging{File: logPath, Level: "DEBUG"},
+		WireKEMScheme:    s.wireKEMScheme,
+		DataDir:          datadir,
+		SphinxGeometry:   s.sphinxGeometry,
+		ConnectTimeout:   courierConfig.DefaultConnectTimeout,
+		HandshakeTimeout: courierConfig.DefaultHandshakeTimeout,
+		ReauthInterval:   courierConfig.DefaultReauthInterval,
 	}
 }
 
@@ -399,19 +398,28 @@ func (s *katzenpost) genNodeConfig(isGateway, isServiceNode bool, isVoting bool)
 		serviceNodeDataDir := filepath.Join(s.outDir, cfg.Server.Identifier)
 		courierDataDir := filepath.Join(serviceNodeDataDir, "courier")
 
-		absServiceNodeDataDir := "/" + s.outDir + "/" + cfg.Server.Identifier
-		courierCfg := s.genCourierConfig(absServiceNodeDataDir, courierName)
+		courierCfg := s.genCourierConfig(courierName)
 		os.Mkdir(courierDataDir, 0700)
-		err := saveCfg(courierCfg, serviceNodeDataDir)
+		linkPubKey := cfgLinkKey(courierCfg, courierDataDir, courierCfg.WireKEMScheme)
+		linkBlob, err := linkPubKey.MarshalBinary()
+		if err != nil {
+			panic(err)
+		}
+
+		err = saveCfg(courierCfg, serviceNodeDataDir)
 		if err != nil {
 			return fmt.Errorf("failed to write courier config: %s", err)
 		}
 		advertizeableCourierCfgPath := s.baseDir + cfg.Server.Identifier + "/courier/courier.toml"
+		advert := make(map[string]map[string]interface{})
+		advert["courier"] = make(map[string]interface{})
+		advert["courier"]["linkPublicKey"] = linkBlob
 		courierPluginCfg := &sConfig.CBORPluginKaetzchen{
-			Capability:     "courier",
-			Endpoint:       "courier",
-			Command:        s.baseDir + "/courier" + s.binSuffix,
-			MaxConcurrency: 1,
+			Capability:        "courier",
+			Endpoint:          "courier",
+			Command:           s.baseDir + "/courier" + s.binSuffix,
+			MaxConcurrency:    1,
+			PKIAdvertizedData: advert,
 			Config: map[string]interface{}{
 				"c": advertizeableCourierCfgPath,
 			},
@@ -938,6 +946,9 @@ func cfgLinkKey(cfg interface{}, outDir string, kemScheme string) kem.PublicKey 
 	case *vConfig.Config:
 		linkpriv = filepath.Join(outDir, cfg.(*vConfig.Config).Server.Identifier, "link.private.pem")
 		linkpublic = filepath.Join(outDir, cfg.(*vConfig.Config).Server.Identifier, "link.public.pem")
+	case *courierConfig.Config:
+		linkpriv = filepath.Join(outDir, "link.private.pem")
+		linkpublic = filepath.Join(outDir, "link.public.pem")
 	default:
 		panic("wrong type")
 	}

@@ -138,7 +138,7 @@ func TestGetRemoteShards(t *testing.T) {
 		identityPublicKey: pk,
 		cfg:               cfg,
 		pkiWorker: &PKIWorker{
-			replicas:      newReplicaMap(),
+			replicas:      common.NewReplicaMap(),
 			lock:          new(sync.RWMutex),
 			docs:          make(map[uint64]*pki.Document),
 			rawDocs:       make(map[uint64][]byte),
@@ -163,7 +163,7 @@ func TestGetRemoteShards(t *testing.T) {
 		StorageReplicas: replicas,
 	}
 	s.pkiWorker.lock.Lock()
-	s.pkiWorker.replicas = newReplicaMap()
+	s.pkiWorker.replicas = common.NewReplicaMap()
 	s.pkiWorker.docs[epoch] = doc
 	s.pkiWorker.lock.Unlock()
 
