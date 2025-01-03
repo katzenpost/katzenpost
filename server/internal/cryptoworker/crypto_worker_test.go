@@ -164,8 +164,8 @@ func (s *mockService) OnPacket(*packet.Packet) {
 	s.count++
 }
 
-func (s *mockService) KaetzchenForPKI() (map[string]map[string]interface{}, error) {
-	return nil, nil
+func (s *mockService) KaetzchenForPKI() (map[string]map[string]interface{}, map[string]map[string]interface{}, error) {
+	return nil, nil, nil
 }
 
 type mockGateway struct {
