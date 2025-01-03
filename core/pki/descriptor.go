@@ -123,6 +123,12 @@ type MixDescriptor struct {
 	// to parameters.
 	Kaetzchen map[string]map[string]interface{} `cbor:"omitempty"`
 
+	// KaetzchenAdvertizedData is used by the operator to advertize
+	// additional information about specific services. This is different
+	// from the above Kaetzchen map in that these keys will never be
+	// modified or passed over commandline to the plugin.
+	KaetzchenAdvertizedData map[string]map[string]interface{} `cbor:"omitempty"`
+
 	// IsGatewayNode indicates that this Mix is a gateway node.
 	// Essentially a gateway allows clients to interact with the mixnet.
 	// This option being set to true is mutually exclusive with
