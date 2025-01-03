@@ -399,12 +399,9 @@ func (s *katzenpost) genNodeConfig(isGateway, isServiceNode bool, isVoting bool)
 		courierCfg := s.genCourierConfig(courierName)
 		os.Mkdir(courierDataDir, 0700)
 		linkPubKey := cfgLinkKey(courierCfg, courierDataDir, courierCfg.WireKEMScheme)
-		linkBlob, err := linkPubKey.MarshalBinary()
-		if err != nil {
-			panic(err)
-		}
+		linkBlob := kempem.ToPublicPEMString(linkPubKey)
 
-		err = saveCfg(courierCfg, serviceNodeDataDir)
+		err := saveCfg(courierCfg, serviceNodeDataDir)
 		if err != nil {
 			return fmt.Errorf("failed to write courier config: %s", err)
 		}
@@ -412,7 +409,7 @@ func (s *katzenpost) genNodeConfig(isGateway, isServiceNode bool, isVoting bool)
 		advert := make(map[string]map[string]interface{})
 		advert["courier"] = make(map[string]interface{})
 		advert["courier"]["linkPublicKey"] = linkBlob
-		_ = &sConfig.CBORPluginKaetzchen{
+		courierPluginCfg := &sConfig.CBORPluginKaetzchen{
 			Capability:        "courier",
 			Endpoint:          "courier",
 			Command:           s.baseDir + "/courier" + s.binSuffix,
@@ -456,8 +453,7 @@ func (s *katzenpost) genNodeConfig(isGateway, isServiceNode bool, isVoting bool)
 			},
 		}
 
-		//cfg.ServiceNode.CBORPluginKaetzchen = []*sConfig.CBORPluginKaetzchen{courierPluginCfg, spoolCfg, mapCfg, pandaCfg, proxyCfg}
-		cfg.ServiceNode.CBORPluginKaetzchen = []*sConfig.CBORPluginKaetzchen{spoolCfg, mapCfg, pandaCfg, proxyCfg}
+		cfg.ServiceNode.CBORPluginKaetzchen = []*sConfig.CBORPluginKaetzchen{courierPluginCfg, spoolCfg, mapCfg, pandaCfg, proxyCfg}
 
 		cfg.Debug.NumKaetzchenWorkers = 4
 
