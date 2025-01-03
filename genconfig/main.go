@@ -230,7 +230,7 @@ func write(f *os.File, str string, args ...interface{}) {
 	}
 }
 
-func (s *katzenpost) genCourierConfig(identifier string) *courierConfig.Config {
+func (s *katzenpost) genCourierConfig(datadir string) *courierConfig.Config {
 	authorities := make([]*vConfig.Authority, 0, len(s.authorities))
 	i := 0
 	for _, auth := range s.authorities {
@@ -243,7 +243,6 @@ func (s *katzenpost) genCourierConfig(identifier string) *courierConfig.Config {
 			Authorities: authorities,
 		},
 	}
-	datadir := filepath.Join(s.baseDir, identifier)
 	const logFile = "courier.log"
 	logPath := filepath.Join(datadir, logFile)
 	return &courierConfig.Config{
@@ -391,13 +390,13 @@ func (s *katzenpost) genNodeConfig(isGateway, isServiceNode bool, isVoting bool)
 		}
 		cfg.ServiceNode.CBORPluginKaetzchen = []*sConfig.CBORPluginKaetzchen{spoolCfg}
 
-		// Courier service
-		courierName := fmt.Sprintf("%s_courier", cfg.Server.Identifier)
 		serviceNodeDataDir := filepath.Join(s.outDir, cfg.Server.Identifier)
 		courierDataDir := filepath.Join(serviceNodeDataDir, "courier")
-
-		courierCfg := s.genCourierConfig(courierName)
 		os.Mkdir(courierDataDir, 0700)
+
+		internalCourierDatadir := filepath.Join(s.baseDir, cfg.Server.Identifier, "courier")
+		courierCfg := s.genCourierConfig(internalCourierDatadir)
+
 		linkPubKey := cfgLinkKey(courierCfg, courierDataDir, courierCfg.WireKEMScheme)
 		linkBlob := kempem.ToPublicPEMString(linkPubKey)
 
