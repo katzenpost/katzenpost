@@ -71,8 +71,15 @@ func (p *serviceNode) KaetzchenForPKI() (map[string]map[string]interface{}, map[
 	kaetzchenAdvertizedData := make(map[string]map[string]interface{})
 	cfg := p.glue.Config()
 	for _, v := range cfg.ServiceNode.CBORPluginKaetzchen {
-		kaetzchenAdvertizedData[v.Capability] = v.PKIAdvertizedData[v.Capability]
+		if v.PKIAdvertizedData != nil {
+			_, ok := v.PKIAdvertizedData[v.Capability]
+			if ok {
+				kaetzchenAdvertizedData[v.Capability] = v.PKIAdvertizedData[v.Capability]
+			}
+		}
 	}
+
+	p.log.Infof("kaetzchenAdvertizedData %v", kaetzchenAdvertizedData)
 
 	return kaetzchenAdvertizedData, merged, nil
 }
