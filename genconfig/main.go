@@ -404,7 +404,7 @@ func (s *katzenpost) genNodeConfig(isGateway, isServiceNode bool, isVoting bool)
 		if err != nil {
 			return fmt.Errorf("failed to write courier config: %s", err)
 		}
-		advertizeableCourierCfgPath := s.baseDir + cfg.Server.Identifier + "/courier/courier.toml"
+		advertizeableCourierCfgPath := s.baseDir + "/" + cfg.Server.Identifier + "/courier/courier.toml"
 		advert := make(map[string]map[string]interface{})
 		advert["courier"] = make(map[string]interface{})
 		advert["courier"]["linkPublicKey"] = linkBlob
