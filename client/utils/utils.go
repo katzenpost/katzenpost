@@ -17,8 +17,6 @@
 package utils
 
 import (
-	"fmt"
-
 	"github.com/katzenpost/katzenpost/core/pki"
 )
 
@@ -35,31 +33,18 @@ func FindServices(capability string, doc *pki.Document) []ServiceDescriptor {
 	if doc == nil {
 		panic("pki doc is nil")
 	}
-
-	fmt.Printf("FindServices: capability -> %s\n", capability)
-	fmt.Printf("PKI DOC: %s\n", doc.String())
-	fmt.Println("AFTER printing PKI doc")
-	fmt.Printf("num service nodes %d\n", len(doc.ServiceNodes))
-
 	services := []ServiceDescriptor{}
 	for _, provider := range doc.ServiceNodes {
-		fmt.Println("meOW")
 		if provider == nil {
 			panic("provider is nil")
 		}
-		fmt.Printf("service node %s\n", provider.Name)
-		fmt.Printf("number of services on service node: %d", len(provider.Kaetzchen))
 		for cap := range provider.Kaetzchen {
-			fmt.Printf("comparing caps %s and %s\n", cap, capability)
 			if cap == capability {
-				fmt.Println("equal")
 				serviceID := ServiceDescriptor{
 					Name:     provider.Kaetzchen[cap]["endpoint"].(string),
 					Provider: provider.Name,
 				}
 				services = append(services, serviceID)
-			} else {
-				fmt.Println("not equal")
 			}
 		}
 	}
