@@ -86,15 +86,20 @@ func (co *Connector) Server() *Server {
 }
 
 func (co *Connector) worker() {
+	co.log.Debug("Connector worker thread started.")
+
 	var (
 		initialSpawnDelay = epochtime.Period / 64
 		resweepInterval   = epochtime.Period / 8
 	)
 
+	co.log.Debugf("initialSpawnDelay is %v", initialSpawnDelay)
+
 	timer := time.NewTimer(initialSpawnDelay)
 	defer timer.Stop()
 
 	for {
+		co.log.Debug("BEFORE Connector worker thread select statement.")
 		timerFired := false
 		select {
 		case <-co.HaltCh():
@@ -104,6 +109,9 @@ func (co *Connector) worker() {
 		case <-timer.C:
 			timerFired = true
 		}
+
+		co.log.Debug("AFTER Connector select statement.")
+
 		if !timerFired && !timer.Stop() {
 			<-timer.C
 		}
@@ -119,7 +127,10 @@ func (co *Connector) worker() {
 }
 
 func (co *Connector) spawnNewConns() {
+	co.log.Debug("START spawnNewConns")
 	newPeerMap := co.server.pki.ReplicasCopy()
+
+	co.log.Debugf("spawnNewConns newPeerMap len %d", len(newPeerMap))
 
 	// Traverse the connection table, to figure out which peers are actually
 	// new.  Each outgoingConn object is responsible for determining when

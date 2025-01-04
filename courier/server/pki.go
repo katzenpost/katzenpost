@@ -262,6 +262,8 @@ func (p *PKIWorker) worker() {
 		// Fetch the PKI documents as required.
 		var didUpdate bool
 		for _, epoch := range p.documentsToFetch() {
+			p.log.Debugf("PKI worker, documentsToFetch epoch %d", epoch)
+
 			// Certain errors in fetching documents are treated as hard
 			// failures that suppress further attempts to fetch the document
 			// for the epoch.
@@ -289,6 +291,7 @@ func (p *PKIWorker) worker() {
 			p.docs[epoch] = d
 			p.lock.Unlock()
 			didUpdate = true
+			p.replicas.UpdateFromPKIDoc(d)
 		}
 
 		p.pruneFailures()
@@ -303,6 +306,7 @@ func (p *PKIWorker) worker() {
 		if now, _, _ := epochtime.Now(); now != lastUpdateEpoch {
 			if doc := p.entryForEpoch(now); doc != nil {
 				lastUpdateEpoch = now
+
 			}
 		}
 		p.updateTimer(timer)
