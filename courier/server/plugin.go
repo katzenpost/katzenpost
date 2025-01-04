@@ -14,11 +14,18 @@ import (
 	"github.com/katzenpost/katzenpost/server/cborplugin"
 )
 
+type Courier struct {
+	write  func(cborplugin.Command)
+	server *Server
+}
+
 // StartPlugin starts the CBOR plugin service which listens for socket connections
 // from the service node.
 func (s *Server) StartPlugin() {
 	socketFile := filepath.Join(s.cfg.DataDir, fmt.Sprintf("%d.courier.socket", os.Getpid()))
-	courier := new(Courier)
+	courier := &Courier{
+		server: s,
+	}
 	var server *cborplugin.Server
 
 	server = cborplugin.NewServer(s.LogBackend().GetLogger("courier_plugin"), socketFile, new(cborplugin.RequestFactory), courier)
@@ -30,11 +37,6 @@ func (s *Server) StartPlugin() {
 		panic(err)
 	}
 
-}
-
-type Courier struct {
-	write  func(cborplugin.Command)
-	server *Server
 }
 
 func (e *Courier) OnCommand(cmd cborplugin.Command) error {
