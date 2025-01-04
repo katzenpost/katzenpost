@@ -371,7 +371,8 @@ func TestConnector(t *testing.T) {
 	mkemNikeScheme := schemes.ByName("x25519")
 	mkemScheme := mkem.NewScheme(mkemNikeScheme)
 
-	nikeScheme := schemes.ByName("x25519")
+	nikeSchemeName := "x25519"
+	nikeScheme := schemes.ByName(nikeSchemeName)
 	g := geo.GeometryFromUserForwardPayloadLength(nikeScheme, 2000, false, 5)
 
 	WireKEMSchemeName := "x25519"
@@ -414,6 +415,8 @@ func TestConnector(t *testing.T) {
 			File:    "",
 			Level:   "DEBUG",
 		},
+		PKIScheme:        pkiSchemeName,
+		EnvelopeScheme:   nikeSchemeName,
 		WireKEMScheme:    WireKEMSchemeName,
 		DataDir:          datadir,
 		SphinxGeometry:   g,

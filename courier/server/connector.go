@@ -153,7 +153,7 @@ func (co *Connector) spawnNewConns() {
 			panic("KEM scheme not found in registry")
 		}
 
-		c := newOutgoingConn(co, v, co.server.cfg.SphinxGeometry, scheme)
+		c := newOutgoingConn(co, v, co.server.cfg)
 		co.onNewConn(c)
 	}
 }

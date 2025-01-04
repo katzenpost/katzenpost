@@ -16,13 +16,16 @@ import (
 
 	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/kem"
+	kemSchemes "github.com/katzenpost/hpqc/kem/schemes"
+	nikeSchemes "github.com/katzenpost/hpqc/nike/schemes"
 	"github.com/katzenpost/hpqc/rand"
+	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
-	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
+	"github.com/katzenpost/katzenpost/courier/server/config"
 	"github.com/katzenpost/katzenpost/http/common"
 )
 
@@ -31,10 +34,10 @@ var outgoingConnID uint64
 const KeepAliveInterval = 3 * time.Minute
 
 type outgoingConn struct {
-	scheme kem.Scheme
-	geo    *geo.Geometry
-	co     GenericConnector
-	log    *logging.Logger
+	linkScheme kem.Scheme
+	cfg        *config.Config
+	co         GenericConnector
+	log        *logging.Logger
 
 	dst *cpki.ReplicaDescriptor
 	ch  chan *commands.ReplicaMessage
@@ -125,7 +128,7 @@ func (c *outgoingConn) worker() {
 	}()
 
 	identityHash := hash.Sum256(c.dst.IdentityKey)
-	linkPubKey, err := c.scheme.UnmarshalBinaryPublicKey(c.dst.LinkKey)
+	linkPubKey, err := c.linkScheme.UnmarshalBinaryPublicKey(c.dst.LinkKey)
 	if err != nil {
 		panic(err)
 	}
@@ -147,7 +150,7 @@ func (c *outgoingConn) worker() {
 			// the cached pointer.
 			if desc != nil {
 				c.dst = desc
-				linkPubKey, err := c.scheme.UnmarshalBinaryPublicKey(c.dst.LinkKey)
+				linkPubKey, err := c.linkScheme.UnmarshalBinaryPublicKey(c.dst.LinkKey)
 				if err != nil {
 					panic(err)
 				}
@@ -242,8 +245,8 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 
 	// Allocate the session struct.
 	cfg := &wire.SessionConfig{
-		KEMScheme:         c.scheme,
-		Geometry:          c.geo,
+		KEMScheme:         c.linkScheme,
+		Geometry:          c.cfg.SphinxGeometry,
 		Authenticator:     c,
 		AdditionalData:    []byte{},
 		AuthenticationKey: c.co.Server().linkPrivKey,
@@ -347,20 +350,24 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 	}
 }
 
-func newOutgoingConn(co GenericConnector, dst *cpki.ReplicaDescriptor, geo *geo.Geometry, scheme kem.Scheme) *outgoingConn {
+func newOutgoingConn(co GenericConnector, dst *cpki.ReplicaDescriptor, cfg *config.Config) *outgoingConn {
 	const maxQueueSize = 64 // TODO/perf: Tune this.
 
+	linkScheme := kemSchemes.ByName(cfg.WireKEMScheme)
+	idScheme := signSchemes.ByName(cfg.PKIScheme)
+	envelopeScheme := nikeSchemes.ByName(cfg.EnvelopeScheme)
+
 	c := &outgoingConn{
-		scheme: scheme,
-		geo:    geo,
-		co:     co,
-		dst:    dst,
-		ch:     make(chan *commands.ReplicaMessage, maxQueueSize),
-		id:     atomic.AddUint64(&outgoingConnID, 1), // Diagnostic only, wrapping is fine.
+		linkScheme: linkScheme,
+		cfg:        cfg,
+		co:         co,
+		dst:        dst,
+		ch:         make(chan *commands.ReplicaMessage, maxQueueSize),
+		id:         atomic.AddUint64(&outgoingConnID, 1), // Diagnostic only, wrapping is fine.
 	}
 	c.log = co.Server().LogBackend().GetLogger(fmt.Sprintf("outgoing:%d", c.id))
 
-	c.log.Debugf("New outgoing connection: %+v", dst)
+	c.log.Debugf("New outgoing connection: %+v", dst.DisplayWithSchemes(linkScheme, idScheme, envelopeScheme))
 
 	// Note: Unlike most other things, this does not spawn the worker here,
 	// because the worker needs to be spawned after the struct is added to

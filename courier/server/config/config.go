@@ -91,8 +91,14 @@ type Config struct {
 	// Logging is the logging configuration.
 	Logging *Logging
 
-	// WireKEMScheme is the wire protocol KEM scheme to be used.
+	// WireKEMScheme is the wire protocol KEM scheme to be used for our link layer protocol.
 	WireKEMScheme string
+
+	// PKIScheme is the signature scheme used by the PKI.
+	PKIScheme string
+
+	// EnvelopeNIKEScheme is the NIKE replica scheme for message envelopes.
+	EnvelopeScheme string
 
 	// DataDir is the absolute path to the server's directory for storing files
 	// like the wire protocol link keys for example.

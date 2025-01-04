@@ -28,10 +28,13 @@ import (
 
 	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/kem"
+	kempem "github.com/katzenpost/hpqc/kem/pem"
 	kemschemes "github.com/katzenpost/hpqc/kem/schemes"
 	"github.com/katzenpost/hpqc/nike"
+	nikepem "github.com/katzenpost/hpqc/nike/pem"
 	"github.com/katzenpost/hpqc/nike/schemes"
 	"github.com/katzenpost/hpqc/sign"
+	signpem "github.com/katzenpost/hpqc/sign/pem"
 
 	"github.com/katzenpost/katzenpost/core/cert"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
@@ -340,6 +343,38 @@ type ReplicaDescriptor struct {
 	// Addresses is the map of transport to address combinations that can
 	// be used to reach the node.
 	Addresses map[string][]string
+}
+
+func (d *ReplicaDescriptor) DisplayWithSchemes(linkScheme kem.Scheme, identityScheme sign.Scheme, envelopeScheme nike.Scheme) string {
+	idPubKey, err := identityScheme.UnmarshalBinaryPublicKey(d.IdentityKey)
+	if err != nil {
+		panic(err)
+	}
+	idKey := signpem.ToPublicPEMString(idPubKey)
+	linkPubKey, err := linkScheme.UnmarshalBinaryPublicKey(d.LinkKey)
+	if err != nil {
+		panic(err)
+	}
+	linkKey := kempem.ToPublicPEMString(linkPubKey)
+
+	envelopeKeys := []string{}
+	for epoch, rawkey := range d.EnvelopeKeys {
+		nikePubkey, err := envelopeScheme.UnmarshalBinaryPublicKey(rawkey)
+		if err != nil {
+			panic(err)
+		}
+		nikeKey := nikepem.ToPublicPEMString(nikePubkey, envelopeScheme)
+		envelopeKeys = append(envelopeKeys, fmt.Sprintf("epoch %d -> %s", epoch, nikeKey))
+	}
+
+	return fmt.Sprintf(`ReplicaDescriptor:
+Name: %s
+Epoch: %d
+IdentityKey: %s
+LinkKey: %s
+EnvelopeKeys: %v
+Addresses: %s
+`, d.Name, d.Epoch, idKey, linkKey, envelopeKeys, d.Addresses)
 }
 
 // IsReplicaDescriptorWellFormed validates the descriptor and returns a descriptive
