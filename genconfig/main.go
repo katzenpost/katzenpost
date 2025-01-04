@@ -249,6 +249,8 @@ func (s *katzenpost) genCourierConfig(datadir string) *courierConfig.Config {
 		PKI:              pki,
 		Logging:          &courierConfig.Logging{File: logPath, Level: "DEBUG"},
 		WireKEMScheme:    s.wireKEMScheme,
+		PKIScheme:        s.pkiSignatureScheme.Name(),
+		EnvelopeScheme:   s.replicaNIKEScheme.Name(),
 		DataDir:          datadir,
 		SphinxGeometry:   s.sphinxGeometry,
 		ConnectTimeout:   courierConfig.DefaultConnectTimeout,
