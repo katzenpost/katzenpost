@@ -70,4 +70,27 @@ type Config struct {
 
 ## Optional SOCKS Proxy
 
+if Type tor+socks5 is used then the User and Password parameters are ignored and
+our Tor stream isolation will be used. If Type is socks5 then the User/Password are
+passed through to the SOCKS proxy server.
+
+// UpstreamProxy is the outgoing connection proxy configuration.
+type UpstreamProxy struct {
+	// Type is the proxy type (Eg: "none"," socks5", "tor+socks5").
+	Type string
+
+	// Network is the proxy address' network (`unix`, `tcp`).
+	Network string
+
+	// Address is the proxy's address.
+	Address string
+
+	// User is the optional proxy username.
+	User string
+
+	// Password is the optional proxy password.
+	Password string
+}
+
+
 
