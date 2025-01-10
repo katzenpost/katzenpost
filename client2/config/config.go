@@ -5,10 +5,8 @@
 package config
 
 import (
-	"context"
 	"errors"
 	"fmt"
-	"net"
 	"net/url"
 	"os"
 	"strings"
@@ -27,7 +25,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 
-	"github.com/katzenpost/katzenpost/client2/internal/proxy"
+	"github.com/katzenpost/katzenpost/client2/proxy"
 )
 
 const (
@@ -273,10 +271,6 @@ type Callbacks struct {
 	// OnDocumentFn is the callback function taht will be called when a
 	// new directory document is retreived for the current epoch.
 	OnDocumentFn func(*cpki.Document)
-
-	// DialContextFn is the optional alternative Dialer.DialContext function
-	// to be used when creating outgoing network connections.
-	DialContextFn func(ctx context.Context, network, address string) (net.Conn, error)
 }
 
 // Config is the top level client configuration.
