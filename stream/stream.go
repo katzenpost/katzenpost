@@ -749,9 +749,10 @@ func deriveListenerDialerSecrets(addr string) ([]byte, []byte, error) {
 }
 
 // Listen should be net.Listener
-func Listen(c Transport, network string, addr *StreamAddr) (*Stream, error) {
+func Listen(c Transport, network, addr string) (*Stream, error) {
 	s := newStream(c, EndToEnd)
-	err := s.keyAsListener(addr)
+	a := &StreamAddr{network: network, address: addr}
+	err := s.keyAsListener(a)
 	if err != nil {
 		return nil, err
 	}
