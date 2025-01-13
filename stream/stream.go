@@ -7,7 +7,6 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"errors"
-	"fmt"
 	"github.com/fxamacker/cbor/v2"
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/katzenpost/client"
@@ -18,7 +17,6 @@ import (
 	"github.com/katzenpost/katzenpost/pigeonhole/common"
 	"golang.org/x/crypto/hkdf"
 	"golang.org/x/crypto/nacl/secretbox"
-	"gopkg.in/op/go-logging.v1"
 	"io"
 	"math"
 	"os"
@@ -133,7 +131,6 @@ type Stream struct {
 
 	// Initiator is true if Stream is created by NewStream or Listen methods
 	Initiator bool
-	log       *logging.Logger
 
 	// Mode indicates what type of Stream, e.g. EndToEnd or Finite
 	Mode StreamMode
@@ -222,11 +219,9 @@ func (r *ReTx) Push(i client.Item) error {
 	r.Unlock()
 	if !ok {
 		// Already Acknowledged
-		r.s.log.Debugf("%d already ACKedd", m.f.Id)
 		return nil
 	}
 	m.priority = uint64(time.Now().Add(retryDelay).UnixNano())
-	r.s.log.Debugf("ReTx.Push(): txFrame %d %v", m.f.Id, time.Until(time.Unix(0, int64(m.priority))))
 	r.s.txFrame(m.f)
 	r.s.Go(func() {
 		r.s.txEnqueue(m) // XXX: deadlocks TQ if called from this routine
@@ -250,7 +245,6 @@ func (s *Stream) reader() {
 			// prod writer to Ack
 			if s.Mode == EndToEnd {
 				if s.ReadIdx-s.AckIdx > s.WindowSize {
-					s.log.Debugf("reader() doFlush: s.ReadIdx-s.AckIdx = %d", s.ReadIdx-s.AckIdx)
 					doFlush = true
 				}
 			}
@@ -269,12 +263,9 @@ func (s *Stream) reader() {
 		f, err := s.readFrame()
 		switch err {
 		case nil:
-			s.log.Debugf("reader() got Frame: %d", f.Id)
 		default:
-			s.log.Debugf("reader() got Error: %s", err)
 			select {
 			case <-s.HaltCh():
-				s.log.Debugf("reader() halting!")
 				return
 			default:
 			}
@@ -316,7 +307,6 @@ func (s *Stream) sleepReader() error {
 		return nil // do not block Read, data is available
 	}
 
-	s.log.Debugf("Read() sleeping until unblocked")
 
 	defer s.l.Lock() // in either case, return holding mutex
 	// Timeout == 0 is a special case that doesn't need a time.Timer
@@ -415,7 +405,6 @@ func (s *Stream) Write(p []byte) (n int, err error) {
 	n, err = s.WriteBuf.Write(p)
 	// doFlush must not be called holding mutex
 	s.l.Unlock()
-	s.log.Debugf("Write() doFlush()")
 	s.doFlush()
 	return
 }
@@ -450,7 +439,6 @@ func (s *Stream) Close() error {
 	if s.WState == StreamOpen {
 		s.WState = StreamClosing
 		s.l.Unlock()
-		s.log.Debugf("Close() doFlush()")
 		s.doFlush()       // wake up a sleeping writer !
 		<-s.onStreamClose // block until writer has finalized
 		return nil
@@ -462,7 +450,6 @@ func (s *Stream) Close() error {
 func (s *Stream) writer() {
 	for {
 
-		s.log.Debugf("writer() top of loop")
 		select {
 		case <-s.HaltCh():
 			return
@@ -474,15 +461,12 @@ func (s *Stream) writer() {
 		s.l.Lock()
 		switch s.WState {
 		case StreamClosed:
-			s.log.Debugf("writer() StreamClosed")
 			close(s.onStreamClose)
 			s.l.Unlock()
 			return
 		case StreamOpen, StreamClosing:
 			if s.WState == StreamOpen {
-				s.log.Debugf("writer() StreamOpen")
 			} else {
-				s.log.Debugf("writer() StreamClosing")
 			}
 			if s.Mode == EndToEnd {
 				if s.ReadIdx-s.AckIdx > s.WindowSize {
@@ -495,7 +479,6 @@ func (s *Stream) writer() {
 			if s.RState == StreamClosed || s.WState == StreamClosing {
 				mustTeardown = true
 				if s.WState != StreamClosing {
-					s.log.Debugf("Rstate == StreamClosed, setting WState == StreamClosing")
 					s.WState = StreamClosing
 				}
 				if s.Mode == EndToEnd {
@@ -508,27 +491,20 @@ func (s *Stream) writer() {
 			if !mustAck && !mustTeardown {
 				mustWaitForData := s.WriteBuf.Len() == 0
 				if mustWaitForData {
-					s.log.Debugf("mustWaitForData")
 				}
 				if mustWaitForAck {
-					s.log.Debugf("mustWaitForAck")
 				}
 				mustWait := mustWaitForAck || mustWaitForData
 
 				if s.WState == StreamClosing {
-					s.log.Debugf("writer() StreamClosing !mustWait")
 					mustWait = false
 				}
 				if mustWait {
-					s.log.Debugf("writer() sleeping")
 					s.l.Unlock()
 					select {
 					case <-s.onFlush:
-						s.log.Debugf("writer() woke onFlush")
 					case <-s.onAck:
-						s.log.Debugf("writer() woke onAck")
 					case <-s.HaltCh():
-						s.log.Debugf("writer() Halt()")
 						return
 					}
 					continue // re-evaluate all of the conditions above after wakeup!
@@ -537,7 +513,6 @@ func (s *Stream) writer() {
 		}
 
 		f := new(Frame)
-		s.log.Debugf("Sending frame for %d", s.WriteIdx)
 		f.Id = s.WriteIdx
 		s.WriteIdx += 1
 
@@ -554,7 +529,6 @@ func (s *Stream) writer() {
 
 		if mustTeardown {
 			// final Ack and frame transmitted
-			s.log.Debugf("Setting WState.StreamClosed and StreamEnd")
 			s.WState = StreamClosed
 			f.Type = StreamEnd
 		}
@@ -568,22 +542,9 @@ func (s *Stream) writer() {
 		}
 		f.Payload = f.Payload[:n]
 		if n > 0 || mustAck || mustTeardown {
-			s.log.Debugf("txFrame on condition:")
-			if mustAck {
-				s.log.Debugf("mustAck")
-			}
-			if mustTeardown {
-				s.log.Debugf("mustTeardown")
-			}
-			if n > 0 {
-				s.log.Debugf("n>0")
-			} else {
-				s.log.Debugf("n==0")
-			}
 			err = s.txFrame(f)
 			switch err {
 			case nil:
-				s.log.Debugf("txFrame OK: do.OnWrite()")
 				// wakes writer into state where Write returns 0, nil
 				// which is treated as EOF condition
 				if n > 0 {
@@ -592,7 +553,6 @@ func (s *Stream) writer() {
 					// do not wake blocked Write() if no data frames were sent
 				}
 			default:
-				s.log.Debugf("txFrame Error: %v enqueue %d for next epoch", err, f.Id)
 			}
 			if s.Mode == Multicast && err == nil {
 				continue // do not retransmit for end-to-end ACK.
@@ -651,7 +611,6 @@ func (s *Stream) txFrame(frame *Frame) (err error) {
 	nonce := [nonceSize]byte{}
 	copy(nonce[:], frame_id[:nonceSize])
 	ciphertext := secretbox.Seal(nil, serialized, &nonce, frame_key)
-	s.log.Debugf("txFrame: %d Acks: %d", frame.Id, frame.Ack)
 	return s.transport.Put(frame_id[:], ciphertext)
 }
 
@@ -831,11 +790,9 @@ func (s *Stream) readFrame() (*Frame, error) {
 		}
 	})
 
-	s.log.Debugf("readFrame: %d", s.ReadIdx)
 	ciphertext, err := s.transport.GetWithContext(ctx, frame_id[:])
 	cancelFn()
 	if err != nil {
-		s.log.Debugf("readFrame: err: %v", err)
 		return nil, err
 	}
 	// use frame_id bytes as nonce
@@ -879,7 +836,6 @@ func (s *Stream) processAck(f *Frame) {
 	// update last_ack from peer
 	s.l.Lock()
 	if f.Ack > s.PeerAckIdx {
-		s.log.Debugf("Got Ack %d > PeerAckIdx: %d", f.Ack, s.PeerAckIdx)
 		s.PeerAckIdx = f.Ack
 	}
 	s.l.Unlock()
@@ -951,7 +907,6 @@ func NewMulticastStream(s *client.Session) *Stream {
 	addr := &StreamAddr{network: "", address: generate()}
 	t := mClient.DuplexFromSeed(c, true, []byte(addr.String()))
 	st := newStream(t, Multicast)
-	st.log = s.GetLogger(fmt.Sprintf("Stream %p", st))
 	err := st.keyAsListener(addr)
 	if err != nil {
 		panic(err)
@@ -968,7 +923,6 @@ func NewStream(s *client.Session) *Stream {
 	addr := &StreamAddr{network: "", address: generate()}
 	t := mClient.DuplexFromSeed(c, true, []byte(addr.String()))
 	st := newStream(t, EndToEnd)
-	st.log = s.GetLogger(fmt.Sprintf("Stream %p", st))
 	err := st.keyAsListener(addr)
 	if err != nil {
 		panic(err)
@@ -996,7 +950,6 @@ func (*nilTransport) PayloadSize() int {
 func LoadStream(s *client.Session, state []byte) (*Stream, error) {
 	c, _ := mClient.NewClient(s)
 	st := newStream(new(nilTransport), EndToEnd)
-	st.log = s.GetLogger(fmt.Sprintf("Stream %p", st))
 	_, err := cbor.UnmarshalFirst(state, st)
 	if err != nil {
 		return nil, err
@@ -1060,8 +1013,6 @@ func DialDuplex(s *client.Session, network, addr string) (*Stream, error) {
 	t := mClient.DuplexFromSeed(c, false, []byte(addr))
 	st := newStream(t, EndToEnd)
 	a := &StreamAddr{network: network, address: addr}
-	st.log = s.GetLogger(fmt.Sprintf("Stream %p", st))
-	st.log.Debugf("DialDuplex: DuplexFromSeed: %x", []byte(a.String()))
 
 	err = st.keyAsDialer(a)
 	if err != nil {
@@ -1076,8 +1027,6 @@ func ListenDuplex(s *client.Session, network, addr string) (*Stream, error) {
 	c, _ := mClient.NewClient(s)
 	st := newStream(mClient.DuplexFromSeed(c, true, []byte(addr)), EndToEnd)
 	a := &StreamAddr{network: network, address: addr}
-	st.log = s.GetLogger(fmt.Sprintf("Stream %p", st))
-	st.log.Debugf("ListenDuplex: DuplexFromSeed: %x", []byte(a.String()))
 	err := st.keyAsListener(a)
 	if err != nil {
 		return nil, err
@@ -1094,7 +1043,6 @@ func NewDuplex(s *client.Session) (*Stream, error) {
 	}
 	a := &StreamAddr{network: "", address: generate()}
 	st := newStream(mClient.DuplexFromSeed(c, true, []byte(a.String())), EndToEnd)
-	st.log = s.GetLogger(fmt.Sprintf("Stream %p", st))
 	err = st.keyAsListener(a)
 	if err != nil {
 		return nil, err
