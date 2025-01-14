@@ -257,7 +257,7 @@ func (c *connection) doConnect(dialCtx context.Context) {
 		maxRetryDelay  = 2 * time.Minute
 	)
 
-	dialFn := c.client.cfg.Callbacks.DialContextFn
+	dialFn := c.client.DialContextFn
 	if dialFn == nil {
 		dialFn = defaultDialer.DialContext
 	}

@@ -4,6 +4,9 @@
 package client2
 
 import (
+	"context"
+	"fmt"
+	"net"
 	"sync"
 	"time"
 
@@ -11,6 +14,7 @@ import (
 
 	"github.com/katzenpost/hpqc/kem"
 	"github.com/katzenpost/hpqc/kem/schemes"
+	"github.com/katzenpost/hpqc/rand"
 
 	"github.com/katzenpost/katzenpost/authority/voting/client"
 	"github.com/katzenpost/katzenpost/client2/config"
@@ -44,6 +48,10 @@ type Client struct {
 	wireKEMScheme kem.Scheme
 
 	PKIClient cpki.Client
+
+	// DialContextFn is the optional alternative Dialer.DialContext function
+	// to be used when creating outgoing network connections.
+	DialContextFn func(ctx context.Context, network, address string) (net.Conn, error)
 }
 
 // Shutdown cleanly shuts down a given Client instance.
@@ -118,6 +126,14 @@ func New(cfg *config.Config, logBackend *log.Backend) (*Client, error) {
 		return nil, err
 	}
 	c.cfg = cfg
+
+	// A per-connection tag (for Tor SOCKS5 stream isloation)
+	proxyContext := fmt.Sprintf("session %d", rand.NewMath().Uint64())
+	dialFn := cfg.UpstreamProxyConfig().ToDialContext(proxyContext)
+	if dialFn == nil {
+		dialFn = defaultDialer.DialContext
+	}
+	c.DialContextFn = dialFn
 
 	c.log = c.logbackend.GetLogger("katzenpost/client2")
 

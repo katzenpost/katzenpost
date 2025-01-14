@@ -113,8 +113,10 @@ func (cfg *Config) ToDialContext(tag string) DialContextFn {
 	switch cfg.Type {
 	case typeNone:
 		return nil
-	case typeSocks5, typeTorSocks5:
+	case typeSocks5:
 		return cfg.newContextSOCKS5(tag)
+	case typeTorSocks5:
+		return cfg.newContextTorSOCKS5(tag)
 	default:
 		panic("proxy: ToDialContext(): invalid type: " + cfg.Type)
 	}
@@ -122,17 +124,24 @@ func (cfg *Config) ToDialContext(tag string) DialContextFn {
 
 func (cfg *Config) newContextSOCKS5(tag string) DialContextFn {
 	auth := cfg.auth
-	if cfg.Type == typeTorSocks5 {
-		auth = &proxy.Auth{}
-
-		// Craft an SOCKSPort isolation entry from `tag`, and jam it into
-		// the User/Password.
-		sum := sha512.Sum512_256([]byte(tag))
-		isolationTag := torSocks5ProcessIsolation + hex.EncodeToString(sum[:16])
-		auth.User = isolationTag
-		auth.Password = string([]byte{0x00})
+	auth.User = cfg.User
+	auth.Password = cfg.Password
+	s := &contextSOCKS5{
+		proxyNet:  cfg.Network,
+		proxyAddr: cfg.Address,
+		proxyAuth: auth,
 	}
+	return s.dialContext
+}
 
+func (cfg *Config) newContextTorSOCKS5(tag string) DialContextFn {
+	// Craft an SOCKSPort isolation entry from `tag`, and jam it into
+	// the User/Password.
+	sum := sha512.Sum512_256([]byte(tag))
+	isolationTag := torSocks5ProcessIsolation + hex.EncodeToString(sum[:16])
+	auth := &proxy.Auth{}
+	auth.User = isolationTag
+	auth.Password = string([]byte{0x00})
 	s := &contextSOCKS5{
 		proxyNet:  cfg.Network,
 		proxyAddr: cfg.Address,
