@@ -15,13 +15,14 @@ help:
 	@echo " clean              - the above, plus cleans includes go_deps images"
 	@echo
 
-warped?=true
 no_decoy?=true
 no_mixdecoy?=true
 mixes=3
 auths=3
 gateways=1
 serviceNodes=1
+
+KATZENPOST_EPOCH_DURATION?=2m
 
 # Parameters
 sr=0
@@ -73,22 +74,24 @@ log_level=INFO
 
 docker=$(shell if which podman|grep -q .; then echo podman; else echo docker; fi)
 
-ldflags="-extldflags '-Wl,-z,stack-size=0x1F40000' -buildid= -X github.com/katzenpost/katzenpost/core/epochtime.WarpedEpoch=${warped}"
+ldflags="-extldflags '-Wl,-z,stack-size=0x1F40000' "
 
 uid?=$(shell [ "$$SUDO_UID" != "" ] && echo "$$SUDO_UID" || id -u)
 gid?=$(shell [ "$$SUDO_GID" != "" ] && echo "$$SUDO_GID" || id -g)
 
 docker_user?=$(shell if echo ${docker}|grep -q podman; then echo 0:0; else echo ${uid}:${gid}; fi)
-docker_args=--memory=6g --memory-swap=6g --user ${docker_user} --volume $(shell readlink -f ..):/go/katzenpost --workdir /go/katzenpost -v $(shell readlink -f .)/$(cache_dir)/go:/go/ -e GOCACHE=/go/cache
+
+docker_args=--memory=6g --memory-swap=6g --user ${docker_user} --volume $(shell readlink -f ..):/go/katzenpost --workdir /go/katzenpost -v $(shell readlink -f .)/$(cache_dir)/go:/go/ -e GOCACHE=/go/cache -e KATZENPOST_EPOCH_DURATION=${KATZENPOST_EPOCH_DURATION}
+# note: the docker_args are *not* used by the containers running under docker-compose, but only for the intermediate and shell containers etc!
 
 replace_name=$(shell if echo ${docker}|grep -q podman; then echo " --replace --name"; else echo " --name"; fi)
 i_if_podman=$(shell if echo ${docker}|grep -q podman; then echo " -i"; else echo; fi)
 mount_net_name=-v `pwd`/$(net_name):/$(net_name)
 
 docker_compose_v1_or_v2?= $(shell [ -e /usr/libexec/docker/cli-plugins/docker-compose ] && echo /usr/libexec/docker/cli-plugins/docker-compose || echo docker-compose)
-docker_compose?= DOCKER_USER=$(docker_user) $(shell if which podman|grep -q .; then echo DOCKER_HOST="unix://$$XDG_RUNTIME_DIR/podman/podman.sock" $(docker_compose_v1_or_v2); else echo $(docker_compose_v1_or_v2); fi)
+docker_compose?= DOCKER_USER=$(docker_user) KATZENPOST_EPOCH_DURATION=${KATZENPOST_EPOCH_DURATION} $(shell if which podman|grep -q .; then echo DOCKER_HOST="unix://$$XDG_RUNTIME_DIR/podman/podman.sock" $(docker_compose_v1_or_v2); else echo $(docker_compose_v1_or_v2); fi)
 
-make_args=--no-print-directory net_name=$(net_name) docker=$(docker) distro=$(distro) warped=$(warped) docker_user=$(docker_user)
+make_args=--no-print-directory net_name=$(net_name) docker=$(docker) distro=$(distro) docker_user=$(docker_user)
 
 docker_run_sh=$(docker) run ${docker_args} $(mount_net_name) --rm katzenpost-$(distro)_base $(sh) -c
 

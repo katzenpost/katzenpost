@@ -93,13 +93,13 @@ Observe that `ping` works correctly, then move on to testing `katzen` app
 
 ## App: katzen
 
-Backup any non-devel non-warped katzen binary first if this would overwrite it
-
-Then build `katzen` binary with:
+Build `katzen` binary with:
 
 ```
-make warped=true docker-build-linux
+make docker-build-linux
 ```
+
+(in the katzen repo)
 
 Assuming that builds with no errors, you should have a `katzen` binary wit which
 you should run two instances of `katzen` GUI app (from two terminals) with:
