@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	_ "net/http/pprof"
@@ -15,12 +14,10 @@ import (
 
 	"github.com/fxamacker/cbor/v2"
 	"github.com/katzenpost/hpqc/rand"
-	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/stretchr/testify/require"
 )
 
 var numEntries = 10
-var logBackend *log.Backend
 
 type mockTransport struct {
 	l    *sync.Mutex
@@ -60,11 +57,9 @@ func (m lossyMockTransport) Put(addr []byte, payload []byte) error {
 func newStreams(t Transport) (*Stream, *Stream) {
 
 	a := newStream(t, EndToEnd)
-	a.log = logBackend.GetLogger(fmt.Sprintf("Stream %p", a))
 	addr := &StreamAddr{address: generate()}
 	a.keyAsListener(addr)
 	b := newStream(t, EndToEnd)
-	b.log = logBackend.GetLogger(fmt.Sprintf("Stream %p", b))
 	b.keyAsDialer(addr)
 
 	if a == nil || b == nil {
@@ -254,12 +249,6 @@ func TestLossyStream(t *testing.T) {
 }
 
 func init() {
-	var e error
-	logBackend, e = log.New("", "DEBUG", false)
-	if e != nil {
-		panic(e)
-	}
-
 	go func() {
 		http.ListenAndServe("localhost:8181", nil)
 	}()

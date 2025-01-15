@@ -311,9 +311,16 @@ func (c *incomingConn) worker() {
 				}
 				continue
 			case *commands.GetConsensus:
-				c.log.Debugf("Received GetConsensus from peer.")
+				c.log.Infof("Received GetConsensus from peer.")
 				if err := c.onGetConsensus(cmd); err != nil {
 					c.log.Debugf("Failed to handle GetConsensus: %v", err)
+					return
+				}
+				continue
+			case *commands.GetConsensus2:
+				c.log.Infof("Received GetConsensus2 from peer.")
+				if err := c.onGetConsensus2(cmd); err != nil {
+					c.log.Infof("Failed to handle GetConsensus2: %v", err)
 					return
 				}
 				continue
@@ -352,6 +359,7 @@ func (c *incomingConn) onMixCommand(rawCmd commands.Command) bool {
 }
 
 func (c *incomingConn) onGetConsensus(cmd *commands.GetConsensus) error {
+	c.log.Info("onGetConsensus")
 	respCmd := &commands.Consensus{}
 	rawDoc, err := c.l.glue.PKI().GetRawConsensus(cmd.Epoch)
 	switch err {
@@ -364,6 +372,52 @@ func (c *incomingConn) onGetConsensus(cmd *commands.GetConsensus) error {
 		respCmd.ErrorCode = commands.ConsensusNotFound
 	}
 	return c.w.SendCommand(respCmd)
+}
+
+func (c *incomingConn) onGetConsensus2(cmd *commands.GetConsensus2) error {
+	c.log.Info("onGetConsensus2")
+	respCmd := &commands.Consensus2{}
+
+	c.log.Info("BEFORE calling GetRawConsensus")
+	rawDoc, err := c.l.glue.PKI().GetRawConsensus(cmd.Epoch)
+	c.log.Info("AFTER calling GetRawConsensus")
+
+	switch err {
+	case nil:
+		c.log.Info("err is nil")
+		respCmd.ErrorCode = commands.ConsensusOk
+		respCmd.Payload = rawDoc
+	case cpki.ErrNoDocument:
+		c.log.Infof("err ConsensusGone : %s", err)
+		respCmd.ErrorCode = commands.ConsensusGone
+	default: // Covers errNotCached
+		c.log.Infof("err ConsensusNotFound : %s", err)
+		respCmd.ErrorCode = commands.ConsensusNotFound
+	}
+
+	chunkSize := cmd.Cmds.MaxMessageLenServerToClient
+	c.log.Infof("chunk size %d", chunkSize)
+
+	chunks, err := cpki.Chunk(rawDoc, chunkSize)
+	if err != nil {
+		return err
+	}
+	for i := 0; i < len(chunks); i++ {
+		c.log.Infof("Sending chunk %d", i)
+		chunk := chunks[i]
+		chunkCmd := &commands.Consensus2{
+			Cmds:       cmd.Cmds,
+			ErrorCode:  0,
+			ChunkNum:   uint32(i),
+			ChunkTotal: uint32(len(chunks)),
+			Payload:    chunk,
+		}
+		err := c.w.SendCommand(chunkCmd)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (c *incomingConn) onSendRetrievePacket(cmd *commands.SendRetrievePacket) error {

@@ -119,6 +119,5 @@ func (b *BufferedStream) CBORDecode(instance interface{}) error {
 			return e
 		}
 	}
-	b.Stream.log.Debugf("decoded OK")
 	return nil
 }

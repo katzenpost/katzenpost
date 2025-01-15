@@ -30,6 +30,8 @@ var (
 	recheckInterval         = epochtime.Period / 16
 	// WarpedEpoch is a build time flag that accelerates the recheckInterval
 	WarpedEpoch = "false"
+
+	ccbor cbor.EncMode
 )
 
 type CachedDoc struct {
@@ -38,7 +40,7 @@ type CachedDoc struct {
 }
 
 type ConsensusGetter interface {
-	GetConsensus(ctx context.Context, epoch uint64) (*commands.Consensus, error)
+	GetConsensus(ctx context.Context, epoch uint64) (*commands.Consensus2, error)
 }
 
 type pki struct {
@@ -49,7 +51,8 @@ type pki struct {
 
 	log *logging.Logger
 
-	docs          sync.Map
+	docs sync.Map // epoch -> doc
+
 	failedFetches map[uint64]error
 
 	clockSkewLock sync.RWMutex
@@ -124,8 +127,6 @@ func (p *pki) currentDocument() ([]byte, *cpki.Document) {
 }
 
 func (p *pki) worker() {
-	p.log.Debug("worker")
-	defer p.log.Debug("stopping worker")
 	timer := time.NewTimer(0)
 	defer func() {
 		p.log.Debug("Halting PKI worker.")
@@ -234,11 +235,11 @@ func (p *pki) updateDocument(epoch uint64) error {
 }
 
 func (p *pki) getDocument(ctx context.Context, epoch uint64) ([]byte, *cpki.Document, error) {
-	p.log.Debug("getDocument")
 	var d *cpki.Document
 	var err error
 
-	p.log.Debugf("Fetching PKI doc for epoch %v from Provider.", epoch)
+	p.log.Debugf("Fetching PKI doc for epoch %v from Gateway.", epoch)
+
 	resp, err := p.consensusGetter.GetConsensus(ctx, epoch)
 	switch err {
 	case nil:
@@ -273,7 +274,7 @@ func (p *pki) getDocument(ctx context.Context, epoch uint64) ([]byte, *cpki.Docu
 		return nil, nil, fmt.Errorf("BUG: Provider returned document for incorrect epoch: %v", d.Epoch)
 	}
 	d.Signatures = nil
-	docBlob, err := cbor.Marshal(d)
+	docBlob, err := ccbor.Marshal(d)
 	if err != nil {
 		p.log.Errorf("BUG: failed to cbor marshal pki doc: %v", err)
 		return nil, nil, err
@@ -305,7 +306,6 @@ func (p *pki) pruneFailures(now uint64) {
 }
 
 func (p *pki) start() {
-	p.log.Debug("start")
 	p.Go(p.worker)
 }
 
@@ -324,4 +324,13 @@ func newPKI(c *Client) *pki {
 		p.docs.Store(d.Epoch, d)
 	}
 	return p
+}
+
+func init() {
+	var err error
+	opts := cbor.CanonicalEncOptions()
+	ccbor, err = opts.EncMode()
+	if err != nil {
+		panic(err)
+	}
 }
