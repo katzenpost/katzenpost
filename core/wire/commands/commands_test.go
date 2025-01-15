@@ -128,6 +128,39 @@ func TestGetConsensus(t *testing.T) {
 	require.IsType(cmd, c, "GetConsensus without Mixnet: FromBytes() invalid type")
 }
 
+func TestGetConsensus2(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+
+	nike := ecdh.Scheme(rand.Reader)
+	forwardPayloadLength := 123
+	nrHops := 5
+	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
+	s := sphinx.NewSphinx(geo)
+	cmds := NewMixnetCommands(s.Geometry())
+
+	cmd := &GetConsensus2{
+		Epoch: 123,
+		Cmds:  cmds,
+	}
+	b := cmd.ToBytes()
+
+	c, err := cmds.FromBytes(b)
+	require.NoError(err, "GetConsensus2: FromBytes() failed")
+	require.IsType(cmd, c, "GetConsensus2: FromBytes() invalid type")
+
+	// Test with Mixnet Transmission. padding is expected.
+	b = cmd.ToBytes()
+
+	require.Len(b, cmds.MaxMessageLenClientToServer, "GetConsensus2 without Mixnet: ToBytes() length")
+	actualDataLength := cmdOverhead + getConsensusLength
+	require.True(util.CtIsZero(b[actualDataLength:]), "GetConsensus2 without Mixnet: No padding expected")
+
+	c, err = cmds.FromBytes(b)
+	require.NoError(err, "GetConsensus2 without Mixnet: FromBytes() failed")
+	require.IsType(cmd, c, "GetConsensus2 without Mixnet: FromBytes() invalid type")
+}
+
 func TestConsensus(t *testing.T) {
 	t.Parallel()
 	require := require.New(t)

@@ -4,7 +4,43 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	ecdh "github.com/katzenpost/hpqc/nike/x25519"
+	"github.com/katzenpost/hpqc/rand"
+
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 )
+
+func TestConsensus2(t *testing.T) {
+	t.Parallel()
+
+	nike := ecdh.Scheme(rand.Reader)
+	forwardPayloadLength := 123
+	nrHops := 5
+	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
+	cmds := NewMixnetCommands(geo)
+
+	cmd1 := &Consensus2{
+		Cmds:       cmds,
+		ErrorCode:  0,
+		ChunkNum:   10,
+		ChunkTotal: 20,
+		Payload:    []byte("abc123"),
+	}
+
+	blob1 := cmd1.ToBytes()
+	c, err := cmds.FromBytes(blob1)
+	require.NoError(t, err)
+
+	cmd2, ok := c.(*Consensus2)
+	require.True(t, ok)
+	require.Equal(t, cmd2.ChunkNum, cmd1.ChunkNum)
+	require.Equal(t, cmd2.ChunkTotal, cmd1.ChunkTotal)
+	require.Equal(t, cmd2.Payload, cmd1.Payload)
+
+	blob2 := cmd1.ToBytes()
+	require.Equal(t, blob1, blob2)
+}
 
 func TestPostDescriptor(t *testing.T) {
 	t.Parallel()
