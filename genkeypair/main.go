@@ -13,6 +13,8 @@ import (
 	nikeschemes "github.com/katzenpost/hpqc/nike/schemes"
 	signpem "github.com/katzenpost/hpqc/sign/pem"
 	signschemes "github.com/katzenpost/hpqc/sign/schemes"
+
+	"github.com/katzenpost/katzenpost/core/utils"
 )
 
 func main() {
@@ -37,6 +39,15 @@ func main() {
 		privout := fmt.Sprintf("%s.kem_private.pem", *outName)
 		fmt.Printf("Writing keypair to %s and %s\n", pubout, privout)
 
+		switch {
+		case utils.BothExists(privout, pubout):
+			panic("both keys already exist")
+		case utils.BothNotExists(privout, pubout):
+			break
+		default:
+			panic("one of the keys already exists")
+		}
+
 		scheme := kemschemes.ByName(*schemeName)
 		pubkey, privkey, err := scheme.GenerateKeyPair()
 		if err != nil {
@@ -55,6 +66,15 @@ func main() {
 		privout := fmt.Sprintf("%s.nike_private.pem", *outName)
 		fmt.Printf("Writing keypair to %s and %s\n", pubout, privout)
 
+		switch {
+		case utils.BothExists(privout, pubout):
+			panic("both keys already exist")
+		case utils.BothNotExists(privout, pubout):
+			break
+		default:
+			panic("one of the keys already exists")
+		}
+
 		scheme := nikeschemes.ByName(*schemeName)
 		pubkey, privkey, err := scheme.GenerateKeyPair()
 		if err != nil {
@@ -72,6 +92,15 @@ func main() {
 		pubout := fmt.Sprintf("%s.sign_public.pem", *outName)
 		privout := fmt.Sprintf("%s.sign_private.pem", *outName)
 		fmt.Printf("Writing keypair to %s and %s\n", pubout, privout)
+
+		switch {
+		case utils.BothExists(privout, pubout):
+			panic("both keys already exist")
+		case utils.BothNotExists(privout, pubout):
+			break
+		default:
+			panic("one of the keys already exists")
+		}
 
 		scheme := signschemes.ByName(*schemeName)
 		pubkey, privkey, err := scheme.GenerateKey()
