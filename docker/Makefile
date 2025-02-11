@@ -52,6 +52,7 @@ kem=
 DISTROS=alpine debian
 distro=alpine
 wirekem=xwing
+replicanike=CTIDH1024-X25519
 net_name=voting_mixnet
 base_port=30000
 bind_addr=127.0.0.1
@@ -79,7 +80,7 @@ uid?=$(shell [ "$$SUDO_UID" != "" ] && echo "$$SUDO_UID" || id -u)
 gid?=$(shell [ "$$SUDO_GID" != "" ] && echo "$$SUDO_GID" || id -g)
 
 docker_user?=$(shell if echo ${docker}|grep -q podman; then echo 0:0; else echo ${uid}:${gid}; fi)
-docker_args=--memory=6g --memory-swap=6g --user ${docker_user} --volume $(shell readlink -f ..):/go/katzenpost --workdir /go/katzenpost -v $(shell readlink -f .)/$(cache_dir)/go:/go/ -e GOCACHE=/go/cache
+docker_args=--user ${docker_user} --volume $(shell readlink -f ..):/go/katzenpost --workdir /go/katzenpost -v $(shell readlink -f .)/$(cache_dir)/go:/go/ -e GOCACHE=/go/cache
 
 replace_name=$(shell if echo ${docker}|grep -q podman; then echo " --replace --name"; else echo " --name"; fi)
 i_if_podman=$(shell if echo ${docker}|grep -q podman; then echo " -i"; else echo; fi)
@@ -92,7 +93,7 @@ make_args=--no-print-directory net_name=$(net_name) docker=$(docker) distro=$(di
 
 docker_run_sh=$(docker) run ${docker_args} $(mount_net_name) --rm katzenpost-$(distro)_base $(sh) -c
 
-testnet_binaries: $(net_name)/server.$(distro) $(net_name)/proxy_server.$(distro) $(net_name)/proxy_client.$(distro) $(net_name)/memspool.$(distro) $(net_name)/pigeonhole.$(distro) $(net_name)/panda_server.$(distro) $(net_name)/echo_server.$(distro) $(net_name)/dirauth.$(distro) | $(net_name) $(cache_dir)
+testnet_binaries: $(net_name)/server.$(distro) $(net_name)/proxy_server.$(distro) $(net_name)/proxy_client.$(distro) $(net_name)/memspool.$(distro) $(net_name)/pigeonhole.$(distro) $(net_name)/panda_server.$(distro) $(net_name)/echo_server.$(distro) $(net_name)/dirauth.$(distro) $(net_name)/replica.$(distro) $(net_name)/courier.$(distro) | $(net_name) $(cache_dir)
 
 $(net_name):
 	mkdir -vp $(net_name)
@@ -110,7 +111,7 @@ $(docker_compose_yml): ../genconfig/main.go $(distro)_base.stamp | $(net_name) $
 		-sr ${sr} -mu ${mu} -muMax ${muMax} -lP ${lP} -lPMax ${lPMax} -lL ${lL} \
 		-lLMax ${lLMax} -lD ${lD} -lDMax ${lDMax} -lM ${lM} -lMMax ${lMMax} \
 		-S .$(distro) -v -o ./$(net_name) -b /$(net_name) -P $(base_port) \
-		-nike "$(nike)" -ratchetNike "$(ratchetNike)" -kem "$(kem)" -d katzenpost-$(distro)_base \
+		-nike "$(nike)" -ratchetNike "$(ratchetNike)" -kem "$(kem)" -replicaNike "$(replicanike)" -d katzenpost-$(distro)_base \
 		${noMixDecoy} ${noDecoy} \
 		-UserForwardPayloadLength $(UserForwardPayloadLength) -log_level $(log_level)'
 
@@ -119,6 +120,10 @@ $(net_name)/running.stamp:
 
 start: $(docker_compose_yml) testnet_binaries
 	cd $(net_name); $(docker_compose) up --remove-orphans -d; $(docker_compose) ps
+	touch $(net_name)/running.stamp
+
+start_debug: $(docker_compose_yml) testnet_binaries
+	cd $(net_name); $(docker_compose) up --remove-orphans;
 	touch $(net_name)/running.stamp
 
 stop:
@@ -155,7 +160,7 @@ debian_base.stamp:
 	touch $@
 
 alpine_base.stamp:
-	$(docker) run $(replace_name) katzenpost_alpine_base docker.io/golang:alpine sh -c 'adduser katzenpost --gecos "" --disabled-password  && apk update && apk upgrade && apk add gcc musl-dev make pv' \
+	$(docker) run $(replace_name) katzenpost_alpine_base docker.io/alpine:edge sh -c 'adduser katzenpost --gecos "" --disabled-password  && apk update && apk upgrade && apk add go gcc musl-dev make pv rocksdb-dev g++ ' \
 	&& $(docker) commit katzenpost_alpine_base katzenpost-alpine_base \
 	&& $(docker) rm katzenpost_alpine_base
 	touch $@
@@ -170,6 +175,12 @@ go-mod-upgrade: $(distro)_base.stamp | $(net_name) $(cache_dir)
 
 $(net_name)/server.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
 		$(docker_run_sh) 'cd server/cmd/server ; go build -trimpath -ldflags ${ldflags} && mv server /$(net_name)/server.$(distro)'
+
+$(net_name)/courier.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
+		$(docker_run_sh) 'cd courier/cmd/courier ; go build -trimpath -ldflags ${ldflags} && mv courier /$(net_name)/courier.$(distro)'
+
+$(net_name)/replica.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
+		$(docker_run_sh) 'cd replica/cmd/replica ; go build -trimpath -ldflags ${ldflags} && mv replica /$(net_name)/replica.$(distro)'
 
 $(net_name)/proxy_client.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
 		$(docker_run_sh) 'cd http/proxy/client; go build -trimpath -ldflags ${ldflags} && mv client /$(net_name)/proxy_client.$(distro)'

@@ -1,4 +1,4 @@
-// debug.go - Katzenpost server debug bits and peices.
+// debug.go - Katzenpost debug bits and peices.
 // Copyright (C) 2017  Yawning Angel.
 //
 // This program is free software: you can redistribute it and/or modify
@@ -14,11 +14,11 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-// Package debug implements useful helper routines to aid debugging.
-package debug
+package utils
 
 import (
 	"encoding/base64"
+
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 )
 
