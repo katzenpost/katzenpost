@@ -29,6 +29,7 @@ import (
 	cConfig2 "github.com/katzenpost/katzenpost/client2/config"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
+	pConfig "github.com/katzenpost/katzenpost/http/proxy/server/config"
 	sConfig "github.com/katzenpost/katzenpost/server/config"
 )
 
@@ -348,10 +349,15 @@ func (s *katzenpost) genNodeConfig(isGateway, isServiceNode bool, isVoting bool)
 
 			// Add a single instance of a http proxy for a service listening on port 4242
 			if !s.hasProxy {
+				proxyCfgPath, err := s.genProxyServerCfg(cfg.Server.Identifier)
+				if err != nil {
+					return err
+				}
+
 				proxyCfg := &sConfig.CBORPluginKaetzchen{
 					Capability:     "http",
 					Endpoint:       "+http",
-					Command:        s.baseDir + "/proxy_server" + s.binSuffix,
+					Command:        fmt.Sprintf("%s -config %s", s.baseDir+"/proxy_server"+s.binSuffix, proxyCfgPath),
 					MaxConcurrency: 1,
 					Config: map[string]interface{}{
 						// allow connections to localhost:4242
@@ -386,6 +392,25 @@ func (s *katzenpost) genNodeConfig(isGateway, isServiceNode bool, isVoting bool)
 	_ = cfgLinkKey(cfg, s.outDir, s.wireKEMScheme)
 	log.Print("genNodeConfig end")
 	return cfg.FixupAndValidate()
+}
+
+// returns file path of generated config
+func (s *katzenpost) genProxyServerCfg(identifier string) (string, error) {
+	outPath := filepath.Join(s.outDir, identifier, "http_proxy.cfg")
+	cfg := &pConfig.Config{
+		SphinxGeometry: s.sphinxGeometry,
+	}
+	f, err := os.Create(outPath)
+	if err != nil {
+		return "", fmt.Errorf("os.Create(%s) failed: %s", outPath, err)
+	}
+	defer f.Close()
+	enc := toml.NewEncoder(f)
+	err = enc.Encode(cfg)
+	if err != nil {
+		return "", err
+	}
+	return outPath, nil
 }
 
 func (s *katzenpost) genVotingAuthoritiesCfg(numAuthorities int, parameters *vConfig.Parameters, nrLayers int, wirekem string) error {
