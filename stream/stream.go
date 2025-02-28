@@ -976,6 +976,14 @@ func (s *Stream) Save() ([]byte, error) {
 
 // Start starts the reader and writer workers
 func (s *Stream) Start() {
+	s.StartWithTransport(nil)
+}
+
+// StartWithTransport starts the reader and writer workers
+func (s *Stream) StartWithTransport(trans Transport) {
+	if trans != nil {
+		s.SetTransport(trans)
+	}
 	s.startOnce.Do(func() {
 		s.retryExpDist.UpdateConnectionStatus(true)
 		s.readerExpDist.UpdateConnectionStatus(true)

@@ -62,3 +62,54 @@ func TestStreamListen(t *testing.T) {
 	_, err = s.Write([]byte("some friendly bytes"))
 	require.NoError(err)
 }
+
+func TestSaveLoadStream(t *testing.T) {
+	// initialize a listener stream
+	require := require.New(t)
+	trans := NewMockTransport()
+	x := sha256.Sum256([]byte("TestStreamDial"))
+	sl, err := Listen(trans, "", base64.StdEncoding.EncodeToString(x[:]))
+
+	// initialize a dialer stream
+	sd, err := Dial(trans, "", base64.StdEncoding.EncodeToString(x[:]))
+	require.NoError(err)
+
+	payload := []byte{}
+	for i := 0; i < 42; i++ {
+		payload = append(payload, []byte(fmt.Sprintf("some friendly bytes %d", i))...)
+	}
+	// send some data
+	_, err = sd.Write(payload[:420])
+	require.NoError(err)
+
+	buf := make([]byte, 42)
+	n, err := sl.Read(buf)
+	require.Equal(42, n)
+
+	// stop the listener in the middle of receiving data
+	sl.Halt()
+
+	// save the stream
+	serialised, err := sl.Save()
+	require.NoError(err)
+
+	// deserialize the stream
+	sl, err = LoadStream(serialised)
+	require.NoError(err)
+
+	// start stream
+	sl.StartWithTransport(trans)
+
+	// receive the rest of the data and verify it
+	buf2 := make([]byte, 420-42)
+	sl.Read(buf2)
+	require.Equal(append(buf, buf2...), payload)
+}
+
+func init() {
+	go func() {
+		http.ListenAndServe("localhost:8181", nil)
+	}()
+	runtime.SetMutexProfileFraction(1)
+	runtime.SetBlockProfileRate(1)
+}
