@@ -199,6 +199,13 @@ type Stream struct {
 	onStreamClose chan struct{}
 }
 
+func (s *Stream) SetTransport(t Transport) {
+	s.l.Lock()
+	defer s.l.Unlock()
+	s.transport = t
+	s.PayloadSize = PayloadSize(t)
+}
+
 // ReTx implmements client.nqueue and re-transmits unacknowledged frames
 type ReTx struct {
 	sync.Mutex
@@ -306,7 +313,6 @@ func (s *Stream) sleepReader() error {
 	} else {
 		return nil // do not block Read, data is available
 	}
-
 
 	defer s.l.Lock() // in either case, return holding mutex
 	// Timeout == 0 is a special case that doesn't need a time.Timer
@@ -628,7 +634,8 @@ func H(i []byte) (res common.MessageID) {
 
 // Dial returns a Stream initialized with secret address
 func Dial(c Transport, network, addr string) (*Stream, error) {
-	s := newStream(c, EndToEnd)
+	s := newStream(EndToEnd)
+	s.SetTransport(c)
 	a := &StreamAddr{network: network, address: addr}
 	err := s.keyAsDialer(a)
 	if err != nil {
@@ -709,7 +716,8 @@ func deriveListenerDialerSecrets(addr string) ([]byte, []byte, error) {
 
 // Listen should be net.Listener
 func Listen(c Transport, network, addr string) (*Stream, error) {
-	s := newStream(c, EndToEnd)
+	s := newStream(EndToEnd)
+	s.SetTransport(c)
 	a := &StreamAddr{network: network, address: addr}
 	err := s.keyAsListener(a)
 	if err != nil {
@@ -876,11 +884,9 @@ func (s *Stream) RemoteAddr() *StreamAddr {
 // Transport describes the interface to Get or Put Frames
 type Transport mClient.ReadWriteClient
 
-func newStream(transport Transport, mode StreamMode) *Stream {
+func newStream(mode StreamMode) *Stream {
 	s := new(Stream)
 	s.Mode = mode
-	s.transport = transport
-	s.PayloadSize = PayloadSize(transport)
 	s.l = new(sync.Mutex)
 	s.startOnce = new(sync.Once)
 	s.RState = StreamOpen
@@ -906,7 +912,8 @@ func NewMulticastStream(s *client.Session) *Stream {
 	c, _ := mClient.NewClient(s)
 	addr := &StreamAddr{network: "", address: generate()}
 	t := mClient.DuplexFromSeed(c, true, []byte(addr.String()))
-	st := newStream(t, Multicast)
+	st := newStream(Multicast)
+	st.SetTransport(t)
 	err := st.keyAsListener(addr)
 	if err != nil {
 		panic(err)
@@ -922,7 +929,8 @@ func NewStream(s *client.Session) *Stream {
 	c, _ := mClient.NewClient(s)
 	addr := &StreamAddr{network: "", address: generate()}
 	t := mClient.DuplexFromSeed(c, true, []byte(addr.String()))
-	st := newStream(t, EndToEnd)
+	st := newStream(EndToEnd)
+	st.SetTransport(t)
 	err := st.keyAsListener(addr)
 	if err != nil {
 		panic(err)
@@ -947,20 +955,11 @@ func (*nilTransport) PayloadSize() int {
 }
 
 // LoadStream initializes a Stream from state saved by Save()
-func LoadStream(s *client.Session, state []byte) (*Stream, error) {
-	c, _ := mClient.NewClient(s)
-	st := newStream(new(nilTransport), EndToEnd)
+func LoadStream(state []byte) (*Stream, error) {
+	st := newStream(EndToEnd)
 	_, err := cbor.UnmarshalFirst(state, st)
 	if err != nil {
 		return nil, err
-	}
-
-	st.transport = mClient.DuplexFromSeed(c, st.Initiator, []byte(st.LocalAddr().String()))
-
-	// Ensure that the frame geometry cannot change an active stream
-	// FIXME: Streams should support resetting sender/receivers on Geometry changes.
-	if st.PayloadSize != PayloadSize(st.transport) {
-		panic(ErrGeometryChanged)
 	}
 
 	return st, nil
@@ -1011,7 +1010,8 @@ func DialDuplex(s *client.Session, network, addr string) (*Stream, error) {
 		return nil, err
 	}
 	t := mClient.DuplexFromSeed(c, false, []byte(addr))
-	st := newStream(t, EndToEnd)
+	st := newStream(EndToEnd)
+	st.SetTransport(t)
 	a := &StreamAddr{network: network, address: addr}
 
 	err = st.keyAsDialer(a)
@@ -1025,7 +1025,8 @@ func DialDuplex(s *client.Session, network, addr string) (*Stream, error) {
 // ListenDuplex returns a Stream using capability pigeonhole storage (Duplex) as initiator
 func ListenDuplex(s *client.Session, network, addr string) (*Stream, error) {
 	c, _ := mClient.NewClient(s)
-	st := newStream(mClient.DuplexFromSeed(c, true, []byte(addr)), EndToEnd)
+	st := newStream(EndToEnd)
+	st.SetTransport(mClient.DuplexFromSeed(c, true, []byte(addr)))
 	a := &StreamAddr{network: network, address: addr}
 	err := st.keyAsListener(a)
 	if err != nil {
@@ -1042,7 +1043,8 @@ func NewDuplex(s *client.Session) (*Stream, error) {
 		return nil, err
 	}
 	a := &StreamAddr{network: "", address: generate()}
-	st := newStream(mClient.DuplexFromSeed(c, true, []byte(a.String())), EndToEnd)
+	st := newStream(EndToEnd)
+	st.SetTransport(mClient.DuplexFromSeed(c, true, []byte(a.String())))
 	err = st.keyAsListener(a)
 	if err != nil {
 		return nil, err

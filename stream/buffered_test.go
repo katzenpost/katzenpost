@@ -56,10 +56,12 @@ func (m lossyMockTransport) Put(addr []byte, payload []byte) error {
 // newStreams returns an initialized pair of Streams
 func newStreams(t Transport) (*Stream, *Stream) {
 
-	a := newStream(t, EndToEnd)
+	a := newStream(EndToEnd)
+	a.SetTransport(t)
 	addr := &StreamAddr{address: generate()}
 	a.keyAsListener(addr)
-	b := newStream(t, EndToEnd)
+	b := newStream(EndToEnd)
+	b.SetTransport(t)
 	b.keyAsDialer(addr)
 
 	if a == nil || b == nil {
