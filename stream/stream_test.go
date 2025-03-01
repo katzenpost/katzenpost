@@ -19,8 +19,13 @@ package stream
 import (
 	"crypto/sha256"
 	"encoding/base64"
+	"fmt"
 	"github.com/stretchr/testify/require"
+	"net/http"
+	_ "net/http/pprof"
+	"runtime"
 	"testing"
+	"time"
 )
 
 func TestFrameKey(t *testing.T) {
