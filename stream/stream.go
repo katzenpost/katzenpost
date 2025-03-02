@@ -60,7 +60,7 @@ const (
 )
 
 func ftStr(t FrameType) string {
-	switch t{
+	switch t {
 	case StreamStart:
 		return "StreamStart"
 	case StreamData:
@@ -97,6 +97,19 @@ const (
 	StreamClosed
 )
 
+// ssStr displays stream state
+func ssStr(s StreamState) string {
+	switch s {
+	case StreamOpen:
+		return "StreamOpen"
+	case StreamClosing:
+		return "StreamClosing"
+	case StreamClosed:
+		return "StreamClosed"
+	}
+	return "StreamInvalid"
+}
+
 // StreamMode is the type of stream.
 //
 //	EndToEnd streams require the reader to acknowledge frames of data read
@@ -113,19 +126,19 @@ const (
 
 // FrameWithPriority implmeents client.Item and holds the retransmit deadline and Frame for use with a TimerQueue
 type FrameWithPriority struct {
-	Frame    *Frame // payload of message
-	priority uint64 // the time in nanoseconds of when to retransmit an unacknowledged message
+	Frame         *Frame // payload of message
+	FramePriority uint64 // the time in nanoseconds of when to retransmit an unacknowledged message
 }
 
 // Priority implements client.Item interface; used by TimerQueue for retransmissions
 func (s *FrameWithPriority) Priority() uint64 {
-	return s.priority
+	return s.FramePriority
 }
 
 // nextEpoch returns a FrameWithPriority for next epoch
 func nextEpoch(f *Frame) *FrameWithPriority {
 	_, _, til := epochtime.Now()
-	return &FrameWithPriority{Frame: f, priority: uint64(time.Now().Add(til).UnixNano())}
+	return &FrameWithPriority{Frame: f, FramePriority: uint64(time.Now().Add(til).UnixNano())}
 }
 
 // nextSRV returns a FrameWithPriority for the next shared random epoch
@@ -137,7 +150,7 @@ func nextSRV(f *Frame) *FrameWithPriority {
 	when := time.Now().Add(timeLeft).UnixNano()
 
 	// XXX: add some noise to avoid stampeding herd
-	return &FrameWithPriority{Frame: f, priority: uint64(when)}
+	return &FrameWithPriority{Frame: f, FramePriority: uint64(when)}
 }
 
 type Stream struct {
@@ -267,7 +280,7 @@ func (r *ReTx) Push(i client.Item) error {
 		// Already Acknowledged
 		return nil
 	}
-	m.priority = uint64(time.Now().Add(retryDelay).UnixNano())
+	m.FramePriority = uint64(time.Now().Add(retryDelay).UnixNano())
 	r.s.txFrame(m.Frame)
 	r.s.Go(func() {
 		r.s.txEnqueue(m) // XXX: deadlocks TQ if called from this routine
@@ -1002,6 +1015,19 @@ func (s *Stream) Save() ([]byte, error) {
 // Start starts the reader and writer workers
 func (s *Stream) Start() {
 	s.StartWithTransport(nil)
+}
+
+// String returns a description of the stream
+func (s *Stream) String() string {
+	addr := s.Addr.String()
+	unACKdstats := ""
+	for id, f := range s.R.Wack {
+		unACKdstats += fmt.Sprintf("Wait: : %d %v\n", id, f.Frame.String())
+	}
+	rwState := fmt.Sprintf("%v %v\n", ssStr(s.RState), ssStr(s.WState))
+	stateStats := fmt.Sprintf("%v %v\n", s.AckIdx, s.PeerAckIdx)
+	bufStats := fmt.Sprintf("ReadBuf.Len(): %v WriteBuf.Len(): %v", s.ReadBuf.Len(), s.WriteBuf.Len())
+	return addr + rwState + stateStats + unACKdstats + bufStats
 }
 
 // StartWithTransport starts the reader and writer workers
