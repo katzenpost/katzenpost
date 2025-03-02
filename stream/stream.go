@@ -92,25 +92,25 @@ const (
 	EndToEnd                    // requires interactive Acknowledge
 )
 
-// frameWithPriority implmeents client.Item and holds the retransmit deadline and Frame for use with a TimerQueue
-type frameWithPriority struct {
-	f        *Frame // payload of message
+// FrameWithPriority implmeents client.Item and holds the retransmit deadline and Frame for use with a TimerQueue
+type FrameWithPriority struct {
+	Frame    *Frame // payload of message
 	priority uint64 // the time in nanoseconds of when to retransmit an unacknowledged message
 }
 
 // Priority implements client.Item interface; used by TimerQueue for retransmissions
-func (s *frameWithPriority) Priority() uint64 {
+func (s *FrameWithPriority) Priority() uint64 {
 	return s.priority
 }
 
-// nextEpoch returns a frameWithPriority for next epoch
-func nextEpoch(f *Frame) *frameWithPriority {
+// nextEpoch returns a FrameWithPriority for next epoch
+func nextEpoch(f *Frame) *FrameWithPriority {
 	_, _, til := epochtime.Now()
-	return &frameWithPriority{f: f, priority: uint64(time.Now().Add(til).UnixNano())}
+	return &FrameWithPriority{Frame: f, priority: uint64(time.Now().Add(til).UnixNano())}
 }
 
-// nextSRV returns a frameWithPriority for the next shared random epoch
-func nextSRV(f *Frame) *frameWithPriority {
+// nextSRV returns a FrameWithPriority for the next shared random epoch
+func nextSRV(f *Frame) *FrameWithPriority {
 	epoch, _, til := epochtime.Now()
 	// XXX: this isn't how we define the weekly srv rotation yet, #689
 	epochsLeft := epochtime.WeekOfEpochs - (epoch % epochtime.WeekOfEpochs)
@@ -118,7 +118,7 @@ func nextSRV(f *Frame) *frameWithPriority {
 	when := time.Now().Add(timeLeft).UnixNano()
 
 	// XXX: add some noise to avoid stampeding herd
-	return &frameWithPriority{f: f, priority: uint64(when)}
+	return &FrameWithPriority{Frame: f, priority: uint64(when)}
 }
 
 type Stream struct {
@@ -210,26 +210,26 @@ func (s *Stream) SetTransport(t Transport) {
 type ReTx struct {
 	sync.Mutex
 	s    *Stream
-	Wack map[uint64]struct{}
+	Wack map[uint64]*FrameWithPriority
 }
 
 // Push is called by the TimerQueue (Stream.TQ) with a client.Item when its deadline expires.
 func (r *ReTx) Push(i client.Item) error {
 	// time to retransmit a block that has not been acknowledged yet
-	m, ok := i.(*frameWithPriority)
+	m, ok := i.(*FrameWithPriority)
 	if !ok {
-		panic("must be frameWithPriority")
+		panic("must be FrameWithPriority")
 	}
 
 	r.Lock()
-	_, ok = r.Wack[m.f.Id]
+	_, ok = r.Wack[m.Frame.Id]
 	r.Unlock()
 	if !ok {
 		// Already Acknowledged
 		return nil
 	}
 	m.priority = uint64(time.Now().Add(retryDelay).UnixNano())
-	r.s.txFrame(m.f)
+	r.s.txFrame(m.Frame)
 	r.s.Go(func() {
 		r.s.txEnqueue(m) // XXX: deadlocks TQ if called from this routine
 	})
@@ -620,10 +620,10 @@ func (s *Stream) txFrame(frame *Frame) (err error) {
 	return s.transport.Put(frame_id[:], ciphertext)
 }
 
-func (s *Stream) txEnqueue(m *frameWithPriority) {
+func (s *Stream) txEnqueue(m *FrameWithPriority) {
 	// use a timerqueue here and set an acknowledgement retransmit timeout; ideally we would know the effective durability of the storage medium and maximize the retransmission delay so that we retransmit a message as little as possible.
 	s.R.Lock()
-	s.R.Wack[m.f.Id] = struct{}{}
+	s.R.Wack[m.Frame.Id] = m
 	s.R.Unlock()
 	s.TQ.Push(m)
 }
@@ -894,7 +894,7 @@ func newStream(mode StreamMode) *Stream {
 	s.Timeout = defaultTimeout
 	// timerqueue calls s.Push when timeout of enqueued item
 	s.R = &ReTx{s: s}
-	s.R.Wack = make(map[uint64]struct{})
+	s.R.Wack = make(map[uint64]*FrameWithPriority)
 	s.TQ = client.NewTimerQueue(s.R)
 	s.retryExpDist = client2.NewExpDist()
 	s.readerExpDist = client2.NewExpDist()
