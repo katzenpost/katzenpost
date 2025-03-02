@@ -991,12 +991,7 @@ func (s *Stream) StartWithTransport(trans Transport) {
 		s.SetTransport(trans)
 	}
 	s.startOnce.Do(func() {
-		s.retryExpDist.UpdateConnectionStatus(true)
-		s.readerExpDist.UpdateConnectionStatus(true)
-		s.senderExpDist.UpdateConnectionStatus(true)
-		s.retryExpDist.UpdateRate(uint64(averageRetryRate/time.Millisecond), uint64(epochtime.Period/time.Millisecond))
-		s.readerExpDist.UpdateRate(uint64(averageReadRate/time.Millisecond), uint64(epochtime.Period/time.Millisecond))
-		s.senderExpDist.UpdateRate(uint64(averageSendRate/time.Millisecond), uint64(epochtime.Period/time.Millisecond))
+		s.Go(s.setDefaultPollingRates)
 		s.Go(func() {
 			<-s.HaltCh()
 			s.retryExpDist.Halt()
@@ -1015,6 +1010,18 @@ func (s *Stream) StartWithTransport(trans Transport) {
 		s.Go(s.reader)
 		s.Go(s.writer)
 	})
+}
+
+// setDefaultPollingRates sets default intervals for the exponential distribution repeat request parameters
+func (s *Stream) setDefaultPollingRates() {
+	// set connected status online to
+	s.retryExpDist.UpdateConnectionStatus(true)
+	s.readerExpDist.UpdateConnectionStatus(true)
+	s.senderExpDist.UpdateConnectionStatus(true)
+
+	s.retryExpDist.UpdateRate(uint64(averageRetryRate/time.Millisecond), uint64(epochtime.Period/time.Millisecond))
+	s.readerExpDist.UpdateRate(uint64(averageReadRate/time.Millisecond), uint64(epochtime.Period/time.Millisecond))
+	s.senderExpDist.UpdateRate(uint64(averageSendRate/time.Millisecond), uint64(epochtime.Period/time.Millisecond))
 }
 
 // DialDuplex returns a stream using capability backed pigeonhole storage (Duplex)
