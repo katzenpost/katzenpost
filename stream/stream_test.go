@@ -29,7 +29,6 @@ import (
 )
 
 func TestFrameKey(t *testing.T) {
-	t.Parallel()
 	require := require.New(t)
 
 	// the same key should be returned for every idx
@@ -84,31 +83,57 @@ func TestSaveLoadStream(t *testing.T) {
 		payload = append(payload, []byte(fmt.Sprintf("some friendly bytes %d", i))...)
 	}
 	// send some data
+	t.Logf("Send 420 bytes of payload")
 	_, err = sd.Write(payload[:420])
 	require.NoError(err)
+	t.Logf("Sent 420 bytes of payload")
+	t.Log(sl.String())
 
+	// read partial data
 	buf := make([]byte, 42)
+	t.Logf("Reading 42 bytes of payload")
 	n, err := sl.Read(buf)
 	require.Equal(42, n)
+	t.Logf("Read 42 bytes of payload")
+	t.Log(sl.String())
 
-	// stop the listener in the middle of receiving data
+	// stop the receiver
+	<-time.After(4*time.Second + 20*time.Millisecond)
+	t.Log("halting stream")
 	sl.Halt()
+	t.Log("halted stream")
+	t.Log(sl.String())
 
 	// save the stream
 	serialised, err := sl.Save()
 	require.NoError(err)
+	t.Log("serialised stream")
+	t.Log(sl.String())
+
+	// dump the stream variables
+	t.Log(sl.String())
 
 	// deserialize the stream
 	sl, err = LoadStream(serialised)
 	require.NoError(err)
+	t.Log("deserialised stream")
+
+	// dump the stream variables
+	t.Log(sl.String())
 
 	// start stream
 	sl.StartWithTransport(trans)
+	t.Log("(re)starting stream")
+	t.Log(sl.String())
 
 	// receive the rest of the data and verify it
 	buf2 := make([]byte, 420-42)
-	sl.Read(buf2)
+	t.Log("resuming read")
+	n, err = sl.Read(buf2) // XXX: use a context and ioutil
+	require.Equal(len(buf2), n)
 	require.Equal(append(buf, buf2...), payload)
+	t.Log("resumed read")
+	t.Log(sl.String())
 }
 
 func init() {
