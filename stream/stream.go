@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"github.com/fxamacker/cbor/v2"
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/katzenpost/client"
@@ -58,6 +59,19 @@ const (
 	StreamEnd
 )
 
+func ftStr(t FrameType) string {
+	switch t{
+	case StreamStart:
+		return "StreamStart"
+	case StreamData:
+		return "StreamData"
+	case StreamEnd:
+		return "StreamEnd"
+	default:
+		return "StreamInvalid"
+	}
+}
+
 // Frame is the container for Stream payloads and contains Stream metadata
 // that indicates whether the Frame is the first, last, or an intermediary
 // block. This
@@ -67,6 +81,11 @@ type Frame struct {
 	Id      uint64
 	Ack     uint64
 	Payload []byte // transported data
+}
+
+// String returns a description of the frame and payload
+func (f *Frame) String() string {
+	return fmt.Sprintf("%s %d %d %s", ftStr(f.Type), f.Id, f.Ack, base64.StdEncoding.EncodeToString(f.Payload))
 }
 
 // StreamState are the states that the reader and writer routines can be in
