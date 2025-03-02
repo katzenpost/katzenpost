@@ -19,8 +19,9 @@ package stream
 import (
 	"crypto/sha256"
 	"encoding/base64"
-	"fmt"
+	"github.com/katzenpost/hpqc/rand"
 	"github.com/stretchr/testify/require"
+	"io"
 	"net/http"
 	_ "net/http/pprof"
 	"runtime"
@@ -78,15 +79,15 @@ func TestSaveLoadStream(t *testing.T) {
 	sd, err := Dial(trans, "", base64.StdEncoding.EncodeToString(x[:]))
 	require.NoError(err)
 
-	payload := []byte{}
-	for i := 0; i < 42; i++ {
-		payload = append(payload, []byte(fmt.Sprintf("some friendly bytes %d", i))...)
-	}
-	// send some data
-	t.Logf("Send 420 bytes of payload")
-	_, err = sd.Write(payload[:420])
+	payload := make([]byte, 4200)
+	_, err = io.ReadFull(rand.Reader, payload[:])
 	require.NoError(err)
-	t.Logf("Sent 420 bytes of payload")
+
+	// send some data
+	t.Logf("Send payload")
+	_, err = sd.Write(payload)
+	require.NoError(err)
+	t.Logf("Sent payload")
 	t.Log(sl.String())
 
 	// read partial data
@@ -105,6 +106,7 @@ func TestSaveLoadStream(t *testing.T) {
 	t.Log(sl.String())
 
 	// save the stream
+	t.Log("serialising stream")
 	serialised, err := sl.Save()
 	require.NoError(err)
 	t.Log("serialised stream")
@@ -127,9 +129,10 @@ func TestSaveLoadStream(t *testing.T) {
 	t.Log(sl.String())
 
 	// receive the rest of the data and verify it
-	buf2 := make([]byte, 420-42)
+	buf2 := make([]byte, 4200-42)
 	t.Log("resuming read")
-	n, err = sl.Read(buf2) // XXX: use a context and ioutil
+	n, err = io.ReadFull(sl, (buf2))
+	require.NoError(err)
 	require.Equal(len(buf2), n)
 	require.Equal(append(buf, buf2...), payload)
 	t.Log("resumed read")
