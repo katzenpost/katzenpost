@@ -999,6 +999,16 @@ func (s *Stream) StartWithTransport(trans Transport) {
 			s.senderExpDist.Halt()
 			s.TQ.Halt()
 		})
+		s.Go(func() {
+			for _, f := range s.R.Wack {
+				s.txEnqueue(f)
+				err := s.txFrame(f.Frame)
+				if err != nil {
+					// ideally, log error - what if stream starts Offline?
+					panic(err)
+				}
+			}
+		})
 		s.WindowSize = defaultWindowSize
 		s.MaxWriteBufSize = int(s.WindowSize) * PayloadSize(s.transport)
 		s.onFlush = make(chan struct{}, 1)
