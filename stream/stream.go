@@ -157,15 +157,20 @@ type stream Stream
 
 func (s *Stream) MarshalCBOR() ([]byte, error) {
 	s.l.Lock()
+	s.R.Lock()
 	defer s.l.Unlock()
+	defer s.R.Unlock()
 	s.ReadBuf = s.readBuf.Bytes()
 	s.WriteBuf = s.writeBuf.Bytes()
 	return cbor.Marshal((*stream)(s))
 }
 
-func (s *Stream) UnarshalCBOR(data []byte) error {
+func (s *Stream) UnmarshalCBOR(data []byte) error {
 	s.l.Lock()
+	s.R.Lock()
 	defer s.l.Unlock()
+	defer s.R.Unlock()
+
 	err := cbor.Unmarshal(data, (*stream)(s))
 	if err != nil {
 		return err
@@ -1031,10 +1036,6 @@ func LoadStream(state []byte) (*Stream, error) {
 
 // Save serializes the current state of the Stream
 func (s *Stream) Save() ([]byte, error) {
-	s.l.Lock()
-	s.R.Lock()
-	defer s.l.Unlock()
-	defer s.R.Unlock()
 	return cbor.Marshal(s)
 }
 
