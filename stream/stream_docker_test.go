@@ -340,13 +340,25 @@ func TestStreamSerialize(t *testing.T) {
 		s.Halt()
 		senderStreamState, err := s.Save()
 		require.NoError(err)
-		s, err = LoadStream(session, senderStreamState)
+		c, _ := mClient.NewClient(session)
+
+		s, err = LoadStream(senderStreamState)
 		require.NoError(err)
+
+		// initialize a pigeonhole client with session
+		trans := mClient.DuplexFromSeed(c, s.Initiator, []byte(s.LocalAddr().String()))
+		// FIXME: Streams should support resetting sender/receivers on Geometry changes.
+		if s.PayloadSize != PayloadSize(trans) {
+			panic(ErrGeometryChanged)
+		}
+
+		// use pigeonhole transport
+		s.SetTransport(trans)
 		s.Start()
 		r.Halt()
 		receiverStreamState, err := r.Save()
 		require.NoError(err)
-		r, err = LoadStream(session, receiverStreamState)
+		r, err = LoadStream(receiverStreamState)
 		require.NoError(err)
 		r.Start()
 	}
