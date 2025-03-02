@@ -338,6 +338,8 @@ func (s *Stream) reader() {
 					doFlush = true
 				}
 			}
+		default:
+			// pass
 		}
 		s.l.Unlock()
 		if doFlush {
