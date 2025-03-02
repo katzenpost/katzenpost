@@ -58,7 +58,7 @@ func newStreams(t Transport) (*Stream, *Stream) {
 
 	a := newStream(EndToEnd)
 	a.SetTransport(t)
-	addr := &StreamAddr{address: generate()}
+	addr := &StreamAddr{Saddress: generate()}
 	a.keyAsListener(addr)
 	b := newStream(EndToEnd)
 	b.SetTransport(t)

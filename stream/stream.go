@@ -636,7 +636,7 @@ func H(i []byte) (res common.MessageID) {
 func Dial(c Transport, network, addr string) (*Stream, error) {
 	s := newStream(EndToEnd)
 	s.SetTransport(c)
-	a := &StreamAddr{network: network, address: addr}
+	a := &StreamAddr{Snetwork: network, Saddress: addr}
 	err := s.keyAsDialer(a)
 	if err != nil {
 		return nil, err
@@ -718,7 +718,7 @@ func deriveListenerDialerSecrets(addr string) ([]byte, []byte, error) {
 func Listen(c Transport, network, addr string) (*Stream, error) {
 	s := newStream(EndToEnd)
 	s.SetTransport(c)
-	a := &StreamAddr{network: network, address: addr}
+	a := &StreamAddr{Snetwork: network, Saddress: addr}
 	err := s.keyAsListener(a)
 	if err != nil {
 		return nil, err
@@ -858,17 +858,17 @@ func (s *Stream) processAck(f *Frame) {
 
 // StreamAddr implements net.Addr
 type StreamAddr struct {
-	network, address string
+	Snetwork, Saddress string
 }
 
 // Network implements net.Addr
 func (s *StreamAddr) Network() string {
-	return s.network
+	return s.Snetwork
 }
 
 // String implements net.Addr String()
 func (s *StreamAddr) String() string {
-	return s.address
+	return s.Saddress
 }
 
 // LocalAddr implements net.Addr LocalAddr()
@@ -910,7 +910,7 @@ func newStream(mode StreamMode) *Stream {
 // NewMulticastStream generates a new address and starts the read/write workers with Multicast mode
 func NewMulticastStream(s *client.Session) *Stream {
 	c, _ := mClient.NewClient(s)
-	addr := &StreamAddr{network: "", address: generate()}
+	addr := &StreamAddr{Snetwork: "", Saddress: generate()}
 	t := mClient.DuplexFromSeed(c, true, []byte(addr.String()))
 	st := newStream(Multicast)
 	st.SetTransport(t)
@@ -927,7 +927,7 @@ func NewMulticastStream(s *client.Session) *Stream {
 // func NewStream(c Transport, identity sign.PrivateKey, sign.PublicKey) *Stream {
 func NewStream(s *client.Session) *Stream {
 	c, _ := mClient.NewClient(s)
-	addr := &StreamAddr{network: "", address: generate()}
+	addr := &StreamAddr{Snetwork: "", Saddress: generate()}
 	t := mClient.DuplexFromSeed(c, true, []byte(addr.String()))
 	st := newStream(EndToEnd)
 	st.SetTransport(t)
@@ -1020,7 +1020,7 @@ func DialDuplex(s *client.Session, network, addr string) (*Stream, error) {
 	t := mClient.DuplexFromSeed(c, false, []byte(addr))
 	st := newStream(EndToEnd)
 	st.SetTransport(t)
-	a := &StreamAddr{network: network, address: addr}
+	a := &StreamAddr{Snetwork: network, Saddress: addr}
 
 	err = st.keyAsDialer(a)
 	if err != nil {
@@ -1035,7 +1035,7 @@ func ListenDuplex(s *client.Session, network, addr string) (*Stream, error) {
 	c, _ := mClient.NewClient(s)
 	st := newStream(EndToEnd)
 	st.SetTransport(mClient.DuplexFromSeed(c, true, []byte(addr)))
-	a := &StreamAddr{network: network, address: addr}
+	a := &StreamAddr{Snetwork: network, Saddress: addr}
 	err := st.keyAsListener(a)
 	if err != nil {
 		return nil, err
@@ -1050,7 +1050,7 @@ func NewDuplex(s *client.Session) (*Stream, error) {
 	if err != nil {
 		return nil, err
 	}
-	a := &StreamAddr{network: "", address: generate()}
+	a := &StreamAddr{Snetwork: "", Saddress: generate()}
 	st := newStream(EndToEnd)
 	st.SetTransport(mClient.DuplexFromSeed(c, true, []byte(a.String())))
 	err = st.keyAsListener(a)
