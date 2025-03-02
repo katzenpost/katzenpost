@@ -314,7 +314,7 @@ func (r *ReTx) Push(i client.Item) error {
 	m.FramePriority = uint64(time.Now().Add(retryDelay).UnixNano())
 	r.s.txFrame(m.Frame)
 	r.s.Go(func() {
-		r.s.txEnqueue(m) // XXX: deadlocks TQ if called from this routine
+		r.s.txEnqueue(m)
 	})
 	return nil
 }
