@@ -153,6 +153,30 @@ func nextSRV(f *Frame) *FrameWithPriority {
 	return &FrameWithPriority{Frame: f, FramePriority: uint64(when)}
 }
 
+type stream Stream
+
+func (s *Stream) MarshalCBOR() ([]byte, error) {
+	s.l.Lock()
+	defer s.l.Unlock()
+	s.ReadBuf = s.readBuf.Bytes()
+	s.WriteBuf = s.writeBuf.Bytes()
+	return cbor.Marshal((*stream)(s))
+}
+
+func (s *Stream) UnarshalCBOR(data []byte) error {
+	s.l.Lock()
+	defer s.l.Unlock()
+	err := cbor.Unmarshal(data, (*stream)(s))
+	if err != nil {
+		return err
+	}
+
+	// initialize buffers
+	s.readBuf = bytes.NewBuffer(s.ReadBuf)
+	s.writeBuf = bytes.NewBuffer(s.WriteBuf)
+	return nil
+}
+
 type Stream struct {
 	l *sync.Mutex
 	worker.Worker
@@ -181,9 +205,11 @@ type Stream struct {
 	WriteIDBase common.MessageID
 	ReadIDBase  common.MessageID
 
-	// buffers
-	WriteBuf *bytes.Buffer // buffer to enqueue data before being transmitted
-	ReadBuf  *bytes.Buffer // buffer to reassumble data from Frames
+	// XXX: bytes.Buffer is not restored by cbor.Marshal
+	WriteBuf []byte
+	writeBuf *bytes.Buffer // buffer to enqueue data before being transmitted
+	ReadBuf  []byte
+	readBuf  *bytes.Buffer // buffer to reassumble data from Frames
 
 	// our frame pointers
 	ReadIdx  uint64
@@ -336,7 +362,7 @@ func (s *Stream) reader() {
 			s.processAck(f)
 		}
 		s.l.Lock()
-		n, _ := s.ReadBuf.Write(f.Payload)
+		n, _ := s.readBuf.Write(f.Payload)
 
 		// If this is the last Frame in the stream, set RState to StreamClosed
 		if f.Type == StreamEnd {
@@ -358,7 +384,7 @@ func (s *Stream) reader() {
 // caller must hold s.l.Lock, and returns with lock held
 // sleepReader sleeps until a Timeout occurs, data is available, or the
 func (s *Stream) sleepReader() error {
-	if s.ReadBuf.Len() == 0 {
+	if s.readBuf.Len() == 0 {
 		if s.RState == StreamClosed {
 			return io.EOF
 		} // otherwise continue below, and wait for data to be available
@@ -400,9 +426,9 @@ func (s *Stream) Read(p []byte) (n int, err error) {
 	}
 	// if sleepReader returns in RState.StreamClosed, check if there are
 	// any bytes to drain to the caller of Read, and subsequent calls to
-	// Read will return io.EOF when the ReadBuf is drained.
-	n, err = s.ReadBuf.Read(p)
-	// ignore io.EOF on short reads from ReadBuf
+	// Read will return io.EOF when the readBuf is drained.
+	n, err = s.readBuf.Read(p)
+	// ignore io.EOF on short reads from readBuf
 	if err == io.EOF {
 		if s.RState != StreamClosed || n > 0 {
 			return n, nil
@@ -414,7 +440,7 @@ func (s *Stream) Read(p []byte) (n int, err error) {
 // caller must hold s.l mutex, and returns with mutex held
 func (s *Stream) sleepWriter() error {
 	// only sleep if there is nothing to do
-	if s.WriteBuf.Len() >= s.MaxWriteBufSize {
+	if s.writeBuf.Len() >= s.MaxWriteBufSize {
 		defer s.l.Lock() // in either case, return holding mutex
 		// Timeout == 0 blocks until there is a write or the stream is halted
 		if s.Timeout != 0 {
@@ -460,7 +486,7 @@ func (s *Stream) Write(p []byte) (n int, err error) {
 		<-s.onStreamClose
 		return 0, io.EOF
 	}
-	n, err = s.WriteBuf.Write(p)
+	n, err = s.writeBuf.Write(p)
 	// doFlush must not be called holding mutex
 	s.l.Unlock()
 	s.doFlush()
@@ -482,7 +508,7 @@ func (s *Stream) Sync() error {
 			return ErrHalted
 		}
 		s.l.Lock()
-		if s.WriteBuf.Len() == 0 {
+		if s.writeBuf.Len() == 0 {
 			s.l.Unlock()
 			return nil
 		}
@@ -491,7 +517,7 @@ func (s *Stream) Sync() error {
 }
 
 // Close terminates the Stream with a final Frame and blocks future Writes
-// it does *not* drain WriteBuf, call Sync() to flush WriteBuf first.
+// it does *not* drain writeBuf, call Sync() to flush writeBuf first.
 func (s *Stream) Close() error {
 	s.l.Lock()
 	if s.WState == StreamOpen {
@@ -547,7 +573,7 @@ func (s *Stream) writer() {
 				}
 			}
 			if !mustAck && !mustTeardown {
-				mustWaitForData := s.WriteBuf.Len() == 0
+				mustWaitForData := s.writeBuf.Len() == 0
 				if mustWaitForData {
 				}
 				if mustWaitForAck {
@@ -592,7 +618,7 @@ func (s *Stream) writer() {
 		}
 		f.Payload = make([]byte, s.PayloadSize)
 		// Read up to the maximum frame payload size
-		n, err := s.WriteBuf.Read(f.Payload)
+		n, err := s.writeBuf.Read(f.Payload)
 		s.l.Unlock()
 		switch err {
 		case nil, io.ErrUnexpectedEOF, io.EOF:
@@ -937,8 +963,8 @@ func newStream(mode StreamMode) *Stream {
 	s.retryExpDist = client2.NewExpDist()
 	s.readerExpDist = client2.NewExpDist()
 	s.senderExpDist = client2.NewExpDist()
-	s.WriteBuf = new(bytes.Buffer)
-	s.ReadBuf = new(bytes.Buffer)
+	s.writeBuf = new(bytes.Buffer)
+	s.readBuf = new(bytes.Buffer)
 
 	s.WriteKey = &[keySize]byte{}
 	s.ReadKey = &[keySize]byte{}
@@ -1026,7 +1052,7 @@ func (s *Stream) String() string {
 	}
 	rwState := fmt.Sprintf("%v %v\n", ssStr(s.RState), ssStr(s.WState))
 	stateStats := fmt.Sprintf("%v %v\n", s.AckIdx, s.PeerAckIdx)
-	bufStats := fmt.Sprintf("ReadBuf.Len(): %v WriteBuf.Len(): %v", s.ReadBuf.Len(), s.WriteBuf.Len())
+	bufStats := fmt.Sprintf("readBuf.Len(): %v writeBuf.Len(): %v", s.readBuf.Len(), s.writeBuf.Len())
 	return addr + rwState + stateStats + unACKdstats + bufStats
 }
 
