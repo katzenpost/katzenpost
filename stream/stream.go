@@ -213,6 +213,26 @@ type ReTx struct {
 	Wack map[uint64]*FrameWithPriority
 }
 
+// Ack removes any unAcknowledged Frames <= frameId from Wack
+func (r *ReTx) Ack(frameId uint64) bool {
+	ackD := false
+	r.Lock()
+
+	todelete := []uint64{}
+	// ack predecessor frames to frameId
+	for i, _ := range r.Wack {
+		if i <= frameId {
+			todelete = append(todelete, i)
+			ackD = true
+		}
+	}
+	for _, i := range todelete {
+		delete(r.Wack, i)
+	}
+	r.Unlock()
+	return ackD
+}
+
 // Push is called by the TimerQueue (Stream.TQ) with a client.Item when its deadline expires.
 func (r *ReTx) Push(i client.Item) error {
 	// time to retransmit a block that has not been acknowledged yet
@@ -826,21 +846,7 @@ func (s *Stream) processAck(f *Frame) {
 	if f.Ack == no_ack {
 		return
 	}
-	ackD := false
-	s.R.Lock()
-
-	todelete := []uint64{}
-	// ack all frames predecessor to peer ack
-	for i, _ := range s.R.Wack {
-		if i <= f.Ack {
-			todelete = append(todelete, i)
-			ackD = true
-		}
-	}
-	for _, i := range todelete {
-		delete(s.R.Wack, i)
-	}
-	s.R.Unlock()
+	ackD := s.R.Ack(f.Ack)
 	// update last_ack from peer
 	s.l.Lock()
 	if f.Ack > s.PeerAckIdx {
