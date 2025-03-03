@@ -1050,9 +1050,11 @@ func (s *Stream) Start() {
 func (s *Stream) String() string {
 	addr := s.Addr.String()
 	unACKdstats := ""
+	s.R.Lock()
 	for id, f := range s.R.Wack {
 		unACKdstats += fmt.Sprintf("Wait: : %d %v\n", id, f.Frame.String())
 	}
+	s.R.Unlock()
 	rwState := fmt.Sprintf("%v %v\n", ssStr(s.RState), ssStr(s.WState))
 	stateStats := fmt.Sprintf("%v %v\n", s.AckIdx, s.PeerAckIdx)
 	bufStats := fmt.Sprintf("readBuf.Len(): %v writeBuf.Len(): %v", s.readBuf.Len(), s.writeBuf.Len())
