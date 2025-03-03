@@ -1057,7 +1057,9 @@ func (s *Stream) String() string {
 	s.R.Unlock()
 	rwState := fmt.Sprintf("%v %v\n", ssStr(s.RState), ssStr(s.WState))
 	stateStats := fmt.Sprintf("%v %v\n", s.AckIdx, s.PeerAckIdx)
+	s.l.Lock()
 	bufStats := fmt.Sprintf("readBuf.Len(): %v writeBuf.Len(): %v", s.readBuf.Len(), s.writeBuf.Len())
+	s.l.Unlock()
 	return addr + rwState + stateStats + unACKdstats + bufStats
 }
 
