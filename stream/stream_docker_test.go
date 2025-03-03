@@ -360,6 +360,9 @@ func TestStreamSerialize(t *testing.T) {
 		require.NoError(err)
 		r, err = LoadStream(receiverStreamState)
 		require.NoError(err)
+
+		// set the transport
+		r.SetTransport(trans)
 		r.Start()
 	}
 	err = s.Close()
