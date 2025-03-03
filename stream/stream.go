@@ -1073,15 +1073,13 @@ func (s *Stream) StartWithTransport(trans Transport) {
 			s.senderExpDist.Halt()
 			s.TQ.Halt()
 		})
+		// re-schedule unacknowledged frames
 		s.Go(func() {
+			s.R.Lock()
 			for _, f := range s.R.Wack {
-				s.txEnqueue(f)
-				err := s.txFrame(f.Frame)
-				if err != nil {
-					// ideally, log error - what if stream starts Offline?
-					panic(err)
-				}
+				defer s.txEnqueue(f)
 			}
+			s.R.Unlock()
 		})
 		s.WindowSize = defaultWindowSize
 		s.MaxWriteBufSize = int(s.WindowSize) * PayloadSize(s.transport)
