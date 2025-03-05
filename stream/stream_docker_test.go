@@ -302,7 +302,7 @@ func TestStreamSerialize(t *testing.T) {
 		enc := cbor.NewEncoder(s)
 		dec := cbor.NewDecoder(r)
 		m := new(msg)
-		m.Payload = make([]byte, 42) //2 * FramePayloadSize)
+		m.Payload = make([]byte, 4200) //2 * FramePayloadSize)
 		for j := 0; j < len(m.Payload); j++ {
 			m.Payload[j] = 0x10
 		}
