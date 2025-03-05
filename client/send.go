@@ -246,18 +246,20 @@ func (s *Session) BlockingSendUnreliableMessageWithContext(ctx context.Context, 
 	}
 
 	// wait until sent so that we know the ReplyETA for the waiting below
-	sentMessage := <-sentWaitChan
-
-	// if the message failed to send we will receive a nil message
-	if sentMessage == nil {
-		return nil, ErrMessageNotSent
-	}
-
-	// use a default context with the estimated replyETA if one is not specified
-	var cancelFn func()
-	if ctx == nil {
-		ctx, cancelFn = context.WithTimeout(context.Background(), sentMessage.ReplyETA+cConstants.RoundTripTimeSlop)
-		defer cancelFn()
+	select {
+	case sentMessage := <-sentWaitChan:
+		// if the message failed to send we will receive a nil message
+		if sentMessage == nil {
+			return nil, ErrMessageNotSent
+		}
+		// use a default context with the estimated replyETA if one is not specified
+		var cancelFn func()
+		if ctx == nil {
+			ctx, cancelFn = context.WithTimeout(context.Background(), sentMessage.ReplyETA+cConstants.RoundTripTimeSlop)
+			defer cancelFn()
+		}
+	case <-s.HaltCh():
+		return nil, ErrHalted
 	}
 
 	// wait for reply or round trip timeout
