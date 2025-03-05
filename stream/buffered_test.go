@@ -252,7 +252,7 @@ func TestLossyStream(t *testing.T) {
 
 func init() {
 	go func() {
-		http.ListenAndServe("localhost:8181", nil)
+		http.ListenAndServe("localhost:8282", nil)
 	}()
 	runtime.SetMutexProfileFraction(1)
 	runtime.SetBlockProfileRate(1)
