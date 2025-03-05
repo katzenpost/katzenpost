@@ -89,21 +89,7 @@ func TestCreateStream(t *testing.T) {
 	require.Equal(n, len(msg))
 
 	yolo := make([]byte, len(msg))
-	for {
-		// XXX: the tricky part is that we don't have a convenience method that will handle spinning on Read() for us and
-		// ReadAtLeast payload
-		// I thought io.ReadAtLeast would do this, but we get EOF too soon
-		// because we are just proxying the calls through bytes.Buffer and whatever it does
-		n, err = r.Read(yolo)
-		require.NoError(err)
-		if n == len(msg) {
-			t.Logf("Read %s", string(yolo))
-			break
-		} else {
-			t.Logf("Read(%d): %s", n, string(yolo))
-		}
-		<-time.After(time.Second)
-	}
+	n, err = io.ReadFull(r, yolo)
 	require.NoError(err)
 	require.Equal(n, len(msg))
 	require.Equal(yolo, msg)
