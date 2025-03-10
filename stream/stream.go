@@ -613,8 +613,7 @@ func (s *Stream) writer() {
 			if s.ReadIdx == 0 {
 				f.Ack = no_ack
 			} else {
-				f.Ack = s.ReadIdx - 1 // ReadIdx points at next frame, which we haven't read
-				s.AckIdx = f.Ack
+				f.Ack = s.AckIdx
 			}
 		}
 
@@ -916,6 +915,9 @@ func (s *Stream) processAck(f *Frame) {
 	s.l.Lock()
 	if f.Ack > s.PeerAckIdx {
 		s.PeerAckIdx = f.Ack
+	}
+	if f.Id > s.AckIdx {
+		s.AckIdx = f.Id
 	}
 	s.l.Unlock()
 	// prod writer() waiting on Ack
