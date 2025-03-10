@@ -269,6 +269,7 @@ func (s *Session) BlockingSendUnreliableMessageWithContext(ctx context.Context, 
 	case <-s.HaltCh():
 		return nil, ErrHalted
 	case <-ctx.Done():
+		s.log.Debugf("ctx.Done(): %v", ctx.Err())
 		return nil, ctx.Err()
 	}
 	// unreachable
