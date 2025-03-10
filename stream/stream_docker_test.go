@@ -306,6 +306,7 @@ func TestStreamSerialize(t *testing.T) {
 		// stop the stream workers, serialize, deserialize, and start them again
 		// note that the same stream object is kept
 
+		s.Sync()
 		s.Halt()
 		senderStreamState, err := s.Save()
 		require.NoError(err)
