@@ -260,7 +260,7 @@ func (m *PigeonHole) OnCommand(cmd cborplugin.Command) error {
 		// validate the capabilities of PigeonHoleRequest
 		if !validateCap(req) {
 			resp.Status = common.StatusFailed
-			m.log.Errorf("validateCap failed with error %v", err)
+			m.log.Errorf("validateCap failed for %x", req.ID)
 		} else {
 			// Write data if payload present
 			if len(req.Payload) > 0 {
