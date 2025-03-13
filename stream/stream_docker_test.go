@@ -19,6 +19,7 @@
 package stream
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -89,21 +90,7 @@ func TestCreateStream(t *testing.T) {
 	require.Equal(n, len(msg))
 
 	yolo := make([]byte, len(msg))
-	for {
-		// XXX: the tricky part is that we don't have a convenience method that will handle spinning on Read() for us and
-		// ReadAtLeast payload
-		// I thought io.ReadAtLeast would do this, but we get EOF too soon
-		// because we are just proxying the calls through bytes.Buffer and whatever it does
-		n, err = r.Read(yolo)
-		require.NoError(err)
-		if n == len(msg) {
-			t.Logf("Read %s", string(yolo))
-			break
-		} else {
-			t.Logf("Read(%d): %s", n, string(yolo))
-		}
-		<-time.After(time.Second)
-	}
+	n, err = io.ReadFull(r, yolo)
 	require.NoError(err)
 	require.Equal(n, len(msg))
 	require.Equal(yolo, msg)
@@ -144,100 +131,82 @@ func TestStreamFragmentation(t *testing.T) {
 
 	wg := new(sync.WaitGroup)
 	wg.Add(2)
-	sidechannel := make(chan string, 0)
-
-	// StreamAddr
+	// Generate StreamAddr
 	addr := &StreamAddr{"address", generate()}
-	// worker A
+
+	// Listen and Dial the StreamAddr
+	listener, err := ListenDuplex(session, "", addr.String())
+	require.NoError(err)
+
+	dialed, err := DialDuplex(session, "", addr.String())
+	require.NoError(err)
+
+	// write data in chunks with delays by sender
+	payload := make([]byte, 10*4200)
+
+	chunk_size := len(payload) / 42
+	_, err = io.ReadFull(rand.Reader, payload)
+	require.NoError(err)
+
+	// a writer worker that sends a payload in chunks and then closes the stream
+	errCh := make(chan error)
 	go func() {
-		s, err := ListenDuplex(session, "", addr.String())
-		require.NoError(err)
-		for i := 0; i < 4; i++ {
-			entropic := make([]byte, 4242) // ensures fragmentation
-			io.ReadFull(rand.Reader, entropic)
-			message := base64.StdEncoding.EncodeToString(entropic)
-			mbytes := []byte(message)
-			// tell the other worker what message we're going to try and send
-			t.Logf("Sending %d bytes", len(message))
-			sidechannel <- message
-			offs := 0
-			for offs < len(mbytes) {
-				n, err := s.Write(mbytes[offs:])
-				require.NoError(err)
-				offs += n
+		defer wg.Done()
+		defer dialed.Close()
+		defer close(errCh)
+		for i := int64(0); i < int64(len(payload)); {
+			var msg []byte
+			remains := payload[i:]
+			if len(remains) < chunk_size {
+				msg = remains
+			} else {
+				msg = remains[:chunk_size]
 			}
-		}
-		// Writer closes stream
-		t.Logf("SendWorker Sync()")
-		err = s.Sync()
-		require.NoError(err)
-		t.Logf("SendWorker Close()")
-		err = s.Close()
-		require.NoError(err)
-
-		close(sidechannel)
-		t.Logf("SendWorker Done()")
-		require.NoError(err)
-		wg.Done()
-
-		// wait until reader has finished reading
-		// before halting the writer()
-		wg.Wait()
-		s.Halt()
-	}()
-
-	// worker B
-	go func() {
-		s, err := DialDuplex(session, "", addr.String())
-		require.NoError(err)
-		for {
-			msg, ok := <-sidechannel
-			// channel was closed by writer, we're done
-			if !ok {
-				// verify that EOF is (eventually) returned on a Read after Stream.Close()
-				foo := make([]byte, 42)
-				var n int
-				var err error
-				// retry read until StreamClosed and EOF has arrived
-				for err == nil {
-					t.Logf("Waiting for StreamEnd")
-					n, err = s.Read(foo)
-					require.Equal(n, 0)
-					<-time.After(2 * time.Second)
-				}
-				// stream must return EOF when writer has finalized stream
-				require.Error(err, io.EOF)
-				t.Logf("ReadWorker Close()")
-				err = s.Close()
-				require.NoError(err)
-				wg.Done()
-				s.Halt()
+			t.Logf("Writing %d bytes", len(msg))
+			n, err := io.Copy(dialed, bytes.NewBuffer(msg))
+			if err != nil {
+				errCh <- err
 				return
 			}
-			b := make([]byte, len(msg))
-			// Read() data until we have received the message
-			for readOff := 0; readOff < len(msg); {
-				n, err := s.Read(b[readOff:])
-				if err != nil {
-					t.Logf("read %d, total %d", n, readOff)
-					if readOff+n < len(msg) {
-						t.Errorf("Read() returned incomplete with err: %v", err)
-						return
-					}
-				}
-				t.Logf("Read %d bytes", n)
-
-				readOff += n
-				if n == 0 {
-					// XXX retry a sensible time later, like the average round trip time
-					<-time.After(time.Second * 2)
-				}
+			if n != int64(chunk_size) {
+				t.Logf("wrote %d less than expected", int64(len(msg))-n)
 			}
-			t.Logf("Read total %d", len(b))
-			require.Equal([]byte(msg), b)
+			i += n
+			// wait
+			<-time.After(10 * time.Second)
 		}
 	}()
+
+	// a reader worker that receives a payload
+
+	result := make([]byte, 4242)
+	err2Ch := make(chan error)
+	go func() {
+		defer wg.Done()
+		defer close(err2Ch)
+		_, err := io.ReadFull(listener, result)
+		if err != nil {
+			err2Ch <- err
+			return
+		}
+	}()
+
+	// require that no errors occurred while reading or writing the data
+	err, ok := <-errCh
+	if !ok {
+		require.NoError(err)
+	}
+	err, ok = <-err2Ch
+	if !ok {
+		require.NoError(err)
+	}
+
+	// wait until the routines have returned
 	wg.Wait()
+
+	// halt the dialer and listener
+	dialed.Halt()
+	listener.Halt()
 }
 
 func TestCBORSerialization(t *testing.T) {
@@ -316,7 +285,7 @@ func TestStreamSerialize(t *testing.T) {
 		enc := cbor.NewEncoder(s)
 		dec := cbor.NewDecoder(r)
 		m := new(msg)
-		m.Payload = make([]byte, 42) //2 * FramePayloadSize)
+		m.Payload = make([]byte, 4200) //2 * FramePayloadSize)
 		for j := 0; j < len(m.Payload); j++ {
 			m.Payload[j] = 0x10
 		}
@@ -337,17 +306,33 @@ func TestStreamSerialize(t *testing.T) {
 		// stop the stream workers, serialize, deserialize, and start them again
 		// note that the same stream object is kept
 
+		s.Sync()
 		s.Halt()
 		senderStreamState, err := s.Save()
 		require.NoError(err)
-		s, err = LoadStream(session, senderStreamState)
+		c, _ := mClient.NewClient(session)
+
+		s, err = LoadStream(senderStreamState)
 		require.NoError(err)
+
+		// initialize a pigeonhole client with session
+		trans := mClient.DuplexFromSeed(c, s.Initiator, []byte(s.LocalAddr().String()))
+		// FIXME: Streams should support resetting sender/receivers on Geometry changes.
+		if s.PayloadSize != PayloadSize(trans) {
+			panic(ErrGeometryChanged)
+		}
+
+		// use pigeonhole transport
+		s.SetTransport(trans)
 		s.Start()
 		r.Halt()
 		receiverStreamState, err := r.Save()
 		require.NoError(err)
-		r, err = LoadStream(session, receiverStreamState)
+		r, err = LoadStream(receiverStreamState)
 		require.NoError(err)
+
+		// set the transport
+		r.SetTransport(trans)
 		r.Start()
 	}
 	err = s.Close()

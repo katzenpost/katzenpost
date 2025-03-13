@@ -34,7 +34,6 @@ import (
 var (
 	cborFrameOverhead = 0 // overhead is determined by init()
 	hash              = sha256.New
-	ErrStatusNotFound = errors.New("StatusNotFound")
 )
 
 type Client struct {
@@ -114,8 +113,17 @@ func (c *Client) Put(ID common.MessageID, signature, payload []byte) error {
 		return err
 	}
 
-	_, err = c.Session.SendReliableMessage(loc.Name(), loc.Provider(), serialized)
-	return err
+	r, err := c.Session.BlockingSendUnreliableMessage(loc.Name(), loc.Provider(), serialized)
+	resp := &common.PigeonHoleResponse{}
+	_, err = cbor.UnmarshalFirst(r, resp)
+	if err != nil {
+		return err
+	}
+	if resp.Status == common.StatusOK {
+		return nil
+	} else {
+		return common.ErrStatusFailed
+	}
 }
 
 // PayloadSize returns the size of the user payload
@@ -153,7 +161,7 @@ func (c *Client) GetWithContext(ctx context.Context, ID common.MessageID, signat
 		return nil, err
 	}
 	if resp.Status == common.StatusNotFound {
-		return nil, ErrStatusNotFound
+		return nil, common.ErrStatusNotFound
 	}
 	return resp.Payload, nil
 }
@@ -204,7 +212,7 @@ func (r *rwPigeonHole) GetWithContext(ctx context.Context, addr []byte) ([]byte,
 // Put implements ReadWriteClient.Put
 func (r *rwPigeonHole) Put(addr []byte, payload []byte) error {
 	i := r.rwCap.Addr(addr)
-	k := r.rwCap.ReadKey(addr)
+	k := r.rwCap.WriteKey(addr)
 	return r.c.Put(i, k.Sign(payload), payload)
 }
 
