@@ -204,7 +204,7 @@ func (r *rwPigeonHole) GetWithContext(ctx context.Context, addr []byte) ([]byte,
 // Put implements ReadWriteClient.Put
 func (r *rwPigeonHole) Put(addr []byte, payload []byte) error {
 	i := r.rwCap.Addr(addr)
-	k := r.rwCap.ReadKey(addr)
+	k := r.rwCap.WriteKey(addr)
 	return r.c.Put(i, k.Sign(payload), payload)
 }
 
