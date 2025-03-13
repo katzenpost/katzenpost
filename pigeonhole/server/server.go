@@ -38,7 +38,6 @@ const (
 	gcBucket         = "gc"
 )
 
-
 // PigeonHole holds reference to the database and logger and provides methods to store and retrieve data
 type PigeonHole struct {
 	worker.Worker
@@ -88,11 +87,9 @@ func (m *PigeonHole) Wake(msgID common.MessageID, payload []byte) error {
 	m.Go(func() {
 		for _, pluginResponse := range waiting {
 			// verify that the pluginResponse SURB and ID fields are intact
-			m.log.Debug("Found pluginResponse %x with SURBID %x from %v", pluginResponse.ID, pluginResponse.SURB, pluginResponse.RequestAt)
 			pluginResponse.Payload = rawResp
-			m.log.Debugf("sending pluginResponse...")
-			m.write(pluginResponse) // XXX: write() is threadsafe, right?
-			m.log.Debugf("sent pluginResponse")
+			m.write(pluginResponse)
+			m.log.Debugf("sent pluginResponse for %x", msgID)
 		}
 	})
 	return nil
