@@ -42,6 +42,7 @@ const (
 // PigeonHole holds reference to the database and logger and provides methods to store and retrieve data
 type PigeonHole struct {
 	worker.Worker
+	l   *sync.Mutex
 	log *logging.Logger
 	db  *bolt.DB
 
@@ -255,50 +256,53 @@ func (m *PigeonHole) OnCommand(cmd cborplugin.Command) error {
 			return err
 		}
 
+		resp := &common.PigeonHoleResponse{}
 		// validate the capabilities of PigeonHoleRequest
 		if !validateCap(req) {
+			resp.Status = common.StatusFailed
 			m.log.Errorf("validateCap failed with error %v", err)
-			return errors.New("failed to verify capability")
-		}
-
-		resp := &common.PigeonHoleResponse{}
-		// Write data if payload present
-		if len(req.Payload) > 0 {
-			err := m.Put(req.ID, req.Payload)
-			if err != nil {
-				m.log.Debugf("Put(%x): Failed", req.ID)
-				resp.Status = common.StatusFailed
-			} else {
-				m.log.Debugf("Put(%x): OK", req.ID)
-				resp.Status = common.StatusOK
-			}
-
-			// Wake pending Get requests and respond with payload
-			err = m.Wake(req.ID, req.Payload)
-			if err != nil {
-				m.log.Errorf("Wake(%x): %v", req.ID, err)
-			}
-
-			// Otherwise request data
 		} else {
-			p, err := m.Get(req.ID)
-			if err != nil {
-				m.log.Debugf("m.Get(%x): %v", req.ID, err)
-				// wait for future data
-				m.Wait(req.ID, &cborplugin.Response{ID: r.ID, SURB: r.SURB})
-				// do not use SURB, return nil
-				return nil
+			// Write data if payload present
+			if len(req.Payload) > 0 {
+				m.log.Debugf("Put(%x)", req.ID)
+
+				// save payload
+				err := m.Put(req.ID, req.Payload)
+				if err != nil {
+					m.log.Debugf("Put(%x): Failed", req.ID)
+					resp.Status = common.StatusFailed
+				} else {
+					m.log.Debugf("Put(%x): OK", req.ID)
+					resp.Status = common.StatusOK
+				}
+
+				// Wake pending Get requests and respond with payload
+				err = m.Wake(req.ID, req.Payload)
+				if err != nil {
+					m.log.Errorf("Wake(%x): %v", req.ID, err)
+				}
+
+				// Otherwise request data
 			} else {
-				// data was found, respond immediately
-				m.log.Debugf("Get(%x): OK", req.ID)
-				resp.Status = common.StatusOK
-				resp.Payload = p
+				p, err := m.Get(req.ID)
+				if err != nil {
+					m.log.Debugf("m.Get(%x): %v", req.ID, err)
+					// wait for future data
+					m.Wait(req.ID, &cborplugin.Response{ID: r.ID, SURB: r.SURB})
+					// do not use SURB, return nil
+					return nil
+				} else {
+					// data was found, respond immediately
+					m.log.Debugf("Get(%x): OK", req.ID)
+					resp.Status = common.StatusOK
+					resp.Payload = p
+				}
 			}
 		}
-
 		// marshal response to this request
 		rawResp, err := resp.Marshal()
 		if err != nil {
+			m.log.Errorf("failure to marshal!?: %v", err)
 			return err
 		}
 		m.write(&cborplugin.Response{ID: r.ID, SURB: r.SURB, Payload: rawResp})
