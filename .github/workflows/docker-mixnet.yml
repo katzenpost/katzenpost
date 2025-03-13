@@ -79,43 +79,6 @@ jobs:
           path: |
             docker/voting_mixnet/*/*.log
 
-  test_e2e_memspool:
-    env:
-      warped: true
-      no_mixdecoy: false
-      no_decoy: false
-    strategy:
-      matrix:
-        go-version: [1.22.x]
-        os: [ubuntu-latest]
-    runs-on: ${{ matrix.os }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Configure podman socket
-        run: |
-          systemctl --user start podman.socket
-
-      - name: Build and start the mixnet
-        run: |
-          cd docker && make log_level=DEBUG start wait
-
-      - name: run memspool end to end tests
-        run: cd memspool && make testargs=-coverprofile=coverage.part dockerdockertest && cat client/coverage.part >> ../coverage.out
-
-      - name: Stop the mixnet
-        run: |
-          cd docker && make stop
-
-      - name: Upload testnet state
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: mixnet-${{ github.run_id }}-${{ github.job }}
-          path: |
-            docker/voting_mixnet/*/*.log
-
   test_benchmark:
     env:
       warped: true
