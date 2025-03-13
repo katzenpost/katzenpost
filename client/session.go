@@ -411,8 +411,8 @@ func (s *Session) ForceFetchPKI() {
 }
 
 func (s *Session) Shutdown() {
-	s.Halt()
 	s.timerQ.Halt()
 	s.minclient.Shutdown()
+	s.Halt()
 	s.minclient.Wait()
 }
