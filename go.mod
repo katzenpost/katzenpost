@@ -15,11 +15,11 @@ require (
 	github.com/katzenpost/circl v1.3.9-0.20240222183521-1cd9a34e9a0c
 	github.com/katzenpost/hpqc v0.0.50
 	github.com/katzenpost/nyquist v0.0.10
-	github.com/linxGnu/grocksdb v1.9.3
+	github.com/linxGnu/grocksdb v1.9.8
 	github.com/prometheus/client_golang v1.20.0
 	github.com/quic-go/quic-go v0.48.2
 	github.com/schwarmco/go-cartesian-product v0.0.0-20230921023625-e02d1c150053
-	github.com/stretchr/testify v1.9.0
+	github.com/stretchr/testify v1.10.0
 	github.com/ugorji/go/codec v1.2.12
 	github.com/yawning/bloom v0.0.0-20181019144233-44d6c5c71ed1
 	gitlab.com/yawning/aez.git v0.0.0-20211027044916-e49e68abd344
