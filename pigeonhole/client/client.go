@@ -34,8 +34,6 @@ import (
 var (
 	cborFrameOverhead = 0 // overhead is determined by init()
 	hash              = sha256.New
-	ErrStatusNotFound = errors.New("StatusNotFound")
-	ErrStatusFailed   = errors.New("StatusFailed")
 )
 
 type Client struct {
@@ -124,7 +122,7 @@ func (c *Client) Put(ID common.MessageID, signature, payload []byte) error {
 	if resp.Status == common.StatusOK {
 		return nil
 	} else {
-		return ErrStatusFailed
+		return common.ErrStatusFailed
 	}
 }
 
@@ -163,7 +161,7 @@ func (c *Client) GetWithContext(ctx context.Context, ID common.MessageID, signat
 		return nil, err
 	}
 	if resp.Status == common.StatusNotFound {
-		return nil, ErrStatusNotFound
+		return nil, common.ErrStatusNotFound
 	}
 	return resp.Payload, nil
 }

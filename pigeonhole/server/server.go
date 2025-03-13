@@ -38,6 +38,7 @@ const (
 	gcBucket         = "gc"
 )
 
+
 // PigeonHole holds reference to the database and logger and provides methods to store and retrieve data
 type PigeonHole struct {
 	worker.Worker
@@ -107,7 +108,7 @@ func (m *PigeonHole) Get(msgID common.MessageID) ([]byte, error) {
 		p := pigeonHoleBkt.Get(msgID[:])
 		if p == nil {
 			// empty slot
-			return ErrDataNotFound
+			return common.ErrStatusNotFound
 		}
 		resp = make([]byte, len(p))
 		copy(resp, p)
