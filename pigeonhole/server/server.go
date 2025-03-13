@@ -29,6 +29,8 @@ import (
 	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/katzenpost/katzenpost/pigeonhole/common"
 	"github.com/katzenpost/katzenpost/server/cborplugin"
+
+	"sync"
 )
 
 const (
@@ -51,6 +53,8 @@ type PigeonHole struct {
 
 // Wait adds pending cborplugin.Responses (with SURBs) by MessageID to a waiting map
 func (m *PigeonHole) Wait(msgID common.MessageID, response *cborplugin.Response) {
+	m.l.Lock()
+	defer m.l.Unlock()
 	_, ok := m.waiting[msgID]
 	if !ok {
 		m.waiting[msgID] = []*cborplugin.Response{response}
@@ -60,14 +64,36 @@ func (m *PigeonHole) Wait(msgID common.MessageID, response *cborplugin.Response)
 }
 
 // Wake returns the pending responses from the waiting map and removes the entries
-func (m *PigeonHole) Wake(msgID common.MessageID) []*cborplugin.Response {
-	w, ok := m.waiting[msgID]
+func (m *PigeonHole) Wake(msgID common.MessageID, payload []byte) error {
+	m.l.Lock()
+	defer m.l.Unlock()
+	waiting, ok := m.waiting[msgID]
 	if !ok {
-		return []*cborplugin.Response{}
+		return nil // nothing waiting is not an error
 	}
 	delete(m.waiting, msgID)
-	m.log.Debugf("Woke: %x: %v", msgID, w)
-	return w
+	m.log.Debugf("Woke %d: %x", len(waiting), msgID)
+
+	// prepare the response payload for pending requests
+	pigeonHoleResponse := &common.PigeonHoleResponse{Status: common.StatusOK, Payload: payload}
+	rawResp, err := pigeonHoleResponse.Marshal()
+	if err != nil {
+		m.log.Errorf("Wake(%x): %v", msgID, err)
+		return err
+	}
+
+	// respond to any Get's that were waiting for this Put from another routine
+	m.Go(func() {
+		for _, pluginResponse := range waiting {
+			// verify that the pluginResponse SURB and ID fields are intact
+			m.log.Debug("Found pluginResponse %x with SURBID %x from %v", pluginResponse.ID, pluginResponse.SURB, pluginResponse.RequestAt)
+			pluginResponse.Payload = rawResp
+			m.log.Debugf("sending pluginResponse...")
+			m.write(pluginResponse) // XXX: write() is threadsafe, right?
+			m.log.Debugf("sent pluginResponse")
+		}
+	})
+	return nil
 }
 
 // Get retrieves an item from the db
@@ -81,7 +107,7 @@ func (m *PigeonHole) Get(msgID common.MessageID) ([]byte, error) {
 		p := pigeonHoleBkt.Get(msgID[:])
 		if p == nil {
 			// empty slot
-			return errors.New("no data")
+			return ErrDataNotFound
 		}
 		resp = make([]byte, len(p))
 		copy(resp, p)
@@ -101,6 +127,7 @@ func (m *PigeonHole) Put(msgID common.MessageID, payload []byte) error {
 			}
 		}
 
+		// store message in pigeonHoleBucket
 		err := bkt.Put(msgID[:], payload)
 		if err != nil {
 			return err
@@ -142,17 +169,6 @@ func (m *PigeonHole) Put(msgID common.MessageID, payload []byte) error {
 		return err
 	}
 
-	// respond to any Get's that were waiting for this Put
-	pigeonHoleResponse := &common.PigeonHoleResponse{Status: common.StatusOK, Payload: payload}
-	rawResp, err := pigeonHoleResponse.Marshal()
-	if err != nil {
-		return nil
-	}
-
-	for _, pluginResponse := range m.Wake(msgID) {
-		pluginResponse.Payload = rawResp
-		m.write(pluginResponse)
-	}
 	return nil
 }
 
@@ -196,6 +212,7 @@ func (m *PigeonHole) worker() {
 // NewPigeonHole instantiates a pigeonHole
 func NewPigeonHole(fileStore string, log *logging.Logger, gcSize int, pigeonHoleSize int) (*PigeonHole, error) {
 	m := &PigeonHole{
+		l:              new(sync.Mutex),
 		log:            log,
 		pigeonHoleSize: pigeonHoleSize,
 		gcSize:         gcSize,
@@ -239,7 +256,7 @@ func (m *PigeonHole) OnCommand(cmd cborplugin.Command) error {
 
 		// validate the capabilities of PigeonHoleRequest
 		if !validateCap(req) {
-			m.log.Errorf("validateCap failed with error %s", err)
+			m.log.Errorf("validateCap failed with error %v", err)
 			return errors.New("failed to verify capability")
 		}
 
@@ -254,34 +271,37 @@ func (m *PigeonHole) OnCommand(cmd cborplugin.Command) error {
 				m.log.Debugf("Put(%x): OK", req.ID)
 				resp.Status = common.StatusOK
 			}
-			waiting := m.Wake(req.ID)
-			for _, pluginResponse := range waiting {
-				pigeonHoleResponse := &common.PigeonHoleResponse{Status: common.StatusOK, Payload: req.Payload}
-				rawResp, err := pigeonHoleResponse.Marshal()
-				if err != nil {
-					continue
-				}
-				pluginResponse.Payload = rawResp
-				m.write(pluginResponse)
+
+			// Wake pending Get requests and respond with payload
+			err = m.Wake(req.ID, req.Payload)
+			if err != nil {
+				m.log.Errorf("Wake(%x): %v", req.ID, err)
 			}
+
 			// Otherwise request data
 		} else {
 			p, err := m.Get(req.ID)
 			if err != nil {
-				m.log.Debugf("Get(%x): Wait", req.ID)
+				m.log.Debugf("m.Get(%x): %v", req.ID, err)
+				// wait for future data
 				m.Wait(req.ID, &cborplugin.Response{ID: r.ID, SURB: r.SURB})
+				// do not use SURB, return nil
 				return nil
 			} else {
+				// data was found, respond immediately
 				m.log.Debugf("Get(%x): OK", req.ID)
 				resp.Status = common.StatusOK
 				resp.Payload = p
 			}
 		}
+
+		// marshal response to this request
 		rawResp, err := resp.Marshal()
 		if err != nil {
 			return err
 		}
 		m.write(&cborplugin.Response{ID: r.ID, SURB: r.SURB, Payload: rawResp})
+		m.log.Debugf("Sent response to command for %x", req.ID)
 		return nil
 	default:
 		m.log.Errorf("OnCommand called with unknown Command type")
