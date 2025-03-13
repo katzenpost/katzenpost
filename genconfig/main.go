@@ -65,7 +65,6 @@ type katzenpost struct {
 	clientIdx      int
 	gatewayIdx     int
 	serviceNodeIdx int
-	hasProxy       bool
 	noMixDecoy     bool
 	debugConfig    *cConfig.Debug
 }
@@ -304,7 +303,7 @@ func (s *katzenpost) genNodeConfig(isGateway, isServiceNode bool, isVoting bool)
 		s.serviceNodeIdx++
 
 		// configure an entry provider or a spool storage provider
-
+		cfg.ServiceNode = &sConfig.ServiceNode{}
 		mapCfg := &sConfig.CBORPluginKaetzchen{
 			Capability:     "pigeonhole",
 			Endpoint:       "+pigeonhole",
@@ -315,7 +314,6 @@ func (s *katzenpost) genNodeConfig(isGateway, isServiceNode bool, isVoting bool)
 				"log_dir": s.baseDir + "/" + cfg.Server.Identifier,
 			},
 		}
-
 		cfg.ServiceNode.CBORPluginKaetzchen = []*sConfig.CBORPluginKaetzchen{mapCfg}
 
 		// Add a single instance of a http proxy for a service listening on port 4242
@@ -332,8 +330,6 @@ func (s *katzenpost) genNodeConfig(isGateway, isServiceNode bool, isVoting bool)
 			},
 		}
 		cfg.ServiceNode.CBORPluginKaetzchen = append(cfg.ServiceNode.CBORPluginKaetzchen, proxyCfg)
-		s.hasProxy = true
-
 		cfg.Debug.NumKaetzchenWorkers = 4
 
 		echoCfg := new(sConfig.Kaetzchen)
