@@ -28,8 +28,8 @@ import (
 
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/core/utils"
 	"github.com/katzenpost/katzenpost/core/worker"
-	"github.com/katzenpost/katzenpost/server/internal/debug"
 	"github.com/katzenpost/katzenpost/server/internal/glue"
 	"github.com/katzenpost/katzenpost/server/internal/instrument"
 	"github.com/katzenpost/katzenpost/server/internal/packet"
@@ -171,7 +171,7 @@ func (co *connector) onNewConn(c *outgoingConn) {
 	}()
 	if _, ok := co.conns[nodeID]; ok {
 		// This should NEVER happen.  Not sure what the sensible thing to do is.
-		co.log.Warningf("Connection to peer: '%v' already exists.", debug.NodeIDToPrintString(&nodeID))
+		co.log.Warningf("Connection to peer: '%v' already exists.", utils.NodeIDToPrintString(&nodeID))
 	}
 	co.conns[nodeID] = c
 }
