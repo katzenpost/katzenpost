@@ -1,6 +1,8 @@
 module github.com/katzenpost/katzenpost
 
-go 1.22.3
+go 1.23.0
+
+toolchain go1.23.6
 
 require (
 	github.com/BurntSushi/toml v1.4.0
@@ -9,9 +11,9 @@ require (
 	github.com/golang/protobuf v1.5.4
 	github.com/grafana/pyroscope-go v1.1.2
 	github.com/jackc/pgx v3.6.2+incompatible
-	github.com/katzenpost/chacha20poly1305 v0.0.0-20211026103954-7b6fb2fc0129
+	github.com/katzenpost/chacha20poly1305 v0.0.1
 	github.com/katzenpost/circl v1.3.9-0.20240222183521-1cd9a34e9a0c
-	github.com/katzenpost/hpqc v0.0.49
+	github.com/katzenpost/hpqc v0.0.50
 	github.com/katzenpost/nyquist v0.0.10
 	github.com/linxGnu/grocksdb v1.9.3
 	github.com/prometheus/client_golang v1.20.0
@@ -24,9 +26,9 @@ require (
 	gitlab.com/yawning/avl.git v0.0.0-20180224045358-04c7c776e391
 	gitlab.com/yawning/bsaes.git v0.0.0-20190805113838-0a714cd429ec
 	go.etcd.io/bbolt v1.3.10
-	golang.org/x/crypto v0.31.0
-	golang.org/x/net v0.29.0
-	golang.org/x/text v0.21.0
+	golang.org/x/crypto v0.36.0
+	golang.org/x/net v0.37.0
+	golang.org/x/text v0.23.0
 	google.golang.org/protobuf v1.34.2
 	gopkg.in/op/go-logging.v1 v1.0.0-20160211212156-b2cb9fa56473
 )
@@ -47,7 +49,7 @@ require (
 	github.com/grafana/pyroscope-go/godeltaprof v0.1.8 // indirect
 	github.com/henrydcase/nobs v0.0.0-20230313231516-25b66236df73 // indirect
 	github.com/jackc/fake v0.0.0-20150926172116-812a484cc733 // indirect
-	github.com/katzenpost/chacha20 v0.0.0-20190910113340-7ce890d6a556 // indirect
+	github.com/katzenpost/chacha20 v0.0.1 // indirect
 	github.com/katzenpost/sntrup4591761 v0.0.0-20231024131303-8755eb1986b8 // indirect
 	github.com/katzenpost/sphincsplus v0.0.2 // indirect
 	github.com/klauspost/compress v1.17.9 // indirect
@@ -71,8 +73,8 @@ require (
 	go.uber.org/mock v0.4.0 // indirect
 	golang.org/x/exp v0.0.0-20240904232852-e7e105dedf7e // indirect
 	golang.org/x/mod v0.21.0 // indirect
-	golang.org/x/sync v0.10.0 // indirect
-	golang.org/x/sys v0.28.0 // indirect
+	golang.org/x/sync v0.12.0 // indirect
+	golang.org/x/sys v0.31.0 // indirect
 	golang.org/x/tools v0.25.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

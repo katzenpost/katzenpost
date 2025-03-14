@@ -87,7 +87,7 @@ i_if_podman=$(shell if echo ${docker}|grep -q podman; then echo " -i"; else echo
 mount_net_name=-v `pwd`/$(net_name):/$(net_name)
 
 docker_compose_v1_or_v2?= $(shell [ -e /usr/libexec/docker/cli-plugins/docker-compose ] && echo /usr/libexec/docker/cli-plugins/docker-compose || echo docker-compose)
-docker_compose?= DOCKER_USER=$(docker_user) $(shell if which podman|grep -q .; then echo DOCKER_HOST="unix://$$XDG_RUNTIME_DIR/podman/podman.sock" $(docker_compose_v1_or_v2); else echo $(docker_compose_v1_or_v2); fi)
+docker_compose?= DOCKER_USER=$(docker_user) $(shell if which podman|grep -q .; then echo DOCKER_HOST="unix://$$XDG_RUNTIME_DIR/podman/podman.sock" podman compose; else echo $(docker_compose_v1_or_v2); fi)
 
 make_args=--no-print-directory net_name=$(net_name) docker=$(docker) distro=$(distro) warped=$(warped) docker_user=$(docker_user)
 
@@ -240,7 +240,7 @@ clean: clean-images clean-local
 
 run-ping: $(net_name)/ping.$(distro) $(net_name)/running.stamp | $(cache_dir)
 	$(docker) run --network=host ${docker_args} $(mount_net_name) --rm  katzenpost-$(distro)_base \
-        /$(net_name)/ping.$(distro) -c /go/katzenpost/docker/$(net_name)/client/client.toml -s echo -printDiff -n 10
+        /$(net_name)/ping.$(distro) -c /go/katzenpost/docker/$(net_name)/client2/client.toml -s echo -printDiff -n 10
 
 restart-memspool: $(net_name)/running.stamp stop-memspool start-memspool
 

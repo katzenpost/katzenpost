@@ -257,7 +257,7 @@ func (c *connection) doConnect(dialCtx context.Context) {
 		maxRetryDelay  = 2 * time.Minute
 	)
 
-	dialFn := c.client.cfg.Callbacks.DialContextFn
+	dialFn := c.client.DialContextFn
 	if dialFn == nil {
 		dialFn = defaultDialer.DialContext
 	}
@@ -432,6 +432,8 @@ func (c *connection) onWireConn(w *wire.Session) {
 
 	var wireErr error
 
+	dechunker := cpki.NewDechunker()
+
 	closeConnCh := make(chan error, 1)
 	forceCloseConn := func(err error) {
 		// We only care about the first error from a callback.
@@ -528,10 +530,9 @@ func (c *connection) onWireConn(w *wire.Session) {
 				ctx.doneFn(fmt.Errorf("outstanding GetConsensus already exists: %v", consensusCtx.epoch))
 			} else {
 				consensusCtx = ctx
-				cmd := &commands.GetConsensus{
-					Epoch:              ctx.epoch,
-					Cmds:               w.GetCommands(),
-					MixnetTransmission: true, // Enable padding for mixnet transmission
+				cmd := &commands.GetConsensus2{
+					Cmds:  w.GetCommands(),
+					Epoch: ctx.epoch,
 				}
 				wireErr = w.SendCommand(cmd)
 				ctx.doneFn(wireErr)
@@ -667,13 +668,32 @@ func (c *connection) onWireConn(w *wire.Session) {
 			}
 			seq++
 		case *commands.Consensus:
+			panic("received Consensus when we are supposed to receive Consensus2")
+		case *commands.Consensus2:
 			if consensusCtx != nil {
-				c.log.Debugf("Received Consensus: ErrorCode: %v, Payload %v bytes", cmd.ErrorCode, len(cmd.Payload))
-				consensusCtx.replyCh <- cmd
-				consensusCtx = nil
+				if dechunker.ChunkNum == 0 {
+					dechunker.ChunkNum = int(cmd.ChunkNum)
+					dechunker.ChunkTotal = int(cmd.ChunkTotal)
+				}
+				err = dechunker.Consume(cmd.Payload, int(cmd.ChunkNum), int(cmd.ChunkTotal))
+				if err != nil {
+					panic(err)
+				}
+				if int(cmd.ChunkNum) == (dechunker.ChunkTotal - 1) {
+					if len(dechunker.Output) == 0 {
+						panic("wtf len(dechunker.Output) == 0")
+					}
+
+					// last chunk
+					cmd.Payload = make([]byte, len(dechunker.Output))
+					copy(cmd.Payload, dechunker.Output)
+					consensusCtx.replyCh <- cmd
+					consensusCtx = nil
+					dechunker = cpki.NewDechunker()
+				}
 			} else {
 				// Spurious Consensus replies are a protocol violation.
-				c.log.Errorf("Received spurious Consensus.")
+				c.log.Errorf("Received spurious Consensus2.")
 				wireErr = newProtocolError("received spurious Consensus")
 				return
 			}
@@ -787,8 +807,7 @@ func (c *connection) sendPacket(pkt []byte) error {
 	return nil
 }
 
-func (c *connection) GetConsensus(ctx context.Context, epoch uint64) (*commands.Consensus, error) {
-	c.log.Debug("getConsensus")
+func (c *connection) GetConsensus(ctx context.Context, epoch uint64) (*commands.Consensus2, error) {
 	c.isConnectedLock.RLock()
 	if !c.isConnected {
 		c.isConnectedLock.RUnlock()
@@ -798,6 +817,7 @@ func (c *connection) GetConsensus(ctx context.Context, epoch uint64) (*commands.
 
 	errCh := make(chan error)
 	replyCh := make(chan interface{})
+
 	select {
 	case c.getConsensusCh <- &getConsensusCtx{
 		replyCh: replyCh,
@@ -806,10 +826,12 @@ func (c *connection) GetConsensus(ctx context.Context, epoch uint64) (*commands.
 			errCh <- err
 		},
 	}:
+	case <-ctx.Done():
+		// Canceled mid-fetch.
+		return nil, errGetConsensusCanceled
 	case <-c.HaltCh():
 		return nil, ErrShutdown
 	}
-	c.log.Debug("Enqueued GetConsensus command for send.")
 
 	// Ensure the dispatch succeeded.
 	select {
@@ -833,7 +855,11 @@ func (c *connection) GetConsensus(ctx context.Context, epoch uint64) (*commands.
 		switch resp := rawResp.(type) {
 		case error:
 			return nil, resp
-		case *commands.Consensus:
+		case *commands.Consensus2:
+			if len(resp.Payload) == 0 {
+				panic("--------------- len(resp.Payload) == 0")
+			}
+
 			return resp, nil
 		default:
 			panic("BUG: Worker returned invalid Consensus response")
