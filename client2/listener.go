@@ -4,6 +4,7 @@
 package client2
 
 import (
+	"errors"
 	"net"
 	"sync"
 
@@ -242,10 +243,6 @@ func NewListener(client *Client, rates *Rates, egressCh chan *Request, logBacken
 			return nil, err
 		}
 	case "unix":
-		fallthrough
-	case "unixgram":
-		fallthrough
-	case "unixpacket":
 		unixAddr, err := net.ResolveUnixAddr(network, address)
 		if err != nil {
 			return nil, err
@@ -254,6 +251,8 @@ func NewListener(client *Client, rates *Rates, egressCh chan *Request, logBacken
 		if err != nil {
 			return nil, err
 		}
+	default:
+		return nil, errors.New("incorrect network type")
 	}
 
 	l.Go(l.worker)
