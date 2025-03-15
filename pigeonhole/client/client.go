@@ -21,56 +21,60 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"errors"
+	"io"
 	"sort"
 
 	"github.com/fxamacker/cbor/v2"
+	"github.com/katzenpost/hpqc/hash"
+	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/hpqc/sign/ed25519"
-	"github.com/katzenpost/katzenpost/client"
-	"github.com/katzenpost/katzenpost/client/utils"
+	cCommon "github.com/katzenpost/katzenpost/client2/common"
+	"github.com/katzenpost/katzenpost/client2/thin"
 	"github.com/katzenpost/katzenpost/pigeonhole/common"
 	"golang.org/x/crypto/hkdf"
 )
 
 var (
 	cborFrameOverhead = 0 // overhead is determined by init()
-	hash              = sha256.New
 	ErrStatusNotFound = errors.New("StatusNotFound")
 )
 
 type Client struct {
-	Session *client.Session
+	tClient *thin.ThinClient
 }
 
-func NewClient(s *client.Session) (*Client, error) {
-	return &Client{Session: s}, nil
+// NewClient(thin) returns Client wrapping a client2/thin.ThinClient
+func NewClient(t *thin.ThinClient) (*Client, error) {
+	return &Client{tClient: t}, nil
 }
 
 type StorageLocation interface {
 	ID() common.MessageID
 	Name() string
-	Provider() string
+	NodeIDHash() *[32]byte
 }
 
 type pigeonHoleStorage struct {
-	id             common.MessageID
-	name, provider string
+	id         common.MessageID
+	nodeIdHash *[32]byte
 }
 
 func (m *pigeonHoleStorage) ID() common.MessageID {
 	return m.id
 }
 func (m *pigeonHoleStorage) Name() string {
-	return m.name
+	return common.PigeonHoleServiceName
 }
-func (m *pigeonHoleStorage) Provider() string {
-	return m.provider
+func (m *pigeonHoleStorage) NodeIDHash() *[32]byte {
+	return m.nodeIdHash
 }
 
-type DeterministicDescriptorList []utils.ServiceDescriptor
+type DeterministicDescriptorList []*cCommon.ServiceDescriptor
 
 func (d DeterministicDescriptorList) Less(i, j int) bool {
-	return d[i].Name+d[i].Provider < d[j].Name+d[j].Provider
+	return string(d[i].MixDescriptor.IdentityKey) < string(d[j].MixDescriptor.IdentityKey)
 }
+
 func (d DeterministicDescriptorList) Len() int {
 	return len(d)
 }
@@ -78,7 +82,7 @@ func (d DeterministicDescriptorList) Swap(i, j int) {
 	d[i], d[j] = d[j], d[i]
 }
 
-func deterministicSelect(descs []utils.ServiceDescriptor, slot int) utils.ServiceDescriptor {
+func deterministicSelect(descs []*cCommon.ServiceDescriptor, slot int) *cCommon.ServiceDescriptor {
 	// TODO: order the descriptors by their identity keys
 	ddescs := DeterministicDescriptorList(descs)
 	sort.Sort(ddescs)
@@ -88,18 +92,22 @@ func deterministicSelect(descs []utils.ServiceDescriptor, slot int) utils.Servic
 // GetStorageProvider returns the deterministically selected storage provider given a storage secret ID
 func (c *Client) GetStorageProvider(ID common.MessageID) (StorageLocation, error) {
 	// doc must be current document!
-	doc := c.Session.CurrentDocument()
+	doc := c.tClient.PKIDocument()
 	if doc == nil {
 		return nil, errors.New("No PKI document") // XXX: find correct error
 	}
-	descs := utils.FindServices(common.PigeonHoleServiceName, doc)
+
+	descs := cCommon.FindServices(common.PigeonHoleServiceName, doc)
 	if len(descs) == 0 {
 		return nil, errors.New("No descriptors")
 	}
 	slot := int(binary.LittleEndian.Uint64(ID[:8])) % len(descs)
+
 	// sort the descs and return the chosen one
 	desc := deterministicSelect(descs, slot)
-	return &pigeonHoleStorage{name: desc.Name, provider: desc.Provider, id: ID}, nil
+	serviceIdHash := hash.Sum256(desc.MixDescriptor.IdentityKey)
+
+	return &pigeonHoleStorage{nodeIdHash: &serviceIdHash, id: ID}, nil
 }
 
 // Put places a value into the store
@@ -114,13 +122,19 @@ func (c *Client) Put(ID common.MessageID, signature, payload []byte) error {
 		return err
 	}
 
-	_, err = c.Session.SendReliableMessage(loc.Name(), loc.Provider(), serialized)
+	// create a unique messageID to pass to SendMessage
+	messageID := new([thin.MessageIDLength]byte)
+	_, err = io.ReadFull(rand.Reader, messageID[:])
+	if err != nil {
+		return err
+	}
+	err = c.tClient.SendReliableMessage(messageID, serialized, loc.NodeIDHash(), []byte(loc.Name()))
 	return err
 }
 
 // PayloadSize returns the size of the user payload
 func (c *Client) PayloadSize() int {
-	geo := c.Session.SphinxGeometry()
+	geo := c.tClient.GetConfig().SphinxGeometry
 	return geo.UserForwardPayloadLength - cborFrameOverhead - ed25519.SignatureSize
 }
 
@@ -142,7 +156,7 @@ func (c *Client) GetWithContext(ctx context.Context, ID common.MessageID, signat
 		return nil, err
 	}
 
-	r, err := c.Session.BlockingSendUnreliableMessageWithContext(ctx, loc.Name(), loc.Provider(), serialized)
+	r, err := c.tClient.BlockingSendMessage(ctx, serialized, loc.NodeIDHash(), []byte(loc.Name()))
 	if err != nil {
 		return nil, err
 	}
@@ -283,8 +297,21 @@ func WriteOnly(c *Client, woCap common.WriteOnlyCap) WriteOnlyClient {
 // create a duplex using a shared secret
 func duplexCapsFromSeed(initiator bool, secret []byte) (*common.ROCap, *common.WOCap) {
 	salt := []byte("duplex initialized from seed is not for multi-party use")
-	keymaterial := hkdf.New(hash, secret, salt, nil)
+
+	/* can use a different hash function such as blake2b which is used by hpqc/hash
+	// wrap blake2b.New512 so that hkdf can use it
+	import zomghash "crypto/hash"
+	f := func() zomghash.Hash {
+		h, err := blake2b.New512(secret)
+		if err != nil {
+			panic(err)
+		}
+		return h
+	}
+	*/
+
 	var err error
+	keymaterial := hkdf.New(sha256.New, secret, salt, nil)
 	var pk1, pk2 *ed25519.PrivateKey
 	// return the listener or dialer side of caps from seed
 	if initiator {
