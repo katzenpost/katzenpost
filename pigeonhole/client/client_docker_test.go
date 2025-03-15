@@ -41,6 +41,9 @@ func TestCreatePigeonhole(t *testing.T) {
 	tClient := thin.NewThinClient(cfg)
 	require.NotNil(tClient)
 
+	err = tClient.Dial()
+	require.NoError(err)
+
 	c, err := NewClient(tClient)
 	require.NoError(err)
 	require.NotNil(c)
@@ -105,6 +108,9 @@ func TestCreateDuplex(t *testing.T) {
 	tClient := thin.NewThinClient(cfg)
 	require.NotNil(tClient)
 
+	err = tClient.Dial()
+	require.NoError(err)
+
 	pigeonholeClient, err := NewClient(tClient)
 	require.NoError(err)
 	require.NotNil(pigeonholeClient)
@@ -138,6 +144,9 @@ func TestAsyncGetPigeonHole(t *testing.T) {
 
 	tClient := thin.NewThinClient(cfg)
 	require.NotNil(tClient)
+
+	err = tClient.Dial()
+	require.NoError(err)
 
 	c, err := NewClient(tClient)
 	require.NoError(err)
