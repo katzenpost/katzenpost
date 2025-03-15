@@ -140,8 +140,8 @@ func (c *Client) PayloadSize() int {
 
 // Get requests ID from the chosen storage node and returns a payload or error
 func (c *Client) Get(ID common.MessageID, signature []byte) ([]byte, error) {
-	// nil context uses the round trip estimated time of arrival
-	return c.GetWithContext(nil, ID, signature)
+	ctx := context.Background()
+	return c.GetWithContext(ctx, ID, signature)
 }
 
 // GetWithContext requests ID from the chosen storage node and blocks until a response is received or is cancelled.
