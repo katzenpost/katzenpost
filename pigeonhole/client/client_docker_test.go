@@ -26,8 +26,8 @@ import (
 
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/hpqc/sign/ed25519"
-	"github.com/katzenpost/katzenpost/client"
-	"github.com/katzenpost/katzenpost/client/config"
+	"github.com/katzenpost/katzenpost/client2/thin"
+	"github.com/katzenpost/katzenpost/client2/config"
 	"github.com/katzenpost/katzenpost/pigeonhole/common"
 	"github.com/stretchr/testify/require"
 )
@@ -38,15 +38,10 @@ func TestCreatePigeonhole(t *testing.T) {
 	cfg, err := config.LoadFile("testdata/client.toml")
 	require.NoError(err)
 
-	client, err := client.New(cfg)
-	require.NoError(err)
+	tClient := thin.NewThinClient(cfg)
+	require.NotNil(tClient)
 
-	ctx := context.Background()
-	session, err := client.NewTOFUSession(ctx)
-	require.NoError(err)
-	session.WaitForDocument(ctx)
-
-	c, err := NewClient(session)
+	c, err := NewClient(tClient)
 	require.NoError(err)
 	require.NotNil(c)
 
@@ -107,15 +102,10 @@ func TestCreateDuplex(t *testing.T) {
 	cfg, err := config.LoadFile("testdata/client.toml")
 	require.NoError(err)
 
-	kClient, err := client.New(cfg)
-	require.NoError(err)
+	tClient := thin.NewThinClient(cfg)
+	require.NotNil(tClient)
 
-	ctx := context.Background()
-	session, err := kClient.NewTOFUSession(ctx)
-	require.NoError(err)
-	session.WaitForDocument(ctx)
-
-	pigeonholeClient, err := NewClient(session)
+	pigeonholeClient, err := NewClient(tClient)
 	require.NoError(err)
 	require.NotNil(pigeonholeClient)
 
@@ -146,15 +136,10 @@ func TestAsyncGetPigeonHole(t *testing.T) {
 	cfg, err := config.LoadFile("testdata/client.toml")
 	require.NoError(err)
 
-	client, err := client.New(cfg)
-	require.NoError(err)
+	tClient := thin.NewThinClient(cfg)
+	require.NotNil(tClient)
 
-	ctx := context.Background()
-	session, err := client.NewTOFUSession(ctx)
-	require.NoError(err)
-	session.WaitForDocument(ctx)
-
-	c, err := NewClient(session)
+	c, err := NewClient(tClient)
 	require.NoError(err)
 	require.NotNil(c)
 
