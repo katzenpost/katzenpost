@@ -50,20 +50,21 @@ func NewClient(t *thin.ThinClient) (*Client, error) {
 
 type StorageLocation interface {
 	ID() common.MessageID
-	Name() string
+	Name() []byte
 	NodeIDHash() *[32]byte
 }
 
 type pigeonHoleStorage struct {
 	id         common.MessageID
 	nodeIdHash *[32]byte
+	serviceName []byte
 }
 
 func (m *pigeonHoleStorage) ID() common.MessageID {
 	return m.id
 }
-func (m *pigeonHoleStorage) Name() string {
-	return common.PigeonHoleServiceName
+func (m *pigeonHoleStorage) Name() []byte {
+	return m.serviceName
 }
 func (m *pigeonHoleStorage) NodeIDHash() *[32]byte {
 	return m.nodeIdHash
@@ -107,7 +108,7 @@ func (c *Client) GetStorageProvider(ID common.MessageID) (StorageLocation, error
 	desc := deterministicSelect(descs, slot)
 	serviceIdHash := hash.Sum256(desc.MixDescriptor.IdentityKey)
 
-	return &pigeonHoleStorage{nodeIdHash: &serviceIdHash, id: ID}, nil
+	return &pigeonHoleStorage{nodeIdHash: &serviceIdHash, id: ID, serviceName: desc.RecipientQueueID}, nil
 }
 
 // Put places a value into the store
@@ -128,7 +129,7 @@ func (c *Client) Put(ID common.MessageID, signature, payload []byte) error {
 	if err != nil {
 		return err
 	}
-	err = c.tClient.SendReliableMessage(messageID, serialized, loc.NodeIDHash(), []byte(loc.Name()))
+	err = c.tClient.SendReliableMessage(messageID, serialized, loc.NodeIDHash(), loc.Name())
 	return err
 }
 
@@ -156,7 +157,7 @@ func (c *Client) GetWithContext(ctx context.Context, ID common.MessageID, signat
 		return nil, err
 	}
 
-	r, err := c.tClient.BlockingSendMessage(ctx, serialized, loc.NodeIDHash(), []byte(loc.Name()))
+	r, err := c.tClient.BlockingSendMessage(ctx, serialized, loc.NodeIDHash(), loc.Name())
 	if err != nil {
 		return nil, err
 	}
