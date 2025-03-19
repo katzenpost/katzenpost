@@ -959,6 +959,7 @@ type Transport mClient.ReadWriteClient
 
 func newStream(mode StreamMode) *Stream {
 	s := new(Stream)
+	s.Addr = new(StreamAddr)
 	s.Mode = mode
 	s.l = new(sync.Mutex)
 	s.startOnce = new(sync.Once)
