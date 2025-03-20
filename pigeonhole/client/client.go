@@ -103,6 +103,10 @@ func (c *Client) GetStorageProvider(ID common.MessageID) (StorageLocation, error
 
 // Put places a value into the store
 func (c *Client) Put(ID common.MessageID, signature, payload []byte) error {
+	return c.PutWithContext(nil, ID, signature, payload)
+}
+
+func (c *Client) PutWithContext(ctx context.Context, ID common.MessageID, signature, payload []byte) error {
 	loc, err := c.GetStorageProvider(ID)
 	if err != nil {
 		return err
@@ -113,7 +117,10 @@ func (c *Client) Put(ID common.MessageID, signature, payload []byte) error {
 		return err
 	}
 
-	r, err := c.Session.BlockingSendUnreliableMessage(loc.Name(), loc.Provider(), serialized)
+	r, err := c.Session.BlockingSendUnreliableMessageWithContext(ctx, loc.Name(), loc.Provider(), serialized)
+	if err != nil {
+		return err
+	}
 	resp := &common.PigeonHoleResponse{}
 	_, err = cbor.UnmarshalFirst(r, resp)
 	if err != nil {
@@ -170,6 +177,7 @@ func (c *Client) GetWithContext(ctx context.Context, ID common.MessageID, signat
 type ReadWriteClient interface {
 	Put(addr []byte, payload []byte) error
 	Get(addr []byte) ([]byte, error)
+	PutWithContext(ctx context.Context, addr []byte, payload []byte) error
 	GetWithContext(ctx context.Context, addr []byte) ([]byte, error)
 	PayloadSize() int
 }
@@ -184,6 +192,7 @@ type ReadOnlyClient interface {
 // WriteOnlyClient only has Put
 type WriteOnlyClient interface {
 	Put(addr []byte, payload []byte) error
+	PutWithContext(ctx context.Context, addr []byte, payload []byte) error
 	PayloadSize() int
 }
 
@@ -214,6 +223,13 @@ func (r *rwPigeonHole) Put(addr []byte, payload []byte) error {
 	i := r.rwCap.Addr(addr)
 	k := r.rwCap.WriteKey(addr)
 	return r.c.Put(i, k.Sign(payload), payload)
+}
+
+// PutWithContext implmements ReadWriteClient.PutWithContext
+func (r *rwPigeonHole) PutWithContext(ctx context.Context, addr []byte, payload []byte) error {
+	i := r.rwCap.Addr(addr)
+	k := r.rwCap.WriteKey(addr)
+	return r.c.PutWithContext(ctx, i, k.Sign(payload), payload)
 }
 
 // PayloadSize implements ReadWriteClient.PayloadSize
@@ -257,6 +273,13 @@ func (w *woPigeonHole) Put(addr []byte, payload []byte) error {
 	i := w.woCap.Addr(addr)
 	k := w.woCap.WriteKey(addr)
 	return w.c.Put(i, k.Sign(payload), payload)
+}
+
+// PutWithContext implmements WriteOnlyClient.PutWithContext
+func (r *woPigeonHole) PutWithContext(ctx context.Context, addr []byte, payload []byte) error {
+	i := r.woCap.Addr(addr)
+	k := r.woCap.WriteKey(addr)
+	return r.c.PutWithContext(ctx, i, k.Sign(payload), payload)
 }
 
 // PayloadSize implements WriteOnlyClient.PayloadSize
@@ -341,6 +364,11 @@ func (s *duplex) Put(addr []byte, payload []byte) error {
 // Get implements ReadWriteClient.Get
 func (s *duplex) Get(addr []byte) ([]byte, error) {
 	return s.ro.Get(addr)
+}
+
+// PutWithContext implements ReadWriteClient.PutWithContext
+func (s *duplex) PutWithContext(ctx context.Context, addr []byte, payload []byte) error {
+	return s.wo.PutWithContext(ctx, addr, payload)
 }
 
 // GetWithContext implements ReadWriteClient.GetWithContext
