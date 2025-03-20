@@ -173,7 +173,7 @@ func TestStreamFragmentation(t *testing.T) {
 			}
 			i += n
 			// wait
-			<-time.After(10 * time.Second)
+			<-time.After(1 * time.Second)
 		}
 	}()
 
