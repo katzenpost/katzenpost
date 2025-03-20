@@ -8,6 +8,7 @@ import (
 
 	"github.com/katzenpost/hpqc/kem/mkem"
 	"github.com/katzenpost/hpqc/nike/schemes"
+	"github.com/katzenpost/hpqc/sign/ed25519"
 
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 )
@@ -132,12 +133,26 @@ func (c *incomingConn) handleReplicaRead(replicaRead *commands.ReplicaRead) *com
 }
 
 func (c *incomingConn) handleReplicaWrite(replicaWrite *commands.ReplicaWrite) *commands.ReplicaWriteReply {
-	// XXX FIXME(david): Use BACAP to verify if a signature authorizes the write to the specified box
 	const (
 		successCode = 0
 		failCode    = 1
 	)
-	err := c.l.server.state.handleReplicaWrite(replicaWrite)
+
+	s := ed25519.Scheme()
+	verifyKey, err := s.UnmarshalBinaryPublicKey(replicaWrite.BoxID[:])
+	if err != nil {
+		c.log.Errorf("handleReplicaWrite failed: %v", err)
+		return &commands.ReplicaWriteReply{
+			ErrorCode: failCode,
+		}
+	}
+	if !s.Verify(verifyKey, replicaWrite.Payload, replicaWrite.Signature[:], nil) {
+		c.log.Errorf("handleReplicaWrite failed: %v", err)
+		return &commands.ReplicaWriteReply{
+			ErrorCode: failCode,
+		}
+	}
+	err = c.l.server.state.handleReplicaWrite(replicaWrite)
 	if err != nil {
 		c.log.Errorf("handleReplicaWrite failed: %v", err)
 		return &commands.ReplicaWriteReply{
