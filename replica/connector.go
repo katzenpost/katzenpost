@@ -21,7 +21,7 @@ import (
 	"github.com/katzenpost/katzenpost/replica/common"
 )
 
-// XXX FIXME TODO(david): make this a config param?
+// TODO(david): make this a config param?
 const replicationQueueLength = 100
 
 type Connector struct {

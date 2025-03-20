@@ -90,7 +90,7 @@ func (c *outgoingConn) dispatchCommand(cmd commands.Command) {
 
 func (c *outgoingConn) worker() {
 	var (
-		// XXX NOTE(david): we might need to adjust these to be aligned with our pki worker thread
+		// NOTE(david): we might need to adjust these to be aligned with our pki worker thread
 		retryIncrement = epochtime.Period / 64
 		maxRetryDelay  = epochtime.Period / 8
 	)
