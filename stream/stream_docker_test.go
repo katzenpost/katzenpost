@@ -179,7 +179,7 @@ func TestStreamFragmentation(t *testing.T) {
 
 	// a reader worker that receives a payload
 
-	result := make([]byte, 4242)
+	result := make([]byte, len(payload))
 	err2Ch := make(chan error)
 	go func() {
 		defer wg.Done()
