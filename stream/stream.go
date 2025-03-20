@@ -460,7 +460,6 @@ func (s *Stream) sleepWriter() error {
 			case <-s.HaltCh():
 				return io.EOF
 			case <-s.onWrite:
-			case <-s.onFlush:
 			}
 		} else {
 			s.l.Unlock()
@@ -468,7 +467,6 @@ func (s *Stream) sleepWriter() error {
 			case <-s.HaltCh():
 				return io.EOF
 			case <-s.onWrite:
-			case <-s.onFlush:
 			}
 		}
 	}
@@ -625,6 +623,8 @@ func (s *Stream) writer() {
 			// final Ack and frame transmitted
 			s.WState = StreamClosed
 			f.Type = StreamEnd
+		} else if f.Id != 0 {
+			f.Type = StreamData
 		}
 		f.Payload = make([]byte, s.PayloadSize)
 		// Read up to the maximum frame payload size
@@ -1096,8 +1096,8 @@ func (s *Stream) StartWithTransport(trans Transport) {
 		s.MaxWriteBufSize = int(s.WindowSize) * PayloadSize(s.transport)
 		s.onFlush = make(chan struct{}, 1)
 		s.onAck = make(chan struct{}, 1)
-		s.onStreamClose = make(chan struct{}, 1)
-		s.onWrite = make(chan struct{}, 1)
+		s.onStreamClose = make(chan struct{})
+		s.onWrite = make(chan struct{})
 		s.onRead = make(chan struct{})
 		s.TQ.Start()
 		s.Go(s.reader)
