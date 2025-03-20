@@ -312,8 +312,10 @@ func (r *ReTx) Push(i client.Item) error {
 		return nil
 	}
 	m.FramePriority = uint64(time.Now().Add(retryDelay).UnixNano())
-	r.s.txFrame(m.Frame)
+	// transmit and schedule for retransmission from goroutine
+	// do not block Push() on txFrame BlockingSend
 	r.s.Go(func() {
+		r.s.txFrame(m.Frame)
 		r.s.txEnqueue(m)
 	})
 	return nil
