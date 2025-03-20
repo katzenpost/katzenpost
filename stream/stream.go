@@ -460,6 +460,7 @@ func (s *Stream) sleepWriter() error {
 			case <-s.HaltCh():
 				return io.EOF
 			case <-s.onWrite:
+			case <-s.onFlush:
 			}
 		} else {
 			s.l.Unlock()
@@ -467,6 +468,7 @@ func (s *Stream) sleepWriter() error {
 			case <-s.HaltCh():
 				return io.EOF
 			case <-s.onWrite:
+			case <-s.onFlush:
 			}
 		}
 	}
