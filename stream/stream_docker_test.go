@@ -162,7 +162,7 @@ func TestStreamFragmentation(t *testing.T) {
 			} else {
 				msg = remains[:chunk_size]
 			}
-			t.Logf("Writing %d bytes", len(msg))
+			t.Logf("Writing %d of %d remaining bytes", len(msg), len(remains))
 			n, err := io.Copy(dialed, bytes.NewBuffer(msg))
 			if err != nil {
 				errCh <- err
