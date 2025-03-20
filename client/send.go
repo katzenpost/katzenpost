@@ -238,7 +238,6 @@ func (s *Session) BlockingSendUnreliableMessageWithContext(ctx context.Context, 
 
 	replyWaitChan := make(chan []byte)
 	s.replyWaitChanMap.Store(*msg.ID, replyWaitChan)
-	defer s.replyWaitChanMap.Delete(*msg.ID)
 
 	err = s.egressQueue.Push(msg)
 	if err != nil {
@@ -265,6 +264,7 @@ func (s *Session) BlockingSendUnreliableMessageWithContext(ctx context.Context, 
 	// wait for reply or round trip timeout
 	select {
 	case reply := <-replyWaitChan:
+		defer s.replyWaitChanMap.Delete(*msg.ID)
 		return reply, nil
 	case <-s.HaltCh():
 		return nil, ErrHalted
