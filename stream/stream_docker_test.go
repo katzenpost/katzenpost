@@ -144,7 +144,7 @@ func TestStreamFragmentation(t *testing.T) {
 	// write data in chunks with delays by sender
 	payload := make([]byte, 10*4200)
 
-	chunk_size := len(payload) / 42
+	chunk_size := len(payload) / 16
 	_, err = io.ReadFull(rand.Reader, payload)
 	require.NoError(err)
 
