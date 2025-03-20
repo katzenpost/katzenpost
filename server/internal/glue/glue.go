@@ -84,7 +84,7 @@ type Gateway interface {
 type ServiceNode interface {
 	Halt()
 	OnPacket(*packet.Packet)
-	KaetzchenForPKI() (map[string]map[string]interface{}, error)
+	KaetzchenForPKI() (map[string]map[string]interface{}, map[string]map[string]interface{}, error)
 }
 
 type Scheduler interface {

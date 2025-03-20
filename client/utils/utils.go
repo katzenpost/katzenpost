@@ -30,8 +30,14 @@ type ServiceDescriptor struct {
 
 // FindServices is a helper function for finding Provider-side services in the PKI document.
 func FindServices(capability string, doc *pki.Document) []ServiceDescriptor {
+	if doc == nil {
+		panic("pki doc is nil")
+	}
 	services := []ServiceDescriptor{}
 	for _, provider := range doc.ServiceNodes {
+		if provider == nil {
+			panic("provider is nil")
+		}
 		for cap := range provider.Kaetzchen {
 			if cap == capability {
 				serviceID := ServiceDescriptor{
