@@ -637,6 +637,7 @@ func (s *Stream) writer() {
 		f.Payload = make([]byte, s.PayloadSize)
 		// Read up to the maximum frame payload size
 		n, err := s.writeBuf.Read(f.Payload)
+		mode := s.Mode
 		s.l.Unlock()
 		switch err {
 		case nil, io.ErrUnexpectedEOF, io.EOF:
@@ -644,26 +645,16 @@ func (s *Stream) writer() {
 		}
 		f.Payload = f.Payload[:n]
 		if n > 0 || mustAck || mustTeardown {
+			// schedules a retransmission in the next epoch if not acknowledged
+			if mode == EndToEnd && !mustTeardown {
+				s.txEnqueue(nextEpoch(f))
+			}
+
 			err = s.txFrame(f)
 			switch err {
 			case nil:
-				// wakes writer into state where Write returns 0, nil
-				// which is treated as EOF condition
-				if n > 0 {
-					s.doOnWrite()
-				} else {
-					// do not wake blocked Write() if no data frames were sent
-				}
+				s.doOnWrite()
 			default:
-			}
-
-			if s.Mode == Multicast && err == nil {
-				continue // do not retransmit for end-to-end ACK.
-			}
-
-			// schedules a retransmission in the next epoch if a response is not received
-			if s.Mode == EndToEnd && !mustTeardown {
-				s.txEnqueue(nextEpoch(f))
 			}
 		}
 	}
@@ -922,17 +913,14 @@ func (s *Stream) readFrame() (*Frame, error) {
 }
 
 func (s *Stream) processAck(f *Frame) {
-	s.l.Lock()
 	// Nothing is acknowledged
-	if f.Ack == no_ack {
-		s.l.Unlock()
+	if f.Ack == no_ack || s.Mode != EndToEnd {
 		return
 	}
 	// update last_ack from peer
 	if f.Ack > s.PeerAckIdx || s.PeerAckIdx == no_ack {
 		s.PeerAckIdx = f.Ack
 	}
-	s.l.Unlock()
 	ackD := s.R.Ack(f.Ack)
 
 	// prod writer() waiting on Ack
