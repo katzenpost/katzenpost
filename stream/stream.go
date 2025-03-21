@@ -320,8 +320,11 @@ func (r *ReTx) Push(i client.Item) error {
 	// transmit and schedule for retransmission from goroutine
 	// do not block Push() on txFrame BlockingSend
 	r.s.Go(func() {
-		r.s.txFrame(m.Frame)
 		r.s.txEnqueue(m)
+		err := r.s.txFrame(m.Frame)
+		if err == nil {
+			r.s.doOnWrite()
+		}
 	})
 	return nil
 }
