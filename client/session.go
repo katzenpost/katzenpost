@@ -341,13 +341,7 @@ func (s *Session) onACK(surbID *[sConstants.SURBIDLength]byte, ciphertext []byte
 			return nil
 		}
 		replyWaitChan := replyWaitChanRaw.(chan []byte)
-		// do not block the worker if the receiver timed out!
-		select {
-		case replyWaitChan <- plaintext:
-		default:
-			s.log.Warningf("Failed to respond to a blocking message")
-			close(replyWaitChan)
-		}
+		replyWaitChan <- plaintext
 	} else {
 		s.eventCh <- &MessageReplyEvent{
 			MessageID: msg.ID,
