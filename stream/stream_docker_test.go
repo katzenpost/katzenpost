@@ -175,6 +175,13 @@ func TestStreamFragmentation(t *testing.T) {
 			// wait
 			<-time.After(1 * time.Second)
 		}
+		// flush writebuf to network
+		err := dialed.Sync()
+		if err != nil {
+			errCh <- err
+		}
+		t.Logf("Wrote all bytes to write buffer")
+
 	}()
 
 	// a reader worker that receives a payload
@@ -184,11 +191,14 @@ func TestStreamFragmentation(t *testing.T) {
 	go func() {
 		defer wg.Done()
 		defer close(err2Ch)
-		_, err := io.ReadFull(listener, result)
+		t.Logf("ReadFull begun")
+		n, err := io.ReadFull(listener, result)
 		if err != nil {
+			t.Logf("ReadFull returned error after %d bytes: %v", n, err)
 			err2Ch <- err
 			return
 		}
+		t.Logf("Read %d bytes", n)
 	}()
 
 	// require that no errors occurred while reading or writing the data
@@ -202,11 +212,21 @@ func TestStreamFragmentation(t *testing.T) {
 	}
 
 	// wait until the routines have returned
+	t.Logf("waiting for all routines to return")
 	wg.Wait()
+	t.Logf("all routines to returned")
 
-	// halt the dialer and listener
-	dialed.Halt()
+	// stop the reader
+	t.Logf("halting listener")
+	t.Logf("Waiting for listener to Halt")
 	listener.Halt()
+	t.Logf("listener halted")
+
+	// stop the sender
+	t.Logf("Halting dialed")
+	t.Logf("Waiting for dialed to Halt")
+	dialed.Halt()
+	t.Logf("dialed halted")
 }
 
 func TestCBORSerialization(t *testing.T) {
