@@ -311,7 +311,12 @@ func (r *ReTx) Push(i client.Item) error {
 		// Already Acknowledged
 		return nil
 	}
-	m.FramePriority = uint64(time.Now().Add(retryDelay).UnixNano())
+
+	// add a sampled retry delay to retransmit if unacknowledged
+	mRng := rand.NewMath()
+	delaySample := time.Duration(uint64(rand.Exp(mRng, float64(1/float64(retryDelay)))))
+	m.FramePriority = uint64(time.Now().Add(delaySample).UnixNano())
+
 	// transmit and schedule for retransmission from goroutine
 	// do not block Push() on txFrame BlockingSend
 	r.s.Go(func() {
