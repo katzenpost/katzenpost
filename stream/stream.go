@@ -643,9 +643,13 @@ func (s *Stream) writer() {
 				}
 			default:
 			}
+
 			if s.Mode == Multicast && err == nil {
 				continue // do not retransmit for end-to-end ACK.
-			} else {
+			}
+
+			// schedules a retransmission in the next epoch if a response is not received
+			if s.Mode == EndToEnd && !mustTeardown {
 				s.txEnqueue(nextEpoch(f))
 			}
 		}
