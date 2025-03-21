@@ -611,6 +611,11 @@ func (s *Stream) writer() {
 
 		// Set frame Ack if EndToEnd
 		if s.Mode == EndToEnd {
+			if s.ReadIdx > 0 {
+				s.AckIdx = s.ReadIdx - 1
+			} else {
+				f.Ack = no_ack
+			}
 			f.Ack = s.AckIdx
 		}
 
@@ -909,21 +914,17 @@ func (s *Stream) readFrame() (*Frame, error) {
 }
 
 func (s *Stream) processAck(f *Frame) {
-	// Update AckIdx
-	if f.Id > s.AckIdx {
-		s.AckIdx = f.Id
-	}
-
-	// update last_ack from peer
 	s.l.Lock()
-	if f.Ack > s.PeerAckIdx {
+	// Nothing is acknowledged
+	if f.Ack == no_ack {
+		s.l.Unlock()
+		return
+	}
+	// update last_ack from peer
+	if f.Ack > s.PeerAckIdx || s.PeerAckIdx == no_ack {
 		s.PeerAckIdx = f.Ack
 	}
 	s.l.Unlock()
-	// Nothing is acknowledged
-	if f.Ack == no_ack {
-		return
-	}
 	ackD := s.R.Ack(f.Ack)
 
 	// prod writer() waiting on Ack
@@ -986,6 +987,7 @@ func newStream(mode StreamMode) *Stream {
 	s.ReadKey = &[keySize]byte{}
 
 	s.AckIdx = no_ack
+	s.PeerAckIdx = no_ack
 	return s
 }
 
