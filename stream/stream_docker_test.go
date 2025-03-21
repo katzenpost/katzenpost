@@ -298,7 +298,9 @@ func TestStreamSerialize(t *testing.T) {
 	}
 
 	for i := 0; i < 10; i++ {
+		t.Logf("Starting encoder stream %s", s.LocalAddr().String())
 		enc := cbor.NewEncoder(s)
+		t.Logf("Starting decoder stream %s", r.LocalAddr().String())
 		dec := cbor.NewDecoder(r)
 		m := new(msg)
 		m.Payload = make([]byte, 4200) //2 * FramePayloadSize)
@@ -322,17 +324,27 @@ func TestStreamSerialize(t *testing.T) {
 		// stop the stream workers, serialize, deserialize, and start them again
 		// note that the same stream object is kept
 
+		t.Logf("Sync()ing encoder")
 		s.Sync()
+		t.Logf("Sync() done")
+		t.Logf("Halt() encoder")
 		s.Halt()
+		t.Logf("Halted")
+		t.Logf("Save encoder stream state")
 		senderStreamState, err := s.Save()
 		require.NoError(err)
-		c, _ := mClient.NewClient(session)
+		t.Logf("Saved %s", s.LocalAddr().String())
 
+		// restore the stream state
 		s, err = LoadStream(senderStreamState)
 		require.NoError(err)
+		t.Logf("Restored %s", s.LocalAddr().String())
 
 		// initialize a pigeonhole client with session
-		trans := mClient.DuplexFromSeed(c, s.Initiator, []byte(s.LocalAddr().String()))
+		c, _ := mClient.NewClient(session)
+		addr := []byte(s.LocalAddr().String())
+		t.Logf("Restoring transport for encoder %s", s.LocalAddr().String())
+		trans := mClient.DuplexFromSeed(c, s.Initiator, addr)
 		// FIXME: Streams should support resetting sender/receivers on Geometry changes.
 		if s.PayloadSize != PayloadSize(trans) {
 			panic(ErrGeometryChanged)
@@ -340,15 +352,29 @@ func TestStreamSerialize(t *testing.T) {
 
 		// use pigeonhole transport
 		s.SetTransport(trans)
+
+		// start stream again
+		t.Logf("restarting encoder stream")
 		s.Start()
+
+		// do the same process for the receiver as well
+		t.Logf("Halt() decoder")
 		r.Halt()
+		t.Logf("Halted")
+		t.Logf("Save decoder stream state")
 		receiverStreamState, err := r.Save()
 		require.NoError(err)
+		t.Logf("Saved")
 		r, err = LoadStream(receiverStreamState)
 		require.NoError(err)
+		t.Logf("Restored %s", r.LocalAddr().String())
 
-		// set the transport
-		r.SetTransport(trans)
+		// set the receiver transport
+		addr2 := []byte(r.LocalAddr().String())
+		t.Logf("Restoring transport for decoder %s", r.LocalAddr().String())
+		trans2 := mClient.DuplexFromSeed(c, r.Initiator, addr2)
+
+		r.SetTransport(trans2)
 		r.Start()
 	}
 	err = s.Close()
