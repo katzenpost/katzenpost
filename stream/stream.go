@@ -611,12 +611,7 @@ func (s *Stream) writer() {
 
 		// Set frame Ack if EndToEnd
 		if s.Mode == EndToEnd {
-			// have not read any data from peer yet so Ack = 0 is special case
-			if s.ReadIdx == 0 {
-				f.Ack = no_ack
-			} else {
-				f.Ack = s.AckIdx
-			}
+			f.Ack = s.AckIdx
 		}
 
 		if mustTeardown {
@@ -910,20 +905,23 @@ func (s *Stream) readFrame() (*Frame, error) {
 }
 
 func (s *Stream) processAck(f *Frame) {
-	// Nothing is acknowledged
-	if f.Ack == no_ack {
-		return
+	// Update AckIdx
+	if f.Id > s.AckIdx {
+		s.AckIdx = f.Id
 	}
-	ackD := s.R.Ack(f.Ack)
+
 	// update last_ack from peer
 	s.l.Lock()
 	if f.Ack > s.PeerAckIdx {
 		s.PeerAckIdx = f.Ack
 	}
-	if f.Id > s.AckIdx {
-		s.AckIdx = f.Id
-	}
 	s.l.Unlock()
+	// Nothing is acknowledged
+	if f.Ack == no_ack {
+		return
+	}
+	ackD := s.R.Ack(f.Ack)
+
 	// prod writer() waiting on Ack
 	if ackD {
 		select {
@@ -982,6 +980,8 @@ func newStream(mode StreamMode) *Stream {
 
 	s.WriteKey = &[keySize]byte{}
 	s.ReadKey = &[keySize]byte{}
+
+	s.AckIdx = no_ack
 	return s
 }
 
