@@ -1090,6 +1090,7 @@ func (s *Stream) StartWithTransport(trans Transport) {
 		s.Go(func() {
 			s.R.Lock()
 			for _, f := range s.R.Wack {
+				f := f
 				defer s.txEnqueue(f)
 			}
 			s.R.Unlock()
