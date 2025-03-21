@@ -35,8 +35,8 @@ const (
 var (
 	hash               = sha256.New
 	cborFrameOverhead  = 0
-	retryDelay         = epochtime.Period / 16
-	averageRetryRate   = epochtime.Period / 4   // how often to retransmit Get requests for unresponsive requests
+	retryDelay         = epochtime.Period       // how often to retransmit unacknowledged frames
+	averageRetryRate   = epochtime.Period / 2   // how often to retransmit Get requests
 	averageReadRate    = epochtime.Period / 256 // how often to send Get requests
 	averageSendRate    = epochtime.Period / 256 // how often to send Get requests
 	defaultTimeout     = 0 * time.Second
