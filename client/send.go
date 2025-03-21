@@ -236,9 +236,9 @@ func (s *Session) BlockingSendUnreliableMessageWithContext(ctx context.Context, 
 	s.sentWaitChanMap.Store(*msg.ID, sentWaitChan)
 	defer s.sentWaitChanMap.Delete(*msg.ID)
 
-	replyWaitChan := make(chan []byte)
+	replyWaitChan := make(chan []byte, 1)
 	s.replyWaitChanMap.Store(*msg.ID, replyWaitChan)
-
+	defer s.replyWaitChanMap.Delete(*msg.ID)
 	err = s.egressQueue.Push(msg)
 	if err != nil {
 		return nil, err
@@ -264,7 +264,6 @@ func (s *Session) BlockingSendUnreliableMessageWithContext(ctx context.Context, 
 	// wait for reply or round trip timeout
 	select {
 	case reply := <-replyWaitChan:
-		defer s.replyWaitChanMap.Delete(*msg.ID)
 		return reply, nil
 	case <-s.HaltCh():
 		return nil, ErrHalted
@@ -286,12 +285,14 @@ func (s *Session) BlockingSendReliableMessage(recipient, provider string, messag
 	s.sentWaitChanMap.Store(*msg.ID, sentWaitChan)
 	defer s.sentWaitChanMap.Delete(*msg.ID)
 
-	replyWaitChan := make(chan []byte)
+	replyWaitChan := make(chan []byte, 1)
 	s.replyWaitChanMap.Store(*msg.ID, replyWaitChan)
+	defer close(replyWaitChan)
 	defer s.replyWaitChanMap.Delete(*msg.ID)
 
 	err = s.egressQueue.Push(msg)
 	if err != nil {
+		panic(err)
 		return nil, err
 	}
 
