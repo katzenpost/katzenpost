@@ -374,11 +374,11 @@ func (s *Stream) reader() {
 			continue
 		}
 
+		s.l.Lock()
 		// process Acks
 		if s.Mode == EndToEnd {
 			s.processAck(f)
 		}
-		s.l.Lock()
 		n, _ := s.readBuf.Write(f.Payload)
 
 		// If this is the last Frame in the stream, set RState to StreamClosed
