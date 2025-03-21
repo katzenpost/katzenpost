@@ -519,17 +519,17 @@ func (s *Stream) Sync() error {
 	}
 	s.l.Unlock()
 	for {
-		select {
-		case <-s.onWrite:
-		case <-s.HaltCh():
-			return ErrHalted
-		}
 		s.l.Lock()
 		if s.writeBuf.Len() == 0 {
 			s.l.Unlock()
 			return nil
 		}
 		s.l.Unlock()
+		select {
+		case <-s.onWrite:
+		case <-s.HaltCh():
+			return ErrHalted
+		}
 	}
 }
 
