@@ -97,7 +97,7 @@ func (a *TimerQueue) worker() {
 			until := time.Until(time.Unix(0, int64(m.Priority)))
 			if until <= 0 {
 				a.l.Unlock()
-				a.forward()
+				a.Go(a.forward)
 				continue
 			} else {
 				c = time.After(until)
@@ -108,7 +108,7 @@ func (a *TimerQueue) worker() {
 		case <-a.HaltCh():
 			return
 		case <-c:
-			a.forward()
+			a.Go(a.forward)
 		case <-a.wakech:
 		}
 	}
