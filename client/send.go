@@ -113,15 +113,9 @@ func (s *Session) doSend(msg *Message) {
 			}
 			sentWaitChan := sentWaitChanRaw.(chan *Message)
 			if err == nil {
-				// do not block writing to the receiver if this is a retransmission
-				select {
-				case sentWaitChan <- msg:
-				default:
-				}
-
-			} else {
-				close(sentWaitChan)
+				sentWaitChan <- msg
 			}
+			close(sentWaitChan)
 			return
 		}
 	}
@@ -232,7 +226,7 @@ func (s *Session) BlockingSendUnreliableMessageWithContext(ctx context.Context, 
 	if err != nil {
 		return nil, err
 	}
-	sentWaitChan := make(chan *Message)
+	sentWaitChan := make(chan *Message, 1)
 	s.sentWaitChanMap.Store(*msg.ID, sentWaitChan)
 	defer s.sentWaitChanMap.Delete(*msg.ID)
 
@@ -281,7 +275,7 @@ func (s *Session) BlockingSendReliableMessage(recipient, provider string, messag
 		return nil, err
 	}
 	msg.Reliable = true
-	sentWaitChan := make(chan *Message)
+	sentWaitChan := make(chan *Message, 1)
 	s.sentWaitChanMap.Store(*msg.ID, sentWaitChan)
 	defer s.sentWaitChanMap.Delete(*msg.ID)
 
