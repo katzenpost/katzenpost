@@ -83,9 +83,11 @@ func (a *TimerQueue) forward() {
 		return
 	}
 	item := m.(*queue.Entry).Value.(Item)
-	if err := a.NextQ.Push(item); err != nil {
-		panic(err)
-	}
+	a.Go(func() {
+		if err := a.NextQ.Push(item); err != nil {
+			panic(err)
+		}
+	})
 }
 
 func (a *TimerQueue) worker() {
@@ -97,7 +99,7 @@ func (a *TimerQueue) worker() {
 			until := time.Until(time.Unix(0, int64(m.Priority)))
 			if until <= 0 {
 				a.l.Unlock()
-				a.Go(a.forward)
+				a.forward()
 				continue
 			} else {
 				c = time.After(until)
@@ -108,7 +110,7 @@ func (a *TimerQueue) worker() {
 		case <-a.HaltCh():
 			return
 		case <-c:
-			a.Go(a.forward)
+			a.forward()
 		case <-a.wakech:
 		}
 	}
