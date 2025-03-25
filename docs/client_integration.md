@@ -180,6 +180,25 @@ It's worth noting that our golang thin client implementation gives you an events
 receiving events from the client daemon. Whereas the Python and Rust thin clients allow you to
 specify call backs for each event type. Both are equivalent to each other.
 
+
+In golang, use the method EventSink() to return a channel of type thin.Event.
+```golang
+	thin := thin.NewThinClient(cfg)
+	err = thin.Dial()
+	if err != nil {
+		panic(err)
+	}
+
+    eventCh := thin.EventSink()
+    for ev := range eventCh {
+        switch ev.(type) {
+            case *thin.NewDocumentEvent:
+            // handle event
+            default:
+        }
+    }
+```
+
 ### Thin client events
 
 Here I'll tell you a bit about each of the events that thin clients receive:
