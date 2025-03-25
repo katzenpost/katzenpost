@@ -123,6 +123,16 @@ the PKI document for the the service name we give it and then
 selects a random entry from that set. I don't care which XYZ
 service I talk to just so long as I can talk to one of them.
 
+```golang
+// ServiceDescriptor describe a mixnet Gateway-side service.
+type ServiceDescriptor struct {
+	// RecipientQueueID is the service name or queue ID.
+	RecipientQueueID []byte
+	// Gateway name.
+	MixDescriptor *cpki.MixDescriptor
+}
+```
+
 The result is that you procure a destination mix identity hash
 and a destination queue ID so that the mix node routes the message to the service.
 
