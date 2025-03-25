@@ -40,9 +40,16 @@ are three thin client libraries:
 * rust thin client source code:
   https://github.com/katzenpost/thin_client/blob/main/src/lib.rs
 
+* working rust example using thin client:
+  https://github.com/katzenpost/thin_client/blob/main/examples/echo_ping.rs
+
 * python thin client source code:
   https://github.com/katzenpost/thin_client/blob/main/thinclient/__init__.py
   
+* working python examples using python thin client:
+  https://github.com/katzenpost/thin_client/blob/main/examples/echo_ping.rs
+  https://github.com/katzenpost/status
+  https://github.com/katzenpost/worldmap
 
 
 ## Thin client configuration
@@ -81,7 +88,8 @@ they expire. Our PKI document publishes several Epochs worth of future
 mix keys so that the upcoming Epoch boundary will not cause any
 transmission failures.
 
-You can obtain a PKI document with PKIDocument()
+Using our Golang thin clinet API you can obtain a PKI document with
+`PKIDocument`:
 
 ```golang
 /*
@@ -95,6 +103,18 @@ func (t *ThinClient) PKIDocument() *cpki.Document {}
     if doc == nil {
         panic("No Document")
     }
+```
+
+and similarly in our Rust thin client API:
+
+```rust
+    let doc = thin_client.pki_document().await;
+```
+
+Likewise in our Python thin client API:
+
+```python
+	doc = thin_client.pki_document()
 ```
 
 Now that we've gotten that introduction out of the way, I will tell
@@ -115,7 +135,19 @@ PKI document and the it handles it's business using that information:
 		panic(err)
 	}
 
-	sendPings(thin, desc, count, concurrency, printDiff)
+	// handle business here
+```
+
+In Rust:
+
+```rust
+let service_desc = thin_client.get_service(service_name).await?;
+```
+
+and in Python:
+
+```python
+service_descriptor = thin_client.get_service(doc, service_name)
 ```
 
 The `GetService` is a convenient helper method which searches
