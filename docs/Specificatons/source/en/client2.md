@@ -1,3 +1,16 @@
+---
+title: "Katzenpost Client Design"
+linkTitle: ""
+description: ""
+categories: [""]
+tags: [""]
+author: ["David Stainton"]
+version: 0
+draft: false
+---
+
+*Last updated: March 25th, 2025*
+
 **Abstract**
 
 This document describes the design of the new Katzenpost mix network
@@ -9,17 +22,18 @@ thin client library.
 
 A Katzenpost mixnet client has several responsibilities at minimum:
 
--   compose Sphinx packets
--   decrypt SURB replies
--   send and receive Noise protocol messages
--   keep up to date with the latest PKI document
+* compose Sphinx packets
+* decrypt SURB replies
+* send and receive Noise protocol messages
+* keep up to date with the latest PKI document
 
 # 2. Overview
 
-Client2 is essentially a long running daemon process that listens on an
-abstract unix domain socket for incoming thin client library
+Client2 is essentially a long running daemon process that listens on a
+local socket (either TCP or Unix domain socket) for incoming thin client library
 connections. Many client applications can use the same client2 daemon.
-Those connections are in a sense being multiplexed into the daemon's
+Those connections are meant to be local, all on the same device. All
+these connections to the client daemon are multiplexed into the daemon's
 single connection to the mix network.
 
 Therefore applications will be integrated with Katzenpost using the thin
@@ -34,15 +48,8 @@ and PKI related cryptography is handled by the daemon.
 
 # 3. Thin client and daemon protocol
 
-Note that the thin client daemon protocol uses abstract unix domain
-sockets in datagram packet mode. The socket is of type SOCK_SEQPACKET
-which is defined as:
-
--   **SOCK_SEQPACKET** (since Linux 2.6.4), is a connection-oriented
-    socket that preserves message boundaries and delivers messages in
-    the order that they were sent.
-
-In golang this is referred to by the "unixpacket" network string.
+Note that the thin client daemon protocol uses a local network socket
+(either abstract Unix domain socket or TCP socket).
 
 ## 3.1 Client socket naming convention
 
@@ -65,9 +72,7 @@ following name:
 ## 3.3 Protocol messages
 
 Note that there are two protocol message types and they are always CBOR
-encoded. We do not make use of any prefix length encoding because the
-socket type preserves message boundaries for us. Therefore we simply
-send over pure CBOR encoded messages.
+encoded. We send over length prefixed CBOR blobs.
 
 The daemon sends the `Response` message which is defined in golang as a
 struct containing an app ID and one of four possible events:
@@ -164,10 +169,10 @@ The client sends the `Request` message which is defined in golang as:
 # 3.4 Protocol description
 
 Upon connecting to the daemon socket the client must wait for two
-messages. The first message received must have it's `is_status` field
-set to true. If so then it's `is_connected` field indicates whether or
-not the daemon has a mixnet PQ Noise protocol connection to an entry
-node.
+messages. The first message which it should receive immediately is a
+status message and it's `is_status` field must be set to true. If so
+then it's `is_connected` field indicates whether or not the daemon has
+a mixnet PQ Noise protocol connection to an entry node.
 
 Next the client awaits the second message which contains the PKI
 document in it's `payload` field. This marks the end of the initial
