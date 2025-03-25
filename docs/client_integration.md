@@ -110,6 +110,33 @@ service I talk to just so long as I can talk to one of them.
 The result is that you procure a destination mix identity hash
 and a destination queue ID so that the mix node routes the message to the service.
 
+The hash algorithm used is provided by "github.com/katzenpost/hpqc" ("golang.org/x/crypto/blake2b.Sum256")
+
+```golang
+func Sum256(data []byte) [blake2b.Size256]byte {}
+```
+
+For example:
+
+```golang
+    import (
+        "github.com/katzenpost/hpqc/hash"
+        "github.com/katzenpost/katzenpost/thin"
+    )
+
+	thin := thin.NewThinClient(cfg)
+	err = thin.Dial()
+	if err != nil {
+		panic(err)
+	}
+
+	desc, err := thin.GetService("echo")
+	if err != nil {
+		panic(err)
+	}
+    serviceIdHash := hash.Sum256(desc.MixDescriptor.IdentityKey)
+    serviceQueueID := desc.RecipientQueueID
+```
 
 ## Sending a message
 
