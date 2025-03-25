@@ -190,13 +190,13 @@ be received. This is a one way message.
 
 The rest of the message sending methods of the thin client are variations of this basic send
 but with some more complexity added for example you can choose to send a message with or without the
-help of an ARQ error correciton scheme where retransmissions are automatically sent when the other party
+help of an ARQ error correction scheme where retransmissions are automatically sent when the other party
 doesn't receive you message. Or keep it minimal and send a message with a SURB
 in the payload so that the service can send you a reply. Also as a convenience our golang API
 has blocking and non-blocking method calls for these operations.
 
 The rust and python thin client APIs are very similar. Knowledge of
-one is easily transferrably to another implementation.
+one is easily transferred to another implementation.
 
 
 
