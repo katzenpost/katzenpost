@@ -81,6 +81,22 @@ they expire. Our PKI document publishes several Epochs worth of future
 mix keys so that the upcoming Epoch boundary will not cause any
 transmission failures.
 
+You can obtain a PKI document with PKIDocument()
+
+```golang
+/*
+import (
+    cpki "github.com/katzenpost/katzenpost/core/pki"
+)
+func (t *ThinClient) PKIDocument() *cpki.Document {}
+*/
+    ...
+    doc := thin.PKIDocument()
+    if doc == nil {
+        panic("No Document")
+    }
+```
+
 Now that we've gotten that introduction out of the way, I will tell
 you that as an application developer using the thin client, I mainly
 care about the mixnet services that I can learn from the PKI document.
