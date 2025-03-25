@@ -81,6 +81,22 @@ they expire. Our PKI document publishes several Epochs worth of future
 mix keys so that the upcoming Epoch boundary will not cause any
 transmission failures.
 
+You can obtain a PKI document with PKIDocument()
+
+```golang
+/*
+import (
+    cpki "github.com/katzenpost/katzenpost/core/pki"
+)
+func (t *ThinClient) PKIDocument() *cpki.Document {}
+*/
+    ...
+    doc := thin.PKIDocument()
+    if doc == nil {
+        panic("No Document")
+    }
+```
+
 Now that we've gotten that introduction out of the way, I will tell
 you that as an application developer using the thin client, I mainly
 care about the mixnet services that I can learn from the PKI document.
@@ -94,7 +110,7 @@ PKI document and the it handles it's business using that information:
 		panic(err)
 	}
 
-	desc, err := thin.GetService(service)
+	desc, err := thin.GetService("echo")
 	if err != nil {
 		panic(err)
 	}
@@ -107,9 +123,46 @@ the PKI document for the the service name we give it and then
 selects a random entry from that set. I don't care which XYZ
 service I talk to just so long as I can talk to one of them.
 
+```golang
+// ServiceDescriptor describe a mixnet Gateway-side service.
+type ServiceDescriptor struct {
+	// RecipientQueueID is the service name or queue ID.
+	RecipientQueueID []byte
+	// Gateway name.
+	MixDescriptor *cpki.MixDescriptor
+}
+```
+
 The result is that you procure a destination mix identity hash
 and a destination queue ID so that the mix node routes the message to the service.
 
+The hash algorithm used is provided by "github.com/katzenpost/hpqc" ("golang.org/x/crypto/blake2b.Sum256")
+
+```golang
+func Sum256(data []byte) [blake2b.Size256]byte {}
+```
+
+For example:
+
+```golang
+    import (
+        "github.com/katzenpost/hpqc/hash"
+        "github.com/katzenpost/katzenpost/thin"
+    )
+
+	thin := thin.NewThinClient(cfg)
+	err = thin.Dial()
+	if err != nil {
+		panic(err)
+	}
+
+	desc, err := thin.GetService("echo")
+	if err != nil {
+		panic(err)
+	}
+    serviceIdHash := hash.Sum256(desc.MixDescriptor.IdentityKey)
+    serviceQueueID := desc.RecipientQueueID
+```
 
 ## Sending a message
 
@@ -152,6 +205,25 @@ one is easily transferrably to another implementation.
 It's worth noting that our golang thin client implementation gives you an events channel for
 receiving events from the client daemon. Whereas the Python and Rust thin clients allow you to
 specify call backs for each event type. Both are equivalent to each other.
+
+
+In golang, use the method EventSink() to return a channel of type thin.Event.
+```golang
+	thin := thin.NewThinClient(cfg)
+	err = thin.Dial()
+	if err != nil {
+		panic(err)
+	}
+
+    eventCh := thin.EventSink()
+    for ev := range eventCh {
+        switch ev.(type) {
+            case *thin.NewDocumentEvent:
+            // handle event
+            default:
+        }
+    }
+```
 
 ### Thin client events
 
