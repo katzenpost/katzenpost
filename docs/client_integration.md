@@ -1,4 +1,3 @@
-
 ---
 title: "Katzenpost Client Integration Guide"
 linkTitle: ""
