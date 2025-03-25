@@ -94,7 +94,7 @@ PKI document and the it handles it's business using that information:
 		panic(err)
 	}
 
-	desc, err := thin.GetService(service)
+	desc, err := thin.GetService("echo")
 	if err != nil {
 		panic(err)
 	}
