@@ -14,7 +14,6 @@ import (
 	"github.com/katzenpost/katzenpost/client2"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/worker"
-	mClient "github.com/katzenpost/katzenpost/pigeonhole/client"
 	"github.com/katzenpost/katzenpost/pigeonhole/common"
 	"golang.org/x/crypto/hkdf"
 	"golang.org/x/crypto/nacl/secretbox"
@@ -958,7 +957,11 @@ func (s *Stream) RemoteAddr() *StreamAddr {
 }
 
 // Transport describes the interface to Get or Put Frames
-type Transport mClient.ReadWriteClient
+type Transport interface {
+	Get(ctx context.Context, addr []byte) ([]byte, error)
+	Put(ctx context.Context, addr []byte, payload []byte) error
+	PayloadSize() int
+}
 
 func newStream(mode StreamMode) *Stream {
 	s := new(Stream)
