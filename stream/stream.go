@@ -988,27 +988,22 @@ func newStream(mode StreamMode) *Stream {
 }
 
 // NewMulticastStream generates a new address and starts the read/write workers with Multicast mode
-func NewMulticastStream(s *client.Session) *Stream {
-	c, _ := mClient.NewClient(s)
-	addr := &StreamAddr{Snetwork: "", Saddress: generate()}
-	t := mClient.DuplexFromSeed(c, true, []byte(addr.String()))
+func NewMulticastStream(t Transport) *Stream {
+	addr := &StreamAddr{network: "", address: generate()}
 	st := newStream(Multicast)
 	st.SetTransport(t)
 	err := st.keyAsListener(addr)
 	if err != nil {
 		panic(err)
 	}
-	st.Mode = Multicast
 	st.Start()
 	return st
 }
 
 // NewStream generates a new address and starts the read/write workers with End to End mode
 // func NewStream(c Transport, identity sign.PrivateKey, sign.PublicKey) *Stream {
-func NewStream(s *client.Session) *Stream {
-	c, _ := mClient.NewClient(s)
-	addr := &StreamAddr{Snetwork: "", Saddress: generate()}
-	t := mClient.DuplexFromSeed(c, true, []byte(addr.String()))
+func NewStream(t Transport) *Stream {
+	addr := &StreamAddr{network: "", address: generate()}
 	st := newStream(EndToEnd)
 	st.SetTransport(t)
 	err := st.keyAsListener(addr)
@@ -1118,56 +1113,6 @@ func (s *Stream) setDefaultPollingRates() {
 	s.retryExpDist.UpdateRate(uint64(averageRetryRate/time.Millisecond), uint64(epochtime.Period/time.Millisecond))
 	s.readerExpDist.UpdateRate(uint64(averageReadRate/time.Millisecond), uint64(epochtime.Period/time.Millisecond))
 	s.senderExpDist.UpdateRate(uint64(averageSendRate/time.Millisecond), uint64(epochtime.Period/time.Millisecond))
-}
-
-// DialDuplex returns a stream using capability backed pigeonhole storage (Duplex)
-func DialDuplex(s *client.Session, network, addr string) (*Stream, error) {
-	c, err := mClient.NewClient(s)
-	if err != nil {
-		return nil, err
-	}
-	t := mClient.DuplexFromSeed(c, false, []byte(addr))
-	st := newStream(EndToEnd)
-	st.SetTransport(t)
-	a := &StreamAddr{Snetwork: network, Saddress: addr}
-
-	err = st.keyAsDialer(a)
-	if err != nil {
-		return nil, err
-	}
-	st.Start()
-	return st, nil
-}
-
-// ListenDuplex returns a Stream using capability pigeonhole storage (Duplex) as initiator
-func ListenDuplex(s *client.Session, network, addr string) (*Stream, error) {
-	c, _ := mClient.NewClient(s)
-	st := newStream(EndToEnd)
-	st.SetTransport(mClient.DuplexFromSeed(c, true, []byte(addr)))
-	a := &StreamAddr{Snetwork: network, Saddress: addr}
-	err := st.keyAsListener(a)
-	if err != nil {
-		return nil, err
-	}
-	st.Start()
-	return st, nil
-}
-
-// NewDuplex returns a Stream using capability pigeonhole storage (Duplex) a Listener
-func NewDuplex(s *client.Session) (*Stream, error) {
-	c, err := mClient.NewClient(s)
-	if err != nil {
-		return nil, err
-	}
-	a := &StreamAddr{Snetwork: "", Saddress: generate()}
-	st := newStream(EndToEnd)
-	st.SetTransport(mClient.DuplexFromSeed(c, true, []byte(a.String())))
-	err = st.keyAsListener(a)
-	if err != nil {
-		return nil, err
-	}
-	st.Start()
-	return st, nil
 }
 
 func init() {
