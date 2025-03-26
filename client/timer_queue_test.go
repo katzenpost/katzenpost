@@ -100,7 +100,6 @@ func TestTimerQueueOrder(t *testing.T) {
 		m.ID[0] = uint8(i)
 		t.Logf("Inserting: %x : %d", m.ID[0], m.Priority())
 		a.Push(m)
-		<-time.After(10 * time.Millisecond)
 	}
 
 	t.Logf("\n")
