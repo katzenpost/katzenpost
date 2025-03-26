@@ -316,6 +316,7 @@ func (s *Session) onACK(surbID *[sConstants.SURBIDLength]byte, ciphertext []byte
 	}
 	s.surbIDMap.Delete(*surbID)
 	msg := rawMessage.(*Message)
+	midStr := fmt.Sprintf("[%v]", hex.EncodeToString(msg.ID[:]))
 	plaintext, err := s.sphinx.DecryptSURBPayload(ciphertext, msg.Key)
 	if err != nil {
 		s.log.Infof("Discarding SURB Reply, decryption failure: %s", err)
@@ -329,23 +330,18 @@ func (s *Session) onACK(surbID *[sConstants.SURBIDLength]byte, ciphertext []byte
 		s.decrementDecoyLoopTally()
 		return nil
 	}
-
+	s.log.Debugf("SURB-ACK: %v response to %v", idStr, midStr)
 	if msg.IsBlocking {
 		replyWaitChanRaw, ok := s.replyWaitChanMap.Load(*msg.ID)
 		if !ok {
 			//XXX: this can happen if a SURB-ACK arrives after a call to BlockingSendUnreliableMessage has timed-out
 			// because the session.surbIDMap has not been deleted or garbage collected
-			s.log.Warningf("Discarding surb %v for blocking message %x : caller likely timed-out", idStr, msg.ID)
+			s.log.Debugf("Did not find a replyChan for blocking message %v", midStr)
+			s.log.Warningf("Discarding surb %v response to %v : caller likely timed-out", idStr, midStr)
 			return nil
 		}
 		replyWaitChan := replyWaitChanRaw.(chan []byte)
-		// do not block the worker if the receiver timed out!
-		select {
-		case replyWaitChan <- plaintext:
-		default:
-			s.log.Warningf("Failed to respond to a blocking message")
-			close(replyWaitChan)
-		}
+		replyWaitChan <- plaintext
 	} else {
 		s.eventCh <- &MessageReplyEvent{
 			MessageID: msg.ID,
@@ -409,8 +405,8 @@ func (s *Session) ForceFetchPKI() {
 }
 
 func (s *Session) Shutdown() {
-	s.Halt()
 	s.timerQ.Halt()
 	s.minclient.Shutdown()
+	s.Halt()
 	s.minclient.Wait()
 }
