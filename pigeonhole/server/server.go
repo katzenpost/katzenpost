@@ -26,6 +26,7 @@ import (
 	bolt "go.etcd.io/bbolt"
 	"gopkg.in/op/go-logging.v1"
 
+	"github.com/katzenpost/hpqc/sign/ed25519"
 	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/katzenpost/katzenpost/pigeonhole/common"
 	"github.com/katzenpost/katzenpost/server/cborplugin"
@@ -254,48 +255,44 @@ func (m *PigeonHole) OnCommand(cmd cborplugin.Command) error {
 		}
 
 		resp := &common.PigeonHoleResponse{}
-		// validate the capabilities of PigeonHoleRequest
-		if !validateCap(req) {
-			resp.Status = common.StatusFailed
-			m.log.Errorf("validateCap failed for %x", req.ID)
-		} else {
-			// Write data if payload present
-			if len(req.Payload) > 0 {
-				m.log.Debugf("Put(%x)", req.ID)
 
-				// save payload
-				err := m.Put(req.ID, req.Payload)
-				if err != nil {
-					m.log.Debugf("Put(%x): Failed", req.ID)
-					resp.Status = common.StatusFailed
-				} else {
-					m.log.Debugf("Put(%x): OK", req.ID)
-					resp.Status = common.StatusOK
-				}
+		// Verify if payload present
+		if len(req.Payload) > 0 && validateBacap(req) {
+			m.log.Debugf("Put(%x)", req.ID)
 
-				// Wake pending Get requests and respond with payload
-				err = m.Wake(req.ID, req.Payload)
-				if err != nil {
-					m.log.Errorf("Wake(%x): %v", req.ID, err)
-				}
-
-				// Otherwise request data
+			// save payload
+			err := m.Put(req.ID, req.Payload)
+			if err != nil {
+				m.log.Debugf("Put(%x): Failed", req.ID)
+				resp.Status = common.StatusFailed
 			} else {
-				p, err := m.Get(req.ID)
-				if err != nil {
-					m.log.Debugf("m.Get(%x): %v", req.ID, err)
-					// wait for future data
-					m.Wait(req.ID, &cborplugin.Response{ID: r.ID, SURB: r.SURB})
-					// do not use SURB, return nil
-					return nil
-				} else {
-					// data was found, respond immediately
-					m.log.Debugf("Get(%x): OK", req.ID)
-					resp.Status = common.StatusOK
-					resp.Payload = p
-				}
+				m.log.Debugf("Put(%x): OK", req.ID)
+				resp.Status = common.StatusOK
+			}
+
+			// Wake pending Get requests and respond with payload
+			err = m.Wake(req.ID, req.Payload)
+			if err != nil {
+				m.log.Errorf("Wake(%x): %v", req.ID, err)
+			}
+
+			// Otherwise return data
+		} else {
+			p, err := m.Get(req.ID)
+			if err != nil {
+				m.log.Debugf("m.Get(%x): %v", req.ID, err)
+				// wait for future data
+				m.Wait(req.ID, &cborplugin.Response{ID: r.ID, SURB: r.SURB})
+				// do not use SURB, return nil
+				return nil
+			} else {
+				// data was found, respond immediately
+				m.log.Debugf("Get(%x): OK", req.ID)
+				resp.Status = common.StatusOK
+				resp.Payload = p
 			}
 		}
+
 		// marshal response to this request
 		rawResp, err := resp.Marshal()
 		if err != nil {
@@ -311,16 +308,12 @@ func (m *PigeonHole) OnCommand(cmd cborplugin.Command) error {
 	}
 }
 
-func validateCap(req *common.PigeonHoleRequest) bool {
-	if len(req.Payload) == 0 {
-		v := req.ID.ReadVerifier()
-		// verify v Signs the publickey bytes
-		return v.Verify(req.Signature, req.ID.Bytes())
-	} else {
-		v := req.ID.WriteVerifier()
-		// verify v Signs the payload bytes
-		return v.Verify(req.Signature, req.Payload)
+func validateBacap(req *common.PigeonHoleRequest) bool {
+	var boxPk ed25519.PublicKey
+	if err := boxPk.FromBytes(req.ID[:]); err != nil {
+		return false
 	}
+	return boxPk.Verify(req.Signature, req.Payload)
 }
 
 func (m *PigeonHole) RegisterConsumer(svr *cborplugin.Server) {
