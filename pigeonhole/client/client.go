@@ -136,12 +136,12 @@ func (c *Client) PayloadSize() int {
 }
 
 // Get requests ID from the chosen storage node and blocks until a response is received or is cancelled.
-func (c *Client) Get(ctx context.Context, ID common.MessageID, signature []byte) ([]byte, error) {
+func (c *Client) Get(ctx context.Context, ID common.MessageID) ([]byte, error) {
 	loc, err := c.GetStorageProvider(ID)
 	if err != nil {
 		return nil, err
 	}
-	b := &common.PigeonHoleRequest{ID: ID, Signature: signature}
+	b := &common.PigeonHoleRequest{ID: ID}
 	serialized, err := cbor.Marshal(b)
 	if err != nil {
 		return nil, err
