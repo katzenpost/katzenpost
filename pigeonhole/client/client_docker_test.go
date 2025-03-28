@@ -185,9 +185,9 @@ func TestAsyncGetPigeonHole(t *testing.T) {
 	}()
 
 	go func() {
-		t.Logf("Sending GetWithContext(), timeout in %v", timeout)
+		t.Logf("Sending Get(), timeout in %d", timeout)
 		ctx, cancelFn := context.WithTimeout(context.Background(), timeout)
-		resp, err := c.GetWithContext(ctx, id, rKey.Sign(id.Bytes()))
+		resp, err := c.Get(ctx, id, rKey.Sign(id.Bytes()))
 		if err != nil {
 			receiverResultCh <- err
 		} else {

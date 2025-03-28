@@ -102,11 +102,7 @@ func (c *Client) GetStorageProvider(ID common.MessageID) (StorageLocation, error
 }
 
 // Put places a value into the store
-func (c *Client) Put(ID common.MessageID, signature, payload []byte) error {
-	return c.PutWithContext(nil, ID, signature, payload)
-}
-
-func (c *Client) PutWithContext(ctx context.Context, ID common.MessageID, signature, payload []byte) error {
+func (c *Client) Put(ctx context.Context, ID common.MessageID, signature, payload []byte) error {
 	loc, err := c.GetStorageProvider(ID)
 	if err != nil {
 		return err
@@ -139,14 +135,8 @@ func (c *Client) PayloadSize() int {
 	return geo.UserForwardPayloadLength - cborFrameOverhead - ed25519.SignatureSize
 }
 
-// Get requests ID from the chosen storage node and returns a payload or error
-func (c *Client) Get(ID common.MessageID, signature []byte) ([]byte, error) {
-	// nil context uses the round trip estimated time of arrival
-	return c.GetWithContext(nil, ID, signature)
-}
-
-// GetWithContext requests ID from the chosen storage node and blocks until a response is received or is cancelled.
-func (c *Client) GetWithContext(ctx context.Context, ID common.MessageID, signature []byte) ([]byte, error) {
+// Get requests ID from the chosen storage node and blocks until a response is received or is cancelled.
+func (c *Client) Get(ctx context.Context, ID common.MessageID, signature []byte) ([]byte, error) {
 	loc, err := c.GetStorageProvider(ID)
 	if err != nil {
 		return nil, err
@@ -175,24 +165,20 @@ func (c *Client) GetWithContext(ctx context.Context, ID common.MessageID, signat
 
 // ReadWriteClient has both Get and Put
 type ReadWriteClient interface {
-	Put(addr []byte, payload []byte) error
-	Get(addr []byte) ([]byte, error)
-	PutWithContext(ctx context.Context, addr []byte, payload []byte) error
-	GetWithContext(ctx context.Context, addr []byte) ([]byte, error)
+	Put(ctx context.Context, addr []byte, payload []byte) error
+	Get(ctx context.Context, addr []byte) ([]byte, error)
 	PayloadSize() int
 }
 
 // ReadOnlyClient only has Get
 type ReadOnlyClient interface {
-	Get(addr []byte) ([]byte, error)
-	GetWithContext(ctx context.Context, addr []byte) ([]byte, error)
+	Get(ctx context.Context, addr []byte) ([]byte, error)
 	PayloadSize() int
 }
 
 // WriteOnlyClient only has Put
 type WriteOnlyClient interface {
-	Put(addr []byte, payload []byte) error
-	PutWithContext(ctx context.Context, addr []byte, payload []byte) error
+	Put(ctx context.Context, addr []byte, payload []byte) error
 	PayloadSize() int
 }
 
@@ -205,31 +191,17 @@ type rwPigeonHole struct {
 }
 
 // Get implements ReadWriteClient.Get
-func (r *rwPigeonHole) Get(addr []byte) ([]byte, error) {
+func (r *rwPigeonHole) Get(ctx context.Context, addr []byte) ([]byte, error) {
 	i := r.rwCap.Addr(addr)
 	k := r.rwCap.ReadKey(addr)
-	return r.c.Get(i, k.Sign(i.Bytes()))
-}
-
-// GetWithContext implements ReadWriteClient.GetWithContext
-func (r *rwPigeonHole) GetWithContext(ctx context.Context, addr []byte) ([]byte, error) {
-	i := r.rwCap.Addr(addr)
-	k := r.rwCap.ReadKey(addr)
-	return r.c.GetWithContext(ctx, i, k.Sign(i.Bytes()))
+	return r.c.Get(ctx, i, k.Sign(i.Bytes()))
 }
 
 // Put implements ReadWriteClient.Put
-func (r *rwPigeonHole) Put(addr []byte, payload []byte) error {
+func (r *rwPigeonHole) Put(ctx context.Context, addr []byte, payload []byte) error {
 	i := r.rwCap.Addr(addr)
 	k := r.rwCap.WriteKey(addr)
-	return r.c.Put(i, k.Sign(payload), payload)
-}
-
-// PutWithContext implmements ReadWriteClient.PutWithContext
-func (r *rwPigeonHole) PutWithContext(ctx context.Context, addr []byte, payload []byte) error {
-	i := r.rwCap.Addr(addr)
-	k := r.rwCap.WriteKey(addr)
-	return r.c.PutWithContext(ctx, i, k.Sign(payload), payload)
+	return r.c.Put(ctx, i, k.Sign(payload), payload)
 }
 
 // PayloadSize implements ReadWriteClient.PayloadSize
@@ -244,17 +216,10 @@ type roPigeonHole struct {
 }
 
 // Get implements ReadOnlyClient.Get
-func (r *roPigeonHole) Get(addr []byte) ([]byte, error) {
+func (r *roPigeonHole) Get(ctx context.Context, addr []byte) ([]byte, error) {
 	i := r.roCap.Addr(addr)
 	k := r.roCap.ReadKey(addr)
-	return r.c.Get(i, k.Sign(i.Bytes()))
-}
-
-// GetWithContext implements ReadOnlyClient.GetWithContext
-func (r *roPigeonHole) GetWithContext(ctx context.Context, addr []byte) ([]byte, error) {
-	i := r.roCap.Addr(addr)
-	k := r.roCap.ReadKey(addr)
-	return r.c.GetWithContext(ctx, i, k.Sign(i.Bytes()))
+	return r.c.Get(ctx, i, k.Sign(i.Bytes()))
 }
 
 // PayloadSize implements ReadOnlyClient.PayloadSize
@@ -268,18 +233,11 @@ type woPigeonHole struct {
 	woCap common.WriteOnlyCap
 }
 
-// Put implements WriteOnlyClient.Put
-func (w *woPigeonHole) Put(addr []byte, payload []byte) error {
-	i := w.woCap.Addr(addr)
-	k := w.woCap.WriteKey(addr)
-	return w.c.Put(i, k.Sign(payload), payload)
-}
-
-// PutWithContext implmements WriteOnlyClient.PutWithContext
-func (r *woPigeonHole) PutWithContext(ctx context.Context, addr []byte, payload []byte) error {
+// Put implmements WriteOnlyClient.Put
+func (r *woPigeonHole) Put(ctx context.Context, addr []byte, payload []byte) error {
 	i := r.woCap.Addr(addr)
 	k := r.woCap.WriteKey(addr)
-	return r.c.PutWithContext(ctx, i, k.Sign(payload), payload)
+	return r.c.Put(ctx, i, k.Sign(payload), payload)
 }
 
 // PayloadSize implements WriteOnlyClient.PayloadSize
@@ -357,23 +315,13 @@ type duplex struct {
 }
 
 // Put implements ReadWriteClient.Put
-func (s *duplex) Put(addr []byte, payload []byte) error {
-	return s.wo.Put(addr, payload)
+func (s *duplex) Put(ctx context.Context, addr []byte, payload []byte) error {
+	return s.wo.Put(ctx, addr, payload)
 }
 
 // Get implements ReadWriteClient.Get
-func (s *duplex) Get(addr []byte) ([]byte, error) {
-	return s.ro.Get(addr)
-}
-
-// PutWithContext implements ReadWriteClient.PutWithContext
-func (s *duplex) PutWithContext(ctx context.Context, addr []byte, payload []byte) error {
-	return s.wo.PutWithContext(ctx, addr, payload)
-}
-
-// GetWithContext implements ReadWriteClient.GetWithContext
-func (s *duplex) GetWithContext(ctx context.Context, addr []byte) ([]byte, error) {
-	return s.ro.GetWithContext(ctx, addr)
+func (s *duplex) Get(ctx context.Context, addr []byte) ([]byte, error) {
+	return s.ro.Get(ctx, addr)
 }
 
 // PayloadSize implements ReadWriteClient.PayloadSize
