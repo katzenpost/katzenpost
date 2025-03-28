@@ -28,7 +28,6 @@ import (
 	"github.com/katzenpost/katzenpost/client"
 	"github.com/katzenpost/katzenpost/client/utils"
 	"github.com/katzenpost/katzenpost/pigeonhole/common"
-	"golang.org/x/crypto/hkdf"
 )
 
 var (
