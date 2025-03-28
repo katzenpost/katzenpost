@@ -38,7 +38,7 @@ func NewLossyMockTransport(lossRate float64) Transport {
 	return m
 }
 
-func (m lossyMockTransport) Put(addr []byte, payload []byte) error {
+func (m lossyMockTransport) Put(ctx context.Context, addr []byte, payload []byte) error {
 	// probabalistically fail to put messages
 	if m.lossRate < 0 || m.lossRate > 1 {
 		panic("lossRate must be >=0 < 1")
