@@ -58,7 +58,7 @@ func newStreams(t Transport) (*Stream, *Stream) {
 
 	a := newStream(EndToEnd)
 	a.SetTransport(t)
-	addr := &StreamAddr{Saddress: generate()}
+	addr := &StreamAddr{Secret: generate()}
 	a.keyAsListener(addr)
 	b := newStream(EndToEnd)
 	b.SetTransport(t)
@@ -79,14 +79,14 @@ func NewMockTransport() Transport {
 	return m
 }
 
-func (m mockTransport) Put(addr []byte, payload []byte) error {
+func (m mockTransport) Put(ctx context.Context, addr []byte, payload []byte) error {
 	m.l.Lock()
 	defer m.l.Unlock()
 	m.data[string(addr)] = payload
 	return nil
 }
 
-func (m mockTransport) Get(addr []byte) ([]byte, error) {
+func (m mockTransport) Get(ctx context.Context, addr []byte) ([]byte, error) {
 	m.l.Lock()
 	d, ok := m.data[string(addr)]
 	m.l.Unlock()
@@ -95,14 +95,6 @@ func (m mockTransport) Get(addr []byte) ([]byte, error) {
 		return nil, errors.New("NotFound")
 	}
 	return d, nil
-}
-
-func (m mockTransport) PutWithContext(ctx context.Context, addr []byte, payload []byte) error {
-	return m.Put(addr, payload)
-}
-
-func (m mockTransport) GetWithContext(ctx context.Context, addr []byte) ([]byte, error) {
-	return m.Get(addr)
 }
 
 func (m mockTransport) PayloadSize() int {
@@ -127,7 +119,7 @@ func TestMockTransport(t *testing.T) {
 		addr := make([]byte, 8)
 		for i := 0; i < 4096; i++ {
 			binary.BigEndian.PutUint64(addr, uint64(i))
-			garbage.Put(addr, randPayload())
+			garbage.Put(nil, addr, randPayload())
 		}
 		wg.Done()
 	}()
@@ -135,7 +127,7 @@ func TestMockTransport(t *testing.T) {
 		addr := make([]byte, 8)
 		for i := 0; i < 4096; i++ {
 			binary.BigEndian.PutUint64(addr, uint64(i))
-			garbage.Put(addr, randPayload())
+			garbage.Put(nil, addr, randPayload())
 		}
 		wg.Done()
 	}()
