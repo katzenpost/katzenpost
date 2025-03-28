@@ -18,21 +18,20 @@ package common
 import (
 	"errors"
 	"github.com/fxamacker/cbor/v2"
+	"github.com/katzenpost/hpqc/sign/ed25519"
 )
 
 const (
 	PigeonHoleServiceName = "pigeonhole"
 )
 
+type MessageID [ed25519.PublicKeySize]byte
+
 type PigeonHoleRequest struct {
-	// ID is the ID of the block which is a ed25519 PublicKey
+	// ID is the ID of the box which is a ed25519 PublicKey
 	ID MessageID
 
-	// Future version may wish to include the PublicKey
-	// if PublicKeySize is
-	// Signature is the signature over Payload with
-	// The Read or Write capability keys for the entry
-	// identified by ID
+	// Signature of the payload by the secret key corresponding to ID
 	Signature []byte
 
 	// Payload is the contents to store or nil
