@@ -44,17 +44,17 @@ func NewClient(s *client.Session) (*Client, error) {
 }
 
 type StorageLocation interface {
-	ID() common.MessageID
+	ID() [ed25519.PublicKeySize]byte
 	Name() string
 	Provider() string
 }
 
 type pigeonHoleStorage struct {
-	id             common.MessageID
+	id             [ed25519.PublicKeySize]byte
 	name, provider string
 }
 
-func (m *pigeonHoleStorage) ID() common.MessageID {
+func (m *pigeonHoleStorage) ID() [ed25519.PublicKeySize]byte {
 	return m.id
 }
 func (m *pigeonHoleStorage) Name() string {
@@ -84,7 +84,7 @@ func deterministicSelect(descs []utils.ServiceDescriptor, slot int) utils.Servic
 }
 
 // GetStorageProvider returns the deterministically selected storage provider given a storage secret ID
-func (c *Client) GetStorageProvider(ID common.MessageID) (StorageLocation, error) {
+func (c *Client) GetStorageProvider(ID [ed25519.PublicKeySize]byte) (StorageLocation, error) {
 	// doc must be current document!
 	doc := c.Session.CurrentDocument()
 	if doc == nil {
@@ -101,7 +101,7 @@ func (c *Client) GetStorageProvider(ID common.MessageID) (StorageLocation, error
 }
 
 // Put places a value into the store
-func (c *Client) Put(ctx context.Context, ID common.MessageID, signature, payload []byte) error {
+func (c *Client) Put(ctx context.Context, ID [ed25519.PublicKeySize]byte, signature [ed25519.SignatureSize]byte, payload []byte) error {
 	loc, err := c.GetStorageProvider(ID)
 	if err != nil {
 		return err
@@ -135,7 +135,7 @@ func (c *Client) PayloadSize() int {
 }
 
 // Get requests ID from the chosen storage node and blocks until a response is received or is cancelled.
-func (c *Client) Get(ctx context.Context, ID common.MessageID) ([]byte, error) {
+func (c *Client) Get(ctx context.Context, ID [ed25519.PublicKeySize]byte) ([]byte, [ed25519.SignatureSize]byte, error) {
 	loc, err := c.GetStorageProvider(ID)
 	if err != nil {
 		return nil, err

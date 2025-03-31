@@ -34,11 +34,11 @@ func NewLossyMockTransport(lossRate float64) Transport {
 	m.l = new(sync.Mutex)
 	m.l.Lock()
 	defer m.l.Unlock()
-	m.data = make(map[string][]byte)
+	m.data = make(map[[32]byte]message)
 	return m
 }
 
-func (m lossyMockTransport) Put(ctx context.Context, addr []byte, payload []byte) error {
+func (m lossyMockTransport) Put(ctx context.Context, addr [32]byte, sig [64]byte, payload []byte) error {
 	// probabalistically fail to put messages
 	if m.lossRate < 0 || m.lossRate > 1 {
 		panic("lossRate must be >=0 < 1")
