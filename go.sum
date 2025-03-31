@@ -6,6 +6,8 @@ filippo.io/mlkem768 v0.0.0-20240221181710-5ce91625fdc1 h1:xbdqh5aDZeO0XqW896qVjK
 filippo.io/mlkem768 v0.0.0-20240221181710-5ce91625fdc1/go.mod h1:mIEHrcJ2xBlJRQwnRO0ujmZ+Rt6m6eNeCPq8E3Wkths=
 github.com/BurntSushi/toml v1.4.0 h1:kuoIxZQy2WRRk1pttg9asf+WVv6tWQuBNVmK8+nqPr0=
 github.com/BurntSushi/toml v1.4.0/go.mod h1:ukJfTF/6rtPPRCnwkur4qwRxa8vTRFBF0uk2lLoLwho=
+github.com/agl/gcmsiv v0.0.0-20190418185415-e8dcd2f151dc h1:MB338WDPuyQ8qXRiSRK2NVTv0EmLYsHXZAevEiQO1+c=
+github.com/agl/gcmsiv v0.0.0-20190418185415-e8dcd2f151dc/go.mod h1:5joDAvk82M2Cx1X8mAL5Orvhy5lfW4BjrTCW65wbvRo=
 github.com/beorn7/perks v1.0.1 h1:VlbKKnNfV8bJzeqoa4cOKqO6bYr3WgKZxO8Z16+hsOM=
 github.com/beorn7/perks v1.0.1/go.mod h1:G2ZrVWU2WbWT9wwq4/hrbKbnv/1ERSJQ0ibhJ6rlkpw=
 github.com/carlmjohnson/versioninfo v0.22.5 h1:O00sjOLUAFxYQjlN/bzYTuZiS0y6fWDQjMRvwtKgwwc=
@@ -54,8 +56,8 @@ github.com/katzenpost/chacha20poly1305 v0.0.1 h1:yFPxgu/VSWsoCNQ2x15az8xBKKc/9GD
 github.com/katzenpost/chacha20poly1305 v0.0.1/go.mod h1:5sv//C8pWaXrnnP3CNiJXqAlA1/yfUZOl1tR9xsL9bI=
 github.com/katzenpost/circl v1.3.9-0.20240222183521-1cd9a34e9a0c h1:FYy03rLIjdyjklBOI6YSCb3q7OubTx0dVDWYOgDsvA8=
 github.com/katzenpost/circl v1.3.9-0.20240222183521-1cd9a34e9a0c/go.mod h1:+EBrwiGYs9S+qZqaqxujN1CReTNCMAG6p+31KkEDeeA=
-github.com/katzenpost/hpqc v0.0.53 h1:hodmAPM4AyHK2pF9dMUxkokc3GHAuy5FM44ez+37w3U=
-github.com/katzenpost/hpqc v0.0.53/go.mod h1:yaVqoZyKeBmgiKnGBpgLNf+nfO4ll81f54RAnaL6OpI=
+github.com/katzenpost/hpqc v0.0.54 h1:OjsAo7FeWtUAcXv2IzynmL8iOG20VdI+ijln76xHevQ=
+github.com/katzenpost/hpqc v0.0.54/go.mod h1:yaVqoZyKeBmgiKnGBpgLNf+nfO4ll81f54RAnaL6OpI=
 github.com/katzenpost/nyquist v0.0.10 h1:rh9TCEXCsutsg+cvbV6ASVFnzSAYBisWQ3fnwQSPa34=
 github.com/katzenpost/nyquist v0.0.10/go.mod h1:tyK92JiCptgsaE0iUAMlt5W2v2Rdw6mnUpIdIidIGHo=
 github.com/katzenpost/sntrup4591761 v0.0.0-20231024131303-8755eb1986b8 h1:TsKxH0x2RUwf5rBw67k15bqVM3oVbexA9oaTZQLIy3Y=
