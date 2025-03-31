@@ -69,17 +69,30 @@ func getSession(t *testing.T) *client.Session {
 	return session
 }
 
-func TestCreateStream(t *testing.T) {
+func TestCreateStreamPigeonhole(t *testing.T) {
 	require := require.New(t)
 	session := getSession(t)
 	defer session.Shutdown()
 	require.NotNil(session)
 
-	// listener (initiator) of stream
-	s := NewStream(session)
+	// create a pigeonhole client
+	c, err := mClient.NewClient(session)
+	require.NoError(err)
+
+	// create a new secret
+	addr := &StreamAddr{Secret: generate()}
+
+	// create pigeonhole transports for stream using address as seed. We do this because it's convenient
+	// but in real world use the mClient.Duplex should be initialized by exchanging public keys for a read cap
+	listenerTransport := mClient.DuplexFromSeed(c, true, []byte(addr.String()))
+	dialerTransport := mClient.DuplexFromSeed(c, false, []byte(addr.String()))
+
+	// the listener initializes first
+	s, err := Listen(listenerTransport, "", addr.String())
+	require.NoError(err)
 
 	// receiver (dialer) of stream
-	r, err := DialDuplex(session, "", s.RemoteAddr().String())
+	r, err := Dial(dialerTransport, "", addr.String())
 	require.NoError(err)
 
 	msg := []byte("Hello World")
@@ -129,14 +142,16 @@ func TestStreamFragmentation(t *testing.T) {
 
 	wg := new(sync.WaitGroup)
 	wg.Add(2)
-	// Generate StreamAddr
-	addr := &StreamAddr{"address", generate()}
+	// Generate StreamAddr and transports
+	addr := &StreamAddr{Secret: generate()}
+	listenerTransport := mClient.DuplexFromSeed(c, true, []byte(addr.String()))
+	dialerTransport := mClient.DuplexFromSeed(c, false, []byte(addr.String()))
 
 	// Listen and Dial the StreamAddr
-	listener, err := ListenDuplex(session, "", addr.String())
+	listener, err := Listen(listenerTransport, "", addr.String())
 	require.NoError(err)
 
-	dialed, err := DialDuplex(session, "", addr.String())
+	dialed, err := Dial(dialerTransport, "", addr.String())
 	require.NoError(err)
 
 	// write data in chunks with delays by sender
