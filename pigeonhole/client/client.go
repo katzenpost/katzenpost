@@ -159,7 +159,15 @@ func (c *Client) Get(ctx context.Context, ID [ed25519.PublicKeySize]byte) ([]byt
 	if resp.Status == common.StatusNotFound {
 		return nil, common.ErrStatusNotFound
 	}
-	return resp.Payload, nil
+
+	// verify that the response payload is signed by the ID requested
+	ok, err := bacap.VerifyCiphertextForContext(ID, nil, resp.Payload, resp.Signature)
+	if !ok {
+		if err == nil {
+			panic("expected error")
+		}
+	}
+	return resp.Payload, resp.Signature, err
 }
 
 func init() {
