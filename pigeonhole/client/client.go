@@ -24,6 +24,7 @@ import (
 	"sort"
 
 	"github.com/fxamacker/cbor/v2"
+	"github.com/katzenpost/hpqc/bacap"
 	"github.com/katzenpost/hpqc/sign/ed25519"
 	"github.com/katzenpost/katzenpost/client"
 	"github.com/katzenpost/katzenpost/client/utils"
@@ -136,28 +137,29 @@ func (c *Client) PayloadSize() int {
 
 // Get requests ID from the chosen storage node and blocks until a response is received or is cancelled.
 func (c *Client) Get(ctx context.Context, ID [ed25519.PublicKeySize]byte) ([]byte, [ed25519.SignatureSize]byte, error) {
+	sig := [ed25519.SignatureSize]byte{}
 	loc, err := c.GetStorageProvider(ID)
 	if err != nil {
-		return nil, err
+		return nil, sig, err
 	}
 	b := &common.PigeonHoleRequest{ID: ID}
 	serialized, err := cbor.Marshal(b)
 	if err != nil {
-		return nil, err
+		return nil, sig, err
 	}
 
 	r, err := c.Session.BlockingSendUnreliableMessageWithContext(ctx, loc.Name(), loc.Provider(), serialized)
 	if err != nil {
-		return nil, err
+		return nil, sig, err
 	}
 	// unwrap the response and return the payload
 	resp := &common.PigeonHoleResponse{}
 	_, err = cbor.UnmarshalFirst(r, resp)
 	if err != nil {
-		return nil, err
+		return nil, sig, err
 	}
 	if resp.Status == common.StatusNotFound {
-		return nil, common.ErrStatusNotFound
+		return nil, sig, common.ErrStatusNotFound
 	}
 
 	// verify that the response payload is signed by the ID requested
