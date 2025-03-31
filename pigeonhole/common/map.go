@@ -25,14 +25,12 @@ const (
 	PigeonHoleServiceName = "pigeonhole"
 )
 
-type MessageID [ed25519.PublicKeySize]byte
-
 type PigeonHoleRequest struct {
-	// ID is the ID of the box which is a ed25519 PublicKey
-	ID MessageID
+	// ID of the box which is a ed25519 PublicKey
+	ID [ed25519.PublicKeySize]byte
 
 	// Signature of the payload by the secret key corresponding to ID
-	Signature []byte
+	Signature [ed25519.SignatureSize]byte
 
 	// Payload is the contents to store or nil
 	Payload []byte
