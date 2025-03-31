@@ -58,8 +58,9 @@ var (
 )
 
 type PigeonHoleResponse struct {
-	Status  PigeonHoleStatus
-	Payload []byte
+	Signature [ed25519.SignatureSize]byte
+	Status    PigeonHoleStatus
+	Payload   []byte
 }
 
 func (m *PigeonHoleResponse) Marshal() ([]byte, error) {

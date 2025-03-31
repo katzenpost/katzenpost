@@ -66,7 +66,7 @@ func (m *PigeonHole) Wait(msgID common.MessageID, response *cborplugin.Response)
 }
 
 // Wake returns the pending responses from the waiting map and removes the entries
-func (m *PigeonHole) Wake(msgID common.MessageID, payload []byte) error {
+func (m *PigeonHole) Wake(msgID common.MessageID, payload []byte, signature [ed25519.SignatureSize]byte) error {
 	m.l.Lock()
 	defer m.l.Unlock()
 	waiting, ok := m.waiting[msgID]
@@ -77,7 +77,7 @@ func (m *PigeonHole) Wake(msgID common.MessageID, payload []byte) error {
 	m.log.Debugf("Woke %d: %x", len(waiting), msgID)
 
 	// prepare the response payload for pending requests
-	pigeonHoleResponse := &common.PigeonHoleResponse{Status: common.StatusOK, Payload: payload}
+	pigeonHoleResponse := &common.PigeonHoleResponse{Status: common.StatusOK, Payload: payload, Signature: signature}
 	rawResp, err := pigeonHoleResponse.Marshal()
 	if err != nil {
 		m.log.Errorf("Wake(%x): %v", msgID, err)
