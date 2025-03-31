@@ -97,7 +97,8 @@ func (m *PigeonHole) Wake(msgID common.MessageID, payload []byte, signature [ed2
 }
 
 // Get retrieves an item from the db
-func (m *PigeonHole) Get(msgID common.MessageID) ([]byte, error) {
+func (m *PigeonHole) Get(msgID common.MessageID) ([]byte, [ed25519.SignatureSize]byte, error) {
+	var sig [ed25519.SignatureSize]byte
 	var resp []byte
 	err := m.db.View(func(tx *bolt.Tx) error {
 		pigeonHoleBkt := tx.Bucket([]byte(pigeonHoleBucket))
@@ -109,15 +110,16 @@ func (m *PigeonHole) Get(msgID common.MessageID) ([]byte, error) {
 			// empty slot
 			return common.ErrStatusNotFound
 		}
-		resp = make([]byte, len(p))
-		copy(resp, p)
+		resp = make([]byte, len(p[ed25519.SignatureSize:]))
+		copy(resp, p[ed25519.SignatureSize:])
+		copy(sig[:], p[:ed255519.SignatureSize])
 		return nil
 	})
-	return resp, err
+	return resp, sig, err
 }
 
 // Put places an item in the db
-func (m *PigeonHole) Put(msgID common.MessageID, payload []byte) error {
+func (m *PigeonHole) Put(msgID common.MessageID, payload []byte, sig [ed25519.Signaturesize]byte) error {
 	err := m.db.Update(func(tx *bolt.Tx) error {
 		bkt := tx.Bucket([]byte(pigeonHoleBucket))
 		p := bkt.Get(msgID[:])
@@ -128,7 +130,7 @@ func (m *PigeonHole) Put(msgID common.MessageID, payload []byte) error {
 		}
 
 		// store message in pigeonHoleBucket
-		err := bkt.Put(msgID[:], payload)
+		err := bkt.Put(msgID[:], append(sig[:], payload...))
 		if err != nil {
 			return err
 		}
@@ -261,7 +263,7 @@ func (m *PigeonHole) OnCommand(cmd cborplugin.Command) error {
 			m.log.Debugf("Put(%x)", req.ID)
 
 			// save payload
-			err := m.Put(req.ID, req.Payload)
+			err := m.Put(req.ID, req.Payload, req.Signature)
 			if err != nil {
 				m.log.Debugf("Put(%x): Failed", req.ID)
 				resp.Status = common.StatusFailed
@@ -271,14 +273,14 @@ func (m *PigeonHole) OnCommand(cmd cborplugin.Command) error {
 			}
 
 			// Wake pending Get requests and respond with payload
-			err = m.Wake(req.ID, req.Payload)
+			err = m.Wake(req.ID, req.Payload, req.Signature)
 			if err != nil {
 				m.log.Errorf("Wake(%x): %v", req.ID, err)
 			}
 
 			// Otherwise return data
 		} else {
-			p, err := m.Get(req.ID)
+			p, sig, err := m.Get(req.ID)
 			if err != nil {
 				m.log.Debugf("m.Get(%x): %v", req.ID, err)
 				// wait for future data
@@ -290,6 +292,7 @@ func (m *PigeonHole) OnCommand(cmd cborplugin.Command) error {
 				m.log.Debugf("Get(%x): OK", req.ID)
 				resp.Status = common.StatusOK
 				resp.Payload = p
+				resp.Signature = sig
 			}
 		}
 
@@ -313,7 +316,7 @@ func validateBacap(req *common.PigeonHoleRequest) bool {
 	if err := boxPk.FromBytes(req.ID[:]); err != nil {
 		return false
 	}
-	return boxPk.Verify(req.Signature, req.Payload)
+	return boxPk.Verify(req.Signature[:], req.Payload)
 }
 
 func (m *PigeonHole) RegisterConsumer(svr *cborplugin.Server) {
