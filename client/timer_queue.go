@@ -83,9 +83,11 @@ func (a *TimerQueue) forward() {
 		return
 	}
 	item := m.(*queue.Entry).Value.(Item)
-	if err := a.NextQ.Push(item); err != nil {
-		panic(err)
-	}
+	a.Go(func() {
+		if err := a.NextQ.Push(item); err != nil {
+			panic(err)
+		}
+	})
 }
 
 func (a *TimerQueue) worker() {
