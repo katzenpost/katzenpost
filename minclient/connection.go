@@ -751,7 +751,10 @@ func (c *connection) sendPacket(pkt []byte) error {
 	case c.sendCh <- &connSendCtx{
 		pkt: pkt,
 		doneFn: func(err error) {
-			errCh <- err
+			select {
+			case errCh <- err:
+			case <-c.HaltCh():
+			}
 		},
 	}:
 	case <-c.HaltCh():
