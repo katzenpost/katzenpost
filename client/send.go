@@ -113,15 +113,9 @@ func (s *Session) doSend(msg *Message) {
 			}
 			sentWaitChan := sentWaitChanRaw.(chan *Message)
 			if err == nil {
-				// do not block writing to the receiver if this is a retransmission
-				select {
-				case sentWaitChan <- msg:
-				default:
-				}
-
-			} else {
-				close(sentWaitChan)
+				sentWaitChan <- msg
 			}
+			close(sentWaitChan)
 			return
 		}
 	}
@@ -232,32 +226,33 @@ func (s *Session) BlockingSendUnreliableMessageWithContext(ctx context.Context, 
 	if err != nil {
 		return nil, err
 	}
-	sentWaitChan := make(chan *Message)
+	sentWaitChan := make(chan *Message, 1)
 	s.sentWaitChanMap.Store(*msg.ID, sentWaitChan)
 	defer s.sentWaitChanMap.Delete(*msg.ID)
 
-	replyWaitChan := make(chan []byte)
+	replyWaitChan := make(chan []byte, 1)
 	s.replyWaitChanMap.Store(*msg.ID, replyWaitChan)
 	defer s.replyWaitChanMap.Delete(*msg.ID)
-
 	err = s.egressQueue.Push(msg)
 	if err != nil {
 		return nil, err
 	}
 
 	// wait until sent so that we know the ReplyETA for the waiting below
-	sentMessage := <-sentWaitChan
-
-	// if the message failed to send we will receive a nil message
-	if sentMessage == nil {
-		return nil, ErrMessageNotSent
-	}
-
-	// use a default context with the estimated replyETA if one is not specified
-	var cancelFn func()
-	if ctx == nil {
-		ctx, cancelFn = context.WithTimeout(context.Background(), sentMessage.ReplyETA+cConstants.RoundTripTimeSlop)
-		defer cancelFn()
+	select {
+	case sentMessage := <-sentWaitChan:
+		// if the message failed to send we will receive a nil message
+		if sentMessage == nil {
+			return nil, ErrMessageNotSent
+		}
+		// use a default context with the estimated replyETA if one is not specified
+		var cancelFn func()
+		if ctx == nil {
+			ctx, cancelFn = context.WithTimeout(context.Background(), sentMessage.ReplyETA+cConstants.RoundTripTimeSlop)
+			defer cancelFn()
+		}
+	case <-s.HaltCh():
+		return nil, ErrHalted
 	}
 
 	// wait for reply or round trip timeout
@@ -267,6 +262,7 @@ func (s *Session) BlockingSendUnreliableMessageWithContext(ctx context.Context, 
 	case <-s.HaltCh():
 		return nil, ErrHalted
 	case <-ctx.Done():
+		s.log.Debugf("ctx.Done(): %v", ctx.Err())
 		return nil, ctx.Err()
 	}
 	// unreachable
@@ -279,16 +275,18 @@ func (s *Session) BlockingSendReliableMessage(recipient, provider string, messag
 		return nil, err
 	}
 	msg.Reliable = true
-	sentWaitChan := make(chan *Message)
+	sentWaitChan := make(chan *Message, 1)
 	s.sentWaitChanMap.Store(*msg.ID, sentWaitChan)
 	defer s.sentWaitChanMap.Delete(*msg.ID)
 
-	replyWaitChan := make(chan []byte)
+	replyWaitChan := make(chan []byte, 1)
 	s.replyWaitChanMap.Store(*msg.ID, replyWaitChan)
+	defer close(replyWaitChan)
 	defer s.replyWaitChanMap.Delete(*msg.ID)
 
 	err = s.egressQueue.Push(msg)
 	if err != nil {
+		panic(err)
 		return nil, err
 	}
 
