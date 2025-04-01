@@ -11,6 +11,10 @@ cache_dir=$(shell readlink -f ../docker)/cache
 go_package_cache_arg := -v $(cache_dir)/go:/go/ -e GOCACHE=/go/cache
 docker_args=--init -it --user ${docker_user} -v $(shell readlink -f ..):/go/katzenpost $(go_package_cache_arg) --network=host --rm -e GORACE=history_size=7  -w /go/katzenpost/stream
 
+dockertest:
+	$(docker) run ${docker_args} $(image) \
+		go test $(testargs) -ldflags ${ldflags} -race -v -timeout 1h -failfast
+
 dockerdockertest:
 	cd ../docker && make $(distro)_base.stamp
 	$(docker) run ${docker_args} $(image) \
