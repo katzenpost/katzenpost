@@ -657,6 +657,10 @@ func (s *Stream) writer() {
 		if n > 0 || mustAck || mustTeardown {
 			s.WriteIdx += 1
 			fw, err := s.encFrame(f)
+			if err != nil {
+				// Fatal
+				return
+			}
 			// schedules a retransmission in the next epoch if not acknowledged
 			if mode == EndToEnd && !mustTeardown {
 				s.txEnqueue(nextEpoch(fw))
