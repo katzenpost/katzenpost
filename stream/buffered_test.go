@@ -56,10 +56,12 @@ func (m lossyMockTransport) Put(addr []byte, payload []byte) error {
 // newStreams returns an initialized pair of Streams
 func newStreams(t Transport) (*Stream, *Stream) {
 
-	a := newStream(t, EndToEnd)
-	addr := &StreamAddr{address: generate()}
+	a := newStream(EndToEnd)
+	a.SetTransport(t)
+	addr := &StreamAddr{Saddress: generate()}
 	a.keyAsListener(addr)
-	b := newStream(t, EndToEnd)
+	b := newStream(EndToEnd)
+	b.SetTransport(t)
 	b.keyAsDialer(addr)
 
 	if a == nil || b == nil {
@@ -95,6 +97,10 @@ func (m mockTransport) Get(addr []byte) ([]byte, error) {
 	return d, nil
 }
 
+func (m mockTransport) PutWithContext(ctx context.Context, addr []byte, payload []byte) error {
+	return m.Put(addr, payload)
+}
+
 func (m mockTransport) GetWithContext(ctx context.Context, addr []byte) ([]byte, error) {
 	return m.Get(addr)
 }
@@ -114,7 +120,6 @@ func randPayload() []byte {
 }
 
 func TestMockTransport(t *testing.T) {
-	t.Parallel()
 	garbage := NewMockTransport()
 	wg := new(sync.WaitGroup)
 	wg.Add(2)
@@ -144,7 +149,6 @@ type msg struct {
 }
 
 func TestBufferedStream(t *testing.T) {
-	t.Parallel()
 	require := require.New(t)
 	trans := NewMockTransport()
 	a, b := newStreams(trans)
@@ -196,7 +200,6 @@ func TestBufferedStream(t *testing.T) {
 }
 
 func TestLossyStream(t *testing.T) {
-	t.Parallel()
 	require := require.New(t)
 	trans := NewLossyMockTransport(0.1)
 	a, b := newStreams(trans)
@@ -250,7 +253,7 @@ func TestLossyStream(t *testing.T) {
 
 func init() {
 	go func() {
-		http.ListenAndServe("localhost:8181", nil)
+		http.ListenAndServe("localhost:8282", nil)
 	}()
 	runtime.SetMutexProfileFraction(1)
 	runtime.SetBlockProfileRate(1)

@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"github.com/fxamacker/cbor/v2"
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/katzenpost/client"
@@ -34,8 +35,8 @@ const (
 var (
 	hash               = sha256.New
 	cborFrameOverhead  = 0
-	retryDelay         = epochtime.Period / 16
-	averageRetryRate   = epochtime.Period / 4   // how often to retransmit Get requests for unresponsive requests
+	retryDelay         = epochtime.Period       // how often to retransmit unacknowledged frames
+	averageRetryRate   = epochtime.Period / 2   // how often to retransmit Get requests
 	averageReadRate    = epochtime.Period / 256 // how often to send Get requests
 	averageSendRate    = epochtime.Period / 256 // how often to send Get requests
 	defaultTimeout     = 0 * time.Second
@@ -58,6 +59,19 @@ const (
 	StreamEnd
 )
 
+func ftStr(t FrameType) string {
+	switch t {
+	case StreamStart:
+		return "StreamStart"
+	case StreamData:
+		return "StreamData"
+	case StreamEnd:
+		return "StreamEnd"
+	default:
+		return "StreamInvalid"
+	}
+}
+
 // Frame is the container for Stream payloads and contains Stream metadata
 // that indicates whether the Frame is the first, last, or an intermediary
 // block. This
@@ -69,6 +83,11 @@ type Frame struct {
 	Payload []byte // transported data
 }
 
+// String returns a description of the frame and payload
+func (f *Frame) String() string {
+	return fmt.Sprintf("%s %d %d %s", ftStr(f.Type), f.Id, f.Ack, base64.StdEncoding.EncodeToString(f.Payload))
+}
+
 // StreamState are the states that the reader and writer routines can be in
 type StreamState uint8
 
@@ -77,6 +96,19 @@ const (
 	StreamClosing
 	StreamClosed
 )
+
+// ssStr displays stream state
+func ssStr(s StreamState) string {
+	switch s {
+	case StreamOpen:
+		return "StreamOpen"
+	case StreamClosing:
+		return "StreamClosing"
+	case StreamClosed:
+		return "StreamClosed"
+	}
+	return "StreamInvalid"
+}
 
 // StreamMode is the type of stream.
 //
@@ -92,25 +124,25 @@ const (
 	EndToEnd                    // requires interactive Acknowledge
 )
 
-// frameWithPriority implmeents client.Item and holds the retransmit deadline and Frame for use with a TimerQueue
-type frameWithPriority struct {
-	f        *Frame // payload of message
-	priority uint64 // the time in nanoseconds of when to retransmit an unacknowledged message
+// FrameWithPriority implmeents client.Item and holds the retransmit deadline and Frame for use with a TimerQueue
+type FrameWithPriority struct {
+	Frame         *Frame // payload of message
+	FramePriority uint64 // the time in nanoseconds of when to retransmit an unacknowledged message
 }
 
 // Priority implements client.Item interface; used by TimerQueue for retransmissions
-func (s *frameWithPriority) Priority() uint64 {
-	return s.priority
+func (s *FrameWithPriority) Priority() uint64 {
+	return s.FramePriority
 }
 
-// nextEpoch returns a frameWithPriority for next epoch
-func nextEpoch(f *Frame) *frameWithPriority {
+// nextEpoch returns a FrameWithPriority for next epoch
+func nextEpoch(f *Frame) *FrameWithPriority {
 	_, _, til := epochtime.Now()
-	return &frameWithPriority{f: f, priority: uint64(time.Now().Add(til).UnixNano())}
+	return &FrameWithPriority{Frame: f, FramePriority: uint64(time.Now().Add(til).UnixNano())}
 }
 
-// nextSRV returns a frameWithPriority for the next shared random epoch
-func nextSRV(f *Frame) *frameWithPriority {
+// nextSRV returns a FrameWithPriority for the next shared random epoch
+func nextSRV(f *Frame) *FrameWithPriority {
 	epoch, _, til := epochtime.Now()
 	// XXX: this isn't how we define the weekly srv rotation yet, #689
 	epochsLeft := epochtime.WeekOfEpochs - (epoch % epochtime.WeekOfEpochs)
@@ -118,7 +150,36 @@ func nextSRV(f *Frame) *frameWithPriority {
 	when := time.Now().Add(timeLeft).UnixNano()
 
 	// XXX: add some noise to avoid stampeding herd
-	return &frameWithPriority{f: f, priority: uint64(when)}
+	return &FrameWithPriority{Frame: f, FramePriority: uint64(when)}
+}
+
+type stream Stream
+
+func (s *Stream) MarshalCBOR() ([]byte, error) {
+	s.l.Lock()
+	s.R.Lock()
+	defer s.l.Unlock()
+	defer s.R.Unlock()
+	s.ReadBuf = s.readBuf.Bytes()
+	s.WriteBuf = s.writeBuf.Bytes()
+	return cbor.Marshal((*stream)(s))
+}
+
+func (s *Stream) UnmarshalCBOR(data []byte) error {
+	s.l.Lock()
+	s.R.Lock()
+	defer s.l.Unlock()
+	defer s.R.Unlock()
+
+	err := cbor.Unmarshal(data, (*stream)(s))
+	if err != nil {
+		return err
+	}
+
+	// initialize buffers
+	s.readBuf = bytes.NewBuffer(s.ReadBuf)
+	s.writeBuf = bytes.NewBuffer(s.WriteBuf)
+	return nil
 }
 
 type Stream struct {
@@ -149,9 +210,11 @@ type Stream struct {
 	WriteIDBase common.MessageID
 	ReadIDBase  common.MessageID
 
-	// buffers
-	WriteBuf *bytes.Buffer // buffer to enqueue data before being transmitted
-	ReadBuf  *bytes.Buffer // buffer to reassumble data from Frames
+	// XXX: bytes.Buffer is not restored by cbor.Marshal
+	WriteBuf []byte
+	writeBuf *bytes.Buffer // buffer to enqueue data before being transmitted
+	ReadBuf  []byte
+	readBuf  *bytes.Buffer // buffer to reassumble data from Frames
 
 	// our frame pointers
 	ReadIdx  uint64
@@ -199,32 +262,69 @@ type Stream struct {
 	onStreamClose chan struct{}
 }
 
+func (s *Stream) SetTransport(t Transport) {
+	s.l.Lock()
+	defer s.l.Unlock()
+	s.transport = t
+	s.PayloadSize = PayloadSize(t)
+}
+
 // ReTx implmements client.nqueue and re-transmits unacknowledged frames
 type ReTx struct {
 	sync.Mutex
 	s    *Stream
-	Wack map[uint64]struct{}
+	Wack map[uint64]*FrameWithPriority
+}
+
+// Ack removes any unAcknowledged Frames <= frameId from Wack
+func (r *ReTx) Ack(frameId uint64) bool {
+	ackD := false
+	r.Lock()
+
+	todelete := []uint64{}
+	// ack predecessor frames to frameId
+	for i, _ := range r.Wack {
+		if i <= frameId {
+			todelete = append(todelete, i)
+			ackD = true
+		}
+	}
+	for _, i := range todelete {
+		delete(r.Wack, i)
+	}
+	r.Unlock()
+	return ackD
 }
 
 // Push is called by the TimerQueue (Stream.TQ) with a client.Item when its deadline expires.
 func (r *ReTx) Push(i client.Item) error {
 	// time to retransmit a block that has not been acknowledged yet
-	m, ok := i.(*frameWithPriority)
+	m, ok := i.(*FrameWithPriority)
 	if !ok {
-		panic("must be frameWithPriority")
+		panic("must be FrameWithPriority")
 	}
 
 	r.Lock()
-	_, ok = r.Wack[m.f.Id]
+	_, ok = r.Wack[m.Frame.Id]
 	r.Unlock()
 	if !ok {
 		// Already Acknowledged
 		return nil
 	}
-	m.priority = uint64(time.Now().Add(retryDelay).UnixNano())
-	r.s.txFrame(m.f)
+
+	// add a sampled retry delay to retransmit if unacknowledged
+	mRng := rand.NewMath()
+	delaySample := time.Duration(uint64(rand.Exp(mRng, float64(1/float64(retryDelay)))))
+	m.FramePriority = uint64(time.Now().Add(delaySample).UnixNano())
+
+	// transmit and schedule for retransmission from goroutine
+	// do not block Push() on txFrame BlockingSend
 	r.s.Go(func() {
-		r.s.txEnqueue(m) // XXX: deadlocks TQ if called from this routine
+		r.s.txEnqueue(m)
+		err := r.s.txFrame(m.Frame)
+		if err == nil {
+			r.s.doOnWrite()
+		}
 	})
 	return nil
 }
@@ -248,6 +348,8 @@ func (s *Stream) reader() {
 					doFlush = true
 				}
 			}
+		default:
+			// pass
 		}
 		s.l.Unlock()
 		if doFlush {
@@ -272,12 +374,12 @@ func (s *Stream) reader() {
 			continue
 		}
 
+		s.l.Lock()
 		// process Acks
 		if s.Mode == EndToEnd {
 			s.processAck(f)
 		}
-		s.l.Lock()
-		n, _ := s.ReadBuf.Write(f.Payload)
+		n, _ := s.readBuf.Write(f.Payload)
 
 		// If this is the last Frame in the stream, set RState to StreamClosed
 		if f.Type == StreamEnd {
@@ -299,14 +401,13 @@ func (s *Stream) reader() {
 // caller must hold s.l.Lock, and returns with lock held
 // sleepReader sleeps until a Timeout occurs, data is available, or the
 func (s *Stream) sleepReader() error {
-	if s.ReadBuf.Len() == 0 {
+	if s.readBuf.Len() == 0 {
 		if s.RState == StreamClosed {
 			return io.EOF
 		} // otherwise continue below, and wait for data to be available
 	} else {
 		return nil // do not block Read, data is available
 	}
-
 
 	defer s.l.Lock() // in either case, return holding mutex
 	// Timeout == 0 is a special case that doesn't need a time.Timer
@@ -342,9 +443,9 @@ func (s *Stream) Read(p []byte) (n int, err error) {
 	}
 	// if sleepReader returns in RState.StreamClosed, check if there are
 	// any bytes to drain to the caller of Read, and subsequent calls to
-	// Read will return io.EOF when the ReadBuf is drained.
-	n, err = s.ReadBuf.Read(p)
-	// ignore io.EOF on short reads from ReadBuf
+	// Read will return io.EOF when the readBuf is drained.
+	n, err = s.readBuf.Read(p)
+	// ignore io.EOF on short reads from readBuf
 	if err == io.EOF {
 		if s.RState != StreamClosed || n > 0 {
 			return n, nil
@@ -356,7 +457,7 @@ func (s *Stream) Read(p []byte) (n int, err error) {
 // caller must hold s.l mutex, and returns with mutex held
 func (s *Stream) sleepWriter() error {
 	// only sleep if there is nothing to do
-	if s.WriteBuf.Len() >= s.MaxWriteBufSize {
+	if s.writeBuf.Len() >= s.MaxWriteBufSize {
 		defer s.l.Lock() // in either case, return holding mutex
 		// Timeout == 0 blocks until there is a write or the stream is halted
 		if s.Timeout != 0 {
@@ -402,7 +503,7 @@ func (s *Stream) Write(p []byte) (n int, err error) {
 		<-s.onStreamClose
 		return 0, io.EOF
 	}
-	n, err = s.WriteBuf.Write(p)
+	n, err = s.writeBuf.Write(p)
 	// doFlush must not be called holding mutex
 	s.l.Unlock()
 	s.doFlush()
@@ -418,22 +519,22 @@ func (s *Stream) Sync() error {
 	}
 	s.l.Unlock()
 	for {
+		s.l.Lock()
+		if s.writeBuf.Len() == 0 {
+			s.l.Unlock()
+			return nil
+		}
+		s.l.Unlock()
 		select {
 		case <-s.onWrite:
 		case <-s.HaltCh():
 			return ErrHalted
 		}
-		s.l.Lock()
-		if s.WriteBuf.Len() == 0 {
-			s.l.Unlock()
-			return nil
-		}
-		s.l.Unlock()
 	}
 }
 
 // Close terminates the Stream with a final Frame and blocks future Writes
-// it does *not* drain WriteBuf, call Sync() to flush WriteBuf first.
+// it does *not* drain writeBuf, call Sync() to flush writeBuf first.
 func (s *Stream) Close() error {
 	s.l.Lock()
 	if s.WState == StreamOpen {
@@ -489,7 +590,7 @@ func (s *Stream) writer() {
 				}
 			}
 			if !mustAck && !mustTeardown {
-				mustWaitForData := s.WriteBuf.Len() == 0
+				mustWaitForData := s.writeBuf.Len() == 0
 				if mustWaitForData {
 				}
 				if mustWaitForAck {
@@ -518,23 +619,25 @@ func (s *Stream) writer() {
 
 		// Set frame Ack if EndToEnd
 		if s.Mode == EndToEnd {
-			// have not read any data from peer yet so Ack = 0 is special case
-			if s.ReadIdx == 0 {
-				f.Ack = no_ack
+			if s.ReadIdx > 0 {
+				s.AckIdx = s.ReadIdx - 1
 			} else {
-				f.Ack = s.ReadIdx - 1 // ReadIdx points at next frame, which we haven't read
-				s.AckIdx = f.Ack
+				f.Ack = no_ack
 			}
+			f.Ack = s.AckIdx
 		}
 
 		if mustTeardown {
 			// final Ack and frame transmitted
 			s.WState = StreamClosed
 			f.Type = StreamEnd
+		} else if f.Id != 0 {
+			f.Type = StreamData
 		}
 		f.Payload = make([]byte, s.PayloadSize)
 		// Read up to the maximum frame payload size
-		n, err := s.WriteBuf.Read(f.Payload)
+		n, err := s.writeBuf.Read(f.Payload)
+		mode := s.Mode
 		s.l.Unlock()
 		switch err {
 		case nil, io.ErrUnexpectedEOF, io.EOF:
@@ -542,22 +645,16 @@ func (s *Stream) writer() {
 		}
 		f.Payload = f.Payload[:n]
 		if n > 0 || mustAck || mustTeardown {
+			// schedules a retransmission in the next epoch if not acknowledged
+			if mode == EndToEnd && !mustTeardown {
+				s.txEnqueue(nextEpoch(f))
+			}
+
 			err = s.txFrame(f)
 			switch err {
 			case nil:
-				// wakes writer into state where Write returns 0, nil
-				// which is treated as EOF condition
-				if n > 0 {
-					s.doOnWrite()
-				} else {
-					// do not wake blocked Write() if no data frames were sent
-				}
+				s.doOnWrite()
 			default:
-			}
-			if s.Mode == Multicast && err == nil {
-				continue // do not retransmit for end-to-end ACK.
-			} else {
-				s.txEnqueue(nextEpoch(f))
 			}
 		}
 	}
@@ -614,10 +711,10 @@ func (s *Stream) txFrame(frame *Frame) (err error) {
 	return s.transport.Put(frame_id[:], ciphertext)
 }
 
-func (s *Stream) txEnqueue(m *frameWithPriority) {
+func (s *Stream) txEnqueue(m *FrameWithPriority) {
 	// use a timerqueue here and set an acknowledgement retransmit timeout; ideally we would know the effective durability of the storage medium and maximize the retransmission delay so that we retransmit a message as little as possible.
 	s.R.Lock()
-	s.R.Wack[m.f.Id] = struct{}{}
+	s.R.Wack[m.Frame.Id] = m
 	s.R.Unlock()
 	s.TQ.Push(m)
 }
@@ -628,8 +725,9 @@ func H(i []byte) (res common.MessageID) {
 
 // Dial returns a Stream initialized with secret address
 func Dial(c Transport, network, addr string) (*Stream, error) {
-	s := newStream(c, EndToEnd)
-	a := &StreamAddr{network: network, address: addr}
+	s := newStream(EndToEnd)
+	s.SetTransport(c)
+	a := &StreamAddr{Snetwork: network, Saddress: addr}
 	err := s.keyAsDialer(a)
 	if err != nil {
 		return nil, err
@@ -709,8 +807,9 @@ func deriveListenerDialerSecrets(addr string) ([]byte, []byte, error) {
 
 // Listen should be net.Listener
 func Listen(c Transport, network, addr string) (*Stream, error) {
-	s := newStream(c, EndToEnd)
-	a := &StreamAddr{network: network, address: addr}
+	s := newStream(EndToEnd)
+	s.SetTransport(c)
+	a := &StreamAddr{Snetwork: network, Saddress: addr}
 	err := s.keyAsListener(a)
 	if err != nil {
 		return nil, err
@@ -815,30 +914,15 @@ func (s *Stream) readFrame() (*Frame, error) {
 
 func (s *Stream) processAck(f *Frame) {
 	// Nothing is acknowledged
-	if f.Ack == no_ack {
+	if f.Ack == no_ack || s.Mode != EndToEnd {
 		return
 	}
-	ackD := false
-	s.R.Lock()
-
-	todelete := []uint64{}
-	// ack all frames predecessor to peer ack
-	for i, _ := range s.R.Wack {
-		if i <= f.Ack {
-			todelete = append(todelete, i)
-			ackD = true
-		}
-	}
-	for _, i := range todelete {
-		delete(s.R.Wack, i)
-	}
-	s.R.Unlock()
 	// update last_ack from peer
-	s.l.Lock()
-	if f.Ack > s.PeerAckIdx {
+	if f.Ack > s.PeerAckIdx || s.PeerAckIdx == no_ack {
 		s.PeerAckIdx = f.Ack
 	}
-	s.l.Unlock()
+	ackD := s.R.Ack(f.Ack)
+
 	// prod writer() waiting on Ack
 	if ackD {
 		select {
@@ -850,17 +934,17 @@ func (s *Stream) processAck(f *Frame) {
 
 // StreamAddr implements net.Addr
 type StreamAddr struct {
-	network, address string
+	Snetwork, Saddress string
 }
 
 // Network implements net.Addr
 func (s *StreamAddr) Network() string {
-	return s.network
+	return s.Snetwork
 }
 
 // String implements net.Addr String()
 func (s *StreamAddr) String() string {
-	return s.address
+	return s.Saddress
 }
 
 // LocalAddr implements net.Addr LocalAddr()
@@ -876,11 +960,10 @@ func (s *Stream) RemoteAddr() *StreamAddr {
 // Transport describes the interface to Get or Put Frames
 type Transport mClient.ReadWriteClient
 
-func newStream(transport Transport, mode StreamMode) *Stream {
+func newStream(mode StreamMode) *Stream {
 	s := new(Stream)
+	s.Addr = new(StreamAddr)
 	s.Mode = mode
-	s.transport = transport
-	s.PayloadSize = PayloadSize(transport)
 	s.l = new(sync.Mutex)
 	s.startOnce = new(sync.Once)
 	s.RState = StreamOpen
@@ -888,25 +971,29 @@ func newStream(transport Transport, mode StreamMode) *Stream {
 	s.Timeout = defaultTimeout
 	// timerqueue calls s.Push when timeout of enqueued item
 	s.R = &ReTx{s: s}
-	s.R.Wack = make(map[uint64]struct{})
+	s.R.Wack = make(map[uint64]*FrameWithPriority)
 	s.TQ = client.NewTimerQueue(s.R)
 	s.retryExpDist = client2.NewExpDist()
 	s.readerExpDist = client2.NewExpDist()
 	s.senderExpDist = client2.NewExpDist()
-	s.WriteBuf = new(bytes.Buffer)
-	s.ReadBuf = new(bytes.Buffer)
+	s.writeBuf = new(bytes.Buffer)
+	s.readBuf = new(bytes.Buffer)
 
 	s.WriteKey = &[keySize]byte{}
 	s.ReadKey = &[keySize]byte{}
+
+	s.AckIdx = no_ack
+	s.PeerAckIdx = no_ack
 	return s
 }
 
 // NewMulticastStream generates a new address and starts the read/write workers with Multicast mode
 func NewMulticastStream(s *client.Session) *Stream {
 	c, _ := mClient.NewClient(s)
-	addr := &StreamAddr{network: "", address: generate()}
+	addr := &StreamAddr{Snetwork: "", Saddress: generate()}
 	t := mClient.DuplexFromSeed(c, true, []byte(addr.String()))
-	st := newStream(t, Multicast)
+	st := newStream(Multicast)
+	st.SetTransport(t)
 	err := st.keyAsListener(addr)
 	if err != nil {
 		panic(err)
@@ -920,9 +1007,10 @@ func NewMulticastStream(s *client.Session) *Stream {
 // func NewStream(c Transport, identity sign.PrivateKey, sign.PublicKey) *Stream {
 func NewStream(s *client.Session) *Stream {
 	c, _ := mClient.NewClient(s)
-	addr := &StreamAddr{network: "", address: generate()}
+	addr := &StreamAddr{Snetwork: "", Saddress: generate()}
 	t := mClient.DuplexFromSeed(c, true, []byte(addr.String()))
-	st := newStream(t, EndToEnd)
+	st := newStream(EndToEnd)
+	st.SetTransport(t)
 	err := st.keyAsListener(addr)
 	if err != nil {
 		panic(err)
@@ -947,20 +1035,11 @@ func (*nilTransport) PayloadSize() int {
 }
 
 // LoadStream initializes a Stream from state saved by Save()
-func LoadStream(s *client.Session, state []byte) (*Stream, error) {
-	c, _ := mClient.NewClient(s)
-	st := newStream(new(nilTransport), EndToEnd)
+func LoadStream(state []byte) (*Stream, error) {
+	st := newStream(EndToEnd)
 	_, err := cbor.UnmarshalFirst(state, st)
 	if err != nil {
 		return nil, err
-	}
-
-	st.transport = mClient.DuplexFromSeed(c, st.Initiator, []byte(st.LocalAddr().String()))
-
-	// Ensure that the frame geometry cannot change an active stream
-	// FIXME: Streams should support resetting sender/receivers on Geometry changes.
-	if st.PayloadSize != PayloadSize(st.transport) {
-		panic(ErrGeometryChanged)
 	}
 
 	return st, nil
@@ -968,22 +1047,38 @@ func LoadStream(s *client.Session, state []byte) (*Stream, error) {
 
 // Save serializes the current state of the Stream
 func (s *Stream) Save() ([]byte, error) {
-	s.l.Lock()
-	s.R.Lock()
-	defer s.l.Unlock()
-	defer s.R.Unlock()
 	return cbor.Marshal(s)
 }
 
 // Start starts the reader and writer workers
 func (s *Stream) Start() {
+	s.StartWithTransport(nil)
+}
+
+// String returns a description of the stream
+func (s *Stream) String() string {
+	addr := s.Addr.String()
+	unACKdstats := ""
+	s.R.Lock()
+	for id, f := range s.R.Wack {
+		unACKdstats += fmt.Sprintf("Wait: : %d %v\n", id, f.Frame.String())
+	}
+	s.R.Unlock()
+	rwState := fmt.Sprintf("%v %v\n", ssStr(s.RState), ssStr(s.WState))
+	stateStats := fmt.Sprintf("%v %v\n", s.AckIdx, s.PeerAckIdx)
+	s.l.Lock()
+	bufStats := fmt.Sprintf("readBuf.Len(): %v writeBuf.Len(): %v", s.readBuf.Len(), s.writeBuf.Len())
+	s.l.Unlock()
+	return addr + rwState + stateStats + unACKdstats + bufStats
+}
+
+// StartWithTransport starts the reader and writer workers
+func (s *Stream) StartWithTransport(trans Transport) {
+	if trans != nil {
+		s.SetTransport(trans)
+	}
 	s.startOnce.Do(func() {
-		s.retryExpDist.UpdateConnectionStatus(true)
-		s.readerExpDist.UpdateConnectionStatus(true)
-		s.senderExpDist.UpdateConnectionStatus(true)
-		s.retryExpDist.UpdateRate(uint64(averageRetryRate/time.Millisecond), uint64(epochtime.Period/time.Millisecond))
-		s.readerExpDist.UpdateRate(uint64(averageReadRate/time.Millisecond), uint64(epochtime.Period/time.Millisecond))
-		s.senderExpDist.UpdateRate(uint64(averageSendRate/time.Millisecond), uint64(epochtime.Period/time.Millisecond))
+		s.Go(s.setDefaultPollingRates)
 		s.Go(func() {
 			<-s.HaltCh()
 			s.retryExpDist.Halt()
@@ -991,17 +1086,38 @@ func (s *Stream) Start() {
 			s.senderExpDist.Halt()
 			s.TQ.Halt()
 		})
+		// re-schedule unacknowledged frames
+		s.Go(func() {
+			s.R.Lock()
+			for _, f := range s.R.Wack {
+				f := f
+				defer s.txEnqueue(f)
+			}
+			s.R.Unlock()
+		})
 		s.WindowSize = defaultWindowSize
 		s.MaxWriteBufSize = int(s.WindowSize) * PayloadSize(s.transport)
 		s.onFlush = make(chan struct{}, 1)
 		s.onAck = make(chan struct{}, 1)
-		s.onStreamClose = make(chan struct{}, 1)
-		s.onWrite = make(chan struct{}, 1)
+		s.onStreamClose = make(chan struct{})
+		s.onWrite = make(chan struct{})
 		s.onRead = make(chan struct{})
 		s.TQ.Start()
 		s.Go(s.reader)
 		s.Go(s.writer)
 	})
+}
+
+// setDefaultPollingRates sets default intervals for the exponential distribution repeat request parameters
+func (s *Stream) setDefaultPollingRates() {
+	// set connected status online to
+	s.retryExpDist.UpdateConnectionStatus(true)
+	s.readerExpDist.UpdateConnectionStatus(true)
+	s.senderExpDist.UpdateConnectionStatus(true)
+
+	s.retryExpDist.UpdateRate(uint64(averageRetryRate/time.Millisecond), uint64(epochtime.Period/time.Millisecond))
+	s.readerExpDist.UpdateRate(uint64(averageReadRate/time.Millisecond), uint64(epochtime.Period/time.Millisecond))
+	s.senderExpDist.UpdateRate(uint64(averageSendRate/time.Millisecond), uint64(epochtime.Period/time.Millisecond))
 }
 
 // DialDuplex returns a stream using capability backed pigeonhole storage (Duplex)
@@ -1011,8 +1127,9 @@ func DialDuplex(s *client.Session, network, addr string) (*Stream, error) {
 		return nil, err
 	}
 	t := mClient.DuplexFromSeed(c, false, []byte(addr))
-	st := newStream(t, EndToEnd)
-	a := &StreamAddr{network: network, address: addr}
+	st := newStream(EndToEnd)
+	st.SetTransport(t)
+	a := &StreamAddr{Snetwork: network, Saddress: addr}
 
 	err = st.keyAsDialer(a)
 	if err != nil {
@@ -1025,8 +1142,9 @@ func DialDuplex(s *client.Session, network, addr string) (*Stream, error) {
 // ListenDuplex returns a Stream using capability pigeonhole storage (Duplex) as initiator
 func ListenDuplex(s *client.Session, network, addr string) (*Stream, error) {
 	c, _ := mClient.NewClient(s)
-	st := newStream(mClient.DuplexFromSeed(c, true, []byte(addr)), EndToEnd)
-	a := &StreamAddr{network: network, address: addr}
+	st := newStream(EndToEnd)
+	st.SetTransport(mClient.DuplexFromSeed(c, true, []byte(addr)))
+	a := &StreamAddr{Snetwork: network, Saddress: addr}
 	err := st.keyAsListener(a)
 	if err != nil {
 		return nil, err
@@ -1041,8 +1159,9 @@ func NewDuplex(s *client.Session) (*Stream, error) {
 	if err != nil {
 		return nil, err
 	}
-	a := &StreamAddr{network: "", address: generate()}
-	st := newStream(mClient.DuplexFromSeed(c, true, []byte(a.String())), EndToEnd)
+	a := &StreamAddr{Snetwork: "", Saddress: generate()}
+	st := newStream(EndToEnd)
+	st.SetTransport(mClient.DuplexFromSeed(c, true, []byte(a.String())))
 	err = st.keyAsListener(a)
 	if err != nil {
 		return nil, err

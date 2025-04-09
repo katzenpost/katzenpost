@@ -1101,5 +1101,14 @@ services:
     network_mode: host
 `, "metrics", "docker.io/prom/prometheus", s.baseDir, s.baseDir)
 
+	write(f, `
+  kpclientd:
+    restart: "no"
+    image: %s
+    volumes:
+      - ./:%s
+    command: %s/kpclientd%s -c %s/client2/client.toml
+    network_mode: host
+`, dockerImage, s.baseDir, s.baseDir, s.binSuffix, s.baseDir)
 	return nil
 }
