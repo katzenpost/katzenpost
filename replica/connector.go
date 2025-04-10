@@ -1,26 +1,13 @@
-// connector.go - Katzenpost server connector.
-// Copyright (C) 2017  Yawning Angel.
-//
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU Affero General Public License as
-// published by the Free Software Foundation, either version 3 of the
-// License, or (at your option) any later version.
-//
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU Affero General Public License for more details.
-//
-// You should have received a copy of the GNU Affero General Public License
-// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+// SPDX-FileCopyrightText: Copyright (C) 2017  Yawning Angel.
+// SPDX-License-Identifier: AGPL-3.0-only
 
-// Package outgoing implements the outgoing connection support.
-package outgoing
+package replica
 
 import (
 	"sync"
 	"time"
 
+	"golang.org/x/crypto/blake2b"
 	"gopkg.in/op/go-logging.v1"
 
 	"github.com/katzenpost/hpqc/hash"
@@ -29,27 +16,31 @@ import (
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/utils"
+	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"github.com/katzenpost/katzenpost/core/worker"
-	"github.com/katzenpost/katzenpost/server/internal/glue"
-	"github.com/katzenpost/katzenpost/server/internal/instrument"
-	"github.com/katzenpost/katzenpost/server/internal/packet"
+	"github.com/katzenpost/katzenpost/replica/common"
 )
 
-type connector struct {
+// TODO(david): make this a config param?
+const replicationQueueLength = 100
+
+type Connector struct {
 	sync.RWMutex
 	worker.Worker
 
-	glue glue.Glue
-	log  *logging.Logger
+	server *Server
+	log    *logging.Logger
 
 	conns         map[[constants.NodeIDLength]byte]*outgoingConn
 	forceUpdateCh chan interface{}
+
+	replicationCh chan *commands.ReplicaWrite
 
 	closeAllCh chan interface{}
 	closeAllWg sync.WaitGroup
 }
 
-func (co *connector) Halt() {
+func (co *Connector) Halt() {
 	co.Worker.Halt()
 
 	// Close all outgoing connections.
@@ -57,7 +48,7 @@ func (co *connector) Halt() {
 	co.closeAllWg.Wait()
 }
 
-func (co *connector) ForceUpdate() {
+func (co *Connector) ForceUpdate() {
 	// This deliberately uses a non-blocking write to a buffered channel so
 	// that the resweeps happen reliably.  Since the resweep is comprehensive,
 	// there's no benefit to queueing more than one resweep request, and the
@@ -68,37 +59,68 @@ func (co *connector) ForceUpdate() {
 	}
 }
 
-func (co *connector) DispatchPacket(pkt *packet.Packet) {
+func (co *Connector) Server() *Server {
+	return co.server
+}
+
+func getBoxID(cmd commands.Command) *[32]byte {
+	switch myCmd := cmd.(type) {
+	case *commands.ReplicaRead:
+		return myCmd.BoxID
+	case *commands.ReplicaWrite:
+		return myCmd.BoxID
+	default:
+		panic("invalid command")
+	}
+}
+
+func (co *Connector) DispatchCommand(cmd commands.Command, idHash *[32]byte) {
 	co.RLock()
 	defer co.RUnlock()
 
-	if pkt == nil {
-		co.log.Debug("Dropping packet: packet is nil, wtf")
-		instrument.InvalidPacketsDropped()
-		instrument.PacketsDropped()
-		pkt.Dispose()
+	if cmd == nil {
+		co.log.Error("Dropping command: command is nil, wtf")
 		return
 	}
-	if pkt.NextNodeHop == nil {
-		co.log.Debug("Dropping packet: packet NextNodeHop is nil, wtf")
-		instrument.InvalidPacketsDropped()
-		instrument.PacketsDropped()
-		pkt.Dispose()
-		return
-	}
-	c, ok := co.conns[pkt.NextNodeHop.ID]
+	c, ok := co.conns[*idHash]
 	if !ok {
-		co.log.Debugf("Dropping packet: %v (No connection for destination)", pkt.ID)
-		instrument.OutgoingPacketsDropped()
-		instrument.PacketsDropped()
-		pkt.Dispose()
+		co.log.Debugf("Dropping command: %v (No connection for destination)", getBoxID(cmd))
 		return
 	}
 
-	c.dispatchPacket(pkt)
+	c.dispatchCommand(cmd)
 }
 
-func (co *connector) worker() {
+func (co *Connector) DispatchReplication(cmd *commands.ReplicaWrite) {
+	co.replicationCh <- cmd
+}
+
+func (co *Connector) doReplication(cmd *commands.ReplicaWrite) {
+	doc := co.server.pkiWorker.PKIDocument()
+	descs, err := common.GetRemoteShards(co.server.identityPublicKey, cmd.BoxID, doc)
+	if err != nil {
+		co.log.Errorf("handleReplicaMessage failed: GetShards err: %x", err)
+		panic(err)
+	}
+	for _, desc := range descs {
+		idHash := blake2b.Sum256(desc.IdentityKey)
+		co.DispatchCommand(cmd, &idHash)
+	}
+}
+
+func (co *Connector) replicationWorker() {
+	for {
+		select {
+		case <-co.HaltCh():
+			co.log.Debugf("Replication worker terminating gracefully.")
+			return
+		case writeCmd := <-co.replicationCh:
+			co.doReplication(writeCmd)
+		}
+	}
+}
+
+func (co *Connector) worker() {
 	var (
 		initialSpawnDelay = epochtime.Period / 64
 		resweepInterval   = epochtime.Period / 8
@@ -111,7 +133,7 @@ func (co *connector) worker() {
 		timerFired := false
 		select {
 		case <-co.HaltCh():
-			co.log.Debugf("Terminating gracefully.")
+			co.log.Debugf("Connector worker terminating gracefully.")
 			return
 		case <-co.forceUpdateCh:
 		case <-timer.C:
@@ -131,8 +153,8 @@ func (co *connector) worker() {
 	// NOTREACHED
 }
 
-func (co *connector) spawnNewConns() {
-	newPeerMap := co.glue.PKI().OutgoingDestinations()
+func (co *Connector) spawnNewConns() {
+	newPeerMap := co.server.pkiWorker.replicas.Copy()
 
 	// Traverse the connection table, to figure out which peers are actually
 	// new.  Each outgoingConn object is responsible for determining when
@@ -150,17 +172,21 @@ func (co *connector) spawnNewConns() {
 	for id, v := range newPeerMap {
 		co.log.Debugf("Spawning connection to: '%x'.", id)
 
-		scheme := schemes.ByName(co.glue.Config().Server.WireKEM)
+		scheme := schemes.ByName(co.server.cfg.WireKEMScheme)
 		if scheme == nil {
 			panic("KEM scheme not found in registry")
 		}
 
-		c := newOutgoingConn(co, v, co.glue.Config().SphinxGeometry, scheme)
+		c := newOutgoingConn(co, v, co.server.cfg.SphinxGeometry, scheme)
 		co.onNewConn(c)
 	}
 }
 
-func (co *connector) onNewConn(c *outgoingConn) {
+func (co *Connector) CloseAllCh() chan interface{} {
+	return co.closeAllCh
+}
+
+func (co *Connector) onNewConn(c *outgoingConn) {
 	nodeID := hash.Sum256(c.dst.IdentityKey)
 
 	co.closeAllWg.Add(1)
@@ -176,7 +202,7 @@ func (co *connector) onNewConn(c *outgoingConn) {
 	co.conns[nodeID] = c
 }
 
-func (co *connector) onClosedConn(c *outgoingConn) {
+func (co *Connector) OnClosedConn(c *outgoingConn) {
 	nodeID := hash.Sum256(c.dst.IdentityKey)
 
 	co.Lock()
@@ -187,25 +213,18 @@ func (co *connector) onClosedConn(c *outgoingConn) {
 	delete(co.conns, nodeID)
 }
 
-func (co *connector) IsValidForwardDest(id *[constants.NodeIDLength]byte) bool {
-	// This doesn't need to be super accurate, just enough to prevent packets
-	// destined to la-la land from being scheduled.
-	co.RLock()
-	defer co.RUnlock()
-	_, ok := co.conns[*id]
-	return ok
-}
-
-// New creates a new connector.
-func New(glue glue.Glue) glue.Connector {
-	co := &connector{
-		glue:          glue,
-		log:           glue.LogBackend().GetLogger("connector"),
+// New creates a new Connector.
+func newConnector(server *Server) *Connector {
+	co := &Connector{
+		server:        server,
+		log:           server.LogBackend().GetLogger("Connector"),
 		conns:         make(map[[constants.NodeIDLength]byte]*outgoingConn),
+		replicationCh: make(chan *commands.ReplicaWrite, replicationQueueLength),
 		forceUpdateCh: make(chan interface{}, 1), // See forceUpdate().
 		closeAllCh:    make(chan interface{}),
 	}
 
 	co.Go(co.worker)
+	co.Go(co.replicationWorker)
 	return co
 }
