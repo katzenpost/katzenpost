@@ -16,6 +16,7 @@
 package common
 
 import (
+	"errors"
 	"github.com/fxamacker/cbor/v2"
 )
 
@@ -52,6 +53,11 @@ const (
 	StatusOK PigeonHoleStatus = iota
 	StatusNotFound
 	StatusFailed
+)
+
+var (
+	ErrStatusNotFound = errors.New("StatusNotFound")
+	ErrStatusFailed   = errors.New("StatusFailed")
 )
 
 type PigeonHoleResponse struct {

@@ -79,7 +79,7 @@ func TestCreatePigeonhole(t *testing.T) {
 	// verify that writing with wrong key fails:
 	badpayload := []byte("write fails")
 	err = c.Put(id, rKey.Sign(badpayload), badpayload)
-	require.NoError(err) // send must succeed
+	require.Error(err)
 
 	// verify that Reading with the ROKey interface works
 	roKey := rwCap.ReadOnly().ReadKey(addr)
@@ -179,7 +179,7 @@ func TestAsyncGetPigeonHole(t *testing.T) {
 	}()
 
 	go func() {
-		t.Logf("Sending GetWithContext(), timeout in %d", timeout)
+		t.Logf("Sending GetWithContext(), timeout in %v", timeout)
 		ctx, cancelFn := context.WithTimeout(context.Background(), timeout)
 		resp, err := c.GetWithContext(ctx, id, rKey.Sign(id.Bytes()))
 		if err != nil {

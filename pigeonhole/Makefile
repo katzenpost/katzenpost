@@ -9,6 +9,9 @@ image=katzenpost-$(distro)_base
 cache_dir=$(shell readlink -f ../docker)/cache
 docker_args=--user ${docker_user} -v $(shell readlink -f ..):/go/katzenpost --network=host --rm -v $(cache_dir)/go:/go/ -e GORACE=history_size=7 -e GOCACHE=/go/cache -w /go/katzenpost/pigeonhole/client
 
+test:
+	go test $(testargs) -ldflags ${ldflags} -race -v -timeout 30m -failfast ./...
+
 dockerdockertest:
 	cd ../docker && make $(distro)_base.stamp
 	$(docker) run ${docker_args} $(image) \
