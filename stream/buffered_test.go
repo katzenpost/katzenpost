@@ -97,6 +97,10 @@ func (m mockTransport) Get(addr []byte) ([]byte, error) {
 	return d, nil
 }
 
+func (m mockTransport) PutWithContext(ctx context.Context, addr []byte, payload []byte) error {
+	return m.Put(addr, payload)
+}
+
 func (m mockTransport) GetWithContext(ctx context.Context, addr []byte) ([]byte, error) {
 	return m.Get(addr)
 }
