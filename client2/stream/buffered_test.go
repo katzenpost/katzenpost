@@ -13,8 +13,9 @@ import (
 	"time"
 
 	"github.com/fxamacker/cbor/v2"
-	"github.com/katzenpost/hpqc/rand"
 	"github.com/stretchr/testify/require"
+
+	"github.com/katzenpost/hpqc/rand"
 )
 
 var numEntries = 10

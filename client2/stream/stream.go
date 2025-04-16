@@ -8,20 +8,23 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"github.com/fxamacker/cbor/v2"
-	"github.com/katzenpost/hpqc/rand"
-	"github.com/katzenpost/katzenpost/client2"
-	"github.com/katzenpost/katzenpost/core/epochtime"
-	"github.com/katzenpost/katzenpost/core/worker"
-	mClient "github.com/katzenpost/katzenpost/pigeonhole/client"
-	"github.com/katzenpost/katzenpost/pigeonhole/common"
-	"golang.org/x/crypto/hkdf"
-	"golang.org/x/crypto/nacl/secretbox"
 	"io"
 	"math"
 	"os"
 	"sync"
 	"time"
+
+	"github.com/fxamacker/cbor/v2"
+	"golang.org/x/crypto/hkdf"
+	"golang.org/x/crypto/nacl/secretbox"
+
+	"github.com/katzenpost/hpqc/rand"
+
+	"github.com/katzenpost/katzenpost/client2"
+	"github.com/katzenpost/katzenpost/core/epochtime"
+	"github.com/katzenpost/katzenpost/core/worker"
+	mClient "github.com/katzenpost/katzenpost/pigeonhole/client"
+	"github.com/katzenpost/katzenpost/pigeonhole/common"
 )
 
 const (

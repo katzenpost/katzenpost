@@ -19,14 +19,16 @@ package stream
 import (
 	"crypto/sha256"
 	"encoding/base64"
-	"github.com/katzenpost/hpqc/rand"
-	"github.com/stretchr/testify/require"
 	"io"
 	"net/http"
 	_ "net/http/pprof"
 	"runtime"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
+
+	"github.com/katzenpost/hpqc/rand"
 )
 
 func TestFrameKey(t *testing.T) {

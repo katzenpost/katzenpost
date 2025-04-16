@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/fxamacker/cbor/v2"
+
 	"github.com/katzenpost/katzenpost/core/worker"
 )
 
