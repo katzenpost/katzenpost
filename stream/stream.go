@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"github.com/fxamacker/cbor/v2"
 	"github.com/katzenpost/hpqc/rand"
-	"github.com/katzenpost/katzenpost/client"
 	"github.com/katzenpost/katzenpost/client2"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/worker"
@@ -124,15 +123,9 @@ const (
 	EndToEnd                    // requires interactive Acknowledge
 )
 
-// FrameWithPriority implmeents client.Item and holds the retransmit deadline and Frame for use with a TimerQueue
 type FrameWithPriority struct {
 	Frame         *Frame // payload of message
 	FramePriority uint64 // the time in nanoseconds of when to retransmit an unacknowledged message
-}
-
-// Priority implements client.Item interface; used by TimerQueue for retransmissions
-func (s *FrameWithPriority) Priority() uint64 {
-	return s.FramePriority
 }
 
 // nextEpoch returns a FrameWithPriority for next epoch
@@ -227,7 +220,7 @@ type Stream struct {
 	PeerAckIdx uint64
 
 	// TQ is used to schedule retransmission events of unacknowledged messages
-	TQ *client.TimerQueue
+	TQ *client2.TimerQueue
 
 	// R holds state needed to reschedule unacknowledged messages expiring in TQ
 	R *ReTx
@@ -269,7 +262,7 @@ func (s *Stream) SetTransport(t Transport) {
 	s.PayloadSize = PayloadSize(t)
 }
 
-// ReTx implmements client.nqueue and re-transmits unacknowledged frames
+// ReTx re-transmits unacknowledged frames
 type ReTx struct {
 	sync.Mutex
 	s    *Stream
@@ -297,15 +290,9 @@ func (r *ReTx) Ack(frameId uint64) bool {
 }
 
 // Push is called by the TimerQueue (Stream.TQ) with a client.Item when its deadline expires.
-func (r *ReTx) Push(i client.Item) error {
-	// time to retransmit a block that has not been acknowledged yet
-	m, ok := i.(*FrameWithPriority)
-	if !ok {
-		panic("must be FrameWithPriority")
-	}
-
+func (r *ReTx) Push(m *FrameWithPriority) error {
 	r.Lock()
-	_, ok = r.Wack[m.Frame.Id]
+	_, ok := r.Wack[m.Frame.Id]
 	r.Unlock()
 	if !ok {
 		// Already Acknowledged
@@ -716,7 +703,7 @@ func (s *Stream) txEnqueue(m *FrameWithPriority) {
 	s.R.Lock()
 	s.R.Wack[m.Frame.Id] = m
 	s.R.Unlock()
-	s.TQ.Push(m)
+	s.TQ.Push(m.FramePriority, m)
 }
 
 func H(i []byte) (res common.MessageID) {
@@ -972,7 +959,10 @@ func newStream(mode StreamMode) *Stream {
 	// timerqueue calls s.Push when timeout of enqueued item
 	s.R = &ReTx{s: s}
 	s.R.Wack = make(map[uint64]*FrameWithPriority)
-	s.TQ = client.NewTimerQueue(s.R)
+	callback := func(value interface{}) {
+		s.R.Push(value.(*FrameWithPriority))
+	}
+	s.TQ = client2.NewTimerQueue(callback)
 	s.retryExpDist = client2.NewExpDist()
 	s.readerExpDist = client2.NewExpDist()
 	s.senderExpDist = client2.NewExpDist()
