@@ -35,7 +35,7 @@ import (
 	"github.com/katzenpost/katzenpost/client/config"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/pki"
-	mClient "github.com/katzenpost/katzenpost/pigeonhole/client"
+	mClient "github.com/katzenpost/katzenpost/map/client"
 	"github.com/stretchr/testify/require"
 	"net/http"
 	_ "net/http/pprof"
