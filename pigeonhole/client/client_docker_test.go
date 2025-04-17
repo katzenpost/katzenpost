@@ -113,7 +113,6 @@ func TestAsyncGetPigeonHole(t *testing.T) {
 	m, err := bacap.NewMessageBoxIndex(rand.Reader)
 	require.NoError(err)
 
-
 	payload := []byte("asynchronously respond to Get")
 	id, sig := m.SignBox(root, nil, payload)
 

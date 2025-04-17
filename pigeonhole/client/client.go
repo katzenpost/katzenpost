@@ -151,32 +151,33 @@ func (c *Client) PayloadSize() int {
 // Get requests ID from the chosen storage node and blocks until a response is received or is cancelled.
 func (c *Client) Get(ctx context.Context, id []byte) ([]byte, error) {
 	box := c.ReadIndex.BoxIDForContext(c.ReadCap, id)
-	loc, err := c.GetStorageProvider(box.ByteArray())
+	keyBytes := box.ByteArray()
+	loc, err := c.GetStorageProvider(&keyBytes)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	b := &common.PigeonHoleRequest{ID: *box}
+	b := &common.PigeonHoleRequest{ID: box.ByteArray()}
 	serialized, err := cbor.Marshal(b)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	r, err := c.Session.BlockingSendUnreliableMessageWithContext(ctx, loc.Name(), loc.Provider(), serialized)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	// unwrap the response and return the payload
 	resp := &common.PigeonHoleResponse{}
 	_, err = cbor.UnmarshalFirst(r, resp)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	if resp.Status == common.StatusNotFound {
-		return nil, nil, common.ErrStatusNotFound
+		return nil, common.ErrStatusNotFound
 	}
 
 	// verify and decrypt the message
-	plaintext, err := c.ReadIndex.DecryptForContext(*box, id, resp.Payload, resp.Signature[:])
+	plaintext, err := c.ReadIndex.DecryptForContext(keyBytes, id, resp.Payload, resp.Signature[:])
 	return plaintext, err
 }
 
