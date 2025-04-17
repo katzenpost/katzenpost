@@ -25,6 +25,7 @@ import (
 
 	"github.com/fxamacker/cbor/v2"
 	"github.com/katzenpost/hpqc/bacap"
+	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/hpqc/sign/ed25519"
 	"github.com/katzenpost/katzenpost/client"
 	"github.com/katzenpost/katzenpost/client/utils"
@@ -36,17 +37,17 @@ var (
 	hash              = sha256.New
 )
 
-// Client holds a ReadCap and WriteCap and a MessageBox
+// Client holds a ReadCap and WriteCap and a MessageBoxIndex for reads and writes.
 type Client struct {
 	Session *client.Session
 
 	// reader capability
-	ReadCap *bacap.UniversalReadCap
+	ReadCap   *bacap.UniversalReadCap
 	ReadIndex *bacap.MessageBoxIndex
 
 	// writer capability
 	WriteIndex *bacap.MessageBoxIndex
-	WriteCap *bacap.BoxOwnerCap
+	WriteCap   *bacap.BoxOwnerCap
 }
 
 func NewClient(s *client.Session) (*Client, error) {
@@ -112,12 +113,15 @@ func (c *Client) GetStorageProvider(ID *[ed25519.PublicKeySize]byte) (StorageLoc
 
 // Put places a value into the store
 func (c *Client) Put(ctx context.Context, ID []byte, payload []byte) error {
-	loc, err := c.GetStorageProvider(ID)
+	boxID, ciphertext, sig := c.WriteIndex.EncryptForContext(c.WriteCap, ID, payload)
+	b := common.PigeonHoleRequest{ID: boxID, Payload: ciphertext}
+	copy(b.Signature[:], sig)
+	serialized, err := cbor.Marshal(b)
 	if err != nil {
 		return err
 	}
-	b := common.PigeonHoleRequest{ID: *ID, Signature: *signature, Payload: payload}
-	serialized, err := cbor.Marshal(b)
+
+	loc, err := c.GetStorageProvider(&boxID)
 	if err != nil {
 		return err
 	}
@@ -147,7 +151,7 @@ func (c *Client) PayloadSize() int {
 // Get requests ID from the chosen storage node and blocks until a response is received or is cancelled.
 func (c *Client) Get(ctx context.Context, id []byte) ([]byte, error) {
 	box := c.ReadIndex.BoxIDForContext(c.ReadCap, id)
-	loc, err := c.GetStorageProvider(ID)
+	loc, err := c.GetStorageProvider(box.ByteArray())
 	if err != nil {
 		return nil, nil, err
 	}
