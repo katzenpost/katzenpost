@@ -25,7 +25,7 @@ import (
 	"path/filepath"
 
 	"github.com/katzenpost/katzenpost/core/log"
-	"github.com/katzenpost/katzenpost/pigeonhole/server"
+	"github.com/katzenpost/katzenpost/map/server"
 	"github.com/katzenpost/katzenpost/server/cborplugin"
 )
 

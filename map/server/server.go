@@ -27,7 +27,7 @@ import (
 	"gopkg.in/op/go-logging.v1"
 
 	"github.com/katzenpost/katzenpost/core/worker"
-	"github.com/katzenpost/katzenpost/pigeonhole/common"
+	"github.com/katzenpost/katzenpost/map/common"
 	"github.com/katzenpost/katzenpost/server/cborplugin"
 
 	"sync"

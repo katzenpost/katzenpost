@@ -28,7 +28,7 @@ import (
 	"github.com/katzenpost/hpqc/sign/ed25519"
 	"github.com/katzenpost/katzenpost/client"
 	"github.com/katzenpost/katzenpost/client/config"
-	"github.com/katzenpost/katzenpost/pigeonhole/common"
+	"github.com/katzenpost/katzenpost/map/common"
 	"github.com/stretchr/testify/require"
 )
 
