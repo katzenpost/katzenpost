@@ -1,9 +1,23 @@
 # Pigeonhole Storage Replica
 
+This section of code implements the storage replica server from our
+unpublished paper, **Echomix: a Strong Anonymity System with
+Messaging** which you can read here: https://arxiv.org/abs/2501.02933
 
-This storage server requires a Katzenpost client2 daemon in order to download
-fresh PKI documents.
+This storage server operates "outside the mixnet". The "courier"
+services which operates on the service nodes in the mix network, is
+responsible for proxying queries and replies to and from the storage
+replicas. The replicas perform their replication and communication
+with the courier services outside of the mixnet, however they do make
+use of our PQ Noise based transport protocol for all of this
+communication. Detailed design docs forthcoming.
 
+## dependencies
+
+Note that this component might be slightly more tricky to build than
+the rest of Katzenpost because of the dependency on a slightly older
+version of RocksDB in order to maintain compatibility with the golang
+bindings.
 
 ## building / running
 
