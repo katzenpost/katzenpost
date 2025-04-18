@@ -35,7 +35,7 @@ import (
 	"github.com/katzenpost/katzenpost/client/config"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/pki"
-	mClient "github.com/katzenpost/katzenpost/pigeonhole/client"
+	mClient "github.com/katzenpost/katzenpost/map/client"
 	"github.com/stretchr/testify/require"
 	"net/http"
 	_ "net/http/pprof"
@@ -340,7 +340,7 @@ func TestStreamSerialize(t *testing.T) {
 		require.NoError(err)
 		t.Logf("Restored %s", s.LocalAddr().String())
 
-		// initialize a pigeonhole client with session
+		// initialize a map client with session
 		c, _ := mClient.NewClient(session)
 		addr := []byte(s.LocalAddr().String())
 		t.Logf("Restoring transport for encoder %s", s.LocalAddr().String())
@@ -350,7 +350,7 @@ func TestStreamSerialize(t *testing.T) {
 			panic(ErrGeometryChanged)
 		}
 
-		// use pigeonhole transport
+		// use map transport
 		s.SetTransport(trans)
 
 		// start stream again

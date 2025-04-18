@@ -1,4 +1,4 @@
-// client.go - pigeonhole service client
+// client.go - map service client
 // Copyright (C) 2021  Masala
 //
 // This program is free software: you can redistribute it and/or modify
@@ -27,7 +27,7 @@ import (
 	"github.com/katzenpost/hpqc/sign/ed25519"
 	"github.com/katzenpost/katzenpost/client"
 	"github.com/katzenpost/katzenpost/client/utils"
-	"github.com/katzenpost/katzenpost/pigeonhole/common"
+	"github.com/katzenpost/katzenpost/map/common"
 	"golang.org/x/crypto/hkdf"
 )
 
@@ -50,18 +50,18 @@ type StorageLocation interface {
 	Provider() string
 }
 
-type pigeonHoleStorage struct {
+type mapStorage struct {
 	id             common.MessageID
 	name, provider string
 }
 
-func (m *pigeonHoleStorage) ID() common.MessageID {
+func (m *mapStorage) ID() common.MessageID {
 	return m.id
 }
-func (m *pigeonHoleStorage) Name() string {
+func (m *mapStorage) Name() string {
 	return m.name
 }
-func (m *pigeonHoleStorage) Provider() string {
+func (m *mapStorage) Provider() string {
 	return m.provider
 }
 
@@ -91,14 +91,14 @@ func (c *Client) GetStorageProvider(ID common.MessageID) (StorageLocation, error
 	if doc == nil {
 		return nil, errors.New("No PKI document") // XXX: find correct error
 	}
-	descs := utils.FindServices(common.PigeonHoleServiceName, doc)
+	descs := utils.FindServices(common.MapServiceName, doc)
 	if len(descs) == 0 {
 		return nil, errors.New("No descriptors")
 	}
 	slot := int(binary.LittleEndian.Uint64(ID[:8])) % len(descs)
 	// sort the descs and return the chosen one
 	desc := deterministicSelect(descs, slot)
-	return &pigeonHoleStorage{name: desc.Name, provider: desc.Provider, id: ID}, nil
+	return &mapStorage{name: desc.Name, provider: desc.Provider, id: ID}, nil
 }
 
 // Put places a value into the store
@@ -111,7 +111,7 @@ func (c *Client) PutWithContext(ctx context.Context, ID common.MessageID, signat
 	if err != nil {
 		return err
 	}
-	b := common.PigeonHoleRequest{ID: ID, Signature: signature, Payload: payload}
+	b := common.MapRequest{ID: ID, Signature: signature, Payload: payload}
 	serialized, err := cbor.Marshal(b)
 	if err != nil {
 		return err
@@ -121,7 +121,7 @@ func (c *Client) PutWithContext(ctx context.Context, ID common.MessageID, signat
 	if err != nil {
 		return err
 	}
-	resp := &common.PigeonHoleResponse{}
+	resp := &common.MapResponse{}
 	_, err = cbor.UnmarshalFirst(r, resp)
 	if err != nil {
 		return err
@@ -151,7 +151,7 @@ func (c *Client) GetWithContext(ctx context.Context, ID common.MessageID, signat
 	if err != nil {
 		return nil, err
 	}
-	b := &common.PigeonHoleRequest{ID: ID, Signature: signature}
+	b := &common.MapRequest{ID: ID, Signature: signature}
 	serialized, err := cbor.Marshal(b)
 	if err != nil {
 		return nil, err
@@ -162,7 +162,7 @@ func (c *Client) GetWithContext(ctx context.Context, ID common.MessageID, signat
 		return nil, err
 	}
 	// unwrap the response and return the payload
-	resp := &common.PigeonHoleResponse{}
+	resp := &common.MapResponse{}
 	_, err = cbor.UnmarshalFirst(r, resp)
 	if err != nil {
 		return nil, err
@@ -196,116 +196,116 @@ type WriteOnlyClient interface {
 	PayloadSize() int
 }
 
-// rwPigeonHole implements ReadWriteTranport using a ReadWriteCap and reference to pigeonHole client
-// The idea is that several streams can share pigeonHole/client and client/session but
-// have different capabilities for the underlying Streams transported by pigeonHole/client
-type rwPigeonHole struct {
+// rwMap implements ReadWriteTranport using a ReadWriteCap and reference to map client
+// The idea is that several streams can share map/client and client/session but
+// have different capabilities for the underlying Streams transported by map/client
+type rwMap struct {
 	c     *Client
 	rwCap common.ReadWriteCap
 }
 
 // Get implements ReadWriteClient.Get
-func (r *rwPigeonHole) Get(addr []byte) ([]byte, error) {
+func (r *rwMap) Get(addr []byte) ([]byte, error) {
 	i := r.rwCap.Addr(addr)
 	k := r.rwCap.ReadKey(addr)
 	return r.c.Get(i, k.Sign(i.Bytes()))
 }
 
 // GetWithContext implements ReadWriteClient.GetWithContext
-func (r *rwPigeonHole) GetWithContext(ctx context.Context, addr []byte) ([]byte, error) {
+func (r *rwMap) GetWithContext(ctx context.Context, addr []byte) ([]byte, error) {
 	i := r.rwCap.Addr(addr)
 	k := r.rwCap.ReadKey(addr)
 	return r.c.GetWithContext(ctx, i, k.Sign(i.Bytes()))
 }
 
 // Put implements ReadWriteClient.Put
-func (r *rwPigeonHole) Put(addr []byte, payload []byte) error {
+func (r *rwMap) Put(addr []byte, payload []byte) error {
 	i := r.rwCap.Addr(addr)
 	k := r.rwCap.WriteKey(addr)
 	return r.c.Put(i, k.Sign(payload), payload)
 }
 
 // PutWithContext implmements ReadWriteClient.PutWithContext
-func (r *rwPigeonHole) PutWithContext(ctx context.Context, addr []byte, payload []byte) error {
+func (r *rwMap) PutWithContext(ctx context.Context, addr []byte, payload []byte) error {
 	i := r.rwCap.Addr(addr)
 	k := r.rwCap.WriteKey(addr)
 	return r.c.PutWithContext(ctx, i, k.Sign(payload), payload)
 }
 
 // PayloadSize implements ReadWriteClient.PayloadSize
-func (r *rwPigeonHole) PayloadSize() int {
+func (r *rwMap) PayloadSize() int {
 	return r.c.PayloadSize()
 }
 
-// roPigeonHole implements ReadOnlyTranport using a ReadOnlyCap and reference to pigeonHole client
-type roPigeonHole struct {
+// roMap implements ReadOnlyTranport using a ReadOnlyCap and reference to map client
+type roMap struct {
 	c     *Client
 	roCap common.ReadOnlyCap
 }
 
 // Get implements ReadOnlyClient.Get
-func (r *roPigeonHole) Get(addr []byte) ([]byte, error) {
+func (r *roMap) Get(addr []byte) ([]byte, error) {
 	i := r.roCap.Addr(addr)
 	k := r.roCap.ReadKey(addr)
 	return r.c.Get(i, k.Sign(i.Bytes()))
 }
 
 // GetWithContext implements ReadOnlyClient.GetWithContext
-func (r *roPigeonHole) GetWithContext(ctx context.Context, addr []byte) ([]byte, error) {
+func (r *roMap) GetWithContext(ctx context.Context, addr []byte) ([]byte, error) {
 	i := r.roCap.Addr(addr)
 	k := r.roCap.ReadKey(addr)
 	return r.c.GetWithContext(ctx, i, k.Sign(i.Bytes()))
 }
 
 // PayloadSize implements ReadOnlyClient.PayloadSize
-func (r *roPigeonHole) PayloadSize() int {
+func (r *roMap) PayloadSize() int {
 	return r.c.PayloadSize()
 }
 
-// woPigeonHole implements WriteOnlyClient
-type woPigeonHole struct {
+// woMap implements WriteOnlyClient
+type woMap struct {
 	c     *Client
 	woCap common.WriteOnlyCap
 }
 
 // Put implements WriteOnlyClient.Put
-func (w *woPigeonHole) Put(addr []byte, payload []byte) error {
+func (w *woMap) Put(addr []byte, payload []byte) error {
 	i := w.woCap.Addr(addr)
 	k := w.woCap.WriteKey(addr)
 	return w.c.Put(i, k.Sign(payload), payload)
 }
 
 // PutWithContext implmements WriteOnlyClient.PutWithContext
-func (r *woPigeonHole) PutWithContext(ctx context.Context, addr []byte, payload []byte) error {
+func (r *woMap) PutWithContext(ctx context.Context, addr []byte, payload []byte) error {
 	i := r.woCap.Addr(addr)
 	k := r.woCap.WriteKey(addr)
 	return r.c.PutWithContext(ctx, i, k.Sign(payload), payload)
 }
 
 // PayloadSize implements WriteOnlyClient.PayloadSize
-func (r *woPigeonHole) PayloadSize() int {
+func (r *woMap) PayloadSize() int {
 	return r.c.PayloadSize()
 }
 
-// ReadWrite returns a Transport using pigeonHole that can read or write with Get() and Put()
+// ReadWrite returns a Transport using map that can read or write with Get() and Put()
 func ReadWrite(c *Client, rwCap common.ReadWriteCap) ReadWriteClient {
-	m := new(rwPigeonHole)
+	m := new(rwMap)
 	m.c = c
 	m.rwCap = rwCap
 	return m
 }
 
-// ReadOnly returns a Transport using pigeonHole that can read with Get() only
+// ReadOnly returns a Transport using map that can read with Get() only
 func ReadOnly(c *Client, roCap common.ReadOnlyCap) ReadOnlyClient {
-	m := new(roPigeonHole)
+	m := new(roMap)
 	m.c = c
 	m.roCap = roCap
 	return m
 }
 
-// WriteOnly returns a Transport using pigeonHole that can write with Put() only
+// WriteOnly returns a Transport using map that can write with Put() only
 func WriteOnly(c *Client, woCap common.WriteOnlyCap) WriteOnlyClient {
-	m := new(woPigeonHole)
+	m := new(woMap)
 	m.c = c
 	m.woCap = woCap
 	return m
@@ -390,6 +390,6 @@ func Duplex(c *Client, r common.ReadOnlyCap, w common.WriteOnlyCap) ReadWriteCli
 }
 
 func init() {
-	b, _ := cbor.Marshal(common.PigeonHoleRequest{})
+	b, _ := cbor.Marshal(common.MapRequest{})
 	cborFrameOverhead = len(b)
 }
