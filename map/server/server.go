@@ -1,4 +1,4 @@
-// server.go - pigeonhole service using cbor plugin system
+// server.go - map service using cbor plugin system
 // Copyright (C) 2021  Masala
 //
 // This program is free software: you can redistribute it and/or modify
@@ -34,26 +34,26 @@ import (
 )
 
 const (
-	pigeonHoleBucket = "pigeonHole"
-	gcBucket         = "gc"
+	mapBucket = "map"
+	gcBucket  = "gc"
 )
 
-// PigeonHole holds reference to the database and logger and provides methods to store and retrieve data
-type PigeonHole struct {
+// Map holds reference to the database and logger and provides methods to store and retrieve data
+type Map struct {
 	worker.Worker
 	l   *sync.Mutex
 	log *logging.Logger
 	db  *bolt.DB
 
-	pigeonHoleSize int // number of entries to keep
-	gcSize         int // number of entries to place in each garbage bucket
+	mapSize int // number of entries to keep
+	gcSize  int // number of entries to place in each garbage bucket
 
 	waiting map[common.MessageID][]*cborplugin.Response
 	write   func(cborplugin.Command)
 }
 
 // Wait adds pending cborplugin.Responses (with SURBs) by MessageID to a waiting map
-func (m *PigeonHole) Wait(msgID common.MessageID, response *cborplugin.Response) {
+func (m *Map) Wait(msgID common.MessageID, response *cborplugin.Response) {
 	m.l.Lock()
 	defer m.l.Unlock()
 	_, ok := m.waiting[msgID]
@@ -65,7 +65,7 @@ func (m *PigeonHole) Wait(msgID common.MessageID, response *cborplugin.Response)
 }
 
 // Wake returns the pending responses from the waiting map and removes the entries
-func (m *PigeonHole) Wake(msgID common.MessageID, payload []byte) error {
+func (m *Map) Wake(msgID common.MessageID, payload []byte) error {
 	m.l.Lock()
 	defer m.l.Unlock()
 	waiting, ok := m.waiting[msgID]
@@ -76,8 +76,8 @@ func (m *PigeonHole) Wake(msgID common.MessageID, payload []byte) error {
 	m.log.Debugf("Woke %d: %x", len(waiting), msgID)
 
 	// prepare the response payload for pending requests
-	pigeonHoleResponse := &common.PigeonHoleResponse{Status: common.StatusOK, Payload: payload}
-	rawResp, err := pigeonHoleResponse.Marshal()
+	mapResponse := &common.MapResponse{Status: common.StatusOK, Payload: payload}
+	rawResp, err := mapResponse.Marshal()
 	if err != nil {
 		m.log.Errorf("Wake(%x): %v", msgID, err)
 		return err
@@ -96,14 +96,14 @@ func (m *PigeonHole) Wake(msgID common.MessageID, payload []byte) error {
 }
 
 // Get retrieves an item from the db
-func (m *PigeonHole) Get(msgID common.MessageID) ([]byte, error) {
+func (m *Map) Get(msgID common.MessageID) ([]byte, error) {
 	var resp []byte
 	err := m.db.View(func(tx *bolt.Tx) error {
-		pigeonHoleBkt := tx.Bucket([]byte(pigeonHoleBucket))
-		if pigeonHoleBkt == nil {
-			return errors.New("pigeonHoleBucket does not exist")
+		mapBkt := tx.Bucket([]byte(mapBucket))
+		if mapBkt == nil {
+			return errors.New("mapBucket does not exist")
 		}
-		p := pigeonHoleBkt.Get(msgID[:])
+		p := mapBkt.Get(msgID[:])
 		if p == nil {
 			// empty slot
 			return common.ErrStatusNotFound
@@ -116,9 +116,9 @@ func (m *PigeonHole) Get(msgID common.MessageID) ([]byte, error) {
 }
 
 // Put places an item in the db
-func (m *PigeonHole) Put(msgID common.MessageID, payload []byte) error {
+func (m *Map) Put(msgID common.MessageID, payload []byte) error {
 	err := m.db.Update(func(tx *bolt.Tx) error {
-		bkt := tx.Bucket([]byte(pigeonHoleBucket))
+		bkt := tx.Bucket([]byte(mapBucket))
 		p := bkt.Get(msgID[:])
 		if p != nil {
 			if !bytes.Equal(p, payload) {
@@ -126,7 +126,7 @@ func (m *PigeonHole) Put(msgID common.MessageID, payload []byte) error {
 			}
 		}
 
-		// store message in pigeonHoleBucket
+		// store message in mapBucket
 		err := bkt.Put(msgID[:], payload)
 		if err != nil {
 			return err
@@ -171,16 +171,16 @@ func (m *PigeonHole) Put(msgID common.MessageID, payload []byte) error {
 	return nil
 }
 
-// GarbageCollect prunes the oldest bucket of entries when the pigeonHole size limit is exceeded
-func (m *PigeonHole) GarbageCollect() error {
+// GarbageCollect prunes the oldest bucket of entries when the map size limit is exceeded
+func (m *Map) GarbageCollect() error {
 	return m.db.Update(func(tx *bolt.Tx) error {
 		bkt := tx.Bucket([]byte(gcBucket))
 		size := bkt.Stats().InlineBucketN * m.gcSize
-		if size > m.pigeonHoleSize {
-			// delete pigeonHole entries in the oldest gcBkt
+		if size > m.mapSize {
+			// delete map entries in the oldest gcBkt
 			k, _ := bkt.Cursor().First()
 			gcbkt := bkt.Bucket(k)
-			mbkt := tx.Bucket([]byte(pigeonHoleBucket))
+			mbkt := tx.Bucket([]byte(mapBucket))
 			gcbkt.ForEach(func(k, v []byte) error {
 				return mbkt.Delete(k)
 			})
@@ -190,12 +190,12 @@ func (m *PigeonHole) GarbageCollect() error {
 	})
 }
 
-func (m *PigeonHole) Shutdown() {
+func (m *Map) Shutdown() {
 	m.db.Close()
 	m.Halt()
 }
 
-func (m *PigeonHole) worker() {
+func (m *Map) worker() {
 	m.log.Notice("Starting garbage collection worker")
 	defer m.log.Notice("Stopping garbage collection worker")
 	for {
@@ -208,14 +208,14 @@ func (m *PigeonHole) worker() {
 	}
 }
 
-// NewPigeonHole instantiates a pigeonHole
-func NewPigeonHole(fileStore string, log *logging.Logger, gcSize int, pigeonHoleSize int) (*PigeonHole, error) {
-	m := &PigeonHole{
-		l:              new(sync.Mutex),
-		log:            log,
-		pigeonHoleSize: pigeonHoleSize,
-		gcSize:         gcSize,
-		waiting:        make(map[common.MessageID][]*cborplugin.Response),
+// NewMap instantiates a map
+func NewMap(fileStore string, log *logging.Logger, gcSize int, mapSize int) (*Map, error) {
+	m := &Map{
+		l:       new(sync.Mutex),
+		log:     log,
+		mapSize: mapSize,
+		gcSize:  gcSize,
+		waiting: make(map[common.MessageID][]*cborplugin.Response),
 	}
 	db, err := bolt.Open(fileStore, 0600, nil)
 	if err != nil {
@@ -224,7 +224,7 @@ func NewPigeonHole(fileStore string, log *logging.Logger, gcSize int, pigeonHole
 	}
 	m.db = db
 	if err = m.db.Update(func(tx *bolt.Tx) error {
-		if _, err := tx.CreateBucketIfNotExists([]byte(pigeonHoleBucket)); err != nil {
+		if _, err := tx.CreateBucketIfNotExists([]byte(mapBucket)); err != nil {
 			return err
 		}
 		if _, err := tx.CreateBucketIfNotExists([]byte(gcBucket)); err != nil {
@@ -240,21 +240,21 @@ func NewPigeonHole(fileStore string, log *logging.Logger, gcSize int, pigeonHole
 	return m, nil
 }
 
-func (m *PigeonHole) OnCommand(cmd cborplugin.Command) error {
+func (m *Map) OnCommand(cmd cborplugin.Command) error {
 	switch r := cmd.(type) {
 	case *cborplugin.Request:
 		if r.SURB == nil {
 			return errors.New("no SURB, cannot reply")
 		}
-		req := &common.PigeonHoleRequest{}
+		req := &common.MapRequest{}
 		dec := cbor.NewDecoder(bytes.NewReader(r.Payload))
 		err := dec.Decode(req)
 		if err != nil {
 			return err
 		}
 
-		resp := &common.PigeonHoleResponse{}
-		// validate the capabilities of PigeonHoleRequest
+		resp := &common.MapResponse{}
+		// validate the capabilities of MapRequest
 		if !validateCap(req) {
 			resp.Status = common.StatusFailed
 			m.log.Errorf("validateCap failed for %x", req.ID)
@@ -311,7 +311,7 @@ func (m *PigeonHole) OnCommand(cmd cborplugin.Command) error {
 	}
 }
 
-func validateCap(req *common.PigeonHoleRequest) bool {
+func validateCap(req *common.MapRequest) bool {
 	if len(req.Payload) == 0 {
 		v := req.ID.ReadVerifier()
 		// verify v Signs the publickey bytes
@@ -323,6 +323,6 @@ func validateCap(req *common.PigeonHoleRequest) bool {
 	}
 }
 
-func (m *PigeonHole) RegisterConsumer(svr *cborplugin.Server) {
+func (m *Map) RegisterConsumer(svr *cborplugin.Server) {
 	m.write = svr.Write
 }
