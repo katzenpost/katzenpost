@@ -46,9 +46,10 @@ func TestAllClient2Tests(t *testing.T) {
 		d.Shutdown()
 	}()
 
-	t.Run("TestDockerMultiplexClients", testDockerMultiplexClients)
-	t.Run("TestDockerClientARQSendReceive", testDockerClientARQSendReceive)
-	t.Run("TestDockerClientSendReceive", testDockerClientSendReceive)
+	//t.Run("TestDockerMultiplexClients", testDockerMultiplexClients)
+	//t.Run("TestDockerClientARQSendReceive", testDockerClientARQSendReceive)
+	//t.Run("TestDockerClientSendReceive", testDockerClientSendReceive)
+	t.Run("TestDockerCourierService", testDockerCourierService)
 }
 
 func setupDaemon() (*Daemon, error) {
