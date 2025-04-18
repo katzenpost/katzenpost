@@ -1,4 +1,4 @@
-// server_test.go - pigeonhole service using cbor plugin system
+// server_test.go - map service using cbor plugin system
 // Copyright (C) 2021  Masala
 //
 // This program is free software: you can redistribute it and/or modify
@@ -25,23 +25,23 @@ import (
 
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/hpqc/sign/ed25519"
-	"github.com/katzenpost/katzenpost/pigeonhole/common"
+	"github.com/katzenpost/katzenpost/map/common"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/op/go-logging.v1"
 )
 
-func TestCreatePigeonHole(t *testing.T) {
+func TestCreateMap(t *testing.T) {
 
 	if runtime.GOOS == "windows" {
 		return
 	}
 
 	require := require.New(t)
-	tmpDir, err := ioutil.TempDir("", "pigeonHole_test")
+	tmpDir, err := ioutil.TempDir("", "map_test")
 	require.NoError(err)
-	f := filepath.Join(tmpDir, "pigeonHole.store")
-	log := logging.MustGetLogger("pigeonHole")
-	m, err := NewPigeonHole(f, log, 10, 100)
+	f := filepath.Join(tmpDir, "map.store")
+	log := logging.MustGetLogger("map")
+	m, err := NewMap(f, log, 10, 100)
 	require.NoError(err)
 	m.Halt()
 
@@ -50,19 +50,19 @@ func TestCreatePigeonHole(t *testing.T) {
 	require.NoError(err)
 }
 
-func TestPigeonHole(t *testing.T) {
+func TestMap(t *testing.T) {
 
 	if runtime.GOOS == "windows" {
 		return
 	}
 
-	// start a pigeonHole service
+	// start a map service
 	require := require.New(t)
-	tmpDir, err := ioutil.TempDir("", "pigeonHole_test")
+	tmpDir, err := ioutil.TempDir("", "map_test")
 	require.NoError(err)
-	f := filepath.Join(tmpDir, "pigeonHole.store")
-	log := logging.MustGetLogger("pigeonHole")
-	m, err := NewPigeonHole(f, log, 10, 100)
+	f := filepath.Join(tmpDir, "map.store")
+	log := logging.MustGetLogger("map")
+	m, err := NewMap(f, log, 10, 100)
 	require.NoError(err)
 
 	// put data in a key
@@ -84,7 +84,7 @@ func TestPigeonHole(t *testing.T) {
 	m.Shutdown()
 
 	// restart the server
-	m, err = NewPigeonHole(f, log, 10, 100)
+	m, err = NewMap(f, log, 10, 100)
 
 	// verify the data is still there
 	data, err = m.Get(msgID)
@@ -96,24 +96,24 @@ func TestPigeonHole(t *testing.T) {
 }
 
 func TestGarbageCollect(t *testing.T) {
-	// start a pigeonHole service
+	// start a map service
 	require := require.New(t)
-	tmpDir, err := ioutil.TempDir("", "pigeonHole_test")
+	tmpDir, err := ioutil.TempDir("", "map_test")
 	require.NoError(err)
 	//defer os.RemoveAll(tmpDir)
-	f := filepath.Join(tmpDir, "pigeonHole.store")
-	log := logging.MustGetLogger("pigeonHole")
+	f := filepath.Join(tmpDir, "map.store")
+	log := logging.MustGetLogger("map")
 
 	// garbage collection parameters
 	gcsize := 10
-	pigeonHolesize := 100
+	mapsize := 100
 
-	m, err := NewPigeonHole(f, log, gcsize, pigeonHolesize)
+	m, err := NewMap(f, log, gcsize, mapsize)
 	require.NoError(err)
 
-	msgIDs := make([]common.MessageID, pigeonHolesize+1)
-	// fill pigeonHole to pigeonHoleSize + 1 to trigger GarbageCollection
-	for i := 0; i < pigeonHolesize+1; i++ {
+	msgIDs := make([]common.MessageID, mapsize+1)
+	// fill map to mapSize + 1 to trigger GarbageCollection
+	for i := 0; i < mapsize+1; i++ {
 		var msgID common.MessageID
 		_, err = rand.Reader.Read(msgID[:])
 		require.NoError(err)
@@ -169,15 +169,15 @@ func TestValidateRWCap(t *testing.T) {
 	wSignature := wKey.Sign(payload)
 	rSignature := rKey.Sign(mID.Bytes())
 	// test verification of write
-	require.True(validateCap(&common.PigeonHoleRequest{ID: mID, Signature: wSignature, Payload: payload}))
+	require.True(validateCap(&common.MapRequest{ID: mID, Signature: wSignature, Payload: payload}))
 	// test failure of write
-	require.False(validateCap(&common.PigeonHoleRequest{ID: mID, Signature: wSignature, Payload: payload[:len(payload)-2]}))
+	require.False(validateCap(&common.MapRequest{ID: mID, Signature: wSignature, Payload: payload[:len(payload)-2]}))
 
 	// test verification of read
-	require.True(validateCap(&common.PigeonHoleRequest{ID: mID, Signature: rSignature, Payload: []byte{}}))
+	require.True(validateCap(&common.MapRequest{ID: mID, Signature: rSignature, Payload: []byte{}}))
 
 	// test failure of read
-	require.False(validateCap(&common.PigeonHoleRequest{ID: mID, Signature: rSignature, Payload: payload[:len(payload)-1]}))
+	require.False(validateCap(&common.MapRequest{ID: mID, Signature: rSignature, Payload: payload[:len(payload)-1]}))
 }
 
 func TestValidateROCap(t *testing.T) {
@@ -194,10 +194,10 @@ func TestValidateROCap(t *testing.T) {
 	rSignature := rKey.Sign(mID.Bytes())
 
 	// test verification of read
-	require.True(validateCap(&common.PigeonHoleRequest{ID: mID, Signature: rSignature, Payload: []byte{}}))
+	require.True(validateCap(&common.MapRequest{ID: mID, Signature: rSignature, Payload: []byte{}}))
 
 	// test failure of read
-	require.False(validateCap(&common.PigeonHoleRequest{ID: mID, Signature: rSignature[:len(rSignature)-1], Payload: []byte{}}))
+	require.False(validateCap(&common.MapRequest{ID: mID, Signature: rSignature[:len(rSignature)-1], Payload: []byte{}}))
 }
 
 func TestValidateWOCap(t *testing.T) {
@@ -215,8 +215,8 @@ func TestValidateWOCap(t *testing.T) {
 	wSignature := wKey.Sign(payload)
 
 	// test verification of write
-	require.True(validateCap(&common.PigeonHoleRequest{ID: mID, Signature: wSignature, Payload: payload}))
+	require.True(validateCap(&common.MapRequest{ID: mID, Signature: wSignature, Payload: payload}))
 
 	// test failure of write
-	require.False(validateCap(&common.PigeonHoleRequest{ID: mID, Signature: wSignature, Payload: payload[:len(payload)-1]}))
+	require.False(validateCap(&common.MapRequest{ID: mID, Signature: wSignature, Payload: payload[:len(payload)-1]}))
 }

@@ -227,8 +227,8 @@ jobs:
         run: |
           cd docker && make log_level=DEBUG start wait
 
-      - name: run pigeonhole end to end tests
-        run: cd pigeonhole && make testargs=-coverprofile=coverage.part dockerdockertest && cat client/coverage.part >> ../coverage.out
+      - name: run map end to end tests
+        run: cd map && make testargs=-coverprofile=coverage.part dockerdockertest && cat client/coverage.part >> ../coverage.out
 
       - name: run stream end to end tests
         run: cd stream && make testargs=-coverprofile=coverage.part dockerdockertest && cat coverage.part >> ../coverage.out

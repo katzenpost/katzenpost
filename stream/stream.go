@@ -14,8 +14,8 @@ import (
 	"github.com/katzenpost/katzenpost/client2"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/worker"
-	mClient "github.com/katzenpost/katzenpost/pigeonhole/client"
-	"github.com/katzenpost/katzenpost/pigeonhole/common"
+	mClient "github.com/katzenpost/katzenpost/map/client"
+	"github.com/katzenpost/katzenpost/map/common"
 	"golang.org/x/crypto/hkdf"
 	"golang.org/x/crypto/nacl/secretbox"
 	"io"
@@ -1120,7 +1120,7 @@ func (s *Stream) setDefaultPollingRates() {
 	s.senderExpDist.UpdateRate(uint64(averageSendRate/time.Millisecond), uint64(epochtime.Period/time.Millisecond))
 }
 
-// DialDuplex returns a stream using capability backed pigeonhole storage (Duplex)
+// DialDuplex returns a stream using capability backed map storage (Duplex)
 func DialDuplex(s *client.Session, network, addr string) (*Stream, error) {
 	c, err := mClient.NewClient(s)
 	if err != nil {
@@ -1139,7 +1139,7 @@ func DialDuplex(s *client.Session, network, addr string) (*Stream, error) {
 	return st, nil
 }
 
-// ListenDuplex returns a Stream using capability pigeonhole storage (Duplex) as initiator
+// ListenDuplex returns a Stream using capability map storage (Duplex) as initiator
 func ListenDuplex(s *client.Session, network, addr string) (*Stream, error) {
 	c, _ := mClient.NewClient(s)
 	st := newStream(EndToEnd)
@@ -1153,7 +1153,7 @@ func ListenDuplex(s *client.Session, network, addr string) (*Stream, error) {
 	return st, nil
 }
 
-// NewDuplex returns a Stream using capability pigeonhole storage (Duplex) a Listener
+// NewDuplex returns a Stream using capability map storage (Duplex) a Listener
 func NewDuplex(s *client.Session) (*Stream, error) {
 	c, err := mClient.NewClient(s)
 	if err != nil {

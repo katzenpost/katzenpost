@@ -409,6 +409,9 @@ func (s *katzenpost) genNodeConfig(isGateway, isServiceNode bool, isVoting bool)
 		advert := make(map[string]map[string]interface{})
 		advert["courier"] = make(map[string]interface{})
 		advert["courier"]["linkPublicKey"] = linkBlob
+
+		// "courier" service is described in our paper, it's used to communicate
+		// with the storage replicas to form the Pigeonhole storage system.
 		courierPluginCfg := &sConfig.CBORPluginKaetzchen{
 			Capability:        "courier",
 			Endpoint:          "courier",
@@ -419,10 +422,13 @@ func (s *katzenpost) genNodeConfig(isGateway, isServiceNode bool, isVoting bool)
 				"c": advertizeableCourierCfgPath,
 			},
 		}
+
+		// NOTE: "map" service is an alternative storage service which does NOT
+		// have all the cool privacy properties that the protocol in our paper describes.
 		mapCfg := &sConfig.CBORPluginKaetzchen{
-			Capability:     "pigeonhole",
-			Endpoint:       "+pigeonhole",
-			Command:        s.baseDir + "/pigeonhole" + s.binSuffix,
+			Capability:     "map",
+			Endpoint:       "+map",
+			Command:        s.baseDir + "/map" + s.binSuffix,
 			MaxConcurrency: 1,
 			Config: map[string]interface{}{
 				"db":      s.baseDir + "/" + cfg.Server.Identifier + "/map.storage",
