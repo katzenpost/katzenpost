@@ -926,12 +926,13 @@ services:
 
 	write(f, `
   kpclientd:
-    restart: "no"
+    restart: "yes"
     image: %s
     volumes:
       - ./:%s
     command: %s/kpclientd%s -c %s/client2/client.toml
     network_mode: host
+    depends_on: gateway1
 `, dockerImage, s.baseDir, s.baseDir, s.binSuffix, s.baseDir)
 	return nil
 }
