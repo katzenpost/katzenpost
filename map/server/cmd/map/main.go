@@ -1,4 +1,4 @@
-// main.go - pigeonhole katzenpost service daemon
+// main.go - map katzenpost service daemon
 // Copyright (C) 2021  Masala
 //
 // This program is free software: you can redistribute it and/or modify
@@ -25,25 +25,25 @@ import (
 	"path/filepath"
 
 	"github.com/katzenpost/katzenpost/core/log"
-	"github.com/katzenpost/katzenpost/pigeonhole/server"
+	"github.com/katzenpost/katzenpost/map/server"
 	"github.com/katzenpost/katzenpost/server/cborplugin"
 )
 
 const (
-	defaultPigeonHoleSize = 0x1 << 32 // 4B entries
-	defaultGCSize         = 0x1 << 30 // 1B entries
+	defaultMapSize = 0x1 << 32 // 4B entries
+	defaultGCSize  = 0x1 << 30 // 1B entries
 )
 
 func main() {
 	var logLevel string
 	var logDir string
 	var dbFile string
-	var pigeonHoleSize int
+	var mapSize int
 	var gcSize int
 	flag.StringVar(&dbFile, "db", "", "database file")
 	flag.StringVar(&logDir, "log_dir", "", "logging directory")
 	flag.StringVar(&logLevel, "log_level", "DEBUG", "logging level could be set to: DEBUG, INFO, NOTICE, WARNING, ERROR, CRITICAL")
-	flag.IntVar(&pigeonHoleSize, "size", defaultPigeonHoleSize, "number of entries to retain")
+	flag.IntVar(&mapSize, "size", defaultMapSize, "number of entries to retain")
 	flag.IntVar(&gcSize, "gc", defaultGCSize, "number of entries to batch garbage collect")
 	flag.Parse()
 
@@ -65,29 +65,29 @@ func main() {
 	}
 
 	// Log to a file.
-	logFile := path.Join(logDir, fmt.Sprintf("pigeonHole.%d.log", os.Getpid()))
+	logFile := path.Join(logDir, fmt.Sprintf("map.%d.log", os.Getpid()))
 	logBackend, err := log.New(logFile, logLevel, false)
 	if err != nil {
 		panic(err)
 	}
-	serverLog := logBackend.GetLogger("pigeonHole_server")
+	serverLog := logBackend.GetLogger("map_server")
 
 	// start service
-	tmpDir, err := ioutil.TempDir("", "pigeonHole_server")
+	tmpDir, err := ioutil.TempDir("", "map_server")
 	if err != nil {
 		panic(err)
 	}
-	socketFile := filepath.Join(tmpDir, fmt.Sprintf("%d.pigeonHole.socket", os.Getpid()))
+	socketFile := filepath.Join(tmpDir, fmt.Sprintf("%d.map.socket", os.Getpid()))
 
-	pigeonHoleServer, err := server.NewPigeonHole(dbFile, serverLog, gcSize, pigeonHoleSize)
+	mapServer, err := server.NewMap(dbFile, serverLog, gcSize, mapSize)
 	if err != nil {
 		panic(err)
 	}
 	cmdBuilder := new(cborplugin.RequestFactory)
-	server := cborplugin.NewServer(serverLog, socketFile, cmdBuilder, pigeonHoleServer)
+	server := cborplugin.NewServer(serverLog, socketFile, cmdBuilder, mapServer)
 	fmt.Printf("%s\n", socketFile) // are you for fucking real right now
 	server.Accept()
 	server.Wait()
-	pigeonHoleServer.Shutdown()
+	mapServer.Shutdown()
 	os.Remove(socketFile)
 }
