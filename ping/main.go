@@ -50,12 +50,16 @@ func main() {
 	var timeout int
 	var concurrency int
 	var printDiff bool
+	var startDaemon bool
+
 	flag.StringVar(&configFile, "c", "", "configuration file")
 	flag.StringVar(&service, "s", "", "service name")
 	flag.IntVar(&count, "n", 5, "count")
 	flag.IntVar(&timeout, "t", 45, "timeout")
 	flag.IntVar(&concurrency, "C", 1, "concurrency")
 	flag.BoolVar(&printDiff, "printDiff", false, "print payload contents if reply is different than original")
+	flag.BoolVar(&startDaemon, "startDaemon", false, "Start a new instance of the client2 daemon.")
+
 	version := flag.Bool("v", false, "Get version info.")
 	flag.Parse()
 
@@ -73,18 +77,20 @@ func main() {
 		panic(fmt.Errorf("failed to open config: %s", err))
 	}
 
-	// create a client and connect to the mixnet Gateway
-	d, err := client2.NewDaemon(cfg)
-	if err != nil {
-		panic(err)
-	}
-	err = d.Start()
-	if err != nil {
-		panic(err)
-	}
+	var d *client2.Daemon
+	if startDaemon {
+		d, err = client2.NewDaemon(cfg)
+		if err != nil {
+			panic(err)
+		}
+		err = d.Start()
+		if err != nil {
+			panic(err)
+		}
 
-	fmt.Println("Sleeping for 3 seconds to let the client daemon startup...")
-	time.Sleep(time.Second * 3)
+		fmt.Println("Sleeping for 3 seconds to let the client daemon startup...")
+		time.Sleep(time.Second * 3)
+	}
 
 	thin := thin.NewThinClient(cfg)
 	err = thin.Dial()
@@ -99,5 +105,7 @@ func main() {
 
 	sendPings(thin, desc, count, concurrency, printDiff)
 
-	d.Shutdown()
+	if startDaemon {
+		d.Shutdown()
+	}
 }
