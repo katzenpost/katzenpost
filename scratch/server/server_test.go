@@ -1,4 +1,4 @@
-// server_test.go - pigeonhole service using cbor plugin system
+// server_test.go - scratch service using cbor plugin system
 // Copyright (C) 2021  Masala
 //
 // This program is free software: you can redistribute it and/or modify
@@ -29,18 +29,18 @@ import (
 	"gopkg.in/op/go-logging.v1"
 )
 
-func TestCreatePigeonHole(t *testing.T) {
+func TestCreateScratch(t *testing.T) {
 
 	if runtime.GOOS == "windows" {
 		return
 	}
 
 	require := require.New(t)
-	tmpDir, err := ioutil.TempDir("", "pigeonHole_test")
+	tmpDir, err := ioutil.TempDir("", "scratch_test")
 	require.NoError(err)
-	f := filepath.Join(tmpDir, "pigeonHole.store")
-	log := logging.MustGetLogger("pigeonHole")
-	m, err := NewPigeonHole(f, log, 10, 100)
+	f := filepath.Join(tmpDir, "scratch.store")
+	log := logging.MustGetLogger("scratch")
+	m, err := NewScratch(f, log, 10, 100)
 	require.NoError(err)
 	m.Halt()
 
@@ -49,19 +49,19 @@ func TestCreatePigeonHole(t *testing.T) {
 	require.NoError(err)
 }
 
-func TestPigeonHole(t *testing.T) {
+func TestScratch(t *testing.T) {
 
 	if runtime.GOOS == "windows" {
 		return
 	}
 
-	// start a pigeonHole service
+	// start a scratch service
 	require := require.New(t)
-	tmpDir, err := ioutil.TempDir("", "pigeonHole_test")
+	tmpDir, err := ioutil.TempDir("", "scratch_test")
 	require.NoError(err)
-	f := filepath.Join(tmpDir, "pigeonHole.store")
-	log := logging.MustGetLogger("pigeonHole")
-	m, err := NewPigeonHole(f, log, 10, 100)
+	f := filepath.Join(tmpDir, "scratch.store")
+	log := logging.MustGetLogger("scratch")
+	m, err := NewScratch(f, log, 10, 100)
 	require.NoError(err)
 
 	// generate a new signing key
@@ -90,7 +90,7 @@ func TestPigeonHole(t *testing.T) {
 	m.Shutdown()
 
 	// restart the server
-	m, err = NewPigeonHole(f, log, 10, 100)
+	m, err = NewScratch(f, log, 10, 100)
 
 	// verify the data is still there
 	data, sig64, err = m.Get(&msgID)
@@ -102,24 +102,24 @@ func TestPigeonHole(t *testing.T) {
 }
 
 func TestGarbageCollect(t *testing.T) {
-	// start a pigeonHole service
+	// start a scratch service
 	require := require.New(t)
-	tmpDir, err := ioutil.TempDir("", "pigeonHole_test")
+	tmpDir, err := ioutil.TempDir("", "scratch_test")
 	require.NoError(err)
 	//defer os.RemoveAll(tmpDir)
-	f := filepath.Join(tmpDir, "pigeonHole.store")
-	log := logging.MustGetLogger("pigeonHole")
+	f := filepath.Join(tmpDir, "scratch.store")
+	log := logging.MustGetLogger("scratch")
 
 	// garbage collection parameters
 	gcsize := 10
-	pigeonHolesize := 100
+	scratchSize := 100
 
-	m, err := NewPigeonHole(f, log, gcsize, pigeonHolesize)
+	m, err := NewScratch(f, log, gcsize, scratchSize)
 	require.NoError(err)
 
-	msgIDs := make([][ed25519.PublicKeySize]byte, pigeonHolesize+1)
-	// fill pigeonHole to pigeonHoleSize + 1 to trigger GarbageCollection
-	for i := 0; i < pigeonHolesize+1; i++ {
+	msgIDs := make([][ed25519.PublicKeySize]byte, scratchSize+1)
+	// fill scratch to scratchSize + 1 to trigger GarbageCollection
+	for i := 0; i < scratchsize+1; i++ {
 
 		secretKey, pubKey, err := ed25519.NewKeypair(rand.Reader)
 		msgID := pubKey.ByteArray()

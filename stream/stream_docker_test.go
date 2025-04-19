@@ -35,7 +35,7 @@ import (
 	"github.com/katzenpost/katzenpost/client/config"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/pki"
-	mClient "github.com/katzenpost/katzenpost/pigeonhole/client"
+	mClient "github.com/katzenpost/katzenpost/scratch/client"
 	"github.com/stretchr/testify/require"
 	"net/http"
 	_ "net/http/pprof"
@@ -75,25 +75,12 @@ func TestCreateStreamPigeonhole(t *testing.T) {
 	defer session.Shutdown()
 	require.NotNil(session)
 
-	// create a pigeonhole client
+	// create a scratch client
 	c, err := mClient.NewClient(session)
 	require.NoError(err)
 
-	// create a new secret
-	addr := &StreamAddr{Secret: generate()}
-
-	// create pigeonhole transports for stream using address as seed. We do this because it's convenient
-	// but in real world use the mClient.Duplex should be initialized by exchanging public keys for a read cap
-	listenerTransport := mClient.DuplexFromSeed(c, true, []byte(addr.String()))
-	dialerTransport := mClient.DuplexFromSeed(c, false, []byte(addr.String()))
-
-	// the listener initializes first
-	s, err := Listen(listenerTransport, "", addr.String())
-	require.NoError(err)
-
-	// receiver (dialer) of stream
-	r, err := Dial(dialerTransport, "", addr.String())
-	require.NoError(err)
+	// create a pair of streams initialized from exchanged UniversalReadCaps
+	s, r := newStreams(c)
 
 	msg := []byte("Hello World")
 	t.Logf("Sending %s", string(msg))
@@ -142,17 +129,9 @@ func TestStreamFragmentation(t *testing.T) {
 
 	wg := new(sync.WaitGroup)
 	wg.Add(2)
-	// Generate StreamAddr and transports
-	addr := &StreamAddr{Secret: generate()}
-	listenerTransport := mClient.DuplexFromSeed(c, true, []byte(addr.String()))
-	dialerTransport := mClient.DuplexFromSeed(c, false, []byte(addr.String()))
 
-	// Listen and Dial the StreamAddr
-	listener, err := Listen(listenerTransport, "", addr.String())
-	require.NoError(err)
-
-	dialed, err := Dial(dialerTransport, "", addr.String())
-	require.NoError(err)
+	// create a pair of streams initialized from exchanged UniversalReadCaps
+	listener, dialed := newStreams(c)
 
 	// write data in chunks with delays by sender
 	payload := make([]byte, 10*4200)
@@ -248,12 +227,12 @@ func TestCBORSerialization(t *testing.T) {
 	defer session.Shutdown()
 	require.NotNil(session)
 
-	// our view of stream
-	// "other end" of stream
-	s, err := NewDuplex(session)
+	// get a client
+	c, err := mClient.NewClient(session)
 	require.NoError(err)
-	r, err := DialDuplex(session, "", s.RemoteAddr().String())
-	require.NoError(err)
+
+	// create a pair of streams initialized from exchanged UniversalReadCaps
+	s, r := newStreams(c)
 
 	type msg struct {
 		Payload []byte
@@ -298,12 +277,12 @@ func TestStreamSerialize(t *testing.T) {
 	defer session.Shutdown()
 	require.NotNil(session)
 
-	// Initialize a capability backed stream (Duplex) as listener
-	s, err := NewDuplex(session)
+	// get a client
+	c, err := mClient.NewClient(session)
 	require.NoError(err)
-	// "other end" of stream
-	r, err := DialDuplex(session, "", s.RemoteAddr().String())
-	require.NoError(err)
+
+	// create a pair of streams initialized from exchanged UniversalReadCaps
+	s, r := newStreams(c)
 
 	type msg struct {
 		Payload []byte
@@ -355,18 +334,11 @@ func TestStreamSerialize(t *testing.T) {
 		require.NoError(err)
 		t.Logf("Restored %s", s.LocalAddr().String())
 
-		// initialize a pigeonhole client with session
+		// initialize a scratch client with session
 		c, _ := mClient.NewClient(session)
-		addr := []byte(s.LocalAddr().String())
-		t.Logf("Restoring transport for encoder %s", s.LocalAddr().String())
-		trans := mClient.DuplexFromSeed(c, s.Initiator, addr)
-		// FIXME: Streams should support resetting sender/receivers on Geometry changes.
-		if s.PayloadSize != PayloadSize(trans) {
-			panic(ErrGeometryChanged)
-		}
 
-		// use pigeonhole transport
-		s.SetTransport(trans)
+		// use scratch transport
+		s.SetTransport(c)
 
 		// start stream again
 		t.Logf("restarting encoder stream")
@@ -384,12 +356,8 @@ func TestStreamSerialize(t *testing.T) {
 		require.NoError(err)
 		t.Logf("Restored %s", r.LocalAddr().String())
 
-		// set the receiver transport
-		addr2 := []byte(r.LocalAddr().String())
-		t.Logf("Restoring transport for decoder %s", r.LocalAddr().String())
-		trans2 := mClient.DuplexFromSeed(c, r.Initiator, addr2)
-
-		r.SetTransport(trans2)
+		r.SetTransport(c)
+		t.Logf("restarting decoder stream")
 		r.Start()
 	}
 	err = s.Close()

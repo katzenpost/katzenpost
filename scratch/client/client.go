@@ -1,4 +1,4 @@
-// client.go - pigeonhole service client
+// client.go - scratch service client
 // Copyright (C) 2021  Masala
 //
 // This program is free software: you can redistribute it and/or modify
@@ -24,12 +24,10 @@ import (
 	"sort"
 
 	"github.com/fxamacker/cbor/v2"
-	"github.com/katzenpost/hpqc/bacap"
-	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/hpqc/sign/ed25519"
 	"github.com/katzenpost/katzenpost/client"
 	"github.com/katzenpost/katzenpost/client/utils"
-	"github.com/katzenpost/katzenpost/pigeonhole/common"
+	"github.com/katzenpost/katzenpost/scratch/common"
 )
 
 var (
@@ -37,17 +35,8 @@ var (
 	hash              = sha256.New
 )
 
-// Client holds a ReadCap and WriteCap and a MessageBoxIndex for reads and writes.
 type Client struct {
 	Session *client.Session
-
-	// reader capability
-	ReadCap   *bacap.UniversalReadCap
-	ReadIndex *bacap.MessageBoxIndex
-
-	// writer capability
-	WriteIndex *bacap.MessageBoxIndex
-	WriteCap   *bacap.BoxOwnerCap
 }
 
 func NewClient(s *client.Session) (*Client, error) {
@@ -60,18 +49,18 @@ type StorageLocation interface {
 	Provider() string
 }
 
-type pigeonHoleStorage struct {
+type scratchStorage struct {
 	id             [ed25519.PublicKeySize]byte
 	name, provider string
 }
 
-func (m *pigeonHoleStorage) ID() [ed25519.PublicKeySize]byte {
+func (m *scratchStorage) ID() [ed25519.PublicKeySize]byte {
 	return m.id
 }
-func (m *pigeonHoleStorage) Name() string {
+func (m *scratchStorage) Name() string {
 	return m.name
 }
-func (m *pigeonHoleStorage) Provider() string {
+func (m *scratchStorage) Provider() string {
 	return m.provider
 }
 
@@ -95,33 +84,30 @@ func deterministicSelect(descs []utils.ServiceDescriptor, slot int) utils.Servic
 }
 
 // GetStorageProvider returns the deterministically selected storage provider given a storage secret ID
-func (c *Client) GetStorageProvider(ID *[ed25519.PublicKeySize]byte) (StorageLocation, error) {
+func (c *Client) GetStorageProvider(ID [ed25519.PublicKeySize]byte) (StorageLocation, error) {
 	// doc must be current document!
 	doc := c.Session.CurrentDocument()
 	if doc == nil {
 		return nil, errors.New("No PKI document") // XXX: find correct error
 	}
-	descs := utils.FindServices(common.PigeonHoleServiceName, doc)
+	descs := utils.FindServices(common.ScratchServiceName, doc)
 	if len(descs) == 0 {
 		return nil, errors.New("No descriptors")
 	}
 	slot := int(binary.LittleEndian.Uint64(ID[:8])) % len(descs)
 	// sort the descs and return the chosen one
 	desc := deterministicSelect(descs, slot)
-	return &pigeonHoleStorage{name: desc.Name, provider: desc.Provider, id: *ID}, nil
+	return &scratchStorage{name: desc.Name, provider: desc.Provider, id: ID}, nil
 }
 
 // Put places a value into the store
-func (c *Client) Put(ctx context.Context, ID []byte, payload []byte) error {
-	boxID, ciphertext, sig := c.WriteIndex.EncryptForContext(c.WriteCap, ID, payload)
-	b := common.PigeonHoleRequest{ID: boxID, Payload: ciphertext}
-	copy(b.Signature[:], sig)
-	serialized, err := cbor.Marshal(b)
+func (c *Client) Put(ctx context.Context, ID [ed25519.PublicKeySize]byte, signature [ed25519.SignatureSize]byte, payload []byte) error {
+	loc, err := c.GetStorageProvider(ID)
 	if err != nil {
 		return err
 	}
-
-	loc, err := c.GetStorageProvider(&boxID)
+	b := common.ScratchRequest{ID: ID, Signature: signature, Payload: payload}
+	serialized, err := cbor.Marshal(b)
 	if err != nil {
 		return err
 	}
@@ -130,7 +116,7 @@ func (c *Client) Put(ctx context.Context, ID []byte, payload []byte) error {
 	if err != nil {
 		return err
 	}
-	resp := &common.PigeonHoleResponse{}
+	resp := &common.ScratchResponse{}
 	_, err = cbor.UnmarshalFirst(r, resp)
 	if err != nil {
 		return err
@@ -149,39 +135,35 @@ func (c *Client) PayloadSize() int {
 }
 
 // Get requests ID from the chosen storage node and blocks until a response is received or is cancelled.
-func (c *Client) Get(ctx context.Context, id []byte) ([]byte, error) {
-	box := c.ReadIndex.BoxIDForContext(c.ReadCap, id)
-	keyBytes := box.ByteArray()
-	loc, err := c.GetStorageProvider(&keyBytes)
+func (c *Client) Get(ctx context.Context, ID [ed25519.PublicKeySize]byte) ([]byte, [ed25519.SignatureSize]byte, error) {
+	sig := [ed25519.SignatureSize]byte{}
+	loc, err := c.GetStorageProvider(ID)
 	if err != nil {
-		return nil, err
+		return nil, sig, err
 	}
-	b := &common.PigeonHoleRequest{ID: box.ByteArray()}
+	b := &common.ScratchRequest{ID: ID}
 	serialized, err := cbor.Marshal(b)
 	if err != nil {
-		return nil, err
+		return nil, sig, err
 	}
 
 	r, err := c.Session.BlockingSendUnreliableMessageWithContext(ctx, loc.Name(), loc.Provider(), serialized)
 	if err != nil {
-		return nil, err
+		return nil, sig, err
 	}
 	// unwrap the response and return the payload
-	resp := &common.PigeonHoleResponse{}
+	resp := &common.ScratchResponse{}
 	_, err = cbor.UnmarshalFirst(r, resp)
 	if err != nil {
-		return nil, err
+		return nil, sig, err
 	}
 	if resp.Status == common.StatusNotFound {
-		return nil, common.ErrStatusNotFound
+		return nil, sig, common.ErrStatusNotFound
 	}
-
-	// verify and decrypt the message
-	plaintext, err := c.ReadIndex.DecryptForContext(keyBytes, id, resp.Payload, resp.Signature[:])
-	return plaintext, err
+	return resp.Payload, resp.Signature, err
 }
 
 func init() {
-	b, _ := cbor.Marshal(common.PigeonHoleRequest{})
+	b, _ := cbor.Marshal(common.ScratchRequest{})
 	cborFrameOverhead = len(b)
 }

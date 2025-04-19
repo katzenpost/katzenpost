@@ -22,10 +22,10 @@ import (
 )
 
 const (
-	PigeonHoleServiceName = "pigeonhole"
+	ScratchServiceName = "scratch"
 )
 
-type PigeonHoleRequest struct {
+type ScratchRequest struct {
 	// ID of the box which is a ed25519 PublicKey
 	ID [ed25519.PublicKeySize]byte
 
@@ -36,18 +36,18 @@ type PigeonHoleRequest struct {
 	Payload []byte
 }
 
-func (m *PigeonHoleRequest) Marshal() ([]byte, error) {
+func (m *ScratchRequest) Marshal() ([]byte, error) {
 	return cbor.Marshal(m)
 }
 
-func (m *PigeonHoleRequest) Unmarshal(b []byte) error {
+func (m *ScratchRequest) Unmarshal(b []byte) error {
 	return cbor.Unmarshal(b, m)
 }
 
-type PigeonHoleStatus uint8
+type ScratchStatus uint8
 
 const (
-	StatusOK PigeonHoleStatus = iota
+	StatusOK ScratchStatus = iota
 	StatusNotFound
 	StatusFailed
 )
@@ -57,16 +57,16 @@ var (
 	ErrStatusFailed   = errors.New("StatusFailed")
 )
 
-type PigeonHoleResponse struct {
+type ScratchResponse struct {
 	Signature [ed25519.SignatureSize]byte
-	Status    PigeonHoleStatus
+	Status    ScratchStatus
 	Payload   []byte
 }
 
-func (m *PigeonHoleResponse) Marshal() ([]byte, error) {
+func (m *ScratchResponse) Marshal() ([]byte, error) {
 	return cbor.Marshal(m)
 }
 
-func (m *PigeonHoleResponse) Unmarshal(b []byte) error {
+func (m *ScratchResponse) Unmarshal(b []byte) error {
 	return cbor.Unmarshal(b, m)
 }

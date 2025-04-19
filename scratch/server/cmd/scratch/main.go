@@ -1,4 +1,4 @@
-// main.go - pigeonhole katzenpost service daemon
+// main.go - scratch katzenpost service daemon
 // Copyright (C) 2021  Masala
 //
 // This program is free software: you can redistribute it and/or modify
@@ -25,12 +25,12 @@ import (
 	"path/filepath"
 
 	"github.com/katzenpost/katzenpost/core/log"
-	"github.com/katzenpost/katzenpost/pigeonhole/server"
+	"github.com/katzenpost/katzenpost/scratch/server"
 	"github.com/katzenpost/katzenpost/server/cborplugin"
 )
 
 const (
-	defaultPigeonHoleSize = 0x1 << 32 // 4B entries
+	defaultScratchSize = 0x1 << 32 // 4B entries
 	defaultGCSize         = 0x1 << 30 // 1B entries
 )
 
@@ -38,12 +38,12 @@ func main() {
 	var logLevel string
 	var logDir string
 	var dbFile string
-	var pigeonHoleSize int
+	var scratchSize int
 	var gcSize int
 	flag.StringVar(&dbFile, "db", "", "database file")
 	flag.StringVar(&logDir, "log_dir", "", "logging directory")
 	flag.StringVar(&logLevel, "log_level", "DEBUG", "logging level could be set to: DEBUG, INFO, NOTICE, WARNING, ERROR, CRITICAL")
-	flag.IntVar(&pigeonHoleSize, "size", defaultPigeonHoleSize, "number of entries to retain")
+	flag.IntVar(&scratchSize, "size", defaultScratchSize, "number of entries to retain")
 	flag.IntVar(&gcSize, "gc", defaultGCSize, "number of entries to batch garbage collect")
 	flag.Parse()
 
@@ -65,29 +65,29 @@ func main() {
 	}
 
 	// Log to a file.
-	logFile := path.Join(logDir, fmt.Sprintf("pigeonHole.%d.log", os.Getpid()))
+	logFile := path.Join(logDir, fmt.Sprintf("scratch.%d.log", os.Getpid()))
 	logBackend, err := log.New(logFile, logLevel, false)
 	if err != nil {
 		panic(err)
 	}
-	serverLog := logBackend.GetLogger("pigeonHole_server")
+	serverLog := logBackend.GetLogger("scratch_server")
 
 	// start service
-	tmpDir, err := ioutil.TempDir("", "pigeonHole_server")
+	tmpDir, err := ioutil.TempDir("", "scratch_server")
 	if err != nil {
 		panic(err)
 	}
-	socketFile := filepath.Join(tmpDir, fmt.Sprintf("%d.pigeonHole.socket", os.Getpid()))
+	socketFile := filepath.Join(tmpDir, fmt.Sprintf("%d.scratch.socket", os.Getpid()))
 
-	pigeonHoleServer, err := server.NewPigeonHole(dbFile, serverLog, gcSize, pigeonHoleSize)
+	scratchServer, err := server.NewScratch(dbFile, serverLog, gcSize, scratchSize)
 	if err != nil {
 		panic(err)
 	}
 	cmdBuilder := new(cborplugin.RequestFactory)
-	server := cborplugin.NewServer(serverLog, socketFile, cmdBuilder, pigeonHoleServer)
+	server := cborplugin.NewServer(serverLog, socketFile, cmdBuilder, scratchServer)
 	fmt.Printf("%s\n", socketFile) // are you for fucking real right now
 	server.Accept()
 	server.Wait()
-	pigeonHoleServer.Shutdown()
+	scratchServer.Shutdown()
 	os.Remove(socketFile)
 }

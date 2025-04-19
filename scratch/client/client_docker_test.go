@@ -1,4 +1,4 @@
-// client_test.go - pigeonhole service client tests
+// client_test.go - scratch service client tests
 // Copyright (C) 2021  Masala
 //
 // This program is free software: you can redistribute it and/or modify
@@ -31,7 +31,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestCreatePigeonhole(t *testing.T) {
+func TestCreateScratch(t *testing.T) {
 	require := require.New(t)
 
 	cfg, err := config.LoadFile("testdata/client.toml")
@@ -84,7 +84,7 @@ func TestCreatePigeonhole(t *testing.T) {
 	require.Equal(payload, payload2)
 }
 
-func TestAsyncGetPigeonHole(t *testing.T) {
+func TestAsyncGetScratch(t *testing.T) {
 	require := require.New(t)
 
 	cfg, err := config.LoadFile("testdata/client.toml")
