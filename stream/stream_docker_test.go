@@ -30,6 +30,7 @@ import (
 
 	"encoding/base64"
 	"github.com/fxamacker/cbor/v2"
+	"github.com/katzenpost/hpqc/bacap"
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/katzenpost/client"
 	"github.com/katzenpost/katzenpost/client/config"
@@ -374,11 +375,17 @@ func TestCreateMulticastStream(t *testing.T) {
 	defer session.Shutdown()
 	require.NotNil(session)
 
-	// listener (initiator) of stream
-	s := NewMulticastStream(session) // could experiment with different MaxWriteBufSize values
+	ownerCap, err := bacap.NewBoxOwnerCap(rand.Reader)
+	require.NoError(err)
+
+	// get a new scratch client
+	transport, err := mClient.NewClient(session)
+	require.NoError(err)
+
+	s := NewMulticastSendStream(transport, ownerCap) // could experiment with different MaxWriteBufSize values
 	// create a buffer of data
 	buf := make([]byte, 42*1024)
-	_, err := io.ReadFull(rand.Reader, buf)
+	_, err = io.ReadFull(rand.Reader, buf)
 	require.NoError(err)
 	message := base64.StdEncoding.EncodeToString(buf)
 	// send buffer of data
@@ -391,8 +398,7 @@ func TestCreateMulticastStream(t *testing.T) {
 	require.NoError(err)
 
 	// receiver (dialer) of stream
-	r, err := DialDuplex(session, "", s.RemoteAddr().String())
-	require.NoError(err)
+	r := NewMulticastRecvStream(transport, ownerCap.UniversalReadCap())
 	buf2 := make([]byte, len(message))
 	n, err := io.ReadFull(r, buf2)
 	require.NoError(err)
