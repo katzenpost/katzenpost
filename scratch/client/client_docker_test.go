@@ -68,18 +68,18 @@ func TestCreateScratch(t *testing.T) {
 	id, sig := m.SignBox(root, nil, payload)
 	sig64 := new([ed25519.SignatureSize]byte)
 	copy(sig64[:], sig)
-	err = c.Put(nil, &id, payload, sig64)
+	err = c.Put(nil, id, *sig64, payload)
 	require.NoError(err)
 
 	// verify that writing with bad signature fails:
-	badsig := &[64]byte{}
-	err = c.Put(nil, &id, payload, badsig)
+	badsig := [64]byte{}
+	err = c.Put(nil, id, badsig, payload)
 	require.Error(err)
 
 	// verify that reading works
 	id2 := m.BoxIDForContext(readCap, nil)
 	p := id2.ByteArray()
-	payload2, _, err := c.Get(nil, &p)
+	payload2, _, err := c.Get(nil, p)
 	require.NoError(err)
 	require.Equal(payload, payload2)
 }
@@ -106,15 +106,14 @@ func TestAsyncGetScratch(t *testing.T) {
 	root, err := bacap.NewBoxOwnerCap(rand.Reader)
 	require.NoError(err)
 
-	// derive the a read capability
-	readCap := root.UniversalReadCap()
-
 	// create a new index
 	m, err := bacap.NewMessageBoxIndex(rand.Reader)
 	require.NoError(err)
 
 	payload := []byte("asynchronously respond to Get")
 	id, sig := m.SignBox(root, nil, payload)
+	sig64 := [ed25519.SignatureSize]byte{}
+	copy(sig64[:], sig)
 
 	senderErrCh := make(chan error, 0)
 	receiverResultCh := make(chan interface{}, 0)
@@ -124,7 +123,7 @@ func TestAsyncGetScratch(t *testing.T) {
 	go func() {
 		// send the Put after the Get
 		<-time.After(sendAfter)
-		senderErrCh <- c.Put(id, payload, sig)
+		senderErrCh <- c.Put(nil, id, sig64, payload)
 	}()
 
 	go func() {
