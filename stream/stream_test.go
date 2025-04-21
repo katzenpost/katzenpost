@@ -33,7 +33,7 @@ func TestSaveLoadStream(t *testing.T) {
 	sd, sl := newStreams(trans)
 
 	payload := make([]byte, 4200)
-	for i :=0 ; i < len(payload); i++ {
+	for i := 0; i < len(payload); i++ {
 		payload[i] = uint8(i)
 	}
 	//_, err := io.ReadFull(rand.Reader, payload[:])

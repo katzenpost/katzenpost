@@ -13,15 +13,15 @@ import (
 	"time"
 
 	"github.com/fxamacker/cbor/v2"
-	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/hpqc/bacap"
+	"github.com/katzenpost/hpqc/rand"
 	"github.com/stretchr/testify/require"
 )
 
 var numEntries = 10
 
 type message struct {
-	payload []byte
+	payload   []byte
 	signature [64]byte
 }
 
@@ -54,7 +54,7 @@ func (m lossyMockTransport) Put(ctx context.Context, addr [32]byte, sig [64]byte
 	if l > rate {
 		m.l.Lock()
 		defer m.l.Unlock()
-		m.data[addr] = message{signature:sig, payload:payload}
+		m.data[addr] = message{signature: sig, payload: payload}
 	}
 	return nil
 }
@@ -104,7 +104,7 @@ func NewMockTransport() Transport {
 func (m mockTransport) Put(ctx context.Context, addr [32]byte, sig [64]byte, payload []byte) error {
 	m.l.Lock()
 	defer m.l.Unlock()
-	m.data[addr] = message{signature:sig, payload:payload}
+	m.data[addr] = message{signature: sig, payload: payload}
 	return nil
 }
 

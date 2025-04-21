@@ -122,8 +122,8 @@ const (
 
 // FrameWithPriority implmeents client.Item and holds the retransmit deadline and Frame for use with a TimerQueue
 type FrameWithPriority struct {
-	FramePriority uint64 // the time in nanoseconds of when to retransmit an unacknowledged message
-	FrameID       uint64 // FrameID is used for end to end acknowldgements and retransmissions
+	FramePriority uint64   // the time in nanoseconds of when to retransmit an unacknowledged message
+	FrameID       uint64   // FrameID is used for end to end acknowldgements and retransmissions
 	ID            [32]byte // box ID to write to
 	Signature     [64]byte
 	Ciphertext    []byte
@@ -892,7 +892,7 @@ func NewStream(t Transport, writeCap *bacap.BoxOwnerCap, readCap *bacap.Universa
 func LoadStream(state []byte) (*Stream, error) {
 	st := newStream(EndToEnd)
 	st.ReadCap = &bacap.UniversalReadCap{}
-	st.WriteCap =  &bacap.BoxOwnerCap{}
+	st.WriteCap = &bacap.BoxOwnerCap{}
 
 	_, err := cbor.UnmarshalFirst(state, st)
 	if err != nil {
