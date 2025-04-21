@@ -862,11 +862,19 @@ func newStream(mode StreamMode) *Stream {
 	return s
 }
 
-// NewMulticastStream generates a new address and starts the read/write workers with Multicast mode
-func NewMulticastStream(t Transport, WriteCap *bacap.BoxOwnerCap) *Stream {
+// NewMulticastSendStream returns a Multicast Writer with no Acknowledgements
+func NewMulticastSendStream(t Transport, writeCap *bacap.BoxOwnerCap) *Stream {
 	st := newStream(Multicast)
+	st.WriteCap = writeCap
 	st.SetTransport(t)
-	st.Start()
+	return st
+}
+
+// NewMulticastRecvStream returns a Multicast Reader with no Acknowledgements
+func NewMulticastRecvStream(t Transport, readCap *bacap.UniversalReadCap) *Stream {
+	st := newStream(Multicast)
+	st.ReadCap = readCap
+	st.SetTransport(t)
 	return st
 }
 
@@ -966,8 +974,18 @@ func (s *Stream) StartWithTransport(trans Transport) {
 		s.onWrite = make(chan struct{})
 		s.onRead = make(chan struct{})
 		s.TQ.Start()
-		s.Go(s.reader)
-		s.Go(s.writer)
+
+		// In Mode Multicast, a Stream may be either a
+		if s.Mode == Multicast {
+			if s.ReadCap != nil {
+				s.Go(s.reader)
+			} else {
+				s.Go(s.writer)
+			}
+		} else {
+			s.Go(s.reader)
+			s.Go(s.writer)
+		}
 	})
 }
 
