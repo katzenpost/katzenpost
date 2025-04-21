@@ -259,26 +259,30 @@ func (m *Scratch) OnCommand(cmd cborplugin.Command) error {
 		resp := &common.ScratchResponse{}
 
 		// Verify if payload present
-		if len(req.Payload) > 0 && validateBacap(req) {
-			m.log.Debugf("Put(%x)", req.ID)
-
-			// save payload
-			err := m.Put(&req.ID, req.Payload, &req.Signature)
-			if err != nil {
-				m.log.Debugf("Put(%x): Failed", req.ID)
+		if len(req.Payload) > 0  {
+			if !validateBacap(req) {
+				m.log.Debugf("Put(%x): Failed to validate", req.ID)
 				resp.Status = common.StatusFailed
 			} else {
-				m.log.Debugf("Put(%x): OK", req.ID)
-				resp.Status = common.StatusOK
-			}
+				m.log.Debugf("Put(%x)", req.ID)
 
-			// Wake pending Get requests and respond with payload
-			err = m.Wake(&req.ID, req.Payload, &req.Signature)
-			if err != nil {
-				m.log.Errorf("Wake(%x): %v", req.ID, err)
-			}
+				// save payload
+				err := m.Put(&req.ID, req.Payload, &req.Signature)
+				if err != nil {
+					m.log.Debugf("Put(%x): Failed", req.ID)
+					resp.Status = common.StatusFailed
+				} else {
+					m.log.Debugf("Put(%x): OK", req.ID)
+					resp.Status = common.StatusOK
+				}
 
-			// Otherwise return data
+				// Wake pending Get requests and respond with payload
+				err = m.Wake(&req.ID, req.Payload, &req.Signature)
+				if err != nil {
+					m.log.Errorf("Wake(%x): %v", req.ID, err)
+				}
+			}
+		// Otherwise return data
 		} else {
 			p, sig, err := m.Get(&req.ID)
 			if err != nil {
