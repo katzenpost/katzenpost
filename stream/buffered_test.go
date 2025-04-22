@@ -73,7 +73,7 @@ func newStreams(t Transport) (*Stream, *Stream) {
 	}
 
 	r1 := w1.UniversalReadCap()
-	r2 := w1.UniversalReadCap()
+	r2 := w2.UniversalReadCap()
 
 	streamCtx := [32]byte{}
 	_, err = io.ReadFull(rand.Reader, streamCtx[:])
