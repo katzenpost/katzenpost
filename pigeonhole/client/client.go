@@ -85,7 +85,7 @@ func deterministicSelect(descs []utils.ServiceDescriptor, slot int) utils.Servic
 }
 
 // GetStorageProvider returns the deterministically selected storage provider given a storage secret ID
-func (c *Client) GetStorageProvider(ID [ed25519.PublicKeySize]byte) (StorageLocation, error) {
+func (c *Client) GetStorageProvider(ID *[ed25519.PublicKeySize]byte) (StorageLocation, error) {
 	// doc must be current document!
 	doc := c.Session.CurrentDocument()
 	if doc == nil {
@@ -98,16 +98,16 @@ func (c *Client) GetStorageProvider(ID [ed25519.PublicKeySize]byte) (StorageLoca
 	slot := int(binary.LittleEndian.Uint64(ID[:8])) % len(descs)
 	// sort the descs and return the chosen one
 	desc := deterministicSelect(descs, slot)
-	return &pigeonHoleStorage{name: desc.Name, provider: desc.Provider, id: ID}, nil
+	return &pigeonHoleStorage{name: desc.Name, provider: desc.Provider, id: *ID}, nil
 }
 
 // Put places a value into the store
-func (c *Client) Put(ctx context.Context, ID [ed25519.PublicKeySize]byte, signature [ed25519.SignatureSize]byte, payload []byte) error {
+func (c *Client) Put(ctx context.Context, ID []byte, payload []byte) error {
 	loc, err := c.GetStorageProvider(ID)
 	if err != nil {
 		return err
 	}
-	b := common.PigeonHoleRequest{ID: ID, Signature: signature, Payload: payload}
+	b := common.PigeonHoleRequest{ID: *ID, Signature: *signature, Payload: payload}
 	serialized, err := cbor.Marshal(b)
 	if err != nil {
 		return err
@@ -136,40 +136,35 @@ func (c *Client) PayloadSize() int {
 }
 
 // Get requests ID from the chosen storage node and blocks until a response is received or is cancelled.
-func (c *Client) Get(ctx context.Context, ID [ed25519.PublicKeySize]byte) ([]byte, [ed25519.SignatureSize]byte, error) {
-	sig := [ed25519.SignatureSize]byte{}
+func (c *Client) Get(ctx context.Context, id []byte) ([]byte, error) {
+	box := c.ReadIndex.BoxIDForContext(c.ReadCap, id)
 	loc, err := c.GetStorageProvider(ID)
 	if err != nil {
-		return nil, sig, err
+		return nil, nil, err
 	}
-	b := &common.PigeonHoleRequest{ID: ID}
+	b := &common.PigeonHoleRequest{ID: *box}
 	serialized, err := cbor.Marshal(b)
 	if err != nil {
-		return nil, sig, err
+		return nil, nil, err
 	}
 
 	r, err := c.Session.BlockingSendUnreliableMessageWithContext(ctx, loc.Name(), loc.Provider(), serialized)
 	if err != nil {
-		return nil, sig, err
+		return nil, nil, err
 	}
 	// unwrap the response and return the payload
 	resp := &common.PigeonHoleResponse{}
 	_, err = cbor.UnmarshalFirst(r, resp)
 	if err != nil {
-		return nil, sig, err
+		return nil, nil, err
 	}
 	if resp.Status == common.StatusNotFound {
-		return nil, sig, common.ErrStatusNotFound
+		return nil, nil, common.ErrStatusNotFound
 	}
 
-	// verify that the response payload is signed by the ID requested
-	ok, err := bacap.VerifyBox(ID, resp.Payload, resp.Signature)
-	if !ok {
-		if err == nil {
-			panic("expected error")
-		}
-	}
-	return resp.Payload, resp.Signature, err
+	// verify and decrypt the message
+	plaintext, err := c.ReadIndex.DecryptForContext(*box, id, resp.Payload, resp.Signature[:])
+	return plaintext, err
 }
 
 func init() {
