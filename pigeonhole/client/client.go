@@ -36,8 +36,17 @@ var (
 	hash              = sha256.New
 )
 
+// Client holds a ReadCap and WriteCap and a MessageBox
 type Client struct {
 	Session *client.Session
+
+	// reader capability
+	ReadCap *bacap.UniversalReadCap
+	ReadIndex *bacap.MessageBoxIndex
+
+	// writer capability
+	WriteIndex *bacap.MessageBoxIndex
+	WriteCap *bacap.BoxOwnerCap
 }
 
 func NewClient(s *client.Session) (*Client, error) {
