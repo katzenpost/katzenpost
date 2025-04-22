@@ -49,35 +49,35 @@ type PigeonHole struct {
 	pigeonHoleSize int // number of entries to keep
 	gcSize         int // number of entries to place in each garbage bucket
 
-	waiting map[common.MessageID][]*cborplugin.Response
+	waiting map[[ed25519.PublicKeySize]byte][]*cborplugin.Response
 	write   func(cborplugin.Command)
 }
 
 // Wait adds pending cborplugin.Responses (with SURBs) by MessageID to a waiting map
-func (m *PigeonHole) Wait(msgID common.MessageID, response *cborplugin.Response) {
+func (m *PigeonHole) Wait(msgID *[ed25519.PublicKeySize]byte, response *cborplugin.Response) {
 	m.l.Lock()
 	defer m.l.Unlock()
-	_, ok := m.waiting[msgID]
+	_, ok := m.waiting[*msgID]
 	if !ok {
-		m.waiting[msgID] = []*cborplugin.Response{response}
+		m.waiting[*msgID] = []*cborplugin.Response{response}
 	} else {
-		m.waiting[msgID] = append(m.waiting[msgID], response)
+		m.waiting[*msgID] = append(m.waiting[*msgID], response)
 	}
 }
 
 // Wake returns the pending responses from the waiting map and removes the entries
-func (m *PigeonHole) Wake(msgID common.MessageID, payload []byte, signature [ed25519.SignatureSize]byte) error {
+func (m *PigeonHole) Wake(msgID *[ed25519.PublicKeySize]byte, payload []byte, signature *[ed25519.SignatureSize]byte) error {
 	m.l.Lock()
 	defer m.l.Unlock()
-	waiting, ok := m.waiting[msgID]
+	waiting, ok := m.waiting[*msgID]
 	if !ok {
 		return nil // nothing waiting is not an error
 	}
-	delete(m.waiting, msgID)
+	delete(m.waiting, *msgID)
 	m.log.Debugf("Woke %d: %x", len(waiting), msgID)
 
 	// prepare the response payload for pending requests
-	pigeonHoleResponse := &common.PigeonHoleResponse{Status: common.StatusOK, Payload: payload, Signature: signature}
+	pigeonHoleResponse := &common.PigeonHoleResponse{Status: common.StatusOK, Payload: payload, Signature: *signature}
 	rawResp, err := pigeonHoleResponse.Marshal()
 	if err != nil {
 		m.log.Errorf("Wake(%x): %v", msgID, err)
@@ -97,8 +97,8 @@ func (m *PigeonHole) Wake(msgID common.MessageID, payload []byte, signature [ed2
 }
 
 // Get retrieves an item from the db
-func (m *PigeonHole) Get(msgID common.MessageID) ([]byte, [ed25519.SignatureSize]byte, error) {
-	var sig [ed25519.SignatureSize]byte
+func (m *PigeonHole) Get(msgID *[ed25519.PublicKeySize]byte) ([]byte, *[ed25519.SignatureSize]byte, error) {
+	sig := new([ed25519.SignatureSize]byte)
 	var resp []byte
 	err := m.db.View(func(tx *bolt.Tx) error {
 		pigeonHoleBkt := tx.Bucket([]byte(pigeonHoleBucket))
@@ -112,14 +112,14 @@ func (m *PigeonHole) Get(msgID common.MessageID) ([]byte, [ed25519.SignatureSize
 		}
 		resp = make([]byte, len(p[ed25519.SignatureSize:]))
 		copy(resp, p[ed25519.SignatureSize:])
-		copy(sig[:], p[:ed255519.SignatureSize])
+		copy(sig[:], p[:ed25519.SignatureSize])
 		return nil
 	})
 	return resp, sig, err
 }
 
 // Put places an item in the db
-func (m *PigeonHole) Put(msgID common.MessageID, payload []byte, sig [ed25519.Signaturesize]byte) error {
+func (m *PigeonHole) Put(msgID *[ed25519.PublicKeySize]byte, payload []byte, sig *[ed25519.SignatureSize]byte) error {
 	err := m.db.Update(func(tx *bolt.Tx) error {
 		bkt := tx.Bucket([]byte(pigeonHoleBucket))
 		p := bkt.Get(msgID[:])
@@ -218,7 +218,7 @@ func NewPigeonHole(fileStore string, log *logging.Logger, gcSize int, pigeonHole
 		log:            log,
 		pigeonHoleSize: pigeonHoleSize,
 		gcSize:         gcSize,
-		waiting:        make(map[common.MessageID][]*cborplugin.Response),
+		waiting:        make(map[[ed25519.PublicKeySize]byte][]*cborplugin.Response),
 	}
 	db, err := bolt.Open(fileStore, 0600, nil)
 	if err != nil {
@@ -263,7 +263,7 @@ func (m *PigeonHole) OnCommand(cmd cborplugin.Command) error {
 			m.log.Debugf("Put(%x)", req.ID)
 
 			// save payload
-			err := m.Put(req.ID, req.Payload, req.Signature)
+			err := m.Put(&req.ID, req.Payload, &req.Signature)
 			if err != nil {
 				m.log.Debugf("Put(%x): Failed", req.ID)
 				resp.Status = common.StatusFailed
@@ -273,18 +273,18 @@ func (m *PigeonHole) OnCommand(cmd cborplugin.Command) error {
 			}
 
 			// Wake pending Get requests and respond with payload
-			err = m.Wake(req.ID, req.Payload, req.Signature)
+			err = m.Wake(&req.ID, req.Payload, &req.Signature)
 			if err != nil {
 				m.log.Errorf("Wake(%x): %v", req.ID, err)
 			}
 
 			// Otherwise return data
 		} else {
-			p, sig, err := m.Get(req.ID)
+			p, sig, err := m.Get(&req.ID)
 			if err != nil {
 				m.log.Debugf("m.Get(%x): %v", req.ID, err)
 				// wait for future data
-				m.Wait(req.ID, &cborplugin.Response{ID: r.ID, SURB: r.SURB})
+				m.Wait(&req.ID, &cborplugin.Response{ID: r.ID, SURB: r.SURB})
 				// do not use SURB, return nil
 				return nil
 			} else {
@@ -292,7 +292,7 @@ func (m *PigeonHole) OnCommand(cmd cborplugin.Command) error {
 				m.log.Debugf("Get(%x): OK", req.ID)
 				resp.Status = common.StatusOK
 				resp.Payload = p
-				resp.Signature = sig
+				resp.Signature = *sig
 			}
 		}
 

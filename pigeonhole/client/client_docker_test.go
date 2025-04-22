@@ -20,15 +20,14 @@ package client
 
 import (
 	"context"
-	"io"
 	"testing"
 	"time"
 
+	"github.com/katzenpost/hpqc/bacap"
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/hpqc/sign/ed25519"
 	"github.com/katzenpost/katzenpost/client"
 	"github.com/katzenpost/katzenpost/client/config"
-	"github.com/katzenpost/katzenpost/pigeonhole/common"
 	"github.com/stretchr/testify/require"
 )
 
@@ -52,92 +51,37 @@ func TestCreatePigeonhole(t *testing.T) {
 
 	// test creating and retrieving an item
 
-	// create a capability key
-	pk, _, err := ed25519.NewKeypair(rand.Reader)
-	require.NoError(err)
-	rwCap := common.NewRWCap(pk)
-
-	// get the id and writeKey for an addrress
-	addr := make([]byte, 32)
-	_, err = io.ReadFull(rand.Reader, addr)
-	require.NoError(err)
-	id := rwCap.Addr(addr)
-	wKey := rwCap.WriteKey(addr)
-
-	// make sure that the verifier of id matches the publickey of writekey
-	require.Equal(wKey.PublicKey().Bytes(), id.WriteVerifier().Bytes())
-
-	// get the readKey for the address
-	rKey := rwCap.ReadKey(addr)
-
-	// make sure the verifier of id matches the publicKey of readKey
-	require.Equal(rKey.PublicKey().Bytes(), id.ReadVerifier().Bytes())
-	payload := []byte("hello world")
-
-	// verify that writing with WriteKey() works
-	err = c.Put(id, wKey.Sign(payload), payload)
+	// create a new owner capability
+	root, err := bacap.NewBoxOwnerCap(rand.Reader)
 	require.NoError(err)
 
-	// verify that writing with wrong key fails:
-	badpayload := []byte("write fails")
-	err = c.Put(id, rKey.Sign(badpayload), badpayload)
+	// derive the a read capability
+	readCap := root.UniversalReadCap()
+
+	// create a new index
+	m, err := bacap.NewMessageBoxIndex(rand.Reader)
+	require.NoError(err)
+
+	payload := []byte("ciphertext goes here")
+
+	// verify that signing and uploading works
+	id, sig := m.SignBox(root, nil, payload)
+	sig64 := new([ed25519.SignatureSize]byte)
+	copy(sig64[:], sig)
+	err = c.Put(nil, &id, payload, sig64)
+	require.NoError(err)
+
+	// verify that writing with bad signature fails:
+	badsig := &[64]byte{}
+	err = c.Put(nil, &id, payload, badsig)
 	require.Error(err)
 
-	// verify that Reading with the ROKey interface works
-	roKey := rwCap.ReadOnly().ReadKey(addr)
-	payload2, err := c.Get(id, roKey.Sign(id.Bytes()))
+	// verify that reading works
+	id2 := m.BoxIDForContext(readCap, nil)
+	p := id2.ByteArray()
+	payload2, _, err := c.Get(nil, &p)
 	require.NoError(err)
 	require.Equal(payload, payload2)
-
-	payload2 = []byte("goodbye world")
-	// verify that Writing with the WOKey works
-	woKey := rwCap.WriteOnly().WriteKey(addr)
-	id = rwCap.WriteOnly().Addr(addr)
-	err = c.Put(id, woKey.Sign(payload2), payload2)
-	require.NoError(err)
-	// XXX: Put is not using a blocking method here, so we're racing Get
-	<-time.After(10 * time.Second)
-	resp, err := c.Get(id, roKey.Sign(id.Bytes()))
-	require.NoError(err)
-	require.Equal(payload2, resp)
-}
-
-func TestCreateDuplex(t *testing.T) {
-	require := require.New(t)
-	cfg, err := config.LoadFile("testdata/client.toml")
-	require.NoError(err)
-
-	kClient, err := client.New(cfg)
-	require.NoError(err)
-
-	ctx := context.Background()
-	session, err := kClient.NewTOFUSession(ctx)
-	require.NoError(err)
-	session.WaitForDocument(ctx)
-
-	pigeonholeClient, err := NewClient(session)
-	require.NoError(err)
-	require.NotNil(pigeonholeClient)
-
-	a := DuplexFromSeed(pigeonholeClient, true, []byte("secret"))
-	b := DuplexFromSeed(pigeonholeClient, false, []byte("secret"))
-
-	ahello := []byte("hello from a")
-	bhello := []byte("hello from b")
-	addr := []byte("address")
-	err = a.Put(addr, ahello)
-	require.NoError(err)
-
-	err = b.Put(addr, bhello)
-	require.NoError(err)
-
-	resp, err := b.Get(addr)
-	require.NoError(err)
-	require.Equal(resp, ahello)
-
-	resp, err = a.Get(addr)
-	require.NoError(err)
-	require.Equal(resp, bhello)
 }
 
 func TestAsyncGetPigeonHole(t *testing.T) {
@@ -158,21 +102,21 @@ func TestAsyncGetPigeonHole(t *testing.T) {
 	require.NoError(err)
 	require.NotNil(c)
 
-	// test retrieving and putting an item
-
-	// create a capability key
-	pk, _, err := ed25519.NewKeypair(rand.Reader)
+	// create a new owner capability
+	root, err := bacap.NewBoxOwnerCap(rand.Reader)
 	require.NoError(err)
-	rwCap := common.NewRWCap(pk)
 
-	// get the id and writeKey for an addrress
-	addr := make([]byte, 32)
+	// derive the a read capability
+	readCap := root.UniversalReadCap()
+
+	// create a new index
+	m, err := bacap.NewMessageBoxIndex(rand.Reader)
+	require.NoError(err)
+
+
 	payload := []byte("asynchronously respond to Get")
-	_, err = io.ReadFull(rand.Reader, addr)
-	require.NoError(err)
-	id := rwCap.Addr(addr)
-	wKey := rwCap.WriteKey(addr)
-	rKey := rwCap.ReadKey(addr)
+	id, sig := m.SignBox(root, nil, payload)
+
 	senderErrCh := make(chan error, 0)
 	receiverResultCh := make(chan interface{}, 0)
 
@@ -181,13 +125,13 @@ func TestAsyncGetPigeonHole(t *testing.T) {
 	go func() {
 		// send the Put after the Get
 		<-time.After(sendAfter)
-		senderErrCh <- c.Put(id, wKey.Sign(payload), payload)
+		senderErrCh <- c.Put(id, payload, sig)
 	}()
 
 	go func() {
 		t.Logf("Sending Get(), timeout in %d", timeout)
 		ctx, cancelFn := context.WithTimeout(context.Background(), timeout)
-		resp, err := c.Get(ctx, id, rKey.Sign(id.Bytes()))
+		resp, _, err := c.Get(ctx, id)
 		if err != nil {
 			receiverResultCh <- err
 		} else {
