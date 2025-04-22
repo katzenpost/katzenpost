@@ -25,7 +25,6 @@ import (
 
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/hpqc/sign/ed25519"
-	"github.com/katzenpost/katzenpost/pigeonhole/common"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/op/go-logging.v1"
 )
@@ -65,17 +64,24 @@ func TestPigeonHole(t *testing.T) {
 	m, err := NewPigeonHole(f, log, 10, 100)
 	require.NoError(err)
 
-	// put data in a key
-	var msgID common.MessageID
-	_, err = rand.Reader.Read(msgID[:])
+	// generate a new signing key
+	secretKey, pubKey, err := ed25519.NewKeypair(rand.Reader)
 	require.NoError(err)
-	payload := []byte("hola")
 
-	err = m.Put(msgID, payload)
+	// create and sign a payload
+	payload := []byte("hola")
+	sig := secretKey.SignMessage(payload)
+	sig64 := new([ed25519.SignatureSize]byte)
+	copy(sig64[:], sig)
+
+	msgID := pubKey.ByteArray()
+
+	// send the payload
+	err = m.Put(&msgID, payload, sig64)
 	require.NoError(err)
 
 	// read data from key
-	data, err := m.Get(msgID)
+	data, sig64, err := m.Get(&msgID)
 	require.NoError(err)
 
 	// verify the key was retrieved
@@ -87,7 +93,7 @@ func TestPigeonHole(t *testing.T) {
 	m, err = NewPigeonHole(f, log, 10, 100)
 
 	// verify the data is still there
-	data, err = m.Get(msgID)
+	data, sig64, err = m.Get(&msgID)
 	require.Equal(data, payload)
 
 	// clean up
@@ -111,14 +117,17 @@ func TestGarbageCollect(t *testing.T) {
 	m, err := NewPigeonHole(f, log, gcsize, pigeonHolesize)
 	require.NoError(err)
 
-	msgIDs := make([]common.MessageID, pigeonHolesize+1)
+	msgIDs := make([][ed25519.PublicKeySize]byte, pigeonHolesize+1)
 	// fill pigeonHole to pigeonHoleSize + 1 to trigger GarbageCollection
 	for i := 0; i < pigeonHolesize+1; i++ {
-		var msgID common.MessageID
-		_, err = rand.Reader.Read(msgID[:])
-		require.NoError(err)
+
+		secretKey, pubKey, err := ed25519.NewKeypair(rand.Reader)
+		msgID := pubKey.ByteArray()
 		payload := []byte("hola")
-		err = m.Put(msgID, payload)
+		sig := secretKey.SignMessage(payload)
+		sig64 := new([ed25519.SignatureSize]byte)
+		copy(sig64[:], sig)
+		err = m.Put(&msgID, payload, sig64)
 		require.NoError(err)
 
 		// keep ordered list of msgID
@@ -127,7 +136,7 @@ func TestGarbageCollect(t *testing.T) {
 
 	// verify that the keys are available
 	for i := 0; i < gcsize; i++ {
-		d, err := m.Get(msgIDs[i])
+		d, _, err := m.Get(&msgIDs[i])
 		require.NoError(err)
 		require.Equal(d, []byte("hola"))
 	}
@@ -136,13 +145,13 @@ func TestGarbageCollect(t *testing.T) {
 
 	// verify that the keys are gone
 	for i := 0; i < gcsize; i++ {
-		_, err := m.Get(msgIDs[i])
+		_, _, err := m.Get(&msgIDs[i])
 		require.Error(err)
 	}
 
 	// verify that the next gcsize keys are still there
 	for i := gcsize; i < 2*gcsize; i++ {
-		d, err := m.Get(msgIDs[i])
+		d, _, err := m.Get(&msgIDs[i])
 		require.NoError(err)
 		require.Equal(d, []byte("hola"))
 	}
@@ -152,71 +161,4 @@ func TestGarbageCollect(t *testing.T) {
 	// clean up
 	err = os.RemoveAll(tmpDir)
 	require.NoError(err)
-}
-
-func TestValidateRWCap(t *testing.T) {
-	require := require.New(t)
-	sk, _, err := ed25519.NewKeypair(rand.Reader)
-	require.NoError(err)
-
-	cap_rw := common.NewRWCap(sk)
-	addr := []byte("address we want to read")
-	payload := []byte("here are some bytes to write")
-
-	mID := cap_rw.Addr(addr)
-	wKey := cap_rw.WriteKey(addr)
-	rKey := cap_rw.ReadKey(addr)
-	wSignature := wKey.Sign(payload)
-	rSignature := rKey.Sign(mID.Bytes())
-	// test verification of write
-	require.True(validateCap(&common.PigeonHoleRequest{ID: mID, Signature: wSignature, Payload: payload}))
-	// test failure of write
-	require.False(validateCap(&common.PigeonHoleRequest{ID: mID, Signature: wSignature, Payload: payload[:len(payload)-2]}))
-
-	// test verification of read
-	require.True(validateCap(&common.PigeonHoleRequest{ID: mID, Signature: rSignature, Payload: []byte{}}))
-
-	// test failure of read
-	require.False(validateCap(&common.PigeonHoleRequest{ID: mID, Signature: rSignature, Payload: payload[:len(payload)-1]}))
-}
-
-func TestValidateROCap(t *testing.T) {
-	require := require.New(t)
-	sk, _, err := ed25519.NewKeypair(rand.Reader)
-	require.NoError(err)
-
-	cap_rw := common.NewRWCap(sk)
-	cap_ro := cap_rw.ReadOnly()
-	addr := []byte("address we want to read")
-
-	mID := cap_ro.Addr(addr)
-	rKey := cap_ro.ReadKey(addr)
-	rSignature := rKey.Sign(mID.Bytes())
-
-	// test verification of read
-	require.True(validateCap(&common.PigeonHoleRequest{ID: mID, Signature: rSignature, Payload: []byte{}}))
-
-	// test failure of read
-	require.False(validateCap(&common.PigeonHoleRequest{ID: mID, Signature: rSignature[:len(rSignature)-1], Payload: []byte{}}))
-}
-
-func TestValidateWOCap(t *testing.T) {
-	require := require.New(t)
-	sk, _, err := ed25519.NewKeypair(rand.Reader)
-	require.NoError(err)
-
-	cap_rw := common.NewRWCap(sk)
-	cap_wo := cap_rw.WriteOnly()
-	addr := []byte("address we want to read")
-	payload := []byte("here are some bytes to write")
-
-	mID := cap_wo.Addr(addr)
-	wKey := cap_wo.WriteKey(addr)
-	wSignature := wKey.Sign(payload)
-
-	// test verification of write
-	require.True(validateCap(&common.PigeonHoleRequest{ID: mID, Signature: wSignature, Payload: payload}))
-
-	// test failure of write
-	require.False(validateCap(&common.PigeonHoleRequest{ID: mID, Signature: wSignature, Payload: payload[:len(payload)-1]}))
 }
