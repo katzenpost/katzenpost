@@ -58,10 +58,6 @@ jobs:
         shell: msys2 {0}
         run: cd authority && GORACE=history_size=7 go test -coverprofile=coverage.out -race -v -failfast -timeout 30m ./...
 
-      - name: Run catshadow unit tests
-        shell: msys2 {0}
-        run: cd catshadow && GORACE=history_size=7 go test -coverprofile=coverage.out -race -v -failfast -timeout 30m ./...
-
       - name: Run client unit tests
         shell: msys2 {0}
         run: cd client && GORACE=history_size=7 go test -coverprofile=coverage.out -race -v -failfast -timeout 30m ./...

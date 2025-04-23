@@ -24,9 +24,6 @@ jobs:
       - name: Run authority unit tests
         run: cd authority && GORACE=history_size=7 go test -coverprofile=coverage.out -race -v -failfast -timeout 30m ./...
 
-      - name: Run catshadow unit tests
-        run: cd catshadow && GORACE=history_size=7 go test -coverprofile=coverage.out -race -v -failfast -timeout 30m ./...
-
       - name: Run client unit tests
         run: cd client && GORACE=history_size=7 go test -coverprofile=coverage.out -race -v -failfast -timeout 30m ./...
 
