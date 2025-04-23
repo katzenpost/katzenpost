@@ -49,7 +49,6 @@ type katzenpost struct {
 	logLevel  string
 	logWriter io.Writer
 
-	ratchetNIKEScheme  string
 	wireKEMScheme      string
 	pkiSignatureScheme sign.Scheme
 	sphinxGeometry     *geo.Geometry
@@ -65,7 +64,6 @@ type katzenpost struct {
 	clientIdx      int
 	gatewayIdx     int
 	serviceNodeIdx int
-	hasPanda       bool
 	hasProxy       bool
 	noMixDecoy     bool
 	debugConfig    *cConfig.Debug
@@ -188,7 +186,6 @@ func (s *katzenpost) genClientCfg() error {
 	os.Mkdir(filepath.Join(s.outDir, "client"), 0700)
 	cfg := new(cConfig.Config)
 
-	cfg.RatchetNIKEScheme = s.ratchetNIKEScheme
 	cfg.WireKEMScheme = s.wireKEMScheme
 	cfg.PKISignatureScheme = s.pkiSignatureScheme.Name()
 	cfg.SphinxGeometry = s.sphinxGeometry
@@ -306,65 +303,38 @@ func (s *katzenpost) genNodeConfig(isGateway, isServiceNode bool, isVoting bool)
 
 		// configure an entry provider or a spool storage provider
 		cfg.ServiceNode = &sConfig.ServiceNode{}
-		spoolCfg := &sConfig.CBORPluginKaetzchen{
-			Capability:     "spool",
-			Endpoint:       "+spool",
-			Command:        s.baseDir + "/memspool" + s.binSuffix,
+
+		mapCfg := &sConfig.CBORPluginKaetzchen{
+			Capability:     "map",
+			Endpoint:       "+map",
+			Command:        s.baseDir + "/map" + s.binSuffix,
 			MaxConcurrency: 1,
 			Config: map[string]interface{}{
-				"data_store": s.baseDir + "/" + cfg.Server.Identifier + "/memspool.storage",
-				"log_dir":    s.baseDir + "/" + cfg.Server.Identifier,
+				"db":      s.baseDir + "/" + cfg.Server.Identifier + "/map.storage",
+				"log_dir": s.baseDir + "/" + cfg.Server.Identifier,
 			},
 		}
-		cfg.ServiceNode.CBORPluginKaetzchen = []*sConfig.CBORPluginKaetzchen{spoolCfg}
-		if !s.hasPanda {
-			mapCfg := &sConfig.CBORPluginKaetzchen{
-				Capability:     "map",
-				Endpoint:       "+map",
-				Command:        s.baseDir + "/map" + s.binSuffix,
+
+		cfg.ServiceNode.CBORPluginKaetzchen = []*sConfig.CBORPluginKaetzchen{mapCfg}
+
+		// Add a single instance of a http proxy for a service listening on port 4242
+		if !s.hasProxy {
+			proxyCfg := &sConfig.CBORPluginKaetzchen{
+				Capability:     "http",
+				Endpoint:       "+http",
+				Command:        s.baseDir + "/proxy_server" + s.binSuffix,
 				MaxConcurrency: 1,
 				Config: map[string]interface{}{
-					"db":      s.baseDir + "/" + cfg.Server.Identifier + "/map.storage",
-					"log_dir": s.baseDir + "/" + cfg.Server.Identifier,
+					// allow connections to localhost:4242
+					"host":      "localhost:4242",
+					"log_dir":   s.baseDir + "/" + cfg.Server.Identifier,
+					"log_level": "DEBUG",
 				},
 			}
-
-			cfg.ServiceNode.CBORPluginKaetzchen = []*sConfig.CBORPluginKaetzchen{spoolCfg, mapCfg}
-			if !s.hasPanda {
-				pandaCfg := &sConfig.CBORPluginKaetzchen{
-					Capability:     "panda",
-					Endpoint:       "+panda",
-					Command:        s.baseDir + "/panda_server" + s.binSuffix,
-					MaxConcurrency: 1,
-					Config: map[string]interface{}{
-						"fileStore": s.baseDir + "/" + cfg.Server.Identifier + "/panda.storage",
-						"log_dir":   s.baseDir + "/" + cfg.Server.Identifier,
-						"log_level": s.logLevel,
-					},
-				}
-				cfg.ServiceNode.CBORPluginKaetzchen = append(cfg.ServiceNode.CBORPluginKaetzchen, pandaCfg)
-				s.hasPanda = true
-			}
-
-			// Add a single instance of a http proxy for a service listening on port 4242
-			if !s.hasProxy {
-				proxyCfg := &sConfig.CBORPluginKaetzchen{
-					Capability:     "http",
-					Endpoint:       "+http",
-					Command:        s.baseDir + "/proxy_server" + s.binSuffix,
-					MaxConcurrency: 1,
-					Config: map[string]interface{}{
-						// allow connections to localhost:4242
-						"host":      "localhost:4242",
-						"log_dir":   s.baseDir + "/" + cfg.Server.Identifier,
-						"log_level": "DEBUG",
-					},
-				}
-				cfg.ServiceNode.CBORPluginKaetzchen = append(cfg.ServiceNode.CBORPluginKaetzchen, proxyCfg)
-				s.hasProxy = true
-			}
-			cfg.Debug.NumKaetzchenWorkers = 4
+			cfg.ServiceNode.CBORPluginKaetzchen = append(cfg.ServiceNode.CBORPluginKaetzchen, proxyCfg)
+			s.hasProxy = true
 		}
+		cfg.Debug.NumKaetzchenWorkers = 4
 
 		echoCfg := new(sConfig.Kaetzchen)
 		echoCfg.Capability = "echo"
@@ -489,7 +459,6 @@ func main() {
 	wirekem := flag.String("wirekem", "", "Name of the KEM Scheme to be used with wire protocol")
 	kem := flag.String("kem", "", "Name of the KEM Scheme to be used with Sphinx")
 	nike := flag.String("nike", "x25519", "Name of the NIKE Scheme to be used with Sphinx")
-	ratchetNike := flag.String("ratchetNike", "CTIDH512-X25519", "Name of the NIKE Scheme to be used with the doubleratchet")
 	UserForwardPayloadLength := flag.Int("UserForwardPayloadLength", 2000, "UserForwardPayloadLength")
 	pkiSignatureScheme := flag.String("pkiScheme", "ed25519", "PKI Signature Scheme to be used")
 	noDecoy := flag.Bool("noDecoy", true, "Disable decoy traffic for the client")
@@ -524,10 +493,6 @@ func main() {
 		log.Fatal("nike and kem flags cannot both be set")
 	}
 
-	if *ratchetNike == "" {
-		log.Fatal("ratchetNike must be set")
-	}
-
 	parameters := &vConfig.Parameters{
 		SendRatePerMinute: *sr,
 		Mu:                *mu,
@@ -544,8 +509,6 @@ func main() {
 	}
 
 	s := &katzenpost{}
-
-	s.ratchetNIKEScheme = *ratchetNike
 
 	s.wireKEMScheme = *wirekem
 	if kemschemes.ByName(*wirekem) == nil {
