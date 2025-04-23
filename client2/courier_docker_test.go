@@ -10,6 +10,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/katzenpost/hpqc/hash"
+
 	"github.com/katzenpost/katzenpost/client2/config"
 	"github.com/katzenpost/katzenpost/client2/thin"
 )
@@ -35,4 +37,12 @@ func testDockerCourierService(t *testing.T) {
 
 	require.NotNil(t, descs)
 	require.True(t, len(descs) > 0)
+
+	target := descs[0]
+
+	message1 := []byte("hello alice, this is bob.")
+	nodeIdKey := hash.Sum256(target.MixDescriptor.IdentityKey)
+
+	reply := sendAndWait(t, thin, message1, &nodeIdKey, target.RecipientQueueID)
+	require.NotNil(t, reply)
 }
