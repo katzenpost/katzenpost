@@ -255,7 +255,6 @@ rootshell: $(distro)_base.stamp
 
 test: wait
 	cd ../client    && make $(make_args) testargs=$(testargs) dockerdockertest
-	cd ../catshadow && make $(make_args) testargs=$(testargs) dockerdockertest
 	cd ../memspool  && make $(make_args) testargs=$(testargs) dockerdockertest
 
 check-go-version:
