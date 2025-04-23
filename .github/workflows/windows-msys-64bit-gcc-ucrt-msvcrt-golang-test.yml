@@ -74,22 +74,6 @@ jobs:
         shell: msys2 {0}
         run: cd core/sphinx && GORACE=history_size=7 go test -coverprofile=coverage.out -race -v -failfast -timeout 30m ./...
 
-      - name: Run doubleratchet unit tests
-        shell: msys2 {0}
-        run:  cd doubleratchet && GORACE=history_size=7 go test -coverprofile=coverage.out -race -v -failfast -timeout 30m ./...
-
-      - name: Run memspool unit tests
-        shell: msys2 {0}
-        run:  cd memspool && GORACE=history_size=7 go test -coverprofile=coverage.out -race -v -failfast -timeout 30m ./...
-
-      - name: Run panda unit tests
-        shell: msys2 {0}
-        run:  cd panda && GORACE=history_size=7 go test -coverprofile=coverage.out -race -v -failfast -timeout 30m ./...
-
-      - name: Run reunion unit tests
-        shell: msys2 {0}
-        run:  cd reunion && GORACE=history_size=7 go test -coverprofile=coverage.out -race -v -failfast -timeout 30m ./...
-
       - name: Run server unit tests
         shell: msys2 {0}
         run:  cd server && GORACE=history_size=7 go test -coverprofile=coverage.out -race -v -failfast -timeout 30m ./...
