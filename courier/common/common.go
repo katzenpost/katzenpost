@@ -7,14 +7,14 @@ import (
 	cbor "github.com/fxamacker/cbor/v2"
 )
 
-type CourierMessage struct {
+type CourierEnvelope struct {
 	SenderEPubKey [2][]byte
 	Replicas      [2]uint8
 	DEK           [2]*[32]byte
 	Ciphertext    []byte
 }
 
-func (c *CourierMessage) Marshal() []byte {
+func (c *CourierEnvelope) Marshal() []byte {
 	blob, err := cbor.Marshal(c)
 	if err != nil {
 		panic(err)
@@ -22,8 +22,8 @@ func (c *CourierMessage) Marshal() []byte {
 	return blob
 }
 
-func CourierMessageFromBytes(b []byte) (*CourierMessage, error) {
-	c := &CourierMessage{}
+func CourierEnvelopeFromBytes(b []byte) (*CourierEnvelope, error) {
+	c := &CourierEnvelope{}
 	err := cbor.Unmarshal(b, c)
 	if err != nil {
 		return nil, err

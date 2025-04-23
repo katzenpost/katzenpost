@@ -42,29 +42,10 @@ func (s *Server) StartPlugin() {
 func (e *Courier) OnCommand(cmd cborplugin.Command) error {
 	switch r := cmd.(type) {
 	case *cborplugin.Request:
-		courierMessage, err := common.CourierMessageFromBytes(r.Payload)
+		courierMessage, err := common.CourierEnvelopeFromBytes(r.Payload)
 		if err != nil {
 			return err
 		}
-
-		/*
-		   type CourierMessage struct {
-		   	SenderEPubKey [2][]byte
-		   	Replicas      [2]uint8
-		   	DEK           [2]*[32]byte
-		   	Ciphertext    []byte
-		   }
-
-		   type ReplicaMessage struct {
-		   	Cmds   *Commands
-		   	Geo    *geo.Geometry
-		   	Scheme nike.Scheme
-
-		   	SenderEPubKey []byte
-		   	DEK           *[32]byte
-		   	Ciphertext    []byte
-		   }
-		*/
 
 		replicas := make([]*commands.ReplicaMessage, 2)
 
