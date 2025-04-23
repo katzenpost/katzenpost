@@ -42,10 +42,6 @@ UserForwardPayloadLength=2000
 # hybrid ctidh PQ can work here, but requires manually building ctidh.
 nike=x25519
 
-# ratchetNike can be NOBS_CSIDH-X25519, "CTIDH511-X25519", "CTIDH512-X25519", "CTIDH1024-X25519", "CTIDH2048-X25519"
-# and defaults to CTIDH512-X25519
-ratchetNike?=CTIDH512-X25519
-
 # kem can be Kyber1024-X448 or any of the other schemes at https://github.com/cloudflare/circl/blob/main/kem/schemes/schemes.go (and then nike must be unset)
 kem=
 
@@ -110,7 +106,7 @@ $(docker_compose_yml): ../genconfig/main.go $(distro)_base.stamp | $(net_name) $
 		-sr ${sr} -mu ${mu} -muMax ${muMax} -lP ${lP} -lPMax ${lPMax} -lL ${lL} \
 		-lLMax ${lLMax} -lD ${lD} -lDMax ${lDMax} -lM ${lM} -lMMax ${lMMax} \
 		-S .$(distro) -v -o ./$(net_name) -b /$(net_name) -P $(base_port) \
-		-nike "$(nike)" -ratchetNike "$(ratchetNike)" -kem "$(kem)" -d katzenpost-$(distro)_base \
+		-nike "$(nike)" -kem "$(kem)" -d katzenpost-$(distro)_base \
 		${noMixDecoy} ${noDecoy} \
 		-UserForwardPayloadLength $(UserForwardPayloadLength) -log_level $(log_level)'
 
