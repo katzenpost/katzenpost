@@ -1,3 +1,6 @@
+//go:build !darwin
+// +build !darwin
+
 // timer_queue_test.go - Time delayed queue tests
 // Copyright (C) 2018  Masala, David Stainton.
 //
