@@ -42,10 +42,6 @@ UserForwardPayloadLength=2000
 # hybrid ctidh PQ can work here, but requires manually building ctidh.
 nike=x25519
 
-# ratchetNike can be NOBS_CSIDH-X25519, "CTIDH511-X25519", "CTIDH512-X25519", "CTIDH1024-X25519", "CTIDH2048-X25519"
-# and defaults to CTIDH512-X25519
-ratchetNike?=CTIDH512-X25519
-
 # kem can be Kyber1024-X448 or any of the other schemes at https://github.com/cloudflare/circl/blob/main/kem/schemes/schemes.go (and then nike must be unset)
 kem=
 
@@ -92,7 +88,7 @@ make_args=--no-print-directory net_name=$(net_name) docker=$(docker) distro=$(di
 
 docker_run_sh=$(docker) run ${docker_args} $(mount_net_name) --rm katzenpost-$(distro)_base $(sh) -c
 
-testnet_binaries: $(net_name)/server.$(distro) $(net_name)/proxy_server.$(distro) $(net_name)/proxy_client.$(distro) $(net_name)/memspool.$(distro) $(net_name)/map.$(distro) $(net_name)/panda_server.$(distro) $(net_name)/echo_server.$(distro) $(net_name)/dirauth.$(distro) $(net_name)/kpclientd.$(distro) | $(net_name) $(cache_dir)
+testnet_binaries: $(net_name)/server.$(distro) $(net_name)/proxy_server.$(distro) $(net_name)/proxy_client.$(distro) $(net_name)/map.$(distro) $(net_name)/echo_server.$(distro) $(net_name)/dirauth.$(distro) $(net_name)/kpclientd.$(distro) | $(net_name) $(cache_dir)
 
 $(net_name):
 	mkdir -vp $(net_name)
@@ -110,7 +106,7 @@ $(docker_compose_yml): ../genconfig/main.go $(distro)_base.stamp | $(net_name) $
 		-sr ${sr} -mu ${mu} -muMax ${muMax} -lP ${lP} -lPMax ${lPMax} -lL ${lL} \
 		-lLMax ${lLMax} -lD ${lD} -lDMax ${lDMax} -lM ${lM} -lMMax ${lMMax} \
 		-S .$(distro) -v -o ./$(net_name) -b /$(net_name) -P $(base_port) \
-		-nike "$(nike)" -ratchetNike "$(ratchetNike)" -kem "$(kem)" -d katzenpost-$(distro)_base \
+		-nike "$(nike)" -kem "$(kem)" -d katzenpost-$(distro)_base \
 		${noMixDecoy} ${noDecoy} \
 		-UserForwardPayloadLength $(UserForwardPayloadLength) -log_level $(log_level)'
 
@@ -177,14 +173,8 @@ $(net_name)/proxy_client.$(distro): $(distro)_base.stamp | $(net_name) $(cache_d
 $(net_name)/proxy_server.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
 		$(docker_run_sh) 'cd http/proxy/server; go build -trimpath -ldflags ${ldflags} && mv server /$(net_name)/proxy_server.$(distro)'
 
-$(net_name)/memspool.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
-		$(docker_run_sh) 'cd memspool/server/cmd/memspool ; go build -trimpath -ldflags ${ldflags} && mv memspool /$(net_name)/memspool.$(distro)'
-
 $(net_name)/map.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
 		$(docker_run_sh) 'cd map/server/cmd/map ; go build -trimpath -ldflags ${ldflags} && mv map /$(net_name)/map.$(distro)'
-
-$(net_name)/panda_server.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
-		$(docker_run_sh) 'cd panda/server/cmd/panda_server ; go build -trimpath -ldflags ${ldflags} && mv panda_server /$(net_name)/panda_server.$(distro)'
 
 $(net_name)/echo_server.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
 		$(docker_run_sh) 'cd server_plugins/cbor_plugins/echo-go ; go build -trimpath -ldflags ${ldflags} && mv echo-go /$(net_name)/echo_server.$(distro)'
@@ -235,15 +225,6 @@ run-ping: $(net_name)/ping.$(distro) $(net_name)/running.stamp | $(cache_dir)
 	$(docker) run --network=host ${docker_args} $(mount_net_name) --rm  katzenpost-$(distro)_base \
         /$(net_name)/ping.$(distro) -c /go/katzenpost/docker/$(net_name)/client2/client.toml -s echo -printDiff -n 10
 
-restart-memspool: $(net_name)/running.stamp stop-memspool start-memspool
-
-stop-memspool:
-	@echo STOP_KAETZCHEN spool|socat - unix:$(net_name)/servicenode1/management_sock|grep "250 spool" && echo stopped memspool || echo failed to stop memspool
-
-start-memspool: $(net_name)/memspool.$(distro)
-	@echo START_KAETZCHEN spool|socat - unix:$(net_name)/servicenode1/management_sock|grep "250 spool"
-	@echo started memspool
-
 shell: $(distro)_base.stamp | $(net_name) $(cache_dir)
 	$(docker) run --network=host ${docker_args} $(mount_net_name) -w /go/katzenpost/docker/$(net_name) --rm -it katzenpost-$(distro)_base $(sh)
 
@@ -255,8 +236,6 @@ rootshell: $(distro)_base.stamp
 
 test: wait
 	cd ../client    && make $(make_args) testargs=$(testargs) dockerdockertest
-	cd ../catshadow && make $(make_args) testargs=$(testargs) dockerdockertest
-	cd ../memspool  && make $(make_args) testargs=$(testargs) dockerdockertest
 
 check-go-version:
 	podman run --rm katzenpost-alpine_base go version
