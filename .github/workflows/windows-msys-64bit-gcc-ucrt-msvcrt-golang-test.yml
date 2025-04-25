@@ -1,6 +1,6 @@
 name: Windows Msys2 64bit unit tests test
 
-on: [pull_request]
+on: [pull_request, push]
 
 jobs:
   windows-build-and-test-golang:
