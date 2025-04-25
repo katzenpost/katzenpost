@@ -879,12 +879,11 @@ func NewMulticastRecvStream(t Transport, readCap *bacap.UniversalReadCap) *Strea
 }
 
 // NewStream generates a new address and initializes a Stream as listener. It does not start it.
-func NewStream(t Transport, writeCap *bacap.BoxOwnerCap, readCap *bacap.UniversalReadCap, context []byte) *Stream {
+func NewStream(writeCap *bacap.BoxOwnerCap, readCap *bacap.UniversalReadCap, context []byte) *Stream {
 	st := newStream(EndToEnd)
 	st.ReadCap = readCap
 	st.WriteCap = writeCap
 	st.Context = context
-	st.SetTransport(t)
 	return st
 }
 
