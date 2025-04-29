@@ -90,6 +90,14 @@ type Config struct {
 	Address string
 }
 
+func FromConfig(cfg *config.Config) *Config {
+	return &Config{
+		SphinxGeometry: cfg.SphinxGeometry,
+		Network:        cfg.ListenNetwork,
+		Address:        cfg.ListenAddress,
+	}
+}
+
 // NewThinClient creates a new thing client.
 func NewThinClient(cfg *Config, logging *config.Logging) *ThinClient {
 	logBackend, err := log.New(logging.File, logging.Level, logging.Disable)
