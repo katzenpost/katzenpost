@@ -24,6 +24,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/log"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/worker"
 )
 
@@ -52,7 +53,7 @@ type ThinResponse struct {
 type ThinClient struct {
 	worker.Worker
 
-	cfg   *config.Config
+	cfg   *Config
 	isTCP bool
 
 	log        *logging.Logger
@@ -77,19 +78,29 @@ type ThinClient struct {
 	closeOnce sync.Once
 }
 
-func (t *ThinClient) Shutdown() {
-	// do other stuff here
-	t.Halt()
+// Config is the thin client config.
+type Config struct {
+	// SphinxGeometry is the Sphinx geometry used by the client daemon that this thin client will connect to.
+	SphinxGeometry *geo.Geometry
+
+	// Network is the client daemon's listening network.
+	Network string
+
+	// Address is the client daemon's listening address.
+	Address string
+
+	// Logging
+	Logging *config.Logging
 }
 
 // NewThinClient creates a new thing client.
-func NewThinClient(cfg *config.Config) *ThinClient {
+func NewThinClient(cfg *Config) *ThinClient {
 	logBackend, err := log.New(cfg.Logging.File, cfg.Logging.Level, cfg.Logging.Disable)
 	if err != nil {
 		panic(err)
 	}
 	return &ThinClient{
-		isTCP:       strings.HasPrefix(strings.ToLower(cfg.ListenNetwork), "tcp"),
+		isTCP:       strings.HasPrefix(strings.ToLower(cfg.Network), cfg.Address),
 		cfg:         cfg,
 		log:         logBackend.GetLogger("thinclient"),
 		logBackend:  logBackend,
@@ -99,8 +110,12 @@ func NewThinClient(cfg *config.Config) *ThinClient {
 	}
 }
 
+func (t *ThinClient) Shutdown() {
+	t.Halt()
+}
+
 // GetConfig returns the config
-func (t *ThinClient) GetConfig() *config.Config {
+func (t *ThinClient) GetConfig() *Config {
 	return t.cfg
 }
 
@@ -131,8 +146,8 @@ func (t *ThinClient) Close() error {
 func (t *ThinClient) Dial() error {
 	t.log.Debug("Dial begin")
 
-	network := t.cfg.ListenNetwork
-	address := t.cfg.ListenAddress
+	network := t.cfg.Network
+	address := t.cfg.Address
 
 	switch network {
 	case "tcp6":
