@@ -27,6 +27,7 @@ import (
 	vConfig "github.com/katzenpost/katzenpost/authority/voting/server/config"
 	cConfig "github.com/katzenpost/katzenpost/client/config"
 	cConfig2 "github.com/katzenpost/katzenpost/client2/config"
+	"github.com/katzenpost/katzenpost/client2/thin"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	sConfig "github.com/katzenpost/katzenpost/server/config"
@@ -61,7 +62,6 @@ type katzenpost struct {
 	lastPort       uint16
 	bindAddr       string
 	nodeIdx        int
-	clientIdx      int
 	gatewayIdx     int
 	serviceNodeIdx int
 	hasProxy       bool
@@ -101,7 +101,28 @@ func addressesFromURLs(addrs []string) map[string][]string {
 	return addresses
 }
 
-func (s *katzenpost) genClient2Cfg() error {
+// this generates the thin client config and NOT the client2 daemon config
+func (s *katzenpost) genClient2ThinCfg(net, addr string) error {
+	log.Print("genClient2ThinCfg begin")
+	os.Mkdir(filepath.Join(s.outDir, "client2"), 0700)
+	cfg := new(thin.Config)
+
+	cfg.SphinxGeometry = s.sphinxGeometry
+	cfg.Network = net
+	cfg.Address = addr
+
+	log.Print("before save thin config")
+	err := saveCfg(cfg, s.outDir)
+	if err != nil {
+		log.Printf("save thin config failure %s", err.Error())
+		return err
+	}
+	log.Print("after save thin config")
+	log.Print("genClient2ThinCfg end")
+	return nil
+}
+
+func (s *katzenpost) genClient2Cfg(net, addr string) error {
 	log.Print("genClient2Cfg begin")
 	os.Mkdir(filepath.Join(s.outDir, "client2"), 0700)
 	cfg := new(cConfig2.Config)
@@ -116,8 +137,8 @@ func (s *katzenpost) genClient2Cfg() error {
 	//cfg.ListenAddress = "/tmp/katzenzpost.socket"
 
 	// Use TCP by default so that the CI tests pass on all platforms
-	cfg.ListenNetwork = "tcp"
-	cfg.ListenAddress = "localhost:64331"
+	cfg.ListenNetwork = net
+	cfg.ListenAddress = addr
 
 	cfg.PKISignatureScheme = s.pkiSignatureScheme.Name()
 	cfg.WireKEMScheme = s.wireKEMScheme
@@ -189,8 +210,6 @@ func (s *katzenpost) genClientCfg() error {
 	cfg.WireKEMScheme = s.wireKEMScheme
 	cfg.PKISignatureScheme = s.pkiSignatureScheme.Name()
 	cfg.SphinxGeometry = s.sphinxGeometry
-
-	s.clientIdx++
 
 	// Logging section.
 	cfg.Logging = &cConfig.Logging{File: "", Level: s.logLevel}
@@ -635,7 +654,15 @@ func main() {
 		log.Fatalf("%s", err)
 	}
 
-	err = s.genClient2Cfg() // depends on genClientCfg()
+	clientDaemonNetwork := "tcp"
+	clientDaemonAddress := "localhost:64331"
+
+	err = s.genClient2Cfg(clientDaemonNetwork, clientDaemonAddress)
+	if err != nil {
+		log.Fatalf("%s", err)
+	}
+
+	err = s.genClient2ThinCfg(clientDaemonNetwork, clientDaemonAddress)
 	if err != nil {
 		log.Fatalf("%s", err)
 	}
@@ -656,6 +683,8 @@ func identifier(cfg interface{}) string {
 		return "client"
 	case *cConfig2.Config:
 		return "client2"
+	case *thin.Config:
+		return "thinclient"
 	case *sConfig.Config:
 		return cfg.(*sConfig.Config).Server.Identifier
 	case *vConfig.Config:
