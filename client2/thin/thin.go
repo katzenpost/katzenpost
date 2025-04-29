@@ -88,14 +88,11 @@ type Config struct {
 
 	// Address is the client daemon's listening address.
 	Address string
-
-	// Logging
-	Logging *config.Logging
 }
 
 // NewThinClient creates a new thing client.
-func NewThinClient(cfg *Config) *ThinClient {
-	logBackend, err := log.New(cfg.Logging.File, cfg.Logging.Level, cfg.Logging.Disable)
+func NewThinClient(cfg *Config, logging *config.Logging) *ThinClient {
+	logBackend, err := log.New(logging.File, logging.Level, logging.Disable)
 	if err != nil {
 		panic(err)
 	}

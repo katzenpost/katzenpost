@@ -86,7 +86,13 @@ func main() {
 	fmt.Println("Sleeping for 3 seconds to let the client daemon startup...")
 	time.Sleep(time.Second * 3)
 
-	thin := thin.NewThinClient(cfg)
+	clientConfig := &thin.Config{
+		SphinxGeometry: cfg.SphinxGeometry,
+		Network:        cfg.ListenNetwork,
+		Address:        cfg.ListenAddress,
+	}
+
+	thin := thin.NewThinClient(clientConfig, cfg.Logging)
 	err = thin.Dial()
 	if err != nil {
 		panic(err)
