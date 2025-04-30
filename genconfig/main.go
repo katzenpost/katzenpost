@@ -28,6 +28,7 @@ import (
 	vConfig "github.com/katzenpost/katzenpost/authority/voting/server/config"
 	cConfig "github.com/katzenpost/katzenpost/client/config"
 	cConfig2 "github.com/katzenpost/katzenpost/client2/config"
+	"github.com/katzenpost/katzenpost/client2/thin"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	courierConfig "github.com/katzenpost/katzenpost/courier/server/config"
@@ -53,7 +54,6 @@ type katzenpost struct {
 	logLevel  string
 	logWriter io.Writer
 
-	ratchetNIKEScheme  string
 	wireKEMScheme      string
 	pkiSignatureScheme sign.Scheme
 	replicaNIKEScheme  nike.Scheme
@@ -68,10 +68,9 @@ type katzenpost struct {
 	basePort        uint16
 	lastPort        uint16
 	lastReplicaPort uint16
+	replicaNodeIdx  int
 	bindAddr        string
 	nodeIdx         int
-	replicaNodeIdx  int
-	clientIdx       int
 	gatewayIdx      int
 	serviceNodeIdx  int
 	noMixDecoy      bool
@@ -110,25 +109,37 @@ func addressesFromURLs(addrs []string) map[string][]string {
 	return addresses
 }
 
-func (s *katzenpost) genClient2Cfg() error {
+// this generates the thin client config and NOT the client2 daemon config
+func (s *katzenpost) genClient2ThinCfg(net, addr string) error {
+	log.Print("genClient2ThinCfg begin")
+	os.Mkdir(filepath.Join(s.outDir, "client2"), 0700)
+	cfg := new(thin.Config)
+
+	cfg.SphinxGeometry = s.sphinxGeometry
+	cfg.Network = net
+	cfg.Address = addr
+
+	log.Print("before save thin config")
+	err := saveCfg(cfg, s.outDir)
+	if err != nil {
+		log.Printf("save thin config failure %s", err.Error())
+		return err
+	}
+	log.Print("after save thin config")
+	log.Print("genClient2ThinCfg end")
+	return nil
+}
+
+func (s *katzenpost) genClient2Cfg(net, addr string) error {
 	log.Print("genClient2Cfg begin")
 	os.Mkdir(filepath.Join(s.outDir, "client2"), 0700)
 	os.Mkdir(filepath.Join(s.outDir, "thinclient"), 0700)
 
 	cfg := new(cConfig2.Config)
 
-	// abstract unix domain sockets only work on linux,
-	//cfg.ListenNetwork = "unix"
-	//cfg.ListenAddress = "@katzenpost"
-	// therefore if unix sockets are requires on non-linux platforms
-	// the solution is to specify a unix socket file path instead of
-	// and abstract unix socket name:
-	//cfg.ListenNetwork = "unix"
-	//cfg.ListenAddress = "/tmp/katzenzpost.socket"
-
 	// Use TCP by default so that the CI tests pass on all platforms
-	cfg.ListenNetwork = "tcp"
-	cfg.ListenAddress = "localhost:64331"
+	cfg.ListenNetwork = net
+	cfg.ListenAddress = addr
 
 	// Logging section.
 	cfg.Logging = &cConfig2.Logging{File: "", Level: "DEBUG"}
@@ -188,12 +199,9 @@ func (s *katzenpost) genClientCfg() error {
 	os.Mkdir(filepath.Join(s.outDir, "client"), 0700)
 	cfg := new(cConfig.Config)
 
-	cfg.RatchetNIKEScheme = s.ratchetNIKEScheme
 	cfg.WireKEMScheme = s.wireKEMScheme
 	cfg.PKISignatureScheme = s.pkiSignatureScheme.Name()
 	cfg.SphinxGeometry = s.sphinxGeometry
-
-	s.clientIdx++
 
 	// Logging section.
 	cfg.Logging = &cConfig.Logging{File: "", Level: s.logLevel}
@@ -379,17 +387,6 @@ func (s *katzenpost) genNodeConfig(isGateway, isServiceNode bool, isVoting bool)
 		s.serviceNodeIdx++
 
 		cfg.ServiceNode = &sConfig.ServiceNode{}
-		spoolCfg := &sConfig.CBORPluginKaetzchen{
-			Capability:     "spool",
-			Endpoint:       "+spool",
-			Command:        s.baseDir + "/memspool" + s.binSuffix,
-			MaxConcurrency: 1,
-			Config: map[string]interface{}{
-				"data_store": s.baseDir + "/" + cfg.Server.Identifier + "/memspool.storage",
-				"log_dir":    s.baseDir + "/" + cfg.Server.Identifier,
-			},
-		}
-		cfg.ServiceNode.CBORPluginKaetzchen = []*sConfig.CBORPluginKaetzchen{spoolCfg}
 
 		serviceNodeDataDir := filepath.Join(s.outDir, cfg.Server.Identifier)
 		courierDataDir := filepath.Join(serviceNodeDataDir, "courier")
@@ -435,17 +432,6 @@ func (s *katzenpost) genNodeConfig(isGateway, isServiceNode bool, isVoting bool)
 				"log_dir": s.baseDir + "/" + cfg.Server.Identifier,
 			},
 		}
-		pandaCfg := &sConfig.CBORPluginKaetzchen{
-			Capability:     "panda",
-			Endpoint:       "+panda",
-			Command:        s.baseDir + "/panda_server" + s.binSuffix,
-			MaxConcurrency: 1,
-			Config: map[string]interface{}{
-				"fileStore": s.baseDir + "/" + cfg.Server.Identifier + "/panda.storage",
-				"log_dir":   s.baseDir + "/" + cfg.Server.Identifier,
-				"log_level": s.logLevel,
-			},
-		}
 		proxyCfg := &sConfig.CBORPluginKaetzchen{
 			Capability:     "http",
 			Endpoint:       "+http",
@@ -459,7 +445,7 @@ func (s *katzenpost) genNodeConfig(isGateway, isServiceNode bool, isVoting bool)
 			},
 		}
 
-		cfg.ServiceNode.CBORPluginKaetzchen = []*sConfig.CBORPluginKaetzchen{courierPluginCfg, spoolCfg, mapCfg, pandaCfg, proxyCfg}
+		cfg.ServiceNode.CBORPluginKaetzchen = []*sConfig.CBORPluginKaetzchen{courierPluginCfg, mapCfg, proxyCfg}
 
 		cfg.Debug.NumKaetzchenWorkers = 4
 
@@ -598,7 +584,6 @@ func main() {
 	wirekem := flag.String("wirekem", "", "Name of the KEM Scheme to be used with wire protocol")
 	kem := flag.String("kem", "", "Name of the KEM Scheme to be used with Sphinx")
 	nike := flag.String("nike", "x25519", "Name of the NIKE Scheme to be used with Sphinx")
-	ratchetNike := flag.String("ratchetNike", "CTIDH512-X25519", "Name of the NIKE Scheme to be used with the doubleratchet")
 	replicaNike := flag.String("replicaNike", "CTIDH1024-X25519", "Name of the NIKE Scheme to be used with the pigeonhole storage replicas")
 	UserForwardPayloadLength := flag.Int("UserForwardPayloadLength", 2000, "UserForwardPayloadLength")
 	pkiSignatureScheme := flag.String("pkiScheme", "ed25519", "PKI Signature Scheme to be used")
@@ -633,11 +618,6 @@ func main() {
 	if *kem != "" && *nike != "" {
 		log.Fatal("nike and kem flags cannot both be set")
 	}
-
-	if *ratchetNike == "" {
-		log.Fatal("ratchetNike must be set")
-	}
-
 	if *replicaNike == "" {
 		log.Fatal("replicaNike must be set")
 	}
@@ -658,8 +638,6 @@ func main() {
 	}
 
 	s := &katzenpost{}
-
-	s.ratchetNIKEScheme = *ratchetNike
 
 	s.wireKEMScheme = *wirekem
 	if kemschemes.ByName(*wirekem) == nil {
@@ -814,7 +792,15 @@ func main() {
 		log.Fatalf("%s", err)
 	}
 
-	err = s.genClient2Cfg() // depends on genClientCfg()
+	clientDaemonNetwork := "tcp"
+	clientDaemonAddress := "localhost:64331"
+
+	err = s.genClient2Cfg(clientDaemonNetwork, clientDaemonAddress)
+	if err != nil {
+		log.Fatalf("%s", err)
+	}
+
+	err = s.genClient2ThinCfg(clientDaemonNetwork, clientDaemonAddress)
 	if err != nil {
 		log.Fatalf("%s", err)
 	}
@@ -834,6 +820,8 @@ func identifier(cfg interface{}) string {
 	case *cConfig.Config:
 		return "client"
 	case *cConfig2.Config:
+		return "client2"
+	case *thin.Config:
 		return "client2"
 	case *vConfig.Config:
 		return cfg.(*vConfig.Config).Server.Identifier
@@ -855,6 +843,8 @@ func toml_name(cfg interface{}) string {
 		return "client"
 	case *cConfig2.Config:
 		return "client"
+	case *thin.Config:
+		return "thinclient"
 	case *sConfig.Config:
 		return "katzenpost"
 	case *rConfig.Config:

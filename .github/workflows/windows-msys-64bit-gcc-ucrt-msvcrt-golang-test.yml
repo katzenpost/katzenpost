@@ -1,6 +1,6 @@
 name: Windows Msys2 64bit unit tests test
 
-on: [pull_request]
+on: [pull_request, push]
 
 jobs:
   windows-build-and-test-golang:
@@ -58,10 +58,6 @@ jobs:
         shell: msys2 {0}
         run: cd authority && GORACE=history_size=7 go test -coverprofile=coverage.out -race -v -failfast -timeout 30m ./...
 
-      - name: Run catshadow unit tests
-        shell: msys2 {0}
-        run: cd catshadow && GORACE=history_size=7 go test -coverprofile=coverage.out -race -v -failfast -timeout 30m ./...
-
       - name: Run client unit tests
         shell: msys2 {0}
         run: cd client && GORACE=history_size=7 go test -coverprofile=coverage.out -race -v -failfast -timeout 30m ./...
@@ -77,22 +73,6 @@ jobs:
       - name: Run NIKE Sphinx unit tests with CTIDH
         shell: msys2 {0}
         run: cd core/sphinx && GORACE=history_size=7 go test -coverprofile=coverage.out -race -v -failfast -timeout 30m ./...
-
-      - name: Run doubleratchet unit tests
-        shell: msys2 {0}
-        run:  cd doubleratchet && GORACE=history_size=7 go test -coverprofile=coverage.out -race -v -failfast -timeout 30m ./...
-
-      - name: Run memspool unit tests
-        shell: msys2 {0}
-        run:  cd memspool && GORACE=history_size=7 go test -coverprofile=coverage.out -race -v -failfast -timeout 30m ./...
-
-      - name: Run panda unit tests
-        shell: msys2 {0}
-        run:  cd panda && GORACE=history_size=7 go test -coverprofile=coverage.out -race -v -failfast -timeout 30m ./...
-
-      - name: Run reunion unit tests
-        shell: msys2 {0}
-        run:  cd reunion && GORACE=history_size=7 go test -coverprofile=coverage.out -race -v -failfast -timeout 30m ./...
 
       - name: Run server unit tests
         shell: msys2 {0}

@@ -119,14 +119,15 @@ func testDockerMultiplexClients(t *testing.T) {
 	cfg, err := config.LoadFile("testdata/client.toml")
 	require.NoError(t, err)
 
-	thin1 := thin.NewThinClient(cfg)
+	thin1 := thin.NewThinClient(thin.FromConfig(cfg), cfg.Logging)
+
 	t.Log("thin client Dialing")
 	err = thin1.Dial()
 	require.NoError(t, err)
 	require.Nil(t, err)
 	t.Log("thin client connected")
 
-	thin2 := thin.NewThinClient(cfg)
+	thin2 := thin.NewThinClient(thin.FromConfig(cfg), cfg.Logging)
 	t.Log("thin client Dialing")
 	err = thin2.Dial()
 	require.NoError(t, err)
@@ -168,7 +169,7 @@ func testDockerClientARQSendReceive(t *testing.T) {
 	cfg, err := config.LoadFile("testdata/client.toml")
 	require.NoError(t, err)
 
-	thin := thin.NewThinClient(cfg)
+	thin := thin.NewThinClient(thin.FromConfig(cfg), cfg.Logging)
 	t.Log("thin client Dialing")
 	err = thin.Dial()
 	require.NoError(t, err)
@@ -241,7 +242,8 @@ func testDockerClientSendReceive(t *testing.T) {
 	cfg, err := config.LoadFile("testdata/client.toml")
 	require.NoError(t, err)
 
-	thin := thin.NewThinClient(cfg)
+	thin := thin.NewThinClient(thin.FromConfig(cfg), cfg.Logging)
+
 	t.Log("------------------------------ thin client Dialing")
 	err = thin.Dial()
 	require.NoError(t, err)

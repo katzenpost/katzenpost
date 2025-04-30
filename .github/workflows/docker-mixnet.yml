@@ -1,5 +1,5 @@
 name: docker mixnet integration tests
-on: [pull_request]
+on: [pull_request, push]
 jobs:
 
   test_e2e_client:
@@ -76,95 +76,6 @@ jobs:
         if: always()
         with:
           name: mixnet-${{ github.run_id }}-${{ github.job }}
-          path: |
-            docker/voting_mixnet/*/*.log
-
-  test_e2e_memspool:
-    env:
-      warped: true
-      no_mixdecoy: false
-      no_decoy: false
-    strategy:
-      matrix:
-        go-version: [1.22.x]
-        os: [ubuntu-latest]
-    runs-on: ${{ matrix.os }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Configure podman socket
-        run: |
-          systemctl --user start podman.socket
-
-      - name: Build and start the mixnet
-        run: |
-          cd docker && make log_level=DEBUG start wait
-
-      - name: run memspool end to end tests
-        run: cd memspool && make testargs=-coverprofile=coverage.part dockerdockertest && cat client/coverage.part >> ../coverage.out
-
-      - name: Stop the mixnet
-        run: |
-          cd docker && make stop
-
-      - name: Upload testnet state
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: mixnet-${{ github.run_id }}-${{ github.job }}
-          path: |
-            docker/voting_mixnet/*/*.log
-
-  test_e2e_catshadow:
-    env:
-      warped: true
-      no_mixdecoy: false
-      no_decoy: false
-    strategy:
-      matrix:
-        go-version: [1.22.x]
-        os: [ubuntu-latest]
-        #ratchetNike: [CTIDH1024-X25519, CTIDH512-X25519, NOBS_CSIDH-X25519]
-        ratchetNike: [ NOBS_CSIDH-X25519]
-      fail-fast: false
-    runs-on: ${{ matrix.os }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Install socat, for talking to management socket
-        run: sudo apt update && sudo apt install -y socat
-
-      - name: Configure podman socket
-        run: |
-          systemctl --user start podman.socket
-
-      - name: Build and start the mixnet
-        run: |
-          cd docker && make ratchetNike=${{ matrix.ratchetNike }} log_level=DEBUG start wait
-
-      - name: test creating upgrade test state files
-        run: cd catshadow && make testargs=-coverprofile=coverage.part test_version=latest upgrade_test_recreate && cat coverage.part >> ../coverage.out
-
-      - name: test upgrade using newly-created state files
-        run: cd catshadow && make testargs=-coverprofile=coverage.part test_version=latest upgrade_test_use_saved && cat coverage.part >> ../coverage.out
-
-      - name: test upgrade using saved state files from v0.0.30
-        run: cd catshadow && make testargs=-coverprofile=coverage.part test_version=v30 upgrade_test_use_saved && cat coverage.part >> ../coverage.out
-
-      - name: run catshadow end to end tests
-        run: cd catshadow && make testargs=-coverprofile=coverage.part dockerdockertest && cat coverage.part >> ../coverage.out
-
-      - name: Stop the mixnet
-        run: |
-          cd docker && make stop
-
-      - name: Upload testnet state
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: mixnet-${{ github.run_id }}-${{ matrix.ratchetNike }}-${{ github.job }}
           path: |
             docker/voting_mixnet/*/*.log
 
