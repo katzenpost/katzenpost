@@ -684,7 +684,7 @@ func identifier(cfg interface{}) string {
 	case *cConfig2.Config:
 		return "client2"
 	case *thin.Config:
-		return "thinclient"
+		return "client2"
 	case *sConfig.Config:
 		return cfg.(*sConfig.Config).Server.Identifier
 	case *vConfig.Config:
@@ -701,6 +701,8 @@ func toml_name(cfg interface{}) string {
 		return "client"
 	case *cConfig2.Config:
 		return "client"
+	case *thin.Config:
+		return "thinclient"
 	case *sConfig.Config:
 		return "katzenpost"
 	case *vConfig.Config:
