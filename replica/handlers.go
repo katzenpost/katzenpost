@@ -11,6 +11,7 @@ import (
 	"github.com/katzenpost/hpqc/sign/ed25519"
 
 	"github.com/katzenpost/katzenpost/core/wire/commands"
+	"github.com/katzenpost/katzenpost/courier/common"
 )
 
 func (c *incomingConn) onReplicaCommand(rawCmd commands.Command) (commands.Command, bool) {
@@ -69,8 +70,8 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 		return errReply
 	}
 	switch myCmd := myCmd.(type) {
-	case *commands.ReplicaRead:
-		replyPayload := c.handleReplicaRead(myCmd).ToBytes()
+	case *common.ReplicaRead:
+		replyPayload := c.handleReplicaRead(myCmd).Bytes()
 		envelopeHash := blake2b.Sum256(replicaMessage.SenderEPubKey[:])
 		senderpubkey, err := nikeScheme.UnmarshalBinaryPublicKey(replicaMessage.SenderEPubKey[:])
 		if err != nil {
@@ -110,21 +111,18 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 	}
 }
 
-func (c *incomingConn) handleReplicaRead(replicaRead *commands.ReplicaRead) *commands.ReplicaReadReply {
+func (c *incomingConn) handleReplicaRead(replicaRead *common.ReplicaRead) *common.ReplicaReadReply {
 	const (
 		successCode = 0
 		failCode    = 1
 	)
 	resp, err := c.l.server.state.handleReplicaRead(replicaRead)
 	if err != nil {
-		return &commands.ReplicaReadReply{
+		return &common.ReplicaReadReply{
 			ErrorCode: failCode,
 		}
 	}
-	nikeScheme := schemes.ByName(c.l.server.cfg.ReplicaNIKEScheme)
-	return &commands.ReplicaReadReply{
-		Cmds:      commands.NewStorageReplicaCommands(c.geo, nikeScheme),
-		Geo:       c.geo,
+	return &common.ReplicaReadReply{
 		ErrorCode: successCode,
 		BoxID:     resp.BoxID,
 		Signature: resp.Signature,

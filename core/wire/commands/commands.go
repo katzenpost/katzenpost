@@ -104,13 +104,6 @@ func NewStorageReplicaCommands(geo *geo.Geometry, scheme nike.Scheme) *Commands 
 		&ReplicaMessageReply{
 			Cmds: c,
 		},
-		&ReplicaRead{
-			Cmds: c,
-		},
-		&ReplicaReadReply{
-			Cmds: c,
-			Geo:  geo,
-		},
 		&ReplicaWrite{
 			Cmds: c,
 		},
@@ -344,10 +337,6 @@ func (c *Commands) FromBytes(b []byte) (Command, error) {
 		return postReplicaDescriptorFromBytes(b)
 	case postReplicaDescriptorStatus:
 		return postReplicaDescriptorStatusFromBytes(b)
-	case replicaRead:
-		return replicaReadFromBytes(b, c)
-	case replicaReadReply:
-		return replicaReadReplyFromBytes(b, c)
 	case replicaWrite:
 		return replicaWriteFromBytes(b, c)
 	case replicaWriteReply:

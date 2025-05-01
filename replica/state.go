@@ -15,6 +15,7 @@ import (
 
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
+	courierCommon "github.com/katzenpost/katzenpost/courier/common"
 	"github.com/katzenpost/katzenpost/replica/common"
 )
 
@@ -52,7 +53,7 @@ func (s *state) initDB() {
 	}
 }
 
-func (s *state) handleReplicaRead(replicaRead *commands.ReplicaRead) (*commands.ReplicaWrite, error) {
+func (s *state) handleReplicaRead(replicaRead *courierCommon.ReplicaRead) (*commands.ReplicaWrite, error) {
 	ro := grocksdb.NewDefaultReadOptions()
 	defer ro.Destroy()
 

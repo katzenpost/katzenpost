@@ -18,6 +18,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/utils"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"github.com/katzenpost/katzenpost/core/worker"
+	courierCommon "github.com/katzenpost/katzenpost/courier/common"
 	"github.com/katzenpost/katzenpost/replica/common"
 )
 
@@ -65,7 +66,7 @@ func (co *Connector) Server() *Server {
 
 func getBoxID(cmd commands.Command) *[32]byte {
 	switch myCmd := cmd.(type) {
-	case *commands.ReplicaRead:
+	case *courierCommon.ReplicaRead:
 		return myCmd.BoxID
 	case *commands.ReplicaWrite:
 		return myCmd.BoxID

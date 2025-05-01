@@ -11,97 +11,12 @@ import (
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 )
 
+// HybridKeySize is a helper function which is used in our
+// geometry calculations below.
 func HybridKeySize(scheme nike.Scheme) int {
 	// NIKE scheme CTIDH1024-X25519 has 160 byte public keys
 	return scheme.PublicKeySize()
 
-}
-
-// ReplicaRead isn't used directly on the wire protocol
-// but is embedded inside the ReplicaMessage which of course
-// are sent by the couriers to the replicas.
-type ReplicaRead struct {
-	Cmds *Commands
-
-	BoxID *[32]byte
-}
-
-func (c *ReplicaRead) ToBytes() []byte {
-	out := make([]byte, cmdOverhead, cmdOverhead+32)
-	out[0] = byte(replicaRead)
-	binary.BigEndian.PutUint32(out[2:6], uint32(c.Length()-cmdOverhead))
-	return append(out, c.BoxID[:]...)
-}
-
-func (c *ReplicaRead) Length() int {
-	return cmdOverhead + 32
-}
-
-func replicaReadFromBytes(b []byte, cmds *Commands) (Command, error) {
-	c := new(ReplicaRead)
-	c.Cmds = cmds
-	c.BoxID = &[32]byte{}
-	copy(c.BoxID[:], b[:32])
-	return c, nil
-}
-
-// ReplicaReadReply isn't used directly on the wire protocol
-// but is embedded inside the ReplicaMessageReply which of course
-// are sent by the replicas to the couriers. Therefore the
-// ReplicaReadReply command is never padded because it is always
-// encapsulated by the ReplicaMessageReply which is padded.
-type ReplicaReadReply struct {
-	Cmds *Commands
-	Geo  *geo.Geometry
-
-	ErrorCode uint8
-	BoxID     *[32]byte
-	Signature *[32]byte
-	Payload   []byte
-}
-
-func (c *ReplicaReadReply) ToBytes() []byte {
-	const (
-		errorCodeLen = 1
-		idLen        = 32
-		sigLen       = 32
-	)
-	length := errorCodeLen + idLen + sigLen + c.Geo.PacketLength
-	out := make([]byte, cmdOverhead, cmdOverhead+errorCodeLen+idLen+sigLen+len(c.Payload))
-	out[0] = byte(replicaReadReply)
-	binary.BigEndian.PutUint32(out[2:6], uint32(length))
-	out = append(out, c.ErrorCode)
-	out = append(out, c.BoxID[:]...)
-	out = append(out, c.Signature[:]...)
-	payload := make([]byte, c.Geo.PacketLength)
-	copy(payload, c.Payload)
-	return append(out, payload...)
-}
-
-func (c *ReplicaReadReply) Length() int {
-	const (
-		errorCodeLen  = 1
-		idLen         = 32
-		sigLen        = 32
-		signatureSize = 32
-	)
-	// XXX replace c.Geo.PacketLength with the precise payload size
-	//return cmdOverhead + errorCodeLen + idLen + sigLen + signatureSize + c.Geo.PacketLength
-	return 0
-}
-
-func replicaReadReplyFromBytes(b []byte, cmds *Commands) (Command, error) {
-	c := new(ReplicaReadReply)
-	c.Cmds = cmds
-	c.Geo = cmds.geo
-	c.BoxID = &[32]byte{}
-	c.ErrorCode = b[0]
-	copy(c.BoxID[:], b[1:32+1])
-	c.Signature = &[32]byte{}
-	copy(c.Signature[:], b[1+32:1+32+32])
-	c.Payload = make([]byte, len(b[1+32+32:]))
-	copy(c.Payload, b[1+32+32:])
-	return c, nil
 }
 
 // ReplicaWrite has two distinct uses. Firstly, it is
@@ -109,6 +24,9 @@ func replicaReadReplyFromBytes(b []byte, cmds *Commands) (Command, error) {
 // Secondly, it can be embedded inside a ReplicaMessage which of course
 // are sent from couriers to replicas.
 type ReplicaWrite struct {
+
+	// Cmds is set to nil if you want to serialize this type
+	// without padding.
 	Cmds *Commands
 
 	BoxID     *[32]byte

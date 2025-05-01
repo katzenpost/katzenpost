@@ -50,7 +50,7 @@ func (e *Courier) OnCommand(cmd cborplugin.Command) error {
 		replicas := make([]*commands.ReplicaMessage, 2)
 
 		// replica 1
-		firstReplicaID := courierMessage.Replicas[0]
+		firstReplicaID := courierMessage.IntermediateReplicas[0]
 		replicas[0] = &commands.ReplicaMessage{
 			SenderEPubKey: courierMessage.SenderEPubKey[0],
 			DEK:           courierMessage.DEK[0],
@@ -59,7 +59,7 @@ func (e *Courier) OnCommand(cmd cborplugin.Command) error {
 		e.server.SendMessage(firstReplicaID, replicas[0])
 
 		// replica 2
-		secondReplicaID := courierMessage.Replicas[1]
+		secondReplicaID := courierMessage.IntermediateReplicas[1]
 		replicas[1] = &commands.ReplicaMessage{
 			SenderEPubKey: courierMessage.SenderEPubKey[1],
 			DEK:           courierMessage.DEK[1],
@@ -67,7 +67,16 @@ func (e *Courier) OnCommand(cmd cborplugin.Command) error {
 		}
 		e.server.SendMessage(secondReplicaID, replicas[1])
 
-		replyPayload := []byte{} // XXX FIX ME
+		envelopeHash := courierMessage.EnvelopeHash()
+
+		reply := &common.CourierEnvelopeReply{
+			EnvelopeHash: envelopeHash,
+			ReplyIndex:   0,
+			Payload:      &commands.ReplicaMessageReply{},
+			ErrorString:  "hello world",
+		}
+		replyPayload := reply.Bytes()
+
 		go func() {
 			// send reply
 			e.write(&cborplugin.Response{ID: r.ID, SURB: r.SURB, Payload: replyPayload})

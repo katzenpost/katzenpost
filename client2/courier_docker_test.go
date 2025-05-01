@@ -73,13 +73,13 @@ func testDockerCourierService(t *testing.T) {
 	copy(dek2[:], ciphertext.DEKCiphertexts[1])
 
 	envelope := common.CourierEnvelope{
-		SenderEPubKey: [2][]byte{replica1pub.Bytes(), replica2pub.Bytes()},
-		Replicas:      [2]uint8{1, 2},
-		DEK:           [2]*[32]byte{dek1, dek2},
-		Ciphertext:    ciphertext.Envelope,
+		SenderEPubKey:        [2][]byte{replica1pub.Bytes(), replica2pub.Bytes()},
+		IntermediateReplicas: [2]uint8{1, 2},
+		DEK:                  [2]*[32]byte{dek1, dek2},
+		Ciphertext:           ciphertext.Envelope,
 	}
 
-	messageBlob := envelope.Marshal()
+	messageBlob := envelope.Bytes()
 	nodeIdKey := hash.Sum256(target.MixDescriptor.IdentityKey)
 	reply := sendAndWait(t, thin, messageBlob, &nodeIdKey, target.RecipientQueueID)
 	require.NotNil(t, reply)
