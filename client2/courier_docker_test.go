@@ -27,7 +27,12 @@ func testDockerCourierService(t *testing.T) {
 	cfg, err := config.LoadFile("testdata/client.toml")
 	require.NoError(t, err)
 
-	thin := thin.NewThinClient(cfg)
+	logging := &config.Logging{
+		Disable: false,
+		File:    "",
+		Level:   "DEBUG",
+	}
+	thin := thin.NewThinClient(thin.FromConfig(cfg), logging)
 	t.Log("thin client Dialing")
 	err = thin.Dial()
 	require.NoError(t, err)
