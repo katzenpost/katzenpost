@@ -280,7 +280,7 @@ func (s *katzenpost) genReplicaNodeConfig() error {
 	cfg.ReplicaNIKEScheme = s.replicaNIKEScheme.Name()
 	cfg.PKISignatureScheme = s.pkiSignatureScheme.Name()
 
-	cfg.Addresses = []string{fmt.Sprintf("tcp://127.0.0.1:%d", s.lastReplicaPort)}
+	cfg.Addresses = []string{fmt.Sprintf("tcp4://127.0.0.1:%d", s.lastReplicaPort)}
 	s.lastReplicaPort++
 
 	cfg.DataDir = filepath.Join(s.baseDir, cfg.Identifier)
