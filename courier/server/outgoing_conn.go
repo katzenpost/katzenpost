@@ -163,7 +163,7 @@ func (c *outgoingConn) worker() {
 
 		// Flatten the lists of addresses to Dial to.
 		var dstAddrs []string
-		for _, t := range cpki.InternalTransports {
+		for _, t := range cpki.ClientTransports {
 			if v, ok := c.dst.Addresses[t]; ok {
 				dstAddrs = append(dstAddrs, v...)
 			}
