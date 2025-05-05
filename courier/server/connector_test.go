@@ -188,18 +188,6 @@ loop:
 				EnvelopeReply: []byte{},
 			}
 			_ = wireConn.SendCommand(resp)
-		case *commands.ReplicaRead:
-			t.Log("-- ReplicaRead")
-			resp := &commands.ReplicaReadReply{
-				Cmds: commands.NewStorageReplicaCommands(m.geo, m.replicaScheme),
-				Geo:  m.geo,
-
-				ErrorCode: 0,
-				BoxID:     &[32]byte{},
-				Signature: &[32]byte{},
-				Payload:   []byte{},
-			}
-			_ = wireConn.SendCommand(resp)
 		case *commands.ReplicaWrite:
 			t.Log("-- ReplicaWrite")
 			resp := &commands.ReplicaWriteReply{
