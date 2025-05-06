@@ -85,7 +85,7 @@ func testDockerCourierService(t *testing.T) {
 
 	envelope := common.CourierEnvelope{
 		SenderEPubKey:        [2][]byte{replica1pub.Bytes(), replica2pub.Bytes()},
-		IntermediateReplicas: [2]uint8{1, 2},
+		IntermediateReplicas: [2]uint8{0, 1},
 		DEK:                  [2]*[32]byte{dek1, dek2},
 		Ciphertext:           ciphertext.Envelope,
 	}
