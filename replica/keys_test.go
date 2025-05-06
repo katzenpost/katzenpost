@@ -13,6 +13,7 @@ import (
 	nikeschemes "github.com/katzenpost/hpqc/nike/schemes"
 
 	"github.com/katzenpost/katzenpost/core/log"
+	"github.com/katzenpost/katzenpost/courier/common"
 )
 
 func TestEnvelopeKey(t *testing.T) {
@@ -37,7 +38,7 @@ func TestEnvelopeKeys(t *testing.T) {
 		keysLock: new(sync.RWMutex),
 		keys:     make(map[uint64]*EnvelopeKey),
 	}
-	epoch, _, _ := ReplicaNow()
+	epoch, _, _ := common.ReplicaNow()
 	err = keys.Generate(epoch)
 	require.NoError(t, err)
 

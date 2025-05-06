@@ -12,6 +12,7 @@ import (
 	vServer "github.com/katzenpost/katzenpost/authority/voting/server"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
+	"github.com/katzenpost/katzenpost/courier/common"
 )
 
 const NumPKIDocsToFetch = 3
@@ -311,7 +312,7 @@ func (p *PKIWorker) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 	}
 
 	// handle the replica NIKE keys
-	replicaEpoch, _, _ := ReplicaNow()
+	replicaEpoch, _, _ := common.ReplicaNow()
 	envelopeKeys := make(map[uint64][]byte)
 
 	key1, err := p.server.envelopeKeys.EnsureKey(replicaEpoch)

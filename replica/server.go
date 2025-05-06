@@ -24,6 +24,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/utils"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
+	"github.com/katzenpost/katzenpost/courier/common"
 	"github.com/katzenpost/katzenpost/replica/config"
 )
 
@@ -247,7 +248,7 @@ func New(cfg *config.Config) (*Server, error) {
 	// Write replica NIKE keys to files or load them from files.
 	s.log.Debug("ensuring replica NIKE keypair exists")
 	nikeScheme := nikeSchemes.ByName(cfg.ReplicaNIKEScheme)
-	replicaEpoch, _, _ := ReplicaNow()
+	replicaEpoch, _, _ := common.ReplicaNow()
 	s.envelopeKeys, err = NewEnvelopeKeys(nikeScheme, s.logBackend.GetLogger("envelopeKeys"), cfg.DataDir, replicaEpoch)
 	s.log.Debug("AFTER ensuring replica NIKE keypair exists")
 	if err != nil {

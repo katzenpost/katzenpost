@@ -23,6 +23,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
+	courierCommon "github.com/katzenpost/katzenpost/courier/common"
 	"github.com/katzenpost/katzenpost/replica/common"
 	"github.com/katzenpost/katzenpost/replica/config"
 )
@@ -116,7 +117,7 @@ func TestIncomingConn(t *testing.T) {
 	err = server.initLogging()
 	require.NoError(t, err)
 
-	epoch, _, _ := ReplicaNow()
+	epoch, _, _ := courierCommon.ReplicaNow()
 	server.envelopeKeys, err = NewEnvelopeKeys(replicaScheme, server.logBackend.GetLogger("envelope keys"), dname, epoch)
 
 	st := &state{

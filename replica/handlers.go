@@ -46,7 +46,7 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 		return nil
 	}
 
-	replicaEpoch, _, _ := ReplicaNow()
+	replicaEpoch, _, _ := common.ReplicaNow()
 	replicaPrivateKeypair, err := c.l.server.envelopeKeys.GetKeypair(replicaEpoch)
 	if err != nil {
 		c.log.Errorf("handleReplicaMessage envelopeKeys.GetKeypair failed: %s", err)

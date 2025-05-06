@@ -18,6 +18,7 @@ import (
 
 	"github.com/katzenpost/katzenpost/core/utils"
 	"github.com/katzenpost/katzenpost/core/worker"
+	"github.com/katzenpost/katzenpost/courier/common"
 )
 
 const (
@@ -25,11 +26,30 @@ const (
 	GracePeriod = 3 * time.Hour
 )
 
+// EnvelopeKey encapsulates the public and private NIKE keys.
 type EnvelopeKey struct {
 	PrivateKey nike.PrivateKey
 	PublicKey  nike.PublicKey
 }
 
+// NewEnvelopeKey creates a new EnvelopeKey type.
+func NewEnvelopeKey(scheme nike.Scheme) *EnvelopeKey {
+	if scheme == nil {
+		panic("replica NIKE scheme is nil")
+	}
+	pk, sk, err := scheme.GenerateKeyPair()
+
+	if err != nil {
+		panic(err)
+	}
+	e := &EnvelopeKey{
+		PrivateKey: sk,
+		PublicKey:  pk,
+	}
+	return e
+}
+
+// NewEnvelopeKeyFromFiles loads the PEM key files from disk.
 func NewEnvelopeKeyFromFiles(dataDir string, scheme nike.Scheme, epoch uint64) (*EnvelopeKey, error) {
 	e := &EnvelopeKey{}
 	privKeyFile, pubKeyFile := e.KeyFileNames(dataDir, scheme, epoch)
@@ -89,22 +109,6 @@ func (e *EnvelopeKey) WriteKeyFiles(dataDir string, scheme nike.Scheme, epoch ui
 	return nil
 }
 
-func NewEnvelopeKey(scheme nike.Scheme) *EnvelopeKey {
-	if scheme == nil {
-		panic("replica NIKE scheme is nil")
-	}
-	pk, sk, err := scheme.GenerateKeyPair()
-
-	if err != nil {
-		panic(err)
-	}
-	e := &EnvelopeKey{
-		PrivateKey: sk,
-		PublicKey:  pk,
-	}
-	return e
-}
-
 type EnvelopeKeys struct {
 	worker.Worker
 
@@ -142,7 +146,7 @@ func NewEnvelopeKeys(scheme nike.Scheme, log *logging.Logger, datadir string, ep
 // which also uploads our replica descriptor
 // to the dirauth nodes.
 func (k *EnvelopeKeys) worker() {
-	_, _, till := ReplicaNow()
+	_, _, till := common.ReplicaNow()
 	gctimer := time.NewTimer(till + GracePeriod)
 	defer func() {
 		k.log.Debugf("Halting EnvelopeKeys worker.")
@@ -176,7 +180,7 @@ func (k *EnvelopeKeys) worker() {
 			}
 		}
 
-		_, _, till := ReplicaNow()
+		_, _, till := common.ReplicaNow()
 		gctimer.Reset(till + GracePeriod)
 	}
 }
@@ -194,7 +198,7 @@ func (k *EnvelopeKeys) Generate(replicaEpoch uint64) error {
 }
 
 func (k *EnvelopeKeys) Prune() bool {
-	epoch, _, _ := ReplicaNow()
+	epoch, _, _ := common.ReplicaNow()
 	didPrune := false
 	k.keysLock.Lock()
 	defer k.keysLock.Unlock()
