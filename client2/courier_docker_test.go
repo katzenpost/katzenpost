@@ -24,6 +24,9 @@ import (
 var mkemNikeScheme *mkem.Scheme = mkem.NewScheme(schemes.ByName("x25519"))
 
 func testDockerCourierService(t *testing.T) {
+
+	t.Log("TESTING COURIER SERVICE1")
+
 	cfg, err := config.LoadFile("testdata/client.toml")
 	require.NoError(t, err)
 
@@ -39,10 +42,14 @@ func testDockerCourierService(t *testing.T) {
 	require.Nil(t, err)
 	t.Log("thin client connected")
 
+	t.Log("TESTING COURIER SERVICE2")
+
 	t.Log("thin client getting PKI doc")
 	doc := thin.PKIDocument()
 	require.NotNil(t, doc)
 	require.NotEqual(t, doc.LambdaP, 0.0)
+
+	t.Log("TESTING COURIER SERVICE3")
 
 	descs, err := thin.GetServices("courier")
 	require.NoError(t, err)
@@ -51,6 +58,8 @@ func testDockerCourierService(t *testing.T) {
 	require.True(t, len(descs) > 0)
 
 	target := descs[0]
+
+	t.Log("TESTING COURIER SERVICE4")
 
 	// XXX we should get these out of the PKI doc
 	replica1pub, _, err := mkemNikeScheme.GenerateKeyPair()
@@ -61,6 +70,8 @@ func testDockerCourierService(t *testing.T) {
 	request := make([]byte, 32)
 	_, err = rand.Reader.Read(request)
 	require.NoError(t, err)
+
+	t.Log("TESTING COURIER SERVICE5")
 
 	_, ciphertextBlob := mkemNikeScheme.Encapsulate([]nike.PublicKey{replica1pub, replica2pub}, request)
 
@@ -81,6 +92,11 @@ func testDockerCourierService(t *testing.T) {
 
 	messageBlob := envelope.Bytes()
 	nodeIdKey := hash.Sum256(target.MixDescriptor.IdentityKey)
+
+	t.Log("TESTING COURIER SERVICE6")
+
 	reply := sendAndWait(t, thin, messageBlob, &nodeIdKey, target.RecipientQueueID)
 	require.NotNil(t, reply)
+
+	t.Log("TESTING COURIER SERVICE7")
 }

@@ -40,16 +40,19 @@ func (s *Server) StartPlugin() {
 }
 
 func (e *Courier) OnCommand(cmd cborplugin.Command) error {
+	e.server.log.Debug("---------- OnCommand BEGIN")
 	switch r := cmd.(type) {
 	case *cborplugin.Request:
 		courierMessage, err := common.CourierEnvelopeFromBytes(r.Payload)
 		if err != nil {
+			e.server.log.Debugf("---------- CBOR DECODE FAIL: %s", err)
 			return err
 		}
 
 		replicas := make([]*commands.ReplicaMessage, 2)
 
 		// replica 1
+		e.server.log.Debug("---------- OnCommand: proxying to replica1")
 		firstReplicaID := courierMessage.IntermediateReplicas[0]
 		replicas[0] = &commands.ReplicaMessage{
 			SenderEPubKey: courierMessage.SenderEPubKey[0],
@@ -59,6 +62,7 @@ func (e *Courier) OnCommand(cmd cborplugin.Command) error {
 		e.server.SendMessage(firstReplicaID, replicas[0])
 
 		// replica 2
+		e.server.log.Debug("---------- OnCommand: proxying to replica2")
 		secondReplicaID := courierMessage.IntermediateReplicas[1]
 		replicas[1] = &commands.ReplicaMessage{
 			SenderEPubKey: courierMessage.SenderEPubKey[1],
@@ -68,7 +72,6 @@ func (e *Courier) OnCommand(cmd cborplugin.Command) error {
 		e.server.SendMessage(secondReplicaID, replicas[1])
 
 		envelopeHash := courierMessage.EnvelopeHash()
-
 		reply := &common.CourierEnvelopeReply{
 			EnvelopeHash: envelopeHash,
 			ReplyIndex:   0,
@@ -77,13 +80,15 @@ func (e *Courier) OnCommand(cmd cborplugin.Command) error {
 		}
 		replyPayload := reply.Bytes()
 
+		e.server.log.Debug("---------- OnCommand END... sending reply")
+
 		go func() {
 			// send reply
 			e.write(&cborplugin.Response{ID: r.ID, SURB: r.SURB, Payload: replyPayload})
 		}()
 		return nil
 	default:
-		return errors.New("courier-plugin: Invalid Command type")
+		return errors.New("---------- courier-plugin: Invalid Command type")
 	}
 }
 

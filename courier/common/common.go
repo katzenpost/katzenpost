@@ -90,7 +90,7 @@ func (c *CourierEnvelope) Bytes() []byte {
 // a CBOR blob of type *CourierEnvelope.
 func CourierEnvelopeFromBytes(b []byte) (*CourierEnvelope, error) {
 	c := &CourierEnvelope{}
-	err := cbor.Unmarshal(b, c)
+	_, err := cbor.UnmarshalFirst(b, c)
 	if err != nil {
 		return nil, err
 	}
