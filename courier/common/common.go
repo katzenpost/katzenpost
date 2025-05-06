@@ -129,7 +129,7 @@ func (c *CourierEnvelopeReply) Bytes() []byte {
 // a CBOR blob of type *CourierEnvelopeReply.
 func CourierEnvelopeReplyFromBytes(b []byte) (*CourierEnvelopeReply, error) {
 	c := &CourierEnvelopeReply{}
-	err := cbor.Unmarshal(b, c)
+	_, err := cbor.UnmarshalFirst(b, c)
 	if err != nil {
 		return nil, err
 	}
@@ -165,7 +165,7 @@ func (c *ReplicaRead) Bytes() []byte {
 // into a ReplicaRead type.
 func ReplicaReadFromBytes(b []byte) (*ReplicaRead, error) {
 	c := &ReplicaRead{}
-	err := cbor.Unmarshal(b, c)
+	_, err := cbor.UnmarshalFirst(b, c)
 	if err != nil {
 		return nil, err
 	}
