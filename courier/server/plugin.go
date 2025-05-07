@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 
 	"github.com/katzenpost/katzenpost/core/wire/commands"
-	"github.com/katzenpost/katzenpost/courier/common"
+	"github.com/katzenpost/katzenpost/replica/common"
 	"github.com/katzenpost/katzenpost/server/cborplugin"
 )
 
