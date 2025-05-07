@@ -160,18 +160,27 @@ func (c *ReplicaMessage) Length() int {
 type ReplicaMessageReply struct {
 	Cmds *Commands
 
-	ErrorCode     uint8
-	EnvelopeHash  *[32]byte
+	// ErrorCode indicates failure on non-zero.
+	ErrorCode uint8
+
+	// EnvelopeHash identifies which query the request is replying to.
+	EnvelopeHash *[32]byte
+
+	// ReplicaID identifies the replica replying.
+	ReplicaID uint8
+
+	// EnvelopeReply contains the mkem ciphertext reply.
 	EnvelopeReply []byte
 }
 
 func (c *ReplicaMessageReply) ToBytes() []byte {
-	out := make([]byte, cmdOverhead, cmdOverhead+1+32+len(c.EnvelopeReply))
+	out := make([]byte, cmdOverhead, cmdOverhead+1+32+1+len(c.EnvelopeReply))
 	out[0] = byte(replicaMessageReply)
-	binary.BigEndian.PutUint32(out[2:6], uint32(1+32+len(c.EnvelopeReply)))
+	binary.BigEndian.PutUint32(out[2:6], uint32(1+32+1+len(c.EnvelopeReply)))
 
 	out = append(out, c.ErrorCode)
 	out = append(out, c.EnvelopeHash[:]...)
+	out = append(out, c.ReplicaID)
 	out = append(out, c.EnvelopeReply...)
 
 	return c.Cmds.padToMaxCommandSize(out, true)
@@ -188,8 +197,10 @@ func replicaMessageReplyFromBytes(b []byte) (Command, error) {
 	r.EnvelopeHash = &[32]byte{}
 	copy(r.EnvelopeHash[:], b[1:1+32])
 
-	r.EnvelopeReply = make([]byte, len(b[1+32:]))
-	copy(r.EnvelopeReply, b[1+32:])
+	r.ReplicaID = b[1+32]
+
+	r.EnvelopeReply = make([]byte, len(b[1+32+1:]))
+	copy(r.EnvelopeReply, b[1+32+1:])
 
 	return r, nil
 }

@@ -166,6 +166,7 @@ func testDockerCourierService(t *testing.T) {
 
 	messageBlob2 := envelope2.Bytes()
 
+	// send a read request
 	reply2 := sendAndWait(t, thin, messageBlob2, &nodeIdKey, target.RecipientQueueID)
 	require.NotNil(t, reply2)
 
@@ -175,7 +176,7 @@ func testDockerCourierService(t *testing.T) {
 	replicaMessageReply := courierReply.Payload
 	require.Equal(t, 0, replicaMessageReply.ErrorCode)
 
-	replyEnv, err := mkemNikeScheme.DecryptEnvelope(senderEPrivKey, replicaMessageReply.EnvelopeReply)
+	replyEnv, err := mkemNikeScheme.DecryptEnvelope(senderEPrivKey, replicaPubKey, replicaMessageReply.EnvelopeReply)
 	require.NoError(t, err)
 
 }

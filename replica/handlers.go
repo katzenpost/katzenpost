@@ -91,6 +91,18 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 		}
 	}
 
+	doc := c.l.server.pkiWorker.PKIDocument()
+	replicaID, err := doc.GetReplicaIDByIdentityKey(c.l.server.identityPublicKey)
+	if err != nil {
+		c.log.Errorf("handleReplicaMessage failed to get our own replica ID: %s", err)
+		return &commands.ReplicaMessageReply{
+			Cmds:          commands.NewStorageReplicaCommands(c.geo, nikeScheme),
+			ErrorCode:     3, // non-zero means failure.
+			EnvelopeHash:  &envelopeHash,
+			EnvelopeReply: []byte{},
+		}
+	}
+
 	switch myCmd := myCmd.(type) {
 	case *common.ReplicaRead:
 		readReply := c.handleReplicaRead(myCmd)
@@ -104,6 +116,7 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 			ErrorCode:     0, // Zero means success.
 			EnvelopeHash:  &envelopeHash,
 			EnvelopeReply: envelopeReply,
+			ReplicaID:     replicaID,
 		}
 	case *commands.ReplicaWrite:
 		writeReply := c.handleReplicaWrite(myCmd)
@@ -118,6 +131,7 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 			ErrorCode:     0, // Zero means success.
 			EnvelopeHash:  &envelopeHash,
 			EnvelopeReply: envelopeReply,
+			ReplicaID:     replicaID,
 		}
 	default:
 		c.log.Error("BUG: handleReplicaMessage failed: invalid request was decrypted")

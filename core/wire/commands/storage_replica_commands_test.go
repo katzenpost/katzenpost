@@ -13,6 +13,76 @@ import (
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 )
 
+func TestReplicaMessageReplyWithoutPadding(t *testing.T) {
+	t.Parallel()
+
+	envelopeHash := &[32]byte{}
+	_, err := rand.Reader.Read(envelopeHash[:])
+	require.NoError(t, err)
+
+	reply1 := ReplicaMessageReply{
+		ErrorCode:     1,
+		EnvelopeHash:  envelopeHash,
+		ReplicaID:     123,
+		EnvelopeReply: []byte("hello world"),
+	}
+
+	blob1 := reply1.ToBytes()
+
+	reply2raw, err := replicaMessageReplyFromBytes(blob1)
+	require.NoError(t, err)
+	reply2 := reply2raw.(*ReplicaMessageReply)
+
+	require.Equal(t, reply1.ErrorCode, reply2.ErrorCode)
+	require.Equal(t, reply1.EnvelopeHash[:], reply2.EnvelopeHash[:])
+	require.Equal(t, reply1.ReplicaID, reply2.ReplicaID)
+	require.Equal(t, reply1.EnvelopeReply, reply2.EnvelopeReply)
+
+	blob2 := reply2.ToBytes()
+	require.Equal(t, blob1, blob2)
+}
+
+/*
+func TestReplicaMessageReplyWithPadding(t *testing.T) {
+	t.Parallel()
+
+	nike := ecdh.Scheme(rand.Reader)
+	forwardPayloadLength := 1234
+	nrHops := 5
+
+	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
+	s := sphinx.NewSphinx(geo)
+
+	cmds := NewStorageReplicaCommands(s.Geometry(), nike)
+
+	envelopeHash := &[32]byte{}
+	_, err := rand.Reader.Read(envelopeHash[:])
+	require.NoError(t, err)
+
+	reply1 := ReplicaMessageReply{
+		Cmds:          cmds,
+		ErrorCode:     1,
+		EnvelopeHash:  envelopeHash,
+		ReplicaID:     123,
+		EnvelopeReply: []byte("hello world"),
+	}
+
+	blob1 := reply1.ToBytes()
+
+	reply2raw, err := replicaMessageReplyFromBytes(blob1)
+	require.NoError(t, err)
+	reply2 := reply2raw.(*ReplicaMessageReply)
+
+	require.Equal(t, reply1.ErrorCode, reply2.ErrorCode)
+	require.Equal(t, reply1.EnvelopeHash[:], reply2.EnvelopeHash[:])
+	require.Equal(t, reply1.ReplicaID, reply2.ReplicaID)
+	require.Equal(t, reply1.EnvelopeReply, reply2.EnvelopeReply)
+
+	blob2 := reply2.ToBytes()
+	require.Equal(t, blob1, blob2)
+}
+*/
+
 func TestReplicaMessage(t *testing.T) {
 	t.Parallel()
 	const payload = "A free man must be able to endure it when his fellow men act and live otherwise than he considers proper. He must free himself from the habit, just as soon as something does not please him, of calling for the police."
