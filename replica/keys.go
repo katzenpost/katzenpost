@@ -36,11 +36,11 @@ func NewEnvelopeKeys(scheme nike.Scheme, log *logging.Logger, datadir string, ep
 	e := &EnvelopeKeys{
 		datadir:  datadir,
 		log:      log,
-		keys:     make(map[uint64]*EnvelopeKey),
+		keys:     make(map[uint64]*common.EnvelopeKey),
 		keysLock: new(sync.RWMutex),
 		scheme:   scheme,
 	}
-	keypair, err := NewEnvelopeKeyFromFiles(datadir, scheme, epoch)
+	keypair, err := common.NewEnvelopeKeyFromFiles(datadir, scheme, epoch)
 	if err == nil {
 		e.keys[epoch] = keypair
 	} else {
@@ -100,7 +100,7 @@ func (k *EnvelopeKeys) worker() {
 func (k *EnvelopeKeys) Generate(replicaEpoch uint64) error {
 	k.keysLock.Lock()
 	defer k.keysLock.Unlock()
-	keypair := NewEnvelopeKey(k.scheme)
+	keypair := common.NewEnvelopeKey(k.scheme)
 	err := keypair.WriteKeyFiles(k.datadir, k.scheme, replicaEpoch)
 	if err != nil {
 		return err
@@ -124,7 +124,7 @@ func (k *EnvelopeKeys) Prune() bool {
 	return didPrune
 }
 
-func (k *EnvelopeKeys) GetKeypair(replicaEpoch uint64) (*EnvelopeKey, error) {
+func (k *EnvelopeKeys) GetKeypair(replicaEpoch uint64) (*common.EnvelopeKey, error) {
 	k.keysLock.RLock()
 	defer k.keysLock.RUnlock()
 	keypair, ok := k.keys[replicaEpoch]
@@ -134,7 +134,7 @@ func (k *EnvelopeKeys) GetKeypair(replicaEpoch uint64) (*EnvelopeKey, error) {
 	return keypair, nil
 }
 
-func (k *EnvelopeKeys) EnsureKey(replicaEpoch uint64) (*EnvelopeKey, error) {
+func (k *EnvelopeKeys) EnsureKey(replicaEpoch uint64) (*common.EnvelopeKey, error) {
 	keypair, err := k.GetKeypair(replicaEpoch)
 	if err != nil {
 		err = k.Generate(replicaEpoch)
