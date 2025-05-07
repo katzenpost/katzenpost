@@ -38,7 +38,7 @@ type CourierEnvelope struct {
 	ReplyIndex uint8
 
 	// SenderEPubKey is the sender's ephemeral public key.
-	SenderEPubKey [2][]byte
+	SenderEPubKey []byte
 
 	// Ciphertext is the encrypted and MAC'ed payload.
 	Ciphertext []byte
@@ -46,7 +46,7 @@ type CourierEnvelope struct {
 
 type envelopeHash struct {
 	// SenderEPubKey is the sender's ephemeral public key.
-	SenderEPubKey [2][]byte
+	SenderEPubKey []byte
 
 	// Ciphertext is the encrypted and MAC'ed payload.
 	Ciphertext []byte

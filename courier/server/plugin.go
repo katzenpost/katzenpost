@@ -55,7 +55,7 @@ func (e *Courier) OnCommand(cmd cborplugin.Command) error {
 		e.server.log.Debug("---------- OnCommand: proxying to replica1")
 		firstReplicaID := courierMessage.IntermediateReplicas[0]
 		replicas[0] = &commands.ReplicaMessage{
-			SenderEPubKey: courierMessage.SenderEPubKey[0],
+			SenderEPubKey: courierMessage.SenderEPubKey,
 			DEK:           courierMessage.DEK[0],
 			Ciphertext:    courierMessage.Ciphertext,
 		}
@@ -65,7 +65,7 @@ func (e *Courier) OnCommand(cmd cborplugin.Command) error {
 		e.server.log.Debug("---------- OnCommand: proxying to replica2")
 		secondReplicaID := courierMessage.IntermediateReplicas[1]
 		replicas[1] = &commands.ReplicaMessage{
-			SenderEPubKey: courierMessage.SenderEPubKey[1],
+			SenderEPubKey: courierMessage.SenderEPubKey,
 			DEK:           courierMessage.DEK[1],
 			Ciphertext:    courierMessage.Ciphertext,
 		}
@@ -84,7 +84,11 @@ func (e *Courier) OnCommand(cmd cborplugin.Command) error {
 
 		go func() {
 			// send reply
-			e.write(&cborplugin.Response{ID: r.ID, SURB: r.SURB, Payload: replyPayload})
+			e.write(&cborplugin.Response{
+				ID:      r.ID,
+				SURB:    r.SURB,
+				Payload: replyPayload,
+			})
 		}()
 		return nil
 	default:

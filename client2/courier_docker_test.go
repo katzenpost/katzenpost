@@ -18,10 +18,11 @@ import (
 
 	"github.com/katzenpost/katzenpost/client2/config"
 	"github.com/katzenpost/katzenpost/client2/thin"
-	"github.com/katzenpost/katzenpost/courier/common"
+	"github.com/katzenpost/katzenpost/core/wire/commands"
+	"github.com/katzenpost/katzenpost/replica/common"
 )
 
-var mkemNikeScheme *mkem.Scheme = mkem.NewScheme(schemes.ByName("x25519"))
+var mkemNikeScheme *mkem.Scheme = mkem.NewScheme(schemes.ByName("CTIDH1024-X25519"))
 
 func testDockerCourierService(t *testing.T) {
 
@@ -54,11 +55,18 @@ func testDockerCourierService(t *testing.T) {
 	replica0 := replicas[0]
 	replica1 := replicas[1]
 	replicaEpoch, _, _ := common.ReplicaNow()
-	replica0EnvKey, ok := replica0.EnvelopeKeys[replicaEpoch]
+	replica0EnvKeyRaw, ok := replica0.EnvelopeKeys[replicaEpoch]
 	require.True(t, ok)
-	replica1EnvKey, ok := replica1.EnvelopeKeys[replicaEpoch]
+	replica1EnvKeyRaw, ok := replica1.EnvelopeKeys[replicaEpoch]
 	require.True(t, ok)
-	//replica0pub
+
+	replica0EnvKey, err := common.EnvelopeKeyFromBytes(replica0EnvKeyRaw)
+	require.NoError(t, err)
+	replica1EnvKey, err := common.EnvelopeKeyFromBytes(replica1EnvKeyRaw)
+	require.NoError(t, err)
+
+	replica0pub := replica0EnvKey.PublicKey
+	replica1pub := replica1EnvKey.PublicKey
 
 	t.Log("TESTING COURIER SERVICE3")
 
@@ -72,10 +80,30 @@ func testDockerCourierService(t *testing.T) {
 
 	t.Log("TESTING COURIER SERVICE4")
 
-	// XXX FIX ME
-	request := make([]byte, 32)
-	_, err = rand.Reader.Read(request)
+	ctx := []byte("test-session")
+	owner, err := NewBoxOwnerCap(rand.Reader)
 	require.NoError(t, err)
+
+	uread := owner.UniversalReadCap()
+
+	writer, err := NewStatefulWriter(owner, ctx)
+	require.NoError(t, err)
+
+	reader, err := NewStatefulReader(uread, ctx)
+	require.NoError(t, err)
+
+	plaintextMessage := "Hello world"
+
+	boxID, ciphertext, sigraw, err := writer.EncryptNext(plaintextMessage)
+	require.NoError(t, err)
+
+	writeRequest := commands.ReplicaWrite{
+		BoxID:     boxID,
+		Signature: sigraw,
+		Payload:   ciphertext,
+	}
+
+	request := writeRequest.ToBytes()
 
 	t.Log("TESTING COURIER SERVICE5")
 
@@ -89,20 +117,47 @@ func testDockerCourierService(t *testing.T) {
 	copy(dek1[:], ciphertext.DEKCiphertexts[0])
 	copy(dek2[:], ciphertext.DEKCiphertexts[1])
 
-	envelope := common.CourierEnvelope{
-		SenderEPubKey:        [2][]byte{replica1pub.Bytes(), replica2pub.Bytes()},
+	senderEPubKey, senderEPrivKey, err := mkemNikeScheme.GenerateKeyPair()
+	require.NoError(t, err)
+
+	envelope1 := common.CourierEnvelope{
+		SenderEPubKey:        senderEPubKey,
 		IntermediateReplicas: [2]uint8{0, 1},
 		DEK:                  [2]*[32]byte{dek1, dek2},
 		Ciphertext:           ciphertext.Envelope,
 	}
 
-	messageBlob := envelope.Bytes()
+	messageBlob := envelope1.Bytes()
 	nodeIdKey := hash.Sum256(target.MixDescriptor.IdentityKey)
 
 	t.Log("TESTING COURIER SERVICE6")
 
-	reply := sendAndWait(t, thin, messageBlob, &nodeIdKey, target.RecipientQueueID)
+	reply1 := sendAndWait(t, thin, messageBlob, &nodeIdKey, target.RecipientQueueID)
 	require.NotNil(t, reply)
 
 	t.Log("TESTING COURIER SERVICE7")
+
+	replicaRead := &ReplicaRead{
+		BoxID: boxID,
+	}
+
+	envelope2 := common.CourierEnvelope{
+		SenderEPubKey:        senderEPubKey,
+		IntermediateReplicas: [2]uint8{0, 1},
+		DEK:                  [2]*[32]byte{dek1, dek2},
+		Ciphertext:           ciphertext.Envelope,
+	}
+
+	reply2 := sendAndWait(t, thin, messageBlob, &nodeIdKey, target.RecipientQueueID)
+	require.NotNil(t, reply)
+
+	courierReply, err := CourierEnvelopeReplyFromBytes(reply2)
+	require.NoError(t, err)
+
+	replicaMessageReply := courierReply.Payload
+	require.Equal(t, 0, replicaMessageReply.ErrorCode)
+
+	plaintext, err := mkemNikeScheme.DecryptEnvelope(replicaMessageReply.EnvelopeReply)
+	require.NoError(t, err)
+	require.Equal(t, plaintext, plaintextMessage)
 }

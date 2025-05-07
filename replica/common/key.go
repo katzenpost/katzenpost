@@ -38,8 +38,13 @@ func NewEnvelopeKey(scheme nike.Scheme) *EnvelopeKey {
 	return e
 }
 
-// NewEnvelopeKeyFromFiles loads the PEM key files from disk.
-func NewEnvelopeKeyFromFiles(dataDir string, scheme nike.Scheme, epoch uint64) (*EnvelopeKey, error) {
+func EnvelopeKeyFromBytes(b []byte) (*EnvelopeKey, error) {
+
+	return nil, nil // XXX FIX ME
+}
+
+// EnvelopeKeyFromFiles loads the PEM key files from disk.
+func EnvelopeKeyFromFiles(dataDir string, scheme nike.Scheme, epoch uint64) (*EnvelopeKey, error) {
 	e := &EnvelopeKey{}
 	privKeyFile, pubKeyFile := e.KeyFileNames(dataDir, scheme, epoch)
 	if utils.BothExists(privKeyFile, pubKeyFile) {
