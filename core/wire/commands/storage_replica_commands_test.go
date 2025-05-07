@@ -134,7 +134,7 @@ func TestReplicaWrite(t *testing.T) {
 	_, err := rand.Reader.Read(id[:])
 	require.NoError(t, err)
 
-	signature := &[32]byte{}
+	signature := &[64]byte{}
 	_, err = rand.Reader.Read(signature[:])
 	require.NoError(t, err)
 

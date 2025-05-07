@@ -65,9 +65,9 @@ func replicaWriteFromBytes(b []byte, cmds *Commands) (Command, error) {
 	c.BoxID = &[32]byte{}
 	copy(c.BoxID[:], b[:32])
 	c.Signature = &[64]byte{}
-	copy(c.Signature[:], b[32:32+32])
-	c.Payload = make([]byte, len(b[32+32:]))
-	copy(c.Payload, b[32+32:])
+	copy(c.Signature[:], b[32:32+64])
+	c.Payload = make([]byte, len(b[32+64:]))
+	copy(c.Payload, b[32+64:])
 	return c, nil
 }
 
