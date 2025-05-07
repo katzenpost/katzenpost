@@ -90,7 +90,7 @@ func CourierEnvelopeFromBytes(b []byte) (*CourierEnvelope, error) {
 	return c, nil
 }
 
-// CourierEnvelopeReply us used wher the Courier sends a reply to the client
+// CourierEnvelopeReply us used when the Courier sends a reply to the client
 // in response to some previously sent CourierEnvelope message.
 type CourierEnvelopeReply struct {
 	// EnvelopeHash is used to uniquely identify the CourierEnvelope message
@@ -182,7 +182,7 @@ type ReplicaReadReply struct {
 	// is verifiable with the BoxID which is also the public key.
 	Signature *[32]byte
 
-	// Payload is the encrypted and MAC'ed.
+	// Payload is encrypted and MAC'ed.
 	Payload []byte
 }
 
@@ -200,6 +200,40 @@ func (c *ReplicaReadReply) Bytes() []byte {
 // the given CBOR binary blob into a *ReplicaReadReply type.
 func ReplicaReadReplyFromBytes(b []byte) (*ReplicaReadReply, error) {
 	c := &ReplicaReadReply{}
+	err := cbor.Unmarshal(b, c)
+	if err != nil {
+		return nil, err
+	}
+	return c, nil
+}
+
+// ReplicaMessageReplyInnerMessage is the struct type
+// which is CBOR encoded, encrypted and sent from
+// replica to courier service inside a ReplicaMessageReply.
+// It encapsulates either a ReplicaReadReply or a ReplicaWriteReply.
+type ReplicaMessageReplyInnerMessage struct {
+	// ReplicaReadReply is of type *ReplicaReadReply.
+	ReplicaReadReply *ReplicaReadReply
+
+	// ReplicaWriteReply is of type *ReplicaWriteReply.
+	ReplicaWriteReply *commands.ReplicaWriteReply
+}
+
+// ReplicaMessageReplyInnerMessage CBOR encode the given type.
+func (c *ReplicaMessageReplyInnerMessage) Bytes() []byte {
+	if c.ReplicaReadReply != nil && c.ReplicaWriteReply != nil {
+		panic("ReplicaMessageReplyInnerMessage.Bytes failure: one field must be nil.")
+	}
+	blob, err := cbor.Marshal(c)
+	if err != nil {
+		panic(err)
+	}
+	return blob
+}
+
+// ReplicaMessageReplyInnerMessageFromBytes CBOR decodes the binary blob.
+func ReplicaMessageReplyInnerMessageFromBytes(b []byte) (*ReplicaMessageReplyInnerMessage, error) {
+	c := &ReplicaMessageReplyInnerMessage{}
 	err := cbor.Unmarshal(b, c)
 	if err != nil {
 		return nil, err

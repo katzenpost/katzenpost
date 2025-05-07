@@ -6,6 +6,8 @@ filippo.io/mlkem768 v0.0.0-20240221181710-5ce91625fdc1 h1:xbdqh5aDZeO0XqW896qVjK
 filippo.io/mlkem768 v0.0.0-20240221181710-5ce91625fdc1/go.mod h1:mIEHrcJ2xBlJRQwnRO0ujmZ+Rt6m6eNeCPq8E3Wkths=
 github.com/BurntSushi/toml v1.4.0 h1:kuoIxZQy2WRRk1pttg9asf+WVv6tWQuBNVmK8+nqPr0=
 github.com/BurntSushi/toml v1.4.0/go.mod h1:ukJfTF/6rtPPRCnwkur4qwRxa8vTRFBF0uk2lLoLwho=
+github.com/agl/gcmsiv v0.0.0-20190418185415-e8dcd2f151dc h1:MB338WDPuyQ8qXRiSRK2NVTv0EmLYsHXZAevEiQO1+c=
+github.com/agl/gcmsiv v0.0.0-20190418185415-e8dcd2f151dc/go.mod h1:5joDAvk82M2Cx1X8mAL5Orvhy5lfW4BjrTCW65wbvRo=
 github.com/beorn7/perks v1.0.1 h1:VlbKKnNfV8bJzeqoa4cOKqO6bYr3WgKZxO8Z16+hsOM=
 github.com/beorn7/perks v1.0.1/go.mod h1:G2ZrVWU2WbWT9wwq4/hrbKbnv/1ERSJQ0ibhJ6rlkpw=
 github.com/carlmjohnson/versioninfo v0.22.5 h1:O00sjOLUAFxYQjlN/bzYTuZiS0y6fWDQjMRvwtKgwwc=

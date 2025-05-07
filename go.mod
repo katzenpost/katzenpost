@@ -37,6 +37,7 @@ require (
 	codeberg.org/vula/highctidh v1.0.2024092800 // indirect
 	filippo.io/edwards25519 v1.0.0 // indirect
 	filippo.io/mlkem768 v0.0.0-20240221181710-5ce91625fdc1 // indirect
+	github.com/agl/gcmsiv v0.0.0-20190418185415-e8dcd2f151dc // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/cockroachdb/apd v1.1.0 // indirect

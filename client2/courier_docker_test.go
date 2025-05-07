@@ -10,6 +10,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/katzenpost/hpqc/bacap"
 	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/kem/mkem"
 	"github.com/katzenpost/hpqc/nike"
@@ -81,25 +82,28 @@ func testDockerCourierService(t *testing.T) {
 	t.Log("TESTING COURIER SERVICE4")
 
 	ctx := []byte("test-session")
-	owner, err := NewBoxOwnerCap(rand.Reader)
+	owner, err := bacap.NewBoxOwnerCap(rand.Reader)
 	require.NoError(t, err)
 
 	uread := owner.UniversalReadCap()
 
-	writer, err := NewStatefulWriter(owner, ctx)
+	writer, err := bacap.NewStatefulWriter(owner, ctx)
 	require.NoError(t, err)
 
-	reader, err := NewStatefulReader(uread, ctx)
+	reader, err := bacap.NewStatefulReader(uread, ctx)
 	require.NoError(t, err)
 
-	plaintextMessage := "Hello world"
+	plaintextMessage := []byte("Hello world")
 
 	boxID, ciphertext, sigraw, err := writer.EncryptNext(plaintextMessage)
 	require.NoError(t, err)
 
+	sig := &[32]byte{}
+	copy(sig[:], sigraw)
+
 	writeRequest := commands.ReplicaWrite{
-		BoxID:     boxID,
-		Signature: sigraw,
+		BoxID:     &boxID,
+		Signature: sig,
 		Payload:   ciphertext,
 	}
 
@@ -109,47 +113,61 @@ func testDockerCourierService(t *testing.T) {
 
 	_, ciphertextBlob := mkemNikeScheme.Encapsulate([]nike.PublicKey{replica0pub, replica1pub}, request)
 
-	ciphertext, err := mkem.CiphertextFromBytes(mkemNikeScheme, ciphertextBlob)
+	mkemCiphertext, err := mkem.CiphertextFromBytes(mkemNikeScheme, ciphertextBlob)
 	require.NoError(t, err)
 
 	dek1 := &[32]byte{}
 	dek2 := &[32]byte{}
-	copy(dek1[:], ciphertext.DEKCiphertexts[0])
-	copy(dek2[:], ciphertext.DEKCiphertexts[1])
+	copy(dek1[:], mkemCiphertext.DEKCiphertexts[0])
+	copy(dek2[:], mkemCiphertext.DEKCiphertexts[1])
 
 	senderEPubKey, senderEPrivKey, err := mkemNikeScheme.GenerateKeyPair()
 	require.NoError(t, err)
 
 	envelope1 := common.CourierEnvelope{
-		SenderEPubKey:        senderEPubKey,
+		SenderEPubKey:        senderEPubKey.Bytes(),
 		IntermediateReplicas: [2]uint8{0, 1},
 		DEK:                  [2]*[32]byte{dek1, dek2},
-		Ciphertext:           ciphertext.Envelope,
+		Ciphertext:           mkemCiphertext.Envelope,
 	}
 
-	messageBlob := envelope1.Bytes()
+	messageBlob1 := envelope1.Bytes()
 	nodeIdKey := hash.Sum256(target.MixDescriptor.IdentityKey)
 
 	t.Log("TESTING COURIER SERVICE6")
 
-	reply1 := sendAndWait(t, thin, messageBlob, &nodeIdKey, target.RecipientQueueID)
-	require.NotNil(t, reply)
+	reply1 := sendAndWait(t, thin, messageBlob1, &nodeIdKey, target.RecipientQueueID)
+	require.NotNil(t, reply1)
+
+	// XXX Do more checks on reply, here.
 
 	t.Log("TESTING COURIER SERVICE7")
 
-	replicaRead := &ReplicaRead{
-		BoxID: boxID,
+	replicaRead := &common.ReplicaRead{
+		BoxID: &boxID,
 	}
+
+	replicaReadBlob := replicaRead.ToBytes()
+	_, replicaReadCiphertextBlob := mkemNikeScheme.Encapsulate([]nike.PublicKey{replica0pub, replica1pub}, replicaReadBlob)
+	replicaReadCiphertext, err := mkem.CiphertextFromBytes(mkemNikeScheme, replicaReadCiphertextBlob)
+	require.NoError(t, err)
+
+	readDek1 := &[32]byte{}
+	readDek2 := &[32]byte{}
+	copy(readDek1[:], replicaReadCiphertext.DEKCiphertexts[0])
+	copy(readDek2[:], replicaReadCiphertext.DEKCiphertexts[1])
 
 	envelope2 := common.CourierEnvelope{
-		SenderEPubKey:        senderEPubKey,
+		SenderEPubKey:        senderEPubKey.Bytes(),
 		IntermediateReplicas: [2]uint8{0, 1},
-		DEK:                  [2]*[32]byte{dek1, dek2},
-		Ciphertext:           ciphertext.Envelope,
+		DEK:                  [2]*[32]byte{readDek1, readDek2},
+		Ciphertext:           replicaReadCiphertext.Envelope,
 	}
 
-	reply2 := sendAndWait(t, thin, messageBlob, &nodeIdKey, target.RecipientQueueID)
-	require.NotNil(t, reply)
+	messageBlob2 := envelope2.Bytes()
+
+	reply2 := sendAndWait(t, thin, messageBlob2, &nodeIdKey, target.RecipientQueueID)
+	require.NotNil(t, reply2)
 
 	courierReply, err := CourierEnvelopeReplyFromBytes(reply2)
 	require.NoError(t, err)
@@ -157,7 +175,7 @@ func testDockerCourierService(t *testing.T) {
 	replicaMessageReply := courierReply.Payload
 	require.Equal(t, 0, replicaMessageReply.ErrorCode)
 
-	plaintext, err := mkemNikeScheme.DecryptEnvelope(replicaMessageReply.EnvelopeReply)
+	replyEnv, err := mkemNikeScheme.DecryptEnvelope(senderEPrivKey, replicaMessageReply.EnvelopeReply)
 	require.NoError(t, err)
-	require.Equal(t, plaintext, plaintextMessage)
+
 }
