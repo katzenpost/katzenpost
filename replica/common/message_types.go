@@ -180,7 +180,7 @@ type ReplicaReadReply struct {
 
 	// Signature covers the given Payload field and
 	// is verifiable with the BoxID which is also the public key.
-	Signature *[32]byte
+	Signature *[64]byte
 
 	// Payload is encrypted and MAC'ed.
 	Payload []byte

@@ -23,7 +23,8 @@ import (
 	"github.com/katzenpost/katzenpost/replica/common"
 )
 
-var mkemNikeScheme *mkem.Scheme = mkem.NewScheme(schemes.ByName("CTIDH1024-X25519"))
+var nikeScheme nike.Scheme = schemes.ByName("CTIDH1024-X25519")
+var mkemNikeScheme *mkem.Scheme = mkem.NewScheme(nikeScheme)
 
 func testDockerCourierService(t *testing.T) {
 
@@ -93,9 +94,9 @@ func testDockerCourierService(t *testing.T) {
 	reader, err := bacap.NewStatefulReader(uread, ctx)
 	require.NoError(t, err)
 
-	plaintextMessage := []byte("Hello world")
+	plaintextMessage1 := []byte("Hello world")
 
-	boxID, ciphertext, sigraw, err := writer.EncryptNext(plaintextMessage)
+	boxID, ciphertext, sigraw, err := writer.EncryptNext(plaintextMessage1)
 	require.NoError(t, err)
 
 	sig := &[32]byte{}
@@ -170,13 +171,30 @@ func testDockerCourierService(t *testing.T) {
 	reply2 := sendAndWait(t, thin, messageBlob2, &nodeIdKey, target.RecipientQueueID)
 	require.NotNil(t, reply2)
 
-	courierReply, err := CourierEnvelopeReplyFromBytes(reply2)
+	courierReply, err := common.CourierEnvelopeReplyFromBytes(reply2)
 	require.NoError(t, err)
 
 	replicaMessageReply := courierReply.Payload
 	require.Equal(t, 0, replicaMessageReply.ErrorCode)
 
-	replyEnv, err := mkemNikeScheme.DecryptEnvelope(senderEPrivKey, replicaPubKey, replicaMessageReply.EnvelopeReply)
+	replyReplica, err := doc.GetReplicaNodeByReplicaID(replicaMessageReply.ReplicaID)
+	require.NoError(t, err)
+	replicaPubKeyBlob := replyReplica.EnvelopeKeys[replicaEpoch]
+	replicaPubKey, err := nikeScheme.UnmarshalBinaryPublicKey(replicaPubKeyBlob)
 	require.NoError(t, err)
 
+	replyEnvelopeBlob, err := mkemNikeScheme.DecryptEnvelope(senderEPrivKey, replicaPubKey, replicaMessageReply.EnvelopeReply)
+	require.NoError(t, err)
+
+	replicaMessageReplyInnerMessage, err := common.ReplicaMessageReplyInnerMessageFromBytes(replyEnvelopeBlob)
+	require.NoError(t, err)
+	require.NotNil(t, replicaMessageReplyInnerMessage.ReplicaReadReply)
+	require.Nil(t, replicaMessageReplyInnerMessage.ReplicaWriteReply)
+
+	cyphertext := replicaMessageReplyInnerMessage.ReplicaReadReply.Payload
+	signature := replicaMessageReplyInnerMessage.ReplicaReadReply.Signature
+
+	plaintextMessage2, err := reader.DecryptNext(ctx, boxID, cyphertext, *signature)
+	require.NoError(t, err)
+	require.Equal(t, plaintextMessage1, plaintextMessage2)
 }
