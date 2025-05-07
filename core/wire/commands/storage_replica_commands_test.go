@@ -21,15 +21,14 @@ func TestReplicaMessageReplyWithoutPadding(t *testing.T) {
 	require.NoError(t, err)
 
 	reply1 := ReplicaMessageReply{
-		ErrorCode:     1,
+		ErrorCode:     0xAA,
 		EnvelopeHash:  envelopeHash,
 		ReplicaID:     123,
 		EnvelopeReply: []byte("hello world"),
 	}
 
 	blob1 := reply1.ToBytes()
-
-	reply2raw, err := replicaMessageReplyFromBytes(blob1)
+	reply2raw, err := replicaMessageReplyFromBytes(blob1[cmdOverhead:], nil)
 	require.NoError(t, err)
 	reply2 := reply2raw.(*ReplicaMessageReply)
 
@@ -42,7 +41,6 @@ func TestReplicaMessageReplyWithoutPadding(t *testing.T) {
 	require.Equal(t, blob1, blob2)
 }
 
-/*
 func TestReplicaMessageReplyWithPadding(t *testing.T) {
 	t.Parallel()
 
@@ -69,7 +67,7 @@ func TestReplicaMessageReplyWithPadding(t *testing.T) {
 
 	blob1 := reply1.ToBytes()
 
-	reply2raw, err := replicaMessageReplyFromBytes(blob1)
+	reply2raw, err := cmds.FromBytes(blob1)
 	require.NoError(t, err)
 	reply2 := reply2raw.(*ReplicaMessageReply)
 
@@ -81,7 +79,6 @@ func TestReplicaMessageReplyWithPadding(t *testing.T) {
 	blob2 := reply2.ToBytes()
 	require.Equal(t, blob1, blob2)
 }
-*/
 
 func TestReplicaMessage(t *testing.T) {
 	t.Parallel()

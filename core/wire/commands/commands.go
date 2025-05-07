@@ -343,6 +343,8 @@ func (c *Commands) FromBytes(b []byte) (Command, error) {
 		return replicaWriteReplyFromBytes(b, c)
 	case replicaMessage:
 		return replicaMessageFromBytes(b, c)
+	case replicaMessageReply:
+		return replicaMessageReplyFromBytes(b, c)
 	case sendRetrievePacket:
 		return sendRetrievePacketFromBytes(b, c)
 	case sendRetrievePacketReply:

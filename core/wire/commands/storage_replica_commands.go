@@ -5,6 +5,7 @@ package commands
 
 import (
 	"encoding/binary"
+	"fmt"
 
 	"github.com/katzenpost/hpqc/nike"
 
@@ -142,7 +143,6 @@ func replicaMessageFromBytes(b []byte, cmds *Commands) (Command, error) {
 	c.DEK = &[32]byte{}
 	copy(c.DEK[:], b[HybridKeySize(c.Scheme):HybridKeySize(c.Scheme)+32])
 
-	// c.Cmds.geo.PacketLength
 	c.Ciphertext = make([]byte, len(b[HybridKeySize(c.Scheme)+32:]))
 	copy(c.Ciphertext, b[HybridKeySize(c.Scheme)+32:])
 
@@ -178,21 +178,24 @@ func (c *ReplicaMessageReply) ToBytes() []byte {
 	out[0] = byte(replicaMessageReply)
 	binary.BigEndian.PutUint32(out[2:6], uint32(1+32+1+len(c.EnvelopeReply)))
 
+	fmt.Printf("writing ErrorCode %d\n", c.ErrorCode)
 	out = append(out, c.ErrorCode)
 	out = append(out, c.EnvelopeHash[:]...)
 	out = append(out, c.ReplicaID)
 	out = append(out, c.EnvelopeReply...)
 
-	return c.Cmds.padToMaxCommandSize(out, true)
+	// optional traffic padding
+	if c.Cmds == nil {
+		return out
+	}
+	return c.Cmds.padToMaxCommandSize(out, false)
 }
 
-func replicaMessageReplyFromBytes(b []byte) (Command, error) {
-	if len(b) != postDescriptorStatusLength {
-		return nil, errInvalidCommand
-	}
-
+func replicaMessageReplyFromBytes(b []byte, cmds *Commands) (Command, error) {
 	r := new(ReplicaMessageReply)
+	r.Cmds = cmds
 	r.ErrorCode = b[0]
+	fmt.Printf("raw hex %x\n", b)
 
 	r.EnvelopeHash = &[32]byte{}
 	copy(r.EnvelopeHash[:], b[1:1+32])
@@ -206,12 +209,5 @@ func replicaMessageReplyFromBytes(b []byte) (Command, error) {
 }
 
 func (c *ReplicaMessageReply) Length() int {
-	const (
-		errorCodeLen  = 1
-		idLen         = 32
-		sigLen        = 32
-		signatureSize = 32
-	)
-	replicaReadReplyLength := cmdOverhead + errorCodeLen + idLen + sigLen + signatureSize + c.Cmds.geo.PacketLength
-	return cmdOverhead + 1 + 32 + replicaReadReplyLength
+	return cmdOverhead + 1 + 32 + 1 + len(c.EnvelopeReply)
 }
