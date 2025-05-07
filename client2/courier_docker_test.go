@@ -49,6 +49,17 @@ func testDockerCourierService(t *testing.T) {
 	require.NotNil(t, doc)
 	require.NotEqual(t, doc.LambdaP, 0.0)
 
+	// extract storage replica info
+	replicas := doc.StorageReplicas
+	replica0 := replicas[0]
+	replica1 := replicas[1]
+	replicaEpoch, _, _ := common.ReplicaNow()
+	replica0EnvKey, ok := replica0.EnvelopeKeys[replicaEpoch]
+	require.True(t, ok)
+	replica1EnvKey, ok := replica1.EnvelopeKeys[replicaEpoch]
+	require.True(t, ok)
+	//replica0pub
+
 	t.Log("TESTING COURIER SERVICE3")
 
 	descs, err := thin.GetServices("courier")
@@ -61,19 +72,14 @@ func testDockerCourierService(t *testing.T) {
 
 	t.Log("TESTING COURIER SERVICE4")
 
-	// XXX we should get these out of the PKI doc
-	replica1pub, _, err := mkemNikeScheme.GenerateKeyPair()
-	require.NoError(t, err)
-	replica2pub, _, err := mkemNikeScheme.GenerateKeyPair()
-	require.NoError(t, err)
-
+	// XXX FIX ME
 	request := make([]byte, 32)
 	_, err = rand.Reader.Read(request)
 	require.NoError(t, err)
 
 	t.Log("TESTING COURIER SERVICE5")
 
-	_, ciphertextBlob := mkemNikeScheme.Encapsulate([]nike.PublicKey{replica1pub, replica2pub}, request)
+	_, ciphertextBlob := mkemNikeScheme.Encapsulate([]nike.PublicKey{replica0pub, replica1pub}, request)
 
 	ciphertext, err := mkem.CiphertextFromBytes(mkemNikeScheme, ciphertextBlob)
 	require.NoError(t, err)

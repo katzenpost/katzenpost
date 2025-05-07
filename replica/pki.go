@@ -12,7 +12,7 @@ import (
 	vServer "github.com/katzenpost/katzenpost/authority/voting/server"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
-	"github.com/katzenpost/katzenpost/courier/common"
+	"github.com/katzenpost/katzenpost/replica/common"
 )
 
 const NumPKIDocsToFetch = 3

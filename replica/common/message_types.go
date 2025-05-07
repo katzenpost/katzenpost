@@ -1,13 +1,6 @@
 // SPDX-FileCopyrightText: © 2024 David Stainton
 // SPDX-License-Identifier: AGPL-3.0-only
 
-// Package common is used to define Pigeonhole protocol
-// message types which are common between the client and
-// server side. In particular these protocol commands are
-// NOT sent directly via our PQ Noise transport. You can
-// find our Pigeonhole specialized PQ Noise transport commands
-// in package:
-// "github.com/katzenpost/katzenpost/core/wire/commands"
 package common
 
 import (

@@ -11,7 +11,7 @@ import (
 	"github.com/katzenpost/hpqc/sign/ed25519"
 
 	"github.com/katzenpost/katzenpost/core/wire/commands"
-	"github.com/katzenpost/katzenpost/courier/common"
+	"github.com/katzenpost/katzenpost/replica/common"
 )
 
 func (c *incomingConn) onReplicaCommand(rawCmd commands.Command) (commands.Command, bool) {
