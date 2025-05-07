@@ -40,7 +40,7 @@ func NewEnvelopeKeys(scheme nike.Scheme, log *logging.Logger, datadir string, ep
 		keysLock: new(sync.RWMutex),
 		scheme:   scheme,
 	}
-	keypair, err := common.NewEnvelopeKeyFromFiles(datadir, scheme, epoch)
+	keypair, err := common.EnvelopeKeyFromFiles(datadir, scheme, epoch)
 	if err == nil {
 		e.keys[epoch] = keypair
 	} else {

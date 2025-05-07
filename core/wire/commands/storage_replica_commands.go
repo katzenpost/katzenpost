@@ -31,12 +31,12 @@ type ReplicaWrite struct {
 	Cmds *Commands
 
 	BoxID     *[32]byte
-	Signature *[32]byte
+	Signature *[64]byte
 	Payload   []byte
 }
 
 func (c *ReplicaWrite) ToBytes() []byte {
-	out := make([]byte, cmdOverhead, cmdOverhead+32+32+len(c.Payload))
+	out := make([]byte, cmdOverhead, cmdOverhead+32+64+len(c.Payload))
 	out[0] = byte(replicaWrite)
 	binary.BigEndian.PutUint32(out[2:6], uint32(c.Length()-cmdOverhead))
 	out = append(out, c.BoxID[:]...)
@@ -54,7 +54,7 @@ func (c *ReplicaWrite) Length() int {
 	var (
 		// XXX FIX ME: largest ideal command size goes here
 		payloadSize   = c.Cmds.geo.PacketLength
-		signatureSize = 32
+		signatureSize = 64
 	)
 	return cmdOverhead + payloadSize + signatureSize
 }
@@ -64,7 +64,7 @@ func replicaWriteFromBytes(b []byte, cmds *Commands) (Command, error) {
 	c.Cmds = cmds
 	c.BoxID = &[32]byte{}
 	copy(c.BoxID[:], b[:32])
-	c.Signature = &[32]byte{}
+	c.Signature = &[64]byte{}
 	copy(c.Signature[:], b[32:32+32])
 	c.Payload = make([]byte, len(b[32+32:]))
 	copy(c.Payload, b[32+32:])
