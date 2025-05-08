@@ -100,9 +100,10 @@ func testDockerCourierService(t *testing.T) {
 	copy(sig[:], sigraw)
 
 	writeRequest := commands.ReplicaWrite{
-		BoxID:     &boxID,
-		Signature: sig,
-		Payload:   ciphertext,
+		BoxID:         &boxID,
+		Signature:     sig,
+		PayloadLength: uint32(len(ciphertext)),
+		Payload:       ciphertext,
 	}
 
 	request := writeRequest.ToBytes()
