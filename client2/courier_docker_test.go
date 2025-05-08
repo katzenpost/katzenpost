@@ -99,7 +99,7 @@ func testDockerCourierService(t *testing.T) {
 	boxID, ciphertext, sigraw, err := writer.EncryptNext(plaintextMessage1)
 	require.NoError(t, err)
 
-	sig := &[32]byte{}
+	sig := &[64]byte{}
 	copy(sig[:], sigraw)
 
 	writeRequest := commands.ReplicaWrite{
