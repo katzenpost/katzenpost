@@ -14,7 +14,6 @@ import (
 	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/kem/mkem"
 	"github.com/katzenpost/hpqc/nike"
-	"github.com/katzenpost/hpqc/nike/schemes"
 	"github.com/katzenpost/hpqc/rand"
 
 	"github.com/katzenpost/katzenpost/client2/config"
@@ -23,8 +22,7 @@ import (
 	"github.com/katzenpost/katzenpost/replica/common"
 )
 
-var nikeScheme nike.Scheme = schemes.ByName("X25519")
-var mkemNikeScheme *mkem.Scheme = mkem.NewScheme(nikeScheme)
+var mkemNikeScheme *mkem.Scheme = mkem.NewScheme(common.NikeScheme)
 
 func testDockerCourierService(t *testing.T) {
 
@@ -62,9 +60,9 @@ func testDockerCourierService(t *testing.T) {
 	replica1EnvKeyRaw, ok := replica1.EnvelopeKeys[replicaEpoch]
 	require.True(t, ok)
 
-	replica0pub, err := nikeScheme.UnmarshalBinaryPublicKey(replica0EnvKeyRaw)
+	replica0pub, err := common.NikeScheme.UnmarshalBinaryPublicKey(replica0EnvKeyRaw)
 	require.NoError(t, err)
-	replica1pub, err := nikeScheme.UnmarshalBinaryPublicKey(replica1EnvKeyRaw)
+	replica1pub, err := common.NikeScheme.UnmarshalBinaryPublicKey(replica1EnvKeyRaw)
 	require.NoError(t, err)
 
 	t.Log("TESTING COURIER SERVICE3")
@@ -178,7 +176,7 @@ func testDockerCourierService(t *testing.T) {
 	replyReplica, err := doc.GetReplicaNodeByReplicaID(replicaMessageReply.ReplicaID)
 	require.NoError(t, err)
 	replicaPubKeyBlob := replyReplica.EnvelopeKeys[replicaEpoch]
-	replicaPubKey, err := nikeScheme.UnmarshalBinaryPublicKey(replicaPubKeyBlob)
+	replicaPubKey, err := common.NikeScheme.UnmarshalBinaryPublicKey(replicaPubKeyBlob)
 	require.NoError(t, err)
 
 	replyEnvelopeBlob, err := mkemNikeScheme.DecryptEnvelope(senderEPrivKey, replicaPubKey, replicaMessageReply.EnvelopeReply)

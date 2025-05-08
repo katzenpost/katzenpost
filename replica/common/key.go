@@ -11,9 +11,12 @@ import (
 
 	"github.com/katzenpost/hpqc/nike"
 	nikepem "github.com/katzenpost/hpqc/nike/pem"
+	"github.com/katzenpost/hpqc/nike/schemes"
 
 	"github.com/katzenpost/katzenpost/core/utils"
 )
+
+var NikeScheme nike.Scheme = schemes.ByName("CTIDH1024-X25519")
 
 // EnvelopeKey encapsulates the public and private NIKE keys.
 type EnvelopeKey struct {

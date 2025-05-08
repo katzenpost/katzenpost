@@ -32,6 +32,7 @@ import (
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	courierConfig "github.com/katzenpost/katzenpost/courier/server/config"
+	"github.com/katzenpost/katzenpost/replica/common"
 	rConfig "github.com/katzenpost/katzenpost/replica/config"
 	sConfig "github.com/katzenpost/katzenpost/server/config"
 )
@@ -584,7 +585,7 @@ func main() {
 	wirekem := flag.String("wirekem", "", "Name of the KEM Scheme to be used with wire protocol")
 	kem := flag.String("kem", "", "Name of the KEM Scheme to be used with Sphinx")
 	nike := flag.String("nike", "x25519", "Name of the NIKE Scheme to be used with Sphinx")
-	replicaNike := flag.String("replicaNike", "X25519", "Name of the NIKE Scheme to be used with the pigeonhole storage replicas")
+
 	UserForwardPayloadLength := flag.Int("UserForwardPayloadLength", 2000, "UserForwardPayloadLength")
 	pkiSignatureScheme := flag.String("pkiScheme", "ed25519", "PKI Signature Scheme to be used")
 	noDecoy := flag.Bool("noDecoy", true, "Disable decoy traffic for the client")
@@ -617,9 +618,6 @@ func main() {
 	}
 	if *kem != "" && *nike != "" {
 		log.Fatal("nike and kem flags cannot both be set")
-	}
-	if *replicaNike == "" {
-		log.Fatal("replicaNike must be set")
 	}
 
 	parameters := &vConfig.Parameters{
@@ -694,13 +692,7 @@ func main() {
 		s.pkiSignatureScheme = signScheme
 	}
 
-	if *replicaNike != "" {
-		nikeScheme := schemes.ByName(*replicaNike)
-		if nikeScheme == nil {
-			log.Fatalf("failed to resolve replica nike scheme %s", *nike)
-		}
-		s.replicaNIKEScheme = nikeScheme
-	}
+	s.replicaNIKEScheme = common.NikeScheme
 
 	os.Mkdir(s.outDir, 0700)
 	os.Mkdir(filepath.Join(s.outDir, s.baseDir), 0700)
