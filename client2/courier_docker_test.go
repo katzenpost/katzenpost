@@ -62,13 +62,10 @@ func testDockerCourierService(t *testing.T) {
 	replica1EnvKeyRaw, ok := replica1.EnvelopeKeys[replicaEpoch]
 	require.True(t, ok)
 
-	replica0EnvKey, err := common.EnvelopeKeyFromBytes(replica0EnvKeyRaw)
+	replica0pub, err := nikeScheme.UnmarshalBinaryPublicKey(replica0EnvKeyRaw)
 	require.NoError(t, err)
-	replica1EnvKey, err := common.EnvelopeKeyFromBytes(replica1EnvKeyRaw)
+	replica1pub, err := nikeScheme.UnmarshalBinaryPublicKey(replica1EnvKeyRaw)
 	require.NoError(t, err)
-
-	replica0pub := replica0EnvKey.PublicKey
-	replica1pub := replica1EnvKey.PublicKey
 
 	t.Log("TESTING COURIER SERVICE3")
 
