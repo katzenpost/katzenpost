@@ -23,7 +23,7 @@ import (
 	"github.com/katzenpost/katzenpost/replica/common"
 )
 
-var nikeScheme nike.Scheme = schemes.ByName("CTIDH1024-X25519")
+var nikeScheme nike.Scheme = schemes.ByName("X25519")
 var mkemNikeScheme *mkem.Scheme = mkem.NewScheme(nikeScheme)
 
 func testDockerCourierService(t *testing.T) {

@@ -584,7 +584,7 @@ func main() {
 	wirekem := flag.String("wirekem", "", "Name of the KEM Scheme to be used with wire protocol")
 	kem := flag.String("kem", "", "Name of the KEM Scheme to be used with Sphinx")
 	nike := flag.String("nike", "x25519", "Name of the NIKE Scheme to be used with Sphinx")
-	replicaNike := flag.String("replicaNike", "CTIDH1024-X25519", "Name of the NIKE Scheme to be used with the pigeonhole storage replicas")
+	replicaNike := flag.String("replicaNike", "X25519", "Name of the NIKE Scheme to be used with the pigeonhole storage replicas")
 	UserForwardPayloadLength := flag.Int("UserForwardPayloadLength", 2000, "UserForwardPayloadLength")
 	pkiSignatureScheme := flag.String("pkiScheme", "ed25519", "PKI Signature Scheme to be used")
 	noDecoy := flag.Bool("noDecoy", true, "Disable decoy traffic for the client")
