@@ -44,10 +44,18 @@ func (c *ReplicaWrite) ToBytes() []byte {
 		boxidlen     = 32
 		signaturelen = 64
 		uint32len    = 4
+		cmdFrontLen  = boxidlen + signaturelen + uint32len
 	)
-	out := make([]byte, cmdOverhead, cmdOverhead+boxidlen+signaturelen+int(c.PayloadLength)+uint32len+len(c.Payload))
+	if c.PayloadLength != uint32(len(c.Payload)) {
+		panic("ReplicaWrite.PayloadLength is set incorrectly")
+	}
+	if c.Payload == nil {
+		panic("ReplicaWrite.Payload ")
+	}
+	out := make([]byte, cmdOverhead, cmdOverhead+cmdFrontLen+len(c.Payload))
 	out[0] = byte(replicaWrite)
-	binary.BigEndian.PutUint32(out[2:6], uint32(c.Length()-cmdOverhead))
+	binary.BigEndian.PutUint32(out[2:6], uint32(cmdFrontLen+len(c.Payload)))
+
 	out = append(out, c.BoxID[:]...)
 	out = append(out, c.Signature[:]...)
 	payloadLen := make([]byte, uint32len)

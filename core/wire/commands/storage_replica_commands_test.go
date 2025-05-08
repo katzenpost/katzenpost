@@ -157,7 +157,39 @@ func TestReplicaWrite(t *testing.T) {
 
 	blob2 := readCmd2.ToBytes()
 	require.Equal(t, blob1, blob2)
+}
 
+func TestReplicaWriteWithoutPadding(t *testing.T) {
+	t.Parallel()
+	const payload = "A free man must be able to endure it when his fellow men act and live otherwise than he considers proper. He must free himself from the habit, just as soon as something does not please him, of calling for the police."
+
+	id := &[32]byte{}
+	_, err := rand.Reader.Read(id[:])
+	require.NoError(t, err)
+
+	signature := &[64]byte{}
+	_, err = rand.Reader.Read(signature[:])
+	require.NoError(t, err)
+
+	writeCmd := &ReplicaWrite{
+		Cmds:          nil,
+		BoxID:         id,
+		Signature:     signature,
+		PayloadLength: uint32(len(payload)),
+		Payload:       []byte(payload),
+	}
+
+	blob1 := writeCmd.ToBytes()
+	writeCmd2, err := replicaWriteFromBytes(blob1[cmdOverhead:], nil)
+	require.NoError(t, err)
+
+	require.Equal(t, writeCmd2.(*ReplicaWrite).BoxID[:], writeCmd.BoxID[:])
+	require.Equal(t, writeCmd2.(*ReplicaWrite).Signature[:], writeCmd.Signature[:])
+	require.Equal(t, writeCmd2.(*ReplicaWrite).PayloadLength, writeCmd.PayloadLength)
+	require.Equal(t, writeCmd2.(*ReplicaWrite).Payload, writeCmd.Payload)
+
+	blob2 := writeCmd2.ToBytes()
+	require.Equal(t, blob1, blob2)
 }
 
 func TestReplicaWriteReply(t *testing.T) {
@@ -174,18 +206,18 @@ func TestReplicaWriteReply(t *testing.T) {
 	_, err := rand.Reader.Read(id[:])
 	require.NoError(t, err)
 
-	readCmd := &ReplicaWriteReply{
+	writeCmd := &ReplicaWriteReply{
 		Cmds: cmds,
 
 		ErrorCode: 123,
 	}
 
-	blob1 := readCmd.ToBytes()
-	readCmd2, err := cmds.FromBytes(blob1)
+	blob1 := writeCmd.ToBytes()
+	writeCmd2, err := cmds.FromBytes(blob1)
 	require.NoError(t, err)
-	require.Equal(t, readCmd2.(*ReplicaWriteReply).ErrorCode, readCmd.ErrorCode)
+	require.Equal(t, writeCmd2.(*ReplicaWriteReply).ErrorCode, writeCmd.ErrorCode)
 
-	blob2 := readCmd2.ToBytes()
+	blob2 := writeCmd2.ToBytes()
 	require.Equal(t, blob1, blob2)
 
 }
