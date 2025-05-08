@@ -450,7 +450,7 @@ func TestConnector(t *testing.T) {
 	boxid := &[32]byte{}
 	_, err = rand.Reader.Read(boxid[:])
 	require.NoError(t, err)
-	sig := &[32]byte{}
+	sig := &[64]byte{}
 	_, err = rand.Reader.Read(boxid[:])
 	require.NoError(t, err)
 	payload := []byte("hello")
@@ -458,9 +458,10 @@ func TestConnector(t *testing.T) {
 	replicaWrite := commands.ReplicaWrite{
 		Cmds: commands.NewStorageReplicaCommands(g, nikeScheme),
 
-		BoxID:     boxid,
-		Signature: sig,
-		Payload:   payload,
+		BoxID:         boxid,
+		Signature:     sig,
+		Payload:       payload,
+		PayloadLength: uint32(len(payload)),
 	}
 
 	_, envelopeRaw := mkemScheme.Encapsulate([]nike.PublicKey{replica1Pub, replica2Pub}, replicaWrite.ToBytes())
