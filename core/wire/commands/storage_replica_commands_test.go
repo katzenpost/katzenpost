@@ -141,9 +141,10 @@ func TestReplicaWrite(t *testing.T) {
 	readCmd := &ReplicaWrite{
 		Cmds: cmds,
 
-		BoxID:     id,
-		Signature: signature,
-		Payload:   []byte(payload),
+		BoxID:         id,
+		Signature:     signature,
+		PayloadLength: uint32(len(payload)),
+		Payload:       []byte(payload),
 	}
 
 	blob1 := readCmd.ToBytes()
@@ -151,9 +152,12 @@ func TestReplicaWrite(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, readCmd2.(*ReplicaWrite).BoxID[:], readCmd.BoxID[:])
 	require.Equal(t, readCmd2.(*ReplicaWrite).Signature[:], readCmd.Signature[:])
+	require.Equal(t, readCmd2.(*ReplicaWrite).PayloadLength, readCmd.PayloadLength)
+	require.Equal(t, readCmd2.(*ReplicaWrite).Payload, readCmd.Payload)
 
 	blob2 := readCmd2.ToBytes()
 	require.Equal(t, blob1, blob2)
+
 }
 
 func TestReplicaWriteReply(t *testing.T) {

@@ -30,17 +30,29 @@ type ReplicaWrite struct {
 	// without padding.
 	Cmds *Commands
 
-	BoxID     *[32]byte
-	Signature *[64]byte
-	Payload   []byte
+	BoxID         *[32]byte
+	Signature     *[64]byte
+	PayloadLength uint32
+	Payload       []byte
 }
 
 func (c *ReplicaWrite) ToBytes() []byte {
-	out := make([]byte, cmdOverhead, cmdOverhead+32+64+len(c.Payload))
+	if c.PayloadLength == 0 {
+		panic("ReplicaWrite.PayloadLength cannot be zero")
+	}
+	const (
+		boxidlen     = 32
+		signaturelen = 64
+		uint32len    = 4
+	)
+	out := make([]byte, cmdOverhead, cmdOverhead+boxidlen+signaturelen+int(c.PayloadLength)+uint32len+len(c.Payload))
 	out[0] = byte(replicaWrite)
 	binary.BigEndian.PutUint32(out[2:6], uint32(c.Length()-cmdOverhead))
 	out = append(out, c.BoxID[:]...)
 	out = append(out, c.Signature[:]...)
+	payloadLen := make([]byte, uint32len)
+	binary.BigEndian.PutUint32(payloadLen, c.PayloadLength)
+	out = append(out, payloadLen...)
 	out = append(out, c.Payload...)
 
 	// optional traffic padding
@@ -55,8 +67,9 @@ func (c *ReplicaWrite) Length() int {
 		// XXX FIX ME: largest ideal command size goes here
 		payloadSize   = c.Cmds.geo.PacketLength
 		signatureSize = 64
+		boxIdSize     = 32
 	)
-	return cmdOverhead + payloadSize + signatureSize
+	return cmdOverhead + payloadSize + signatureSize + boxIdSize
 }
 
 func replicaWriteFromBytes(b []byte, cmds *Commands) (Command, error) {
@@ -66,8 +79,10 @@ func replicaWriteFromBytes(b []byte, cmds *Commands) (Command, error) {
 	copy(c.BoxID[:], b[:32])
 	c.Signature = &[64]byte{}
 	copy(c.Signature[:], b[32:32+64])
-	c.Payload = make([]byte, len(b[32+64:]))
-	copy(c.Payload, b[32+64:])
+	payloadLen := binary.BigEndian.Uint32(b[32+64 : 32+64+4])
+	c.PayloadLength = payloadLen
+	c.Payload = make([]byte, payloadLen)
+	copy(c.Payload, b[32+64+4:32+64+4+int(payloadLen)])
 	return c, nil
 }
 
