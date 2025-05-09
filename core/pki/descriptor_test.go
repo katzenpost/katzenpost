@@ -71,8 +71,8 @@ func TestDescriptor(t *testing.T) {
 		blob, err := mPriv.Public().MarshalBinary()
 		d.MixKeys[uint64(e)] = blob
 	}
-	d.Kaetzchen = make(map[string]map[string]interface{})
-	d.Kaetzchen["miau"] = map[string]interface{}{
+	d.Services = make(map[string]map[string]interface{})
+	d.Services["miau"] = map[string]interface{}{
 		"endpoint":  "+miau",
 		"miauCount": 23,
 	}
