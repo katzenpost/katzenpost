@@ -223,7 +223,7 @@ func (s *Session) sendFromQueueOrDecoy(loopSvc *utils.ServiceDescriptor) {
 
 func (s *Session) isDocValid(doc *pki.Document) error {
 	for _, provider := range doc.ServiceNodes {
-		_, ok := provider.Kaetzchen[constants.LoopService]
+		_, ok := provider.Services[constants.LoopService]
 		if ok {
 			return nil
 		}

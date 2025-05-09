@@ -24,8 +24,8 @@ import (
 	"fmt"
 	"net"
 	"net/url"
-	"sync"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/katzenpost/hpqc/hash"
@@ -411,7 +411,7 @@ func (p *pki) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 
 		// Publish currently running Kaetzchen.
 		var err error
-		desc.Kaetzchen, err = p.glue.ServiceNode().KaetzchenForPKI()
+		desc.Services, err = p.glue.ServiceNode().KaetzchenForPKI()
 		if err != nil {
 			return err
 		}
