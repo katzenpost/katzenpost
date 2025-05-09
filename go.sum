@@ -32,8 +32,6 @@ github.com/go-task/slim-sprig/v3 v3.0.0 h1:sUs3vkvUymDpBKi3qH1YSqBQk9+9D/8M2mN1v
 github.com/go-task/slim-sprig/v3 v3.0.0/go.mod h1:W848ghGpv3Qj3dhTPRyJypKRiqCdHZiAzKg9hl15HA8=
 github.com/gofrs/uuid v4.4.0+incompatible h1:3qXRTX8/NbyulANqlc0lchS1gqAVxRgsuW1YrTJupqA=
 github.com/gofrs/uuid v4.4.0+incompatible/go.mod h1:b2aQJv3Z4Fp6yNu3cdSllBxTCLRxnplIgP/c0N/04lM=
-github.com/golang/protobuf v1.5.4 h1:i7eJL8qZTpSEXOPTxNKhASYpMn+8e5Q6AdndVa1dWek=
-github.com/golang/protobuf v1.5.4/go.mod h1:lnTiLA8Wa4RWRcIUkrtSVa5nRhsEGBg48fD6rSs7xps=
 github.com/google/go-cmp v0.6.0 h1:ofyhxvXcZhMsU5ulbFiLKl/XBFqE1GSq7atu8tAmTRI=
 github.com/google/go-cmp v0.6.0/go.mod h1:17dUlkBOakJ0+DkrSSNjCkIjxS6bF9zb3elmeNGIjoY=
 github.com/google/pprof v0.0.0-20240903155634-a8630aee4ab9 h1:q5g0N9eal4bmJwXHC5z0QCKs8qhS35hFfq0BAYsIwZI=
@@ -50,8 +48,6 @@ github.com/jackc/pgx v3.6.2+incompatible h1:2zP5OD7kiyR3xzRYMhOcXVvkDZsImVXfj+yI
 github.com/jackc/pgx v3.6.2+incompatible/go.mod h1:0ZGrqGqkRlliWnWB4zKnWtjbSWbGkVEFm4TeybAXq+I=
 github.com/katzenpost/chacha20 v0.0.1 h1:Scu6Pqyginw083FhypKMIBmCI2gQTC1RFD6vqpWwI2Y=
 github.com/katzenpost/chacha20 v0.0.1/go.mod h1:/LIJK/8cUXVJrCh5NypZ8So3gDfQCoQT8lRvy1rYQZA=
-github.com/katzenpost/chacha20poly1305 v0.0.1 h1:yFPxgu/VSWsoCNQ2x15az8xBKKc/9GDY9Pz42MvY9xg=
-github.com/katzenpost/chacha20poly1305 v0.0.1/go.mod h1:5sv//C8pWaXrnnP3CNiJXqAlA1/yfUZOl1tR9xsL9bI=
 github.com/katzenpost/circl v1.3.9-0.20240222183521-1cd9a34e9a0c h1:FYy03rLIjdyjklBOI6YSCb3q7OubTx0dVDWYOgDsvA8=
 github.com/katzenpost/circl v1.3.9-0.20240222183521-1cd9a34e9a0c/go.mod h1:+EBrwiGYs9S+qZqaqxujN1CReTNCMAG6p+31KkEDeeA=
 github.com/katzenpost/hpqc v0.0.55 h1:dRdk3k+sJsvRb5Z2CLVUmxOhY/WhgQ6JkAGWYFUNdLg=
