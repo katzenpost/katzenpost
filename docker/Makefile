@@ -48,7 +48,6 @@ kem=
 DISTROS=alpine debian
 distro=alpine
 wirekem=xwing
-replicanike=CTIDH1024-X25519
 net_name=voting_mixnet
 base_port=30000
 bind_addr=127.0.0.1
