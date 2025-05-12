@@ -30,25 +30,18 @@ type ReplicaWrite struct {
 	// without padding.
 	Cmds *Commands
 
-	BoxID         *[32]byte
-	Signature     *[64]byte
-	PayloadLength uint32
-	Payload       []byte
+	BoxID     *[32]byte
+	Signature *[64]byte
+	Payload   []byte
 }
 
 func (c *ReplicaWrite) ToBytes() []byte {
-	if c.PayloadLength == 0 {
-		panic("ReplicaWrite.PayloadLength cannot be zero")
-	}
 	const (
 		boxidlen     = 32
 		signaturelen = 64
 		uint32len    = 4
 		cmdFrontLen  = boxidlen + signaturelen + uint32len
 	)
-	if c.PayloadLength != uint32(len(c.Payload)) {
-		panic("ReplicaWrite.PayloadLength is set incorrectly")
-	}
 	if c.Payload == nil {
 		panic("ReplicaWrite.Payload ")
 	}
@@ -59,7 +52,7 @@ func (c *ReplicaWrite) ToBytes() []byte {
 	out = append(out, c.BoxID[:]...)
 	out = append(out, c.Signature[:]...)
 	payloadLen := make([]byte, uint32len)
-	binary.BigEndian.PutUint32(payloadLen, c.PayloadLength)
+	binary.BigEndian.PutUint32(payloadLen, uint32(len(c.Payload)))
 	out = append(out, payloadLen...)
 	out = append(out, c.Payload...)
 
@@ -88,7 +81,6 @@ func replicaWriteFromBytes(b []byte, cmds *Commands) (Command, error) {
 	c.Signature = &[64]byte{}
 	copy(c.Signature[:], b[32:32+64])
 	payloadLen := binary.BigEndian.Uint32(b[32+64 : 32+64+4])
-	c.PayloadLength = payloadLen
 	c.Payload = make([]byte, payloadLen)
 	copy(c.Payload, b[32+64+4:32+64+4+int(payloadLen)])
 	return c, nil
