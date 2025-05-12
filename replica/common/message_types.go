@@ -26,15 +26,8 @@ type CourierEnvelope struct {
 	// DEK is used for each replica: ReplicaMessage.DEK
 	DEK [2]*[32]byte
 
-	// ReplyIndex is described:
-	// The client will be resending its messages to the courier
-	// until it receives a reply. The courier is responsible for
-	// NOT sending each of those resent messages to the
-	// replicas. It can use the EnvelopeHash to deduplicate.  When
-	// the client sends a CourierEnvelope that the courier has
-	// already got ReplicaMessageReply's for, the courier needs to
-	// respond with one of those.  ReplyIndex will let the client
-	// choose which one. I guess it could be a bool.
+	// ReplyIndex is an actual index into the 2 element array of
+	// intermediate replicas: the `IntermediateReplicas` field above.
 	ReplyIndex uint8
 
 	// SenderEPubKey is the sender's ephemeral public key.
@@ -97,8 +90,9 @@ type CourierEnvelopeReply struct {
 	// that this CourierEnvelopeReply is replying to.
 	EnvelopeHash *[32]byte
 
-	// ReplyIndex is a copy of the CourierEnvelope.ReplyIndex field from the
-	// CourierEnvelope that this CourierEnvelopeReply corresponds to
+	// ReplyIndex is an actual index into the 2 element array of
+	// intermediate replicas: the `IntermediateReplicas` field in
+	// the original courier envelope.
 	ReplyIndex uint8
 
 	// Payload contains an embedded ReplicaMessageReply.
@@ -107,6 +101,10 @@ type CourierEnvelopeReply struct {
 	// ErrorString will be empty if the query was well formed. Otherwise
 	// ErrorString will be set to an informative error string.
 	ErrorString string
+
+	// ErrorCode if non-zero indicates an error. ReplyIndex and Payload
+	// maybe invalid if an error is indicated.
+	ErrorCode uint8
 }
 
 // Bytes returns a CBOR blob of the given CourierEnvelopeReply.
