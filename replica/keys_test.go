@@ -13,12 +13,12 @@ import (
 	nikeschemes "github.com/katzenpost/hpqc/nike/schemes"
 
 	"github.com/katzenpost/katzenpost/core/log"
-	"github.com/katzenpost/katzenpost/courier/common"
+	"github.com/katzenpost/katzenpost/replica/common"
 )
 
 func TestEnvelopeKey(t *testing.T) {
 	nikeScheme := nikeschemes.ByName("CTIDH512-X25519")
-	keys := NewEnvelopeKey(nikeScheme)
+	keys := common.NewEnvelopeKey(nikeScheme)
 	require.NotNil(t, keys)
 }
 
@@ -36,7 +36,7 @@ func TestEnvelopeKeys(t *testing.T) {
 		datadir:  dname,
 		scheme:   replicaScheme,
 		keysLock: new(sync.RWMutex),
-		keys:     make(map[uint64]*EnvelopeKey),
+		keys:     make(map[uint64]*common.EnvelopeKey),
 	}
 	epoch, _, _ := common.ReplicaNow()
 	err = keys.Generate(epoch)

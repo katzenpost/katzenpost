@@ -23,7 +23,6 @@ import (
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
-	courierCommon "github.com/katzenpost/katzenpost/courier/common"
 	"github.com/katzenpost/katzenpost/replica/common"
 	"github.com/katzenpost/katzenpost/replica/config"
 )
@@ -117,7 +116,7 @@ func TestIncomingConn(t *testing.T) {
 	err = server.initLogging()
 	require.NoError(t, err)
 
-	epoch, _, _ := courierCommon.ReplicaNow()
+	epoch, _, _ := common.ReplicaNow()
 	server.envelopeKeys, err = NewEnvelopeKeys(replicaScheme, server.logBackend.GetLogger("envelope keys"), dname, epoch)
 
 	st := &state{
@@ -195,7 +194,7 @@ func TestIncomingConn(t *testing.T) {
 	_, err = rand.Reader.Read(boxid[:])
 	require.NoError(t, err)
 
-	sig := &[32]byte{}
+	sig := &[64]byte{}
 	_, err = rand.Reader.Read(boxid[:])
 	require.NoError(t, err)
 
@@ -208,8 +207,7 @@ func TestIncomingConn(t *testing.T) {
 	})
 	require.NotNil(t, reply)
 
-	reply2 := inConn.handleReplicaRead(&commands.ReplicaRead{
-		Cmds:  commands.NewStorageReplicaCommands(geometry, replicaScheme),
+	reply2 := inConn.handleReplicaRead(&common.ReplicaRead{
 		BoxID: boxid,
 	})
 	require.NotNil(t, reply2)

@@ -8,12 +8,10 @@ require (
 	github.com/BurntSushi/toml v1.4.0
 	github.com/carlmjohnson/versioninfo v0.22.5
 	github.com/fxamacker/cbor/v2 v2.7.0
-	github.com/golang/protobuf v1.5.4
 	github.com/grafana/pyroscope-go v1.1.2
 	github.com/jackc/pgx v3.6.2+incompatible
-	github.com/katzenpost/chacha20poly1305 v0.0.1
 	github.com/katzenpost/circl v1.3.9-0.20240222183521-1cd9a34e9a0c
-	github.com/katzenpost/hpqc v0.0.55
+	github.com/katzenpost/hpqc v0.0.57
 	github.com/katzenpost/nyquist v0.0.10
 	github.com/linxGnu/grocksdb v1.9.8
 	github.com/prometheus/client_golang v1.20.0
@@ -29,7 +27,6 @@ require (
 	golang.org/x/crypto v0.36.0
 	golang.org/x/net v0.38.0
 	golang.org/x/text v0.23.0
-	google.golang.org/protobuf v1.34.2
 	gopkg.in/op/go-logging.v1 v1.0.0-20160211212156-b2cb9fa56473
 )
 
@@ -51,6 +48,7 @@ require (
 	github.com/henrydcase/nobs v0.0.0-20230313231516-25b66236df73 // indirect
 	github.com/jackc/fake v0.0.0-20150926172116-812a484cc733 // indirect
 	github.com/katzenpost/chacha20 v0.0.1 // indirect
+	github.com/katzenpost/chacha20poly1305 v0.0.1 // indirect
 	github.com/katzenpost/sntrup4591761 v0.0.0-20231024131303-8755eb1986b8 // indirect
 	github.com/katzenpost/sphincsplus v0.0.2 // indirect
 	github.com/klauspost/compress v1.17.9 // indirect
@@ -77,5 +75,6 @@ require (
 	golang.org/x/sync v0.12.0 // indirect
 	golang.org/x/sys v0.31.0 // indirect
 	golang.org/x/tools v0.25.0 // indirect
+	google.golang.org/protobuf v1.34.2 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

@@ -52,7 +52,7 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 		c.log.Errorf("handleReplicaMessage envelopeKeys.GetKeypair failed: %s", err)
 		return nil
 	}
-	requestRaw, err := scheme.Decapsulate(replicaPrivateKeypair.PrivateKey, ct.Envelope)
+	requestRaw, err := scheme.Decapsulate(replicaPrivateKeypair.PrivateKey, ct)
 	if err != nil {
 		c.log.Errorf("handleReplicaMessage Decapsulate failed: %s", err)
 		errReply := &commands.ReplicaMessageReply{
