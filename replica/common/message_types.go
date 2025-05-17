@@ -6,7 +6,10 @@ package common
 import (
 	cbor "github.com/fxamacker/cbor/v2"
 
+	"github.com/katzenpost/hpqc/bacap"
 	"github.com/katzenpost/hpqc/hash"
+	"github.com/katzenpost/hpqc/kem/mkem"
+
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 )
 
@@ -24,7 +27,7 @@ type CourierEnvelope struct {
 	IntermediateReplicas [2]uint8
 
 	// DEK is used for each replica: ReplicaMessage.DEK
-	DEK [2]*[32]byte
+	DEK [2]*[mkem.DEKSize]byte
 
 	// ReplyIndex is an actual index into the 2 element array of
 	// intermediate replicas: the `IntermediateReplicas` field above.
@@ -45,7 +48,7 @@ type envelopeHash struct {
 	Ciphertext []byte
 }
 
-func (c *envelopeHash) Bytes() *[32]byte {
+func (c *envelopeHash) Bytes() *[hash.HashSize]byte {
 	blob, err := cbor.Marshal(c)
 	if err != nil {
 		panic(err) // impossible
@@ -55,7 +58,7 @@ func (c *envelopeHash) Bytes() *[32]byte {
 	return &h
 }
 
-func (c *CourierEnvelope) EnvelopeHash() *[32]byte {
+func (c *CourierEnvelope) EnvelopeHash() *[hash.HashSize]byte {
 	env := &envelopeHash{
 		SenderEPubKey: c.SenderEPubKey,
 		Ciphertext:    c.Ciphertext,
@@ -88,7 +91,7 @@ func CourierEnvelopeFromBytes(b []byte) (*CourierEnvelope, error) {
 type CourierEnvelopeReply struct {
 	// EnvelopeHash is used to uniquely identify the CourierEnvelope message
 	// that this CourierEnvelopeReply is replying to.
-	EnvelopeHash *[32]byte
+	EnvelopeHash *[hash.HashSize]byte
 
 	// ReplyIndex is an actual index into the 2 element array of
 	// intermediate replicas: the `IntermediateReplicas` field in
@@ -127,11 +130,38 @@ func CourierEnvelopeReplyFromBytes(b []byte) (*CourierEnvelopeReply, error) {
 	return c, nil
 }
 
+// ReplicaInnerMessage is a type that is used to encapsulate either a
+// ReplicaRead or a ReplicaWrite.
+type ReplicaInnerMessage struct {
+	ReplicaRead  *ReplicaRead
+	ReplicaWrite *commands.ReplicaWrite
+}
+
+func (c *ReplicaInnerMessage) Bytes() []byte {
+	if c.ReplicaRead != nil && c.ReplicaWrite != nil {
+		panic("ReplicaInnerMessage.Bytes failure: one field must be nil.")
+	}
+	blob, err := cbor.Marshal(c)
+	if err != nil {
+		panic(err)
+	}
+	return blob
+}
+
+func ReplicaInnerMessageFromBytes(b []byte) (*ReplicaInnerMessage, error) {
+	c := &ReplicaInnerMessage{}
+	err := cbor.Unmarshal(b, c)
+	if err != nil {
+		return nil, err
+	}
+	return c, nil
+}
+
 // ReplicaRead isn't used directly on the wire protocol
 // but is embedded inside the ReplicaMessage which of course
 // are sent by the couriers to the replicas.
 type ReplicaRead struct {
-	BoxID *[32]byte
+	BoxID *[bacap.BoxIDSize]byte
 }
 
 func (c *ReplicaRead) Length() int {
@@ -174,11 +204,11 @@ type ReplicaReadReply struct {
 	ErrorCode uint8
 
 	// BoxID uniquely identifies a box.
-	BoxID *[32]byte
+	BoxID *[bacap.BoxIDSize]byte
 
 	// Signature covers the given Payload field and
 	// is verifiable with the BoxID which is also the public key.
-	Signature *[64]byte
+	Signature *[bacap.SignatureSize]byte
 
 	// Payload is encrypted and MAC'ed.
 	Payload []byte

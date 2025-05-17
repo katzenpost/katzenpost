@@ -5,6 +5,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/katzenpost/hpqc/kem/mkem"
 	ecdh "github.com/katzenpost/hpqc/nike/x25519"
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/hpqc/sign/schemes"
@@ -97,7 +98,7 @@ func TestReplicaMessage(t *testing.T) {
 	_, err := rand.Reader.Read(senderKey[:])
 	require.NoError(t, err)
 
-	dek := &[32]byte{}
+	dek := &[mkem.DEKSize]byte{}
 	_, err = rand.Reader.Read(dek[:])
 	require.NoError(t, err)
 

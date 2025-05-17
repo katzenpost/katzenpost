@@ -8,6 +8,7 @@ import (
 	"encoding/binary"
 	"errors"
 
+	"github.com/katzenpost/hpqc/kem/mkem"
 	"github.com/katzenpost/hpqc/nike"
 	"github.com/katzenpost/hpqc/sign"
 
@@ -98,7 +99,7 @@ func NewStorageReplicaCommands(geo *geo.Geometry, scheme nike.Scheme) *Commands 
 			Scheme: scheme,
 
 			SenderEPubKey: make([]byte, HybridKeySize(scheme)),
-			DEK:           &[32]byte{},
+			DEK:           &[mkem.DEKSize]byte{},
 			Ciphertext:    payload,
 		},
 		&ReplicaMessageReply{

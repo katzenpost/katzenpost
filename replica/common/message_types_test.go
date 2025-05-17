@@ -26,20 +26,13 @@ func TestEnvelopeUnmarshaling(t *testing.T) {
 	_, err = rand.Reader.Read(request)
 	require.NoError(t, err)
 
-	_, ciphertextBlob := mkemNikeScheme.Encapsulate([]nike.PublicKey{replica1pub, replica2pub}, request)
-
-	ciphertext, err := mkem.CiphertextFromBytes(mkemNikeScheme, ciphertextBlob)
-	require.NoError(t, err)
-
-	dek1 := &[32]byte{}
-	dek2 := &[32]byte{}
-	copy(dek1[:], ciphertext.DEKCiphertexts[0])
-	copy(dek2[:], ciphertext.DEKCiphertexts[1])
+	senderPrivateKey, ciphertext := mkemNikeScheme.Encapsulate([]nike.PublicKey{replica1pub, replica2pub}, request)
+	senderPublicKey := senderPrivateKey.Public()
 
 	envelope := CourierEnvelope{
-		SenderEPubKey:        [2][]byte{replica1pub.Bytes(), replica2pub.Bytes()},
+		SenderEPubKey:        senderPublicKey.Bytes(),
 		IntermediateReplicas: [2]uint8{1, 2},
-		DEK:                  [2]*[32]byte{dek1, dek2},
+		DEK:                  [2]*[mkem.DEKSize]byte{ciphertext.DEKCiphertexts[0], ciphertext.DEKCiphertexts[1]},
 		Ciphertext:           ciphertext.Envelope,
 	}
 

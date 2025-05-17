@@ -7,6 +7,8 @@ import (
 	"encoding/binary"
 	"fmt"
 
+	"github.com/katzenpost/hpqc/bacap"
+	"github.com/katzenpost/hpqc/kem/mkem"
 	"github.com/katzenpost/hpqc/nike"
 
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
@@ -30,17 +32,15 @@ type ReplicaWrite struct {
 	// without padding.
 	Cmds *Commands
 
-	BoxID     *[32]byte
-	Signature *[64]byte
+	BoxID     *[bacap.BoxIDSize]byte
+	Signature *[bacap.SignatureSize]byte
 	Payload   []byte
 }
 
 func (c *ReplicaWrite) ToBytes() []byte {
 	const (
-		boxidlen     = 32
-		signaturelen = 64
-		uint32len    = 4
-		cmdFrontLen  = boxidlen + signaturelen + uint32len
+		uint32len   = 4
+		cmdFrontLen = bacap.BoxIDSize + bacap.SignatureSize + uint32len
 	)
 	if c.Payload == nil {
 		panic("ReplicaWrite.Payload ")
@@ -64,25 +64,22 @@ func (c *ReplicaWrite) ToBytes() []byte {
 }
 
 func (c *ReplicaWrite) Length() int {
-	var (
-		// XXX FIX ME: largest ideal command size goes here
-		payloadSize   = c.Cmds.geo.PacketLength
-		signatureSize = 64
-		boxIdSize     = 32
-	)
-	return cmdOverhead + payloadSize + signatureSize + boxIdSize
+	// XXX FIX ME: largest ideal command size goes here
+	var payloadSize = c.Cmds.geo.PacketLength
+	return cmdOverhead + payloadSize + bacap.SignatureSize + bacap.BoxIDSize
 }
 
 func replicaWriteFromBytes(b []byte, cmds *Commands) (Command, error) {
+	const uint32len = 4
 	c := new(ReplicaWrite)
 	c.Cmds = cmds
-	c.BoxID = &[32]byte{}
-	copy(c.BoxID[:], b[:32])
-	c.Signature = &[64]byte{}
-	copy(c.Signature[:], b[32:32+64])
-	payloadLen := binary.BigEndian.Uint32(b[32+64 : 32+64+4])
+	c.BoxID = &[bacap.BoxIDSize]byte{}
+	copy(c.BoxID[:], b[:bacap.BoxIDSize])
+	c.Signature = &[bacap.SignatureSize]byte{}
+	copy(c.Signature[:], b[bacap.BoxIDSize:bacap.BoxIDSize+bacap.SignatureSize])
+	payloadLen := binary.BigEndian.Uint32(b[bacap.BoxIDSize+bacap.SignatureSize : bacap.BoxIDSize+bacap.SignatureSize+uint32len])
 	c.Payload = make([]byte, payloadLen)
-	copy(c.Payload, b[32+64+4:32+64+4+int(payloadLen)])
+	copy(c.Payload, b[bacap.BoxIDSize+bacap.SignatureSize+uint32len:bacap.BoxIDSize+bacap.SignatureSize+uint32len+int(payloadLen)])
 	return c, nil
 }
 
@@ -131,7 +128,7 @@ type ReplicaMessage struct {
 	Scheme nike.Scheme
 
 	SenderEPubKey []byte
-	DEK           *[32]byte
+	DEK           *[mkem.DEKSize]byte
 	Ciphertext    []byte
 }
 
@@ -140,7 +137,9 @@ func (c *ReplicaMessage) ToBytes() []byte {
 	out[0] = byte(replicaMessage)
 	binary.BigEndian.PutUint32(out[2:6], uint32(c.Length()-cmdOverhead))
 
+	c.DEK = &[mkem.DEKSize]byte{}
 	out = append(out, c.SenderEPubKey[:]...)
+	c.DEK = &[mkem.DEKSize]byte{}
 	out = append(out, c.DEK[:]...)
 	out = append(out, c.Ciphertext...)
 
@@ -155,19 +154,18 @@ func replicaMessageFromBytes(b []byte, cmds *Commands) (Command, error) {
 	c.SenderEPubKey = make([]byte, HybridKeySize(c.Scheme))
 	copy(c.SenderEPubKey[:], b[:HybridKeySize(c.Scheme)])
 
-	c.DEK = &[32]byte{}
-	copy(c.DEK[:], b[HybridKeySize(c.Scheme):HybridKeySize(c.Scheme)+32])
+	c.DEK = &[mkem.DEKSize]byte{}
+	copy(c.DEK[:], b[HybridKeySize(c.Scheme):HybridKeySize(c.Scheme)+mkem.DEKSize])
 
-	c.Ciphertext = make([]byte, len(b[HybridKeySize(c.Scheme)+32:]))
-	copy(c.Ciphertext, b[HybridKeySize(c.Scheme)+32:])
+	c.Ciphertext = make([]byte, len(b[HybridKeySize(c.Scheme)+mkem.DEKSize:]))
+	copy(c.Ciphertext, b[HybridKeySize(c.Scheme)+mkem.DEKSize:])
 
 	return c, nil
 }
 
 func (c *ReplicaMessage) Length() int {
 	// XXX replace c.Geo.PacketLength with the precise payload size
-	const dekLen = 32
-	return cmdOverhead + dekLen + HybridKeySize(c.Scheme) + c.Geo.PacketLength
+	return cmdOverhead + mkem.DEKSize + HybridKeySize(c.Scheme) + c.Geo.PacketLength
 }
 
 // ReplicaMessageReply is sent by replicas to couriers as a reply
