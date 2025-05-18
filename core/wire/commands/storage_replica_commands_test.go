@@ -22,11 +22,12 @@ func TestReplicaMessageReplyWithoutPadding(t *testing.T) {
 	_, err := rand.Reader.Read(envelopeHash[:])
 	require.NoError(t, err)
 
+	payload := []byte("hello world")
 	reply1 := ReplicaMessageReply{
 		ErrorCode:     0xAA,
 		EnvelopeHash:  envelopeHash,
 		ReplicaID:     123,
-		EnvelopeReply: []byte("hello world"),
+		EnvelopeReply: payload,
 	}
 
 	blob1 := reply1.ToBytes()
@@ -37,7 +38,7 @@ func TestReplicaMessageReplyWithoutPadding(t *testing.T) {
 	require.Equal(t, reply1.ErrorCode, reply2.ErrorCode)
 	require.Equal(t, reply1.EnvelopeHash[:], reply2.EnvelopeHash[:])
 	require.Equal(t, reply1.ReplicaID, reply2.ReplicaID)
-	require.Equal(t, reply1.EnvelopeReply, reply2.EnvelopeReply)
+	require.Equal(t, payload, reply2.EnvelopeReply)
 
 	blob2 := reply2.ToBytes()
 	require.Equal(t, blob1, blob2)
@@ -59,16 +60,16 @@ func TestReplicaMessageReplyWithPadding(t *testing.T) {
 	_, err := rand.Reader.Read(envelopeHash[:])
 	require.NoError(t, err)
 
+	payload := []byte("hello world")
 	reply1 := ReplicaMessageReply{
 		Cmds:          cmds,
 		ErrorCode:     1,
 		EnvelopeHash:  envelopeHash,
 		ReplicaID:     123,
-		EnvelopeReply: []byte("hello world"),
+		EnvelopeReply: payload,
 	}
 
 	blob1 := reply1.ToBytes()
-
 	reply2raw, err := cmds.FromBytes(blob1)
 	require.NoError(t, err)
 	reply2 := reply2raw.(*ReplicaMessageReply)
@@ -76,7 +77,9 @@ func TestReplicaMessageReplyWithPadding(t *testing.T) {
 	require.Equal(t, reply1.ErrorCode, reply2.ErrorCode)
 	require.Equal(t, reply1.EnvelopeHash[:], reply2.EnvelopeHash[:])
 	require.Equal(t, reply1.ReplicaID, reply2.ReplicaID)
-	require.Equal(t, reply1.EnvelopeReply, reply2.EnvelopeReply)
+	require.Equal(t, payload, reply2.EnvelopeReply)
+
+	t.Logf("envelope reply: %x", reply2.EnvelopeReply)
 
 	blob2 := reply2.ToBytes()
 	require.Equal(t, blob1, blob2)
@@ -117,7 +120,7 @@ func TestReplicaMessage(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Equal(t, replicaMessage1.DEK[:], replicaMessage2.(*ReplicaMessage).DEK[:])
-	require.Equal(t, replicaMessage1.Ciphertext, replicaMessage2.(*ReplicaMessage).Ciphertext)
+	require.Equal(t, []byte(payload), replicaMessage2.(*ReplicaMessage).Ciphertext)
 }
 
 func TestReplicaWrite(t *testing.T) {
@@ -153,7 +156,7 @@ func TestReplicaWrite(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, readCmd2.(*ReplicaWrite).BoxID[:], readCmd.BoxID[:])
 	require.Equal(t, readCmd2.(*ReplicaWrite).Signature[:], readCmd.Signature[:])
-	require.Equal(t, readCmd2.(*ReplicaWrite).Payload, readCmd.Payload)
+	require.Equal(t, readCmd2.(*ReplicaWrite).Payload, []byte(payload))
 
 	blob2 := readCmd2.ToBytes()
 	require.Equal(t, blob1, blob2)
@@ -184,7 +187,7 @@ func TestReplicaWriteWithoutPadding(t *testing.T) {
 
 	require.Equal(t, writeCmd2.(*ReplicaWrite).BoxID[:], writeCmd.BoxID[:])
 	require.Equal(t, writeCmd2.(*ReplicaWrite).Signature[:], writeCmd.Signature[:])
-	require.Equal(t, writeCmd2.(*ReplicaWrite).Payload, writeCmd.Payload)
+	require.Equal(t, writeCmd2.(*ReplicaWrite).Payload, []byte(payload))
 
 	blob2 := writeCmd2.ToBytes()
 	require.Equal(t, blob1, blob2)

@@ -38,22 +38,19 @@ type ReplicaWrite struct {
 }
 
 func (c *ReplicaWrite) ToBytes() []byte {
-	const (
-		uint32len   = 4
-		cmdFrontLen = bacap.BoxIDSize + bacap.SignatureSize + uint32len
-	)
+	const uint32len = 4
+	var cmdLen = bacap.BoxIDSize + bacap.SignatureSize + len(c.Payload)
+
 	if c.Payload == nil {
 		panic("ReplicaWrite.Payload ")
 	}
-	out := make([]byte, cmdOverhead, cmdOverhead+cmdFrontLen+len(c.Payload))
+	out := make([]byte, cmdOverhead, cmdOverhead+cmdLen)
 	out[0] = byte(replicaWrite)
-	binary.BigEndian.PutUint32(out[2:6], uint32(cmdFrontLen+len(c.Payload)))
+	out[1] = 0
+	binary.BigEndian.PutUint32(out[2:6], uint32(cmdLen))
 
 	out = append(out, c.BoxID[:]...)
 	out = append(out, c.Signature[:]...)
-	payloadLen := make([]byte, uint32len)
-	binary.BigEndian.PutUint32(payloadLen, uint32(len(c.Payload)))
-	out = append(out, payloadLen...)
 	out = append(out, c.Payload...)
 
 	// optional traffic padding
@@ -77,9 +74,8 @@ func replicaWriteFromBytes(b []byte, cmds *Commands) (Command, error) {
 	copy(c.BoxID[:], b[:bacap.BoxIDSize])
 	c.Signature = &[bacap.SignatureSize]byte{}
 	copy(c.Signature[:], b[bacap.BoxIDSize:bacap.BoxIDSize+bacap.SignatureSize])
-	payloadLen := binary.BigEndian.Uint32(b[bacap.BoxIDSize+bacap.SignatureSize : bacap.BoxIDSize+bacap.SignatureSize+uint32len])
-	c.Payload = make([]byte, payloadLen)
-	copy(c.Payload, b[bacap.BoxIDSize+bacap.SignatureSize+uint32len:bacap.BoxIDSize+bacap.SignatureSize+uint32len+int(payloadLen)])
+	c.Payload = make([]byte, len(b[bacap.BoxIDSize+bacap.SignatureSize:]))
+	copy(c.Payload, b[bacap.BoxIDSize+bacap.SignatureSize:])
 	return c, nil
 }
 
@@ -133,19 +129,15 @@ type ReplicaMessage struct {
 func (c *ReplicaMessage) ToBytes() []byte {
 	const uint32len = 4
 	hkSize := len(c.SenderEPubKey)
-	totalLen := cmdOverhead + hkSize + mkem.DEKSize + uint32len + len(c.Ciphertext)
 
 	out := make([]byte, cmdOverhead)
 	out[0] = byte(replicaMessage)
 	out[1] = 0
-	binary.BigEndian.PutUint32(out[2:6], uint32(totalLen-cmdOverhead))
+	totalLen := hkSize + mkem.DEKSize + len(c.Ciphertext)
+	binary.BigEndian.PutUint32(out[2:6], uint32(totalLen))
 
 	out = append(out, c.SenderEPubKey...)
 	out = append(out, c.DEK[:]...)
-
-	lenBuf := make([]byte, uint32len)
-	binary.BigEndian.PutUint32(lenBuf, uint32(len(c.Ciphertext)))
-	out = append(out, lenBuf...)
 	out = append(out, c.Ciphertext...)
 
 	return c.Cmds.padToMaxCommandSize(out, true)
@@ -173,15 +165,8 @@ func replicaMessageFromBytes(b []byte, cmds *Commands) (Command, error) {
 	copy(c.DEK[:], b[offset:offset+mkem.DEKSize])
 	offset += mkem.DEKSize
 
-	payloadLen := int(binary.BigEndian.Uint32(b[offset : offset+uint32len]))
-	offset += uint32len
-
-	if len(b) < offset+payloadLen {
-		return nil, fmt.Errorf("ciphertext truncated")
-	}
-
-	c.Ciphertext = make([]byte, payloadLen)
-	copy(c.Ciphertext, b[offset:offset+payloadLen])
+	c.Ciphertext = make([]byte, len(b[offset:]))
+	copy(c.Ciphertext, b[offset:])
 
 	return c, nil
 }
