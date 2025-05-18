@@ -199,7 +199,6 @@ func (c *ReplicaMessageReply) ToBytes() []byte {
 	out[0] = byte(replicaMessageReply)
 	binary.BigEndian.PutUint32(out[2:6], uint32(1+32+1+len(c.EnvelopeReply)))
 
-	fmt.Printf("writing ErrorCode %d\n", c.ErrorCode)
 	out = append(out, c.ErrorCode)
 	out = append(out, c.EnvelopeHash[:]...)
 	out = append(out, c.ReplicaID)
@@ -216,7 +215,6 @@ func replicaMessageReplyFromBytes(b []byte, cmds *Commands) (Command, error) {
 	r := new(ReplicaMessageReply)
 	r.Cmds = cmds
 	r.ErrorCode = b[0]
-	fmt.Printf("raw hex %x\n", b)
 
 	r.EnvelopeHash = &[32]byte{}
 	copy(r.EnvelopeHash[:], b[1:1+32])

@@ -9,7 +9,6 @@
 package tests
 
 import (
-	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -122,7 +121,7 @@ func (r *Replica) handleReplicaWrite(replicaWrite *commands.ReplicaWrite) *comma
 	}
 }
 
-func (r *Replica) ReceiveMessage(replicaMessageRaw []byte) *commands.ReplicaMessageReply {
+func (r *Replica) ReceiveMessage(replicaMessageRaw []byte) []byte {
 	cmd, err := r.Cmds.FromBytes(replicaMessageRaw)
 	if err != nil {
 		panic(err)
@@ -148,8 +147,6 @@ func (r *Replica) ReceiveMessage(replicaMessageRaw []byte) *commands.ReplicaMess
 		Envelope:           replicaMessage.Ciphertext,
 	}
 
-	fmt.Printf("replicaMessage.Ciphertext %x\n", replicaMessage.Ciphertext)
-
 	requestRaw, err := scheme.Decapsulate(r.PrivateKey, ct)
 	if err != nil {
 		panic(err)
@@ -173,13 +170,14 @@ func (r *Replica) ReceiveMessage(replicaMessageRaw []byte) *commands.ReplicaMess
 		}
 		replyInnerMessageBlob := replyInnerMessage.Bytes()
 		envelopeReply := scheme.EnvelopeReply(r.PrivateKey, senderpubkey, replyInnerMessageBlob)
-		return &commands.ReplicaMessageReply{
+		reply := &commands.ReplicaMessageReply{
 			Cmds:          r.Cmds,
 			ErrorCode:     0, // Zero means success.
 			EnvelopeHash:  &envelopeHash,
 			EnvelopeReply: envelopeReply.Envelope,
 			ReplicaID:     r.ID,
 		}
+		return reply.ToBytes()
 	case msg.ReplicaWrite != nil:
 		writeReply := r.handleReplicaWrite(msg.ReplicaWrite)
 		// XXX c.l.server.connector.DispatchReplication(myCmd)
@@ -188,13 +186,14 @@ func (r *Replica) ReceiveMessage(replicaMessageRaw []byte) *commands.ReplicaMess
 		}
 		replyInnerMessageBlob := replyInnerMessage.Bytes()
 		envelopeReply := scheme.EnvelopeReply(r.PrivateKey, senderpubkey, replyInnerMessageBlob)
-		return &commands.ReplicaMessageReply{
+		reply := &commands.ReplicaMessageReply{
 			Cmds:          r.Cmds,
 			ErrorCode:     0, // Zero means success.
 			EnvelopeHash:  &envelopeHash,
 			EnvelopeReply: envelopeReply.Envelope,
 			ReplicaID:     r.ID,
 		}
+		return reply.ToBytes()
 	default:
 		panic("wtf")
 	}
@@ -208,8 +207,18 @@ type Courier struct {
 }
 
 func (c *Courier) SendToReplica(id uint8, replicaMessage *commands.ReplicaMessage) *commands.ReplicaMessageReply {
+	replyBlob := c.Replicas[id].ReceiveMessage(replicaMessage.ToBytes())
+	cmd, err := c.Cmds.FromBytes(replyBlob)
+	if err != nil {
+		panic(err)
+	}
 
-	return c.Replicas[id].ReceiveMessage(replicaMessage.ToBytes())
+	switch v := cmd.(type) {
+	case *commands.ReplicaMessageReply:
+		return v
+	default:
+		panic("Courier received invalid message")
+	}
 }
 
 func (c *Courier) ReceiveClientQuery(query []byte) *common.CourierEnvelopeReply {
@@ -357,33 +366,6 @@ func (c *ClientReader) ComposeReadNextMessage() (nike.PrivateKey, *common.Courie
 		Ciphertext:           mkemCiphertext.Envelope,
 	}
 	return mkemPrivateKey, envelope
-}
-
-func TestReplicaMessage(t *testing.T) {
-	sphinxNikeScheme := schemes.ByName("X25519")
-	sphinxGeo := geo.GeometryFromUserForwardPayloadLength(sphinxNikeScheme, 5000, true, 5)
-	replicaScheme := schemes.ByName("CTIDH1024-X25519")
-	cmds := commands.NewStorageReplicaCommands(sphinxGeo, replicaScheme)
-
-	dek := &[mkem.DEKSize]byte{}
-	senderKey := make([]byte, commands.HybridKeySize(replicaScheme))
-	_, err := rand.Reader.Read(senderKey[:])
-	require.NoError(t, err)
-	payload := []byte("A free man must be able to endure it when his fellow men act and live otherwise than he considers proper. He must free himself from the habit, just as soon as something does not please him, of calling for the police.")
-
-	msg := &commands.ReplicaMessage{
-		Cmds:   cmds,
-		Geo:    sphinxGeo,
-		Scheme: replicaScheme,
-
-		SenderEPubKey: senderKey,
-		DEK:           dek,
-		Ciphertext:    payload,
-	}
-
-	blob := msg.ToBytes()
-	_, err = cmds.FromBytes(blob)
-	require.NoError(t, err)
 }
 
 func TestClientCourierProtocolFlow(t *testing.T) {
