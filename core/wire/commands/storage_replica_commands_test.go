@@ -6,6 +6,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/katzenpost/hpqc/kem/mkem"
+	nikeSchmes "github.com/katzenpost/hpqc/nike/schemes"
 	ecdh "github.com/katzenpost/hpqc/nike/x25519"
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/hpqc/sign/schemes"
@@ -82,17 +83,16 @@ func TestReplicaMessageReplyWithPadding(t *testing.T) {
 }
 
 func TestReplicaMessage(t *testing.T) {
-	t.Parallel()
 	const payload = "A free man must be able to endure it when his fellow men act and live otherwise than he considers proper. He must free himself from the habit, just as soon as something does not please him, of calling for the police."
 
-	nike := ecdh.Scheme(rand.Reader)
-	forwardPayloadLength := 1234
+	//nike := ecdh.Scheme(rand.Reader)
+	nike := nikeSchmes.ByName("CTIDH1024-X25519")
+	forwardPayloadLength := 5000
 	nrHops := 5
 
-	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
-	s := sphinx.NewSphinx(geo)
-
-	cmds := NewStorageReplicaCommands(s.Geometry(), nike)
+	sphinxNike := nikeSchmes.ByName("X25519")
+	geo := geo.GeometryFromUserForwardPayloadLength(sphinxNike, forwardPayloadLength, true, nrHops)
+	cmds := NewStorageReplicaCommands(geo, nike)
 
 	senderKey := make([]byte, HybridKeySize(nike))
 	_, err := rand.Reader.Read(senderKey[:])
@@ -117,6 +117,7 @@ func TestReplicaMessage(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Equal(t, replicaMessage1.DEK[:], replicaMessage2.(*ReplicaMessage).DEK[:])
+	require.Equal(t, replicaMessage1.Ciphertext, replicaMessage2.(*ReplicaMessage).Ciphertext)
 }
 
 func TestReplicaWrite(t *testing.T) {

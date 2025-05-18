@@ -120,8 +120,6 @@ func (c *ReplicaWriteReply) Length() int {
 	return 0
 }
 
-// ReplicaMessage used over wire protocol from couriers to replicas,
-// one replica at a time.
 type ReplicaMessage struct {
 	Cmds   *Commands
 	Geo    *geo.Geometry
@@ -133,32 +131,57 @@ type ReplicaMessage struct {
 }
 
 func (c *ReplicaMessage) ToBytes() []byte {
-	out := make([]byte, cmdOverhead, cmdOverhead+32+len(c.Ciphertext))
-	out[0] = byte(replicaMessage)
-	binary.BigEndian.PutUint32(out[2:6], uint32(c.Length()-cmdOverhead))
+	const uint32len = 4
+	hkSize := len(c.SenderEPubKey)
+	totalLen := cmdOverhead + hkSize + mkem.DEKSize + uint32len + len(c.Ciphertext)
 
-	c.DEK = &[mkem.DEKSize]byte{}
-	out = append(out, c.SenderEPubKey[:]...)
-	c.DEK = &[mkem.DEKSize]byte{}
+	out := make([]byte, cmdOverhead)
+	out[0] = byte(replicaMessage)
+	out[1] = 0
+	binary.BigEndian.PutUint32(out[2:6], uint32(totalLen-cmdOverhead))
+
+	out = append(out, c.SenderEPubKey...)
 	out = append(out, c.DEK[:]...)
+
+	lenBuf := make([]byte, uint32len)
+	binary.BigEndian.PutUint32(lenBuf, uint32(len(c.Ciphertext)))
+	out = append(out, lenBuf...)
 	out = append(out, c.Ciphertext...)
 
 	return c.Cmds.padToMaxCommandSize(out, true)
 }
 
 func replicaMessageFromBytes(b []byte, cmds *Commands) (Command, error) {
+	const uint32len = 4
+
 	c := new(ReplicaMessage)
 	c.Cmds = cmds
 	c.Scheme = cmds.replicaNikeScheme
 
-	c.SenderEPubKey = make([]byte, HybridKeySize(c.Scheme))
-	copy(c.SenderEPubKey[:], b[:HybridKeySize(c.Scheme)])
+	hkSize := HybridKeySize(c.Scheme)
+	offset := 0
 
-	c.DEK = &[mkem.DEKSize]byte{}
-	copy(c.DEK[:], b[HybridKeySize(c.Scheme):HybridKeySize(c.Scheme)+mkem.DEKSize])
+	if len(b) < hkSize+mkem.DEKSize+uint32len {
+		return nil, fmt.Errorf("message too short")
+	}
 
-	c.Ciphertext = make([]byte, len(b[HybridKeySize(c.Scheme)+mkem.DEKSize:]))
-	copy(c.Ciphertext, b[HybridKeySize(c.Scheme)+mkem.DEKSize:])
+	c.SenderEPubKey = make([]byte, hkSize)
+	copy(c.SenderEPubKey, b[offset:offset+hkSize])
+	offset += hkSize
+
+	c.DEK = new([mkem.DEKSize]byte)
+	copy(c.DEK[:], b[offset:offset+mkem.DEKSize])
+	offset += mkem.DEKSize
+
+	payloadLen := int(binary.BigEndian.Uint32(b[offset : offset+uint32len]))
+	offset += uint32len
+
+	if len(b) < offset+payloadLen {
+		return nil, fmt.Errorf("ciphertext truncated")
+	}
+
+	c.Ciphertext = make([]byte, payloadLen)
+	copy(c.Ciphertext, b[offset:offset+payloadLen])
 
 	return c, nil
 }

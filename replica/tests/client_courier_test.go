@@ -9,6 +9,7 @@
 package tests
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -39,15 +40,17 @@ type Box struct {
 }
 
 type Replica struct {
-	SphinxGeo  *geo.Geometry
-	NIKEScheme nike.Scheme
-	PrivateKey nike.PrivateKey
-	PublicKey  nike.PublicKey
-	DB         map[[32]byte]*Box
-	ID         uint8
+	Cmds             *commands.Commands
+	SphinxGeo        *geo.Geometry
+	SphinxNIKEScheme nike.Scheme
+	NIKEScheme       nike.Scheme
+	PrivateKey       nike.PrivateKey
+	PublicKey        nike.PublicKey
+	DB               map[[32]byte]*Box
+	ID               uint8
 }
 
-func NewReplicas(count int, scheme nike.Scheme, sphinxGeo *geo.Geometry) []*Replica {
+func NewReplicas(count int, scheme nike.Scheme, cmds *commands.Commands, sphinxGeo *geo.Geometry, sphinxNIKEScheme nike.Scheme) []*Replica {
 	replicas := make([]*Replica, count)
 	for i := 0; i < count; i++ {
 		pk, sk, err := scheme.GenerateKeyPair()
@@ -55,12 +58,14 @@ func NewReplicas(count int, scheme nike.Scheme, sphinxGeo *geo.Geometry) []*Repl
 			panic(err)
 		}
 		replicas[i] = &Replica{
-			SphinxGeo:  sphinxGeo,
-			NIKEScheme: scheme,
-			PrivateKey: sk,
-			PublicKey:  pk,
-			DB:         make(map[[32]byte]*Box),
-			ID:         uint8(i),
+			Cmds:             cmds,
+			SphinxGeo:        sphinxGeo,
+			SphinxNIKEScheme: sphinxNIKEScheme,
+			NIKEScheme:       scheme,
+			PrivateKey:       sk,
+			PublicKey:        pk,
+			DB:               make(map[[32]byte]*Box),
+			ID:               uint8(i),
 		}
 	}
 	return replicas
@@ -117,7 +122,20 @@ func (r *Replica) handleReplicaWrite(replicaWrite *commands.ReplicaWrite) *comma
 	}
 }
 
-func (r *Replica) ReceiveMessage(replicaMessage *commands.ReplicaMessage) *commands.ReplicaMessageReply {
+func (r *Replica) ReceiveMessage(replicaMessageRaw []byte) *commands.ReplicaMessageReply {
+	cmd, err := r.Cmds.FromBytes(replicaMessageRaw)
+	if err != nil {
+		panic(err)
+	}
+
+	var replicaMessage *commands.ReplicaMessage
+	switch v := cmd.(type) {
+	case *commands.ReplicaMessage:
+		replicaMessage = v
+	default:
+		panic("Replica received invalid message")
+	}
+
 	scheme := mkem.NewScheme(r.NIKEScheme)
 
 	ephemeralPublicKey, err := r.NIKEScheme.UnmarshalBinaryPublicKey(replicaMessage.SenderEPubKey)
@@ -130,11 +148,13 @@ func (r *Replica) ReceiveMessage(replicaMessage *commands.ReplicaMessage) *comma
 		Envelope:           replicaMessage.Ciphertext,
 	}
 
+	fmt.Printf("replicaMessage.Ciphertext %x\n", replicaMessage.Ciphertext)
+
 	requestRaw, err := scheme.Decapsulate(r.PrivateKey, ct)
 	if err != nil {
 		panic(err)
 	}
-	cmds := commands.NewStorageReplicaCommands(r.SphinxGeo, r.NIKEScheme)
+
 	msg, err := common.ReplicaInnerMessageFromBytes(requestRaw)
 	if err != nil {
 		panic(err)
@@ -154,7 +174,7 @@ func (r *Replica) ReceiveMessage(replicaMessage *commands.ReplicaMessage) *comma
 		replyInnerMessageBlob := replyInnerMessage.Bytes()
 		envelopeReply := scheme.EnvelopeReply(r.PrivateKey, senderpubkey, replyInnerMessageBlob)
 		return &commands.ReplicaMessageReply{
-			Cmds:          cmds,
+			Cmds:          r.Cmds,
 			ErrorCode:     0, // Zero means success.
 			EnvelopeHash:  &envelopeHash,
 			EnvelopeReply: envelopeReply.Envelope,
@@ -169,7 +189,7 @@ func (r *Replica) ReceiveMessage(replicaMessage *commands.ReplicaMessage) *comma
 		replyInnerMessageBlob := replyInnerMessage.Bytes()
 		envelopeReply := scheme.EnvelopeReply(r.PrivateKey, senderpubkey, replyInnerMessageBlob)
 		return &commands.ReplicaMessageReply{
-			Cmds:          cmds,
+			Cmds:          r.Cmds,
 			ErrorCode:     0, // Zero means success.
 			EnvelopeHash:  &envelopeHash,
 			EnvelopeReply: envelopeReply.Envelope,
@@ -181,11 +201,15 @@ func (r *Replica) ReceiveMessage(replicaMessage *commands.ReplicaMessage) *comma
 }
 
 type Courier struct {
-	Replicas []*Replica
+	Replicas      []*Replica
+	Cmds          *commands.Commands
+	Geo           *geo.Geometry
+	ReplicaScheme nike.Scheme
 }
 
 func (c *Courier) SendToReplica(id uint8, replicaMessage *commands.ReplicaMessage) *commands.ReplicaMessageReply {
-	return c.Replicas[id].ReceiveMessage(replicaMessage)
+
+	return c.Replicas[id].ReceiveMessage(replicaMessage.ToBytes())
 }
 
 func (c *Courier) ReceiveClientQuery(query []byte) *common.CourierEnvelopeReply {
@@ -197,6 +221,10 @@ func (c *Courier) ReceiveClientQuery(query []byte) *common.CourierEnvelopeReply 
 	// replica 0
 	firstReplicaID := courierMessage.IntermediateReplicas[0]
 	reply0 := c.SendToReplica(firstReplicaID, &commands.ReplicaMessage{
+		Cmds:   c.Cmds,
+		Geo:    c.Geo,
+		Scheme: c.ReplicaScheme,
+
 		SenderEPubKey: courierMessage.SenderEPubKey,
 		DEK:           courierMessage.DEK[0],
 		Ciphertext:    courierMessage.Ciphertext,
@@ -205,6 +233,10 @@ func (c *Courier) ReceiveClientQuery(query []byte) *common.CourierEnvelopeReply 
 	// replica 1
 	secondReplicaID := courierMessage.IntermediateReplicas[1]
 	c.SendToReplica(secondReplicaID, &commands.ReplicaMessage{
+		Cmds:   c.Cmds,
+		Geo:    c.Geo,
+		Scheme: c.ReplicaScheme,
+
 		SenderEPubKey: courierMessage.SenderEPubKey,
 		DEK:           courierMessage.DEK[1],
 		Ciphertext:    courierMessage.Ciphertext,
@@ -327,12 +359,42 @@ func (c *ClientReader) ComposeReadNextMessage() (nike.PrivateKey, *common.Courie
 	return mkemPrivateKey, envelope
 }
 
+func TestReplicaMessage(t *testing.T) {
+	sphinxNikeScheme := schemes.ByName("X25519")
+	sphinxGeo := geo.GeometryFromUserForwardPayloadLength(sphinxNikeScheme, 5000, true, 5)
+	replicaScheme := schemes.ByName("CTIDH1024-X25519")
+	cmds := commands.NewStorageReplicaCommands(sphinxGeo, replicaScheme)
+
+	dek := &[mkem.DEKSize]byte{}
+	senderKey := make([]byte, commands.HybridKeySize(replicaScheme))
+	_, err := rand.Reader.Read(senderKey[:])
+	require.NoError(t, err)
+	payload := []byte("A free man must be able to endure it when his fellow men act and live otherwise than he considers proper. He must free himself from the habit, just as soon as something does not please him, of calling for the police.")
+
+	msg := &commands.ReplicaMessage{
+		Cmds:   cmds,
+		Geo:    sphinxGeo,
+		Scheme: replicaScheme,
+
+		SenderEPubKey: senderKey,
+		DEK:           dek,
+		Ciphertext:    payload,
+	}
+
+	blob := msg.ToBytes()
+	_, err = cmds.FromBytes(blob)
+	require.NoError(t, err)
+}
+
 func TestClientCourierProtocolFlow(t *testing.T) {
 	sphinxGeo := geo.GeometryFromUserForwardPayloadLength(schemes.ByName("X25519"), 5000, true, 5)
+	sphinxNikeScheme := schemes.ByName("X25519")
 	scheme := schemes.ByName("CTIDH1024-X25519")
+	cmds := commands.NewStorageReplicaCommands(sphinxGeo, scheme)
+
 	mkemNikeScheme := mkem.NewScheme(scheme)
 
-	replicas := NewReplicas(4, scheme, sphinxGeo)
+	replicas := NewReplicas(4, scheme, cmds, sphinxGeo, sphinxNikeScheme)
 	require.NotNil(t, replicas)
 	for i := 0; i < len(replicas); i++ {
 		if replicas[i] == nil {
@@ -341,7 +403,10 @@ func TestClientCourierProtocolFlow(t *testing.T) {
 	}
 
 	courier := &Courier{
-		Replicas: replicas,
+		Replicas:      replicas,
+		Cmds:          cmds,
+		Geo:           sphinxGeo,
+		ReplicaScheme: scheme,
 	}
 
 	ctx := []byte("katzenpost pigeonhole context")
