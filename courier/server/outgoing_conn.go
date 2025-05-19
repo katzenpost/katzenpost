@@ -252,7 +252,9 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 		AuthenticationKey: c.co.Server().linkPrivKey,
 		RandomReader:      rand.Reader,
 	}
-	w, err := wire.NewSession(cfg, true)
+	envelopeScheme := nikeSchemes.ByName(c.cfg.EnvelopeScheme)
+	isInitiator := true
+	w, err := wire.NewStorageReplicaSession(cfg, envelopeScheme, isInitiator)
 	if err != nil {
 		c.log.Errorf("Failed to allocate session: %v", err)
 		return
