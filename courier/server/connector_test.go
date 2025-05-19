@@ -16,6 +16,7 @@ import (
 	"github.com/fxamacker/cbor/v2"
 	"github.com/stretchr/testify/require"
 
+	"github.com/katzenpost/hpqc/bacap"
 	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/kem"
 	"github.com/katzenpost/hpqc/kem/mkem"
@@ -447,7 +448,7 @@ func TestConnector(t *testing.T) {
 	replica2Pub, _ := m.replicaKeys(1)
 
 	// client creates a replica command
-	boxid := &[32]byte{}
+	boxid := &[bacap.BoxIDSize]byte{}
 	_, err = rand.Reader.Read(boxid[:])
 	require.NoError(t, err)
 	sig := &[64]byte{}
@@ -458,17 +459,14 @@ func TestConnector(t *testing.T) {
 	replicaWrite := commands.ReplicaWrite{
 		Cmds: commands.NewStorageReplicaCommands(g, nikeScheme),
 
-		BoxID:         boxid,
-		Signature:     sig,
-		Payload:       payload,
-		PayloadLength: uint32(len(payload)),
+		BoxID:     boxid,
+		Signature: sig,
+		Payload:   payload,
 	}
 
-	_, envelopeRaw := mkemScheme.Encapsulate([]nike.PublicKey{replica1Pub, replica2Pub}, replicaWrite.ToBytes())
-	envelope1, err := mkem.CiphertextFromBytes(mkemScheme, envelopeRaw)
-	require.NoError(t, err)
-	dek := &[32]byte{}
-	copy(dek[:], envelope1.DEKCiphertexts[0])
+	_, envelope1 := mkemScheme.Encapsulate([]nike.PublicKey{replica1Pub, replica2Pub}, replicaWrite.ToBytes())
+	dek := &[mkem.DEKSize]byte{}
+	copy(dek[:], envelope1.DEKCiphertexts[0][:])
 	mesg := &commands.ReplicaMessage{
 		Cmds:   commands.NewStorageReplicaCommands(g, nikeScheme),
 		Geo:    g,

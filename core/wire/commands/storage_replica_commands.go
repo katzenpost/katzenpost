@@ -116,6 +116,7 @@ func (c *ReplicaWriteReply) Length() int {
 	return 0
 }
 
+// ReplicaMessage
 type ReplicaMessage struct {
 	Cmds   *Commands
 	Geo    *geo.Geometry
