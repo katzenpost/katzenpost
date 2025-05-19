@@ -9,6 +9,10 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/katzenpost/hpqc/nike"
+	"github.com/katzenpost/hpqc/nike/schemes"
+
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"github.com/katzenpost/katzenpost/replica/common"
 	"github.com/katzenpost/katzenpost/server/cborplugin"
@@ -17,14 +21,26 @@ import (
 type Courier struct {
 	write  func(cborplugin.Command)
 	server *Server
+
+	cmds           *commands.Commands
+	geo            *geo.Geometry
+	envelopeScheme nike.Scheme
 }
 
 // StartPlugin starts the CBOR plugin service which listens for socket connections
 // from the service node.
 func (s *Server) StartPlugin() {
 	socketFile := filepath.Join(s.cfg.DataDir, fmt.Sprintf("%d.courier.socket", os.Getpid()))
+
+	scheme := schemes.ByName(s.cfg.EnvelopeScheme)
+	cmds := commands.NewStorageReplicaCommands(s.cfg.SphinxGeometry, scheme)
+
 	courier := &Courier{
 		server: s,
+
+		cmds:           cmds,
+		geo:            s.cfg.SphinxGeometry,
+		envelopeScheme: scheme,
 	}
 	var server *cborplugin.Server
 
@@ -55,6 +71,10 @@ func (e *Courier) OnCommand(cmd cborplugin.Command) error {
 		e.server.log.Debug("---------- OnCommand: proxying to replica1")
 		firstReplicaID := courierMessage.IntermediateReplicas[0]
 		replicas[0] = &commands.ReplicaMessage{
+			Cmds:   e.cmds,
+			Geo:    e.geo,
+			Scheme: e.envelopeScheme,
+
 			SenderEPubKey: courierMessage.SenderEPubKey,
 			DEK:           courierMessage.DEK[0],
 			Ciphertext:    courierMessage.Ciphertext,
@@ -65,6 +85,10 @@ func (e *Courier) OnCommand(cmd cborplugin.Command) error {
 		e.server.log.Debug("---------- OnCommand: proxying to replica2")
 		secondReplicaID := courierMessage.IntermediateReplicas[1]
 		replicas[1] = &commands.ReplicaMessage{
+			Cmds:   e.cmds,
+			Geo:    e.geo,
+			Scheme: e.envelopeScheme,
+
 			SenderEPubKey: courierMessage.SenderEPubKey,
 			DEK:           courierMessage.DEK[1],
 			Ciphertext:    courierMessage.Ciphertext,
@@ -76,7 +100,8 @@ func (e *Courier) OnCommand(cmd cborplugin.Command) error {
 			EnvelopeHash: envelopeHash,
 			ReplyIndex:   0,
 			Payload:      &commands.ReplicaMessageReply{},
-			ErrorString:  "hello world",
+			ErrorString:  "",
+			ErrorCode:    0,
 		}
 		replyPayload := reply.Bytes()
 
