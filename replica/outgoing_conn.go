@@ -16,6 +16,7 @@ import (
 
 	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/kem"
+	"github.com/katzenpost/hpqc/nike/schemes"
 	"github.com/katzenpost/hpqc/rand"
 
 	"github.com/katzenpost/katzenpost/core/epochtime"
@@ -249,7 +250,9 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 		AuthenticationKey: c.co.Server().linkKey,
 		RandomReader:      rand.Reader,
 	}
-	w, err := wire.NewSession(cfg, true)
+	envelopeScheme := schemes.ByName(c.co.(*Connector).server.cfg.ReplicaNIKEScheme)
+	isInitiator := true
+	w, err := wire.NewStorageReplicaSession(cfg, envelopeScheme, isInitiator)
 	if err != nil {
 		c.log.Errorf("Failed to allocate session: %v", err)
 		return
