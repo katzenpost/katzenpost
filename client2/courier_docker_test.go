@@ -110,15 +110,15 @@ func testDockerCourierService(t *testing.T) {
 	mkemPrivateKey, mkemCiphertext := mkemNikeScheme.Encapsulate([]nike.PublicKey{replica0pub, replica1pub}, request)
 	mkemPublicKey := mkemPrivateKey.Public()
 
-	dek0 := &[32]byte{}
-	dek1 := &[32]byte{}
-	copy(dek0[:], mkemCiphertext.DEKCiphertexts[0])
-	copy(dek1[:], mkemCiphertext.DEKCiphertexts[1])
+	dek0 := &[mkem.DEKSize]byte{}
+	dek1 := &[mkem.DEKSize]byte{}
+	copy(dek0[:], mkemCiphertext.DEKCiphertexts[0][:])
+	copy(dek1[:], mkemCiphertext.DEKCiphertexts[1][:])
 
 	envelope1 := common.CourierEnvelope{
 		SenderEPubKey:        mkemPublicKey.Bytes(),
 		IntermediateReplicas: [2]uint8{0, 1}, // indices to pkidoc's StorageReplicas
-		DEK:                  [2]*[32]byte{dek0, dek1},
+		DEK:                  [2]*[mkem.DEKSize]byte{dek0, dek1},
 		Ciphertext:           mkemCiphertext.Envelope,
 	}
 
@@ -143,15 +143,15 @@ func testDockerCourierService(t *testing.T) {
 	replicaReadBlob := replicaRead.ToBytes()
 	readerPrivateKey, replicaReadCiphertext := mkemNikeScheme.Encapsulate([]nike.PublicKey{replica0pub, replica1pub}, replicaReadBlob)
 
-	readDek0 := &[32]byte{}
-	readDek1 := &[32]byte{}
-	copy(readDek0[:], replicaReadCiphertext.DEKCiphertexts[0])
-	copy(readDek1[:], replicaReadCiphertext.DEKCiphertexts[1])
+	readDek0 := &[mkem.DEKSize]byte{}
+	readDek1 := &[mkem.DEKSize]byte{}
+	copy(readDek0[:], replicaReadCiphertext.DEKCiphertexts[0][:])
+	copy(readDek1[:], replicaReadCiphertext.DEKCiphertexts[1][:])
 
 	envelope2 := common.CourierEnvelope{
 		SenderEPubKey:        readerPrivateKey.Public().Bytes(),
 		IntermediateReplicas: [2]uint8{0, 1},
-		DEK:                  [2]*[32]byte{readDek0, readDek1},
+		DEK:                  [2]*[mkem.DEKSize]byte{readDek0, readDek1},
 		Ciphertext:           replicaReadCiphertext.Envelope,
 	}
 
