@@ -163,7 +163,7 @@ func testDockerCourierService(t *testing.T) {
 	require.NoError(t, err)
 
 	replicaMessageReply := courierReply.Payload
-	require.Equal(t, 0, replicaMessageReply.ErrorCode)
+	require.Equal(t, replicaMessageReply.ErrorCode, uint8(0))
 
 	replyReplica := replicas[replicaMessageReply.ReplicaID]
 	replicaPubKeyBlob := replyReplica.EnvelopeKeys[replicaEpoch]
