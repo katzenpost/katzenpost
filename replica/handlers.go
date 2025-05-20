@@ -115,7 +115,7 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 			Cmds:          commands.NewStorageReplicaCommands(c.geo, nikeScheme),
 			ErrorCode:     0, // Zero means success.
 			EnvelopeHash:  &envelopeHash,
-			EnvelopeReply: envelopeReply,
+			EnvelopeReply: envelopeReply.Envelope,
 			ReplicaID:     replicaID,
 		}
 	case *commands.ReplicaWrite:
@@ -130,7 +130,7 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 			Cmds:          commands.NewStorageReplicaCommands(c.geo, nikeScheme),
 			ErrorCode:     0, // Zero means success.
 			EnvelopeHash:  &envelopeHash,
-			EnvelopeReply: envelopeReply,
+			EnvelopeReply: envelopeReply.Envelope,
 			ReplicaID:     replicaID,
 		}
 	default:
