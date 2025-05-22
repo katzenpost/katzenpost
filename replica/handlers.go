@@ -37,6 +37,7 @@ func (c *incomingConn) onReplicaCommand(rawCmd commands.Command) (commands.Comma
 	// not reached
 }
 
+// replicaMessage's are sent from the courier to the replica storage servers
 func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMessage) commands.Command {
 	nikeScheme := schemes.ByName(c.l.server.cfg.ReplicaNIKEScheme)
 	scheme := mkem.NewScheme(nikeScheme)
@@ -69,14 +70,16 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 		}
 		return errReply
 	}
-	envelopeHash := blake2b.Sum256(replicaMessage.SenderEPubKey[:])
+
+	envelopeHash := replicaMessage.EnvelopeHash()
+
 	keypair, err := c.l.server.envelopeKeys.GetKeypair(replicaEpoch)
 	if err != nil {
 		c.log.Errorf("handleReplicaMessage failed to get envelope keypair: %s", err)
 		return &commands.ReplicaMessageReply{
 			Cmds:          commands.NewStorageReplicaCommands(c.geo, nikeScheme),
 			ErrorCode:     2, // non-zero means failure.
-			EnvelopeHash:  &envelopeHash,
+			EnvelopeHash:  envelopeHash,
 			EnvelopeReply: []byte{},
 		}
 	}
@@ -86,7 +89,7 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 		return &commands.ReplicaMessageReply{
 			Cmds:          commands.NewStorageReplicaCommands(c.geo, nikeScheme),
 			ErrorCode:     1, // non-zero means failure.
-			EnvelopeHash:  &envelopeHash,
+			EnvelopeHash:  envelopeHash,
 			EnvelopeReply: []byte{},
 		}
 	}
@@ -98,7 +101,7 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 		return &commands.ReplicaMessageReply{
 			Cmds:          commands.NewStorageReplicaCommands(c.geo, nikeScheme),
 			ErrorCode:     3, // non-zero means failure.
-			EnvelopeHash:  &envelopeHash,
+			EnvelopeHash:  envelopeHash,
 			EnvelopeReply: []byte{},
 		}
 	}
@@ -114,7 +117,7 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 		return &commands.ReplicaMessageReply{
 			Cmds:          commands.NewStorageReplicaCommands(c.geo, nikeScheme),
 			ErrorCode:     0, // Zero means success.
-			EnvelopeHash:  &envelopeHash,
+			EnvelopeHash:  envelopeHash,
 			EnvelopeReply: envelopeReply.Envelope,
 			ReplicaID:     replicaID,
 		}
@@ -129,7 +132,7 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 		return &commands.ReplicaMessageReply{
 			Cmds:          commands.NewStorageReplicaCommands(c.geo, nikeScheme),
 			ErrorCode:     0, // Zero means success.
-			EnvelopeHash:  &envelopeHash,
+			EnvelopeHash:  envelopeHash,
 			EnvelopeReply: envelopeReply.Envelope,
 			ReplicaID:     replicaID,
 		}

@@ -7,7 +7,10 @@ import (
 	"encoding/binary"
 	"fmt"
 
+	"golang.org/x/crypto/blake2b"
+
 	"github.com/katzenpost/hpqc/bacap"
+	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/kem/mkem"
 	"github.com/katzenpost/hpqc/nike"
 
@@ -116,7 +119,8 @@ func (c *ReplicaWriteReply) Length() int {
 	return 0
 }
 
-// ReplicaMessage
+// ReplicaMessage used over wire protocol from couriers to replicas,
+// one replica at a time.
 type ReplicaMessage struct {
 	Cmds   *Commands
 	Geo    *geo.Geometry
@@ -125,6 +129,25 @@ type ReplicaMessage struct {
 	SenderEPubKey []byte
 	DEK           *[mkem.DEKSize]byte
 	Ciphertext    []byte
+}
+
+func (c *ReplicaMessage) EnvelopeHash() *[hash.HashSize]byte {
+	h, err := blake2b.New256(nil)
+	if err != nil {
+		panic(err)
+	}
+	_, err = h.Write(c.SenderEPubKey)
+	if err != nil {
+		panic(err)
+	}
+	_, err = h.Write(c.Ciphertext)
+	if err != nil {
+		panic(err)
+	}
+	s := h.Sum([]byte{})
+	hashOut := &[blake2b.Size256]byte{}
+	copy(hashOut[:], s)
+	return hashOut
 }
 
 func (c *ReplicaMessage) ToBytes() []byte {

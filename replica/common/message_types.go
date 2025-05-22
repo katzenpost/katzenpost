@@ -5,6 +5,7 @@ package common
 
 import (
 	cbor "github.com/fxamacker/cbor/v2"
+	"golang.org/x/crypto/blake2b"
 
 	"github.com/katzenpost/hpqc/bacap"
 	"github.com/katzenpost/hpqc/hash"
@@ -40,30 +41,23 @@ type CourierEnvelope struct {
 	Ciphertext []byte
 }
 
-type envelopeHash struct {
-	// SenderEPubKey is the sender's ephemeral public key.
-	SenderEPubKey []byte
-
-	// Ciphertext is the encrypted and MAC'ed payload.
-	Ciphertext []byte
-}
-
-func (c *envelopeHash) Bytes() *[hash.HashSize]byte {
-	blob, err := cbor.Marshal(c)
-	if err != nil {
-		panic(err) // impossible
-	}
-
-	h := hash.Sum256(blob)
-	return &h
-}
-
 func (c *CourierEnvelope) EnvelopeHash() *[hash.HashSize]byte {
-	env := &envelopeHash{
-		SenderEPubKey: c.SenderEPubKey,
-		Ciphertext:    c.Ciphertext,
+	h, err := blake2b.New256(nil)
+	if err != nil {
+		panic(err)
 	}
-	return env.Bytes()
+	_, err = h.Write(c.SenderEPubKey)
+	if err != nil {
+		panic(err)
+	}
+	_, err = h.Write(c.Ciphertext)
+	if err != nil {
+		panic(err)
+	}
+	s := h.Sum([]byte{})
+	hashOut := &[blake2b.Size256]byte{}
+	copy(hashOut[:], s)
+	return hashOut
 }
 
 // Bytes serializes the given CourierEnvelope using CBOR.
