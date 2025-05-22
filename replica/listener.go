@@ -94,6 +94,7 @@ func (l *Listener) worker() {
 }
 
 func (l *Listener) onNewConn(conn net.Conn) {
+	l.log.Debug("------------- New Connection")
 	wireScheme := schemes.ByName(l.server.cfg.WireKEMScheme)
 	if wireScheme == nil {
 		panic("KEM scheme not found in registry")

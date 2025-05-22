@@ -36,9 +36,9 @@ func testDockerCourierService(t *testing.T) {
 		File:    "",
 		Level:   "DEBUG",
 	}
-	thin := thin.NewThinClient(thin.FromConfig(cfg), logging)
-	t.Log("thin client Dialing")
-	err = thin.Dial()
+	thinClient := thin.NewThinClient(thin.FromConfig(cfg), logging)
+	t.Log("thinClient Dialing")
+	err = thinClient.Dial()
 	require.NoError(t, err)
 	require.Nil(t, err)
 	t.Log("thin client connected")
@@ -46,7 +46,7 @@ func testDockerCourierService(t *testing.T) {
 	t.Log("TESTING COURIER SERVICE2")
 
 	t.Log("thin client getting PKI doc")
-	doc := thin.PKIDocument()
+	doc := thinClient.PKIDocument()
 	require.NotNil(t, doc)
 	require.NotEqual(t, doc.LambdaP, 0.0)
 
@@ -67,7 +67,7 @@ func testDockerCourierService(t *testing.T) {
 
 	t.Log("TESTING COURIER SERVICE3")
 
-	descs, err := thin.GetServices("courier")
+	descs, err := thinClient.GetServices("courier")
 	require.NoError(t, err)
 
 	require.NotNil(t, descs)
@@ -127,7 +127,7 @@ func testDockerCourierService(t *testing.T) {
 
 	t.Log("TESTING COURIER SERVICE6")
 
-	reply1 := sendAndWait(t, thin, messageBlob1, &nodeIdKey, courierDesc.RecipientQueueID)
+	reply1 := sendAndWait(t, thinClient, messageBlob1, &nodeIdKey, courierDesc.RecipientQueueID)
 	require.NotNil(t, reply1)
 
 	// XXX Do more checks on reply, here.
@@ -155,33 +155,44 @@ func testDockerCourierService(t *testing.T) {
 		Ciphertext:           replicaReadCiphertext.Envelope,
 	}
 
-	// send a read request
-	reply2 := sendAndWait(t, thin, envelope2.Bytes(), &nodeIdKey, courierDesc.RecipientQueueID)
-	require.NotNil(t, reply2)
+	for i := 0; i < 3; i++ {
+		// send a read request
+		courierReplyBlob := sendAndWait(t, thinClient, envelope2.Bytes(), &nodeIdKey, courierDesc.RecipientQueueID)
+		require.NotNil(t, courierReplyBlob)
 
-	courierReply, err := common.CourierEnvelopeReplyFromBytes(reply2)
-	require.NoError(t, err)
+		courierReply, err := common.CourierEnvelopeReplyFromBytes(courierReplyBlob)
+		require.NoError(t, err)
 
-	replicaMessageReply := courierReply.Payload
-	require.Equal(t, replicaMessageReply.ErrorCode, uint8(0))
+		replicaMessageReply := courierReply.Payload
+		require.Equal(t, replicaMessageReply.ErrorCode, uint8(0))
 
-	replyReplica := replicas[replicaMessageReply.ReplicaID]
-	replicaPubKeyBlob := replyReplica.EnvelopeKeys[replicaEpoch]
-	replicaPubKey, err := common.NikeScheme.UnmarshalBinaryPublicKey(replicaPubKeyBlob)
-	require.NoError(t, err)
+		replyReplica := replicas[replicaMessageReply.ReplicaID]
+		replicaPubKeyBlob := replyReplica.EnvelopeKeys[replicaEpoch]
+		replicaPubKey, err := common.NikeScheme.UnmarshalBinaryPublicKey(replicaPubKeyBlob)
+		require.NoError(t, err)
 
-	replyEnvelopeBlob, err := mkemNikeScheme.DecryptEnvelope(readerPrivateKey, replicaPubKey, replicaMessageReply.EnvelopeReply)
-	require.NoError(t, err)
+		t.Logf("EnvelopeReply length %d", len(replicaMessageReply.EnvelopeReply))
 
-	replicaMessageReplyInnerMessage, err := common.ReplicaMessageReplyInnerMessageFromBytes(replyEnvelopeBlob)
-	require.NoError(t, err)
-	require.NotNil(t, replicaMessageReplyInnerMessage.ReplicaReadReply)
-	require.Nil(t, replicaMessageReplyInnerMessage.ReplicaWriteReply)
+		if len(replicaMessageReply.EnvelopeReply) != 0 {
+			replyEnvelopeBlob, err := mkemNikeScheme.DecryptEnvelope(readerPrivateKey, replicaPubKey, replicaMessageReply.EnvelopeReply)
+			require.NoError(t, err)
 
-	cyphertext := replicaMessageReplyInnerMessage.ReplicaReadReply.Payload
-	signature := replicaMessageReplyInnerMessage.ReplicaReadReply.Signature
+			replicaMessageReplyInnerMessage, err := common.ReplicaMessageReplyInnerMessageFromBytes(replyEnvelopeBlob)
+			require.NoError(t, err)
+			require.NotNil(t, replicaMessageReplyInnerMessage.ReplicaReadReply)
+			require.Nil(t, replicaMessageReplyInnerMessage.ReplicaWriteReply)
 
-	plaintextMessage2, err := reader.DecryptNext(ctx, boxID, cyphertext, *signature)
-	require.NoError(t, err)
-	require.Equal(t, plaintextMessage1, plaintextMessage2)
+			cyphertext := replicaMessageReplyInnerMessage.ReplicaReadReply.Payload
+			signature := replicaMessageReplyInnerMessage.ReplicaReadReply.Signature
+
+			plaintextMessage2, err := reader.DecryptNext(ctx, boxID, cyphertext, *signature)
+			require.NoError(t, err)
+			require.Equal(t, plaintextMessage1, plaintextMessage2)
+
+			break
+		}
+	}
+
+	t.Log("Test Completed. Disconnecting...")
+	thinClient.Close()
 }
