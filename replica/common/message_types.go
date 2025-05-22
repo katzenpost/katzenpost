@@ -92,8 +92,8 @@ type CourierEnvelopeReply struct {
 	// the original courier envelope.
 	ReplyIndex uint8
 
-	// Payload contains an embedded ReplicaMessageReply.
-	Payload *commands.ReplicaMessageReply
+	// Payload contains an embedded ReplicaMessageReply's EnvelopeReply.
+	Payload []byte
 
 	// ErrorString will be empty if the query was well formed. Otherwise
 	// ErrorString will be set to an informative error string.
