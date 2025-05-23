@@ -253,7 +253,7 @@ func (c *Courier) ReceiveClientQuery(query []byte) *common.CourierEnvelopeReply 
 	reply := &common.CourierEnvelopeReply{
 		EnvelopeHash: courierMessage.EnvelopeHash(),
 		ReplyIndex:   0,
-		Payload:      reply0,
+		Payload:      reply0.EnvelopeReply,
 		ErrorString:  "",
 		ErrorCode:    0,
 	}
@@ -413,7 +413,7 @@ func TestClientCourierProtocolFlow(t *testing.T) {
 	bobPrivateKey1, bobReceiveRequest := bob.ComposeReadNextMessage()
 	bobReply1 := courier.ReceiveClientQuery(bobReceiveRequest.Bytes())
 
-	rawInnerMsg, err := mkemNikeScheme.DecryptEnvelope(bobPrivateKey1, replicas[0].PublicKey, bobReply1.Payload.EnvelopeReply)
+	rawInnerMsg, err := mkemNikeScheme.DecryptEnvelope(bobPrivateKey1, replicas[0].PublicKey, bobReply1.Payload)
 	require.NoError(t, err)
 
 	// common.ReplicaMessageReplyInnerMessage
