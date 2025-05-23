@@ -13,7 +13,7 @@ require (
 	github.com/katzenpost/circl v1.3.9-0.20240222183521-1cd9a34e9a0c
 	github.com/katzenpost/hpqc v0.0.61
 	github.com/katzenpost/nyquist v0.0.10
-	github.com/linxGnu/grocksdb v1.9.8
+	github.com/linxGnu/grocksdb v1.10.1
 	github.com/prometheus/client_golang v1.20.0
 	github.com/quic-go/quic-go v0.48.2
 	github.com/schwarmco/go-cartesian-product v0.0.0-20230921023625-e02d1c150053

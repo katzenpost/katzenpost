@@ -12,6 +12,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/katzenpost/hpqc/bacap"
 	kemschemes "github.com/katzenpost/hpqc/kem/schemes"
 	nikeschemes "github.com/katzenpost/hpqc/nike/schemes"
 	ecdh "github.com/katzenpost/hpqc/nike/x25519"
@@ -184,12 +185,12 @@ func TestGetRemoteShards(t *testing.T) {
 	require.NotNil(t, cmds)
 
 	numShares := 4
-	boxIDs := make([]*[32]byte, numShares)
+	boxIDs := make([]*[bacap.BoxIDSize]byte, numShares)
 	for i := 0; i < numShares; i++ {
 		replicaWriteCmd1 := &commands.ReplicaWrite{
 			Cmds:      cmds,
-			BoxID:     &[32]byte{},
-			Signature: &[32]byte{},
+			BoxID:     &[bacap.BoxIDSize]byte{},
+			Signature: &[bacap.SignatureSize]byte{},
 			Payload:   []byte("hello i am a payload"),
 		}
 		_, err = rand.Reader.Read(replicaWriteCmd1.BoxID[:])
@@ -204,7 +205,7 @@ func TestGetRemoteShards(t *testing.T) {
 		boxIDs[i] = replicaWriteCmd1.BoxID
 	}
 
-	boxid := &[32]byte{}
+	boxid := &[bacap.BoxIDSize]byte{}
 	_, err = rand.Reader.Read(boxid[:])
 	require.NoError(t, err)
 

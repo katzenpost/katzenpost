@@ -13,7 +13,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/katzenpost/hpqc/bacap"
 	"github.com/katzenpost/hpqc/kem"
+	"github.com/katzenpost/hpqc/kem/mkem"
 	kemschemes "github.com/katzenpost/hpqc/kem/schemes"
 	nikeschemes "github.com/katzenpost/hpqc/nike/schemes"
 	"github.com/katzenpost/hpqc/rand"
@@ -190,7 +192,7 @@ func TestIncomingConn(t *testing.T) {
 	require.False(t, ok)
 	require.Nil(t, replyCommand)
 
-	boxid := &[32]byte{}
+	boxid := &[bacap.BoxIDSize]byte{}
 	_, err = rand.Reader.Read(boxid[:])
 	require.NoError(t, err)
 
@@ -217,7 +219,7 @@ func TestIncomingConn(t *testing.T) {
 		Geo:  geometry,
 
 		SenderEPubKey: make([]byte, commands.HybridKeySize(replicaScheme)),
-		DEK:           &[32]byte{},
+		DEK:           &[mkem.DEKSize]byte{},
 		Ciphertext:    make([]byte, 1000),
 	}
 	reply3 := inConn.handleReplicaMessage(replicaMessage)

@@ -21,10 +21,11 @@ bindings.
 
 ## building / running
 
-Install the `RocksDB` dependencies on your host system:
+Install the `RocksDB` dependencies on your host system.
+Run these commands as root:
 
 ```bash
-sudo apt install cmake
+apt install cmake
 
 cd /tmp && \
     git clone https://github.com/gflags/gflags.git && \
@@ -39,10 +40,10 @@ cd /tmp && \
 cd /tmp && \
     git clone https://github.com/facebook/rocksdb.git && \
     cd rocksdb && \
-    git checkout v9.3.1 && \
+    git checkout v10.2.1 && \
     make shared_lib && \
     mkdir -p /usr/local/rocksdb/lib && \
-    mkdir /usr/local/rocksdb/include && \
+    mkdir -p /usr/local/rocksdb/include && \
     cp librocksdb.so* /usr/local/rocksdb/lib && \
     cp /usr/local/rocksdb/lib/librocksdb.so* /usr/lib/ && \
     cp -r include /usr/local/rocksdb/ && \

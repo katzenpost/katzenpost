@@ -10,6 +10,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/katzenpost/hpqc/bacap"
 	"github.com/katzenpost/hpqc/kem"
 	kemschemes "github.com/katzenpost/hpqc/kem/schemes"
 	"github.com/katzenpost/hpqc/nike"
@@ -162,8 +163,8 @@ func TestState(t *testing.T) {
 	for i := 0; i < numShares; i++ {
 		replicaWriteCmd1 := &commands.ReplicaWrite{
 			Cmds:      cmds,
-			BoxID:     &[32]byte{},
-			Signature: &[32]byte{},
+			BoxID:     &[bacap.BoxIDSize]byte{},
+			Signature: &[bacap.SignatureSize]byte{},
 			Payload:   []byte("hello i am a payload"),
 		}
 		_, err = rand.Reader.Read(replicaWriteCmd1.BoxID[:])
@@ -178,9 +179,8 @@ func TestState(t *testing.T) {
 		boxIDs[i] = replicaWriteCmd1.BoxID
 	}
 
-	replicaReadCmd := &commands.ReplicaRead{
-		Cmds:  cmds,
-		BoxID: &[32]byte{},
+	replicaReadCmd := &common.ReplicaRead{
+		BoxID: &[bacap.BoxIDSize]byte{},
 	}
 	copy(replicaReadCmd.BoxID[:], boxIDs[0][:])
 

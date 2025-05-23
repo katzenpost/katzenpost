@@ -4,8 +4,6 @@
 package replica
 
 import (
-	"golang.org/x/crypto/blake2b"
-
 	"github.com/katzenpost/hpqc/kem/mkem"
 	"github.com/katzenpost/hpqc/nike/schemes"
 	"github.com/katzenpost/hpqc/sign/ed25519"
