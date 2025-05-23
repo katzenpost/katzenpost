@@ -14,10 +14,12 @@ import (
 	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/kem/mkem"
 	"github.com/katzenpost/hpqc/nike"
+	"github.com/katzenpost/hpqc/nike/schemes"
 	"github.com/katzenpost/hpqc/rand"
 
 	"github.com/katzenpost/katzenpost/client2/config"
 	"github.com/katzenpost/katzenpost/client2/thin"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"github.com/katzenpost/katzenpost/replica/common"
 )
@@ -155,6 +157,9 @@ func testDockerCourierService(t *testing.T) {
 		Ciphertext:           replicaReadCiphertext.Envelope,
 	}
 
+	sphinxGeo := geo.GeometryFromUserForwardPayloadLength(schemes.ByName("X25519"), 5000, true, 5)
+	cmds := commands.NewStorageReplicaCommands(sphinxGeo, common.NikeScheme)
+
 	for i := 0; i < 3; i++ {
 		// send a read request
 		courierReplyBlob := sendAndWait(t, thinClient, envelope2.Bytes(), &nodeIdKey, courierDesc.RecipientQueueID)
@@ -163,8 +168,21 @@ func testDockerCourierService(t *testing.T) {
 		courierReply, err := common.CourierEnvelopeReplyFromBytes(courierReplyBlob)
 		require.NoError(t, err)
 
-		replicaMessageReply := courierReply.Payload
-		require.Equal(t, replicaMessageReply.ErrorCode, uint8(0))
+		if courierReply.Payload == nil {
+			continue
+		}
+		replicaMessageReplyRaw := courierReply.Payload
+
+		myCmd, err := cmds.FromBytes(replicaMessageReplyRaw)
+		require.NoError(t, err)
+
+		var replicaMessageReply *commands.ReplicaMessageReply
+		switch v := myCmd.(type) {
+		case *commands.ReplicaMessageReply:
+			replicaMessageReply = v
+		default:
+			panic("received unexpected command")
+		}
 
 		replyReplica := replicas[replicaMessageReply.ReplicaID]
 		replicaPubKeyBlob := replyReplica.EnvelopeKeys[replicaEpoch]
