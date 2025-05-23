@@ -39,6 +39,8 @@ type PKI interface {
 type Server struct {
 	cfg *config.Config
 
+	courier *Courier
+
 	logBackend *log.Backend
 	log        *logging.Logger
 

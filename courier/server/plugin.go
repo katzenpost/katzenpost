@@ -65,6 +65,7 @@ func (s *Server) StartPlugin() {
 	cmds := commands.NewStorageReplicaCommands(s.cfg.SphinxGeometry, scheme)
 
 	courier := NewCourier(s, cmds, scheme)
+	s.courier = courier
 	var server *cborplugin.Server
 
 	server = cborplugin.NewServer(s.LogBackend().GetLogger("courier_plugin"), socketFile, new(cborplugin.RequestFactory), courier)
@@ -78,7 +79,31 @@ func (s *Server) StartPlugin() {
 
 }
 
-func (e *Courier) handleNewMessage(envHash *[hash.HashSize]byte, courierMessage *common.CourierEnvelope) []byte {
+func (e *Courier) CacheReply(reply *commands.ReplicaMessageReply) {
+	e.dedupCacheLock.Lock()
+	entry, ok := e.dedupCache[*reply.EnvelopeHash]
+	if ok {
+		switch {
+		case entry.EnvelopeReplies[0] == nil && entry.EnvelopeReplies[1] == nil:
+			entry.EnvelopeReplies[0] = reply
+		case entry.EnvelopeReplies[0] != nil && entry.EnvelopeReplies[1] == nil:
+			entry.EnvelopeReplies[1] = reply
+		case entry.EnvelopeReplies[0] != nil && entry.EnvelopeReplies[1] != nil:
+			// no-op. already cached both replies.
+		}
+	} else {
+		e.dedupCache[*reply.EnvelopeHash] = &CourierBookKeeping{
+			Epoch: e.server.pki.PKIDocument().Epoch,
+			EnvelopeReplies: [2]*commands.ReplicaMessageReply{
+				reply,
+				nil,
+			},
+		}
+	}
+	e.dedupCacheLock.Unlock()
+}
+
+func (e *Courier) handleNewMessage(isRead bool, envHash *[hash.HashSize]byte, courierMessage *common.CourierEnvelope) []byte {
 	replicas := make([]*commands.ReplicaMessage, 2)
 
 	// replica 1
@@ -120,7 +145,6 @@ func (e *Courier) handleNewMessage(envHash *[hash.HashSize]byte, courierMessage 
 }
 
 func (e *Courier) handleOldMessage(cacheEntry *CourierBookKeeping, envHash *[hash.HashSize]byte, courierMessage *common.CourierEnvelope) []byte {
-	var replyPayload []byte
 	reply := &common.CourierEnvelopeReply{
 		EnvelopeHash: envHash,
 		ReplyIndex:   courierMessage.ReplyIndex,
@@ -137,50 +161,57 @@ func (e *Courier) handleOldMessage(cacheEntry *CourierBookKeeping, envHash *[has
 		}
 	}
 
-	return replyPayload
+	return reply.Bytes()
 }
 
 func (e *Courier) OnCommand(cmd cborplugin.Command) error {
+
+	// NOTE(David): storage replica read replies needs to go into the dedup cache
+
 	e.server.log.Debug("---------- OnCommand BEGIN")
+	var request *cborplugin.Request
 	switch r := cmd.(type) {
 	case *cborplugin.Request:
-		courierMessage, err := common.CourierEnvelopeFromBytes(r.Payload)
-		if err != nil {
-			e.server.log.Debugf("---------- CBOR DECODE FAIL: %s", err)
-			return err
-		}
-		envHash := courierMessage.EnvelopeHash()
-
-		var replyPayload []byte
-		e.dedupCacheLock.RLock()
-		cacheEntry, ok := e.dedupCache[*envHash]
-		e.dedupCacheLock.RUnlock()
-		if ok {
-			replyPayload = e.handleOldMessage(cacheEntry, envHash, courierMessage)
-		} else {
-			e.dedupCacheLock.Lock()
-			e.dedupCache[*envHash] = &CourierBookKeeping{
-				Epoch:           e.server.pki.PKIDocument().Epoch,
-				EnvelopeReplies: [2]*commands.ReplicaMessageReply{},
-			}
-			e.dedupCacheLock.Unlock()
-			replyPayload = e.handleNewMessage(envHash, courierMessage)
-		}
-
-		e.server.log.Debug("---------- OnCommand END... sending reply")
-
-		go func() {
-			// send reply
-			e.write(&cborplugin.Response{
-				ID:      r.ID,
-				SURB:    r.SURB,
-				Payload: replyPayload,
-			})
-		}()
-		return nil
+		request = r
 	default:
 		return errors.New("---------- courier-plugin: Invalid Command type")
 	}
+
+	courierMessage, err := common.CourierEnvelopeFromBytes(request.Payload)
+	if err != nil {
+		e.server.log.Debugf("---------- CBOR DECODE FAIL: %s", err)
+		return err
+	}
+	envHash := courierMessage.EnvelopeHash()
+
+	var replyPayload []byte
+	e.dedupCacheLock.RLock()
+	cacheEntry, ok := e.dedupCache[*envHash]
+	e.dedupCacheLock.RUnlock()
+	if ok {
+		replyPayload = e.handleOldMessage(cacheEntry, envHash, courierMessage)
+	} else {
+		e.dedupCacheLock.Lock()
+		e.dedupCache[*envHash] = &CourierBookKeeping{
+			Epoch:           e.server.pki.PKIDocument().Epoch,
+			EnvelopeReplies: [2]*commands.ReplicaMessageReply{nil, nil},
+		}
+		e.dedupCacheLock.Unlock()
+		replyPayload = e.handleNewMessage(courierMessage.IsRead, envHash, courierMessage)
+	}
+
+	e.server.log.Debug("---------- OnCommand END... sending reply")
+
+	go func() {
+		// send reply
+		e.write(&cborplugin.Response{
+			ID:      request.ID,
+			SURB:    request.SURB,
+			Payload: replyPayload,
+		})
+	}()
+	return nil
+
 }
 
 func (e *Courier) RegisterConsumer(s *cborplugin.Server) {

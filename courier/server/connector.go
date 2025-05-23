@@ -153,7 +153,7 @@ func (co *Connector) spawnNewConns() {
 			panic("KEM scheme not found in registry")
 		}
 
-		c := newOutgoingConn(co, v, co.server.cfg)
+		c := newOutgoingConn(co, v, co.server.cfg, co.server.courier)
 		co.onNewConn(c)
 	}
 }
@@ -169,7 +169,7 @@ func (co *Connector) onNewConn(c *outgoingConn) {
 	co.Lock()
 	defer func() {
 		co.Unlock()
-		go c.worker()
+		c.Go(c.worker)
 	}()
 	if _, ok := co.conns[nodeID]; ok {
 		// This should NEVER happen.  Not sure what the sensible thing to do is.

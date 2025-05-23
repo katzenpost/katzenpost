@@ -25,6 +25,7 @@ import (
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
+	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/katzenpost/katzenpost/courier/server/config"
 	"github.com/katzenpost/katzenpost/http/common"
 )
@@ -34,6 +35,9 @@ var outgoingConnID uint64
 const KeepAliveInterval = 3 * time.Minute
 
 type outgoingConn struct {
+	worker.Worker
+
+	courier    *Courier
 	linkScheme kem.Scheme
 	cfg        *config.Config
 	co         GenericConnector
@@ -277,17 +281,29 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 	//
 	// Incoming connections do not need similar treatment by virtue of
 	// the fact that they are constantly reading.
-	peerClosedCh := make(chan interface{})
-	go func() {
-		var oneByte [1]byte
-		if n, err := conn.Read(oneByte[:]); n != 0 || err == nil {
-			// This should *NEVER* happen past the handshake,
-			// and is an invariant violation that will force close
-			// the connection.
-			c.log.Warningf("Peer sent reverse traffic.")
+
+	// Start the peer reader.
+	receiveCmdCh := make(chan interface{})
+	c.Go(func() {
+		defer close(receiveCmdCh)
+		for {
+			rawCmd, err := w.RecvCommand()
+			if err != nil {
+				c.log.Debugf("Failed to receive command: %v", err)
+				select {
+				case <-c.HaltCh():
+				case receiveCmdCh <- err:
+				}
+				return
+			}
+
+			select {
+			case <-c.HaltCh():
+				return
+			case receiveCmdCh <- rawCmd:
+			}
 		}
-		close(peerClosedCh)
-	}()
+	})
 
 	cmdCh := make(chan commands.Command)
 	cmdCloseCh := make(chan error)
@@ -312,10 +328,10 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 	defer reauth.Stop()
 
 	for {
+		var rawCmd commands.Command
 		var cmd commands.Command
 		select {
-		case <-peerClosedCh:
-			c.log.Debugf("Connection closed by peer.")
+		case <-c.HaltCh():
 			return
 		case <-closeCh:
 			wasHalted = true
@@ -339,6 +355,8 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 		// Use a go routine to actually send commands to the peer so that
 		// cancelation can happen, even when mid SendCommand().
 		select {
+		case <-c.HaltCh():
+			return
 		case <-closeCh:
 			// Halted while trying to send a command to the remote peer.
 			wasHalted = true
@@ -346,13 +364,36 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 		case <-cmdCloseCh:
 			// Something blew up when sending the command to the remote peer.
 			return
+		case replyCmd := <-receiveCmdCh:
+			switch cmdOrErr := replyCmd.(type) {
+			case commands.Command:
+				rawCmd = cmdOrErr
+			case error:
+				c.log.Errorf("Received wire protocol RecvCommand error: %s", cmdOrErr)
+			}
 		case cmdCh <- cmd:
 			// Pass the command onto the worker that actually handles writing.
+			continue
+		}
+
+		// Handle the response.
+		switch replycmd := rawCmd.(type) {
+		case *commands.NoOp:
+			c.log.Debugf("Received NoOp.")
+		case *commands.Disconnect:
+			c.log.Debugf("Received Disconnect from peer.")
+			return
+		case *commands.ReplicaMessageReply:
+			c.log.Debug("Received ReplicaMessageReply")
+			c.courier.CacheReply(replycmd)
+		default:
+			c.log.Errorf("BUG, Received unexpected command from replica peer: %s", cmd)
+			return
 		}
 	}
 }
 
-func newOutgoingConn(co GenericConnector, dst *cpki.ReplicaDescriptor, cfg *config.Config) *outgoingConn {
+func newOutgoingConn(co GenericConnector, dst *cpki.ReplicaDescriptor, cfg *config.Config, courier *Courier) *outgoingConn {
 	const maxQueueSize = 64 // TODO/perf: Tune this.
 
 	linkScheme := kemSchemes.ByName(cfg.WireKEMScheme)
@@ -362,6 +403,7 @@ func newOutgoingConn(co GenericConnector, dst *cpki.ReplicaDescriptor, cfg *conf
 	c := &outgoingConn{
 		linkScheme: linkScheme,
 		cfg:        cfg,
+		courier:    courier,
 		co:         co,
 		dst:        dst,
 		ch:         make(chan *commands.ReplicaMessage, maxQueueSize),

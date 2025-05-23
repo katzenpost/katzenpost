@@ -39,6 +39,10 @@ type CourierEnvelope struct {
 
 	// Ciphertext is the encrypted and MAC'ed payload.
 	Ciphertext []byte
+
+	// IsRead is set to true to indicate a read request.
+	// Or else it is set to false indicating a write request.
+	IsRead bool
 }
 
 func (c *CourierEnvelope) EnvelopeHash() *[hash.HashSize]byte {
