@@ -159,6 +159,7 @@ func testDockerCourierService(t *testing.T) {
 
 	sphinxGeo := geo.GeometryFromUserForwardPayloadLength(schemes.ByName("X25519"), 5000, true, 5)
 	cmds := commands.NewStorageReplicaCommands(sphinxGeo, common.NikeScheme)
+	isSuccess := false
 
 	for i := 0; i < 3; i++ {
 		// send a read request
@@ -206,10 +207,13 @@ func testDockerCourierService(t *testing.T) {
 			plaintextMessage2, err := reader.DecryptNext(ctx, boxID, cyphertext, *signature)
 			require.NoError(t, err)
 			require.Equal(t, plaintextMessage1, plaintextMessage2)
+			isSuccess = true
 
 			break
 		}
 	}
+
+	require.True(t, isSuccess)
 
 	t.Log("Test Completed. Disconnecting...")
 	thinClient.Close()
