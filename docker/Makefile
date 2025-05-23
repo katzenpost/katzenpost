@@ -155,7 +155,7 @@ debian_base.stamp:
 	touch $@
 
 alpine_base.stamp:
-	$(docker) run $(replace_name) katzenpost_alpine_base docker.io/golang:alpine sh -c 'adduser katzenpost --gecos "" --disabled-password  && apk update && apk upgrade && apk add gcc musl-dev make pv rocksdb-dev g++ ' \
+	$(docker) run $(replace_name) katzenpost_alpine_base docker.io/alpine:20250108 sh -c 'adduser katzenpost --gecos "" --disabled-password  && apk update && apk upgrade && apk add go gcc musl-dev make pv rocksdb-dev g++ ' \
 	&& $(docker) commit katzenpost_alpine_base katzenpost-alpine_base \
 	&& $(docker) rm katzenpost_alpine_base
 	touch $@
