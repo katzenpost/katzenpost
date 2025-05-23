@@ -185,7 +185,7 @@ loop:
 				Cmds: commands.NewStorageReplicaCommands(m.geo, m.replicaScheme),
 
 				ErrorCode:     0,
-				EnvelopeHash:  &[32]byte{},
+				EnvelopeHash:  &[hash.HashSize]byte{},
 				EnvelopeReply: []byte{},
 			}
 			_ = wireConn.SendCommand(resp)
@@ -272,7 +272,7 @@ func (m *mockPKI) generateReplicaDescriptors(t *testing.T, epoch uint64) (*pki.R
 }
 
 func (m *mockPKI) generateDocument(t *testing.T, numDirAuths, numMixNodes, numStorageReplicas int, geo *geo.Geometry, epoch uint64) *pki.Document {
-	srv := make([]byte, 32)
+	srv := make([]byte, hash.HashSize)
 	_, err := rand.Reader.Read(srv)
 	require.NoError(t, err)
 	oldhashes := [][]byte{srv, srv}
@@ -341,13 +341,13 @@ func (m *mockPKI) PKIDocument() *pki.Document {
 	}
 }
 
-func (m *mockPKI) ReplicasCopy() map[[32]byte]*pki.ReplicaDescriptor {
+func (m *mockPKI) ReplicasCopy() map[[hash.HashSize]byte]*pki.ReplicaDescriptor {
 	doc := m.PKIDocument()
 	replicas1 := doc.StorageReplicas[0]
 	replicas2 := doc.StorageReplicas[1]
 	id1 := hash.Sum256(replicas1.IdentityKey)
 	id2 := hash.Sum256(replicas2.IdentityKey)
-	replicas := make(map[[32]byte]*pki.ReplicaDescriptor)
+	replicas := make(map[[hash.HashSize]byte]*pki.ReplicaDescriptor)
 	replicas[id1] = replicas1
 	replicas[id2] = replicas2
 	return replicas
