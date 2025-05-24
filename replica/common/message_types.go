@@ -266,3 +266,27 @@ func ReplicaMessageReplyInnerMessageFromBytes(b []byte) (*ReplicaMessageReplyInn
 	}
 	return c, nil
 }
+
+// Box is used only by our local state database.
+type Box struct {
+	BoxID     *[bacap.BoxIDSize]byte
+	Signature *[bacap.SignatureSize]byte
+	Payload   []byte
+}
+
+func (c *Box) Bytes() []byte {
+	blob, err := cbor.Marshal(c)
+	if err != nil {
+		panic(err)
+	}
+	return blob
+}
+
+func BoxFromBytes(b []byte) (*Box, error) {
+	c := &Box{}
+	err := cbor.Unmarshal(b, c)
+	if err != nil {
+		return nil, err
+	}
+	return c, nil
+}

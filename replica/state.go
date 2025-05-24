@@ -4,7 +4,7 @@
 package replica
 
 import (
-	"errors"
+	"fmt"
 	"path/filepath"
 
 	"github.com/linxGnu/grocksdb"
@@ -52,7 +52,7 @@ func (s *state) initDB() {
 	}
 }
 
-func (s *state) handleReplicaRead(replicaRead *common.ReplicaRead) (*commands.ReplicaWrite, error) {
+func (s *state) handleReplicaRead(replicaRead *common.ReplicaRead) (*common.Box, error) {
 	ro := grocksdb.NewDefaultReadOptions()
 	defer ro.Destroy()
 
@@ -64,38 +64,42 @@ func (s *state) handleReplicaRead(replicaRead *common.ReplicaRead) (*commands.Re
 	copy(data, value.Data())
 	value.Free()
 
-	nikeScheme := schemes.ByName(s.server.cfg.ReplicaNIKEScheme)
-	cmds := commands.NewStorageReplicaCommands(s.server.cfg.SphinxGeometry, nikeScheme)
-	rawCmds, err := cmds.FromBytes(data)
+	box, err := common.BoxFromBytes(data)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("invalid data retrieved from database: %s", err)
 	}
-	writeCmd, ok := rawCmds.(*commands.ReplicaWrite)
-	if !ok {
-		return nil, errors.New("invalid data retrieved from database")
-	}
-	return writeCmd, nil
+	return box, nil
 }
 
 func (s *state) handleReplicaWrite(replicaWrite *commands.ReplicaWrite) error {
 	wo := grocksdb.NewDefaultWriteOptions()
 	defer wo.Destroy()
-
-	return s.db.Put(wo, replicaWrite.BoxID[:], replicaWrite.ToBytes())
+	box := &common.Box{
+		BoxID:     replicaWrite.BoxID,
+		Signature: replicaWrite.Signature,
+		Payload:   replicaWrite.Payload,
+	}
+	return s.db.Put(wo, box.BoxID[:], box.Bytes())
 }
 
 func (s *state) replicaWriteFromBlob(blob []byte) (*commands.ReplicaWrite, error) {
-	nikeScheme := schemes.ByName(s.server.cfg.ReplicaNIKEScheme)
-	cmds := commands.NewStorageReplicaCommands(s.server.cfg.SphinxGeometry, nikeScheme)
-	rawCmds, err := cmds.FromBytes(blob)
+	box, err := common.BoxFromBytes(blob)
 	if err != nil {
 		return nil, err
 	}
-	writeCmd, ok := rawCmds.(*commands.ReplicaWrite)
-	if !ok {
-		return nil, errors.New("invalid data retrieved from database")
+	scheme := schemes.ByName(s.server.cfg.ReplicaNIKEScheme)
+	if scheme == nil {
+		panic(fmt.Sprintf("scheme %s doesn't exist", s.server.cfg.ReplicaNIKEScheme))
 	}
-	return writeCmd, nil
+	cmds := commands.NewStorageReplicaCommands(s.server.cfg.SphinxGeometry, scheme)
+	ret := &commands.ReplicaWrite{
+		Cmds: cmds,
+
+		BoxID:     box.BoxID,
+		Signature: box.Signature,
+		Payload:   box.Payload,
+	}
+	return ret, nil
 }
 
 func (s *state) getRemoteShards(boxID []byte) ([]*pki.ReplicaDescriptor, error) {

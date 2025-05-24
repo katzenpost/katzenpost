@@ -158,14 +158,22 @@ func TestState(t *testing.T) {
 	cmds := commands.NewStorageReplicaCommands(geo, replicaScheme)
 	require.NotNil(t, cmds)
 
-	numShares := 4
+	payload := []byte("hello i am a payload")
+	signature := &[bacap.SignatureSize]byte{}
+	boxid := &[bacap.BoxIDSize]byte{}
+	_, err = rand.Reader.Read(signature[:])
+	require.NoError(t, err)
+	_, err = rand.Reader.Read(boxid[:])
+	require.NoError(t, err)
+
+	numShares := 2
 	boxIDs := make([]*[32]byte, numShares)
 	for i := 0; i < numShares; i++ {
 		replicaWriteCmd1 := &commands.ReplicaWrite{
 			Cmds:      cmds,
-			BoxID:     &[bacap.BoxIDSize]byte{},
-			Signature: &[bacap.SignatureSize]byte{},
-			Payload:   []byte("hello i am a payload"),
+			BoxID:     boxid,
+			Signature: signature,
+			Payload:   payload,
 		}
 		_, err = rand.Reader.Read(replicaWriteCmd1.BoxID[:])
 		require.NoError(t, err)
@@ -184,8 +192,12 @@ func TestState(t *testing.T) {
 	}
 	copy(replicaReadCmd.BoxID[:], boxIDs[0][:])
 
-	_, err = st.handleReplicaRead(replicaReadCmd)
+	box, err := st.handleReplicaRead(replicaReadCmd)
 	require.NoError(t, err)
+
+	require.Equal(t, box.BoxID, boxid)
+	require.Equal(t, box.Payload, payload)
+	require.Equal(t, box.Signature, signature)
 
 	t.Log("BEFORE Rebalance")
 	st.Rebalance()
