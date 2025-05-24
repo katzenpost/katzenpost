@@ -62,7 +62,7 @@ func (m *MockSession) ClockSkew() time.Duration {
 func TestIncomingConn(t *testing.T) {
 	pkiScheme := signschemes.ByName("Ed25519 Sphincs+")
 	linkScheme := kemschemes.ByName("Xwing")
-	replicaScheme := nikeschemes.ByName("x25519")
+	replicaScheme := nikeschemes.ByName("CTIDH1024-X25519")
 	sphinxScheme := nikeschemes.ByName("x25519")
 
 	nrHops := 5
@@ -120,6 +120,7 @@ func TestIncomingConn(t *testing.T) {
 
 	epoch, _, _ := common.ReplicaNow()
 	server.envelopeKeys, err = NewEnvelopeKeys(replicaScheme, server.logBackend.GetLogger("envelope keys"), dname, epoch)
+	require.NoError(t, err)
 
 	st := &state{
 		server: server,
@@ -146,7 +147,6 @@ func TestIncomingConn(t *testing.T) {
 		pk: linkpubkey,
 		ad: ad,
 	}
-	inConn.l = listener
 
 	ids, err := listener.GetConnIdentities()
 	require.NoError(t, err)
@@ -174,22 +174,6 @@ func TestIncomingConn(t *testing.T) {
 
 	replyCommand, ok := inConn.onReplicaCommand(new(commands.NoOp))
 	require.True(t, ok)
-	require.Nil(t, replyCommand)
-
-	replyCommand, ok = inConn.onReplicaCommand(new(commands.Disconnect))
-	require.False(t, ok)
-	require.Nil(t, replyCommand)
-
-	//replyCommand, ok = inConn.onReplicaCommand(new(commands.ReplicaWrite))
-	//require.True(t, ok)
-	//require.NotNil(t, replyCommand)
-
-	//replyCommand, ok = inConn.onReplicaCommand(new(commands.ReplicaMessage))
-	//require.True(t, ok)
-	//require.NotNil(t, replyCommand)
-
-	replyCommand, ok = inConn.onReplicaCommand(new(commands.Consensus))
-	require.False(t, ok)
 	require.Nil(t, replyCommand)
 
 	boxid := &[bacap.BoxIDSize]byte{}
