@@ -303,7 +303,8 @@ func (s *katzenpost) genReplicaNodeConfig() error {
 
 	cfg.Logging = new(rConfig.Logging)
 	cfg.Logging.File = serverLogFile
-	cfg.Logging.Level = s.logLevel
+	//cfg.Logging.Level = s.logLevel
+	cfg.Logging.Level = "DEBUG"
 
 	s.replicaNodeConfigs = append(s.replicaNodeConfigs, cfg)
 	_ = cfgIdKey(cfg, s.outDir)
