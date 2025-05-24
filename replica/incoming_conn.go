@@ -52,13 +52,16 @@ type incomingConn struct {
 }
 
 func (c *incomingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
+	c.log.Debug("-------- START incomingConn.IsPeerValid")
 	if c.l.server.pkiWorker.AuthenticateCourierConnection(creds) {
+		c.log.Debug("-------- END incomingConn.IsPeerValid")
 		return true
 	}
 	if _, isValid := c.l.server.pkiWorker.AuthenticateReplicaConnection(creds); isValid {
+		c.log.Debug("-------- END incomingConn.IsPeerValid")
 		return true
 	}
-	c.log.Debug("incomgingConn IsPeerValid auth failed")
+	c.log.Debug("------ incomgingConn incomingConn.IsPeerValid auth failed")
 	return false
 }
 

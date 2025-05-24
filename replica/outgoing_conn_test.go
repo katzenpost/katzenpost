@@ -20,6 +20,7 @@ import (
 
 	authconfig "github.com/katzenpost/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/katzenpost/core/epochtime"
+	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
@@ -28,6 +29,9 @@ import (
 )
 
 func TestOutgoingConn(t *testing.T) {
+	logBackend, err := log.New("", "DEBUG", false)
+	require.NoError(t, err)
+
 	dname, err := os.MkdirTemp("", fmt.Sprintf("replica.testState %d", os.Getpid()))
 	require.NoError(t, err)
 	defer os.RemoveAll(dname)
@@ -86,6 +90,7 @@ func TestOutgoingConn(t *testing.T) {
 	s := &Server{
 		identityPublicKey: pk,
 		cfg:               cfg,
+		logBackend:        logBackend,
 		pkiWorker: &PKIWorker{
 			replicas:      common.NewReplicaMap(),
 			lock:          new(sync.RWMutex),

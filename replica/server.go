@@ -81,17 +81,17 @@ func (s *Server) initDataDir() error {
 	if fi, err := os.Lstat(d); err != nil {
 		// Directory doesn't exist, create one.
 		if !os.IsNotExist(err) {
-			return fmt.Errorf("authority: failed to stat() DataDir: %v", err)
+			return fmt.Errorf("replica: failed to stat() DataDir: %v", err)
 		}
 		if err = os.Mkdir(d, dirMode); err != nil {
-			return fmt.Errorf("authority: failed to create DataDir: %v", err)
+			return fmt.Errorf("replica: failed to create DataDir: %v", err)
 		}
 	} else {
 		if !fi.IsDir() {
-			return fmt.Errorf("authority: DataDir '%v' is not a directory", d)
+			return fmt.Errorf("replica: DataDir '%v' is not a directory", d)
 		}
 		if fi.Mode() != dirMode {
-			return fmt.Errorf("authority: DataDir '%v' has invalid permissions '%v'", d, fi.Mode())
+			return fmt.Errorf("replica: DataDir '%v' has invalid permissions '%v'", d, fi.Mode())
 		}
 	}
 

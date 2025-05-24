@@ -44,12 +44,11 @@ type outgoingConn struct {
 }
 
 func (c *outgoingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
-	// At a minimum, the peer's credentials should match what we started out
-	// with.  This is enforced even if mix authentication is disabled.
+	c.log.Debug("---- START outgoingConn.IsPeerValid")
 
 	idHash := hash.Sum256(c.dst.IdentityKey)
 	if !hmac.Equal(idHash[:], creds.AdditionalData) {
-		c.log.Debug("IsPeerValid false, identity hash mismatch")
+		c.log.Debug("outgoingConn.IsPeerValid false, identity hash mismatch")
 		return false
 	}
 	keyblob, err := creds.PublicKey.MarshalBinary()
@@ -57,7 +56,7 @@ func (c *outgoingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 		panic(err)
 	}
 	if !hmac.Equal(c.dst.LinkKey, keyblob) {
-		c.log.Debug("IsPeerValid false, link key mismatch")
+		c.log.Debug("outgoingConn.IsPeerValid false, link key mismatch")
 		return false
 	}
 
@@ -69,6 +68,8 @@ func (c *outgoingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 	if !isValid {
 		c.log.Debug("failed to authenticate connect via latest PKI doc")
 	}
+
+	c.log.Debug("---- END outgoingConn.IsPeerValid")
 	return isValid
 }
 

@@ -157,6 +157,7 @@ func (p *PKIWorker) updateReplicas(doc *pki.Document) {
 }
 
 func (p *PKIWorker) AuthenticateCourierConnection(c *wire.PeerCredentials) bool {
+	p.log.Debug("---- START AuthenticateCourierConnection")
 	const keyEndpoint = "endpoint"
 	if len(c.AdditionalData) != 0 {
 		p.log.Debugf("AuthenticateConnection: '%x' AD should be zero bytes.", c.AdditionalData)
@@ -187,10 +188,12 @@ func (p *PKIWorker) AuthenticateCourierConnection(c *wire.PeerCredentials) bool 
 			isCourier = true
 		}
 	}
+	p.log.Debug("---- END AuthenticateCourierConnection")
 	return isCourier
 }
 
 func (p *PKIWorker) AuthenticateReplicaConnection(c *wire.PeerCredentials) (*pki.ReplicaDescriptor, bool) {
+	p.log.Debug("---- START AuthenticateReplicaConnection")
 	if len(c.AdditionalData) != sConstants.NodeIDLength {
 		p.log.Debugf("AuthenticateConnection: '%x' AD not an IdentityKey?.", c.AdditionalData)
 		return nil, false
@@ -210,5 +213,7 @@ func (p *PKIWorker) AuthenticateReplicaConnection(c *wire.PeerCredentials) (*pki
 		p.log.Debug("wtf2")
 		return nil, false
 	}
+
+	p.log.Debug("---- END AuthenticateReplicaConnection")
 	return replicaDesc, true
 }
