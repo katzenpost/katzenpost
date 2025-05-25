@@ -214,7 +214,7 @@ func newIncomingConn(l *Listener, conn net.Conn, geo *geo.Geometry, scheme kem.S
 		geo:               geo,
 	}
 	c.log = l.server.logBackend.GetLogger(fmt.Sprintf("incoming:%d", c.id))
-	c.log.Debugf("<><><<< New incoming connection: %v", conn.RemoteAddr())
+	c.log.Debugf("New incoming connection: %v", conn.RemoteAddr())
 
 	// Note: Unlike most other things, this does not spawn the worker here,
 	// because the worker needs to be spawned after the struct is added to
