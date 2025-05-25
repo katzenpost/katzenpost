@@ -205,8 +205,12 @@ func (p *PKIWorker) AuthenticateCourierConnection(c *wire.PeerCredentials) bool 
 			p.log.Errorf("AuthenticateCourierConnection failed to unmarshal courier link key: %s", err)
 		}
 		if c.PublicKey.Equal(linkPubKey) {
+			p.log.Debugf("Found matching courier link key for service node %s", desc.Name)
 			isCourier = true
 		}
+	}
+	if !isCourier {
+		p.log.Debug("No matching courier link key found in any service node")
 	}
 	p.log.Debug("---- END AuthenticateCourierConnection")
 	return isCourier
@@ -222,7 +226,7 @@ func (p *PKIWorker) AuthenticateReplicaConnection(c *wire.PeerCredentials) (*pki
 	copy(nodeID[:], c.AdditionalData)
 	replicaDesc, isReplica := p.replicas.GetReplicaDescriptor(&nodeID)
 	if !isReplica {
-		p.log.Debug("wtf1")
+		p.log.Debugf("Authentication failed: node ID %x not found in replica list", nodeID)
 		return nil, false
 	}
 	blob, err := c.PublicKey.MarshalBinary()
@@ -230,7 +234,7 @@ func (p *PKIWorker) AuthenticateReplicaConnection(c *wire.PeerCredentials) (*pki
 		panic(err)
 	}
 	if !hmac.Equal(replicaDesc.LinkKey, blob) {
-		p.log.Debug("wtf2")
+		p.log.Debugf("Authentication failed: link key mismatch for replica %x", nodeID)
 		return nil, false
 	}
 
