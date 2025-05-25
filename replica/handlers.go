@@ -13,23 +13,24 @@ import (
 )
 
 func (c *incomingConn) onReplicaCommand(rawCmd commands.Command) (commands.Command, bool) {
+	c.log.Debugf("onReplicaCommand received command type: %T with value: %+v", rawCmd, rawCmd)
 	switch cmd := rawCmd.(type) {
 	case *commands.NoOp:
-		c.log.Debugf("Received NoOp from peer.")
+		c.log.Debug("Received NoOp from peer")
 		return nil, true
 	case *commands.Disconnect:
-		c.log.Debugf("Received disconnect from peer.")
+		c.log.Debug("Received disconnect from peer")
 		return nil, false
 	case *commands.ReplicaWrite:
-		c.log.Debugf("Received ReplicaWrite from peer.")
+		c.log.Debugf("Processing ReplicaWrite command for BoxID: %x", cmd.BoxID)
 		resp := c.handleReplicaWrite(cmd)
 		return resp, true
 	case *commands.ReplicaMessage:
-		c.log.Debugf("Received ReplicaMessage from peer.")
+		c.log.Debugf("Processing ReplicaMessage command with ciphertext length: %d", len(cmd.Ciphertext))
 		resp := c.handleReplicaMessage(cmd)
 		return resp, true
 	default:
-		c.log.Debugf("Received unexpected command: %T", cmd)
+		c.log.Errorf("Received unexpected command type: %T", cmd)
 		return nil, false
 	}
 	// not reached
@@ -37,6 +38,7 @@ func (c *incomingConn) onReplicaCommand(rawCmd commands.Command) (commands.Comma
 
 // replicaMessage's are sent from the courier to the replica storage servers
 func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMessage) commands.Command {
+	c.log.Debug("Starting handleReplicaMessage processing")
 	nikeScheme := schemes.ByName(c.l.server.cfg.ReplicaNIKEScheme)
 	scheme := mkem.NewScheme(nikeScheme)
 	ct, err := mkem.CiphertextFromBytes(scheme, replicaMessage.Ciphertext)
@@ -51,6 +53,7 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 		c.log.Errorf("handleReplicaMessage envelopeKeys.GetKeypair failed: %s", err)
 		return nil
 	}
+	c.log.Debug("Attempting to decapsulate message")
 	requestRaw, err := scheme.Decapsulate(replicaPrivateKeypair.PrivateKey, ct)
 	if err != nil {
 		c.log.Errorf("handleReplicaMessage Decapsulate failed: %s", err)
@@ -59,15 +62,17 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 		}
 		return errReply
 	}
+	c.log.Debug("Successfully decapsulated message, parsing command")
 	cmds := commands.NewStorageReplicaCommands(c.geo, nikeScheme)
 	myCmd, err := cmds.FromBytes(requestRaw)
 	if err != nil {
-		c.log.Errorf("handleReplicaMessage Decapsulate failed: %s", err)
+		c.log.Errorf("handleReplicaMessage command parse failed: %s", err)
 		errReply := &commands.ReplicaMessageReply{
 			ErrorCode: replicaMessageReplyCommandParseFailure,
 		}
 		return errReply
 	}
+	c.log.Debugf("Successfully parsed command of type: %T", myCmd)
 
 	envelopeHash := replicaMessage.EnvelopeHash()
 
@@ -106,6 +111,7 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 
 	switch myCmd := myCmd.(type) {
 	case *common.ReplicaRead:
+		c.log.Debugf("Processing decrypted ReplicaRead command for BoxID: %x", myCmd.BoxID)
 		readReply := c.handleReplicaRead(myCmd)
 		replyInnerMessage := common.ReplicaMessageReplyInnerMessage{
 			ReplicaReadReply: readReply,
@@ -120,6 +126,7 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 			ReplicaID:     replicaID,
 		}
 	case *commands.ReplicaWrite:
+		c.log.Debugf("Processing decrypted ReplicaWrite command for BoxID: %x", myCmd.BoxID)
 		writeReply := c.handleReplicaWrite(myCmd)
 		c.l.server.connector.DispatchReplication(myCmd)
 		replyInnerMessage := common.ReplicaMessageReplyInnerMessage{
@@ -145,12 +152,15 @@ func (c *incomingConn) handleReplicaRead(replicaRead *common.ReplicaRead) *commo
 		successCode = 0
 		failCode    = 1
 	)
+	c.log.Debugf("Handling replica read request for BoxID: %x", replicaRead.BoxID)
 	resp, err := c.l.server.state.handleReplicaRead(replicaRead)
 	if err != nil {
+		c.log.Errorf("Replica read failed: %v", err)
 		return &common.ReplicaReadReply{
 			ErrorCode: failCode,
 		}
 	}
+	c.log.Debug("Replica read successful")
 	return &common.ReplicaReadReply{
 		ErrorCode: successCode,
 		BoxID:     resp.BoxID,
@@ -165,27 +175,29 @@ func (c *incomingConn) handleReplicaWrite(replicaWrite *commands.ReplicaWrite) *
 		failCode    = 1
 	)
 
+	c.log.Debugf("Handling replica write request for BoxID: %x", replicaWrite.BoxID)
 	s := ed25519.Scheme()
 	verifyKey, err := s.UnmarshalBinaryPublicKey(replicaWrite.BoxID[:])
 	if err != nil {
-		c.log.Errorf("handleReplicaWrite failed: %v", err)
+		c.log.Errorf("handleReplicaWrite failed to unmarshal BoxID as public key: %v", err)
 		return &commands.ReplicaWriteReply{
 			ErrorCode: failCode,
 		}
 	}
 	if !s.Verify(verifyKey, replicaWrite.Payload, replicaWrite.Signature[:], nil) {
-		c.log.Errorf("handleReplicaWrite failed: %v", err)
+		c.log.Error("handleReplicaWrite signature verification failed")
 		return &commands.ReplicaWriteReply{
 			ErrorCode: failCode,
 		}
 	}
 	err = c.l.server.state.handleReplicaWrite(replicaWrite)
 	if err != nil {
-		c.log.Errorf("handleReplicaWrite failed: %v", err)
+		c.log.Errorf("handleReplicaWrite state update failed: %v", err)
 		return &commands.ReplicaWriteReply{
 			ErrorCode: failCode,
 		}
 	}
+	c.log.Debug("Replica write successful")
 	return &commands.ReplicaWriteReply{
 		ErrorCode: successCode,
 	}

@@ -88,33 +88,41 @@ func (co *Connector) DispatchCommand(cmd commands.Command, idHash *[32]byte) {
 		return
 	}
 
+	co.log.Debugf("Dispatching command type %T to peer %x", cmd, idHash)
 	c.dispatchCommand(cmd)
 }
 
 func (co *Connector) DispatchReplication(cmd *commands.ReplicaWrite) {
+	co.log.Debugf("Queueing replication for BoxID: %x", cmd.BoxID)
 	co.replicationCh <- cmd
 }
 
 func (co *Connector) doReplication(cmd *commands.ReplicaWrite) {
+	co.log.Debugf("Starting replication for BoxID: %x", cmd.BoxID)
 	doc := co.server.pkiWorker.PKIDocument()
 	descs, err := common.GetRemoteShards(co.server.identityPublicKey, cmd.BoxID, doc)
 	if err != nil {
-		co.log.Errorf("handleReplicaMessage failed: GetShards err: %x", err)
+		co.log.Errorf("Replication failed: GetShards err: %v", err)
 		panic(err)
 	}
+	co.log.Debugf("Found %d remote shards for replication", len(descs))
 	for _, desc := range descs {
 		idHash := blake2b.Sum256(desc.IdentityKey)
+		co.log.Debugf("Dispatching replication to shard %x", idHash)
 		co.DispatchCommand(cmd, &idHash)
 	}
+	co.log.Debug("Replication dispatch completed")
 }
 
 func (co *Connector) replicationWorker() {
+	co.log.Debug("Starting replication worker")
 	for {
 		select {
 		case <-co.HaltCh():
 			co.log.Debugf("Replication worker terminating gracefully.")
 			return
 		case writeCmd := <-co.replicationCh:
+			co.log.Debugf("Replication worker received write command for BoxID: %x", writeCmd.BoxID)
 			co.doReplication(writeCmd)
 		}
 	}
@@ -126,6 +134,7 @@ func (co *Connector) worker() {
 		resweepInterval   = epochtime.Period / 8
 	)
 
+	co.log.Debug("Starting connector worker")
 	timer := time.NewTimer(initialSpawnDelay)
 	defer timer.Stop()
 
@@ -136,8 +145,10 @@ func (co *Connector) worker() {
 			co.log.Debugf("Connector worker terminating gracefully.")
 			return
 		case <-co.forceUpdateCh:
+			co.log.Debug("Forced connection update triggered")
 		case <-timer.C:
 			timerFired = true
+			co.log.Debug("Periodic connection update triggered")
 		}
 		if !timerFired && !timer.Stop() {
 			<-timer.C
