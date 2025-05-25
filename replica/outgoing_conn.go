@@ -40,7 +40,6 @@ type outgoingConn struct {
 
 	id         uint64
 	retryDelay time.Duration
-	canSend    bool
 }
 
 func (c *outgoingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
@@ -332,13 +331,6 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 			}
 			continue
 		case cmd = <-c.ch:
-		}
-
-		if !c.canSend {
-			// This is presumably a early connect, and we aren't allowed to
-			// actually send commands to the peer yet.
-			c.log.Debugf("Dropping replica command: %v (Not yet connected to outbound replica node.)", cmd)
-			continue
 		}
 
 		// Use a go routine to actually send commands to the peer so that

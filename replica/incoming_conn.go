@@ -46,7 +46,6 @@ type incomingConn struct {
 	retrSeq uint32
 
 	isInitialized bool // Set by listener.
-	canSend       bool
 
 	closeConnectionCh chan bool
 }
@@ -186,17 +185,6 @@ func (c *incomingConn) worker() {
 			}
 		}
 
-		// TODO: It's possible that a peer connects right at the tail end
-		// before we start allowing "early" packets, resulting in c.canSend
-		// being false till the reauth timer fires.  This probably isn't a
-		// big deal since everyone should be using NTP anyway.
-		if !c.canSend {
-			// The peer's PKI document entry isn't for the current epoch,
-			// or within the slack time.
-			c.log.Debugf("Dropping mix command received out of epoch.")
-			continue
-		}
-
 		// Handle all of the storage replica commands.
 		resp, allGood := c.onReplicaCommand(rawCmd)
 		if !allGood {
@@ -210,7 +198,6 @@ func (c *incomingConn) worker() {
 				c.log.Debugf("Peer %v: Failed to send response: %v", hash.Sum256(blob), err)
 			}
 		}
-
 	}
 
 	// NOTREACHED
