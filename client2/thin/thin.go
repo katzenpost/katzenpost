@@ -13,6 +13,7 @@ import (
 	"net"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/fxamacker/cbor/v2"
 	"gopkg.in/op/go-logging.v1"
@@ -378,18 +379,25 @@ func (t *ThinClient) eventSinkWorker() {
 			// stop thread on shutdown
 			return
 		case drain := <-t.drainAdd:
+			// Only add buffered channels to prevent blocking
+			if cap(drain) == 0 {
+				t.log.Warning("Attempting to add unbuffered channel to eventSink drains - ignoring")
+				continue
+			}
 			drains[drain] = struct{}{}
 		case drain := <-t.drainRemove:
 			delete(drains, drain)
 		case event := <-t.eventSink:
 			bad := make([]chan Event, 0)
-			for drain, _ := range drains {
+			for drain := range drains {
 				select {
 				case <-t.HaltCh():
 					return
 				case drain <- event:
-				default:
-					t.log.Errorf("BUG: removing unresponsive channel from eventSink drains")
+					// Successfully sent event
+				case <-time.After(100 * time.Millisecond):
+					// Channel blocked for too long
+					t.log.Warning("Removing unresponsive channel from eventSink drains")
 					bad = append(bad, drain)
 				}
 			}
