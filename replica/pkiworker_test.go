@@ -389,3 +389,117 @@ func TestPruneDocuments(t *testing.T) {
 
 	s.Shutdown()
 }
+
+func TestAuthenticationDuringEpochTransition(t *testing.T) {
+	pkiScheme := signschemes.ByName("Ed25519 Sphincs+")
+	idpubkey, _, err := pkiScheme.GenerateKey()
+	require.NoError(t, err)
+
+	linkScheme := kemschemes.ByName("Xwing")
+	linkpubkey, _, err := linkScheme.GenerateKeyPair()
+	require.NoError(t, err)
+
+	replicaScheme := nikeschemes.ByName("x25519")
+	geometry := geo.GeometryFromUserForwardPayloadLength(nikeschemes.ByName("x25519"), 5000, true, 5)
+
+	cfg := &config.Config{
+		PKI: &config.PKI{
+			Voting: &config.Voting{
+				Authorities: []*authconfig.Authority{
+					&authconfig.Authority{
+						Identifier:         "dirauth1",
+						IdentityPublicKey:  idpubkey,
+						PKISignatureScheme: pkiScheme.Name(),
+						LinkPublicKey:      linkpubkey,
+						WireKEMScheme:      linkScheme.Name(),
+						Addresses:          []string{"tcp://127.0.0.1:1234"},
+					},
+				},
+			},
+		},
+		Logging: &config.Logging{
+			Disable: false,
+			File:    "",
+			Level:   "DEBUG",
+		},
+		DataDir:            filepath.Join(t.TempDir(), "datadir"),
+		Identifier:         "replica1",
+		WireKEMScheme:      linkScheme.Name(),
+		PKISignatureScheme: pkiScheme.Name(),
+		ReplicaNIKEScheme:  replicaScheme.Name(),
+		SphinxGeometry:     geometry,
+		Addresses:          []string{"tcp://127.0.0.1:7483"},
+	}
+	s, err := New(cfg)
+	require.NoError(t, err)
+
+	libpubkeypem := kempem.ToPublicPEMString(linkpubkey)
+	creds := &wire.PeerCredentials{
+		AdditionalData: []byte{},
+		PublicKey:      linkpubkey,
+	}
+
+	epoch, _, _ := epochtime.Now()
+	advertMap := make(map[string]map[string]interface{})
+	advertMap["courier"] = make(map[string]interface{})
+	advertMap["courier"]["linkPublicKey"] = libpubkeypem
+
+	kaetzchen := make(map[string]map[string]interface{})
+	kaetzchen["courier"] = make(map[string]interface{})
+
+	idpubkeyblob, err := idpubkey.MarshalBinary()
+	require.NoError(t, err)
+	libpubkeyblob, err := linkpubkey.MarshalBinary()
+	require.NoError(t, err)
+
+	currentDoc := &pki.Document{
+		Epoch: epoch,
+		ServiceNodes: []*pki.MixDescriptor{
+			&pki.MixDescriptor{
+				Name:                    "servicenode1",
+				Epoch:                   epoch,
+				IdentityKey:             idpubkeyblob,
+				LinkKey:                 libpubkeyblob,
+				Kaetzchen:               kaetzchen,
+				KaetzchenAdvertizedData: advertMap,
+			},
+		},
+	}
+
+	nextDoc := &pki.Document{
+		Epoch: epoch + 1,
+		ServiceNodes: []*pki.MixDescriptor{
+			&pki.MixDescriptor{
+				Name:                    "servicenode1",
+				Epoch:                   epoch + 1,
+				IdentityKey:             idpubkeyblob,
+				LinkKey:                 libpubkeyblob,
+				Kaetzchen:               kaetzchen,
+				KaetzchenAdvertizedData: advertMap,
+			},
+		},
+	}
+
+	s.pkiWorker.lock.Lock()
+	s.pkiWorker.docs[epoch] = currentDoc
+	s.pkiWorker.lock.Unlock()
+
+	ok := s.pkiWorker.AuthenticateCourierConnection(creds)
+	require.True(t, ok, "Authentication should succeed with current epoch doc")
+
+	s.pkiWorker.lock.Lock()
+	s.pkiWorker.docs[epoch+1] = nextDoc
+	s.pkiWorker.lock.Unlock()
+
+	ok = s.pkiWorker.AuthenticateCourierConnection(creds)
+	require.True(t, ok, "Authentication should succeed with both epoch docs")
+
+	s.pkiWorker.lock.Lock()
+	delete(s.pkiWorker.docs, epoch)
+	s.pkiWorker.lock.Unlock()
+
+	ok = s.pkiWorker.AuthenticateCourierConnection(creds)
+	require.True(t, ok, "Authentication should succeed with next epoch doc")
+
+	s.Shutdown()
+}

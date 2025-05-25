@@ -159,16 +159,36 @@ func (p *PKIWorker) updateReplicas(doc *pki.Document) {
 func (p *PKIWorker) AuthenticateCourierConnection(c *wire.PeerCredentials) bool {
 	p.log.Debug("---- START AuthenticateCourierConnection")
 	const keyEndpoint = "endpoint"
+
 	if len(c.AdditionalData) != 0 {
 		p.log.Debugf("AuthenticateConnection: '%x' AD should be zero bytes.", c.AdditionalData)
 		return false
 	}
+
 	epoch, _, _ := epochtime.Now()
+
+	// Try current epoch first
 	doc := p.entryForEpoch(epoch)
 	if doc == nil {
-		p.log.Error("PKI doc is nil")
-		return false
+		p.log.Debugf("No PKI doc for current epoch %d, trying next epoch", epoch)
+		// Try next epoch
+		doc = p.entryForEpoch(epoch + 1)
+		if doc == nil {
+			p.log.Debugf("No PKI doc for next epoch %d, trying previous epoch", epoch+1)
+			// Try previous epoch
+			doc = p.entryForEpoch(epoch - 1)
+			if doc == nil {
+				p.log.Errorf("No PKI docs available for epochs %d, %d, or %d", epoch-1, epoch, epoch+1)
+				return false
+			}
+			p.log.Debugf("Using PKI doc from previous epoch %d", epoch-1)
+		} else {
+			p.log.Debugf("Using PKI doc from next epoch %d", epoch+1)
+		}
+	} else {
+		p.log.Debugf("Using PKI doc from current epoch %d", epoch)
 	}
+
 	isCourier := false
 	for _, desc := range doc.ServiceNodes {
 		if desc.Kaetzchen == nil {
