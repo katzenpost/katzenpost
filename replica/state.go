@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Copyright (C) 2024 David Stainton
+s// SPDX-FileCopyrightText: Copyright (C) 2024 David Stainton
 // SPDX-License-Identifier: AGPL-3.0-only
 
 package replica
@@ -60,30 +60,36 @@ func (s *state) initDB() {
 }
 
 func (s *state) handleReplicaRead(replicaRead *common.ReplicaRead) (*common.Box, error) {
-	s.log.Debugf("state: Handling replica read for BoxID: %x", replicaRead.BoxID)
+	s.log.Debugf("state: Starting replica read for BoxID: %x", replicaRead.BoxID)
 	ro := grocksdb.NewDefaultReadOptions()
 	defer ro.Destroy()
 
+	s.log.Debug("state: Attempting database read")
 	value, err := s.db.Get(ro, replicaRead.BoxID[:])
 	if err != nil {
-		s.log.Debugf("state: Failed to read from database: %s", err)
+		s.log.Errorf("state: Failed to read from database: %s", err)
 		return nil, err
 	}
+	if value.Size() == 0 {
+		s.log.Debugf("state: No data found for BoxID: %x", replicaRead.BoxID)
+		return nil, fmt.Errorf("no data found for BoxID")
+	}
+	s.log.Debugf("state: Successfully read %d bytes from database", value.Size())
 	data := make([]byte, value.Size())
 	copy(data, value.Data())
 	value.Free()
 
 	box, err := common.BoxFromBytes(data)
 	if err != nil {
-		s.log.Debugf("state: Failed to deserialize box: %s", err)
+		s.log.Errorf("state: Failed to deserialize box: %s", err)
 		return nil, fmt.Errorf("invalid data retrieved from database: %s", err)
 	}
-	s.log.Debug("state: Successfully handled replica read")
+	s.log.Debugf("state: Successfully handled replica read, returning box with %d bytes payload", len(box.Payload))
 	return box, nil
 }
 
 func (s *state) handleReplicaWrite(replicaWrite *commands.ReplicaWrite) error {
-	s.log.Debugf("state: Handling replica write for BoxID: %x", replicaWrite.BoxID)
+	s.log.Debugf("state: Starting replica write for BoxID: %x", replicaWrite.BoxID)
 	wo := grocksdb.NewDefaultWriteOptions()
 	defer wo.Destroy()
 	box := &common.Box{
@@ -91,9 +97,10 @@ func (s *state) handleReplicaWrite(replicaWrite *commands.ReplicaWrite) error {
 		Signature: replicaWrite.Signature,
 		Payload:   replicaWrite.Payload,
 	}
+	s.log.Debugf("state: Attempting to write %d bytes to database", len(box.Bytes()))
 	err := s.db.Put(wo, box.BoxID[:], box.Bytes())
 	if err != nil {
-		s.log.Debugf("state: Failed to write to database: %s", err)
+		s.log.Errorf("state: Failed to write to database: %s", err)
 		return err
 	}
 	s.log.Debug("state: Successfully handled replica write")
@@ -101,10 +108,10 @@ func (s *state) handleReplicaWrite(replicaWrite *commands.ReplicaWrite) error {
 }
 
 func (s *state) replicaWriteFromBlob(blob []byte) (*commands.ReplicaWrite, error) {
-	s.log.Debug("state: Converting blob to ReplicaWrite")
+	s.log.Debugf("state: Converting blob of size %d to ReplicaWrite", len(blob))
 	box, err := common.BoxFromBytes(blob)
 	if err != nil {
-		s.log.Debugf("state: Failed to deserialize box from blob: %s", err)
+		s.log.Errorf("state: Failed to deserialize box from blob: %s", err)
 		return nil, err
 	}
 	scheme := schemes.ByName(s.server.cfg.ReplicaNIKEScheme)
@@ -120,7 +127,7 @@ func (s *state) replicaWriteFromBlob(blob []byte) (*commands.ReplicaWrite, error
 		Signature: box.Signature,
 		Payload:   box.Payload,
 	}
-	s.log.Debug("state: Successfully converted blob to ReplicaWrite")
+	s.log.Debugf("state: Successfully converted blob to ReplicaWrite with BoxID: %x", box.BoxID)
 	return ret, nil
 }
 
@@ -161,7 +168,7 @@ func (s *state) Rebalance() error {
 		key := it.Key()
 		value := it.Value()
 
-		s.log.Debugf("state: Processing key: %x", key.Data())
+		s.log.Debugf("state: Processing key: %x with value size %d", key.Data(), value.Size())
 
 		writeCmd, err := s.replicaWriteFromBlob(value.Data())
 		if err != nil {
