@@ -92,7 +92,9 @@ func NewStorageReplicaCommands(geo *geo.Geometry, scheme nike.Scheme) *Commands 
 		replicaNikeScheme:  scheme,
 	}
 	payload := make([]byte, geo.PacketLength) // XXX TODO(David): Pick a more precise size.
-	c.serverToClientCommands = []Command{
+
+	// Commands that clients (couriers) can send to servers (replicas)
+	c.clientToServerCommands = []Command{
 		&ReplicaMessage{
 			Geo:    geo,
 			Cmds:   c,
@@ -102,17 +104,33 @@ func NewStorageReplicaCommands(geo *geo.Geometry, scheme nike.Scheme) *Commands 
 			DEK:           &[mkem.DEKSize]byte{},
 			Ciphertext:    payload,
 		},
-		&ReplicaMessageReply{
+		&ReplicaWrite{
 			Cmds: c,
 		},
-		&ReplicaWrite{
+		&NoOp{
+			Cmds: c,
+		},
+		&Disconnect{
+			Cmds: c,
+		},
+	}
+
+	// Commands that servers (replicas) can send to clients (couriers)
+	c.serverToClientCommands = []Command{
+		&ReplicaMessageReply{
 			Cmds: c,
 		},
 		&ReplicaWriteReply{
 			Cmds: c,
 		},
+		&NoOp{
+			Cmds: c,
+		},
+		&Disconnect{
+			Cmds: c,
+		},
 	}
-	c.clientToServerCommands = c.serverToClientCommands
+
 	c.shouldPad = true
 	c.MaxMessageLenClientToServer = c.calcMaxMessageLenClientToServer()
 	c.MaxMessageLenServerToClient = c.calcMaxMessageLenServerToClient()
