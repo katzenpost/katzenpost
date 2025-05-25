@@ -28,21 +28,27 @@ func newState(s *Server) *state {
 	if s.cfg.SphinxGeometry == nil {
 		panic("s.server.cfg.SphinxGeometry cannot be nil")
 	}
-	return &state{
+	st := &state{
 		server: s,
 		log:    s.LogBackend().GetLogger("state"),
 	}
+	st.log.Debug("state: Created new state")
+	return st
 }
 
 func (s *state) Close() {
+	s.log.Debug("state: Closing state")
 	s.db.Close()
 }
 
 func (s *state) dbPath() string {
-	return filepath.Join(s.server.cfg.DataDir, "replica.db")
+	path := filepath.Join(s.server.cfg.DataDir, "replica.db")
+	s.log.Debugf("state: Database path: %s", path)
+	return path
 }
 
 func (s *state) initDB() {
+	s.log.Debug("state: Initializing database")
 	opts := grocksdb.NewDefaultOptions()
 	opts.SetCreateIfMissing(true)
 	var err error
@@ -50,14 +56,17 @@ func (s *state) initDB() {
 	if err != nil {
 		panic(err)
 	}
+	s.log.Debug("state: Database initialized successfully")
 }
 
 func (s *state) handleReplicaRead(replicaRead *common.ReplicaRead) (*common.Box, error) {
+	s.log.Debugf("state: Handling replica read for BoxID: %x", replicaRead.BoxID)
 	ro := grocksdb.NewDefaultReadOptions()
 	defer ro.Destroy()
 
 	value, err := s.db.Get(ro, replicaRead.BoxID[:])
 	if err != nil {
+		s.log.Debugf("state: Failed to read from database: %s", err)
 		return nil, err
 	}
 	data := make([]byte, value.Size())
@@ -66,12 +75,15 @@ func (s *state) handleReplicaRead(replicaRead *common.ReplicaRead) (*common.Box,
 
 	box, err := common.BoxFromBytes(data)
 	if err != nil {
+		s.log.Debugf("state: Failed to deserialize box: %s", err)
 		return nil, fmt.Errorf("invalid data retrieved from database: %s", err)
 	}
+	s.log.Debug("state: Successfully handled replica read")
 	return box, nil
 }
 
 func (s *state) handleReplicaWrite(replicaWrite *commands.ReplicaWrite) error {
+	s.log.Debugf("state: Handling replica write for BoxID: %x", replicaWrite.BoxID)
 	wo := grocksdb.NewDefaultWriteOptions()
 	defer wo.Destroy()
 	box := &common.Box{
@@ -79,16 +91,25 @@ func (s *state) handleReplicaWrite(replicaWrite *commands.ReplicaWrite) error {
 		Signature: replicaWrite.Signature,
 		Payload:   replicaWrite.Payload,
 	}
-	return s.db.Put(wo, box.BoxID[:], box.Bytes())
+	err := s.db.Put(wo, box.BoxID[:], box.Bytes())
+	if err != nil {
+		s.log.Debugf("state: Failed to write to database: %s", err)
+		return err
+	}
+	s.log.Debug("state: Successfully handled replica write")
+	return nil
 }
 
 func (s *state) replicaWriteFromBlob(blob []byte) (*commands.ReplicaWrite, error) {
+	s.log.Debug("state: Converting blob to ReplicaWrite")
 	box, err := common.BoxFromBytes(blob)
 	if err != nil {
+		s.log.Debugf("state: Failed to deserialize box from blob: %s", err)
 		return nil, err
 	}
 	scheme := schemes.ByName(s.server.cfg.ReplicaNIKEScheme)
 	if scheme == nil {
+		s.log.Errorf("state: Scheme %s doesn't exist", s.server.cfg.ReplicaNIKEScheme)
 		panic(fmt.Sprintf("scheme %s doesn't exist", s.server.cfg.ReplicaNIKEScheme))
 	}
 	cmds := commands.NewStorageReplicaCommands(s.server.cfg.SphinxGeometry, scheme)
@@ -99,18 +120,21 @@ func (s *state) replicaWriteFromBlob(blob []byte) (*commands.ReplicaWrite, error
 		Signature: box.Signature,
 		Payload:   box.Payload,
 	}
+	s.log.Debug("state: Successfully converted blob to ReplicaWrite")
 	return ret, nil
 }
 
 func (s *state) getRemoteShards(boxID []byte) ([]*pki.ReplicaDescriptor, error) {
+	s.log.Debugf("state: Getting remote shards for BoxID: %x", boxID)
 	doc := s.server.pkiWorker.PKIDocument()
 	boxIDar := new([32]byte)
 	copy(boxIDar[:], boxID)
 	shards, err := common.GetRemoteShards(s.server.identityPublicKey, boxIDar, doc)
 	if err != nil {
-		s.log.Errorf("ERROR GetShards for boxID %x has failed: %s", boxID, err)
+		s.log.Errorf("state: GetShards for boxID %x has failed: %s", boxID, err)
 		return nil, err
 	}
+	s.log.Debugf("state: Found %d remote shards", len(shards))
 	return shards, nil
 }
 
@@ -124,6 +148,7 @@ func (s *state) getRemoteShards(boxID []byte) ([]*pki.ReplicaDescriptor, error) 
 // then just copy the share to the other replica. Otherwise copy
 // the share to the two replicas.
 func (s *state) Rebalance() error {
+	s.log.Debug("state: Starting rebalance operation")
 	ro := grocksdb.NewDefaultReadOptions()
 	ro.SetFillCache(false)
 
@@ -131,31 +156,37 @@ func (s *state) Rebalance() error {
 	defer it.Close()
 	it.Seek([]byte{0})
 
+	boxCount := 0
 	for it = it; it.Valid(); it.Next() {
 		key := it.Key()
 		value := it.Value()
 
-		s.log.Debugf("key %v", key)
+		s.log.Debugf("state: Processing key: %x", key.Data())
 
 		writeCmd, err := s.replicaWriteFromBlob(value.Data())
 		if err != nil {
+			s.log.Errorf("state: Failed to create ReplicaWrite from blob: %s", err)
 			return err
 		}
 
 		boxID := key.Data()
 		remoteShards, err := s.getRemoteShards(boxID)
 		if err != nil {
+			s.log.Errorf("state: Failed to get remote shards: %s", err)
 			return err
 		}
 
 		for _, shard := range remoteShards {
 			idHash := blake2b.Sum256(shard.IdentityKey)
+			s.log.Debugf("state: Dispatching to shard with ID hash: %x", idHash)
 			s.server.connector.DispatchCommand(writeCmd, &idHash)
 		}
 
 		key.Free()
 		value.Free()
+		boxCount++
 	}
 
+	s.log.Debugf("state: Rebalance completed, processed %d boxes", boxCount)
 	return nil
 }

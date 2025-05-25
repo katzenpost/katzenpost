@@ -44,11 +44,9 @@ type outgoingConn struct {
 }
 
 func (c *outgoingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
-	c.log.Debug("---- START outgoingConn.IsPeerValid")
-
 	idHash := hash.Sum256(c.dst.IdentityKey)
 	if !hmac.Equal(idHash[:], creds.AdditionalData) {
-		c.log.Debug("outgoingConn.IsPeerValid false, identity hash mismatch")
+		c.log.Debug("OutgoingConn: Identity hash mismatch")
 		return false
 	}
 	keyblob, err := creds.PublicKey.MarshalBinary()
@@ -56,7 +54,7 @@ func (c *outgoingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 		panic(err)
 	}
 	if !hmac.Equal(c.dst.LinkKey, keyblob) {
-		c.log.Debug("outgoingConn.IsPeerValid false, link key mismatch")
+		c.log.Debug("OutgoingConn: Link key mismatch")
 		return false
 	}
 
@@ -66,11 +64,12 @@ func (c *outgoingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 	_, isValid = c.co.Server().pkiWorker.AuthenticateReplicaConnection(creds)
 
 	if !isValid {
-		c.log.Debug("failed to authenticate connect via latest PKI doc")
+		c.log.Debug("OutgoingConn: PKI authentication failed")
+		return false
 	}
 
-	c.log.Debug("---- END outgoingConn.IsPeerValid")
-	return isValid
+	c.log.Debug("OutgoingConn: Authentication successful")
+	return true
 }
 
 func (c *outgoingConn) dispatchCommand(cmd commands.Command) {
