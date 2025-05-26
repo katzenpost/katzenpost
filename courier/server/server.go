@@ -19,7 +19,6 @@ import (
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/utils"
-	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"github.com/katzenpost/katzenpost/courier/server/config"
 )
@@ -32,12 +31,6 @@ type GenericConnector interface {
 	ForceUpdate()
 
 	DispatchMessage(dest uint8, message *commands.ReplicaMessage)
-}
-
-type PKI interface {
-	AuthenticateReplicaConnection(c *wire.PeerCredentials) (*pki.ReplicaDescriptor, bool)
-	PKIDocument() *pki.Document
-	ReplicasCopy() map[[32]byte]*pki.ReplicaDescriptor
 }
 
 type Server struct {
@@ -54,39 +47,40 @@ type Server struct {
 	identityPrivateKey sign.PrivateKey
 	identityPublicKey  sign.PublicKey
 
-	PKI       PKI
+	PKI       *PKIWorker
 	connector GenericConnector
 }
 
-func defaultPKIFactory(s *Server) {
-	var err error
-	s.PKI, err = newPKIWorker(s, s.logBackend.GetLogger("pkiclient"))
-	if err != nil {
-		panic(err)
-	}
+// NewWithDefaultPKI creates a new Server with the default voting PKI client
+func NewWithDefaultPKI(cfg *config.Config) (*Server, error) {
+	return New(cfg, nil)
 }
 
-// NewWithPKI creates a new Server with a custom PKI factory that returns a PKI interface
-func NewWithPKI(cfg *config.Config, pkiFactory func(*Server) PKI) (*Server, error) {
-	// Convert the PKI factory to the expected format
-	var convertedFactory func(*Server)
-	if pkiFactory != nil {
-		convertedFactory = func(s *Server) {
-			s.PKI = pkiFactory(s)
-		}
-	}
-	return New(cfg, convertedFactory)
+// NewWithPKI creates a new Server with a custom PKI client for testing
+func NewWithPKI(cfg *config.Config, pkiClient pki.Client) (*Server, error) {
+	return New(cfg, pkiClient)
 }
 
-func New(cfg *config.Config, pkiFactory func(*Server)) (*Server, error) {
+func New(cfg *config.Config, pkiClient pki.Client) (*Server, error) {
 	s := &Server{
 		cfg: cfg,
 	}
+
 	err := utils.MkDataDir(s.cfg.DataDir)
 	if err != nil {
 		return nil, err
 	}
 	err = s.initLogging()
+	if err != nil {
+		return nil, err
+	}
+
+	// Create PKI worker with injected client or default client
+	if pkiClient != nil {
+		s.PKI, err = newPKIWorker(s, pkiClient, s.logBackend.GetLogger("courier-pkiworker"))
+	} else {
+		s.PKI, err = newPKIWorkerWithDefaultClient(s, s.logBackend.GetLogger("courier-pkiworker"))
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -154,12 +148,6 @@ func New(cfg *config.Config, pkiFactory func(*Server)) (*Server, error) {
 	}
 	s.linkPrivKey = linkPrivateKey
 	s.linkPubKey = linkPublicKey
-
-	if pkiFactory == nil {
-		defaultPKIFactory(s)
-	} else {
-		pkiFactory(s)
-	}
 
 	s.connector = newConnector(s)
 

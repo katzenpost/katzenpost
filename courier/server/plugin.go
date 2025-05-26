@@ -103,8 +103,15 @@ func (e *Courier) CacheReply(reply *commands.ReplicaMessageReply) {
 		}
 	} else {
 		e.log.Debug("BUG: received an unknown EnvelopeHash from a replica reply")
+
+		// Get current epoch, defaulting to 0 if PKI document is not available yet
+		var currentEpoch uint64
+		if pkiDoc := e.server.PKI.PKIDocument(); pkiDoc != nil {
+			currentEpoch = pkiDoc.Epoch
+		}
+
 		e.dedupCache[*reply.EnvelopeHash] = &CourierBookKeeping{
-			Epoch: e.server.PKI.PKIDocument().Epoch,
+			Epoch: currentEpoch,
 			EnvelopeReplies: [2]*commands.ReplicaMessageReply{
 				reply,
 				nil,
@@ -196,8 +203,15 @@ func (e *Courier) OnCommand(cmd cborplugin.Command) error {
 		replyPayload = e.handleOldMessage(cacheEntry, envHash, courierMessage)
 	} else {
 		e.dedupCacheLock.Lock()
+
+		// Get current epoch, defaulting to 0 if PKI document is not available yet
+		var currentEpoch uint64
+		if pkiDoc := e.server.PKI.PKIDocument(); pkiDoc != nil {
+			currentEpoch = pkiDoc.Epoch
+		}
+
 		e.dedupCache[*envHash] = &CourierBookKeeping{
-			Epoch:           e.server.PKI.PKIDocument().Epoch,
+			Epoch:           currentEpoch,
 			EnvelopeReplies: [2]*commands.ReplicaMessageReply{nil, nil},
 		}
 		e.dedupCacheLock.Unlock()

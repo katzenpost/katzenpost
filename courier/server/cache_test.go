@@ -4,19 +4,23 @@
 package server
 
 import (
+	"context"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/nike/schemes"
+	"github.com/katzenpost/hpqc/sign"
 
+	dirauthconfig "github.com/katzenpost/katzenpost/authority/voting/server/config"
+	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
-	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"github.com/katzenpost/katzenpost/courier/server/config"
+	"github.com/katzenpost/katzenpost/loops"
 	"github.com/katzenpost/katzenpost/replica/common"
 )
 
@@ -280,6 +284,7 @@ func TestCourierCacheEmptyResponse(t *testing.T) {
 // Helper function to create a test courier
 func createTestCourier(t *testing.T) *Courier {
 	// Create minimal test configuration
+	sphinxNikeSchemeName := "X25519"
 	geo := &geo.Geometry{
 		PacketLength:                3082,
 		HeaderLength:                476,
@@ -292,16 +297,17 @@ func createTestCourier(t *testing.T) *Courier {
 		UserForwardPayloadLength:    2000,
 		NextNodeHopLength:           65,
 		SPRPKeyMaterialLength:       64,
-		NIKEName:                    "CTIDH1024-X25519",
+		NIKEName:                    sphinxNikeSchemeName,
 	}
 
-	scheme := schemes.ByName("CTIDH1024-X25519")
-	require.NotNil(t, scheme, "NIKE scheme should be available")
+	replicaSchemeName := "CTIDH1024-X25519"
+	replicaScheme := schemes.ByName(replicaSchemeName)
+	require.NotNil(t, replicaScheme, "NIKE scheme should be available")
 
-	cmds := commands.NewStorageReplicaCommands(geo, scheme)
+	cmds := commands.NewStorageReplicaCommands(geo, replicaScheme)
 
 	// Create mock PKI for testing
-	mockPKI := &mockCourierPKI{
+	mockPKI := &mockPKIClient{
 		doc: &pki.Document{
 			Epoch: 1,
 		},
@@ -313,12 +319,25 @@ func createTestCourier(t *testing.T) *Courier {
 	server := &Server{
 		cfg: &config.Config{
 			SphinxGeometry: geo,
+			WireKEMScheme:  "Xwing",
+			PKIScheme:      "ed25519",
+			EnvelopeScheme: replicaSchemeName,
+			PKI: &config.PKI{
+				Voting: &config.Voting{
+					Authorities: []*dirauthconfig.Authority{
+						&dirauthconfig.Authority{},
+					},
+				},
+			},
 		},
-		PKI:        mockPKI,
 		logBackend: backendLog,
 	}
 
-	courier := NewCourier(server, cmds, scheme)
+	server.log = server.logBackend.GetLogger("courier-server")
+	server.PKI, err = newPKIWorker(server, mockPKI, server.logBackend.GetLogger("courier-pkiworker"))
+	require.NoError(t, err)
+
+	courier := NewCourier(server, cmds, replicaScheme)
 	require.NotNil(t, courier, "Courier should be created successfully")
 	require.NotNil(t, courier.dedupCache, "Dedup cache should be initialized")
 
@@ -425,15 +444,25 @@ func TestCourierCacheMultipleEnvelopes(t *testing.T) {
 func TestCourierCacheEpochTracking(t *testing.T) {
 	courier := createTestCourier(t)
 
-	// Mock PKI document with specific epoch
-	mockPKI := &mockCourierPKI{
+	// Get the current epoch for testing
+	currentEpoch, _, _ := epochtime.Now()
+	testEpoch := currentEpoch
+
+	mockPKI := &mockPKIClient{
 		doc: &pki.Document{
-			Epoch: 12345,
+			Epoch: testEpoch,
 		},
 	}
-	courier.server = &Server{
-		PKI: mockPKI,
-	}
+
+	// Replace the PKI worker with one that has our test epoch
+	var err error
+	courier.server.PKI, err = newPKIWorker(courier.server, mockPKI, courier.server.logBackend.GetLogger("courier-pkiworker"))
+	require.NoError(t, err)
+
+	// Manually populate the PKI worker's cache with the test document for the current epoch
+	courier.server.PKI.lock.Lock()
+	courier.server.PKI.docs[testEpoch] = mockPKI.doc
+	courier.server.PKI.lock.Unlock()
 
 	envHash := [hash.HashSize]byte{}
 	copy(envHash[:], []byte("test-envelope-hash-12345678901234567890123456789012"))
@@ -452,7 +481,7 @@ func TestCourierCacheEpochTracking(t *testing.T) {
 	entry := courier.dedupCache[envHash]
 	courier.dedupCacheLock.RUnlock()
 
-	require.Equal(t, uint64(12345), entry.Epoch, "Cache entry should track correct epoch")
+	require.Equal(t, testEpoch, entry.Epoch, "Cache entry should track correct epoch")
 }
 
 // TestCourierCacheErrorReplies tests caching of error replies
@@ -502,19 +531,30 @@ func TestCourierCacheNilEnvelopeHash(t *testing.T) {
 	require.Equal(t, 0, len(courier.dedupCache), "Cache should remain empty with nil envelope hash")
 }
 
-// mockCourierPKI implements PKI interface for testing
-type mockCourierPKI struct {
+type mockPKIClient struct {
 	doc *pki.Document
 }
 
-func (m *mockCourierPKI) PKIDocument() *pki.Document {
-	return m.doc
+// Get returns the PKI document along with the raw serialized form for the provided epoch.
+func (m *mockPKIClient) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, error) {
+	blob, err := m.doc.MarshalCertificate()
+	if err != nil {
+		return nil, nil, err
+	}
+	return m.doc, blob, nil
 }
 
-func (m *mockCourierPKI) ReplicasCopy() map[[32]byte]*pki.ReplicaDescriptor {
-	return make(map[[32]byte]*pki.ReplicaDescriptor)
+// Post posts the node's descriptor to the PKI for the provided epoch.
+func (m *mockPKIClient) Post(ctx context.Context, epoch uint64, signingPrivateKey sign.PrivateKey, signingPublicKey sign.PublicKey, d *pki.MixDescriptor, loopstats *loops.LoopStats) error {
+	panic("not implemented")
 }
 
-func (m *mockCourierPKI) AuthenticateReplicaConnection(c *wire.PeerCredentials) (*pki.ReplicaDescriptor, bool) {
-	return nil, false
+// PostReplica posts the pigeonhole storage replica node's descriptor to the PKI for the provided epoch.
+func (m *mockPKIClient) PostReplica(ctx context.Context, epoch uint64, signingPrivateKey sign.PrivateKey, signingPublicKey sign.PublicKey, d *pki.ReplicaDescriptor) error {
+	panic("not implemented")
+}
+
+// Deserialize returns PKI document given the raw bytes.
+func (m *mockPKIClient) Deserialize(raw []byte) (*pki.Document, error) {
+	panic("not implemented")
 }

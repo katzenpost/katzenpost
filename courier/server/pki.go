@@ -18,7 +18,6 @@ import (
 	vServer "github.com/katzenpost/katzenpost/authority/voting/server"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/pki"
-	cpki "github.com/katzenpost/katzenpost/core/pki"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/worker"
@@ -52,9 +51,10 @@ type PKIWorker struct {
 	lastPublishedReplicaEpoch uint64
 }
 
-func newPKIWorker(server *Server, log *logging.Logger) (*PKIWorker, error) {
+func newPKIWorker(server *Server, pkiClient pki.Client, log *logging.Logger) (*PKIWorker, error) {
 	p := &PKIWorker{
 		server:        server,
+		impl:          pkiClient,
 		log:           log,
 		lock:          new(sync.RWMutex),
 		docs:          make(map[uint64]*pki.Document),
@@ -63,6 +63,13 @@ func newPKIWorker(server *Server, log *logging.Logger) (*PKIWorker, error) {
 		replicas:      common.NewReplicaMap(),
 	}
 
+	p.Go(p.worker)
+
+	return p, nil
+}
+
+// newPKIWorkerWithDefaultClient creates a PKIWorker with the default voting client
+func newPKIWorkerWithDefaultClient(server *Server, log *logging.Logger) (*PKIWorker, error) {
 	kemscheme := schemes.ByName(server.cfg.WireKEMScheme)
 	if kemscheme == nil {
 		return nil, errors.New("kem scheme not found in registry")
@@ -74,15 +81,13 @@ func newPKIWorker(server *Server, log *logging.Logger) (*PKIWorker, error) {
 		Authorities: server.cfg.PKI.Voting.Authorities,
 		Geo:         server.cfg.SphinxGeometry,
 	}
-	var err error
-	p.impl, err = vClient.New(pkiCfg)
+
+	pkiClient, err := vClient.New(pkiCfg)
 	if err != nil {
 		return nil, err
 	}
 
-	p.Go(p.worker)
-
-	return p, nil
+	return newPKIWorker(server, pkiClient, log)
 }
 
 func (p *PKIWorker) ReplicasCopy() map[[32]byte]*pki.ReplicaDescriptor {
@@ -155,12 +160,12 @@ func (p *PKIWorker) pruneDocuments() {
 	}
 }
 
-func (p *PKIWorker) PKIDocument() *cpki.Document {
+func (p *PKIWorker) PKIDocument() *pki.Document {
 	epoch, _, _ := epochtime.Now()
 	return p.entryForEpoch(epoch)
 }
 
-func (p *PKIWorker) entryForEpoch(epoch uint64) *cpki.Document {
+func (p *PKIWorker) entryForEpoch(epoch uint64) *pki.Document {
 	p.lock.RLock()
 	defer p.lock.RUnlock()
 
@@ -280,7 +285,7 @@ func (p *PKIWorker) worker() {
 			}
 			if err != nil {
 				p.log.Warningf("Failed to fetch PKI for epoch %v: %v", epoch, err)
-				if err == cpki.ErrDocumentGone {
+				if err == pki.ErrDocumentGone {
 					p.setFailedFetch(epoch, err)
 				}
 				continue
