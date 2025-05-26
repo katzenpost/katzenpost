@@ -13,10 +13,13 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/katzenpost/hpqc/bacap"
+	"github.com/katzenpost/hpqc/kem"
 	kemschemes "github.com/katzenpost/hpqc/kem/schemes"
+	"github.com/katzenpost/hpqc/nike"
 	nikeschemes "github.com/katzenpost/hpqc/nike/schemes"
 	ecdh "github.com/katzenpost/hpqc/nike/x25519"
 	"github.com/katzenpost/hpqc/rand"
+	"github.com/katzenpost/hpqc/sign"
 	signschemes "github.com/katzenpost/hpqc/sign/schemes"
 
 	authconfig "github.com/katzenpost/katzenpost/authority/voting/server/config"
@@ -135,19 +138,22 @@ func TestGetRemoteShards(t *testing.T) {
 		Addresses:          []string{"tcp://127.0.0.1:34394"},
 	}
 
+	// Create PKI worker with proper structure
+	pkiWorker := &PKIWorker{
+		replicas:      common.NewReplicaMap(),
+		lock:          new(sync.RWMutex),
+		docs:          make(map[uint64]*pki.Document),
+		rawDocs:       make(map[uint64][]byte),
+		failedFetches: make(map[uint64]error),
+	}
+
 	s := &Server{
 		identityPublicKey: pk,
 		cfg:               cfg,
-		pkiWorker: &PKIWorker{
-			replicas:      common.NewReplicaMap(),
-			lock:          new(sync.RWMutex),
-			docs:          make(map[uint64]*pki.Document),
-			rawDocs:       make(map[uint64][]byte),
-			failedFetches: make(map[uint64]error),
-		},
+		PKIWorker:         pkiWorker, // Use correct field name
 	}
-	s.pkiWorker.server = s
-	s.connector = new(mockConnector)
+	s.PKIWorker.server = s
+	s.connector = newMockConnector(s) // Create mock connector
 
 	epoch, _, _ := epochtime.Now()
 
@@ -155,7 +161,7 @@ func TestGetRemoteShards(t *testing.T) {
 	replicas := make([]*pki.ReplicaDescriptor, 0, numReplicas)
 
 	for i := 0; i < numReplicas; i++ {
-		replica := generateReplica(t, pkiScheme, linkScheme, replicaScheme)
+		replica := generateTestReplica(t, pkiScheme, linkScheme, replicaScheme, i)
 		replicas = append(replicas, replica)
 	}
 
@@ -163,21 +169,19 @@ func TestGetRemoteShards(t *testing.T) {
 		Epoch:           epoch,
 		StorageReplicas: replicas,
 	}
-	s.pkiWorker.lock.Lock()
-	s.pkiWorker.replicas = common.NewReplicaMap()
-	s.pkiWorker.docs[epoch] = doc
-	s.pkiWorker.lock.Unlock()
+	s.PKIWorker.lock.Lock()
+	s.PKIWorker.replicas = common.NewReplicaMap()
+	s.PKIWorker.docs[epoch] = doc
+	s.PKIWorker.lock.Unlock()
 
-	s.pkiWorker.server = s
-	s.pkiWorker.log = s.LogBackend().GetLogger("pki")
+	s.PKIWorker.server = s
 
 	err = s.initLogging()
 	require.NoError(t, err)
 
-	st := &state{
-		server: s,
-		log:    s.LogBackend().GetLogger("state"),
-	}
+	s.PKIWorker.log = s.LogBackend().GetLogger("pki")
+
+	st := newState(s)
 	s.state = st
 	st.initDB()
 
@@ -214,11 +218,51 @@ func TestGetRemoteShards(t *testing.T) {
 
 	t.Logf("SHARDS: %v", shards)
 
-	myreplicas := s.pkiWorker.replicas.Copy()
+	myreplicas := s.PKIWorker.replicas.Copy()
 	require.Zero(t, len(myreplicas))
 
-	s.pkiWorker.updateReplicas(doc)
+	s.PKIWorker.updateReplicas(doc)
 
-	myreplicas = s.pkiWorker.replicas.Copy()
+	myreplicas = s.PKIWorker.replicas.Copy()
 	require.Equal(t, numReplicas, len(myreplicas))
+}
+
+// generateTestReplica creates a test replica descriptor
+func generateTestReplica(t *testing.T, pkiScheme sign.Scheme, linkScheme kem.Scheme, replicaScheme nike.Scheme, index int) *pki.ReplicaDescriptor {
+	// Generate identity key
+	identityPubKey, _, err := pkiScheme.GenerateKey()
+	require.NoError(t, err)
+
+	// Generate link key
+	linkPubKey, _, err := linkScheme.GenerateKeyPair()
+	require.NoError(t, err)
+
+	// Generate replica NIKE key
+	replicaPubKey, _, err := replicaScheme.GenerateKeyPair()
+	require.NoError(t, err)
+
+	// Serialize keys to bytes
+	identityKeyBytes, err := identityPubKey.MarshalBinary()
+	require.NoError(t, err)
+
+	linkKeyBytes, err := linkPubKey.MarshalBinary()
+	require.NoError(t, err)
+
+	replicaKeyBytes, err := replicaPubKey.MarshalBinary()
+	require.NoError(t, err)
+
+	// Create replica descriptor
+	replica := &pki.ReplicaDescriptor{
+		Name:        fmt.Sprintf("replica%d", index),
+		IdentityKey: identityKeyBytes,
+		LinkKey:     linkKeyBytes,
+		Addresses:   map[string][]string{"tcp": {fmt.Sprintf("tcp://127.0.0.1:%d", 19000+index)}},
+	}
+
+	// Add envelope keys (using current epoch)
+	epoch, _, _ := epochtime.Now()
+	replica.EnvelopeKeys = make(map[uint64][]byte)
+	replica.EnvelopeKeys[epoch] = replicaKeyBytes
+
+	return replica
 }

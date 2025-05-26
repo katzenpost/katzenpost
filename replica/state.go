@@ -133,7 +133,7 @@ func (s *state) replicaWriteFromBlob(blob []byte) (*commands.ReplicaWrite, error
 
 func (s *state) getRemoteShards(boxID []byte) ([]*pki.ReplicaDescriptor, error) {
 	s.log.Debugf("state: Getting remote shards for BoxID: %x", boxID)
-	doc := s.server.pkiWorker.PKIDocument()
+	doc := s.server.PKIWorker.PKIDocument()
 	boxIDar := new([32]byte)
 	copy(boxIDar[:], boxID)
 	shards, err := common.GetRemoteShards(s.server.identityPublicKey, boxIDar, doc)

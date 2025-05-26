@@ -87,24 +87,26 @@ func TestOutgoingConn(t *testing.T) {
 		Addresses:          []string{"tcp://127.0.0.1:34394"},
 	}
 
+	pkiWorker := &PKIWorker{
+		replicas:      common.NewReplicaMap(),
+		lock:          new(sync.RWMutex),
+		docs:          make(map[uint64]*pki.Document),
+		rawDocs:       make(map[uint64][]byte),
+		failedFetches: make(map[uint64]error),
+	}
+
 	s := &Server{
 		identityPublicKey: pk,
 		cfg:               cfg,
 		logBackend:        logBackend,
-		pkiWorker: &PKIWorker{
-			replicas:      common.NewReplicaMap(),
-			lock:          new(sync.RWMutex),
-			docs:          make(map[uint64]*pki.Document),
-			rawDocs:       make(map[uint64][]byte),
-			failedFetches: make(map[uint64]error),
-		},
+		PKIWorker:         pkiWorker,
 	}
-	s.pkiWorker.server = s
+	pkiWorker.server = s
 	s.connector = newMockConnector(s)
 
 	epoch, _, _ := epochtime.Now()
-	s.pkiWorker.lock.Lock()
-	s.pkiWorker.docs[epoch] = &pki.Document{
+	pkiWorker.lock.Lock()
+	pkiWorker.docs[epoch] = &pki.Document{
 		Epoch: epoch,
 		ServiceNodes: []*pki.MixDescriptor{
 			&pki.MixDescriptor{
@@ -115,18 +117,18 @@ func TestOutgoingConn(t *testing.T) {
 			},
 		},
 	}
-	s.pkiWorker.docs[epoch] = &pki.Document{
+	pkiWorker.docs[epoch] = &pki.Document{
 		Epoch: epoch,
 		StorageReplicas: []*pki.ReplicaDescriptor{
 			dstReplicaDesc,
 		},
 	}
 	adID := hash.Sum256(dstReplicaDesc.IdentityKey)
-	s.pkiWorker.replicas.Replace(map[[32]byte]*pki.ReplicaDescriptor{adID: dstReplicaDesc})
+	pkiWorker.replicas.Replace(map[[32]byte]*pki.ReplicaDescriptor{adID: dstReplicaDesc})
 
-	s.pkiWorker.lock.Unlock()
-	s.pkiWorker.server = s
-	s.pkiWorker.log = s.LogBackend().GetLogger("pki")
+	pkiWorker.lock.Unlock()
+	pkiWorker.server = s
+	pkiWorker.log = s.LogBackend().GetLogger("pki")
 
 	err = s.initLogging()
 	require.NoError(t, err)

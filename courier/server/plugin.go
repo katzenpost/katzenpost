@@ -65,7 +65,7 @@ func (s *Server) StartPlugin() {
 	cmds := commands.NewStorageReplicaCommands(s.cfg.SphinxGeometry, scheme)
 
 	courier := NewCourier(s, cmds, scheme)
-	s.courier = courier
+	s.Courier = courier
 	var server *cborplugin.Server
 
 	server = cborplugin.NewServer(s.LogBackend().GetLogger("courier_plugin"), socketFile, new(cborplugin.RequestFactory), courier)
@@ -80,6 +80,11 @@ func (s *Server) StartPlugin() {
 }
 
 func (e *Courier) CacheReply(reply *commands.ReplicaMessageReply) {
+	// Don't cache replies with nil envelope hash
+	if reply.EnvelopeHash == nil {
+		return
+	}
+
 	e.dedupCacheLock.Lock()
 	entry, ok := e.dedupCache[*reply.EnvelopeHash]
 	if ok {
@@ -93,7 +98,7 @@ func (e *Courier) CacheReply(reply *commands.ReplicaMessageReply) {
 		}
 	} else {
 		e.dedupCache[*reply.EnvelopeHash] = &CourierBookKeeping{
-			Epoch: e.server.pki.PKIDocument().Epoch,
+			Epoch: e.server.PKI.PKIDocument().Epoch,
 			EnvelopeReplies: [2]*commands.ReplicaMessageReply{
 				reply,
 				nil,
@@ -193,7 +198,7 @@ func (e *Courier) OnCommand(cmd cborplugin.Command) error {
 	} else {
 		e.dedupCacheLock.Lock()
 		e.dedupCache[*envHash] = &CourierBookKeeping{
-			Epoch:           e.server.pki.PKIDocument().Epoch,
+			Epoch:           e.server.PKI.PKIDocument().Epoch,
 			EnvelopeReplies: [2]*commands.ReplicaMessageReply{nil, nil},
 		}
 		e.dedupCacheLock.Unlock()
@@ -216,4 +221,8 @@ func (e *Courier) OnCommand(cmd cborplugin.Command) error {
 
 func (e *Courier) RegisterConsumer(s *cborplugin.Server) {
 	e.write = s.Write
+}
+
+func (e *Courier) SetWriteFunc(writeFunc func(cborplugin.Command)) {
+	e.write = writeFunc
 }

@@ -111,16 +111,18 @@ func TestState(t *testing.T) {
 		},
 	}
 
+	pkiWorker := &PKIWorker{
+		replicas:      common.NewReplicaMap(),
+		lock:          new(sync.RWMutex),
+		docs:          make(map[uint64]*pki.Document),
+		rawDocs:       make(map[uint64][]byte),
+		failedFetches: make(map[uint64]error),
+	}
+
 	s := &Server{
 		identityPublicKey: pk,
 		cfg:               cfg,
-		pkiWorker: &PKIWorker{
-			replicas:      common.NewReplicaMap(),
-			lock:          new(sync.RWMutex),
-			docs:          make(map[uint64]*pki.Document),
-			rawDocs:       make(map[uint64][]byte),
-			failedFetches: make(map[uint64]error),
-		},
+		PKIWorker:         pkiWorker,
 	}
 
 	s.connector = new(mockConnector)
@@ -135,18 +137,18 @@ func TestState(t *testing.T) {
 		replicas = append(replicas, replica)
 	}
 
-	s.pkiWorker.lock.Lock()
-	s.pkiWorker.docs[epoch] = &pki.Document{
+	pkiWorker.lock.Lock()
+	pkiWorker.docs[epoch] = &pki.Document{
 		Epoch:           epoch,
 		StorageReplicas: replicas,
 	}
-	s.pkiWorker.lock.Unlock()
+	pkiWorker.lock.Unlock()
 
 	err = s.initLogging()
 	require.NoError(t, err)
 
-	s.pkiWorker.server = s
-	s.pkiWorker.log = s.LogBackend().GetLogger("pki")
+	pkiWorker.server = s
+	pkiWorker.log = s.LogBackend().GetLogger("pki")
 
 	st := &state{
 		server: s,

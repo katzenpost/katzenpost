@@ -104,7 +104,7 @@ func TestAuthenticateCourierConnection(t *testing.T) {
 	}
 
 	epoch, _, _ := epochtime.Now()
-	s.pkiWorker.lock.Lock()
+	s.PKIWorker.lock.Lock()
 
 	advertMap := make(map[string]map[string]interface{})
 	advertMap["courier"] = make(map[string]interface{})
@@ -113,7 +113,7 @@ func TestAuthenticateCourierConnection(t *testing.T) {
 	kaetzchen := make(map[string]map[string]interface{})
 	kaetzchen["courier"] = make(map[string]interface{})
 
-	s.pkiWorker.docs[epoch] = &pki.Document{
+	s.PKIWorker.docs[epoch] = &pki.Document{
 		Epoch: epoch,
 		ServiceNodes: []*pki.MixDescriptor{
 			&pki.MixDescriptor{
@@ -126,13 +126,13 @@ func TestAuthenticateCourierConnection(t *testing.T) {
 			},
 		},
 	}
-	s.pkiWorker.lock.Unlock()
+	s.PKIWorker.lock.Unlock()
 
-	ok := s.pkiWorker.AuthenticateCourierConnection(creds)
+	ok := s.PKIWorker.AuthenticateCourierConnection(creds)
 	require.True(t, ok)
 
-	s.pkiWorker.lock.Lock()
-	s.pkiWorker.docs[epoch] = &pki.Document{
+	s.PKIWorker.lock.Lock()
+	s.PKIWorker.docs[epoch] = &pki.Document{
 		Epoch: epoch,
 		GatewayNodes: []*pki.MixDescriptor{
 			&pki.MixDescriptor{
@@ -143,9 +143,9 @@ func TestAuthenticateCourierConnection(t *testing.T) {
 			},
 		},
 	}
-	s.pkiWorker.lock.Unlock()
+	s.PKIWorker.lock.Unlock()
 
-	ok = s.pkiWorker.AuthenticateCourierConnection(creds)
+	ok = s.PKIWorker.AuthenticateCourierConnection(creds)
 	require.False(t, ok)
 
 	s.Shutdown()
@@ -215,8 +215,9 @@ func TestAuthenticateReplicaConnection(t *testing.T) {
 	}
 
 	epoch, _, _ := epochtime.Now()
-	s.pkiWorker.lock.Lock()
-	s.pkiWorker.docs[epoch] = &pki.Document{
+	pkiWorker := s.PKIWorker
+	pkiWorker.lock.Lock()
+	pkiWorker.docs[epoch] = &pki.Document{
 		Epoch: epoch,
 		ServiceNodes: []*pki.MixDescriptor{
 			&pki.MixDescriptor{
@@ -228,9 +229,9 @@ func TestAuthenticateReplicaConnection(t *testing.T) {
 		},
 	}
 
-	s.pkiWorker.lock.Unlock()
+	pkiWorker.lock.Unlock()
 
-	_, ok := s.pkiWorker.AuthenticateReplicaConnection(creds)
+	_, ok := pkiWorker.AuthenticateReplicaConnection(creds)
 	require.False(t, ok)
 
 	replicaDesc := &pki.ReplicaDescriptor{
@@ -240,17 +241,17 @@ func TestAuthenticateReplicaConnection(t *testing.T) {
 		LinkKey:     libpubkeyblob,
 	}
 
-	s.pkiWorker.lock.Lock()
-	s.pkiWorker.docs[epoch] = &pki.Document{
+	pkiWorker.lock.Lock()
+	pkiWorker.docs[epoch] = &pki.Document{
 		Epoch: epoch,
 		StorageReplicas: []*pki.ReplicaDescriptor{
 			replicaDesc,
 		},
 	}
-	s.pkiWorker.lock.Unlock()
-	s.pkiWorker.replicas.Replace(map[[32]byte]*pki.ReplicaDescriptor{id: replicaDesc})
+	pkiWorker.lock.Unlock()
+	pkiWorker.replicas.Replace(map[[32]byte]*pki.ReplicaDescriptor{id: replicaDesc})
 
-	_, ok = s.pkiWorker.AuthenticateReplicaConnection(creds)
+	_, ok = pkiWorker.AuthenticateReplicaConnection(creds)
 	require.True(t, ok)
 
 	s.Shutdown()
@@ -367,8 +368,9 @@ func TestPruneDocuments(t *testing.T) {
 
 	now, _, _ := epochtime.Now()
 	epoch := now - 10
-	s.pkiWorker.lock.Lock()
-	s.pkiWorker.docs[epoch] = &pki.Document{
+	pkiWorker := s.PKIWorker
+	pkiWorker.lock.Lock()
+	pkiWorker.docs[epoch] = &pki.Document{
 		Epoch: epoch,
 		ServiceNodes: []*pki.MixDescriptor{
 			&pki.MixDescriptor{
@@ -379,13 +381,13 @@ func TestPruneDocuments(t *testing.T) {
 			},
 		},
 	}
-	s.pkiWorker.lock.Unlock()
+	pkiWorker.lock.Unlock()
 
-	s.pkiWorker.pruneDocuments()
+	pkiWorker.pruneDocuments()
 
-	s.pkiWorker.lock.Lock()
-	require.Zero(t, len(s.pkiWorker.docs))
-	s.pkiWorker.lock.Unlock()
+	pkiWorker.lock.Lock()
+	require.Zero(t, len(pkiWorker.docs))
+	pkiWorker.lock.Unlock()
 
 	s.Shutdown()
 }
@@ -480,25 +482,26 @@ func TestAuthenticationDuringEpochTransition(t *testing.T) {
 		},
 	}
 
-	s.pkiWorker.lock.Lock()
-	s.pkiWorker.docs[epoch] = currentDoc
-	s.pkiWorker.lock.Unlock()
+	pkiWorker := s.PKIWorker
+	pkiWorker.lock.Lock()
+	pkiWorker.docs[epoch] = currentDoc
+	pkiWorker.lock.Unlock()
 
-	ok := s.pkiWorker.AuthenticateCourierConnection(creds)
+	ok := pkiWorker.AuthenticateCourierConnection(creds)
 	require.True(t, ok, "Authentication should succeed with current epoch doc")
 
-	s.pkiWorker.lock.Lock()
-	s.pkiWorker.docs[epoch+1] = nextDoc
-	s.pkiWorker.lock.Unlock()
+	pkiWorker.lock.Lock()
+	pkiWorker.docs[epoch+1] = nextDoc
+	pkiWorker.lock.Unlock()
 
-	ok = s.pkiWorker.AuthenticateCourierConnection(creds)
+	ok = pkiWorker.AuthenticateCourierConnection(creds)
 	require.True(t, ok, "Authentication should succeed with both epoch docs")
 
-	s.pkiWorker.lock.Lock()
-	delete(s.pkiWorker.docs, epoch)
-	s.pkiWorker.lock.Unlock()
+	pkiWorker.lock.Lock()
+	delete(pkiWorker.docs, epoch)
+	pkiWorker.lock.Unlock()
 
-	ok = s.pkiWorker.AuthenticateCourierConnection(creds)
+	ok = pkiWorker.AuthenticateCourierConnection(creds)
 	require.True(t, ok, "Authentication should succeed with next epoch doc")
 
 	s.Shutdown()

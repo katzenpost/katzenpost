@@ -35,12 +35,15 @@ type Connector struct {
 }
 
 func (co *Connector) destToNodeID(dest uint8) (*[constants.NodeIDLength]byte, error) {
-	doc := co.server.pki.PKIDocument()
-	if int(dest) >= (len(doc.StorageReplicas) - 1) {
+	doc := co.server.PKI.PKIDocument()
+	co.log.Debugf("destToNodeID: dest=%d, StorageReplicas count=%d", dest, len(doc.StorageReplicas))
+	if int(dest) >= len(doc.StorageReplicas) {
+		co.log.Errorf("destToNodeID: invalid destination ID %d >= %d", dest, len(doc.StorageReplicas))
 		return nil, errors.New("invalid destination ID")
 	}
 	replica := doc.StorageReplicas[dest]
 	idKeyHash := hash.Sum256(replica.IdentityKey)
+	co.log.Debugf("destToNodeID: dest=%d mapped to replica %s", dest, replica.Name)
 	return &idKeyHash, nil
 }
 
@@ -128,7 +131,7 @@ func (co *Connector) worker() {
 
 func (co *Connector) spawnNewConns() {
 	co.log.Debug("START spawnNewConns")
-	newPeerMap := co.server.pki.ReplicasCopy()
+	newPeerMap := co.server.PKI.ReplicasCopy()
 
 	co.log.Debugf("spawnNewConns newPeerMap len %d", len(newPeerMap))
 
@@ -153,7 +156,7 @@ func (co *Connector) spawnNewConns() {
 			panic("KEM scheme not found in registry")
 		}
 
-		c := newOutgoingConn(co, v, co.server.cfg, co.server.courier)
+		c := newOutgoingConn(co, v, co.server.cfg, co.server.Courier)
 		co.onNewConn(c)
 	}
 }

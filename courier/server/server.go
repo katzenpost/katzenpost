@@ -11,6 +11,10 @@ import (
 	"github.com/katzenpost/hpqc/kem"
 	pemkem "github.com/katzenpost/hpqc/kem/pem"
 	"github.com/katzenpost/hpqc/kem/schemes"
+	nikeSchemes "github.com/katzenpost/hpqc/nike/schemes"
+	"github.com/katzenpost/hpqc/sign"
+	signpem "github.com/katzenpost/hpqc/sign/pem"
+	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
@@ -39,7 +43,7 @@ type PKI interface {
 type Server struct {
 	cfg *config.Config
 
-	courier *Courier
+	Courier *Courier
 
 	logBackend *log.Backend
 	log        *logging.Logger
@@ -47,16 +51,31 @@ type Server struct {
 	linkPrivKey kem.PrivateKey
 	linkPubKey  kem.PublicKey
 
-	pki       PKI
+	identityPrivateKey sign.PrivateKey
+	identityPublicKey  sign.PublicKey
+
+	PKI       PKI
 	connector GenericConnector
 }
 
 func defaultPKIFactory(s *Server) {
 	var err error
-	s.pki, err = newPKIWorker(s, s.logBackend.GetLogger("pkiclient"))
+	s.PKI, err = newPKIWorker(s, s.logBackend.GetLogger("pkiclient"))
 	if err != nil {
 		panic(err)
 	}
+}
+
+// NewWithPKI creates a new Server with a custom PKI factory that returns a PKI interface
+func NewWithPKI(cfg *config.Config, pkiFactory func(*Server) PKI) (*Server, error) {
+	// Convert the PKI factory to the expected format
+	var convertedFactory func(*Server)
+	if pkiFactory != nil {
+		convertedFactory = func(s *Server) {
+			s.PKI = pkiFactory(s)
+		}
+	}
+	return New(cfg, convertedFactory)
 }
 
 func New(cfg *config.Config, pkiFactory func(*Server)) (*Server, error) {
@@ -70,6 +89,41 @@ func New(cfg *config.Config, pkiFactory func(*Server)) (*Server, error) {
 	err = s.initLogging()
 	if err != nil {
 		return nil, err
+	}
+
+	// Initialize identity keys
+	identityPrivateKeyFile := filepath.Join(s.cfg.DataDir, "identity.private.pem")
+	identityPublicKeyFile := filepath.Join(s.cfg.DataDir, "identity.public.pem")
+
+	pkiSignatureScheme := signSchemes.ByName(cfg.PKIScheme)
+	if pkiSignatureScheme == nil {
+		panic("PKI signature scheme not found")
+	}
+
+	if utils.BothExists(identityPrivateKeyFile, identityPublicKeyFile) {
+		s.identityPrivateKey, err = signpem.FromPrivatePEMFile(identityPrivateKeyFile, pkiSignatureScheme)
+		if err != nil {
+			return nil, err
+		}
+		s.identityPublicKey, err = signpem.FromPublicPEMFile(identityPublicKeyFile, pkiSignatureScheme)
+		if err != nil {
+			return nil, err
+		}
+	} else if utils.BothNotExists(identityPrivateKeyFile, identityPublicKeyFile) {
+		s.identityPublicKey, s.identityPrivateKey, err = pkiSignatureScheme.GenerateKey()
+		if err != nil {
+			return nil, err
+		}
+		err = signpem.PrivateKeyToFile(identityPrivateKeyFile, s.identityPrivateKey)
+		if err != nil {
+			return nil, err
+		}
+		err = signpem.PublicKeyToFile(identityPublicKeyFile, s.identityPublicKey)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		panic("Improbable: Only found one identity PEM file.")
 	}
 
 	// read our service node's link keys
@@ -109,6 +163,11 @@ func New(cfg *config.Config, pkiFactory func(*Server)) (*Server, error) {
 
 	s.connector = newConnector(s)
 
+	// Initialize the Courier plugin for testing
+	nikeScheme := nikeSchemes.ByName(cfg.EnvelopeScheme)
+	cmds := commands.NewStorageReplicaCommands(cfg.SphinxGeometry, nikeScheme)
+	s.Courier = NewCourier(s, cmds, nikeScheme)
+
 	return s, nil
 }
 
@@ -134,4 +193,18 @@ func (s *Server) initLogging() error {
 
 func (s *Server) SendMessage(dest uint8, mesg *commands.ReplicaMessage) {
 	s.connector.DispatchMessage(dest, mesg)
+}
+
+func (s *Server) ForceConnectorUpdate() {
+	s.connector.ForceUpdate()
+}
+
+// IdentityPublicKey returns the server's identity public key
+func (s *Server) IdentityPublicKey() sign.PublicKey {
+	return s.identityPublicKey
+}
+
+// LinkPublicKey returns the server's link public key
+func (s *Server) LinkPublicKey() kem.PublicKey {
+	return s.linkPubKey
 }

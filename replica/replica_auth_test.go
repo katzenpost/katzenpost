@@ -213,10 +213,12 @@ func TestAuthentication(t *testing.T) {
 
 	// Update PKI state with current epoch
 	epoch, _, _ := epochtime.Now()
-	replica1Server.pkiWorker.docs[epoch] = doc
-	replica2Server.pkiWorker.docs[epoch] = doc
-	replica1Server.pkiWorker.updateReplicas(doc)
-	replica2Server.pkiWorker.updateReplicas(doc)
+	replica1PKI := replica1Server.PKIWorker
+	replica2PKI := replica2Server.PKIWorker
+	replica1PKI.docs[epoch] = doc
+	replica2PKI.docs[epoch] = doc
+	replica1PKI.updateReplicas(doc)
+	replica2PKI.updateReplicas(doc)
 
 	// Initialize envelope keys for both replicas
 	replica1Server.envelopeKeys, err = NewEnvelopeKeys(replicaScheme, replica1Server.log, replica1Server.cfg.DataDir, replicaEpoch)
@@ -233,7 +235,7 @@ func TestAuthentication(t *testing.T) {
 		}
 
 		// Test courier authentication from replica1
-		isValid := replica1Server.pkiWorker.AuthenticateCourierConnection(courierCreds)
+		isValid := replica1PKI.AuthenticateCourierConnection(courierCreds)
 		require.True(t, isValid, "Courier authentication should succeed")
 
 		// Test with invalid courier link key
@@ -243,7 +245,7 @@ func TestAuthentication(t *testing.T) {
 			AdditionalData: []byte{},
 			PublicKey:      invalidLinkPubKey,
 		}
-		isValid = replica1Server.pkiWorker.AuthenticateCourierConnection(invalidCourierCreds)
+		isValid = replica1PKI.AuthenticateCourierConnection(invalidCourierCreds)
 		require.False(t, isValid, "Courier authentication should fail with invalid link key")
 	})
 
@@ -257,7 +259,7 @@ func TestAuthentication(t *testing.T) {
 		}
 
 		// Test replica authentication from replica1
-		desc, isValid := replica1Server.pkiWorker.AuthenticateReplicaConnection(replica2Creds)
+		desc, isValid := replica1PKI.AuthenticateReplicaConnection(replica2Creds)
 		require.True(t, isValid, "Replica authentication should succeed")
 		require.NotNil(t, desc, "Replica descriptor should be returned")
 		require.Equal(t, replica2Desc.Name, desc.Name, "Correct replica descriptor should be returned")
@@ -275,7 +277,7 @@ func TestAuthentication(t *testing.T) {
 			AdditionalData: invalidIdHash[:],
 			PublicKey:      replica2LinkPubKey,
 		}
-		desc, isValid = replica1Server.pkiWorker.AuthenticateReplicaConnection(invalidCreds)
+		desc, isValid = replica1PKI.AuthenticateReplicaConnection(invalidCreds)
 		require.False(t, isValid, "Replica authentication should fail with invalid identity key")
 		require.Nil(t, desc, "No descriptor should be returned for invalid credentials")
 
@@ -286,7 +288,7 @@ func TestAuthentication(t *testing.T) {
 			AdditionalData: replica2IdHash[:],
 			PublicKey:      invalidLinkPubKey,
 		}
-		desc, isValid = replica1Server.pkiWorker.AuthenticateReplicaConnection(invalidLinkCreds)
+		desc, isValid = replica1PKI.AuthenticateReplicaConnection(invalidLinkCreds)
 		require.False(t, isValid, "Replica authentication should fail with invalid link key")
 		require.Nil(t, desc, "No descriptor should be returned for invalid credentials")
 	})

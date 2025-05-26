@@ -96,16 +96,18 @@ func TestIncomingConn(t *testing.T) {
 	err = cfg.FixupAndValidate(false)
 	require.NoError(t, err)
 
+	pkiWorker := &PKIWorker{
+		replicas:      common.NewReplicaMap(),
+		lock:          new(sync.RWMutex),
+		docs:          make(map[uint64]*pki.Document),
+		rawDocs:       make(map[uint64][]byte),
+		failedFetches: make(map[uint64]error),
+	}
+
 	server := &Server{
 		identityPublicKey: pk,
 		cfg:               cfg,
-		pkiWorker: &PKIWorker{
-			replicas:      common.NewReplicaMap(),
-			lock:          new(sync.RWMutex),
-			docs:          make(map[uint64]*pki.Document),
-			rawDocs:       make(map[uint64][]byte),
-			failedFetches: make(map[uint64]error),
-		},
+		PKIWorker:         pkiWorker,
 	}
 
 	linkpubkey, linkprivkey, err := linkScheme.GenerateKeyPair()

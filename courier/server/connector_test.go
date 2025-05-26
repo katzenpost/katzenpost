@@ -427,13 +427,13 @@ func TestConnector(t *testing.T) {
 	numDirAuths := 3
 
 	pkiFactory := func(s *Server) {
-		s.pki = m
+		s.PKI = m
 	}
 
 	server, err := New(cfg, pkiFactory)
 	require.NoError(t, err)
 
-	server.pki.(*mockPKI).generateDocument(m.t, numDirAuths, numMixNodes, numStorageReplicas, m.geo, epoch)
+	server.PKI.(*mockPKI).generateDocument(m.t, numDirAuths, numMixNodes, numStorageReplicas, m.geo, epoch)
 
 	connector := newConnector(server)
 	connector.ForceUpdate()

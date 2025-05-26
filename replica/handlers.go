@@ -41,10 +41,24 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 	c.log.Debug("Starting handleReplicaMessage processing")
 	nikeScheme := schemes.ByName(c.l.server.cfg.ReplicaNIKEScheme)
 	scheme := mkem.NewScheme(nikeScheme)
-	ct, err := mkem.CiphertextFromBytes(scheme, replicaMessage.Ciphertext)
+
+	// Construct the MKEM ciphertext from the ReplicaMessage fields
+	// The Ciphertext field contains only the envelope, not the full CBOR-encoded mkem.Ciphertext
+	ephemeralPublicKey, err := nikeScheme.UnmarshalBinaryPublicKey(replicaMessage.SenderEPubKey)
 	if err != nil {
-		c.log.Errorf("handleReplicaMessage CiphertextFromBytes failed: %s", err)
-		return nil
+		c.log.Errorf("handleReplicaMessage failed to unmarshal SenderEPubKey: %s", err)
+		envelopeHash := replicaMessage.EnvelopeHash()
+		return &commands.ReplicaMessageReply{
+			Cmds:          commands.NewStorageReplicaCommands(c.geo, nikeScheme),
+			ErrorCode:     4, // non-zero means failure.
+			EnvelopeHash:  envelopeHash,
+			EnvelopeReply: []byte{},
+		}
+	}
+	ct := &mkem.Ciphertext{
+		EphemeralPublicKey: ephemeralPublicKey,
+		DEKCiphertexts:     []*[mkem.DEKSize]byte{replicaMessage.DEK},
+		Envelope:           replicaMessage.Ciphertext,
 	}
 
 	replicaEpoch, _, _ := common.ReplicaNow()
@@ -57,22 +71,23 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 	requestRaw, err := scheme.Decapsulate(replicaPrivateKeypair.PrivateKey, ct)
 	if err != nil {
 		c.log.Errorf("handleReplicaMessage Decapsulate failed: %s", err)
+		envelopeHash := replicaMessage.EnvelopeHash()
 		errReply := &commands.ReplicaMessageReply{
-			ErrorCode: replicaMessageReplyDecapsulationFailure,
+			Cmds:          commands.NewStorageReplicaCommands(c.geo, nikeScheme),
+			ErrorCode:     replicaMessageReplyDecapsulationFailure,
+			EnvelopeHash:  envelopeHash,
+			ReplicaID:     0, // We don't have a valid replica ID in this error case
+			EnvelopeReply: []byte{},
 		}
 		return errReply
 	}
+
 	c.log.Debug("Successfully decapsulated message, parsing command")
-	cmds := commands.NewStorageReplicaCommands(c.geo, nikeScheme)
-	myCmd, err := cmds.FromBytes(requestRaw)
+	msg, err := common.ReplicaInnerMessageFromBytes(requestRaw)
 	if err != nil {
-		c.log.Errorf("handleReplicaMessage command parse failed: %s", err)
-		errReply := &commands.ReplicaMessageReply{
-			ErrorCode: replicaMessageReplyCommandParseFailure,
-		}
-		return errReply
+		panic(err)
 	}
-	c.log.Debugf("Successfully parsed command of type: %T", myCmd)
+	c.log.Debug("Successfully parsed command")
 
 	envelopeHash := replicaMessage.EnvelopeHash()
 
@@ -86,18 +101,10 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 			EnvelopeReply: []byte{},
 		}
 	}
-	senderpubkey, err := nikeScheme.UnmarshalBinaryPublicKey(replicaMessage.SenderEPubKey[:])
-	if err != nil {
-		c.log.Errorf("handleReplicaMessage failed to unmarshal SenderEPubKey: %s", err)
-		return &commands.ReplicaMessageReply{
-			Cmds:          commands.NewStorageReplicaCommands(c.geo, nikeScheme),
-			ErrorCode:     1, // non-zero means failure.
-			EnvelopeHash:  envelopeHash,
-			EnvelopeReply: []byte{},
-		}
-	}
+	// Use the ephemeralPublicKey we already unmarshaled earlier
+	senderpubkey := ephemeralPublicKey
 
-	doc := c.l.server.pkiWorker.PKIDocument()
+	doc := c.l.server.PKIWorker.PKIDocument()
 	replicaID, err := doc.GetReplicaIDByIdentityKey(c.l.server.identityPublicKey)
 	if err != nil {
 		c.log.Errorf("handleReplicaMessage failed to get our own replica ID: %s", err)
@@ -109,8 +116,9 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 		}
 	}
 
-	switch myCmd := myCmd.(type) {
-	case *common.ReplicaRead:
+	switch {
+	case msg.ReplicaRead != nil:
+		myCmd := msg.ReplicaRead
 		c.log.Debugf("Processing decrypted ReplicaRead command for BoxID: %x", myCmd.BoxID)
 		readReply := c.handleReplicaRead(myCmd)
 		replyInnerMessage := common.ReplicaMessageReplyInnerMessage{
@@ -125,7 +133,8 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 			EnvelopeReply: envelopeReply.Envelope,
 			ReplicaID:     replicaID,
 		}
-	case *commands.ReplicaWrite:
+	case msg.ReplicaWrite != nil:
+		myCmd := msg.ReplicaWrite
 		c.log.Debugf("Processing decrypted ReplicaWrite command for BoxID: %x", myCmd.BoxID)
 		writeReply := c.handleReplicaWrite(myCmd)
 		c.l.server.connector.DispatchReplication(myCmd)
@@ -143,7 +152,12 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 		}
 	default:
 		c.log.Error("BUG: handleReplicaMessage failed: invalid request was decrypted")
-		return nil
+		return &commands.ReplicaMessageReply{
+			Cmds:          commands.NewStorageReplicaCommands(c.geo, nikeScheme),
+			ErrorCode:     5, // non-zero means failure.
+			EnvelopeHash:  envelopeHash,
+			EnvelopeReply: []byte{},
+		}
 	}
 }
 

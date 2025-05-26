@@ -60,7 +60,7 @@ func (c *outgoingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 	// Query the PKI to figure out if we can send or not, and to ensure that
 	// the peer is listed in a PKI document that's valid.
 	var isValid bool
-	_, isValid = c.co.Server().pkiWorker.AuthenticateReplicaConnection(creds)
+	_, isValid = c.co.Server().PKIWorker.AuthenticateReplicaConnection(creds)
 
 	if !isValid {
 		c.log.Debug("OutgoingConn: PKI authentication failed")
@@ -140,7 +140,7 @@ func (c *outgoingConn) worker() {
 		// something like this, stale connections can get stuck in the
 		// dialing state since the Connector relies on outgoingConnection
 		// objects to remove themselves from the connection table.
-		if desc, isValid := c.co.Server().pkiWorker.AuthenticateReplicaConnection(&dialCheckCreds); isValid {
+		if desc, isValid := c.co.Server().PKIWorker.AuthenticateReplicaConnection(&dialCheckCreds); isValid {
 			// The list of addresses could have changed, authenticateConnection
 			// will return the most "current" descriptor on success, so update
 			// the cached pointer.

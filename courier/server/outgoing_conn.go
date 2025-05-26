@@ -71,7 +71,7 @@ func (c *outgoingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 	// Query the PKI to figure out if we can send or not, and to ensure that
 	// the peer is listed in a PKI document that's valid.
 	var isValid bool
-	_, isValid = c.co.Server().pki.AuthenticateReplicaConnection(creds)
+	_, isValid = c.co.Server().PKI.AuthenticateReplicaConnection(creds)
 
 	if !isValid {
 		c.log.Debug("failed to authenticate connect via latest PKI doc")
@@ -148,7 +148,7 @@ func (c *outgoingConn) worker() {
 		// something like this, stale connections can get stuck in the
 		// dialing state since the Connector relies on outgoingConnection
 		// objects to remove themselves from the connection table.
-		if desc, isValid := c.co.Server().pki.AuthenticateReplicaConnection(&dialCheckCreds); isValid {
+		if desc, isValid := c.co.Server().PKI.AuthenticateReplicaConnection(&dialCheckCreds); isValid {
 			// The list of addresses could have changed, authenticateConnection
 			// will return the most "current" descriptor on success, so update
 			// the cached pointer.
@@ -275,12 +275,6 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 	c.log.Debugf("Handshake completed.")
 	conn.SetDeadline(time.Time{})
 	c.retryDelay = 0 // Reset the retry delay on successful handshakes.
-
-	// Since outgoing connections have no reverse traffic, read from the
-	// reverse path to detect that the connection has been closed.
-	//
-	// Incoming connections do not need similar treatment by virtue of
-	// the fact that they are constantly reading.
 
 	// Start the peer reader.
 	receiveCmdCh := make(chan interface{})

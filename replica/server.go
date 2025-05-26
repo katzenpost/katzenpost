@@ -21,8 +21,10 @@ import (
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 
 	"github.com/katzenpost/katzenpost/core/log"
+	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/utils"
+	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"github.com/katzenpost/katzenpost/replica/common"
 	"github.com/katzenpost/katzenpost/replica/config"
@@ -48,12 +50,20 @@ type GenericConnector interface {
 	DispatchReplication(cmd *commands.ReplicaWrite)
 }
 
+type PKI interface {
+	PKIDocument() *pki.Document                                                           // Returns the PKI document
+	AuthenticateCourierConnection(c *wire.PeerCredentials) bool                           // Authenticates courier connections
+	AuthenticateReplicaConnection(c *wire.PeerCredentials) (*pki.ReplicaDescriptor, bool) // Authenticates replica connections
+	ReplicasCopy() map[[32]byte]*pki.ReplicaDescriptor                                    // Returns copy of replicas map
+	Halt()                                                                                // Stops the PKI worker
+}
+
 type Server struct {
 	sync.WaitGroup
 
 	cfg *config.Config
 
-	pkiWorker *PKIWorker
+	PKIWorker *PKIWorker
 	listeners []GenericListener
 	state     *state
 	connector GenericConnector
@@ -152,6 +162,12 @@ func (s *Server) RotateLog() {
 // New returns a new Server instance parameterized with the specific
 // configuration.
 func New(cfg *config.Config) (*Server, error) {
+	return NewWithPKI(cfg, nil)
+}
+
+// NewWithPKI returns a new Server instance with a custom PKI implementation.
+// If pkiFactory is nil, the default PKI worker is used.
+func NewWithPKI(cfg *config.Config, pkiFactory func(*Server) PKI) (*Server, error) {
 	s := new(Server)
 	s.cfg = cfg
 
@@ -287,10 +303,11 @@ func New(cfg *config.Config) (*Server, error) {
 
 	// Start the PKI worker.
 	s.log.Notice("start PKI worker")
-	s.pkiWorker, err = newPKIWorker(s, s.logBackend.GetLogger("pkiWorker"))
+	pkiWorker, err := newPKIWorker(s, s.logBackend.GetLogger("pkiWorker"))
 	if err != nil {
 		panic(err)
 	}
+	s.PKIWorker = pkiWorker
 
 	// Start the outgoing connection worker
 	s.log.Notice("start connector worker")

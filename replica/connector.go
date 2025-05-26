@@ -99,7 +99,7 @@ func (co *Connector) DispatchReplication(cmd *commands.ReplicaWrite) {
 
 func (co *Connector) doReplication(cmd *commands.ReplicaWrite) {
 	co.log.Debugf("Starting replication for BoxID: %x", cmd.BoxID)
-	doc := co.server.pkiWorker.PKIDocument()
+	doc := co.server.PKIWorker.PKIDocument()
 	descs, err := common.GetRemoteShards(co.server.identityPublicKey, cmd.BoxID, doc)
 	if err != nil {
 		co.log.Errorf("Replication failed: GetShards err: %v", err)
@@ -165,7 +165,7 @@ func (co *Connector) worker() {
 }
 
 func (co *Connector) spawnNewConns() {
-	newPeerMap := co.server.pkiWorker.replicas.Copy()
+	newPeerMap := co.server.PKIWorker.ReplicasCopy()
 
 	// Traverse the connection table, to figure out which peers are actually
 	// new.  Each outgoingConn object is responsible for determining when
