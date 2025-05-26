@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"sync"
 
+	"gopkg.in/op/go-logging.v1"
+
 	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/nike"
 	"github.com/katzenpost/hpqc/nike/schemes"
@@ -33,6 +35,7 @@ type CourierBookKeeping struct {
 type Courier struct {
 	write  func(cborplugin.Command)
 	server *Server
+	log    *logging.Logger
 
 	cmds           *commands.Commands
 	geo            *geo.Geometry
@@ -46,8 +49,10 @@ type Courier struct {
 // TODO: eventually we need to write the dedupCache to disk and so here's where
 // we'd load it from disk.
 func NewCourier(s *Server, cmds *commands.Commands, scheme nike.Scheme) *Courier {
+
 	courier := &Courier{
 		server:         s,
+		log:            s.logBackend.GetLogger("Courier"),
 		cmds:           cmds,
 		geo:            s.cfg.SphinxGeometry,
 		envelopeScheme: scheme,
@@ -97,7 +102,7 @@ func (e *Courier) CacheReply(reply *commands.ReplicaMessageReply) {
 			// no-op. already cached both replies.
 		}
 	} else {
-		e.server.log.Debug("BUG: received an unknown EnvelopeHash from a replica reply")
+		e.log.Debug("BUG: received an unknown EnvelopeHash from a replica reply")
 		e.dedupCache[*reply.EnvelopeHash] = &CourierBookKeeping{
 			Epoch: e.server.PKI.PKIDocument().Epoch,
 			EnvelopeReplies: [2]*commands.ReplicaMessageReply{
@@ -177,7 +182,7 @@ func (e *Courier) OnCommand(cmd cborplugin.Command) error {
 
 	courierMessage, err := common.CourierEnvelopeFromBytes(request.Payload)
 	if err != nil {
-		e.server.log.Debugf("Bug, failed to decode CBOR blob: %s", err)
+		e.log.Debugf("Bug, failed to decode CBOR blob: %s", err)
 		return err
 	}
 	envHash := courierMessage.EnvelopeHash()
