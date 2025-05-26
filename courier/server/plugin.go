@@ -97,6 +97,7 @@ func (e *Courier) CacheReply(reply *commands.ReplicaMessageReply) {
 			// no-op. already cached both replies.
 		}
 	} else {
+		e.server.log.Debug("BUG: received an unknown EnvelopeHash from a replica reply")
 		e.dedupCache[*reply.EnvelopeHash] = &CourierBookKeeping{
 			Epoch: e.server.PKI.PKIDocument().Epoch,
 			EnvelopeReplies: [2]*commands.ReplicaMessageReply{
@@ -111,8 +112,6 @@ func (e *Courier) CacheReply(reply *commands.ReplicaMessageReply) {
 func (e *Courier) handleNewMessage(isRead bool, envHash *[hash.HashSize]byte, courierMessage *common.CourierEnvelope) []byte {
 	replicas := make([]*commands.ReplicaMessage, 2)
 
-	// replica 1
-	e.server.log.Debug("---------- OnCommand: proxying to replica1")
 	firstReplicaID := courierMessage.IntermediateReplicas[0]
 	replicas[0] = &commands.ReplicaMessage{
 		Cmds:   e.cmds,
@@ -125,8 +124,6 @@ func (e *Courier) handleNewMessage(isRead bool, envHash *[hash.HashSize]byte, co
 	}
 	e.server.SendMessage(firstReplicaID, replicas[0])
 
-	// replica 2
-	e.server.log.Debug("---------- OnCommand: proxying to replica2")
 	secondReplicaID := courierMessage.IntermediateReplicas[1]
 	replicas[1] = &commands.ReplicaMessage{
 		Cmds:   e.cmds,
@@ -170,21 +167,17 @@ func (e *Courier) handleOldMessage(cacheEntry *CourierBookKeeping, envHash *[has
 }
 
 func (e *Courier) OnCommand(cmd cborplugin.Command) error {
-
-	// NOTE(David): storage replica read replies needs to go into the dedup cache
-
-	e.server.log.Debug("---------- OnCommand BEGIN")
 	var request *cborplugin.Request
 	switch r := cmd.(type) {
 	case *cborplugin.Request:
 		request = r
 	default:
-		return errors.New("---------- courier-plugin: Invalid Command type")
+		return errors.New("Bug in courier-plugin: received invalid Command type")
 	}
 
 	courierMessage, err := common.CourierEnvelopeFromBytes(request.Payload)
 	if err != nil {
-		e.server.log.Debugf("---------- CBOR DECODE FAIL: %s", err)
+		e.server.log.Debugf("Bug, failed to decode CBOR blob: %s", err)
 		return err
 	}
 	envHash := courierMessage.EnvelopeHash()
@@ -193,6 +186,7 @@ func (e *Courier) OnCommand(cmd cborplugin.Command) error {
 	e.dedupCacheLock.RLock()
 	cacheEntry, ok := e.dedupCache[*envHash]
 	e.dedupCacheLock.RUnlock()
+
 	if ok {
 		replyPayload = e.handleOldMessage(cacheEntry, envHash, courierMessage)
 	} else {
@@ -204,8 +198,6 @@ func (e *Courier) OnCommand(cmd cborplugin.Command) error {
 		e.dedupCacheLock.Unlock()
 		replyPayload = e.handleNewMessage(courierMessage.IsRead, envHash, courierMessage)
 	}
-
-	e.server.log.Debug("---------- OnCommand END... sending reply")
 
 	go func() {
 		// send reply
