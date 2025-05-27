@@ -338,3 +338,12 @@ func (p *PKIWorker) AuthenticateReplicaConnection(c *wire.PeerCredentials) (*pki
 	}
 	return replicaDesc, true
 }
+
+// SetDocumentForEpoch sets a PKI document for a specific epoch; for testing only.
+func (p *PKIWorker) SetDocumentForEpoch(epoch uint64, doc *pki.Document, rawDoc []byte) {
+	p.lock.Lock()
+	defer p.lock.Unlock()
+	p.docs[epoch] = doc
+	p.rawDocs[epoch] = rawDoc
+	p.replicas.UpdateFromPKIDoc(doc)
+}

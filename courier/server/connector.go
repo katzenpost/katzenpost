@@ -130,10 +130,7 @@ func (co *Connector) worker() {
 }
 
 func (co *Connector) spawnNewConns() {
-	co.log.Debug("START spawnNewConns")
-	newPeerMap := co.server.PKI.ReplicasCopy()
-
-	co.log.Debugf("spawnNewConns newPeerMap len %d", len(newPeerMap))
+	newPeerMap := co.server.PKI.replicas.Copy()
 
 	// Traverse the connection table, to figure out which peers are actually
 	// new.  Each outgoingConn object is responsible for determining when
@@ -166,19 +163,25 @@ func (co *Connector) CloseAllCh() chan interface{} {
 }
 
 func (co *Connector) onNewConn(c *outgoingConn) {
+	co.Lock()
+	defer co.Unlock()
+	co.onNewConnLocked(c)
+}
+
+func (co *Connector) onNewConnLocked(c *outgoingConn) {
 	nodeID := hash.Sum256(c.dst.IdentityKey)
 
-	co.closeAllWg.Add(1)
-	co.Lock()
-	defer func() {
-		co.Unlock()
-		c.Go(c.worker)
-	}()
 	if _, ok := co.conns[nodeID]; ok {
-		// This should NEVER happen.  Not sure what the sensible thing to do is.
-		co.log.Warningf("Connection to peer: '%v' already exists.", utils.NodeIDToPrintString(&nodeID))
+		// Connection already exists, don't create a duplicate
+		co.log.Debugf("Connection to peer: '%v' already exists, reusing existing connection.", utils.NodeIDToPrintString(&nodeID))
+		// Don't start the new connection worker or add to wait group
+		return
 	}
+
+	// Only add to wait group and start worker if this is a truly new connection
+	co.closeAllWg.Add(1)
 	co.conns[nodeID] = c
+	c.Go(c.worker)
 }
 
 func (co *Connector) OnClosedConn(c *outgoingConn) {
