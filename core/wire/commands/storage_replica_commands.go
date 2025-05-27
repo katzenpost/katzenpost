@@ -214,18 +214,26 @@ type ReplicaMessageReply struct {
 	// ReplicaID identifies the replica replying.
 	ReplicaID uint8
 
+	// IsRead indicates whether the request was a read operation.
+	IsRead bool
+
 	// EnvelopeReply contains the mkem ciphertext reply.
 	EnvelopeReply []byte
 }
 
 func (c *ReplicaMessageReply) ToBytes() []byte {
-	out := make([]byte, cmdOverhead, cmdOverhead+1+32+1+len(c.EnvelopeReply))
+	out := make([]byte, cmdOverhead, cmdOverhead+1+32+1+1+len(c.EnvelopeReply))
 	out[0] = byte(replicaMessageReply)
-	binary.BigEndian.PutUint32(out[2:6], uint32(1+32+1+len(c.EnvelopeReply)))
+	binary.BigEndian.PutUint32(out[2:6], uint32(1+32+1+1+len(c.EnvelopeReply)))
 
 	out = append(out, c.ErrorCode)
 	out = append(out, c.EnvelopeHash[:]...)
 	out = append(out, c.ReplicaID)
+	if c.IsRead {
+		out = append(out, 1)
+	} else {
+		out = append(out, 0)
+	}
 	out = append(out, c.EnvelopeReply...)
 
 	// optional traffic padding
@@ -244,13 +252,14 @@ func replicaMessageReplyFromBytes(b []byte, cmds *Commands) (Command, error) {
 	copy(r.EnvelopeHash[:], b[1:1+32])
 
 	r.ReplicaID = b[1+32]
+	r.IsRead = b[1+32+1] == 1
 
-	r.EnvelopeReply = make([]byte, len(b[1+32+1:]))
-	copy(r.EnvelopeReply, b[1+32+1:])
+	r.EnvelopeReply = make([]byte, len(b[1+32+1+1:]))
+	copy(r.EnvelopeReply, b[1+32+1+1:])
 
 	return r, nil
 }
 
 func (c *ReplicaMessageReply) Length() int {
-	return cmdOverhead + 1 + 32 + 1 + len(c.EnvelopeReply)
+	return cmdOverhead + 1 + 32 + 1 + 1 + len(c.EnvelopeReply)
 }
