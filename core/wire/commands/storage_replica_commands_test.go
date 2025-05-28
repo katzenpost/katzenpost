@@ -80,7 +80,7 @@ func TestReplicaMessageReplyWithPadding(t *testing.T) {
 	require.Equal(t, reply1.ErrorCode, reply2.ErrorCode)
 	require.Equal(t, reply1.EnvelopeHash[:], reply2.EnvelopeHash[:])
 	require.Equal(t, reply1.ReplicaID, reply2.ReplicaID)
-	require.Equal(t, payload, reply2.EnvelopeReply)
+	require.Equal(t, reply1.EnvelopeReply, reply2.EnvelopeReply)
 	require.Equal(t, reply1.IsRead, reply2.IsRead)
 
 	t.Logf("envelope reply: %x", reply2.EnvelopeReply)
