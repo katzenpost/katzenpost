@@ -269,51 +269,13 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 	conn.SetDeadline(time.Time{})
 	c.retryDelay = 0 // Reset the retry delay on successful handshakes.
 
-	// Since outgoing connections have no reverse traffic, read from the
-	// reverse path to detect that the connection has been closed.
-	//
-	// Incoming connections do not need similar treatment by virtue of
-	// the fact that they are constantly reading.
-	peerClosedCh := make(chan interface{})
-	go func() {
-		var oneByte [1]byte
-		if n, err := conn.Read(oneByte[:]); n != 0 || err == nil {
-			// This should *NEVER* happen past the handshake,
-			// and is an invariant violation that will force close
-			// the connection.
-			c.log.Warningf("Peer sent reverse traffic.")
-		}
-		close(peerClosedCh)
-	}()
-
-	cmdCh := make(chan commands.Command)
-	cmdCloseCh := make(chan error)
-	defer close(cmdCh)
-	go func() {
-		defer close(cmdCloseCh)
-		for {
-			cmd, ok := <-cmdCh
-			if !ok {
-				return
-			}
-			if err := w.SendCommand(cmd); err != nil {
-				c.log.Debugf("SendCommand failed: %v", err)
-				return
-			}
-		}
-	}()
-
 	// Start the reauthenticate ticker.
 	reauthMs := time.Duration(c.co.Server().cfg.ReauthInterval) * time.Millisecond
 	reauth := time.NewTicker(reauthMs)
 	defer reauth.Stop()
 
 	for {
-		var cmd commands.Command
 		select {
-		case <-peerClosedCh:
-			c.log.Debugf("Connection closed by peer.")
-			return
 		case <-closeCh:
 			wasHalted = true
 			return
@@ -322,29 +284,39 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 			// and re-authenticate to handle the PKI document(s) changing.
 			creds, err := w.PeerCredentials()
 			if err != nil {
-				c.log.Debugf("Session fail: %s", err)
+				c.log.Debugf("replica outgoingConn: Session fail: %s", err)
 				return
 			}
 			if !c.IsPeerValid(creds) {
-				c.log.Debugf("Disconnecting, peer reauthenticate failed.")
+				c.log.Debugf("replica outgoingConn: Disconnecting, peer reauthenticate failed.")
 				return
 			}
 			continue
-		case cmd = <-c.ch:
-		}
+		case cmd := <-c.ch:
+			if err := w.SendCommand(cmd); err != nil {
+				c.log.Debugf("SendCommand failed: %v", err)
+				return
+			}
 
-		// Use a go routine to actually send commands to the peer so that
-		// cancelation can happen, even when mid SendCommand().
-		select {
-		case <-closeCh:
-			// Halted while trying to send a command to the remote peer.
-			wasHalted = true
-			return
-		case <-cmdCloseCh:
-			// Something blew up when sending the command to the remote peer.
-			return
-		case cmdCh <- cmd:
-			// Pass the command onto the worker that actually handles writing.
+			response, err := w.RecvCommand()
+			if err != nil {
+				c.log.Debugf("Failed to receive command: %v", err)
+				return
+			}
+			switch responseCmd := response.(type) {
+			case *commands.NoOp:
+				c.log.Debugf("replica outgoingConn: Received NoOp.")
+			case *commands.Disconnect:
+				c.log.Debugf("replica outgoingConn: Received Disconnect from peer.")
+				return
+			case *commands.ReplicaWriteReply:
+				c.log.Debugf("replica outgoingConn: Received ReplicaWriteReply error code: %d", responseCmd.ErrorCode)
+			case *commands.ReplicaMessageReply:
+				c.log.Debugf("replica outgoingConn: Received ReplicaMessageReply error code: %d", responseCmd.ErrorCode)
+			default:
+				c.log.Errorf("replica outgoingConn: BUG, Received unexpected command from replica peer: %s", responseCmd)
+				return
+			}
 		}
 	}
 }
