@@ -34,12 +34,15 @@ func TestEnvelopeUnmarshaling(t *testing.T) {
 		IntermediateReplicas: [2]uint8{1, 2},
 		DEK:                  [2]*[mkem.DEKSize]byte{ciphertext.DEKCiphertexts[0], ciphertext.DEKCiphertexts[1]},
 		Ciphertext:           ciphertext.Envelope,
+		IsRead:               true,
 	}
 
 	cborBlob1 := envelope.Bytes()
 
-	_, err = CourierEnvelopeFromBytes(cborBlob1)
+	msg1, err := CourierEnvelopeFromBytes(cborBlob1)
 	require.NoError(t, err)
+
+	require.Equal(t, msg1.IsRead, envelope.IsRead)
 
 	zeros := make([]byte, 64)
 	cborBlob2 := append(cborBlob1, zeros...)
