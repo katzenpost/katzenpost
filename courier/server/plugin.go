@@ -189,6 +189,12 @@ func (e *Courier) handleOldMessage(cacheEntry *CourierBookKeeping, envHash *[has
 		ErrorCode:    0,
 	}
 
+	// Check if cacheEntry is nil before accessing its fields
+	if cacheEntry == nil {
+		e.log.Debugf("Cache entry is nil, no replies available")
+		return reply.Bytes()
+	}
+
 	// Log cache state
 	reply0Available := cacheEntry.EnvelopeReplies[0] != nil
 	reply1Available := cacheEntry.EnvelopeReplies[1] != nil
@@ -197,15 +203,12 @@ func (e *Courier) handleOldMessage(cacheEntry *CourierBookKeeping, envHash *[has
 	if cacheEntry.EnvelopeReplies[courierMessage.ReplyIndex] != nil {
 		e.log.Debugf("Found reply at requested index %d", courierMessage.ReplyIndex)
 		reply.Payload = cacheEntry.EnvelopeReplies[courierMessage.ReplyIndex].EnvelopeReply
-	} else {
+	} else if cacheEntry.EnvelopeReplies[courierMessage.ReplyIndex^1] != nil {
 		e.log.Debugf("No reply at requested index %d, checking alternate index %d", courierMessage.ReplyIndex, courierMessage.ReplyIndex^1)
-		if cacheEntry.EnvelopeReplies[courierMessage.ReplyIndex^1] != nil {
-			e.log.Debugf("Found reply at alternate index %d", courierMessage.ReplyIndex^1)
-			reply.Payload = cacheEntry.EnvelopeReplies[courierMessage.ReplyIndex^1].EnvelopeReply
-			reply.ReplyIndex = courierMessage.ReplyIndex ^ 1
-		} else {
-			e.log.Debugf("No replies available in cache")
-		}
+		reply.Payload = cacheEntry.EnvelopeReplies[courierMessage.ReplyIndex^1].EnvelopeReply
+		reply.ReplyIndex = courierMessage.ReplyIndex ^ 1
+	} else {
+		e.log.Debugf("No replies available in cache")
 	}
 
 	e.log.Debugf("handleOldMessage returning payload length: %d", len(reply.Payload))
