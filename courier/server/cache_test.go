@@ -42,6 +42,7 @@ func TestCourierCacheBasicOperations(t *testing.T) {
 		ReplicaID:     0,
 		ErrorCode:     0,
 		EnvelopeReply: []byte("test-reply-payload"),
+		IsRead:        true, // Set IsRead to true so it will be cached
 	}
 
 	// Test CacheReply - first reply
@@ -73,6 +74,7 @@ func TestCourierCacheDualReplies(t *testing.T) {
 		ReplicaID:     0,
 		ErrorCode:     0,
 		EnvelopeReply: []byte("reply-from-replica-0"),
+		IsRead:        true, // Set IsRead to true so it will be cached
 	}
 
 	// Create second replica reply
@@ -81,6 +83,7 @@ func TestCourierCacheDualReplies(t *testing.T) {
 		ReplicaID:     1,
 		ErrorCode:     0,
 		EnvelopeReply: []byte("reply-from-replica-1"),
+		IsRead:        true, // Set IsRead to true so it will be cached
 	}
 
 	// Cache first reply
@@ -88,9 +91,10 @@ func TestCourierCacheDualReplies(t *testing.T) {
 
 	// Verify first reply is cached
 	courier.dedupCacheLock.RLock()
-	entry := courier.dedupCache[envHash]
+	entry, exists := courier.dedupCache[envHash]
 	courier.dedupCacheLock.RUnlock()
 
+	require.True(t, exists, "Cache entry should exist")
 	require.Equal(t, reply1, entry.EnvelopeReplies[0], "First reply should be stored in slot 0")
 	require.Nil(t, entry.EnvelopeReplies[1], "Second slot should be empty")
 
@@ -119,6 +123,7 @@ func TestCourierCacheOverflow(t *testing.T) {
 		ReplicaID:     0,
 		ErrorCode:     0,
 		EnvelopeReply: []byte("reply-1"),
+		IsRead:        true, // Add this flag to ensure replies are cached
 	}
 
 	reply2 := &commands.ReplicaMessageReply{
@@ -126,6 +131,7 @@ func TestCourierCacheOverflow(t *testing.T) {
 		ReplicaID:     1,
 		ErrorCode:     0,
 		EnvelopeReply: []byte("reply-2"),
+		IsRead:        true, // Add this flag to ensure replies are cached
 	}
 
 	reply3 := &commands.ReplicaMessageReply{
@@ -133,6 +139,7 @@ func TestCourierCacheOverflow(t *testing.T) {
 		ReplicaID:     0,
 		ErrorCode:     0,
 		EnvelopeReply: []byte("reply-3-should-be-ignored"),
+		IsRead:        true, // Add this flag to ensure replies are cached
 	}
 
 	// Cache all three replies
@@ -163,6 +170,7 @@ func TestCourierCacheHandleOldMessage(t *testing.T) {
 		ReplicaID:     0,
 		ErrorCode:     0,
 		EnvelopeReply: []byte("cached-reply-0"),
+		IsRead:        true, // Add this flag to ensure replies are cached
 	}
 
 	reply2 := &commands.ReplicaMessageReply{
@@ -170,6 +178,7 @@ func TestCourierCacheHandleOldMessage(t *testing.T) {
 		ReplicaID:     1,
 		ErrorCode:     0,
 		EnvelopeReply: []byte("cached-reply-1"),
+		IsRead:        true, // Add this flag to ensure replies are cached
 	}
 
 	// Cache both replies
@@ -359,6 +368,7 @@ func TestCourierCacheConcurrentAccess(t *testing.T) {
 			ReplicaID:     uint8(i % 2), // Alternate between replica 0 and 1
 			ErrorCode:     0,
 			EnvelopeReply: []byte("concurrent-reply"),
+			IsRead:        true, // Add this flag to ensure replies are cached
 		}
 	}
 
@@ -412,6 +422,7 @@ func TestCourierCacheMultipleEnvelopes(t *testing.T) {
 			ReplicaID:     uint8(i % 2),
 			ErrorCode:     0,
 			EnvelopeReply: []byte("reply-for-envelope-" + string(rune('A'+i))),
+			IsRead:        true, // Add this flag to ensure replies are cached
 		}
 		courier.CacheReply(reply)
 	}
@@ -472,6 +483,7 @@ func TestCourierCacheEpochTracking(t *testing.T) {
 		ReplicaID:     0,
 		ErrorCode:     0,
 		EnvelopeReply: []byte("test-reply"),
+		IsRead:        true, // Add this flag to ensure the reply is cached
 	}
 
 	courier.CacheReply(reply)
@@ -497,6 +509,7 @@ func TestCourierCacheErrorReplies(t *testing.T) {
 		ReplicaID:     0,
 		ErrorCode:     1, // Error code
 		EnvelopeReply: []byte("error-occurred"),
+		IsRead:        true, // Add this flag to ensure the reply is cached
 	}
 
 	courier.CacheReply(errorReply)
