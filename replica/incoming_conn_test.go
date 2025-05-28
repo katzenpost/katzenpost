@@ -200,16 +200,33 @@ func TestIncomingConn(t *testing.T) {
 	})
 	require.NotNil(t, reply2)
 
+	// Generate valid cryptographic material for the ReplicaMessage
+	senderEPubKey := make([]byte, commands.HybridKeySize(replicaScheme))
+	_, err = rand.Reader.Read(senderEPubKey)
+	require.NoError(t, err)
+
+	dek := &[mkem.DEKSize]byte{}
+	_, err = rand.Reader.Read(dek[:])
+	require.NoError(t, err)
+
+	ciphertext := make([]byte, 1000)
+	_, err = rand.Reader.Read(ciphertext)
+	require.NoError(t, err)
+
 	replicaMessage := &commands.ReplicaMessage{
 		Cmds: commands.NewStorageReplicaCommands(geometry, replicaScheme),
 		Geo:  geometry,
 
-		SenderEPubKey: make([]byte, commands.HybridKeySize(replicaScheme)),
-		DEK:           &[mkem.DEKSize]byte{},
-		Ciphertext:    make([]byte, 1000),
+		SenderEPubKey: senderEPubKey,
+		DEK:           dek,
+		Ciphertext:    ciphertext,
 	}
 	reply3 := inConn.handleReplicaMessage(replicaMessage)
-	require.Nil(t, reply3)
+	require.NotNil(t, reply3)
+	// Expect an error reply since we're using invalid cryptographic material
+	replicaReply3, ok := reply3.(*commands.ReplicaMessageReply)
+	require.True(t, ok)
+	require.NotEqual(t, uint8(0), replicaReply3.ErrorCode)
 
 	// 30 seconds is too slow
 	//inConn.Close()

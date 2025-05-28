@@ -132,6 +132,7 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 			EnvelopeHash:  envelopeHash,
 			EnvelopeReply: envelopeReply.Envelope,
 			ReplicaID:     replicaID,
+			IsRead:        true,
 		}
 	case msg.ReplicaWrite != nil:
 		myCmd := msg.ReplicaWrite
@@ -149,6 +150,7 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 			EnvelopeHash:  envelopeHash,
 			EnvelopeReply: envelopeReply.Envelope,
 			ReplicaID:     replicaID,
+			IsRead:        false,
 		}
 	default:
 		c.log.Error("BUG: handleReplicaMessage failed: invalid request was decrypted")

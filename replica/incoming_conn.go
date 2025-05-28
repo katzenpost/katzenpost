@@ -188,15 +188,21 @@ func (c *incomingConn) worker() {
 		// Handle all of the storage replica commands.
 		resp, allGood := c.onReplicaCommand(rawCmd)
 		if !allGood {
+			c.log.Debugf("Failed to handle replica command: %v", rawCmd)
 			// Catastrophic failure in command processing, or a disconnect.
 			return
 		}
 
 		// Send the response, if any.
 		if resp != nil {
+			c.log.Debugf("Sending response: %T", resp)
 			if err = c.w.SendCommand(resp); err != nil {
 				c.log.Debugf("Peer %v: Failed to send response: %v", hash.Sum256(blob), err)
+			} else {
+				c.log.Debugf("Successfully sent response: %T", resp)
 			}
+		} else {
+			c.log.Debugf("No response to send (resp is nil)")
 		}
 	}
 
