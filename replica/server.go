@@ -167,7 +167,12 @@ func New(cfg *config.Config) (*Server, error) {
 
 // NewWithPKI returns a new Server instance with a custom PKI implementation.
 // If pkiFactory is nil, the default PKI worker is used.
-func NewWithPKI(cfg *config.Config, pkiFactory func(*Server) PKI) (*Server, error) {
+func NewWithPKI(cfg *config.Config, pkiClient pki.Client) (*Server, error) {
+	return newServerWithPKI(cfg, pkiClient)
+}
+
+// newServerWithPKI is the internal implementation that supports both PKI factory and PKI client
+func newServerWithPKI(cfg *config.Config, pkiClient pki.Client) (*Server, error) {
 	s := new(Server)
 	s.cfg = cfg
 
@@ -303,7 +308,14 @@ func NewWithPKI(cfg *config.Config, pkiFactory func(*Server) PKI) (*Server, erro
 
 	// Start the PKI worker.
 	s.log.Notice("start PKI worker")
-	pkiWorker, err := newPKIWorker(s, s.logBackend.GetLogger("pkiWorker"))
+	var pkiWorker *PKIWorker
+	if pkiClient != nil {
+		// Use the provided PKI client for testing
+		pkiWorker, err = newPKIWorkerWithClient(s, pkiClient, s.logBackend.GetLogger("pkiWorker"))
+	} else {
+		// Use the default PKI worker
+		pkiWorker, err = newPKIWorker(s, s.logBackend.GetLogger("pkiWorker"))
+	}
 	if err != nil {
 		panic(err)
 	}

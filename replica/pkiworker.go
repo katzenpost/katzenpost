@@ -4,7 +4,6 @@
 package replica
 
 import (
-	"context"
 	"crypto/hmac"
 	"errors"
 	"net/url"
@@ -27,13 +26,6 @@ import (
 	"github.com/katzenpost/katzenpost/replica/common"
 )
 
-// PKIDocumentProvider interface for fetching PKI documents
-// This allows separation of document fetching from authentication logic
-type PKIDocumentProvider interface {
-	// Get returns the PKI document along with the raw serialized form for the provided epoch
-	Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, error)
-}
-
 const PKIDocNum = 3
 
 var (
@@ -52,8 +44,7 @@ type PKIWorker struct {
 
 	replicas *common.ReplicaMap
 
-	impl        pki.Client
-	docProvider PKIDocumentProvider // Injected document provider for testing
+	impl pki.Client // PKI client for document fetching and publishing
 
 	lock                      *sync.RWMutex
 	descAddrMap               map[string][]string
@@ -65,13 +56,30 @@ type PKIWorker struct {
 	lastPublishedReplicaEpoch uint64
 }
 
+// newPKIWorker creates a PKIWorker with the default voting client
 func newPKIWorker(server *Server, log *logging.Logger) (*PKIWorker, error) {
-	return newPKIWorkerWithDocumentProvider(server, log, nil)
+	kemscheme := schemes.ByName(server.cfg.WireKEMScheme)
+	if kemscheme == nil {
+		return nil, errors.New("kem scheme not found in registry")
+	}
+	pkiCfg := &vClient.Config{
+		KEMScheme:   kemscheme,
+		LinkKey:     server.linkKey,
+		LogBackend:  server.LogBackend(),
+		Authorities: server.cfg.PKI.Voting.Authorities,
+		Geo:         server.cfg.SphinxGeometry,
+	}
+
+	pkiClient, err := vClient.New(pkiCfg)
+	if err != nil {
+		return nil, err
+	}
+
+	return newPKIWorkerWithClient(server, pkiClient, log)
 }
 
-// newPKIWorkerWithDocumentProvider creates a PKIWorker with an optional document provider
-// If docProvider is nil, uses the real PKI client for document fetching
-func newPKIWorkerWithDocumentProvider(server *Server, log *logging.Logger, docProvider PKIDocumentProvider) (*PKIWorker, error) {
+// newPKIWorkerWithClient creates a PKIWorker with a custom pki.Client for testing
+func newPKIWorkerWithClient(server *Server, pkiClient pki.Client, log *logging.Logger) (*PKIWorker, error) {
 	p := &PKIWorker{
 		server:        server,
 		log:           log,
@@ -81,7 +89,7 @@ func newPKIWorkerWithDocumentProvider(server *Server, log *logging.Logger, docPr
 		docs:          make(map[uint64]*pki.Document),
 		rawDocs:       make(map[uint64][]byte),
 		failedFetches: make(map[uint64]error),
-		docProvider:   docProvider,
+		impl:          pkiClient,
 	}
 
 	for _, v := range server.cfg.Addresses {
@@ -94,32 +102,6 @@ func newPKIWorkerWithDocumentProvider(server *Server, log *logging.Logger, docPr
 		} else {
 			p.descAddrMap[u.Scheme] = []string{v}
 		}
-	}
-
-	// Only create real PKI client if no document provider is injected
-	if docProvider == nil {
-		kemscheme := schemes.ByName(server.cfg.WireKEMScheme)
-		if kemscheme == nil {
-			return nil, errors.New("kem scheme not found in registry")
-		}
-		pkiCfg := &vClient.Config{
-			KEMScheme:   kemscheme,
-			LinkKey:     server.linkKey,
-			LogBackend:  server.LogBackend(),
-			Authorities: server.cfg.PKI.Voting.Authorities,
-			Geo:         server.cfg.SphinxGeometry,
-		}
-		var err error
-		p.impl, err = vClient.New(pkiCfg)
-		if err != nil {
-			return nil, err
-		}
-		// Use the real PKI client as the document provider
-		p.docProvider = p.impl
-	} else {
-		// For mock document provider, we don't have a real PKI client
-		// Set impl to nil to prevent publishing attempts
-		p.impl = nil
 	}
 
 	p.Go(p.worker)
