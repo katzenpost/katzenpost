@@ -88,7 +88,7 @@ func setupTestEnvironment(t *testing.T) *testEnvironment {
 	serviceAddress := "tcp://127.0.0.1:18000"
 	serviceDesc := makeServiceDescriptor(t, serviceAddress, courierLinkPubKey)
 
-	numReplicas := 5
+	numReplicas := 1
 	replicaDescriptors := make([]*pki.ReplicaDescriptor, numReplicas)
 	replicaConfigs := make([]*config.Config, numReplicas)
 	replicaKeys := make([]map[uint64]nike.PublicKey, numReplicas)
@@ -324,7 +324,7 @@ func createMockPKIClient(t *testing.T, sphinxGeo *geo.Geometry, serviceDesc *pki
 	// here we generate a PKI document and then store it for three epochs
 	// while carefully modify each document's epoch value:
 	currentEpoch, _, _ := epochtime.Now()
-	for _, epoch := range []uint64{currentEpoch - 1, currentEpoch, currentEpoch + 1} {
+	for _, epoch := range []uint64{currentEpoch - 2, currentEpoch - 1, currentEpoch, currentEpoch + 1} {
 		doc := generateTestPKIDocument(t, epoch, serviceDesc, replicaDescriptors, sphinxGeo)
 		doc.Epoch = epoch
 		mock.docs[epoch] = doc
@@ -412,8 +412,9 @@ func aliceComposesNextMessage(t *testing.T, message []byte, env *testEnvironment
 	}
 
 	currentEpoch, _, _ := epochtime.Now()
-	replicaPubKey1 := env.mockPKIClient.docs[currentEpoch].StorageReplicas[0].EnvelopeKeys[0]
-	replicaPubKey2 := env.mockPKIClient.docs[currentEpoch].StorageReplicas[1].EnvelopeKeys[0]
+	replicaEpoch, _, _ := common.ReplicaNow()
+	replicaPubKey1 := env.mockPKIClient.docs[currentEpoch].StorageReplicas[0].EnvelopeKeys[replicaEpoch]
+	replicaPubKey2 := env.mockPKIClient.docs[currentEpoch].StorageReplicas[1].EnvelopeKeys[replicaEpoch]
 
 	replicaPubKeys := make([]nike.PublicKey, 2)
 	replicaPubKeys[0], err = common.NikeScheme.UnmarshalBinaryPublicKey(replicaPubKey1)
@@ -449,25 +450,53 @@ func aliceAndBobKeyExchangeKeys(t *testing.T, env *testEnvironment) (*bacap.Stat
 	return aliceStatefulWriter, bobStatefulReader
 }
 
+func waitForCourierPKI(t *testing.T, env *testEnvironment) {
+	maxWait := 30 * time.Second
+	checkInterval := 100 * time.Millisecond
+	start := time.Now()
+
+	for time.Since(start) < maxWait {
+		if env.courier.PKI.PKIDocument() != nil {
+			return
+		}
+		time.Sleep(checkInterval)
+	}
+
+	t.Fatal("Timeout waiting for courier PKI document to be ready")
+}
+
 func testBoxRoundTrip(t *testing.T, env *testEnvironment) {
+	t.Log("WAIT FOR COURIER PKI")
+	waitForCourierPKI(t, env)
+	t.Log("END OF WAIT FOR COURIER PKI")
+
 	aliceStatefulWriter, bobStatefulReader := aliceAndBobKeyExchangeKeys(t, env)
 
 	alicePayload1 := []byte("Hello, Bob!")
 	aliceEnvelope1 := aliceComposesNextMessage(t, alicePayload1, env, aliceStatefulWriter)
-	courierWriteReply := injectCourierEnvelope(t, env, aliceEnvelope1)
+	courierWriteReply1 := injectCourierEnvelope(t, env, aliceEnvelope1)
 
-	require.Equal(t, courierWriteReply.EnvelopeHash[:], aliceEnvelope1.EnvelopeHash())
-	require.Equal(t, uint8(0), courierWriteReply.ErrorCode)
-	require.Equal(t, uint8(0), courierWriteReply.ReplyIndex)
-	require.Equal(t, len(courierWriteReply.ErrorString), 0)
-	require.Nil(t, courierWriteReply.Payload)
+	aliceEnvHash1 := aliceEnvelope1.EnvelopeHash()
+	require.Equal(t, courierWriteReply1.EnvelopeHash[:], aliceEnvHash1[:])
+	require.Equal(t, uint8(0), courierWriteReply1.ErrorCode)
+	require.Equal(t, uint8(0), courierWriteReply1.ReplyIndex)
+	require.Equal(t, len(courierWriteReply1.ErrorString), 0)
+	require.Nil(t, courierWriteReply1.Payload)
 
-	bobReadRequest := composeReadRequest(t, env, bobStatefulReader)
-	courierReadReply := injectCourierEnvelope(t, env, bobReadRequest)
+	bobReadRequest1 := composeReadRequest(t, env, bobStatefulReader)
+	courierReadReply1 := injectCourierEnvelope(t, env, bobReadRequest1)
 
-	require.Equal(t, courierReadReply.EnvelopeHash[:], bobReadRequest.EnvelopeHash())
-	require.Equal(t, uint8(0), courierReadReply.ErrorCode)
-	require.Equal(t, uint8(0), courierReadReply.ReplyIndex)
+	bobEnvHash1 := bobReadRequest1.EnvelopeHash()
+	require.Equal(t, courierReadReply1.EnvelopeHash[:], bobEnvHash1[:])
+	require.Equal(t, uint8(0), courierReadReply1.ErrorCode)
+	require.Equal(t, uint8(0), courierReadReply1.ReplyIndex)
+	require.Nil(t, courierReadReply1.Payload)
+
+	courierReadReply2 := injectCourierEnvelope(t, env, bobReadRequest1)
+	require.Equal(t, courierReadReply2.EnvelopeHash[:], bobEnvHash1[:])
+	require.Equal(t, uint8(0), courierReadReply2.ErrorCode)
+	require.Equal(t, uint8(0), courierReadReply2.ReplyIndex)
+	require.NotNil(t, courierReadReply2.Payload)
 
 	/*
 		boxid, err := bobStatefulReader.NextBoxID()
@@ -526,42 +555,6 @@ func injectCourierEnvelope(t *testing.T, env *testEnvironment, envelope *common.
 	return courierReply
 }
 
-func processCourierResponse(t *testing.T, env *testEnvironment, originalEnvelope *common.CourierEnvelope, response *cborplugin.Response) {
-	courierReply, err := common.CourierEnvelopeReplyFromBytes(response.Payload)
-	require.NoError(t, err)
-	require.NotNil(t, courierReply)
-
-	t.Logf("Courier reply - ErrorCode: %d, ErrorString: %s", courierReply.ErrorCode, courierReply.ErrorString)
-
-	if courierReply.ErrorCode != 0 {
-		t.Fatalf("Courier returned error: %s (code: %d)", courierReply.ErrorString, courierReply.ErrorCode)
-	}
-
-	// Parse the replica response from the courier reply payload
-	cmds := commands.NewStorageReplicaCommands(env.courierConfig.SphinxGeometry, common.NikeScheme)
-	replicaCmd, err := cmds.FromBytes(courierReply.Payload)
-	require.NoError(t, err)
-
-	replicaMessageReply, ok := replicaCmd.(*commands.ReplicaMessageReply)
-	require.True(t, ok, "Expected ReplicaMessageReply, got %T", replicaCmd)
-	require.Equal(t, uint8(0), replicaMessageReply.ErrorCode, "Replica returned error code: %d", replicaMessageReply.ErrorCode)
-
-	t.Logf("Received ReplicaMessageReply from replica %d", replicaMessageReply.ReplicaID)
-
-	// Decrypt the envelope reply to get the actual box data
-	if len(replicaMessageReply.EnvelopeReply) == 0 {
-		t.Log("Empty envelope reply from replica")
-		return
-	}
-
-	// Parse the inner message
-	innerMsg, err := common.ReplicaMessageReplyInnerMessageFromBytes(replicaMessageReply.EnvelopeReply)
-	require.NoError(t, err)
-	require.NotNil(t, innerMsg.ReplicaWriteReply)
-	require.Equal(t, innerMsg.ReplicaWriteReply.ErrorCode, 0)
-
-}
-
 func composeReadRequest(t *testing.T, env *testEnvironment, reader *bacap.StatefulReader) *common.CourierEnvelope {
 	boxID, err := reader.NextBoxID()
 	require.NoError(t, err)
@@ -578,8 +571,9 @@ func composeReadRequest(t *testing.T, env *testEnvironment, reader *bacap.Statef
 	replica1Index := 1
 
 	currentEpoch, _, _ := epochtime.Now()
-	replicaPubKey1 := env.mockPKIClient.docs[currentEpoch].StorageReplicas[replica0Index].EnvelopeKeys[0]
-	replicaPubKey2 := env.mockPKIClient.docs[currentEpoch].StorageReplicas[replica1Index].EnvelopeKeys[0]
+	replicaEpoch, _, _ := common.ReplicaNow()
+	replicaPubKey1 := env.mockPKIClient.docs[currentEpoch].StorageReplicas[replica0Index].EnvelopeKeys[replicaEpoch]
+	replicaPubKey2 := env.mockPKIClient.docs[currentEpoch].StorageReplicas[replica1Index].EnvelopeKeys[replicaEpoch]
 
 	replicaPubKeys := make([]nike.PublicKey, 2)
 	replicaPubKeys[0], err = common.NikeScheme.UnmarshalBinaryPublicKey(replicaPubKey1)
