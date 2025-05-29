@@ -24,7 +24,6 @@ import (
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/utils"
-	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"github.com/katzenpost/katzenpost/replica/common"
 	"github.com/katzenpost/katzenpost/replica/config"
@@ -48,14 +47,6 @@ type GenericConnector interface {
 	ForceUpdate()
 	DispatchCommand(cmd commands.Command, idHash *[32]byte)
 	DispatchReplication(cmd *commands.ReplicaWrite)
-}
-
-type PKI interface {
-	PKIDocument() *pki.Document                                                           // Returns the PKI document
-	AuthenticateCourierConnection(c *wire.PeerCredentials) bool                           // Authenticates courier connections
-	AuthenticateReplicaConnection(c *wire.PeerCredentials) (*pki.ReplicaDescriptor, bool) // Authenticates replica connections
-	ReplicasCopy() map[[32]byte]*pki.ReplicaDescriptor                                    // Returns copy of replicas map
-	Halt()                                                                                // Stops the PKI worker
 }
 
 type Server struct {
