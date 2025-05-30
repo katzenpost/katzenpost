@@ -88,7 +88,7 @@ func setupTestEnvironment(t *testing.T) *testEnvironment {
 	serviceAddress := "tcp://127.0.0.1:18000"
 	serviceDesc := makeServiceDescriptor(t, serviceAddress, courierLinkPubKey)
 
-	numReplicas := 1
+	numReplicas := 3
 	replicaDescriptors := make([]*pki.ReplicaDescriptor, numReplicas)
 	replicaConfigs := make([]*config.Config, numReplicas)
 	replicaKeys := make([]map[uint64]nike.PublicKey, numReplicas)
@@ -262,8 +262,8 @@ func createReplicaServer(t *testing.T, cfg *config.Config, pkiClient pki.Client)
 }
 
 func makeServiceDescriptor(t *testing.T, address string, linkPubKey kem.PublicKey) *pki.MixDescriptor {
-	linkPubKeyBytes, err := linkPubKey.MarshalBinary()
-	require.NoError(t, err)
+	linkPubKeyPEM := kemPEM.ToPublicPEMString(linkPubKey)
+
 	return &pki.MixDescriptor{
 		Name:        "servicenode1",
 		IdentityKey: []byte("servicenode1_identity_key"),
@@ -278,7 +278,7 @@ func makeServiceDescriptor(t *testing.T, address string, linkPubKey kem.PublicKe
 		},
 		KaetzchenAdvertizedData: map[string]map[string]interface{}{
 			"courier": map[string]interface{}{
-				"linkPublicKey": linkPubKeyBytes,
+				"linkPublicKey": linkPubKeyPEM,
 			},
 		},
 		IsServiceNode: true,
