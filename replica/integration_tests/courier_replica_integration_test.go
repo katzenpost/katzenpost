@@ -78,15 +78,15 @@ func setupTestEnvironment(t *testing.T) *testEnvironment {
 	require.NoError(t, err)
 
 	sphinxGeo := geo.GeometryFromUserForwardPayloadLength(nikeSchemes.ByName("X25519"), 5000, true, 5)
+	pkiScheme := signSchemes.ByName("Ed25519 Sphincs+")
+	linkScheme := kemSchemes.ByName("Xwing")
 
 	courierDir := filepath.Join(tempDir, "courier")
 	require.NoError(t, os.MkdirAll(courierDir, 0700))
-	courierCfg := createCourierConfig(t, courierDir, sphinxGeo)
+	courierCfg := createCourierConfig(t, courierDir, pkiScheme, linkScheme, sphinxGeo)
 
 	_, courierLinkPubKey := generateCourierLinkKeys(t, courierDir, courierCfg.WireKEMScheme)
-
-	serviceAddress := "tcp://127.0.0.1:18000"
-	serviceDesc := makeServiceDescriptor(t, serviceAddress, courierLinkPubKey)
+	serviceDesc := makeServiceDescriptor(t, courierLinkPubKey)
 
 	numReplicas := 3
 	replicaDescriptors := make([]*pki.ReplicaDescriptor, numReplicas)
@@ -96,7 +96,7 @@ func setupTestEnvironment(t *testing.T) *testEnvironment {
 	for i := 0; i < numReplicas; i++ {
 		replicaDir := filepath.Join(tempDir, fmt.Sprintf("replica%d", i))
 		require.NoError(t, os.MkdirAll(replicaDir, 0700))
-		replicaConfigs[i] = createReplicaConfig(t, replicaDir, i, sphinxGeo)
+		replicaConfigs[i] = createReplicaConfig(t, replicaDir, pkiScheme, linkScheme, i, sphinxGeo)
 		myreplicaKeys, linkPubKey, replicaIdentityPubKey := generateReplicaKeys(t, replicaDir, replicaConfigs[i].PKISignatureScheme, replicaConfigs[i].WireKEMScheme)
 		replicaDescriptors[i] = makeReplicaDescriptor(t, i, linkPubKey, replicaIdentityPubKey, myreplicaKeys)
 		replicaKeys[i] = myreplicaKeys
@@ -139,13 +139,13 @@ func setupTestEnvironment(t *testing.T) *testEnvironment {
 // createReplicaConfig creates a configuration for a replica server.
 // the configuration will contain a PKI configuration section which
 // is synthetic and does not connect to any real directory authorities.
-func createReplicaConfig(t *testing.T, dataDir string, replicaID int, sphinxGeo *geo.Geometry) *config.Config {
+func createReplicaConfig(t *testing.T, dataDir string, pkiScheme sign.Scheme, linkScheme kem.Scheme, replicaID int, sphinxGeo *geo.Geometry) *config.Config {
 	return &config.Config{
 		DataDir:            dataDir,
 		Identifier:         fmt.Sprintf("replica%d", replicaID),
-		WireKEMScheme:      "Xwing",
-		PKISignatureScheme: "Ed25519",
-		ReplicaNIKEScheme:  "CTIDH1024-X25519",
+		WireKEMScheme:      linkScheme.Name(),
+		PKISignatureScheme: pkiScheme.Name(),
+		ReplicaNIKEScheme:  common.NikeScheme.Name(),
 		SphinxGeometry:     sphinxGeo,
 		Addresses:          []string{fmt.Sprintf("tcp://127.0.0.1:%d", 19000+replicaID)},
 		GenerateOnly:       false,
@@ -205,12 +205,12 @@ func generateReplicaKeys(t *testing.T, dataDir, pkiSignatureSchemeName, wireKEMS
 	return replicaKeys, linkPublicKey, replicaIdentityPublicKey
 }
 
-func createCourierConfig(t *testing.T, dataDir string, sphinxGeo *geo.Geometry) *courierConfig.Config {
+func createCourierConfig(t *testing.T, dataDir string, pkiScheme sign.Scheme, linkScheme kem.Scheme, sphinxGeo *geo.Geometry) *courierConfig.Config {
 	return &courierConfig.Config{
 		DataDir:          dataDir,
-		WireKEMScheme:    "Xwing",
-		PKIScheme:        "Ed25519",
-		EnvelopeScheme:   "CTIDH1024-X25519",
+		WireKEMScheme:    linkScheme.Name(),
+		PKIScheme:        pkiScheme.Name(),
+		EnvelopeScheme:   common.NikeScheme.Name(),
 		SphinxGeometry:   sphinxGeo,
 		ConnectTimeout:   60000,
 		HandshakeTimeout: 30000,
@@ -261,8 +261,9 @@ func createReplicaServer(t *testing.T, cfg *config.Config, pkiClient pki.Client)
 	return server
 }
 
-func makeServiceDescriptor(t *testing.T, address string, linkPubKey kem.PublicKey) *pki.MixDescriptor {
+func makeServiceDescriptor(t *testing.T, linkPubKey kem.PublicKey) *pki.MixDescriptor {
 	linkPubKeyPEM := kemPEM.ToPublicPEMString(linkPubKey)
+	address := "tcp://127.0.0.1:22000"
 
 	return &pki.MixDescriptor{
 		Name:        "servicenode1",
@@ -286,7 +287,11 @@ func makeServiceDescriptor(t *testing.T, address string, linkPubKey kem.PublicKe
 	}
 }
 
-func makeReplicaDescriptor(t *testing.T, replicaID int, linkPubKey kem.PublicKey, identityPubKey sign.PublicKey, replicaKeys map[uint64]nike.PublicKey) *pki.ReplicaDescriptor {
+func makeReplicaDescriptor(t *testing.T,
+	replicaID int,
+	linkPubKey kem.PublicKey,
+	identityPubKey sign.PublicKey,
+	replicaKeys map[uint64]nike.PublicKey) *pki.ReplicaDescriptor {
 
 	require.NotNil(t, linkPubKey)
 	require.NotNil(t, identityPubKey)
