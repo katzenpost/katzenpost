@@ -312,10 +312,6 @@ func newServerWithPKI(cfg *config.Config, pkiClient pki.Client) (*Server, error)
 	}
 	s.PKIWorker = pkiWorker
 
-	// Start the outgoing connection worker
-	s.log.Notice("start connector worker")
-	s.connector = newConnector(s)
-
 	// Bring the listener(s) online.
 	s.log.Notice("start listener workers")
 	s.listeners = make([]GenericListener, 0, len(addresses))
@@ -327,6 +323,10 @@ func newServerWithPKI(cfg *config.Config, pkiClient pki.Client) (*Server, error)
 		}
 		s.listeners = append(s.listeners, l)
 	}
+
+	// Start the outgoing connection worker
+	s.log.Notice("start connector worker")
+	s.connector = newConnector(s)
 
 	isOk = true
 
