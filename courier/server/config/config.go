@@ -18,9 +18,9 @@ import (
 
 const (
 	defaultLogLevel         = "NOTICE"
-	DefaultConnectTimeout   = 60 * 1000 // 60 sec.
-	DefaultHandshakeTimeout = 30 * 1000 // 30 sec.
-	DefaultReauthInterval   = 30 * 1000 // 30 sec.
+	DefaultConnectTimeout   = 60 * 1000  // 60 sec.
+	DefaultHandshakeTimeout = 30 * 1000  // 30 sec.
+	DefaultReauthInterval   = 300 * 1000 // 300 sec.
 )
 
 var defaultLogging = Logging{
