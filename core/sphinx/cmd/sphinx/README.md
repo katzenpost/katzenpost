@@ -27,6 +27,8 @@ A comprehensive command-line interface for creating, manipulating, and processin
   - [SURB Components](#surb-components)
   - [SURB Keys File Format](#surb-keys-file-format)
 - [Testing](#testing)
+  - [Unit Tests](#unit-tests)
+  - [Integration Tests](#integration-tests)
 - [Examples](#examples)
   - [Running the Standalone SURB Test](#running-the-standalone-surb-test)
   - [Running the Forward Packet with Embedded SURB Test](#running-the-forward-packet-with-embedded-surb-test)
@@ -372,14 +374,34 @@ key_data = "base64_encoded_decryption_keys"
 
 ## Testing
 
-Run the included test scripts from the examples directory:
+### Unit Tests
+
+Run the comprehensive unit test suite:
+
+```bash
+go test -v .                # Run unit tests with verbose output
+./run_tests.sh             # Run both unit and integration tests
+```
+
+The unit tests cover:
+- **Node ID validation** and hex encoding/decoding
+- **Hop specification parsing** and validation
+- **SURB keys file format** (TOML with base64 encoding)
+- **SURB payload extraction** from combined payloads
+- **Geometry validation** and packet size calculations
+- **File operations** and error handling
+- **Base64 encoding/decoding** for key storage
+
+### Integration Tests
+
+Run the included integration test scripts:
 
 ```bash
 ./examples/test_surb.sh              # Test standalone SURB workflow
 ./examples/test_forward_with_surb.sh # Test embedded SURB workflow
 ```
 
-The test scripts automatically:
+The integration test scripts automatically:
 - Install the Sphinx CLI tool using `go install`
 - Build the genkeypair tool for key generation
 - Generate all required cryptographic keys
