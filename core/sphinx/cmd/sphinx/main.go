@@ -5,7 +5,6 @@ package main
 
 import (
 	"crypto/rand"
-	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
@@ -17,6 +16,7 @@ import (
 	"github.com/BurntSushi/toml"
 	"github.com/spf13/cobra"
 
+	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/kem"
 	kempem "github.com/katzenpost/hpqc/kem/pem"
 	kemschemes "github.com/katzenpost/hpqc/kem/schemes"
@@ -745,8 +745,8 @@ func generateNodeID(keyFile string) {
 	}
 
 	// Generate a deterministic node ID by hashing the PEM data
-	hash := sha256.Sum256(pemData)
-	nodeID := hex.EncodeToString(hash[:])
+	hashResult := hash.Sum256(pemData)
+	nodeID := hex.EncodeToString(hashResult[:])
 
 	fmt.Printf("Node ID for %s: %s\n", keyFile, nodeID)
 }
