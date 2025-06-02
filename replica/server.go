@@ -261,7 +261,7 @@ func newServerWithPKI(cfg *config.Config, pkiClient pki.Client) (*Server, error)
 	s.log.Debug("ensuring replica NIKE keypair exists")
 	nikeScheme := nikeSchemes.ByName(cfg.ReplicaNIKEScheme)
 	replicaEpoch, _, _ := common.ReplicaNow()
-	s.envelopeKeys, err = NewEnvelopeKeys(nikeScheme, s.logBackend.GetLogger("envelopeKeys"), cfg.DataDir, replicaEpoch)
+	s.envelopeKeys, err = NewEnvelopeKeys(nikeScheme, s.logBackend.GetLogger("replica envelopeKeys"), cfg.DataDir, replicaEpoch)
 	s.log.Debug("AFTER ensuring replica NIKE keypair exists")
 	if err != nil {
 		panic(err)
@@ -302,10 +302,10 @@ func newServerWithPKI(cfg *config.Config, pkiClient pki.Client) (*Server, error)
 	var pkiWorker *PKIWorker
 	if pkiClient != nil {
 		// Use the provided PKI client for testing
-		pkiWorker, err = newPKIWorkerWithClient(s, pkiClient, s.logBackend.GetLogger("pkiWorker"))
+		pkiWorker, err = newPKIWorkerWithClient(s, pkiClient, s.logBackend.GetLogger("replica pkiWorker"))
 	} else {
 		// Use the default PKI worker
-		pkiWorker, err = newPKIWorker(s, s.logBackend.GetLogger("pkiWorker"))
+		pkiWorker, err = newPKIWorker(s, s.logBackend.GetLogger("replica pkiWorker"))
 	}
 	if err != nil {
 		panic(err)

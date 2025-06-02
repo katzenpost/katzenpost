@@ -102,14 +102,12 @@ func setupTestEnvironment(t *testing.T) *testEnvironment {
 		replicaKeys[i] = myreplicaKeys
 	}
 
-	mymockPKIClient := createMockPKIClient(t, sphinxGeo, serviceDesc, replicaDescriptors)
-
 	replicas := make([]*replica.Server, numReplicas)
 	for i := 0; i < numReplicas; i++ {
-		replicas[i] = createReplicaServer(t, replicaConfigs[i], mymockPKIClient)
+		replicas[i] = createReplicaServer(t, replicaConfigs[i], createMockPKIClient(t, sphinxGeo, serviceDesc, replicaDescriptors))
 	}
 
-	courier := createCourierServer(t, courierCfg, mymockPKIClient)
+	courier := createCourierServer(t, courierCfg, createMockPKIClient(t, sphinxGeo, serviceDesc, replicaDescriptors))
 	courier.ForceConnectorUpdate()
 
 	cleanup := func() {
@@ -119,11 +117,13 @@ func setupTestEnvironment(t *testing.T) *testEnvironment {
 				replica.Wait()
 			}
 		}
-		if courier != nil {
-			// Courier cleanup if needed
-		}
+		//if courier != nil {
+		// Courier cleanup if needed
+		//}
 		os.RemoveAll(tempDir)
 	}
+
+	mymockPKIClient := createMockPKIClient(t, sphinxGeo, serviceDesc, replicaDescriptors)
 
 	return &testEnvironment{
 		tempDir:        tempDir,
@@ -474,6 +474,10 @@ func testBoxRoundTrip(t *testing.T, env *testEnvironment) {
 	t.Log("WAIT FOR COURIER PKI")
 	waitForCourierPKI(t, env)
 	t.Log("END OF WAIT FOR COURIER PKI")
+
+	t.Log("SLEEPING FOR 10 SECONDS")
+	time.Sleep(10 * time.Second)
+	t.Log("END OF SLEEP")
 
 	aliceStatefulWriter, bobStatefulReader := aliceAndBobKeyExchangeKeys(t, env)
 

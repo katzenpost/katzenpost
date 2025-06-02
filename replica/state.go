@@ -30,7 +30,7 @@ func newState(s *Server) *state {
 	}
 	st := &state{
 		server: s,
-		log:    s.LogBackend().GetLogger("state"),
+		log:    s.LogBackend().GetLogger("replica state"),
 	}
 	st.log.Debug("state: Created new state")
 	return st

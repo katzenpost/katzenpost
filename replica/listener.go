@@ -201,7 +201,7 @@ func newListener(server *Server, id int, addr string) (*Listener, error) {
 
 	l := &Listener{
 		server:     server,
-		log:        server.logBackend.GetLogger(fmt.Sprintf("Listener:%d", id)),
+		log:        server.logBackend.GetLogger(fmt.Sprintf("replica Listener:%d", id)),
 		conns:      list.New(),
 		closeAllCh: make(chan interface{}),
 	}

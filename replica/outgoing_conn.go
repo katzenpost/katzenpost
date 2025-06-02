@@ -332,7 +332,7 @@ func newOutgoingConn(co GenericConnector, dst *cpki.ReplicaDescriptor, geo *geo.
 		ch:     make(chan commands.Command, maxQueueSize),
 		id:     atomic.AddUint64(&outgoingConnID, 1), // Diagnostic only, wrapping is fine.
 	}
-	c.log = co.Server().LogBackend().GetLogger(fmt.Sprintf("outgoing:%d", c.id))
+	c.log = co.Server().LogBackend().GetLogger(fmt.Sprintf("replica outgoing:%d", c.id))
 
 	c.log.Debugf("New outgoing connection: %+v", dst)
 

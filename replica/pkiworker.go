@@ -167,6 +167,7 @@ func (p *PKIWorker) AuthenticateCourierConnection(c *wire.PeerCredentials) bool 
 	const keyEndpoint = "endpoint"
 
 	if len(c.AdditionalData) != 0 {
+		p.log.Debugf("AuthenticateCourierConnection: AD is not length 0, AD is '%x'", c.AdditionalData)
 		return false
 	}
 

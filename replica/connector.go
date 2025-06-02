@@ -228,7 +228,7 @@ func (co *Connector) OnClosedConn(c *outgoingConn) {
 func newConnector(server *Server) *Connector {
 	co := &Connector{
 		server:        server,
-		log:           server.LogBackend().GetLogger("Connector"),
+		log:           server.LogBackend().GetLogger("replica Connector"),
 		conns:         make(map[[constants.NodeIDLength]byte]*outgoingConn),
 		replicationCh: make(chan *commands.ReplicaWrite, replicationQueueLength),
 		forceUpdateCh: make(chan interface{}, 1), // See forceUpdate().
