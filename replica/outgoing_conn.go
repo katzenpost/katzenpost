@@ -259,6 +259,8 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 	}()
 
 	// Allocate the session struct.
+	// For replica-to-replica connections, we send our own identity hash
+	// as AdditionalData so the receiving replica can authenticate us
 	identityHash := hash.Sum256From(c.co.Server().identityPublicKey)
 	cfg := &wire.SessionConfig{
 		KEMScheme:         c.scheme,

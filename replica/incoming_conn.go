@@ -228,11 +228,11 @@ func (c *incomingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 		epoch, _, _ := epochtime.Now()
 
 		// Try current, next, and previous epochs
-		doc := c.l.server.PKIWorker.entryForEpoch(epoch)
+		doc := c.l.server.PKIWorker.documentForEpoch(epoch)
 		if doc == nil {
-			doc = c.l.server.PKIWorker.entryForEpoch(epoch + 1)
+			doc = c.l.server.PKIWorker.documentForEpoch(epoch + 1)
 			if doc == nil {
-				doc = c.l.server.PKIWorker.entryForEpoch(epoch - 1)
+				doc = c.l.server.PKIWorker.documentForEpoch(epoch - 1)
 				if doc == nil {
 					c.log.Errorf("No PKI docs available for epochs %d, %d, or %d", epoch-1, epoch, epoch+1)
 					return false
