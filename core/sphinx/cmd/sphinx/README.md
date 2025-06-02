@@ -2,6 +2,41 @@
 
 A comprehensive command-line interface for creating, manipulating, and processing Sphinx packets and Single Use Reply Blocks (SURBs) for ad-hoc anonymous communication networks.
 
+NOTE that this tool can use any post quantum cryptographic NIKE or KEM from the [HPQC library](https://github.com/katzenpost/hpqc), which includes:
+
+| NIKE: Non-Interactive Key Exchange |
+|:---:|
+
+| Primitive | HPQC name | security |
+|  --------  |  -------  | -------  | 
+| Classical Diffie-Hellman | "DH4096_RFC3526" | classic |
+| X25519 | "X25519" | classic |
+| X448 | "X448" | classic |
+| Implementations of CTIDH | "ctidh511", "ctidh512", "ctidh1024", "ctidh2048" | post-quantum | 
+| hybrid of CSIDH and X25519 | "NOBS_CSIDH-X25519 " | hybrid |
+|hybrids of CTIDH with X25519 | "CTIDH511-X25519", "CTIDH512-X25519", "CTIDH1024-X25519" | hybrid |
+| hybrids of CTIDH with X448 | "CTIDH512-X448", "CTIDH1024-X448", "CTIDH2048-X448"| hybrid |
+
+__________
+
+| KEM: Key Encapsulation Mechanism |
+|:---:|
+
+
+| Primitive | HPQC name | security |
+|  --------  |  -------  | -------  | 
+| ML-KEM-768| "MLKEM768" | post-quantum |
+| XWING is a hybrid primitive that pre-combines ML-KEM-768 and X25519. Due to [security properties](https://eprint.iacr.org/2018/024) of our combiner, we also implement our own combination of the two below.| "XWING" | hybrid |
+| The sntrup4591761 version of the NTRU cryptosystem. | "NTRUPrime"  | post-quantum |
+| FrodoKEM-640-SHAKE |"FrodoKEM-640-SHAKE"| post-quantum|
+| Various forms of the McEliece cryptosystem| "mceliece348864", "mceliece348864f", "mceliece460896", "mceliece460896f", "mceliece6688128", "mceliece6688128f", "mceliece6960119", "mceliece6960119f", "mceliece8192128", "mceliece8192128f" | post-quantum|
+|A hybrid of ML-KEM-768 and X25519. The [KEM Combiners paper](https://eprint.iacr.org/2018/024.pdf) is the reason we implemented our own combination in addition to including XWING. |"MLKEM768-X25519"| hybrid |
+|A hybrid of ML-KEM-768 and X448|"MLKEM768-X448"| hybrid |
+|A hybrid of FrodoKEM-640-SHAKE and X448|"FrodoKEM-640-SHAKE-X448"| hybrid |
+|A hybrid of NTRU and X448| "sntrup4591761-X448"| hybrid |
+|Hybrids of the McEliece primitives and X25519| "mceliece348864-X25519", "mceliece348864f-X25519", "mceliece460896-X25519", "mceliece460896f-X25519", "mceliece6688128-X25519", "mceliece6688128f-X25519", "mceliece6960119-X25519", "mceliece6960119f-X25519", "mceliece8192128-X25519", "mceliece8192128f-X25519" | hybrid|
+
+
 ## Table of Contents
 
 - [Overview](#overview)
