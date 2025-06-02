@@ -47,9 +47,6 @@ type GenericConnector interface {
 	ForceUpdate()
 	DispatchCommand(cmd commands.Command, idHash *[32]byte)
 	DispatchReplication(cmd *commands.ReplicaWrite)
-	HasConnection(nodeID *[constants.NodeIDLength]byte) bool
-	CloseConnection(nodeID *[constants.NodeIDLength]byte)
-	EnableOutgoingConnections()
 }
 
 type Server struct {
@@ -345,12 +342,4 @@ func newServerWithPKI(cfg *config.Config, pkiClient pki.Client) (*Server, error)
 	}
 
 	return s, nil
-}
-
-// EnableOutgoingConnections enables the server to start making outgoing connections.
-// This should be called after the server has a PKI document and is ready to connect to peers.
-func (s *Server) EnableOutgoingConnections() {
-	if s.connector != nil {
-		s.connector.EnableOutgoingConnections()
-	}
 }

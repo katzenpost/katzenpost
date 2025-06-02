@@ -44,57 +44,33 @@ type outgoingConn struct {
 }
 
 func (c *outgoingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
-	c.log.Debugf("IsPeerValid: ENTRY - Starting outgoing peer validation to %s", c.dst.Name)
-
-	if creds == nil {
-		c.log.Errorf("IsPeerValid: creds is nil - RETURNING FALSE")
-		return false
-	}
-
-	c.log.Debugf("IsPeerValid: AdditionalData length: %d, hex: %x", len(creds.AdditionalData), creds.AdditionalData)
-
 	// First verify the identity hash matches what we expect
 	idHash := hash.Sum256(c.dst.IdentityKey)
-	c.log.Debugf("IsPeerValid: Expected identity hash: %x", idHash)
-	c.log.Debugf("IsPeerValid: Received identity hash: %x", creds.AdditionalData)
-
 	if !hmac.Equal(idHash[:], creds.AdditionalData) {
-		c.log.Errorf("IsPeerValid: Identity hash mismatch for %s - RETURNING FALSE", c.dst.Name)
+		c.log.Debug("OutgoingConn: Identity hash mismatch")
 		return false
 	}
-	c.log.Debugf("IsPeerValid: Identity hash matches for %s", c.dst.Name)
 
 	// Then verify the link key matches what we expect
-	c.log.Debugf("IsPeerValid: Verifying link key for %s", c.dst.Name)
 	keyblob, err := creds.PublicKey.MarshalBinary()
 	if err != nil {
-		c.log.Errorf("IsPeerValid: Failed to marshal public key: %v", err)
 		panic(err)
 	}
-	c.log.Debugf("IsPeerValid: Marshaled public key length: %d", len(keyblob))
-	c.log.Debugf("IsPeerValid: Expected link key length: %d", len(c.dst.LinkKey))
-
 	if !hmac.Equal(c.dst.LinkKey, keyblob) {
-		c.log.Errorf("IsPeerValid: Link key mismatch for %s - RETURNING FALSE", c.dst.Name)
-		c.log.Debugf("IsPeerValid: Expected link key: %x", c.dst.LinkKey[:32]) // Show first 32 bytes
-		c.log.Debugf("IsPeerValid: Received link key: %x", keyblob[:32])       // Show first 32 bytes
+		c.log.Debug("OutgoingConn: Link key mismatch")
 		return false
 	}
-	c.log.Debugf("IsPeerValid: Link key matches for %s", c.dst.Name)
 
 	// Verify the replica is in the current PKI document
 	var nodeID [sConstants.NodeIDLength]byte
 	copy(nodeID[:], creds.AdditionalData)
-	c.log.Debugf("IsPeerValid: Looking up replica in PKI for nodeID: %x", nodeID)
-
 	_, isReplica := c.co.Server().PKIWorker.replicas.GetReplicaDescriptor(&nodeID)
 	if !isReplica {
-		c.log.Errorf("IsPeerValid: PKI authentication failed - replica %s (nodeID %x) not found - RETURNING FALSE", c.dst.Name, nodeID)
+		c.log.Debug("OutgoingConn: PKI authentication failed - replica not found")
 		return false
 	}
-	c.log.Debugf("IsPeerValid: Replica %s found in PKI document", c.dst.Name)
 
-	c.log.Debugf("IsPeerValid: Authentication successful for %s - RETURNING TRUE", c.dst.Name)
+	c.log.Debug("OutgoingConn: Authentication successful")
 	return true
 }
 
@@ -296,7 +272,7 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 	}
 	envelopeScheme := schemes.ByName(c.co.(*Connector).server.cfg.ReplicaNIKEScheme)
 	isInitiator := true
-	w, err := wire.NewBidirectionalStorageReplicaSession(cfg, envelopeScheme, isInitiator)
+	w, err := wire.NewStorageReplicaSession(cfg, envelopeScheme, isInitiator)
 	if err != nil {
 		c.log.Errorf("Failed to allocate session: %v", err)
 		return

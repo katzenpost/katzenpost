@@ -514,8 +514,7 @@ func waitForReplicasPKI(t *testing.T, env *testEnvironment) {
 }
 
 func testBoxRoundTrip(t *testing.T, env *testEnvironment) {
-	// STEP 1: FORCE ALL COMPONENTS TO GET PKI DOCUMENTS FIRST
-	t.Log("STEP 1: FORCE COURIER PKI FETCH")
+	t.Log("FORCE COURIER PKI FETCH")
 	forceCourierPKIFetch(t, env)
 	t.Log("END OF FORCE COURIER PKI FETCH")
 
@@ -530,17 +529,6 @@ func testBoxRoundTrip(t *testing.T, env *testEnvironment) {
 	t.Log("WAIT FOR REPLICAS PKI")
 	waitForReplicasPKI(t, env)
 	t.Log("END OF WAIT FOR REPLICAS PKI")
-
-	// STEP 2: NOW THAT ALL REPLICAS HAVE PKI DOCUMENTS, ENABLE OUTGOING CONNECTIONS
-	t.Log("STEP 2: ENABLING OUTGOING CONNECTIONS FOR ALL REPLICAS")
-	for i, replica := range env.replicas {
-		t.Logf("Enabling outgoing connections for replica %d", i)
-		replica.EnableOutgoingConnections()
-	}
-	t.Log("END OF ENABLING OUTGOING CONNECTIONS")
-
-	// Give some time for connections to establish
-	time.Sleep(2 * time.Second)
 
 	aliceStatefulWriter, bobStatefulReader := aliceAndBobKeyExchangeKeys(t, env)
 

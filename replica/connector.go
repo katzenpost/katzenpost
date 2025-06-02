@@ -4,8 +4,6 @@
 package replica
 
 import (
-	"bytes"
-	"math/rand"
 	"sync"
 	"time"
 
@@ -16,7 +14,6 @@ import (
 	"github.com/katzenpost/hpqc/kem/schemes"
 
 	"github.com/katzenpost/katzenpost/core/epochtime"
-	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/utils"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
@@ -41,10 +38,6 @@ type Connector struct {
 
 	closeAllCh chan interface{}
 	closeAllWg sync.WaitGroup
-
-	// Control when outgoing connections should start
-	connectionsEnabled  bool
-	enableConnectionsCh chan bool
 }
 
 func (co *Connector) Halt() {
@@ -62,16 +55,6 @@ func (co *Connector) ForceUpdate() {
 	// periodic timer serves as a fallback.
 	select {
 	case co.forceUpdateCh <- true:
-	default:
-	}
-}
-
-// EnableOutgoingConnections allows the connector to start making outgoing connections.
-// This should be called after the replica has a PKI document and is ready to connect to peers.
-func (co *Connector) EnableOutgoingConnections() {
-	co.log.Debug("Enabling outgoing connections")
-	select {
-	case co.enableConnectionsCh <- true:
 	default:
 	}
 }
@@ -152,18 +135,6 @@ func (co *Connector) worker() {
 	)
 
 	co.log.Debug("Starting connector worker")
-
-	// Wait for connections to be enabled before starting
-	co.log.Debug("Waiting for outgoing connections to be enabled...")
-	select {
-	case <-co.HaltCh():
-		co.log.Debugf("Connector worker terminating gracefully.")
-		return
-	case <-co.enableConnectionsCh:
-		co.connectionsEnabled = true
-		co.log.Debug("Outgoing connections enabled, starting connection attempts")
-	}
-
 	timer := time.NewTimer(initialSpawnDelay)
 	defer timer.Stop()
 
@@ -173,9 +144,6 @@ func (co *Connector) worker() {
 		case <-co.HaltCh():
 			co.log.Debugf("Connector worker terminating gracefully.")
 			return
-		case <-co.enableConnectionsCh:
-			co.connectionsEnabled = true
-			co.log.Debug("Outgoing connections enabled")
 		case <-co.forceUpdateCh:
 			co.log.Debug("Forced connection update triggered")
 		case <-timer.C:
@@ -186,12 +154,9 @@ func (co *Connector) worker() {
 			<-timer.C
 		}
 
-		// Only start outgoing connections if they are enabled
-		if co.connectionsEnabled {
-			// Start outgoing connections as needed, based on the PKI documents
-			// and current time.
-			co.spawnNewConns()
-		}
+		// Start outgoing connections as needed, based on the PKI documents
+		// and current time.
+		co.spawnNewConns()
 
 		timer.Reset(resweepInterval)
 	}
@@ -214,47 +179,17 @@ func (co *Connector) spawnNewConns() {
 	}
 	co.RUnlock()
 
-	// Get our own identity hash for connection ordering
-	myIdentityHash := hash.Sum256From(co.server.identityPublicKey)
-
-	// Convert map to slice for randomization and filtering
-	type peerEntry struct {
-		id   [constants.NodeIDLength]byte
-		desc *cpki.ReplicaDescriptor
-	}
-	var peers []peerEntry
-
+	// Spawn the new outgoingConn objects.
 	for id, v := range newPeerMap {
-		// Only connect to replicas with higher IDs to prevent bidirectional connections
-		if bytes.Compare(myIdentityHash[:], id[:]) < 0 {
-			peers = append(peers, peerEntry{id: id, desc: v})
-		} else {
-			co.log.Debugf("Skipping connection to replica with lower ID: '%x' (my ID: '%x')", id, myIdentityHash)
+		co.log.Debugf("Spawning connection to: '%x'.", id)
+
+		scheme := schemes.ByName(co.server.cfg.WireKEMScheme)
+		if scheme == nil {
+			panic("KEM scheme not found in registry")
 		}
-	}
 
-	// Randomize the connection order to prevent simultaneous connection attempts
-	rand.Shuffle(len(peers), func(i, j int) {
-		peers[i], peers[j] = peers[j], peers[i]
-	})
-
-	// Spawn the new outgoingConn objects with random delays
-	for _, peer := range peers {
-		// Add random delay (0-5 seconds) before each connection attempt
-		delay := time.Duration(rand.Intn(5000)) * time.Millisecond
-		co.log.Debugf("Spawning connection to: '%x' with %v delay", peer.id, delay)
-
-		go func(id [constants.NodeIDLength]byte, desc *cpki.ReplicaDescriptor, delay time.Duration) {
-			time.Sleep(delay)
-
-			scheme := schemes.ByName(co.server.cfg.WireKEMScheme)
-			if scheme == nil {
-				panic("KEM scheme not found in registry")
-			}
-
-			c := newOutgoingConn(co, desc, co.server.cfg.SphinxGeometry, scheme)
-			co.onNewConn(c)
-		}(peer.id, peer.desc, delay)
+		c := newOutgoingConn(co, v, co.server.cfg.SphinxGeometry, scheme)
+		co.onNewConn(c)
 	}
 }
 
@@ -289,42 +224,15 @@ func (co *Connector) OnClosedConn(c *outgoingConn) {
 	delete(co.conns, nodeID)
 }
 
-// HasConnection checks if there's an outgoing connection to the specified peer
-func (co *Connector) HasConnection(nodeID *[constants.NodeIDLength]byte) bool {
-	co.RLock()
-	defer co.RUnlock()
-	_, exists := co.conns[*nodeID]
-	return exists
-}
-
-// CloseConnection closes the outgoing connection to the specified peer
-func (co *Connector) CloseConnection(nodeID *[constants.NodeIDLength]byte) {
-	co.Lock()
-	conn, exists := co.conns[*nodeID]
-	if exists {
-		delete(co.conns, *nodeID)
-	}
-	co.Unlock()
-
-	if exists {
-		co.log.Debugf("Closing outgoing connection to %x due to bidirectional race", *nodeID)
-		// The outgoing connection will terminate when it tries to send a command
-		// and finds the channel closed, or when the connector is shut down
-		close(conn.ch)
-	}
-}
-
 // New creates a new Connector.
 func newConnector(server *Server) *Connector {
 	co := &Connector{
-		server:              server,
-		log:                 server.LogBackend().GetLogger("replica Connector"),
-		conns:               make(map[[constants.NodeIDLength]byte]*outgoingConn),
-		replicationCh:       make(chan *commands.ReplicaWrite, replicationQueueLength),
-		forceUpdateCh:       make(chan interface{}, 1), // See forceUpdate().
-		closeAllCh:          make(chan interface{}),
-		connectionsEnabled:  false,
-		enableConnectionsCh: make(chan bool, 1),
+		server:        server,
+		log:           server.LogBackend().GetLogger("replica Connector"),
+		conns:         make(map[[constants.NodeIDLength]byte]*outgoingConn),
+		replicationCh: make(chan *commands.ReplicaWrite, replicationQueueLength),
+		forceUpdateCh: make(chan interface{}, 1), // See forceUpdate().
+		closeAllCh:    make(chan interface{}),
 	}
 
 	co.Go(co.worker)
