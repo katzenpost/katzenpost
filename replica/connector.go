@@ -15,7 +15,6 @@ import (
 
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
-	"github.com/katzenpost/katzenpost/core/utils"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/katzenpost/katzenpost/replica/common"
@@ -180,6 +179,7 @@ func (co *Connector) spawnNewConns() {
 	co.RUnlock()
 
 	// Spawn the new outgoingConn objects.
+	// Connect to all replicas for replication purposes
 	for id, v := range newPeerMap {
 		co.log.Debugf("Spawning connection to: '%x'.", id)
 
@@ -208,7 +208,7 @@ func (co *Connector) onNewConn(c *outgoingConn) {
 	}()
 	if _, ok := co.conns[nodeID]; ok {
 		// This should NEVER happen.  Not sure what the sensible thing to do is.
-		co.log.Warningf("Connection to peer: '%v' already exists.", utils.NodeIDToPrintString(&nodeID))
+		co.log.Warningf("Connection to peer: '%x' already exists.", nodeID)
 	}
 	co.conns[nodeID] = c
 }

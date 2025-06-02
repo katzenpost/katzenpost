@@ -38,7 +38,10 @@ func newState(s *Server) *state {
 
 func (s *state) Close() {
 	s.log.Debug("state: Closing state")
-	s.db.Close()
+	if s.db != nil {
+		s.db.Close()
+		s.db = nil
+	}
 }
 
 func (s *state) dbPath() string {
@@ -61,6 +64,13 @@ func (s *state) initDB() {
 
 func (s *state) handleReplicaRead(replicaRead *common.ReplicaRead) (*common.Box, error) {
 	s.log.Debugf("state: Starting replica read for BoxID: %x", replicaRead.BoxID)
+
+	// Check if database is still open
+	if s.db == nil {
+		s.log.Error("state: Database is closed, cannot perform read")
+		return nil, fmt.Errorf("database is closed")
+	}
+
 	ro := grocksdb.NewDefaultReadOptions()
 	defer ro.Destroy()
 
@@ -90,6 +100,13 @@ func (s *state) handleReplicaRead(replicaRead *common.ReplicaRead) (*common.Box,
 
 func (s *state) handleReplicaWrite(replicaWrite *commands.ReplicaWrite) error {
 	s.log.Debugf("state: Starting replica write for BoxID: %x", replicaWrite.BoxID)
+
+	// Check if database is still open
+	if s.db == nil {
+		s.log.Error("state: Database is closed, cannot perform write")
+		return fmt.Errorf("database is closed")
+	}
+
 	wo := grocksdb.NewDefaultWriteOptions()
 	defer wo.Destroy()
 	box := &common.Box{
@@ -156,6 +173,13 @@ func (s *state) getRemoteShards(boxID []byte) ([]*pki.ReplicaDescriptor, error) 
 // the share to the two replicas.
 func (s *state) Rebalance() error {
 	s.log.Debug("state: Starting rebalance operation")
+
+	// Check if database is still open
+	if s.db == nil {
+		s.log.Error("state: Database is closed, cannot perform rebalance")
+		return fmt.Errorf("database is closed")
+	}
+
 	ro := grocksdb.NewDefaultReadOptions()
 	ro.SetFillCache(false)
 

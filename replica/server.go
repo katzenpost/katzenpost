@@ -131,14 +131,30 @@ func (s *Server) Wait() {
 
 func (s *Server) halt() {
 	s.log.Noticef("Starting graceful shutdown.")
-	close(s.fatalErrCh)
-	s.log.Noticef("Shutdown complete.")
-	close(s.haltedCh)
-	s.state.Close()
+
+	// First halt all listeners to stop accepting new connections
 	for _, listener := range s.listeners {
 		listener.Halt()
 	}
-	s.envelopeKeys.Halt()
+
+	// Then halt the connector to stop outgoing connections
+	if s.connector != nil {
+		s.connector.Halt()
+	}
+
+	// Now it's safe to close the database since no more requests are coming in
+	if s.state != nil {
+		s.state.Close()
+	}
+
+	// Finally halt other components
+	if s.envelopeKeys != nil {
+		s.envelopeKeys.Halt()
+	}
+
+	close(s.fatalErrCh)
+	s.log.Noticef("Shutdown complete.")
+	close(s.haltedCh)
 }
 
 // RotateLog rotates the log file

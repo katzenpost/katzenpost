@@ -93,6 +93,7 @@ func setupTestEnvironment(t *testing.T) *testEnvironment {
 	replicaConfigs := make([]*config.Config, numReplicas)
 	replicaKeys := make([]map[uint64]nike.PublicKey, numReplicas)
 
+	// STEP 1: Create all replica descriptors FIRST
 	for i := 0; i < numReplicas; i++ {
 		replicaDir := filepath.Join(tempDir, fmt.Sprintf("replica%d", i))
 		require.NoError(t, os.MkdirAll(replicaDir, 0700))
@@ -102,6 +103,8 @@ func setupTestEnvironment(t *testing.T) *testEnvironment {
 		replicaKeys[i] = myreplicaKeys
 	}
 
+	// STEP 2: Create all servers with their own PKI clients (like production)
+	// Each PKI client will have the same PKI documents available
 	replicas := make([]*replica.Server, numReplicas)
 	for i := 0; i < numReplicas; i++ {
 		replicas[i] = createReplicaServer(t, replicaConfigs[i], createMockPKIClient(t, sphinxGeo, serviceDesc, replicaDescriptors))
@@ -149,6 +152,9 @@ func createReplicaConfig(t *testing.T, dataDir string, pkiScheme sign.Scheme, li
 		SphinxGeometry:     sphinxGeo,
 		Addresses:          []string{fmt.Sprintf("tcp://127.0.0.1:%d", 19000+replicaID)},
 		GenerateOnly:       false,
+		ConnectTimeout:     60000,  // 60 seconds
+		HandshakeTimeout:   30000,  // 30 seconds
+		ReauthInterval:     300000, // 5 minutes
 		Logging: &config.Logging{
 			Disable: false,
 			Level:   "DEBUG",
@@ -529,6 +535,9 @@ func testBoxRoundTrip(t *testing.T, env *testEnvironment) {
 	t.Log("WAIT FOR REPLICAS PKI")
 	waitForReplicasPKI(t, env)
 	t.Log("END OF WAIT FOR REPLICAS PKI")
+
+	// Give some time for connections to establish
+	time.Sleep(2 * time.Second)
 
 	aliceStatefulWriter, bobStatefulReader := aliceAndBobKeyExchangeKeys(t, env)
 
