@@ -470,14 +470,52 @@ func waitForCourierPKI(t *testing.T, env *testEnvironment) {
 	t.Fatal("Timeout waiting for courier PKI document to be ready")
 }
 
+// forceReplicasPKIFetch forces all replicas to fetch PKI documents
+func forceReplicasPKIFetch(t *testing.T, env *testEnvironment) {
+	for i, replica := range env.replicas {
+		t.Logf("Forcing PKI fetch for replica %d", i)
+		err := replica.PKIWorker.ForceFetchPKI()
+		require.NoError(t, err, "Failed to force PKI fetch for replica %d", i)
+	}
+}
+
+// waitForReplicasPKI waits for all replicas to have PKI documents
+func waitForReplicasPKI(t *testing.T, env *testEnvironment) {
+	maxWait := 30 * time.Second
+	checkInterval := 100 * time.Millisecond
+	start := time.Now()
+
+	for time.Since(start) < maxWait {
+		allReady := true
+		for i, replica := range env.replicas {
+			if !replica.PKIWorker.HasCurrentPKIDocument() {
+				t.Logf("Replica %d does not have PKI document yet", i)
+				allReady = false
+				break
+			}
+		}
+		if allReady {
+			t.Log("All replicas have PKI documents")
+			return
+		}
+		time.Sleep(checkInterval)
+	}
+
+	t.Fatal("Timeout waiting for all replicas to have PKI documents")
+}
+
 func testBoxRoundTrip(t *testing.T, env *testEnvironment) {
 	t.Log("WAIT FOR COURIER PKI")
 	waitForCourierPKI(t, env)
 	t.Log("END OF WAIT FOR COURIER PKI")
 
-	t.Log("SLEEPING FOR 10 SECONDS")
-	time.Sleep(10 * time.Second)
-	t.Log("END OF SLEEP")
+	t.Log("FORCE REPLICAS PKI FETCH")
+	forceReplicasPKIFetch(t, env)
+	t.Log("END OF FORCE REPLICAS PKI FETCH")
+
+	t.Log("WAIT FOR REPLICAS PKI")
+	waitForReplicasPKI(t, env)
+	t.Log("END OF WAIT FOR REPLICAS PKI")
 
 	aliceStatefulWriter, bobStatefulReader := aliceAndBobKeyExchangeKeys(t, env)
 
