@@ -150,12 +150,79 @@ Example:
 	},
 }
 
+var newSURBCmd = &cobra.Command{
+	Use:   "newsurb",
+	Short: "Create a new Sphinx SURB (Single Use Reply Block)",
+	Long: `Create a new Sphinx SURB that can be used to send reply packets back through the mixnet.
+A SURB contains the routing information and cryptographic keys needed for replies.
+
+Example:
+  sphinx newsurb --geometry config.toml \
+    --hop "abc123...,node1_key.pem" \
+    --hop "789abc...,node2_key.pem" \
+    --output-surb reply.surb \
+    --output-keys reply.keys`,
+	Run: func(cmd *cobra.Command, args []string) {
+		geometryFile, _ := cmd.Flags().GetString("geometry")
+		outputSURBFile, _ := cmd.Flags().GetString("output-surb")
+		outputKeysFile, _ := cmd.Flags().GetString("output-keys")
+		hops, _ := cmd.Flags().GetStringArray("hop")
+
+		generateSphinxSURB(geometryFile, hops, outputSURBFile, outputKeysFile)
+	},
+}
+
+var newPacketFromSURBCmd = &cobra.Command{
+	Use:   "newpacketfromsurb",
+	Short: "Create a new Sphinx packet from a SURB",
+	Long: `Create a new Sphinx reply packet using a SURB (Single Use Reply Block).
+This creates a packet that will be routed back through the mixnet using the SURB's routing information.
+
+Example:
+  sphinx newpacketfromsurb --geometry config.toml \
+    --surb reply.surb \
+    --payload message.txt \
+    --output reply_packet.bin`,
+	Run: func(cmd *cobra.Command, args []string) {
+		geometryFile, _ := cmd.Flags().GetString("geometry")
+		surbFile, _ := cmd.Flags().GetString("surb")
+		payloadFile, _ := cmd.Flags().GetString("payload")
+		outputFile, _ := cmd.Flags().GetString("output")
+
+		generateSphinxPacketFromSURB(geometryFile, surbFile, payloadFile, outputFile)
+	},
+}
+
+var decryptSURBPayloadCmd = &cobra.Command{
+	Use:   "decryptsurbpayload",
+	Short: "Decrypt a SURB payload using SURB keys",
+	Long: `Decrypt a SURB payload that was extracted from a reply packet using the SURB decryption keys.
+This is the final step in the SURB workflow to recover the original plaintext.
+
+Example:
+  sphinx decryptsurbpayload --geometry config.toml \
+    --keys reply.keys \
+    --payload encrypted_payload.bin \
+    --output decrypted_message.txt`,
+	Run: func(cmd *cobra.Command, args []string) {
+		geometryFile, _ := cmd.Flags().GetString("geometry")
+		keysFile, _ := cmd.Flags().GetString("keys")
+		payloadFile, _ := cmd.Flags().GetString("payload")
+		outputFile, _ := cmd.Flags().GetString("output")
+
+		decryptSURBPayload(geometryFile, keysFile, payloadFile, outputFile)
+	},
+}
+
 func init() {
 	// Add subcommands
 	rootCmd.AddCommand(createGeometryCmd)
 	rootCmd.AddCommand(newPacketCmd)
 	rootCmd.AddCommand(genNodeIDCmd)
 	rootCmd.AddCommand(unwrapCmd)
+	rootCmd.AddCommand(newSURBCmd)
+	rootCmd.AddCommand(newPacketFromSURBCmd)
+	rootCmd.AddCommand(decryptSURBPayloadCmd)
 
 	// createGeometry flags
 	createGeometryCmd.Flags().Int("nrMixLayers", 3, "number of hops per route not counting ingress/egress nodes")
@@ -180,6 +247,24 @@ func init() {
 	unwrapCmd.Flags().String("output", "", "file to write unwrapped payload to (default: stdout)")
 	unwrapCmd.Flags().String("output-packet", "", "file to write the processed packet to (for forwarding to next hop)")
 
+	// newsurb flags
+	newSURBCmd.Flags().String("geometry", "", "path to TOML geometry config file (required)")
+	newSURBCmd.Flags().StringArray("hop", []string{}, "hop specification: node_id_hex,public_key_pem_file (can be specified multiple times)")
+	newSURBCmd.Flags().String("output-surb", "", "file to write the SURB to (required)")
+	newSURBCmd.Flags().String("output-keys", "", "file to write the SURB decryption keys to (required)")
+
+	// newpacketfromsurb flags
+	newPacketFromSURBCmd.Flags().String("geometry", "", "path to TOML geometry config file (required)")
+	newPacketFromSURBCmd.Flags().String("surb", "", "path to SURB file (required)")
+	newPacketFromSURBCmd.Flags().String("payload", "", "file to read payload from (default: stdin)")
+	newPacketFromSURBCmd.Flags().String("output", "", "file to write the Sphinx packet to (default: stdout)")
+
+	// decryptsurbpayload flags
+	decryptSURBPayloadCmd.Flags().String("geometry", "", "path to TOML geometry config file (required)")
+	decryptSURBPayloadCmd.Flags().String("keys", "", "path to SURB keys file (required)")
+	decryptSURBPayloadCmd.Flags().String("payload", "", "file to read encrypted payload from (default: stdin)")
+	decryptSURBPayloadCmd.Flags().String("output", "", "file to write decrypted payload to (default: stdout)")
+
 	// Mark required flags
 	newPacketCmd.MarkFlagRequired("geometry")
 	newPacketCmd.MarkFlagRequired("hop")
@@ -187,6 +272,14 @@ func init() {
 	unwrapCmd.MarkFlagRequired("geometry")
 	unwrapCmd.MarkFlagRequired("private-key")
 	unwrapCmd.MarkFlagRequired("packet")
+	newSURBCmd.MarkFlagRequired("geometry")
+	newSURBCmd.MarkFlagRequired("hop")
+	newSURBCmd.MarkFlagRequired("output-surb")
+	newSURBCmd.MarkFlagRequired("output-keys")
+	newPacketFromSURBCmd.MarkFlagRequired("geometry")
+	newPacketFromSURBCmd.MarkFlagRequired("surb")
+	decryptSURBPayloadCmd.MarkFlagRequired("geometry")
+	decryptSURBPayloadCmd.MarkFlagRequired("keys")
 }
 
 func main() {
@@ -364,6 +457,262 @@ func unwrapSphinxPacket(geometryFile, privateKeyFile, packetFile, outputFile, ou
 			log.Fatalf("failed to write processed packet to file: %v", err)
 		}
 		fmt.Fprintf(os.Stderr, "Processed packet written to %s (%d bytes)\n", outputPacketFile, len(packet))
+	}
+}
+
+// generateSphinxSURB creates a Sphinx SURB from the given parameters
+func generateSphinxSURB(geometryFile string, hops []string, outputSURBFile, outputKeysFile string) {
+	// Load geometry from TOML file
+	geometry, err := loadGeometryFromTOML(geometryFile)
+	if err != nil {
+		log.Fatalf("failed to load geometry: %v", err)
+	}
+
+	// Create Sphinx instance from geometry
+	sphinxInstance, err := sphinx.FromGeometry(geometry)
+	if err != nil {
+		log.Fatalf("failed to create Sphinx instance: %v", err)
+	}
+
+	// Validate hop count
+	if len(hops) != geometry.NrHops {
+		log.Fatalf("SURB paths require exactly %d hops for this geometry, got %d", geometry.NrHops, len(hops))
+	}
+
+	// Build path from hop specifications (similar to buildPathFromHops but for SURB)
+	path := make([]*sphinx.PathHop, len(hops))
+
+	// Determine which scheme to use
+	var nikeScheme nike.Scheme
+	var kemScheme kem.Scheme
+
+	if geometry.NIKEName != "" {
+		nikeScheme = schemes.ByName(geometry.NIKEName)
+		if nikeScheme == nil {
+			log.Fatalf("failed to resolve NIKE scheme: %s", geometry.NIKEName)
+		}
+	} else if geometry.KEMName != "" {
+		kemScheme = kemschemes.ByName(geometry.KEMName)
+		if kemScheme == nil {
+			log.Fatalf("failed to resolve KEM scheme: %s", geometry.KEMName)
+		}
+	} else {
+		log.Fatalf("geometry has neither NIKE nor KEM scheme")
+	}
+
+	for i, hopSpec := range hops {
+		parts := strings.Split(hopSpec, ",")
+		if len(parts) != 2 {
+			log.Fatalf("hop %d: expected format 'node_id_hex,public_key_pem_file', got %d parts", i, len(parts))
+		}
+
+		nodeID := strings.TrimSpace(parts[0])
+		publicKeyFile := strings.TrimSpace(parts[1])
+
+		// Parse node ID
+		nodeIDBytes, err := hex.DecodeString(nodeID)
+		if err != nil {
+			log.Fatalf("hop %d: invalid node ID: %v", i, err)
+		}
+		if len(nodeIDBytes) != constants.NodeIDLength {
+			log.Fatalf("hop %d: node ID has wrong length: got %d, expected %d", i, len(nodeIDBytes), constants.NodeIDLength)
+		}
+
+		// Create path hop
+		hop := &sphinx.PathHop{}
+		copy(hop.ID[:], nodeIDBytes)
+
+		// Load public key
+		if nikeScheme != nil {
+			pubKey, err := nikepem.FromPublicPEMFile(publicKeyFile, nikeScheme)
+			if err != nil {
+				log.Fatalf("hop %d: failed to load NIKE public key from %s: %v", i, publicKeyFile, err)
+			}
+			hop.NIKEPublicKey = pubKey
+		} else {
+			pubKey, err := kempem.FromPublicPEMFile(publicKeyFile, kemScheme)
+			if err != nil {
+				log.Fatalf("hop %d: failed to load KEM public key from %s: %v", i, publicKeyFile, err)
+			}
+			hop.KEMPublicKey = pubKey
+		}
+
+		// Add SURBReply command to each hop (required for SURBs)
+		surbReply := &commands.SURBReply{}
+		// Generate a random SURB ID
+		_, err = rand.Read(surbReply.ID[:])
+		if err != nil {
+			log.Fatalf("hop %d: failed to generate SURB reply ID: %v", i, err)
+		}
+		hop.Commands = append(hop.Commands, surbReply)
+
+		path[i] = hop
+	}
+
+	// Create the SURB
+	surb, surbKeys, err := sphinxInstance.NewSURB(rand.Reader, path)
+	if err != nil {
+		log.Fatalf("failed to create SURB: %v", err)
+	}
+
+	// Write SURB to file
+	err = os.WriteFile(outputSURBFile, surb, 0644)
+	if err != nil {
+		log.Fatalf("failed to write SURB to file: %v", err)
+	}
+
+	// Write SURB keys to file
+	err = os.WriteFile(outputKeysFile, surbKeys, 0644)
+	if err != nil {
+		log.Fatalf("failed to write SURB keys to file: %v", err)
+	}
+
+	fmt.Fprintf(os.Stderr, "SURB created successfully!\n")
+	fmt.Fprintf(os.Stderr, "SURB written to %s (%d bytes)\n", outputSURBFile, len(surb))
+	fmt.Fprintf(os.Stderr, "SURB keys written to %s (%d bytes)\n", outputKeysFile, len(surbKeys))
+}
+
+// generateSphinxPacketFromSURB creates a Sphinx packet from a SURB and payload
+func generateSphinxPacketFromSURB(geometryFile, surbFile, payloadFile, outputFile string) {
+	// Load geometry from TOML file
+	geometry, err := loadGeometryFromTOML(geometryFile)
+	if err != nil {
+		log.Fatalf("failed to load geometry: %v", err)
+	}
+
+	// Create Sphinx instance from geometry
+	sphinxInstance, err := sphinx.FromGeometry(geometry)
+	if err != nil {
+		log.Fatalf("failed to create Sphinx instance: %v", err)
+	}
+
+	// Read SURB from file
+	surb, err := os.ReadFile(surbFile)
+	if err != nil {
+		log.Fatalf("failed to read SURB file %s: %v", surbFile, err)
+	}
+
+	// Validate SURB length
+	if len(surb) != geometry.SURBLength {
+		log.Fatalf("invalid SURB length: got %d bytes, expected %d bytes", len(surb), geometry.SURBLength)
+	}
+
+	// Read payload
+	var payload []byte
+	if payloadFile == "" {
+		// Read from stdin
+		payload, err = io.ReadAll(os.Stdin)
+		if err != nil {
+			log.Fatalf("failed to read payload from stdin: %v", err)
+		}
+	} else {
+		// Read from file
+		payload, err = os.ReadFile(payloadFile)
+		if err != nil {
+			log.Fatalf("failed to read payload file: %v", err)
+		}
+	}
+
+	// Ensure payload is the correct size
+	if len(payload) > geometry.ForwardPayloadLength {
+		log.Fatalf("payload too large: %d bytes, max %d bytes", len(payload), geometry.ForwardPayloadLength)
+	}
+
+	// Pad payload to correct size
+	if len(payload) < geometry.ForwardPayloadLength {
+		paddedPayload := make([]byte, geometry.ForwardPayloadLength)
+		copy(paddedPayload, payload)
+		payload = paddedPayload
+	}
+
+	// Create packet from SURB
+	packet, firstHop, err := sphinxInstance.NewPacketFromSURB(surb, payload)
+	if err != nil {
+		log.Fatalf("failed to create packet from SURB: %v", err)
+	}
+
+	// Print information about the created packet
+	fmt.Fprintf(os.Stderr, "Packet created from SURB successfully!\n")
+	fmt.Fprintf(os.Stderr, "First hop node ID: %x\n", firstHop[:])
+	fmt.Fprintf(os.Stderr, "Packet size: %d bytes\n", len(packet))
+
+	// Write packet to output
+	if outputFile == "" {
+		// Write to stdout
+		_, err = os.Stdout.Write(packet)
+		if err != nil {
+			log.Fatalf("failed to write packet to stdout: %v", err)
+		}
+	} else {
+		// Write to file
+		err = os.WriteFile(outputFile, packet, 0644)
+		if err != nil {
+			log.Fatalf("failed to write packet to file: %v", err)
+		}
+		fmt.Fprintf(os.Stderr, "Packet written to %s\n", outputFile)
+	}
+}
+
+// decryptSURBPayload decrypts a SURB payload using SURB keys
+func decryptSURBPayload(geometryFile, keysFile, payloadFile, outputFile string) {
+	// Load geometry from TOML file
+	geometry, err := loadGeometryFromTOML(geometryFile)
+	if err != nil {
+		log.Fatalf("failed to load geometry: %v", err)
+	}
+
+	// Create Sphinx instance from geometry
+	sphinxInstance, err := sphinx.FromGeometry(geometry)
+	if err != nil {
+		log.Fatalf("failed to create Sphinx instance: %v", err)
+	}
+
+	// Read SURB keys from file
+	surbKeys, err := os.ReadFile(keysFile)
+	if err != nil {
+		log.Fatalf("failed to read SURB keys file %s: %v", keysFile, err)
+	}
+
+	// Read encrypted payload
+	var encryptedPayload []byte
+	if payloadFile == "" {
+		// Read from stdin
+		encryptedPayload, err = io.ReadAll(os.Stdin)
+		if err != nil {
+			log.Fatalf("failed to read encrypted payload from stdin: %v", err)
+		}
+	} else {
+		// Read from file
+		encryptedPayload, err = os.ReadFile(payloadFile)
+		if err != nil {
+			log.Fatalf("failed to read encrypted payload file: %v", err)
+		}
+	}
+
+	// Decrypt the SURB payload
+	decryptedPayload, err := sphinxInstance.DecryptSURBPayload(encryptedPayload, surbKeys)
+	if err != nil {
+		log.Fatalf("failed to decrypt SURB payload: %v", err)
+	}
+
+	// Print information about the decryption
+	fmt.Fprintf(os.Stderr, "SURB payload decrypted successfully!\n")
+	fmt.Fprintf(os.Stderr, "Decrypted payload size: %d bytes\n", len(decryptedPayload))
+
+	// Write decrypted payload to output
+	if outputFile == "" {
+		// Write to stdout
+		_, err = os.Stdout.Write(decryptedPayload)
+		if err != nil {
+			log.Fatalf("failed to write decrypted payload to stdout: %v", err)
+		}
+	} else {
+		// Write to file
+		err = os.WriteFile(outputFile, decryptedPayload, 0644)
+		if err != nil {
+			log.Fatalf("failed to write decrypted payload to file: %v", err)
+		}
+		fmt.Fprintf(os.Stderr, "Decrypted payload written to %s\n", outputFile)
 	}
 }
 
