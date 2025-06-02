@@ -26,16 +26,16 @@ A comprehensive command-line interface for creating, manipulating, and processin
   - [Payload Format (with embedded SURB)](#payload-format-with-embedded-surb)
   - [SURB Components](#surb-components)
   - [SURB Keys File Format](#surb-keys-file-format)
-- [SURB IDs and Key Management](#surb-ids-and-key-management)
-- [Command Output Examples](#command-output-examples)
 - [Testing](#testing)
-- [Advanced Usage](#advanced-usage)
-  - [Network Geometries](#network-geometries)
-  - [Batch Processing](#batch-processing)
-  - [Integration with Mix Networks](#integration-with-mix-networks)
-- [Dependencies](#dependencies)
-- [Contributing](#contributing)
+- [Examples](#examples)
+  - [Running the Standalone SURB Test](#running-the-standalone-surb-test)
+  - [Running the Forward Packet with Embedded SURB Test](#running-the-forward-packet-with-embedded-surb-test)
+  - [Key Features Demonstrated](#key-features-demonstrated)
+  - [SURB IDs and Key Management](#surb-ids-and-key-management)
+  - [Command Output Examples](#command-output-examples)
 - [License](#license)
+
+
 
 ## Overview
 
@@ -385,6 +385,168 @@ The test scripts automatically:
 - Generate all required cryptographic keys
 - Create appropriate geometry files
 - Test complete end-to-end workflows with 5-hop paths
+
+## Examples
+
+### Running the Standalone SURB Test
+
+```bash
+$ ./examples/test_surb.sh
+=== Testing Complete SURB Functionality ===
+Installing Sphinx CLI tool...
+Building genkeypair tool...
+Generating test key files...
+Generating geometry file...
+1. Creating SURB...
+SURB IDs created:
+  Hop 0: 7b6055d66b03e1dc3fab3381b701415a
+  Hop 1: d1a9c673ac5b394cc958e28a5e34b5e1
+  Hop 2: c400dabf67ef00bf5654a00de40ea13e
+  Hop 3: 6b957a7e3cb809f000216031d0c6dc0a
+  Hop 4: 7d1d41f10b90b3cc8360ac4766420479
+SURB created successfully!
+SURB written to test_surb.surb (572 bytes)
+SURB keys written to test_surb.keys (384 bytes)
+
+To use this SURB, share these components:
+  SURB file: test_surb.surb
+  First hop ID: b49ef25e17c77eca3945955bf99fae538a59865067a7fc7afd92ef9153e8ac30
+
+Keep private:
+  Decryption keys: test_surb.keys
+
+2. Creating reply message...
+
+3. Creating packet from SURB...
+Packet created from SURB successfully!
+First hop node ID: b49ef25e17c77eca3945955bf99fae538a59865067a7fc7afd92ef9153e8ac30
+Packet size: 3082 bytes
+Packet written to test_reply.bin
+
+4. Unwrapping packet (hop 1)...
+Packet unwrapped successfully!
+Commands found: 2
+  Command 0: SURBReply 7b6055d66b03e1dc3fab3381b701415a
+SURB_ID: 7b6055d66b03e1dc3fab3381b701415a
+  Command 1: NextNodeHop to 2062050ca17fe7e4c0db07e8481b7c9e4e8196bf5cd0a0f7cfa8c08bb7e055ba
+
+5. Unwrapping packet (hop 2)...
+Packet unwrapped successfully!
+Commands found: 2
+  Command 0: SURBReply d1a9c673ac5b394cc958e28a5e34b5e1
+SURB_ID: d1a9c673ac5b394cc958e28a5e34b5e1
+  Command 1: NextNodeHop to 8e0cc4461f928837c4937458c52279d4a2c33ee440be41261a05cb128484c2d2
+
+[... continues through all 5 hops ...]
+
+8. Unwrapping packet (hop 5 - final)...
+Packet unwrapped successfully!
+Commands found: 1
+  Command 0: SURBReply 7d1d41f10b90b3cc8360ac4766420479
+SURB_ID: 7d1d41f10b90b3cc8360ac4766420479
+
+This is the final hop (no next hop)
+Payload size: 2606 bytes
+
+9. Decrypting SURB payload...
+SURB payload decrypted successfully!
+Decrypted payload size: 2574 bytes
+
+10. Verifying result...
+Original message:
+Hello from SURB reply test!
+
+Decrypted message:
+Hello from SURB reply test!
+
+=== SURB Test Complete ===
+```
+
+### Running the Forward Packet with Embedded SURB Test
+
+```bash
+$ ./examples/test_forward_with_surb.sh
+=== Testing Forward Packet with Embedded SURB + SURB Reply ===
+Installing Sphinx CLI tool...
+Building genkeypair tool...
+Generating test key files...
+Generating geometry file...
+1. Creating forward packet with embedded SURB...
+SURB IDs created:
+  Hop 0: e5b19d1759006b0d02cadd604363641f
+  Hop 1: d8ec8d8dc9a4b53017d427edbfe79f71
+  Hop 2: 83989b21f42e9377f4f7c008ad8ba574
+  Hop 3: 15db45ce22f917911f839bbd64a5423b
+  Hop 4: 5ade28082a34c10e2a4760cdddb20e7f
+SURB embedded in packet payload
+SURB keys written to forward_surb.keys (384 bytes)
+Sphinx packet written to forward_with_surb.bin (3082 bytes)
+
+2. Unwrapping forward packet (hop 1)...
+Packet unwrapped successfully!
+Commands found: 1
+  Command 0: NextNodeHop to 2062050ca17fe7e4c0db07e8481b7c9e4e8196bf5cd0a0f7cfa8c08bb7e055ba
+
+[... continues through all 5 forward hops ...]
+
+6. Unwrapping forward packet (hop 5 - final destination)...
+Packet unwrapped successfully!
+Commands found: 1
+  Command 0: Recipient 0000000000000000000000000000000000000000000000000000000000000000
+
+This is the final hop (no next hop)
+Payload size: 2574 bytes
+SURB extracted successfully!
+SURB written to extracted_surb.surb (572 bytes)
+User payload size: 2000 bytes
+
+7. Checking if SURB was extracted...
+✅ SURB successfully extracted to extracted_surb.surb
+
+9. Creating reply message using the embedded SURB...
+Creating a test SURB for reply demonstration...
+SURB created successfully!
+
+10. Creating reply packet from SURB...
+Packet created from SURB successfully!
+Packet size: 3082 bytes
+
+[... continues through all 5 reply hops ...]
+
+16. Decrypting SURB reply payload...
+SURB payload decrypted successfully!
+
+17. Verifying complete workflow...
+=== FORWARD MESSAGE ===
+Original forward message:
+Original message for forward packet
+
+=== REPLY MESSAGE ===
+Original reply message:
+This is a reply using the embedded SURB!
+
+Decrypted reply message:
+This is a reply using the embedded SURB!
+
+=== WORKFLOW SUMMARY ===
+✅ Forward packet with embedded SURB created
+✅ Forward packet routed through 5 hops
+✅ Combined payload (message + SURB) delivered
+✅ Reply SURB used to create return packet
+✅ Reply packet routed back through different 5-hop path
+✅ Reply message successfully decrypted
+
+=== Test Complete ===
+```
+
+### Key Features Demonstrated
+
+**SURB ID Tracking**: Each hop shows unique SURB IDs for proper key management
+**5-Hop Paths**: Both forward and reverse paths use 5 hops for enhanced security
+**Automatic Setup**: Scripts handle all tool installation and key generation
+**Complete Workflows**: End-to-end testing of all Sphinx functionality
+**SURB Extraction**: Automatic extraction of embedded SURBs from forward packets
+**Bidirectional Communication**: Full round-trip message exchange
 
 ### SURB IDs and Key Management
 
