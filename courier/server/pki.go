@@ -175,6 +175,59 @@ func (p *PKIWorker) entryForEpoch(epoch uint64) *pki.Document {
 	return nil
 }
 
+// ForceFetchPKI forces the PKI worker to fetch a new PKI document for the current epoch.
+// This is useful for integration tests where you want to ensure the courier has the latest
+// PKI document without waiting for the normal fetch cycle.
+func (p *PKIWorker) ForceFetchPKI() error {
+	if p.impl == nil {
+		return errors.New("no PKI client configured")
+	}
+
+	epoch, _, _ := epochtime.Now()
+
+	// Clear any failed fetch record for this epoch to allow retry
+	p.lock.Lock()
+	delete(p.failedFetches, epoch)
+	p.lock.Unlock()
+
+	p.log.Debugf("Force fetching PKI document for epoch %v", epoch)
+
+	// Fetch the PKI document
+	ctx := context.Background()
+	d, rawDoc, err := p.impl.Get(ctx, epoch)
+	if err != nil {
+		p.log.Warningf("Force fetch failed for epoch %v: %v", epoch, err)
+		return err
+	}
+
+	// Validate sphinx geometry
+	if !hmac.Equal(d.SphinxGeometryHash, p.server.cfg.SphinxGeometry.Hash()) {
+		return errors.New("sphinx geometry mismatch")
+	}
+
+	// Update replicas and store the document
+	p.replicas.UpdateFromPKIDoc(d)
+
+	p.lock.Lock()
+	p.rawDocs[epoch] = rawDoc
+	p.docs[epoch] = d
+	p.lock.Unlock()
+
+	p.log.Debugf("Successfully force fetched PKI document for epoch %v", epoch)
+
+	// Kick the connector to update connections
+	p.server.connector.ForceUpdate()
+
+	return nil
+}
+
+// HasCurrentPKIDocument returns true if the courier has a PKI document for the current epoch.
+// This is useful for integration tests to check if the courier is ready.
+func (p *PKIWorker) HasCurrentPKIDocument() bool {
+	epoch, _, _ := epochtime.Now()
+	return p.entryForEpoch(epoch) != nil
+}
+
 // updateTimer is used by the worker loop to determine when next to wake and fetch.
 func (p *PKIWorker) updateTimer(timer *time.Timer) {
 	now, elapsed, till := epochtime.Now()

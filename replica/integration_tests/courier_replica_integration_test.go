@@ -455,13 +455,22 @@ func aliceAndBobKeyExchangeKeys(t *testing.T, env *testEnvironment) (*bacap.Stat
 	return aliceStatefulWriter, bobStatefulReader
 }
 
+// forceCourierPKIFetch forces the courier to fetch PKI documents
+func forceCourierPKIFetch(t *testing.T, env *testEnvironment) {
+	t.Log("Forcing PKI fetch for courier")
+	err := env.courier.PKI.ForceFetchPKI()
+	require.NoError(t, err, "Failed to force PKI fetch for courier")
+}
+
+// waitForCourierPKI waits for the courier to have a PKI document
 func waitForCourierPKI(t *testing.T, env *testEnvironment) {
 	maxWait := 30 * time.Second
 	checkInterval := 100 * time.Millisecond
 	start := time.Now()
 
 	for time.Since(start) < maxWait {
-		if env.courier.PKI.PKIDocument() != nil {
+		if env.courier.PKI.HasCurrentPKIDocument() {
+			t.Log("Courier has PKI document")
 			return
 		}
 		time.Sleep(checkInterval)
@@ -505,6 +514,10 @@ func waitForReplicasPKI(t *testing.T, env *testEnvironment) {
 }
 
 func testBoxRoundTrip(t *testing.T, env *testEnvironment) {
+	t.Log("FORCE COURIER PKI FETCH")
+	forceCourierPKIFetch(t, env)
+	t.Log("END OF FORCE COURIER PKI FETCH")
+
 	t.Log("WAIT FOR COURIER PKI")
 	waitForCourierPKI(t, env)
 	t.Log("END OF WAIT FOR COURIER PKI")
