@@ -4,10 +4,12 @@
 package replica
 
 import (
+	"bytes"
 	"container/list"
 	"crypto/hmac"
 	"fmt"
 	"net"
+	"net/url"
 	"sync/atomic"
 	"time"
 
@@ -66,6 +68,45 @@ func (c *incomingConn) worker() {
 		c.l.onClosedConn(c) // Remove from the connection list.
 	}()
 
+	// Check for bidirectional connection race condition BEFORE handshake
+	// Get the remote address to see if we're already connecting to this peer
+	remoteAddr := c.c.RemoteAddr().String()
+	c.log.Debugf("Incoming connection from: %s", remoteAddr)
+
+	// Extract the IP and port from the remote address
+	// Skip bidirectional race detection for non-network connections (like pipes in tests)
+	host, _, err := net.SplitHostPort(remoteAddr)
+	if err != nil {
+		c.log.Debugf("Cannot parse remote address %s (likely test connection): %v", remoteAddr, err)
+		// Continue with normal handshake for test connections
+	} else {
+		// Check if we have any outgoing connections to the same host
+		// This is a simple heuristic to detect bidirectional connection attempts
+		myIdentityHash := hash.Sum256From(c.l.server.identityPublicKey)
+
+		// For now, let's use a simple approach: if our ID is lower, we close incoming connections
+		// and keep outgoing connections. This should prevent the deadlock.
+		replicas := c.l.server.PKIWorker.ReplicasCopy()
+		for nodeID, desc := range replicas {
+			// Check if this replica has an address matching the incoming connection
+			for _, addrs := range desc.Addresses {
+				for _, addr := range addrs {
+					if u, err := url.Parse(addr); err == nil {
+						if addrHost, _, err := net.SplitHostPort(u.Host); err == nil {
+							if addrHost == host {
+								// This is a connection from a known replica
+								if bytes.Compare(myIdentityHash[:], nodeID[:]) < 0 {
+									c.log.Debugf("Closing incoming connection from %x due to bidirectional race - keeping outgoing connection", nodeID)
+									return
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
 	// Allocate the session struct.
 	identityHash := hash.Sum256From(c.l.server.identityPublicKey)
 	cfg := &wire.SessionConfig{
@@ -76,11 +117,10 @@ func (c *incomingConn) worker() {
 		AuthenticationKey: c.l.server.linkKey,
 		RandomReader:      rand.Reader,
 	}
-	var err error
 	c.l.Lock()
 
 	nikeScheme := nikeschemes.ByName(c.l.server.cfg.ReplicaNIKEScheme)
-	c.w, err = wire.NewStorageReplicaSession(cfg, nikeScheme, false)
+	c.w, err = wire.NewBidirectionalStorageReplicaSession(cfg, nikeScheme, false)
 
 	c.l.Unlock()
 	if err != nil {
@@ -98,14 +138,39 @@ func (c *incomingConn) worker() {
 	}
 	c.log.Debugf("Handshake completed.")
 	c.c.SetDeadline(time.Time{})
+
+	// Check for bidirectional connection race condition
+	// If we have an outgoing connection to the same peer, close this incoming connection
+	// to prevent protocol deadlocks
+	creds, err := c.w.PeerCredentials()
+	if err == nil && len(creds.AdditionalData) == sConstants.NodeIDLength {
+		var peerNodeID [sConstants.NodeIDLength]byte
+		copy(peerNodeID[:], creds.AdditionalData)
+
+		// Check if we have an outgoing connection to this peer
+		if c.l.server.connector.HasConnection(&peerNodeID) {
+			myIdentityHash := hash.Sum256From(c.l.server.identityPublicKey)
+
+			// Use deterministic rule: replica with lower ID keeps outgoing connection
+			if bytes.Compare(myIdentityHash[:], peerNodeID[:]) < 0 {
+				c.log.Debugf("Closing incoming connection due to bidirectional race - keeping outgoing connection to %x", peerNodeID)
+				return
+			} else {
+				c.log.Debugf("Accepting incoming connection and will close outgoing connection to %x", peerNodeID)
+				// Close the outgoing connection since we have higher ID
+				c.l.server.connector.CloseConnection(&peerNodeID)
+			}
+		}
+	}
+
 	c.l.onInitializedConn(c)
 
 	// Log the connection source.
-	creds, err := c.w.PeerCredentials()
+	creds2, err := c.w.PeerCredentials()
 	if err != nil {
 		c.log.Debugf("Session failure: %s", err)
 	}
-	blob, err := creds.PublicKey.MarshalBinary()
+	blob, err := creds2.PublicKey.MarshalBinary()
 	if err != nil {
 		panic(err)
 	}
@@ -222,75 +287,109 @@ func newIncomingConn(l *Listener, conn net.Conn, geo *geo.Geometry, scheme kem.S
 }
 
 func (c *incomingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
+	c.log.Debugf("IsPeerValid: ENTRY - Starting peer validation from %s", c.c.RemoteAddr())
+
+	if creds == nil {
+		c.log.Errorf("IsPeerValid: creds is nil - RETURNING FALSE")
+		return false
+	}
+
+	c.log.Debugf("IsPeerValid: AdditionalData length: %d, hex: %x", len(creds.AdditionalData), creds.AdditionalData)
+
 	// Check if this is a courier connection (empty AdditionalData)
 	if len(creds.AdditionalData) == 0 {
+		c.log.Debugf("IsPeerValid: Detected courier connection (empty AdditionalData)")
 		// Check courier authentication
 		epoch, _, _ := epochtime.Now()
+		c.log.Debugf("IsPeerValid: Current epoch: %d", epoch)
 
 		// Try current, next, and previous epochs
+		c.log.Debugf("IsPeerValid: Looking for PKI document for epoch %d", epoch)
 		doc := c.l.server.PKIWorker.documentForEpoch(epoch)
 		if doc == nil {
+			c.log.Debugf("IsPeerValid: No doc for epoch %d, trying epoch %d", epoch, epoch+1)
 			doc = c.l.server.PKIWorker.documentForEpoch(epoch + 1)
 			if doc == nil {
+				c.log.Debugf("IsPeerValid: No doc for epoch %d, trying epoch %d", epoch+1, epoch-1)
 				doc = c.l.server.PKIWorker.documentForEpoch(epoch - 1)
 				if doc == nil {
-					c.log.Errorf("No PKI docs available for epochs %d, %d, or %d", epoch-1, epoch, epoch+1)
+					c.log.Errorf("IsPeerValid: No PKI docs available for epochs %d, %d, or %d - RETURNING FALSE", epoch-1, epoch, epoch+1)
 					return false
 				}
 			}
 		}
 
+		c.log.Debugf("IsPeerValid: Found PKI document for epoch %d with %d service nodes", doc.Epoch, len(doc.ServiceNodes))
+
 		// Check if the public key matches any courier in the PKI document
-		for _, desc := range doc.ServiceNodes {
+		courierCount := 0
+		for i, desc := range doc.ServiceNodes {
 			if desc.Kaetzchen == nil {
+				c.log.Debugf("IsPeerValid: ServiceNode[%d] %s has no Kaetzchen, skipping", i, desc.Name)
 				continue
 			}
+			courierCount++
+			c.log.Debugf("IsPeerValid: Checking ServiceNode[%d] %s (courier %d)", i, desc.Name, courierCount)
+
 			rawLinkPubKey, err := desc.GetRawCourierLinkKey()
 			if err != nil {
-				c.log.Errorf("desc.GetRawCourierLinkKey() failure: %s", err)
+				c.log.Errorf("IsPeerValid: desc.GetRawCourierLinkKey() failure for %s: %s", desc.Name, err)
 				continue
 			}
 			linkScheme := kemschemes.ByName(c.l.server.cfg.WireKEMScheme)
 			linkPubKey, err := pem.FromPublicPEMString(rawLinkPubKey, linkScheme)
 			if err != nil {
-				c.log.Errorf("Failed to unmarshal courier link key: %s", err)
+				c.log.Errorf("IsPeerValid: Failed to unmarshal courier link key for %s: %s", desc.Name, err)
 				continue
 			}
 			if creds.PublicKey.Equal(linkPubKey) {
-				c.log.Debug("IncomingConn: Authenticated courier connection")
+				c.log.Debugf("IsPeerValid: Authenticated courier connection for %s - RETURNING TRUE", desc.Name)
 				return true
 			}
+			c.log.Debugf("IsPeerValid: Public key mismatch for courier %s", desc.Name)
 		}
-		c.log.Debug("IncomingConn: Courier authentication failed")
+		c.log.Debugf("IsPeerValid: Courier authentication failed - checked %d couriers - RETURNING FALSE", courierCount)
 		return false
 	}
 
 	// Check if this is a replica connection (AdditionalData is node ID hash)
 	if len(creds.AdditionalData) == sConstants.NodeIDLength {
+		c.log.Debugf("IsPeerValid: Detected replica connection (AdditionalData length: %d)", sConstants.NodeIDLength)
 		var nodeID [sConstants.NodeIDLength]byte
 		copy(nodeID[:], creds.AdditionalData)
+		c.log.Debugf("IsPeerValid: Replica nodeID from AdditionalData: %x", nodeID)
 
 		// Get replica descriptor from the replica map
+		c.log.Debugf("IsPeerValid: Looking up replica descriptor for nodeID: %x", nodeID)
 		replicaDesc, isReplica := c.l.server.PKIWorker.replicas.GetReplicaDescriptor(&nodeID)
 		if !isReplica {
-			c.log.Debugf("Authentication failed: node ID %x not found in replica list", nodeID)
+			c.log.Errorf("IsPeerValid: Authentication failed: node ID %x not found in replica list - RETURNING FALSE", nodeID)
 			return false
 		}
+		c.log.Debugf("IsPeerValid: Found replica descriptor for nodeID: %x", nodeID)
 
 		// Verify link key matches
+		c.log.Debugf("IsPeerValid: Verifying link key for replica %x", nodeID)
 		blob, err := creds.PublicKey.MarshalBinary()
 		if err != nil {
+			c.log.Errorf("IsPeerValid: Failed to marshal public key: %v", err)
 			panic(err)
 		}
+		c.log.Debugf("IsPeerValid: Marshaled public key length: %d", len(blob))
+		c.log.Debugf("IsPeerValid: Expected link key length: %d", len(replicaDesc.LinkKey))
+
 		if !hmac.Equal(replicaDesc.LinkKey, blob) {
-			c.log.Debugf("Authentication failed: link key mismatch for replica %x", nodeID)
+			c.log.Errorf("IsPeerValid: Authentication failed: link key mismatch for replica %x - RETURNING FALSE", nodeID)
+			c.log.Debugf("IsPeerValid: Expected link key: %x", replicaDesc.LinkKey[:32]) // Show first 32 bytes
+			c.log.Debugf("IsPeerValid: Received link key: %x", blob[:32])                // Show first 32 bytes
 			return false
 		}
 
-		c.log.Debug("IncomingConn: Authenticated replica connection")
+		c.log.Debugf("IsPeerValid: Authenticated replica connection for nodeID %x - RETURNING TRUE", nodeID)
 		return true
 	}
 
-	c.log.Debug("IncomingConn: Authentication failed, invalid AdditionalData length")
+	c.log.Errorf("IsPeerValid: Authentication failed, invalid AdditionalData length: %d (expected 0 or %d) - RETURNING FALSE",
+		len(creds.AdditionalData), sConstants.NodeIDLength)
 	return false
 }

@@ -137,6 +137,42 @@ func NewStorageReplicaCommands(geo *geo.Geometry, scheme nike.Scheme) *Commands 
 	return c
 }
 
+// NewBidirectionalStorageReplicaCommands creates a Commands instance suitable for replica-to-replica
+// communication where both sides can initiate replication. This allows either replica to send
+// ReplicaWrite commands over a single unidirectional connection.
+func NewBidirectionalStorageReplicaCommands(geo *geo.Geometry, scheme nike.Scheme) *Commands {
+	c := &Commands{
+		geo:                geo,
+		pkiSignatureScheme: nil,
+		replicaNikeScheme:  scheme,
+	}
+
+	// Both sides can send and receive ReplicaWrite and ReplicaWriteReply commands
+	// This enables bidirectional replication over unidirectional connections
+	bidirectionalCommands := []Command{
+		&ReplicaWrite{
+			Cmds: c,
+		},
+		&ReplicaWriteReply{
+			Cmds: c,
+		},
+		&NoOp{
+			Cmds: c,
+		},
+		&Disconnect{
+			Cmds: c,
+		},
+	}
+
+	c.clientToServerCommands = bidirectionalCommands
+	c.serverToClientCommands = bidirectionalCommands
+
+	c.shouldPad = true
+	c.MaxMessageLenClientToServer = c.calcMaxMessageLenClientToServer()
+	c.MaxMessageLenServerToClient = c.calcMaxMessageLenServerToClient()
+	return c
+}
+
 // NewPKICommands creates a Commands instance suitale to be used by PKI nodes.
 func NewPKICommands(pkiSignatureScheme sign.Scheme) *Commands {
 	const defaultReplicaDescriptorSize = 123

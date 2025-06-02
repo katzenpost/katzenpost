@@ -22,6 +22,7 @@ import (
 
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/pki"
+	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"github.com/katzenpost/katzenpost/replica/common"
@@ -81,6 +82,14 @@ func (m *mockConnector) ForceUpdate() {}
 func (m *mockConnector) DispatchReplication(cmd *commands.ReplicaWrite) {}
 
 func (m *mockConnector) DispatchCommand(cmd commands.Command, idHash *[32]byte) {}
+
+func (m *mockConnector) HasConnection(nodeID *[constants.NodeIDLength]byte) bool {
+	return false
+}
+
+func (m *mockConnector) CloseConnection(nodeID *[constants.NodeIDLength]byte) {}
+
+func (m *mockConnector) EnableOutgoingConnections() {}
 
 func TestState(t *testing.T) {
 	dname, err := os.MkdirTemp("", "replca.testState")
