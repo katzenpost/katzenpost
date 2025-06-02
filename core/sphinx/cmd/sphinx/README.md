@@ -383,14 +383,6 @@ go test -v .                # Run unit tests with verbose output
 ./run_tests.sh             # Run both unit and integration tests
 ```
 
-The unit tests cover:
-- **Node ID validation** and hex encoding/decoding
-- **Hop specification parsing** and validation
-- **SURB keys file format** (TOML with base64 encoding)
-- **SURB payload extraction** from combined payloads
-- **Geometry validation** and packet size calculations
-- **File operations** and error handling
-- **Base64 encoding/decoding** for key storage
 
 ### Integration Tests
 
