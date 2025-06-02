@@ -130,11 +130,32 @@ Example:
 	},
 }
 
+var unwrapCmd = &cobra.Command{
+	Use:   "unwrap",
+	Short: "Unwrap/decrypt a Sphinx packet",
+	Long: `Unwrap a Sphinx packet using a private key, revealing the payload and routing commands.
+This simulates what a mix node does when processing a Sphinx packet.
+
+Example:
+  sphinx unwrap --geometry config.toml --private-key node1.nike_private.pem --packet packet.bin
+  sphinx unwrap --geometry config.toml --private-key node1.nike_private.pem --packet packet.bin --output-packet next_packet.bin`,
+	Run: func(cmd *cobra.Command, args []string) {
+		geometryFile, _ := cmd.Flags().GetString("geometry")
+		privateKeyFile, _ := cmd.Flags().GetString("private-key")
+		packetFile, _ := cmd.Flags().GetString("packet")
+		outputFile, _ := cmd.Flags().GetString("output")
+		outputPacketFile, _ := cmd.Flags().GetString("output-packet")
+
+		unwrapSphinxPacket(geometryFile, privateKeyFile, packetFile, outputFile, outputPacketFile)
+	},
+}
+
 func init() {
 	// Add subcommands
 	rootCmd.AddCommand(createGeometryCmd)
 	rootCmd.AddCommand(newPacketCmd)
 	rootCmd.AddCommand(genNodeIDCmd)
+	rootCmd.AddCommand(unwrapCmd)
 
 	// createGeometry flags
 	createGeometryCmd.Flags().Int("nrMixLayers", 3, "number of hops per route not counting ingress/egress nodes")
@@ -152,10 +173,20 @@ func init() {
 	// genNodeID flags
 	genNodeIDCmd.Flags().String("key", "", "path to public key PEM file (required)")
 
+	// unwrap flags
+	unwrapCmd.Flags().String("geometry", "", "path to TOML geometry config file (required)")
+	unwrapCmd.Flags().String("private-key", "", "path to private key PEM file (required)")
+	unwrapCmd.Flags().String("packet", "", "path to Sphinx packet file (required)")
+	unwrapCmd.Flags().String("output", "", "file to write unwrapped payload to (default: stdout)")
+	unwrapCmd.Flags().String("output-packet", "", "file to write the processed packet to (for forwarding to next hop)")
+
 	// Mark required flags
 	newPacketCmd.MarkFlagRequired("geometry")
 	newPacketCmd.MarkFlagRequired("hop")
 	genNodeIDCmd.MarkFlagRequired("key")
+	unwrapCmd.MarkFlagRequired("geometry")
+	unwrapCmd.MarkFlagRequired("private-key")
+	unwrapCmd.MarkFlagRequired("packet")
 }
 
 func main() {
@@ -215,6 +246,124 @@ func generateSphinxGeometry(createGeometry *CreateGeometry) {
 		if err != nil {
 			panic(err)
 		}
+	}
+}
+
+// unwrapSphinxPacket unwraps a Sphinx packet using a private key
+func unwrapSphinxPacket(geometryFile, privateKeyFile, packetFile, outputFile, outputPacketFile string) {
+	// Load geometry from TOML file
+	geometry, err := loadGeometryFromTOML(geometryFile)
+	if err != nil {
+		log.Fatalf("failed to load geometry: %v", err)
+	}
+
+	// Create Sphinx instance from geometry
+	sphinx, err := sphinx.FromGeometry(geometry)
+	if err != nil {
+		log.Fatalf("failed to create Sphinx instance: %v", err)
+	}
+
+	// Load private key from PEM file
+	var privateKey interface{}
+	if geometry.NIKEName != "" {
+		nikeScheme := schemes.ByName(geometry.NIKEName)
+		if nikeScheme == nil {
+			log.Fatalf("failed to resolve NIKE scheme: %s", geometry.NIKEName)
+		}
+
+		privKey, err := nikepem.FromPrivatePEMFile(privateKeyFile, nikeScheme)
+		if err != nil {
+			log.Fatalf("failed to load NIKE private key from %s: %v", privateKeyFile, err)
+		}
+		privateKey = privKey
+	} else if geometry.KEMName != "" {
+		kemScheme := kemschemes.ByName(geometry.KEMName)
+		if kemScheme == nil {
+			log.Fatalf("failed to resolve KEM scheme: %s", geometry.KEMName)
+		}
+
+		privKey, err := kempem.FromPrivatePEMFile(privateKeyFile, kemScheme)
+		if err != nil {
+			log.Fatalf("failed to load KEM private key from %s: %v", privateKeyFile, err)
+		}
+		privateKey = privKey
+	} else {
+		log.Fatalf("geometry has neither NIKE nor KEM scheme")
+	}
+
+	// Read packet from file
+	packet, err := os.ReadFile(packetFile)
+	if err != nil {
+		log.Fatalf("failed to read packet file %s: %v", packetFile, err)
+	}
+
+	// Unwrap the packet
+	payload, replayTag, cmds, err := sphinx.Unwrap(privateKey, packet)
+	if err != nil {
+		log.Fatalf("failed to unwrap Sphinx packet: %v", err)
+	}
+
+	// Print information about the unwrapped packet
+	fmt.Fprintf(os.Stderr, "Packet unwrapped successfully!\n")
+	fmt.Fprintf(os.Stderr, "Replay tag: %x\n", replayTag)
+	fmt.Fprintf(os.Stderr, "Commands found: %d\n", len(cmds))
+
+	var nextHopNodeID string
+	var recipientID string
+	for i, cmd := range cmds {
+		switch c := cmd.(type) {
+		case *commands.NextNodeHop:
+			nextHopNodeID = hex.EncodeToString(c.ID[:])
+			fmt.Fprintf(os.Stderr, "  Command %d: NextNodeHop to %s\n", i, nextHopNodeID)
+		case *commands.Recipient:
+			recipientID = hex.EncodeToString(c.ID[:])
+			fmt.Fprintf(os.Stderr, "  Command %d: Recipient %s\n", i, recipientID)
+		case *commands.SURBReply:
+			fmt.Fprintf(os.Stderr, "  Command %d: SURBReply %x\n", i, c.ID[:])
+		default:
+			fmt.Fprintf(os.Stderr, "  Command %d: Unknown command type\n", i)
+		}
+	}
+
+	// Print next hop information prominently
+	if nextHopNodeID != "" {
+		fmt.Fprintf(os.Stderr, "\nNext hop node ID: %s\n", nextHopNodeID)
+	} else {
+		fmt.Fprintf(os.Stderr, "\nThis is the final hop (no next hop)\n")
+	}
+
+	// Print recipient information if present
+	if recipientID != "" {
+		fmt.Fprintf(os.Stderr, "Recipient ID: %s\n", recipientID)
+	}
+
+	if len(payload) > 0 {
+		fmt.Fprintf(os.Stderr, "Payload size: %d bytes\n", len(payload))
+
+		// Write payload to output
+		if outputFile == "" {
+			// Write to stdout
+			_, err = os.Stdout.Write(payload)
+			if err != nil {
+				log.Fatalf("failed to write payload to stdout: %v", err)
+			}
+		} else {
+			// Write to file
+			err = os.WriteFile(outputFile, payload, 0644)
+			if err != nil {
+				log.Fatalf("failed to write payload to file: %v", err)
+			}
+			fmt.Fprintf(os.Stderr, "Payload written to %s\n", outputFile)
+		}
+	}
+
+	// Save the processed packet if requested (for forwarding to next hop)
+	if outputPacketFile != "" {
+		err = os.WriteFile(outputPacketFile, packet, 0644)
+		if err != nil {
+			log.Fatalf("failed to write processed packet to file: %v", err)
+		}
+		fmt.Fprintf(os.Stderr, "Processed packet written to %s (%d bytes)\n", outputPacketFile, len(packet))
 	}
 }
 
@@ -411,6 +560,7 @@ func generateSphinxPacket(newPacket *NewPacket) {
 			log.Fatalf("failed to write packet to stdout: %v", err)
 		}
 	} else {
+
 		// Write to file
 		err = os.WriteFile(newPacket.OutputFile, packet, 0644)
 		if err != nil {
