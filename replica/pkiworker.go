@@ -4,7 +4,6 @@
 package replica
 
 import (
-	"crypto/hmac"
 	"errors"
 	"net/url"
 	"sync"
@@ -13,15 +12,12 @@ import (
 	"golang.org/x/crypto/blake2b"
 	"gopkg.in/op/go-logging.v1"
 
-	"github.com/katzenpost/hpqc/kem/pem"
 	"github.com/katzenpost/hpqc/kem/schemes"
 
 	vClient "github.com/katzenpost/katzenpost/authority/voting/client"
 	vServer "github.com/katzenpost/katzenpost/authority/voting/server"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/pki"
-	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
-	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/katzenpost/katzenpost/replica/common"
 )
@@ -163,89 +159,18 @@ func (p *PKIWorker) updateReplicas(doc *pki.Document) {
 	}
 }
 
-func (p *PKIWorker) AuthenticateCourierConnection(c *wire.PeerCredentials) bool {
-	const keyEndpoint = "endpoint"
-
-	if len(c.AdditionalData) != 0 {
-		p.log.Debugf("AuthenticateCourierConnection: AD is not length 0, AD is '%x'", c.AdditionalData)
-		return false
-	}
-
-	epoch, _, _ := epochtime.Now()
-
-	// Try current epoch first
-	doc := p.entryForEpoch(epoch)
-	if doc == nil {
-		p.log.Debugf("No PKI doc for current epoch %d, trying next epoch", epoch)
-		// Try next epoch
-		doc = p.entryForEpoch(epoch + 1)
-		if doc == nil {
-			p.log.Debugf("No PKI doc for next epoch %d, trying previous epoch", epoch+1)
-			// Try previous epoch
-			doc = p.entryForEpoch(epoch - 1)
-			if doc == nil {
-				p.log.Errorf("No PKI docs available for epochs %d, %d, or %d", epoch-1, epoch, epoch+1)
-				return false
-			}
-			p.log.Debugf("Using PKI doc from previous epoch %d", epoch-1)
-		} else {
-			p.log.Debugf("Using PKI doc from next epoch %d", epoch+1)
-		}
-	} else {
-		p.log.Debugf("Using PKI doc from current epoch %d", epoch)
-	}
-
-	isCourier := false
-	for _, desc := range doc.ServiceNodes {
-		if desc.Kaetzchen == nil {
-			continue
-		}
-		rawLinkPubKey, err := desc.GetRawCourierLinkKey()
-		if err != nil {
-			p.log.Errorf("desc.GetRawCourierLinkKey() failure: %s", err)
-			return false
-		}
-		linkScheme := schemes.ByName(p.server.cfg.WireKEMScheme)
-		linkPubKey, err := pem.FromPublicPEMString(rawLinkPubKey, linkScheme)
-		if err != nil {
-			p.log.Errorf("AuthenticateCourierConnection failed to unmarshal courier link key: %s", err)
-		}
-		if c.PublicKey.Equal(linkPubKey) {
-			p.log.Debugf("Found matching courier link key for service node %s", desc.Name)
-			isCourier = true
-		}
-	}
-	if !isCourier {
-		p.log.Debug("No matching courier link key found in any service node")
-	}
-	return isCourier
-}
-
-func (p *PKIWorker) AuthenticateReplicaConnection(c *wire.PeerCredentials) (*pki.ReplicaDescriptor, bool) {
-	if len(c.AdditionalData) != sConstants.NodeIDLength {
-		p.log.Debugf("AuthenticateConnection: '%x' AD not an IdentityKey?.", c.AdditionalData)
-		return nil, false
-	}
-	var nodeID [sConstants.NodeIDLength]byte
-	copy(nodeID[:], c.AdditionalData)
-	replicaDesc, isReplica := p.replicas.GetReplicaDescriptor(&nodeID)
-	if !isReplica {
-		p.log.Debugf("Authentication failed: node ID %x not found in replica list", nodeID)
-		return nil, false
-	}
-	blob, err := c.PublicKey.MarshalBinary()
-	if err != nil {
-		panic(err)
-	}
-	if !hmac.Equal(replicaDesc.LinkKey, blob) {
-		p.log.Debugf("Authentication failed: link key mismatch for replica %x", nodeID)
-		return nil, false
-	}
-
-	return replicaDesc, true
-}
-
 // ReplicasCopy returns a copy of the replicas map
 func (p *PKIWorker) ReplicasCopy() map[[32]byte]*pki.ReplicaDescriptor {
 	return p.replicas.Copy()
+}
+
+// Keep the documentForEpoch method public so it can be used by IsPeerValid
+func (p *PKIWorker) documentForEpoch(epoch uint64) *pki.Document {
+	p.lock.RLock()
+	defer p.lock.RUnlock()
+
+	if d, ok := p.docs[epoch]; ok {
+		return d
+	}
+	return nil
 }

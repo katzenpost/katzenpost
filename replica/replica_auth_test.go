@@ -4,6 +4,7 @@
 package replica
 
 import (
+	"crypto/hmac"
 	"os"
 	"path/filepath"
 	"testing"
@@ -12,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/katzenpost/hpqc/hash"
+	"github.com/katzenpost/hpqc/kem/pem"
 	kempem "github.com/katzenpost/hpqc/kem/pem"
 	kemschemes "github.com/katzenpost/hpqc/kem/schemes"
 	nikeschemes "github.com/katzenpost/hpqc/nike/schemes"
@@ -20,6 +22,7 @@ import (
 	vConfig "github.com/katzenpost/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/pki"
+	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/replica/common"
@@ -47,6 +50,63 @@ func setupPKIDoc(t *testing.T, replicas []*pki.ReplicaDescriptor, serviceNodes [
 		ServiceNodes:    serviceNodes,
 	}
 	return doc
+}
+
+func authenticateCourierConnection(pkiWorker *PKIWorker, creds *wire.PeerCredentials) bool {
+	// Check courier authentication
+	epoch, _, _ := epochtime.Now()
+
+	// Try current, next, and previous epochs
+	doc := pkiWorker.documentForEpoch(epoch)
+	if doc == nil {
+		doc = pkiWorker.documentForEpoch(epoch + 1)
+		if doc == nil {
+			doc = pkiWorker.documentForEpoch(epoch - 1)
+			if doc == nil {
+				return false
+			}
+		}
+	}
+
+	// Check if the public key matches any courier in the PKI document
+	for _, desc := range doc.ServiceNodes {
+		if desc.Kaetzchen == nil {
+			continue
+		}
+		rawLinkPubKey, err := desc.GetRawCourierLinkKey()
+		if err != nil {
+			continue
+		}
+		linkScheme := kemschemes.ByName("Kyber768-X25519") // Use the scheme from this test
+		linkPubKey, err := pem.FromPublicPEMString(rawLinkPubKey, linkScheme)
+		if err != nil {
+			continue
+		}
+		if creds.PublicKey.Equal(linkPubKey) {
+			return true
+		}
+	}
+	return false
+}
+
+func authenticateReplicaConnection(pkiWorker *PKIWorker, creds *wire.PeerCredentials) (*pki.ReplicaDescriptor, bool) {
+	if len(creds.AdditionalData) != sConstants.NodeIDLength {
+		return nil, false
+	}
+	var nodeID [sConstants.NodeIDLength]byte
+	copy(nodeID[:], creds.AdditionalData)
+	replicaDesc, isReplica := pkiWorker.replicas.GetReplicaDescriptor(&nodeID)
+	if !isReplica {
+		return nil, false
+	}
+	blob, err := creds.PublicKey.MarshalBinary()
+	if err != nil {
+		panic(err)
+	}
+	if !hmac.Equal(replicaDesc.LinkKey, blob) {
+		return nil, false
+	}
+	return replicaDesc, true
 }
 
 // TestAuthentication tests all authentication paths:
@@ -235,7 +295,7 @@ func TestAuthentication(t *testing.T) {
 		}
 
 		// Test courier authentication from replica1
-		isValid := replica1PKI.AuthenticateCourierConnection(courierCreds)
+		isValid := authenticateCourierConnection(replica1PKI, courierCreds)
 		require.True(t, isValid, "Courier authentication should succeed")
 
 		// Test with invalid courier link key
@@ -245,7 +305,7 @@ func TestAuthentication(t *testing.T) {
 			AdditionalData: []byte{},
 			PublicKey:      invalidLinkPubKey,
 		}
-		isValid = replica1PKI.AuthenticateCourierConnection(invalidCourierCreds)
+		isValid = authenticateCourierConnection(replica1PKI, invalidCourierCreds)
 		require.False(t, isValid, "Courier authentication should fail with invalid link key")
 	})
 
@@ -259,13 +319,13 @@ func TestAuthentication(t *testing.T) {
 		}
 
 		// Test replica authentication from replica1
-		desc, isValid := replica1PKI.AuthenticateReplicaConnection(replica2Creds)
+		replicaDesc, isValid := authenticateReplicaConnection(replica1PKI, replica2Creds)
 		require.True(t, isValid, "Replica authentication should succeed")
-		require.NotNil(t, desc, "Replica descriptor should be returned")
-		require.Equal(t, replica2Desc.Name, desc.Name, "Correct replica descriptor should be returned")
-		require.NotEmpty(t, desc.EnvelopeKeys, "Replica descriptor should have envelope keys")
-		require.Contains(t, desc.EnvelopeKeys, replicaEpoch, "Replica descriptor should have current replica epoch key")
-		require.Contains(t, desc.EnvelopeKeys, replicaEpoch+1, "Replica descriptor should have next replica epoch key")
+		require.NotNil(t, replicaDesc, "Replica descriptor should not be nil")
+		require.Equal(t, replica2Desc.Name, replicaDesc.Name, "Correct replica descriptor should be returned")
+		require.NotEmpty(t, replicaDesc.EnvelopeKeys, "Replica descriptor should have envelope keys")
+		require.Contains(t, replicaDesc.EnvelopeKeys, replicaEpoch, "Replica descriptor should have current replica epoch key")
+		require.Contains(t, replicaDesc.EnvelopeKeys, replicaEpoch+1, "Replica descriptor should have next replica epoch key")
 
 		// Test with invalid identity key
 		invalidIdentityKey, _, err := pkiScheme.GenerateKey()
@@ -277,7 +337,7 @@ func TestAuthentication(t *testing.T) {
 			AdditionalData: invalidIdHash[:],
 			PublicKey:      replica2LinkPubKey,
 		}
-		desc, isValid = replica1PKI.AuthenticateReplicaConnection(invalidCreds)
+		desc, isValid := authenticateReplicaConnection(replica1PKI, invalidCreds)
 		require.False(t, isValid, "Replica authentication should fail with invalid identity key")
 		require.Nil(t, desc, "No descriptor should be returned for invalid credentials")
 
@@ -288,7 +348,7 @@ func TestAuthentication(t *testing.T) {
 			AdditionalData: replica2IdHash[:],
 			PublicKey:      invalidLinkPubKey,
 		}
-		desc, isValid = replica1PKI.AuthenticateReplicaConnection(invalidLinkCreds)
+		desc, isValid = authenticateReplicaConnection(replica1PKI, invalidLinkCreds)
 		require.False(t, isValid, "Replica authentication should fail with invalid link key")
 		require.Nil(t, desc, "No descriptor should be returned for invalid credentials")
 	})

@@ -21,6 +21,7 @@ import (
 
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
+	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
@@ -43,11 +44,14 @@ type outgoingConn struct {
 }
 
 func (c *outgoingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
+	// First verify the identity hash matches what we expect
 	idHash := hash.Sum256(c.dst.IdentityKey)
 	if !hmac.Equal(idHash[:], creds.AdditionalData) {
 		c.log.Debug("OutgoingConn: Identity hash mismatch")
 		return false
 	}
+
+	// Then verify the link key matches what we expect
 	keyblob, err := creds.PublicKey.MarshalBinary()
 	if err != nil {
 		panic(err)
@@ -57,13 +61,12 @@ func (c *outgoingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 		return false
 	}
 
-	// Query the PKI to figure out if we can send or not, and to ensure that
-	// the peer is listed in a PKI document that's valid.
-	var isValid bool
-	_, isValid = c.co.Server().PKIWorker.AuthenticateReplicaConnection(creds)
-
-	if !isValid {
-		c.log.Debug("OutgoingConn: PKI authentication failed")
+	// Verify the replica is in the current PKI document
+	var nodeID [sConstants.NodeIDLength]byte
+	copy(nodeID[:], creds.AdditionalData)
+	_, isReplica := c.co.Server().PKIWorker.replicas.GetReplicaDescriptor(&nodeID)
+	if !isReplica {
+		c.log.Debug("OutgoingConn: PKI authentication failed - replica not found")
 		return false
 	}
 
@@ -140,17 +143,33 @@ func (c *outgoingConn) worker() {
 		// something like this, stale connections can get stuck in the
 		// dialing state since the Connector relies on outgoingConnection
 		// objects to remove themselves from the connection table.
-		if desc, isValid := c.co.Server().PKIWorker.AuthenticateReplicaConnection(&dialCheckCreds); isValid {
-			// The list of addresses could have changed, authenticateConnection
-			// will return the most "current" descriptor on success, so update
-			// the cached pointer.
-			if desc != nil {
-				c.dst = desc
+
+		// Extract node ID from credentials
+		var nodeID [sConstants.NodeIDLength]byte
+		copy(nodeID[:], dialCheckCreds.AdditionalData)
+
+		// Check if the replica is in the current PKI document
+		replicaDesc, isReplica := c.co.Server().PKIWorker.replicas.GetReplicaDescriptor(&nodeID)
+		if isReplica {
+			// Verify link key matches
+			keyblob, err := dialCheckCreds.PublicKey.MarshalBinary()
+			if err != nil {
+				panic(err)
+			}
+			isValid := hmac.Equal(replicaDesc.LinkKey, keyblob)
+
+			if isValid {
+				// The list of addresses could have changed, so update
+				// the cached pointer with the current descriptor
+				c.dst = replicaDesc
 				linkPubKey, err := c.scheme.UnmarshalBinaryPublicKey(c.dst.LinkKey)
 				if err != nil {
 					panic(err)
 				}
 				dialCheckCreds.PublicKey = linkPubKey
+			} else {
+				c.log.Debugf("Bailing out of Dial loop, link key mismatch.")
+				return
 			}
 		} else {
 			c.log.Debugf("Bailing out of Dial loop, no longer in PKI.")

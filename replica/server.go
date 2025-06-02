@@ -199,6 +199,7 @@ func newServerWithPKI(cfg *config.Config, pkiClient pki.Client) (*Server, error)
 	s.identityPublicKey, s.identityPrivateKey, err = pkiSignatureScheme.GenerateKey()
 
 	if utils.BothExists(identityPrivateKeyFile, identityPublicKeyFile) {
+		s.log.Noticef("Using Identity keypair which already exists: %s and %s", identityPrivateKeyFile, identityPublicKeyFile)
 		s.identityPrivateKey, err = signpem.FromPrivatePEMFile(identityPrivateKeyFile, pkiSignatureScheme)
 		if err != nil {
 			return nil, err
@@ -208,6 +209,7 @@ func newServerWithPKI(cfg *config.Config, pkiClient pki.Client) (*Server, error)
 			return nil, err
 		}
 	} else if utils.BothNotExists(identityPrivateKeyFile, identityPublicKeyFile) {
+		s.log.Noticef("Identity keypair does not exist, creating new keypair: %s and %s", identityPrivateKeyFile, identityPublicKeyFile)
 		err = signpem.PrivateKeyToFile(identityPrivateKeyFile, s.identityPrivateKey)
 		if err != nil {
 			return nil, err
@@ -234,6 +236,7 @@ func newServerWithPKI(cfg *config.Config, pkiClient pki.Client) (*Server, error)
 	}
 
 	if utils.BothExists(linkPrivateKeyFile, linkPublicKeyFile) {
+		s.log.Noticef("Using Link keypair which already exists: %s and %s", linkPrivateKeyFile, linkPublicKeyFile)
 		linkPrivateKey, err = kempem.FromPrivatePEMFile(linkPrivateKeyFile, scheme)
 		if err != nil {
 			return nil, err
@@ -243,6 +246,7 @@ func newServerWithPKI(cfg *config.Config, pkiClient pki.Client) (*Server, error)
 			return nil, err
 		}
 	} else if utils.BothNotExists(linkPrivateKeyFile, linkPublicKeyFile) {
+		s.log.Noticef("Link keypair does not exist, creating new keypair: %s and %s", linkPrivateKeyFile, linkPublicKeyFile)
 		err = kempem.PrivateKeyToFile(linkPrivateKeyFile, linkPrivateKey)
 		if err != nil {
 			return nil, err

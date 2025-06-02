@@ -5,6 +5,7 @@ package replica
 
 import (
 	"container/list"
+	"crypto/hmac"
 	"fmt"
 	"net"
 	"sync/atomic"
@@ -14,10 +15,14 @@ import (
 
 	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/kem"
-	"github.com/katzenpost/hpqc/nike/schemes"
+	"github.com/katzenpost/hpqc/kem/pem"
+	kemschemes "github.com/katzenpost/hpqc/kem/schemes"
+	nikeschemes "github.com/katzenpost/hpqc/nike/schemes"
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/hpqc/sign"
 
+	"github.com/katzenpost/katzenpost/core/epochtime"
+	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
@@ -50,19 +55,6 @@ type incomingConn struct {
 	closeConnectionCh chan bool
 }
 
-func (c *incomingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
-	if c.l.server.PKIWorker.AuthenticateCourierConnection(creds) {
-		c.log.Debug("IncomingConn: Authenticated courier connection")
-		return true
-	}
-	if _, isValid := c.l.server.PKIWorker.AuthenticateReplicaConnection(creds); isValid {
-		c.log.Debug("IncomingConn: Authenticated replica connection")
-		return true
-	}
-	c.log.Debug("IncomingConn: Authentication failed")
-	return false
-}
-
 func (c *incomingConn) Close() {
 	c.closeConnectionCh <- true
 }
@@ -87,7 +79,7 @@ func (c *incomingConn) worker() {
 	var err error
 	c.l.Lock()
 
-	nikeScheme := schemes.ByName(c.l.server.cfg.ReplicaNIKEScheme)
+	nikeScheme := nikeschemes.ByName(c.l.server.cfg.ReplicaNIKEScheme)
 	c.w, err = wire.NewStorageReplicaSession(cfg, nikeScheme, false)
 
 	c.l.Unlock()
@@ -227,4 +219,78 @@ func newIncomingConn(l *Listener, conn net.Conn, geo *geo.Geometry, scheme kem.S
 	// the connection list.
 
 	return c
+}
+
+func (c *incomingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
+	// Check if this is a courier connection (empty AdditionalData)
+	if len(creds.AdditionalData) == 0 {
+		// Check courier authentication
+		epoch, _, _ := epochtime.Now()
+
+		// Try current, next, and previous epochs
+		doc := c.l.server.PKIWorker.entryForEpoch(epoch)
+		if doc == nil {
+			doc = c.l.server.PKIWorker.entryForEpoch(epoch + 1)
+			if doc == nil {
+				doc = c.l.server.PKIWorker.entryForEpoch(epoch - 1)
+				if doc == nil {
+					c.log.Errorf("No PKI docs available for epochs %d, %d, or %d", epoch-1, epoch, epoch+1)
+					return false
+				}
+			}
+		}
+
+		// Check if the public key matches any courier in the PKI document
+		for _, desc := range doc.ServiceNodes {
+			if desc.Kaetzchen == nil {
+				continue
+			}
+			rawLinkPubKey, err := desc.GetRawCourierLinkKey()
+			if err != nil {
+				c.log.Errorf("desc.GetRawCourierLinkKey() failure: %s", err)
+				continue
+			}
+			linkScheme := kemschemes.ByName(c.l.server.cfg.WireKEMScheme)
+			linkPubKey, err := pem.FromPublicPEMString(rawLinkPubKey, linkScheme)
+			if err != nil {
+				c.log.Errorf("Failed to unmarshal courier link key: %s", err)
+				continue
+			}
+			if creds.PublicKey.Equal(linkPubKey) {
+				c.log.Debug("IncomingConn: Authenticated courier connection")
+				return true
+			}
+		}
+		c.log.Debug("IncomingConn: Courier authentication failed")
+		return false
+	}
+
+	// Check if this is a replica connection (AdditionalData is node ID hash)
+	if len(creds.AdditionalData) == sConstants.NodeIDLength {
+		var nodeID [sConstants.NodeIDLength]byte
+		copy(nodeID[:], creds.AdditionalData)
+
+		// Get replica descriptor from the replica map
+		replicaDesc, isReplica := c.l.server.PKIWorker.replicas.GetReplicaDescriptor(&nodeID)
+		if !isReplica {
+			c.log.Debugf("Authentication failed: node ID %x not found in replica list", nodeID)
+			return false
+		}
+
+		// Verify link key matches
+		blob, err := creds.PublicKey.MarshalBinary()
+		if err != nil {
+			panic(err)
+		}
+		if !hmac.Equal(replicaDesc.LinkKey, blob) {
+			c.log.Debugf("Authentication failed: link key mismatch for replica %x", nodeID)
+			return false
+		}
+
+		c.log.Debug("IncomingConn: Authenticated replica connection")
+		return true
+	}
+
+	c.log.Debug("IncomingConn: Authentication failed, invalid AdditionalData length")
+	return false
 }

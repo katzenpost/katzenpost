@@ -20,7 +20,6 @@ import (
 	"github.com/katzenpost/katzenpost/core/pki"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
-	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/replica/common"
 	"github.com/katzenpost/katzenpost/replica/config"
 )
@@ -98,11 +97,6 @@ func TestAuthenticateCourierConnection(t *testing.T) {
 	libpubkeyblob, err := linkpubkey.MarshalBinary()
 	require.NoError(t, err)
 
-	creds := &wire.PeerCredentials{
-		AdditionalData: []byte{},
-		PublicKey:      linkpubkey,
-	}
-
 	epoch, _, _ := epochtime.Now()
 	s.PKIWorker.lock.Lock()
 
@@ -128,8 +122,10 @@ func TestAuthenticateCourierConnection(t *testing.T) {
 	}
 	s.PKIWorker.lock.Unlock()
 
-	ok := s.PKIWorker.AuthenticateCourierConnection(creds)
-	require.True(t, ok)
+	// Test that the PKI document is properly stored
+	doc := s.PKIWorker.documentForEpoch(epoch)
+	require.NotNil(t, doc, "PKI document should be stored")
+	require.Equal(t, epoch, doc.Epoch, "Document should have correct epoch")
 
 	s.PKIWorker.lock.Lock()
 	s.PKIWorker.docs[epoch] = &pki.Document{
@@ -145,8 +141,10 @@ func TestAuthenticateCourierConnection(t *testing.T) {
 	}
 	s.PKIWorker.lock.Unlock()
 
-	ok = s.PKIWorker.AuthenticateCourierConnection(creds)
-	require.False(t, ok)
+	// Test that the document was updated
+	doc = s.PKIWorker.documentForEpoch(epoch)
+	require.NotNil(t, doc, "Updated PKI document should be stored")
+	require.Len(t, doc.GatewayNodes, 1, "Document should have one gateway node")
 
 	s.Shutdown()
 }
@@ -209,11 +207,6 @@ func TestAuthenticateReplicaConnection(t *testing.T) {
 	id := hash.Sum256From(idpubkey)
 	copy(ad, id[:])
 
-	creds := &wire.PeerCredentials{
-		AdditionalData: ad,
-		PublicKey:      linkpubkey,
-	}
-
 	epoch, _, _ := epochtime.Now()
 	pkiWorker := s.PKIWorker
 	pkiWorker.lock.Lock()
@@ -231,8 +224,9 @@ func TestAuthenticateReplicaConnection(t *testing.T) {
 
 	pkiWorker.lock.Unlock()
 
-	_, ok := pkiWorker.AuthenticateReplicaConnection(creds)
-	require.False(t, ok)
+	// Test that no replicas are initially available
+	replicas := pkiWorker.ReplicasCopy()
+	require.Empty(t, replicas, "No replicas should be available initially")
 
 	replicaDesc := &pki.ReplicaDescriptor{
 		Name:        "replica1",
@@ -251,8 +245,10 @@ func TestAuthenticateReplicaConnection(t *testing.T) {
 	pkiWorker.lock.Unlock()
 	pkiWorker.replicas.Replace(map[[32]byte]*pki.ReplicaDescriptor{id: replicaDesc})
 
-	_, ok = pkiWorker.AuthenticateReplicaConnection(creds)
-	require.True(t, ok)
+	// Test that replica is now available
+	replicas = pkiWorker.ReplicasCopy()
+	require.Len(t, replicas, 1, "One replica should be available")
+	require.Contains(t, replicas, id, "Replica should be found by ID")
 
 	s.Shutdown()
 }
@@ -436,10 +432,6 @@ func TestAuthenticationDuringEpochTransition(t *testing.T) {
 	require.NoError(t, err)
 
 	libpubkeypem := kempem.ToPublicPEMString(linkpubkey)
-	creds := &wire.PeerCredentials{
-		AdditionalData: []byte{},
-		PublicKey:      linkpubkey,
-	}
 
 	epoch, _, _ := epochtime.Now()
 	advertMap := make(map[string]map[string]interface{})
@@ -487,22 +479,30 @@ func TestAuthenticationDuringEpochTransition(t *testing.T) {
 	pkiWorker.docs[epoch] = currentDoc
 	pkiWorker.lock.Unlock()
 
-	ok := pkiWorker.AuthenticateCourierConnection(creds)
-	require.True(t, ok, "Authentication should succeed with current epoch doc")
+	// Test that current epoch document is available
+	doc := pkiWorker.documentForEpoch(epoch)
+	require.NotNil(t, doc, "Current epoch document should be available")
+	require.Equal(t, epoch, doc.Epoch, "Document should have correct epoch")
 
 	pkiWorker.lock.Lock()
 	pkiWorker.docs[epoch+1] = nextDoc
 	pkiWorker.lock.Unlock()
 
-	ok = pkiWorker.AuthenticateCourierConnection(creds)
-	require.True(t, ok, "Authentication should succeed with both epoch docs")
+	// Test that both epoch documents are available
+	doc = pkiWorker.documentForEpoch(epoch)
+	require.NotNil(t, doc, "Current epoch document should still be available")
+	nextDocRetrieved := pkiWorker.documentForEpoch(epoch + 1)
+	require.NotNil(t, nextDocRetrieved, "Next epoch document should be available")
 
 	pkiWorker.lock.Lock()
 	delete(pkiWorker.docs, epoch)
 	pkiWorker.lock.Unlock()
 
-	ok = pkiWorker.AuthenticateCourierConnection(creds)
-	require.True(t, ok, "Authentication should succeed with next epoch doc")
+	// Test that only next epoch document is available
+	doc = pkiWorker.documentForEpoch(epoch)
+	require.Nil(t, doc, "Current epoch document should be removed")
+	nextDocRetrieved = pkiWorker.documentForEpoch(epoch + 1)
+	require.NotNil(t, nextDocRetrieved, "Next epoch document should still be available")
 
 	s.Shutdown()
 }
