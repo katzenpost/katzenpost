@@ -372,12 +372,19 @@ key_data = "base64_encoded_decryption_keys"
 
 ## Testing
 
-Run the included test scripts:
+Run the included test scripts from the examples directory:
 
 ```bash
-./test_surb.sh              # Test standalone SURB workflow
-./test_forward_with_surb.sh # Test embedded SURB workflow
+./examples/test_surb.sh              # Test standalone SURB workflow
+./examples/test_forward_with_surb.sh # Test embedded SURB workflow
 ```
+
+The test scripts automatically:
+- Install the Sphinx CLI tool using `go install`
+- Build the genkeypair tool for key generation
+- Generate all required cryptographic keys
+- Create appropriate geometry files
+- Test complete end-to-end workflows with 5-hop paths
 
 ### SURB IDs and Key Management
 

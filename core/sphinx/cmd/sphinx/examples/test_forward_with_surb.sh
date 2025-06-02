@@ -4,9 +4,9 @@ set -e  # Exit on any error
 
 echo "=== Testing Forward Packet with Embedded SURB + SURB Reply ==="
 
-# Build required tools
-echo "Building Sphinx CLI tool..."
-go build -o sphinx .
+# Install required tools
+echo "Installing Sphinx CLI tool..."
+go install .
 
 echo "Building genkeypair tool..."
 (cd /home/human/code/katzenpost/genkeypair && go build -o genkeypair .)
@@ -22,7 +22,7 @@ done
 # Generate geometry file if it doesn't exist
 echo "Generating geometry file..."
 if [ ! -f geometry_5hop.toml ]; then
-    ./sphinx createGeometry --nike x25519 --nrMixLayers 3 --file geometry_5hop.toml
+    sphinx createGeometry --nike x25519 --nrMixLayers 3 --file geometry_5hop.toml
 fi
 
 # Clean up any existing test files
@@ -32,7 +32,7 @@ rm -f extracted_surb.surb reply_packet.bin reply_processed*.bin reply_final_payl
 echo "1. Creating forward packet with embedded SURB..."
 echo "Original message for forward packet" > forward_message.txt
 
-./sphinx newpacket \
+sphinx newpacket \
   --geometry geometry_5hop.toml \
   --payload forward_message.txt \
   --output forward_with_surb.bin \
@@ -50,35 +50,35 @@ echo "Original message for forward packet" > forward_message.txt
   --output-surb-keys forward_surb.keys
 
 echo -e "\n2. Unwrapping forward packet (hop 1)..."
-./sphinx unwrap \
+sphinx unwrap \
   --geometry geometry_5hop.toml \
   --private-key /home/human/code/katzenpost/genkeypair/node1.nike_private.pem \
   --packet forward_with_surb.bin \
   --output-packet forward_processed1.bin
 
 echo -e "\n3. Unwrapping forward packet (hop 2)..."
-./sphinx unwrap \
+sphinx unwrap \
   --geometry geometry_5hop.toml \
   --private-key /home/human/code/katzenpost/genkeypair/node2.nike_private.pem \
   --packet forward_processed1.bin \
   --output-packet forward_processed2.bin
 
 echo -e "\n4. Unwrapping forward packet (hop 3)..."
-./sphinx unwrap \
+sphinx unwrap \
   --geometry geometry_5hop.toml \
   --private-key /home/human/code/katzenpost/genkeypair/node3.nike_private.pem \
   --packet forward_processed2.bin \
   --output-packet forward_processed3.bin
 
 echo -e "\n5. Unwrapping forward packet (hop 4)..."
-./sphinx unwrap \
+sphinx unwrap \
   --geometry geometry_5hop.toml \
   --private-key /home/human/code/katzenpost/genkeypair/node4.nike_private.pem \
   --packet forward_processed3.bin \
   --output-packet forward_processed4.bin
 
 echo -e "\n6. Unwrapping forward packet (hop 5 - final destination)..."
-./sphinx unwrap \
+sphinx unwrap \
   --geometry geometry_5hop.toml \
   --private-key /home/human/code/katzenpost/genkeypair/node5.nike_private.pem \
   --packet forward_processed4.bin \
@@ -104,7 +104,7 @@ echo "This is a reply using the embedded SURB!" > reply_message.txt
 
 # Create a test SURB for reply demonstration (5 hops)
 echo "Creating a test SURB for reply demonstration..."
-./sphinx newsurb \
+sphinx newsurb \
   --geometry geometry_5hop.toml \
   --output-surb test_reply_surb.surb \
   --output-keys test_reply_surb.keys \
@@ -115,49 +115,49 @@ echo "Creating a test SURB for reply demonstration..."
   --hop="e5f67890123456789012345678901234567890123456789012345678a1b2c3d4,/home/human/code/katzenpost/genkeypair/node10.nike_public.pem"
 
 echo -e "\n10. Creating reply packet from SURB..."
-./sphinx newpacketfromsurb \
+sphinx newpacketfromsurb \
   --geometry geometry_5hop.toml \
   --surb test_reply_surb.surb \
   --payload reply_message.txt \
   --output reply_packet.bin
 
 echo -e "\n11. Unwrapping reply packet (hop 1)..."
-./sphinx unwrap \
+sphinx unwrap \
   --geometry geometry_5hop.toml \
   --private-key /home/human/code/katzenpost/genkeypair/node6.nike_private.pem \
   --packet reply_packet.bin \
   --output-packet reply_processed1.bin
 
 echo -e "\n12. Unwrapping reply packet (hop 2)..."
-./sphinx unwrap \
+sphinx unwrap \
   --geometry geometry_5hop.toml \
   --private-key /home/human/code/katzenpost/genkeypair/node7.nike_private.pem \
   --packet reply_processed1.bin \
   --output-packet reply_processed2.bin
 
 echo -e "\n13. Unwrapping reply packet (hop 3)..."
-./sphinx unwrap \
+sphinx unwrap \
   --geometry geometry_5hop.toml \
   --private-key /home/human/code/katzenpost/genkeypair/node8.nike_private.pem \
   --packet reply_processed2.bin \
   --output-packet reply_processed3.bin
 
 echo -e "\n14. Unwrapping reply packet (hop 4)..."
-./sphinx unwrap \
+sphinx unwrap \
   --geometry geometry_5hop.toml \
   --private-key /home/human/code/katzenpost/genkeypair/node9.nike_private.pem \
   --packet reply_processed3.bin \
   --output-packet reply_processed4.bin
 
 echo -e "\n15. Unwrapping reply packet (hop 5 - back to original sender)..."
-./sphinx unwrap \
+sphinx unwrap \
   --geometry geometry_5hop.toml \
   --private-key /home/human/code/katzenpost/genkeypair/node10.nike_private.pem \
   --packet reply_processed4.bin \
   --output reply_final_payload.bin
 
 echo -e "\n16. Decrypting SURB reply payload..."
-./sphinx decryptsurbpayload \
+sphinx decryptsurbpayload \
   --geometry geometry_5hop.toml \
   --keys test_reply_surb.keys \
   --payload reply_final_payload.bin \
