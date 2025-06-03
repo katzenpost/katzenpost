@@ -18,8 +18,6 @@ import (
 	"github.com/katzenpost/katzenpost/client2/thin"
 )
 
-var incomingConnID uint64
-
 // incomingConn type is used along with listener type
 type incomingConn struct {
 	listener *listener

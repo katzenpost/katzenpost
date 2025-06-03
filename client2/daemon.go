@@ -21,7 +21,6 @@ import (
 	"github.com/katzenpost/katzenpost/core/log"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
-	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/worker"
 )
 
@@ -57,20 +56,20 @@ type Daemon struct {
 	listener *listener
 	egressCh chan *Request
 
-	replies   map[[sConstants.SURBIDLength]byte]replyDescriptor
-	decoys    map[[sConstants.SURBIDLength]byte]replyDescriptor
+	replies   map[[constants.SURBIDLength]byte]replyDescriptor
+	decoys    map[[constants.SURBIDLength]byte]replyDescriptor
 	replyLock *sync.Mutex
 
 	timerQueue *TimerQueue
 	ingressCh  chan *sphinxReply
-	gcSurbIDCh chan *[sConstants.SURBIDLength]byte
+	gcSurbIDCh chan *[constants.SURBIDLength]byte
 
 	gcTimerQueue *TimerQueue
 	gcReplyCh    chan *gcReply
 
 	arqTimerQueue *TimerQueue
-	arqSurbIDMap  map[[sConstants.SURBIDLength]byte]*ARQMessage
-	arqResendCh   chan *[sConstants.SURBIDLength]byte
+	arqSurbIDMap  map[[constants.SURBIDLength]byte]*ARQMessage
+	arqResendCh   chan *[constants.SURBIDLength]byte
 
 	haltOnce sync.Once
 }
@@ -82,13 +81,13 @@ func NewDaemon(cfg *config.Config) (*Daemon, error) {
 		cfg:          cfg,
 		egressCh:     make(chan *Request, egressSize),
 		ingressCh:    make(chan *sphinxReply, ingressSize),
-		replies:      make(map[[sConstants.SURBIDLength]byte]replyDescriptor),
-		decoys:       make(map[[sConstants.SURBIDLength]byte]replyDescriptor),
-		gcSurbIDCh:   make(chan *[sConstants.SURBIDLength]byte),
+		replies:      make(map[[constants.SURBIDLength]byte]replyDescriptor),
+		decoys:       make(map[[constants.SURBIDLength]byte]replyDescriptor),
+		gcSurbIDCh:   make(chan *[constants.SURBIDLength]byte),
 		gcReplyCh:    make(chan *gcReply),
 		replyLock:    new(sync.Mutex),
-		arqSurbIDMap: make(map[[sConstants.SURBIDLength]byte]*ARQMessage),
-		arqResendCh:  make(chan *[sConstants.SURBIDLength]byte, 2),
+		arqSurbIDMap: make(map[[constants.SURBIDLength]byte]*ARQMessage),
+		arqResendCh:  make(chan *[constants.SURBIDLength]byte, 2),
 	}
 	err := d.initLogging()
 	if err != nil {
@@ -157,7 +156,7 @@ func (d *Daemon) Start() error {
 	d.cfg.Callbacks.OnDocumentFn = d.onDocument
 
 	d.timerQueue = NewTimerQueue(func(rawSurbID interface{}) {
-		surbID, ok := rawSurbID.(*[sConstants.SURBIDLength]byte)
+		surbID, ok := rawSurbID.(*[constants.SURBIDLength]byte)
 		if !ok {
 			panic("wtf, failed type assertion!")
 		}
@@ -170,7 +169,7 @@ func (d *Daemon) Start() error {
 	d.timerQueue.Start()
 	d.arqTimerQueue = NewTimerQueue(func(rawSurbID interface{}) {
 		d.log.Info("ARQ TimerQueue callback!")
-		surbID, ok := rawSurbID.(*[sConstants.SURBIDLength]byte)
+		surbID, ok := rawSurbID.(*[constants.SURBIDLength]byte)
 		if !ok {
 			panic("wtf, failed type assertion!")
 		}
@@ -200,8 +199,8 @@ func (d *Daemon) Start() error {
 
 func (d *Daemon) onDocument(doc *cpki.Document) {
 	slopFactor := 0.8
-	pollProviderMsec := time.Duration((1.0 / (doc.LambdaP + doc.LambdaL)) * slopFactor * float64(time.Millisecond))
-	d.client.SetPollInterval(pollProviderMsec)
+	pollProvider := time.Duration((1.0 / (doc.LambdaP + doc.LambdaL)) * slopFactor * float64(time.Millisecond))
+	d.client.SetPollInterval(pollProvider)
 	d.listener.updateFromPKIDoc(doc)
 }
 
@@ -226,13 +225,13 @@ func (d *Daemon) egressWorker() {
 			d.arqDoResend(surbID)
 		case request := <-d.egressCh:
 			switch {
-			case request.IsLoopDecoy == true:
+			case request.IsLoopDecoy:
 				d.sendLoopDecoy(request)
-			case request.IsDropDecoy == true:
+			case request.IsDropDecoy:
 				d.sendDropDecoy()
-			case request.IsSendOp == true:
+			case request.IsSendOp:
 				d.send(request)
-			case request.IsARQSendOp == true:
+			case request.IsARQSendOp:
 				d.send(request)
 			default:
 				panic("send operation not fully specified")
@@ -292,7 +291,7 @@ func (d *Daemon) handleReply(reply *sphinxReply) {
 				}
 				peeked := d.arqTimerQueue.Peek()
 				if peeked != nil {
-					peekSurbId := peeked.Value.(*[sConstants.SURBIDLength]byte)
+					peekSurbId := peeked.Value.(*[constants.SURBIDLength]byte)
 					if hmac.Equal(arqMessage.SURBID[:], peekSurbId[:]) {
 						d.arqTimerQueue.Pop()
 					}
@@ -337,13 +336,13 @@ func (d *Daemon) handleReply(reply *sphinxReply) {
 }
 
 func (d *Daemon) send(request *Request) {
-	surbKey := []byte{}
+	var surbKey []byte
 	var rtt time.Duration
 	var err error
 	var now time.Time
 
-	if request.IsARQSendOp == true {
-		request.SURBID = &[sConstants.SURBIDLength]byte{}
+	if request.IsARQSendOp {
+		request.SURBID = &[constants.SURBIDLength]byte{}
 		_, err = rand.Reader.Read(request.SURBID[:])
 		if err != nil {
 			panic(err)
@@ -355,14 +354,14 @@ func (d *Daemon) send(request *Request) {
 		d.log.Infof("SendCiphertext error: %s", err.Error())
 	}
 
-	if request.IsARQSendOp == true {
+	if request.IsARQSendOp {
 		d.log.Infof("ARQ RTT %s", rtt)
 	}
 
 	if request.WithSURB {
 		now = time.Now()
 		// XXX  this is too aggressive, and must be at least the fetchInterval + rtt + some slopfactor to account for path delays
-	
+
 		fetchInterval := d.client.GetPollInterval()
 		slop := time.Second
 		duration := rtt + fetchInterval + slop
@@ -370,7 +369,7 @@ func (d *Daemon) send(request *Request) {
 
 		d.timerQueue.Push(uint64(replyArrivalTime.UnixNano()), request.SURBID)
 
-		if request.IsLoopDecoy == false {
+		if !request.IsLoopDecoy {
 			incomingConn := d.listener.getConnection(request.AppID)
 			if incomingConn != nil {
 				response := &Response{
@@ -392,7 +391,7 @@ func (d *Daemon) send(request *Request) {
 	}
 
 	d.replyLock.Lock()
-	if request.IsARQSendOp == true {
+	if request.IsARQSendOp {
 		message := &ARQMessage{
 			AppID:              request.AppID,
 			MessageID:          request.ID,
@@ -456,7 +455,7 @@ func (d *Daemon) sendLoopDecoy(request *Request) {
 
 	serviceIdHash := hash.Sum256(echoService.MixDescriptor.IdentityKey)
 	payload := make([]byte, d.client.geo.UserForwardPayloadLength)
-	surbID := &[sConstants.SURBIDLength]byte{}
+	surbID := &[constants.SURBIDLength]byte{}
 	_, err := rand.Reader.Read(surbID[:])
 	if err != nil {
 		panic(err)
@@ -496,7 +495,7 @@ func (d *Daemon) sendDropDecoy() {
 	d.send(request)
 }
 
-func (d *Daemon) arqResend(surbID *[sConstants.SURBIDLength]byte) {
+func (d *Daemon) arqResend(surbID *[constants.SURBIDLength]byte) {
 	select {
 	case <-d.HaltCh():
 		return
@@ -504,7 +503,7 @@ func (d *Daemon) arqResend(surbID *[sConstants.SURBIDLength]byte) {
 	}
 }
 
-func (d *Daemon) arqDoResend(surbID *[sConstants.SURBIDLength]byte) {
+func (d *Daemon) arqDoResend(surbID *[constants.SURBIDLength]byte) {
 	defer d.log.Info("resend end")
 
 	d.replyLock.Lock()
@@ -524,7 +523,7 @@ func (d *Daemon) arqDoResend(surbID *[sConstants.SURBIDLength]byte) {
 			AppID: message.AppID,
 			MessageReplyEvent: &thin.MessageReplyEvent{
 				MessageID: message.MessageID,
-				Err:       errors.New("Max retries met."),
+				Err:       errors.New("max retries met"),
 				Payload:   []byte{},
 				SURBID:    surbID,
 			},
@@ -543,7 +542,7 @@ func (d *Daemon) arqDoResend(surbID *[sConstants.SURBIDLength]byte) {
 	d.log.Warningf("resend ----------------- REMOVING SURB ID %x", surbID[:])
 	delete(d.arqSurbIDMap, *surbID)
 
-	newsurbID := &[sConstants.SURBIDLength]byte{}
+	newsurbID := &[constants.SURBIDLength]byte{}
 	_, err := rand.Reader.Read(newsurbID[:])
 	if err != nil {
 		panic(err)
