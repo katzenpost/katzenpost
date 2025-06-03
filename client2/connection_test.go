@@ -36,14 +36,6 @@ import (
 // document contains fields from Document but not the encoding.BinaryMarshaler methods
 type document cpki.Document
 
-type mixKeys struct {
-	idpubkey  []sign.PublicKey
-	idprivkey []sign.PrivateKey
-
-	pubkeys  []nike.PublicKey
-	privkeys []nike.PrivateKey
-}
-
 func generateDescriptor(t *testing.T, pkiScheme sign.Scheme, linkScheme kem.Scheme, sphinxNikeScheme nike.Scheme, sphinxKemScheme kem.Scheme) *cpki.MixDescriptor {
 	idkey := make([]byte, pkiScheme.PublicKeySize())
 	_, err := rand.Reader.Read(idkey)
@@ -53,27 +45,10 @@ func generateDescriptor(t *testing.T, pkiScheme sign.Scheme, linkScheme kem.Sche
 	_, err = rand.Reader.Read(linkkey)
 	require.NoError(t, err)
 
-	var mixkey0 []byte
-	var mixkey1 []byte
-
-	if sphinxNikeScheme == nil {
-		mixkey0 = make([]byte, sphinxKemScheme.PublicKeySize())
-		mixkey1 = make([]byte, sphinxKemScheme.PublicKeySize())
-	} else {
-		mixkey0 = make([]byte, sphinxNikeScheme.PublicKeySize())
-		mixkey1 = make([]byte, sphinxNikeScheme.PublicKeySize())
-	}
-
-	_, err = rand.Reader.Read(mixkey0)
-	require.NoError(t, err)
-	_, err = rand.Reader.Read(mixkey1)
-	require.NoError(t, err)
-
 	return &cpki.MixDescriptor{
 		Name:        "fake mix node name",
 		IdentityKey: idkey,
 		LinkKey:     linkkey,
-		MixKeys:     map[uint64][]byte{0: mixkey0, 1: mixkey1},
 		Addresses:   map[string][]string{"tcp": []string{"tcp://127.0.0.1:12345"}},
 	}
 }
@@ -335,12 +310,8 @@ func TestConnection(t *testing.T) {
 	}()
 
 	clientCfg.Callbacks = &config.Callbacks{}
-	clientCfg.Callbacks.OnConnFn = func(err error) {
-		return
-	}
-	clientCfg.Callbacks.OnDocumentFn = func(*cpki.Document) {
-		return
-	}
+	clientCfg.Callbacks.OnConnFn = func(err error) {}
+	clientCfg.Callbacks.OnDocumentFn = func(*cpki.Document) {}
 	clientCfg.Callbacks.OnEmptyFn = func() error {
 		return nil
 	}

@@ -20,7 +20,6 @@ import (
 	"github.com/katzenpost/hpqc/rand"
 	"gopkg.in/op/go-logging.v1"
 
-	"github.com/katzenpost/katzenpost/core/epochtime"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
@@ -42,9 +41,8 @@ var (
 		Timeout:   connectTimeout,
 	}
 
-	keepAliveInterval   = 3 * time.Minute
-	connectTimeout      = 1 * time.Minute
-	pkiFallbackInterval = epochtime.Period / 16
+	keepAliveInterval = 3 * time.Minute
+	connectTimeout    = 1 * time.Minute
 )
 
 // ConnectError is the error used to indicate that a connect attempt has failed.
@@ -166,7 +164,7 @@ func (c *connection) getDescriptor() error {
 		c.log.Debugf("No PKI document for current epoch or cached PKI document provide.")
 		n := len(c.client.cfg.PinnedGateways.Gateways)
 		if n == 0 {
-			return errors.New("No PinnedGateways")
+			return errors.New("no PinnedGateways")
 		}
 		gateway := c.client.cfg.PinnedGateways.Gateways[rand.NewMath().Intn(n)]
 		idHash := hash.Sum256From(gateway.IdentityKey)
@@ -803,8 +801,6 @@ func (c *connection) sendPacket(pkt []byte) error {
 	case <-c.HaltCh():
 		return ErrShutdown
 	}
-
-	return nil
 }
 
 func (c *connection) GetConsensus(ctx context.Context, epoch uint64) (*commands.Consensus2, error) {
