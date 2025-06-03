@@ -71,6 +71,7 @@ type testEnvironment struct {
 	replicaConfigs []*config.Config
 	courierConfig  *courierConfig.Config
 	cleanup        func()
+	replicaKeys    []map[uint64]nike.PublicKey
 }
 
 func setupTestEnvironment(t *testing.T) *testEnvironment {
@@ -136,6 +137,7 @@ func setupTestEnvironment(t *testing.T) *testEnvironment {
 		replicaConfigs: replicaConfigs,
 		courierConfig:  courierCfg,
 		cleanup:        cleanup,
+		replicaKeys:    replicaKeys,
 	}
 }
 
@@ -543,7 +545,7 @@ func testBoxRoundTrip(t *testing.T, env *testEnvironment) {
 	require.Equal(t, len(courierWriteReply1.ErrorString), 0)
 	require.Nil(t, courierWriteReply1.Payload)
 
-	bobReadRequest1 := composeReadRequest(t, env, bobStatefulReader)
+	bobReadRequest1, bobPrivateKey1 := composeReadRequest(t, env, bobStatefulReader)
 	courierReadReply1 := injectCourierEnvelope(t, env, bobReadRequest1)
 
 	bobEnvHash1 := bobReadRequest1.EnvelopeHash()
@@ -561,14 +563,21 @@ func testBoxRoundTrip(t *testing.T, env *testEnvironment) {
 	require.Equal(t, uint8(0), courierReadReply2.ReplyIndex)
 	require.NotNil(t, courierReadReply2.Payload)
 
-	/*
-		boxid, err := bobStatefulReader.NextBoxID()
-		require.NoError(t, err)
-		bobPlaintext1, err := bobStatefulReader.DecryptNext(BACAP_CTX, *boxid, ct, sig)
-		require.NoError(t, err)
-		require.Equal(t, alicePayload1, bobPlaintext1)
-	*/
+	replicaEpoch, _, _ := common.ReplicaNow()
+	replicaPubKey := env.replicaKeys[int(bobReadRequest1.IntermediateReplicas[0])][replicaEpoch]
+	rawInnerMsg, err := mkemNikeScheme.DecryptEnvelope(bobPrivateKey1, replicaPubKey, courierReadReply2.Payload)
+	require.NoError(t, err)
 
+	// common.ReplicaMessageReplyInnerMessage
+	innerMsg, err := common.ReplicaMessageReplyInnerMessageFromBytes(rawInnerMsg)
+	require.NoError(t, err)
+	require.NotNil(t, innerMsg.ReplicaReadReply)
+
+	boxid, err := bobStatefulReader.NextBoxID()
+	require.NoError(t, err)
+	bobPlaintext1, err := bobStatefulReader.DecryptNext(BACAP_CTX, *boxid, innerMsg.ReplicaReadReply.Payload, *innerMsg.ReplicaReadReply.Signature)
+	require.NoError(t, err)
+	require.Equal(t, alicePayload1, bobPlaintext1)
 }
 
 func injectCourierEnvelope(t *testing.T, env *testEnvironment, envelope *common.CourierEnvelope) *common.CourierEnvelopeReply {
@@ -618,7 +627,7 @@ func injectCourierEnvelope(t *testing.T, env *testEnvironment, envelope *common.
 	return courierReply
 }
 
-func composeReadRequest(t *testing.T, env *testEnvironment, reader *bacap.StatefulReader) *common.CourierEnvelope {
+func composeReadRequest(t *testing.T, env *testEnvironment, reader *bacap.StatefulReader) (*common.CourierEnvelope, nike.PrivateKey) {
 	boxID, err := reader.NextBoxID()
 	require.NoError(t, err)
 
@@ -658,5 +667,5 @@ func composeReadRequest(t *testing.T, env *testEnvironment, reader *bacap.Statef
 		DEK:                  [2]*[mkem.DEKSize]byte{mkemCiphertext.DEKCiphertexts[0], mkemCiphertext.DEKCiphertexts[1]},
 		Ciphertext:           mkemCiphertext.Envelope,
 		IsRead:               true, // This is a read request!
-	}
+	}, mkemPrivateKey
 }
