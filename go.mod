@@ -17,6 +17,7 @@ require (
 	github.com/prometheus/client_golang v1.20.0
 	github.com/quic-go/quic-go v0.48.2
 	github.com/schwarmco/go-cartesian-product v0.0.0-20230921023625-e02d1c150053
+	github.com/spf13/cobra v1.9.1
 	github.com/stretchr/testify v1.10.0
 	github.com/ugorji/go/codec v1.2.12
 	github.com/yawning/bloom v0.0.0-20181019144233-44d6c5c71ed1
@@ -68,7 +69,6 @@ require (
 	github.com/quic-go/qpack v0.5.1 // indirect
 	github.com/rfjakob/eme v1.1.2 // indirect
 	github.com/shopspring/decimal v1.4.0 // indirect
-	github.com/spf13/cobra v1.9.1 // indirect
 	github.com/spf13/pflag v1.0.6 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	gitlab.com/yawning/x448.git v0.0.0-20221003101044-617eb9b7d9b7 // indirect
