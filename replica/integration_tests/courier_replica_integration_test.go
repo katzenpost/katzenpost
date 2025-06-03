@@ -410,6 +410,10 @@ func createCourierServer(t *testing.T, cfg *courierConfig.Config, pkiClient pki.
 func aliceComposesNextMessage(t *testing.T, message []byte, env *testEnvironment, aliceStatefulWriter *bacap.StatefulWriter) *common.CourierEnvelope {
 	boxID, ciphertext, sigraw, err := aliceStatefulWriter.EncryptNext(message)
 	require.NoError(t, err)
+
+	// DEBUG: Log Alice's BoxID
+	t.Logf("DEBUG: Alice writes to BoxID: %x", boxID[:])
+
 	sig := [bacap.SignatureSize]byte{}
 	copy(sig[:], sigraw)
 
@@ -536,13 +540,11 @@ func testBoxRoundTrip(t *testing.T, env *testEnvironment) {
 	waitForReplicasPKI(t, env)
 	t.Log("END OF WAIT FOR REPLICAS PKI")
 
-	// Give some time for connections to establish
-	time.Sleep(2 * time.Second)
-
 	aliceStatefulWriter, bobStatefulReader := aliceAndBobKeyExchangeKeys(t, env)
 
 	alicePayload1 := []byte("Hello, Bob!")
 	aliceEnvelope1 := aliceComposesNextMessage(t, alicePayload1, env, aliceStatefulWriter)
+
 	courierWriteReply1 := injectCourierEnvelope(t, env, aliceEnvelope1)
 
 	aliceEnvHash1 := aliceEnvelope1.EnvelopeHash()
@@ -559,7 +561,10 @@ func testBoxRoundTrip(t *testing.T, env *testEnvironment) {
 	require.Equal(t, courierReadReply1.EnvelopeHash[:], bobEnvHash1[:])
 	require.Equal(t, uint8(0), courierReadReply1.ErrorCode)
 	require.Equal(t, uint8(0), courierReadReply1.ReplyIndex)
-	require.Nil(t, courierReadReply1.Payload)
+	require.Nil(t, courierReadReply1.Payload, "First read always returns nil - requests sent to replicas")
+
+	// Wait for replica responses to be received and cached by courier
+	time.Sleep(2 * time.Second)
 
 	courierReadReply2 := injectCourierEnvelope(t, env, bobReadRequest1)
 	require.Equal(t, courierReadReply2.EnvelopeHash[:], bobEnvHash1[:])
@@ -628,6 +633,9 @@ func composeReadRequest(t *testing.T, env *testEnvironment, reader *bacap.Statef
 	boxID, err := reader.NextBoxID()
 	require.NoError(t, err)
 
+	// DEBUG: Log Bob's BoxID
+	t.Logf("DEBUG: Bob reads from BoxID: %x", boxID[:])
+
 	readRequest := &common.ReplicaRead{
 		BoxID: boxID,
 	}
@@ -660,5 +668,6 @@ func composeReadRequest(t *testing.T, env *testEnvironment, reader *bacap.Statef
 		IntermediateReplicas: [2]uint8{uint8(replica0Index), uint8(replica1Index)},
 		DEK:                  [2]*[mkem.DEKSize]byte{mkemCiphertext.DEKCiphertexts[0], mkemCiphertext.DEKCiphertexts[1]},
 		Ciphertext:           mkemCiphertext.Envelope,
+		IsRead:               true, // This is a read request!
 	}
 }

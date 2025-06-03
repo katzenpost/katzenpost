@@ -199,7 +199,7 @@ func (co *Connector) OnClosedConn(c *outgoingConn) {
 func newConnector(server *Server) *Connector {
 	co := &Connector{
 		server:        server,
-		log:           server.LogBackend().GetLogger("Connector"),
+		log:           server.LogBackend().GetLogger("courier Connector"),
 		conns:         make(map[[constants.NodeIDLength]byte]*outgoingConn),
 		forceUpdateCh: make(chan interface{}, 1), // See forceUpdate().
 		closeAllCh:    make(chan interface{}),

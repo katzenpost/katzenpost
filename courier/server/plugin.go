@@ -52,7 +52,7 @@ func NewCourier(s *Server, cmds *commands.Commands, scheme nike.Scheme) *Courier
 
 	courier := &Courier{
 		server:         s,
-		log:            s.logBackend.GetLogger("Courier"),
+		log:            s.logBackend.GetLogger("courier"),
 		cmds:           cmds,
 		geo:            s.cfg.SphinxGeometry,
 		envelopeScheme: scheme,

@@ -174,7 +174,7 @@ func (s *Server) initLogging() error {
 	var err error
 	s.logBackend, err = log.New(p, s.cfg.Logging.Level, s.cfg.Logging.Disable)
 	if err == nil {
-		s.log = s.logBackend.GetLogger("server")
+		s.log = s.logBackend.GetLogger("courier server")
 	}
 	return err
 }

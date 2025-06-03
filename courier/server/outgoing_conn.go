@@ -291,6 +291,8 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 				return
 			}
 
+			c.log.Debugf("DEBUG: Received command from replica: %T", rawCmd)
+
 			select {
 			case <-c.HaltCh():
 				return
@@ -344,33 +346,31 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 			}
 			continue
 		case cmd = <-c.ch:
-		}
-
-		// Use a go routine to actually send commands to the peer so that
-		// cancelation can happen, even when mid SendCommand().
-		select {
-		case <-c.HaltCh():
-			return
-		case <-closeCh:
-			// Halted while trying to send a command to the remote peer.
-			wasHalted = true
-			return
+			select {
+			case <-c.HaltCh():
+				return
+			case <-closeCh:
+				wasHalted = true
+				return
+			case cmdCh <- cmd:
+			}
+			continue
 		case <-cmdCloseCh:
 			// Something blew up when sending the command to the remote peer.
 			return
 		case replyCmd := <-receiveCmdCh:
+			c.log.Debugf("DEBUG: Processing reply from receiveCmdCh: %T", replyCmd)
 			switch cmdOrErr := replyCmd.(type) {
 			case commands.Command:
 				rawCmd = cmdOrErr
+				c.log.Debugf("DEBUG: Got command from replica: %T", rawCmd)
 			case error:
 				c.log.Errorf("Received wire protocol RecvCommand error: %s", cmdOrErr)
 			}
-		case cmdCh <- cmd:
-			// Pass the command onto the worker that actually handles writing.
-			continue
 		}
 
 		// Handle the response.
+		c.log.Debugf("DEBUG: Handling response command: %T", rawCmd)
 		switch replycmd := rawCmd.(type) {
 		case *commands.NoOp:
 			c.log.Debugf("Received NoOp.")
@@ -378,7 +378,8 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 			c.log.Debugf("Received Disconnect from peer.")
 			return
 		case *commands.ReplicaMessageReply:
-			c.log.Debug("Received ReplicaMessageReply")
+			c.log.Debugf("DEBUG: Received ReplicaMessageReply - IsRead: %v, ErrorCode: %d, EnvelopeReplyLen: %d",
+				replycmd.IsRead, replycmd.ErrorCode, len(replycmd.EnvelopeReply))
 			c.courier.CacheReply(replycmd)
 		default:
 			c.log.Errorf("BUG, Received unexpected command from replica peer: %s", cmd)
@@ -403,7 +404,7 @@ func newOutgoingConn(co GenericConnector, dst *cpki.ReplicaDescriptor, cfg *conf
 		ch:         make(chan *commands.ReplicaMessage, maxQueueSize),
 		id:         atomic.AddUint64(&outgoingConnID, 1), // Diagnostic only, wrapping is fine.
 	}
-	c.log = co.Server().LogBackend().GetLogger(fmt.Sprintf("outgoing:%d", c.id))
+	c.log = co.Server().LogBackend().GetLogger(fmt.Sprintf("courier outgoing:%d", c.id))
 
 	c.log.Debugf("New outgoing connection: %+v", dst.DisplayWithSchemes(linkScheme, idScheme, envelopeScheme))
 
