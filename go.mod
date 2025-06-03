@@ -46,6 +46,7 @@ require (
 	github.com/google/pprof v0.0.0-20240903155634-a8630aee4ab9 // indirect
 	github.com/grafana/pyroscope-go/godeltaprof v0.1.8 // indirect
 	github.com/henrydcase/nobs v0.0.0-20230313231516-25b66236df73 // indirect
+	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/jackc/fake v0.0.0-20150926172116-812a484cc733 // indirect
 	github.com/katzenpost/chacha20 v0.0.1 // indirect
 	github.com/katzenpost/chacha20poly1305 v0.0.1 // indirect
@@ -67,6 +68,8 @@ require (
 	github.com/quic-go/qpack v0.5.1 // indirect
 	github.com/rfjakob/eme v1.1.2 // indirect
 	github.com/shopspring/decimal v1.4.0 // indirect
+	github.com/spf13/cobra v1.9.1 // indirect
+	github.com/spf13/pflag v1.0.6 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	gitlab.com/yawning/x448.git v0.0.0-20221003101044-617eb9b7d9b7 // indirect
 	go.uber.org/mock v0.4.0 // indirect

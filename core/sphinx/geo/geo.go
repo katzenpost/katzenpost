@@ -191,10 +191,17 @@ func (g *Geometry) Display() string {
 	return string(blob)
 }
 
+type Config struct {
+	SphinxGeometry *Geometry
+}
+
 func (g *Geometry) Marshal() ([]byte, error) {
 	buf := new(bytes.Buffer)
 	encoder := toml.NewEncoder(buf)
-	err := encoder.Encode(g)
+	config := &Config{
+		SphinxGeometry: g,
+	}
+	err := encoder.Encode(config)
 	if err != nil {
 		return nil, err
 	}
