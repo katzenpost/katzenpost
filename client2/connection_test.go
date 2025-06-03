@@ -15,6 +15,7 @@ import (
 	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/kem"
 	kemSchemes "github.com/katzenpost/hpqc/kem/schemes"
+	"github.com/katzenpost/hpqc/nike"
 	"github.com/katzenpost/hpqc/nike/schemes"
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/hpqc/sign"
@@ -35,7 +36,7 @@ import (
 // document contains fields from Document but not the encoding.BinaryMarshaler methods
 type document cpki.Document
 
-func generateDescriptor(t *testing.T, pkiScheme sign.Scheme, linkScheme kem.Scheme) *cpki.MixDescriptor {
+func generateDescriptor(t *testing.T, pkiScheme sign.Scheme, linkScheme kem.Scheme, sphinxNikeScheme nike.Scheme, sphinxKemScheme kem.Scheme) *cpki.MixDescriptor {
 	idkey := make([]byte, pkiScheme.PublicKeySize())
 	_, err := rand.Reader.Read(idkey)
 	require.NoError(t, err)
@@ -52,10 +53,10 @@ func generateDescriptor(t *testing.T, pkiScheme sign.Scheme, linkScheme kem.Sche
 	}
 }
 
-func generateDocument(t *testing.T, pkiScheme sign.Scheme, linkScheme kem.Scheme, numMixNodes int, geo *geo.Geometry, epoch uint64) *cpki.Document {
+func generateDocument(t *testing.T, pkiScheme sign.Scheme, linkScheme kem.Scheme, replicaScheme nike.Scheme, sphinxNikeScheme nike.Scheme, sphinxKemScheme kem.Scheme, numDirAuths, numMixNodes, numStorageReplicas int, geo *geo.Geometry, epoch uint64) *cpki.Document {
 	mixNodes := make([]*cpki.MixDescriptor, numMixNodes)
 	for i := 0; i < numMixNodes; i++ {
-		mixNodes[i] = generateDescriptor(t, pkiScheme, linkScheme)
+		mixNodes[i] = generateDescriptor(t, pkiScheme, linkScheme, sphinxNikeScheme, sphinxKemScheme)
 	}
 	topology := make([][]*cpki.MixDescriptor, 1)
 	topology[0] = mixNodes
@@ -147,7 +148,11 @@ func TestConnection(t *testing.T) {
 
 	gwAddr := "tcp://127.0.0.1:1234"
 
+	replicaScheme := schemes.ByName("x25519")
+	sphinxNikeScheme := schemes.ByName("x25519")
+	numDirAuths := 3
 	numMixNodes := 3
+	numStorageReplicas := 0
 
 	clientCfg := &config.Config{
 		ListenNetwork:      "tcp",
@@ -268,7 +273,7 @@ func TestConnection(t *testing.T) {
 			case *commands.GetConsensus:
 				panic("GetConsensus wtf")
 			case *commands.GetConsensus2:
-				doc := generateDocument(t, pkiScheme, linkScheme, numMixNodes, g, mycmd.Epoch)
+				doc := generateDocument(t, pkiScheme, linkScheme, replicaScheme, sphinxNikeScheme, nil, numDirAuths, numMixNodes, numStorageReplicas, g, mycmd.Epoch)
 
 				docs[mycmd.Epoch], err = ccbor.Marshal((*document)(doc))
 				require.NoError(t, err)
