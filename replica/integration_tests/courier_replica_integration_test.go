@@ -524,21 +524,10 @@ func waitForReplicasPKI(t *testing.T, env *testEnvironment) {
 }
 
 func testBoxRoundTrip(t *testing.T, env *testEnvironment) {
-	t.Log("FORCE COURIER PKI FETCH")
 	forceCourierPKIFetch(t, env)
-	t.Log("END OF FORCE COURIER PKI FETCH")
-
-	t.Log("WAIT FOR COURIER PKI")
 	waitForCourierPKI(t, env)
-	t.Log("END OF WAIT FOR COURIER PKI")
-
-	t.Log("FORCE REPLICAS PKI FETCH")
 	forceReplicasPKIFetch(t, env)
-	t.Log("END OF FORCE REPLICAS PKI FETCH")
-
-	t.Log("WAIT FOR REPLICAS PKI")
 	waitForReplicasPKI(t, env)
-	t.Log("END OF WAIT FOR REPLICAS PKI")
 
 	aliceStatefulWriter, bobStatefulReader := aliceAndBobKeyExchangeKeys(t, env)
 
