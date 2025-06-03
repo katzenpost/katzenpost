@@ -83,11 +83,10 @@ func (l *listener) worker() {
 		}
 		conn, err := l.listener.Accept()
 		if err != nil {
-			if e, ok := err.(net.Error); ok && !e.Temporary() {
+			if err == net.ErrClosed {
 				l.log.Errorf("Critical accept failure: %v", err)
 				return
 			}
-			continue
 		}
 		l.log.Debugf("Accepted new connection: %v", conn.RemoteAddr())
 		l.onNewConn(conn)
