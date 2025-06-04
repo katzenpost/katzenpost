@@ -323,7 +323,6 @@ func (d *Daemon) handleReply(reply *sphinxReply) {
 	isDecoy := false
 	desc := replyDescriptor{}
 	arqMessage := &ARQMessage{}
-	myChannelReplyDescriptor := replyDescriptor{}
 
 	d.replyLock.Lock()
 	myReplyDescriptor, isReply := d.replies[*reply.surbID]
@@ -332,7 +331,7 @@ func (d *Daemon) handleReply(reply *sphinxReply) {
 	d.replyLock.Unlock()
 
 	d.channelRepliesLock.RLock()
-	myChannelReplyDescriptor, isChannelReply = d.channelReplies[*reply.surbID]
+	myChannelReplyDescriptor, isChannelReply := d.channelReplies[*reply.surbID]
 	d.channelRepliesLock.RUnlock()
 
 	switch {
