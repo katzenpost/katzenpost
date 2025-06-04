@@ -34,6 +34,12 @@ type CourierEnvelope struct {
 	// intermediate replicas: the `IntermediateReplicas` field above.
 	ReplyIndex uint8
 
+	// Epoch is the Katzenpost epoch in which the ReplyIndex is valid.
+	// That is to say, you must retrieve the replica public key from the
+	// PKI document for this epoch in order to verify and decrypt
+	// the Ciphertext.
+	Epoch uint64
+
 	// SenderEPubKey is the sender's ephemeral public key.
 	SenderEPubKey []byte
 
