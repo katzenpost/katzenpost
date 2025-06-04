@@ -6,22 +6,26 @@ package client2
 import (
 	"crypto/hmac"
 	"errors"
+	"fmt"
 	mrand "math/rand"
 	"path/filepath"
 	"sync"
 	"time"
 
+	"gopkg.in/op/go-logging.v1"
+
 	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/rand"
-	"gopkg.in/op/go-logging.v1"
 
 	"github.com/katzenpost/katzenpost/client2/common"
 	"github.com/katzenpost/katzenpost/client2/config"
+	"github.com/katzenpost/katzenpost/client2/constants"
 	"github.com/katzenpost/katzenpost/client2/thin"
 	"github.com/katzenpost/katzenpost/core/log"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
-	"github.com/katzenpost/katzenpost/core/sphinx/constants"
+	sphinxConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/worker"
+	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
 )
 
 const (
@@ -35,7 +39,7 @@ type gcReply struct {
 }
 
 type sphinxReply struct {
-	surbID     *[constants.SURBIDLength]byte
+	surbID     *[sphinxConstants.SURBIDLength]byte
 	ciphertext []byte
 }
 
@@ -56,20 +60,27 @@ type Daemon struct {
 	listener *listener
 	egressCh chan *Request
 
-	replies   map[[constants.SURBIDLength]byte]replyDescriptor
-	decoys    map[[constants.SURBIDLength]byte]replyDescriptor
+	replies   map[[sphinxConstants.SURBIDLength]byte]replyDescriptor
+	decoys    map[[sphinxConstants.SURBIDLength]byte]replyDescriptor
 	replyLock *sync.Mutex
 
 	timerQueue *TimerQueue
 	ingressCh  chan *sphinxReply
-	gcSurbIDCh chan *[constants.SURBIDLength]byte
+	gcSurbIDCh chan *[sphinxConstants.SURBIDLength]byte
 
 	gcTimerQueue *TimerQueue
 	gcReplyCh    chan *gcReply
 
 	arqTimerQueue *TimerQueue
-	arqSurbIDMap  map[[constants.SURBIDLength]byte]*ARQMessage
-	arqResendCh   chan *[constants.SURBIDLength]byte
+	arqSurbIDMap  map[[sphinxConstants.SURBIDLength]byte]*ARQMessage
+	arqResendCh   chan *[sphinxConstants.SURBIDLength]byte
+
+	channelReplies         map[[sphinxConstants.SURBIDLength]byte]replyDescriptor
+	channelRepliesLock     *sync.RWMutex
+	surbIDToChannelMap     map[[sphinxConstants.SURBIDLength]byte][thin.ChannelIDLength]byte
+	surbIDToChannelMapLock *sync.RWMutex
+	channelMap             map[[thin.ChannelIDLength]byte]*ChannelDescriptor
+	channelMapLock         *sync.RWMutex
 
 	haltOnce sync.Once
 }
@@ -81,13 +92,20 @@ func NewDaemon(cfg *config.Config) (*Daemon, error) {
 		cfg:          cfg,
 		egressCh:     make(chan *Request, egressSize),
 		ingressCh:    make(chan *sphinxReply, ingressSize),
-		replies:      make(map[[constants.SURBIDLength]byte]replyDescriptor),
-		decoys:       make(map[[constants.SURBIDLength]byte]replyDescriptor),
-		gcSurbIDCh:   make(chan *[constants.SURBIDLength]byte),
+		replies:      make(map[[sphinxConstants.SURBIDLength]byte]replyDescriptor),
+		decoys:       make(map[[sphinxConstants.SURBIDLength]byte]replyDescriptor),
+		gcSurbIDCh:   make(chan *[sphinxConstants.SURBIDLength]byte),
 		gcReplyCh:    make(chan *gcReply),
 		replyLock:    new(sync.Mutex),
-		arqSurbIDMap: make(map[[constants.SURBIDLength]byte]*ARQMessage),
-		arqResendCh:  make(chan *[constants.SURBIDLength]byte, 2),
+		arqSurbIDMap: make(map[[sphinxConstants.SURBIDLength]byte]*ARQMessage),
+		arqResendCh:  make(chan *[sphinxConstants.SURBIDLength]byte, 2),
+		// pigeonhole channel fields:
+		channelReplies:         make(map[[sphinxConstants.SURBIDLength]byte]replyDescriptor),
+		channelRepliesLock:     new(sync.RWMutex),
+		surbIDToChannelMap:     make(map[[sphinxConstants.SURBIDLength]byte][thin.ChannelIDLength]byte),
+		surbIDToChannelMapLock: new(sync.RWMutex),
+		channelMap:             make(map[[thin.ChannelIDLength]byte]*ChannelDescriptor),
+		channelMapLock:         new(sync.RWMutex),
 	}
 	err := d.initLogging()
 	if err != nil {
@@ -156,7 +174,7 @@ func (d *Daemon) Start() error {
 	d.cfg.Callbacks.OnDocumentFn = d.onDocument
 
 	d.timerQueue = NewTimerQueue(func(rawSurbID interface{}) {
-		surbID, ok := rawSurbID.(*[constants.SURBIDLength]byte)
+		surbID, ok := rawSurbID.(*[sphinxConstants.SURBIDLength]byte)
 		if !ok {
 			panic("wtf, failed type assertion!")
 		}
@@ -169,7 +187,7 @@ func (d *Daemon) Start() error {
 	d.timerQueue.Start()
 	d.arqTimerQueue = NewTimerQueue(func(rawSurbID interface{}) {
 		d.log.Info("ARQ TimerQueue callback!")
-		surbID, ok := rawSurbID.(*[constants.SURBIDLength]byte)
+		surbID, ok := rawSurbID.(*[sphinxConstants.SURBIDLength]byte)
 		if !ok {
 			panic("wtf, failed type assertion!")
 		}
@@ -204,7 +222,7 @@ func (d *Daemon) onDocument(doc *cpki.Document) {
 	d.listener.updateFromPKIDoc(doc)
 }
 
-func (d *Daemon) proxyReplies(surbID *[constants.SURBIDLength]byte, ciphertext []byte) error {
+func (d *Daemon) proxyReplies(surbID *[sphinxConstants.SURBIDLength]byte, ciphertext []byte) error {
 	select {
 	case d.ingressCh <- &sphinxReply{
 		surbID:     surbID,
@@ -233,6 +251,17 @@ func (d *Daemon) egressWorker() {
 				d.send(request)
 			case request.IsARQSendOp:
 				d.send(request)
+
+				// New Pigeonhole Channel related commands proceed here:
+
+			case request.CreateChannel != nil:
+				d.createChannel(request)
+			case request.CreateReadChannel != nil:
+				d.createReadChannel(request)
+			case request.WriteChannel != nil:
+				d.writeChannel(request)
+			case request.ReadChannel != nil:
+				d.readChannel(request)
 			default:
 				panic("send operation not fully specified")
 			}
@@ -262,6 +291,21 @@ func (d *Daemon) ingressWorker() {
 				d.log.Errorf("failed to send Response: %s", err)
 			}
 		case surbID := <-d.gcSurbIDCh:
+			d.channelRepliesLock.RLock()
+			_, ok := d.channelReplies[*surbID]
+			d.channelRepliesLock.RUnlock()
+
+			if ok {
+				d.channelRepliesLock.Lock()
+				delete(d.channelReplies, *surbID)
+				d.channelRepliesLock.Unlock()
+
+				d.surbIDToChannelMapLock.Lock()
+				delete(d.surbIDToChannelMap, *surbID)
+				d.surbIDToChannelMapLock.Unlock()
+				continue
+			}
+
 			d.replyLock.Lock()
 			delete(d.replies, *surbID)
 			delete(d.decoys, *surbID)
@@ -273,40 +317,56 @@ func (d *Daemon) ingressWorker() {
 }
 
 func (d *Daemon) handleReply(reply *sphinxReply) {
+	isChannelReply := false
+	isReply := false
+	isARQReply := false
 	isDecoy := false
+	desc := replyDescriptor{}
+	arqMessage := &ARQMessage{}
+	myChannelReplyDescriptor := replyDescriptor{}
 
 	d.replyLock.Lock()
-	desc, ok := d.replies[*reply.surbID]
-	if !ok {
-		desc, ok = d.decoys[*reply.surbID]
-		if ok {
-			isDecoy = true
-		} else {
-			arqMessage, ok := d.arqSurbIDMap[*reply.surbID]
-			if ok {
-				desc = replyDescriptor{
-					ID:      arqMessage.MessageID,
-					appID:   arqMessage.AppID,
-					surbKey: arqMessage.SURBDecryptionKeys,
-				}
-				peeked := d.arqTimerQueue.Peek()
-				if peeked != nil {
-					peekSurbId := peeked.Value.(*[constants.SURBIDLength]byte)
-					if hmac.Equal(arqMessage.SURBID[:], peekSurbId[:]) {
-						d.arqTimerQueue.Pop()
-					}
-				}
-			} else {
-				d.replyLock.Unlock()
-				return
+	myReplyDescriptor, isReply := d.replies[*reply.surbID]
+	myDecoyDescriptor, isDecoy := d.decoys[*reply.surbID]
+	arqMessage, isARQReply = d.arqSurbIDMap[*reply.surbID]
+	d.replyLock.Unlock()
+
+	d.channelRepliesLock.RLock()
+	myChannelReplyDescriptor, isChannelReply = d.channelReplies[*reply.surbID]
+	d.channelRepliesLock.RUnlock()
+
+	switch {
+	case isReply:
+		desc = myReplyDescriptor
+		d.replyLock.Lock()
+		delete(d.replies, *reply.surbID)
+		d.replyLock.Unlock()
+	case isDecoy:
+		desc = myDecoyDescriptor
+		d.replyLock.Lock()
+		delete(d.decoys, *reply.surbID)
+		d.replyLock.Unlock()
+	case isARQReply:
+		desc = replyDescriptor{
+			ID:      arqMessage.MessageID,
+			appID:   arqMessage.AppID,
+			surbKey: arqMessage.SURBDecryptionKeys,
+		}
+		peeked := d.arqTimerQueue.Peek()
+		if peeked != nil {
+			peekSurbId := peeked.Value.(*[sphinxConstants.SURBIDLength]byte)
+			if hmac.Equal(arqMessage.SURBID[:], peekSurbId[:]) {
+				d.arqTimerQueue.Pop()
 			}
 		}
-
+		d.replyLock.Lock()
+		delete(d.arqSurbIDMap, *reply.surbID)
+		d.replyLock.Unlock()
+	case isChannelReply:
+		desc = myChannelReplyDescriptor
+	default:
+		return
 	}
-	delete(d.replies, *reply.surbID)
-	delete(d.decoys, *reply.surbID)
-	delete(d.arqSurbIDMap, *reply.surbID)
-	d.replyLock.Unlock()
 
 	plaintext, err := d.client.sphinx.DecryptSURBPayload(reply.ciphertext, desc.surbKey)
 	if err != nil {
@@ -324,15 +384,152 @@ func (d *Daemon) handleReply(reply *sphinxReply) {
 		d.log.Errorf("no connection associated with AppID %x", desc.appID[:])
 		return
 	}
-	conn.sendResponse(&Response{
-		AppID: desc.appID,
-		MessageReplyEvent: &thin.MessageReplyEvent{
-			MessageID: desc.ID,
-			SURBID:    reply.surbID,
-			Payload:   plaintext,
-		},
-	})
+	if isChannelReply {
+		d.handleChannelReply(desc.appID, desc.ID, reply.surbID, plaintext, conn)
+	} else {
+		conn.sendResponse(&Response{
+			AppID: desc.appID,
+			MessageReplyEvent: &thin.MessageReplyEvent{
+				MessageID: desc.ID,
+				SURBID:    reply.surbID,
+				Payload:   plaintext,
+			},
+		})
+	}
+}
 
+// handleChannelReply tries to handle the reply and if successful it sends a
+// response to the appropriate thin client connection. Otherwise it returns an error.
+func (d *Daemon) handleChannelReply(appid *[AppIDLength]byte,
+	mesgID *[MessageIDLength]byte,
+	surbid *[sphinxConstants.SURBIDLength]byte,
+	plaintext []byte,
+	conn *incomingConn) error {
+
+	d.surbIDToChannelMapLock.RLock()
+	channelID, ok := d.surbIDToChannelMap[*surbid]
+	d.surbIDToChannelMapLock.RUnlock()
+	if !ok {
+		d.log.Errorf("no channelID found for surbID %x", surbid[:])
+		return fmt.Errorf("no channelID found for surbID %x", surbid[:])
+	}
+	d.channelMapLock.RLock()
+	channelDesc, ok := d.channelMap[channelID]
+	d.channelMapLock.RUnlock()
+	if !ok {
+		d.log.Errorf("no channel found for channelID %x", channelID[:])
+		return fmt.Errorf("no channel found for channelID %x", channelID[:])
+	}
+
+	// sanity check
+	if channelDesc.StatefulReader == nil && channelDesc.StatefulWriter == nil {
+		d.log.Errorf("bug 1, invalid book keeping for channelID %x", channelID[:])
+		return fmt.Errorf("bug 1, invalid book keeping for channelID %x", channelID[:])
+	}
+	if channelDesc.StatefulReader != nil && channelDesc.StatefulWriter != nil {
+		d.log.Errorf("bug 2, invalid book keeping for channelID %x", channelID[:])
+		return fmt.Errorf("bug 2, invalid book keeping for channelID %x", channelID[:])
+	}
+	if channelDesc.EnvelopeDescriptors == nil {
+		d.log.Errorf("bug 3, invalid book keeping for channelID %x", channelID[:])
+		return fmt.Errorf("bug 3, invalid book keeping for channelID %x", channelID[:])
+	}
+
+	isReader := false
+	isWriter := false
+	switch {
+	case channelDesc.StatefulReader != nil:
+		isReader = true
+	case channelDesc.StatefulWriter != nil:
+		isWriter = true
+	}
+
+	env, err := replicaCommon.CourierEnvelopeReplyFromBytes(plaintext)
+	if err != nil {
+		d.log.Errorf("failed to unmarshal courier envelope: %s", err)
+		return fmt.Errorf("failed to unmarshal courier envelope: %s", err)
+	}
+	envHash := env.EnvelopeHash
+	privateKeyBytes := channelDesc.EnvelopeDescriptors[*envHash].EnvelopeKey
+	privateKey, err := replicaCommon.NikeScheme.UnmarshalBinaryPrivateKey(privateKeyBytes)
+	if err != nil {
+		d.log.Errorf("failed to unmarshal private key: %s", err)
+		return fmt.Errorf("failed to unmarshal private key: %s", err)
+	}
+	_, doc := d.client.CurrentDocument()
+	if doc == nil {
+		d.log.Errorf("no pki doc found")
+		return fmt.Errorf("no pki doc found")
+	}
+
+	// NOTE(David): we derive our replica epoch from the CourierEnvelope's Epoch field just in case
+	// there's been an epoch rotation for both the Katzenpost epoch and the Replica epoch.
+	replicaEpoch := replicaCommon.ConvertNormalToReplicaEpoch(channelDesc.EnvelopeDescriptors[*envHash].Epoch)
+	replicaNum := channelDesc.EnvelopeDescriptors[*envHash].ReplicaNums[env.ReplyIndex]
+	desc, err := replicaCommon.ReplicaNum(replicaNum, doc)
+	if err != nil {
+		d.log.Errorf("failed to get replica descriptor: %s", err)
+		return fmt.Errorf("failed to get replica descriptor: %s", err)
+	}
+
+	replicaPubKey, err := replicaCommon.NikeScheme.UnmarshalBinaryPublicKey(desc.EnvelopeKeys[replicaEpoch])
+	if err != nil {
+		d.log.Errorf("failed to unmarshal public key: %s", err)
+		return fmt.Errorf("failed to unmarshal public key: %s", err)
+	}
+	rawInnerMsg, err := replicaCommon.MKEMNikeScheme.DecryptEnvelope(privateKey, replicaPubKey, env.Payload)
+	if err != nil {
+		d.log.Errorf("failed to decrypt envelope: %s", err)
+		return fmt.Errorf("failed to decrypt envelope: %s", err)
+	}
+	innerMsg, err := replicaCommon.ReplicaMessageReplyInnerMessageFromBytes(rawInnerMsg)
+	if err != nil {
+		d.log.Errorf("failed to unmarshal inner message: %s", err)
+		return fmt.Errorf("failed to unmarshal inner message: %s", err)
+	}
+
+	switch {
+	case innerMsg.ReplicaReadReply != nil:
+		if !isReader {
+			d.log.Errorf("bug 4, invalid book keeping for channelID %x", channelID[:])
+			return fmt.Errorf("bug 4, invalid book keeping for channelID %x", channelID[:])
+		}
+		boxid, err := channelDesc.StatefulReader.NextBoxID()
+		if err != nil {
+			d.log.Errorf("failed to get next boxid: %s", err)
+			return fmt.Errorf("failed to get next boxid: %s", err)
+		}
+		innerplaintext, err := channelDesc.StatefulReader.DecryptNext(
+			[]byte(constants.PIGEONHOLE_CTX),
+			*boxid,
+			innerMsg.ReplicaReadReply.Payload,
+			*innerMsg.ReplicaReadReply.Signature)
+		if err != nil {
+			d.log.Errorf("failed to decrypt next: %s", err)
+			return fmt.Errorf("failed to decrypt next: %s", err)
+		}
+		conn.sendResponse(&Response{
+			AppID: appid,
+			ReadChannelReply: &thin.ReadChannelReply{
+				ChannelID: channelID,
+				Payload:   innerplaintext,
+			},
+		})
+		delete(channelDesc.EnvelopeDescriptors, *envHash)
+		return nil
+	case innerMsg.ReplicaWriteReply != nil:
+		if !isWriter {
+			d.log.Errorf("bug 5, invalid book keeping for channelID %x", channelID[:])
+			return fmt.Errorf("bug 5, invalid book keeping for channelID %x", channelID[:])
+		}
+
+		// XXX FIX ME TODO: handle write replies here.
+
+		delete(channelDesc.EnvelopeDescriptors, *envHash)
+		return nil
+	}
+	d.log.Errorf("bug 6, invalid book keeping for channelID %x", channelID[:])
+	return fmt.Errorf("bug 6, invalid book keeping for channelID %x", channelID[:])
 }
 
 func (d *Daemon) send(request *Request) {
@@ -342,7 +539,7 @@ func (d *Daemon) send(request *Request) {
 	var now time.Time
 
 	if request.IsARQSendOp {
-		request.SURBID = &[constants.SURBIDLength]byte{}
+		request.SURBID = &[sphinxConstants.SURBIDLength]byte{}
 		_, err = rand.Reader.Read(request.SURBID[:])
 		if err != nil {
 			panic(err)
@@ -455,7 +652,7 @@ func (d *Daemon) sendLoopDecoy(request *Request) {
 
 	serviceIdHash := hash.Sum256(echoService.MixDescriptor.IdentityKey)
 	payload := make([]byte, d.client.geo.UserForwardPayloadLength)
-	surbID := &[constants.SURBIDLength]byte{}
+	surbID := &[sphinxConstants.SURBIDLength]byte{}
 	_, err := rand.Reader.Read(surbID[:])
 	if err != nil {
 		panic(err)
@@ -495,7 +692,7 @@ func (d *Daemon) sendDropDecoy() {
 	d.send(request)
 }
 
-func (d *Daemon) arqResend(surbID *[constants.SURBIDLength]byte) {
+func (d *Daemon) arqResend(surbID *[sphinxConstants.SURBIDLength]byte) {
 	select {
 	case <-d.HaltCh():
 		return
@@ -503,7 +700,7 @@ func (d *Daemon) arqResend(surbID *[constants.SURBIDLength]byte) {
 	}
 }
 
-func (d *Daemon) arqDoResend(surbID *[constants.SURBIDLength]byte) {
+func (d *Daemon) arqDoResend(surbID *[sphinxConstants.SURBIDLength]byte) {
 	defer d.log.Info("resend end")
 
 	d.replyLock.Lock()
@@ -542,7 +739,7 @@ func (d *Daemon) arqDoResend(surbID *[constants.SURBIDLength]byte) {
 	d.log.Warningf("resend ----------------- REMOVING SURB ID %x", surbID[:])
 	delete(d.arqSurbIDMap, *surbID)
 
-	newsurbID := &[constants.SURBIDLength]byte{}
+	newsurbID := &[sphinxConstants.SURBIDLength]byte{}
 	_, err := rand.Reader.Read(newsurbID[:])
 	if err != nil {
 		panic(err)

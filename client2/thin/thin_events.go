@@ -8,9 +8,13 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/katzenpost/hpqc/bacap"
+
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 )
+
+const ChannelIDLength = 32
 
 // Event is the generic event sent over the event listener channel.
 type Event interface {
@@ -132,4 +136,22 @@ func (e *NewPKIDocumentEvent) String() string {
 		panic(err)
 	}
 	return fmt.Sprintf("PKI Document for epoch %d", doc.Epoch)
+}
+
+type CreateChannelReply struct {
+	ChannelID [ChannelIDLength]byte   `cbor:"channel_id"`
+	ReadCap   *bacap.UniversalReadCap `cbor:"read_cap"`
+}
+
+type CreateReadChannelReply struct {
+	ChannelID [ChannelIDLength]byte `cbor:"channel_id"`
+}
+
+type WriteChannelReply struct {
+	ChannelID [ChannelIDLength]byte `cbor:"channel_id"`
+}
+
+type ReadChannelReply struct {
+	ChannelID [ChannelIDLength]byte `cbor:"channel_id"`
+	Payload   []byte                `cbor:"payload"`
 }

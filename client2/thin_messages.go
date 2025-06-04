@@ -1,10 +1,10 @@
-// SPDX-FileCopyrightText: © 2023 David Stainton
+// SPDX-FileCopyrightText: (c) 2024, 2025  David Stainton.
 // SPDX-License-Identifier: AGPL-3.0-only
 package client2
 
 import (
 	"github.com/katzenpost/katzenpost/client2/thin"
-	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 )
 
 func IntoThinResponse(r *Response) *thin.Response {
@@ -33,6 +33,14 @@ type Response struct {
 	MessageReplyEvent *thin.MessageReplyEvent
 
 	MessageIDGarbageCollected *thin.MessageIDGarbageCollected
+
+	CreateChannelReply *thin.CreateChannelReply
+
+	CreateReadChannelReply *thin.CreateReadChannelReply
+
+	WriteChannelReply *thin.WriteChannelReply
+
+	ReadChannelReply *thin.ReadChannelReply
 }
 
 func FromThinRequest(r *thin.Request, appid *[AppIDLength]byte) *Request {
@@ -53,6 +61,14 @@ func FromThinRequest(r *thin.Request, appid *[AppIDLength]byte) *Request {
 }
 
 type Request struct {
+	CreateChannel *thin.CreateChannel
+
+	CreateReadChannel *thin.CreateReadChannel
+
+	WriteChannel *thin.WriteChannel
+
+	ReadChannel *thin.ReadChannel
+
 	// ID is the unique identifier with respect to the Payload.
 	// This is only used by the ARQ.
 	ID *[MessageIDLength]byte
@@ -63,7 +79,7 @@ type Request struct {
 
 	// SURBID must be a unique identity for each request.
 	// This field should be nil if WithSURB is false.
-	SURBID *[sConstants.SURBIDLength]byte
+	SURBID *[constants.SURBIDLength]byte
 
 	// AppID must be a unique identity for the client application
 	// that is sending this Request.

@@ -80,6 +80,10 @@ func (c *Client) CurrentDocument() ([]byte, *cpki.Document) {
 	return c.pki.currentDocument()
 }
 
+func (c *Client) GetDocumentByEpoch(epoch uint64) *cpki.Document {
+	return c.pki.GetDocumentByEpoch(epoch)
+}
+
 func (c *Client) WaitForCurrentDocument() {
 	_, doc := c.pki.currentDocument()
 	if doc != nil {
@@ -114,6 +118,14 @@ func (p *pki) skewedUnixTime() int64 {
 	defer p.clockSkewLock.RUnlock()
 
 	return time.Now().Unix() + p.clockSkew
+}
+
+func (p *pki) GetDocumentByEpoch(epoch uint64) *cpki.Document {
+	if d, _ := p.docs.Load(epoch); d != nil {
+		cached := d.(*CachedDoc)
+		return cached.Doc
+	}
+	return nil
 }
 
 func (p *pki) currentDocument() ([]byte, *cpki.Document) {
