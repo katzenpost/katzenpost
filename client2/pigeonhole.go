@@ -5,6 +5,7 @@ package client2
 
 import (
 	mrand "math/rand"
+	"sync"
 	"time"
 
 	"github.com/katzenpost/hpqc/bacap"
@@ -43,6 +44,7 @@ type ChannelDescriptor struct {
 	StatefulWriter      *bacap.StatefulWriter
 	StatefulReader      *bacap.StatefulReader
 	EnvelopeDescriptors map[[hash.HashSize]byte]*EnvelopeDescriptor
+	EnvelopeLock        sync.RWMutex // Protects EnvelopeDescriptors map
 	SendSeq             uint64
 }
 
@@ -174,7 +176,8 @@ func (d *Daemon) createChannel(request *Request) {
 	}
 	d.channelMapLock.Lock()
 	d.channelMap[channelID] = &ChannelDescriptor{
-		StatefulWriter: statefulWriter,
+		StatefulWriter:      statefulWriter,
+		EnvelopeDescriptors: make(map[[hash.HashSize]byte]*EnvelopeDescriptor),
 	}
 	d.channelMapLock.Unlock()
 
@@ -193,22 +196,25 @@ func (d *Daemon) createChannel(request *Request) {
 }
 
 func (d *Daemon) createReadChannel(request *Request) {
+	// Create a new channelID for Bob's read channel
 	channelID := [thin.ChannelIDLength]byte{}
 	_, err := rand.Reader.Read(channelID[:])
 	if err != nil {
 		panic(err)
 	}
-	d.channelMapLock.Lock()
-	channelDesc, ok := d.channelMap[channelID]
-	if !ok {
-		d.log.Errorf("createReadChannel failure: no channel found for channelID %x", channelID[:])
-		return
-	}
+
+	// Create a StatefulReader from the readCap provided by Alice
 	statefulReader, err := bacap.NewStatefulReader(request.CreateReadChannel.ReadCap, constants.PIGEONHOLE_CTX)
 	if err != nil {
 		panic(err)
 	}
-	channelDesc.StatefulReader = statefulReader
+
+	// Create a new ChannelDescriptor for Bob's read channel
+	d.channelMapLock.Lock()
+	d.channelMap[channelID] = &ChannelDescriptor{
+		StatefulReader:      statefulReader,
+		EnvelopeDescriptors: make(map[[hash.HashSize]byte]*EnvelopeDescriptor),
+	}
 	d.channelMapLock.Unlock()
 
 	conn := d.listener.getConnection(request.AppID)
@@ -248,11 +254,13 @@ func (d *Daemon) writeChannel(request *Request) {
 	}
 
 	envHash := courierEnvelope.EnvelopeHash()
+	channelDesc.EnvelopeLock.Lock()
 	channelDesc.EnvelopeDescriptors[*envHash] = &EnvelopeDescriptor{
 		Epoch:       doc.Epoch,
 		ReplicaNums: courierEnvelope.IntermediateReplicas,
 		EnvelopeKey: envelopePrivateKey.Bytes(),
 	}
+	channelDesc.EnvelopeLock.Unlock()
 
 	surbid := &[sphinxConstants.SURBIDLength]byte{}
 	_, err = rand.Reader.Read(surbid[:])
@@ -273,6 +281,18 @@ func (d *Daemon) writeChannel(request *Request) {
 	surbKey, rtt, err := d.client.SendCiphertext(sendRequest)
 	if err != nil {
 		d.log.Errorf("failed to send sphinx packet: %s", err.Error())
+		// Send error response to client
+		conn := d.listener.getConnection(request.AppID)
+		if conn != nil {
+			conn.sendResponse(&Response{
+				AppID: request.AppID,
+				WriteChannelReply: &thin.WriteChannelReply{
+					ChannelID: channelID,
+					Err:       err.Error(),
+				},
+			})
+		}
+		return
 	}
 
 	fetchInterval := d.client.GetPollInterval()
@@ -347,11 +367,13 @@ func (d *Daemon) readChannel(request *Request) {
 	if err != nil {
 		panic(err)
 	}
+	channelDesc.EnvelopeLock.Lock()
 	channelDesc.EnvelopeDescriptors[*envHash] = &EnvelopeDescriptor{
-		Epoch:       replicaEpoch,
+		Epoch:       doc.Epoch, // Store normal epoch, convert when needed
 		ReplicaNums: courierEnvelope.IntermediateReplicas,
 		EnvelopeKey: envelopeKey,
 	}
+	channelDesc.EnvelopeLock.Unlock()
 
 	surbid := &[sphinxConstants.SURBIDLength]byte{}
 	_, err = rand.Reader.Read(surbid[:])
@@ -373,6 +395,18 @@ func (d *Daemon) readChannel(request *Request) {
 	surbKey, rtt, err := d.client.SendCiphertext(sendRequest)
 	if err != nil {
 		d.log.Errorf("failed to send sphinx packet: %s", err.Error())
+		// Send error response to client
+		conn := d.listener.getConnection(request.AppID)
+		if conn != nil {
+			conn.sendResponse(&Response{
+				AppID: request.AppID,
+				ReadChannelReply: &thin.ReadChannelReply{
+					ChannelID: channelID,
+					Err:       err.Error(),
+				},
+			})
+		}
+		return
 	}
 
 	fetchInterval := d.client.GetPollInterval()

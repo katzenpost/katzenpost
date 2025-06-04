@@ -691,6 +691,9 @@ func (t *ThinClient) CreateChannel(ctx context.Context) (*[ChannelIDLength]byte,
 
 		switch v := event.(type) {
 		case *CreateChannelReply:
+			if v.Err != "" {
+				return nil, nil, errors.New(v.Err)
+			}
 			return &v.ChannelID, v.ReadCap, nil
 		case *ConnectionStatusEvent:
 			if !v.IsConnected {
@@ -737,6 +740,9 @@ func (t *ThinClient) CreateReadChannel(ctx context.Context, readCap *bacap.Unive
 
 		switch v := event.(type) {
 		case *CreateReadChannelReply:
+			if v.Err != "" {
+				return nil, errors.New(v.Err)
+			}
 			return &v.ChannelID, nil
 		case *ConnectionStatusEvent:
 			if !v.IsConnected {
@@ -789,6 +795,9 @@ func (t *ThinClient) WriteChannel(ctx context.Context, channelID *[ChannelIDLeng
 
 		switch v := event.(type) {
 		case *WriteChannelReply:
+			if v.Err != "" {
+				return errors.New(v.Err)
+			}
 			return nil
 		case *ConnectionStatusEvent:
 			if !v.IsConnected {
@@ -837,6 +846,9 @@ func (t *ThinClient) ReadChannel(ctx context.Context, channelID *[ChannelIDLengt
 
 		switch v := event.(type) {
 		case *ReadChannelReply:
+			if v.Err != "" {
+				return nil, errors.New(v.Err)
+			}
 			return v.Payload, nil
 		case *ConnectionStatusEvent:
 			if !v.IsConnected {

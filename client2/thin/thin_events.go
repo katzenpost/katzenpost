@@ -141,37 +141,53 @@ func (e *NewPKIDocumentEvent) String() string {
 type CreateChannelReply struct {
 	ChannelID [ChannelIDLength]byte   `cbor:"channel_id"`
 	ReadCap   *bacap.UniversalReadCap `cbor:"read_cap"`
+	Err       string                  `cbor:"err,omitempty"`
 }
 
 // String returns a string representation of the CreateChannelReply.
 func (e *CreateChannelReply) String() string {
+	if e.Err != "" {
+		return fmt.Sprintf("CreateChannelReply: %x (error: %s)", e.ChannelID[:], e.Err)
+	}
 	return fmt.Sprintf("CreateChannelReply: %x", e.ChannelID[:])
 }
 
 type CreateReadChannelReply struct {
 	ChannelID [ChannelIDLength]byte `cbor:"channel_id"`
+	Err       string                `cbor:"err,omitempty"`
 }
 
 // String returns a string representation of the CreateReadChannelReply.
 func (e *CreateReadChannelReply) String() string {
+	if e.Err != "" {
+		return fmt.Sprintf("CreateReadChannelReply: %x (error: %s)", e.ChannelID[:], e.Err)
+	}
 	return fmt.Sprintf("CreateReadChannelReply: %x", e.ChannelID[:])
 }
 
 type WriteChannelReply struct {
 	ChannelID [ChannelIDLength]byte `cbor:"channel_id"`
+	Err       string                `cbor:"err,omitempty"`
 }
 
 // String returns a string representation of the WriteChannelReply.
 func (e *WriteChannelReply) String() string {
+	if e.Err != "" {
+		return fmt.Sprintf("WriteChannelReply: %x (error: %s)", e.ChannelID[:], e.Err)
+	}
 	return fmt.Sprintf("WriteChannelReply: %x", e.ChannelID[:])
 }
 
 type ReadChannelReply struct {
 	ChannelID [ChannelIDLength]byte `cbor:"channel_id"`
 	Payload   []byte                `cbor:"payload"`
+	Err       string                `cbor:"err,omitempty"`
 }
 
 // String returns a string representation of the ReadChannelReply.
 func (e *ReadChannelReply) String() string {
+	if e.Err != "" {
+		return fmt.Sprintf("ReadChannelReply: %x (error: %s)", e.ChannelID[:], e.Err)
+	}
 	return fmt.Sprintf("ReadChannelReply: %x (%d bytes)", e.ChannelID[:], len(e.Payload))
 }

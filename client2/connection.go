@@ -109,11 +109,19 @@ type connection struct {
 	isConnectedLock sync.RWMutex
 	isConnected     bool
 
-	gateway *[32]byte
-	queueID []byte
+	gatewayLock sync.RWMutex
+	gateway     *[32]byte
+	queueID     []byte
 
 	isShutdownLock sync.RWMutex
 	isShutdown     bool
+}
+
+// getGateway safely returns the current gateway hash
+func (c *connection) getGateway() *[32]byte {
+	c.gatewayLock.RLock()
+	defer c.gatewayLock.RUnlock()
+	return c.gateway
 }
 
 type getConsensusCtx struct {
@@ -134,6 +142,8 @@ type connSendCtx struct {
 func (c *Client) ForceFetch() {
 	select {
 	case c.conn.fetchCh <- true:
+	case <-c.HaltCh():
+		// Client is shutting down, don't send
 	default:
 	}
 }
@@ -168,7 +178,9 @@ func (c *connection) getDescriptor() error {
 		}
 		gateway := c.client.cfg.PinnedGateways.Gateways[rand.NewMath().Intn(n)]
 		idHash := hash.Sum256From(gateway.IdentityKey)
+		c.gatewayLock.Lock()
 		c.gateway = &idHash
+		c.gatewayLock.Unlock()
 
 		idkey, err := gateway.IdentityKey.MarshalBinary()
 		if err != nil {
@@ -199,7 +211,9 @@ func (c *connection) getDescriptor() error {
 		}
 		gateway := doc.GatewayNodes[rand.NewMath().Intn(n)]
 		idHash := hash.Sum256(gateway.IdentityKey)
+		c.gatewayLock.Lock()
 		c.gateway = &idHash
+		c.gatewayLock.Unlock()
 		desc, err := doc.GetGateway(gateway.Name)
 		if err != nil {
 			c.log.Debugf("Failed to find descriptor for Gateway: %v", err)
@@ -782,6 +796,14 @@ func (c *connection) sendPacket(pkt []byte) error {
 		return ErrNotConnected
 	}
 	c.isConnectedLock.RUnlock()
+
+	// Check if we're shutting down before sending
+	c.isShutdownLock.RLock()
+	if c.isShutdown {
+		c.isShutdownLock.RUnlock()
+		return ErrShutdown
+	}
+	c.isShutdownLock.RUnlock()
 
 	errCh := make(chan error)
 	select {

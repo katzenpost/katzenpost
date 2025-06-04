@@ -449,7 +449,20 @@ func (d *Daemon) handleChannelReply(appid *[AppIDLength]byte,
 		return fmt.Errorf("failed to unmarshal courier envelope: %s", err)
 	}
 	envHash := env.EnvelopeHash
-	privateKeyBytes := channelDesc.EnvelopeDescriptors[*envHash].EnvelopeKey
+
+	// Get envelope descriptor with proper locking
+	channelDesc.EnvelopeLock.RLock()
+	envelopeDesc, ok := channelDesc.EnvelopeDescriptors[*envHash]
+	if !ok {
+		channelDesc.EnvelopeLock.RUnlock()
+		d.log.Errorf("no envelope descriptor found for hash %x", envHash[:])
+		return fmt.Errorf("no envelope descriptor found for hash %x", envHash[:])
+	}
+	privateKeyBytes := envelopeDesc.EnvelopeKey
+	replicaEpoch := replicaCommon.ConvertNormalToReplicaEpoch(envelopeDesc.Epoch)
+	replicaNum := envelopeDesc.ReplicaNums[env.ReplyIndex]
+	channelDesc.EnvelopeLock.RUnlock()
+
 	privateKey, err := replicaCommon.NikeScheme.UnmarshalBinaryPrivateKey(privateKeyBytes)
 	if err != nil {
 		d.log.Errorf("failed to unmarshal private key: %s", err)
@@ -460,22 +473,31 @@ func (d *Daemon) handleChannelReply(appid *[AppIDLength]byte,
 		d.log.Errorf("no pki doc found")
 		return fmt.Errorf("no pki doc found")
 	}
-
-	// NOTE(David): we derive our replica epoch from the CourierEnvelope's Epoch field just in case
-	// there's been an epoch rotation for both the Katzenpost epoch and the Replica epoch.
-	replicaEpoch := replicaCommon.ConvertNormalToReplicaEpoch(channelDesc.EnvelopeDescriptors[*envHash].Epoch)
-	replicaNum := channelDesc.EnvelopeDescriptors[*envHash].ReplicaNums[env.ReplyIndex]
 	desc, err := replicaCommon.ReplicaNum(replicaNum, doc)
 	if err != nil {
 		d.log.Errorf("failed to get replica descriptor: %s", err)
 		return fmt.Errorf("failed to get replica descriptor: %s", err)
 	}
 
-	replicaPubKey, err := replicaCommon.NikeScheme.UnmarshalBinaryPublicKey(desc.EnvelopeKeys[replicaEpoch])
+	// Check if replica public key exists for this epoch
+	replicaPubKeyBytes, ok := desc.EnvelopeKeys[replicaEpoch]
+	if !ok || len(replicaPubKeyBytes) == 0 {
+		d.log.Debugf("replica public key not available for epoch %d - replica may not be ready", replicaEpoch)
+		return fmt.Errorf("replica public key not available for epoch %d", replicaEpoch)
+	}
+
+	replicaPubKey, err := replicaCommon.NikeScheme.UnmarshalBinaryPublicKey(replicaPubKeyBytes)
 	if err != nil {
 		d.log.Errorf("failed to unmarshal public key: %s", err)
 		return fmt.Errorf("failed to unmarshal public key: %s", err)
 	}
+
+	// Check if payload is nil or empty before attempting decryption
+	if env.Payload == nil || len(env.Payload) == 0 {
+		d.log.Debugf("received empty payload for envelope hash %x - no data available yet", envHash[:])
+		return fmt.Errorf("no data available for read operation")
+	}
+
 	rawInnerMsg, err := replicaCommon.MKEMNikeScheme.DecryptEnvelope(privateKey, replicaPubKey, env.Payload)
 	if err != nil {
 		d.log.Errorf("failed to decrypt envelope: %s", err)
@@ -514,7 +536,9 @@ func (d *Daemon) handleChannelReply(appid *[AppIDLength]byte,
 				Payload:   innerplaintext,
 			},
 		})
+		channelDesc.EnvelopeLock.Lock()
 		delete(channelDesc.EnvelopeDescriptors, *envHash)
+		channelDesc.EnvelopeLock.Unlock()
 		return nil
 	case innerMsg.ReplicaWriteReply != nil:
 		if !isWriter {
@@ -536,7 +560,9 @@ func (d *Daemon) handleChannelReply(appid *[AppIDLength]byte,
 			},
 		})
 
+		channelDesc.EnvelopeLock.Lock()
 		delete(channelDesc.EnvelopeDescriptors, *envHash)
+		channelDesc.EnvelopeLock.Unlock()
 		return nil
 	}
 	d.log.Errorf("bug 6, invalid book keeping for channelID %x", channelID[:])

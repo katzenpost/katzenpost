@@ -37,6 +37,13 @@ func (c *Client) ComposeSphinxPacket(request *Request) (pkt []byte, surbkey []by
 	copy(payload, request.Payload)
 
 	for {
+		// Check if we're shutting down to avoid races
+		select {
+		case <-c.HaltCh():
+			return nil, nil, 0, ErrShutdown
+		default:
+		}
+
 		unixTime := c.pki.skewedUnixTime()
 		_, _, budget := epochtime.FromUnix(unixTime)
 		start := time.Now()
@@ -44,11 +51,12 @@ func (c *Client) ComposeSphinxPacket(request *Request) (pkt []byte, surbkey []by
 		// Select the forward path.
 		now := time.Unix(unixTime, 0)
 
-		if c.conn.gateway == nil {
+		gateway := c.conn.getGateway()
+		if gateway == nil {
 			panic("source gateway cannot be nil")
 		}
 
-		fwdPath, then, err := c.makePath(request.RecipientQueueID, request.DestinationIdHash, request.SURBID, now, true)
+		fwdPath, then, err := c.makePath(request.RecipientQueueID, request.DestinationIdHash, request.SURBID, now, true, gateway)
 		if err != nil {
 			return nil, nil, 0, err
 		}
@@ -58,7 +66,7 @@ func (c *Client) ComposeSphinxPacket(request *Request) (pkt []byte, surbkey []by
 			if c.conn.queueID == nil {
 				panic("sender queueID cannot be nil")
 			}
-			revPath, then, err = c.makePath(c.conn.queueID, request.DestinationIdHash, request.SURBID, then, false)
+			revPath, then, err = c.makePath(c.conn.queueID, request.DestinationIdHash, request.SURBID, then, false, gateway)
 			if err != nil {
 				return nil, nil, 0, err
 			}
@@ -116,7 +124,8 @@ func (c *Client) SendCiphertext(request *Request) ([]byte, time.Duration, error)
 
 	pkt, k, rtt, err := c.ComposeSphinxPacket(request)
 	if err != nil {
-		panic(fmt.Sprintf("COMPOSE SPHINX PACKET FAIL %s", err.Error()))
+		// Don't panic on shutdown or other errors, return them gracefully
+		return nil, 0, err
 	}
 	err = c.conn.sendPacket(pkt)
 	return k, rtt, err
@@ -130,15 +139,15 @@ func (c *Client) SendPacket(pkt []byte) error {
 	return err
 }
 
-func (c *Client) makePath(recipient []byte, destination *[32]byte, surbID *[sConstants.SURBIDLength]byte, baseTime time.Time, isForward bool) ([]*sphinx.PathHop, time.Time, error) {
-	if c.conn.gateway == nil {
-		panic("c.conn.gateway is nil")
+func (c *Client) makePath(recipient []byte, destination *[32]byte, surbID *[sConstants.SURBIDLength]byte, baseTime time.Time, isForward bool, gateway *[32]byte) ([]*sphinx.PathHop, time.Time, error) {
+	if gateway == nil {
+		panic("gateway is nil")
 	}
 	if destination == nil {
 		panic("destination is nil")
 	}
 
-	srcNode, dstNode := c.conn.gateway, destination
+	srcNode, dstNode := gateway, destination
 	if !isForward {
 		srcNode, dstNode = dstNode, srcNode
 	}
