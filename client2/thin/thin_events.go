@@ -143,15 +143,35 @@ type CreateChannelReply struct {
 	ReadCap   *bacap.UniversalReadCap `cbor:"read_cap"`
 }
 
+// String returns a string representation of the CreateChannelReply.
+func (e *CreateChannelReply) String() string {
+	return fmt.Sprintf("CreateChannelReply: %x", e.ChannelID[:])
+}
+
 type CreateReadChannelReply struct {
 	ChannelID [ChannelIDLength]byte `cbor:"channel_id"`
+}
+
+// String returns a string representation of the CreateReadChannelReply.
+func (e *CreateReadChannelReply) String() string {
+	return fmt.Sprintf("CreateReadChannelReply: %x", e.ChannelID[:])
 }
 
 type WriteChannelReply struct {
 	ChannelID [ChannelIDLength]byte `cbor:"channel_id"`
 }
 
+// String returns a string representation of the WriteChannelReply.
+func (e *WriteChannelReply) String() string {
+	return fmt.Sprintf("WriteChannelReply: %x", e.ChannelID[:])
+}
+
 type ReadChannelReply struct {
 	ChannelID [ChannelIDLength]byte `cbor:"channel_id"`
 	Payload   []byte                `cbor:"payload"`
+}
+
+// String returns a string representation of the ReadChannelReply.
+func (e *ReadChannelReply) String() string {
+	return fmt.Sprintf("ReadChannelReply: %x (%d bytes)", e.ChannelID[:], len(e.Payload))
 }

@@ -18,6 +18,7 @@ import (
 	"github.com/fxamacker/cbor/v2"
 	"gopkg.in/op/go-logging.v1"
 
+	"github.com/katzenpost/hpqc/bacap"
 	"github.com/katzenpost/hpqc/rand"
 
 	"github.com/katzenpost/katzenpost/client2/common"
@@ -349,6 +350,38 @@ func (t *ThinClient) worker() {
 					return
 				}
 			}
+		case message.CreateChannelReply != nil:
+			t.log.Debug("CreateChannelReply")
+			select {
+			case t.eventSink <- message.CreateChannelReply:
+				continue
+			case <-t.HaltCh():
+				return
+			}
+		case message.CreateReadChannelReply != nil:
+			t.log.Debug("CreateReadChannelReply")
+			select {
+			case t.eventSink <- message.CreateReadChannelReply:
+				continue
+			case <-t.HaltCh():
+				return
+			}
+		case message.WriteChannelReply != nil:
+			t.log.Debug("WriteChannelReply")
+			select {
+			case t.eventSink <- message.WriteChannelReply:
+				continue
+			case <-t.HaltCh():
+				return
+			}
+		case message.ReadChannelReply != nil:
+			t.log.Debug("ReadChannelReply")
+			select {
+			case t.eventSink <- message.ReadChannelReply:
+				continue
+			case <-t.HaltCh():
+				return
+			}
 		default:
 			t.log.Error("bug: received invalid thin client message")
 		}
@@ -626,4 +659,193 @@ func (t *ThinClient) BlockingSendReliableMessage(ctx context.Context, messageID 
 	}
 
 	// unreachable
+}
+
+// CreateChannel creates a new pigeonhole channel and returns the channel ID and read capability.
+func (t *ThinClient) CreateChannel(ctx context.Context) (*[ChannelIDLength]byte, *bacap.UniversalReadCap, error) {
+	if ctx == nil {
+		return nil, nil, errors.New("context cannot be nil")
+	}
+
+	req := &Request{
+		CreateChannel: &CreateChannel{},
+	}
+
+	eventSink := t.EventSink()
+	defer t.StopEventSink(eventSink)
+
+	err := t.writeMessage(req)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	for {
+		var event Event
+		select {
+		case <-ctx.Done():
+			return nil, nil, ctx.Err()
+		case event = <-eventSink:
+		case <-t.HaltCh():
+			return nil, nil, errors.New("halting")
+		}
+
+		switch v := event.(type) {
+		case *CreateChannelReply:
+			return &v.ChannelID, v.ReadCap, nil
+		case *ConnectionStatusEvent:
+			if !v.IsConnected {
+				return nil, nil, errors.New("connection lost")
+			}
+		default:
+			// Ignore other events
+		}
+	}
+}
+
+// CreateReadChannel creates a read channel from a read capability.
+func (t *ThinClient) CreateReadChannel(ctx context.Context, readCap *bacap.UniversalReadCap) (*[ChannelIDLength]byte, error) {
+	if ctx == nil {
+		return nil, errors.New("context cannot be nil")
+	}
+	if readCap == nil {
+		return nil, errors.New("readCap cannot be nil")
+	}
+
+	req := &Request{
+		CreateReadChannel: &CreateReadChannel{
+			ReadCap: readCap,
+		},
+	}
+
+	eventSink := t.EventSink()
+	defer t.StopEventSink(eventSink)
+
+	err := t.writeMessage(req)
+	if err != nil {
+		return nil, err
+	}
+
+	for {
+		var event Event
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case event = <-eventSink:
+		case <-t.HaltCh():
+			return nil, errors.New("halting")
+		}
+
+		switch v := event.(type) {
+		case *CreateReadChannelReply:
+			return &v.ChannelID, nil
+		case *ConnectionStatusEvent:
+			if !v.IsConnected {
+				return nil, errors.New("connection lost")
+			}
+		case *NewDocumentEvent:
+			// Ignore PKI document updates
+		default:
+			// Ignore other events
+		}
+	}
+}
+
+// WriteChannel writes data to a pigeonhole channel.
+// XXX TODO FIXME(David): MUST implement pigeonhole geometry object
+// to calculate the maximum BACAP Box payload size and enforce it
+// in the thin clients!!!
+func (t *ThinClient) WriteChannel(ctx context.Context, channelID *[ChannelIDLength]byte, payload []byte) error {
+	if ctx == nil {
+		return errors.New("context cannot be nil")
+	}
+	if channelID == nil {
+		return errors.New("channelID cannot be nil")
+	}
+
+	req := &Request{
+		WriteChannel: &WriteChannel{
+			ChannelID: *channelID,
+			Payload:   payload,
+		},
+	}
+
+	eventSink := t.EventSink()
+	defer t.StopEventSink(eventSink)
+
+	err := t.writeMessage(req)
+	if err != nil {
+		return err
+	}
+
+	for {
+		var event Event
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case event = <-eventSink:
+		case <-t.HaltCh():
+			return errors.New("halting")
+		}
+
+		switch v := event.(type) {
+		case *WriteChannelReply:
+			return nil
+		case *ConnectionStatusEvent:
+			if !v.IsConnected {
+				return errors.New("connection lost")
+			}
+		case *NewDocumentEvent:
+			// Ignore PKI document updates
+		default:
+			// Ignore other events
+		}
+	}
+}
+
+// ReadChannel reads data from a pigeonhole channel.
+func (t *ThinClient) ReadChannel(ctx context.Context, channelID *[ChannelIDLength]byte, readLen int) ([]byte, error) {
+	if ctx == nil {
+		return nil, errors.New("context cannot be nil")
+	}
+	if channelID == nil {
+		return nil, errors.New("channelID cannot be nil")
+	}
+
+	req := &Request{
+		ReadChannel: &ReadChannel{
+			ChannelID: *channelID,
+		},
+	}
+
+	eventSink := t.EventSink()
+	defer t.StopEventSink(eventSink)
+
+	err := t.writeMessage(req)
+	if err != nil {
+		return nil, err
+	}
+
+	for {
+		var event Event
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case event = <-eventSink:
+		case <-t.HaltCh():
+			return nil, errors.New("halting")
+		}
+
+		switch v := event.(type) {
+		case *ReadChannelReply:
+			return v.Payload, nil
+		case *ConnectionStatusEvent:
+			if !v.IsConnected {
+				return nil, errors.New("connection lost")
+			}
+		case *NewDocumentEvent:
+			// Ignore PKI document updates
+		default:
+			// Ignore other events
+		}
+	}
 }

@@ -14,6 +14,10 @@ func IntoThinResponse(r *Response) *thin.Response {
 		MessageSentEvent:          r.MessageSentEvent,
 		MessageReplyEvent:         r.MessageReplyEvent,
 		MessageIDGarbageCollected: r.MessageIDGarbageCollected,
+		CreateChannelReply:        r.CreateChannelReply,
+		CreateReadChannelReply:    r.CreateReadChannelReply,
+		WriteChannelReply:         r.WriteChannelReply,
+		ReadChannelReply:          r.ReadChannelReply,
 	}
 }
 
@@ -46,6 +50,10 @@ type Response struct {
 func FromThinRequest(r *thin.Request, appid *[AppIDLength]byte) *Request {
 	return &Request{
 		AppID:             appid,
+		CreateChannel:     r.CreateChannel,
+		CreateReadChannel: r.CreateReadChannel,
+		WriteChannel:      r.WriteChannel,
+		ReadChannel:       r.ReadChannel,
 		ID:                r.ID,
 		WithSURB:          r.WithSURB,
 		SURBID:            r.SURBID,

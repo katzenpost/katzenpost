@@ -29,7 +29,6 @@ type WriteChannel struct {
 
 type ReadChannel struct {
 	ChannelID [ChannelIDLength]byte `cbor:"channel_id"`
-	ReadLen   int                   `cbor:"read_len"`
 }
 
 type Response struct {
