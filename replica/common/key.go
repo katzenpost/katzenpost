@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/katzenpost/hpqc/kem/mkem"
 	"github.com/katzenpost/hpqc/nike"
 	nikepem "github.com/katzenpost/hpqc/nike/pem"
 	"github.com/katzenpost/hpqc/nike/schemes"
@@ -17,6 +18,7 @@ import (
 )
 
 var NikeScheme nike.Scheme = schemes.ByName("CTIDH1024-X25519")
+var MKEMNikeScheme = mkem.NewScheme(NikeScheme)
 
 // EnvelopeKey encapsulates the public and private NIKE keys.
 type EnvelopeKey struct {
