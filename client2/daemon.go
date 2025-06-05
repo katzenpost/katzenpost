@@ -496,7 +496,7 @@ func (d *Daemon) handleChannelReply(appid *[AppIDLength]byte,
 		return fmt.Errorf("failed to unmarshal private key: %s", err)
 	}
 
-	if env.Payload == nil || len(env.Payload) == 0 {
+	if len(env.Payload) == 0 {
 		d.log.Debugf("received empty payload for envelope hash %x - no data available yet", envHash[:])
 		return fmt.Errorf("no data available for read operation")
 	}
