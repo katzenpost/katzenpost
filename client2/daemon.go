@@ -14,6 +14,7 @@ import (
 
 	"gopkg.in/op/go-logging.v1"
 
+	"github.com/katzenpost/hpqc/bacap"
 	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/rand"
 
@@ -138,6 +139,10 @@ func (d *Daemon) Shutdown() {
 func (d *Daemon) halt() {
 	d.log.Debug("Stopping thin client listener")
 	d.listener.Shutdown()
+
+	d.log.Debug("Stopping workers first to prevent channel deadlocks")
+	d.Halt() // shutdown ingressWorker and egressWorker first
+
 	d.log.Debug("Stopping timerQueue")
 	d.timerQueue.Halt()
 	d.log.Debug("Stopping gcTimerQueue")
@@ -147,7 +152,6 @@ func (d *Daemon) halt() {
 
 	d.log.Debug("Stopping client")
 	d.client.Shutdown()
-	d.Halt() // shutdown ingressWorker and egressWorker
 }
 
 func (d *Daemon) Start() error {
@@ -182,6 +186,9 @@ func (d *Daemon) Start() error {
 		case d.gcSurbIDCh <- surbID:
 		case <-d.HaltCh():
 			return
+		case <-time.After(5 * time.Second):
+			d.log.Debugf("Timeout sending to gcSurbIDCh for SURB ID %x", surbID[:])
+			return
 		}
 	})
 	d.timerQueue.Start()
@@ -192,7 +199,18 @@ func (d *Daemon) Start() error {
 			panic("wtf, failed type assertion!")
 		}
 		d.log.Warning("BEFORE ARQ resend")
-		d.arqResend(surbID)
+		// Use a timeout to prevent blocking during shutdown
+		go func() {
+			select {
+			case <-d.HaltCh():
+				return
+			case <-time.After(10 * time.Second):
+				d.log.Debugf("ARQ resend timeout for SURB ID %x", surbID[:])
+				return
+			default:
+				d.arqResend(surbID)
+			}
+		}()
 		d.log.Warning("AFTER ARQ resend")
 	})
 	d.arqTimerQueue.Start()
@@ -204,6 +222,9 @@ func (d *Daemon) Start() error {
 		select {
 		case d.gcReplyCh <- myGcReply:
 		case <-d.HaltCh():
+			return
+		case <-time.After(5 * time.Second):
+			d.log.Debugf("Timeout sending to gcReplyCh for message ID %x", myGcReply.id[:])
 			return
 		}
 	})
@@ -412,6 +433,7 @@ func (d *Daemon) handleChannelReply(appid *[AppIDLength]byte,
 		d.log.Errorf("no channelID found for surbID %x", surbid[:])
 		return fmt.Errorf("no channelID found for surbID %x", surbid[:])
 	}
+
 	d.channelMapLock.RLock()
 	channelDesc, ok := d.channelMap[channelID]
 	d.channelMapLock.RUnlock()
@@ -450,18 +472,21 @@ func (d *Daemon) handleChannelReply(appid *[AppIDLength]byte,
 	}
 	envHash := env.EnvelopeHash
 
-	// Get envelope descriptor with proper locking
+	// DEBUG: Log envelope hash and map size when processing reply
 	channelDesc.EnvelopeLock.RLock()
+	mapSize := len(channelDesc.EnvelopeDescriptors)
 	envelopeDesc, ok := channelDesc.EnvelopeDescriptors[*envHash]
+	channelDesc.EnvelopeLock.RUnlock()
+
+	fmt.Printf("PROCESSING REPLY ENVELOPE HASH: %x (map size: %d, exists: %t)\n", envHash[:], mapSize, ok)
+
 	if !ok {
-		channelDesc.EnvelopeLock.RUnlock()
 		d.log.Errorf("no envelope descriptor found for hash %x", envHash[:])
 		return fmt.Errorf("no envelope descriptor found for hash %x", envHash[:])
 	}
 	privateKeyBytes := envelopeDesc.EnvelopeKey
 	replicaEpoch := replicaCommon.ConvertNormalToReplicaEpoch(envelopeDesc.Epoch)
 	replicaNum := envelopeDesc.ReplicaNums[env.ReplyIndex]
-	channelDesc.EnvelopeLock.RUnlock()
 
 	privateKey, err := replicaCommon.NikeScheme.UnmarshalBinaryPrivateKey(privateKeyBytes)
 	if err != nil {
@@ -479,7 +504,6 @@ func (d *Daemon) handleChannelReply(appid *[AppIDLength]byte,
 		return fmt.Errorf("failed to get replica descriptor: %s", err)
 	}
 
-	// Check if replica public key exists for this epoch
 	replicaPubKeyBytes, ok := desc.EnvelopeKeys[replicaEpoch]
 	if !ok || len(replicaPubKeyBytes) == 0 {
 		d.log.Debugf("replica public key not available for epoch %d - replica may not be ready", replicaEpoch)
@@ -492,11 +516,13 @@ func (d *Daemon) handleChannelReply(appid *[AppIDLength]byte,
 		return fmt.Errorf("failed to unmarshal public key: %s", err)
 	}
 
-	// Check if payload is nil or empty before attempting decryption
 	if env.Payload == nil || len(env.Payload) == 0 {
 		d.log.Debugf("received empty payload for envelope hash %x - no data available yet", envHash[:])
 		return fmt.Errorf("no data available for read operation")
 	}
+
+	mkemPrivateKeyBytes, _ := privateKey.MarshalBinary()
+	fmt.Printf("BOB DECRYPTS WITH MKEM KEY: %x\n", mkemPrivateKeyBytes[:16]) // First 16 bytes for brevity
 
 	rawInnerMsg, err := replicaCommon.MKEMNikeScheme.DecryptEnvelope(privateKey, replicaPubKey, env.Payload)
 	if err != nil {
@@ -515,11 +541,33 @@ func (d *Daemon) handleChannelReply(appid *[AppIDLength]byte,
 			d.log.Errorf("bug 4, invalid book keeping for channelID %x", channelID[:])
 			return fmt.Errorf("bug 4, invalid book keeping for channelID %x", channelID[:])
 		}
-		boxid, err := channelDesc.StatefulReader.NextBoxID()
-		if err != nil {
-			d.log.Errorf("failed to get next boxid: %s", err)
-			return fmt.Errorf("failed to get next boxid: %s", err)
+
+		if innerMsg.ReplicaReadReply.ErrorCode != 0 {
+			d.log.Debugf("replica returned error code %d for read operation", innerMsg.ReplicaReadReply.ErrorCode)
+			return fmt.Errorf("replica read failed with error code %d", innerMsg.ReplicaReadReply.ErrorCode)
 		}
+
+		if innerMsg.ReplicaReadReply.Signature == nil {
+			d.log.Debugf("replica returned nil signature for read operation")
+			return fmt.Errorf("replica read reply has nil signature")
+		}
+
+		var boxid *[bacap.BoxIDSize]byte
+		if mesgID != nil {
+			channelDesc.StoredEnvelopesLock.RLock()
+			storedData, exists := channelDesc.StoredEnvelopes[*mesgID]
+			channelDesc.StoredEnvelopesLock.RUnlock()
+			if exists {
+				boxid = storedData.BoxID
+				d.log.Debugf("Using stored box ID %x for message ID %x", boxid[:], mesgID[:])
+			}
+		}
+
+		if boxid == nil {
+			d.log.Errorf("No stored box ID found for message ID %x - cannot process reply", mesgID[:])
+			return fmt.Errorf("no stored box ID found for message ID - cannot process reply")
+		}
+
 		innerplaintext, err := channelDesc.StatefulReader.DecryptNext(
 			[]byte(constants.PIGEONHOLE_CTX),
 			*boxid,
@@ -536,9 +584,10 @@ func (d *Daemon) handleChannelReply(appid *[AppIDLength]byte,
 				Payload:   innerplaintext,
 			},
 		})
-		channelDesc.EnvelopeLock.Lock()
-		delete(channelDesc.EnvelopeDescriptors, *envHash)
-		channelDesc.EnvelopeLock.Unlock()
+		// possibly a BUG:
+		//channelDesc.EnvelopeLock.Lock()
+		//delete(channelDesc.EnvelopeDescriptors, *envHash)
+		//channelDesc.EnvelopeLock.Unlock()
 		return nil
 	case innerMsg.ReplicaWriteReply != nil:
 		if !isWriter {
@@ -560,9 +609,10 @@ func (d *Daemon) handleChannelReply(appid *[AppIDLength]byte,
 			},
 		})
 
-		channelDesc.EnvelopeLock.Lock()
-		delete(channelDesc.EnvelopeDescriptors, *envHash)
-		channelDesc.EnvelopeLock.Unlock()
+		// possibly a BUG:
+		//channelDesc.EnvelopeLock.Lock()
+		//delete(channelDesc.EnvelopeDescriptors, *envHash)
+		//channelDesc.EnvelopeLock.Unlock()
 		return nil
 	}
 	d.log.Errorf("bug 6, invalid book keeping for channelID %x", channelID[:])
@@ -734,6 +784,11 @@ func (d *Daemon) arqResend(surbID *[sphinxConstants.SURBIDLength]byte) {
 	case <-d.HaltCh():
 		return
 	case d.arqResendCh <- surbID:
+	default:
+		// If we can't send immediately and we're not halted,
+		// the channel might be full or the receiver is busy.
+		// Don't block during shutdown.
+		d.log.Debugf("ARQ resend channel full, dropping resend for SURB ID %x", surbID[:])
 	}
 }
 

@@ -4,6 +4,7 @@
 package client2
 
 import (
+	"fmt"
 	mrand "math/rand"
 	"sync"
 	"time"
@@ -38,6 +39,12 @@ type EnvelopeDescriptor struct {
 	EnvelopeKey []byte
 }
 
+// StoredEnvelopeData contains the envelope and associated box ID for reuse
+type StoredEnvelopeData struct {
+	Envelope *replicaCommon.CourierEnvelope
+	BoxID    *[bacap.BoxIDSize]byte
+}
+
 // ChannelDescriptor describes a pigeonhole channel and supplies us with
 // everthing we need to read or write to the channel.
 type ChannelDescriptor struct {
@@ -46,6 +53,10 @@ type ChannelDescriptor struct {
 	EnvelopeDescriptors map[[hash.HashSize]byte]*EnvelopeDescriptor
 	EnvelopeLock        sync.RWMutex // Protects EnvelopeDescriptors map
 	SendSeq             uint64
+
+	// StoredEnvelopes maps message IDs to stored envelope data for reuse
+	StoredEnvelopes     map[[thin.MessageIDLength]byte]*StoredEnvelopeData
+	StoredEnvelopesLock sync.RWMutex // Protects StoredEnvelopes map
 }
 
 func GetRandomCourier(doc *cpki.Document) (*[hash.HashSize]byte, []byte) {
@@ -104,6 +115,10 @@ func CreateChannelWriteRequest(
 	if err != nil {
 		return nil, nil, err
 	}
+
+	// DEBUG: Log Alice's write BoxID
+	fmt.Printf("ALICE WRITES TO BoxID: %x\n", boxID[:])
+
 	sig := [bacap.SignatureSize]byte{}
 	copy(sig[:], sigraw)
 
@@ -144,6 +159,13 @@ func CreateChannelReadRequest(channelID [thin.ChannelIDLength]byte,
 		panic(err)
 	}
 
+	return CreateChannelReadRequestWithBoxID(channelID, boxID, doc)
+}
+
+func CreateChannelReadRequestWithBoxID(channelID [thin.ChannelIDLength]byte,
+	boxID *[bacap.BoxIDSize]byte,
+	doc *cpki.Document) (*replicaCommon.CourierEnvelope, nike.PrivateKey, error) {
+
 	msg := &replicaCommon.ReplicaInnerMessage{
 		ReplicaRead: &replicaCommon.ReplicaRead{
 			BoxID: boxID,
@@ -155,6 +177,10 @@ func CreateChannelReadRequest(channelID [thin.ChannelIDLength]byte,
 		return nil, nil, err
 	}
 	mkemPrivateKey, mkemCiphertext := replicaCommon.MKEMNikeScheme.Encapsulate(replicaPubKeys, msg.Bytes())
+
+	// DEBUG: Log Bob's MKEM private key for envelope creation
+	mkemPrivateKeyBytes, _ := mkemPrivateKey.MarshalBinary()
+	fmt.Printf("BOB CREATES ENVELOPE WITH MKEM KEY: %x\n", mkemPrivateKeyBytes[:16]) // First 16 bytes for brevity
 
 	envelope := &replicaCommon.CourierEnvelope{
 		SenderEPubKey:        mkemPrivateKey.Public().Bytes(),
@@ -178,6 +204,7 @@ func (d *Daemon) createChannel(request *Request) {
 	d.channelMap[channelID] = &ChannelDescriptor{
 		StatefulWriter:      statefulWriter,
 		EnvelopeDescriptors: make(map[[hash.HashSize]byte]*EnvelopeDescriptor),
+		StoredEnvelopes:     make(map[[thin.MessageIDLength]byte]*StoredEnvelopeData),
 	}
 	d.channelMapLock.Unlock()
 
@@ -214,6 +241,7 @@ func (d *Daemon) createReadChannel(request *Request) {
 	d.channelMap[channelID] = &ChannelDescriptor{
 		StatefulReader:      statefulReader,
 		EnvelopeDescriptors: make(map[[hash.HashSize]byte]*EnvelopeDescriptor),
+		StoredEnvelopes:     make(map[[thin.MessageIDLength]byte]*StoredEnvelopeData),
 	}
 	d.channelMapLock.Unlock()
 
@@ -232,13 +260,17 @@ func (d *Daemon) createReadChannel(request *Request) {
 
 func (d *Daemon) writeChannel(request *Request) {
 	channelID := request.WriteChannel.ChannelID
+
+	// Hold channelMapLock for the entire operation to ensure channelDesc doesn't change
 	d.channelMapLock.RLock()
 	channelDesc, ok := d.channelMap[channelID]
-	d.channelMapLock.RUnlock()
 	if !ok {
+		d.channelMapLock.RUnlock()
 		d.log.Errorf("writeChannel failure: no channel found for channelID %x", channelID[:])
 		return
 	}
+	// Keep the lock held while we work with channelDesc
+	defer d.channelMapLock.RUnlock()
 
 	_, doc := d.client.CurrentDocument()
 
@@ -326,60 +358,160 @@ func (d *Daemon) writeChannel(request *Request) {
 	})
 }
 
-func (d *Daemon) readChannel(request *Request) {
-	channelID := request.ReadChannel.ChannelID
-	d.channelMapLock.RLock()
-	channelDesc, ok := d.channelMap[channelID]
-	d.channelMapLock.RUnlock()
-	if !ok {
-		d.log.Errorf("no channel found for channelID %x", channelID[:])
-		return
+// getOrCreateEnvelope retrieves a stored envelope or creates a new one for the read request
+func (d *Daemon) getOrCreateEnvelope(request *Request, channelDesc *ChannelDescriptor, doc *cpki.Document) (*replicaCommon.CourierEnvelope, nike.PrivateKey, error) {
+	// Check if we have a stored envelope for this message ID
+	if request.ID != nil {
+		if envelope, privateKey, found := d.getStoredEnvelope(request.ID, channelDesc); found {
+			return envelope, privateKey, nil
+		}
 	}
 
-	_, doc := d.client.CurrentDocument()
+	// Create a new envelope if we don't have a stored one
+	return d.createNewEnvelope(request, channelDesc, doc)
+}
 
-	courierEnvelope, envelopePrivateKey, err := CreateChannelReadRequest(
+// getStoredEnvelope retrieves a previously stored envelope and its private key
+// Returns the envelope, private key, and a boolean indicating if found
+func (d *Daemon) getStoredEnvelope(messageID *[thin.MessageIDLength]byte, channelDesc *ChannelDescriptor) (*replicaCommon.CourierEnvelope, nike.PrivateKey, bool) {
+	channelDesc.StoredEnvelopesLock.RLock()
+	storedData, exists := channelDesc.StoredEnvelopes[*messageID]
+	channelDesc.StoredEnvelopesLock.RUnlock()
+
+	if !exists {
+		return nil, nil, false
+	}
+
+	d.log.Debugf("Reusing stored envelope for message ID %x", messageID[:])
+	courierEnvelope := storedData.Envelope
+
+	// Retrieve the envelope private key from the envelope descriptors
+	envHash := courierEnvelope.EnvelopeHash()
+
+	// DEBUG: Log envelope hash and map size when retrieving
+	channelDesc.EnvelopeLock.RLock()
+	mapSize := len(channelDesc.EnvelopeDescriptors)
+	envDesc, envExists := channelDesc.EnvelopeDescriptors[*envHash]
+	channelDesc.EnvelopeLock.RUnlock()
+
+	fmt.Printf("RETRIEVING ENVELOPE HASH: %x (map size: %d, exists: %t)\n", envHash[:], mapSize, envExists)
+
+	if !envExists {
+		d.log.Errorf("envelope descriptor not found for stored envelope")
+		return nil, nil, false
+	}
+
+	envelopePrivateKey, err := replicaCommon.NikeScheme.UnmarshalBinaryPrivateKey(envDesc.EnvelopeKey)
+	if err != nil {
+		d.log.Errorf("failed to unmarshal stored envelope private key: %s", err)
+		return nil, nil, false
+	}
+
+	// DEBUG: Log Bob's retrieved MKEM private key
+	fmt.Printf("BOB RETRIEVES STORED MKEM KEY: %x\n", envDesc.EnvelopeKey[:16]) // First 16 bytes for brevity
+
+	return courierEnvelope, envelopePrivateKey, true
+}
+
+// createNewEnvelope creates a new courier envelope for the read request
+func (d *Daemon) createNewEnvelope(request *Request, channelDesc *ChannelDescriptor, doc *cpki.Document) (*replicaCommon.CourierEnvelope, nike.PrivateKey, error) {
+	// Get the box ID before creating the envelope
+	boxID, err := channelDesc.StatefulReader.NextBoxID()
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to get next box ID: %s", err)
+	}
+
+	// DEBUG: Log Bob's read BoxID
+	fmt.Printf("BOB READS FROM BoxID: %x\n", boxID[:])
+
+	courierEnvelope, envelopePrivateKey, err := CreateChannelReadRequestWithBoxID(
 		request.ReadChannel.ChannelID,
-		channelDesc.StatefulReader,
+		boxID,
 		doc)
 	if err != nil {
-		d.log.Errorf("failed to create read request: %s", err)
-		return
+		return nil, nil, fmt.Errorf("failed to create read request: %s", err)
 	}
 
+	// Store the envelope and box ID for future reuse if we have a message ID
+	if request.ID != nil {
+		channelDesc.StoredEnvelopesLock.Lock()
+		channelDesc.StoredEnvelopes[*request.ID] = &StoredEnvelopeData{
+			Envelope: courierEnvelope,
+			BoxID:    boxID,
+		}
+		channelDesc.StoredEnvelopesLock.Unlock()
+		d.log.Debugf("Stored envelope for message ID %x", request.ID[:])
+	}
+
+	return courierEnvelope, envelopePrivateKey, nil
+}
+
+// sendReadChannelErrorResponse sends an error response for a read channel request
+func (d *Daemon) sendReadChannelErrorResponse(request *Request, channelID [thin.ChannelIDLength]byte, errorMsg string) {
+	conn := d.listener.getConnection(request.AppID)
+	if conn != nil {
+		conn.sendResponse(&Response{
+			AppID: request.AppID,
+			ReadChannelReply: &thin.ReadChannelReply{
+				ChannelID: channelID,
+				Err:       errorMsg,
+			},
+		})
+	}
+}
+
+// storeEnvelopeDescriptor stores the envelope descriptor for new envelopes (not reused ones)
+func (d *Daemon) storeEnvelopeDescriptor(courierEnvelope *replicaCommon.CourierEnvelope, envelopePrivateKey nike.PrivateKey, channelDesc *ChannelDescriptor, doc *cpki.Document) error {
 	envHash := courierEnvelope.EnvelopeHash()
-	replicaPubKeys := make([]nike.PublicKey, 2)
-	replicaEpoch, _, _ := replicaCommon.ReplicaNow()
-	for i, replicaNum := range courierEnvelope.IntermediateReplicas {
-		desc, err := replicaCommon.ReplicaNum(replicaNum, doc)
-		if err != nil {
-			d.log.Errorf("failed to get replica descriptor: %s", err)
-			return
-		}
-		replicaPubKeys[i], err = replicaCommon.NikeScheme.UnmarshalBinaryPublicKey(desc.EnvelopeKeys[replicaEpoch])
-		if err != nil {
-			d.log.Errorf("failed to unmarshal public key: %s", err)
-			return
-		}
-	}
 
-	envelopeKey, err := envelopePrivateKey.MarshalBinary()
-	if err != nil {
-		panic(err)
-	}
-	channelDesc.EnvelopeLock.Lock()
-	channelDesc.EnvelopeDescriptors[*envHash] = &EnvelopeDescriptor{
-		Epoch:       doc.Epoch, // Store normal epoch, convert when needed
-		ReplicaNums: courierEnvelope.IntermediateReplicas,
-		EnvelopeKey: envelopeKey,
-	}
-	channelDesc.EnvelopeLock.Unlock()
+	// DEBUG: Log envelope hash and map size when storing
+	channelDesc.EnvelopeLock.RLock()
+	mapSize := len(channelDesc.EnvelopeDescriptors)
+	channelDesc.EnvelopeLock.RUnlock()
+	fmt.Printf("STORING ENVELOPE HASH: %x (map size: %d)\n", envHash[:], mapSize)
 
+	// Only store envelope descriptor for new envelopes (not reused ones)
+	channelDesc.EnvelopeLock.RLock()
+	_, envDescExists := channelDesc.EnvelopeDescriptors[*envHash]
+	channelDesc.EnvelopeLock.RUnlock()
+
+	if !envDescExists {
+		replicaPubKeys := make([]nike.PublicKey, 2)
+		replicaEpoch, _, _ := replicaCommon.ReplicaNow()
+		for i, replicaNum := range courierEnvelope.IntermediateReplicas {
+			desc, err := replicaCommon.ReplicaNum(replicaNum, doc)
+			if err != nil {
+				return fmt.Errorf("failed to get replica descriptor: %s", err)
+			}
+			replicaPubKeys[i], err = replicaCommon.NikeScheme.UnmarshalBinaryPublicKey(desc.EnvelopeKeys[replicaEpoch])
+			if err != nil {
+				return fmt.Errorf("failed to unmarshal public key: %s", err)
+			}
+		}
+
+		envelopeKey, err := envelopePrivateKey.MarshalBinary()
+		if err != nil {
+			return fmt.Errorf("failed to marshal envelope private key: %s", err)
+		}
+		channelDesc.EnvelopeLock.Lock()
+		channelDesc.EnvelopeDescriptors[*envHash] = &EnvelopeDescriptor{
+			Epoch:       doc.Epoch, // Store normal epoch, convert when needed
+			ReplicaNums: courierEnvelope.IntermediateReplicas,
+			EnvelopeKey: envelopeKey,
+		}
+		channelDesc.EnvelopeLock.Unlock()
+	}
+	return nil
+}
+
+// sendEnvelopeToCourier sends the courier envelope via Sphinx and sets up reply handling
+func (d *Daemon) sendEnvelopeToCourier(request *Request, channelID [thin.ChannelIDLength]byte, courierEnvelope *replicaCommon.CourierEnvelope, doc *cpki.Document) error {
 	surbid := &[sphinxConstants.SURBIDLength]byte{}
-	_, err = rand.Reader.Read(surbid[:])
+	_, err := rand.Reader.Read(surbid[:])
 	if err != nil {
-		panic(err)
+		return fmt.Errorf("failed to generate SURB ID: %s", err)
 	}
+
 	destinationIdHash, recipientQueueID := GetRandomCourier(doc)
 
 	sendRequest := &Request{
@@ -392,23 +524,13 @@ func (d *Daemon) readChannel(request *Request) {
 		SURBID:            surbid,
 		IsSendOp:          true,
 	}
+
 	surbKey, rtt, err := d.client.SendCiphertext(sendRequest)
 	if err != nil {
-		d.log.Errorf("failed to send sphinx packet: %s", err.Error())
-		// Send error response to client
-		conn := d.listener.getConnection(request.AppID)
-		if conn != nil {
-			conn.sendResponse(&Response{
-				AppID: request.AppID,
-				ReadChannelReply: &thin.ReadChannelReply{
-					ChannelID: channelID,
-					Err:       err.Error(),
-				},
-			})
-		}
-		return
+		return fmt.Errorf("failed to send sphinx packet: %s", err)
 	}
 
+	// Set up reply handling
 	fetchInterval := d.client.GetPollInterval()
 	slop := time.Second
 	duration := rtt + fetchInterval + slop
@@ -416,6 +538,7 @@ func (d *Daemon) readChannel(request *Request) {
 
 	d.channelRepliesLock.Lock()
 	d.channelReplies[*surbid] = replyDescriptor{
+		ID:      request.ID,
 		appID:   request.AppID,
 		surbKey: surbKey,
 	}
@@ -427,6 +550,11 @@ func (d *Daemon) readChannel(request *Request) {
 
 	d.timerQueue.Push(uint64(replyArrivalTime.UnixNano()), sendRequest.SURBID)
 
+	return nil
+}
+
+// sendReadChannelSuccessResponse sends a success response for a read channel request
+func (d *Daemon) sendReadChannelSuccessResponse(request *Request, channelID [thin.ChannelIDLength]byte) {
 	conn := d.listener.getConnection(request.AppID)
 	if conn == nil {
 		d.log.Errorf("no connection associated with AppID %x", request.AppID[:])
@@ -438,4 +566,48 @@ func (d *Daemon) readChannel(request *Request) {
 			ChannelID: channelID,
 		},
 	})
+}
+
+func (d *Daemon) readChannel(request *Request) {
+	channelID := request.ReadChannel.ChannelID
+
+	// Hold channelMapLock for the entire operation to ensure channelDesc doesn't change
+	d.channelMapLock.RLock()
+	channelDesc, ok := d.channelMap[channelID]
+	if !ok {
+		d.channelMapLock.RUnlock()
+		d.log.Errorf("no channel found for channelID %x", channelID[:])
+		return
+	}
+	// Keep the lock held while we work with channelDesc
+	defer d.channelMapLock.RUnlock()
+
+	_, doc := d.client.CurrentDocument()
+
+	// Get or create the courier envelope
+	courierEnvelope, envelopePrivateKey, err := d.getOrCreateEnvelope(request, channelDesc, doc)
+	if err != nil {
+		d.log.Errorf("failed to get or create envelope: %s", err)
+		d.sendReadChannelErrorResponse(request, channelID, err.Error())
+		return
+	}
+
+	// Store envelope descriptor for new envelopes (not reused ones)
+	err = d.storeEnvelopeDescriptor(courierEnvelope, envelopePrivateKey, channelDesc, doc)
+	if err != nil {
+		d.log.Errorf("failed to store envelope descriptor: %s", err)
+		d.sendReadChannelErrorResponse(request, channelID, err.Error())
+		return
+	}
+
+	// Send the envelope to the courier and handle the response
+	err = d.sendEnvelopeToCourier(request, channelID, courierEnvelope, doc)
+	if err != nil {
+		d.log.Errorf("failed to send envelope to courier: %s", err)
+		d.sendReadChannelErrorResponse(request, channelID, err.Error())
+		return
+	}
+
+	// Send success response to client
+	d.sendReadChannelSuccessResponse(request, channelID)
 }

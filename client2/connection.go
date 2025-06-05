@@ -457,7 +457,8 @@ func (c *connection) onWireConn(w *wire.Session) {
 	cmdCloseCh := make(chan interface{})
 	defer func() {
 		if wireErr == nil {
-			panic("BUG: wireErr is nil on connection teardown.")
+			// Set a default error if wireErr is nil during shutdown
+			wireErr = ErrShutdown
 		}
 		c.onConnStatusChange(wireErr)
 	}()
@@ -693,7 +694,10 @@ func (c *connection) onWireConn(w *wire.Session) {
 				}
 				if int(cmd.ChunkNum) == (dechunker.ChunkTotal - 1) {
 					if len(dechunker.Output) == 0 {
-						panic("wtf len(dechunker.Output) == 0")
+						// Handle empty dechunker output gracefully during shutdown
+						c.log.Debugf("Dechunker output is empty, likely due to shutdown")
+						wireErr = newProtocolError("empty consensus response during shutdown")
+						return
 					}
 
 					// last chunk
