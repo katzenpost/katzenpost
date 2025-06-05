@@ -11,10 +11,12 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/BurntSushi/toml"
 	"github.com/fxamacker/cbor/v2"
 	"gopkg.in/op/go-logging.v1"
 
@@ -98,6 +100,22 @@ func FromConfig(cfg *config.Config) *Config {
 		Network:        cfg.ListenNetwork,
 		Address:        cfg.ListenAddress,
 	}
+}
+
+// LoadFile loads a thin client configuration from a TOML file.
+func LoadFile(filename string) (*Config, error) {
+	b, err := os.ReadFile(filename)
+	if err != nil {
+		return nil, err
+	}
+
+	cfg := new(Config)
+	err = toml.Unmarshal(b, cfg)
+	if err != nil {
+		return nil, err
+	}
+
+	return cfg, nil
 }
 
 // NewThinClient creates a new thing client.
