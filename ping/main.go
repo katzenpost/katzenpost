@@ -50,12 +50,14 @@ func main() {
 	var timeout int
 	var concurrency int
 	var printDiff bool
+	var thinClientOnly bool
 	flag.StringVar(&configFile, "c", "", "configuration file")
 	flag.StringVar(&service, "s", "", "service name")
 	flag.IntVar(&count, "n", 5, "count")
 	flag.IntVar(&timeout, "t", 45, "timeout")
 	flag.IntVar(&concurrency, "C", 1, "concurrency")
 	flag.BoolVar(&printDiff, "printDiff", false, "print payload contents if reply is different than original")
+	flag.BoolVar(&thinClientOnly, "thin", false, "use thin client mode (connect to existing daemon)")
 	version := flag.Bool("v", false, "Get version info.")
 	flag.Parse()
 
@@ -68,36 +70,62 @@ func main() {
 		panic("must specify service name with -s")
 	}
 
-	cfg, err := config.LoadFile(configFile)
-	if err != nil {
-		panic(fmt.Errorf("failed to open config: %s", err))
+	var thinClient *thin.ThinClient
+	var daemon *client2.Daemon
+
+	if thinClientOnly {
+		// Thin client mode: connect to existing daemon
+		cfg, err := thin.LoadFile(configFile)
+		if err != nil {
+			panic(fmt.Errorf("failed to open thin client config: %s", err))
+		}
+
+		logging := &config.Logging{
+			Disable: false,
+			File:    "",
+			Level:   "DEBUG",
+		}
+
+		thinClient = thin.NewThinClient(cfg, logging)
+		err = thinClient.Dial()
+		if err != nil {
+			panic(fmt.Errorf("failed to connect to daemon: %s", err))
+		}
+	} else {
+		// Full mode: start own daemon
+		cfg, err := config.LoadFile(configFile)
+		if err != nil {
+			panic(fmt.Errorf("failed to open config: %s", err))
+		}
+
+		// create a client and connect to the mixnet Gateway
+		daemon, err = client2.NewDaemon(cfg)
+		if err != nil {
+			panic(err)
+		}
+		err = daemon.Start()
+		if err != nil {
+			panic(err)
+		}
+
+		fmt.Println("Sleeping for 3 seconds to let the client daemon startup...")
+		time.Sleep(time.Second * 3)
+
+		thinClient = thin.NewThinClient(thin.FromConfig(cfg), cfg.Logging)
+		err = thinClient.Dial()
+		if err != nil {
+			panic(err)
+		}
 	}
 
-	// create a client and connect to the mixnet Gateway
-	d, err := client2.NewDaemon(cfg)
+	desc, err := thinClient.GetService(service)
 	if err != nil {
 		panic(err)
 	}
-	err = d.Start()
-	if err != nil {
-		panic(err)
+
+	sendPings(thinClient, desc, count, concurrency, printDiff)
+
+	if daemon != nil {
+		daemon.Shutdown()
 	}
-
-	fmt.Println("Sleeping for 3 seconds to let the client daemon startup...")
-	time.Sleep(time.Second * 3)
-
-	thin := thin.NewThinClient(thin.FromConfig(cfg), cfg.Logging)
-	err = thin.Dial()
-	if err != nil {
-		panic(err)
-	}
-
-	desc, err := thin.GetService(service)
-	if err != nil {
-		panic(err)
-	}
-
-	sendPings(thin, desc, count, concurrency, printDiff)
-
-	d.Shutdown()
 }
