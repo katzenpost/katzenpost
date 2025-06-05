@@ -12,7 +12,6 @@ import (
 	"runtime"
 	"syscall"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -30,47 +29,19 @@ var (
 )
 
 func TestAllClient2Tests(t *testing.T) {
-	d, err := setupDaemon()
-	require.NoError(t, err)
-
-	t.Cleanup(func() {
-		d.Shutdown()
-	})
-
+	// Setup signal handling for graceful shutdown
 	haltCh := make(chan os.Signal, 1)
 	signal.Notify(haltCh, os.Interrupt, syscall.SIGTERM)
 	go func() {
 		<-haltCh
 		close(shutdownCh)
 		t.Log("Interrupt caught. Shutdown")
-		d.Shutdown()
 	}()
 
 	//t.Run("TestDockerMultiplexClients", testDockerMultiplexClients)
 	//t.Run("TestDockerClientARQSendReceive", testDockerClientARQSendReceive)
 	//t.Run("TestDockerClientSendReceive", testDockerClientSendReceive)
 	t.Run("TestDockerCourierService", testDockerCourierService)
-}
-
-func setupDaemon() (*Daemon, error) {
-	cfg, err := config.LoadFile("testdata/client.toml")
-	if err != nil {
-		return nil, err
-	}
-
-	d, err := NewDaemon(cfg)
-	if err != nil {
-		return nil, err
-	}
-	err = d.Start()
-	if err != nil {
-		return nil, err
-	}
-
-	// maybe we need to sleep first to ensure the daemon is listening first before dialing
-	time.Sleep(time.Second * 3)
-
-	return d, nil
 }
 
 func sendAndWait(t *testing.T, client *thin.ThinClient, message []byte, nodeID *[32]byte, queueID []byte) []byte {
@@ -116,10 +87,16 @@ func sendAndWait(t *testing.T, client *thin.ThinClient, message []byte, nodeID *
 func testDockerMultiplexClients(t *testing.T) {
 	t.Parallel()
 
-	cfg, err := config.LoadFile("testdata/client.toml")
+	cfg, err := thin.LoadFile("testdata/thinclient.toml")
 	require.NoError(t, err)
 
-	thin1 := thin.NewThinClient(thin.FromConfig(cfg), cfg.Logging)
+	logging := &config.Logging{
+		Disable: false,
+		File:    "",
+		Level:   "DEBUG",
+	}
+
+	thin1 := thin.NewThinClient(cfg, logging)
 
 	t.Log("thin client Dialing")
 	err = thin1.Dial()
@@ -127,7 +104,7 @@ func testDockerMultiplexClients(t *testing.T) {
 	require.Nil(t, err)
 	t.Log("thin client connected")
 
-	thin2 := thin.NewThinClient(thin.FromConfig(cfg), cfg.Logging)
+	thin2 := thin.NewThinClient(cfg, logging)
 	t.Log("thin client Dialing")
 	err = thin2.Dial()
 	require.NoError(t, err)
@@ -166,10 +143,16 @@ func testDockerMultiplexClients(t *testing.T) {
 func testDockerClientARQSendReceive(t *testing.T) {
 	t.Parallel()
 
-	cfg, err := config.LoadFile("testdata/client.toml")
+	cfg, err := thin.LoadFile("testdata/thinclient.toml")
 	require.NoError(t, err)
 
-	thin := thin.NewThinClient(thin.FromConfig(cfg), cfg.Logging)
+	logging := &config.Logging{
+		Disable: false,
+		File:    "",
+		Level:   "DEBUG",
+	}
+
+	thin := thin.NewThinClient(cfg, logging)
 	t.Log("thin client Dialing")
 	err = thin.Dial()
 	require.NoError(t, err)
@@ -239,10 +222,16 @@ func testDockerClientARQSendReceive(t *testing.T) {
 func testDockerClientSendReceive(t *testing.T) {
 	t.Parallel()
 
-	cfg, err := config.LoadFile("testdata/client.toml")
+	cfg, err := thin.LoadFile("testdata/thinclient.toml")
 	require.NoError(t, err)
 
-	thin := thin.NewThinClient(thin.FromConfig(cfg), cfg.Logging)
+	logging := &config.Logging{
+		Disable: false,
+		File:    "",
+		Level:   "DEBUG",
+	}
+
+	thin := thin.NewThinClient(cfg, logging)
 
 	t.Log("------------------------------ thin client Dialing")
 	err = thin.Dial()
