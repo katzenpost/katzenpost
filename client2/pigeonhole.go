@@ -6,6 +6,7 @@ package client2
 import (
 	"fmt"
 	mrand "math/rand"
+	"os"
 	"sync"
 	"time"
 
@@ -57,6 +58,10 @@ type ChannelDescriptor struct {
 	// StoredEnvelopes maps message IDs to stored envelope data for reuse
 	StoredEnvelopes     map[[thin.MessageIDLength]byte]*StoredEnvelopeData
 	StoredEnvelopesLock sync.RWMutex // Protects StoredEnvelopes map
+
+	// ReaderLock protects StatefulReader.DecryptNext calls to prevent BACAP state corruption
+	// CRITICAL: DecryptNext advances the reader's internal state and must be serialized
+	ReaderLock sync.Mutex
 }
 
 func GetRandomCourier(doc *cpki.Document) (*[hash.HashSize]byte, []byte) {
@@ -118,6 +123,7 @@ func CreateChannelWriteRequest(
 
 	// DEBUG: Log Alice's write BoxID
 	fmt.Printf("ALICE WRITES TO BoxID: %x\n", boxID[:])
+	fmt.Fprintf(os.Stderr, "ALICE WRITES TO BoxID: %x\n", boxID[:])
 
 	sig := [bacap.SignatureSize]byte{}
 	copy(sig[:], sigraw)
@@ -135,10 +141,17 @@ func CreateChannelWriteRequest(
 	if err != nil {
 		return nil, nil, err
 	}
+
+	fmt.Printf("ALICE MKEM ENCRYPT: Starting encryption with message size %d bytes\n", len(msg.Bytes()))
 	mkemPrivateKey, mkemCiphertext := replicaCommon.MKEMNikeScheme.Encapsulate(
 		replicaPubKeys, msg.Bytes(),
 	)
 	mkemPublicKey := mkemPrivateKey.Public()
+
+	// DEBUG: Log Alice's MKEM private key for envelope creation
+	mkemPrivateKeyBytes, _ := mkemPrivateKey.MarshalBinary()
+	fmt.Printf("ALICE CREATES ENVELOPE WITH MKEM KEY: %x\n", mkemPrivateKeyBytes[:16]) // First 16 bytes for brevity
+	fmt.Printf("ALICE MKEM ENCRYPT SUCCESS: Encrypted to %d bytes\n", len(mkemCiphertext.Envelope))
 
 	envelope := &replicaCommon.CourierEnvelope{
 		SenderEPubKey:        mkemPublicKey.Bytes(),
@@ -176,11 +189,14 @@ func CreateChannelReadRequestWithBoxID(channelID [thin.ChannelIDLength]byte,
 	if err != nil {
 		return nil, nil, err
 	}
+
+	fmt.Printf("BOB MKEM ENCRYPT: Starting encryption with message size %d bytes\n", len(msg.Bytes()))
 	mkemPrivateKey, mkemCiphertext := replicaCommon.MKEMNikeScheme.Encapsulate(replicaPubKeys, msg.Bytes())
 
 	// DEBUG: Log Bob's MKEM private key for envelope creation
 	mkemPrivateKeyBytes, _ := mkemPrivateKey.MarshalBinary()
 	fmt.Printf("BOB CREATES ENVELOPE WITH MKEM KEY: %x\n", mkemPrivateKeyBytes[:16]) // First 16 bytes for brevity
+	fmt.Printf("BOB MKEM ENCRYPT SUCCESS: Encrypted to %d bytes\n", len(mkemCiphertext.Envelope))
 
 	envelope := &replicaCommon.CourierEnvelope{
 		SenderEPubKey:        mkemPrivateKey.Public().Bytes(),
@@ -415,7 +431,6 @@ func (d *Daemon) getStoredEnvelope(messageID *[thin.MessageIDLength]byte, channe
 
 // createNewEnvelope creates a new courier envelope for the read request
 func (d *Daemon) createNewEnvelope(request *Request, channelDesc *ChannelDescriptor, doc *cpki.Document) (*replicaCommon.CourierEnvelope, nike.PrivateKey, error) {
-	// Get the box ID before creating the envelope
 	boxID, err := channelDesc.StatefulReader.NextBoxID()
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to get next box ID: %s", err)
@@ -423,6 +438,7 @@ func (d *Daemon) createNewEnvelope(request *Request, channelDesc *ChannelDescrip
 
 	// DEBUG: Log Bob's read BoxID
 	fmt.Printf("BOB READS FROM BoxID: %x\n", boxID[:])
+	fmt.Fprintf(os.Stderr, "BOB READS FROM BoxID: %x\n", boxID[:])
 
 	courierEnvelope, envelopePrivateKey, err := CreateChannelReadRequestWithBoxID(
 		request.ReadChannel.ChannelID,
@@ -469,6 +485,19 @@ func (d *Daemon) storeEnvelopeDescriptor(courierEnvelope *replicaCommon.CourierE
 	mapSize := len(channelDesc.EnvelopeDescriptors)
 	channelDesc.EnvelopeLock.RUnlock()
 	fmt.Printf("STORING ENVELOPE HASH: %x (map size: %d)\n", envHash[:], mapSize)
+
+	// DEBUG: Log the raw data being hashed to identify the issue
+	fmt.Printf("DEBUG ENVELOPE DATA:\n")
+	pubKeyLen := len(courierEnvelope.SenderEPubKey)
+	if pubKeyLen > 32 {
+		pubKeyLen = 32
+	}
+	cipherLen := len(courierEnvelope.Ciphertext)
+	if cipherLen > 32 {
+		cipherLen = 32
+	}
+	fmt.Printf("  SenderEPubKey: %x\n", courierEnvelope.SenderEPubKey[:pubKeyLen])
+	fmt.Printf("  Ciphertext: %x\n", courierEnvelope.Ciphertext[:cipherLen])
 
 	// Only store envelope descriptor for new envelopes (not reused ones)
 	channelDesc.EnvelopeLock.RLock()

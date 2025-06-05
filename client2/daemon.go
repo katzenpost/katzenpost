@@ -317,13 +317,12 @@ func (d *Daemon) ingressWorker() {
 			d.channelRepliesLock.RUnlock()
 
 			if ok {
-				d.channelRepliesLock.Lock()
-				delete(d.channelReplies, *surbID)
-				d.channelRepliesLock.Unlock()
-
-				d.surbIDToChannelMapLock.Lock()
-				delete(d.surbIDToChannelMap, *surbID)
-				d.surbIDToChannelMapLock.Unlock()
+				// CRITICAL FIX: Do NOT clean up channel reply state on timer expiration
+				// for pigeonhole channels. Unlike regular messages, pigeonhole channels
+				// need to support retries with the same envelope/SURB ID. The cleanup
+				// should only happen when the operation succeeds (in handleChannelReply)
+				// or when the client explicitly stops retrying.
+				d.log.Debugf("Timer expired for channel SURB ID %x, but keeping state for retries", surbID[:])
 				continue
 			}
 
@@ -405,7 +404,17 @@ func (d *Daemon) handleReply(reply *sphinxReply) {
 		return
 	}
 	if isChannelReply {
-		d.handleChannelReply(desc.appID, desc.ID, reply.surbID, plaintext, conn)
+		err := d.handleChannelReply(desc.appID, desc.ID, reply.surbID, plaintext, conn)
+		if err == nil {
+			// CRITICAL FIX: Clean up channel reply state after successful processing
+			d.channelRepliesLock.Lock()
+			delete(d.channelReplies, *reply.surbID)
+			d.channelRepliesLock.Unlock()
+
+			d.surbIDToChannelMapLock.Lock()
+			delete(d.surbIDToChannelMap, *reply.surbID)
+			d.surbIDToChannelMapLock.Unlock()
+		}
 	} else {
 		conn.sendResponse(&Response{
 			AppID: desc.appID,
@@ -524,11 +533,13 @@ func (d *Daemon) handleChannelReply(appid *[AppIDLength]byte,
 	mkemPrivateKeyBytes, _ := privateKey.MarshalBinary()
 	fmt.Printf("BOB DECRYPTS WITH MKEM KEY: %x\n", mkemPrivateKeyBytes[:16]) // First 16 bytes for brevity
 
+	d.log.Debugf("MKEM DECRYPT: Starting decryption with payload size %d bytes", len(env.Payload))
 	rawInnerMsg, err := replicaCommon.MKEMNikeScheme.DecryptEnvelope(privateKey, replicaPubKey, env.Payload)
 	if err != nil {
-		d.log.Errorf("failed to decrypt envelope: %s", err)
+		d.log.Errorf("MKEM DECRYPT FAILED: %s", err)
 		return fmt.Errorf("failed to decrypt envelope: %s", err)
 	}
+	d.log.Debugf("MKEM DECRYPT SUCCESS: Decrypted %d bytes", len(rawInnerMsg))
 	innerMsg, err := replicaCommon.ReplicaMessageReplyInnerMessageFromBytes(rawInnerMsg)
 	if err != nil {
 		d.log.Errorf("failed to unmarshal inner message: %s", err)
@@ -568,15 +579,19 @@ func (d *Daemon) handleChannelReply(appid *[AppIDLength]byte,
 			return fmt.Errorf("no stored box ID found for message ID - cannot process reply")
 		}
 
+		d.log.Debugf("BACAP DECRYPT: Starting decryption for BoxID %x with payload size %d bytes", boxid[:], len(innerMsg.ReplicaReadReply.Payload))
+		channelDesc.ReaderLock.Lock()
 		innerplaintext, err := channelDesc.StatefulReader.DecryptNext(
 			[]byte(constants.PIGEONHOLE_CTX),
 			*boxid,
 			innerMsg.ReplicaReadReply.Payload,
 			*innerMsg.ReplicaReadReply.Signature)
+		channelDesc.ReaderLock.Unlock()
 		if err != nil {
-			d.log.Errorf("failed to decrypt next: %s", err)
+			d.log.Errorf("BACAP DECRYPT FAILED for BoxID %x: %s", boxid[:], err)
 			return fmt.Errorf("failed to decrypt next: %s", err)
 		}
+		d.log.Debugf("BACAP DECRYPT SUCCESS: Decrypted %d bytes for BoxID %x", len(innerplaintext), boxid[:])
 		conn.sendResponse(&Response{
 			AppID: appid,
 			ReadChannelReply: &thin.ReadChannelReply{
@@ -584,10 +599,20 @@ func (d *Daemon) handleChannelReply(appid *[AppIDLength]byte,
 				Payload:   innerplaintext,
 			},
 		})
-		// possibly a BUG:
-		//channelDesc.EnvelopeLock.Lock()
-		//delete(channelDesc.EnvelopeDescriptors, *envHash)
-		//channelDesc.EnvelopeLock.Unlock()
+
+		// CRITICAL FIX: Clean up envelope descriptor after successful processing
+		// to prevent memory leaks and stale state that could cause issues
+		channelDesc.EnvelopeLock.Lock()
+		delete(channelDesc.EnvelopeDescriptors, *envHash)
+		channelDesc.EnvelopeLock.Unlock()
+
+		// Also clean up stored envelope data if we have a message ID
+		if mesgID != nil {
+			channelDesc.StoredEnvelopesLock.Lock()
+			delete(channelDesc.StoredEnvelopes, *mesgID)
+			channelDesc.StoredEnvelopesLock.Unlock()
+		}
+
 		return nil
 	case innerMsg.ReplicaWriteReply != nil:
 		if !isWriter {
@@ -609,10 +634,12 @@ func (d *Daemon) handleChannelReply(appid *[AppIDLength]byte,
 			},
 		})
 
-		// possibly a BUG:
-		//channelDesc.EnvelopeLock.Lock()
-		//delete(channelDesc.EnvelopeDescriptors, *envHash)
-		//channelDesc.EnvelopeLock.Unlock()
+		// CRITICAL FIX: Clean up envelope descriptor after successful processing
+		// to prevent memory leaks and stale state that could cause issues
+		channelDesc.EnvelopeLock.Lock()
+		delete(channelDesc.EnvelopeDescriptors, *envHash)
+		channelDesc.EnvelopeLock.Unlock()
+
 		return nil
 	}
 	d.log.Errorf("bug 6, invalid book keeping for channelID %x", channelID[:])
