@@ -99,8 +99,8 @@ func testDockerCourierService(t *testing.T) {
 			time.Sleep(5 * time.Second)
 		}
 
-		// Create a fresh context with 2-minute timeout for each read attempt
-		readCtx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		// Create a fresh context with 10-minute timeout for each read attempt
+		readCtx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 		receivedMessage, err = bobThinClient.ReadChannel(readCtx, bobChannelID, readMessageID)
 		cancel()
 

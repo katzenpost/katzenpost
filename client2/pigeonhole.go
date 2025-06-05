@@ -469,6 +469,7 @@ func (d *Daemon) sendReadChannelErrorResponse(request *Request, channelID [thin.
 		conn.sendResponse(&Response{
 			AppID: request.AppID,
 			ReadChannelReply: &thin.ReadChannelReply{
+				MessageID: request.ID,
 				ChannelID: channelID,
 				Err:       errorMsg,
 			},
@@ -592,6 +593,7 @@ func (d *Daemon) sendReadChannelSuccessResponse(request *Request, channelID [thi
 	conn.sendResponse(&Response{
 		AppID: request.AppID,
 		ReadChannelReply: &thin.ReadChannelReply{
+			MessageID: request.ID,
 			ChannelID: channelID,
 		},
 	})

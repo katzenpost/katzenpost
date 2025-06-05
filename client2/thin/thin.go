@@ -79,6 +79,9 @@ type ThinClient struct {
 	sentWaitChanMap  sync.Map // MessageID -> chan error
 	replyWaitChanMap sync.Map // MessageID -> chan *MessageReplyEvent
 
+	// used by ReadChannel only
+	readChannelWaitChanMap sync.Map // MessageID -> chan *ReadChannelReply
+
 	closeOnce sync.Once
 }
 
@@ -393,12 +396,30 @@ func (t *ThinClient) worker() {
 				return
 			}
 		case message.ReadChannelReply != nil:
-			t.log.Debug("ReadChannelReply")
-			select {
-			case t.eventSink <- message.ReadChannelReply:
-				continue
-			case <-t.HaltCh():
-				return
+			t.log.Debugf("ReadChannelReply: MessageID %x, ChannelID %x, Payload size %d bytes",
+				message.ReadChannelReply.MessageID[:], message.ReadChannelReply.ChannelID[:], len(message.ReadChannelReply.Payload))
+			isDirectReply := false
+			if message.ReadChannelReply.MessageID != nil {
+				readWaitChanRaw, ok := t.readChannelWaitChanMap.Load(*message.ReadChannelReply.MessageID)
+				if ok {
+					isDirectReply = true
+					readWaitChan := readWaitChanRaw.(chan *ReadChannelReply)
+					select {
+					case readWaitChan <- message.ReadChannelReply:
+					case <-t.HaltCh():
+						return
+					}
+				} else {
+					t.log.Debugf("No wait channel found for MessageID %x", message.ReadChannelReply.MessageID[:])
+				}
+			}
+			if !isDirectReply {
+				select {
+				case t.eventSink <- message.ReadChannelReply:
+					continue
+				case <-t.HaltCh():
+					return
+				}
 			}
 		default:
 			t.log.Error("bug: received invalid thin client message")
@@ -848,38 +869,32 @@ func (t *ThinClient) ReadChannel(ctx context.Context, channelID *[ChannelIDLengt
 		},
 	}
 
-	eventSink := t.EventSink()
-	defer t.StopEventSink(eventSink)
+	// Set up direct message ID correlation for ReadChannelReply
+	// Always create or reuse a persistent wait channel for this MessageID
+	readWaitChanRaw, exists := t.readChannelWaitChanMap.Load(*messageID)
+	var readWaitChan chan *ReadChannelReply
+	if exists {
+		readWaitChan = readWaitChanRaw.(chan *ReadChannelReply)
+	} else {
+		readWaitChan = make(chan *ReadChannelReply, 1) // Buffered to prevent blocking
+		t.readChannelWaitChanMap.Store(*messageID, readWaitChan)
+	}
 
 	err := t.writeMessage(req)
 	if err != nil {
 		return nil, err
 	}
 
-	for {
-		var event Event
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		case event = <-eventSink:
-		case <-t.HaltCh():
-			return nil, errors.New("halting")
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case reply := <-readWaitChan:
+		if reply.Err != "" {
+			return nil, errors.New(reply.Err)
 		}
-
-		switch v := event.(type) {
-		case *ReadChannelReply:
-			if v.Err != "" {
-				return nil, errors.New(v.Err)
-			}
-			return v.Payload, nil
-		case *ConnectionStatusEvent:
-			if !v.IsConnected {
-				return nil, errors.New("connection lost")
-			}
-		case *NewDocumentEvent:
-			// Ignore PKI document updates
-		default:
-			// Ignore other events
-		}
+		return reply.Payload, nil
+	case <-t.HaltCh():
+		t.readChannelWaitChanMap.Delete(*messageID)
+		return nil, errors.New("halting")
 	}
 }

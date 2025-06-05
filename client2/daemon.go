@@ -317,11 +317,6 @@ func (d *Daemon) ingressWorker() {
 			d.channelRepliesLock.RUnlock()
 
 			if ok {
-				// CRITICAL FIX: Do NOT clean up channel reply state on timer expiration
-				// for pigeonhole channels. Unlike regular messages, pigeonhole channels
-				// need to support retries with the same envelope/SURB ID. The cleanup
-				// should only happen when the operation succeeds (in handleChannelReply)
-				// or when the client explicitly stops retrying.
 				d.log.Debugf("Timer expired for channel SURB ID %x, but keeping state for retries", surbID[:])
 				continue
 			}
@@ -406,7 +401,6 @@ func (d *Daemon) handleReply(reply *sphinxReply) {
 	if isChannelReply {
 		err := d.handleChannelReply(desc.appID, desc.ID, reply.surbID, plaintext, conn)
 		if err == nil {
-			// CRITICAL FIX: Clean up channel reply state after successful processing
 			d.channelRepliesLock.Lock()
 			delete(d.channelReplies, *reply.surbID)
 			d.channelRepliesLock.Unlock()
@@ -571,6 +565,7 @@ func (d *Daemon) handleChannelReply(appid *[AppIDLength]byte,
 
 		if innerMsg.ReplicaReadReply.ErrorCode != 0 {
 			d.log.Debugf("replica returned error code %d for read operation", innerMsg.ReplicaReadReply.ErrorCode)
+			// Don't clean up envelope descriptors on replica errors - we want to retry with the same envelope
 			return fmt.Errorf("replica read failed with error code %d", innerMsg.ReplicaReadReply.ErrorCode)
 		}
 
@@ -608,16 +603,21 @@ func (d *Daemon) handleChannelReply(appid *[AppIDLength]byte,
 			return fmt.Errorf("failed to decrypt next: %s", err)
 		}
 		d.log.Debugf("BACAP DECRYPT SUCCESS: Decrypted %d bytes for BoxID %x", len(innerplaintext), boxid[:])
-		conn.sendResponse(&Response{
+		d.log.Debugf("SENDING RESPONSE: MessageID %x, ChannelID %x, Payload size %d bytes", mesgID[:], channelID[:], len(innerplaintext))
+		err = conn.sendResponse(&Response{
 			AppID: appid,
 			ReadChannelReply: &thin.ReadChannelReply{
+				MessageID: mesgID,
 				ChannelID: channelID,
 				Payload:   innerplaintext,
 			},
 		})
+		if err != nil {
+			d.log.Errorf("Failed to send response to client: %s", err)
+			// Don't clean up envelope descriptors if response sending failed - allow retry
+			return fmt.Errorf("failed to send response to client: %s", err)
+		}
 
-		// CRITICAL FIX: Clean up envelope descriptor after successful processing
-		// to prevent memory leaks and stale state that could cause issues
 		channelDesc.EnvelopeLock.Lock()
 		delete(channelDesc.EnvelopeDescriptors, *envHash)
 		channelDesc.EnvelopeLock.Unlock()
@@ -643,15 +643,18 @@ func (d *Daemon) handleChannelReply(appid *[AppIDLength]byte,
 			d.log.Errorf("failed to write to channel, error code: %d", innerMsg.ReplicaWriteReply.ErrorCode)
 		}
 
-		conn.sendResponse(&Response{
+		err = conn.sendResponse(&Response{
 			AppID: appid,
 			WriteChannelReply: &thin.WriteChannelReply{
 				ChannelID: channelID,
 			},
 		})
+		if err != nil {
+			d.log.Errorf("Failed to send write response to client: %s", err)
+			// Don't clean up envelope descriptors if response sending failed - allow retry
+			return fmt.Errorf("failed to send write response to client: %s", err)
+		}
 
-		// CRITICAL FIX: Clean up envelope descriptor after successful processing
-		// to prevent memory leaks and stale state that could cause issues
 		channelDesc.EnvelopeLock.Lock()
 		delete(channelDesc.EnvelopeDescriptors, *envHash)
 		channelDesc.EnvelopeLock.Unlock()

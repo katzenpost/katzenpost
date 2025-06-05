@@ -179,15 +179,20 @@ func (e *WriteChannelReply) String() string {
 }
 
 type ReadChannelReply struct {
-	ChannelID [ChannelIDLength]byte `cbor:"channel_id"`
-	Payload   []byte                `cbor:"payload"`
-	Err       string                `cbor:"err,omitempty"`
+	MessageID *[MessageIDLength]byte `cbor:"message_id"`
+	ChannelID [ChannelIDLength]byte  `cbor:"channel_id"`
+	Payload   []byte                 `cbor:"payload"`
+	Err       string                 `cbor:"err,omitempty"`
 }
 
 // String returns a string representation of the ReadChannelReply.
 func (e *ReadChannelReply) String() string {
-	if e.Err != "" {
-		return fmt.Sprintf("ReadChannelReply: %x (error: %s)", e.ChannelID[:], e.Err)
+	msgIDStr := "nil"
+	if e.MessageID != nil {
+		msgIDStr = fmt.Sprintf("%x", e.MessageID[:8]) // First 8 bytes for brevity
 	}
-	return fmt.Sprintf("ReadChannelReply: %x (%d bytes)", e.ChannelID[:], len(e.Payload))
+	if e.Err != "" {
+		return fmt.Sprintf("ReadChannelReply: msgID=%s channel=%x (error: %s)", msgIDStr, e.ChannelID[:8], e.Err)
+	}
+	return fmt.Sprintf("ReadChannelReply: msgID=%s channel=%x (%d bytes)", msgIDStr, e.ChannelID[:8], len(e.Payload))
 }
