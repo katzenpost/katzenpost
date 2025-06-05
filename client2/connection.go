@@ -491,9 +491,14 @@ func (c *connection) onWireConn(w *wire.Session) {
 	dispatchOnEmpty := func() error {
 		if c.client.cfg.Callbacks.OnEmptyFn != nil {
 			c.Go(func() {
-				if err := c.client.cfg.Callbacks.OnEmptyFn(); err != nil {
-					c.log.Debugf("Caller failed to handle MessageEmpty: %v", err)
-					forceCloseConn(err)
+				select {
+				case <-c.HaltCh():
+					return
+				default:
+					if err := c.client.cfg.Callbacks.OnEmptyFn(); err != nil {
+						c.log.Debugf("Caller failed to handle MessageEmpty: %v", err)
+						forceCloseConn(err)
+					}
 				}
 			})
 		}
@@ -648,10 +653,14 @@ func (c *connection) onWireConn(w *wire.Session) {
 			nrResps++
 			if c.client.cfg.Callbacks.OnMessageFn != nil {
 				c.Go(func() {
-					// this is without a cancelFn... can block ? XXX
-					if err := c.client.cfg.Callbacks.OnMessageFn(cmd.Payload); err != nil {
-						c.log.Debugf("Caller failed to handle Message: %v", err)
-						forceCloseConn(err)
+					select {
+					case <-c.HaltCh():
+						return
+					default:
+						if err := c.client.cfg.Callbacks.OnMessageFn(cmd.Payload); err != nil {
+							c.log.Debugf("Caller failed to handle Message: %v", err)
+							forceCloseConn(err)
+						}
 					}
 				})
 			}
@@ -671,9 +680,14 @@ func (c *connection) onWireConn(w *wire.Session) {
 			nrResps++
 			if c.client.cfg.Callbacks.OnACKFn != nil {
 				c.Go(func() {
-					if err := c.client.cfg.Callbacks.OnACKFn(&cmd.ID, cmd.Payload); err != nil {
-						c.log.Debugf("Caller failed to handle MessageACK: %v", err)
-						forceCloseConn(err)
+					select {
+					case <-c.HaltCh():
+						return
+					default:
+						if err := c.client.cfg.Callbacks.OnACKFn(&cmd.ID, cmd.Payload); err != nil {
+							c.log.Debugf("Caller failed to handle MessageACK: %v", err)
+							forceCloseConn(err)
+						}
 					}
 				})
 			} else {

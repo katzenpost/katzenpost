@@ -142,6 +142,8 @@ func (c *incomingConn) worker() {
 				// c.worker() is returning for some reason, give up on
 				// trying to write the command, and just return.
 				return
+			case <-c.listener.HaltCh():
+				return
 			}
 		}
 	})
