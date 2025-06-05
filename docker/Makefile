@@ -1,7 +1,8 @@
-.PHONY: clean clean-local clean-local-dryrun clean-image-% clean-container-% clean-images test rootshell shell run-ping go-mod-tidy go-mod-upgrade help start stop client-restart clean-client client-logs
+.PHONY: clean clean-local clean-local-dryrun clean-image-% clean-container-% clean-images test rootshell shell run-ping go-mod-tidy go-mod-upgrade help start stop client-restart clean-client client-logs config-only
 
 help:
 	@echo "These make targets allow you to control the test network:"
+	@echo " config-only        - generate configuration files only (no docker containers)"
 	@echo " start              - start the testnet"
 	@echo " stop               - stop the testnet"
 	@echo " client-restart     - restart just the kpclientd daemon"
@@ -111,6 +112,21 @@ $(docker_compose_yml): ../genconfig/main.go $(distro)_base.stamp | $(net_name) $
 		-nike "$(nike)" -kem "$(kem)" -d katzenpost-$(distro)_base \
 		${noMixDecoy} ${noDecoy} \
 		-UserForwardPayloadLength $(UserForwardPayloadLength) -log_level $(log_level)'
+
+# Generate configuration files only (without docker containers)
+# This is useful for tests that depend on config files existing (e.g., client2/testdata symlinks)
+config-only: | $(net_name)
+	@echo "Generating mixnet configuration files without docker containers..."
+	cd ../genconfig && go build && ./genconfig -wirekem $(wirekem) -a ${bind_addr} -nv ${auths} -n ${mixes} -gateways ${gateways} \
+		-serviceNodes ${serviceNodes} \
+		-sr ${sr} -mu ${mu} -muMax ${muMax} -lP ${lP} -lPMax ${lPMax} -lL ${lL} \
+		-lLMax ${lLMax} -lD ${lD} -lDMax ${lDMax} -lM ${lM} -lMMax ${lMMax} \
+		-v -o ./$(net_name) -b /$(net_name) -P $(base_port) \
+		-nike "$(nike)" -kem "$(kem)" \
+		${noMixDecoy} ${noDecoy} \
+		-UserForwardPayloadLength $(UserForwardPayloadLength) -log_level $(log_level)
+	@echo "Configuration files generated in ./$(net_name)/"
+	@echo "Tests can now use the symlinked configs (e.g., client2/testdata/client.toml -> ../../docker/$(net_name)/client2/client.toml)"
 
 $(net_name)/running.stamp:
 	make $(make_args) start
