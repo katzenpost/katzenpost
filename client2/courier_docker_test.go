@@ -72,6 +72,10 @@ func testDockerCourierService(t *testing.T) {
 	require.NoError(t, err)
 	t.Log("Alice: Successfully wrote message")
 
+	// Wait for message to propagate through the system
+	t.Log("Waiting 10 seconds for message propagation...")
+	time.Sleep(10 * time.Second)
+
 	// === BOB (Reader) ===
 	t.Log("Bob: Creating read channel from Alice's readCap")
 	bobChannelID, err := bobThinClient.CreateReadChannel(ctx, readCap)
@@ -79,9 +83,11 @@ func testDockerCourierService(t *testing.T) {
 	require.NotNil(t, bobChannelID)
 	t.Logf("Bob: Created read channel %x (different from Alice's %x)", bobChannelID[:], aliceChannelID[:])
 
-	// NOTE: Bob's channelID is different from Alice's, but the readCap ensures they access the same box sequence
-
 	// Bob reads the message (may need to retry as the message might not be immediately available)
+	// Use a consistent message ID for all read attempts to enable courier envelope reuse
+	readMessageID := bobThinClient.NewMessageID()
+	t.Logf("Bob: Using message ID %x for all read attempts", readMessageID[:])
+
 	var receivedMessage []byte
 	maxRetries := 10
 	for i := 0; i < maxRetries; i++ {
@@ -93,7 +99,11 @@ func testDockerCourierService(t *testing.T) {
 			time.Sleep(5 * time.Second)
 		}
 
-		receivedMessage, err = bobThinClient.ReadChannel(ctx, bobChannelID, len(plaintextMessage))
+		// Create a fresh context with 2-minute timeout for each read attempt
+		readCtx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		receivedMessage, err = bobThinClient.ReadChannel(readCtx, bobChannelID, readMessageID)
+		cancel()
+
 		if err != nil {
 			t.Logf("Bob: Read attempt %d failed: %v", i+1, err)
 			if i < maxRetries-1 {
