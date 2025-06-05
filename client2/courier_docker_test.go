@@ -19,8 +19,8 @@ import (
 func testDockerCourierService(t *testing.T) {
 	t.Log("TESTING COURIER SERVICE - Starting pigeonhole channel test")
 
-	// Load configuration
-	cfg, err := config.LoadFile("testdata/client.toml")
+	// Load thin client configuration
+	cfg, err := thin.LoadFile("testdata/thinclient.toml")
 	require.NoError(t, err)
 
 	logging := &config.Logging{
@@ -31,13 +31,13 @@ func testDockerCourierService(t *testing.T) {
 
 	// Create separate thin clients for Alice and Bob
 	t.Log("Creating Alice's thin client")
-	aliceThinClient := thin.NewThinClient(thin.FromConfig(cfg), logging)
+	aliceThinClient := thin.NewThinClient(cfg, logging)
 	err = aliceThinClient.Dial()
 	require.NoError(t, err)
 	t.Log("Alice's thin client connected")
 
 	t.Log("Creating Bob's thin client")
-	bobThinClient := thin.NewThinClient(thin.FromConfig(cfg), logging)
+	bobThinClient := thin.NewThinClient(cfg, logging)
 	err = bobThinClient.Dial()
 	require.NoError(t, err)
 	t.Log("Bob's thin client connected")
