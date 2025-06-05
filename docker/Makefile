@@ -1,10 +1,11 @@
-.PHONY: clean clean-local clean-local-dryrun clean-image-% clean-container-% clean-images test rootshell shell run-ping go-mod-tidy go-mod-upgrade help start stop client-restart clean-client
+.PHONY: clean clean-local clean-local-dryrun clean-image-% clean-container-% clean-images test rootshell shell run-ping go-mod-tidy go-mod-upgrade help start stop client-restart clean-client client-logs
 
 help:
 	@echo "These make targets allow you to control the test network:"
 	@echo " start              - start the testnet"
 	@echo " stop               - stop the testnet"
 	@echo " client-restart     - restart just the kpclientd daemon"
+	@echo " client-logs        - view kpclientd daemon logs"
 	@echo " wait               - wait for testnet to have consensus"
 	@echo " watch              - tail -F all logs"
 	@echo " status             - show testnet consensus status"
@@ -133,6 +134,10 @@ client-restart:
 	cd $(net_name) && $(docker_compose) stop kpclientd
 	cd $(net_name) && $(docker_compose) up -d kpclientd
 	@echo "kpclientd daemon restarted with updated code"
+
+client-logs:
+	@echo "Tailing kpclientd daemon logs (Ctrl+C to exit)..."
+	cd $(net_name) && $(docker_compose) logs -f --tail 20 kpclientd
 
 watch:
 	tail -F $(net_name)/*/*.log
