@@ -812,15 +812,19 @@ func (t *ThinClient) WriteChannel(ctx context.Context, channelID *[ChannelIDLeng
 }
 
 // ReadChannel reads data from a pigeonhole channel.
-func (t *ThinClient) ReadChannel(ctx context.Context, channelID *[ChannelIDLength]byte, readLen int) ([]byte, error) {
+func (t *ThinClient) ReadChannel(ctx context.Context, channelID *[ChannelIDLength]byte, messageID *[MessageIDLength]byte) ([]byte, error) {
 	if ctx == nil {
 		return nil, errors.New("context cannot be nil")
 	}
 	if channelID == nil {
 		return nil, errors.New("channelID cannot be nil")
 	}
+	if messageID == nil {
+		return nil, errors.New("messageID cannot be nil")
+	}
 
 	req := &Request{
+		ID: messageID,
 		ReadChannel: &ReadChannel{
 			ChannelID: *channelID,
 		},
