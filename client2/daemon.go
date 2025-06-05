@@ -495,34 +495,11 @@ func (d *Daemon) handleChannelReply(appid *[AppIDLength]byte,
 	}
 	privateKeyBytes := envelopeDesc.EnvelopeKey
 	replicaEpoch := replicaCommon.ConvertNormalToReplicaEpoch(envelopeDesc.Epoch)
-	replicaNum := envelopeDesc.ReplicaNums[env.ReplyIndex]
 
 	privateKey, err := replicaCommon.NikeScheme.UnmarshalBinaryPrivateKey(privateKeyBytes)
 	if err != nil {
 		d.log.Errorf("failed to unmarshal private key: %s", err)
 		return fmt.Errorf("failed to unmarshal private key: %s", err)
-	}
-	_, doc := d.client.CurrentDocument()
-	if doc == nil {
-		d.log.Errorf("no pki doc found")
-		return fmt.Errorf("no pki doc found")
-	}
-	desc, err := replicaCommon.ReplicaNum(replicaNum, doc)
-	if err != nil {
-		d.log.Errorf("failed to get replica descriptor: %s", err)
-		return fmt.Errorf("failed to get replica descriptor: %s", err)
-	}
-
-	replicaPubKeyBytes, ok := desc.EnvelopeKeys[replicaEpoch]
-	if !ok || len(replicaPubKeyBytes) == 0 {
-		d.log.Debugf("replica public key not available for epoch %d - replica may not be ready", replicaEpoch)
-		return fmt.Errorf("replica public key not available for epoch %d", replicaEpoch)
-	}
-
-	replicaPubKey, err := replicaCommon.NikeScheme.UnmarshalBinaryPublicKey(replicaPubKeyBytes)
-	if err != nil {
-		d.log.Errorf("failed to unmarshal public key: %s", err)
-		return fmt.Errorf("failed to unmarshal public key: %s", err)
 	}
 
 	if env.Payload == nil || len(env.Payload) == 0 {
@@ -533,11 +510,50 @@ func (d *Daemon) handleChannelReply(appid *[AppIDLength]byte,
 	mkemPrivateKeyBytes, _ := privateKey.MarshalBinary()
 	fmt.Printf("BOB DECRYPTS WITH MKEM KEY: %x\n", mkemPrivateKeyBytes[:16]) // First 16 bytes for brevity
 
+	// First decrypt the MKEM envelope to get the inner message and determine the actual replica ID
 	d.log.Debugf("MKEM DECRYPT: Starting decryption with payload size %d bytes", len(env.Payload))
-	rawInnerMsg, err := replicaCommon.MKEMNikeScheme.DecryptEnvelope(privateKey, replicaPubKey, env.Payload)
-	if err != nil {
-		d.log.Errorf("MKEM DECRYPT FAILED: %s", err)
-		return fmt.Errorf("failed to decrypt envelope: %s", err)
+
+	// Try decryption with both possible replica public keys since we don't know which replica sent the reply yet
+	var rawInnerMsg []byte
+
+	_, doc := d.client.CurrentDocument()
+	if doc == nil {
+		d.log.Errorf("no pki doc found")
+		return fmt.Errorf("no pki doc found")
+	}
+
+	// Try both replicas from the original envelope
+	for _, replicaNum := range envelopeDesc.ReplicaNums {
+		desc, err := replicaCommon.ReplicaNum(replicaNum, doc)
+		if err != nil {
+			d.log.Debugf("failed to get replica descriptor for replica %d: %s", replicaNum, err)
+			continue
+		}
+
+		replicaPubKeyBytes, ok := desc.EnvelopeKeys[replicaEpoch]
+		if !ok || len(replicaPubKeyBytes) == 0 {
+			d.log.Debugf("replica public key not available for replica %d epoch %d", replicaNum, replicaEpoch)
+			continue
+		}
+
+		replicaPubKey, err := replicaCommon.NikeScheme.UnmarshalBinaryPublicKey(replicaPubKeyBytes)
+		if err != nil {
+			d.log.Debugf("failed to unmarshal public key for replica %d: %s", replicaNum, err)
+			continue
+		}
+
+		// Try to decrypt with this replica's public key
+		rawInnerMsg, err = replicaCommon.MKEMNikeScheme.DecryptEnvelope(privateKey, replicaPubKey, env.Payload)
+		if err == nil {
+			d.log.Debugf("MKEM DECRYPT SUCCESS with replica %d: Decrypted %d bytes", replicaNum, len(rawInnerMsg))
+			break
+		}
+		d.log.Debugf("MKEM DECRYPT failed with replica %d: %s", replicaNum, err)
+	}
+
+	if rawInnerMsg == nil {
+		d.log.Errorf("MKEM DECRYPT FAILED with all possible replicas")
+		return fmt.Errorf("failed to decrypt envelope with any replica key")
 	}
 	d.log.Debugf("MKEM DECRYPT SUCCESS: Decrypted %d bytes", len(rawInnerMsg))
 	innerMsg, err := replicaCommon.ReplicaMessageReplyInnerMessageFromBytes(rawInnerMsg)
