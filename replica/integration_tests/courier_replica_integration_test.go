@@ -471,7 +471,7 @@ func aliceAndBobKeyExchangeKeys(t *testing.T, env *testEnvironment) (*bacap.Stat
 func forceCourierPKIFetch(t *testing.T, env *testEnvironment) {
 	t.Log("Forcing PKI fetch for courier")
 	err := env.courier.PKI.ForceFetchPKI()
-	require.NoError(t, err, "Failed to force PKI fetch for courier")
+	require.NoError(t, err)
 }
 
 // waitForCourierPKI waits for the courier to have a PKI document
@@ -496,7 +496,7 @@ func forceReplicasPKIFetch(t *testing.T, env *testEnvironment) {
 	for i, replica := range env.replicas {
 		t.Logf("Forcing PKI fetch for replica %d", i)
 		err := replica.PKIWorker.ForceFetchPKI()
-		require.NoError(t, err, "Failed to force PKI fetch for replica %d", i)
+		require.NoError(t, err)
 	}
 }
 
@@ -552,7 +552,7 @@ func testBoxRoundTrip(t *testing.T, env *testEnvironment) {
 	require.Equal(t, courierReadReply1.EnvelopeHash[:], bobEnvHash1[:])
 	require.Equal(t, uint8(0), courierReadReply1.ErrorCode)
 	require.Equal(t, uint8(0), courierReadReply1.ReplyIndex)
-	require.Nil(t, courierReadReply1.Payload, "First read always returns nil - requests sent to replicas")
+	require.Nil(t, courierReadReply1.Payload)
 
 	// Wait for replica responses to be received and cached by courier
 	courierReadReply2 := waitForCachedReply(t, env, bobReadRequest1)

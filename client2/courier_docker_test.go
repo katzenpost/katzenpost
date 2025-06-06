@@ -134,10 +134,10 @@ func testDockerCourierService(t *testing.T) {
 		t.Log("1. Message propagation delay (try increasing wait times)")
 		t.Log("2. Issue with courier-replica communication")
 		t.Log("3. Problem with read channel setup")
-		require.NotEmpty(t, receivedMessage, "Bob should have received a message")
+		require.NotEmpty(t, receivedMessage)
 	}
 
-	require.Equal(t, plaintextMessage, receivedMessage, "Alice's message should match Bob's received message")
+	require.Equal(t, plaintextMessage, receivedMessage)
 
 	t.Log("SUCCESS: Alice and Bob successfully communicated through pigeonhole channel!")
 	t.Logf("Original message: %s", string(plaintextMessage))

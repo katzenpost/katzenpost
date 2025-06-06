@@ -41,7 +41,7 @@ func TestCourierCacheBasicOperations(t *testing.T) {
 	courier := createTestCourier(t)
 
 	// Test initial state - cache should be empty
-	require.Equal(t, 0, len(courier.dedupCache), "Cache should be empty initially")
+	require.Equal(t, 0, len(courier.dedupCache))
 
 	// Create test envelope hash
 	envHash := [hash.HashSize]byte{}
@@ -60,16 +60,16 @@ func TestCourierCacheBasicOperations(t *testing.T) {
 	courier.CacheReply(reply)
 
 	// Verify cache entry was created
-	require.Equal(t, 1, len(courier.dedupCache), "Cache should contain one entry")
+	require.Equal(t, 1, len(courier.dedupCache))
 
 	courier.dedupCacheLock.RLock()
 	entry, exists := courier.dedupCache[envHash]
 	courier.dedupCacheLock.RUnlock()
 
-	require.True(t, exists, "Cache entry should exist")
-	require.NotNil(t, entry, "Cache entry should not be nil")
-	require.Equal(t, reply, entry.EnvelopeReplies[0], "First reply should be stored")
-	require.Nil(t, entry.EnvelopeReplies[1], "Second reply should be nil")
+	require.True(t, exists)
+	require.NotNil(t, entry)
+	require.Equal(t, reply, entry.EnvelopeReplies[0])
+	require.Nil(t, entry.EnvelopeReplies[1])
 }
 
 // TestCourierCacheDualReplies tests caching replies from both replicas
@@ -105,9 +105,9 @@ func TestCourierCacheDualReplies(t *testing.T) {
 	entry, exists := courier.dedupCache[envHash]
 	courier.dedupCacheLock.RUnlock()
 
-	require.True(t, exists, "Cache entry should exist")
-	require.Equal(t, reply1, entry.EnvelopeReplies[0], "First reply should be stored in slot 0")
-	require.Nil(t, entry.EnvelopeReplies[1], "Second slot should be empty")
+	require.True(t, exists)
+	require.Equal(t, reply1, entry.EnvelopeReplies[0])
+	require.Nil(t, entry.EnvelopeReplies[1])
 
 	// Cache second reply
 	courier.CacheReply(reply2)
@@ -117,8 +117,8 @@ func TestCourierCacheDualReplies(t *testing.T) {
 	entry = courier.dedupCache[envHash]
 	courier.dedupCacheLock.RUnlock()
 
-	require.Equal(t, reply1, entry.EnvelopeReplies[0], "First reply should remain in slot 0")
-	require.Equal(t, reply2, entry.EnvelopeReplies[1], "Second reply should be in slot 1")
+	require.Equal(t, reply1, entry.EnvelopeReplies[0])
+	require.Equal(t, reply2, entry.EnvelopeReplies[1])
 }
 
 // TestCourierCacheOverflow tests behavior when trying to cache more than 2 replies
@@ -163,9 +163,9 @@ func TestCourierCacheOverflow(t *testing.T) {
 	entry := courier.dedupCache[envHash]
 	courier.dedupCacheLock.RUnlock()
 
-	require.Equal(t, reply1, entry.EnvelopeReplies[0], "First reply should remain")
-	require.Equal(t, reply2, entry.EnvelopeReplies[1], "Second reply should remain")
-	require.NotEqual(t, reply3.EnvelopeReply, entry.EnvelopeReplies[0].EnvelopeReply, "Third reply should not overwrite first")
+	require.Equal(t, reply1, entry.EnvelopeReplies[0])
+	require.Equal(t, reply2, entry.EnvelopeReplies[1])
+	require.NotEqual(t, reply3.EnvelopeReply, entry.EnvelopeReplies[0].EnvelopeReply)
 }
 
 // TestCourierCacheHandleOldMessage tests retrieving cached replies
@@ -213,8 +213,8 @@ func TestCourierCacheHandleOldMessage(t *testing.T) {
 	courierReply, err := common.CourierEnvelopeReplyFromBytes(replyBytes)
 	require.NoError(t, err, errShouldParseReply)
 
-	require.Equal(t, uint8(0), courierReply.ReplyIndex, "Reply index should be 0")
-	require.Equal(t, reply1.EnvelopeReply, courierReply.Payload, "Should return cached reply 0")
+	require.Equal(t, uint8(0), courierReply.ReplyIndex)
+	require.Equal(t, reply1.EnvelopeReply, courierReply.Payload)
 
 	// Test handleOldMessage for reply index 1
 	courierEnv.ReplyIndex = 1
@@ -223,8 +223,8 @@ func TestCourierCacheHandleOldMessage(t *testing.T) {
 	courierReply, err = common.CourierEnvelopeReplyFromBytes(replyBytes)
 	require.NoError(t, err, errShouldParseReply)
 
-	require.Equal(t, uint8(1), courierReply.ReplyIndex, "Reply index should be 1")
-	require.Equal(t, reply2.EnvelopeReply, courierReply.Payload, "Should return cached reply 1")
+	require.Equal(t, uint8(1), courierReply.ReplyIndex)
+	require.Equal(t, reply2.EnvelopeReply, courierReply.Payload)
 }
 
 // TestCourierCacheFallbackBehavior tests fallback when requested reply index is not available
@@ -270,8 +270,8 @@ func TestCourierCacheFallbackBehavior(t *testing.T) {
 	require.NoError(t, err, errShouldParseReply)
 
 	// Should fallback to reply index 1 and update the reply index
-	require.Equal(t, uint8(1), courierReply.ReplyIndex, "Should fallback to reply index 1")
-	require.Equal(t, reply1.EnvelopeReply, courierReply.Payload, "Should return the available reply")
+	require.Equal(t, uint8(1), courierReply.ReplyIndex)
+	require.Equal(t, reply1.EnvelopeReply, courierReply.Payload)
 }
 
 // TestCourierCacheEmptyResponse tests behavior when no replies are cached
@@ -296,9 +296,9 @@ func TestCourierCacheEmptyResponse(t *testing.T) {
 	courierReply, err := common.CourierEnvelopeReplyFromBytes(replyBytes)
 	require.NoError(t, err, errShouldParseReply)
 
-	require.Equal(t, uint8(0), courierReply.ReplyIndex, "Reply index should match request")
-	require.Empty(t, courierReply.Payload, "Payload should be empty when no replies cached")
-	require.Equal(t, uint8(0), courierReply.ErrorCode, "Error code should be 0")
+	require.Equal(t, uint8(0), courierReply.ReplyIndex)
+	require.Empty(t, courierReply.Payload)
+	require.Equal(t, uint8(0), courierReply.ErrorCode)
 }
 
 // Helper function to create a test courier
@@ -322,7 +322,7 @@ func createTestCourier(t *testing.T) *Courier {
 
 	replicaSchemeName := "CTIDH1024-X25519"
 	replicaScheme := schemes.ByName(replicaSchemeName)
-	require.NotNil(t, replicaScheme, "NIKE scheme should be available")
+	require.NotNil(t, replicaScheme)
 
 	cmds := commands.NewStorageReplicaCommands(geo, replicaScheme)
 
@@ -358,8 +358,8 @@ func createTestCourier(t *testing.T) *Courier {
 	require.NoError(t, err)
 
 	courier := NewCourier(server, cmds, replicaScheme)
-	require.NotNil(t, courier, "Courier should be created successfully")
-	require.NotNil(t, courier.dedupCache, "Dedup cache should be initialized")
+	require.NotNil(t, courier)
+	require.NotNil(t, courier.dedupCache)
 
 	return courier
 }
@@ -402,8 +402,8 @@ func TestCourierCacheConcurrentAccess(t *testing.T) {
 	entry, exists := courier.dedupCache[envHash]
 	courier.dedupCacheLock.RUnlock()
 
-	require.True(t, exists, "Cache entry should exist")
-	require.NotNil(t, entry, "Cache entry should not be nil")
+	require.True(t, exists)
+	require.NotNil(t, entry)
 
 	// Should have at most 2 replies (one per replica)
 	replyCount := 0
@@ -413,7 +413,7 @@ func TestCourierCacheConcurrentAccess(t *testing.T) {
 	if entry.EnvelopeReplies[1] != nil {
 		replyCount++
 	}
-	require.LessOrEqual(t, replyCount, 2, "Should have at most 2 cached replies")
+	require.LessOrEqual(t, replyCount, 2)
 }
 
 // TestCourierCacheMultipleEnvelopes tests caching for different envelope hashes
@@ -439,26 +439,26 @@ func TestCourierCacheMultipleEnvelopes(t *testing.T) {
 	}
 
 	// Verify all envelopes are cached separately
-	require.Equal(t, 5, len(courier.dedupCache), "Should have 5 cache entries")
+	require.Equal(t, 5, len(courier.dedupCache))
 
 	for i, envHash := range envHashes {
 		courier.dedupCacheLock.RLock()
 		entry, exists := courier.dedupCache[envHash]
 		courier.dedupCacheLock.RUnlock()
 
-		require.True(t, exists, "Cache entry should exist for envelope %d", i)
-		require.NotNil(t, entry, "Cache entry should not be nil for envelope %d", i)
+		require.True(t, exists)
+		require.NotNil(t, entry)
 
 		expectedReply := []byte("reply-for-envelope-" + string(rune('A'+i)))
 
 		// CacheReply stores replies sequentially in slot 0 first, regardless of ReplicaID
 		// Since each envelope hash gets only one reply, it should be in slot 0
-		require.NotNil(t, entry.EnvelopeReplies[0], "First reply slot should not be nil for envelope %d", i)
-		require.Equal(t, expectedReply, entry.EnvelopeReplies[0].EnvelopeReply, "Reply should match for envelope %d", i)
-		require.Equal(t, uint8(i%2), entry.EnvelopeReplies[0].ReplicaID, "ReplicaID should match for envelope %d", i)
+		require.NotNil(t, entry.EnvelopeReplies[0])
+		require.Equal(t, expectedReply, entry.EnvelopeReplies[0].EnvelopeReply)
+		require.Equal(t, uint8(i%2), entry.EnvelopeReplies[0].ReplicaID)
 
 		// Second slot should be nil since we only cached one reply per envelope
-		require.Nil(t, entry.EnvelopeReplies[1], "Second reply slot should be nil for envelope %d", i)
+		require.Nil(t, entry.EnvelopeReplies[1])
 	}
 }
 
@@ -504,7 +504,7 @@ func TestCourierCacheEpochTracking(t *testing.T) {
 	entry := courier.dedupCache[envHash]
 	courier.dedupCacheLock.RUnlock()
 
-	require.Equal(t, testEpoch, entry.Epoch, "Cache entry should track correct epoch")
+	require.Equal(t, testEpoch, entry.Epoch)
 }
 
 // TestCourierCacheErrorReplies tests caching of error replies
@@ -530,8 +530,8 @@ func TestCourierCacheErrorReplies(t *testing.T) {
 	entry := courier.dedupCache[envHash]
 	courier.dedupCacheLock.RUnlock()
 
-	require.Equal(t, errorReply, entry.EnvelopeReplies[0], "Error reply should be cached")
-	require.Equal(t, uint8(1), entry.EnvelopeReplies[0].ErrorCode, "Error code should be preserved")
+	require.Equal(t, errorReply, entry.EnvelopeReplies[0])
+	require.Equal(t, uint8(1), entry.EnvelopeReplies[0].ErrorCode)
 }
 
 // TestCourierCacheNilEnvelopeHash tests behavior with nil envelope hash
@@ -552,7 +552,7 @@ func TestCourierCacheNilEnvelopeHash(t *testing.T) {
 	}, "CacheReply should not panic with nil envelope hash")
 
 	// Cache should remain empty
-	require.Equal(t, 0, len(courier.dedupCache), "Cache should remain empty with nil envelope hash")
+	require.Equal(t, 0, len(courier.dedupCache))
 }
 
 type mockPKIClient struct {

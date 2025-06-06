@@ -296,7 +296,7 @@ func TestAuthentication(t *testing.T) {
 
 		// Test courier authentication from replica1
 		isValid := authenticateCourierConnection(replica1PKI, courierCreds)
-		require.True(t, isValid, "Courier authentication should succeed")
+		require.True(t, isValid)
 
 		// Test with invalid courier link key
 		invalidLinkPubKey, _, err := linkScheme.GenerateKeyPair()
@@ -306,7 +306,7 @@ func TestAuthentication(t *testing.T) {
 			PublicKey:      invalidLinkPubKey,
 		}
 		isValid = authenticateCourierConnection(replica1PKI, invalidCourierCreds)
-		require.False(t, isValid, "Courier authentication should fail with invalid link key")
+		require.False(t, isValid)
 	})
 
 	// Test 2: Replica Authentication (Incoming)
@@ -320,12 +320,12 @@ func TestAuthentication(t *testing.T) {
 
 		// Test replica authentication from replica1
 		replicaDesc, isValid := authenticateReplicaConnection(replica1PKI, replica2Creds)
-		require.True(t, isValid, "Replica authentication should succeed")
-		require.NotNil(t, replicaDesc, "Replica descriptor should not be nil")
-		require.Equal(t, replica2Desc.Name, replicaDesc.Name, "Correct replica descriptor should be returned")
-		require.NotEmpty(t, replicaDesc.EnvelopeKeys, "Replica descriptor should have envelope keys")
-		require.Contains(t, replicaDesc.EnvelopeKeys, replicaEpoch, "Replica descriptor should have current replica epoch key")
-		require.Contains(t, replicaDesc.EnvelopeKeys, replicaEpoch+1, "Replica descriptor should have next replica epoch key")
+		require.True(t, isValid)
+		require.NotNil(t, replicaDesc)
+		require.Equal(t, replica2Desc.Name, replicaDesc.Name)
+		require.NotEmpty(t, replicaDesc.EnvelopeKeys)
+		require.Contains(t, replicaDesc.EnvelopeKeys, replicaEpoch)
+		require.Contains(t, replicaDesc.EnvelopeKeys, replicaEpoch+1)
 
 		// Test with invalid identity key
 		invalidIdentityKey, _, err := pkiScheme.GenerateKey()
@@ -338,8 +338,8 @@ func TestAuthentication(t *testing.T) {
 			PublicKey:      replica2LinkPubKey,
 		}
 		desc, isValid := authenticateReplicaConnection(replica1PKI, invalidCreds)
-		require.False(t, isValid, "Replica authentication should fail with invalid identity key")
-		require.Nil(t, desc, "No descriptor should be returned for invalid credentials")
+		require.False(t, isValid)
+		require.Nil(t, desc)
 
 		// Test with invalid link key
 		invalidLinkPubKey, _, err := linkScheme.GenerateKeyPair()
@@ -349,15 +349,15 @@ func TestAuthentication(t *testing.T) {
 			PublicKey:      invalidLinkPubKey,
 		}
 		desc, isValid = authenticateReplicaConnection(replica1PKI, invalidLinkCreds)
-		require.False(t, isValid, "Replica authentication should fail with invalid link key")
-		require.Nil(t, desc, "No descriptor should be returned for invalid credentials")
+		require.False(t, isValid)
+		require.Nil(t, desc)
 	})
 
 	// Test 3: Replica Authentication (Outgoing)
 	t.Run("ReplicaAuthenticationOutgoing", func(t *testing.T) {
 		// Create outgoing connection from replica1 to replica2
 		outConn := newOutgoingConn(replica1Server.connector, replica2Desc, geometry, linkScheme)
-		require.NotNil(t, outConn, "Outgoing connection should be created")
+		require.NotNil(t, outConn)
 
 		// Create replica credentials
 		replica2IdHash := hash.Sum256(replica2IdentityKeyBlob)
@@ -368,7 +368,7 @@ func TestAuthentication(t *testing.T) {
 
 		// Test outgoing authentication
 		isValid := outConn.IsPeerValid(replica2Creds)
-		require.True(t, isValid, "Outgoing replica authentication should succeed")
+		require.True(t, isValid)
 
 		// Test with invalid identity key
 		invalidIdentityKey, _, err := pkiScheme.GenerateKey()
@@ -381,7 +381,7 @@ func TestAuthentication(t *testing.T) {
 			PublicKey:      replica2LinkPubKey,
 		}
 		isValid = outConn.IsPeerValid(invalidCreds)
-		require.False(t, isValid, "Outgoing authentication should fail with invalid identity key")
+		require.False(t, isValid)
 
 		// Test with invalid link key
 		invalidLinkPubKey, _, err := linkScheme.GenerateKeyPair()
@@ -391,6 +391,6 @@ func TestAuthentication(t *testing.T) {
 			PublicKey:      invalidLinkPubKey,
 		}
 		isValid = outConn.IsPeerValid(invalidLinkCreds)
-		require.False(t, isValid, "Outgoing authentication should fail with invalid link key")
+		require.False(t, isValid)
 	})
 }

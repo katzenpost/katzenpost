@@ -124,8 +124,8 @@ func TestAuthenticateCourierConnection(t *testing.T) {
 
 	// Test that the PKI document is properly stored
 	doc := s.PKIWorker.documentForEpoch(epoch)
-	require.NotNil(t, doc, "PKI document should be stored")
-	require.Equal(t, epoch, doc.Epoch, "Document should have correct epoch")
+	require.NotNil(t, doc)
+	require.Equal(t, epoch, doc.Epoch)
 
 	s.PKIWorker.lock.Lock()
 	s.PKIWorker.docs[epoch] = &pki.Document{
@@ -143,8 +143,8 @@ func TestAuthenticateCourierConnection(t *testing.T) {
 
 	// Test that the document was updated
 	doc = s.PKIWorker.documentForEpoch(epoch)
-	require.NotNil(t, doc, "Updated PKI document should be stored")
-	require.Len(t, doc.GatewayNodes, 1, "Document should have one gateway node")
+	require.NotNil(t, doc)
+	require.Len(t, doc.GatewayNodes, 1)
 
 	s.Shutdown()
 }
@@ -226,7 +226,7 @@ func TestAuthenticateReplicaConnection(t *testing.T) {
 
 	// Test that no replicas are initially available
 	replicas := pkiWorker.ReplicasCopy()
-	require.Empty(t, replicas, "No replicas should be available initially")
+	require.Empty(t, replicas)
 
 	replicaDesc := &pki.ReplicaDescriptor{
 		Name:        "replica1",
@@ -247,8 +247,8 @@ func TestAuthenticateReplicaConnection(t *testing.T) {
 
 	// Test that replica is now available
 	replicas = pkiWorker.ReplicasCopy()
-	require.Len(t, replicas, 1, "One replica should be available")
-	require.Contains(t, replicas, id, "Replica should be found by ID")
+	require.Len(t, replicas, 1)
+	require.Contains(t, replicas, id)
 
 	s.Shutdown()
 }
@@ -481,8 +481,8 @@ func TestAuthenticationDuringEpochTransition(t *testing.T) {
 
 	// Test that current epoch document is available
 	doc := pkiWorker.documentForEpoch(epoch)
-	require.NotNil(t, doc, "Current epoch document should be available")
-	require.Equal(t, epoch, doc.Epoch, "Document should have correct epoch")
+	require.NotNil(t, doc)
+	require.Equal(t, epoch, doc.Epoch)
 
 	pkiWorker.lock.Lock()
 	pkiWorker.docs[epoch+1] = nextDoc
@@ -490,9 +490,9 @@ func TestAuthenticationDuringEpochTransition(t *testing.T) {
 
 	// Test that both epoch documents are available
 	doc = pkiWorker.documentForEpoch(epoch)
-	require.NotNil(t, doc, "Current epoch document should still be available")
+	require.NotNil(t, doc)
 	nextDocRetrieved := pkiWorker.documentForEpoch(epoch + 1)
-	require.NotNil(t, nextDocRetrieved, "Next epoch document should be available")
+	require.NotNil(t, nextDocRetrieved)
 
 	pkiWorker.lock.Lock()
 	delete(pkiWorker.docs, epoch)
@@ -500,9 +500,9 @@ func TestAuthenticationDuringEpochTransition(t *testing.T) {
 
 	// Test that only next epoch document is available
 	doc = pkiWorker.documentForEpoch(epoch)
-	require.Nil(t, doc, "Current epoch document should be removed")
+	require.Nil(t, doc)
 	nextDocRetrieved = pkiWorker.documentForEpoch(epoch + 1)
-	require.NotNil(t, nextDocRetrieved, "Next epoch document should still be available")
+	require.NotNil(t, nextDocRetrieved)
 
 	s.Shutdown()
 }
