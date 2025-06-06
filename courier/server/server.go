@@ -66,80 +66,111 @@ func New(cfg *config.Config, pkiClient pki.Client) (*Server, error) {
 		cfg: cfg,
 	}
 
-	err := utils.MkDataDir(s.cfg.DataDir)
-	if err != nil {
-		return nil, err
-	}
-	err = s.initLogging()
-	if err != nil {
+	if err := s.initializeBasics(); err != nil {
 		return nil, err
 	}
 
-	// Create PKI worker with injected client or default client
+	if err := s.initializePKI(pkiClient); err != nil {
+		return nil, err
+	}
+
+	if err := s.initializeIdentityKeys(); err != nil {
+		return nil, err
+	}
+
+	if err := s.initializeLinkKeys(); err != nil {
+		return nil, err
+	}
+
+	s.initializeServices()
+
+	return s, nil
+}
+
+// initializeBasics sets up data directory and logging
+func (s *Server) initializeBasics() error {
+	if err := utils.MkDataDir(s.cfg.DataDir); err != nil {
+		return err
+	}
+	return s.initLogging()
+}
+
+// initializePKI sets up the PKI worker
+func (s *Server) initializePKI(pkiClient pki.Client) error {
+	var err error
 	if pkiClient != nil {
 		s.PKI, err = newPKIWorker(s, pkiClient, s.logBackend.GetLogger("courier-pkiworker"))
 	} else {
 		s.PKI, err = newPKIWorkerWithDefaultClient(s, s.logBackend.GetLogger("courier-pkiworker"))
 	}
-	if err != nil {
-		return nil, err
-	}
+	return err
+}
 
-	// Initialize identity keys
+// initializeIdentityKeys sets up identity keys for the server
+func (s *Server) initializeIdentityKeys() error {
 	identityPrivateKeyFile := filepath.Join(s.cfg.DataDir, "identity.private.pem")
 	identityPublicKeyFile := filepath.Join(s.cfg.DataDir, "identity.public.pem")
 
-	pkiSignatureScheme := signSchemes.ByName(cfg.PKIScheme)
+	pkiSignatureScheme := signSchemes.ByName(s.cfg.PKIScheme)
 	if pkiSignatureScheme == nil {
 		panic("PKI signature scheme not found")
 	}
 
 	if utils.BothExists(identityPrivateKeyFile, identityPublicKeyFile) {
-		s.identityPrivateKey, err = signpem.FromPrivatePEMFile(identityPrivateKeyFile, pkiSignatureScheme)
-		if err != nil {
-			return nil, err
-		}
-		s.identityPublicKey, err = signpem.FromPublicPEMFile(identityPublicKeyFile, pkiSignatureScheme)
-		if err != nil {
-			return nil, err
-		}
+		return s.loadExistingIdentityKeys(identityPrivateKeyFile, identityPublicKeyFile, pkiSignatureScheme)
 	} else if utils.BothNotExists(identityPrivateKeyFile, identityPublicKeyFile) {
-		s.identityPublicKey, s.identityPrivateKey, err = pkiSignatureScheme.GenerateKey()
-		if err != nil {
-			return nil, err
-		}
-		err = signpem.PrivateKeyToFile(identityPrivateKeyFile, s.identityPrivateKey)
-		if err != nil {
-			return nil, err
-		}
-		err = signpem.PublicKeyToFile(identityPublicKeyFile, s.identityPublicKey)
-		if err != nil {
-			return nil, err
-		}
+		return s.generateNewIdentityKeys(identityPrivateKeyFile, identityPublicKeyFile, pkiSignatureScheme)
 	} else {
 		panic("Improbable: Only found one identity PEM file.")
 	}
+}
 
-	// read our service node's link keys
+// loadExistingIdentityKeys loads identity keys from existing files
+func (s *Server) loadExistingIdentityKeys(privateFile, publicFile string, scheme sign.Scheme) error {
+	var err error
+	s.identityPrivateKey, err = signpem.FromPrivatePEMFile(privateFile, scheme)
+	if err != nil {
+		return err
+	}
+	s.identityPublicKey, err = signpem.FromPublicPEMFile(publicFile, scheme)
+	return err
+}
+
+// generateNewIdentityKeys generates and saves new identity keys
+func (s *Server) generateNewIdentityKeys(privateFile, publicFile string, scheme sign.Scheme) error {
+	var err error
+	s.identityPublicKey, s.identityPrivateKey, err = scheme.GenerateKey()
+	if err != nil {
+		return err
+	}
+	if err = signpem.PrivateKeyToFile(privateFile, s.identityPrivateKey); err != nil {
+		return err
+	}
+	return signpem.PublicKeyToFile(publicFile, s.identityPublicKey)
+}
+
+// initializeLinkKeys sets up link keys for the server
+func (s *Server) initializeLinkKeys() error {
 	linkPrivateKeyFile := filepath.Join(s.cfg.DataDir, "link.private.pem")
 	linkPublicKeyFile := filepath.Join(s.cfg.DataDir, "link.public.pem")
 
-	scheme := schemes.ByName(cfg.WireKEMScheme)
+	scheme := schemes.ByName(s.cfg.WireKEMScheme)
 	if scheme == nil {
 		panic("KEM scheme not found")
 	}
 
 	var linkPublicKey kem.PublicKey
 	var linkPrivateKey kem.PrivateKey
+	var err error
 
 	if utils.BothExists(linkPrivateKeyFile, linkPublicKeyFile) {
 		linkPrivateKey, err = pemkem.FromPrivatePEMFile(linkPrivateKeyFile, scheme)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		linkPublicKey, err = pemkem.FromPublicPEMFile(linkPublicKeyFile, scheme)
 		if err != nil {
-			return nil, err
+			return err
 		}
 	} else if utils.BothNotExists(linkPrivateKeyFile, linkPublicKeyFile) {
 		panic("No link keys found.")
@@ -148,15 +179,17 @@ func New(cfg *config.Config, pkiClient pki.Client) (*Server, error) {
 	}
 	s.linkPrivKey = linkPrivateKey
 	s.linkPubKey = linkPublicKey
+	return nil
+}
 
+// initializeServices sets up connector and courier services
+func (s *Server) initializeServices() {
 	s.connector = newConnector(s)
 
 	// Initialize the Courier plugin for testing
-	nikeScheme := nikeSchemes.ByName(cfg.EnvelopeScheme)
-	cmds := commands.NewStorageReplicaCommands(cfg.SphinxGeometry, nikeScheme)
+	nikeScheme := nikeSchemes.ByName(s.cfg.EnvelopeScheme)
+	cmds := commands.NewStorageReplicaCommands(s.cfg.SphinxGeometry, nikeScheme)
 	s.Courier = NewCourier(s, cmds, nikeScheme)
-
-	return s, nil
 }
 
 func (s *Server) LogBackend() *log.Backend {
