@@ -92,11 +92,7 @@ func (c *outgoingConn) dispatchCommand(cmd commands.Command) {
 }
 
 func (c *outgoingConn) worker() {
-	var (
-		// NOTE(david): we might need to adjust these to be aligned with our pki worker thread
-		retryIncrement = epochtime.Period / 64
-		maxRetryDelay  = epochtime.Period / 8
-	)
+	retryIncrement, maxRetryDelay := epochtime.Period/64, epochtime.Period/8
 
 	defer func() {
 		c.log.Debugf("Halting connect worker.")
@@ -104,18 +100,26 @@ func (c *outgoingConn) worker() {
 		close(c.ch)
 	}()
 
-	// Sigh, I assume the correct thing to do is to use context for everything,
-	// but the whole package feels like a shitty hack to make up for the fact
-	// that Go lacks a real object model.
-	//
-	// So, use the context stuff via a bunch of shitty hacks to make up for the
-	// fact that the server doesn't use context everywhere instead.
+	dialCtx, dialer, dialCheckCreds := c.initializeWorker()
+	defer dialCtx.cancelFn()
+
+	c.runConnectionLoop(dialCtx, dialer, dialCheckCreds, retryIncrement, maxRetryDelay)
+}
+
+// workerContext holds the context and cancellation function for the worker
+type workerContext struct {
+	context.Context
+	cancelFn context.CancelFunc
+}
+
+// initializeWorker sets up the dial context, dialer, and credentials for the worker
+func (c *outgoingConn) initializeWorker() (*workerContext, *net.Dialer, *wire.PeerCredentials) {
 	dialCtx, cancelFn := context.WithCancel(context.Background())
-	defer cancelFn()
-	dialer := net.Dialer{
+	dialer := &net.Dialer{
 		KeepAlive: KeepAliveInterval,
 		Timeout:   time.Duration(c.co.Server().cfg.ConnectTimeout) * time.Millisecond,
 	}
+
 	go func() {
 		// Bolt a bunch of channels to the dial canceler, such that closing
 		// either channel results in the dial context being canceled.
@@ -131,125 +135,154 @@ func (c *outgoingConn) worker() {
 	if err != nil {
 		panic(err)
 	}
-	dialCheckCreds := wire.PeerCredentials{
+	dialCheckCreds := &wire.PeerCredentials{
 		AdditionalData: identityHash[:],
 		PublicKey:      linkPubKey,
 	}
 
-	// Establish the outgoing connection.
+	return &workerContext{dialCtx, cancelFn}, dialer, dialCheckCreds
+}
+
+// runConnectionLoop handles the main connection establishment loop
+func (c *outgoingConn) runConnectionLoop(dialCtx *workerContext, dialer *net.Dialer, dialCheckCreds *wire.PeerCredentials, retryIncrement, maxRetryDelay time.Duration) {
 	for {
-		// Check to see if the connection should be made in the first
-		// place by seeing if the connection is in the PKI.  Without
-		// something like this, stale connections can get stuck in the
-		// dialing state since the Connector relies on outgoingConnection
-		// objects to remove themselves from the connection table.
-
-		// Extract node ID from credentials
-		var nodeID [sConstants.NodeIDLength]byte
-		copy(nodeID[:], dialCheckCreds.AdditionalData)
-
-		// Check if the replica is in the current PKI document
-		replicaDesc, isReplica := c.co.Server().PKIWorker.replicas.GetReplicaDescriptor(&nodeID)
-		if isReplica {
-			// Verify link key matches
-			keyblob, err := dialCheckCreds.PublicKey.MarshalBinary()
-			if err != nil {
-				panic(err)
-			}
-			isValid := hmac.Equal(replicaDesc.LinkKey, keyblob)
-
-			if isValid {
-				// The list of addresses could have changed, so update
-				// the cached pointer with the current descriptor
-				c.dst = replicaDesc
-				linkPubKey, err := c.scheme.UnmarshalBinaryPublicKey(c.dst.LinkKey)
-				if err != nil {
-					panic(err)
-				}
-				dialCheckCreds.PublicKey = linkPubKey
-			} else {
-				c.log.Debugf("Bailing out of Dial loop, link key mismatch.")
-				return
-			}
-		} else {
-			c.log.Debugf("Bailing out of Dial loop, no longer in PKI.")
+		if !c.validatePKIConnection(dialCheckCreds) {
 			return
 		}
 
-		// Flatten the lists of addresses to Dial to.
-		var dstAddrs []string
-		for _, t := range cpki.ClientTransports {
-			if v, ok := c.dst.Addresses[t]; ok {
-				dstAddrs = append(dstAddrs, v...)
-			}
-		}
+		dstAddrs := c.collectDestinationAddresses()
 		if len(dstAddrs) == 0 {
-			// Should *NEVER* happen because descriptors currently MUST have
-			// at least once `tcp4` address to be considered valid.
 			c.log.Warningf("Bailing out of Dial loop, no suitable addresses found.")
 			return
 		}
 
-		for _, addr := range dstAddrs {
-			select {
-			case <-time.After(c.retryDelay):
-				// Back off incrementally on reconnects.
-				//
-				// This maybe should be tracked per address, but whatever.  I
-				// remember when IPng was supposed to take over the world in
-				// the 90s, and it still hasn't happened yet.
-				c.retryDelay += retryIncrement
-				if c.retryDelay > maxRetryDelay {
-					c.retryDelay = maxRetryDelay
-				}
-			case <-dialCtx.Done():
-				// Canceled mid-retry delay.
-				c.log.Debugf("(Re)connection attempts canceled.")
-				return
-			}
-
-			// Dial.
-			u, err := url.Parse(addr)
-			if err != nil {
-				c.log.Warningf("Failed to parse addr: %v", err)
-				continue
-			}
-			c.log.Debugf("Dialing: %v", u.Host)
-
-			conn, err := common.DialURL(u, dialCtx, dialer.DialContext)
-			select {
-			case <-dialCtx.Done():
-				// Canceled.
-				if conn != nil {
-					conn.Close()
-				}
-				return
-			default:
-				if err != nil {
-					c.log.Warningf("Failed to connect to '%v': %v", u.Host, err)
-					continue
-				}
-			}
-			c.log.Debugf("%v connection established.", u.Scheme)
-			start := time.Now()
-
-			// Handle the new connection.
-			if c.onConnEstablished(conn, dialCtx.Done()) {
-				// Canceled with a connection established.
-				c.log.Debugf("Existing connection canceled.")
-				return
-			}
-
-			// That's odd, the connection died, reconnect.
-			c.log.Debugf("Connection terminated, will reconnect.")
-			if time.Since(start) < retryIncrement {
-				// If the connection was not alive for a sensible amount of
-				// time, re-impose a reconnect delay.
-				c.retryDelay = retryIncrement
-			}
-			break
+		if c.attemptConnections(dialCtx, dialer, dstAddrs, retryIncrement, maxRetryDelay) {
+			return
 		}
 	}
+}
+
+// validatePKIConnection checks PKI validity and updates the descriptor if needed
+func (c *outgoingConn) validatePKIConnection(dialCheckCreds *wire.PeerCredentials) bool {
+	// Extract node ID from credentials
+	var nodeID [sConstants.NodeIDLength]byte
+	copy(nodeID[:], dialCheckCreds.AdditionalData)
+
+	// Check if the replica is in the current PKI document
+	replicaDesc, isReplica := c.co.Server().PKIWorker.replicas.GetReplicaDescriptor(&nodeID)
+	if isReplica {
+		// Verify link key matches
+		keyblob, err := dialCheckCreds.PublicKey.MarshalBinary()
+		if err != nil {
+			panic(err)
+		}
+		isValid := hmac.Equal(replicaDesc.LinkKey, keyblob)
+
+		if isValid {
+			// The list of addresses could have changed, so update
+			// the cached pointer with the current descriptor
+			c.dst = replicaDesc
+			linkPubKey, err := c.scheme.UnmarshalBinaryPublicKey(c.dst.LinkKey)
+			if err != nil {
+				panic(err)
+			}
+			dialCheckCreds.PublicKey = linkPubKey
+			return true
+		} else {
+			c.log.Debugf("Bailing out of Dial loop, link key mismatch.")
+			return false
+		}
+	} else {
+		c.log.Debugf("Bailing out of Dial loop, no longer in PKI.")
+		return false
+	}
+}
+
+// collectDestinationAddresses flattens the lists of addresses to dial to
+func (c *outgoingConn) collectDestinationAddresses() []string {
+	var dstAddrs []string
+	for _, t := range cpki.ClientTransports {
+		if v, ok := c.dst.Addresses[t]; ok {
+			dstAddrs = append(dstAddrs, v...)
+		}
+	}
+	return dstAddrs
+}
+
+// attemptConnections tries to connect to each address and returns true if worker should exit
+func (c *outgoingConn) attemptConnections(dialCtx *workerContext, dialer *net.Dialer, dstAddrs []string, retryIncrement, maxRetryDelay time.Duration) bool {
+	for _, addr := range dstAddrs {
+		if c.handleRetryDelay(dialCtx, retryIncrement, maxRetryDelay) {
+			return true // Canceled during retry delay
+		}
+
+		conn, shouldReturn := c.dialConnection(dialCtx, dialer, addr)
+		if shouldReturn {
+			return true
+		}
+		if conn == nil {
+			continue // Failed to connect, try next address
+		}
+
+		start := time.Now()
+		if c.onConnEstablished(conn, dialCtx.Done()) {
+			// Canceled with a connection established.
+			c.log.Debugf("Existing connection canceled.")
+			return true
+		}
+
+		// Connection died, check if we should impose retry delay
+		c.log.Debugf("Connection terminated, will reconnect.")
+		if time.Since(start) < retryIncrement {
+			c.retryDelay = retryIncrement
+		}
+		break
+	}
+	return false
+}
+
+// handleRetryDelay manages the retry delay logic and returns true if canceled
+func (c *outgoingConn) handleRetryDelay(dialCtx *workerContext, retryIncrement, maxRetryDelay time.Duration) bool {
+	select {
+	case <-time.After(c.retryDelay):
+		// Back off incrementally on reconnects.
+		c.retryDelay += retryIncrement
+		if c.retryDelay > maxRetryDelay {
+			c.retryDelay = maxRetryDelay
+		}
+		return false
+	case <-dialCtx.Done():
+		// Canceled mid-retry delay.
+		c.log.Debugf("(Re)connection attempts canceled.")
+		return true
+	}
+}
+
+// dialConnection attempts to dial a single address and returns the connection and whether worker should return
+func (c *outgoingConn) dialConnection(dialCtx *workerContext, dialer *net.Dialer, addr string) (net.Conn, bool) {
+	u, err := url.Parse(addr)
+	if err != nil {
+		c.log.Warningf("Failed to parse addr: %v", err)
+		return nil, false
+	}
+	c.log.Debugf("Dialing: %v", u.Host)
+
+	conn, err := common.DialURL(u, dialCtx.Context, dialer.DialContext)
+	select {
+	case <-dialCtx.Done():
+		// Canceled.
+		if conn != nil {
+			conn.Close()
+		}
+		return nil, true
+	default:
+		if err != nil {
+			c.log.Warningf("Failed to connect to '%v': %v", u.Host, err)
+			return nil, false
+		}
+	}
+	c.log.Debugf("%v connection established.", u.Scheme)
+	return conn, false
 }
 
 func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{}) (wasHalted bool) {
