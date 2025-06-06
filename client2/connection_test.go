@@ -313,19 +313,26 @@ func TestConnection(t *testing.T) {
 	// focuses on connection establishment and document retrieval, not event handling
 	clientCfg.Callbacks = &config.Callbacks{}
 	// Empty callback for test - connection events are not relevant for this test
-	clientCfg.Callbacks.OnConnFn = func(err error) {}
+	clientCfg.Callbacks.OnConnFn = func(err error) {
+		// Intentionally empty - connection events not tested here
+	}
 	// Empty callback for test - document processing is handled elsewhere in test
-	clientCfg.Callbacks.OnDocumentFn = func(*cpki.Document) {}
+	clientCfg.Callbacks.OnDocumentFn = func(*cpki.Document) {
+		// Intentionally empty - document processing tested separately
+	}
 	// Empty callback for test - empty message events are not tested here
 	clientCfg.Callbacks.OnEmptyFn = func() error {
+		// Intentionally empty - empty message events not relevant for connection test
 		return nil
 	}
 	// Empty callback for test - message handling is not the focus of this test
 	clientCfg.Callbacks.OnMessageFn = func([]byte) error {
+		// Intentionally empty - message handling not tested in this connection test
 		return nil
 	}
 	// Empty callback for test - ACK handling is not tested in this connection test
 	clientCfg.Callbacks.OnACKFn = func(*[constants.SURBIDLength]byte, []byte) error {
+		// Intentionally empty - ACK handling not relevant for connection establishment test
 		return nil
 	}
 
