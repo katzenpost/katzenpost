@@ -31,6 +31,11 @@ import (
 	"github.com/katzenpost/katzenpost/replica/config"
 )
 
+const (
+	// testReplicaNameFormat is the format string for replica names in tests
+	testReplicaNameFormat = "replica%d"
+)
+
 func TestInitDataDir(t *testing.T) {
 	s := &Server{
 		cfg: &config.Config{
@@ -253,7 +258,7 @@ func generateTestReplica(t *testing.T, pkiScheme sign.Scheme, linkScheme kem.Sch
 
 	// Create replica descriptor
 	replica := &pki.ReplicaDescriptor{
-		Name:        fmt.Sprintf("replica%d", index),
+		Name:        fmt.Sprintf(testReplicaNameFormat, index),
 		IdentityKey: identityKeyBytes,
 		LinkKey:     linkKeyBytes,
 		Addresses:   map[string][]string{"tcp": {fmt.Sprintf("tcp://127.0.0.1:%d", 19000+index)}},

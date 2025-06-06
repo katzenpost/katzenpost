@@ -43,6 +43,8 @@ import (
 const (
 	// testPKIScheme is the PKI signature scheme used in tests
 	testPKIScheme = "Ed25519 Sphincs+"
+	// testReplicaNameFormat is the format string for replica names in tests
+	testReplicaNameFormat = "replica%d"
 )
 
 var (
@@ -101,7 +103,7 @@ func setupTestEnvironment(t *testing.T) *testEnvironment {
 
 	// STEP 1: Create all replica descriptors FIRST
 	for i := 0; i < numReplicas; i++ {
-		replicaDir := filepath.Join(tempDir, fmt.Sprintf("replica%d", i))
+		replicaDir := filepath.Join(tempDir, fmt.Sprintf(testReplicaNameFormat, i))
 		require.NoError(t, os.MkdirAll(replicaDir, 0700))
 		replicaConfigs[i] = createReplicaConfig(t, replicaDir, pkiScheme, linkScheme, i, sphinxGeo)
 		myreplicaKeys, linkPubKey, replicaIdentityPubKey := generateReplicaKeys(t, replicaDir, replicaConfigs[i].PKISignatureScheme, replicaConfigs[i].WireKEMScheme)
@@ -152,7 +154,7 @@ func setupTestEnvironment(t *testing.T) *testEnvironment {
 func createReplicaConfig(t *testing.T, dataDir string, pkiScheme sign.Scheme, linkScheme kem.Scheme, replicaID int, sphinxGeo *geo.Geometry) *config.Config {
 	return &config.Config{
 		DataDir:            dataDir,
-		Identifier:         fmt.Sprintf("replica%d", replicaID),
+		Identifier:         fmt.Sprintf(testReplicaNameFormat, replicaID),
 		WireKEMScheme:      linkScheme.Name(),
 		PKISignatureScheme: pkiScheme.Name(),
 		ReplicaNIKEScheme:  common.NikeScheme.Name(),
@@ -317,7 +319,7 @@ func makeReplicaDescriptor(t *testing.T,
 	require.NoError(t, err)
 
 	desc := &pki.ReplicaDescriptor{
-		Name:        fmt.Sprintf("replica%d", replicaID),
+		Name:        fmt.Sprintf(testReplicaNameFormat, replicaID),
 		IdentityKey: identityPubKeyBytes,
 		LinkKey:     linkPubKeyBytes,
 		Addresses: map[string][]string{
