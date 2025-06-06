@@ -126,7 +126,7 @@ func generateNodes(isServiceNode, isGateway bool, num int, epoch uint64) ([]*pki
 			Addresses: map[string][]string{
 				"tcp4": []string{fmt.Sprintf("tcp4://127.0.0.1:%d", i+1)},
 			},
-			Kaetzchen:     nil,
+			Services:      nil,
 			IsGatewayNode: isGateway,
 			IsServiceNode: isServiceNode,
 			LoadWeight:    0,

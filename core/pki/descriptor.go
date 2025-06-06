@@ -121,7 +121,7 @@ type MixDescriptor struct {
 
 	// Kaetzchen is the map of provider autoresponder agents by capability
 	// to parameters.
-	Kaetzchen map[string]map[string]interface{} `cbor:"omitempty"`
+	Services map[string]map[string]interface{} `cbor:"Services,omitempty"`
 
 	// IsGatewayNode indicates that this Mix is a gateway node.
 	// Essentially a gateway allows clients to interact with the mixnet.
@@ -165,8 +165,8 @@ func (d *MixDescriptor) UnmarshalMixKeyAsKEM(epoch uint64, g *geo.Geometry) (kem
 // String returns a human readable MixDescriptor suitable for terse logging.
 func (d *MixDescriptor) String() string {
 	kaetzchen := ""
-	if len(d.Kaetzchen) > 0 {
-		kaetzchen = fmt.Sprintf("%v", d.Kaetzchen)
+	if len(d.Services) > 0 {
+		kaetzchen = fmt.Sprintf("%v", d.Services)
 	}
 	id := hash.Sum256(d.IdentityKey)
 	s := fmt.Sprintf("{%s %x %v", d.Name, id, d.Addresses)
@@ -238,18 +238,18 @@ func IsDescriptorWellFormed(d *MixDescriptor, epoch uint64) error {
 		return fmt.Errorf("Descriptor contains no addresses")
 	}
 	if !d.IsServiceNode {
-		if d.Kaetzchen != nil {
+		if d.Services != nil {
 			return fmt.Errorf("Descriptor contains Kaetzchen when a mix")
 		}
 	} else {
-		if err := validateKaetzchen(d.Kaetzchen); err != nil {
-			return fmt.Errorf("Descriptor contains invalid Kaetzchen block: %v", err)
+		if err := validateServices(d.Services); err != nil {
+			return fmt.Errorf("Descriptor contains invalid Services block: %v", err)
 		}
 	}
 	return nil
 }
 
-func validateKaetzchen(m map[string]map[string]interface{}) error {
+func validateServices(m map[string]map[string]interface{}) error {
 	const keyEndpoint = "endpoint"
 
 	if m == nil {

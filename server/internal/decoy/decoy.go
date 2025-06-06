@@ -376,7 +376,7 @@ func (d *decoy) sendDecoyPacket(ent *pkicache.Entry) {
 	var loopRecip string
 	for _, idx := range d.rng.Perm(len(doc.ServiceNodes)) {
 		desc := doc.ServiceNodes[idx]
-		params, ok := desc.Kaetzchen[kaetzchen.EchoCapability]
+		params, ok := desc.Services[kaetzchen.EchoCapability]
 		if !ok {
 			continue
 		}

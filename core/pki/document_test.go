@@ -64,8 +64,8 @@ func genDescriptor(require *require.Assertions, idx int, isGatewayNode, isServic
 		d.MixKeys[uint64(e)] = mPriv.Public().Bytes()
 	}
 	if isServiceNode {
-		d.Kaetzchen = make(map[string]map[string]interface{})
-		d.Kaetzchen["miau"] = map[string]interface{}{
+		d.Services = make(map[string]map[string]interface{})
+		d.Services["miau"] = map[string]interface{}{
 			"endpoint":  "+miau",
 			"miauCount": idx,
 		}

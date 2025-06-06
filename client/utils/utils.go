@@ -32,10 +32,10 @@ type ServiceDescriptor struct {
 func FindServices(capability string, doc *pki.Document) []ServiceDescriptor {
 	services := []ServiceDescriptor{}
 	for _, provider := range doc.ServiceNodes {
-		for cap := range provider.Kaetzchen {
+		for cap := range provider.Services {
 			if cap == capability {
 				serviceID := ServiceDescriptor{
-					Name:     provider.Kaetzchen[cap]["endpoint"].(string),
+					Name:     provider.Services[cap]["endpoint"].(string),
 					Provider: provider.Name,
 				}
 				services = append(services, serviceID)

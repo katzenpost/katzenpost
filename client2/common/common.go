@@ -22,10 +22,10 @@ func FindServices(capability string, doc *cpki.Document) []*ServiceDescriptor {
 	}
 	services := []*ServiceDescriptor{}
 	for _, provider := range doc.ServiceNodes {
-		for cap := range provider.Kaetzchen {
+		for cap := range provider.Services {
 			if cap == capability {
 				serviceID := &ServiceDescriptor{
-					RecipientQueueID: []byte(provider.Kaetzchen[cap]["endpoint"].(string)),
+					RecipientQueueID: []byte(provider.Services[cap]["endpoint"].(string)),
 					MixDescriptor:    provider,
 				}
 				services = append(services, serviceID)
