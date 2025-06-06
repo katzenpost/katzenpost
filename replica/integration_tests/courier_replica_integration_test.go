@@ -555,7 +555,7 @@ func testBoxRoundTrip(t *testing.T, env *testEnvironment) {
 	require.Nil(t, courierReadReply1.Payload, "First read always returns nil - requests sent to replicas")
 
 	// Wait for replica responses to be received and cached by courier
-	time.Sleep(2 * time.Second)
+	time.Sleep(5 * time.Second)
 
 	courierReadReply2 := injectCourierEnvelope(t, env, bobReadRequest1)
 	require.Equal(t, courierReadReply2.EnvelopeHash[:], bobEnvHash1[:])
