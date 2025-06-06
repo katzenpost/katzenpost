@@ -27,6 +27,9 @@ import (
 const (
 	// Test envelope hash used across multiple test functions
 	testEnvelopeHashString = "test-envelope-hash-12345678901234567890123456789012"
+
+	// Test assertion message for courier reply parsing
+	errShouldParseReply = "Should be able to parse courier reply"
 )
 
 // TestCourierCacheBasicOperations tests basic cache operations
@@ -205,7 +208,7 @@ func TestCourierCacheHandleOldMessage(t *testing.T) {
 
 	// Parse the reply
 	courierReply, err := common.CourierEnvelopeReplyFromBytes(replyBytes)
-	require.NoError(t, err, "Should be able to parse courier reply")
+	require.NoError(t, err, errShouldParseReply)
 
 	require.Equal(t, uint8(0), courierReply.ReplyIndex, "Reply index should be 0")
 	require.Equal(t, reply1.EnvelopeReply, courierReply.Payload, "Should return cached reply 0")
@@ -215,7 +218,7 @@ func TestCourierCacheHandleOldMessage(t *testing.T) {
 	replyBytes = courier.handleOldMessage(cacheEntry, &envHash, courierEnv)
 
 	courierReply, err = common.CourierEnvelopeReplyFromBytes(replyBytes)
-	require.NoError(t, err, "Should be able to parse courier reply")
+	require.NoError(t, err, errShouldParseReply)
 
 	require.Equal(t, uint8(1), courierReply.ReplyIndex, "Reply index should be 1")
 	require.Equal(t, reply2.EnvelopeReply, courierReply.Payload, "Should return cached reply 1")
@@ -261,7 +264,7 @@ func TestCourierCacheFallbackBehavior(t *testing.T) {
 	replyBytes := courier.handleOldMessage(cacheEntry, &envHash, courierEnv)
 
 	courierReply, err := common.CourierEnvelopeReplyFromBytes(replyBytes)
-	require.NoError(t, err, "Should be able to parse courier reply")
+	require.NoError(t, err, errShouldParseReply)
 
 	// Should fallback to reply index 1 and update the reply index
 	require.Equal(t, uint8(1), courierReply.ReplyIndex, "Should fallback to reply index 1")
@@ -288,7 +291,7 @@ func TestCourierCacheEmptyResponse(t *testing.T) {
 	replyBytes := courier.handleOldMessage(cacheEntry, &envHash, courierEnv)
 
 	courierReply, err := common.CourierEnvelopeReplyFromBytes(replyBytes)
-	require.NoError(t, err, "Should be able to parse courier reply")
+	require.NoError(t, err, errShouldParseReply)
 
 	require.Equal(t, uint8(0), courierReply.ReplyIndex, "Reply index should match request")
 	require.Empty(t, courierReply.Payload, "Payload should be empty when no replies cached")
