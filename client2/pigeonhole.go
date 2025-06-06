@@ -30,6 +30,11 @@ var (
 	secureRand = hpqcRand.NewMath()
 )
 
+const (
+	// Error message for missing connection
+	errNoConnectionForAppID = "no connection associated with AppID %x"
+)
+
 // EnvelopeDescriptor supplies us with everthing we need to decrypt
 // an encrypted envelope reply from a storage replica via the courier.
 // The assumption is that we have access to the PKI document for the
@@ -231,7 +236,7 @@ func (d *Daemon) createChannel(request *Request) {
 
 	conn := d.listener.getConnection(request.AppID)
 	if conn == nil {
-		d.log.Errorf("no connection associated with AppID %x", request.AppID[:])
+		d.log.Errorf(errNoConnectionForAppID, request.AppID[:])
 		return
 	}
 	conn.sendResponse(&Response{
@@ -268,7 +273,7 @@ func (d *Daemon) createReadChannel(request *Request) {
 
 	conn := d.listener.getConnection(request.AppID)
 	if conn == nil {
-		d.log.Errorf("createReadChannel failure: no connection associated with AppID %x", request.AppID[:])
+		d.log.Errorf("createReadChannel failure: "+errNoConnectionForAppID, request.AppID[:])
 		return
 	}
 	conn.sendResponse(&Response{
@@ -368,7 +373,7 @@ func (d *Daemon) writeChannel(request *Request) {
 
 	conn := d.listener.getConnection(request.AppID)
 	if conn == nil {
-		d.log.Errorf("no connection associated with AppID %x", request.AppID[:])
+		d.log.Errorf(errNoConnectionForAppID, request.AppID[:])
 		return
 	}
 	conn.sendResponse(&Response{
@@ -592,7 +597,7 @@ func (d *Daemon) sendEnvelopeToCourier(request *Request, channelID [thin.Channel
 func (d *Daemon) sendReadChannelSuccessResponse(request *Request, channelID [thin.ChannelIDLength]byte) {
 	conn := d.listener.getConnection(request.AppID)
 	if conn == nil {
-		d.log.Errorf("no connection associated with AppID %x", request.AppID[:])
+		d.log.Errorf(errNoConnectionForAppID, request.AppID[:])
 		return
 	}
 	conn.sendResponse(&Response{
