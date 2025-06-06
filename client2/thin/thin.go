@@ -34,11 +34,13 @@ import (
 
 const (
 	MessageIDLength = 16
+)
 
-	// Error message for nil context
-	errContextCannotBeNil = "context cannot be nil"
-
-	errConnectionLost = "connection lost"
+var (
+	// Error variables for reuse
+	errContextCannotBeNil = errors.New("context cannot be nil")
+	errConnectionLost     = errors.New("connection lost")
+	errHalting            = errors.New("halting")
 )
 
 // ThinResponse is used to encapsulate a message response
@@ -586,7 +588,7 @@ func (t *ThinClient) SendMessage(surbID *[sConstants.SURBIDLength]byte, payload 
 // BlockingSendMessage blocks until a reply is received and returns it or an error.
 func (t *ThinClient) BlockingSendMessage(ctx context.Context, payload []byte, destNode *[32]byte, destQueue []byte) ([]byte, error) {
 	if ctx == nil {
-		return nil, errors.New(errContextCannotBeNil)
+		return nil, errContextCannotBeNil
 	}
 	surbID := t.NewSURBID()
 	eventSink := t.EventSink()
@@ -603,7 +605,7 @@ func (t *ThinClient) BlockingSendMessage(ctx context.Context, payload []byte, de
 			return nil, ctx.Err()
 		case event = <-eventSink:
 		case <-t.HaltCh():
-			return nil, errors.New("halting")
+			return nil, errHalting
 		}
 
 		switch v := event.(type) {
@@ -648,7 +650,7 @@ func (t *ThinClient) SendReliableMessage(messageID *[MessageIDLength]byte, paylo
 // BlockingSendReliableMessage blocks until the message is reliably sent and the ARQ reply is received.
 func (t *ThinClient) BlockingSendReliableMessage(ctx context.Context, messageID *[MessageIDLength]byte, payload []byte, destNode *[32]byte, destQueue []byte) (reply []byte, err error) {
 	if ctx == nil {
-		return nil, errors.New(errContextCannotBeNil)
+		return nil, errContextCannotBeNil
 	}
 
 	if messageID == nil {
@@ -689,7 +691,7 @@ func (t *ThinClient) BlockingSendReliableMessage(ctx context.Context, messageID 
 			return nil, err
 		}
 	case <-t.HaltCh():
-		return nil, errors.New("halting")
+		return nil, errHalting
 	}
 
 	select {
@@ -701,7 +703,7 @@ func (t *ThinClient) BlockingSendReliableMessage(ctx context.Context, messageID 
 		}
 		return reply.Payload, nil
 	case <-t.HaltCh():
-		return nil, errors.New("halting")
+		return nil, errHalting
 	}
 
 	// unreachable
@@ -710,7 +712,7 @@ func (t *ThinClient) BlockingSendReliableMessage(ctx context.Context, messageID 
 // CreateChannel creates a new pigeonhole channel and returns the channel ID and read capability.
 func (t *ThinClient) CreateChannel(ctx context.Context) (*[ChannelIDLength]byte, *bacap.UniversalReadCap, error) {
 	if ctx == nil {
-		return nil, nil, errors.New(errContextCannotBeNil)
+		return nil, nil, errContextCannotBeNil
 	}
 
 	req := &Request{
@@ -732,7 +734,7 @@ func (t *ThinClient) CreateChannel(ctx context.Context) (*[ChannelIDLength]byte,
 			return nil, nil, ctx.Err()
 		case event = <-eventSink:
 		case <-t.HaltCh():
-			return nil, nil, errors.New("halting")
+			return nil, nil, errHalting
 		}
 
 		switch v := event.(type) {
@@ -743,7 +745,7 @@ func (t *ThinClient) CreateChannel(ctx context.Context) (*[ChannelIDLength]byte,
 			return &v.ChannelID, v.ReadCap, nil
 		case *ConnectionStatusEvent:
 			if !v.IsConnected {
-				return nil, nil, errors.New(errConnectionLost)
+				return nil, nil, errConnectionLost
 			}
 		default:
 			// Ignore other events
@@ -754,7 +756,7 @@ func (t *ThinClient) CreateChannel(ctx context.Context) (*[ChannelIDLength]byte,
 // CreateReadChannel creates a read channel from a read capability.
 func (t *ThinClient) CreateReadChannel(ctx context.Context, readCap *bacap.UniversalReadCap) (*[ChannelIDLength]byte, error) {
 	if ctx == nil {
-		return nil, errors.New(errContextCannotBeNil)
+		return nil, errContextCannotBeNil
 	}
 	if readCap == nil {
 		return nil, errors.New("readCap cannot be nil")
@@ -781,7 +783,7 @@ func (t *ThinClient) CreateReadChannel(ctx context.Context, readCap *bacap.Unive
 			return nil, ctx.Err()
 		case event = <-eventSink:
 		case <-t.HaltCh():
-			return nil, errors.New("halting")
+			return nil, errHalting
 		}
 
 		switch v := event.(type) {
@@ -792,7 +794,7 @@ func (t *ThinClient) CreateReadChannel(ctx context.Context, readCap *bacap.Unive
 			return &v.ChannelID, nil
 		case *ConnectionStatusEvent:
 			if !v.IsConnected {
-				return nil, errors.New(errConnectionLost)
+				return nil, errConnectionLost
 			}
 		case *NewDocumentEvent:
 			// Ignore PKI document updates
@@ -805,7 +807,7 @@ func (t *ThinClient) CreateReadChannel(ctx context.Context, readCap *bacap.Unive
 // WriteChannel writes data to a pigeonhole channel.
 func (t *ThinClient) WriteChannel(ctx context.Context, channelID *[ChannelIDLength]byte, payload []byte) error {
 	if ctx == nil {
-		return errors.New(errContextCannotBeNil)
+		return errContextCannotBeNil
 	}
 	if channelID == nil {
 		return errors.New("channelID cannot be nil")
@@ -833,7 +835,7 @@ func (t *ThinClient) WriteChannel(ctx context.Context, channelID *[ChannelIDLeng
 			return ctx.Err()
 		case event = <-eventSink:
 		case <-t.HaltCh():
-			return errors.New("halting")
+			return errHalting
 		}
 
 		switch v := event.(type) {
@@ -844,7 +846,7 @@ func (t *ThinClient) WriteChannel(ctx context.Context, channelID *[ChannelIDLeng
 			return nil
 		case *ConnectionStatusEvent:
 			if !v.IsConnected {
-				return errors.New(errConnectionLost)
+				return errConnectionLost
 			}
 		case *NewDocumentEvent:
 			// Ignore PKI document updates
@@ -857,7 +859,7 @@ func (t *ThinClient) WriteChannel(ctx context.Context, channelID *[ChannelIDLeng
 // ReadChannel reads data from a pigeonhole channel.
 func (t *ThinClient) ReadChannel(ctx context.Context, channelID *[ChannelIDLength]byte, messageID *[MessageIDLength]byte) ([]byte, error) {
 	if ctx == nil {
-		return nil, errors.New(errContextCannotBeNil)
+		return nil, errContextCannotBeNil
 	}
 	if channelID == nil {
 		return nil, errors.New("channelID cannot be nil")
@@ -899,6 +901,6 @@ func (t *ThinClient) ReadChannel(ctx context.Context, channelID *[ChannelIDLengt
 		return reply.Payload, nil
 	case <-t.HaltCh():
 		t.readChannelWaitChanMap.Delete(*messageID)
-		return nil, errors.New("halting")
+		return nil, errHalting
 	}
 }
