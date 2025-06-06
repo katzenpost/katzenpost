@@ -163,6 +163,12 @@ func (l *Listener) CloseOldConns(ptr interface{}) error {
 	l.Lock()
 	defer l.Unlock()
 
+	// Check if the connection has a valid session before calling PeerCredentials
+	if c.w == nil {
+		l.log.Debugf("Connection has no session, skipping CloseOldConns")
+		return nil
+	}
+
 	a, err := c.w.PeerCredentials()
 	if err != nil {
 		l.log.Errorf("Session fail: %s", err)

@@ -562,9 +562,20 @@ func testBoxRoundTrip(t *testing.T, env *testEnvironment) {
 	require.NotNil(t, courierReadReply2.Payload)
 
 	replicaEpoch, _, _ := common.ReplicaNow()
-	replicaPubKey := env.replicaKeys[int(bobReadRequest1.IntermediateReplicas[0])][replicaEpoch]
-	rawInnerMsg, err := mkemNikeScheme.DecryptEnvelope(bobPrivateKey1, replicaPubKey, courierReadReply2.Payload)
-	require.NoError(t, err)
+
+	// Try to decrypt with both replica keys since we don't know which one provided the response
+	var rawInnerMsg []byte
+	var err error
+
+	// Try replica 0 first
+	replicaPubKey0 := env.replicaKeys[int(bobReadRequest1.IntermediateReplicas[0])][replicaEpoch]
+	rawInnerMsg, err = mkemNikeScheme.DecryptEnvelope(bobPrivateKey1, replicaPubKey0, courierReadReply2.Payload)
+	if err != nil {
+		// If replica 0 fails, try replica 1
+		replicaPubKey1 := env.replicaKeys[int(bobReadRequest1.IntermediateReplicas[1])][replicaEpoch]
+		rawInnerMsg, err = mkemNikeScheme.DecryptEnvelope(bobPrivateKey1, replicaPubKey1, courierReadReply2.Payload)
+		require.NoError(t, err, "Failed to decrypt with both replica keys")
+	}
 
 	// common.ReplicaMessageReplyInnerMessage
 	innerMsg, err := common.ReplicaMessageReplyInnerMessageFromBytes(rawInnerMsg)
