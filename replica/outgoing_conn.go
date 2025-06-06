@@ -92,11 +92,8 @@ func (c *outgoingConn) dispatchCommand(cmd commands.Command) {
 }
 
 func (c *outgoingConn) worker() {
-	var (
-		// NOTE(david): we might need to adjust these to be aligned with our pki worker thread
-		retryIncrement = epochtime.Period / 64
-		maxRetryDelay  = epochtime.Period / 8
-	)
+	retryIncrement := epochtime.Period / 64
+	maxRetryDelay := epochtime.Period / 8
 
 	defer func() {
 		c.log.Debugf("Halting connect worker.")
@@ -104,75 +101,12 @@ func (c *outgoingConn) worker() {
 		close(c.ch)
 	}()
 
-	// Sigh, I assume the correct thing to do is to use context for everything,
-	// but the whole package feels like a shitty hack to make up for the fact
-	// that Go lacks a real object model.
-	//
-	// So, use the context stuff via a bunch of shitty hacks to make up for the
-	// fact that the server doesn't use context everywhere instead.
-	dialCtx, cancelFn := context.WithCancel(context.Background())
+	dialCtx, cancelFn, dialer, dialCheckCreds := c.initializeConnection()
 	defer cancelFn()
-	dialer := net.Dialer{
-		KeepAlive: KeepAliveInterval,
-		Timeout:   time.Duration(c.co.Server().cfg.ConnectTimeout) * time.Millisecond,
-	}
-	go func() {
-		// Bolt a bunch of channels to the dial canceler, such that closing
-		// either channel results in the dial context being canceled.
-		select {
-		case <-c.co.CloseAllCh():
-			cancelFn()
-		case <-dialCtx.Done():
-		}
-	}()
-
-	identityHash := hash.Sum256(c.dst.IdentityKey)
-	linkPubKey, err := c.scheme.UnmarshalBinaryPublicKey(c.dst.LinkKey)
-	if err != nil {
-		panic(err)
-	}
-	dialCheckCreds := wire.PeerCredentials{
-		AdditionalData: identityHash[:],
-		PublicKey:      linkPubKey,
-	}
 
 	// Establish the outgoing connection.
 	for {
-		// Check to see if the connection should be made in the first
-		// place by seeing if the connection is in the PKI.  Without
-		// something like this, stale connections can get stuck in the
-		// dialing state since the Connector relies on outgoingConnection
-		// objects to remove themselves from the connection table.
-
-		// Extract node ID from credentials
-		var nodeID [sConstants.NodeIDLength]byte
-		copy(nodeID[:], dialCheckCreds.AdditionalData)
-
-		// Check if the replica is in the current PKI document
-		replicaDesc, isReplica := c.co.Server().PKIWorker.replicas.GetReplicaDescriptor(&nodeID)
-		if isReplica {
-			// Verify link key matches
-			keyblob, err := dialCheckCreds.PublicKey.MarshalBinary()
-			if err != nil {
-				panic(err)
-			}
-			isValid := hmac.Equal(replicaDesc.LinkKey, keyblob)
-
-			if isValid {
-				// The list of addresses could have changed, so update
-				// the cached pointer with the current descriptor
-				c.dst = replicaDesc
-				linkPubKey, err := c.scheme.UnmarshalBinaryPublicKey(c.dst.LinkKey)
-				if err != nil {
-					panic(err)
-				}
-				dialCheckCreds.PublicKey = linkPubKey
-			} else {
-				c.log.Debugf("Bailing out of Dial loop, link key mismatch.")
-				return
-			}
-		} else {
-			c.log.Debugf("Bailing out of Dial loop, no longer in PKI.")
+		if !c.validatePKIAndUpdateCredentials(&dialCheckCreds) {
 			return
 		}
 
@@ -249,6 +183,84 @@ func (c *outgoingConn) worker() {
 			}
 			break
 		}
+	}
+}
+
+// initializeConnection sets up the dial context, dialer, and credentials
+func (c *outgoingConn) initializeConnection() (context.Context, context.CancelFunc, net.Dialer, wire.PeerCredentials) {
+	// Sigh, I assume the correct thing to do is to use context for everything,
+	// but the whole package feels like a shitty hack to make up for the fact
+	// that Go lacks a real object model.
+	//
+	// So, use the context stuff via a bunch of shitty hacks to make up for the
+	// fact that the server doesn't use context everywhere instead.
+	dialCtx, cancelFn := context.WithCancel(context.Background())
+	dialer := net.Dialer{
+		KeepAlive: KeepAliveInterval,
+		Timeout:   time.Duration(c.co.Server().cfg.ConnectTimeout) * time.Millisecond,
+	}
+	go func() {
+		// Bolt a bunch of channels to the dial canceler, such that closing
+		// either channel results in the dial context being canceled.
+		select {
+		case <-c.co.CloseAllCh():
+			cancelFn()
+		case <-dialCtx.Done():
+		}
+	}()
+
+	identityHash := hash.Sum256(c.dst.IdentityKey)
+	linkPubKey, err := c.scheme.UnmarshalBinaryPublicKey(c.dst.LinkKey)
+	if err != nil {
+		panic(err)
+	}
+	dialCheckCreds := wire.PeerCredentials{
+		AdditionalData: identityHash[:],
+		PublicKey:      linkPubKey,
+	}
+
+	return dialCtx, cancelFn, dialer, dialCheckCreds
+}
+
+// validatePKIAndUpdateCredentials checks PKI validity and updates credentials if needed
+func (c *outgoingConn) validatePKIAndUpdateCredentials(dialCheckCreds *wire.PeerCredentials) bool {
+	// Check to see if the connection should be made in the first
+	// place by seeing if the connection is in the PKI.  Without
+	// something like this, stale connections can get stuck in the
+	// dialing state since the Connector relies on outgoingConnection
+	// objects to remove themselves from the connection table.
+
+	// Extract node ID from credentials
+	var nodeID [sConstants.NodeIDLength]byte
+	copy(nodeID[:], dialCheckCreds.AdditionalData)
+
+	// Check if the replica is in the current PKI document
+	replicaDesc, isReplica := c.co.Server().PKIWorker.replicas.GetReplicaDescriptor(&nodeID)
+	if isReplica {
+		// Verify link key matches
+		keyblob, err := dialCheckCreds.PublicKey.MarshalBinary()
+		if err != nil {
+			panic(err)
+		}
+		isValid := hmac.Equal(replicaDesc.LinkKey, keyblob)
+
+		if isValid {
+			// The list of addresses could have changed, so update
+			// the cached pointer with the current descriptor
+			c.dst = replicaDesc
+			linkPubKey, err := c.scheme.UnmarshalBinaryPublicKey(c.dst.LinkKey)
+			if err != nil {
+				panic(err)
+			}
+			dialCheckCreds.PublicKey = linkPubKey
+			return true
+		} else {
+			c.log.Debugf("Bailing out of Dial loop, link key mismatch.")
+			return false
+		}
+	} else {
+		c.log.Debugf("Bailing out of Dial loop, no longer in PKI.")
+		return false
 	}
 }
 
