@@ -42,9 +42,6 @@ jobs:
       - name: Run courier unit tests
         run: cd courier && GORACE=history_size=7 go test -coverprofile=coverage.out -v -failfast -timeout 30m ./...
 
-      - name: Run replica unit tests
-        run: cd replica && GORACE=history_size=7 go test -coverprofile=coverage.out -race -v -failfast -timeout 30m ./...
-
       - name: Run map unit tests
         run: cd map && GORACE=history_size=7 go test -coverprofile=coverage.out -race -v -failfast -timeout 30m ./...
 

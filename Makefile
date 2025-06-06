@@ -1,5 +1,5 @@
 
-.PHONY: all test test-unit test-config sphincsplus clean server dirauth genconfig ping
+.PHONY: all test test-unit test-replica test-config sphincsplus clean server dirauth genconfig ping
 
 all: server dirauth genconfig ping
 
@@ -42,13 +42,18 @@ test-unit: test-config
 	cd server && GORACE=history_size=7 go test -coverprofile=coverage.out -race -v -failfast -timeout 30m ./...
 	@echo "Running courier unit tests..."
 	cd courier && GORACE=history_size=7 go test -coverprofile=coverage.out -v -failfast -timeout 30m ./...
-	@echo "Running replica unit tests..."
-	cd replica && GORACE=history_size=7 go test -coverprofile=coverage.out -race -v -failfast -timeout 30m ./...
+
 	@echo "Running map unit tests..."
 	cd map && GORACE=history_size=7 go test -coverprofile=coverage.out -race -v -failfast -timeout 30m ./...
 	@echo "Running stream unit tests..."
 	cd stream && GORACE=history_size=7 go test -coverprofile=coverage.out -race -v -failfast -timeout 30m ./...
 	@echo "All unit tests completed successfully!"
+
+# Run replica unit tests (requires RocksDB dependencies)
+test-replica: test-config
+	@echo "Running replica unit tests..."
+	cd replica && GORACE=history_size=7 go test -coverprofile=coverage.out -race -v -failfast -timeout 30m ./...
+	@echo "Replica unit tests completed successfully!"
 
 # Legacy test target (kept for backwards compatibility)
 test:
