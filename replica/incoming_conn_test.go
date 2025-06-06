@@ -51,7 +51,9 @@ func (m *MockSession) RecvCommand() (commands.Command, error) {
 	return new(commands.ReplicaMessageReply), nil
 }
 
-func (m *MockSession) Close() {}
+func (m *MockSession) Close() {
+	// Mock implementation: no-op for testing purposes
+}
 
 func (m *MockSession) PeerCredentials() (*wire.PeerCredentials, error) {
 	return &wire.PeerCredentials{
