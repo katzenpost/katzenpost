@@ -14,7 +14,6 @@ import (
 	"github.com/BurntSushi/toml"
 
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
-	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/utils"
 )
@@ -139,6 +138,29 @@ type Config struct {
 }
 
 func (c *Config) FixupAndValidate(forceGenOnly bool) error {
+	c.setDefaultTimeouts()
+
+	if err := c.validateRequiredFields(); err != nil {
+		return err
+	}
+
+	if err := c.validateAndSetupAddresses(); err != nil {
+		return err
+	}
+
+	if err := c.validateDataDirectory(); err != nil {
+		return err
+	}
+
+	if err := c.validatePKIConfiguration(); err != nil {
+		return err
+	}
+
+	return c.setupLoggingDefaults()
+}
+
+// setDefaultTimeouts sets default values for timeout configurations
+func (c *Config) setDefaultTimeouts() {
 	if c.ReauthInterval <= 0 {
 		c.ReauthInterval = defaultReauthInterval
 	}
@@ -148,68 +170,84 @@ func (c *Config) FixupAndValidate(forceGenOnly bool) error {
 	if c.ConnectTimeout <= 0 {
 		c.ConnectTimeout = defaultConnectTimeout
 	}
+}
+
+// validateRequiredFields validates that all required configuration fields are set
+func (c *Config) validateRequiredFields() error {
 	if c.Identifier == "" {
 		return errors.New("config: Server: Identifier is not set")
 	}
-
 	if c.WireKEMScheme == "" {
 		return errors.New("config: Server: WireKEMScheme is not set")
 	}
-
 	if c.PKISignatureScheme == "" {
 		return errors.New("config: Server: PKISignatureScheme is not set")
 	}
-
 	if c.ReplicaNIKEScheme == "" {
 		return errors.New("config: Server: ReplicaNIKEScheme is not set")
 	}
 	if c.SphinxGeometry == nil {
 		return errors.New("config: SphinxGeometry must not be nil")
 	}
+	return nil
+}
 
+// validateAndSetupAddresses validates existing addresses or sets up default ones
+func (c *Config) validateAndSetupAddresses() error {
 	if c.Addresses != nil {
-		for _, v := range c.Addresses {
-			if u, err := url.Parse(v); err != nil {
-				return fmt.Errorf("config: Authority: Address '%v' is invalid: %v", v, err)
-			} else if u.Port() == "" {
-				return fmt.Errorf("config: Authority: Address '%v' is invalid: Must contain Port", v)
-			}
-		}
-	} else {
-		// Try to guess a "suitable" external IPv4 address.  If people want
-		// to do loopback testing, they can manually specify one.  If people
-		// want to use IPng, they can manually specify that as well.
-		addr, err := utils.GetExternalIPv4Address()
-		if err != nil {
-			return err
-		}
-
-		c.Addresses = []string{"tcp://" + addr.String() + defaultAddress}
+		return c.validateExistingAddresses()
 	}
+	return c.setupDefaultAddress()
+}
 
-	internalTransports := make(map[string]bool)
-	for _, v := range pki.InternalTransports {
-		internalTransports[strings.ToLower(string(v))] = true
+// validateExistingAddresses validates the configured addresses
+func (c *Config) validateExistingAddresses() error {
+	for _, v := range c.Addresses {
+		if u, err := url.Parse(v); err != nil {
+			return fmt.Errorf("config: Authority: Address '%v' is invalid: %v", v, err)
+		} else if u.Port() == "" {
+			return fmt.Errorf("config: Authority: Address '%v' is invalid: Must contain Port", v)
+		}
 	}
+	return nil
+}
 
+// setupDefaultAddress sets up a default external IPv4 address
+func (c *Config) setupDefaultAddress() error {
+	// Try to guess a "suitable" external IPv4 address.  If people want
+	// to do loopback testing, they can manually specify one.  If people
+	// want to use IPng, they can manually specify that as well.
+	addr, err := utils.GetExternalIPv4Address()
+	if err != nil {
+		return err
+	}
+	c.Addresses = []string{"tcp://" + addr.String() + defaultAddress}
+	return nil
+}
+
+// validateDataDirectory validates that the data directory is an absolute path
+func (c *Config) validateDataDirectory() error {
 	if !filepath.IsAbs(c.DataDir) {
 		return fmt.Errorf("config: Server: DataDir '%v' is not an absolute path", c.DataDir)
 	}
+	return nil
+}
 
+// validatePKIConfiguration validates that PKI configuration is present
+func (c *Config) validatePKIConfiguration() error {
 	if c.PKI == nil {
 		return errors.New("config: No PKI block was present")
 	}
+	return nil
+}
 
+// setupLoggingDefaults sets up default logging configuration and validates it
+func (c *Config) setupLoggingDefaults() error {
 	// Handle missing sections if possible.
 	if c.Logging == nil {
 		c.Logging = &defaultLogging
 	}
-
-	if err := c.Logging.validate(); err != nil {
-		return err
-	}
-
-	return nil
+	return c.Logging.validate()
 }
 
 // Load parses and validates the provided buffer b as a config file body and
