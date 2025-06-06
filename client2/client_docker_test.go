@@ -25,7 +25,9 @@ import (
 )
 
 var (
-	shutdownCh chan interface{}
+	shutdownCh           chan interface{}
+	thinClientConfigFile = "testdata/thinclient.toml"
+	testLogLevel         = "DEBUG"
 )
 
 func TestAllClient2Tests(t *testing.T) {
@@ -87,13 +89,13 @@ func sendAndWait(t *testing.T, client *thin.ThinClient, message []byte, nodeID *
 func testDockerMultiplexClients(t *testing.T) {
 	t.Parallel()
 
-	cfg, err := thin.LoadFile("testdata/thinclient.toml")
+	cfg, err := thin.LoadFile(thinClientConfigFile)
 	require.NoError(t, err)
 
 	logging := &config.Logging{
 		Disable: false,
 		File:    "",
-		Level:   "DEBUG",
+		Level:   testLogLevel,
 	}
 
 	thin1 := thin.NewThinClient(cfg, logging)
@@ -143,13 +145,13 @@ func testDockerMultiplexClients(t *testing.T) {
 func testDockerClientARQSendReceive(t *testing.T) {
 	t.Parallel()
 
-	cfg, err := thin.LoadFile("testdata/thinclient.toml")
+	cfg, err := thin.LoadFile(thinClientConfigFile)
 	require.NoError(t, err)
 
 	logging := &config.Logging{
 		Disable: false,
 		File:    "",
-		Level:   "DEBUG",
+		Level:   testLogLevel,
 	}
 
 	thin := thin.NewThinClient(cfg, logging)
@@ -222,13 +224,13 @@ func testDockerClientARQSendReceive(t *testing.T) {
 func testDockerClientSendReceive(t *testing.T) {
 	t.Parallel()
 
-	cfg, err := thin.LoadFile("testdata/thinclient.toml")
+	cfg, err := thin.LoadFile(thinClientConfigFile)
 	require.NoError(t, err)
 
 	logging := &config.Logging{
 		Disable: false,
 		File:    "",
-		Level:   "DEBUG",
+		Level:   testLogLevel,
 	}
 
 	thin := thin.NewThinClient(cfg, logging)
