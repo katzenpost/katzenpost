@@ -37,6 +37,8 @@ const (
 
 	// Error message for nil context
 	errContextCannotBeNil = "context cannot be nil"
+
+	errConnectionLost = "connection lost"
 )
 
 // ThinResponse is used to encapsulate a message response
@@ -610,7 +612,7 @@ func (t *ThinClient) BlockingSendMessage(ctx context.Context, payload []byte, de
 		case *ConnectionStatusEvent:
 			t.log.Info("ConnectionStatusEvent")
 			if !v.IsConnected {
-				panic("socket connection lost")
+				panic(errConnectionLost)
 			}
 		case *NewDocumentEvent:
 			t.log.Info("NewPKIDocumentEvent")
@@ -741,7 +743,7 @@ func (t *ThinClient) CreateChannel(ctx context.Context) (*[ChannelIDLength]byte,
 			return &v.ChannelID, v.ReadCap, nil
 		case *ConnectionStatusEvent:
 			if !v.IsConnected {
-				return nil, nil, errors.New("connection lost")
+				return nil, nil, errors.New(errConnectionLost)
 			}
 		default:
 			// Ignore other events
@@ -790,7 +792,7 @@ func (t *ThinClient) CreateReadChannel(ctx context.Context, readCap *bacap.Unive
 			return &v.ChannelID, nil
 		case *ConnectionStatusEvent:
 			if !v.IsConnected {
-				return nil, errors.New("connection lost")
+				return nil, errors.New(errConnectionLost)
 			}
 		case *NewDocumentEvent:
 			// Ignore PKI document updates
@@ -845,7 +847,7 @@ func (t *ThinClient) WriteChannel(ctx context.Context, channelID *[ChannelIDLeng
 			return nil
 		case *ConnectionStatusEvent:
 			if !v.IsConnected {
-				return errors.New("connection lost")
+				return errors.New(errConnectionLost)
 			}
 		case *NewDocumentEvent:
 			// Ignore PKI document updates
