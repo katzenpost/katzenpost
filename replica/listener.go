@@ -141,11 +141,12 @@ func (l *Listener) GetConnIdentities() (map[[sConstants.RecipientIDLength]byte]i
 		cc := e.Value.(*incomingConn)
 
 		// Skip checking against pre-handshake conns.
-		if cc.w == nil || !cc.isInitialized {
+		session := cc.getSession()
+		if session == nil || !cc.isInitialized {
 			continue
 		}
 
-		b, err := cc.w.PeerCredentials()
+		b, err := session.PeerCredentials()
 		if err != nil {
 			l.log.Errorf("Session fail: %s", err)
 			return nil, errors.New("strange failure to retrieve session identity")
@@ -164,12 +165,13 @@ func (l *Listener) CloseOldConns(ptr interface{}) error {
 	defer l.Unlock()
 
 	// Check if the connection has a valid session before calling PeerCredentials
-	if c.w == nil {
+	session := c.getSession()
+	if session == nil {
 		l.log.Debugf("Connection has no session, skipping CloseOldConns")
 		return nil
 	}
 
-	a, err := c.w.PeerCredentials()
+	a, err := session.PeerCredentials()
 	if err != nil {
 		l.log.Errorf("Session fail: %s", err)
 		return err
@@ -179,12 +181,13 @@ func (l *Listener) CloseOldConns(ptr interface{}) error {
 		cc := e.Value.(*incomingConn)
 
 		// Skip checking a conn against itself, or against pre-handshake conns.
-		if cc == c || cc.w == nil || !cc.isInitialized {
+		ccSession := cc.getSession()
+		if cc == c || ccSession == nil || !cc.isInitialized {
 			continue
 		}
 
 		// Compare both by AdditionalData and PublicKey.
-		b, err := cc.w.PeerCredentials()
+		b, err := ccSession.PeerCredentials()
 		if err != nil {
 			continue
 		}

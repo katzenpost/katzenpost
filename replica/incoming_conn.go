@@ -84,29 +84,7 @@ func (c *incomingConn) worker() {
 		c.l.onClosedConn(c) // Remove from the connection list.
 	}()
 
-	session, err := c.setupSession()
-	if err != nil {
-		c.log.Errorf("Failed to setup session: %v", err)
-		return
-	}
-	defer session.Close()
-
-	creds, blob, err := c.performHandshake(session)
-	if err != nil {
-		c.log.Errorf("Handshake failed: %v", err)
-		return
-	}
-
-	if err := c.closeOldConnections(); err != nil {
-		c.log.Errorf("Closing new connection because something is broken: " + err.Error())
-		return
-	}
-
-	c.processCommands(session, creds, blob)
-}
-
-// setupSession creates and configures a new storage replica session
-func (c *incomingConn) setupSession() (*wire.Session, error) {
+	// Allocate the session struct.
 	identityHash := hash.Sum256From(c.l.server.identityPublicKey)
 	cfg := &wire.SessionConfig{
 		KEMScheme:         c.scheme,
@@ -116,67 +94,75 @@ func (c *incomingConn) setupSession() (*wire.Session, error) {
 		AuthenticationKey: c.l.server.linkKey,
 		RandomReader:      rand.Reader,
 	}
-
+	var err error
 	c.l.Lock()
+
 	nikeScheme := nikeschemes.ByName(c.l.server.cfg.ReplicaNIKEScheme)
 	session, err := wire.NewStorageReplicaSession(cfg, nikeScheme, false)
+
 	c.l.Unlock()
 
-	if err != nil {
-		return nil, err
+	if err == nil {
+		c.setSession(session)
 	}
 
-	c.setSession(session)
-	return session, nil
-}
+	if err != nil {
+		c.log.Errorf("Failed to allocate session: %v", err)
+		return
+	}
 
-// performHandshake handles the connection handshake and authentication
-func (c *incomingConn) performHandshake(session *wire.Session) (*wire.PeerCredentials, []byte, error) {
+	sessionInterface := c.getSession()
+	if sessionInterface == nil {
+		c.log.Errorf("Failed to get session")
+		return
+	}
+	session, ok := sessionInterface.(*wire.Session)
+	if !ok {
+		c.log.Errorf("Failed to cast session to *wire.Session")
+		return
+	}
+	defer session.Close()
+
+	// Bind the session to the conn, handshake, authenticate.
 	timeoutMs := time.Duration(c.l.server.cfg.HandshakeTimeout) * time.Millisecond
 	c.c.SetDeadline(time.Now().Add(timeoutMs))
-
-	if err := session.Initialize(c.c); err != nil {
-		return nil, nil, err
+	if err = session.Initialize(c.c); err != nil {
+		c.log.Errorf("Handshake failed: %v", err)
+		return
 	}
-
 	c.log.Debugf("Handshake completed.")
 	c.c.SetDeadline(time.Time{})
 	c.l.onInitializedConn(c)
 
+	// Log the connection source.
 	creds, err := session.PeerCredentials()
 	if err != nil {
 		c.log.Debugf("Session failure: %s", err)
-		return nil, nil, err
 	}
-
 	blob, err := creds.PublicKey.MarshalBinary()
 	if err != nil {
 		panic(err)
 	}
 
-	return creds, blob, nil
-}
-
-// closeOldConnections ensures only one connection per peer
-func (c *incomingConn) closeOldConnections() error {
+	// Ensure that there's only one incoming conn from any given peer, though
+	// this only really matters for user sessions. Newest connection wins.
 	for _, s := range c.l.server.listeners {
-		if err := s.CloseOldConns(c); err != nil {
-			return err
+		err := s.CloseOldConns(c)
+		if err != nil {
+			c.log.Errorf("Closing new connection because something is broken: " + err.Error())
+			return
 		}
 	}
-	return nil
-}
 
-// processCommands handles the main command processing loop
-func (c *incomingConn) processCommands(session *wire.Session, creds *wire.PeerCredentials, blob []byte) {
+	// Start the reauthenticate ticker.
 	reauthMs := time.Duration(c.l.server.cfg.ReauthInterval) * time.Millisecond
 	reauth := time.NewTicker(reauthMs)
 	defer reauth.Stop()
 
+	// Start reading from the peer.
 	commandCh := make(chan commands.Command)
 	commandCloseCh := make(chan interface{})
 	defer close(commandCloseCh)
-
 	go func() {
 		defer close(commandCh)
 		for {
@@ -188,67 +174,65 @@ func (c *incomingConn) processCommands(session *wire.Session, creds *wire.PeerCr
 			select {
 			case commandCh <- rawCmd:
 			case <-commandCloseCh:
-				// c.processCommands() is returning for some reason, give up on
+				// c.worker() is returning for some reason, give up on
 				// trying to write the command, and just return.
 				return
 			}
 		}
 	}()
 
+	// Process incoming packets.
 	for {
-		rawCmd, shouldContinue := c.waitForCommand(commandCh, reauth, creds)
-		if !shouldContinue {
+		var rawCmd commands.Command
+		var ok bool
+
+		select {
+		case <-c.l.closeAllCh:
+			// Server is getting shutdown, all connections are being closed.
+			return
+		case <-reauth.C:
+			// Each incoming conn has a periodic 1/15 Hz timer to wake up
+			// and re-authenticate the connection to handle the PKI document(s)
+			// and or the user database changing.
+			//
+			// Doing it this way avoids a good amount of complexity at the
+			// the cost of extra authenticates (which should be fairly fast).
+			if !c.IsPeerValid(creds) {
+				c.log.Debugf("Disconnecting, peer reauthenticate failed.")
+				return
+			}
+			continue
+		case <-c.closeConnectionCh:
+			c.log.Debugf("Disconnecting to make room for a newer connection from the same peer.")
+			return
+		case rawCmd, ok = <-commandCh:
+			if !ok {
+				return
+			}
+		}
+
+		// Handle all of the storage replica commands.
+		resp, allGood := c.onReplicaCommand(rawCmd)
+		if !allGood {
+			c.log.Debugf("Failed to handle replica command: %v", rawCmd)
+			// Catastrophic failure in command processing, or a disconnect.
 			return
 		}
 
-		if rawCmd == nil {
-			continue // Reauthentication case
-		}
-
-		c.handleCommand(session, rawCmd, blob)
-	}
-}
-
-// waitForCommand waits for the next command or control signal
-func (c *incomingConn) waitForCommand(commandCh chan commands.Command, reauth *time.Ticker, creds *wire.PeerCredentials) (commands.Command, bool) {
-	select {
-	case <-c.l.closeAllCh:
-		return nil, false
-	case <-reauth.C:
-		if !c.IsPeerValid(creds) {
-			c.log.Debugf("Disconnecting, peer reauthenticate failed.")
-			return nil, false
-		}
-		return nil, true // Continue but skip command processing
-	case <-c.closeConnectionCh:
-		c.log.Debugf("Disconnecting to make room for a newer connection from the same peer.")
-		return nil, false
-	case rawCmd, ok := <-commandCh:
-		if !ok {
-			return nil, false
-		}
-		return rawCmd, true
-	}
-}
-
-// handleCommand processes a single command and sends the response
-func (c *incomingConn) handleCommand(session *wire.Session, rawCmd commands.Command, blob []byte) {
-	resp, allGood := c.onReplicaCommand(rawCmd)
-	if !allGood {
-		c.log.Debugf("Failed to handle replica command: %v", rawCmd)
-		return
-	}
-
-	if resp != nil {
-		c.log.Debugf("Sending response: %T", resp)
-		if err := session.SendCommand(resp); err != nil {
-			c.log.Debugf("Peer %v: Failed to send response: %v", hash.Sum256(blob), err)
+		// Send the response, if any.
+		if resp != nil {
+			c.log.Debugf("Sending response: %T", resp)
+			if err = session.SendCommand(resp); err != nil {
+				c.log.Debugf("Peer %v: Failed to send response: %v", hash.Sum256(blob), err)
+			} else {
+				c.log.Debugf("Successfully sent response: %T", resp)
+			}
 		} else {
-			c.log.Debugf("Successfully sent response: %T", resp)
+			c.log.Debugf("No response to send (resp is nil)")
 		}
-	} else {
-		c.log.Debugf("No response to send (resp is nil)")
 	}
+
+	// NOTREACHED
 }
 
 func newIncomingConn(l *Listener, conn net.Conn, geo *geo.Geometry, scheme kem.Scheme, pkiSignScheme sign.Scheme) *incomingConn {
