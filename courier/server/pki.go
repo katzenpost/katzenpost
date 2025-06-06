@@ -260,18 +260,29 @@ func (p *PKIWorker) updateTimer(timer *time.Timer) {
 
 func (p *PKIWorker) worker() {
 	p.log.Info("PKI worker started")
-	var initialSpawnDelay = epochtime.Period / 64
 
-	timer := time.NewTimer(initialSpawnDelay)
+	timer, pkiCtx, isCanceled, lastUpdateEpoch := p.initializeWorker()
+	if timer == nil {
+		return // No implementation configured
+	}
 	defer func() {
 		p.log.Debugf("Halting PKI worker.")
 		timer.Stop()
 	}()
 
+	p.runMainLoop(timer, pkiCtx, isCanceled, &lastUpdateEpoch)
+}
+
+// initializeWorker sets up the PKI worker context and timer
+func (p *PKIWorker) initializeWorker() (*time.Timer, context.Context, func() bool, uint64) {
+	var initialSpawnDelay = epochtime.Period / 64
+	timer := time.NewTimer(initialSpawnDelay)
+
 	if p.impl == nil {
 		p.log.Warningf("No implementation is configured, disabling PKI interface.")
-		return
+		return nil, nil, nil, 0
 	}
+
 	pkiCtx, cancelFn := context.WithCancel(context.Background())
 	go func() {
 		select {
@@ -281,6 +292,7 @@ func (p *PKIWorker) worker() {
 			p.log.Debug("<-pkiCtx.Done()")
 		}
 	}()
+
 	isCanceled := func() bool {
 		select {
 		case <-pkiCtx.Done():
@@ -290,84 +302,104 @@ func (p *PKIWorker) worker() {
 		}
 	}
 
-	// Note: The worker's start is delayed till after the Server's connector
-	// is initialized, so that force updating the outgoing connection table
-	// is guaranteed to work.
+	return timer, pkiCtx, isCanceled, 0
+}
 
-	var lastUpdateEpoch uint64
-
+// runMainLoop handles the main PKI worker event loop
+func (p *PKIWorker) runMainLoop(timer *time.Timer, pkiCtx context.Context, isCanceled func() bool, lastUpdateEpoch *uint64) {
 	for {
-		var timerFired bool
+		if !p.handleTimerEvent(timer, pkiCtx) {
+			return
+		}
+
+		didUpdate := p.fetchDocuments(pkiCtx, isCanceled)
+		p.processDocuments(didUpdate)
+		p.updateCurrentEpoch(lastUpdateEpoch)
+		p.updateTimer(timer)
+	}
+}
+
+// handleTimerEvent processes timer and cancellation events
+func (p *PKIWorker) handleTimerEvent(timer *time.Timer, pkiCtx context.Context) bool {
+	var timerFired bool
+	select {
+	case <-p.HaltCh():
+		p.log.Debug("Terminating gracefully.")
+		return false
+	case <-pkiCtx.Done():
+		p.log.Debug("pkiCtx.Done")
+		return false
+	case <-timer.C:
+		timerFired = true
+	}
+
+	if !timerFired && !timer.Stop() {
 		select {
 		case <-p.HaltCh():
 			p.log.Debug("Terminating gracefully.")
-			return
-		case <-pkiCtx.Done():
-			p.log.Debug("pkiCtx.Done")
-			return
+			return false
 		case <-timer.C:
-			timerFired = true
 		}
-		if !timerFired && !timer.Stop() {
-			select {
-			case <-p.HaltCh():
-				p.log.Debug("Terminating gracefully.")
-				return
-			case <-timer.C:
-			}
-		}
+	}
+	return true
+}
 
-		// Fetch the PKI documents as required.
-		var didUpdate bool
-		for _, epoch := range p.documentsToFetch() {
-			p.log.Debugf("PKI worker, documentsToFetch epoch %d", epoch)
+// fetchDocuments fetches PKI documents for required epochs
+func (p *PKIWorker) fetchDocuments(pkiCtx context.Context, isCanceled func() bool) bool {
+	var didUpdate bool
+	for _, epoch := range p.documentsToFetch() {
+		p.log.Debugf("PKI worker, documentsToFetch epoch %d", epoch)
 
-			// Certain errors in fetching documents are treated as hard
-			// failures that suppress further attempts to fetch the document
-			// for the epoch.
-			if ok, err := p.getFailedFetch(epoch); ok {
-				p.log.Debugf("Skipping fetch for epoch %v: %v", epoch, err)
-				continue
-			}
-
-			d, rawDoc, err := p.impl.Get(pkiCtx, epoch)
-			if isCanceled() {
-				// Canceled mid-fetch.
-				p.log.Debug("Canceled mid-fetch")
-				return
-			}
-			if err != nil {
-				p.log.Warningf("Failed to fetch PKI for epoch %v: %v", epoch, err)
-				if err == pki.ErrDocumentGone {
-					p.setFailedFetch(epoch, err)
-				}
-				continue
-			}
-
-			p.lock.Lock()
-			p.rawDocs[epoch] = rawDoc
-			p.docs[epoch] = d
-			p.lock.Unlock()
-			didUpdate = true
-			p.replicas.UpdateFromPKIDoc(d)
+		// Certain errors in fetching documents are treated as hard
+		// failures that suppress further attempts to fetch the document
+		// for the epoch.
+		if ok, err := p.getFailedFetch(epoch); ok {
+			p.log.Debugf("Skipping fetch for epoch %v: %v", epoch, err)
+			continue
 		}
 
-		p.pruneFailures()
-		if didUpdate {
-			// Dispose of the old PKI documents.
-			p.pruneDocuments()
+		d, rawDoc, err := p.impl.Get(pkiCtx, epoch)
+		if isCanceled() {
+			// Canceled mid-fetch.
+			p.log.Debug("Canceled mid-fetch")
+			return false
 		}
-
-		// Internal component depend on network wide paramemters, and or the
-		// list of nodes.  Update if there is a new document for the current
-		// epoch.
-		if now, _, _ := epochtime.Now(); now != lastUpdateEpoch {
-			if doc := p.entryForEpoch(now); doc != nil {
-				lastUpdateEpoch = now
-
+		if err != nil {
+			p.log.Warningf("Failed to fetch PKI for epoch %v: %v", epoch, err)
+			if err == pki.ErrDocumentGone {
+				p.setFailedFetch(epoch, err)
 			}
+			continue
 		}
-		p.updateTimer(timer)
+
+		p.lock.Lock()
+		p.rawDocs[epoch] = rawDoc
+		p.docs[epoch] = d
+		p.lock.Unlock()
+		didUpdate = true
+		p.replicas.UpdateFromPKIDoc(d)
+	}
+	return didUpdate
+}
+
+// processDocuments handles document cleanup and pruning
+func (p *PKIWorker) processDocuments(didUpdate bool) {
+	p.pruneFailures()
+	if didUpdate {
+		// Dispose of the old PKI documents.
+		p.pruneDocuments()
+	}
+}
+
+// updateCurrentEpoch updates components when a new epoch document is available
+func (p *PKIWorker) updateCurrentEpoch(lastUpdateEpoch *uint64) {
+	// Internal component depend on network wide paramemters, and or the
+	// list of nodes.  Update if there is a new document for the current
+	// epoch.
+	if now, _, _ := epochtime.Now(); now != *lastUpdateEpoch {
+		if doc := p.entryForEpoch(now); doc != nil {
+			*lastUpdateEpoch = now
+		}
 	}
 }
 
