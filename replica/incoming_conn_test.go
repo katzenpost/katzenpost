@@ -138,6 +138,10 @@ func TestIncomingConn(t *testing.T) {
 
 	listener.onNewConn(connRx)
 
+	// Give the worker goroutine a moment to start and fail
+	// since we're using a broken pipe connection
+	time.Sleep(100 * time.Millisecond)
+
 	listener.Lock()
 	e := listener.conns.Front()
 	inConn := e.Value.(*incomingConn)
