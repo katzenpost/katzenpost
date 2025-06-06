@@ -46,8 +46,6 @@ type Courier struct {
 }
 
 // NewCourier returns a new Courier type.
-// TODO: eventually we need to write the dedupCache to disk and so here's where
-// we'd load it from disk.
 func NewCourier(s *Server, cmds *commands.Commands, scheme nike.Scheme) *Courier {
 
 	courier := &Courier{
