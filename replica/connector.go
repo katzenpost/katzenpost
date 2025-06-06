@@ -20,9 +20,6 @@ import (
 	"github.com/katzenpost/katzenpost/replica/common"
 )
 
-// TODO(david): make this a config param?
-const replicationQueueLength = 100
-
 type Connector struct {
 	sync.RWMutex
 	worker.Worker
@@ -230,7 +227,7 @@ func newConnector(server *Server) *Connector {
 		server:        server,
 		log:           server.LogBackend().GetLogger("replica Connector"),
 		conns:         make(map[[constants.NodeIDLength]byte]*outgoingConn),
-		replicationCh: make(chan *commands.ReplicaWrite, replicationQueueLength),
+		replicationCh: make(chan *commands.ReplicaWrite, server.cfg.ReplicationQueueLength),
 		forceUpdateCh: make(chan interface{}, 1), // See forceUpdate().
 		closeAllCh:    make(chan interface{}),
 	}

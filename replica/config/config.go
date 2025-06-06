@@ -19,11 +19,12 @@ import (
 )
 
 const (
-	defaultAddress          = ":3266"
-	defaultLogLevel         = "NOTICE"
-	defaultConnectTimeout   = 60 * 1000  // 60 sec.
-	defaultHandshakeTimeout = 30 * 1000  // 30 sec.
-	defaultReauthInterval   = 300 * 1000 // 300 sec.
+	defaultAddress                = ":3266"
+	defaultLogLevel               = "NOTICE"
+	defaultConnectTimeout         = 60 * 1000  // 60 sec.
+	defaultHandshakeTimeout       = 30 * 1000  // 30 sec.
+	defaultReauthInterval         = 300 * 1000 // 300 sec.
+	defaultReplicationQueueLength = 100        // Default queue length for replication operations
 )
 
 var defaultLogging = Logging{
@@ -132,6 +133,10 @@ type Config struct {
 	// reauthenticated in milliseconds.
 	ReauthInterval int
 
+	// ReplicationQueueLength specifies the maximum number of items that can be
+	// queued for replication operations.
+	ReplicationQueueLength int
+
 	// GenerateOnly halts and cleans up the server right after long term
 	// key generation.
 	GenerateOnly bool
@@ -169,6 +174,9 @@ func (c *Config) setDefaultTimeouts() {
 	}
 	if c.ConnectTimeout <= 0 {
 		c.ConnectTimeout = defaultConnectTimeout
+	}
+	if c.ReplicationQueueLength <= 0 {
+		c.ReplicationQueueLength = defaultReplicationQueueLength
 	}
 }
 
