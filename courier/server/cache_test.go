@@ -24,6 +24,11 @@ import (
 	"github.com/katzenpost/katzenpost/replica/common"
 )
 
+const (
+	// Test envelope hash used across multiple test functions
+	testEnvelopeHashString = "test-envelope-hash-12345678901234567890123456789012"
+)
+
 // TestCourierCacheBasicOperations tests basic cache operations
 func TestCourierCacheBasicOperations(t *testing.T) {
 	// Create a courier with empty cache
@@ -34,7 +39,7 @@ func TestCourierCacheBasicOperations(t *testing.T) {
 
 	// Create test envelope hash
 	envHash := [hash.HashSize]byte{}
-	copy(envHash[:], []byte("test-envelope-hash-12345678901234567890123456789012"))
+	copy(envHash[:], []byte(testEnvelopeHashString))
 
 	// Create test replica reply
 	reply := &commands.ReplicaMessageReply{
@@ -66,7 +71,7 @@ func TestCourierCacheDualReplies(t *testing.T) {
 	courier := createTestCourier(t)
 
 	envHash := [hash.HashSize]byte{}
-	copy(envHash[:], []byte("test-envelope-hash-12345678901234567890123456789012"))
+	copy(envHash[:], []byte(testEnvelopeHashString))
 
 	// Create first replica reply
 	reply1 := &commands.ReplicaMessageReply{
@@ -115,7 +120,7 @@ func TestCourierCacheOverflow(t *testing.T) {
 	courier := createTestCourier(t)
 
 	envHash := [hash.HashSize]byte{}
-	copy(envHash[:], []byte("test-envelope-hash-12345678901234567890123456789012"))
+	copy(envHash[:], []byte(testEnvelopeHashString))
 
 	// Create three replica replies
 	reply1 := &commands.ReplicaMessageReply{
@@ -162,7 +167,7 @@ func TestCourierCacheHandleOldMessage(t *testing.T) {
 	courier := createTestCourier(t)
 
 	envHash := [hash.HashSize]byte{}
-	copy(envHash[:], []byte("test-envelope-hash-12345678901234567890123456789012"))
+	copy(envHash[:], []byte(testEnvelopeHashString))
 
 	// Create test replies
 	reply1 := &commands.ReplicaMessageReply{
@@ -221,7 +226,7 @@ func TestCourierCacheFallbackBehavior(t *testing.T) {
 	courier := createTestCourier(t)
 
 	envHash := [hash.HashSize]byte{}
-	copy(envHash[:], []byte("test-envelope-hash-12345678901234567890123456789012"))
+	copy(envHash[:], []byte(testEnvelopeHashString))
 
 	// Cache only reply from replica 1 (index 1)
 	reply1 := &commands.ReplicaMessageReply{
@@ -268,7 +273,7 @@ func TestCourierCacheEmptyResponse(t *testing.T) {
 	courier := createTestCourier(t)
 
 	envHash := [hash.HashSize]byte{}
-	copy(envHash[:], []byte("test-envelope-hash-12345678901234567890123456789012"))
+	copy(envHash[:], []byte(testEnvelopeHashString))
 
 	// Create cache entry with no replies
 	cacheEntry := &CourierBookKeeping{
@@ -358,7 +363,7 @@ func TestCourierCacheConcurrentAccess(t *testing.T) {
 	courier := createTestCourier(t)
 
 	envHash := [hash.HashSize]byte{}
-	copy(envHash[:], []byte("test-envelope-hash-12345678901234567890123456789012"))
+	copy(envHash[:], []byte(testEnvelopeHashString))
 
 	// Create multiple replies
 	replies := make([]*commands.ReplicaMessageReply, 10)
@@ -476,7 +481,7 @@ func TestCourierCacheEpochTracking(t *testing.T) {
 	courier.server.PKI.lock.Unlock()
 
 	envHash := [hash.HashSize]byte{}
-	copy(envHash[:], []byte("test-envelope-hash-12345678901234567890123456789012"))
+	copy(envHash[:], []byte(testEnvelopeHashString))
 
 	reply := &commands.ReplicaMessageReply{
 		EnvelopeHash:  &envHash,
@@ -501,7 +506,7 @@ func TestCourierCacheErrorReplies(t *testing.T) {
 	courier := createTestCourier(t)
 
 	envHash := [hash.HashSize]byte{}
-	copy(envHash[:], []byte("test-envelope-hash-12345678901234567890123456789012"))
+	copy(envHash[:], []byte(testEnvelopeHashString))
 
 	// Create error reply
 	errorReply := &commands.ReplicaMessageReply{
