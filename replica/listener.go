@@ -107,11 +107,11 @@ func (l *Listener) onNewConn(conn net.Conn) {
 
 	l.closeAllWg.Add(1)
 	l.Lock()
-	defer func() {
-		l.Unlock()
-		go c.worker()
-	}()
 	c.e = l.conns.PushFront(c)
+	l.Unlock()
+
+	// Start the worker goroutine after the connection is safely added to the list
+	go c.worker()
 }
 
 func (l *Listener) onInitializedConn(c *incomingConn) {

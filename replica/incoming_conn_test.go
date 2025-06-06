@@ -148,11 +148,16 @@ func TestIncomingConn(t *testing.T) {
 	listener.Unlock()
 	require.NotNil(t, inConn)
 
+	// Wait a bit more to ensure the worker has failed and exited
+	// before we start manipulating the connection state
+	time.Sleep(50 * time.Millisecond)
+
 	ad := make([]byte, 32)
-	inConn.w = &MockSession{
+	mockSession := &MockSession{
 		pk: linkpubkey,
 		ad: ad,
 	}
+	inConn.setSession(mockSession)
 
 	ids, err := listener.GetConnIdentities()
 	require.NoError(t, err)

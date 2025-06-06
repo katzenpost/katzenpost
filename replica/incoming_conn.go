@@ -8,6 +8,7 @@ import (
 	"crypto/hmac"
 	"fmt"
 	"net"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -53,10 +54,27 @@ type incomingConn struct {
 	isInitialized bool // Set by listener.
 
 	closeConnectionCh chan bool
+
+	// Mutex to protect session access
+	sessionMutex sync.RWMutex
 }
 
 func (c *incomingConn) Close() {
 	c.closeConnectionCh <- true
+}
+
+// getSession safely gets the session with read lock
+func (c *incomingConn) getSession() wire.SessionInterface {
+	c.sessionMutex.RLock()
+	defer c.sessionMutex.RUnlock()
+	return c.w
+}
+
+// setSession safely sets the session with write lock
+func (c *incomingConn) setSession(session wire.SessionInterface) {
+	c.sessionMutex.Lock()
+	defer c.sessionMutex.Unlock()
+	c.w = session
 }
 
 func (c *incomingConn) worker() {
@@ -80,19 +98,23 @@ func (c *incomingConn) worker() {
 	c.l.Lock()
 
 	nikeScheme := nikeschemes.ByName(c.l.server.cfg.ReplicaNIKEScheme)
-	c.w, err = wire.NewStorageReplicaSession(cfg, nikeScheme, false)
+	session, err := wire.NewStorageReplicaSession(cfg, nikeScheme, false)
 
 	c.l.Unlock()
+
 	if err != nil {
 		c.log.Errorf("Failed to allocate session: %v", err)
 		return
 	}
-	defer c.w.Close()
+
+	// Set the session with proper synchronization
+	c.setSession(session)
+	defer session.Close()
 
 	// Bind the session to the conn, handshake, authenticate.
 	timeoutMs := time.Duration(c.l.server.cfg.HandshakeTimeout) * time.Millisecond
 	c.c.SetDeadline(time.Now().Add(timeoutMs))
-	if err = c.w.Initialize(c.c); err != nil {
+	if err = session.Initialize(c.c); err != nil {
 		c.log.Errorf("Handshake failed: %v", err)
 		return
 	}
@@ -101,7 +123,7 @@ func (c *incomingConn) worker() {
 	c.l.onInitializedConn(c)
 
 	// Log the connection source.
-	creds, err := c.w.PeerCredentials()
+	creds, err := session.PeerCredentials()
 	if err != nil {
 		c.log.Debugf("Session failure: %s", err)
 	}
@@ -132,7 +154,7 @@ func (c *incomingConn) worker() {
 	go func() {
 		defer close(commandCh)
 		for {
-			rawCmd, err := c.w.RecvCommand()
+			rawCmd, err := session.RecvCommand()
 			if err != nil {
 				c.log.Debugf("Failed to receive command: %v", err)
 				return
@@ -188,7 +210,7 @@ func (c *incomingConn) worker() {
 		// Send the response, if any.
 		if resp != nil {
 			c.log.Debugf("Sending response: %T", resp)
-			if err = c.w.SendCommand(resp); err != nil {
+			if err = session.SendCommand(resp); err != nil {
 				c.log.Debugf("Peer %v: Failed to send response: %v", hash.Sum256(blob), err)
 			} else {
 				c.log.Debugf("Successfully sent response: %T", resp)
