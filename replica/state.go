@@ -185,10 +185,9 @@ func (s *state) Rebalance() error {
 
 	it := s.db.NewIterator(ro)
 	defer it.Close()
-	it.Seek([]byte{0})
 
 	boxCount := 0
-	for it = it; it.Valid(); it.Next() {
+	for it.Seek([]byte{0}); it.Valid(); it.Next() {
 		key := it.Key()
 		value := it.Value()
 
