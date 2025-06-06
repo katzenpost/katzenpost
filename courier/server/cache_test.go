@@ -30,6 +30,9 @@ const (
 
 	// Test assertion message for courier reply parsing
 	errShouldParseReply = "Should be able to parse courier reply"
+
+	// Error message for unimplemented mock methods
+	errNotImplemented = "not implemented"
 )
 
 // TestCourierCacheBasicOperations tests basic cache operations
@@ -567,15 +570,15 @@ func (m *mockPKIClient) Get(ctx context.Context, epoch uint64) (*pki.Document, [
 
 // Post posts the node's descriptor to the PKI for the provided epoch.
 func (m *mockPKIClient) Post(ctx context.Context, epoch uint64, signingPrivateKey sign.PrivateKey, signingPublicKey sign.PublicKey, d *pki.MixDescriptor, loopstats *loops.LoopStats) error {
-	panic("not implemented")
+	panic(errNotImplemented)
 }
 
 // PostReplica posts the pigeonhole storage replica node's descriptor to the PKI for the provided epoch.
 func (m *mockPKIClient) PostReplica(ctx context.Context, epoch uint64, signingPrivateKey sign.PrivateKey, signingPublicKey sign.PublicKey, d *pki.ReplicaDescriptor) error {
-	panic("not implemented")
+	panic(errNotImplemented)
 }
 
 // Deserialize returns PKI document given the raw bytes.
 func (m *mockPKIClient) Deserialize(raw []byte) (*pki.Document, error) {
-	panic("not implemented")
+	panic(errNotImplemented)
 }
