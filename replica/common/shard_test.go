@@ -22,6 +22,11 @@ import (
 	"github.com/katzenpost/katzenpost/core/pki"
 )
 
+const (
+	// testPKIScheme is the PKI signature scheme used in tests
+	testPKIScheme = "Ed25519 Sphincs+"
+)
+
 func generateDescriptor(t *testing.T, pkiScheme sign.Scheme, linkScheme kem.Scheme, sphinxNikeScheme nike.Scheme, sphinxKemScheme kem.Scheme) *pki.MixDescriptor {
 	idkey := make([]byte, pkiScheme.PublicKeySize())
 	_, err := rand.Reader.Read(idkey)
@@ -118,7 +123,7 @@ func TestGetShards(t *testing.T) {
 	numStorageReplicas := 19
 	numMixNodes := 9
 	numDirAuths := 9
-	pkiScheme := signschemes.ByName("Ed25519 Sphincs+")
+	pkiScheme := signschemes.ByName(testPKIScheme)
 	sphinxNikeScheme := nikeschemes.ByName("x25519")
 	replicaScheme := nikeschemes.ByName("x25519")
 	linkScheme := kemschemes.ByName("Xwing")
@@ -137,7 +142,7 @@ func TestGetReplicaKeys(t *testing.T) {
 	numStorageReplicas := 19
 	numMixNodes := 9
 	numDirAuths := 9
-	pkiScheme := signschemes.ByName("Ed25519 Sphincs+")
+	pkiScheme := signschemes.ByName(testPKIScheme)
 	sphinxNikeScheme := nikeschemes.ByName("x25519")
 	replicaScheme := nikeschemes.ByName("x25519")
 	linkScheme := kemschemes.ByName("Xwing")
@@ -194,7 +199,7 @@ func TestGetRemoteShards(t *testing.T) {
 	numStorageReplicas := 19
 	numMixNodes := 9
 	numDirAuths := 9
-	pkiScheme := signschemes.ByName("Ed25519 Sphincs+")
+	pkiScheme := signschemes.ByName(testPKIScheme)
 	sphinxNikeScheme := nikeschemes.ByName("x25519")
 	replicaScheme := nikeschemes.ByName("x25519")
 	linkScheme := kemschemes.ByName("Xwing")
@@ -224,7 +229,7 @@ func TestReplicaSort(t *testing.T) {
 	numStorageReplicas := 19
 	numMixNodes := 9
 	numDirAuths := 9
-	pkiScheme := signschemes.ByName("Ed25519 Sphincs+")
+	pkiScheme := signschemes.ByName(testPKIScheme)
 	sphinxNikeScheme := nikeschemes.ByName("x25519")
 	replicaScheme := nikeschemes.ByName("x25519")
 	linkScheme := kemschemes.ByName("Xwing")
@@ -240,7 +245,7 @@ func TestReplicaNum(t *testing.T) {
 	numStorageReplicas := 19
 	numMixNodes := 9
 	numDirAuths := 9
-	pkiScheme := signschemes.ByName("Ed25519 Sphincs+")
+	pkiScheme := signschemes.ByName(testPKIScheme)
 	sphinxNikeScheme := nikeschemes.ByName("x25519")
 	replicaScheme := nikeschemes.ByName("x25519")
 	linkScheme := kemschemes.ByName("Xwing")

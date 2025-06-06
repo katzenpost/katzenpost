@@ -40,6 +40,11 @@ import (
 	"github.com/katzenpost/katzenpost/server/cborplugin"
 )
 
+const (
+	// testPKIScheme is the PKI signature scheme used in tests
+	testPKIScheme = "Ed25519 Sphincs+"
+)
+
 var (
 	BACAP_CTX      []byte       = []byte("test-session")
 	mkemNikeScheme *mkem.Scheme = mkem.NewScheme(common.NikeScheme)
@@ -79,7 +84,7 @@ func setupTestEnvironment(t *testing.T) *testEnvironment {
 	require.NoError(t, err)
 
 	sphinxGeo := geo.GeometryFromUserForwardPayloadLength(nikeSchemes.ByName("X25519"), 5000, true, 5)
-	pkiScheme := signSchemes.ByName("Ed25519 Sphincs+")
+	pkiScheme := signSchemes.ByName(testPKIScheme)
 	linkScheme := kemSchemes.ByName("Xwing")
 
 	courierDir := filepath.Join(tempDir, "courier")

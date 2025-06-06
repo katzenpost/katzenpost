@@ -49,7 +49,7 @@ func TestInitDataDir(t *testing.T) {
 }
 
 func TestNew(t *testing.T) {
-	pkiScheme := signschemes.ByName("Ed25519 Sphincs+")
+	pkiScheme := signschemes.ByName(testPKIScheme)
 	idpubkey, _, err := pkiScheme.GenerateKey()
 	require.NoError(t, err)
 

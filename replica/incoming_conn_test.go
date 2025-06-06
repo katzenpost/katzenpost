@@ -29,6 +29,11 @@ import (
 	"github.com/katzenpost/katzenpost/replica/config"
 )
 
+const (
+	// testPKIScheme is the PKI signature scheme used in tests
+	testPKIScheme = "Ed25519 Sphincs+"
+)
+
 type MockSession struct {
 	ad []byte
 	pk kem.PublicKey
@@ -60,7 +65,7 @@ func (m *MockSession) ClockSkew() time.Duration {
 }
 
 func TestIncomingConn(t *testing.T) {
-	pkiScheme := signschemes.ByName("Ed25519 Sphincs+")
+	pkiScheme := signschemes.ByName(testPKIScheme)
 	linkScheme := kemschemes.ByName("Xwing")
 	replicaScheme := nikeschemes.ByName("CTIDH1024-X25519")
 	sphinxScheme := nikeschemes.ByName("x25519")

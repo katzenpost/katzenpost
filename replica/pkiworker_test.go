@@ -42,7 +42,7 @@ func TestReplicaMap(t *testing.T) {
 }
 
 func TestAuthenticateCourierConnection(t *testing.T) {
-	pkiScheme := signschemes.ByName("Ed25519 Sphincs+")
+	pkiScheme := signschemes.ByName(testPKIScheme)
 	idpubkey, _, err := pkiScheme.GenerateKey()
 	require.NoError(t, err)
 
@@ -150,7 +150,7 @@ func TestAuthenticateCourierConnection(t *testing.T) {
 }
 
 func TestAuthenticateReplicaConnection(t *testing.T) {
-	pkiScheme := signschemes.ByName("Ed25519 Sphincs+")
+	pkiScheme := signschemes.ByName(testPKIScheme)
 	idpubkey, _, err := pkiScheme.GenerateKey()
 	require.NoError(t, err)
 
@@ -305,7 +305,7 @@ func TestGetFailedFetch(t *testing.T) {
 }
 
 func TestPruneDocuments(t *testing.T) {
-	pkiScheme := signschemes.ByName("Ed25519 Sphincs+")
+	pkiScheme := signschemes.ByName(testPKIScheme)
 	idpubkey, _, err := pkiScheme.GenerateKey()
 	require.NoError(t, err)
 
@@ -389,7 +389,7 @@ func TestPruneDocuments(t *testing.T) {
 }
 
 func TestAuthenticationDuringEpochTransition(t *testing.T) {
-	pkiScheme := signschemes.ByName("Ed25519 Sphincs+")
+	pkiScheme := signschemes.ByName(testPKIScheme)
 	idpubkey, _, err := pkiScheme.GenerateKey()
 	require.NoError(t, err)
 
