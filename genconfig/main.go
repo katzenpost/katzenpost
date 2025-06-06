@@ -46,6 +46,7 @@ const (
 	nrServiceNodes = 1
 	nrStorageNodes = 3
 	nrAuthorities  = 3
+	serverLogFile  = "katzenpost.log"
 )
 
 type katzenpost struct {
@@ -269,8 +270,6 @@ func (s *katzenpost) genCourierConfig(datadir string) *courierConfig.Config {
 }
 
 func (s *katzenpost) genReplicaNodeConfig() error {
-	const serverLogFile = "katzenpost.log"
-
 	log.Print("genReplicaNodeConfig")
 
 	cfg := new(rConfig.Config)
@@ -315,8 +314,6 @@ func (s *katzenpost) genReplicaNodeConfig() error {
 }
 
 func (s *katzenpost) genNodeConfig(isGateway, isServiceNode bool, isVoting bool) error {
-	const serverLogFile = "katzenpost.log"
-
 	n := fmt.Sprintf("mix%d", s.nodeIdx+1)
 	if isGateway {
 		n = fmt.Sprintf("gateway%d", s.gatewayIdx+1)
@@ -493,7 +490,7 @@ func (s *katzenpost) genVotingAuthoritiesCfg(numAuthorities int, parameters *vCo
 		s.lastPort += 1
 		cfg.Logging = &vConfig.Logging{
 			Disable: false,
-			File:    "katzenpost.log",
+			File:    serverLogFile,
 			Level:   s.logLevel,
 		}
 		cfg.Parameters = parameters
