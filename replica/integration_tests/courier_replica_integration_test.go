@@ -555,9 +555,7 @@ func testBoxRoundTrip(t *testing.T, env *testEnvironment) {
 	require.Nil(t, courierReadReply1.Payload, "First read always returns nil - requests sent to replicas")
 
 	// Wait for replica responses to be received and cached by courier
-	time.Sleep(5 * time.Second)
-
-	courierReadReply2 := injectCourierEnvelope(t, env, bobReadRequest1)
+	courierReadReply2 := waitForCachedReply(t, env, bobReadRequest1)
 	require.Equal(t, courierReadReply2.EnvelopeHash[:], bobEnvHash1[:])
 	require.Equal(t, uint8(0), courierReadReply2.ErrorCode)
 	require.Equal(t, uint8(0), courierReadReply2.ReplyIndex)
@@ -668,4 +666,28 @@ func composeReadRequest(t *testing.T, env *testEnvironment, reader *bacap.Statef
 		Ciphertext:           mkemCiphertext.Envelope,
 		IsRead:               true, // This is a read request!
 	}, mkemPrivateKey
+}
+
+// waitForCachedReply waits for the courier to cache a reply by repeatedly trying the request
+// until we get a non-nil payload, indicating the replica response has been cached
+func waitForCachedReply(t *testing.T, env *testEnvironment, envelope *common.CourierEnvelope) *common.CourierEnvelopeReply {
+	maxWait := 10 * time.Second
+	checkInterval := 100 * time.Millisecond
+	start := time.Now()
+
+	for time.Since(start) < maxWait {
+		reply := injectCourierEnvelope(t, env, envelope)
+
+		// If we got a non-nil payload, the cache is ready
+		if reply.Payload != nil {
+			t.Logf("Courier cache ready - received payload of length %d", len(reply.Payload))
+			return reply
+		}
+
+		// Wait before trying again
+		time.Sleep(checkInterval)
+	}
+
+	t.Fatalf("Timeout waiting for courier cache to contain reply for envelope hash %x", envelope.EnvelopeHash()[:8])
+	return nil // This will never be reached due to t.Fatalf, but needed for compilation
 }
