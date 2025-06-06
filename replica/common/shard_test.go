@@ -27,6 +27,18 @@ const (
 	testPKIScheme = "Ed25519 Sphincs+"
 )
 
+// DocumentConfig holds configuration parameters for generating test PKI documents
+type DocumentConfig struct {
+	PKIScheme          sign.Scheme
+	LinkScheme         kem.Scheme
+	ReplicaScheme      nike.Scheme
+	SphinxNikeScheme   nike.Scheme
+	SphinxKemScheme    kem.Scheme
+	NumDirAuths        int
+	NumMixNodes        int
+	NumStorageReplicas int
+}
+
 func generateDescriptor(t *testing.T, pkiScheme sign.Scheme, linkScheme kem.Scheme, sphinxNikeScheme nike.Scheme, sphinxKemScheme kem.Scheme) *pki.MixDescriptor {
 	idkey := make([]byte, pkiScheme.PublicKeySize())
 	_, err := rand.Reader.Read(idkey)
@@ -89,17 +101,17 @@ func generateReplica(t *testing.T, name string, pkiScheme sign.Scheme, linkSchem
 	}
 }
 
-func generateDocument(t *testing.T, pkiScheme sign.Scheme, linkScheme kem.Scheme, replicaScheme nike.Scheme, sphinxNikeScheme nike.Scheme, sphinxKemScheme kem.Scheme, numDirAuths, numMixNodes, numStorageReplicas int) *pki.Document {
-	mixNodes := make([]*pki.MixDescriptor, numMixNodes)
-	for i := 0; i < numMixNodes; i++ {
-		mixNodes[i] = generateDescriptor(t, pkiScheme, linkScheme, sphinxNikeScheme, sphinxKemScheme)
+func generateDocument(t *testing.T, config *DocumentConfig) *pki.Document {
+	mixNodes := make([]*pki.MixDescriptor, config.NumMixNodes)
+	for i := 0; i < config.NumMixNodes; i++ {
+		mixNodes[i] = generateDescriptor(t, config.PKIScheme, config.LinkScheme, config.SphinxNikeScheme, config.SphinxKemScheme)
 	}
 	topology := make([][]*pki.MixDescriptor, 1)
 	topology[0] = mixNodes
-	replicas := make([]*pki.ReplicaDescriptor, numStorageReplicas)
-	for i := 0; i < numStorageReplicas; i++ {
+	replicas := make([]*pki.ReplicaDescriptor, config.NumStorageReplicas)
+	for i := 0; i < config.NumStorageReplicas; i++ {
 		name := fmt.Sprintf("fake replica %d", i)
-		replicas[i] = generateReplica(t, name, pkiScheme, linkScheme, replicaScheme)
+		replicas[i] = generateReplica(t, name, config.PKIScheme, config.LinkScheme, config.ReplicaScheme)
 	}
 
 	srv := make([]byte, 32)
@@ -115,19 +127,22 @@ func generateDocument(t *testing.T, pkiScheme sign.Scheme, linkScheme kem.Scheme
 		SharedRandomValue:  srv,
 		PriorSharedRandom:  oldhashes,
 		SphinxGeometryHash: geohash,
-		PKISignatureScheme: pkiScheme.Name(),
+		PKISignatureScheme: config.PKIScheme.Name(),
 	}
 }
 
 func TestGetShards(t *testing.T) {
-	numStorageReplicas := 19
-	numMixNodes := 9
-	numDirAuths := 9
-	pkiScheme := signschemes.ByName(testPKIScheme)
-	sphinxNikeScheme := nikeschemes.ByName("x25519")
-	replicaScheme := nikeschemes.ByName("x25519")
-	linkScheme := kemschemes.ByName("Xwing")
-	doc := generateDocument(t, pkiScheme, linkScheme, replicaScheme, sphinxNikeScheme, nil, numDirAuths, numMixNodes, numStorageReplicas)
+	config := &DocumentConfig{
+		PKIScheme:          signschemes.ByName(testPKIScheme),
+		LinkScheme:         kemschemes.ByName("Xwing"),
+		ReplicaScheme:      nikeschemes.ByName("x25519"),
+		SphinxNikeScheme:   nikeschemes.ByName("x25519"),
+		SphinxKemScheme:    nil,
+		NumDirAuths:        9,
+		NumMixNodes:        9,
+		NumStorageReplicas: 19,
+	}
+	doc := generateDocument(t, config)
 
 	boxid := &[32]byte{}
 	_, err := rand.Reader.Read(boxid[:])
@@ -139,17 +154,20 @@ func TestGetShards(t *testing.T) {
 }
 
 func TestGetReplicaKeys(t *testing.T) {
-	numStorageReplicas := 19
-	numMixNodes := 9
-	numDirAuths := 9
-	pkiScheme := signschemes.ByName(testPKIScheme)
-	sphinxNikeScheme := nikeschemes.ByName("x25519")
-	replicaScheme := nikeschemes.ByName("x25519")
-	linkScheme := kemschemes.ByName("Xwing")
-	doc := generateDocument(t, pkiScheme, linkScheme, replicaScheme, sphinxNikeScheme, nil, numDirAuths, numMixNodes, numStorageReplicas)
+	config := &DocumentConfig{
+		PKIScheme:          signschemes.ByName(testPKIScheme),
+		LinkScheme:         kemschemes.ByName("Xwing"),
+		ReplicaScheme:      nikeschemes.ByName("x25519"),
+		SphinxNikeScheme:   nikeschemes.ByName("x25519"),
+		SphinxKemScheme:    nil,
+		NumDirAuths:        9,
+		NumMixNodes:        9,
+		NumStorageReplicas: 19,
+	}
+	doc := generateDocument(t, config)
 	replicaKeys, err := GetReplicaKeys(doc)
 	require.NoError(t, err)
-	require.Equal(t, numStorageReplicas, len(replicaKeys))
+	require.Equal(t, config.NumStorageReplicas, len(replicaKeys))
 
 	boxid := &[32]byte{}
 	_, err = rand.Reader.Read(boxid[:])
@@ -196,14 +214,17 @@ func TestShardSimple(t *testing.T) {
 }
 
 func TestGetRemoteShards(t *testing.T) {
-	numStorageReplicas := 19
-	numMixNodes := 9
-	numDirAuths := 9
-	pkiScheme := signschemes.ByName(testPKIScheme)
-	sphinxNikeScheme := nikeschemes.ByName("x25519")
-	replicaScheme := nikeschemes.ByName("x25519")
-	linkScheme := kemschemes.ByName("Xwing")
-	doc := generateDocument(t, pkiScheme, linkScheme, replicaScheme, sphinxNikeScheme, nil, numDirAuths, numMixNodes, numStorageReplicas)
+	config := &DocumentConfig{
+		PKIScheme:          signschemes.ByName(testPKIScheme),
+		LinkScheme:         kemschemes.ByName("Xwing"),
+		ReplicaScheme:      nikeschemes.ByName("x25519"),
+		SphinxNikeScheme:   nikeschemes.ByName("x25519"),
+		SphinxKemScheme:    nil,
+		NumDirAuths:        9,
+		NumMixNodes:        9,
+		NumStorageReplicas: 19,
+	}
+	doc := generateDocument(t, config)
 
 	boxid := &[32]byte{}
 	_, err := rand.Reader.Read(boxid[:])
@@ -211,13 +232,13 @@ func TestGetRemoteShards(t *testing.T) {
 
 	replicaDescs, err := GetShards(boxid, doc)
 	require.NoError(t, err)
-	replicaIdPubKey, err := pkiScheme.UnmarshalBinaryPublicKey(replicaDescs[0].IdentityKey)
+	replicaIdPubKey, err := config.PKIScheme.UnmarshalBinaryPublicKey(replicaDescs[0].IdentityKey)
 	require.NoError(t, err)
 	replicas, err := GetRemoteShards(replicaIdPubKey, boxid, doc)
 	require.NoError(t, err)
 	require.Equal(t, 1, len(replicas))
 
-	pubkey, _, err := pkiScheme.GenerateKey()
+	pubkey, _, err := config.PKIScheme.GenerateKey()
 	require.NoError(t, err)
 
 	replicas2, err := GetRemoteShards(pubkey, boxid, doc)
@@ -226,35 +247,41 @@ func TestGetRemoteShards(t *testing.T) {
 }
 
 func TestReplicaSort(t *testing.T) {
-	numStorageReplicas := 19
-	numMixNodes := 9
-	numDirAuths := 9
-	pkiScheme := signschemes.ByName(testPKIScheme)
-	sphinxNikeScheme := nikeschemes.ByName("x25519")
-	replicaScheme := nikeschemes.ByName("x25519")
-	linkScheme := kemschemes.ByName("Xwing")
-	doc := generateDocument(t, pkiScheme, linkScheme, replicaScheme, sphinxNikeScheme, nil, numDirAuths, numMixNodes, numStorageReplicas)
+	config := &DocumentConfig{
+		PKIScheme:          signschemes.ByName(testPKIScheme),
+		LinkScheme:         kemschemes.ByName("Xwing"),
+		ReplicaScheme:      nikeschemes.ByName("x25519"),
+		SphinxNikeScheme:   nikeschemes.ByName("x25519"),
+		SphinxKemScheme:    nil,
+		NumDirAuths:        9,
+		NumMixNodes:        9,
+		NumStorageReplicas: 19,
+	}
+	doc := generateDocument(t, config)
 
 	replicas, err := ReplicaSort(doc)
 	require.NoError(t, err)
 
-	require.Equal(t, len(replicas), numStorageReplicas)
+	require.Equal(t, len(replicas), config.NumStorageReplicas)
 }
 
 func TestReplicaNum(t *testing.T) {
-	numStorageReplicas := 19
-	numMixNodes := 9
-	numDirAuths := 9
-	pkiScheme := signschemes.ByName(testPKIScheme)
-	sphinxNikeScheme := nikeschemes.ByName("x25519")
-	replicaScheme := nikeschemes.ByName("x25519")
-	linkScheme := kemschemes.ByName("Xwing")
-	doc := generateDocument(t, pkiScheme, linkScheme, replicaScheme, sphinxNikeScheme, nil, numDirAuths, numMixNodes, numStorageReplicas)
+	config := &DocumentConfig{
+		PKIScheme:          signschemes.ByName(testPKIScheme),
+		LinkScheme:         kemschemes.ByName("Xwing"),
+		ReplicaScheme:      nikeschemes.ByName("x25519"),
+		SphinxNikeScheme:   nikeschemes.ByName("x25519"),
+		SphinxKemScheme:    nil,
+		NumDirAuths:        9,
+		NumMixNodes:        9,
+		NumStorageReplicas: 19,
+	}
+	doc := generateDocument(t, config)
 
-	_, err := ReplicaNum(uint8(numStorageReplicas-1), doc)
+	_, err := ReplicaNum(uint8(config.NumStorageReplicas-1), doc)
 	require.NoError(t, err)
 
-	_, err = ReplicaNum(uint8(numStorageReplicas), doc)
+	_, err = ReplicaNum(uint8(config.NumStorageReplicas), doc)
 	require.Error(t, err)
 }
 
