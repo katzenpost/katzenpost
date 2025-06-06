@@ -6,6 +6,7 @@ package server
 import (
 	"context"
 	"crypto/hmac"
+	"crypto/rand"
 	"fmt"
 	"net"
 	"net/url"
@@ -18,7 +19,6 @@ import (
 	"github.com/katzenpost/hpqc/kem"
 	kemSchemes "github.com/katzenpost/hpqc/kem/schemes"
 	nikeSchemes "github.com/katzenpost/hpqc/nike/schemes"
-	"github.com/katzenpost/hpqc/rand"
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 
 	"github.com/katzenpost/katzenpost/core/epochtime"
@@ -285,7 +285,24 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 		conn.Close()
 	}()
 
-	// Allocate the session struct.
+	w, err := c.setupSession(conn)
+	if err != nil {
+		return
+	}
+	defer w.Close()
+
+	receiveCmdCh := c.startPeerReader(w)
+	cmdCh, cmdCloseCh := c.startCommandSender(w)
+	defer close(cmdCh)
+
+	reauth := c.startReauthTicker()
+	defer reauth.Stop()
+
+	return c.runEventLoop(w, closeCh, reauth, cmdCh, cmdCloseCh, receiveCmdCh)
+}
+
+// setupSession creates and initializes a wire session for the connection
+func (c *outgoingConn) setupSession(conn net.Conn) (*wire.Session, error) {
 	cfg := &wire.SessionConfig{
 		KEMScheme:         c.linkScheme,
 		Geometry:          c.cfg.SphinxGeometry,
@@ -299,22 +316,25 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 	w, err := wire.NewStorageReplicaSession(cfg, envelopeScheme, isInitiator)
 	if err != nil {
 		c.log.Errorf("Failed to allocate session: %v", err)
-		return
+		return nil, err
 	}
-	defer w.Close()
 
 	// Bind the session to the conn, handshake, authenticate.
 	timeoutMs := time.Duration(c.co.Server().cfg.HandshakeTimeout) * time.Millisecond
 	conn.SetDeadline(time.Now().Add(timeoutMs))
 	if err = w.Initialize(conn); err != nil {
 		c.log.Errorf("Handshake failed: %v", err)
-		return
+		return nil, err
 	}
 	c.log.Debugf("Handshake completed.")
 	conn.SetDeadline(time.Time{})
 	c.retryDelay = 0 // Reset the retry delay on successful handshakes.
 
-	// Start the peer reader.
+	return w, nil
+}
+
+// startPeerReader starts a goroutine to read commands from the peer
+func (c *outgoingConn) startPeerReader(w *wire.Session) chan interface{} {
 	receiveCmdCh := make(chan interface{})
 	c.Go(func() {
 		defer close(receiveCmdCh)
@@ -338,10 +358,13 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 			}
 		}
 	})
+	return receiveCmdCh
+}
 
+// startCommandSender starts a goroutine to send commands to the peer
+func (c *outgoingConn) startCommandSender(w *wire.Session) (chan commands.Command, chan error) {
 	cmdCh := make(chan commands.Command)
 	cmdCloseCh := make(chan error)
-	defer close(cmdCh)
 	go func() {
 		defer close(cmdCloseCh)
 		for {
@@ -355,75 +378,106 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 			}
 		}
 	}()
+	return cmdCh, cmdCloseCh
+}
 
-	// Start the reauthenticate ticker.
+// startReauthTicker starts the reauthentication ticker
+func (c *outgoingConn) startReauthTicker() *time.Ticker {
 	reauthMs := time.Duration(c.co.Server().cfg.ReauthInterval) * time.Millisecond
-	reauth := time.NewTicker(reauthMs)
-	defer reauth.Stop()
+	return time.NewTicker(reauthMs)
+}
 
+// runEventLoop handles the main event processing loop
+func (c *outgoingConn) runEventLoop(w *wire.Session, closeCh <-chan struct{}, reauth *time.Ticker, cmdCh chan commands.Command, cmdCloseCh chan error, receiveCmdCh chan interface{}) bool {
 	for {
 		var rawCmd commands.Command
 		var cmd commands.Command
+
 		select {
 		case <-c.HaltCh():
-			return
+			return false
 		case <-closeCh:
-			wasHalted = true
-			return
+			return true
 		case <-reauth.C:
-			// Each outgoing connection has a periodic 1/15 Hz timer to wake up
-			// and re-authenticate to handle the PKI document(s) changing.
-			creds, err := w.PeerCredentials()
-			if err != nil {
-				c.log.Debugf("Session fail: %s", err)
-				return
-			}
-			if !c.IsPeerValid(creds) {
-				c.log.Debugf("Disconnecting, peer reauthenticate failed.")
-				return
+			if !c.handleReauth(w) {
+				return false
 			}
 			continue
 		case cmd = <-c.ch:
-			select {
-			case <-c.HaltCh():
-				return
-			case <-closeCh:
-				wasHalted = true
-				return
-			case cmdCh <- cmd:
+			if c.handleOutgoingCommand(cmd, cmdCh, closeCh) {
+				return true
 			}
 			continue
 		case <-cmdCloseCh:
-			// Something blew up when sending the command to the remote peer.
-			return
+			return false
 		case replyCmd := <-receiveCmdCh:
-			c.log.Debugf("DEBUG: Processing reply from receiveCmdCh: %T", replyCmd)
-			switch cmdOrErr := replyCmd.(type) {
-			case commands.Command:
-				rawCmd = cmdOrErr
-				c.log.Debugf("DEBUG: Got command from replica: %T", rawCmd)
-			case error:
-				c.log.Errorf("Received wire protocol RecvCommand error: %s", cmdOrErr)
-			}
+			rawCmd = c.processIncomingReply(replyCmd)
 		}
 
-		// Handle the response.
-		c.log.Debugf("DEBUG: Handling response command: %T", rawCmd)
-		switch replycmd := rawCmd.(type) {
-		case *commands.NoOp:
-			c.log.Debugf("Received NoOp.")
-		case *commands.Disconnect:
-			c.log.Debugf("Received Disconnect from peer.")
-			return
-		case *commands.ReplicaMessageReply:
-			c.log.Debugf("DEBUG: Received ReplicaMessageReply - IsRead: %v, ErrorCode: %d, EnvelopeReplyLen: %d",
-				replycmd.IsRead, replycmd.ErrorCode, len(replycmd.EnvelopeReply))
-			c.courier.CacheReply(replycmd)
-		default:
-			c.log.Errorf("BUG, Received unexpected command from replica peer: %s", cmd)
-			return
+		if !c.handleCommand(rawCmd, cmd) {
+			return false
 		}
 	}
+}
+
+// handleReauth processes reauthentication events
+func (c *outgoingConn) handleReauth(w *wire.Session) bool {
+	creds, err := w.PeerCredentials()
+	if err != nil {
+		c.log.Debugf("Session fail: %s", err)
+		return false
+	}
+	if !c.IsPeerValid(creds) {
+		c.log.Debugf("Disconnecting, peer reauthenticate failed.")
+		return false
+	}
+	return true
+}
+
+// handleOutgoingCommand processes commands from the outgoing channel
+func (c *outgoingConn) handleOutgoingCommand(cmd commands.Command, cmdCh chan commands.Command, closeCh <-chan struct{}) bool {
+	select {
+	case <-c.HaltCh():
+		return true
+	case <-closeCh:
+		return true
+	case cmdCh <- cmd:
+		return false
+	}
+}
+
+// processIncomingReply processes replies from the peer
+func (c *outgoingConn) processIncomingReply(replyCmd interface{}) commands.Command {
+	c.log.Debugf("DEBUG: Processing reply from receiveCmdCh: %T", replyCmd)
+	switch cmdOrErr := replyCmd.(type) {
+	case commands.Command:
+		c.log.Debugf("DEBUG: Got command from replica: %T", cmdOrErr)
+		return cmdOrErr
+	case error:
+		c.log.Errorf("Received wire protocol RecvCommand error: %s", cmdOrErr)
+		return nil
+	}
+	return nil
+}
+
+// handleCommand processes received commands
+func (c *outgoingConn) handleCommand(rawCmd commands.Command, cmd commands.Command) bool {
+	c.log.Debugf("DEBUG: Handling response command: %T", rawCmd)
+	switch replycmd := rawCmd.(type) {
+	case *commands.NoOp:
+		c.log.Debugf("Received NoOp.")
+	case *commands.Disconnect:
+		c.log.Debugf("Received Disconnect from peer.")
+		return false
+	case *commands.ReplicaMessageReply:
+		c.log.Debugf("DEBUG: Received ReplicaMessageReply - IsRead: %v, ErrorCode: %d, EnvelopeReplyLen: %d",
+			replycmd.IsRead, replycmd.ErrorCode, len(replycmd.EnvelopeReply))
+		c.courier.CacheReply(replycmd)
+	default:
+		c.log.Errorf("BUG, Received unexpected command from replica peer: %s", cmd)
+		return false
+	}
+	return true
 }
 
 func newOutgoingConn(co GenericConnector, dst *cpki.ReplicaDescriptor, cfg *config.Config, courier *Courier) *outgoingConn {
