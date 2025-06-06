@@ -461,9 +461,29 @@ func (d *Daemon) handleChannelReply(appid *[AppIDLength]byte,
 
 	switch {
 	case innerMsg.ReplicaReadReply != nil:
-		return d.handleReadReply(appid, mesgID, channelID, channelDesc, innerMsg.ReplicaReadReply, envHash, isReader, conn)
+		params := &ReplyHandlerParams{
+			AppID:       appid,
+			MessageID:   mesgID,
+			ChannelID:   channelID,
+			ChannelDesc: channelDesc,
+			EnvHash:     envHash,
+			IsReader:    isReader,
+			IsWriter:    isWriter,
+			Conn:        conn,
+		}
+		return d.handleReadReply(params, innerMsg.ReplicaReadReply)
 	case innerMsg.ReplicaWriteReply != nil:
-		return d.handleWriteReply(appid, channelID, channelDesc, innerMsg.ReplicaWriteReply, envHash, isWriter, conn)
+		params := &ReplyHandlerParams{
+			AppID:       appid,
+			MessageID:   mesgID,
+			ChannelID:   channelID,
+			ChannelDesc: channelDesc,
+			EnvHash:     envHash,
+			IsReader:    isReader,
+			IsWriter:    isWriter,
+			Conn:        conn,
+		}
+		return d.handleWriteReply(params, innerMsg.ReplicaWriteReply)
 	}
 	d.log.Errorf("bug 6, invalid book keeping for channelID %x", channelID[:])
 	return fmt.Errorf("bug 6, invalid book keeping for channelID %x", channelID[:])
@@ -607,11 +627,23 @@ func (d *Daemon) decryptMKEMEnvelope(env *replicaCommon.CourierEnvelopeReply, en
 	return innerMsg, nil
 }
 
+// ReplyHandlerParams groups parameters for reply handler functions
+type ReplyHandlerParams struct {
+	AppID       *[AppIDLength]byte
+	MessageID   *[MessageIDLength]byte
+	ChannelID   [thin.ChannelIDLength]byte
+	ChannelDesc *ChannelDescriptor
+	EnvHash     *[hash.HashSize]byte
+	IsReader    bool
+	IsWriter    bool
+	Conn        *incomingConn
+}
+
 // handleReadReply processes a replica read reply
-func (d *Daemon) handleReadReply(appid *[AppIDLength]byte, mesgID *[MessageIDLength]byte, channelID [thin.ChannelIDLength]byte, channelDesc *ChannelDescriptor, readReply *replicaCommon.ReplicaReadReply, envHash *[hash.HashSize]byte, isReader bool, conn *incomingConn) error {
-	if !isReader {
-		d.log.Errorf("bug 4, invalid book keeping for channelID %x", channelID[:])
-		return fmt.Errorf("bug 4, invalid book keeping for channelID %x", channelID[:])
+func (d *Daemon) handleReadReply(params *ReplyHandlerParams, readReply *replicaCommon.ReplicaReadReply) error {
+	if !params.IsReader {
+		d.log.Errorf("bug 4, invalid book keeping for channelID %x", params.ChannelID[:])
+		return fmt.Errorf("bug 4, invalid book keeping for channelID %x", params.ChannelID[:])
 	}
 
 	if readReply.ErrorCode != 0 {
@@ -626,41 +658,41 @@ func (d *Daemon) handleReadReply(appid *[AppIDLength]byte, mesgID *[MessageIDLen
 	}
 
 	var boxid *[bacap.BoxIDSize]byte
-	if mesgID != nil {
-		channelDesc.StoredEnvelopesLock.RLock()
-		storedData, exists := channelDesc.StoredEnvelopes[*mesgID]
-		channelDesc.StoredEnvelopesLock.RUnlock()
+	if params.MessageID != nil {
+		params.ChannelDesc.StoredEnvelopesLock.RLock()
+		storedData, exists := params.ChannelDesc.StoredEnvelopes[*params.MessageID]
+		params.ChannelDesc.StoredEnvelopesLock.RUnlock()
 		if exists {
 			boxid = storedData.BoxID
-			d.log.Debugf("Using stored box ID %x for message ID %x", boxid[:], mesgID[:])
+			d.log.Debugf("Using stored box ID %x for message ID %x", boxid[:], params.MessageID[:])
 		}
 	}
 
 	if boxid == nil {
-		d.log.Errorf("No stored box ID found for message ID %x - cannot process reply", mesgID[:])
+		d.log.Errorf("No stored box ID found for message ID %x - cannot process reply", params.MessageID[:])
 		return fmt.Errorf("no stored box ID found for message ID - cannot process reply")
 	}
 
 	d.log.Debugf("BACAP DECRYPT: Starting decryption for BoxID %x with payload size %d bytes", boxid[:], len(readReply.Payload))
-	channelDesc.ReaderLock.Lock()
-	innerplaintext, err := channelDesc.StatefulReader.DecryptNext(
+	params.ChannelDesc.ReaderLock.Lock()
+	innerplaintext, err := params.ChannelDesc.StatefulReader.DecryptNext(
 		[]byte(constants.PIGEONHOLE_CTX),
 		*boxid,
 		readReply.Payload,
 		*readReply.Signature)
-	channelDesc.ReaderLock.Unlock()
+	params.ChannelDesc.ReaderLock.Unlock()
 	if err != nil {
 		d.log.Errorf("BACAP DECRYPT FAILED for BoxID %x: %s", boxid[:], err)
 		return fmt.Errorf("failed to decrypt next: %s", err)
 	}
 
 	d.log.Debugf("BACAP DECRYPT SUCCESS: Decrypted %d bytes for BoxID %x", len(innerplaintext), boxid[:])
-	d.log.Debugf("SENDING RESPONSE: MessageID %x, ChannelID %x, Payload size %d bytes", mesgID[:], channelID[:], len(innerplaintext))
-	err = conn.sendResponse(&Response{
-		AppID: appid,
+	d.log.Debugf("SENDING RESPONSE: MessageID %x, ChannelID %x, Payload size %d bytes", params.MessageID[:], params.ChannelID[:], len(innerplaintext))
+	err = params.Conn.sendResponse(&Response{
+		AppID: params.AppID,
 		ReadChannelReply: &thin.ReadChannelReply{
-			MessageID: mesgID,
-			ChannelID: channelID,
+			MessageID: params.MessageID,
+			ChannelID: params.ChannelID,
 			Payload:   innerplaintext,
 		},
 	})
@@ -670,35 +702,35 @@ func (d *Daemon) handleReadReply(appid *[AppIDLength]byte, mesgID *[MessageIDLen
 		return fmt.Errorf("failed to send response to client: %s", err)
 	}
 
-	channelDesc.EnvelopeLock.Lock()
-	delete(channelDesc.EnvelopeDescriptors, *envHash)
-	channelDesc.EnvelopeLock.Unlock()
+	params.ChannelDesc.EnvelopeLock.Lock()
+	delete(params.ChannelDesc.EnvelopeDescriptors, *params.EnvHash)
+	params.ChannelDesc.EnvelopeLock.Unlock()
 
 	// Also clean up stored envelope data if we have a message ID
-	if mesgID != nil {
-		channelDesc.StoredEnvelopesLock.Lock()
-		delete(channelDesc.StoredEnvelopes, *mesgID)
-		channelDesc.StoredEnvelopesLock.Unlock()
+	if params.MessageID != nil {
+		params.ChannelDesc.StoredEnvelopesLock.Lock()
+		delete(params.ChannelDesc.StoredEnvelopes, *params.MessageID)
+		params.ChannelDesc.StoredEnvelopesLock.Unlock()
 	}
 
 	return nil
 }
 
 // handleWriteReply processes a replica write reply
-func (d *Daemon) handleWriteReply(appid *[AppIDLength]byte, channelID [thin.ChannelIDLength]byte, channelDesc *ChannelDescriptor, writeReply *commands.ReplicaWriteReply, envHash *[hash.HashSize]byte, isWriter bool, conn *incomingConn) error {
-	if !isWriter {
-		d.log.Errorf("bug 5, invalid book keeping for channelID %x", channelID[:])
-		return fmt.Errorf("bug 5, invalid book keeping for channelID %x", channelID[:])
+func (d *Daemon) handleWriteReply(params *ReplyHandlerParams, writeReply *commands.ReplicaWriteReply) error {
+	if !params.IsWriter {
+		d.log.Errorf("bug 5, invalid book keeping for channelID %x", params.ChannelID[:])
+		return fmt.Errorf("bug 5, invalid book keeping for channelID %x", params.ChannelID[:])
 	}
 
 	if writeReply.ErrorCode != 0 {
 		d.log.Errorf("failed to write to channel, error code: %d", writeReply.ErrorCode)
 	}
 
-	err := conn.sendResponse(&Response{
-		AppID: appid,
+	err := params.Conn.sendResponse(&Response{
+		AppID: params.AppID,
 		WriteChannelReply: &thin.WriteChannelReply{
-			ChannelID: channelID,
+			ChannelID: params.ChannelID,
 		},
 	})
 	if err != nil {
@@ -707,9 +739,9 @@ func (d *Daemon) handleWriteReply(appid *[AppIDLength]byte, channelID [thin.Chan
 		return fmt.Errorf("failed to send write response to client: %s", err)
 	}
 
-	channelDesc.EnvelopeLock.Lock()
-	delete(channelDesc.EnvelopeDescriptors, *envHash)
-	channelDesc.EnvelopeLock.Unlock()
+	params.ChannelDesc.EnvelopeLock.Lock()
+	delete(params.ChannelDesc.EnvelopeDescriptors, *params.EnvHash)
+	params.ChannelDesc.EnvelopeLock.Unlock()
 
 	return nil
 }
