@@ -691,9 +691,6 @@ func (d *Daemon) handleWriteReply(appid *[AppIDLength]byte, channelID [thin.Chan
 		return fmt.Errorf("bug 5, invalid book keeping for channelID %x", channelID[:])
 	}
 
-	// XXX FIX ME TODO: handle write replies here, now:
-	// there might be more actions to take here for example
-	// if we had an ARQ we would then want to cancel our ARQ timer.
 	if writeReply.ErrorCode != 0 {
 		d.log.Errorf("failed to write to channel, error code: %d", writeReply.ErrorCode)
 	}
