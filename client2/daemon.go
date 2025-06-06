@@ -5,6 +5,7 @@ package client2
 
 import (
 	"crypto/hmac"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	mrand "math/rand"
@@ -16,7 +17,7 @@ import (
 
 	"github.com/katzenpost/hpqc/bacap"
 	"github.com/katzenpost/hpqc/hash"
-	"github.com/katzenpost/hpqc/rand"
+	hpqcRand "github.com/katzenpost/hpqc/rand"
 
 	"github.com/katzenpost/katzenpost/client2/common"
 	"github.com/katzenpost/katzenpost/client2/config"
@@ -83,6 +84,9 @@ type Daemon struct {
 	channelMap             map[[thin.ChannelIDLength]byte]*ChannelDescriptor
 	channelMapLock         *sync.RWMutex
 
+	// Cryptographically secure random number generator
+	secureRand *mrand.Rand
+
 	haltOnce sync.Once
 }
 
@@ -107,6 +111,8 @@ func NewDaemon(cfg *config.Config) (*Daemon, error) {
 		surbIDToChannelMapLock: new(sync.RWMutex),
 		channelMap:             make(map[[thin.ChannelIDLength]byte]*ChannelDescriptor),
 		channelMapLock:         new(sync.RWMutex),
+		// Initialize cryptographically secure random number generator
+		secureRand: hpqcRand.NewMath(),
 	}
 	err := d.initLogging()
 	if err != nil {
@@ -781,7 +787,7 @@ func (d *Daemon) sendLoopDecoy(request *Request) {
 	if len(echoServices) == 0 {
 		panic("wtf no echo services")
 	}
-	echoService := echoServices[mrand.Intn(len(echoServices))]
+	echoService := echoServices[d.secureRand.Intn(len(echoServices))]
 
 	serviceIdHash := hash.Sum256(echoService.MixDescriptor.IdentityKey)
 	payload := make([]byte, d.client.geo.UserForwardPayloadLength)
@@ -810,7 +816,7 @@ func (d *Daemon) sendDropDecoy() {
 	if len(echoServices) == 0 {
 		panic("wtf no echo services")
 	}
-	echoService := echoServices[mrand.Intn(len(echoServices))]
+	echoService := echoServices[d.secureRand.Intn(len(echoServices))]
 
 	serviceIdHash := hash.Sum256(echoService.MixDescriptor.IdentityKey)
 	payload := make([]byte, d.client.geo.UserForwardPayloadLength)

@@ -4,8 +4,8 @@
 package client2
 
 import (
+	"crypto/rand"
 	"fmt"
-	mrand "math/rand"
 	"os"
 	"sync"
 	"time"
@@ -14,7 +14,7 @@ import (
 	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/kem/mkem"
 	"github.com/katzenpost/hpqc/nike"
-	"github.com/katzenpost/hpqc/rand"
+	hpqcRand "github.com/katzenpost/hpqc/rand"
 
 	"github.com/katzenpost/katzenpost/client2/common"
 	"github.com/katzenpost/katzenpost/client2/constants"
@@ -23,6 +23,11 @@ import (
 	sphinxConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
+)
+
+var (
+	// Package-level cryptographically secure random number generator
+	secureRand = hpqcRand.NewMath()
 )
 
 // EnvelopeDescriptor supplies us with everthing we need to decrypt
@@ -69,17 +74,17 @@ func GetRandomCourier(doc *cpki.Document) (*[hash.HashSize]byte, []byte) {
 	if len(courierServices) == 0 {
 		panic("wtf no courier services")
 	}
-	courierService := courierServices[mrand.Intn(len(courierServices))]
+	courierService := courierServices[secureRand.Intn(len(courierServices))]
 	serviceIdHash := hash.Sum256(courierService.MixDescriptor.IdentityKey)
 	return &serviceIdHash, courierService.RecipientQueueID
 }
 
 func GetRandomIntermediateReplicas(doc *cpki.Document) ([2]uint8, []nike.PublicKey, error) {
 	maxReplica := uint8(len(doc.StorageReplicas) - 1)
-	replica1 := uint8(mrand.Intn(int(maxReplica)))
+	replica1 := uint8(secureRand.Intn(int(maxReplica)))
 	var replica2 uint8
 	for replica2 == replica1 {
-		replica2 = uint8(mrand.Intn(int(maxReplica)))
+		replica2 = uint8(secureRand.Intn(int(maxReplica)))
 	}
 
 	replicaPubKeys := make([]nike.PublicKey, 2)
