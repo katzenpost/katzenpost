@@ -38,16 +38,26 @@ import (
 )
 
 const (
-	basePort       = 30000
-	bindAddr       = "127.0.0.1"
-	nrLayers       = 3
-	nrNodes        = 6
-	nrGateways     = 1
-	nrServiceNodes = 1
-	nrStorageNodes = 3
-	nrAuthorities  = 3
-	serverLogFile  = "katzenpost.log"
-	tcpAddrFormat  = "tcp://127.0.0.1:%d"
+	basePort               = 30000
+	bindAddr               = "127.0.0.1"
+	nrLayers               = 3
+	nrNodes                = 6
+	nrGateways             = 1
+	nrServiceNodes         = 1
+	nrStorageNodes         = 3
+	nrAuthorities          = 3
+	serverLogFile          = "katzenpost.log"
+	tcpAddrFormat          = "tcp://127.0.0.1:%d"
+	identityPublicKeyFile  = "identity.public.pem"
+	identityPrivateKeyFile = "identity.private.pem"
+	linkPublicKeyFile      = "link.public.pem"
+	linkPrivateKeyFile     = "link.private.pem"
+	courierService         = "courier"
+	clientIdentifier       = "client"
+	client2Identifier      = "client2"
+	debugLogLevel          = "DEBUG"
+	authNodeFormat         = "auth%d"
+	writingLogFormat       = "writing %s"
 )
 
 type katzenpost struct {
@@ -145,7 +155,7 @@ func (s *katzenpost) genClient2Cfg(net, addr string) error {
 	cfg.ListenAddress = addr
 
 	// Logging section.
-	cfg.Logging = &cConfig2.Logging{File: "", Level: "DEBUG"}
+	cfg.Logging = &cConfig2.Logging{File: "", Level: debugLogLevel}
 
 	cfg.PKISignatureScheme = s.pkiSignatureScheme.Name()
 	cfg.WireKEMScheme = s.wireKEMScheme
@@ -258,7 +268,7 @@ func (s *katzenpost) genCourierConfig(datadir string) *courierConfig.Config {
 	logPath := filepath.Join(datadir, logFile)
 	return &courierConfig.Config{
 		PKI:              pki,
-		Logging:          &courierConfig.Logging{File: logPath, Level: "DEBUG"},
+		Logging:          &courierConfig.Logging{File: logPath, Level: debugLogLevel},
 		WireKEMScheme:    s.wireKEMScheme,
 		PKIScheme:        s.pkiSignatureScheme.Name(),
 		EnvelopeScheme:   s.replicaNIKEScheme.Name(),
@@ -304,7 +314,7 @@ func (s *katzenpost) genReplicaNodeConfig() error {
 	cfg.Logging = new(rConfig.Logging)
 	cfg.Logging.File = serverLogFile
 	//cfg.Logging.Level = s.logLevel
-	cfg.Logging.Level = "DEBUG"
+	cfg.Logging.Level = debugLogLevel
 
 	s.replicaNodeConfigs = append(s.replicaNodeConfigs, cfg)
 	_ = cfgIdKey(cfg, s.outDir)
@@ -389,10 +399,10 @@ func (s *katzenpost) genNodeConfig(isGateway, isServiceNode bool, isVoting bool)
 		cfg.ServiceNode = &sConfig.ServiceNode{}
 
 		serviceNodeDataDir := filepath.Join(s.outDir, cfg.Server.Identifier)
-		courierDataDir := filepath.Join(serviceNodeDataDir, "courier")
+		courierDataDir := filepath.Join(serviceNodeDataDir, courierService)
 		os.Mkdir(courierDataDir, 0700)
 
-		internalCourierDatadir := filepath.Join(s.baseDir, cfg.Server.Identifier, "courier")
+		internalCourierDatadir := filepath.Join(s.baseDir, cfg.Server.Identifier, courierService)
 		courierCfg := s.genCourierConfig(internalCourierDatadir)
 
 		linkPubKey := cfgLinkKey(courierCfg, courierDataDir, courierCfg.WireKEMScheme)
@@ -402,16 +412,16 @@ func (s *katzenpost) genNodeConfig(isGateway, isServiceNode bool, isVoting bool)
 		if err != nil {
 			return fmt.Errorf("failed to write courier config: %s", err)
 		}
-		advertizeableCourierCfgPath := s.baseDir + "/" + cfg.Server.Identifier + "/courier/courier.toml"
+		advertizeableCourierCfgPath := s.baseDir + "/" + cfg.Server.Identifier + "/" + courierService + "/courier.toml"
 		advert := make(map[string]map[string]interface{})
-		advert["courier"] = make(map[string]interface{})
-		advert["courier"]["linkPublicKey"] = linkBlob
+		advert[courierService] = make(map[string]interface{})
+		advert[courierService]["linkPublicKey"] = linkBlob
 
 		// "courier" service is described in our paper, it's used to communicate
 		// with the storage replicas to form the Pigeonhole storage system.
 		courierPluginCfg := &sConfig.CBORPluginKaetzchen{
-			Capability:        "courier",
-			Endpoint:          "courier",
+			Capability:        courierService,
+			Endpoint:          courierService,
 			Command:           s.baseDir + "/courier" + s.binSuffix,
 			MaxConcurrency:    1,
 			PKIAdvertizedData: advert,
@@ -441,7 +451,7 @@ func (s *katzenpost) genNodeConfig(isGateway, isServiceNode bool, isVoting bool)
 				// allow connections to localhost:4242
 				"host":      "localhost:4242",
 				"log_dir":   s.baseDir + "/" + cfg.Server.Identifier,
-				"log_level": "DEBUG",
+				"log_level": debugLogLevel,
 			},
 		}
 
@@ -483,9 +493,9 @@ func (s *katzenpost) genVotingAuthoritiesCfg(numAuthorities int, parameters *vCo
 		cfg.Server = &vConfig.Server{
 			WireKEMScheme:      s.wireKEMScheme,
 			PKISignatureScheme: s.pkiSignatureScheme.Name(),
-			Identifier:         fmt.Sprintf("auth%d", i),
+			Identifier:         fmt.Sprintf(authNodeFormat, i),
 			Addresses:          []string{fmt.Sprintf(tcpAddrFormat, s.lastPort)},
-			DataDir:            filepath.Join(s.baseDir, fmt.Sprintf("auth%d", i)),
+			DataDir:            filepath.Join(s.baseDir, fmt.Sprintf(authNodeFormat, i)),
 		}
 		os.Mkdir(filepath.Join(s.outDir, cfg.Server.Identifier), 0700)
 		s.lastPort += 1
@@ -504,7 +514,7 @@ func (s *katzenpost) genVotingAuthoritiesCfg(numAuthorities int, parameters *vCo
 		idKey := cfgIdKey(cfg, s.outDir)
 		linkKey := cfgLinkKey(cfg, s.outDir, wirekem)
 		authority := &vConfig.Authority{
-			Identifier:         fmt.Sprintf("auth%d", i),
+			Identifier:         fmt.Sprintf(authNodeFormat, i),
 			IdentityPublicKey:  idKey,
 			LinkPublicKey:      linkKey,
 			WireKEMScheme:      wirekem,
@@ -532,7 +542,7 @@ func (s *katzenpost) genAuthorizedNodes() ([]*vConfig.Node, []*vConfig.Node, []*
 	for _, replicaCfg := range s.replicaNodeConfigs {
 		node := &vConfig.Node{
 			Identifier:           replicaCfg.Identifier,
-			IdentityPublicKeyPem: filepath.Join("../", replicaCfg.Identifier, "identity.public.pem"),
+			IdentityPublicKeyPem: filepath.Join("../", replicaCfg.Identifier, identityPublicKeyFile),
 		}
 		replicas = append(replicas, node)
 	}
@@ -543,7 +553,7 @@ func (s *katzenpost) genAuthorizedNodes() ([]*vConfig.Node, []*vConfig.Node, []*
 	for _, nodeCfg := range s.nodeConfigs {
 		node := &vConfig.Node{
 			Identifier:           nodeCfg.Server.Identifier,
-			IdentityPublicKeyPem: filepath.Join("../", nodeCfg.Server.Identifier, "identity.public.pem"),
+			IdentityPublicKeyPem: filepath.Join("../", nodeCfg.Server.Identifier, identityPublicKeyFile),
 		}
 		if nodeCfg.Server.IsGatewayNode {
 			gateways = append(gateways, node)
@@ -579,7 +589,7 @@ func main() {
 	outDir := flag.String("o", "", "Path to write files to")
 	dockerImage := flag.String("d", "katzenpost-go_mod", "Docker image for compose-compose")
 	binSuffix := flag.String("S", "", "suffix for binaries in docker-compose.yml")
-	logLevel := flag.String("log_level", "DEBUG", "logging level could be set to: DEBUG, INFO, NOTICE, WARNING, ERROR, CRITICAL")
+	logLevel := flag.String("log_level", debugLogLevel, "logging level could be set to: DEBUG, INFO, NOTICE, WARNING, ERROR, CRITICAL")
 	omitTopology := flag.Bool("D", false, "Dynamic topology (omit fixed topology definition)")
 	wirekem := flag.String("wirekem", "", "Name of the KEM Scheme to be used with wire protocol")
 	kem := flag.String("kem", "", "Name of the KEM Scheme to be used with Sphinx")
@@ -809,11 +819,11 @@ func main() {
 func identifier(cfg interface{}) string {
 	switch cfg.(type) {
 	case *cConfig.Config:
-		return "client"
+		return clientIdentifier
 	case *cConfig2.Config:
-		return "client2"
+		return client2Identifier
 	case *thin.Config:
-		return "client2"
+		return client2Identifier
 	case *vConfig.Config:
 		return cfg.(*vConfig.Config).Server.Identifier
 	case *sConfig.Config:
@@ -821,7 +831,7 @@ func identifier(cfg interface{}) string {
 	case *rConfig.Config:
 		return cfg.(*rConfig.Config).Identifier
 	case *courierConfig.Config:
-		return "courier"
+		return courierService
 	default:
 		log.Fatalf("identifier() passed unexpected type %v", cfg)
 		return ""
@@ -831,9 +841,9 @@ func identifier(cfg interface{}) string {
 func toml_name(cfg interface{}) string {
 	switch cfg.(type) {
 	case *cConfig.Config:
-		return "client"
+		return clientIdentifier
 	case *cConfig2.Config:
-		return "client"
+		return clientIdentifier
 	case *thin.Config:
 		return "thinclient"
 	case *sConfig.Config:
@@ -841,7 +851,7 @@ func toml_name(cfg interface{}) string {
 	case *rConfig.Config:
 		return "replica"
 	case *courierConfig.Config:
-		return "courier"
+		return courierService
 	case *vConfig.Config:
 		return "authority"
 	default:
@@ -852,7 +862,7 @@ func toml_name(cfg interface{}) string {
 
 func saveCfg(cfg interface{}, outDir string) error {
 	fileName := filepath.Join(outDir, identifier(cfg), fmt.Sprintf("%s.toml", toml_name(cfg)))
-	log.Printf("writing %s", fileName)
+	log.Printf(writingLogFormat, fileName)
 	f, err := os.Create(fileName)
 	if err != nil {
 		return fmt.Errorf("os.Create(%s) failed: %s", fileName, err)
@@ -869,16 +879,16 @@ func cfgIdKey(cfg interface{}, outDir string) sign.PublicKey {
 	var pkiSignatureScheme string
 	switch cfg.(type) {
 	case *rConfig.Config:
-		priv = filepath.Join(outDir, cfg.(*rConfig.Config).Identifier, "identity.private.pem")
-		public = filepath.Join(outDir, cfg.(*rConfig.Config).Identifier, "identity.public.pem")
+		priv = filepath.Join(outDir, cfg.(*rConfig.Config).Identifier, identityPrivateKeyFile)
+		public = filepath.Join(outDir, cfg.(*rConfig.Config).Identifier, identityPublicKeyFile)
 		pkiSignatureScheme = cfg.(*rConfig.Config).PKISignatureScheme
 	case *sConfig.Config:
-		priv = filepath.Join(outDir, cfg.(*sConfig.Config).Server.Identifier, "identity.private.pem")
-		public = filepath.Join(outDir, cfg.(*sConfig.Config).Server.Identifier, "identity.public.pem")
+		priv = filepath.Join(outDir, cfg.(*sConfig.Config).Server.Identifier, identityPrivateKeyFile)
+		public = filepath.Join(outDir, cfg.(*sConfig.Config).Server.Identifier, identityPublicKeyFile)
 		pkiSignatureScheme = cfg.(*sConfig.Config).Server.PKISignatureScheme
 	case *vConfig.Config:
-		priv = filepath.Join(outDir, cfg.(*vConfig.Config).Server.Identifier, "identity.private.pem")
-		public = filepath.Join(outDir, cfg.(*vConfig.Config).Server.Identifier, "identity.public.pem")
+		priv = filepath.Join(outDir, cfg.(*vConfig.Config).Server.Identifier, identityPrivateKeyFile)
+		public = filepath.Join(outDir, cfg.(*vConfig.Config).Server.Identifier, identityPublicKeyFile)
 		pkiSignatureScheme = cfg.(*vConfig.Config).Server.PKISignatureScheme
 	default:
 		panic("wrong type")
@@ -894,9 +904,9 @@ func cfgIdKey(cfg interface{}, outDir string) sign.PublicKey {
 		return idPubKey
 	}
 	idPubKey, idKey, err := scheme.GenerateKey()
-	log.Printf("writing %s", priv)
+	log.Printf(writingLogFormat, priv)
 	signpem.PrivateKeyToFile(priv, idKey)
-	log.Printf("writing %s", public)
+	log.Printf(writingLogFormat, public)
 	signpem.PublicKeyToFile(public, idPubKey)
 	return idPubKey
 }
@@ -907,17 +917,17 @@ func cfgLinkKey(cfg interface{}, outDir string, kemScheme string) kem.PublicKey 
 
 	switch cfg.(type) {
 	case *rConfig.Config:
-		linkpriv = filepath.Join(outDir, cfg.(*rConfig.Config).Identifier, "link.private.pem")
-		linkpublic = filepath.Join(outDir, cfg.(*rConfig.Config).Identifier, "link.public.pem")
+		linkpriv = filepath.Join(outDir, cfg.(*rConfig.Config).Identifier, linkPrivateKeyFile)
+		linkpublic = filepath.Join(outDir, cfg.(*rConfig.Config).Identifier, linkPublicKeyFile)
 	case *sConfig.Config:
-		linkpriv = filepath.Join(outDir, cfg.(*sConfig.Config).Server.Identifier, "link.private.pem")
-		linkpublic = filepath.Join(outDir, cfg.(*sConfig.Config).Server.Identifier, "link.public.pem")
+		linkpriv = filepath.Join(outDir, cfg.(*sConfig.Config).Server.Identifier, linkPrivateKeyFile)
+		linkpublic = filepath.Join(outDir, cfg.(*sConfig.Config).Server.Identifier, linkPublicKeyFile)
 	case *vConfig.Config:
-		linkpriv = filepath.Join(outDir, cfg.(*vConfig.Config).Server.Identifier, "link.private.pem")
-		linkpublic = filepath.Join(outDir, cfg.(*vConfig.Config).Server.Identifier, "link.public.pem")
+		linkpriv = filepath.Join(outDir, cfg.(*vConfig.Config).Server.Identifier, linkPrivateKeyFile)
+		linkpublic = filepath.Join(outDir, cfg.(*vConfig.Config).Server.Identifier, linkPublicKeyFile)
 	case *courierConfig.Config:
-		linkpriv = filepath.Join(outDir, "link.private.pem")
-		linkpublic = filepath.Join(outDir, "link.public.pem")
+		linkpriv = filepath.Join(outDir, linkPrivateKeyFile)
+		linkpublic = filepath.Join(outDir, linkPublicKeyFile)
 	default:
 		panic("wrong type")
 	}
@@ -927,12 +937,12 @@ func cfgLinkKey(cfg interface{}, outDir string, kemScheme string) kem.PublicKey 
 		panic(err)
 	}
 
-	log.Printf("writing %s", linkpriv)
+	log.Printf(writingLogFormat, linkpriv)
 	err = kempem.PrivateKeyToFile(linkpriv, linkPrivKey)
 	if err != nil {
 		panic(err)
 	}
-	log.Printf("writing %s", linkpublic)
+	log.Printf(writingLogFormat, linkpublic)
 	err = kempem.PublicKeyToFile(linkpublic, linkPubKey)
 	if err != nil {
 		panic(err)
@@ -942,7 +952,7 @@ func cfgLinkKey(cfg interface{}, outDir string, kemScheme string) kem.PublicKey 
 
 func (s *katzenpost) genPrometheus() error {
 	dest := filepath.Join(s.outDir, "prometheus.yml")
-	log.Printf("writing %s", dest)
+	log.Printf(writingLogFormat, dest)
 
 	f, err := os.Create(dest)
 
@@ -969,7 +979,7 @@ scrape_configs:
 
 func (s *katzenpost) genDockerCompose(dockerImage string) error {
 	dest := filepath.Join(s.outDir, "docker-compose.yml")
-	log.Printf("writing %s", dest)
+	log.Printf(writingLogFormat, dest)
 	f, err := os.Create(dest)
 
 	if err != nil {
