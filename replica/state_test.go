@@ -72,15 +72,25 @@ func (m *mockConnector) CloseAllCh() chan interface{} {
 	return nil
 }
 
-func (m *mockConnector) OnClosedConn(conn *outgoingConn) {}
+func (m *mockConnector) OnClosedConn(conn *outgoingConn) {
+	// Mock implementation: no-op for testing purposes
+}
 
-func (m *mockConnector) Halt() {}
+func (m *mockConnector) Halt() {
+	// Mock implementation: no-op for testing purposes
+}
 
-func (m *mockConnector) ForceUpdate() {}
+func (m *mockConnector) ForceUpdate() {
+	// Mock implementation: no-op for testing purposes
+}
 
-func (m *mockConnector) DispatchReplication(cmd *commands.ReplicaWrite) {}
+func (m *mockConnector) DispatchReplication(cmd *commands.ReplicaWrite) {
+	// Mock implementation: no-op for testing purposes
+}
 
-func (m *mockConnector) DispatchCommand(cmd commands.Command, idHash *[32]byte) {}
+func (m *mockConnector) DispatchCommand(cmd commands.Command, idHash *[32]byte) {
+	// Mock implementation: no-op for testing purposes
+}
 
 func TestState(t *testing.T) {
 	dname, err := os.MkdirTemp("", "replca.testState")
