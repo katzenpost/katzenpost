@@ -32,7 +32,12 @@ import (
 	"github.com/katzenpost/katzenpost/core/worker"
 )
 
-const MessageIDLength = 16
+const (
+	MessageIDLength = 16
+
+	// Error message for nil context
+	errContextCannotBeNil = "context cannot be nil"
+)
 
 // ThinResponse is used to encapsulate a message response
 // that are passed to the client application.
@@ -579,7 +584,7 @@ func (t *ThinClient) SendMessage(surbID *[sConstants.SURBIDLength]byte, payload 
 // BlockingSendMessage blocks until a reply is received and returns it or an error.
 func (t *ThinClient) BlockingSendMessage(ctx context.Context, payload []byte, destNode *[32]byte, destQueue []byte) ([]byte, error) {
 	if ctx == nil {
-		return nil, errors.New("context cannot be nil")
+		return nil, errors.New(errContextCannotBeNil)
 	}
 	surbID := t.NewSURBID()
 	eventSink := t.EventSink()
@@ -641,7 +646,7 @@ func (t *ThinClient) SendReliableMessage(messageID *[MessageIDLength]byte, paylo
 // BlockingSendReliableMessage blocks until the message is reliably sent and the ARQ reply is received.
 func (t *ThinClient) BlockingSendReliableMessage(ctx context.Context, messageID *[MessageIDLength]byte, payload []byte, destNode *[32]byte, destQueue []byte) (reply []byte, err error) {
 	if ctx == nil {
-		return nil, errors.New("context cannot be nil")
+		return nil, errors.New(errContextCannotBeNil)
 	}
 
 	if messageID == nil {
@@ -703,7 +708,7 @@ func (t *ThinClient) BlockingSendReliableMessage(ctx context.Context, messageID 
 // CreateChannel creates a new pigeonhole channel and returns the channel ID and read capability.
 func (t *ThinClient) CreateChannel(ctx context.Context) (*[ChannelIDLength]byte, *bacap.UniversalReadCap, error) {
 	if ctx == nil {
-		return nil, nil, errors.New("context cannot be nil")
+		return nil, nil, errors.New(errContextCannotBeNil)
 	}
 
 	req := &Request{
@@ -747,7 +752,7 @@ func (t *ThinClient) CreateChannel(ctx context.Context) (*[ChannelIDLength]byte,
 // CreateReadChannel creates a read channel from a read capability.
 func (t *ThinClient) CreateReadChannel(ctx context.Context, readCap *bacap.UniversalReadCap) (*[ChannelIDLength]byte, error) {
 	if ctx == nil {
-		return nil, errors.New("context cannot be nil")
+		return nil, errors.New(errContextCannotBeNil)
 	}
 	if readCap == nil {
 		return nil, errors.New("readCap cannot be nil")
@@ -801,7 +806,7 @@ func (t *ThinClient) CreateReadChannel(ctx context.Context, readCap *bacap.Unive
 // in the thin clients!!!
 func (t *ThinClient) WriteChannel(ctx context.Context, channelID *[ChannelIDLength]byte, payload []byte) error {
 	if ctx == nil {
-		return errors.New("context cannot be nil")
+		return errors.New(errContextCannotBeNil)
 	}
 	if channelID == nil {
 		return errors.New("channelID cannot be nil")
@@ -853,7 +858,7 @@ func (t *ThinClient) WriteChannel(ctx context.Context, channelID *[ChannelIDLeng
 // ReadChannel reads data from a pigeonhole channel.
 func (t *ThinClient) ReadChannel(ctx context.Context, channelID *[ChannelIDLength]byte, messageID *[MessageIDLength]byte) ([]byte, error) {
 	if ctx == nil {
-		return nil, errors.New("context cannot be nil")
+		return nil, errors.New(errContextCannotBeNil)
 	}
 	if channelID == nil {
 		return nil, errors.New("channelID cannot be nil")
