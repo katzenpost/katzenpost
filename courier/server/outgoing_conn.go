@@ -481,7 +481,6 @@ func (c *outgoingConn) handleCommand(rawCmd commands.Command, cmd commands.Comma
 }
 
 func newOutgoingConn(co GenericConnector, dst *cpki.ReplicaDescriptor, cfg *config.Config, courier *Courier) *outgoingConn {
-	const maxQueueSize = 64 // TODO/perf: Tune this.
 
 	linkScheme := kemSchemes.ByName(cfg.WireKEMScheme)
 	idScheme := signSchemes.ByName(cfg.PKIScheme)
@@ -493,7 +492,7 @@ func newOutgoingConn(co GenericConnector, dst *cpki.ReplicaDescriptor, cfg *conf
 		courier:    courier,
 		co:         co,
 		dst:        dst,
-		ch:         make(chan *commands.ReplicaMessage, maxQueueSize),
+		ch:         make(chan *commands.ReplicaMessage, cfg.MaxQueueSize),
 		id:         atomic.AddUint64(&outgoingConnID, 1), // Diagnostic only, wrapping is fine.
 	}
 	c.log = co.Server().LogBackend().GetLogger(fmt.Sprintf("courier outgoing:%d", c.id))

@@ -21,6 +21,7 @@ const (
 	DefaultConnectTimeout   = 60 * 1000  // 60 sec.
 	DefaultHandshakeTimeout = 30 * 1000  // 30 sec.
 	DefaultReauthInterval   = 300 * 1000 // 300 sec.
+	DefaultMaxQueueSize     = 64         // Default outgoing connection queue size.
 )
 
 var defaultLogging = Logging{
@@ -118,6 +119,10 @@ type Config struct {
 	// ReauthInterval specifies the interval at which a connection will be
 	// reauthenticated in milliseconds.
 	ReauthInterval int
+
+	// MaxQueueSize specifies the maximum number of messages that can be queued
+	// for an outgoing connection before blocking.
+	MaxQueueSize int
 }
 
 func (c *Config) FixupAndValidate() error {
@@ -147,6 +152,9 @@ func (c *Config) FixupAndValidate() error {
 	}
 	if c.ConnectTimeout <= 0 {
 		c.ConnectTimeout = DefaultConnectTimeout
+	}
+	if c.MaxQueueSize <= 0 {
+		c.MaxQueueSize = DefaultMaxQueueSize
 	}
 	return nil
 }
