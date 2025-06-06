@@ -803,9 +803,6 @@ func (t *ThinClient) CreateReadChannel(ctx context.Context, readCap *bacap.Unive
 }
 
 // WriteChannel writes data to a pigeonhole channel.
-// XXX TODO FIXME(David): MUST implement pigeonhole geometry object
-// to calculate the maximum BACAP Box payload size and enforce it
-// in the thin clients!!!
 func (t *ThinClient) WriteChannel(ctx context.Context, channelID *[ChannelIDLength]byte, payload []byte) error {
 	if ctx == nil {
 		return errors.New(errContextCannotBeNil)
