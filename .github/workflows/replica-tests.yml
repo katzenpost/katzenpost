@@ -21,7 +21,7 @@ jobs:
       - name: Install RocksDB dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake build-essential
+          sudo apt-get install -y cmake build-essential libsnappy-dev libzstd-dev liblz4-dev libz-dev
 
       - name: Install gflags
         run: |
