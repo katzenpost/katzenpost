@@ -147,39 +147,15 @@ func (c *Client) makePath(recipient []byte, destination *[32]byte, surbID *[sCon
 		panic("destination is nil")
 	}
 
-	srcNode, dstNode := gateway, destination
-	if !isForward {
-		srcNode, dstNode = dstNode, srcNode
-	}
-
 	// Get the current PKI document.
 	_, doc := c.CurrentDocument()
 	if doc == nil {
 		return nil, time.Time{}, newPKIError("client2: no PKI document for current epoch")
 	}
 
-	var src *cpki.MixDescriptor
-	var dst *cpki.MixDescriptor
-	var err error
-
-	if isForward {
-		src, err = doc.GetGatewayByKeyHash(srcNode)
-		if err != nil {
-			return nil, time.Time{}, newPKIError("client2: failed to find source Gateway: %v", err)
-		}
-		dst, err = doc.GetServiceNodeByKeyHash(dstNode)
-		if err != nil {
-			return nil, time.Time{}, newPKIError("client2: failed to find destination service node: %v", err)
-		}
-	} else {
-		src, err = doc.GetServiceNodeByKeyHash(srcNode)
-		if err != nil {
-			return nil, time.Time{}, newPKIError("client2: failed to find source service node: %v", err)
-		}
-		dst, err = doc.GetGatewayByKeyHash(dstNode)
-		if err != nil {
-			return nil, time.Time{}, newPKIError("client2: failed to find destination gateway node: %v", err)
-		}
+	src, dst, err := c.getSourceAndDestinationNodes(doc, gateway, destination, isForward)
+	if err != nil {
+		return nil, time.Time{}, err
 	}
 
 	rng := rand.NewMath()
@@ -194,6 +170,39 @@ func (c *Client) makePath(recipient []byte, destination *[32]byte, surbID *[sCon
 	}
 
 	return p, t, err
+}
+
+// getSourceAndDestinationNodes retrieves the source and destination mix descriptors based on direction
+func (c *Client) getSourceAndDestinationNodes(doc *cpki.Document, gateway, destination *[32]byte, isForward bool) (*cpki.MixDescriptor, *cpki.MixDescriptor, error) {
+	srcNode, dstNode := gateway, destination
+	if !isForward {
+		srcNode, dstNode = dstNode, srcNode
+	}
+
+	var src, dst *cpki.MixDescriptor
+	var err error
+
+	if isForward {
+		src, err = doc.GetGatewayByKeyHash(srcNode)
+		if err != nil {
+			return nil, nil, newPKIError("client2: failed to find source Gateway: %v", err)
+		}
+		dst, err = doc.GetServiceNodeByKeyHash(dstNode)
+		if err != nil {
+			return nil, nil, newPKIError("client2: failed to find destination service node: %v", err)
+		}
+	} else {
+		src, err = doc.GetServiceNodeByKeyHash(srcNode)
+		if err != nil {
+			return nil, nil, newPKIError("client2: failed to find source service node: %v", err)
+		}
+		dst, err = doc.GetGatewayByKeyHash(dstNode)
+		if err != nil {
+			return nil, nil, newPKIError("client2: failed to find destination gateway node: %v", err)
+		}
+	}
+
+	return src, dst, nil
 }
 
 func (c *Client) logPath(doc *cpki.Document, p []*sphinx.PathHop) error {
