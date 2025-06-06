@@ -18,6 +18,39 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ matrix.go-version }}-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-${{ matrix.go-version }}-
+            ${{ runner.os }}-go-
+
+      - name: Cache RocksDB build
+        uses: actions/cache@v4
+        with:
+          path: |
+            /usr/local/rocksdb
+            /tmp/rocksdb-build-cache
+          key: ${{ runner.os }}-rocksdb-v10.2.1-${{ hashFiles('.github/workflows/replica-tests.yml') }}
+          restore-keys: |
+            ${{ runner.os }}-rocksdb-v10.2.1-
+            ${{ runner.os }}-rocksdb-
+
+      - name: Cache gflags build
+        uses: actions/cache@v4
+        with:
+          path: |
+            /usr/local/include/gflags
+            /usr/local/lib/libgflags*
+            /tmp/gflags-build-cache
+          key: ${{ runner.os }}-gflags-${{ hashFiles('.github/workflows/replica-tests.yml') }}
+          restore-keys: |
+            ${{ runner.os }}-gflags-
+
       - name: Install RocksDB dependencies
         run: |
           sudo apt-get update
@@ -25,32 +58,45 @@ jobs:
 
       - name: Install gflags
         run: |
-          cd /tmp
-          git clone https://github.com/gflags/gflags.git
-          cd gflags
-          mkdir build
-          cd build
-          cmake -DBUILD_SHARED_LIBS=1 -DGFLAGS_INSTALL_SHARED_LIBS=1 ..
-          make -j$(nproc)
-          sudo make install
-          cd /tmp
-          rm -rf /tmp/gflags/
+          if [ ! -f /usr/local/lib/libgflags.so ]; then
+            echo "Building gflags from source..."
+            cd /tmp
+            git clone https://github.com/gflags/gflags.git
+            cd gflags
+            mkdir build
+            cd build
+            cmake -DBUILD_SHARED_LIBS=1 -DGFLAGS_INSTALL_SHARED_LIBS=1 ..
+            make -j$(nproc)
+            sudo make install
+            cd /tmp
+            rm -rf /tmp/gflags/
+          else
+            echo "Using cached gflags installation"
+          fi
 
       - name: Install RocksDB
         run: |
-          cd /tmp
-          git clone https://github.com/facebook/rocksdb.git
-          cd rocksdb
-          git checkout v10.2.1
-          make shared_lib -j$(nproc)
-          sudo mkdir -p /usr/local/rocksdb/lib
-          sudo mkdir -p /usr/local/rocksdb/include
-          sudo cp librocksdb.so* /usr/local/rocksdb/lib
-          sudo cp /usr/local/rocksdb/lib/librocksdb.so* /usr/lib/
-          sudo cp -r include /usr/local/rocksdb/
-          sudo cp -r include/* /usr/include/
-          cd /tmp
-          rm -rf /tmp/rocksdb/
+          if [ ! -f /usr/local/rocksdb/lib/librocksdb.so ]; then
+            echo "Building RocksDB from source..."
+            cd /tmp
+            git clone https://github.com/facebook/rocksdb.git
+            cd rocksdb
+            git checkout v10.2.1
+            make shared_lib -j$(nproc)
+            sudo mkdir -p /usr/local/rocksdb/lib
+            sudo mkdir -p /usr/local/rocksdb/include
+            sudo cp librocksdb.so* /usr/local/rocksdb/lib
+            sudo cp /usr/local/rocksdb/lib/librocksdb.so* /usr/lib/
+            sudo cp -r include /usr/local/rocksdb/
+            sudo cp -r include/* /usr/include/
+            cd /tmp
+            rm -rf /tmp/rocksdb/
+          else
+            echo "Using cached RocksDB installation"
+            # Ensure symlinks are in place
+            sudo cp /usr/local/rocksdb/lib/librocksdb.so* /usr/lib/ 2>/dev/null || true
+            sudo cp -r /usr/local/rocksdb/include/* /usr/include/ 2>/dev/null || true
+          fi
 
       - name: Update library cache
         run: sudo ldconfig

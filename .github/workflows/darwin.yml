@@ -18,6 +18,17 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/Library/Caches/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-${{ matrix.arch }}-go-${{ matrix.go-version }}-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.arch }}-go-${{ matrix.go-version }}-
+            ${{ runner.os }}-${{ matrix.arch }}-go-
+
       - name: Generate mixnet configuration
         run: cd genconfig && go build && ./genconfig -wirekem xwing -v -b /conf -o ../docker/voting_mixnet/
 
