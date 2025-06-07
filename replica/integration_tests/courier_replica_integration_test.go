@@ -119,6 +119,17 @@ func setupTestEnvironment(t *testing.T) *testEnvironment {
 	}
 
 	courier := createCourierServer(t, courierCfg, createMockPKIClient(t, sphinxGeo, serviceDesc, replicaDescriptors))
+
+	// Force all replicas to fetch PKI documents first
+	for i, replica := range replicas {
+		t.Logf("Forcing PKI fetch for replica %d during setup", i)
+		err = replica.PKIWorker.ForceFetchPKI()
+		require.NoError(t, err)
+	}
+
+	// Force courier to fetch PKI documents, then update connector
+	err = courier.PKI.ForceFetchPKI()
+	require.NoError(t, err)
 	courier.ForceConnectorUpdate()
 
 	cleanup := func() {
@@ -533,9 +544,8 @@ func waitForReplicasPKI(t *testing.T, env *testEnvironment) {
 }
 
 func testBoxRoundTrip(t *testing.T, env *testEnvironment) {
-	forceCourierPKIFetch(t, env)
+	// PKI documents are already fetched during setup, just verify they're ready
 	waitForCourierPKI(t, env)
-	forceReplicasPKIFetch(t, env)
 	waitForReplicasPKI(t, env)
 
 	aliceStatefulWriter, bobStatefulReader := aliceAndBobKeyExchangeKeys(t, env)
