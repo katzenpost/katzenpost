@@ -6,6 +6,7 @@ package config
 import (
 	"testing"
 
+	"github.com/katzenpost/katzenpost/common/config"
 	"github.com/stretchr/testify/require"
 )
 
@@ -33,7 +34,7 @@ func TestConfigDefaults(t *testing.T) {
 	require.Equal(t, defaultReplicationQueueLength, c.ReplicationQueueLength)
 	require.Equal(t, defaultOutgoingQueueSize, c.OutgoingQueueSize)
 	require.Equal(t, defaultKeepAliveInterval, c.KeepAliveInterval)
-	require.Equal(t, defaultConnectTimeout, c.ConnectTimeout)
-	require.Equal(t, defaultHandshakeTimeout, c.HandshakeTimeout)
-	require.Equal(t, defaultReauthInterval, c.ReauthInterval)
+	require.Equal(t, config.DefaultConnectTimeout, c.ConnectTimeout)
+	require.Equal(t, config.DefaultHandshakeTimeout, c.HandshakeTimeout)
+	require.Equal(t, config.DefaultReauthInterval, c.ReauthInterval)
 }
