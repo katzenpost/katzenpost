@@ -110,80 +110,98 @@ func (c *outgoingConn) worker() {
 			return
 		}
 
-		// Flatten the lists of addresses to Dial to.
-		var dstAddrs []string
-		for _, t := range cpki.ClientTransports {
-			if v, ok := c.dst.Addresses[t]; ok {
-				dstAddrs = append(dstAddrs, v...)
-			}
-		}
+		dstAddrs := c.getDestinationAddresses()
 		if len(dstAddrs) == 0 {
-			// Should *NEVER* happen because descriptors currently MUST have
-			// at least once `tcp4` address to be considered valid.
 			c.log.Warningf("Bailing out of Dial loop, no suitable addresses found.")
 			return
 		}
 
-		for _, addr := range dstAddrs {
-			select {
-			case <-time.After(c.retryDelay):
-				// Back off incrementally on reconnects.
-				//
-				// This maybe should be tracked per address, but whatever.  I
-				// remember when IPng was supposed to take over the world in
-				// the 90s, and it still hasn't happened yet.
-				c.retryDelay += retryIncrement
-				if c.retryDelay > maxRetryDelay {
-					c.retryDelay = maxRetryDelay
-				}
-			case <-dialCtx.Done():
-				// Canceled mid-retry delay.
-				c.log.Debugf("(Re)connection attempts canceled.")
-				return
-			}
-
-			// Dial.
-			u, err := url.Parse(addr)
-			if err != nil {
-				c.log.Warningf("Failed to parse addr: %v", err)
-				continue
-			}
-			c.log.Debugf("Dialing: %v", u.Host)
-
-			conn, err := common.DialURL(u, dialCtx, dialer.DialContext)
-			select {
-			case <-dialCtx.Done():
-				// Canceled.
-				if conn != nil {
-					conn.Close()
-				}
-				return
-			default:
-				if err != nil {
-					c.log.Warningf("Failed to connect to '%v': %v", u.Host, err)
-					continue
-				}
-			}
-			c.log.Debugf("%v connection established.", u.Scheme)
-			start := time.Now()
-
-			// Handle the new connection.
-			if c.onConnEstablished(conn, dialCtx.Done()) {
-				// Canceled with a connection established.
-				c.log.Debugf("Existing connection canceled.")
-				return
-			}
-
-			// That's odd, the connection died, reconnect.
-			c.log.Debugf("Connection terminated, will reconnect.")
-			if time.Since(start) < retryIncrement {
-				// If the connection was not alive for a sensible amount of
-				// time, re-impose a reconnect delay.
-				c.retryDelay = retryIncrement
-			}
-			break
+		if c.attemptConnectionToAddresses(dstAddrs, dialCtx, dialer, retryIncrement, maxRetryDelay) {
+			return // Connection was canceled or we should exit
 		}
 	}
+}
+
+// getDestinationAddresses flattens the lists of addresses to dial to
+func (c *outgoingConn) getDestinationAddresses() []string {
+	var dstAddrs []string
+	for _, t := range cpki.ClientTransports {
+		if v, ok := c.dst.Addresses[t]; ok {
+			dstAddrs = append(dstAddrs, v...)
+		}
+	}
+	return dstAddrs
+}
+
+// attemptConnectionToAddresses tries to connect to each address with retry logic
+func (c *outgoingConn) attemptConnectionToAddresses(dstAddrs []string, dialCtx context.Context, dialer net.Dialer, retryIncrement, maxRetryDelay time.Duration) bool {
+	for _, addr := range dstAddrs {
+		select {
+		case <-time.After(c.retryDelay):
+			// Back off incrementally on reconnects.
+			//
+			// This maybe should be tracked per address, but whatever.  I
+			// remember when IPng was supposed to take over the world in
+			// the 90s, and it still hasn't happened yet.
+			c.retryDelay += retryIncrement
+			if c.retryDelay > maxRetryDelay {
+				c.retryDelay = maxRetryDelay
+			}
+		case <-dialCtx.Done():
+			// Canceled mid-retry delay.
+			c.log.Debugf("(Re)connection attempts canceled.")
+			return true
+		}
+
+		if c.dialAndHandleConnection(addr, dialCtx, dialer, retryIncrement) {
+			return true // Connection was canceled or we should exit
+		}
+	}
+	return false
+}
+
+// dialAndHandleConnection handles dialing to a single address and managing the connection
+func (c *outgoingConn) dialAndHandleConnection(addr string, dialCtx context.Context, dialer net.Dialer, retryIncrement time.Duration) bool {
+	// Dial.
+	u, err := url.Parse(addr)
+	if err != nil {
+		c.log.Warningf("Failed to parse addr: %v", err)
+		return false
+	}
+	c.log.Debugf("Dialing: %v", u.Host)
+
+	conn, err := common.DialURL(u, dialCtx, dialer.DialContext)
+	select {
+	case <-dialCtx.Done():
+		// Canceled.
+		if conn != nil {
+			conn.Close()
+		}
+		return true
+	default:
+		if err != nil {
+			c.log.Warningf("Failed to connect to '%v': %v", u.Host, err)
+			return false
+		}
+	}
+	c.log.Debugf("%v connection established.", u.Scheme)
+	start := time.Now()
+
+	// Handle the new connection.
+	if c.onConnEstablished(conn, dialCtx.Done()) {
+		// Canceled with a connection established.
+		c.log.Debugf("Existing connection canceled.")
+		return true
+	}
+
+	// That's odd, the connection died, reconnect.
+	c.log.Debugf("Connection terminated, will reconnect.")
+	if time.Since(start) < retryIncrement {
+		// If the connection was not alive for a sensible amount of
+		// time, re-impose a reconnect delay.
+		c.retryDelay = retryIncrement
+	}
+	return false // Continue to next address
 }
 
 // initializeConnection sets up the dial context, dialer, and credentials
