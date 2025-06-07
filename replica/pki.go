@@ -142,6 +142,45 @@ func (p *PKIWorker) worker() {
 		p.log.Warningf("No PKI client is configured, disabling PKI interface.")
 		return
 	}
+
+	pkiCtx, cancelFn, isCanceled := p.setupWorkerContext()
+	defer cancelFn()
+
+	var lastUpdateEpoch uint64
+
+	for {
+		if p.shouldTerminate(timer, pkiCtx) {
+			return
+		}
+
+		// Check to see if we need to publish the descriptor
+		err := p.publishDescriptorIfNeeded(pkiCtx)
+		if isCanceled() {
+			p.log.Debug("Canceled mid-post")
+			return
+		}
+		if err != nil {
+			p.log.Warningf("Failed to post to PKI: %v", err)
+		}
+
+		// Fetch and process PKI documents
+		didUpdate := p.fetchAndProcessDocuments(pkiCtx, isCanceled)
+		if isCanceled() {
+			return
+		}
+
+		// Handle document updates and cleanup
+		p.handleDocumentUpdates(didUpdate)
+
+		// Update epoch tracking
+		lastUpdateEpoch = p.updateEpochTracking(lastUpdateEpoch)
+
+		p.updateTimer(timer)
+	}
+}
+
+// setupWorkerContext sets up the context and cancellation logic for the worker
+func (p *PKIWorker) setupWorkerContext() (context.Context, context.CancelFunc, func() bool) {
 	pkiCtx, cancelFn := context.WithCancel(context.Background())
 	go func() {
 		select {
@@ -159,106 +198,101 @@ func (p *PKIWorker) worker() {
 			return false
 		}
 	}
+	return pkiCtx, cancelFn, isCanceled
+}
 
-	// Note: The worker's start is delayed till after the Server's connector
-	// is initialized, so that force updating the outgoing connection table
-	// is guaranteed to work.
-
-	var lastUpdateEpoch uint64
-
-	for {
-		var timerFired bool
+// shouldTerminate handles timer events and termination conditions
+func (p *PKIWorker) shouldTerminate(timer *time.Timer, pkiCtx context.Context) bool {
+	var timerFired bool
+	select {
+	case <-p.HaltCh():
+		p.log.Debug("Terminating gracefully.")
+		return true
+	case <-pkiCtx.Done():
+		p.log.Debug("pkiCtx.Done")
+		return true
+	case <-timer.C:
+		timerFired = true
+	}
+	if !timerFired && !timer.Stop() {
 		select {
 		case <-p.HaltCh():
 			p.log.Debug("Terminating gracefully.")
-			return
-		case <-pkiCtx.Done():
-			p.log.Debug("pkiCtx.Done")
-			return
+			return true
 		case <-timer.C:
-			timerFired = true
 		}
-		if !timerFired && !timer.Stop() {
-			select {
-			case <-p.HaltCh():
-				p.log.Debug("Terminating gracefully.")
-				return
-			case <-timer.C:
-			}
+	}
+	return false
+}
+
+// fetchAndProcessDocuments fetches PKI documents and processes them
+func (p *PKIWorker) fetchAndProcessDocuments(pkiCtx context.Context, isCanceled func() bool) bool {
+	var didUpdate bool
+	for _, epoch := range p.documentsToFetch() {
+		// Certain errors in fetching documents are treated as hard
+		// failures that suppress further attempts to fetch the document
+		// for the epoch.
+		if ok, err := p.getFailedFetch(epoch); ok {
+			p.log.Debugf("Skipping fetch for epoch %v: %v", epoch, err)
+			continue
 		}
 
-		// Check to see if we need to publish the descriptor, and do so, along
-		// with all the key rotation bits.
-		err := p.publishDescriptorIfNeeded(pkiCtx)
+		// Fetch PKI document using the client
+		d, rawDoc, err := p.impl.Get(pkiCtx, epoch)
+
 		if isCanceled() {
-			// Canceled mid-post
-			p.log.Debug("Canceled mid-post")
-			return
+			// Canceled mid-fetch.
+			p.log.Debug("Canceled mid-fetch")
+			return didUpdate
 		}
 		if err != nil {
-			p.log.Warningf("Failed to post to PKI: %v", err)
-		}
-		// Fetch the PKI documents as required.
-		var didUpdate bool
-		for _, epoch := range p.documentsToFetch() {
-			// Certain errors in fetching documents are treated as hard
-			// failures that suppress further attempts to fetch the document
-			// for the epoch.
-			if ok, err := p.getFailedFetch(epoch); ok {
-				p.log.Debugf("Skipping fetch for epoch %v: %v", epoch, err)
-				continue
+			p.log.Warningf("Failed to fetch PKI for epoch %v: %v", epoch, err)
+			if err == cpki.ErrDocumentGone {
+				p.setFailedFetch(epoch, err)
 			}
-
-			// Fetch PKI document using the client
-			d, rawDoc, err := p.impl.Get(pkiCtx, epoch)
-
-			if isCanceled() {
-				// Canceled mid-fetch.
-				p.log.Debug("Canceled mid-fetch")
-				return
-			}
-			if err != nil {
-				p.log.Warningf("Failed to fetch PKI for epoch %v: %v", epoch, err)
-				if err == cpki.ErrDocumentGone {
-					p.setFailedFetch(epoch, err)
-				}
-				continue
-			}
-
-			if !hmac.Equal(d.SphinxGeometryHash, p.server.cfg.SphinxGeometry.Hash()) {
-				p.log.Errorf("Sphinx Geometry mismatch is set to: \n %s\n", p.server.cfg.SphinxGeometry.Display())
-				panic("Sphinx Geometry mismatch!")
-			}
-
-			// take note of the service nodes and storage replicas
-			p.updateReplicas(d)
-
-			p.lock.Lock()
-			p.rawDocs[epoch] = rawDoc
-			p.docs[epoch] = d
-			p.lock.Unlock()
-			didUpdate = true
+			continue
 		}
 
-		p.pruneFailures()
-		if didUpdate {
-			// Dispose of the old PKI documents.
-			p.pruneDocuments()
-
-			// If the PKI document map changed, kick the connector worker.
-			p.server.connector.ForceUpdate()
+		if !hmac.Equal(d.SphinxGeometryHash, p.server.cfg.SphinxGeometry.Hash()) {
+			p.log.Errorf("Sphinx Geometry mismatch is set to: \n %s\n", p.server.cfg.SphinxGeometry.Display())
+			panic("Sphinx Geometry mismatch!")
 		}
 
-		// Internal component depend on network wide paramemters, and or the
-		// list of nodes.  Update if there is a new document for the current
-		// epoch.
-		if now, _, _ := epochtime.Now(); now != lastUpdateEpoch {
-			if doc := p.entryForEpoch(now); doc != nil {
-				lastUpdateEpoch = now
-			}
-		}
-		p.updateTimer(timer)
+		// take note of the service nodes and storage replicas
+		p.updateReplicas(d)
+
+		p.lock.Lock()
+		p.rawDocs[epoch] = rawDoc
+		p.docs[epoch] = d
+		p.lock.Unlock()
+		didUpdate = true
 	}
+	return didUpdate
+}
+
+// handleDocumentUpdates handles cleanup and updates when documents change
+func (p *PKIWorker) handleDocumentUpdates(didUpdate bool) {
+	p.pruneFailures()
+	if didUpdate {
+		// Dispose of the old PKI documents.
+		p.pruneDocuments()
+
+		// If the PKI document map changed, kick the connector worker.
+		p.server.connector.ForceUpdate()
+	}
+}
+
+// updateEpochTracking updates epoch tracking and returns the new lastUpdateEpoch
+func (p *PKIWorker) updateEpochTracking(lastUpdateEpoch uint64) uint64 {
+	// Internal component depend on network wide paramemters, and or the
+	// list of nodes.  Update if there is a new document for the current
+	// epoch.
+	if now, _, _ := epochtime.Now(); now != lastUpdateEpoch {
+		if doc := p.entryForEpoch(now); doc != nil {
+			return now
+		}
+	}
+	return lastUpdateEpoch
 }
 
 func (p *PKIWorker) publishDescriptorIfNeeded(pkiCtx context.Context) error {
