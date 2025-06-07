@@ -28,11 +28,6 @@ import (
 	"github.com/katzenpost/katzenpost/replica/config"
 )
 
-const (
-	// testPKIScheme is the PKI signature scheme used in tests
-	testPKIScheme = "Ed25519 Sphincs+"
-)
-
 type MockSession struct {
 	ad []byte
 	pk kem.PublicKey

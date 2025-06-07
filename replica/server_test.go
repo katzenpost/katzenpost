@@ -4,35 +4,23 @@
 package replica
 
 import (
-	"fmt"
-	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/katzenpost/hpqc/bacap"
-	"github.com/katzenpost/hpqc/kem"
 	kemschemes "github.com/katzenpost/hpqc/kem/schemes"
-	"github.com/katzenpost/hpqc/nike"
 	nikeschemes "github.com/katzenpost/hpqc/nike/schemes"
-	ecdh "github.com/katzenpost/hpqc/nike/x25519"
 	"github.com/katzenpost/hpqc/rand"
-	"github.com/katzenpost/hpqc/sign"
 	signschemes "github.com/katzenpost/hpqc/sign/schemes"
 
 	authconfig "github.com/katzenpost/katzenpost/authority/voting/server/config"
-	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"github.com/katzenpost/katzenpost/replica/common"
 	"github.com/katzenpost/katzenpost/replica/config"
-)
-
-const (
-	// testReplicaNameFormat is the format string for replica names in tests
-	testReplicaNameFormat = "replica%d"
 )
 
 func TestInitDataDir(t *testing.T) {
@@ -109,22 +97,11 @@ func TestNew(t *testing.T) {
 }
 
 func TestGetRemoteShards(t *testing.T) {
-	dname, err := os.MkdirTemp("", fmt.Sprintf("replica.testState %d", os.Getpid()))
-	require.NoError(t, err)
-	defer os.RemoveAll(dname)
-
-	nike := ecdh.Scheme(rand.Reader)
-	forwardPayloadLength := 1234
-	nrHops := 5
-	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
-	require.NotNil(t, geo)
-
-	pkiScheme := signschemes.ByName("ed25519")
-	linkScheme := kemschemes.ByName("x25519")
-	replicaScheme := nikeschemes.ByName("x25519")
-
-	pk, _, err := pkiScheme.GenerateKey()
-	require.NoError(t, err)
+	// Setup test environment
+	schemes := NewTestSchemes()
+	geometry := CreateTestGeometryCustom(schemes, 1234, 5)
+	tempDir := CreateTestTempDir(t, "replica_test_state")
+	keys := GenerateTestKeys(t, schemes)
 
 	cfg := &config.Config{
 		PKI:        &config.PKI{},
@@ -134,11 +111,11 @@ func TestGetRemoteShards(t *testing.T) {
 			File:    "",
 			Level:   "DEBUG",
 		},
-		DataDir:            dname,
-		SphinxGeometry:     geo,
-		PKISignatureScheme: pkiScheme.Name(),
-		ReplicaNIKEScheme:  replicaScheme.Name(),
-		WireKEMScheme:      linkScheme.Name(),
+		DataDir:            tempDir,
+		SphinxGeometry:     geometry,
+		PKISignatureScheme: schemes.PKI.Name(),
+		ReplicaNIKEScheme:  schemes.Replica.Name(),
+		WireKEMScheme:      schemes.Link.Name(),
 		Addresses:          []string{"tcp://127.0.0.1:34394"},
 	}
 
@@ -149,44 +126,35 @@ func TestGetRemoteShards(t *testing.T) {
 	}
 
 	s := &Server{
-		identityPublicKey: pk,
+		identityPublicKey: keys.IdentityPubKey,
 		cfg:               cfg,
-		PKIWorker:         pkiWorker, // Use correct field name
+		PKIWorker:         pkiWorker,
 	}
 	s.PKIWorker.server = s
-	s.connector = newMockConnector(s) // Create mock connector
-
-	epoch, _, _ := epochtime.Now()
+	s.connector = newMockConnector(s)
 
 	numReplicas := 10
 	replicas := make([]*pki.ReplicaDescriptor, 0, numReplicas)
 
 	for i := 0; i < numReplicas; i++ {
-		replica := generateTestReplica(t, pkiScheme, linkScheme, replicaScheme, i)
+		replica := GenerateTestReplica(t, schemes, i)
 		replicas = append(replicas, replica)
 	}
 
-	doc := &pki.Document{
-		Epoch:           epoch,
-		StorageReplicas: replicas,
-	}
-
-	// Store the document and reset replicas
-	rawDoc, err := doc.MarshalCertificate()
-	require.NoError(t, err)
-	s.PKIWorker.StoreDocument(epoch, doc, rawDoc)
+	doc := CreateTestPKIDocument(t, replicas, nil)
+	StoreTestDocument(t, s.PKIWorker, doc)
 	s.PKIWorker.replicas = common.NewReplicaMap()
 
 	s.PKIWorker.server = s
 
-	err = s.initLogging()
+	err := s.initLogging()
 	require.NoError(t, err)
 
 	st := newState(s)
 	s.state = st
 	st.initDB()
 
-	cmds := commands.NewStorageReplicaCommands(geo, replicaScheme)
+	cmds := commands.NewStorageReplicaCommands(geometry, schemes.Replica)
 	require.NotNil(t, cmds)
 
 	numShares := 4
@@ -226,44 +194,4 @@ func TestGetRemoteShards(t *testing.T) {
 
 	myreplicas = s.PKIWorker.replicas.Copy()
 	require.Equal(t, numReplicas, len(myreplicas))
-}
-
-// generateTestReplica creates a test replica descriptor
-func generateTestReplica(t *testing.T, pkiScheme sign.Scheme, linkScheme kem.Scheme, replicaScheme nike.Scheme, index int) *pki.ReplicaDescriptor {
-	// Generate identity key
-	identityPubKey, _, err := pkiScheme.GenerateKey()
-	require.NoError(t, err)
-
-	// Generate link key
-	linkPubKey, _, err := linkScheme.GenerateKeyPair()
-	require.NoError(t, err)
-
-	// Generate replica NIKE key
-	replicaPubKey, _, err := replicaScheme.GenerateKeyPair()
-	require.NoError(t, err)
-
-	// Serialize keys to bytes
-	identityKeyBytes, err := identityPubKey.MarshalBinary()
-	require.NoError(t, err)
-
-	linkKeyBytes, err := linkPubKey.MarshalBinary()
-	require.NoError(t, err)
-
-	replicaKeyBytes, err := replicaPubKey.MarshalBinary()
-	require.NoError(t, err)
-
-	// Create replica descriptor
-	replica := &pki.ReplicaDescriptor{
-		Name:        fmt.Sprintf(testReplicaNameFormat, index),
-		IdentityKey: identityKeyBytes,
-		LinkKey:     linkKeyBytes,
-		Addresses:   map[string][]string{"tcp": {fmt.Sprintf("tcp://127.0.0.1:%d", 19000+index)}},
-	}
-
-	// Add envelope keys (using current epoch)
-	epoch, _, _ := epochtime.Now()
-	replica.EnvelopeKeys = make(map[uint64][]byte)
-	replica.EnvelopeKeys[epoch] = replicaKeyBytes
-
-	return replica
 }
