@@ -6,6 +6,7 @@ package replica
 import (
 	"container/list"
 	"crypto/hmac"
+	"errors"
 	"fmt"
 	"net"
 	"sync"
@@ -85,6 +86,30 @@ func (c *incomingConn) worker() {
 		c.l.onClosedConn(c) // Remove from the connection list.
 	}()
 
+	// Initialize session
+	session, err := c.initializeSession()
+	if err != nil {
+		return
+	}
+	defer session.Close()
+
+	// Perform handshake and authentication
+	creds, blob, err := c.performHandshakeAndAuth(session)
+	if err != nil {
+		return
+	}
+
+	// Close old connections from the same peer
+	if err := c.closeOldConnections(); err != nil {
+		return
+	}
+
+	// Start command processing
+	c.processCommands(session, creds, blob)
+}
+
+// initializeSession creates and configures the wire session
+func (c *incomingConn) initializeSession() (*wire.Session, error) {
 	// Allocate the session struct.
 	identityHash := hash.Sum256From(c.l.server.identityPublicKey)
 	cfg := &wire.SessionConfig{
@@ -109,27 +134,31 @@ func (c *incomingConn) worker() {
 
 	if err != nil {
 		c.log.Errorf("Failed to allocate session: %v", err)
-		return
+		return nil, err
 	}
 
 	sessionInterface := c.getSession()
 	if sessionInterface == nil {
 		c.log.Errorf("Failed to get session")
-		return
+		return nil, errors.New("failed to get session")
 	}
 	session, ok := sessionInterface.(*wire.Session)
 	if !ok {
 		c.log.Errorf("Failed to cast session to *wire.Session")
-		return
+		return nil, errors.New("failed to cast session to *wire.Session")
 	}
-	defer session.Close()
 
+	return session, nil
+}
+
+// performHandshakeAndAuth handles the handshake and authentication process
+func (c *incomingConn) performHandshakeAndAuth(session *wire.Session) (*wire.PeerCredentials, []byte, error) {
 	// Bind the session to the conn, handshake, authenticate.
 	timeoutMs := time.Duration(c.l.server.cfg.HandshakeTimeout) * time.Millisecond
 	c.c.SetDeadline(time.Now().Add(timeoutMs))
-	if err = session.Initialize(c.c); err != nil {
+	if err := session.Initialize(c.c); err != nil {
 		c.log.Errorf("Handshake failed: %v", err)
-		return
+		return nil, nil, err
 	}
 	c.log.Debugf("Handshake completed.")
 	c.c.SetDeadline(time.Time{})
@@ -139,22 +168,32 @@ func (c *incomingConn) worker() {
 	creds, err := session.PeerCredentials()
 	if err != nil {
 		c.log.Debugf("Session failure: %s", err)
+		return nil, nil, err
 	}
 	blob, err := creds.PublicKey.MarshalBinary()
 	if err != nil {
 		panic(err)
 	}
 
+	return creds, blob, nil
+}
+
+// closeOldConnections ensures only one connection per peer
+func (c *incomingConn) closeOldConnections() error {
 	// Ensure that there's only one incoming conn from any given peer, though
 	// this only really matters for user sessions. Newest connection wins.
 	for _, s := range c.l.server.listeners {
 		err := s.CloseOldConns(c)
 		if err != nil {
 			c.log.Errorf("Closing new connection because something is broken: " + err.Error())
-			return
+			return err
 		}
 	}
+	return nil
+}
 
+// processCommands handles the main command processing loop
+func (c *incomingConn) processCommands(session *wire.Session, creds *wire.PeerCredentials, blob []byte) {
 	// Start the reauthenticate ticker.
 	reauthMs := time.Duration(c.l.server.cfg.ReauthInterval) * time.Millisecond
 	reauth := time.NewTicker(reauthMs)
@@ -223,7 +262,7 @@ func (c *incomingConn) worker() {
 		// Send the response, if any.
 		if resp != nil {
 			c.log.Debugf("Sending response: %T", resp)
-			if err = session.SendCommand(resp); err != nil {
+			if err := session.SendCommand(resp); err != nil {
 				c.log.Debugf("Peer %v: Failed to send response: %v", hash.Sum256(blob), err)
 			} else {
 				c.log.Debugf("Successfully sent response: %T", resp)
