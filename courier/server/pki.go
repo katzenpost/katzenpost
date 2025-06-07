@@ -36,9 +36,10 @@ var (
 type PKIWorker struct {
 	worker.Worker
 
-	server *Server
-	log    *logging.Logger
-	impl   pki.Client
+	server  *Server
+	log     *logging.Logger
+	impl    pki.Client
+	fetcher *pki.DocumentFetcher
 
 	replicas *common.ReplicaMap
 
@@ -56,6 +57,7 @@ func newPKIWorker(server *Server, pkiClient pki.Client, log *logging.Logger) (*P
 		server:        server,
 		impl:          pkiClient,
 		log:           log,
+		fetcher:       pki.NewDocumentFetcher(pkiClient, log),
 		lock:          new(sync.RWMutex),
 		docs:          make(map[uint64]*pki.Document),
 		rawDocs:       make(map[uint64][]byte),
@@ -346,39 +348,33 @@ func (p *PKIWorker) handleTimerEvent(timer *time.Timer, pkiCtx context.Context) 
 
 // fetchDocuments fetches PKI documents for required epochs
 func (p *PKIWorker) fetchDocuments(pkiCtx context.Context, isCanceled func() bool) bool {
+	epochs := p.documentsToFetch()
+	if len(epochs) == 0 {
+		return false
+	}
+
+	results := p.fetcher.FetchDocuments(
+		pkiCtx,
+		epochs,
+		isCanceled,
+		p.getFailedFetch,
+		p.setFailedFetch,
+	)
+
 	var didUpdate bool
-	for _, epoch := range p.documentsToFetch() {
-		p.log.Debugf("PKI worker, documentsToFetch epoch %d", epoch)
-
-		// Certain errors in fetching documents are treated as hard
-		// failures that suppress further attempts to fetch the document
-		// for the epoch.
-		if ok, err := p.getFailedFetch(epoch); ok {
-			p.log.Debugf("Skipping fetch for epoch %v: %v", epoch, err)
-			continue
-		}
-
-		d, rawDoc, err := p.impl.Get(pkiCtx, epoch)
-		if isCanceled() {
-			// Canceled mid-fetch.
-			p.log.Debug("Canceled mid-fetch")
-			return false
-		}
-		if err != nil {
-			p.log.Warningf("Failed to fetch PKI for epoch %v: %v", epoch, err)
-			if err == pki.ErrDocumentGone {
-				p.setFailedFetch(epoch, err)
-			}
+	for _, result := range results {
+		if result.Skipped || result.Error != nil {
 			continue
 		}
 
 		p.lock.Lock()
-		p.rawDocs[epoch] = rawDoc
-		p.docs[epoch] = d
+		p.rawDocs[result.Epoch] = result.RawDoc
+		p.docs[result.Epoch] = result.Doc
 		p.lock.Unlock()
 		didUpdate = true
-		p.replicas.UpdateFromPKIDoc(d)
+		p.replicas.UpdateFromPKIDoc(result.Doc)
 	}
+
 	return didUpdate
 }
 

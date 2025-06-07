@@ -37,8 +37,9 @@ var (
 type PKIWorker struct {
 	worker.Worker
 
-	server *Server
-	log    *logging.Logger
+	server  *Server
+	log     *logging.Logger
+	fetcher *pki.DocumentFetcher
 
 	replicas *common.ReplicaMap
 
@@ -81,6 +82,7 @@ func newPKIWorkerWithClient(server *Server, pkiClient pki.Client, log *logging.L
 	p := &PKIWorker{
 		server:        server,
 		log:           log,
+		fetcher:       pki.NewDocumentFetcher(pkiClient, log),
 		replicas:      common.NewReplicaMap(),
 		lock:          new(sync.RWMutex),
 		descAddrMap:   make(map[string][]string),

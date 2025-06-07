@@ -227,43 +227,37 @@ func (p *PKIWorker) shouldTerminate(timer *time.Timer, pkiCtx context.Context) b
 
 // fetchAndProcessDocuments fetches PKI documents and processes them
 func (p *PKIWorker) fetchAndProcessDocuments(pkiCtx context.Context, isCanceled func() bool) bool {
+	epochs := p.documentsToFetch()
+	if len(epochs) == 0 {
+		return false
+	}
+
+	results := p.fetcher.FetchDocuments(
+		pkiCtx,
+		epochs,
+		isCanceled,
+		p.getFailedFetch,
+		p.setFailedFetch,
+	)
+
 	var didUpdate bool
-	for _, epoch := range p.documentsToFetch() {
-		// Certain errors in fetching documents are treated as hard
-		// failures that suppress further attempts to fetch the document
-		// for the epoch.
-		if ok, err := p.getFailedFetch(epoch); ok {
-			p.log.Debugf("Skipping fetch for epoch %v: %v", epoch, err)
+	for _, result := range results {
+		if result.Skipped || result.Error != nil {
 			continue
 		}
 
-		// Fetch PKI document using the client
-		d, rawDoc, err := p.impl.Get(pkiCtx, epoch)
-
-		if isCanceled() {
-			// Canceled mid-fetch.
-			p.log.Debug("Canceled mid-fetch")
-			return didUpdate
-		}
-		if err != nil {
-			p.log.Warningf("Failed to fetch PKI for epoch %v: %v", epoch, err)
-			if err == cpki.ErrDocumentGone {
-				p.setFailedFetch(epoch, err)
-			}
-			continue
-		}
-
-		if !hmac.Equal(d.SphinxGeometryHash, p.server.cfg.SphinxGeometry.Hash()) {
+		// Validate sphinx geometry
+		if !hmac.Equal(result.Doc.SphinxGeometryHash, p.server.cfg.SphinxGeometry.Hash()) {
 			p.log.Errorf("Sphinx Geometry mismatch is set to: \n %s\n", p.server.cfg.SphinxGeometry.Display())
 			panic("Sphinx Geometry mismatch!")
 		}
 
 		// take note of the service nodes and storage replicas
-		p.updateReplicas(d)
+		p.updateReplicas(result.Doc)
 
 		p.lock.Lock()
-		p.rawDocs[epoch] = rawDoc
-		p.docs[epoch] = d
+		p.rawDocs[result.Epoch] = result.RawDoc
+		p.docs[result.Epoch] = result.Doc
 		p.lock.Unlock()
 		didUpdate = true
 	}
