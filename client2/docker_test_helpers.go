@@ -6,6 +6,7 @@
 package client2
 
 import (
+	"context"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -65,4 +66,31 @@ func findEchoTargets(t *testing.T, doc *cpki.Document) []*cpki.MixDescriptor {
 	}
 	require.True(t, len(pingTargets) > 0)
 	return pingTargets
+}
+
+// setupClientAndTargets sets up a thin client and finds echo targets - common test setup pattern
+func setupClientAndTargets(t *testing.T) (*thin.ThinClient, []*cpki.MixDescriptor) {
+	client := setupThinClient(t)
+	doc := validatePKIDocument(t, client)
+	targets := findEchoTargets(t, doc)
+	return client, targets
+}
+
+// repeatSendAndWait sends the same message multiple times using sendAndWait
+func repeatSendAndWait(t *testing.T, client *thin.ThinClient, message []byte, nodeID *[32]byte, queueID []byte, count int) {
+	for i := 0; i < count; i++ {
+		reply := sendAndWait(t, client, message, nodeID, queueID)
+		require.Equal(t, message, reply[:len(message)])
+	}
+}
+
+// repeatBlockingSendReliableMessage sends the same message multiple times using BlockingSendReliableMessage
+func repeatBlockingSendReliableMessage(t *testing.T, client *thin.ThinClient, message []byte, nodeID *[32]byte, queueID []byte, count int) {
+	for i := 0; i < count; i++ {
+		messageID := client.NewMessageID()
+		reply, err := client.BlockingSendReliableMessage(context.Background(), messageID, message, nodeID, queueID)
+		require.NoError(t, err)
+		require.NotEqual(t, reply, []byte{})
+		require.Equal(t, message, reply[:len(message)])
+	}
 }

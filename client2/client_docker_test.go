@@ -6,7 +6,6 @@
 package client2
 
 import (
-	"context"
 	"os"
 	"os/signal"
 	"runtime"
@@ -17,7 +16,6 @@ import (
 
 	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/katzenpost/client2/thin"
-	cpki "github.com/katzenpost/katzenpost/core/pki"
 
 	"net/http"
 	_ "net/http/pprof"
@@ -86,125 +84,51 @@ func sendAndWait(t *testing.T, client *thin.ThinClient, message []byte, nodeID *
 func testDockerMultiplexClients(t *testing.T) {
 	t.Parallel()
 
-	thin1 := setupThinClient(t)
-	thin2 := setupThinClient(t)
+	client1, pingTargets := setupClientAndTargets(t)
+	defer client1.Close()
 
-	doc := validatePKIDocument(t, thin1)
-	pingTargets := findEchoTargets(t, doc)
+	client2 := setupThinClient(t)
+	defer client2.Close()
 
 	message1 := []byte("hello alice, this is bob.")
 	nodeIdKey := hash.Sum256(pingTargets[0].IdentityKey)
 
-	reply := sendAndWait(t, thin1, message1, &nodeIdKey, []byte("+echo"))
+	reply := sendAndWait(t, client1, message1, &nodeIdKey, []byte("+echo"))
 	require.Equal(t, message1, reply[:len(message1)])
 
-	reply = sendAndWait(t, thin2, message1, &nodeIdKey, []byte("+echo"))
+	reply = sendAndWait(t, client2, message1, &nodeIdKey, []byte("+echo"))
 	require.Equal(t, message1, reply[:len(message1)])
-
-	err := thin1.Close()
-	require.NoError(t, err)
-
-	err = thin2.Close()
-	require.NoError(t, err)
 }
 
 func testDockerClientARQSendReceive(t *testing.T) {
 	t.Parallel()
 
-	thin := setupThinClient(t)
-	doc := validatePKIDocument(t, thin)
-	pingTargets := findEchoTargets(t, doc)
+	client, pingTargets := setupClientAndTargets(t)
+	defer client.Close()
 
 	message1 := []byte("hello alice, this is bob.")
 	nodeIdKey := hash.Sum256(pingTargets[0].IdentityKey)
 
-	id1 := thin.NewMessageID()
-	id2 := thin.NewMessageID()
-	id3 := thin.NewMessageID()
-	id4 := thin.NewMessageID()
-
-	message3, err := thin.BlockingSendReliableMessage(context.Background(), id1, message1, &nodeIdKey, []byte("+echo"))
-	require.NoError(t, err)
-	require.NotEqual(t, message3, []byte{})
-	require.Equal(t, message1, message3[:len(message1)])
-
-	message3, err = thin.BlockingSendReliableMessage(context.Background(), id2, message1, &nodeIdKey, []byte("+echo"))
-	require.NoError(t, err)
-	require.NotEqual(t, message3, []byte{})
-	require.Equal(t, message1, message3[:len(message1)])
-
-	message3, err = thin.BlockingSendReliableMessage(context.Background(), id3, message1, &nodeIdKey, []byte("+echo"))
-	require.NoError(t, err)
-	require.NotEqual(t, message3, []byte{})
-	require.Equal(t, message1, message3[:len(message1)])
-
-	message3, err = thin.BlockingSendReliableMessage(context.Background(), id4, message1, &nodeIdKey, []byte("+echo"))
-	require.NoError(t, err)
-	require.NotEqual(t, message3, []byte{})
-	require.Equal(t, message1, message3[:len(message1)])
-
-	message3, err = thin.BlockingSendReliableMessage(context.Background(), id4, message1, &nodeIdKey, []byte("+echo"))
-	require.NoError(t, err)
-	require.NotEqual(t, message3, []byte{})
-	require.Equal(t, message1, message3[:len(message1)])
-
-	message3, err = thin.BlockingSendReliableMessage(context.Background(), id4, message1, &nodeIdKey, []byte("+echo"))
-	require.NoError(t, err)
-	require.NotEqual(t, message3, []byte{})
-	require.Equal(t, message1, message3[:len(message1)])
-
-	message3, err = thin.BlockingSendReliableMessage(context.Background(), id4, message1, &nodeIdKey, []byte("+echo"))
-	require.NoError(t, err)
-	require.NotEqual(t, message3, []byte{})
-	require.Equal(t, message1, message3[:len(message1)])
-
-	err = thin.Close()
-	require.NoError(t, err)
+	// Send the same message 7 times using BlockingSendReliableMessage
+	repeatBlockingSendReliableMessage(t, client, message1, &nodeIdKey, []byte("+echo"), 7)
 }
 
 func testDockerClientSendReceive(t *testing.T) {
 	t.Parallel()
 
-	thin := setupThinClient(t)
-	doc := validatePKIDocument(t, thin)
+	client, pingTargets := setupClientAndTargets(t)
+	defer client.Close()
 
-	pingTargets := []*cpki.MixDescriptor{}
-	for i := 0; i < len(doc.ServiceNodes); i++ {
-		for k, _ := range doc.ServiceNodes[i].Kaetzchen {
-			t.Logf("Key %s", k)
-		}
-
-		_, ok := doc.ServiceNodes[i].Kaetzchen["echo"]
-		if ok {
-			pingTargets = append(pingTargets, doc.ServiceNodes[i])
-		}
-	}
-	require.True(t, len(pingTargets) > 0)
 	message1 := []byte("hello alice, this is bob.")
 	nodeIdKey := hash.Sum256(pingTargets[0].IdentityKey)
 
 	t.Log("BEFORE sendAndWait")
-	reply := sendAndWait(t, thin, message1, &nodeIdKey, []byte("+testdest"))
+	reply := sendAndWait(t, client, message1, &nodeIdKey, []byte("+testdest"))
 	t.Log("AFTER sendAndWait")
 	require.Equal(t, message1, reply[:len(message1)])
 
-	reply = sendAndWait(t, thin, message1, &nodeIdKey, []byte("+testdest"))
-	require.Equal(t, message1, reply[:len(message1)])
-
-	reply = sendAndWait(t, thin, message1, &nodeIdKey, []byte("+testdest"))
-	require.Equal(t, message1, reply[:len(message1)])
-
-	reply = sendAndWait(t, thin, message1, &nodeIdKey, []byte("+testdest"))
-	require.Equal(t, message1, reply[:len(message1)])
-
-	reply = sendAndWait(t, thin, message1, &nodeIdKey, []byte("+testdest"))
-	require.Equal(t, message1, reply[:len(message1)])
-
-	reply = sendAndWait(t, thin, message1, &nodeIdKey, []byte("+testdest"))
-	require.Equal(t, message1, reply[:len(message1)])
-
-	err := thin.Close()
-	require.NoError(t, err)
+	// Send the same message 5 more times
+	repeatSendAndWait(t, client, message1, &nodeIdKey, []byte("+testdest"), 5)
 }
 
 func init() {
