@@ -21,6 +21,10 @@ const (
 	defaultTestLogLevel         = "DEBUG"
 )
 
+var (
+	shutdownCh chan interface{}
+)
+
 // setupThinClientWithConfig creates and connects a thin client with the specified configuration
 func setupThinClientWithConfig(t *testing.T, configFile, logLevel string) *thin.ThinClient {
 	cfg, err := thin.LoadFile(configFile)
@@ -76,6 +80,47 @@ func setupClientAndTargets(t *testing.T) (*thin.ThinClient, []*cpki.MixDescripto
 	return client, targets
 }
 
+// sendAndWait sends a message and waits for a reply
+func sendAndWait(t *testing.T, client *thin.ThinClient, message []byte, nodeID *[32]byte, queueID []byte) []byte {
+	surbID := client.NewSURBID()
+	eventSink := client.EventSink()
+	err := client.SendMessage(surbID, message, nodeID, queueID)
+	require.NoError(t, err)
+
+	for {
+		var event thin.Event
+		select {
+		case event = <-eventSink:
+		case <-shutdownCh: // exit if halted
+			// interrupt caught, shutdown client
+			t.Log("Interrupt caught - shutting down client")
+			client.Halt()
+			return nil
+		}
+
+		switch v := event.(type) {
+		case *thin.MessageIDGarbageCollected:
+			t.Log("MessageIDGarbageCollected")
+		case *thin.ConnectionStatusEvent:
+			t.Log("ConnectionStatusEvent")
+			if !v.IsConnected {
+				panic("socket connection lost")
+			}
+		case *thin.NewDocumentEvent:
+			t.Log("NewPKIDocumentEvent")
+		case *thin.MessageSentEvent:
+			t.Log("MessageSentEvent")
+		case *thin.MessageReplyEvent:
+			t.Log("MessageReplyEvent")
+			require.Equal(t, surbID[:], v.SURBID[:])
+			return v.Payload
+		default:
+			panic("impossible event type")
+		}
+	}
+	panic("impossible event type")
+}
+
 // repeatSendAndWait sends the same message multiple times using sendAndWait
 func repeatSendAndWait(t *testing.T, client *thin.ThinClient, message []byte, nodeID *[32]byte, queueID []byte, count int) {
 	for i := 0; i < count; i++ {
@@ -93,4 +138,8 @@ func repeatBlockingSendReliableMessage(t *testing.T, client *thin.ThinClient, me
 		require.NotEqual(t, reply, []byte{})
 		require.Equal(t, message, reply[:len(message)])
 	}
+}
+
+func init() {
+	shutdownCh = make(chan interface{})
 }
