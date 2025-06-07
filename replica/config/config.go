@@ -7,88 +7,26 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
-	"os"
 	"path/filepath"
-	"strings"
 
-	"github.com/BurntSushi/toml"
-
-	"github.com/katzenpost/katzenpost/authority/voting/server/config"
+	"github.com/katzenpost/katzenpost/common/config"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/utils"
 )
 
 const (
 	defaultAddress                = ":3266"
-	defaultLogLevel               = "NOTICE"
-	defaultConnectTimeout         = 60 * 1000  // 60 sec.
-	defaultHandshakeTimeout       = 30 * 1000  // 30 sec.
-	defaultReauthInterval         = 300 * 1000 // 300 sec.
 	defaultReplicationQueueLength = 100        // Default queue length for replication operations
 	defaultOutgoingQueueSize      = 64         // Default queue size for outgoing connections
 	defaultKeepAliveInterval      = 180 * 1000 // Default TCP keep-alive interval (3 minutes)
 )
 
-var defaultLogging = Logging{
-	Disable: false,
-	File:    "",
-	Level:   defaultLogLevel,
-}
-
-// PKI is the Katzenpost directory authority configuration.
-type PKI struct {
-	Voting *Voting
-}
-
-func (pCfg *PKI) validate(datadir string) error {
-	if pCfg.Voting == nil {
-		return errors.New("Voting is nil")
-	}
-	return nil
-}
-
-// Voting is a set of Authorities that vote on a threshold consensus PKI
-type Voting struct {
-	Authorities []*config.Authority
-}
-
-func (vCfg *Voting) validate(datadir string) error {
-	if vCfg.Authorities == nil {
-		return errors.New("Authorities is nil")
-	}
-	for _, auth := range vCfg.Authorities {
-		err := auth.Validate()
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// Logging is the Katzenpost server logging configuration.
-type Logging struct {
-	// Disable disables logging entirely.
-	Disable bool
-
-	// File specifies the log file, if omitted stdout will be used.
-	File string
-
-	// Level specifies the log level.
-	Level string
-}
-
-func (lCfg *Logging) validate() error {
-	lvl := strings.ToUpper(lCfg.Level)
-	switch lvl {
-	case "ERROR", "WARNING", "NOTICE", "INFO", "DEBUG":
-	case "":
-		lCfg.Level = defaultLogLevel
-	default:
-		return fmt.Errorf("config: Logging: Level '%v' is invalid", lCfg.Level)
-	}
-	lCfg.Level = lvl // Force uppercase.
-	return nil
-}
+// Type aliases for common configuration structures
+type (
+	PKI     = config.PKI
+	Voting  = config.Voting
+	Logging = config.Logging
+)
 
 type Config struct {
 	// PKI is the Katzenpost directory authority client configuration.
@@ -176,13 +114,13 @@ func (c *Config) FixupAndValidate(forceGenOnly bool) error {
 // setDefaultTimeouts sets default values for timeout configurations
 func (c *Config) setDefaultTimeouts() {
 	if c.ReauthInterval <= 0 {
-		c.ReauthInterval = defaultReauthInterval
+		c.ReauthInterval = config.DefaultReauthInterval
 	}
 	if c.HandshakeTimeout <= 0 {
-		c.HandshakeTimeout = defaultHandshakeTimeout
+		c.HandshakeTimeout = config.DefaultHandshakeTimeout
 	}
 	if c.ConnectTimeout <= 0 {
-		c.ConnectTimeout = defaultConnectTimeout
+		c.ConnectTimeout = config.DefaultConnectTimeout
 	}
 	if c.ReplicationQueueLength <= 0 {
 		c.ReplicationQueueLength = defaultReplicationQueueLength
@@ -268,16 +206,17 @@ func (c *Config) validatePKIConfiguration() error {
 func (c *Config) setupLoggingDefaults() error {
 	// Handle missing sections if possible.
 	if c.Logging == nil {
+		defaultLogging := config.DefaultLogging()
 		c.Logging = &defaultLogging
 	}
-	return c.Logging.validate()
+	return c.Logging.Validate()
 }
 
 // Load parses and validates the provided buffer b as a config file body and
 // returns the Config.
 func Load(b []byte, forceGenOnly bool) (*Config, error) {
 	cfg := new(Config)
-	err := toml.Unmarshal(b, cfg)
+	err := config.LoadConfigFromBytes(b, cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -295,9 +234,18 @@ func Load(b []byte, forceGenOnly bool) (*Config, error) {
 // LoadFile loads, parses and validates the provided file and returns the
 // Config.
 func LoadFile(f string, forceGenOnly bool) (*Config, error) {
-	b, err := os.ReadFile(f)
+	cfg := new(Config)
+	err := config.LoadConfigFromFile(f, cfg)
 	if err != nil {
 		return nil, err
 	}
-	return Load(b, forceGenOnly)
+	if err := cfg.FixupAndValidate(forceGenOnly); err != nil {
+		return nil, err
+	}
+
+	if forceGenOnly {
+		cfg.GenerateOnly = true
+	}
+
+	return cfg, nil
 }

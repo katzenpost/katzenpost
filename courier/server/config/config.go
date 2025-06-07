@@ -6,84 +6,22 @@ package config
 import (
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
-	"strings"
 
-	"github.com/BurntSushi/toml"
-
-	"github.com/katzenpost/katzenpost/authority/voting/server/config"
+	"github.com/katzenpost/katzenpost/common/config"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 )
 
 const (
-	defaultLogLevel         = "NOTICE"
-	DefaultConnectTimeout   = 60 * 1000  // 60 sec.
-	DefaultHandshakeTimeout = 30 * 1000  // 30 sec.
-	DefaultReauthInterval   = 300 * 1000 // 300 sec.
-	DefaultMaxQueueSize     = 64         // Default outgoing connection queue size.
+	DefaultMaxQueueSize = 64 // Default outgoing connection queue size.
 )
 
-var defaultLogging = Logging{
-	Disable: false,
-	File:    "",
-	Level:   defaultLogLevel,
-}
-
-// PKI is the Katzenpost directory authority configuration.
-type PKI struct {
-	Voting *Voting
-}
-
-func (pCfg *PKI) validate(datadir string) error {
-	if pCfg.Voting == nil {
-		return errors.New("Voting is nil")
-	}
-	return nil
-}
-
-// Voting is a set of Authorities that vote on a threshold consensus PKI
-type Voting struct {
-	Authorities []*config.Authority
-}
-
-func (vCfg *Voting) validate(datadir string) error {
-	if vCfg.Authorities == nil {
-		return errors.New("Authorities is nil")
-	}
-	for _, auth := range vCfg.Authorities {
-		err := auth.Validate()
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// Logging is the Katzenpost server logging configuration.
-type Logging struct {
-	// Disable disables logging entirely.
-	Disable bool
-
-	// File specifies the log file, if omitted stdout will be used.
-	File string
-
-	// Level specifies the log level.
-	Level string
-}
-
-func (lCfg *Logging) validate() error {
-	lvl := strings.ToUpper(lCfg.Level)
-	switch lvl {
-	case "ERROR", "WARNING", "NOTICE", "INFO", "DEBUG":
-	case "":
-		lCfg.Level = defaultLogLevel
-	default:
-		return fmt.Errorf("config: Logging: Level '%v' is invalid", lCfg.Level)
-	}
-	lCfg.Level = lvl // Force uppercase.
-	return nil
-}
+// Type aliases for common configuration structures
+type (
+	PKI     = config.PKI
+	Voting  = config.Voting
+	Logging = config.Logging
+)
 
 type Config struct {
 	// PKI is the Katzenpost directory authority client configuration.
@@ -130,9 +68,10 @@ func (c *Config) FixupAndValidate() error {
 		return errors.New("config: No PKI block was present")
 	}
 	if c.Logging == nil {
+		defaultLogging := config.DefaultLogging()
 		c.Logging = &defaultLogging
 	}
-	if err := c.Logging.validate(); err != nil {
+	if err := c.Logging.Validate(); err != nil {
 		return err
 	}
 	if c.WireKEMScheme == "" {
@@ -145,13 +84,13 @@ func (c *Config) FixupAndValidate() error {
 		return errors.New("config: SphinxGeometry must not be nil")
 	}
 	if c.ReauthInterval <= 0 {
-		c.ReauthInterval = DefaultReauthInterval
+		c.ReauthInterval = config.DefaultReauthInterval
 	}
 	if c.HandshakeTimeout <= 0 {
-		c.HandshakeTimeout = DefaultHandshakeTimeout
+		c.HandshakeTimeout = config.DefaultHandshakeTimeout
 	}
 	if c.ConnectTimeout <= 0 {
-		c.ConnectTimeout = DefaultConnectTimeout
+		c.ConnectTimeout = config.DefaultConnectTimeout
 	}
 	if c.MaxQueueSize <= 0 {
 		c.MaxQueueSize = DefaultMaxQueueSize
@@ -163,7 +102,7 @@ func (c *Config) FixupAndValidate() error {
 // returns the Config.
 func Load(b []byte) (*Config, error) {
 	cfg := new(Config)
-	err := toml.Unmarshal(b, cfg)
+	err := config.LoadConfigFromBytes(b, cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -177,9 +116,13 @@ func Load(b []byte) (*Config, error) {
 // LoadFile loads, parses and validates the provided file and returns the
 // Config.
 func LoadFile(f string) (*Config, error) {
-	b, err := os.ReadFile(f)
+	cfg := new(Config)
+	err := config.LoadConfigFromFile(f, cfg)
 	if err != nil {
 		return nil, err
 	}
-	return Load(b)
+	if err := cfg.FixupAndValidate(); err != nil {
+		return nil, err
+	}
+	return cfg, nil
 }
