@@ -44,14 +44,34 @@ type outgoingConn struct {
 }
 
 func (c *outgoingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
-	// First verify the identity hash matches what we expect
+	if !c.validateIdentityHash(creds) {
+		return false
+	}
+
+	if !c.validateLinkKey(creds) {
+		return false
+	}
+
+	if !c.validateReplicaInPKI(creds) {
+		return false
+	}
+
+	c.log.Debug("OutgoingConn: Authentication successful")
+	return true
+}
+
+// validateIdentityHash verifies the identity hash matches what we expect
+func (c *outgoingConn) validateIdentityHash(creds *wire.PeerCredentials) bool {
 	idHash := hash.Sum256(c.dst.IdentityKey)
 	if !hmac.Equal(idHash[:], creds.AdditionalData) {
 		c.log.Debug("OutgoingConn: Identity hash mismatch")
 		return false
 	}
+	return true
+}
 
-	// Then verify the link key matches what we expect
+// validateLinkKey verifies the link key matches what we expect
+func (c *outgoingConn) validateLinkKey(creds *wire.PeerCredentials) bool {
 	keyblob, err := creds.PublicKey.MarshalBinary()
 	if err != nil {
 		panic(err)
@@ -60,8 +80,11 @@ func (c *outgoingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 		c.log.Debug("OutgoingConn: Link key mismatch")
 		return false
 	}
+	return true
+}
 
-	// Verify the replica is in the current PKI document
+// validateReplicaInPKI verifies the replica is in the current PKI document
+func (c *outgoingConn) validateReplicaInPKI(creds *wire.PeerCredentials) bool {
 	var nodeID [sConstants.NodeIDLength]byte
 	copy(nodeID[:], creds.AdditionalData)
 	_, isReplica := c.co.Server().PKIWorker.replicas.GetReplicaDescriptor(&nodeID)
@@ -69,8 +92,6 @@ func (c *outgoingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 		c.log.Debug("OutgoingConn: PKI authentication failed - replica not found")
 		return false
 	}
-
-	c.log.Debug("OutgoingConn: Authentication successful")
 	return true
 }
 
