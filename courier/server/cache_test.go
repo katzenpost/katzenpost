@@ -79,6 +79,16 @@ func TestCourierCacheDualReplies(t *testing.T) {
 	envHash := [hash.HashSize]byte{}
 	copy(envHash[:], []byte(testEnvelopeHashString))
 
+	// Set up the cache entry properly with both replica IDs first
+	// This simulates what would happen in the normal OnCommand flow
+	courier.dedupCacheLock.Lock()
+	courier.dedupCache[envHash] = &CourierBookKeeping{
+		Epoch:                1,
+		IntermediateReplicas: [2]uint8{0, 1}, // Both replicas are expected
+		EnvelopeReplies:      [2]*commands.ReplicaMessageReply{nil, nil},
+	}
+	courier.dedupCacheLock.Unlock()
+
 	// Create first replica reply
 	reply1 := &commands.ReplicaMessageReply{
 		EnvelopeHash:  &envHash,
@@ -128,6 +138,15 @@ func TestCourierCacheOverflow(t *testing.T) {
 	envHash := [hash.HashSize]byte{}
 	copy(envHash[:], []byte(testEnvelopeHashString))
 
+	// Set up the cache entry properly with both replica IDs first
+	courier.dedupCacheLock.Lock()
+	courier.dedupCache[envHash] = &CourierBookKeeping{
+		Epoch:                1,
+		IntermediateReplicas: [2]uint8{0, 1}, // Both replicas are expected
+		EnvelopeReplies:      [2]*commands.ReplicaMessageReply{nil, nil},
+	}
+	courier.dedupCacheLock.Unlock()
+
 	// Create three replica replies
 	reply1 := &commands.ReplicaMessageReply{
 		EnvelopeHash:  &envHash,
@@ -174,6 +193,15 @@ func TestCourierCacheHandleOldMessage(t *testing.T) {
 
 	envHash := [hash.HashSize]byte{}
 	copy(envHash[:], []byte(testEnvelopeHashString))
+
+	// Set up the cache entry properly with both replica IDs first
+	courier.dedupCacheLock.Lock()
+	courier.dedupCache[envHash] = &CourierBookKeeping{
+		Epoch:                1,
+		IntermediateReplicas: [2]uint8{0, 1}, // Both replicas are expected
+		EnvelopeReplies:      [2]*commands.ReplicaMessageReply{nil, nil},
+	}
+	courier.dedupCacheLock.Unlock()
 
 	// Create test replies
 	reply1 := &commands.ReplicaMessageReply{
@@ -450,15 +478,20 @@ func TestCourierCacheMultipleEnvelopes(t *testing.T) {
 		require.NotNil(t, entry)
 
 		expectedReply := []byte("reply-for-envelope-" + string(rune('A'+i)))
+		expectedReplicaID := uint8(i % 2)
 
-		// CacheReply stores replies sequentially in slot 0 first, regardless of ReplicaID
-		// Since each envelope hash gets only one reply, it should be in slot 0
-		require.NotNil(t, entry.EnvelopeReplies[0])
-		require.Equal(t, expectedReply, entry.EnvelopeReplies[0].EnvelopeReply)
-		require.Equal(t, uint8(i%2), entry.EnvelopeReplies[0].ReplicaID)
-
-		// Second slot should be nil since we only cached one reply per envelope
-		require.Nil(t, entry.EnvelopeReplies[1])
+		// CacheReply stores replies based on ReplicaID: replica 0 → slot 0, replica 1 → slot 1
+		if expectedReplicaID == 0 {
+			require.NotNil(t, entry.EnvelopeReplies[0])
+			require.Equal(t, expectedReply, entry.EnvelopeReplies[0].EnvelopeReply)
+			require.Equal(t, expectedReplicaID, entry.EnvelopeReplies[0].ReplicaID)
+			require.Nil(t, entry.EnvelopeReplies[1])
+		} else {
+			require.NotNil(t, entry.EnvelopeReplies[1])
+			require.Equal(t, expectedReply, entry.EnvelopeReplies[1].EnvelopeReply)
+			require.Equal(t, expectedReplicaID, entry.EnvelopeReplies[1].ReplicaID)
+			require.Nil(t, entry.EnvelopeReplies[0])
+		}
 	}
 }
 

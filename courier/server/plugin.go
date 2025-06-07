@@ -114,8 +114,13 @@ func (e *Courier) CacheReply(reply *commands.ReplicaMessageReply) {
 		}
 
 		if replyIndex >= 0 {
-			e.log.Debugf("CacheReply: storing reply from replica %d at IntermediateReplicas index %d", reply.ReplicaID, replyIndex)
-			entry.EnvelopeReplies[replyIndex] = reply
+			// Only store the reply if there isn't already one cached for this replica
+			if entry.EnvelopeReplies[replyIndex] == nil {
+				e.log.Debugf("CacheReply: storing reply from replica %d at IntermediateReplicas index %d", reply.ReplicaID, replyIndex)
+				entry.EnvelopeReplies[replyIndex] = reply
+			} else {
+				e.log.Debugf("CacheReply: reply from replica %d already cached, ignoring duplicate", reply.ReplicaID)
+			}
 		} else {
 			e.log.Warningf("CacheReply: replica ID %d not found in IntermediateReplicas %v for envelope hash %x", reply.ReplicaID, entry.IntermediateReplicas, reply.EnvelopeHash)
 		}
