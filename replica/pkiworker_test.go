@@ -24,6 +24,11 @@ import (
 	"github.com/katzenpost/katzenpost/replica/config"
 )
 
+const (
+	testDirAuthAddress = "tcp://127.0.0.1:1234"
+	testReplicaAddress = "tcp://127.0.0.1:7483"
+)
+
 func TestReplicaMap(t *testing.T) {
 	r := common.NewReplicaMap()
 	newMap := make(map[[32]byte]*pki.ReplicaDescriptor)
@@ -68,7 +73,7 @@ func TestAuthenticateCourierConnection(t *testing.T) {
 						PKISignatureScheme: pkiScheme.Name(),
 						LinkPublicKey:      linkpubkey,
 						WireKEMScheme:      linkScheme.Name(),
-						Addresses:          []string{"tcp://127.0.0.1:1234"},
+						Addresses:          []string{testDirAuthAddress},
 					},
 				},
 			},
@@ -84,7 +89,7 @@ func TestAuthenticateCourierConnection(t *testing.T) {
 		PKISignatureScheme: pkiScheme.Name(),
 		ReplicaNIKEScheme:  replicaScheme.Name(),
 		SphinxGeometry:     geometry,
-		Addresses:          []string{"tcp://127.0.0.1:7483"},
+		Addresses:          []string{testReplicaAddress},
 	}
 	s, err := New(cfg)
 	require.NoError(t, err)
@@ -176,7 +181,7 @@ func TestAuthenticateReplicaConnection(t *testing.T) {
 						PKISignatureScheme: pkiScheme.Name(),
 						LinkPublicKey:      linkpubkey,
 						WireKEMScheme:      linkScheme.Name(),
-						Addresses:          []string{"tcp://127.0.0.1:1234"},
+						Addresses:          []string{testDirAuthAddress},
 					},
 				},
 			},
@@ -192,7 +197,7 @@ func TestAuthenticateReplicaConnection(t *testing.T) {
 		PKISignatureScheme: pkiScheme.Name(),
 		ReplicaNIKEScheme:  replicaScheme.Name(),
 		SphinxGeometry:     geometry,
-		Addresses:          []string{"tcp://127.0.0.1:7483"},
+		Addresses:          []string{testReplicaAddress},
 	}
 	s, err := New(cfg)
 	require.NoError(t, err)
@@ -331,7 +336,7 @@ func TestPruneDocuments(t *testing.T) {
 						PKISignatureScheme: pkiScheme.Name(),
 						LinkPublicKey:      linkpubkey,
 						WireKEMScheme:      linkScheme.Name(),
-						Addresses:          []string{"tcp://127.0.0.1:1234"},
+						Addresses:          []string{testDirAuthAddress},
 					},
 				},
 			},
@@ -347,7 +352,7 @@ func TestPruneDocuments(t *testing.T) {
 		PKISignatureScheme: pkiScheme.Name(),
 		ReplicaNIKEScheme:  replicaScheme.Name(),
 		SphinxGeometry:     geometry,
-		Addresses:          []string{"tcp://127.0.0.1:7483"},
+		Addresses:          []string{testReplicaAddress},
 	}
 	s, err := New(cfg)
 	require.NoError(t, err)
@@ -410,7 +415,7 @@ func TestAuthenticationDuringEpochTransition(t *testing.T) {
 						PKISignatureScheme: pkiScheme.Name(),
 						LinkPublicKey:      linkpubkey,
 						WireKEMScheme:      linkScheme.Name(),
-						Addresses:          []string{"tcp://127.0.0.1:1234"},
+						Addresses:          []string{testDirAuthAddress},
 					},
 				},
 			},
@@ -426,7 +431,7 @@ func TestAuthenticationDuringEpochTransition(t *testing.T) {
 		PKISignatureScheme: pkiScheme.Name(),
 		ReplicaNIKEScheme:  replicaScheme.Name(),
 		SphinxGeometry:     geometry,
-		Addresses:          []string{"tcp://127.0.0.1:7483"},
+		Addresses:          []string{testReplicaAddress},
 	}
 	s, err := New(cfg)
 	require.NoError(t, err)
