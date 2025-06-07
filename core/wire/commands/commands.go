@@ -8,6 +8,7 @@ import (
 	"encoding/binary"
 	"errors"
 
+	"github.com/katzenpost/hpqc/kem/mkem"
 	"github.com/katzenpost/hpqc/nike"
 	"github.com/katzenpost/hpqc/sign"
 
@@ -91,34 +92,45 @@ func NewStorageReplicaCommands(geo *geo.Geometry, scheme nike.Scheme) *Commands 
 		replicaNikeScheme:  scheme,
 	}
 	payload := make([]byte, geo.PacketLength) // XXX TODO(David): Pick a more precise size.
-	c.serverToClientCommands = []Command{
+
+	// Commands that clients (couriers) can send to servers (replicas)
+	c.clientToServerCommands = []Command{
 		&ReplicaMessage{
 			Geo:    geo,
 			Cmds:   c,
 			Scheme: scheme,
 
 			SenderEPubKey: make([]byte, HybridKeySize(scheme)),
-			DEK:           &[32]byte{},
+			DEK:           &[mkem.DEKSize]byte{},
 			Ciphertext:    payload,
 		},
-		&ReplicaMessageReply{
-			Cmds: c,
-		},
-		&ReplicaRead{
-			Cmds: c,
-		},
-		&ReplicaReadReply{
-			Cmds: c,
-			Geo:  geo,
-		},
 		&ReplicaWrite{
+			Cmds: c,
+		},
+		&NoOp{
+			Cmds: c,
+		},
+		&Disconnect{
+			Cmds: c,
+		},
+	}
+
+	// Commands that servers (replicas) can send to clients (couriers)
+	c.serverToClientCommands = []Command{
+		&ReplicaMessageReply{
 			Cmds: c,
 		},
 		&ReplicaWriteReply{
 			Cmds: c,
 		},
+		&NoOp{
+			Cmds: c,
+		},
+		&Disconnect{
+			Cmds: c,
+		},
 	}
-	c.clientToServerCommands = c.serverToClientCommands
+
 	c.shouldPad = true
 	c.MaxMessageLenClientToServer = c.calcMaxMessageLenClientToServer()
 	c.MaxMessageLenServerToClient = c.calcMaxMessageLenServerToClient()
@@ -141,8 +153,8 @@ func NewPKICommands(pkiSignatureScheme sign.Scheme) *Commands {
 		// These larger commands contain the entire PKI document and can be
 		// very large depending on the ciphersuites, the Sphinx KEM/NIKE and PKI Signature scheme.
 		// Increase the size if your PKI doc doesn't fit.
-		MaxMessageLenClientToServer: 50000,
-		MaxMessageLenServerToClient: 50000,
+		MaxMessageLenClientToServer: 50000000,
+		MaxMessageLenServerToClient: 50000000,
 	}
 	return c
 }
@@ -344,16 +356,14 @@ func (c *Commands) FromBytes(b []byte) (Command, error) {
 		return postReplicaDescriptorFromBytes(b)
 	case postReplicaDescriptorStatus:
 		return postReplicaDescriptorStatusFromBytes(b)
-	case replicaRead:
-		return replicaReadFromBytes(b, c)
-	case replicaReadReply:
-		return replicaReadReplyFromBytes(b, c)
 	case replicaWrite:
 		return replicaWriteFromBytes(b, c)
 	case replicaWriteReply:
 		return replicaWriteReplyFromBytes(b, c)
 	case replicaMessage:
 		return replicaMessageFromBytes(b, c)
+	case replicaMessageReply:
+		return replicaMessageReplyFromBytes(b, c)
 	case sendRetrievePacket:
 		return sendRetrievePacketFromBytes(b, c)
 	case sendRetrievePacketReply:

@@ -1,10 +1,10 @@
-// SPDX-FileCopyrightText: © 2023 David Stainton
+// SPDX-FileCopyrightText: (c) 2024, 2025  David Stainton.
 // SPDX-License-Identifier: AGPL-3.0-only
 package client2
 
 import (
 	"github.com/katzenpost/katzenpost/client2/thin"
-	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 )
 
 func IntoThinResponse(r *Response) *thin.Response {
@@ -14,6 +14,10 @@ func IntoThinResponse(r *Response) *thin.Response {
 		MessageSentEvent:          r.MessageSentEvent,
 		MessageReplyEvent:         r.MessageReplyEvent,
 		MessageIDGarbageCollected: r.MessageIDGarbageCollected,
+		CreateChannelReply:        r.CreateChannelReply,
+		CreateReadChannelReply:    r.CreateReadChannelReply,
+		WriteChannelReply:         r.WriteChannelReply,
+		ReadChannelReply:          r.ReadChannelReply,
 	}
 }
 
@@ -33,11 +37,23 @@ type Response struct {
 	MessageReplyEvent *thin.MessageReplyEvent
 
 	MessageIDGarbageCollected *thin.MessageIDGarbageCollected
+
+	CreateChannelReply *thin.CreateChannelReply
+
+	CreateReadChannelReply *thin.CreateReadChannelReply
+
+	WriteChannelReply *thin.WriteChannelReply
+
+	ReadChannelReply *thin.ReadChannelReply
 }
 
 func FromThinRequest(r *thin.Request, appid *[AppIDLength]byte) *Request {
 	return &Request{
 		AppID:             appid,
+		CreateChannel:     r.CreateChannel,
+		CreateReadChannel: r.CreateReadChannel,
+		WriteChannel:      r.WriteChannel,
+		ReadChannel:       r.ReadChannel,
 		ID:                r.ID,
 		WithSURB:          r.WithSURB,
 		SURBID:            r.SURBID,
@@ -53,6 +69,14 @@ func FromThinRequest(r *thin.Request, appid *[AppIDLength]byte) *Request {
 }
 
 type Request struct {
+	CreateChannel *thin.CreateChannel
+
+	CreateReadChannel *thin.CreateReadChannel
+
+	WriteChannel *thin.WriteChannel
+
+	ReadChannel *thin.ReadChannel
+
 	// ID is the unique identifier with respect to the Payload.
 	// This is only used by the ARQ.
 	ID *[MessageIDLength]byte
@@ -63,7 +87,7 @@ type Request struct {
 
 	// SURBID must be a unique identity for each request.
 	// This field should be nil if WithSURB is false.
-	SURBID *[sConstants.SURBIDLength]byte
+	SURBID *[constants.SURBIDLength]byte
 
 	// AppID must be a unique identity for the client application
 	// that is sending this Request.
