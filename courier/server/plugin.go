@@ -85,16 +85,7 @@ func (s *Server) StartPlugin() {
 func (e *Courier) CacheReply(reply *commands.ReplicaMessageReply) {
 	e.log.Debugf("CacheReply called with envelope hash: %x", reply.EnvelopeHash)
 
-	if !reply.IsRead {
-		e.log.Debug("CacheReply: not caching write reply")
-		return
-	}
-
-	e.log.Debug("CacheReply: caching read reply")
-
-	// Don't cache replies with nil envelope hash
-	if reply.EnvelopeHash == nil {
-		e.log.Debug("CacheReply: envelope hash is nil, not caching")
+	if !e.validateReply(reply) {
 		return
 	}
 
@@ -103,55 +94,94 @@ func (e *Courier) CacheReply(reply *commands.ReplicaMessageReply) {
 
 	entry, ok := e.dedupCache[*reply.EnvelopeHash]
 	if ok {
-		e.log.Debugf("CacheReply: found existing cache entry for envelope hash %x", reply.EnvelopeHash)
-		// Find which index in IntermediateReplicas corresponds to this replica ID
-		var replyIndex int = -1
-		for i, replicaID := range entry.IntermediateReplicas {
-			if replicaID == reply.ReplicaID {
-				replyIndex = i
-				break
-			}
-		}
-
-		if replyIndex >= 0 {
-			// Only store the reply if there isn't already one cached for this replica
-			if entry.EnvelopeReplies[replyIndex] == nil {
-				e.log.Debugf("CacheReply: storing reply from replica %d at IntermediateReplicas index %d", reply.ReplicaID, replyIndex)
-				entry.EnvelopeReplies[replyIndex] = reply
-			} else {
-				e.log.Debugf("CacheReply: reply from replica %d already cached, ignoring duplicate", reply.ReplicaID)
-			}
-		} else {
-			e.log.Warningf("CacheReply: replica ID %d not found in IntermediateReplicas %v for envelope hash %x", reply.ReplicaID, entry.IntermediateReplicas, reply.EnvelopeHash)
-		}
+		e.handleExistingEntry(entry, reply)
 	} else {
-		e.log.Debugf("BUG: received an unknown EnvelopeHash %x from a replica reply", reply.EnvelopeHash)
-
-		// Get current epoch, defaulting to 0 if PKI document is not available yet
-		var currentEpoch uint64
-		if pkiDoc := e.server.PKI.PKIDocument(); pkiDoc != nil {
-			currentEpoch = pkiDoc.Epoch
-		}
-
-		// Create new cache entry - we don't have IntermediateReplicas info here
-		// This is a BUG case, so we'll store at replica ID index as fallback
-		newEntry := &CourierBookKeeping{
-			Epoch:                currentEpoch,
-			IntermediateReplicas: [2]uint8{reply.ReplicaID, 255}, // 255 indicates unknown
-			EnvelopeReplies:      [2]*commands.ReplicaMessageReply{nil, nil},
-		}
-
-		if reply.ReplicaID < 2 {
-			e.log.Debugf("CacheReply: creating new cache entry and storing reply from replica %d at index %d", reply.ReplicaID, reply.ReplicaID)
-			newEntry.EnvelopeReplies[reply.ReplicaID] = reply
-		} else {
-			e.log.Warningf("CacheReply: invalid replica ID %d for envelope hash %x", reply.ReplicaID, reply.EnvelopeHash)
-		}
-
-		e.dedupCache[*reply.EnvelopeHash] = newEntry
+		e.createNewEntry(reply)
 	}
 
-	// Log final cache state
+	e.logFinalCacheState(reply)
+}
+
+// validateReply checks if the reply should be cached
+func (e *Courier) validateReply(reply *commands.ReplicaMessageReply) bool {
+	if !reply.IsRead {
+		e.log.Debug("CacheReply: not caching write reply")
+		return false
+	}
+
+	e.log.Debug("CacheReply: caching read reply")
+
+	if reply.EnvelopeHash == nil {
+		e.log.Debug("CacheReply: envelope hash is nil, not caching")
+		return false
+	}
+
+	return true
+}
+
+// handleExistingEntry processes replies for existing cache entries
+func (e *Courier) handleExistingEntry(entry *CourierBookKeeping, reply *commands.ReplicaMessageReply) {
+	e.log.Debugf("CacheReply: found existing cache entry for envelope hash %x", reply.EnvelopeHash)
+
+	replyIndex := e.findReplicaIndex(entry, reply.ReplicaID)
+	if replyIndex >= 0 {
+		e.storeReplyIfEmpty(entry, reply, replyIndex)
+	} else {
+		e.log.Warningf("CacheReply: replica ID %d not found in IntermediateReplicas %v for envelope hash %x", reply.ReplicaID, entry.IntermediateReplicas, reply.EnvelopeHash)
+	}
+}
+
+// findReplicaIndex finds the index for a replica ID in IntermediateReplicas
+func (e *Courier) findReplicaIndex(entry *CourierBookKeeping, replicaID uint8) int {
+	for i, id := range entry.IntermediateReplicas {
+		if id == replicaID {
+			return i
+		}
+	}
+	return -1
+}
+
+// storeReplyIfEmpty stores the reply only if the slot is empty
+func (e *Courier) storeReplyIfEmpty(entry *CourierBookKeeping, reply *commands.ReplicaMessageReply, replyIndex int) {
+	if entry.EnvelopeReplies[replyIndex] == nil {
+		e.log.Debugf("CacheReply: storing reply from replica %d at IntermediateReplicas index %d", reply.ReplicaID, replyIndex)
+		entry.EnvelopeReplies[replyIndex] = reply
+	} else {
+		e.log.Debugf("CacheReply: reply from replica %d already cached, ignoring duplicate", reply.ReplicaID)
+	}
+}
+
+// createNewEntry creates a new cache entry for unknown envelope hashes
+func (e *Courier) createNewEntry(reply *commands.ReplicaMessageReply) {
+	e.log.Debugf("BUG: received an unknown EnvelopeHash %x from a replica reply", reply.EnvelopeHash)
+
+	currentEpoch := e.getCurrentEpoch()
+	newEntry := &CourierBookKeeping{
+		Epoch:                currentEpoch,
+		IntermediateReplicas: [2]uint8{reply.ReplicaID, 255}, // 255 indicates unknown
+		EnvelopeReplies:      [2]*commands.ReplicaMessageReply{nil, nil},
+	}
+
+	if reply.ReplicaID < 2 {
+		e.log.Debugf("CacheReply: creating new cache entry and storing reply from replica %d at index %d", reply.ReplicaID, reply.ReplicaID)
+		newEntry.EnvelopeReplies[reply.ReplicaID] = reply
+	} else {
+		e.log.Warningf("CacheReply: invalid replica ID %d for envelope hash %x", reply.ReplicaID, reply.EnvelopeHash)
+	}
+
+	e.dedupCache[*reply.EnvelopeHash] = newEntry
+}
+
+// getCurrentEpoch gets the current epoch from PKI document
+func (e *Courier) getCurrentEpoch() uint64 {
+	if pkiDoc := e.server.PKI.PKIDocument(); pkiDoc != nil {
+		return pkiDoc.Epoch
+	}
+	return 0
+}
+
+// logFinalCacheState logs the final state of the cache entry
+func (e *Courier) logFinalCacheState(reply *commands.ReplicaMessageReply) {
 	finalEntry := e.dedupCache[*reply.EnvelopeHash]
 	reply0Available := finalEntry.EnvelopeReplies[0] != nil
 	reply1Available := finalEntry.EnvelopeReplies[1] != nil
