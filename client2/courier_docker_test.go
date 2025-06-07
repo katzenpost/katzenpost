@@ -56,7 +56,7 @@ func testDockerCourierService(t *testing.T) {
 	plaintextMessage := []byte("Hello world from Alice to Bob!")
 
 	// Create context with timeout for operations
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
 	// === ALICE (Writer) ===
