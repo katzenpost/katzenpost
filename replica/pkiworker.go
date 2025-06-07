@@ -8,7 +8,6 @@ import (
 	"crypto/hmac"
 	"errors"
 	"net/url"
-	"sync"
 	"time"
 
 	"golang.org/x/crypto/blake2b"
@@ -37,19 +36,14 @@ var (
 type PKIWorker struct {
 	worker.Worker
 
-	server  *Server
-	log     *logging.Logger
-	fetcher *pki.DocumentFetcher
+	server *Server
+	*pki.WorkerBase
 
 	replicas *common.ReplicaMap
 
 	impl pki.Client // PKI client for document fetching and publishing
 
-	lock                      *sync.RWMutex
 	descAddrMap               map[string][]string
-	docs                      map[uint64]*pki.Document
-	rawDocs                   map[uint64][]byte
-	failedFetches             map[uint64]error
 	lastPublishedEpoch        uint64
 	lastWarnedEpoch           uint64
 	lastPublishedReplicaEpoch uint64
@@ -80,16 +74,11 @@ func newPKIWorker(server *Server, log *logging.Logger) (*PKIWorker, error) {
 // newPKIWorkerWithClient creates a PKIWorker with a custom pki.Client for testing
 func newPKIWorkerWithClient(server *Server, pkiClient pki.Client, log *logging.Logger) (*PKIWorker, error) {
 	p := &PKIWorker{
-		server:        server,
-		log:           log,
-		fetcher:       pki.NewDocumentFetcher(pkiClient, log),
-		replicas:      common.NewReplicaMap(),
-		lock:          new(sync.RWMutex),
-		descAddrMap:   make(map[string][]string),
-		docs:          make(map[uint64]*pki.Document),
-		rawDocs:       make(map[uint64][]byte),
-		failedFetches: make(map[uint64]error),
-		impl:          pkiClient,
+		server:      server,
+		WorkerBase:  pki.NewWorkerBase(pkiClient, log),
+		replicas:    common.NewReplicaMap(),
+		descAddrMap: make(map[string][]string),
+		impl:        pkiClient,
 	}
 
 	for _, v := range server.cfg.Addresses {
@@ -158,7 +147,7 @@ func (p *PKIWorker) updateReplicas(doc *pki.Document) {
 		p.replicas.Replace(newReplicas)
 		err := p.server.state.Rebalance()
 		if err != nil {
-			p.log.Errorf("Rebalance failure: %s", err)
+			p.GetLogger().Errorf("Rebalance failure: %s", err)
 		}
 	}
 }
@@ -170,13 +159,7 @@ func (p *PKIWorker) ReplicasCopy() map[[32]byte]*pki.ReplicaDescriptor {
 
 // Keep the documentForEpoch method public so it can be used by IsPeerValid
 func (p *PKIWorker) documentForEpoch(epoch uint64) *pki.Document {
-	p.lock.RLock()
-	defer p.lock.RUnlock()
-
-	if d, ok := p.docs[epoch]; ok {
-		return d
-	}
-	return nil
+	return p.EntryForEpoch(epoch)
 }
 
 // ForceFetchPKI forces the PKI worker to fetch a new PKI document for the current epoch.
@@ -190,17 +173,15 @@ func (p *PKIWorker) ForceFetchPKI() error {
 	epoch, _, _ := epochtime.Now()
 
 	// Clear any failed fetch record for this epoch to allow retry
-	p.lock.Lock()
-	delete(p.failedFetches, epoch)
-	p.lock.Unlock()
+	p.ClearFailedFetch(epoch)
 
-	p.log.Debugf("Force fetching PKI document for epoch %v", epoch)
+	p.GetLogger().Debugf("Force fetching PKI document for epoch %v", epoch)
 
 	// Fetch the PKI document
 	ctx := context.Background()
 	d, rawDoc, err := p.impl.Get(ctx, epoch)
 	if err != nil {
-		p.log.Warningf("Force fetch failed for epoch %v: %v", epoch, err)
+		p.GetLogger().Warningf("Force fetch failed for epoch %v: %v", epoch, err)
 		return err
 	}
 
@@ -211,13 +192,9 @@ func (p *PKIWorker) ForceFetchPKI() error {
 
 	// Update replicas and store the document
 	p.updateReplicas(d)
+	p.StoreDocument(epoch, d, rawDoc)
 
-	p.lock.Lock()
-	p.rawDocs[epoch] = rawDoc
-	p.docs[epoch] = d
-	p.lock.Unlock()
-
-	p.log.Debugf("Successfully force fetched PKI document for epoch %v", epoch)
+	p.GetLogger().Debugf("Successfully force fetched PKI document for epoch %v", epoch)
 
 	// Kick the connector to update connections
 	p.server.connector.ForceUpdate()

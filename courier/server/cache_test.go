@@ -515,9 +515,9 @@ func TestCourierCacheEpochTracking(t *testing.T) {
 	require.NoError(t, err)
 
 	// Manually populate the PKI worker's cache with the test document for the current epoch
-	courier.server.PKI.lock.Lock()
-	courier.server.PKI.docs[testEpoch] = mockPKI.doc
-	courier.server.PKI.lock.Unlock()
+	rawDoc, err := mockPKI.doc.MarshalCertificate()
+	require.NoError(t, err)
+	courier.server.PKI.SetDocumentForEpoch(testEpoch, mockPKI.doc, rawDoc)
 
 	envHash := [hash.HashSize]byte{}
 	copy(envHash[:], []byte(testEnvelopeHashString))
