@@ -350,11 +350,15 @@ func newServerWithPKI(cfg *config.Config, pkiClient pki.Client) (*Server, error)
 
 	isOk = true
 
-	// XXX FIXME: perform rebalance after some delay to ensure we're first fully booted up
-	s.log.Notice("performing rebalance after startup")
-	err = s.state.Rebalance()
-	if err != nil {
-		s.log.Errorf("failed to rebalance shares after startup: %s", err)
+	// Check if we have a PKI document before rebalancing
+	if s.PKIWorker.HasCurrentPKIDocument() {
+		s.log.Notice("performing rebalance after startup")
+		err = s.state.Rebalance()
+		if err != nil {
+			s.log.Errorf("failed to rebalance shares after startup: %s", err)
+		}
+	} else {
+		s.log.Notice("skipping initial rebalance - no PKI document available yet")
 	}
 
 	return s, nil
