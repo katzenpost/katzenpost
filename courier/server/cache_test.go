@@ -35,26 +35,81 @@ const (
 	errNotImplemented = "not implemented"
 )
 
+// Test helper functions to eliminate code duplication
+
+// createTestEnvelopeHash creates a test envelope hash from the standard test string
+func createTestEnvelopeHash() [hash.HashSize]byte {
+	var envHash [hash.HashSize]byte
+	copy(envHash[:], []byte(testEnvelopeHashString))
+	return envHash
+}
+
+// createTestEnvelopeHashWithSuffix creates a test envelope hash with a custom suffix
+func createTestEnvelopeHashWithSuffix(suffix string) [hash.HashSize]byte {
+	var envHash [hash.HashSize]byte
+	hashString := "test-envelope-hash-" + suffix + "234567890123456789012345678901"
+	copy(envHash[:], []byte(hashString))
+	return envHash
+}
+
+// createTestReply creates a standard test reply with the given parameters
+func createTestReply(envHash *[hash.HashSize]byte, replicaID uint8, payload string, isRead bool) *commands.ReplicaMessageReply {
+	return &commands.ReplicaMessageReply{
+		EnvelopeHash:  envHash,
+		ReplicaID:     replicaID,
+		ErrorCode:     0,
+		EnvelopeReply: []byte(payload),
+		IsRead:        isRead,
+	}
+}
+
+// createTestErrorReply creates a test reply with an error code
+func createTestErrorReply(envHash *[hash.HashSize]byte, replicaID uint8, errorCode uint8, payload string, isRead bool) *commands.ReplicaMessageReply {
+	return &commands.ReplicaMessageReply{
+		EnvelopeHash:  envHash,
+		ReplicaID:     replicaID,
+		ErrorCode:     errorCode,
+		EnvelopeReply: []byte(payload),
+		IsRead:        isRead,
+	}
+}
+
+// setupCacheEntry sets up a cache entry with both replica IDs
+func setupCacheEntry(courier *Courier, envHash [hash.HashSize]byte, epoch uint64) {
+	courier.dedupCacheLock.Lock()
+	courier.dedupCache[envHash] = &CourierBookKeeping{
+		Epoch:                epoch,
+		IntermediateReplicas: [2]uint8{0, 1}, // Both replicas are expected
+		EnvelopeReplies:      [2]*commands.ReplicaMessageReply{nil, nil},
+	}
+	courier.dedupCacheLock.Unlock()
+}
+
+// getCacheEntry safely retrieves a cache entry
+func getCacheEntry(courier *Courier, envHash [hash.HashSize]byte) (*CourierBookKeeping, bool) {
+	courier.dedupCacheLock.RLock()
+	defer courier.dedupCacheLock.RUnlock()
+	entry, exists := courier.dedupCache[envHash]
+	return entry, exists
+}
+
+// verifyCacheEntry verifies that a cache entry exists and returns it
+func verifyCacheEntry(t *testing.T, courier *Courier, envHash [hash.HashSize]byte) *CourierBookKeeping {
+	entry, exists := getCacheEntry(courier, envHash)
+	require.True(t, exists)
+	require.NotNil(t, entry)
+	return entry
+}
+
 // TestCourierCacheBasicOperations tests basic cache operations
 func TestCourierCacheBasicOperations(t *testing.T) {
-	// Create a courier with empty cache
 	courier := createTestCourier(t)
 
 	// Test initial state - cache should be empty
 	require.Equal(t, 0, len(courier.dedupCache))
 
-	// Create test envelope hash
-	envHash := [hash.HashSize]byte{}
-	copy(envHash[:], []byte(testEnvelopeHashString))
-
-	// Create test replica reply
-	reply := &commands.ReplicaMessageReply{
-		EnvelopeHash:  &envHash,
-		ReplicaID:     0,
-		ErrorCode:     0,
-		EnvelopeReply: []byte("test-reply-payload"),
-		IsRead:        true, // Set IsRead to true so it will be cached
-	}
+	envHash := createTestEnvelopeHash()
+	reply := createTestReply(&envHash, 0, "test-reply-payload", true)
 
 	// Test CacheReply - first reply
 	courier.CacheReply(reply)
@@ -62,12 +117,7 @@ func TestCourierCacheBasicOperations(t *testing.T) {
 	// Verify cache entry was created
 	require.Equal(t, 1, len(courier.dedupCache))
 
-	courier.dedupCacheLock.RLock()
-	entry, exists := courier.dedupCache[envHash]
-	courier.dedupCacheLock.RUnlock()
-
-	require.True(t, exists)
-	require.NotNil(t, entry)
+	entry := verifyCacheEntry(t, courier, envHash)
 	require.Equal(t, reply, entry.EnvelopeReplies[0])
 	require.Nil(t, entry.EnvelopeReplies[1])
 }
@@ -75,47 +125,19 @@ func TestCourierCacheBasicOperations(t *testing.T) {
 // TestCourierCacheDualReplies tests caching replies from both replicas
 func TestCourierCacheDualReplies(t *testing.T) {
 	courier := createTestCourier(t)
-
-	envHash := [hash.HashSize]byte{}
-	copy(envHash[:], []byte(testEnvelopeHashString))
+	envHash := createTestEnvelopeHash()
 
 	// Set up the cache entry properly with both replica IDs first
-	// This simulates what would happen in the normal OnCommand flow
-	courier.dedupCacheLock.Lock()
-	courier.dedupCache[envHash] = &CourierBookKeeping{
-		Epoch:                1,
-		IntermediateReplicas: [2]uint8{0, 1}, // Both replicas are expected
-		EnvelopeReplies:      [2]*commands.ReplicaMessageReply{nil, nil},
-	}
-	courier.dedupCacheLock.Unlock()
+	setupCacheEntry(courier, envHash, 1)
 
-	// Create first replica reply
-	reply1 := &commands.ReplicaMessageReply{
-		EnvelopeHash:  &envHash,
-		ReplicaID:     0,
-		ErrorCode:     0,
-		EnvelopeReply: []byte("reply-from-replica-0"),
-		IsRead:        true, // Set IsRead to true so it will be cached
-	}
-
-	// Create second replica reply
-	reply2 := &commands.ReplicaMessageReply{
-		EnvelopeHash:  &envHash,
-		ReplicaID:     1,
-		ErrorCode:     0,
-		EnvelopeReply: []byte("reply-from-replica-1"),
-		IsRead:        true, // Set IsRead to true so it will be cached
-	}
+	reply1 := createTestReply(&envHash, 0, "reply-from-replica-0", true)
+	reply2 := createTestReply(&envHash, 1, "reply-from-replica-1", true)
 
 	// Cache first reply
 	courier.CacheReply(reply1)
 
 	// Verify first reply is cached
-	courier.dedupCacheLock.RLock()
-	entry, exists := courier.dedupCache[envHash]
-	courier.dedupCacheLock.RUnlock()
-
-	require.True(t, exists)
+	entry := verifyCacheEntry(t, courier, envHash)
 	require.Equal(t, reply1, entry.EnvelopeReplies[0])
 	require.Nil(t, entry.EnvelopeReplies[1])
 
@@ -123,10 +145,7 @@ func TestCourierCacheDualReplies(t *testing.T) {
 	courier.CacheReply(reply2)
 
 	// Verify both replies are cached
-	courier.dedupCacheLock.RLock()
-	entry = courier.dedupCache[envHash]
-	courier.dedupCacheLock.RUnlock()
-
+	entry, _ = getCacheEntry(courier, envHash)
 	require.Equal(t, reply1, entry.EnvelopeReplies[0])
 	require.Equal(t, reply2, entry.EnvelopeReplies[1])
 }
@@ -134,43 +153,14 @@ func TestCourierCacheDualReplies(t *testing.T) {
 // TestCourierCacheOverflow tests behavior when trying to cache more than 2 replies
 func TestCourierCacheOverflow(t *testing.T) {
 	courier := createTestCourier(t)
-
-	envHash := [hash.HashSize]byte{}
-	copy(envHash[:], []byte(testEnvelopeHashString))
+	envHash := createTestEnvelopeHash()
 
 	// Set up the cache entry properly with both replica IDs first
-	courier.dedupCacheLock.Lock()
-	courier.dedupCache[envHash] = &CourierBookKeeping{
-		Epoch:                1,
-		IntermediateReplicas: [2]uint8{0, 1}, // Both replicas are expected
-		EnvelopeReplies:      [2]*commands.ReplicaMessageReply{nil, nil},
-	}
-	courier.dedupCacheLock.Unlock()
+	setupCacheEntry(courier, envHash, 1)
 
-	// Create three replica replies
-	reply1 := &commands.ReplicaMessageReply{
-		EnvelopeHash:  &envHash,
-		ReplicaID:     0,
-		ErrorCode:     0,
-		EnvelopeReply: []byte("reply-1"),
-		IsRead:        true, // Add this flag to ensure replies are cached
-	}
-
-	reply2 := &commands.ReplicaMessageReply{
-		EnvelopeHash:  &envHash,
-		ReplicaID:     1,
-		ErrorCode:     0,
-		EnvelopeReply: []byte("reply-2"),
-		IsRead:        true, // Add this flag to ensure replies are cached
-	}
-
-	reply3 := &commands.ReplicaMessageReply{
-		EnvelopeHash:  &envHash,
-		ReplicaID:     0,
-		ErrorCode:     0,
-		EnvelopeReply: []byte("reply-3-should-be-ignored"),
-		IsRead:        true, // Add this flag to ensure replies are cached
-	}
+	reply1 := createTestReply(&envHash, 0, "reply-1", true)
+	reply2 := createTestReply(&envHash, 1, "reply-2", true)
+	reply3 := createTestReply(&envHash, 0, "reply-3-should-be-ignored", true)
 
 	// Cache all three replies
 	courier.CacheReply(reply1)
@@ -178,10 +168,7 @@ func TestCourierCacheOverflow(t *testing.T) {
 	courier.CacheReply(reply3) // This should be ignored
 
 	// Verify only first two replies are cached
-	courier.dedupCacheLock.RLock()
-	entry := courier.dedupCache[envHash]
-	courier.dedupCacheLock.RUnlock()
-
+	entry, _ := getCacheEntry(courier, envHash)
 	require.Equal(t, reply1, entry.EnvelopeReplies[0])
 	require.Equal(t, reply2, entry.EnvelopeReplies[1])
 	require.NotEqual(t, reply3.EnvelopeReply, entry.EnvelopeReplies[0].EnvelopeReply)
@@ -190,35 +177,13 @@ func TestCourierCacheOverflow(t *testing.T) {
 // TestCourierCacheHandleOldMessage tests retrieving cached replies
 func TestCourierCacheHandleOldMessage(t *testing.T) {
 	courier := createTestCourier(t)
-
-	envHash := [hash.HashSize]byte{}
-	copy(envHash[:], []byte(testEnvelopeHashString))
+	envHash := createTestEnvelopeHash()
 
 	// Set up the cache entry properly with both replica IDs first
-	courier.dedupCacheLock.Lock()
-	courier.dedupCache[envHash] = &CourierBookKeeping{
-		Epoch:                1,
-		IntermediateReplicas: [2]uint8{0, 1}, // Both replicas are expected
-		EnvelopeReplies:      [2]*commands.ReplicaMessageReply{nil, nil},
-	}
-	courier.dedupCacheLock.Unlock()
+	setupCacheEntry(courier, envHash, 1)
 
-	// Create test replies
-	reply1 := &commands.ReplicaMessageReply{
-		EnvelopeHash:  &envHash,
-		ReplicaID:     0,
-		ErrorCode:     0,
-		EnvelopeReply: []byte("cached-reply-0"),
-		IsRead:        true, // Add this flag to ensure replies are cached
-	}
-
-	reply2 := &commands.ReplicaMessageReply{
-		EnvelopeHash:  &envHash,
-		ReplicaID:     1,
-		ErrorCode:     0,
-		EnvelopeReply: []byte("cached-reply-1"),
-		IsRead:        true, // Add this flag to ensure replies are cached
-	}
+	reply1 := createTestReply(&envHash, 0, "cached-reply-0", true)
+	reply2 := createTestReply(&envHash, 1, "cached-reply-1", true)
 
 	// Cache both replies
 	courier.CacheReply(reply1)
@@ -230,9 +195,7 @@ func TestCourierCacheHandleOldMessage(t *testing.T) {
 	}
 
 	// Get cached entry
-	courier.dedupCacheLock.RLock()
-	cacheEntry := courier.dedupCache[envHash]
-	courier.dedupCacheLock.RUnlock()
+	cacheEntry, _ := getCacheEntry(courier, envHash)
 
 	// Test handleOldMessage for reply index 0
 	replyBytes := courier.handleOldMessage(cacheEntry, &envHash, courierEnv)
@@ -258,18 +221,9 @@ func TestCourierCacheHandleOldMessage(t *testing.T) {
 // TestCourierCacheFallbackBehavior tests fallback when requested reply index is not available
 func TestCourierCacheFallbackBehavior(t *testing.T) {
 	courier := createTestCourier(t)
+	envHash := createTestEnvelopeHash()
 
-	envHash := [hash.HashSize]byte{}
-	copy(envHash[:], []byte(testEnvelopeHashString))
-
-	// Cache only reply from replica 1 (index 1)
-	reply1 := &commands.ReplicaMessageReply{
-		EnvelopeHash:  &envHash,
-		ReplicaID:     1,
-		ErrorCode:     0,
-		EnvelopeReply: []byte("only-reply-from-replica-1"),
-	}
-
+	reply1 := createTestReply(&envHash, 1, "only-reply-from-replica-1", false)
 	courier.CacheReply(reply1)
 
 	// Manually set up cache entry with reply only in slot 1
@@ -288,10 +242,7 @@ func TestCourierCacheFallbackBehavior(t *testing.T) {
 		ReplyIndex: 0,
 	}
 
-	courier.dedupCacheLock.RLock()
-	cacheEntry := courier.dedupCache[envHash]
-	courier.dedupCacheLock.RUnlock()
-
+	cacheEntry, _ := getCacheEntry(courier, envHash)
 	replyBytes := courier.handleOldMessage(cacheEntry, &envHash, courierEnv)
 
 	courierReply, err := common.CourierEnvelopeReplyFromBytes(replyBytes)
@@ -305,9 +256,7 @@ func TestCourierCacheFallbackBehavior(t *testing.T) {
 // TestCourierCacheEmptyResponse tests behavior when no replies are cached
 func TestCourierCacheEmptyResponse(t *testing.T) {
 	courier := createTestCourier(t)
-
-	envHash := [hash.HashSize]byte{}
-	copy(envHash[:], []byte(testEnvelopeHashString))
+	envHash := createTestEnvelopeHash()
 
 	// Create cache entry with no replies
 	cacheEntry := &CourierBookKeeping{
@@ -395,20 +344,12 @@ func createTestCourier(t *testing.T) *Courier {
 // TestCourierCacheConcurrentAccess tests thread safety of cache operations
 func TestCourierCacheConcurrentAccess(t *testing.T) {
 	courier := createTestCourier(t)
-
-	envHash := [hash.HashSize]byte{}
-	copy(envHash[:], []byte(testEnvelopeHashString))
+	envHash := createTestEnvelopeHash()
 
 	// Create multiple replies
 	replies := make([]*commands.ReplicaMessageReply, 10)
 	for i := 0; i < 10; i++ {
-		replies[i] = &commands.ReplicaMessageReply{
-			EnvelopeHash:  &envHash,
-			ReplicaID:     uint8(i % 2), // Alternate between replica 0 and 1
-			ErrorCode:     0,
-			EnvelopeReply: []byte("concurrent-reply"),
-			IsRead:        true, // Add this flag to ensure replies are cached
-		}
+		replies[i] = createTestReply(&envHash, uint8(i%2), "concurrent-reply", true)
 	}
 
 	// Concurrently cache replies
@@ -426,12 +367,7 @@ func TestCourierCacheConcurrentAccess(t *testing.T) {
 	}
 
 	// Verify cache state is consistent
-	courier.dedupCacheLock.RLock()
-	entry, exists := courier.dedupCache[envHash]
-	courier.dedupCacheLock.RUnlock()
-
-	require.True(t, exists)
-	require.NotNil(t, entry)
+	entry := verifyCacheEntry(t, courier, envHash)
 
 	// Should have at most 2 replies (one per replica)
 	replyCount := 0
@@ -451,18 +387,12 @@ func TestCourierCacheMultipleEnvelopes(t *testing.T) {
 	// Create multiple envelope hashes
 	envHashes := make([][hash.HashSize]byte, 5)
 	for i := 0; i < 5; i++ {
-		copy(envHashes[i][:], []byte("test-envelope-hash-"+string(rune('A'+i))+"234567890123456789012345678901"))
+		envHashes[i] = createTestEnvelopeHashWithSuffix(string(rune('A' + i)))
 	}
 
 	// Cache replies for each envelope
 	for i, envHash := range envHashes {
-		reply := &commands.ReplicaMessageReply{
-			EnvelopeHash:  &envHash,
-			ReplicaID:     uint8(i % 2),
-			ErrorCode:     0,
-			EnvelopeReply: []byte("reply-for-envelope-" + string(rune('A'+i))),
-			IsRead:        true, // Add this flag to ensure replies are cached
-		}
+		reply := createTestReply(&envHash, uint8(i%2), "reply-for-envelope-"+string(rune('A'+i)), true)
 		courier.CacheReply(reply)
 	}
 
@@ -470,12 +400,7 @@ func TestCourierCacheMultipleEnvelopes(t *testing.T) {
 	require.Equal(t, 5, len(courier.dedupCache))
 
 	for i, envHash := range envHashes {
-		courier.dedupCacheLock.RLock()
-		entry, exists := courier.dedupCache[envHash]
-		courier.dedupCacheLock.RUnlock()
-
-		require.True(t, exists)
-		require.NotNil(t, entry)
+		entry := verifyCacheEntry(t, courier, envHash)
 
 		expectedReply := []byte("reply-for-envelope-" + string(rune('A'+i)))
 		expectedReplicaID := uint8(i % 2)
@@ -543,26 +468,13 @@ func TestCourierCacheEpochTracking(t *testing.T) {
 // TestCourierCacheErrorReplies tests caching of error replies
 func TestCourierCacheErrorReplies(t *testing.T) {
 	courier := createTestCourier(t)
+	envHash := createTestEnvelopeHash()
 
-	envHash := [hash.HashSize]byte{}
-	copy(envHash[:], []byte(testEnvelopeHashString))
-
-	// Create error reply
-	errorReply := &commands.ReplicaMessageReply{
-		EnvelopeHash:  &envHash,
-		ReplicaID:     0,
-		ErrorCode:     1, // Error code
-		EnvelopeReply: []byte("error-occurred"),
-		IsRead:        true, // Add this flag to ensure the reply is cached
-	}
-
+	errorReply := createTestErrorReply(&envHash, 0, 1, "error-occurred", true)
 	courier.CacheReply(errorReply)
 
 	// Verify error reply is cached
-	courier.dedupCacheLock.RLock()
-	entry := courier.dedupCache[envHash]
-	courier.dedupCacheLock.RUnlock()
-
+	entry := verifyCacheEntry(t, courier, envHash)
 	require.Equal(t, errorReply, entry.EnvelopeReplies[0])
 	require.Equal(t, uint8(1), entry.EnvelopeReplies[0].ErrorCode)
 }
@@ -571,13 +483,7 @@ func TestCourierCacheErrorReplies(t *testing.T) {
 func TestCourierCacheNilEnvelopeHash(t *testing.T) {
 	courier := createTestCourier(t)
 
-	// Create reply with nil envelope hash - this should not panic
-	reply := &commands.ReplicaMessageReply{
-		EnvelopeHash:  nil,
-		ReplicaID:     0,
-		ErrorCode:     0,
-		EnvelopeReply: []byte("test-reply"),
-	}
+	reply := createTestReply(nil, 0, "test-reply", false)
 
 	// This should not panic but also should not cache anything
 	require.NotPanics(t, func() {
