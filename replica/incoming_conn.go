@@ -200,9 +200,36 @@ func (c *incomingConn) processCommands(session *wire.Session, creds *wire.PeerCr
 	defer reauth.Stop()
 
 	// Start reading from the peer.
-	commandCh := make(chan commands.Command)
-	commandCloseCh := make(chan interface{})
+	commandCh, commandCloseCh := c.startCommandReader(session)
 	defer close(commandCloseCh)
+
+	// Process incoming packets.
+	for {
+		rawCmd, shouldContinue := c.handleSelectCases(reauth.C, creds, commandCh)
+		if !shouldContinue {
+			return
+		}
+		if rawCmd == nil {
+			continue
+		}
+
+		// Handle all of the storage replica commands.
+		resp, allGood := c.onReplicaCommand(rawCmd)
+		if !allGood {
+			c.log.Debugf("Failed to handle replica command: %v", rawCmd)
+			return
+		}
+
+		// Send the response, if any.
+		c.sendResponse(session, resp, blob)
+	}
+}
+
+// startCommandReader starts a goroutine to read commands from the session
+func (c *incomingConn) startCommandReader(session *wire.Session) (chan commands.Command, chan any) {
+	commandCh := make(chan commands.Command)
+	commandCloseCh := make(chan any)
+
 	go func() {
 		defer close(commandCh)
 		for {
@@ -214,65 +241,48 @@ func (c *incomingConn) processCommands(session *wire.Session, creds *wire.PeerCr
 			select {
 			case commandCh <- rawCmd:
 			case <-commandCloseCh:
-				// c.worker() is returning for some reason, give up on
-				// trying to write the command, and just return.
 				return
 			}
 		}
 	}()
 
-	// Process incoming packets.
-	for {
-		var rawCmd commands.Command
-		var ok bool
+	return commandCh, commandCloseCh
+}
 
-		select {
-		case <-c.l.closeAllCh:
-			// Server is getting shutdown, all connections are being closed.
-			return
-		case <-reauth.C:
-			// Each incoming conn has a periodic 1/15 Hz timer to wake up
-			// and re-authenticate the connection to handle the PKI document(s)
-			// and or the user database changing.
-			//
-			// Doing it this way avoids a good amount of complexity at the
-			// the cost of extra authenticates (which should be fairly fast).
-			if !c.IsPeerValid(creds) {
-				c.log.Debugf("Disconnecting, peer reauthenticate failed.")
-				return
-			}
-			continue
-		case <-c.closeConnectionCh:
-			c.log.Debugf("Disconnecting to make room for a newer connection from the same peer.")
-			return
-		case rawCmd, ok = <-commandCh:
-			if !ok {
-				return
-			}
+// handleSelectCases handles the main select statement cases
+func (c *incomingConn) handleSelectCases(reauthCh <-chan time.Time, creds *wire.PeerCredentials, commandCh <-chan commands.Command) (commands.Command, bool) {
+	select {
+	case <-c.l.closeAllCh:
+		return nil, false
+	case <-reauthCh:
+		if !c.IsPeerValid(creds) {
+			c.log.Debugf("Disconnecting, peer reauthenticate failed.")
+			return nil, false
 		}
-
-		// Handle all of the storage replica commands.
-		resp, allGood := c.onReplicaCommand(rawCmd)
-		if !allGood {
-			c.log.Debugf("Failed to handle replica command: %v", rawCmd)
-			// Catastrophic failure in command processing, or a disconnect.
-			return
+		return nil, true
+	case <-c.closeConnectionCh:
+		c.log.Debugf("Disconnecting to make room for a newer connection from the same peer.")
+		return nil, false
+	case rawCmd, ok := <-commandCh:
+		if !ok {
+			return nil, false
 		}
-
-		// Send the response, if any.
-		if resp != nil {
-			c.log.Debugf("Sending response: %T", resp)
-			if err := session.SendCommand(resp); err != nil {
-				c.log.Debugf("Peer %v: Failed to send response: %v", hash.Sum256(blob), err)
-			} else {
-				c.log.Debugf("Successfully sent response: %T", resp)
-			}
-		} else {
-			c.log.Debugf("No response to send (resp is nil)")
-		}
+		return rawCmd, true
 	}
+}
 
-	// NOTREACHED
+// sendResponse sends a response command if one is provided
+func (c *incomingConn) sendResponse(session *wire.Session, resp commands.Command, blob []byte) {
+	if resp != nil {
+		c.log.Debugf("Sending response: %T", resp)
+		if err := session.SendCommand(resp); err != nil {
+			c.log.Debugf("Peer %v: Failed to send response: %v", hash.Sum256(blob), err)
+		} else {
+			c.log.Debugf("Successfully sent response: %T", resp)
+		}
+	} else {
+		c.log.Debugf("No response to send (resp is nil)")
+	}
 }
 
 func newIncomingConn(l *Listener, conn net.Conn, geo *geo.Geometry, scheme kem.Scheme, pkiSignScheme sign.Scheme) *incomingConn {
