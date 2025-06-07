@@ -9,10 +9,13 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/katzenpost/hpqc/hash"
+	"github.com/katzenpost/hpqc/kem"
 	kempem "github.com/katzenpost/hpqc/kem/pem"
 	kemschemes "github.com/katzenpost/hpqc/kem/schemes"
+	"github.com/katzenpost/hpqc/nike"
 	nikeschemes "github.com/katzenpost/hpqc/nike/schemes"
 	"github.com/katzenpost/hpqc/rand"
+	"github.com/katzenpost/hpqc/sign"
 	signschemes "github.com/katzenpost/hpqc/sign/schemes"
 
 	authconfig "github.com/katzenpost/katzenpost/authority/voting/server/config"
@@ -28,6 +31,94 @@ const (
 	testDirAuthAddress = "tcp://127.0.0.1:1234"
 	testReplicaAddress = "tcp://127.0.0.1:7483"
 )
+
+// testSetup holds common test setup data
+type testSetup struct {
+	pkiScheme     sign.Scheme
+	idpubkey      sign.PublicKey
+	linkScheme    kem.Scheme
+	linkpubkey    kem.PublicKey
+	replicaScheme nike.Scheme
+	geometry      *geo.Geometry
+	cfg           *config.Config
+	server        *Server
+	idpubkeyblob  []byte
+	libpubkeyblob []byte
+	id            [32]byte
+}
+
+// createTestSetup creates common test setup with keys, config, and server
+func createTestSetup(t *testing.T) *testSetup {
+	pkiScheme := signschemes.ByName(testPKIScheme)
+	idpubkey, _, err := pkiScheme.GenerateKey()
+	require.NoError(t, err)
+
+	linkScheme := kemschemes.ByName("Xwing")
+	linkpubkey, _, err := linkScheme.GenerateKeyPair()
+	require.NoError(t, err)
+
+	replicaScheme := nikeschemes.ByName("x25519")
+
+	nrHops := 5
+	payloadSize := 5000
+	sphinxScheme := nikeschemes.ByName("x25519")
+
+	geometry := geo.GeometryFromUserForwardPayloadLength(sphinxScheme, payloadSize, true, nrHops)
+
+	cfg := &config.Config{
+		PKI: &config.PKI{
+			Voting: &config.Voting{
+				Authorities: []*authconfig.Authority{
+					&authconfig.Authority{
+						Identifier:         "dirauth1",
+						IdentityPublicKey:  idpubkey,
+						PKISignatureScheme: pkiScheme.Name(),
+						LinkPublicKey:      linkpubkey,
+						WireKEMScheme:      linkScheme.Name(),
+						Addresses:          []string{testDirAuthAddress},
+					},
+				},
+			},
+		},
+		Logging: &config.Logging{
+			Disable: false,
+			File:    "",
+			Level:   "DEBUG",
+		},
+		DataDir:            filepath.Join(t.TempDir(), "datadir"),
+		Identifier:         "replica1",
+		WireKEMScheme:      linkScheme.Name(),
+		PKISignatureScheme: pkiScheme.Name(),
+		ReplicaNIKEScheme:  replicaScheme.Name(),
+		SphinxGeometry:     geometry,
+		Addresses:          []string{testReplicaAddress},
+	}
+
+	server, err := New(cfg)
+	require.NoError(t, err)
+
+	idpubkeyblob, err := idpubkey.MarshalBinary()
+	require.NoError(t, err)
+
+	libpubkeyblob, err := linkpubkey.MarshalBinary()
+	require.NoError(t, err)
+
+	id := hash.Sum256From(idpubkey)
+
+	return &testSetup{
+		pkiScheme:     pkiScheme,
+		idpubkey:      idpubkey,
+		linkScheme:    linkScheme,
+		linkpubkey:    linkpubkey,
+		replicaScheme: replicaScheme,
+		geometry:      geometry,
+		cfg:           cfg,
+		server:        server,
+		idpubkeyblob:  idpubkeyblob,
+		libpubkeyblob: libpubkeyblob,
+		id:            id,
+	}
+}
 
 func TestReplicaMap(t *testing.T) {
 	r := common.NewReplicaMap()
@@ -47,63 +138,13 @@ func TestReplicaMap(t *testing.T) {
 }
 
 func TestAuthenticateCourierConnection(t *testing.T) {
-	pkiScheme := signschemes.ByName(testPKIScheme)
-	idpubkey, _, err := pkiScheme.GenerateKey()
-	require.NoError(t, err)
+	setup := createTestSetup(t)
+	defer setup.server.Shutdown()
 
-	linkScheme := kemschemes.ByName("Xwing")
-	linkpubkey, _, err := linkScheme.GenerateKeyPair()
-	require.NoError(t, err)
-
-	replicaScheme := nikeschemes.ByName("x25519")
-
-	nrHops := 5
-	payloadSize := 5000
-	sphinxScheme := nikeschemes.ByName("x25519")
-
-	geometry := geo.GeometryFromUserForwardPayloadLength(sphinxScheme, payloadSize, true, nrHops)
-
-	cfg := &config.Config{
-		PKI: &config.PKI{
-			Voting: &config.Voting{
-				Authorities: []*authconfig.Authority{
-					&authconfig.Authority{
-						Identifier:         "dirauth1",
-						IdentityPublicKey:  idpubkey,
-						PKISignatureScheme: pkiScheme.Name(),
-						LinkPublicKey:      linkpubkey,
-						WireKEMScheme:      linkScheme.Name(),
-						Addresses:          []string{testDirAuthAddress},
-					},
-				},
-			},
-		},
-		Logging: &config.Logging{
-			Disable: false,
-			File:    "",
-			Level:   "DEBUG",
-		},
-		DataDir:            filepath.Join(t.TempDir(), "datadir"),
-		Identifier:         "replica1",
-		WireKEMScheme:      linkScheme.Name(),
-		PKISignatureScheme: pkiScheme.Name(),
-		ReplicaNIKEScheme:  replicaScheme.Name(),
-		SphinxGeometry:     geometry,
-		Addresses:          []string{testReplicaAddress},
-	}
-	s, err := New(cfg)
-	require.NoError(t, err)
-
-	idpubkeyblob, err := idpubkey.MarshalBinary()
-	require.NoError(t, err)
-
-	libpubkeypem := kempem.ToPublicPEMString(linkpubkey)
-
-	libpubkeyblob, err := linkpubkey.MarshalBinary()
-	require.NoError(t, err)
+	libpubkeypem := kempem.ToPublicPEMString(setup.linkpubkey)
 
 	epoch, _, _ := epochtime.Now()
-	s.PKIWorker.lock.Lock()
+	setup.server.PKIWorker.lock.Lock()
 
 	advertMap := make(map[string]map[string]interface{})
 	advertMap["courier"] = make(map[string]interface{})
@@ -112,108 +153,55 @@ func TestAuthenticateCourierConnection(t *testing.T) {
 	kaetzchen := make(map[string]map[string]interface{})
 	kaetzchen["courier"] = make(map[string]interface{})
 
-	s.PKIWorker.docs[epoch] = &pki.Document{
+	setup.server.PKIWorker.docs[epoch] = &pki.Document{
 		Epoch: epoch,
 		ServiceNodes: []*pki.MixDescriptor{
 			&pki.MixDescriptor{
 				Name:                    "servicenode1",
 				Epoch:                   epoch,
-				IdentityKey:             idpubkeyblob,
-				LinkKey:                 libpubkeyblob,
+				IdentityKey:             setup.idpubkeyblob,
+				LinkKey:                 setup.libpubkeyblob,
 				Kaetzchen:               kaetzchen,
 				KaetzchenAdvertizedData: advertMap,
 			},
 		},
 	}
-	s.PKIWorker.lock.Unlock()
+	setup.server.PKIWorker.lock.Unlock()
 
 	// Test that the PKI document is properly stored
-	doc := s.PKIWorker.documentForEpoch(epoch)
+	doc := setup.server.PKIWorker.documentForEpoch(epoch)
 	require.NotNil(t, doc)
 	require.Equal(t, epoch, doc.Epoch)
 
-	s.PKIWorker.lock.Lock()
-	s.PKIWorker.docs[epoch] = &pki.Document{
+	setup.server.PKIWorker.lock.Lock()
+	setup.server.PKIWorker.docs[epoch] = &pki.Document{
 		Epoch: epoch,
 		GatewayNodes: []*pki.MixDescriptor{
 			&pki.MixDescriptor{
 				Name:        "servicenode1",
 				Epoch:       epoch,
-				IdentityKey: idpubkeyblob,
-				LinkKey:     libpubkeyblob,
+				IdentityKey: setup.idpubkeyblob,
+				LinkKey:     setup.libpubkeyblob,
 			},
 		},
 	}
-	s.PKIWorker.lock.Unlock()
+	setup.server.PKIWorker.lock.Unlock()
 
 	// Test that the document was updated
-	doc = s.PKIWorker.documentForEpoch(epoch)
+	doc = setup.server.PKIWorker.documentForEpoch(epoch)
 	require.NotNil(t, doc)
 	require.Len(t, doc.GatewayNodes, 1)
-
-	s.Shutdown()
 }
 
 func TestAuthenticateReplicaConnection(t *testing.T) {
-	pkiScheme := signschemes.ByName(testPKIScheme)
-	idpubkey, _, err := pkiScheme.GenerateKey()
-	require.NoError(t, err)
-
-	linkScheme := kemschemes.ByName("Xwing")
-	linkpubkey, _, err := linkScheme.GenerateKeyPair()
-	require.NoError(t, err)
-
-	replicaScheme := nikeschemes.ByName("x25519")
-
-	nrHops := 5
-	payloadSize := 5000
-	sphinxScheme := nikeschemes.ByName("x25519")
-
-	geometry := geo.GeometryFromUserForwardPayloadLength(sphinxScheme, payloadSize, true, nrHops)
-
-	cfg := &config.Config{
-		PKI: &config.PKI{
-			Voting: &config.Voting{
-				Authorities: []*authconfig.Authority{
-					&authconfig.Authority{
-						Identifier:         "dirauth1",
-						IdentityPublicKey:  idpubkey,
-						PKISignatureScheme: pkiScheme.Name(),
-						LinkPublicKey:      linkpubkey,
-						WireKEMScheme:      linkScheme.Name(),
-						Addresses:          []string{testDirAuthAddress},
-					},
-				},
-			},
-		},
-		Logging: &config.Logging{
-			Disable: false,
-			File:    "",
-			Level:   "DEBUG",
-		},
-		DataDir:            filepath.Join(t.TempDir(), "datadir"),
-		Identifier:         "replica1",
-		WireKEMScheme:      linkScheme.Name(),
-		PKISignatureScheme: pkiScheme.Name(),
-		ReplicaNIKEScheme:  replicaScheme.Name(),
-		SphinxGeometry:     geometry,
-		Addresses:          []string{testReplicaAddress},
-	}
-	s, err := New(cfg)
-	require.NoError(t, err)
+	setup := createTestSetup(t)
+	defer setup.server.Shutdown()
 
 	ad := make([]byte, sConstants.NodeIDLength)
-	idpubkeyblob, err := idpubkey.MarshalBinary()
-	require.NoError(t, err)
-
-	libpubkeyblob, err := linkpubkey.MarshalBinary()
-	require.NoError(t, err)
-
-	id := hash.Sum256From(idpubkey)
-	copy(ad, id[:])
+	copy(ad, setup.id[:])
 
 	epoch, _, _ := epochtime.Now()
-	pkiWorker := s.PKIWorker
+	pkiWorker := setup.server.PKIWorker
 	pkiWorker.lock.Lock()
 	pkiWorker.docs[epoch] = &pki.Document{
 		Epoch: epoch,
@@ -221,8 +209,8 @@ func TestAuthenticateReplicaConnection(t *testing.T) {
 			&pki.MixDescriptor{
 				Name:        "servicenode1",
 				Epoch:       epoch,
-				IdentityKey: idpubkeyblob,
-				LinkKey:     libpubkeyblob,
+				IdentityKey: setup.idpubkeyblob,
+				LinkKey:     setup.libpubkeyblob,
 			},
 		},
 	}
@@ -236,8 +224,8 @@ func TestAuthenticateReplicaConnection(t *testing.T) {
 	replicaDesc := &pki.ReplicaDescriptor{
 		Name:        "replica1",
 		Epoch:       epoch,
-		IdentityKey: idpubkeyblob,
-		LinkKey:     libpubkeyblob,
+		IdentityKey: setup.idpubkeyblob,
+		LinkKey:     setup.libpubkeyblob,
 	}
 
 	pkiWorker.lock.Lock()
@@ -248,14 +236,12 @@ func TestAuthenticateReplicaConnection(t *testing.T) {
 		},
 	}
 	pkiWorker.lock.Unlock()
-	pkiWorker.replicas.Replace(map[[32]byte]*pki.ReplicaDescriptor{id: replicaDesc})
+	pkiWorker.replicas.Replace(map[[32]byte]*pki.ReplicaDescriptor{setup.id: replicaDesc})
 
 	// Test that replica is now available
 	replicas = pkiWorker.ReplicasCopy()
 	require.Len(t, replicas, 1)
-	require.Contains(t, replicas, id)
-
-	s.Shutdown()
+	require.Contains(t, replicas, setup.id)
 }
 
 func TestDocumentsToFetch(t *testing.T) {
@@ -310,66 +296,15 @@ func TestGetFailedFetch(t *testing.T) {
 }
 
 func TestPruneDocuments(t *testing.T) {
-	pkiScheme := signschemes.ByName(testPKIScheme)
-	idpubkey, _, err := pkiScheme.GenerateKey()
-	require.NoError(t, err)
-
-	linkScheme := kemschemes.ByName("Xwing")
-	linkpubkey, _, err := linkScheme.GenerateKeyPair()
-	require.NoError(t, err)
-
-	replicaScheme := nikeschemes.ByName("x25519")
-
-	nrHops := 5
-	payloadSize := 5000
-	sphinxScheme := nikeschemes.ByName("x25519")
-
-	geometry := geo.GeometryFromUserForwardPayloadLength(sphinxScheme, payloadSize, true, nrHops)
-
-	cfg := &config.Config{
-		PKI: &config.PKI{
-			Voting: &config.Voting{
-				Authorities: []*authconfig.Authority{
-					&authconfig.Authority{
-						Identifier:         "dirauth1",
-						IdentityPublicKey:  idpubkey,
-						PKISignatureScheme: pkiScheme.Name(),
-						LinkPublicKey:      linkpubkey,
-						WireKEMScheme:      linkScheme.Name(),
-						Addresses:          []string{testDirAuthAddress},
-					},
-				},
-			},
-		},
-		Logging: &config.Logging{
-			Disable: false,
-			File:    "",
-			Level:   "DEBUG",
-		},
-		DataDir:            filepath.Join(t.TempDir(), "datadir"),
-		Identifier:         "replica1",
-		WireKEMScheme:      linkScheme.Name(),
-		PKISignatureScheme: pkiScheme.Name(),
-		ReplicaNIKEScheme:  replicaScheme.Name(),
-		SphinxGeometry:     geometry,
-		Addresses:          []string{testReplicaAddress},
-	}
-	s, err := New(cfg)
-	require.NoError(t, err)
+	setup := createTestSetup(t)
+	defer setup.server.Shutdown()
 
 	ad := make([]byte, sConstants.NodeIDLength)
-	idpubkeyblob, err := idpubkey.MarshalBinary()
-	require.NoError(t, err)
-
-	libpubkeyblob, err := linkpubkey.MarshalBinary()
-	require.NoError(t, err)
-
-	id := hash.Sum256From(idpubkey)
-	copy(ad, id[:])
+	copy(ad, setup.id[:])
 
 	now, _, _ := epochtime.Now()
 	epoch := now - 10
-	pkiWorker := s.PKIWorker
+	pkiWorker := setup.server.PKIWorker
 	pkiWorker.lock.Lock()
 	pkiWorker.docs[epoch] = &pki.Document{
 		Epoch: epoch,
@@ -377,8 +312,8 @@ func TestPruneDocuments(t *testing.T) {
 			&pki.MixDescriptor{
 				Name:        "servicenode1",
 				Epoch:       epoch,
-				IdentityKey: idpubkeyblob,
-				LinkKey:     libpubkeyblob,
+				IdentityKey: setup.idpubkeyblob,
+				LinkKey:     setup.libpubkeyblob,
 			},
 		},
 	}
@@ -389,54 +324,13 @@ func TestPruneDocuments(t *testing.T) {
 	pkiWorker.lock.Lock()
 	require.Zero(t, len(pkiWorker.docs))
 	pkiWorker.lock.Unlock()
-
-	s.Shutdown()
 }
 
 func TestAuthenticationDuringEpochTransition(t *testing.T) {
-	pkiScheme := signschemes.ByName(testPKIScheme)
-	idpubkey, _, err := pkiScheme.GenerateKey()
-	require.NoError(t, err)
+	setup := createTestSetup(t)
+	defer setup.server.Shutdown()
 
-	linkScheme := kemschemes.ByName("Xwing")
-	linkpubkey, _, err := linkScheme.GenerateKeyPair()
-	require.NoError(t, err)
-
-	replicaScheme := nikeschemes.ByName("x25519")
-	geometry := geo.GeometryFromUserForwardPayloadLength(nikeschemes.ByName("x25519"), 5000, true, 5)
-
-	cfg := &config.Config{
-		PKI: &config.PKI{
-			Voting: &config.Voting{
-				Authorities: []*authconfig.Authority{
-					&authconfig.Authority{
-						Identifier:         "dirauth1",
-						IdentityPublicKey:  idpubkey,
-						PKISignatureScheme: pkiScheme.Name(),
-						LinkPublicKey:      linkpubkey,
-						WireKEMScheme:      linkScheme.Name(),
-						Addresses:          []string{testDirAuthAddress},
-					},
-				},
-			},
-		},
-		Logging: &config.Logging{
-			Disable: false,
-			File:    "",
-			Level:   "DEBUG",
-		},
-		DataDir:            filepath.Join(t.TempDir(), "datadir"),
-		Identifier:         "replica1",
-		WireKEMScheme:      linkScheme.Name(),
-		PKISignatureScheme: pkiScheme.Name(),
-		ReplicaNIKEScheme:  replicaScheme.Name(),
-		SphinxGeometry:     geometry,
-		Addresses:          []string{testReplicaAddress},
-	}
-	s, err := New(cfg)
-	require.NoError(t, err)
-
-	libpubkeypem := kempem.ToPublicPEMString(linkpubkey)
+	libpubkeypem := kempem.ToPublicPEMString(setup.linkpubkey)
 
 	epoch, _, _ := epochtime.Now()
 	advertMap := make(map[string]map[string]interface{})
@@ -446,19 +340,14 @@ func TestAuthenticationDuringEpochTransition(t *testing.T) {
 	kaetzchen := make(map[string]map[string]interface{})
 	kaetzchen["courier"] = make(map[string]interface{})
 
-	idpubkeyblob, err := idpubkey.MarshalBinary()
-	require.NoError(t, err)
-	libpubkeyblob, err := linkpubkey.MarshalBinary()
-	require.NoError(t, err)
-
 	currentDoc := &pki.Document{
 		Epoch: epoch,
 		ServiceNodes: []*pki.MixDescriptor{
 			&pki.MixDescriptor{
 				Name:                    "servicenode1",
 				Epoch:                   epoch,
-				IdentityKey:             idpubkeyblob,
-				LinkKey:                 libpubkeyblob,
+				IdentityKey:             setup.idpubkeyblob,
+				LinkKey:                 setup.libpubkeyblob,
 				Kaetzchen:               kaetzchen,
 				KaetzchenAdvertizedData: advertMap,
 			},
@@ -471,15 +360,15 @@ func TestAuthenticationDuringEpochTransition(t *testing.T) {
 			&pki.MixDescriptor{
 				Name:                    "servicenode1",
 				Epoch:                   epoch + 1,
-				IdentityKey:             idpubkeyblob,
-				LinkKey:                 libpubkeyblob,
+				IdentityKey:             setup.idpubkeyblob,
+				LinkKey:                 setup.libpubkeyblob,
 				Kaetzchen:               kaetzchen,
 				KaetzchenAdvertizedData: advertMap,
 			},
 		},
 	}
 
-	pkiWorker := s.PKIWorker
+	pkiWorker := setup.server.PKIWorker
 	pkiWorker.lock.Lock()
 	pkiWorker.docs[epoch] = currentDoc
 	pkiWorker.lock.Unlock()
@@ -508,6 +397,4 @@ func TestAuthenticationDuringEpochTransition(t *testing.T) {
 	require.Nil(t, doc)
 	nextDocRetrieved = pkiWorker.documentForEpoch(epoch + 1)
 	require.NotNil(t, nextDocRetrieved)
-
-	s.Shutdown()
 }
