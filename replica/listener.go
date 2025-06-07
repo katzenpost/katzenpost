@@ -24,8 +24,6 @@ import (
 	"github.com/katzenpost/katzenpost/http/common"
 )
 
-const KeepAliveInterval = 3 * time.Minute
-
 type Listener struct {
 	sync.Mutex
 	worker.Worker
@@ -82,7 +80,8 @@ func (l *Listener) worker() {
 		tcpConn, ok := conn.(*net.TCPConn)
 		if ok {
 			tcpConn.SetKeepAlive(true)
-			tcpConn.SetKeepAlivePeriod(KeepAliveInterval)
+			keepAliveInterval := time.Duration(l.server.cfg.KeepAliveInterval) * time.Millisecond
+			tcpConn.SetKeepAlivePeriod(keepAliveInterval)
 		}
 
 		l.log.Debugf("Accepted new connection: %v", conn.RemoteAddr())

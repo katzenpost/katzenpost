@@ -196,7 +196,7 @@ func (c *outgoingConn) initializeConnection() (context.Context, context.CancelFu
 	// fact that the server doesn't use context everywhere instead.
 	dialCtx, cancelFn := context.WithCancel(context.Background())
 	dialer := net.Dialer{
-		KeepAlive: KeepAliveInterval,
+		KeepAlive: time.Duration(c.co.Server().cfg.KeepAliveInterval) * time.Millisecond,
 		Timeout:   time.Duration(c.co.Server().cfg.ConnectTimeout) * time.Millisecond,
 	}
 	go func() {
@@ -355,14 +355,12 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 }
 
 func newOutgoingConn(co GenericConnector, dst *cpki.ReplicaDescriptor, geo *geo.Geometry, scheme kem.Scheme) *outgoingConn {
-	const maxQueueSize = 64 // TODO/perf: Tune this.
-
 	c := &outgoingConn{
 		scheme: scheme,
 		geo:    geo,
 		co:     co,
 		dst:    dst,
-		ch:     make(chan commands.Command, maxQueueSize),
+		ch:     make(chan commands.Command, co.Server().cfg.OutgoingQueueSize),
 		id:     atomic.AddUint64(&outgoingConnID, 1), // Diagnostic only, wrapping is fine.
 	}
 	c.log = co.Server().LogBackend().GetLogger(fmt.Sprintf("replica outgoing:%d", c.id))

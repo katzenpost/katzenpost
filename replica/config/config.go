@@ -25,6 +25,8 @@ const (
 	defaultHandshakeTimeout       = 30 * 1000  // 30 sec.
 	defaultReauthInterval         = 300 * 1000 // 300 sec.
 	defaultReplicationQueueLength = 100        // Default queue length for replication operations
+	defaultOutgoingQueueSize      = 64         // Default queue size for outgoing connections
+	defaultKeepAliveInterval      = 180 * 1000 // Default TCP keep-alive interval (3 minutes)
 )
 
 var defaultLogging = Logging{
@@ -137,6 +139,13 @@ type Config struct {
 	// queued for replication operations.
 	ReplicationQueueLength int
 
+	// OutgoingQueueSize specifies the maximum number of commands that can be
+	// queued for outgoing connections.
+	OutgoingQueueSize int
+
+	// KeepAliveInterval specifies the TCP keep-alive interval in milliseconds.
+	KeepAliveInterval int
+
 	// GenerateOnly halts and cleans up the server right after long term
 	// key generation.
 	GenerateOnly bool
@@ -177,6 +186,12 @@ func (c *Config) setDefaultTimeouts() {
 	}
 	if c.ReplicationQueueLength <= 0 {
 		c.ReplicationQueueLength = defaultReplicationQueueLength
+	}
+	if c.OutgoingQueueSize <= 0 {
+		c.OutgoingQueueSize = defaultOutgoingQueueSize
+	}
+	if c.KeepAliveInterval <= 0 {
+		c.KeepAliveInterval = defaultKeepAliveInterval
 	}
 }
 
