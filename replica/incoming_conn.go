@@ -23,6 +23,7 @@ import (
 	"github.com/katzenpost/hpqc/sign"
 
 	"github.com/katzenpost/katzenpost/core/epochtime"
+	"github.com/katzenpost/katzenpost/core/pki"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
@@ -258,73 +259,96 @@ func newIncomingConn(l *Listener, conn net.Conn, geo *geo.Geometry, scheme kem.S
 func (c *incomingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 	// Check if this is a courier connection (empty AdditionalData)
 	if len(creds.AdditionalData) == 0 {
-		// Check courier authentication
-		epoch, _, _ := epochtime.Now()
-
-		// Try current, next, and previous epochs
-		doc := c.l.server.PKIWorker.documentForEpoch(epoch)
-		if doc == nil {
-			doc = c.l.server.PKIWorker.documentForEpoch(epoch + 1)
-			if doc == nil {
-				doc = c.l.server.PKIWorker.documentForEpoch(epoch - 1)
-				if doc == nil {
-					c.log.Errorf("No PKI docs available for epochs %d, %d, or %d", epoch-1, epoch, epoch+1)
-					return false
-				}
-			}
-		}
-
-		// Check if the public key matches any courier in the PKI document
-		for _, desc := range doc.ServiceNodes {
-			if desc.Kaetzchen == nil {
-				continue
-			}
-			rawLinkPubKey, err := desc.GetRawCourierLinkKey()
-			if err != nil {
-				c.log.Errorf("desc.GetRawCourierLinkKey() failure: %s", err)
-				continue
-			}
-			linkScheme := kemschemes.ByName(c.l.server.cfg.WireKEMScheme)
-			linkPubKey, err := pem.FromPublicPEMString(rawLinkPubKey, linkScheme)
-			if err != nil {
-				c.log.Errorf("Failed to unmarshal courier link key: %s", err)
-				continue
-			}
-			if creds.PublicKey.Equal(linkPubKey) {
-				c.log.Debug("IncomingConn: Authenticated courier connection")
-				return true
-			}
-		}
-		c.log.Debug("IncomingConn: Courier authentication failed")
-		return false
+		return c.authenticateCourier(creds)
 	}
 
 	// Check if this is a replica connection (AdditionalData is node ID hash)
 	if len(creds.AdditionalData) == sConstants.NodeIDLength {
-		var nodeID [sConstants.NodeIDLength]byte
-		copy(nodeID[:], creds.AdditionalData)
-
-		// Get replica descriptor from the replica map
-		replicaDesc, isReplica := c.l.server.PKIWorker.replicas.GetReplicaDescriptor(&nodeID)
-		if !isReplica {
-			c.log.Debugf("Authentication failed: node ID %x not found in replica list", nodeID)
-			return false
-		}
-
-		// Verify link key matches
-		blob, err := creds.PublicKey.MarshalBinary()
-		if err != nil {
-			panic(err)
-		}
-		if !hmac.Equal(replicaDesc.LinkKey, blob) {
-			c.log.Debugf("Authentication failed: link key mismatch for replica %x", nodeID)
-			return false
-		}
-
-		c.log.Debug("IncomingConn: Authenticated replica connection")
-		return true
+		return c.authenticateReplica(creds)
 	}
 
 	c.log.Debug("IncomingConn: Authentication failed, invalid AdditionalData length")
 	return false
+}
+
+// authenticateCourier handles authentication for courier connections
+func (c *incomingConn) authenticateCourier(creds *wire.PeerCredentials) bool {
+	doc := c.findPKIDocument()
+	if doc == nil {
+		return false
+	}
+
+	// Check if the public key matches any courier in the PKI document
+	for _, desc := range doc.ServiceNodes {
+		if desc.Kaetzchen == nil {
+			continue
+		}
+		if c.validateCourierKey(desc, creds.PublicKey) {
+			c.log.Debug("IncomingConn: Authenticated courier connection")
+			return true
+		}
+	}
+	c.log.Debug("IncomingConn: Courier authentication failed")
+	return false
+}
+
+// authenticateReplica handles authentication for replica connections
+func (c *incomingConn) authenticateReplica(creds *wire.PeerCredentials) bool {
+	var nodeID [sConstants.NodeIDLength]byte
+	copy(nodeID[:], creds.AdditionalData)
+
+	// Get replica descriptor from the replica map
+	replicaDesc, isReplica := c.l.server.PKIWorker.replicas.GetReplicaDescriptor(&nodeID)
+	if !isReplica {
+		c.log.Debugf("Authentication failed: node ID %x not found in replica list", nodeID)
+		return false
+	}
+
+	// Verify link key matches
+	blob, err := creds.PublicKey.MarshalBinary()
+	if err != nil {
+		panic(err)
+	}
+	if !hmac.Equal(replicaDesc.LinkKey, blob) {
+		c.log.Debugf("Authentication failed: link key mismatch for replica %x", nodeID)
+		return false
+	}
+
+	c.log.Debug("IncomingConn: Authenticated replica connection")
+	return true
+}
+
+// findPKIDocument finds a PKI document for current, next, or previous epoch
+func (c *incomingConn) findPKIDocument() *pki.Document {
+	epoch, _, _ := epochtime.Now()
+
+	// Try current, next, and previous epochs
+	doc := c.l.server.PKIWorker.documentForEpoch(epoch)
+	if doc == nil {
+		doc = c.l.server.PKIWorker.documentForEpoch(epoch + 1)
+		if doc == nil {
+			doc = c.l.server.PKIWorker.documentForEpoch(epoch - 1)
+			if doc == nil {
+				c.log.Errorf("No PKI docs available for epochs %d, %d, or %d", epoch-1, epoch, epoch+1)
+				return nil
+			}
+		}
+	}
+	return doc
+}
+
+// validateCourierKey validates a courier's link key against the provided public key
+func (c *incomingConn) validateCourierKey(desc *pki.MixDescriptor, publicKey kem.PublicKey) bool {
+	rawLinkPubKey, err := desc.GetRawCourierLinkKey()
+	if err != nil {
+		c.log.Errorf("desc.GetRawCourierLinkKey() failure: %s", err)
+		return false
+	}
+	linkScheme := kemschemes.ByName(c.l.server.cfg.WireKEMScheme)
+	linkPubKey, err := pem.FromPublicPEMString(rawLinkPubKey, linkScheme)
+	if err != nil {
+		c.log.Errorf("Failed to unmarshal courier link key: %s", err)
+		return false
+	}
+	return publicKey.Equal(linkPubKey)
 }
