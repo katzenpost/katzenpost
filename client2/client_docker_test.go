@@ -16,7 +16,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/katzenpost/hpqc/hash"
-	"github.com/katzenpost/katzenpost/client2/config"
 	"github.com/katzenpost/katzenpost/client2/thin"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 
@@ -25,9 +24,7 @@ import (
 )
 
 var (
-	shutdownCh           chan interface{}
-	thinClientConfigFile = "testdata/thinclient.toml"
-	testLogLevel         = "DEBUG"
+	shutdownCh chan interface{}
 )
 
 func TestAllClient2Tests(t *testing.T) {
@@ -89,43 +86,12 @@ func sendAndWait(t *testing.T, client *thin.ThinClient, message []byte, nodeID *
 func testDockerMultiplexClients(t *testing.T) {
 	t.Parallel()
 
-	cfg, err := thin.LoadFile(thinClientConfigFile)
-	require.NoError(t, err)
+	thin1 := setupThinClient(t)
+	thin2 := setupThinClient(t)
 
-	logging := &config.Logging{
-		Disable: false,
-		File:    "",
-		Level:   testLogLevel,
-	}
+	doc := validatePKIDocument(t, thin1)
+	pingTargets := findEchoTargets(t, doc)
 
-	thin1 := thin.NewThinClient(cfg, logging)
-
-	t.Log("thin client Dialing")
-	err = thin1.Dial()
-	require.NoError(t, err)
-	require.Nil(t, err)
-	t.Log("thin client connected")
-
-	thin2 := thin.NewThinClient(cfg, logging)
-	t.Log("thin client Dialing")
-	err = thin2.Dial()
-	require.NoError(t, err)
-	require.Nil(t, err)
-	t.Log("thin client connected")
-
-	t.Log("thin client getting PKI doc")
-	doc := thin1.PKIDocument()
-	require.NotNil(t, doc)
-	require.NotEqual(t, doc.LambdaP, 0.0)
-
-	pingTargets := []*cpki.MixDescriptor{}
-	for i := 0; i < len(doc.ServiceNodes); i++ {
-		_, ok := doc.ServiceNodes[i].Kaetzchen["echo"]
-		if ok {
-			pingTargets = append(pingTargets, doc.ServiceNodes[i])
-		}
-	}
-	require.True(t, len(pingTargets) > 0)
 	message1 := []byte("hello alice, this is bob.")
 	nodeIdKey := hash.Sum256(pingTargets[0].IdentityKey)
 
@@ -135,7 +101,7 @@ func testDockerMultiplexClients(t *testing.T) {
 	reply = sendAndWait(t, thin2, message1, &nodeIdKey, []byte("+echo"))
 	require.Equal(t, message1, reply[:len(message1)])
 
-	err = thin1.Close()
+	err := thin1.Close()
 	require.NoError(t, err)
 
 	err = thin2.Close()
@@ -145,35 +111,10 @@ func testDockerMultiplexClients(t *testing.T) {
 func testDockerClientARQSendReceive(t *testing.T) {
 	t.Parallel()
 
-	cfg, err := thin.LoadFile(thinClientConfigFile)
-	require.NoError(t, err)
+	thin := setupThinClient(t)
+	doc := validatePKIDocument(t, thin)
+	pingTargets := findEchoTargets(t, doc)
 
-	logging := &config.Logging{
-		Disable: false,
-		File:    "",
-		Level:   testLogLevel,
-	}
-
-	thin := thin.NewThinClient(cfg, logging)
-	t.Log("thin client Dialing")
-	err = thin.Dial()
-	require.NoError(t, err)
-	require.Nil(t, err)
-	t.Log("thin client connected")
-
-	t.Log("thin client getting PKI doc")
-	doc := thin.PKIDocument()
-	require.NotNil(t, doc)
-	require.NotEqual(t, doc.LambdaP, 0.0)
-
-	pingTargets := []*cpki.MixDescriptor{}
-	for i := 0; i < len(doc.ServiceNodes); i++ {
-		_, ok := doc.ServiceNodes[i].Kaetzchen["echo"]
-		if ok {
-			pingTargets = append(pingTargets, doc.ServiceNodes[i])
-		}
-	}
-	require.True(t, len(pingTargets) > 0)
 	message1 := []byte("hello alice, this is bob.")
 	nodeIdKey := hash.Sum256(pingTargets[0].IdentityKey)
 
@@ -224,31 +165,11 @@ func testDockerClientARQSendReceive(t *testing.T) {
 func testDockerClientSendReceive(t *testing.T) {
 	t.Parallel()
 
-	cfg, err := thin.LoadFile(thinClientConfigFile)
-	require.NoError(t, err)
-
-	logging := &config.Logging{
-		Disable: false,
-		File:    "",
-		Level:   testLogLevel,
-	}
-
-	thin := thin.NewThinClient(cfg, logging)
-
-	t.Log("------------------------------ thin client Dialing")
-	err = thin.Dial()
-	require.NoError(t, err)
-	require.Nil(t, err)
-	t.Log("------------------------------ thin client connected")
-
-	t.Log("thin client getting PKI doc")
-	doc := thin.PKIDocument()
-	require.NotNil(t, doc)
-	require.NotEqual(t, doc.LambdaP, 0.0)
+	thin := setupThinClient(t)
+	doc := validatePKIDocument(t, thin)
 
 	pingTargets := []*cpki.MixDescriptor{}
 	for i := 0; i < len(doc.ServiceNodes); i++ {
-
 		for k, _ := range doc.ServiceNodes[i].Kaetzchen {
 			t.Logf("Key %s", k)
 		}
@@ -282,7 +203,7 @@ func testDockerClientSendReceive(t *testing.T) {
 	reply = sendAndWait(t, thin, message1, &nodeIdKey, []byte("+testdest"))
 	require.Equal(t, message1, reply[:len(message1)])
 
-	err = thin.Close()
+	err := thin.Close()
 	require.NoError(t, err)
 }
 

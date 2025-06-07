@@ -12,45 +12,24 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/katzenpost/katzenpost/client2/config"
-	"github.com/katzenpost/katzenpost/client2/thin"
+	_ "github.com/katzenpost/katzenpost/client2/thin" // Used by helper functions
 )
 
 func testDockerCourierService(t *testing.T) {
 	t.Log("TESTING COURIER SERVICE - Starting pigeonhole channel test")
 
-	// Load thin client configuration
-	cfg, err := thin.LoadFile("testdata/thinclient.toml")
-	require.NoError(t, err)
-
-	logging := &config.Logging{
-		Disable: false,
-		File:    "",
-		Level:   "DEBUG",
-	}
-
 	// Create separate thin clients for Alice and Bob
 	t.Log("Creating Alice's thin client")
-	aliceThinClient := thin.NewThinClient(cfg, logging)
-	err = aliceThinClient.Dial()
-	require.NoError(t, err)
+	aliceThinClient := setupThinClient(t)
 	t.Log("Alice's thin client connected")
 
 	t.Log("Creating Bob's thin client")
-	bobThinClient := thin.NewThinClient(cfg, logging)
-	err = bobThinClient.Dial()
-	require.NoError(t, err)
+	bobThinClient := setupThinClient(t)
 	t.Log("Bob's thin client connected")
 
 	// Wait for PKI document (both clients should have it)
-	t.Log("Waiting for PKI documents")
-	aliceDoc := aliceThinClient.PKIDocument()
-	require.NotNil(t, aliceDoc)
-	require.NotEqual(t, aliceDoc.LambdaP, 0.0)
-
-	bobDoc := bobThinClient.PKIDocument()
-	require.NotNil(t, bobDoc)
-	require.NotEqual(t, bobDoc.LambdaP, 0.0)
+	_ = validatePKIDocument(t, aliceThinClient)
+	_ = validatePKIDocument(t, bobThinClient)
 
 	// Test message to send
 	plaintextMessage := []byte("Hello world from Alice to Bob!")
