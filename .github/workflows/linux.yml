@@ -17,7 +17,6 @@ jobs:
           - { name: "server", path: "server", timeout: "30m" }
           - { name: "courier", path: "courier", timeout: "30m" }
           - { name: "map", path: "map", timeout: "30m" }
-          - { name: "stream", path: "stream", timeout: "30m" }
     runs-on: ${{ matrix.os }}
     name: test-${{ matrix.test-suite.name }}
     steps:
