@@ -14,7 +14,7 @@ import (
 
 	"github.com/katzenpost/hpqc/kem"
 	kempem "github.com/katzenpost/hpqc/kem/pem"
-	"github.com/katzenpost/hpqc/kem/schemes"
+	kemSchemes "github.com/katzenpost/hpqc/kem/schemes"
 	nikeSchemes "github.com/katzenpost/hpqc/nike/schemes"
 	"github.com/katzenpost/hpqc/sign"
 	signpem "github.com/katzenpost/hpqc/sign/pem"
@@ -202,89 +202,15 @@ func newServerWithPKI(cfg *config.Config, pkiClient pki.Client) (*Server, error)
 		s.log.Warning("Debug logging is enabled.")
 	}
 
-	// Initialize the server identity and link keys.
-	s.log.Debug("ensuring identity keypair exists")
-	identityPrivateKeyFile := filepath.Join(s.cfg.DataDir, "identity.private.pem")
-	identityPublicKeyFile := filepath.Join(s.cfg.DataDir, "identity.public.pem")
-
-	var err error
-	pkiSignatureScheme := signSchemes.ByName(s.cfg.PKISignatureScheme)
-	if s == nil {
-		return nil, errors.New("PKI Signature Scheme not found")
-	}
-	s.identityPublicKey, s.identityPrivateKey, err = pkiSignatureScheme.GenerateKey()
-
-	if utils.BothExists(identityPrivateKeyFile, identityPublicKeyFile) {
-		s.log.Noticef("Using Identity keypair which already exists: %s and %s", identityPrivateKeyFile, identityPublicKeyFile)
-		s.identityPrivateKey, err = signpem.FromPrivatePEMFile(identityPrivateKeyFile, pkiSignatureScheme)
-		if err != nil {
-			return nil, err
-		}
-		s.identityPublicKey, err = signpem.FromPublicPEMFile(identityPublicKeyFile, pkiSignatureScheme)
-		if err != nil {
-			return nil, err
-		}
-	} else if utils.BothNotExists(identityPrivateKeyFile, identityPublicKeyFile) {
-		s.log.Noticef("Identity keypair does not exist, creating new keypair: %s and %s", identityPrivateKeyFile, identityPublicKeyFile)
-		err = signpem.PrivateKeyToFile(identityPrivateKeyFile, s.identityPrivateKey)
-		if err != nil {
-			return nil, err
-		}
-		err = signpem.PublicKeyToFile(identityPublicKeyFile, s.identityPublicKey)
-		if err != nil {
-			return nil, err
-		}
-	} else {
-		return nil, fmt.Errorf("%s and %s must either both exist or not exist", identityPrivateKeyFile, identityPublicKeyFile)
-	}
-
-	s.log.Debug("ensuring link keypair exists")
-	scheme := schemes.ByName(cfg.WireKEMScheme)
-	if scheme == nil {
-		return nil, errors.New("KEM scheme not found in registry")
-	}
-	linkPrivateKeyFile := filepath.Join(s.cfg.DataDir, "link.private.pem")
-	linkPublicKeyFile := filepath.Join(s.cfg.DataDir, "link.public.pem")
-
-	linkPublicKey, linkPrivateKey, err := scheme.GenerateKeyPair()
-	if err != nil {
+	// Initialize cryptographic keys
+	if err := s.initIdentityKeys(); err != nil {
 		return nil, err
 	}
-
-	if utils.BothExists(linkPrivateKeyFile, linkPublicKeyFile) {
-		s.log.Noticef("Using Link keypair which already exists: %s and %s", linkPrivateKeyFile, linkPublicKeyFile)
-		linkPrivateKey, err = kempem.FromPrivatePEMFile(linkPrivateKeyFile, scheme)
-		if err != nil {
-			return nil, err
-		}
-		_, err = kempem.FromPublicPEMFile(linkPublicKeyFile, scheme)
-		if err != nil {
-			return nil, err
-		}
-	} else if utils.BothNotExists(linkPrivateKeyFile, linkPublicKeyFile) {
-		s.log.Noticef("Link keypair does not exist, creating new keypair: %s and %s", linkPrivateKeyFile, linkPublicKeyFile)
-		err = kempem.PrivateKeyToFile(linkPrivateKeyFile, linkPrivateKey)
-		if err != nil {
-			return nil, err
-		}
-		err = kempem.PublicKeyToFile(linkPublicKeyFile, linkPublicKey)
-		if err != nil {
-			return nil, err
-		}
-	} else {
-		panic("Improbable: Only found one link PEM file.")
+	if err := s.initLinkKeys(); err != nil {
+		return nil, err
 	}
-
-	s.linkKey = linkPrivateKey
-
-	// Write replica NIKE keys to files or load them from files.
-	s.log.Debug("ensuring replica NIKE keypair exists")
-	nikeScheme := nikeSchemes.ByName(cfg.ReplicaNIKEScheme)
-	replicaEpoch, _, _ := common.ReplicaNow()
-	s.envelopeKeys, err = NewEnvelopeKeys(nikeScheme, s.logBackend.GetLogger("replica envelopeKeys"), cfg.DataDir, replicaEpoch)
-	s.log.Debug("AFTER ensuring replica NIKE keypair exists")
-	if err != nil {
-		panic(err)
+	if err := s.initEnvelopeKeys(); err != nil {
+		return nil, err
 	}
 
 	if s.cfg.GenerateOnly {
@@ -299,6 +225,129 @@ func newServerWithPKI(cfg *config.Config, pkiClient pki.Client) (*Server, error)
 		}
 	}()
 
+	if err := s.startServices(pkiClient); err != nil {
+		return nil, err
+	}
+
+	isOk = true
+
+	// Check if we have a PKI document before rebalancing
+	if s.PKIWorker.HasCurrentPKIDocument() {
+		s.log.Notice("performing rebalance after startup")
+		err := s.state.Rebalance()
+		if err != nil {
+			s.log.Errorf("failed to rebalance shares after startup: %s", err)
+		}
+	} else {
+		s.log.Notice("skipping initial rebalance - no PKI document available yet")
+	}
+
+	return s, nil
+}
+
+// initIdentityKeys initializes the server's identity keypair
+func (s *Server) initIdentityKeys() error {
+	s.log.Debug("ensuring identity keypair exists")
+	identityPrivateKeyFile := filepath.Join(s.cfg.DataDir, "identity.private.pem")
+	identityPublicKeyFile := filepath.Join(s.cfg.DataDir, "identity.public.pem")
+
+	pkiSignatureScheme := signSchemes.ByName(s.cfg.PKISignatureScheme)
+	if pkiSignatureScheme == nil {
+		return errors.New("PKI Signature Scheme not found")
+	}
+
+	var err error
+	s.identityPublicKey, s.identityPrivateKey, err = pkiSignatureScheme.GenerateKey()
+	if err != nil {
+		return err
+	}
+
+	if utils.BothExists(identityPrivateKeyFile, identityPublicKeyFile) {
+		s.log.Noticef("Using Identity keypair which already exists: %s and %s", identityPrivateKeyFile, identityPublicKeyFile)
+		s.identityPrivateKey, err = signpem.FromPrivatePEMFile(identityPrivateKeyFile, pkiSignatureScheme)
+		if err != nil {
+			return err
+		}
+		s.identityPublicKey, err = signpem.FromPublicPEMFile(identityPublicKeyFile, pkiSignatureScheme)
+		if err != nil {
+			return err
+		}
+	} else if utils.BothNotExists(identityPrivateKeyFile, identityPublicKeyFile) {
+		s.log.Noticef("Identity keypair does not exist, creating new keypair: %s and %s", identityPrivateKeyFile, identityPublicKeyFile)
+		err = signpem.PrivateKeyToFile(identityPrivateKeyFile, s.identityPrivateKey)
+		if err != nil {
+			return err
+		}
+		err = signpem.PublicKeyToFile(identityPublicKeyFile, s.identityPublicKey)
+		if err != nil {
+			return err
+		}
+	} else {
+		return fmt.Errorf("%s and %s must either both exist or not exist", identityPrivateKeyFile, identityPublicKeyFile)
+	}
+
+	return nil
+}
+
+// initLinkKeys initializes the server's link keypair
+func (s *Server) initLinkKeys() error {
+	s.log.Debug("ensuring link keypair exists")
+	scheme := kemSchemes.ByName(s.cfg.WireKEMScheme)
+	if scheme == nil {
+		return errors.New("KEM scheme not found in registry")
+	}
+	linkPrivateKeyFile := filepath.Join(s.cfg.DataDir, "link.private.pem")
+	linkPublicKeyFile := filepath.Join(s.cfg.DataDir, "link.public.pem")
+
+	linkPublicKey, linkPrivateKey, err := scheme.GenerateKeyPair()
+	if err != nil {
+		return err
+	}
+
+	if utils.BothExists(linkPrivateKeyFile, linkPublicKeyFile) {
+		s.log.Noticef("Using Link keypair which already exists: %s and %s", linkPrivateKeyFile, linkPublicKeyFile)
+		linkPrivateKey, err = kempem.FromPrivatePEMFile(linkPrivateKeyFile, scheme)
+		if err != nil {
+			return err
+		}
+		_, err = kempem.FromPublicPEMFile(linkPublicKeyFile, scheme)
+		if err != nil {
+			return err
+		}
+	} else if utils.BothNotExists(linkPrivateKeyFile, linkPublicKeyFile) {
+		s.log.Noticef("Link keypair does not exist, creating new keypair: %s and %s", linkPrivateKeyFile, linkPublicKeyFile)
+		err = kempem.PrivateKeyToFile(linkPrivateKeyFile, linkPrivateKey)
+		if err != nil {
+			return err
+		}
+		err = kempem.PublicKeyToFile(linkPublicKeyFile, linkPublicKey)
+		if err != nil {
+			return err
+		}
+	} else {
+		panic("Improbable: Only found one link PEM file.")
+	}
+
+	s.linkKey = linkPrivateKey
+	return nil
+}
+
+// initEnvelopeKeys initializes the server's envelope keys
+func (s *Server) initEnvelopeKeys() error {
+	s.log.Debug("ensuring replica NIKE keypair exists")
+	nikeScheme := nikeSchemes.ByName(s.cfg.ReplicaNIKEScheme)
+	replicaEpoch, _, _ := common.ReplicaNow()
+	var err error
+	s.envelopeKeys, err = NewEnvelopeKeys(nikeScheme, s.logBackend.GetLogger("replica envelopeKeys"), s.cfg.DataDir, replicaEpoch)
+	s.log.Debug("AFTER ensuring replica NIKE keypair exists")
+	if err != nil {
+		panic(err)
+	}
+	return nil
+}
+
+// startServices starts all the server services (PKI worker, listeners, connector)
+func (s *Server) startServices(pkiClient pki.Client) error {
 	// Start the fatal error watcher.
 	go func() {
 		err, ok := <-s.fatalErrCh
@@ -320,6 +369,7 @@ func newServerWithPKI(cfg *config.Config, pkiClient pki.Client) (*Server, error)
 	// Start the PKI worker.
 	s.log.Notice("start PKI worker")
 	var pkiWorker *PKIWorker
+	var err error
 	if pkiClient != nil {
 		// Use the provided PKI client for testing
 		pkiWorker, err = newPKIWorkerWithClient(s, pkiClient, s.logBackend.GetLogger("replica pkiWorker"))
@@ -339,7 +389,7 @@ func newServerWithPKI(cfg *config.Config, pkiClient pki.Client) (*Server, error)
 		l, err := newListener(s, i, addr)
 		if err != nil {
 			s.log.Errorf("Failed to spawn listener on address: %v (%v).", addr, err)
-			return nil, err
+			return err
 		}
 		s.listeners = append(s.listeners, l)
 	}
@@ -348,18 +398,5 @@ func newServerWithPKI(cfg *config.Config, pkiClient pki.Client) (*Server, error)
 	s.log.Notice("start connector worker")
 	s.connector = newConnector(s)
 
-	isOk = true
-
-	// Check if we have a PKI document before rebalancing
-	if s.PKIWorker.HasCurrentPKIDocument() {
-		s.log.Notice("performing rebalance after startup")
-		err = s.state.Rebalance()
-		if err != nil {
-			s.log.Errorf("failed to rebalance shares after startup: %s", err)
-		}
-	} else {
-		s.log.Notice("skipping initial rebalance - no PKI document available yet")
-	}
-
-	return s, nil
+	return nil
 }
