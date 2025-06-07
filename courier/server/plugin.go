@@ -27,8 +27,9 @@ import (
 // 2. deduping reads
 // 3. caching replica replies
 type CourierBookKeeping struct {
-	Epoch           uint64
-	EnvelopeReplies [2]*commands.ReplicaMessageReply
+	Epoch                uint64
+	IntermediateReplicas [2]uint8 // Store the replica IDs that were contacted
+	EnvelopeReplies      [2]*commands.ReplicaMessageReply
 }
 
 // Courier handles the CBOR plugin interface for our courier service.
@@ -103,16 +104,20 @@ func (e *Courier) CacheReply(reply *commands.ReplicaMessageReply) {
 	entry, ok := e.dedupCache[*reply.EnvelopeHash]
 	if ok {
 		e.log.Debugf("CacheReply: found existing cache entry for envelope hash %x", reply.EnvelopeHash)
-		switch {
-		case entry.EnvelopeReplies[0] == nil && entry.EnvelopeReplies[1] == nil:
-			e.log.Debug("CacheReply: storing reply in slot 0")
-			entry.EnvelopeReplies[0] = reply
-		case entry.EnvelopeReplies[0] != nil && entry.EnvelopeReplies[1] == nil:
-			e.log.Debug("CacheReply: storing reply in slot 1")
-			entry.EnvelopeReplies[1] = reply
-		case entry.EnvelopeReplies[0] != nil && entry.EnvelopeReplies[1] != nil:
-			e.log.Debug("CacheReply: both slots already filled, not caching")
-			// no-op. already cached both replies.
+		// Find which index in IntermediateReplicas corresponds to this replica ID
+		var replyIndex int = -1
+		for i, replicaID := range entry.IntermediateReplicas {
+			if replicaID == reply.ReplicaID {
+				replyIndex = i
+				break
+			}
+		}
+
+		if replyIndex >= 0 {
+			e.log.Debugf("CacheReply: storing reply from replica %d at IntermediateReplicas index %d", reply.ReplicaID, replyIndex)
+			entry.EnvelopeReplies[replyIndex] = reply
+		} else {
+			e.log.Warningf("CacheReply: replica ID %d not found in IntermediateReplicas %v for envelope hash %x", reply.ReplicaID, entry.IntermediateReplicas, reply.EnvelopeHash)
 		}
 	} else {
 		e.log.Debugf("BUG: received an unknown EnvelopeHash %x from a replica reply", reply.EnvelopeHash)
@@ -123,14 +128,22 @@ func (e *Courier) CacheReply(reply *commands.ReplicaMessageReply) {
 			currentEpoch = pkiDoc.Epoch
 		}
 
-		e.log.Debug("CacheReply: creating new cache entry and storing reply in slot 0")
-		e.dedupCache[*reply.EnvelopeHash] = &CourierBookKeeping{
-			Epoch: currentEpoch,
-			EnvelopeReplies: [2]*commands.ReplicaMessageReply{
-				reply,
-				nil,
-			},
+		// Create new cache entry - we don't have IntermediateReplicas info here
+		// This is a BUG case, so we'll store at replica ID index as fallback
+		newEntry := &CourierBookKeeping{
+			Epoch:                currentEpoch,
+			IntermediateReplicas: [2]uint8{reply.ReplicaID, 255}, // 255 indicates unknown
+			EnvelopeReplies:      [2]*commands.ReplicaMessageReply{nil, nil},
 		}
+
+		if reply.ReplicaID < 2 {
+			e.log.Debugf("CacheReply: creating new cache entry and storing reply from replica %d at index %d", reply.ReplicaID, reply.ReplicaID)
+			newEntry.EnvelopeReplies[reply.ReplicaID] = reply
+		} else {
+			e.log.Warningf("CacheReply: invalid replica ID %d for envelope hash %x", reply.ReplicaID, reply.EnvelopeHash)
+		}
+
+		e.dedupCache[*reply.EnvelopeHash] = newEntry
 	}
 
 	// Log final cache state
@@ -248,8 +261,9 @@ func (e *Courier) OnCommand(cmd cborplugin.Command) error {
 		}
 
 		e.dedupCache[*envHash] = &CourierBookKeeping{
-			Epoch:           currentEpoch,
-			EnvelopeReplies: [2]*commands.ReplicaMessageReply{nil, nil},
+			Epoch:                currentEpoch,
+			IntermediateReplicas: courierMessage.IntermediateReplicas,
+			EnvelopeReplies:      [2]*commands.ReplicaMessageReply{nil, nil},
 		}
 		e.dedupCacheLock.Unlock()
 		replyPayload = e.handleNewMessage(courierMessage.IsRead, envHash, courierMessage)
