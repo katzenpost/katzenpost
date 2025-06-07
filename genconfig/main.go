@@ -29,6 +29,7 @@ import (
 	cConfig "github.com/katzenpost/katzenpost/client/config"
 	cConfig2 "github.com/katzenpost/katzenpost/client2/config"
 	"github.com/katzenpost/katzenpost/client2/thin"
+	"github.com/katzenpost/katzenpost/common/config"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	courierConfig "github.com/katzenpost/katzenpost/courier/server/config"
@@ -274,9 +275,9 @@ func (s *katzenpost) genCourierConfig(datadir string) *courierConfig.Config {
 		EnvelopeScheme:   s.replicaNIKEScheme.Name(),
 		DataDir:          datadir,
 		SphinxGeometry:   s.sphinxGeometry,
-		ConnectTimeout:   courierConfig.DefaultConnectTimeout,
-		HandshakeTimeout: courierConfig.DefaultHandshakeTimeout,
-		ReauthInterval:   courierConfig.DefaultReauthInterval,
+		ConnectTimeout:   config.DefaultConnectTimeout,
+		HandshakeTimeout: config.DefaultHandshakeTimeout,
+		ReauthInterval:   config.DefaultReauthInterval,
 	}
 }
 
