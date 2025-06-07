@@ -258,13 +258,21 @@ func TestDocumentsToFetch(t *testing.T) {
 	p := &PKIWorker{
 		WorkerBase: pki.NewWorkerBase(nil, nil),
 	}
-	epochs := p.DocumentsToFetch()
+
+	// Capture timing once to ensure consistent behavior throughout test
 	_, _, till := epochtime.Now()
-	if till < nextFetchTill {
-		require.Equal(t, 4, len(epochs))
-	} else {
-		require.Equal(t, 3, len(epochs))
+	isNearEpochEnd := till < nextFetchTill
+
+	epochs := p.DocumentsToFetch()
+
+	// The number of epochs to fetch depends on timing within the epoch
+	// When till < nextFetchTill (last 1/16 of epoch), we fetch for next epoch (4 docs)
+	// Otherwise, we fetch for current epoch (3 docs)
+	expectedCount := 3
+	if isNearEpochEnd {
+		expectedCount = 4
 	}
+	require.Equal(t, expectedCount, len(epochs))
 
 	// Store a document for the first epoch to simulate it being fetched
 	if len(epochs) > 0 {
@@ -275,12 +283,10 @@ func TestDocumentsToFetch(t *testing.T) {
 	}
 
 	epochs2 := p.DocumentsToFetch()
-	_, _, till = epochtime.Now()
-	if till < nextFetchTill {
-		require.Equal(t, 3, len(epochs2))
-	} else {
-		require.Equal(t, 2, len(epochs2))
-	}
+
+	// After storing one document, we should have one fewer to fetch
+	expectedCount2 := expectedCount - 1
+	require.Equal(t, expectedCount2, len(epochs2))
 
 }
 
