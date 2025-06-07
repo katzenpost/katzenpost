@@ -3,7 +3,6 @@ package replica
 import (
 	"errors"
 	"path/filepath"
-	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -144,7 +143,6 @@ func TestAuthenticateCourierConnection(t *testing.T) {
 	libpubkeypem := kempem.ToPublicPEMString(setup.linkpubkey)
 
 	epoch, _, _ := epochtime.Now()
-	setup.server.PKIWorker.lock.Lock()
 
 	advertMap := make(map[string]map[string]interface{})
 	advertMap["courier"] = make(map[string]interface{})
@@ -153,7 +151,7 @@ func TestAuthenticateCourierConnection(t *testing.T) {
 	kaetzchen := make(map[string]map[string]interface{})
 	kaetzchen["courier"] = make(map[string]interface{})
 
-	setup.server.PKIWorker.docs[epoch] = &pki.Document{
+	doc := &pki.Document{
 		Epoch: epoch,
 		ServiceNodes: []*pki.MixDescriptor{
 			&pki.MixDescriptor{
@@ -166,15 +164,18 @@ func TestAuthenticateCourierConnection(t *testing.T) {
 			},
 		},
 	}
-	setup.server.PKIWorker.lock.Unlock()
+
+	rawDoc, err := doc.MarshalCertificate()
+	require.NoError(t, err)
+	setup.server.PKIWorker.StoreDocument(epoch, doc, rawDoc)
 
 	// Test that the PKI document is properly stored
-	doc := setup.server.PKIWorker.documentForEpoch(epoch)
-	require.NotNil(t, doc)
-	require.Equal(t, epoch, doc.Epoch)
+	retrievedDoc := setup.server.PKIWorker.documentForEpoch(epoch)
+	require.NotNil(t, retrievedDoc)
+	require.Equal(t, epoch, retrievedDoc.Epoch)
 
-	setup.server.PKIWorker.lock.Lock()
-	setup.server.PKIWorker.docs[epoch] = &pki.Document{
+	// Create and store an updated document with gateway nodes
+	updatedDoc := &pki.Document{
 		Epoch: epoch,
 		GatewayNodes: []*pki.MixDescriptor{
 			&pki.MixDescriptor{
@@ -185,12 +186,15 @@ func TestAuthenticateCourierConnection(t *testing.T) {
 			},
 		},
 	}
-	setup.server.PKIWorker.lock.Unlock()
+
+	rawUpdatedDoc, err := updatedDoc.MarshalCertificate()
+	require.NoError(t, err)
+	setup.server.PKIWorker.StoreDocument(epoch, updatedDoc, rawUpdatedDoc)
 
 	// Test that the document was updated
-	doc = setup.server.PKIWorker.documentForEpoch(epoch)
-	require.NotNil(t, doc)
-	require.Len(t, doc.GatewayNodes, 1)
+	retrievedDoc = setup.server.PKIWorker.documentForEpoch(epoch)
+	require.NotNil(t, retrievedDoc)
+	require.Len(t, retrievedDoc.GatewayNodes, 1)
 }
 
 func TestAuthenticateReplicaConnection(t *testing.T) {
@@ -202,8 +206,9 @@ func TestAuthenticateReplicaConnection(t *testing.T) {
 
 	epoch, _, _ := epochtime.Now()
 	pkiWorker := setup.server.PKIWorker
-	pkiWorker.lock.Lock()
-	pkiWorker.docs[epoch] = &pki.Document{
+
+	// Create and store initial document
+	initialDoc := &pki.Document{
 		Epoch: epoch,
 		ServiceNodes: []*pki.MixDescriptor{
 			&pki.MixDescriptor{
@@ -215,7 +220,9 @@ func TestAuthenticateReplicaConnection(t *testing.T) {
 		},
 	}
 
-	pkiWorker.lock.Unlock()
+	rawInitialDoc, err := initialDoc.MarshalCertificate()
+	require.NoError(t, err)
+	pkiWorker.StoreDocument(epoch, initialDoc, rawInitialDoc)
 
 	// Test that no replicas are initially available
 	replicas := pkiWorker.ReplicasCopy()
@@ -228,14 +235,17 @@ func TestAuthenticateReplicaConnection(t *testing.T) {
 		LinkKey:     setup.libpubkeyblob,
 	}
 
-	pkiWorker.lock.Lock()
-	pkiWorker.docs[epoch] = &pki.Document{
+	// Create and store document with replica
+	replicaDoc := &pki.Document{
 		Epoch: epoch,
 		StorageReplicas: []*pki.ReplicaDescriptor{
 			replicaDesc,
 		},
 	}
-	pkiWorker.lock.Unlock()
+
+	rawReplicaDoc, err := replicaDoc.MarshalCertificate()
+	require.NoError(t, err)
+	pkiWorker.StoreDocument(epoch, replicaDoc, rawReplicaDoc)
 	pkiWorker.replicas.Replace(map[[32]byte]*pki.ReplicaDescriptor{setup.id: replicaDesc})
 
 	// Test that replica is now available
@@ -246,10 +256,9 @@ func TestAuthenticateReplicaConnection(t *testing.T) {
 
 func TestDocumentsToFetch(t *testing.T) {
 	p := &PKIWorker{
-		lock: new(sync.RWMutex),
-		docs: make(map[uint64]*pki.Document),
+		WorkerBase: pki.NewWorkerBase(nil, nil),
 	}
-	epochs := p.documentsToFetch()
+	epochs := p.DocumentsToFetch()
 	_, _, till := epochtime.Now()
 	if till < nextFetchTill {
 		require.Equal(t, 4, len(epochs))
@@ -257,11 +266,15 @@ func TestDocumentsToFetch(t *testing.T) {
 		require.Equal(t, 3, len(epochs))
 	}
 
-	p.lock.Lock()
-	p.docs[epochs[0]] = nil
-	p.lock.Unlock()
+	// Store a document for the first epoch to simulate it being fetched
+	if len(epochs) > 0 {
+		doc := &pki.Document{Epoch: epochs[0]}
+		rawDoc, err := doc.MarshalCertificate()
+		require.NoError(t, err)
+		p.StoreDocument(epochs[0], doc, rawDoc)
+	}
 
-	epochs2 := p.documentsToFetch()
+	epochs2 := p.DocumentsToFetch()
 	_, _, till = epochtime.Now()
 	if till < nextFetchTill {
 		require.Equal(t, 3, len(epochs2))
@@ -273,24 +286,23 @@ func TestDocumentsToFetch(t *testing.T) {
 
 func TestGetFailedFetch(t *testing.T) {
 	p := &PKIWorker{
-		lock:          new(sync.RWMutex),
-		failedFetches: make(map[uint64]error),
+		WorkerBase: pki.NewWorkerBase(nil, nil),
 	}
-	epochs := p.documentsToFetch()
-	ok, err := p.getFailedFetch(epochs[0])
+	epochs := p.DocumentsToFetch()
+	ok, err := p.GetFailedFetch(epochs[0])
 	require.NoError(t, err)
 	require.False(t, ok)
 
 	myepoch := epochs[0] - 10
-	p.setFailedFetch(myepoch, errors.New("wtf"))
+	p.SetFailedFetch(myepoch, errors.New("wtf"))
 
-	ok, err = p.getFailedFetch(myepoch)
+	ok, err = p.GetFailedFetch(myepoch)
 	require.Error(t, err)
 	require.True(t, ok)
 
-	p.pruneFailures()
+	p.PruneFailures()
 
-	ok, err = p.getFailedFetch(myepoch)
+	ok, err = p.GetFailedFetch(myepoch)
 	require.NoError(t, err)
 	require.False(t, ok)
 }
@@ -305,8 +317,9 @@ func TestPruneDocuments(t *testing.T) {
 	now, _, _ := epochtime.Now()
 	epoch := now - 10
 	pkiWorker := setup.server.PKIWorker
-	pkiWorker.lock.Lock()
-	pkiWorker.docs[epoch] = &pki.Document{
+
+	// Store an old document that should be pruned
+	oldDoc := &pki.Document{
 		Epoch: epoch,
 		ServiceNodes: []*pki.MixDescriptor{
 			&pki.MixDescriptor{
@@ -317,13 +330,16 @@ func TestPruneDocuments(t *testing.T) {
 			},
 		},
 	}
-	pkiWorker.lock.Unlock()
 
-	pkiWorker.pruneDocuments()
+	rawOldDoc, err := oldDoc.MarshalCertificate()
+	require.NoError(t, err)
+	pkiWorker.StoreDocument(epoch, oldDoc, rawOldDoc)
 
-	pkiWorker.lock.Lock()
-	require.Zero(t, len(pkiWorker.docs))
-	pkiWorker.lock.Unlock()
+	pkiWorker.PruneDocuments()
+
+	// Verify the old document was pruned
+	retrievedDoc := pkiWorker.documentForEpoch(epoch)
+	require.Nil(t, retrievedDoc)
 }
 
 func TestAuthenticationDuringEpochTransition(t *testing.T) {
@@ -369,18 +385,21 @@ func TestAuthenticationDuringEpochTransition(t *testing.T) {
 	}
 
 	pkiWorker := setup.server.PKIWorker
-	pkiWorker.lock.Lock()
-	pkiWorker.docs[epoch] = currentDoc
-	pkiWorker.lock.Unlock()
+
+	// Store current epoch document
+	rawCurrentDoc, err := currentDoc.MarshalCertificate()
+	require.NoError(t, err)
+	pkiWorker.StoreDocument(epoch, currentDoc, rawCurrentDoc)
 
 	// Test that current epoch document is available
 	doc := pkiWorker.documentForEpoch(epoch)
 	require.NotNil(t, doc)
 	require.Equal(t, epoch, doc.Epoch)
 
-	pkiWorker.lock.Lock()
-	pkiWorker.docs[epoch+1] = nextDoc
-	pkiWorker.lock.Unlock()
+	// Store next epoch document
+	rawNextDoc, err := nextDoc.MarshalCertificate()
+	require.NoError(t, err)
+	pkiWorker.StoreDocument(epoch+1, nextDoc, rawNextDoc)
 
 	// Test that both epoch documents are available
 	doc = pkiWorker.documentForEpoch(epoch)
@@ -388,9 +407,8 @@ func TestAuthenticationDuringEpochTransition(t *testing.T) {
 	nextDocRetrieved := pkiWorker.documentForEpoch(epoch + 1)
 	require.NotNil(t, nextDocRetrieved)
 
-	pkiWorker.lock.Lock()
-	delete(pkiWorker.docs, epoch)
-	pkiWorker.lock.Unlock()
+	// Remove current epoch document by storing nil (simulating deletion)
+	pkiWorker.StoreDocument(epoch, nil, nil)
 
 	// Test that only next epoch document is available
 	doc = pkiWorker.documentForEpoch(epoch)

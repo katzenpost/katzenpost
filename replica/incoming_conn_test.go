@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"net"
 	"os"
-	"sync"
 	"testing"
 	"time"
 
@@ -104,11 +103,8 @@ func TestIncomingConn(t *testing.T) {
 	require.NoError(t, err)
 
 	pkiWorker := &PKIWorker{
-		replicas:      common.NewReplicaMap(),
-		lock:          new(sync.RWMutex),
-		docs:          make(map[uint64]*pki.Document),
-		rawDocs:       make(map[uint64][]byte),
-		failedFetches: make(map[uint64]error),
+		replicas:   common.NewReplicaMap(),
+		WorkerBase: pki.NewWorkerBase(nil, nil), // No PKI client needed for test
 	}
 
 	server := &Server{

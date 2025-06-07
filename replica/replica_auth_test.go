@@ -275,8 +275,12 @@ func TestAuthentication(t *testing.T) {
 	epoch, _, _ := epochtime.Now()
 	replica1PKI := replica1Server.PKIWorker
 	replica2PKI := replica2Server.PKIWorker
-	replica1PKI.docs[epoch] = doc
-	replica2PKI.docs[epoch] = doc
+
+	// Store the document in both PKI workers
+	rawDoc, err := doc.MarshalCertificate()
+	require.NoError(t, err)
+	replica1PKI.StoreDocument(epoch, doc, rawDoc)
+	replica2PKI.StoreDocument(epoch, doc, rawDoc)
 	replica1PKI.updateReplicas(doc)
 	replica2PKI.updateReplicas(doc)
 

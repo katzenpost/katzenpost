@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -145,11 +144,8 @@ func TestGetRemoteShards(t *testing.T) {
 
 	// Create PKI worker with proper structure
 	pkiWorker := &PKIWorker{
-		replicas:      common.NewReplicaMap(),
-		lock:          new(sync.RWMutex),
-		docs:          make(map[uint64]*pki.Document),
-		rawDocs:       make(map[uint64][]byte),
-		failedFetches: make(map[uint64]error),
+		replicas:   common.NewReplicaMap(),
+		WorkerBase: pki.NewWorkerBase(nil, nil),
 	}
 
 	s := &Server{
@@ -174,17 +170,17 @@ func TestGetRemoteShards(t *testing.T) {
 		Epoch:           epoch,
 		StorageReplicas: replicas,
 	}
-	s.PKIWorker.lock.Lock()
+
+	// Store the document and reset replicas
+	rawDoc, err := doc.MarshalCertificate()
+	require.NoError(t, err)
+	s.PKIWorker.StoreDocument(epoch, doc, rawDoc)
 	s.PKIWorker.replicas = common.NewReplicaMap()
-	s.PKIWorker.docs[epoch] = doc
-	s.PKIWorker.lock.Unlock()
 
 	s.PKIWorker.server = s
 
 	err = s.initLogging()
 	require.NoError(t, err)
-
-	s.PKIWorker.log = s.LogBackend().GetLogger("pki")
 
 	st := newState(s)
 	s.state = st

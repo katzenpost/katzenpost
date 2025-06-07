@@ -5,7 +5,6 @@ package replica
 
 import (
 	"os"
-	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -122,11 +121,8 @@ func TestState(t *testing.T) {
 	}
 
 	pkiWorker := &PKIWorker{
-		replicas:      common.NewReplicaMap(),
-		lock:          new(sync.RWMutex),
-		docs:          make(map[uint64]*pki.Document),
-		rawDocs:       make(map[uint64][]byte),
-		failedFetches: make(map[uint64]error),
+		replicas:   common.NewReplicaMap(),
+		WorkerBase: pki.NewWorkerBase(nil, nil),
 	}
 
 	s := &Server{
@@ -147,18 +143,19 @@ func TestState(t *testing.T) {
 		replicas = append(replicas, replica)
 	}
 
-	pkiWorker.lock.Lock()
-	pkiWorker.docs[epoch] = &pki.Document{
+	// Store the document
+	doc := &pki.Document{
 		Epoch:           epoch,
 		StorageReplicas: replicas,
 	}
-	pkiWorker.lock.Unlock()
+	rawDoc, err := doc.MarshalCertificate()
+	require.NoError(t, err)
+	pkiWorker.StoreDocument(epoch, doc, rawDoc)
 
 	err = s.initLogging()
 	require.NoError(t, err)
 
 	pkiWorker.server = s
-	pkiWorker.log = s.LogBackend().GetLogger("pki")
 
 	st := &state{
 		server: s,

@@ -6,7 +6,6 @@ package replica
 import (
 	"fmt"
 	"os"
-	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -48,8 +47,6 @@ func TestOutgoingConn(t *testing.T) {
 
 	idpubkey, _, err := pkiScheme.GenerateKey()
 	require.NoError(t, err)
-	idpubkeyblob, err := idpubkey.MarshalBinary()
-	require.NoError(t, err)
 
 	dstReplicaDesc := generateReplica(t, pkiScheme, linkScheme, replicaScheme)
 	linkpubkey, err := linkScheme.UnmarshalBinaryPublicKey(dstReplicaDesc.LinkKey)
@@ -88,11 +85,8 @@ func TestOutgoingConn(t *testing.T) {
 	}
 
 	pkiWorker := &PKIWorker{
-		replicas:      common.NewReplicaMap(),
-		lock:          new(sync.RWMutex),
-		docs:          make(map[uint64]*pki.Document),
-		rawDocs:       make(map[uint64][]byte),
-		failedFetches: make(map[uint64]error),
+		replicas:   common.NewReplicaMap(),
+		WorkerBase: pki.NewWorkerBase(nil, nil), // No PKI client needed for test
 	}
 
 	s := &Server{
@@ -105,30 +99,24 @@ func TestOutgoingConn(t *testing.T) {
 	s.connector = newMockConnector(s)
 
 	epoch, _, _ := epochtime.Now()
-	pkiWorker.lock.Lock()
-	pkiWorker.docs[epoch] = &pki.Document{
-		Epoch: epoch,
-		ServiceNodes: []*pki.MixDescriptor{
-			&pki.MixDescriptor{
-				Name:        "servicenode1",
-				Epoch:       epoch,
-				IdentityKey: idpubkeyblob,
-				LinkKey:     dstReplicaDesc.LinkKey,
-			},
-		},
-	}
-	pkiWorker.docs[epoch] = &pki.Document{
+
+	// Create a PKI document with the test replica
+	doc := &pki.Document{
 		Epoch: epoch,
 		StorageReplicas: []*pki.ReplicaDescriptor{
 			dstReplicaDesc,
 		},
 	}
+
+	// Store the document in the PKI worker
+	rawDoc, err := doc.MarshalCertificate()
+	require.NoError(t, err)
+	pkiWorker.StoreDocument(epoch, doc, rawDoc)
+
 	adID := hash.Sum256(dstReplicaDesc.IdentityKey)
 	pkiWorker.replicas.Replace(map[[32]byte]*pki.ReplicaDescriptor{adID: dstReplicaDesc})
 
-	pkiWorker.lock.Unlock()
 	pkiWorker.server = s
-	pkiWorker.log = s.LogBackend().GetLogger("pki")
 
 	err = s.initLogging()
 	require.NoError(t, err)
