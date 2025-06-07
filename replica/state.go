@@ -18,6 +18,10 @@ import (
 	"github.com/katzenpost/katzenpost/replica/common"
 )
 
+const (
+	errDatabaseClosed = "database is closed"
+)
+
 type state struct {
 	server *Server
 	db     *grocksdb.DB
@@ -68,7 +72,7 @@ func (s *state) handleReplicaRead(replicaRead *common.ReplicaRead) (*common.Box,
 	// Check if database is still open
 	if s.db == nil {
 		s.log.Error("state: Database is closed, cannot perform read")
-		return nil, fmt.Errorf("database is closed")
+		return nil, fmt.Errorf(errDatabaseClosed)
 	}
 
 	ro := grocksdb.NewDefaultReadOptions()
@@ -104,7 +108,7 @@ func (s *state) handleReplicaWrite(replicaWrite *commands.ReplicaWrite) error {
 	// Check if database is still open
 	if s.db == nil {
 		s.log.Error("state: Database is closed, cannot perform write")
-		return fmt.Errorf("database is closed")
+		return fmt.Errorf(errDatabaseClosed)
 	}
 
 	wo := grocksdb.NewDefaultWriteOptions()
@@ -177,7 +181,7 @@ func (s *state) Rebalance() error {
 	// Check if database is still open
 	if s.db == nil {
 		s.log.Error("state: Database is closed, cannot perform rebalance")
-		return fmt.Errorf("database is closed")
+		return fmt.Errorf(errDatabaseClosed)
 	}
 
 	ro := grocksdb.NewDefaultReadOptions()
