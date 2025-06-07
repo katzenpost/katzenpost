@@ -565,12 +565,13 @@ func testBoxRoundTrip(t *testing.T, env *testEnvironment) {
 	courierReadReply2 := waitForCachedReply(t, env, bobReadRequest1)
 	require.Equal(t, courierReadReply2.EnvelopeHash[:], bobEnvHash1[:])
 	require.Equal(t, uint8(0), courierReadReply2.ErrorCode)
-	require.Equal(t, uint8(0), courierReadReply2.ReplyIndex)
+	// ReplyIndex now correctly indicates which replica replied (0 or 1)
+	require.True(t, courierReadReply2.ReplyIndex < 2, "ReplyIndex should be 0 or 1")
 	require.NotNil(t, courierReadReply2.Payload)
 
 	replicaEpoch, _, _ := common.ReplicaNow()
 
-	// Use the ReplyIndex from the CourierEnvelopeReply to determine which replica responded
+	// Now ReplyIndex correctly indicates which replica replied (0 or 1)
 	replicaIndex := int(bobReadRequest1.IntermediateReplicas[courierReadReply2.ReplyIndex])
 	replicaPubKey := env.replicaKeys[replicaIndex][replicaEpoch]
 	rawInnerMsg, err := mkemNikeScheme.DecryptEnvelope(bobPrivateKey1, replicaPubKey, courierReadReply2.Payload)
