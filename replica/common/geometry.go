@@ -94,13 +94,13 @@ func NewGeometry(boxPayloadLength int) *Geometry {
 
 func (g *Geometry) courierEnvelopeOverhead() int {
 	const (
-		intermediateReplicasLength = 2  // [2]uint8
-		epochLength                = 8  // uint64
-		isReadLength               = 1  // bool
-		replyIndexLength           = 1  // uint8
-		chachaPolyNonceLength      = 12 // ChaCha20Poly1305 nonce
-		chachaPolyTagLength        = 16 // Poly1305 authentication tag
-		cborOverhead               = 53 // CBOR serialization overhead
+		intermediateReplicasLength = 2
+		epochLength                = 8
+		isReadLength               = 1
+		replyIndexLength           = 1
+		chachaPolyNonceLength      = 12
+		chachaPolyTagLength        = 16
+		cborOverhead               = 53
 	)
 	return intermediateReplicasLength + (2 * mkem.DEKSize) +
 		replyIndexLength + epochLength +
@@ -110,46 +110,34 @@ func (g *Geometry) courierEnvelopeOverhead() int {
 
 func (g *Geometry) courierEnvelopeReplyOverhead() int {
 	const (
-		envelopeHashLength    = hash.HashSize // 32 bytes - *[hash.HashSize]byte
-		replyIndexLength      = 1             // 1 byte - uint8
-		errorCodeLength       = 1             // 1 byte - uint8
-		chachaPolyNonceLength = 12            // ChaCha20Poly1305 nonce
-		chachaPolyTagLength   = 16            // Poly1305 authentication tag
-		cborOverhead          = 20            // CBOR serialization overhead
+		envelopeHashLength    = hash.HashSize
+		replyIndexLength      = 1
+		errorCodeLength       = 1
+		chachaPolyNonceLength = 12
+		chachaPolyTagLength   = 16
+		cborOverhead          = 20
 	)
 
 	return envelopeHashLength + replyIndexLength + errorCodeLength +
 		chachaPolyNonceLength + chachaPolyTagLength + cborOverhead
 }
 
-// replicaInnerMessageOverhead calculates the overhead for ReplicaInnerMessage.
-// ReplicaInnerMessage is a CBOR map with 2 fields where exactly one is non-nil.
-// We use the actual overhead calculations for each case and add CBOR union overhead.
 func (g *Geometry) replicaInnerMessageOverhead() int {
 	const (
-		// CBOR overhead for ReplicaInnerMessage struct with 2 pointer fields
-		cborMapHeader      = 1  // CBOR map type indicator
-		replicaReadKeyLen  = 12 // "ReplicaRead" field name length
-		replicaWriteKeyLen = 13 // "ReplicaWrite" field name length
-		nilValueOverhead   = 1  // CBOR nil value for unused field
-		cborFieldOverhead  = 2  // CBOR field encoding overhead per field
-
-		// Additional CBOR overhead when embedding ReplicaWrite in ReplicaInnerMessage
-		// This accounts for the extra CBOR serialization overhead of the nested structure
+		cborMapHeader                 = 1
+		replicaReadKeyLen             = 12
+		replicaWriteKeyLen            = 13
+		nilValueOverhead              = 1
+		cborFieldOverhead             = 2
 		replicaWriteEmbeddingOverhead = 28
 
-		// Total CBOR struct overhead for the union type
 		unionStructOverhead = cborMapHeader + replicaReadKeyLen + replicaWriteKeyLen +
 			nilValueOverhead + (2 * cborFieldOverhead)
 	)
 
-	// ReplicaRead case: union overhead + actual ReplicaRead overhead
 	replicaReadCaseOverhead := unionStructOverhead + g.replicaReadOverhead()
-
-	// ReplicaWrite case: union overhead + actual ReplicaWrite overhead + embedding overhead
 	replicaWriteCaseOverhead := unionStructOverhead + g.replicaWriteOverhead() + replicaWriteEmbeddingOverhead
 
-	// Return the maximum to accommodate either case
 	if replicaReadCaseOverhead > replicaWriteCaseOverhead {
 		return replicaReadCaseOverhead
 	}
@@ -160,21 +148,14 @@ func (g *Geometry) replicaReadLength() int {
 	return g.SignatureScheme().PublicKeySize()
 }
 
-// replicaReadOverhead calculates the overhead of the ReplicaRead message.
-// ReplicaRead only contains a BoxID (Ed25519 public key) and is CBOR serialized.
 func (g *Geometry) replicaReadOverhead() int {
 	boxIDLength := g.SignatureScheme().PublicKeySize()
-	// CBOR overhead for a simple struct with one field
-	cborOverhead := 9 // CBOR overhead for struct with one 32-byte field
+	cborOverhead := 9
 	return boxIDLength + cborOverhead
 }
 
-// note that here we calculate the overhead of the ReplicaWrite message without padding
-// because we only care about these message types in the context of being transported
-// over the mixnet in a Sphinx packet payload.
 func (g *Geometry) replicaWriteOverhead() int {
 	const (
-		// BACAP uses AES-GCM-SIV which adds 16 bytes of authentication tag overhead
 		bacapEncryptionOverhead = 16
 	)
 
@@ -278,53 +259,40 @@ func (g *Geometry) Hash() []byte {
 }
 
 func courierEnvelopeLength(boxPayloadLength int, nikeScheme nike.Scheme) int {
-	// Create a temporary geometry to use existing methods
 	tempGeo := &Geometry{
 		BoxPayloadLength:    boxPayloadLength,
 		NIKEName:            nikeScheme.Name(),
 		SignatureSchemeName: SignatureSchemeName,
 	}
 
-	// CourierEnvelope contains MKEM-encrypted ReplicaInnerMessage
-	// ReplicaInnerMessage contains either ReplicaRead or ReplicaWrite
-	// We need to calculate the larger of the two cases
-
-	// Case 1: ReplicaRead - just contains a BoxID
 	replicaReadSize := tempGeo.replicaReadOverhead()
 	replicaInnerMessageReadSize := replicaInnerMessageOverheadForRead() + replicaReadSize
 
-	// Case 2: ReplicaWrite - contains BoxID + Signature + BACAP-encrypted payload
 	replicaWriteSize := tempGeo.replicaWriteOverhead() + boxPayloadLength
 	replicaInnerMessageWriteSize := replicaInnerMessageOverheadForWrite() + replicaWriteSize
 
-	// Take the maximum of the two cases
 	maxReplicaInnerMessageSize := max(replicaInnerMessageReadSize, replicaInnerMessageWriteSize)
 
-	// Add MKEM encryption overhead and CourierEnvelope overhead
 	return tempGeo.courierEnvelopeOverhead() + mkemEncryptionOverhead(maxReplicaInnerMessageSize, nikeScheme)
 }
 
 func mkemEncryptionOverhead(plaintextSize int, nikeScheme nike.Scheme) int {
 	const (
-		chachaPolyNonceLength = 12 // ChaCha20Poly1305 nonce
-		chachaPolyTagLength   = 16 // Poly1305 authentication tag
+		chachaPolyNonceLength = 12
+		chachaPolyTagLength   = 16
 	)
 
-	// MKEM encryption overhead includes:
-	// - Ephemeral public key size
-	// - ChaCha20Poly1305 nonce and tag
-	// - The actual ciphertext is the same size as plaintext
 	return nikeScheme.PublicKeySize() + chachaPolyNonceLength + chachaPolyTagLength + plaintextSize
 }
 
 func courierEnvelopeReplyLength() int {
 	const (
-		envelopeHashLength    = hash.HashSize // 32 bytes - *[hash.HashSize]byte
-		replyIndexLength      = 1             // 1 byte - uint8
-		errorCodeLength       = 1             // 1 byte - uint8
-		chachaPolyNonceLength = 12            // ChaCha20Poly1305 nonce
-		chachaPolyTagLength   = 16            // Poly1305 authentication tag
-		cborOverhead          = 20            // CBOR serialization overhead
+		envelopeHashLength    = hash.HashSize
+		replyIndexLength      = 1
+		errorCodeLength       = 1
+		chachaPolyNonceLength = 12
+		chachaPolyTagLength   = 16
+		cborOverhead          = 20
 	)
 
 	return envelopeHashLength + replyIndexLength + errorCodeLength +
@@ -333,14 +301,12 @@ func courierEnvelopeReplyLength() int {
 
 func replicaInnerMessageOverheadForRead() int {
 	const (
-		// CBOR overhead for ReplicaInnerMessage struct with 2 pointer fields
-		cborMapHeader      = 1  // CBOR map type indicator
-		replicaReadKeyLen  = 12 // "ReplicaRead" field name length
-		replicaWriteKeyLen = 13 // "ReplicaWrite" field name length
-		nilValueOverhead   = 1  // CBOR nil value for unused field
-		cborFieldOverhead  = 2  // CBOR field encoding overhead per field
+		cborMapHeader      = 1
+		replicaReadKeyLen  = 12
+		replicaWriteKeyLen = 13
+		nilValueOverhead   = 1
+		cborFieldOverhead  = 2
 
-		// Total CBOR struct overhead for the union type
 		unionStructOverhead = cborMapHeader + replicaReadKeyLen + replicaWriteKeyLen +
 			nilValueOverhead + (2 * cborFieldOverhead)
 	)
@@ -349,40 +315,42 @@ func replicaInnerMessageOverheadForRead() int {
 
 func replicaInnerMessageOverheadForWrite() int {
 	const (
-		// CBOR overhead for ReplicaInnerMessage struct with 2 pointer fields
-		cborMapHeader      = 1  // CBOR map type indicator
-		replicaReadKeyLen  = 12 // "ReplicaRead" field name length
-		replicaWriteKeyLen = 13 // "ReplicaWrite" field name length
-		nilValueOverhead   = 1  // CBOR nil value for unused field
-		cborFieldOverhead  = 2  // CBOR field encoding overhead per field
-
-		// Additional CBOR overhead when embedding ReplicaWrite in ReplicaInnerMessage
-		// This accounts for the extra CBOR serialization overhead of the nested structure
+		cborMapHeader                 = 1
+		replicaReadKeyLen             = 12
+		replicaWriteKeyLen            = 13
+		nilValueOverhead              = 1
+		cborFieldOverhead             = 2
 		replicaWriteEmbeddingOverhead = 28
 
-		// Total CBOR struct overhead for the union type
 		unionStructOverhead = cborMapHeader + replicaReadKeyLen + replicaWriteKeyLen +
 			nilValueOverhead + (2 * cborFieldOverhead)
 	)
 	return unionStructOverhead + replicaWriteEmbeddingOverhead
 }
 
-func findMaxBoxPayloadLength(maxCourierEnvelopeLength int, nikeScheme nike.Scheme) int {
-	// Binary search to find the maximum BoxPayloadLength that fits within the constraint
-	low := 0
-	high := maxCourierEnvelopeLength // Upper bound estimate
-
-	for low <= high {
-		mid := (low + high) / 2
-
-		if courierEnvelopeLength(mid, nikeScheme) <= maxCourierEnvelopeLength {
-			low = mid + 1
-		} else {
-			high = mid - 1
-		}
+func calculateMaxBoxPayloadLength(maxCourierEnvelopeLength int, nikeScheme nike.Scheme) int {
+	tempGeo := &Geometry{
+		NIKEName:            nikeScheme.Name(),
+		SignatureSchemeName: SignatureSchemeName,
 	}
 
-	return high // Return the largest value that fits
+	courierOverhead := tempGeo.courierEnvelopeOverhead()
+	mkemFixedOverhead := nikeScheme.PublicKeySize() + 12 + 16
+	availableForReplicaInner := maxCourierEnvelopeLength - courierOverhead - mkemFixedOverhead
+
+	readCaseOverhead := replicaInnerMessageOverheadForRead() + tempGeo.replicaReadOverhead()
+	writeCaseFixedOverhead := replicaInnerMessageOverheadForWrite() + tempGeo.replicaWriteOverhead()
+
+	if readCaseOverhead > availableForReplicaInner {
+		return 0
+	}
+
+	maxBoxPayloadFromWriteCase := availableForReplicaInner - writeCaseFixedOverhead
+	if maxBoxPayloadFromWriteCase < 0 {
+		return 0
+	}
+
+	return maxBoxPayloadFromWriteCase
 }
 
 // GeometryFromBoxPayloadLength solves Use Case 1: specify BoxPayloadLength and derive
@@ -428,8 +396,6 @@ func GeometryFromPigeonholeGeometry(pigeonholeGeometry *Geometry, nrHops int) *g
 		panic(fmt.Sprintf("invalid NIKE scheme: %s", pigeonholeGeometry.NIKEName))
 	}
 
-	// The Sphinx geometry needs to accommodate the CourierEnvelope
-	// (CourierEnvelopeReply is smaller, so CourierEnvelope is the constraint)
 	maxPigeonholeMessageSize := pigeonholeGeometry.CourierEnvelopeLength
 	return geo.GeometryFromUserForwardPayloadLength(nikeScheme, maxPigeonholeMessageSize, true, nrHops)
 }
@@ -448,18 +414,11 @@ func GeometryFromPigeonholeGeometry(pigeonholeGeometry *Geometry, nrHops int) *g
 // Returns:
 //   - *Geometry: The pigeonhole geometry with maximum BoxPayloadLength that fits the constraint
 func GeometryFromSphinxGeometry(sphinxGeometry *geo.Geometry) *Geometry {
-	// Use the default Pigeonhole NIKE scheme, NOT the Sphinx NIKE scheme
-	// These are independent cryptographic layers
 	pigeonholeNikeScheme := NikeScheme
-
-	// Calculate the maximum BoxPayloadLength that fits within the Sphinx constraint
-	// The constraint is the UserForwardPayloadLength from Sphinx
 	maxPayloadSize := sphinxGeometry.UserForwardPayloadLength
 
-	// Use binary search to find the maximum BoxPayloadLength that fits
-	boxPayloadLength := findMaxBoxPayloadLength(maxPayloadSize, pigeonholeNikeScheme)
+	boxPayloadLength := calculateMaxBoxPayloadLength(maxPayloadSize, pigeonholeNikeScheme)
 	if boxPayloadLength <= 0 {
-		// Calculate minimum required size for debugging
 		minRequired := courierEnvelopeLength(1, pigeonholeNikeScheme)
 		panic(fmt.Sprintf("Sphinx geometry too small: UserForwardPayloadLength=%d, need at least %d",
 			maxPayloadSize, minRequired))
