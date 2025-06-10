@@ -280,12 +280,10 @@ func mkemCiphertextSize(plaintextSize int) int {
 
 func courierEnvelopeReplyLength(boxPayloadLength int) int {
 	const (
-		envelopeHashLength    = hash.HashSize
-		replyIndexLength      = 1
-		errorCodeLength       = 1
-		chachaPolyNonceLength = 12
-		chachaPolyTagLength   = 16
-		cborOverhead          = 20
+		envelopeHashLength = hash.HashSize
+		replyIndexLength   = 1
+		errorCodeLength    = 1
+		cborOverhead       = 20
 	)
 
 	replicaReadReplyOverhead := replicaReadReplyOverhead()
@@ -300,8 +298,10 @@ func courierEnvelopeReplyLength(boxPayloadLength int) int {
 		replicaMessageReplyInnerOverhead + replicaWriteReplySize,
 	)
 
-	return envelopeHashLength + replyIndexLength + errorCodeLength +
-		chachaPolyNonceLength + chachaPolyTagLength + cborOverhead + maxReplicaMessageReplyInnerSize
+	// The Payload field contains MKEM-encrypted ReplicaMessageReplyInnerMessage
+	mkemCiphertext := mkemCiphertextSize(maxReplicaMessageReplyInnerSize)
+
+	return envelopeHashLength + replyIndexLength + errorCodeLength + cborOverhead + mkemCiphertext
 }
 
 func replicaInnerMessageOverheadForRead() int {

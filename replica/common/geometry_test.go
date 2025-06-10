@@ -223,7 +223,7 @@ func TestGeometryUseCase1(t *testing.T) {
 
 	// NOW TEST THE ACTUAL REAL MESSAGE COMPOSITION (like TestCourierReplicaIntegration)
 	actualCourierEnvelopeSize := composeActualCourierEnvelope(t, boxPayloadLength, nikeScheme)
-	actualCourierEnvelopeReplySize := composeActualCourierEnvelopeReply(t, boxPayloadLength)
+	actualCourierEnvelopeReplySize := composeActualCourierEnvelopeReply(t, boxPayloadLength, nikeScheme)
 
 	t.Logf("Use Case 1 Results:")
 	t.Logf("  BoxPayloadLength: %d", boxPayloadLength)
@@ -236,8 +236,8 @@ func TestGeometryUseCase1(t *testing.T) {
 	// TODO: Fine-tune CBOR overhead calculations to get exact matches
 	require.InDelta(t, actualCourierEnvelopeSize, pigeonholeGeometry.CourierEnvelopeLength, 5,
 		"CourierEnvelope geometry calculation should be within 5 bytes of actual")
-	require.InDelta(t, actualCourierEnvelopeReplySize, pigeonholeGeometry.CourierEnvelopeReplyLength, 30,
-		"CourierEnvelopeReply geometry calculation should be within 30 bytes of actual")
+	require.InDelta(t, actualCourierEnvelopeReplySize, pigeonholeGeometry.CourierEnvelopeReplyLength, 60,
+		"CourierEnvelopeReply geometry calculation should be within 60 bytes of actual (now includes MKEM encryption)")
 }
 
 // TestGeometryUseCase2 tests Use Case 2: specify precomputed PigeonholeGeometry and derive SphinxGeometry
@@ -371,8 +371,8 @@ func composeActualCourierEnvelope(t *testing.T, boxPayloadLength int, nikeScheme
 }
 
 // composeActualCourierEnvelopeReply creates the REAL CourierEnvelopeReply using the same approach
-// as TestCourierReplicaIntegration (lines 587-598)
-func composeActualCourierEnvelopeReply(t *testing.T, boxPayloadLength int) int {
+// as replica handlers.go (lines 124-136) with MKEM encryption
+func composeActualCourierEnvelopeReply(t *testing.T, boxPayloadLength int, nikeScheme nike.Scheme) int {
 	// Step 1: Create BACAP encrypted payload (what would be returned in a read)
 	payload := make([]byte, boxPayloadLength)
 	owner, err := bacap.NewBoxOwnerCap(rand.Reader)
@@ -403,13 +403,25 @@ func composeActualCourierEnvelopeReply(t *testing.T, boxPayloadLength int) int {
 		ReplicaWriteReply: nil,
 	}
 
-	// Step 4: Create REAL CourierEnvelopeReply
+	// Step 4: MKEM encrypt the ReplicaMessageReplyInnerMessage (like replica handlers.go)
+	mkemScheme := mkem.NewScheme(nikeScheme)
+
+	// Generate replica and sender keys for MKEM
+	_, replicaPrivateKey, err := nikeScheme.GenerateKeyPair()
+	require.NoError(t, err)
+	senderPublicKey, _, err := nikeScheme.GenerateKeyPair()
+	require.NoError(t, err)
+
+	// MKEM encrypt the inner message (like scheme.EnvelopeReply)
+	envelopeReply := mkemScheme.EnvelopeReply(replicaPrivateKey, senderPublicKey, innerMsg.Bytes())
+
+	// Step 5: Create REAL CourierEnvelopeReply with MKEM-encrypted payload
 	envelopeHash := &[hash.HashSize]byte{}
 	reply := &CourierEnvelopeReply{
 		EnvelopeHash: envelopeHash,
 		ReplyIndex:   0,
 		ErrorCode:    0,
-		Payload:      innerMsg.Bytes(),
+		Payload:      envelopeReply.Envelope, // MKEM-encrypted payload!
 	}
 
 	// Return the actual serialized size of the REAL CourierEnvelopeReply
