@@ -412,7 +412,7 @@ func composeActualCourierEnvelopeReply(t *testing.T, boxPayloadLength int, nikeS
 	senderPublicKey, _, err := nikeScheme.GenerateKeyPair()
 	require.NoError(t, err)
 
-	// MKEM encrypt the inner message (like scheme.EnvelopeReply)
+	// MKEM encrypt the inner message
 	envelopeReply := mkemScheme.EnvelopeReply(replicaPrivateKey, senderPublicKey, innerMsg.Bytes())
 
 	// Step 5: Create REAL CourierEnvelopeReply with MKEM-encrypted payload
