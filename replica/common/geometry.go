@@ -149,9 +149,13 @@ func (g *Geometry) replicaReadOverhead() int {
 }
 
 func (g *Geometry) replicaWriteOverhead() int {
+	const (
+		bacapEncryptionOverhead = 16
+	)
+
 	boxIDLength := g.SignatureScheme().PublicKeySize()
 	signatureLength := g.SignatureScheme().SignatureSize()
-	return commands.CmdOverhead + boxIDLength + signatureLength
+	return commands.CmdOverhead + boxIDLength + signatureLength + bacapEncryptionOverhead
 }
 
 // Validate returns an error if one of it's validation checks fails.
@@ -258,7 +262,7 @@ func courierEnvelopeLength(boxPayloadLength int, nikeScheme nike.Scheme) int {
 	replicaReadSize := tempGeo.replicaReadOverhead()
 	replicaInnerMessageReadSize := replicaInnerMessageOverheadForRead() + replicaReadSize
 
-	replicaWriteSize := tempGeo.replicaWriteOverhead() + boxPayloadLength + 16 // +16 for BACAP encryption
+	replicaWriteSize := tempGeo.replicaWriteOverhead() + boxPayloadLength
 	replicaInnerMessageWriteSize := replicaInnerMessageOverheadForWrite() + replicaWriteSize
 
 	maxReplicaInnerMessageSize := max(replicaInnerMessageReadSize, replicaInnerMessageWriteSize)
