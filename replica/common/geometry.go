@@ -67,26 +67,24 @@ type Geometry struct {
 }
 
 // NewGeometry solves Use Case 1: specify BoxPayloadLength and derive appropriate
-// Pigeonhole Geometry object using default schemes.
+// PigeonholeGeometry object.
 //
 // This constructor takes a desired BoxPayloadLength (the usable payload size for
 // BACAP-encrypted messages) and creates a PigeonholeGeometry with calculated envelope
-// lengths using the default NIKE scheme (CTIDH1024-X25519) and signature scheme (Ed25519).
-//
-// This is a convenience constructor for the most common use case. For more control over
-// the NIKE scheme, use GeometryFromBoxPayloadLength() instead.
+// lengths. The signature scheme is always Ed25519 due to BACAP's dependency.
 //
 // Parameters:
 //   - boxPayloadLength: The desired size of the usable payload in bytes
+//   - nikeScheme: The NIKE scheme to use for MKEM encryption
 //
 // Returns:
 //   - *Geometry: The pigeonhole geometry with calculated envelope lengths
-func NewGeometry(boxPayloadLength int) *Geometry {
+func NewGeometry(boxPayloadLength int, nikeScheme nike.Scheme) *Geometry {
 	g := &Geometry{
 		BoxPayloadLength:           boxPayloadLength,
 		SignatureSchemeName:        SignatureSchemeName,
-		NIKEName:                   NikeScheme.Name(),
-		CourierEnvelopeLength:      courierEnvelopeLength(boxPayloadLength, NikeScheme),
+		NIKEName:                   nikeScheme.Name(),
+		CourierEnvelopeLength:      courierEnvelopeLength(boxPayloadLength, nikeScheme),
 		CourierEnvelopeReplyLength: courierEnvelopeReplyLength(boxPayloadLength),
 	}
 	return g
@@ -450,28 +448,28 @@ func GeometryFromPigeonholeGeometry(pigeonholeGeometry *Geometry, nrHops int) *g
 // This function takes an existing SphinxGeometry (perhaps constrained by network requirements)
 // and determines the maximum BoxPayloadLength that can fit within the Sphinx packet size
 // constraints. It then creates a PigeonholeGeometry that maximizes payload utilization
-// while staying within the Sphinx limits.
+// while staying within the Sphinx limits. The signature scheme is always Ed25519 due to BACAP's dependency.
 //
 // Parameters:
 //   - sphinxGeometry: An existing sphinx geometry that constrains the maximum message size
+//   - nikeScheme: The NIKE scheme to use for MKEM encryption in the pigeonhole geometry
 //
 // Returns:
 //   - *Geometry: The pigeonhole geometry with maximum BoxPayloadLength that fits the constraint
-func GeometryFromSphinxGeometry(sphinxGeometry *geo.Geometry) *Geometry {
-	pigeonholeNikeScheme := NikeScheme
+func GeometryFromSphinxGeometry(sphinxGeometry *geo.Geometry, nikeScheme nike.Scheme) *Geometry {
 	maxPayloadSize := sphinxGeometry.UserForwardPayloadLength
 
-	boxPayloadLength := calculateMaxBoxPayloadLength(maxPayloadSize, pigeonholeNikeScheme)
+	boxPayloadLength := calculateMaxBoxPayloadLength(maxPayloadSize, nikeScheme)
 	if boxPayloadLength <= 0 {
-		minRequired := courierEnvelopeLength(1, pigeonholeNikeScheme)
+		minRequired := courierEnvelopeLength(1, nikeScheme)
 		panic(fmt.Sprintf("Sphinx geometry too small: UserForwardPayloadLength=%d, need at least %d",
 			maxPayloadSize, minRequired))
 	}
 
 	return &Geometry{
-		CourierEnvelopeLength:      courierEnvelopeLength(boxPayloadLength, pigeonholeNikeScheme),
+		CourierEnvelopeLength:      courierEnvelopeLength(boxPayloadLength, nikeScheme),
 		CourierEnvelopeReplyLength: courierEnvelopeReplyLength(boxPayloadLength),
-		NIKEName:                   pigeonholeNikeScheme.Name(),
+		NIKEName:                   nikeScheme.Name(),
 		SignatureSchemeName:        SignatureSchemeName,
 		BoxPayloadLength:           boxPayloadLength,
 	}

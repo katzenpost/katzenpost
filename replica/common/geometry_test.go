@@ -46,7 +46,9 @@ func TestReplicaWriteOverhead(t *testing.T) {
 	writeCmdBytes := writeCmd.ToBytes()
 	overhead := len(writeCmdBytes) - len(payload) // Compare against original payload size
 
-	geo := NewGeometry(len(payload))
+	nikeScheme := schemes.ByName("x25519")
+	require.NotNil(t, nikeScheme)
+	geo := NewGeometry(len(payload), nikeScheme)
 	overhead2 := geo.replicaWriteOverhead()
 
 	t.Logf("Original payload size: %d", len(payload))
@@ -66,7 +68,9 @@ func TestReplicaReadOverhead(t *testing.T) {
 	readCmdBytes := readCmd.ToBytes()
 	overhead := len(readCmdBytes)
 
-	geo := NewGeometry(1000) // payload size doesn't matter for read overhead
+	nikeScheme := schemes.ByName("x25519")
+	require.NotNil(t, nikeScheme)
+	geo := NewGeometry(1000, nikeScheme) // payload size doesn't matter for read overhead
 	overhead2 := geo.replicaReadOverhead()
 
 	t.Logf("readCmdBytes overhead: %d", overhead)
@@ -101,7 +105,9 @@ func TestCourierEnvelopeOverhead(t *testing.T) {
 	envelopeBytes := envelope.Bytes()
 	overhead := len(envelopeBytes) - len(payload)
 
-	geo := NewGeometry(len(payload))
+	nikeScheme := schemes.ByName("CTIDH1024-X25519")
+	require.NotNil(t, nikeScheme)
+	geo := NewGeometry(len(payload), nikeScheme)
 	overhead2 := geo.courierEnvelopeOverhead()
 
 	t.Logf("courierEnvelope overhead: %d", overhead)
@@ -127,7 +133,9 @@ func TestCourierEnvelopeReplyOverhead(t *testing.T) {
 	replyBytes := reply.Bytes()
 	overhead := len(replyBytes) - len(payload)
 
-	geo := NewGeometry(len(payload))
+	nikeScheme := schemes.ByName("x25519")
+	require.NotNil(t, nikeScheme)
+	geo := NewGeometry(len(payload), nikeScheme)
 	overhead2 := geo.courierEnvelopeReplyOverhead()
 
 	t.Logf("geo.courierEnvelopeReplyOverhead: %d", overhead2)
@@ -137,7 +145,9 @@ func TestCourierEnvelopeReplyOverhead(t *testing.T) {
 
 func TestReplicaInnerMessageOverhead(t *testing.T) {
 	payload := make([]byte, 1000)
-	geo := NewGeometry(len(payload))
+	nikeScheme := schemes.ByName("x25519")
+	require.NotNil(t, nikeScheme)
+	geo := NewGeometry(len(payload), nikeScheme)
 
 	// Test ReplicaRead case
 	readMsg := &ReplicaInnerMessage{
@@ -265,12 +275,14 @@ func TestGeometryUseCase3(t *testing.T) {
 	precomputedSphinxGeometry := geo.GeometryFromUserForwardPayloadLength(nikeScheme, userForwardPayloadLength, true, nrHops)
 	require.NotNil(t, precomputedSphinxGeometry)
 
-	pigeonholeGeometry := GeometryFromSphinxGeometry(precomputedSphinxGeometry)
+	pigeonholeNikeScheme := schemes.ByName("CTIDH1024-X25519")
+	require.NotNil(t, pigeonholeNikeScheme)
+	pigeonholeGeometry := GeometryFromSphinxGeometry(precomputedSphinxGeometry, pigeonholeNikeScheme)
 
 	// Validate pigeonhole geometry
 	require.NotNil(t, pigeonholeGeometry)
-	// Pigeonhole uses its own NIKE scheme, NOT the Sphinx NIKE scheme
-	require.Equal(t, NikeScheme.Name(), pigeonholeGeometry.NIKEName)
+	// Pigeonhole uses the specified NIKE scheme, independent of Sphinx NIKE scheme
+	require.Equal(t, pigeonholeNikeScheme.Name(), pigeonholeGeometry.NIKEName)
 	require.Equal(t, SignatureSchemeName, pigeonholeGeometry.SignatureSchemeName)
 	require.Greater(t, pigeonholeGeometry.BoxPayloadLength, 0)
 	require.Greater(t, pigeonholeGeometry.CourierEnvelopeLength, pigeonholeGeometry.BoxPayloadLength)
