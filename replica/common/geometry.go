@@ -42,9 +42,9 @@ var (
 
 // Geometry describes the geometry of the Pigeonhole Protocol messages.
 // It has 3 distinct use cases:
-// 1. specify BoxPayloadLength and derive appropriate PigeonholeGeometry and SphinxGeometry objects.
-// 2. specify a precomputed PigeonholeGeometry and derive accommodating SphinxGeometry object.
-// 3. specify a precomputed SphinxGeometry as a size constraint and derive a PigeonholeGeometry object.
+// 1. specify BoxPayloadLength and derive appropriate Pigeonhole Geometry and Sphinx Geometry objects.
+// 2. specify a precomputed Pigeonhole Geometry and derive accommodating Sphinx Geometry object.
+// 3. specify a precomputed Sphinx Geometry as a size constraint and derive a Pigeonhole Geometry object.
 type Geometry struct {
 
 	// CourierEnvelopeLength is the length of the CBOR serialized CourierEnvelope message.
@@ -284,22 +284,23 @@ func mkemCiphertextSize(plaintextSize int) int {
 
 func courierEnvelopeReplyLength(boxPayloadLength int) int {
 	const (
-		envelopeHashLength = hash.HashSize
-		replyIndexLength   = 1
-		errorCodeLength    = 1
-		cborOverhead       = 20
+		envelopeHashLength      = hash.HashSize
+		replyIndexLength        = 1
+		errorCodeLength         = 1
+		bacapEncryptionOverhead = 16
+		cborOverhead            = 20
 	)
 
 	replicaReadReplyOverhead := replicaReadReplyOverhead()
 	replicaWriteReplyOverhead := replicaWriteReplyOverhead()
 
-	replicaReadReplySize := replicaReadReplyOverhead + boxPayloadLength + 16 // +16 for BACAP
+	replicaReadReplySize := replicaReadReplyOverhead + boxPayloadLength + bacapEncryptionOverhead
 	replicaWriteReplySize := replicaWriteReplyOverhead
 
 	replicaMessageReplyInnerOverhead := replicaMessageReplyInnerOverhead()
 	maxReplicaMessageReplyInnerSize := max(
-		replicaMessageReplyInnerOverhead + replicaReadReplySize,
-		replicaMessageReplyInnerOverhead + replicaWriteReplySize,
+		replicaMessageReplyInnerOverhead+replicaReadReplySize,
+		replicaMessageReplyInnerOverhead+replicaWriteReplySize,
 	)
 
 	// The Payload field contains MKEM-encrypted ReplicaMessageReplyInnerMessage
@@ -339,10 +340,10 @@ func replicaInnerMessageOverheadForWrite() int {
 
 func replicaReadReplyOverhead() int {
 	const (
-		errorCodeLength   = 1
-		boxIDLength       = 32
-		signatureLength   = 64
-		cborOverhead      = 15
+		errorCodeLength = 1
+		boxIDLength     = 32
+		signatureLength = 64
+		cborOverhead    = 15
 	)
 	return errorCodeLength + boxIDLength + signatureLength + cborOverhead
 }
@@ -370,13 +371,18 @@ func replicaMessageReplyInnerOverhead() int {
 }
 
 func calculateMaxBoxPayloadLength(maxCourierEnvelopeLength int, nikeScheme nike.Scheme) int {
+	const (
+		chachaPolyNonceLength = 12
+		chachaPolyTagLength   = 16
+	)
+
 	tempGeo := &Geometry{
 		NIKEName:            nikeScheme.Name(),
 		SignatureSchemeName: SignatureSchemeName,
 	}
 
 	courierOverhead := tempGeo.courierEnvelopeOverhead()
-	mkemFixedOverhead := 12 + 16 // nonce + tag (ephemeral key already in courierOverhead)
+	mkemFixedOverhead := chachaPolyNonceLength + chachaPolyTagLength
 	availableForReplicaInner := maxCourierEnvelopeLength - courierOverhead - mkemFixedOverhead
 
 	readCaseOverhead := replicaInnerMessageOverheadForRead() + tempGeo.replicaReadOverhead()
