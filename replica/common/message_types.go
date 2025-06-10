@@ -72,7 +72,7 @@ func (c *CourierEnvelope) EnvelopeHash() *[hash.HashSize]byte {
 
 // Bytes serializes the given CourierEnvelope using CBOR.
 func (c *CourierEnvelope) Bytes() []byte {
-	blob, err := cbor.Marshal(c)
+	blob, err := ccbor.Marshal(c)
 	if err != nil {
 		panic(err)
 	}
@@ -105,10 +105,6 @@ type CourierEnvelopeReply struct {
 	// Payload contains an embedded ReplicaMessageReply's EnvelopeReply.
 	Payload []byte
 
-	// ErrorString will be empty if the query was well formed. Otherwise
-	// ErrorString will be set to an informative error string.
-	ErrorString string
-
 	// ErrorCode if non-zero indicates an error. ReplyIndex and Payload
 	// maybe invalid if an error is indicated.
 	ErrorCode uint8
@@ -116,7 +112,7 @@ type CourierEnvelopeReply struct {
 
 // Bytes returns a CBOR blob of the given CourierEnvelopeReply.
 func (c *CourierEnvelopeReply) Bytes() []byte {
-	blob, err := cbor.Marshal(c)
+	blob, err := ccbor.Marshal(c)
 	if err != nil {
 		panic(err)
 	}
@@ -145,7 +141,7 @@ func (c *ReplicaInnerMessage) Bytes() []byte {
 	if c.ReplicaRead != nil && c.ReplicaWrite != nil {
 		panic("ReplicaInnerMessage.Bytes failure: one field must be nil.")
 	}
-	blob, err := cbor.Marshal(c)
+	blob, err := ccbor.Marshal(c)
 	if err != nil {
 		panic(err)
 	}
@@ -179,7 +175,7 @@ func (c *ReplicaRead) ToBytes() []byte {
 // Bytes marshals the given ReplicaRead into
 // a CBOR binary blob.
 func (c *ReplicaRead) Bytes() []byte {
-	blob, err := cbor.Marshal(c)
+	blob, err := ccbor.Marshal(c)
 	if err != nil {
 		panic(err) // impossible
 	}
@@ -221,7 +217,7 @@ type ReplicaReadReply struct {
 // Bytes is a helper method used to marshal the
 // given ReplicaReadReply into a CBOR binary blob.
 func (c *ReplicaReadReply) Bytes() []byte {
-	blob, err := cbor.Marshal(c)
+	blob, err := ccbor.Marshal(c)
 	if err != nil {
 		panic(err)
 	}
@@ -256,7 +252,7 @@ func (c *ReplicaMessageReplyInnerMessage) Bytes() []byte {
 	if c.ReplicaReadReply != nil && c.ReplicaWriteReply != nil {
 		panic("ReplicaMessageReplyInnerMessage.Bytes failure: one field must be nil.")
 	}
-	blob, err := cbor.Marshal(c)
+	blob, err := ccbor.Marshal(c)
 	if err != nil {
 		panic(err)
 	}
@@ -281,7 +277,7 @@ type Box struct {
 }
 
 func (c *Box) Bytes() []byte {
-	blob, err := cbor.Marshal(c)
+	blob, err := ccbor.Marshal(c)
 	if err != nil {
 		panic(err)
 	}
@@ -295,4 +291,13 @@ func BoxFromBytes(b []byte) (*Box, error) {
 		return nil, err
 	}
 	return c, nil
+}
+
+func init() {
+	var err error
+	opts := cbor.CanonicalEncOptions()
+	ccbor, err = opts.EncMode()
+	if err != nil {
+		panic(err)
+	}
 }

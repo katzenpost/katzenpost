@@ -219,7 +219,6 @@ func (e *Courier) handleNewMessage(isRead bool, envHash *[hash.HashSize]byte, co
 		EnvelopeHash: envHash,
 		ReplyIndex:   0,
 		Payload:      nil,
-		ErrorString:  "",
 		ErrorCode:    0,
 	}
 	return reply.Bytes()
@@ -231,7 +230,6 @@ func (e *Courier) handleOldMessage(cacheEntry *CourierBookKeeping, envHash *[has
 	reply := &common.CourierEnvelopeReply{
 		EnvelopeHash: envHash,
 		ReplyIndex:   courierMessage.ReplyIndex,
-		ErrorString:  "",
 		ErrorCode:    0,
 	}
 
