@@ -87,7 +87,7 @@ func NewGeometry(boxPayloadLength int) *Geometry {
 		SignatureSchemeName:        SignatureSchemeName,
 		NIKEName:                   NikeScheme.Name(),
 		CourierEnvelopeLength:      courierEnvelopeLength(boxPayloadLength, NikeScheme),
-		CourierEnvelopeReplyLength: courierEnvelopeReplyLength(),
+		CourierEnvelopeReplyLength: courierEnvelopeReplyLength(boxPayloadLength),
 	}
 	return g
 }
@@ -285,7 +285,7 @@ func mkemEncryptionOverhead(plaintextSize int, nikeScheme nike.Scheme) int {
 	return nikeScheme.PublicKeySize() + chachaPolyNonceLength + chachaPolyTagLength + plaintextSize
 }
 
-func courierEnvelopeReplyLength() int {
+func courierEnvelopeReplyLength(boxPayloadLength int) int {
 	const (
 		envelopeHashLength    = hash.HashSize
 		replyIndexLength      = 1
@@ -295,8 +295,20 @@ func courierEnvelopeReplyLength() int {
 		cborOverhead          = 20
 	)
 
+	replicaReadReplyOverhead := replicaReadReplyOverhead()
+	replicaWriteReplyOverhead := replicaWriteReplyOverhead()
+
+	replicaReadReplySize := replicaReadReplyOverhead + boxPayloadLength
+	replicaWriteReplySize := replicaWriteReplyOverhead
+
+	replicaMessageReplyInnerOverhead := replicaMessageReplyInnerOverhead()
+	maxReplicaMessageReplyInnerSize := max(
+		replicaMessageReplyInnerOverhead + replicaReadReplySize,
+		replicaMessageReplyInnerOverhead + replicaWriteReplySize,
+	)
+
 	return envelopeHashLength + replyIndexLength + errorCodeLength +
-		chachaPolyNonceLength + chachaPolyTagLength + cborOverhead
+		chachaPolyNonceLength + chachaPolyTagLength + cborOverhead + maxReplicaMessageReplyInnerSize
 }
 
 func replicaInnerMessageOverheadForRead() int {
@@ -326,6 +338,38 @@ func replicaInnerMessageOverheadForWrite() int {
 			nilValueOverhead + (2 * cborFieldOverhead)
 	)
 	return unionStructOverhead + replicaWriteEmbeddingOverhead
+}
+
+func replicaReadReplyOverhead() int {
+	const (
+		errorCodeLength   = 1
+		boxIDLength       = 32
+		signatureLength   = 64
+		cborOverhead      = 15
+	)
+	return errorCodeLength + boxIDLength + signatureLength + cborOverhead
+}
+
+func replicaWriteReplyOverhead() int {
+	const (
+		errorCodeLength = 1
+		cborOverhead    = 5
+	)
+	return errorCodeLength + cborOverhead
+}
+
+func replicaMessageReplyInnerOverhead() int {
+	const (
+		cborMapHeader           = 1
+		replicaReadReplyKeyLen  = 16
+		replicaWriteReplyKeyLen = 17
+		nilValueOverhead        = 1
+		cborFieldOverhead       = 2
+
+		unionStructOverhead = cborMapHeader + replicaReadReplyKeyLen + replicaWriteReplyKeyLen +
+			nilValueOverhead + (2 * cborFieldOverhead)
+	)
+	return unionStructOverhead
 }
 
 func calculateMaxBoxPayloadLength(maxCourierEnvelopeLength int, nikeScheme nike.Scheme) int {
@@ -369,7 +413,7 @@ func calculateMaxBoxPayloadLength(maxCourierEnvelopeLength int, nikeScheme nike.
 func GeometryFromBoxPayloadLength(boxPayloadLength int, nikeScheme nike.Scheme) *Geometry {
 	return &Geometry{
 		CourierEnvelopeLength:      courierEnvelopeLength(boxPayloadLength, nikeScheme),
-		CourierEnvelopeReplyLength: courierEnvelopeReplyLength(),
+		CourierEnvelopeReplyLength: courierEnvelopeReplyLength(boxPayloadLength),
 		NIKEName:                   nikeScheme.Name(),
 		SignatureSchemeName:        SignatureSchemeName,
 		BoxPayloadLength:           boxPayloadLength,
@@ -426,7 +470,7 @@ func GeometryFromSphinxGeometry(sphinxGeometry *geo.Geometry) *Geometry {
 
 	return &Geometry{
 		CourierEnvelopeLength:      courierEnvelopeLength(boxPayloadLength, pigeonholeNikeScheme),
-		CourierEnvelopeReplyLength: courierEnvelopeReplyLength(),
+		CourierEnvelopeReplyLength: courierEnvelopeReplyLength(boxPayloadLength),
 		NIKEName:                   pigeonholeNikeScheme.Name(),
 		SignatureSchemeName:        SignatureSchemeName,
 		BoxPayloadLength:           boxPayloadLength,
