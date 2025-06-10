@@ -149,13 +149,9 @@ func (g *Geometry) replicaReadOverhead() int {
 }
 
 func (g *Geometry) replicaWriteOverhead() int {
-	const (
-		bacapEncryptionOverhead = 16
-	)
-
 	boxIDLength := g.SignatureScheme().PublicKeySize()
 	signatureLength := g.SignatureScheme().SignatureSize()
-	return commands.CmdOverhead + boxIDLength + signatureLength + bacapEncryptionOverhead
+	return commands.CmdOverhead + boxIDLength + signatureLength
 }
 
 // Validate returns an error if one of it's validation checks fails.
@@ -262,21 +258,24 @@ func courierEnvelopeLength(boxPayloadLength int, nikeScheme nike.Scheme) int {
 	replicaReadSize := tempGeo.replicaReadOverhead()
 	replicaInnerMessageReadSize := replicaInnerMessageOverheadForRead() + replicaReadSize
 
-	replicaWriteSize := tempGeo.replicaWriteOverhead() + boxPayloadLength
+	replicaWriteSize := tempGeo.replicaWriteOverhead() + boxPayloadLength + 16 // +16 for BACAP encryption
 	replicaInnerMessageWriteSize := replicaInnerMessageOverheadForWrite() + replicaWriteSize
 
 	maxReplicaInnerMessageSize := max(replicaInnerMessageReadSize, replicaInnerMessageWriteSize)
 
-	return tempGeo.courierEnvelopeOverhead() + mkemEncryptionOverhead(maxReplicaInnerMessageSize, nikeScheme)
+	courierOverhead := tempGeo.courierEnvelopeOverhead()
+	mkemCiphertext := mkemCiphertextSize(maxReplicaInnerMessageSize)
+
+	return courierOverhead + mkemCiphertext
 }
 
-func mkemEncryptionOverhead(plaintextSize int, nikeScheme nike.Scheme) int {
+func mkemCiphertextSize(plaintextSize int) int {
 	const (
 		chachaPolyNonceLength = 12
 		chachaPolyTagLength   = 16
 	)
 
-	return nikeScheme.PublicKeySize() + chachaPolyNonceLength + chachaPolyTagLength + plaintextSize
+	return chachaPolyNonceLength + chachaPolyTagLength + plaintextSize
 }
 
 func courierEnvelopeReplyLength(boxPayloadLength int) int {
@@ -292,7 +291,7 @@ func courierEnvelopeReplyLength(boxPayloadLength int) int {
 	replicaReadReplyOverhead := replicaReadReplyOverhead()
 	replicaWriteReplyOverhead := replicaWriteReplyOverhead()
 
-	replicaReadReplySize := replicaReadReplyOverhead + boxPayloadLength
+	replicaReadReplySize := replicaReadReplyOverhead + boxPayloadLength + 16 // +16 for BACAP
 	replicaWriteReplySize := replicaWriteReplyOverhead
 
 	replicaMessageReplyInnerOverhead := replicaMessageReplyInnerOverhead()
@@ -373,7 +372,7 @@ func calculateMaxBoxPayloadLength(maxCourierEnvelopeLength int, nikeScheme nike.
 	}
 
 	courierOverhead := tempGeo.courierEnvelopeOverhead()
-	mkemFixedOverhead := nikeScheme.PublicKeySize() + 12 + 16
+	mkemFixedOverhead := 12 + 16 // nonce + tag (ephemeral key already in courierOverhead)
 	availableForReplicaInner := maxCourierEnvelopeLength - courierOverhead - mkemFixedOverhead
 
 	readCaseOverhead := replicaInnerMessageOverheadForRead() + tempGeo.replicaReadOverhead()
