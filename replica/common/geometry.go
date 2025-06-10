@@ -19,12 +19,21 @@ import (
 	"github.com/katzenpost/hpqc/nike/schemes"
 	"github.com/katzenpost/hpqc/sign"
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 )
 
 const (
 	SignatureSchemeName = "Ed25519"
 )
+
+// Helper function for max
+func max(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
 
 var (
 	// Create reusable EncMode interface with immutable options, safe for concurrent use.
@@ -57,23 +66,39 @@ type Geometry struct {
 	BoxPayloadLength int
 }
 
-func NewGeometry(boxPayloadLength int) *Geometry {
-	return &Geometry{
-		BoxPayloadLength:    boxPayloadLength,
-		SignatureSchemeName: SignatureSchemeName,
-		NIKEName:            NikeScheme.Name(),
+// NewGeometry solves Use Case 1: specify BoxPayloadLength and derive appropriate
+// PigeonholeGeometry object.
+//
+// This constructor takes a desired BoxPayloadLength (the usable payload size for
+// BACAP-encrypted messages) and creates a PigeonholeGeometry with calculated envelope
+// lengths. The signature scheme is always Ed25519 due to BACAP's dependency.
+//
+// Parameters:
+//   - boxPayloadLength: The desired size of the usable payload in bytes
+//   - nikeScheme: The NIKE scheme to use for MKEM encryption
+//
+// Returns:
+//   - *Geometry: The pigeonhole geometry with calculated envelope lengths
+func NewGeometry(boxPayloadLength int, nikeScheme nike.Scheme) *Geometry {
+	g := &Geometry{
+		BoxPayloadLength:           boxPayloadLength,
+		SignatureSchemeName:        SignatureSchemeName,
+		NIKEName:                   nikeScheme.Name(),
+		CourierEnvelopeLength:      courierEnvelopeLength(boxPayloadLength, nikeScheme),
+		CourierEnvelopeReplyLength: courierEnvelopeReplyLength(boxPayloadLength),
 	}
+	return g
 }
 
 func (g *Geometry) courierEnvelopeOverhead() int {
 	const (
-		intermediateReplicasLength = 2  // [2]uint8
-		epochLength                = 8  // uint64
-		isReadLength               = 1  // bool
-		replyIndexLength           = 1  // uint8
-		chachaPolyNonceLength      = 12 // ChaCha20Poly1305 nonce
-		chachaPolyTagLength        = 16 // Poly1305 authentication tag
-		cborOverhead               = 53 // CBOR serialization overhead
+		intermediateReplicasLength = 2
+		epochLength                = 8
+		isReadLength               = 1
+		replyIndexLength           = 1
+		chachaPolyNonceLength      = 12
+		chachaPolyTagLength        = 16
+		cborOverhead               = 53
 	)
 	return intermediateReplicasLength + (2 * mkem.DEKSize) +
 		replyIndexLength + epochLength +
@@ -83,72 +108,54 @@ func (g *Geometry) courierEnvelopeOverhead() int {
 
 func (g *Geometry) courierEnvelopeReplyOverhead() int {
 	const (
-		envelopeHashLength    = hash.HashSize // 32 bytes - *[hash.HashSize]byte
-		replyIndexLength      = 1             // 1 byte - uint8
-		errorCodeLength       = 1             // 1 byte - uint8
-		chachaPolyNonceLength = 12            // ChaCha20Poly1305 nonce
-		chachaPolyTagLength   = 16            // Poly1305 authentication tag
-		cborOverhead          = 20            // CBOR serialization overhead
+		envelopeHashLength    = hash.HashSize
+		replyIndexLength      = 1
+		errorCodeLength       = 1
+		chachaPolyNonceLength = 12
+		chachaPolyTagLength   = 16
+		cborOverhead          = 20
 	)
 
 	return envelopeHashLength + replyIndexLength + errorCodeLength +
 		chachaPolyNonceLength + chachaPolyTagLength + cborOverhead
 }
 
-// replicaInnerMessageOverhead calculates the overhead for ReplicaInnerMessage.
-// ReplicaInnerMessage is a CBOR map with 2 fields where exactly one is non-nil.
-// Based on empirical measurements, we break down the overhead into constituent parts.
 func (g *Geometry) replicaInnerMessageOverhead() int {
 	const (
-		// CBOR overhead for ReplicaInnerMessage struct with 2 pointer fields
-		cborMapHeader      = 1  // CBOR map type indicator
-		replicaReadKeyLen  = 12 // "ReplicaRead" field name length
-		replicaWriteKeyLen = 13 // "ReplicaWrite" field name length
-		nilValueOverhead   = 1  // CBOR nil value for unused field
-		cborFieldOverhead  = 2  // CBOR field encoding overhead per field
+		cborMapHeader                 = 1
+		replicaReadKeyLen             = 12
+		replicaWriteKeyLen            = 13
+		nilValueOverhead              = 1
+		cborFieldOverhead             = 2
+		replicaWriteEmbeddingOverhead = 28
 
-		// Total CBOR struct overhead for the union type
 		unionStructOverhead = cborMapHeader + replicaReadKeyLen + replicaWriteKeyLen +
 			nilValueOverhead + (2 * cborFieldOverhead)
 	)
 
-	// ReplicaRead case: union overhead + embedded ReplicaRead CBOR overhead
-	// ReplicaRead is a struct with one field (BoxID) that gets CBOR serialized
-	replicaReadEmbeddedOverhead := 1 + 6 + 1 + 32 // CBOR map + "BoxID" key + field overhead + BoxID size
-	replicaReadCaseOverhead := unionStructOverhead + replicaReadEmbeddedOverhead
+	replicaReadCaseOverhead := unionStructOverhead + g.replicaReadOverhead()
+	replicaWriteCaseOverhead := unionStructOverhead + g.replicaWriteOverhead() + replicaWriteEmbeddingOverhead
 
-	// ReplicaWrite case: union overhead + embedded ReplicaWrite CBOR overhead
-	// ReplicaWrite gets CBOR serialized with all its fields
-	replicaWriteEmbeddedOverhead := 1 + 5 + 1 + 32 + 1 + 9 + 1 + 64 + 1 + 7 + 1 // CBOR overhead for all ReplicaWrite fields
-	replicaWriteCaseOverhead := unionStructOverhead + replicaWriteEmbeddedOverhead
-
-	// Return the maximum to accommodate either case
 	if replicaReadCaseOverhead > replicaWriteCaseOverhead {
 		return replicaReadCaseOverhead
 	}
 	return replicaWriteCaseOverhead
 }
 
-func (g *Geometry) replicaReadLength() int {
-	return g.SignatureScheme().PublicKeySize()
-}
-
-// replicaReadOverhead calculates the overhead of the ReplicaRead message.
-// ReplicaRead only contains a BoxID (Ed25519 public key) and is CBOR serialized.
 func (g *Geometry) replicaReadOverhead() int {
 	boxIDLength := g.SignatureScheme().PublicKeySize()
-	// CBOR overhead for a simple struct with one field
-	cborOverhead := 9 // CBOR overhead for struct with one 32-byte field
+	cborOverhead := 9
 	return boxIDLength + cborOverhead
 }
 
-// note that here we calculate the overhead of the ReplicaWrite message without padding
-// because we only care about these message types in the context of being transported
-// over the mixnet in a Sphinx packet payload.
 func (g *Geometry) replicaWriteOverhead() int {
+	const (
+		bacapEncryptionOverhead = 16
+	)
+
 	boxIDLength := g.SignatureScheme().PublicKeySize()
 	signatureLength := g.SignatureScheme().SignatureSize()
-	return commands.CmdOverhead + boxIDLength + signatureLength
+	return commands.CmdOverhead + boxIDLength + signatureLength + bacapEncryptionOverhead
 }
 
 // Validate returns an error if one of it's validation checks fails.
@@ -243,6 +250,228 @@ func (g *Geometry) Hash() []byte {
 		panic(err)
 	}
 	return h.Sum(nil)
+}
+
+func courierEnvelopeLength(boxPayloadLength int, nikeScheme nike.Scheme) int {
+	tempGeo := &Geometry{
+		BoxPayloadLength:    boxPayloadLength,
+		NIKEName:            nikeScheme.Name(),
+		SignatureSchemeName: SignatureSchemeName,
+	}
+
+	replicaReadSize := tempGeo.replicaReadOverhead()
+	replicaInnerMessageReadSize := replicaInnerMessageOverheadForRead() + replicaReadSize
+
+	replicaWriteSize := tempGeo.replicaWriteOverhead() + boxPayloadLength
+	replicaInnerMessageWriteSize := replicaInnerMessageOverheadForWrite() + replicaWriteSize
+
+	maxReplicaInnerMessageSize := max(replicaInnerMessageReadSize, replicaInnerMessageWriteSize)
+
+	courierOverhead := tempGeo.courierEnvelopeOverhead()
+	mkemCiphertext := mkemCiphertextSize(maxReplicaInnerMessageSize)
+
+	return courierOverhead + mkemCiphertext
+}
+
+func mkemCiphertextSize(plaintextSize int) int {
+	const (
+		chachaPolyNonceLength = 12
+		chachaPolyTagLength   = 16
+	)
+
+	return chachaPolyNonceLength + chachaPolyTagLength + plaintextSize
+}
+
+func courierEnvelopeReplyLength(boxPayloadLength int) int {
+	const (
+		envelopeHashLength = hash.HashSize
+		replyIndexLength   = 1
+		errorCodeLength    = 1
+		cborOverhead       = 20
+	)
+
+	replicaReadReplyOverhead := replicaReadReplyOverhead()
+	replicaWriteReplyOverhead := replicaWriteReplyOverhead()
+
+	replicaReadReplySize := replicaReadReplyOverhead + boxPayloadLength + 16 // +16 for BACAP
+	replicaWriteReplySize := replicaWriteReplyOverhead
+
+	replicaMessageReplyInnerOverhead := replicaMessageReplyInnerOverhead()
+	maxReplicaMessageReplyInnerSize := max(
+		replicaMessageReplyInnerOverhead + replicaReadReplySize,
+		replicaMessageReplyInnerOverhead + replicaWriteReplySize,
+	)
+
+	// The Payload field contains MKEM-encrypted ReplicaMessageReplyInnerMessage
+	mkemCiphertext := mkemCiphertextSize(maxReplicaMessageReplyInnerSize)
+
+	return envelopeHashLength + replyIndexLength + errorCodeLength + cborOverhead + mkemCiphertext
+}
+
+func replicaInnerMessageOverheadForRead() int {
+	const (
+		cborMapHeader      = 1
+		replicaReadKeyLen  = 12
+		replicaWriteKeyLen = 13
+		nilValueOverhead   = 1
+		cborFieldOverhead  = 2
+
+		unionStructOverhead = cborMapHeader + replicaReadKeyLen + replicaWriteKeyLen +
+			nilValueOverhead + (2 * cborFieldOverhead)
+	)
+	return unionStructOverhead
+}
+
+func replicaInnerMessageOverheadForWrite() int {
+	const (
+		cborMapHeader                 = 1
+		replicaReadKeyLen             = 12
+		replicaWriteKeyLen            = 13
+		nilValueOverhead              = 1
+		cborFieldOverhead             = 2
+		replicaWriteEmbeddingOverhead = 28
+
+		unionStructOverhead = cborMapHeader + replicaReadKeyLen + replicaWriteKeyLen +
+			nilValueOverhead + (2 * cborFieldOverhead)
+	)
+	return unionStructOverhead + replicaWriteEmbeddingOverhead
+}
+
+func replicaReadReplyOverhead() int {
+	const (
+		errorCodeLength   = 1
+		boxIDLength       = 32
+		signatureLength   = 64
+		cborOverhead      = 15
+	)
+	return errorCodeLength + boxIDLength + signatureLength + cborOverhead
+}
+
+func replicaWriteReplyOverhead() int {
+	const (
+		errorCodeLength = 1
+		cborOverhead    = 5
+	)
+	return errorCodeLength + cborOverhead
+}
+
+func replicaMessageReplyInnerOverhead() int {
+	const (
+		cborMapHeader           = 1
+		replicaReadReplyKeyLen  = 16
+		replicaWriteReplyKeyLen = 17
+		nilValueOverhead        = 1
+		cborFieldOverhead       = 2
+
+		unionStructOverhead = cborMapHeader + replicaReadReplyKeyLen + replicaWriteReplyKeyLen +
+			nilValueOverhead + (2 * cborFieldOverhead)
+	)
+	return unionStructOverhead
+}
+
+func calculateMaxBoxPayloadLength(maxCourierEnvelopeLength int, nikeScheme nike.Scheme) int {
+	tempGeo := &Geometry{
+		NIKEName:            nikeScheme.Name(),
+		SignatureSchemeName: SignatureSchemeName,
+	}
+
+	courierOverhead := tempGeo.courierEnvelopeOverhead()
+	mkemFixedOverhead := 12 + 16 // nonce + tag (ephemeral key already in courierOverhead)
+	availableForReplicaInner := maxCourierEnvelopeLength - courierOverhead - mkemFixedOverhead
+
+	readCaseOverhead := replicaInnerMessageOverheadForRead() + tempGeo.replicaReadOverhead()
+	writeCaseFixedOverhead := replicaInnerMessageOverheadForWrite() + tempGeo.replicaWriteOverhead()
+
+	if readCaseOverhead > availableForReplicaInner {
+		return 0
+	}
+
+	maxBoxPayloadFromWriteCase := availableForReplicaInner - writeCaseFixedOverhead
+	if maxBoxPayloadFromWriteCase < 0 {
+		return 0
+	}
+
+	return maxBoxPayloadFromWriteCase
+}
+
+// GeometryFromBoxPayloadLength solves Use Case 1: specify BoxPayloadLength and derive
+// appropriate PigeonholeGeometry object.
+//
+// This function takes a desired BoxPayloadLength (the usable payload size for BACAP-encrypted
+// messages) and creates a PigeonholeGeometry with calculated envelope lengths that can
+// accommodate that payload size.
+//
+// Parameters:
+//   - boxPayloadLength: The desired size of the usable payload in bytes
+//   - nikeScheme: The NIKE scheme to use for MKEM encryption
+//
+// Returns:
+//   - *Geometry: The pigeonhole geometry with calculated envelope lengths
+func GeometryFromBoxPayloadLength(boxPayloadLength int, nikeScheme nike.Scheme) *Geometry {
+	return &Geometry{
+		CourierEnvelopeLength:      courierEnvelopeLength(boxPayloadLength, nikeScheme),
+		CourierEnvelopeReplyLength: courierEnvelopeReplyLength(boxPayloadLength),
+		NIKEName:                   nikeScheme.Name(),
+		SignatureSchemeName:        SignatureSchemeName,
+		BoxPayloadLength:           boxPayloadLength,
+	}
+}
+
+// GeometryFromPigeonholeGeometry solves Use Case 2: specify a precomputed PigeonholeGeometry
+// and derive accommodating SphinxGeometry object.
+//
+// This function takes an existing PigeonholeGeometry (perhaps loaded from configuration)
+// and creates a SphinxGeometry that can accommodate the pigeonhole messages. This is useful
+// when the pigeonhole parameters are fixed and you need to determine the required Sphinx
+// packet size.
+//
+// Parameters:
+//   - pigeonholeGeometry: An existing pigeonhole geometry with known envelope lengths
+//   - nrHops: The number of hops for the Sphinx packet
+//
+// Returns:
+//   - *geo.Geometry: The sphinx geometry sized to accommodate the pigeonhole messages
+func GeometryFromPigeonholeGeometry(pigeonholeGeometry *Geometry, nrHops int) *geo.Geometry {
+	nikeScheme := schemes.ByName(pigeonholeGeometry.NIKEName)
+	if nikeScheme == nil {
+		panic(fmt.Sprintf("invalid NIKE scheme: %s", pigeonholeGeometry.NIKEName))
+	}
+
+	maxPigeonholeMessageSize := pigeonholeGeometry.CourierEnvelopeLength
+	return geo.GeometryFromUserForwardPayloadLength(nikeScheme, maxPigeonholeMessageSize, true, nrHops)
+}
+
+// GeometryFromSphinxGeometry solves Use Case 3: specify a precomputed SphinxGeometry as a
+// size constraint and derive a PigeonholeGeometry object.
+//
+// This function takes an existing SphinxGeometry (perhaps constrained by network requirements)
+// and determines the maximum BoxPayloadLength that can fit within the Sphinx packet size
+// constraints. It then creates a PigeonholeGeometry that maximizes payload utilization
+// while staying within the Sphinx limits. The signature scheme is always Ed25519 due to BACAP's dependency.
+//
+// Parameters:
+//   - sphinxGeometry: An existing sphinx geometry that constrains the maximum message size
+//   - nikeScheme: The NIKE scheme to use for MKEM encryption in the pigeonhole geometry
+//
+// Returns:
+//   - *Geometry: The pigeonhole geometry with maximum BoxPayloadLength that fits the constraint
+func GeometryFromSphinxGeometry(sphinxGeometry *geo.Geometry, nikeScheme nike.Scheme) *Geometry {
+	maxPayloadSize := sphinxGeometry.UserForwardPayloadLength
+
+	boxPayloadLength := calculateMaxBoxPayloadLength(maxPayloadSize, nikeScheme)
+	if boxPayloadLength <= 0 {
+		minRequired := courierEnvelopeLength(1, nikeScheme)
+		panic(fmt.Sprintf("Sphinx geometry too small: UserForwardPayloadLength=%d, need at least %d",
+			maxPayloadSize, minRequired))
+	}
+
+	return &Geometry{
+		CourierEnvelopeLength:      courierEnvelopeLength(boxPayloadLength, nikeScheme),
+		CourierEnvelopeReplyLength: courierEnvelopeReplyLength(boxPayloadLength),
+		NIKEName:                   nikeScheme.Name(),
+		SignatureSchemeName:        SignatureSchemeName,
+		BoxPayloadLength:           boxPayloadLength,
+	}
 }
 
 func init() {
