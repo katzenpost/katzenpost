@@ -559,7 +559,6 @@ func testBoxRoundTrip(t *testing.T, env *testEnvironment) {
 	require.Equal(t, courierWriteReply1.EnvelopeHash[:], aliceEnvHash1[:])
 	require.Equal(t, uint8(0), courierWriteReply1.ErrorCode)
 	require.Equal(t, uint8(0), courierWriteReply1.ReplyIndex)
-	require.Equal(t, len(courierWriteReply1.ErrorString), 0)
 	require.Nil(t, courierWriteReply1.Payload)
 
 	bobReadRequest1, bobPrivateKey1 := composeReadRequest(t, env, bobStatefulReader)

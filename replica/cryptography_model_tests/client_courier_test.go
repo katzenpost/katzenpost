@@ -254,7 +254,6 @@ func (c *Courier) ReceiveClientQuery(query []byte) *common.CourierEnvelopeReply 
 		EnvelopeHash: courierMessage.EnvelopeHash(),
 		ReplyIndex:   0,
 		Payload:      reply0.EnvelopeReply,
-		ErrorString:  "",
 		ErrorCode:    0,
 	}
 	return reply
