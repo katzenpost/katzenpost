@@ -142,10 +142,6 @@ func (g *Geometry) replicaInnerMessageOverhead() int {
 	return replicaWriteCaseOverhead
 }
 
-func (g *Geometry) replicaReadLength() int {
-	return g.SignatureScheme().PublicKeySize()
-}
-
 func (g *Geometry) replicaReadOverhead() int {
 	boxIDLength := g.SignatureScheme().PublicKeySize()
 	cborOverhead := 9
