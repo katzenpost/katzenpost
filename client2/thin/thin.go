@@ -21,6 +21,7 @@ import (
 	"gopkg.in/op/go-logging.v1"
 
 	"github.com/katzenpost/hpqc/bacap"
+	"github.com/katzenpost/hpqc/nike/schemes"
 	"github.com/katzenpost/hpqc/rand"
 
 	"github.com/katzenpost/katzenpost/client2/common"
@@ -30,6 +31,7 @@ import (
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/worker"
+	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
 )
 
 const (
@@ -99,6 +101,9 @@ type Config struct {
 	// SphinxGeometry is the Sphinx geometry used by the client daemon that this thin client will connect to.
 	SphinxGeometry *geo.Geometry
 
+	// PigeonholeGeometry is the pigeonhole geometry used for payload size validation.
+	PigeonholeGeometry *replicaCommon.Geometry
+
 	// Network is the client daemon's listening network.
 	Network string
 
@@ -107,10 +112,18 @@ type Config struct {
 }
 
 func FromConfig(cfg *config.Config) *Config {
+	nikeScheme := schemes.ByName("CTIDH1024-X25519")
+	if nikeScheme == nil {
+		panic("failed to get CTIDH1024-X25519 NIKE scheme")
+	}
+
+	pigeonholeGeometry := replicaCommon.GeometryFromSphinxGeometry(cfg.SphinxGeometry, nikeScheme)
+
 	return &Config{
-		SphinxGeometry: cfg.SphinxGeometry,
-		Network:        cfg.ListenNetwork,
-		Address:        cfg.ListenAddress,
+		SphinxGeometry:     cfg.SphinxGeometry,
+		PigeonholeGeometry: pigeonholeGeometry,
+		Network:            cfg.ListenNetwork,
+		Address:            cfg.ListenAddress,
 	}
 }
 
@@ -811,6 +824,11 @@ func (t *ThinClient) WriteChannel(ctx context.Context, channelID *[ChannelIDLeng
 	}
 	if channelID == nil {
 		return errors.New("channelID cannot be nil")
+	}
+
+	// Validate payload size against pigeonhole geometry
+	if t.cfg.PigeonholeGeometry != nil && len(payload) > t.cfg.PigeonholeGeometry.BoxPayloadLength {
+		return fmt.Errorf("payload size %d exceeds maximum allowed size %d", len(payload), t.cfg.PigeonholeGeometry.BoxPayloadLength)
 	}
 
 	req := &Request{

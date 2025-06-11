@@ -4,6 +4,7 @@
 package thin
 
 import (
+	"context"
 	"encoding/binary"
 	"io"
 	"net"
@@ -12,6 +13,7 @@ import (
 	"github.com/fxamacker/cbor/v2"
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/katzenpost/core/log"
+	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
 	"github.com/stretchr/testify/require"
 )
 
@@ -96,4 +98,31 @@ func TestThinTCPSendRecv(t *testing.T) {
 
 	e = <-serverWriteMessageErrCh
 	require.NoError(t, e)
+
+	// test WriteChannel
+
+	pigeonholeGeometry := &replicaCommon.Geometry{
+		BoxPayloadLength: 50,
+	}
+
+	thin.cfg = &Config{
+		PigeonholeGeometry: pigeonholeGeometry,
+	}
+
+	channelID := &[ChannelIDLength]byte{}
+	_, err = rand.Reader.Read(channelID[:])
+	require.NoError(t, err)
+
+	ctx := context.Background()
+
+	largePayload := make([]byte, 100)
+	err = thin.WriteChannel(ctx, channelID, largePayload)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "payload size")
+	require.Contains(t, err.Error(), "exceeds maximum allowed size")
+
+	thin.cfg.PigeonholeGeometry = nil
+	err = thin.WriteChannel(ctx, nil, largePayload)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "channelID cannot be nil")
 }
