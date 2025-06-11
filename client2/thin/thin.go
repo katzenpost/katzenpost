@@ -112,6 +112,10 @@ type Config struct {
 }
 
 func FromConfig(cfg *config.Config) *Config {
+	if cfg.SphinxGeometry == nil {
+		panic("SphinxGeometry cannot be nil")
+	}
+
 	nikeScheme := schemes.ByName("CTIDH1024-X25519")
 	if nikeScheme == nil {
 		panic("failed to get CTIDH1024-X25519 NIKE scheme")
@@ -145,6 +149,13 @@ func LoadFile(filename string) (*Config, error) {
 
 // NewThinClient creates a new thing client.
 func NewThinClient(cfg *Config, logging *config.Logging) *ThinClient {
+	if cfg.SphinxGeometry == nil {
+		panic("SphinxGeometry cannot be nil")
+	}
+	if cfg.PigeonholeGeometry == nil {
+		panic("PigeonholeGeometry cannot be nil")
+	}
+
 	logBackend, err := log.New(logging.File, logging.Level, logging.Disable)
 	if err != nil {
 		panic(err)
@@ -243,6 +254,10 @@ func (t *ThinClient) Dial() error {
 }
 
 func (t *ThinClient) writeMessage(request *Request) error {
+	if request.Payload != nil && len(request.Payload) > t.cfg.SphinxGeometry.UserForwardPayloadLength {
+		return fmt.Errorf("payload size %d exceeds maximum allowed size %d", len(request.Payload), t.cfg.SphinxGeometry.UserForwardPayloadLength)
+	}
+
 	blob, err := cbor.Marshal(request)
 	if err != nil {
 		return err
@@ -827,7 +842,7 @@ func (t *ThinClient) WriteChannel(ctx context.Context, channelID *[ChannelIDLeng
 	}
 
 	// Validate payload size against pigeonhole geometry
-	if t.cfg.PigeonholeGeometry != nil && len(payload) > t.cfg.PigeonholeGeometry.BoxPayloadLength {
+	if len(payload) > t.cfg.PigeonholeGeometry.BoxPayloadLength {
 		return fmt.Errorf("payload size %d exceeds maximum allowed size %d", len(payload), t.cfg.PigeonholeGeometry.BoxPayloadLength)
 	}
 
