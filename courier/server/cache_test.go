@@ -201,9 +201,11 @@ func TestCourierCacheHandleOldMessage(t *testing.T) {
 	replyBytes := courier.handleOldMessage(cacheEntry, &envHash, courierEnv)
 
 	// Parse the reply
-	courierReply, err := common.CourierEnvelopeReplyFromBytes(replyBytes)
+	courierQueryReply, err := common.CourierQueryReplyFromBytes(replyBytes)
 	require.NoError(t, err, errShouldParseReply)
+	require.NotNil(t, courierQueryReply.CourierEnvelopeReply)
 
+	courierReply := courierQueryReply.CourierEnvelopeReply
 	require.Equal(t, uint8(0), courierReply.ReplyIndex)
 	require.Equal(t, reply1.EnvelopeReply, courierReply.Payload)
 
@@ -211,9 +213,11 @@ func TestCourierCacheHandleOldMessage(t *testing.T) {
 	courierEnv.ReplyIndex = 1
 	replyBytes = courier.handleOldMessage(cacheEntry, &envHash, courierEnv)
 
-	courierReply, err = common.CourierEnvelopeReplyFromBytes(replyBytes)
+	courierQueryReply, err = common.CourierQueryReplyFromBytes(replyBytes)
 	require.NoError(t, err, errShouldParseReply)
+	require.NotNil(t, courierQueryReply.CourierEnvelopeReply)
 
+	courierReply = courierQueryReply.CourierEnvelopeReply
 	require.Equal(t, uint8(1), courierReply.ReplyIndex)
 	require.Equal(t, reply2.EnvelopeReply, courierReply.Payload)
 }
@@ -245,9 +249,11 @@ func TestCourierCacheFallbackBehavior(t *testing.T) {
 	cacheEntry, _ := getCacheEntry(courier, envHash)
 	replyBytes := courier.handleOldMessage(cacheEntry, &envHash, courierEnv)
 
-	courierReply, err := common.CourierEnvelopeReplyFromBytes(replyBytes)
+	courierQueryReply, err := common.CourierQueryReplyFromBytes(replyBytes)
 	require.NoError(t, err, errShouldParseReply)
+	require.NotNil(t, courierQueryReply.CourierEnvelopeReply)
 
+	courierReply := courierQueryReply.CourierEnvelopeReply
 	// Should fallback to reply index 1 and update the reply index
 	require.Equal(t, uint8(1), courierReply.ReplyIndex)
 	require.Equal(t, reply1.EnvelopeReply, courierReply.Payload)
@@ -270,9 +276,11 @@ func TestCourierCacheEmptyResponse(t *testing.T) {
 
 	replyBytes := courier.handleOldMessage(cacheEntry, &envHash, courierEnv)
 
-	courierReply, err := common.CourierEnvelopeReplyFromBytes(replyBytes)
+	courierQueryReply, err := common.CourierQueryReplyFromBytes(replyBytes)
 	require.NoError(t, err, errShouldParseReply)
+	require.NotNil(t, courierQueryReply.CourierEnvelopeReply)
 
+	courierReply := courierQueryReply.CourierEnvelopeReply
 	require.Equal(t, uint8(0), courierReply.ReplyIndex)
 	require.Empty(t, courierReply.Payload)
 	require.Equal(t, uint8(0), courierReply.ErrorCode)

@@ -533,10 +533,17 @@ func (d *Daemon) validateChannel(channelID [thin.ChannelIDLength]byte, channelDe
 
 // processEnvelope processes the courier envelope and extracts necessary information
 func (d *Daemon) processEnvelope(plaintext []byte, channelDesc *ChannelDescriptor) (*replicaCommon.CourierEnvelopeReply, *EnvelopeDescriptor, nike.PrivateKey, error) {
-	env, err := replicaCommon.CourierEnvelopeReplyFromBytes(plaintext)
+	courierQueryReply, err := replicaCommon.CourierQueryReplyFromBytes(plaintext)
 	if err != nil {
-		d.log.Errorf("failed to unmarshal courier envelope: %s", err)
-		return nil, nil, nil, fmt.Errorf("failed to unmarshal courier envelope: %s", err)
+		d.log.Errorf("failed to unmarshal courier query reply: %s", err)
+		return nil, nil, nil, fmt.Errorf("failed to unmarshal courier query reply: %s", err)
+	}
+
+	// Extract the CourierEnvelopeReply from the CourierQueryReply
+	env := courierQueryReply.CourierEnvelopeReply
+	if env == nil {
+		d.log.Errorf("CourierEnvelopeReply is nil in CourierQueryReply")
+		return nil, nil, nil, fmt.Errorf("CourierEnvelopeReply is nil in CourierQueryReply")
 	}
 	envHash := env.EnvelopeHash
 

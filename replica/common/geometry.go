@@ -47,11 +47,11 @@ var (
 // 3. specify a precomputed Sphinx Geometry as a size constraint and derive a Pigeonhole Geometry object.
 type Geometry struct {
 
-	// CourierEnvelopeLength is the length of the CBOR serialized CourierEnvelope message.
-	CourierEnvelopeLength int
+	// CourierQueryLength is the length of the CBOR serialized CourierQuery message.
+	CourierQueryLength int
 
-	// CourierEnvelopeReplyLength is the length of the CBOR serialized CourierEnvelopeReply message.
-	CourierEnvelopeReplyLength int
+	// CourierQueryReplyLength is the length of the CBOR serialized CourierQueryReply message.
+	CourierQueryReplyLength int
 
 	// NikeName is the name of the NIKE scheme used by our MKEM scheme to encrypt
 	// the CourierEnvelope and CourierEnvelopeReply messages.
@@ -81,11 +81,11 @@ type Geometry struct {
 //   - *Geometry: The pigeonhole geometry with calculated envelope lengths
 func NewGeometry(boxPayloadLength int, nikeScheme nike.Scheme) *Geometry {
 	g := &Geometry{
-		BoxPayloadLength:           boxPayloadLength,
-		SignatureSchemeName:        SignatureSchemeName,
-		NIKEName:                   nikeScheme.Name(),
-		CourierEnvelopeLength:      courierEnvelopeLength(boxPayloadLength, nikeScheme),
-		CourierEnvelopeReplyLength: courierEnvelopeReplyLength(boxPayloadLength),
+		BoxPayloadLength:        boxPayloadLength,
+		SignatureSchemeName:     SignatureSchemeName,
+		NIKEName:                nikeScheme.Name(),
+		CourierQueryLength:      courierQueryLength(boxPayloadLength, nikeScheme),
+		CourierQueryReplyLength: courierQueryReplyLength(boxPayloadLength),
 	}
 	return g
 }
@@ -199,8 +199,8 @@ func (g *Geometry) SignatureScheme() sign.Scheme {
 func (g *Geometry) String() string {
 	var b strings.Builder
 	b.WriteString("pigeonhole_geometry:\n")
-	b.WriteString(fmt.Sprintf("CourierEnvelopeLength: %d\n", g.CourierEnvelopeLength))
-	b.WriteString(fmt.Sprintf("CourierEnvelopeReplyLength: %d\n", g.CourierEnvelopeReplyLength))
+	b.WriteString(fmt.Sprintf("CourierQueryLength: %d\n", g.CourierQueryLength))
+	b.WriteString(fmt.Sprintf("CourierQueryReplyLength: %d\n", g.CourierQueryReplyLength))
 	b.WriteString(fmt.Sprintf("NIKEName: %s\n", g.NIKEName))
 	b.WriteString(fmt.Sprintf("SignatureSchemeName: %s\n", g.SignatureSchemeName))
 	b.WriteString(fmt.Sprintf("UserForwardPayloadLength: %d\n", g.BoxPayloadLength))
@@ -252,7 +252,12 @@ func (g *Geometry) Hash() []byte {
 	return h.Sum(nil)
 }
 
-func courierEnvelopeLength(boxPayloadLength int, nikeScheme nike.Scheme) int {
+func courierQueryLength(boxPayloadLength int, nikeScheme nike.Scheme) int {
+	const (
+		// Additional CBOR overhead from CourierQuery wrapper around CourierEnvelope
+		courierQueryWrapperOverhead = 30
+	)
+
 	tempGeo := &Geometry{
 		BoxPayloadLength:    boxPayloadLength,
 		NIKEName:            nikeScheme.Name(),
@@ -270,7 +275,7 @@ func courierEnvelopeLength(boxPayloadLength int, nikeScheme nike.Scheme) int {
 	courierOverhead := tempGeo.courierEnvelopeOverhead()
 	mkemCiphertext := mkemCiphertextSize(maxReplicaInnerMessageSize)
 
-	return courierOverhead + mkemCiphertext
+	return courierOverhead + mkemCiphertext + courierQueryWrapperOverhead
 }
 
 func mkemCiphertextSize(plaintextSize int) int {
@@ -282,13 +287,15 @@ func mkemCiphertextSize(plaintextSize int) int {
 	return chachaPolyNonceLength + chachaPolyTagLength + plaintextSize
 }
 
-func courierEnvelopeReplyLength(boxPayloadLength int) int {
+func courierQueryReplyLength(boxPayloadLength int) int {
 	const (
 		envelopeHashLength      = hash.HashSize
 		replyIndexLength        = 1
 		errorCodeLength         = 1
 		bacapEncryptionOverhead = 16
 		cborOverhead            = 20
+		// Additional CBOR overhead from CourierQueryReply wrapper around CourierEnvelopeReply
+		courierQueryReplyWrapperOverhead = 40
 	)
 
 	replicaReadReplyOverhead := replicaReadReplyOverhead()
@@ -306,7 +313,7 @@ func courierEnvelopeReplyLength(boxPayloadLength int) int {
 	// The Payload field contains MKEM-encrypted ReplicaMessageReplyInnerMessage
 	mkemCiphertext := mkemCiphertextSize(maxReplicaMessageReplyInnerSize)
 
-	return envelopeHashLength + replyIndexLength + errorCodeLength + cborOverhead + mkemCiphertext
+	return envelopeHashLength + replyIndexLength + errorCodeLength + cborOverhead + mkemCiphertext + courierQueryReplyWrapperOverhead
 }
 
 func replicaInnerMessageOverheadForRead() int {
@@ -370,10 +377,12 @@ func replicaMessageReplyInnerOverhead() int {
 	return unionStructOverhead
 }
 
-func calculateMaxBoxPayloadLength(maxCourierEnvelopeLength int, nikeScheme nike.Scheme) int {
+func calculateMaxBoxPayloadLength(maxCourierQueryLength int, nikeScheme nike.Scheme) int {
 	const (
 		chachaPolyNonceLength = 12
 		chachaPolyTagLength   = 16
+		// Additional CBOR overhead from CourierQuery wrapper around CourierEnvelope
+		courierQueryWrapperOverhead = 30
 	)
 
 	tempGeo := &Geometry{
@@ -383,7 +392,7 @@ func calculateMaxBoxPayloadLength(maxCourierEnvelopeLength int, nikeScheme nike.
 
 	courierOverhead := tempGeo.courierEnvelopeOverhead()
 	mkemFixedOverhead := chachaPolyNonceLength + chachaPolyTagLength
-	availableForReplicaInner := maxCourierEnvelopeLength - courierOverhead - mkemFixedOverhead
+	availableForReplicaInner := maxCourierQueryLength - courierOverhead - mkemFixedOverhead - courierQueryWrapperOverhead
 
 	readCaseOverhead := replicaInnerMessageOverheadForRead() + tempGeo.replicaReadOverhead()
 	writeCaseFixedOverhead := replicaInnerMessageOverheadForWrite() + tempGeo.replicaWriteOverhead()
@@ -415,11 +424,11 @@ func calculateMaxBoxPayloadLength(maxCourierEnvelopeLength int, nikeScheme nike.
 //   - *Geometry: The pigeonhole geometry with calculated envelope lengths
 func GeometryFromBoxPayloadLength(boxPayloadLength int, nikeScheme nike.Scheme) *Geometry {
 	return &Geometry{
-		CourierEnvelopeLength:      courierEnvelopeLength(boxPayloadLength, nikeScheme),
-		CourierEnvelopeReplyLength: courierEnvelopeReplyLength(boxPayloadLength),
-		NIKEName:                   nikeScheme.Name(),
-		SignatureSchemeName:        SignatureSchemeName,
-		BoxPayloadLength:           boxPayloadLength,
+		CourierQueryLength:      courierQueryLength(boxPayloadLength, nikeScheme),
+		CourierQueryReplyLength: courierQueryReplyLength(boxPayloadLength),
+		NIKEName:                nikeScheme.Name(),
+		SignatureSchemeName:     SignatureSchemeName,
+		BoxPayloadLength:        boxPayloadLength,
 	}
 }
 
@@ -443,7 +452,7 @@ func GeometryFromPigeonholeGeometry(pigeonholeGeometry *Geometry, nrHops int) *g
 		panic(fmt.Sprintf("invalid NIKE scheme: %s", pigeonholeGeometry.NIKEName))
 	}
 
-	maxPigeonholeMessageSize := pigeonholeGeometry.CourierEnvelopeLength
+	maxPigeonholeMessageSize := pigeonholeGeometry.CourierQueryLength
 	return geo.GeometryFromUserForwardPayloadLength(nikeScheme, maxPigeonholeMessageSize, true, nrHops)
 }
 
@@ -466,17 +475,17 @@ func GeometryFromSphinxGeometry(sphinxGeometry *geo.Geometry, nikeScheme nike.Sc
 
 	boxPayloadLength := calculateMaxBoxPayloadLength(maxPayloadSize, nikeScheme)
 	if boxPayloadLength <= 0 {
-		minRequired := courierEnvelopeLength(1, nikeScheme)
+		minRequired := courierQueryLength(1, nikeScheme)
 		panic(fmt.Sprintf("Sphinx geometry too small: UserForwardPayloadLength=%d, need at least %d",
 			maxPayloadSize, minRequired))
 	}
 
 	return &Geometry{
-		CourierEnvelopeLength:      courierEnvelopeLength(boxPayloadLength, nikeScheme),
-		CourierEnvelopeReplyLength: courierEnvelopeReplyLength(boxPayloadLength),
-		NIKEName:                   nikeScheme.Name(),
-		SignatureSchemeName:        SignatureSchemeName,
-		BoxPayloadLength:           boxPayloadLength,
+		CourierQueryLength:      courierQueryLength(boxPayloadLength, nikeScheme),
+		CourierQueryReplyLength: courierQueryReplyLength(boxPayloadLength),
+		NIKEName:                nikeScheme.Name(),
+		SignatureSchemeName:     SignatureSchemeName,
+		BoxPayloadLength:        boxPayloadLength,
 	}
 }
 

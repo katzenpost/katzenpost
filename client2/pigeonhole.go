@@ -326,13 +326,19 @@ func (d *Daemon) writeChannel(request *Request) {
 		panic(err)
 	}
 	destinationIdHash, recipientQueueID := GetRandomCourier(doc)
+	// Wrap CourierEnvelope in CourierQuery
+	courierQuery := &replicaCommon.CourierQuery{
+		CourierEnvelope: courierEnvelope,
+		CopyCommand:     nil,
+	}
+
 	sendRequest := &Request{
 		ID:                request.ID,
 		AppID:             request.AppID,
 		WithSURB:          true,
 		DestinationIdHash: destinationIdHash,
 		RecipientQueueID:  recipientQueueID,
-		Payload:           courierEnvelope.Bytes(),
+		Payload:           courierQuery.Bytes(),
 		SURBID:            surbid,
 		IsSendOp:          true,
 	}
@@ -554,13 +560,19 @@ func (d *Daemon) sendEnvelopeToCourier(request *Request, channelID [thin.Channel
 
 	destinationIdHash, recipientQueueID := GetRandomCourier(doc)
 
+	// Wrap CourierEnvelope in CourierQuery
+	courierQuery := &replicaCommon.CourierQuery{
+		CourierEnvelope: courierEnvelope,
+		CopyCommand:     nil,
+	}
+
 	sendRequest := &Request{
 		ID:                request.ID,
 		AppID:             request.AppID,
 		WithSURB:          true,
 		DestinationIdHash: destinationIdHash,
 		RecipientQueueID:  recipientQueueID,
-		Payload:           courierEnvelope.Bytes(),
+		Payload:           courierQuery.Bytes(),
 		SURBID:            surbid,
 		IsSendOp:          true,
 	}

@@ -607,13 +607,17 @@ func injectCourierEnvelope(t *testing.T, env *testEnvironment, envelope *common.
 		responseCh <- cmd
 	})
 
-	// Create a CBOR plugin command containing the CourierEnvelope
-	envelopeBytes := envelope.Bytes()
+	// Create a CBOR plugin command containing the CourierQuery with CourierEnvelope
+	courierQuery := &common.CourierQuery{
+		CourierEnvelope: envelope,
+		CopyCommand:     nil,
+	}
+	queryBytes := courierQuery.Bytes()
 
 	requestCmd := &cborplugin.Request{
 		ID:      1,                                                             // Generate a unique ID
 		SURB:    []byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}, // Fake SURB needed for testing
-		Payload: envelopeBytes,
+		Payload: queryBytes,
 	}
 
 	// fake out the client to mixnet to courier comms, obviously.
@@ -638,11 +642,12 @@ func injectCourierEnvelope(t *testing.T, env *testEnvironment, envelope *common.
 		t.Fatalf("Unexpected response type: %T", responseCmd)
 	}
 
-	courierReply, err := common.CourierEnvelopeReplyFromBytes(response.Payload)
+	courierQueryReply, err := common.CourierQueryReplyFromBytes(response.Payload)
 	require.NoError(t, err)
-	require.NotNil(t, courierReply)
+	require.NotNil(t, courierQueryReply)
+	require.NotNil(t, courierQueryReply.CourierEnvelopeReply)
 
-	return courierReply
+	return courierQueryReply.CourierEnvelopeReply
 }
 
 func composeReadRequest(t *testing.T, env *testEnvironment, reader *bacap.StatefulReader) (*common.CourierEnvelope, nike.PrivateKey) {

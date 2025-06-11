@@ -188,7 +188,7 @@ func (e *Courier) logFinalCacheState(reply *commands.ReplicaMessageReply) {
 	e.log.Debugf("CacheReply: final cache state for %x - Reply[0]: %v, Reply[1]: %v", reply.EnvelopeHash, reply0Available, reply1Available)
 }
 
-func (e *Courier) handleNewMessage(isRead bool, envHash *[hash.HashSize]byte, courierMessage *common.CourierEnvelope) []byte {
+func (e *Courier) handleNewMessage(envHash *[hash.HashSize]byte, courierMessage *common.CourierEnvelope) []byte {
 	replicas := make([]*commands.ReplicaMessage, 2)
 
 	firstReplicaID := courierMessage.IntermediateReplicas[0]
@@ -215,11 +215,16 @@ func (e *Courier) handleNewMessage(isRead bool, envHash *[hash.HashSize]byte, co
 	}
 	e.server.SendMessage(secondReplicaID, replicas[1])
 
-	reply := &common.CourierEnvelopeReply{
+	envelopeReply := &common.CourierEnvelopeReply{
 		EnvelopeHash: envHash,
 		ReplyIndex:   0,
 		Payload:      nil,
 		ErrorCode:    0,
+	}
+
+	reply := &common.CourierQueryReply{
+		CourierEnvelopeReply: envelopeReply,
+		CopyCommandReply:     nil,
 	}
 	return reply.Bytes()
 }
@@ -227,7 +232,7 @@ func (e *Courier) handleNewMessage(isRead bool, envHash *[hash.HashSize]byte, co
 func (e *Courier) handleOldMessage(cacheEntry *CourierBookKeeping, envHash *[hash.HashSize]byte, courierMessage *common.CourierEnvelope) []byte {
 	e.log.Debugf("handleOldMessage called for envelope hash: %x, requested ReplyIndex: %d", envHash, courierMessage.ReplyIndex)
 
-	reply := &common.CourierEnvelopeReply{
+	envelopeReply := &common.CourierEnvelopeReply{
 		EnvelopeHash: envHash,
 		ReplyIndex:   courierMessage.ReplyIndex,
 		ErrorCode:    0,
@@ -236,6 +241,10 @@ func (e *Courier) handleOldMessage(cacheEntry *CourierBookKeeping, envHash *[has
 	// Check if cacheEntry is nil before accessing its fields
 	if cacheEntry == nil {
 		e.log.Debugf("Cache entry is nil, no replies available")
+		reply := &common.CourierQueryReply{
+			CourierEnvelopeReply: envelopeReply,
+			CopyCommandReply:     nil,
+		}
 		return reply.Bytes()
 	}
 
@@ -246,16 +255,21 @@ func (e *Courier) handleOldMessage(cacheEntry *CourierBookKeeping, envHash *[has
 
 	if cacheEntry.EnvelopeReplies[courierMessage.ReplyIndex] != nil {
 		e.log.Debugf("Found reply at requested index %d", courierMessage.ReplyIndex)
-		reply.Payload = cacheEntry.EnvelopeReplies[courierMessage.ReplyIndex].EnvelopeReply
+		envelopeReply.Payload = cacheEntry.EnvelopeReplies[courierMessage.ReplyIndex].EnvelopeReply
 	} else if cacheEntry.EnvelopeReplies[courierMessage.ReplyIndex^1] != nil {
 		e.log.Debugf("No reply at requested index %d, checking alternate index %d", courierMessage.ReplyIndex, courierMessage.ReplyIndex^1)
-		reply.Payload = cacheEntry.EnvelopeReplies[courierMessage.ReplyIndex^1].EnvelopeReply
-		reply.ReplyIndex = courierMessage.ReplyIndex ^ 1
+		envelopeReply.Payload = cacheEntry.EnvelopeReplies[courierMessage.ReplyIndex^1].EnvelopeReply
+		envelopeReply.ReplyIndex = courierMessage.ReplyIndex ^ 1
 	} else {
 		e.log.Debugf("No replies available in cache")
 	}
 
-	e.log.Debugf("handleOldMessage returning payload length: %d", len(reply.Payload))
+	reply := &common.CourierQueryReply{
+		CourierEnvelopeReply: envelopeReply,
+		CopyCommandReply:     nil,
+	}
+
+	e.log.Debugf("handleOldMessage returning payload length: %d", len(envelopeReply.Payload))
 	return reply.Bytes()
 }
 
@@ -268,50 +282,74 @@ func (e *Courier) OnCommand(cmd cborplugin.Command) error {
 		return errors.New("Bug in courier-plugin: received invalid Command type")
 	}
 
-	courierMessage, err := common.CourierEnvelopeFromBytes(request.Payload)
+	courierQuery, err := common.CourierQueryFromBytes(request.Payload)
 	if err != nil {
-		e.log.Debugf("Bug, failed to decode CBOR blob: %s", err)
+		e.log.Debugf("Bug, failed to decode CourierQuery CBOR blob: %s", err)
 		return err
 	}
-	envHash := courierMessage.EnvelopeHash()
 
-	var replyPayload []byte
-	e.dedupCacheLock.RLock()
-	cacheEntry, ok := e.dedupCache[*envHash]
-	e.dedupCacheLock.RUnlock()
+	// Handle CourierEnvelope if present
+	if courierQuery.CourierEnvelope != nil {
+		courierMessage := courierQuery.CourierEnvelope
+		envHash := courierMessage.EnvelopeHash()
 
-	if ok {
-		e.log.Debugf("OnCommand: Found cached entry for envelope hash %x, calling handleOldMessage", envHash)
-		replyPayload = e.handleOldMessage(cacheEntry, envHash, courierMessage)
-	} else {
-		e.log.Debugf("OnCommand: No cached entry for envelope hash %x, calling handleNewMessage", envHash)
-		e.dedupCacheLock.Lock()
+		var replyPayload []byte
+		e.dedupCacheLock.RLock()
+		cacheEntry, ok := e.dedupCache[*envHash]
+		e.dedupCacheLock.RUnlock()
 
-		// Get current epoch, defaulting to 0 if PKI document is not available yet
-		var currentEpoch uint64
-		if pkiDoc := e.server.PKI.PKIDocument(); pkiDoc != nil {
-			currentEpoch = pkiDoc.Epoch
+		if ok {
+			e.log.Debugf("OnCommand: Found cached entry for envelope hash %x, calling handleOldMessage", envHash)
+			replyPayload = e.handleOldMessage(cacheEntry, envHash, courierMessage)
+		} else {
+			e.log.Debugf("OnCommand: No cached entry for envelope hash %x, calling handleNewMessage", envHash)
+			e.dedupCacheLock.Lock()
+
+			// Get current epoch, defaulting to 0 if PKI document is not available yet
+			var currentEpoch uint64
+			if pkiDoc := e.server.PKI.PKIDocument(); pkiDoc != nil {
+				currentEpoch = pkiDoc.Epoch
+			}
+
+			e.dedupCache[*envHash] = &CourierBookKeeping{
+				Epoch:                currentEpoch,
+				IntermediateReplicas: courierMessage.IntermediateReplicas,
+				EnvelopeReplies:      [2]*commands.ReplicaMessageReply{nil, nil},
+			}
+			e.dedupCacheLock.Unlock()
+			replyPayload = e.handleNewMessage(envHash, courierMessage)
 		}
 
-		e.dedupCache[*envHash] = &CourierBookKeeping{
-			Epoch:                currentEpoch,
-			IntermediateReplicas: courierMessage.IntermediateReplicas,
-			EnvelopeReplies:      [2]*commands.ReplicaMessageReply{nil, nil},
-		}
-		e.dedupCacheLock.Unlock()
-		replyPayload = e.handleNewMessage(courierMessage.IsRead, envHash, courierMessage)
+		go func() {
+			// send reply
+			e.write(&cborplugin.Response{
+				ID:      request.ID,
+				SURB:    request.SURB,
+				Payload: replyPayload,
+			})
+		}()
 	}
 
-	go func() {
-		// send reply
-		e.write(&cborplugin.Response{
-			ID:      request.ID,
-			SURB:    request.SURB,
-			Payload: replyPayload,
-		})
-	}()
-	return nil
+	// TODO: Handle CopyCommand if present
+	if courierQuery.CopyCommand != nil {
+		e.log.Debugf("CopyCommand not yet implemented")
+		// For now, return an error reply
+		errorReply := &common.CourierQueryReply{
+			CourierEnvelopeReply: nil,
+			CopyCommandReply: &common.CopyCommandReply{
+				ErrorCode: 1, // Error code 1 for not implemented
+			},
+		}
+		go func() {
+			e.write(&cborplugin.Response{
+				ID:      request.ID,
+				SURB:    request.SURB,
+				Payload: errorReply.Bytes(),
+			})
+		}()
+	}
 
+	return nil
 }
 
 func (e *Courier) RegisterConsumer(s *cborplugin.Server) {

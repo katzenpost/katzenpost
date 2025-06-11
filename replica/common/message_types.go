@@ -14,6 +14,79 @@ import (
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 )
 
+// CourierQuery is sent from the Client to its Courier.
+type CourierQuery struct {
+	CourierEnvelope *CourierEnvelope
+	CopyCommand     *CopyCommand
+}
+
+// Bytes serializes the given CourierEnvelope using CBOR.
+func (c *CourierQuery) Bytes() []byte {
+	blob, err := ccbor.Marshal(c)
+	if err != nil {
+		panic(err)
+	}
+	return blob
+}
+
+// CourierQueryFromBytes is a helper function to unmarshal
+// a CBOR blob of type *CourierQuery.
+func CourierQueryFromBytes(b []byte) (*CourierQuery, error) {
+	c := &CourierQuery{}
+	_, err := cbor.UnmarshalFirst(b, c)
+	if err != nil {
+		return nil, err
+	}
+	return c, nil
+}
+
+// CourierQueryReply is sent from the Courier to the Client.
+type CourierQueryReply struct {
+	CourierEnvelopeReply *CourierEnvelopeReply
+	CopyCommandReply     *CopyCommandReply
+}
+
+// Bytes serializes the given CourierEnvelope using CBOR.
+func (c *CourierQueryReply) Bytes() []byte {
+	blob, err := ccbor.Marshal(c)
+	if err != nil {
+		panic(err)
+	}
+	return blob
+}
+
+// CourierQueryReplyFromBytes is a helper function to unmarshal
+// a CBOR blob of type *CourierEnvelope.
+func CourierQueryReplyFromBytes(b []byte) (*CourierQueryReply, error) {
+	c := &CourierQueryReply{}
+	_, err := cbor.UnmarshalFirst(b, c)
+	if err != nil {
+		return nil, err
+	}
+	return c, nil
+}
+
+// CopyCommand is used to tell the courier to read a temporary sequence which
+// contains a series of write operations which are encrypted to the respective
+// replicas. The courier cannot read these write operations, but it can proxy
+// them to various specified intermediate replicas which will decrypt and
+// execute them.
+//
+// The given WriteCap is used to derive a ReadCap which is used to read
+// the temporary sequence. Then the courier proxies the sequenced operations
+// to the specified intermediate replicas. The given WriteCap is then used
+// to write tombstones to the temporary sequence to delete it.
+type CopyCommand struct {
+	WriteCap *bacap.BoxOwnerCap
+}
+
+// CopyCommandReply is sent by the courier in response to a CopyCommand
+// AFTER the courier has executed the CopyCommand or an error was encountered.
+// An ErrorCode of zero indicates success.
+type CopyCommandReply struct {
+	ErrorCode uint8
+}
+
 // CourierEnvelope is sent from the Client to its Courier.
 // CourierEnvelope is used when the Client is trying to either read or
 // write a single BACAP box.
@@ -51,6 +124,7 @@ type CourierEnvelope struct {
 	IsRead bool
 }
 
+// EnvelopeHash returns the hash of the CourierEnvelope.
 func (c *CourierEnvelope) EnvelopeHash() *[hash.HashSize]byte {
 	h, err := blake2b.New256(nil)
 	if err != nil {
@@ -137,6 +211,7 @@ type ReplicaInnerMessage struct {
 	ReplicaWrite *commands.ReplicaWrite
 }
 
+// Bytes returns a CBOR blob of the given ReplicaInnerMessage.
 func (c *ReplicaInnerMessage) Bytes() []byte {
 	if c.ReplicaRead != nil && c.ReplicaWrite != nil {
 		panic("ReplicaInnerMessage.Bytes failure: one field must be nil.")
@@ -148,6 +223,7 @@ func (c *ReplicaInnerMessage) Bytes() []byte {
 	return blob
 }
 
+// ReplicaInnerMessageFromBytes is a helper function to unmarshal
 func ReplicaInnerMessageFromBytes(b []byte) (*ReplicaInnerMessage, error) {
 	c := &ReplicaInnerMessage{}
 	err := cbor.Unmarshal(b, c)
@@ -276,6 +352,7 @@ type Box struct {
 	Payload   []byte
 }
 
+// Bytes returns a CBOR blob of the given Box.
 func (c *Box) Bytes() []byte {
 	blob, err := ccbor.Marshal(c)
 	if err != nil {
@@ -284,6 +361,7 @@ func (c *Box) Bytes() []byte {
 	return blob
 }
 
+// BoxFromBytes unmarshals the given CBOR blob into a Box.
 func BoxFromBytes(b []byte) (*Box, error) {
 	c := &Box{}
 	err := cbor.Unmarshal(b, c)

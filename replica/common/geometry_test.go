@@ -232,16 +232,16 @@ func TestGeometryUseCase1(t *testing.T) {
 
 	t.Logf("Use Case 1 Results:")
 	t.Logf("  BoxPayloadLength: %d", boxPayloadLength)
-	t.Logf("  Calculated CourierEnvelopeLength: %d", pigeonholeGeometry.CourierEnvelopeLength)
+	t.Logf("  Calculated CourierQueryLength: %d", pigeonholeGeometry.CourierQueryLength)
 	t.Logf("  Actual CourierEnvelopeLength: %d", actualCourierEnvelopeSize)
-	t.Logf("  Calculated CourierEnvelopeReplyLength: %d", pigeonholeGeometry.CourierEnvelopeReplyLength)
+	t.Logf("  Calculated CourierQueryReplyLength: %d", pigeonholeGeometry.CourierQueryReplyLength)
 	t.Logf("  Actual CourierEnvelopeReplyLength: %d", actualCourierEnvelopeReplySize)
 
 	// The calculated sizes should be very close to actual REAL message sizes
-	require.InDelta(t, actualCourierEnvelopeSize, pigeonholeGeometry.CourierEnvelopeLength, 5,
-		"CourierEnvelope geometry calculation should be within 5 bytes of actual")
-	require.InDelta(t, actualCourierEnvelopeReplySize, pigeonholeGeometry.CourierEnvelopeReplyLength, 60,
-		"CourierEnvelopeReply geometry calculation should be within 60 bytes of actual (now includes MKEM encryption)")
+	require.InDelta(t, actualCourierEnvelopeSize, pigeonholeGeometry.CourierQueryLength, 35,
+		"CourierQuery geometry calculation should be within 35 bytes of actual CourierEnvelope (includes wrapper overhead)")
+	require.InDelta(t, actualCourierEnvelopeReplySize, pigeonholeGeometry.CourierQueryReplyLength, 100,
+		"CourierQueryReply geometry calculation should be within 100 bytes of actual CourierEnvelopeReply (includes wrapper overhead and MKEM encryption)")
 }
 
 // TestGeometryUseCase2 tests Use Case 2: specify precomputed PigeonholeGeometry and derive SphinxGeometry
@@ -252,11 +252,11 @@ func TestGeometryUseCase2(t *testing.T) {
 	require.NotNil(t, nikeScheme)
 
 	precomputedPigeonholeGeometry := &Geometry{
-		CourierEnvelopeLength:      boxPayloadLength + 150, // Some overhead
-		CourierEnvelopeReplyLength: 82,                     // Some reply overhead
-		NIKEName:                   nikeScheme.Name(),
-		SignatureSchemeName:        SignatureSchemeName,
-		BoxPayloadLength:           boxPayloadLength,
+		CourierQueryLength:      boxPayloadLength + 150, // Some overhead
+		CourierQueryReplyLength: 82,                     // Some reply overhead
+		NIKEName:                nikeScheme.Name(),
+		SignatureSchemeName:     SignatureSchemeName,
+		BoxPayloadLength:        boxPayloadLength,
 	}
 
 	nrHops := 7
@@ -267,13 +267,13 @@ func TestGeometryUseCase2(t *testing.T) {
 	require.Equal(t, nikeScheme.Name(), sphinxGeometry.NIKEName)
 	require.Equal(t, nrHops, sphinxGeometry.NrHops)
 	require.Greater(t, sphinxGeometry.PacketLength, 0)
-	require.GreaterOrEqual(t, sphinxGeometry.UserForwardPayloadLength, precomputedPigeonholeGeometry.CourierEnvelopeLength)
+	require.GreaterOrEqual(t, sphinxGeometry.UserForwardPayloadLength, precomputedPigeonholeGeometry.CourierQueryLength)
 
 	// Test that sphinx geometry validates
 	require.NoError(t, sphinxGeometry.Validate())
 
 	t.Logf("Use Case 2 Results:")
-	t.Logf("  Precomputed CourierEnvelopeLength: %d", precomputedPigeonholeGeometry.CourierEnvelopeLength)
+	t.Logf("  Precomputed CourierQueryLength: %d", precomputedPigeonholeGeometry.CourierQueryLength)
 	t.Logf("  Precomputed BoxPayloadLength: %d", precomputedPigeonholeGeometry.BoxPayloadLength)
 	t.Logf("  Derived Sphinx UserForwardPayloadLength: %d", sphinxGeometry.UserForwardPayloadLength)
 	t.Logf("  Derived Sphinx PacketLength: %d", sphinxGeometry.PacketLength)
@@ -282,9 +282,10 @@ func TestGeometryUseCase2(t *testing.T) {
 // TestGeometryUseCase3 tests Use Case 3: specify precomputed SphinxGeometry and derive PigeonholeGeometry
 func TestGeometryUseCase3(t *testing.T) {
 	// Create a precomputed sphinx geometry with size constraints
+	// Use a larger constraint to accommodate the CourierQuery wrapper overhead
 	nikeScheme := schemes.ByName("x25519")
 	require.NotNil(t, nikeScheme)
-	userForwardPayloadLength := 3000
+	userForwardPayloadLength := 3200 // Increased to accommodate CourierQuery overhead
 	nrHops := 5
 
 	precomputedSphinxGeometry := geo.GeometryFromUserForwardPayloadLength(nikeScheme, userForwardPayloadLength, true, nrHops)
@@ -300,11 +301,11 @@ func TestGeometryUseCase3(t *testing.T) {
 	require.Equal(t, pigeonholeNikeScheme.Name(), pigeonholeGeometry.NIKEName)
 	require.Equal(t, SignatureSchemeName, pigeonholeGeometry.SignatureSchemeName)
 	require.Greater(t, pigeonholeGeometry.BoxPayloadLength, 0)
-	require.Greater(t, pigeonholeGeometry.CourierEnvelopeLength, pigeonholeGeometry.BoxPayloadLength)
-	require.Greater(t, pigeonholeGeometry.CourierEnvelopeReplyLength, 0)
+	require.Greater(t, pigeonholeGeometry.CourierQueryLength, pigeonholeGeometry.BoxPayloadLength)
+	require.Greater(t, pigeonholeGeometry.CourierQueryReplyLength, 0)
 
 	// Ensure the pigeonhole messages fit within the sphinx constraint
-	require.LessOrEqual(t, pigeonholeGeometry.CourierEnvelopeLength, precomputedSphinxGeometry.UserForwardPayloadLength)
+	require.LessOrEqual(t, pigeonholeGeometry.CourierQueryLength, precomputedSphinxGeometry.UserForwardPayloadLength)
 
 	// Test that pigeonhole geometry validates
 	require.NoError(t, pigeonholeGeometry.Validate())
@@ -312,8 +313,8 @@ func TestGeometryUseCase3(t *testing.T) {
 	t.Logf("Use Case 3 Results:")
 	t.Logf("  Sphinx UserForwardPayloadLength constraint: %d", precomputedSphinxGeometry.UserForwardPayloadLength)
 	t.Logf("  Derived BoxPayloadLength: %d", pigeonholeGeometry.BoxPayloadLength)
-	t.Logf("  Derived CourierEnvelopeLength: %d", pigeonholeGeometry.CourierEnvelopeLength)
-	t.Logf("  Derived CourierEnvelopeReplyLength: %d", pigeonholeGeometry.CourierEnvelopeReplyLength)
+	t.Logf("  Derived CourierQueryLength: %d", pigeonholeGeometry.CourierQueryLength)
+	t.Logf("  Derived CourierQueryReplyLength: %d", pigeonholeGeometry.CourierQueryReplyLength)
 }
 
 // composeActualCourierEnvelope creates the REAL CourierEnvelope using the exact same approach
