@@ -19,6 +19,11 @@ import (
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 )
 
+const (
+	testContext     = "test-context"
+	ctidh1024X25519 = "CTIDH1024-X25519"
+)
+
 func TestReplicaWriteOverhead(t *testing.T) {
 	payload := make([]byte, 1000)
 
@@ -26,7 +31,7 @@ func TestReplicaWriteOverhead(t *testing.T) {
 	owner, err := bacap.NewBoxOwnerCap(rand.Reader)
 	require.NoError(t, err)
 
-	ctx := []byte("test-context")
+	ctx := []byte(testContext)
 	statefulWriter, err := bacap.NewStatefulWriter(owner, ctx)
 	require.NoError(t, err)
 
@@ -85,7 +90,7 @@ func TestCourierEnvelopeOverhead(t *testing.T) {
 	payload := make([]byte, 1000)
 
 	// Create NIKE scheme for envelope keys
-	scheme := schemes.ByName("CTIDH1024-X25519")
+	scheme := schemes.ByName(ctidh1024X25519)
 	require.NotNil(t, scheme)
 
 	// Generate ephemeral key pair
@@ -106,7 +111,7 @@ func TestCourierEnvelopeOverhead(t *testing.T) {
 	envelopeBytes := envelope.Bytes()
 	overhead := len(envelopeBytes) - len(payload)
 
-	nikeScheme := schemes.ByName("CTIDH1024-X25519")
+	nikeScheme := schemes.ByName(ctidh1024X25519)
 	require.NotNil(t, nikeScheme)
 	geo := NewGeometry(len(payload), nikeScheme)
 	overhead2 := geo.courierEnvelopeOverhead()
@@ -164,7 +169,7 @@ func TestReplicaInnerMessageOverhead(t *testing.T) {
 	owner, err := bacap.NewBoxOwnerCap(rand.Reader)
 	require.NoError(t, err)
 
-	ctx := []byte("test-context")
+	ctx := []byte(testContext)
 	statefulWriter, err := bacap.NewStatefulWriter(owner, ctx)
 	require.NoError(t, err)
 
@@ -233,7 +238,6 @@ func TestGeometryUseCase1(t *testing.T) {
 	t.Logf("  Actual CourierEnvelopeReplyLength: %d", actualCourierEnvelopeReplySize)
 
 	// The calculated sizes should be very close to actual REAL message sizes
-	// TODO: Fine-tune CBOR overhead calculations to get exact matches
 	require.InDelta(t, actualCourierEnvelopeSize, pigeonholeGeometry.CourierEnvelopeLength, 5,
 		"CourierEnvelope geometry calculation should be within 5 bytes of actual")
 	require.InDelta(t, actualCourierEnvelopeReplySize, pigeonholeGeometry.CourierEnvelopeReplyLength, 60,
@@ -286,7 +290,7 @@ func TestGeometryUseCase3(t *testing.T) {
 	precomputedSphinxGeometry := geo.GeometryFromUserForwardPayloadLength(nikeScheme, userForwardPayloadLength, true, nrHops)
 	require.NotNil(t, precomputedSphinxGeometry)
 
-	pigeonholeNikeScheme := schemes.ByName("CTIDH1024-X25519")
+	pigeonholeNikeScheme := schemes.ByName(ctidh1024X25519)
 	require.NotNil(t, pigeonholeNikeScheme)
 	pigeonholeGeometry := GeometryFromSphinxGeometry(precomputedSphinxGeometry, pigeonholeNikeScheme)
 
@@ -320,7 +324,7 @@ func composeActualCourierEnvelope(t *testing.T, boxPayloadLength int, nikeScheme
 	owner, err := bacap.NewBoxOwnerCap(rand.Reader)
 	require.NoError(t, err)
 
-	ctx := []byte("test-context")
+	ctx := []byte(testContext)
 	statefulWriter, err := bacap.NewStatefulWriter(owner, ctx)
 	require.NoError(t, err)
 
@@ -361,9 +365,9 @@ func composeActualCourierEnvelope(t *testing.T, boxPayloadLength int, nikeScheme
 	envelope := &CourierEnvelope{
 		SenderEPubKey:        mkemPublicKey.Bytes(),
 		IntermediateReplicas: [2]uint8{0, 1},
-		DEK: [2]*[mkem.DEKSize]byte{mkemCiphertext.DEKCiphertexts[0], mkemCiphertext.DEKCiphertexts[1]},
-		Ciphertext: mkemCiphertext.Envelope,
-		IsRead:     false,
+		DEK:                  [2]*[mkem.DEKSize]byte{mkemCiphertext.DEKCiphertexts[0], mkemCiphertext.DEKCiphertexts[1]},
+		Ciphertext:           mkemCiphertext.Envelope,
+		IsRead:               false,
 	}
 
 	// Return the actual serialized size of the REAL CourierEnvelope
@@ -378,7 +382,7 @@ func composeActualCourierEnvelopeReply(t *testing.T, boxPayloadLength int, nikeS
 	owner, err := bacap.NewBoxOwnerCap(rand.Reader)
 	require.NoError(t, err)
 
-	ctx := []byte("test-context")
+	ctx := []byte(testContext)
 	statefulWriter, err := bacap.NewStatefulWriter(owner, ctx)
 	require.NoError(t, err)
 
@@ -427,5 +431,3 @@ func composeActualCourierEnvelopeReply(t *testing.T, boxPayloadLength int, nikeS
 	// Return the actual serialized size of the REAL CourierEnvelopeReply
 	return len(reply.Bytes())
 }
-
-
