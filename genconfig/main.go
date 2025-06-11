@@ -130,6 +130,7 @@ func (s *katzenpost) genClient2ThinCfg(net, addr string) error {
 	cfg := new(thin.Config)
 
 	cfg.SphinxGeometry = s.sphinxGeometry
+	cfg.PigeonholeGeometry = common.GeometryFromSphinxGeometry(s.sphinxGeometry, s.replicaNIKEScheme)
 	cfg.Network = net
 	cfg.Address = addr
 
