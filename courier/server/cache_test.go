@@ -198,10 +198,10 @@ func TestCourierCacheHandleOldMessage(t *testing.T) {
 	cacheEntry, _ := getCacheEntry(courier, envHash)
 
 	// Test handleOldMessage for reply index 0
-	replyBytes := courier.handleOldMessage(cacheEntry, &envHash, courierEnv)
+	reply := courier.handleOldMessage(cacheEntry, &envHash, courierEnv)
 
 	// Parse the reply
-	courierQueryReply, err := common.CourierQueryReplyFromBytes(replyBytes)
+	courierQueryReply, err := common.CourierQueryReplyFromBytes(reply.Bytes())
 	require.NoError(t, err, errShouldParseReply)
 	require.NotNil(t, courierQueryReply.CourierEnvelopeReply)
 
@@ -211,9 +211,9 @@ func TestCourierCacheHandleOldMessage(t *testing.T) {
 
 	// Test handleOldMessage for reply index 1
 	courierEnv.ReplyIndex = 1
-	replyBytes = courier.handleOldMessage(cacheEntry, &envHash, courierEnv)
+	reply = courier.handleOldMessage(cacheEntry, &envHash, courierEnv)
 
-	courierQueryReply, err = common.CourierQueryReplyFromBytes(replyBytes)
+	courierQueryReply, err = common.CourierQueryReplyFromBytes(reply.Bytes())
 	require.NoError(t, err, errShouldParseReply)
 	require.NotNil(t, courierQueryReply.CourierEnvelopeReply)
 
@@ -247,9 +247,9 @@ func TestCourierCacheFallbackBehavior(t *testing.T) {
 	}
 
 	cacheEntry, _ := getCacheEntry(courier, envHash)
-	replyBytes := courier.handleOldMessage(cacheEntry, &envHash, courierEnv)
+	reply := courier.handleOldMessage(cacheEntry, &envHash, courierEnv)
 
-	courierQueryReply, err := common.CourierQueryReplyFromBytes(replyBytes)
+	courierQueryReply, err := common.CourierQueryReplyFromBytes(reply.Bytes())
 	require.NoError(t, err, errShouldParseReply)
 	require.NotNil(t, courierQueryReply.CourierEnvelopeReply)
 
@@ -274,9 +274,9 @@ func TestCourierCacheEmptyResponse(t *testing.T) {
 		ReplyIndex: 0,
 	}
 
-	replyBytes := courier.handleOldMessage(cacheEntry, &envHash, courierEnv)
+	reply := courier.handleOldMessage(cacheEntry, &envHash, courierEnv)
 
-	courierQueryReply, err := common.CourierQueryReplyFromBytes(replyBytes)
+	courierQueryReply, err := common.CourierQueryReplyFromBytes(reply.Bytes())
 	require.NoError(t, err, errShouldParseReply)
 	require.NotNil(t, courierQueryReply.CourierEnvelopeReply)
 
