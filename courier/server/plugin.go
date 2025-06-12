@@ -12,6 +12,7 @@ import (
 
 	"gopkg.in/op/go-logging.v1"
 
+	"github.com/katzenpost/hpqc/bacap"
 	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/nike"
 	"github.com/katzenpost/hpqc/nike/schemes"
@@ -188,7 +189,7 @@ func (e *Courier) logFinalCacheState(reply *commands.ReplicaMessageReply) {
 	e.log.Debugf("CacheReply: final cache state for %x - Reply[0]: %v, Reply[1]: %v", reply.EnvelopeHash, reply0Available, reply1Available)
 }
 
-func (e *Courier) handleNewMessage(envHash *[hash.HashSize]byte, courierMessage *common.CourierEnvelope) []byte {
+func (e *Courier) handleNewMessage(envHash *[hash.HashSize]byte, courierMessage *common.CourierEnvelope) *common.CourierQueryReply {
 	replicas := make([]*commands.ReplicaMessage, 2)
 
 	firstReplicaID := courierMessage.IntermediateReplicas[0]
@@ -226,10 +227,10 @@ func (e *Courier) handleNewMessage(envHash *[hash.HashSize]byte, courierMessage 
 		CourierEnvelopeReply: envelopeReply,
 		CopyCommandReply:     nil,
 	}
-	return reply.Bytes()
+	return reply
 }
 
-func (e *Courier) handleOldMessage(cacheEntry *CourierBookKeeping, envHash *[hash.HashSize]byte, courierMessage *common.CourierEnvelope) []byte {
+func (e *Courier) handleOldMessage(cacheEntry *CourierBookKeeping, envHash *[hash.HashSize]byte, courierMessage *common.CourierEnvelope) *common.CourierQueryReply {
 	e.log.Debugf("handleOldMessage called for envelope hash: %x, requested ReplyIndex: %d", envHash, courierMessage.ReplyIndex)
 
 	envelopeReply := &common.CourierEnvelopeReply{
@@ -245,7 +246,7 @@ func (e *Courier) handleOldMessage(cacheEntry *CourierBookKeeping, envHash *[has
 			CourierEnvelopeReply: envelopeReply,
 			CopyCommandReply:     nil,
 		}
-		return reply.Bytes()
+		return reply
 	}
 
 	// Log cache state
@@ -270,7 +271,7 @@ func (e *Courier) handleOldMessage(cacheEntry *CourierBookKeeping, envHash *[has
 	}
 
 	e.log.Debugf("handleOldMessage returning payload length: %d", len(envelopeReply.Payload))
-	return reply.Bytes()
+	return reply
 }
 
 func (e *Courier) OnCommand(cmd cborplugin.Command) error {
@@ -290,66 +291,91 @@ func (e *Courier) OnCommand(cmd cborplugin.Command) error {
 
 	// Handle CourierEnvelope if present
 	if courierQuery.CourierEnvelope != nil {
-		courierMessage := courierQuery.CourierEnvelope
-		envHash := courierMessage.EnvelopeHash()
-
-		var replyPayload []byte
-		e.dedupCacheLock.RLock()
-		cacheEntry, ok := e.dedupCache[*envHash]
-		e.dedupCacheLock.RUnlock()
-
-		if ok {
-			e.log.Debugf("OnCommand: Found cached entry for envelope hash %x, calling handleOldMessage", envHash)
-			replyPayload = e.handleOldMessage(cacheEntry, envHash, courierMessage)
-		} else {
-			e.log.Debugf("OnCommand: No cached entry for envelope hash %x, calling handleNewMessage", envHash)
-			e.dedupCacheLock.Lock()
-
-			// Get current epoch, defaulting to 0 if PKI document is not available yet
-			var currentEpoch uint64
-			if pkiDoc := e.server.PKI.PKIDocument(); pkiDoc != nil {
-				currentEpoch = pkiDoc.Epoch
-			}
-
-			e.dedupCache[*envHash] = &CourierBookKeeping{
-				Epoch:                currentEpoch,
-				IntermediateReplicas: courierMessage.IntermediateReplicas,
-				EnvelopeReplies:      [2]*commands.ReplicaMessageReply{nil, nil},
-			}
-			e.dedupCacheLock.Unlock()
-			replyPayload = e.handleNewMessage(envHash, courierMessage)
-		}
+		reply := e.handleCourierEnvelope(courierQuery.CourierEnvelope)
 
 		go func() {
 			// send reply
 			e.write(&cborplugin.Response{
 				ID:      request.ID,
 				SURB:    request.SURB,
-				Payload: replyPayload,
+				Payload: reply.Bytes(),
 			})
 		}()
 	}
 
-	// TODO: Handle CopyCommand if present
+	// Handle CopyCommand if present
 	if courierQuery.CopyCommand != nil {
-		e.log.Debugf("CopyCommand not yet implemented")
-		// For now, return an error reply
-		errorReply := &common.CourierQueryReply{
-			CourierEnvelopeReply: nil,
-			CopyCommandReply: &common.CopyCommandReply{
-				ErrorCode: 1, // Error code 1 for not implemented
-			},
+		e.log.Debugf("CopyCommand received")
+
+		// implementing it now motherfucker
+		if courierQuery.CopyCommand.WriteCap == nil {
+			e.log.Debugf("CopyCommand received with nil WriteCap")
+			return errors.New("CopyCommand received with nil WriteCap")
 		}
+
+		reply := e.handleCopyCommand(courierQuery.CopyCommand.WriteCap)
+
 		go func() {
 			e.write(&cborplugin.Response{
 				ID:      request.ID,
 				SURB:    request.SURB,
-				Payload: errorReply.Bytes(),
+				Payload: reply.Bytes(),
 			})
 		}()
 	}
 
 	return nil
+}
+
+func (e *Courier) handleCourierEnvelope(courierMessage *common.CourierEnvelope) *common.CourierQueryReply {
+	envHash := courierMessage.EnvelopeHash()
+
+	var reply *common.CourierQueryReply
+	e.dedupCacheLock.RLock()
+	cacheEntry, ok := e.dedupCache[*envHash]
+	e.dedupCacheLock.RUnlock()
+
+	if ok {
+		e.log.Debugf("OnCommand: Found cached entry for envelope hash %x, calling handleOldMessage", envHash)
+		reply = e.handleOldMessage(cacheEntry, envHash, courierMessage)
+	} else {
+		e.log.Debugf("OnCommand: No cached entry for envelope hash %x, calling handleNewMessage", envHash)
+		e.dedupCacheLock.Lock()
+
+		// Get current epoch, defaulting to 0 if PKI document is not available yet
+		var currentEpoch uint64
+		if pkiDoc := e.server.PKI.PKIDocument(); pkiDoc != nil {
+			currentEpoch = pkiDoc.Epoch
+		}
+
+		e.dedupCache[*envHash] = &CourierBookKeeping{
+			Epoch:                currentEpoch,
+			IntermediateReplicas: courierMessage.IntermediateReplicas,
+			EnvelopeReplies:      [2]*commands.ReplicaMessageReply{nil, nil},
+		}
+		e.dedupCacheLock.Unlock()
+		reply = e.handleNewMessage(envHash, courierMessage)
+	}
+
+	return reply
+}
+
+func (e *Courier) handleCopyCommand(writeCap *bacap.BoxOwnerCap) *common.CourierQueryReply {
+	// here we BACAP Boxes from the readcap which we can derive from the given writecap.
+	// we don't know exactly how many Boxes but if we encounter a final Box it will have
+	// content which is padded with zeros instead of the next CBOR blob.
+
+	//readcap := writeCap.UniversalReadCap()
+
+	// For now, return an error reply
+	errorReply := &common.CourierQueryReply{
+		CourierEnvelopeReply: nil,
+		CopyCommandReply: &common.CopyCommandReply{
+			ErrorCode: 1, // Error code 1 for not implemented
+		},
+	}
+
+	return errorReply
 }
 
 func (e *Courier) RegisterConsumer(s *cborplugin.Server) {
