@@ -18,6 +18,7 @@ import (
 
 	"github.com/katzenpost/katzenpost/client2/common"
 	"github.com/katzenpost/katzenpost/client2/constants"
+	pigeonholeCommon "github.com/katzenpost/katzenpost/client2/pigeonhole/common"
 	"github.com/katzenpost/katzenpost/client2/thin"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	sphinxConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
@@ -84,29 +85,6 @@ func GetRandomCourier(doc *cpki.Document) (*[hash.HashSize]byte, []byte) {
 	return &serviceIdHash, courierService.RecipientQueueID
 }
 
-func GetRandomIntermediateReplicas(doc *cpki.Document) ([2]uint8, []nike.PublicKey, error) {
-	maxReplica := uint8(len(doc.StorageReplicas) - 1)
-	replica1 := uint8(secureRand.Intn(int(maxReplica)))
-	var replica2 uint8
-	for replica2 == replica1 {
-		replica2 = uint8(secureRand.Intn(int(maxReplica)))
-	}
-
-	replicaPubKeys := make([]nike.PublicKey, 2)
-	replicaEpoch, _, _ := replicaCommon.ReplicaNow()
-	for i, replicaNum := range [2]uint8{replica1, replica2} {
-		desc, err := replicaCommon.ReplicaNum(replicaNum, doc)
-		if err != nil {
-			return [2]uint8{}, nil, err
-		}
-		replicaPubKeys[i], err = replicaCommon.NikeScheme.UnmarshalBinaryPublicKey(desc.EnvelopeKeys[replicaEpoch])
-		if err != nil {
-			return [2]uint8{}, nil, err
-		}
-	}
-	return [2]uint8{replica1, replica2}, replicaPubKeys, nil
-}
-
 func NewPigeonholeChannel() (*bacap.StatefulWriter, *bacap.UniversalReadCap) {
 	owner, err := bacap.NewBoxOwnerCap(rand.Reader)
 	if err != nil {
@@ -147,7 +125,7 @@ func CreateChannelWriteRequest(
 		ReplicaWrite: &writeRequest,
 	}
 
-	intermediateReplicas, replicaPubKeys, err := GetRandomIntermediateReplicas(doc)
+	intermediateReplicas, replicaPubKeys, err := pigeonholeCommon.GetRandomIntermediateReplicas(doc)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -195,7 +173,7 @@ func CreateChannelReadRequestWithBoxID(channelID [thin.ChannelIDLength]byte,
 		},
 	}
 
-	intermediateReplicas, replicaPubKeys, err := GetRandomIntermediateReplicas(doc)
+	intermediateReplicas, replicaPubKeys, err := pigeonholeCommon.GetRandomIntermediateReplicas(doc)
 	if err != nil {
 		return nil, nil, err
 	}

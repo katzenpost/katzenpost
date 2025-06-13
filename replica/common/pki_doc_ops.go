@@ -6,39 +6,13 @@ package common
 
 import (
 	"errors"
-	"slices"
-
-	"golang.org/x/crypto/blake2b"
 
 	"github.com/katzenpost/katzenpost/core/pki"
 )
 
-func ReplicaSort(doc *pki.Document) ([]*pki.ReplicaDescriptor, error) {
-	if doc.StorageReplicas == nil {
-		return nil, errors.New("ReplicaEnumeration: doc.StorageReplicas is nil")
-	}
-	if len(doc.StorageReplicas) == 0 {
-		return nil, errors.New("ReplicaEnumeration: doc.StorageReplicas is empty")
-	}
-	replicas := make([]*pki.ReplicaDescriptor, 0, len(doc.StorageReplicas))
-	for _, replica := range doc.StorageReplicas {
-		replicas = append(replicas, replica)
-	}
-	slices.SortFunc(replicas, func(a, b *pki.ReplicaDescriptor) int {
-		ha := blake2b.Sum256(a.IdentityKey)
-		hb := blake2b.Sum256(b.IdentityKey)
-		return slices.Compare(ha[:], hb[:])
-	})
-	return replicas, nil
-}
-
 func ReplicaNum(n uint8, doc *pki.Document) (*pki.ReplicaDescriptor, error) {
-	replicas, err := ReplicaSort(doc)
-	if err != nil {
-		return nil, err
-	}
 	if n < uint8(len(doc.StorageReplicas)) {
-		return replicas[n], nil
+		return doc.StorageReplicas[n], nil
 	} else {
 		return nil, errors.New("ReplicaNum: n is out of bounds of doc.StorageReplicas")
 	}

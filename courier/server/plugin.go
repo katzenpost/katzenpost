@@ -17,8 +17,10 @@ import (
 	"github.com/katzenpost/hpqc/nike"
 	"github.com/katzenpost/hpqc/nike/schemes"
 
+	"github.com/katzenpost/katzenpost/client2/constants"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
+	pigeonholeCommon "github.com/katzenpost/katzenpost/pigeonhole/common"
 	"github.com/katzenpost/katzenpost/replica/common"
 	"github.com/katzenpost/katzenpost/server/cborplugin"
 )
@@ -189,7 +191,7 @@ func (e *Courier) logFinalCacheState(reply *commands.ReplicaMessageReply) {
 	e.log.Debugf("CacheReply: final cache state for %x - Reply[0]: %v, Reply[1]: %v", reply.EnvelopeHash, reply0Available, reply1Available)
 }
 
-func (e *Courier) handleNewMessage(envHash *[hash.HashSize]byte, courierMessage *common.CourierEnvelope) *common.CourierQueryReply {
+func (e *Courier) handleCourierEnvelope(courierMessage *common.CourierEnvelope) {
 	replicas := make([]*commands.ReplicaMessage, 2)
 
 	firstReplicaID := courierMessage.IntermediateReplicas[0]
@@ -215,17 +217,18 @@ func (e *Courier) handleNewMessage(envHash *[hash.HashSize]byte, courierMessage 
 		Ciphertext:    courierMessage.Ciphertext,
 	}
 	e.server.SendMessage(secondReplicaID, replicas[1])
+}
 
-	envelopeReply := &common.CourierEnvelopeReply{
-		EnvelopeHash: envHash,
-		ReplyIndex:   0,
-		Payload:      nil,
-		ErrorCode:    0,
-	}
-
+func (e *Courier) handleNewMessage(envHash *[hash.HashSize]byte, courierMessage *common.CourierEnvelope) *common.CourierQueryReply {
+	e.handleCourierEnvelope(courierMessage)
 	reply := &common.CourierQueryReply{
-		CourierEnvelopeReply: envelopeReply,
-		CopyCommandReply:     nil,
+		CourierEnvelopeReply: &common.CourierEnvelopeReply{
+			EnvelopeHash: envHash,
+			ReplyIndex:   0,
+			Payload:      nil,
+			ErrorCode:    0,
+		},
+		CopyCommandReply: nil,
 	}
 	return reply
 }
@@ -291,7 +294,7 @@ func (e *Courier) OnCommand(cmd cborplugin.Command) error {
 
 	// Handle CourierEnvelope if present
 	if courierQuery.CourierEnvelope != nil {
-		reply := e.handleCourierEnvelope(courierQuery.CourierEnvelope)
+		reply := e.cacheHandleCourierEnvelope(courierQuery.CourierEnvelope)
 
 		go func() {
 			// send reply
@@ -313,7 +316,7 @@ func (e *Courier) OnCommand(cmd cborplugin.Command) error {
 			return errors.New("CopyCommand received with nil WriteCap")
 		}
 
-		reply := e.handleCopyCommand(courierQuery.CopyCommand.WriteCap)
+		reply := e.handleCopyCommand(courierQuery.CopyCommand)
 
 		go func() {
 			e.write(&cborplugin.Response{
@@ -327,55 +330,114 @@ func (e *Courier) OnCommand(cmd cborplugin.Command) error {
 	return nil
 }
 
-func (e *Courier) handleCourierEnvelope(courierMessage *common.CourierEnvelope) *common.CourierQueryReply {
+func (e *Courier) cacheHandleCourierEnvelope(courierMessage *common.CourierEnvelope) *common.CourierQueryReply {
 	envHash := courierMessage.EnvelopeHash()
 
-	var reply *common.CourierQueryReply
 	e.dedupCacheLock.RLock()
 	cacheEntry, ok := e.dedupCache[*envHash]
 	e.dedupCacheLock.RUnlock()
 
 	if ok {
 		e.log.Debugf("OnCommand: Found cached entry for envelope hash %x, calling handleOldMessage", envHash)
-		reply = e.handleOldMessage(cacheEntry, envHash, courierMessage)
-	} else {
-		e.log.Debugf("OnCommand: No cached entry for envelope hash %x, calling handleNewMessage", envHash)
-		e.dedupCacheLock.Lock()
+		return e.handleOldMessage(cacheEntry, envHash, courierMessage)
+	}
 
-		// Get current epoch, defaulting to 0 if PKI document is not available yet
-		var currentEpoch uint64
-		if pkiDoc := e.server.PKI.PKIDocument(); pkiDoc != nil {
-			currentEpoch = pkiDoc.Epoch
-		}
+	e.log.Debugf("OnCommand: No cached entry for envelope hash %x, calling handleNewMessage", envHash)
+	e.dedupCacheLock.Lock()
 
-		e.dedupCache[*envHash] = &CourierBookKeeping{
-			Epoch:                currentEpoch,
-			IntermediateReplicas: courierMessage.IntermediateReplicas,
-			EnvelopeReplies:      [2]*commands.ReplicaMessageReply{nil, nil},
+	// Get current epoch, defaulting to 0 if PKI document is not available yet
+	var currentEpoch uint64
+	if pkiDoc := e.server.PKI.PKIDocument(); pkiDoc != nil {
+		currentEpoch = pkiDoc.Epoch
+	}
+
+	e.dedupCache[*envHash] = &CourierBookKeeping{
+		Epoch:                currentEpoch,
+		IntermediateReplicas: courierMessage.IntermediateReplicas,
+		EnvelopeReplies:      [2]*commands.ReplicaMessageReply{nil, nil},
+	}
+	e.dedupCacheLock.Unlock()
+	return e.handleNewMessage(envHash, courierMessage)
+}
+
+func (e *Courier) handleCopyCommand(copyCmd *common.CopyCommand) *common.CourierQueryReply {
+	// here we copy BACAP Boxes from the readcap which we can derive from the given writecap.
+	// we don't know exactly how many Boxes but if we encounter a final Box it will have
+	// content which are padded with zeros instead of the next CBOR blob.
+
+	readcap := copyCmd.WriteCap.UniversalReadCap()
+	statefulReader, err := bacap.NewStatefulReader(readcap, constants.PIGEONHOLE_CTX)
+	if err != nil {
+		e.log.Debugf("Failed to create stateful reader from readcap: %s", err)
+		return &common.CourierQueryReply{
+			CourierEnvelopeReply: nil,
+			CopyCommandReply: &common.CopyCommandReply{
+				ErrorCode: 2, // readcap derivation error
+			},
 		}
-		e.dedupCacheLock.Unlock()
-		reply = e.handleNewMessage(envHash, courierMessage)
+	}
+
+	var nextBox *commands.ReplicaMessageReply
+	boxIDList := make([]*[bacap.BoxIDSize]byte, 0)
+	for ; nextBox != nil; nextBox, err = e.readNextBox(statefulReader) {
+		if err != nil {
+			e.log.Debugf("Failed to read next Box: %s", err)
+			return &common.CourierQueryReply{
+				CourierEnvelopeReply: nil,
+				CopyCommandReply: &common.CopyCommandReply{
+					ErrorCode: 3, // read error
+				},
+			}
+		}
+		e.handleCourierEnvelope(nextBox)
+		boxIDList = append(boxIDList, nextBox.BoxID)
+	}
+
+	// XXX TODO FIXME: write tombstones to all the Boxes in boxIDList.
+
+	// For now, return an error reply
+	reply := &common.CourierQueryReply{
+		CourierEnvelopeReply: nil,
+		CopyCommandReply: &common.CopyCommandReply{
+			ErrorCode: 0, // success
+		},
 	}
 
 	return reply
 }
 
-func (e *Courier) handleCopyCommand(writeCap *bacap.BoxOwnerCap) *common.CourierQueryReply {
-	// here we BACAP Boxes from the readcap which we can derive from the given writecap.
-	// we don't know exactly how many Boxes but if we encounter a final Box it will have
-	// content which is padded with zeros instead of the next CBOR blob.
+func (e *Courier) readNextBox(statefulReader *bacap.StatefulReader) (*commands.ReplicaMessageReply, error) {
 
-	//readcap := writeCap.UniversalReadCap()
+	// TODO FIXME
+	// step 1: send message to replica and get reply of *commands.ReplicaMessageReply
+	// step 2: decrypt it and buffer
+	// step 3: repeat steps 1 and 2 until we get a full Box and return it
+	// keeps buffer state for the next call unless we detect that this is the last call
+	// which is the case if the last bytes in the Box are padded with zeros instead of the
+	// next CBOR blob.
 
-	// For now, return an error reply
-	errorReply := &common.CourierQueryReply{
-		CourierEnvelopeReply: nil,
-		CopyCommandReply: &common.CopyCommandReply{
-			ErrorCode: 1, // Error code 1 for not implemented
-		},
+	boxID, err := statefulReader.NextBoxID()
+	if err != nil {
+		e.log.Debugf("Failed to get next BoxID: %s", err)
+		return nil, errors.New("failed to get next BoxID")
 	}
 
-	return errorReply
+	replicaMessageReply, err := e.readBoxFromReplica(boxID)
+	if err != nil {
+		e.log.Debugf("Failed to read Box from replica: %s", err)
+		return nil, errors.New("failed to read Box from replica")
+	}
+
+	return nil, nil // XXX
+}
+
+// here we send a read request to the replica and get a reply
+func (e *Courier) readBoxFromReplica(boxID *[bacap.BoxIDSize]byte) (*commands.ReplicaMessageReply, error) {
+	doc := e.server.PKI.PKIDocument()
+	pigeonholeCommon.GetRandomIntermediateReplicas(doc)
+
+	// XXX FIXME: retrieve the Box from the replica by sending a query and receiving the reply
+	return nil, nil
 }
 
 func (e *Courier) RegisterConsumer(s *cborplugin.Server) {
