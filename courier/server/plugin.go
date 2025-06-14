@@ -4,6 +4,7 @@
 package server
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"os"
@@ -12,6 +13,7 @@ import (
 
 	"gopkg.in/op/go-logging.v1"
 
+	"github.com/fxamacker/cbor/v2"
 	"github.com/katzenpost/hpqc/bacap"
 	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/nike"
@@ -47,11 +49,13 @@ type Courier struct {
 
 	dedupCacheLock sync.RWMutex
 	dedupCache     map[[hash.HashSize]byte]*CourierBookKeeping
+
+	copyCacheLock sync.RWMutex
+	copyCache     map[[hash.HashSize]byte]chan *commands.ReplicaMessageReply
 }
 
 // NewCourier returns a new Courier type.
 func NewCourier(s *Server, cmds *commands.Commands, scheme nike.Scheme) *Courier {
-
 	courier := &Courier{
 		server:         s,
 		log:            s.logBackend.GetLogger("courier"),
@@ -59,6 +63,7 @@ func NewCourier(s *Server, cmds *commands.Commands, scheme nike.Scheme) *Courier
 		geo:            s.cfg.SphinxGeometry,
 		envelopeScheme: scheme,
 		dedupCache:     make(map[[hash.HashSize]byte]*CourierBookKeeping),
+		copyCache:      make(map[[hash.HashSize]byte]chan *commands.ReplicaMessageReply),
 	}
 	return courier
 }
@@ -83,6 +88,21 @@ func (s *Server) StartPlugin() {
 		panic(err)
 	}
 
+}
+
+func (e *Courier) HandleReply(reply *commands.ReplicaMessageReply) {
+	isCopy := false
+	e.copyCacheLock.RLock()
+	if _, ok := e.copyCache[*reply.EnvelopeHash]; ok {
+		isCopy = true
+	}
+	e.copyCacheLock.RUnlock()
+
+	if isCopy {
+		e.handleCopyReply(reply)
+		return
+	}
+	e.CacheReply(reply)
 }
 
 func (e *Courier) CacheReply(reply *commands.ReplicaMessageReply) {
@@ -377,9 +397,24 @@ func (e *Courier) handleCopyCommand(copyCmd *common.CopyCommand) *common.Courier
 		}
 	}
 
-	var nextBox *commands.ReplicaMessageReply
+	// read all boxes in the copy sequence
 	boxIDList := make([]*[bacap.BoxIDSize]byte, 0)
-	for ; nextBox != nil; nextBox, err = e.readNextBox(statefulReader) {
+	var boxPlaintext []byte
+	isLast := false
+	buffer := bytes.NewBuffer(nil)
+	for isLast == false {
+		boxID, err := statefulReader.NextBoxID()
+		if err != nil {
+			e.log.Debugf("Failed to get next BoxID: %s", err)
+			return &common.CourierQueryReply{
+				CourierEnvelopeReply: nil,
+				CopyCommandReply: &common.CopyCommandReply{
+					ErrorCode: 3, // read error
+				},
+			}
+		}
+		boxIDList = append(boxIDList, boxID)
+		boxPlaintext, isLast, err = e.readNextBox(statefulReader)
 		if err != nil {
 			e.log.Debugf("Failed to read next Box: %s", err)
 			return &common.CourierQueryReply{
@@ -389,13 +424,56 @@ func (e *Courier) handleCopyCommand(copyCmd *common.CopyCommand) *common.Courier
 				},
 			}
 		}
-		e.handleCourierEnvelope(nextBox)
-		boxIDList = append(boxIDList, nextBox.BoxID)
+		buffer.Write(boxPlaintext)
+	}
+
+	// make a CBOR decoder to decode buffer
+	decMode, err := cbor.DecOptions{}.DecMode()
+	if err != nil {
+		e.log.Debugf("Failed to create CBOR decoder: %s", err)
+		return &common.CourierQueryReply{
+			CourierEnvelopeReply: nil,
+			CopyCommandReply: &common.CopyCommandReply{
+				ErrorCode: 3, // read error
+			},
+		}
+	}
+	decoder := decMode.NewDecoder(buffer)
+
+	// decode all of buffer into CourierEnvelopes
+	envelopes := make([]*common.CourierEnvelope, 0)
+	for buffer.Len() > 0 {
+		var v interface{}
+		err := decoder.Decode(&v)
+		if err != nil {
+			e.log.Debugf("Failed to decode CBOR: %s", err)
+			return &common.CourierQueryReply{
+				CourierEnvelopeReply: nil,
+				CopyCommandReply: &common.CopyCommandReply{
+					ErrorCode: 3, // read error
+				},
+			}
+		}
+		envelope, ok := v.(*common.CourierEnvelope)
+		if !ok {
+			e.log.Debugf("BUG: Type assertion failed, expected *common.CourierEnvelope, got %T", v)
+			return &common.CourierQueryReply{
+				CourierEnvelopeReply: nil,
+				CopyCommandReply: &common.CopyCommandReply{
+					ErrorCode: 3, // read error
+				},
+			}
+		}
+		envelopes = append(envelopes, envelope)
+	}
+
+	// Send each CourierEnvelope to the replicas.
+	for _, envelope := range envelopes {
+		e.handleCourierEnvelope(envelope)
 	}
 
 	// XXX TODO FIXME: write tombstones to all the Boxes in boxIDList.
 
-	// For now, return an error reply
 	reply := &common.CourierQueryReply{
 		CourierEnvelopeReply: nil,
 		CopyCommandReply: &common.CopyCommandReply{
@@ -406,38 +484,87 @@ func (e *Courier) handleCopyCommand(copyCmd *common.CopyCommand) *common.Courier
 	return reply
 }
 
-func (e *Courier) readNextBox(statefulReader *bacap.StatefulReader) (*commands.ReplicaMessageReply, error) {
-
-	// TODO FIXME
-	// step 1: send message to replica and get reply of *commands.ReplicaMessageReply
-	// step 2: decrypt it and buffer
-	// step 3: repeat steps 1 and 2 until we get a full Box and return it
-	// keeps buffer state for the next call unless we detect that this is the last call
-	// which is the case if the last bytes in the Box are padded with zeros instead of the
-	// next CBOR blob.
-
+func (e *Courier) readNextBox(statefulReader *bacap.StatefulReader) (boxPlaintext []byte, isLast bool, err error) {
 	boxID, err := statefulReader.NextBoxID()
 	if err != nil {
 		e.log.Debugf("Failed to get next BoxID: %s", err)
-		return nil, errors.New("failed to get next BoxID")
+		return nil, false, errors.New("failed to get next BoxID")
 	}
-
-	replicaMessageReply, err := e.readBoxFromReplica(boxID)
+	replicaReadReply, err := e.readBoxFromReplica(boxID)
 	if err != nil {
 		e.log.Debugf("Failed to read Box from replica: %s", err)
-		return nil, errors.New("failed to read Box from replica")
+		return nil, false, errors.New("failed to read Box from replica")
 	}
-
-	return nil, nil // XXX
+	return replicaReadReply.Payload, replicaReadReply.IsLast, nil
 }
 
 // here we send a read request to the replica and get a reply
-func (e *Courier) readBoxFromReplica(boxID *[bacap.BoxIDSize]byte) (*commands.ReplicaMessageReply, error) {
+func (e *Courier) readBoxFromReplica(boxID *[bacap.BoxIDSize]byte) (*common.ReplicaReadReply, error) {
 	doc := e.server.PKI.PKIDocument()
-	pigeonholeCommon.GetRandomIntermediateReplicas(doc)
+	_, replicaPubKeys, err := pigeonholeCommon.GetRandomIntermediateReplicas(doc)
+	if err != nil {
+		return nil, err
+	}
 
-	// XXX FIXME: retrieve the Box from the replica by sending a query and receiving the reply
-	return nil, nil
+	readMsg := common.ReplicaRead{
+		BoxID: boxID,
+	}
+	msg := &common.ReplicaInnerMessage{
+		ReplicaRead: &readMsg,
+	}
+
+	mkemPrivateKey, mkemCiphertext := common.MKEMNikeScheme.Encapsulate(replicaPubKeys, msg.Bytes())
+	mkemPublicKey := mkemPrivateKey.Public()
+	query := &commands.ReplicaMessage{
+		Cmds:   e.cmds,
+		Geo:    e.geo,
+		Scheme: e.envelopeScheme,
+
+		SenderEPubKey: mkemPublicKey.Bytes(),
+		DEK:           mkemCiphertext.DEKCiphertexts[0],
+		Ciphertext:    mkemCiphertext.Envelope,
+	}
+
+	envHash := query.EnvelopeHash()
+
+	e.copyCacheLock.Lock()
+	e.copyCache[*envHash] = make(chan *commands.ReplicaMessageReply, 1)
+	e.copyCacheLock.Unlock()
+
+	e.server.SendMessage(0, query)
+
+	reply := <-e.copyCache[*envHash]
+	delete(e.copyCache, *envHash)
+
+	if reply.ErrorCode != 0 {
+		return nil, errors.New("failed to read Box from replica")
+	}
+
+	rawPlaintext, err := common.MKEMNikeScheme.DecryptEnvelope(mkemPrivateKey, replicaPubKeys[0], reply.EnvelopeReply)
+	if err != nil {
+		return nil, err
+	}
+
+	innerMsg, err := common.ReplicaMessageReplyInnerMessageFromBytes(rawPlaintext)
+	if err != nil {
+		return nil, err
+	}
+
+	if innerMsg.ReplicaReadReply == nil {
+		return nil, errors.New("failed to read Box from replica")
+	}
+
+	return innerMsg.ReplicaReadReply, nil
+}
+
+func (e *Courier) handleCopyReply(reply *commands.ReplicaMessageReply) {
+	e.log.Debugf("handleCopyReply called with envelope hash: %x", reply.EnvelopeHash)
+
+	e.copyCacheLock.RLock()
+	replyChan := e.copyCache[*reply.EnvelopeHash]
+	e.copyCacheLock.RUnlock()
+
+	replyChan <- reply
 }
 
 func (e *Courier) RegisterConsumer(s *cborplugin.Server) {
