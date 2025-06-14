@@ -380,11 +380,10 @@ func (e *Courier) cacheHandleCourierEnvelope(courierMessage *common.CourierEnvel
 	return e.handleNewMessage(envHash, courierMessage)
 }
 
+// handleCopycommad reads all the boxes in the given BACAP sequence and interprets their
+// plaintext contents as CourierEnvelopes. It then sends all those CourierEnvelopes to the
+// specified intermediate replicas. Lastly it overwrites the initial sequence with tombstones.
 func (e *Courier) handleCopyCommand(copyCmd *common.CopyCommand) *common.CourierQueryReply {
-	// here we copy BACAP Boxes from the readcap which we can derive from the given writecap.
-	// we don't know exactly how many Boxes but if we encounter a final Box it will have
-	// content which are padded with zeros instead of the next CBOR blob.
-
 	readcap := copyCmd.WriteCap.UniversalReadCap()
 	statefulReader, err := bacap.NewStatefulReader(readcap, constants.PIGEONHOLE_CTX)
 	if err != nil {
