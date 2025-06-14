@@ -5,7 +5,9 @@
 package commands
 
 const (
-	cmdOverhead = 1 + 1 + 4
+	// CmdOverhead is the wire protocol overhead for commands (command ID + reserved byte + 4-byte length field).
+	CmdOverhead = 1 + 1 + 4
+	cmdOverhead = CmdOverhead // deprecated: use CmdOverhead
 
 	retreiveMessageLength = 4
 	messageBaseLength     = 1 + 1 + 4

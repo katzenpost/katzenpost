@@ -13,7 +13,8 @@ import (
 // TRAFFIC PADDED START
 
 type GetConsensus2 struct {
-	Cmds  *Commands
+	Cmds *Commands
+
 	Epoch uint64
 }
 

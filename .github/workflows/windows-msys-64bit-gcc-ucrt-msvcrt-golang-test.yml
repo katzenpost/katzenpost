@@ -1,6 +1,6 @@
 name: Windows Msys2 64bit unit tests test
 
-on: [pull_request, push]
+on: [pull_request]
 
 jobs:
   windows-build-and-test-golang:
@@ -10,14 +10,22 @@ jobs:
       GOEXPERIMENT: cgocheck2
       GODEBUG: cgocheck=1
       CGO_LDFLAGS: "-Wl,--no-as-needed -Wl,-allow-multiple-definition"
-    runs-on: ${{ matrix.os }}
     strategy:
       matrix:
         OS: ["windows-2022"]
         CC: ["gcc"]
         ENVIRONMENT: ["MINGW64"] # https://www.msys2.org/docs/environments/
         go-version: ["1.22.x"]
+        test-suite:
+          - { name: "authority", path: "authority", timeout: "30m" }
+          - { name: "client", path: "client", timeout: "30m" }
+          - { name: "client2", path: "client2", timeout: "30m" }
+          - { name: "core", path: "core", timeout: "30m" }
+          - { name: "sphinx", path: "core/sphinx", timeout: "30m" }
+          - { name: "server", path: "server", timeout: "30m" }
       fail-fast: false
+    runs-on: ${{ matrix.OS }}
+    name: test-${{ matrix.test-suite.name }}-windows
     steps:
       - uses: actions/checkout@v4
 
@@ -40,6 +48,17 @@ jobs:
         with:
           go-version: ${{ matrix.go-version }}
 
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~\AppData\Local\go-build
+            ~\go\pkg\mod
+          key: ${{ runner.os }}-go-${{ matrix.go-version }}-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-${{ matrix.go-version }}-
+            ${{ runner.os }}-go-
+
       - name: Gather runtime environment
         shell: msys2 {0}
         run: |
@@ -54,26 +73,6 @@ jobs:
         run: |
           cd genconfig && go build && ./genconfig -wirekem xwing -v -b /conf -o ../docker/voting_mixnet/
 
-      - name: Run authority unit tests
+      - name: Run ${{ matrix.test-suite.name }} unit tests
         shell: msys2 {0}
-        run: cd authority && GORACE=history_size=7 go test -coverprofile=coverage.out -race -v -failfast -timeout 30m ./...
-
-      - name: Run client unit tests
-        shell: msys2 {0}
-        run: cd client && GORACE=history_size=7 go test -coverprofile=coverage.out -race -v -failfast -timeout 30m ./...
-
-      - name: Run client2 unit tests
-        shell: msys2 {0}
-        run: cd client2 && GORACE=history_size=7 go test -coverprofile=coverage.out -race -v -failfast -timeout 30m ./...
-
-      - name: Run core unit tests
-        shell: msys2 {0}
-        run: cd core && GORACE=history_size=7 go test -coverprofile=coverage.out -race -v -failfast -timeout 30m ./...
-
-      - name: Run NIKE Sphinx unit tests with CTIDH
-        shell: msys2 {0}
-        run: cd core/sphinx && GORACE=history_size=7 go test -coverprofile=coverage.out -race -v -failfast -timeout 30m ./...
-
-      - name: Run server unit tests
-        shell: msys2 {0}
-        run:  cd server && GORACE=history_size=7 go test -coverprofile=coverage.out -race -v -failfast -timeout 30m ./...
+        run: cd ${{ matrix.test-suite.path }} && GORACE=history_size=7 go test -coverprofile=coverage.out -race -v -failfast -timeout ${{ matrix.test-suite.timeout }} ./...

@@ -1092,6 +1092,9 @@ func (s *state) tallyVotes(epoch uint64) ([]*pki.MixDescriptor, []*pki.ReplicaDe
 			}
 		}
 	}
+
+	sortReplicaNodesByPublicKey(replicaNodes)
+
 	// include parameters that have a threshold of votes
 	for bs, votes := range mixParams {
 		params := &config.Parameters{}
@@ -2188,6 +2191,14 @@ func epochToBytes(e uint64) []byte {
 
 func epochFromBytes(b []byte) uint64 {
 	return binary.BigEndian.Uint64(b[0:8])
+}
+
+func sortReplicaNodesByPublicKey(nodes []*pki.ReplicaDescriptor) {
+	dTos := func(d *pki.ReplicaDescriptor) string {
+		pk := hash.Sum256(d.IdentityKey)
+		return string(pk[:])
+	}
+	sort.Slice(nodes, func(i, j int) bool { return dTos(nodes[i]) < dTos(nodes[j]) })
 }
 
 func sortNodesByPublicKey(nodes []*pki.MixDescriptor) {
