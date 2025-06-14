@@ -85,6 +85,29 @@ func TestReplicaReadOverhead(t *testing.T) {
 	require.Equal(t, overhead, overhead2)
 }
 
+func TestReplicaReadReplyOverhead(t *testing.T) {
+	// Test CBOR overhead for ReplicaReadReply
+	payload := make([]byte, 100)
+	boxID := [bacap.BoxIDSize]byte{}
+	signature := [bacap.SignatureSize]byte{}
+
+	reply := &ReplicaReadReply{
+		ErrorCode: 0,
+		BoxID:     &boxID,
+		Signature: &signature,
+		Payload:   payload,
+		IsLast:    false,
+	}
+	replyBytes := reply.Bytes()
+	actualOverhead := len(replyBytes) - len(payload)
+
+	// Current geometry calculation
+	calculatedOverhead := replicaReadReplyOverhead()
+
+	// The calculated overhead should match the actual overhead
+	require.Equal(t, actualOverhead, calculatedOverhead, "Geometry calculation should match actual overhead")
+}
+
 func TestCourierEnvelopeOverhead(t *testing.T) {
 	// Create a CourierEnvelope with fixed payload size
 	payload := make([]byte, 1000)
@@ -180,30 +203,24 @@ func TestReplicaInnerMessageOverhead(t *testing.T) {
 	sig := [bacap.SignatureSize]byte{}
 	copy(sig[:], sigraw)
 
+	// Create the ReplicaWrite separately to measure its CBOR overhead
+	replicaWrite := &commands.ReplicaWrite{
+		Cmds:      nil, // no padding
+		BoxID:     &boxID,
+		Signature: &sig,
+		IsLast:    false,
+		Payload:   bacapCiphertext, // Use encrypted payload
+	}
+
 	writeMsg := &ReplicaInnerMessage{
-		ReplicaRead: nil,
-		ReplicaWrite: &commands.ReplicaWrite{
-			Cmds:      nil, // no padding
-			BoxID:     &boxID,
-			Signature: &sig,
-			Payload:   bacapCiphertext, // Use encrypted payload
-		},
+		ReplicaRead:  nil,
+		ReplicaWrite: replicaWrite,
 	}
 	writeMsgBytes := writeMsg.Bytes()
 	writeOverhead := len(writeMsgBytes) - len(payload) // Compare against original payload size
 
-	// Debug: let's see what the individual components calculate to
-	replicaReadOverhead := geo.replicaReadOverhead()
-	replicaWriteOverhead := geo.replicaWriteOverhead()
-
-	t.Logf("readOverhead (actual): %d", readOverhead)
-	t.Logf("writeOverhead (actual): %d", writeOverhead)
-	t.Logf("replicaReadOverhead (calculated): %d", replicaReadOverhead)
-	t.Logf("replicaWriteOverhead (calculated): %d", replicaWriteOverhead)
-
 	// The calculated overhead should accommodate both cases
 	calculatedOverhead := geo.replicaInnerMessageOverhead()
-	t.Logf("calculatedOverhead: %d", calculatedOverhead)
 
 	// The calculated overhead should be at least as large as both actual overheads
 	require.GreaterOrEqual(t, calculatedOverhead, readOverhead)

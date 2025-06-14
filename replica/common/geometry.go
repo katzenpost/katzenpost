@@ -134,7 +134,7 @@ func (g *Geometry) replicaInnerMessageOverhead() int {
 	)
 
 	replicaReadCaseOverhead := unionStructOverhead + g.replicaReadOverhead()
-	replicaWriteCaseOverhead := unionStructOverhead + g.replicaWriteOverhead() + replicaWriteEmbeddingOverhead
+	replicaWriteCaseOverhead := unionStructOverhead + g.replicaWriteCBOROverhead() + replicaWriteEmbeddingOverhead
 
 	if replicaReadCaseOverhead > replicaWriteCaseOverhead {
 		return replicaReadCaseOverhead
@@ -151,11 +151,23 @@ func (g *Geometry) replicaReadOverhead() int {
 func (g *Geometry) replicaWriteOverhead() int {
 	const (
 		bacapEncryptionOverhead = 16
+		isLastFieldSize         = 1
 	)
 
 	boxIDLength := g.SignatureScheme().PublicKeySize()
 	signatureLength := g.SignatureScheme().SignatureSize()
-	return commands.CmdOverhead + boxIDLength + signatureLength + bacapEncryptionOverhead
+	return commands.CmdOverhead + boxIDLength + signatureLength + isLastFieldSize + bacapEncryptionOverhead
+}
+
+func (g *Geometry) replicaWriteCBOROverhead() int {
+	const (
+		bacapEncryptionOverhead = 16
+		cborOverhead            = 17
+	)
+
+	boxIDLength := g.SignatureScheme().PublicKeySize()
+	signatureLength := g.SignatureScheme().SignatureSize()
+	return boxIDLength + signatureLength + cborOverhead + bacapEncryptionOverhead
 }
 
 // Validate returns an error if one of it's validation checks fails.
@@ -267,7 +279,7 @@ func courierQueryLength(boxPayloadLength int, nikeScheme nike.Scheme) int {
 	replicaReadSize := tempGeo.replicaReadOverhead()
 	replicaInnerMessageReadSize := replicaInnerMessageOverheadForRead() + replicaReadSize
 
-	replicaWriteSize := tempGeo.replicaWriteOverhead() + boxPayloadLength
+	replicaWriteSize := tempGeo.replicaWriteCBOROverhead() + boxPayloadLength
 	replicaInnerMessageWriteSize := replicaInnerMessageOverheadForWrite() + replicaWriteSize
 
 	maxReplicaInnerMessageSize := max(replicaInnerMessageReadSize, replicaInnerMessageWriteSize)
@@ -350,7 +362,7 @@ func replicaReadReplyOverhead() int {
 		errorCodeLength = 1
 		boxIDLength     = 32
 		signatureLength = 64
-		cborOverhead    = 15
+		cborOverhead    = 49
 	)
 	return errorCodeLength + boxIDLength + signatureLength + cborOverhead
 }
@@ -395,7 +407,7 @@ func calculateMaxBoxPayloadLength(maxCourierQueryLength int, nikeScheme nike.Sch
 	availableForReplicaInner := maxCourierQueryLength - courierOverhead - mkemFixedOverhead - courierQueryWrapperOverhead
 
 	readCaseOverhead := replicaInnerMessageOverheadForRead() + tempGeo.replicaReadOverhead()
-	writeCaseFixedOverhead := replicaInnerMessageOverheadForWrite() + tempGeo.replicaWriteOverhead()
+	writeCaseFixedOverhead := replicaInnerMessageOverheadForWrite() + tempGeo.replicaWriteCBOROverhead()
 
 	if readCaseOverhead > availableForReplicaInner {
 		return 0
