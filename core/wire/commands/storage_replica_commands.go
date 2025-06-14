@@ -42,7 +42,8 @@ type ReplicaWrite struct {
 }
 
 func (c *ReplicaWrite) ToBytes() []byte {
-	var cmdLen = bacap.BoxIDSize + bacap.SignatureSize + len(c.Payload)
+	const isLastSize = 1
+	var cmdLen = bacap.BoxIDSize + bacap.SignatureSize + isLastSize + len(c.Payload)
 
 	if c.Payload == nil {
 		panic("ReplicaWrite.Payload ")
