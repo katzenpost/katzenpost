@@ -401,17 +401,10 @@ func (e *Courier) handleCopyCommand(copyCmd *common.CopyCommand) *common.Courier
 		return e.createCopyErrorReply(copyErrorReadCapDerivation)
 	}
 
-	boxIDList, buffer, err := e.readAllBoxes(statefulReader)
+	boxIDList, err := e.processBoxesStreaming(statefulReader)
 	if err != nil {
 		return e.createCopyErrorReply(copyErrorRead)
 	}
-
-	envelopes, err := e.decodeCourierEnvelopes(buffer)
-	if err != nil {
-		return e.createCopyErrorReply(copyErrorRead)
-	}
-
-	e.sendEnvelopesToReplicas(envelopes)
 
 	// XXX TODO FIXME: write tombstones to all the Boxes in boxIDList.
 	_ = boxIDList
@@ -429,62 +422,105 @@ func (e *Courier) createStatefulReader(writeCap *bacap.BoxOwnerCap) (*bacap.Stat
 	return statefulReader, nil
 }
 
-func (e *Courier) readAllBoxes(statefulReader *bacap.StatefulReader) ([]*[bacap.BoxIDSize]byte, *bytes.Buffer, error) {
+func (e *Courier) processBoxesStreaming(statefulReader *bacap.StatefulReader) ([]*[bacap.BoxIDSize]byte, error) {
 	boxIDList := make([]*[bacap.BoxIDSize]byte, 0)
-	buffer := bytes.NewBuffer(nil)
+
+	// Create a streaming CBOR decoder that processes envelopes as they become available
+	streamingDecoder := NewStreamingCBORDecoder(e.handleCourierEnvelope)
 	isLast := false
 
 	for !isLast {
 		boxID, err := statefulReader.NextBoxID()
 		if err != nil {
 			e.log.Debugf("Failed to get next BoxID: %s", err)
-			return nil, nil, err
+			return nil, err
 		}
 		boxIDList = append(boxIDList, boxID)
 
 		boxPlaintext, last, err := e.readNextBox(statefulReader)
 		if err != nil {
 			e.log.Debugf("Failed to read next Box: %s", err)
-			return nil, nil, err
-		}
-		isLast = last
-		buffer.Write(boxPlaintext)
-	}
-
-	return boxIDList, buffer, nil
-}
-
-func (e *Courier) decodeCourierEnvelopes(buffer *bytes.Buffer) ([]*common.CourierEnvelope, error) {
-	decMode, err := cbor.DecOptions{}.DecMode()
-	if err != nil {
-		e.log.Debugf("Failed to create CBOR decoder: %s", err)
-		return nil, err
-	}
-	decoder := decMode.NewDecoder(buffer)
-
-	envelopes := make([]*common.CourierEnvelope, 0)
-	for buffer.Len() > 0 {
-		var v interface{}
-		err := decoder.Decode(&v)
-		if err != nil {
-			e.log.Debugf("Failed to decode CBOR: %s", err)
 			return nil, err
 		}
-		envelope, ok := v.(*common.CourierEnvelope)
-		if !ok {
-			e.log.Debugf("BUG: Type assertion failed, expected *common.CourierEnvelope, got %T", v)
-			return nil, errors.New("invalid envelope type")
+		isLast = last
+
+		// Feed this box's plaintext to the streaming decoder
+		// Envelopes are processed immediately as they become decodable
+		err = streamingDecoder.ProcessChunk(boxPlaintext)
+		if err != nil {
+			e.log.Debugf("Failed to process box chunk: %s", err)
+			return nil, err
 		}
-		envelopes = append(envelopes, envelope)
 	}
 
-	return envelopes, nil
+	// Process any remaining partial data
+	err := streamingDecoder.Finalize()
+	if err != nil {
+		e.log.Debugf("Failed to finalize streaming decoder: %s", err)
+		return nil, err
+	}
+
+	return boxIDList, nil
 }
 
-func (e *Courier) sendEnvelopesToReplicas(envelopes []*common.CourierEnvelope) {
-	for _, envelope := range envelopes {
-		e.handleCourierEnvelope(envelope)
+// StreamingCBORDecoder processes CBOR data incrementally, decoding and handling
+// CourierEnvelopes as soon as they become available, without accumulating all data
+type StreamingCBORDecoder struct {
+	buffer         *bytes.Buffer
+	decoder        *cbor.Decoder
+	handleEnvelope func(*common.CourierEnvelope)
+}
+
+// NewStreamingCBORDecoder creates a new streaming CBOR decoder
+func NewStreamingCBORDecoder(handleEnvelope func(*common.CourierEnvelope)) *StreamingCBORDecoder {
+	buffer := bytes.NewBuffer(nil)
+	decMode, _ := cbor.DecOptions{}.DecMode() // Error handling done in ProcessChunk
+	decoder := decMode.NewDecoder(buffer)
+
+	return &StreamingCBORDecoder{
+		buffer:         buffer,
+		decoder:        decoder,
+		handleEnvelope: handleEnvelope,
 	}
+}
+
+// ProcessChunk adds new data and processes any complete envelopes
+func (s *StreamingCBORDecoder) ProcessChunk(data []byte) error {
+	// Add new data to buffer
+	s.buffer.Write(data)
+
+	// Try to decode and process any complete envelopes
+	return s.processAvailableEnvelopes()
+}
+
+// Finalize processes any remaining data in the buffer
+func (s *StreamingCBORDecoder) Finalize() error {
+	return s.processAvailableEnvelopes()
+}
+
+// processAvailableEnvelopes attempts to decode envelopes from the current buffer
+func (s *StreamingCBORDecoder) processAvailableEnvelopes() error {
+	for s.buffer.Len() > 0 {
+		// Remember the current buffer position
+		initialLen := s.buffer.Len()
+
+		var envelope common.CourierEnvelope
+		err := s.decoder.Decode(&envelope)
+		if err != nil {
+			// If we can't decode, it likely means we need more data
+			// Reset buffer to initial state and wait for more data
+			return nil
+		}
+
+		// Successfully decoded an envelope - process it immediately
+		s.handleEnvelope(&envelope)
+
+		// If buffer length didn't change, we have a problem
+		if s.buffer.Len() == initialLen {
+			return errors.New("CBOR decoder made no progress")
+		}
+	}
+	return nil
 }
 
 func (e *Courier) createCopyErrorReply(errorCode uint8) *common.CourierQueryReply {
