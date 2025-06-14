@@ -288,6 +288,12 @@ type ReplicaReadReply struct {
 
 	// Payload is encrypted and MAC'ed.
 	Payload []byte
+
+	// IsLast indicates whether this is the last box in the sequence.
+	// Most of the time this is unused. But it is used when reading
+	// a temporary sequence of Boxes for the purpose of the Courier's
+	// CopyCommand.
+	IsLast bool
 }
 
 // Bytes is a helper method used to marshal the
