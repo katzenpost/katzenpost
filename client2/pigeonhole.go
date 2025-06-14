@@ -18,11 +18,11 @@ import (
 
 	"github.com/katzenpost/katzenpost/client2/common"
 	"github.com/katzenpost/katzenpost/client2/constants"
-	pigeonholeCommon "github.com/katzenpost/katzenpost/client2/pigeonhole/common"
 	"github.com/katzenpost/katzenpost/client2/thin"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	sphinxConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
+	pigeonholeCommon "github.com/katzenpost/katzenpost/pigeonhole/common"
 	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
 )
 
