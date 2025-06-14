@@ -37,11 +37,11 @@ type ReplicaWrite struct {
 
 	BoxID     *[bacap.BoxIDSize]byte
 	Signature *[bacap.SignatureSize]byte
+	IsLast    bool
 	Payload   []byte
 }
 
 func (c *ReplicaWrite) ToBytes() []byte {
-	const uint32len = 4
 	var cmdLen = bacap.BoxIDSize + bacap.SignatureSize + len(c.Payload)
 
 	if c.Payload == nil {
@@ -54,6 +54,11 @@ func (c *ReplicaWrite) ToBytes() []byte {
 
 	out = append(out, c.BoxID[:]...)
 	out = append(out, c.Signature[:]...)
+	if c.IsLast {
+		out = append(out, 1)
+	} else {
+		out = append(out, 0)
+	}
 	out = append(out, c.Payload...)
 
 	// optional traffic padding
@@ -66,19 +71,20 @@ func (c *ReplicaWrite) ToBytes() []byte {
 func (c *ReplicaWrite) Length() int {
 	// XXX FIX ME: largest ideal command size goes here
 	var payloadSize = c.Cmds.geo.PacketLength
-	return cmdOverhead + payloadSize + bacap.SignatureSize + bacap.BoxIDSize
+	const IsLastSize = 1
+	return cmdOverhead + payloadSize + bacap.SignatureSize + bacap.BoxIDSize + IsLastSize
 }
 
 func replicaWriteFromBytes(b []byte, cmds *Commands) (Command, error) {
-	const uint32len = 4
 	c := new(ReplicaWrite)
 	c.Cmds = cmds
 	c.BoxID = &[bacap.BoxIDSize]byte{}
 	copy(c.BoxID[:], b[:bacap.BoxIDSize])
 	c.Signature = &[bacap.SignatureSize]byte{}
 	copy(c.Signature[:], b[bacap.BoxIDSize:bacap.BoxIDSize+bacap.SignatureSize])
-	c.Payload = make([]byte, len(b[bacap.BoxIDSize+bacap.SignatureSize:]))
-	copy(c.Payload, b[bacap.BoxIDSize+bacap.SignatureSize:])
+	c.IsLast = b[bacap.BoxIDSize+bacap.SignatureSize] == 1
+	c.Payload = make([]byte, len(b[bacap.BoxIDSize+bacap.SignatureSize+1:]))
+	copy(c.Payload, b[bacap.BoxIDSize+bacap.SignatureSize+1:])
 	return c, nil
 }
 
