@@ -161,6 +161,11 @@ func (c *ReplicaMessage) ToBytes() []byte {
 	const uint32len = 4
 	hkSize := len(c.SenderEPubKey)
 
+	// Validate that DEK is not nil to prevent panic
+	if c.DEK == nil {
+		panic("ReplicaMessage.ToBytes: DEK field is nil")
+	}
+
 	out := make([]byte, cmdOverhead)
 	out[0] = byte(replicaMessage)
 	out[1] = 0
