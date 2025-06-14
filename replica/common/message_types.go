@@ -355,6 +355,7 @@ func ReplicaMessageReplyInnerMessageFromBytes(b []byte) (*ReplicaMessageReplyInn
 type Box struct {
 	BoxID     *[bacap.BoxIDSize]byte
 	Signature *[bacap.SignatureSize]byte
+	IsLast    bool
 	Payload   []byte
 }
 

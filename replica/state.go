@@ -116,6 +116,7 @@ func (s *state) handleReplicaWrite(replicaWrite *commands.ReplicaWrite) error {
 	box := &common.Box{
 		BoxID:     replicaWrite.BoxID,
 		Signature: replicaWrite.Signature,
+		IsLast:    replicaWrite.IsLast,
 		Payload:   replicaWrite.Payload,
 	}
 	s.log.Debugf("state: Attempting to write %d bytes to database", len(box.Bytes()))
@@ -146,6 +147,7 @@ func (s *state) replicaWriteFromBlob(blob []byte) (*commands.ReplicaWrite, error
 
 		BoxID:     box.BoxID,
 		Signature: box.Signature,
+		IsLast:    box.IsLast,
 		Payload:   box.Payload,
 	}
 	s.log.Debugf("state: Successfully converted blob to ReplicaWrite with BoxID: %x", box.BoxID)

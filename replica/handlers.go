@@ -182,6 +182,7 @@ func (c *incomingConn) handleReplicaRead(replicaRead *common.ReplicaRead) *commo
 		BoxID:     resp.BoxID,
 		Signature: resp.Signature,
 		Payload:   resp.Payload,
+		IsLast:    resp.IsLast,
 	}
 }
 
