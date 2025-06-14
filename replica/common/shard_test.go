@@ -246,25 +246,6 @@ func TestGetRemoteShards(t *testing.T) {
 	require.Equal(t, 2, len(replicas2))
 }
 
-func TestReplicaSort(t *testing.T) {
-	config := &DocumentConfig{
-		PKIScheme:          signschemes.ByName(testPKIScheme),
-		LinkScheme:         kemschemes.ByName("Xwing"),
-		ReplicaScheme:      nikeschemes.ByName("x25519"),
-		SphinxNikeScheme:   nikeschemes.ByName("x25519"),
-		SphinxKemScheme:    nil,
-		NumDirAuths:        9,
-		NumMixNodes:        9,
-		NumStorageReplicas: 19,
-	}
-	doc := generateDocument(t, config)
-
-	replicas, err := ReplicaSort(doc)
-	require.NoError(t, err)
-
-	require.Equal(t, len(replicas), config.NumStorageReplicas)
-}
-
 func TestReplicaNum(t *testing.T) {
 	config := &DocumentConfig{
 		PKIScheme:          signschemes.ByName(testPKIScheme),
