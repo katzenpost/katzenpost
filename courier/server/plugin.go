@@ -27,6 +27,10 @@ import (
 	"github.com/katzenpost/katzenpost/server/cborplugin"
 )
 
+const (
+	errFailedToReadBoxFromReplica = "failed to read Box from replica"
+)
+
 // CourierBookKeeping is used for:
 // 1. deduping writes
 // 2. deduping reads
@@ -492,7 +496,7 @@ func (e *Courier) readNextBox(statefulReader *bacap.StatefulReader) (boxPlaintex
 	replicaReadReply, err := e.readBoxFromReplica(boxID)
 	if err != nil {
 		e.log.Debugf("Failed to read Box from replica: %s", err)
-		return nil, false, errors.New("failed to read Box from replica")
+		return nil, false, errors.New(errFailedToReadBoxFromReplica)
 	}
 	return replicaReadReply.Payload, replicaReadReply.IsLast, nil
 }
@@ -536,7 +540,7 @@ func (e *Courier) readBoxFromReplica(boxID *[bacap.BoxIDSize]byte) (*common.Repl
 	delete(e.copyCache, *envHash)
 
 	if reply.ErrorCode != 0 {
-		return nil, errors.New("failed to read Box from replica")
+		return nil, errors.New(errFailedToReadBoxFromReplica)
 	}
 
 	rawPlaintext, err := common.MKEMNikeScheme.DecryptEnvelope(mkemPrivateKey, replicaPubKeys[0], reply.EnvelopeReply)
@@ -550,7 +554,7 @@ func (e *Courier) readBoxFromReplica(boxID *[bacap.BoxIDSize]byte) (*common.Repl
 	}
 
 	if innerMsg.ReplicaReadReply == nil {
-		return nil, errors.New("failed to read Box from replica")
+		return nil, errors.New(errFailedToReadBoxFromReplica)
 	}
 
 	return innerMsg.ReplicaReadReply, nil
