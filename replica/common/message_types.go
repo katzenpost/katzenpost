@@ -4,6 +4,8 @@
 package common
 
 import (
+	"fmt"
+
 	cbor "github.com/fxamacker/cbor/v2"
 	"golang.org/x/crypto/blake2b"
 
@@ -161,6 +163,12 @@ func CourierEnvelopeFromBytes(b []byte) (*CourierEnvelope, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	// Validate that DEK array elements are not nil
+	if c.DEK[0] == nil || c.DEK[1] == nil {
+		return nil, fmt.Errorf("CourierEnvelope DEK array contains nil elements")
+	}
+
 	return c, nil
 }
 
