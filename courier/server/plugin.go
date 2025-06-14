@@ -31,6 +31,14 @@ const (
 	errFailedToReadBoxFromReplica = "failed to read Box from replica"
 )
 
+// Copy command error codes
+const (
+	copyErrorSuccess           uint8 = 0
+	copyErrorInvalidWriteCap   uint8 = 1
+	copyErrorReadCapDerivation uint8 = 2
+	copyErrorRead              uint8 = 3
+)
+
 // CourierBookKeeping is used for:
 // 1. deduping writes
 // 2. deduping reads
@@ -388,103 +396,113 @@ func (e *Courier) cacheHandleCourierEnvelope(courierMessage *common.CourierEnvel
 // plaintext contents as CourierEnvelopes. It then sends all those CourierEnvelopes to the
 // specified intermediate replicas. Lastly it overwrites the initial sequence with tombstones.
 func (e *Courier) handleCopyCommand(copyCmd *common.CopyCommand) *common.CourierQueryReply {
-	readcap := copyCmd.WriteCap.UniversalReadCap()
+	statefulReader, err := e.createStatefulReader(copyCmd.WriteCap)
+	if err != nil {
+		return e.createCopyErrorReply(copyErrorReadCapDerivation)
+	}
+
+	boxIDList, buffer, err := e.readAllBoxes(statefulReader)
+	if err != nil {
+		return e.createCopyErrorReply(copyErrorRead)
+	}
+
+	envelopes, err := e.decodeCourierEnvelopes(buffer)
+	if err != nil {
+		return e.createCopyErrorReply(copyErrorRead)
+	}
+
+	e.sendEnvelopesToReplicas(envelopes)
+
+	// XXX TODO FIXME: write tombstones to all the Boxes in boxIDList.
+	_ = boxIDList
+
+	return e.createCopySuccessReply()
+}
+
+func (e *Courier) createStatefulReader(writeCap *bacap.BoxOwnerCap) (*bacap.StatefulReader, error) {
+	readcap := writeCap.UniversalReadCap()
 	statefulReader, err := bacap.NewStatefulReader(readcap, constants.PIGEONHOLE_CTX)
 	if err != nil {
 		e.log.Debugf("Failed to create stateful reader from readcap: %s", err)
-		return &common.CourierQueryReply{
-			CourierEnvelopeReply: nil,
-			CopyCommandReply: &common.CopyCommandReply{
-				ErrorCode: 2, // readcap derivation error
-			},
-		}
+		return nil, err
 	}
+	return statefulReader, nil
+}
 
-	// read all boxes in the copy sequence
+func (e *Courier) readAllBoxes(statefulReader *bacap.StatefulReader) ([]*[bacap.BoxIDSize]byte, *bytes.Buffer, error) {
 	boxIDList := make([]*[bacap.BoxIDSize]byte, 0)
-	var boxPlaintext []byte
-	isLast := false
 	buffer := bytes.NewBuffer(nil)
-	for isLast == false {
+	isLast := false
+
+	for !isLast {
 		boxID, err := statefulReader.NextBoxID()
 		if err != nil {
 			e.log.Debugf("Failed to get next BoxID: %s", err)
-			return &common.CourierQueryReply{
-				CourierEnvelopeReply: nil,
-				CopyCommandReply: &common.CopyCommandReply{
-					ErrorCode: 3, // read error
-				},
-			}
+			return nil, nil, err
 		}
 		boxIDList = append(boxIDList, boxID)
-		boxPlaintext, isLast, err = e.readNextBox(statefulReader)
+
+		boxPlaintext, last, err := e.readNextBox(statefulReader)
 		if err != nil {
 			e.log.Debugf("Failed to read next Box: %s", err)
-			return &common.CourierQueryReply{
-				CourierEnvelopeReply: nil,
-				CopyCommandReply: &common.CopyCommandReply{
-					ErrorCode: 3, // read error
-				},
-			}
+			return nil, nil, err
 		}
+		isLast = last
 		buffer.Write(boxPlaintext)
 	}
 
-	// make a CBOR decoder to decode buffer
+	return boxIDList, buffer, nil
+}
+
+func (e *Courier) decodeCourierEnvelopes(buffer *bytes.Buffer) ([]*common.CourierEnvelope, error) {
 	decMode, err := cbor.DecOptions{}.DecMode()
 	if err != nil {
 		e.log.Debugf("Failed to create CBOR decoder: %s", err)
-		return &common.CourierQueryReply{
-			CourierEnvelopeReply: nil,
-			CopyCommandReply: &common.CopyCommandReply{
-				ErrorCode: 3, // read error
-			},
-		}
+		return nil, err
 	}
 	decoder := decMode.NewDecoder(buffer)
 
-	// decode all of buffer into CourierEnvelopes
 	envelopes := make([]*common.CourierEnvelope, 0)
 	for buffer.Len() > 0 {
 		var v interface{}
 		err := decoder.Decode(&v)
 		if err != nil {
 			e.log.Debugf("Failed to decode CBOR: %s", err)
-			return &common.CourierQueryReply{
-				CourierEnvelopeReply: nil,
-				CopyCommandReply: &common.CopyCommandReply{
-					ErrorCode: 3, // read error
-				},
-			}
+			return nil, err
 		}
 		envelope, ok := v.(*common.CourierEnvelope)
 		if !ok {
 			e.log.Debugf("BUG: Type assertion failed, expected *common.CourierEnvelope, got %T", v)
-			return &common.CourierQueryReply{
-				CourierEnvelopeReply: nil,
-				CopyCommandReply: &common.CopyCommandReply{
-					ErrorCode: 3, // read error
-				},
-			}
+			return nil, errors.New("invalid envelope type")
 		}
 		envelopes = append(envelopes, envelope)
 	}
 
-	// Send each CourierEnvelope to the replicas.
+	return envelopes, nil
+}
+
+func (e *Courier) sendEnvelopesToReplicas(envelopes []*common.CourierEnvelope) {
 	for _, envelope := range envelopes {
 		e.handleCourierEnvelope(envelope)
 	}
+}
 
-	// XXX TODO FIXME: write tombstones to all the Boxes in boxIDList.
-
-	reply := &common.CourierQueryReply{
+func (e *Courier) createCopyErrorReply(errorCode uint8) *common.CourierQueryReply {
+	return &common.CourierQueryReply{
 		CourierEnvelopeReply: nil,
 		CopyCommandReply: &common.CopyCommandReply{
-			ErrorCode: 0, // success
+			ErrorCode: errorCode,
 		},
 	}
+}
 
-	return reply
+func (e *Courier) createCopySuccessReply() *common.CourierQueryReply {
+	return &common.CourierQueryReply{
+		CourierEnvelopeReply: nil,
+		CopyCommandReply: &common.CopyCommandReply{
+			ErrorCode: copyErrorSuccess,
+		},
+	}
 }
 
 func (e *Courier) readNextBox(statefulReader *bacap.StatefulReader) (boxPlaintext []byte, isLast bool, err error) {
