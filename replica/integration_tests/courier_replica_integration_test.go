@@ -49,6 +49,13 @@ const (
 	testPKIScheme = "Ed25519 Sphincs+"
 	// testReplicaNameFormat is the format string for replica names in tests
 	testReplicaNameFormat = "replica%d"
+
+	// Error message constants to avoid duplication
+	errUnexpectedResponseType = "Unexpected response type: %T"
+
+	// Test assertion message constants to avoid duplication
+	msgShouldGetExactly2ShardedReplicas  = "Should get exactly 2 sharded replicas"
+	msgShouldFindShardedReplicaInStorage = "Should find sharded replica in StorageReplicas"
 )
 
 var (
@@ -1148,7 +1155,7 @@ func testNestedEnvelopeRoundTrip(t *testing.T, env *testEnvironment) {
 	case *cborplugin.Response:
 		response = r
 	default:
-		t.Fatalf("Unexpected response type: %T", responseCmd)
+		t.Fatalf(errUnexpectedResponseType, responseCmd)
 	}
 
 	// Decode the CourierQueryReply from the response payload
@@ -1357,7 +1364,7 @@ func createCourierEnvelopeForDestination(t *testing.T, env *testEnvironment, fin
 	// Use sharding algorithm to determine which replicas should store this BoxID
 	shardedReplicas, err := replicaCommon.GetShards(&boxID, doc)
 	require.NoError(t, err)
-	require.Equal(t, 2, len(shardedReplicas), "Should get exactly 2 sharded replicas")
+	require.Equal(t, 2, len(shardedReplicas), msgShouldGetExactly2ShardedReplicas)
 
 	// Find the indices of the sharded replicas in the StorageReplicas slice
 	var replicaIndices [2]uint8
@@ -1372,7 +1379,7 @@ func createCourierEnvelopeForDestination(t *testing.T, env *testEnvironment, fin
 				break
 			}
 		}
-		require.NotEqual(t, -1, replicaIndex, "Should find sharded replica in StorageReplicas")
+		require.NotEqual(t, -1, replicaIndex, msgShouldFindShardedReplicaInStorage)
 
 		replicaIndices[i] = uint8(replicaIndex)
 		replicaPubKey := doc.StorageReplicas[replicaIndex].EnvelopeKeys[replicaEpoch]
@@ -1423,7 +1430,7 @@ func aliceComposesDirectWriteToReplica(t *testing.T, env *testEnvironment, boxID
 	// Use sharding algorithm to determine which replicas should store this BoxID
 	shardedReplicas, err := replicaCommon.GetShards(boxID, doc)
 	require.NoError(t, err)
-	require.Equal(t, 2, len(shardedReplicas), "Should get exactly 2 sharded replicas")
+	require.Equal(t, 2, len(shardedReplicas), msgShouldGetExactly2ShardedReplicas)
 
 	// Find the indices of the sharded replicas in the StorageReplicas slice
 	var replicaIndices [2]uint8
@@ -1438,7 +1445,7 @@ func aliceComposesDirectWriteToReplica(t *testing.T, env *testEnvironment, boxID
 				break
 			}
 		}
-		require.NotEqual(t, -1, replicaIndex, "Should find sharded replica in StorageReplicas")
+		require.NotEqual(t, -1, replicaIndex, msgShouldFindShardedReplicaInStorage)
 
 		replicaIndices[i] = uint8(replicaIndex)
 		replicaPubKey := doc.StorageReplicas[replicaIndex].EnvelopeKeys[replicaEpoch]
@@ -1482,7 +1489,7 @@ func aliceComposesReadFromReplica(t *testing.T, env *testEnvironment, boxID *[ba
 	// Use sharding algorithm to determine which replicas should have this BoxID
 	shardedReplicas, err := replicaCommon.GetShards(boxID, doc)
 	require.NoError(t, err)
-	require.Equal(t, 2, len(shardedReplicas), "Should get exactly 2 sharded replicas")
+	require.Equal(t, 2, len(shardedReplicas), msgShouldGetExactly2ShardedReplicas)
 
 	// Find the indices of the sharded replicas in the StorageReplicas slice
 	var replicaIndices [2]uint8
@@ -1497,7 +1504,7 @@ func aliceComposesReadFromReplica(t *testing.T, env *testEnvironment, boxID *[ba
 				break
 			}
 		}
-		require.NotEqual(t, -1, replicaIndex, "Should find sharded replica in StorageReplicas")
+		require.NotEqual(t, -1, replicaIndex, msgShouldFindShardedReplicaInStorage)
 
 		replicaIndices[i] = uint8(replicaIndex)
 		replicaPubKey := doc.StorageReplicas[replicaIndex].EnvelopeKeys[replicaEpoch]
@@ -1570,7 +1577,7 @@ func injectCopyCommand(t *testing.T, env *testEnvironment, writeCap *bacap.BoxOw
 	case *cborplugin.Response:
 		response = r
 	default:
-		t.Fatalf("Unexpected response type: %T", responseCmd)
+		t.Fatalf(errUnexpectedResponseType, responseCmd)
 	}
 
 	courierQueryReply, err := common.CourierQueryReplyFromBytes(response.Payload)
@@ -1624,7 +1631,7 @@ func injectCourierEnvelope(t *testing.T, env *testEnvironment, envelope *common.
 	case *cborplugin.Response:
 		response = r
 	default:
-		t.Fatalf("Unexpected response type: %T", responseCmd)
+		t.Fatalf(errUnexpectedResponseType, responseCmd)
 	}
 
 	courierQueryReply, err := common.CourierQueryReplyFromBytes(response.Payload)
@@ -1657,7 +1664,7 @@ func composeReadRequest(t *testing.T, env *testEnvironment, reader *bacap.Statef
 	// Use sharding algorithm to determine which replicas should have this BoxID
 	shardedReplicas, err := replicaCommon.GetShards(boxID, doc)
 	require.NoError(t, err)
-	require.Equal(t, 2, len(shardedReplicas), "Should get exactly 2 sharded replicas")
+	require.Equal(t, 2, len(shardedReplicas), msgShouldGetExactly2ShardedReplicas)
 
 	// Find the indices of the sharded replicas in the StorageReplicas slice
 	var replicaIndices [2]uint8
@@ -1672,7 +1679,7 @@ func composeReadRequest(t *testing.T, env *testEnvironment, reader *bacap.Statef
 				break
 			}
 		}
-		require.NotEqual(t, -1, replicaIndex, "Should find sharded replica in StorageReplicas")
+		require.NotEqual(t, -1, replicaIndex, msgShouldFindShardedReplicaInStorage)
 
 		replicaIndices[i] = uint8(replicaIndex)
 		replicaPubKey := doc.StorageReplicas[replicaIndex].EnvelopeKeys[replicaEpoch]
