@@ -40,9 +40,10 @@ const (
 
 var (
 	// Error variables for reuse
-	errContextCannotBeNil = errors.New("context cannot be nil")
-	errConnectionLost     = errors.New("connection lost")
-	errHalting            = errors.New("halting")
+	errContextCannotBeNil   = errors.New("context cannot be nil")
+	errChannelIDCannotBeNil = errors.New("channelID cannot be nil")
+	errConnectionLost       = errors.New("connection lost")
+	errHalting              = errors.New("halting")
 )
 
 // ThinResponse is used to encapsulate a message response
@@ -838,7 +839,7 @@ func (t *ThinClient) WriteChannel(ctx context.Context, channelID *[ChannelIDLeng
 		return errContextCannotBeNil
 	}
 	if channelID == nil {
-		return errors.New("channelID cannot be nil")
+		return errChannelIDCannotBeNil
 	}
 
 	// Validate payload size against pigeonhole geometry
@@ -895,7 +896,7 @@ func (t *ThinClient) ReadChannel(ctx context.Context, channelID *[ChannelIDLengt
 		return nil, errContextCannotBeNil
 	}
 	if channelID == nil {
-		return nil, errors.New("channelID cannot be nil")
+		return nil, errChannelIDCannotBeNil
 	}
 	if messageID == nil {
 		return nil, errors.New("messageID cannot be nil")
@@ -944,7 +945,7 @@ func (t *ThinClient) CopyChannel(ctx context.Context, channelID *[ChannelIDLengt
 		return errContextCannotBeNil
 	}
 	if channelID == nil {
-		return errors.New("channelID cannot be nil")
+		return errChannelIDCannotBeNil
 	}
 
 	req := &Request{
