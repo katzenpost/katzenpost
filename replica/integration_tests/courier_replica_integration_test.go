@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -135,6 +136,66 @@ type testEnvironment struct {
 	courierConfig  *courierConfig.Config
 	cleanup        func()
 	replicaKeys    []map[uint64]nike.PublicKey
+	// Response routing system - set up once per test environment
+	responseRouter *responseRouter
+}
+
+// responseRouter handles routing courier responses to the correct test channels
+type responseRouter struct {
+	// Map to route responses by request ID
+	responseMap   map[uint64]chan cborplugin.Command
+	responseMapMu sync.RWMutex
+	// Global response channel for debugging
+	globalCh      chan cborplugin.Command
+}
+
+// newResponseRouter creates a new response router
+func newResponseRouter() *responseRouter {
+	return &responseRouter{
+		responseMap: make(map[uint64]chan cborplugin.Command),
+		globalCh:    make(chan cborplugin.Command, 100),
+	}
+}
+
+// registerRequest registers a request ID and returns a channel for its response
+func (rr *responseRouter) registerRequest(requestID uint64) chan cborplugin.Command {
+	responseCh := make(chan cborplugin.Command, 1)
+	rr.responseMapMu.Lock()
+	rr.responseMap[requestID] = responseCh
+	rr.responseMapMu.Unlock()
+	return responseCh
+}
+
+// unregisterRequest removes a request ID from the routing map
+func (rr *responseRouter) unregisterRequest(requestID uint64) {
+	rr.responseMapMu.Lock()
+	delete(rr.responseMap, requestID)
+	rr.responseMapMu.Unlock()
+}
+
+// writeFunc is the function that gets called by the courier to send responses
+func (rr *responseRouter) writeFunc(cmd cborplugin.Command) {
+	// Send to global channel for debugging
+	select {
+	case rr.globalCh <- cmd:
+	default:
+		// Don't block if global channel is full
+	}
+
+	// Route to specific request channel if it exists
+	if response, ok := cmd.(*cborplugin.Response); ok {
+		rr.responseMapMu.RLock()
+		targetCh := rr.responseMap[response.ID]
+		rr.responseMapMu.RUnlock()
+
+		if targetCh != nil {
+			select {
+			case targetCh <- cmd:
+			case <-time.After(1 * time.Second):
+				// Don't block forever if channel is full
+			}
+		}
+	}
 }
 
 func setupTestEnvironment(t *testing.T) *testEnvironment {
@@ -211,6 +272,12 @@ func setupTestEnvironment(t *testing.T) *testEnvironment {
 
 	mymockPKIClient := createMockPKIClient(t, sphinxGeo, serviceDesc, replicaDescriptors)
 
+	// Set up response routing system - SetWriteFunc called only once per test environment
+	router := newResponseRouter()
+
+	// Set up the write function once and only once - this is critical to avoid data races
+	courier.Courier.SetWriteFunc(router.writeFunc)
+
 	return &testEnvironment{
 		tempDir:        tempDir,
 		replicas:       replicas,
@@ -220,6 +287,7 @@ func setupTestEnvironment(t *testing.T) *testEnvironment {
 		courierConfig:  courierCfg,
 		cleanup:        cleanup,
 		replicaKeys:    replicaKeys,
+		responseRouter: router,
 	}
 }
 
@@ -905,13 +973,14 @@ func createNestedCourierEnvelope(t *testing.T) []byte {
 }
 
 func injectCourierEnvelope(t *testing.T, env *testEnvironment, envelope *common.CourierEnvelope) *common.CourierEnvelopeReply {
-	// Create a channel to capture the courier's response
-	responseCh := make(chan cborplugin.Command, 1)
+	// Generate a unique request ID using nanosecond timestamp
+	requestID := uint64(time.Now().UnixNano())
 
-	// Set up a mock write function to capture the response
-	env.courier.Courier.SetWriteFunc(func(cmd cborplugin.Command) {
-		responseCh <- cmd
-	})
+	// Register this request with the response router and get a response channel
+	responseCh := env.responseRouter.registerRequest(requestID)
+
+	// Clean up the response map entry when done
+	defer env.responseRouter.unregisterRequest(requestID)
 
 	// Create a CBOR plugin command containing the CourierQuery with CourierEnvelope
 	courierQuery := &common.CourierQuery{
@@ -921,17 +990,18 @@ func injectCourierEnvelope(t *testing.T, env *testEnvironment, envelope *common.
 	queryBytes := courierQuery.Bytes()
 
 	requestCmd := &cborplugin.Request{
-		ID:      1,                                                             // Generate a unique ID
+		ID:      requestID,                                                     // Use unique request ID
 		SURB:    []byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}, // Fake SURB needed for testing
 		Payload: queryBytes,
 	}
 
-	// fake out the client to mixnet to courier comms, obviously.
+	// Send the request to the courier - this will trigger the courier's OnCommand method
+	// The courier will process this and eventually call our writeFunc with a response
 	err := env.courier.Courier.OnCommand(requestCmd)
 	require.NoError(t, err)
 	t.Log("CourierEnvelope processed through courier OnCommand")
 
-	// wait for response with timeout
+	// Wait for response with timeout
 	var responseCmd cborplugin.Command
 	select {
 	case responseCmd = <-responseCh:
