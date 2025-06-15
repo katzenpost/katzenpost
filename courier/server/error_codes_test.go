@@ -14,6 +14,11 @@ import (
 	"github.com/katzenpost/katzenpost/replica/common"
 )
 
+const (
+	// Test constants to avoid duplication
+	testEnvelopeHash = "test-envelope-hash-1234567890123"
+)
+
 // TestErrorCodeToString tests the error code to string conversion functions
 func TestErrorCodeToString(t *testing.T) {
 	// Test copy error codes
@@ -82,7 +87,7 @@ func TestCreateCopySuccessReply(t *testing.T) {
 func TestCreateEnvelopeErrorReply(t *testing.T) {
 	courier := createTestCourier(t)
 	envHash := &[hash.HashSize]byte{}
-	copy(envHash[:], []byte("test-envelope-hash-1234567890123"))
+	copy(envHash[:], []byte(testEnvelopeHash))
 
 	reply := courier.createEnvelopeErrorReply(envHash, envelopeErrorNilDEKElements)
 	require.NotNil(t, reply)
@@ -98,7 +103,7 @@ func TestCreateEnvelopeErrorReply(t *testing.T) {
 func TestHandleOldMessageWithNilCache(t *testing.T) {
 	courier := createTestCourier(t)
 	envHash := &[hash.HashSize]byte{}
-	copy(envHash[:], []byte("test-envelope-hash-1234567890123"))
+	copy(envHash[:], []byte(testEnvelopeHash))
 
 	courierMessage := &common.CourierEnvelope{
 		ReplyIndex: 0,
@@ -116,7 +121,7 @@ func TestHandleOldMessageWithNilCache(t *testing.T) {
 func TestHandleNewMessageWithNilDEK(t *testing.T) {
 	courier := createTestCourier(t)
 	envHash := &[hash.HashSize]byte{}
-	copy(envHash[:], []byte("test-envelope-hash-1234567890123"))
+	copy(envHash[:], []byte(testEnvelopeHash))
 
 	courierMessage := &common.CourierEnvelope{
 		DEK: [2]*[mkem.DEKSize]byte{nil, nil}, // Both DEK elements are nil

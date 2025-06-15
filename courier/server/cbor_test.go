@@ -487,16 +487,16 @@ func TestStreamingDecoderDetailedBuffer(t *testing.T) {
 	t.Logf("Initial buffer length: %d", buffer.Len())
 
 	// Decode first envelope
-	var env1_concat common.CourierEnvelope
-	err = decoder.Decode(&env1_concat)
+	var env1Concat common.CourierEnvelope
+	err = decoder.Decode(&env1Concat)
 	require.NoError(t, err)
-	t.Logf("After decoding envelope 1: buffer length = %d, epoch = %d", buffer.Len(), env1_concat.Epoch)
+	t.Logf("After decoding envelope 1: buffer length = %d, epoch = %d", buffer.Len(), env1Concat.Epoch)
 
 	// Decode second envelope
-	var env2_concat common.CourierEnvelope
-	err = decoder.Decode(&env2_concat)
+	var env2Concat common.CourierEnvelope
+	err = decoder.Decode(&env2Concat)
 	require.NoError(t, err)
-	t.Logf("After decoding envelope 2: buffer length = %d, epoch = %d", buffer.Len(), env2_concat.Epoch)
+	t.Logf("After decoding envelope 2: buffer length = %d, epoch = %d", buffer.Len(), env2Concat.Epoch)
 
 	// Test 3: Use the streaming decoder's processAvailableEnvelopes method
 	t.Log("=== Test 3: Streaming decoder processAvailableEnvelopes ===")
