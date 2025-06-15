@@ -39,7 +39,6 @@ import (
 	"github.com/katzenpost/katzenpost/loops"
 	"github.com/katzenpost/katzenpost/replica"
 	"github.com/katzenpost/katzenpost/replica/common"
-	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
 	"github.com/katzenpost/katzenpost/replica/config"
 	"github.com/katzenpost/katzenpost/server/cborplugin"
 )
@@ -61,6 +60,107 @@ const (
 var (
 	mkemNikeScheme *mkem.Scheme = mkem.NewScheme(common.NikeScheme)
 )
+
+// Helper functions to eliminate code duplication
+
+// shardingResult holds the result of sharding operations
+type shardingResult struct {
+	ReplicaIndices [2]uint8
+	ReplicaPubKeys []nike.PublicKey
+}
+
+// getShardingInfo performs the common sharding logic and returns replica indices and public keys
+func getShardingInfo(t *testing.T, env *testEnvironment, boxID *[bacap.BoxIDSize]byte) *shardingResult {
+	currentEpoch, _, _ := epochtime.Now()
+	replicaEpoch, _, _ := common.ReplicaNow()
+	doc := env.mockPKIClient.docs[currentEpoch]
+
+	// Use sharding algorithm to determine which replicas should store this BoxID
+	shardedReplicas, err := common.GetShards(boxID, doc)
+	require.NoError(t, err)
+	require.Equal(t, 2, len(shardedReplicas), msgShouldGetExactly2ShardedReplicas)
+
+	// Find the indices of the sharded replicas in the StorageReplicas slice
+	var replicaIndices [2]uint8
+	var replicaPubKeys []nike.PublicKey = make([]nike.PublicKey, 2)
+
+	for i, shardedReplica := range shardedReplicas {
+		// Find the index of this replica in the StorageReplicas slice
+		replicaIndex := -1
+		for j, storageReplica := range doc.StorageReplicas {
+			if bytes.Equal(shardedReplica.IdentityKey, storageReplica.IdentityKey) {
+				replicaIndex = j
+				break
+			}
+		}
+		require.NotEqual(t, -1, replicaIndex, msgShouldFindShardedReplicaInStorage)
+
+		replicaIndices[i] = uint8(replicaIndex)
+		replicaPubKey := doc.StorageReplicas[replicaIndex].EnvelopeKeys[replicaEpoch]
+		replicaPubKeys[i], err = common.NikeScheme.UnmarshalBinaryPublicKey(replicaPubKey)
+		require.NoError(t, err)
+	}
+
+	return &shardingResult{
+		ReplicaIndices: replicaIndices,
+		ReplicaPubKeys: replicaPubKeys,
+	}
+}
+
+// createMKEMEnvelope creates a CourierEnvelope with MKEM encryption
+func createMKEMEnvelope(t *testing.T, sharding *shardingResult, innerMessage *common.ReplicaInnerMessage, isRead bool) *common.CourierEnvelope {
+	mkemPrivateKey, mkemCiphertext := mkemNikeScheme.Encapsulate(sharding.ReplicaPubKeys, innerMessage.Bytes())
+	mkemPublicKey := mkemPrivateKey.Public()
+	replicaEpoch, _, _ := common.ReplicaNow()
+
+	return &common.CourierEnvelope{
+		SenderEPubKey:        mkemPublicKey.Bytes(),
+		IntermediateReplicas: sharding.ReplicaIndices,
+		DEK:                  [2]*[mkem.DEKSize]byte{mkemCiphertext.DEKCiphertexts[0], mkemCiphertext.DEKCiphertexts[1]},
+		Ciphertext:           mkemCiphertext.Envelope,
+		IsRead:               isRead,
+		Epoch:                replicaEpoch,
+	}
+}
+
+// createRequestWithResponse creates a request, sends it, and waits for response
+func createRequestWithResponse(t *testing.T, env *testEnvironment, query *common.CourierQuery, timeoutSeconds int) *cborplugin.Response {
+	// Generate a unique request ID using nanosecond timestamp
+	requestID := uint64(time.Now().UnixNano())
+
+	// Register this request with the response router and get a response channel
+	responseCh := env.responseRouter.registerRequest(requestID)
+
+	// Clean up the response map entry when done
+	defer env.responseRouter.unregisterRequest(requestID)
+
+	queryBytes := query.Bytes()
+	requestCmd := &cborplugin.Request{
+		ID:      requestID,                                                     // Use unique request ID
+		SURB:    []byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}, // Fake SURB needed for testing
+		Payload: queryBytes,
+	}
+
+	// Send the request to the courier
+	err := env.courier.Courier.OnCommand(requestCmd)
+	require.NoError(t, err)
+
+	// Wait for response with timeout
+	var responseCmd cborplugin.Command
+	select {
+	case responseCmd = <-responseCh:
+		t.Log("Received response from courier")
+	case <-time.After(time.Duration(timeoutSeconds) * time.Second):
+		t.Fatal("Timeout waiting for courier response")
+	}
+
+	response, ok := responseCmd.(*cborplugin.Response)
+	if !ok {
+		t.Fatalf(errUnexpectedResponseType, responseCmd)
+	}
+
+	return response
+}
 
 // TestCourierReplicaIntegration tests the full courier-replica interaction
 // by injecting CourierEnvelope messages directly into the courier and verifying
@@ -1357,51 +1457,14 @@ func createCourierEnvelopeForDestination(t *testing.T, env *testEnvironment, fin
 	}
 
 	// Use sharding algorithm to determine which replicas should store this BoxID
-	currentEpoch, _, _ := epochtime.Now()
-	replicaEpoch, _, _ := common.ReplicaNow()
-	doc := env.mockPKIClient.docs[currentEpoch]
+	sharding := getShardingInfo(t, env, &boxID)
 
-	// Use sharding algorithm to determine which replicas should store this BoxID
-	shardedReplicas, err := replicaCommon.GetShards(&boxID, doc)
-	require.NoError(t, err)
-	require.Equal(t, 2, len(shardedReplicas), msgShouldGetExactly2ShardedReplicas)
-
-	// Find the indices of the sharded replicas in the StorageReplicas slice
-	var replicaIndices [2]uint8
-	var replicaPubKeys []nike.PublicKey = make([]nike.PublicKey, 2)
-
-	for i, shardedReplica := range shardedReplicas {
-		// Find the index of this replica in the StorageReplicas slice
-		replicaIndex := -1
-		for j, storageReplica := range doc.StorageReplicas {
-			if bytes.Equal(shardedReplica.IdentityKey, storageReplica.IdentityKey) {
-				replicaIndex = j
-				break
-			}
-		}
-		require.NotEqual(t, -1, replicaIndex, msgShouldFindShardedReplicaInStorage)
-
-		replicaIndices[i] = uint8(replicaIndex)
-		replicaPubKey := doc.StorageReplicas[replicaIndex].EnvelopeKeys[replicaEpoch]
-		replicaPubKeys[i], err = common.NikeScheme.UnmarshalBinaryPublicKey(replicaPubKey)
-		require.NoError(t, err)
-
-		t.Logf("Final destination BoxID %x will be stored on replica %d (identity: %x)",
-			boxID[:8], replicaIndex, shardedReplica.IdentityKey[:8])
+	for _, replicaIndex := range sharding.ReplicaIndices {
+		t.Logf("Final destination BoxID %x will be stored on replica %d", boxID[:8], replicaIndex)
 	}
-
-	// MKEM encrypt the inner message
-	mkemPrivateKey, mkemCiphertext := mkemNikeScheme.Encapsulate(replicaPubKeys, innerMessage.Bytes())
-	mkemPublicKey := mkemPrivateKey.Public()
 
 	// Create the CourierEnvelope that will write to the final destination
-	courierEnvelope := &common.CourierEnvelope{
-		SenderEPubKey:        mkemPublicKey.Bytes(),
-		IntermediateReplicas: replicaIndices, // Use sharded replica indices
-		DEK:                  [2]*[mkem.DEKSize]byte{mkemCiphertext.DEKCiphertexts[0], mkemCiphertext.DEKCiphertexts[1]},
-		Ciphertext:           mkemCiphertext.Envelope,
-		IsRead:               false, // This is a write operation
-	}
+	courierEnvelope := createMKEMEnvelope(t, sharding, innerMessage, false)
 
 	// CBOR encode the CourierEnvelope
 	cborBlob := courierEnvelope.Bytes()
@@ -1423,53 +1486,13 @@ func aliceComposesDirectWriteToReplica(t *testing.T, env *testEnvironment, boxID
 		ReplicaWrite: &writeRequest,
 	}
 
-	currentEpoch, _, _ := epochtime.Now()
-	replicaEpoch, _, _ := common.ReplicaNow()
-	doc := env.mockPKIClient.docs[currentEpoch]
+	sharding := getShardingInfo(t, env, boxID)
 
-	// Use sharding algorithm to determine which replicas should store this BoxID
-	shardedReplicas, err := replicaCommon.GetShards(boxID, doc)
-	require.NoError(t, err)
-	require.Equal(t, 2, len(shardedReplicas), msgShouldGetExactly2ShardedReplicas)
-
-	// Find the indices of the sharded replicas in the StorageReplicas slice
-	var replicaIndices [2]uint8
-	var replicaPubKeys []nike.PublicKey = make([]nike.PublicKey, 2)
-
-	for i, shardedReplica := range shardedReplicas {
-		// Find the index of this replica in the StorageReplicas slice
-		replicaIndex := -1
-		for j, storageReplica := range doc.StorageReplicas {
-			if bytes.Equal(shardedReplica.IdentityKey, storageReplica.IdentityKey) {
-				replicaIndex = j
-				break
-			}
-		}
-		require.NotEqual(t, -1, replicaIndex, msgShouldFindShardedReplicaInStorage)
-
-		replicaIndices[i] = uint8(replicaIndex)
-		replicaPubKey := doc.StorageReplicas[replicaIndex].EnvelopeKeys[replicaEpoch]
-		replicaPubKeys[i], err = common.NikeScheme.UnmarshalBinaryPublicKey(replicaPubKey)
-		require.NoError(t, err)
-
-		t.Logf("BoxID %x will be stored on replica %d (identity: %x)",
-			boxID[:8], replicaIndex, shardedReplica.IdentityKey[:8])
+	for _, replicaIndex := range sharding.ReplicaIndices {
+		t.Logf("BoxID %x will be stored on replica %d", boxID[:8], replicaIndex)
 	}
 
-	mkemPrivateKey, mkemCiphertext := mkemNikeScheme.Encapsulate(
-		replicaPubKeys, msg.Bytes(),
-	)
-	mkemPublicKey := mkemPrivateKey.Public()
-
-	return &common.CourierEnvelope{
-		SenderEPubKey:        mkemPublicKey.Bytes(),
-		IntermediateReplicas: replicaIndices, // Use sharded replica indices
-		DEK: [2]*[mkem.DEKSize]byte{mkemCiphertext.DEKCiphertexts[0],
-			mkemCiphertext.DEKCiphertexts[1]},
-		Ciphertext: mkemCiphertext.Envelope,
-		IsRead:     false,
-		Epoch:      replicaEpoch, // Set the epoch field
-	}
+	return createMKEMEnvelope(t, sharding, msg, false)
 }
 
 // aliceComposesReadFromReplica creates a CourierEnvelope that reads the given BoxID from replicas.
@@ -1482,66 +1505,17 @@ func aliceComposesReadFromReplica(t *testing.T, env *testEnvironment, boxID *[ba
 		ReplicaRead: &readRequest,
 	}
 
-	currentEpoch, _, _ := epochtime.Now()
-	replicaEpoch, _, _ := common.ReplicaNow()
-	doc := env.mockPKIClient.docs[currentEpoch]
+	sharding := getShardingInfo(t, env, boxID)
 
-	// Use sharding algorithm to determine which replicas should have this BoxID
-	shardedReplicas, err := replicaCommon.GetShards(boxID, doc)
-	require.NoError(t, err)
-	require.Equal(t, 2, len(shardedReplicas), msgShouldGetExactly2ShardedReplicas)
-
-	// Find the indices of the sharded replicas in the StorageReplicas slice
-	var replicaIndices [2]uint8
-	var replicaPubKeys []nike.PublicKey = make([]nike.PublicKey, 2)
-
-	for i, shardedReplica := range shardedReplicas {
-		// Find the index of this replica in the StorageReplicas slice
-		replicaIndex := -1
-		for j, storageReplica := range doc.StorageReplicas {
-			if bytes.Equal(shardedReplica.IdentityKey, storageReplica.IdentityKey) {
-				replicaIndex = j
-				break
-			}
-		}
-		require.NotEqual(t, -1, replicaIndex, msgShouldFindShardedReplicaInStorage)
-
-		replicaIndices[i] = uint8(replicaIndex)
-		replicaPubKey := doc.StorageReplicas[replicaIndex].EnvelopeKeys[replicaEpoch]
-		replicaPubKeys[i], err = common.NikeScheme.UnmarshalBinaryPublicKey(replicaPubKey)
-		require.NoError(t, err)
-
-		t.Logf("BoxID %x will be read from replica %d (identity: %x)",
-			boxID[:8], replicaIndex, shardedReplica.IdentityKey[:8])
+	for _, replicaIndex := range sharding.ReplicaIndices {
+		t.Logf("BoxID %x will be read from replica %d", boxID[:8], replicaIndex)
 	}
 
-	mkemPrivateKey, mkemCiphertext := mkemNikeScheme.Encapsulate(
-		replicaPubKeys, msg.Bytes(),
-	)
-	mkemPublicKey := mkemPrivateKey.Public()
-
-	return &common.CourierEnvelope{
-		SenderEPubKey:        mkemPublicKey.Bytes(),
-		IntermediateReplicas: replicaIndices, // Use sharded replica indices
-		DEK: [2]*[mkem.DEKSize]byte{mkemCiphertext.DEKCiphertexts[0],
-			mkemCiphertext.DEKCiphertexts[1]},
-		Ciphertext: mkemCiphertext.Envelope,
-		IsRead:     true,         // This is a read operation
-		Epoch:      replicaEpoch, // Set the epoch field
-	}
+	return createMKEMEnvelope(t, sharding, msg, true)
 }
 
 // injectCopyCommand sends a CopyCommand to the courier and returns the reply
 func injectCopyCommand(t *testing.T, env *testEnvironment, writeCap *bacap.BoxOwnerCap) *common.CopyCommandReply {
-	// Generate a unique request ID using nanosecond timestamp
-	requestID := uint64(time.Now().UnixNano())
-
-	// Register this request with the response router and get a response channel
-	responseCh := env.responseRouter.registerRequest(requestID)
-
-	// Clean up the response map entry when done
-	defer env.responseRouter.unregisterRequest(requestID)
-
 	// Create a CBOR plugin command containing the CourierQuery with CopyCommand
 	copyCommand := &common.CopyCommand{
 		WriteCap: writeCap,
@@ -1550,35 +1524,8 @@ func injectCopyCommand(t *testing.T, env *testEnvironment, writeCap *bacap.BoxOw
 		CourierEnvelope: nil,
 		CopyCommand:     copyCommand,
 	}
-	queryBytes := courierQuery.Bytes()
 
-	requestCmd := &cborplugin.Request{
-		ID:      requestID,                                                     // Use unique request ID
-		SURB:    []byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}, // Fake SURB needed for testing
-		Payload: queryBytes,
-	}
-
-	// Send the request to the courier - this will trigger the courier's OnCommand method
-	err := env.courier.Courier.OnCommand(requestCmd)
-	require.NoError(t, err)
-	t.Log("CopyCommand processed through courier OnCommand")
-
-	// Wait for response with timeout
-	var responseCmd cborplugin.Command
-	select {
-	case responseCmd = <-responseCh:
-		t.Log("Received copy command response from courier")
-	case <-time.After(30 * time.Second): // Longer timeout for copy operations
-		t.Fatal("Timeout waiting for copy command response")
-	}
-
-	var response *cborplugin.Response
-	switch r := responseCmd.(type) {
-	case *cborplugin.Response:
-		response = r
-	default:
-		t.Fatalf(errUnexpectedResponseType, responseCmd)
-	}
+	response := createRequestWithResponse(t, env, courierQuery, 30)
 
 	courierQueryReply, err := common.CourierQueryReplyFromBytes(response.Payload)
 	require.NoError(t, err)
@@ -1589,50 +1536,13 @@ func injectCopyCommand(t *testing.T, env *testEnvironment, writeCap *bacap.BoxOw
 }
 
 func injectCourierEnvelope(t *testing.T, env *testEnvironment, envelope *common.CourierEnvelope) *common.CourierEnvelopeReply {
-	// Generate a unique request ID using nanosecond timestamp
-	requestID := uint64(time.Now().UnixNano())
-
-	// Register this request with the response router and get a response channel
-	responseCh := env.responseRouter.registerRequest(requestID)
-
-	// Clean up the response map entry when done
-	defer env.responseRouter.unregisterRequest(requestID)
-
 	// Create a CBOR plugin command containing the CourierQuery with CourierEnvelope
 	courierQuery := &common.CourierQuery{
 		CourierEnvelope: envelope,
 		CopyCommand:     nil,
 	}
-	queryBytes := courierQuery.Bytes()
 
-	requestCmd := &cborplugin.Request{
-		ID:      requestID,                                                     // Use unique request ID
-		SURB:    []byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}, // Fake SURB needed for testing
-		Payload: queryBytes,
-	}
-
-	// Send the request to the courier - this will trigger the courier's OnCommand method
-	// The courier will process this and eventually call our writeFunc with a response
-	err := env.courier.Courier.OnCommand(requestCmd)
-	require.NoError(t, err)
-	t.Log("CourierEnvelope processed through courier OnCommand")
-
-	// Wait for response with timeout
-	var responseCmd cborplugin.Command
-	select {
-	case responseCmd = <-responseCh:
-		t.Log("Received response from courier")
-	case <-time.After(10 * time.Second):
-		t.Fatal("Timeout waiting for courier response")
-	}
-
-	var response *cborplugin.Response
-	switch r := responseCmd.(type) {
-	case *cborplugin.Response:
-		response = r
-	default:
-		t.Fatalf(errUnexpectedResponseType, responseCmd)
-	}
+	response := createRequestWithResponse(t, env, courierQuery, 10)
 
 	courierQueryReply, err := common.CourierQueryReplyFromBytes(response.Payload)
 	require.NoError(t, err)
@@ -1657,51 +1567,23 @@ func composeReadRequest(t *testing.T, env *testEnvironment, reader *bacap.Statef
 		ReplicaRead: readRequest,
 	}
 
-	currentEpoch, _, _ := epochtime.Now()
-	replicaEpoch, _, _ := common.ReplicaNow()
-	doc := env.mockPKIClient.docs[currentEpoch]
+	sharding := getShardingInfo(t, env, boxID)
 
-	// Use sharding algorithm to determine which replicas should have this BoxID
-	shardedReplicas, err := replicaCommon.GetShards(boxID, doc)
-	require.NoError(t, err)
-	require.Equal(t, 2, len(shardedReplicas), msgShouldGetExactly2ShardedReplicas)
-
-	// Find the indices of the sharded replicas in the StorageReplicas slice
-	var replicaIndices [2]uint8
-	var replicaPubKeys []nike.PublicKey = make([]nike.PublicKey, 2)
-
-	for i, shardedReplica := range shardedReplicas {
-		// Find the index of this replica in the StorageReplicas slice
-		replicaIndex := -1
-		for j, storageReplica := range doc.StorageReplicas {
-			if bytes.Equal(shardedReplica.IdentityKey, storageReplica.IdentityKey) {
-				replicaIndex = j
-				break
-			}
-		}
-		require.NotEqual(t, -1, replicaIndex, msgShouldFindShardedReplicaInStorage)
-
-		replicaIndices[i] = uint8(replicaIndex)
-		replicaPubKey := doc.StorageReplicas[replicaIndex].EnvelopeKeys[replicaEpoch]
-		replicaPubKeys[i], err = common.NikeScheme.UnmarshalBinaryPublicKey(replicaPubKey)
-		require.NoError(t, err)
-
-		t.Logf("BoxID %x will be read from replica %d (identity: %x)",
-			boxID[:8], replicaIndex, shardedReplica.IdentityKey[:8])
+	for _, replicaIndex := range sharding.ReplicaIndices {
+		t.Logf("BoxID %x will be read from replica %d", boxID[:8], replicaIndex)
 	}
 
-	mkemPrivateKey, mkemCiphertext := mkemNikeScheme.Encapsulate(
-		replicaPubKeys, msg.Bytes(),
-	)
-
+	mkemPrivateKey, mkemCiphertext := mkemNikeScheme.Encapsulate(sharding.ReplicaPubKeys, msg.Bytes())
 	mkemPublicKey := mkemPrivateKey.Public()
+	replicaEpoch, _, _ := common.ReplicaNow()
+
 	return &common.CourierEnvelope{
 		SenderEPubKey:        mkemPublicKey.Bytes(),
-		IntermediateReplicas: replicaIndices, // Use sharded replica indices
+		IntermediateReplicas: sharding.ReplicaIndices,
 		DEK:                  [2]*[mkem.DEKSize]byte{mkemCiphertext.DEKCiphertexts[0], mkemCiphertext.DEKCiphertexts[1]},
 		Ciphertext:           mkemCiphertext.Envelope,
-		IsRead:               true,         // This is a read request!
-		Epoch:                replicaEpoch, // Set the epoch field
+		IsRead:               true,
+		Epoch:                replicaEpoch,
 	}, mkemPrivateKey
 }
 
