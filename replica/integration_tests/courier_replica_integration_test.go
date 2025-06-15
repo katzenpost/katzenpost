@@ -562,11 +562,15 @@ func createCourierServer(t *testing.T, cfg *courierConfig.Config, pkiClient pki.
 }
 
 func aliceComposesNextMessage(t *testing.T, message []byte, env *testEnvironment, aliceStatefulWriter *bacap.StatefulWriter) *common.CourierEnvelope {
+	return aliceComposesNextMessageWithIsLast(t, message, env, aliceStatefulWriter, false)
+}
+
+func aliceComposesNextMessageWithIsLast(t *testing.T, message []byte, env *testEnvironment, aliceStatefulWriter *bacap.StatefulWriter, isLast bool) *common.CourierEnvelope {
 	boxID, ciphertext, sigraw, err := aliceStatefulWriter.EncryptNext(message)
 	require.NoError(t, err)
 
 	// DEBUG: Log Alice's BoxID
-	t.Logf("DEBUG: Alice writes to BoxID: %x", boxID[:])
+	t.Logf("DEBUG: Alice writes to BoxID: %x (IsLast=%v)", boxID[:], isLast)
 
 	sig := [bacap.SignatureSize]byte{}
 	copy(sig[:], sigraw)
@@ -575,6 +579,7 @@ func aliceComposesNextMessage(t *testing.T, message []byte, env *testEnvironment
 		BoxID:     &boxID,
 		Signature: &sig,
 		Payload:   ciphertext,
+		IsLast:    isLast, // Set the IsLast field properly
 	}
 	msg := &common.ReplicaInnerMessage{
 		ReplicaWrite: &writeRequest,
@@ -967,9 +972,10 @@ func testNestedEnvelopeRoundTrip(t *testing.T, env *testEnvironment) {
 	// Write each chunk to replicas using BACAP
 	t.Logf("Writing %d chunks to replicas", len(chunks))
 	for i, chunk := range chunks {
-		t.Logf("Writing chunk %d (%d bytes)", i+1, len(chunk))
+		isLastChunk := (i == len(chunks)-1)
+		t.Logf("Writing chunk %d (%d bytes), IsLast=%v", i+1, len(chunk), isLastChunk)
 
-		aliceEnvelope := aliceComposesNextMessage(t, chunk, env, aliceStatefulWriter)
+		aliceEnvelope := aliceComposesNextMessageWithIsLast(t, chunk, env, aliceStatefulWriter, isLastChunk)
 		courierWriteReply := injectCourierEnvelope(t, env, aliceEnvelope)
 
 		aliceEnvHash := aliceEnvelope.EnvelopeHash()
@@ -978,7 +984,7 @@ func testNestedEnvelopeRoundTrip(t *testing.T, env *testEnvironment) {
 		require.Equal(t, uint8(0), courierWriteReply.ReplyIndex)
 		require.Nil(t, courierWriteReply.Payload)
 
-		t.Logf("Successfully wrote chunk %d", i+1)
+		t.Logf("Successfully wrote chunk %d (IsLast=%v)", i+1, isLastChunk)
 	}
 
 	// Wait for replication to complete
@@ -1069,6 +1075,71 @@ func testNestedEnvelopeRoundTrip(t *testing.T, env *testEnvironment) {
 
 	require.Equal(t, len(courierEnvelopes), len(decodedEnvelopes), "Should decode same number of envelopes")
 	t.Log("CourierEnvelope round trip test completed successfully")
+
+	// Now test the copy command - create a CopyCommand with Alice's BoxOwnerCap for Sequence A
+	t.Log("Testing copy command to execute CourierEnvelopes...")
+	copyCommand := &common.CopyCommand{
+		WriteCap: aliceStatefulWriter.Owner, // Alice's BoxOwnerCap for Sequence A
+	}
+
+	// Create a CourierQuery with the embedded CopyCommand
+	courierQuery := &common.CourierQuery{
+		CopyCommand: copyCommand,
+	}
+
+	// Send the CourierQuery to the courier and expect a reply
+	t.Log("Sending CopyCommand to courier...")
+	queryBytes := courierQuery.Bytes()
+
+	// Generate a unique request ID using nanosecond timestamp
+	requestID := uint64(time.Now().UnixNano())
+
+	// Register this request with the response router and get a response channel
+	responseCh := env.responseRouter.registerRequest(requestID)
+
+	// Clean up the response map entry when done
+	defer env.responseRouter.unregisterRequest(requestID)
+
+	// Create a cborplugin.Request to send to the courier
+	requestCmd := &cborplugin.Request{
+		ID:      requestID,                                                     // Use unique request ID
+		SURB:    []byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}, // Fake SURB needed for testing
+		Payload: queryBytes,
+	}
+
+	// Send the request to the courier - this will trigger the courier's OnCommand method
+	err = env.courier.Courier.OnCommand(requestCmd)
+	require.NoError(t, err)
+	t.Log("CopyCommand processed through courier OnCommand")
+
+	// Wait for response with timeout
+	var responseCmd cborplugin.Command
+	select {
+	case responseCmd = <-responseCh:
+		t.Log("Received response from courier for CopyCommand")
+	case <-time.After(30 * time.Second): // Longer timeout for copy operations
+		t.Fatal("Timeout waiting for CopyCommand response")
+	}
+
+	var response *cborplugin.Response
+	switch r := responseCmd.(type) {
+	case *cborplugin.Response:
+		response = r
+	default:
+		t.Fatalf("Unexpected response type: %T", responseCmd)
+	}
+
+	// Decode the CourierQueryReply from the response payload
+	courierQueryReply, err := common.CourierQueryReplyFromBytes(response.Payload)
+	require.NoError(t, err)
+	require.NotNil(t, courierQueryReply.CopyCommandReply, "Should have CopyCommandReply")
+
+	// Check the error code - 0 means success
+	errorCode := courierQueryReply.CopyCommandReply.ErrorCode
+	t.Logf("CopyCommand reply ErrorCode: %d", errorCode)
+	require.Equal(t, uint8(0), errorCode, "CopyCommand should succeed")
+
+	t.Log("CopyCommand executed successfully - real data should now be written to final destination sequence!")
 }
 
 // verifyTemporarySequence reads back and verifies the temporary sequence data
