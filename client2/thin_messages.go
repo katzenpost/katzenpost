@@ -18,6 +18,7 @@ func IntoThinResponse(r *Response) *thin.Response {
 		CreateReadChannelReply:    r.CreateReadChannelReply,
 		WriteChannelReply:         r.WriteChannelReply,
 		ReadChannelReply:          r.ReadChannelReply,
+		CopyChannelReply:          r.CopyChannelReply,
 	}
 }
 
@@ -45,6 +46,8 @@ type Response struct {
 	WriteChannelReply *thin.WriteChannelReply
 
 	ReadChannelReply *thin.ReadChannelReply
+
+	CopyChannelReply *thin.CopyChannelReply
 }
 
 func FromThinRequest(r *thin.Request, appid *[AppIDLength]byte) *Request {
@@ -54,6 +57,7 @@ func FromThinRequest(r *thin.Request, appid *[AppIDLength]byte) *Request {
 		CreateReadChannel: r.CreateReadChannel,
 		WriteChannel:      r.WriteChannel,
 		ReadChannel:       r.ReadChannel,
+		CopyChannel:       r.CopyChannel,
 		ID:                r.ID,
 		WithSURB:          r.WithSURB,
 		SURBID:            r.SURBID,
@@ -76,6 +80,8 @@ type Request struct {
 	WriteChannel *thin.WriteChannel
 
 	ReadChannel *thin.ReadChannel
+
+	CopyChannel *thin.CopyChannel
 
 	// ID is the unique identifier with respect to the Payload.
 	// This is only used by the ARQ.

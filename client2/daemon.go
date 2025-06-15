@@ -291,6 +291,8 @@ func (d *Daemon) egressWorker() {
 				d.writeChannel(request)
 			case request.ReadChannel != nil:
 				d.readChannel(request)
+			case request.CopyChannel != nil:
+				d.copyChannel(request)
 			default:
 				panic("send operation not fully specified")
 			}
@@ -447,46 +449,64 @@ func (d *Daemon) handleChannelReply(appid *[AppIDLength]byte,
 		return err
 	}
 
-	env, envelopeDesc, privateKey, err := d.processEnvelope(plaintext, channelDesc)
+	// First, parse the courier query reply to check what type of reply it is
+	courierQueryReply, err := replicaCommon.CourierQueryReplyFromBytes(plaintext)
 	if err != nil {
-		return err
+		d.log.Errorf("failed to unmarshal courier query reply: %s", err)
+		return fmt.Errorf("failed to unmarshal courier query reply: %s", err)
 	}
 
-	innerMsg, err := d.decryptMKEMEnvelope(env, envelopeDesc, privateKey)
-	if err != nil {
-		return err
+	// Handle copy command replies
+	if courierQueryReply.CopyCommandReply != nil {
+		return d.handleCopyReply(appid, channelID, courierQueryReply.CopyCommandReply, conn)
 	}
 
-	envHash := env.EnvelopeHash
-
-	switch {
-	case innerMsg.ReplicaReadReply != nil:
-		params := &ReplyHandlerParams{
-			AppID:       appid,
-			MessageID:   mesgID,
-			ChannelID:   channelID,
-			ChannelDesc: channelDesc,
-			EnvHash:     envHash,
-			IsReader:    isReader,
-			IsWriter:    isWriter,
-			Conn:        conn,
+	// Handle envelope replies (read/write operations)
+	if courierQueryReply.CourierEnvelopeReply != nil {
+		env, envelopeDesc, privateKey, err := d.processEnvelopeReply(courierQueryReply.CourierEnvelopeReply, channelDesc)
+		if err != nil {
+			return err
 		}
-		return d.handleReadReply(params, innerMsg.ReplicaReadReply)
-	case innerMsg.ReplicaWriteReply != nil:
-		params := &ReplyHandlerParams{
-			AppID:       appid,
-			MessageID:   mesgID,
-			ChannelID:   channelID,
-			ChannelDesc: channelDesc,
-			EnvHash:     envHash,
-			IsReader:    isReader,
-			IsWriter:    isWriter,
-			Conn:        conn,
+
+		innerMsg, err := d.decryptMKEMEnvelope(env, envelopeDesc, privateKey)
+		if err != nil {
+			return err
 		}
-		return d.handleWriteReply(params, innerMsg.ReplicaWriteReply)
+
+		envHash := env.EnvelopeHash
+
+		switch {
+		case innerMsg.ReplicaReadReply != nil:
+			params := &ReplyHandlerParams{
+				AppID:       appid,
+				MessageID:   mesgID,
+				ChannelID:   channelID,
+				ChannelDesc: channelDesc,
+				EnvHash:     envHash,
+				IsReader:    isReader,
+				IsWriter:    isWriter,
+				Conn:        conn,
+			}
+			return d.handleReadReply(params, innerMsg.ReplicaReadReply)
+		case innerMsg.ReplicaWriteReply != nil:
+			params := &ReplyHandlerParams{
+				AppID:       appid,
+				MessageID:   mesgID,
+				ChannelID:   channelID,
+				ChannelDesc: channelDesc,
+				EnvHash:     envHash,
+				IsReader:    isReader,
+				IsWriter:    isWriter,
+				Conn:        conn,
+			}
+			return d.handleWriteReply(params, innerMsg.ReplicaWriteReply)
+		}
+		d.log.Errorf("bug 6, invalid book keeping for channelID %x", channelID[:])
+		return fmt.Errorf("bug 6, invalid book keeping for channelID %x", channelID[:])
 	}
-	d.log.Errorf("bug 6, invalid book keeping for channelID %x", channelID[:])
-	return fmt.Errorf("bug 6, invalid book keeping for channelID %x", channelID[:])
+
+	d.log.Errorf("courier query reply contains neither envelope reply nor copy command reply")
+	return fmt.Errorf("courier query reply contains neither envelope reply nor copy command reply")
 }
 
 // lookupChannel finds the channel descriptor for a given SURB ID
@@ -531,20 +551,8 @@ func (d *Daemon) validateChannel(channelID [thin.ChannelIDLength]byte, channelDe
 	return isReader, isWriter, nil
 }
 
-// processEnvelope processes the courier envelope and extracts necessary information
-func (d *Daemon) processEnvelope(plaintext []byte, channelDesc *ChannelDescriptor) (*replicaCommon.CourierEnvelopeReply, *EnvelopeDescriptor, nike.PrivateKey, error) {
-	courierQueryReply, err := replicaCommon.CourierQueryReplyFromBytes(plaintext)
-	if err != nil {
-		d.log.Errorf("failed to unmarshal courier query reply: %s", err)
-		return nil, nil, nil, fmt.Errorf("failed to unmarshal courier query reply: %s", err)
-	}
-
-	// Extract the CourierEnvelopeReply from the CourierQueryReply
-	env := courierQueryReply.CourierEnvelopeReply
-	if env == nil {
-		d.log.Errorf("CourierEnvelopeReply is nil in CourierQueryReply")
-		return nil, nil, nil, fmt.Errorf("CourierEnvelopeReply is nil in CourierQueryReply")
-	}
+// processEnvelopeReply processes the courier envelope reply and extracts necessary information
+func (d *Daemon) processEnvelopeReply(env *replicaCommon.CourierEnvelopeReply, channelDesc *ChannelDescriptor) (*replicaCommon.CourierEnvelopeReply, *EnvelopeDescriptor, nike.PrivateKey, error) {
 	envHash := env.EnvelopeHash
 
 	// DEBUG: Log envelope hash and map size when processing reply
@@ -718,6 +726,31 @@ func (d *Daemon) handleReadReply(params *ReplyHandlerParams, readReply *replicaC
 		params.ChannelDesc.StoredEnvelopesLock.Lock()
 		delete(params.ChannelDesc.StoredEnvelopes, *params.MessageID)
 		params.ChannelDesc.StoredEnvelopesLock.Unlock()
+	}
+
+	return nil
+}
+
+// handleCopyReply processes a copy command reply
+func (d *Daemon) handleCopyReply(appid *[AppIDLength]byte, channelID [thin.ChannelIDLength]byte, copyReply *replicaCommon.CopyCommandReply, conn *incomingConn) error {
+	var errMsg string
+	if copyReply.ErrorCode != 0 {
+		errMsg = fmt.Sprintf("copy command failed with error code %d", copyReply.ErrorCode)
+		d.log.Errorf("copy command failed for channel %x with error code %d", channelID[:], copyReply.ErrorCode)
+	} else {
+		d.log.Debugf("copy command completed successfully for channel %x", channelID[:])
+	}
+
+	err := conn.sendResponse(&Response{
+		AppID: appid,
+		CopyChannelReply: &thin.CopyChannelReply{
+			ChannelID: channelID,
+			Err:       errMsg,
+		},
+	})
+	if err != nil {
+		d.log.Errorf("Failed to send copy response to client: %s", err)
+		return fmt.Errorf("failed to send copy response to client: %s", err)
 	}
 
 	return nil
@@ -1001,5 +1034,116 @@ func (d *Daemon) arqDoResend(surbID *[sphinxConstants.SURBIDLength]byte) {
 	err = d.client.SendPacket(pkt)
 	if err != nil {
 		d.log.Warningf("ARQ resend failure: %s", err)
+	}
+}
+
+func (d *Daemon) copyChannel(request *Request) {
+	channelID := request.CopyChannel.ChannelID
+
+	// Hold channelMapLock for the entire operation to ensure channelDesc doesn't change
+	d.channelMapLock.RLock()
+	channelDesc, ok := d.channelMap[channelID]
+	if !ok {
+		d.channelMapLock.RUnlock()
+		d.log.Errorf("copyChannel failure: no channel found for channelID %x", channelID[:])
+		d.sendCopyChannelErrorResponse(request, channelID, "channel not found")
+		return
+	}
+	// Keep the lock held while we work with channelDesc
+	defer d.channelMapLock.RUnlock()
+
+	// Ensure this is a write channel
+	if channelDesc.StatefulWriter == nil || channelDesc.BoxOwnerCap == nil {
+		d.log.Errorf("copyChannel failure: channel %x is not a write channel", channelID[:])
+		d.sendCopyChannelErrorResponse(request, channelID, "channel is not a write channel")
+		return
+	}
+
+	_, doc := d.client.CurrentDocument()
+	if doc == nil {
+		d.log.Errorf("copyChannel failure: no PKI document available")
+		d.sendCopyChannelErrorResponse(request, channelID, "no PKI document available")
+		return
+	}
+
+	// Extract the WriteCap from the BoxOwnerCap
+	writeCap := channelDesc.BoxOwnerCap
+
+	// Create the CopyCommand
+	copyCommand := &replicaCommon.CopyCommand{
+		WriteCap: writeCap,
+	}
+
+	// Create CourierQuery with CopyCommand
+	courierQuery := &replicaCommon.CourierQuery{
+		CourierEnvelope: nil,
+		CopyCommand:     copyCommand,
+	}
+
+	// Generate SURB ID
+	surbid := &[sphinxConstants.SURBIDLength]byte{}
+	_, err := rand.Reader.Read(surbid[:])
+	if err != nil {
+		d.log.Errorf("copyChannel failure: failed to generate SURB ID: %s", err)
+		d.sendCopyChannelErrorResponse(request, channelID, "failed to generate SURB ID")
+		return
+	}
+
+	// Get random courier
+	destinationIdHash, recipientQueueID := GetRandomCourier(doc)
+
+	// Create send request
+	sendRequest := &Request{
+		ID:                request.ID,
+		AppID:             request.AppID,
+		WithSURB:          true,
+		DestinationIdHash: destinationIdHash,
+		RecipientQueueID:  recipientQueueID,
+		Payload:           courierQuery.Bytes(),
+		SURBID:            surbid,
+		IsSendOp:          true,
+	}
+
+	// Send to courier
+	surbKey, rtt, err := d.client.SendCiphertext(sendRequest)
+	if err != nil {
+		d.log.Errorf("copyChannel failure: failed to send to courier: %s", err)
+		d.sendCopyChannelErrorResponse(request, channelID, err.Error())
+		return
+	}
+
+	// Set up reply handling
+	fetchInterval := d.client.GetPollInterval()
+	slop := time.Second
+	duration := rtt + fetchInterval + slop
+	replyArrivalTime := time.Now().Add(duration)
+
+	d.channelRepliesLock.Lock()
+	d.channelReplies[*surbid] = replyDescriptor{
+		ID:      request.ID,
+		appID:   request.AppID,
+		surbKey: surbKey,
+	}
+	d.channelRepliesLock.Unlock()
+
+	d.surbIDToChannelMapLock.Lock()
+	d.surbIDToChannelMap[*surbid] = channelID
+	d.surbIDToChannelMapLock.Unlock()
+
+	d.timerQueue.Push(uint64(replyArrivalTime.UnixNano()), surbid)
+
+	d.log.Debugf("copyChannel: sent copy command for channel %x", channelID[:])
+}
+
+func (d *Daemon) sendCopyChannelErrorResponse(request *Request, channelID [thin.ChannelIDLength]byte, errMsg string) {
+	conn := d.listener.getConnection(request.AppID)
+	if conn != nil {
+		conn.sendResponse(&Response{
+			AppID: request.AppID,
+			CopyChannelReply: &thin.CopyChannelReply{
+				ChannelID: channelID,
+				Err:       errMsg,
+			},
+		})
 	}
 }

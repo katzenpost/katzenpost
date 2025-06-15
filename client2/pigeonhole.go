@@ -62,6 +62,7 @@ type StoredEnvelopeData struct {
 type ChannelDescriptor struct {
 	StatefulWriter      *bacap.StatefulWriter
 	StatefulReader      *bacap.StatefulReader
+	BoxOwnerCap         *bacap.BoxOwnerCap // Only set for write channels
 	EnvelopeDescriptors map[[hash.HashSize]byte]*EnvelopeDescriptor
 	EnvelopeLock        sync.RWMutex // Protects EnvelopeDescriptors map
 	SendSeq             uint64
@@ -85,7 +86,7 @@ func GetRandomCourier(doc *cpki.Document) (*[hash.HashSize]byte, []byte) {
 	return &serviceIdHash, courierService.RecipientQueueID
 }
 
-func NewPigeonholeChannel() (*bacap.StatefulWriter, *bacap.UniversalReadCap) {
+func NewPigeonholeChannel() (*bacap.StatefulWriter, *bacap.UniversalReadCap, *bacap.BoxOwnerCap) {
 	owner, err := bacap.NewBoxOwnerCap(rand.Reader)
 	if err != nil {
 		panic(err)
@@ -95,7 +96,7 @@ func NewPigeonholeChannel() (*bacap.StatefulWriter, *bacap.UniversalReadCap) {
 		panic(err)
 	}
 	bobReadCap := owner.UniversalReadCap()
-	return statefulWriter, bobReadCap
+	return statefulWriter, bobReadCap, owner
 }
 
 func CreateChannelWriteRequest(
@@ -198,7 +199,7 @@ func CreateChannelReadRequestWithBoxID(channelID [thin.ChannelIDLength]byte,
 }
 
 func (d *Daemon) createChannel(request *Request) {
-	statefulWriter, bobReadCap := NewPigeonholeChannel()
+	statefulWriter, bobReadCap, boxOwnerCap := NewPigeonholeChannel()
 	channelID := [thin.ChannelIDLength]byte{}
 	_, err := rand.Reader.Read(channelID[:])
 	if err != nil {
@@ -207,6 +208,7 @@ func (d *Daemon) createChannel(request *Request) {
 	d.channelMapLock.Lock()
 	d.channelMap[channelID] = &ChannelDescriptor{
 		StatefulWriter:      statefulWriter,
+		BoxOwnerCap:         boxOwnerCap,
 		EnvelopeDescriptors: make(map[[hash.HashSize]byte]*EnvelopeDescriptor),
 		StoredEnvelopes:     make(map[[thin.MessageIDLength]byte]*StoredEnvelopeData),
 	}

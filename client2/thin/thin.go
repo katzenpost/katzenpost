@@ -937,3 +937,54 @@ func (t *ThinClient) ReadChannel(ctx context.Context, channelID *[ChannelIDLengt
 		return nil, errHalting
 	}
 }
+
+// CopyChannel copies data from a pigeonhole channel to replicas via courier.
+func (t *ThinClient) CopyChannel(ctx context.Context, channelID *[ChannelIDLength]byte) error {
+	if ctx == nil {
+		return errContextCannotBeNil
+	}
+	if channelID == nil {
+		return errors.New("channelID cannot be nil")
+	}
+
+	req := &Request{
+		CopyChannel: &CopyChannel{
+			ChannelID: *channelID,
+		},
+	}
+
+	eventSink := t.EventSink()
+	defer t.StopEventSink(eventSink)
+
+	err := t.writeMessage(req)
+	if err != nil {
+		return err
+	}
+
+	for {
+		var event Event
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case event = <-eventSink:
+		case <-t.HaltCh():
+			return errHalting
+		}
+
+		switch v := event.(type) {
+		case *CopyChannelReply:
+			if v.Err != "" {
+				return errors.New(v.Err)
+			}
+			return nil
+		case *ConnectionStatusEvent:
+			if !v.IsConnected {
+				return errConnectionLost
+			}
+		case *NewDocumentEvent:
+			// Ignore PKI document updates
+		default:
+			// Ignore other events
+		}
+	}
+}

@@ -196,3 +196,16 @@ func (e *ReadChannelReply) String() string {
 	}
 	return fmt.Sprintf("ReadChannelReply: msgID=%s channel=%x (%d bytes)", msgIDStr, e.ChannelID[:8], len(e.Payload))
 }
+
+type CopyChannelReply struct {
+	ChannelID [ChannelIDLength]byte `cbor:"channel_id"`
+	Err       string                `cbor:"err,omitempty"`
+}
+
+// String returns a string representation of the CopyChannelReply.
+func (e *CopyChannelReply) String() string {
+	if e.Err != "" {
+		return fmt.Sprintf("CopyChannelReply: %x (error: %s)", e.ChannelID[:], e.Err)
+	}
+	return fmt.Sprintf("CopyChannelReply: %x", e.ChannelID[:])
+}

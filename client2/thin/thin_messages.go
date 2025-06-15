@@ -31,6 +31,10 @@ type ReadChannel struct {
 	ChannelID [ChannelIDLength]byte `cbor:"channel_id"`
 }
 
+type CopyChannel struct {
+	ChannelID [ChannelIDLength]byte `cbor:"channel_id"`
+}
+
 type Response struct {
 	ShutdownEvent *ShutdownEvent `cbor:"shudown_event"`
 
@@ -51,6 +55,8 @@ type Response struct {
 	WriteChannelReply *WriteChannelReply `cbor:"write_channel_reply"`
 
 	ReadChannelReply *ReadChannelReply `cbor:"read_channel_reply"`
+
+	CopyChannelReply *CopyChannelReply `cbor:"copy_channel_reply"`
 }
 
 type Request struct {
@@ -65,6 +71,9 @@ type Request struct {
 
 	// ReadChannel is used to read from a Pigeonhole channel.
 	ReadChannel *ReadChannel `cbor:"read_channel"`
+
+	// CopyChannel is used to copy a Pigeonhole channel.
+	CopyChannel *CopyChannel `cbor:"copy_channel"`
 
 	// ID is the unique identifier with respect to the Payload.
 	// This is only used by the ARQ.
