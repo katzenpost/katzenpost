@@ -390,9 +390,6 @@ func (c *outgoingConn) startReauthTicker() *time.Ticker {
 // runEventLoop handles the main event processing loop
 func (c *outgoingConn) runEventLoop(w *wire.Session, closeCh <-chan struct{}, reauth *time.Ticker, cmdCh chan commands.Command, cmdCloseCh chan error, receiveCmdCh chan interface{}) bool {
 	for {
-		var rawCmd commands.Command
-		var cmd commands.Command
-
 		select {
 		case <-c.HaltCh():
 			return false
@@ -403,7 +400,7 @@ func (c *outgoingConn) runEventLoop(w *wire.Session, closeCh <-chan struct{}, re
 				return false
 			}
 			continue
-		case cmd = <-c.ch:
+		case cmd := <-c.ch:
 			if c.handleOutgoingCommand(cmd, cmdCh, closeCh) {
 				return true
 			}
@@ -411,11 +408,10 @@ func (c *outgoingConn) runEventLoop(w *wire.Session, closeCh <-chan struct{}, re
 		case <-cmdCloseCh:
 			return false
 		case replyCmd := <-receiveCmdCh:
-			rawCmd = c.processIncomingReply(replyCmd)
-		}
-
-		if !c.handleCommand(rawCmd, cmd) {
-			return false
+			rawCmd := c.processIncomingReply(replyCmd)
+			if !c.handleCommand(rawCmd) {
+				return false
+			}
 		}
 	}
 }
@@ -461,7 +457,7 @@ func (c *outgoingConn) processIncomingReply(replyCmd interface{}) commands.Comma
 }
 
 // handleCommand processes received commands
-func (c *outgoingConn) handleCommand(rawCmd commands.Command, cmd commands.Command) bool {
+func (c *outgoingConn) handleCommand(rawCmd commands.Command) bool {
 	c.log.Debugf("DEBUG: Handling response command: %T", rawCmd)
 	switch replycmd := rawCmd.(type) {
 	case *commands.NoOp:
@@ -474,7 +470,7 @@ func (c *outgoingConn) handleCommand(rawCmd commands.Command, cmd commands.Comma
 			replycmd.IsRead, replycmd.ErrorCode, len(replycmd.EnvelopeReply))
 		c.courier.HandleReply(replycmd)
 	default:
-		c.log.Errorf("BUG, Received unexpected command from replica peer: %s", cmd)
+		c.log.Errorf("BUG, Received unexpected command from replica peer: %s", rawCmd)
 		return false
 	}
 	return true
