@@ -58,9 +58,18 @@ var (
 // This test writes a box to replicas via the courier, then reads it back and
 // verifies that all box fields are identical.
 func TestCourierReplicaIntegration(t *testing.T) {
+	// Disable parallel execution to avoid resource conflicts
+	// t.Parallel() is intentionally not called
+
 	// Create test environment with real servers
 	testEnv := setupTestEnvironment(t)
-	defer testEnv.cleanup()
+	defer func() {
+		t.Logf("Starting cleanup for TestCourierReplicaIntegration")
+		testEnv.cleanup()
+		// Wait for complete shutdown before next test
+		time.Sleep(3 * time.Second)
+		t.Logf("Cleanup completed for TestCourierReplicaIntegration")
+	}()
 
 	// Wait for servers to be ready
 	time.Sleep(2 * time.Second)
@@ -72,9 +81,18 @@ func TestCourierReplicaIntegration(t *testing.T) {
 // TestCourierReplicaSequenceIntegration tests writing and reading a sequence of boxes
 // using BACAP stateful writer/reader to verify sequence handling works correctly.
 func TestCourierReplicaSequenceIntegration(t *testing.T) {
+	// Disable parallel execution to avoid resource conflicts
+	// t.Parallel() is intentionally not called
+
 	// Create test environment with real servers
 	testEnv := setupTestEnvironment(t)
-	defer testEnv.cleanup()
+	defer func() {
+		t.Logf("Starting cleanup for TestCourierReplicaSequenceIntegration")
+		testEnv.cleanup()
+		// Wait for complete shutdown before next test
+		time.Sleep(3 * time.Second)
+		t.Logf("Cleanup completed for TestCourierReplicaSequenceIntegration")
+	}()
 
 	// Wait for servers to be ready
 	time.Sleep(2 * time.Second)
@@ -87,9 +105,18 @@ func TestCourierReplicaSequenceIntegration(t *testing.T) {
 // CourierEnvelope CBOR blob that spans two boxes, then reading it back and verifying
 // the raw bytes match.
 func TestCourierReplicaNestedEnvelopeIntegration(t *testing.T) {
+	// Disable parallel execution to avoid resource conflicts
+	// t.Parallel() is intentionally not called
+
 	// Create test environment with real servers
 	testEnv := setupTestEnvironment(t)
-	defer testEnv.cleanup()
+	defer func() {
+		t.Logf("Starting cleanup for TestCourierReplicaNestedEnvelopeIntegration")
+		testEnv.cleanup()
+		// Wait for complete shutdown before next test
+		time.Sleep(3 * time.Second)
+		t.Logf("Cleanup completed for TestCourierReplicaNestedEnvelopeIntegration")
+	}()
 
 	// Wait for servers to be ready
 	time.Sleep(2 * time.Second)
@@ -114,6 +141,9 @@ func setupTestEnvironment(t *testing.T) *testEnvironment {
 	tempDir, err := os.MkdirTemp("", "courier_replica_test_*")
 	require.NoError(t, err)
 
+	// Use unique port base for each test to avoid conflicts
+	portBase := 19000 + (int(time.Now().UnixNano()) % 1000)
+
 	sphinxGeo := geo.GeometryFromUserForwardPayloadLength(nikeSchemes.ByName("X25519"), 5000, true, 5)
 	pkiScheme := signSchemes.ByName(testPKIScheme)
 	linkScheme := kemSchemes.ByName("Xwing")
@@ -134,9 +164,9 @@ func setupTestEnvironment(t *testing.T) *testEnvironment {
 	for i := 0; i < numReplicas; i++ {
 		replicaDir := filepath.Join(tempDir, fmt.Sprintf(testReplicaNameFormat, i))
 		require.NoError(t, os.MkdirAll(replicaDir, 0700))
-		replicaConfigs[i] = createReplicaConfig(t, replicaDir, pkiScheme, linkScheme, i, sphinxGeo)
+		replicaConfigs[i] = createReplicaConfig(t, replicaDir, pkiScheme, linkScheme, i, sphinxGeo, portBase)
 		myreplicaKeys, linkPubKey, replicaIdentityPubKey := generateReplicaKeys(t, replicaDir, replicaConfigs[i].PKISignatureScheme, replicaConfigs[i].WireKEMScheme)
-		replicaDescriptors[i] = makeReplicaDescriptor(t, i, linkPubKey, replicaIdentityPubKey, myreplicaKeys)
+		replicaDescriptors[i] = makeReplicaDescriptor(t, i, linkPubKey, replicaIdentityPubKey, myreplicaKeys, portBase)
 		replicaKeys[i] = myreplicaKeys
 	}
 
@@ -162,15 +192,20 @@ func setupTestEnvironment(t *testing.T) *testEnvironment {
 	courier.ForceConnectorUpdate()
 
 	cleanup := func() {
-		for _, replica := range replicas {
+		// Shutdown all replicas first
+		for i, replica := range replicas {
 			if replica != nil {
+				t.Logf("Shutting down replica %d", i)
 				replica.Shutdown()
 				replica.Wait()
 			}
 		}
-		//if courier != nil {
-		// Courier cleanup if needed
-		//}
+
+		// Note: Courier doesn't have explicit shutdown methods,
+		// it will be cleaned up when the process exits
+
+		// Clean up temporary directory
+		t.Logf("Removing temp directory: %s", tempDir)
 		os.RemoveAll(tempDir)
 	}
 
@@ -191,7 +226,7 @@ func setupTestEnvironment(t *testing.T) *testEnvironment {
 // createReplicaConfig creates a configuration for a replica server.
 // the configuration will contain a PKI configuration section which
 // is synthetic and does not connect to any real directory authorities.
-func createReplicaConfig(t *testing.T, dataDir string, pkiScheme sign.Scheme, linkScheme kem.Scheme, replicaID int, sphinxGeo *geo.Geometry) *config.Config {
+func createReplicaConfig(t *testing.T, dataDir string, pkiScheme sign.Scheme, linkScheme kem.Scheme, replicaID int, sphinxGeo *geo.Geometry, portBase int) *config.Config {
 	return &config.Config{
 		DataDir:            dataDir,
 		Identifier:         fmt.Sprintf(testReplicaNameFormat, replicaID),
@@ -199,7 +234,7 @@ func createReplicaConfig(t *testing.T, dataDir string, pkiScheme sign.Scheme, li
 		PKISignatureScheme: pkiScheme.Name(),
 		ReplicaNIKEScheme:  common.NikeScheme.Name(),
 		SphinxGeometry:     sphinxGeo,
-		Addresses:          []string{fmt.Sprintf("tcp://127.0.0.1:%d", 19000+replicaID)},
+		Addresses:          []string{fmt.Sprintf("tcp://127.0.0.1:%d", portBase+replicaID)},
 		GenerateOnly:       false,
 		ConnectTimeout:     60000,  // 60 seconds
 		HandshakeTimeout:   30000,  // 30 seconds
@@ -346,7 +381,8 @@ func makeReplicaDescriptor(t *testing.T,
 	replicaID int,
 	linkPubKey kem.PublicKey,
 	identityPubKey sign.PublicKey,
-	replicaKeys map[uint64]nike.PublicKey) *pki.ReplicaDescriptor {
+	replicaKeys map[uint64]nike.PublicKey,
+	portBase int) *pki.ReplicaDescriptor {
 
 	require.NotNil(t, linkPubKey)
 	require.NotNil(t, identityPubKey)
@@ -363,7 +399,7 @@ func makeReplicaDescriptor(t *testing.T,
 		IdentityKey: identityPubKeyBytes,
 		LinkKey:     linkPubKeyBytes,
 		Addresses: map[string][]string{
-			"tcp": {fmt.Sprintf("tcp://127.0.0.1:%d", 19000+replicaID)},
+			"tcp": {fmt.Sprintf("tcp://127.0.0.1:%d", portBase+replicaID)},
 		},
 		EnvelopeKeys: make(map[uint64][]byte),
 	}
