@@ -697,16 +697,17 @@ func (e *Courier) processBoxesStreaming(statefulReader *bacap.StatefulReader) ([
 		return nil, errStreamingDecoderFailed
 	}
 
-	e.log.Debugf("Copy: Successfully processed %d boxes from Sequence B", len(boxIDList))
+	e.log.Debugf("Copy: Successfully processed %d CourierEnvelopes and wrote %d boxes to destination", streamingDecoder.processedEnvelopes, len(boxIDList))
 	return boxIDList, nil
 }
 
 // StreamingCBORDecoder processes CBOR data incrementally, decoding and handling
 // CourierEnvelopes as soon as they become available, without accumulating all data
 type StreamingCBORDecoder struct {
-	buffer         *bytes.Buffer
-	decoder        *cbor.Decoder
-	handleEnvelope func(*common.CourierEnvelope)
+	buffer             *bytes.Buffer
+	decoder            *cbor.Decoder
+	handleEnvelope     func(*common.CourierEnvelope)
+	processedEnvelopes int
 }
 
 // NewStreamingCBORDecoder creates a new streaming CBOR decoder
@@ -738,27 +739,19 @@ func (s *StreamingCBORDecoder) Finalize() error {
 
 // processAvailableEnvelopes attempts to decode envelopes from the current buffer
 func (s *StreamingCBORDecoder) processAvailableEnvelopes() error {
-	for s.buffer.Len() > 0 {
-		// Remember the current buffer position
-		initialLen := s.buffer.Len()
-
+	for {
 		var envelope common.CourierEnvelope
 		err := s.decoder.Decode(&envelope)
 		if err != nil {
 			// If we can't decode, it likely means we need more data
-			// Reset buffer to initial state and wait for more data
+			// This is normal and expected when we've processed all available complete envelopes
 			return nil
 		}
 
 		// Successfully decoded an envelope - process it immediately
 		s.handleEnvelope(&envelope)
-
-		// If buffer length didn't change, we have a problem
-		if s.buffer.Len() == initialLen {
-			return errors.New("CBOR decoder made no progress")
-		}
+		s.processedEnvelopes++
 	}
-	return nil
 }
 
 func (e *Courier) createCopyErrorReply(errorCode uint8) *common.CourierQueryReply {
