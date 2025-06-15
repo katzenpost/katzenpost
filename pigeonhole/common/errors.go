@@ -18,6 +18,11 @@ package common
 
 import "fmt"
 
+// Error message constants to avoid duplication
+const (
+	errorMsgInternalError = "Internal error"
+)
+
 // Replica error codes - used in ReplicaReadReply and ReplicaWriteReply
 const (
 	ReplicaErrorSuccess           uint8 = 0  // Operation completed successfully
@@ -80,12 +85,12 @@ const (
 
 // Client error codes
 const (
-	ClientErrorSuccess         uint8 = 0 // Operation completed successfully
-	ClientErrorInvalidRequest  uint8 = 1 // Invalid request format
-	ClientErrorConnectionLost  uint8 = 2 // Connection to courier lost
-	ClientErrorTimeout         uint8 = 3 // Operation timed out
-	ClientErrorInternalError   uint8 = 4 // Internal client error
-	ClientErrorMaxRetries      uint8 = 5 // Maximum retries exceeded
+	ClientErrorSuccess        uint8 = 0 // Operation completed successfully
+	ClientErrorInvalidRequest uint8 = 1 // Invalid request format
+	ClientErrorConnectionLost uint8 = 2 // Connection to courier lost
+	ClientErrorTimeout        uint8 = 3 // Operation timed out
+	ClientErrorInternalError  uint8 = 4 // Internal client error
+	ClientErrorMaxRetries     uint8 = 5 // Maximum retries exceeded
 )
 
 // ReplicaErrorToString returns a human-readable string for replica error codes
@@ -108,7 +113,7 @@ func ReplicaErrorToString(errorCode uint8) string {
 	case ReplicaErrorPermissionDenied:
 		return "Permission denied"
 	case ReplicaErrorInternalError:
-		return "Internal error"
+		return errorMsgInternalError
 	case ReplicaErrorInvalidEpoch:
 		return "Invalid epoch"
 	case ReplicaErrorReplicationFailed:
@@ -182,7 +187,7 @@ func EnvelopeErrorToString(errorCode uint8) string {
 	case EnvelopeErrorReplicaUnavailable:
 		return "Replica unavailable"
 	case EnvelopeErrorInternalError:
-		return "Internal error"
+		return errorMsgInternalError
 	default:
 		return fmt.Sprintf("Unknown envelope error code: %d", errorCode)
 	}
@@ -202,7 +207,7 @@ func CourierErrorToString(errorCode uint8) string {
 	case CourierErrorConnectionLost:
 		return "Connection lost"
 	case CourierErrorInternalError:
-		return "Internal error"
+		return errorMsgInternalError
 	default:
 		return fmt.Sprintf("Unknown courier error code: %d", errorCode)
 	}
@@ -220,7 +225,7 @@ func ClientErrorToString(errorCode uint8) string {
 	case ClientErrorTimeout:
 		return "Timeout"
 	case ClientErrorInternalError:
-		return "Internal error"
+		return errorMsgInternalError
 	case ClientErrorMaxRetries:
 		return "Maximum retries exceeded"
 	default:
@@ -237,9 +242,9 @@ func MapReplicaErrorToCopyError(replicaError uint8) uint8 {
 		return CopyErrorReplicaNotFound
 	case ReplicaErrorDatabaseError:
 		return CopyErrorReplicaDatabase
-	case ReplicaErrorInternalError, ReplicaErrorInvalidBoxID, ReplicaErrorInvalidSignature, 
-		 ReplicaErrorInvalidPayload, ReplicaErrorStorageFull, ReplicaErrorPermissionDenied,
-		 ReplicaErrorInvalidEpoch, ReplicaErrorReplicationFailed:
+	case ReplicaErrorInternalError, ReplicaErrorInvalidBoxID, ReplicaErrorInvalidSignature,
+		ReplicaErrorInvalidPayload, ReplicaErrorStorageFull, ReplicaErrorPermissionDenied,
+		ReplicaErrorInvalidEpoch, ReplicaErrorReplicationFailed:
 		return CopyErrorReplicaInternal
 	default:
 		return CopyErrorReplicaInternal
