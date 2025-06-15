@@ -83,6 +83,21 @@ func TestCourierReplicaSequenceIntegration(t *testing.T) {
 	testBoxSequenceRoundTrip(t, testEnv)
 }
 
+// TestCourierReplicaNestedEnvelopeIntegration tests writing a large nested encrypted
+// CourierEnvelope CBOR blob that spans two boxes, then reading it back and verifying
+// the raw bytes match.
+func TestCourierReplicaNestedEnvelopeIntegration(t *testing.T) {
+	// Create test environment with real servers
+	testEnv := setupTestEnvironment(t)
+	defer testEnv.cleanup()
+
+	// Wait for servers to be ready
+	time.Sleep(2 * time.Second)
+
+	// Test nested envelope round-trip: write large CBOR blob across two boxes
+	testNestedEnvelopeRoundTrip(t, testEnv)
+}
+
 // testEnvironment holds all the components needed for testing
 type testEnvironment struct {
 	tempDir        string
@@ -698,6 +713,159 @@ func testBoxSequenceRoundTrip(t *testing.T, env *testEnvironment) {
 	}
 
 	t.Logf("Successfully completed sequence round-trip test for %d boxes", len(messages))
+}
+
+func testNestedEnvelopeRoundTrip(t *testing.T, env *testEnvironment) {
+	// PKI documents are already fetched during setup, just verify they're ready
+	waitForCourierPKI(t, env)
+	waitForReplicasPKI(t, env)
+
+	aliceStatefulWriter, bobStatefulReader := aliceAndBobKeyExchangeKeys(t, env)
+
+	// Create a nested CourierEnvelope with its own independent keys
+	nestedEnvelopeCBOR := createNestedCourierEnvelope(t)
+
+	t.Logf("Created nested CourierEnvelope CBOR blob of size %d bytes", len(nestedEnvelopeCBOR))
+
+	// Calculate how to split across 2 boxes
+	maxBoxPayload := 1000 // Approximate max payload per box
+	if len(nestedEnvelopeCBOR) <= maxBoxPayload {
+		// Add padding to ensure it spans 2 boxes
+		padding := make([]byte, maxBoxPayload+100)
+		nestedEnvelopeCBOR = append(nestedEnvelopeCBOR, padding...)
+		t.Logf("Added padding, total size now %d bytes", len(nestedEnvelopeCBOR))
+	}
+
+	// Split the CBOR blob into 2 chunks
+	midpoint := len(nestedEnvelopeCBOR) / 2
+	chunk1 := nestedEnvelopeCBOR[:midpoint]
+	chunk2 := nestedEnvelopeCBOR[midpoint:]
+
+	t.Logf("Split into chunk1: %d bytes, chunk2: %d bytes", len(chunk1), len(chunk2))
+
+	// Write chunk1 to first box
+	t.Logf("Writing chunk1 to first box")
+	aliceEnvelope1 := aliceComposesNextMessage(t, chunk1, env, aliceStatefulWriter)
+	courierWriteReply1 := injectCourierEnvelope(t, env, aliceEnvelope1)
+
+	require.Equal(t, uint8(0), courierWriteReply1.ErrorCode)
+	require.Nil(t, courierWriteReply1.Payload)
+	t.Logf("Successfully wrote chunk1")
+
+	// Write chunk2 to second box
+	t.Logf("Writing chunk2 to second box")
+	aliceEnvelope2 := aliceComposesNextMessage(t, chunk2, env, aliceStatefulWriter)
+	courierWriteReply2 := injectCourierEnvelope(t, env, aliceEnvelope2)
+
+	require.Equal(t, uint8(0), courierWriteReply2.ErrorCode)
+	require.Nil(t, courierWriteReply2.Payload)
+	t.Logf("Successfully wrote chunk2")
+
+	// Read back both boxes and concatenate
+	var reconstructedCBOR []byte
+
+	for i := 0; i < 2; i++ {
+		t.Logf("Reading box %d", i+1)
+
+		bobReadRequest, bobPrivateKey := composeReadRequest(t, env, bobStatefulReader)
+		courierReadReply := injectCourierEnvelope(t, env, bobReadRequest)
+
+		if courierReadReply.Payload == nil {
+			t.Logf("First read request returned nil payload for box %d, falling back to polling", i+1)
+			courierReadReply = waitForReplicaResponse(t, env, bobReadRequest)
+		}
+
+		require.NotNil(t, courierReadReply.Payload, "Should have payload")
+
+		// Decrypt the box content
+		replicaEpoch, _, _ := common.ReplicaNow()
+		replicaIndex := int(bobReadRequest.IntermediateReplicas[courierReadReply.ReplyIndex])
+		replicaPubKey := env.replicaKeys[replicaIndex][replicaEpoch]
+		rawInnerMsg, err := mkemNikeScheme.DecryptEnvelope(bobPrivateKey, replicaPubKey, courierReadReply.Payload)
+		require.NoError(t, err)
+
+		innerMsg, err := common.ReplicaMessageReplyInnerMessageFromBytes(rawInnerMsg)
+		require.NoError(t, err)
+		require.NotNil(t, innerMsg.ReplicaReadReply)
+
+		boxid, err := bobStatefulReader.NextBoxID()
+		require.NoError(t, err)
+		chunkData, err := bobStatefulReader.DecryptNext(BACAP_CTX, *boxid, innerMsg.ReplicaReadReply.Payload, *innerMsg.ReplicaReadReply.Signature)
+		require.NoError(t, err)
+
+		// Append this chunk to reconstructed data
+		reconstructedCBOR = append(reconstructedCBOR, chunkData...)
+		t.Logf("Successfully read and decrypted box %d: %d bytes", i+1, len(chunkData))
+	}
+
+	// Verify the reconstructed CBOR matches the original
+	require.Equal(t, nestedEnvelopeCBOR, reconstructedCBOR, "Reconstructed CBOR should match original")
+	t.Logf("Successfully verified nested envelope round-trip: %d bytes", len(reconstructedCBOR))
+}
+
+// createNestedCourierEnvelope creates a CourierEnvelope with nested ReplicaWrite containing
+// BACAP-encrypted "Hello Bob" + padding, using independent keys
+func createNestedCourierEnvelope(t *testing.T) []byte {
+	// Create independent BACAP keys for the nested envelope
+	nestedOwner, err := bacap.NewBoxOwnerCap(rand.Reader)
+	require.NoError(t, err)
+
+	nestedStatefulWriter, err := bacap.NewStatefulWriter(nestedOwner, BACAP_CTX)
+	require.NoError(t, err)
+
+	// Create "Hello Bob" message with padding to fill box payload
+	message := []byte("Hello Bob")
+	// Add padding to make it a full box payload size
+	padding := make([]byte, 1000-len(message)) // Approximate box payload size
+	paddedMessage := append(message, padding...)
+
+	// BACAP encrypt the padded message
+	boxID, bacapCiphertext, sigraw, err := nestedStatefulWriter.EncryptNext(paddedMessage)
+	require.NoError(t, err)
+
+	sig := [bacap.SignatureSize]byte{}
+	copy(sig[:], sigraw)
+
+	// Create ReplicaWrite with the BACAP-encrypted payload
+	replicaWrite := &commands.ReplicaWrite{
+		Cmds:      nil, // No padding for inner command
+		BoxID:     &boxID,
+		Signature: &sig,
+		IsLast:    true,
+		Payload:   bacapCiphertext,
+	}
+
+	// Create ReplicaInnerMessage containing the ReplicaWrite
+	innerMessage := &common.ReplicaInnerMessage{
+		ReplicaWrite: replicaWrite,
+	}
+
+	// Generate dummy replica public keys for MKEM encryption
+	replicaPubKey1, _, err := common.NikeScheme.GenerateKeyPair()
+	require.NoError(t, err)
+	replicaPubKey2, _, err := common.NikeScheme.GenerateKeyPair()
+	require.NoError(t, err)
+	replicaPubKeys := []nike.PublicKey{replicaPubKey1, replicaPubKey2}
+
+	// MKEM encrypt the inner message using the global mkemNikeScheme
+	mkemPrivateKey, mkemCiphertext := mkemNikeScheme.Encapsulate(replicaPubKeys, innerMessage.Bytes())
+	mkemPublicKey := mkemPrivateKey.Public()
+
+	// Create the nested CourierEnvelope
+	nestedEnvelope := &common.CourierEnvelope{
+		SenderEPubKey:        mkemPublicKey.Bytes(),
+		IntermediateReplicas: [2]uint8{0, 1},
+		DEK:                  [2]*[mkem.DEKSize]byte{mkemCiphertext.DEKCiphertexts[0], mkemCiphertext.DEKCiphertexts[1]},
+		Ciphertext:           mkemCiphertext.Envelope,
+		IsRead:               false,
+	}
+
+	// CBOR encode the entire CourierEnvelope
+	cborBlob := nestedEnvelope.Bytes()
+	t.Logf("Created nested CourierEnvelope: ReplicaWrite with %d byte BACAP payload, total CBOR size: %d bytes",
+		len(bacapCiphertext), len(cborBlob))
+
+	return cborBlob
 }
 
 func injectCourierEnvelope(t *testing.T, env *testEnvironment, envelope *common.CourierEnvelope) *common.CourierEnvelopeReply {
