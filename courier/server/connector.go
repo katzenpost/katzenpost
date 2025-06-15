@@ -35,6 +35,10 @@ type Connector struct {
 
 func (co *Connector) destToNodeID(dest uint8) (*[constants.NodeIDLength]byte, error) {
 	doc := co.server.PKI.PKIDocument()
+	if doc == nil {
+		co.log.Errorf("destToNodeID: PKI document is nil")
+		return nil, errInvalidDestinationID
+	}
 	co.log.Debugf("destToNodeID: dest=%d, StorageReplicas count=%d", dest, len(doc.StorageReplicas))
 	if int(dest) >= len(doc.StorageReplicas) {
 		co.log.Errorf("destToNodeID: invalid destination ID %d >= %d", dest, len(doc.StorageReplicas))

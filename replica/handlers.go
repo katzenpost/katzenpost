@@ -137,7 +137,7 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 		envelopeReply := scheme.EnvelopeReply(keypair.PrivateKey, senderpubkey, replyInnerMessageBlob)
 		return &commands.ReplicaMessageReply{
 			Cmds:          commands.NewStorageReplicaCommands(c.geo, nikeScheme),
-			ErrorCode:     0, // Zero means success.
+			ErrorCode:     readReply.ErrorCode, // Use the actual read result error code
 			EnvelopeHash:  envelopeHash,
 			EnvelopeReply: envelopeReply.Envelope,
 			ReplicaID:     replicaID,
@@ -155,7 +155,7 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 		envelopeReply := scheme.EnvelopeReply(keypair.PrivateKey, senderpubkey, replyInnerMessageBlob)
 		return &commands.ReplicaMessageReply{
 			Cmds:          commands.NewStorageReplicaCommands(c.geo, nikeScheme),
-			ErrorCode:     0, // Zero means success.
+			ErrorCode:     writeReply.ErrorCode, // Use the actual write result error code
 			EnvelopeHash:  envelopeHash,
 			EnvelopeReply: envelopeReply.Envelope,
 			ReplicaID:     replicaID,
@@ -173,21 +173,20 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 }
 
 func (c *incomingConn) handleReplicaRead(replicaRead *common.ReplicaRead) *common.ReplicaReadReply {
-	const (
-		successCode = 0
-		failCode    = 1
-	)
 	c.log.Debugf("Handling replica read request for BoxID: %x", replicaRead.BoxID)
 	resp, err := c.l.server.state.handleReplicaRead(replicaRead)
 	if err != nil {
 		c.log.Errorf("Replica read failed: %v", err)
+		// Map specific errors to specific error codes
+		errorCode := uint8(1) // Default to ReplicaErrorNotFound for now
+		// TODO: Add more specific error mapping based on err type
 		return &common.ReplicaReadReply{
-			ErrorCode: failCode,
+			ErrorCode: errorCode,
 		}
 	}
 	c.log.Debug("Replica read successful")
 	return &common.ReplicaReadReply{
-		ErrorCode: successCode,
+		ErrorCode: 0, // ReplicaErrorSuccess
 		BoxID:     resp.BoxID,
 		Signature: resp.Signature,
 		Payload:   resp.Payload,
@@ -196,35 +195,30 @@ func (c *incomingConn) handleReplicaRead(replicaRead *common.ReplicaRead) *commo
 }
 
 func (c *incomingConn) handleReplicaWrite(replicaWrite *commands.ReplicaWrite) *commands.ReplicaWriteReply {
-	const (
-		successCode = 0
-		failCode    = 1
-	)
-
 	c.log.Debugf("Handling replica write request for BoxID: %x", replicaWrite.BoxID)
 	s := ed25519.Scheme()
 	verifyKey, err := s.UnmarshalBinaryPublicKey(replicaWrite.BoxID[:])
 	if err != nil {
 		c.log.Errorf("handleReplicaWrite failed to unmarshal BoxID as public key: %v", err)
 		return &commands.ReplicaWriteReply{
-			ErrorCode: failCode,
+			ErrorCode: 2, // ReplicaErrorInvalidBoxID
 		}
 	}
 	if !s.Verify(verifyKey, replicaWrite.Payload, replicaWrite.Signature[:], nil) {
 		c.log.Error("handleReplicaWrite signature verification failed")
 		return &commands.ReplicaWriteReply{
-			ErrorCode: failCode,
+			ErrorCode: 3, // ReplicaErrorInvalidSignature
 		}
 	}
 	err = c.l.server.state.handleReplicaWrite(replicaWrite)
 	if err != nil {
 		c.log.Errorf("handleReplicaWrite state update failed: %v", err)
 		return &commands.ReplicaWriteReply{
-			ErrorCode: failCode,
+			ErrorCode: 4, // ReplicaErrorDatabaseError
 		}
 	}
 	c.log.Debug("Replica write successful")
 	return &commands.ReplicaWriteReply{
-		ErrorCode: successCode,
+		ErrorCode: 0, // ReplicaErrorSuccess
 	}
 }

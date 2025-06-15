@@ -23,7 +23,9 @@ import (
 	"github.com/katzenpost/katzenpost/client2/constants"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
+	pigeonholeCommon "github.com/katzenpost/katzenpost/pigeonhole/common"
 	"github.com/katzenpost/katzenpost/replica/common"
+	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
 	"github.com/katzenpost/katzenpost/server/cborplugin"
 )
 
@@ -48,130 +50,64 @@ var (
 	errEmptySequence              = errors.New("empty sequence")
 )
 
-// Copy command error codes
+// Copy command error codes - using centralized error codes
 const (
-	copyErrorSuccess           uint8 = 0
-	copyErrorInvalidWriteCap   uint8 = 1
-	copyErrorReadCapDerivation uint8 = 2
-	copyErrorRead              uint8 = 3
-	copyErrorEmptySequence     uint8 = 4
-	copyErrorBACAPDecryption   uint8 = 5
-	copyErrorCBORDecoding      uint8 = 6
-	copyErrorStreamingDecoder  uint8 = 7
-	copyErrorReplicaTimeout    uint8 = 8
-	copyErrorMKEMDecryption    uint8 = 9
-	copyErrorTombstoneWrite    uint8 = 10
+	copyErrorSuccess           = pigeonholeCommon.CopyErrorSuccess
+	copyErrorInvalidWriteCap   = pigeonholeCommon.CopyErrorInvalidWriteCap
+	copyErrorReadCapDerivation = pigeonholeCommon.CopyErrorReadCapDerivation
+	copyErrorRead              = pigeonholeCommon.CopyErrorRead
+	copyErrorEmptySequence     = pigeonholeCommon.CopyErrorEmptySequence
+	copyErrorBACAPDecryption   = pigeonholeCommon.CopyErrorBACAPDecryption
+	copyErrorCBORDecoding      = pigeonholeCommon.CopyErrorCBORDecoding
+	copyErrorStreamingDecoder  = pigeonholeCommon.CopyErrorStreamingDecoder
+	copyErrorReplicaTimeout    = pigeonholeCommon.CopyErrorReplicaTimeout
+	copyErrorMKEMDecryption    = pigeonholeCommon.CopyErrorMKEMDecryption
+	copyErrorTombstoneWrite    = pigeonholeCommon.CopyErrorTombstoneWrite
+	copyErrorReplicaNotFound   = pigeonholeCommon.CopyErrorReplicaNotFound
+	copyErrorReplicaDatabase   = pigeonholeCommon.CopyErrorReplicaDatabase
+	copyErrorReplicaInternal   = pigeonholeCommon.CopyErrorReplicaInternal
 )
 
-// CourierEnvelope operation error codes
+// CourierEnvelope operation error codes - using centralized error codes
 const (
-	envelopeErrorSuccess            uint8 = 0
-	envelopeErrorInvalidEnvelope    uint8 = 1
-	envelopeErrorNilEnvelopeHash    uint8 = 2
-	envelopeErrorNilDEKElements     uint8 = 3
-	envelopeErrorInvalidReplicaID   uint8 = 4
-	envelopeErrorReplicaTimeout     uint8 = 5
-	envelopeErrorConnectionFailure  uint8 = 6
-	envelopeErrorCacheCorruption    uint8 = 7
-	envelopeErrorPKIUnavailable     uint8 = 8
-	envelopeErrorInvalidEpoch       uint8 = 9
-	envelopeErrorMKEMFailure        uint8 = 10
-	envelopeErrorReplicaUnavailable uint8 = 11
-	envelopeErrorInternalError      uint8 = 12
+	envelopeErrorSuccess            = pigeonholeCommon.EnvelopeErrorSuccess
+	envelopeErrorInvalidEnvelope    = pigeonholeCommon.EnvelopeErrorInvalidEnvelope
+	envelopeErrorNilEnvelopeHash    = pigeonholeCommon.EnvelopeErrorNilEnvelopeHash
+	envelopeErrorNilDEKElements     = pigeonholeCommon.EnvelopeErrorNilDEKElements
+	envelopeErrorInvalidReplicaID   = pigeonholeCommon.EnvelopeErrorInvalidReplicaID
+	envelopeErrorReplicaTimeout     = pigeonholeCommon.EnvelopeErrorReplicaTimeout
+	envelopeErrorConnectionFailure  = pigeonholeCommon.EnvelopeErrorConnectionFailure
+	envelopeErrorCacheCorruption    = pigeonholeCommon.EnvelopeErrorCacheCorruption
+	envelopeErrorPKIUnavailable     = pigeonholeCommon.EnvelopeErrorPKIUnavailable
+	envelopeErrorInvalidEpoch       = pigeonholeCommon.EnvelopeErrorInvalidEpoch
+	envelopeErrorMKEMFailure        = pigeonholeCommon.EnvelopeErrorMKEMFailure
+	envelopeErrorReplicaUnavailable = pigeonholeCommon.EnvelopeErrorReplicaUnavailable
+	envelopeErrorInternalError      = pigeonholeCommon.EnvelopeErrorInternalError
 )
 
-// General courier error codes
+// General courier error codes - using centralized error codes
 const (
-	courierErrorSuccess         uint8 = 0
-	courierErrorInvalidCommand  uint8 = 1
-	courierErrorCBORDecoding    uint8 = 2
-	courierErrorDispatchFailure uint8 = 3
-	courierErrorConnectionLost  uint8 = 4
-	courierErrorInternalError   uint8 = 5
+	courierErrorSuccess         = pigeonholeCommon.CourierErrorSuccess
+	courierErrorInvalidCommand  = pigeonholeCommon.CourierErrorInvalidCommand
+	courierErrorCBORDecoding    = pigeonholeCommon.CourierErrorCBORDecoding
+	courierErrorDispatchFailure = pigeonholeCommon.CourierErrorDispatchFailure
+	courierErrorConnectionLost  = pigeonholeCommon.CourierErrorConnectionLost
+	courierErrorInternalError   = pigeonholeCommon.CourierErrorInternalError
 )
 
 // copyErrorToString returns a human-readable string for copy error codes
 func copyErrorToString(errorCode uint8) string {
-	switch errorCode {
-	case copyErrorSuccess:
-		return "Success"
-	case copyErrorInvalidWriteCap:
-		return "Invalid WriteCap"
-	case copyErrorReadCapDerivation:
-		return "ReadCap derivation failed"
-	case copyErrorRead:
-		return "Read operation failed"
-	case copyErrorEmptySequence:
-		return "Empty sequence"
-	case copyErrorBACAPDecryption:
-		return "BACAP decryption failed"
-	case copyErrorCBORDecoding:
-		return "CBOR decoding failed"
-	case copyErrorStreamingDecoder:
-		return "Streaming decoder failed"
-	case copyErrorReplicaTimeout:
-		return "Replica timeout"
-	case copyErrorMKEMDecryption:
-		return "MKEM decryption failed"
-	case copyErrorTombstoneWrite:
-		return "Tombstone write failed"
-	default:
-		return fmt.Sprintf("Unknown copy error code: %d", errorCode)
-	}
+	return pigeonholeCommon.CopyErrorToString(errorCode)
 }
 
 // envelopeErrorToString returns a human-readable string for envelope error codes
 func envelopeErrorToString(errorCode uint8) string {
-	switch errorCode {
-	case envelopeErrorSuccess:
-		return "Success"
-	case envelopeErrorInvalidEnvelope:
-		return "Invalid envelope"
-	case envelopeErrorNilEnvelopeHash:
-		return "Nil envelope hash"
-	case envelopeErrorNilDEKElements:
-		return "Nil DEK elements"
-	case envelopeErrorInvalidReplicaID:
-		return "Invalid replica ID"
-	case envelopeErrorReplicaTimeout:
-		return "Replica timeout"
-	case envelopeErrorConnectionFailure:
-		return "Connection failure"
-	case envelopeErrorCacheCorruption:
-		return "Cache corruption"
-	case envelopeErrorPKIUnavailable:
-		return "PKI unavailable"
-	case envelopeErrorInvalidEpoch:
-		return "Invalid epoch"
-	case envelopeErrorMKEMFailure:
-		return "MKEM failure"
-	case envelopeErrorReplicaUnavailable:
-		return "Replica unavailable"
-	case envelopeErrorInternalError:
-		return "Internal error"
-	default:
-		return fmt.Sprintf("Unknown envelope error code: %d", errorCode)
-	}
+	return pigeonholeCommon.EnvelopeErrorToString(errorCode)
 }
 
 // courierErrorToString returns a human-readable string for general courier error codes
 func courierErrorToString(errorCode uint8) string {
-	switch errorCode {
-	case courierErrorSuccess:
-		return "Success"
-	case courierErrorInvalidCommand:
-		return "Invalid command"
-	case courierErrorCBORDecoding:
-		return "CBOR decoding failed"
-	case courierErrorDispatchFailure:
-		return "Dispatch failure"
-	case courierErrorConnectionLost:
-		return "Connection lost"
-	case courierErrorInternalError:
-		return "Internal error"
-	default:
-		return fmt.Sprintf("Unknown courier error code: %d", errorCode)
-	}
+	return pigeonholeCommon.CourierErrorToString(errorCode)
 }
 
 // CourierBookKeeping is used for:
@@ -731,6 +667,10 @@ func (e *Courier) processBoxesStreaming(statefulReader *bacap.StatefulReader) ([
 
 		// Use DecryptNext to advance the StatefulReader state
 		// We need to provide the actual encrypted box data from the replica
+		if replicaReadReply.Signature == nil {
+			e.log.Debugf("Replica read reply has nil signature for BoxID %x", boxID[:8])
+			return nil, errBACAPDecryptionFailed
+		}
 		boxPlaintext, err := statefulReader.DecryptNext(constants.PIGEONHOLE_CTX, *boxID, replicaReadReply.Payload, *replicaReadReply.Signature)
 		if err != nil {
 			e.log.Debugf("Failed to decrypt box: %s", err)
@@ -873,74 +813,147 @@ func (e *Courier) readBoxFromReplica(boxID *[bacap.BoxIDSize]byte) (*common.Repl
 	e.log.Debugf("Copy: Reading BoxID %x from replica", boxID[:8])
 
 	doc := e.server.PKI.PKIDocument()
-	// For copy command, always use replica 0 to match test expectations
 	replicaEpoch, _, _ := common.ReplicaNow()
-	replicaPubKey := doc.StorageReplicas[0].EnvelopeKeys[replicaEpoch]
 
-	replicaPubKeys := make([]nike.PublicKey, 1)
-	var err error
-	replicaPubKeys[0], err = common.NikeScheme.UnmarshalBinaryPublicKey(replicaPubKey)
+	// Use sharding algorithm to determine which replicas should have this BoxID
+	shardedReplicas, err := replicaCommon.GetShards(boxID, doc)
 	if err != nil {
-		return nil, err
+		e.log.Debugf("Copy: Failed to get shards for BoxID %x: %s", boxID[:8], err)
+		return nil, errFailedToReadBoxFromReplica
 	}
-
-	readMsg := common.ReplicaRead{
-		BoxID: boxID,
-	}
-	msg := &common.ReplicaInnerMessage{
-		ReplicaRead: &readMsg,
-	}
-
-	mkemPrivateKey, mkemCiphertext := common.MKEMNikeScheme.Encapsulate(replicaPubKeys, msg.Bytes())
-	mkemPublicKey := mkemPrivateKey.Public()
-
-	// Validate DEK is not nil before using it
-	if mkemCiphertext.DEKCiphertexts[0] == nil {
-		return nil, errMKEMEncapsulationFailed
-	}
-
-	query := &commands.ReplicaMessage{
-		Cmds:   e.cmds,
-		Geo:    e.geo,
-		Scheme: e.envelopeScheme,
-
-		SenderEPubKey: mkemPublicKey.Bytes(),
-		DEK:           mkemCiphertext.DEKCiphertexts[0],
-		Ciphertext:    mkemCiphertext.Envelope,
-	}
-
-	envHash := query.EnvelopeHash()
-
-	e.copyCacheLock.Lock()
-	e.copyCache[*envHash] = make(chan *commands.ReplicaMessageReply, 1)
-	e.copyCacheLock.Unlock()
-
-	e.server.SendMessage(0, query)
-
-	reply := <-e.copyCache[*envHash]
-	delete(e.copyCache, *envHash)
-
-	e.log.Debugf("Copy: Replica reply for BoxID %x: ErrorCode=%d", boxID[:8], reply.ErrorCode)
-
-	if reply.ErrorCode != 0 {
+	if len(shardedReplicas) != 2 {
+		e.log.Debugf("Copy: Expected 2 sharded replicas, got %d for BoxID %x", len(shardedReplicas), boxID[:8])
 		return nil, errFailedToReadBoxFromReplica
 	}
 
-	rawPlaintext, err := common.MKEMNikeScheme.DecryptEnvelope(mkemPrivateKey, replicaPubKeys[0], reply.EnvelopeReply)
-	if err != nil {
-		return nil, errMKEMDecryptionFailed
+	// Track replica errors for fine-grained error reporting
+	replicaErrors := make([]uint8, 0, 2)
+
+	// Try reading from the 2 sharded replicas
+	for i, shardedReplica := range shardedReplicas {
+		// Find the index of this replica in the StorageReplicas slice
+		replicaIndex := -1
+		for j, storageReplica := range doc.StorageReplicas {
+			if bytes.Equal(shardedReplica.IdentityKey, storageReplica.IdentityKey) {
+				replicaIndex = j
+				break
+			}
+		}
+		if replicaIndex == -1 {
+			e.log.Debugf("Copy: Could not find sharded replica %d in StorageReplicas for BoxID %x", i, boxID[:8])
+			replicaErrors = append(replicaErrors, pigeonholeCommon.ReplicaErrorInvalidEpoch)
+			continue
+		}
+
+		e.log.Debugf("Copy: Trying sharded replica %d (index %d) for BoxID %x", i, replicaIndex, boxID[:8])
+
+		replicaPubKey := doc.StorageReplicas[replicaIndex].EnvelopeKeys[replicaEpoch]
+		replicaPubKeys := make([]nike.PublicKey, 1)
+		var err error
+		replicaPubKeys[0], err = common.NikeScheme.UnmarshalBinaryPublicKey(replicaPubKey)
+		if err != nil {
+			e.log.Debugf("Copy: Failed to unmarshal replica %d public key: %s", replicaIndex, err)
+			replicaErrors = append(replicaErrors, pigeonholeCommon.ReplicaErrorInvalidEpoch)
+			continue
+		}
+
+		readMsg := common.ReplicaRead{
+			BoxID: boxID,
+		}
+		msg := &common.ReplicaInnerMessage{
+			ReplicaRead: &readMsg,
+		}
+
+		mkemPrivateKey, mkemCiphertext := common.MKEMNikeScheme.Encapsulate(replicaPubKeys, msg.Bytes())
+		mkemPublicKey := mkemPrivateKey.Public()
+
+		// Validate DEK is not nil before using it
+		if mkemCiphertext.DEKCiphertexts[0] == nil {
+			e.log.Debugf("Copy: MKEM encapsulation failed for replica %d", replicaIndex)
+			replicaErrors = append(replicaErrors, pigeonholeCommon.ReplicaErrorInternalError)
+			continue
+		}
+
+		query := &commands.ReplicaMessage{
+			Cmds:   e.cmds,
+			Geo:    e.geo,
+			Scheme: e.envelopeScheme,
+
+			SenderEPubKey: mkemPublicKey.Bytes(),
+			DEK:           mkemCiphertext.DEKCiphertexts[0],
+			Ciphertext:    mkemCiphertext.Envelope,
+		}
+
+		envHash := query.EnvelopeHash()
+
+		e.copyCacheLock.Lock()
+		e.copyCache[*envHash] = make(chan *commands.ReplicaMessageReply, 1)
+		e.copyCacheLock.Unlock()
+
+		e.server.SendMessage(uint8(replicaIndex), query)
+
+		reply := <-e.copyCache[*envHash]
+		delete(e.copyCache, *envHash)
+
+		e.log.Debugf("Copy: Replica %d reply for BoxID %x: ErrorCode=%d", replicaIndex, boxID[:8], reply.ErrorCode)
+
+		if reply.ErrorCode != 0 {
+			e.log.Debugf("Copy: Replica %d returned error code %d (%s), trying next replica", replicaIndex, reply.ErrorCode, pigeonholeCommon.ReplicaErrorToString(reply.ErrorCode))
+			// Store the replica error for fine-grained error reporting
+			replicaErrors = append(replicaErrors, reply.ErrorCode)
+			continue
+		}
+
+		rawPlaintext, err := common.MKEMNikeScheme.DecryptEnvelope(mkemPrivateKey, replicaPubKeys[0], reply.EnvelopeReply)
+		if err != nil {
+			e.log.Debugf("Copy: Failed to decrypt envelope from replica %d: %s", replicaIndex, err)
+			replicaErrors = append(replicaErrors, pigeonholeCommon.ReplicaErrorInternalError)
+			continue
+		}
+
+		innerMsg, err := common.ReplicaMessageReplyInnerMessageFromBytes(rawPlaintext)
+		if err != nil {
+			e.log.Debugf("Copy: Failed to parse inner message from replica %d: %s", replicaIndex, err)
+			continue
+		}
+
+		if innerMsg.ReplicaReadReply == nil {
+			e.log.Debugf("Copy: Replica %d returned nil ReplicaReadReply", replicaIndex)
+			continue
+		}
+
+		// Check if signature is nil (this was the original issue)
+		if innerMsg.ReplicaReadReply.Signature == nil {
+			e.log.Debugf("Copy: Replica %d returned nil signature for BoxID %x, trying next replica", replicaIndex, boxID[:8])
+			replicaErrors = append(replicaErrors, pigeonholeCommon.ReplicaErrorInvalidSignature)
+			continue
+		}
+
+		e.log.Debugf("Copy: Successfully read BoxID %x from replica %d", boxID[:8], replicaIndex)
+		return innerMsg.ReplicaReadReply, nil
 	}
 
-	innerMsg, err := common.ReplicaMessageReplyInnerMessageFromBytes(rawPlaintext)
-	if err != nil {
-		return nil, err
+	// If we get here, all replicas failed
+	e.log.Debugf("Copy: All replicas failed to provide valid data for BoxID %x", boxID[:8])
+
+	// Analyze replica errors to provide more specific error reporting
+	if len(replicaErrors) > 0 {
+		// Find the most common error or prioritize certain error types
+		notFoundCount := 0
+		for _, errCode := range replicaErrors {
+			if errCode == pigeonholeCommon.ReplicaErrorNotFound {
+				notFoundCount++
+			}
+		}
+
+		// If majority of replicas returned "not found", it's likely the data doesn't exist
+		if notFoundCount > len(replicaErrors)/2 {
+			e.log.Debugf("Copy: Majority of replicas (%d/%d) returned 'not found' for BoxID %x", notFoundCount, len(replicaErrors), boxID[:8])
+			return nil, errFailedToReadBoxFromReplica // Could be mapped to a more specific error
+		}
 	}
 
-	if innerMsg.ReplicaReadReply == nil {
-		return nil, errFailedToReadBoxFromReplica
-	}
-
-	return innerMsg.ReplicaReadReply, nil
+	return nil, errFailedToReadBoxFromReplica
 }
 
 func (e *Courier) handleCopyReply(reply *commands.ReplicaMessageReply) {
