@@ -69,6 +69,20 @@ func TestCourierReplicaIntegration(t *testing.T) {
 	testBoxRoundTrip(t, testEnv)
 }
 
+// TestCourierReplicaSequenceIntegration tests writing and reading a sequence of boxes
+// using BACAP stateful writer/reader to verify sequence handling works correctly.
+func TestCourierReplicaSequenceIntegration(t *testing.T) {
+	// Create test environment with real servers
+	testEnv := setupTestEnvironment(t)
+	defer testEnv.cleanup()
+
+	// Wait for servers to be ready
+	time.Sleep(2 * time.Second)
+
+	// Test sequence round-trip: write multiple boxes, then read them back and verify
+	testBoxSequenceRoundTrip(t, testEnv)
+}
+
 // testEnvironment holds all the components needed for testing
 type testEnvironment struct {
 	tempDir        string
@@ -603,6 +617,87 @@ func testBoxRoundTrip(t *testing.T, env *testEnvironment) {
 	bobPlaintext1, err := bobStatefulReader.DecryptNext(BACAP_CTX, *boxid, innerMsg.ReplicaReadReply.Payload, *innerMsg.ReplicaReadReply.Signature)
 	require.NoError(t, err)
 	require.Equal(t, alicePayload1, bobPlaintext1)
+}
+
+func testBoxSequenceRoundTrip(t *testing.T, env *testEnvironment) {
+	// PKI documents are already fetched during setup, just verify they're ready
+	waitForCourierPKI(t, env)
+	waitForReplicasPKI(t, env)
+
+	aliceStatefulWriter, bobStatefulReader := aliceAndBobKeyExchangeKeys(t, env)
+
+	// Define the sequence of messages to write
+	messages := [][]byte{
+		[]byte("hello 1"),
+		[]byte("hello 2"),
+		[]byte("hello 3"),
+	}
+
+	// Write the sequence of boxes
+	t.Logf("Writing sequence of %d boxes", len(messages))
+	for i, payload := range messages {
+		t.Logf("Writing box %d with payload: %s", i+1, string(payload))
+
+		aliceEnvelope := aliceComposesNextMessage(t, payload, env, aliceStatefulWriter)
+		courierWriteReply := injectCourierEnvelope(t, env, aliceEnvelope)
+
+		aliceEnvHash := aliceEnvelope.EnvelopeHash()
+		require.Equal(t, courierWriteReply.EnvelopeHash[:], aliceEnvHash[:])
+		require.Equal(t, uint8(0), courierWriteReply.ErrorCode)
+		require.Equal(t, uint8(0), courierWriteReply.ReplyIndex)
+		require.Nil(t, courierWriteReply.Payload)
+
+		t.Logf("Successfully wrote box %d", i+1)
+	}
+
+	// Now read back the sequence of boxes
+	t.Logf("Reading back sequence of %d boxes", len(messages))
+	for i := 0; i < len(messages); i++ {
+		t.Logf("Reading box %d", i+1)
+
+		bobReadRequest, bobPrivateKey := composeReadRequest(t, env, bobStatefulReader)
+
+		// First read request should now get immediate reply with payload due to immediate proxying
+		courierReadReply := injectCourierEnvelope(t, env, bobReadRequest)
+
+		bobEnvHash := bobReadRequest.EnvelopeHash()
+		require.Equal(t, courierReadReply.EnvelopeHash[:], bobEnvHash[:])
+		require.Equal(t, uint8(0), courierReadReply.ErrorCode)
+
+		// With immediate proxying, we should get a non-nil payload on the first request
+		if courierReadReply.Payload == nil {
+			t.Logf("First read request returned nil payload for box %d, falling back to polling", i+1)
+			courierReadReply = waitForReplicaResponse(t, env, bobReadRequest)
+		}
+
+		// ReplyIndex correctly indicates which replica replied (0 or 1)
+		require.True(t, courierReadReply.ReplyIndex < 2, "ReplyIndex should be 0 or 1")
+		require.NotNil(t, courierReadReply.Payload, "Should have payload either from immediate proxying or cache")
+
+		// Decrypt and verify the message
+		replicaEpoch, _, _ := common.ReplicaNow()
+		replicaIndex := int(bobReadRequest.IntermediateReplicas[courierReadReply.ReplyIndex])
+		replicaPubKey := env.replicaKeys[replicaIndex][replicaEpoch]
+		rawInnerMsg, err := mkemNikeScheme.DecryptEnvelope(bobPrivateKey, replicaPubKey, courierReadReply.Payload)
+		require.NoError(t, err)
+
+		// common.ReplicaMessageReplyInnerMessage
+		innerMsg, err := common.ReplicaMessageReplyInnerMessageFromBytes(rawInnerMsg)
+		require.NoError(t, err)
+		require.NotNil(t, innerMsg.ReplicaReadReply)
+
+		boxid, err := bobStatefulReader.NextBoxID()
+		require.NoError(t, err)
+		bobPlaintext, err := bobStatefulReader.DecryptNext(BACAP_CTX, *boxid, innerMsg.ReplicaReadReply.Payload, *innerMsg.ReplicaReadReply.Signature)
+		require.NoError(t, err)
+
+		// Verify the decrypted message matches what we wrote
+		expectedMessage := messages[i]
+		require.Equal(t, expectedMessage, bobPlaintext)
+		t.Logf("Successfully read and verified box %d: %s", i+1, string(bobPlaintext))
+	}
+
+	t.Logf("Successfully completed sequence round-trip test for %d boxes", len(messages))
 }
 
 func injectCourierEnvelope(t *testing.T, env *testEnvironment, envelope *common.CourierEnvelope) *common.CourierEnvelopeReply {
