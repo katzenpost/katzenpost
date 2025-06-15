@@ -67,8 +67,6 @@ func TestCourierReplicaIntegration(t *testing.T) {
 	defer func() {
 		t.Logf("Starting cleanup for TestCourierReplicaIntegration")
 		testEnv.cleanup()
-		// Wait for complete shutdown before next test
-		time.Sleep(3 * time.Second)
 		t.Logf("Cleanup completed for TestCourierReplicaIntegration")
 	}()
 
@@ -90,8 +88,6 @@ func TestCourierReplicaSequenceIntegration(t *testing.T) {
 	defer func() {
 		t.Logf("Starting cleanup for TestCourierReplicaSequenceIntegration")
 		testEnv.cleanup()
-		// Wait for complete shutdown before next test
-		time.Sleep(3 * time.Second)
 		t.Logf("Cleanup completed for TestCourierReplicaSequenceIntegration")
 	}()
 
@@ -114,8 +110,6 @@ func TestCourierReplicaNestedEnvelopeIntegration(t *testing.T) {
 	defer func() {
 		t.Logf("Starting cleanup for TestCourierReplicaNestedEnvelopeIntegration")
 		testEnv.cleanup()
-		// Wait for complete shutdown before next test
-		time.Sleep(3 * time.Second)
 		t.Logf("Cleanup completed for TestCourierReplicaNestedEnvelopeIntegration")
 	}()
 
@@ -146,7 +140,7 @@ type responseRouter struct {
 	responseMap   map[uint64]chan cborplugin.Command
 	responseMapMu sync.RWMutex
 	// Global response channel for debugging
-	globalCh      chan cborplugin.Command
+	globalCh chan cborplugin.Command
 }
 
 // newResponseRouter creates a new response router
