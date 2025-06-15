@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"gopkg.in/op/go-logging.v1"
 
@@ -183,6 +184,13 @@ type CourierBookKeeping struct {
 	EnvelopeReplies      [2]*commands.ReplicaMessageReply
 }
 
+// PendingReadRequest stores information about a read request waiting for immediate reply
+type PendingReadRequest struct {
+	RequestID uint64
+	SURB      []byte
+	Timeout   time.Time
+}
+
 // Courier handles the CBOR plugin interface for our courier service.
 type Courier struct {
 	write  func(cborplugin.Command)
@@ -198,6 +206,9 @@ type Courier struct {
 
 	copyCacheLock sync.RWMutex
 	copyCache     map[[hash.HashSize]byte]chan *commands.ReplicaMessageReply
+
+	pendingReadLock sync.RWMutex
+	pendingReads    map[[hash.HashSize]byte]*PendingReadRequest
 }
 
 // NewCourier returns a new Courier type.
@@ -210,6 +221,7 @@ func NewCourier(s *Server, cmds *commands.Commands, scheme nike.Scheme) *Courier
 		envelopeScheme: scheme,
 		dedupCache:     make(map[[hash.HashSize]byte]*CourierBookKeeping),
 		copyCache:      make(map[[hash.HashSize]byte]chan *commands.ReplicaMessageReply),
+		pendingReads:   make(map[[hash.HashSize]byte]*PendingReadRequest),
 	}
 	return courier
 }
@@ -256,6 +268,12 @@ func (e *Courier) CacheReply(reply *commands.ReplicaMessageReply) {
 
 	if !e.validateReply(reply) {
 		return
+	}
+
+	// Check for pending read request and immediately proxy reply if found
+	if e.tryImmediateReplyProxy(reply) {
+		e.log.Debugf("Immediately proxied reply for envelope hash: %x", reply.EnvelopeHash)
+		// Still cache the reply for potential future requests
 	}
 
 	e.dedupCacheLock.Lock()
@@ -355,6 +373,84 @@ func (e *Courier) logFinalCacheState(reply *commands.ReplicaMessageReply) {
 	reply0Available := finalEntry.EnvelopeReplies[0] != nil
 	reply1Available := finalEntry.EnvelopeReplies[1] != nil
 	e.log.Debugf("CacheReply: final cache state for %x - Reply[0]: %v, Reply[1]: %v", reply.EnvelopeHash, reply0Available, reply1Available)
+}
+
+// tryImmediateReplyProxy checks if there's a pending read request and immediately proxies the reply
+func (e *Courier) tryImmediateReplyProxy(reply *commands.ReplicaMessageReply) bool {
+	e.pendingReadLock.Lock()
+	defer e.pendingReadLock.Unlock()
+
+	pendingRequest, exists := e.pendingReads[*reply.EnvelopeHash]
+	if !exists {
+		return false
+	}
+
+	// Check if the request has timed out
+	if time.Now().After(pendingRequest.Timeout) {
+		e.log.Debugf("Pending read request for envelope hash %x has timed out, removing", reply.EnvelopeHash)
+		delete(e.pendingReads, *reply.EnvelopeHash)
+		return false
+	}
+
+	// Remove the pending request since we're about to fulfill it
+	delete(e.pendingReads, *reply.EnvelopeHash)
+
+	// Create the reply with the replica data
+	courierReply := &common.CourierQueryReply{
+		CourierEnvelopeReply: &common.CourierEnvelopeReply{
+			EnvelopeHash: reply.EnvelopeHash,
+			ReplyIndex:   reply.ReplicaID, // Use the replica ID as the reply index
+			Payload:      reply.EnvelopeReply,
+			ErrorCode:    envelopeErrorSuccess,
+		},
+		CopyCommandReply: nil,
+	}
+
+	// Send the immediate reply
+	go func() {
+		e.write(&cborplugin.Response{
+			ID:      pendingRequest.RequestID,
+			SURB:    pendingRequest.SURB,
+			Payload: courierReply.Bytes(),
+		})
+	}()
+
+	return true
+}
+
+// storePendingReadRequest stores a pending read request with a 4-second timeout
+func (e *Courier) storePendingReadRequest(envHash *[hash.HashSize]byte, requestID uint64, surb []byte) {
+	e.pendingReadLock.Lock()
+	defer e.pendingReadLock.Unlock()
+
+	// Set 4-second timeout as requested
+	timeout := time.Now().Add(4 * time.Second)
+
+	e.pendingReads[*envHash] = &PendingReadRequest{
+		RequestID: requestID,
+		SURB:      surb,
+		Timeout:   timeout,
+	}
+
+	e.log.Debugf("Stored pending read request for envelope hash %x with 4-second timeout", envHash)
+
+	// Start a goroutine to clean up expired requests
+	go e.cleanupExpiredRequest(envHash, timeout)
+}
+
+// cleanupExpiredRequest removes a pending request after its timeout expires
+func (e *Courier) cleanupExpiredRequest(envHash *[hash.HashSize]byte, timeout time.Time) {
+	// Wait until the timeout expires
+	time.Sleep(time.Until(timeout))
+
+	e.pendingReadLock.Lock()
+	defer e.pendingReadLock.Unlock()
+
+	// Check if the request is still there and has expired
+	if pendingRequest, exists := e.pendingReads[*envHash]; exists && time.Now().After(pendingRequest.Timeout) {
+		delete(e.pendingReads, *envHash)
+		e.log.Debugf("Cleaned up expired pending read request for envelope hash %x", envHash)
+	}
 }
 
 func (e *Courier) handleCourierEnvelope(courierMessage *common.CourierEnvelope) error {
@@ -484,7 +580,7 @@ func (e *Courier) OnCommand(cmd cborplugin.Command) error {
 
 	// Handle CourierEnvelope if present
 	if courierQuery.CourierEnvelope != nil {
-		reply := e.cacheHandleCourierEnvelope(courierQuery.CourierEnvelope)
+		reply := e.cacheHandleCourierEnvelope(courierQuery.CourierEnvelope, request.ID, request.SURB)
 
 		go func() {
 			// send reply
@@ -520,7 +616,7 @@ func (e *Courier) OnCommand(cmd cborplugin.Command) error {
 	return nil
 }
 
-func (e *Courier) cacheHandleCourierEnvelope(courierMessage *common.CourierEnvelope) *common.CourierQueryReply {
+func (e *Courier) cacheHandleCourierEnvelope(courierMessage *common.CourierEnvelope, requestID uint64, surb []byte) *common.CourierQueryReply {
 	envHash := courierMessage.EnvelopeHash()
 
 	e.dedupCacheLock.RLock()
@@ -533,6 +629,12 @@ func (e *Courier) cacheHandleCourierEnvelope(courierMessage *common.CourierEnvel
 	}
 
 	e.log.Debugf("OnCommand: No cached entry for envelope hash %x, calling handleNewMessage", envHash)
+
+	// For read requests, store pending request info for immediate reply proxying
+	if courierMessage.IsRead {
+		e.storePendingReadRequest(envHash, requestID, surb)
+	}
+
 	e.dedupCacheLock.Lock()
 
 	// Get current epoch, defaulting to 0 if PKI document is not available yet
