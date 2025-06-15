@@ -25,6 +25,18 @@ import (
 const (
 	// testPKIScheme is the PKI signature scheme used in tests
 	testPKIScheme = "Ed25519 Sphincs+"
+	// testLinkScheme is the link KEM scheme used in tests
+	testLinkScheme = "Xwing"
+	// testReplicaScheme is the replica NIKE scheme used in tests
+	testReplicaScheme = "x25519"
+	// testSphinxNikeScheme is the Sphinx NIKE scheme used in tests
+	testSphinxNikeScheme = "x25519"
+	// testNumDirAuths is the number of directory authorities in test documents
+	testNumDirAuths = 9
+	// testNumMixNodes is the number of mix nodes in test documents
+	testNumMixNodes = 9
+	// testNumStorageReplicas is the number of storage replicas in test documents
+	testNumStorageReplicas = 19
 )
 
 // DocumentConfig holds configuration parameters for generating test PKI documents
@@ -37,6 +49,49 @@ type DocumentConfig struct {
 	NumDirAuths        int
 	NumMixNodes        int
 	NumStorageReplicas int
+}
+
+// Helper functions to eliminate code duplication
+
+// createDefaultTestConfig creates a standard test configuration used across multiple tests
+func createDefaultTestConfig() *DocumentConfig {
+	return &DocumentConfig{
+		PKIScheme:          signschemes.ByName(testPKIScheme),
+		LinkScheme:         kemschemes.ByName(testLinkScheme),
+		ReplicaScheme:      nikeschemes.ByName(testReplicaScheme),
+		SphinxNikeScheme:   nikeschemes.ByName(testSphinxNikeScheme),
+		SphinxKemScheme:    nil,
+		NumDirAuths:        testNumDirAuths,
+		NumMixNodes:        testNumMixNodes,
+		NumStorageReplicas: testNumStorageReplicas,
+	}
+}
+
+// generateRandomBoxID creates a random box ID for testing
+func generateRandomBoxID(t *testing.T) *[32]byte {
+	boxid := &[32]byte{}
+	_, err := rand.Reader.Read(boxid[:])
+	require.NoError(t, err)
+	return boxid
+}
+
+// setupTestDocumentAndBoxID creates a test document and random box ID
+func setupTestDocumentAndBoxID(t *testing.T) (*pki.Document, *[32]byte) {
+	config := createDefaultTestConfig()
+	doc := generateDocument(t, config)
+	boxid := generateRandomBoxID(t)
+	return doc, boxid
+}
+
+// generateRandomKeys creates random keys for benchmarking
+func generateRandomKeys(tb testing.TB, numServers, keySize int) [][]byte {
+	keys := make([][]byte, numServers)
+	for i := 0; i < numServers; i++ {
+		keys[i] = make([]byte, keySize)
+		_, err := rand.Reader.Read(keys[i])
+		require.NoError(tb, err)
+	}
+	return keys
 }
 
 func generateDescriptor(t *testing.T, pkiScheme sign.Scheme, linkScheme kem.Scheme, sphinxNikeScheme nike.Scheme, sphinxKemScheme kem.Scheme) *pki.MixDescriptor {
@@ -132,21 +187,7 @@ func generateDocument(t *testing.T, config *DocumentConfig) *pki.Document {
 }
 
 func TestGetShards(t *testing.T) {
-	config := &DocumentConfig{
-		PKIScheme:          signschemes.ByName(testPKIScheme),
-		LinkScheme:         kemschemes.ByName("Xwing"),
-		ReplicaScheme:      nikeschemes.ByName("x25519"),
-		SphinxNikeScheme:   nikeschemes.ByName("x25519"),
-		SphinxKemScheme:    nil,
-		NumDirAuths:        9,
-		NumMixNodes:        9,
-		NumStorageReplicas: 19,
-	}
-	doc := generateDocument(t, config)
-
-	boxid := &[32]byte{}
-	_, err := rand.Reader.Read(boxid[:])
-	require.NoError(t, err)
+	doc, boxid := setupTestDocumentAndBoxID(t)
 
 	replicaDescs, err := GetShards(boxid, doc)
 	require.NoError(t, err)
@@ -154,24 +195,13 @@ func TestGetShards(t *testing.T) {
 }
 
 func TestGetReplicaKeys(t *testing.T) {
-	config := &DocumentConfig{
-		PKIScheme:          signschemes.ByName(testPKIScheme),
-		LinkScheme:         kemschemes.ByName("Xwing"),
-		ReplicaScheme:      nikeschemes.ByName("x25519"),
-		SphinxNikeScheme:   nikeschemes.ByName("x25519"),
-		SphinxKemScheme:    nil,
-		NumDirAuths:        9,
-		NumMixNodes:        9,
-		NumStorageReplicas: 19,
-	}
+	config := createDefaultTestConfig()
 	doc := generateDocument(t, config)
 	replicaKeys, err := GetReplicaKeys(doc)
 	require.NoError(t, err)
 	require.Equal(t, config.NumStorageReplicas, len(replicaKeys))
 
-	boxid := &[32]byte{}
-	_, err = rand.Reader.Read(boxid[:])
-	require.NoError(t, err)
+	boxid := generateRandomBoxID(t)
 
 	orderedKeys := Shard2(boxid, replicaKeys)
 	for i := 0; i < len(orderedKeys); i++ {
@@ -214,21 +244,9 @@ func TestShardSimple(t *testing.T) {
 }
 
 func TestGetRemoteShards(t *testing.T) {
-	config := &DocumentConfig{
-		PKIScheme:          signschemes.ByName(testPKIScheme),
-		LinkScheme:         kemschemes.ByName("Xwing"),
-		ReplicaScheme:      nikeschemes.ByName("x25519"),
-		SphinxNikeScheme:   nikeschemes.ByName("x25519"),
-		SphinxKemScheme:    nil,
-		NumDirAuths:        9,
-		NumMixNodes:        9,
-		NumStorageReplicas: 19,
-	}
+	config := createDefaultTestConfig()
 	doc := generateDocument(t, config)
-
-	boxid := &[32]byte{}
-	_, err := rand.Reader.Read(boxid[:])
-	require.NoError(t, err)
+	boxid := generateRandomBoxID(t)
 
 	replicaDescs, err := GetShards(boxid, doc)
 	require.NoError(t, err)
@@ -247,16 +265,7 @@ func TestGetRemoteShards(t *testing.T) {
 }
 
 func TestReplicaNum(t *testing.T) {
-	config := &DocumentConfig{
-		PKIScheme:          signschemes.ByName(testPKIScheme),
-		LinkScheme:         kemschemes.ByName("Xwing"),
-		ReplicaScheme:      nikeschemes.ByName("x25519"),
-		SphinxNikeScheme:   nikeschemes.ByName("x25519"),
-		SphinxKemScheme:    nil,
-		NumDirAuths:        9,
-		NumMixNodes:        9,
-		NumStorageReplicas: 19,
-	}
+	config := createDefaultTestConfig()
 	doc := generateDocument(t, config)
 
 	_, err := ReplicaNum(uint8(config.NumStorageReplicas-1), doc)
@@ -269,12 +278,7 @@ func TestReplicaNum(t *testing.T) {
 func BenchmarkShard2(b *testing.B) {
 	numServers := 10
 	keySize := 32
-	keys := make([][]byte, numServers)
-	for i := 0; i < numServers; i++ {
-		keys[i] = make([]byte, keySize)
-		_, err := rand.Reader.Read(keys[i])
-		require.NoError(b, err)
-	}
+	keys := generateRandomKeys(b, numServers, keySize)
 
 	boxid := &[32]byte{}
 	_, err := rand.Reader.Read(boxid[:])
