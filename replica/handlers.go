@@ -105,6 +105,15 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 	senderpubkey := ephemeralPublicKey
 
 	doc := c.l.server.PKIWorker.PKIDocument()
+	if doc == nil {
+		c.log.Error("handleReplicaMessage failed: no PKI document available")
+		return &commands.ReplicaMessageReply{
+			Cmds:          commands.NewStorageReplicaCommands(c.geo, nikeScheme),
+			ErrorCode:     2, // non-zero means failure.
+			EnvelopeHash:  envelopeHash,
+			EnvelopeReply: []byte{},
+		}
+	}
 	replicaID, err := doc.GetReplicaIDByIdentityKey(c.l.server.identityPublicKey)
 	if err != nil {
 		c.log.Errorf("handleReplicaMessage failed to get our own replica ID: %s", err)

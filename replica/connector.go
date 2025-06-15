@@ -96,6 +96,10 @@ func (co *Connector) DispatchReplication(cmd *commands.ReplicaWrite) {
 func (co *Connector) doReplication(cmd *commands.ReplicaWrite) {
 	co.log.Debugf("Starting replication for BoxID: %x", cmd.BoxID)
 	doc := co.server.PKIWorker.PKIDocument()
+	if doc == nil {
+		co.log.Error("Replication failed: no PKI document available")
+		return
+	}
 	descs, err := common.GetRemoteShards(co.server.identityPublicKey, cmd.BoxID, doc)
 	if err != nil {
 		co.log.Errorf("Replication failed: GetShards err: %v", err)
