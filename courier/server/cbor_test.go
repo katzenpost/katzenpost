@@ -8,15 +8,66 @@ import (
 	"github.com/fxamacker/cbor/v2"
 	"github.com/stretchr/testify/require"
 
+	"github.com/katzenpost/hpqc/nike"
 	"github.com/katzenpost/hpqc/nike/schemes"
 
 	"github.com/katzenpost/katzenpost/replica/common"
 )
 
+const (
+	// Test message constants to avoid duplication
+	testMessage1     = "message 1"
+	testMessage2     = "message 2"
+	testMessage3     = "message 3"
+	testMessage1Long = "test message 1"
+	testMessage2Long = "test message 2"
+
+	// Log message constants
+	logProcessedEnvelope = "Processed envelope with epoch %d"
+	logEnvelopeSize      = "Envelope %d size: %d bytes"
+	logBufferLength      = "Buffer length: %d"
+
+	// Test constants
+	nikeSchemeX25519  = "x25519"
+	envelopeProcessed = "envelope_processed"
+)
+
+// Helper functions for common test patterns
+
+// setupNikeScheme initializes and validates the NIKE scheme
+func setupNikeScheme(t *testing.T) nike.Scheme {
+	nikeScheme := schemes.ByName(nikeSchemeX25519)
+	require.NotNil(t, nikeScheme)
+	return nikeScheme
+}
+
+// createBasicEnvelopeHandler creates a standard envelope handler that logs processed envelopes
+func createBasicEnvelopeHandler(t *testing.T, processedEnvelopes *[]*common.CourierEnvelope) func(*common.CourierEnvelope) {
+	return func(envelope *common.CourierEnvelope) {
+		*processedEnvelopes = append(*processedEnvelopes, envelope)
+		t.Logf(logProcessedEnvelope, envelope.Epoch)
+	}
+}
+
+// createProgressTrackingHandler creates an envelope handler that tracks progress calls
+func createProgressTrackingHandler(t *testing.T, processedEnvelopes *[]*common.CourierEnvelope, progressCalls *[]string) func(*common.CourierEnvelope) {
+	return func(envelope *common.CourierEnvelope) {
+		*processedEnvelopes = append(*processedEnvelopes, envelope)
+		*progressCalls = append(*progressCalls, envelopeProcessed)
+		t.Logf(logProcessedEnvelope, envelope.Epoch)
+	}
+}
+
+// createSilentEnvelopeHandler creates an envelope handler that doesn't log
+func createSilentEnvelopeHandler(processedEnvelopes *[]*common.CourierEnvelope) func(*common.CourierEnvelope) {
+	return func(envelope *common.CourierEnvelope) {
+		*processedEnvelopes = append(*processedEnvelopes, envelope)
+	}
+}
+
 // TestCBORBasicDecoding tests basic CBOR encoding/decoding of CourierEnvelopes
 func TestCBORBasicDecoding(t *testing.T) {
-	nikeScheme := schemes.ByName("x25519")
-	require.NotNil(t, nikeScheme)
+	nikeScheme := setupNikeScheme(t)
 
 	// Create a simple test envelope
 	envelope := createTestEnvelope(t, []byte("test message"), nikeScheme)
@@ -40,13 +91,12 @@ func TestCBORBasicDecoding(t *testing.T) {
 
 // TestCBORConcatenatedDecoding tests decoding multiple concatenated CBOR objects
 func TestCBORConcatenatedDecoding(t *testing.T) {
-	nikeScheme := schemes.ByName("x25519")
-	require.NotNil(t, nikeScheme)
+	nikeScheme := setupNikeScheme(t)
 
 	// Create multiple test envelopes
-	envelope1 := createTestEnvelope(t, []byte("message 1"), nikeScheme)
-	envelope2 := createTestEnvelope(t, []byte("message 2"), nikeScheme)
-	envelope3 := createTestEnvelope(t, []byte("message 3"), nikeScheme)
+	envelope1 := createTestEnvelope(t, []byte(testMessage1), nikeScheme)
+	envelope2 := createTestEnvelope(t, []byte(testMessage2), nikeScheme)
+	envelope3 := createTestEnvelope(t, []byte(testMessage3), nikeScheme)
 
 	// Encode each to CBOR
 	cbor1 := envelope1.Bytes()
@@ -86,19 +136,14 @@ func TestCBORConcatenatedDecoding(t *testing.T) {
 
 // TestStreamingDecoderBasic tests the streaming decoder with complete envelopes
 func TestStreamingDecoderBasic(t *testing.T) {
-	nikeScheme := schemes.ByName("x25519")
-	require.NotNil(t, nikeScheme)
+	nikeScheme := setupNikeScheme(t)
 
 	var processedEnvelopes []*common.CourierEnvelope
-	handleEnvelope := func(envelope *common.CourierEnvelope) {
-		processedEnvelopes = append(processedEnvelopes, envelope)
-		t.Logf("Processed envelope with epoch %d", envelope.Epoch)
-	}
-
+	handleEnvelope := createBasicEnvelopeHandler(t, &processedEnvelopes)
 	decoder := NewStreamingCBORDecoder(handleEnvelope)
 
 	// Create and process single envelope
-	envelope1 := createTestEnvelope(t, []byte("test message 1"), nikeScheme)
+	envelope1 := createTestEnvelope(t, []byte(testMessage1Long), nikeScheme)
 	cbor1 := envelope1.Bytes()
 
 	err := decoder.ProcessChunk(cbor1)
@@ -107,7 +152,7 @@ func TestStreamingDecoderBasic(t *testing.T) {
 	require.Equal(t, envelope1.Epoch, processedEnvelopes[0].Epoch)
 
 	// Process second envelope
-	envelope2 := createTestEnvelope(t, []byte("test message 2"), nikeScheme)
+	envelope2 := createTestEnvelope(t, []byte(testMessage2Long), nikeScheme)
 	cbor2 := envelope2.Bytes()
 
 	err = decoder.ProcessChunk(cbor2)
@@ -120,21 +165,16 @@ func TestStreamingDecoderBasic(t *testing.T) {
 
 // TestStreamingDecoderConcatenated tests the streaming decoder with concatenated data
 func TestStreamingDecoderConcatenated(t *testing.T) {
-	nikeScheme := schemes.ByName("x25519")
-	require.NotNil(t, nikeScheme)
+	nikeScheme := setupNikeScheme(t)
 
 	var processedEnvelopes []*common.CourierEnvelope
-	handleEnvelope := func(envelope *common.CourierEnvelope) {
-		processedEnvelopes = append(processedEnvelopes, envelope)
-		t.Logf("Processed envelope with epoch %d", envelope.Epoch)
-	}
-
+	handleEnvelope := createBasicEnvelopeHandler(t, &processedEnvelopes)
 	decoder := NewStreamingCBORDecoder(handleEnvelope)
 
 	// Create multiple envelopes
-	envelope1 := createTestEnvelope(t, []byte("message 1"), nikeScheme)
-	envelope2 := createTestEnvelope(t, []byte("message 2"), nikeScheme)
-	envelope3 := createTestEnvelope(t, []byte("message 3"), nikeScheme)
+	envelope1 := createTestEnvelope(t, []byte(testMessage1), nikeScheme)
+	envelope2 := createTestEnvelope(t, []byte(testMessage2), nikeScheme)
+	envelope3 := createTestEnvelope(t, []byte(testMessage3), nikeScheme)
 
 	// Concatenate all CBOR data
 	cbor1 := envelope1.Bytes()
@@ -161,20 +201,15 @@ func TestStreamingDecoderConcatenated(t *testing.T) {
 
 // TestStreamingDecoderPartialChunks tests the streaming decoder with partial chunks
 func TestStreamingDecoderPartialChunks(t *testing.T) {
-	nikeScheme := schemes.ByName("x25519")
-	require.NotNil(t, nikeScheme)
+	nikeScheme := setupNikeScheme(t)
 
 	var processedEnvelopes []*common.CourierEnvelope
-	handleEnvelope := func(envelope *common.CourierEnvelope) {
-		processedEnvelopes = append(processedEnvelopes, envelope)
-		t.Logf("Processed envelope with epoch %d", envelope.Epoch)
-	}
-
+	handleEnvelope := createBasicEnvelopeHandler(t, &processedEnvelopes)
 	decoder := NewStreamingCBORDecoder(handleEnvelope)
 
 	// Create multiple envelopes
-	envelope1 := createTestEnvelope(t, []byte("message 1"), nikeScheme)
-	envelope2 := createTestEnvelope(t, []byte("message 2"), nikeScheme)
+	envelope1 := createTestEnvelope(t, []byte(testMessage1), nikeScheme)
+	envelope2 := createTestEnvelope(t, []byte(testMessage2), nikeScheme)
 
 	// Concatenate CBOR data
 	cbor1 := envelope1.Bytes()
@@ -182,8 +217,8 @@ func TestStreamingDecoderPartialChunks(t *testing.T) {
 	concatenated := append(cbor1, cbor2...)
 
 	t.Logf("Total data size: %d bytes", len(concatenated))
-	t.Logf("Envelope 1 size: %d bytes", len(cbor1))
-	t.Logf("Envelope 2 size: %d bytes", len(cbor2))
+	t.Logf(logEnvelopeSize, 1, len(cbor1))
+	t.Logf(logEnvelopeSize, 2, len(cbor2))
 
 	// Process in small chunks
 	chunkSize := 50
@@ -214,17 +249,12 @@ func TestStreamingDecoderPartialChunks(t *testing.T) {
 
 // TestStreamingDecoderBufferBehavior tests the internal buffer behavior
 func TestStreamingDecoderBufferBehavior(t *testing.T) {
-	nikeScheme := schemes.ByName("x25519")
-	require.NotNil(t, nikeScheme)
+	nikeScheme := setupNikeScheme(t)
 
 	var processedEnvelopes []*common.CourierEnvelope
 	var bufferLengths []int
 
-	handleEnvelope := func(envelope *common.CourierEnvelope) {
-		processedEnvelopes = append(processedEnvelopes, envelope)
-		t.Logf("Processed envelope with epoch %d", envelope.Epoch)
-	}
-
+	handleEnvelope := createBasicEnvelopeHandler(t, &processedEnvelopes)
 	decoder := NewStreamingCBORDecoder(handleEnvelope)
 
 	// Create a test envelope
@@ -257,10 +287,7 @@ func TestStreamingDecoderBufferBehavior(t *testing.T) {
 // TestStreamingDecoderWithInvalidData tests how the decoder handles invalid CBOR data
 func TestStreamingDecoderWithInvalidData(t *testing.T) {
 	var processedEnvelopes []*common.CourierEnvelope
-	handleEnvelope := func(envelope *common.CourierEnvelope) {
-		processedEnvelopes = append(processedEnvelopes, envelope)
-	}
-
+	handleEnvelope := createSilentEnvelopeHandler(&processedEnvelopes)
 	decoder := NewStreamingCBORDecoder(handleEnvelope)
 
 	// Test with completely invalid data
@@ -281,30 +308,25 @@ func TestStreamingDecoderWithInvalidData(t *testing.T) {
 
 // TestStreamingDecoderProgressIssue specifically tests the "made no progress" scenario
 func TestStreamingDecoderProgressIssue(t *testing.T) {
-	nikeScheme := schemes.ByName("x25519")
-	require.NotNil(t, nikeScheme)
+	nikeScheme := setupNikeScheme(t)
 
 	var processedEnvelopes []*common.CourierEnvelope
 	var progressCalls []string
 
-	handleEnvelope := func(envelope *common.CourierEnvelope) {
-		processedEnvelopes = append(processedEnvelopes, envelope)
-		progressCalls = append(progressCalls, "envelope_processed")
-		t.Logf("Processed envelope with epoch %d", envelope.Epoch)
-	}
+	handleEnvelope := createProgressTrackingHandler(t, &processedEnvelopes, &progressCalls)
 
 	// Create a custom decoder to monitor buffer changes
 	decoder := NewStreamingCBORDecoder(handleEnvelope)
 
 	// Create test envelopes
-	envelope1 := createTestEnvelope(t, []byte("message 1"), nikeScheme)
-	envelope2 := createTestEnvelope(t, []byte("message 2"), nikeScheme)
+	envelope1 := createTestEnvelope(t, []byte(testMessage1), nikeScheme)
+	envelope2 := createTestEnvelope(t, []byte(testMessage2), nikeScheme)
 
 	cbor1 := envelope1.Bytes()
 	cbor2 := envelope2.Bytes()
 
-	t.Logf("Envelope 1 size: %d bytes", len(cbor1))
-	t.Logf("Envelope 2 size: %d bytes", len(cbor2))
+	t.Logf(logEnvelopeSize, 1, len(cbor1))
+	t.Logf(logEnvelopeSize, 2, len(cbor2))
 
 	// Test scenario: concatenated data that might cause progress issues
 	concatenated := append(cbor1, cbor2...)
@@ -334,14 +356,10 @@ func TestStreamingDecoderProgressIssue(t *testing.T) {
 
 // TestStreamingDecoderLargeData tests with larger amounts of data
 func TestStreamingDecoderLargeData(t *testing.T) {
-	nikeScheme := schemes.ByName("x25519")
-	require.NotNil(t, nikeScheme)
+	nikeScheme := setupNikeScheme(t)
 
 	var processedEnvelopes []*common.CourierEnvelope
-	handleEnvelope := func(envelope *common.CourierEnvelope) {
-		processedEnvelopes = append(processedEnvelopes, envelope)
-	}
-
+	handleEnvelope := createSilentEnvelopeHandler(&processedEnvelopes)
 	decoder := NewStreamingCBORDecoder(handleEnvelope)
 
 	// Create many envelopes
@@ -381,26 +399,21 @@ func TestStreamingDecoderLargeData(t *testing.T) {
 
 // TestStreamingDecoderBufferConsumption tests exactly how the buffer is consumed
 func TestStreamingDecoderBufferConsumption(t *testing.T) {
-	nikeScheme := schemes.ByName("x25519")
-	require.NotNil(t, nikeScheme)
+	nikeScheme := setupNikeScheme(t)
 
 	var processedEnvelopes []*common.CourierEnvelope
-	handleEnvelope := func(envelope *common.CourierEnvelope) {
-		processedEnvelopes = append(processedEnvelopes, envelope)
-		t.Logf("Processed envelope with epoch %d", envelope.Epoch)
-	}
-
+	handleEnvelope := createBasicEnvelopeHandler(t, &processedEnvelopes)
 	decoder := NewStreamingCBORDecoder(handleEnvelope)
 
 	// Create two different envelopes
-	envelope1 := createTestEnvelope(t, []byte("message 1"), nikeScheme)
-	envelope2 := createTestEnvelope(t, []byte("message 2"), nikeScheme)
+	envelope1 := createTestEnvelope(t, []byte(testMessage1), nikeScheme)
+	envelope2 := createTestEnvelope(t, []byte(testMessage2), nikeScheme)
 
 	cbor1 := envelope1.Bytes()
 	cbor2 := envelope2.Bytes()
 
-	t.Logf("Envelope 1 size: %d bytes", len(cbor1))
-	t.Logf("Envelope 2 size: %d bytes", len(cbor2))
+	t.Logf(logEnvelopeSize, 1, len(cbor1))
+	t.Logf(logEnvelopeSize, 2, len(cbor2))
 
 	// Concatenate the data
 	concatenated := append(cbor1, cbor2...)
@@ -440,18 +453,17 @@ func min(a, b int) int {
 
 // TestStreamingDecoderDetailedBuffer tests the buffer behavior in detail
 func TestStreamingDecoderDetailedBuffer(t *testing.T) {
-	nikeScheme := schemes.ByName("x25519")
-	require.NotNil(t, nikeScheme)
+	nikeScheme := setupNikeScheme(t)
 
 	// Create two different envelopes
-	envelope1 := createTestEnvelope(t, []byte("message 1"), nikeScheme)
-	envelope2 := createTestEnvelope(t, []byte("message 2"), nikeScheme)
+	envelope1 := createTestEnvelope(t, []byte(testMessage1), nikeScheme)
+	envelope2 := createTestEnvelope(t, []byte(testMessage2), nikeScheme)
 
 	cbor1 := envelope1.Bytes()
 	cbor2 := envelope2.Bytes()
 
-	t.Logf("Envelope 1 size: %d bytes", len(cbor1))
-	t.Logf("Envelope 2 size: %d bytes", len(cbor2))
+	t.Logf(logEnvelopeSize, 1, len(cbor1))
+	t.Logf(logEnvelopeSize, 2, len(cbor2))
 
 	// Test 1: Decode each envelope separately
 	t.Log("=== Test 1: Separate decoding ===")
@@ -489,10 +501,7 @@ func TestStreamingDecoderDetailedBuffer(t *testing.T) {
 	// Test 3: Use the streaming decoder's processAvailableEnvelopes method
 	t.Log("=== Test 3: Streaming decoder processAvailableEnvelopes ===")
 	var processedEnvelopes []*common.CourierEnvelope
-	handleEnvelope := func(envelope *common.CourierEnvelope) {
-		processedEnvelopes = append(processedEnvelopes, envelope)
-		t.Logf("Processed envelope with epoch %d", envelope.Epoch)
-	}
+	handleEnvelope := createBasicEnvelopeHandler(t, &processedEnvelopes)
 
 	streamingDecoder := NewStreamingCBORDecoder(handleEnvelope)
 	streamingDecoder.buffer.Write(concatenated)
