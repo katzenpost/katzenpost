@@ -4,7 +4,6 @@
 package server
 
 import (
-	"errors"
 	"sync"
 	"time"
 
@@ -39,7 +38,7 @@ func (co *Connector) destToNodeID(dest uint8) (*[constants.NodeIDLength]byte, er
 	co.log.Debugf("destToNodeID: dest=%d, StorageReplicas count=%d", dest, len(doc.StorageReplicas))
 	if int(dest) >= len(doc.StorageReplicas) {
 		co.log.Errorf("destToNodeID: invalid destination ID %d >= %d", dest, len(doc.StorageReplicas))
-		return nil, errors.New("invalid destination ID")
+		return nil, errInvalidDestinationID
 	}
 	replica := doc.StorageReplicas[dest]
 	idKeyHash := hash.Sum256(replica.IdentityKey)
@@ -58,7 +57,7 @@ func (co *Connector) DispatchMessage(dest uint8, message *commands.ReplicaMessag
 	c, ok := co.conns[*id]
 	if !ok {
 		co.RUnlock()
-		co.log.Error("DispatchMessage failure: connection not found")
+		co.log.Errorf("DispatchMessage failure: %s", errConnectionNotFound)
 		return
 	}
 	co.RUnlock()

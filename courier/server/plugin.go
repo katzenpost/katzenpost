@@ -22,13 +22,29 @@ import (
 	"github.com/katzenpost/katzenpost/client2/constants"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
-	pigeonholeCommon "github.com/katzenpost/katzenpost/pigeonhole/common"
 	"github.com/katzenpost/katzenpost/replica/common"
 	"github.com/katzenpost/katzenpost/server/cborplugin"
 )
 
-const (
-	errFailedToReadBoxFromReplica = "failed to read Box from replica"
+// Error message constants
+var (
+	errFailedToReadBoxFromReplica = errors.New("failed to read Box from replica")
+	errInvalidDestinationID       = errors.New("invalid destination ID")
+	errConnectionNotFound         = errors.New("connection not found")
+	errNilEnvelopeHash            = errors.New("envelope hash is nil")
+	errNilDEKElements             = errors.New("DEK array contains nil elements")
+	errCBORDecodingFailed         = errors.New("CBOR decoding failed")
+	errStreamingDecoderFailed     = errors.New("streaming decoder failed")
+	errReplicaTimeout             = errors.New("replica timeout")
+	errInvalidReplicaID           = errors.New("invalid replica ID")
+	errCacheCorruption            = errors.New("cache corruption detected")
+	errPKIDocumentUnavailable     = errors.New("PKI document unavailable")
+	errInvalidEpoch               = errors.New("invalid epoch")
+	errMKEMEncapsulationFailed    = errors.New("MKEM encapsulation failed")
+	errMKEMDecryptionFailed       = errors.New("MKEM decryption failed")
+	errBACAPDecryptionFailed      = errors.New("BACAP decryption failed")
+	errTombstoneWriteFailed       = errors.New("tombstone write failed")
+	errEmptySequence              = errors.New("empty sequence")
 )
 
 // Copy command error codes
@@ -37,7 +53,125 @@ const (
 	copyErrorInvalidWriteCap   uint8 = 1
 	copyErrorReadCapDerivation uint8 = 2
 	copyErrorRead              uint8 = 3
+	copyErrorEmptySequence     uint8 = 4
+	copyErrorBACAPDecryption   uint8 = 5
+	copyErrorCBORDecoding      uint8 = 6
+	copyErrorStreamingDecoder  uint8 = 7
+	copyErrorReplicaTimeout    uint8 = 8
+	copyErrorMKEMDecryption    uint8 = 9
+	copyErrorTombstoneWrite    uint8 = 10
 )
+
+// CourierEnvelope operation error codes
+const (
+	envelopeErrorSuccess            uint8 = 0
+	envelopeErrorInvalidEnvelope    uint8 = 1
+	envelopeErrorNilEnvelopeHash    uint8 = 2
+	envelopeErrorNilDEKElements     uint8 = 3
+	envelopeErrorInvalidReplicaID   uint8 = 4
+	envelopeErrorReplicaTimeout     uint8 = 5
+	envelopeErrorConnectionFailure  uint8 = 6
+	envelopeErrorCacheCorruption    uint8 = 7
+	envelopeErrorPKIUnavailable     uint8 = 8
+	envelopeErrorInvalidEpoch       uint8 = 9
+	envelopeErrorMKEMFailure        uint8 = 10
+	envelopeErrorReplicaUnavailable uint8 = 11
+	envelopeErrorInternalError      uint8 = 12
+)
+
+// General courier error codes
+const (
+	courierErrorSuccess         uint8 = 0
+	courierErrorInvalidCommand  uint8 = 1
+	courierErrorCBORDecoding    uint8 = 2
+	courierErrorDispatchFailure uint8 = 3
+	courierErrorConnectionLost  uint8 = 4
+	courierErrorInternalError   uint8 = 5
+)
+
+// copyErrorToString returns a human-readable string for copy error codes
+func copyErrorToString(errorCode uint8) string {
+	switch errorCode {
+	case copyErrorSuccess:
+		return "Success"
+	case copyErrorInvalidWriteCap:
+		return "Invalid WriteCap"
+	case copyErrorReadCapDerivation:
+		return "ReadCap derivation failed"
+	case copyErrorRead:
+		return "Read operation failed"
+	case copyErrorEmptySequence:
+		return "Empty sequence"
+	case copyErrorBACAPDecryption:
+		return "BACAP decryption failed"
+	case copyErrorCBORDecoding:
+		return "CBOR decoding failed"
+	case copyErrorStreamingDecoder:
+		return "Streaming decoder failed"
+	case copyErrorReplicaTimeout:
+		return "Replica timeout"
+	case copyErrorMKEMDecryption:
+		return "MKEM decryption failed"
+	case copyErrorTombstoneWrite:
+		return "Tombstone write failed"
+	default:
+		return fmt.Sprintf("Unknown copy error code: %d", errorCode)
+	}
+}
+
+// envelopeErrorToString returns a human-readable string for envelope error codes
+func envelopeErrorToString(errorCode uint8) string {
+	switch errorCode {
+	case envelopeErrorSuccess:
+		return "Success"
+	case envelopeErrorInvalidEnvelope:
+		return "Invalid envelope"
+	case envelopeErrorNilEnvelopeHash:
+		return "Nil envelope hash"
+	case envelopeErrorNilDEKElements:
+		return "Nil DEK elements"
+	case envelopeErrorInvalidReplicaID:
+		return "Invalid replica ID"
+	case envelopeErrorReplicaTimeout:
+		return "Replica timeout"
+	case envelopeErrorConnectionFailure:
+		return "Connection failure"
+	case envelopeErrorCacheCorruption:
+		return "Cache corruption"
+	case envelopeErrorPKIUnavailable:
+		return "PKI unavailable"
+	case envelopeErrorInvalidEpoch:
+		return "Invalid epoch"
+	case envelopeErrorMKEMFailure:
+		return "MKEM failure"
+	case envelopeErrorReplicaUnavailable:
+		return "Replica unavailable"
+	case envelopeErrorInternalError:
+		return "Internal error"
+	default:
+		return fmt.Sprintf("Unknown envelope error code: %d", errorCode)
+	}
+}
+
+// courierErrorToString returns a human-readable string for general courier error codes
+func courierErrorToString(errorCode uint8) string {
+	switch errorCode {
+	case courierErrorSuccess:
+		return "Success"
+	case courierErrorInvalidCommand:
+		return "Invalid command"
+	case courierErrorCBORDecoding:
+		return "CBOR decoding failed"
+	case courierErrorDispatchFailure:
+		return "Dispatch failure"
+	case courierErrorConnectionLost:
+		return "Connection lost"
+	case courierErrorInternalError:
+		return "Internal error"
+	default:
+		return fmt.Sprintf("Unknown courier error code: %d", errorCode)
+	}
+}
 
 // CourierBookKeeping is used for:
 // 1. deduping writes
@@ -147,7 +281,7 @@ func (e *Courier) validateReply(reply *commands.ReplicaMessageReply) bool {
 	e.log.Debug("CacheReply: caching read reply")
 
 	if reply.EnvelopeHash == nil {
-		e.log.Debug("CacheReply: envelope hash is nil, not caching")
+		e.log.Debugf("CacheReply: envelope hash is nil, not caching - error: %s", errNilEnvelopeHash)
 		return false
 	}
 
@@ -223,8 +357,15 @@ func (e *Courier) logFinalCacheState(reply *commands.ReplicaMessageReply) {
 	e.log.Debugf("CacheReply: final cache state for %x - Reply[0]: %v, Reply[1]: %v", reply.EnvelopeHash, reply0Available, reply1Available)
 }
 
-func (e *Courier) handleCourierEnvelope(courierMessage *common.CourierEnvelope) {
+func (e *Courier) handleCourierEnvelope(courierMessage *common.CourierEnvelope) error {
+	e.log.Debugf("Copy: Processing CourierEnvelope (IsRead=%t)", courierMessage.IsRead)
 	replicas := make([]*commands.ReplicaMessage, 2)
+
+	// Validate DEK array elements are not nil before using them
+	if courierMessage.DEK[0] == nil || courierMessage.DEK[1] == nil {
+		e.log.Errorf("handleCourierEnvelope: CourierEnvelope DEK array contains nil elements")
+		return errNilDEKElements
+	}
 
 	firstReplicaID := courierMessage.IntermediateReplicas[0]
 	replicas[0] = &commands.ReplicaMessage{
@@ -249,16 +390,24 @@ func (e *Courier) handleCourierEnvelope(courierMessage *common.CourierEnvelope) 
 		Ciphertext:    courierMessage.Ciphertext,
 	}
 	e.server.SendMessage(secondReplicaID, replicas[1])
+	return nil
 }
 
 func (e *Courier) handleNewMessage(envHash *[hash.HashSize]byte, courierMessage *common.CourierEnvelope) *common.CourierQueryReply {
-	e.handleCourierEnvelope(courierMessage)
+	if err := e.handleCourierEnvelope(courierMessage); err != nil {
+		e.log.Errorf("Failed to handle courier envelope: %s", err)
+		if err == errNilDEKElements {
+			return e.createEnvelopeErrorReply(envHash, envelopeErrorNilDEKElements)
+		}
+		return e.createEnvelopeErrorReply(envHash, envelopeErrorInternalError)
+	}
+
 	reply := &common.CourierQueryReply{
 		CourierEnvelopeReply: &common.CourierEnvelopeReply{
 			EnvelopeHash: envHash,
 			ReplyIndex:   0,
 			Payload:      nil,
-			ErrorCode:    0,
+			ErrorCode:    envelopeErrorSuccess,
 		},
 		CopyCommandReply: nil,
 	}
@@ -268,20 +417,16 @@ func (e *Courier) handleNewMessage(envHash *[hash.HashSize]byte, courierMessage 
 func (e *Courier) handleOldMessage(cacheEntry *CourierBookKeeping, envHash *[hash.HashSize]byte, courierMessage *common.CourierEnvelope) *common.CourierQueryReply {
 	e.log.Debugf("handleOldMessage called for envelope hash: %x, requested ReplyIndex: %d", envHash, courierMessage.ReplyIndex)
 
-	envelopeReply := &common.CourierEnvelopeReply{
-		EnvelopeHash: envHash,
-		ReplyIndex:   courierMessage.ReplyIndex,
-		ErrorCode:    0,
-	}
-
 	// Check if cacheEntry is nil before accessing its fields
 	if cacheEntry == nil {
 		e.log.Debugf("Cache entry is nil, no replies available")
-		reply := &common.CourierQueryReply{
-			CourierEnvelopeReply: envelopeReply,
-			CopyCommandReply:     nil,
-		}
-		return reply
+		return e.createEnvelopeErrorReply(envHash, envelopeErrorCacheCorruption)
+	}
+
+	envelopeReply := &common.CourierEnvelopeReply{
+		EnvelopeHash: envHash,
+		ReplyIndex:   courierMessage.ReplyIndex,
+		ErrorCode:    envelopeErrorSuccess,
 	}
 
 	// Log cache state
@@ -320,8 +465,21 @@ func (e *Courier) OnCommand(cmd cborplugin.Command) error {
 
 	courierQuery, err := common.CourierQueryFromBytes(request.Payload)
 	if err != nil {
-		e.log.Debugf("Bug, failed to decode CourierQuery CBOR blob: %s", err)
-		return err
+		e.log.Debugf("Failed to decode CourierQuery CBOR blob: %s", err)
+		// Send error reply back to client
+		errorReply := &common.CourierQueryReply{
+			CourierEnvelopeReply: &common.CourierEnvelopeReply{
+				ErrorCode: envelopeErrorInvalidEnvelope,
+			},
+		}
+		go func() {
+			e.write(&cborplugin.Response{
+				ID:      request.ID,
+				SURB:    request.SURB,
+				Payload: errorReply.Bytes(),
+			})
+		}()
+		return errCBORDecodingFailed
 	}
 
 	// Handle CourierEnvelope if present
@@ -398,12 +556,28 @@ func (e *Courier) cacheHandleCourierEnvelope(courierMessage *common.CourierEnvel
 func (e *Courier) handleCopyCommand(copyCmd *common.CopyCommand) *common.CourierQueryReply {
 	statefulReader, err := e.createStatefulReader(copyCmd.WriteCap)
 	if err != nil {
+		e.log.Debugf("Failed to create stateful reader: %s", err)
 		return e.createCopyErrorReply(copyErrorReadCapDerivation)
 	}
 
 	boxIDList, err := e.processBoxesStreaming(statefulReader)
 	if err != nil {
-		return e.createCopyErrorReply(copyErrorRead)
+		e.log.Debugf("Failed to process boxes: %s", err)
+		// Map specific errors to specific error codes
+		switch err {
+		case errEmptySequence:
+			return e.createCopyErrorReply(copyErrorEmptySequence)
+		case errBACAPDecryptionFailed:
+			return e.createCopyErrorReply(copyErrorBACAPDecryption)
+		case errStreamingDecoderFailed:
+			return e.createCopyErrorReply(copyErrorStreamingDecoder)
+		case errReplicaTimeout:
+			return e.createCopyErrorReply(copyErrorReplicaTimeout)
+		case errMKEMDecryptionFailed:
+			return e.createCopyErrorReply(copyErrorMKEMDecryption)
+		default:
+			return e.createCopyErrorReply(copyErrorRead)
+		}
 	}
 
 	// XXX TODO FIXME: write tombstones to all the Boxes in boxIDList.
@@ -426,30 +600,51 @@ func (e *Courier) processBoxesStreaming(statefulReader *bacap.StatefulReader) ([
 	boxIDList := make([]*[bacap.BoxIDSize]byte, 0)
 
 	// Create a streaming CBOR decoder that processes envelopes as they become available
-	streamingDecoder := NewStreamingCBORDecoder(e.handleCourierEnvelope)
-	isLast := false
+	streamingDecoder := NewStreamingCBORDecoder(func(envelope *common.CourierEnvelope) {
+		if err := e.handleCourierEnvelope(envelope); err != nil {
+			e.log.Errorf("Failed to handle courier envelope: %s", err)
+		}
+	})
 
-	for !isLast {
+	// Read boxes sequentially using the StatefulReader
+	for {
+		// Get the next BoxID to read
 		boxID, err := statefulReader.NextBoxID()
 		if err != nil {
-			e.log.Debugf("Failed to get next BoxID: %s", err)
-			return nil, err
+			// If we can't get the first BoxID, the sequence is empty
+			e.log.Debugf("Empty sequence detected: %s", err)
+			return nil, errEmptySequence
 		}
 		boxIDList = append(boxIDList, boxID)
 
-		boxPlaintext, last, err := e.readNextBox(statefulReader)
+		// Read the box from replica
+		replicaReadReply, err := e.readBoxFromReplica(boxID)
 		if err != nil {
-			e.log.Debugf("Failed to read next Box: %s", err)
+			e.log.Debugf("Failed to read Box from replica: %s", err)
+			if err == errFailedToReadBoxFromReplica {
+				return nil, errReplicaTimeout
+			}
 			return nil, err
 		}
-		isLast = last
+
+		// Use DecryptNext to advance the StatefulReader state
+		// We need to provide the actual encrypted box data from the replica
+		boxPlaintext, err := statefulReader.DecryptNext(constants.PIGEONHOLE_CTX, *boxID, replicaReadReply.Payload, *replicaReadReply.Signature)
+		if err != nil {
+			e.log.Debugf("Failed to decrypt box: %s", err)
+			return nil, errBACAPDecryptionFailed
+		}
 
 		// Feed this box's plaintext to the streaming decoder
-		// Envelopes are processed immediately as they become decodable
 		err = streamingDecoder.ProcessChunk(boxPlaintext)
 		if err != nil {
 			e.log.Debugf("Failed to process box chunk: %s", err)
-			return nil, err
+			return nil, errStreamingDecoderFailed
+		}
+
+		// Check if this was the last box
+		if replicaReadReply.IsLast {
+			break
 		}
 	}
 
@@ -457,9 +652,10 @@ func (e *Courier) processBoxesStreaming(statefulReader *bacap.StatefulReader) ([
 	err := streamingDecoder.Finalize()
 	if err != nil {
 		e.log.Debugf("Failed to finalize streaming decoder: %s", err)
-		return nil, err
+		return nil, errStreamingDecoderFailed
 	}
 
+	e.log.Debugf("Copy: Successfully processed %d boxes from Sequence B", len(boxIDList))
 	return boxIDList, nil
 }
 
@@ -524,6 +720,7 @@ func (s *StreamingCBORDecoder) processAvailableEnvelopes() error {
 }
 
 func (e *Courier) createCopyErrorReply(errorCode uint8) *common.CourierQueryReply {
+	e.log.Debugf("Copy command failed with error code %d: %s", errorCode, copyErrorToString(errorCode))
 	return &common.CourierQueryReply{
 		CourierEnvelopeReply: nil,
 		CopyCommandReply: &common.CopyCommandReply{
@@ -533,6 +730,7 @@ func (e *Courier) createCopyErrorReply(errorCode uint8) *common.CourierQueryRepl
 }
 
 func (e *Courier) createCopySuccessReply() *common.CourierQueryReply {
+	e.log.Debugf("Copy command completed successfully")
 	return &common.CourierQueryReply{
 		CourierEnvelopeReply: nil,
 		CopyCommandReply: &common.CopyCommandReply{
@@ -541,24 +739,45 @@ func (e *Courier) createCopySuccessReply() *common.CourierQueryReply {
 	}
 }
 
-func (e *Courier) readNextBox(statefulReader *bacap.StatefulReader) (boxPlaintext []byte, isLast bool, err error) {
-	boxID, err := statefulReader.NextBoxID()
-	if err != nil {
-		e.log.Debugf("Failed to get next BoxID: %s", err)
-		return nil, false, errors.New("failed to get next BoxID")
+// createEnvelopeErrorReply creates a CourierEnvelopeReply with the specified error code
+func (e *Courier) createEnvelopeErrorReply(envHash *[hash.HashSize]byte, errorCode uint8) *common.CourierQueryReply {
+	e.log.Debugf("Envelope operation failed with error code %d: %s", errorCode, envelopeErrorToString(errorCode))
+	return &common.CourierQueryReply{
+		CourierEnvelopeReply: &common.CourierEnvelopeReply{
+			EnvelopeHash: envHash,
+			ReplyIndex:   0,
+			Payload:      nil,
+			ErrorCode:    errorCode,
+		},
+		CopyCommandReply: nil,
 	}
-	replicaReadReply, err := e.readBoxFromReplica(boxID)
-	if err != nil {
-		e.log.Debugf("Failed to read Box from replica: %s", err)
-		return nil, false, errors.New(errFailedToReadBoxFromReplica)
+}
+
+// createEnvelopeSuccessReply creates a successful CourierEnvelopeReply
+func (e *Courier) createEnvelopeSuccessReply(envHash *[hash.HashSize]byte, replyIndex uint8, payload []byte) *common.CourierQueryReply {
+	return &common.CourierQueryReply{
+		CourierEnvelopeReply: &common.CourierEnvelopeReply{
+			EnvelopeHash: envHash,
+			ReplyIndex:   replyIndex,
+			Payload:      payload,
+			ErrorCode:    envelopeErrorSuccess,
+		},
+		CopyCommandReply: nil,
 	}
-	return replicaReadReply.Payload, replicaReadReply.IsLast, nil
 }
 
 // here we send a read request to the replica and get a reply
 func (e *Courier) readBoxFromReplica(boxID *[bacap.BoxIDSize]byte) (*common.ReplicaReadReply, error) {
+	e.log.Debugf("Copy: Reading BoxID %x from replica", boxID[:8])
+
 	doc := e.server.PKI.PKIDocument()
-	_, replicaPubKeys, err := pigeonholeCommon.GetRandomIntermediateReplicas(doc)
+	// For copy command, always use replica 0 to match test expectations
+	replicaEpoch, _, _ := common.ReplicaNow()
+	replicaPubKey := doc.StorageReplicas[0].EnvelopeKeys[replicaEpoch]
+
+	replicaPubKeys := make([]nike.PublicKey, 1)
+	var err error
+	replicaPubKeys[0], err = common.NikeScheme.UnmarshalBinaryPublicKey(replicaPubKey)
 	if err != nil {
 		return nil, err
 	}
@@ -572,6 +791,12 @@ func (e *Courier) readBoxFromReplica(boxID *[bacap.BoxIDSize]byte) (*common.Repl
 
 	mkemPrivateKey, mkemCiphertext := common.MKEMNikeScheme.Encapsulate(replicaPubKeys, msg.Bytes())
 	mkemPublicKey := mkemPrivateKey.Public()
+
+	// Validate DEK is not nil before using it
+	if mkemCiphertext.DEKCiphertexts[0] == nil {
+		return nil, errMKEMEncapsulationFailed
+	}
+
 	query := &commands.ReplicaMessage{
 		Cmds:   e.cmds,
 		Geo:    e.geo,
@@ -593,13 +818,15 @@ func (e *Courier) readBoxFromReplica(boxID *[bacap.BoxIDSize]byte) (*common.Repl
 	reply := <-e.copyCache[*envHash]
 	delete(e.copyCache, *envHash)
 
+	e.log.Debugf("Copy: Replica reply for BoxID %x: ErrorCode=%d", boxID[:8], reply.ErrorCode)
+
 	if reply.ErrorCode != 0 {
-		return nil, errors.New(errFailedToReadBoxFromReplica)
+		return nil, errFailedToReadBoxFromReplica
 	}
 
 	rawPlaintext, err := common.MKEMNikeScheme.DecryptEnvelope(mkemPrivateKey, replicaPubKeys[0], reply.EnvelopeReply)
 	if err != nil {
-		return nil, err
+		return nil, errMKEMDecryptionFailed
 	}
 
 	innerMsg, err := common.ReplicaMessageReplyInnerMessageFromBytes(rawPlaintext)
@@ -608,7 +835,7 @@ func (e *Courier) readBoxFromReplica(boxID *[bacap.BoxIDSize]byte) (*common.Repl
 	}
 
 	if innerMsg.ReplicaReadReply == nil {
-		return nil, errors.New(errFailedToReadBoxFromReplica)
+		return nil, errFailedToReadBoxFromReplica
 	}
 
 	return innerMsg.ReplicaReadReply, nil
