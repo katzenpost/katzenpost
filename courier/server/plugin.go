@@ -22,6 +22,7 @@ import (
 	"github.com/katzenpost/hpqc/nike/schemes"
 
 	"github.com/katzenpost/katzenpost/client2/constants"
+	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 	pigeonholeCommon "github.com/katzenpost/katzenpost/pigeonhole/common"
@@ -1017,10 +1018,29 @@ func (e *Courier) createEnvelopeSuccessReply(envHash *[hash.HashSize]byte, reply
 func (e *Courier) readBoxFromReplica(boxID *[bacap.BoxIDSize]byte) (*common.ReplicaReadReply, error) {
 	e.log.Debugf("Copy: Reading BoxID %x from replica", boxID[:8])
 
-	doc := e.server.PKI.PKIDocument()
-	replicaEpoch, _, _ := common.ReplicaNow()
+	shardedReplicas, err := e.getShardedReplicas(boxID)
+	if err != nil {
+		return nil, err
+	}
 
-	// Use sharding algorithm to determine which replicas should have this BoxID
+	replicaErrors := make([]uint8, 0, 2)
+
+	// Try reading from the 2 sharded replicas
+	for i, shardedReplica := range shardedReplicas {
+		reply, err := e.tryReadFromReplica(boxID, i, shardedReplica, &replicaErrors)
+		if err == nil && reply != nil {
+			e.log.Debugf("Copy: Successfully read BoxID %x from replica %d", boxID[:8], i)
+			return reply, nil
+		}
+	}
+
+	return e.handleAllReplicasFailed(boxID, replicaErrors)
+}
+
+// getShardedReplicas gets the sharded replicas for a given BoxID
+func (e *Courier) getShardedReplicas(boxID *[bacap.BoxIDSize]byte) ([]*pki.ReplicaDescriptor, error) {
+	doc := e.server.PKI.PKIDocument()
+
 	shardedReplicas, err := replicaCommon.GetShards(boxID, doc)
 	if err != nil {
 		e.log.Debugf("Copy: Failed to get shards for BoxID %x: %s", boxID[:8], err)
@@ -1031,119 +1051,148 @@ func (e *Courier) readBoxFromReplica(boxID *[bacap.BoxIDSize]byte) (*common.Repl
 		return nil, errFailedToReadBoxFromReplica
 	}
 
-	// Track replica errors for fine-grained error reporting
-	replicaErrors := make([]uint8, 0, 2)
+	return shardedReplicas, nil
+}
 
-	// Try reading from the 2 sharded replicas
-	for i, shardedReplica := range shardedReplicas {
-		// Find the index of this replica in the StorageReplicas slice
-		replicaIndex := -1
-		for j, storageReplica := range doc.StorageReplicas {
-			if bytes.Equal(shardedReplica.IdentityKey, storageReplica.IdentityKey) {
-				replicaIndex = j
-				break
-			}
-		}
-		if replicaIndex == -1 {
-			e.log.Debugf("Copy: Could not find sharded replica %d in StorageReplicas for BoxID %x", i, boxID[:8])
-			replicaErrors = append(replicaErrors, pigeonholeCommon.ReplicaErrorInvalidEpoch)
-			continue
-		}
+// prepareReplicaKeys prepares the replica public keys for MKEM encryption
+func (e *Courier) prepareReplicaKeys(replicaIndex int, doc *pki.Document) ([]nike.PublicKey, error) {
+	replicaEpoch, _, _ := common.ReplicaNow()
+	replicaPubKey := doc.StorageReplicas[replicaIndex].EnvelopeKeys[replicaEpoch]
+	replicaPubKeys := make([]nike.PublicKey, 1)
 
-		e.log.Debugf("Copy: Trying sharded replica %d (index %d) for BoxID %x", i, replicaIndex, boxID[:8])
-
-		replicaPubKey := doc.StorageReplicas[replicaIndex].EnvelopeKeys[replicaEpoch]
-		replicaPubKeys := make([]nike.PublicKey, 1)
-		var err error
-		replicaPubKeys[0], err = common.NikeScheme.UnmarshalBinaryPublicKey(replicaPubKey)
-		if err != nil {
-			e.log.Debugf("Copy: Failed to unmarshal replica %d public key: %s", replicaIndex, err)
-			replicaErrors = append(replicaErrors, pigeonholeCommon.ReplicaErrorInvalidEpoch)
-			continue
-		}
-
-		readMsg := common.ReplicaRead{
-			BoxID: boxID,
-		}
-		msg := &common.ReplicaInnerMessage{
-			ReplicaRead: &readMsg,
-		}
-
-		mkemPrivateKey, mkemCiphertext := common.MKEMNikeScheme.Encapsulate(replicaPubKeys, msg.Bytes())
-		mkemPublicKey := mkemPrivateKey.Public()
-
-		// Validate DEK is not nil before using it
-		if mkemCiphertext.DEKCiphertexts[0] == nil {
-			e.log.Debugf("Copy: MKEM encapsulation failed for replica %d", replicaIndex)
-			replicaErrors = append(replicaErrors, pigeonholeCommon.ReplicaErrorInternalError)
-			continue
-		}
-
-		query := &commands.ReplicaMessage{
-			Cmds:   e.cmds,
-			Geo:    e.geo,
-			Scheme: e.envelopeScheme,
-
-			SenderEPubKey: mkemPublicKey.Bytes(),
-			DEK:           mkemCiphertext.DEKCiphertexts[0],
-			Ciphertext:    mkemCiphertext.Envelope,
-		}
-
-		envHash := query.EnvelopeHash()
-
-		e.copyCacheLock.Lock()
-		e.copyCache[*envHash] = make(chan *commands.ReplicaMessageReply, 1)
-		e.copyCacheLock.Unlock()
-
-		e.server.SendMessage(uint8(replicaIndex), query)
-
-		reply := <-e.copyCache[*envHash]
-		delete(e.copyCache, *envHash)
-
-		e.log.Debugf("Copy: Replica %d reply for BoxID %x: ErrorCode=%d", replicaIndex, boxID[:8], reply.ErrorCode)
-
-		if reply.ErrorCode != 0 {
-			e.log.Debugf("Copy: Replica %d returned error code %d (%s), trying next replica", replicaIndex, reply.ErrorCode, pigeonholeCommon.ReplicaErrorToString(reply.ErrorCode))
-			// Store the replica error for fine-grained error reporting
-			replicaErrors = append(replicaErrors, reply.ErrorCode)
-			continue
-		}
-
-		rawPlaintext, err := common.MKEMNikeScheme.DecryptEnvelope(mkemPrivateKey, replicaPubKeys[0], reply.EnvelopeReply)
-		if err != nil {
-			e.log.Debugf("Copy: Failed to decrypt envelope from replica %d: %s", replicaIndex, err)
-			replicaErrors = append(replicaErrors, pigeonholeCommon.ReplicaErrorInternalError)
-			continue
-		}
-
-		innerMsg, err := common.ReplicaMessageReplyInnerMessageFromBytes(rawPlaintext)
-		if err != nil {
-			e.log.Debugf("Copy: Failed to parse inner message from replica %d: %s", replicaIndex, err)
-			continue
-		}
-
-		if innerMsg.ReplicaReadReply == nil {
-			e.log.Debugf("Copy: Replica %d returned nil ReplicaReadReply", replicaIndex)
-			continue
-		}
-
-		// Check if signature is nil (this was the original issue)
-		if innerMsg.ReplicaReadReply.Signature == nil {
-			e.log.Debugf("Copy: Replica %d returned nil signature for BoxID %x, trying next replica", replicaIndex, boxID[:8])
-			replicaErrors = append(replicaErrors, pigeonholeCommon.ReplicaErrorInvalidSignature)
-			continue
-		}
-
-		e.log.Debugf("Copy: Successfully read BoxID %x from replica %d", boxID[:8], replicaIndex)
-		return innerMsg.ReplicaReadReply, nil
+	var err error
+	replicaPubKeys[0], err = common.NikeScheme.UnmarshalBinaryPublicKey(replicaPubKey)
+	if err != nil {
+		e.log.Debugf("Copy: Failed to unmarshal replica %d public key: %s", replicaIndex, err)
+		return nil, err
 	}
 
-	// If we get here, all replicas failed
+	return replicaPubKeys, nil
+}
+
+// findReplicaIndexByDescriptor finds the index of a sharded replica in the StorageReplicas slice
+func (e *Courier) findReplicaIndexByDescriptor(shardedReplica *pki.ReplicaDescriptor, doc *pki.Document) int {
+	for j, storageReplica := range doc.StorageReplicas {
+		if bytes.Equal(shardedReplica.IdentityKey, storageReplica.IdentityKey) {
+			return j
+		}
+	}
+	return -1
+}
+
+// tryReadFromReplica attempts to read from a single replica
+func (e *Courier) tryReadFromReplica(boxID *[bacap.BoxIDSize]byte, replicaNum int, shardedReplica *pki.ReplicaDescriptor, replicaErrors *[]uint8) (*common.ReplicaReadReply, error) {
+	doc := e.server.PKI.PKIDocument()
+
+	// Find the index of this replica in the StorageReplicas slice
+	replicaIndex := e.findReplicaIndexByDescriptor(shardedReplica, doc)
+	if replicaIndex == -1 {
+		e.log.Debugf("Copy: Could not find sharded replica %d in StorageReplicas for BoxID %x", replicaNum, boxID[:8])
+		*replicaErrors = append(*replicaErrors, pigeonholeCommon.ReplicaErrorInvalidEpoch)
+		return nil, errFailedToReadBoxFromReplica
+	}
+
+	e.log.Debugf("Copy: Trying sharded replica %d (index %d) for BoxID %x", replicaNum, replicaIndex, boxID[:8])
+
+	replicaPubKeys, err := e.prepareReplicaKeys(replicaIndex, doc)
+	if err != nil {
+		*replicaErrors = append(*replicaErrors, pigeonholeCommon.ReplicaErrorInvalidEpoch)
+		return nil, err
+	}
+
+	reply, mkemPrivateKey, err := e.sendReplicaQuery(boxID, replicaIndex, replicaPubKeys)
+	if err != nil {
+		*replicaErrors = append(*replicaErrors, pigeonholeCommon.ReplicaErrorInternalError)
+		return nil, err
+	}
+
+	return e.processReplicaReply(boxID, replicaIndex, reply, mkemPrivateKey, replicaPubKeys, replicaErrors)
+}
+
+// sendReplicaQuery sends a query to a replica and returns the reply and private key
+func (e *Courier) sendReplicaQuery(boxID *[bacap.BoxIDSize]byte, replicaIndex int, replicaPubKeys []nike.PublicKey) (*commands.ReplicaMessageReply, nike.PrivateKey, error) {
+	readMsg := common.ReplicaRead{
+		BoxID: boxID,
+	}
+	msg := &common.ReplicaInnerMessage{
+		ReplicaRead: &readMsg,
+	}
+
+	mkemPrivateKey, mkemCiphertext := common.MKEMNikeScheme.Encapsulate(replicaPubKeys, msg.Bytes())
+	mkemPublicKey := mkemPrivateKey.Public()
+
+	// Validate DEK is not nil before using it
+	if mkemCiphertext.DEKCiphertexts[0] == nil {
+		e.log.Debugf("Copy: MKEM encapsulation failed for replica %d", replicaIndex)
+		return nil, nil, errFailedToReadBoxFromReplica
+	}
+
+	query := &commands.ReplicaMessage{
+		Cmds:   e.cmds,
+		Geo:    e.geo,
+		Scheme: e.envelopeScheme,
+
+		SenderEPubKey: mkemPublicKey.Bytes(),
+		DEK:           mkemCiphertext.DEKCiphertexts[0],
+		Ciphertext:    mkemCiphertext.Envelope,
+	}
+
+	envHash := query.EnvelopeHash()
+
+	e.copyCacheLock.Lock()
+	e.copyCache[*envHash] = make(chan *commands.ReplicaMessageReply, 1)
+	e.copyCacheLock.Unlock()
+
+	e.server.SendMessage(uint8(replicaIndex), query)
+
+	reply := <-e.copyCache[*envHash]
+	delete(e.copyCache, *envHash)
+
+	return reply, mkemPrivateKey, nil
+}
+
+// processReplicaReply processes the reply from a replica and validates the response
+func (e *Courier) processReplicaReply(boxID *[bacap.BoxIDSize]byte, replicaIndex int, reply *commands.ReplicaMessageReply, mkemPrivateKey nike.PrivateKey, replicaPubKeys []nike.PublicKey, replicaErrors *[]uint8) (*common.ReplicaReadReply, error) {
+	e.log.Debugf("Copy: Replica %d reply for BoxID %x: ErrorCode=%d", replicaIndex, boxID[:8], reply.ErrorCode)
+
+	if reply.ErrorCode != 0 {
+		e.log.Debugf("Copy: Replica %d returned error code %d (%s), trying next replica", replicaIndex, reply.ErrorCode, pigeonholeCommon.ReplicaErrorToString(reply.ErrorCode))
+		*replicaErrors = append(*replicaErrors, reply.ErrorCode)
+		return nil, errFailedToReadBoxFromReplica
+	}
+
+	rawPlaintext, err := common.MKEMNikeScheme.DecryptEnvelope(mkemPrivateKey, replicaPubKeys[0], reply.EnvelopeReply)
+	if err != nil {
+		e.log.Debugf("Copy: Failed to decrypt envelope from replica %d: %s", replicaIndex, err)
+		*replicaErrors = append(*replicaErrors, pigeonholeCommon.ReplicaErrorInternalError)
+		return nil, err
+	}
+
+	innerMsg, err := common.ReplicaMessageReplyInnerMessageFromBytes(rawPlaintext)
+	if err != nil {
+		e.log.Debugf("Copy: Failed to parse inner message from replica %d: %s", replicaIndex, err)
+		return nil, err
+	}
+
+	if innerMsg.ReplicaReadReply == nil {
+		e.log.Debugf("Copy: Replica %d returned nil ReplicaReadReply", replicaIndex)
+		return nil, errFailedToReadBoxFromReplica
+	}
+
+	if innerMsg.ReplicaReadReply.Signature == nil {
+		e.log.Debugf("Copy: Replica %d returned nil signature for BoxID %x, trying next replica", replicaIndex, boxID[:8])
+		*replicaErrors = append(*replicaErrors, pigeonholeCommon.ReplicaErrorInvalidSignature)
+		return nil, errFailedToReadBoxFromReplica
+	}
+
+	return innerMsg.ReplicaReadReply, nil
+}
+
+// handleAllReplicasFailed handles the case when all replicas fail to provide valid data
+func (e *Courier) handleAllReplicasFailed(boxID *[bacap.BoxIDSize]byte, replicaErrors []uint8) (*common.ReplicaReadReply, error) {
 	e.log.Debugf("Copy: All replicas failed to provide valid data for BoxID %x", boxID[:8])
 
-	// Analyze replica errors to provide more specific error reporting
 	if len(replicaErrors) > 0 {
-		// Find the most common error or prioritize certain error types
 		notFoundCount := 0
 		for _, errCode := range replicaErrors {
 			if errCode == pigeonholeCommon.ReplicaErrorNotFound {
@@ -1151,10 +1200,8 @@ func (e *Courier) readBoxFromReplica(boxID *[bacap.BoxIDSize]byte) (*common.Repl
 			}
 		}
 
-		// If majority of replicas returned "not found", it's likely the data doesn't exist
 		if notFoundCount > len(replicaErrors)/2 {
 			e.log.Debugf("Copy: Majority of replicas (%d/%d) returned 'not found' for BoxID %x", notFoundCount, len(replicaErrors), boxID[:8])
-			return nil, errFailedToReadBoxFromReplica // Could be mapped to a more specific error
 		}
 	}
 
