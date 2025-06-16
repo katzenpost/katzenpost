@@ -4,6 +4,7 @@
 package common
 
 import (
+	"encoding/binary"
 	"fmt"
 
 	cbor "github.com/fxamacker/cbor/v2"
@@ -384,6 +385,58 @@ func BoxFromBytes(b []byte) (*Box, error) {
 		return nil, err
 	}
 	return c, nil
+}
+
+// InnerBACAPPayload represents the innermost payload structure that goes inside BACAP ciphertext.
+// It uses a 4-byte length prefix followed by data followed by zero-byte padding to ensure
+// all BACAP write messages are the same size (padded to the maximum allowed by geometry).
+type InnerBACAPPayload struct {
+	Data []byte
+}
+
+// CreatePaddedPayload creates a padded InnerBACAPPayload with 4-byte length prefix.
+// The maxUserDataSize parameter specifies the maximum user data that can be stored.
+// The resulting payload will be exactly (maxUserDataSize + 4) bytes, with:
+// - 4 bytes: length of actual data (little-endian)
+// - N bytes: actual data
+// - remaining bytes: zero padding
+func CreatePaddedPayload(data []byte, maxUserDataSize int) ([]byte, error) {
+	if len(data) > maxUserDataSize {
+		return nil, fmt.Errorf("data too large: %d bytes > %d bytes (max user data size)", len(data), maxUserDataSize)
+	}
+
+	// Create the padded payload (user data + 4-byte length prefix)
+	totalSize := maxUserDataSize + 4
+	paddedPayload := make([]byte, totalSize)
+
+	// Write 4-byte length prefix (little-endian)
+	binary.LittleEndian.PutUint32(paddedPayload[0:4], uint32(len(data)))
+
+	// Copy the actual data
+	copy(paddedPayload[4:4+len(data)], data)
+
+	// Remaining bytes are already zero (from make())
+
+	return paddedPayload, nil
+}
+
+// ExtractDataFromPaddedPayload extracts the original data from a padded payload.
+// It reads the 4-byte length prefix and returns only the actual data portion.
+func ExtractDataFromPaddedPayload(paddedPayload []byte) ([]byte, error) {
+	if len(paddedPayload) < 4 {
+		return nil, fmt.Errorf("padded payload too short: %d bytes < 4 bytes (minimum for length prefix)", len(paddedPayload))
+	}
+
+	// Read the length prefix
+	dataLength := binary.LittleEndian.Uint32(paddedPayload[0:4])
+
+	// Validate the length
+	if int(dataLength) > len(paddedPayload)-4 {
+		return nil, fmt.Errorf("invalid data length: %d bytes > %d bytes (available after length prefix)", dataLength, len(paddedPayload)-4)
+	}
+
+	// Extract and return the actual data
+	return paddedPayload[4 : 4+dataLength], nil
 }
 
 func init() {

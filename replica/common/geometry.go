@@ -69,8 +69,8 @@ type Geometry struct {
 	// by BACAP to sign payloads.
 	SignatureSchemeName string
 
-	// BoxPayloadLength is the size of the usable payload that is end to end encrypted at rest
-	// by means of the BACAP protocol described in section 4 of our paper, EchoMix.
+	// BoxPayloadLength is the maximum size of actual user data that can be stored in a box.
+	// This is the innermost payload size before the 4-byte length prefix and zero padding.
 	BoxPayloadLength int
 }
 
@@ -220,10 +220,11 @@ func (g *Geometry) replicaWriteTotalOverhead() int {
 	boxID := [bacap.BoxIDSize]byte{}
 	signature := [bacap.SignatureSize]byte{}
 
-	// Create a BACAP-encrypted payload using the geometry's BoxPayloadLength
-	originalPayload := make([]byte, g.BoxPayloadLength)
-	bacapEncryptedPayload := make([]byte, len(originalPayload)+bacapEncryptionOverhead)
-	copy(bacapEncryptedPayload, originalPayload)
+	// Create a BACAP-encrypted payload using the geometry's PaddedPayloadLength
+	// This represents the actual size that gets encrypted by BACAP (user data + 4-byte prefix)
+	paddedPayload := make([]byte, g.PaddedPayloadLength())
+	bacapEncryptedPayload := make([]byte, len(paddedPayload)+bacapEncryptionOverhead)
+	copy(bacapEncryptedPayload, paddedPayload)
 
 	writeRequest := commands.ReplicaWrite{
 		BoxID:     &boxID,
@@ -237,8 +238,8 @@ func (g *Geometry) replicaWriteTotalOverhead() int {
 	// ReplicaWrite wire overhead = total size - BACAP encrypted payload size
 	wireOverhead := actualSize - bacapEncryptedSize
 
-	// For the geometry calculation, we need to return the total overhead relative to original payload
-	// This function is used as: replicaWriteSize = replicaWriteTotalOverhead() + boxPayloadLength
+	// For the geometry calculation, we need to return the total overhead relative to padded payload
+	// This function is used as: replicaWriteSize = replicaWriteTotalOverhead() + paddedPayloadLength
 	// So it should return: wire overhead + BACAP encryption overhead
 	return wireOverhead + bacapEncryptionOverhead
 }
@@ -260,7 +261,7 @@ func (g *Geometry) Validate() error {
 		return errors.New("geometry SignatureSchemeName must be set to Ed25519")
 	}
 	if g.BoxPayloadLength == 0 {
-		return errors.New("geometry UserForwardPayloadLength is not set")
+		return errors.New("geometry BoxPayloadLength is not set")
 	}
 	return nil
 }
@@ -281,11 +282,19 @@ func (g *Geometry) SignatureScheme() sign.Scheme {
 	return s
 }
 
+// PaddedPayloadLength returns the total size of the BACAP payload after adding
+// the 4-byte length prefix and zero padding. This is the size that gets encrypted by BACAP.
+func (g *Geometry) PaddedPayloadLength() int {
+	const lengthPrefixSize = 4
+	return g.BoxPayloadLength + lengthPrefixSize
+}
+
 // ExpectedMKEMCiphertextSizeForWrite returns the expected size of the MKEM ciphertext
 // for write operations. This ensures BACAP payloads are padded to the maximum size.
 func (g *Geometry) ExpectedMKEMCiphertextSizeForWrite() int {
-	// Calculate the size of ReplicaWrite with BACAP payload padded to BoxPayloadLength
-	replicaWriteSize := g.replicaWriteTotalOverhead() + g.BoxPayloadLength
+	// Calculate the size of ReplicaWrite with BACAP payload padded to PaddedPayloadLength
+	// This includes the user data + 4-byte length prefix
+	replicaWriteSize := g.replicaWriteTotalOverhead() + g.PaddedPayloadLength()
 
 	// Add ReplicaInnerMessage wrapper overhead
 	replicaInnerMessageWriteSize := replicaInnerMessageOverheadForWrite() + replicaWriteSize
@@ -303,7 +312,7 @@ func (g *Geometry) String() string {
 	b.WriteString(fmt.Sprintf("CourierQueryReplyWriteLength: %d\n", g.CourierQueryReplyWriteLength))
 	b.WriteString(fmt.Sprintf("NIKEName: %s\n", g.NIKEName))
 	b.WriteString(fmt.Sprintf("SignatureSchemeName: %s\n", g.SignatureSchemeName))
-	b.WriteString(fmt.Sprintf("UserForwardPayloadLength: %d\n", g.BoxPayloadLength))
+	b.WriteString(fmt.Sprintf("BoxPayloadLength: %d\n", g.BoxPayloadLength))
 	return b.String()
 }
 
@@ -379,7 +388,8 @@ func courierQueryWriteLength(boxPayloadLength int, nikeScheme nike.Scheme) int {
 		SignatureSchemeName: SignatureSchemeName,
 	}
 
-	replicaWriteSize := tempGeo.replicaWriteTotalOverhead() + boxPayloadLength
+	// Use the padded payload length (user data + 4-byte prefix) for write operations
+	replicaWriteSize := tempGeo.replicaWriteTotalOverhead() + tempGeo.PaddedPayloadLength()
 	replicaInnerMessageWriteSize := replicaInnerMessageOverheadForWrite() + replicaWriteSize
 
 	courierOverhead := tempGeo.courierEnvelopeWriteOverhead()
@@ -424,7 +434,7 @@ func calculateCourierQueryWrapperOverhead(courierEnvelopeSize int) int {
 		IntermediateReplicas: [2]uint8{0, 1},
 		DEK:                  [2]*[mkem.DEKSize]byte{mkemCiphertext.DEKCiphertexts[0], mkemCiphertext.DEKCiphertexts[1]},
 		ReplyIndex:           0,
-		Epoch:                0,                     // Match real-world usage (defaults to 0)
+		Epoch:                0,                     // Use consistent epoch for predictable geometry calculations
 		SenderEPubKey:        mkemPublicKey.Bytes(), // Use MKEM public key like real usage
 		Ciphertext:           []byte{},              // Empty to measure overhead
 		IsRead:               false,
@@ -439,7 +449,7 @@ func calculateCourierQueryWrapperOverhead(courierEnvelopeSize int) int {
 		IntermediateReplicas: [2]uint8{0, 1},
 		DEK:                  [2]*[mkem.DEKSize]byte{mkemCiphertext.DEKCiphertexts[0], mkemCiphertext.DEKCiphertexts[1]},
 		ReplyIndex:           0,
-		Epoch:                0,                     // Match real-world usage (defaults to 0)
+		Epoch:                0,                     // Use consistent epoch for predictable geometry calculations
 		SenderEPubKey:        mkemPublicKey.Bytes(), // Use MKEM public key like real usage
 		Ciphertext:           ciphertext,
 		IsRead:               false,
@@ -467,17 +477,17 @@ func mkemCiphertextSize(plaintextSize int) int {
 	return chachaPolyNonceLength + chachaPolyTagLength + plaintextSize
 }
 
-func courierQueryReplyLength(boxPayloadLength int) int {
-	return max(courierQueryReplyReadLength(boxPayloadLength), courierQueryReplyWriteLength(boxPayloadLength))
-}
-
 func courierQueryReplyReadLength(boxPayloadLength int) int {
 	const (
 		bacapEncryptionOverhead = 16
+		lengthPrefixSize        = 4
 	)
 
+	// Calculate the padded payload length (user data + 4-byte prefix)
+	paddedPayloadLength := boxPayloadLength + lengthPrefixSize
+
 	replicaReadReplyOverhead := replicaReadReplyOverhead()
-	replicaReadReplySize := replicaReadReplyOverhead + boxPayloadLength + bacapEncryptionOverhead
+	replicaReadReplySize := replicaReadReplyOverhead + paddedPayloadLength + bacapEncryptionOverhead
 
 	replicaMessageReplyInnerOverhead := replicaMessageReplyInnerOverhead()
 	replicaMessageReplyInnerSize := replicaMessageReplyInnerOverhead + replicaReadReplySize
@@ -593,8 +603,13 @@ func replicaInnerMessageOverheadForWrite() int {
 	// This should match the geometry's BoxPayloadLength when used in practice
 	const standardBoxPayloadLength = 1000
 
-	// Create BACAP payload padded to the standard size
-	payload := make([]byte, standardBoxPayloadLength)
+	// Create test data and pad it using the new helper function
+	testData := []byte("test data for overhead calculation")
+	paddedPayload, err := CreatePaddedPayload(testData, standardBoxPayloadLength)
+	if err != nil {
+		panic(err)
+	}
+
 	owner, err := bacap.NewBoxOwnerCap(rand.Reader)
 	if err != nil {
 		panic(err)
@@ -606,8 +621,8 @@ func replicaInnerMessageOverheadForWrite() int {
 		panic(err)
 	}
 
-	// BACAP encrypt the payload exactly like the test
-	boxID, ciphertext, sigraw, err := statefulWriter.EncryptNext(payload)
+	// BACAP encrypt the padded payload exactly like the test
+	boxID, ciphertext, sigraw, err := statefulWriter.EncryptNext(paddedPayload)
 	if err != nil {
 		panic(err)
 	}
@@ -689,6 +704,7 @@ func calculateMaxBoxPayloadLength(maxCourierQueryLength int, nikeScheme nike.Sch
 	const (
 		chachaPolyNonceLength = 12
 		chachaPolyTagLength   = 16
+		lengthPrefixSize      = 4
 	)
 
 	tempGeo := &Geometry{
@@ -706,13 +722,18 @@ func calculateMaxBoxPayloadLength(maxCourierQueryLength int, nikeScheme nike.Sch
 	availableForReplicaInner := maxCourierQueryLength - courierOverhead - mkemFixedOverhead - courierQueryWrapperOverhead
 
 	readCaseOverhead := replicaInnerMessageOverheadForRead() + tempGeo.replicaReadOverhead()
+
+	// For write case, we need to account for the fact that replicaWriteTotalOverhead()
+	// expects to be added to PaddedPayloadLength (BoxPayloadLength + 4), not BoxPayloadLength
+	// So we need to solve: availableForReplicaInner = writeCaseFixedOverhead + (BoxPayloadLength + 4)
+	// Therefore: BoxPayloadLength = availableForReplicaInner - writeCaseFixedOverhead - 4
 	writeCaseFixedOverhead := replicaInnerMessageOverheadForWrite() + tempGeo.replicaWriteTotalOverhead()
 
 	if readCaseOverhead > availableForReplicaInner {
 		return 0
 	}
 
-	maxBoxPayloadFromWriteCase := availableForReplicaInner - writeCaseFixedOverhead
+	maxBoxPayloadFromWriteCase := availableForReplicaInner - writeCaseFixedOverhead - lengthPrefixSize
 	if maxBoxPayloadFromWriteCase < 0 {
 		return 0
 	}
