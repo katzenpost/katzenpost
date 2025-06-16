@@ -704,8 +704,28 @@ func (e *Courier) writeTombstones(writeCap *bacap.BoxOwnerCap, numBoxes int) err
 
 // createAndSendTombstoneEnvelope creates a tombstone envelope and sends it to replicas
 func (e *Courier) createAndSendTombstoneEnvelope(statefulWriter *bacap.StatefulWriter, tombstonePayload []byte, isLast bool) error {
-	// Log tombstone payload size against geometry constraints (no longer rejecting)
-	// tombstonePayload is padded (BoxPayloadLength + 4), so compare against padded length
+	e.validateTombstonePayload(tombstonePayload)
+
+	boxID, msg, err := e.encryptTombstonePayload(statefulWriter, tombstonePayload, isLast)
+	if err != nil {
+		return err
+	}
+
+	replicaIndices, replicaPubKeys, err := e.prepareReplicaKeysForTombstone(&boxID)
+	if err != nil {
+		return err
+	}
+
+	courierEnvelope, err := e.createTombstoneCourierEnvelope(msg, replicaIndices, replicaPubKeys)
+	if err != nil {
+		return err
+	}
+
+	return e.sendTombstoneEnvelope(courierEnvelope, &boxID, replicaIndices)
+}
+
+// validateTombstonePayload validates and logs tombstone payload size
+func (e *Courier) validateTombstonePayload(tombstonePayload []byte) {
 	maxPaddedPayloadLength := e.pigeonholeGeo.BoxPayloadLength + 4
 	if len(tombstonePayload) > maxPaddedPayloadLength {
 		e.log.Infof("WARNING: Oversized tombstone payload: %d bytes > %d bytes (padded geometry limit) - processing anyway",
@@ -714,11 +734,14 @@ func (e *Courier) createAndSendTombstoneEnvelope(statefulWriter *bacap.StatefulW
 		e.log.Debugf("Tombstone payload size OK: %d bytes <= %d bytes (padded geometry limit)",
 			len(tombstonePayload), maxPaddedPayloadLength)
 	}
+}
 
+// encryptTombstonePayload encrypts the tombstone payload and creates the write request
+func (e *Courier) encryptTombstonePayload(statefulWriter *bacap.StatefulWriter, tombstonePayload []byte, isLast bool) ([bacap.BoxIDSize]byte, *common.ReplicaInnerMessage, error) {
 	boxID, ciphertext, sigraw, err := statefulWriter.EncryptNext(tombstonePayload)
 	if err != nil {
 		e.log.Debugf("Failed to encrypt tombstone payload: %s", err)
-		return err
+		return [bacap.BoxIDSize]byte{}, nil, err
 	}
 
 	// Convert signature to array
@@ -726,7 +749,7 @@ func (e *Courier) createAndSendTombstoneEnvelope(statefulWriter *bacap.StatefulW
 	copy(sig[:], sigraw)
 
 	// Create ReplicaWrite command for the tombstone
-	writeRequest := commands.ReplicaWrite{
+	writeRequest := &commands.ReplicaWrite{
 		BoxID:     &boxID,
 		Signature: &sig,
 		Payload:   ciphertext,
@@ -735,46 +758,40 @@ func (e *Courier) createAndSendTombstoneEnvelope(statefulWriter *bacap.StatefulW
 
 	// Create ReplicaInnerMessage
 	msg := &common.ReplicaInnerMessage{
-		ReplicaWrite: &writeRequest,
+		ReplicaWrite: writeRequest,
 	}
 
-	// Get PKI document for replica information
+	return boxID, msg, nil
+}
+
+// prepareReplicaKeysForTombstone prepares replica keys and indices for tombstone encryption
+func (e *Courier) prepareReplicaKeysForTombstone(boxID *[bacap.BoxIDSize]byte) ([2]uint8, []nike.PublicKey, error) {
 	doc := e.server.PKI.PKIDocument()
 	if doc == nil {
 		e.log.Debugf("PKI document not available for tombstone write")
-		return errors.New("PKI document not available")
+		return [2]uint8{}, nil, errors.New("PKI document not available")
 	}
 
-	replicaEpoch, _, _ := common.ReplicaNow()
-
-	// Use sharding algorithm to determine which replicas should store this BoxID
-	shardedReplicas, err := replicaCommon.GetShards(&boxID, doc)
+	shardedReplicas, err := replicaCommon.GetShards(boxID, doc)
 	if err != nil {
 		e.log.Debugf("Failed to get shards for tombstone BoxID %x: %s", boxID[:8], err)
-		return err
+		return [2]uint8{}, nil, err
 	}
 
 	if len(shardedReplicas) != 2 {
 		e.log.Debugf("Expected 2 sharded replicas for tombstone, got %d for BoxID %x", len(shardedReplicas), boxID[:8])
-		return errors.New("invalid number of sharded replicas")
+		return [2]uint8{}, nil, errors.New("invalid number of sharded replicas")
 	}
 
-	// Create MKEM public keys for the sharded replicas
+	replicaEpoch, _, _ := common.ReplicaNow()
 	replicaPubKeys := make([]nike.PublicKey, 2)
 	var replicaIndices [2]uint8
 
 	for i, shardedReplica := range shardedReplicas {
-		// Find the index of this replica in the StorageReplicas slice
-		replicaIndex := -1
-		for j, storageReplica := range doc.StorageReplicas {
-			if bytes.Equal(shardedReplica.IdentityKey, storageReplica.IdentityKey) {
-				replicaIndex = j
-				break
-			}
-		}
+		replicaIndex := e.findReplicaIndexByDescriptor(shardedReplica, doc)
 		if replicaIndex == -1 {
 			e.log.Debugf("Could not find sharded replica %d in StorageReplicas for tombstone BoxID %x", i, boxID[:8])
-			return errors.New("replica not found in PKI document")
+			return [2]uint8{}, nil, errors.New("replica not found in PKI document")
 		}
 
 		replicaIndices[i] = uint8(replicaIndex)
@@ -784,32 +801,37 @@ func (e *Courier) createAndSendTombstoneEnvelope(statefulWriter *bacap.StatefulW
 		replicaPubKeys[i], err = common.NikeScheme.UnmarshalBinaryPublicKey(replicaPubKey)
 		if err != nil {
 			e.log.Debugf("Failed to unmarshal replica %d public key for tombstone: %s", replicaIndex, err)
-			return err
+			return [2]uint8{}, nil, err
 		}
 	}
 
-	// MKEM encrypt the inner message
+	return replicaIndices, replicaPubKeys, nil
+}
+
+// createTombstoneCourierEnvelope creates the MKEM-encrypted courier envelope for the tombstone
+func (e *Courier) createTombstoneCourierEnvelope(msg *common.ReplicaInnerMessage, replicaIndices [2]uint8, replicaPubKeys []nike.PublicKey) (*common.CourierEnvelope, error) {
 	mkemPrivateKey, mkemCiphertext := common.MKEMNikeScheme.Encapsulate(replicaPubKeys, msg.Bytes())
 	mkemPublicKey := mkemPrivateKey.Public()
 
 	// Validate DEK ciphertexts are not nil
 	if mkemCiphertext.DEKCiphertexts[0] == nil || mkemCiphertext.DEKCiphertexts[1] == nil {
 		e.log.Debugf("MKEM encapsulation failed for tombstone - nil DEK ciphertexts")
-		return errors.New("MKEM encapsulation failed")
+		return nil, errors.New("MKEM encapsulation failed")
 	}
 
-	// Create CourierEnvelope for the tombstone
-	courierEnvelope := &common.CourierEnvelope{
+	return &common.CourierEnvelope{
 		SenderEPubKey:        mkemPublicKey.Bytes(),
 		IntermediateReplicas: replicaIndices,
 		DEK:                  [2]*[mkem.DEKSize]byte{mkemCiphertext.DEKCiphertexts[0], mkemCiphertext.DEKCiphertexts[1]},
 		Ciphertext:           mkemCiphertext.Envelope,
 		IsRead:               false,
-	}
+	}, nil
+}
 
-	// Send the tombstone envelope to replicas using existing infrastructure
+// sendTombstoneEnvelope sends the tombstone envelope to replicas
+func (e *Courier) sendTombstoneEnvelope(courierEnvelope *common.CourierEnvelope, boxID *[bacap.BoxIDSize]byte, replicaIndices [2]uint8) error {
 	e.log.Debugf("Sending tombstone envelope for BoxID %x to replicas %v", boxID[:8], replicaIndices)
-	err = e.handleCourierEnvelope(courierEnvelope)
+	err := e.handleCourierEnvelope(courierEnvelope)
 	if err != nil {
 		e.log.Debugf("Failed to send tombstone envelope for BoxID %x: %s", boxID[:8], err)
 		return err
