@@ -830,8 +830,6 @@ func (e *Courier) createStatefulReader(writeCap *bacap.BoxOwnerCap) (*bacap.Stat
 }
 
 func (e *Courier) processBoxesStreaming(statefulReader *bacap.StatefulReader) (int, error) {
-	boxCount := 0
-
 	// Create a streaming CBOR decoder that processes envelopes as they become available
 	streamingDecoder := NewStreamingCBORDecoder(func(envelope *common.CourierEnvelope) {
 		if err := e.handleCourierEnvelope(envelope); err != nil {
@@ -839,58 +837,46 @@ func (e *Courier) processBoxesStreaming(statefulReader *bacap.StatefulReader) (i
 		}
 	})
 
+	boxCount, err := e.processAllBoxes(statefulReader, streamingDecoder)
+	if err != nil {
+		return 0, err
+	}
+
+	// Process any remaining partial data
+	err = streamingDecoder.Finalize()
+	if err != nil {
+		e.log.Debugf("Failed to finalize streaming decoder: %s", err)
+		return 0, errStreamingDecoderFailed
+	}
+
+	e.log.Debugf("Copy: Successfully processed %d CourierEnvelopes and wrote %d boxes to destination", streamingDecoder.processedEnvelopes, boxCount)
+	return boxCount, nil
+}
+
+// processAllBoxes reads and processes all boxes in the sequence
+func (e *Courier) processAllBoxes(statefulReader *bacap.StatefulReader, streamingDecoder *StreamingCBORDecoder) (int, error) {
+	boxCount := 0
+
 	// Read boxes sequentially using the StatefulReader
 	for {
-		// Get the next BoxID to read
-		boxID, err := statefulReader.NextBoxID()
+		boxID, err := e.getNextBoxID(statefulReader, boxCount)
 		if err != nil {
-			// If we can't get the first BoxID, the sequence is empty
-			e.log.Debugf("Empty sequence detected: %s", err)
-			return 0, errEmptySequence
+			return boxCount, err
 		}
 		boxCount++
 
-		// Read the box from replica
 		replicaReadReply, err := e.readBoxFromReplica(boxID)
 		if err != nil {
-			e.log.Debugf("Failed to read Box from replica: %s", err)
-			if err == errFailedToReadBoxFromReplica {
-				return 0, errReplicaTimeout
-			}
+			return 0, e.handleReadBoxError(err)
+		}
+
+		boxPlaintext, boxPaddedPlaintext, err := e.decryptAndExtractBox(statefulReader, boxID, replicaReadReply)
+		if err != nil {
 			return 0, err
 		}
 
-		// Use DecryptNext to advance the StatefulReader state
-		// We need to provide the actual encrypted box data from the replica
-		if replicaReadReply.Signature == nil {
-			e.log.Debugf("Replica read reply has nil signature for BoxID %x", boxID[:8])
-			return 0, errBACAPDecryptionFailed
-		}
-		boxPaddedPlaintext, err := statefulReader.DecryptNext(constants.PIGEONHOLE_CTX, *boxID, replicaReadReply.Payload, *replicaReadReply.Signature)
-		if err != nil {
-			e.log.Debugf("Failed to decrypt box: %s", err)
-			return 0, errBACAPDecryptionFailed
-		}
+		e.validateBoxSize(boxPaddedPlaintext)
 
-		// Extract the original data from the padded payload
-		boxPlaintext, err := replicaCommon.ExtractDataFromPaddedPayload(boxPaddedPlaintext)
-		if err != nil {
-			e.log.Debugf("Failed to extract data from padded payload: %s", err)
-			return 0, errBACAPDecryptionFailed
-		}
-
-		// Log box plaintext size against geometry constraints (no longer rejecting)
-		// boxPaddedPlaintext is padded (BoxPayloadLength + 4), so compare against padded length
-		maxPaddedPayloadLength := e.pigeonholeGeo.BoxPayloadLength + 4
-		if len(boxPaddedPlaintext) > maxPaddedPayloadLength {
-			e.log.Infof("WARNING: Oversized box plaintext: %d bytes > %d bytes (padded geometry limit) - processing anyway",
-				len(boxPaddedPlaintext), maxPaddedPayloadLength)
-		} else {
-			e.log.Debugf("Box plaintext size OK: %d bytes <= %d bytes (padded geometry limit)",
-				len(boxPaddedPlaintext), maxPaddedPayloadLength)
-		}
-
-		// Feed this box's plaintext to the streaming decoder
 		err = streamingDecoder.ProcessChunk(boxPlaintext)
 		if err != nil {
 			e.log.Debugf("Failed to process box chunk: %s", err)
@@ -903,15 +889,67 @@ func (e *Courier) processBoxesStreaming(statefulReader *bacap.StatefulReader) (i
 		}
 	}
 
-	// Process any remaining partial data
-	err := streamingDecoder.Finalize()
+	return boxCount, nil
+}
+
+// getNextBoxID gets the next BoxID to read, handling empty sequence detection
+func (e *Courier) getNextBoxID(statefulReader *bacap.StatefulReader, boxCount int) (*[bacap.BoxIDSize]byte, error) {
+	boxID, err := statefulReader.NextBoxID()
 	if err != nil {
-		e.log.Debugf("Failed to finalize streaming decoder: %s", err)
-		return 0, errStreamingDecoderFailed
+		// If we can't get the first BoxID, the sequence is empty
+		e.log.Debugf("Empty sequence detected: %s", err)
+		if boxCount == 0 {
+			return nil, errEmptySequence
+		}
+		return nil, err
+	}
+	return boxID, nil
+}
+
+// handleReadBoxError handles errors from reading boxes from replicas
+func (e *Courier) handleReadBoxError(err error) error {
+	e.log.Debugf("Failed to read Box from replica: %s", err)
+	if err == errFailedToReadBoxFromReplica {
+		return errReplicaTimeout
+	}
+	return err
+}
+
+// decryptAndExtractBox decrypts a box and extracts the plaintext data
+func (e *Courier) decryptAndExtractBox(statefulReader *bacap.StatefulReader, boxID *[bacap.BoxIDSize]byte, replicaReadReply *common.ReplicaReadReply) ([]byte, []byte, error) {
+	// Validate signature before decryption
+	if replicaReadReply.Signature == nil {
+		e.log.Debugf("Replica read reply has nil signature for BoxID %x", boxID[:8])
+		return nil, nil, errBACAPDecryptionFailed
 	}
 
-	e.log.Debugf("Copy: Successfully processed %d CourierEnvelopes and wrote %d boxes to destination", streamingDecoder.processedEnvelopes, boxCount)
-	return boxCount, nil
+	// Decrypt the box using BACAP
+	boxPaddedPlaintext, err := statefulReader.DecryptNext(constants.PIGEONHOLE_CTX, *boxID, replicaReadReply.Payload, *replicaReadReply.Signature)
+	if err != nil {
+		e.log.Debugf("Failed to decrypt box: %s", err)
+		return nil, nil, errBACAPDecryptionFailed
+	}
+
+	// Extract the original data from the padded payload
+	boxPlaintext, err := replicaCommon.ExtractDataFromPaddedPayload(boxPaddedPlaintext)
+	if err != nil {
+		e.log.Debugf("Failed to extract data from padded payload: %s", err)
+		return nil, nil, errBACAPDecryptionFailed
+	}
+
+	return boxPlaintext, boxPaddedPlaintext, nil
+}
+
+// validateBoxSize validates the box size against geometry constraints
+func (e *Courier) validateBoxSize(boxPaddedPlaintext []byte) {
+	maxPaddedPayloadLength := e.pigeonholeGeo.BoxPayloadLength + 4
+	if len(boxPaddedPlaintext) > maxPaddedPayloadLength {
+		e.log.Infof("WARNING: Oversized box plaintext: %d bytes > %d bytes (padded geometry limit) - processing anyway",
+			len(boxPaddedPlaintext), maxPaddedPayloadLength)
+	} else {
+		e.log.Debugf("Box plaintext size OK: %d bytes <= %d bytes (padded geometry limit)",
+			len(boxPaddedPlaintext), maxPaddedPayloadLength)
+	}
 }
 
 // StreamingCBORDecoder processes CBOR data incrementally, decoding and handling
