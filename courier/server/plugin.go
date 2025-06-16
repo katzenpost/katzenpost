@@ -398,27 +398,28 @@ func (e *Courier) cleanupExpiredRequest(envHash *[hash.HashSize]byte, timeout ti
 func (e *Courier) handleCourierEnvelope(courierMessage *common.CourierEnvelope) error {
 	e.log.Debugf("Copy: Processing CourierEnvelope (IsRead=%t)", courierMessage.IsRead)
 
-	// Validate CourierEnvelope size against geometry constraints
+	// Log CourierEnvelope size against geometry constraints (no longer rejecting)
 	envelopeSize := len(courierMessage.Bytes())
 	maxEnvelopeSize := max(e.pigeonholeGeo.CourierQueryReadLength, e.pigeonholeGeo.CourierQueryWriteLength)
 	if envelopeSize > maxEnvelopeSize {
-		e.log.Debugf("Rejecting oversized CourierEnvelope: %d bytes > %d bytes (geometry limit)",
+		e.log.Infof("WARNING: Oversized CourierEnvelope: %d bytes > %d bytes (geometry limit) - processing anyway",
 			envelopeSize, maxEnvelopeSize)
-		return errGeometryViolation
+	} else {
+		e.log.Debugf("CourierEnvelope size OK: %d bytes <= %d bytes (geometry limit)",
+			envelopeSize, maxEnvelopeSize)
 	}
 
-	// For write operations, validate that the MKEM ciphertext has the exact expected size
-	// This ensures BACAP payloads are padded to the maximum size allowed by geometry
+	// For write operations, log MKEM ciphertext size (no longer rejecting)
 	if !courierMessage.IsRead {
 		expectedCiphertextSize := e.pigeonholeGeo.ExpectedMKEMCiphertextSizeForWrite()
 		actualCiphertextSize := len(courierMessage.Ciphertext)
 
 		if actualCiphertextSize != expectedCiphertextSize {
-			e.log.Debugf("Rejecting write with incorrect ciphertext size: %d bytes, expected exactly %d bytes (geometry constraint)",
+			e.log.Infof("WARNING: Write ciphertext size mismatch: %d bytes, expected %d bytes (geometry constraint) - processing anyway",
 				actualCiphertextSize, expectedCiphertextSize)
-			return errGeometryViolation
+		} else {
+			e.log.Debugf("Write ciphertext size validation passed: %d bytes", actualCiphertextSize)
 		}
-		e.log.Debugf("Write ciphertext size validation passed: %d bytes", actualCiphertextSize)
 	}
 
 	replicas := make([]*commands.ReplicaMessage, 2)
@@ -460,9 +461,6 @@ func (e *Courier) handleNewMessage(envHash *[hash.HashSize]byte, courierMessage 
 		e.log.Errorf("Failed to handle courier envelope: %s", err)
 		if err == errNilDEKElements {
 			return e.createEnvelopeErrorReply(envHash, envelopeErrorNilDEKElements)
-		}
-		if err == errGeometryViolation {
-			return e.createEnvelopeErrorReply(envHash, envelopeErrorInvalidEnvelope)
 		}
 		return e.createEnvelopeErrorReply(envHash, envelopeErrorInternalError)
 	}
@@ -528,25 +526,14 @@ func (e *Courier) OnCommand(cmd cborplugin.Command) error {
 		return errors.New("Bug in courier-plugin: received invalid Command type")
 	}
 
-	// Validate message size against geometry constraints
+	// Log message size against geometry constraints (no longer rejecting)
 	maxQueryLength := max(e.pigeonholeGeo.CourierQueryReadLength, e.pigeonholeGeo.CourierQueryWriteLength)
 	if len(request.Payload) > maxQueryLength {
-		e.log.Debugf("Rejecting oversized CourierQuery: %d bytes > %d bytes (geometry limit)",
+		e.log.Infof("WARNING: Oversized CourierQuery: %d bytes > %d bytes (geometry limit) - processing anyway",
 			len(request.Payload), maxQueryLength)
-		// Send error reply back to client
-		errorReply := &common.CourierQueryReply{
-			CourierEnvelopeReply: &common.CourierEnvelopeReply{
-				ErrorCode: envelopeErrorInvalidEnvelope,
-			},
-		}
-		go func() {
-			e.write(&cborplugin.Response{
-				ID:      request.ID,
-				SURB:    request.SURB,
-				Payload: errorReply.Bytes(),
-			})
-		}()
-		return errGeometryViolation
+	} else {
+		e.log.Debugf("CourierQuery size OK: %d bytes <= %d bytes (geometry limit)",
+			len(request.Payload), maxQueryLength)
 	}
 
 	courierQuery, err := common.CourierQueryFromBytes(request.Payload)
@@ -689,7 +676,13 @@ func (e *Courier) writeTombstones(writeCap *bacap.BoxOwnerCap, numBoxes int) err
 		return err
 	}
 
-	tombstonePayload := make([]byte, e.pigeonholeGeo.BoxPayloadLength)
+	// Create tombstone data (all zeros) and pad it using the new helper function
+	tombstoneData := make([]byte, 0) // Empty data for tombstones
+	tombstonePayload, err := replicaCommon.CreatePaddedPayload(tombstoneData, e.pigeonholeGeo.BoxPayloadLength)
+	if err != nil {
+		e.log.Debugf("Failed to create padded tombstone payload: %s", err)
+		return err
+	}
 
 	// Write tombstones using the deterministic nature of BACAP BoxIDs
 	// The StatefulWriter will generate the same BoxIDs as the original sequence
@@ -710,11 +703,15 @@ func (e *Courier) writeTombstones(writeCap *bacap.BoxOwnerCap, numBoxes int) err
 
 // createAndSendTombstoneEnvelope creates a tombstone envelope and sends it to replicas
 func (e *Courier) createAndSendTombstoneEnvelope(statefulWriter *bacap.StatefulWriter, tombstonePayload []byte, isLast bool) error {
-	// Validate tombstone payload size against geometry constraints
-	if len(tombstonePayload) > e.pigeonholeGeo.BoxPayloadLength {
-		e.log.Debugf("Rejecting oversized tombstone payload: %d bytes > %d bytes (geometry limit)",
-			len(tombstonePayload), e.pigeonholeGeo.BoxPayloadLength)
-		return errGeometryViolation
+	// Log tombstone payload size against geometry constraints (no longer rejecting)
+	// tombstonePayload is padded (BoxPayloadLength + 4), so compare against padded length
+	maxPaddedPayloadLength := e.pigeonholeGeo.BoxPayloadLength + 4
+	if len(tombstonePayload) > maxPaddedPayloadLength {
+		e.log.Infof("WARNING: Oversized tombstone payload: %d bytes > %d bytes (padded geometry limit) - processing anyway",
+			len(tombstonePayload), maxPaddedPayloadLength)
+	} else {
+		e.log.Debugf("Tombstone payload size OK: %d bytes <= %d bytes (padded geometry limit)",
+			len(tombstonePayload), maxPaddedPayloadLength)
 	}
 
 	boxID, ciphertext, sigraw, err := statefulWriter.EncryptNext(tombstonePayload)
@@ -868,17 +865,28 @@ func (e *Courier) processBoxesStreaming(statefulReader *bacap.StatefulReader) (i
 			e.log.Debugf("Replica read reply has nil signature for BoxID %x", boxID[:8])
 			return 0, errBACAPDecryptionFailed
 		}
-		boxPlaintext, err := statefulReader.DecryptNext(constants.PIGEONHOLE_CTX, *boxID, replicaReadReply.Payload, *replicaReadReply.Signature)
+		boxPaddedPlaintext, err := statefulReader.DecryptNext(constants.PIGEONHOLE_CTX, *boxID, replicaReadReply.Payload, *replicaReadReply.Signature)
 		if err != nil {
 			e.log.Debugf("Failed to decrypt box: %s", err)
 			return 0, errBACAPDecryptionFailed
 		}
 
-		// Validate box plaintext size against geometry constraints
-		if len(boxPlaintext) > e.pigeonholeGeo.BoxPayloadLength {
-			e.log.Debugf("Rejecting oversized box plaintext: %d bytes > %d bytes (geometry limit)",
-				len(boxPlaintext), e.pigeonholeGeo.BoxPayloadLength)
-			return 0, errGeometryViolation
+		// Extract the original data from the padded payload
+		boxPlaintext, err := replicaCommon.ExtractDataFromPaddedPayload(boxPaddedPlaintext)
+		if err != nil {
+			e.log.Debugf("Failed to extract data from padded payload: %s", err)
+			return 0, errBACAPDecryptionFailed
+		}
+
+		// Log box plaintext size against geometry constraints (no longer rejecting)
+		// boxPaddedPlaintext is padded (BoxPayloadLength + 4), so compare against padded length
+		maxPaddedPayloadLength := e.pigeonholeGeo.BoxPayloadLength + 4
+		if len(boxPaddedPlaintext) > maxPaddedPayloadLength {
+			e.log.Infof("WARNING: Oversized box plaintext: %d bytes > %d bytes (padded geometry limit) - processing anyway",
+				len(boxPaddedPlaintext), maxPaddedPayloadLength)
+		} else {
+			e.log.Debugf("Box plaintext size OK: %d bytes <= %d bytes (padded geometry limit)",
+				len(boxPaddedPlaintext), maxPaddedPayloadLength)
 		}
 
 		// Feed this box's plaintext to the streaming decoder
