@@ -72,6 +72,7 @@ type katzenpost struct {
 	pkiSignatureScheme sign.Scheme
 	replicaNIKEScheme  nike.Scheme
 	sphinxGeometry     *geo.Geometry
+	pigeonholeGeometry *common.Geometry
 	votingAuthConfigs  []*vConfig.Config
 	authorities        map[[32]byte]*vConfig.Authority
 	authIdentity       sign.PublicKey
@@ -130,7 +131,7 @@ func (s *katzenpost) genClient2ThinCfg(net, addr string) error {
 	cfg := new(thin.Config)
 
 	cfg.SphinxGeometry = s.sphinxGeometry
-	cfg.PigeonholeGeometry = common.GeometryFromSphinxGeometry(s.sphinxGeometry, s.replicaNIKEScheme)
+	cfg.PigeonholeGeometry = s.pigeonholeGeometry
 	cfg.Network = net
 	cfg.Address = addr
 
@@ -162,6 +163,7 @@ func (s *katzenpost) genClient2Cfg(net, addr string) error {
 	cfg.PKISignatureScheme = s.pkiSignatureScheme.Name()
 	cfg.WireKEMScheme = s.wireKEMScheme
 	cfg.SphinxGeometry = s.sphinxGeometry
+	cfg.PigeonholeGeometry = s.pigeonholeGeometry
 
 	// UpstreamProxy section
 	cfg.UpstreamProxy = &cConfig2.UpstreamProxy{Type: "none"}
@@ -704,6 +706,9 @@ func main() {
 	}
 
 	s.replicaNIKEScheme = common.NikeScheme
+
+	// Generate pigeonhole geometry once for use in both client2 and thin client configs
+	s.pigeonholeGeometry = common.GeometryFromSphinxGeometry(s.sphinxGeometry, s.replicaNIKEScheme)
 
 	os.Mkdir(s.outDir, 0700)
 	os.Mkdir(filepath.Join(s.outDir, s.baseDir), 0700)
