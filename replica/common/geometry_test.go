@@ -109,24 +109,35 @@ func TestReplicaReadReplyOverhead(t *testing.T) {
 }
 
 func TestCourierEnvelopeOverhead(t *testing.T) {
-	// Create a CourierEnvelope with fixed payload size
+	// Use x25519 to match our geometry functions and real-world usage
+	nikeScheme := schemes.ByName("x25519")
+	require.NotNil(t, nikeScheme)
+
 	payload := make([]byte, 1000)
+	geo := NewGeometry(len(payload), nikeScheme)
 
-	// Create NIKE scheme for envelope keys
-	scheme := schemes.ByName(ctidh1024X25519)
-	require.NotNil(t, scheme)
+	// Create MKEM scheme and generate MKEM keys like real-world usage
+	mkemScheme := mkem.NewScheme(nikeScheme)
 
-	// Generate ephemeral key pair
-	ephemeralPub, _, err := scheme.GenerateKeyPair()
-	require.NoError(t, err)
-	ephemeralPubBytes := ephemeralPub.Bytes()
+	// Generate replica keys for MKEM (like real usage)
+	replicaPubKeys := make([]nike.PublicKey, 2)
+	for i := 0; i < 2; i++ {
+		pub, _, err := nikeScheme.GenerateKeyPair()
+		require.NoError(t, err)
+		replicaPubKeys[i] = pub
+	}
+
+	// Create dummy plaintext to get MKEM keys
+	dummyPlaintext := []byte("dummy")
+	mkemPrivateKey, mkemCiphertext := mkemScheme.Encapsulate(replicaPubKeys, dummyPlaintext)
+	mkemPublicKey := mkemPrivateKey.Public()
 
 	envelope := &CourierEnvelope{
 		IntermediateReplicas: [2]uint8{0, 1},
-		DEK:                  [2]*[mkem.DEKSize]byte{{}, {}},
+		DEK:                  [2]*[mkem.DEKSize]byte{mkemCiphertext.DEKCiphertexts[0], mkemCiphertext.DEKCiphertexts[1]},
 		ReplyIndex:           0,
-		Epoch:                12345,
-		SenderEPubKey:        ephemeralPubBytes,
+		Epoch:                0,                     // Match real-world usage (defaults to 0)
+		SenderEPubKey:        mkemPublicKey.Bytes(), // Use MKEM public key like real usage
 		IsRead:               false,
 		Ciphertext:           payload,
 	}
@@ -134,9 +145,6 @@ func TestCourierEnvelopeOverhead(t *testing.T) {
 	envelopeBytes := envelope.Bytes()
 	overhead := len(envelopeBytes) - len(payload)
 
-	nikeScheme := schemes.ByName(ctidh1024X25519)
-	require.NotNil(t, nikeScheme)
-	geo := NewGeometry(len(payload), nikeScheme)
 	overhead2 := max(geo.courierEnvelopeReadOverhead(), geo.courierEnvelopeWriteOverhead())
 
 	t.Logf("courierEnvelope overhead: %d", overhead)
@@ -220,8 +228,9 @@ func TestReplicaInnerMessageOverhead(t *testing.T) {
 	replicaWriteBytes := replicaWrite.ToBytes()
 	writeOverhead := len(writeMsgBytes) - len(replicaWriteBytes) // Compare against ReplicaWrite size
 
-	// The calculated overhead should accommodate both cases
-	calculatedOverhead := max(geo.replicaInnerMessageReadOverhead(), geo.replicaInnerMessageWriteOverhead())
+	// Test the specific overheads separately
+	calculatedReadOverhead := geo.replicaInnerMessageReadOverhead()
+	calculatedWriteOverhead := geo.replicaInnerMessageWriteOverhead()
 
 	// Debug output to understand the values
 	t.Logf("Debug values:")
@@ -230,12 +239,19 @@ func TestReplicaInnerMessageOverhead(t *testing.T) {
 	t.Logf("  ReplicaWrite size: %d", len(replicaWriteBytes))
 	t.Logf("  ReplicaInnerMessage size: %d", len(writeMsgBytes))
 	t.Logf("  Test writeOverhead (ReplicaInnerMessage - ReplicaWrite): %d", writeOverhead)
-	t.Logf("  Geometry calculatedOverhead (ReplicaInnerMessage - ReplicaWrite): %d", calculatedOverhead)
+	t.Logf("  Geometry calculatedReadOverhead: %d", calculatedReadOverhead)
+	t.Logf("  Geometry calculatedWriteOverhead: %d", calculatedWriteOverhead)
 	t.Logf("  Actual ReplicaInnerMessage overhead: %d", len(writeMsgBytes)-len(replicaWriteBytes))
 
-	// The calculated overhead should be at least as large as both actual overheads
-	require.GreaterOrEqual(t, calculatedOverhead, readOverhead)
-	require.GreaterOrEqual(t, calculatedOverhead, writeOverhead)
+	// The calculated read overhead should match the read case
+	// Note: readOverhead is the total size of ReplicaInnerMessage with ReplicaRead
+	// calculatedReadOverhead is just the overhead, so we need to add the ReplicaRead size
+	replicaReadSize := 32 + 9 // BoxID + CBOR overhead (from replicaReadOverhead)
+	expectedReadTotal := calculatedReadOverhead + replicaReadSize
+	require.Equal(t, readOverhead, expectedReadTotal, "Read overhead calculation should match")
+
+	// The calculated write overhead should match the write case
+	require.Equal(t, writeOverhead, calculatedWriteOverhead, "Write overhead calculation should match")
 }
 
 // TestGeometryUseCase1 tests Use Case 1: specify BoxPayloadLength and derive PigeonholeGeometry

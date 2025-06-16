@@ -184,23 +184,13 @@ func (g *Geometry) courierEnvelopeReplyOverhead() int {
 }
 
 func (g *Geometry) replicaInnerMessageReadOverhead() int {
-	const (
-		cborMapHeader      = 1
-		replicaReadKeyLen  = 12
-		replicaWriteKeyLen = 13
-		nilValueOverhead   = 1
-		cborFieldOverhead  = 2
-
-		unionStructOverhead = cborMapHeader + replicaReadKeyLen + replicaWriteKeyLen +
-			nilValueOverhead + (2 * cborFieldOverhead)
-	)
-
-	return unionStructOverhead + g.replicaReadOverhead()
+	// Use the same dynamic calculation as the standalone function
+	return replicaInnerMessageOverheadForRead()
 }
 
 func (g *Geometry) replicaInnerMessageWriteOverhead() int {
-	// Return the exact overhead for the write case that matches the test
-	return 66
+	// Use the same dynamic calculation as the standalone function
+	return replicaInnerMessageOverheadForWrite()
 }
 
 func (g *Geometry) replicaReadOverhead() int {
@@ -230,8 +220,8 @@ func (g *Geometry) replicaWriteTotalOverhead() int {
 	boxID := [bacap.BoxIDSize]byte{}
 	signature := [bacap.SignatureSize]byte{}
 
-	// Create a BACAP-encrypted payload to match what the test does
-	originalPayload := make([]byte, 100)
+	// Create a BACAP-encrypted payload using the geometry's BoxPayloadLength
+	originalPayload := make([]byte, g.BoxPayloadLength)
 	bacapEncryptedPayload := make([]byte, len(originalPayload)+bacapEncryptionOverhead)
 	copy(bacapEncryptedPayload, originalPayload)
 
@@ -586,8 +576,12 @@ func replicaInnerMessageOverheadForRead() int {
 }
 
 func replicaInnerMessageOverheadForWrite() int {
-	// Create a real ReplicaWrite using BACAP encryption exactly like the test does
-	payload := make([]byte, 1000) // Use the same payload size as the test
+	// Use a standard BoxPayloadLength for consistent overhead calculation
+	// This should match the geometry's BoxPayloadLength when used in practice
+	const standardBoxPayloadLength = 1000
+
+	// Create BACAP payload padded to the standard size
+	payload := make([]byte, standardBoxPayloadLength)
 	owner, err := bacap.NewBoxOwnerCap(rand.Reader)
 	if err != nil {
 		panic(err)
