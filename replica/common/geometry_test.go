@@ -397,9 +397,9 @@ func TestGeometryUseCase3(t *testing.T) {
 	t.Logf("  Max geometry prediction: %d", maxGeometryPrediction)
 }
 
-// composeActualCourierEnvelope creates the REAL CourierEnvelope using the exact same approach
+// createCourierEnvelopeFromPayload creates a REAL CourierEnvelope from a payload using the exact same approach
 // as TestCourierReplicaIntegration in aliceComposesNextMessage()
-func composeActualCourierEnvelope(t *testing.T, boxPayloadLength int, nikeScheme nike.Scheme) int {
+func createCourierEnvelopeFromPayload(t *testing.T, boxPayloadLength int, nikeScheme nike.Scheme) *CourierEnvelope {
 	// Step 1: Create BACAP encrypted payload (exactly like integration test)
 	payload := make([]byte, boxPayloadLength)
 	owner, err := bacap.NewBoxOwnerCap(rand.Reader)
@@ -451,13 +451,19 @@ func composeActualCourierEnvelope(t *testing.T, boxPayloadLength int, nikeScheme
 		IsRead:               false,
 	}
 
-	// Return the actual serialized size of the REAL CourierEnvelope
+	return envelope
+}
+
+// composeActualCourierEnvelope creates the REAL CourierEnvelope using the exact same approach
+// as TestCourierReplicaIntegration in aliceComposesNextMessage()
+func composeActualCourierEnvelope(t *testing.T, boxPayloadLength int, nikeScheme nike.Scheme) int {
+	envelope := createCourierEnvelopeFromPayload(t, boxPayloadLength, nikeScheme)
 	return len(envelope.Bytes())
 }
 
-// composeActualCourierEnvelopeReply creates the REAL CourierEnvelopeReply using the same approach
+// createCourierEnvelopeReplyFromPayload creates a REAL CourierEnvelopeReply from a payload using the same approach
 // as replica handlers.go (lines 124-136) with MKEM encryption
-func composeActualCourierEnvelopeReply(t *testing.T, boxPayloadLength int, nikeScheme nike.Scheme) int {
+func createCourierEnvelopeReplyFromPayload(t *testing.T, boxPayloadLength int, nikeScheme nike.Scheme) *CourierEnvelopeReply {
 	// Step 1: Create BACAP encrypted payload (what would be returned in a read)
 	payload := make([]byte, boxPayloadLength)
 	owner, err := bacap.NewBoxOwnerCap(rand.Reader)
@@ -509,7 +515,13 @@ func composeActualCourierEnvelopeReply(t *testing.T, boxPayloadLength int, nikeS
 		Payload:      envelopeReply.Envelope, // MKEM-encrypted payload!
 	}
 
-	// Return the actual serialized size of the REAL CourierEnvelopeReply
+	return reply
+}
+
+// composeActualCourierEnvelopeReply creates the REAL CourierEnvelopeReply using the same approach
+// as replica handlers.go (lines 124-136) with MKEM encryption
+func composeActualCourierEnvelopeReply(t *testing.T, boxPayloadLength int, nikeScheme nike.Scheme) int {
+	reply := createCourierEnvelopeReplyFromPayload(t, boxPayloadLength, nikeScheme)
 	return len(reply.Bytes())
 }
 
@@ -658,113 +670,13 @@ func TestGeometryCBOROverheadScaling(t *testing.T) {
 
 // measureActualCourierEnvelopeSize creates a real CourierEnvelope and measures its CBOR size
 func measureActualCourierEnvelopeSize(t *testing.T, payloadSize int, nikeScheme nike.Scheme) int {
-	// Create BACAP encrypted payload
-	payload := make([]byte, payloadSize)
-	owner, err := bacap.NewBoxOwnerCap(rand.Reader)
-	require.NoError(t, err)
-
-	ctx := []byte(testContext)
-	statefulWriter, err := bacap.NewStatefulWriter(owner, ctx)
-	require.NoError(t, err)
-
-	// BACAP encrypt the payload
-	boxID, ciphertext, sigraw, err := statefulWriter.EncryptNext(payload)
-	require.NoError(t, err)
-
-	sig := [bacap.SignatureSize]byte{}
-	copy(sig[:], sigraw)
-
-	// Create ReplicaWrite
-	writeRequest := commands.ReplicaWrite{
-		BoxID:     &boxID,
-		Signature: &sig,
-		Payload:   ciphertext,
-	}
-
-	// Create ReplicaInnerMessage
-	msg := &ReplicaInnerMessage{
-		ReplicaWrite: &writeRequest,
-	}
-
-	// MKEM encrypt
-	mkemScheme := mkem.NewScheme(nikeScheme)
-
-	// Generate replica keys for MKEM
-	replicaPubKeys := make([]nike.PublicKey, 2)
-	for i := 0; i < 2; i++ {
-		pub, _, err := nikeScheme.GenerateKeyPair()
-		require.NoError(t, err)
-		replicaPubKeys[i] = pub
-	}
-
-	mkemPrivateKey, mkemCiphertext := mkemScheme.Encapsulate(replicaPubKeys, msg.Bytes())
-	mkemPublicKey := mkemPrivateKey.Public()
-
-	// Create CourierEnvelope
-	envelope := &CourierEnvelope{
-		SenderEPubKey:        mkemPublicKey.Bytes(),
-		IntermediateReplicas: [2]uint8{0, 1},
-		DEK:                  [2]*[mkem.DEKSize]byte{mkemCiphertext.DEKCiphertexts[0], mkemCiphertext.DEKCiphertexts[1]},
-		Ciphertext:           mkemCiphertext.Envelope,
-		IsRead:               false,
-	}
-
+	envelope := createCourierEnvelopeFromPayload(t, payloadSize, nikeScheme)
 	return len(envelope.Bytes())
 }
 
 // measureActualCourierEnvelopeReplySize creates a real CourierEnvelopeReply and measures its CBOR size
 func measureActualCourierEnvelopeReplySize(t *testing.T, payloadSize int, nikeScheme nike.Scheme) int {
-	// Create BACAP encrypted payload
-	payload := make([]byte, payloadSize)
-	owner, err := bacap.NewBoxOwnerCap(rand.Reader)
-	require.NoError(t, err)
-
-	ctx := []byte(testContext)
-	statefulWriter, err := bacap.NewStatefulWriter(owner, ctx)
-	require.NoError(t, err)
-
-	// BACAP encrypt the payload
-	boxID, ciphertext, sigraw, err := statefulWriter.EncryptNext(payload)
-	require.NoError(t, err)
-
-	sig := [bacap.SignatureSize]byte{}
-	copy(sig[:], sigraw)
-
-	// Create ReplicaReadReply with BACAP-encrypted payload
-	readReply := &ReplicaReadReply{
-		ErrorCode: 0,
-		BoxID:     &boxID,
-		Signature: &sig,
-		Payload:   ciphertext,
-	}
-
-	// Create ReplicaMessageReplyInnerMessage containing ReplicaReadReply
-	innerMsg := &ReplicaMessageReplyInnerMessage{
-		ReplicaReadReply:  readReply,
-		ReplicaWriteReply: nil,
-	}
-
-	// MKEM encrypt the ReplicaMessageReplyInnerMessage
-	mkemScheme := mkem.NewScheme(nikeScheme)
-
-	// Generate replica and sender keys for MKEM
-	_, replicaPrivateKey, err := nikeScheme.GenerateKeyPair()
-	require.NoError(t, err)
-	senderPublicKey, _, err := nikeScheme.GenerateKeyPair()
-	require.NoError(t, err)
-
-	// MKEM encrypt the inner message
-	envelopeReply := mkemScheme.EnvelopeReply(replicaPrivateKey, senderPublicKey, innerMsg.Bytes())
-
-	// Create CourierEnvelopeReply with MKEM-encrypted payload
-	envelopeHash := &[hash.HashSize]byte{}
-	reply := &CourierEnvelopeReply{
-		EnvelopeHash: envelopeHash,
-		ReplyIndex:   0,
-		ErrorCode:    0,
-		Payload:      envelopeReply.Envelope, // MKEM-encrypted payload!
-	}
-
+	reply := createCourierEnvelopeReplyFromPayload(t, payloadSize, nikeScheme)
 	return len(reply.Bytes())
 }
 
@@ -1206,55 +1118,8 @@ func measureCourierEnvelopeLayer(t *testing.T, boxPayloadLength int, nikeScheme 
 	// First get the MKEM encrypted size
 	actualMKEMSize, _ := measureMKEMLayer(t, boxPayloadLength, nikeScheme)
 
-	payload := make([]byte, boxPayloadLength)
-	owner, err := bacap.NewBoxOwnerCap(rand.Reader)
-	require.NoError(t, err)
-
-	ctx := []byte(testContext)
-	statefulWriter, err := bacap.NewStatefulWriter(owner, ctx)
-	require.NoError(t, err)
-
-	// BACAP encrypt the payload
-	boxID, ciphertext, sigraw, err := statefulWriter.EncryptNext(payload)
-	require.NoError(t, err)
-
-	sig := [bacap.SignatureSize]byte{}
-	copy(sig[:], sigraw)
-
-	// Create ReplicaWrite
-	writeRequest := commands.ReplicaWrite{
-		BoxID:     &boxID,
-		Signature: &sig,
-		Payload:   ciphertext,
-	}
-
-	// Create ReplicaInnerMessage
-	msg := &ReplicaInnerMessage{
-		ReplicaWrite: &writeRequest,
-	}
-
-	// MKEM encrypt
-	mkemScheme := mkem.NewScheme(nikeScheme)
-
-	// Generate replica keys for MKEM
-	replicaPubKeys := make([]nike.PublicKey, 2)
-	for i := 0; i < 2; i++ {
-		pub, _, err := nikeScheme.GenerateKeyPair()
-		require.NoError(t, err)
-		replicaPubKeys[i] = pub
-	}
-
-	mkemPrivateKey, mkemCiphertext := mkemScheme.Encapsulate(replicaPubKeys, msg.Bytes())
-	mkemPublicKey := mkemPrivateKey.Public()
-
-	// Create CourierEnvelope
-	envelope := &CourierEnvelope{
-		SenderEPubKey:        mkemPublicKey.Bytes(),
-		IntermediateReplicas: [2]uint8{0, 1},
-		DEK:                  [2]*[mkem.DEKSize]byte{mkemCiphertext.DEKCiphertexts[0], mkemCiphertext.DEKCiphertexts[1]},
-		Ciphertext:           mkemCiphertext.Envelope,
-		IsRead:               false,
-	}
+	// Use the DRY helper to create the envelope
+	envelope := createCourierEnvelopeFromPayload(t, boxPayloadLength, nikeScheme)
 
 	actualSize := len(envelope.Bytes())
 	overhead := actualSize - actualMKEMSize
