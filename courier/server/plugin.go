@@ -17,6 +17,7 @@ import (
 	"github.com/fxamacker/cbor/v2"
 	"github.com/katzenpost/hpqc/bacap"
 	"github.com/katzenpost/hpqc/hash"
+	"github.com/katzenpost/hpqc/kem/mkem"
 	"github.com/katzenpost/hpqc/nike"
 	"github.com/katzenpost/hpqc/nike/schemes"
 
@@ -48,6 +49,7 @@ var (
 	errBACAPDecryptionFailed      = errors.New("BACAP decryption failed")
 	errTombstoneWriteFailed       = errors.New("tombstone write failed")
 	errEmptySequence              = errors.New("empty sequence")
+	errGeometryViolation          = errors.New("message violates geometry constraints")
 )
 
 // Copy command error codes - using centralized error codes
@@ -136,6 +138,7 @@ type Courier struct {
 	cmds           *commands.Commands
 	geo            *geo.Geometry
 	envelopeScheme nike.Scheme
+	pigeonholeGeo  *replicaCommon.Geometry
 
 	dedupCacheLock sync.RWMutex
 	dedupCache     map[[hash.HashSize]byte]*CourierBookKeeping
@@ -149,12 +152,15 @@ type Courier struct {
 
 // NewCourier returns a new Courier type.
 func NewCourier(s *Server, cmds *commands.Commands, scheme nike.Scheme) *Courier {
+	pigeonholeGeo := replicaCommon.GeometryFromSphinxGeometry(s.cfg.SphinxGeometry, scheme)
+
 	courier := &Courier{
 		server:         s,
 		log:            s.logBackend.GetLogger("courier"),
 		cmds:           cmds,
 		geo:            s.cfg.SphinxGeometry,
 		envelopeScheme: scheme,
+		pigeonholeGeo:  pigeonholeGeo,
 		dedupCache:     make(map[[hash.HashSize]byte]*CourierBookKeeping),
 		copyCache:      make(map[[hash.HashSize]byte]chan *commands.ReplicaMessageReply),
 		pendingReads:   make(map[[hash.HashSize]byte]*PendingReadRequest),
@@ -391,6 +397,15 @@ func (e *Courier) cleanupExpiredRequest(envHash *[hash.HashSize]byte, timeout ti
 
 func (e *Courier) handleCourierEnvelope(courierMessage *common.CourierEnvelope) error {
 	e.log.Debugf("Copy: Processing CourierEnvelope (IsRead=%t)", courierMessage.IsRead)
+
+	// Validate CourierEnvelope size against geometry constraints
+	envelopeSize := len(courierMessage.Bytes())
+	if envelopeSize > e.pigeonholeGeo.CourierQueryLength {
+		e.log.Debugf("Rejecting oversized CourierEnvelope: %d bytes > %d bytes (geometry limit)",
+			envelopeSize, e.pigeonholeGeo.CourierQueryLength)
+		return errGeometryViolation
+	}
+
 	replicas := make([]*commands.ReplicaMessage, 2)
 
 	// Validate DEK array elements are not nil before using them
@@ -430,6 +445,9 @@ func (e *Courier) handleNewMessage(envHash *[hash.HashSize]byte, courierMessage 
 		e.log.Errorf("Failed to handle courier envelope: %s", err)
 		if err == errNilDEKElements {
 			return e.createEnvelopeErrorReply(envHash, envelopeErrorNilDEKElements)
+		}
+		if err == errGeometryViolation {
+			return e.createEnvelopeErrorReply(envHash, envelopeErrorInvalidEnvelope)
 		}
 		return e.createEnvelopeErrorReply(envHash, envelopeErrorInternalError)
 	}
@@ -493,6 +511,26 @@ func (e *Courier) OnCommand(cmd cborplugin.Command) error {
 		request = r
 	default:
 		return errors.New("Bug in courier-plugin: received invalid Command type")
+	}
+
+	// Validate message size against geometry constraints
+	if len(request.Payload) > e.pigeonholeGeo.CourierQueryLength {
+		e.log.Debugf("Rejecting oversized CourierQuery: %d bytes > %d bytes (geometry limit)",
+			len(request.Payload), e.pigeonholeGeo.CourierQueryLength)
+		// Send error reply back to client
+		errorReply := &common.CourierQueryReply{
+			CourierEnvelopeReply: &common.CourierEnvelopeReply{
+				ErrorCode: envelopeErrorInvalidEnvelope,
+			},
+		}
+		go func() {
+			e.write(&cborplugin.Response{
+				ID:      request.ID,
+				SURB:    request.SURB,
+				Payload: errorReply.Bytes(),
+			})
+		}()
+		return errGeometryViolation
 	}
 
 	courierQuery, err := common.CourierQueryFromBytes(request.Payload)
@@ -598,7 +636,7 @@ func (e *Courier) handleCopyCommand(copyCmd *common.CopyCommand) *common.Courier
 		return e.createCopyErrorReply(copyErrorReadCapDerivation)
 	}
 
-	boxIDList, err := e.processBoxesStreaming(statefulReader)
+	numBoxes, err := e.processBoxesStreaming(statefulReader)
 	if err != nil {
 		e.log.Debugf("Failed to process boxes: %s", err)
 		// Map specific errors to specific error codes
@@ -618,10 +656,153 @@ func (e *Courier) handleCopyCommand(copyCmd *common.CopyCommand) *common.Courier
 		}
 	}
 
-	// XXX TODO FIXME: write tombstones to all the Boxes in boxIDList.
-	_ = boxIDList
+	// Write tombstones to all the Boxes in the sequence
+	err = e.writeTombstones(copyCmd.WriteCap, numBoxes)
+	if err != nil {
+		e.log.Debugf("Failed to write tombstones: %s", err)
+		return e.createCopyErrorReply(copyErrorTombstoneWrite)
+	}
 
 	return e.createCopySuccessReply()
+}
+
+func (e *Courier) writeTombstones(writeCap *bacap.BoxOwnerCap, numBoxes int) error {
+	statefulWriter, err := bacap.NewStatefulWriter(writeCap, constants.PIGEONHOLE_CTX)
+	if err != nil {
+		e.log.Debugf("Failed to create StatefulWriter for tombstones: %s", err)
+		return err
+	}
+
+	tombstonePayload := make([]byte, e.pigeonholeGeo.BoxPayloadLength)
+
+	// Write tombstones using the deterministic nature of BACAP BoxIDs
+	// The StatefulWriter will generate the same BoxIDs as the original sequence
+	for i := 0; i < numBoxes; i++ {
+		isLast := (i == numBoxes-1)
+		e.log.Debugf("Writing tombstone %d/%d (IsLast=%t)", i+1, numBoxes, isLast)
+
+		err = e.createAndSendTombstoneEnvelope(statefulWriter, tombstonePayload, isLast)
+		if err != nil {
+			e.log.Debugf("Failed to write tombstone %d: %s", i+1, err)
+			return err
+		}
+	}
+
+	e.log.Debugf("Successfully wrote %d tombstones", numBoxes)
+	return nil
+}
+
+// createAndSendTombstoneEnvelope creates a tombstone envelope and sends it to replicas
+func (e *Courier) createAndSendTombstoneEnvelope(statefulWriter *bacap.StatefulWriter, tombstonePayload []byte, isLast bool) error {
+	// Validate tombstone payload size against geometry constraints
+	if len(tombstonePayload) > e.pigeonholeGeo.BoxPayloadLength {
+		e.log.Debugf("Rejecting oversized tombstone payload: %d bytes > %d bytes (geometry limit)",
+			len(tombstonePayload), e.pigeonholeGeo.BoxPayloadLength)
+		return errGeometryViolation
+	}
+
+	boxID, ciphertext, sigraw, err := statefulWriter.EncryptNext(tombstonePayload)
+	if err != nil {
+		e.log.Debugf("Failed to encrypt tombstone payload: %s", err)
+		return err
+	}
+
+	// Convert signature to array
+	sig := [bacap.SignatureSize]byte{}
+	copy(sig[:], sigraw)
+
+	// Create ReplicaWrite command for the tombstone
+	writeRequest := commands.ReplicaWrite{
+		BoxID:     &boxID,
+		Signature: &sig,
+		Payload:   ciphertext,
+		IsLast:    isLast,
+	}
+
+	// Create ReplicaInnerMessage
+	msg := &common.ReplicaInnerMessage{
+		ReplicaWrite: &writeRequest,
+	}
+
+	// Get PKI document for replica information
+	doc := e.server.PKI.PKIDocument()
+	if doc == nil {
+		e.log.Debugf("PKI document not available for tombstone write")
+		return errors.New("PKI document not available")
+	}
+
+	replicaEpoch, _, _ := common.ReplicaNow()
+
+	// Use sharding algorithm to determine which replicas should store this BoxID
+	shardedReplicas, err := replicaCommon.GetShards(&boxID, doc)
+	if err != nil {
+		e.log.Debugf("Failed to get shards for tombstone BoxID %x: %s", boxID[:8], err)
+		return err
+	}
+
+	if len(shardedReplicas) != 2 {
+		e.log.Debugf("Expected 2 sharded replicas for tombstone, got %d for BoxID %x", len(shardedReplicas), boxID[:8])
+		return errors.New("invalid number of sharded replicas")
+	}
+
+	// Create MKEM public keys for the sharded replicas
+	replicaPubKeys := make([]nike.PublicKey, 2)
+	var replicaIndices [2]uint8
+
+	for i, shardedReplica := range shardedReplicas {
+		// Find the index of this replica in the StorageReplicas slice
+		replicaIndex := -1
+		for j, storageReplica := range doc.StorageReplicas {
+			if bytes.Equal(shardedReplica.IdentityKey, storageReplica.IdentityKey) {
+				replicaIndex = j
+				break
+			}
+		}
+		if replicaIndex == -1 {
+			e.log.Debugf("Could not find sharded replica %d in StorageReplicas for tombstone BoxID %x", i, boxID[:8])
+			return errors.New("replica not found in PKI document")
+		}
+
+		replicaIndices[i] = uint8(replicaIndex)
+
+		// Get replica public key for this epoch
+		replicaPubKey := doc.StorageReplicas[replicaIndex].EnvelopeKeys[replicaEpoch]
+		replicaPubKeys[i], err = common.NikeScheme.UnmarshalBinaryPublicKey(replicaPubKey)
+		if err != nil {
+			e.log.Debugf("Failed to unmarshal replica %d public key for tombstone: %s", replicaIndex, err)
+			return err
+		}
+	}
+
+	// MKEM encrypt the inner message
+	mkemPrivateKey, mkemCiphertext := common.MKEMNikeScheme.Encapsulate(replicaPubKeys, msg.Bytes())
+	mkemPublicKey := mkemPrivateKey.Public()
+
+	// Validate DEK ciphertexts are not nil
+	if mkemCiphertext.DEKCiphertexts[0] == nil || mkemCiphertext.DEKCiphertexts[1] == nil {
+		e.log.Debugf("MKEM encapsulation failed for tombstone - nil DEK ciphertexts")
+		return errors.New("MKEM encapsulation failed")
+	}
+
+	// Create CourierEnvelope for the tombstone
+	courierEnvelope := &common.CourierEnvelope{
+		SenderEPubKey:        mkemPublicKey.Bytes(),
+		IntermediateReplicas: replicaIndices,
+		DEK:                  [2]*[mkem.DEKSize]byte{mkemCiphertext.DEKCiphertexts[0], mkemCiphertext.DEKCiphertexts[1]},
+		Ciphertext:           mkemCiphertext.Envelope,
+		IsRead:               false,
+	}
+
+	// Send the tombstone envelope to replicas using existing infrastructure
+	e.log.Debugf("Sending tombstone envelope for BoxID %x to replicas %v", boxID[:8], replicaIndices)
+	err = e.handleCourierEnvelope(courierEnvelope)
+	if err != nil {
+		e.log.Debugf("Failed to send tombstone envelope for BoxID %x: %s", boxID[:8], err)
+		return err
+	}
+
+	e.log.Debugf("Successfully sent tombstone for BoxID %x", boxID[:8])
+	return nil
 }
 
 func (e *Courier) createStatefulReader(writeCap *bacap.BoxOwnerCap) (*bacap.StatefulReader, error) {
@@ -634,8 +815,8 @@ func (e *Courier) createStatefulReader(writeCap *bacap.BoxOwnerCap) (*bacap.Stat
 	return statefulReader, nil
 }
 
-func (e *Courier) processBoxesStreaming(statefulReader *bacap.StatefulReader) ([]*[bacap.BoxIDSize]byte, error) {
-	boxIDList := make([]*[bacap.BoxIDSize]byte, 0)
+func (e *Courier) processBoxesStreaming(statefulReader *bacap.StatefulReader) (int, error) {
+	boxCount := 0
 
 	// Create a streaming CBOR decoder that processes envelopes as they become available
 	streamingDecoder := NewStreamingCBORDecoder(func(envelope *common.CourierEnvelope) {
@@ -651,37 +832,44 @@ func (e *Courier) processBoxesStreaming(statefulReader *bacap.StatefulReader) ([
 		if err != nil {
 			// If we can't get the first BoxID, the sequence is empty
 			e.log.Debugf("Empty sequence detected: %s", err)
-			return nil, errEmptySequence
+			return 0, errEmptySequence
 		}
-		boxIDList = append(boxIDList, boxID)
+		boxCount++
 
 		// Read the box from replica
 		replicaReadReply, err := e.readBoxFromReplica(boxID)
 		if err != nil {
 			e.log.Debugf("Failed to read Box from replica: %s", err)
 			if err == errFailedToReadBoxFromReplica {
-				return nil, errReplicaTimeout
+				return 0, errReplicaTimeout
 			}
-			return nil, err
+			return 0, err
 		}
 
 		// Use DecryptNext to advance the StatefulReader state
 		// We need to provide the actual encrypted box data from the replica
 		if replicaReadReply.Signature == nil {
 			e.log.Debugf("Replica read reply has nil signature for BoxID %x", boxID[:8])
-			return nil, errBACAPDecryptionFailed
+			return 0, errBACAPDecryptionFailed
 		}
 		boxPlaintext, err := statefulReader.DecryptNext(constants.PIGEONHOLE_CTX, *boxID, replicaReadReply.Payload, *replicaReadReply.Signature)
 		if err != nil {
 			e.log.Debugf("Failed to decrypt box: %s", err)
-			return nil, errBACAPDecryptionFailed
+			return 0, errBACAPDecryptionFailed
+		}
+
+		// Validate box plaintext size against geometry constraints
+		if len(boxPlaintext) > e.pigeonholeGeo.BoxPayloadLength {
+			e.log.Debugf("Rejecting oversized box plaintext: %d bytes > %d bytes (geometry limit)",
+				len(boxPlaintext), e.pigeonholeGeo.BoxPayloadLength)
+			return 0, errGeometryViolation
 		}
 
 		// Feed this box's plaintext to the streaming decoder
 		err = streamingDecoder.ProcessChunk(boxPlaintext)
 		if err != nil {
 			e.log.Debugf("Failed to process box chunk: %s", err)
-			return nil, errStreamingDecoderFailed
+			return 0, errStreamingDecoderFailed
 		}
 
 		// Check if this was the last box
@@ -694,11 +882,11 @@ func (e *Courier) processBoxesStreaming(statefulReader *bacap.StatefulReader) ([
 	err := streamingDecoder.Finalize()
 	if err != nil {
 		e.log.Debugf("Failed to finalize streaming decoder: %s", err)
-		return nil, errStreamingDecoderFailed
+		return 0, errStreamingDecoderFailed
 	}
 
-	e.log.Debugf("Copy: Successfully processed %d CourierEnvelopes and wrote %d boxes to destination", streamingDecoder.processedEnvelopes, len(boxIDList))
-	return boxIDList, nil
+	e.log.Debugf("Copy: Successfully processed %d CourierEnvelopes and wrote %d boxes to destination", streamingDecoder.processedEnvelopes, boxCount)
+	return boxCount, nil
 }
 
 // StreamingCBORDecoder processes CBOR data incrementally, decoding and handling
