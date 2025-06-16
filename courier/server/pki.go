@@ -40,6 +40,8 @@ type PKIWorker struct {
 
 	replicas *common.ReplicaMap
 
+	impl pki.Client // PKI client for document fetching and publishing
+
 	lastPublishedEpoch        uint64
 	lastWarnedEpoch           uint64
 	lastPublishedReplicaEpoch uint64
@@ -50,6 +52,7 @@ func newPKIWorker(server *Server, pkiClient pki.Client, log *logging.Logger) (*P
 		server:     server,
 		WorkerBase: pki.NewWorkerBase(pkiClient, log),
 		replicas:   common.NewReplicaMap(),
+		impl:       pkiClient,
 	}
 
 	p.Go(p.worker)
@@ -94,6 +97,10 @@ func (p *PKIWorker) HasCurrentPKIDocument() bool {
 // This is useful for integration tests where you want to ensure the courier has the latest
 // PKI document without waiting for the normal fetch cycle.
 func (p *PKIWorker) ForceFetchPKI() error {
+	if p.impl == nil {
+		return errors.New("no PKI client configured")
+	}
+
 	epoch, _, _ := epochtime.Now()
 
 	// Clear any failed fetch record for this epoch to allow retry
@@ -101,26 +108,20 @@ func (p *PKIWorker) ForceFetchPKI() error {
 
 	p.GetLogger().Debugf("Force fetching PKI document for epoch %v", epoch)
 
-	// Fetch the PKI document
+	// Fetch the PKI document directly from the client (like replica does)
 	ctx := context.Background()
-	results := p.FetchDocuments(ctx, func() bool { return false })
-
-	for _, result := range results {
-		if result.Epoch == epoch {
-			if result.Error != nil {
-				p.GetLogger().Warningf("Force fetch failed for epoch %v: %v", epoch, result.Error)
-				return result.Error
-			}
-
-			p.StoreDocument(result.Epoch, result.Doc, result.RawDoc)
-			p.replicas.UpdateFromPKIDoc(result.Doc)
-
-			p.GetLogger().Debugf("Successfully force fetched PKI document for epoch %v", epoch)
-			return nil
-		}
+	d, rawDoc, err := p.impl.Get(ctx, epoch)
+	if err != nil {
+		p.GetLogger().Warningf("Force fetch failed for epoch %v: %v", epoch, err)
+		return err
 	}
 
-	return errors.New("failed to fetch document for current epoch")
+	// Store the document and update replicas
+	p.StoreDocument(epoch, d, rawDoc)
+	p.replicas.UpdateFromPKIDoc(d)
+
+	p.GetLogger().Debugf("Successfully force fetched PKI document for epoch %v", epoch)
+	return nil
 }
 
 func (p *PKIWorker) worker() {
