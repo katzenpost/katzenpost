@@ -4,6 +4,7 @@
 package thin
 
 import (
+	"context"
 	"encoding/binary"
 	"io"
 	"net"
@@ -12,6 +13,8 @@ import (
 	"github.com/fxamacker/cbor/v2"
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/katzenpost/core/log"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
+	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
 	"github.com/stretchr/testify/require"
 )
 
@@ -25,7 +28,18 @@ func TestThinTCPSendRecv(t *testing.T) {
 	require.NoError(t, err)
 
 	client, server := net.Pipe()
+	defaultSphinxGeometry := &geo.Geometry{
+		UserForwardPayloadLength: 1000,
+	}
+	defaultPigeonholeGeometry := &replicaCommon.Geometry{
+		BoxPayloadLength: 1000,
+	}
+
 	thin := ThinClient{
+		cfg: &Config{
+			SphinxGeometry:     defaultSphinxGeometry,
+			PigeonholeGeometry: defaultPigeonholeGeometry,
+		},
 		log:   logBackend.GetLogger("thinclient"),
 		isTCP: true,
 		conn:  client,
@@ -96,4 +110,87 @@ func TestThinTCPSendRecv(t *testing.T) {
 
 	e = <-serverWriteMessageErrCh
 	require.NoError(t, e)
+
+	// test WriteChannel
+
+	pigeonholeGeometry := &replicaCommon.Geometry{
+		BoxPayloadLength: 50,
+	}
+
+	thin.cfg = &Config{
+		SphinxGeometry:     defaultSphinxGeometry,
+		PigeonholeGeometry: pigeonholeGeometry,
+	}
+
+	channelID := &[ChannelIDLength]byte{}
+	_, err = rand.Reader.Read(channelID[:])
+	require.NoError(t, err)
+
+	ctx := context.Background()
+
+	largePayload := make([]byte, 100)
+	err = thin.WriteChannel(ctx, channelID, largePayload)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "payload size")
+	require.Contains(t, err.Error(), "exceeds maximum allowed size")
+
+	err = thin.WriteChannel(ctx, nil, largePayload)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "channelID cannot be nil")
+
+	sphinxGeometry := &geo.Geometry{
+		UserForwardPayloadLength: 30,
+	}
+	thin.cfg = &Config{
+		SphinxGeometry:     sphinxGeometry,
+		PigeonholeGeometry: defaultPigeonholeGeometry,
+	}
+
+	largeSphinxPayload := make([]byte, 50)
+	request = &Request{
+		Payload: largeSphinxPayload,
+	}
+	err = thin.writeMessage(request)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "payload size")
+	require.Contains(t, err.Error(), "exceeds maximum allowed size")
+}
+
+func TestCopyChannelValidation(t *testing.T) {
+	logBackend, err := log.New("", "DEBUG", false)
+	require.NoError(t, err)
+
+	client, _ := net.Pipe()
+	defaultSphinxGeometry := &geo.Geometry{
+		UserForwardPayloadLength: 1000,
+	}
+	defaultPigeonholeGeometry := &replicaCommon.Geometry{
+		BoxPayloadLength: 1000,
+	}
+
+	thin := ThinClient{
+		cfg: &Config{
+			SphinxGeometry:     defaultSphinxGeometry,
+			PigeonholeGeometry: defaultPigeonholeGeometry,
+		},
+		log:   logBackend.GetLogger("thinclient"),
+		isTCP: true,
+		conn:  client,
+	}
+
+	ctx := context.Background()
+
+	// Test with nil channelID
+	err = thin.CopyChannel(ctx, nil)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "channelID cannot be nil")
+
+	// Test with nil context
+	channelID := &[ChannelIDLength]byte{}
+	_, err = rand.Reader.Read(channelID[:])
+	require.NoError(t, err)
+
+	err = thin.CopyChannel(nil, channelID)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "context cannot be nil")
 }

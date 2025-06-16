@@ -19,7 +19,6 @@ package client
 import (
 	"errors"
 	"math"
-	mrand "math/rand"
 	"time"
 
 	"github.com/katzenpost/hpqc/rand"
@@ -155,7 +154,7 @@ func (s *Session) worker() {
 			if isConnected {
 				// select a loop service endpoint
 				if !s.cfg.Debug.DisableDecoyTraffic {
-					loopSvc = &loopServices[mrand.Intn(len(loopServices))]
+					loopSvc = &loopServices[mRng.Intn(len(loopServices))]
 				}
 				if lambdaPFired {
 					s.sendFromQueueOrDecoy(loopSvc)

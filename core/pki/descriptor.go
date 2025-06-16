@@ -28,10 +28,13 @@ import (
 
 	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/kem"
+	kempem "github.com/katzenpost/hpqc/kem/pem"
 	kemschemes "github.com/katzenpost/hpqc/kem/schemes"
 	"github.com/katzenpost/hpqc/nike"
+	nikepem "github.com/katzenpost/hpqc/nike/pem"
 	"github.com/katzenpost/hpqc/nike/schemes"
 	"github.com/katzenpost/hpqc/sign"
+	signpem "github.com/katzenpost/hpqc/sign/pem"
 
 	"github.com/katzenpost/katzenpost/core/cert"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
@@ -123,6 +126,12 @@ type MixDescriptor struct {
 	// to parameters.
 	Kaetzchen map[string]map[string]interface{} `cbor:"omitempty"`
 
+	// KaetzchenAdvertizedData is used by the operator to advertize
+	// additional information about specific services. This is different
+	// from the above Kaetzchen map in that these keys will never be
+	// modified or passed over commandline to the plugin.
+	KaetzchenAdvertizedData map[string]map[string]interface{}
+
 	// IsGatewayNode indicates that this Mix is a gateway node.
 	// Essentially a gateway allows clients to interact with the mixnet.
 	// This option being set to true is mutually exclusive with
@@ -182,6 +191,22 @@ func (d *MixDescriptor) UnmarshalBinary(data []byte) error {
 // MarshalBinary implmements encoding.BinaryMarshaler
 func (d *MixDescriptor) MarshalBinary() ([]byte, error) {
 	return ccbor.Marshal((*mixdescriptor)(d))
+}
+
+func (d *MixDescriptor) GetRawCourierLinkKey() (string, error) {
+	courierData, ok := d.KaetzchenAdvertizedData["courier"]
+	if !ok {
+		return "", errors.New("KaetzchenAdvertizedData does not have an entry for 'courier'")
+	}
+	linkPubKey, ok := courierData["linkPublicKey"]
+	if !ok {
+		return "", errors.New("courier data does not have an entry for linkPublicKey")
+	}
+	ret, ok := linkPubKey.(string)
+	if !ok {
+		return "", errors.New("cannot type cast courier linkPubKey into string")
+	}
+	return ret, nil
 }
 
 // IsDescriptorWellFormed validates the descriptor and returns a descriptive
@@ -318,6 +343,38 @@ type ReplicaDescriptor struct {
 	// Addresses is the map of transport to address combinations that can
 	// be used to reach the node.
 	Addresses map[string][]string
+}
+
+func (d *ReplicaDescriptor) DisplayWithSchemes(linkScheme kem.Scheme, identityScheme sign.Scheme, envelopeScheme nike.Scheme) string {
+	idPubKey, err := identityScheme.UnmarshalBinaryPublicKey(d.IdentityKey)
+	if err != nil {
+		panic(err)
+	}
+	idKey := signpem.ToPublicPEMString(idPubKey)
+	linkPubKey, err := linkScheme.UnmarshalBinaryPublicKey(d.LinkKey)
+	if err != nil {
+		panic(err)
+	}
+	linkKey := kempem.ToPublicPEMString(linkPubKey)
+
+	envelopeKeys := []string{}
+	for epoch, rawkey := range d.EnvelopeKeys {
+		nikePubkey, err := envelopeScheme.UnmarshalBinaryPublicKey(rawkey)
+		if err != nil {
+			panic(err)
+		}
+		nikeKey := nikepem.ToPublicPEMString(nikePubkey, envelopeScheme)
+		envelopeKeys = append(envelopeKeys, fmt.Sprintf("epoch %d -> %s", epoch, nikeKey))
+	}
+
+	return fmt.Sprintf(`ReplicaDescriptor:
+Name: %s
+Epoch: %d
+IdentityKey: %s
+LinkKey: %s
+EnvelopeKeys: %v
+Addresses: %s
+`, d.Name, d.Epoch, idKey, linkKey, envelopeKeys, d.Addresses)
 }
 
 // IsReplicaDescriptorWellFormed validates the descriptor and returns a descriptive

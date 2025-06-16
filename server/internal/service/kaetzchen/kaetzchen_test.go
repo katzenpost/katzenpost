@@ -124,8 +124,8 @@ func (p *mockProvider) AuthenticateClient(*wire.PeerCredentials) bool {
 
 func (p *mockProvider) OnPacket(*packet.Packet) {}
 
-func (p *mockProvider) KaetzchenForPKI() (map[string]map[string]interface{}, error) {
-	return nil, nil
+func (p *mockProvider) KaetzchenForPKI() (map[string]map[string]interface{}, map[string]map[string]interface{}, error) {
+	return nil, nil, nil
 }
 
 type mockDecoy struct{}
