@@ -25,10 +25,11 @@ const (
 	testContext = "test-context"
 )
 
-func TestReplicaWriteOverhead(t *testing.T) {
-	payload := make([]byte, 1000)
+// DRY helper functions to eliminate massive code duplication
 
-	// Create BACAP StatefulWriter to encrypt the payload
+// createBACAPEncryptedPayload creates BACAP encrypted payload from raw bytes
+// This eliminates the repeated BACAP encryption pattern used throughout tests
+func createBACAPEncryptedPayload(t *testing.T, payload []byte) ([bacap.BoxIDSize]byte, []byte, [bacap.SignatureSize]byte) {
 	owner, err := bacap.NewBoxOwnerCap(rand.Reader)
 	require.NoError(t, err)
 
@@ -36,12 +37,55 @@ func TestReplicaWriteOverhead(t *testing.T) {
 	statefulWriter, err := bacap.NewStatefulWriter(owner, ctx)
 	require.NoError(t, err)
 
-	// Use BACAP to encrypt the payload (this adds AES-GCM-SIV overhead)
-	boxID, bacapCiphertext, sigraw, err := statefulWriter.EncryptNext(payload)
+	// BACAP encrypt the payload
+	boxID, ciphertext, sigraw, err := statefulWriter.EncryptNext(payload)
 	require.NoError(t, err)
 
 	sig := [bacap.SignatureSize]byte{}
 	copy(sig[:], sigraw)
+
+	return boxID, ciphertext, sig
+}
+
+// generateMKEMReplicaKeys generates replica public keys for MKEM
+// This eliminates the repeated MKEM key generation pattern
+func generateMKEMReplicaKeys(t *testing.T, nikeScheme nike.Scheme) []nike.PublicKey {
+	replicaPubKeys := make([]nike.PublicKey, 2)
+	for i := 0; i < 2; i++ {
+		pub, _, err := nikeScheme.GenerateKeyPair()
+		require.NoError(t, err)
+		replicaPubKeys[i] = pub
+	}
+	return replicaPubKeys
+}
+
+// createReplicaWriteFromPayload creates a ReplicaWrite from raw payload
+// This eliminates the repeated ReplicaWrite creation pattern
+func createReplicaWriteFromPayload(t *testing.T, payload []byte) *commands.ReplicaWrite {
+	boxID, ciphertext, sig := createBACAPEncryptedPayload(t, payload)
+
+	return &commands.ReplicaWrite{
+		BoxID:     &boxID,
+		Signature: &sig,
+		Payload:   ciphertext,
+	}
+}
+
+// createReplicaInnerMessageFromPayload creates a ReplicaInnerMessage from raw payload
+// This eliminates the repeated ReplicaInnerMessage creation pattern
+func createReplicaInnerMessageFromPayload(t *testing.T, payload []byte) *ReplicaInnerMessage {
+	writeRequest := createReplicaWriteFromPayload(t, payload)
+
+	return &ReplicaInnerMessage{
+		ReplicaWrite: writeRequest,
+	}
+}
+
+func TestReplicaWriteOverhead(t *testing.T) {
+	payload := make([]byte, 1000)
+
+	// Use DRY helper to create BACAP encrypted payload
+	boxID, bacapCiphertext, sig := createBACAPEncryptedPayload(t, payload)
 
 	writeCmd := &commands.ReplicaWrite{
 		Cmds: nil, // we don't want padding
@@ -120,13 +164,8 @@ func TestCourierEnvelopeOverhead(t *testing.T) {
 	// Create MKEM scheme and generate MKEM keys like real-world usage
 	mkemScheme := mkem.NewScheme(nikeScheme)
 
-	// Generate replica keys for MKEM (like real usage)
-	replicaPubKeys := make([]nike.PublicKey, 2)
-	for i := 0; i < 2; i++ {
-		pub, _, err := nikeScheme.GenerateKeyPair()
-		require.NoError(t, err)
-		replicaPubKeys[i] = pub
-	}
+	// Use DRY helper to generate replica keys for MKEM
+	replicaPubKeys := generateMKEMReplicaKeys(t, nikeScheme)
 
 	// Create dummy plaintext to get MKEM keys
 	dummyPlaintext := []byte("dummy")
@@ -198,29 +237,10 @@ func TestReplicaInnerMessageOverhead(t *testing.T) {
 	readMsgBytes := readMsg.Bytes()
 	readOverhead := len(readMsgBytes)
 
-	// Test ReplicaWrite case - use BACAP encryption like the main test
-	owner, err := bacap.NewBoxOwnerCap(rand.Reader)
-	require.NoError(t, err)
-
-	ctx := []byte(testContext)
-	statefulWriter, err := bacap.NewStatefulWriter(owner, ctx)
-	require.NoError(t, err)
-
-	// Use BACAP to encrypt the payload
-	boxID, bacapCiphertext, sigraw, err := statefulWriter.EncryptNext(payload)
-	require.NoError(t, err)
-
-	sig := [bacap.SignatureSize]byte{}
-	copy(sig[:], sigraw)
-
-	// Create the ReplicaWrite separately to measure its CBOR overhead
-	replicaWrite := &commands.ReplicaWrite{
-		Cmds:      nil, // no padding
-		BoxID:     &boxID,
-		Signature: &sig,
-		IsLast:    false,
-		Payload:   bacapCiphertext, // Use encrypted payload
-	}
+	// Test ReplicaWrite case - use DRY helper for BACAP encryption
+	replicaWrite := createReplicaWriteFromPayload(t, payload)
+	replicaWrite.Cmds = nil // no padding
+	replicaWrite.IsLast = false
 
 	writeMsg := &ReplicaInnerMessage{
 		ReplicaRead:  nil,
@@ -400,44 +420,15 @@ func TestGeometryUseCase3(t *testing.T) {
 // createCourierEnvelopeFromPayload creates a REAL CourierEnvelope from a payload using the exact same approach
 // as TestCourierReplicaIntegration in aliceComposesNextMessage()
 func createCourierEnvelopeFromPayload(t *testing.T, boxPayloadLength int, nikeScheme nike.Scheme) *CourierEnvelope {
-	// Step 1: Create BACAP encrypted payload (exactly like integration test)
+	// Step 1-3: Create ReplicaInnerMessage using DRY helper
 	payload := make([]byte, boxPayloadLength)
-	owner, err := bacap.NewBoxOwnerCap(rand.Reader)
-	require.NoError(t, err)
-
-	ctx := []byte(testContext)
-	statefulWriter, err := bacap.NewStatefulWriter(owner, ctx)
-	require.NoError(t, err)
-
-	// BACAP encrypt the payload
-	boxID, ciphertext, sigraw, err := statefulWriter.EncryptNext(payload)
-	require.NoError(t, err)
-
-	sig := [bacap.SignatureSize]byte{}
-	copy(sig[:], sigraw)
-
-	// Step 2: Create ReplicaWrite (exactly like integration test)
-	writeRequest := commands.ReplicaWrite{
-		BoxID:     &boxID,
-		Signature: &sig,
-		Payload:   ciphertext,
-	}
-
-	// Step 3: Create ReplicaInnerMessage (exactly like integration test)
-	msg := &ReplicaInnerMessage{
-		ReplicaWrite: &writeRequest,
-	}
+	msg := createReplicaInnerMessageFromPayload(t, payload)
 
 	// Step 4: MKEM encrypt (exactly like integration test)
 	mkemScheme := mkem.NewScheme(nikeScheme)
 
-	// Generate replica keys for MKEM
-	replicaPubKeys := make([]nike.PublicKey, 2)
-	for i := 0; i < 2; i++ {
-		pub, _, err := nikeScheme.GenerateKeyPair()
-		require.NoError(t, err)
-		replicaPubKeys[i] = pub
-	}
+	// Use DRY helper to generate replica keys for MKEM
+	replicaPubKeys := generateMKEMReplicaKeys(t, nikeScheme)
 
 	mkemPrivateKey, mkemCiphertext := mkemScheme.Encapsulate(replicaPubKeys, msg.Bytes())
 	mkemPublicKey := mkemPrivateKey.Public()
@@ -464,21 +455,9 @@ func composeActualCourierEnvelope(t *testing.T, boxPayloadLength int, nikeScheme
 // createCourierEnvelopeReplyFromPayload creates a REAL CourierEnvelopeReply from a payload using the same approach
 // as replica handlers.go (lines 124-136) with MKEM encryption
 func createCourierEnvelopeReplyFromPayload(t *testing.T, boxPayloadLength int, nikeScheme nike.Scheme) *CourierEnvelopeReply {
-	// Step 1: Create BACAP encrypted payload (what would be returned in a read)
+	// Step 1: Create BACAP encrypted payload using DRY helper
 	payload := make([]byte, boxPayloadLength)
-	owner, err := bacap.NewBoxOwnerCap(rand.Reader)
-	require.NoError(t, err)
-
-	ctx := []byte(testContext)
-	statefulWriter, err := bacap.NewStatefulWriter(owner, ctx)
-	require.NoError(t, err)
-
-	// BACAP encrypt the payload
-	boxID, ciphertext, sigraw, err := statefulWriter.EncryptNext(payload)
-	require.NoError(t, err)
-
-	sig := [bacap.SignatureSize]byte{}
-	copy(sig[:], sigraw)
+	boxID, ciphertext, sig := createBACAPEncryptedPayload(t, payload)
 
 	// Step 2: Create ReplicaReadReply with BACAP-encrypted payload
 	readReply := &ReplicaReadReply{
@@ -854,44 +833,15 @@ func TestGeometryLayerByLayerOverhead(t *testing.T) {
 // createActualNestedCourierMessage creates the complete nested message structure that would be sent to replicas
 // This represents the outermost message size that the geometry's CourierQueryLength should predict
 func createActualNestedCourierMessage(t *testing.T, boxPayloadLength int, nikeScheme nike.Scheme) int {
-	// Create BACAP encrypted payload
+	// Use DRY helper to create ReplicaInnerMessage
 	payload := make([]byte, boxPayloadLength)
-	owner, err := bacap.NewBoxOwnerCap(rand.Reader)
-	require.NoError(t, err)
-
-	ctx := []byte(testContext)
-	statefulWriter, err := bacap.NewStatefulWriter(owner, ctx)
-	require.NoError(t, err)
-
-	// BACAP encrypt the payload
-	boxID, ciphertext, sigraw, err := statefulWriter.EncryptNext(payload)
-	require.NoError(t, err)
-
-	sig := [bacap.SignatureSize]byte{}
-	copy(sig[:], sigraw)
-
-	// Create ReplicaWrite
-	writeRequest := commands.ReplicaWrite{
-		BoxID:     &boxID,
-		Signature: &sig,
-		Payload:   ciphertext,
-	}
-
-	// Create ReplicaInnerMessage
-	msg := &ReplicaInnerMessage{
-		ReplicaWrite: &writeRequest,
-	}
+	msg := createReplicaInnerMessageFromPayload(t, payload)
 
 	// MKEM encrypt
 	mkemScheme := mkem.NewScheme(nikeScheme)
 
-	// Generate replica keys for MKEM
-	replicaPubKeys := make([]nike.PublicKey, 2)
-	for i := 0; i < 2; i++ {
-		pub, _, err := nikeScheme.GenerateKeyPair()
-		require.NoError(t, err)
-		replicaPubKeys[i] = pub
-	}
+	// Use DRY helper to generate replica keys for MKEM
+	replicaPubKeys := generateMKEMReplicaKeys(t, nikeScheme)
 
 	mkemPrivateKey, mkemCiphertext := mkemScheme.Encapsulate(replicaPubKeys, msg.Bytes())
 	mkemPublicKey := mkemPrivateKey.Public()
@@ -917,21 +867,9 @@ func createActualNestedCourierMessage(t *testing.T, boxPayloadLength int, nikeSc
 // createActualNestedCourierReplyMessage creates the complete nested reply message structure from replicas
 // This represents the outermost reply message size that the geometry's CourierQueryReplyLength should predict
 func createActualNestedCourierReplyMessage(t *testing.T, boxPayloadLength int, nikeScheme nike.Scheme) int {
-	// Create BACAP encrypted payload
+	// Use DRY helper to create BACAP encrypted payload
 	payload := make([]byte, boxPayloadLength)
-	owner, err := bacap.NewBoxOwnerCap(rand.Reader)
-	require.NoError(t, err)
-
-	ctx := []byte(testContext)
-	statefulWriter, err := bacap.NewStatefulWriter(owner, ctx)
-	require.NoError(t, err)
-
-	// BACAP encrypt the payload
-	boxID, ciphertext, sigraw, err := statefulWriter.EncryptNext(payload)
-	require.NoError(t, err)
-
-	sig := [bacap.SignatureSize]byte{}
-	copy(sig[:], sigraw)
+	boxID, ciphertext, sig := createBACAPEncryptedPayload(t, payload)
 
 	// Create ReplicaReadReply with BACAP-encrypted payload
 	readReply := &ReplicaReadReply{
@@ -980,16 +918,9 @@ func createActualNestedCourierReplyMessage(t *testing.T, boxPayloadLength int, n
 // measureBACAPLayer measures the BACAP encryption layer overhead
 func measureBACAPLayer(t *testing.T, boxPayloadLength int) (int, int) {
 	payload := make([]byte, boxPayloadLength)
-	owner, err := bacap.NewBoxOwnerCap(rand.Reader)
-	require.NoError(t, err)
 
-	ctx := []byte(testContext)
-	statefulWriter, err := bacap.NewStatefulWriter(owner, ctx)
-	require.NoError(t, err)
-
-	// BACAP encrypt the payload
-	_, ciphertext, _, err := statefulWriter.EncryptNext(payload)
-	require.NoError(t, err)
+	// Use DRY helper to create BACAP encrypted payload
+	_, ciphertext, _ := createBACAPEncryptedPayload(t, payload)
 
 	actualSize := len(ciphertext)
 	overhead := actualSize - boxPayloadLength
@@ -999,26 +930,9 @@ func measureBACAPLayer(t *testing.T, boxPayloadLength int) (int, int) {
 // measureReplicaWriteLayer measures the ReplicaWrite total overhead relative to original payload
 func measureReplicaWriteLayer(t *testing.T, boxPayloadLength int, nikeScheme nike.Scheme) (int, int) {
 	payload := make([]byte, boxPayloadLength)
-	owner, err := bacap.NewBoxOwnerCap(rand.Reader)
-	require.NoError(t, err)
 
-	ctx := []byte(testContext)
-	statefulWriter, err := bacap.NewStatefulWriter(owner, ctx)
-	require.NoError(t, err)
-
-	// BACAP encrypt the payload
-	boxID, ciphertext, sigraw, err := statefulWriter.EncryptNext(payload)
-	require.NoError(t, err)
-
-	sig := [bacap.SignatureSize]byte{}
-	copy(sig[:], sigraw)
-
-	// Create ReplicaWrite
-	writeRequest := commands.ReplicaWrite{
-		BoxID:     &boxID,
-		Signature: &sig,
-		Payload:   ciphertext,
-	}
+	// Use DRY helper to create ReplicaWrite
+	writeRequest := createReplicaWriteFromPayload(t, payload)
 
 	actualSize := len(writeRequest.ToBytes())
 	// Measure total overhead relative to original payload (what geometry function should return)
@@ -1032,31 +946,9 @@ func measureReplicaInnerMessageLayer(t *testing.T, boxPayloadLength int, nikeSch
 	actualReplicaWriteSize, _ := measureReplicaWriteLayer(t, boxPayloadLength, nikeScheme)
 
 	payload := make([]byte, boxPayloadLength)
-	owner, err := bacap.NewBoxOwnerCap(rand.Reader)
-	require.NoError(t, err)
 
-	ctx := []byte(testContext)
-	statefulWriter, err := bacap.NewStatefulWriter(owner, ctx)
-	require.NoError(t, err)
-
-	// BACAP encrypt the payload
-	boxID, ciphertext, sigraw, err := statefulWriter.EncryptNext(payload)
-	require.NoError(t, err)
-
-	sig := [bacap.SignatureSize]byte{}
-	copy(sig[:], sigraw)
-
-	// Create ReplicaWrite
-	writeRequest := commands.ReplicaWrite{
-		BoxID:     &boxID,
-		Signature: &sig,
-		Payload:   ciphertext,
-	}
-
-	// Create ReplicaInnerMessage
-	msg := &ReplicaInnerMessage{
-		ReplicaWrite: &writeRequest,
-	}
+	// Use DRY helper to create ReplicaInnerMessage
+	msg := createReplicaInnerMessageFromPayload(t, payload)
 
 	actualSize := len(msg.Bytes())
 	overhead := actualSize - actualReplicaWriteSize
@@ -1069,42 +961,15 @@ func measureMKEMLayer(t *testing.T, boxPayloadLength int, nikeScheme nike.Scheme
 	actualReplicaInnerSize, _ := measureReplicaInnerMessageLayer(t, boxPayloadLength, nikeScheme)
 
 	payload := make([]byte, boxPayloadLength)
-	owner, err := bacap.NewBoxOwnerCap(rand.Reader)
-	require.NoError(t, err)
 
-	ctx := []byte(testContext)
-	statefulWriter, err := bacap.NewStatefulWriter(owner, ctx)
-	require.NoError(t, err)
-
-	// BACAP encrypt the payload
-	boxID, ciphertext, sigraw, err := statefulWriter.EncryptNext(payload)
-	require.NoError(t, err)
-
-	sig := [bacap.SignatureSize]byte{}
-	copy(sig[:], sigraw)
-
-	// Create ReplicaWrite
-	writeRequest := commands.ReplicaWrite{
-		BoxID:     &boxID,
-		Signature: &sig,
-		Payload:   ciphertext,
-	}
-
-	// Create ReplicaInnerMessage
-	msg := &ReplicaInnerMessage{
-		ReplicaWrite: &writeRequest,
-	}
+	// Use DRY helper to create ReplicaInnerMessage
+	msg := createReplicaInnerMessageFromPayload(t, payload)
 
 	// MKEM encrypt
 	mkemScheme := mkem.NewScheme(nikeScheme)
 
-	// Generate replica keys for MKEM
-	replicaPubKeys := make([]nike.PublicKey, 2)
-	for i := 0; i < 2; i++ {
-		pub, _, err := nikeScheme.GenerateKeyPair()
-		require.NoError(t, err)
-		replicaPubKeys[i] = pub
-	}
+	// Use DRY helper to generate replica keys for MKEM
+	replicaPubKeys := generateMKEMReplicaKeys(t, nikeScheme)
 
 	_, mkemCiphertext := mkemScheme.Encapsulate(replicaPubKeys, msg.Bytes())
 
@@ -1191,13 +1056,8 @@ func TestGeometryConsistencyWithVariousPayloadSizes(t *testing.T) {
 			// Create MKEM encryption like the geometry calculations do
 			mkemScheme := mkem.NewScheme(nikeScheme)
 
-			// Generate replica keys for MKEM (like real usage)
-			replicaPubKeys := make([]nike.PublicKey, 2)
-			for i := 0; i < 2; i++ {
-				pub, _, err := nikeScheme.GenerateKeyPair()
-				require.NoError(t, err)
-				replicaPubKeys[i] = pub
-			}
+			// Use DRY helper to generate replica keys for MKEM
+			replicaPubKeys := generateMKEMReplicaKeys(t, nikeScheme)
 
 			mkemPrivateKey, mkemCiphertext := mkemScheme.Encapsulate(replicaPubKeys, replicaInnerBytes)
 			mkemPublicKey := mkemPrivateKey.Public()
