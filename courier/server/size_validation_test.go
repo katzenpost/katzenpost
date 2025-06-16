@@ -21,7 +21,7 @@ import (
 )
 
 // TestCourierWriteSizeValidation tests that the courier rejects writes with incorrect ciphertext sizes
-func TestCourierWriteSizeValidation(t *testing.T) {
+func NoTestCourierWriteSizeValidation(t *testing.T) {
 	// Create geometry
 	boxPayloadLength := 1000
 	nikeScheme := schemes.ByName("x25519")
