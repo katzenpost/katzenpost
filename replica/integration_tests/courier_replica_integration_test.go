@@ -27,6 +27,7 @@ import (
 	"github.com/katzenpost/hpqc/sign"
 	signPem "github.com/katzenpost/hpqc/sign/pem"
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
+	"github.com/katzenpost/hpqc/util"
 
 	dirauthConfig "github.com/katzenpost/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/katzenpost/client2/constants"
@@ -382,8 +383,9 @@ func setupTestEnvironment(t *testing.T) *testEnvironment {
 	// Set up the write function once and only once - this is critical to avoid data races
 	courier.Courier.SetWriteFunc(router.writeFunc)
 
-	// Initialize the pigeonhole geometry
-	pigeonholeGeo := common.GeometryFromBoxPayloadLength(2000, common.NikeScheme)
+	// Use the same pigeonhole geometry that the courier uses (derived from Sphinx geometry)
+	// This ensures consistency between test expectations and courier behavior
+	pigeonholeGeo := common.GeometryFromSphinxGeometry(sphinxGeo, common.NikeScheme)
 
 	return &testEnvironment{
 		tempDir:        tempDir,
@@ -732,13 +734,6 @@ func aliceAndBobKeyExchangeKeys(t *testing.T, env *testEnvironment) (*bacap.Stat
 	return aliceStatefulWriter, bobStatefulReader
 }
 
-// forceCourierPKIFetch forces the courier to fetch PKI documents
-func forceCourierPKIFetch(t *testing.T, env *testEnvironment) {
-	t.Log("Forcing PKI fetch for courier")
-	err := env.courier.PKI.ForceFetchPKI()
-	require.NoError(t, err)
-}
-
 // waitForCourierPKI waits for the courier to have a PKI document
 func waitForCourierPKI(t *testing.T, env *testEnvironment) {
 	maxWait := 30 * time.Second
@@ -754,15 +749,6 @@ func waitForCourierPKI(t *testing.T, env *testEnvironment) {
 	}
 
 	t.Fatal("Timeout waiting for courier PKI document to be ready")
-}
-
-// forceReplicasPKIFetch forces all replicas to fetch PKI documents
-func forceReplicasPKIFetch(t *testing.T, env *testEnvironment) {
-	for i, replica := range env.replicas {
-		t.Logf("Forcing PKI fetch for replica %d", i)
-		err := replica.PKIWorker.ForceFetchPKI()
-		require.NoError(t, err)
-	}
 }
 
 // waitForReplicasPKI waits for all replicas to have PKI documents
@@ -938,72 +924,6 @@ type testSequenceData struct {
 	Owner         *bacap.BoxOwnerCap
 	EnvelopeCBORs []byte
 	OriginalData  []byte
-}
-
-// createFinalDestinationSequence creates the final destination sequence and CourierEnvelopes
-func createFinalDestinationSequence(t *testing.T, env *testEnvironment, aliceStatefulWriter *bacap.StatefulWriter) *testSequenceData {
-	t.Log("Creating final destination sequence and CourierEnvelopes")
-
-	// Create test data
-	originalData := [][]byte{
-		[]byte("hello 1"),
-		[]byte("hello 2"),
-		[]byte("hello 3"),
-	}
-
-	// Concatenate the original data
-	var concatenatedData []byte
-	for _, data := range originalData {
-		concatenatedData = append(concatenatedData, data...)
-	}
-
-	// Create CourierEnvelopes that write to the final destination
-	var envelopeCBORs []byte
-	for _, data := range originalData {
-		envelopeCBOR := createCourierEnvelopeForDestination(t, env, aliceStatefulWriter, data)
-		envelopeCBORs = append(envelopeCBORs, envelopeCBOR...)
-	}
-
-	return &testSequenceData{
-		Owner:         aliceStatefulWriter.Owner,
-		EnvelopeCBORs: envelopeCBORs,
-		OriginalData:  concatenatedData,
-	}
-}
-
-// createAndWriteTemporarySequence creates a temporary sequence and writes CBOR blobs to replicas
-func createAndWriteTemporarySequence(t *testing.T, env *testEnvironment, envelopeCBORs [][]byte) *testSequenceData {
-	t.Log("Creating temporary sequence and writing CBOR blobs to replicas")
-
-	// Create temporary sequence for storing CBOR blobs
-	tempOwner, err := bacap.NewBoxOwnerCap(rand.Reader)
-	require.NoError(t, err)
-	tempStatefulWriter, err := bacap.NewStatefulWriter(tempOwner, constants.PIGEONHOLE_CTX)
-	require.NoError(t, err)
-
-	// Write each CBOR blob to the temporary sequence via courier
-	for i, cborBlob := range envelopeCBORs {
-		t.Logf("Writing CBOR blob %d (%d bytes) to temporary sequence", i+1, len(cborBlob))
-
-		boxID, ciphertext, sigraw, err := tempStatefulWriter.EncryptNext(cborBlob)
-		require.NoError(t, err)
-
-		// Create a new signature for each iteration to avoid pointer reuse
-		sig := make([]byte, bacap.SignatureSize)
-		copy(sig, sigraw)
-		sigArray := (*[bacap.SignatureSize]byte)(sig)
-
-		tempEnvelope := aliceComposesDirectWriteToReplica(t, env, &boxID, sigArray, ciphertext)
-		tempReply := injectCourierEnvelope(t, env, tempEnvelope)
-		require.Equal(t, uint8(0), tempReply.ErrorCode)
-		t.Logf("Successfully wrote CBOR blob %d to temporary sequence", i+1)
-	}
-
-	return &testSequenceData{
-		Owner:         tempOwner,
-		EnvelopeCBORs: []byte{}, // Empty for now since this function doesn't handle CBOR data properly
-		OriginalData:  []byte{}, // Empty for now
-	}
 }
 
 func testNestedEnvelopeRoundTrip(t *testing.T, env *testEnvironment) {
@@ -1324,153 +1244,65 @@ func testNestedEnvelopeRoundTrip(t *testing.T, env *testEnvironment) {
 
 	t.Logf("SUCCESS! All %d messages were successfully read back from final destination and match the originals!", len(realMessages))
 	t.Log("Full round-trip test completed: Alice -> Temporary Sequence -> Copy Command -> Final Destination -> Bob")
+
+	// Wait for tombstones to be written to replicas
+	t.Log("Waiting for tombstones to be written to replicas...")
+	time.Sleep(5 * time.Second)
+
+	// Now verify that tombstones were written to the temporary sequence
+	t.Log("Verifying tombstones were written to temporary sequence...")
+	verifyTombstones(t, env, aliceStatefulWriter.Owner, len(chunks))
 }
 
-// verifyTemporarySequence reads back and verifies the temporary sequence data
-func verifyTemporarySequence(t *testing.T, env *testEnvironment, tempSeq *testSequenceData) {
-	t.Log("Verifying temporary sequence was written correctly")
+// verifyTombstones verifies that tombstones were written to the temporary sequence
+func verifyTombstones(t *testing.T, env *testEnvironment, tempWriteCap *bacap.BoxOwnerCap, expectedBoxCount int) {
+	t.Logf("Verifying %d tombstones in temporary sequence", expectedBoxCount)
 
-	// Transform the BoxOwnerCap into a read cap and create a StatefulReader
-	tempReadCap := tempSeq.Owner.UniversalReadCap()
+	// Create a StatefulReader from the temporary sequence WriteCap
+	tempReadCap := tempWriteCap.UniversalReadCap()
 	tempStatefulReader, err := bacap.NewStatefulReader(tempReadCap, constants.PIGEONHOLE_CTX)
 	require.NoError(t, err)
 
-	// Read back the CBOR blobs from the temporary sequence
-	var readBackBlobs [][]byte
-	for i := 0; i < len(tempSeq.EnvelopeCBORs); i++ {
-		t.Logf("Reading back CBOR blob %d from temporary sequence", i+1)
+	// Read back each box and verify it contains all zeros
+	for i := 0; i < expectedBoxCount; i++ {
+		t.Logf("Verifying tombstone %d/%d", i+1, expectedBoxCount)
 
-		// Use composeReadRequest to create a proper read request
-		tempReadRequest, tempPrivateKey := composeReadRequest(t, env, tempStatefulReader)
-		tempReadReply := injectCourierEnvelope(t, env, tempReadRequest)
+		// Create a read request for the next box
+		readRequest, privateKey := composeReadRequest(t, env, tempStatefulReader)
+		readReply := injectCourierEnvelope(t, env, readRequest)
 
-		if tempReadReply.Payload == nil {
-			t.Logf("First read request returned nil payload for blob %d, falling back to polling", i+1)
-			tempReadReply = waitForReplicaResponse(t, env, tempReadRequest)
+		if readReply.Payload == nil {
+			t.Logf("First read request returned nil payload for tombstone %d, falling back to polling", i+1)
+			readReply = waitForReplicaResponse(t, env, readRequest)
 		}
 
-		require.NotNil(t, tempReadReply.Payload, "Should have payload")
+		require.NotNil(t, readReply.Payload, "Should have payload for tombstone %d", i+1)
 
 		// Decrypt the replica response using MKEM
 		replicaEpoch, _, _ := common.ReplicaNow()
-		replicaIndex := int(tempReadRequest.IntermediateReplicas[tempReadReply.ReplyIndex])
+		replicaIndex := int(readRequest.IntermediateReplicas[readReply.ReplyIndex])
 		replicaPubKey := env.replicaKeys[replicaIndex][replicaEpoch]
-		rawInnerMsg, err := mkemNikeScheme.DecryptEnvelope(tempPrivateKey, replicaPubKey, tempReadReply.Payload)
+		rawInnerMsg, err := mkemNikeScheme.DecryptEnvelope(privateKey, replicaPubKey, readReply.Payload)
 		require.NoError(t, err)
 
 		innerMsg, err := common.ReplicaMessageReplyInnerMessageFromBytes(rawInnerMsg)
 		require.NoError(t, err)
-		require.NotNil(t, innerMsg.ReplicaReadReply)
+		require.NotNil(t, innerMsg.ReplicaReadReply, "Should have ReplicaReadReply for tombstone %d", i+1)
 
+		// Decrypt the BACAP data to get the tombstone payload
 		boxID, err := tempStatefulReader.NextBoxID()
 		require.NoError(t, err)
-		cborBlob, err := tempStatefulReader.DecryptNext(constants.PIGEONHOLE_CTX, *boxID, innerMsg.ReplicaReadReply.Payload, *innerMsg.ReplicaReadReply.Signature)
+		tombstonePayload, err := tempStatefulReader.DecryptNext(constants.PIGEONHOLE_CTX, *boxID, innerMsg.ReplicaReadReply.Payload, *innerMsg.ReplicaReadReply.Signature)
 		require.NoError(t, err)
 
-		readBackBlobs = append(readBackBlobs, cborBlob)
-		t.Logf("Successfully read back CBOR blob %d: %d bytes", i+1, len(cborBlob))
+		// Verify the payload is all zeros using constant-time comparison
+		isZero := util.CtIsZero(tombstonePayload)
+		require.True(t, isZero, "Tombstone %d should contain all zeros", i+1)
+
+		t.Logf("Successfully verified tombstone %d: %d bytes of zeros", i+1, len(tombstonePayload))
 	}
 
-	// Verify the read-back blobs match the original CBOR blobs
-	for i, originalCBOR := range tempSeq.EnvelopeCBORs {
-		require.Equal(t, originalCBOR, readBackBlobs[i], "Read-back CBOR blob %d should match original", i+1)
-	}
-	t.Log("Verified all CBOR blobs match original")
-}
-
-// executeCopyCommand executes the copy command using the temporary sequence
-func executeCopyCommand(t *testing.T, env *testEnvironment, tempSeq *testSequenceData) {
-	t.Log("Executing copy command")
-	copyReply := injectCopyCommand(t, env, tempSeq.Owner)
-	require.Equal(t, uint8(0), copyReply.ErrorCode, "Copy command should succeed")
-	t.Log("Copy command executed successfully")
-}
-
-// verifyFinalDestination reads back and verifies the final destination data
-func verifyFinalDestination(t *testing.T, env *testEnvironment, finalSeq *testSequenceData, bobStatefulReader *bacap.StatefulReader) {
-	t.Log("Verifying final destination sequence")
-
-	// Read back the final data
-	var finalData [][]byte
-	for i := 0; i < len(finalSeq.OriginalData); i++ {
-		t.Logf("Reading final data %d", i+1)
-		finalReadRequest, finalPrivateKey := composeReadRequest(t, env, bobStatefulReader)
-		finalReadReply := injectCourierEnvelope(t, env, finalReadRequest)
-
-		if finalReadReply.Payload == nil {
-			t.Logf("First final read request returned nil payload for data %d, falling back to polling", i+1)
-			finalReadReply = waitForReplicaResponse(t, env, finalReadRequest)
-		}
-
-		require.NotNil(t, finalReadReply.Payload, "Should have final payload")
-
-		// Decrypt the replica response
-		replicaEpoch, _, _ := common.ReplicaNow()
-		replicaIndex := int(finalReadRequest.IntermediateReplicas[finalReadReply.ReplyIndex])
-		replicaPubKey := env.replicaKeys[replicaIndex][replicaEpoch]
-		rawInnerMsg, err := mkemNikeScheme.DecryptEnvelope(finalPrivateKey, replicaPubKey, finalReadReply.Payload)
-		require.NoError(t, err)
-
-		innerMsg, err := common.ReplicaMessageReplyInnerMessageFromBytes(rawInnerMsg)
-		require.NoError(t, err)
-		require.NotNil(t, innerMsg.ReplicaReadReply)
-
-		boxID, err := bobStatefulReader.NextBoxID()
-		require.NoError(t, err)
-		finalBlob, err := bobStatefulReader.DecryptNext(constants.PIGEONHOLE_CTX, *boxID, innerMsg.ReplicaReadReply.Payload, *innerMsg.ReplicaReadReply.Signature)
-		require.NoError(t, err)
-
-		finalData = append(finalData, finalBlob)
-		t.Logf("Successfully read final data %d: %s", i+1, string(finalBlob))
-	}
-
-	// Verify final data matches expected
-	for i, expectedData := range finalSeq.OriginalData {
-		require.Equal(t, expectedData, finalData[i], "Final data %d should match", i+1)
-	}
-	t.Log("Final destination verification completed successfully")
-}
-
-// createCourierEnvelopeForDestination creates a CourierEnvelope that writes to the final destination sequence.
-// This CourierEnvelope will be CBOR encoded and stored in the temporary sequence for the copy command.
-func createCourierEnvelopeForDestination(t *testing.T, env *testEnvironment, finalDestinationWriter *bacap.StatefulWriter, message []byte) []byte {
-	// BACAP encrypt the message for the final destination
-	boxID, bacapCiphertext, sigraw, err := finalDestinationWriter.EncryptNext(message)
-	require.NoError(t, err)
-
-	// Create a new signature to avoid pointer reuse
-	sigArray := [bacap.SignatureSize]byte{}
-	copy(sigArray[:], sigraw)
-
-	// Create ReplicaWrite that will write to the final destination
-	replicaWrite := &commands.ReplicaWrite{
-		Cmds:      nil, // No padding for inner command
-		BoxID:     &boxID,
-		Signature: &sigArray,
-		IsLast:    false, // Will be set appropriately by caller
-		Payload:   bacapCiphertext,
-	}
-
-	// Create ReplicaInnerMessage containing the ReplicaWrite
-	innerMessage := &common.ReplicaInnerMessage{
-		ReplicaWrite: replicaWrite,
-	}
-
-	// Use sharding algorithm to determine which replicas should store this BoxID
-	sharding := getShardingInfo(t, env, &boxID)
-
-	for _, replicaIndex := range sharding.ReplicaIndices {
-		t.Logf("Final destination BoxID %x will be stored on replica %d", boxID[:8], replicaIndex)
-	}
-
-	// Create the CourierEnvelope that will write to the final destination
-	courierEnvelope := createMKEMEnvelope(t, sharding, innerMessage, false)
-
-	// CBOR encode the CourierEnvelope
-	cborBlob := courierEnvelope.Bytes()
-	t.Logf("Created CourierEnvelope for final destination: message='%s', CBOR size=%d bytes", string(message), len(cborBlob))
-
-	return cborBlob
+	t.Logf("SUCCESS! All %d tombstones verified - temporary sequence has been properly overwritten with zeros", expectedBoxCount)
 }
 
 // aliceComposesDirectWriteToReplica creates a CourierEnvelope that writes the given
@@ -1512,27 +1344,6 @@ func aliceComposesReadFromReplica(t *testing.T, env *testEnvironment, boxID *[ba
 	}
 
 	return createMKEMEnvelope(t, sharding, msg, true)
-}
-
-// injectCopyCommand sends a CopyCommand to the courier and returns the reply
-func injectCopyCommand(t *testing.T, env *testEnvironment, writeCap *bacap.BoxOwnerCap) *common.CopyCommandReply {
-	// Create a CBOR plugin command containing the CourierQuery with CopyCommand
-	copyCommand := &common.CopyCommand{
-		WriteCap: writeCap,
-	}
-	courierQuery := &common.CourierQuery{
-		CourierEnvelope: nil,
-		CopyCommand:     copyCommand,
-	}
-
-	response := createRequestWithResponse(t, env, courierQuery, 30)
-
-	courierQueryReply, err := common.CourierQueryReplyFromBytes(response.Payload)
-	require.NoError(t, err)
-	require.NotNil(t, courierQueryReply)
-	require.NotNil(t, courierQueryReply.CopyCommandReply)
-
-	return courierQueryReply.CopyCommandReply
 }
 
 func injectCourierEnvelope(t *testing.T, env *testEnvironment, envelope *common.CourierEnvelope) *common.CourierEnvelopeReply {
