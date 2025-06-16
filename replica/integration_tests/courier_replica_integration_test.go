@@ -991,14 +991,42 @@ func testNestedEnvelopeRoundTrip(t *testing.T, env *testEnvironment) {
 
 	aliceStatefulWriter, bobStatefulReader := aliceAndBobKeyExchangeKeys(t, env)
 
-	// Create a separate final destination sequence (Sequence B) - this is where the real data will end up
+	// Create final destination sequence and real messages
+	finalDestinationWriter, realMessages := setupFinalDestinationAndMessages(t, env)
+
+	// Generate CourierEnvelopes for the real messages
+	courierEnvelopes, _ := createCourierEnvelopesForMessages(t, env, finalDestinationWriter, realMessages)
+
+	// CBOR encode and chunk the CourierEnvelopes
+	chunks, courierEnvelopeCBORData := chunkCourierEnvelopes(t, env, courierEnvelopes)
+
+	// Write chunks to replicas and verify
+	writeChunksToReplicas(t, env, chunks, aliceStatefulWriter)
+
+	// Read back and verify data integrity
+	reconstructedData := readBackAndVerifyChunks(t, env, chunks, bobStatefulReader, courierEnvelopeCBORData)
+
+	// Verify CourierEnvelopes can be decoded
+	verifyDecodedEnvelopes(t, courierEnvelopes, reconstructedData)
+
+	// Execute copy command and verify
+	executeCopyCommand(t, env, aliceStatefulWriter)
+
+	// Read from final destination and verify
+	readFromFinalDestinationAndVerify(t, env, finalDestinationWriter, realMessages)
+
+	// Verify tombstones were written
+	verifyTombstones(t, env, aliceStatefulWriter.Owner, len(chunks))
+}
+
+// setupFinalDestinationAndMessages creates the final destination sequence and real messages
+func setupFinalDestinationAndMessages(t *testing.T, env *testEnvironment) (*bacap.StatefulWriter, [][]byte) {
 	finalDestinationOwner, err := bacap.NewBoxOwnerCap(rand.Reader)
 	require.NoError(t, err)
 	finalDestinationWriter, err := bacap.NewStatefulWriter(finalDestinationOwner, constants.PIGEONHOLE_CTX)
 	require.NoError(t, err)
 	t.Log("Created final destination sequence (Sequence B)")
 
-	// Create real data that we want to end up in the final destination sequence
 	realMessages := [][]byte{
 		[]byte("Secret message 1: This is confidential data that should end up in the final destination"),
 		[]byte("Secret message 2: Another piece of sensitive information for the final sequence"),
@@ -1006,7 +1034,11 @@ func testNestedEnvelopeRoundTrip(t *testing.T, env *testEnvironment) {
 	}
 	t.Logf("Created %d real messages for final destination", len(realMessages))
 
-	// Generate proper CourierEnvelopes that contain instructions to write the real data to Sequence B
+	return finalDestinationWriter, realMessages
+}
+
+// createCourierEnvelopesForMessages generates CourierEnvelopes for the real messages
+func createCourierEnvelopesForMessages(t *testing.T, env *testEnvironment, finalDestinationWriter *bacap.StatefulWriter, realMessages [][]byte) ([]*common.CourierEnvelope, []byte) {
 	var courierEnvelopes []*common.CourierEnvelope
 	var originalDataForVerification []byte
 
@@ -1014,18 +1046,15 @@ func testNestedEnvelopeRoundTrip(t *testing.T, env *testEnvironment) {
 		t.Logf("Creating CourierEnvelope %d for message: %s", i+1, string(message[:50])+"...")
 
 		// BACAP encrypt the message for the final destination sequence
-		// Create padded payload to ensure proper format
 		paddedMessage, err := common.CreatePaddedPayload(message, env.geometry.BoxPayloadLength)
 		require.NoError(t, err)
 
 		boxID, bacapCiphertext, sigraw, err := finalDestinationWriter.EncryptNext(paddedMessage)
 		require.NoError(t, err)
 
-		// Create a signature array to avoid pointer reuse
 		signature := [bacap.SignatureSize]byte{}
 		copy(signature[:], sigraw)
 
-		// Create CourierEnvelope with proper write instructions
 		envelope := aliceComposesDirectWriteToReplica(t, env, &boxID, &signature, bacapCiphertext)
 		courierEnvelopes = append(courierEnvelopes, envelope)
 		originalDataForVerification = append(originalDataForVerification, message...)
@@ -1034,28 +1063,28 @@ func testNestedEnvelopeRoundTrip(t *testing.T, env *testEnvironment) {
 			boxID[:8], envelope.IntermediateReplicas)
 	}
 
-	// CBOR encode all the CourierEnvelopes and pack them into boxes properly
-	// We need to ensure that each box contains complete CBOR objects
+	return courierEnvelopes, originalDataForVerification
+}
+
+// chunkCourierEnvelopes CBOR encodes and chunks the CourierEnvelopes
+func chunkCourierEnvelopes(t *testing.T, env *testEnvironment, courierEnvelopes []*common.CourierEnvelope) ([][]byte, []byte) {
 	boxPayloadLength := env.geometry.BoxPayloadLength
 	t.Logf("Using BoxPayloadLength: %d bytes", boxPayloadLength)
 
 	var chunks [][]byte
 	var currentChunk []byte
-	var courierEnvelopeCBORData []byte // For verification later
+	var courierEnvelopeCBORData []byte
 
 	for i, envelope := range courierEnvelopes {
 		envelopeBytes := envelope.Bytes()
 		courierEnvelopeCBORData = append(courierEnvelopeCBORData, envelopeBytes...)
 		t.Logf("CBOR encoded CourierEnvelope %d: %d bytes", i+1, len(envelopeBytes))
 
-		// Handle large envelopes that need to be split across multiple boxes
 		remainingBytes := envelopeBytes
 		for len(remainingBytes) > 0 {
-			// Calculate how much space is available in the current chunk
 			availableSpace := boxPayloadLength - len(currentChunk)
 
 			if availableSpace <= 0 {
-				// Current chunk is full, start a new one
 				if len(currentChunk) > 0 {
 					chunks = append(chunks, currentChunk)
 					t.Logf("Created chunk %d: %d bytes", len(chunks), len(currentChunk))
@@ -1064,13 +1093,11 @@ func testNestedEnvelopeRoundTrip(t *testing.T, env *testEnvironment) {
 				availableSpace = boxPayloadLength
 			}
 
-			// Take as much as we can fit in this chunk
 			chunkSize := len(remainingBytes)
 			if chunkSize > availableSpace {
 				chunkSize = availableSpace
 			}
 
-			// Add this portion to the current chunk
 			currentChunk = append(currentChunk, remainingBytes[:chunkSize]...)
 			remainingBytes = remainingBytes[chunkSize:]
 
@@ -1079,7 +1106,6 @@ func testNestedEnvelopeRoundTrip(t *testing.T, env *testEnvironment) {
 		}
 	}
 
-	// Add the last chunk if it has data
 	if len(currentChunk) > 0 {
 		chunks = append(chunks, currentChunk)
 		t.Logf("Created final chunk %d: %d bytes", len(chunks), len(currentChunk))
@@ -1088,7 +1114,11 @@ func testNestedEnvelopeRoundTrip(t *testing.T, env *testEnvironment) {
 	t.Logf("Total CourierEnvelope CBOR data size: %d bytes", len(courierEnvelopeCBORData))
 	t.Logf("Packed into %d chunks with complete CBOR objects", len(chunks))
 
-	// Write each chunk to replicas using BACAP
+	return chunks, courierEnvelopeCBORData
+}
+
+// writeChunksToReplicas writes each chunk to replicas using BACAP
+func writeChunksToReplicas(t *testing.T, env *testEnvironment, chunks [][]byte, aliceStatefulWriter *bacap.StatefulWriter) {
 	t.Logf("Writing %d chunks to replicas", len(chunks))
 	for i, chunk := range chunks {
 		isLastChunk := (i == len(chunks)-1)
@@ -1109,63 +1139,16 @@ func testNestedEnvelopeRoundTrip(t *testing.T, env *testEnvironment) {
 	// Wait for replication to complete
 	t.Log("Waiting for replication to complete...")
 	time.Sleep(2 * time.Second)
+}
 
-	// Read back all chunks and reconstruct the original data
+// readBackAndVerifyChunks reads back all chunks and reconstructs the original data
+func readBackAndVerifyChunks(t *testing.T, env *testEnvironment, chunks [][]byte, bobStatefulReader *bacap.StatefulReader, courierEnvelopeCBORData []byte) []byte {
 	t.Logf("Reading back %d chunks from replicas", len(chunks))
 	var reconstructedData []byte
 
 	for i := 0; i < len(chunks); i++ {
-		t.Logf("Reading chunk %d", i+1)
-
-		bobReadRequest, bobPrivateKey := composeReadRequest(t, env, bobStatefulReader)
-		courierReadReply := injectCourierEnvelope(t, env, bobReadRequest)
-
-		bobEnvHash := bobReadRequest.EnvelopeHash()
-		require.Equal(t, courierReadReply.EnvelopeHash[:], bobEnvHash[:])
-		require.Equal(t, uint8(0), courierReadReply.ErrorCode)
-
-		// With immediate proxying, we should get a non-nil payload on the first request
-		if courierReadReply.Payload == nil {
-			t.Logf("First read request returned nil payload for chunk %d, falling back to polling", i+1)
-			courierReadReply = waitForReplicaResponse(t, env, bobReadRequest)
-		}
-
-		require.NotNil(t, courierReadReply.Payload, "Should have payload")
-
-		// Decrypt and verify the chunk
-		replicaEpoch, _, _ := common.ReplicaNow()
-		replicaIndex := int(bobReadRequest.IntermediateReplicas[courierReadReply.ReplyIndex])
-		replicaPubKey := env.replicaKeys[replicaIndex][replicaEpoch]
-		rawInnerMsg, err := mkemNikeScheme.DecryptEnvelope(bobPrivateKey, replicaPubKey, courierReadReply.Payload)
-		require.NoError(t, err)
-
-		innerMsg, err := common.ReplicaMessageReplyInnerMessageFromBytes(rawInnerMsg)
-		require.NoError(t, err)
-		require.NotNil(t, innerMsg.ReplicaReadReply)
-
-		// Debug the read reply
-		t.Logf("ReplicaReadReply ErrorCode: %d", innerMsg.ReplicaReadReply.ErrorCode)
-		t.Logf("ReplicaReadReply BoxID: %x", innerMsg.ReplicaReadReply.BoxID[:8])
-		t.Logf("ReplicaReadReply Payload length: %d", len(innerMsg.ReplicaReadReply.Payload))
-		t.Logf("ReplicaReadReply Signature is nil: %v", innerMsg.ReplicaReadReply.Signature == nil)
-
-		if innerMsg.ReplicaReadReply.ErrorCode != 0 {
-			t.Fatalf("Replica returned error code %d for chunk %d", innerMsg.ReplicaReadReply.ErrorCode, i+1)
-		}
-		require.NotNil(t, innerMsg.ReplicaReadReply.Signature, "Signature should not be nil for chunk %d", i+1)
-
-		boxID, err := bobStatefulReader.NextBoxID()
-		require.NoError(t, err)
-		paddedChunkData, err := bobStatefulReader.DecryptNext(constants.PIGEONHOLE_CTX, *boxID, innerMsg.ReplicaReadReply.Payload, *innerMsg.ReplicaReadReply.Signature)
-		require.NoError(t, err)
-
-		// Extract the actual data from the padded payload (remove 4-byte length prefix and padding)
-		chunkData, err := common.ExtractDataFromPaddedPayload(paddedChunkData)
-		require.NoError(t, err)
-
-		// Append this chunk to our reconstructed data
+		chunkData := readAndDecryptSingleChunk(t, env, bobStatefulReader, i+1)
 		reconstructedData = append(reconstructedData, chunkData...)
-		t.Logf("Successfully read chunk %d: %d bytes (extracted from %d padded bytes)", i+1, len(chunkData), len(paddedChunkData))
 	}
 
 	// Verify the reconstructed data matches the original CourierEnvelope CBOR data
@@ -1173,11 +1156,69 @@ func testNestedEnvelopeRoundTrip(t *testing.T, env *testEnvironment) {
 	require.Equal(t, courierEnvelopeCBORData, reconstructedData, "Reconstructed data should match original CourierEnvelope CBOR data")
 
 	t.Logf("Successfully verified %d bytes of reconstructed CourierEnvelope CBOR data", len(reconstructedData))
+	return reconstructedData
+}
 
-	// Verify we can decode the CourierEnvelopes back from the reconstructed data
+// readAndDecryptSingleChunk reads and decrypts a single chunk from replicas
+func readAndDecryptSingleChunk(t *testing.T, env *testEnvironment, bobStatefulReader *bacap.StatefulReader, chunkNum int) []byte {
+	t.Logf("Reading chunk %d", chunkNum)
+
+	bobReadRequest, bobPrivateKey := composeReadRequest(t, env, bobStatefulReader)
+	courierReadReply := injectCourierEnvelope(t, env, bobReadRequest)
+
+	bobEnvHash := bobReadRequest.EnvelopeHash()
+	require.Equal(t, courierReadReply.EnvelopeHash[:], bobEnvHash[:])
+	require.Equal(t, uint8(0), courierReadReply.ErrorCode)
+
+	// With immediate proxying, we should get a non-nil payload on the first request
+	if courierReadReply.Payload == nil {
+		t.Logf("First read request returned nil payload for chunk %d, falling back to polling", chunkNum)
+		courierReadReply = waitForReplicaResponse(t, env, bobReadRequest)
+	}
+
+	require.NotNil(t, courierReadReply.Payload, "Should have payload")
+
+	// Decrypt and verify the chunk
+	replicaEpoch, _, _ := common.ReplicaNow()
+	replicaIndex := int(bobReadRequest.IntermediateReplicas[courierReadReply.ReplyIndex])
+	replicaPubKey := env.replicaKeys[replicaIndex][replicaEpoch]
+	rawInnerMsg, err := mkemNikeScheme.DecryptEnvelope(bobPrivateKey, replicaPubKey, courierReadReply.Payload)
+	require.NoError(t, err)
+
+	innerMsg, err := common.ReplicaMessageReplyInnerMessageFromBytes(rawInnerMsg)
+	require.NoError(t, err)
+	require.NotNil(t, innerMsg.ReplicaReadReply)
+
+	// Debug the read reply
+	t.Logf("ReplicaReadReply ErrorCode: %d", innerMsg.ReplicaReadReply.ErrorCode)
+	t.Logf("ReplicaReadReply BoxID: %x", innerMsg.ReplicaReadReply.BoxID[:8])
+	t.Logf("ReplicaReadReply Payload length: %d", len(innerMsg.ReplicaReadReply.Payload))
+	t.Logf("ReplicaReadReply Signature is nil: %v", innerMsg.ReplicaReadReply.Signature == nil)
+
+	if innerMsg.ReplicaReadReply.ErrorCode != 0 {
+		t.Fatalf("Replica returned error code %d for chunk %d", innerMsg.ReplicaReadReply.ErrorCode, chunkNum)
+	}
+	require.NotNil(t, innerMsg.ReplicaReadReply.Signature, "Signature should not be nil for chunk %d", chunkNum)
+
+	boxID, err := bobStatefulReader.NextBoxID()
+	require.NoError(t, err)
+	paddedChunkData, err := bobStatefulReader.DecryptNext(constants.PIGEONHOLE_CTX, *boxID, innerMsg.ReplicaReadReply.Payload, *innerMsg.ReplicaReadReply.Signature)
+	require.NoError(t, err)
+
+	// Extract the actual data from the padded payload (remove 4-byte length prefix and padding)
+	chunkData, err := common.ExtractDataFromPaddedPayload(paddedChunkData)
+	require.NoError(t, err)
+
+	t.Logf("Successfully read chunk %d: %d bytes (extracted from %d padded bytes)", chunkNum, len(chunkData), len(paddedChunkData))
+	return chunkData
+}
+
+// verifyDecodedEnvelopes verifies that CourierEnvelopes can be decoded from reconstructed data
+func verifyDecodedEnvelopes(t *testing.T, courierEnvelopes []*common.CourierEnvelope, reconstructedData []byte) {
 	t.Log("Verifying CourierEnvelopes can be decoded from reconstructed data...")
 	var decodedEnvelopes []*common.CourierEnvelope
 	offset := 0
+
 	for i := 0; i < len(courierEnvelopes); i++ {
 		// Find the length of the next CBOR object
 		originalEnvelopeBytes := courierEnvelopes[i].Bytes()
@@ -1198,8 +1239,10 @@ func testNestedEnvelopeRoundTrip(t *testing.T, env *testEnvironment) {
 
 	require.Equal(t, len(courierEnvelopes), len(decodedEnvelopes), "Should decode same number of envelopes")
 	t.Log("CourierEnvelope round trip test completed successfully")
+}
 
-	// Now test the copy command - create a CopyCommand with Alice's BoxOwnerCap for Sequence A
+// executeCopyCommand executes the copy command and verifies success
+func executeCopyCommand(t *testing.T, env *testEnvironment, aliceStatefulWriter *bacap.StatefulWriter) {
 	t.Log("Testing copy command to execute CourierEnvelopes...")
 	copyCommand := &common.CopyCommand{
 		WriteCap: aliceStatefulWriter.Owner, // Alice's BoxOwnerCap for Sequence A
@@ -1231,7 +1274,7 @@ func testNestedEnvelopeRoundTrip(t *testing.T, env *testEnvironment) {
 	}
 
 	// Send the request to the courier - this will trigger the courier's OnCommand method
-	err = env.courier.Courier.OnCommand(requestCmd)
+	err := env.courier.Courier.OnCommand(requestCmd)
 	require.NoError(t, err)
 	t.Log("CopyCommand processed through courier OnCommand")
 
@@ -1267,54 +1310,22 @@ func testNestedEnvelopeRoundTrip(t *testing.T, env *testEnvironment) {
 	// Wait for the data to be available (eventually we'll use events/channels instead of sleep)
 	t.Log("Waiting 2 seconds for data to be available...")
 	time.Sleep(2 * time.Second)
+}
 
-	// Now read back the data from the final destination sequence to verify it matches the original messages
+// readFromFinalDestinationAndVerify reads from final destination and verifies messages match originals
+func readFromFinalDestinationAndVerify(t *testing.T, env *testEnvironment, finalDestinationWriter *bacap.StatefulWriter, realMessages [][]byte) {
 	t.Log("Reading back data from final destination sequence...")
 
 	// Create a StatefulReader for Bob to read from the final destination sequence
 	bobReadCap := finalDestinationWriter.Owner.UniversalReadCap()
-	bobStatefulReader, err = bacap.NewStatefulReader(bobReadCap, constants.PIGEONHOLE_CTX)
+	bobStatefulReader, err := bacap.NewStatefulReader(bobReadCap, constants.PIGEONHOLE_CTX)
 	require.NoError(t, err)
 
 	// Read back each message and verify it matches the original
 	var readBackMessages [][]byte
 	for i, originalMessage := range realMessages {
-		t.Logf("Reading back message %d from final destination", i+1)
-
-		// Create a read request for the next box in Bob's sequence
-		readRequest, privateKey := composeReadRequest(t, env, bobStatefulReader)
-		readReply := injectCourierEnvelope(t, env, readRequest)
-
-		if readReply.Payload == nil {
-			t.Logf("First read request returned nil payload for message %d, falling back to polling", i+1)
-			readReply = waitForReplicaResponse(t, env, readRequest)
-		}
-
-		require.NotNil(t, readReply.Payload, "Should have payload for message %d", i+1)
-
-		// Decrypt the replica response using MKEM
-		replicaEpoch, _, _ := common.ReplicaNow()
-		replicaIndex := int(readRequest.IntermediateReplicas[readReply.ReplyIndex])
-		replicaPubKey := env.replicaKeys[replicaIndex][replicaEpoch]
-		rawInnerMsg, err := mkemNikeScheme.DecryptEnvelope(privateKey, replicaPubKey, readReply.Payload)
-		require.NoError(t, err)
-
-		innerMsg, err := common.ReplicaMessageReplyInnerMessageFromBytes(rawInnerMsg)
-		require.NoError(t, err)
-		require.NotNil(t, innerMsg.ReplicaReadReply, "Should have ReplicaReadReply for message %d", i+1)
-
-		// Decrypt the BACAP data to get the original message
-		boxID, err := bobStatefulReader.NextBoxID()
-		require.NoError(t, err)
-		paddedDecryptedMessage, err := bobStatefulReader.DecryptNext(constants.PIGEONHOLE_CTX, *boxID, innerMsg.ReplicaReadReply.Payload, *innerMsg.ReplicaReadReply.Signature)
-		require.NoError(t, err)
-
-		// Extract the actual message data from the padded payload (remove 4-byte length prefix and padding)
-		decryptedMessage, err := common.ExtractDataFromPaddedPayload(paddedDecryptedMessage)
-		require.NoError(t, err)
-
+		decryptedMessage := readAndVerifySingleMessage(t, env, bobStatefulReader, i+1)
 		readBackMessages = append(readBackMessages, decryptedMessage)
-		t.Logf("Successfully read back message %d: '%s'", i+1, string(decryptedMessage))
 
 		// Verify this message matches the original
 		require.Equal(t, originalMessage, decryptedMessage, "Message %d should match original", i+1)
@@ -1326,10 +1337,46 @@ func testNestedEnvelopeRoundTrip(t *testing.T, env *testEnvironment) {
 	// Wait for tombstones to be written to replicas
 	t.Log("Waiting for tombstones to be written to replicas...")
 	time.Sleep(5 * time.Second)
+}
 
-	// Now verify that tombstones were written to the temporary sequence
-	t.Log("Verifying tombstones were written to temporary sequence...")
-	verifyTombstones(t, env, aliceStatefulWriter.Owner, len(chunks))
+// readAndVerifySingleMessage reads and verifies a single message from final destination
+func readAndVerifySingleMessage(t *testing.T, env *testEnvironment, bobStatefulReader *bacap.StatefulReader, messageNum int) []byte {
+	t.Logf("Reading back message %d from final destination", messageNum)
+
+	// Create a read request for the next box in Bob's sequence
+	readRequest, privateKey := composeReadRequest(t, env, bobStatefulReader)
+	readReply := injectCourierEnvelope(t, env, readRequest)
+
+	if readReply.Payload == nil {
+		t.Logf("First read request returned nil payload for message %d, falling back to polling", messageNum)
+		readReply = waitForReplicaResponse(t, env, readRequest)
+	}
+
+	require.NotNil(t, readReply.Payload, "Should have payload for message %d", messageNum)
+
+	// Decrypt the replica response using MKEM
+	replicaEpoch, _, _ := common.ReplicaNow()
+	replicaIndex := int(readRequest.IntermediateReplicas[readReply.ReplyIndex])
+	replicaPubKey := env.replicaKeys[replicaIndex][replicaEpoch]
+	rawInnerMsg, err := mkemNikeScheme.DecryptEnvelope(privateKey, replicaPubKey, readReply.Payload)
+	require.NoError(t, err)
+
+	innerMsg, err := common.ReplicaMessageReplyInnerMessageFromBytes(rawInnerMsg)
+	require.NoError(t, err)
+	require.NotNil(t, innerMsg.ReplicaReadReply, "Should have ReplicaReadReply for message %d", messageNum)
+
+	// Decrypt the BACAP data to get the original message
+	boxID, err := bobStatefulReader.NextBoxID()
+	require.NoError(t, err)
+	paddedDecryptedMessage, err := bobStatefulReader.DecryptNext(constants.PIGEONHOLE_CTX, *boxID, innerMsg.ReplicaReadReply.Payload, *innerMsg.ReplicaReadReply.Signature)
+	require.NoError(t, err)
+
+	// Extract the actual message data from the padded payload (remove 4-byte length prefix and padding)
+	decryptedMessage, err := common.ExtractDataFromPaddedPayload(paddedDecryptedMessage)
+	require.NoError(t, err)
+
+	t.Logf("Successfully read back message %d: '%s'", messageNum, string(decryptedMessage))
+	return decryptedMessage
 }
 
 // verifyTombstones verifies that tombstones were written to the temporary sequence
