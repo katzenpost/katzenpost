@@ -717,31 +717,60 @@ func replicaMessageReplyInnerOverhead() int {
 }
 
 func calculateMaxBoxPayloadLength(maxCourierQueryLength int, nikeScheme nike.Scheme) int {
-	// Use iterative approach to find the maximum BoxPayloadLength that fits
-	// Start with a reasonable estimate and refine
-	low := 1
-	high := maxCourierQueryLength / 2 // Conservative upper bound
-	bestFit := 0
+	// Pure arithmetic calculation - no iteration needed
+	// Solve: maxCourierQueryLength = totalFixedOverhead + BoxPayloadLength + lengthPrefixSize
 
-	for low <= high {
-		mid := (low + high) / 2
+	const (
+		lengthPrefixSize        = 4  // 4-byte length prefix in BACAP payload
+		bacapEncryptionOverhead = 16 // BACAP encryption overhead
+		mkemOverhead            = 28 // ChaCha20-Poly1305: 12 nonce + 16 tag
+	)
 
-		// Test if this BoxPayloadLength fits within the constraints
-		readLength := courierQueryReadLength(mid, nikeScheme)
-		writeLength := courierQueryWriteLength(mid, nikeScheme)
-		maxLength := max(readLength, writeLength)
+	// Get signature scheme overhead (static)
+	signatureScheme := signSchemes.ByName(SignatureSchemeName)
+	if signatureScheme == nil {
+		panic("failed to get signature scheme")
+	}
+	boxIDLength := signatureScheme.PublicKeySize()
+	signatureLength := signatureScheme.SignatureSize()
 
-		if maxLength <= maxCourierQueryLength {
-			// This size fits, try a larger one
-			bestFit = mid
-			low = mid + 1
-		} else {
-			// This size is too large, try a smaller one
-			high = mid - 1
-		}
+	// Calculate all static overheads
+	replicaWriteStaticOverhead := commands.CmdOverhead + boxIDLength + signatureLength + 1 + bacapEncryptionOverhead // +1 for IsLast field
+
+	// Calculate CBOR overheads using minimal test data (these are nearly constant)
+	replicaInnerMessageOverhead := replicaInnerMessageOverheadForWrite(100) // Use small test size - overhead is nearly constant
+
+	// Create a temporary geometry to use existing overhead calculation methods
+	tempGeo := &Geometry{
+		BoxPayloadLength:    100, // Use small test size for overhead calculation
+		NIKEName:            nikeScheme.Name(),
+		SignatureSchemeName: SignatureSchemeName,
 	}
 
-	return bestFit
+	// Calculate CourierEnvelope overhead using existing method
+	testMkemCiphertextSize := mkemCiphertextSize(100) // Small test size
+	courierEnvelopeOverhead := tempGeo.courierEnvelopeWriteOverhead(testMkemCiphertextSize)
+
+	// Calculate CourierQuery wrapper overhead using existing method
+	courierQueryWrapperOverhead := calculateCourierQueryWrapperOverhead(testMkemCiphertextSize+courierEnvelopeOverhead, nikeScheme)
+
+	// Total fixed overhead = all overhead except the variable BoxPayloadLength + lengthPrefixSize
+	totalFixedOverhead := replicaWriteStaticOverhead + replicaInnerMessageOverhead +
+		mkemOverhead + courierEnvelopeOverhead + courierQueryWrapperOverhead
+
+	// Solve: maxCourierQueryLength = totalFixedOverhead + BoxPayloadLength + lengthPrefixSize
+	// Therefore: BoxPayloadLength = maxCourierQueryLength - totalFixedOverhead - lengthPrefixSize
+	maxBoxPayloadLength := maxCourierQueryLength - totalFixedOverhead - lengthPrefixSize
+
+	// Add small safety margin for CBOR encoding variations (CBOR can vary by 1-2 bytes)
+	const cborSafetyMargin = 3
+	maxBoxPayloadLength -= cborSafetyMargin
+
+	if maxBoxPayloadLength <= 0 {
+		return 0
+	}
+
+	return maxBoxPayloadLength
 }
 
 // GeometryFromBoxPayloadLength solves Use Case 1: specify BoxPayloadLength and derive
