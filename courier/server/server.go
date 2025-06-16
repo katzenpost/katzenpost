@@ -184,12 +184,13 @@ func (s *Server) initializeLinkKeys() error {
 
 // initializeServices sets up connector and courier services
 func (s *Server) initializeServices() {
-	s.connector = newConnector(s)
-
-	// Initialize the Courier plugin for testing
+	// Initialize the Courier plugin first (before connector)
 	nikeScheme := nikeSchemes.ByName(s.cfg.EnvelopeScheme)
 	cmds := commands.NewStorageReplicaCommands(s.cfg.SphinxGeometry, nikeScheme)
 	s.Courier = NewCourier(s, cmds, nikeScheme)
+
+	// Initialize connector after courier is ready
+	s.connector = newConnector(s)
 }
 
 func (s *Server) LogBackend() *log.Backend {
