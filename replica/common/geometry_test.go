@@ -146,7 +146,8 @@ func TestCourierEnvelopeOverhead(t *testing.T) {
 	envelopeBytes := envelope.Bytes()
 	overhead := len(envelopeBytes) - len(payload)
 
-	overhead2 := max(geo.courierEnvelopeReadOverhead(), geo.courierEnvelopeWriteOverhead())
+	// Use the actual payload size for accurate overhead calculation
+	overhead2 := max(geo.courierEnvelopeReadOverhead(), geo.courierEnvelopeWriteOverhead(len(payload)))
 
 	t.Logf("courierEnvelope overhead: %d", overhead)
 	t.Logf("geo.courierEnvelopeOverhead: %d", overhead2)
@@ -556,8 +557,9 @@ func TestGeometryCBOROverheadScaling(t *testing.T) {
 			t.Logf("  Geometry validation failed for size %d: %v", payloadSize, err)
 		}
 
-		// Measure calculated overheads
-		courierEnvelopeOverhead := max(geometry.courierEnvelopeReadOverhead(), geometry.courierEnvelopeWriteOverhead())
+		// Measure calculated overheads (use estimated ciphertext size for this test)
+		estimatedCiphertextSize := 1000
+		courierEnvelopeOverhead := max(geometry.courierEnvelopeReadOverhead(), geometry.courierEnvelopeWriteOverhead(estimatedCiphertextSize))
 		courierEnvelopeReplyOverhead := geometry.courierEnvelopeReplyOverhead()
 		replicaReadReplyOverhead := replicaReadReplyOverhead()
 		replicaWriteOverhead := geometry.replicaWriteOverhead()
@@ -874,7 +876,8 @@ func TestGeometryLayerByLayerOverhead(t *testing.T) {
 	// Layer 5: CourierEnvelope (contains MKEM encrypted data)
 	t.Logf("\n=== Layer 5: CourierEnvelope ===")
 	actualCourierEnvelopeSize, courierEnvelopeOverhead := measureCourierEnvelopeLayer(t, boxPayloadLength, nikeScheme)
-	calculatedCourierEnvelopeOverhead := geometry.courierEnvelopeWriteOverhead()
+	// Use the actual MKEM ciphertext size for accurate overhead calculation
+	calculatedCourierEnvelopeOverhead := geometry.courierEnvelopeWriteOverhead(actualMKEMSize)
 
 	t.Logf("MKEM encrypted size: %d bytes", actualMKEMSize)
 	t.Logf("Actual CourierEnvelope size: %d bytes", actualCourierEnvelopeSize)
@@ -886,7 +889,7 @@ func TestGeometryLayerByLayerOverhead(t *testing.T) {
 	t.Logf("\n=== Layer 6: CourierQuery Wrapper ===")
 	actualCourierQuerySize := createActualNestedCourierMessage(t, boxPayloadLength, nikeScheme)
 	actualCourierQueryOverhead := actualCourierQuerySize - actualCourierEnvelopeSize
-	calculatedCourierQueryOverhead := calculateCourierQueryWrapperOverhead(actualCourierEnvelopeSize)
+	calculatedCourierQueryOverhead := calculateCourierQueryWrapperOverhead(actualCourierEnvelopeSize, nikeScheme)
 
 	t.Logf("CourierEnvelope size: %d bytes", actualCourierEnvelopeSize)
 	t.Logf("Actual CourierQuery size: %d bytes", actualCourierQuerySize)
@@ -904,14 +907,15 @@ func TestGeometryLayerByLayerOverhead(t *testing.T) {
 		SignatureSchemeName: SignatureSchemeName,
 	}
 
-	replicaWriteSize := tempGeo.replicaWriteTotalOverhead() + boxPayloadLength
-	replicaInnerMessageWriteSize := replicaInnerMessageOverheadForWrite() + replicaWriteSize
+	replicaWriteSize := tempGeo.replicaWriteTotalOverhead() + tempGeo.PaddedPayloadLength()
+	replicaInnerMessageWriteSize := replicaInnerMessageOverheadForWrite(boxPayloadLength) + replicaWriteSize
 
-	courierOverhead := tempGeo.courierEnvelopeWriteOverhead()
+	// Calculate MKEM ciphertext size first, then use it for courier overhead calculation
 	mkemCiphertext := mkemCiphertextSize(replicaInnerMessageWriteSize)
+	courierOverhead := tempGeo.courierEnvelopeWriteOverhead(mkemCiphertext)
 	calculatedCourierEnvelopeSize := courierOverhead + mkemCiphertext
 
-	calculatedCourierQueryWrapperOverhead := calculateCourierQueryWrapperOverhead(calculatedCourierEnvelopeSize)
+	calculatedCourierQueryWrapperOverhead := calculateCourierQueryWrapperOverhead(calculatedCourierEnvelopeSize, nikeScheme)
 	calculatedTotal := calculatedCourierEnvelopeSize + calculatedCourierQueryWrapperOverhead
 
 	t.Logf("Manual calculation:")

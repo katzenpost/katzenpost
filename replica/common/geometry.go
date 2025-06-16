@@ -122,7 +122,9 @@ func (g *Geometry) courierEnvelopeReadOverhead() int {
 	mkemPrivateKey, mkemCiphertext := mkemScheme.Encapsulate(replicaPubKeys, dummyPlaintext)
 	mkemPublicKey := mkemPrivateKey.Public()
 
-	testCiphertext := make([]byte, 1000) // Use real ciphertext data
+	// Calculate expected ciphertext size based on BoxPayloadLength for read operations
+	expectedCiphertextSize := g.expectedMKEMCiphertextSizeForRead()
+	testCiphertext := make([]byte, expectedCiphertextSize)
 
 	envelope := &CourierEnvelope{
 		IntermediateReplicas: [2]uint8{0, 1},
@@ -139,7 +141,7 @@ func (g *Geometry) courierEnvelopeReadOverhead() int {
 	return len(serialized) - len(testCiphertext)
 }
 
-func (g *Geometry) courierEnvelopeWriteOverhead() int {
+func (g *Geometry) courierEnvelopeWriteOverhead(ciphertextSize int) int {
 	// Create a CourierEnvelope for write operations exactly like the real-world usage (measureCourierEnvelopeLayer)
 	nikeScheme := g.NIKEScheme()
 
@@ -161,7 +163,7 @@ func (g *Geometry) courierEnvelopeWriteOverhead() int {
 	mkemPrivateKey, mkemCiphertext := mkemScheme.Encapsulate(replicaPubKeys, dummyPlaintext)
 	mkemPublicKey := mkemPrivateKey.Public()
 
-	testCiphertext := make([]byte, 1000) // Use real ciphertext data
+	testCiphertext := make([]byte, ciphertextSize) // Use the actual expected ciphertext size
 
 	envelope := &CourierEnvelope{
 		IntermediateReplicas: [2]uint8{0, 1},
@@ -190,7 +192,7 @@ func (g *Geometry) replicaInnerMessageReadOverhead() int {
 
 func (g *Geometry) replicaInnerMessageWriteOverhead() int {
 	// Use the same dynamic calculation as the standalone function
-	return replicaInnerMessageOverheadForWrite()
+	return replicaInnerMessageOverheadForWrite(g.BoxPayloadLength)
 }
 
 func (g *Geometry) replicaReadOverhead() int {
@@ -297,10 +299,23 @@ func (g *Geometry) ExpectedMKEMCiphertextSizeForWrite() int {
 	replicaWriteSize := g.replicaWriteTotalOverhead() + g.PaddedPayloadLength()
 
 	// Add ReplicaInnerMessage wrapper overhead
-	replicaInnerMessageWriteSize := replicaInnerMessageOverheadForWrite() + replicaWriteSize
+	replicaInnerMessageWriteSize := replicaInnerMessageOverheadForWrite(g.BoxPayloadLength) + replicaWriteSize
 
 	// Add MKEM encryption overhead (ChaCha20-Poly1305)
 	return mkemCiphertextSize(replicaInnerMessageWriteSize)
+}
+
+// expectedMKEMCiphertextSizeForRead returns the expected size of the MKEM ciphertext
+// for read operations based on the BoxPayloadLength.
+func (g *Geometry) expectedMKEMCiphertextSizeForRead() int {
+	// Calculate the size of ReplicaRead
+	replicaReadSize := g.replicaReadOverhead()
+
+	// Add ReplicaInnerMessage wrapper overhead
+	replicaInnerMessageReadSize := replicaInnerMessageOverheadForRead() + replicaReadSize
+
+	// Add MKEM encryption overhead (ChaCha20-Poly1305)
+	return mkemCiphertextSize(replicaInnerMessageReadSize)
 }
 
 func (g *Geometry) String() string {
@@ -375,8 +390,8 @@ func courierQueryReadLength(boxPayloadLength int, nikeScheme nike.Scheme) int {
 	mkemCiphertext := mkemCiphertextSize(replicaInnerMessageReadSize)
 	courierEnvelopeSize := courierOverhead + mkemCiphertext
 
-	// Calculate CourierQuery wrapper overhead dynamically
-	courierQueryWrapperOverhead := calculateCourierQueryWrapperOverhead(courierEnvelopeSize)
+	// Calculate CourierQuery wrapper overhead dynamically using the same NIKE scheme
+	courierQueryWrapperOverhead := calculateCourierQueryWrapperOverhead(courierEnvelopeSize, nikeScheme)
 
 	return courierEnvelopeSize + courierQueryWrapperOverhead
 }
@@ -390,22 +405,24 @@ func courierQueryWriteLength(boxPayloadLength int, nikeScheme nike.Scheme) int {
 
 	// Use the padded payload length (user data + 4-byte prefix) for write operations
 	replicaWriteSize := tempGeo.replicaWriteTotalOverhead() + tempGeo.PaddedPayloadLength()
-	replicaInnerMessageWriteSize := replicaInnerMessageOverheadForWrite() + replicaWriteSize
+	replicaInnerMessageWriteSize := replicaInnerMessageOverheadForWrite(boxPayloadLength) + replicaWriteSize
 
-	courierOverhead := tempGeo.courierEnvelopeWriteOverhead()
+	// Calculate MKEM ciphertext size first
 	mkemCiphertext := mkemCiphertextSize(replicaInnerMessageWriteSize)
+
+	// Now calculate courier overhead using the actual ciphertext size
+	courierOverhead := tempGeo.courierEnvelopeWriteOverhead(mkemCiphertext)
 	courierEnvelopeSize := courierOverhead + mkemCiphertext
 
-	// Calculate CourierQuery wrapper overhead dynamically
-	courierQueryWrapperOverhead := calculateCourierQueryWrapperOverhead(courierEnvelopeSize)
+	// Calculate CourierQuery wrapper overhead dynamically using the same NIKE scheme
+	courierQueryWrapperOverhead := calculateCourierQueryWrapperOverhead(courierEnvelopeSize, nikeScheme)
 
 	return courierEnvelopeSize + courierQueryWrapperOverhead
 }
 
 // calculateCourierQueryWrapperOverhead dynamically calculates the CBOR overhead for CourierQuery wrapper
-func calculateCourierQueryWrapperOverhead(courierEnvelopeSize int) int {
+func calculateCourierQueryWrapperOverhead(courierEnvelopeSize int, nikeScheme nike.Scheme) int {
 	// Create a CourierEnvelope with the EXACT size that will be encapsulated, using real-world MKEM keys
-	nikeScheme := schemes.ByName("x25519")
 
 	// Create MKEM scheme and generate MKEM keys like real-world usage
 	mkemScheme := mkem.NewScheme(nikeScheme)
@@ -521,8 +538,9 @@ func courierQueryReplyWriteLength(boxPayloadLength int) int {
 
 // calculateCourierEnvelopeReplyOverhead dynamically calculates the CBOR overhead for CourierEnvelopeReply
 func calculateCourierEnvelopeReplyOverhead() int {
-	// Create a CourierEnvelopeReply with real test payload to measure CBOR overhead exactly like the test
-	testPayload := make([]byte, 1000)
+	// Create a CourierEnvelopeReply with a reasonable test payload to measure CBOR overhead
+	// Use a moderate size that represents typical MKEM ciphertext sizes
+	testPayload := make([]byte, 500)
 	envelopeHash := &[hash.HashSize]byte{}
 
 	reply := &CourierEnvelopeReply{
@@ -598,14 +616,12 @@ func replicaInnerMessageOverheadForRead() int {
 	return totalSize - replicaReadSize
 }
 
-func replicaInnerMessageOverheadForWrite() int {
-	// Use a standard BoxPayloadLength for consistent overhead calculation
-	// This should match the geometry's BoxPayloadLength when used in practice
-	const standardBoxPayloadLength = 1000
+func replicaInnerMessageOverheadForWrite(boxPayloadLength int) int {
+	// Use the actual BoxPayloadLength for accurate overhead calculation
 
 	// Create test data and pad it using the new helper function
 	testData := []byte("test data for overhead calculation")
-	paddedPayload, err := CreatePaddedPayload(testData, standardBoxPayloadLength)
+	paddedPayload, err := CreatePaddedPayload(testData, boxPayloadLength)
 	if err != nil {
 		panic(err)
 	}
@@ -701,44 +717,31 @@ func replicaMessageReplyInnerOverhead() int {
 }
 
 func calculateMaxBoxPayloadLength(maxCourierQueryLength int, nikeScheme nike.Scheme) int {
-	const (
-		chachaPolyNonceLength = 12
-		chachaPolyTagLength   = 16
-		lengthPrefixSize      = 4
-	)
+	// Use iterative approach to find the maximum BoxPayloadLength that fits
+	// Start with a reasonable estimate and refine
+	low := 1
+	high := maxCourierQueryLength / 2 // Conservative upper bound
+	bestFit := 0
 
-	tempGeo := &Geometry{
-		NIKEName:            nikeScheme.Name(),
-		SignatureSchemeName: SignatureSchemeName,
+	for low <= high {
+		mid := (low + high) / 2
+
+		// Test if this BoxPayloadLength fits within the constraints
+		readLength := courierQueryReadLength(mid, nikeScheme)
+		writeLength := courierQueryWriteLength(mid, nikeScheme)
+		maxLength := max(readLength, writeLength)
+
+		if maxLength <= maxCourierQueryLength {
+			// This size fits, try a larger one
+			bestFit = mid
+			low = mid + 1
+		} else {
+			// This size is too large, try a smaller one
+			high = mid - 1
+		}
 	}
 
-	courierOverhead := max(tempGeo.courierEnvelopeReadOverhead(), tempGeo.courierEnvelopeWriteOverhead())
-	mkemFixedOverhead := chachaPolyNonceLength + chachaPolyTagLength
-
-	// Estimate CourierQuery wrapper overhead using a small envelope size
-	estimatedEnvelopeSize := courierOverhead + mkemFixedOverhead + 100 // Small estimate
-	courierQueryWrapperOverhead := calculateCourierQueryWrapperOverhead(estimatedEnvelopeSize)
-
-	availableForReplicaInner := maxCourierQueryLength - courierOverhead - mkemFixedOverhead - courierQueryWrapperOverhead
-
-	readCaseOverhead := replicaInnerMessageOverheadForRead() + tempGeo.replicaReadOverhead()
-
-	// For write case, we need to account for the fact that replicaWriteTotalOverhead()
-	// expects to be added to PaddedPayloadLength (BoxPayloadLength + 4), not BoxPayloadLength
-	// So we need to solve: availableForReplicaInner = writeCaseFixedOverhead + (BoxPayloadLength + 4)
-	// Therefore: BoxPayloadLength = availableForReplicaInner - writeCaseFixedOverhead - 4
-	writeCaseFixedOverhead := replicaInnerMessageOverheadForWrite() + tempGeo.replicaWriteTotalOverhead()
-
-	if readCaseOverhead > availableForReplicaInner {
-		return 0
-	}
-
-	maxBoxPayloadFromWriteCase := availableForReplicaInner - writeCaseFixedOverhead - lengthPrefixSize
-	if maxBoxPayloadFromWriteCase < 0 {
-		return 0
-	}
-
-	return maxBoxPayloadFromWriteCase
+	return bestFit
 }
 
 // GeometryFromBoxPayloadLength solves Use Case 1: specify BoxPayloadLength and derive
