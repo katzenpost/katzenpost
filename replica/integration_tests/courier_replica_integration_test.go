@@ -336,14 +336,17 @@ func setupTestEnvironment(t *testing.T) *testEnvironment {
 		replicaKeys[i] = myreplicaKeys
 	}
 
-	// STEP 2: Create all servers with their own PKI clients (like production)
-	// Each PKI client will have the same PKI documents available
+	// STEP 2: Create shared mock PKI client for all components
+	// This ensures all components use the same PKI documents and memoization
+	sharedMockPKIClient := createMockPKIClient(t, sphinxGeo, serviceDesc, replicaDescriptors)
+
+	// Create all servers with the shared PKI client
 	replicas := make([]*replica.Server, numReplicas)
 	for i := 0; i < numReplicas; i++ {
-		replicas[i] = createReplicaServer(t, replicaConfigs[i], createMockPKIClient(t, sphinxGeo, serviceDesc, replicaDescriptors))
+		replicas[i] = createReplicaServer(t, replicaConfigs[i], sharedMockPKIClient)
 	}
 
-	courier := createCourierServer(t, courierCfg, createMockPKIClient(t, sphinxGeo, serviceDesc, replicaDescriptors))
+	courier := createCourierServer(t, courierCfg, sharedMockPKIClient)
 
 	// Force all replicas to fetch PKI documents first
 	for i, replica := range replicas {
@@ -375,8 +378,6 @@ func setupTestEnvironment(t *testing.T) *testEnvironment {
 		os.RemoveAll(tempDir)
 	}
 
-	mymockPKIClient := createMockPKIClient(t, sphinxGeo, serviceDesc, replicaDescriptors)
-
 	// Set up response routing system - SetWriteFunc called only once per test environment
 	router := newResponseRouter()
 
@@ -391,7 +392,7 @@ func setupTestEnvironment(t *testing.T) *testEnvironment {
 		tempDir:        tempDir,
 		replicas:       replicas,
 		courier:        courier,
-		mockPKIClient:  mymockPKIClient,
+		mockPKIClient:  sharedMockPKIClient,
 		replicaConfigs: replicaConfigs,
 		courierConfig:  courierCfg,
 		cleanup:        cleanup,
@@ -595,10 +596,13 @@ func makeReplicaDescriptor(t *testing.T,
 func createMockPKIClient(t *testing.T, sphinxGeo *geo.Geometry, serviceDesc *pki.MixDescriptor, replicaDescriptors []*pki.ReplicaDescriptor) *mockPKIClient {
 	mock := newMockPKIClient(t)
 
-	// here we generate a PKI document and then store it for three epochs
-	// while carefully modify each document's epoch value:
+	// Generate PKI documents for a wide range of epochs to handle any epoch requests
+	// This ensures both the test logic and PKI workers can find documents
 	currentEpoch, _, _ := epochtime.Now()
-	for _, epoch := range []uint64{currentEpoch - 2, currentEpoch - 1, currentEpoch, currentEpoch + 1} {
+
+	// Create documents for a range around the current epoch
+	for i := int64(-10); i <= 10; i++ {
+		epoch := uint64(int64(currentEpoch) + i)
 		doc := generateTestPKIDocument(t, epoch, serviceDesc, replicaDescriptors, sphinxGeo)
 		doc.Epoch = epoch
 		mock.docs[epoch] = doc
@@ -626,20 +630,62 @@ func generateTestPKIDocument(t *testing.T, epoch uint64, serviceDesc *pki.MixDes
 
 type mockPKIClient struct {
 	t    *testing.T
+	mu   sync.RWMutex
 	docs map[uint64]*pki.Document
 }
 
 func newMockPKIClient(t *testing.T) *mockPKIClient {
 	return &mockPKIClient{
 		t:    t,
+		mu:   sync.RWMutex{},
 		docs: make(map[uint64]*pki.Document),
 	}
 }
 
 func (c *mockPKIClient) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, error) {
+	// First, try to read from cache with read lock
+	c.mu.RLock()
 	doc, exists := c.docs[epoch]
+	c.mu.RUnlock()
+
 	if !exists {
-		return nil, nil, fmt.Errorf("no PKI document available for epoch %d", epoch)
+		// Need to generate document, acquire write lock
+		c.mu.Lock()
+		// Double-check in case another goroutine generated it while we were waiting
+		doc, exists = c.docs[epoch]
+		if !exists {
+			// Generate document on-demand for any requested epoch
+			// Use the template from any existing document
+			var templateDoc *pki.Document
+			for _, d := range c.docs {
+				templateDoc = d
+				break
+			}
+			if templateDoc == nil {
+				c.mu.Unlock()
+				return nil, nil, fmt.Errorf("no template PKI document available to generate document for epoch %d", epoch)
+			}
+
+			// Create a copy of the template document with the requested epoch
+			doc = &pki.Document{
+				Epoch:              epoch,
+				SendRatePerMinute:  templateDoc.SendRatePerMinute,
+				LambdaP:            templateDoc.LambdaP,
+				LambdaL:            templateDoc.LambdaL,
+				LambdaD:            templateDoc.LambdaD,
+				LambdaM:            templateDoc.LambdaM,
+				StorageReplicas:    templateDoc.StorageReplicas,
+				Topology:           templateDoc.Topology,
+				GatewayNodes:       templateDoc.GatewayNodes,
+				ServiceNodes:       templateDoc.ServiceNodes,
+				SharedRandomValue:  templateDoc.SharedRandomValue,
+				SphinxGeometryHash: templateDoc.SphinxGeometryHash,
+			}
+
+			// Memoize the generated document for future requests
+			c.docs[epoch] = doc
+		}
+		c.mu.Unlock()
 	}
 
 	blob, err := doc.MarshalCertificate()
@@ -675,7 +721,11 @@ func aliceComposesNextMessage(t *testing.T, message []byte, env *testEnvironment
 }
 
 func aliceComposesNextMessageWithIsLast(t *testing.T, message []byte, env *testEnvironment, aliceStatefulWriter *bacap.StatefulWriter, isLast bool) *common.CourierEnvelope {
-	boxID, ciphertext, sigraw, err := aliceStatefulWriter.EncryptNext(message)
+	// Create padded payload using the helper function to ensure proper format for courier copy command
+	paddedPayload, err := common.CreatePaddedPayload(message, env.geometry.BoxPayloadLength)
+	require.NoError(t, err)
+
+	boxID, ciphertext, sigraw, err := aliceStatefulWriter.EncryptNext(paddedPayload)
 	require.NoError(t, err)
 
 	// DEBUG: Log Alice's BoxID
@@ -956,7 +1006,11 @@ func testNestedEnvelopeRoundTrip(t *testing.T, env *testEnvironment) {
 		t.Logf("Creating CourierEnvelope %d for message: %s", i+1, string(message[:50])+"...")
 
 		// BACAP encrypt the message for the final destination sequence
-		boxID, bacapCiphertext, sigraw, err := finalDestinationWriter.EncryptNext(message)
+		// Create padded payload to ensure proper format
+		paddedMessage, err := common.CreatePaddedPayload(message, env.geometry.BoxPayloadLength)
+		require.NoError(t, err)
+
+		boxID, bacapCiphertext, sigraw, err := finalDestinationWriter.EncryptNext(paddedMessage)
 		require.NoError(t, err)
 
 		// Create a signature array to avoid pointer reuse
@@ -986,26 +1040,34 @@ func testNestedEnvelopeRoundTrip(t *testing.T, env *testEnvironment) {
 		courierEnvelopeCBORData = append(courierEnvelopeCBORData, envelopeBytes...)
 		t.Logf("CBOR encoded CourierEnvelope %d: %d bytes", i+1, len(envelopeBytes))
 
-		// Check if this envelope fits in the current chunk
-		if len(currentChunk)+len(envelopeBytes) <= boxPayloadLength {
-			// Fits in current chunk
-			currentChunk = append(currentChunk, envelopeBytes...)
-		} else {
-			// Doesn't fit, start a new chunk
-			if len(currentChunk) > 0 {
-				chunks = append(chunks, currentChunk)
-				t.Logf("Created chunk %d: %d bytes", len(chunks), len(currentChunk))
+		// Handle large envelopes that need to be split across multiple boxes
+		remainingBytes := envelopeBytes
+		for len(remainingBytes) > 0 {
+			// Calculate how much space is available in the current chunk
+			availableSpace := boxPayloadLength - len(currentChunk)
+
+			if availableSpace <= 0 {
+				// Current chunk is full, start a new one
+				if len(currentChunk) > 0 {
+					chunks = append(chunks, currentChunk)
+					t.Logf("Created chunk %d: %d bytes", len(chunks), len(currentChunk))
+				}
+				currentChunk = nil
+				availableSpace = boxPayloadLength
 			}
 
-			// Check if the envelope is too large for a single box
-			if len(envelopeBytes) > boxPayloadLength {
-				t.Fatalf("CourierEnvelope %d (%d bytes) is too large for a single box (%d bytes)",
-					i+1, len(envelopeBytes), boxPayloadLength)
+			// Take as much as we can fit in this chunk
+			chunkSize := len(remainingBytes)
+			if chunkSize > availableSpace {
+				chunkSize = availableSpace
 			}
 
-			// Start new chunk with this envelope
-			currentChunk = make([]byte, len(envelopeBytes))
-			copy(currentChunk, envelopeBytes)
+			// Add this portion to the current chunk
+			currentChunk = append(currentChunk, remainingBytes[:chunkSize]...)
+			remainingBytes = remainingBytes[chunkSize:]
+
+			t.Logf("Added %d bytes of CourierEnvelope %d to chunk (remaining: %d bytes)",
+				chunkSize, i+1, len(remainingBytes))
 		}
 	}
 
@@ -1086,12 +1148,16 @@ func testNestedEnvelopeRoundTrip(t *testing.T, env *testEnvironment) {
 
 		boxID, err := bobStatefulReader.NextBoxID()
 		require.NoError(t, err)
-		chunkData, err := bobStatefulReader.DecryptNext(constants.PIGEONHOLE_CTX, *boxID, innerMsg.ReplicaReadReply.Payload, *innerMsg.ReplicaReadReply.Signature)
+		paddedChunkData, err := bobStatefulReader.DecryptNext(constants.PIGEONHOLE_CTX, *boxID, innerMsg.ReplicaReadReply.Payload, *innerMsg.ReplicaReadReply.Signature)
+		require.NoError(t, err)
+
+		// Extract the actual data from the padded payload (remove 4-byte length prefix and padding)
+		chunkData, err := common.ExtractDataFromPaddedPayload(paddedChunkData)
 		require.NoError(t, err)
 
 		// Append this chunk to our reconstructed data
 		reconstructedData = append(reconstructedData, chunkData...)
-		t.Logf("Successfully read chunk %d: %d bytes", i+1, len(chunkData))
+		t.Logf("Successfully read chunk %d: %d bytes (extracted from %d padded bytes)", i+1, len(chunkData), len(paddedChunkData))
 	}
 
 	// Verify the reconstructed data matches the original CourierEnvelope CBOR data
@@ -1232,7 +1298,11 @@ func testNestedEnvelopeRoundTrip(t *testing.T, env *testEnvironment) {
 		// Decrypt the BACAP data to get the original message
 		boxID, err := bobStatefulReader.NextBoxID()
 		require.NoError(t, err)
-		decryptedMessage, err := bobStatefulReader.DecryptNext(constants.PIGEONHOLE_CTX, *boxID, innerMsg.ReplicaReadReply.Payload, *innerMsg.ReplicaReadReply.Signature)
+		paddedDecryptedMessage, err := bobStatefulReader.DecryptNext(constants.PIGEONHOLE_CTX, *boxID, innerMsg.ReplicaReadReply.Payload, *innerMsg.ReplicaReadReply.Signature)
+		require.NoError(t, err)
+
+		// Extract the actual message data from the padded payload (remove 4-byte length prefix and padding)
+		decryptedMessage, err := common.ExtractDataFromPaddedPayload(paddedDecryptedMessage)
 		require.NoError(t, err)
 
 		readBackMessages = append(readBackMessages, decryptedMessage)
