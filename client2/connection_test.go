@@ -31,6 +31,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
+	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
 )
 
 // document contains fields from Document but not the encoding.BinaryMarshaler methods
@@ -154,12 +155,16 @@ func TestConnection(t *testing.T) {
 	numMixNodes := 3
 	numStorageReplicas := 0
 
+	// Compute pigeonhole geometry from sphinx geometry for test
+	pigeonholeGeometry := replicaCommon.GeometryFromSphinxGeometry(g, sphinxNikeScheme)
+
 	clientCfg := &config.Config{
 		ListenNetwork:      "tcp",
 		ListenAddress:      "127.0.0.1:63445",
 		PKISignatureScheme: "ed25519",
 		WireKEMScheme:      "x25519",
 		SphinxGeometry:     g,
+		PigeonholeGeometry: pigeonholeGeometry,
 		Logging: &config.Logging{
 			Disable: false,
 			File:    "",

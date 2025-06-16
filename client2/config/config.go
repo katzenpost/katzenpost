@@ -24,6 +24,7 @@ import (
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
+	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
 
 	"github.com/katzenpost/katzenpost/client2/proxy"
 )
@@ -291,6 +292,9 @@ type Config struct {
 	// SphinxGeometry
 	SphinxGeometry *geo.Geometry
 
+	// PigeonholeGeometry
+	PigeonholeGeometry *replicaCommon.Geometry
+
 	// Logging
 	Logging *Logging
 
@@ -345,6 +349,13 @@ func (c *Config) FixupAndValidate() error {
 		return errors.New("config: No SphinxGeometry block was present")
 	}
 	err := c.SphinxGeometry.Validate()
+	if err != nil {
+		return err
+	}
+	if c.PigeonholeGeometry == nil {
+		return errors.New("config: No PigeonholeGeometry block was present")
+	}
+	err = c.PigeonholeGeometry.Validate()
 	if err != nil {
 		return err
 	}

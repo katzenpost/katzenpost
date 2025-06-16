@@ -21,7 +21,6 @@ import (
 	"gopkg.in/op/go-logging.v1"
 
 	"github.com/katzenpost/hpqc/bacap"
-	"github.com/katzenpost/hpqc/nike/schemes"
 	"github.com/katzenpost/hpqc/rand"
 
 	"github.com/katzenpost/katzenpost/client2/common"
@@ -116,17 +115,13 @@ func FromConfig(cfg *config.Config) *Config {
 	if cfg.SphinxGeometry == nil {
 		panic("SphinxGeometry cannot be nil")
 	}
-
-	nikeScheme := schemes.ByName("CTIDH1024-X25519")
-	if nikeScheme == nil {
-		panic("failed to get CTIDH1024-X25519 NIKE scheme")
+	if cfg.PigeonholeGeometry == nil {
+		panic("PigeonholeGeometry cannot be nil")
 	}
-
-	pigeonholeGeometry := replicaCommon.GeometryFromSphinxGeometry(cfg.SphinxGeometry, nikeScheme)
 
 	return &Config{
 		SphinxGeometry:     cfg.SphinxGeometry,
-		PigeonholeGeometry: pigeonholeGeometry,
+		PigeonholeGeometry: cfg.PigeonholeGeometry,
 		Network:            cfg.ListenNetwork,
 		Address:            cfg.ListenAddress,
 	}
