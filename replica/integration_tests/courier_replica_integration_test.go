@@ -883,7 +883,11 @@ func testBoxRoundTrip(t *testing.T, env *testEnvironment) {
 
 	boxid, err := bobStatefulReader.NextBoxID()
 	require.NoError(t, err)
-	bobPlaintext1, err := bobStatefulReader.DecryptNext(constants.PIGEONHOLE_CTX, *boxid, innerMsg.ReplicaReadReply.Payload, *innerMsg.ReplicaReadReply.Signature)
+	bobPaddedPlaintext1, err := bobStatefulReader.DecryptNext(constants.PIGEONHOLE_CTX, *boxid, innerMsg.ReplicaReadReply.Payload, *innerMsg.ReplicaReadReply.Signature)
+	require.NoError(t, err)
+
+	// Extract the actual message data from the padded payload (remove 4-byte length prefix and padding)
+	bobPlaintext1, err := common.ExtractDataFromPaddedPayload(bobPaddedPlaintext1)
 	require.NoError(t, err)
 	require.Equal(t, alicePayload1, bobPlaintext1)
 }
@@ -957,7 +961,11 @@ func testBoxSequenceRoundTrip(t *testing.T, env *testEnvironment) {
 
 		boxid, err := bobStatefulReader.NextBoxID()
 		require.NoError(t, err)
-		bobPlaintext, err := bobStatefulReader.DecryptNext(constants.PIGEONHOLE_CTX, *boxid, innerMsg.ReplicaReadReply.Payload, *innerMsg.ReplicaReadReply.Signature)
+		bobPaddedPlaintext, err := bobStatefulReader.DecryptNext(constants.PIGEONHOLE_CTX, *boxid, innerMsg.ReplicaReadReply.Payload, *innerMsg.ReplicaReadReply.Signature)
+		require.NoError(t, err)
+
+		// Extract the actual message data from the padded payload (remove 4-byte length prefix and padding)
+		bobPlaintext, err := common.ExtractDataFromPaddedPayload(bobPaddedPlaintext)
 		require.NoError(t, err)
 
 		// Verify the decrypted message matches what we wrote
