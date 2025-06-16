@@ -33,11 +33,6 @@ import (
 
 var incomingConnID uint64
 
-const (
-	replicaMessageReplyDecapsulationFailure = 123
-	replicaMessageReplyCommandParseFailure  = 122
-)
-
 type incomingConn struct {
 	scheme        kem.Scheme
 	pkiSignScheme sign.Scheme

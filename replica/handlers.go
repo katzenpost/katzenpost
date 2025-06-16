@@ -9,6 +9,7 @@ import (
 	"github.com/katzenpost/hpqc/sign/ed25519"
 
 	"github.com/katzenpost/katzenpost/core/wire/commands"
+	pigeonholeCommon "github.com/katzenpost/katzenpost/pigeonhole/common"
 	"github.com/katzenpost/katzenpost/replica/common"
 )
 
@@ -50,7 +51,7 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 		envelopeHash := replicaMessage.EnvelopeHash()
 		return &commands.ReplicaMessageReply{
 			Cmds:          commands.NewStorageReplicaCommands(c.geo, nikeScheme),
-			ErrorCode:     4, // non-zero means failure.
+			ErrorCode:     pigeonholeCommon.ReplicaErrorInternalError,
 			EnvelopeHash:  envelopeHash,
 			EnvelopeReply: []byte{},
 		}
@@ -74,7 +75,7 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 		envelopeHash := replicaMessage.EnvelopeHash()
 		errReply := &commands.ReplicaMessageReply{
 			Cmds:          commands.NewStorageReplicaCommands(c.geo, nikeScheme),
-			ErrorCode:     replicaMessageReplyDecapsulationFailure,
+			ErrorCode:     pigeonholeCommon.ReplicaErrorInternalError,
 			EnvelopeHash:  envelopeHash,
 			ReplicaID:     0, // We don't have a valid replica ID in this error case
 			EnvelopeReply: []byte{},
@@ -96,7 +97,7 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 		c.log.Errorf("handleReplicaMessage failed to get envelope keypair: %s", err)
 		return &commands.ReplicaMessageReply{
 			Cmds:          commands.NewStorageReplicaCommands(c.geo, nikeScheme),
-			ErrorCode:     2, // non-zero means failure.
+			ErrorCode:     pigeonholeCommon.ReplicaErrorInvalidEpoch,
 			EnvelopeHash:  envelopeHash,
 			EnvelopeReply: []byte{},
 		}
@@ -109,7 +110,7 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 		c.log.Error("handleReplicaMessage failed: no PKI document available")
 		return &commands.ReplicaMessageReply{
 			Cmds:          commands.NewStorageReplicaCommands(c.geo, nikeScheme),
-			ErrorCode:     2, // non-zero means failure.
+			ErrorCode:     pigeonholeCommon.ReplicaErrorInvalidEpoch,
 			EnvelopeHash:  envelopeHash,
 			EnvelopeReply: []byte{},
 		}
@@ -119,7 +120,7 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 		c.log.Errorf("handleReplicaMessage failed to get our own replica ID: %s", err)
 		return &commands.ReplicaMessageReply{
 			Cmds:          commands.NewStorageReplicaCommands(c.geo, nikeScheme),
-			ErrorCode:     3, // non-zero means failure.
+			ErrorCode:     pigeonholeCommon.ReplicaErrorInternalError,
 			EnvelopeHash:  envelopeHash,
 			EnvelopeReply: []byte{},
 		}
@@ -165,7 +166,7 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 		c.log.Error("BUG: handleReplicaMessage failed: invalid request was decrypted")
 		return &commands.ReplicaMessageReply{
 			Cmds:          commands.NewStorageReplicaCommands(c.geo, nikeScheme),
-			ErrorCode:     5, // non-zero means failure.
+			ErrorCode:     pigeonholeCommon.ReplicaErrorInternalError,
 			EnvelopeHash:  envelopeHash,
 			EnvelopeReply: []byte{},
 		}
@@ -178,15 +179,14 @@ func (c *incomingConn) handleReplicaRead(replicaRead *common.ReplicaRead) *commo
 	if err != nil {
 		c.log.Errorf("Replica read failed: %v", err)
 		// Map specific errors to specific error codes
-		errorCode := uint8(1) // Default to ReplicaErrorNotFound for now
-		// TODO: Add more specific error mapping based on err type
+		errorCode := pigeonholeCommon.ReplicaErrorNotFound // Default to ReplicaErrorNotFound
 		return &common.ReplicaReadReply{
 			ErrorCode: errorCode,
 		}
 	}
 	c.log.Debug("Replica read successful")
 	return &common.ReplicaReadReply{
-		ErrorCode: 0, // ReplicaErrorSuccess
+		ErrorCode: pigeonholeCommon.ReplicaErrorSuccess,
 		BoxID:     resp.BoxID,
 		Signature: resp.Signature,
 		Payload:   resp.Payload,
@@ -201,24 +201,24 @@ func (c *incomingConn) handleReplicaWrite(replicaWrite *commands.ReplicaWrite) *
 	if err != nil {
 		c.log.Errorf("handleReplicaWrite failed to unmarshal BoxID as public key: %v", err)
 		return &commands.ReplicaWriteReply{
-			ErrorCode: 2, // ReplicaErrorInvalidBoxID
+			ErrorCode: pigeonholeCommon.ReplicaErrorInvalidBoxID,
 		}
 	}
 	if !s.Verify(verifyKey, replicaWrite.Payload, replicaWrite.Signature[:], nil) {
 		c.log.Error("handleReplicaWrite signature verification failed")
 		return &commands.ReplicaWriteReply{
-			ErrorCode: 3, // ReplicaErrorInvalidSignature
+			ErrorCode: pigeonholeCommon.ReplicaErrorInvalidSignature,
 		}
 	}
 	err = c.l.server.state.handleReplicaWrite(replicaWrite)
 	if err != nil {
 		c.log.Errorf("handleReplicaWrite state update failed: %v", err)
 		return &commands.ReplicaWriteReply{
-			ErrorCode: 4, // ReplicaErrorDatabaseError
+			ErrorCode: pigeonholeCommon.ReplicaErrorDatabaseError,
 		}
 	}
 	c.log.Debug("Replica write successful")
 	return &commands.ReplicaWriteReply{
-		ErrorCode: 0, // ReplicaErrorSuccess
+		ErrorCode: pigeonholeCommon.ReplicaErrorSuccess,
 	}
 }
