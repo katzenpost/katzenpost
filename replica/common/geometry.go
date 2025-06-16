@@ -281,6 +281,19 @@ func (g *Geometry) SignatureScheme() sign.Scheme {
 	return s
 }
 
+// ExpectedMKEMCiphertextSizeForWrite returns the expected size of the MKEM ciphertext
+// for write operations. This ensures BACAP payloads are padded to the maximum size.
+func (g *Geometry) ExpectedMKEMCiphertextSizeForWrite() int {
+	// Calculate the size of ReplicaWrite with BACAP payload padded to BoxPayloadLength
+	replicaWriteSize := g.replicaWriteTotalOverhead() + g.BoxPayloadLength
+
+	// Add ReplicaInnerMessage wrapper overhead
+	replicaInnerMessageWriteSize := replicaInnerMessageOverheadForWrite() + replicaWriteSize
+
+	// Add MKEM encryption overhead (ChaCha20-Poly1305)
+	return mkemCiphertextSize(replicaInnerMessageWriteSize)
+}
+
 func (g *Geometry) String() string {
 	var b strings.Builder
 	b.WriteString("pigeonhole_geometry:\n")

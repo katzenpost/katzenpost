@@ -400,10 +400,25 @@ func (e *Courier) handleCourierEnvelope(courierMessage *common.CourierEnvelope) 
 
 	// Validate CourierEnvelope size against geometry constraints
 	envelopeSize := len(courierMessage.Bytes())
-	if envelopeSize > e.pigeonholeGeo.CourierQueryLength {
+	maxEnvelopeSize := max(e.pigeonholeGeo.CourierQueryReadLength, e.pigeonholeGeo.CourierQueryWriteLength)
+	if envelopeSize > maxEnvelopeSize {
 		e.log.Debugf("Rejecting oversized CourierEnvelope: %d bytes > %d bytes (geometry limit)",
-			envelopeSize, e.pigeonholeGeo.CourierQueryLength)
+			envelopeSize, maxEnvelopeSize)
 		return errGeometryViolation
+	}
+
+	// For write operations, validate that the MKEM ciphertext has the exact expected size
+	// This ensures BACAP payloads are padded to the maximum size allowed by geometry
+	if !courierMessage.IsRead {
+		expectedCiphertextSize := e.pigeonholeGeo.ExpectedMKEMCiphertextSizeForWrite()
+		actualCiphertextSize := len(courierMessage.Ciphertext)
+
+		if actualCiphertextSize != expectedCiphertextSize {
+			e.log.Debugf("Rejecting write with incorrect ciphertext size: %d bytes, expected exactly %d bytes (geometry constraint)",
+				actualCiphertextSize, expectedCiphertextSize)
+			return errGeometryViolation
+		}
+		e.log.Debugf("Write ciphertext size validation passed: %d bytes", actualCiphertextSize)
 	}
 
 	replicas := make([]*commands.ReplicaMessage, 2)
@@ -514,9 +529,10 @@ func (e *Courier) OnCommand(cmd cborplugin.Command) error {
 	}
 
 	// Validate message size against geometry constraints
-	if len(request.Payload) > e.pigeonholeGeo.CourierQueryLength {
+	maxQueryLength := max(e.pigeonholeGeo.CourierQueryReadLength, e.pigeonholeGeo.CourierQueryWriteLength)
+	if len(request.Payload) > maxQueryLength {
 		e.log.Debugf("Rejecting oversized CourierQuery: %d bytes > %d bytes (geometry limit)",
-			len(request.Payload), e.pigeonholeGeo.CourierQueryLength)
+			len(request.Payload), maxQueryLength)
 		// Send error reply back to client
 		errorReply := &common.CourierQueryReply{
 			CourierEnvelopeReply: &common.CourierEnvelopeReply{
