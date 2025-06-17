@@ -1,0 +1,146 @@
+// SPDX-FileCopyrightText: © 2025 David Stainton
+// SPDX-License-Identifier: AGPL-3.0-only
+
+// Trunnel schema for katzenpost pigeonhole messages
+// This replaces CBOR encoding with fixed-overhead binary format
+
+// Constants for fixed sizes
+const BACAP_BOX_ID_SIZE = 32;        // ed25519.PublicKeySize
+const BACAP_SIGNATURE_SIZE = 64;     // ed25519.SignatureSize  
+const MKEM_DEK_SIZE = 60;            // mkem.DEKSize
+const MKEM_PUBKEY_SIZE = 160;        // CTIDH1024-X25519 hybrid size (estimated)
+const HASH_SIZE = 32;                // SHA256/Blake2b hash size
+
+// CourierEnvelope - the main envelope structure
+struct courier_envelope {
+    // Intermediate replica indices (2 replicas)
+    u8 intermediate_replicas[2];
+
+    // Data Encryption Keys for 2 replicas
+    u8 dek1[MKEM_DEK_SIZE];
+    u8 dek2[MKEM_DEK_SIZE];
+
+    // Reply index for response routing
+    u8 reply_index;
+
+    // Epoch number
+    u64 epoch;
+
+    // Sender's ephemeral public key (variable length)
+    u16 sender_pubkey_len;
+    u8 sender_pubkey[sender_pubkey_len];
+
+    // Encrypted payload (variable length)
+    u32 ciphertext_len;
+    u8 ciphertext[ciphertext_len];
+
+    // Read/Write flag
+    u8 is_read;
+}
+
+// CourierEnvelopeReply - reply envelope structure
+struct courier_envelope_reply {
+    // Reply index for correlation
+    u8 reply_index;
+
+    // Epoch number
+    u64 epoch;
+
+    // Encrypted reply payload
+    u32 ciphertext_len;
+    u8 ciphertext[ciphertext_len];
+}
+
+// CourierQuery - union for either courier envelope or copy command
+struct courier_query {
+    u8 query_type IN [0, 1]; // 0=envelope, 1=copy_command
+
+    union content[query_type] {
+        0: struct courier_envelope envelope;
+        1: struct copy_command copy_command;
+    };
+}
+
+// CourierQueryReply - union for either envelope reply or copy command reply
+struct courier_query_reply {
+    u8 reply_type IN [0, 1]; // 0=envelope_reply, 1=copy_command_reply
+
+    union content[reply_type] {
+        0: struct courier_envelope_reply envelope_reply;
+        1: struct copy_command_reply copy_command_reply;
+    };
+}
+
+// ReplicaRead - simple read request
+struct replica_read {
+    u8 box_id[BACAP_BOX_ID_SIZE];
+}
+
+// ReplicaReadReply - read response
+struct replica_read_reply {
+    u8 box_id[BACAP_BOX_ID_SIZE];
+
+    // Error code (0 = success, non-zero = error)
+    u8 error_code;
+
+    // Payload (length 0 means failure)
+    u32 payload_len;
+    u8 payload[payload_len];
+    u8 signature[BACAP_SIGNATURE_SIZE];
+}
+
+// ReplicaInnerMessage - union for read/write operations
+struct replica_inner_message {
+    u8 message_type IN [0, 1]; // 0=read, 1=write
+
+    union content[message_type] {
+        0: struct replica_read read_msg;
+        1: struct replica_write write_msg;
+    };
+}
+
+// ReplicaWrite - write request matching core/wire/commands.ReplicaWrite
+// Contains only the essential fields: BoxID, Signature, and Payload
+struct replica_write {
+    u8 box_id[BACAP_BOX_ID_SIZE];
+    u8 signature[BACAP_SIGNATURE_SIZE];
+    u32 payload_len;
+    u8 payload[payload_len];
+}
+
+// ReplicaMessageReplyInnerMessage - union for read/write replies
+struct replica_message_reply_inner_message {
+    u8 message_type IN [0, 1]; // 0=read_reply, 1=write_reply
+
+    union content[message_type] {
+        0: struct replica_read_reply read_reply;
+        1: struct replica_write_reply write_reply;
+    };
+}
+
+// ReplicaWriteReply - write response matching core/wire/commands.ReplicaWriteReply
+struct replica_write_reply {
+    u8 error_code;
+}
+
+// Box - BACAP message box
+struct box {
+    u8 box_id[BACAP_BOX_ID_SIZE];
+
+    u32 payload_len;
+    u8 payload[payload_len];
+
+    u8 signature[BACAP_SIGNATURE_SIZE];
+}
+
+// CopyCommand - command to copy a BACAP sequence
+struct copy_command {
+    // BACAP BoxOwnerCap serialized as bytes (variable length)
+    u32 write_cap_len;
+    u8 write_cap[write_cap_len];
+}
+
+// CopyCommandReply - reply for copy command operations
+struct copy_command_reply {
+    u8 error_code;
+}

@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-package common
+package pigeonhole
 
 import "fmt"
 
@@ -40,20 +40,20 @@ const (
 
 // Courier copy command error codes
 const (
-	CopyErrorSuccess           uint8 = 0  // Copy operation completed successfully
-	CopyErrorInvalidWriteCap   uint8 = 1  // Invalid WriteCap provided
-	CopyErrorReadCapDerivation uint8 = 2  // Failed to derive ReadCap from WriteCap
-	CopyErrorRead              uint8 = 3  // Read operation failed
-	CopyErrorEmptySequence     uint8 = 4  // BACAP sequence is empty
-	CopyErrorBACAPDecryption   uint8 = 5  // BACAP decryption failed
-	CopyErrorCBORDecoding      uint8 = 6  // CBOR decoding failed
-	CopyErrorStreamingDecoder  uint8 = 7  // Streaming decoder failed
-	CopyErrorReplicaTimeout    uint8 = 8  // Replica operation timed out
-	CopyErrorMKEMDecryption    uint8 = 9  // MKEM decryption failed
-	CopyErrorTombstoneWrite    uint8 = 10 // Failed to write tombstone
-	CopyErrorReplicaNotFound   uint8 = 11 // Replica data not found (proxied from replica)
-	CopyErrorReplicaDatabase   uint8 = 12 // Replica database error (proxied from replica)
-	CopyErrorReplicaInternal   uint8 = 13 // Replica internal error (proxied from replica)
+	CopyErrorSuccess           uint8 = 0 // Copy operation completed successfully
+	CopyErrorInvalidWriteCap   uint8 = 1 // Invalid WriteCap provided
+	CopyErrorReadCapDerivation uint8 = 2 // Failed to derive ReadCap from WriteCap
+	CopyErrorRead              uint8 = 3 // Read operation failed
+	CopyErrorEmptySequence     uint8 = 4 // BACAP sequence is empty
+	CopyErrorBACAPDecryption   uint8 = 5 // BACAP decryption failed
+
+	CopyErrorStreamingDecoder uint8 = 7  // Streaming decoder failed
+	CopyErrorReplicaTimeout   uint8 = 8  // Replica operation timed out
+	CopyErrorMKEMDecryption   uint8 = 9  // MKEM decryption failed
+	CopyErrorTombstoneWrite   uint8 = 10 // Failed to write tombstone
+	CopyErrorReplicaNotFound  uint8 = 11 // Replica data not found (proxied from replica)
+	CopyErrorReplicaDatabase  uint8 = 12 // Replica database error (proxied from replica)
+	CopyErrorReplicaInternal  uint8 = 13 // Replica internal error (proxied from replica)
 )
 
 // Courier envelope operation error codes
@@ -75,9 +75,9 @@ const (
 
 // General courier error codes
 const (
-	CourierErrorSuccess         uint8 = 0 // Operation completed successfully
-	CourierErrorInvalidCommand  uint8 = 1 // Invalid command received
-	CourierErrorCBORDecoding    uint8 = 2 // CBOR decoding failed
+	CourierErrorSuccess        uint8 = 0 // Operation completed successfully
+	CourierErrorInvalidCommand uint8 = 1 // Invalid command received
+
 	CourierErrorDispatchFailure uint8 = 3 // Failed to dispatch to replica
 	CourierErrorConnectionLost  uint8 = 4 // Connection to replica lost
 	CourierErrorInternalError   uint8 = 5 // Internal courier error
@@ -138,8 +138,7 @@ func CopyErrorToString(errorCode uint8) string {
 		return "Empty sequence"
 	case CopyErrorBACAPDecryption:
 		return "BACAP decryption failed"
-	case CopyErrorCBORDecoding:
-		return "CBOR decoding failed"
+
 	case CopyErrorStreamingDecoder:
 		return "Streaming decoder failed"
 	case CopyErrorReplicaTimeout:
@@ -200,8 +199,7 @@ func CourierErrorToString(errorCode uint8) string {
 		return "Success"
 	case CourierErrorInvalidCommand:
 		return "Invalid command"
-	case CourierErrorCBORDecoding:
-		return "CBOR decoding failed"
+
 	case CourierErrorDispatchFailure:
 		return "Dispatch failure"
 	case CourierErrorConnectionLost:

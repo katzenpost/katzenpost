@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 // Package common contains code that is useful to pigeonhole clients and Couriers.
-package common
+package pigeonhole
 
 import (
 	"github.com/katzenpost/hpqc/nike"
