@@ -9,10 +9,11 @@ import (
 	"fmt"
 	"time"
 
+	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
+
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/pki"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
-	"github.com/katzenpost/katzenpost/replica/common"
 )
 
 const NumPKIDocsToFetch = 3
@@ -185,7 +186,7 @@ func (p *PKIWorker) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 	}
 
 	// handle the replica NIKE keys
-	replicaEpoch, _, _ := common.ReplicaNow()
+	replicaEpoch, _, _ := replicaCommon.ReplicaNow()
 	envelopeKeys := make(map[uint64][]byte)
 
 	key1, err := p.server.envelopeKeys.EnsureKey(replicaEpoch)

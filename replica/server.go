@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"sync"
 
+	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
+
 	"gopkg.in/op/go-logging.v1"
 
 	"github.com/katzenpost/hpqc/kem"
@@ -25,7 +27,6 @@ import (
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/utils"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
-	"github.com/katzenpost/katzenpost/replica/common"
 	"github.com/katzenpost/katzenpost/replica/config"
 )
 
@@ -336,7 +337,7 @@ func (s *Server) initLinkKeys() error {
 func (s *Server) initEnvelopeKeys() error {
 	s.log.Debug("ensuring replica NIKE keypair exists")
 	nikeScheme := nikeSchemes.ByName(s.cfg.ReplicaNIKEScheme)
-	replicaEpoch, _, _ := common.ReplicaNow()
+	replicaEpoch, _, _ := replicaCommon.ReplicaNow()
 	var err error
 	s.envelopeKeys, err = NewEnvelopeKeys(nikeScheme, s.logBackend.GetLogger("replica envelopeKeys"), s.cfg.DataDir, replicaEpoch)
 	s.log.Debug("AFTER ensuring replica NIKE keypair exists")

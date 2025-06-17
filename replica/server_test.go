@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
+
 	"github.com/stretchr/testify/require"
 
 	"github.com/katzenpost/hpqc/bacap"
@@ -19,7 +21,6 @@ import (
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
-	"github.com/katzenpost/katzenpost/replica/common"
 	"github.com/katzenpost/katzenpost/replica/config"
 )
 
@@ -121,7 +122,7 @@ func TestGetRemoteShards(t *testing.T) {
 
 	// Create PKI worker with proper structure
 	pkiWorker := &PKIWorker{
-		replicas:   common.NewReplicaMap(),
+		replicas:   replicaCommon.NewReplicaMap(),
 		WorkerBase: pki.NewWorkerBase(nil, nil),
 	}
 
@@ -143,7 +144,7 @@ func TestGetRemoteShards(t *testing.T) {
 
 	doc := CreateTestPKIDocument(t, replicas, nil)
 	StoreTestDocument(t, s.PKIWorker, doc)
-	s.PKIWorker.replicas = common.NewReplicaMap()
+	s.PKIWorker.replicas = replicaCommon.NewReplicaMap()
 
 	s.PKIWorker.server = s
 
@@ -182,7 +183,7 @@ func TestGetRemoteShards(t *testing.T) {
 	_, err = rand.Reader.Read(boxid[:])
 	require.NoError(t, err)
 
-	shards, err := common.GetRemoteShards(s.identityPublicKey, boxid, doc)
+	shards, err := replicaCommon.GetRemoteShards(s.identityPublicKey, boxid, doc)
 	require.NoError(t, err)
 
 	t.Logf("SHARDS: %v", shards)

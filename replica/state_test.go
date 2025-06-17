@@ -7,6 +7,8 @@ import (
 	"os"
 	"testing"
 
+	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
+
 	"github.com/stretchr/testify/require"
 
 	"github.com/katzenpost/hpqc/bacap"
@@ -23,7 +25,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
-	"github.com/katzenpost/katzenpost/replica/common"
+	"github.com/katzenpost/katzenpost/pigeonhole"
 	"github.com/katzenpost/katzenpost/replica/config"
 )
 
@@ -83,7 +85,7 @@ func TestState(t *testing.T) {
 	}
 
 	pkiWorker := &PKIWorker{
-		replicas:   common.NewReplicaMap(),
+		replicas:   replicaCommon.NewReplicaMap(),
 		WorkerBase: pki.NewWorkerBase(nil, nil),
 	}
 
@@ -158,17 +160,15 @@ func TestState(t *testing.T) {
 		boxIDs[i] = replicaWriteCmd1.BoxID
 	}
 
-	replicaReadCmd := &common.ReplicaRead{
-		BoxID: &[bacap.BoxIDSize]byte{},
-	}
+	replicaReadCmd := &pigeonhole.ReplicaRead{}
 	copy(replicaReadCmd.BoxID[:], boxIDs[0][:])
 
 	box, err := st.handleReplicaRead(replicaReadCmd)
 	require.NoError(t, err)
 
-	require.Equal(t, box.BoxID, boxid)
+	require.Equal(t, box.BoxID[:], boxid[:])
 	require.Equal(t, box.Payload, payload)
-	require.Equal(t, box.Signature, signature)
+	require.Equal(t, box.Signature[:], signature[:])
 
 	t.Log("BEFORE Rebalance")
 	st.Rebalance()

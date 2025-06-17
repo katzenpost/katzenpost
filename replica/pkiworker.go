@@ -20,7 +20,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/worker"
-	"github.com/katzenpost/katzenpost/replica/common"
+	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
 )
 
 const PKIDocNum = 3
@@ -39,7 +39,7 @@ type PKIWorker struct {
 	server *Server
 	*pki.WorkerBase
 
-	replicas *common.ReplicaMap
+	replicas *replicaCommon.ReplicaMap
 
 	impl pki.Client // PKI client for document fetching and publishing
 
@@ -76,7 +76,7 @@ func newPKIWorkerWithClient(server *Server, pkiClient pki.Client, log *logging.L
 	p := &PKIWorker{
 		server:      server,
 		WorkerBase:  pki.NewWorkerBase(pkiClient, log),
-		replicas:    common.NewReplicaMap(),
+		replicas:    replicaCommon.NewReplicaMap(),
 		descAddrMap: make(map[string][]string),
 		impl:        pkiClient,
 	}

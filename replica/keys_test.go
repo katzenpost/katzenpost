@@ -8,17 +8,18 @@ import (
 	"sync"
 	"testing"
 
+	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
+
 	"github.com/stretchr/testify/require"
 
 	nikeschemes "github.com/katzenpost/hpqc/nike/schemes"
 
 	"github.com/katzenpost/katzenpost/core/log"
-	"github.com/katzenpost/katzenpost/replica/common"
 )
 
 func TestEnvelopeKey(t *testing.T) {
 	nikeScheme := nikeschemes.ByName("CTIDH512-X25519")
-	keys := common.NewEnvelopeKey(nikeScheme)
+	keys := replicaCommon.NewEnvelopeKey(nikeScheme)
 	require.NotNil(t, keys)
 }
 
@@ -36,9 +37,9 @@ func TestEnvelopeKeys(t *testing.T) {
 		datadir:  dname,
 		scheme:   replicaScheme,
 		keysLock: new(sync.RWMutex),
-		keys:     make(map[uint64]*common.EnvelopeKey),
+		keys:     make(map[uint64]*replicaCommon.EnvelopeKey),
 	}
-	epoch, _, _ := common.ReplicaNow()
+	epoch, _, _ := replicaCommon.ReplicaNow()
 	err = keys.Generate(epoch)
 	require.NoError(t, err)
 

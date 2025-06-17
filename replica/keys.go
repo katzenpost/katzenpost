@@ -8,12 +8,13 @@ import (
 	"sync"
 	"time"
 
+	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
+
 	"gopkg.in/op/go-logging.v1"
 
 	"github.com/katzenpost/hpqc/nike"
 
 	"github.com/katzenpost/katzenpost/core/worker"
-	"github.com/katzenpost/katzenpost/replica/common"
 )
 
 const (
@@ -29,18 +30,18 @@ type EnvelopeKeys struct {
 	scheme  nike.Scheme
 
 	keysLock *sync.RWMutex
-	keys     map[uint64]*common.EnvelopeKey
+	keys     map[uint64]*replicaCommon.EnvelopeKey
 }
 
 func NewEnvelopeKeys(scheme nike.Scheme, log *logging.Logger, datadir string, epoch uint64) (*EnvelopeKeys, error) {
 	e := &EnvelopeKeys{
 		datadir:  datadir,
 		log:      log,
-		keys:     make(map[uint64]*common.EnvelopeKey),
+		keys:     make(map[uint64]*replicaCommon.EnvelopeKey),
 		keysLock: new(sync.RWMutex),
 		scheme:   scheme,
 	}
-	keypair, err := common.EnvelopeKeyFromFiles(datadir, scheme, epoch)
+	keypair, err := replicaCommon.EnvelopeKeyFromFiles(datadir, scheme, epoch)
 	if err == nil {
 		e.keys[epoch] = keypair
 	} else {
@@ -58,7 +59,7 @@ func NewEnvelopeKeys(scheme nike.Scheme, log *logging.Logger, datadir string, ep
 // which also uploads our replica descriptor
 // to the dirauth nodes.
 func (k *EnvelopeKeys) worker() {
-	_, _, till := common.ReplicaNow()
+	_, _, till := replicaCommon.ReplicaNow()
 	gctimer := time.NewTimer(till + GracePeriod)
 	defer func() {
 		k.log.Debugf("Halting EnvelopeKeys worker.")
@@ -92,7 +93,7 @@ func (k *EnvelopeKeys) worker() {
 			}
 		}
 
-		_, _, till := common.ReplicaNow()
+		_, _, till := replicaCommon.ReplicaNow()
 		gctimer.Reset(till + GracePeriod)
 	}
 }
@@ -100,7 +101,7 @@ func (k *EnvelopeKeys) worker() {
 func (k *EnvelopeKeys) Generate(replicaEpoch uint64) error {
 	k.keysLock.Lock()
 	defer k.keysLock.Unlock()
-	keypair := common.NewEnvelopeKey(k.scheme)
+	keypair := replicaCommon.NewEnvelopeKey(k.scheme)
 	err := keypair.WriteKeyFiles(k.datadir, k.scheme, replicaEpoch)
 	if err != nil {
 		return err
@@ -110,7 +111,7 @@ func (k *EnvelopeKeys) Generate(replicaEpoch uint64) error {
 }
 
 func (k *EnvelopeKeys) Prune() bool {
-	epoch, _, _ := common.ReplicaNow()
+	epoch, _, _ := replicaCommon.ReplicaNow()
 	didPrune := false
 	k.keysLock.Lock()
 	defer k.keysLock.Unlock()
@@ -124,7 +125,7 @@ func (k *EnvelopeKeys) Prune() bool {
 	return didPrune
 }
 
-func (k *EnvelopeKeys) GetKeypair(replicaEpoch uint64) (*common.EnvelopeKey, error) {
+func (k *EnvelopeKeys) GetKeypair(replicaEpoch uint64) (*replicaCommon.EnvelopeKey, error) {
 	k.keysLock.RLock()
 	defer k.keysLock.RUnlock()
 	keypair, ok := k.keys[replicaEpoch]
@@ -134,7 +135,7 @@ func (k *EnvelopeKeys) GetKeypair(replicaEpoch uint64) (*common.EnvelopeKey, err
 	return keypair, nil
 }
 
-func (k *EnvelopeKeys) EnsureKey(replicaEpoch uint64) (*common.EnvelopeKey, error) {
+func (k *EnvelopeKeys) EnsureKey(replicaEpoch uint64) (*replicaCommon.EnvelopeKey, error) {
 	keypair, err := k.GetKeypair(replicaEpoch)
 	if err != nil {
 		err = k.Generate(replicaEpoch)

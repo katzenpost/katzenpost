@@ -8,6 +8,8 @@ import (
 	"os"
 	"testing"
 
+	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
+
 	"github.com/stretchr/testify/require"
 
 	"github.com/katzenpost/hpqc/kem"
@@ -25,7 +27,6 @@ import (
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
-	"github.com/katzenpost/katzenpost/replica/common"
 	"github.com/katzenpost/katzenpost/replica/config"
 )
 
@@ -167,7 +168,7 @@ func CreateTestConfig(t *testing.T, schemes *TestSchemes, geometry *geo.Geometry
 // CreateTestServer creates a test server with PKI worker
 func CreateTestServer(t *testing.T, cfg *config.Config, keys *TestKeys, logBackend *log.Backend) *Server {
 	pkiWorker := &PKIWorker{
-		replicas:   common.NewReplicaMap(),
+		replicas:   replicaCommon.NewReplicaMap(),
 		WorkerBase: pki.NewWorkerBase(nil, nil),
 	}
 

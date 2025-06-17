@@ -25,7 +25,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
-	"github.com/katzenpost/katzenpost/http/common"
+	httpCommon "github.com/katzenpost/katzenpost/http/common"
 )
 
 var outgoingConnID uint64
@@ -191,7 +191,7 @@ func (c *outgoingConn) dialAndHandleConnection(addr string, dialCtx context.Cont
 	}
 	c.log.Debugf("Dialing: %v", u.Host)
 
-	conn, err := common.DialURL(u, dialCtx, dialer.DialContext)
+	conn, err := httpCommon.DialURL(u, dialCtx, dialer.DialContext)
 	select {
 	case <-dialCtx.Done():
 		// Canceled.

@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
+
 	"github.com/stretchr/testify/require"
 
 	"github.com/katzenpost/hpqc/hash"
@@ -22,7 +24,6 @@ import (
 	"github.com/katzenpost/katzenpost/core/pki"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
-	"github.com/katzenpost/katzenpost/replica/common"
 	"github.com/katzenpost/katzenpost/replica/config"
 )
 
@@ -120,7 +121,7 @@ func createTestSetup(t *testing.T) *testSetup {
 }
 
 func TestReplicaMap(t *testing.T) {
-	r := common.NewReplicaMap()
+	r := replicaCommon.NewReplicaMap()
 	newMap := make(map[[32]byte]*pki.ReplicaDescriptor)
 	replica := &pki.ReplicaDescriptor{
 		Name: "replica1",

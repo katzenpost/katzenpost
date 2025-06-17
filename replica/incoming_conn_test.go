@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
+
 	"github.com/stretchr/testify/require"
 
 	"github.com/katzenpost/hpqc/bacap"
@@ -24,7 +26,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
-	"github.com/katzenpost/katzenpost/replica/common"
+	"github.com/katzenpost/katzenpost/pigeonhole"
 	"github.com/katzenpost/katzenpost/replica/config"
 )
 
@@ -98,7 +100,7 @@ func TestIncomingConn(t *testing.T) {
 	require.NoError(t, err)
 
 	pkiWorker := &PKIWorker{
-		replicas:   common.NewReplicaMap(),
+		replicas:   replicaCommon.NewReplicaMap(),
 		WorkerBase: pki.NewWorkerBase(nil, nil), // No PKI client needed for test
 	}
 
@@ -118,7 +120,7 @@ func TestIncomingConn(t *testing.T) {
 	err = server.initLogging()
 	require.NoError(t, err)
 
-	epoch, _, _ := common.ReplicaNow()
+	epoch, _, _ := replicaCommon.ReplicaNow()
 	server.envelopeKeys, err = NewEnvelopeKeys(replicaScheme, server.logBackend.GetLogger("envelope keys"), dname, epoch)
 	require.NoError(t, err)
 
@@ -194,17 +196,20 @@ func TestIncomingConn(t *testing.T) {
 	require.NoError(t, err)
 
 	payload := make([]byte, 1000)
-	reply := inConn.handleReplicaWrite(&commands.ReplicaWrite{
+	// Convert wire command to trunnel type for testing
+	wireWrite := &commands.ReplicaWrite{
 		Cmds:      commands.NewStorageReplicaCommands(geometry, replicaScheme),
 		BoxID:     boxid,
 		Signature: sig,
 		Payload:   payload,
-	})
+	}
+	trunnelWrite := pigeonhole.WireCommandToTrunnelReplicaWrite(wireWrite)
+	reply := inConn.handleReplicaWrite(trunnelWrite)
 	require.NotNil(t, reply)
 
-	reply2 := inConn.handleReplicaRead(&common.ReplicaRead{
-		BoxID: boxid,
-	})
+	trunnelRead := &pigeonhole.ReplicaRead{}
+	copy(trunnelRead.BoxID[:], boxid[:])
+	reply2 := inConn.handleReplicaRead(trunnelRead)
 	require.NotNil(t, reply2)
 
 	// Generate valid cryptographic material for the ReplicaMessage

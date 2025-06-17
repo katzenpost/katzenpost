@@ -13,6 +13,8 @@ import (
 	"sync"
 	"time"
 
+	httpCommon "github.com/katzenpost/katzenpost/http/common"
+
 	"github.com/quic-go/quic-go"
 	"gopkg.in/op/go-logging.v1"
 
@@ -21,7 +23,6 @@ import (
 
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/worker"
-	"github.com/katzenpost/katzenpost/http/common"
 )
 
 type Listener struct {
@@ -225,15 +226,15 @@ func newListener(server *Server, id int, addr string) (*Listener, error) {
 				return nil, err
 			}
 		case "quic":
-			ql, err := quic.ListenAddr(u.Host, common.GenerateTLSConfig(), nil)
+			ql, err := quic.ListenAddr(u.Host, httpCommon.GenerateTLSConfig(), nil)
 			if err != nil {
 				l.log.Errorf("Failed to start Listener '%v': %v", addr, err)
 				return nil, err
 			}
-			// Wrap quic.Listener with common.QuicListener
+			// Wrap quic.Listener with httpCommon.QuicListener
 			// so it implements like net.Listener for a
 			// single QUIC Stream
-			l.l = &common.QuicListener{Listener: ql}
+			l.l = &httpCommon.QuicListener{Listener: ql}
 		default:
 			return nil, fmt.Errorf("Unsupported Listener scheme '%v': %v", addr, err)
 		}

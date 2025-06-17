@@ -6,6 +6,8 @@ package replica
 import (
 	"testing"
 
+	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
+
 	"github.com/stretchr/testify/require"
 
 	"github.com/katzenpost/hpqc/hash"
@@ -14,7 +16,6 @@ import (
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/wire"
-	"github.com/katzenpost/katzenpost/replica/common"
 )
 
 func TestOutgoingConn(t *testing.T) {
@@ -34,7 +35,7 @@ func TestOutgoingConn(t *testing.T) {
 	cfg := CreateTestConfig(t, schemes, geometry, tempDir, "replica1", []string{"tcp://127.0.0.1:34394"})
 
 	pkiWorker := &PKIWorker{
-		replicas:   common.NewReplicaMap(),
+		replicas:   replicaCommon.NewReplicaMap(),
 		WorkerBase: pki.NewWorkerBase(nil, nil), // No PKI client needed for test
 	}
 

@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"path/filepath"
 
+	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
+
 	"github.com/linxGnu/grocksdb"
 	"golang.org/x/crypto/blake2b"
 	"gopkg.in/op/go-logging.v1"
@@ -15,7 +17,7 @@ import (
 
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
-	"github.com/katzenpost/katzenpost/replica/common"
+	"github.com/katzenpost/katzenpost/pigeonhole"
 )
 
 const (
@@ -66,7 +68,7 @@ func (s *state) initDB() {
 	s.log.Debug("state: Database initialized successfully")
 }
 
-func (s *state) handleReplicaRead(replicaRead *common.ReplicaRead) (*common.Box, error) {
+func (s *state) handleReplicaRead(replicaRead *pigeonhole.ReplicaRead) (*pigeonhole.Box, error) {
 	s.log.Debugf("state: Starting replica read for BoxID: %x", replicaRead.BoxID)
 
 	// Check if database is still open
@@ -93,7 +95,7 @@ func (s *state) handleReplicaRead(replicaRead *common.ReplicaRead) (*common.Box,
 	copy(data, value.Data())
 	value.Free()
 
-	box, err := common.BoxFromBytes(data)
+	box, err := pigeonhole.BoxFromBytes(data)
 	if err != nil {
 		s.log.Errorf("state: Failed to deserialize box: %s", err)
 		return nil, fmt.Errorf("invalid data retrieved from database: %s", err)
@@ -113,12 +115,13 @@ func (s *state) handleReplicaWrite(replicaWrite *commands.ReplicaWrite) error {
 
 	wo := grocksdb.NewDefaultWriteOptions()
 	defer wo.Destroy()
-	box := &common.Box{
-		BoxID:     replicaWrite.BoxID,
-		Signature: replicaWrite.Signature,
-		IsLast:    replicaWrite.IsLast,
-		Payload:   replicaWrite.Payload,
+	box := &pigeonhole.Box{
+		PayloadLen: uint32(len(replicaWrite.Payload)),
+		Payload:    replicaWrite.Payload,
 	}
+	// Convert pointer arrays to regular arrays
+	copy(box.BoxID[:], replicaWrite.BoxID[:])
+	copy(box.Signature[:], replicaWrite.Signature[:])
 	s.log.Debugf("state: Attempting to write %d bytes to database", len(box.Bytes()))
 	err := s.db.Put(wo, box.BoxID[:], box.Bytes())
 	if err != nil {
@@ -131,7 +134,7 @@ func (s *state) handleReplicaWrite(replicaWrite *commands.ReplicaWrite) error {
 
 func (s *state) replicaWriteFromBlob(blob []byte) (*commands.ReplicaWrite, error) {
 	s.log.Debugf("state: Converting blob of size %d to ReplicaWrite", len(blob))
-	box, err := common.BoxFromBytes(blob)
+	box, err := pigeonhole.BoxFromBytes(blob)
 	if err != nil {
 		s.log.Errorf("state: Failed to deserialize box from blob: %s", err)
 		return nil, err
@@ -142,12 +145,17 @@ func (s *state) replicaWriteFromBlob(blob []byte) (*commands.ReplicaWrite, error
 		panic(fmt.Sprintf("scheme %s doesn't exist", s.server.cfg.ReplicaNIKEScheme))
 	}
 	cmds := commands.NewStorageReplicaCommands(s.server.cfg.SphinxGeometry, scheme)
-	ret := &commands.ReplicaWrite{
-		Cmds: cmds,
+	// Convert array types to pointer types for wire commands
+	boxID := &[32]byte{}
+	copy(boxID[:], box.BoxID[:])
 
-		BoxID:     box.BoxID,
-		Signature: box.Signature,
-		IsLast:    box.IsLast,
+	signature := &[64]byte{}
+	copy(signature[:], box.Signature[:])
+
+	ret := &commands.ReplicaWrite{
+		Cmds:      cmds,
+		BoxID:     boxID,
+		Signature: signature,
 		Payload:   box.Payload,
 	}
 	s.log.Debugf("state: Successfully converted blob to ReplicaWrite with BoxID: %x", box.BoxID)
@@ -159,7 +167,7 @@ func (s *state) getRemoteShards(boxID []byte) ([]*pki.ReplicaDescriptor, error) 
 	doc := s.server.PKIWorker.PKIDocument()
 	boxIDar := new([32]byte)
 	copy(boxIDar[:], boxID)
-	shards, err := common.GetRemoteShards(s.server.identityPublicKey, boxIDar, doc)
+	shards, err := replicaCommon.GetRemoteShards(s.server.identityPublicKey, boxIDar, doc)
 	if err != nil {
 		s.log.Errorf("state: GetShards for boxID %x has failed: %s", boxID, err)
 		return nil, err

@@ -23,7 +23,7 @@ import (
 
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
-	"github.com/katzenpost/katzenpost/replica/common"
+	"github.com/katzenpost/katzenpost/pigeonhole"
 )
 
 type Box struct {
@@ -70,29 +70,31 @@ func NewReplicas(count int, scheme nike.Scheme, cmds *commands.Commands, sphinxG
 	return replicas
 }
 
-func (r *Replica) handleReplicaRead(replicaRead *common.ReplicaRead) *common.ReplicaReadReply {
+func (r *Replica) handleReplicaRead(replicaRead *pigeonhole.ReplicaRead) *pigeonhole.ReplicaReadReply {
 	const (
 		successCode = 0
 		failCode    = 1
 	)
-	box, ok := r.DB[*replicaRead.BoxID]
+	box, ok := r.DB[replicaRead.BoxID]
 	if !ok {
-		return &common.ReplicaReadReply{
-			ErrorCode: failCode,
-			BoxID:     nil,
-			Signature: nil,
-			Payload:   nil,
+		return &pigeonhole.ReplicaReadReply{
+			ErrorCode:  failCode,
+			BoxID:      [32]uint8{},
+			Signature:  [64]uint8{},
+			PayloadLen: 0,
+			Payload:    nil,
 		}
 	}
-	return &common.ReplicaReadReply{
-		ErrorCode: successCode,
-		BoxID:     box.BoxID,
-		Signature: box.Signature,
-		Payload:   box.Payload,
+	return &pigeonhole.ReplicaReadReply{
+		ErrorCode:  successCode,
+		BoxID:      *box.BoxID,
+		Signature:  *box.Signature,
+		PayloadLen: uint32(len(box.Payload)),
+		Payload:    box.Payload,
 	}
 }
 
-func (r *Replica) handleReplicaWrite(replicaWrite *commands.ReplicaWrite) *commands.ReplicaWriteReply {
+func (r *Replica) handleReplicaWrite(replicaWrite *pigeonhole.ReplicaWrite) *pigeonhole.ReplicaWriteReply {
 	const (
 		successCode = 0
 		failCode    = 1
@@ -100,23 +102,23 @@ func (r *Replica) handleReplicaWrite(replicaWrite *commands.ReplicaWrite) *comma
 	s := ed25519.Scheme()
 	verifyKey, err := s.UnmarshalBinaryPublicKey(replicaWrite.BoxID[:])
 	if err != nil {
-		return &commands.ReplicaWriteReply{
+		return &pigeonhole.ReplicaWriteReply{
 			ErrorCode: failCode,
 		}
 	}
 	if !s.Verify(verifyKey, replicaWrite.Payload, replicaWrite.Signature[:], nil) {
-		return &commands.ReplicaWriteReply{
+		return &pigeonhole.ReplicaWriteReply{
 			ErrorCode: failCode,
 		}
 	}
 
-	r.DB[*replicaWrite.BoxID] = &Box{
-		BoxID:     replicaWrite.BoxID,
-		Signature: replicaWrite.Signature,
+	r.DB[replicaWrite.BoxID] = &Box{
+		BoxID:     &replicaWrite.BoxID,
+		Signature: &replicaWrite.Signature,
 		Payload:   replicaWrite.Payload,
 	}
 
-	return &commands.ReplicaWriteReply{
+	return &pigeonhole.ReplicaWriteReply{
 		ErrorCode: successCode,
 	}
 }
@@ -152,7 +154,7 @@ func (r *Replica) ReceiveMessage(replicaMessageRaw []byte) []byte {
 		panic(err)
 	}
 
-	msg, err := common.ReplicaInnerMessageFromBytes(requestRaw)
+	msg, err := pigeonhole.ParseReplicaInnerMessage(requestRaw)
 	if err != nil {
 		panic(err)
 	}
@@ -163,10 +165,11 @@ func (r *Replica) ReceiveMessage(replicaMessageRaw []byte) []byte {
 		panic(err)
 	}
 	switch {
-	case msg.ReplicaRead != nil:
-		readReply := r.handleReplicaRead(msg.ReplicaRead)
-		replyInnerMessage := common.ReplicaMessageReplyInnerMessage{
-			ReplicaReadReply: readReply,
+	case msg.ReadMsg != nil:
+		readReply := r.handleReplicaRead(msg.ReadMsg)
+		replyInnerMessage := pigeonhole.ReplicaMessageReplyInnerMessage{
+			MessageType: 0, // 0 = read_reply
+			ReadReply:   readReply,
 		}
 		replyInnerMessageBlob := replyInnerMessage.Bytes()
 		envelopeReply := scheme.EnvelopeReply(r.PrivateKey, senderpubkey, replyInnerMessageBlob)
@@ -178,11 +181,12 @@ func (r *Replica) ReceiveMessage(replicaMessageRaw []byte) []byte {
 			ReplicaID:     r.ID,
 		}
 		return reply.ToBytes()
-	case msg.ReplicaWrite != nil:
-		writeReply := r.handleReplicaWrite(msg.ReplicaWrite)
+	case msg.WriteMsg != nil:
+		writeReply := r.handleReplicaWrite(msg.WriteMsg)
 		// XXX c.l.server.connector.DispatchReplication(myCmd)
-		replyInnerMessage := common.ReplicaMessageReplyInnerMessage{
-			ReplicaWriteReply: writeReply,
+		replyInnerMessage := pigeonhole.ReplicaMessageReplyInnerMessage{
+			MessageType: 1, // 1 = write_reply
+			WriteReply:  writeReply,
 		}
 		replyInnerMessageBlob := replyInnerMessage.Bytes()
 		envelopeReply := scheme.EnvelopeReply(r.PrivateKey, senderpubkey, replyInnerMessageBlob)
@@ -221,8 +225,8 @@ func (c *Courier) SendToReplica(id uint8, replicaMessage *commands.ReplicaMessag
 	}
 }
 
-func (c *Courier) ReceiveClientQuery(query []byte) *common.CourierEnvelopeReply {
-	courierMessage, err := common.CourierEnvelopeFromBytes(query)
+func (c *Courier) ReceiveClientQuery(query []byte) *pigeonhole.CourierEnvelopeReply {
+	courierMessage, err := pigeonhole.ParseCourierEnvelope(query)
 	if err != nil {
 		panic(err)
 	}
@@ -234,8 +238,8 @@ func (c *Courier) ReceiveClientQuery(query []byte) *common.CourierEnvelopeReply 
 		Geo:    c.Geo,
 		Scheme: c.ReplicaScheme,
 
-		SenderEPubKey: courierMessage.SenderEPubKey,
-		DEK:           courierMessage.DEK[0],
+		SenderEPubKey: courierMessage.SenderPubkey,
+		DEK:           &courierMessage.Dek1,
 		Ciphertext:    courierMessage.Ciphertext,
 	})
 
@@ -246,15 +250,15 @@ func (c *Courier) ReceiveClientQuery(query []byte) *common.CourierEnvelopeReply 
 		Geo:    c.Geo,
 		Scheme: c.ReplicaScheme,
 
-		SenderEPubKey: courierMessage.SenderEPubKey,
-		DEK:           courierMessage.DEK[1],
+		SenderEPubKey: courierMessage.SenderPubkey,
+		DEK:           &courierMessage.Dek2,
 		Ciphertext:    courierMessage.Ciphertext,
 	})
-	reply := &common.CourierEnvelopeReply{
-		EnvelopeHash: courierMessage.EnvelopeHash(),
-		ReplyIndex:   0,
-		Payload:      reply0.EnvelopeReply,
-		ErrorCode:    0,
+	reply := &pigeonhole.CourierEnvelopeReply{
+		ReplyIndex:    0,
+		Epoch:         courierMessage.Epoch,
+		CiphertextLen: uint32(len(reply0.EnvelopeReply)),
+		Ciphertext:    reply0.EnvelopeReply,
 	}
 	return reply
 }
@@ -283,7 +287,7 @@ func NewClientWriter(replicas []*Replica, MKEMNikeScheme *mkem.Scheme, ctx []byt
 	}
 }
 
-func (c *ClientWriter) ComposeSendNextMessage(message []byte) *common.CourierEnvelope {
+func (c *ClientWriter) ComposeSendNextMessage(message []byte) *pigeonhole.CourierEnvelope {
 	boxID, ciphertext, sigraw, err := c.StatefulWriter.EncryptNext(message)
 	if err != nil {
 		panic(err)
@@ -292,13 +296,15 @@ func (c *ClientWriter) ComposeSendNextMessage(message []byte) *common.CourierEnv
 	sig := &[bacap.SignatureSize]byte{}
 	copy(sig[:], sigraw)
 
-	writeRequest := commands.ReplicaWrite{
-		BoxID:     &boxID,
-		Signature: sig,
-		Payload:   ciphertext,
+	writeRequest := &pigeonhole.ReplicaWrite{
+		BoxID:      boxID,
+		Signature:  *sig,
+		PayloadLen: uint32(len(ciphertext)),
+		Payload:    ciphertext,
 	}
-	msg := &common.ReplicaInnerMessage{
-		ReplicaWrite: &writeRequest,
+	msg := &pigeonhole.ReplicaInnerMessage{
+		MessageType: 1, // 1 = write
+		WriteMsg:    writeRequest,
 	}
 
 	replicaPubKeys := make([]nike.PublicKey, 2)
@@ -310,11 +316,18 @@ func (c *ClientWriter) ComposeSendNextMessage(message []byte) *common.CourierEnv
 		replicaPubKeys, msg.Bytes())
 	mkemPublicKey := mkemPrivateKey.Public()
 
-	envelope := &common.CourierEnvelope{
-		SenderEPubKey:        mkemPublicKey.Bytes(),
+	senderPubkey := mkemPublicKey.Bytes()
+	envelope := &pigeonhole.CourierEnvelope{
 		IntermediateReplicas: [2]uint8{0, 1}, // indices to pkidoc's StorageReplicas
-		DEK:                  [2]*[mkem.DEKSize]byte{mkemCiphertext.DEKCiphertexts[0], mkemCiphertext.DEKCiphertexts[1]},
+		Dek1:                 *mkemCiphertext.DEKCiphertexts[0],
+		Dek2:                 *mkemCiphertext.DEKCiphertexts[1],
+		ReplyIndex:           0,
+		Epoch:                0,
+		SenderPubkeyLen:      uint16(len(senderPubkey)),
+		SenderPubkey:         senderPubkey,
+		CiphertextLen:        uint32(len(mkemCiphertext.Envelope)),
 		Ciphertext:           mkemCiphertext.Envelope,
+		IsRead:               0, // 0 = write
 	}
 	return envelope
 }
@@ -339,16 +352,17 @@ func NewClientReader(replicas []*Replica, MKEMNikeScheme *mkem.Scheme, universal
 	}
 }
 
-func (c *ClientReader) ComposeReadNextMessage() (nike.PrivateKey, *common.CourierEnvelope) {
+func (c *ClientReader) ComposeReadNextMessage() (nike.PrivateKey, *pigeonhole.CourierEnvelope) {
 	boxid, err := c.StatefulReader.NextBoxID()
 	if err != nil {
 		panic(err)
 	}
-	readMsg := common.ReplicaRead{
-		BoxID: boxid,
+	readMsg := &pigeonhole.ReplicaRead{
+		BoxID: *boxid,
 	}
-	msg := &common.ReplicaInnerMessage{
-		ReplicaRead: &readMsg,
+	msg := &pigeonhole.ReplicaInnerMessage{
+		MessageType: 0, // 0 = read
+		ReadMsg:     readMsg,
 	}
 
 	replicaPubKeys := make([]nike.PublicKey, 2)
@@ -358,11 +372,18 @@ func (c *ClientReader) ComposeReadNextMessage() (nike.PrivateKey, *common.Courie
 
 	mkemPrivateKey, mkemCiphertext := c.MKEMNikeScheme.Encapsulate(replicaPubKeys, msg.Bytes())
 	mkemPublicKey := mkemPrivateKey.Public()
-	envelope := &common.CourierEnvelope{
-		SenderEPubKey:        mkemPublicKey.Bytes(),
+	senderPubkey := mkemPublicKey.Bytes()
+	envelope := &pigeonhole.CourierEnvelope{
 		IntermediateReplicas: [2]uint8{0, 1}, // indices to pkidoc's StorageReplicas
-		DEK:                  [2]*[mkem.DEKSize]byte{mkemCiphertext.DEKCiphertexts[0], mkemCiphertext.DEKCiphertexts[1]},
+		Dek1:                 *mkemCiphertext.DEKCiphertexts[0],
+		Dek2:                 *mkemCiphertext.DEKCiphertexts[1],
+		ReplyIndex:           0,
+		Epoch:                0,
+		SenderPubkeyLen:      uint16(len(senderPubkey)),
+		SenderPubkey:         senderPubkey,
+		CiphertextLen:        uint32(len(mkemCiphertext.Envelope)),
 		Ciphertext:           mkemCiphertext.Envelope,
+		IsRead:               1, // 1 = read
 	}
 	return mkemPrivateKey, envelope
 }
@@ -403,24 +424,23 @@ func TestClientCourierProtocolFlow(t *testing.T) {
 
 	aliceMsg1 := []byte("Bob, Beware they are jamming GPS.")
 	messageToSend := alice.ComposeSendNextMessage(aliceMsg1)
-	aliceEnvHash1 := messageToSend.EnvelopeHash()
 	courierReply1 := courier.ReceiveClientQuery(messageToSend.Bytes())
-	require.Equal(t, *courierReply1.EnvelopeHash, *aliceEnvHash1)
+	require.NotNil(t, courierReply1)
 
 	// --- Bob retrieves and decrypts the message
 
 	bobPrivateKey1, bobReceiveRequest := bob.ComposeReadNextMessage()
 	bobReply1 := courier.ReceiveClientQuery(bobReceiveRequest.Bytes())
 
-	rawInnerMsg, err := mkemNikeScheme.DecryptEnvelope(bobPrivateKey1, replicas[0].PublicKey, bobReply1.Payload)
+	rawInnerMsg, err := mkemNikeScheme.DecryptEnvelope(bobPrivateKey1, replicas[0].PublicKey, bobReply1.Ciphertext)
 	require.NoError(t, err)
 
-	// common.ReplicaMessageReplyInnerMessage
-	innerMsg, err := common.ReplicaMessageReplyInnerMessageFromBytes(rawInnerMsg)
+	// pigeonhole.ReplicaMessageReplyInnerMessage
+	innerMsg, err := pigeonhole.ParseReplicaMessageReplyInnerMessage(rawInnerMsg)
 	require.NoError(t, err)
-	require.NotNil(t, innerMsg.ReplicaReadReply)
+	require.NotNil(t, innerMsg.ReadReply)
 
-	plaintext, err := bob.StatefulReader.DecryptNext(ctx, *innerMsg.ReplicaReadReply.BoxID, innerMsg.ReplicaReadReply.Payload, *innerMsg.ReplicaReadReply.Signature)
+	plaintext, err := bob.StatefulReader.DecryptNext(ctx, innerMsg.ReadReply.BoxID, innerMsg.ReadReply.Payload, innerMsg.ReadReply.Signature)
 	require.NoError(t, err)
 
 	require.Equal(t, aliceMsg1[:], plaintext[:])

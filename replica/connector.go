@@ -7,6 +7,8 @@ import (
 	"sync"
 	"time"
 
+	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
+
 	"golang.org/x/crypto/blake2b"
 	"gopkg.in/op/go-logging.v1"
 
@@ -17,7 +19,6 @@ import (
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"github.com/katzenpost/katzenpost/core/worker"
-	"github.com/katzenpost/katzenpost/replica/common"
 )
 
 type Connector struct {
@@ -61,8 +62,6 @@ func (co *Connector) Server() *Server {
 
 func getBoxID(cmd commands.Command) *[32]byte {
 	switch myCmd := cmd.(type) {
-	case *common.ReplicaRead:
-		return myCmd.BoxID
 	case *commands.ReplicaWrite:
 		return myCmd.BoxID
 	default:
@@ -100,7 +99,7 @@ func (co *Connector) doReplication(cmd *commands.ReplicaWrite) {
 		co.log.Error("Replication failed: no PKI document available")
 		return
 	}
-	descs, err := common.GetRemoteShards(co.server.identityPublicKey, cmd.BoxID, doc)
+	descs, err := replicaCommon.GetRemoteShards(co.server.identityPublicKey, cmd.BoxID, doc)
 	if err != nil {
 		co.log.Errorf("Replication failed: GetShards err: %v", err)
 		panic(err)

@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
+
 	"github.com/stretchr/testify/require"
 
 	"github.com/katzenpost/hpqc/hash"
@@ -22,7 +24,6 @@ import (
 	"github.com/katzenpost/katzenpost/core/pki"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/wire"
-	"github.com/katzenpost/katzenpost/replica/common"
 	"github.com/katzenpost/katzenpost/replica/config"
 )
 
@@ -128,7 +129,7 @@ func TestAuthentication(t *testing.T) {
 	courierLinkKeyPEM := kempem.ToPublicPEMString(courierKeys.LinkPubKey)
 
 	// Generate envelope keys for replicas
-	replicaEpoch, _, _ := common.ReplicaNow()
+	replicaEpoch, _, _ := replicaCommon.ReplicaNow()
 
 	// Create replica descriptors with envelope keys
 	replica1Desc := &pki.ReplicaDescriptor{
