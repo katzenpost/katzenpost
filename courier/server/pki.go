@@ -20,7 +20,7 @@ import (
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/worker"
-	"github.com/katzenpost/katzenpost/replica/common"
+	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
 )
 
 const NumPKIDocsToFetch = 3
@@ -38,7 +38,7 @@ type PKIWorker struct {
 	server *Server
 	*pki.WorkerBase
 
-	replicas *common.ReplicaMap
+	replicas *replicaCommon.ReplicaMap
 
 	impl pki.Client // PKI client for document fetching and publishing
 
@@ -51,7 +51,7 @@ func newPKIWorker(server *Server, pkiClient pki.Client, log *logging.Logger) (*P
 	p := &PKIWorker{
 		server:     server,
 		WorkerBase: pki.NewWorkerBase(pkiClient, log),
-		replicas:   common.NewReplicaMap(),
+		replicas:   replicaCommon.NewReplicaMap(),
 		impl:       pkiClient,
 	}
 
