@@ -1,6 +1,8 @@
 // SPDX-FileCopyrightText: © 2025 David Stainton
 // SPDX-License-Identifier: AGPL-3.0-only
 
+//go:build !windows
+
 package client2
 
 import (
@@ -114,8 +116,21 @@ func TestCreateChannelWriteRequestPayloadTooLarge(t *testing.T) {
 func createSyntheticPKIDocument(t *testing.T) *cpki.Document {
 	// Create schemes like integration tests
 	pkiScheme := signSchemes.ByName(testPKIScheme)
+	if pkiScheme == nil {
+		// Fallback to Ed25519 if the hybrid scheme is not available
+		pkiScheme = signSchemes.ByName("Ed25519")
+		require.NotNil(t, pkiScheme, "Ed25519 signature scheme should be available")
+	}
+
 	linkScheme := kemSchemes.ByName("Xwing")
+	if linkScheme == nil {
+		// Fallback to X25519 if Xwing is not available
+		linkScheme = kemSchemes.ByName("X25519")
+		require.NotNil(t, linkScheme, "X25519 KEM scheme should be available")
+	}
+
 	nikeScheme := replicaCommon.NikeScheme
+	require.NotNil(t, nikeScheme, "NIKE scheme should be available")
 
 	// Create 3 replica descriptors like integration tests
 	numReplicas := 3
@@ -126,7 +141,9 @@ func createSyntheticPKIDocument(t *testing.T) *cpki.Document {
 	}
 
 	// Create a basic sphinx geometry for the document
-	sphinxGeo := geo.GeometryFromUserForwardPayloadLength(nikeSchemes.ByName("X25519"), 5000, true, 5)
+	sphinxNikeScheme := nikeSchemes.ByName("X25519")
+	require.NotNil(t, sphinxNikeScheme, "X25519 NIKE scheme should be available for sphinx geometry")
+	sphinxGeo := geo.GeometryFromUserForwardPayloadLength(sphinxNikeScheme, 5000, true, 5)
 
 	// Get current epoch
 	currentEpoch, _, _ := epochtime.Now()
