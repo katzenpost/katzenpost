@@ -255,7 +255,7 @@ func (c *Courier) ReceiveClientQuery(query []byte) *pigeonhole.CourierEnvelopeRe
 		Ciphertext:    courierMessage.Ciphertext,
 	})
 	reply := &pigeonhole.CourierEnvelopeReply{
-		EnvelopeHash: [32]uint8{}, // TODO: Set proper envelope hash
+		EnvelopeHash: [32]uint8{},
 		ReplyIndex:   0,
 		PayloadLen:   uint32(len(reply0.EnvelopeReply)),
 		Payload:      reply0.EnvelopeReply,
