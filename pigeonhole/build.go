@@ -87,14 +87,26 @@ func main() {
 	fmt.Println("Trunnel code generation completed successfully!")
 }
 
-// findTrunnelBinary attempts to find the trunnel binary in various locations
+// findTrunnelBinary attempts to find the trunnel binary in trusted locations
 func findTrunnelBinary() (string, error) {
-	// First try to find it in PATH
-	if path, err := exec.LookPath("trunnel"); err == nil {
-		return path, nil
+	// First check the standard Go binary installation directory
+	goPath := os.Getenv("GOPATH")
+	if goPath == "" {
+		// Default GOPATH when not set
+		homeDir, err := os.UserHomeDir()
+		if err == nil {
+			goPath = filepath.Join(homeDir, "go")
+		}
 	}
 
-	// Try to find it in the Go module cache
+	if goPath != "" {
+		trunnelBinary := filepath.Join(goPath, "bin", "trunnel")
+		if info, err := os.Stat(trunnelBinary); err == nil && info.Mode()&0111 != 0 {
+			return trunnelBinary, nil
+		}
+	}
+
+	// Fallback: Look for trunnel binary in the Go module cache (if it exists as a module)
 	cmd := exec.Command("go", "list", "-m", "-f", "{{.Dir}}", "github.com/katzenpost/trunnel")
 	output, err := cmd.Output()
 	if err != nil {
@@ -111,8 +123,8 @@ func findTrunnelBinary() (string, error) {
 		return trunnelBinary, nil
 	}
 
-	// If not executable, try to make it executable
-	if err := os.Chmod(trunnelBinary, 0755); err != nil {
+	// If not executable, try to make it executable (owner-only for security)
+	if err := os.Chmod(trunnelBinary, 0700); err != nil {
 		return "", fmt.Errorf("trunnel binary found but not executable: %s", trunnelBinary)
 	}
 
