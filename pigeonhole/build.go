@@ -90,25 +90,51 @@ func main() {
 // findTrunnelBinary attempts to find the trunnel binary in trusted locations
 func findTrunnelBinary() (string, error) {
 	// First check the standard Go binary installation directory
-	goPath := os.Getenv("GOPATH")
+	if trunnelPath := checkGOPATHTrunnel(); trunnelPath != "" {
+		return trunnelPath, nil
+	}
+
+	// Fallback: Look for trunnel binary in the Go module cache
+	return findTrunnelInModuleCache()
+}
+
+// checkGOPATHTrunnel checks for trunnel binary in GOPATH/bin
+func checkGOPATHTrunnel() string {
+	goPath := getGOPATH()
 	if goPath == "" {
-		// Default GOPATH when not set
-		homeDir, err := os.UserHomeDir()
-		if err == nil {
-			goPath = filepath.Join(homeDir, "go")
-		}
+		return ""
 	}
 
+	trunnelBinary := filepath.Join(goPath, "bin", "trunnel")
+	if isExecutable(trunnelBinary) {
+		return trunnelBinary
+	}
+	return ""
+}
+
+// getGOPATH returns the GOPATH, using default if not set
+func getGOPATH() string {
+	goPath := os.Getenv("GOPATH")
 	if goPath != "" {
-		trunnelBinary := filepath.Join(goPath, "bin", "trunnel")
-		if info, err := os.Stat(trunnelBinary); err == nil && info.Mode()&0111 != 0 {
-			return trunnelBinary, nil
-		}
+		return goPath
 	}
 
-	// Fallback: Look for trunnel binary in the Go module cache (if it exists as a module)
-	// Check for go binary in standard locations for security
-	var goBinary string
+	// Default GOPATH when not set
+	homeDir, err := os.UserHomeDir()
+	if err == nil {
+		return filepath.Join(homeDir, "go")
+	}
+	return ""
+}
+
+// isExecutable checks if a file exists and is executable
+func isExecutable(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.Mode()&0111 != 0
+}
+
+// findGoBinary finds the go binary in standard trusted locations
+func findGoBinary() (string, error) {
 	standardGoPaths := []string{
 		"/usr/local/go/bin/go",
 		"/usr/bin/go",
@@ -120,20 +146,25 @@ func findTrunnelBinary() (string, error) {
 		standardGoPaths = append([]string{filepath.Join(goroot, "bin", "go")}, standardGoPaths...)
 	}
 
-	// Also check GOPATH/bin (same logic as for trunnel binary)
-	if goPath != "" {
+	// Also check GOPATH/bin
+	if goPath := getGOPATH(); goPath != "" {
 		standardGoPaths = append([]string{filepath.Join(goPath, "bin", "go")}, standardGoPaths...)
 	}
 
 	for _, path := range standardGoPaths {
-		if info, err := os.Stat(path); err == nil && info.Mode()&0111 != 0 {
-			goBinary = path
-			break
+		if isExecutable(path) {
+			return path, nil
 		}
 	}
 
-	if goBinary == "" {
-		return "", fmt.Errorf("could not find go binary in standard locations")
+	return "", fmt.Errorf("could not find go binary in standard locations")
+}
+
+// findTrunnelInModuleCache finds trunnel binary in the Go module cache
+func findTrunnelInModuleCache() (string, error) {
+	goBinary, err := findGoBinary()
+	if err != nil {
+		return "", err
 	}
 
 	cmd := exec.Command(goBinary, "list", "-m", "-f", "{{.Dir}}", "github.com/katzenpost/trunnel")
@@ -148,7 +179,7 @@ func findTrunnelBinary() (string, error) {
 	trunnelBinary := filepath.Join(trunnelModDir, "trunnel")
 
 	// Check if the binary exists and is executable
-	if info, err := os.Stat(trunnelBinary); err == nil && info.Mode()&0111 != 0 {
+	if isExecutable(trunnelBinary) {
 		return trunnelBinary, nil
 	}
 
