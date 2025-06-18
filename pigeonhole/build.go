@@ -107,7 +107,36 @@ func findTrunnelBinary() (string, error) {
 	}
 
 	// Fallback: Look for trunnel binary in the Go module cache (if it exists as a module)
-	cmd := exec.Command("go", "list", "-m", "-f", "{{.Dir}}", "github.com/katzenpost/trunnel")
+	// Check for go binary in standard locations for security
+	var goBinary string
+	standardGoPaths := []string{
+		"/usr/local/go/bin/go",
+		"/usr/bin/go",
+		"/opt/go/bin/go",
+	}
+
+	// Also check GOROOT if set
+	if goroot := os.Getenv("GOROOT"); goroot != "" {
+		standardGoPaths = append([]string{filepath.Join(goroot, "bin", "go")}, standardGoPaths...)
+	}
+
+	// Also check GOPATH/bin (same logic as for trunnel binary)
+	if goPath != "" {
+		standardGoPaths = append([]string{filepath.Join(goPath, "bin", "go")}, standardGoPaths...)
+	}
+
+	for _, path := range standardGoPaths {
+		if info, err := os.Stat(path); err == nil && info.Mode()&0111 != 0 {
+			goBinary = path
+			break
+		}
+	}
+
+	if goBinary == "" {
+		return "", fmt.Errorf("could not find go binary in standard locations")
+	}
+
+	cmd := exec.Command(goBinary, "list", "-m", "-f", "{{.Dir}}", "github.com/katzenpost/trunnel")
 	output, err := cmd.Output()
 	if err != nil {
 		return "", fmt.Errorf("could not find trunnel module: %v", err)
