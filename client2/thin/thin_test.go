@@ -11,10 +11,11 @@ import (
 	"testing"
 
 	"github.com/fxamacker/cbor/v2"
+	"github.com/katzenpost/hpqc/nike/schemes"
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
-	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
+	pigeonholeGeo "github.com/katzenpost/katzenpost/pigeonhole/geo"
 	"github.com/stretchr/testify/require"
 )
 
@@ -31,9 +32,8 @@ func TestThinTCPSendRecv(t *testing.T) {
 	defaultSphinxGeometry := &geo.Geometry{
 		UserForwardPayloadLength: 1000,
 	}
-	defaultPigeonholeGeometry := &replicaCommon.Geometry{
-		BoxPayloadLength: 1000,
-	}
+	nikeScheme := schemes.ByName("x25519")
+	defaultPigeonholeGeometry := pigeonholeGeo.NewGeometry(1000, nikeScheme)
 
 	thin := ThinClient{
 		cfg: &Config{
@@ -113,9 +113,7 @@ func TestThinTCPSendRecv(t *testing.T) {
 
 	// test WriteChannel
 
-	pigeonholeGeometry := &replicaCommon.Geometry{
-		BoxPayloadLength: 50,
-	}
+	pigeonholeGeometry := pigeonholeGeo.NewGeometry(50, nikeScheme)
 
 	thin.cfg = &Config{
 		SphinxGeometry:     defaultSphinxGeometry,
@@ -164,9 +162,8 @@ func TestCopyChannelValidation(t *testing.T) {
 	defaultSphinxGeometry := &geo.Geometry{
 		UserForwardPayloadLength: 1000,
 	}
-	defaultPigeonholeGeometry := &replicaCommon.Geometry{
-		BoxPayloadLength: 1000,
-	}
+	nikeScheme := schemes.ByName("x25519")
+	defaultPigeonholeGeometry := pigeonholeGeo.NewGeometry(1000, nikeScheme)
 
 	thin := ThinClient{
 		cfg: &Config{

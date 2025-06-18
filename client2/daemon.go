@@ -27,8 +27,8 @@ import (
 	"github.com/katzenpost/katzenpost/core/log"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	sphinxConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
-	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"github.com/katzenpost/katzenpost/core/worker"
+	"github.com/katzenpost/katzenpost/pigeonhole"
 	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
 )
 
@@ -450,7 +450,7 @@ func (d *Daemon) handleChannelReply(appid *[AppIDLength]byte,
 	}
 
 	// First, parse the courier query reply to check what type of reply it is
-	courierQueryReply, err := replicaCommon.CourierQueryReplyFromBytes(plaintext)
+	courierQueryReply, err := pigeonhole.ParseCourierQueryReply(plaintext)
 	if err != nil {
 		d.log.Errorf("failed to unmarshal courier query reply: %s", err)
 		return fmt.Errorf("failed to unmarshal courier query reply: %s", err)
@@ -462,8 +462,8 @@ func (d *Daemon) handleChannelReply(appid *[AppIDLength]byte,
 	}
 
 	// Handle envelope replies (read/write operations)
-	if courierQueryReply.CourierEnvelopeReply != nil {
-		env, envelopeDesc, privateKey, err := d.processEnvelopeReply(courierQueryReply.CourierEnvelopeReply, channelDesc)
+	if courierQueryReply.EnvelopeReply != nil {
+		env, envelopeDesc, privateKey, err := d.processEnvelopeReply(courierQueryReply.EnvelopeReply, channelDesc)
 		if err != nil {
 			return err
 		}
@@ -473,10 +473,10 @@ func (d *Daemon) handleChannelReply(appid *[AppIDLength]byte,
 			return err
 		}
 
-		envHash := env.EnvelopeHash
+		envHash := (*[hash.HashSize]byte)(env.EnvelopeHash[:])
 
 		switch {
-		case innerMsg.ReplicaReadReply != nil:
+		case innerMsg.ReadReply != nil:
 			params := &ReplyHandlerParams{
 				AppID:       appid,
 				MessageID:   mesgID,
@@ -487,8 +487,8 @@ func (d *Daemon) handleChannelReply(appid *[AppIDLength]byte,
 				IsWriter:    isWriter,
 				Conn:        conn,
 			}
-			return d.handleReadReply(params, innerMsg.ReplicaReadReply)
-		case innerMsg.ReplicaWriteReply != nil:
+			return d.handleReadReply(params, innerMsg.ReadReply)
+		case innerMsg.WriteReply != nil:
 			params := &ReplyHandlerParams{
 				AppID:       appid,
 				MessageID:   mesgID,
@@ -499,7 +499,7 @@ func (d *Daemon) handleChannelReply(appid *[AppIDLength]byte,
 				IsWriter:    isWriter,
 				Conn:        conn,
 			}
-			return d.handleWriteReply(params, innerMsg.ReplicaWriteReply)
+			return d.handleWriteReply(params, innerMsg.WriteReply)
 		}
 		d.log.Errorf("bug 6, invalid book keeping for channelID %x", channelID[:])
 		return fmt.Errorf("bug 6, invalid book keeping for channelID %x", channelID[:])
@@ -552,8 +552,8 @@ func (d *Daemon) validateChannel(channelID [thin.ChannelIDLength]byte, channelDe
 }
 
 // processEnvelopeReply processes the courier envelope reply and extracts necessary information
-func (d *Daemon) processEnvelopeReply(env *replicaCommon.CourierEnvelopeReply, channelDesc *ChannelDescriptor) (*replicaCommon.CourierEnvelopeReply, *EnvelopeDescriptor, nike.PrivateKey, error) {
-	envHash := env.EnvelopeHash
+func (d *Daemon) processEnvelopeReply(env *pigeonhole.CourierEnvelopeReply, channelDesc *ChannelDescriptor) (*pigeonhole.CourierEnvelopeReply, *EnvelopeDescriptor, nike.PrivateKey, error) {
+	envHash := (*[hash.HashSize]byte)(env.EnvelopeHash[:])
 
 	// DEBUG: Log envelope hash and map size when processing reply
 	channelDesc.EnvelopeLock.RLock()
@@ -583,7 +583,7 @@ func (d *Daemon) processEnvelopeReply(env *replicaCommon.CourierEnvelopeReply, c
 }
 
 // decryptMKEMEnvelope decrypts the MKEM envelope and returns the inner message
-func (d *Daemon) decryptMKEMEnvelope(env *replicaCommon.CourierEnvelopeReply, envelopeDesc *EnvelopeDescriptor, privateKey nike.PrivateKey) (*replicaCommon.ReplicaMessageReplyInnerMessage, error) {
+func (d *Daemon) decryptMKEMEnvelope(env *pigeonhole.CourierEnvelopeReply, envelopeDesc *EnvelopeDescriptor, privateKey nike.PrivateKey) (*pigeonhole.ReplicaMessageReplyInnerMessage, error) {
 	mkemPrivateKeyBytes, _ := privateKey.MarshalBinary()
 	fmt.Printf("BOB DECRYPTS WITH MKEM KEY: %x\n", mkemPrivateKeyBytes[:16]) // First 16 bytes for brevity
 
@@ -633,7 +633,7 @@ func (d *Daemon) decryptMKEMEnvelope(env *replicaCommon.CourierEnvelopeReply, en
 	}
 
 	d.log.Debugf("MKEM DECRYPT SUCCESS: Decrypted %d bytes", len(rawInnerMsg))
-	innerMsg, err := replicaCommon.ReplicaMessageReplyInnerMessageFromBytes(rawInnerMsg)
+	innerMsg, err := pigeonhole.ParseReplicaMessageReplyInnerMessage(rawInnerMsg)
 	if err != nil {
 		d.log.Errorf("failed to unmarshal inner message: %s", err)
 		return nil, fmt.Errorf("failed to unmarshal inner message: %s", err)
@@ -655,7 +655,7 @@ type ReplyHandlerParams struct {
 }
 
 // handleReadReply processes a replica read reply
-func (d *Daemon) handleReadReply(params *ReplyHandlerParams, readReply *replicaCommon.ReplicaReadReply) error {
+func (d *Daemon) handleReadReply(params *ReplyHandlerParams, readReply *pigeonhole.ReplicaReadReply) error {
 	if !params.IsReader {
 		d.log.Errorf("bug 4, invalid book keeping for channelID %x", params.ChannelID[:])
 		return fmt.Errorf("bug 4, invalid book keeping for channelID %x", params.ChannelID[:])
@@ -667,9 +667,11 @@ func (d *Daemon) handleReadReply(params *ReplyHandlerParams, readReply *replicaC
 		return fmt.Errorf("replica read failed with error code %d", readReply.ErrorCode)
 	}
 
-	if readReply.Signature == nil {
-		d.log.Debugf("replica returned nil signature for read operation")
-		return fmt.Errorf("replica read reply has nil signature")
+	// Check if signature is all zeros (equivalent to nil check)
+	var zeroSig [64]uint8
+	if readReply.Signature == zeroSig {
+		d.log.Debugf("replica returned zero signature for read operation")
+		return fmt.Errorf("replica read reply has zero signature")
 	}
 
 	var boxid *[bacap.BoxIDSize]byte
@@ -690,11 +692,12 @@ func (d *Daemon) handleReadReply(params *ReplyHandlerParams, readReply *replicaC
 
 	d.log.Debugf("BACAP DECRYPT: Starting decryption for BoxID %x with payload size %d bytes", boxid[:], len(readReply.Payload))
 	params.ChannelDesc.ReaderLock.Lock()
+	signature := (*[bacap.SignatureSize]byte)(readReply.Signature[:])
 	innerplaintext, err := params.ChannelDesc.StatefulReader.DecryptNext(
 		[]byte(constants.PIGEONHOLE_CTX),
 		*boxid,
 		readReply.Payload,
-		*readReply.Signature)
+		*signature)
 	params.ChannelDesc.ReaderLock.Unlock()
 	if err != nil {
 		d.log.Errorf("BACAP DECRYPT FAILED for BoxID %x: %s", boxid[:], err)
@@ -732,7 +735,7 @@ func (d *Daemon) handleReadReply(params *ReplyHandlerParams, readReply *replicaC
 }
 
 // handleCopyReply processes a copy command reply
-func (d *Daemon) handleCopyReply(appid *[AppIDLength]byte, channelID [thin.ChannelIDLength]byte, copyReply *replicaCommon.CopyCommandReply, conn *incomingConn) error {
+func (d *Daemon) handleCopyReply(appid *[AppIDLength]byte, channelID [thin.ChannelIDLength]byte, copyReply *pigeonhole.CopyCommandReply, conn *incomingConn) error {
 	var errMsg string
 	if copyReply.ErrorCode != 0 {
 		errMsg = fmt.Sprintf("copy command failed with error code %d", copyReply.ErrorCode)
@@ -757,7 +760,7 @@ func (d *Daemon) handleCopyReply(appid *[AppIDLength]byte, channelID [thin.Chann
 }
 
 // handleWriteReply processes a replica write reply
-func (d *Daemon) handleWriteReply(params *ReplyHandlerParams, writeReply *commands.ReplicaWriteReply) error {
+func (d *Daemon) handleWriteReply(params *ReplyHandlerParams, writeReply *pigeonhole.ReplicaWriteReply) error {
 	if !params.IsWriter {
 		d.log.Errorf("bug 5, invalid book keeping for channelID %x", params.ChannelID[:])
 		return fmt.Errorf("bug 5, invalid book keeping for channelID %x", params.ChannelID[:])
@@ -1070,19 +1073,25 @@ func (d *Daemon) copyChannel(request *Request) {
 	writeCap := channelDesc.BoxOwnerCap
 
 	// Create the CopyCommand
-	copyCommand := &replicaCommon.CopyCommand{
-		WriteCap: writeCap,
+	writeCapBytes, err := writeCap.MarshalBinary()
+	if err != nil {
+		d.log.Errorf("failed to marshal BoxOwnerCap: %s", err)
+		return
+	}
+	copyCommand := &pigeonhole.CopyCommand{
+		WriteCapLen: uint32(len(writeCapBytes)),
+		WriteCap:    writeCapBytes,
 	}
 
 	// Create CourierQuery with CopyCommand
-	courierQuery := &replicaCommon.CourierQuery{
-		CourierEnvelope: nil,
-		CopyCommand:     copyCommand,
+	courierQuery := &pigeonhole.CourierQuery{
+		QueryType:   1, // 1 = copy_command
+		CopyCommand: copyCommand,
 	}
 
 	// Generate SURB ID
 	surbid := &[sphinxConstants.SURBIDLength]byte{}
-	_, err := rand.Reader.Read(surbid[:])
+	_, err = rand.Reader.Read(surbid[:])
 	if err != nil {
 		d.log.Errorf("copyChannel failure: failed to generate SURB ID: %s", err)
 		d.sendCopyChannelErrorResponse(request, channelID, "failed to generate SURB ID")

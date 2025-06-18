@@ -31,7 +31,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
-	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
+	pigeonholeGeo "github.com/katzenpost/katzenpost/pigeonhole/geo"
 )
 
 // document contains fields from Document but not the encoding.BinaryMarshaler methods
@@ -156,7 +156,8 @@ func TestConnection(t *testing.T) {
 	numStorageReplicas := 0
 
 	// Compute pigeonhole geometry from sphinx geometry for test
-	pigeonholeGeometry := replicaCommon.GeometryFromSphinxGeometry(g, sphinxNikeScheme)
+	pigeonholeGeometry, err := pigeonholeGeo.NewGeometryFromSphinx(g, sphinxNikeScheme)
+	require.NoError(t, err)
 
 	clientCfg := &config.Config{
 		ListenNetwork:      "tcp",

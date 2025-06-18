@@ -30,7 +30,7 @@ import (
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/worker"
-	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
+	pigeonholeGeo "github.com/katzenpost/katzenpost/pigeonhole/geo"
 )
 
 const (
@@ -102,7 +102,7 @@ type Config struct {
 	SphinxGeometry *geo.Geometry
 
 	// PigeonholeGeometry is the pigeonhole geometry used for payload size validation.
-	PigeonholeGeometry *replicaCommon.Geometry
+	PigeonholeGeometry *pigeonholeGeo.Geometry
 
 	// Network is the client daemon's listening network.
 	Network string

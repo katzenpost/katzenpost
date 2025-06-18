@@ -12,7 +12,6 @@ import (
 
 	"github.com/katzenpost/hpqc/bacap"
 	"github.com/katzenpost/hpqc/hash"
-	"github.com/katzenpost/hpqc/kem/mkem"
 	"github.com/katzenpost/hpqc/nike"
 	hpqcRand "github.com/katzenpost/hpqc/rand"
 
@@ -21,8 +20,7 @@ import (
 	"github.com/katzenpost/katzenpost/client2/thin"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	sphinxConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
-	"github.com/katzenpost/katzenpost/core/wire/commands"
-	pigeonholeCommon "github.com/katzenpost/katzenpost/pigeonhole/common"
+	"github.com/katzenpost/katzenpost/pigeonhole"
 	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
 )
 
@@ -53,7 +51,7 @@ type EnvelopeDescriptor struct {
 
 // StoredEnvelopeData contains the envelope and associated box ID for reuse
 type StoredEnvelopeData struct {
-	Envelope *replicaCommon.CourierEnvelope
+	Envelope *pigeonhole.CourierEnvelope
 	BoxID    *[bacap.BoxIDSize]byte
 }
 
@@ -103,7 +101,7 @@ func CreateChannelWriteRequest(
 	channelID [thin.ChannelIDLength]byte,
 	statefulWriter *bacap.StatefulWriter,
 	payload []byte,
-	doc *cpki.Document) (*replicaCommon.CourierEnvelope, nike.PrivateKey, error) {
+	doc *cpki.Document) (*pigeonhole.CourierEnvelope, nike.PrivateKey, error) {
 
 	boxID, ciphertext, sigraw, err := statefulWriter.EncryptNext(payload)
 	if err != nil {
@@ -117,16 +115,24 @@ func CreateChannelWriteRequest(
 	sig := [bacap.SignatureSize]byte{}
 	copy(sig[:], sigraw)
 
-	writeRequest := commands.ReplicaWrite{
-		BoxID:     &boxID,
-		Signature: &sig,
-		Payload:   ciphertext,
+	// Convert to pigeonhole.ReplicaWrite
+	var boxIDArray [32]uint8
+	copy(boxIDArray[:], boxID[:])
+	var sigArray [64]uint8
+	copy(sigArray[:], sig[:])
+
+	writeRequest := &pigeonhole.ReplicaWrite{
+		BoxID:      boxIDArray,
+		Signature:  sigArray,
+		PayloadLen: uint32(len(ciphertext)),
+		Payload:    ciphertext,
 	}
-	msg := &replicaCommon.ReplicaInnerMessage{
-		ReplicaWrite: &writeRequest,
+	msg := &pigeonhole.ReplicaInnerMessage{
+		MessageType: 1, // 1 = write
+		WriteMsg:    writeRequest,
 	}
 
-	intermediateReplicas, replicaPubKeys, err := pigeonholeCommon.GetRandomIntermediateReplicas(doc)
+	intermediateReplicas, replicaPubKeys, err := pigeonhole.GetRandomIntermediateReplicas(doc)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -142,19 +148,30 @@ func CreateChannelWriteRequest(
 	fmt.Printf("ALICE CREATES ENVELOPE WITH MKEM KEY: %x\n", mkemPrivateKeyBytes[:16]) // First 16 bytes for brevity
 	fmt.Printf("ALICE MKEM ENCRYPT SUCCESS: Encrypted to %d bytes\n", len(mkemCiphertext.Envelope))
 
-	envelope := &replicaCommon.CourierEnvelope{
-		SenderEPubKey:        mkemPublicKey.Bytes(),
-		Epoch:                doc.Epoch,
+	// Convert DEK ciphertexts to arrays
+	var dek1, dek2 [60]uint8
+	copy(dek1[:], mkemCiphertext.DEKCiphertexts[0][:])
+	copy(dek2[:], mkemCiphertext.DEKCiphertexts[1][:])
+
+	senderPubkeyBytes := mkemPublicKey.Bytes()
+	envelope := &pigeonhole.CourierEnvelope{
 		IntermediateReplicas: intermediateReplicas,
-		DEK:                  [2]*[mkem.DEKSize]byte{mkemCiphertext.DEKCiphertexts[0], mkemCiphertext.DEKCiphertexts[1]},
+		Dek1:                 dek1,
+		Dek2:                 dek2,
+		ReplyIndex:           0,
+		Epoch:                doc.Epoch,
+		SenderPubkeyLen:      uint16(len(senderPubkeyBytes)),
+		SenderPubkey:         senderPubkeyBytes,
+		CiphertextLen:        uint32(len(mkemCiphertext.Envelope)),
 		Ciphertext:           mkemCiphertext.Envelope,
+		IsRead:               0, // 0 = write
 	}
 	return envelope, mkemPrivateKey, err
 }
 
 func CreateChannelReadRequest(channelID [thin.ChannelIDLength]byte,
 	statefulReader *bacap.StatefulReader,
-	doc *cpki.Document) (*replicaCommon.CourierEnvelope, nike.PrivateKey, error) {
+	doc *cpki.Document) (*pigeonhole.CourierEnvelope, nike.PrivateKey, error) {
 
 	boxID, err := statefulReader.NextBoxID()
 	if err != nil {
@@ -166,15 +183,20 @@ func CreateChannelReadRequest(channelID [thin.ChannelIDLength]byte,
 
 func CreateChannelReadRequestWithBoxID(channelID [thin.ChannelIDLength]byte,
 	boxID *[bacap.BoxIDSize]byte,
-	doc *cpki.Document) (*replicaCommon.CourierEnvelope, nike.PrivateKey, error) {
+	doc *cpki.Document) (*pigeonhole.CourierEnvelope, nike.PrivateKey, error) {
 
-	msg := &replicaCommon.ReplicaInnerMessage{
-		ReplicaRead: &replicaCommon.ReplicaRead{
-			BoxID: boxID,
+	// Convert boxID to array
+	var boxIDArray [32]uint8
+	copy(boxIDArray[:], boxID[:])
+
+	msg := &pigeonhole.ReplicaInnerMessage{
+		MessageType: 0, // 0 = read
+		ReadMsg: &pigeonhole.ReplicaRead{
+			BoxID: boxIDArray,
 		},
 	}
 
-	intermediateReplicas, replicaPubKeys, err := pigeonholeCommon.GetRandomIntermediateReplicas(doc)
+	intermediateReplicas, replicaPubKeys, err := pigeonhole.GetRandomIntermediateReplicas(doc)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -187,13 +209,23 @@ func CreateChannelReadRequestWithBoxID(channelID [thin.ChannelIDLength]byte,
 	fmt.Printf("BOB CREATES ENVELOPE WITH MKEM KEY: %x\n", mkemPrivateKeyBytes[:16]) // First 16 bytes for brevity
 	fmt.Printf("BOB MKEM ENCRYPT SUCCESS: Encrypted to %d bytes\n", len(mkemCiphertext.Envelope))
 
-	envelope := &replicaCommon.CourierEnvelope{
-		SenderEPubKey:        mkemPrivateKey.Public().Bytes(),
-		Epoch:                doc.Epoch,
+	// Convert DEK ciphertexts to arrays
+	var dek1, dek2 [60]uint8
+	copy(dek1[:], mkemCiphertext.DEKCiphertexts[0][:])
+	copy(dek2[:], mkemCiphertext.DEKCiphertexts[1][:])
+
+	senderPubkeyBytes := mkemPrivateKey.Public().Bytes()
+	envelope := &pigeonhole.CourierEnvelope{
 		IntermediateReplicas: intermediateReplicas,
-		DEK:                  [2]*[mkem.DEKSize]byte{mkemCiphertext.DEKCiphertexts[0], mkemCiphertext.DEKCiphertexts[1]},
+		Dek1:                 dek1,
+		Dek2:                 dek2,
+		ReplyIndex:           0,
+		Epoch:                doc.Epoch,
+		SenderPubkeyLen:      uint16(len(senderPubkeyBytes)),
+		SenderPubkey:         senderPubkeyBytes,
+		CiphertextLen:        uint32(len(mkemCiphertext.Envelope)),
 		Ciphertext:           mkemCiphertext.Envelope,
-		IsRead:               true,
+		IsRead:               1, // 1 = read
 	}
 	return envelope, mkemPrivateKey, nil
 }
@@ -307,9 +339,9 @@ func (d *Daemon) writeChannel(request *Request) {
 	}
 	destinationIdHash, recipientQueueID := GetRandomCourier(doc)
 	// Wrap CourierEnvelope in CourierQuery
-	courierQuery := &replicaCommon.CourierQuery{
-		CourierEnvelope: courierEnvelope,
-		CopyCommand:     nil,
+	courierQuery := &pigeonhole.CourierQuery{
+		QueryType: 0, // 0 = envelope
+		Envelope:  courierEnvelope,
 	}
 
 	sendRequest := &Request{
@@ -371,7 +403,7 @@ func (d *Daemon) writeChannel(request *Request) {
 }
 
 // getOrCreateEnvelope retrieves a stored envelope or creates a new one for the read request
-func (d *Daemon) getOrCreateEnvelope(request *Request, channelDesc *ChannelDescriptor, doc *cpki.Document) (*replicaCommon.CourierEnvelope, nike.PrivateKey, error) {
+func (d *Daemon) getOrCreateEnvelope(request *Request, channelDesc *ChannelDescriptor, doc *cpki.Document) (*pigeonhole.CourierEnvelope, nike.PrivateKey, error) {
 	// Check if we have a stored envelope for this message ID
 	if request.ID != nil {
 		if envelope, privateKey, found := d.getStoredEnvelope(request.ID, channelDesc); found {
@@ -385,7 +417,7 @@ func (d *Daemon) getOrCreateEnvelope(request *Request, channelDesc *ChannelDescr
 
 // getStoredEnvelope retrieves a previously stored envelope and its private key
 // Returns the envelope, private key, and a boolean indicating if found
-func (d *Daemon) getStoredEnvelope(messageID *[thin.MessageIDLength]byte, channelDesc *ChannelDescriptor) (*replicaCommon.CourierEnvelope, nike.PrivateKey, bool) {
+func (d *Daemon) getStoredEnvelope(messageID *[thin.MessageIDLength]byte, channelDesc *ChannelDescriptor) (*pigeonhole.CourierEnvelope, nike.PrivateKey, bool) {
 	channelDesc.StoredEnvelopesLock.RLock()
 	storedData, exists := channelDesc.StoredEnvelopes[*messageID]
 	channelDesc.StoredEnvelopesLock.RUnlock()
@@ -426,7 +458,7 @@ func (d *Daemon) getStoredEnvelope(messageID *[thin.MessageIDLength]byte, channe
 }
 
 // createNewEnvelope creates a new courier envelope for the read request
-func (d *Daemon) createNewEnvelope(request *Request, channelDesc *ChannelDescriptor, doc *cpki.Document) (*replicaCommon.CourierEnvelope, nike.PrivateKey, error) {
+func (d *Daemon) createNewEnvelope(request *Request, channelDesc *ChannelDescriptor, doc *cpki.Document) (*pigeonhole.CourierEnvelope, nike.PrivateKey, error) {
 	boxID, err := channelDesc.StatefulReader.NextBoxID()
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to get next box ID: %s", err)
@@ -474,7 +506,7 @@ func (d *Daemon) sendReadChannelErrorResponse(request *Request, channelID [thin.
 }
 
 // storeEnvelopeDescriptor stores the envelope descriptor for new envelopes (not reused ones)
-func (d *Daemon) storeEnvelopeDescriptor(courierEnvelope *replicaCommon.CourierEnvelope, envelopePrivateKey nike.PrivateKey, channelDesc *ChannelDescriptor, doc *cpki.Document) error {
+func (d *Daemon) storeEnvelopeDescriptor(courierEnvelope *pigeonhole.CourierEnvelope, envelopePrivateKey nike.PrivateKey, channelDesc *ChannelDescriptor, doc *cpki.Document) error {
 	envHash := courierEnvelope.EnvelopeHash()
 
 	// DEBUG: Log envelope hash and map size when storing
@@ -485,7 +517,7 @@ func (d *Daemon) storeEnvelopeDescriptor(courierEnvelope *replicaCommon.CourierE
 
 	// DEBUG: Log the raw data being hashed to identify the issue
 	fmt.Printf("DEBUG ENVELOPE DATA:\n")
-	pubKeyLen := len(courierEnvelope.SenderEPubKey)
+	pubKeyLen := len(courierEnvelope.SenderPubkey)
 	if pubKeyLen > 32 {
 		pubKeyLen = 32
 	}
@@ -493,7 +525,7 @@ func (d *Daemon) storeEnvelopeDescriptor(courierEnvelope *replicaCommon.CourierE
 	if cipherLen > 32 {
 		cipherLen = 32
 	}
-	fmt.Printf("  SenderEPubKey: %x\n", courierEnvelope.SenderEPubKey[:pubKeyLen])
+	fmt.Printf("  SenderPubkey: %x\n", courierEnvelope.SenderPubkey[:pubKeyLen])
 	fmt.Printf("  Ciphertext: %x\n", courierEnvelope.Ciphertext[:cipherLen])
 
 	// Only store envelope descriptor for new envelopes (not reused ones)
@@ -531,7 +563,7 @@ func (d *Daemon) storeEnvelopeDescriptor(courierEnvelope *replicaCommon.CourierE
 }
 
 // sendEnvelopeToCourier sends the courier envelope via Sphinx and sets up reply handling
-func (d *Daemon) sendEnvelopeToCourier(request *Request, channelID [thin.ChannelIDLength]byte, courierEnvelope *replicaCommon.CourierEnvelope, doc *cpki.Document) error {
+func (d *Daemon) sendEnvelopeToCourier(request *Request, channelID [thin.ChannelIDLength]byte, courierEnvelope *pigeonhole.CourierEnvelope, doc *cpki.Document) error {
 	surbid := &[sphinxConstants.SURBIDLength]byte{}
 	_, err := rand.Reader.Read(surbid[:])
 	if err != nil {
@@ -541,9 +573,9 @@ func (d *Daemon) sendEnvelopeToCourier(request *Request, channelID [thin.Channel
 	destinationIdHash, recipientQueueID := GetRandomCourier(doc)
 
 	// Wrap CourierEnvelope in CourierQuery
-	courierQuery := &replicaCommon.CourierQuery{
-		CourierEnvelope: courierEnvelope,
-		CopyCommand:     nil,
+	courierQuery := &pigeonhole.CourierQuery{
+		QueryType: 0, // 0 = envelope
+		Envelope:  courierEnvelope,
 	}
 
 	sendRequest := &Request{

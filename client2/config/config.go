@@ -24,7 +24,7 @@ import (
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
-	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
+	pigeonholeGeo "github.com/katzenpost/katzenpost/pigeonhole/geo"
 
 	"github.com/katzenpost/katzenpost/client2/proxy"
 )
@@ -293,7 +293,7 @@ type Config struct {
 	SphinxGeometry *geo.Geometry
 
 	// PigeonholeGeometry
-	PigeonholeGeometry *replicaCommon.Geometry
+	PigeonholeGeometry *pigeonholeGeo.Geometry
 
 	// Logging
 	Logging *Logging
