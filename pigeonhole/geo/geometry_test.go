@@ -18,7 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestGeometry_UseCase1_FromBoxPayloadLength(t *testing.T) {
+func TestGeometryUseCase1FromBoxPayloadLength(t *testing.T) {
 	// Use Case 1: Given BoxPayloadLength, derive all envelope sizes
 	nikeScheme := schemes.ByName("x25519")
 	require.NotNil(t, nikeScheme)
@@ -44,7 +44,7 @@ func TestGeometry_UseCase1_FromBoxPayloadLength(t *testing.T) {
 	t.Logf("Geometry for BoxPayloadLength=%d:\n%s", boxPayloadLength, g.String())
 }
 
-func TestGeometry_UseCase2_ToSphinxGeometry(t *testing.T) {
+func TestGeometryUseCase2ToSphinxGeometry(t *testing.T) {
 	// Use Case 2: Given precomputed Geometry, derive accommodating Sphinx Geometry
 	nikeScheme := schemes.ByName("x25519")
 	require.NotNil(t, nikeScheme)
@@ -72,7 +72,7 @@ func TestGeometry_UseCase2_ToSphinxGeometry(t *testing.T) {
 	t.Logf("Sphinx PacketLength: %d", sphinxGeo.PacketLength)
 }
 
-func TestGeometry_UseCase3_FromSphinxGeometry(t *testing.T) {
+func TestGeometryUseCase3FromSphinxGeometry(t *testing.T) {
 	// Use Case 3: Given Sphinx Geometry constraint, derive optimal Geometry
 	nikeScheme := schemes.ByName("x25519")
 	require.NotNil(t, nikeScheme)
@@ -105,7 +105,7 @@ func TestGeometry_UseCase3_FromSphinxGeometry(t *testing.T) {
 	t.Logf("Space utilization: %.1f%%", float64(maxEnvelopeSize)*100/float64(sphinxGeo.UserForwardPayloadLength))
 }
 
-func TestGeometry_PrecisionComparison(t *testing.T) {
+func TestGeometryPrecisionComparison(t *testing.T) {
 	// Test that demonstrates the precision and determinism of trunnel's fixed binary format
 	nikeScheme := schemes.ByName("x25519")
 	require.NotNil(t, nikeScheme)
@@ -134,7 +134,7 @@ func TestGeometry_PrecisionComparison(t *testing.T) {
 	}
 }
 
-func TestGeometry_BidirectionalSizing(t *testing.T) {
+func TestGeometryBidirectionalSizing(t *testing.T) {
 	// Test the bidirectional sizing capability
 	nikeScheme := schemes.ByName("x25519")
 	require.NotNil(t, nikeScheme)
@@ -158,7 +158,7 @@ func TestGeometry_BidirectionalSizing(t *testing.T) {
 	t.Logf("Sphinx UserForwardPayloadLength: %d", sphinxGeo.UserForwardPayloadLength)
 }
 
-func TestGeometry_PrecisePredictions(t *testing.T) {
+func TestGeometryPrecisePredictions(t *testing.T) {
 	// Test that geometry predictions exactly match actual serialized message sizes
 	// This test creates real messages like the integration tests do
 	nikeScheme := schemes.ByName("x25519")
