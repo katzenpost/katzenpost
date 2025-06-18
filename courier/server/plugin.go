@@ -368,10 +368,11 @@ func (e *Courier) tryImmediateReplyProxy(reply *commands.ReplicaMessageReply) bo
 		courierReply := &pigeonhole.CourierQueryReply{
 			ReplyType: 0, // 0 = envelope_reply
 			EnvelopeReply: &pigeonhole.CourierEnvelopeReply{
-				ReplyIndex:    reply.ReplicaID, // Use the replica ID that responded
-				Epoch:         0,               // TODO: Set proper epoch
-				CiphertextLen: uint32(len(reply.EnvelopeReply)),
-				Ciphertext:    reply.EnvelopeReply,
+				EnvelopeHash: [32]uint8{},     // TODO: Set proper envelope hash
+				ReplyIndex:   reply.ReplicaID, // Use the replica ID that responded
+				PayloadLen:   uint32(len(reply.EnvelopeReply)),
+				Payload:      reply.EnvelopeReply,
+				ErrorCode:    0,
 			},
 		}
 
@@ -478,10 +479,11 @@ func (e *Courier) handleNewMessage(envHash *[hash.HashSize]byte, courierMessage 
 	reply := &pigeonhole.CourierQueryReply{
 		ReplyType: 0, // 0 = envelope_reply
 		EnvelopeReply: &pigeonhole.CourierEnvelopeReply{
-			ReplyIndex:    0,
-			Epoch:         0,
-			CiphertextLen: 0,
-			Ciphertext:    nil,
+			EnvelopeHash: [32]uint8{},
+			ReplyIndex:   0,
+			PayloadLen:   0,
+			Payload:      nil,
+			ErrorCode:    1, // Error code for timeout
 		},
 	}
 	return reply
@@ -519,10 +521,11 @@ func (e *Courier) handleOldMessage(cacheEntry *CourierBookKeeping, envHash *[has
 	reply := &pigeonhole.CourierQueryReply{
 		ReplyType: 0, // 0 = envelope_reply
 		EnvelopeReply: &pigeonhole.CourierEnvelopeReply{
-			ReplyIndex:    replyIndex,
-			Epoch:         0,
-			CiphertextLen: uint32(len(payload)),
-			Ciphertext:    payload,
+			EnvelopeHash: [32]uint8{}, // TODO: Set proper envelope hash
+			ReplyIndex:   replyIndex,
+			PayloadLen:   uint32(len(payload)),
+			Payload:      payload,
+			ErrorCode:    0,
 		},
 	}
 
@@ -553,10 +556,11 @@ func (e *Courier) OnCommand(cmd cborplugin.Command) error {
 		errorReply := &pigeonhole.CourierQueryReply{
 			ReplyType: 0, // 0 = envelope_reply
 			EnvelopeReply: &pigeonhole.CourierEnvelopeReply{
-				ReplyIndex:    0,
-				Epoch:         0,
-				CiphertextLen: 0,
-				Ciphertext:    nil,
+				EnvelopeHash: [32]uint8{},
+				ReplyIndex:   0,
+				PayloadLen:   0,
+				Payload:      nil,
+				ErrorCode:    1, // Error code for timeout
 			},
 		}
 		go func() {
@@ -635,10 +639,11 @@ func (e *Courier) createEnvelopeErrorReply(envHash *[hash.HashSize]byte, errorCo
 	return &pigeonhole.CourierQueryReply{
 		ReplyType: 0, // 0 = envelope_reply
 		EnvelopeReply: &pigeonhole.CourierEnvelopeReply{
-			ReplyIndex:    0,
-			Epoch:         0,
-			CiphertextLen: 0,
-			Ciphertext:    nil,
+			EnvelopeHash: [32]uint8{},
+			ReplyIndex:   0,
+			PayloadLen:   0,
+			Payload:      nil,
+			ErrorCode:    1, // Error code for timeout
 		},
 	}
 }
@@ -648,10 +653,11 @@ func (e *Courier) createEnvelopeSuccessReply(envHash *[hash.HashSize]byte, reply
 	return &pigeonhole.CourierQueryReply{
 		ReplyType: 0, // 0 = envelope_reply
 		EnvelopeReply: &pigeonhole.CourierEnvelopeReply{
-			ReplyIndex:    replyIndex,
-			Epoch:         0,
-			CiphertextLen: uint32(len(payload)),
-			Ciphertext:    payload,
+			EnvelopeHash: [32]uint8{}, // TODO: Set proper envelope hash
+			ReplyIndex:   replyIndex,
+			PayloadLen:   uint32(len(payload)),
+			Payload:      payload,
+			ErrorCode:    0,
 		},
 	}
 }

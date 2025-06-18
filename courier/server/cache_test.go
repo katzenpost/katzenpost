@@ -204,7 +204,7 @@ func TestCourierCacheHandleOldMessage(t *testing.T) {
 	require.NotNil(t, reply)
 	require.NotNil(t, reply.EnvelopeReply)
 	require.Equal(t, uint8(0), reply.EnvelopeReply.ReplyIndex)
-	require.Equal(t, reply1.EnvelopeReply, reply.EnvelopeReply.Ciphertext)
+	require.Equal(t, reply1.EnvelopeReply, reply.EnvelopeReply.Payload)
 
 	// Test handleOldMessage for reply index 1
 	courierEnv.ReplyIndex = 1
@@ -213,7 +213,7 @@ func TestCourierCacheHandleOldMessage(t *testing.T) {
 	require.NotNil(t, reply)
 	require.NotNil(t, reply.EnvelopeReply)
 	require.Equal(t, uint8(1), reply.EnvelopeReply.ReplyIndex)
-	require.Equal(t, reply2.EnvelopeReply, reply.EnvelopeReply.Ciphertext)
+	require.Equal(t, reply2.EnvelopeReply, reply.EnvelopeReply.Payload)
 }
 
 // TestCourierCacheFallbackBehavior tests fallback when requested reply index is not available
@@ -248,7 +248,7 @@ func TestCourierCacheFallbackBehavior(t *testing.T) {
 	require.NotNil(t, reply.EnvelopeReply)
 	// Should fallback to reply index 1 and update the reply index
 	require.Equal(t, uint8(1), reply.EnvelopeReply.ReplyIndex)
-	require.Equal(t, reply1.EnvelopeReply, reply.EnvelopeReply.Ciphertext)
+	require.Equal(t, reply1.EnvelopeReply, reply.EnvelopeReply.Payload)
 }
 
 // TestCourierCacheEmptyResponse tests behavior when no replies are cached
@@ -272,7 +272,7 @@ func TestCourierCacheEmptyResponse(t *testing.T) {
 	require.NotNil(t, reply)
 	require.NotNil(t, reply.EnvelopeReply)
 	require.Equal(t, uint8(0), reply.EnvelopeReply.ReplyIndex)
-	require.Empty(t, reply.EnvelopeReply.Ciphertext)
+	require.Empty(t, reply.EnvelopeReply.Payload)
 }
 
 // Helper function to create a test courier
