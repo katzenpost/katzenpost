@@ -9,6 +9,17 @@ import (
 	"testing"
 )
 
+// Test error message constants to avoid duplication
+const (
+	errReplyIndexMismatch  = "ReplyIndex mismatch: got %d, want %d"
+	errPayloadLenMismatch  = "PayloadLen mismatch: got %d, want %d"
+	errPayloadMismatch     = "Payload mismatch"
+	errErrorCodeMismatch   = "ErrorCode mismatch: got %d, want %d"
+	errBoxIDMismatch       = "BoxID mismatch"
+	errMessageTypeMismatch = "MessageType mismatch: got %d, want %d"
+	errSignatureMismatch   = "Signature mismatch"
+)
+
 // Helper function to create random bytes
 func randomBytes(size int) []byte {
 	data := make([]byte, size)
@@ -77,7 +88,7 @@ func TestCourierEnvelopeEncodeDecode(t *testing.T) {
 		t.Errorf("Dek2 mismatch")
 	}
 	if decoded.ReplyIndex != original.ReplyIndex {
-		t.Errorf("ReplyIndex mismatch: got %d, want %d", decoded.ReplyIndex, original.ReplyIndex)
+		t.Errorf(errReplyIndexMismatch, decoded.ReplyIndex, original.ReplyIndex)
 	}
 	if decoded.Epoch != original.Epoch {
 		t.Errorf("Epoch mismatch: got %d, want %d", decoded.Epoch, original.Epoch)
@@ -129,16 +140,16 @@ func TestCourierEnvelopeReplyEncodeDecode(t *testing.T) {
 		t.Errorf("EnvelopeHash mismatch")
 	}
 	if decoded.ReplyIndex != original.ReplyIndex {
-		t.Errorf("ReplyIndex mismatch: got %d, want %d", decoded.ReplyIndex, original.ReplyIndex)
+		t.Errorf(errReplyIndexMismatch, decoded.ReplyIndex, original.ReplyIndex)
 	}
 	if decoded.PayloadLen != original.PayloadLen {
-		t.Errorf("PayloadLen mismatch: got %d, want %d", decoded.PayloadLen, original.PayloadLen)
+		t.Errorf(errPayloadLenMismatch, decoded.PayloadLen, original.PayloadLen)
 	}
 	if !bytes.Equal(decoded.Payload, original.Payload) {
-		t.Errorf("Payload mismatch")
+		t.Errorf(errPayloadMismatch)
 	}
 	if decoded.ErrorCode != original.ErrorCode {
-		t.Errorf("ErrorCode mismatch: got %d, want %d", decoded.ErrorCode, original.ErrorCode)
+		t.Errorf(errErrorCodeMismatch, decoded.ErrorCode, original.ErrorCode)
 	}
 }
 
@@ -162,7 +173,7 @@ func TestReplicaReadEncodeDecode(t *testing.T) {
 
 	// Compare fields
 	if decoded.BoxID != original.BoxID {
-		t.Errorf("BoxID mismatch")
+		t.Errorf(errBoxIDMismatch)
 	}
 }
 
@@ -199,25 +210,25 @@ func TestReplicaReadReplyEncodeDecode(t *testing.T) {
 
 	// Compare fields
 	if decoded.MessageType != replyMsg.MessageType {
-		t.Errorf("MessageType mismatch: got %d, want %d", decoded.MessageType, replyMsg.MessageType)
+		t.Errorf(errMessageTypeMismatch, decoded.MessageType, replyMsg.MessageType)
 	}
 	if decoded.ReadReply == nil {
 		t.Fatalf("ReadReply is nil")
 	}
 	if decoded.ReadReply.BoxID != original.BoxID {
-		t.Errorf("BoxID mismatch")
+		t.Errorf(errBoxIDMismatch)
 	}
 	if decoded.ReadReply.ErrorCode != original.ErrorCode {
-		t.Errorf("ErrorCode mismatch: got %d, want %d", decoded.ReadReply.ErrorCode, original.ErrorCode)
+		t.Errorf(errErrorCodeMismatch, decoded.ReadReply.ErrorCode, original.ErrorCode)
 	}
 	if decoded.ReadReply.PayloadLen != original.PayloadLen {
-		t.Errorf("PayloadLen mismatch: got %d, want %d", decoded.ReadReply.PayloadLen, original.PayloadLen)
+		t.Errorf(errPayloadLenMismatch, decoded.ReadReply.PayloadLen, original.PayloadLen)
 	}
 	if !bytes.Equal(decoded.ReadReply.Payload, original.Payload) {
-		t.Errorf("Payload mismatch")
+		t.Errorf(errPayloadMismatch)
 	}
 	if decoded.ReadReply.Signature != original.Signature {
-		t.Errorf("Signature mismatch")
+		t.Errorf(errSignatureMismatch)
 	}
 }
 
@@ -246,16 +257,16 @@ func TestReplicaWriteEncodeDecode(t *testing.T) {
 
 	// Compare fields
 	if decoded.BoxID != original.BoxID {
-		t.Errorf("BoxID mismatch")
+		t.Errorf(errBoxIDMismatch)
 	}
 	if decoded.Signature != original.Signature {
-		t.Errorf("Signature mismatch")
+		t.Errorf(errSignatureMismatch)
 	}
 	if decoded.PayloadLen != original.PayloadLen {
-		t.Errorf("PayloadLen mismatch: got %d, want %d", decoded.PayloadLen, original.PayloadLen)
+		t.Errorf(errPayloadLenMismatch, decoded.PayloadLen, original.PayloadLen)
 	}
 	if !bytes.Equal(decoded.Payload, original.Payload) {
-		t.Errorf("Payload mismatch")
+		t.Errorf(errPayloadMismatch)
 	}
 }
 
@@ -286,13 +297,13 @@ func TestReplicaWriteReplyEncodeDecode(t *testing.T) {
 
 	// Compare fields
 	if decoded.MessageType != replyMsg.MessageType {
-		t.Errorf("MessageType mismatch: got %d, want %d", decoded.MessageType, replyMsg.MessageType)
+		t.Errorf(errMessageTypeMismatch, decoded.MessageType, replyMsg.MessageType)
 	}
 	if decoded.WriteReply == nil {
 		t.Fatalf("WriteReply is nil")
 	}
 	if decoded.WriteReply.ErrorCode != original.ErrorCode {
-		t.Errorf("ErrorCode mismatch: got %d, want %d", decoded.WriteReply.ErrorCode, original.ErrorCode)
+		t.Errorf(errErrorCodeMismatch, decoded.WriteReply.ErrorCode, original.ErrorCode)
 	}
 }
 
@@ -321,7 +332,7 @@ func TestReplicaInnerMessageReadEncodeDecode(t *testing.T) {
 
 	// Compare fields
 	if decoded.MessageType != original.MessageType {
-		t.Errorf("MessageType mismatch: got %d, want %d", decoded.MessageType, original.MessageType)
+		t.Errorf(errMessageTypeMismatch, decoded.MessageType, original.MessageType)
 	}
 	if decoded.ReadMsg == nil {
 		t.Fatalf("ReadMsg is nil")
@@ -360,7 +371,7 @@ func TestReplicaInnerMessageWriteEncodeDecode(t *testing.T) {
 
 	// Compare fields
 	if decoded.MessageType != original.MessageType {
-		t.Errorf("MessageType mismatch: got %d, want %d", decoded.MessageType, original.MessageType)
+		t.Errorf(errMessageTypeMismatch, decoded.MessageType, original.MessageType)
 	}
 	if decoded.WriteMsg == nil {
 		t.Fatalf("WriteMsg is nil")
@@ -372,7 +383,7 @@ func TestReplicaInnerMessageWriteEncodeDecode(t *testing.T) {
 		t.Errorf("WriteMsg.Signature mismatch")
 	}
 	if decoded.WriteMsg.PayloadLen != original.WriteMsg.PayloadLen {
-		t.Errorf("WriteMsg.PayloadLen mismatch: got %d, want %d", decoded.WriteMsg.PayloadLen, original.WriteMsg.PayloadLen)
+		t.Errorf(errPayloadLenMismatch, decoded.WriteMsg.PayloadLen, original.WriteMsg.PayloadLen)
 	}
 	if !bytes.Equal(decoded.WriteMsg.Payload, original.WriteMsg.Payload) {
 		t.Errorf("WriteMsg.Payload mismatch")
@@ -404,16 +415,16 @@ func TestBoxEncodeDecode(t *testing.T) {
 
 	// Compare fields
 	if decoded.BoxID != original.BoxID {
-		t.Errorf("BoxID mismatch")
+		t.Errorf(errBoxIDMismatch)
 	}
 	if decoded.PayloadLen != original.PayloadLen {
-		t.Errorf("PayloadLen mismatch: got %d, want %d", decoded.PayloadLen, original.PayloadLen)
+		t.Errorf(errPayloadLenMismatch, decoded.PayloadLen, original.PayloadLen)
 	}
 	if !bytes.Equal(decoded.Payload, original.Payload) {
-		t.Errorf("Payload mismatch")
+		t.Errorf(errPayloadMismatch)
 	}
 	if decoded.Signature != original.Signature {
-		t.Errorf("Signature mismatch")
+		t.Errorf(errSignatureMismatch)
 	}
 }
 
@@ -578,6 +589,6 @@ func TestMaxValues(t *testing.T) {
 		t.Errorf("Epoch mismatch: got %d, want %d", decoded.Epoch, original.Epoch)
 	}
 	if decoded.ReplyIndex != original.ReplyIndex {
-		t.Errorf("ReplyIndex mismatch: got %d, want %d", decoded.ReplyIndex, original.ReplyIndex)
+		t.Errorf(errReplyIndexMismatch, decoded.ReplyIndex, original.ReplyIndex)
 	}
 }
