@@ -33,7 +33,8 @@ import (
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	courierConfig "github.com/katzenpost/katzenpost/courier/server/config"
-	"github.com/katzenpost/katzenpost/replica/common"
+	pigeonholeGeo "github.com/katzenpost/katzenpost/pigeonhole/geo"
+	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
 	rConfig "github.com/katzenpost/katzenpost/replica/config"
 	sConfig "github.com/katzenpost/katzenpost/server/config"
 )
@@ -72,7 +73,7 @@ type katzenpost struct {
 	pkiSignatureScheme sign.Scheme
 	replicaNIKEScheme  nike.Scheme
 	sphinxGeometry     *geo.Geometry
-	pigeonholeGeometry *common.Geometry
+	pigeonholeGeometry *pigeonholeGeo.Geometry
 	votingAuthConfigs  []*vConfig.Config
 	authorities        map[[32]byte]*vConfig.Authority
 	authIdentity       sign.PublicKey
@@ -705,10 +706,13 @@ func main() {
 		s.pkiSignatureScheme = signScheme
 	}
 
-	s.replicaNIKEScheme = common.NikeScheme
+	s.replicaNIKEScheme = replicaCommon.NikeScheme
 
 	// Generate pigeonhole geometry once for use in both client2 and thin client configs
-	s.pigeonholeGeometry = common.GeometryFromSphinxGeometry(s.sphinxGeometry, s.replicaNIKEScheme)
+	s.pigeonholeGeometry, err = pigeonholeGeo.NewGeometryFromSphinx(s.sphinxGeometry, s.replicaNIKEScheme)
+	if err != nil {
+		log.Fatalf("Failed to create pigeonhole geometry: %v", err)
+	}
 
 	os.Mkdir(s.outDir, 0700)
 	os.Mkdir(filepath.Join(s.outDir, s.baseDir), 0700)
