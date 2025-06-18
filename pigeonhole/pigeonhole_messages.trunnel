@@ -40,15 +40,22 @@ struct courier_envelope {
 
 // CourierEnvelopeReply - reply envelope structure
 struct courier_envelope_reply {
-    // Reply index for correlation
+    // EnvelopeHash is used to uniquely identify the CourierEnvelope message
+    // that this CourierEnvelopeReply is replying to.
+    u8 envelope_hash[HASH_SIZE];
+
+    // ReplyIndex is an actual index into the 2 element array of
+    // intermediate replicas: the `IntermediateReplicas` field in
+    // the original courier envelope.
     u8 reply_index;
 
-    // Epoch number
-    u64 epoch;
+    // Payload contains an embedded ReplicaMessageReply's EnvelopeReply.
+    u32 payload_len;
+    u8 payload[payload_len];
 
-    // Encrypted reply payload
-    u32 ciphertext_len;
-    u8 ciphertext[ciphertext_len];
+    // ErrorCode if non-zero indicates an error. ReplyIndex and Payload
+    // maybe invalid if an error is indicated.
+    u8 error_code;
 }
 
 // CourierQuery - union for either courier envelope or copy command
@@ -78,15 +85,19 @@ struct replica_read {
 
 // ReplicaReadReply - read response
 struct replica_read_reply {
-    u8 box_id[BACAP_BOX_ID_SIZE];
-
     // Error code (0 = success, non-zero = error)
     u8 error_code;
 
-    // Payload (length 0 means failure)
+    // BoxID uniquely identifies a box
+    u8 box_id[BACAP_BOX_ID_SIZE];
+
+    // Signature covers the given Payload field and
+    // is verifiable with the BoxID which is also the public key
+    u8 signature[BACAP_SIGNATURE_SIZE];
+
+    // Payload is encrypted and MAC'ed
     u32 payload_len;
     u8 payload[payload_len];
-    u8 signature[BACAP_SIGNATURE_SIZE];
 }
 
 // ReplicaInnerMessage - union for read/write operations

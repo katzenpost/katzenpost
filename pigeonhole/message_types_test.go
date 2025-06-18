@@ -100,13 +100,15 @@ func TestCourierEnvelopeEncodeDecode(t *testing.T) {
 }
 
 func TestCourierEnvelopeReplyEncodeDecode(t *testing.T) {
-	ciphertext := randomBytes(50)
+	payload := randomBytes(50)
+	envelopeHash := randomFixedBytes32()
 
 	original := &CourierEnvelopeReply{
-		ReplyIndex:    123,
-		Epoch:         9876543210987654321,
-		CiphertextLen: uint32(len(ciphertext)),
-		Ciphertext:    ciphertext,
+		EnvelopeHash: envelopeHash,
+		ReplyIndex:   123,
+		PayloadLen:   uint32(len(payload)),
+		Payload:      payload,
+		ErrorCode:    0,
 	}
 
 	// Encode
@@ -123,17 +125,20 @@ func TestCourierEnvelopeReplyEncodeDecode(t *testing.T) {
 	}
 
 	// Compare fields
+	if decoded.EnvelopeHash != original.EnvelopeHash {
+		t.Errorf("EnvelopeHash mismatch")
+	}
 	if decoded.ReplyIndex != original.ReplyIndex {
 		t.Errorf("ReplyIndex mismatch: got %d, want %d", decoded.ReplyIndex, original.ReplyIndex)
 	}
-	if decoded.Epoch != original.Epoch {
-		t.Errorf("Epoch mismatch: got %d, want %d", decoded.Epoch, original.Epoch)
+	if decoded.PayloadLen != original.PayloadLen {
+		t.Errorf("PayloadLen mismatch: got %d, want %d", decoded.PayloadLen, original.PayloadLen)
 	}
-	if decoded.CiphertextLen != original.CiphertextLen {
-		t.Errorf("CiphertextLen mismatch: got %d, want %d", decoded.CiphertextLen, original.CiphertextLen)
+	if !bytes.Equal(decoded.Payload, original.Payload) {
+		t.Errorf("Payload mismatch")
 	}
-	if !bytes.Equal(decoded.Ciphertext, original.Ciphertext) {
-		t.Errorf("Ciphertext mismatch")
+	if decoded.ErrorCode != original.ErrorCode {
+		t.Errorf("ErrorCode mismatch: got %d, want %d", decoded.ErrorCode, original.ErrorCode)
 	}
 }
 
