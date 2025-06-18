@@ -21,6 +21,7 @@ import (
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	sphinxConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/pigeonhole"
+	pigeonholeGeo "github.com/katzenpost/katzenpost/pigeonhole/geo"
 	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
 )
 
@@ -98,24 +99,33 @@ func NewPigeonholeChannel() (*bacap.StatefulWriter, *bacap.UniversalReadCap, *ba
 }
 
 func CreateChannelWriteRequest(
-	channelID [thin.ChannelIDLength]byte,
 	statefulWriter *bacap.StatefulWriter,
 	payload []byte,
-	doc *cpki.Document) (*pigeonhole.CourierEnvelope, nike.PrivateKey, error) {
+	doc *cpki.Document,
+	geometry *pigeonholeGeo.Geometry) (*pigeonhole.CourierEnvelope, nike.PrivateKey, error) {
 
-	boxID, ciphertext, sigraw, err := statefulWriter.EncryptNext(payload)
+	// Validate that the payload can fit within the geometry's BoxPayloadLength
+	// CreatePaddedPayload requires 4 bytes for length prefix plus the payload
+	minRequiredSize := len(payload) + 4
+	if minRequiredSize > geometry.BoxPayloadLength {
+		return nil, nil, fmt.Errorf("payload too large: %d bytes (+ 4 byte length prefix) exceeds BoxPayloadLength of %d bytes",
+			len(payload), geometry.BoxPayloadLength)
+	}
+
+	// Pad the payload to the geometry's BoxPayloadLength to fill the user forward sphinx payloads
+	paddedPayload, err := pigeonhole.CreatePaddedPayload(payload, geometry.BoxPayloadLength)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	// DEBUG: Log Alice's write BoxID
-	fmt.Printf("ALICE WRITES TO BoxID: %x\n", boxID[:])
-	fmt.Fprintf(os.Stderr, "ALICE WRITES TO BoxID: %x\n", boxID[:])
+	boxID, ciphertext, sigraw, err := statefulWriter.EncryptNext(paddedPayload)
+	if err != nil {
+		return nil, nil, err
+	}
 
 	sig := [bacap.SignatureSize]byte{}
 	copy(sig[:], sigraw)
 
-	// Convert to pigeonhole.ReplicaWrite
 	var boxIDArray [32]uint8
 	copy(boxIDArray[:], boxID[:])
 	var sigArray [64]uint8
@@ -137,18 +147,11 @@ func CreateChannelWriteRequest(
 		return nil, nil, err
 	}
 
-	fmt.Printf("ALICE MKEM ENCRYPT: Starting encryption with message size %d bytes\n", len(msg.Bytes()))
 	mkemPrivateKey, mkemCiphertext := replicaCommon.MKEMNikeScheme.Encapsulate(
 		replicaPubKeys, msg.Bytes(),
 	)
 	mkemPublicKey := mkemPrivateKey.Public()
 
-	// DEBUG: Log Alice's MKEM private key for envelope creation
-	mkemPrivateKeyBytes, _ := mkemPrivateKey.MarshalBinary()
-	fmt.Printf("ALICE CREATES ENVELOPE WITH MKEM KEY: %x\n", mkemPrivateKeyBytes[:16]) // First 16 bytes for brevity
-	fmt.Printf("ALICE MKEM ENCRYPT SUCCESS: Encrypted to %d bytes\n", len(mkemCiphertext.Envelope))
-
-	// Convert DEK ciphertexts to arrays
 	var dek1, dek2 [60]uint8
 	copy(dek1[:], mkemCiphertext.DEKCiphertexts[0][:])
 	copy(dek2[:], mkemCiphertext.DEKCiphertexts[1][:])
@@ -313,10 +316,10 @@ func (d *Daemon) writeChannel(request *Request) {
 	_, doc := d.client.CurrentDocument()
 
 	courierEnvelope, envelopePrivateKey, err := CreateChannelWriteRequest(
-		request.WriteChannel.ChannelID,
 		channelDesc.StatefulWriter,
 		request.WriteChannel.Payload,
-		doc)
+		doc,
+		d.cfg.PigeonholeGeometry)
 
 	if err != nil {
 		d.log.Errorf("writeChannel failure: failed to create write request: %s", err)
