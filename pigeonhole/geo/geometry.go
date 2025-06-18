@@ -129,35 +129,46 @@ func NewGeometry(boxPayloadLength int, nikeScheme nike.Scheme) *Geometry {
 // NewGeometryFromSphinx creates a Geometry from Sphinx constraints (Use Case 3)
 //
 // Given a Sphinx geometry with limited UserForwardPayloadLength, find the optimal
-// BoxPayloadLength that maximizes usage of the available space.
+// BoxPayloadLength that maximizes usage of the available space by directly calculating
+// the overhead layers and subtracting them from the target size.
 func NewGeometryFromSphinx(sphinxGeo *geo.Geometry, nikeScheme nike.Scheme) (*Geometry, error) {
-	// Binary search to find the maximum BoxPayloadLength that fits in the Sphinx constraint
-	maxUserPayload := sphinxGeo.UserForwardPayloadLength
+	targetSize := sphinxGeo.UserForwardPayloadLength
 
-	// Start with a reasonable range
-	low, high := 1, maxUserPayload
-	bestBoxPayloadLength := 0
+	// Calculate all overhead layers for CourierQueryWrite (the largest envelope type)
+	// Working backwards from CourierQuery to BoxPayloadLength:
 
-	for low <= high {
-		mid := (low + high) / 2
-		testGeo := NewGeometry(mid, nikeScheme)
+	// 1. CourierQuery wrapper overhead
+	courierQueryOverhead := 1 // QueryType discriminator
 
-		// Check if the largest envelope (usually CourierQueryWriteLength) fits
-		maxEnvelopeSize := maxInt(testGeo.CourierQueryReadLength, testGeo.CourierQueryWriteLength)
+	// 2. CourierEnvelope overhead (fixed fields + sender pubkey)
+	senderPubkeySize := nikeScheme.PublicKeySize()
+	courierEnvelopeOverhead := calculateCourierEnvelopeOverhead(0, senderPubkeySize) // Pass 0 for ciphertext size since we're calculating overhead
 
-		if maxEnvelopeSize <= maxUserPayload {
-			bestBoxPayloadLength = mid
-			low = mid + 1
-		} else {
-			high = mid - 1
-		}
+	// 3. MKEM encryption overhead
+	mkemOverhead := mkemEncryptionOverhead
+
+	// 4. ReplicaInnerMessage overhead
+	replicaInnerMessageOverhead := messageTypeSize
+
+	// 5. ReplicaWrite fixed overhead
+	replicaWriteOverhead := replicaWriteFixedOverhead()
+
+	// 6. BACAP encryption overhead
+	bacapOverhead := bacapEncryptionOverhead
+
+	// Calculate total overhead
+	totalOverhead := courierQueryOverhead + courierEnvelopeOverhead + mkemOverhead +
+		replicaInnerMessageOverhead + replicaWriteOverhead + bacapOverhead
+
+	// Calculate the BoxPayloadLength by subtracting all overheads from target
+	boxPayloadLength := targetSize - totalOverhead
+
+	if boxPayloadLength <= 0 {
+		return nil, fmt.Errorf("sphinx geometry too small: UserForwardPayloadLength=%d, total overhead=%d",
+			targetSize, totalOverhead)
 	}
 
-	if bestBoxPayloadLength == 0 {
-		return nil, fmt.Errorf("sphinx geometry too small: UserForwardPayloadLength=%d", maxUserPayload)
-	}
-
-	return NewGeometry(bestBoxPayloadLength, nikeScheme), nil
+	return NewGeometry(boxPayloadLength, nikeScheme), nil
 }
 
 // ToSphinxGeometry creates an accommodating Sphinx Geometry (Use Case 2)
