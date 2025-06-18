@@ -865,7 +865,7 @@ func testBoxRoundTrip(t *testing.T, env *testEnvironment) {
 	// Note: EnvelopeHash method doesn't exist on trunnel types, skipping hash comparison
 	// require.Equal(t, uint8(0), courierWriteReply1.ErrorCode) // ErrorCode doesn't exist on CourierEnvelopeReply
 	require.Equal(t, uint8(0), courierWriteReply1.ReplyIndex)
-	require.True(t, len(courierWriteReply1.Ciphertext) == 0) // Ciphertext should be empty for write operations
+	require.True(t, len(courierWriteReply1.Payload) == 0) // Payload should be empty for write operations
 
 	bobReadRequest1, bobPrivateKey1 := composeReadRequest(t, env, bobStatefulReader)
 
@@ -876,7 +876,7 @@ func testBoxRoundTrip(t *testing.T, env *testEnvironment) {
 	// require.Equal(t, uint8(0), courierReadReply1.ErrorCode) // ErrorCode doesn't exist on CourierEnvelopeReply
 
 	// With immediate proxying, we should get a non-empty payload on the first request
-	if len(courierReadReply1.Ciphertext) == 0 {
+	if len(courierReadReply1.Payload) == 0 {
 		t.Logf("First read request returned nil payload, this suggests immediate proxying didn't work")
 		// For now, let's still allow the test to continue to see what happens
 		// In the future, this should be a hard requirement
@@ -888,15 +888,15 @@ func testBoxRoundTrip(t *testing.T, env *testEnvironment) {
 
 	// ReplyIndex now correctly indicates which replica replied (0 or 1)
 	require.True(t, courierReadReply1.ReplyIndex < 2, "ReplyIndex should be 0 or 1")
-	require.True(t, len(courierReadReply1.Ciphertext) > 0, "Should have ciphertext either from immediate proxying or cache")
-	require.True(t, len(courierReadReply1.Ciphertext) > 0, "Ciphertext should not be empty")
+	require.True(t, len(courierReadReply1.Payload) > 0, "Should have payload either from immediate proxying or cache")
+	require.True(t, len(courierReadReply1.Payload) > 0, "Payload should not be empty")
 
 	replicaEpoch, _, _ := replicaCommon.ReplicaNow()
 
 	// Now ReplyIndex correctly indicates which replica replied (0 or 1)
 	replicaIndex := int(bobReadRequest1.IntermediateReplicas[courierReadReply1.ReplyIndex])
 	replicaPubKey := env.replicaKeys[replicaIndex][replicaEpoch]
-	rawInnerMsg, err := mkemNikeScheme.DecryptEnvelope(bobPrivateKey1, replicaPubKey, courierReadReply1.Ciphertext)
+	rawInnerMsg, err := mkemNikeScheme.DecryptEnvelope(bobPrivateKey1, replicaPubKey, courierReadReply1.Payload)
 	require.NoError(t, err)
 
 	// pigeonhole.ReplicaMessageReplyInnerMessage
@@ -942,7 +942,7 @@ func testBoxSequenceRoundTrip(t *testing.T, env *testEnvironment) {
 		// Note: EnvelopeHash method doesn't exist on trunnel types, skipping hash comparison
 		// require.Equal(t, uint8(0), courierWriteReply.ErrorCode) // ErrorCode doesn't exist on CourierEnvelopeReply
 		require.Equal(t, uint8(0), courierWriteReply.ReplyIndex)
-		require.True(t, len(courierWriteReply.Ciphertext) == 0) // Ciphertext should be empty for write operations
+		require.True(t, len(courierWriteReply.Payload) == 0) // Payload should be empty for write operations
 
 		t.Logf("Successfully wrote box %d", i+1)
 	}
@@ -961,21 +961,21 @@ func testBoxSequenceRoundTrip(t *testing.T, env *testEnvironment) {
 		// require.Equal(t, uint8(0), courierReadReply.ErrorCode) // ErrorCode doesn't exist on CourierEnvelopeReply
 
 		// With immediate proxying, we should get a non-empty payload on the first request
-		if len(courierReadReply.Ciphertext) == 0 {
+		if len(courierReadReply.Payload) == 0 {
 			t.Logf("First read request returned nil payload for box %d, falling back to polling", i+1)
 			courierReadReply = waitForReplicaResponse(t, env, bobReadRequest)
 		}
 
 		// ReplyIndex correctly indicates which replica replied (0 or 1)
 		require.True(t, courierReadReply.ReplyIndex < 2, "ReplyIndex should be 0 or 1")
-		require.True(t, len(courierReadReply.Ciphertext) > 0, "Should have ciphertext either from immediate proxying or cache")
-		require.True(t, len(courierReadReply.Ciphertext) > 0, "Ciphertext should not be empty")
+		require.True(t, len(courierReadReply.Payload) > 0, "Should have payload either from immediate proxying or cache")
+		require.True(t, len(courierReadReply.Payload) > 0, "Payload should not be empty")
 
 		// Decrypt and verify the message
 		replicaEpoch, _, _ := replicaCommon.ReplicaNow()
 		replicaIndex := int(bobReadRequest.IntermediateReplicas[courierReadReply.ReplyIndex])
 		replicaPubKey := env.replicaKeys[replicaIndex][replicaEpoch]
-		rawInnerMsg, err := mkemNikeScheme.DecryptEnvelope(bobPrivateKey, replicaPubKey, courierReadReply.Ciphertext)
+		rawInnerMsg, err := mkemNikeScheme.DecryptEnvelope(bobPrivateKey, replicaPubKey, courierReadReply.Payload)
 		require.NoError(t, err)
 
 		// pigeonhole.ReplicaMessageReplyInnerMessage
@@ -1072,8 +1072,8 @@ func waitForReplicaResponse(t *testing.T, env *testEnvironment, envelope *pigeon
 		reply := injectCourierEnvelope(t, env, envelope)
 
 		// If we got a non-empty payload, the response is ready
-		if len(reply.Ciphertext) > 0 {
-			t.Logf("Courier response ready - received payload of length %d", len(reply.Ciphertext))
+		if len(reply.Payload) > 0 {
+			t.Logf("Courier response ready - received payload of length %d", len(reply.Payload))
 			return reply
 		}
 

@@ -255,10 +255,11 @@ func (c *Courier) ReceiveClientQuery(query []byte) *pigeonhole.CourierEnvelopeRe
 		Ciphertext:    courierMessage.Ciphertext,
 	})
 	reply := &pigeonhole.CourierEnvelopeReply{
-		ReplyIndex:    0,
-		Epoch:         courierMessage.Epoch,
-		CiphertextLen: uint32(len(reply0.EnvelopeReply)),
-		Ciphertext:    reply0.EnvelopeReply,
+		EnvelopeHash: [32]uint8{}, // TODO: Set proper envelope hash
+		ReplyIndex:   0,
+		PayloadLen:   uint32(len(reply0.EnvelopeReply)),
+		Payload:      reply0.EnvelopeReply,
+		ErrorCode:    0,
 	}
 	return reply
 }
@@ -322,7 +323,6 @@ func (c *ClientWriter) ComposeSendNextMessage(message []byte) *pigeonhole.Courie
 		Dek1:                 *mkemCiphertext.DEKCiphertexts[0],
 		Dek2:                 *mkemCiphertext.DEKCiphertexts[1],
 		ReplyIndex:           0,
-		Epoch:                0,
 		SenderPubkeyLen:      uint16(len(senderPubkey)),
 		SenderPubkey:         senderPubkey,
 		CiphertextLen:        uint32(len(mkemCiphertext.Envelope)),
@@ -378,7 +378,6 @@ func (c *ClientReader) ComposeReadNextMessage() (nike.PrivateKey, *pigeonhole.Co
 		Dek1:                 *mkemCiphertext.DEKCiphertexts[0],
 		Dek2:                 *mkemCiphertext.DEKCiphertexts[1],
 		ReplyIndex:           0,
-		Epoch:                0,
 		SenderPubkeyLen:      uint16(len(senderPubkey)),
 		SenderPubkey:         senderPubkey,
 		CiphertextLen:        uint32(len(mkemCiphertext.Envelope)),
@@ -432,7 +431,7 @@ func TestClientCourierProtocolFlow(t *testing.T) {
 	bobPrivateKey1, bobReceiveRequest := bob.ComposeReadNextMessage()
 	bobReply1 := courier.ReceiveClientQuery(bobReceiveRequest.Bytes())
 
-	rawInnerMsg, err := mkemNikeScheme.DecryptEnvelope(bobPrivateKey1, replicas[0].PublicKey, bobReply1.Ciphertext)
+	rawInnerMsg, err := mkemNikeScheme.DecryptEnvelope(bobPrivateKey1, replicas[0].PublicKey, bobReply1.Payload)
 	require.NoError(t, err)
 
 	// pigeonhole.ReplicaMessageReplyInnerMessage
