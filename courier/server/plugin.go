@@ -26,81 +26,23 @@ import (
 
 // Error message constants
 var (
-	errFailedToReadBoxFromReplica = errors.New("failed to read Box from replica")
-	errInvalidDestinationID       = errors.New("invalid destination ID")
-	errConnectionNotFound         = errors.New("connection not found")
-	errNilEnvelopeHash            = errors.New("envelope hash is nil")
-	errNilDEKElements             = errors.New("DEK array contains nil elements")
-	errCBORDecodingFailed         = errors.New("CBOR decoding failed")
-	errStreamingDecoderFailed     = errors.New("streaming decoder failed")
-	errReplicaTimeout             = errors.New("replica timeout")
-	errInvalidReplicaID           = errors.New("invalid replica ID")
-	errCacheCorruption            = errors.New("cache corruption detected")
-	errPKIDocumentUnavailable     = errors.New("PKI document unavailable")
-	errInvalidEpoch               = errors.New("invalid epoch")
-	errMKEMEncapsulationFailed    = errors.New("MKEM encapsulation failed")
-	errMKEMDecryptionFailed       = errors.New("MKEM decryption failed")
-	errBACAPDecryptionFailed      = errors.New("BACAP decryption failed")
-	errTombstoneWriteFailed       = errors.New("tombstone write failed")
-	errEmptySequence              = errors.New("empty sequence")
-)
-
-// Copy command error codes - using centralized error codes
-const (
-	copyErrorSuccess           = pigeonhole.CopyErrorSuccess
-	copyErrorInvalidWriteCap   = pigeonhole.CopyErrorInvalidWriteCap
-	copyErrorReadCapDerivation = pigeonhole.CopyErrorReadCapDerivation
-	copyErrorRead              = pigeonhole.CopyErrorRead
-	copyErrorEmptySequence     = pigeonhole.CopyErrorEmptySequence
-	copyErrorBACAPDecryption   = pigeonhole.CopyErrorBACAPDecryption
-	copyErrorStreamingDecoder  = pigeonhole.CopyErrorStreamingDecoder
-	copyErrorReplicaTimeout    = pigeonhole.CopyErrorReplicaTimeout
-	copyErrorMKEMDecryption    = pigeonhole.CopyErrorMKEMDecryption
-	copyErrorTombstoneWrite    = pigeonhole.CopyErrorTombstoneWrite
-	copyErrorReplicaNotFound   = pigeonhole.CopyErrorReplicaNotFound
-	copyErrorReplicaDatabase   = pigeonhole.CopyErrorReplicaDatabase
-	copyErrorReplicaInternal   = pigeonhole.CopyErrorReplicaInternal
+	errInvalidDestinationID = errors.New("invalid destination ID")
+	errConnectionNotFound   = errors.New("connection not found")
+	errNilEnvelopeHash      = errors.New("envelope hash is nil")
+	errNilDEKElements       = errors.New("DEK array contains nil elements")
+	errCBORDecodingFailed   = errors.New("CBOR decoding failed")
 )
 
 // CourierEnvelope operation error codes - using centralized error codes
 const (
-	envelopeErrorSuccess            = pigeonhole.EnvelopeErrorSuccess
-	envelopeErrorInvalidEnvelope    = pigeonhole.EnvelopeErrorInvalidEnvelope
-	envelopeErrorNilEnvelopeHash    = pigeonhole.EnvelopeErrorNilEnvelopeHash
-	envelopeErrorNilDEKElements     = pigeonhole.EnvelopeErrorNilDEKElements
-	envelopeErrorInvalidReplicaID   = pigeonhole.EnvelopeErrorInvalidReplicaID
-	envelopeErrorReplicaTimeout     = pigeonhole.EnvelopeErrorReplicaTimeout
-	envelopeErrorConnectionFailure  = pigeonhole.EnvelopeErrorConnectionFailure
-	envelopeErrorCacheCorruption    = pigeonhole.EnvelopeErrorCacheCorruption
-	envelopeErrorPKIUnavailable     = pigeonhole.EnvelopeErrorPKIUnavailable
-	envelopeErrorInvalidEpoch       = pigeonhole.EnvelopeErrorInvalidEpoch
-	envelopeErrorMKEMFailure        = pigeonhole.EnvelopeErrorMKEMFailure
-	envelopeErrorReplicaUnavailable = pigeonhole.EnvelopeErrorReplicaUnavailable
-	envelopeErrorInternalError      = pigeonhole.EnvelopeErrorInternalError
+	envelopeErrorNilDEKElements  = pigeonhole.EnvelopeErrorNilDEKElements
+	envelopeErrorCacheCorruption = pigeonhole.EnvelopeErrorCacheCorruption
+	envelopeErrorInternalError   = pigeonhole.EnvelopeErrorInternalError
 )
-
-// General courier error codes - using centralized error codes
-const (
-	courierErrorSuccess         = pigeonhole.CourierErrorSuccess
-	courierErrorInvalidCommand  = pigeonhole.CourierErrorInvalidCommand
-	courierErrorDispatchFailure = pigeonhole.CourierErrorDispatchFailure
-	courierErrorConnectionLost  = pigeonhole.CourierErrorConnectionLost
-	courierErrorInternalError   = pigeonhole.CourierErrorInternalError
-)
-
-// copyErrorToString returns a human-readable string for copy error codes
-func copyErrorToString(errorCode uint8) string {
-	return pigeonhole.CopyErrorToString(errorCode)
-}
 
 // envelopeErrorToString returns a human-readable string for envelope error codes
 func envelopeErrorToString(errorCode uint8) string {
 	return pigeonhole.EnvelopeErrorToString(errorCode)
-}
-
-// courierErrorToString returns a human-readable string for general courier error codes
-func courierErrorToString(errorCode uint8) string {
-	return pigeonhole.CourierErrorToString(errorCode)
 }
 
 // CourierBookKeeping is used for:
@@ -466,7 +408,7 @@ func (e *Courier) handleNewMessage(envHash *[hash.HashSize]byte, courierMessage 
 	reply := &pigeonhole.CourierQueryReply{
 		ReplyType: 0, // 0 = envelope_reply
 		EnvelopeReply: &pigeonhole.CourierEnvelopeReply{
-			EnvelopeHash: [32]uint8{},
+			EnvelopeHash: *envHash,
 			ReplyIndex:   0,
 			PayloadLen:   0,
 			Payload:      nil,
@@ -526,7 +468,7 @@ func (e *Courier) OnCommand(cmd cborplugin.Command) error {
 	case *cborplugin.Request:
 		request = r
 	default:
-		return errors.New("Bug in courier-plugin: received invalid Command type")
+		return errors.New("bug in courier-plugin: received invalid Command type")
 	}
 
 	courierQuery, err := pigeonhole.CourierQueryFromBytes(request.Payload)
@@ -543,7 +485,7 @@ func (e *Courier) OnCommand(cmd cborplugin.Command) error {
 		errorReply := &pigeonhole.CourierQueryReply{
 			ReplyType: 0, // 0 = envelope_reply
 			EnvelopeReply: &pigeonhole.CourierEnvelopeReply{
-				EnvelopeHash: [32]uint8{},
+				EnvelopeHash: *courierQuery.Envelope.EnvelopeHash(),
 				ReplyIndex:   0,
 				PayloadLen:   0,
 				Payload:      nil,
@@ -626,25 +568,11 @@ func (e *Courier) createEnvelopeErrorReply(envHash *[hash.HashSize]byte, errorCo
 	return &pigeonhole.CourierQueryReply{
 		ReplyType: 0, // 0 = envelope_reply
 		EnvelopeReply: &pigeonhole.CourierEnvelopeReply{
-			EnvelopeHash: [32]uint8{},
+			EnvelopeHash: *envHash,
 			ReplyIndex:   0,
 			PayloadLen:   0,
 			Payload:      nil,
 			ErrorCode:    1, // Error code for timeout
-		},
-	}
-}
-
-// createEnvelopeSuccessReply creates a successful CourierEnvelopeReply
-func (e *Courier) createEnvelopeSuccessReply(envHash *[hash.HashSize]byte, replyIndex uint8, payload []byte) *pigeonhole.CourierQueryReply {
-	return &pigeonhole.CourierQueryReply{
-		ReplyType: 0, // 0 = envelope_reply
-		EnvelopeReply: &pigeonhole.CourierEnvelopeReply{
-			EnvelopeHash: *envHash,
-			ReplyIndex:   replyIndex,
-			PayloadLen:   uint32(len(payload)),
-			Payload:      payload,
-			ErrorCode:    0,
 		},
 	}
 }
