@@ -368,7 +368,7 @@ func (e *Courier) tryImmediateReplyProxy(reply *commands.ReplicaMessageReply) bo
 		courierReply := &pigeonhole.CourierQueryReply{
 			ReplyType: 0, // 0 = envelope_reply
 			EnvelopeReply: &pigeonhole.CourierEnvelopeReply{
-				EnvelopeHash: [32]uint8{},     // TODO: Set proper envelope hash
+				EnvelopeHash: *reply.EnvelopeHash,
 				ReplyIndex:   reply.ReplicaID, // Use the replica ID that responded
 				PayloadLen:   uint32(len(reply.EnvelopeReply)),
 				Payload:      reply.EnvelopeReply,
@@ -426,20 +426,7 @@ func (e *Courier) cleanupExpiredRequest(envHash *[hash.HashSize]byte, timeout ti
 func (e *Courier) handleCourierEnvelope(courierMessage *pigeonhole.CourierEnvelope) error {
 	e.log.Debugf("Copy: Processing CourierEnvelope (IsRead=%t)", courierMessage.IsRead)
 
-	// For write operations, validate that the MKEM ciphertext has the exact expected size
-	// This ensures BACAP payloads are padded to the maximum size allowed by geometry
-	if courierMessage.IsRead == 0 { // 0 = write, 1 = read
-		// TODO: Implement geometry validation for trunnel types
-		// expectedCiphertextSize := e.pigeonholeGeo.ExpectedMKEMCiphertextSizeForWrite()
-		actualCiphertextSize := len(courierMessage.Ciphertext)
-		e.log.Debugf("Write ciphertext size: %d bytes (geometry validation TODO)", actualCiphertextSize)
-	}
-
 	replicas := make([]*commands.ReplicaMessage, 2)
-
-	// Validate DEK arrays (now Dek1 and Dek2 in trunnel)
-	// TODO: Add proper validation for DEK arrays
-	e.log.Debugf("DEK validation TODO - using Dek1 and Dek2 arrays")
 
 	firstReplicaID := courierMessage.IntermediateReplicas[0]
 	replicas[0] = &commands.ReplicaMessage{
@@ -521,7 +508,7 @@ func (e *Courier) handleOldMessage(cacheEntry *CourierBookKeeping, envHash *[has
 	reply := &pigeonhole.CourierQueryReply{
 		ReplyType: 0, // 0 = envelope_reply
 		EnvelopeReply: &pigeonhole.CourierEnvelopeReply{
-			EnvelopeHash: [32]uint8{}, // TODO: Set proper envelope hash
+			EnvelopeHash: *envHash,
 			ReplyIndex:   replyIndex,
 			PayloadLen:   uint32(len(payload)),
 			Payload:      payload,
@@ -653,7 +640,7 @@ func (e *Courier) createEnvelopeSuccessReply(envHash *[hash.HashSize]byte, reply
 	return &pigeonhole.CourierQueryReply{
 		ReplyType: 0, // 0 = envelope_reply
 		EnvelopeReply: &pigeonhole.CourierEnvelopeReply{
-			EnvelopeHash: [32]uint8{}, // TODO: Set proper envelope hash
+			EnvelopeHash: *envHash,
 			ReplyIndex:   replyIndex,
 			PayloadLen:   uint32(len(payload)),
 			Payload:      payload,
