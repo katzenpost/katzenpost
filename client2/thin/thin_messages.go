@@ -28,11 +28,70 @@ type WriteChannel struct {
 }
 
 type ReadChannel struct {
-	ChannelID [ChannelIDLength]byte `cbor:"channel_id"`
+	ChannelID [ChannelIDLength]byte  `cbor:"channel_id"`
+	ID        *[MessageIDLength]byte `cbor:"id"`
 }
 
 type CopyChannel struct {
-	ChannelID [ChannelIDLength]byte `cbor:"channel_id"`
+	ChannelID [ChannelIDLength]byte  `cbor:"channel_id"`
+	ID        *[MessageIDLength]byte `cbor:"id"`
+}
+
+type SendMessage struct {
+	// ID is the unique identifier with respect to the Payload.
+	// This is only used by the ARQ.
+	ID *[MessageIDLength]byte `cbor:"id"`
+
+	// WithSURB indicates if the message should be sent with a SURB
+	// in the Sphinx payload.
+	WithSURB bool `cbor:"with_surb"`
+
+	// SURBID must be a unique identity for each request.
+	// This field should be nil if WithSURB is false.
+	SURBID *[sConstants.SURBIDLength]byte `cbor:"surbid"`
+
+	// DestinationIdHash is 32 byte hash of the destination Provider's
+	// identity public key.
+	DestinationIdHash *[hash.HashSize]byte `cbor:"destination_id_hash"`
+
+	// RecipientQueueID is the queue identity which will receive the message.
+	RecipientQueueID []byte `cbor:"recipient_queue_id"`
+
+	// Payload is the actual Sphinx packet.
+	Payload []byte `cbor:"payload"`
+}
+
+type SendARQMessage struct {
+	// ID is the unique identifier with respect to the Payload.
+	// This is only used by the ARQ.
+	ID *[MessageIDLength]byte `cbor:"id"`
+
+	// WithSURB indicates if the message should be sent with a SURB
+	// in the Sphinx payload.
+	WithSURB bool `cbor:"with_surb"`
+
+	// SURBID must be a unique identity for each request.
+	// This field should be nil if WithSURB is false.
+	SURBID *[sConstants.SURBIDLength]byte `cbor:"surbid"`
+
+	// DestinationIdHash is 32 byte hash of the destination Provider's
+	// identity public key.
+	DestinationIdHash *[hash.HashSize]byte `cbor:"destination_id_hash"`
+
+	// RecipientQueueID is the queue identity which will receive the message.
+	RecipientQueueID []byte `cbor:"recipient_queue_id"`
+
+	// Payload is the actual Sphinx packet.
+	Payload []byte `cbor:"payload"`
+}
+
+type SendLoopDecoy struct {
+}
+
+type SendDropDecoy struct {
+}
+
+type ThinClose struct {
 }
 
 type Response struct {
@@ -75,45 +134,20 @@ type Request struct {
 	// CopyChannel is used to copy a Pigeonhole channel.
 	CopyChannel *CopyChannel `cbor:"copy_channel"`
 
-	// ID is the unique identifier with respect to the Payload.
-	// This is only used by the ARQ.
-	ID *[MessageIDLength]byte `cbor:"id"`
+	// SendMessage is used to send a message through the mix network.
+	SendMessage *SendMessage `cbor:"send_message"`
 
-	// WithSURB indicates if the message should be sent with a SURB
-	// in the Sphinx payload.
-	WithSURB bool `cbor:"with_surb"`
+	// SendARQMessage is used to send a message through the mix network
+	// using the naive ARQ error correction scheme.
+	SendARQMessage *SendARQMessage `cbor:"send_arq_message"`
 
-	// SURBID must be a unique identity for each request.
-	// This field should be nil if WithSURB is false.
-	SURBID *[sConstants.SURBIDLength]byte `cbor:"surbid"`
+	// SendLoopDecoy is used to send a loop decoy message.
+	SendLoopDecoy *SendLoopDecoy `cbor:"send_loop_decoy"`
 
-	// DestinationIdHash is 32 byte hash of the destination Provider's
-	// identity public key.
-	DestinationIdHash *[hash.HashSize]byte `cbor:"destination_id_hash"`
+	// SendDropDecoy is used to send a drop decoy message.
+	SendDropDecoy *SendDropDecoy `cbor:"send_drop_decoy"`
 
-	// RecipientQueueID is the queue identity which will receive the message.
-	RecipientQueueID []byte `cbor:"recipient_queue_id"`
-
-	// Payload is the actual Sphinx packet.
-	Payload []byte `cbor:"payload"`
-
-	// IsSendOp is set to true if the intent is to send a message through
-	// the mix network.
-	IsSendOp bool `cbor:"is_send_op"`
-
-	// IsARQSendOp is set to true if the intent is to send a message through
-	// the mix network using the naive ARQ error correction scheme.
-	IsARQSendOp bool `cbor:"is_arq_send_op"`
-
-	// IsLoopDecoy is set to true to indicate that this message shall
-	// be a loop decoy message.
-	IsLoopDecoy bool `cbor:"is_loop_decoy"`
-
-	// IsDropDecoy is set to true to indicate that this message shall
-	// be a drop decoy message.
-	IsDropDecoy bool `cbor:"is_drop_decoy"`
-
-	// IsThinClose is set to true to indicate that the thin client
-	// is disconnecting from the daemon.
-	IsThinClose bool `cbor:"is_thin_close"`
+	// ThinClose is used to indicate that the thin client is disconnecting
+	// from the daemon.
+	ThinClose *ThinClose `cbor:"thin_close"`
 }

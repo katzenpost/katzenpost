@@ -19,22 +19,45 @@ import (
 
 // ComposeSphinxPacket is used to compose Sphinx packets.
 func (c *Client) ComposeSphinxPacket(request *Request) (pkt []byte, surbkey []byte, rtt time.Duration, err error) {
-	if request.DestinationIdHash == nil {
-		return nil, nil, 0, errors.New("request.DestinationIdHash is nil")
-	}
-	if len(request.RecipientQueueID) == 0 {
-		return nil, nil, 0, errors.New("client2: recipient is nil")
-	}
-	if len(request.RecipientQueueID) > sConstants.RecipientIDLength {
-		return nil, nil, 0, fmt.Errorf("client2: invalid recipient: '%v'", request.RecipientQueueID)
+	// Extract fields from the appropriate sub-struct
+	var destinationIdHash *[32]byte
+	var recipientQueueID []byte
+	var requestPayload []byte
+	var withSURB bool
+	var surbID *[sConstants.SURBIDLength]byte
+
+	if request.SendMessage != nil {
+		destinationIdHash = request.SendMessage.DestinationIdHash
+		recipientQueueID = request.SendMessage.RecipientQueueID
+		requestPayload = request.SendMessage.Payload
+		withSURB = request.SendMessage.WithSURB
+		surbID = request.SendMessage.SURBID
+	} else if request.SendARQMessage != nil {
+		destinationIdHash = request.SendARQMessage.DestinationIdHash
+		recipientQueueID = request.SendARQMessage.RecipientQueueID
+		requestPayload = request.SendARQMessage.Payload
+		withSURB = request.SendARQMessage.WithSURB
+		surbID = request.SendARQMessage.SURBID
+	} else {
+		return nil, nil, 0, errors.New("request must have SendMessage or SendARQMessage")
 	}
 
-	if len(request.Payload) > c.geo.UserForwardPayloadLength {
-		return nil, nil, 0, fmt.Errorf("message too large: %v > %v", len(request.Payload), c.geo.UserForwardPayloadLength)
+	if destinationIdHash == nil {
+		return nil, nil, 0, errors.New("request.DestinationIdHash is nil")
+	}
+	if len(recipientQueueID) == 0 {
+		return nil, nil, 0, errors.New("client2: recipient is nil")
+	}
+	if len(recipientQueueID) > sConstants.RecipientIDLength {
+		return nil, nil, 0, fmt.Errorf("client2: invalid recipient: '%v'", recipientQueueID)
+	}
+
+	if len(requestPayload) > c.geo.UserForwardPayloadLength {
+		return nil, nil, 0, fmt.Errorf("message too large: %v > %v", len(requestPayload), c.geo.UserForwardPayloadLength)
 	}
 
 	payload := make([]byte, c.geo.UserForwardPayloadLength)
-	copy(payload, request.Payload)
+	copy(payload, requestPayload)
 
 	for {
 		// Check if we're shutting down to avoid races
@@ -56,17 +79,17 @@ func (c *Client) ComposeSphinxPacket(request *Request) (pkt []byte, surbkey []by
 			panic("source gateway cannot be nil")
 		}
 
-		fwdPath, then, err := c.makePath(request.RecipientQueueID, request.DestinationIdHash, request.SURBID, now, true, gateway)
+		fwdPath, then, err := c.makePath(recipientQueueID, destinationIdHash, surbID, now, true, gateway)
 		if err != nil {
 			return nil, nil, 0, err
 		}
 
 		revPath := make([]*sphinx.PathHop, 0)
-		if request.SURBID != nil {
+		if surbID != nil {
 			if c.conn.queueID == nil {
 				panic("sender queueID cannot be nil")
 			}
-			revPath, then, err = c.makePath(c.conn.queueID, request.DestinationIdHash, request.SURBID, then, false, gateway)
+			revPath, then, err = c.makePath(c.conn.queueID, destinationIdHash, surbID, then, false, gateway)
 			if err != nil {
 				return nil, nil, 0, err
 			}
@@ -82,15 +105,15 @@ func (c *Client) ComposeSphinxPacket(request *Request) (pkt []byte, surbkey []by
 		// the PKI publication imposted limitations will be selected.  When
 		// that happens, the path selection must be redone.
 		if then.Sub(now) < epochtime.Period*2 {
-			if request.WithSURB {
-				payload := make([]byte, 2, 2+c.geo.SURBLength+len(request.Payload))
+			if withSURB {
+				payload := make([]byte, 2, 2+c.geo.SURBLength+len(requestPayload))
 				payload[0] = 1 // Packet has a SURB.
 				surb, k, err := c.sphinx.NewSURB(rand.Reader, revPath)
 				if err != nil {
 					return nil, nil, 0, err
 				}
 				payload = append(payload, surb...)
-				payload = append(payload, request.Payload...)
+				payload = append(payload, requestPayload...)
 
 				blob := make([]byte, c.geo.ForwardPayloadLength)
 				copy(blob, payload)
@@ -118,8 +141,9 @@ func (c *Client) ComposeSphinxPacket(request *Request) (pkt []byte, surbkey []by
 // SURB identified by surbID, and returns the SURB decryption key and total
 // round trip delay. Blocks until packet is sent on the wire.
 func (c *Client) SendCiphertext(request *Request) ([]byte, time.Duration, error) {
-	if request.DestinationIdHash == nil {
-		return nil, 0, errors.New("request.DestinationIdHash is nil")
+	// Check that we have a valid send request
+	if request.SendMessage == nil && request.SendARQMessage == nil {
+		return nil, 0, errors.New("request must have SendMessage or SendARQMessage")
 	}
 
 	pkt, k, rtt, err := c.ComposeSphinxPacket(request)

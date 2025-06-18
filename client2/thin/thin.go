@@ -186,7 +186,7 @@ func (t *ThinClient) GetLogger(prefix string) *logging.Logger {
 func (t *ThinClient) Close() error {
 
 	req := &Request{
-		IsThinClose: true,
+		ThinClose: &ThinClose{},
 	}
 	err := t.writeMessage(req)
 	if err != nil {
@@ -250,8 +250,15 @@ func (t *ThinClient) Dial() error {
 }
 
 func (t *ThinClient) writeMessage(request *Request) error {
-	if request.Payload != nil && len(request.Payload) > t.cfg.SphinxGeometry.UserForwardPayloadLength {
-		return fmt.Errorf("payload size %d exceeds maximum allowed size %d", len(request.Payload), t.cfg.SphinxGeometry.UserForwardPayloadLength)
+	// Check payload size for SendMessage and SendARQMessage
+	var payload []byte
+	if request.SendMessage != nil {
+		payload = request.SendMessage.Payload
+	} else if request.SendARQMessage != nil {
+		payload = request.SendARQMessage.Payload
+	}
+	if payload != nil && len(payload) > t.cfg.SphinxGeometry.UserForwardPayloadLength {
+		return fmt.Errorf("payload size %d exceeds maximum allowed size %d", len(payload), t.cfg.SphinxGeometry.UserForwardPayloadLength)
 	}
 
 	blob, err := cbor.Marshal(request)
@@ -578,11 +585,12 @@ func (t *ThinClient) NewSURBID() *[sConstants.SURBIDLength]byte {
 // No reply will be possible.
 func (t *ThinClient) SendMessageWithoutReply(payload []byte, destNode *[32]byte, destQueue []byte) error {
 	req := &Request{
-		WithSURB:          false,
-		IsSendOp:          true,
-		Payload:           payload,
-		DestinationIdHash: destNode,
-		RecipientQueueID:  destQueue,
+		SendMessage: &SendMessage{
+			WithSURB:          false,
+			Payload:           payload,
+			DestinationIdHash: destNode,
+			RecipientQueueID:  destQueue,
+		},
 	}
 
 	return t.writeMessage(req)
@@ -598,12 +606,13 @@ func (t *ThinClient) SendMessage(surbID *[sConstants.SURBIDLength]byte, payload 
 		return errors.New("surbID cannot be nil")
 	}
 	req := &Request{
-		SURBID:            surbID,
-		WithSURB:          true,
-		IsSendOp:          true,
-		Payload:           payload,
-		DestinationIdHash: destNode,
-		RecipientQueueID:  destQueue,
+		SendMessage: &SendMessage{
+			SURBID:            surbID,
+			WithSURB:          true,
+			Payload:           payload,
+			DestinationIdHash: destNode,
+			RecipientQueueID:  destQueue,
+		},
 	}
 
 	return t.writeMessage(req)
@@ -660,12 +669,13 @@ func (t *ThinClient) BlockingSendMessage(ctx context.Context, payload []byte, de
 
 func (t *ThinClient) SendReliableMessage(messageID *[MessageIDLength]byte, payload []byte, destNode *[32]byte, destQueue []byte) error {
 	req := &Request{
-		ID:                messageID,
-		WithSURB:          true,
-		IsARQSendOp:       true,
-		Payload:           payload,
-		DestinationIdHash: destNode,
-		RecipientQueueID:  destQueue,
+		SendARQMessage: &SendARQMessage{
+			ID:                messageID,
+			WithSURB:          true,
+			Payload:           payload,
+			DestinationIdHash: destNode,
+			RecipientQueueID:  destQueue,
+		},
 	}
 
 	return t.writeMessage(req)
@@ -686,12 +696,13 @@ func (t *ThinClient) BlockingSendReliableMessage(ctx context.Context, messageID 
 	}
 
 	req := &Request{
-		ID:                messageID,
-		WithSURB:          true,
-		IsARQSendOp:       true,
-		Payload:           payload,
-		DestinationIdHash: destNode,
-		RecipientQueueID:  destQueue,
+		SendARQMessage: &SendARQMessage{
+			ID:                messageID,
+			WithSURB:          true,
+			Payload:           payload,
+			DestinationIdHash: destNode,
+			RecipientQueueID:  destQueue,
+		},
 	}
 
 	sentWaitChan := make(chan error)
@@ -898,9 +909,9 @@ func (t *ThinClient) ReadChannel(ctx context.Context, channelID *[ChannelIDLengt
 	}
 
 	req := &Request{
-		ID: messageID,
 		ReadChannel: &ReadChannel{
 			ChannelID: *channelID,
+			ID:        messageID,
 		},
 	}
 
@@ -943,16 +954,24 @@ func (t *ThinClient) CopyChannel(ctx context.Context, channelID *[ChannelIDLengt
 		return errChannelIDCannotBeNil
 	}
 
+	// Generate a message ID for correlation
+	messageID := new([MessageIDLength]byte)
+	_, err := io.ReadFull(rand.Reader, messageID[:])
+	if err != nil {
+		return err
+	}
+
 	req := &Request{
 		CopyChannel: &CopyChannel{
 			ChannelID: *channelID,
+			ID:        messageID,
 		},
 	}
 
 	eventSink := t.EventSink()
 	defer t.StopEventSink(eventSink)
 
-	err := t.writeMessage(req)
+	err = t.writeMessage(req)
 	if err != nil {
 		return err
 	}

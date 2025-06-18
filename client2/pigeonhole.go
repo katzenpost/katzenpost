@@ -348,14 +348,15 @@ func (d *Daemon) writeChannel(request *Request) {
 	}
 
 	sendRequest := &Request{
-		ID:                request.ID,
-		AppID:             request.AppID,
-		WithSURB:          true,
-		DestinationIdHash: destinationIdHash,
-		RecipientQueueID:  recipientQueueID,
-		Payload:           courierQuery.Bytes(),
-		SURBID:            surbid,
-		IsSendOp:          true,
+		AppID: request.AppID,
+		SendMessage: &thin.SendMessage{
+			ID:                nil, // WriteChannel doesn't have an ID field
+			WithSURB:          true,
+			DestinationIdHash: destinationIdHash,
+			RecipientQueueID:  recipientQueueID,
+			Payload:           courierQuery.Bytes(),
+			SURBID:            surbid,
+		},
 	}
 	surbKey, rtt, err := d.client.SendCiphertext(sendRequest)
 	if err != nil {
@@ -390,7 +391,7 @@ func (d *Daemon) writeChannel(request *Request) {
 	d.surbIDToChannelMap[*surbid] = channelID
 	d.surbIDToChannelMapLock.Unlock()
 
-	d.timerQueue.Push(uint64(replyArrivalTime.UnixNano()), sendRequest.SURBID)
+	d.timerQueue.Push(uint64(replyArrivalTime.UnixNano()), sendRequest.SendMessage.SURBID)
 
 	conn := d.listener.getConnection(request.AppID)
 	if conn == nil {
@@ -408,8 +409,8 @@ func (d *Daemon) writeChannel(request *Request) {
 // getOrCreateEnvelope retrieves a stored envelope or creates a new one for the read request
 func (d *Daemon) getOrCreateEnvelope(request *Request, channelDesc *ChannelDescriptor, doc *cpki.Document) (*pigeonhole.CourierEnvelope, nike.PrivateKey, error) {
 	// Check if we have a stored envelope for this message ID
-	if request.ID != nil {
-		if envelope, privateKey, found := d.getStoredEnvelope(request.ID, channelDesc); found {
+	if request.ReadChannel.ID != nil {
+		if envelope, privateKey, found := d.getStoredEnvelope(request.ReadChannel.ID, channelDesc); found {
 			return envelope, privateKey, nil
 		}
 	}
@@ -480,14 +481,14 @@ func (d *Daemon) createNewEnvelope(request *Request, channelDesc *ChannelDescrip
 	}
 
 	// Store the envelope and box ID for future reuse if we have a message ID
-	if request.ID != nil {
+	if request.ReadChannel.ID != nil {
 		channelDesc.StoredEnvelopesLock.Lock()
-		channelDesc.StoredEnvelopes[*request.ID] = &StoredEnvelopeData{
+		channelDesc.StoredEnvelopes[*request.ReadChannel.ID] = &StoredEnvelopeData{
 			Envelope: courierEnvelope,
 			BoxID:    boxID,
 		}
 		channelDesc.StoredEnvelopesLock.Unlock()
-		d.log.Debugf("Stored envelope for message ID %x", request.ID[:])
+		d.log.Debugf("Stored envelope for message ID %x", request.ReadChannel.ID[:])
 	}
 
 	return courierEnvelope, envelopePrivateKey, nil
@@ -500,7 +501,7 @@ func (d *Daemon) sendReadChannelErrorResponse(request *Request, channelID [thin.
 		conn.sendResponse(&Response{
 			AppID: request.AppID,
 			ReadChannelReply: &thin.ReadChannelReply{
-				MessageID: request.ID,
+				MessageID: request.ReadChannel.ID,
 				ChannelID: channelID,
 				Err:       errorMsg,
 			},
@@ -582,14 +583,15 @@ func (d *Daemon) sendEnvelopeToCourier(request *Request, channelID [thin.Channel
 	}
 
 	sendRequest := &Request{
-		ID:                request.ID,
-		AppID:             request.AppID,
-		WithSURB:          true,
-		DestinationIdHash: destinationIdHash,
-		RecipientQueueID:  recipientQueueID,
-		Payload:           courierQuery.Bytes(),
-		SURBID:            surbid,
-		IsSendOp:          true,
+		AppID: request.AppID,
+		SendMessage: &thin.SendMessage{
+			ID:                request.ReadChannel.ID,
+			WithSURB:          true,
+			DestinationIdHash: destinationIdHash,
+			RecipientQueueID:  recipientQueueID,
+			Payload:           courierQuery.Bytes(),
+			SURBID:            surbid,
+		},
 	}
 
 	surbKey, rtt, err := d.client.SendCiphertext(sendRequest)
@@ -605,7 +607,7 @@ func (d *Daemon) sendEnvelopeToCourier(request *Request, channelID [thin.Channel
 
 	d.channelRepliesLock.Lock()
 	d.channelReplies[*surbid] = replyDescriptor{
-		ID:      request.ID,
+		ID:      request.ReadChannel.ID,
 		appID:   request.AppID,
 		surbKey: surbKey,
 	}
@@ -615,7 +617,7 @@ func (d *Daemon) sendEnvelopeToCourier(request *Request, channelID [thin.Channel
 	d.surbIDToChannelMap[*surbid] = channelID
 	d.surbIDToChannelMapLock.Unlock()
 
-	d.timerQueue.Push(uint64(replyArrivalTime.UnixNano()), sendRequest.SURBID)
+	d.timerQueue.Push(uint64(replyArrivalTime.UnixNano()), sendRequest.SendMessage.SURBID)
 
 	return nil
 }
@@ -630,7 +632,7 @@ func (d *Daemon) sendReadChannelSuccessResponse(request *Request, channelID [thi
 	conn.sendResponse(&Response{
 		AppID: request.AppID,
 		ReadChannelReply: &thin.ReadChannelReply{
-			MessageID: request.ID,
+			MessageID: request.ReadChannel.ID,
 			ChannelID: channelID,
 		},
 	})

@@ -173,7 +173,7 @@ func (c *incomingConn) worker() {
 			if !ok {
 				return
 			}
-			if rawReq.IsThinClose {
+			if rawReq.ThinClose != nil {
 				c.log.Info("Thin client sent a disconnect request, closing thin client connection.")
 				return
 			}

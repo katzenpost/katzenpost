@@ -272,13 +272,13 @@ func (d *Daemon) egressWorker() {
 			d.arqDoResend(surbID)
 		case request := <-d.egressCh:
 			switch {
-			case request.IsLoopDecoy:
+			case request.SendLoopDecoy != nil:
 				d.sendLoopDecoy(request)
-			case request.IsDropDecoy:
+			case request.SendDropDecoy != nil:
 				d.sendDropDecoy()
-			case request.IsSendOp:
+			case request.SendMessage != nil:
 				d.send(request)
-			case request.IsARQSendOp:
+			case request.SendARQMessage != nil:
 				d.send(request)
 
 				// New Pigeonhole Channel related commands proceed here:
@@ -803,9 +803,9 @@ func (d *Daemon) send(request *Request) {
 	var err error
 	var now time.Time
 
-	if request.IsARQSendOp {
-		request.SURBID = &[sphinxConstants.SURBIDLength]byte{}
-		_, err = rand.Reader.Read(request.SURBID[:])
+	if request.SendARQMessage != nil {
+		request.SendARQMessage.SURBID = &[sphinxConstants.SURBIDLength]byte{}
+		_, err = rand.Reader.Read(request.SendARQMessage.SURBID[:])
 		if err != nil {
 			panic(err)
 		}
@@ -816,11 +816,29 @@ func (d *Daemon) send(request *Request) {
 		d.log.Infof("SendCiphertext error: %s", err.Error())
 	}
 
-	if request.IsARQSendOp {
+	if request.SendARQMessage != nil {
 		d.log.Infof("ARQ RTT %s", rtt)
 	}
 
-	if request.WithSURB {
+	// Check if this is a request with SURB (either SendMessage or SendARQMessage)
+	var withSURB bool
+	var surbID *[sphinxConstants.SURBIDLength]byte
+	var messageID *[MessageIDLength]byte
+	var isLoopDecoy bool
+
+	if request.SendMessage != nil {
+		withSURB = request.SendMessage.WithSURB
+		surbID = request.SendMessage.SURBID
+		messageID = request.SendMessage.ID
+		isLoopDecoy = (request.SendLoopDecoy != nil)
+	} else if request.SendARQMessage != nil {
+		withSURB = request.SendARQMessage.WithSURB
+		surbID = request.SendARQMessage.SURBID
+		messageID = request.SendARQMessage.ID
+		isLoopDecoy = false
+	}
+
+	if withSURB {
 		now = time.Now()
 		// XXX  this is too aggressive, and must be at least the fetchInterval + rtt + some slopfactor to account for path delays
 
@@ -829,16 +847,16 @@ func (d *Daemon) send(request *Request) {
 		duration := rtt + fetchInterval + slop
 		replyArrivalTime := now.Add(duration)
 
-		d.timerQueue.Push(uint64(replyArrivalTime.UnixNano()), request.SURBID)
+		d.timerQueue.Push(uint64(replyArrivalTime.UnixNano()), surbID)
 
-		if !request.IsLoopDecoy {
+		if !isLoopDecoy {
 			incomingConn := d.listener.getConnection(request.AppID)
 			if incomingConn != nil {
 				response := &Response{
 					AppID: request.AppID,
 					MessageSentEvent: &thin.MessageSentEvent{
-						MessageID: request.ID,
-						SURBID:    request.SURBID,
+						MessageID: messageID,
+						SURBID:    surbID,
 						SentAt:    now,
 						ReplyETA:  rtt,
 						Err:       err,
@@ -853,15 +871,15 @@ func (d *Daemon) send(request *Request) {
 	}
 
 	d.replyLock.Lock()
-	if request.IsARQSendOp {
+	if request.SendARQMessage != nil {
 		message := &ARQMessage{
 			AppID:              request.AppID,
-			MessageID:          request.ID,
-			SURBID:             request.SURBID,
-			Payload:            request.Payload,
-			DestinationIdHash:  request.DestinationIdHash,
+			MessageID:          request.SendARQMessage.ID,
+			SURBID:             request.SendARQMessage.SURBID,
+			Payload:            request.SendARQMessage.Payload,
+			DestinationIdHash:  request.SendARQMessage.DestinationIdHash,
 			Retransmissions:    0,
-			RecipientQueueID:   request.RecipientQueueID,
+			RecipientQueueID:   request.SendARQMessage.RecipientQueueID,
 			SURBDecryptionKeys: surbKey,
 			SentAt:             time.Now(),
 			ReplyETA:           rtt,
@@ -877,13 +895,13 @@ func (d *Daemon) send(request *Request) {
 		slop := time.Minute * 5 // very conservative
 		replyArrivalTime := time.Now().Add(rtt + slop)
 		d.gcTimerQueue.Push(uint64(replyArrivalTime.UnixNano()), &gcReply{
-			id:    request.ID,
+			id:    request.SendARQMessage.ID,
 			appID: request.AppID,
 		})
 	}
 
-	if request.IsSendOp {
-		d.replies[*request.SURBID] = replyDescriptor{
+	if request.SendMessage != nil {
+		d.replies[*request.SendMessage.SURBID] = replyDescriptor{
 			appID:   request.AppID,
 			surbKey: surbKey,
 		}
@@ -891,8 +909,8 @@ func (d *Daemon) send(request *Request) {
 		return
 	}
 
-	if request.IsLoopDecoy {
-		d.decoys[*request.SURBID] = replyDescriptor{
+	if isLoopDecoy {
+		d.decoys[*surbID] = replyDescriptor{
 			appID:   request.AppID,
 			surbKey: surbKey,
 		}
@@ -924,11 +942,14 @@ func (d *Daemon) sendLoopDecoy(request *Request) {
 
 	}
 
-	request.Payload = payload
-	request.SURBID = surbID
-	request.DestinationIdHash = &serviceIdHash
-	request.RecipientQueueID = echoService.RecipientQueueID
-	request.IsLoopDecoy = true
+	// Convert to SendMessage for actual sending
+	request.SendMessage = &thin.SendMessage{
+		Payload:           payload,
+		SURBID:            surbID,
+		DestinationIdHash: &serviceIdHash,
+		RecipientQueueID:  echoService.RecipientQueueID,
+		WithSURB:          true,
+	}
 
 	d.send(request)
 }
@@ -947,12 +968,14 @@ func (d *Daemon) sendDropDecoy() {
 	serviceIdHash := hash.Sum256(echoService.MixDescriptor.IdentityKey)
 	payload := make([]byte, d.client.geo.UserForwardPayloadLength)
 
-	request := &Request{}
-	request.WithSURB = false
-	request.Payload = payload
-	request.DestinationIdHash = &serviceIdHash
-	request.RecipientQueueID = echoService.RecipientQueueID
-	request.IsDropDecoy = true
+	request := &Request{
+		SendMessage: &thin.SendMessage{
+			WithSURB:          false,
+			Payload:           payload,
+			DestinationIdHash: &serviceIdHash,
+			RecipientQueueID:  echoService.RecipientQueueID,
+		},
+	}
 
 	d.send(request)
 }
@@ -1015,14 +1038,15 @@ func (d *Daemon) arqDoResend(surbID *[sphinxConstants.SURBIDLength]byte) {
 		panic(err)
 	}
 	pkt, k, rtt, err := d.client.ComposeSphinxPacket(&Request{
-		ID:                message.MessageID,
-		AppID:             message.AppID,
-		WithSURB:          true,
-		DestinationIdHash: message.DestinationIdHash,
-		RecipientQueueID:  message.RecipientQueueID,
-		Payload:           message.Payload,
-		SURBID:            newsurbID,
-		IsARQSendOp:       true,
+		AppID: message.AppID,
+		SendARQMessage: &thin.SendARQMessage{
+			ID:                message.MessageID,
+			WithSURB:          true,
+			DestinationIdHash: message.DestinationIdHash,
+			RecipientQueueID:  message.RecipientQueueID,
+			Payload:           message.Payload,
+			SURBID:            newsurbID,
+		},
 	})
 	if err != nil {
 		d.log.Errorf("failed to send sphinx packet: %s", err.Error())
@@ -1111,14 +1135,14 @@ func (d *Daemon) copyChannel(request *Request) {
 
 	// Create send request
 	sendRequest := &Request{
-		ID:                request.ID,
-		AppID:             request.AppID,
-		WithSURB:          true,
-		DestinationIdHash: destinationIdHash,
-		RecipientQueueID:  recipientQueueID,
-		Payload:           courierQuery.Bytes(),
-		SURBID:            surbid,
-		IsSendOp:          true,
+		AppID: request.AppID,
+		SendMessage: &thin.SendMessage{
+			WithSURB:          true,
+			DestinationIdHash: destinationIdHash,
+			RecipientQueueID:  recipientQueueID,
+			Payload:           courierQuery.Bytes(),
+			SURBID:            surbid,
+		},
 	}
 
 	// Send to courier
@@ -1137,7 +1161,7 @@ func (d *Daemon) copyChannel(request *Request) {
 
 	d.channelRepliesLock.Lock()
 	d.channelReplies[*surbid] = replyDescriptor{
-		ID:      request.ID,
+		ID:      request.CopyChannel.ID,
 		appID:   request.AppID,
 		surbKey: surbKey,
 	}

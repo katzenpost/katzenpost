@@ -4,7 +4,6 @@ package client2
 
 import (
 	"github.com/katzenpost/katzenpost/client2/thin"
-	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 )
 
 func IntoThinResponse(r *Response) *thin.Response {
@@ -58,17 +57,11 @@ func FromThinRequest(r *thin.Request, appid *[AppIDLength]byte) *Request {
 		WriteChannel:      r.WriteChannel,
 		ReadChannel:       r.ReadChannel,
 		CopyChannel:       r.CopyChannel,
-		ID:                r.ID,
-		WithSURB:          r.WithSURB,
-		SURBID:            r.SURBID,
-		DestinationIdHash: r.DestinationIdHash,
-		RecipientQueueID:  r.RecipientQueueID,
-		Payload:           r.Payload,
-		IsSendOp:          r.IsSendOp,
-		IsARQSendOp:       r.IsARQSendOp,
-		IsLoopDecoy:       r.IsLoopDecoy,
-		IsDropDecoy:       r.IsDropDecoy,
-		IsThinClose:       r.IsThinClose,
+		SendMessage:       r.SendMessage,
+		SendARQMessage:    r.SendARQMessage,
+		SendLoopDecoy:     r.SendLoopDecoy,
+		SendDropDecoy:     r.SendDropDecoy,
+		ThinClose:         r.ThinClose,
 	}
 }
 
@@ -83,49 +76,17 @@ type Request struct {
 
 	CopyChannel *thin.CopyChannel
 
-	// ID is the unique identifier with respect to the Payload.
-	// This is only used by the ARQ.
-	ID *[MessageIDLength]byte
+	SendMessage *thin.SendMessage
 
-	// WithSURB indicates if the message should be sent with a SURB
-	// in the Sphinx payload.
-	WithSURB bool
+	SendARQMessage *thin.SendARQMessage
 
-	// SURBID must be a unique identity for each request.
-	// This field should be nil if WithSURB is false.
-	SURBID *[constants.SURBIDLength]byte
+	SendLoopDecoy *thin.SendLoopDecoy
+
+	SendDropDecoy *thin.SendDropDecoy
+
+	ThinClose *thin.ThinClose
 
 	// AppID must be a unique identity for the client application
 	// that is sending this Request.
 	AppID *[AppIDLength]byte
-
-	// DestinationIdHash is 32 byte hash of the destination Provider's
-	// identity public key.
-	DestinationIdHash *[32]byte
-
-	// RecipientQueueID is the queue identity which will receive the message.
-	RecipientQueueID []byte
-
-	// Payload is the actual Sphinx packet.
-	Payload []byte
-
-	// IsSendOp is set to true if the intent is to send a message through
-	// the mix network.
-	IsSendOp bool
-
-	// IsARQSendOp is set to true if the intent is to send a message through
-	// the mix network using the naive ARQ error correction scheme.
-	IsARQSendOp bool
-
-	// IsLoopDecoy is set to true to indicate that this message shall
-	// be a loop decoy message.
-	IsLoopDecoy bool
-
-	// IsDropDecoy is set to true to indicate that this message shall
-	// be a drop decoy message.
-	IsDropDecoy bool
-
-	// IsThinClose is set to true to indicate that the thin client
-	// is disconnecting from the daemon.
-	IsThinClose bool
 }

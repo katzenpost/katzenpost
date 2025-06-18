@@ -50,8 +50,10 @@ func TestThinTCPSendRecv(t *testing.T) {
 	require.NoError(t, err)
 
 	request := &Request{
-		ID:      id,
-		Payload: []byte("abc123"),
+		SendMessage: &SendMessage{
+			ID:      id,
+			Payload: []byte("abc123"),
+		},
 	}
 	thinWriteMessageErrCh := make(chan error, 0)
 	go func() {
@@ -76,7 +78,7 @@ func TestThinTCPSendRecv(t *testing.T) {
 	err = cbor.Unmarshal(message, serverRequest)
 	require.NoError(t, err)
 
-	require.Equal(t, serverRequest.ID[:], request.ID[:])
+	require.Equal(t, serverRequest.SendMessage.ID[:], request.SendMessage.ID[:])
 
 	// test readMessage
 
@@ -146,7 +148,9 @@ func TestThinTCPSendRecv(t *testing.T) {
 
 	largeSphinxPayload := make([]byte, 50)
 	request = &Request{
-		Payload: largeSphinxPayload,
+		SendMessage: &SendMessage{
+			Payload: largeSphinxPayload,
+		},
 	}
 	err = thin.writeMessage(request)
 	require.Error(t, err)
