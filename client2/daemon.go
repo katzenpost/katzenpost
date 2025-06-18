@@ -705,13 +705,21 @@ func (d *Daemon) handleReadReply(params *ReplyHandlerParams, readReply *pigeonho
 	}
 
 	d.log.Debugf("BACAP DECRYPT SUCCESS: Decrypted %d bytes for BoxID %x", len(innerplaintext), boxid[:])
-	d.log.Debugf("SENDING RESPONSE: MessageID %x, ChannelID %x, Payload size %d bytes", params.MessageID[:], params.ChannelID[:], len(innerplaintext))
+
+	// Extract the original message from the padded payload (remove 4-byte length prefix and padding)
+	originalMessage, err := pigeonhole.ExtractMessageFromPaddedPayload(innerplaintext)
+	if err != nil {
+		d.log.Errorf("Failed to extract message from padded payload: %s", err)
+		return fmt.Errorf("failed to extract message from padded payload: %s", err)
+	}
+
+	d.log.Debugf("SENDING RESPONSE: MessageID %x, ChannelID %x, Payload size %d bytes (extracted from %d padded bytes)", params.MessageID[:], params.ChannelID[:], len(originalMessage), len(innerplaintext))
 	err = params.Conn.sendResponse(&Response{
 		AppID: params.AppID,
 		ReadChannelReply: &thin.ReadChannelReply{
 			MessageID: params.MessageID,
 			ChannelID: params.ChannelID,
-			Payload:   innerplaintext,
+			Payload:   originalMessage,
 		},
 	})
 	if err != nil {
