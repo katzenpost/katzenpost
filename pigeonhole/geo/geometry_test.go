@@ -18,6 +18,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// Test log message constants to avoid duplication
+const (
+	logSphinxUserForwardPayloadLength = "Sphinx UserForwardPayloadLength: %d"
+)
+
 func TestGeometryUseCase1FromBoxPayloadLength(t *testing.T) {
 	// Use Case 1: Given BoxPayloadLength, derive all envelope sizes
 	nikeScheme := schemes.ByName("x25519")
@@ -68,7 +73,7 @@ func TestGeometryUseCase2ToSphinxGeometry(t *testing.T) {
 	require.GreaterOrEqual(t, sphinxGeo.UserForwardPayloadLength, maxEnvelopeSize)
 
 	t.Logf("Pigeonhole max envelope size: %d", maxEnvelopeSize)
-	t.Logf("Sphinx UserForwardPayloadLength: %d", sphinxGeo.UserForwardPayloadLength)
+	t.Logf(logSphinxUserForwardPayloadLength, sphinxGeo.UserForwardPayloadLength)
 	t.Logf("Sphinx PacketLength: %d", sphinxGeo.PacketLength)
 }
 
@@ -99,7 +104,7 @@ func TestGeometryUseCase3FromSphinxGeometry(t *testing.T) {
 	// The BoxPayloadLength should be optimized (not too small)
 	require.Greater(t, pigeonholeGeo.BoxPayloadLength, 100) // Should find a reasonable size
 
-	t.Logf("Sphinx UserForwardPayloadLength: %d", sphinxGeo.UserForwardPayloadLength)
+	t.Logf(logSphinxUserForwardPayloadLength, sphinxGeo.UserForwardPayloadLength)
 	t.Logf("Optimal BoxPayloadLength: %d", pigeonholeGeo.BoxPayloadLength)
 	t.Logf("Max envelope size: %d", maxEnvelopeSize)
 	t.Logf("Space utilization: %.1f%%", float64(maxEnvelopeSize)*100/float64(sphinxGeo.UserForwardPayloadLength))
@@ -155,7 +160,7 @@ func TestGeometryBidirectionalSizing(t *testing.T) {
 
 	t.Logf("Original BoxPayloadLength: %d", originalBoxPayloadLength)
 	t.Logf("Round-trip BoxPayloadLength: %d", pigeonholeGeo2.BoxPayloadLength)
-	t.Logf("Sphinx UserForwardPayloadLength: %d", sphinxGeo.UserForwardPayloadLength)
+	t.Logf(logSphinxUserForwardPayloadLength, sphinxGeo.UserForwardPayloadLength)
 }
 
 func TestGeometryPrecisePredictions(t *testing.T) {
