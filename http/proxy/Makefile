@@ -1,12 +1,12 @@
 warped?=false
 ldflags="-buildid= -X github.com/katzenpost/katzenpost/core/epochtime.WarpedEpoch=${warped}"
 
-all: clean client/client server/server
+all: clean client server
 
-client/client:
-	cd client && go build -trimpath -ldflags ${ldflags}
+client:
+	cd ../../cmd/http-proxy-client && go build -trimpath -ldflags ${ldflags}
 
-server/server:
-	cd server && go build -trimpath -ldflags ${ldflags}
+server:
+	cd ../../cmd/http-proxy-server && go build -trimpath -ldflags ${ldflags}
 clean:
-	rm -f client/client server/server
+	rm -f ../../cmd/http-proxy-client/http-proxy-client ../../cmd/http-proxy-server/http-proxy-server

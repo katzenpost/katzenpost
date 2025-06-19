@@ -101,10 +101,10 @@ $(cache_dir): $(cache_dir)/go
 $(cache_dir)/go:
 	mkdir -vp $(cache_dir)/go
 
-$(docker_compose_yml): ../genconfig/main.go $(distro)_base.stamp | $(net_name) $(cache_dir)
+$(docker_compose_yml): ../cmd/genconfig/main.go $(distro)_base.stamp | $(net_name) $(cache_dir)
 	$(docker) run ${docker_args} --rm katzenpost-$(distro)_base \
-		$(sh) -c 'cd genconfig && go build && cd ../docker \
-		&& ../genconfig/genconfig -wirekem $(wirekem) -a ${bind_addr} -nv ${auths} -n ${mixes} -gateways ${gateways} \
+		$(sh) -c 'cd cmd/genconfig && go build && cd ../docker \
+		&& ../cmd/genconfig/genconfig -wirekem $(wirekem) -a ${bind_addr} -nv ${auths} -n ${mixes} -gateways ${gateways} \
 		-serviceNodes ${serviceNodes} \
 		-sr ${sr} -mu ${mu} -muMax ${muMax} -lP ${lP} -lPMax ${lPMax} -lL ${lL} \
 		-lLMax ${lLMax} -lD ${lD} -lDMax ${lDMax} -lM ${lM} -lMMax ${lMMax} \
@@ -117,7 +117,7 @@ $(docker_compose_yml): ../genconfig/main.go $(distro)_base.stamp | $(net_name) $
 # This is useful for tests that depend on config files existing (e.g., client2/testdata symlinks)
 config-only: | $(net_name)
 	@echo "Generating mixnet configuration files without docker containers..."
-	cd ../genconfig && go build && ./genconfig -wirekem $(wirekem) -a ${bind_addr} -nv ${auths} -n ${mixes} -gateways ${gateways} \
+	cd ../cmd/genconfig && go build && ./genconfig -wirekem $(wirekem) -a ${bind_addr} -nv ${auths} -n ${mixes} -gateways ${gateways} \
 		-serviceNodes ${serviceNodes} \
 		-sr ${sr} -mu ${mu} -muMax ${muMax} -lP ${lP} -lPMax ${lPMax} -lL ${lL} \
 		-lLMax ${lLMax} -lD ${lD} -lDMax ${lDMax} -lM ${lM} -lMMax ${lMMax} \
@@ -200,37 +200,36 @@ go-mod-upgrade: $(distro)_base.stamp | $(net_name) $(cache_dir)
 			$(sh) -c 'go get -d -u ./... && go mod tidy'
 
 $(net_name)/server.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
-		$(docker_run_sh) 'cd server/cmd/server ; go build -trimpath -ldflags ${ldflags} && mv server /$(net_name)/server.$(distro)'
+		$(docker_run_sh) 'cd cmd/server ; go build -trimpath -ldflags ${ldflags} && mv server /$(net_name)/server.$(distro)'
 
 $(net_name)/courier.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
-		$(docker_run_sh) 'cd courier/cmd/courier ; go build -trimpath -ldflags ${ldflags} && mv courier /$(net_name)/courier.$(distro)'
+		$(docker_run_sh) 'cd cmd/courier ; go build -trimpath -ldflags ${ldflags} && mv courier /$(net_name)/courier.$(distro)'
 
 $(net_name)/replica.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
-		$(docker_run_sh) 'cd replica/cmd/replica ; go build -trimpath -ldflags ${ldflags} && mv replica /$(net_name)/replica.$(distro)'
+		$(docker_run_sh) 'cd cmd/replica ; go build -trimpath -ldflags ${ldflags} && mv replica /$(net_name)/replica.$(distro)'
 
 $(net_name)/proxy_client.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
-		$(docker_run_sh) 'cd http/proxy/client; go build -trimpath -ldflags ${ldflags} && mv client /$(net_name)/proxy_client.$(distro)'
+		$(docker_run_sh) 'cd cmd/http-proxy-client; go build -trimpath -ldflags ${ldflags} && mv http-proxy-client /$(net_name)/proxy_client.$(distro)'
 
 $(net_name)/proxy_server.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
-		$(docker_run_sh) 'cd http/proxy/server; go build -trimpath -ldflags ${ldflags} && mv server /$(net_name)/proxy_server.$(distro)'
+		$(docker_run_sh) 'cd cmd/http-proxy-server; go build -trimpath -ldflags ${ldflags} && mv http-proxy-server /$(net_name)/proxy_server.$(distro)'
 
 $(net_name)/map.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
-		$(docker_run_sh) 'cd map/server/cmd/map ; go build -trimpath -ldflags ${ldflags} && mv map /$(net_name)/map.$(distro)'
+		$(docker_run_sh) 'cd cmd/map ; go build -trimpath -ldflags ${ldflags} && mv map /$(net_name)/map.$(distro)'
 
 $(net_name)/echo_server.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
-		$(docker_run_sh) 'cd server_plugins/cbor_plugins/echo-go ; go build -trimpath -ldflags ${ldflags} && mv echo-go /$(net_name)/echo_server.$(distro)'
+		$(docker_run_sh) 'cd cmd/echo-plugin ; go build -trimpath -ldflags ${ldflags} && mv echo-plugin /$(net_name)/echo_server.$(distro)'
 
 $(net_name)/dirauth.$(distro): $(distro)_base.stamp $(docker_compose_yml) | $(net_name) $(cache_dir)
-		$(docker_run_sh) 'cd authority && make $(make_args) cmd/dirauth/dirauth cmd/fetch/fetch && \
-			mv cmd/dirauth/dirauth /$(net_name)/dirauth.$(distro) && \
-			mv cmd/fetch/fetch /$(net_name)/fetch.$(distro)'
+		$(docker_run_sh) 'cd cmd/dirauth && go build -trimpath -ldflags ${ldflags} && mv dirauth /$(net_name)/dirauth.$(distro) && \
+			cd ../fetch && go build -trimpath -ldflags ${ldflags} && mv fetch /$(net_name)/fetch.$(distro)'
 
 $(net_name)/ping.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
-		$(docker_run_sh) 'cd ping && go mod verify && go build -ldflags ${ldflags} && \
+		$(docker_run_sh) 'cd cmd/ping && go mod verify && go build -ldflags ${ldflags} && \
 			mv ping /$(net_name)/ping.$(distro)'
 
 $(net_name)/kpclientd.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
-		$(docker_run_sh) 'cd client2/cmd/kpclientd && go mod verify && go build -ldflags ${ldflags} && \
+		$(docker_run_sh) 'cd cmd/kpclientd && go mod verify && go build -ldflags ${ldflags} && \
 			mv kpclientd /$(net_name)/kpclientd.$(distro)'
 
 clean-images: stop

@@ -23,11 +23,11 @@ coverage-file:
 coverage-html:
 	go tool cover -html=coverage.out
 
-cmd/dirauth/dirauth: clean
-	cd cmd/dirauth && go build -trimpath -ldflags ${ldflags}
+dirauth: clean
+	cd ../cmd/dirauth && go build -trimpath -ldflags ${ldflags}
 
-cmd/fetch/fetch: clean
-	cd cmd/fetch && go build -trimpath -ldflags ${ldflags}
+fetch: clean
+	cd ../cmd/fetch && go build -trimpath -ldflags ${ldflags}
 
 clean:
-	rm -f cmd/fetch/fetch cmd/voting/voting cmd/nonvoting/nonvoting
+	rm -f ../cmd/fetch/fetch ../cmd/dirauth/dirauth cmd/voting/voting cmd/nonvoting/nonvoting

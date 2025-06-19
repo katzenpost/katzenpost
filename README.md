@@ -221,7 +221,7 @@ by the dirauth configuration. Clients also use this signature scheme to verify P
 We can optionally enable the use of pyroscope pprof profiling within the mix server
 by building with the "pyroscope" build tag:
 
-cd server/cmd/server; go build --tags pyroscope
+cd cmd/server; go build --tags pyroscope
 
 You'll have to setup a pyroscope server via these instructions, here:
 

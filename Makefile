@@ -4,19 +4,19 @@
 all: server dirauth genconfig ping
 
 server:
-	cd server/cmd/server; go build
+	cd cmd/server; go build
 
 dirauth:
-	cd authority/cmd/dirauth; go build
+	cd cmd/dirauth; go build
 
 genconfig:
-	cd genconfig; go build
+	cd cmd/genconfig; go build
 
 ping:
-	cd ping; go build
+	cd cmd/ping; go build
 
 clean:
-	rm -f server/cmd/server/server authority/cmd/dirauth/dirauth genconfig/genconfig ping/ping
+	rm -f cmd/server/server cmd/dirauth/dirauth cmd/genconfig/genconfig cmd/ping/ping
 
 sphincsplus:
 	cd sphincsplus/ref && go test -v -race -timeout 0 ./...
