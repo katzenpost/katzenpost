@@ -30,25 +30,97 @@ outgoing messages.
 
 # Project Status
 
-Many excited new changes are forthcoming!
-You can watch our progress being tracked, here:
+We are currently working to implement the new mixnet protocols discussed
+in our [paper](https://arxiv.org/abs/2501.02933). Please also see the
+specification documents for the new protocols:
 
-https://github.com/orgs/katzenpost/projects/6/views/5
-
+[Pigeonhole Protocol Specification](https://katzenpost.network/docs/specs/pigeonhole/)
+[Group Chat Protocol Specification](https://katzenpost.network/docs/specs/group_chat.html)
 
 # Building Katzenpost
 
-To build all server related components, type "make" when inside this repo:
+## Build Targets
+
+The root Makefile provides several build targets for different components:
+
+### Standard Components
+To build all standard server and client components (excluding replica), use:
 
 ```bash
 cd katzenpost
-make
+make all
+```
+
+This builds all executables in the `cmd/` directory:
+- **server** - Mix server node
+- **dirauth** - Directory authority node
+- **genconfig** - Configuration file generator
+- **ping** - Network connectivity testing tool
+- **courier** - Message courier service
+- **echo-plugin** - Echo service plugin
+- **fetch** - Data fetching utility
+- **genkeypair** - Cryptographic key pair generator
+- **gensphinx** - Sphinx packet generator
+- **http-proxy-client** - HTTP proxy client
+- **http-proxy-server** - HTTP proxy server
+- **katzencat** - Katzenpost netcat-like utility
+- **katzencopy** - File transfer utility
+- **kpclientd** - Katzenpost client daemon
+- **map** - Network mapping utility
+- **sphinx** - Sphinx cryptographic packet tool
+
+### Individual Components
+You can also build individual components:
+
+```bash
+make server      # Build just the mix server
+make dirauth     # Build just the directory authority
+make genconfig   # Build just the config generator
+# ... etc for any component
+```
+
+### Replica Component (Special Requirements)
+The replica component requires RocksDB dependencies and has its own target:
+
+```bash
+make replica
+```
+
+This will:
+1. Install RocksDB dependencies (cmake, build tools, gflags, RocksDB v10.2.1)
+2. Build the replica executable
+
+**Note:** The replica target requires sudo privileges to install system dependencies.
+
+### Cleaning Built Binaries
+To remove all built executables:
+
+```bash
+make clean
+```
+
+## Dependencies
+
+### Standard Components
+Most Katzenpost components only require Go and standard system libraries.
+
+### Replica Component Dependencies
+The replica component requires RocksDB, which has additional system dependencies:
+
+- **System packages**: cmake, build-essential, libsnappy-dev, libzstd-dev, liblz4-dev, libz-dev
+- **gflags**: Built from source (https://github.com/gflags/gflags.git)
+- **RocksDB v10.2.1**: Built from source (https://github.com/facebook/rocksdb.git)
+
+The `make replica` target automatically handles installing these dependencies, but requires sudo privileges. If you prefer to install dependencies manually, you can use:
+
+```bash
+make install-replica-deps  # Install RocksDB dependencies only
 ```
 
 # Client:
 
-Currently, [Katzen](https://github.com/katzenpost/katzen) is the only client available for use with Katzenpost. However a SOCKS proxy client is forthcoming
-and you'll be able to use that with many existing applications.
+New Katzenpost mixnet clients are forthcoming.
+
 
 # Server Side Usage/Configuration
 
@@ -78,24 +150,23 @@ to learn how to configure a Katzenpost mixnet.**
 
 Documentation is a work in progress:
 
-* [mix server docs](docs/handbook/mix_server.rst)
+* [Katzenpost Mixnet Documentation](https://katzenpost.network/docs/)
 
-* [dirauth server docs](docs/handbook/voting_pki.rst)
+* [Using the Katzenpost Docker test mix network](https://katzenpost.network/docs/admin_guide/docker.html)
 
+* [Mixnet Admin guide](https://katzenpost.network/docs/admin_guide/)
 
 
 # Expert's Corner
 
 Katzenpost is an unverified decryption mix network that uses a continuous time
-mixing strategy with client selected exponential delays and a stratified (layered) topology. 
+mixing strategy with client selected exponential delays and a stratified routing topology. 
 
-Our documentation is in progress, but we have some resources for experts:
+We have some resources for experts:
 
-* Out mix net design literature review, can be found [here.](https://katzenpost.network/research/Literature_overview__website_version.pdf)
+* [Mixnet Threat Model Document](https://katzenpost.network/research/Threat_Model_Doc.pdf)
 
-* Our threat model document, work-in-progress, can be found [here.](https://katzenpost.network/research/Threat_Model_Doc.pdf)
-
-* Our design specification documents are available [here.](https://github.com/katzenpost/katzenpost/tree/main/docs/specs)
+* [Mixnet Literature Review](https://katzenpost.network/research/Literature_overview__website_version.pdf)
 
 
 ## Cryptographic Agility
@@ -117,6 +188,56 @@ allowing us to build protocols that are completely agnostic to the
 specific cryptographic primitive being used.  Secondly, each of these
 protocol implementations allows for the selection of the cryptographic
 primitive via it's TOML configuration file.
+
+Here's what primitives are available to you:
+
+| NIKE: Non-Interactive Key Exchange |
+|:---:|
+
+| Primitive | HPQC name | security |
+|  --------  |  -------  | -------  | 
+| Classical Diffie-Hellman | "DH4096_RFC3526" | classic |
+| X25519 | "X25519" | classic |
+| X448 | "X448" | classic |
+| Implementations of CTIDH | "ctidh511", "ctidh512", "ctidh1024", "ctidh2048" | post-quantum | 
+| hybrid of CSIDH and X25519 | "NOBS_CSIDH-X25519 " | hybrid |
+|hybrids of CTIDH with X25519 | "CTIDH511-X25519", "CTIDH512-X25519", "CTIDH1024-X25519" | hybrid |
+| hybrids of CTIDH with X448 | "CTIDH512-X448", "CTIDH1024-X448", "CTIDH2048-X448"| hybrid |
+
+__________
+
+| KEM: Key Encapsulation Mechanism |
+|:---:|
+
+
+| Primitive | HPQC name | security |
+|  --------  |  -------  | -------  | 
+| ML-KEM-768| "MLKEM768" | post-quantum |
+| XWING is a hybrid primitive that pre-combines ML-KEM-768 and X25519. Due to [security properties](https://eprint.iacr.org/2018/024) of our combiner, we also implement our own combination of the two below.| "XWING" | hybrid |
+| The sntrup4591761 version of the NTRU cryptosystem. | "NTRUPrime"  | post-quantum |
+| FrodoKEM-640-SHAKE |"FrodoKEM-640-SHAKE"| post-quantum|
+| Various forms of the McEliece cryptosystem| "mceliece348864", "mceliece348864f", "mceliece460896", "mceliece460896f", "mceliece6688128", "mceliece6688128f", "mceliece6960119", "mceliece6960119f", "mceliece8192128", "mceliece8192128f" | post-quantum|
+|A hybrid of ML-KEM-768 and X25519. The [KEM Combiners paper](https://eprint.iacr.org/2018/024.pdf) is the reason we implemented our own combination in addition to including XWING. |"MLKEM768-X25519"| hybrid |
+|A hybrid of ML-KEM-768 and X448|"MLKEM768-X448"| hybrid |
+|A hybrid of FrodoKEM-640-SHAKE and X448|"FrodoKEM-640-SHAKE-X448"| hybrid |
+|A hybrid of NTRU and X448| "sntrup4591761-X448"| hybrid |
+|Hybrids of the McEliece primitives and X25519| "mceliece348864-X25519", "mceliece348864f-X25519", "mceliece460896-X25519", "mceliece460896f-X25519", "mceliece6688128-X25519", "mceliece6688128f-X25519", "mceliece6960119-X25519", "mceliece6960119f-X25519", "mceliece8192128-X25519", "mceliece8192128f-X25519" | hybrid|
+
+As well as all of the NIKE schemes through the KEM adapter, and any combinations of the above through the combiner.
+
+____________
+
+| SIGN: Cryptographic Signature Schemes |
+|:---:|
+
+
+| Primitive | HPQC name | security |
+|  --------  |  -------  |  -------  |
+| Ed25519 | "ed25519" | classic |
+| Ed448 | "ed448" | classic |
+| Sphincs+shake-256f | "Sphincs+" | post-quantum |
+| hybrids of Sphincs+ and ECC | "Ed25519 Sphincs+", "Ed448-Sphincs+" | hybrid |
+|hybrids of Dilithium 2 and 3 with Ed25519 | "eddilithium2", "eddilithium3" | hybrid |
 
 
 ## Wire protocol based on Noise/PQ Noise
