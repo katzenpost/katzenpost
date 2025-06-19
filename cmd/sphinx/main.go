@@ -11,6 +11,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/BurntSushi/toml"
@@ -85,6 +86,12 @@ var createGeometryCmd = &cobra.Command{
 		createGeometry.UserForwardPayloadLength, _ = cmd.Flags().GetInt("UserForwardPayloadLength")
 		createGeometry.File, _ = cmd.Flags().GetString("file")
 
+		// Validate input parameters
+		if err := validateCreateGeometryParams(&createGeometry); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+
 		generateSphinxGeometry(&createGeometry)
 	},
 }
@@ -154,6 +161,13 @@ Example:
 			fmt.Fprintf(os.Stderr, "Error: --key flag is required\n")
 			os.Exit(1)
 		}
+
+		// Validate that key file exists and is readable
+		if err := validateFileExists(keyFile, "public key"); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+
 		generateNodeID(keyFile)
 	},
 }
@@ -174,6 +188,20 @@ Example:
 		outputFile, _ := cmd.Flags().GetString("output")
 		outputPacketFile, _ := cmd.Flags().GetString("output-packet")
 		outputSURBFile, _ := cmd.Flags().GetString(flagOutputSURB)
+
+		// Validate input files exist
+		if err := validateFileExists(geometryFile, "geometry"); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+		if err := validateFileExists(privateKeyFile, "private key"); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+		if err := validateFileExists(packetFile, "packet"); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
 
 		unwrapSphinxPacket(geometryFile, privateKeyFile, packetFile, outputFile, outputPacketFile, outputSURBFile)
 	},
@@ -397,7 +425,7 @@ func createGeometryFromKEM(kemName string, userForwardPayloadLength, nrHops int)
 }
 
 func writeGeometryToFile(tomlOut, filename string) {
-	out, err := os.OpenFile(filename, os.O_WRONLY|os.O_CREATE, 0600)
+	out, err := os.OpenFile(filename, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
 	if err != nil {
 		panic(err)
 	}
@@ -417,6 +445,95 @@ func writeGeometryToFile(tomlOut, filename string) {
 	if writeCount != len(tomlOut) {
 		panic("partial write failure")
 	}
+}
+
+// validateCreateGeometryParams validates parameters for createGeometry command
+func validateCreateGeometryParams(createGeometry *CreateGeometry) error {
+	// Validate that either NIKE or KEM is specified, but not both
+	if createGeometry.NIKE == "" && createGeometry.KEM == "" {
+		return fmt.Errorf("either --nike or --kem must be specified")
+	}
+	if createGeometry.NIKE != "" && createGeometry.KEM != "" {
+		return fmt.Errorf("cannot specify both --nike and --kem, choose one")
+	}
+
+	// Validate number of hops
+	if createGeometry.NrMixHops < 1 {
+		return fmt.Errorf("number of mix layers must be at least 1, got %d", createGeometry.NrMixHops)
+	}
+	if createGeometry.NrMixHops > 10 {
+		return fmt.Errorf("number of mix layers cannot exceed 10, got %d", createGeometry.NrMixHops)
+	}
+
+	// Validate payload length
+	if createGeometry.UserForwardPayloadLength < 1 {
+		return fmt.Errorf("user forward payload length must be positive, got %d", createGeometry.UserForwardPayloadLength)
+	}
+	if createGeometry.UserForwardPayloadLength > 1024*1024 {
+		return fmt.Errorf("user forward payload length too large (max 1MB), got %d", createGeometry.UserForwardPayloadLength)
+	}
+
+	// Validate NIKE scheme if specified
+	if createGeometry.NIKE != "" {
+		nikeScheme := schemes.ByName(createGeometry.NIKE)
+		if nikeScheme == nil {
+			return fmt.Errorf("unknown NIKE scheme: %s", createGeometry.NIKE)
+		}
+	}
+
+	// Validate KEM scheme if specified
+	if createGeometry.KEM != "" {
+		kemScheme := kemschemes.ByName(createGeometry.KEM)
+		if kemScheme == nil {
+			return fmt.Errorf("unknown KEM scheme: %s", createGeometry.KEM)
+		}
+	}
+
+	// Validate output file path if specified
+	if createGeometry.File != "" {
+		// Check if directory exists and is writable
+		dir := filepath.Dir(createGeometry.File)
+		if dir != "." {
+			if _, err := os.Stat(dir); os.IsNotExist(err) {
+				return fmt.Errorf("output directory does not exist: %s", dir)
+			}
+		}
+
+		// Check if file already exists and warn (but don't fail)
+		if _, err := os.Stat(createGeometry.File); err == nil {
+			fmt.Fprintf(os.Stderr, "Warning: output file %s already exists and will be overwritten\n", createGeometry.File)
+		}
+	}
+
+	return nil
+}
+
+// validateFileExists checks if a file exists and is readable
+func validateFileExists(filePath, fileType string) error {
+	if filePath == "" {
+		return fmt.Errorf("%s file path cannot be empty", fileType)
+	}
+
+	info, err := os.Stat(filePath)
+	if os.IsNotExist(err) {
+		return fmt.Errorf("%s file does not exist: %s", fileType, filePath)
+	}
+	if err != nil {
+		return fmt.Errorf("error accessing %s file %s: %v", fileType, filePath, err)
+	}
+
+	if info.IsDir() {
+		return fmt.Errorf("%s file path is a directory, not a file: %s", fileType, filePath)
+	}
+
+	// Try to open the file to check if it's readable
+	file, err := os.Open(filePath)
+	if err != nil {
+		return fmt.Errorf("%s file is not readable: %s (%v)", fileType, filePath, err)
+	}
+	file.Close()
+
+	return nil
 }
 
 func generateSphinxGeometry(createGeometry *CreateGeometry) {
@@ -842,6 +959,18 @@ func parseNodeID(nodeID string, hopIndex int) ([32]byte, error) {
 		return nodeIDArray, fmt.Errorf("hop %d: node ID has wrong length: got %d, expected %d", hopIndex, len(nodeIDBytes), constants.NodeIDLength)
 	}
 
+	// Validate that node ID bytes are non-zero
+	allZero := true
+	for _, b := range nodeIDBytes {
+		if b != 0 {
+			allZero = false
+			break
+		}
+	}
+	if allZero {
+		return nodeIDArray, fmt.Errorf("hop %d: node ID cannot be all zeros", hopIndex)
+	}
+
 	copy(nodeIDArray[:], nodeIDBytes)
 	return nodeIDArray, nil
 }
@@ -1066,6 +1195,18 @@ func createSURBHop(hopSpec string, hopIndex int, surbID [16]byte, nikeScheme nik
 	}
 	if len(nodeIDBytes) != constants.NodeIDLength {
 		return nil, fmt.Errorf("SURB hop %d: node ID has wrong length: got %d, expected %d", hopIndex, len(nodeIDBytes), constants.NodeIDLength)
+	}
+
+	// Validate that node ID bytes are non-zero
+	allZero := true
+	for _, b := range nodeIDBytes {
+		if b != 0 {
+			allZero = false
+			break
+		}
+	}
+	if allZero {
+		return nil, fmt.Errorf("SURB hop %d: node ID cannot be all zeros", hopIndex)
 	}
 
 	hop := &sphinx.PathHop{}
