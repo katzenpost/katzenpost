@@ -820,13 +820,97 @@ func loadGeometryFromTOML(filename string) (*geo.Geometry, error) {
 	return config.SphinxGeometry, nil
 }
 
+func parseHopSpec(hopSpec string, hopIndex int) (string, string, error) {
+	parts := strings.Split(hopSpec, ",")
+	if len(parts) != 2 {
+		return "", "", fmt.Errorf("hop %d: expected format 'node_id_hex,public_key_pem_file', got %d parts", hopIndex, len(parts))
+	}
+
+	nodeID := strings.TrimSpace(parts[0])
+	publicKeyFile := strings.TrimSpace(parts[1])
+	return nodeID, publicKeyFile, nil
+}
+
+func parseNodeID(nodeID string, hopIndex int) ([32]byte, error) {
+	var nodeIDArray [32]byte
+
+	nodeIDBytes, err := hex.DecodeString(nodeID)
+	if err != nil {
+		return nodeIDArray, fmt.Errorf("hop %d: invalid node ID: %v", hopIndex, err)
+	}
+	if len(nodeIDBytes) != constants.NodeIDLength {
+		return nodeIDArray, fmt.Errorf("hop %d: node ID has wrong length: got %d, expected %d", hopIndex, len(nodeIDBytes), constants.NodeIDLength)
+	}
+
+	copy(nodeIDArray[:], nodeIDBytes)
+	return nodeIDArray, nil
+}
+
+func loadHopPublicKey(geometry *geo.Geometry, publicKeyFile string, hopIndex int, hop *sphinx.PathHop) error {
+	if geometry.NIKEName != "" {
+		nikeScheme := schemes.ByName(geometry.NIKEName)
+		if nikeScheme == nil {
+			return fmt.Errorf(errFailedToResolveNIKE, geometry.NIKEName)
+		}
+
+		pubKey, err := nikepem.FromPublicPEMFile(publicKeyFile, nikeScheme)
+		if err != nil {
+			return fmt.Errorf("hop %d: failed to load NIKE key from %s: %v", hopIndex, publicKeyFile, err)
+		}
+		hop.NIKEPublicKey = pubKey
+		return nil
+	}
+
+	if geometry.KEMName != "" {
+		kemScheme := kemschemes.ByName(geometry.KEMName)
+		if kemScheme == nil {
+			return fmt.Errorf(errFailedToResolveKEM, geometry.KEMName)
+		}
+
+		pubKey, err := kempem.FromPublicPEMFile(publicKeyFile, kemScheme)
+		if err != nil {
+			return fmt.Errorf("hop %d: failed to load KEM key from %s: %v", hopIndex, publicKeyFile, err)
+		}
+		hop.KEMPublicKey = pubKey
+		return nil
+	}
+
+	return fmt.Errorf(errGeometryNoScheme)
+}
+
+func createPathHop(geometry *geo.Geometry, hopSpec string, hopIndex int, isTerminal bool) (*sphinx.PathHop, error) {
+	nodeID, publicKeyFile, err := parseHopSpec(hopSpec, hopIndex)
+	if err != nil {
+		return nil, err
+	}
+
+	nodeIDArray, err := parseNodeID(nodeID, hopIndex)
+	if err != nil {
+		return nil, err
+	}
+
+	hop := &sphinx.PathHop{}
+	hop.ID = nodeIDArray
+
+	err = loadHopPublicKey(geometry, publicKeyFile, hopIndex, hop)
+	if err != nil {
+		return nil, err
+	}
+
+	if isTerminal {
+		recipient := &commands.Recipient{}
+		hop.Commands = append(hop.Commands, recipient)
+	}
+
+	return hop, nil
+}
+
 // buildPathFromHops builds the Sphinx path from hop specifications
 func buildPathFromHops(newPacket *NewPacket, hops []string) error {
 	if len(hops) == 0 {
 		return fmt.Errorf("no hops specified")
 	}
 
-	// Load geometry to know which scheme to use and validate hop count
 	geometry, err := loadGeometryFromTOML(newPacket.GeometryFile)
 	if err != nil {
 		return fmt.Errorf(errFailedToLoadGeometry, err)
@@ -836,78 +920,21 @@ func buildPathFromHops(newPacket *NewPacket, hops []string) error {
 		return fmt.Errorf("sphinx paths require exactly %d hops for this geometry, got %d", geometry.NrHops, len(hops))
 	}
 
-	// Build the path
 	newPacket.Path = make([]*sphinx.PathHop, len(hops))
 
 	for i, hopSpec := range hops {
-		parts := strings.Split(hopSpec, ",")
-
-		// All hops: node_id,public_key_file
-		if len(parts) != 2 {
-			return fmt.Errorf("hop %d: expected format 'node_id_hex,public_key_pem_file', got %d parts", i, len(parts))
-		}
-
-		nodeID := strings.TrimSpace(parts[0])
-		publicKeyFile := strings.TrimSpace(parts[1])
-
-		hop := &sphinx.PathHop{}
-
-		// Parse node ID
-		nodeIDBytes, err := hex.DecodeString(nodeID)
+		isTerminal := i == len(hops)-1
+		hop, err := createPathHop(geometry, hopSpec, i, isTerminal)
 		if err != nil {
-			return fmt.Errorf("hop %d: invalid node ID: %v", i, err)
+			return err
 		}
-		if len(nodeIDBytes) != constants.NodeIDLength {
-			return fmt.Errorf("hop %d: node ID has wrong length: got %d, expected %d", i, len(nodeIDBytes), constants.NodeIDLength)
-		}
-		copy(hop.ID[:], nodeIDBytes)
-
-		// Load public key from PEM file based on geometry
-		if geometry.NIKEName != "" {
-			nikeScheme := schemes.ByName(geometry.NIKEName)
-			if nikeScheme == nil {
-				return fmt.Errorf(errFailedToResolveNIKE, geometry.NIKEName)
-			}
-
-			pubKey, err := nikepem.FromPublicPEMFile(publicKeyFile, nikeScheme)
-			if err != nil {
-				return fmt.Errorf("hop %d: failed to load NIKE key from %s: %v", i, publicKeyFile, err)
-			}
-			hop.NIKEPublicKey = pubKey
-		} else if geometry.KEMName != "" {
-			kemScheme := kemschemes.ByName(geometry.KEMName)
-			if kemScheme == nil {
-				return fmt.Errorf(errFailedToResolveKEM, geometry.KEMName)
-			}
-
-			pubKey, err := kempem.FromPublicPEMFile(publicKeyFile, kemScheme)
-			if err != nil {
-				return fmt.Errorf("hop %d: failed to load KEM key from %s: %v", i, publicKeyFile, err)
-			}
-			hop.KEMPublicKey = pubKey
-		} else {
-			return fmt.Errorf(errGeometryNoScheme)
-		}
-
-		// Add commands based on hop type
-		if i < len(hops)-1 {
-			// Non-terminal hop: no commands needed for this use case
-		} else {
-			// Terminal hop: add recipient command with blank (all zeros) recipient ID
-			recipient := &commands.Recipient{}
-			// recipient.ID is already initialized to all zeros
-			hop.Commands = append(hop.Commands, recipient)
-		}
-
 		newPacket.Path[i] = hop
 	}
 
 	return nil
 }
 
-// generateSphinxPacketWithOptionalSURB creates a new Sphinx packet with optional embedded SURB
-func generateSphinxPacketWithOptionalSURB(newPacket *NewPacket, includeSURB bool, surbHops []string, outputSURBKeysFile string) {
-	// Validate required parameters
+func validatePacketParameters(newPacket *NewPacket, includeSURB bool, surbHops []string, outputSURBKeysFile string) {
 	if newPacket.GeometryFile == "" {
 		log.Fatalf("geometry file is required (use -geometry flag)")
 	}
@@ -915,7 +942,6 @@ func generateSphinxPacketWithOptionalSURB(newPacket *NewPacket, includeSURB bool
 		log.Fatalf("path is required (specify path hops as command line arguments)")
 	}
 
-	// Validate SURB parameters if SURB is requested
 	if includeSURB {
 		if len(surbHops) == 0 {
 			log.Fatalf("--surb-hop flags are required when using --include-surb")
@@ -924,177 +950,170 @@ func generateSphinxPacketWithOptionalSURB(newPacket *NewPacket, includeSURB bool
 			log.Fatalf("--%s is required when using --include-surb", flagOutputSURBKeys)
 		}
 	}
+}
 
-	// Load geometry from TOML file
-	geometry, err := loadGeometryFromTOML(newPacket.GeometryFile)
+func createEmbeddedSURB(geometry *geo.Geometry, sphinxInstance *sphinx.Sphinx, surbHops []string, outputSURBKeysFile string, originalPayload []byte) []byte {
+	surbPath, surbID, err := createSURBPath(geometry, surbHops)
 	if err != nil {
-		log.Fatalf(errFailedToLoadGeometry, err)
+		log.Fatalf("failed to create SURB path: %v", err)
 	}
 
-	// Create Sphinx instance from geometry
-	sphinxInstance, err := sphinx.FromGeometry(geometry)
+	surb, surbKeys, err := sphinxInstance.NewSURB(rand.Reader, surbPath)
 	if err != nil {
-		log.Fatalf(errFailedToCreateSphinx, err)
+		log.Fatalf("failed to create SURB: %v", err)
 	}
 
-	// Read original payload
-	var originalPayload []byte
-	if newPacket.PayloadFile == "" {
-		// Read from stdin
-		originalPayload, err = io.ReadAll(os.Stdin)
-		if err != nil {
-			log.Fatalf("failed to read payload from stdin: %v", err)
-		}
-	} else {
-		// Read from file
-		originalPayload, err = os.ReadFile(newPacket.PayloadFile)
-		if err != nil {
-			log.Fatalf("failed to read payload file: %v", err)
-		}
-	}
-
-	var finalPayload []byte
-
-	if includeSURB {
-		// Create SURB first
-		surbPath, surbID, err := createSURBPath(geometry, surbHops)
-		if err != nil {
-			log.Fatalf("failed to create SURB path: %v", err)
-		}
-
-		surb, surbKeys, err := sphinxInstance.NewSURB(rand.Reader, surbPath)
-		if err != nil {
-			log.Fatalf("failed to create SURB: %v", err)
-		}
-
-		// Save SURB keys with SURB ID
-		err = saveSURBKeysWithIDs(outputSURBKeysFile, surbKeys, surbID)
-		if err != nil {
-			log.Fatalf("failed to write SURB keys to file: %v", err)
-		}
-
-		// Combine original payload with SURB
-		finalPayload = combinePayloadWithSURB(originalPayload, surb, geometry.ForwardPayloadLength)
-
-		fmt.Fprintf(os.Stderr, "SURB embedded in packet payload\n")
-		fmt.Fprintf(os.Stderr, "SURB keys written to %s (%d bytes)\n", outputSURBKeysFile, len(surbKeys))
-	} else {
-		// Use original payload as-is
-		finalPayload = originalPayload
-	}
-
-	// Ensure payload is the correct size
-	if len(finalPayload) > geometry.ForwardPayloadLength {
-		log.Fatalf("combined payload too large: %d bytes, max %d bytes", len(finalPayload), geometry.ForwardPayloadLength)
-	}
-
-	// Pad payload to correct size
-	if len(finalPayload) < geometry.ForwardPayloadLength {
-		paddedPayload := make([]byte, geometry.ForwardPayloadLength)
-		copy(paddedPayload, finalPayload)
-		finalPayload = paddedPayload
-	}
-
-	// Create the packet
-	packet, err := sphinxInstance.NewPacket(rand.Reader, newPacket.Path, finalPayload)
+	err = saveSURBKeysWithIDs(outputSURBKeysFile, surbKeys, surbID)
 	if err != nil {
-		log.Fatalf("failed to create Sphinx packet: %v", err)
+		log.Fatalf("failed to write SURB keys to file: %v", err)
 	}
 
-	// Write packet to output
-	if newPacket.OutputFile == "" {
-		// Write to stdout
+	finalPayload := combinePayloadWithSURB(originalPayload, surb, geometry.ForwardPayloadLength)
+
+	fmt.Fprintf(os.Stderr, "SURB embedded in packet payload\n")
+	fmt.Fprintf(os.Stderr, "SURB keys written to %s (%d bytes)\n", outputSURBKeysFile, len(surbKeys))
+
+	return finalPayload
+}
+
+func writeSphinxPacket(packet []byte, outputFile string) {
+	var err error
+	if outputFile == "" {
 		_, err = os.Stdout.Write(packet)
 		if err != nil {
 			log.Fatalf("failed to write packet to stdout: %v", err)
 		}
 	} else {
-		// Write to file
-		err = os.WriteFile(newPacket.OutputFile, packet, 0644)
+		err = os.WriteFile(outputFile, packet, 0644)
 		if err != nil {
 			log.Fatalf("failed to write packet to file: %v", err)
 		}
-		fmt.Fprintf(os.Stderr, "Sphinx packet written to %s (%d bytes)\n", newPacket.OutputFile, len(packet))
+		fmt.Fprintf(os.Stderr, "Sphinx packet written to %s (%d bytes)\n", outputFile, len(packet))
 	}
+}
+
+// generateSphinxPacketWithOptionalSURB creates a new Sphinx packet with optional embedded SURB
+func generateSphinxPacketWithOptionalSURB(newPacket *NewPacket, includeSURB bool, surbHops []string, outputSURBKeysFile string) {
+	validatePacketParameters(newPacket, includeSURB, surbHops, outputSURBKeysFile)
+
+	geometry, err := loadGeometryFromTOML(newPacket.GeometryFile)
+	if err != nil {
+		log.Fatalf(errFailedToLoadGeometry, err)
+	}
+
+	sphinxInstance, err := sphinx.FromGeometry(geometry)
+	if err != nil {
+		log.Fatalf(errFailedToCreateSphinx, err)
+	}
+
+	originalPayload := readPayloadFromSource(newPacket.PayloadFile)
+
+	var finalPayload []byte
+	if includeSURB {
+		finalPayload = createEmbeddedSURB(geometry, sphinxInstance, surbHops, outputSURBKeysFile, originalPayload)
+	} else {
+		finalPayload = originalPayload
+	}
+
+	finalPayload = validateAndPadPayload(finalPayload, geometry.ForwardPayloadLength)
+
+	packet, err := sphinxInstance.NewPacket(rand.Reader, newPacket.Path, finalPayload)
+	if err != nil {
+		log.Fatalf("failed to create Sphinx packet: %v", err)
+	}
+
+	writeSphinxPacket(packet, newPacket.OutputFile)
+}
+
+func generateSURBID() ([16]byte, error) {
+	var surbID [16]byte
+	_, err := rand.Read(surbID[:])
+	if err != nil {
+		return [16]byte{}, fmt.Errorf("failed to generate SURB ID: %v", err)
+	}
+	return surbID, nil
+}
+
+func determineCryptoSchemes(geometry *geo.Geometry) (nike.Scheme, kem.Scheme, error) {
+	if geometry.NIKEName != "" {
+		nikeScheme := schemes.ByName(geometry.NIKEName)
+		if nikeScheme == nil {
+			return nil, nil, fmt.Errorf(errFailedToResolveNIKE, geometry.NIKEName)
+		}
+		return nikeScheme, nil, nil
+	}
+
+	if geometry.KEMName != "" {
+		kemScheme := kemschemes.ByName(geometry.KEMName)
+		if kemScheme == nil {
+			return nil, nil, fmt.Errorf(errFailedToResolveKEM, geometry.KEMName)
+		}
+		return nil, kemScheme, nil
+	}
+
+	return nil, nil, fmt.Errorf(errGeometryNoScheme)
+}
+
+func createSURBHop(hopSpec string, hopIndex int, surbID [16]byte, nikeScheme nike.Scheme, kemScheme kem.Scheme) (*sphinx.PathHop, error) {
+	nodeID, publicKeyFile, err := parseHopSpec(hopSpec, hopIndex)
+	if err != nil {
+		return nil, err
+	}
+
+	nodeIDBytes, err := hex.DecodeString(nodeID)
+	if err != nil {
+		return nil, fmt.Errorf("SURB hop %d: invalid node ID: %v", hopIndex, err)
+	}
+	if len(nodeIDBytes) != constants.NodeIDLength {
+		return nil, fmt.Errorf("SURB hop %d: node ID has wrong length: got %d, expected %d", hopIndex, len(nodeIDBytes), constants.NodeIDLength)
+	}
+
+	hop := &sphinx.PathHop{}
+	copy(hop.ID[:], nodeIDBytes)
+
+	if nikeScheme != nil {
+		pubKey, err := nikepem.FromPublicPEMFile(publicKeyFile, nikeScheme)
+		if err != nil {
+			return nil, fmt.Errorf("SURB hop %d: failed to load NIKE public key from %s: %v", hopIndex, publicKeyFile, err)
+		}
+		hop.NIKEPublicKey = pubKey
+	} else {
+		pubKey, err := kempem.FromPublicPEMFile(publicKeyFile, kemScheme)
+		if err != nil {
+			return nil, fmt.Errorf("SURB hop %d: failed to load KEM public key from %s: %v", hopIndex, publicKeyFile, err)
+		}
+		hop.KEMPublicKey = pubKey
+	}
+
+	surbReply := &commands.SURBReply{}
+	copy(surbReply.ID[:], surbID[:])
+	hop.Commands = append(hop.Commands, surbReply)
+
+	return hop, nil
 }
 
 // createSURBPath creates a SURB path from hop specifications
 func createSURBPath(geometry *geo.Geometry, surbHops []string) ([]*sphinx.PathHop, [16]byte, error) {
-	// Validate hop count
 	if len(surbHops) != geometry.NrHops {
 		return nil, [16]byte{}, fmt.Errorf("SURB paths require exactly %d hops for this geometry, got %d", geometry.NrHops, len(surbHops))
 	}
 
-	// Build path from hop specifications
-	path := make([]*sphinx.PathHop, len(surbHops))
-
-	// Generate a single SURB ID for the entire SURB
-	var surbID [16]byte
-	_, err := rand.Read(surbID[:])
+	surbID, err := generateSURBID()
 	if err != nil {
-		return nil, [16]byte{}, fmt.Errorf("failed to generate SURB ID: %v", err)
+		return nil, [16]byte{}, err
 	}
 
-	// Determine which scheme to use
-	var nikeScheme nike.Scheme
-	var kemScheme kem.Scheme
-
-	if geometry.NIKEName != "" {
-		nikeScheme = schemes.ByName(geometry.NIKEName)
-		if nikeScheme == nil {
-			return nil, [16]byte{}, fmt.Errorf(errFailedToResolveNIKE, geometry.NIKEName)
-		}
-	} else if geometry.KEMName != "" {
-		kemScheme = kemschemes.ByName(geometry.KEMName)
-		if kemScheme == nil {
-			return nil, [16]byte{}, fmt.Errorf(errFailedToResolveKEM, geometry.KEMName)
-		}
-	} else {
-		return nil, [16]byte{}, fmt.Errorf(errGeometryNoScheme)
+	nikeScheme, kemScheme, err := determineCryptoSchemes(geometry)
+	if err != nil {
+		return nil, [16]byte{}, err
 	}
 
+	path := make([]*sphinx.PathHop, len(surbHops))
 	for i, hopSpec := range surbHops {
-		parts := strings.Split(hopSpec, ",")
-		if len(parts) != 2 {
-			return nil, [16]byte{}, fmt.Errorf("SURB hop %d: expected format 'node_id_hex,public_key_pem_file', got %d parts", i, len(parts))
-		}
-
-		nodeID := strings.TrimSpace(parts[0])
-		publicKeyFile := strings.TrimSpace(parts[1])
-
-		// Parse node ID
-		nodeIDBytes, err := hex.DecodeString(nodeID)
+		hop, err := createSURBHop(hopSpec, i, surbID, nikeScheme, kemScheme)
 		if err != nil {
-			return nil, [16]byte{}, fmt.Errorf("SURB hop %d: invalid node ID: %v", i, err)
+			return nil, [16]byte{}, err
 		}
-		if len(nodeIDBytes) != constants.NodeIDLength {
-			return nil, [16]byte{}, fmt.Errorf("SURB hop %d: node ID has wrong length: got %d, expected %d", i, len(nodeIDBytes), constants.NodeIDLength)
-		}
-
-		// Create path hop
-		hop := &sphinx.PathHop{}
-		copy(hop.ID[:], nodeIDBytes)
-
-		// Load public key
-		if nikeScheme != nil {
-			pubKey, err := nikepem.FromPublicPEMFile(publicKeyFile, nikeScheme)
-			if err != nil {
-				return nil, [16]byte{}, fmt.Errorf("SURB hop %d: failed to load NIKE public key from %s: %v", i, publicKeyFile, err)
-			}
-			hop.NIKEPublicKey = pubKey
-		} else {
-			pubKey, err := kempem.FromPublicPEMFile(publicKeyFile, kemScheme)
-			if err != nil {
-				return nil, [16]byte{}, fmt.Errorf("SURB hop %d: failed to load KEM public key from %s: %v", i, publicKeyFile, err)
-			}
-			hop.KEMPublicKey = pubKey
-		}
-
-		// Add SURBReply command with the same SURB ID for all hops
-		surbReply := &commands.SURBReply{}
-		copy(surbReply.ID[:], surbID[:])
-
-		hop.Commands = append(hop.Commands, surbReply)
 		path[i] = hop
 	}
 
