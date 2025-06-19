@@ -6,6 +6,7 @@ package common
 import (
 	"crypto/hmac"
 	"errors"
+	"fmt"
 	"slices"
 
 	"golang.org/x/crypto/blake2b"
@@ -22,11 +23,18 @@ const (
 
 func GetReplicaKeys(doc *pki.Document) ([][]byte, error) {
 	if doc.StorageReplicas == nil {
+		// This is a serious problem - log a warning
+		fmt.Printf("WARNING: PKI document has nil StorageReplicas - mixnet may not be fully operational\n")
 		return nil, errors.New("GetReplicaKeys: doc.StorageReplicas is nil")
 	}
 	if len(doc.StorageReplicas) == 0 {
+		// This is a serious problem - log a warning
+		fmt.Printf("WARNING: PKI document has zero StorageReplicas - mixnet may not be fully operational\n")
 		return nil, errors.New("GetReplicaKeys: doc.StorageReplicas is empty")
 	}
+
+	// Log info about available replicas
+	fmt.Printf("INFO: PKI document has %d storage replicas available\n", len(doc.StorageReplicas))
 	keys := make([][]byte, len(doc.StorageReplicas))
 	for i, replica := range doc.StorageReplicas {
 		keys[i] = make([]byte, len(replica.IdentityKey))
