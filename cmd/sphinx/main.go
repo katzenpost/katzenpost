@@ -39,6 +39,15 @@ const (
 	flagGeometryConfigDescription = "path to TOML geometry config file (required)"
 )
 
+// Error message constants to avoid duplication
+const (
+	errFailedToLoadGeometry = "failed to load geometry: %v"
+	errFailedToCreateSphinx = "failed to create Sphinx instance: %v"
+	errFailedToResolveNIKE  = "failed to resolve NIKE scheme: %s"
+	errFailedToResolveKEM   = "failed to resolve KEM scheme: %s"
+	errGeometryNoScheme     = "geometry has neither NIKE nor KEM scheme"
+)
+
 type CreateGeometry struct {
 	NrMixHops                int
 	NIKE                     string
@@ -419,13 +428,13 @@ func unwrapSphinxPacket(geometryFile, privateKeyFile, packetFile, outputFile, ou
 	// Load geometry from TOML file
 	geometry, err := loadGeometryFromTOML(geometryFile)
 	if err != nil {
-		log.Fatalf("failed to load geometry: %v", err)
+		log.Fatalf(errFailedToLoadGeometry, err)
 	}
 
 	// Create Sphinx instance from geometry
 	sphinx, err := sphinx.FromGeometry(geometry)
 	if err != nil {
-		log.Fatalf("failed to create Sphinx instance: %v", err)
+		log.Fatalf(errFailedToCreateSphinx, err)
 	}
 
 	// Load private key from PEM file
@@ -433,7 +442,7 @@ func unwrapSphinxPacket(geometryFile, privateKeyFile, packetFile, outputFile, ou
 	if geometry.NIKEName != "" {
 		nikeScheme := schemes.ByName(geometry.NIKEName)
 		if nikeScheme == nil {
-			log.Fatalf("failed to resolve NIKE scheme: %s", geometry.NIKEName)
+			log.Fatalf(errFailedToResolveNIKE, geometry.NIKEName)
 		}
 
 		privKey, err := nikepem.FromPrivatePEMFile(privateKeyFile, nikeScheme)
@@ -444,7 +453,7 @@ func unwrapSphinxPacket(geometryFile, privateKeyFile, packetFile, outputFile, ou
 	} else if geometry.KEMName != "" {
 		kemScheme := kemschemes.ByName(geometry.KEMName)
 		if kemScheme == nil {
-			log.Fatalf("failed to resolve KEM scheme: %s", geometry.KEMName)
+			log.Fatalf(errFailedToResolveKEM, geometry.KEMName)
 		}
 
 		privKey, err := kempem.FromPrivatePEMFile(privateKeyFile, kemScheme)
@@ -453,7 +462,7 @@ func unwrapSphinxPacket(geometryFile, privateKeyFile, packetFile, outputFile, ou
 		}
 		privateKey = privKey
 	} else {
-		log.Fatalf("geometry has neither NIKE nor KEM scheme")
+		log.Fatalf(errGeometryNoScheme)
 	}
 
 	// Read packet from file
@@ -550,13 +559,13 @@ func generateSphinxSURB(geometryFile string, hops []string, outputSURBFile, outp
 	// Load geometry from TOML file
 	geometry, err := loadGeometryFromTOML(geometryFile)
 	if err != nil {
-		log.Fatalf("failed to load geometry: %v", err)
+		log.Fatalf(errFailedToLoadGeometry, err)
 	}
 
 	// Create Sphinx instance from geometry
 	sphinxInstance, err := sphinx.FromGeometry(geometry)
 	if err != nil {
-		log.Fatalf("failed to create Sphinx instance: %v", err)
+		log.Fatalf(errFailedToCreateSphinx, err)
 	}
 
 	// Validate hop count
@@ -606,13 +615,13 @@ func generateSphinxPacketFromSURB(geometryFile, surbFile, payloadFile, outputFil
 	// Load geometry from TOML file
 	geometry, err := loadGeometryFromTOML(geometryFile)
 	if err != nil {
-		log.Fatalf("failed to load geometry: %v", err)
+		log.Fatalf(errFailedToLoadGeometry, err)
 	}
 
 	// Create Sphinx instance from geometry
 	sphinxInstance, err := sphinx.FromGeometry(geometry)
 	if err != nil {
-		log.Fatalf("failed to create Sphinx instance: %v", err)
+		log.Fatalf(errFailedToCreateSphinx, err)
 	}
 
 	// Read SURB from file
@@ -687,13 +696,13 @@ func decryptSURBPayload(geometryFile, keysFile, payloadFile, outputFile string) 
 	// Load geometry from TOML file
 	geometry, err := loadGeometryFromTOML(geometryFile)
 	if err != nil {
-		log.Fatalf("failed to load geometry: %v", err)
+		log.Fatalf(errFailedToLoadGeometry, err)
 	}
 
 	// Create Sphinx instance from geometry
 	sphinxInstance, err := sphinx.FromGeometry(geometry)
 	if err != nil {
-		log.Fatalf("failed to create Sphinx instance: %v", err)
+		log.Fatalf(errFailedToCreateSphinx, err)
 	}
 
 	// Read and parse SURB keys from TOML file
@@ -795,7 +804,7 @@ func buildPathFromHops(newPacket *NewPacket, hops []string) error {
 	// Load geometry to know which scheme to use and validate hop count
 	geometry, err := loadGeometryFromTOML(newPacket.GeometryFile)
 	if err != nil {
-		return fmt.Errorf("failed to load geometry: %v", err)
+		return fmt.Errorf(errFailedToLoadGeometry, err)
 	}
 
 	if len(hops) != geometry.NrHops {
@@ -832,7 +841,7 @@ func buildPathFromHops(newPacket *NewPacket, hops []string) error {
 		if geometry.NIKEName != "" {
 			nikeScheme := schemes.ByName(geometry.NIKEName)
 			if nikeScheme == nil {
-				return fmt.Errorf("failed to resolve NIKE scheme: %s", geometry.NIKEName)
+				return fmt.Errorf(errFailedToResolveNIKE, geometry.NIKEName)
 			}
 
 			pubKey, err := nikepem.FromPublicPEMFile(publicKeyFile, nikeScheme)
@@ -843,7 +852,7 @@ func buildPathFromHops(newPacket *NewPacket, hops []string) error {
 		} else if geometry.KEMName != "" {
 			kemScheme := kemschemes.ByName(geometry.KEMName)
 			if kemScheme == nil {
-				return fmt.Errorf("failed to resolve KEM scheme: %s", geometry.KEMName)
+				return fmt.Errorf(errFailedToResolveKEM, geometry.KEMName)
 			}
 
 			pubKey, err := kempem.FromPublicPEMFile(publicKeyFile, kemScheme)
@@ -852,7 +861,7 @@ func buildPathFromHops(newPacket *NewPacket, hops []string) error {
 			}
 			hop.KEMPublicKey = pubKey
 		} else {
-			return fmt.Errorf("geometry has neither NIKE nor KEM scheme")
+			return fmt.Errorf(errGeometryNoScheme)
 		}
 
 		// Add commands based on hop type
@@ -894,13 +903,13 @@ func generateSphinxPacketWithOptionalSURB(newPacket *NewPacket, includeSURB bool
 	// Load geometry from TOML file
 	geometry, err := loadGeometryFromTOML(newPacket.GeometryFile)
 	if err != nil {
-		log.Fatalf("failed to load geometry: %v", err)
+		log.Fatalf(errFailedToLoadGeometry, err)
 	}
 
 	// Create Sphinx instance from geometry
 	sphinxInstance, err := sphinx.FromGeometry(geometry)
 	if err != nil {
-		log.Fatalf("failed to create Sphinx instance: %v", err)
+		log.Fatalf(errFailedToCreateSphinx, err)
 	}
 
 	// Read original payload
@@ -1008,15 +1017,15 @@ func createSURBPath(geometry *geo.Geometry, surbHops []string) ([]*sphinx.PathHo
 	if geometry.NIKEName != "" {
 		nikeScheme = schemes.ByName(geometry.NIKEName)
 		if nikeScheme == nil {
-			return nil, [16]byte{}, fmt.Errorf("failed to resolve NIKE scheme: %s", geometry.NIKEName)
+			return nil, [16]byte{}, fmt.Errorf(errFailedToResolveNIKE, geometry.NIKEName)
 		}
 	} else if geometry.KEMName != "" {
 		kemScheme = kemschemes.ByName(geometry.KEMName)
 		if kemScheme == nil {
-			return nil, [16]byte{}, fmt.Errorf("failed to resolve KEM scheme: %s", geometry.KEMName)
+			return nil, [16]byte{}, fmt.Errorf(errFailedToResolveKEM, geometry.KEMName)
 		}
 	} else {
-		return nil, [16]byte{}, fmt.Errorf("geometry has neither NIKE nor KEM scheme")
+		return nil, [16]byte{}, fmt.Errorf(errGeometryNoScheme)
 	}
 
 	for i, hopSpec := range surbHops {
