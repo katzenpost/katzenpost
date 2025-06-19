@@ -30,6 +30,15 @@ import (
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 )
 
+// Flag name constants to avoid duplication
+const (
+	flagPrivateKey                = "private-key"
+	flagOutputSURB                = "output-surb"
+	flagOutputKeys                = "output-keys"
+	flagOutputSURBKeys            = "output-surb-keys"
+	flagGeometryConfigDescription = "path to TOML geometry config file (required)"
+)
+
 type CreateGeometry struct {
 	NrMixHops                int
 	NIKE                     string
@@ -109,7 +118,7 @@ Examples:
 		// SURB-related flags
 		includeSURB, _ := cmd.Flags().GetBool("include-surb")
 		surbHops, _ := cmd.Flags().GetStringArray("surb-hop")
-		outputSURBKeysFile, _ := cmd.Flags().GetString("output-surb-keys")
+		outputSURBKeysFile, _ := cmd.Flags().GetString(flagOutputSURBKeys)
 
 		// Build path from hop specifications
 		err := buildPathFromHops(&newPacket, hops)
@@ -151,11 +160,11 @@ Example:
   sphinx unwrap --geometry config.toml --private-key node1.nike_private.pem --packet packet.bin --output-packet next_packet.bin`,
 	Run: func(cmd *cobra.Command, args []string) {
 		geometryFile, _ := cmd.Flags().GetString("geometry")
-		privateKeyFile, _ := cmd.Flags().GetString("private-key")
+		privateKeyFile, _ := cmd.Flags().GetString(flagPrivateKey)
 		packetFile, _ := cmd.Flags().GetString("packet")
 		outputFile, _ := cmd.Flags().GetString("output")
 		outputPacketFile, _ := cmd.Flags().GetString("output-packet")
-		outputSURBFile, _ := cmd.Flags().GetString("output-surb")
+		outputSURBFile, _ := cmd.Flags().GetString(flagOutputSURB)
 
 		unwrapSphinxPacket(geometryFile, privateKeyFile, packetFile, outputFile, outputPacketFile, outputSURBFile)
 	},
@@ -175,8 +184,8 @@ Example:
     --output-keys reply.keys`,
 	Run: func(cmd *cobra.Command, args []string) {
 		geometryFile, _ := cmd.Flags().GetString("geometry")
-		outputSURBFile, _ := cmd.Flags().GetString("output-surb")
-		outputKeysFile, _ := cmd.Flags().GetString("output-keys")
+		outputSURBFile, _ := cmd.Flags().GetString(flagOutputSURB)
+		outputKeysFile, _ := cmd.Flags().GetString(flagOutputKeys)
 		hops, _ := cmd.Flags().GetStringArray("hop")
 
 		generateSphinxSURB(geometryFile, hops, outputSURBFile, outputKeysFile)
@@ -243,39 +252,39 @@ func init() {
 	createGeometryCmd.Flags().String("file", "", "file path to write TOML output to, empty indicates stdout")
 
 	// newpacket flags
-	newPacketCmd.Flags().String("geometry", "", "path to TOML geometry config file (required)")
+	newPacketCmd.Flags().String("geometry", "", flagGeometryConfigDescription)
 	newPacketCmd.Flags().String("output", "", "file to write the Sphinx packet to (default: stdout)")
 	newPacketCmd.Flags().String("payload", "", "file to read payload from (default: stdin)")
 	newPacketCmd.Flags().StringArray("hop", []string{}, "hop specification: node_id_hex,public_key_pem_file (can be specified multiple times)")
 	newPacketCmd.Flags().Bool("include-surb", false, "embed a SURB in the packet payload for reply capability")
 	newPacketCmd.Flags().StringArray("surb-hop", []string{}, "SURB hop specification: node_id_hex,public_key_pem_file (used with --include-surb)")
-	newPacketCmd.Flags().String("output-surb-keys", "", "file to write SURB decryption keys to (used with --include-surb)")
+	newPacketCmd.Flags().String(flagOutputSURBKeys, "", "file to write SURB decryption keys to (used with --include-surb)")
 
 	// genNodeID flags
 	genNodeIDCmd.Flags().String("key", "", "path to public key PEM file (required)")
 
 	// unwrap flags
-	unwrapCmd.Flags().String("geometry", "", "path to TOML geometry config file (required)")
-	unwrapCmd.Flags().String("private-key", "", "path to private key PEM file (required)")
+	unwrapCmd.Flags().String("geometry", "", flagGeometryConfigDescription)
+	unwrapCmd.Flags().String(flagPrivateKey, "", "path to private key PEM file (required)")
 	unwrapCmd.Flags().String("packet", "", "path to Sphinx packet file (required)")
 	unwrapCmd.Flags().String("output", "", "file to write unwrapped payload to (default: stdout)")
 	unwrapCmd.Flags().String("output-packet", "", "file to write the processed packet to (for forwarding to next hop)")
-	unwrapCmd.Flags().String("output-surb", "", "file to write extracted SURB to (if payload contains embedded SURB)")
+	unwrapCmd.Flags().String(flagOutputSURB, "", "file to write extracted SURB to (if payload contains embedded SURB)")
 
 	// newsurb flags
-	newSURBCmd.Flags().String("geometry", "", "path to TOML geometry config file (required)")
+	newSURBCmd.Flags().String("geometry", "", flagGeometryConfigDescription)
 	newSURBCmd.Flags().StringArray("hop", []string{}, "hop specification: node_id_hex,public_key_pem_file (can be specified multiple times)")
-	newSURBCmd.Flags().String("output-surb", "", "file to write the SURB to (required)")
-	newSURBCmd.Flags().String("output-keys", "", "file to write the SURB decryption keys to (required)")
+	newSURBCmd.Flags().String(flagOutputSURB, "", "file to write the SURB to (required)")
+	newSURBCmd.Flags().String(flagOutputKeys, "", "file to write the SURB decryption keys to (required)")
 
 	// newpacketfromsurb flags
-	newPacketFromSURBCmd.Flags().String("geometry", "", "path to TOML geometry config file (required)")
+	newPacketFromSURBCmd.Flags().String("geometry", "", flagGeometryConfigDescription)
 	newPacketFromSURBCmd.Flags().String("surb", "", "path to SURB file (required)")
 	newPacketFromSURBCmd.Flags().String("payload", "", "file to read payload from (default: stdin)")
 	newPacketFromSURBCmd.Flags().String("output", "", "file to write the Sphinx packet to (default: stdout)")
 
 	// decryptsurbpayload flags
-	decryptSURBPayloadCmd.Flags().String("geometry", "", "path to TOML geometry config file (required)")
+	decryptSURBPayloadCmd.Flags().String("geometry", "", flagGeometryConfigDescription)
 	decryptSURBPayloadCmd.Flags().String("keys", "", "path to SURB keys file (required)")
 	decryptSURBPayloadCmd.Flags().String("payload", "", "file to read encrypted payload from (default: stdin)")
 	decryptSURBPayloadCmd.Flags().String("output", "", "file to write decrypted payload to (default: stdout)")
@@ -285,12 +294,12 @@ func init() {
 	newPacketCmd.MarkFlagRequired("hop")
 	genNodeIDCmd.MarkFlagRequired("key")
 	unwrapCmd.MarkFlagRequired("geometry")
-	unwrapCmd.MarkFlagRequired("private-key")
+	unwrapCmd.MarkFlagRequired(flagPrivateKey)
 	unwrapCmd.MarkFlagRequired("packet")
 	newSURBCmd.MarkFlagRequired("geometry")
 	newSURBCmd.MarkFlagRequired("hop")
-	newSURBCmd.MarkFlagRequired("output-surb")
-	newSURBCmd.MarkFlagRequired("output-keys")
+	newSURBCmd.MarkFlagRequired(flagOutputSURB)
+	newSURBCmd.MarkFlagRequired(flagOutputKeys)
 	newPacketFromSURBCmd.MarkFlagRequired("geometry")
 	newPacketFromSURBCmd.MarkFlagRequired("surb")
 	decryptSURBPayloadCmd.MarkFlagRequired("geometry")
@@ -878,7 +887,7 @@ func generateSphinxPacketWithOptionalSURB(newPacket *NewPacket, includeSURB bool
 			log.Fatalf("--surb-hop flags are required when using --include-surb")
 		}
 		if outputSURBKeysFile == "" {
-			log.Fatalf("--output-surb-keys is required when using --include-surb")
+			log.Fatalf("--%s is required when using --include-surb", flagOutputSURBKeys)
 		}
 	}
 
