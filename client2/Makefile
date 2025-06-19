@@ -33,7 +33,7 @@ dockertest-channels:
 		go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 1h -run "TestAllClient2Tests/TestDockerCourierService"
 
 warpedclientdaemon:
-	cd cmd/kpclientd; go build -ldflags ${ldflags}
+	cd ../cmd/kpclientd; go build -ldflags ${ldflags}
 
 clientdaemon:
-	cd cmd/kpclientd; go build
+	cd ../cmd/kpclientd; go build

@@ -62,6 +62,47 @@ const (
 	writingLogFormat       = "writing %s"
 )
 
+// Config holds all the parsed command line flags
+type Config struct {
+	nrLayers                 int
+	nrNodes                  int
+	nrGateways               int
+	nrServiceNodes           int
+	nrStorageNodes           int
+	voting                   bool
+	nrVoting                 int
+	baseDir                  string
+	basePort                 int
+	bindAddr                 string
+	outDir                   string
+	dockerImage              string
+	binSuffix                string
+	logLevel                 string
+	omitTopology             bool
+	wirekem                  string
+	kem                      string
+	nike                     string
+	UserForwardPayloadLength int
+	pkiSignatureScheme       string
+	noDecoy                  bool
+	noMixDecoy               bool
+	dialTimeout              int
+	maxPKIDelay              int
+	pollingIntvl             int
+	sr                       uint64
+	mu                       float64
+	muMax                    uint64
+	lP                       float64
+	lPMax                    uint64
+	lL                       float64
+	lLMax                    uint64
+	lD                       float64
+	lDMax                    uint64
+	lM                       float64
+	lMMax                    uint64
+	lGMax                    uint64
+}
+
 type katzenpost struct {
 	baseDir   string
 	outDir    string
@@ -577,11 +618,12 @@ func (s *katzenpost) genAuthorizedNodes() ([]*vConfig.Node, []*vConfig.Node, []*
 	return replicas, gateways, serviceNodes, mixes, nil
 }
 
-func main() {
-	var err error
+// parseFlags handles all command line flag parsing and returns a Config struct
+func parseFlags() *Config {
+	cfg := &Config{}
+
 	nrLayers := flag.Int("L", nrLayers, "Number of layers.")
 	nrNodes := flag.Int("n", nrNodes, "Number of mixes.")
-
 	nrGateways := flag.Int("gateways", nrGateways, "Number of gateway nodes.")
 	nrServiceNodes := flag.Int("serviceNodes", nrServiceNodes, "Number of service nodes.")
 	nrStorageNodes := flag.Int("storageNodes", nrStorageNodes, "Number of storage replica nodes.")
@@ -623,85 +665,124 @@ func main() {
 
 	flag.Parse()
 
-	if *wirekem == "" {
-		log.Fatal("wire KEM must be set")
+	// Assign parsed values to config struct
+	cfg.nrLayers = *nrLayers
+	cfg.nrNodes = *nrNodes
+	cfg.nrGateways = *nrGateways
+	cfg.nrServiceNodes = *nrServiceNodes
+	cfg.nrStorageNodes = *nrStorageNodes
+	cfg.voting = *voting
+	cfg.nrVoting = *nrVoting
+	cfg.baseDir = *baseDir
+	cfg.basePort = *basePort
+	cfg.bindAddr = *bindAddr
+	cfg.outDir = *outDir
+	cfg.dockerImage = *dockerImage
+	cfg.binSuffix = *binSuffix
+	cfg.logLevel = *logLevel
+	cfg.omitTopology = *omitTopology
+	cfg.wirekem = *wirekem
+	cfg.kem = *kem
+	cfg.nike = *nike
+	cfg.UserForwardPayloadLength = *UserForwardPayloadLength
+	cfg.pkiSignatureScheme = *pkiSignatureScheme
+	cfg.noDecoy = *noDecoy
+	cfg.noMixDecoy = *noMixDecoy
+	cfg.dialTimeout = *dialTimeout
+	cfg.maxPKIDelay = *maxPKIDelay
+	cfg.pollingIntvl = *pollingIntvl
+	cfg.sr = *sr
+	cfg.mu = *mu
+	cfg.muMax = *muMax
+	cfg.lP = *lP
+	cfg.lPMax = *lPMax
+	cfg.lL = *lL
+	cfg.lLMax = *lLMax
+	cfg.lD = *lD
+	cfg.lDMax = *lDMax
+	cfg.lM = *lM
+	cfg.lMMax = *lMMax
+	cfg.lGMax = *lGMax
+
+	return cfg
+}
+
+// validateConfig validates the parsed configuration and returns any errors
+func validateConfig(cfg *Config) error {
+	if cfg.wirekem == "" {
+		return fmt.Errorf("wire KEM must be set")
 	}
 
-	if *kem == "" && *nike == "" {
-		log.Fatal("either nike or kem must be set")
+	if cfg.kem == "" && cfg.nike == "" {
+		return fmt.Errorf("either nike or kem must be set")
 	}
-	if *kem != "" && *nike != "" {
-		log.Fatal("nike and kem flags cannot both be set")
-	}
-
-	parameters := &vConfig.Parameters{
-		SendRatePerMinute: *sr,
-		Mu:                *mu,
-		MuMaxDelay:        *muMax,
-		LambdaP:           *lP,
-		LambdaPMaxDelay:   *lPMax,
-		LambdaL:           *lL,
-		LambdaLMaxDelay:   *lLMax,
-		LambdaD:           *lD,
-		LambdaDMaxDelay:   *lDMax,
-		LambdaM:           *lM,
-		LambdaMMaxDelay:   *lMMax,
-		LambdaGMaxDelay:   *lGMax,
+	if cfg.kem != "" && cfg.nike != "" {
+		return fmt.Errorf("nike and kem flags cannot both be set")
 	}
 
+	if kemschemes.ByName(cfg.wirekem) == nil {
+		return fmt.Errorf("invalid wire KEM scheme")
+	}
+
+	return nil
+}
+
+// initializeKatzenpost creates and initializes a katzenpost struct with the given configuration
+func initializeKatzenpost(cfg *Config) *katzenpost {
 	s := &katzenpost{}
 
-	s.wireKEMScheme = *wirekem
-	if kemschemes.ByName(*wirekem) == nil {
-		log.Fatal("invalid wire KEM scheme")
-	}
-
-	s.baseDir = *baseDir
-	s.outDir = *outDir
-	s.binSuffix = *binSuffix
-	s.basePort = uint16(*basePort)
+	s.wireKEMScheme = cfg.wirekem
+	s.baseDir = cfg.baseDir
+	s.outDir = cfg.outDir
+	s.binSuffix = cfg.binSuffix
+	s.basePort = uint16(cfg.basePort)
 	s.lastPort = s.basePort + 1
 	s.lastReplicaPort = s.basePort + 3000
-	s.bindAddr = *bindAddr
-	s.logLevel = *logLevel
+	s.bindAddr = cfg.bindAddr
+	s.logLevel = cfg.logLevel
 	s.debugConfig = &cConfig.Debug{
-		DisableDecoyTraffic:         *noDecoy,
-		SessionDialTimeout:          *dialTimeout,
-		InitialMaxPKIRetrievalDelay: *maxPKIDelay,
-		PollingInterval:             *pollingIntvl,
+		DisableDecoyTraffic:         cfg.noDecoy,
+		SessionDialTimeout:          cfg.dialTimeout,
+		InitialMaxPKIRetrievalDelay: cfg.maxPKIDelay,
+		PollingInterval:             cfg.pollingIntvl,
 	}
-	s.noMixDecoy = *noMixDecoy
+	s.noMixDecoy = cfg.noMixDecoy
 
-	nrHops := *nrLayers + 2
+	return s
+}
 
-	if *nike != "" {
-		nikeScheme := schemes.ByName(*nike)
+// setupGeometry configures the cryptographic schemes and geometries
+func setupGeometry(s *katzenpost, cfg *Config) error {
+	nrHops := cfg.nrLayers + 2
+
+	if cfg.nike != "" {
+		nikeScheme := schemes.ByName(cfg.nike)
 		if nikeScheme == nil {
-			log.Fatalf("failed to resolve nike scheme %s", *nike)
+			return fmt.Errorf("failed to resolve nike scheme %s", cfg.nike)
 		}
 		s.sphinxGeometry = geo.GeometryFromUserForwardPayloadLength(
 			nikeScheme,
-			*UserForwardPayloadLength,
+			cfg.UserForwardPayloadLength,
 			true,
 			nrHops,
 		)
 	}
-	if *kem != "" {
-		kemScheme := kemschemes.ByName(*kem)
+	if cfg.kem != "" {
+		kemScheme := kemschemes.ByName(cfg.kem)
 		if kemScheme == nil {
-			log.Fatalf("failed to resolve kem scheme %s", *kem)
+			return fmt.Errorf("failed to resolve kem scheme %s", cfg.kem)
 		}
 		s.sphinxGeometry = geo.KEMGeometryFromUserForwardPayloadLength(
 			kemScheme,
-			*UserForwardPayloadLength,
+			cfg.UserForwardPayloadLength,
 			true,
 			nrHops,
 		)
 	}
-	if *pkiSignatureScheme != "" {
-		signScheme := signSchemes.ByName(*pkiSignatureScheme)
+	if cfg.pkiSignatureScheme != "" {
+		signScheme := signSchemes.ByName(cfg.pkiSignatureScheme)
 		if signScheme == nil {
-			log.Fatalf("failed to resolve pki signature scheme %s", *pkiSignatureScheme)
+			return fmt.Errorf("failed to resolve pki signature scheme %s", cfg.pkiSignatureScheme)
 		}
 		s.pkiSignatureScheme = signScheme
 	}
@@ -709,99 +790,117 @@ func main() {
 	s.replicaNIKEScheme = replicaCommon.NikeScheme
 
 	// Generate pigeonhole geometry once for use in both client2 and thin client configs
+	var err error
 	s.pigeonholeGeometry, err = pigeonholeGeo.NewGeometryFromSphinx(s.sphinxGeometry, s.replicaNIKEScheme)
 	if err != nil {
-		log.Fatalf("Failed to create pigeonhole geometry: %v", err)
+		return fmt.Errorf("failed to create pigeonhole geometry: %v", err)
 	}
 
-	os.Mkdir(s.outDir, 0700)
-	os.Mkdir(filepath.Join(s.outDir, s.baseDir), 0700)
+	return nil
+}
 
-	if *voting {
-		// Generate the voting authority configurations
-		err := s.genVotingAuthoritiesCfg(*nrVoting, parameters, *nrLayers, *wirekem)
-		if err != nil {
-			log.Fatalf("getVotingAuthoritiesCfg failed: %s", err)
-		}
-	}
-
+// generateNodes creates all the different types of nodes (gateways, service nodes, mixes, replicas)
+func generateNodes(s *katzenpost, cfg *Config) error {
 	// Generate the gateway configs.
-	for i := 0; i < *nrGateways; i++ {
-		if err = s.genNodeConfig(true, false, *voting); err != nil {
-			log.Fatalf("Failed to generate gateway config: %v", err)
+	for i := 0; i < cfg.nrGateways; i++ {
+		if err := s.genNodeConfig(true, false, cfg.voting); err != nil {
+			return fmt.Errorf("failed to generate gateway config: %v", err)
 		}
 	}
+
 	// Generate the service node configs.
-	for i := 0; i < *nrServiceNodes; i++ {
-		if err = s.genNodeConfig(false, true, *voting); err != nil {
-			log.Fatalf("Failed to generate service node config: %v", err)
+	for i := 0; i < cfg.nrServiceNodes; i++ {
+		if err := s.genNodeConfig(false, true, cfg.voting); err != nil {
+			return fmt.Errorf("failed to generate service node config: %v", err)
 		}
 	}
 
 	// Generate the mix node configs.
-	for i := 0; i < *nrNodes; i++ {
-		if err = s.genNodeConfig(false, false, *voting); err != nil {
-			log.Fatalf("Failed to generate mix node config: %v", err)
+	for i := 0; i < cfg.nrNodes; i++ {
+		if err := s.genNodeConfig(false, false, cfg.voting); err != nil {
+			return fmt.Errorf("failed to generate mix node config: %v", err)
 		}
 	}
 
 	// Pigeonhole storage replica node configs.
-	for i := 0; i < *nrStorageNodes; i++ {
-		if err = s.genReplicaNodeConfig(); err != nil {
-			log.Fatalf("Failed to generate storage replica node config: %v", err)
+	for i := 0; i < cfg.nrStorageNodes; i++ {
+		if err := s.genReplicaNodeConfig(); err != nil {
+			return fmt.Errorf("failed to generate storage replica node config: %v", err)
 		}
 	}
 
-	// Generate the authority config
-	if *voting {
-		replicas, gateways, serviceNodes, mixes, err := s.genAuthorizedNodes()
-		if err != nil {
-			panic(err)
-		}
-		for _, vCfg := range s.votingAuthConfigs {
+	return nil
+}
 
-			for _, k := range replicas {
-				vCfg.StorageReplicas = append(vCfg.StorageReplicas, k)
-			}
-			vCfg.Mixes = mixes
-			vCfg.GatewayNodes = gateways
-			vCfg.ServiceNodes = serviceNodes
-			if *omitTopology == false {
-				vCfg.Topology = new(vConfig.Topology)
-				vCfg.Topology.Layers = make([]vConfig.Layer, 0)
-				for i := 0; i < *nrLayers; i++ {
-					vCfg.Topology.Layers = append(vCfg.Topology.Layers, *new(vConfig.Layer))
-					vCfg.Topology.Layers[i].Nodes = make([]vConfig.Node, 0)
-				}
-				for j := range mixes {
-					layer := j % *nrLayers
-					vCfg.Topology.Layers[layer].Nodes = append(vCfg.Topology.Layers[layer].Nodes, *mixes[j])
-				}
-			}
-		}
-		for _, vCfg := range s.votingAuthConfigs {
-			if err := saveCfg(vCfg, *outDir); err != nil {
-				log.Fatalf("Failed to saveCfg of authority with %s", err)
-			}
-		}
-	}
-	// write the mixes keys and configs to disk
-	for _, v := range s.nodeConfigs {
-		if err := saveCfg(v, *outDir); err != nil {
-			log.Fatalf("saveCfg failure: %s", err)
-		}
+// configureAuthorities handles voting authority configuration and topology setup
+func configureAuthorities(s *katzenpost, cfg *Config) error {
+	if !cfg.voting {
+		return nil
 	}
 
-	// replicas
-	for _, r := range s.replicaNodeConfigs {
-		if err := saveCfg(r, *outDir); err != nil {
-			log.Fatalf("saveCfg failure: %s", err)
-		}
-	}
-
-	err = s.genClientCfg()
+	replicas, gateways, serviceNodes, mixes, err := s.genAuthorizedNodes()
 	if err != nil {
-		log.Fatalf("%s", err)
+		return fmt.Errorf("failed to generate authorized nodes: %v", err)
+	}
+
+	for _, vCfg := range s.votingAuthConfigs {
+		for _, k := range replicas {
+			vCfg.StorageReplicas = append(vCfg.StorageReplicas, k)
+		}
+		vCfg.Mixes = mixes
+		vCfg.GatewayNodes = gateways
+		vCfg.ServiceNodes = serviceNodes
+
+		if !cfg.omitTopology {
+			vCfg.Topology = new(vConfig.Topology)
+			vCfg.Topology.Layers = make([]vConfig.Layer, 0)
+			for i := 0; i < cfg.nrLayers; i++ {
+				vCfg.Topology.Layers = append(vCfg.Topology.Layers, *new(vConfig.Layer))
+				vCfg.Topology.Layers[i].Nodes = make([]vConfig.Node, 0)
+			}
+			for j := range mixes {
+				layer := j % cfg.nrLayers
+				vCfg.Topology.Layers[layer].Nodes = append(vCfg.Topology.Layers[layer].Nodes, *mixes[j])
+			}
+		}
+	}
+
+	return nil
+}
+
+// saveConfigurations saves all generated configurations to disk
+func saveConfigurations(s *katzenpost, cfg *Config) error {
+	// Save voting authority configs
+	if cfg.voting {
+		for _, vCfg := range s.votingAuthConfigs {
+			if err := saveCfg(vCfg, cfg.outDir); err != nil {
+				return fmt.Errorf("failed to saveCfg of authority: %v", err)
+			}
+		}
+	}
+
+	// Save node configs
+	for _, v := range s.nodeConfigs {
+		if err := saveCfg(v, cfg.outDir); err != nil {
+			return fmt.Errorf("saveCfg failure: %v", err)
+		}
+	}
+
+	// Save replica configs
+	for _, r := range s.replicaNodeConfigs {
+		if err := saveCfg(r, cfg.outDir); err != nil {
+			return fmt.Errorf("saveCfg failure: %v", err)
+		}
+	}
+
+	return nil
+}
+
+// generateClientConfigurations creates all client configuration files
+func generateClientConfigurations(s *katzenpost) error {
+	err := s.genClientCfg()
+	if err != nil {
+		return fmt.Errorf("failed to generate client config: %v", err)
 	}
 
 	clientDaemonNetwork := "tcp"
@@ -809,21 +908,99 @@ func main() {
 
 	err = s.genClient2Cfg(clientDaemonNetwork, clientDaemonAddress)
 	if err != nil {
-		log.Fatalf("%s", err)
+		return fmt.Errorf("failed to generate client2 config: %v", err)
 	}
 
 	err = s.genClient2ThinCfg(clientDaemonNetwork, clientDaemonAddress)
 	if err != nil {
-		log.Fatalf("%s", err)
+		return fmt.Errorf("failed to generate client2 thin config: %v", err)
 	}
 
-	err = s.genDockerCompose(*dockerImage)
+	return nil
+}
+
+// generateOutputFiles creates docker-compose and prometheus configuration files
+func generateOutputFiles(s *katzenpost, cfg *Config) error {
+	err := s.genDockerCompose(cfg.dockerImage)
 	if err != nil {
-		log.Fatalf("%s", err)
+		return fmt.Errorf("failed to generate docker-compose: %v", err)
 	}
+
 	err = s.genPrometheus()
 	if err != nil {
-		log.Fatalf("%s", err)
+		return fmt.Errorf("failed to generate prometheus config: %v", err)
+	}
+
+	return nil
+}
+
+func main() {
+	// Parse command line flags
+	cfg := parseFlags()
+
+	// Validate configuration
+	if err := validateConfig(cfg); err != nil {
+		log.Fatal(err)
+	}
+
+	// Create parameters struct for voting authorities
+	parameters := &vConfig.Parameters{
+		SendRatePerMinute: cfg.sr,
+		Mu:                cfg.mu,
+		MuMaxDelay:        cfg.muMax,
+		LambdaP:           cfg.lP,
+		LambdaPMaxDelay:   cfg.lPMax,
+		LambdaL:           cfg.lL,
+		LambdaLMaxDelay:   cfg.lLMax,
+		LambdaD:           cfg.lD,
+		LambdaDMaxDelay:   cfg.lDMax,
+		LambdaM:           cfg.lM,
+		LambdaMMaxDelay:   cfg.lMMax,
+		LambdaGMaxDelay:   cfg.lGMax,
+	}
+
+	// Initialize katzenpost struct
+	s := initializeKatzenpost(cfg)
+
+	// Setup cryptographic schemes and geometries
+	if err := setupGeometry(s, cfg); err != nil {
+		log.Fatal(err)
+	}
+
+	// Create output directories
+	os.Mkdir(s.outDir, 0700)
+	os.Mkdir(filepath.Join(s.outDir, s.baseDir), 0700)
+
+	// Generate voting authority configurations if needed
+	if cfg.voting {
+		if err := s.genVotingAuthoritiesCfg(cfg.nrVoting, parameters, cfg.nrLayers, cfg.wirekem); err != nil {
+			log.Fatalf("getVotingAuthoritiesCfg failed: %s", err)
+		}
+	}
+
+	// Generate all node configurations
+	if err := generateNodes(s, cfg); err != nil {
+		log.Fatal(err)
+	}
+
+	// Configure voting authorities and topology
+	if err := configureAuthorities(s, cfg); err != nil {
+		log.Fatal(err)
+	}
+
+	// Save all configurations to disk
+	if err := saveConfigurations(s, cfg); err != nil {
+		log.Fatal(err)
+	}
+
+	// Generate client configurations
+	if err := generateClientConfigurations(s); err != nil {
+		log.Fatal(err)
+	}
+
+	// Generate output files (docker-compose, prometheus)
+	if err := generateOutputFiles(s, cfg); err != nil {
+		log.Fatal(err)
 	}
 }
 
@@ -849,7 +1026,7 @@ func identifier(cfg interface{}) string {
 	}
 }
 
-func toml_name(cfg interface{}) string {
+func tomlName(cfg interface{}) string {
 	switch cfg.(type) {
 	case *cConfig.Config:
 		return clientIdentifier
@@ -866,13 +1043,13 @@ func toml_name(cfg interface{}) string {
 	case *vConfig.Config:
 		return "authority"
 	default:
-		log.Fatalf("toml_name() passed unexpected type")
+		log.Fatalf("tomlName() passed unexpected type")
 		return ""
 	}
 }
 
 func saveCfg(cfg interface{}, outDir string) error {
-	fileName := filepath.Join(outDir, identifier(cfg), fmt.Sprintf("%s.toml", toml_name(cfg)))
+	fileName := filepath.Join(outDir, identifier(cfg), fmt.Sprintf("%s.toml", tomlName(cfg)))
 	log.Printf(writingLogFormat, fileName)
 	f, err := os.Create(fileName)
 	if err != nil {
