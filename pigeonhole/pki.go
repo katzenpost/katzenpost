@@ -5,6 +5,8 @@
 package pigeonhole
 
 import (
+	"errors"
+
 	"github.com/katzenpost/hpqc/nike"
 	"github.com/katzenpost/hpqc/rand"
 
@@ -18,11 +20,14 @@ var (
 
 // GetRandomIntermediateReplicas returns two random replica numbers and their public keys.
 func GetRandomIntermediateReplicas(doc *cpki.Document) ([2]uint8, []nike.PublicKey, error) {
-	maxReplica := uint8(len(doc.StorageReplicas) - 1)
-	replica1 := uint8(secureRand.Intn(int(maxReplica)))
+	numReplicas := uint8(len(doc.StorageReplicas))
+	if numReplicas < 2 {
+		return [2]uint8{}, nil, errors.New("insufficient storage replicas: need at least 2")
+	}
+	replica1 := uint8(secureRand.Intn(int(numReplicas)))
 	var replica2 uint8
 	for replica2 == replica1 {
-		replica2 = uint8(secureRand.Intn(int(maxReplica)))
+		replica2 = uint8(secureRand.Intn(int(numReplicas)))
 	}
 
 	replicaPubKeys := make([]nike.PublicKey, 2)
