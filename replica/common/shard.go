@@ -27,6 +27,7 @@ func GetReplicaKeys(doc *pki.Document) ([][]byte, error) {
 	if len(doc.StorageReplicas) == 0 {
 		return nil, errors.New("GetReplicaKeys: doc.StorageReplicas is empty")
 	}
+
 	keys := make([][]byte, len(doc.StorageReplicas))
 	for i, replica := range doc.StorageReplicas {
 		keys[i] = make([]byte, len(replica.IdentityKey))

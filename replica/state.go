@@ -165,6 +165,18 @@ func (s *state) replicaWriteFromBlob(blob []byte) (*commands.ReplicaWrite, error
 func (s *state) getRemoteShards(boxID []byte) ([]*pki.ReplicaDescriptor, error) {
 	s.log.Debugf("state: Getting remote shards for BoxID: %x", boxID)
 	doc := s.server.PKIWorker.PKIDocument()
+
+	// Check if PKI document has storage replicas
+	if doc == nil {
+		s.log.Debugf("state: No PKI document available yet, skipping remote shards for BoxID: %x", boxID)
+		return []*pki.ReplicaDescriptor{}, nil
+	}
+
+	if doc.StorageReplicas == nil || len(doc.StorageReplicas) == 0 {
+		s.log.Debugf("state: No storage replicas in PKI document yet, skipping remote shards for BoxID: %x", boxID)
+		return []*pki.ReplicaDescriptor{}, nil
+	}
+
 	boxIDar := new([32]byte)
 	copy(boxIDar[:], boxID)
 	shards, err := replicaCommon.GetRemoteShards(s.server.identityPublicKey, boxIDar, doc)
