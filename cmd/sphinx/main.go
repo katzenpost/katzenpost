@@ -47,6 +47,7 @@ const (
 	errFailedToResolveNIKE  = "failed to resolve NIKE scheme: %s"
 	errFailedToResolveKEM   = "failed to resolve KEM scheme: %s"
 	errGeometryNoScheme     = "geometry has neither NIKE nor KEM scheme"
+	errFormat               = "Error: %v\n"
 )
 
 type CreateGeometry struct {
@@ -88,7 +89,7 @@ var createGeometryCmd = &cobra.Command{
 
 		// Validate input parameters
 		if err := validateCreateGeometryParams(&createGeometry); err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			fmt.Fprintf(os.Stderr, errFormat, err)
 			os.Exit(1)
 		}
 
@@ -139,7 +140,7 @@ Examples:
 		// Build path from hop specifications
 		err := buildPathFromHops(&newPacket, hops)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			fmt.Fprintf(os.Stderr, errFormat, err)
 			os.Exit(1)
 		}
 
@@ -164,7 +165,7 @@ Example:
 
 		// Validate that key file exists and is readable
 		if err := validateFileExists(keyFile, "public key"); err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			fmt.Fprintf(os.Stderr, errFormat, err)
 			os.Exit(1)
 		}
 
@@ -191,15 +192,15 @@ Example:
 
 		// Validate input files exist
 		if err := validateFileExists(geometryFile, "geometry"); err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			fmt.Fprintf(os.Stderr, errFormat, err)
 			os.Exit(1)
 		}
 		if err := validateFileExists(privateKeyFile, "private key"); err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			fmt.Fprintf(os.Stderr, errFormat, err)
 			os.Exit(1)
 		}
 		if err := validateFileExists(packetFile, "packet"); err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			fmt.Fprintf(os.Stderr, errFormat, err)
 			os.Exit(1)
 		}
 
@@ -349,7 +350,7 @@ func main() {
 		if strings.Contains(err.Error(), "unknown command") {
 			handleUnknownCommand(err)
 		} else {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			fmt.Fprintf(os.Stderr, errFormat, err)
 		}
 		os.Exit(1)
 	}
@@ -449,31 +450,64 @@ func writeGeometryToFile(tomlOut, filename string) {
 
 // validateCreateGeometryParams validates parameters for createGeometry command
 func validateCreateGeometryParams(createGeometry *CreateGeometry) error {
-	// Validate that either NIKE or KEM is specified, but not both
+	if err := validateCryptoScheme(createGeometry); err != nil {
+		return err
+	}
+
+	if err := validateMixHops(createGeometry.NrMixHops); err != nil {
+		return err
+	}
+
+	if err := validatePayloadLength(createGeometry.UserForwardPayloadLength); err != nil {
+		return err
+	}
+
+	if err := validateSchemes(createGeometry); err != nil {
+		return err
+	}
+
+	if err := validateOutputFile(createGeometry.File); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// validateCryptoScheme validates that either NIKE or KEM is specified, but not both
+func validateCryptoScheme(createGeometry *CreateGeometry) error {
 	if createGeometry.NIKE == "" && createGeometry.KEM == "" {
 		return fmt.Errorf("either --nike or --kem must be specified")
 	}
 	if createGeometry.NIKE != "" && createGeometry.KEM != "" {
 		return fmt.Errorf("cannot specify both --nike and --kem, choose one")
 	}
+	return nil
+}
 
-	// Validate number of hops
-	if createGeometry.NrMixHops < 1 {
-		return fmt.Errorf("number of mix layers must be at least 1, got %d", createGeometry.NrMixHops)
+// validateMixHops validates the number of mix hops
+func validateMixHops(nrMixHops int) error {
+	if nrMixHops < 1 {
+		return fmt.Errorf("number of mix layers must be at least 1, got %d", nrMixHops)
 	}
-	if createGeometry.NrMixHops > 10 {
-		return fmt.Errorf("number of mix layers cannot exceed 10, got %d", createGeometry.NrMixHops)
+	if nrMixHops > 10 {
+		return fmt.Errorf("number of mix layers cannot exceed 10, got %d", nrMixHops)
 	}
+	return nil
+}
 
-	// Validate payload length
-	if createGeometry.UserForwardPayloadLength < 1 {
-		return fmt.Errorf("user forward payload length must be positive, got %d", createGeometry.UserForwardPayloadLength)
+// validatePayloadLength validates the user forward payload length
+func validatePayloadLength(payloadLength int) error {
+	if payloadLength < 1 {
+		return fmt.Errorf("user forward payload length must be positive, got %d", payloadLength)
 	}
-	if createGeometry.UserForwardPayloadLength > 1024*1024 {
-		return fmt.Errorf("user forward payload length too large (max 1MB), got %d", createGeometry.UserForwardPayloadLength)
+	if payloadLength > 1024*1024 {
+		return fmt.Errorf("user forward payload length too large (max 1MB), got %d", payloadLength)
 	}
+	return nil
+}
 
-	// Validate NIKE scheme if specified
+// validateSchemes validates NIKE and KEM schemes if specified
+func validateSchemes(createGeometry *CreateGeometry) error {
 	if createGeometry.NIKE != "" {
 		nikeScheme := schemes.ByName(createGeometry.NIKE)
 		if nikeScheme == nil {
@@ -481,7 +515,6 @@ func validateCreateGeometryParams(createGeometry *CreateGeometry) error {
 		}
 	}
 
-	// Validate KEM scheme if specified
 	if createGeometry.KEM != "" {
 		kemScheme := kemschemes.ByName(createGeometry.KEM)
 		if kemScheme == nil {
@@ -489,20 +522,26 @@ func validateCreateGeometryParams(createGeometry *CreateGeometry) error {
 		}
 	}
 
-	// Validate output file path if specified
-	if createGeometry.File != "" {
-		// Check if directory exists and is writable
-		dir := filepath.Dir(createGeometry.File)
-		if dir != "." {
-			if _, err := os.Stat(dir); os.IsNotExist(err) {
-				return fmt.Errorf("output directory does not exist: %s", dir)
-			}
-		}
+	return nil
+}
 
-		// Check if file already exists and warn (but don't fail)
-		if _, err := os.Stat(createGeometry.File); err == nil {
-			fmt.Fprintf(os.Stderr, "Warning: output file %s already exists and will be overwritten\n", createGeometry.File)
+// validateOutputFile validates the output file path if specified
+func validateOutputFile(filePath string) error {
+	if filePath == "" {
+		return nil
+	}
+
+	// Check if directory exists and is writable
+	dir := filepath.Dir(filePath)
+	if dir != "." {
+		if _, err := os.Stat(dir); os.IsNotExist(err) {
+			return fmt.Errorf("output directory does not exist: %s", dir)
 		}
+	}
+
+	// Check if file already exists and warn (but don't fail)
+	if _, err := os.Stat(filePath); err == nil {
+		fmt.Fprintf(os.Stderr, "Warning: output file %s already exists and will be overwritten\n", filePath)
 	}
 
 	return nil
