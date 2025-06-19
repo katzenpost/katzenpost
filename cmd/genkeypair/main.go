@@ -17,7 +17,11 @@ import (
 	"github.com/katzenpost/katzenpost/core/utils"
 )
 
-const writingKeypairFormat = "Writing keypair to %s and %s\n"
+const (
+	writingKeypairFormat = "Writing keypair to %s and %s\n"
+	errBothKeysExist     = "both keys already exist"
+	errOneKeyExists      = "one of the keys already exists"
+)
 
 func main() {
 	keyType := flag.String("type", "kem", "type is either: nike, kem or sign")
@@ -43,11 +47,11 @@ func main() {
 
 		switch {
 		case utils.BothExists(privout, pubout):
-			panic("both keys already exist")
+			panic(errBothKeysExist)
 		case utils.BothNotExists(privout, pubout):
 			break
 		default:
-			panic("one of the keys already exists")
+			panic(errOneKeyExists)
 		}
 
 		scheme := kemschemes.ByName(*schemeName)
@@ -70,11 +74,11 @@ func main() {
 
 		switch {
 		case utils.BothExists(privout, pubout):
-			panic("both keys already exist")
+			panic(errBothKeysExist)
 		case utils.BothNotExists(privout, pubout):
 			break
 		default:
-			panic("one of the keys already exists")
+			panic(errOneKeyExists)
 		}
 
 		scheme := nikeschemes.ByName(*schemeName)
@@ -97,11 +101,11 @@ func main() {
 
 		switch {
 		case utils.BothExists(privout, pubout):
-			panic("both keys already exist")
+			panic(errBothKeysExist)
 		case utils.BothNotExists(privout, pubout):
 			break
 		default:
-			panic("one of the keys already exists")
+			panic(errOneKeyExists)
 		}
 
 		scheme := signschemes.ByName(*schemeName)
