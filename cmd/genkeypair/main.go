@@ -23,104 +23,106 @@ const (
 	errOneKeyExists      = "one of the keys already exists"
 )
 
+func validateArgs(keyType, schemeName, outName string) {
+	if keyType == "" {
+		panic("type cannot be empty")
+	}
+	if schemeName == "" {
+		panic("scheme cannot be empty")
+	}
+	if outName == "" {
+		panic("out cannot be empty")
+	}
+}
+
+func checkKeyFilesExist(privout, pubout string) {
+	fmt.Printf(writingKeypairFormat, pubout, privout)
+
+	switch {
+	case utils.BothExists(privout, pubout):
+		panic(errBothKeysExist)
+	case utils.BothNotExists(privout, pubout):
+		return
+	default:
+		panic(errOneKeyExists)
+	}
+}
+
+func generateKemKeypair(schemeName, outName string) {
+	pubout := fmt.Sprintf("%s.kem_public.pem", outName)
+	privout := fmt.Sprintf("%s.kem_private.pem", outName)
+
+	checkKeyFilesExist(privout, pubout)
+
+	scheme := kemschemes.ByName(schemeName)
+	pubkey, privkey, err := scheme.GenerateKeyPair()
+	if err != nil {
+		panic(err)
+	}
+
+	if err := kempem.PublicKeyToFile(pubout, pubkey); err != nil {
+		panic(err)
+	}
+	if err := kempem.PrivateKeyToFile(privout, privkey); err != nil {
+		panic(err)
+	}
+}
+
+func generateNikeKeypair(schemeName, outName string) {
+	pubout := fmt.Sprintf("%s.nike_public.pem", outName)
+	privout := fmt.Sprintf("%s.nike_private.pem", outName)
+
+	checkKeyFilesExist(privout, pubout)
+
+	scheme := nikeschemes.ByName(schemeName)
+	pubkey, privkey, err := scheme.GenerateKeyPair()
+	if err != nil {
+		panic(err)
+	}
+
+	if err := nikepem.PublicKeyToFile(pubout, pubkey, scheme); err != nil {
+		panic(err)
+	}
+	if err := nikepem.PrivateKeyToFile(privout, privkey, scheme); err != nil {
+		panic(err)
+	}
+}
+
+func generateSignKeypair(schemeName, outName string) {
+	pubout := fmt.Sprintf("%s.sign_public.pem", outName)
+	privout := fmt.Sprintf("%s.sign_private.pem", outName)
+
+	checkKeyFilesExist(privout, pubout)
+
+	scheme := signschemes.ByName(schemeName)
+	pubkey, privkey, err := scheme.GenerateKey()
+	if err != nil {
+		panic(err)
+	}
+
+	if err := signpem.PublicKeyToFile(pubout, pubkey); err != nil {
+		panic(err)
+	}
+	if err := signpem.PrivateKeyToFile(privout, privkey); err != nil {
+		panic(err)
+	}
+}
+
 func main() {
 	keyType := flag.String("type", "kem", "type is either: nike, kem or sign")
 	schemeName := flag.String("scheme", "x25519", "name of the nike, kem or sign scheme")
 	outName := flag.String("out", "out", "output keypair name")
 	flag.Parse()
 
-	if *keyType == "" {
-		panic("type cannot be empty")
-	}
-	if *schemeName == "" {
-		panic("scheme cannot be empty")
-	}
-	if *outName == "" {
-		panic("out cannot be empty")
-	}
+	validateArgs(*keyType, *schemeName, *outName)
 
-	switch {
-	case *keyType == "kem":
-		pubout := fmt.Sprintf("%s.kem_public.pem", *outName)
-		privout := fmt.Sprintf("%s.kem_private.pem", *outName)
-		fmt.Printf(writingKeypairFormat, pubout, privout)
-
-		switch {
-		case utils.BothExists(privout, pubout):
-			panic(errBothKeysExist)
-		case utils.BothNotExists(privout, pubout):
-			break
-		default:
-			panic(errOneKeyExists)
-		}
-
-		scheme := kemschemes.ByName(*schemeName)
-		pubkey, privkey, err := scheme.GenerateKeyPair()
-		if err != nil {
-			panic(err)
-		}
-		err = kempem.PublicKeyToFile(pubout, pubkey)
-		if err != nil {
-			panic(err)
-		}
-		err = kempem.PrivateKeyToFile(privout, privkey)
-		if err != nil {
-			panic(err)
-		}
-	case *keyType == "nike":
-		pubout := fmt.Sprintf("%s.nike_public.pem", *outName)
-		privout := fmt.Sprintf("%s.nike_private.pem", *outName)
-		fmt.Printf(writingKeypairFormat, pubout, privout)
-
-		switch {
-		case utils.BothExists(privout, pubout):
-			panic(errBothKeysExist)
-		case utils.BothNotExists(privout, pubout):
-			break
-		default:
-			panic(errOneKeyExists)
-		}
-
-		scheme := nikeschemes.ByName(*schemeName)
-		pubkey, privkey, err := scheme.GenerateKeyPair()
-		if err != nil {
-			panic(err)
-		}
-		err = nikepem.PublicKeyToFile(pubout, pubkey, scheme)
-		if err != nil {
-			panic(err)
-		}
-		err = nikepem.PrivateKeyToFile(privout, privkey, scheme)
-		if err != nil {
-			panic(err)
-		}
-	case *keyType == "sign":
-		pubout := fmt.Sprintf("%s.sign_public.pem", *outName)
-		privout := fmt.Sprintf("%s.sign_private.pem", *outName)
-		fmt.Printf(writingKeypairFormat, pubout, privout)
-
-		switch {
-		case utils.BothExists(privout, pubout):
-			panic(errBothKeysExist)
-		case utils.BothNotExists(privout, pubout):
-			break
-		default:
-			panic(errOneKeyExists)
-		}
-
-		scheme := signschemes.ByName(*schemeName)
-		pubkey, privkey, err := scheme.GenerateKey()
-		if err != nil {
-			panic(err)
-		}
-		err = signpem.PublicKeyToFile(pubout, pubkey)
-		if err != nil {
-			panic(err)
-		}
-		err = signpem.PrivateKeyToFile(privout, privkey)
-		if err != nil {
-			panic(err)
-		}
+	switch *keyType {
+	case "kem":
+		generateKemKeypair(*schemeName, *outName)
+	case "nike":
+		generateNikeKeypair(*schemeName, *outName)
+	case "sign":
+		generateSignKeypair(*schemeName, *outName)
 	default:
 		panic("key type must be kem, nike or sign")
 	}
