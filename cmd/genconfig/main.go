@@ -849,7 +849,7 @@ func identifier(cfg interface{}) string {
 	}
 }
 
-func toml_name(cfg interface{}) string {
+func tomlName(cfg interface{}) string {
 	switch cfg.(type) {
 	case *cConfig.Config:
 		return clientIdentifier
@@ -866,13 +866,13 @@ func toml_name(cfg interface{}) string {
 	case *vConfig.Config:
 		return "authority"
 	default:
-		log.Fatalf("toml_name() passed unexpected type")
+		log.Fatalf("tomlName() passed unexpected type")
 		return ""
 	}
 }
 
 func saveCfg(cfg interface{}, outDir string) error {
-	fileName := filepath.Join(outDir, identifier(cfg), fmt.Sprintf("%s.toml", toml_name(cfg)))
+	fileName := filepath.Join(outDir, identifier(cfg), fmt.Sprintf("%s.toml", tomlName(cfg)))
 	log.Printf(writingLogFormat, fileName)
 	f, err := os.Create(fileName)
 	if err != nil {

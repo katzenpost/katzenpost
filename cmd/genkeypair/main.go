@@ -17,6 +17,8 @@ import (
 	"github.com/katzenpost/katzenpost/core/utils"
 )
 
+const writingKeypairFormat = "Writing keypair to %s and %s\n"
+
 func main() {
 	keyType := flag.String("type", "kem", "type is either: nike, kem or sign")
 	schemeName := flag.String("scheme", "x25519", "name of the nike, kem or sign scheme")
@@ -37,7 +39,7 @@ func main() {
 	case *keyType == "kem":
 		pubout := fmt.Sprintf("%s.kem_public.pem", *outName)
 		privout := fmt.Sprintf("%s.kem_private.pem", *outName)
-		fmt.Printf("Writing keypair to %s and %s\n", pubout, privout)
+		fmt.Printf(writingKeypairFormat, pubout, privout)
 
 		switch {
 		case utils.BothExists(privout, pubout):
@@ -64,7 +66,7 @@ func main() {
 	case *keyType == "nike":
 		pubout := fmt.Sprintf("%s.nike_public.pem", *outName)
 		privout := fmt.Sprintf("%s.nike_private.pem", *outName)
-		fmt.Printf("Writing keypair to %s and %s\n", pubout, privout)
+		fmt.Printf(writingKeypairFormat, pubout, privout)
 
 		switch {
 		case utils.BothExists(privout, pubout):
@@ -91,7 +93,7 @@ func main() {
 	case *keyType == "sign":
 		pubout := fmt.Sprintf("%s.sign_public.pem", *outName)
 		privout := fmt.Sprintf("%s.sign_private.pem", *outName)
-		fmt.Printf("Writing keypair to %s and %s\n", pubout, privout)
+		fmt.Printf(writingKeypairFormat, pubout, privout)
 
 		switch {
 		case utils.BothExists(privout, pubout):
