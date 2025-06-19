@@ -25,7 +25,7 @@ func GetRandomIntermediateReplicas(doc *cpki.Document) ([2]uint8, []nike.PublicK
 		return [2]uint8{}, nil, errors.New("insufficient storage replicas: need at least 2")
 	}
 	replica1 := uint8(secureRand.Intn(int(numReplicas)))
-	var replica2 uint8
+	replica2 := uint8(secureRand.Intn(int(numReplicas)))
 	for replica2 == replica1 {
 		replica2 = uint8(secureRand.Intn(int(numReplicas)))
 	}
