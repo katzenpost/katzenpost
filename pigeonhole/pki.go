@@ -31,7 +31,7 @@ func GetRandomIntermediateReplicas(doc *cpki.Document) ([2]uint8, []nike.PublicK
 
 	numReplicas := uint8(len(doc.StorageReplicas))
 	if numReplicas < 2 {
-		return [2]uint8{}, nil, errors.New("insufficient storage replicas: need at least 2")
+		return [2]uint8{}, nil, errors.New("insufficient storage replicas in PKI document: need at least 2")
 	}
 
 	replica1 := uint8(secureRand.Intn(int(numReplicas)))
