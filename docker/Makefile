@@ -103,7 +103,7 @@ $(cache_dir)/go:
 
 $(docker_compose_yml): ../cmd/genconfig/main.go $(distro)_base.stamp | $(net_name) $(cache_dir)
 	$(docker) run ${docker_args} --rm katzenpost-$(distro)_base \
-		$(sh) -c 'cd cmd/genconfig && go build && cd docker \
+		$(sh) -c 'cd cmd/genconfig && go build && cd ../../docker \
 		&& ../cmd/genconfig/genconfig -wirekem $(wirekem) -a ${bind_addr} -nv ${auths} -n ${mixes} -gateways ${gateways} \
 		-serviceNodes ${serviceNodes} \
 		-sr ${sr} -mu ${mu} -muMax ${muMax} -lP ${lP} -lPMax ${lPMax} -lL ${lL} \
