@@ -315,22 +315,32 @@ func CreateChannelReadRequestWithBoxID(channelID [thin.ChannelIDLength]byte,
 	return envelope, mkemPrivateKey, nil
 }
 
-// advanceWriterToIndex advances a StatefulWriter to the specified target index
-func (d *Daemon) advanceWriterToIndex(statefulWriter *bacap.StatefulWriter, targetIndex *bacap.MessageBoxIndex) error {
+// advanceToIndex advances either a StatefulWriter or StatefulReader to the specified target index
+func (d *Daemon) advanceToIndex(nextIndex **bacap.MessageBoxIndex, lastIndex **bacap.MessageBoxIndex, targetIndex *bacap.MessageBoxIndex) error {
 	if targetIndex == nil {
 		return nil
 	}
 
 	// Advance to the target index if needed
-	for statefulWriter.NextIndex.Idx64 < targetIndex.Idx64 {
-		nextIndex, err := statefulWriter.NextIndex.NextIndex()
+	for (*nextIndex).Idx64 < targetIndex.Idx64 {
+		newIndex, err := (*nextIndex).NextIndex()
 		if err != nil {
 			return fmt.Errorf("failed to advance to target index: %s", err)
 		}
-		statefulWriter.LastOutboxIdx = statefulWriter.NextIndex
-		statefulWriter.NextIndex = nextIndex
+		*lastIndex = *nextIndex
+		*nextIndex = newIndex
 	}
 	return nil
+}
+
+// advanceWriterToIndex advances a StatefulWriter to the specified target index
+func (d *Daemon) advanceWriterToIndex(statefulWriter *bacap.StatefulWriter, targetIndex *bacap.MessageBoxIndex) error {
+	return d.advanceToIndex(&statefulWriter.NextIndex, &statefulWriter.LastOutboxIdx, targetIndex)
+}
+
+// advanceReaderToIndex advances a StatefulReader to the specified target index
+func (d *Daemon) advanceReaderToIndex(statefulReader *bacap.StatefulReader, targetIndex *bacap.MessageBoxIndex) error {
+	return d.advanceToIndex(&statefulReader.NextIndex, &statefulReader.LastInboxRead, targetIndex)
 }
 
 // setupWriteChannelFromExisting creates a StatefulWriter from an existing BoxOwnerCap
@@ -458,17 +468,9 @@ func (d *Daemon) createReadChannel(request *Request) {
 
 	// If a specific MessageBoxIndex was provided, advance to that position
 	if request.CreateReadChannel.MessageBoxIndex != nil {
-		targetIndex := request.CreateReadChannel.MessageBoxIndex
-
-		// Advance to the target index if needed
-		for statefulReader.NextIndex.Idx64 < targetIndex.Idx64 {
-			nextIndex, err := statefulReader.NextIndex.NextIndex()
-			if err != nil {
-				d.log.Errorf("createReadChannel failure: failed to advance to target index: %s", err)
-				return
-			}
-			statefulReader.LastInboxRead = statefulReader.NextIndex
-			statefulReader.NextIndex = nextIndex
+		if err := d.advanceReaderToIndex(statefulReader, request.CreateReadChannel.MessageBoxIndex); err != nil {
+			d.log.Errorf("createReadChannel failure: %s", err)
+			return
 		}
 	}
 
