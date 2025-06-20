@@ -311,101 +311,77 @@ func CreateChannelReadRequestWithBoxID(channelID [thin.ChannelIDLength]byte,
 	return envelope, mkemPrivateKey, nil
 }
 
-func (d *Daemon) createWriteChannel(request *Request) {
-	var statefulWriter *bacap.StatefulWriter
-	var bobReadCap *bacap.UniversalReadCap
-	var boxOwnerCap *bacap.BoxOwnerCap
-	var err error
+// advanceWriterToIndex advances a StatefulWriter to the specified target index
+func (d *Daemon) advanceWriterToIndex(statefulWriter *bacap.StatefulWriter, targetIndex *bacap.MessageBoxIndex) error {
+	if targetIndex == nil {
+		return nil
+	}
 
-	// Check if we're resuming an existing channel or creating a new one
-	if request.CreateWriteChannel.BoxOwnerCap != nil {
-		// Resuming existing channel
-		boxOwnerCap = request.CreateWriteChannel.BoxOwnerCap
-		bobReadCap = boxOwnerCap.UniversalReadCap()
-
-		// Create StatefulWriter from the provided BoxOwnerCap
-		statefulWriter, err = bacap.NewStatefulWriter(boxOwnerCap, constants.PIGEONHOLE_CTX)
+	// Advance to the target index if needed
+	for statefulWriter.NextIndex.Idx64 < targetIndex.Idx64 {
+		nextIndex, err := statefulWriter.NextIndex.NextIndex()
 		if err != nil {
-			d.log.Errorf("createWriteChannel failure: failed to create StatefulWriter: %s", err)
-			return
+			return fmt.Errorf("failed to advance to target index: %s", err)
 		}
-
-		// If a specific MessageBoxIndex was provided, advance to that position
-		if request.CreateWriteChannel.MessageBoxIndex != nil {
-			// We need to advance the writer to the specified index
-			targetIndex := request.CreateWriteChannel.MessageBoxIndex
-
-			// Advance to the target index if needed
-			for statefulWriter.NextIndex.Idx64 < targetIndex.Idx64 {
-				nextIndex, err := statefulWriter.NextIndex.NextIndex()
-				if err != nil {
-					d.log.Errorf("createWriteChannel failure: failed to advance to target index: %s", err)
-					return
-				}
-				statefulWriter.LastOutboxIdx = statefulWriter.NextIndex
-				statefulWriter.NextIndex = nextIndex
-			}
-		}
-	} else {
-		// Creating new channel
-		statefulWriter, bobReadCap, boxOwnerCap = NewPigeonholeChannel()
-
-		// If a specific starting MessageBoxIndex was provided, advance to that position
-		if request.CreateWriteChannel.MessageBoxIndex != nil {
-			targetIndex := request.CreateWriteChannel.MessageBoxIndex
-
-			// Advance to the target index if needed
-			for statefulWriter.NextIndex.Idx64 < targetIndex.Idx64 {
-				nextIndex, err := statefulWriter.NextIndex.NextIndex()
-				if err != nil {
-					d.log.Errorf("createWriteChannel failure: failed to advance to target index: %s", err)
-					return
-				}
-				statefulWriter.LastOutboxIdx = statefulWriter.NextIndex
-				statefulWriter.NextIndex = nextIndex
-			}
-		}
+		statefulWriter.LastOutboxIdx = statefulWriter.NextIndex
+		statefulWriter.NextIndex = nextIndex
 	}
+	return nil
+}
 
-	// Check for capability deduplication - only for resuming existing channels
-	if request.CreateWriteChannel.BoxOwnerCap != nil {
-		if err := d.checkWriteCapabilityDedup(request, boxOwnerCap); err != nil {
-			return
-		}
-	}
+// setupWriteChannelFromExisting creates a StatefulWriter from an existing BoxOwnerCap
+func (d *Daemon) setupWriteChannelFromExisting(request *Request) (*bacap.StatefulWriter, *bacap.UniversalReadCap, *bacap.BoxOwnerCap, error) {
+	boxOwnerCap := request.CreateWriteChannel.BoxOwnerCap
+	bobReadCap := boxOwnerCap.UniversalReadCap()
 
-	// Generate channel ID
-	channelID := [thin.ChannelIDLength]byte{}
-	_, err = rand.Reader.Read(channelID[:])
+	// Create StatefulWriter from the provided BoxOwnerCap
+	statefulWriter, err := bacap.NewStatefulWriter(boxOwnerCap, constants.PIGEONHOLE_CTX)
 	if err != nil {
-		panic(err)
+		return nil, nil, nil, fmt.Errorf("failed to create StatefulWriter: %s", err)
 	}
 
-	// Add capability to deduplication map for new channels
-	if request.CreateWriteChannel.BoxOwnerCap == nil {
-		if err := d.checkWriteCapabilityDedup(request, boxOwnerCap); err != nil {
-			return
-		}
+	// Advance to the specified index if provided
+	if err := d.advanceWriterToIndex(statefulWriter, request.CreateWriteChannel.MessageBoxIndex); err != nil {
+		return nil, nil, nil, err
 	}
 
-	// Store channel descriptor
+	return statefulWriter, bobReadCap, boxOwnerCap, nil
+}
+
+// setupWriteChannelFromNew creates a new channel and StatefulWriter
+func (d *Daemon) setupWriteChannelFromNew(request *Request) (*bacap.StatefulWriter, *bacap.UniversalReadCap, *bacap.BoxOwnerCap, error) {
+	// Creating new channel
+	statefulWriter, bobReadCap, boxOwnerCap := NewPigeonholeChannel()
+
+	// Advance to the specified index if provided
+	if err := d.advanceWriterToIndex(statefulWriter, request.CreateWriteChannel.MessageBoxIndex); err != nil {
+		return nil, nil, nil, err
+	}
+
+	return statefulWriter, bobReadCap, boxOwnerCap, nil
+}
+
+// storeWriteChannelDescriptor stores the channel descriptor in the daemon's channel map
+func (d *Daemon) storeWriteChannelDescriptor(channelID [thin.ChannelIDLength]byte, statefulWriter *bacap.StatefulWriter, boxOwnerCap *bacap.BoxOwnerCap) {
 	d.channelMapLock.Lock()
+	defer d.channelMapLock.Unlock()
+
 	d.channelMap[channelID] = &ChannelDescriptor{
 		StatefulWriter:      statefulWriter,
 		BoxOwnerCap:         boxOwnerCap,
 		EnvelopeDescriptors: make(map[[hash.HashSize]byte]*EnvelopeDescriptor),
 		StoredEnvelopes:     make(map[[thin.MessageIDLength]byte]*StoredEnvelopeData),
 	}
-	d.channelMapLock.Unlock()
+}
 
-	// Get current message index for the reply
-	currentMessageIndex := statefulWriter.NextIndex
-
+// sendWriteChannelSuccessResponse sends a successful response for write channel creation
+func (d *Daemon) sendWriteChannelSuccessResponse(request *Request, channelID [thin.ChannelIDLength]byte, bobReadCap *bacap.UniversalReadCap, boxOwnerCap *bacap.BoxOwnerCap, currentMessageIndex *bacap.MessageBoxIndex) {
 	conn := d.listener.getConnection(request.AppID)
 	if conn == nil {
 		d.log.Errorf(errNoConnectionForAppID, request.AppID[:])
 		return
 	}
+
 	conn.sendResponse(&Response{
 		AppID: request.AppID,
 		CreateWriteChannelReply: &thin.CreateWriteChannelReply{
@@ -415,6 +391,45 @@ func (d *Daemon) createWriteChannel(request *Request) {
 			NextMessageIndex: currentMessageIndex,
 		},
 	})
+}
+
+func (d *Daemon) createWriteChannel(request *Request) {
+	// Setup channel components based on whether we're resuming or creating new
+	var statefulWriter *bacap.StatefulWriter
+	var bobReadCap *bacap.UniversalReadCap
+	var boxOwnerCap *bacap.BoxOwnerCap
+	var err error
+
+	isResuming := request.CreateWriteChannel.BoxOwnerCap != nil
+	if isResuming {
+		statefulWriter, bobReadCap, boxOwnerCap, err = d.setupWriteChannelFromExisting(request)
+	} else {
+		statefulWriter, bobReadCap, boxOwnerCap, err = d.setupWriteChannelFromNew(request)
+	}
+
+	if err != nil {
+		d.log.Errorf("createWriteChannel failure: %s", err)
+		d.sendWriteChannelError(request, err.Error())
+		return
+	}
+
+	// Check for capability deduplication
+	if err := d.checkWriteCapabilityDedup(request, boxOwnerCap); err != nil {
+		return
+	}
+
+	// Generate channel ID
+	channelID := [thin.ChannelIDLength]byte{}
+	if _, err := rand.Reader.Read(channelID[:]); err != nil {
+		panic(err)
+	}
+
+	// Store channel descriptor
+	d.storeWriteChannelDescriptor(channelID, statefulWriter, boxOwnerCap)
+
+	// Send success response
+	currentMessageIndex := statefulWriter.NextIndex
+	d.sendWriteChannelSuccessResponse(request, channelID, bobReadCap, boxOwnerCap, currentMessageIndex)
 }
 
 func (d *Daemon) createReadChannel(request *Request) {
