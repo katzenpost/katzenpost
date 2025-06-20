@@ -33,6 +33,10 @@ var (
 const (
 	// Error message for missing connection
 	errNoConnectionForAppID = "no connection associated with AppID %x"
+
+	// Error messages for capability deduplication
+	errCapabilityMarshalFailed = "failed to marshal capability"
+	errCapabilityAlreadyInUse  = "capability already in use"
 )
 
 // EnvelopeDescriptor supplies us with everthing we need to decrypt
@@ -960,7 +964,7 @@ func (d *Daemon) checkWriteCapabilityDedup(request *Request, boxOwnerCap *bacap.
 	boxOwnerCapBytes, err := boxOwnerCap.MarshalBinary()
 	if err != nil {
 		d.log.Errorf("createWriteChannel failure: failed to marshal BoxOwnerCap: %s", err)
-		d.sendWriteChannelError(request, "failed to marshal capability")
+		d.sendWriteChannelError(request, errCapabilityMarshalFailed)
 		return err
 	}
 
@@ -970,8 +974,8 @@ func (d *Daemon) checkWriteCapabilityDedup(request *Request, boxOwnerCap *bacap.
 
 	if d.usedWriteCaps[capKey] {
 		d.log.Errorf("createWriteChannel failure: BoxOwnerCap already in use")
-		d.sendWriteChannelError(request, "capability already in use")
-		return fmt.Errorf("capability already in use")
+		d.sendWriteChannelError(request, errCapabilityAlreadyInUse)
+		return fmt.Errorf(errCapabilityAlreadyInUse)
 	}
 
 	// Mark this capability as used
@@ -984,7 +988,7 @@ func (d *Daemon) checkReadCapabilityDedup(request *Request, readCap *bacap.Unive
 	readCapBytes, err := readCap.MarshalBinary()
 	if err != nil {
 		d.log.Errorf("createReadChannel failure: failed to marshal UniversalReadCap: %s", err)
-		d.sendReadChannelError(request, "failed to marshal capability")
+		d.sendReadChannelError(request, errCapabilityMarshalFailed)
 		return err
 	}
 
@@ -994,8 +998,8 @@ func (d *Daemon) checkReadCapabilityDedup(request *Request, readCap *bacap.Unive
 
 	if d.usedReadCaps[capKey] {
 		d.log.Errorf("createReadChannel failure: UniversalReadCap already in use")
-		d.sendReadChannelError(request, "capability already in use")
-		return fmt.Errorf("capability already in use")
+		d.sendReadChannelError(request, errCapabilityAlreadyInUse)
+		return fmt.Errorf(errCapabilityAlreadyInUse)
 	}
 
 	// Mark this capability as used
