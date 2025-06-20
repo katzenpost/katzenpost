@@ -6,11 +6,11 @@ package pigeonhole
 import (
 	"encoding/binary"
 	"fmt"
-	"reflect"
 
 	"golang.org/x/crypto/blake2b"
 
 	"github.com/katzenpost/hpqc/hash"
+	"github.com/katzenpost/hpqc/kem/mkem"
 	"github.com/katzenpost/hpqc/nike"
 )
 
@@ -115,7 +115,7 @@ func CreateWriteEnvelope(
 	replicaPubKeys []nike.PublicKey,
 	intermediateReplicas [2]uint8,
 	epoch uint64,
-	mkemScheme interface{},
+	mkemScheme *mkem.Scheme,
 ) (*CourierEnvelope, nike.PrivateKey, error) {
 
 	writeRequest := &ReplicaWrite{
@@ -140,7 +140,7 @@ func CreateReadEnvelope(
 	replicaPubKeys []nike.PublicKey,
 	intermediateReplicas [2]uint8,
 	epoch uint64,
-	mkemScheme interface{},
+	mkemScheme *mkem.Scheme,
 ) (*CourierEnvelope, nike.PrivateKey, error) {
 
 	msg := &ReplicaInnerMessage{
@@ -159,47 +159,16 @@ func createEnvelopeFromMessage(
 	replicaPubKeys []nike.PublicKey,
 	intermediateReplicas [2]uint8,
 	epoch uint64,
-	mkemScheme interface{},
+	mkemScheme *mkem.Scheme,
 	isRead bool,
 ) (*CourierEnvelope, nike.PrivateKey, error) {
-	// Define interface or use type assertion instead of reflection
-	type MKEMScheme interface {
-		Encapsulate(keys []nike.PublicKey, payload []byte) (nike.PrivateKey, interface{})
-	}
-
-	scheme, ok := mkemScheme.(MKEMScheme)
-	if !ok {
-		return nil, nil, fmt.Errorf("mkemScheme does not implement required interface")
-	}
-
-	mkemPrivateKey, ciphertext := scheme.Encapsulate(replicaPubKeys, msg.Bytes())
+	mkemPrivateKey, ciphertext := mkemScheme.Encapsulate(replicaPubKeys, msg.Bytes())
 	mkemPublicKey := mkemPrivateKey.Public()
 
-	// Extract DEKCiphertexts and Envelope from the ciphertext using reflection
-	ciphertextValue := reflect.ValueOf(ciphertext)
-	if ciphertextValue.Kind() == reflect.Ptr {
-		ciphertextValue = ciphertextValue.Elem()
-	}
-
-	dekCiphertextsField := ciphertextValue.FieldByName("DEKCiphertexts")
-	envelopeField := ciphertextValue.FieldByName("Envelope")
-
-	if !dekCiphertextsField.IsValid() || !envelopeField.IsValid() {
-		return nil, nil, fmt.Errorf("MKEM ciphertext does not have expected DEKCiphertexts and Envelope fields")
-	}
-
-	dekCiphertexts, ok := dekCiphertextsField.Interface().([]*[60]byte)
-	if !ok {
-		return nil, nil, fmt.Errorf("failed to cast DEKCiphertexts to expected type")
-	}
-	envelope, ok := envelopeField.Interface().([]byte)
-	if !ok {
-		return nil, nil, fmt.Errorf("failed to cast Envelope to []byte")
-	}
-
+	// Extract DEKCiphertexts and Envelope from the ciphertext directly
 	var dek1, dek2 [60]uint8
-	copy(dek1[:], dekCiphertexts[0][:])
-	copy(dek2[:], dekCiphertexts[1][:])
+	copy(dek1[:], ciphertext.DEKCiphertexts[0][:])
+	copy(dek2[:], ciphertext.DEKCiphertexts[1][:])
 
 	senderPubkeyBytes := mkemPublicKey.Bytes()
 
@@ -218,8 +187,8 @@ func createEnvelopeFromMessage(
 		Epoch:                epoch,
 		SenderPubkeyLen:      uint16(len(senderPubkeyBytes)),
 		SenderPubkey:         senderPubkeyBytes,
-		CiphertextLen:        uint32(len(envelope)),
-		Ciphertext:           envelope,
+		CiphertextLen:        uint32(len(ciphertext.Envelope)),
+		Ciphertext:           ciphertext.Envelope,
 		IsRead:               isReadUint8,
 	}
 
