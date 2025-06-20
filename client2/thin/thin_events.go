@@ -138,23 +138,26 @@ func (e *NewPKIDocumentEvent) String() string {
 	return fmt.Sprintf("PKI Document for epoch %d", doc.Epoch)
 }
 
-type CreateChannelReply struct {
-	ChannelID [ChannelIDLength]byte   `cbor:"channel_id"`
-	ReadCap   *bacap.UniversalReadCap `cbor:"read_cap"`
-	Err       string                  `cbor:"err,omitempty"`
+type CreateWriteChannelReply struct {
+	ChannelID        [ChannelIDLength]byte   `cbor:"channel_id"`
+	ReadCap          *bacap.UniversalReadCap `cbor:"read_cap"`           // For sharing with others
+	BoxOwnerCap      *bacap.BoxOwnerCap      `cbor:"box_owner_cap"`      // For persistence/resumption
+	NextMessageIndex *bacap.MessageBoxIndex  `cbor:"next_message_index"` // Current write position
+	Err              string                  `cbor:"err,omitempty"`
 }
 
-// String returns a string representation of the CreateChannelReply.
-func (e *CreateChannelReply) String() string {
+// String returns a string representation of the CreateWriteChannelReply.
+func (e *CreateWriteChannelReply) String() string {
 	if e.Err != "" {
-		return fmt.Sprintf("CreateChannelReply: %x (error: %s)", e.ChannelID[:], e.Err)
+		return fmt.Sprintf("CreateWriteChannelReply: %x (error: %s)", e.ChannelID[:], e.Err)
 	}
-	return fmt.Sprintf("CreateChannelReply: %x", e.ChannelID[:])
+	return fmt.Sprintf("CreateWriteChannelReply: %x", e.ChannelID[:])
 }
 
 type CreateReadChannelReply struct {
-	ChannelID [ChannelIDLength]byte `cbor:"channel_id"`
-	Err       string                `cbor:"err,omitempty"`
+	ChannelID        [ChannelIDLength]byte  `cbor:"channel_id"`
+	NextMessageIndex *bacap.MessageBoxIndex `cbor:"next_message_index"` // Current read position
+	Err              string                 `cbor:"err,omitempty"`
 }
 
 // String returns a string representation of the CreateReadChannelReply.
@@ -166,8 +169,10 @@ func (e *CreateReadChannelReply) String() string {
 }
 
 type WriteChannelReply struct {
-	ChannelID [ChannelIDLength]byte `cbor:"channel_id"`
-	Err       string                `cbor:"err,omitempty"`
+	ChannelID          [ChannelIDLength]byte  `cbor:"channel_id"`
+	SendMessagePayload []byte                 `cbor:"send_message_payload"` // Prepared payload for SendMessage
+	NextMessageIndex   *bacap.MessageBoxIndex `cbor:"next_message_index"`   // Index to use AFTER courier ACK
+	Err                string                 `cbor:"err,omitempty"`
 }
 
 // String returns a string representation of the WriteChannelReply.
@@ -175,14 +180,15 @@ func (e *WriteChannelReply) String() string {
 	if e.Err != "" {
 		return fmt.Sprintf("WriteChannelReply: %x (error: %s)", e.ChannelID[:], e.Err)
 	}
-	return fmt.Sprintf("WriteChannelReply: %x", e.ChannelID[:])
+	return fmt.Sprintf("WriteChannelReply: %x (%d bytes payload)", e.ChannelID[:], len(e.SendMessagePayload))
 }
 
 type ReadChannelReply struct {
-	MessageID *[MessageIDLength]byte `cbor:"message_id"`
-	ChannelID [ChannelIDLength]byte  `cbor:"channel_id"`
-	Payload   []byte                 `cbor:"payload"`
-	Err       string                 `cbor:"err,omitempty"`
+	MessageID          *[MessageIDLength]byte `cbor:"message_id"`
+	ChannelID          [ChannelIDLength]byte  `cbor:"channel_id"`
+	SendMessagePayload []byte                 `cbor:"send_message_payload"` // Prepared query for SendMessage
+	NextMessageIndex   *bacap.MessageBoxIndex `cbor:"next_message_index"`   // Position for AFTER successful read
+	Err                string                 `cbor:"err,omitempty"`
 }
 
 // String returns a string representation of the ReadChannelReply.
@@ -194,7 +200,7 @@ func (e *ReadChannelReply) String() string {
 	if e.Err != "" {
 		return fmt.Sprintf("ReadChannelReply: msgID=%s channel=%x (error: %s)", msgIDStr, e.ChannelID[:8], e.Err)
 	}
-	return fmt.Sprintf("ReadChannelReply: msgID=%s channel=%x (%d bytes)", msgIDStr, e.ChannelID[:8], len(e.Payload))
+	return fmt.Sprintf("ReadChannelReply: msgID=%s channel=%x (%d bytes payload)", msgIDStr, e.ChannelID[:8], len(e.SendMessagePayload))
 }
 
 type CopyChannelReply struct {

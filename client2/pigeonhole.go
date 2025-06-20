@@ -73,6 +73,10 @@ type ChannelDescriptor struct {
 	// ReaderLock protects StatefulReader.DecryptNext calls to prevent BACAP state corruption
 	// CRITICAL: DecryptNext advances the reader's internal state and must be serialized
 	ReaderLock sync.Mutex
+
+	// WriterLock protects StatefulWriter state advancement to prevent BACAP state corruption
+	// CRITICAL: State advancement must be serialized and only happen after courier acknowledgment
+	WriterLock sync.Mutex
 }
 
 func GetRandomCourier(doc *cpki.Document) (*[hash.HashSize]byte, []byte) {
@@ -172,6 +176,80 @@ func CreateChannelWriteRequest(
 	return envelope, mkemPrivateKey, err
 }
 
+// CreateChannelWriteRequestPrepareOnly prepares a write request WITHOUT advancing StatefulWriter state.
+// This allows for deferred state advancement until courier acknowledgment.
+func CreateChannelWriteRequestPrepareOnly(
+	statefulWriter *bacap.StatefulWriter,
+	payload []byte,
+	doc *cpki.Document,
+	geometry *pigeonholeGeo.Geometry) (*pigeonhole.CourierEnvelope, nike.PrivateKey, error) {
+
+	// Validate that the payload can fit within the geometry's BoxPayloadLength
+	// CreatePaddedPayload requires 4 bytes for length prefix plus the payload
+	minRequiredSize := len(payload) + 4
+	if minRequiredSize > geometry.BoxPayloadLength {
+		return nil, nil, fmt.Errorf("payload too large: %d bytes (+ 4 byte length prefix) exceeds BoxPayloadLength of %d bytes",
+			len(payload), geometry.BoxPayloadLength)
+	}
+
+	// Pad the payload to the geometry's BoxPayloadLength to fill the user forward sphinx payloads
+	paddedPayload, err := pigeonhole.CreatePaddedPayload(payload, geometry.BoxPayloadLength)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// Encrypt the message WITHOUT advancing state
+	boxID, ciphertext, sigraw := statefulWriter.NextIndex.EncryptForContext(statefulWriter.Owner, statefulWriter.Ctx, paddedPayload)
+
+	sig := [bacap.SignatureSize]byte{}
+	copy(sig[:], sigraw)
+
+	var boxIDArray [32]uint8
+	copy(boxIDArray[:], boxID[:])
+	var sigArray [64]uint8
+	copy(sigArray[:], sig[:])
+
+	writeRequest := &pigeonhole.ReplicaWrite{
+		BoxID:      boxIDArray,
+		Signature:  sigArray,
+		PayloadLen: uint32(len(ciphertext)),
+		Payload:    ciphertext,
+	}
+	msg := &pigeonhole.ReplicaInnerMessage{
+		MessageType: 1, // 1 = write
+		WriteMsg:    writeRequest,
+	}
+
+	intermediateReplicas, replicaPubKeys, err := pigeonhole.GetRandomIntermediateReplicas(doc)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	mkemPrivateKey, mkemCiphertext := replicaCommon.MKEMNikeScheme.Encapsulate(
+		replicaPubKeys, msg.Bytes(),
+	)
+	mkemPublicKey := mkemPrivateKey.Public()
+
+	var dek1, dek2 [60]uint8
+	copy(dek1[:], mkemCiphertext.DEKCiphertexts[0][:])
+	copy(dek2[:], mkemCiphertext.DEKCiphertexts[1][:])
+
+	senderPubkeyBytes := mkemPublicKey.Bytes()
+	envelope := &pigeonhole.CourierEnvelope{
+		IntermediateReplicas: intermediateReplicas,
+		Dek1:                 dek1,
+		Dek2:                 dek2,
+		ReplyIndex:           0,
+		Epoch:                doc.Epoch,
+		SenderPubkeyLen:      uint16(len(senderPubkeyBytes)),
+		SenderPubkey:         senderPubkeyBytes,
+		CiphertextLen:        uint32(len(mkemCiphertext.Envelope)),
+		Ciphertext:           mkemCiphertext.Envelope,
+		IsRead:               0, // 0 = write
+	}
+	return envelope, mkemPrivateKey, nil
+}
+
 func CreateChannelReadRequest(channelID [thin.ChannelIDLength]byte,
 	statefulReader *bacap.StatefulReader,
 	doc *cpki.Document) (*pigeonhole.CourierEnvelope, nike.PrivateKey, error) {
@@ -233,13 +311,70 @@ func CreateChannelReadRequestWithBoxID(channelID [thin.ChannelIDLength]byte,
 	return envelope, mkemPrivateKey, nil
 }
 
-func (d *Daemon) createChannel(request *Request) {
-	statefulWriter, bobReadCap, boxOwnerCap := NewPigeonholeChannel()
+func (d *Daemon) createWriteChannel(request *Request) {
+	var statefulWriter *bacap.StatefulWriter
+	var bobReadCap *bacap.UniversalReadCap
+	var boxOwnerCap *bacap.BoxOwnerCap
+	var err error
+
+	// Check if we're resuming an existing channel or creating a new one
+	if request.CreateWriteChannel.BoxOwnerCap != nil {
+		// Resuming existing channel
+		boxOwnerCap = request.CreateWriteChannel.BoxOwnerCap
+		bobReadCap = boxOwnerCap.UniversalReadCap()
+
+		// Create StatefulWriter from the provided BoxOwnerCap
+		statefulWriter, err = bacap.NewStatefulWriter(boxOwnerCap, constants.PIGEONHOLE_CTX)
+		if err != nil {
+			d.log.Errorf("createWriteChannel failure: failed to create StatefulWriter: %s", err)
+			return
+		}
+
+		// If a specific MessageBoxIndex was provided, advance to that position
+		if request.CreateWriteChannel.MessageBoxIndex != nil {
+			// We need to advance the writer to the specified index
+			targetIndex := request.CreateWriteChannel.MessageBoxIndex
+
+			// Advance to the target index if needed
+			for statefulWriter.NextIndex.Idx64 < targetIndex.Idx64 {
+				nextIndex, err := statefulWriter.NextIndex.NextIndex()
+				if err != nil {
+					d.log.Errorf("createWriteChannel failure: failed to advance to target index: %s", err)
+					return
+				}
+				statefulWriter.LastOutboxIdx = statefulWriter.NextIndex
+				statefulWriter.NextIndex = nextIndex
+			}
+		}
+	} else {
+		// Creating new channel
+		statefulWriter, bobReadCap, boxOwnerCap = NewPigeonholeChannel()
+
+		// If a specific starting MessageBoxIndex was provided, advance to that position
+		if request.CreateWriteChannel.MessageBoxIndex != nil {
+			targetIndex := request.CreateWriteChannel.MessageBoxIndex
+
+			// Advance to the target index if needed
+			for statefulWriter.NextIndex.Idx64 < targetIndex.Idx64 {
+				nextIndex, err := statefulWriter.NextIndex.NextIndex()
+				if err != nil {
+					d.log.Errorf("createWriteChannel failure: failed to advance to target index: %s", err)
+					return
+				}
+				statefulWriter.LastOutboxIdx = statefulWriter.NextIndex
+				statefulWriter.NextIndex = nextIndex
+			}
+		}
+	}
+
+	// Generate channel ID
 	channelID := [thin.ChannelIDLength]byte{}
-	_, err := rand.Reader.Read(channelID[:])
+	_, err = rand.Reader.Read(channelID[:])
 	if err != nil {
 		panic(err)
 	}
+
+	// Store channel descriptor
 	d.channelMapLock.Lock()
 	d.channelMap[channelID] = &ChannelDescriptor{
 		StatefulWriter:      statefulWriter,
@@ -249,6 +384,9 @@ func (d *Daemon) createChannel(request *Request) {
 	}
 	d.channelMapLock.Unlock()
 
+	// Get current message index for the reply
+	currentMessageIndex := statefulWriter.NextIndex
+
 	conn := d.listener.getConnection(request.AppID)
 	if conn == nil {
 		d.log.Errorf(errNoConnectionForAppID, request.AppID[:])
@@ -256,9 +394,11 @@ func (d *Daemon) createChannel(request *Request) {
 	}
 	conn.sendResponse(&Response{
 		AppID: request.AppID,
-		CreateChannelReply: &thin.CreateChannelReply{
-			ChannelID: channelID,
-			ReadCap:   bobReadCap,
+		CreateWriteChannelReply: &thin.CreateWriteChannelReply{
+			ChannelID:        channelID,
+			ReadCap:          bobReadCap,
+			BoxOwnerCap:      boxOwnerCap,
+			NextMessageIndex: currentMessageIndex,
 		},
 	})
 }
@@ -274,7 +414,24 @@ func (d *Daemon) createReadChannel(request *Request) {
 	// Create a StatefulReader from the readCap provided by Alice
 	statefulReader, err := bacap.NewStatefulReader(request.CreateReadChannel.ReadCap, constants.PIGEONHOLE_CTX)
 	if err != nil {
-		panic(err)
+		d.log.Errorf("createReadChannel failure: failed to create StatefulReader: %s", err)
+		return
+	}
+
+	// If a specific MessageBoxIndex was provided, advance to that position
+	if request.CreateReadChannel.MessageBoxIndex != nil {
+		targetIndex := request.CreateReadChannel.MessageBoxIndex
+
+		// Advance to the target index if needed
+		for statefulReader.NextIndex.Idx64 < targetIndex.Idx64 {
+			nextIndex, err := statefulReader.NextIndex.NextIndex()
+			if err != nil {
+				d.log.Errorf("createReadChannel failure: failed to advance to target index: %s", err)
+				return
+			}
+			statefulReader.LastInboxRead = statefulReader.NextIndex
+			statefulReader.NextIndex = nextIndex
+		}
 	}
 
 	// Create a new ChannelDescriptor for Bob's read channel
@@ -286,6 +443,9 @@ func (d *Daemon) createReadChannel(request *Request) {
 	}
 	d.channelMapLock.Unlock()
 
+	// Get current message index for the reply
+	currentMessageIndex := statefulReader.NextIndex
+
 	conn := d.listener.getConnection(request.AppID)
 	if conn == nil {
 		d.log.Errorf("createReadChannel failure: "+errNoConnectionForAppID, request.AppID[:])
@@ -294,7 +454,8 @@ func (d *Daemon) createReadChannel(request *Request) {
 	conn.sendResponse(&Response{
 		AppID: request.AppID,
 		CreateReadChannelReply: &thin.CreateReadChannelReply{
-			ChannelID: channelID,
+			ChannelID:        channelID,
+			NextMessageIndex: currentMessageIndex,
 		},
 	})
 }
@@ -308,6 +469,16 @@ func (d *Daemon) writeChannel(request *Request) {
 	if !ok {
 		d.channelMapLock.RUnlock()
 		d.log.Errorf("writeChannel failure: no channel found for channelID %x", channelID[:])
+		conn := d.listener.getConnection(request.AppID)
+		if conn != nil {
+			conn.sendResponse(&Response{
+				AppID: request.AppID,
+				WriteChannelReply: &thin.WriteChannelReply{
+					ChannelID: channelID,
+					Err:       "channel not found",
+				},
+			})
+		}
 		return
 	}
 	// Keep the lock held while we work with channelDesc
@@ -315,7 +486,8 @@ func (d *Daemon) writeChannel(request *Request) {
 
 	_, doc := d.client.CurrentDocument()
 
-	courierEnvelope, envelopePrivateKey, err := CreateChannelWriteRequest(
+	// Prepare the write request WITHOUT sending it and WITHOUT advancing state
+	courierEnvelope, envelopePrivateKey, err := CreateChannelWriteRequestPrepareOnly(
 		channelDesc.StatefulWriter,
 		request.WriteChannel.Payload,
 		doc,
@@ -323,45 +495,6 @@ func (d *Daemon) writeChannel(request *Request) {
 
 	if err != nil {
 		d.log.Errorf("writeChannel failure: failed to create write request: %s", err)
-		return
-	}
-
-	envHash := courierEnvelope.EnvelopeHash()
-	channelDesc.EnvelopeLock.Lock()
-	channelDesc.EnvelopeDescriptors[*envHash] = &EnvelopeDescriptor{
-		Epoch:       doc.Epoch,
-		ReplicaNums: courierEnvelope.IntermediateReplicas,
-		EnvelopeKey: envelopePrivateKey.Bytes(),
-	}
-	channelDesc.EnvelopeLock.Unlock()
-
-	surbid := &[sphinxConstants.SURBIDLength]byte{}
-	_, err = rand.Reader.Read(surbid[:])
-	if err != nil {
-		panic(err)
-	}
-	destinationIdHash, recipientQueueID := GetRandomCourier(doc)
-	// Wrap CourierEnvelope in CourierQuery
-	courierQuery := &pigeonhole.CourierQuery{
-		QueryType: 0, // 0 = envelope
-		Envelope:  courierEnvelope,
-	}
-
-	sendRequest := &Request{
-		AppID: request.AppID,
-		SendMessage: &thin.SendMessage{
-			ID:                nil, // WriteChannel doesn't have an ID field
-			WithSURB:          true,
-			DestinationIdHash: destinationIdHash,
-			RecipientQueueID:  recipientQueueID,
-			Payload:           courierQuery.Bytes(),
-			SURBID:            surbid,
-		},
-	}
-	surbKey, rtt, err := d.client.SendCiphertext(sendRequest)
-	if err != nil {
-		d.log.Errorf("failed to send sphinx packet: %s", err.Error())
-		// Send error response to client
 		conn := d.listener.getConnection(request.AppID)
 		if conn != nil {
 			conn.sendResponse(&Response{
@@ -375,23 +508,38 @@ func (d *Daemon) writeChannel(request *Request) {
 		return
 	}
 
-	fetchInterval := d.client.GetPollInterval()
-	slop := time.Second
-	duration := rtt + fetchInterval + slop
-	replyArrivalTime := time.Now().Add(duration)
-
-	d.channelRepliesLock.Lock()
-	d.channelReplies[*surbid] = replyDescriptor{
-		appID:   request.AppID,
-		surbKey: surbKey,
+	// Store envelope descriptor for later use when the message is actually sent
+	envHash := courierEnvelope.EnvelopeHash()
+	channelDesc.EnvelopeLock.Lock()
+	channelDesc.EnvelopeDescriptors[*envHash] = &EnvelopeDescriptor{
+		Epoch:       doc.Epoch,
+		ReplicaNums: courierEnvelope.IntermediateReplicas,
+		EnvelopeKey: envelopePrivateKey.Bytes(),
 	}
-	d.channelRepliesLock.Unlock()
+	channelDesc.EnvelopeLock.Unlock()
 
-	d.surbIDToChannelMapLock.Lock()
-	d.surbIDToChannelMap[*surbid] = channelID
-	d.surbIDToChannelMapLock.Unlock()
+	// Wrap CourierEnvelope in CourierQuery to create the SendMessage payload
+	courierQuery := &pigeonhole.CourierQuery{
+		QueryType: 0, // 0 = envelope
+		Envelope:  courierEnvelope,
+	}
 
-	d.timerQueue.Push(uint64(replyArrivalTime.UnixNano()), sendRequest.SendMessage.SURBID)
+	// Get the next MessageBoxIndex that will be used AFTER courier acknowledgment
+	nextMessageIndex, err := channelDesc.StatefulWriter.NextIndex.NextIndex()
+	if err != nil {
+		d.log.Errorf("writeChannel failure: failed to get next message index: %s", err)
+		conn := d.listener.getConnection(request.AppID)
+		if conn != nil {
+			conn.sendResponse(&Response{
+				AppID: request.AppID,
+				WriteChannelReply: &thin.WriteChannelReply{
+					ChannelID: channelID,
+					Err:       err.Error(),
+				},
+			})
+		}
+		return
+	}
 
 	conn := d.listener.getConnection(request.AppID)
 	if conn == nil {
@@ -401,7 +549,9 @@ func (d *Daemon) writeChannel(request *Request) {
 	conn.sendResponse(&Response{
 		AppID: request.AppID,
 		WriteChannelReply: &thin.WriteChannelReply{
-			ChannelID: channelID,
+			ChannelID:          channelID,
+			SendMessagePayload: courierQuery.Bytes(),
+			NextMessageIndex:   nextMessageIndex,
 		},
 	})
 }
@@ -647,6 +797,17 @@ func (d *Daemon) readChannel(request *Request) {
 	if !ok {
 		d.channelMapLock.RUnlock()
 		d.log.Errorf("no channel found for channelID %x", channelID[:])
+		conn := d.listener.getConnection(request.AppID)
+		if conn != nil {
+			conn.sendResponse(&Response{
+				AppID: request.AppID,
+				ReadChannelReply: &thin.ReadChannelReply{
+					MessageID: request.ReadChannel.ID,
+					ChannelID: channelID,
+					Err:       "channel not found",
+				},
+			})
+		}
 		return
 	}
 	// Keep the lock held while we work with channelDesc
@@ -654,30 +815,78 @@ func (d *Daemon) readChannel(request *Request) {
 
 	_, doc := d.client.CurrentDocument()
 
-	// Get or create the courier envelope
+	// Get or create the courier envelope WITHOUT sending it
 	courierEnvelope, envelopePrivateKey, err := d.getOrCreateEnvelope(request, channelDesc, doc)
 	if err != nil {
 		d.log.Errorf("failed to get or create envelope: %s", err)
-		d.sendReadChannelErrorResponse(request, channelID, err.Error())
+		conn := d.listener.getConnection(request.AppID)
+		if conn != nil {
+			conn.sendResponse(&Response{
+				AppID: request.AppID,
+				ReadChannelReply: &thin.ReadChannelReply{
+					MessageID: request.ReadChannel.ID,
+					ChannelID: channelID,
+					Err:       err.Error(),
+				},
+			})
+		}
 		return
 	}
 
-	// Store envelope descriptor for new envelopes (not reused ones)
+	// Store envelope descriptor for later use when the message is actually sent
 	err = d.storeEnvelopeDescriptor(courierEnvelope, envelopePrivateKey, channelDesc, doc)
 	if err != nil {
 		d.log.Errorf("failed to store envelope descriptor: %s", err)
-		d.sendReadChannelErrorResponse(request, channelID, err.Error())
+		conn := d.listener.getConnection(request.AppID)
+		if conn != nil {
+			conn.sendResponse(&Response{
+				AppID: request.AppID,
+				ReadChannelReply: &thin.ReadChannelReply{
+					MessageID: request.ReadChannel.ID,
+					ChannelID: channelID,
+					Err:       err.Error(),
+				},
+			})
+		}
 		return
 	}
 
-	// Send the envelope to the courier and handle the response
-	err = d.sendEnvelopeToCourier(request, channelID, courierEnvelope, doc)
+	// Wrap CourierEnvelope in CourierQuery to create the SendMessage payload
+	courierQuery := &pigeonhole.CourierQuery{
+		QueryType: 0, // 0 = envelope
+		Envelope:  courierEnvelope,
+	}
+
+	// Get the next MessageBoxIndex that will be used AFTER successful read
+	nextMessageIndex, err := channelDesc.StatefulReader.NextIndex.NextIndex()
 	if err != nil {
-		d.log.Errorf("failed to send envelope to courier: %s", err)
-		d.sendReadChannelErrorResponse(request, channelID, err.Error())
+		d.log.Errorf("failed to get next message index: %s", err)
+		conn := d.listener.getConnection(request.AppID)
+		if conn != nil {
+			conn.sendResponse(&Response{
+				AppID: request.AppID,
+				ReadChannelReply: &thin.ReadChannelReply{
+					MessageID: request.ReadChannel.ID,
+					ChannelID: channelID,
+					Err:       err.Error(),
+				},
+			})
+		}
 		return
 	}
 
-	// Send success response to client
-	d.sendReadChannelSuccessResponse(request, channelID)
+	conn := d.listener.getConnection(request.AppID)
+	if conn == nil {
+		d.log.Errorf(errNoConnectionForAppID, request.AppID[:])
+		return
+	}
+	conn.sendResponse(&Response{
+		AppID: request.AppID,
+		ReadChannelReply: &thin.ReadChannelReply{
+			MessageID:          request.ReadChannel.ID,
+			ChannelID:          channelID,
+			SendMessagePayload: courierQuery.Bytes(),
+			NextMessageIndex:   nextMessageIndex,
+		},
+	})
 }

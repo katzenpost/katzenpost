@@ -10,16 +10,14 @@ import (
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 )
 
-type ChannelMap struct {
-	ReadChannels  map[[ChannelIDLength]byte]*bacap.StatefulReader `cbor:"read_channels"`
-	WriteChannels map[[ChannelIDLength]byte]*bacap.StatefulWriter `cbor:"write_channels"`
-}
-
-type CreateChannel struct {
+type CreateWriteChannel struct {
+	BoxOwnerCap     *bacap.BoxOwnerCap     `cbor:"box_owner_cap,omitempty"`     // For resuming existing channel
+	MessageBoxIndex *bacap.MessageBoxIndex `cbor:"message_box_index,omitempty"` // Starting/resume point
 }
 
 type CreateReadChannel struct {
-	ReadCap *bacap.UniversalReadCap `cbor:"read_cap"`
+	ReadCap         *bacap.UniversalReadCap `cbor:"read_cap"`
+	MessageBoxIndex *bacap.MessageBoxIndex  `cbor:"message_box_index,omitempty"` // Starting/resume point
 }
 
 type WriteChannel struct {
@@ -29,7 +27,7 @@ type WriteChannel struct {
 
 type ReadChannel struct {
 	ChannelID [ChannelIDLength]byte  `cbor:"channel_id"`
-	ID        *[MessageIDLength]byte `cbor:"id"`
+	ID        *[MessageIDLength]byte `cbor:"id,omitempty"` // Optional for correlation
 }
 
 type CopyChannel struct {
@@ -107,7 +105,7 @@ type Response struct {
 
 	MessageIDGarbageCollected *MessageIDGarbageCollected `cbor:"message_id_garbage_collected"`
 
-	CreateChannelReply *CreateChannelReply `cbor:"create_channel_reply"`
+	CreateWriteChannelReply *CreateWriteChannelReply `cbor:"create_write_channel_reply"`
 
 	CreateReadChannelReply *CreateReadChannelReply `cbor:"create_read_channel_reply"`
 
@@ -119,8 +117,8 @@ type Response struct {
 }
 
 type Request struct {
-	// CreateChannel is used to create a new Pigeonhole channel.
-	CreateChannel *CreateChannel `cbor:"create_channel"`
+	// CreateWriteChannel is used to create a new Pigeonhole write channel.
+	CreateWriteChannel *CreateWriteChannel `cbor:"create_write_channel"`
 
 	// CreateReadChannel is used to create a new Pigeonhole read channel.
 	CreateReadChannel *CreateReadChannel `cbor:"create_read_channel"`

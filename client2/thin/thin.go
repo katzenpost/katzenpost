@@ -411,10 +411,10 @@ func (t *ThinClient) worker() {
 					return
 				}
 			}
-		case message.CreateChannelReply != nil:
-			t.log.Debug("CreateChannelReply")
+		case message.CreateWriteChannelReply != nil:
+			t.log.Debug("CreateWriteChannelReply")
 			select {
-			case t.eventSink <- message.CreateChannelReply:
+			case t.eventSink <- message.CreateWriteChannelReply:
 				continue
 			case <-t.HaltCh():
 				return
@@ -436,8 +436,8 @@ func (t *ThinClient) worker() {
 				return
 			}
 		case message.ReadChannelReply != nil:
-			t.log.Debugf("ReadChannelReply: MessageID %x, ChannelID %x, Payload size %d bytes",
-				message.ReadChannelReply.MessageID[:], message.ReadChannelReply.ChannelID[:], len(message.ReadChannelReply.Payload))
+			t.log.Debugf("ReadChannelReply: MessageID %x, ChannelID %x, SendMessagePayload size %d bytes",
+				message.ReadChannelReply.MessageID[:], message.ReadChannelReply.ChannelID[:], len(message.ReadChannelReply.SendMessagePayload))
 			isDirectReply := false
 			if message.ReadChannelReply.MessageID != nil {
 				readWaitChanRaw, ok := t.readChannelWaitChanMap.Load(*message.ReadChannelReply.MessageID)
@@ -744,14 +744,74 @@ func (t *ThinClient) BlockingSendReliableMessage(ctx context.Context, messageID 
 	// unreachable
 }
 
-// CreateChannel creates a new pigeonhole channel and returns the channel ID and read capability.
-func (t *ThinClient) CreateChannel(ctx context.Context) (*[ChannelIDLength]byte, *bacap.UniversalReadCap, error) {
+// CreateWriteChannel creates a new pigeonhole write channel and returns the channel ID, read capability, and write capability.
+func (t *ThinClient) CreateWriteChannel(ctx context.Context, boxOwnerCap *bacap.BoxOwnerCap, messageBoxIndex *bacap.MessageBoxIndex) (*[ChannelIDLength]byte, *bacap.UniversalReadCap, *bacap.BoxOwnerCap, *bacap.MessageBoxIndex, error) {
 	if ctx == nil {
-		return nil, nil, errContextCannotBeNil
+		return nil, nil, nil, nil, errContextCannotBeNil
 	}
 
 	req := &Request{
-		CreateChannel: &CreateChannel{},
+		CreateWriteChannel: &CreateWriteChannel{
+			BoxOwnerCap:     boxOwnerCap,
+			MessageBoxIndex: messageBoxIndex,
+		},
+	}
+
+	eventSink := t.EventSink()
+	defer t.StopEventSink(eventSink)
+
+	err := t.writeMessage(req)
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
+
+	for {
+		var event Event
+		select {
+		case <-ctx.Done():
+			return nil, nil, nil, nil, ctx.Err()
+		case event = <-eventSink:
+		case <-t.HaltCh():
+			return nil, nil, nil, nil, errHalting
+		}
+
+		switch v := event.(type) {
+		case *CreateWriteChannelReply:
+			if v.Err != "" {
+				return nil, nil, nil, nil, errors.New(v.Err)
+			}
+			return &v.ChannelID, v.ReadCap, v.BoxOwnerCap, v.NextMessageIndex, nil
+		case *ConnectionStatusEvent:
+			if !v.IsConnected {
+				return nil, nil, nil, nil, errConnectionLost
+			}
+		default:
+			// Ignore other events
+		}
+	}
+}
+
+// CreateChannel creates a new pigeonhole channel and returns the channel ID and read capability.
+// This is a convenience method that calls CreateWriteChannel with nil parameters.
+func (t *ThinClient) CreateChannel(ctx context.Context) (*[ChannelIDLength]byte, *bacap.UniversalReadCap, error) {
+	channelID, readCap, _, _, err := t.CreateWriteChannel(ctx, nil, nil)
+	return channelID, readCap, err
+}
+
+// CreateReadChannel creates a read channel from a read capability.
+func (t *ThinClient) CreateReadChannel(ctx context.Context, readCap *bacap.UniversalReadCap, messageBoxIndex *bacap.MessageBoxIndex) (*[ChannelIDLength]byte, *bacap.MessageBoxIndex, error) {
+	if ctx == nil {
+		return nil, nil, errContextCannotBeNil
+	}
+	if readCap == nil {
+		return nil, nil, errors.New("readCap cannot be nil")
+	}
+
+	req := &Request{
+		CreateReadChannel: &CreateReadChannel{
+			ReadCap:         readCap,
+			MessageBoxIndex: messageBoxIndex,
+		},
 	}
 
 	eventSink := t.EventSink()
@@ -773,63 +833,14 @@ func (t *ThinClient) CreateChannel(ctx context.Context) (*[ChannelIDLength]byte,
 		}
 
 		switch v := event.(type) {
-		case *CreateChannelReply:
+		case *CreateReadChannelReply:
 			if v.Err != "" {
 				return nil, nil, errors.New(v.Err)
 			}
-			return &v.ChannelID, v.ReadCap, nil
+			return &v.ChannelID, v.NextMessageIndex, nil
 		case *ConnectionStatusEvent:
 			if !v.IsConnected {
 				return nil, nil, errConnectionLost
-			}
-		default:
-			// Ignore other events
-		}
-	}
-}
-
-// CreateReadChannel creates a read channel from a read capability.
-func (t *ThinClient) CreateReadChannel(ctx context.Context, readCap *bacap.UniversalReadCap) (*[ChannelIDLength]byte, error) {
-	if ctx == nil {
-		return nil, errContextCannotBeNil
-	}
-	if readCap == nil {
-		return nil, errors.New("readCap cannot be nil")
-	}
-
-	req := &Request{
-		CreateReadChannel: &CreateReadChannel{
-			ReadCap: readCap,
-		},
-	}
-
-	eventSink := t.EventSink()
-	defer t.StopEventSink(eventSink)
-
-	err := t.writeMessage(req)
-	if err != nil {
-		return nil, err
-	}
-
-	for {
-		var event Event
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		case event = <-eventSink:
-		case <-t.HaltCh():
-			return nil, errHalting
-		}
-
-		switch v := event.(type) {
-		case *CreateReadChannelReply:
-			if v.Err != "" {
-				return nil, errors.New(v.Err)
-			}
-			return &v.ChannelID, nil
-		case *ConnectionStatusEvent:
-			if !v.IsConnected {
-				return nil, errConnectionLost
 			}
 		case *NewDocumentEvent:
 			// Ignore PKI document updates
@@ -839,18 +850,19 @@ func (t *ThinClient) CreateReadChannel(ctx context.Context, readCap *bacap.Unive
 	}
 }
 
-// WriteChannel writes data to a pigeonhole channel.
-func (t *ThinClient) WriteChannel(ctx context.Context, channelID *[ChannelIDLength]byte, payload []byte) error {
+// WriteChannel prepares a write message for a pigeonhole channel and returns the SendMessage payload and next MessageBoxIndex.
+// The thin client must then call SendMessage with the returned payload to actually send the message.
+func (t *ThinClient) WriteChannel(ctx context.Context, channelID *[ChannelIDLength]byte, payload []byte) ([]byte, *bacap.MessageBoxIndex, error) {
 	if ctx == nil {
-		return errContextCannotBeNil
+		return nil, nil, errContextCannotBeNil
 	}
 	if channelID == nil {
-		return errChannelIDCannotBeNil
+		return nil, nil, errChannelIDCannotBeNil
 	}
 
 	// Validate payload size against pigeonhole geometry
 	if len(payload) > t.cfg.PigeonholeGeometry.BoxPayloadLength {
-		return fmt.Errorf("payload size %d exceeds maximum allowed size %d", len(payload), t.cfg.PigeonholeGeometry.BoxPayloadLength)
+		return nil, nil, fmt.Errorf("payload size %d exceeds maximum allowed size %d", len(payload), t.cfg.PigeonholeGeometry.BoxPayloadLength)
 	}
 
 	req := &Request{
@@ -865,28 +877,28 @@ func (t *ThinClient) WriteChannel(ctx context.Context, channelID *[ChannelIDLeng
 
 	err := t.writeMessage(req)
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
 
 	for {
 		var event Event
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return nil, nil, ctx.Err()
 		case event = <-eventSink:
 		case <-t.HaltCh():
-			return errHalting
+			return nil, nil, errHalting
 		}
 
 		switch v := event.(type) {
 		case *WriteChannelReply:
 			if v.Err != "" {
-				return errors.New(v.Err)
+				return nil, nil, errors.New(v.Err)
 			}
-			return nil
+			return v.SendMessagePayload, v.NextMessageIndex, nil
 		case *ConnectionStatusEvent:
 			if !v.IsConnected {
-				return errConnectionLost
+				return nil, nil, errConnectionLost
 			}
 		case *NewDocumentEvent:
 			// Ignore PKI document updates
@@ -896,16 +908,17 @@ func (t *ThinClient) WriteChannel(ctx context.Context, channelID *[ChannelIDLeng
 	}
 }
 
-// ReadChannel reads data from a pigeonhole channel.
-func (t *ThinClient) ReadChannel(ctx context.Context, channelID *[ChannelIDLength]byte, messageID *[MessageIDLength]byte) ([]byte, error) {
+// ReadChannel prepares a read query for a pigeonhole channel and returns the SendMessage payload and next MessageBoxIndex.
+// The thin client must then call SendMessage with the returned payload to actually send the query.
+func (t *ThinClient) ReadChannel(ctx context.Context, channelID *[ChannelIDLength]byte, messageID *[MessageIDLength]byte) ([]byte, *bacap.MessageBoxIndex, error) {
 	if ctx == nil {
-		return nil, errContextCannotBeNil
+		return nil, nil, errContextCannotBeNil
 	}
 	if channelID == nil {
-		return nil, errChannelIDCannotBeNil
+		return nil, nil, errChannelIDCannotBeNil
 	}
 	if messageID == nil {
-		return nil, errors.New("messageID cannot be nil")
+		return nil, nil, errors.New("messageID cannot be nil")
 	}
 
 	req := &Request{
@@ -928,20 +941,20 @@ func (t *ThinClient) ReadChannel(ctx context.Context, channelID *[ChannelIDLengt
 
 	err := t.writeMessage(req)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	select {
 	case <-ctx.Done():
-		return nil, ctx.Err()
+		return nil, nil, ctx.Err()
 	case reply := <-readWaitChan:
 		if reply.Err != "" {
-			return nil, errors.New(reply.Err)
+			return nil, nil, errors.New(reply.Err)
 		}
-		return reply.Payload, nil
+		return reply.SendMessagePayload, reply.NextMessageIndex, nil
 	case <-t.HaltCh():
 		t.readChannelWaitChanMap.Delete(*messageID)
-		return nil, errHalting
+		return nil, nil, errHalting
 	}
 }
 

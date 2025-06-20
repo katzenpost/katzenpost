@@ -129,12 +129,12 @@ func TestThinTCPSendRecv(t *testing.T) {
 	ctx := context.Background()
 
 	largePayload := make([]byte, 100)
-	err = thin.WriteChannel(ctx, channelID, largePayload)
+	_, _, err = thin.WriteChannel(ctx, channelID, largePayload)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "payload size")
 	require.Contains(t, err.Error(), "exceeds maximum allowed size")
 
-	err = thin.WriteChannel(ctx, nil, largePayload)
+	_, _, err = thin.WriteChannel(ctx, nil, largePayload)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "channelID cannot be nil")
 

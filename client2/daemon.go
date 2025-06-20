@@ -283,8 +283,8 @@ func (d *Daemon) egressWorker() {
 
 				// New Pigeonhole Channel related commands proceed here:
 
-			case request.CreateChannel != nil:
-				d.createChannel(request)
+			case request.CreateWriteChannel != nil:
+				d.createWriteChannel(request)
 			case request.CreateReadChannel != nil:
 				d.createReadChannel(request)
 			case request.WriteChannel != nil:
@@ -714,11 +714,13 @@ func (d *Daemon) handleReadReply(params *ReplyHandlerParams, readReply *pigeonho
 	}
 
 	d.log.Debugf("SENDING RESPONSE: MessageID %x, ChannelID %x, Payload size %d bytes (extracted from %d padded bytes)", params.MessageID[:], params.ChannelID[:], len(originalMessage), len(innerplaintext))
+
+	// For the new API, we need to send a MessageReplyEvent with the actual message content
+	// since ReadChannelReply now only contains the prepared query payload
 	err = params.Conn.sendResponse(&Response{
 		AppID: params.AppID,
-		ReadChannelReply: &thin.ReadChannelReply{
+		MessageReplyEvent: &thin.MessageReplyEvent{
 			MessageID: params.MessageID,
-			ChannelID: params.ChannelID,
 			Payload:   originalMessage,
 		},
 	})
@@ -774,8 +776,25 @@ func (d *Daemon) handleWriteReply(params *ReplyHandlerParams, writeReply *pigeon
 		return fmt.Errorf("bug 5, invalid book keeping for channelID %x", params.ChannelID[:])
 	}
 
-	if writeReply.ErrorCode != 0 {
+	// Only advance state if the write was successful
+	if writeReply.ErrorCode == 0 {
+		// Advance StatefulWriter state now that courier has confirmed successful storage
+		params.ChannelDesc.WriterLock.Lock()
+		if params.ChannelDesc.StatefulWriter != nil {
+			nextIndex, err := params.ChannelDesc.StatefulWriter.NextIndex.NextIndex()
+			if err != nil {
+				params.ChannelDesc.WriterLock.Unlock()
+				d.log.Errorf("Failed to advance writer state: %s", err)
+				return fmt.Errorf("failed to advance writer state: %s", err)
+			}
+			params.ChannelDesc.StatefulWriter.LastOutboxIdx = params.ChannelDesc.StatefulWriter.NextIndex
+			params.ChannelDesc.StatefulWriter.NextIndex = nextIndex
+			d.log.Debugf("Advanced writer state for channel %x", params.ChannelID[:])
+		}
+		params.ChannelDesc.WriterLock.Unlock()
+	} else {
 		d.log.Errorf("failed to write to channel, error code: %d", writeReply.ErrorCode)
+		// Don't advance state on write failure - allow retry with same index
 	}
 
 	err := params.Conn.sendResponse(&Response{
