@@ -86,6 +86,11 @@ type Daemon struct {
 	channelMap             map[[thin.ChannelIDLength]byte]*ChannelDescriptor
 	channelMapLock         *sync.RWMutex
 
+	// Capability deduplication maps to prevent reusing read/write capabilities
+	usedReadCaps   map[string]bool // Maps binary representation of UniversalReadCap to true
+	usedWriteCaps  map[string]bool // Maps binary representation of BoxOwnerCap to true
+	capabilityLock *sync.RWMutex   // Protects both capability maps
+
 	// Cryptographically secure random number generator
 	secureRand *mrand.Rand
 
@@ -113,6 +118,10 @@ func NewDaemon(cfg *config.Config) (*Daemon, error) {
 		surbIDToChannelMapLock: new(sync.RWMutex),
 		channelMap:             make(map[[thin.ChannelIDLength]byte]*ChannelDescriptor),
 		channelMapLock:         new(sync.RWMutex),
+		// capability deduplication fields:
+		usedReadCaps:   make(map[string]bool),
+		usedWriteCaps:  make(map[string]bool),
+		capabilityLock: new(sync.RWMutex),
 		// Initialize cryptographically secure random number generator
 		secureRand: hpqcRand.NewMath(),
 	}

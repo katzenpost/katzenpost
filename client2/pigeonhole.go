@@ -367,11 +367,75 @@ func (d *Daemon) createWriteChannel(request *Request) {
 		}
 	}
 
+	// Check for capability deduplication - only for resuming existing channels
+	if request.CreateWriteChannel.BoxOwnerCap != nil {
+		boxOwnerCapBytes, err := boxOwnerCap.MarshalBinary()
+		if err != nil {
+			d.log.Errorf("createWriteChannel failure: failed to marshal BoxOwnerCap: %s", err)
+			conn := d.listener.getConnection(request.AppID)
+			if conn != nil {
+				conn.sendResponse(&Response{
+					AppID: request.AppID,
+					CreateWriteChannelReply: &thin.CreateWriteChannelReply{
+						ChannelID: [thin.ChannelIDLength]byte{},
+						Err:       "failed to marshal capability",
+					},
+				})
+			}
+			return
+		}
+
+		capKey := string(boxOwnerCapBytes)
+		d.capabilityLock.Lock()
+		if d.usedWriteCaps[capKey] {
+			d.capabilityLock.Unlock()
+			d.log.Errorf("createWriteChannel failure: BoxOwnerCap already in use")
+			conn := d.listener.getConnection(request.AppID)
+			if conn != nil {
+				conn.sendResponse(&Response{
+					AppID: request.AppID,
+					CreateWriteChannelReply: &thin.CreateWriteChannelReply{
+						ChannelID: [thin.ChannelIDLength]byte{},
+						Err:       "capability already in use",
+					},
+				})
+			}
+			return
+		}
+		// Mark this capability as used
+		d.usedWriteCaps[capKey] = true
+		d.capabilityLock.Unlock()
+	}
+
 	// Generate channel ID
 	channelID := [thin.ChannelIDLength]byte{}
 	_, err = rand.Reader.Read(channelID[:])
 	if err != nil {
 		panic(err)
+	}
+
+	// Add capability to deduplication map for new channels
+	if request.CreateWriteChannel.BoxOwnerCap == nil {
+		boxOwnerCapBytes, err := boxOwnerCap.MarshalBinary()
+		if err != nil {
+			d.log.Errorf("createWriteChannel failure: failed to marshal BoxOwnerCap: %s", err)
+			conn := d.listener.getConnection(request.AppID)
+			if conn != nil {
+				conn.sendResponse(&Response{
+					AppID: request.AppID,
+					CreateWriteChannelReply: &thin.CreateWriteChannelReply{
+						ChannelID: [thin.ChannelIDLength]byte{},
+						Err:       "failed to marshal capability",
+					},
+				})
+			}
+			return
+		}
+
+		capKey := string(boxOwnerCapBytes)
+		d.capabilityLock.Lock()
+		d.usedWriteCaps[capKey] = true
+		d.capabilityLock.Unlock()
 	}
 
 	// Store channel descriptor
@@ -404,9 +468,47 @@ func (d *Daemon) createWriteChannel(request *Request) {
 }
 
 func (d *Daemon) createReadChannel(request *Request) {
+	// Check for capability deduplication first
+	readCapBytes, err := request.CreateReadChannel.ReadCap.MarshalBinary()
+	if err != nil {
+		d.log.Errorf("createReadChannel failure: failed to marshal UniversalReadCap: %s", err)
+		conn := d.listener.getConnection(request.AppID)
+		if conn != nil {
+			conn.sendResponse(&Response{
+				AppID: request.AppID,
+				CreateReadChannelReply: &thin.CreateReadChannelReply{
+					ChannelID: [thin.ChannelIDLength]byte{},
+					Err:       "failed to marshal capability",
+				},
+			})
+		}
+		return
+	}
+
+	capKey := string(readCapBytes)
+	d.capabilityLock.Lock()
+	if d.usedReadCaps[capKey] {
+		d.capabilityLock.Unlock()
+		d.log.Errorf("createReadChannel failure: UniversalReadCap already in use")
+		conn := d.listener.getConnection(request.AppID)
+		if conn != nil {
+			conn.sendResponse(&Response{
+				AppID: request.AppID,
+				CreateReadChannelReply: &thin.CreateReadChannelReply{
+					ChannelID: [thin.ChannelIDLength]byte{},
+					Err:       "capability already in use",
+				},
+			})
+		}
+		return
+	}
+	// Mark this capability as used
+	d.usedReadCaps[capKey] = true
+	d.capabilityLock.Unlock()
+
 	// Create a new channelID for Bob's read channel
 	channelID := [thin.ChannelIDLength]byte{}
-	_, err := rand.Reader.Read(channelID[:])
+	_, err = rand.Reader.Read(channelID[:])
 	if err != nil {
 		panic(err)
 	}
@@ -433,6 +535,8 @@ func (d *Daemon) createReadChannel(request *Request) {
 			statefulReader.NextIndex = nextIndex
 		}
 	}
+
+	// Note: Capability deduplication for read channels is already handled at the beginning of createReadChannel
 
 	// Create a new ChannelDescriptor for Bob's read channel
 	d.channelMapLock.Lock()
@@ -889,4 +993,29 @@ func (d *Daemon) readChannel(request *Request) {
 			NextMessageIndex:   nextMessageIndex,
 		},
 	})
+}
+
+// removeCapabilityFromDedup removes a capability from the deduplication maps
+// This should be called when a channel is explicitly closed or removed
+func (d *Daemon) removeCapabilityFromDedup(channelDesc *ChannelDescriptor) {
+	d.capabilityLock.Lock()
+	defer d.capabilityLock.Unlock()
+
+	// Remove write capability if this is a write channel
+	if channelDesc.BoxOwnerCap != nil {
+		boxOwnerCapBytes, err := channelDesc.BoxOwnerCap.MarshalBinary()
+		if err == nil {
+			capKey := string(boxOwnerCapBytes)
+			delete(d.usedWriteCaps, capKey)
+		}
+	}
+
+	// Remove read capability if this is a read channel
+	if channelDesc.StatefulReader != nil {
+		readCapBytes, err := channelDesc.StatefulReader.Urcap.MarshalBinary()
+		if err == nil {
+			capKey := string(readCapBytes)
+			delete(d.usedReadCaps, capKey)
+		}
+	}
 }
