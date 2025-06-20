@@ -162,19 +162,17 @@ func createEnvelopeFromMessage(
 	mkemScheme interface{},
 	isRead bool,
 ) (*CourierEnvelope, nike.PrivateKey, error) {
-	// Use reflection to call Encapsulate method dynamically
-	schemeValue := reflect.ValueOf(mkemScheme)
-	encapsulateMethod := schemeValue.MethodByName("Encapsulate")
-	if !encapsulateMethod.IsValid() {
-		return nil, nil, fmt.Errorf("mkemScheme does not have Encapsulate method")
-	}
+ // Define interface or use type assertion instead of reflection
+ type MKEMScheme interface {
+     Encapsulate(keys []nike.PublicKey, payload []byte) (nike.PrivateKey, interface{})
+ }
 
-	// Prepare arguments for reflection call
-	keysValue := reflect.ValueOf(replicaPubKeys)
-	payloadValue := reflect.ValueOf(msg.Bytes())
+ scheme, ok := mkemScheme.(MKEMScheme)
+ if !ok {
+     return nil, nil, fmt.Errorf("mkemScheme does not implement required interface")
+ }
 
-	// Call Encapsulate method
-	results := encapsulateMethod.Call([]reflect.Value{keysValue, payloadValue})
+ mkemPrivateKey, ciphertext := scheme.Encapsulate(replicaPubKeys, msg.Bytes())
 	if len(results) != 2 {
 		return nil, nil, fmt.Errorf("Encapsulate method returned unexpected number of values")
 	}
