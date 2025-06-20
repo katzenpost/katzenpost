@@ -177,24 +177,33 @@ func createEnvelopeFromMessage(
 		return nil, nil, fmt.Errorf("Encapsulate method returned unexpected number of values")
 	}
 
-	mkemPrivateKey := results[0].Interface().(nike.PrivateKey)
-	mkemPublicKey := mkemPrivateKey.Public()
+ mkemPrivateKey, ok := results[0].Interface().(nike.PrivateKey)
+ if !ok {
+     return nil, nil, fmt.Errorf("failed to cast result to nike.PrivateKey")
+ }
+ mkemPublicKey := mkemPrivateKey.Public()
 
-	// Extract DEKCiphertexts and Envelope from the ciphertext using reflection
-	ciphertextValue := results[1]
-	if ciphertextValue.Kind() == reflect.Ptr {
-		ciphertextValue = ciphertextValue.Elem()
-	}
+ // Extract DEKCiphertexts and Envelope from the ciphertext using reflection
+ ciphertextValue := results[1]
+ if ciphertextValue.Kind() == reflect.Ptr {
+     ciphertextValue = ciphertextValue.Elem()
+ }
 
-	dekCiphertextsField := ciphertextValue.FieldByName("DEKCiphertexts")
-	envelopeField := ciphertextValue.FieldByName("Envelope")
+ dekCiphertextsField := ciphertextValue.FieldByName("DEKCiphertexts")
+ envelopeField := ciphertextValue.FieldByName("Envelope")
 
-	if !dekCiphertextsField.IsValid() || !envelopeField.IsValid() {
-		return nil, nil, fmt.Errorf("MKEM ciphertext does not have expected DEKCiphertexts and Envelope fields")
-	}
+ if !dekCiphertextsField.IsValid() || !envelopeField.IsValid() {
+     return nil, nil, fmt.Errorf("MKEM ciphertext does not have expected DEKCiphertexts and Envelope fields")
+ }
 
-	dekCiphertexts := dekCiphertextsField.Interface().([]*[60]byte)
-	envelope := envelopeField.Interface().([]byte)
+ dekCiphertexts, ok := dekCiphertextsField.Interface().([]*[60]byte)
+ if !ok {
+     return nil, nil, fmt.Errorf("failed to cast DEKCiphertexts to expected type")
+ }
+ envelope, ok := envelopeField.Interface().([]byte)
+ if !ok {
+     return nil, nil, fmt.Errorf("failed to cast Envelope to []byte")
+ }
 
 	var dek1, dek2 [60]uint8
 	copy(dek1[:], dekCiphertexts[0][:])
