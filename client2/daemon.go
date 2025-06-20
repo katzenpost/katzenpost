@@ -289,9 +289,6 @@ func (d *Daemon) egressWorker() {
 				d.send(request)
 			case request.SendARQMessage != nil:
 				d.send(request)
-
-				// New Pigeonhole Channel related commands proceed here:
-
 			case request.CreateWriteChannel != nil:
 				d.createWriteChannel(request)
 			case request.CreateReadChannel != nil:
@@ -489,6 +486,7 @@ func (d *Daemon) handleChannelReply(appid *[AppIDLength]byte,
 			params := &ReplyHandlerParams{
 				AppID:       appid,
 				MessageID:   mesgID,
+				SURBID:      surbid,
 				ChannelID:   channelID,
 				ChannelDesc: channelDesc,
 				EnvHash:     envHash,
@@ -501,6 +499,7 @@ func (d *Daemon) handleChannelReply(appid *[AppIDLength]byte,
 			params := &ReplyHandlerParams{
 				AppID:       appid,
 				MessageID:   mesgID,
+				SURBID:      surbid,
 				ChannelID:   channelID,
 				ChannelDesc: channelDesc,
 				EnvHash:     envHash,
@@ -655,6 +654,7 @@ func (d *Daemon) decryptMKEMEnvelope(env *pigeonhole.CourierEnvelopeReply, envel
 type ReplyHandlerParams struct {
 	AppID       *[AppIDLength]byte
 	MessageID   *[MessageIDLength]byte
+	SURBID      *[sphinxConstants.SURBIDLength]byte
 	ChannelID   [thin.ChannelIDLength]byte
 	ChannelDesc *ChannelDescriptor
 	EnvHash     *[hash.HashSize]byte
@@ -730,6 +730,7 @@ func (d *Daemon) handleReadReply(params *ReplyHandlerParams, readReply *pigeonho
 		AppID: params.AppID,
 		MessageReplyEvent: &thin.MessageReplyEvent{
 			MessageID: params.MessageID,
+			SURBID:    params.SURBID,
 			Payload:   originalMessage,
 		},
 	})
@@ -755,19 +756,21 @@ func (d *Daemon) handleReadReply(params *ReplyHandlerParams, readReply *pigeonho
 
 // handleCopyReply processes a copy command reply
 func (d *Daemon) handleCopyReply(appid *[AppIDLength]byte, channelID [thin.ChannelIDLength]byte, copyReply *pigeonhole.CopyCommandReply, conn *incomingConn) error {
-	var errMsg string
 	if copyReply.ErrorCode != 0 {
-		errMsg = fmt.Sprintf("copy command failed with error code %d", copyReply.ErrorCode)
 		d.log.Errorf("copy command failed for channel %x with error code %d", channelID[:], copyReply.ErrorCode)
 	} else {
 		d.log.Debugf("copy command completed successfully for channel %x", channelID[:])
 	}
 
+	var errorCode uint8 = thin.ThinClientErrorSuccess
+	if copyReply.ErrorCode != 0 {
+		errorCode = thin.ThinClientErrorInternalError
+	}
 	err := conn.sendResponse(&Response{
 		AppID: appid,
 		CopyChannelReply: &thin.CopyChannelReply{
 			ChannelID: channelID,
-			Err:       errMsg,
+			ErrorCode: errorCode,
 		},
 	})
 	if err != nil {
@@ -880,6 +883,10 @@ func (d *Daemon) send(request *Request) {
 		if !isLoopDecoy {
 			incomingConn := d.listener.getConnection(request.AppID)
 			if incomingConn != nil {
+				var errorCode uint8 = thin.ThinClientErrorSuccess
+				if err != nil {
+					errorCode = thin.ThinClientErrorInternalError
+				}
 				response := &Response{
 					AppID: request.AppID,
 					MessageSentEvent: &thin.MessageSentEvent{
@@ -887,7 +894,7 @@ func (d *Daemon) send(request *Request) {
 						SURBID:    surbID,
 						SentAt:    now,
 						ReplyETA:  rtt,
-						Err:       err,
+						ErrorCode: errorCode,
 					},
 				}
 				err = incomingConn.sendResponse(response)
@@ -1041,7 +1048,7 @@ func (d *Daemon) arqDoResend(surbID *[sphinxConstants.SURBIDLength]byte) {
 			AppID: message.AppID,
 			MessageReplyEvent: &thin.MessageReplyEvent{
 				MessageID: message.MessageID,
-				Err:       errors.New("max retries met"),
+				ErrorCode: thin.ThinClientErrorMaxRetries,
 				Payload:   []byte{},
 				SURBID:    surbID,
 			},
@@ -1211,7 +1218,7 @@ func (d *Daemon) sendCopyChannelErrorResponse(request *Request, channelID [thin.
 			AppID: request.AppID,
 			CopyChannelReply: &thin.CopyChannelReply{
 				ChannelID: channelID,
-				Err:       errMsg,
+				ErrorCode: thin.ThinClientErrorInternalError,
 			},
 		})
 	}

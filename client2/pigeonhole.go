@@ -372,7 +372,7 @@ func (d *Daemon) createWriteChannel(request *Request) {
 
 	if err != nil {
 		d.log.Errorf("createWriteChannel failure: %s", err)
-		d.sendWriteChannelError(request, err.Error())
+		d.sendWriteChannelError(request, thin.ThinClientErrorInternalError)
 		return
 	}
 
@@ -466,7 +466,7 @@ func (d *Daemon) writeChannel(request *Request) {
 				AppID: request.AppID,
 				WriteChannelReply: &thin.WriteChannelReply{
 					ChannelID: channelID,
-					Err:       "channel not found",
+					ErrorCode: thin.ThinClientErrorChannelNotFound,
 				},
 			})
 		}
@@ -496,7 +496,7 @@ func (d *Daemon) writeChannel(request *Request) {
 				AppID: request.AppID,
 				WriteChannelReply: &thin.WriteChannelReply{
 					ChannelID: channelID,
-					Err:       err.Error(),
+					ErrorCode: thin.ThinClientErrorInternalError,
 				},
 			})
 		}
@@ -533,7 +533,7 @@ func (d *Daemon) writeChannel(request *Request) {
 				AppID: request.AppID,
 				WriteChannelReply: &thin.WriteChannelReply{
 					ChannelID: channelID,
-					Err:       err.Error(),
+					ErrorCode: thin.ThinClientErrorInternalError,
 				},
 			})
 		}
@@ -648,7 +648,7 @@ func (d *Daemon) createNewEnvelope(request *Request, channelDesc *ChannelDescrip
 }
 
 // sendReadChannelErrorResponse sends an error response for a read channel request
-func (d *Daemon) sendReadChannelErrorResponse(request *Request, channelID [thin.ChannelIDLength]byte, errorMsg string) {
+func (d *Daemon) sendReadChannelErrorResponse(request *Request, channelID [thin.ChannelIDLength]byte, errorCode uint8) {
 	conn := d.listener.getConnection(request.AppID)
 	if conn != nil {
 		conn.sendResponse(&Response{
@@ -656,7 +656,7 @@ func (d *Daemon) sendReadChannelErrorResponse(request *Request, channelID [thin.
 			ReadChannelReply: &thin.ReadChannelReply{
 				MessageID: request.ReadChannel.ID,
 				ChannelID: channelID,
-				Err:       errorMsg,
+				ErrorCode: errorCode,
 			},
 		})
 	}
@@ -807,7 +807,7 @@ func (d *Daemon) readChannel(request *Request) {
 				ReadChannelReply: &thin.ReadChannelReply{
 					MessageID: request.ReadChannel.ID,
 					ChannelID: channelID,
-					Err:       "channel not found",
+					ErrorCode: thin.ThinClientErrorChannelNotFound,
 				},
 			})
 		}
@@ -829,7 +829,7 @@ func (d *Daemon) readChannel(request *Request) {
 				ReadChannelReply: &thin.ReadChannelReply{
 					MessageID: request.ReadChannel.ID,
 					ChannelID: channelID,
-					Err:       err.Error(),
+					ErrorCode: thin.ThinClientErrorInternalError,
 				},
 			})
 		}
@@ -847,7 +847,7 @@ func (d *Daemon) readChannel(request *Request) {
 				ReadChannelReply: &thin.ReadChannelReply{
 					MessageID: request.ReadChannel.ID,
 					ChannelID: channelID,
-					Err:       err.Error(),
+					ErrorCode: thin.ThinClientErrorInternalError,
 				},
 			})
 		}
@@ -874,7 +874,7 @@ func (d *Daemon) readChannel(request *Request) {
 				ReadChannelReply: &thin.ReadChannelReply{
 					MessageID: request.ReadChannel.ID,
 					ChannelID: channelID,
-					Err:       err.Error(),
+					ErrorCode: thin.ThinClientErrorInternalError,
 				},
 			})
 		}
@@ -898,28 +898,28 @@ func (d *Daemon) readChannel(request *Request) {
 }
 
 // sendWriteChannelError sends an error response for write channel creation
-func (d *Daemon) sendWriteChannelError(request *Request, errorMsg string) {
+func (d *Daemon) sendWriteChannelError(request *Request, errorCode uint8) {
 	conn := d.listener.getConnection(request.AppID)
 	if conn != nil {
 		conn.sendResponse(&Response{
 			AppID: request.AppID,
 			CreateWriteChannelReply: &thin.CreateWriteChannelReply{
 				ChannelID: [thin.ChannelIDLength]byte{},
-				Err:       errorMsg,
+				ErrorCode: errorCode,
 			},
 		})
 	}
 }
 
 // sendReadChannelError sends an error response for read channel creation
-func (d *Daemon) sendReadChannelError(request *Request, errorMsg string) {
+func (d *Daemon) sendReadChannelError(request *Request, errorCode uint8) {
 	conn := d.listener.getConnection(request.AppID)
 	if conn != nil {
 		conn.sendResponse(&Response{
 			AppID: request.AppID,
 			CreateReadChannelReply: &thin.CreateReadChannelReply{
 				ChannelID: [thin.ChannelIDLength]byte{},
-				Err:       errorMsg,
+				ErrorCode: errorCode,
 			},
 		})
 	}
@@ -930,7 +930,7 @@ func (d *Daemon) checkWriteCapabilityDedup(request *Request, boxOwnerCap *bacap.
 	boxOwnerCapBytes, err := boxOwnerCap.MarshalBinary()
 	if err != nil {
 		d.log.Errorf("createWriteChannel failure: failed to marshal BoxOwnerCap: %s", err)
-		d.sendWriteChannelError(request, errCapabilityMarshalFailed)
+		d.sendWriteChannelError(request, thin.ThinClientErrorInternalError)
 		return err
 	}
 
@@ -940,7 +940,7 @@ func (d *Daemon) checkWriteCapabilityDedup(request *Request, boxOwnerCap *bacap.
 
 	if d.usedWriteCaps[capKey] {
 		d.log.Errorf("createWriteChannel failure: BoxOwnerCap already in use")
-		d.sendWriteChannelError(request, errCapabilityAlreadyInUse)
+		d.sendWriteChannelError(request, thin.ThinClientErrorInvalidRequest)
 		return fmt.Errorf(errCapabilityAlreadyInUse)
 	}
 
@@ -954,7 +954,7 @@ func (d *Daemon) checkReadCapabilityDedup(request *Request, readCap *bacap.Unive
 	readCapBytes, err := readCap.MarshalBinary()
 	if err != nil {
 		d.log.Errorf("createReadChannel failure: failed to marshal UniversalReadCap: %s", err)
-		d.sendReadChannelError(request, errCapabilityMarshalFailed)
+		d.sendReadChannelError(request, thin.ThinClientErrorInternalError)
 		return err
 	}
 
@@ -964,7 +964,7 @@ func (d *Daemon) checkReadCapabilityDedup(request *Request, readCap *bacap.Unive
 
 	if d.usedReadCaps[capKey] {
 		d.log.Errorf("createReadChannel failure: UniversalReadCap already in use")
-		d.sendReadChannelError(request, errCapabilityAlreadyInUse)
+		d.sendReadChannelError(request, thin.ThinClientErrorInvalidRequest)
 		return fmt.Errorf(errCapabilityAlreadyInUse)
 	}
 
