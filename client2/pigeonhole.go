@@ -335,16 +335,23 @@ func (d *Daemon) storeWriteChannelDescriptor(channelID [thin.ChannelIDLength]byt
 		EnvelopeDescriptors: make(map[[hash.HashSize]byte]*EnvelopeDescriptor),
 		StoredEnvelopes:     make(map[[thin.MessageIDLength]byte]*StoredEnvelopeData),
 	}
+// Advance to the target index if needed
+maxIterations := 1000000 // Safety limit to prevent infinite loops
+iterations := 0
+for statefulWriter.NextIndex.Idx64 < targetIndex.Idx64 {
+    if iterations >= maxIterations {
+        d.log.Errorf("createWriteChannel failure: exceeded maximum iterations advancing to target index")
+        return
+    }
+    nextIndex, err := statefulWriter.NextIndex.NextIndex()
+    if err != nil {
+        d.log.Errorf("createWriteChannel failure: failed to advance to target index: %s", err)
+        return
+    }
+    statefulWriter.LastOutboxIdx = statefulWriter.NextIndex
+    statefulWriter.NextIndex = nextIndex
+    iterations++
 }
-
-// sendWriteChannelSuccessResponse sends a successful response for write channel creation
-func (d *Daemon) sendWriteChannelSuccessResponse(request *Request, channelID [thin.ChannelIDLength]byte, bobReadCap *bacap.UniversalReadCap, boxOwnerCap *bacap.BoxOwnerCap, currentMessageIndex *bacap.MessageBoxIndex) {
-	conn := d.listener.getConnection(request.AppID)
-	if conn == nil {
-		d.log.Errorf(errNoConnectionForAppID, request.AppID[:])
-		return
-	}
-
 	conn.sendResponse(&Response{
 		AppID: request.AppID,
 		CreateWriteChannelReply: &thin.CreateWriteChannelReply{
