@@ -294,7 +294,10 @@ func (c *ClientWriter) ComposeSendNextMessage(message []byte) *pigeonhole.Courie
 		panic(err)
 	}
 
-	sig := [bacap.SignatureSize]byte{}
+ if len(sigraw) != bacap.SignatureSize {
+     panic(fmt.Sprintf("signature size mismatch: expected %d, got %d", bacap.SignatureSize, len(sigraw)))
+ }
+ sig := [bacap.SignatureSize]byte{}
 	copy(sig[:], sigraw)
 
 	replicaPubKeys := make([]nike.PublicKey, 2)
