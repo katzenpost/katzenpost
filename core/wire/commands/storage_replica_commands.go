@@ -5,103 +5,24 @@ package commands
 
 import (
 	"encoding/binary"
+	"fmt"
 
+	"golang.org/x/crypto/blake2b"
+
+	"github.com/katzenpost/hpqc/bacap"
+	"github.com/katzenpost/hpqc/hash"
+	"github.com/katzenpost/hpqc/kem/mkem"
 	"github.com/katzenpost/hpqc/nike"
 
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 )
 
+// HybridKeySize is a helper function which is used in our
+// geometry calculations below.
 func HybridKeySize(scheme nike.Scheme) int {
 	// NIKE scheme CTIDH1024-X25519 has 160 byte public keys
 	return scheme.PublicKeySize()
 
-}
-
-// ReplicaRead isn't used directly on the wire protocol
-// but is embedded inside the ReplicaMessage which of course
-// are sent by the couriers to the replicas.
-type ReplicaRead struct {
-	Cmds *Commands
-
-	BoxID *[32]byte
-}
-
-func (c *ReplicaRead) ToBytes() []byte {
-	out := make([]byte, cmdOverhead, cmdOverhead+32)
-	out[0] = byte(replicaRead)
-	binary.BigEndian.PutUint32(out[2:6], uint32(c.Length()-cmdOverhead))
-	return append(out, c.BoxID[:]...)
-}
-
-func (c *ReplicaRead) Length() int {
-	return cmdOverhead + 32
-}
-
-func replicaReadFromBytes(b []byte, cmds *Commands) (Command, error) {
-	c := new(ReplicaRead)
-	c.Cmds = cmds
-	c.BoxID = &[32]byte{}
-	copy(c.BoxID[:], b[:32])
-	return c, nil
-}
-
-// ReplicaReadReply isn't used directly on the wire protocol
-// but is embedded inside the ReplicaMessageReply which of course
-// are sent by the replicas to the couriers. Therefore the
-// ReplicaReadReply command is never padded because it is always
-// encapsulated by the ReplicaMessageReply which is padded.
-type ReplicaReadReply struct {
-	Cmds *Commands
-	Geo  *geo.Geometry
-
-	ErrorCode uint8
-	BoxID     *[32]byte
-	Signature *[32]byte
-	Payload   []byte
-}
-
-func (c *ReplicaReadReply) ToBytes() []byte {
-	const (
-		errorCodeLen = 1
-		idLen        = 32
-		sigLen       = 32
-	)
-	length := errorCodeLen + idLen + sigLen + c.Geo.PacketLength
-	out := make([]byte, cmdOverhead, cmdOverhead+errorCodeLen+idLen+sigLen+len(c.Payload))
-	out[0] = byte(replicaReadReply)
-	binary.BigEndian.PutUint32(out[2:6], uint32(length))
-	out = append(out, c.ErrorCode)
-	out = append(out, c.BoxID[:]...)
-	out = append(out, c.Signature[:]...)
-	payload := make([]byte, c.Geo.PacketLength)
-	copy(payload, c.Payload)
-	return append(out, payload...)
-}
-
-func (c *ReplicaReadReply) Length() int {
-	const (
-		errorCodeLen  = 1
-		idLen         = 32
-		sigLen        = 32
-		signatureSize = 32
-	)
-	// XXX replace c.Geo.PacketLength with the precise payload size
-	//return cmdOverhead + errorCodeLen + idLen + sigLen + signatureSize + c.Geo.PacketLength
-	return 0
-}
-
-func replicaReadReplyFromBytes(b []byte, cmds *Commands) (Command, error) {
-	c := new(ReplicaReadReply)
-	c.Cmds = cmds
-	c.Geo = cmds.geo
-	c.BoxID = &[32]byte{}
-	c.ErrorCode = b[0]
-	copy(c.BoxID[:], b[1:32+1])
-	c.Signature = &[32]byte{}
-	copy(c.Signature[:], b[1+32:1+32+32])
-	c.Payload = make([]byte, len(b[1+32+32:]))
-	copy(c.Payload, b[1+32+32:])
-	return c, nil
 }
 
 // ReplicaWrite has two distinct uses. Firstly, it is
@@ -109,17 +30,27 @@ func replicaReadReplyFromBytes(b []byte, cmds *Commands) (Command, error) {
 // Secondly, it can be embedded inside a ReplicaMessage which of course
 // are sent from couriers to replicas.
 type ReplicaWrite struct {
+
+	// Cmds is set to nil if you want to serialize this type
+	// without padding.
 	Cmds *Commands
 
-	BoxID     *[32]byte
-	Signature *[32]byte
+	BoxID     *[bacap.BoxIDSize]byte
+	Signature *[bacap.SignatureSize]byte
 	Payload   []byte
 }
 
 func (c *ReplicaWrite) ToBytes() []byte {
-	out := make([]byte, cmdOverhead, cmdOverhead+32+32+len(c.Payload))
+	var cmdLen = bacap.BoxIDSize + bacap.SignatureSize + len(c.Payload)
+
+	if c.Payload == nil {
+		panic("ReplicaWrite.Payload ")
+	}
+	out := make([]byte, cmdOverhead, cmdOverhead+cmdLen)
 	out[0] = byte(replicaWrite)
-	binary.BigEndian.PutUint32(out[2:6], uint32(c.Length()-cmdOverhead))
+	out[1] = 0
+	binary.BigEndian.PutUint32(out[2:6], uint32(cmdLen))
+
 	out = append(out, c.BoxID[:]...)
 	out = append(out, c.Signature[:]...)
 	out = append(out, c.Payload...)
@@ -132,23 +63,20 @@ func (c *ReplicaWrite) ToBytes() []byte {
 }
 
 func (c *ReplicaWrite) Length() int {
-	var (
-		// XXX FIX ME: largest ideal command size goes here
-		payloadSize   = c.Cmds.geo.PacketLength
-		signatureSize = 32
-	)
-	return cmdOverhead + payloadSize + signatureSize
+	// XXX FIX ME: largest ideal command size goes here
+	var payloadSize = c.Cmds.geo.PacketLength
+	return cmdOverhead + payloadSize + bacap.SignatureSize + bacap.BoxIDSize
 }
 
 func replicaWriteFromBytes(b []byte, cmds *Commands) (Command, error) {
 	c := new(ReplicaWrite)
 	c.Cmds = cmds
-	c.BoxID = &[32]byte{}
-	copy(c.BoxID[:], b[:32])
-	c.Signature = &[32]byte{}
-	copy(c.Signature[:], b[32:32+32])
-	c.Payload = make([]byte, len(b[32+32:]))
-	copy(c.Payload, b[32+32:])
+	c.BoxID = &[bacap.BoxIDSize]byte{}
+	copy(c.BoxID[:], b[:bacap.BoxIDSize])
+	c.Signature = &[bacap.SignatureSize]byte{}
+	copy(c.Signature[:], b[bacap.BoxIDSize:bacap.BoxIDSize+bacap.SignatureSize])
+	c.Payload = make([]byte, len(b[bacap.BoxIDSize+bacap.SignatureSize:]))
+	copy(c.Payload, b[bacap.BoxIDSize+bacap.SignatureSize:])
 	return c, nil
 }
 
@@ -197,16 +125,45 @@ type ReplicaMessage struct {
 	Scheme nike.Scheme
 
 	SenderEPubKey []byte
-	DEK           *[32]byte
+	DEK           *[mkem.DEKSize]byte
 	Ciphertext    []byte
 }
 
-func (c *ReplicaMessage) ToBytes() []byte {
-	out := make([]byte, cmdOverhead, cmdOverhead+32+len(c.Ciphertext))
-	out[0] = byte(replicaMessage)
-	binary.BigEndian.PutUint32(out[2:6], uint32(c.Length()-cmdOverhead))
+func (c *ReplicaMessage) EnvelopeHash() *[hash.HashSize]byte {
+	h, err := blake2b.New256(nil)
+	if err != nil {
+		panic(err)
+	}
+	_, err = h.Write(c.SenderEPubKey)
+	if err != nil {
+		panic(err)
+	}
+	_, err = h.Write(c.Ciphertext)
+	if err != nil {
+		panic(err)
+	}
+	s := h.Sum([]byte{})
+	hashOut := &[blake2b.Size256]byte{}
+	copy(hashOut[:], s)
+	return hashOut
+}
 
-	out = append(out, c.SenderEPubKey[:]...)
+func (c *ReplicaMessage) ToBytes() []byte {
+	const uint32len = 4
+	hkSize := len(c.SenderEPubKey)
+
+	// Validate that DEK is not nil to prevent panic
+	if c.DEK == nil {
+		panic("ReplicaMessage.ToBytes: DEK field is nil")
+	}
+
+	out := make([]byte, cmdOverhead)
+	out[0] = byte(replicaMessage)
+	out[1] = 0
+	totalLen := hkSize + mkem.DEKSize + len(c.Ciphertext)
+	binary.BigEndian.PutUint32(out[2:6], uint32(totalLen))
+
+	out = append(out, c.SenderEPubKey...)
 	out = append(out, c.DEK[:]...)
 	out = append(out, c.Ciphertext...)
 
@@ -214,27 +171,36 @@ func (c *ReplicaMessage) ToBytes() []byte {
 }
 
 func replicaMessageFromBytes(b []byte, cmds *Commands) (Command, error) {
+	const uint32len = 4
+
 	c := new(ReplicaMessage)
 	c.Cmds = cmds
 	c.Scheme = cmds.replicaNikeScheme
 
-	c.SenderEPubKey = make([]byte, HybridKeySize(c.Scheme))
-	copy(c.SenderEPubKey[:], b[:HybridKeySize(c.Scheme)])
+	hkSize := HybridKeySize(c.Scheme)
+	offset := 0
 
-	c.DEK = &[32]byte{}
-	copy(c.DEK[:], b[HybridKeySize(c.Scheme):HybridKeySize(c.Scheme)+32])
+	if len(b) < hkSize+mkem.DEKSize+uint32len {
+		return nil, fmt.Errorf("message too short")
+	}
 
-	// c.Cmds.geo.PacketLength
-	c.Ciphertext = make([]byte, len(b[HybridKeySize(c.Scheme)+32:]))
-	copy(c.Ciphertext, b[HybridKeySize(c.Scheme)+32:])
+	c.SenderEPubKey = make([]byte, hkSize)
+	copy(c.SenderEPubKey, b[offset:offset+hkSize])
+	offset += hkSize
+
+	c.DEK = new([mkem.DEKSize]byte)
+	copy(c.DEK[:], b[offset:offset+mkem.DEKSize])
+	offset += mkem.DEKSize
+
+	c.Ciphertext = make([]byte, len(b[offset:]))
+	copy(c.Ciphertext, b[offset:])
 
 	return c, nil
 }
 
 func (c *ReplicaMessage) Length() int {
 	// XXX replace c.Geo.PacketLength with the precise payload size
-	const dekLen = 32
-	return cmdOverhead + dekLen + HybridKeySize(c.Scheme) + c.Geo.PacketLength
+	return cmdOverhead + mkem.DEKSize + HybridKeySize(c.Scheme) + c.Geo.PacketLength
 }
 
 // ReplicaMessageReply is sent by replicas to couriers as a reply
@@ -242,47 +208,61 @@ func (c *ReplicaMessage) Length() int {
 type ReplicaMessageReply struct {
 	Cmds *Commands
 
-	ErrorCode     uint8
-	EnvelopeHash  *[32]byte
+	// ErrorCode indicates failure on non-zero.
+	ErrorCode uint8
+
+	// EnvelopeHash identifies which query the request is replying to.
+	EnvelopeHash *[32]byte
+
+	// ReplicaID identifies the replica replying.
+	ReplicaID uint8
+
+	// IsRead indicates whether the request was a read operation.
+	IsRead bool
+
+	// EnvelopeReply contains the mkem ciphertext reply.
 	EnvelopeReply []byte
 }
 
 func (c *ReplicaMessageReply) ToBytes() []byte {
-	out := make([]byte, cmdOverhead, cmdOverhead+1+32+len(c.EnvelopeReply))
+	out := make([]byte, cmdOverhead, cmdOverhead+1+32+1+1+len(c.EnvelopeReply))
 	out[0] = byte(replicaMessageReply)
-	binary.BigEndian.PutUint32(out[2:6], uint32(1+32+len(c.EnvelopeReply)))
+	binary.BigEndian.PutUint32(out[2:6], uint32(1+32+1+1+len(c.EnvelopeReply)))
 
 	out = append(out, c.ErrorCode)
 	out = append(out, c.EnvelopeHash[:]...)
+	out = append(out, c.ReplicaID)
+	if c.IsRead {
+		out = append(out, 1)
+	} else {
+		out = append(out, 0)
+	}
 	out = append(out, c.EnvelopeReply...)
 
-	return c.Cmds.padToMaxCommandSize(out, true)
+	// optional traffic padding
+	if c.Cmds == nil {
+		return out
+	}
+	return c.Cmds.padToMaxCommandSize(out, false)
 }
 
-func replicaMessageReplyFromBytes(b []byte) (Command, error) {
-	if len(b) != postDescriptorStatusLength {
-		return nil, errInvalidCommand
-	}
-
+func replicaMessageReplyFromBytes(b []byte, cmds *Commands) (Command, error) {
 	r := new(ReplicaMessageReply)
+	r.Cmds = cmds
 	r.ErrorCode = b[0]
 
 	r.EnvelopeHash = &[32]byte{}
 	copy(r.EnvelopeHash[:], b[1:1+32])
 
-	r.EnvelopeReply = make([]byte, len(b[1+32:]))
-	copy(r.EnvelopeReply, b[1+32:])
+	r.ReplicaID = b[1+32]
+	r.IsRead = b[1+32+1] == 1
+
+	r.EnvelopeReply = make([]byte, len(b[1+32+1+1:]))
+	copy(r.EnvelopeReply, b[1+32+1+1:])
 
 	return r, nil
 }
 
 func (c *ReplicaMessageReply) Length() int {
-	const (
-		errorCodeLen  = 1
-		idLen         = 32
-		sigLen        = 32
-		signatureSize = 32
-	)
-	replicaReadReplyLength := cmdOverhead + errorCodeLen + idLen + sigLen + signatureSize + c.Cmds.geo.PacketLength
-	return cmdOverhead + 1 + 32 + replicaReadReplyLength
+	return cmdOverhead + 1 + 32 + 1 + 1 + len(c.EnvelopeReply)
 }

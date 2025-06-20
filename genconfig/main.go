@@ -19,6 +19,7 @@ import (
 	"github.com/katzenpost/hpqc/kem"
 	kempem "github.com/katzenpost/hpqc/kem/pem"
 	kemschemes "github.com/katzenpost/hpqc/kem/schemes"
+	"github.com/katzenpost/hpqc/nike"
 	"github.com/katzenpost/hpqc/nike/schemes"
 	"github.com/katzenpost/hpqc/sign"
 	signpem "github.com/katzenpost/hpqc/sign/pem"
@@ -28,19 +29,37 @@ import (
 	cConfig "github.com/katzenpost/katzenpost/client/config"
 	cConfig2 "github.com/katzenpost/katzenpost/client2/config"
 	"github.com/katzenpost/katzenpost/client2/thin"
+	"github.com/katzenpost/katzenpost/common/config"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
+	courierConfig "github.com/katzenpost/katzenpost/courier/server/config"
+	pigeonholeGeo "github.com/katzenpost/katzenpost/pigeonhole/geo"
+	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
+	rConfig "github.com/katzenpost/katzenpost/replica/config"
 	sConfig "github.com/katzenpost/katzenpost/server/config"
 )
 
 const (
-	basePort       = 30000
-	bindAddr       = "127.0.0.1"
-	nrLayers       = 3
-	nrNodes        = 6
-	nrGateways     = 1
-	nrServiceNodes = 1
-	nrAuthorities  = 3
+	basePort               = 30000
+	bindAddr               = "127.0.0.1"
+	nrLayers               = 3
+	nrNodes                = 6
+	nrGateways             = 1
+	nrServiceNodes         = 1
+	nrStorageNodes         = 3
+	nrAuthorities          = 3
+	serverLogFile          = "katzenpost.log"
+	tcpAddrFormat          = "tcp://127.0.0.1:%d"
+	identityPublicKeyFile  = "identity.public.pem"
+	identityPrivateKeyFile = "identity.private.pem"
+	linkPublicKeyFile      = "link.public.pem"
+	linkPrivateKeyFile     = "link.private.pem"
+	courierService         = "courier"
+	clientIdentifier       = "client"
+	client2Identifier      = "client2"
+	debugLogLevel          = "DEBUG"
+	authNodeFormat         = "auth%d"
+	writingLogFormat       = "writing %s"
 )
 
 type katzenpost struct {
@@ -52,21 +71,26 @@ type katzenpost struct {
 
 	wireKEMScheme      string
 	pkiSignatureScheme sign.Scheme
+	replicaNIKEScheme  nike.Scheme
 	sphinxGeometry     *geo.Geometry
+	pigeonholeGeometry *pigeonholeGeo.Geometry
 	votingAuthConfigs  []*vConfig.Config
 	authorities        map[[32]byte]*vConfig.Authority
 	authIdentity       sign.PublicKey
 
-	nodeConfigs    []*sConfig.Config
-	basePort       uint16
-	lastPort       uint16
-	bindAddr       string
-	nodeIdx        int
-	gatewayIdx     int
-	serviceNodeIdx int
-	hasProxy       bool
-	noMixDecoy     bool
-	debugConfig    *cConfig.Debug
+	nodeConfigs        []*sConfig.Config
+	replicaNodeConfigs []*rConfig.Config
+
+	basePort        uint16
+	lastPort        uint16
+	lastReplicaPort uint16
+	replicaNodeIdx  int
+	bindAddr        string
+	nodeIdx         int
+	gatewayIdx      int
+	serviceNodeIdx  int
+	noMixDecoy      bool
+	debugConfig     *cConfig.Debug
 }
 
 type AuthById []*vConfig.Authority
@@ -108,6 +132,7 @@ func (s *katzenpost) genClient2ThinCfg(net, addr string) error {
 	cfg := new(thin.Config)
 
 	cfg.SphinxGeometry = s.sphinxGeometry
+	cfg.PigeonholeGeometry = s.pigeonholeGeometry
 	cfg.Network = net
 	cfg.Address = addr
 
@@ -125,46 +150,36 @@ func (s *katzenpost) genClient2ThinCfg(net, addr string) error {
 func (s *katzenpost) genClient2Cfg(net, addr string) error {
 	log.Print("genClient2Cfg begin")
 	os.Mkdir(filepath.Join(s.outDir, "client2"), 0700)
-	cfg := new(cConfig2.Config)
+	os.Mkdir(filepath.Join(s.outDir, "thinclient"), 0700)
 
-	// abstract unix domain sockets only work on linux,
-	//cfg.ListenNetwork = "unix"
-	//cfg.ListenAddress = "@katzenpost"
-	// therefore if unix sockets are requires on non-linux platforms
-	// the solution is to specify a unix socket file path instead of
-	// and abstract unix socket name:
-	//cfg.ListenNetwork = "unix"
-	//cfg.ListenAddress = "/tmp/katzenzpost.socket"
+	cfg := new(cConfig2.Config)
 
 	// Use TCP by default so that the CI tests pass on all platforms
 	cfg.ListenNetwork = net
 	cfg.ListenAddress = addr
 
+	// Logging section.
+	cfg.Logging = &cConfig2.Logging{File: "", Level: debugLogLevel}
+
 	cfg.PKISignatureScheme = s.pkiSignatureScheme.Name()
 	cfg.WireKEMScheme = s.wireKEMScheme
 	cfg.SphinxGeometry = s.sphinxGeometry
-
-	// Logging section.
-	cfg.Logging = &cConfig2.Logging{File: "", Level: "DEBUG"}
+	cfg.PigeonholeGeometry = s.pigeonholeGeometry
 
 	// UpstreamProxy section
 	cfg.UpstreamProxy = &cConfig2.UpstreamProxy{Type: "none"}
 
 	// VotingAuthority section
-
 	peers := make([]*vConfig.Authority, 0)
 	for _, peer := range s.authorities {
 		peers = append(peers, peer)
 	}
-
 	sort.Sort(AuthById(peers))
-
 	cfg.VotingAuthority = &cConfig2.VotingAuthority{Peers: peers}
 
 	// Debug section
 	cfg.Debug = &cConfig2.Debug{DisableDecoyTraffic: s.debugConfig.DisableDecoyTraffic}
 
-	log.Print("before gathering providers")
 	gateways := make([]*cConfig2.Gateway, 0)
 	for i := 0; i < len(s.nodeConfigs); i++ {
 		if s.nodeConfigs[i].Gateway == nil {
@@ -185,21 +200,16 @@ func (s *katzenpost) genClient2Cfg(net, addr string) error {
 		gateways = append(gateways, gateway)
 	}
 	if len(gateways) == 0 {
-		panic("wtf 0 providers")
+		panic("wtf 0 gateways")
 	}
-	log.Print("after gathering providers")
 	cfg.PinnedGateways = &cConfig2.Gateways{
 		Gateways: gateways,
 	}
-
-	log.Print("before save config")
 	err := saveCfg(cfg, s.outDir)
 	if err != nil {
-		log.Printf("save config failure %s", err.Error())
+		log.Printf("save client2 config failure %s", err.Error())
 		return err
 	}
-	log.Print("after save config")
-	log.Print("genClient2Cfg end")
 	return nil
 }
 
@@ -246,9 +256,80 @@ func write(f *os.File, str string, args ...interface{}) {
 	}
 }
 
-func (s *katzenpost) genNodeConfig(isGateway, isServiceNode bool, isVoting bool) error {
-	const serverLogFile = "katzenpost.log"
+func (s *katzenpost) genCourierConfig(datadir string) *courierConfig.Config {
+	authorities := make([]*vConfig.Authority, 0, len(s.authorities))
+	i := 0
+	for _, auth := range s.authorities {
+		authorities = append(authorities, auth)
+		i += 1
+	}
+	sort.Sort(AuthById(authorities))
+	pki := &courierConfig.PKI{
+		Voting: &courierConfig.Voting{
+			Authorities: authorities,
+		},
+	}
+	const logFile = "courier.log"
+	logPath := filepath.Join(datadir, logFile)
+	return &courierConfig.Config{
+		PKI:              pki,
+		Logging:          &courierConfig.Logging{File: logPath, Level: debugLogLevel},
+		WireKEMScheme:    s.wireKEMScheme,
+		PKIScheme:        s.pkiSignatureScheme.Name(),
+		EnvelopeScheme:   s.replicaNIKEScheme.Name(),
+		DataDir:          datadir,
+		SphinxGeometry:   s.sphinxGeometry,
+		ConnectTimeout:   config.DefaultConnectTimeout,
+		HandshakeTimeout: config.DefaultHandshakeTimeout,
+		ReauthInterval:   config.DefaultReauthInterval,
+	}
+}
 
+func (s *katzenpost) genReplicaNodeConfig() error {
+	log.Print("genReplicaNodeConfig")
+
+	cfg := new(rConfig.Config)
+
+	cfg.Identifier = fmt.Sprintf("replica%d", s.replicaNodeIdx+1)
+	cfg.SphinxGeometry = s.sphinxGeometry
+	cfg.WireKEMScheme = s.wireKEMScheme
+	cfg.ReplicaNIKEScheme = s.replicaNIKEScheme.Name()
+	cfg.PKISignatureScheme = s.pkiSignatureScheme.Name()
+
+	cfg.Addresses = []string{fmt.Sprintf(tcpAddrFormat, s.lastReplicaPort)}
+	s.lastReplicaPort++
+
+	cfg.DataDir = filepath.Join(s.baseDir, cfg.Identifier)
+	os.Mkdir(filepath.Join(s.outDir, cfg.Identifier), 0700)
+
+	authorities := make([]*vConfig.Authority, 0, len(s.authorities))
+	i := 0
+	for _, auth := range s.authorities {
+		authorities = append(authorities, auth)
+		i += 1
+	}
+
+	sort.Sort(AuthById(authorities))
+	cfg.PKI = &rConfig.PKI{
+		Voting: &rConfig.Voting{
+			Authorities: authorities,
+		},
+	}
+
+	cfg.Logging = new(rConfig.Logging)
+	cfg.Logging.File = serverLogFile
+	//cfg.Logging.Level = s.logLevel
+	cfg.Logging.Level = debugLogLevel
+
+	s.replicaNodeConfigs = append(s.replicaNodeConfigs, cfg)
+	_ = cfgIdKey(cfg, s.outDir)
+	_ = cfgLinkKey(cfg, s.outDir, s.wireKEMScheme)
+
+	s.replicaNodeIdx++
+	return cfg.FixupAndValidate(false)
+}
+
+func (s *katzenpost) genNodeConfig(isGateway, isServiceNode bool, isVoting bool) error {
 	n := fmt.Sprintf("mix%d", s.nodeIdx+1)
 	if isGateway {
 		n = fmt.Sprintf("gateway%d", s.gatewayIdx+1)
@@ -265,11 +346,11 @@ func (s *katzenpost) genNodeConfig(isGateway, isServiceNode bool, isVoting bool)
 	cfg.Server.PKISignatureScheme = s.pkiSignatureScheme.Name()
 	cfg.Server.Identifier = n
 	if isGateway {
-		cfg.Server.Addresses = []string{fmt.Sprintf("tcp://127.0.0.1:%d", s.lastPort)}
-		cfg.Server.BindAddresses = []string{fmt.Sprintf("tcp://127.0.0.1:%d", s.lastPort)}
+		cfg.Server.Addresses = []string{fmt.Sprintf(tcpAddrFormat, s.lastPort)}
+		cfg.Server.BindAddresses = []string{fmt.Sprintf(tcpAddrFormat, s.lastPort)}
 		s.lastPort += 2
 	} else {
-		cfg.Server.Addresses = []string{fmt.Sprintf("tcp://127.0.0.1:%d", s.lastPort)}
+		cfg.Server.Addresses = []string{fmt.Sprintf(tcpAddrFormat, s.lastPort)}
 		s.lastPort += 2
 	}
 	cfg.Server.DataDir = filepath.Join(s.baseDir, n)
@@ -320,9 +401,42 @@ func (s *katzenpost) genNodeConfig(isGateway, isServiceNode bool, isVoting bool)
 		// Enable the thwack interface.
 		s.serviceNodeIdx++
 
-		// configure an entry provider or a spool storage provider
 		cfg.ServiceNode = &sConfig.ServiceNode{}
 
+		serviceNodeDataDir := filepath.Join(s.outDir, cfg.Server.Identifier)
+		courierDataDir := filepath.Join(serviceNodeDataDir, courierService)
+		os.Mkdir(courierDataDir, 0700)
+
+		internalCourierDatadir := filepath.Join(s.baseDir, cfg.Server.Identifier, courierService)
+		courierCfg := s.genCourierConfig(internalCourierDatadir)
+
+		linkPubKey := cfgLinkKey(courierCfg, courierDataDir, courierCfg.WireKEMScheme)
+		linkBlob := kempem.ToPublicPEMString(linkPubKey)
+
+		err := saveCfg(courierCfg, serviceNodeDataDir)
+		if err != nil {
+			return fmt.Errorf("failed to write courier config: %s", err)
+		}
+		advertizeableCourierCfgPath := s.baseDir + "/" + cfg.Server.Identifier + "/" + courierService + "/courier.toml"
+		advert := make(map[string]map[string]interface{})
+		advert[courierService] = make(map[string]interface{})
+		advert[courierService]["linkPublicKey"] = linkBlob
+
+		// "courier" service is described in our paper, it's used to communicate
+		// with the storage replicas to form the Pigeonhole storage system.
+		courierPluginCfg := &sConfig.CBORPluginKaetzchen{
+			Capability:        courierService,
+			Endpoint:          courierService,
+			Command:           s.baseDir + "/courier" + s.binSuffix,
+			MaxConcurrency:    1,
+			PKIAdvertizedData: advert,
+			Config: map[string]interface{}{
+				"c": advertizeableCourierCfgPath,
+			},
+		}
+
+		// NOTE: "map" service is an alternative storage service which does NOT
+		// have all the cool privacy properties that the protocol in our paper describes.
 		mapCfg := &sConfig.CBORPluginKaetzchen{
 			Capability:     "map",
 			Endpoint:       "+map",
@@ -333,26 +447,21 @@ func (s *katzenpost) genNodeConfig(isGateway, isServiceNode bool, isVoting bool)
 				"log_dir": s.baseDir + "/" + cfg.Server.Identifier,
 			},
 		}
-
-		cfg.ServiceNode.CBORPluginKaetzchen = []*sConfig.CBORPluginKaetzchen{mapCfg}
-
-		// Add a single instance of a http proxy for a service listening on port 4242
-		if !s.hasProxy {
-			proxyCfg := &sConfig.CBORPluginKaetzchen{
-				Capability:     "http",
-				Endpoint:       "+http",
-				Command:        s.baseDir + "/proxy_server" + s.binSuffix,
-				MaxConcurrency: 1,
-				Config: map[string]interface{}{
-					// allow connections to localhost:4242
-					"host":      "localhost:4242",
-					"log_dir":   s.baseDir + "/" + cfg.Server.Identifier,
-					"log_level": "DEBUG",
-				},
-			}
-			cfg.ServiceNode.CBORPluginKaetzchen = append(cfg.ServiceNode.CBORPluginKaetzchen, proxyCfg)
-			s.hasProxy = true
+		proxyCfg := &sConfig.CBORPluginKaetzchen{
+			Capability:     "http",
+			Endpoint:       "+http",
+			Command:        s.baseDir + "/proxy_server" + s.binSuffix,
+			MaxConcurrency: 1,
+			Config: map[string]interface{}{
+				// allow connections to localhost:4242
+				"host":      "localhost:4242",
+				"log_dir":   s.baseDir + "/" + cfg.Server.Identifier,
+				"log_level": debugLogLevel,
+			},
 		}
+
+		cfg.ServiceNode.CBORPluginKaetzchen = []*sConfig.CBORPluginKaetzchen{courierPluginCfg, mapCfg, proxyCfg}
+
 		cfg.Debug.NumKaetzchenWorkers = 4
 
 		echoCfg := new(sConfig.Kaetzchen)
@@ -389,15 +498,15 @@ func (s *katzenpost) genVotingAuthoritiesCfg(numAuthorities int, parameters *vCo
 		cfg.Server = &vConfig.Server{
 			WireKEMScheme:      s.wireKEMScheme,
 			PKISignatureScheme: s.pkiSignatureScheme.Name(),
-			Identifier:         fmt.Sprintf("auth%d", i),
-			Addresses:          []string{fmt.Sprintf("tcp://127.0.0.1:%d", s.lastPort)},
-			DataDir:            filepath.Join(s.baseDir, fmt.Sprintf("auth%d", i)),
+			Identifier:         fmt.Sprintf(authNodeFormat, i),
+			Addresses:          []string{fmt.Sprintf(tcpAddrFormat, s.lastPort)},
+			DataDir:            filepath.Join(s.baseDir, fmt.Sprintf(authNodeFormat, i)),
 		}
 		os.Mkdir(filepath.Join(s.outDir, cfg.Server.Identifier), 0700)
 		s.lastPort += 1
 		cfg.Logging = &vConfig.Logging{
 			Disable: false,
-			File:    "katzenpost.log",
+			File:    serverLogFile,
 			Level:   s.logLevel,
 		}
 		cfg.Parameters = parameters
@@ -410,7 +519,7 @@ func (s *katzenpost) genVotingAuthoritiesCfg(numAuthorities int, parameters *vCo
 		idKey := cfgIdKey(cfg, s.outDir)
 		linkKey := cfgLinkKey(cfg, s.outDir, wirekem)
 		authority := &vConfig.Authority{
-			Identifier:         fmt.Sprintf("auth%d", i),
+			Identifier:         fmt.Sprintf(authNodeFormat, i),
 			IdentityPublicKey:  idKey,
 			LinkPublicKey:      linkKey,
 			WireKEMScheme:      wirekem,
@@ -433,14 +542,23 @@ func (s *katzenpost) genVotingAuthoritiesCfg(numAuthorities int, parameters *vCo
 	return nil
 }
 
-func (s *katzenpost) genAuthorizedNodes() ([]*vConfig.Node, []*vConfig.Node, []*vConfig.Node, error) {
+func (s *katzenpost) genAuthorizedNodes() ([]*vConfig.Node, []*vConfig.Node, []*vConfig.Node, []*vConfig.Node, error) {
+	replicas := []*vConfig.Node{}
+	for _, replicaCfg := range s.replicaNodeConfigs {
+		node := &vConfig.Node{
+			Identifier:           replicaCfg.Identifier,
+			IdentityPublicKeyPem: filepath.Join("../", replicaCfg.Identifier, identityPublicKeyFile),
+		}
+		replicas = append(replicas, node)
+	}
+
 	mixes := []*vConfig.Node{}
 	gateways := []*vConfig.Node{}
 	serviceNodes := []*vConfig.Node{}
 	for _, nodeCfg := range s.nodeConfigs {
 		node := &vConfig.Node{
 			Identifier:           nodeCfg.Server.Identifier,
-			IdentityPublicKeyPem: filepath.Join("../", nodeCfg.Server.Identifier, "identity.public.pem"),
+			IdentityPublicKeyPem: filepath.Join("../", nodeCfg.Server.Identifier, identityPublicKeyFile),
 		}
 		if nodeCfg.Server.IsGatewayNode {
 			gateways = append(gateways, node)
@@ -450,11 +568,13 @@ func (s *katzenpost) genAuthorizedNodes() ([]*vConfig.Node, []*vConfig.Node, []*
 			mixes = append(mixes, node)
 		}
 	}
+
+	sort.Sort(NodeById(replicas))
 	sort.Sort(NodeById(mixes))
 	sort.Sort(NodeById(gateways))
 	sort.Sort(NodeById(serviceNodes))
 
-	return gateways, serviceNodes, mixes, nil
+	return replicas, gateways, serviceNodes, mixes, nil
 }
 
 func main() {
@@ -462,8 +582,9 @@ func main() {
 	nrLayers := flag.Int("L", nrLayers, "Number of layers.")
 	nrNodes := flag.Int("n", nrNodes, "Number of mixes.")
 
-	nrGateways := flag.Int("gateways", nrGateways, "Number of gateways.")
-	nrServiceNodes := flag.Int("serviceNodes", nrServiceNodes, "Number of providers.")
+	nrGateways := flag.Int("gateways", nrGateways, "Number of gateway nodes.")
+	nrServiceNodes := flag.Int("serviceNodes", nrServiceNodes, "Number of service nodes.")
+	nrStorageNodes := flag.Int("storageNodes", nrStorageNodes, "Number of storage replica nodes.")
 
 	voting := flag.Bool("v", false, "Generate voting configuration")
 	nrVoting := flag.Int("nv", nrAuthorities, "Generate voting configuration")
@@ -473,11 +594,12 @@ func main() {
 	outDir := flag.String("o", "", "Path to write files to")
 	dockerImage := flag.String("d", "katzenpost-go_mod", "Docker image for compose-compose")
 	binSuffix := flag.String("S", "", "suffix for binaries in docker-compose.yml")
-	logLevel := flag.String("log_level", "DEBUG", "logging level could be set to: DEBUG, INFO, NOTICE, WARNING, ERROR, CRITICAL")
+	logLevel := flag.String("log_level", debugLogLevel, "logging level could be set to: DEBUG, INFO, NOTICE, WARNING, ERROR, CRITICAL")
 	omitTopology := flag.Bool("D", false, "Dynamic topology (omit fixed topology definition)")
 	wirekem := flag.String("wirekem", "", "Name of the KEM Scheme to be used with wire protocol")
 	kem := flag.String("kem", "", "Name of the KEM Scheme to be used with Sphinx")
 	nike := flag.String("nike", "x25519", "Name of the NIKE Scheme to be used with Sphinx")
+
 	UserForwardPayloadLength := flag.Int("UserForwardPayloadLength", 2000, "UserForwardPayloadLength")
 	pkiSignatureScheme := flag.String("pkiScheme", "ed25519", "PKI Signature Scheme to be used")
 	noDecoy := flag.Bool("noDecoy", true, "Disable decoy traffic for the client")
@@ -539,6 +661,7 @@ func main() {
 	s.binSuffix = *binSuffix
 	s.basePort = uint16(*basePort)
 	s.lastPort = s.basePort + 1
+	s.lastReplicaPort = s.basePort + 3000
 	s.bindAddr = *bindAddr
 	s.logLevel = *logLevel
 	s.debugConfig = &cConfig.Debug{
@@ -583,6 +706,14 @@ func main() {
 		s.pkiSignatureScheme = signScheme
 	}
 
+	s.replicaNIKEScheme = replicaCommon.NikeScheme
+
+	// Generate pigeonhole geometry once for use in both client2 and thin client configs
+	s.pigeonholeGeometry, err = pigeonholeGeo.NewGeometryFromSphinx(s.sphinxGeometry, s.replicaNIKEScheme)
+	if err != nil {
+		log.Fatalf("Failed to create pigeonhole geometry: %v", err)
+	}
+
 	os.Mkdir(s.outDir, 0700)
 	os.Mkdir(filepath.Join(s.outDir, s.baseDir), 0700)
 
@@ -597,29 +728,41 @@ func main() {
 	// Generate the gateway configs.
 	for i := 0; i < *nrGateways; i++ {
 		if err = s.genNodeConfig(true, false, *voting); err != nil {
-			log.Fatalf("Failed to generate provider config: %v", err)
+			log.Fatalf("Failed to generate gateway config: %v", err)
 		}
 	}
 	// Generate the service node configs.
 	for i := 0; i < *nrServiceNodes; i++ {
 		if err = s.genNodeConfig(false, true, *voting); err != nil {
-			log.Fatalf("Failed to generate provider config: %v", err)
+			log.Fatalf("Failed to generate service node config: %v", err)
 		}
 	}
 
 	// Generate the mix node configs.
 	for i := 0; i < *nrNodes; i++ {
 		if err = s.genNodeConfig(false, false, *voting); err != nil {
-			log.Fatalf("Failed to generate node config: %v", err)
+			log.Fatalf("Failed to generate mix node config: %v", err)
 		}
 	}
+
+	// Pigeonhole storage replica node configs.
+	for i := 0; i < *nrStorageNodes; i++ {
+		if err = s.genReplicaNodeConfig(); err != nil {
+			log.Fatalf("Failed to generate storage replica node config: %v", err)
+		}
+	}
+
 	// Generate the authority config
 	if *voting {
-		gateways, serviceNodes, mixes, err := s.genAuthorizedNodes()
+		replicas, gateways, serviceNodes, mixes, err := s.genAuthorizedNodes()
 		if err != nil {
 			panic(err)
 		}
 		for _, vCfg := range s.votingAuthConfigs {
+
+			for _, k := range replicas {
+				vCfg.StorageReplicas = append(vCfg.StorageReplicas, k)
+			}
 			vCfg.Mixes = mixes
 			vCfg.GatewayNodes = gateways
 			vCfg.ServiceNodes = serviceNodes
@@ -645,6 +788,13 @@ func main() {
 	// write the mixes keys and configs to disk
 	for _, v := range s.nodeConfigs {
 		if err := saveCfg(v, *outDir); err != nil {
+			log.Fatalf("saveCfg failure: %s", err)
+		}
+	}
+
+	// replicas
+	for _, r := range s.replicaNodeConfigs {
+		if err := saveCfg(r, *outDir); err != nil {
 			log.Fatalf("saveCfg failure: %s", err)
 		}
 	}
@@ -680,17 +830,21 @@ func main() {
 func identifier(cfg interface{}) string {
 	switch cfg.(type) {
 	case *cConfig.Config:
-		return "client"
+		return clientIdentifier
 	case *cConfig2.Config:
-		return "client2"
+		return client2Identifier
 	case *thin.Config:
-		return "client2"
-	case *sConfig.Config:
-		return cfg.(*sConfig.Config).Server.Identifier
+		return client2Identifier
 	case *vConfig.Config:
 		return cfg.(*vConfig.Config).Server.Identifier
+	case *sConfig.Config:
+		return cfg.(*sConfig.Config).Server.Identifier
+	case *rConfig.Config:
+		return cfg.(*rConfig.Config).Identifier
+	case *courierConfig.Config:
+		return courierService
 	default:
-		log.Fatalf("identifier() passed unexpected type")
+		log.Fatalf("identifier() passed unexpected type %v", cfg)
 		return ""
 	}
 }
@@ -698,13 +852,17 @@ func identifier(cfg interface{}) string {
 func toml_name(cfg interface{}) string {
 	switch cfg.(type) {
 	case *cConfig.Config:
-		return "client"
+		return clientIdentifier
 	case *cConfig2.Config:
-		return "client"
+		return clientIdentifier
 	case *thin.Config:
 		return "thinclient"
 	case *sConfig.Config:
 		return "katzenpost"
+	case *rConfig.Config:
+		return "replica"
+	case *courierConfig.Config:
+		return courierService
 	case *vConfig.Config:
 		return "authority"
 	default:
@@ -715,7 +873,7 @@ func toml_name(cfg interface{}) string {
 
 func saveCfg(cfg interface{}, outDir string) error {
 	fileName := filepath.Join(outDir, identifier(cfg), fmt.Sprintf("%s.toml", toml_name(cfg)))
-	log.Printf("writing %s", fileName)
+	log.Printf(writingLogFormat, fileName)
 	f, err := os.Create(fileName)
 	if err != nil {
 		return fmt.Errorf("os.Create(%s) failed: %s", fileName, err)
@@ -731,13 +889,17 @@ func cfgIdKey(cfg interface{}, outDir string) sign.PublicKey {
 	var priv, public string
 	var pkiSignatureScheme string
 	switch cfg.(type) {
+	case *rConfig.Config:
+		priv = filepath.Join(outDir, cfg.(*rConfig.Config).Identifier, identityPrivateKeyFile)
+		public = filepath.Join(outDir, cfg.(*rConfig.Config).Identifier, identityPublicKeyFile)
+		pkiSignatureScheme = cfg.(*rConfig.Config).PKISignatureScheme
 	case *sConfig.Config:
-		priv = filepath.Join(outDir, cfg.(*sConfig.Config).Server.Identifier, "identity.private.pem")
-		public = filepath.Join(outDir, cfg.(*sConfig.Config).Server.Identifier, "identity.public.pem")
+		priv = filepath.Join(outDir, cfg.(*sConfig.Config).Server.Identifier, identityPrivateKeyFile)
+		public = filepath.Join(outDir, cfg.(*sConfig.Config).Server.Identifier, identityPublicKeyFile)
 		pkiSignatureScheme = cfg.(*sConfig.Config).Server.PKISignatureScheme
 	case *vConfig.Config:
-		priv = filepath.Join(outDir, cfg.(*vConfig.Config).Server.Identifier, "identity.private.pem")
-		public = filepath.Join(outDir, cfg.(*vConfig.Config).Server.Identifier, "identity.public.pem")
+		priv = filepath.Join(outDir, cfg.(*vConfig.Config).Server.Identifier, identityPrivateKeyFile)
+		public = filepath.Join(outDir, cfg.(*vConfig.Config).Server.Identifier, identityPublicKeyFile)
 		pkiSignatureScheme = cfg.(*vConfig.Config).Server.PKISignatureScheme
 	default:
 		panic("wrong type")
@@ -753,9 +915,9 @@ func cfgIdKey(cfg interface{}, outDir string) sign.PublicKey {
 		return idPubKey
 	}
 	idPubKey, idKey, err := scheme.GenerateKey()
-	log.Printf("writing %s", priv)
+	log.Printf(writingLogFormat, priv)
 	signpem.PrivateKeyToFile(priv, idKey)
-	log.Printf("writing %s", public)
+	log.Printf(writingLogFormat, public)
 	signpem.PublicKeyToFile(public, idPubKey)
 	return idPubKey
 }
@@ -765,12 +927,18 @@ func cfgLinkKey(cfg interface{}, outDir string, kemScheme string) kem.PublicKey 
 	var linkpublic string
 
 	switch cfg.(type) {
+	case *rConfig.Config:
+		linkpriv = filepath.Join(outDir, cfg.(*rConfig.Config).Identifier, linkPrivateKeyFile)
+		linkpublic = filepath.Join(outDir, cfg.(*rConfig.Config).Identifier, linkPublicKeyFile)
 	case *sConfig.Config:
-		linkpriv = filepath.Join(outDir, cfg.(*sConfig.Config).Server.Identifier, "link.private.pem")
-		linkpublic = filepath.Join(outDir, cfg.(*sConfig.Config).Server.Identifier, "link.public.pem")
+		linkpriv = filepath.Join(outDir, cfg.(*sConfig.Config).Server.Identifier, linkPrivateKeyFile)
+		linkpublic = filepath.Join(outDir, cfg.(*sConfig.Config).Server.Identifier, linkPublicKeyFile)
 	case *vConfig.Config:
-		linkpriv = filepath.Join(outDir, cfg.(*vConfig.Config).Server.Identifier, "link.private.pem")
-		linkpublic = filepath.Join(outDir, cfg.(*vConfig.Config).Server.Identifier, "link.public.pem")
+		linkpriv = filepath.Join(outDir, cfg.(*vConfig.Config).Server.Identifier, linkPrivateKeyFile)
+		linkpublic = filepath.Join(outDir, cfg.(*vConfig.Config).Server.Identifier, linkPublicKeyFile)
+	case *courierConfig.Config:
+		linkpriv = filepath.Join(outDir, linkPrivateKeyFile)
+		linkpublic = filepath.Join(outDir, linkPublicKeyFile)
 	default:
 		panic("wrong type")
 	}
@@ -780,12 +948,12 @@ func cfgLinkKey(cfg interface{}, outDir string, kemScheme string) kem.PublicKey 
 		panic(err)
 	}
 
-	log.Printf("writing %s", linkpriv)
+	log.Printf(writingLogFormat, linkpriv)
 	err = kempem.PrivateKeyToFile(linkpriv, linkPrivKey)
 	if err != nil {
 		panic(err)
 	}
-	log.Printf("writing %s", linkpublic)
+	log.Printf(writingLogFormat, linkpublic)
 	err = kempem.PublicKeyToFile(linkpublic, linkPubKey)
 	if err != nil {
 		panic(err)
@@ -795,7 +963,7 @@ func cfgLinkKey(cfg interface{}, outDir string, kemScheme string) kem.PublicKey 
 
 func (s *katzenpost) genPrometheus() error {
 	dest := filepath.Join(s.outDir, "prometheus.yml")
-	log.Printf("writing %s", dest)
+	log.Printf(writingLogFormat, dest)
 
 	f, err := os.Create(dest)
 
@@ -822,7 +990,7 @@ scrape_configs:
 
 func (s *katzenpost) genDockerCompose(dockerImage string) error {
 	dest := filepath.Join(s.outDir, "docker-compose.yml")
-	log.Printf("writing %s", dest)
+	log.Printf(writingLogFormat, dest)
 	f, err := os.Create(dest)
 
 	if err != nil {
@@ -831,7 +999,7 @@ func (s *katzenpost) genDockerCompose(dockerImage string) error {
 
 	defer f.Close()
 
-	gateways, serviceNodes, mixes, err := s.genAuthorizedNodes()
+	replicas, gateways, serviceNodes, mixes, err := s.genAuthorizedNodes()
 
 	if err != nil {
 		log.Fatal(err)
@@ -895,6 +1063,30 @@ services:
       - %s`, authCfg.Server.Identifier)
 		}
 	}
+
+	// pigeonhole storage replicas
+	for i := range replicas {
+		// mixes in this form don't have their identifiers, because that isn't
+		// part of the consensus. if/when that is fixed this could use that
+		// identifier; instead it duplicates the definition of the name format
+		// here.
+		write(f, `
+  replica%d:
+    restart: "no"
+    image: %s
+    volumes:
+      - ./:%s
+    command: %s/replica%s -f %s/replica%d/replica.toml
+    network_mode: host
+    depends_on:`, i+1, dockerImage, s.baseDir, s.baseDir, s.binSuffix, s.baseDir, i+1)
+		for _, authCfg := range s.votingAuthConfigs {
+			// is this depends_on stuff actually necessary?
+			// there was a bit more of it before this function was regenerating docker-compose.yaml...
+			write(f, `
+      - %s`, authCfg.Server.Identifier)
+		}
+	}
+
 	for _, authCfg := range s.votingAuthConfigs {
 		write(f, `
   %s:

@@ -11,12 +11,16 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os"
 	"strings"
 	"sync"
+	"time"
 
+	"github.com/BurntSushi/toml"
 	"github.com/fxamacker/cbor/v2"
 	"gopkg.in/op/go-logging.v1"
 
+	"github.com/katzenpost/hpqc/bacap"
 	"github.com/katzenpost/hpqc/rand"
 
 	"github.com/katzenpost/katzenpost/client2/common"
@@ -26,9 +30,20 @@ import (
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/worker"
+	pigeonholeGeo "github.com/katzenpost/katzenpost/pigeonhole/geo"
 )
 
-const MessageIDLength = 16
+const (
+	MessageIDLength = 16
+)
+
+var (
+	// Error variables for reuse
+	errContextCannotBeNil   = errors.New("context cannot be nil")
+	errChannelIDCannotBeNil = errors.New("channelID cannot be nil")
+	errConnectionLost       = errors.New("connection lost")
+	errHalting              = errors.New("halting")
+)
 
 // ThinResponse is used to encapsulate a message response
 // that are passed to the client application.
@@ -75,6 +90,9 @@ type ThinClient struct {
 	sentWaitChanMap  sync.Map // MessageID -> chan error
 	replyWaitChanMap sync.Map // MessageID -> chan *MessageReplyEvent
 
+	// used by ReadChannel only
+	readChannelWaitChanMap sync.Map // MessageID -> chan *ReadChannelReply
+
 	closeOnce sync.Once
 }
 
@@ -82,6 +100,9 @@ type ThinClient struct {
 type Config struct {
 	// SphinxGeometry is the Sphinx geometry used by the client daemon that this thin client will connect to.
 	SphinxGeometry *geo.Geometry
+
+	// PigeonholeGeometry is the pigeonhole geometry used for payload size validation.
+	PigeonholeGeometry *pigeonholeGeo.Geometry
 
 	// Network is the client daemon's listening network.
 	Network string
@@ -91,15 +112,46 @@ type Config struct {
 }
 
 func FromConfig(cfg *config.Config) *Config {
-	return &Config{
-		SphinxGeometry: cfg.SphinxGeometry,
-		Network:        cfg.ListenNetwork,
-		Address:        cfg.ListenAddress,
+	if cfg.SphinxGeometry == nil {
+		panic("SphinxGeometry cannot be nil")
 	}
+	if cfg.PigeonholeGeometry == nil {
+		panic("PigeonholeGeometry cannot be nil")
+	}
+
+	return &Config{
+		SphinxGeometry:     cfg.SphinxGeometry,
+		PigeonholeGeometry: cfg.PigeonholeGeometry,
+		Network:            cfg.ListenNetwork,
+		Address:            cfg.ListenAddress,
+	}
+}
+
+// LoadFile loads a thin client configuration from a TOML file.
+func LoadFile(filename string) (*Config, error) {
+	b, err := os.ReadFile(filename)
+	if err != nil {
+		return nil, err
+	}
+
+	cfg := new(Config)
+	err = toml.Unmarshal(b, cfg)
+	if err != nil {
+		return nil, err
+	}
+
+	return cfg, nil
 }
 
 // NewThinClient creates a new thing client.
 func NewThinClient(cfg *Config, logging *config.Logging) *ThinClient {
+	if cfg.SphinxGeometry == nil {
+		panic("SphinxGeometry cannot be nil")
+	}
+	if cfg.PigeonholeGeometry == nil {
+		panic("PigeonholeGeometry cannot be nil")
+	}
+
 	logBackend, err := log.New(logging.File, logging.Level, logging.Disable)
 	if err != nil {
 		panic(err)
@@ -134,7 +186,7 @@ func (t *ThinClient) GetLogger(prefix string) *logging.Logger {
 func (t *ThinClient) Close() error {
 
 	req := &Request{
-		IsThinClose: true,
+		ThinClose: &ThinClose{},
 	}
 	err := t.writeMessage(req)
 	if err != nil {
@@ -198,6 +250,17 @@ func (t *ThinClient) Dial() error {
 }
 
 func (t *ThinClient) writeMessage(request *Request) error {
+	// Check payload size for SendMessage and SendARQMessage
+	var payload []byte
+	if request.SendMessage != nil {
+		payload = request.SendMessage.Payload
+	} else if request.SendARQMessage != nil {
+		payload = request.SendARQMessage.Payload
+	}
+	if payload != nil && len(payload) > t.cfg.SphinxGeometry.UserForwardPayloadLength {
+		return fmt.Errorf("payload size %d exceeds maximum allowed size %d", len(payload), t.cfg.SphinxGeometry.UserForwardPayloadLength)
+	}
+
 	blob, err := cbor.Marshal(request)
 	if err != nil {
 		return err
@@ -348,6 +411,56 @@ func (t *ThinClient) worker() {
 					return
 				}
 			}
+		case message.CreateChannelReply != nil:
+			t.log.Debug("CreateChannelReply")
+			select {
+			case t.eventSink <- message.CreateChannelReply:
+				continue
+			case <-t.HaltCh():
+				return
+			}
+		case message.CreateReadChannelReply != nil:
+			t.log.Debug("CreateReadChannelReply")
+			select {
+			case t.eventSink <- message.CreateReadChannelReply:
+				continue
+			case <-t.HaltCh():
+				return
+			}
+		case message.WriteChannelReply != nil:
+			t.log.Debug("WriteChannelReply")
+			select {
+			case t.eventSink <- message.WriteChannelReply:
+				continue
+			case <-t.HaltCh():
+				return
+			}
+		case message.ReadChannelReply != nil:
+			t.log.Debugf("ReadChannelReply: MessageID %x, ChannelID %x, Payload size %d bytes",
+				message.ReadChannelReply.MessageID[:], message.ReadChannelReply.ChannelID[:], len(message.ReadChannelReply.Payload))
+			isDirectReply := false
+			if message.ReadChannelReply.MessageID != nil {
+				readWaitChanRaw, ok := t.readChannelWaitChanMap.Load(*message.ReadChannelReply.MessageID)
+				if ok {
+					isDirectReply = true
+					readWaitChan := readWaitChanRaw.(chan *ReadChannelReply)
+					select {
+					case readWaitChan <- message.ReadChannelReply:
+					case <-t.HaltCh():
+						return
+					}
+				} else {
+					t.log.Debugf("No wait channel found for MessageID %x", message.ReadChannelReply.MessageID[:])
+				}
+			}
+			if !isDirectReply {
+				select {
+				case t.eventSink <- message.ReadChannelReply:
+					continue
+				case <-t.HaltCh():
+					return
+				}
+			}
 		default:
 			t.log.Error("bug: received invalid thin client message")
 		}
@@ -378,18 +491,25 @@ func (t *ThinClient) eventSinkWorker() {
 			// stop thread on shutdown
 			return
 		case drain := <-t.drainAdd:
+			// Only add buffered channels to prevent blocking
+			if cap(drain) == 0 {
+				t.log.Warning("Attempting to add unbuffered channel to eventSink drains - ignoring")
+				continue
+			}
 			drains[drain] = struct{}{}
 		case drain := <-t.drainRemove:
 			delete(drains, drain)
 		case event := <-t.eventSink:
 			bad := make([]chan Event, 0)
-			for drain, _ := range drains {
+			for drain := range drains {
 				select {
 				case <-t.HaltCh():
 					return
 				case drain <- event:
-				default:
-					t.log.Errorf("BUG: removing unresponsive channel from eventSink drains")
+					// Successfully sent event
+				case <-time.After(100 * time.Millisecond):
+					// Channel blocked for too long
+					t.log.Warning("Removing unresponsive channel from eventSink drains")
 					bad = append(bad, drain)
 				}
 			}
@@ -465,11 +585,12 @@ func (t *ThinClient) NewSURBID() *[sConstants.SURBIDLength]byte {
 // No reply will be possible.
 func (t *ThinClient) SendMessageWithoutReply(payload []byte, destNode *[32]byte, destQueue []byte) error {
 	req := &Request{
-		WithSURB:          false,
-		IsSendOp:          true,
-		Payload:           payload,
-		DestinationIdHash: destNode,
-		RecipientQueueID:  destQueue,
+		SendMessage: &SendMessage{
+			WithSURB:          false,
+			Payload:           payload,
+			DestinationIdHash: destNode,
+			RecipientQueueID:  destQueue,
+		},
 	}
 
 	return t.writeMessage(req)
@@ -485,12 +606,13 @@ func (t *ThinClient) SendMessage(surbID *[sConstants.SURBIDLength]byte, payload 
 		return errors.New("surbID cannot be nil")
 	}
 	req := &Request{
-		SURBID:            surbID,
-		WithSURB:          true,
-		IsSendOp:          true,
-		Payload:           payload,
-		DestinationIdHash: destNode,
-		RecipientQueueID:  destQueue,
+		SendMessage: &SendMessage{
+			SURBID:            surbID,
+			WithSURB:          true,
+			Payload:           payload,
+			DestinationIdHash: destNode,
+			RecipientQueueID:  destQueue,
+		},
 	}
 
 	return t.writeMessage(req)
@@ -499,7 +621,7 @@ func (t *ThinClient) SendMessage(surbID *[sConstants.SURBIDLength]byte, payload 
 // BlockingSendMessage blocks until a reply is received and returns it or an error.
 func (t *ThinClient) BlockingSendMessage(ctx context.Context, payload []byte, destNode *[32]byte, destQueue []byte) ([]byte, error) {
 	if ctx == nil {
-		return nil, errors.New("context cannot be nil")
+		return nil, errContextCannotBeNil
 	}
 	surbID := t.NewSURBID()
 	eventSink := t.EventSink()
@@ -516,7 +638,7 @@ func (t *ThinClient) BlockingSendMessage(ctx context.Context, payload []byte, de
 			return nil, ctx.Err()
 		case event = <-eventSink:
 		case <-t.HaltCh():
-			return nil, errors.New("halting")
+			return nil, errHalting
 		}
 
 		switch v := event.(type) {
@@ -525,7 +647,7 @@ func (t *ThinClient) BlockingSendMessage(ctx context.Context, payload []byte, de
 		case *ConnectionStatusEvent:
 			t.log.Info("ConnectionStatusEvent")
 			if !v.IsConnected {
-				panic("socket connection lost")
+				panic(errConnectionLost)
 			}
 		case *NewDocumentEvent:
 			t.log.Info("NewPKIDocumentEvent")
@@ -547,12 +669,13 @@ func (t *ThinClient) BlockingSendMessage(ctx context.Context, payload []byte, de
 
 func (t *ThinClient) SendReliableMessage(messageID *[MessageIDLength]byte, payload []byte, destNode *[32]byte, destQueue []byte) error {
 	req := &Request{
-		ID:                messageID,
-		WithSURB:          true,
-		IsARQSendOp:       true,
-		Payload:           payload,
-		DestinationIdHash: destNode,
-		RecipientQueueID:  destQueue,
+		SendARQMessage: &SendARQMessage{
+			ID:                messageID,
+			WithSURB:          true,
+			Payload:           payload,
+			DestinationIdHash: destNode,
+			RecipientQueueID:  destQueue,
+		},
 	}
 
 	return t.writeMessage(req)
@@ -561,7 +684,7 @@ func (t *ThinClient) SendReliableMessage(messageID *[MessageIDLength]byte, paylo
 // BlockingSendReliableMessage blocks until the message is reliably sent and the ARQ reply is received.
 func (t *ThinClient) BlockingSendReliableMessage(ctx context.Context, messageID *[MessageIDLength]byte, payload []byte, destNode *[32]byte, destQueue []byte) (reply []byte, err error) {
 	if ctx == nil {
-		return nil, errors.New("context cannot be nil")
+		return nil, errContextCannotBeNil
 	}
 
 	if messageID == nil {
@@ -573,12 +696,13 @@ func (t *ThinClient) BlockingSendReliableMessage(ctx context.Context, messageID 
 	}
 
 	req := &Request{
-		ID:                messageID,
-		WithSURB:          true,
-		IsARQSendOp:       true,
-		Payload:           payload,
-		DestinationIdHash: destNode,
-		RecipientQueueID:  destQueue,
+		SendARQMessage: &SendARQMessage{
+			ID:                messageID,
+			WithSURB:          true,
+			Payload:           payload,
+			DestinationIdHash: destNode,
+			RecipientQueueID:  destQueue,
+		},
 	}
 
 	sentWaitChan := make(chan error)
@@ -602,7 +726,7 @@ func (t *ThinClient) BlockingSendReliableMessage(ctx context.Context, messageID 
 			return nil, err
 		}
 	case <-t.HaltCh():
-		return nil, errors.New("halting")
+		return nil, errHalting
 	}
 
 	select {
@@ -614,8 +738,268 @@ func (t *ThinClient) BlockingSendReliableMessage(ctx context.Context, messageID 
 		}
 		return reply.Payload, nil
 	case <-t.HaltCh():
-		return nil, errors.New("halting")
+		return nil, errHalting
 	}
 
 	// unreachable
+}
+
+// CreateChannel creates a new pigeonhole channel and returns the channel ID and read capability.
+func (t *ThinClient) CreateChannel(ctx context.Context) (*[ChannelIDLength]byte, *bacap.UniversalReadCap, error) {
+	if ctx == nil {
+		return nil, nil, errContextCannotBeNil
+	}
+
+	req := &Request{
+		CreateChannel: &CreateChannel{},
+	}
+
+	eventSink := t.EventSink()
+	defer t.StopEventSink(eventSink)
+
+	err := t.writeMessage(req)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	for {
+		var event Event
+		select {
+		case <-ctx.Done():
+			return nil, nil, ctx.Err()
+		case event = <-eventSink:
+		case <-t.HaltCh():
+			return nil, nil, errHalting
+		}
+
+		switch v := event.(type) {
+		case *CreateChannelReply:
+			if v.Err != "" {
+				return nil, nil, errors.New(v.Err)
+			}
+			return &v.ChannelID, v.ReadCap, nil
+		case *ConnectionStatusEvent:
+			if !v.IsConnected {
+				return nil, nil, errConnectionLost
+			}
+		default:
+			// Ignore other events
+		}
+	}
+}
+
+// CreateReadChannel creates a read channel from a read capability.
+func (t *ThinClient) CreateReadChannel(ctx context.Context, readCap *bacap.UniversalReadCap) (*[ChannelIDLength]byte, error) {
+	if ctx == nil {
+		return nil, errContextCannotBeNil
+	}
+	if readCap == nil {
+		return nil, errors.New("readCap cannot be nil")
+	}
+
+	req := &Request{
+		CreateReadChannel: &CreateReadChannel{
+			ReadCap: readCap,
+		},
+	}
+
+	eventSink := t.EventSink()
+	defer t.StopEventSink(eventSink)
+
+	err := t.writeMessage(req)
+	if err != nil {
+		return nil, err
+	}
+
+	for {
+		var event Event
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case event = <-eventSink:
+		case <-t.HaltCh():
+			return nil, errHalting
+		}
+
+		switch v := event.(type) {
+		case *CreateReadChannelReply:
+			if v.Err != "" {
+				return nil, errors.New(v.Err)
+			}
+			return &v.ChannelID, nil
+		case *ConnectionStatusEvent:
+			if !v.IsConnected {
+				return nil, errConnectionLost
+			}
+		case *NewDocumentEvent:
+			// Ignore PKI document updates
+		default:
+			// Ignore other events
+		}
+	}
+}
+
+// WriteChannel writes data to a pigeonhole channel.
+func (t *ThinClient) WriteChannel(ctx context.Context, channelID *[ChannelIDLength]byte, payload []byte) error {
+	if ctx == nil {
+		return errContextCannotBeNil
+	}
+	if channelID == nil {
+		return errChannelIDCannotBeNil
+	}
+
+	// Validate payload size against pigeonhole geometry
+	if len(payload) > t.cfg.PigeonholeGeometry.BoxPayloadLength {
+		return fmt.Errorf("payload size %d exceeds maximum allowed size %d", len(payload), t.cfg.PigeonholeGeometry.BoxPayloadLength)
+	}
+
+	req := &Request{
+		WriteChannel: &WriteChannel{
+			ChannelID: *channelID,
+			Payload:   payload,
+		},
+	}
+
+	eventSink := t.EventSink()
+	defer t.StopEventSink(eventSink)
+
+	err := t.writeMessage(req)
+	if err != nil {
+		return err
+	}
+
+	for {
+		var event Event
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case event = <-eventSink:
+		case <-t.HaltCh():
+			return errHalting
+		}
+
+		switch v := event.(type) {
+		case *WriteChannelReply:
+			if v.Err != "" {
+				return errors.New(v.Err)
+			}
+			return nil
+		case *ConnectionStatusEvent:
+			if !v.IsConnected {
+				return errConnectionLost
+			}
+		case *NewDocumentEvent:
+			// Ignore PKI document updates
+		default:
+			// Ignore other events
+		}
+	}
+}
+
+// ReadChannel reads data from a pigeonhole channel.
+func (t *ThinClient) ReadChannel(ctx context.Context, channelID *[ChannelIDLength]byte, messageID *[MessageIDLength]byte) ([]byte, error) {
+	if ctx == nil {
+		return nil, errContextCannotBeNil
+	}
+	if channelID == nil {
+		return nil, errChannelIDCannotBeNil
+	}
+	if messageID == nil {
+		return nil, errors.New("messageID cannot be nil")
+	}
+
+	req := &Request{
+		ReadChannel: &ReadChannel{
+			ChannelID: *channelID,
+			ID:        messageID,
+		},
+	}
+
+	// Set up direct message ID correlation for ReadChannelReply
+	// Always create or reuse a persistent wait channel for this MessageID
+	readWaitChanRaw, exists := t.readChannelWaitChanMap.Load(*messageID)
+	var readWaitChan chan *ReadChannelReply
+	if exists {
+		readWaitChan = readWaitChanRaw.(chan *ReadChannelReply)
+	} else {
+		readWaitChan = make(chan *ReadChannelReply, 1) // Buffered to prevent blocking
+		t.readChannelWaitChanMap.Store(*messageID, readWaitChan)
+	}
+
+	err := t.writeMessage(req)
+	if err != nil {
+		return nil, err
+	}
+
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case reply := <-readWaitChan:
+		if reply.Err != "" {
+			return nil, errors.New(reply.Err)
+		}
+		return reply.Payload, nil
+	case <-t.HaltCh():
+		t.readChannelWaitChanMap.Delete(*messageID)
+		return nil, errHalting
+	}
+}
+
+// CopyChannel copies data from a pigeonhole channel to replicas via courier.
+func (t *ThinClient) CopyChannel(ctx context.Context, channelID *[ChannelIDLength]byte) error {
+	if ctx == nil {
+		return errContextCannotBeNil
+	}
+	if channelID == nil {
+		return errChannelIDCannotBeNil
+	}
+
+	// Generate a message ID for correlation
+	messageID := new([MessageIDLength]byte)
+	_, err := io.ReadFull(rand.Reader, messageID[:])
+	if err != nil {
+		return err
+	}
+
+	req := &Request{
+		CopyChannel: &CopyChannel{
+			ChannelID: *channelID,
+			ID:        messageID,
+		},
+	}
+
+	eventSink := t.EventSink()
+	defer t.StopEventSink(eventSink)
+
+	err = t.writeMessage(req)
+	if err != nil {
+		return err
+	}
+
+	for {
+		var event Event
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case event = <-eventSink:
+		case <-t.HaltCh():
+			return errHalting
+		}
+
+		switch v := event.(type) {
+		case *CopyChannelReply:
+			if v.Err != "" {
+				return errors.New(v.Err)
+			}
+			return nil
+		case *ConnectionStatusEvent:
+			if !v.IsConnected {
+				return errConnectionLost
+			}
+		case *NewDocumentEvent:
+			// Ignore PKI document updates
+		default:
+			// Ignore other events
+		}
+	}
 }

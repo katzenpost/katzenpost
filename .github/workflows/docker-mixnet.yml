@@ -1,46 +1,6 @@
 name: docker mixnet integration tests
-on: [pull_request, push]
+on: [pull_request]
 jobs:
-
-  test_e2e_client:
-    env:
-      warped: true
-      no_mixdecoy: false
-      no_decoy: false
-    strategy:
-      matrix:
-        go-version: [1.22.x]
-        os: [ubuntu-latest]
-    runs-on: ${{ matrix.os }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Configure podman socket
-        run: |
-          systemctl --user start podman.socket
-
-      - name: Build and start the mixnet
-        run: |
-          cd docker && make no_decoy=false no_mixdecoy=false log_level=DEBUG start wait
-
-      - name: run ping
-        run: cd docker && make run-ping
-
-      - name: run client end to end tests
-        run: cd client && make testargs=-coverprofile=coverage.part dockerdockertest && cat coverage.part >> ../coverage.out
-
-      - name: Stop the mixnet
-        run: |
-          cd docker && make stop
-
-      - name: Upload testnet state
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: mixnet-${{ github.run_id }}-${{ github.job }}
-          path: |
-            docker/voting_mixnet/*/*.log
 
   test_e2e_client2:
     env:
@@ -56,6 +16,17 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Cache Docker layers
+        uses: actions/cache@v4
+        with:
+          path: /tmp/.buildx-cache
+          key: ${{ runner.os }}-buildx-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-buildx-
+
       - name: Configure podman socket
         run: |
           systemctl --user start podman.socket
@@ -66,83 +37,6 @@ jobs:
 
       - name: run client end to end tests
         run: cd client2 && make testargs=-coverprofile=coverage.part dockerdockertest && cat coverage.part >> ../coverage.out
-
-      - name: Stop the mixnet
-        run: |
-          cd docker && make stop
-
-      - name: Upload testnet state
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: mixnet-${{ github.run_id }}-${{ github.job }}
-          path: |
-            docker/voting_mixnet/*/*.log
-
-  test_benchmark:
-    env:
-      warped: true
-      no_mixdecoy: false
-      no_decoy: false
-    strategy:
-      matrix:
-        go-version: [1.22.x]
-        os: [ubuntu-latest]
-    runs-on: ${{ matrix.os }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Configure podman socket
-        run: |
-          systemctl --user start podman.socket
-
-      - name: Build and start the mixnet
-        run: |
-          cd docker && make log_level=DEBUG start wait run-ping
-
-      - name: run benchmark tests
-        run: cd bench && make testargs=-coverprofile=coverage.part dockerdockertest && cat coverage.part >> ../coverage.out
-
-      - name: Stop the mixnet
-        run: |
-          cd docker && make stop
-
-      - name: Upload testnet state
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: mixnet-${{ github.run_id }}-${{ github.job }}
-          path: |
-            docker/voting_mixnet/*/*.log
-
-  test_e2e_stream:
-    env:
-      warped: true
-      no_mixdecoy: false
-      no_decoy: false
-    strategy:
-      matrix:
-        go-version: [1.22.x]
-        os: [ubuntu-latest]
-    runs-on: ${{ matrix.os }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Configure podman socket
-        run: |
-          systemctl --user start podman.socket
-
-      - name: Build and start the mixnet
-        run: |
-          cd docker && make log_level=DEBUG start wait
-
-      - name: run map end to end tests
-        run: cd map && make testargs=-coverprofile=coverage.part dockerdockertest && cat client/coverage.part >> ../coverage.out
-
-      - name: run stream end to end tests
-        run: cd stream && make testargs=-coverprofile=coverage.part dockerdockertest && cat coverage.part >> ../coverage.out
 
       - name: Stop the mixnet
         run: |

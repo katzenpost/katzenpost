@@ -18,8 +18,6 @@ import (
 	"github.com/katzenpost/katzenpost/client2/thin"
 )
 
-var incomingConnID uint64
-
 // incomingConn type is used along with listener type
 type incomingConn struct {
 	listener *listener
@@ -144,6 +142,8 @@ func (c *incomingConn) worker() {
 				// c.worker() is returning for some reason, give up on
 				// trying to write the command, and just return.
 				return
+			case <-c.listener.HaltCh():
+				return
 			}
 		}
 	})
@@ -173,7 +173,7 @@ func (c *incomingConn) worker() {
 			if !ok {
 				return
 			}
-			if rawReq.IsThinClose {
+			if rawReq.ThinClose != nil {
 				c.log.Info("Thin client sent a disconnect request, closing thin client connection.")
 				return
 			}

@@ -9,11 +9,11 @@ import (
 	"sync"
 
 	"github.com/fxamacker/cbor/v2"
+	"gopkg.in/op/go-logging.v1"
 
 	"github.com/katzenpost/katzenpost/core/log"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/worker"
-	"gopkg.in/op/go-logging.v1"
 )
 
 type listener struct {

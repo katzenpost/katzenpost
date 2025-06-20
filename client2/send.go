@@ -19,24 +19,54 @@ import (
 
 // ComposeSphinxPacket is used to compose Sphinx packets.
 func (c *Client) ComposeSphinxPacket(request *Request) (pkt []byte, surbkey []byte, rtt time.Duration, err error) {
-	if request.DestinationIdHash == nil {
-		return nil, nil, 0, errors.New("request.DestinationIdHash is nil")
-	}
-	if len(request.RecipientQueueID) == 0 {
-		return nil, nil, 0, errors.New("client2: recipient is nil")
-	}
-	if len(request.RecipientQueueID) > sConstants.RecipientIDLength {
-		return nil, nil, 0, fmt.Errorf("client2: invalid recipient: '%v'", request.RecipientQueueID)
+	// Extract fields from the appropriate sub-struct
+	var destinationIdHash *[32]byte
+	var recipientQueueID []byte
+	var requestPayload []byte
+	var withSURB bool
+	var surbID *[sConstants.SURBIDLength]byte
+
+	if request.SendMessage != nil {
+		destinationIdHash = request.SendMessage.DestinationIdHash
+		recipientQueueID = request.SendMessage.RecipientQueueID
+		requestPayload = request.SendMessage.Payload
+		withSURB = request.SendMessage.WithSURB
+		surbID = request.SendMessage.SURBID
+	} else if request.SendARQMessage != nil {
+		destinationIdHash = request.SendARQMessage.DestinationIdHash
+		recipientQueueID = request.SendARQMessage.RecipientQueueID
+		requestPayload = request.SendARQMessage.Payload
+		withSURB = request.SendARQMessage.WithSURB
+		surbID = request.SendARQMessage.SURBID
+	} else {
+		return nil, nil, 0, errors.New("request must have SendMessage or SendARQMessage")
 	}
 
-	if len(request.Payload) > c.geo.UserForwardPayloadLength {
-		return nil, nil, 0, fmt.Errorf("message too large: %v > %v", len(request.Payload), c.geo.UserForwardPayloadLength)
+	if destinationIdHash == nil {
+		return nil, nil, 0, errors.New("request.DestinationIdHash is nil")
+	}
+	if len(recipientQueueID) == 0 {
+		return nil, nil, 0, errors.New("client2: recipient is nil")
+	}
+	if len(recipientQueueID) > sConstants.RecipientIDLength {
+		return nil, nil, 0, fmt.Errorf("client2: invalid recipient: '%v'", recipientQueueID)
+	}
+
+	if len(requestPayload) > c.geo.UserForwardPayloadLength {
+		return nil, nil, 0, fmt.Errorf("message too large: %v > %v", len(requestPayload), c.geo.UserForwardPayloadLength)
 	}
 
 	payload := make([]byte, c.geo.UserForwardPayloadLength)
-	copy(payload, request.Payload)
+	copy(payload, requestPayload)
 
 	for {
+		// Check if we're shutting down to avoid races
+		select {
+		case <-c.HaltCh():
+			return nil, nil, 0, ErrShutdown
+		default:
+		}
+
 		unixTime := c.pki.skewedUnixTime()
 		_, _, budget := epochtime.FromUnix(unixTime)
 		start := time.Now()
@@ -44,21 +74,22 @@ func (c *Client) ComposeSphinxPacket(request *Request) (pkt []byte, surbkey []by
 		// Select the forward path.
 		now := time.Unix(unixTime, 0)
 
-		if c.conn.gateway == nil {
+		gateway := c.conn.getGateway()
+		if gateway == nil {
 			panic("source gateway cannot be nil")
 		}
 
-		fwdPath, then, err := c.makePath(request.RecipientQueueID, request.DestinationIdHash, request.SURBID, now, true)
+		fwdPath, then, err := c.makePath(recipientQueueID, destinationIdHash, surbID, now, true, gateway)
 		if err != nil {
 			return nil, nil, 0, err
 		}
 
 		revPath := make([]*sphinx.PathHop, 0)
-		if request.SURBID != nil {
+		if surbID != nil {
 			if c.conn.queueID == nil {
 				panic("sender queueID cannot be nil")
 			}
-			revPath, then, err = c.makePath(c.conn.queueID, request.DestinationIdHash, request.SURBID, then, false)
+			revPath, then, err = c.makePath(c.conn.queueID, destinationIdHash, surbID, then, false, gateway)
 			if err != nil {
 				return nil, nil, 0, err
 			}
@@ -74,15 +105,15 @@ func (c *Client) ComposeSphinxPacket(request *Request) (pkt []byte, surbkey []by
 		// the PKI publication imposted limitations will be selected.  When
 		// that happens, the path selection must be redone.
 		if then.Sub(now) < epochtime.Period*2 {
-			if request.WithSURB {
-				payload := make([]byte, 2, 2+c.geo.SURBLength+len(request.Payload))
+			if withSURB {
+				payload := make([]byte, 2, 2+c.geo.SURBLength+len(requestPayload))
 				payload[0] = 1 // Packet has a SURB.
 				surb, k, err := c.sphinx.NewSURB(rand.Reader, revPath)
 				if err != nil {
 					return nil, nil, 0, err
 				}
 				payload = append(payload, surb...)
-				payload = append(payload, request.Payload...)
+				payload = append(payload, requestPayload...)
 
 				blob := make([]byte, c.geo.ForwardPayloadLength)
 				copy(blob, payload)
@@ -110,13 +141,15 @@ func (c *Client) ComposeSphinxPacket(request *Request) (pkt []byte, surbkey []by
 // SURB identified by surbID, and returns the SURB decryption key and total
 // round trip delay. Blocks until packet is sent on the wire.
 func (c *Client) SendCiphertext(request *Request) ([]byte, time.Duration, error) {
-	if request.DestinationIdHash == nil {
-		return nil, 0, errors.New("request.DestinationIdHash is nil")
+	// Check that we have a valid send request
+	if request.SendMessage == nil && request.SendARQMessage == nil {
+		return nil, 0, errors.New("request must have SendMessage or SendARQMessage")
 	}
 
 	pkt, k, rtt, err := c.ComposeSphinxPacket(request)
 	if err != nil {
-		panic(fmt.Sprintf("COMPOSE SPHINX PACKET FAIL %s", err.Error()))
+		// Don't panic on shutdown or other errors, return them gracefully
+		return nil, 0, err
 	}
 	err = c.conn.sendPacket(pkt)
 	return k, rtt, err
@@ -130,17 +163,12 @@ func (c *Client) SendPacket(pkt []byte) error {
 	return err
 }
 
-func (c *Client) makePath(recipient []byte, destination *[32]byte, surbID *[sConstants.SURBIDLength]byte, baseTime time.Time, isForward bool) ([]*sphinx.PathHop, time.Time, error) {
-	if c.conn.gateway == nil {
-		panic("c.conn.gateway is nil")
+func (c *Client) makePath(recipient []byte, destination *[32]byte, surbID *[sConstants.SURBIDLength]byte, baseTime time.Time, isForward bool, gateway *[32]byte) ([]*sphinx.PathHop, time.Time, error) {
+	if gateway == nil {
+		panic("gateway is nil")
 	}
 	if destination == nil {
 		panic("destination is nil")
-	}
-
-	srcNode, dstNode := c.conn.gateway, destination
-	if !isForward {
-		srcNode, dstNode = dstNode, srcNode
 	}
 
 	// Get the current PKI document.
@@ -149,28 +177,9 @@ func (c *Client) makePath(recipient []byte, destination *[32]byte, surbID *[sCon
 		return nil, time.Time{}, newPKIError("client2: no PKI document for current epoch")
 	}
 
-	var src *cpki.MixDescriptor
-	var dst *cpki.MixDescriptor
-	var err error
-
-	if isForward {
-		src, err = doc.GetGatewayByKeyHash(srcNode)
-		if err != nil {
-			return nil, time.Time{}, newPKIError("client2: failed to find source Gateway: %v", err)
-		}
-		dst, err = doc.GetServiceNodeByKeyHash(dstNode)
-		if err != nil {
-			return nil, time.Time{}, newPKIError("client2: failed to find destination service node: %v", err)
-		}
-	} else {
-		src, err = doc.GetServiceNodeByKeyHash(srcNode)
-		if err != nil {
-			return nil, time.Time{}, newPKIError("client2: failed to find source service node: %v", err)
-		}
-		dst, err = doc.GetGatewayByKeyHash(dstNode)
-		if err != nil {
-			return nil, time.Time{}, newPKIError("client2: failed to find destination gateway node: %v", err)
-		}
+	src, dst, err := c.getSourceAndDestinationNodes(doc, gateway, destination, isForward)
+	if err != nil {
+		return nil, time.Time{}, err
 	}
 
 	rng := rand.NewMath()
@@ -185,6 +194,39 @@ func (c *Client) makePath(recipient []byte, destination *[32]byte, surbID *[sCon
 	}
 
 	return p, t, err
+}
+
+// getSourceAndDestinationNodes retrieves the source and destination mix descriptors based on direction
+func (c *Client) getSourceAndDestinationNodes(doc *cpki.Document, gateway, destination *[32]byte, isForward bool) (*cpki.MixDescriptor, *cpki.MixDescriptor, error) {
+	srcNode, dstNode := gateway, destination
+	if !isForward {
+		srcNode, dstNode = dstNode, srcNode
+	}
+
+	var src, dst *cpki.MixDescriptor
+	var err error
+
+	if isForward {
+		src, err = doc.GetGatewayByKeyHash(srcNode)
+		if err != nil {
+			return nil, nil, newPKIError("client2: failed to find source Gateway: %v", err)
+		}
+		dst, err = doc.GetServiceNodeByKeyHash(dstNode)
+		if err != nil {
+			return nil, nil, newPKIError("client2: failed to find destination service node: %v", err)
+		}
+	} else {
+		src, err = doc.GetServiceNodeByKeyHash(srcNode)
+		if err != nil {
+			return nil, nil, newPKIError("client2: failed to find source service node: %v", err)
+		}
+		dst, err = doc.GetGatewayByKeyHash(dstNode)
+		if err != nil {
+			return nil, nil, newPKIError("client2: failed to find destination gateway node: %v", err)
+		}
+	}
+
+	return src, dst, nil
 }
 
 func (c *Client) logPath(doc *cpki.Document, p []*sphinx.PathHop) error {
