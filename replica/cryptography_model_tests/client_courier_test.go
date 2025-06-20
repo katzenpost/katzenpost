@@ -294,40 +294,26 @@ func (c *ClientWriter) ComposeSendNextMessage(message []byte) *pigeonhole.Courie
 		panic(err)
 	}
 
-	sig := &[bacap.SignatureSize]byte{}
+	sig := [bacap.SignatureSize]byte{}
 	copy(sig[:], sigraw)
-
-	writeRequest := &pigeonhole.ReplicaWrite{
-		BoxID:      boxID,
-		Signature:  *sig,
-		PayloadLen: uint32(len(ciphertext)),
-		Payload:    ciphertext,
-	}
-	msg := &pigeonhole.ReplicaInnerMessage{
-		MessageType: 1, // 1 = write
-		WriteMsg:    writeRequest,
-	}
 
 	replicaPubKeys := make([]nike.PublicKey, 2)
 	for i := 0; i < 2; i++ {
 		replicaPubKeys[i] = c.Replicas[i].PublicKey
 	}
 
-	mkemPrivateKey, mkemCiphertext := c.MKEMNikeScheme.Encapsulate(
-		replicaPubKeys, msg.Bytes())
-	mkemPublicKey := mkemPrivateKey.Public()
-
-	senderPubkey := mkemPublicKey.Bytes()
-	envelope := &pigeonhole.CourierEnvelope{
-		IntermediateReplicas: [2]uint8{0, 1}, // indices to pkidoc's StorageReplicas
-		Dek1:                 *mkemCiphertext.DEKCiphertexts[0],
-		Dek2:                 *mkemCiphertext.DEKCiphertexts[1],
-		ReplyIndex:           0,
-		SenderPubkeyLen:      uint16(len(senderPubkey)),
-		SenderPubkey:         senderPubkey,
-		CiphertextLen:        uint32(len(mkemCiphertext.Envelope)),
-		Ciphertext:           mkemCiphertext.Envelope,
-		IsRead:               0, // 0 = write
+	// Use the shared envelope creation function
+	envelope, _, err := pigeonhole.CreateWriteEnvelope(
+		boxID,
+		sig,
+		ciphertext,
+		replicaPubKeys,
+		[2]uint8{0, 1}, // indices to pkidoc's StorageReplicas
+		0,              // epoch (not used in tests)
+		c.MKEMNikeScheme,
+	)
+	if err != nil {
+		panic(err)
 	}
 	return envelope
 }
@@ -357,32 +343,22 @@ func (c *ClientReader) ComposeReadNextMessage() (nike.PrivateKey, *pigeonhole.Co
 	if err != nil {
 		panic(err)
 	}
-	readMsg := &pigeonhole.ReplicaRead{
-		BoxID: *boxid,
-	}
-	msg := &pigeonhole.ReplicaInnerMessage{
-		MessageType: 0, // 0 = read
-		ReadMsg:     readMsg,
-	}
 
 	replicaPubKeys := make([]nike.PublicKey, 2)
 	for i := 0; i < 2; i++ {
 		replicaPubKeys[i] = c.Replicas[i].PublicKey
 	}
 
-	mkemPrivateKey, mkemCiphertext := c.MKEMNikeScheme.Encapsulate(replicaPubKeys, msg.Bytes())
-	mkemPublicKey := mkemPrivateKey.Public()
-	senderPubkey := mkemPublicKey.Bytes()
-	envelope := &pigeonhole.CourierEnvelope{
-		IntermediateReplicas: [2]uint8{0, 1}, // indices to pkidoc's StorageReplicas
-		Dek1:                 *mkemCiphertext.DEKCiphertexts[0],
-		Dek2:                 *mkemCiphertext.DEKCiphertexts[1],
-		ReplyIndex:           0,
-		SenderPubkeyLen:      uint16(len(senderPubkey)),
-		SenderPubkey:         senderPubkey,
-		CiphertextLen:        uint32(len(mkemCiphertext.Envelope)),
-		Ciphertext:           mkemCiphertext.Envelope,
-		IsRead:               1, // 1 = read
+	// Use the shared envelope creation function
+	envelope, mkemPrivateKey, err := pigeonhole.CreateReadEnvelope(
+		*boxid,
+		replicaPubKeys,
+		[2]uint8{0, 1}, // indices to pkidoc's StorageReplicas
+		0,              // epoch (not used in tests)
+		c.MKEMNikeScheme,
+	)
+	if err != nil {
+		panic(err)
 	}
 	return mkemPrivateKey, envelope
 }
