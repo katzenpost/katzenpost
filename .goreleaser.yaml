@@ -6,7 +6,7 @@ before:
 
 builds:
  - id: mixserver
-   main: ./server/cmd/server
+   main: ./cmd/server
    binary: mixserver
    env:
       - CGO_ENABLED=1
@@ -21,7 +21,7 @@ builds:
       - 6
       - 7
  - id: dirauth
-   main: ./authority/cmd/voting
+   main: ./cmd/dirauth
    binary: dirauth
    env:
       - CGO_ENABLED=1
@@ -36,7 +36,7 @@ builds:
       - 6
       - 7
  - id: fetch
-   main: ./authority/cmd/fetch
+   main: ./cmd/fetch
    binary: fetch
    env:
       - CGO_ENABLED=1
@@ -51,7 +51,7 @@ builds:
       - 6
       - 7
  - id: ping
-   main: ./ping
+   main: ./cmd/ping
    binary: ping
    env:
       - CGO_ENABLED=1
