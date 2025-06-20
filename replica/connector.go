@@ -4,6 +4,7 @@
 package replica
 
 import (
+	"fmt"
 	"sync"
 	"time"
 
@@ -88,40 +89,72 @@ func (co *Connector) DispatchCommand(cmd commands.Command, idHash *[32]byte) {
 }
 
 func (co *Connector) DispatchReplication(cmd *commands.ReplicaWrite) {
-	co.log.Debugf("Queueing replication for BoxID: %x", cmd.BoxID)
+	co.log.Infof("REPLICATION: Queueing replication for BoxID: %x", cmd.BoxID)
+	fmt.Printf("REPLICATION: Queueing replication for BoxID: %x\n", cmd.BoxID)
 	co.replicationCh <- cmd
 }
 
 func (co *Connector) doReplication(cmd *commands.ReplicaWrite) {
-	co.log.Debugf("Starting replication for BoxID: %x", cmd.BoxID)
+	co.log.Infof("REPLICATION: Starting replication for BoxID: %x", cmd.BoxID)
+	fmt.Printf("REPLICATION: Starting replication for BoxID: %x\n", cmd.BoxID)
+
 	doc := co.server.PKIWorker.PKIDocument()
 	if doc == nil {
-		co.log.Error("Replication failed: no PKI document available")
+		co.log.Error("REPLICATION: Failed - no PKI document available")
+		fmt.Printf("REPLICATION: Failed - no PKI document available\n")
 		return
 	}
+
+	// Log our own identity for context
+	myIdBytes, err := co.server.identityPublicKey.MarshalBinary()
+	if err != nil {
+		co.log.Errorf("REPLICATION: Failed to marshal identity key: %v", err)
+		fmt.Printf("REPLICATION: Failed to marshal identity key: %v\n", err)
+	} else {
+		myIdHash := blake2b.Sum256(myIdBytes)
+		co.log.Infof("REPLICATION: My identity: %x", myIdHash[:8])
+		fmt.Printf("REPLICATION: My identity: %x\n", myIdHash[:8])
+	}
+
 	descs, err := replicaCommon.GetRemoteShards(co.server.identityPublicKey, cmd.BoxID, doc)
 	if err != nil {
-		co.log.Errorf("Replication failed: GetShards err: %v", err)
+		co.log.Errorf("REPLICATION: Failed - GetRemoteShards err: %v", err)
+		fmt.Printf("REPLICATION: Failed - GetRemoteShards err: %v\n", err)
 		panic(err)
 	}
-	co.log.Debugf("Found %d remote shards for replication", len(descs))
-	for _, desc := range descs {
+
+	co.log.Infof("REPLICATION: Found %d remote shards for BoxID %x", len(descs), cmd.BoxID)
+	fmt.Printf("REPLICATION: Found %d remote shards for BoxID %x\n", len(descs), cmd.BoxID)
+
+	if len(descs) == 0 {
+		co.log.Infof("REPLICATION: No remote shards needed for BoxID %x", cmd.BoxID)
+		fmt.Printf("REPLICATION: No remote shards needed for BoxID %x\n", cmd.BoxID)
+		return
+	}
+
+	for i, desc := range descs {
 		idHash := blake2b.Sum256(desc.IdentityKey)
-		co.log.Debugf("Dispatching replication to shard %x", idHash)
+		co.log.Infof("REPLICATION: Dispatching to shard %d/%d: %s (ID: %x)", i+1, len(descs), desc.Name, idHash[:8])
+		fmt.Printf("REPLICATION: Dispatching to shard %d/%d: %s (ID: %x)\n", i+1, len(descs), desc.Name, idHash[:8])
 		co.DispatchCommand(cmd, &idHash)
 	}
-	co.log.Debug("Replication dispatch completed")
+
+	co.log.Infof("REPLICATION: Dispatch completed for BoxID %x", cmd.BoxID)
+	fmt.Printf("REPLICATION: Dispatch completed for BoxID %x\n", cmd.BoxID)
 }
 
 func (co *Connector) replicationWorker() {
-	co.log.Debug("Starting replication worker")
+	co.log.Infof("REPLICATION: Starting replication worker")
+	fmt.Printf("REPLICATION: Starting replication worker\n")
 	for {
 		select {
 		case <-co.HaltCh():
-			co.log.Debugf("Replication worker terminating gracefully.")
+			co.log.Infof("REPLICATION: Worker terminating gracefully")
+			fmt.Printf("REPLICATION: Worker terminating gracefully\n")
 			return
 		case writeCmd := <-co.replicationCh:
-			co.log.Debugf("Replication worker received write command for BoxID: %x", writeCmd.BoxID)
+			co.log.Infof("REPLICATION: Worker received write command for BoxID: %x", writeCmd.BoxID)
+			fmt.Printf("REPLICATION: Worker received write command for BoxID: %x\n", writeCmd.BoxID)
 			co.doReplication(writeCmd)
 		}
 	}
