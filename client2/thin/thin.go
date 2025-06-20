@@ -21,6 +21,7 @@ import (
 	"gopkg.in/op/go-logging.v1"
 
 	"github.com/katzenpost/hpqc/bacap"
+	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/rand"
 
 	"github.com/katzenpost/katzenpost/client2/common"
@@ -30,12 +31,18 @@ import (
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/worker"
+	"github.com/katzenpost/katzenpost/pigeonhole"
 	pigeonholeGeo "github.com/katzenpost/katzenpost/pigeonhole/geo"
 )
 
 const (
 	MessageIDLength = 16
 )
+
+// GetRandomCourier is a wrapper around pigeonhole.GetRandomCourier for convenience.
+func GetRandomCourier(doc *cpki.Document) (*[hash.HashSize]byte, []byte) {
+	return pigeonhole.GetRandomCourier(doc)
+}
 
 var (
 	// Error variables for reuse

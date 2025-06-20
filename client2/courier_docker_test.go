@@ -7,6 +7,7 @@ package client2
 
 import (
 	"context"
+	"crypto/hmac"
 	"testing"
 	"time"
 
@@ -178,9 +179,19 @@ func performSingleReadAttempt(t *testing.T, params *ReadAttemptParams) bool {
 
 	t.Logf("Bob: Prepared read query (%d bytes), next index ready", len(readPayload))
 
-	// Step 2: Send prepared query via SendMessage
+	// Step 2: Get PKI document and select random courier
+	doc := params.BobThinClient.PKIDocument()
+	if doc == nil {
+		t.Fatalf("Bob: Failed to get PKI document: PKI document is nil")
+	}
+
+	// Step 3: Select random courier for sending the read query
+	destinationIdHash, recipientQueueID := thin.GetRandomCourier(doc)
+
+	// Step 4: Send prepared query via SendMessage
 	t.Logf("Bob: Sending prepared read query via SendMessage")
-	err = params.BobThinClient.SendMessage(params.ReadMessageID, readPayload, nil, nil)
+	surbID := params.BobThinClient.NewSURBID()
+	err = params.BobThinClient.SendMessage(surbID, readPayload, destinationIdHash, recipientQueueID)
 	if err != nil {
 		return handleSendMessageError(t, err, params.AttemptNum, params.MaxRetries)
 	}
@@ -189,6 +200,7 @@ func performSingleReadAttempt(t *testing.T, params *ReadAttemptParams) bool {
 	replyParams := &ReplyWaitParams{
 		BobThinClient:   params.BobThinClient,
 		ReadMessageID:   params.ReadMessageID,
+		SURBID:          surbID,
 		NextReadIndex:   nextReadIndex,
 		AttemptNum:      params.AttemptNum,
 		MaxRetries:      params.MaxRetries,
@@ -224,6 +236,7 @@ func handleSendMessageError(t *testing.T, err error, attemptNum, maxRetries int)
 type ReplyWaitParams struct {
 	BobThinClient   *thin.ThinClient
 	ReadMessageID   *[thin.MessageIDLength]byte
+	SURBID          *[16]byte
 	NextReadIndex   *bacap.MessageBoxIndex
 	AttemptNum      int
 	MaxRetries      int
@@ -244,6 +257,7 @@ func waitForMessageReply(t *testing.T, params *ReplyWaitParams) bool {
 	case event := <-params.BobThinClient.EventSink():
 		eventParams := &EventProcessParams{
 			ReadMessageID:   params.ReadMessageID,
+			SURBID:          params.SURBID,
 			NextReadIndex:   params.NextReadIndex,
 			AttemptNum:      params.AttemptNum,
 			MaxRetries:      params.MaxRetries,
@@ -259,6 +273,7 @@ func waitForMessageReply(t *testing.T, params *ReplyWaitParams) bool {
 // EventProcessParams groups parameters for processing reply events
 type EventProcessParams struct {
 	ReadMessageID   *[thin.MessageIDLength]byte
+	SURBID          *[16]byte
 	NextReadIndex   *bacap.MessageBoxIndex
 	AttemptNum      int
 	MaxRetries      int
@@ -270,7 +285,8 @@ type EventProcessParams struct {
 func processReplyEvent(t *testing.T, event thin.Event, params *EventProcessParams) bool {
 	switch e := event.(type) {
 	case *thin.MessageReplyEvent:
-		if e.MessageID != nil && *e.MessageID == *params.ReadMessageID {
+		// Check if this reply matches our SURB ID using constant-time comparison
+		if e.SURBID != nil && params.SURBID != nil && hmac.Equal(e.SURBID[:], params.SURBID[:]) {
 			replyParams := &MessageReplyParams{
 				Event:           e,
 				NextReadIndex:   params.NextReadIndex,
@@ -281,7 +297,7 @@ func processReplyEvent(t *testing.T, event thin.Event, params *EventProcessParam
 			}
 			return handleCorrectMessageReply(t, replyParams)
 		}
-		return handleWrongMessageID(t, params.AttemptNum, params.MaxRetries)
+		return handleWrongSURBID(t, params.AttemptNum, params.MaxRetries)
 	default:
 		return handleUnexpectedEvent(t, e, params.AttemptNum, params.MaxRetries)
 	}
@@ -300,13 +316,13 @@ type MessageReplyParams struct {
 // handleCorrectMessageReply processes a MessageReplyEvent with the correct message ID
 func handleCorrectMessageReply(t *testing.T, params *MessageReplyParams) bool {
 	t.Log("Bob: Received MessageReplyEvent for our read query")
-	if params.Event.Err != nil {
-		t.Logf("Bob: MessageReplyEvent contains error: %v", params.Event.Err)
+	if params.Event.ErrorCode != thin.ThinClientErrorSuccess {
+		t.Logf("Bob: MessageReplyEvent contains error: %v", thin.ThinClientErrorToString(params.Event.ErrorCode))
 		if params.AttemptNum < params.MaxRetries-1 {
 			time.Sleep(3 * time.Second)
 			return false
 		}
-		t.Fatalf("Bob: Final MessageReplyEvent failed: %v", params.Event.Err)
+		t.Fatalf("Bob: Final MessageReplyEvent failed: %v", thin.ThinClientErrorToString(params.Event.ErrorCode))
 	}
 
 	// Extract the actual message from the reply
@@ -327,9 +343,9 @@ func handleCorrectMessageReply(t *testing.T, params *MessageReplyParams) bool {
 	return true
 }
 
-// handleWrongMessageID handles MessageReplyEvent with wrong message ID
-func handleWrongMessageID(t *testing.T, attemptNum, maxRetries int) bool {
-	t.Logf("Bob: Received MessageReplyEvent for different message ID, ignoring")
+// handleWrongSURBID handles MessageReplyEvent with wrong SURB ID
+func handleWrongSURBID(t *testing.T, attemptNum, maxRetries int) bool {
+	t.Logf("Bob: Received MessageReplyEvent for different SURB ID, ignoring")
 	if attemptNum < maxRetries-1 {
 		time.Sleep(3 * time.Second)
 		return false

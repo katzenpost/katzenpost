@@ -15,7 +15,6 @@ import (
 	"github.com/katzenpost/hpqc/nike"
 	hpqcRand "github.com/katzenpost/hpqc/rand"
 
-	"github.com/katzenpost/katzenpost/client2/common"
 	"github.com/katzenpost/katzenpost/client2/constants"
 	"github.com/katzenpost/katzenpost/client2/thin"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
@@ -81,16 +80,6 @@ type ChannelDescriptor struct {
 	// WriterLock protects StatefulWriter state advancement to prevent BACAP state corruption
 	// CRITICAL: State advancement must be serialized and only happen after courier acknowledgment
 	WriterLock sync.Mutex
-}
-
-func GetRandomCourier(doc *cpki.Document) (*[hash.HashSize]byte, []byte) {
-	courierServices := common.FindServices(constants.CourierServiceName, doc)
-	if len(courierServices) == 0 {
-		panic("wtf no courier services")
-	}
-	courierService := courierServices[secureRand.Intn(len(courierServices))]
-	serviceIdHash := hash.Sum256(courierService.MixDescriptor.IdentityKey)
-	return &serviceIdHash, courierService.RecipientQueueID
 }
 
 func NewPigeonholeChannel() (*bacap.StatefulWriter, *bacap.UniversalReadCap, *bacap.BoxOwnerCap) {
@@ -727,7 +716,7 @@ func (d *Daemon) sendEnvelopeToCourier(request *Request, channelID [thin.Channel
 		return fmt.Errorf("failed to generate SURB ID: %s", err)
 	}
 
-	destinationIdHash, recipientQueueID := GetRandomCourier(doc)
+	destinationIdHash, recipientQueueID := pigeonhole.GetRandomCourier(doc)
 
 	// Wrap CourierEnvelope in CourierQuery
 	courierQuery := &pigeonhole.CourierQuery{

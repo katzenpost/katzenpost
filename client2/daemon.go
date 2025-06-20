@@ -1166,7 +1166,7 @@ func (d *Daemon) copyChannel(request *Request) {
 	}
 
 	// Get random courier
-	destinationIdHash, recipientQueueID := GetRandomCourier(doc)
+	destinationIdHash, recipientQueueID := pigeonhole.GetRandomCourier(doc)
 
 	// Create send request
 	sendRequest := &Request{
