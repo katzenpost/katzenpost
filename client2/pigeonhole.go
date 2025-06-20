@@ -315,32 +315,40 @@ func CreateChannelReadRequestWithBoxID(channelID [thin.ChannelIDLength]byte,
 	return envelope, mkemPrivateKey, nil
 }
 
-// advanceToIndex advances either a StatefulWriter or StatefulReader to the specified target index
-func (d *Daemon) advanceToIndex(nextIndex **bacap.MessageBoxIndex, lastIndex **bacap.MessageBoxIndex, targetIndex *bacap.MessageBoxIndex) error {
+// advanceWriterToIndex advances a StatefulWriter to the specified target index
+func (d *Daemon) advanceWriterToIndex(statefulWriter *bacap.StatefulWriter, targetIndex *bacap.MessageBoxIndex) error {
 	if targetIndex == nil {
 		return nil
 	}
 
 	// Advance to the target index if needed
-	for (*nextIndex).Idx64 < targetIndex.Idx64 {
-		newIndex, err := (*nextIndex).NextIndex()
+	for statefulWriter.NextIndex.Idx64 < targetIndex.Idx64 {
+		nextIndex, err := statefulWriter.NextIndex.NextIndex()
 		if err != nil {
 			return fmt.Errorf("failed to advance to target index: %s", err)
 		}
-		*lastIndex = *nextIndex
-		*nextIndex = newIndex
+		statefulWriter.LastOutboxIdx = statefulWriter.NextIndex
+		statefulWriter.NextIndex = nextIndex
 	}
 	return nil
 }
 
-// advanceWriterToIndex advances a StatefulWriter to the specified target index
-func (d *Daemon) advanceWriterToIndex(statefulWriter *bacap.StatefulWriter, targetIndex *bacap.MessageBoxIndex) error {
-	return d.advanceToIndex(&statefulWriter.NextIndex, &statefulWriter.LastOutboxIdx, targetIndex)
-}
-
 // advanceReaderToIndex advances a StatefulReader to the specified target index
 func (d *Daemon) advanceReaderToIndex(statefulReader *bacap.StatefulReader, targetIndex *bacap.MessageBoxIndex) error {
-	return d.advanceToIndex(&statefulReader.NextIndex, &statefulReader.LastInboxRead, targetIndex)
+	if targetIndex == nil {
+		return nil
+	}
+
+	// Advance to the target index if needed
+	for statefulReader.NextIndex.Idx64 < targetIndex.Idx64 {
+		nextIndex, err := statefulReader.NextIndex.NextIndex()
+		if err != nil {
+			return fmt.Errorf("failed to advance to target index: %s", err)
+		}
+		statefulReader.LastInboxRead = statefulReader.NextIndex
+		statefulReader.NextIndex = nextIndex
+	}
+	return nil
 }
 
 // setupWriteChannelFromExisting creates a StatefulWriter from an existing BoxOwnerCap
