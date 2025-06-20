@@ -135,7 +135,16 @@ func attemptMessageRead(t *testing.T, bobThinClient *thin.ThinClient, bobChannel
 			time.Sleep(5 * time.Second)
 		}
 
-		if performSingleReadAttempt(t, bobThinClient, bobChannelID, readMessageID, i, maxRetries, &receivedMessage, &messageReceived) {
+		params := &ReadAttemptParams{
+			BobThinClient:   bobThinClient,
+			BobChannelID:    bobChannelID,
+			ReadMessageID:   readMessageID,
+			AttemptNum:      i,
+			MaxRetries:      maxRetries,
+			ReceivedMessage: &receivedMessage,
+			MessageReceived: &messageReceived,
+		}
+		if performSingleReadAttempt(t, params) {
 			break
 		}
 	}
@@ -143,30 +152,50 @@ func attemptMessageRead(t *testing.T, bobThinClient *thin.ThinClient, bobChannel
 	return receivedMessage
 }
 
+// ReadAttemptParams groups parameters for read attempt operations
+type ReadAttemptParams struct {
+	BobThinClient   *thin.ThinClient
+	BobChannelID    *[thin.ChannelIDLength]byte
+	ReadMessageID   *[thin.MessageIDLength]byte
+	AttemptNum      int
+	MaxRetries      int
+	ReceivedMessage *[]byte
+	MessageReceived *bool
+}
+
 // performSingleReadAttempt performs a single read attempt with proper error handling
-func performSingleReadAttempt(t *testing.T, bobThinClient *thin.ThinClient, bobChannelID *[thin.ChannelIDLength]byte, readMessageID *[thin.MessageIDLength]byte, attemptNum, maxRetries int, receivedMessage *[]byte, messageReceived *bool) bool {
+func performSingleReadAttempt(t *testing.T, params *ReadAttemptParams) bool {
 	// Create a fresh context with 10-minute timeout for each read attempt
 	readCtx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 
 	// Step 1: Prepare read query (new API)
-	t.Logf("Bob: Preparing read query for attempt %d", attemptNum+1)
-	readPayload, nextReadIndex, err := bobThinClient.ReadChannel(readCtx, bobChannelID, readMessageID)
+	t.Logf("Bob: Preparing read query for attempt %d", params.AttemptNum+1)
+	readPayload, nextReadIndex, err := params.BobThinClient.ReadChannel(readCtx, params.BobChannelID, params.ReadMessageID)
 	if err != nil {
-		return handleReadPreparationError(t, err, attemptNum, maxRetries)
+		return handleReadPreparationError(t, err, params.AttemptNum, params.MaxRetries)
 	}
 
 	t.Logf("Bob: Prepared read query (%d bytes), next index ready", len(readPayload))
 
 	// Step 2: Send prepared query via SendMessage
 	t.Logf("Bob: Sending prepared read query via SendMessage")
-	err = bobThinClient.SendMessage(readMessageID, readPayload, nil, nil)
+	err = params.BobThinClient.SendMessage(params.ReadMessageID, readPayload, nil, nil)
 	if err != nil {
-		return handleSendMessageError(t, err, attemptNum, maxRetries)
+		return handleSendMessageError(t, err, params.AttemptNum, params.MaxRetries)
 	}
 
 	// Step 3: Wait for reply via MessageReplyEvent
-	return waitForMessageReply(t, bobThinClient, readMessageID, nextReadIndex, attemptNum, maxRetries, receivedMessage, messageReceived)
+	replyParams := &ReplyWaitParams{
+		BobThinClient:   params.BobThinClient,
+		ReadMessageID:   params.ReadMessageID,
+		NextReadIndex:   nextReadIndex,
+		AttemptNum:      params.AttemptNum,
+		MaxRetries:      params.MaxRetries,
+		ReceivedMessage: params.ReceivedMessage,
+		MessageReceived: params.MessageReceived,
+	}
+	return waitForMessageReply(t, replyParams)
 }
 
 // handleReadPreparationError handles errors during read preparation
@@ -191,8 +220,19 @@ func handleSendMessageError(t *testing.T, err error, attemptNum, maxRetries int)
 	return true
 }
 
+// ReplyWaitParams groups parameters for waiting for message replies
+type ReplyWaitParams struct {
+	BobThinClient   *thin.ThinClient
+	ReadMessageID   *[thin.MessageIDLength]byte
+	NextReadIndex   *bacap.MessageBoxIndex
+	AttemptNum      int
+	MaxRetries      int
+	ReceivedMessage *[]byte
+	MessageReceived *bool
+}
+
 // waitForMessageReply waits for and processes MessageReplyEvent
-func waitForMessageReply(t *testing.T, bobThinClient *thin.ThinClient, readMessageID *[thin.MessageIDLength]byte, nextReadIndex *bacap.MessageBoxIndex, attemptNum, maxRetries int, receivedMessage *[]byte, messageReceived *bool) bool {
+func waitForMessageReply(t *testing.T, params *ReplyWaitParams) bool {
 	t.Log("Bob: Waiting for MessageReplyEvent with actual message content...")
 
 	// Wait for the reply with a reasonable timeout
@@ -201,49 +241,85 @@ func waitForMessageReply(t *testing.T, bobThinClient *thin.ThinClient, readMessa
 
 	// Wait for the actual reply event
 	select {
-	case event := <-bobThinClient.EventSink():
-		return processReplyEvent(t, event, readMessageID, nextReadIndex, attemptNum, maxRetries, receivedMessage, messageReceived)
+	case event := <-params.BobThinClient.EventSink():
+		eventParams := &EventProcessParams{
+			ReadMessageID:   params.ReadMessageID,
+			NextReadIndex:   params.NextReadIndex,
+			AttemptNum:      params.AttemptNum,
+			MaxRetries:      params.MaxRetries,
+			ReceivedMessage: params.ReceivedMessage,
+			MessageReceived: params.MessageReceived,
+		}
+		return processReplyEvent(t, event, eventParams)
 	case <-replyCtx.Done():
-		return handleReplyTimeout(t, attemptNum, maxRetries)
+		return handleReplyTimeout(t, params.AttemptNum, params.MaxRetries)
 	}
+}
+
+// EventProcessParams groups parameters for processing reply events
+type EventProcessParams struct {
+	ReadMessageID   *[thin.MessageIDLength]byte
+	NextReadIndex   *bacap.MessageBoxIndex
+	AttemptNum      int
+	MaxRetries      int
+	ReceivedMessage *[]byte
+	MessageReceived *bool
 }
 
 // processReplyEvent processes the received event and extracts the message
-func processReplyEvent(t *testing.T, event thin.Event, readMessageID *[thin.MessageIDLength]byte, nextReadIndex *bacap.MessageBoxIndex, attemptNum, maxRetries int, receivedMessage *[]byte, messageReceived *bool) bool {
+func processReplyEvent(t *testing.T, event thin.Event, params *EventProcessParams) bool {
 	switch e := event.(type) {
 	case *thin.MessageReplyEvent:
-		if e.MessageID != nil && *e.MessageID == *readMessageID {
-			return handleCorrectMessageReply(t, e, nextReadIndex, attemptNum, maxRetries, receivedMessage, messageReceived)
+		if e.MessageID != nil && *e.MessageID == *params.ReadMessageID {
+			replyParams := &MessageReplyParams{
+				Event:           e,
+				NextReadIndex:   params.NextReadIndex,
+				AttemptNum:      params.AttemptNum,
+				MaxRetries:      params.MaxRetries,
+				ReceivedMessage: params.ReceivedMessage,
+				MessageReceived: params.MessageReceived,
+			}
+			return handleCorrectMessageReply(t, replyParams)
 		}
-		return handleWrongMessageID(t, attemptNum, maxRetries)
+		return handleWrongMessageID(t, params.AttemptNum, params.MaxRetries)
 	default:
-		return handleUnexpectedEvent(t, e, attemptNum, maxRetries)
+		return handleUnexpectedEvent(t, e, params.AttemptNum, params.MaxRetries)
 	}
 }
 
+// MessageReplyParams groups parameters for handling message replies
+type MessageReplyParams struct {
+	Event           *thin.MessageReplyEvent
+	NextReadIndex   *bacap.MessageBoxIndex
+	AttemptNum      int
+	MaxRetries      int
+	ReceivedMessage *[]byte
+	MessageReceived *bool
+}
+
 // handleCorrectMessageReply processes a MessageReplyEvent with the correct message ID
-func handleCorrectMessageReply(t *testing.T, e *thin.MessageReplyEvent, nextReadIndex *bacap.MessageBoxIndex, attemptNum, maxRetries int, receivedMessage *[]byte, messageReceived *bool) bool {
+func handleCorrectMessageReply(t *testing.T, params *MessageReplyParams) bool {
 	t.Log("Bob: Received MessageReplyEvent for our read query")
-	if e.Err != nil {
-		t.Logf("Bob: MessageReplyEvent contains error: %v", e.Err)
-		if attemptNum < maxRetries-1 {
+	if params.Event.Err != nil {
+		t.Logf("Bob: MessageReplyEvent contains error: %v", params.Event.Err)
+		if params.AttemptNum < params.MaxRetries-1 {
 			time.Sleep(3 * time.Second)
 			return false
 		}
-		t.Fatalf("Bob: Final MessageReplyEvent failed: %v", e.Err)
+		t.Fatalf("Bob: Final MessageReplyEvent failed: %v", params.Event.Err)
 	}
 
 	// Extract the actual message from the reply
-	if len(e.Payload) > 0 {
-		*receivedMessage = e.Payload
-		t.Logf("Bob: Successfully received message (%d bytes)", len(*receivedMessage))
-		t.Logf("Bob: Next read index for crash recovery: %v", nextReadIndex != nil)
-		*messageReceived = true
+	if len(params.Event.Payload) > 0 {
+		*params.ReceivedMessage = params.Event.Payload
+		t.Logf("Bob: Successfully received message (%d bytes)", len(*params.ReceivedMessage))
+		t.Logf("Bob: Next read index for crash recovery: %v", params.NextReadIndex != nil)
+		*params.MessageReceived = true
 		return true
 	}
 
 	t.Log("Bob: MessageReplyEvent has empty payload, retrying...")
-	if attemptNum < maxRetries-1 {
+	if params.AttemptNum < params.MaxRetries-1 {
 		time.Sleep(3 * time.Second)
 		return false
 	}
