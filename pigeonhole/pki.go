@@ -8,9 +8,12 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/nike"
 	"github.com/katzenpost/hpqc/rand"
 
+	"github.com/katzenpost/katzenpost/client2/common"
+	"github.com/katzenpost/katzenpost/client2/constants"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
 )
@@ -18,6 +21,18 @@ import (
 var (
 	secureRand = rand.NewMath()
 )
+
+// GetRandomCourier selects a random courier from the PKI document and returns
+// the destination ID hash and recipient queue ID for use with SendMessage.
+func GetRandomCourier(doc *cpki.Document) (*[hash.HashSize]byte, []byte) {
+	courierServices := common.FindServices(constants.CourierServiceName, doc)
+	if len(courierServices) == 0 {
+		panic("failure: no courier services")
+	}
+	courierService := courierServices[rand.NewMath().Intn(len(courierServices))]
+	serviceIdHash := hash.Sum256(courierService.MixDescriptor.IdentityKey)
+	return &serviceIdHash, courierService.RecipientQueueID
+}
 
 // GetRandomIntermediateReplicas returns two random replica numbers and their public keys.
 func GetRandomIntermediateReplicas(doc *cpki.Document) ([2]uint8, []nike.PublicKey, error) {
