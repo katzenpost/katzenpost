@@ -371,8 +371,12 @@ func (t *ThinClient) worker() {
 				if ok {
 					isArq = true
 					sentWaitChan := sentWaitChanRaw.(chan error)
+					var err error
+					if message.MessageSentEvent.ErrorCode != ThinClientErrorSuccess {
+						err = fmt.Errorf(ThinClientErrorToString(message.MessageSentEvent.ErrorCode))
+					}
 					select {
-					case sentWaitChan <- message.MessageSentEvent.Err:
+					case sentWaitChan <- err:
 					case <-t.HaltCh():
 						return
 					}
@@ -733,8 +737,8 @@ func (t *ThinClient) BlockingSendReliableMessage(ctx context.Context, messageID 
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	case reply := <-replyWaitChan:
-		if reply.Err != nil {
-			return nil, reply.Err
+		if reply.ErrorCode != ThinClientErrorSuccess {
+			return nil, fmt.Errorf(ThinClientErrorToString(reply.ErrorCode))
 		}
 		return reply.Payload, nil
 	case <-t.HaltCh():
@@ -777,8 +781,8 @@ func (t *ThinClient) CreateWriteChannel(ctx context.Context, boxOwnerCap *bacap.
 
 		switch v := event.(type) {
 		case *CreateWriteChannelReply:
-			if v.Err != "" {
-				return nil, nil, nil, nil, errors.New(v.Err)
+			if v.ErrorCode != ThinClientErrorSuccess {
+				return nil, nil, nil, nil, fmt.Errorf(ThinClientErrorToString(v.ErrorCode))
 			}
 			return &v.ChannelID, v.ReadCap, v.BoxOwnerCap, v.NextMessageIndex, nil
 		case *ConnectionStatusEvent:
@@ -834,8 +838,8 @@ func (t *ThinClient) CreateReadChannel(ctx context.Context, readCap *bacap.Unive
 
 		switch v := event.(type) {
 		case *CreateReadChannelReply:
-			if v.Err != "" {
-				return nil, nil, errors.New(v.Err)
+			if v.ErrorCode != ThinClientErrorSuccess {
+				return nil, nil, fmt.Errorf(ThinClientErrorToString(v.ErrorCode))
 			}
 			return &v.ChannelID, v.NextMessageIndex, nil
 		case *ConnectionStatusEvent:
@@ -892,8 +896,8 @@ func (t *ThinClient) WriteChannel(ctx context.Context, channelID *[ChannelIDLeng
 
 		switch v := event.(type) {
 		case *WriteChannelReply:
-			if v.Err != "" {
-				return nil, nil, errors.New(v.Err)
+			if v.ErrorCode != ThinClientErrorSuccess {
+				return nil, nil, fmt.Errorf(ThinClientErrorToString(v.ErrorCode))
 			}
 			return v.SendMessagePayload, v.NextMessageIndex, nil
 		case *ConnectionStatusEvent:
@@ -948,8 +952,8 @@ func (t *ThinClient) ReadChannel(ctx context.Context, channelID *[ChannelIDLengt
 	case <-ctx.Done():
 		return nil, nil, ctx.Err()
 	case reply := <-readWaitChan:
-		if reply.Err != "" {
-			return nil, nil, errors.New(reply.Err)
+		if reply.ErrorCode != ThinClientErrorSuccess {
+			return nil, nil, fmt.Errorf(ThinClientErrorToString(reply.ErrorCode))
 		}
 		return reply.SendMessagePayload, reply.NextMessageIndex, nil
 	case <-t.HaltCh():
@@ -1001,8 +1005,8 @@ func (t *ThinClient) CopyChannel(ctx context.Context, channelID *[ChannelIDLengt
 
 		switch v := event.(type) {
 		case *CopyChannelReply:
-			if v.Err != "" {
-				return errors.New(v.Err)
+			if v.ErrorCode != ThinClientErrorSuccess {
+				return fmt.Errorf(ThinClientErrorToString(v.ErrorCode))
 			}
 			return nil
 		case *ConnectionStatusEvent:

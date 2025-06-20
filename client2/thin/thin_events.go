@@ -14,6 +14,51 @@ import (
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 )
 
+// Thin client error codes
+const (
+	ThinClientErrorSuccess            uint8 = 0  // Operation completed successfully
+	ThinClientErrorConnectionLost     uint8 = 1  // Connection to daemon lost
+	ThinClientErrorTimeout            uint8 = 2  // Operation timed out
+	ThinClientErrorInvalidRequest     uint8 = 3  // Invalid request format
+	ThinClientErrorInternalError      uint8 = 4  // Internal client error
+	ThinClientErrorMaxRetries         uint8 = 5  // Maximum retries exceeded
+	ThinClientErrorInvalidChannel     uint8 = 6  // Invalid channel ID
+	ThinClientErrorChannelNotFound    uint8 = 7  // Channel not found
+	ThinClientErrorPermissionDenied   uint8 = 8  // Permission denied
+	ThinClientErrorInvalidPayload     uint8 = 9  // Invalid payload data
+	ThinClientErrorServiceUnavailable uint8 = 10 // Service unavailable
+)
+
+// ThinClientErrorToString returns a human-readable string for thin client error codes
+func ThinClientErrorToString(errorCode uint8) string {
+	switch errorCode {
+	case ThinClientErrorSuccess:
+		return "Success"
+	case ThinClientErrorConnectionLost:
+		return "Connection lost"
+	case ThinClientErrorTimeout:
+		return "Timeout"
+	case ThinClientErrorInvalidRequest:
+		return "Invalid request"
+	case ThinClientErrorInternalError:
+		return "Internal error"
+	case ThinClientErrorMaxRetries:
+		return "Maximum retries exceeded"
+	case ThinClientErrorInvalidChannel:
+		return "Invalid channel"
+	case ThinClientErrorChannelNotFound:
+		return "Channel not found"
+	case ThinClientErrorPermissionDenied:
+		return "Permission denied"
+	case ThinClientErrorInvalidPayload:
+		return "Invalid payload"
+	case ThinClientErrorServiceUnavailable:
+		return "Service unavailable"
+	default:
+		return fmt.Sprintf("Unknown thin client error code: %d", errorCode)
+	}
+}
+
 const ChannelIDLength = 32
 
 // Event is the generic event sent over the event listener channel.
@@ -59,14 +104,14 @@ type MessageReplyEvent struct {
 	// Payload is the reply payload if any.
 	Payload []byte `cbor:"payload"`
 
-	// Err is the error encountered when servicing the request if any.
-	Err error `cbor:"err"`
+	// ErrorCode is the error code encountered when servicing the request if any.
+	ErrorCode uint8 `cbor:"error_code,omitempty"`
 }
 
 // String returns a string representation of the MessageReplyEvent.
 func (e *MessageReplyEvent) String() string {
-	if e.Err != nil {
-		return fmt.Sprintf("MessageReply: %v failed: %v", hex.EncodeToString(e.MessageID[:]), e.Err)
+	if e.ErrorCode != ThinClientErrorSuccess {
+		return fmt.Sprintf("MessageReply: %v failed: %v", hex.EncodeToString(e.MessageID[:]), ThinClientErrorToString(e.ErrorCode))
 	}
 	return fmt.Sprintf("KaetzchenReply: %v (%v bytes)", hex.EncodeToString(e.MessageID[:]), len(e.Payload))
 }
@@ -87,14 +132,14 @@ type MessageSentEvent struct {
 	// ReplyETA is the expected round trip time to receive a response.
 	ReplyETA time.Duration `cbor:"reply_eta"`
 
-	// Err is the error encountered when sending the message if any.
-	Err error `cbor:"err"`
+	// ErrorCode is the error code encountered when sending the message if any.
+	ErrorCode uint8 `cbor:"error_code,omitempty"`
 }
 
 // String returns a string representation of a MessageSentEvent.
 func (e *MessageSentEvent) String() string {
-	if e.Err != nil {
-		return fmt.Sprintf("MessageSent: %v failed: %v", hex.EncodeToString(e.MessageID[:]), e.Err)
+	if e.ErrorCode != ThinClientErrorSuccess {
+		return fmt.Sprintf("MessageSent: %v failed: %v", hex.EncodeToString(e.MessageID[:]), ThinClientErrorToString(e.ErrorCode))
 	}
 	return fmt.Sprintf("MessageSent: %v", hex.EncodeToString(e.MessageID[:]))
 }
@@ -143,13 +188,13 @@ type CreateWriteChannelReply struct {
 	ReadCap          *bacap.UniversalReadCap `cbor:"read_cap"`           // For sharing with others
 	BoxOwnerCap      *bacap.BoxOwnerCap      `cbor:"box_owner_cap"`      // For persistence/resumption
 	NextMessageIndex *bacap.MessageBoxIndex  `cbor:"next_message_index"` // Current write position
-	Err              string                  `cbor:"err,omitempty"`
+	ErrorCode        uint8                   `cbor:"error_code,omitempty"`
 }
 
 // String returns a string representation of the CreateWriteChannelReply.
 func (e *CreateWriteChannelReply) String() string {
-	if e.Err != "" {
-		return fmt.Sprintf("CreateWriteChannelReply: %x (error: %s)", e.ChannelID[:], e.Err)
+	if e.ErrorCode != ThinClientErrorSuccess {
+		return fmt.Sprintf("CreateWriteChannelReply: %x (error: %s)", e.ChannelID[:], ThinClientErrorToString(e.ErrorCode))
 	}
 	return fmt.Sprintf("CreateWriteChannelReply: %x", e.ChannelID[:])
 }
@@ -157,13 +202,13 @@ func (e *CreateWriteChannelReply) String() string {
 type CreateReadChannelReply struct {
 	ChannelID        [ChannelIDLength]byte  `cbor:"channel_id"`
 	NextMessageIndex *bacap.MessageBoxIndex `cbor:"next_message_index"` // Current read position
-	Err              string                 `cbor:"err,omitempty"`
+	ErrorCode        uint8                  `cbor:"error_code,omitempty"`
 }
 
 // String returns a string representation of the CreateReadChannelReply.
 func (e *CreateReadChannelReply) String() string {
-	if e.Err != "" {
-		return fmt.Sprintf("CreateReadChannelReply: %x (error: %s)", e.ChannelID[:], e.Err)
+	if e.ErrorCode != ThinClientErrorSuccess {
+		return fmt.Sprintf("CreateReadChannelReply: %x (error: %s)", e.ChannelID[:], ThinClientErrorToString(e.ErrorCode))
 	}
 	return fmt.Sprintf("CreateReadChannelReply: %x", e.ChannelID[:])
 }
@@ -172,13 +217,13 @@ type WriteChannelReply struct {
 	ChannelID          [ChannelIDLength]byte  `cbor:"channel_id"`
 	SendMessagePayload []byte                 `cbor:"send_message_payload"` // Prepared payload for SendMessage
 	NextMessageIndex   *bacap.MessageBoxIndex `cbor:"next_message_index"`   // Index to use AFTER courier ACK
-	Err                string                 `cbor:"err,omitempty"`
+	ErrorCode          uint8                  `cbor:"error_code,omitempty"`
 }
 
 // String returns a string representation of the WriteChannelReply.
 func (e *WriteChannelReply) String() string {
-	if e.Err != "" {
-		return fmt.Sprintf("WriteChannelReply: %x (error: %s)", e.ChannelID[:], e.Err)
+	if e.ErrorCode != ThinClientErrorSuccess {
+		return fmt.Sprintf("WriteChannelReply: %x (error: %s)", e.ChannelID[:], ThinClientErrorToString(e.ErrorCode))
 	}
 	return fmt.Sprintf("WriteChannelReply: %x (%d bytes payload)", e.ChannelID[:], len(e.SendMessagePayload))
 }
@@ -188,7 +233,7 @@ type ReadChannelReply struct {
 	ChannelID          [ChannelIDLength]byte  `cbor:"channel_id"`
 	SendMessagePayload []byte                 `cbor:"send_message_payload"` // Prepared query for SendMessage
 	NextMessageIndex   *bacap.MessageBoxIndex `cbor:"next_message_index"`   // Position for AFTER successful read
-	Err                string                 `cbor:"err,omitempty"`
+	ErrorCode          uint8                  `cbor:"error_code,omitempty"`
 }
 
 // String returns a string representation of the ReadChannelReply.
@@ -197,21 +242,21 @@ func (e *ReadChannelReply) String() string {
 	if e.MessageID != nil {
 		msgIDStr = fmt.Sprintf("%x", e.MessageID[:8]) // First 8 bytes for brevity
 	}
-	if e.Err != "" {
-		return fmt.Sprintf("ReadChannelReply: msgID=%s channel=%x (error: %s)", msgIDStr, e.ChannelID[:8], e.Err)
+	if e.ErrorCode != ThinClientErrorSuccess {
+		return fmt.Sprintf("ReadChannelReply: msgID=%s channel=%x (error: %s)", msgIDStr, e.ChannelID[:8], ThinClientErrorToString(e.ErrorCode))
 	}
 	return fmt.Sprintf("ReadChannelReply: msgID=%s channel=%x (%d bytes payload)", msgIDStr, e.ChannelID[:8], len(e.SendMessagePayload))
 }
 
 type CopyChannelReply struct {
 	ChannelID [ChannelIDLength]byte `cbor:"channel_id"`
-	Err       string                `cbor:"err,omitempty"`
+	ErrorCode uint8                 `cbor:"error_code,omitempty"`
 }
 
 // String returns a string representation of the CopyChannelReply.
 func (e *CopyChannelReply) String() string {
-	if e.Err != "" {
-		return fmt.Sprintf("CopyChannelReply: %x (error: %s)", e.ChannelID[:], e.Err)
+	if e.ErrorCode != ThinClientErrorSuccess {
+		return fmt.Sprintf("CopyChannelReply: %x (error: %s)", e.ChannelID[:], ThinClientErrorToString(e.ErrorCode))
 	}
 	return fmt.Sprintf("CopyChannelReply: %x", e.ChannelID[:])
 }
