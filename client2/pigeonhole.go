@@ -255,6 +255,7 @@ func CreateChannelReadRequestWithBoxID(channelID [thin.ChannelIDLength]byte,
 }
 
 // advanceWriterToIndex advances a StatefulWriter to the specified target index
+// NOTE: This function assumes the caller holds the appropriate WriterLock
 func (d *Daemon) advanceWriterToIndex(statefulWriter *bacap.StatefulWriter, targetIndex *bacap.MessageBoxIndex) error {
 	if targetIndex == nil {
 		return nil
@@ -273,6 +274,7 @@ func (d *Daemon) advanceWriterToIndex(statefulWriter *bacap.StatefulWriter, targ
 }
 
 // advanceReaderToIndex advances a StatefulReader to the specified target index
+// NOTE: This function assumes the caller holds the appropriate ReaderLock
 func (d *Daemon) advanceReaderToIndex(statefulReader *bacap.StatefulReader, targetIndex *bacap.MessageBoxIndex) error {
 	if targetIndex == nil {
 		return nil
@@ -475,6 +477,9 @@ func (d *Daemon) writeChannel(request *Request) {
 
 	_, doc := d.client.CurrentDocument()
 
+	// CRITICAL: Protect StatefulWriter state access with WriterLock to prevent BACAP state corruption
+	channelDesc.WriterLock.Lock()
+
 	// Prepare the write request WITHOUT sending it and WITHOUT advancing state
 	courierEnvelope, envelopePrivateKey, err := CreateChannelWriteRequestPrepareOnly(
 		channelDesc.StatefulWriter,
@@ -483,6 +488,7 @@ func (d *Daemon) writeChannel(request *Request) {
 		d.cfg.PigeonholeGeometry)
 
 	if err != nil {
+		channelDesc.WriterLock.Unlock()
 		d.log.Errorf("writeChannel failure: failed to create write request: %s", err)
 		conn := d.listener.getConnection(request.AppID)
 		if conn != nil {
@@ -496,6 +502,12 @@ func (d *Daemon) writeChannel(request *Request) {
 		}
 		return
 	}
+
+	// Get the next MessageBoxIndex that will be used AFTER courier acknowledgment
+	nextMessageIndex, err := channelDesc.StatefulWriter.NextIndex.NextIndex()
+
+	// Release WriterLock after all StatefulWriter state operations are complete
+	channelDesc.WriterLock.Unlock()
 
 	// Store envelope descriptor for later use when the message is actually sent
 	envHash := courierEnvelope.EnvelopeHash()
@@ -513,8 +525,6 @@ func (d *Daemon) writeChannel(request *Request) {
 		Envelope:  courierEnvelope,
 	}
 
-	// Get the next MessageBoxIndex that will be used AFTER courier acknowledgment
-	nextMessageIndex, err := channelDesc.StatefulWriter.NextIndex.NextIndex()
 	if err != nil {
 		d.log.Errorf("writeChannel failure: failed to get next message index: %s", err)
 		conn := d.listener.getConnection(request.AppID)
@@ -602,6 +612,10 @@ func (d *Daemon) getStoredEnvelope(messageID *[thin.MessageIDLength]byte, channe
 
 // createNewEnvelope creates a new courier envelope for the read request
 func (d *Daemon) createNewEnvelope(request *Request, channelDesc *ChannelDescriptor, doc *cpki.Document) (*pigeonhole.CourierEnvelope, nike.PrivateKey, error) {
+	// CRITICAL: Protect StatefulReader state access with ReaderLock to prevent BACAP state corruption
+	channelDesc.ReaderLock.Lock()
+	defer channelDesc.ReaderLock.Unlock()
+
 	boxID, err := channelDesc.StatefulReader.NextBoxID()
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to get next box ID: %s", err)
@@ -846,8 +860,11 @@ func (d *Daemon) readChannel(request *Request) {
 		Envelope:  courierEnvelope,
 	}
 
-	// Get the next MessageBoxIndex that will be used AFTER successful read
+	// CRITICAL: Protect StatefulReader NextIndex access with ReaderLock to prevent BACAP state corruption
+	channelDesc.ReaderLock.Lock()
 	nextMessageIndex, err := channelDesc.StatefulReader.NextIndex.NextIndex()
+	channelDesc.ReaderLock.Unlock()
+
 	if err != nil {
 		d.log.Errorf("failed to get next message index: %s", err)
 		conn := d.listener.getConnection(request.AppID)
