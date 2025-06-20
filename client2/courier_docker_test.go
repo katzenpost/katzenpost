@@ -10,9 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/katzenpost/katzenpost/client2/thin"
 	"github.com/stretchr/testify/require"
-
-	_ "github.com/katzenpost/katzenpost/client2/thin" // Used by helper functions
 )
 
 func testDockerCourierService(t *testing.T) {
@@ -85,7 +84,8 @@ func testDockerCourierService(t *testing.T) {
 
 	var receivedMessage []byte
 	maxRetries := 10
-	for i := 0; i < maxRetries; i++ {
+	messageReceived := false
+	for i := 0; i < maxRetries && !messageReceived; i++ {
 		t.Logf("Bob: Reading message attempt %d/%d (new crash-consistent API)", i+1, maxRetries)
 
 		// Add a longer delay before the first read to allow message propagation
@@ -128,17 +128,68 @@ func testDockerCourierService(t *testing.T) {
 			break
 		}
 
-		// Step 3: Wait for reply (this would come via MessageReplyEvent in the new API)
-		// For now, we'll simulate success since the full reply handling would require
-		// more complex event processing that's beyond the scope of this test update
-		t.Log("Bob: Successfully sent read query - in production, would wait for MessageReplyEvent")
-		t.Logf("Bob: Next read index for crash recovery: %v", nextReadIndex != nil)
+		// Step 3: Wait for reply via MessageReplyEvent
+		t.Log("Bob: Waiting for MessageReplyEvent with actual message content...")
 
-		// For this test, we'll break here since we've successfully demonstrated the new API
-		// In a real implementation, we'd wait for the MessageReplyEvent with the actual message
-		receivedMessage = plaintextMessage // Simulate successful read for test completion
-		t.Log("Bob: Simulating successful message read for test completion")
-		break
+		// Wait for the reply with a reasonable timeout
+		replyCtx, replyCancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer replyCancel()
+
+		// Wait for the actual reply event
+		select {
+		case event := <-bobThinClient.EventSink():
+			switch e := event.(type) {
+			case *thin.MessageReplyEvent:
+				if e.MessageID != nil && *e.MessageID == *readMessageID {
+					t.Log("Bob: Received MessageReplyEvent for our read query")
+					if e.Err != nil {
+						t.Logf("Bob: MessageReplyEvent contains error: %v", e.Err)
+						if i < maxRetries-1 {
+							time.Sleep(3 * time.Second)
+							continue
+						}
+						t.Fatalf("Bob: Final MessageReplyEvent failed: %v", e.Err)
+					}
+
+					// Extract the actual message from the reply
+					if len(e.Payload) > 0 {
+						receivedMessage = e.Payload
+						t.Logf("Bob: Successfully received message (%d bytes)", len(receivedMessage))
+						t.Logf("Bob: Next read index for crash recovery: %v", nextReadIndex != nil)
+						messageReceived = true
+						break // Exit the switch statement
+					} else {
+						t.Log("Bob: MessageReplyEvent has empty payload, retrying...")
+						if i < maxRetries-1 {
+							time.Sleep(3 * time.Second)
+							continue
+						}
+						t.Fatal("Bob: Final MessageReplyEvent had empty payload")
+					}
+				} else {
+					t.Logf("Bob: Received MessageReplyEvent for different message ID, ignoring")
+					if i < maxRetries-1 {
+						time.Sleep(3 * time.Second)
+						continue
+					}
+					t.Fatal("Bob: Never received MessageReplyEvent for our read query")
+				}
+			default:
+				t.Logf("Bob: Received unexpected event type: %T, ignoring", e)
+				if i < maxRetries-1 {
+					time.Sleep(3 * time.Second)
+					continue
+				}
+				t.Fatal("Bob: Never received MessageReplyEvent for our read query")
+			}
+		case <-replyCtx.Done():
+			t.Logf("Bob: Timeout waiting for MessageReplyEvent on attempt %d", i+1)
+			if i < maxRetries-1 {
+				time.Sleep(3 * time.Second)
+				continue
+			}
+			t.Fatal("Bob: Final timeout waiting for MessageReplyEvent")
+		}
 	}
 
 	// Verify the messages match
