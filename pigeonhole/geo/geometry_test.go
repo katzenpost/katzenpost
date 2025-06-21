@@ -173,7 +173,7 @@ func TestGeometryPrecisePredictions(t *testing.T) {
 	require.NoError(t, g.Validate())
 
 	// Create BACAP keys like integration tests
-	aliceOwner, err := bacap.NewBoxOwnerCap(rand.Reader)
+	aliceOwner, err := bacap.NewWriteCap(rand.Reader)
 	require.NoError(t, err)
 	aliceStatefulWriter, err := bacap.NewStatefulWriter(aliceOwner, constants.PIGEONHOLE_CTX)
 	require.NoError(t, err)

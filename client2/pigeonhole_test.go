@@ -35,7 +35,7 @@ const (
 
 func TestCreateChannelWriteRequest(t *testing.T) {
 	// Create BACAP stateful writer
-	owner, err := bacap.NewBoxOwnerCap(rand.Reader)
+	owner, err := bacap.NewWriteCap(rand.Reader)
 	require.NoError(t, err)
 	statefulWriter, err := bacap.NewStatefulWriter(owner, constants.PIGEONHOLE_CTX)
 	require.NoError(t, err)
@@ -82,7 +82,7 @@ func TestCreateChannelWriteRequest(t *testing.T) {
 
 func TestCreateChannelWriteRequestPayloadTooLarge(t *testing.T) {
 	// Create BACAP stateful writer
-	owner, err := bacap.NewBoxOwnerCap(rand.Reader)
+	owner, err := bacap.NewWriteCap(rand.Reader)
 	require.NoError(t, err)
 	statefulWriter, err := bacap.NewStatefulWriter(owner, constants.PIGEONHOLE_CTX)
 	require.NoError(t, err)

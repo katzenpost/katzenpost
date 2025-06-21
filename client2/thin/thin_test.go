@@ -122,21 +122,15 @@ func TestThinTCPSendRecv(t *testing.T) {
 		PigeonholeGeometry: pigeonholeGeometry,
 	}
 
-	channelID := &[ChannelIDLength]byte{}
-	_, err = rand.Reader.Read(channelID[:])
-	require.NoError(t, err)
+	channelID := uint16(12345)
 
 	ctx := context.Background()
 
 	largePayload := make([]byte, 100)
-	err = thin.WriteChannel(ctx, channelID, largePayload)
+	_, _, err = thin.WriteChannel(ctx, channelID, largePayload)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "payload size")
 	require.Contains(t, err.Error(), "exceeds maximum allowed size")
-
-	err = thin.WriteChannel(ctx, nil, largePayload)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "channelID cannot be nil")
 
 	sphinxGeometry := &geo.Geometry{
 		UserForwardPayloadLength: 30,
@@ -156,42 +150,4 @@ func TestThinTCPSendRecv(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "payload size")
 	require.Contains(t, err.Error(), "exceeds maximum allowed size")
-}
-
-func TestCopyChannelValidation(t *testing.T) {
-	logBackend, err := log.New("", "DEBUG", false)
-	require.NoError(t, err)
-
-	client, _ := net.Pipe()
-	defaultSphinxGeometry := &geo.Geometry{
-		UserForwardPayloadLength: 1000,
-	}
-	nikeScheme := schemes.ByName("x25519")
-	defaultPigeonholeGeometry := pigeonholeGeo.NewGeometry(1000, nikeScheme)
-
-	thin := ThinClient{
-		cfg: &Config{
-			SphinxGeometry:     defaultSphinxGeometry,
-			PigeonholeGeometry: defaultPigeonholeGeometry,
-		},
-		log:   logBackend.GetLogger("thinclient"),
-		isTCP: true,
-		conn:  client,
-	}
-
-	ctx := context.Background()
-
-	// Test with nil channelID
-	err = thin.CopyChannel(ctx, nil)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "channelID cannot be nil")
-
-	// Test with nil context
-	channelID := &[ChannelIDLength]byte{}
-	_, err = rand.Reader.Read(channelID[:])
-	require.NoError(t, err)
-
-	err = thin.CopyChannel(nil, channelID)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "context cannot be nil")
 }
