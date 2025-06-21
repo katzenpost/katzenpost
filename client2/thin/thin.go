@@ -1143,3 +1143,16 @@ func (t *ThinClient) ReadChannel(ctx context.Context, channelID uint16, messageI
 		return nil, nil, errHalting
 	}
 }
+
+/* NOTE(david): FIXME later
+func (t *ThinClient) SendReadChannelQuery(ctx context.Context, channelID uint16, payload []byte, destNode *[32]byte, destQueue []byte) error {
+	if ctx == nil {
+		return errContextCannotBeNil
+	}
+
+	surbid := t.NewSURBID()
+
+	return t.SendMessage(surbid, payload, destNode, destQueue)
+
+}
+*/

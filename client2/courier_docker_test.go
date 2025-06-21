@@ -12,6 +12,7 @@ import (
 
 	"github.com/katzenpost/hpqc/bacap"
 	"github.com/katzenpost/katzenpost/client2/thin"
+	"github.com/katzenpost/katzenpost/pigeonhole"
 	"github.com/stretchr/testify/require"
 )
 
@@ -138,6 +139,11 @@ func performBobReadOperation(t *testing.T, bobThinClient *thin.ThinClient, readC
 
 	// Send read query
 	receivedMessage := sendAndWait(t, bobThinClient, sendPayload, serviceNodeID, courierQueueID)
+	require.NotNil(t, receivedMessage)
 
-	return receivedMessage
+	// remove padding
+	message, err := pigeonhole.ExtractMessageFromPaddedPayload(receivedMessage)
+	require.NoError(t, err)
+
+	return message
 }
