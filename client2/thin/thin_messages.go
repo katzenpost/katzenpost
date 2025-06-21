@@ -76,20 +76,8 @@ type ReadChannel struct {
 
 	// MessageID is used for correlating the read request with its response.
 	// This allows the client to match responses to specific read operations.
+	// This field is required.
 	MessageID *[MessageIDLength]byte `cbor:"id,omitempty"`
-}
-
-// CopyChannel requests copying data from a pigeonhole channel to storage replicas
-// via the courier system. This operation ensures message persistence and availability
-// across multiple storage nodes in the network.
-type CopyChannel struct {
-	// ChannelID identifies the source channel for the copy operation.
-	// This ID was returned when the channel was created.
-	ChannelID uint16 `cbor:"channel_id"`
-
-	// MessageID is used for correlating the copy request with its response.
-	// This allows the client to track the completion of copy operations.
-	MessageID *[MessageIDLength]byte `cbor:"id"`
 }
 
 // SendMessage requests sending a message through the mixnet using the Sphinx
@@ -247,9 +235,6 @@ type Request struct {
 
 	// ReadChannel requests reading the next message from a pigeonhole channel.
 	ReadChannel *ReadChannel `cbor:"read_channel"`
-
-	// CopyChannel requests copying channel data to storage replicas.
-	CopyChannel *CopyChannel `cbor:"copy_channel"`
 
 	// SendMessage requests sending a message through the mixnet.
 	SendMessage *SendMessage `cbor:"send_message"`

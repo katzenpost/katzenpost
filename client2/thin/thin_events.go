@@ -22,9 +22,9 @@ import (
 // These codes are used in response messages to indicate the success or failure
 // of operations, allowing applications to handle errors consistently.
 const (
-	// ThinClientErrorSuccess indicates that the operation completed successfully
+	// ThinClientSuccess indicates that the operation completed successfully
 	// with no errors. This is the default success state.
-	ThinClientErrorSuccess uint8 = 0
+	ThinClientSuccess uint8 = 0
 
 	// ThinClientErrorConnectionLost indicates that the connection to the daemon
 	// was lost during the operation. The client should attempt to reconnect.
@@ -83,7 +83,7 @@ const (
 //   - string: A human-readable description of the error
 func ThinClientErrorToString(errorCode uint8) string {
 	switch errorCode {
-	case ThinClientErrorSuccess:
+	case ThinClientSuccess:
 		return "Success"
 	case ThinClientErrorConnectionLost:
 		return "Connection lost"
@@ -177,7 +177,7 @@ type MessageReplyEvent struct {
 
 // String returns a string representation of the MessageReplyEvent.
 func (e *MessageReplyEvent) String() string {
-	if e.ErrorCode != ThinClientErrorSuccess {
+	if e.ErrorCode != ThinClientSuccess {
 		return fmt.Sprintf("MessageReply: %v failed: %v", hex.EncodeToString(e.MessageID[:]), ThinClientErrorToString(e.ErrorCode))
 	}
 	return fmt.Sprintf("KaetzchenReply: %v (%v bytes)", hex.EncodeToString(e.MessageID[:]), len(e.Payload))
@@ -205,7 +205,7 @@ type MessageSentEvent struct {
 
 // String returns a string representation of a MessageSentEvent.
 func (e *MessageSentEvent) String() string {
-	if e.ErrorCode != ThinClientErrorSuccess {
+	if e.ErrorCode != ThinClientSuccess {
 		return fmt.Sprintf("MessageSent: %v failed: %v", hex.EncodeToString(e.MessageID[:]), ThinClientErrorToString(e.ErrorCode))
 	}
 	return fmt.Sprintf("MessageSent: %v", hex.EncodeToString(e.MessageID[:]))
@@ -283,7 +283,7 @@ type CreateWriteChannelReply struct {
 
 // String returns a string representation of the CreateWriteChannelReply.
 func (e *CreateWriteChannelReply) String() string {
-	if e.ErrorCode != ThinClientErrorSuccess {
+	if e.ErrorCode != ThinClientSuccess {
 		return fmt.Sprintf("CreateWriteChannelReply: %d (error: %s)", e.ChannelID, ThinClientErrorToString(e.ErrorCode))
 	}
 	return fmt.Sprintf("CreateWriteChannelReply: %d", e.ChannelID)
@@ -308,7 +308,7 @@ type CreateReadChannelReply struct {
 
 // String returns a string representation of the CreateReadChannelReply.
 func (e *CreateReadChannelReply) String() string {
-	if e.ErrorCode != ThinClientErrorSuccess {
+	if e.ErrorCode != ThinClientSuccess {
 		return fmt.Sprintf("CreateReadChannelReply: %d (error: %s)", e.ChannelID, ThinClientErrorToString(e.ErrorCode))
 	}
 	return fmt.Sprintf("CreateReadChannelReply: %d", e.ChannelID)
@@ -336,7 +336,7 @@ type WriteChannelReply struct {
 
 // String returns a string representation of the WriteChannelReply.
 func (e *WriteChannelReply) String() string {
-	if e.ErrorCode != ThinClientErrorSuccess {
+	if e.ErrorCode != ThinClientSuccess {
 		return fmt.Sprintf("WriteChannelReply: %d (error: %s)", e.ChannelID, ThinClientErrorToString(e.ErrorCode))
 	}
 	return fmt.Sprintf("WriteChannelReply: %d (%d bytes payload)", e.ChannelID, len(e.SendMessagePayload))
@@ -372,7 +372,7 @@ func (e *ReadChannelReply) String() string {
 	if e.MessageID != nil {
 		msgIDStr = fmt.Sprintf("%x", e.MessageID[:8]) // First 8 bytes for brevity
 	}
-	if e.ErrorCode != ThinClientErrorSuccess {
+	if e.ErrorCode != ThinClientSuccess {
 		return fmt.Sprintf("ReadChannelReply: msgID=%s channel=%d (error: %s)", msgIDStr, e.ChannelID, ThinClientErrorToString(e.ErrorCode))
 	}
 	return fmt.Sprintf("ReadChannelReply: msgID=%s channel=%d (%d bytes payload)", msgIDStr, e.ChannelID, len(e.SendMessagePayload))
@@ -392,7 +392,7 @@ type CopyChannelReply struct {
 
 // String returns a string representation of the CopyChannelReply.
 func (e *CopyChannelReply) String() string {
-	if e.ErrorCode != ThinClientErrorSuccess {
+	if e.ErrorCode != ThinClientSuccess {
 		return fmt.Sprintf("CopyChannelReply: %d (error: %s)", e.ChannelID, ThinClientErrorToString(e.ErrorCode))
 	}
 	return fmt.Sprintf("CopyChannelReply: %d", e.ChannelID)

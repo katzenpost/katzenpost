@@ -556,7 +556,7 @@ func (t *ThinClient) worker() {
 					isArq = true
 					sentWaitChan := sentWaitChanRaw.(chan error)
 					var err error
-					if message.MessageSentEvent.ErrorCode != ThinClientErrorSuccess {
+					if message.MessageSentEvent.ErrorCode != ThinClientSuccess {
 						err = errors.New(ThinClientErrorToString(message.MessageSentEvent.ErrorCode))
 					}
 					select {
@@ -921,7 +921,7 @@ func (t *ThinClient) BlockingSendReliableMessage(ctx context.Context, messageID 
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	case reply := <-replyWaitChan:
-		if reply.ErrorCode != ThinClientErrorSuccess {
+		if reply.ErrorCode != ThinClientSuccess {
 			return nil, errors.New(ThinClientErrorToString(reply.ErrorCode))
 		}
 		return reply.Payload, nil
@@ -976,7 +976,7 @@ func (t *ThinClient) CreateWriteChannel(ctx context.Context, WriteCap *bacap.Wri
 
 		switch v := event.(type) {
 		case *CreateWriteChannelReply:
-			if v.ErrorCode != ThinClientErrorSuccess {
+			if v.ErrorCode != ThinClientSuccess {
 				return 0, nil, nil, nil, errors.New(ThinClientErrorToString(v.ErrorCode))
 			}
 			return v.ChannelID, v.ReadCap, v.WriteCap, v.NextMessageIndex, nil
@@ -1026,7 +1026,7 @@ func (t *ThinClient) CreateReadChannel(ctx context.Context, readCap *bacap.ReadC
 
 		switch v := event.(type) {
 		case *CreateReadChannelReply:
-			if v.ErrorCode != ThinClientErrorSuccess {
+			if v.ErrorCode != ThinClientSuccess {
 				return 0, nil, errors.New(ThinClientErrorToString(v.ErrorCode))
 			}
 			return v.ChannelID, v.NextMessageIndex, nil
@@ -1081,7 +1081,7 @@ func (t *ThinClient) WriteChannel(ctx context.Context, channelID uint16, payload
 
 		switch v := event.(type) {
 		case *WriteChannelReply:
-			if v.ErrorCode != ThinClientErrorSuccess {
+			if v.ErrorCode != ThinClientSuccess {
 				return nil, nil, errors.New(ThinClientErrorToString(v.ErrorCode))
 			}
 			return v.SendMessagePayload, v.NextMessageIndex, nil
@@ -1134,7 +1134,7 @@ func (t *ThinClient) ReadChannel(ctx context.Context, channelID uint16, messageI
 	case <-ctx.Done():
 		return nil, nil, ctx.Err()
 	case reply := <-readWaitChan:
-		if reply.ErrorCode != ThinClientErrorSuccess {
+		if reply.ErrorCode != ThinClientSuccess {
 			return nil, nil, errors.New(ThinClientErrorToString(reply.ErrorCode))
 		}
 		return reply.SendMessagePayload, reply.NextMessageIndex, nil

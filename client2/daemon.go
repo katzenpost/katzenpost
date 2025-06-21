@@ -316,8 +316,6 @@ func (d *Daemon) egressWorker() {
 				d.writeChannel(request)
 			case request.ReadChannel != nil:
 				d.readChannel(request)
-			case request.CopyChannel != nil:
-				d.log.Warning("copyChannel not implemented")
 			default:
 				panic("send operation not fully specified")
 			}
@@ -583,10 +581,10 @@ func (d *Daemon) processEnvelopeReply(env *pigeonhole.CourierEnvelopeReply, chan
 	envHash := (*[hash.HashSize]byte)(env.EnvelopeHash[:])
 
 	// DEBUG: Log envelope hash and map size when processing reply
-	channelDesc.EnvelopeLock.RLock()
+	channelDesc.EnvelopeDescriptorsLock.RLock()
 	mapSize := len(channelDesc.EnvelopeDescriptors)
 	envelopeDesc, ok := channelDesc.EnvelopeDescriptors[*envHash]
-	channelDesc.EnvelopeLock.RUnlock()
+	channelDesc.EnvelopeDescriptorsLock.RUnlock()
 
 	fmt.Printf("PROCESSING REPLY ENVELOPE HASH: %x (map size: %d, exists: %t)\n", envHash[:], mapSize, ok)
 
@@ -719,14 +717,14 @@ func (d *Daemon) handleReadReply(params *ReplyHandlerParams, readReply *pigeonho
 	}
 
 	d.log.Debugf("BACAP DECRYPT: Starting decryption for BoxID %x with payload size %d bytes", boxid[:], len(readReply.Payload))
-	params.ChannelDesc.ReaderLock.Lock()
+	params.ChannelDesc.StatefulReaderLock.Lock()
 	signature := (*[bacap.SignatureSize]byte)(readReply.Signature[:])
 	innerplaintext, err := params.ChannelDesc.StatefulReader.DecryptNext(
 		[]byte(constants.PIGEONHOLE_CTX),
 		*boxid,
 		readReply.Payload,
 		*signature)
-	params.ChannelDesc.ReaderLock.Unlock()
+	params.ChannelDesc.StatefulReaderLock.Unlock()
 	if err != nil {
 		d.log.Errorf("BACAP DECRYPT FAILED for BoxID %x: %s", boxid[:], err)
 		return fmt.Errorf("failed to decrypt next: %s", err)
@@ -759,9 +757,9 @@ func (d *Daemon) handleReadReply(params *ReplyHandlerParams, readReply *pigeonho
 		return fmt.Errorf("failed to send response to client: %s", err)
 	}
 
-	params.ChannelDesc.EnvelopeLock.Lock()
+	params.ChannelDesc.StatefulReaderLock.Lock()
 	delete(params.ChannelDesc.EnvelopeDescriptors, *params.EnvHash)
-	params.ChannelDesc.EnvelopeLock.Unlock()
+	params.ChannelDesc.StatefulReaderLock.Unlock()
 
 	// Also clean up stored envelope data if we have a message ID
 	if params.MessageID != nil {
@@ -781,7 +779,7 @@ func (d *Daemon) handleCopyReply(appid *[AppIDLength]byte, channelID uint16, cop
 		d.log.Debugf("copy command completed successfully for channel %d", channelID)
 	}
 
-	var errorCode uint8 = thin.ThinClientErrorSuccess
+	var errorCode uint8 = thin.ThinClientSuccess
 	if copyReply.ErrorCode != 0 {
 		errorCode = thin.ThinClientErrorInternalError
 	}
@@ -810,11 +808,11 @@ func (d *Daemon) handleWriteReply(params *ReplyHandlerParams, writeReply *pigeon
 	// Only advance state if the write was successful
 	if writeReply.ErrorCode == 0 {
 		// Advance StatefulWriter state now that courier has confirmed successful storage
-		params.ChannelDesc.WriterLock.Lock()
+		params.ChannelDesc.StatefulWriterLock.Lock()
 		if params.ChannelDesc.StatefulWriter != nil {
 			nextIndex, err := params.ChannelDesc.StatefulWriter.NextIndex.NextIndex()
 			if err != nil {
-				params.ChannelDesc.WriterLock.Unlock()
+				params.ChannelDesc.StatefulWriterLock.Unlock()
 				d.log.Errorf("Failed to advance writer state: %s", err)
 				return fmt.Errorf("failed to advance writer state: %s", err)
 			}
@@ -822,7 +820,7 @@ func (d *Daemon) handleWriteReply(params *ReplyHandlerParams, writeReply *pigeon
 			params.ChannelDesc.StatefulWriter.NextIndex = nextIndex
 			d.log.Debugf("Advanced writer state for channel %d", params.ChannelID)
 		}
-		params.ChannelDesc.WriterLock.Unlock()
+		params.ChannelDesc.StatefulWriterLock.Unlock()
 	} else {
 		d.log.Errorf("failed to write to channel, error code: %d", writeReply.ErrorCode)
 		// Don't advance state on write failure - allow retry with same index
@@ -840,9 +838,9 @@ func (d *Daemon) handleWriteReply(params *ReplyHandlerParams, writeReply *pigeon
 		return fmt.Errorf("failed to send write response to client: %s", err)
 	}
 
-	params.ChannelDesc.EnvelopeLock.Lock()
+	params.ChannelDesc.EnvelopeDescriptorsLock.Lock()
 	delete(params.ChannelDesc.EnvelopeDescriptors, *params.EnvHash)
-	params.ChannelDesc.EnvelopeLock.Unlock()
+	params.ChannelDesc.EnvelopeDescriptorsLock.Unlock()
 
 	return nil
 }
@@ -902,7 +900,7 @@ func (d *Daemon) send(request *Request) {
 		if !isLoopDecoy {
 			incomingConn := d.listener.getConnection(request.AppID)
 			if incomingConn != nil {
-				var errorCode uint8 = thin.ThinClientErrorSuccess
+				var errorCode uint8 = thin.ThinClientSuccess
 				if err != nil {
 					errorCode = thin.ThinClientErrorInternalError
 				}
