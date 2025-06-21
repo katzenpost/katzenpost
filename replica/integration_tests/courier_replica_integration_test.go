@@ -798,11 +798,11 @@ func aliceComposesNextMessageWithIsLast(t *testing.T, message []byte, env *testE
 func aliceAndBobKeyExchangeKeys(t *testing.T, env *testEnvironment) (*bacap.StatefulWriter, *bacap.StatefulReader) {
 	// --- Alice creates a BACAP sequence and gives Bob a sequence read capability
 	// Bob can read from his StatefulReader that which Alice writes with her StatefulWriter.
-	aliceOwner, err := bacap.NewBoxOwnerCap(rand.Reader)
+	aliceOwner, err := bacap.NewWriteCap(rand.Reader)
 	require.NoError(t, err)
 	aliceStatefulWriter, err := bacap.NewStatefulWriter(aliceOwner, constants.PIGEONHOLE_CTX)
 	require.NoError(t, err)
-	bobReadCap := aliceOwner.UniversalReadCap()
+	bobReadCap := aliceOwner.ReadCap()
 	bobStatefulReader, err := bacap.NewStatefulReader(bobReadCap, constants.PIGEONHOLE_CTX)
 	require.NoError(t, err)
 	return aliceStatefulWriter, bobStatefulReader
@@ -1091,7 +1091,7 @@ func waitForReplicaResponse(t *testing.T, env *testEnvironment, envelope *pigeon
 
 // testSequenceData holds the data for a BACAP sequence used in testing
 type testSequenceData struct {
-	Owner         *bacap.BoxOwnerCap
+	Owner         *bacap.WriteCap
 	EnvelopeCBORs []byte
 	OriginalData  []byte
 }

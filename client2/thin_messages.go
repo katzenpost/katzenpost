@@ -74,6 +74,7 @@ type Request struct {
 
 	ReadChannel *thin.ReadChannel
 
+	// CopyChannel is not implemented
 	CopyChannel *thin.CopyChannel
 
 	SendMessage *thin.SendMessage

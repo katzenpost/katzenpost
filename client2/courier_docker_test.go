@@ -20,12 +20,15 @@ func testDockerCourierService(t *testing.T) {
 	t.Log("TESTING COURIER SERVICE - Starting pigeonhole channel test")
 
 	// Setup clients and test data
-	aliceThinClient, bobThinClient, plaintextMessage := setupCourierTest(t)
+	aliceThinClient, bobThinClient := setupCourierTest(t)
 	defer func() {
 		t.Log("Test Completed. Disconnecting...")
 		aliceThinClient.Close()
 		bobThinClient.Close()
 	}()
+
+	// Test message to send
+	plaintextMessage := []byte("Hello world from Alice to Bob!")
 
 	// Alice sends message
 	aliceChannelID, readCap := performAliceWriteOperation(t, aliceThinClient, plaintextMessage)
@@ -38,7 +41,7 @@ func testDockerCourierService(t *testing.T) {
 }
 
 // setupCourierTest initializes thin clients and test data
-func setupCourierTest(t *testing.T) (*thin.ThinClient, *thin.ThinClient, []byte) {
+func setupCourierTest(t *testing.T) (*thin.ThinClient, *thin.ThinClient) {
 	// Create separate thin clients for Alice and Bob
 	t.Log("Creating Alice's thin client")
 	aliceThinClient := setupThinClient(t)
@@ -52,10 +55,7 @@ func setupCourierTest(t *testing.T) (*thin.ThinClient, *thin.ThinClient, []byte)
 	_ = validatePKIDocument(t, aliceThinClient)
 	_ = validatePKIDocument(t, bobThinClient)
 
-	// Test message to send
-	plaintextMessage := []byte("Hello world from Alice to Bob!")
-
-	return aliceThinClient, bobThinClient, plaintextMessage
+	return aliceThinClient, bobThinClient
 }
 
 // performAliceWriteOperation handles Alice's write channel creation and message sending
