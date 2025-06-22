@@ -143,3 +143,44 @@ func repeatBlockingSendReliableMessage(t *testing.T, client *thin.ThinClient, me
 func init() {
 	shutdownCh = make(chan interface{})
 }
+
+// sendChannelQueryAndWait sends a channel query message and waits for a reply
+func sendChannelQueryAndWait(t *testing.T, client *thin.ThinClient, channelID uint16, message []byte, nodeID *[32]byte, queueID []byte) []byte {
+	surbID := client.NewSURBID()
+	eventSink := client.EventSink()
+	err := client.SendChannelQuery(channelID, message, nodeID, queueID)
+	require.NoError(t, err)
+
+	for {
+		var event thin.Event
+		select {
+		case event = <-eventSink:
+		case <-shutdownCh: // exit if halted
+			// interrupt caught, shutdown client
+			t.Log("Interrupt caught - shutting down client")
+			client.Halt()
+			return nil
+		}
+
+		switch v := event.(type) {
+		case *thin.MessageIDGarbageCollected:
+			t.Log("MessageIDGarbageCollected")
+		case *thin.ConnectionStatusEvent:
+			t.Log("ConnectionStatusEvent")
+			if !v.IsConnected {
+				panic("socket connection lost")
+			}
+		case *thin.NewDocumentEvent:
+			t.Log("NewPKIDocumentEvent")
+		case *thin.MessageSentEvent:
+			t.Log("MessageSentEvent")
+		case *thin.MessageReplyEvent:
+			t.Log("MessageReplyEvent")
+			require.Equal(t, surbID[:], v.SURBID[:])
+			return v.Payload
+		default:
+			panic("impossible event type")
+		}
+	}
+	panic("impossible event type")
+}

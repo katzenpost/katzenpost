@@ -59,7 +59,7 @@ func setupCourierTest(t *testing.T) (*thin.ThinClient, *thin.ThinClient) {
 }
 
 // performAliceWriteOperation handles Alice's write channel creation and message sending
-func performAliceWriteOperation(t *testing.T, aliceThinClient *thin.ThinClient, plaintextMessage []byte) (uint16, *bacap.ReadCap) {
+func performAliceWriteOperation(t *testing.T, aliceThinClient *thin.ThinClient, channelID uint16, plaintextMessage []byte) (uint16, *bacap.ReadCap) {
 	// Create context with timeout for operations
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
@@ -88,7 +88,7 @@ func performAliceWriteOperation(t *testing.T, aliceThinClient *thin.ThinClient, 
 	require.NotNil(t, doc)
 	serviceNodeID, courierQueueID := thin.GetRandomCourier(doc)
 
-	writeReply := sendAndWait(t, aliceThinClient, sendPayload, serviceNodeID, courierQueueID)
+	writeReply := sendChannelQueryAndWait(t, aliceThinClient, aliceChannelID, sendPayload, serviceNodeID, courierQueueID)
 	require.NotNil(t, writeReply)
 	require.NotEmpty(t, writeReply)
 	t.Log("Alice: Successfully sent message via sendAndWait")
@@ -138,7 +138,7 @@ func performBobReadOperation(t *testing.T, bobThinClient *thin.ThinClient, readC
 	serviceNodeID, courierQueueID := thin.GetRandomCourier(doc)
 
 	// Send read query
-	receivedMessage := sendAndWait(t, bobThinClient, sendPayload, serviceNodeID, courierQueueID)
+	receivedMessage := sendChannelQueryAndWait(t, bobThinClient, bobChannelID, sendPayload, serviceNodeID, courierQueueID)
 	require.NotNil(t, receivedMessage)
 
 	// remove padding
