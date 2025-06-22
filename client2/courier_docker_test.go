@@ -59,7 +59,7 @@ func setupCourierTest(t *testing.T) (*thin.ThinClient, *thin.ThinClient) {
 }
 
 // performAliceWriteOperation handles Alice's write channel creation and message sending
-func performAliceWriteOperation(t *testing.T, aliceThinClient *thin.ThinClient, channelID uint16, plaintextMessage []byte) (uint16, *bacap.ReadCap) {
+func performAliceWriteOperation(t *testing.T, aliceThinClient *thin.ThinClient, plaintextMessage []byte) (uint16, *bacap.ReadCap) {
 	// Create context with timeout for operations
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
