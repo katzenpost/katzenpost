@@ -12,7 +12,6 @@ import (
 	"github.com/katzenpost/hpqc/bacap"
 	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/nike"
-	"github.com/katzenpost/hpqc/rand"
 
 	"github.com/katzenpost/katzenpost/client2/constants"
 	"github.com/katzenpost/katzenpost/client2/thin"
@@ -20,11 +19,6 @@ import (
 	"github.com/katzenpost/katzenpost/pigeonhole"
 	pigeonholeGeo "github.com/katzenpost/katzenpost/pigeonhole/geo"
 	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
-)
-
-var (
-	// Package-level cryptographically secure random number generator
-	secureRand = rand.NewMath()
 )
 
 const (
@@ -657,81 +651,4 @@ func (d *Daemon) checkReadCapabilityDedup(request *Request, readCap *bacap.ReadC
 	// Mark this capability as used
 	d.usedReadCaps[capHash] = true
 	return nil
-}
-
-// removeCapabilityFromDedup removes a capability from the deduplication maps
-// This should be called when a channel is explicitly closed or removed
-func (d *Daemon) removeCapabilityFromDedup(channelDesc *ChannelDescriptor) {
-	if channelDesc.StatefulReader != nil {
-		readCapBytes, err := channelDesc.StatefulReader.Rcap.MarshalBinary()
-		if err == nil {
-			capHash := hash.Sum256(readCapBytes)
-			d.capabilityLock.Lock()
-			delete(d.usedReadCaps, capHash)
-			d.capabilityLock.Unlock()
-		}
-		return
-	}
-	if channelDesc.StatefulWriter != nil {
-		boxOwnerCapBytes, err := channelDesc.StatefulWriter.Wcap.MarshalBinary()
-		if err == nil {
-			capHash := hash.Sum256(boxOwnerCapBytes)
-			d.capabilityLock.Lock()
-			delete(d.usedWriteCaps, capHash)
-			d.capabilityLock.Unlock()
-		}
-	}
-}
-
-func (d *Daemon) sendCreateWriteChannelError(request *Request, errorCode uint8) {
-	conn := d.listener.getConnection(request.AppID)
-	if conn != nil {
-		conn.sendResponse(&Response{
-			AppID: request.AppID,
-			CreateWriteChannelReply: &thin.CreateWriteChannelReply{
-				ChannelID: 0,
-				ErrorCode: errorCode,
-			},
-		})
-	}
-}
-
-func (d *Daemon) sendCreateReadChannelError(request *Request, errorCode uint8) {
-	conn := d.listener.getConnection(request.AppID)
-	if conn != nil {
-		conn.sendResponse(&Response{
-			AppID: request.AppID,
-			CreateReadChannelReply: &thin.CreateReadChannelReply{
-				ChannelID: 0,
-				ErrorCode: errorCode,
-			},
-		})
-	}
-}
-
-func (d *Daemon) sendReadChannelError(request *Request, errorCode uint8) {
-	conn := d.listener.getConnection(request.AppID)
-	if conn != nil {
-		conn.sendResponse(&Response{
-			AppID: request.AppID,
-			ReadChannelReply: &thin.ReadChannelReply{
-				MessageID: request.ReadChannel.MessageID,
-				ChannelID: request.ReadChannel.ChannelID,
-				ErrorCode: errorCode,
-			},
-		})
-	}
-}
-
-func (d *Daemon) sendWriteChannelError(request *Request, errorCode uint8) {
-	conn := d.listener.getConnection(request.AppID)
-	if conn != nil {
-		conn.sendResponse(&Response{
-			AppID: request.AppID,
-			WriteChannelReply: &thin.WriteChannelReply{
-				ChannelID: request.WriteChannel.ChannelID,
-				ErrorCode: errorCode,
-			},
-		})
-	}
 }

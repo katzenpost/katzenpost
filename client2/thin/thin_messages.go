@@ -94,6 +94,10 @@ type SendMessage struct {
 	// When true, the SURBID field must also be provided.
 	WithSURB bool `cbor:"with_surb"`
 
+	// ChannelID is optional and only used for sending channel messages.
+	// For non-channel messages, this field should be nil.
+	ChannelID *uint16 `cbor:"channel_id,omitempty"`
+
 	// SURBID is a unique identifier for the SURB included with this message.
 	// This ID is used to correlate replies with the original message.
 	// This field must be nil if WithSURB is false.

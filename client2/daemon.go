@@ -346,13 +346,8 @@ func (d *Daemon) ingressWorker() {
 			}
 		case surbID := <-d.gcSurbIDCh:
 			d.channelRepliesLock.RLock()
-			_, ok := d.channelReplies[*surbID]
+			delete(d.channelReplies, *surbID)
 			d.channelRepliesLock.RUnlock()
-
-			if ok {
-				d.log.Debugf("Timer expired for channel SURB ID %x, but keeping state for retries", surbID[:])
-				continue
-			}
 
 			d.replyLock.Lock()
 			delete(d.replies, *surbID)
@@ -454,8 +449,8 @@ func (d *Daemon) handleReply(reply *sphinxReply) {
 	}
 }
 
-// handleChannelReply tries to handle the reply and if successful it sends a
-// response to the appropriate thin client connection. Otherwise it returns an error.
+// handleChannelReply tries to decrypt the reply and if successful it sends a
+// response to the given thin client connection. Otherwise it returns an error.
 func (d *Daemon) handleChannelReply(appid *[AppIDLength]byte,
 	mesgID *[MessageIDLength]byte,
 	surbid *[sphinxConstants.SURBIDLength]byte,
@@ -472,66 +467,74 @@ func (d *Daemon) handleChannelReply(appid *[AppIDLength]byte,
 		return err
 	}
 
-	// First, parse the courier query reply to check what type of reply it is
 	courierQueryReply, err := pigeonhole.ParseCourierQueryReply(plaintext)
 	if err != nil {
 		d.log.Errorf("failed to unmarshal courier query reply: %s", err)
 		return fmt.Errorf("failed to unmarshal courier query reply: %s", err)
 	}
 
-	// Handle copy command replies
 	if courierQueryReply.CopyCommandReply != nil {
-		return d.handleCopyReply(appid, channelID, courierQueryReply.CopyCommandReply, conn)
+		panic("copy command not yet implemented")
 	}
 
-	// Handle envelope replies (read/write operations)
-	if courierQueryReply.EnvelopeReply != nil {
-		env, envelopeDesc, privateKey, err := d.processEnvelopeReply(courierQueryReply.EnvelopeReply, channelDesc)
-		if err != nil {
-			return err
-		}
-
-		innerMsg, err := d.decryptMKEMEnvelope(env, envelopeDesc, privateKey)
-		if err != nil {
-			return err
-		}
-
-		envHash := (*[hash.HashSize]byte)(env.EnvelopeHash[:])
-
-		switch {
-		case innerMsg.ReadReply != nil:
-			params := &ReplyHandlerParams{
-				AppID:       appid,
-				MessageID:   mesgID,
-				SURBID:      surbid,
-				ChannelID:   channelID,
-				ChannelDesc: channelDesc,
-				EnvHash:     envHash,
-				IsReader:    isReader,
-				IsWriter:    isWriter,
-				Conn:        conn,
-			}
-			return d.handleReadReply(params, innerMsg.ReadReply)
-		case innerMsg.WriteReply != nil:
-			params := &ReplyHandlerParams{
-				AppID:       appid,
-				MessageID:   mesgID,
-				SURBID:      surbid,
-				ChannelID:   channelID,
-				ChannelDesc: channelDesc,
-				EnvHash:     envHash,
-				IsReader:    isReader,
-				IsWriter:    isWriter,
-				Conn:        conn,
-			}
-			return d.handleWriteReply(params, innerMsg.WriteReply)
-		}
-		d.log.Errorf("bug 6, invalid book keeping for channelID %d", channelID)
-		return fmt.Errorf("bug 6, invalid book keeping for channelID %d", channelID)
+	if courierQueryReply.EnvelopeReply == nil {
+		d.handleChannelReplyError(appid, surbid, mesgID, thin.ThinClientErrorInternalError)
+		return fmt.Errorf("courier query reply contains neither envelope reply nor copy command reply")
 	}
 
-	d.log.Errorf("courier query reply contains neither envelope reply nor copy command reply")
-	return fmt.Errorf("courier query reply contains neither envelope reply nor copy command reply")
+	envHash := &courierQueryReply.EnvelopeReply.EnvelopeHash
+	env := courierQueryReply.EnvelopeReply
+	channelDesc.EnvelopeDescriptorsLock.Lock()
+	envelopeDesc, ok := channelDesc.EnvelopeDescriptors[*envHash]
+	delete(channelDesc.EnvelopeDescriptors, *envHash)
+	channelDesc.EnvelopeDescriptorsLock.Unlock()
+	if !ok {
+		d.handleChannelReplyError(appid, surbid, mesgID, thin.ThinClientErrorInternalError)
+		return fmt.Errorf("no envelope descriptor found for hash %x", envHash[:])
+	}
+
+	privateKey, err := replicaCommon.NikeScheme.UnmarshalBinaryPrivateKey(envelopeDesc.EnvelopeKey)
+	if err != nil {
+		d.handleChannelReplyError(appid, surbid, mesgID, thin.ThinClientErrorInternalError)
+		return fmt.Errorf("failed to unmarshal private key: %s", err)
+	}
+
+	innerMsg, err := d.decryptMKEMEnvelope(env, envelopeDesc, privateKey)
+	if err != nil {
+		return err
+	}
+
+	switch {
+	case innerMsg.ReadReply != nil:
+		params := &ReplyHandlerParams{
+			AppID:       appid,
+			MessageID:   mesgID,
+			SURBID:      surbid,
+			ChannelID:   channelID,
+			ChannelDesc: channelDesc,
+			EnvHash:     envHash,
+			IsReader:    isReader,
+			IsWriter:    isWriter,
+			Conn:        conn,
+		}
+		return d.handleReadReply(params, innerMsg.ReadReply)
+	case innerMsg.WriteReply != nil:
+		params := &ReplyHandlerParams{
+			AppID:       appid,
+			MessageID:   mesgID,
+			SURBID:      surbid,
+			ChannelID:   channelID,
+			ChannelDesc: channelDesc,
+			EnvHash:     envHash,
+			IsReader:    isReader,
+			IsWriter:    isWriter,
+			Conn:        conn,
+		}
+		return d.handleWriteReply(params, innerMsg.WriteReply)
+	}
+	d.handleChannelReplyError(appid, surbid, mesgID, thin.ThinClientErrorInternalError)
+	d.log.Errorf("bug, invalid book keeping for channelID %d", channelID)
+	return fmt.Errorf("bug, invalid book keeping for channelID %d", channelID)
 }
 
 // lookupChannel finds the channel descriptor for a given SURB ID
@@ -576,41 +579,11 @@ func (d *Daemon) validateChannel(channelID uint16, channelDesc *ChannelDescripto
 	return isReader, isWriter, nil
 }
 
-// processEnvelopeReply processes the courier envelope reply and extracts necessary information
-func (d *Daemon) processEnvelopeReply(env *pigeonhole.CourierEnvelopeReply, channelDesc *ChannelDescriptor) (*pigeonhole.CourierEnvelopeReply, *EnvelopeDescriptor, nike.PrivateKey, error) {
-	envHash := (*[hash.HashSize]byte)(env.EnvelopeHash[:])
-
-	// DEBUG: Log envelope hash and map size when processing reply
-	channelDesc.EnvelopeDescriptorsLock.RLock()
-	mapSize := len(channelDesc.EnvelopeDescriptors)
-	envelopeDesc, ok := channelDesc.EnvelopeDescriptors[*envHash]
-	channelDesc.EnvelopeDescriptorsLock.RUnlock()
-
-	fmt.Printf("PROCESSING REPLY ENVELOPE HASH: %x (map size: %d, exists: %t)\n", envHash[:], mapSize, ok)
-
-	if !ok {
-		d.log.Errorf("no envelope descriptor found for hash %x", envHash[:])
-		return nil, nil, nil, fmt.Errorf("no envelope descriptor found for hash %x", envHash[:])
-	}
-
-	privateKey, err := replicaCommon.NikeScheme.UnmarshalBinaryPrivateKey(envelopeDesc.EnvelopeKey)
-	if err != nil {
-		d.log.Errorf("failed to unmarshal private key: %s", err)
-		return nil, nil, nil, fmt.Errorf("failed to unmarshal private key: %s", err)
-	}
-
-	if len(env.Payload) == 0 {
-		d.log.Debugf("received empty payload for envelope hash %x - no data available yet", envHash[:])
-		return nil, nil, nil, fmt.Errorf("no data available for read operation")
-	}
-
-	return env, envelopeDesc, privateKey, nil
-}
-
 // decryptMKEMEnvelope decrypts the MKEM envelope and returns the inner message
-func (d *Daemon) decryptMKEMEnvelope(env *pigeonhole.CourierEnvelopeReply, envelopeDesc *EnvelopeDescriptor, privateKey nike.PrivateKey) (*pigeonhole.ReplicaMessageReplyInnerMessage, error) {
-	mkemPrivateKeyBytes, _ := privateKey.MarshalBinary()
-	fmt.Printf("BOB DECRYPTS WITH MKEM KEY: %x\n", mkemPrivateKeyBytes[:16]) // First 16 bytes for brevity
+func (d *Daemon) decryptMKEMEnvelope(
+	env *pigeonhole.CourierEnvelopeReply,
+	envelopeDesc *EnvelopeDescriptor,
+	privateKey nike.PrivateKey) (*pigeonhole.ReplicaMessageReplyInnerMessage, error) {
 
 	d.log.Debugf("MKEM DECRYPT: Starting decryption with payload size %d bytes", len(env.Payload))
 
@@ -757,43 +730,13 @@ func (d *Daemon) handleReadReply(params *ReplyHandlerParams, readReply *pigeonho
 		return fmt.Errorf("failed to send response to client: %s", err)
 	}
 
-	params.ChannelDesc.StatefulReaderLock.Lock()
+	params.ChannelDesc.EnvelopeDescriptorsLock.Lock()
 	delete(params.ChannelDesc.EnvelopeDescriptors, *params.EnvHash)
-	params.ChannelDesc.StatefulReaderLock.Unlock()
+	params.ChannelDesc.EnvelopeDescriptorsLock.Unlock()
 
-	// Also clean up stored envelope data if we have a message ID
-	if params.MessageID != nil {
-		params.ChannelDesc.StoredEnvelopesLock.Lock()
-		delete(params.ChannelDesc.StoredEnvelopes, *params.MessageID)
-		params.ChannelDesc.StoredEnvelopesLock.Unlock()
-	}
-
-	return nil
-}
-
-// handleCopyReply processes a copy command reply
-func (d *Daemon) handleCopyReply(appid *[AppIDLength]byte, channelID uint16, copyReply *pigeonhole.CopyCommandReply, conn *incomingConn) error {
-	if copyReply.ErrorCode != 0 {
-		d.log.Errorf("copy command failed for channel %d with error code %d", channelID, copyReply.ErrorCode)
-	} else {
-		d.log.Debugf("copy command completed successfully for channel %d", channelID)
-	}
-
-	var errorCode uint8 = thin.ThinClientSuccess
-	if copyReply.ErrorCode != 0 {
-		errorCode = thin.ThinClientErrorInternalError
-	}
-	err := conn.sendResponse(&Response{
-		AppID: appid,
-		CopyChannelReply: &thin.CopyChannelReply{
-			ChannelID: channelID,
-			ErrorCode: errorCode,
-		},
-	})
-	if err != nil {
-		d.log.Errorf("Failed to send copy response to client: %s", err)
-		return fmt.Errorf("failed to send copy response to client: %s", err)
-	}
+	params.ChannelDesc.StoredEnvelopesLock.Lock()
+	delete(params.ChannelDesc.StoredEnvelopes, *params.MessageID)
+	params.ChannelDesc.StoredEnvelopesLock.Unlock()
 
 	return nil
 }
@@ -810,14 +753,7 @@ func (d *Daemon) handleWriteReply(params *ReplyHandlerParams, writeReply *pigeon
 		// Advance StatefulWriter state now that courier has confirmed successful storage
 		params.ChannelDesc.StatefulWriterLock.Lock()
 		if params.ChannelDesc.StatefulWriter != nil {
-			nextIndex, err := params.ChannelDesc.StatefulWriter.NextIndex.NextIndex()
-			if err != nil {
-				params.ChannelDesc.StatefulWriterLock.Unlock()
-				d.log.Errorf("Failed to advance writer state: %s", err)
-				return fmt.Errorf("failed to advance writer state: %s", err)
-			}
-			params.ChannelDesc.StatefulWriter.LastOutboxIdx = params.ChannelDesc.StatefulWriter.NextIndex
-			params.ChannelDesc.StatefulWriter.NextIndex = nextIndex
+			params.ChannelDesc.StatefulWriter.AdvanceState()
 			d.log.Debugf("Advanced writer state for channel %d", params.ChannelID)
 		}
 		params.ChannelDesc.StatefulWriterLock.Unlock()
@@ -829,7 +765,10 @@ func (d *Daemon) handleWriteReply(params *ReplyHandlerParams, writeReply *pigeon
 	err := params.Conn.sendResponse(&Response{
 		AppID: params.AppID,
 		WriteChannelReply: &thin.WriteChannelReply{
-			ChannelID: params.ChannelID,
+			ChannelID:          params.ChannelID,
+			SendMessagePayload: []byte{},
+			NextMessageIndex:   params.ChannelDesc.StatefulWriter.NextIndex,
+			ErrorCode:          thin.ThinClientSuccess,
 		},
 	})
 	if err != nil {
@@ -841,6 +780,10 @@ func (d *Daemon) handleWriteReply(params *ReplyHandlerParams, writeReply *pigeon
 	params.ChannelDesc.EnvelopeDescriptorsLock.Lock()
 	delete(params.ChannelDesc.EnvelopeDescriptors, *params.EnvHash)
 	params.ChannelDesc.EnvelopeDescriptorsLock.Unlock()
+
+	params.ChannelDesc.StoredEnvelopesLock.Lock()
+	delete(params.ChannelDesc.StoredEnvelopes, *params.MessageID)
+	params.ChannelDesc.StoredEnvelopesLock.Unlock()
 
 	return nil
 }
@@ -950,6 +893,17 @@ func (d *Daemon) send(request *Request) {
 			id:    request.SendARQMessage.ID,
 			appID: request.AppID,
 		})
+	}
+
+	if request.SendMessage.ChannelID != nil {
+		d.channelRepliesLock.Lock()
+		d.channelReplies[*request.SendMessage.SURBID] = replyDescriptor{
+			appID:   request.AppID,
+			surbKey: surbKey,
+		}
+		d.channelRepliesLock.Unlock()
+		d.replyLock.Unlock()
+		return
 	}
 
 	if request.SendMessage != nil {
