@@ -10,14 +10,39 @@ import (
 	"testing"
 	"time"
 
+	"github.com/katzenpost/hpqc/bacap"
+	"github.com/katzenpost/katzenpost/client2/thin"
+	"github.com/katzenpost/katzenpost/pigeonhole"
 	"github.com/stretchr/testify/require"
-
-	_ "github.com/katzenpost/katzenpost/client2/thin" // Used by helper functions
 )
 
 func testDockerCourierService(t *testing.T) {
 	t.Log("TESTING COURIER SERVICE - Starting pigeonhole channel test")
 
+	// Setup clients and test data
+	aliceThinClient, bobThinClient := setupCourierTest(t)
+	defer func() {
+		t.Log("Test Completed. Disconnecting...")
+		aliceThinClient.Close()
+		bobThinClient.Close()
+	}()
+
+	// Test message to send
+	plaintextMessage := []byte("Hello world from Alice to Bob!")
+
+	// Alice sends message
+	_, readCap := performAliceWriteOperation(t, aliceThinClient, plaintextMessage)
+	require.NotNil(t, readCap)
+
+	// Bob reads message
+	receivedMessage := performBobReadOperation(t, bobThinClient, readCap)
+
+	// Verify results
+	require.Equal(t, plaintextMessage, receivedMessage)
+}
+
+// setupCourierTest initializes thin clients and test data
+func setupCourierTest(t *testing.T) (*thin.ThinClient, *thin.ThinClient) {
 	// Create separate thin clients for Alice and Bob
 	t.Log("Creating Alice's thin client")
 	aliceThinClient := setupThinClient(t)
@@ -31,98 +56,95 @@ func testDockerCourierService(t *testing.T) {
 	_ = validatePKIDocument(t, aliceThinClient)
 	_ = validatePKIDocument(t, bobThinClient)
 
-	// Test message to send
-	plaintextMessage := []byte("Hello world from Alice to Bob!")
+	return aliceThinClient, bobThinClient
+}
 
+// performAliceWriteOperation handles Alice's write channel creation and message sending
+func performAliceWriteOperation(t *testing.T, aliceThinClient *thin.ThinClient, plaintextMessage []byte) (uint16, *bacap.ReadCap) {
 	// Create context with timeout for operations
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
 	// === ALICE (Writer) ===
-	t.Log("Alice: Creating pigeonhole channel")
-	aliceChannelID, readCap, err := aliceThinClient.CreateChannel(ctx)
+	t.Log("Alice: Creating pigeonhole write channel")
+	aliceChannelID, readCap, boxOwnerCap, currentIndex, err := aliceThinClient.CreateWriteChannel(ctx, nil, nil)
 	require.NoError(t, err)
 	require.NotNil(t, aliceChannelID)
 	require.NotNil(t, readCap)
-	t.Logf("Alice: Created write channel %x", aliceChannelID[:])
+	require.NotNil(t, boxOwnerCap)
+	require.NotNil(t, currentIndex)
+	t.Logf("Alice: Created write channel %d", aliceChannelID)
 
-	t.Log("Alice: Writing message to channel")
-	err = aliceThinClient.WriteChannel(ctx, aliceChannelID, plaintextMessage)
+	t.Log("Alice: Preparing write message (new crash-consistent API)")
+	sendPayload, nextIndex, err := aliceThinClient.WriteChannel(ctx, aliceChannelID, plaintextMessage)
 	require.NoError(t, err)
-	t.Log("Alice: Successfully wrote message")
+	require.NotNil(t, sendPayload)
+	require.NotNil(t, nextIndex)
+	t.Logf("Alice: Prepared message payload (%d bytes), next index ready", len(sendPayload))
+
+	t.Log("Alice: Sending prepared message via SendMessage")
+
+	// get the courier service from the PKI document
+	doc := aliceThinClient.PKIDocument()
+	require.NotNil(t, doc)
+	serviceNodeID, courierQueueID := thin.GetRandomCourier(doc)
+
+	writeReply := sendChannelQueryAndWait(t, aliceThinClient, aliceChannelID, sendPayload, serviceNodeID, courierQueueID)
+	require.NotNil(t, writeReply)
+	require.NotEmpty(t, writeReply)
+	t.Log("Alice: Successfully sent message via sendAndWait")
+
+	// In a real application, Alice would save nextIndex to persistent storage
+	// after receiving courier acknowledgment, but for this test we'll just log it
+	t.Logf("Alice: Next index for crash recovery: %v", nextIndex != nil)
 
 	// Wait for message to propagate through the system
-	t.Log("Waiting 10 seconds for message propagation...")
-	time.Sleep(10 * time.Second)
+	t.Log("Waiting 3 seconds for message propagation...")
+	time.Sleep(3 * time.Second)
+
+	return aliceChannelID, readCap
+}
+
+// performBobReadOperation handles Bob's read channel creation and message reading
+func performBobReadOperation(t *testing.T, bobThinClient *thin.ThinClient, readCap *bacap.ReadCap) []byte {
+	// Create context with timeout for operations
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
 
 	// === BOB (Reader) ===
-	t.Log("Bob: Creating read channel from Alice's readCap")
-	bobChannelID, err := bobThinClient.CreateReadChannel(ctx, readCap)
+	t.Log("Bob: Creating read channel from Alice's readCap (new crash-consistent API)")
+	bobChannelID, bobCurrentIndex, err := bobThinClient.CreateReadChannel(ctx, readCap, nil)
 	require.NoError(t, err)
 	require.NotNil(t, bobChannelID)
-	t.Logf("Bob: Created read channel %x (different from Alice's %x)", bobChannelID[:], aliceChannelID[:])
+	require.NotNil(t, bobCurrentIndex)
+	t.Logf("Bob: Created read channel %d", bobChannelID)
+	t.Logf("Bob: Starting read index: %v", bobCurrentIndex != nil)
 
-	// Bob reads the message (may need to retry as the message might not be immediately available)
+	// Bob reads the message using new crash-consistent API
 	// Use a consistent message ID for all read attempts to enable courier envelope reuse
 	readMessageID := bobThinClient.NewMessageID()
 	t.Logf("Bob: Using message ID %x for all read attempts", readMessageID[:])
 
-	var receivedMessage []byte
-	maxRetries := 10
-	for i := 0; i < maxRetries; i++ {
-		t.Logf("Bob: Reading message attempt %d/%d", i+1, maxRetries)
+	// Prepare read query
+	t.Log("Bob: Preparing read query (new crash-consistent API)")
+	sendPayload, nextIndex, err := bobThinClient.ReadChannel(ctx, bobChannelID, readMessageID)
+	require.NoError(t, err)
+	require.NotNil(t, sendPayload)
+	require.NotNil(t, nextIndex)
+	t.Logf("Bob: Prepared read query payload (%d bytes), next index ready", len(sendPayload))
 
-		// Add a longer delay before the first read to allow message propagation
-		if i == 0 {
-			t.Log("Bob: Waiting for message to propagate through the system...")
-			time.Sleep(5 * time.Second)
-		}
+	// get the courier service from the PKI document
+	doc := bobThinClient.PKIDocument()
+	require.NotNil(t, doc)
+	serviceNodeID, courierQueueID := thin.GetRandomCourier(doc)
 
-		// Create a fresh context with 10-minute timeout for each read attempt
-		readCtx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
-		receivedMessage, err = bobThinClient.ReadChannel(readCtx, bobChannelID, readMessageID)
-		cancel()
+	// Send read query
+	receivedMessage := sendChannelQueryAndWait(t, bobThinClient, bobChannelID, sendPayload, serviceNodeID, courierQueueID)
+	require.NotNil(t, receivedMessage)
 
-		if err != nil {
-			t.Logf("Bob: Read attempt %d failed: %v", i+1, err)
-			if i < maxRetries-1 {
-				time.Sleep(3 * time.Second) // Wait before retry
-				continue
-			}
-			// On the last attempt, log the error but don't fail immediately
-			t.Logf("Bob: Final read attempt failed: %v", err)
-			break
-		}
+	// remove padding
+	message, err := pigeonhole.ExtractMessageFromPaddedPayload(receivedMessage)
+	require.NoError(t, err)
 
-		if len(receivedMessage) > 0 {
-			t.Log("Bob: Successfully read message")
-			break
-		}
-
-		if i < maxRetries-1 {
-			t.Log("Bob: No message available yet, retrying...")
-			time.Sleep(3 * time.Second)
-		}
-	}
-
-	// Verify the messages match
-	if len(receivedMessage) == 0 {
-		t.Log("FAILURE: Bob did not receive any message")
-		t.Logf("Original message: %s", string(plaintextMessage))
-		t.Log("This could indicate:")
-		t.Log("1. Message propagation delay (try increasing wait times)")
-		t.Log("2. Issue with courier-replica communication")
-		t.Log("3. Problem with read channel setup")
-		require.NotEmpty(t, receivedMessage)
-	}
-
-	require.Equal(t, plaintextMessage, receivedMessage)
-
-	t.Log("SUCCESS: Alice and Bob successfully communicated through pigeonhole channel!")
-	t.Logf("Original message: %s", string(plaintextMessage))
-	t.Logf("Received message: %s", string(receivedMessage))
-
-	t.Log("Test Completed. Disconnecting...")
-	aliceThinClient.Close()
-	bobThinClient.Close()
+	return message
 }
