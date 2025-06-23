@@ -32,6 +32,7 @@ func testDockerCourierService(t *testing.T) {
 
 	// Alice sends message
 	_, readCap := performAliceWriteOperation(t, aliceThinClient, plaintextMessage)
+	require.NotNil(t, readCap)
 
 	// Bob reads message
 	receivedMessage := performBobReadOperation(t, bobThinClient, readCap)

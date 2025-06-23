@@ -12,6 +12,7 @@ import (
 	"github.com/katzenpost/hpqc/bacap"
 	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/nike"
+	"github.com/katzenpost/hpqc/rand"
 
 	"github.com/katzenpost/katzenpost/client2/constants"
 	"github.com/katzenpost/katzenpost/client2/thin"
@@ -568,7 +569,12 @@ func (d *Daemon) createOrResumeStatefulWriter(request *Request) (*bacap.Stateful
 			}
 		}
 	} else {
-		statefulWriter, err = bacap.NewStatefulWriter(request.CreateWriteChannel.WriteCap, constants.PIGEONHOLE_CTX)
+		// Create a new WriteCap for a new channel
+		newWriteCap, err := bacap.NewWriteCap(rand.Reader)
+		if err != nil {
+			return nil, err
+		}
+		statefulWriter, err = bacap.NewStatefulWriter(newWriteCap, constants.PIGEONHOLE_CTX)
 		if err != nil {
 			return nil, err
 		}

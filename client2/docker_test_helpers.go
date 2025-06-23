@@ -8,6 +8,7 @@ package client2
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -148,7 +149,11 @@ func init() {
 func sendChannelQueryAndWait(t *testing.T, client *thin.ThinClient, channelID uint16, message []byte, nodeID *[32]byte, queueID []byte) []byte {
 	surbID := client.NewSURBID()
 	eventSink := client.EventSink()
-	err := client.SendChannelQuery(channelID, message, nodeID, queueID)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+
+	err := client.SendChannelQuery(ctx, channelID, message, nodeID, queueID)
 	require.NoError(t, err)
 
 	for {
