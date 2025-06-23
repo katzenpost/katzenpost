@@ -10,6 +10,8 @@ import (
 	"golang.org/x/crypto/blake2b"
 
 	"github.com/katzenpost/hpqc/hash"
+	"github.com/katzenpost/hpqc/kem/mkem"
+	"github.com/katzenpost/hpqc/nike"
 )
 
 // Helper functions for backward compatibility with the old methods.go file
@@ -102,6 +104,95 @@ func BoxFromBytes(data []byte) (*Box, error) {
 func (c *CourierEnvelope) Bytes() []byte {
 	data, _ := c.MarshalBinary()
 	return data
+}
+
+// CreateWriteEnvelope creates a CourierEnvelope for write operations
+// This function encapsulates the common pattern of creating write envelopes
+func CreateWriteEnvelope(
+	boxID [32]uint8,
+	signature [64]uint8,
+	payload []byte,
+	replicaPubKeys []nike.PublicKey,
+	intermediateReplicas [2]uint8,
+	epoch uint64,
+	mkemScheme *mkem.Scheme,
+) (*CourierEnvelope, nike.PrivateKey, error) {
+
+	writeRequest := &ReplicaWrite{
+		BoxID:      boxID,
+		Signature:  signature,
+		PayloadLen: uint32(len(payload)),
+		Payload:    payload,
+	}
+
+	msg := &ReplicaInnerMessage{
+		MessageType: 1, // 1 = write
+		WriteMsg:    writeRequest,
+	}
+
+	return createEnvelopeFromMessage(msg, replicaPubKeys, intermediateReplicas, epoch, mkemScheme, false)
+}
+
+// CreateReadEnvelope creates a CourierEnvelope for read operations
+// This function encapsulates the common pattern of creating read envelopes
+func CreateReadEnvelope(
+	boxID [32]uint8,
+	replicaPubKeys []nike.PublicKey,
+	intermediateReplicas [2]uint8,
+	epoch uint64,
+	mkemScheme *mkem.Scheme,
+) (*CourierEnvelope, nike.PrivateKey, error) {
+
+	msg := &ReplicaInnerMessage{
+		MessageType: 0, // 0 = read
+		ReadMsg: &ReplicaRead{
+			BoxID: boxID,
+		},
+	}
+
+	return createEnvelopeFromMessage(msg, replicaPubKeys, intermediateReplicas, epoch, mkemScheme, true)
+}
+
+// createEnvelopeFromMessage is the shared implementation for envelope creation
+func createEnvelopeFromMessage(
+	msg *ReplicaInnerMessage,
+	replicaPubKeys []nike.PublicKey,
+	intermediateReplicas [2]uint8,
+	epoch uint64,
+	mkemScheme *mkem.Scheme,
+	isRead bool,
+) (*CourierEnvelope, nike.PrivateKey, error) {
+	mkemPrivateKey, ciphertext := mkemScheme.Encapsulate(replicaPubKeys, msg.Bytes())
+	mkemPublicKey := mkemPrivateKey.Public()
+
+	// Extract DEKCiphertexts and Envelope from the ciphertext directly
+	var dek1, dek2 [60]uint8
+	copy(dek1[:], ciphertext.DEKCiphertexts[0][:])
+	copy(dek2[:], ciphertext.DEKCiphertexts[1][:])
+
+	senderPubkeyBytes := mkemPublicKey.Bytes()
+
+	var isReadUint8 uint8
+	if isRead {
+		isReadUint8 = 1
+	} else {
+		isReadUint8 = 0
+	}
+
+	courierEnvelope := &CourierEnvelope{
+		IntermediateReplicas: intermediateReplicas,
+		Dek1:                 dek1,
+		Dek2:                 dek2,
+		ReplyIndex:           0,
+		Epoch:                epoch,
+		SenderPubkeyLen:      uint16(len(senderPubkeyBytes)),
+		SenderPubkey:         senderPubkeyBytes,
+		CiphertextLen:        uint32(len(ciphertext.Envelope)),
+		Ciphertext:           ciphertext.Envelope,
+		IsRead:               isReadUint8,
+	}
+
+	return courierEnvelope, mkemPrivateKey, nil
 }
 
 // Bytes returns the marshaled binary representation (for backward compatibility)
