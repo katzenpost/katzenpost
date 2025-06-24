@@ -1032,7 +1032,9 @@ func (d *Daemon) arqDoResend(surbID *[sphinxConstants.SURBIDLength]byte) {
 		}
 		incomingConn := d.listener.getConnection(message.AppID)
 		if incomingConn == nil {
-			panic("incomingConn is nil")
+			d.log.Warningf("no connection found for AppID %x during ARQ max retry, likely shutting down", message.AppID[:])
+			d.replyLock.Unlock()
+			return
 		}
 		err := incomingConn.sendResponse(response)
 		if err != nil {
