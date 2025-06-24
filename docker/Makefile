@@ -1,4 +1,4 @@
-.PHONY: clean clean-local clean-local-dryrun clean-image-% clean-container-% clean-images test rootshell shell run-ping go-mod-tidy go-mod-upgrade help start stop client-restart clean-client client-logs config-only
+.PHONY: clean clean-local clean-local-dryrun clean-image-% clean-container-% clean-images test rootshell shell run-ping go-mod-tidy go-mod-upgrade help start stop client-restart clean-client client-logs replica1-logs replica2-logs replica-logs-all config-only
 
 help:
 	@echo "These make targets allow you to control the test network:"
@@ -7,6 +7,9 @@ help:
 	@echo " stop               - stop the testnet"
 	@echo " client-restart     - restart just the kpclientd daemon"
 	@echo " client-logs        - view kpclientd daemon logs"
+	@echo " replica1-logs      - view replica1 logs"
+	@echo " replica2-logs      - view replica2 logs"
+	@echo " replica-logs-all   - view all replica logs (no tail limit)"
 	@echo " wait               - wait for testnet to have consensus"
 	@echo " watch              - tail -F all logs"
 	@echo " status             - show testnet consensus status"
@@ -154,6 +157,18 @@ client-restart:
 client-logs:
 	@echo "Tailing kpclientd daemon logs (Ctrl+C to exit)..."
 	cd $(net_name) && $(docker_compose) logs -f --tail 20 kpclientd
+
+replica1-logs:
+	@echo "Tailing replica1 logs (Ctrl+C to exit)..."
+	cd $(net_name) && $(docker_compose) logs -f --tail 50 replica1
+
+replica2-logs:
+	@echo "Tailing replica2 logs (Ctrl+C to exit)..."
+	cd $(net_name) && $(docker_compose) logs -f --tail 50 replica2
+
+replica-logs-all:
+	@echo "Showing all replica logs (no tail limit)..."
+	cd $(net_name) && $(docker_compose) logs replica1 replica2
 
 watch:
 	tail -F $(net_name)/*/*.log
