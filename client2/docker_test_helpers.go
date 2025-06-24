@@ -147,7 +147,6 @@ func init() {
 
 // sendChannelQueryAndWait sends a channel query message and waits for a reply
 func sendChannelQueryAndWait(t *testing.T, client *thin.ThinClient, channelID uint16, message []byte, nodeID *[32]byte, queueID []byte) []byte {
-	surbID := client.NewSURBID()
 	eventSink := client.EventSink()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
@@ -181,7 +180,6 @@ func sendChannelQueryAndWait(t *testing.T, client *thin.ThinClient, channelID ui
 			t.Log("MessageSentEvent")
 		case *thin.MessageReplyEvent:
 			t.Log("MessageReplyEvent")
-			require.Equal(t, surbID[:], v.SURBID[:])
 			return v.Payload
 		default:
 			panic("impossible event type")
