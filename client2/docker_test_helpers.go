@@ -7,6 +7,7 @@ package client2
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -175,14 +176,29 @@ func sendChannelQueryAndWait(t *testing.T, client *thin.ThinClient, channelID ui
 				panic("socket connection lost")
 			}
 		case *thin.NewDocumentEvent:
+			t.Log("NewDocumentEvent")
+		case *thin.NewPKIDocumentEvent:
 			t.Log("NewPKIDocumentEvent")
 		case *thin.MessageSentEvent:
 			t.Log("MessageSentEvent")
 		case *thin.MessageReplyEvent:
 			t.Log("MessageReplyEvent")
 			return v.Payload
+		case *thin.ShutdownEvent:
+			t.Log("ShutdownEvent")
+			panic("daemon shutdown")
+		case *thin.CreateWriteChannelReply:
+			t.Log("CreateWriteChannelReply")
+		case *thin.CreateReadChannelReply:
+			t.Log("CreateReadChannelReply")
+		case *thin.WriteChannelReply:
+			t.Log("WriteChannelReply")
+		case *thin.ReadChannelReply:
+			t.Log("ReadChannelReply")
+		case *thin.CopyChannelReply:
+			t.Log("CopyChannelReply")
 		default:
-			panic("impossible event type")
+			panic(fmt.Sprintf("impossible event type: %T", event))
 		}
 	}
 	panic("impossible event type")
