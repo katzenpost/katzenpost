@@ -139,9 +139,9 @@ func (e *NewPKIDocumentEvent) String() string {
 }
 
 type CreateChannelReply struct {
-	ChannelID [ChannelIDLength]byte   `cbor:"channel_id"`
-	ReadCap   *bacap.UniversalReadCap `cbor:"read_cap"`
-	Err       string                  `cbor:"err,omitempty"`
+	ChannelID [ChannelIDLength]byte `cbor:"channel_id"`
+	ReadCap   *bacap.ReadCap        `cbor:"read_cap"`
+	Err       string                `cbor:"err,omitempty"`
 }
 
 // String returns a string representation of the CreateChannelReply.

@@ -745,7 +745,7 @@ func (t *ThinClient) BlockingSendReliableMessage(ctx context.Context, messageID 
 }
 
 // CreateChannel creates a new pigeonhole channel and returns the channel ID and read capability.
-func (t *ThinClient) CreateChannel(ctx context.Context) (*[ChannelIDLength]byte, *bacap.UniversalReadCap, error) {
+func (t *ThinClient) CreateChannel(ctx context.Context) (*[ChannelIDLength]byte, *bacap.ReadCap, error) {
 	if ctx == nil {
 		return nil, nil, errContextCannotBeNil
 	}
@@ -789,7 +789,7 @@ func (t *ThinClient) CreateChannel(ctx context.Context) (*[ChannelIDLength]byte,
 }
 
 // CreateReadChannel creates a read channel from a read capability.
-func (t *ThinClient) CreateReadChannel(ctx context.Context, readCap *bacap.UniversalReadCap) (*[ChannelIDLength]byte, error) {
+func (t *ThinClient) CreateReadChannel(ctx context.Context, readCap *bacap.ReadCap) (*[ChannelIDLength]byte, error) {
 	if ctx == nil {
 		return nil, errContextCannotBeNil
 	}

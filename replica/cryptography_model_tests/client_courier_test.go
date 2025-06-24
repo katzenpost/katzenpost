@@ -265,14 +265,14 @@ func (c *Courier) ReceiveClientQuery(query []byte) *pigeonhole.CourierEnvelopeRe
 }
 
 type ClientWriter struct {
-	BoxOwnerCap    *bacap.BoxOwnerCap
+	WriteCap       *bacap.WriteCap
 	StatefulWriter *bacap.StatefulWriter
 	MKEMNikeScheme *mkem.Scheme
 	Replicas       []*Replica
 }
 
 func NewClientWriter(replicas []*Replica, MKEMNikeScheme *mkem.Scheme, ctx []byte) *ClientWriter {
-	owner, err := bacap.NewBoxOwnerCap(rand.Reader)
+	owner, err := bacap.NewWriteCap(rand.Reader)
 	if err != nil {
 		panic(err)
 	}
@@ -281,7 +281,7 @@ func NewClientWriter(replicas []*Replica, MKEMNikeScheme *mkem.Scheme, ctx []byt
 		panic(err)
 	}
 	return &ClientWriter{
-		BoxOwnerCap:    owner,
+		WriteCap:       owner,
 		StatefulWriter: statefulWriter,
 		MKEMNikeScheme: MKEMNikeScheme,
 		Replicas:       replicas,
@@ -333,22 +333,22 @@ func (c *ClientWriter) ComposeSendNextMessage(message []byte) *pigeonhole.Courie
 }
 
 type ClientReader struct {
-	UniversalReadCap *bacap.UniversalReadCap
-	StatefulReader   *bacap.StatefulReader
-	MKEMNikeScheme   *mkem.Scheme
-	Replicas         []*Replica
+	ReadCap        *bacap.ReadCap
+	StatefulReader *bacap.StatefulReader
+	MKEMNikeScheme *mkem.Scheme
+	Replicas       []*Replica
 }
 
-func NewClientReader(replicas []*Replica, MKEMNikeScheme *mkem.Scheme, universalReadCap *bacap.UniversalReadCap, ctx []byte) *ClientReader {
-	statefulReader, err := bacap.NewStatefulReader(universalReadCap, ctx)
+func NewClientReader(replicas []*Replica, MKEMNikeScheme *mkem.Scheme, readCap *bacap.ReadCap, ctx []byte) *ClientReader {
+	statefulReader, err := bacap.NewStatefulReader(readCap, ctx)
 	if err != nil {
 		panic(err)
 	}
 	return &ClientReader{
-		UniversalReadCap: universalReadCap,
-		StatefulReader:   statefulReader,
-		MKEMNikeScheme:   MKEMNikeScheme,
-		Replicas:         replicas,
+		ReadCap:        readCap,
+		StatefulReader: statefulReader,
+		MKEMNikeScheme: MKEMNikeScheme,
+		Replicas:       replicas,
 	}
 }
 
@@ -415,8 +415,8 @@ func TestClientCourierProtocolFlow(t *testing.T) {
 	// --- Alice creates a BACAP sequence and gives Bob a sequence read capability
 
 	alice := NewClientWriter(replicas, mkemNikeScheme, ctx)
-	ureadcap := alice.BoxOwnerCap.UniversalReadCap()
-	bob := NewClientReader(replicas, mkemNikeScheme, ureadcap, ctx)
+	readCap := alice.WriteCap.ReadCap()
+	bob := NewClientReader(replicas, mkemNikeScheme, readCap, ctx)
 
 	// --- Alice encrypts a message to Bob in the BACAP sequence.
 	// and it gets sent to the storage replicas.
