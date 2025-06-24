@@ -19,7 +19,7 @@ type CreateChannel struct {
 }
 
 type CreateReadChannel struct {
-	ReadCap *bacap.UniversalReadCap `cbor:"read_cap"`
+	ReadCap *bacap.ReadCap `cbor:"read_cap"`
 }
 
 type WriteChannel struct {

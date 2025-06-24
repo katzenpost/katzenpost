@@ -61,7 +61,7 @@ type StoredEnvelopeData struct {
 type ChannelDescriptor struct {
 	StatefulWriter      *bacap.StatefulWriter
 	StatefulReader      *bacap.StatefulReader
-	BoxOwnerCap         *bacap.BoxOwnerCap // Only set for write channels
+	BoxOwnerCap         *bacap.WriteCap // Only set for write channels
 	EnvelopeDescriptors map[[hash.HashSize]byte]*EnvelopeDescriptor
 	EnvelopeLock        sync.RWMutex // Protects EnvelopeDescriptors map
 	SendSeq             uint64
@@ -85,8 +85,8 @@ func GetRandomCourier(doc *cpki.Document) (*[hash.HashSize]byte, []byte) {
 	return &serviceIdHash, courierService.RecipientQueueID
 }
 
-func NewPigeonholeChannel() (*bacap.StatefulWriter, *bacap.UniversalReadCap, *bacap.BoxOwnerCap) {
-	owner, err := bacap.NewBoxOwnerCap(rand.Reader)
+func NewPigeonholeChannel() (*bacap.StatefulWriter, *bacap.ReadCap, *bacap.WriteCap) {
+	owner, err := bacap.NewWriteCap(rand.Reader)
 	if err != nil {
 		panic(err)
 	}
@@ -94,7 +94,7 @@ func NewPigeonholeChannel() (*bacap.StatefulWriter, *bacap.UniversalReadCap, *ba
 	if err != nil {
 		panic(err)
 	}
-	bobReadCap := owner.UniversalReadCap()
+	bobReadCap := owner.ReadCap()
 	return statefulWriter, bobReadCap, owner
 }
 

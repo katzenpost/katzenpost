@@ -798,11 +798,11 @@ func aliceComposesNextMessageWithIsLast(t *testing.T, message []byte, env *testE
 func aliceAndBobKeyExchangeKeys(t *testing.T, env *testEnvironment) (*bacap.StatefulWriter, *bacap.StatefulReader) {
 	// --- Alice creates a BACAP sequence and gives Bob a sequence read capability
 	// Bob can read from his StatefulReader that which Alice writes with her StatefulWriter.
-	aliceOwner, err := bacap.NewBoxOwnerCap(rand.Reader)
+	aliceOwner, err := bacap.NewWriteCap(rand.Reader)
 	require.NoError(t, err)
 	aliceStatefulWriter, err := bacap.NewStatefulWriter(aliceOwner, constants.PIGEONHOLE_CTX)
 	require.NoError(t, err)
-	bobReadCap := aliceOwner.UniversalReadCap()
+	bobReadCap := aliceOwner.ReadCap()
 	bobStatefulReader, err := bacap.NewStatefulReader(bobReadCap, constants.PIGEONHOLE_CTX)
 	require.NoError(t, err)
 	return aliceStatefulWriter, bobStatefulReader
@@ -1091,7 +1091,7 @@ func waitForReplicaResponse(t *testing.T, env *testEnvironment, envelope *pigeon
 
 // testSequenceData holds the data for a BACAP sequence used in testing
 type testSequenceData struct {
-	Owner         *bacap.BoxOwnerCap
+	Owner         *bacap.WriteCap
 	EnvelopeCBORs []byte
 	OriginalData  []byte
 }
@@ -1136,7 +1136,7 @@ func testNestedEnvelopeRoundTrip(t *testing.T, env *testEnvironment) {
 /*
 // setupFinalDestinationAndMessages creates the final destination sequence and real messages
 func setupFinalDestinationAndMessages(t *testing.T, env *testEnvironment) (*bacap.StatefulWriter, [][]byte) {
-	finalDestinationOwner, err := bacap.NewBoxOwnerCap(rand.Reader)
+	finalDestinationOwner, err := bacap.NewWriteCap(rand.Reader)
 	require.NoError(t, err)
 	finalDestinationWriter, err := bacap.NewStatefulWriter(finalDestinationOwner, constants.PIGEONHOLE_CTX)
 	require.NoError(t, err)
@@ -1362,7 +1362,7 @@ func verifyDecodedEnvelopes(t *testing.T, courierEnvelopes []*pigeonhole.Courier
 func executeCopyCommand(t *testing.T, env *testEnvironment, aliceStatefulWriter *bacap.StatefulWriter) {
 	t.Log("Testing copy command to execute CourierEnvelopes...")
 	copyCommand := &common.CopyCommand{
-		WriteCap: aliceStatefulWriter.Owner, // Alice's BoxOwnerCap for Sequence A
+		WriteCap: aliceStatefulWriter.Owner, // Alice's WriteCap for Sequence A
 	}
 
 	// Create a CourierQuery with the embedded CopyCommand
@@ -1434,7 +1434,7 @@ func readFromFinalDestinationAndVerify(t *testing.T, env *testEnvironment, final
 	t.Log("Reading back data from final destination sequence...")
 
 	// Create a StatefulReader for Bob to read from the final destination sequence
-	bobReadCap := finalDestinationWriter.Owner.UniversalReadCap()
+	bobReadCap := finalDestinationWriter.Owner.ReadCap()
 	bobStatefulReader, err := bacap.NewStatefulReader(bobReadCap, constants.PIGEONHOLE_CTX)
 	require.NoError(t, err)
 
@@ -1497,11 +1497,11 @@ func readAndVerifySingleMessage(t *testing.T, env *testEnvironment, bobStatefulR
 }
 
 // verifyTombstones verifies that tombstones were written to the temporary sequence
-func verifyTombstones(t *testing.T, env *testEnvironment, tempWriteCap *bacap.BoxOwnerCap, expectedBoxCount int) {
+func verifyTombstones(t *testing.T, env *testEnvironment, tempWriteCap *bacap.WriteCap, expectedBoxCount int) {
 	t.Logf("Verifying %d tombstones in temporary sequence", expectedBoxCount)
 
 	// Create a StatefulReader from the temporary sequence WriteCap
-	tempReadCap := tempWriteCap.UniversalReadCap()
+	tempReadCap := tempWriteCap.ReadCap()
 	tempStatefulReader, err := bacap.NewStatefulReader(tempReadCap, constants.PIGEONHOLE_CTX)
 	require.NoError(t, err)
 
