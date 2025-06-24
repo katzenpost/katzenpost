@@ -127,32 +127,47 @@ func (s *Server) StartPlugin() {
 }
 
 func (e *Courier) HandleReply(reply *commands.ReplicaMessageReply) {
-	isCopy := false
-	e.copyCacheLock.RLock()
-	if _, ok := e.copyCache[*reply.EnvelopeHash]; ok {
-		isCopy = true
-	}
-	e.copyCacheLock.RUnlock()
+	e.log.Debugf("HandleReply: Received ReplicaMessageReply - IsRead: %v, ErrorCode: %d, EnvelopeHash: %x",
+		reply.IsRead, reply.ErrorCode, reply.EnvelopeHash)
 
-	if isCopy {
-		panic("NOT YET IMPLEMENTED")
-		//e.handleCopyReply(reply)
-		return
+	switch {
+	case reply.IsRead:
+		e.log.Debugf("HandleReply: Calling CacheReply for envelope hash: %x", reply.EnvelopeHash)
+		e.CacheReply(reply)
+	case reply.IsRead == false:
+		// Note(David): We need to use these replies in a future change
+		// such that we form a simple Automatic Repeat reQuest (ARQ) scheme for error correction:
+		// e.g. if we don't get a reply in time then we resend the write query.
+		//e.handleWriteReply(reply)
+	default:
+		isCopy := false
+		e.copyCacheLock.RLock()
+		if _, ok := e.copyCache[*reply.EnvelopeHash]; ok {
+			isCopy = true
+		}
+		e.copyCacheLock.RUnlock()
+		if isCopy {
+			panic("NOT YET IMPLEMENTED")
+			//e.handleCopyReply(reply)
+			return
+		}
+
+		// Not a read or copy reply, it must be a bug
+		e.log.Errorf("HandleReply: Bug - received reply that is not a read or copy reply")
 	}
-	e.CacheReply(reply)
 }
 
 func (e *Courier) CacheReply(reply *commands.ReplicaMessageReply) {
 	e.log.Debugf("CacheReply called with envelope hash: %x", reply.EnvelopeHash)
 
-	if !e.validateReply(reply) {
-		return
-	}
-
 	// Check for pending read request and immediately proxy reply if found
 	if e.tryImmediateReplyProxy(reply) {
 		e.log.Debugf("Immediately proxied reply for envelope hash: %x", reply.EnvelopeHash)
 		// Still cache the reply for potential future requests
+	}
+
+	if !e.validateReply(reply) {
+		return
 	}
 
 	e.dedupCacheLock.Lock()
@@ -431,7 +446,7 @@ func (e *Courier) handleNewMessage(envHash *[hash.HashSize]byte, courierMessage 
 			ReplyIndex:   0,
 			PayloadLen:   0,
 			Payload:      nil,
-			ErrorCode:    1, // Error code for timeout
+			ErrorCode:    0, // Success - write was accepted
 		},
 	}
 	return reply
