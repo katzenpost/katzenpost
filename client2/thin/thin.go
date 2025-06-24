@@ -1043,7 +1043,7 @@ func (t *ThinClient) CreateReadChannel(ctx context.Context, readCap *bacap.ReadC
 }
 
 // WriteChannel prepares a write message for a pigeonhole channel and returns the SendMessage payload and next MessageBoxIndex.
-// The thin client must then call SendMessage with the returned payload to actually send the message.
+// The thin client must then call SendChannelQuery with the returned payload to actually send the message.
 func (t *ThinClient) WriteChannel(ctx context.Context, channelID uint16, payload []byte) ([]byte, *bacap.MessageBoxIndex, error) {
 	if ctx == nil {
 		return nil, nil, errContextCannotBeNil
@@ -1098,7 +1098,7 @@ func (t *ThinClient) WriteChannel(ctx context.Context, channelID uint16, payload
 }
 
 // ReadChannel prepares a read query for a pigeonhole channel and returns the payload and next MessageBoxIndex.
-// The thin client must then call SendMessage (or similar methods) with the returned payload to actually send the query.
+// The thin client must then call SendChannelQuery with the returned payload to actually send the query.
 func (t *ThinClient) ReadChannel(ctx context.Context, channelID uint16, messageID *[MessageIDLength]byte) ([]byte, *bacap.MessageBoxIndex, error) {
 	if ctx == nil {
 		return nil, nil, errContextCannotBeNil
@@ -1114,33 +1114,39 @@ func (t *ThinClient) ReadChannel(ctx context.Context, channelID uint16, messageI
 		},
 	}
 
-	// Set up direct message ID correlation for ReadChannelReply
-	// Always create or reuse a persistent wait channel for this MessageID
-	readWaitChanRaw, exists := t.readChannelWaitChanMap.Load(*messageID)
-	var readWaitChan chan *ReadChannelReply
-	if exists {
-		readWaitChan = readWaitChanRaw.(chan *ReadChannelReply)
-	} else {
-		readWaitChan = make(chan *ReadChannelReply, 1) // Buffered to prevent blocking
-		t.readChannelWaitChanMap.Store(*messageID, readWaitChan)
-	}
+	eventSink := t.EventSink()
+	defer t.StopEventSink(eventSink)
 
 	err := t.writeMessage(req)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	select {
-	case <-ctx.Done():
-		return nil, nil, ctx.Err()
-	case reply := <-readWaitChan:
-		if reply.ErrorCode != ThinClientSuccess {
-			return nil, nil, errors.New(ThinClientErrorToString(reply.ErrorCode))
+	for {
+		var event Event
+		select {
+		case <-ctx.Done():
+			return nil, nil, ctx.Err()
+		case event = <-eventSink:
+		case <-t.HaltCh():
+			return nil, nil, errHalting
 		}
-		return reply.SendMessagePayload, reply.NextMessageIndex, nil
-	case <-t.HaltCh():
-		t.readChannelWaitChanMap.Delete(*messageID)
-		return nil, nil, errHalting
+
+		switch v := event.(type) {
+		case *ReadChannelReply:
+			if v.ErrorCode != ThinClientSuccess {
+				return nil, nil, errors.New(ThinClientErrorToString(v.ErrorCode))
+			}
+			return v.SendMessagePayload, v.NextMessageIndex, nil
+		case *ConnectionStatusEvent:
+			if !v.IsConnected {
+				return nil, nil, errConnectionLost
+			}
+		case *NewDocumentEvent:
+			// Ignore PKI document updates
+		default:
+			// Ignore other events
+		}
 	}
 }
 
