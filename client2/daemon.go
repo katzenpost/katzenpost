@@ -895,7 +895,7 @@ func (d *Daemon) send(request *Request) {
 		})
 	}
 
-	if request.SendMessage.ChannelID != nil {
+	if request.SendMessage != nil && request.SendMessage.ChannelID != nil {
 		d.channelRepliesLock.Lock()
 		d.channelReplies[*request.SendMessage.SURBID] = replyDescriptor{
 			appID:   request.AppID,
