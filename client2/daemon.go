@@ -902,6 +902,12 @@ func (d *Daemon) send(request *Request) {
 			surbKey: surbKey,
 		}
 		d.channelRepliesLock.Unlock()
+
+		// Store the SURB ID to channel ID mapping
+		d.surbIDToChannelMapLock.Lock()
+		d.surbIDToChannelMap[*request.SendMessage.SURBID] = *request.SendMessage.ChannelID
+		d.surbIDToChannelMapLock.Unlock()
+
 		d.replyLock.Unlock()
 		return
 	}
