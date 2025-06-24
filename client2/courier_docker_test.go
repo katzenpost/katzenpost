@@ -15,7 +15,21 @@ import (
 	_ "github.com/katzenpost/katzenpost/client2/thin" // Used by helper functions
 )
 
-func testDockerCourierService(t *testing.T) {
+func testDockerCourierServiceNewThinclientAPI(t *testing.T) {
+	t.Log("TESTING COURIER SERVICE - Starting pigeonhole channel test")
+
+	// Create separate thin clients for Alice and Bob
+	t.Log("Creating Alice's thin client")
+	aliceThinClient := setupThinClient(t)
+	t.Log("Alice's thin client connected")
+
+	t.Log("Creating Bob's thin client")
+	bobThinClient := setupThinClient(t)
+	t.Log("Bob's thin client connected")
+
+}
+
+func testDockerCourierServiceOldThinclientAPI(t *testing.T) {
 	t.Log("TESTING COURIER SERVICE - Starting pigeonhole channel test")
 
 	// Create separate thin clients for Alice and Bob
