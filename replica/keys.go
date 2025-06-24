@@ -138,6 +138,13 @@ func (k *EnvelopeKeys) GetKeypair(replicaEpoch uint64) (*replicaCommon.EnvelopeK
 }
 
 func (k *EnvelopeKeys) EnsureKey(replicaEpoch uint64) (*replicaCommon.EnvelopeKey, error) {
+	// Check if the requested epoch is too old to generate a key for
+	// Allow keys for a reasonable range of past epochs, but reject very old ones
+	currentEpoch, _, _ := replicaCommon.ReplicaNow()
+	if replicaEpoch < currentEpoch-15 {
+		return nil, errors.New("cannot generate key for epoch that is too old")
+	}
+
 	keypair, err := k.GetKeypair(replicaEpoch)
 	if err != nil {
 		err = k.Generate(replicaEpoch)
