@@ -61,7 +61,7 @@ type StoredEnvelopeData struct {
 type ChannelDescriptor struct {
 	StatefulWriter      *bacap.StatefulWriter
 	StatefulReader      *bacap.StatefulReader
-	BoxOwnerCap         *bacap.WriteCap // Only set for write channels
+	WriteCap            *bacap.WriteCap // WriteCap - only set for write channels
 	EnvelopeDescriptors map[[hash.HashSize]byte]*EnvelopeDescriptor
 	EnvelopeLock        sync.RWMutex // Protects EnvelopeDescriptors map
 	SendSeq             uint64
@@ -243,7 +243,7 @@ func (d *Daemon) createChannel(request *Request) {
 	d.channelMapLock.Lock()
 	d.channelMap[channelID] = &ChannelDescriptor{
 		StatefulWriter:      statefulWriter,
-		BoxOwnerCap:         boxOwnerCap,
+		WriteCap:            boxOwnerCap,
 		EnvelopeDescriptors: make(map[[hash.HashSize]byte]*EnvelopeDescriptor),
 		StoredEnvelopes:     make(map[[thin.MessageIDLength]byte]*StoredEnvelopeData),
 	}

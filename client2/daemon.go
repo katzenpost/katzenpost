@@ -1088,7 +1088,7 @@ func (d *Daemon) copyChannel(request *Request) {
 	defer d.channelMapLock.RUnlock()
 
 	// Ensure this is a write channel
-	if channelDesc.StatefulWriter == nil || channelDesc.BoxOwnerCap == nil {
+	if channelDesc.StatefulWriter == nil || channelDesc.WriteCap == nil {
 		d.log.Errorf("copyChannel failure: channel %x is not a write channel", channelID[:])
 		d.sendCopyChannelErrorResponse(request, channelID, "channel is not a write channel")
 		return
@@ -1101,13 +1101,13 @@ func (d *Daemon) copyChannel(request *Request) {
 		return
 	}
 
-	// Extract the WriteCap from the BoxOwnerCap
-	writeCap := channelDesc.BoxOwnerCap
+	// Extract the WriteCap from the channel descriptor
+	writeCap := channelDesc.WriteCap
 
 	// Create the CopyCommand
 	writeCapBytes, err := writeCap.MarshalBinary()
 	if err != nil {
-		d.log.Errorf("failed to marshal BoxOwnerCap: %s", err)
+		d.log.Errorf("failed to marshal WriteCap: %s", err)
 		return
 	}
 	copyCommand := &pigeonhole.CopyCommand{
