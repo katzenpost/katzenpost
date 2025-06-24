@@ -306,12 +306,22 @@ func (e *Courier) tryImmediateReplyProxy(reply *commands.ReplicaMessageReply) bo
 
 	// Send the immediate reply
 	go func() {
+		// Find the index of this replica in the IntermediateReplicas array
+		var replyIndex uint8 = 0 // Default to 0 if not found
+		e.dedupCacheLock.Lock()
+		if entry, ok := e.dedupCache[*reply.EnvelopeHash]; ok {
+			if idx := e.findReplicaIndex(entry, reply.ReplicaID); idx >= 0 {
+				replyIndex = uint8(idx)
+			}
+		}
+		e.dedupCacheLock.Unlock()
+
 		// Create proper CourierQueryReply with the replica's response
 		courierReply := &pigeonhole.CourierQueryReply{
 			ReplyType: 0, // 0 = envelope_reply
 			EnvelopeReply: &pigeonhole.CourierEnvelopeReply{
 				EnvelopeHash: *reply.EnvelopeHash,
-				ReplyIndex:   reply.ReplicaID, // Use the replica ID that responded
+				ReplyIndex:   replyIndex, // Use the index within IntermediateReplicas array
 				PayloadLen:   uint32(len(reply.EnvelopeReply)),
 				Payload:      reply.EnvelopeReply,
 				ErrorCode:    0,
