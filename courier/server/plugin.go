@@ -405,6 +405,15 @@ func (e *Courier) handleNewMessage(envHash *[hash.HashSize]byte, courierMessage 
 		return e.createEnvelopeErrorReply(envHash, envelopeErrorInternalError)
 	}
 
+	// For read requests, don't send an immediate timeout reply
+	// The tryImmediateReplyProxy() function will handle sending the actual response
+	// when replica replies are received via CacheReply()
+	if courierMessage.IsRead == 1 { // 1 = read, 0 = write
+		e.log.Debugf("handleNewMessage: Read request - not sending immediate timeout reply, waiting for replica responses")
+		return nil // Don't send immediate reply for read requests
+	}
+
+	// For write requests, send the immediate reply (which may be a timeout/error)
 	reply := &pigeonhole.CourierQueryReply{
 		ReplyType: 0, // 0 = envelope_reply
 		EnvelopeReply: &pigeonhole.CourierEnvelopeReply{
@@ -506,14 +515,17 @@ func (e *Courier) OnCommand(cmd cborplugin.Command) error {
 	if courierQuery.Envelope != nil {
 		reply := e.cacheHandleCourierEnvelope(courierQuery.Envelope, request.ID, request.SURB)
 
-		go func() {
-			// send reply
-			e.write(&cborplugin.Response{
-				ID:      request.ID,
-				SURB:    request.SURB,
-				Payload: reply.Bytes(),
-			})
-		}()
+		// Only send immediate reply if one was returned (nil means waiting for replica responses)
+		if reply != nil {
+			go func() {
+				// send reply
+				e.write(&cborplugin.Response{
+					ID:      request.ID,
+					SURB:    request.SURB,
+					Payload: reply.Bytes(),
+				})
+			}()
+		}
 	}
 
 	// Copy command handling has been removed as requested
