@@ -144,16 +144,19 @@ type ConnectionStatusEvent struct {
 	// When false, the client is disconnected and operations will fail.
 	IsConnected bool `cbor:"is_connected"`
 
-	// Err contains any error that occurred during connection establishment or
-	// that caused a disconnection. This field is nil when IsConnected is true
+	// Err contains any error message that occurred during connection establishment or
+	// that caused a disconnection. This field is empty when IsConnected is true
 	// or when the disconnection was intentional.
-	Err error `cbor:"err"`
+	Err string `cbor:"err"`
 }
 
 // String returns a string representation of the ConnectionStatusEvent.
 func (e *ConnectionStatusEvent) String() string {
 	if !e.IsConnected {
-		return fmt.Sprintf("ConnectionStatus: %v (%v)", e.IsConnected, e.Err)
+		if e.Err != "" {
+			return fmt.Sprintf("ConnectionStatus: %v (%s)", e.IsConnected, e.Err)
+		}
+		return fmt.Sprintf("ConnectionStatus: %v", e.IsConnected)
 	}
 	return fmt.Sprintf("ConnectionStatus: %v", e.IsConnected)
 }
