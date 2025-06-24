@@ -595,6 +595,12 @@ func (d *Daemon) decryptMKEMEnvelope(
 
 	replicaEpoch := replicaCommon.ConvertNormalToReplicaEpoch(envelopeDesc.Epoch)
 
+	// Check if payload is empty before attempting decryption
+	if len(env.Payload) == 0 {
+		d.log.Errorf("MKEM DECRYPT FAILED: envelope payload is empty")
+		return nil, fmt.Errorf("envelope payload is empty, cannot decrypt")
+	}
+
 	// Try both replicas from the original envelope
 	var rawInnerMsg []byte
 	for _, replicaNum := range envelopeDesc.ReplicaNums {
