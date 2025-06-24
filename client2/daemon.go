@@ -484,6 +484,38 @@ func (d *Daemon) handleChannelReply(appid *[AppIDLength]byte,
 
 	envHash := &courierQueryReply.EnvelopeReply.EnvelopeHash
 	env := courierQueryReply.EnvelopeReply
+
+	// Handle write acknowledgments with empty payload (successful writes)
+	if len(env.Payload) == 0 && env.ErrorCode == 0 {
+		d.log.Debugf("Received write acknowledgment with empty payload for envelope hash %x", envHash[:])
+
+		// For write acknowledgments, we don't need to decrypt anything
+		// Just send a successful write reply to the client
+		if isWriter {
+			params := &ReplyHandlerParams{
+				AppID:       appid,
+				MessageID:   mesgID,
+				SURBID:      surbid,
+				ChannelID:   channelID,
+				ChannelDesc: channelDesc,
+				EnvHash:     envHash,
+				IsReader:    isReader,
+				IsWriter:    isWriter,
+				Conn:        conn,
+			}
+
+			// Create a synthetic write reply indicating success
+			writeReply := &pigeonhole.ReplicaWriteReply{
+				ErrorCode: 0, // Success
+			}
+
+			return d.handleWriteReply(params, writeReply)
+		} else {
+			d.handleChannelReplyError(appid, surbid, mesgID, thin.ThinClientErrorInternalError)
+			return fmt.Errorf("received write acknowledgment for non-writer channel %d", channelID)
+		}
+	}
+
 	channelDesc.EnvelopeDescriptorsLock.Lock()
 	envelopeDesc, ok := channelDesc.EnvelopeDescriptors[*envHash]
 	delete(channelDesc.EnvelopeDescriptors, *envHash)
