@@ -115,9 +115,11 @@ func (k *EnvelopeKeys) Prune() bool {
 	didPrune := false
 	k.keysLock.Lock()
 	defer k.keysLock.Unlock()
-	for key, _ := range k.keys {
+	for key, keypair := range k.keys {
 		if key < epoch-1 {
 			k.log.Debugf("Purging expired key for epoch: %v", key)
+			// Remove key files from disk
+			keypair.PurgeKeyFiles(k.datadir, k.scheme, key)
 			delete(k.keys, key)
 			didPrune = true
 		}
