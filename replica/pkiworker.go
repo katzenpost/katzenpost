@@ -26,7 +26,7 @@ import (
 const PKIDocNum = 3
 
 var (
-	PublishDeadline     = vServer.PublishConsensusDeadline
+	PublishDeadline     = vServer.MixPublishDeadline
 	mixServerCacheDelay = epochtime.Period / 16
 	nextFetchTill       = epochtime.Period - (PublishDeadline + mixServerCacheDelay)
 	client2FetchDelay   = 2 * time.Minute

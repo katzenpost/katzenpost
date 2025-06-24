@@ -4,35 +4,31 @@
 package client2
 
 import (
-	"crypto/rand"
+	"errors"
 	"fmt"
 	"os"
 	"sync"
-	"time"
 
 	"github.com/katzenpost/hpqc/bacap"
 	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/nike"
-	hpqcRand "github.com/katzenpost/hpqc/rand"
+	"github.com/katzenpost/hpqc/rand"
 
-	"github.com/katzenpost/katzenpost/client2/common"
 	"github.com/katzenpost/katzenpost/client2/constants"
 	"github.com/katzenpost/katzenpost/client2/thin"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
-	sphinxConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/pigeonhole"
 	pigeonholeGeo "github.com/katzenpost/katzenpost/pigeonhole/geo"
 	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
 )
 
-var (
-	// Package-level cryptographically secure random number generator
-	secureRand = hpqcRand.NewMath()
-)
-
 const (
 	// Error message for missing connection
 	errNoConnectionForAppID = "no connection associated with AppID %x"
+
+	// Error messages for capability deduplication
+	errCapabilityMarshalFailed = "failed to marshal capability"
+	errCapabilityAlreadyInUse  = "capability already in use"
 )
 
 // EnvelopeDescriptor supplies us with everthing we need to decrypt
@@ -59,43 +55,17 @@ type StoredEnvelopeData struct {
 // ChannelDescriptor describes a pigeonhole channel and supplies us with
 // everthing we need to read or write to the channel.
 type ChannelDescriptor struct {
-	StatefulWriter      *bacap.StatefulWriter
-	StatefulReader      *bacap.StatefulReader
-	BoxOwnerCap         *bacap.BoxOwnerCap // Only set for write channels
-	EnvelopeDescriptors map[[hash.HashSize]byte]*EnvelopeDescriptor
-	EnvelopeLock        sync.RWMutex // Protects EnvelopeDescriptors map
-	SendSeq             uint64
+	StatefulWriter     *bacap.StatefulWriter
+	StatefulWriterLock sync.Mutex
 
-	// StoredEnvelopes maps message IDs to stored envelope data for reuse
+	StatefulReader     *bacap.StatefulReader
+	StatefulReaderLock sync.Mutex
+
+	EnvelopeDescriptors     map[[hash.HashSize]byte]*EnvelopeDescriptor
+	EnvelopeDescriptorsLock sync.RWMutex
+
 	StoredEnvelopes     map[[thin.MessageIDLength]byte]*StoredEnvelopeData
-	StoredEnvelopesLock sync.RWMutex // Protects StoredEnvelopes map
-
-	// ReaderLock protects StatefulReader.DecryptNext calls to prevent BACAP state corruption
-	// CRITICAL: DecryptNext advances the reader's internal state and must be serialized
-	ReaderLock sync.Mutex
-}
-
-func GetRandomCourier(doc *cpki.Document) (*[hash.HashSize]byte, []byte) {
-	courierServices := common.FindServices(constants.CourierServiceName, doc)
-	if len(courierServices) == 0 {
-		panic("wtf no courier services")
-	}
-	courierService := courierServices[secureRand.Intn(len(courierServices))]
-	serviceIdHash := hash.Sum256(courierService.MixDescriptor.IdentityKey)
-	return &serviceIdHash, courierService.RecipientQueueID
-}
-
-func NewPigeonholeChannel() (*bacap.StatefulWriter, *bacap.UniversalReadCap, *bacap.BoxOwnerCap) {
-	owner, err := bacap.NewBoxOwnerCap(rand.Reader)
-	if err != nil {
-		panic(err)
-	}
-	statefulWriter, err := bacap.NewStatefulWriter(owner, constants.PIGEONHOLE_CTX)
-	if err != nil {
-		panic(err)
-	}
-	bobReadCap := owner.UniversalReadCap()
-	return statefulWriter, bobReadCap, owner
+	StoredEnvelopesLock sync.RWMutex
 }
 
 func CreateChannelWriteRequest(
@@ -131,15 +101,49 @@ func CreateChannelWriteRequest(
 	var sigArray [64]uint8
 	copy(sigArray[:], sig[:])
 
-	writeRequest := &pigeonhole.ReplicaWrite{
-		BoxID:      boxIDArray,
-		Signature:  sigArray,
-		PayloadLen: uint32(len(ciphertext)),
-		Payload:    ciphertext,
+	intermediateReplicas, replicaPubKeys, err := pigeonhole.GetRandomIntermediateReplicas(doc)
+	if err != nil {
+		return nil, nil, err
 	}
-	msg := &pigeonhole.ReplicaInnerMessage{
-		MessageType: 1, // 1 = write
-		WriteMsg:    writeRequest,
+
+	// Use the shared envelope creation function
+	return pigeonhole.CreateWriteEnvelope(
+		boxIDArray,
+		sigArray,
+		ciphertext,
+		replicaPubKeys,
+		intermediateReplicas,
+		doc.Epoch,
+		replicaCommon.MKEMNikeScheme,
+	)
+}
+
+// CreateChannelWriteRequestPrepareOnly prepares a write request WITHOUT advancing StatefulWriter state.
+// This allows for deferred state advancement until courier acknowledgment.
+func CreateChannelWriteRequestPrepareOnly(
+	statefulWriter *bacap.StatefulWriter,
+	payload []byte,
+	doc *cpki.Document,
+	geometry *pigeonholeGeo.Geometry) (*pigeonhole.CourierEnvelope, nike.PrivateKey, error) {
+
+	// Validate that the payload can fit within the geometry's BoxPayloadLength
+	// CreatePaddedPayload requires 4 bytes for length prefix plus the payload
+	minRequiredSize := len(payload) + 4
+	if minRequiredSize > geometry.BoxPayloadLength {
+		return nil, nil, fmt.Errorf("payload too large: %d bytes (+ 4 byte length prefix) exceeds BoxPayloadLength of %d bytes",
+			len(payload), geometry.BoxPayloadLength)
+	}
+
+	// Pad the payload to the geometry's BoxPayloadLength to fill the user forward sphinx payloads
+	paddedPayload, err := pigeonhole.CreatePaddedPayload(payload, geometry.BoxPayloadLength)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// Encrypt the message WITHOUT advancing state
+	boxID, ciphertext, sigraw, err := statefulWriter.PrepareNext(paddedPayload)
+	if err != nil {
+		return nil, nil, err
 	}
 
 	intermediateReplicas, replicaPubKeys, err := pigeonhole.GetRandomIntermediateReplicas(doc)
@@ -147,32 +151,24 @@ func CreateChannelWriteRequest(
 		return nil, nil, err
 	}
 
-	mkemPrivateKey, mkemCiphertext := replicaCommon.MKEMNikeScheme.Encapsulate(
-		replicaPubKeys, msg.Bytes(),
+	sigArray := [64]uint8{}
+	copy(sigArray[:], sigraw)
+
+	boxIDArray := [32]uint8{}
+	copy(boxIDArray[:], boxID[:])
+
+	return pigeonhole.CreateWriteEnvelope(
+		boxIDArray,
+		sigArray,
+		ciphertext,
+		replicaPubKeys,
+		intermediateReplicas,
+		doc.Epoch,
+		replicaCommon.MKEMNikeScheme,
 	)
-	mkemPublicKey := mkemPrivateKey.Public()
-
-	var dek1, dek2 [60]uint8
-	copy(dek1[:], mkemCiphertext.DEKCiphertexts[0][:])
-	copy(dek2[:], mkemCiphertext.DEKCiphertexts[1][:])
-
-	senderPubkeyBytes := mkemPublicKey.Bytes()
-	envelope := &pigeonhole.CourierEnvelope{
-		IntermediateReplicas: intermediateReplicas,
-		Dek1:                 dek1,
-		Dek2:                 dek2,
-		ReplyIndex:           0,
-		Epoch:                doc.Epoch,
-		SenderPubkeyLen:      uint16(len(senderPubkeyBytes)),
-		SenderPubkey:         senderPubkeyBytes,
-		CiphertextLen:        uint32(len(mkemCiphertext.Envelope)),
-		Ciphertext:           mkemCiphertext.Envelope,
-		IsRead:               0, // 0 = write
-	}
-	return envelope, mkemPrivateKey, err
 }
 
-func CreateChannelReadRequest(channelID [thin.ChannelIDLength]byte,
+func CreateChannelReadRequest(channelID uint16,
 	statefulReader *bacap.StatefulReader,
 	doc *cpki.Document) (*pigeonhole.CourierEnvelope, nike.PrivateKey, error) {
 
@@ -184,7 +180,7 @@ func CreateChannelReadRequest(channelID [thin.ChannelIDLength]byte,
 	return CreateChannelReadRequestWithBoxID(channelID, boxID, doc)
 }
 
-func CreateChannelReadRequestWithBoxID(channelID [thin.ChannelIDLength]byte,
+func CreateChannelReadRequestWithBoxID(channelID uint16,
 	boxID *[bacap.BoxIDSize]byte,
 	doc *cpki.Document) (*pigeonhole.CourierEnvelope, nike.PrivateKey, error) {
 
@@ -192,92 +188,85 @@ func CreateChannelReadRequestWithBoxID(channelID [thin.ChannelIDLength]byte,
 	var boxIDArray [32]uint8
 	copy(boxIDArray[:], boxID[:])
 
-	msg := &pigeonhole.ReplicaInnerMessage{
-		MessageType: 0, // 0 = read
-		ReadMsg: &pigeonhole.ReplicaRead{
-			BoxID: boxIDArray,
-		},
-	}
-
 	intermediateReplicas, replicaPubKeys, err := pigeonhole.GetRandomIntermediateReplicas(doc)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	fmt.Printf("BOB MKEM ENCRYPT: Starting encryption with message size %d bytes\n", len(msg.Bytes()))
-	mkemPrivateKey, mkemCiphertext := replicaCommon.MKEMNikeScheme.Encapsulate(replicaPubKeys, msg.Bytes())
+	// DEBUG: Log Bob's read operation
+	fmt.Printf("BOB MKEM ENCRYPT: Starting encryption for read request\n")
+
+	// Use the shared envelope creation function
+	envelope, mkemPrivateKey, err := pigeonhole.CreateReadEnvelope(
+		boxIDArray,
+		replicaPubKeys,
+		intermediateReplicas,
+		doc.Epoch,
+		replicaCommon.MKEMNikeScheme,
+	)
+	if err != nil {
+		return nil, nil, err
+	}
 
 	// DEBUG: Log Bob's MKEM private key for envelope creation
 	mkemPrivateKeyBytes, _ := mkemPrivateKey.MarshalBinary()
 	fmt.Printf("BOB CREATES ENVELOPE WITH MKEM KEY: %x\n", mkemPrivateKeyBytes[:16]) // First 16 bytes for brevity
-	fmt.Printf("BOB MKEM ENCRYPT SUCCESS: Encrypted to %d bytes\n", len(mkemCiphertext.Envelope))
+	fmt.Printf("BOB MKEM ENCRYPT SUCCESS: Encrypted to %d bytes\n", len(envelope.Ciphertext))
 
-	// Convert DEK ciphertexts to arrays
-	var dek1, dek2 [60]uint8
-	copy(dek1[:], mkemCiphertext.DEKCiphertexts[0][:])
-	copy(dek2[:], mkemCiphertext.DEKCiphertexts[1][:])
-
-	senderPubkeyBytes := mkemPrivateKey.Public().Bytes()
-	envelope := &pigeonhole.CourierEnvelope{
-		IntermediateReplicas: intermediateReplicas,
-		Dek1:                 dek1,
-		Dek2:                 dek2,
-		ReplyIndex:           0,
-		Epoch:                doc.Epoch,
-		SenderPubkeyLen:      uint16(len(senderPubkeyBytes)),
-		SenderPubkey:         senderPubkeyBytes,
-		CiphertextLen:        uint32(len(mkemCiphertext.Envelope)),
-		Ciphertext:           mkemCiphertext.Envelope,
-		IsRead:               1, // 1 = read
-	}
 	return envelope, mkemPrivateKey, nil
 }
 
-func (d *Daemon) createChannel(request *Request) {
-	statefulWriter, bobReadCap, boxOwnerCap := NewPigeonholeChannel()
-	channelID := [thin.ChannelIDLength]byte{}
-	_, err := rand.Reader.Read(channelID[:])
-	if err != nil {
-		panic(err)
-	}
-	d.channelMapLock.Lock()
-	d.channelMap[channelID] = &ChannelDescriptor{
-		StatefulWriter:      statefulWriter,
-		BoxOwnerCap:         boxOwnerCap,
-		EnvelopeDescriptors: make(map[[hash.HashSize]byte]*EnvelopeDescriptor),
-		StoredEnvelopes:     make(map[[thin.MessageIDLength]byte]*StoredEnvelopeData),
-	}
-	d.channelMapLock.Unlock()
-
+// sendWriteChannelSuccessResponse sends a successful response for write channel creation
+func (d *Daemon) sendWriteChannelSuccessResponse(request *Request, channelID uint16, bobReadCap *bacap.ReadCap, writeCap *bacap.WriteCap, currentMessageIndex *bacap.MessageBoxIndex) {
 	conn := d.listener.getConnection(request.AppID)
 	if conn == nil {
 		d.log.Errorf(errNoConnectionForAppID, request.AppID[:])
 		return
 	}
+
 	conn.sendResponse(&Response{
 		AppID: request.AppID,
-		CreateChannelReply: &thin.CreateChannelReply{
-			ChannelID: channelID,
-			ReadCap:   bobReadCap,
+		CreateWriteChannelReply: &thin.CreateWriteChannelReply{
+			ChannelID:        channelID,
+			ReadCap:          bobReadCap,
+			WriteCap:         writeCap,
+			NextMessageIndex: currentMessageIndex,
+			ErrorCode:        thin.ThinClientSuccess,
 		},
 	})
 }
 
+func (d *Daemon) createWriteChannel(request *Request) {
+	statefulWriter, err := d.createOrResumeStatefulWriter(request)
+	if err != nil {
+		d.log.Errorf("createWriteChannel failure: %s", err)
+		d.sendCreateWriteChannelError(request, thin.ThinClientErrorInternalError)
+		return
+	}
+
+	channelID := d.generateUniqueChannelID()
+	d.channelMapLock.Lock()
+	d.channelMap[channelID] = &ChannelDescriptor{
+		StatefulWriter:      statefulWriter,
+		EnvelopeDescriptors: make(map[[hash.HashSize]byte]*EnvelopeDescriptor),
+		StoredEnvelopes:     make(map[[thin.MessageIDLength]byte]*StoredEnvelopeData),
+	}
+	d.channelMapLock.Unlock()
+
+	currentMessageIndex := statefulWriter.NextIndex
+	bobReadCap := statefulWriter.Wcap.ReadCap()
+	d.sendWriteChannelSuccessResponse(request, channelID, bobReadCap, statefulWriter.Wcap, currentMessageIndex)
+}
+
 func (d *Daemon) createReadChannel(request *Request) {
-	// Create a new channelID for Bob's read channel
-	channelID := [thin.ChannelIDLength]byte{}
-	_, err := rand.Reader.Read(channelID[:])
+	statefulReader, err := d.createOrResumeStatefulReader(request)
 	if err != nil {
-		panic(err)
+		d.log.Errorf("createReadChannel failure: %s", err)
+		d.sendCreateReadChannelError(request, thin.ThinClientErrorInternalError)
+		return
 	}
 
-	// Create a StatefulReader from the readCap provided by Alice
-	statefulReader, err := bacap.NewStatefulReader(request.CreateReadChannel.ReadCap, constants.PIGEONHOLE_CTX)
-	if err != nil {
-		panic(err)
-	}
-
-	// Create a new ChannelDescriptor for Bob's read channel
+	channelID := d.generateUniqueChannelID()
 	d.channelMapLock.Lock()
 	d.channelMap[channelID] = &ChannelDescriptor{
 		StatefulReader:      statefulReader,
@@ -286,15 +275,19 @@ func (d *Daemon) createReadChannel(request *Request) {
 	}
 	d.channelMapLock.Unlock()
 
+	currentMessageIndex := statefulReader.NextIndex
 	conn := d.listener.getConnection(request.AppID)
 	if conn == nil {
 		d.log.Errorf("createReadChannel failure: "+errNoConnectionForAppID, request.AppID[:])
+		d.sendCreateReadChannelError(request, thin.ThinClientErrorInternalError)
 		return
 	}
 	conn.sendResponse(&Response{
 		AppID: request.AppID,
 		CreateReadChannelReply: &thin.CreateReadChannelReply{
-			ChannelID: channelID,
+			ChannelID:        channelID,
+			NextMessageIndex: currentMessageIndex,
+			ErrorCode:        thin.ThinClientSuccess,
 		},
 	})
 }
@@ -302,120 +295,75 @@ func (d *Daemon) createReadChannel(request *Request) {
 func (d *Daemon) writeChannel(request *Request) {
 	channelID := request.WriteChannel.ChannelID
 
-	// Hold channelMapLock for the entire operation to ensure channelDesc doesn't change
 	d.channelMapLock.RLock()
 	channelDesc, ok := d.channelMap[channelID]
+	d.channelMapLock.RUnlock()
 	if !ok {
 		d.channelMapLock.RUnlock()
-		d.log.Errorf("writeChannel failure: no channel found for channelID %x", channelID[:])
+		d.log.Errorf("writeChannel failure: no channel found for channelID %d", channelID)
+		d.sendWriteChannelError(request, thin.ThinClientErrorChannelNotFound)
 		return
 	}
-	// Keep the lock held while we work with channelDesc
-	defer d.channelMapLock.RUnlock()
 
 	_, doc := d.client.CurrentDocument()
 
-	courierEnvelope, envelopePrivateKey, err := CreateChannelWriteRequest(
+	channelDesc.StatefulWriterLock.Lock()
+	courierEnvelope, envelopePrivateKey, err := CreateChannelWriteRequestPrepareOnly(
 		channelDesc.StatefulWriter,
 		request.WriteChannel.Payload,
 		doc,
 		d.cfg.PigeonholeGeometry)
-
 	if err != nil {
+		channelDesc.StatefulWriterLock.Unlock()
 		d.log.Errorf("writeChannel failure: failed to create write request: %s", err)
+		d.sendWriteChannelError(request, thin.ThinClientErrorInternalError)
 		return
 	}
+	nextMessageIndex, err := channelDesc.StatefulWriter.GetNextMessageIndex()
+	if err != nil {
+		channelDesc.StatefulWriterLock.Unlock()
+		d.log.Errorf("writeChannel failure: failed to get next message index: %s", err)
+		d.sendWriteChannelError(request, thin.ThinClientErrorInternalError)
+		return
+	}
+	channelDesc.StatefulWriterLock.Unlock()
 
 	envHash := courierEnvelope.EnvelopeHash()
-	channelDesc.EnvelopeLock.Lock()
+	channelDesc.EnvelopeDescriptorsLock.Lock()
 	channelDesc.EnvelopeDescriptors[*envHash] = &EnvelopeDescriptor{
 		Epoch:       doc.Epoch,
 		ReplicaNums: courierEnvelope.IntermediateReplicas,
 		EnvelopeKey: envelopePrivateKey.Bytes(),
 	}
-	channelDesc.EnvelopeLock.Unlock()
+	channelDesc.EnvelopeDescriptorsLock.Unlock()
 
-	surbid := &[sphinxConstants.SURBIDLength]byte{}
-	_, err = rand.Reader.Read(surbid[:])
-	if err != nil {
-		panic(err)
-	}
-	destinationIdHash, recipientQueueID := GetRandomCourier(doc)
-	// Wrap CourierEnvelope in CourierQuery
 	courierQuery := &pigeonhole.CourierQuery{
 		QueryType: 0, // 0 = envelope
 		Envelope:  courierEnvelope,
 	}
 
-	sendRequest := &Request{
-		AppID: request.AppID,
-		SendMessage: &thin.SendMessage{
-			ID:                nil, // WriteChannel doesn't have an ID field
-			WithSURB:          true,
-			DestinationIdHash: destinationIdHash,
-			RecipientQueueID:  recipientQueueID,
-			Payload:           courierQuery.Bytes(),
-			SURBID:            surbid,
-		},
-	}
-	surbKey, rtt, err := d.client.SendCiphertext(sendRequest)
-	if err != nil {
-		d.log.Errorf("failed to send sphinx packet: %s", err.Error())
-		// Send error response to client
-		conn := d.listener.getConnection(request.AppID)
-		if conn != nil {
-			conn.sendResponse(&Response{
-				AppID: request.AppID,
-				WriteChannelReply: &thin.WriteChannelReply{
-					ChannelID: channelID,
-					Err:       err.Error(),
-				},
-			})
-		}
-		return
-	}
-
-	fetchInterval := d.client.GetPollInterval()
-	slop := time.Second
-	duration := rtt + fetchInterval + slop
-	replyArrivalTime := time.Now().Add(duration)
-
-	d.channelRepliesLock.Lock()
-	d.channelReplies[*surbid] = replyDescriptor{
-		appID:   request.AppID,
-		surbKey: surbKey,
-	}
-	d.channelRepliesLock.Unlock()
-
-	d.surbIDToChannelMapLock.Lock()
-	d.surbIDToChannelMap[*surbid] = channelID
-	d.surbIDToChannelMapLock.Unlock()
-
-	d.timerQueue.Push(uint64(replyArrivalTime.UnixNano()), sendRequest.SendMessage.SURBID)
-
 	conn := d.listener.getConnection(request.AppID)
 	if conn == nil {
 		d.log.Errorf(errNoConnectionForAppID, request.AppID[:])
+		d.sendWriteChannelError(request, thin.ThinClientErrorConnectionLost)
 		return
 	}
 	conn.sendResponse(&Response{
 		AppID: request.AppID,
 		WriteChannelReply: &thin.WriteChannelReply{
-			ChannelID: channelID,
+			ChannelID:          channelID,
+			SendMessagePayload: courierQuery.Bytes(),
+			NextMessageIndex:   nextMessageIndex,
+			ErrorCode:          thin.ThinClientSuccess,
 		},
 	})
 }
 
 // getOrCreateEnvelope retrieves a stored envelope or creates a new one for the read request
 func (d *Daemon) getOrCreateEnvelope(request *Request, channelDesc *ChannelDescriptor, doc *cpki.Document) (*pigeonhole.CourierEnvelope, nike.PrivateKey, error) {
-	// Check if we have a stored envelope for this message ID
-	if request.ReadChannel.ID != nil {
-		if envelope, privateKey, found := d.getStoredEnvelope(request.ReadChannel.ID, channelDesc); found {
-			return envelope, privateKey, nil
-		}
+	if envelope, privateKey, found := d.getStoredEnvelope(request.ReadChannel.MessageID, channelDesc); found {
+		return envelope, privateKey, nil
 	}
-
-	// Create a new envelope if we don't have a stored one
 	return d.createNewEnvelope(request, channelDesc, doc)
 }
 
@@ -437,12 +385,9 @@ func (d *Daemon) getStoredEnvelope(messageID *[thin.MessageIDLength]byte, channe
 	envHash := courierEnvelope.EnvelopeHash()
 
 	// DEBUG: Log envelope hash and map size when retrieving
-	channelDesc.EnvelopeLock.RLock()
-	mapSize := len(channelDesc.EnvelopeDescriptors)
+	channelDesc.EnvelopeDescriptorsLock.RLock()
 	envDesc, envExists := channelDesc.EnvelopeDescriptors[*envHash]
-	channelDesc.EnvelopeLock.RUnlock()
-
-	fmt.Printf("RETRIEVING ENVELOPE HASH: %x (map size: %d, exists: %t)\n", envHash[:], mapSize, envExists)
+	channelDesc.EnvelopeDescriptorsLock.RUnlock()
 
 	if !envExists {
 		d.log.Errorf("envelope descriptor not found for stored envelope")
@@ -455,14 +400,15 @@ func (d *Daemon) getStoredEnvelope(messageID *[thin.MessageIDLength]byte, channe
 		return nil, nil, false
 	}
 
-	// DEBUG: Log Bob's retrieved MKEM private key
-	fmt.Printf("BOB RETRIEVES STORED MKEM KEY: %x\n", envDesc.EnvelopeKey[:16]) // First 16 bytes for brevity
-
 	return courierEnvelope, envelopePrivateKey, true
 }
 
 // createNewEnvelope creates a new courier envelope for the read request
 func (d *Daemon) createNewEnvelope(request *Request, channelDesc *ChannelDescriptor, doc *cpki.Document) (*pigeonhole.CourierEnvelope, nike.PrivateKey, error) {
+	// CRITICAL: Protect StatefulReader state access with ReaderLock to prevent BACAP state corruption
+	channelDesc.StatefulReaderLock.Lock()
+	defer channelDesc.StatefulReaderLock.Unlock()
+
 	boxID, err := channelDesc.StatefulReader.NextBoxID()
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to get next box ID: %s", err)
@@ -481,46 +427,20 @@ func (d *Daemon) createNewEnvelope(request *Request, channelDesc *ChannelDescrip
 	}
 
 	// Store the envelope and box ID for future reuse if we have a message ID
-	if request.ReadChannel.ID != nil {
+	if request.ReadChannel.MessageID != nil {
 		channelDesc.StoredEnvelopesLock.Lock()
-		channelDesc.StoredEnvelopes[*request.ReadChannel.ID] = &StoredEnvelopeData{
+		channelDesc.StoredEnvelopes[*request.ReadChannel.MessageID] = &StoredEnvelopeData{
 			Envelope: courierEnvelope,
 			BoxID:    boxID,
 		}
 		channelDesc.StoredEnvelopesLock.Unlock()
-		d.log.Debugf("Stored envelope for message ID %x", request.ReadChannel.ID[:])
+		d.log.Debugf("Stored envelope for message ID %x", request.ReadChannel.MessageID[:])
 	}
 
 	return courierEnvelope, envelopePrivateKey, nil
 }
 
-// sendReadChannelErrorResponse sends an error response for a read channel request
-func (d *Daemon) sendReadChannelErrorResponse(request *Request, channelID [thin.ChannelIDLength]byte, errorMsg string) {
-	conn := d.listener.getConnection(request.AppID)
-	if conn != nil {
-		conn.sendResponse(&Response{
-			AppID: request.AppID,
-			ReadChannelReply: &thin.ReadChannelReply{
-				MessageID: request.ReadChannel.ID,
-				ChannelID: channelID,
-				Err:       errorMsg,
-			},
-		})
-	}
-}
-
-// storeEnvelopeDescriptor stores the envelope descriptor for new envelopes (not reused ones)
 func (d *Daemon) storeEnvelopeDescriptor(courierEnvelope *pigeonhole.CourierEnvelope, envelopePrivateKey nike.PrivateKey, channelDesc *ChannelDescriptor, doc *cpki.Document) error {
-	envHash := courierEnvelope.EnvelopeHash()
-
-	// DEBUG: Log envelope hash and map size when storing
-	channelDesc.EnvelopeLock.RLock()
-	mapSize := len(channelDesc.EnvelopeDescriptors)
-	channelDesc.EnvelopeLock.RUnlock()
-	fmt.Printf("STORING ENVELOPE HASH: %x (map size: %d)\n", envHash[:], mapSize)
-
-	// DEBUG: Log the raw data being hashed to identify the issue
-	fmt.Printf("DEBUG ENVELOPE DATA:\n")
 	pubKeyLen := len(courierEnvelope.SenderPubkey)
 	if pubKeyLen > 32 {
 		pubKeyLen = 32
@@ -529,13 +449,12 @@ func (d *Daemon) storeEnvelopeDescriptor(courierEnvelope *pigeonhole.CourierEnve
 	if cipherLen > 32 {
 		cipherLen = 32
 	}
-	fmt.Printf("  SenderPubkey: %x\n", courierEnvelope.SenderPubkey[:pubKeyLen])
-	fmt.Printf("  Ciphertext: %x\n", courierEnvelope.Ciphertext[:cipherLen])
 
-	// Only store envelope descriptor for new envelopes (not reused ones)
-	channelDesc.EnvelopeLock.RLock()
+	envHash := courierEnvelope.EnvelopeHash()
+
+	channelDesc.EnvelopeDescriptorsLock.RLock()
 	_, envDescExists := channelDesc.EnvelopeDescriptors[*envHash]
-	channelDesc.EnvelopeLock.RUnlock()
+	channelDesc.EnvelopeDescriptorsLock.RUnlock()
 
 	if !envDescExists {
 		replicaPubKeys := make([]nike.PublicKey, 2)
@@ -555,129 +474,187 @@ func (d *Daemon) storeEnvelopeDescriptor(courierEnvelope *pigeonhole.CourierEnve
 		if err != nil {
 			return fmt.Errorf("failed to marshal envelope private key: %s", err)
 		}
-		channelDesc.EnvelopeLock.Lock()
+		channelDesc.EnvelopeDescriptorsLock.Lock()
 		channelDesc.EnvelopeDescriptors[*envHash] = &EnvelopeDescriptor{
-			Epoch:       doc.Epoch, // Store normal epoch, convert when needed
+			Epoch:       doc.Epoch,
 			ReplicaNums: courierEnvelope.IntermediateReplicas,
 			EnvelopeKey: envelopeKey,
 		}
-		channelDesc.EnvelopeLock.Unlock()
+		channelDesc.EnvelopeDescriptorsLock.Unlock()
 	}
 	return nil
-}
-
-// sendEnvelopeToCourier sends the courier envelope via Sphinx and sets up reply handling
-func (d *Daemon) sendEnvelopeToCourier(request *Request, channelID [thin.ChannelIDLength]byte, courierEnvelope *pigeonhole.CourierEnvelope, doc *cpki.Document) error {
-	surbid := &[sphinxConstants.SURBIDLength]byte{}
-	_, err := rand.Reader.Read(surbid[:])
-	if err != nil {
-		return fmt.Errorf("failed to generate SURB ID: %s", err)
-	}
-
-	destinationIdHash, recipientQueueID := GetRandomCourier(doc)
-
-	// Wrap CourierEnvelope in CourierQuery
-	courierQuery := &pigeonhole.CourierQuery{
-		QueryType: 0, // 0 = envelope
-		Envelope:  courierEnvelope,
-	}
-
-	sendRequest := &Request{
-		AppID: request.AppID,
-		SendMessage: &thin.SendMessage{
-			ID:                request.ReadChannel.ID,
-			WithSURB:          true,
-			DestinationIdHash: destinationIdHash,
-			RecipientQueueID:  recipientQueueID,
-			Payload:           courierQuery.Bytes(),
-			SURBID:            surbid,
-		},
-	}
-
-	surbKey, rtt, err := d.client.SendCiphertext(sendRequest)
-	if err != nil {
-		return fmt.Errorf("failed to send sphinx packet: %s", err)
-	}
-
-	// Set up reply handling
-	fetchInterval := d.client.GetPollInterval()
-	slop := time.Second
-	duration := rtt + fetchInterval + slop
-	replyArrivalTime := time.Now().Add(duration)
-
-	d.channelRepliesLock.Lock()
-	d.channelReplies[*surbid] = replyDescriptor{
-		ID:      request.ReadChannel.ID,
-		appID:   request.AppID,
-		surbKey: surbKey,
-	}
-	d.channelRepliesLock.Unlock()
-
-	d.surbIDToChannelMapLock.Lock()
-	d.surbIDToChannelMap[*surbid] = channelID
-	d.surbIDToChannelMapLock.Unlock()
-
-	d.timerQueue.Push(uint64(replyArrivalTime.UnixNano()), sendRequest.SendMessage.SURBID)
-
-	return nil
-}
-
-// sendReadChannelSuccessResponse sends a success response for a read channel request
-func (d *Daemon) sendReadChannelSuccessResponse(request *Request, channelID [thin.ChannelIDLength]byte) {
-	conn := d.listener.getConnection(request.AppID)
-	if conn == nil {
-		d.log.Errorf(errNoConnectionForAppID, request.AppID[:])
-		return
-	}
-	conn.sendResponse(&Response{
-		AppID: request.AppID,
-		ReadChannelReply: &thin.ReadChannelReply{
-			MessageID: request.ReadChannel.ID,
-			ChannelID: channelID,
-		},
-	})
 }
 
 func (d *Daemon) readChannel(request *Request) {
 	channelID := request.ReadChannel.ChannelID
 
-	// Hold channelMapLock for the entire operation to ensure channelDesc doesn't change
 	d.channelMapLock.RLock()
 	channelDesc, ok := d.channelMap[channelID]
+	d.channelMapLock.RUnlock()
+
 	if !ok {
-		d.channelMapLock.RUnlock()
-		d.log.Errorf("no channel found for channelID %x", channelID[:])
+		d.log.Errorf("no channel found for channelID %d", channelID)
+		d.sendReadChannelError(request, thin.ThinClientErrorChannelNotFound)
 		return
 	}
-	// Keep the lock held while we work with channelDesc
-	defer d.channelMapLock.RUnlock()
 
 	_, doc := d.client.CurrentDocument()
 
-	// Get or create the courier envelope
 	courierEnvelope, envelopePrivateKey, err := d.getOrCreateEnvelope(request, channelDesc, doc)
 	if err != nil {
 		d.log.Errorf("failed to get or create envelope: %s", err)
-		d.sendReadChannelErrorResponse(request, channelID, err.Error())
+		d.sendReadChannelError(request, thin.ThinClientErrorInternalError)
 		return
 	}
 
-	// Store envelope descriptor for new envelopes (not reused ones)
 	err = d.storeEnvelopeDescriptor(courierEnvelope, envelopePrivateKey, channelDesc, doc)
 	if err != nil {
 		d.log.Errorf("failed to store envelope descriptor: %s", err)
-		d.sendReadChannelErrorResponse(request, channelID, err.Error())
+		d.sendReadChannelError(request, thin.ThinClientErrorInternalError)
 		return
 	}
 
-	// Send the envelope to the courier and handle the response
-	err = d.sendEnvelopeToCourier(request, channelID, courierEnvelope, doc)
+	courierQuery := &pigeonhole.CourierQuery{
+		QueryType: 0, // 0 = envelope
+		Envelope:  courierEnvelope,
+	}
+
+	channelDesc.StatefulReaderLock.Lock()
+	nextMessageIndex, err := channelDesc.StatefulReader.NextIndex.NextIndex()
+	channelDesc.StatefulReaderLock.Unlock()
+
 	if err != nil {
-		d.log.Errorf("failed to send envelope to courier: %s", err)
-		d.sendReadChannelErrorResponse(request, channelID, err.Error())
+		d.log.Errorf("failed to get next message index: %s", err)
+		d.sendReadChannelError(request, thin.ThinClientErrorInternalError)
 		return
 	}
 
-	// Send success response to client
-	d.sendReadChannelSuccessResponse(request, channelID)
+	conn := d.listener.getConnection(request.AppID)
+	if conn == nil {
+		d.log.Errorf(errNoConnectionForAppID, request.AppID[:])
+		d.sendReadChannelError(request, thin.ThinClientErrorConnectionLost)
+		return
+	}
+	conn.sendResponse(&Response{
+		AppID: request.AppID,
+		ReadChannelReply: &thin.ReadChannelReply{
+			MessageID:          request.ReadChannel.MessageID,
+			ChannelID:          channelID,
+			SendMessagePayload: courierQuery.Bytes(),
+			NextMessageIndex:   nextMessageIndex,
+		},
+	})
+}
+
+func (d *Daemon) createOrResumeStatefulWriter(request *Request) (*bacap.StatefulWriter, error) {
+	isResuming := request.CreateWriteChannel.WriteCap != nil
+	var statefulWriter *bacap.StatefulWriter
+	var err error
+	if isResuming {
+		if err := d.checkWriteCapabilityDedup(request.CreateWriteChannel.WriteCap); err != nil {
+			return nil, err
+		}
+		if request.CreateWriteChannel.MessageBoxIndex == nil {
+			statefulWriter, err = bacap.NewStatefulWriter(request.CreateWriteChannel.WriteCap, constants.PIGEONHOLE_CTX)
+			if err != nil {
+				return nil, err
+			}
+		} else {
+			statefulWriter, err = bacap.NewStatefulWriterWithIndex(
+				request.CreateWriteChannel.WriteCap,
+				constants.PIGEONHOLE_CTX,
+				request.CreateWriteChannel.MessageBoxIndex)
+			if err != nil {
+				return nil, err
+			}
+		}
+	} else {
+		// Create a new WriteCap for a new channel
+		newWriteCap, err := bacap.NewWriteCap(rand.Reader)
+		if err != nil {
+			return nil, err
+		}
+		statefulWriter, err = bacap.NewStatefulWriter(newWriteCap, constants.PIGEONHOLE_CTX)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return statefulWriter, nil
+}
+
+func (d *Daemon) createOrResumeStatefulReader(request *Request) (*bacap.StatefulReader, error) {
+	isResuming := request.CreateReadChannel.ReadCap != nil
+	var statefulReader *bacap.StatefulReader
+	var err error
+	if isResuming {
+		if err := d.checkReadCapabilityDedup(request, request.CreateReadChannel.ReadCap); err != nil {
+			return nil, err
+		}
+		if request.CreateReadChannel.MessageBoxIndex == nil {
+			statefulReader, err = bacap.NewStatefulReader(request.CreateReadChannel.ReadCap, constants.PIGEONHOLE_CTX)
+			if err != nil {
+				return nil, err
+			}
+		} else {
+			statefulReader, err = bacap.NewStatefulReaderWithIndex(
+				request.CreateReadChannel.ReadCap,
+				constants.PIGEONHOLE_CTX,
+				request.CreateReadChannel.MessageBoxIndex)
+			if err != nil {
+				return nil, err
+			}
+		}
+	} else {
+		statefulReader, err = bacap.NewStatefulReader(request.CreateReadChannel.ReadCap, constants.PIGEONHOLE_CTX)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return statefulReader, nil
+}
+
+// checkWriteCapabilityDedup checks if a WriteCap is already in use and adds it to the dedup map
+func (d *Daemon) checkWriteCapabilityDedup(writeCap *bacap.WriteCap) error {
+	writeCapBytes, err := writeCap.MarshalBinary()
+	if err != nil {
+		return err
+	}
+
+	capHash := hash.Sum256(writeCapBytes)
+	d.capabilityLock.Lock()
+	defer d.capabilityLock.Unlock()
+
+	if d.usedWriteCaps[capHash] {
+		return errors.New(errCapabilityAlreadyInUse)
+	}
+
+	// Mark this capability as used
+	d.usedWriteCaps[capHash] = true
+	return nil
+}
+
+// checkReadCapabilityDedup checks if a ReadCap is already in use and adds it to the dedup map
+func (d *Daemon) checkReadCapabilityDedup(request *Request, readCap *bacap.ReadCap) error {
+	readCapBytes, err := readCap.MarshalBinary()
+	if err != nil {
+		d.log.Errorf("createReadChannel failure: failed to marshal ReadCap: %s", err)
+		d.sendReadChannelError(request, thin.ThinClientErrorInternalError)
+		return err
+	}
+
+	capHash := hash.Sum256(readCapBytes)
+	d.capabilityLock.Lock()
+	defer d.capabilityLock.Unlock()
+
+	if d.usedReadCaps[capHash] {
+		d.log.Errorf("createReadChannel failure: ReadCap already in use")
+		d.sendReadChannelError(request, thin.ThinClientErrorInvalidRequest)
+		return errors.New(errCapabilityAlreadyInUse)
+	}
+
+	// Mark this capability as used
+	d.usedReadCaps[capHash] = true
+	return nil
 }

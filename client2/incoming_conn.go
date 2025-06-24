@@ -77,10 +77,14 @@ func (c *incomingConn) sendPKIDoc(doc []byte) error {
 }
 
 func (c *incomingConn) updateConnectionStatus(status error) {
+	var errStr string
+	if status != nil {
+		errStr = status.Error()
+	}
 	message := &Response{
 		ConnectionStatusEvent: &thin.ConnectionStatusEvent{
 			IsConnected: status == nil,
-			Err:         status,
+			Err:         errStr,
 		},
 	}
 	select {

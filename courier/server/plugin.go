@@ -127,32 +127,47 @@ func (s *Server) StartPlugin() {
 }
 
 func (e *Courier) HandleReply(reply *commands.ReplicaMessageReply) {
-	isCopy := false
-	e.copyCacheLock.RLock()
-	if _, ok := e.copyCache[*reply.EnvelopeHash]; ok {
-		isCopy = true
-	}
-	e.copyCacheLock.RUnlock()
+	e.log.Debugf("HandleReply: Received ReplicaMessageReply - IsRead: %v, ErrorCode: %d, EnvelopeHash: %x",
+		reply.IsRead, reply.ErrorCode, reply.EnvelopeHash)
 
-	if isCopy {
-		panic("NOT YET IMPLEMENTED")
-		//e.handleCopyReply(reply)
-		return
+	switch {
+	case reply.IsRead:
+		e.log.Debugf("HandleReply: Calling CacheReply for envelope hash: %x", reply.EnvelopeHash)
+		e.CacheReply(reply)
+	case reply.IsRead == false:
+		// Note(David): We need to use these replies in a future change
+		// such that we form a simple Automatic Repeat reQuest (ARQ) scheme for error correction:
+		// e.g. if we don't get a reply in time then we resend the write query.
+		//e.handleWriteReply(reply)
+	default:
+		isCopy := false
+		e.copyCacheLock.RLock()
+		if _, ok := e.copyCache[*reply.EnvelopeHash]; ok {
+			isCopy = true
+		}
+		e.copyCacheLock.RUnlock()
+		if isCopy {
+			panic("NOT YET IMPLEMENTED")
+			//e.handleCopyReply(reply)
+			return
+		}
+
+		// Not a read or copy reply, it must be a bug
+		e.log.Errorf("HandleReply: Bug - received reply that is not a read or copy reply")
 	}
-	e.CacheReply(reply)
 }
 
 func (e *Courier) CacheReply(reply *commands.ReplicaMessageReply) {
 	e.log.Debugf("CacheReply called with envelope hash: %x", reply.EnvelopeHash)
 
-	if !e.validateReply(reply) {
-		return
-	}
-
 	// Check for pending read request and immediately proxy reply if found
 	if e.tryImmediateReplyProxy(reply) {
 		e.log.Debugf("Immediately proxied reply for envelope hash: %x", reply.EnvelopeHash)
 		// Still cache the reply for potential future requests
+	}
+
+	if !e.validateReply(reply) {
+		return
 	}
 
 	e.dedupCacheLock.Lock()
@@ -306,12 +321,22 @@ func (e *Courier) tryImmediateReplyProxy(reply *commands.ReplicaMessageReply) bo
 
 	// Send the immediate reply
 	go func() {
+		// Find the index of this replica in the IntermediateReplicas array
+		var replyIndex uint8 = 0 // Default to 0 if not found
+		e.dedupCacheLock.Lock()
+		if entry, ok := e.dedupCache[*reply.EnvelopeHash]; ok {
+			if idx := e.findReplicaIndex(entry, reply.ReplicaID); idx >= 0 {
+				replyIndex = uint8(idx)
+			}
+		}
+		e.dedupCacheLock.Unlock()
+
 		// Create proper CourierQueryReply with the replica's response
 		courierReply := &pigeonhole.CourierQueryReply{
 			ReplyType: 0, // 0 = envelope_reply
 			EnvelopeReply: &pigeonhole.CourierEnvelopeReply{
 				EnvelopeHash: *reply.EnvelopeHash,
-				ReplyIndex:   reply.ReplicaID, // Use the replica ID that responded
+				ReplyIndex:   replyIndex, // Use the index within IntermediateReplicas array
 				PayloadLen:   uint32(len(reply.EnvelopeReply)),
 				Payload:      reply.EnvelopeReply,
 				ErrorCode:    0,
@@ -405,6 +430,15 @@ func (e *Courier) handleNewMessage(envHash *[hash.HashSize]byte, courierMessage 
 		return e.createEnvelopeErrorReply(envHash, envelopeErrorInternalError)
 	}
 
+	// For read requests, don't send an immediate timeout reply
+	// The tryImmediateReplyProxy() function will handle sending the actual response
+	// when replica replies are received via CacheReply()
+	if courierMessage.IsRead == 1 { // 1 = read, 0 = write
+		e.log.Debugf("handleNewMessage: Read request - not sending immediate timeout reply, waiting for replica responses")
+		return nil // Don't send immediate reply for read requests
+	}
+
+	// For write requests, send the immediate reply (which may be a timeout/error)
 	reply := &pigeonhole.CourierQueryReply{
 		ReplyType: 0, // 0 = envelope_reply
 		EnvelopeReply: &pigeonhole.CourierEnvelopeReply{
@@ -412,7 +446,7 @@ func (e *Courier) handleNewMessage(envHash *[hash.HashSize]byte, courierMessage 
 			ReplyIndex:   0,
 			PayloadLen:   0,
 			Payload:      nil,
-			ErrorCode:    1, // Error code for timeout
+			ErrorCode:    0, // Success - write was accepted
 		},
 	}
 	return reply
@@ -506,14 +540,17 @@ func (e *Courier) OnCommand(cmd cborplugin.Command) error {
 	if courierQuery.Envelope != nil {
 		reply := e.cacheHandleCourierEnvelope(courierQuery.Envelope, request.ID, request.SURB)
 
-		go func() {
-			// send reply
-			e.write(&cborplugin.Response{
-				ID:      request.ID,
-				SURB:    request.SURB,
-				Payload: reply.Bytes(),
-			})
-		}()
+		// Only send immediate reply if one was returned (nil means waiting for replica responses)
+		if reply != nil {
+			go func() {
+				// send reply
+				e.write(&cborplugin.Response{
+					ID:      request.ID,
+					SURB:    request.SURB,
+					Payload: reply.Bytes(),
+				})
+			}()
+		}
 	}
 
 	// Copy command handling has been removed as requested
