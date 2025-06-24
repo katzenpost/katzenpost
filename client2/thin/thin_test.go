@@ -85,7 +85,7 @@ func TestThinTCPSendRecv(t *testing.T) {
 	serverResponse := &Response{
 		ConnectionStatusEvent: &ConnectionStatusEvent{
 			IsConnected: true,
-			Err:         nil,
+			Err:         "",
 		},
 	}
 	serverMessage, err := cbor.Marshal(serverResponse)
