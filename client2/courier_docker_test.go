@@ -107,11 +107,9 @@ func performAliceWriteOperation(t *testing.T, aliceThinClient *thin.ThinClient, 
 
 // performBobReadOperation handles Bob's read channel creation and message reading
 func performBobReadOperation(t *testing.T, bobThinClient *thin.ThinClient, readCap *bacap.ReadCap) []byte {
-	// Create context with timeout for operations
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
-	// === BOB (Reader) ===
 	t.Log("Bob: Creating read channel from Alice's readCap (new crash-consistent API)")
 	bobChannelID, bobCurrentIndex, err := bobThinClient.CreateReadChannel(ctx, readCap, nil)
 	require.NoError(t, err)
