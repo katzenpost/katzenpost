@@ -40,14 +40,14 @@ func testDockerCourierService(t *testing.T) {
 
 	// === ALICE (Writer) ===
 	t.Log("Alice: Creating pigeonhole channel")
-	aliceChannelID, readCap, err := aliceThinClient.CreateChannel(ctx)
+	aliceChannelID, readCap, err := aliceThinClient.OldCreateChannel(ctx)
 	require.NoError(t, err)
 	require.NotNil(t, aliceChannelID)
 	require.NotNil(t, readCap)
 	t.Logf("Alice: Created write channel %x", aliceChannelID[:])
 
 	t.Log("Alice: Writing message to channel")
-	err = aliceThinClient.WriteChannel(ctx, aliceChannelID, plaintextMessage)
+	err = aliceThinClient.OldWriteChannel(ctx, aliceChannelID, plaintextMessage)
 	require.NoError(t, err)
 	t.Log("Alice: Successfully wrote message")
 
@@ -57,7 +57,7 @@ func testDockerCourierService(t *testing.T) {
 
 	// === BOB (Reader) ===
 	t.Log("Bob: Creating read channel from Alice's readCap")
-	bobChannelID, err := bobThinClient.CreateReadChannel(ctx, readCap)
+	bobChannelID, err := bobThinClient.OldCreateReadChannel(ctx, readCap)
 	require.NoError(t, err)
 	require.NotNil(t, bobChannelID)
 	t.Logf("Bob: Created read channel %x (different from Alice's %x)", bobChannelID[:], aliceChannelID[:])
@@ -80,7 +80,7 @@ func testDockerCourierService(t *testing.T) {
 
 		// Create a fresh context with 10-minute timeout for each read attempt
 		readCtx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
-		receivedMessage, err = bobThinClient.ReadChannel(readCtx, bobChannelID, readMessageID)
+		receivedMessage, err = bobThinClient.OldReadChannel(readCtx, bobChannelID, readMessageID)
 		cancel()
 
 		if err != nil {

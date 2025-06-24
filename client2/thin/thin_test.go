@@ -129,12 +129,12 @@ func TestThinTCPSendRecv(t *testing.T) {
 	ctx := context.Background()
 
 	largePayload := make([]byte, 100)
-	err = thin.WriteChannel(ctx, channelID, largePayload)
+	err = thin.OldWriteChannel(ctx, channelID, largePayload)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "payload size")
 	require.Contains(t, err.Error(), "exceeds maximum allowed size")
 
-	err = thin.WriteChannel(ctx, nil, largePayload)
+	err = thin.OldWriteChannel(ctx, nil, largePayload)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "channelID cannot be nil")
 
@@ -182,7 +182,7 @@ func TestCopyChannelValidation(t *testing.T) {
 	ctx := context.Background()
 
 	// Test with nil channelID
-	err = thin.CopyChannel(ctx, nil)
+	err = thin.OldCopyChannel(ctx, nil)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "channelID cannot be nil")
 
@@ -191,7 +191,7 @@ func TestCopyChannelValidation(t *testing.T) {
 	_, err = rand.Reader.Read(channelID[:])
 	require.NoError(t, err)
 
-	err = thin.CopyChannel(nil, channelID)
+	err = thin.OldCopyChannel(nil, channelID)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "context cannot be nil")
 }

@@ -744,8 +744,8 @@ func (t *ThinClient) BlockingSendReliableMessage(ctx context.Context, messageID 
 	// unreachable
 }
 
-// CreateChannel creates a new pigeonhole channel and returns the channel ID and read capability.
-func (t *ThinClient) CreateChannel(ctx context.Context) (*[ChannelIDLength]byte, *bacap.ReadCap, error) {
+// OldCreateChannel creates a new pigeonhole channel and returns the channel ID and read capability.
+func (t *ThinClient) OldCreateChannel(ctx context.Context) (*[ChannelIDLength]byte, *bacap.ReadCap, error) {
 	if ctx == nil {
 		return nil, nil, errContextCannotBeNil
 	}
@@ -788,8 +788,8 @@ func (t *ThinClient) CreateChannel(ctx context.Context) (*[ChannelIDLength]byte,
 	}
 }
 
-// CreateReadChannel creates a read channel from a read capability.
-func (t *ThinClient) CreateReadChannel(ctx context.Context, readCap *bacap.ReadCap) (*[ChannelIDLength]byte, error) {
+// OldCreateReadChannel creates a read channel from a read capability.
+func (t *ThinClient) OldCreateReadChannel(ctx context.Context, readCap *bacap.ReadCap) (*[ChannelIDLength]byte, error) {
 	if ctx == nil {
 		return nil, errContextCannotBeNil
 	}
@@ -839,8 +839,8 @@ func (t *ThinClient) CreateReadChannel(ctx context.Context, readCap *bacap.ReadC
 	}
 }
 
-// WriteChannel writes data to a pigeonhole channel.
-func (t *ThinClient) WriteChannel(ctx context.Context, channelID *[ChannelIDLength]byte, payload []byte) error {
+// OldWriteChannel writes data to a pigeonhole channel.
+func (t *ThinClient) OldWriteChannel(ctx context.Context, channelID *[ChannelIDLength]byte, payload []byte) error {
 	if ctx == nil {
 		return errContextCannotBeNil
 	}
@@ -896,8 +896,8 @@ func (t *ThinClient) WriteChannel(ctx context.Context, channelID *[ChannelIDLeng
 	}
 }
 
-// ReadChannel reads data from a pigeonhole channel.
-func (t *ThinClient) ReadChannel(ctx context.Context, channelID *[ChannelIDLength]byte, messageID *[MessageIDLength]byte) ([]byte, error) {
+// OldReadChannel reads data from a pigeonhole channel.
+func (t *ThinClient) OldReadChannel(ctx context.Context, channelID *[ChannelIDLength]byte, messageID *[MessageIDLength]byte) ([]byte, error) {
 	if ctx == nil {
 		return nil, errContextCannotBeNil
 	}
@@ -945,8 +945,8 @@ func (t *ThinClient) ReadChannel(ctx context.Context, channelID *[ChannelIDLengt
 	}
 }
 
-// CopyChannel copies data from a pigeonhole channel to replicas via courier.
-func (t *ThinClient) CopyChannel(ctx context.Context, channelID *[ChannelIDLength]byte) error {
+// OldCopyChannel copies data from a pigeonhole channel to replicas via courier.
+func (t *ThinClient) OldCopyChannel(ctx context.Context, channelID *[ChannelIDLength]byte) error {
 	if ctx == nil {
 		return errContextCannotBeNil
 	}
