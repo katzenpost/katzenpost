@@ -80,6 +80,10 @@ type ThinClient struct {
 	pkidoc      *cpki.Document
 	pkidocMutex sync.RWMutex
 
+	// PKI document cache by epoch to ensure consistency during epoch transitions
+	pkiDocCache     map[uint64]*cpki.Document
+	pkiDocCacheLock sync.RWMutex
+
 	eventSink   chan Event
 	drainAdd    chan chan Event
 	drainRemove chan chan Event
@@ -164,6 +168,7 @@ func NewThinClient(cfg *Config, logging *config.Logging) *ThinClient {
 		eventSink:   make(chan Event, 2),
 		drainAdd:    make(chan chan Event),
 		drainRemove: make(chan chan Event),
+		pkiDocCache: make(map[uint64]*cpki.Document),
 	}
 }
 
@@ -560,9 +565,30 @@ func (t *ThinClient) parsePKIDoc(payload []byte) (*cpki.Document, error) {
 		t.log.Errorf("failed to unmarshal CBOR PKI doc: %s", err.Error())
 		return nil, err
 	}
+
+	// Update current document
 	t.pkidocMutex.Lock()
 	t.pkidoc = doc
 	t.pkidocMutex.Unlock()
+
+	// Cache document by epoch for consistency during epoch transitions
+	t.pkiDocCacheLock.Lock()
+	t.pkiDocCache[doc.Epoch] = doc
+	t.log.Debugf("Cached PKI document for epoch %d", doc.Epoch)
+
+	// Clean up old cached documents (keep last 5 epochs)
+	const maxCachedEpochs = 5
+	if len(t.pkiDocCache) > maxCachedEpochs {
+		oldestEpoch := doc.Epoch - maxCachedEpochs
+		for epoch := range t.pkiDocCache {
+			if epoch < oldestEpoch {
+				delete(t.pkiDocCache, epoch)
+				t.log.Debugf("Removed old PKI document for epoch %d", epoch)
+			}
+		}
+	}
+	t.pkiDocCacheLock.Unlock()
+
 	return doc, nil
 }
 
@@ -571,6 +597,20 @@ func (t *ThinClient) PKIDocument() *cpki.Document {
 	t.pkidocMutex.RLock()
 	defer t.pkidocMutex.RUnlock()
 	return t.pkidoc
+}
+
+// PKIDocumentForEpoch returns the PKI document for a specific epoch from cache.
+// If the document for the requested epoch is not cached, returns the current document.
+// This ensures consistency during epoch transitions where Alice and Bob might
+// use different PKI documents, leading to different envelope hashes.
+func (t *ThinClient) PKIDocumentForEpoch(epoch uint64) (*cpki.Document, error) {
+	t.pkiDocCacheLock.RLock()
+	defer t.pkiDocCacheLock.RUnlock()
+	if doc, exists := t.pkiDocCache[epoch]; exists {
+		t.log.Debugf("Using cached PKI document for epoch %d", epoch)
+		return doc, nil
+	}
+	return nil, errors.New("no PKI document available for the requested epoch")
 }
 
 // GetServices returns the services matching the specified service name

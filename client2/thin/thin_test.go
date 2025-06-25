@@ -14,6 +14,7 @@ import (
 	"github.com/katzenpost/hpqc/nike/schemes"
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/katzenpost/core/log"
+	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	pigeonholeGeo "github.com/katzenpost/katzenpost/pigeonhole/geo"
 	"github.com/stretchr/testify/require"
@@ -194,4 +195,38 @@ func TestCopyChannelValidation(t *testing.T) {
 	err = thin.OldCopyChannel(nil, channelID)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "context cannot be nil")
+}
+
+func TestPKIDocumentForEpoch(t *testing.T) {
+	logBackend, err := log.New("", "DEBUG", false)
+	require.NoError(t, err)
+
+	thin := &ThinClient{
+		log:         logBackend.GetLogger("thinclient"),
+		pkiDocCache: make(map[uint64]*cpki.Document),
+	}
+
+	// Test with empty cache - should return error
+	doc, err := thin.PKIDocumentForEpoch(12345)
+	require.Error(t, err)
+	require.Nil(t, doc)
+	require.Contains(t, err.Error(), "no PKI document available for the requested epoch")
+
+	// Test with cached document - should return document
+	testDoc := &cpki.Document{
+		Epoch: 12345,
+	}
+	thin.pkiDocCache[12345] = testDoc
+
+	doc, err = thin.PKIDocumentForEpoch(12345)
+	require.NoError(t, err)
+	require.NotNil(t, doc)
+	require.Equal(t, uint64(12345), doc.Epoch)
+	require.Equal(t, testDoc, doc)
+
+	// Test with different epoch - should return error
+	doc, err = thin.PKIDocumentForEpoch(54321)
+	require.Error(t, err)
+	require.Nil(t, doc)
+	require.Contains(t, err.Error(), "no PKI document available for the requested epoch")
 }
