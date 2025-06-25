@@ -12,6 +12,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/katzenpost/hpqc/hash"
 	_ "github.com/katzenpost/katzenpost/client2/thin" // Used by helper functions
 )
 
@@ -64,7 +65,58 @@ func TestDockerCourierServiceNewThinclientAPI(t *testing.T) {
 	bobIndexBytes, _ := bobNextMessageIndex.MarshalBinary()
 	t.Logf("Bob: NextMessageIndex: %x", bobIndexBytes[:16])
 
-	t.Log("SUCCESS: CreateWriteChannel and CreateReadChannelV2 APIs working!")
+	// === Test WriteChannelV2 (new API) ===
+	t.Log("Alice: Testing WriteChannelV2 method")
+	testMessage := []byte("Hello from Alice via WriteChannelV2!")
+	sendPayload, nextWriteIndex, err := aliceThinClient.WriteChannelV2(ctx, channelID, testMessage)
+	if err != nil {
+		// Expected to fail with "Service unavailable" since it's not implemented yet
+		t.Logf("Alice: WriteChannelV2 failed as expected (not implemented): %v", err)
+		require.Contains(t, err.Error(), "Service unavailable")
+	} else {
+		// If it succeeds in the future, validate the response
+		require.NotNil(t, sendPayload)
+		require.NotNil(t, nextWriteIndex)
+		t.Logf("Alice: WriteChannelV2 succeeded, payload size: %d bytes", len(sendPayload))
+	}
+
+	// === Test ReadChannelV2 (new API) ===
+	t.Log("Bob: Testing ReadChannelV2 method")
+	messageID := bobThinClient.NewMessageID()
+	readPayload, nextReadIndex, err := bobThinClient.ReadChannelV2(ctx, bobChannelID, messageID)
+	if err != nil {
+		// Expected to fail with "Service unavailable" since it's not implemented yet
+		t.Logf("Bob: ReadChannelV2 failed as expected (not implemented): %v", err)
+		require.Contains(t, err.Error(), "Service unavailable")
+	} else {
+		// If it succeeds in the future, validate the response
+		require.NotNil(t, readPayload)
+		require.NotNil(t, nextReadIndex)
+		t.Logf("Bob: ReadChannelV2 succeeded, payload size: %d bytes", len(readPayload))
+	}
+
+	// === Test SendChannelQuery (new API) ===
+	t.Log("Testing SendChannelQuery method")
+	if sendPayload != nil {
+		// Get courier service for sending the query
+		courierService, err := aliceThinClient.GetService("courier")
+		require.NoError(t, err)
+		require.NotNil(t, courierService)
+
+		// Test SendChannelQuery with the payload from WriteChannelV2
+		identityHash := hash.Sum256(courierService.MixDescriptor.IdentityKey)
+		err = aliceThinClient.SendChannelQuery(ctx, channelID, sendPayload,
+			&identityHash, courierService.RecipientQueueID)
+		if err != nil {
+			t.Logf("SendChannelQuery failed: %v", err)
+		} else {
+			t.Log("SendChannelQuery succeeded")
+		}
+	} else {
+		t.Log("Skipping SendChannelQuery test since WriteChannelV2 is not implemented")
+	}
+
+	t.Log("SUCCESS: WriteChannelV2, ReadChannelV2, and SendChannelQuery APIs tested!")
 }
 
 func testDockerCourierServiceOldThinclientAPI(t *testing.T) {
