@@ -598,10 +598,10 @@ func (d *Daemon) processEnvelopeReply(env *pigeonhole.CourierEnvelopeReply, chan
 	envHash := (*[hash.HashSize]byte)(env.EnvelopeHash[:])
 
 	// DEBUG: Log envelope hash and map size when processing reply
-	channelDesc.EnvelopeLock.RLock()
+	channelDesc.EnvelopeDescriptorsLock.RLock()
 	mapSize := len(channelDesc.EnvelopeDescriptors)
 	envelopeDesc, ok := channelDesc.EnvelopeDescriptors[*envHash]
-	channelDesc.EnvelopeLock.RUnlock()
+	channelDesc.EnvelopeDescriptorsLock.RUnlock()
 
 	fmt.Printf("PROCESSING REPLY ENVELOPE HASH: %x (map size: %d, exists: %t)\n", envHash[:], mapSize, ok)
 
@@ -733,14 +733,14 @@ func (d *Daemon) handleReadReply(params *ReplyHandlerParams, readReply *pigeonho
 	}
 
 	d.log.Debugf("BACAP DECRYPT: Starting decryption for BoxID %x with payload size %d bytes", boxid[:], len(readReply.Payload))
-	params.ChannelDesc.ReaderLock.Lock()
+	params.ChannelDesc.StatefulReaderLock.Lock()
 	signature := (*[bacap.SignatureSize]byte)(readReply.Signature[:])
 	innerplaintext, err := params.ChannelDesc.StatefulReader.DecryptNext(
 		[]byte(constants.PIGEONHOLE_CTX),
 		*boxid,
 		readReply.Payload,
 		*signature)
-	params.ChannelDesc.ReaderLock.Unlock()
+	params.ChannelDesc.StatefulReaderLock.Unlock()
 	if err != nil {
 		d.log.Errorf("BACAP DECRYPT FAILED for BoxID %x: %s", boxid[:], err)
 		return fmt.Errorf("failed to decrypt next: %s", err)
@@ -770,9 +770,9 @@ func (d *Daemon) handleReadReply(params *ReplyHandlerParams, readReply *pigeonho
 		return fmt.Errorf("failed to send response to client: %s", err)
 	}
 
-	params.ChannelDesc.EnvelopeLock.Lock()
+	params.ChannelDesc.EnvelopeDescriptorsLock.Lock()
 	delete(params.ChannelDesc.EnvelopeDescriptors, *params.EnvHash)
-	params.ChannelDesc.EnvelopeLock.Unlock()
+	params.ChannelDesc.EnvelopeDescriptorsLock.Unlock()
 
 	// Also clean up stored envelope data if we have a message ID
 	if params.MessageID != nil {
@@ -832,9 +832,9 @@ func (d *Daemon) handleWriteReply(params *ReplyHandlerParams, writeReply *pigeon
 		return fmt.Errorf("failed to send write response to client: %s", err)
 	}
 
-	params.ChannelDesc.EnvelopeLock.Lock()
+	params.ChannelDesc.EnvelopeDescriptorsLock.Lock()
 	delete(params.ChannelDesc.EnvelopeDescriptors, *params.EnvHash)
-	params.ChannelDesc.EnvelopeLock.Unlock()
+	params.ChannelDesc.EnvelopeDescriptorsLock.Unlock()
 
 	return nil
 }
@@ -1130,7 +1130,7 @@ func (d *Daemon) copyChannel(request *Request) {
 	defer d.channelMapLock.RUnlock()
 
 	// Ensure this is a write channel
-	if channelDesc.StatefulWriter == nil || channelDesc.WriteCap == nil {
+	if channelDesc.StatefulWriter == nil {
 		d.log.Errorf("copyChannel failure: channel %x is not a write channel", channelID[:])
 		d.sendCopyChannelErrorResponse(request, channelID, "channel is not a write channel")
 		return
@@ -1144,7 +1144,9 @@ func (d *Daemon) copyChannel(request *Request) {
 	}
 
 	// Extract the WriteCap from the channel descriptor
-	writeCap := channelDesc.WriteCap
+	channelDesc.StatefulWriterLock.Lock()
+	writeCap := channelDesc.StatefulWriter.Wcap
+	channelDesc.StatefulWriterLock.Unlock()
 
 	// Create the CopyCommand
 	writeCapBytes, err := writeCap.MarshalBinary()

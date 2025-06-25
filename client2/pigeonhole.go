@@ -60,20 +60,17 @@ type StoredEnvelopeData struct {
 // ChannelDescriptor describes a pigeonhole channel and supplies us with
 // everthing we need to read or write to the channel.
 type ChannelDescriptor struct {
-	StatefulWriter      *bacap.StatefulWriter
-	StatefulReader      *bacap.StatefulReader
-	WriteCap            *bacap.WriteCap // WriteCap - only set for write channels
-	EnvelopeDescriptors map[[hash.HashSize]byte]*EnvelopeDescriptor
-	EnvelopeLock        sync.RWMutex // Protects EnvelopeDescriptors map
-	SendSeq             uint64
+	StatefulWriter     *bacap.StatefulWriter
+	StatefulWriterLock sync.Mutex
 
-	// StoredEnvelopes maps message IDs to stored envelope data for reuse
+	StatefulReader     *bacap.StatefulReader
+	StatefulReaderLock sync.Mutex
+
+	EnvelopeDescriptors     map[[hash.HashSize]byte]*EnvelopeDescriptor
+	EnvelopeDescriptorsLock sync.RWMutex
+
 	StoredEnvelopes     map[[thin.MessageIDLength]byte]*StoredEnvelopeData
-	StoredEnvelopesLock sync.RWMutex // Protects StoredEnvelopes map
-
-	// ReaderLock protects StatefulReader.DecryptNext calls to prevent BACAP state corruption
-	// CRITICAL: DecryptNext advances the reader's internal state and must be serialized
-	ReaderLock sync.Mutex
+	StoredEnvelopesLock sync.RWMutex
 }
 
 func GetRandomCourier(doc *cpki.Document) (*[hash.HashSize]byte, []byte) {
@@ -130,6 +127,84 @@ func CreateChannelWriteRequest(
 	var boxIDArray [32]uint8
 	copy(boxIDArray[:], boxID[:])
 	var sigArray [64]uint8
+	copy(sigArray[:], sig[:])
+
+	writeRequest := &pigeonhole.ReplicaWrite{
+		BoxID:      boxIDArray,
+		Signature:  sigArray,
+		PayloadLen: uint32(len(ciphertext)),
+		Payload:    ciphertext,
+	}
+	msg := &pigeonhole.ReplicaInnerMessage{
+		MessageType: 1, // 1 = write
+		WriteMsg:    writeRequest,
+	}
+
+	intermediateReplicas, replicaPubKeys, err := pigeonhole.GetRandomIntermediateReplicas(doc)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	mkemPrivateKey, mkemCiphertext := replicaCommon.MKEMNikeScheme.Encapsulate(
+		replicaPubKeys, msg.Bytes(),
+	)
+	mkemPublicKey := mkemPrivateKey.Public()
+
+	var dek1, dek2 [60]uint8
+	copy(dek1[:], mkemCiphertext.DEKCiphertexts[0][:])
+	copy(dek2[:], mkemCiphertext.DEKCiphertexts[1][:])
+
+	senderPubkeyBytes := mkemPublicKey.Bytes()
+	envelope := &pigeonhole.CourierEnvelope{
+		IntermediateReplicas: intermediateReplicas,
+		Dek1:                 dek1,
+		Dek2:                 dek2,
+		ReplyIndex:           0,
+		Epoch:                doc.Epoch,
+		SenderPubkeyLen:      uint16(len(senderPubkeyBytes)),
+		SenderPubkey:         senderPubkeyBytes,
+		CiphertextLen:        uint32(len(mkemCiphertext.Envelope)),
+		Ciphertext:           mkemCiphertext.Envelope,
+		IsRead:               0, // 0 = write
+	}
+	return envelope, mkemPrivateKey, err
+}
+
+// CreateChannelWriteRequestPrepareOnly prepares a write request WITHOUT advancing StatefulWriter state.
+// This allows for deferred state advancement until courier acknowledgment.
+func CreateChannelWriteRequestPrepareOnly(
+	statefulWriter *bacap.StatefulWriter,
+	payload []byte,
+	doc *cpki.Document,
+	geometry *pigeonholeGeo.Geometry) (*pigeonhole.CourierEnvelope, nike.PrivateKey, error) {
+
+	// Validate that the payload can fit within the geometry's BoxPayloadLength
+	// CreatePaddedPayload requires 4 bytes for length prefix plus the payload
+	minRequiredSize := len(payload) + 4
+	if minRequiredSize > geometry.BoxPayloadLength {
+		return nil, nil, fmt.Errorf("payload too large: %d bytes (+ 4 byte length prefix) exceeds BoxPayloadLength of %d bytes",
+			len(payload), geometry.BoxPayloadLength)
+	}
+
+	// Pad the payload to the geometry's BoxPayloadLength to fill the user forward sphinx payloads
+	paddedPayload, err := pigeonhole.CreatePaddedPayload(payload, geometry.BoxPayloadLength)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// Encrypt the message WITHOUT advancing state
+	boxID, ciphertext, sigraw, err := statefulWriter.PrepareNext(paddedPayload)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	sig := [bacap.SignatureSize]byte{}
+	copy(sig[:], sigraw)
+
+	boxIDArray := [32]uint8{}
+	copy(boxIDArray[:], boxID[:])
+
+	sigArray := [64]uint8{}
 	copy(sigArray[:], sig[:])
 
 	writeRequest := &pigeonhole.ReplicaWrite{
@@ -277,7 +352,7 @@ func (d *Daemon) createWriteChannel(request *Request) {
 }
 
 func (d *Daemon) createChannel(request *Request) {
-	statefulWriter, bobReadCap, boxOwnerCap := NewPigeonholeChannel()
+	statefulWriter, bobReadCap, _ := NewPigeonholeChannel()
 	channelID := [thin.ChannelIDLength]byte{}
 	_, err := rand.Reader.Read(channelID[:])
 	if err != nil {
@@ -286,7 +361,6 @@ func (d *Daemon) createChannel(request *Request) {
 	d.channelMapLock.Lock()
 	d.channelMap[channelID] = &ChannelDescriptor{
 		StatefulWriter:      statefulWriter,
-		WriteCap:            boxOwnerCap,
 		EnvelopeDescriptors: make(map[[hash.HashSize]byte]*EnvelopeDescriptor),
 		StoredEnvelopes:     make(map[[thin.MessageIDLength]byte]*StoredEnvelopeData),
 	}
@@ -358,25 +432,27 @@ func (d *Daemon) writeChannel(request *Request) {
 
 	_, doc := d.client.CurrentDocument()
 
-	courierEnvelope, envelopePrivateKey, err := CreateChannelWriteRequest(
+	channelDesc.StatefulWriterLock.Lock()
+	courierEnvelope, envelopePrivateKey, err := CreateChannelWriteRequestPrepareOnly(
 		channelDesc.StatefulWriter,
 		request.WriteChannel.Payload,
 		doc,
 		d.cfg.PigeonholeGeometry)
-
 	if err != nil {
+		channelDesc.StatefulWriterLock.Unlock()
 		d.log.Errorf("writeChannel failure: failed to create write request: %s", err)
 		return
 	}
+	channelDesc.StatefulWriterLock.Unlock()
 
 	envHash := courierEnvelope.EnvelopeHash()
-	channelDesc.EnvelopeLock.Lock()
+	channelDesc.EnvelopeDescriptorsLock.Lock()
 	channelDesc.EnvelopeDescriptors[*envHash] = &EnvelopeDescriptor{
 		Epoch:       doc.Epoch,
 		ReplicaNums: courierEnvelope.IntermediateReplicas,
 		EnvelopeKey: envelopePrivateKey.Bytes(),
 	}
-	channelDesc.EnvelopeLock.Unlock()
+	channelDesc.EnvelopeDescriptorsLock.Unlock()
 
 	surbid := &[sphinxConstants.SURBIDLength]byte{}
 	_, err = rand.Reader.Read(surbid[:])
@@ -480,10 +556,10 @@ func (d *Daemon) getStoredEnvelope(messageID *[thin.MessageIDLength]byte, channe
 	envHash := courierEnvelope.EnvelopeHash()
 
 	// DEBUG: Log envelope hash and map size when retrieving
-	channelDesc.EnvelopeLock.RLock()
+	channelDesc.EnvelopeDescriptorsLock.RLock()
 	mapSize := len(channelDesc.EnvelopeDescriptors)
 	envDesc, envExists := channelDesc.EnvelopeDescriptors[*envHash]
-	channelDesc.EnvelopeLock.RUnlock()
+	channelDesc.EnvelopeDescriptorsLock.RUnlock()
 
 	fmt.Printf("RETRIEVING ENVELOPE HASH: %x (map size: %d, exists: %t)\n", envHash[:], mapSize, envExists)
 
@@ -557,9 +633,9 @@ func (d *Daemon) storeEnvelopeDescriptor(courierEnvelope *pigeonhole.CourierEnve
 	envHash := courierEnvelope.EnvelopeHash()
 
 	// DEBUG: Log envelope hash and map size when storing
-	channelDesc.EnvelopeLock.RLock()
+	channelDesc.EnvelopeDescriptorsLock.RLock()
 	mapSize := len(channelDesc.EnvelopeDescriptors)
-	channelDesc.EnvelopeLock.RUnlock()
+	channelDesc.EnvelopeDescriptorsLock.RUnlock()
 	fmt.Printf("STORING ENVELOPE HASH: %x (map size: %d)\n", envHash[:], mapSize)
 
 	// DEBUG: Log the raw data being hashed to identify the issue
@@ -576,9 +652,9 @@ func (d *Daemon) storeEnvelopeDescriptor(courierEnvelope *pigeonhole.CourierEnve
 	fmt.Printf("  Ciphertext: %x\n", courierEnvelope.Ciphertext[:cipherLen])
 
 	// Only store envelope descriptor for new envelopes (not reused ones)
-	channelDesc.EnvelopeLock.RLock()
+	channelDesc.EnvelopeDescriptorsLock.RLock()
 	_, envDescExists := channelDesc.EnvelopeDescriptors[*envHash]
-	channelDesc.EnvelopeLock.RUnlock()
+	channelDesc.EnvelopeDescriptorsLock.RUnlock()
 
 	if !envDescExists {
 		replicaPubKeys := make([]nike.PublicKey, 2)
@@ -598,13 +674,13 @@ func (d *Daemon) storeEnvelopeDescriptor(courierEnvelope *pigeonhole.CourierEnve
 		if err != nil {
 			return fmt.Errorf("failed to marshal envelope private key: %s", err)
 		}
-		channelDesc.EnvelopeLock.Lock()
+		channelDesc.EnvelopeDescriptorsLock.Lock()
 		channelDesc.EnvelopeDescriptors[*envHash] = &EnvelopeDescriptor{
 			Epoch:       doc.Epoch, // Store normal epoch, convert when needed
 			ReplicaNums: courierEnvelope.IntermediateReplicas,
 			EnvelopeKey: envelopeKey,
 		}
-		channelDesc.EnvelopeLock.Unlock()
+		channelDesc.EnvelopeDescriptorsLock.Unlock()
 	}
 	return nil
 }
