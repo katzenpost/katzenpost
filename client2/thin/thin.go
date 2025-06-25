@@ -427,6 +427,14 @@ func (t *ThinClient) worker() {
 			case <-t.HaltCh():
 				return
 			}
+		case message.CreateWriteChannelReply != nil:
+			t.log.Debug("CreateWriteChannelReply")
+			select {
+			case t.eventSink <- message.CreateWriteChannelReply:
+				continue
+			case <-t.HaltCh():
+				return
+			}
 		case message.WriteChannelReply != nil:
 			t.log.Debug("WriteChannelReply")
 			select {

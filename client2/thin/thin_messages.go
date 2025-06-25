@@ -228,6 +228,8 @@ type Response struct {
 
 	CreateChannelReply *CreateChannelReply `cbor:"create_channel_reply"`
 
+	CreateWriteChannelReply *CreateWriteChannelReply `cbor:"create_write_channel_reply"`
+
 	CreateReadChannelReply *CreateReadChannelReply `cbor:"create_read_channel_reply"`
 
 	WriteChannelReply *WriteChannelReply `cbor:"write_channel_reply"`
