@@ -477,6 +477,22 @@ func (t *ThinClient) worker() {
 					return
 				}
 			}
+		case message.WriteChannelV2Reply != nil:
+			t.log.Debug("WriteChannelV2Reply")
+			select {
+			case t.eventSink <- message.WriteChannelV2Reply:
+				continue
+			case <-t.HaltCh():
+				return
+			}
+		case message.ReadChannelV2Reply != nil:
+			t.log.Debug("ReadChannelV2Reply")
+			select {
+			case t.eventSink <- message.ReadChannelV2Reply:
+				continue
+			case <-t.HaltCh():
+				return
+			}
 		default:
 			t.log.Error("bug: received invalid thin client message")
 		}
@@ -1136,4 +1152,140 @@ func (t *ThinClient) CreateReadChannelV2(ctx context.Context, readCap *bacap.Rea
 			// Ignore other events
 		}
 	}
+}
+
+// WriteChannelV2 prepares a write message for a pigeonhole channel and returns the SendMessage payload and next MessageBoxIndex.
+// The thin client must then call SendChannelQuery with the returned payload to actually send the message.
+func (t *ThinClient) WriteChannelV2(ctx context.Context, channelID uint16, payload []byte) ([]byte, *bacap.MessageBoxIndex, error) {
+	if ctx == nil {
+		return nil, nil, errContextCannotBeNil
+	}
+
+	// Validate payload size against pigeonhole geometry
+	if len(payload) > t.cfg.PigeonholeGeometry.BoxPayloadLength {
+		return nil, nil, fmt.Errorf("payload size %d exceeds maximum allowed size %d", len(payload), t.cfg.PigeonholeGeometry.BoxPayloadLength)
+	}
+
+	req := &Request{
+		WriteChannelV2: &WriteChannelV2{
+			ChannelID: channelID,
+			Payload:   payload,
+		},
+	}
+
+	eventSink := t.EventSink()
+	defer t.StopEventSink(eventSink)
+
+	err := t.writeMessage(req)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	for {
+		var event Event
+		select {
+		case <-ctx.Done():
+			return nil, nil, ctx.Err()
+		case event = <-eventSink:
+		case <-t.HaltCh():
+			return nil, nil, errHalting
+		}
+
+		switch v := event.(type) {
+		case *WriteChannelV2Reply:
+			if v.ErrorCode != ThinClientSuccess {
+				return nil, nil, errors.New(ThinClientErrorToString(v.ErrorCode))
+			}
+			return v.SendMessagePayload, v.NextMessageIndex, nil
+		case *ConnectionStatusEvent:
+			if !v.IsConnected {
+				return nil, nil, errConnectionLost
+			}
+		case *NewDocumentEvent:
+			// Ignore PKI document updates
+		default:
+			// Ignore other events
+		}
+	}
+}
+
+// ReadChannelV2 prepares a read query for a pigeonhole channel and returns the payload and next MessageBoxIndex.
+// The thin client must then call SendChannelQuery with the returned payload to actually send the query.
+func (t *ThinClient) ReadChannelV2(ctx context.Context, channelID uint16, messageID *[MessageIDLength]byte) ([]byte, *bacap.MessageBoxIndex, error) {
+	if ctx == nil {
+		return nil, nil, errContextCannotBeNil
+	}
+	if messageID == nil {
+		return nil, nil, errors.New("messageID cannot be nil")
+	}
+
+	req := &Request{
+		ReadChannelV2: &ReadChannelV2{
+			ChannelID: channelID,
+			MessageID: messageID,
+		},
+	}
+
+	eventSink := t.EventSink()
+	defer t.StopEventSink(eventSink)
+
+	err := t.writeMessage(req)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	for {
+		var event Event
+		select {
+		case <-ctx.Done():
+			return nil, nil, ctx.Err()
+		case event = <-eventSink:
+		case <-t.HaltCh():
+			return nil, nil, errHalting
+		}
+
+		switch v := event.(type) {
+		case *ReadChannelV2Reply:
+			if v.ErrorCode != ThinClientSuccess {
+				return nil, nil, errors.New(ThinClientErrorToString(v.ErrorCode))
+			}
+			return v.SendMessagePayload, v.NextMessageIndex, nil
+		case *ConnectionStatusEvent:
+			if !v.IsConnected {
+				return nil, nil, errConnectionLost
+			}
+		case *NewDocumentEvent:
+			// Ignore PKI document updates
+		default:
+			// Ignore other events
+		}
+	}
+}
+
+// SendChannelQuery sends a channel query (prepared by WriteChannelV2 or ReadChannelV2) to the mixnet.
+func (t *ThinClient) SendChannelQuery(
+	ctx context.Context,
+	channelID uint16,
+	payload []byte,
+	destNode *[32]byte,
+	destQueue []byte,
+) error {
+
+	if ctx == nil {
+		return errContextCannotBeNil
+	}
+
+	surbID := t.NewSURBID()
+	req := &Request{
+		SendMessage: &SendMessage{
+			ChannelID:         &channelID,
+			SURBID:            surbID,
+			WithSURB:          true,
+			Payload:           payload,
+			DestinationIdHash: destNode,
+			RecipientQueueID:  destQueue,
+		},
+	}
+
+	return t.writeMessage(req)
 }

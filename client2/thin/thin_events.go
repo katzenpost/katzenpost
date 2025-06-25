@@ -190,6 +190,70 @@ func (e *CreateReadChannelV2Reply) String() string {
 	return fmt.Sprintf("CreateReadChannelV2Reply: %d", e.ChannelID)
 }
 
+// WriteChannelV2Reply is sent in response to a WriteChannelV2 request.
+// It provides the prepared message payload that should be sent through the mixnet
+// to complete the channel write operation.
+type WriteChannelV2Reply struct {
+	// ChannelID identifies the channel this reply corresponds to.
+	ChannelID uint16 `cbor:"channel_id"`
+
+	// SendMessagePayload contains the prepared Sphinx packet that should be
+	// sent via SendChannelQuery to complete the write operation.
+	SendMessagePayload []byte `cbor:"send_message_payload"`
+
+	// NextMessageIndex indicates the message index to use after the courier
+	// acknowledges successful delivery of this message.
+	NextMessageIndex *bacap.MessageBoxIndex `cbor:"next_message_index"`
+
+	// ErrorCode indicates the success or failure of preparing the write operation.
+	// A value of ThinClientErrorSuccess indicates the payload is ready to send.
+	ErrorCode uint8 `cbor:"error_code,omitempty"`
+}
+
+// String returns a string representation of the WriteChannelV2Reply.
+func (e *WriteChannelV2Reply) String() string {
+	if e.ErrorCode != ThinClientSuccess {
+		return fmt.Sprintf("WriteChannelV2Reply: %d (error: %s)", e.ChannelID, ThinClientErrorToString(e.ErrorCode))
+	}
+	return fmt.Sprintf("WriteChannelV2Reply: %d (%d bytes payload)", e.ChannelID, len(e.SendMessagePayload))
+}
+
+// ReadChannelV2Reply is sent in response to a ReadChannelV2 request.
+// It provides the prepared query payload that should be sent through the mixnet
+// to retrieve the next message from the channel.
+type ReadChannelV2Reply struct {
+	// MessageID is used for correlating this read operation with its eventual
+	// response when the query completes.
+	MessageID *[MessageIDLength]byte `cbor:"message_id"`
+
+	// ChannelID identifies the channel this reply corresponds to.
+	ChannelID uint16 `cbor:"channel_id"`
+
+	// SendMessagePayload contains the prepared query that should be sent via
+	// SendChannelQuery to retrieve the next message from the channel.
+	SendMessagePayload []byte `cbor:"send_message_payload"`
+
+	// NextMessageIndex indicates the message index to use after successfully
+	// reading the current message.
+	NextMessageIndex *bacap.MessageBoxIndex `cbor:"next_message_index"`
+
+	// ErrorCode indicates the success or failure of preparing the read operation.
+	// A value of ThinClientErrorSuccess indicates the query is ready to send.
+	ErrorCode uint8 `cbor:"error_code,omitempty"`
+}
+
+// String returns a string representation of the ReadChannelV2Reply.
+func (e *ReadChannelV2Reply) String() string {
+	msgIDStr := "nil"
+	if e.MessageID != nil {
+		msgIDStr = fmt.Sprintf("%x", e.MessageID[:8]) // First 8 bytes for brevity
+	}
+	if e.ErrorCode != ThinClientSuccess {
+		return fmt.Sprintf("ReadChannelV2Reply: msgID=%s channel=%d (error: %s)", msgIDStr, e.ChannelID, ThinClientErrorToString(e.ErrorCode))
+	}
+	return fmt.Sprintf("ReadChannelV2Reply: msgID=%s channel=%d (%d bytes payload)", msgIDStr, e.ChannelID, len(e.SendMessagePayload))
+}
+
 /***
 OLD API
 ***/

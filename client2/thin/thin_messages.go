@@ -125,6 +125,14 @@ type CreateWriteChannel struct {
 	MessageBoxIndex *bacap.MessageBoxIndex `cbor:"message_box_index,omitempty"`
 }
 
+// String returns a string representation of the CreateWriteChannelReply.
+func (e *CreateWriteChannelReply) String() string {
+	if e.ErrorCode != ThinClientSuccess {
+		return fmt.Sprintf("CreateWriteChannelReply: %d (error: %s)", e.ChannelID, ThinClientErrorToString(e.ErrorCode))
+	}
+	return fmt.Sprintf("CreateWriteChannelReply: %d", e.ChannelID)
+}
+
 // CreateReadChannelV2 requests the creation of a new pigeonhole read channel
 // from an existing read capability. Read channels allow receiving messages
 // from a communication channel created by the holder of the write capability.
@@ -139,12 +147,45 @@ type CreateReadChannelV2 struct {
 	MessageBoxIndex *bacap.MessageBoxIndex `cbor:"message_box_index,omitempty"`
 }
 
-// String returns a string representation of the CreateWriteChannelReply.
-func (e *CreateWriteChannelReply) String() string {
-	if e.ErrorCode != ThinClientSuccess {
-		return fmt.Sprintf("CreateWriteChannelReply: %d (error: %s)", e.ChannelID, ThinClientErrorToString(e.ErrorCode))
+// WriteChannelV2 requests writing a message to an existing pigeonhole channel (V2 API).
+// The daemon will prepare the message for transmission and return the
+// serialized payload that should be sent via SendChannelQuery.
+type WriteChannelV2 struct {
+	// ChannelID identifies the target channel for the write operation.
+	// This ID was returned when the channel was created.
+	ChannelID uint16 `cbor:"channel_id"`
+
+	// Payload contains the message data to write to the channel.
+	// The payload size must not exceed the channel's configured limits.
+	Payload []byte `cbor:"payload"`
+}
+
+// String returns a string representation of the WriteChannelV2 request.
+func (w *WriteChannelV2) String() string {
+	return fmt.Sprintf("WriteChannelV2: channel=%d (%d bytes payload)", w.ChannelID, len(w.Payload))
+}
+
+// ReadChannelV2 requests reading the next message from a pigeonhole channel (V2 API).
+// The daemon will prepare a query for the next available message and return
+// the serialized payload that should be sent via SendChannelQuery.
+type ReadChannelV2 struct {
+	// ChannelID identifies the source channel for the read operation.
+	// This ID was returned when the channel was created.
+	ChannelID uint16 `cbor:"channel_id"`
+
+	// MessageID is used for correlating the read request with its response.
+	// This allows the client to match responses to specific read operations.
+	// This field is required.
+	MessageID *[MessageIDLength]byte `cbor:"id,omitempty"`
+}
+
+// String returns a string representation of the ReadChannelV2 request.
+func (r *ReadChannelV2) String() string {
+	msgIDStr := "nil"
+	if r.MessageID != nil {
+		msgIDStr = fmt.Sprintf("%x", r.MessageID[:8]) // First 8 bytes for brevity
 	}
-	return fmt.Sprintf("CreateWriteChannelReply: %d", e.ChannelID)
+	return fmt.Sprintf("ReadChannelV2: channel=%d msgID=%s", r.ChannelID, msgIDStr)
 }
 
 // OLD API
@@ -178,6 +219,10 @@ type SendMessage struct {
 	// WithSURB indicates if the message should be sent with a SURB
 	// in the Sphinx payload.
 	WithSURB bool `cbor:"with_surb"`
+
+	// ChannelID is optional and only used for sending channel messages.
+	// For non-channel messages, this field should be nil.
+	ChannelID *uint16 `cbor:"channel_id,omitempty"`
 
 	// SURBID must be a unique identity for each request.
 	// This field should be nil if WithSURB is false.
@@ -248,6 +293,10 @@ type Response struct {
 
 	CreateReadChannelV2Reply *CreateReadChannelV2Reply `cbor:"create_read_channel_v2_reply"`
 
+	WriteChannelV2Reply *WriteChannelV2Reply `cbor:"write_channel_v2_reply"`
+
+	ReadChannelV2Reply *ReadChannelV2Reply `cbor:"read_channel_v2_reply"`
+
 	WriteChannelReply *WriteChannelReply `cbor:"write_channel_reply"`
 
 	ReadChannelReply *ReadChannelReply `cbor:"read_channel_reply"`
@@ -264,6 +313,12 @@ type Request struct {
 
 	// CreateReadChannelV2 is used to create a new Pigeonhole read channel.
 	CreateReadChannelV2 *CreateReadChannelV2 `cbor:"create_read_channel_v2"`
+
+	// WriteChannelV2 is used to write to a Pigeonhole channel (new API).
+	WriteChannelV2 *WriteChannelV2 `cbor:"write_channel_v2"`
+
+	// ReadChannelV2 is used to read from a Pigeonhole channel (new API).
+	ReadChannelV2 *ReadChannelV2 `cbor:"read_channel_v2"`
 
 	//	OLD CHANNEL API
 	CreateChannel *CreateChannel `cbor:"create_channel"`
