@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/katzenpost/hpqc/hash"
+	"github.com/katzenpost/katzenpost/client2/common"
 	_ "github.com/katzenpost/katzenpost/client2/thin" // Used by helper functions
 )
 
@@ -24,8 +25,10 @@ func TestDockerCourierServiceNewThinclientAPI(t *testing.T) {
 	aliceThinClient := setupThinClient(t)
 	defer aliceThinClient.Close()
 
-	// Wait for PKI document
-	_ = validatePKIDocument(t, aliceThinClient)
+	// Wait for PKI document and get current epoch
+	currentDoc := validatePKIDocument(t, aliceThinClient)
+	currentEpoch := currentDoc.Epoch
+	t.Logf("Using PKI document for epoch %d", currentEpoch)
 
 	// Create context with timeout for operations
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
@@ -52,8 +55,10 @@ func TestDockerCourierServiceNewThinclientAPI(t *testing.T) {
 	bobThinClient := setupThinClient(t)
 	defer bobThinClient.Close()
 
-	// Wait for PKI document for Bob
-	_ = validatePKIDocument(t, bobThinClient)
+	// Wait for PKI document for Bob and validate it's for the same epoch
+	bobDoc := validatePKIDocument(t, bobThinClient)
+	require.Equal(t, currentEpoch, bobDoc.Epoch, "Alice and Bob should use the same PKI epoch")
+	t.Logf("Bob also using PKI document for epoch %d", bobDoc.Epoch)
 
 	// === Test CreateReadChannelV2 (new API) ===
 	t.Log("Bob: Creating read channel using new API")
@@ -98,10 +103,14 @@ func TestDockerCourierServiceNewThinclientAPI(t *testing.T) {
 	// === Test SendChannelQuery (new API) ===
 	t.Log("Testing SendChannelQuery method")
 	if sendPayload != nil {
-		// Get courier service for sending the query
-		courierService, err := aliceThinClient.GetService("courier")
+		// Get courier service for sending the query using epoch-specific PKI document
+		aliceEpochDoc, err := aliceThinClient.PKIDocumentForEpoch(currentEpoch)
 		require.NoError(t, err)
-		require.NotNil(t, courierService)
+		require.NotNil(t, aliceEpochDoc)
+
+		courierServices := common.FindServices("courier", aliceEpochDoc)
+		require.True(t, len(courierServices) > 0, "No courier services found in PKI document")
+		courierService := courierServices[0] // Use first available courier
 
 		// Test SendChannelQuery with the payload from WriteChannelV2
 		identityHash := hash.Sum256(courierService.MixDescriptor.IdentityKey)
@@ -131,9 +140,12 @@ func testDockerCourierServiceOldThinclientAPI(t *testing.T) {
 	bobThinClient := setupThinClient(t)
 	t.Log("Bob's thin client connected")
 
-	// Wait for PKI document (both clients should have it)
-	_ = validatePKIDocument(t, aliceThinClient)
-	_ = validatePKIDocument(t, bobThinClient)
+	// Wait for PKI document (both clients should have it) and ensure same epoch
+	aliceDoc := validatePKIDocument(t, aliceThinClient)
+	bobDoc := validatePKIDocument(t, bobThinClient)
+	currentEpoch := aliceDoc.Epoch
+	require.Equal(t, currentEpoch, bobDoc.Epoch, "Alice and Bob should use the same PKI epoch")
+	t.Logf("Both clients using PKI document for epoch %d", currentEpoch)
 
 	// Test message to send
 	plaintextMessage := []byte("Hello world from Alice to Bob!")

@@ -59,6 +59,17 @@ func validatePKIDocument(t *testing.T, client *thin.ThinClient) *cpki.Document {
 	return doc
 }
 
+// validatePKIDocumentForEpoch gets and validates the PKI document for a specific epoch from a thin client
+func validatePKIDocumentForEpoch(t *testing.T, client *thin.ThinClient, epoch uint64) *cpki.Document {
+	t.Logf("thin client getting PKI doc for epoch %d", epoch)
+	doc, err := client.PKIDocumentForEpoch(epoch)
+	require.NoError(t, err)
+	require.NotNil(t, doc)
+	require.Equal(t, epoch, doc.Epoch)
+	require.NotEqual(t, doc.LambdaP, 0.0)
+	return doc
+}
+
 // findEchoTargets finds service nodes that support the echo service
 func findEchoTargets(t *testing.T, doc *cpki.Document) []*cpki.MixDescriptor {
 	pingTargets := []*cpki.MixDescriptor{}
