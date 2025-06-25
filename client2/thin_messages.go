@@ -16,6 +16,7 @@ func IntoThinResponse(r *Response) *thin.Response {
 		CreateChannelReply:        r.CreateChannelReply,
 		CreateWriteChannelReply:   r.CreateWriteChannelReply,
 		CreateReadChannelReply:    r.CreateReadChannelReply,
+		CreateReadChannelV2Reply:  r.CreateReadChannelV2Reply,
 		WriteChannelReply:         r.WriteChannelReply,
 		ReadChannelReply:          r.ReadChannelReply,
 		CopyChannelReply:          r.CopyChannelReply,
@@ -45,6 +46,8 @@ type Response struct {
 
 	CreateReadChannelReply *thin.CreateReadChannelReply
 
+	CreateReadChannelV2Reply *thin.CreateReadChannelV2Reply
+
 	WriteChannelReply *thin.WriteChannelReply
 
 	ReadChannelReply *thin.ReadChannelReply
@@ -54,23 +57,26 @@ type Response struct {
 
 func FromThinRequest(r *thin.Request, appid *[AppIDLength]byte) *Request {
 	return &Request{
-		AppID:              appid,
-		CreateWriteChannel: r.CreateWriteChannel,
-		CreateChannel:      r.CreateChannel,
-		CreateReadChannel:  r.CreateReadChannel,
-		WriteChannel:       r.WriteChannel,
-		ReadChannel:        r.ReadChannel,
-		CopyChannel:        r.CopyChannel,
-		SendMessage:        r.SendMessage,
-		SendARQMessage:     r.SendARQMessage,
-		SendLoopDecoy:      r.SendLoopDecoy,
-		SendDropDecoy:      r.SendDropDecoy,
-		ThinClose:          r.ThinClose,
+		AppID:               appid,
+		CreateWriteChannel:  r.CreateWriteChannel,
+		CreateReadChannelV2: r.CreateReadChannelV2,
+		CreateChannel:       r.CreateChannel,
+		CreateReadChannel:   r.CreateReadChannel,
+		WriteChannel:        r.WriteChannel,
+		ReadChannel:         r.ReadChannel,
+		CopyChannel:         r.CopyChannel,
+		SendMessage:         r.SendMessage,
+		SendARQMessage:      r.SendARQMessage,
+		SendLoopDecoy:       r.SendLoopDecoy,
+		SendDropDecoy:       r.SendDropDecoy,
+		ThinClose:           r.ThinClose,
 	}
 }
 
 type Request struct {
 	CreateWriteChannel *thin.CreateWriteChannel
+
+	CreateReadChannelV2 *thin.CreateReadChannelV2
 
 	CreateChannel *thin.CreateChannel
 

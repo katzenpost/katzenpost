@@ -165,6 +165,31 @@ type CreateWriteChannelReply struct {
 	ErrorCode uint8 `cbor:"error_code,omitempty"`
 }
 
+// CreateReadChannelV2Reply is sent in response to a CreateReadChannelV2 request.
+// It provides the channel ID and current read position for the newly created
+// pigeonhole read channel.
+type CreateReadChannelV2Reply struct {
+	// ChannelID is the unique identifier for the created read channel, used in
+	// subsequent ReadChannel operations.
+	ChannelID uint16 `cbor:"channel_id"`
+
+	// NextMessageIndex indicates the current read position in the channel,
+	// showing where the next read operation will start from.
+	NextMessageIndex *bacap.MessageBoxIndex `cbor:"next_message_index"`
+
+	// ErrorCode indicates the success or failure of the channel creation.
+	// A value of ThinClientErrorSuccess indicates successful creation.
+	ErrorCode uint8 `cbor:"error_code,omitempty"`
+}
+
+// String returns a string representation of the CreateReadChannelV2Reply.
+func (e *CreateReadChannelV2Reply) String() string {
+	if e.ErrorCode != ThinClientSuccess {
+		return fmt.Sprintf("CreateReadChannelV2Reply: %d (error: %s)", e.ChannelID, ThinClientErrorToString(e.ErrorCode))
+	}
+	return fmt.Sprintf("CreateReadChannelV2Reply: %d", e.ChannelID)
+}
+
 /***
 OLD API
 ***/

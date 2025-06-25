@@ -337,7 +337,7 @@ func (d *Daemon) createWriteChannel(request *Request) {
 		return
 	}
 
-	channelID := d.generateUniqueNewChannelID()
+	channelID := d.generateUniqueChannelID()
 	d.newChannelMapLock.Lock()
 	d.newChannelMap[channelID] = &ChannelDescriptor{
 		StatefulWriter:      statefulWriter,
@@ -849,6 +849,75 @@ func (d *Daemon) sendCreateWriteChannelError(request *Request, errorCode uint8) 
 			},
 		})
 	}
+}
+
+func (d *Daemon) sendCreateReadChannelV2Error(request *Request, errorCode uint8) {
+	conn := d.listener.getConnection(request.AppID)
+	if conn != nil {
+		conn.sendResponse(&Response{
+			AppID: request.AppID,
+			CreateReadChannelV2Reply: &thin.CreateReadChannelV2Reply{
+				ChannelID: 0,
+				ErrorCode: errorCode,
+			},
+		})
+	}
+}
+
+func (d *Daemon) createOrResumeStatefulReaderV2(request *Request) (*bacap.StatefulReader, error) {
+	if request.CreateReadChannelV2.ReadCap == nil {
+		return nil, errors.New("CreateReadChannelV2 requires a ReadCap")
+	}
+
+	var statefulReader *bacap.StatefulReader
+	var err error
+
+	if request.CreateReadChannelV2.MessageBoxIndex == nil {
+		statefulReader, err = bacap.NewStatefulReader(request.CreateReadChannelV2.ReadCap, constants.PIGEONHOLE_CTX)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		statefulReader, err = bacap.NewStatefulReaderWithIndex(request.CreateReadChannelV2.ReadCap, constants.PIGEONHOLE_CTX, request.CreateReadChannelV2.MessageBoxIndex)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return statefulReader, nil
+}
+
+func (d *Daemon) createReadChannelV2(request *Request) {
+	statefulReader, err := d.createOrResumeStatefulReaderV2(request)
+	if err != nil {
+		d.log.Errorf("createReadChannelV2 failure: %s", err)
+		d.sendCreateReadChannelV2Error(request, thin.ThinClientErrorInternalError)
+		return
+	}
+
+	channelID := d.generateUniqueChannelID()
+	d.newChannelMapLock.Lock()
+	d.newChannelMap[channelID] = &ChannelDescriptor{
+		StatefulReader:      statefulReader,
+		EnvelopeDescriptors: make(map[[hash.HashSize]byte]*EnvelopeDescriptor),
+		StoredEnvelopes:     make(map[[thin.MessageIDLength]byte]*StoredEnvelopeData),
+	}
+	d.newChannelMapLock.Unlock()
+
+	currentMessageIndex := statefulReader.NextIndex
+	conn := d.listener.getConnection(request.AppID)
+	if conn == nil {
+		d.log.Errorf("createReadChannelV2 failure: "+errNoConnectionForAppID, request.AppID[:])
+		d.sendCreateReadChannelV2Error(request, thin.ThinClientErrorInternalError)
+		return
+	}
+	conn.sendResponse(&Response{
+		AppID: request.AppID,
+		CreateReadChannelV2Reply: &thin.CreateReadChannelV2Reply{
+			ChannelID:        channelID,
+			NextMessageIndex: currentMessageIndex,
+			ErrorCode:        thin.ThinClientSuccess,
+		},
+	})
 }
 
 // checkWriteCapabilityDedup checks if a WriteCap is already in use and adds it to the dedup map

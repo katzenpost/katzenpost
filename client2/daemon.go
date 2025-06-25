@@ -144,6 +144,25 @@ func NewDaemon(cfg *config.Config) (*Daemon, error) {
 	return d, nil
 }
 
+// generateUniqueChannelID generates a unique uint16 channel ID that's not already in use
+func (d *Daemon) generateUniqueChannelID() uint16 {
+	d.newChannelMapLock.Lock()
+	defer d.newChannelMapLock.Unlock()
+
+	for {
+		// Generate a random uint16
+		var channelID uint16
+		binary.Read(rand.Reader, binary.BigEndian, &channelID)
+
+		// Check if it's already in use
+		if _, exists := d.newChannelMap[channelID]; !exists {
+			// Reserve the ID by adding an empty entry (will be replaced with actual descriptor)
+			d.newChannelMap[channelID] = nil
+			return channelID
+		}
+	}
+}
+
 func (d *Daemon) initLogging() error {
 	f := d.cfg.Logging.File
 	if !d.cfg.Logging.Disable && d.cfg.Logging.File != "" {
@@ -325,6 +344,11 @@ func (d *Daemon) egressWorker() {
 
 			case request.CreateWriteChannel != nil:
 				d.createWriteChannel(request)
+			case request.CreateReadChannelV2 != nil:
+				d.createReadChannelV2(request)
+
+				// Old Pigeonhole Channel related commands proceed here:
+
 			case request.CreateChannel != nil:
 				d.createChannel(request)
 			case request.CreateReadChannel != nil:

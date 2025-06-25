@@ -46,7 +46,25 @@ func TestDockerCourierServiceNewThinclientAPI(t *testing.T) {
 	t.Logf("Alice: WriteCap: %x", writeCapBytes[:16])
 	t.Logf("Alice: NextMessageIndex: %x", indexBytes[:16])
 
-	t.Log("SUCCESS: CreateWriteChannel API working!")
+	// Create a thin client for Bob
+	t.Log("Creating Bob's thin client")
+	bobThinClient := setupThinClient(t)
+	defer bobThinClient.Close()
+
+	// Wait for PKI document for Bob
+	_ = validatePKIDocument(t, bobThinClient)
+
+	// === Test CreateReadChannelV2 (new API) ===
+	t.Log("Bob: Creating read channel using new API")
+	bobChannelID, bobNextMessageIndex, err := bobThinClient.CreateReadChannelV2(ctx, readCap, nil)
+	require.NoError(t, err)
+	require.NotZero(t, bobChannelID)
+	require.NotNil(t, bobNextMessageIndex)
+	t.Logf("Bob: Successfully created read channel %d", bobChannelID)
+	bobIndexBytes, _ := bobNextMessageIndex.MarshalBinary()
+	t.Logf("Bob: NextMessageIndex: %x", bobIndexBytes[:16])
+
+	t.Log("SUCCESS: CreateWriteChannel and CreateReadChannelV2 APIs working!")
 }
 
 func testDockerCourierServiceOldThinclientAPI(t *testing.T) {

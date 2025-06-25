@@ -427,6 +427,14 @@ func (t *ThinClient) worker() {
 			case <-t.HaltCh():
 				return
 			}
+		case message.CreateReadChannelV2Reply != nil:
+			t.log.Debug("CreateReadChannelV2Reply")
+			select {
+			case t.eventSink <- message.CreateReadChannelV2Reply:
+				continue
+			case <-t.HaltCh():
+				return
+			}
 		case message.CreateWriteChannelReply != nil:
 			t.log.Debug("CreateWriteChannelReply")
 			select {
@@ -1070,6 +1078,60 @@ func (t *ThinClient) CreateWriteChannel(ctx context.Context, WriteCap *bacap.Wri
 			if !v.IsConnected {
 				return 0, nil, nil, nil, errConnectionLost
 			}
+		case *NewDocumentEvent:
+			// Ignore PKI document updates
+		default:
+			// Ignore other events
+		}
+	}
+}
+
+// CreateReadChannelV2 creates a read channel from a read capability.
+func (t *ThinClient) CreateReadChannelV2(ctx context.Context, readCap *bacap.ReadCap, messageBoxIndex *bacap.MessageBoxIndex) (uint16, *bacap.MessageBoxIndex, error) {
+	if ctx == nil {
+		return 0, nil, errContextCannotBeNil
+	}
+	if readCap == nil {
+		return 0, nil, errors.New("readCap cannot be nil")
+	}
+
+	req := &Request{
+		CreateReadChannelV2: &CreateReadChannelV2{
+			ReadCap:         readCap,
+			MessageBoxIndex: messageBoxIndex,
+		},
+	}
+
+	eventSink := t.EventSink()
+	defer t.StopEventSink(eventSink)
+
+	err := t.writeMessage(req)
+	if err != nil {
+		return 0, nil, err
+	}
+
+	for {
+		var event Event
+		select {
+		case <-ctx.Done():
+			return 0, nil, ctx.Err()
+		case event = <-eventSink:
+		case <-t.HaltCh():
+			return 0, nil, errHalting
+		}
+
+		switch v := event.(type) {
+		case *CreateReadChannelV2Reply:
+			if v.ErrorCode != ThinClientSuccess {
+				return 0, nil, errors.New(ThinClientErrorToString(v.ErrorCode))
+			}
+			return v.ChannelID, v.NextMessageIndex, nil
+		case *ConnectionStatusEvent:
+			if !v.IsConnected {
+				return 0, nil, errConnectionLost
+			}
+		case *NewDocumentEvent:
+			// Ignore PKI document updates
 		default:
 			// Ignore other events
 		}

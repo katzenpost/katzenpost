@@ -125,6 +125,20 @@ type CreateWriteChannel struct {
 	MessageBoxIndex *bacap.MessageBoxIndex `cbor:"message_box_index,omitempty"`
 }
 
+// CreateReadChannelV2 requests the creation of a new pigeonhole read channel
+// from an existing read capability. Read channels allow receiving messages
+// from a communication channel created by the holder of the write capability.
+type CreateReadChannelV2 struct {
+	// ReadCap is the read capability that grants access to the channel.
+	// This capability is typically shared by the channel creator and allows
+	// reading messages from the specified channel.
+	ReadCap *bacap.ReadCap `cbor:"read_cap"`
+
+	// MessageBoxIndex specifies the starting read position for the channel.
+	// If nil, reading will start from the beginning of the channel.
+	MessageBoxIndex *bacap.MessageBoxIndex `cbor:"message_box_index,omitempty"`
+}
+
 // String returns a string representation of the CreateWriteChannelReply.
 func (e *CreateWriteChannelReply) String() string {
 	if e.ErrorCode != ThinClientSuccess {
@@ -228,9 +242,11 @@ type Response struct {
 
 	CreateChannelReply *CreateChannelReply `cbor:"create_channel_reply"`
 
+	CreateReadChannelReply *CreateReadChannelReply `cbor:"create_read_channel_reply"`
+
 	CreateWriteChannelReply *CreateWriteChannelReply `cbor:"create_write_channel_reply"`
 
-	CreateReadChannelReply *CreateReadChannelReply `cbor:"create_read_channel_reply"`
+	CreateReadChannelV2Reply *CreateReadChannelV2Reply `cbor:"create_read_channel_v2_reply"`
 
 	WriteChannelReply *WriteChannelReply `cbor:"write_channel_reply"`
 
@@ -243,13 +259,16 @@ type Request struct {
 
 	// NEW CHANNEL API
 
-	// CreateChannel is used to create a new Pigeonhole write channel.
+	// CreateWriteChannel is used to create a new Pigeonhole write channel.
 	CreateWriteChannel *CreateWriteChannel `cbor:"create_write_channel"`
+
+	// CreateReadChannelV2 is used to create a new Pigeonhole read channel.
+	CreateReadChannelV2 *CreateReadChannelV2 `cbor:"create_read_channel_v2"`
 
 	//	OLD CHANNEL API
 	CreateChannel *CreateChannel `cbor:"create_channel"`
 
-	// CreateReadChannel is used to create a new Pigeonhole read channel.
+	// CreateReadChannel is used to create a new Pigeonhole read channel (old API).
 	CreateReadChannel *CreateReadChannel `cbor:"create_read_channel"`
 
 	// WriteChannel is used to write to a Pigeonhole channel.
