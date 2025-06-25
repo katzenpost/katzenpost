@@ -35,6 +35,9 @@ jobs:
         run: |
           cd docker && make start wait
 
+      - name: Sleep for a few seconds to allow the mixnet to fully start
+        run: sleep 5
+
       - name: run old client core end to end tests
         run: cd client2 && make testargs=-coverprofile=coverage.part dockertest-legacy && cat coverage.part >> ../coverage.out
 
