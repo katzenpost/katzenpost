@@ -4,19 +4,138 @@
 package thin
 
 import (
+	"fmt"
+
 	"github.com/katzenpost/hpqc/bacap"
 	"github.com/katzenpost/hpqc/hash"
 
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 )
 
+// Thin client error codes provide standardized error reporting across the protocol.
+// These codes are used in response messages to indicate the success or failure
+// of operations, allowing applications to handle errors consistently.
+const (
+	// ThinClientSuccess indicates that the operation completed successfully
+	// with no errors. This is the default success state.
+	ThinClientSuccess uint8 = 0
+
+	// ThinClientErrorConnectionLost indicates that the connection to the daemon
+	// was lost during the operation. The client should attempt to reconnect.
+	ThinClientErrorConnectionLost uint8 = 1
+
+	// ThinClientErrorTimeout indicates that the operation timed out before
+	// completion. This may occur during network operations or when waiting
+	// for responses from the mixnet.
+	ThinClientErrorTimeout uint8 = 2
+
+	// ThinClientErrorInvalidRequest indicates that the request format was
+	// invalid or contained malformed data that could not be processed.
+	ThinClientErrorInvalidRequest uint8 = 3
+
+	// ThinClientErrorInternalError indicates an internal error occurred within
+	// the client daemon or thin client that prevented operation completion.
+	ThinClientErrorInternalError uint8 = 4
+
+	// ThinClientErrorMaxRetries indicates that the maximum number of retry
+	// attempts was exceeded for a reliable operation (such as ARQ).
+	ThinClientErrorMaxRetries uint8 = 5
+
+	// ThinClientErrorInvalidChannel indicates that the specified channel ID
+	// is invalid or malformed.
+	ThinClientErrorInvalidChannel uint8 = 6
+
+	// ThinClientErrorChannelNotFound indicates that the specified channel
+	// does not exist or has been garbage collected.
+	ThinClientErrorChannelNotFound uint8 = 7
+
+	// ThinClientErrorPermissionDenied indicates that the operation was denied
+	// due to insufficient permissions or capability restrictions.
+	ThinClientErrorPermissionDenied uint8 = 8
+
+	// ThinClientErrorInvalidPayload indicates that the message payload was
+	// invalid, too large, or otherwise could not be processed.
+	ThinClientErrorInvalidPayload uint8 = 9
+
+	// ThinClientErrorServiceUnavailable indicates that the requested service
+	// or functionality is currently unavailable.
+	ThinClientErrorServiceUnavailable uint8 = 10
+
+	// ThinClientErrorDuplicateCapability indicates that the provided capability
+	// (read or write cap) has already been used and is considered a duplicate.
+	ThinClientErrorDuplicateCapability uint8 = 11
+)
+
+// ThinClientErrorToString converts a thin client error code to a human-readable string.
+// This function provides consistent error message formatting across the thin client
+// protocol and is used for logging and error reporting.
+//
+// Parameters:
+//   - errorCode: The error code to convert
+//
+// Returns:
+//   - string: A human-readable description of the error
+func ThinClientErrorToString(errorCode uint8) string {
+	switch errorCode {
+	case ThinClientSuccess:
+		return "Success"
+	case ThinClientErrorConnectionLost:
+		return "Connection lost"
+	case ThinClientErrorTimeout:
+		return "Timeout"
+	case ThinClientErrorInvalidRequest:
+		return "Invalid request"
+	case ThinClientErrorInternalError:
+		return "Internal error"
+	case ThinClientErrorMaxRetries:
+		return "Maximum retries exceeded"
+	case ThinClientErrorInvalidChannel:
+		return "Invalid channel"
+	case ThinClientErrorChannelNotFound:
+		return "Channel not found"
+	case ThinClientErrorPermissionDenied:
+		return "Permission denied"
+	case ThinClientErrorInvalidPayload:
+		return "Invalid payload"
+	case ThinClientErrorServiceUnavailable:
+		return "Service unavailable"
+	default:
+		return fmt.Sprintf("Unknown thin client error code: %d", errorCode)
+	}
+}
+
 type ChannelMap struct {
 	ReadChannels  map[[ChannelIDLength]byte]*bacap.StatefulReader `cbor:"read_channels"`
 	WriteChannels map[[ChannelIDLength]byte]*bacap.StatefulWriter `cbor:"write_channels"`
 }
 
-type CreateChannel struct {
+// CreateWriteChannel requests the creation of a new pigeonhole write channel
+// or the resumption of an existing one. Write channels allow sending messages
+// to a persistent communication channel that can be read by holders of the
+// corresponding read capability.
+type CreateWriteChannel struct {
+	// WriteCap is the write capability for resuming an existing channel.
+	// If nil, a new channel will be created. If provided, the channel will
+	// be resumed from the specified MessageBoxIndex position.
+	WriteCap *bacap.WriteCap `cbor:"write_cap,omitempty"`
+
+	// MessageBoxIndex specifies the starting or resume point for the channel.
+	// This field is required when resuming an existing channel (WriteCap != nil)
+	// and optional when creating a new channel (defaults to a random starting point).
+	MessageBoxIndex *bacap.MessageBoxIndex `cbor:"message_box_index,omitempty"`
 }
+
+// String returns a string representation of the CreateWriteChannelReply.
+func (e *CreateWriteChannelReply) String() string {
+	if e.ErrorCode != ThinClientSuccess {
+		return fmt.Sprintf("CreateWriteChannelReply: %d (error: %s)", e.ChannelID, ThinClientErrorToString(e.ErrorCode))
+	}
+	return fmt.Sprintf("CreateWriteChannelReply: %d", e.ChannelID)
+}
+
+// OLD API
+
+type CreateChannel struct{}
 
 type CreateReadChannel struct {
 	ReadCap *bacap.ReadCap `cbor:"read_cap"`
@@ -119,7 +238,13 @@ type Response struct {
 }
 
 type Request struct {
-	// CreateChannel is used to create a new Pigeonhole channel.
+
+	// NEW CHANNEL API
+
+	// CreateChannel is used to create a new Pigeonhole write channel.
+	CreateWriteChannel *CreateWriteChannel `cbor:"create_write_channel"`
+
+	//	OLD CHANNEL API
 	CreateChannel *CreateChannel `cbor:"create_channel"`
 
 	// CreateReadChannel is used to create a new Pigeonhole read channel.

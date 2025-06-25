@@ -138,6 +138,37 @@ func (e *NewPKIDocumentEvent) String() string {
 	return fmt.Sprintf("PKI Document for epoch %d", doc.Epoch)
 }
 
+/**** NEW API ***/
+
+// CreateWriteChannelReply is sent in response to a CreateWriteChannel request.
+// It provides the channel ID and capabilities needed to use the newly created
+// or resumed pigeonhole write channel.
+type CreateWriteChannelReply struct {
+	// ChannelID is the unique identifier for the created channel, used in
+	// subsequent WriteChannel operations.
+	ChannelID uint16 `cbor:"channel_id"`
+
+	// ReadCap is the read capability that can be shared with others to allow
+	// them to read messages from this channel.
+	ReadCap *bacap.ReadCap `cbor:"read_cap"`
+
+	// WriteCap is the write capability that should be stored for channel
+	// persistence and resumption across client restarts.
+	WriteCap *bacap.WriteCap `cbor:"write_cap"`
+
+	// NextMessageIndex indicates the current write position in the channel,
+	// used for tracking message ordering and resumption.
+	NextMessageIndex *bacap.MessageBoxIndex `cbor:"next_message_index"`
+
+	// ErrorCode indicates the success or failure of the channel creation.
+	// A value of ThinClientErrorSuccess indicates successful creation.
+	ErrorCode uint8 `cbor:"error_code,omitempty"`
+}
+
+/***
+OLD API
+***/
+
 type CreateChannelReply struct {
 	ChannelID [ChannelIDLength]byte `cbor:"channel_id"`
 	ReadCap   *bacap.ReadCap        `cbor:"read_cap"`

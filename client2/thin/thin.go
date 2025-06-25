@@ -1003,3 +1003,67 @@ func (t *ThinClient) OldCopyChannel(ctx context.Context, channelID *[ChannelIDLe
 		}
 	}
 }
+
+/****
+
+NEW PIGEONHOLE CHANNEL API
+
+****/
+
+// CreateWriteChannel creates a new pigeonhole write channel and returns the channel ID, read capability, and write capability.
+func (t *ThinClient) CreateWriteChannel(ctx context.Context, WriteCap *bacap.WriteCap, messageBoxIndex *bacap.MessageBoxIndex) (uint16, *bacap.ReadCap, *bacap.WriteCap, *bacap.MessageBoxIndex, error) {
+	if ctx == nil {
+		return 0, nil, nil, nil, errContextCannotBeNil
+	}
+
+	switch {
+	case WriteCap == nil && messageBoxIndex == nil:
+		// Creating a new channel
+	case WriteCap != nil && messageBoxIndex == nil:
+		return 0, nil, nil, nil, errors.New("messageBoxIndex cannot be nil when resuming an existing channel")
+	case WriteCap == nil && messageBoxIndex != nil:
+		return 0, nil, nil, nil, errors.New("WriteCap cannot be nil when resuming an existing channel")
+	case WriteCap != nil && messageBoxIndex != nil:
+		// Resuming an existing channel
+	}
+
+	req := &Request{
+		CreateWriteChannel: &CreateWriteChannel{
+			WriteCap:        WriteCap,
+			MessageBoxIndex: messageBoxIndex,
+		},
+	}
+
+	eventSink := t.EventSink()
+	defer t.StopEventSink(eventSink)
+
+	err := t.writeMessage(req)
+	if err != nil {
+		return 0, nil, nil, nil, err
+	}
+
+	for {
+		var event Event
+		select {
+		case <-ctx.Done():
+			return 0, nil, nil, nil, ctx.Err()
+		case event = <-eventSink:
+		case <-t.HaltCh():
+			return 0, nil, nil, nil, errHalting
+		}
+
+		switch v := event.(type) {
+		case *CreateWriteChannelReply:
+			if v.ErrorCode != ThinClientSuccess {
+				return 0, nil, nil, nil, errors.New(ThinClientErrorToString(v.ErrorCode))
+			}
+			return v.ChannelID, v.ReadCap, v.WriteCap, v.NextMessageIndex, nil
+		case *ConnectionStatusEvent:
+			if !v.IsConnected {
+				return 0, nil, nil, nil, errConnectionLost
+			}
+		default:
+			// Ignore other events
+		}
+	}
+}
