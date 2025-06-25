@@ -864,6 +864,19 @@ func (d *Daemon) sendCreateReadChannelV2Error(request *Request, errorCode uint8)
 	}
 }
 
+func (d *Daemon) sendWriteChannelV2Error(request *Request, errorCode uint8) {
+	conn := d.listener.getConnection(request.AppID)
+	if conn != nil {
+		conn.sendResponse(&Response{
+			AppID: request.AppID,
+			WriteChannelV2Reply: &thin.WriteChannelV2Reply{
+				ChannelID: request.WriteChannelV2.ChannelID,
+				ErrorCode: errorCode,
+			},
+		})
+	}
+}
+
 func (d *Daemon) createOrResumeStatefulReaderV2(request *Request) (*bacap.StatefulReader, error) {
 	if request.CreateReadChannelV2.ReadCap == nil {
 		return nil, errors.New("CreateReadChannelV2 requires a ReadCap")
@@ -941,16 +954,69 @@ func (d *Daemon) checkWriteCapabilityDedup(writeCap *bacap.WriteCap) error {
 }
 
 func (d *Daemon) writeChannelV2(request *Request) {
-	conn := d.listener.getConnection(request.AppID)
-	if conn != nil {
-		conn.sendResponse(&Response{
-			AppID: request.AppID,
-			WriteChannelV2Reply: &thin.WriteChannelV2Reply{
-				ChannelID: request.WriteChannelV2.ChannelID,
-				ErrorCode: thin.ThinClientErrorServiceUnavailable,
-			},
-		})
+	channelID := request.WriteChannelV2.ChannelID
+
+	d.newChannelMapLock.RLock()
+	channelDesc, ok := d.newChannelMap[channelID]
+	d.newChannelMapLock.RUnlock()
+	if !ok {
+		d.log.Errorf("writeChannelV2 failure: no channel found for channelID %d", channelID)
+		d.sendWriteChannelV2Error(request, thin.ThinClientErrorChannelNotFound)
+		return
 	}
+
+	_, doc := d.client.CurrentDocument()
+
+	channelDesc.StatefulWriterLock.Lock()
+	courierEnvelope, envelopePrivateKey, err := CreateChannelWriteRequestPrepareOnly(
+		channelDesc.StatefulWriter,
+		request.WriteChannelV2.Payload,
+		doc,
+		d.cfg.PigeonholeGeometry)
+	if err != nil {
+		channelDesc.StatefulWriterLock.Unlock()
+		d.log.Errorf("writeChannelV2 failure: failed to create write request: %s", err)
+		d.sendWriteChannelV2Error(request, thin.ThinClientErrorInternalError)
+		return
+	}
+	nextMessageIndex, err := channelDesc.StatefulWriter.GetNextMessageIndex()
+	if err != nil {
+		channelDesc.StatefulWriterLock.Unlock()
+		d.log.Errorf("writeChannelV2 failure: failed to get next message index: %s", err)
+		d.sendWriteChannelV2Error(request, thin.ThinClientErrorInternalError)
+		return
+	}
+	channelDesc.StatefulWriterLock.Unlock()
+
+	envHash := courierEnvelope.EnvelopeHash()
+	channelDesc.EnvelopeDescriptorsLock.Lock()
+	channelDesc.EnvelopeDescriptors[*envHash] = &EnvelopeDescriptor{
+		Epoch:       doc.Epoch,
+		ReplicaNums: courierEnvelope.IntermediateReplicas,
+		EnvelopeKey: envelopePrivateKey.Bytes(),
+	}
+	channelDesc.EnvelopeDescriptorsLock.Unlock()
+
+	courierQuery := &pigeonhole.CourierQuery{
+		QueryType: 0, // 0 = envelope
+		Envelope:  courierEnvelope,
+	}
+
+	conn := d.listener.getConnection(request.AppID)
+	if conn == nil {
+		d.log.Errorf(errNoConnectionForAppID, request.AppID[:])
+		d.sendWriteChannelV2Error(request, thin.ThinClientErrorConnectionLost)
+		return
+	}
+	conn.sendResponse(&Response{
+		AppID: request.AppID,
+		WriteChannelV2Reply: &thin.WriteChannelV2Reply{
+			ChannelID:          channelID,
+			SendMessagePayload: courierQuery.Bytes(),
+			NextMessageIndex:   nextMessageIndex,
+			ErrorCode:          thin.ThinClientSuccess,
+		},
+	})
 }
 
 func (d *Daemon) readChannelV2(request *Request) {
