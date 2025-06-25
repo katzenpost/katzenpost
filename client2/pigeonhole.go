@@ -939,3 +939,30 @@ func (d *Daemon) checkWriteCapabilityDedup(writeCap *bacap.WriteCap) error {
 	d.usedWriteCaps[capHash] = true
 	return nil
 }
+
+func (d *Daemon) writeChannelV2(request *Request) {
+	conn := d.listener.getConnection(request.AppID)
+	if conn != nil {
+		conn.sendResponse(&Response{
+			AppID: request.AppID,
+			WriteChannelV2Reply: &thin.WriteChannelV2Reply{
+				ChannelID: request.WriteChannelV2.ChannelID,
+				ErrorCode: thin.ThinClientErrorServiceUnavailable,
+			},
+		})
+	}
+}
+
+func (d *Daemon) readChannelV2(request *Request) {
+	conn := d.listener.getConnection(request.AppID)
+	if conn != nil {
+		conn.sendResponse(&Response{
+			AppID: request.AppID,
+			ReadChannelV2Reply: &thin.ReadChannelV2Reply{
+				MessageID: request.ReadChannelV2.MessageID,
+				ChannelID: request.ReadChannelV2.ChannelID,
+				ErrorCode: thin.ThinClientErrorServiceUnavailable,
+			},
+		})
+	}
+}

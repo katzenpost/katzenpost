@@ -346,6 +346,10 @@ func (d *Daemon) egressWorker() {
 				d.createWriteChannel(request)
 			case request.CreateReadChannelV2 != nil:
 				d.createReadChannelV2(request)
+			case request.WriteChannelV2 != nil:
+				d.writeChannelV2(request)
+			case request.ReadChannelV2 != nil:
+				d.readChannelV2(request)
 
 				// Old Pigeonhole Channel related commands proceed here:
 
