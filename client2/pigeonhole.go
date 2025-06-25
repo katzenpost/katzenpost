@@ -5,6 +5,7 @@ package client2
 
 import (
 	"crypto/rand"
+	"errors"
 	"fmt"
 	"os"
 	"sync"
@@ -231,6 +232,48 @@ func CreateChannelReadRequestWithBoxID(channelID [thin.ChannelIDLength]byte,
 		IsRead:               1, // 1 = read
 	}
 	return envelope, mkemPrivateKey, nil
+}
+
+// sendWriteChannelSuccessResponse sends a successful response for write channel creation
+func (d *Daemon) sendWriteChannelSuccessResponse(request *Request, channelID uint16, bobReadCap *bacap.ReadCap, writeCap *bacap.WriteCap, currentMessageIndex *bacap.MessageBoxIndex) {
+	conn := d.listener.getConnection(request.AppID)
+	if conn == nil {
+		d.log.Errorf(errNoConnectionForAppID, request.AppID[:])
+		return
+	}
+
+	conn.sendResponse(&Response{
+		AppID: request.AppID,
+		CreateWriteChannelReply: &thin.CreateWriteChannelReply{
+			ChannelID:        channelID,
+			ReadCap:          bobReadCap,
+			WriteCap:         writeCap,
+			NextMessageIndex: currentMessageIndex,
+			ErrorCode:        thin.ThinClientSuccess,
+		},
+	})
+}
+
+func (d *Daemon) createWriteChannel(request *Request) {
+	statefulWriter, err := d.createOrResumeStatefulWriter(request)
+	if err != nil {
+		d.log.Errorf("createWriteChannel failure: %s", err)
+		d.sendCreateWriteChannelError(request, thin.ThinClientErrorInternalError)
+		return
+	}
+
+	channelID := d.generateUniqueNewChannelID()
+	d.newChannelMapLock.Lock()
+	d.newChannelMap[channelID] = &ChannelDescriptor{
+		StatefulWriter:      statefulWriter,
+		EnvelopeDescriptors: make(map[[hash.HashSize]byte]*EnvelopeDescriptor),
+		StoredEnvelopes:     make(map[[thin.MessageIDLength]byte]*StoredEnvelopeData),
+	}
+	d.newChannelMapLock.Unlock()
+
+	currentMessageIndex := statefulWriter.NextIndex
+	bobReadCap := statefulWriter.Wcap.ReadCap()
+	d.sendWriteChannelSuccessResponse(request, channelID, bobReadCap, statefulWriter.Wcap, currentMessageIndex)
 }
 
 func (d *Daemon) createChannel(request *Request) {
@@ -680,4 +723,74 @@ func (d *Daemon) readChannel(request *Request) {
 
 	// Send success response to client
 	d.sendReadChannelSuccessResponse(request, channelID)
+}
+
+func (d *Daemon) createOrResumeStatefulWriter(request *Request) (*bacap.StatefulWriter, error) {
+	isResuming := request.CreateWriteChannel.WriteCap != nil
+	var statefulWriter *bacap.StatefulWriter
+	var err error
+	if isResuming {
+		if err := d.checkWriteCapabilityDedup(request.CreateWriteChannel.WriteCap); err != nil {
+			return nil, err
+		}
+		if request.CreateWriteChannel.MessageBoxIndex == nil {
+			statefulWriter, err = bacap.NewStatefulWriter(request.CreateWriteChannel.WriteCap, constants.PIGEONHOLE_CTX)
+			if err != nil {
+				return nil, err
+			}
+		} else {
+			statefulWriter, err = bacap.NewStatefulWriterWithIndex(
+				request.CreateWriteChannel.WriteCap,
+				constants.PIGEONHOLE_CTX,
+				request.CreateWriteChannel.MessageBoxIndex)
+			if err != nil {
+				return nil, err
+			}
+		}
+	} else {
+		// Create a new WriteCap for a new channel
+		newWriteCap, err := bacap.NewWriteCap(rand.Reader)
+		if err != nil {
+			return nil, err
+		}
+		statefulWriter, err = bacap.NewStatefulWriter(newWriteCap, constants.PIGEONHOLE_CTX)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return statefulWriter, nil
+}
+
+func (d *Daemon) sendCreateWriteChannelError(request *Request, errorCode uint8) {
+	conn := d.listener.getConnection(request.AppID)
+	if conn != nil {
+		conn.sendResponse(&Response{
+			AppID: request.AppID,
+			CreateWriteChannelReply: &thin.CreateWriteChannelReply{
+				ChannelID: 0,
+				ErrorCode: errorCode,
+			},
+		})
+	}
+}
+
+// checkWriteCapabilityDedup checks if a WriteCap is already in use and adds it to the dedup map
+func (d *Daemon) checkWriteCapabilityDedup(writeCap *bacap.WriteCap) error {
+	writeCapBytes, err := writeCap.MarshalBinary()
+	if err != nil {
+		return err
+	}
+
+	capHash := hash.Sum256(writeCapBytes)
+	d.capabilityLock.Lock()
+	defer d.capabilityLock.Unlock()
+
+	if d.usedWriteCaps[capHash] {
+		return errors.New("capability already in use")
+	}
+
+	// Mark this capability as used
+	d.usedWriteCaps[capHash] = true
+	return nil
 }

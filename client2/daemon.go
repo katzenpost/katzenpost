@@ -6,6 +6,7 @@ package client2
 import (
 	"crypto/hmac"
 	"crypto/rand"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	mrand "math/rand"
@@ -86,6 +87,17 @@ type Daemon struct {
 	channelMap             map[[thin.ChannelIDLength]byte]*ChannelDescriptor
 	channelMapLock         *sync.RWMutex
 
+	// New API fields (separate from old API)
+	newSurbIDToChannelMap     map[[sphinxConstants.SURBIDLength]byte]uint16
+	newSurbIDToChannelMapLock *sync.RWMutex
+	newChannelMap             map[uint16]*ChannelDescriptor
+	newChannelMapLock         *sync.RWMutex
+
+	// Capability deduplication maps to prevent reusing read/write capabilities
+	usedReadCaps   map[[hash.HashSize]byte]bool // Maps hash of ReadCap to true
+	usedWriteCaps  map[[hash.HashSize]byte]bool // Maps hash of WriteCap to true
+	capabilityLock *sync.RWMutex                // Protects both capability maps
+
 	// Cryptographically secure random number generator
 	secureRand *mrand.Rand
 
@@ -113,6 +125,15 @@ func NewDaemon(cfg *config.Config) (*Daemon, error) {
 		surbIDToChannelMapLock: new(sync.RWMutex),
 		channelMap:             make(map[[thin.ChannelIDLength]byte]*ChannelDescriptor),
 		channelMapLock:         new(sync.RWMutex),
+		// New API fields
+		newSurbIDToChannelMap:     make(map[[sphinxConstants.SURBIDLength]byte]uint16),
+		newSurbIDToChannelMapLock: new(sync.RWMutex),
+		newChannelMap:             make(map[uint16]*ChannelDescriptor),
+		newChannelMapLock:         new(sync.RWMutex),
+		// capability deduplication fields:
+		usedReadCaps:   make(map[[hash.HashSize]byte]bool),
+		usedWriteCaps:  make(map[[hash.HashSize]byte]bool),
+		capabilityLock: new(sync.RWMutex),
 		// Initialize cryptographically secure random number generator
 		secureRand: hpqcRand.NewMath(),
 	}
@@ -137,6 +158,25 @@ func (d *Daemon) initLogging() error {
 		d.log = d.logbackend.GetLogger("katzenpost/client2")
 	}
 	return err
+}
+
+// generateUniqueNewChannelID generates a unique uint16 channel ID for the new API
+func (d *Daemon) generateUniqueNewChannelID() uint16 {
+	d.newChannelMapLock.Lock()
+	defer d.newChannelMapLock.Unlock()
+
+	for {
+		// Generate a random uint16
+		var channelID uint16
+		binary.Read(rand.Reader, binary.BigEndian, &channelID)
+
+		// Check if it's already in use
+		if _, exists := d.newChannelMap[channelID]; !exists {
+			// Reserve the ID by adding an empty entry (will be replaced with actual descriptor)
+			d.newChannelMap[channelID] = nil
+			return channelID
+		}
+	}
 }
 
 // Shutdown cleanly shuts down a given Server instance.
@@ -283,6 +323,8 @@ func (d *Daemon) egressWorker() {
 
 				// New Pigeonhole Channel related commands proceed here:
 
+			case request.CreateWriteChannel != nil:
+				d.createWriteChannel(request)
 			case request.CreateChannel != nil:
 				d.createChannel(request)
 			case request.CreateReadChannel != nil:

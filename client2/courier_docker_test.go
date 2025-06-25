@@ -15,9 +15,38 @@ import (
 	_ "github.com/katzenpost/katzenpost/client2/thin" // Used by helper functions
 )
 
-func testDockerCourierServiceNewThinclientAPI(t *testing.T) {
-	t.Log("TESTING COURIER SERVICE - New thin client API not yet implemented")
-	t.Skip("New thin client API not yet implemented - placeholder for future implementation")
+func TestDockerCourierServiceNewThinclientAPI(t *testing.T) {
+	t.Log("TESTING COURIER SERVICE - New thin client API CreateWriteChannel")
+
+	// Create a thin client for Alice
+	t.Log("Creating Alice's thin client")
+	aliceThinClient := setupThinClient(t)
+	defer aliceThinClient.Close()
+
+	// Wait for PKI document
+	_ = validatePKIDocument(t, aliceThinClient)
+
+	// Create context with timeout for operations
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+
+	// === Test CreateWriteChannel (new API) ===
+	t.Log("Alice: Creating write channel using new API")
+	channelID, readCap, writeCap, nextMessageIndex, err := aliceThinClient.CreateWriteChannel(ctx, nil, nil)
+	require.NoError(t, err)
+	require.NotZero(t, channelID)
+	require.NotNil(t, readCap)
+	require.NotNil(t, writeCap)
+	require.NotNil(t, nextMessageIndex)
+	t.Logf("Alice: Successfully created write channel %d", channelID)
+	readCapBytes, _ := readCap.MarshalBinary()
+	writeCapBytes, _ := writeCap.MarshalBinary()
+	indexBytes, _ := nextMessageIndex.MarshalBinary()
+	t.Logf("Alice: ReadCap: %x", readCapBytes[:16])
+	t.Logf("Alice: WriteCap: %x", writeCapBytes[:16])
+	t.Logf("Alice: NextMessageIndex: %x", indexBytes[:16])
+
+	t.Log("SUCCESS: CreateWriteChannel API working!")
 }
 
 func testDockerCourierServiceOldThinclientAPI(t *testing.T) {

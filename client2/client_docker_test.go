@@ -35,7 +35,7 @@ func TestAllClient2Tests(t *testing.T) {
 	t.Run("TestDockerClientSendReceive", testDockerClientSendReceive)
 	t.Run("TestDockerCourierServiceOldThinclientAPI", testDockerCourierServiceOldThinclientAPI)
 
-	t.Run("TestDockerCourierServiceNewThinclientAPI", testDockerCourierServiceNewThinclientAPI)
+	t.Run("TestDockerCourierServiceNewThinclientAPI", TestDockerCourierServiceNewThinclientAPI)
 }
 
 func testDockerMultiplexClients(t *testing.T) {
