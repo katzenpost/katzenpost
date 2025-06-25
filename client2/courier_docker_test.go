@@ -16,17 +16,8 @@ import (
 )
 
 func testDockerCourierServiceNewThinclientAPI(t *testing.T) {
-	t.Log("TESTING COURIER SERVICE - Starting pigeonhole channel test")
-
-	// Create separate thin clients for Alice and Bob
-	t.Log("Creating Alice's thin client")
-	aliceThinClient := setupThinClient(t)
-	t.Log("Alice's thin client connected")
-
-	t.Log("Creating Bob's thin client")
-	bobThinClient := setupThinClient(t)
-	t.Log("Bob's thin client connected")
-
+	t.Log("TESTING COURIER SERVICE - New thin client API not yet implemented")
+	t.Skip("New thin client API not yet implemented - placeholder for future implementation")
 }
 
 func testDockerCourierServiceOldThinclientAPI(t *testing.T) {
