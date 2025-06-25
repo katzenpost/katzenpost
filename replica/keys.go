@@ -115,9 +115,11 @@ func (k *EnvelopeKeys) Prune() bool {
 	didPrune := false
 	k.keysLock.Lock()
 	defer k.keysLock.Unlock()
-	for key, _ := range k.keys {
+	for key, keypair := range k.keys {
 		if key < epoch-1 {
 			k.log.Debugf("Purging expired key for epoch: %v", key)
+			// Remove key files from disk
+			keypair.PurgeKeyFiles(k.datadir, k.scheme, key)
 			delete(k.keys, key)
 			didPrune = true
 		}
@@ -136,6 +138,13 @@ func (k *EnvelopeKeys) GetKeypair(replicaEpoch uint64) (*replicaCommon.EnvelopeK
 }
 
 func (k *EnvelopeKeys) EnsureKey(replicaEpoch uint64) (*replicaCommon.EnvelopeKey, error) {
+	// Check if the requested epoch is too old to generate a key for
+	// Allow keys for a reasonable range of past epochs, but reject very old ones
+	currentEpoch, _, _ := replicaCommon.ReplicaNow()
+	if replicaEpoch < currentEpoch-15 {
+		return nil, errors.New("cannot generate key for epoch that is too old")
+	}
+
 	keypair, err := k.GetKeypair(replicaEpoch)
 	if err != nil {
 		err = k.Generate(replicaEpoch)
