@@ -672,7 +672,7 @@ func (d *Daemon) lookupNewChannel(surbid *[sphinxConstants.SURBIDLength]byte) (u
 	channelID, ok := d.newSurbIDToChannelMap[*surbid]
 	d.newSurbIDToChannelMapLock.RUnlock()
 	if !ok {
-		d.log.Errorf("no channelID found for surbID %x in new API", surbid[:])
+		d.log.Errorf("BUG no channelID found for surbID %x in new API", surbid[:])
 		return 0, nil, fmt.Errorf("no channelID found for surbID %x in new API", surbid[:])
 	}
 
@@ -680,7 +680,7 @@ func (d *Daemon) lookupNewChannel(surbid *[sphinxConstants.SURBIDLength]byte) (u
 	channelDesc, ok := d.newChannelMap[channelID]
 	d.newChannelMapLock.RUnlock()
 	if !ok {
-		d.log.Errorf("no channel found for channelID %d in new API", channelID)
+		d.log.Errorf("BUG no channel found for channelID %d in new API", channelID)
 		return 0, nil, fmt.Errorf("no channel found for channelID %d in new API", channelID)
 	}
 
