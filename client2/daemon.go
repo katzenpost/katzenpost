@@ -457,6 +457,7 @@ func (d *Daemon) handleReply(reply *sphinxReply) {
 		delete(d.arqSurbIDMap, *reply.surbID)
 		d.replyLock.Unlock()
 	case isChannelReply:
+		d.log.Debugf("Received channel reply for SURB ID %x", reply.surbID[:])
 		desc = myChannelReplyDescriptor
 	default:
 		return
@@ -481,6 +482,7 @@ func (d *Daemon) handleReply(reply *sphinxReply) {
 	if isChannelReply {
 		err := d.handleChannelReply(desc.appID, desc.ID, reply.surbID, plaintext, conn)
 		if err == nil {
+			d.log.Infof("Handled channel reply book keeping for SURB ID %x, sent response to client", reply.surbID[:])
 			d.channelRepliesLock.Lock()
 			delete(d.channelReplies, *reply.surbID)
 			d.channelRepliesLock.Unlock()
@@ -1072,6 +1074,8 @@ func (d *Daemon) send(request *Request) {
 		if request.SendMessage.ChannelID != nil {
 			d.log.Infof("NEW API: Processing SendMessage with ChannelID %d, SURB ID %x",
 				*request.SendMessage.ChannelID, request.SendMessage.SURBID[:8])
+
+			d.log.Infof("NEW API: Storing SURB ID %x with Channel ID %d", request.SendMessage.SURBID[:8], *request.SendMessage.ChannelID)
 
 			// New API: store in channel replies and new SURB ID map
 			d.channelRepliesLock.Lock()
