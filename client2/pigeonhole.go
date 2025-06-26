@@ -201,15 +201,9 @@ func CreateChannelWriteRequestPrepareOnly(
 	sig := [bacap.SignatureSize]byte{}
 	copy(sig[:], sigraw)
 
-	boxIDArray := [32]uint8{}
-	copy(boxIDArray[:], boxID[:])
-
-	sigArray := [64]uint8{}
-	copy(sigArray[:], sig[:])
-
 	writeRequest := &pigeonhole.ReplicaWrite{
-		BoxID:      boxIDArray,
-		Signature:  sigArray,
+		BoxID:      boxID,
+		Signature:  sig,
 		PayloadLen: uint32(len(ciphertext)),
 		Payload:    ciphertext,
 	}
@@ -1065,14 +1059,10 @@ func (d *Daemon) readChannelV2(request *Request) {
 		return
 	}
 
-	// Convert boxID to array
-	var boxIDArray [32]uint8
-	copy(boxIDArray[:], boxID[:])
-
 	msg := &pigeonhole.ReplicaInnerMessage{
 		MessageType: 0, // 0 = read
 		ReadMsg: &pigeonhole.ReplicaRead{
-			BoxID: boxIDArray,
+			BoxID: *boxID,
 		},
 	}
 
