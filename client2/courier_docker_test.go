@@ -6,7 +6,9 @@
 package client2
 
 import (
+	"bytes"
 	"context"
+	"encoding/binary"
 	"testing"
 	"time"
 
@@ -14,118 +16,182 @@ import (
 
 	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/katzenpost/client2/common"
-	_ "github.com/katzenpost/katzenpost/client2/thin" // Used by helper functions
+	"github.com/katzenpost/katzenpost/client2/thin"
+	"github.com/katzenpost/katzenpost/pigeonhole"
 )
 
 func TestDockerCourierServiceNewThinclientAPI(t *testing.T) {
-	t.Log("TESTING COURIER SERVICE - New thin client API CreateWriteChannel")
+	t.Log("TESTING COURIER SERVICE - New thin client API")
 
-	// Create a thin client for Alice
-	t.Log("Creating Alice's thin client")
+	// Setup clients and get current epoch
 	aliceThinClient := setupThinClient(t)
 	defer aliceThinClient.Close()
-
-	// Wait for PKI document and get current epoch
-	currentDoc := validatePKIDocument(t, aliceThinClient)
-	currentEpoch := currentDoc.Epoch
-	t.Logf("Using PKI document for epoch %d", currentEpoch)
-
-	// Create context with timeout for operations
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	defer cancel()
-
-	// === Test CreateWriteChannel (new API) ===
-	t.Log("Alice: Creating write channel using new API")
-	channelID, readCap, writeCap, nextMessageIndex, err := aliceThinClient.CreateWriteChannel(ctx, nil, nil)
-	require.NoError(t, err)
-	require.NotZero(t, channelID)
-	require.NotNil(t, readCap)
-	require.NotNil(t, writeCap)
-	require.NotNil(t, nextMessageIndex)
-	t.Logf("Alice: Successfully created write channel %d", channelID)
-	readCapBytes, _ := readCap.MarshalBinary()
-	writeCapBytes, _ := writeCap.MarshalBinary()
-	indexBytes, _ := nextMessageIndex.MarshalBinary()
-	t.Logf("Alice: ReadCap: %x", readCapBytes[:16])
-	t.Logf("Alice: WriteCap: %x", writeCapBytes[:16])
-	t.Logf("Alice: NextMessageIndex: %x", indexBytes[:16])
-
-	// Create a thin client for Bob
-	t.Log("Creating Bob's thin client")
 	bobThinClient := setupThinClient(t)
 	defer bobThinClient.Close()
 
-	// Wait for PKI document for Bob and validate it's for the same epoch
+	currentDoc := validatePKIDocument(t, aliceThinClient)
+	currentEpoch := currentDoc.Epoch
 	bobDoc := validatePKIDocument(t, bobThinClient)
-	require.Equal(t, currentEpoch, bobDoc.Epoch, "Alice and Bob should use the same PKI epoch")
-	t.Logf("Bob also using PKI document for epoch %d", bobDoc.Epoch)
+	require.Equal(t, currentEpoch, bobDoc.Epoch, "Alice and Bob must use same PKI epoch")
+	t.Logf("Using PKI document for epoch %d", currentEpoch)
 
-	// === Test CreateReadChannelV2 (new API) ===
-	t.Log("Bob: Creating read channel using new API")
-	bobChannelID, bobNextMessageIndex, err := bobThinClient.CreateReadChannelV2(ctx, readCap, nil)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+
+	// Alice creates write channel
+	t.Log("Alice: Creating write channel")
+	channelID, readCap, _, _, err := aliceThinClient.CreateWriteChannel(ctx, nil, nil)
 	require.NoError(t, err)
-	require.NotZero(t, bobChannelID)
-	require.NotNil(t, bobNextMessageIndex)
-	t.Logf("Bob: Successfully created read channel %d", bobChannelID)
-	bobIndexBytes, _ := bobNextMessageIndex.MarshalBinary()
-	t.Logf("Bob: NextMessageIndex: %x", bobIndexBytes[:16])
+	t.Logf("Alice: Created write channel %d", channelID)
 
-	// === Test WriteChannelV2 (new API) ===
-	t.Log("Alice: Testing WriteChannelV2 method")
-	testMessage := []byte("Hello from Alice via WriteChannelV2!")
-	sendPayload, nextWriteIndex, err := aliceThinClient.WriteChannelV2(ctx, channelID, testMessage)
-	if err != nil {
-		// Expected to fail with "Service unavailable" since it's not implemented yet
-		t.Logf("Alice: WriteChannelV2 failed as expected (not implemented): %v", err)
-		require.Contains(t, err.Error(), "Service unavailable")
-	} else {
-		// If it succeeds in the future, validate the response
-		require.NotNil(t, sendPayload)
-		require.NotNil(t, nextWriteIndex)
-		t.Logf("Alice: WriteChannelV2 succeeded, payload size: %d bytes", len(sendPayload))
-	}
+	// Bob creates read channel
+	t.Log("Bob: Creating read channel")
+	bobChannelID, _, err := bobThinClient.CreateReadChannelV2(ctx, readCap, nil)
+	require.NoError(t, err)
+	t.Logf("Bob: Created read channel %d", bobChannelID)
 
-	// === Test ReadChannelV2 (new API) ===
-	t.Log("Bob: Testing ReadChannelV2 method")
+	// Alice writes message
+	originalMessage := []byte("Hello from Alice to Bob via new channel API!")
+	t.Log("Alice: Writing message")
+	writePayload, _, err := aliceThinClient.WriteChannelV2(ctx, channelID, originalMessage)
+	require.NoError(t, err)
+	require.NotNil(t, writePayload)
+	t.Logf("Alice: Generated write payload (%d bytes)", len(writePayload))
+
+	// Alice sends write query via courier
+	epochDoc, err := aliceThinClient.PKIDocumentForEpoch(currentEpoch)
+	require.NoError(t, err)
+	courierServices := common.FindServices("courier", epochDoc)
+	require.True(t, len(courierServices) > 0, "No courier services found")
+	courierService := courierServices[0]
+
+	identityHash := hash.Sum256(courierService.MixDescriptor.IdentityKey)
+	err = aliceThinClient.SendChannelQuery(ctx, channelID, writePayload, &identityHash, courierService.RecipientQueueID)
+	require.NoError(t, err)
+	t.Log("Alice: Sent write query to courier")
+
+	// Wait for message propagation
+	time.Sleep(3 * time.Second)
+
+	// Bob reads message
+	t.Log("Bob: Reading message")
 	messageID := bobThinClient.NewMessageID()
-	readPayload, nextReadIndex, err := bobThinClient.ReadChannelV2(ctx, bobChannelID, messageID)
-	if err != nil {
-		// Expected to fail with "Service unavailable" since it's not implemented yet
-		t.Logf("Bob: ReadChannelV2 failed as expected (not implemented): %v", err)
-		require.Contains(t, err.Error(), "Service unavailable")
-	} else {
-		// If it succeeds in the future, validate the response
-		require.NotNil(t, readPayload)
-		require.NotNil(t, nextReadIndex)
-		t.Logf("Bob: ReadChannelV2 succeeded, payload size: %d bytes", len(readPayload))
-	}
+	readPayload, _, err := bobThinClient.ReadChannelV2(ctx, bobChannelID, messageID)
+	require.NoError(t, err)
+	require.NotNil(t, readPayload)
+	t.Logf("Bob: Generated read payload (%d bytes)", len(readPayload))
 
-	// === Test SendChannelQuery (new API) ===
-	t.Log("Testing SendChannelQuery method")
-	if sendPayload != nil {
-		// Get courier service for sending the query using epoch-specific PKI document
-		aliceEpochDoc, err := aliceThinClient.PKIDocumentForEpoch(currentEpoch)
-		require.NoError(t, err)
-		require.NotNil(t, aliceEpochDoc)
+	// Bob sends read query via courier
+	err = bobThinClient.SendChannelQuery(ctx, bobChannelID, readPayload, &identityHash, courierService.RecipientQueueID)
+	require.NoError(t, err)
+	t.Log("Bob: Sent read query to courier")
 
-		courierServices := common.FindServices("courier", aliceEpochDoc)
-		require.True(t, len(courierServices) > 0, "No courier services found in PKI document")
-		courierService := courierServices[0] // Use first available courier
+	// Wait for Bob to receive Alice's message via MessageReplyEvent with retry mechanism
+	t.Log("Bob: Waiting for message reply...")
+	eventSink := bobThinClient.EventSink()
+	defer bobThinClient.StopEventSink(eventSink)
 
-		// Test SendChannelQuery with the payload from WriteChannelV2
-		identityHash := hash.Sum256(courierService.MixDescriptor.IdentityKey)
-		err = aliceThinClient.SendChannelQuery(ctx, channelID, sendPayload,
-			&identityHash, courierService.RecipientQueueID)
-		if err != nil {
-			t.Logf("SendChannelQuery failed: %v", err)
-		} else {
-			t.Log("SendChannelQuery succeeded")
+	var receivedPayload []byte
+	maxRetries := 10
+	retryDelay := 2 * time.Second
+
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		t.Logf("Bob: Waiting for message reply (attempt %d/%d)...", attempt, maxRetries)
+
+		timeout := time.After(10 * time.Second)
+
+		for {
+			select {
+			case <-timeout:
+				if attempt == maxRetries {
+					t.Fatal("Timeout waiting for message reply after all retries")
+				}
+				t.Logf("Bob: Timeout on attempt %d, retrying...", attempt)
+				goto nextAttempt
+			case event := <-eventSink:
+				switch v := event.(type) {
+				case *thin.MessageReplyEvent:
+					if v.Err != nil {
+						t.Fatalf("Bob: Message reply error: %v", v.Err)
+					}
+					receivedPayload = v.Payload
+					t.Logf("Bob: Received message reply (%d bytes)", len(receivedPayload))
+
+					// Check if we got actual data or empty payload
+					if len(receivedPayload) > 0 {
+						t.Logf("Bob: Successfully received message on attempt %d", attempt)
+						goto messageReceived
+					} else {
+						t.Logf("Bob: Received empty payload on attempt %d, retrying...", attempt)
+						goto nextAttempt
+					}
+				case *thin.ConnectionStatusEvent:
+					if !v.IsConnected {
+						t.Fatal("Bob: Lost connection while waiting for reply")
+					}
+				default:
+					// Ignore other events
+				}
+			}
 		}
-	} else {
-		t.Log("Skipping SendChannelQuery test since WriteChannelV2 is not implemented")
+
+	nextAttempt:
+		if attempt < maxRetries {
+			t.Logf("Bob: Waiting %v before retry...", retryDelay)
+			time.Sleep(retryDelay)
+
+			// Send another read query for retry
+			readPayload, _, err := bobThinClient.ReadChannelV2(ctx, bobChannelID, messageID)
+			require.NoError(t, err)
+			err = bobThinClient.SendChannelQuery(ctx, bobChannelID, readPayload, &identityHash, courierService.RecipientQueueID)
+			require.NoError(t, err)
+			t.Logf("Bob: Sent retry read query (attempt %d)", attempt+1)
+		}
 	}
 
-	t.Log("SUCCESS: WriteChannelV2, ReadChannelV2, and SendChannelQuery APIs tested!")
+messageReceived:
+	// Debug: examine the payload structure
+	t.Logf("Bob: Received payload (%d bytes)", len(receivedPayload))
+	t.Logf("Bob: First 64 bytes: %x", receivedPayload[:min(64, len(receivedPayload))])
+
+	// Try extracting directly as padded payload (like reference implementation)
+	actualMessage, err := pigeonhole.ExtractMessageFromPaddedPayload(receivedPayload)
+	if err == nil {
+		// Direct extraction worked
+		require.True(t, bytes.Equal(originalMessage, actualMessage),
+			"Bob's received message does not match Alice's original message")
+		t.Log("SUCCESS: Bob received Alice's exact original message!")
+		t.Logf("Original: %s", string(originalMessage))
+		t.Logf("Received: %s", string(actualMessage))
+		return
+	}
+
+	t.Logf("Bob: Direct extraction failed: %v", err)
+	t.Logf("Bob: Trying to parse as protocol structures...")
+
+	// If direct extraction fails, the payload might be wrapped in protocol structures
+	// Let's examine the payload more carefully
+	if len(receivedPayload) >= 4 {
+		// Check if it starts with a length prefix
+		length := binary.BigEndian.Uint32(receivedPayload[:4])
+		t.Logf("Bob: Potential length prefix: %d (0x%x)", length, length)
+
+		if length > 0 && length < uint32(len(receivedPayload)) {
+			// Try extracting from offset 4
+			actualMessage, err := pigeonhole.ExtractMessageFromPaddedPayload(receivedPayload[4:])
+			if err == nil {
+				require.True(t, bytes.Equal(originalMessage, actualMessage),
+					"Bob's received message does not match Alice's original message")
+				t.Log("SUCCESS: Bob received Alice's message after skipping length prefix!")
+				t.Logf("Original: %s", string(originalMessage))
+				t.Logf("Received: %s", string(actualMessage))
+				return
+			}
+			t.Logf("Bob: Extraction after length prefix failed: %v", err)
+		}
+	}
+
+	t.Fatalf("Bob: Could not extract message from received payload")
 }
 
 func testDockerCourierServiceOldThinclientAPI(t *testing.T) {

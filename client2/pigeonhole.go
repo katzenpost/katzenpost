@@ -877,6 +877,20 @@ func (d *Daemon) sendWriteChannelV2Error(request *Request, errorCode uint8) {
 	}
 }
 
+func (d *Daemon) sendReadChannelV2Error(request *Request, errorCode uint8) {
+	conn := d.listener.getConnection(request.AppID)
+	if conn != nil {
+		conn.sendResponse(&Response{
+			AppID: request.AppID,
+			ReadChannelV2Reply: &thin.ReadChannelV2Reply{
+				MessageID: request.ReadChannelV2.MessageID,
+				ChannelID: request.ReadChannelV2.ChannelID,
+				ErrorCode: errorCode,
+			},
+		})
+	}
+}
+
 func (d *Daemon) createOrResumeStatefulReaderV2(request *Request) (*bacap.StatefulReader, error) {
 	if request.CreateReadChannelV2.ReadCap == nil {
 		return nil, errors.New("CreateReadChannelV2 requires a ReadCap")
@@ -1020,15 +1034,105 @@ func (d *Daemon) writeChannelV2(request *Request) {
 }
 
 func (d *Daemon) readChannelV2(request *Request) {
-	conn := d.listener.getConnection(request.AppID)
-	if conn != nil {
-		conn.sendResponse(&Response{
-			AppID: request.AppID,
-			ReadChannelV2Reply: &thin.ReadChannelV2Reply{
-				MessageID: request.ReadChannelV2.MessageID,
-				ChannelID: request.ReadChannelV2.ChannelID,
-				ErrorCode: thin.ThinClientErrorServiceUnavailable,
-			},
-		})
+	channelID := request.ReadChannelV2.ChannelID
+
+	d.newChannelMapLock.RLock()
+	channelDesc, ok := d.newChannelMap[channelID]
+	d.newChannelMapLock.RUnlock()
+
+	if !ok {
+		d.log.Errorf("readChannelV2 failure: no channel found for channelID %d", channelID)
+		d.sendReadChannelV2Error(request, thin.ThinClientErrorChannelNotFound)
+		return
 	}
+
+	_, doc := d.client.CurrentDocument()
+
+	channelDesc.StatefulReaderLock.Lock()
+	boxID, err := channelDesc.StatefulReader.NextBoxID()
+	if err != nil {
+		channelDesc.StatefulReaderLock.Unlock()
+		d.log.Errorf("readChannelV2 failure: failed to get next box ID: %s", err)
+		d.sendReadChannelV2Error(request, thin.ThinClientErrorInternalError)
+		return
+	}
+	nextMessageIndex, err := channelDesc.StatefulReader.NextIndex.NextIndex()
+	channelDesc.StatefulReaderLock.Unlock()
+
+	if err != nil {
+		d.log.Errorf("readChannelV2 failure: failed to get next message index: %s", err)
+		d.sendReadChannelV2Error(request, thin.ThinClientErrorInternalError)
+		return
+	}
+
+	// Convert boxID to array
+	var boxIDArray [32]uint8
+	copy(boxIDArray[:], boxID[:])
+
+	msg := &pigeonhole.ReplicaInnerMessage{
+		MessageType: 0, // 0 = read
+		ReadMsg: &pigeonhole.ReplicaRead{
+			BoxID: boxIDArray,
+		},
+	}
+
+	intermediateReplicas, replicaPubKeys, err := pigeonhole.GetRandomIntermediateReplicas(doc)
+	if err != nil {
+		d.log.Errorf("readChannelV2 failure: failed to get intermediate replicas: %s", err)
+		d.sendReadChannelV2Error(request, thin.ThinClientErrorInternalError)
+		return
+	}
+
+	mkemPrivateKey, mkemCiphertext := replicaCommon.MKEMNikeScheme.Encapsulate(replicaPubKeys, msg.Bytes())
+
+	// Convert DEK ciphertexts to arrays
+	var dek1, dek2 [60]uint8
+	copy(dek1[:], mkemCiphertext.DEKCiphertexts[0][:])
+	copy(dek2[:], mkemCiphertext.DEKCiphertexts[1][:])
+
+	senderPubkeyBytes := mkemPrivateKey.Public().Bytes()
+	courierEnvelope := &pigeonhole.CourierEnvelope{
+		IntermediateReplicas: intermediateReplicas,
+		Dek1:                 dek1,
+		Dek2:                 dek2,
+		ReplyIndex:           0,
+		Epoch:                doc.Epoch,
+		SenderPubkeyLen:      uint16(len(senderPubkeyBytes)),
+		SenderPubkey:         senderPubkeyBytes,
+		CiphertextLen:        uint32(len(mkemCiphertext.Envelope)),
+		Ciphertext:           mkemCiphertext.Envelope,
+		IsRead:               1, // 1 = read
+	}
+	envelopePrivateKey := mkemPrivateKey
+
+	envHash := courierEnvelope.EnvelopeHash()
+	channelDesc.EnvelopeDescriptorsLock.Lock()
+	channelDesc.EnvelopeDescriptors[*envHash] = &EnvelopeDescriptor{
+		Epoch:       doc.Epoch,
+		ReplicaNums: courierEnvelope.IntermediateReplicas,
+		EnvelopeKey: envelopePrivateKey.Bytes(),
+	}
+	channelDesc.EnvelopeDescriptorsLock.Unlock()
+
+	courierQuery := &pigeonhole.CourierQuery{
+		QueryType: 0, // 0 = envelope
+		Envelope:  courierEnvelope,
+	}
+
+	conn := d.listener.getConnection(request.AppID)
+	if conn == nil {
+		d.log.Errorf(errNoConnectionForAppID, request.AppID[:])
+		d.sendReadChannelV2Error(request, thin.ThinClientErrorConnectionLost)
+		return
+	}
+	conn.sendResponse(&Response{
+		AppID: request.AppID,
+		ReadChannelV2Reply: &thin.ReadChannelV2Reply{
+			MessageID:          request.ReadChannelV2.MessageID,
+			ChannelID:          channelID,
+			SendMessagePayload: courierQuery.Bytes(),
+			NextMessageIndex:   nextMessageIndex,
+			ErrorCode:          thin.ThinClientSuccess,
+		},
+	})
 }

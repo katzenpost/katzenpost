@@ -485,9 +485,14 @@ func (d *Daemon) handleReply(reply *sphinxReply) {
 			delete(d.channelReplies, *reply.surbID)
 			d.channelRepliesLock.Unlock()
 
+			// Clean up from both old and new API maps
 			d.surbIDToChannelMapLock.Lock()
 			delete(d.surbIDToChannelMap, *reply.surbID)
 			d.surbIDToChannelMapLock.Unlock()
+
+			d.newSurbIDToChannelMapLock.Lock()
+			delete(d.newSurbIDToChannelMap, *reply.surbID)
+			d.newSurbIDToChannelMapLock.Unlock()
 		}
 	} else {
 		conn.sendResponse(&Response{
@@ -509,37 +514,96 @@ func (d *Daemon) handleChannelReply(appid *[AppIDLength]byte,
 	plaintext []byte,
 	conn *incomingConn) error {
 
-	channelID, channelDesc, err := d.lookupChannel(surbid)
-	if err != nil {
-		return err
+	d.log.Infof("CHANNEL REPLY: Looking up SURB ID %x, payload size: %d bytes", surbid[:8], len(plaintext))
+
+	// Try new API first, then fall back to old API
+	newChannelID, newChannelDesc, newErr := d.lookupNewChannel(surbid)
+	if newErr == nil {
+		d.log.Infof("NEW API: Found channel %d for SURB ID %x, payload size: %d bytes", newChannelID, surbid[:8], len(plaintext))
+		// New API channel found
+		return d.handleNewChannelReply(appid, mesgID, surbid, plaintext, conn, newChannelID, newChannelDesc)
 	}
 
-	isReader, isWriter, err := d.validateChannel(channelID, channelDesc)
+	// Fall back to old API
+	oldChannelID, oldChannelDesc, oldErr := d.lookupChannel(surbid)
+	if oldErr != nil {
+		d.log.Errorf("SURB ID %x not found in either old or new API maps", surbid[:8])
+		return fmt.Errorf("SURB ID not found in either API: new=%v, old=%v", newErr, oldErr)
+	}
+
+	d.log.Infof("OLD API: Found channel %x for SURB ID %x", oldChannelID[:8], surbid[:8])
+	// Old API channel found
+	return d.handleOldChannelReply(appid, mesgID, surbid, plaintext, conn, oldChannelID, oldChannelDesc)
+}
+
+// handleNewChannelReply handles channel replies for the new API
+func (d *Daemon) handleNewChannelReply(appid *[AppIDLength]byte,
+	mesgID *[MessageIDLength]byte,
+	surbid *[sphinxConstants.SURBIDLength]byte,
+	plaintext []byte,
+	conn *incomingConn,
+	channelID uint16,
+	channelDesc *ChannelDescriptor) error {
+
+	d.log.Infof("NEW API REPLY: Processing reply for channel %d, payload size: %d bytes", channelID, len(plaintext))
+
+	if len(plaintext) == 0 {
+		d.log.Infof("NEW API REPLY: Empty payload for channel %d, not sending response", channelID)
+		return nil
+	}
+
+	isReader, isWriter, err := d.validateNewChannel(channelID, channelDesc)
 	if err != nil {
 		return err
 	}
 
 	// First, parse the courier query reply to check what type of reply it is
+	d.log.Infof("NEW API REPLY: Parsing courier query reply...")
 	courierQueryReply, err := pigeonhole.ParseCourierQueryReply(plaintext)
 	if err != nil {
-		d.log.Errorf("failed to unmarshal courier query reply: %s", err)
+		d.log.Errorf("NEW API REPLY: Failed to unmarshal courier query reply: %s", err)
 		return fmt.Errorf("failed to unmarshal courier query reply: %s", err)
 	}
 
 	// Handle copy command replies
 	if courierQueryReply.CopyCommandReply != nil {
-		return d.handleCopyReply(appid, channelID, courierQueryReply.CopyCommandReply, conn)
+		d.log.Infof("NEW API REPLY: Handling copy command reply")
+		return d.handleNewCopyReply(appid, channelID, courierQueryReply.CopyCommandReply, conn)
 	}
 
 	// Handle envelope replies (read/write operations)
 	if courierQueryReply.EnvelopeReply != nil {
+		d.log.Infof("NEW API REPLY: Handling envelope reply")
+
+		// Check if the envelope reply has an empty payload (no data available yet)
+		if len(courierQueryReply.EnvelopeReply.Payload) == 0 {
+			d.log.Infof("NEW API REPLY: Empty payload - no data available yet, sending empty response")
+			// Send empty response to client so they can retry
+			err := conn.sendResponse(&Response{
+				AppID: appid,
+				MessageReplyEvent: &thin.MessageReplyEvent{
+					MessageID: mesgID,
+					Payload:   nil, // Empty payload
+					Err:       nil, // No error - just no data yet
+				},
+			})
+			if err != nil {
+				d.log.Errorf("NEW API REPLY: Failed to send empty response: %s", err)
+				return err
+			}
+			return nil
+		}
+
 		env, envelopeDesc, privateKey, err := d.processEnvelopeReply(courierQueryReply.EnvelopeReply, channelDesc)
 		if err != nil {
+			d.log.Errorf("NEW API REPLY: Failed to process envelope reply: %s", err)
 			return err
 		}
 
+		d.log.Infof("NEW API REPLY: Decrypting MKEM envelope...")
 		innerMsg, err := d.decryptMKEMEnvelope(env, envelopeDesc, privateKey)
 		if err != nil {
+			d.log.Errorf("NEW API REPLY: Failed to decrypt MKEM envelope: %s", err)
 			return err
 		}
 
@@ -547,7 +611,7 @@ func (d *Daemon) handleChannelReply(appid *[AppIDLength]byte,
 
 		switch {
 		case innerMsg.ReadReply != nil:
-			params := &ReplyHandlerParams{
+			params := &NewReplyHandlerParams{
 				AppID:       appid,
 				MessageID:   mesgID,
 				ChannelID:   channelID,
@@ -557,9 +621,9 @@ func (d *Daemon) handleChannelReply(appid *[AppIDLength]byte,
 				IsWriter:    isWriter,
 				Conn:        conn,
 			}
-			return d.handleReadReply(params, innerMsg.ReadReply)
+			return d.handleNewReadReply(params, innerMsg.ReadReply)
 		case innerMsg.WriteReply != nil:
-			params := &ReplyHandlerParams{
+			params := &NewReplyHandlerParams{
 				AppID:       appid,
 				MessageID:   mesgID,
 				ChannelID:   channelID,
@@ -569,17 +633,17 @@ func (d *Daemon) handleChannelReply(appid *[AppIDLength]byte,
 				IsWriter:    isWriter,
 				Conn:        conn,
 			}
-			return d.handleWriteReply(params, innerMsg.WriteReply)
+			return d.handleNewWriteReply(params, innerMsg.WriteReply)
 		}
-		d.log.Errorf("bug 6, invalid book keeping for channelID %x", channelID[:])
-		return fmt.Errorf("bug 6, invalid book keeping for channelID %x", channelID[:])
+		d.log.Errorf("bug 6, invalid book keeping for channelID %d", channelID)
+		return fmt.Errorf("bug 6, invalid book keeping for channelID %d", channelID)
 	}
 
 	d.log.Errorf("courier query reply contains neither envelope reply nor copy command reply")
 	return fmt.Errorf("courier query reply contains neither envelope reply nor copy command reply")
 }
 
-// lookupChannel finds the channel descriptor for a given SURB ID
+// lookupChannel finds the channel descriptor for a given SURB ID (old API)
 func (d *Daemon) lookupChannel(surbid *[sphinxConstants.SURBIDLength]byte) ([thin.ChannelIDLength]byte, *ChannelDescriptor, error) {
 	d.surbIDToChannelMapLock.RLock()
 	channelID, ok := d.surbIDToChannelMap[*surbid]
@@ -595,6 +659,27 @@ func (d *Daemon) lookupChannel(surbid *[sphinxConstants.SURBIDLength]byte) ([thi
 	if !ok {
 		d.log.Errorf("no channel found for channelID %x", channelID[:])
 		return [thin.ChannelIDLength]byte{}, nil, fmt.Errorf("no channel found for channelID %x", channelID[:])
+	}
+
+	return channelID, channelDesc, nil
+}
+
+// lookupNewChannel finds the channel descriptor for a given SURB ID (new API)
+func (d *Daemon) lookupNewChannel(surbid *[sphinxConstants.SURBIDLength]byte) (uint16, *ChannelDescriptor, error) {
+	d.newSurbIDToChannelMapLock.RLock()
+	channelID, ok := d.newSurbIDToChannelMap[*surbid]
+	d.newSurbIDToChannelMapLock.RUnlock()
+	if !ok {
+		d.log.Errorf("no channelID found for surbID %x in new API", surbid[:])
+		return 0, nil, fmt.Errorf("no channelID found for surbID %x in new API", surbid[:])
+	}
+
+	d.newChannelMapLock.RLock()
+	channelDesc, ok := d.newChannelMap[channelID]
+	d.newChannelMapLock.RUnlock()
+	if !ok {
+		d.log.Errorf("no channel found for channelID %d in new API", channelID)
+		return 0, nil, fmt.Errorf("no channel found for channelID %d in new API", channelID)
 	}
 
 	return channelID, channelDesc, nil
@@ -712,11 +797,23 @@ func (d *Daemon) decryptMKEMEnvelope(env *pigeonhole.CourierEnvelopeReply, envel
 	return innerMsg, nil
 }
 
-// ReplyHandlerParams groups parameters for reply handler functions
+// ReplyHandlerParams groups parameters for reply handler functions (old API)
 type ReplyHandlerParams struct {
 	AppID       *[AppIDLength]byte
 	MessageID   *[MessageIDLength]byte
 	ChannelID   [thin.ChannelIDLength]byte
+	ChannelDesc *ChannelDescriptor
+	EnvHash     *[hash.HashSize]byte
+	IsReader    bool
+	IsWriter    bool
+	Conn        *incomingConn
+}
+
+// NewReplyHandlerParams groups parameters for reply handler functions (new API)
+type NewReplyHandlerParams struct {
+	AppID       *[AppIDLength]byte
+	MessageID   *[MessageIDLength]byte
+	ChannelID   uint16
 	ChannelDesc *ChannelDescriptor
 	EnvHash     *[hash.HashSize]byte
 	IsReader    bool
@@ -971,9 +1068,32 @@ func (d *Daemon) send(request *Request) {
 	}
 
 	if request.SendMessage != nil {
-		d.replies[*request.SendMessage.SURBID] = replyDescriptor{
-			appID:   request.AppID,
-			surbKey: surbKey,
+		// Check if this is a new API channel query (has ChannelID field)
+		if request.SendMessage.ChannelID != nil {
+			d.log.Infof("NEW API: Processing SendMessage with ChannelID %d, SURB ID %x",
+				*request.SendMessage.ChannelID, request.SendMessage.SURBID[:8])
+
+			// New API: store in channel replies and new SURB ID map
+			d.channelRepliesLock.Lock()
+			d.channelReplies[*request.SendMessage.SURBID] = replyDescriptor{
+				appID:   request.AppID,
+				surbKey: surbKey,
+			}
+			d.channelRepliesLock.Unlock()
+
+			// Store the SURB ID to channel ID mapping in the NEW API maps
+			d.newSurbIDToChannelMapLock.Lock()
+			d.newSurbIDToChannelMap[*request.SendMessage.SURBID] = *request.SendMessage.ChannelID
+			d.newSurbIDToChannelMapLock.Unlock()
+
+			d.log.Infof("NEW API: Stored SURB ID %x -> Channel ID %d mapping",
+				request.SendMessage.SURBID[:8], *request.SendMessage.ChannelID)
+		} else {
+			// Old API: store in regular replies
+			d.replies[*request.SendMessage.SURBID] = replyDescriptor{
+				appID:   request.AppID,
+				surbKey: surbKey,
+			}
 		}
 		d.replyLock.Unlock()
 		return
@@ -1259,4 +1379,230 @@ func (d *Daemon) sendCopyChannelErrorResponse(request *Request, channelID [thin.
 			},
 		})
 	}
+}
+
+// handleOldChannelReply handles channel replies for the old API
+func (d *Daemon) handleOldChannelReply(appid *[AppIDLength]byte,
+	mesgID *[MessageIDLength]byte,
+	surbid *[sphinxConstants.SURBIDLength]byte,
+	plaintext []byte,
+	conn *incomingConn,
+	channelID [thin.ChannelIDLength]byte,
+	channelDesc *ChannelDescriptor) error {
+
+	isReader, isWriter, err := d.validateChannel(channelID, channelDesc)
+	if err != nil {
+		return err
+	}
+
+	// First, parse the courier query reply to check what type of reply it is
+	courierQueryReply, err := pigeonhole.ParseCourierQueryReply(plaintext)
+	if err != nil {
+		d.log.Errorf("failed to unmarshal courier query reply: %s", err)
+		return fmt.Errorf("failed to unmarshal courier query reply: %s", err)
+	}
+
+	// Handle copy command replies
+	if courierQueryReply.CopyCommandReply != nil {
+		return d.handleCopyReply(appid, channelID, courierQueryReply.CopyCommandReply, conn)
+	}
+
+	// Handle envelope replies (read/write operations)
+	if courierQueryReply.EnvelopeReply != nil {
+		env, envelopeDesc, privateKey, err := d.processEnvelopeReply(courierQueryReply.EnvelopeReply, channelDesc)
+		if err != nil {
+			return err
+		}
+
+		innerMsg, err := d.decryptMKEMEnvelope(env, envelopeDesc, privateKey)
+		if err != nil {
+			return err
+		}
+
+		envHash := (*[hash.HashSize]byte)(env.EnvelopeHash[:])
+
+		switch {
+		case innerMsg.ReadReply != nil:
+			params := &ReplyHandlerParams{
+				AppID:       appid,
+				MessageID:   mesgID,
+				ChannelID:   channelID,
+				ChannelDesc: channelDesc,
+				EnvHash:     envHash,
+				IsReader:    isReader,
+				IsWriter:    isWriter,
+				Conn:        conn,
+			}
+			return d.handleReadReply(params, innerMsg.ReadReply)
+		case innerMsg.WriteReply != nil:
+			params := &ReplyHandlerParams{
+				AppID:       appid,
+				MessageID:   mesgID,
+				ChannelID:   channelID,
+				ChannelDesc: channelDesc,
+				EnvHash:     envHash,
+				IsReader:    isReader,
+				IsWriter:    isWriter,
+				Conn:        conn,
+			}
+			return d.handleWriteReply(params, innerMsg.WriteReply)
+		}
+		d.log.Errorf("bug 6, invalid book keeping for channelID %x", channelID[:])
+		return fmt.Errorf("bug 6, invalid book keeping for channelID %x", channelID[:])
+	}
+
+	d.log.Errorf("courier query reply contains neither envelope reply nor copy command reply")
+	return fmt.Errorf("courier query reply contains neither envelope reply nor copy command reply")
+}
+
+// validateNewChannel performs sanity checks on the channel descriptor and determines channel type (new API)
+func (d *Daemon) validateNewChannel(channelID uint16, channelDesc *ChannelDescriptor) (bool, bool, error) {
+	// sanity check
+	if channelDesc.StatefulReader == nil && channelDesc.StatefulWriter == nil {
+		d.log.Errorf("bug 1, invalid book keeping for channelID %d", channelID)
+		return false, false, fmt.Errorf("bug 1, invalid book keeping for channelID %d", channelID)
+	}
+	if channelDesc.StatefulReader != nil && channelDesc.StatefulWriter != nil {
+		d.log.Errorf("bug 2, invalid book keeping for channelID %d", channelID)
+		return false, false, fmt.Errorf("bug 2, invalid book keeping for channelID %d", channelID)
+	}
+	if channelDesc.EnvelopeDescriptors == nil {
+		d.log.Errorf("bug 3, invalid book keeping for channelID %d", channelID)
+		return false, false, fmt.Errorf("bug 3, invalid book keeping for channelID %d", channelID)
+	}
+
+	isReader := channelDesc.StatefulReader != nil
+	isWriter := channelDesc.StatefulWriter != nil
+	return isReader, isWriter, nil
+}
+
+// handleNewCopyReply processes a copy command reply (new API)
+func (d *Daemon) handleNewCopyReply(appid *[AppIDLength]byte, channelID uint16, copyReply *pigeonhole.CopyCommandReply, conn *incomingConn) error {
+	var errMsg string
+	if copyReply.ErrorCode != 0 {
+		errMsg = fmt.Sprintf("copy command failed with error code %d", copyReply.ErrorCode)
+		d.log.Errorf("copy command failed for channel %d with error code %d", channelID, copyReply.ErrorCode)
+	} else {
+		d.log.Debugf("copy command completed successfully for channel %d", channelID)
+	}
+
+	err := conn.sendResponse(&Response{
+		AppID: appid,
+		CopyChannelReply: &thin.CopyChannelReply{
+			ChannelID: [thin.ChannelIDLength]byte{}, // TODO: Convert uint16 to byte array if needed
+			Err:       errMsg,
+		},
+	})
+	if err != nil {
+		d.log.Errorf("Failed to send copy response to client: %s", err)
+		return fmt.Errorf("failed to send copy response to client: %s", err)
+	}
+
+	return nil
+}
+
+// handleNewReadReply processes a read reply (new API)
+func (d *Daemon) handleNewReadReply(params *NewReplyHandlerParams, readReply *pigeonhole.ReplicaReadReply) error {
+	if !params.IsReader {
+		d.log.Errorf("bug 4, invalid book keeping for channelID %d", params.ChannelID)
+		return fmt.Errorf("bug 4, invalid book keeping for channelID %d", params.ChannelID)
+	}
+
+	var replyErr error
+	var payload []byte
+
+	if readReply.ErrorCode != 0 {
+		replyErr = fmt.Errorf("read failed with error code %d", readReply.ErrorCode)
+		d.log.Errorf("read failed for channel %d with error code %d", params.ChannelID, readReply.ErrorCode)
+	} else {
+		// Check if signature is all zeros (equivalent to nil check)
+		var zeroSig [64]uint8
+		if readReply.Signature == zeroSig {
+			replyErr = fmt.Errorf("replica read reply has zero signature")
+			d.log.Debugf("replica returned zero signature for read operation")
+		} else {
+			// For new API, get the next BoxID from the StatefulReader
+			params.ChannelDesc.StatefulReaderLock.Lock()
+			boxid, err := params.ChannelDesc.StatefulReader.NextBoxID()
+			if err != nil {
+				params.ChannelDesc.StatefulReaderLock.Unlock()
+				replyErr = fmt.Errorf("failed to get next box ID: %s", err)
+				d.log.Errorf("Failed to get next box ID for channel %d: %s", params.ChannelID, err)
+			} else {
+				// BACAP decrypt the payload
+				d.log.Debugf("BACAP DECRYPT: Starting decryption for BoxID %x with payload size %d bytes", boxid[:], len(readReply.Payload))
+				signature := (*[bacap.SignatureSize]byte)(readReply.Signature[:])
+				innerplaintext, err := params.ChannelDesc.StatefulReader.DecryptNext(
+					[]byte(constants.PIGEONHOLE_CTX),
+					*boxid,
+					readReply.Payload,
+					*signature)
+				params.ChannelDesc.StatefulReaderLock.Unlock()
+
+				if err != nil {
+					replyErr = fmt.Errorf("failed to decrypt next: %s", err)
+					d.log.Errorf("BACAP DECRYPT FAILED for BoxID %x: %s", boxid[:], err)
+				} else {
+					d.log.Debugf("BACAP DECRYPT SUCCESS: Decrypted %d bytes for BoxID %x", len(innerplaintext), boxid[:])
+
+					// Extract the original message from the padded payload
+					originalMessage, err := pigeonhole.ExtractMessageFromPaddedPayload(innerplaintext)
+					if err != nil {
+						replyErr = fmt.Errorf("failed to extract message from padded payload: %s", err)
+						d.log.Errorf("Failed to extract message from padded payload: %s", err)
+					} else {
+						payload = originalMessage
+						d.log.Debugf("Successfully extracted %d bytes from %d padded bytes for channel %d", len(originalMessage), len(innerplaintext), params.ChannelID)
+					}
+				}
+			}
+		}
+	}
+
+	// For new API, use MessageReplyEvent to deliver the read result
+	err := params.Conn.sendResponse(&Response{
+		AppID: params.AppID,
+		MessageReplyEvent: &thin.MessageReplyEvent{
+			MessageID: params.MessageID,
+			Payload:   payload,
+			Err:       replyErr,
+		},
+	})
+	if err != nil {
+		d.log.Errorf("Failed to send read response to client: %s", err)
+		return fmt.Errorf("failed to send read response to client: %s", err)
+	}
+
+	return nil
+}
+
+// handleNewWriteReply processes a write reply (new API)
+func (d *Daemon) handleNewWriteReply(params *NewReplyHandlerParams, writeReply *pigeonhole.ReplicaWriteReply) error {
+	if !params.IsWriter {
+		d.log.Errorf("bug 5, invalid book keeping for channelID %d", params.ChannelID)
+		return fmt.Errorf("bug 5, invalid book keeping for channelID %d", params.ChannelID)
+	}
+
+	var replyErr error
+	if writeReply.ErrorCode != 0 {
+		replyErr = fmt.Errorf("write failed with error code %d", writeReply.ErrorCode)
+		d.log.Errorf("NEW API WRITE FAILED: Channel %d, Error Code %d", params.ChannelID, writeReply.ErrorCode)
+	} else {
+		d.log.Infof("NEW API WRITE SUCCESS: Channel %d completed successfully", params.ChannelID)
+	}
+
+	// For new API, use MessageReplyEvent to deliver the write result
+	err := params.Conn.sendResponse(&Response{
+		AppID: params.AppID,
+		MessageReplyEvent: &thin.MessageReplyEvent{
+			MessageID: params.MessageID,
+			Err:       replyErr,
+		},
+	})
+	if err != nil {
+		d.log.Errorf("Failed to send write response to client: %s", err)
+		return fmt.Errorf("failed to send write response to client: %s", err)
+	}
+
+	return nil
 }
