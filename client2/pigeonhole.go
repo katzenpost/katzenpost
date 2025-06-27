@@ -619,6 +619,13 @@ func (d *Daemon) writeChannel(request *Request) {
 		return
 	}
 
+	// Check if this is a write channel (has StatefulWriter)
+	if channelDesc.StatefulWriter == nil {
+		d.log.Errorf("writeChannel failure: channel %d is not a write channel", channelID)
+		d.sendWriteChannelError(request, thin.ThinClientErrorInvalidChannel)
+		return
+	}
+
 	_, doc := d.client.CurrentDocument()
 
 	channelDesc.StatefulWriterLock.Lock()
@@ -683,6 +690,13 @@ func (d *Daemon) readChannel(request *Request) {
 	if !ok {
 		d.log.Errorf("readChannel failure: no channel found for channelID %d", channelID)
 		d.sendReadChannelError(request, thin.ThinClientErrorChannelNotFound)
+		return
+	}
+
+	// Check if this is a read channel (has StatefulReader)
+	if channelDesc.StatefulReader == nil {
+		d.log.Errorf("readChannel failure: channel %d is not a read channel", channelID)
+		d.sendReadChannelError(request, thin.ThinClientErrorInvalidChannel)
 		return
 	}
 
