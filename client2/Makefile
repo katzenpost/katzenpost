@@ -27,11 +27,6 @@ dockertest-legacy:
 	$(docker) run -w /go/katzenpost/client2 ${docker_args} $(image) \
 		go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 1h -run "TestAllClient2Tests/(TestDockerMultiplexClients|TestDockerClientARQSendReceive|TestDockerClientSendReceive)"
 
-dockertest-channels-old:
-	cd ../docker && make $(distro)_base.stamp
-	$(docker) run -w /go/katzenpost/client2 ${docker_args} $(image) \
-		go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 1h -run "TestAllClient2Tests/TestDockerCourierServiceOldThinclientAPI"
-
 dockertest-channels-new:
 	cd ../docker && make $(distro)_base.stamp
 	$(docker) run -w /go/katzenpost/client2 ${docker_args} $(image) \

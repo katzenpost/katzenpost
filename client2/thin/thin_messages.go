@@ -188,29 +188,6 @@ func (r *ReadChannelV2) String() string {
 	return fmt.Sprintf("ReadChannelV2: channel=%d msgID=%s", r.ChannelID, msgIDStr)
 }
 
-// OLD API
-
-type CreateChannel struct{}
-
-type CreateReadChannel struct {
-	ReadCap *bacap.ReadCap `cbor:"read_cap"`
-}
-
-type WriteChannel struct {
-	ChannelID [ChannelIDLength]byte `cbor:"channel_id"`
-	Payload   []byte                `cbor:"payload"`
-}
-
-type ReadChannel struct {
-	ChannelID [ChannelIDLength]byte  `cbor:"channel_id"`
-	ID        *[MessageIDLength]byte `cbor:"id"`
-}
-
-type CopyChannel struct {
-	ChannelID [ChannelIDLength]byte  `cbor:"channel_id"`
-	ID        *[MessageIDLength]byte `cbor:"id"`
-}
-
 type SendMessage struct {
 	// ID is the unique identifier with respect to the Payload.
 	// This is only used by the ARQ.
@@ -285,10 +262,6 @@ type Response struct {
 
 	MessageIDGarbageCollected *MessageIDGarbageCollected `cbor:"message_id_garbage_collected"`
 
-	CreateChannelReply *CreateChannelReply `cbor:"create_channel_reply"`
-
-	CreateReadChannelReply *CreateReadChannelReply `cbor:"create_read_channel_reply"`
-
 	CreateWriteChannelReply *CreateWriteChannelReply `cbor:"create_write_channel_reply"`
 
 	CreateReadChannelV2Reply *CreateReadChannelV2Reply `cbor:"create_read_channel_v2_reply"`
@@ -296,12 +269,6 @@ type Response struct {
 	WriteChannelV2Reply *WriteChannelV2Reply `cbor:"write_channel_v2_reply"`
 
 	ReadChannelV2Reply *ReadChannelV2Reply `cbor:"read_channel_v2_reply"`
-
-	WriteChannelReply *WriteChannelReply `cbor:"write_channel_reply"`
-
-	ReadChannelReply *ReadChannelReply `cbor:"read_channel_reply"`
-
-	CopyChannelReply *CopyChannelReply `cbor:"copy_channel_reply"`
 }
 
 type Request struct {
@@ -319,21 +286,6 @@ type Request struct {
 
 	// ReadChannelV2 is used to read from a Pigeonhole channel (new API).
 	ReadChannelV2 *ReadChannelV2 `cbor:"read_channel_v2"`
-
-	//	OLD CHANNEL API
-	CreateChannel *CreateChannel `cbor:"create_channel"`
-
-	// CreateReadChannel is used to create a new Pigeonhole read channel (old API).
-	CreateReadChannel *CreateReadChannel `cbor:"create_read_channel"`
-
-	// WriteChannel is used to write to a Pigeonhole channel.
-	WriteChannel *WriteChannel `cbor:"write_channel"`
-
-	// ReadChannel is used to read from a Pigeonhole channel.
-	ReadChannel *ReadChannel `cbor:"read_channel"`
-
-	// CopyChannel is used to copy a Pigeonhole channel.
-	CopyChannel *CopyChannel `cbor:"copy_channel"`
 
 	// SendMessage is used to send a message through the mix network.
 	SendMessage *SendMessage `cbor:"send_message"`

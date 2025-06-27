@@ -33,7 +33,6 @@ func TestAllClient2Tests(t *testing.T) {
 	t.Run("TestDockerMultiplexClients", testDockerMultiplexClients)
 	t.Run("TestDockerClientARQSendReceive", testDockerClientARQSendReceive)
 	t.Run("TestDockerClientSendReceive", testDockerClientSendReceive)
-	t.Run("TestDockerCourierServiceOldThinclientAPI", testDockerCourierServiceOldThinclientAPI)
 
 	t.Run("TestDockerCourierServiceNewThinclientAPI", TestDockerCourierServiceNewThinclientAPI)
 }
