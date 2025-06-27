@@ -35,7 +35,7 @@ func cleanupAttempt(t *testing.T, cancel context.CancelFunc, client *thin.ThinCl
 func handleMessageReplyEvent(t *testing.T, v *thin.MessageReplyEvent, attempt int) attemptResult {
 	t.Log("MessageReplyEvent")
 
-	if v.Err != nil {
+	if v.Err != "" {
 		t.Logf("Message reply error on attempt %d: %v", attempt, v.Err)
 		return attemptResult{retry: true}
 	}

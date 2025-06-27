@@ -472,6 +472,7 @@ func (d *Daemon) handleReply(reply *sphinxReply) {
 				MessageID: desc.ID,
 				SURBID:    reply.surbID,
 				Payload:   plaintext,
+				Err:       "", // No error
 			},
 		})
 	}
@@ -542,7 +543,7 @@ func (d *Daemon) handleNewChannelReply(appid *[AppIDLength]byte,
 				MessageReplyEvent: &thin.MessageReplyEvent{
 					MessageID: mesgID,
 					Payload:   nil, // Empty payload
-					Err:       nil, // No error - just no data yet
+					Err:       "",  // No error - just no data yet
 				},
 			})
 			if err != nil {
@@ -844,6 +845,7 @@ func (d *Daemon) handleReadReply(params *ReplyHandlerParams, readReply *pigeonho
 		MessageReplyEvent: &thin.MessageReplyEvent{
 			MessageID: params.MessageID,
 			Payload:   originalMessage,
+			Err:       "", // No error
 		},
 	})
 	if err != nil {
@@ -882,6 +884,7 @@ func (d *Daemon) handleWriteReply(params *ReplyHandlerParams, writeReply *pigeon
 		MessageReplyEvent: &thin.MessageReplyEvent{
 			MessageID: params.MessageID,
 			Payload:   nil, // Write operations don't return payload
+			Err:       "",  // No error
 		},
 	})
 	if err != nil {
@@ -952,6 +955,10 @@ func (d *Daemon) send(request *Request) {
 		if !isLoopDecoy {
 			incomingConn := d.listener.getConnection(request.AppID)
 			if incomingConn != nil {
+				var errStr string
+				if err != nil {
+					errStr = err.Error()
+				}
 				response := &Response{
 					AppID: request.AppID,
 					MessageSentEvent: &thin.MessageSentEvent{
@@ -959,7 +966,7 @@ func (d *Daemon) send(request *Request) {
 						SURBID:    surbID,
 						SentAt:    now,
 						ReplyETA:  rtt,
-						Err:       err,
+						Err:       errStr,
 					},
 				}
 				err = incomingConn.sendResponse(response)
@@ -1138,9 +1145,9 @@ func (d *Daemon) arqDoResend(surbID *[sphinxConstants.SURBIDLength]byte) {
 			AppID: message.AppID,
 			MessageReplyEvent: &thin.MessageReplyEvent{
 				MessageID: message.MessageID,
-				Err:       errors.New("max retries met"),
 				Payload:   []byte{},
 				SURBID:    surbID,
+				Err:       "max retries met",
 			},
 		}
 		incomingConn := d.listener.getConnection(message.AppID)
@@ -1290,12 +1297,16 @@ func (d *Daemon) handleNewReadReply(params *NewReplyHandlerParams, readReply *pi
 	payload, replyErr := d.processReadReplyPayload(params, readReply)
 
 	// For new API, use MessageReplyEvent to deliver the read result
+	var errStr string
+	if replyErr != nil {
+		errStr = replyErr.Error()
+	}
 	err := params.Conn.sendResponse(&Response{
 		AppID: params.AppID,
 		MessageReplyEvent: &thin.MessageReplyEvent{
 			MessageID: params.MessageID,
 			Payload:   payload,
-			Err:       replyErr,
+			Err:       errStr,
 		},
 	})
 	if err != nil {
@@ -1322,11 +1333,15 @@ func (d *Daemon) handleNewWriteReply(params *NewReplyHandlerParams, writeReply *
 	}
 
 	// For new API, use MessageReplyEvent to deliver the write result
+	var errStr string
+	if replyErr != nil {
+		errStr = replyErr.Error()
+	}
 	err := params.Conn.sendResponse(&Response{
 		AppID: params.AppID,
 		MessageReplyEvent: &thin.MessageReplyEvent{
 			MessageID: params.MessageID,
-			Err:       replyErr,
+			Err:       errStr,
 		},
 	})
 	if err != nil {

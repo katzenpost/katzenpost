@@ -59,13 +59,14 @@ type MessageReplyEvent struct {
 	// Payload is the reply payload if any.
 	Payload []byte `cbor:"payload"`
 
-	// Err is the error encountered when servicing the request if any.
-	Err error `cbor:"err"`
+	// Err is the error message if any error was encountered when servicing the request.
+	// Empty string indicates no error occurred.
+	Err string `cbor:"err,omitempty"`
 }
 
 // String returns a string representation of the MessageReplyEvent.
 func (e *MessageReplyEvent) String() string {
-	if e.Err != nil {
+	if e.Err != "" {
 		return fmt.Sprintf("MessageReply: %v failed: %v", hex.EncodeToString(e.MessageID[:]), e.Err)
 	}
 	return fmt.Sprintf("KaetzchenReply: %v (%v bytes)", hex.EncodeToString(e.MessageID[:]), len(e.Payload))
@@ -87,13 +88,14 @@ type MessageSentEvent struct {
 	// ReplyETA is the expected round trip time to receive a response.
 	ReplyETA time.Duration `cbor:"reply_eta"`
 
-	// Err is the error encountered when sending the message if any.
-	Err error `cbor:"err"`
+	// Err is the error message if any error was encountered when sending the message.
+	// Empty string indicates no error occurred.
+	Err string `cbor:"err,omitempty"`
 }
 
 // String returns a string representation of a MessageSentEvent.
 func (e *MessageSentEvent) String() string {
-	if e.Err != nil {
+	if e.Err != "" {
 		return fmt.Sprintf("MessageSent: %v failed: %v", hex.EncodeToString(e.MessageID[:]), e.Err)
 	}
 	return fmt.Sprintf("MessageSent: %v", hex.EncodeToString(e.MessageID[:]))

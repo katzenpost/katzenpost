@@ -373,8 +373,12 @@ func (t *ThinClient) worker() {
 				if ok {
 					isArq = true
 					sentWaitChan := sentWaitChanRaw.(chan error)
+					var err error
+					if message.MessageSentEvent.Err != "" {
+						err = errors.New(message.MessageSentEvent.Err)
+					}
 					select {
-					case sentWaitChan <- message.MessageSentEvent.Err:
+					case sentWaitChan <- err:
 					case <-t.HaltCh():
 						return
 					}
@@ -754,8 +758,8 @@ func (t *ThinClient) BlockingSendReliableMessage(ctx context.Context, messageID 
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	case reply := <-replyWaitChan:
-		if reply.Err != nil {
-			return nil, reply.Err
+		if reply.Err != "" {
+			return nil, errors.New(reply.Err)
 		}
 		return reply.Payload, nil
 	case <-t.HaltCh():
