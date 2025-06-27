@@ -6,9 +6,7 @@
 package client2
 
 import (
-	"bytes"
 	"context"
-	"encoding/binary"
 	"testing"
 	"time"
 
@@ -17,11 +15,89 @@ import (
 	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/katzenpost/client2/common"
 	"github.com/katzenpost/katzenpost/client2/thin"
-	"github.com/katzenpost/katzenpost/pigeonhole"
 )
+
+// sendQueryAndWait sends a channel query and waits for the reply with retry logic
+func sendQueryAndWait(t *testing.T, client *thin.ThinClient, channelID uint16, message []byte, nodeID *[32]byte, queueID []byte) []byte {
+	maxRetries := 5
+	retryDelay := 3 * time.Second
+
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		t.Logf("Sending channel query (attempt %d/%d)", attempt, maxRetries)
+
+		eventSink := client.EventSink()
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+
+		err := client.SendChannelQuery(ctx, channelID, message, nodeID, queueID)
+		require.NoError(t, err)
+
+		// Wait for reply
+		timeout := time.After(15 * time.Second)
+		for {
+			select {
+			case <-timeout:
+				t.Logf("Timeout on attempt %d", attempt)
+				cancel()
+				client.StopEventSink(eventSink)
+				goto nextAttempt
+			case <-ctx.Done():
+				t.Logf("Context cancelled on attempt %d", attempt)
+				cancel()
+				client.StopEventSink(eventSink)
+				goto nextAttempt
+			case event := <-eventSink:
+				switch v := event.(type) {
+				case *thin.MessageIDGarbageCollected:
+					t.Log("MessageIDGarbageCollected")
+				case *thin.ConnectionStatusEvent:
+					t.Log("ConnectionStatusEvent")
+					if !v.IsConnected {
+						t.Fatal("socket connection lost")
+					}
+				case *thin.NewDocumentEvent:
+					t.Log("NewPKIDocumentEvent")
+				case *thin.MessageSentEvent:
+					t.Log("MessageSentEvent")
+				case *thin.MessageReplyEvent:
+					t.Log("MessageReplyEvent")
+					if v.Err != nil {
+						t.Logf("Message reply error on attempt %d: %v", attempt, v.Err)
+						cancel()
+						client.StopEventSink(eventSink)
+						goto nextAttempt
+					}
+					if v.Payload != nil && len(v.Payload) > 0 {
+						t.Logf("SUCCESS: Received non-empty payload on attempt %d (%d bytes)", attempt, len(v.Payload))
+						cancel()
+						client.StopEventSink(eventSink)
+						return v.Payload
+					} else {
+						t.Logf("Received nil/empty payload on attempt %d, retrying...", attempt)
+						cancel()
+						client.StopEventSink(eventSink)
+						goto nextAttempt
+					}
+				default:
+					t.Logf("Ignoring event type: %T", event)
+				}
+			}
+		}
+
+	nextAttempt:
+		if attempt < maxRetries {
+			t.Logf("Waiting %v before retry...", retryDelay)
+			time.Sleep(retryDelay)
+		}
+	}
+
+	t.Fatalf("Failed to receive valid payload after %d attempts", maxRetries)
+	return nil
+}
 
 func TestDockerCourierServiceNewThinclientAPI(t *testing.T) {
 	t.Log("TESTING COURIER SERVICE - New thin client API")
+	// NOTE: The new API automatically extracts messages from padded payloads in the daemon,
+	// so clients receive the original message directly, not the raw padded payload.
 
 	// Setup clients and get current epoch
 	aliceThinClient := setupThinClient(t)
@@ -73,7 +149,7 @@ func TestDockerCourierServiceNewThinclientAPI(t *testing.T) {
 	// Wait for message propagation
 	time.Sleep(3 * time.Second)
 
-	// Bob reads message
+	// Bob reads message using the helper function
 	t.Log("Bob: Reading message")
 	messageID := bobThinClient.NewMessageID()
 	readPayload, _, err := bobThinClient.ReadChannelV2(ctx, bobChannelID, messageID)
@@ -81,117 +157,12 @@ func TestDockerCourierServiceNewThinclientAPI(t *testing.T) {
 	require.NotNil(t, readPayload)
 	t.Logf("Bob: Generated read payload (%d bytes)", len(readPayload))
 
-	// Bob sends read query via courier
-	err = bobThinClient.SendChannelQuery(ctx, bobChannelID, readPayload, &identityHash, courierService.RecipientQueueID)
-	require.NoError(t, err)
-	t.Log("Bob: Sent read query to courier")
+	// Bob sends read query and waits for reply using helper
+	t.Log("Bob: Sending read query and waiting for reply...")
+	receivedPayload := sendQueryAndWait(t, bobThinClient, bobChannelID, readPayload, &identityHash, courierService.RecipientQueueID)
+	require.NotNil(t, receivedPayload, "Bob: Received nil payload")
 
-	// Wait for Bob to receive Alice's message via MessageReplyEvent with retry mechanism
-	t.Log("Bob: Waiting for message reply...")
-	eventSink := bobThinClient.EventSink()
-	defer bobThinClient.StopEventSink(eventSink)
-
-	var receivedPayload []byte
-	maxRetries := 10
-	retryDelay := 2 * time.Second
-
-	for attempt := 1; attempt <= maxRetries; attempt++ {
-		t.Logf("Bob: Waiting for message reply (attempt %d/%d)...", attempt, maxRetries)
-
-		timeout := time.After(10 * time.Second)
-
-		for {
-			select {
-			case <-timeout:
-				if attempt == maxRetries {
-					t.Fatal("Timeout waiting for message reply after all retries")
-				}
-				t.Logf("Bob: Timeout on attempt %d, retrying...", attempt)
-				goto nextAttempt
-			case event := <-eventSink:
-				switch v := event.(type) {
-				case *thin.MessageReplyEvent:
-					if v.Err != nil {
-						t.Fatalf("Bob: Message reply error: %v", v.Err)
-					}
-					receivedPayload = v.Payload
-					t.Logf("Bob: Received message reply (%d bytes)", len(receivedPayload))
-
-					// Check if we got actual data or empty payload
-					if len(receivedPayload) > 0 {
-						t.Logf("Bob: Successfully received message on attempt %d", attempt)
-						goto messageReceived
-					} else {
-						t.Logf("Bob: Received empty payload on attempt %d, retrying...", attempt)
-						goto nextAttempt
-					}
-				case *thin.ConnectionStatusEvent:
-					if !v.IsConnected {
-						t.Fatal("Bob: Lost connection while waiting for reply")
-					}
-				default:
-					// Ignore other events
-				}
-			}
-		}
-
-	nextAttempt:
-		if attempt < maxRetries {
-			t.Logf("Bob: Waiting %v before retry...", retryDelay)
-			time.Sleep(retryDelay)
-
-			// Send another read query for retry
-			readPayload, _, err := bobThinClient.ReadChannelV2(ctx, bobChannelID, messageID)
-			require.NoError(t, err)
-			err = bobThinClient.SendChannelQuery(ctx, bobChannelID, readPayload, &identityHash, courierService.RecipientQueueID)
-			require.NoError(t, err)
-			t.Logf("Bob: Sent retry read query (attempt %d)", attempt+1)
-		}
-	}
-
-messageReceived:
-	// Debug: examine the payload structure
-	t.Logf("Bob: Received payload (%d bytes)", len(receivedPayload))
-	t.Logf("Bob: First 64 bytes: %x", receivedPayload[:min(64, len(receivedPayload))])
-
-	// Try extracting directly as padded payload (like reference implementation)
-	actualMessage, err := pigeonhole.ExtractMessageFromPaddedPayload(receivedPayload)
-	if err == nil {
-		// Direct extraction worked
-		require.True(t, bytes.Equal(originalMessage, actualMessage),
-			"Bob's received message does not match Alice's original message")
-		t.Log("SUCCESS: Bob received Alice's exact original message!")
-		t.Logf("Original: %s", string(originalMessage))
-		t.Logf("Received: %s", string(actualMessage))
-		return
-	}
-
-	t.Logf("Bob: Direct extraction failed: %v", err)
-	t.Logf("Bob: Trying to parse as protocol structures...")
-
-	// If direct extraction fails, the payload might be wrapped in protocol structures
-	// Let's examine the payload more carefully
-	if len(receivedPayload) >= 4 {
-		// Check if it starts with a length prefix
-		length := binary.BigEndian.Uint32(receivedPayload[:4])
-		t.Logf("Bob: Potential length prefix: %d (0x%x)", length, length)
-
-		if length > 0 && length < uint32(len(receivedPayload)) {
-			// Try extracting from offset 4
-			actualMessage, err := pigeonhole.ExtractMessageFromPaddedPayload(receivedPayload[4:])
-			if err == nil {
-				require.True(t, bytes.Equal(originalMessage, actualMessage),
-					"Bob's received message does not match Alice's original message")
-				t.Log("SUCCESS: Bob received Alice's message after skipping length prefix!")
-				t.Logf("Original: %s", string(originalMessage))
-				t.Logf("Received: %s", string(actualMessage))
-				return
-			}
-			t.Logf("Bob: Extraction after length prefix failed: %v", err)
-		}
-	}
-
-	t.Fatalf("Bob: Could not extract message from received payload")
+	require.Equal(t, originalMessage, receivedPayload, "Bob should receive the original message")
 }
 
 func testDockerCourierServiceOldThinclientAPI(t *testing.T) {
