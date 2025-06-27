@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net"
 	"sync"
+	"time"
 
 	"github.com/fxamacker/cbor/v2"
 	"gopkg.in/op/go-logging.v1"
@@ -40,12 +41,36 @@ type listener struct {
 }
 
 func (l *listener) Shutdown() {
+	shutdownStart := time.Now()
+	l.log.Debug("Starting listener shutdown")
+
 	// Close the listener, wait for worker() to return.
 	l.listener.Close()
-	// stop listener, and stop Accepting connections
-	l.Halt()
-	// stop the decoy Sender
-	l.decoySender.Halt()
+
+	// Parallelize listener and decoy sender shutdown for faster cleanup
+	var shutdownWg sync.WaitGroup
+	shutdownWg.Add(2)
+
+	go func() {
+		defer shutdownWg.Done()
+		start := time.Now()
+		l.log.Debug("Stopping listener worker")
+		// stop listener, and stop Accepting connections
+		l.Halt()
+		l.log.Debugf("Listener worker stopped in %v", time.Since(start))
+	}()
+
+	go func() {
+		defer shutdownWg.Done()
+		start := time.Now()
+		l.log.Debug("Stopping decoy sender")
+		// stop the decoy Sender
+		l.decoySender.Halt()
+		l.log.Debugf("Decoy sender stopped in %v", time.Since(start))
+	}()
+
+	shutdownWg.Wait()
+	l.log.Debugf("Listener shutdown complete in %v", time.Since(shutdownStart))
 }
 
 func (l *listener) updateFromPKIDoc(doc *cpki.Document) {

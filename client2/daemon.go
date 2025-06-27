@@ -185,21 +185,61 @@ func (d *Daemon) Shutdown() {
 }
 
 func (d *Daemon) halt() {
+	shutdownStart := time.Now()
+	d.log.Info("Starting graceful daemon shutdown")
+
+	// Step 1: Stop listener
+	listenerStart := time.Now()
 	d.log.Debug("Stopping thin client listener")
 	d.listener.Shutdown()
+	d.log.Infof("Listener stopped in %v", time.Since(listenerStart))
 
+	// Step 2: Stop workers
+	workersStart := time.Now()
 	d.log.Debug("Stopping workers first to prevent channel deadlocks")
 	d.Halt() // shutdown ingressWorker and egressWorker first
+	d.log.Infof("Workers stopped in %v", time.Since(workersStart))
 
-	d.log.Debug("Stopping timerQueue")
-	d.timerQueue.Halt()
-	d.log.Debug("Stopping gcTimerQueue")
-	d.gcTimerQueue.Halt()
-	d.log.Debug("Stopping arqTimerQueue")
-	d.arqTimerQueue.Halt()
+	// Step 3: Parallelize timer queue shutdown for faster shutdown
+	timerStart := time.Now()
+	d.log.Debug("Stopping timer queues in parallel")
+	var timerWg sync.WaitGroup
+	timerWg.Add(3)
 
+	go func() {
+		defer timerWg.Done()
+		start := time.Now()
+		d.log.Debug("Stopping timerQueue")
+		d.timerQueue.Halt()
+		d.log.Debugf("timerQueue stopped in %v", time.Since(start))
+	}()
+
+	go func() {
+		defer timerWg.Done()
+		start := time.Now()
+		d.log.Debug("Stopping gcTimerQueue")
+		d.gcTimerQueue.Halt()
+		d.log.Debugf("gcTimerQueue stopped in %v", time.Since(start))
+	}()
+
+	go func() {
+		defer timerWg.Done()
+		start := time.Now()
+		d.log.Debug("Stopping arqTimerQueue")
+		d.arqTimerQueue.Halt()
+		d.log.Debugf("arqTimerQueue stopped in %v", time.Since(start))
+	}()
+
+	timerWg.Wait()
+	d.log.Infof("All timer queues stopped in %v", time.Since(timerStart))
+
+	// Step 4: Stop client
+	clientStart := time.Now()
 	d.log.Debug("Stopping client")
 	d.client.Shutdown()
+	d.log.Infof("Client stopped in %v", time.Since(clientStart))
+
+	d.log.Infof("Daemon shutdown complete in %v", time.Since(shutdownStart))
 }
 
 func (d *Daemon) Start() error {

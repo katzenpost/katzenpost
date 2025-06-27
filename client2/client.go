@@ -56,19 +56,40 @@ type Client struct {
 
 // Shutdown cleanly shuts down a given Client instance.
 func (c *Client) Shutdown() {
-	c.log.Info("Starting graceful shutdown.")
+	shutdownStart := time.Now()
+	c.log.Info("Starting graceful client shutdown.")
 
 	if c.conn != nil {
+		connStart := time.Now()
+		c.log.Debug("Stopping connection")
 		c.conn.Shutdown()
+		c.log.Debugf("Connection stopped in %v", time.Since(connStart))
 	}
 
-	if c.pki != nil {
-		c.log.Info("stopping PKI worker")
-		c.pki.Halt()
-		c.log.Info("waiting for stopped PKI worker to exit")
-	}
-	c.Halt()
-	c.log.Info("Shutdown complete.")
+	// Parallelize PKI and main client shutdown for faster cleanup
+	var clientShutdownWg sync.WaitGroup
+	clientShutdownWg.Add(2)
+
+	go func() {
+		defer clientShutdownWg.Done()
+		if c.pki != nil {
+			start := time.Now()
+			c.log.Debug("Stopping PKI worker")
+			c.pki.Halt()
+			c.log.Debugf("PKI worker stopped in %v", time.Since(start))
+		}
+	}()
+
+	go func() {
+		defer clientShutdownWg.Done()
+		start := time.Now()
+		c.log.Debug("Stopping main client worker")
+		c.Halt()
+		c.log.Debugf("Main client worker stopped in %v", time.Since(start))
+	}()
+
+	clientShutdownWg.Wait()
+	c.log.Infof("Client shutdown complete in %v", time.Since(shutdownStart))
 }
 
 // XXX This will go away once we get rid of polling.
