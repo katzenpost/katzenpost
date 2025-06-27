@@ -165,10 +165,10 @@ type CreateWriteChannelReply struct {
 	ErrorCode uint8 `cbor:"error_code,omitempty"`
 }
 
-// CreateReadChannelV2Reply is sent in response to a CreateReadChannelV2 request.
+// CreateReadChannelReply is sent in response to a CreateReadChannel request.
 // It provides the channel ID and current read position for the newly created
 // pigeonhole read channel.
-type CreateReadChannelV2Reply struct {
+type CreateReadChannelReply struct {
 	// ChannelID is the unique identifier for the created read channel, used in
 	// subsequent ReadChannel operations.
 	ChannelID uint16 `cbor:"channel_id"`
@@ -182,18 +182,18 @@ type CreateReadChannelV2Reply struct {
 	ErrorCode uint8 `cbor:"error_code,omitempty"`
 }
 
-// String returns a string representation of the CreateReadChannelV2Reply.
-func (e *CreateReadChannelV2Reply) String() string {
+// String returns a string representation of the CreateReadChannelReply.
+func (e *CreateReadChannelReply) String() string {
 	if e.ErrorCode != ThinClientSuccess {
-		return fmt.Sprintf("CreateReadChannelV2Reply: %d (error: %s)", e.ChannelID, ThinClientErrorToString(e.ErrorCode))
+		return fmt.Sprintf("CreateReadChannelReply: %d (error: %s)", e.ChannelID, ThinClientErrorToString(e.ErrorCode))
 	}
-	return fmt.Sprintf("CreateReadChannelV2Reply: %d", e.ChannelID)
+	return fmt.Sprintf("CreateReadChannelReply: %d", e.ChannelID)
 }
 
-// WriteChannelV2Reply is sent in response to a WriteChannelV2 request.
+// WriteChannelReply is sent in response to a WriteChannel request.
 // It provides the prepared message payload that should be sent through the mixnet
 // to complete the channel write operation.
-type WriteChannelV2Reply struct {
+type WriteChannelReply struct {
 	// ChannelID identifies the channel this reply corresponds to.
 	ChannelID uint16 `cbor:"channel_id"`
 
@@ -210,18 +210,18 @@ type WriteChannelV2Reply struct {
 	ErrorCode uint8 `cbor:"error_code,omitempty"`
 }
 
-// String returns a string representation of the WriteChannelV2Reply.
-func (e *WriteChannelV2Reply) String() string {
+// String returns a string representation of the WriteChannelReply.
+func (e *WriteChannelReply) String() string {
 	if e.ErrorCode != ThinClientSuccess {
-		return fmt.Sprintf("WriteChannelV2Reply: %d (error: %s)", e.ChannelID, ThinClientErrorToString(e.ErrorCode))
+		return fmt.Sprintf("WriteChannelReply: %d (error: %s)", e.ChannelID, ThinClientErrorToString(e.ErrorCode))
 	}
-	return fmt.Sprintf("WriteChannelV2Reply: %d (%d bytes payload)", e.ChannelID, len(e.SendMessagePayload))
+	return fmt.Sprintf("WriteChannelReply: %d (%d bytes payload)", e.ChannelID, len(e.SendMessagePayload))
 }
 
-// ReadChannelV2Reply is sent in response to a ReadChannelV2 request.
+// ReadChannelReply is sent in response to a ReadChannel request.
 // It provides the prepared query payload that should be sent through the mixnet
 // to retrieve the next message from the channel.
-type ReadChannelV2Reply struct {
+type ReadChannelReply struct {
 	// MessageID is used for correlating this read operation with its eventual
 	// response when the query completes.
 	MessageID *[MessageIDLength]byte `cbor:"message_id"`
@@ -242,14 +242,14 @@ type ReadChannelV2Reply struct {
 	ErrorCode uint8 `cbor:"error_code,omitempty"`
 }
 
-// String returns a string representation of the ReadChannelV2Reply.
-func (e *ReadChannelV2Reply) String() string {
+// String returns a string representation of the ReadChannelReply.
+func (e *ReadChannelReply) String() string {
 	msgIDStr := "nil"
 	if e.MessageID != nil {
 		msgIDStr = fmt.Sprintf("%x", e.MessageID[:8]) // First 8 bytes for brevity
 	}
 	if e.ErrorCode != ThinClientSuccess {
-		return fmt.Sprintf("ReadChannelV2Reply: msgID=%s channel=%d (error: %s)", msgIDStr, e.ChannelID, ThinClientErrorToString(e.ErrorCode))
+		return fmt.Sprintf("ReadChannelReply: msgID=%s channel=%d (error: %s)", msgIDStr, e.ChannelID, ThinClientErrorToString(e.ErrorCode))
 	}
-	return fmt.Sprintf("ReadChannelV2Reply: msgID=%s channel=%d (%d bytes payload)", msgIDStr, e.ChannelID, len(e.SendMessagePayload))
+	return fmt.Sprintf("ReadChannelReply: msgID=%s channel=%d (%d bytes payload)", msgIDStr, e.ChannelID, len(e.SendMessagePayload))
 }

@@ -14,9 +14,9 @@ func IntoThinResponse(r *Response) *thin.Response {
 		MessageReplyEvent:         r.MessageReplyEvent,
 		MessageIDGarbageCollected: r.MessageIDGarbageCollected,
 		CreateWriteChannelReply:   r.CreateWriteChannelReply,
-		CreateReadChannelV2Reply:  r.CreateReadChannelV2Reply,
-		WriteChannelV2Reply:       r.WriteChannelV2Reply,
-		ReadChannelV2Reply:        r.ReadChannelV2Reply,
+		CreateReadChannelReply:    r.CreateReadChannelReply,
+		WriteChannelReply:         r.WriteChannelReply,
+		ReadChannelReply:          r.ReadChannelReply,
 	}
 }
 
@@ -39,20 +39,20 @@ type Response struct {
 
 	CreateWriteChannelReply *thin.CreateWriteChannelReply
 
-	CreateReadChannelV2Reply *thin.CreateReadChannelV2Reply
+	CreateReadChannelReply *thin.CreateReadChannelReply
 
-	WriteChannelV2Reply *thin.WriteChannelV2Reply
+	WriteChannelReply *thin.WriteChannelReply
 
-	ReadChannelV2Reply *thin.ReadChannelV2Reply
+	ReadChannelReply *thin.ReadChannelReply
 }
 
 func FromThinRequest(r *thin.Request, appid *[AppIDLength]byte) *Request {
 	return &Request{
-		AppID:               appid,
-		CreateWriteChannel:  r.CreateWriteChannel,
-		CreateReadChannelV2: r.CreateReadChannelV2,
-		WriteChannelV2:      r.WriteChannelV2,
-		ReadChannelV2:       r.ReadChannelV2,
+		AppID:              appid,
+		CreateWriteChannel: r.CreateWriteChannel,
+		CreateReadChannel:  r.CreateReadChannel,
+		WriteChannel:       r.WriteChannel,
+		ReadChannel:        r.ReadChannel,
 
 		SendMessage:    r.SendMessage,
 		SendARQMessage: r.SendARQMessage,
@@ -65,11 +65,11 @@ func FromThinRequest(r *thin.Request, appid *[AppIDLength]byte) *Request {
 type Request struct {
 	CreateWriteChannel *thin.CreateWriteChannel
 
-	CreateReadChannelV2 *thin.CreateReadChannelV2
+	CreateReadChannel *thin.CreateReadChannel
 
-	WriteChannelV2 *thin.WriteChannelV2
+	WriteChannel *thin.WriteChannel
 
-	ReadChannelV2 *thin.ReadChannelV2
+	ReadChannel *thin.ReadChannel
 
 	SendMessage *thin.SendMessage
 

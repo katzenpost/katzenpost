@@ -122,14 +122,14 @@ func TestDockerCourierServiceNewThinclientAPI(t *testing.T) {
 
 	// Bob creates read channel
 	t.Log("Bob: Creating read channel")
-	bobChannelID, _, err := bobThinClient.CreateReadChannelV2(ctx, readCap, nil)
+	bobChannelID, _, err := bobThinClient.CreateReadChannel(ctx, readCap, nil)
 	require.NoError(t, err)
 	t.Logf("Bob: Created read channel %d", bobChannelID)
 
 	// Alice writes message
 	originalMessage := []byte("Hello from Alice to Bob via new channel API!")
 	t.Log("Alice: Writing message")
-	writePayload, _, err := aliceThinClient.WriteChannelV2(ctx, channelID, originalMessage)
+	writePayload, _, err := aliceThinClient.WriteChannel(ctx, channelID, originalMessage)
 	require.NoError(t, err)
 	require.NotNil(t, writePayload)
 	t.Logf("Alice: Generated write payload (%d bytes)", len(writePayload))
@@ -152,7 +152,7 @@ func TestDockerCourierServiceNewThinclientAPI(t *testing.T) {
 	// Bob reads message using the helper function
 	t.Log("Bob: Reading message")
 	messageID := bobThinClient.NewMessageID()
-	readPayload, _, err := bobThinClient.ReadChannelV2(ctx, bobChannelID, messageID)
+	readPayload, _, err := bobThinClient.ReadChannel(ctx, bobChannelID, messageID)
 	require.NoError(t, err)
 	require.NotNil(t, readPayload)
 	t.Logf("Bob: Generated read payload (%d bytes)", len(readPayload))

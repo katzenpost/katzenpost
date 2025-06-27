@@ -491,12 +491,12 @@ func (d *Daemon) sendCreateWriteChannelError(request *Request, errorCode uint8) 
 	}
 }
 
-func (d *Daemon) sendCreateReadChannelV2Error(request *Request, errorCode uint8) {
+func (d *Daemon) sendCreateReadChannelError(request *Request, errorCode uint8) {
 	conn := d.listener.getConnection(request.AppID)
 	if conn != nil {
 		conn.sendResponse(&Response{
 			AppID: request.AppID,
-			CreateReadChannelV2Reply: &thin.CreateReadChannelV2Reply{
+			CreateReadChannelReply: &thin.CreateReadChannelReply{
 				ChannelID: 0,
 				ErrorCode: errorCode,
 			},
@@ -504,48 +504,48 @@ func (d *Daemon) sendCreateReadChannelV2Error(request *Request, errorCode uint8)
 	}
 }
 
-func (d *Daemon) sendWriteChannelV2Error(request *Request, errorCode uint8) {
+func (d *Daemon) sendWriteChannelError(request *Request, errorCode uint8) {
 	conn := d.listener.getConnection(request.AppID)
 	if conn != nil {
 		conn.sendResponse(&Response{
 			AppID: request.AppID,
-			WriteChannelV2Reply: &thin.WriteChannelV2Reply{
-				ChannelID: request.WriteChannelV2.ChannelID,
+			WriteChannelReply: &thin.WriteChannelReply{
+				ChannelID: request.WriteChannel.ChannelID,
 				ErrorCode: errorCode,
 			},
 		})
 	}
 }
 
-func (d *Daemon) sendReadChannelV2Error(request *Request, errorCode uint8) {
+func (d *Daemon) sendReadChannelError(request *Request, errorCode uint8) {
 	conn := d.listener.getConnection(request.AppID)
 	if conn != nil {
 		conn.sendResponse(&Response{
 			AppID: request.AppID,
-			ReadChannelV2Reply: &thin.ReadChannelV2Reply{
-				MessageID: request.ReadChannelV2.MessageID,
-				ChannelID: request.ReadChannelV2.ChannelID,
+			ReadChannelReply: &thin.ReadChannelReply{
+				MessageID: request.ReadChannel.MessageID,
+				ChannelID: request.ReadChannel.ChannelID,
 				ErrorCode: errorCode,
 			},
 		})
 	}
 }
 
-func (d *Daemon) createOrResumeStatefulReaderV2(request *Request) (*bacap.StatefulReader, error) {
-	if request.CreateReadChannelV2.ReadCap == nil {
-		return nil, errors.New("CreateReadChannelV2 requires a ReadCap")
+func (d *Daemon) createOrResumeStatefulReader(request *Request) (*bacap.StatefulReader, error) {
+	if request.CreateReadChannel.ReadCap == nil {
+		return nil, errors.New("CreateReadChannel requires a ReadCap")
 	}
 
 	var statefulReader *bacap.StatefulReader
 	var err error
 
-	if request.CreateReadChannelV2.MessageBoxIndex == nil {
-		statefulReader, err = bacap.NewStatefulReader(request.CreateReadChannelV2.ReadCap, constants.PIGEONHOLE_CTX)
+	if request.CreateReadChannel.MessageBoxIndex == nil {
+		statefulReader, err = bacap.NewStatefulReader(request.CreateReadChannel.ReadCap, constants.PIGEONHOLE_CTX)
 		if err != nil {
 			return nil, err
 		}
 	} else {
-		statefulReader, err = bacap.NewStatefulReaderWithIndex(request.CreateReadChannelV2.ReadCap, constants.PIGEONHOLE_CTX, request.CreateReadChannelV2.MessageBoxIndex)
+		statefulReader, err = bacap.NewStatefulReaderWithIndex(request.CreateReadChannel.ReadCap, constants.PIGEONHOLE_CTX, request.CreateReadChannel.MessageBoxIndex)
 		if err != nil {
 			return nil, err
 		}
@@ -553,11 +553,11 @@ func (d *Daemon) createOrResumeStatefulReaderV2(request *Request) (*bacap.Statef
 	return statefulReader, nil
 }
 
-func (d *Daemon) createReadChannelV2(request *Request) {
-	statefulReader, err := d.createOrResumeStatefulReaderV2(request)
+func (d *Daemon) createReadChannel(request *Request) {
+	statefulReader, err := d.createOrResumeStatefulReader(request)
 	if err != nil {
-		d.log.Errorf("createReadChannelV2 failure: %s", err)
-		d.sendCreateReadChannelV2Error(request, thin.ThinClientErrorInternalError)
+		d.log.Errorf("createReadChannel failure: %s", err)
+		d.sendCreateReadChannelError(request, thin.ThinClientErrorInternalError)
 		return
 	}
 
@@ -573,13 +573,13 @@ func (d *Daemon) createReadChannelV2(request *Request) {
 	currentMessageIndex := statefulReader.NextIndex
 	conn := d.listener.getConnection(request.AppID)
 	if conn == nil {
-		d.log.Errorf("createReadChannelV2 failure: "+errNoConnectionForAppID, request.AppID[:])
-		d.sendCreateReadChannelV2Error(request, thin.ThinClientErrorInternalError)
+		d.log.Errorf("createReadChannel failure: "+errNoConnectionForAppID, request.AppID[:])
+		d.sendCreateReadChannelError(request, thin.ThinClientErrorInternalError)
 		return
 	}
 	conn.sendResponse(&Response{
 		AppID: request.AppID,
-		CreateReadChannelV2Reply: &thin.CreateReadChannelV2Reply{
+		CreateReadChannelReply: &thin.CreateReadChannelReply{
 			ChannelID:        channelID,
 			NextMessageIndex: currentMessageIndex,
 			ErrorCode:        thin.ThinClientSuccess,
@@ -607,15 +607,15 @@ func (d *Daemon) checkWriteCapabilityDedup(writeCap *bacap.WriteCap) error {
 	return nil
 }
 
-func (d *Daemon) writeChannelV2(request *Request) {
-	channelID := request.WriteChannelV2.ChannelID
+func (d *Daemon) writeChannel(request *Request) {
+	channelID := request.WriteChannel.ChannelID
 
 	d.newChannelMapLock.RLock()
 	channelDesc, ok := d.newChannelMap[channelID]
 	d.newChannelMapLock.RUnlock()
 	if !ok {
-		d.log.Errorf("writeChannelV2 failure: no channel found for channelID %d", channelID)
-		d.sendWriteChannelV2Error(request, thin.ThinClientErrorChannelNotFound)
+		d.log.Errorf("writeChannel failure: no channel found for channelID %d", channelID)
+		d.sendWriteChannelError(request, thin.ThinClientErrorChannelNotFound)
 		return
 	}
 
@@ -624,20 +624,20 @@ func (d *Daemon) writeChannelV2(request *Request) {
 	channelDesc.StatefulWriterLock.Lock()
 	courierEnvelope, envelopePrivateKey, err := CreateChannelWriteRequestPrepareOnly(
 		channelDesc.StatefulWriter,
-		request.WriteChannelV2.Payload,
+		request.WriteChannel.Payload,
 		doc,
 		d.cfg.PigeonholeGeometry)
 	if err != nil {
 		channelDesc.StatefulWriterLock.Unlock()
-		d.log.Errorf("writeChannelV2 failure: failed to create write request: %s", err)
-		d.sendWriteChannelV2Error(request, thin.ThinClientErrorInternalError)
+		d.log.Errorf("writeChannel failure: failed to create write request: %s", err)
+		d.sendWriteChannelError(request, thin.ThinClientErrorInternalError)
 		return
 	}
 	nextMessageIndex, err := channelDesc.StatefulWriter.GetNextMessageIndex()
 	if err != nil {
 		channelDesc.StatefulWriterLock.Unlock()
-		d.log.Errorf("writeChannelV2 failure: failed to get next message index: %s", err)
-		d.sendWriteChannelV2Error(request, thin.ThinClientErrorInternalError)
+		d.log.Errorf("writeChannel failure: failed to get next message index: %s", err)
+		d.sendWriteChannelError(request, thin.ThinClientErrorInternalError)
 		return
 	}
 	channelDesc.StatefulWriterLock.Unlock()
@@ -659,12 +659,12 @@ func (d *Daemon) writeChannelV2(request *Request) {
 	conn := d.listener.getConnection(request.AppID)
 	if conn == nil {
 		d.log.Errorf(errNoConnectionForAppID, request.AppID[:])
-		d.sendWriteChannelV2Error(request, thin.ThinClientErrorConnectionLost)
+		d.sendWriteChannelError(request, thin.ThinClientErrorConnectionLost)
 		return
 	}
 	conn.sendResponse(&Response{
 		AppID: request.AppID,
-		WriteChannelV2Reply: &thin.WriteChannelV2Reply{
+		WriteChannelReply: &thin.WriteChannelReply{
 			ChannelID:          channelID,
 			SendMessagePayload: courierQuery.Bytes(),
 			NextMessageIndex:   nextMessageIndex,
@@ -673,16 +673,16 @@ func (d *Daemon) writeChannelV2(request *Request) {
 	})
 }
 
-func (d *Daemon) readChannelV2(request *Request) {
-	channelID := request.ReadChannelV2.ChannelID
+func (d *Daemon) readChannel(request *Request) {
+	channelID := request.ReadChannel.ChannelID
 
 	d.newChannelMapLock.RLock()
 	channelDesc, ok := d.newChannelMap[channelID]
 	d.newChannelMapLock.RUnlock()
 
 	if !ok {
-		d.log.Errorf("readChannelV2 failure: no channel found for channelID %d", channelID)
-		d.sendReadChannelV2Error(request, thin.ThinClientErrorChannelNotFound)
+		d.log.Errorf("readChannel failure: no channel found for channelID %d", channelID)
+		d.sendReadChannelError(request, thin.ThinClientErrorChannelNotFound)
 		return
 	}
 
@@ -692,16 +692,16 @@ func (d *Daemon) readChannelV2(request *Request) {
 	boxID, err := channelDesc.StatefulReader.NextBoxID()
 	if err != nil {
 		channelDesc.StatefulReaderLock.Unlock()
-		d.log.Errorf("readChannelV2 failure: failed to get next box ID: %s", err)
-		d.sendReadChannelV2Error(request, thin.ThinClientErrorInternalError)
+		d.log.Errorf("readChannel failure: failed to get next box ID: %s", err)
+		d.sendReadChannelError(request, thin.ThinClientErrorInternalError)
 		return
 	}
 	nextMessageIndex, err := channelDesc.StatefulReader.NextIndex.NextIndex()
 	channelDesc.StatefulReaderLock.Unlock()
 
 	if err != nil {
-		d.log.Errorf("readChannelV2 failure: failed to get next message index: %s", err)
-		d.sendReadChannelV2Error(request, thin.ThinClientErrorInternalError)
+		d.log.Errorf("readChannel failure: failed to get next message index: %s", err)
+		d.sendReadChannelError(request, thin.ThinClientErrorInternalError)
 		return
 	}
 
@@ -714,8 +714,8 @@ func (d *Daemon) readChannelV2(request *Request) {
 
 	intermediateReplicas, replicaPubKeys, err := pigeonhole.GetRandomIntermediateReplicas(doc)
 	if err != nil {
-		d.log.Errorf("readChannelV2 failure: failed to get intermediate replicas: %s", err)
-		d.sendReadChannelV2Error(request, thin.ThinClientErrorInternalError)
+		d.log.Errorf("readChannel failure: failed to get intermediate replicas: %s", err)
+		d.sendReadChannelError(request, thin.ThinClientErrorInternalError)
 		return
 	}
 
@@ -758,13 +758,13 @@ func (d *Daemon) readChannelV2(request *Request) {
 	conn := d.listener.getConnection(request.AppID)
 	if conn == nil {
 		d.log.Errorf(errNoConnectionForAppID, request.AppID[:])
-		d.sendReadChannelV2Error(request, thin.ThinClientErrorConnectionLost)
+		d.sendReadChannelError(request, thin.ThinClientErrorConnectionLost)
 		return
 	}
 	conn.sendResponse(&Response{
 		AppID: request.AppID,
-		ReadChannelV2Reply: &thin.ReadChannelV2Reply{
-			MessageID:          request.ReadChannelV2.MessageID,
+		ReadChannelReply: &thin.ReadChannelReply{
+			MessageID:          request.ReadChannel.MessageID,
 			ChannelID:          channelID,
 			SendMessagePayload: courierQuery.Bytes(),
 			NextMessageIndex:   nextMessageIndex,

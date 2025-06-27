@@ -133,10 +133,10 @@ func (e *CreateWriteChannelReply) String() string {
 	return fmt.Sprintf("CreateWriteChannelReply: %d", e.ChannelID)
 }
 
-// CreateReadChannelV2 requests the creation of a new pigeonhole read channel
+// CreateReadChannel requests the creation of a new pigeonhole read channel
 // from an existing read capability. Read channels allow receiving messages
 // from a communication channel created by the holder of the write capability.
-type CreateReadChannelV2 struct {
+type CreateReadChannel struct {
 	// ReadCap is the read capability that grants access to the channel.
 	// This capability is typically shared by the channel creator and allows
 	// reading messages from the specified channel.
@@ -147,10 +147,10 @@ type CreateReadChannelV2 struct {
 	MessageBoxIndex *bacap.MessageBoxIndex `cbor:"message_box_index,omitempty"`
 }
 
-// WriteChannelV2 requests writing a message to an existing pigeonhole channel (V2 API).
+// WriteChannel requests writing a message to an existing pigeonhole channel.
 // The daemon will prepare the message for transmission and return the
 // serialized payload that should be sent via SendChannelQuery.
-type WriteChannelV2 struct {
+type WriteChannel struct {
 	// ChannelID identifies the target channel for the write operation.
 	// This ID was returned when the channel was created.
 	ChannelID uint16 `cbor:"channel_id"`
@@ -160,15 +160,15 @@ type WriteChannelV2 struct {
 	Payload []byte `cbor:"payload"`
 }
 
-// String returns a string representation of the WriteChannelV2 request.
-func (w *WriteChannelV2) String() string {
-	return fmt.Sprintf("WriteChannelV2: channel=%d (%d bytes payload)", w.ChannelID, len(w.Payload))
+// String returns a string representation of the WriteChannel request.
+func (w *WriteChannel) String() string {
+	return fmt.Sprintf("WriteChannel: channel=%d (%d bytes payload)", w.ChannelID, len(w.Payload))
 }
 
-// ReadChannelV2 requests reading the next message from a pigeonhole channel (V2 API).
+// ReadChannel requests reading the next message from a pigeonhole channel.
 // The daemon will prepare a query for the next available message and return
 // the serialized payload that should be sent via SendChannelQuery.
-type ReadChannelV2 struct {
+type ReadChannel struct {
 	// ChannelID identifies the source channel for the read operation.
 	// This ID was returned when the channel was created.
 	ChannelID uint16 `cbor:"channel_id"`
@@ -179,13 +179,13 @@ type ReadChannelV2 struct {
 	MessageID *[MessageIDLength]byte `cbor:"id,omitempty"`
 }
 
-// String returns a string representation of the ReadChannelV2 request.
-func (r *ReadChannelV2) String() string {
+// String returns a string representation of the ReadChannel request.
+func (r *ReadChannel) String() string {
 	msgIDStr := "nil"
 	if r.MessageID != nil {
 		msgIDStr = fmt.Sprintf("%x", r.MessageID[:8]) // First 8 bytes for brevity
 	}
-	return fmt.Sprintf("ReadChannelV2: channel=%d msgID=%s", r.ChannelID, msgIDStr)
+	return fmt.Sprintf("ReadChannel: channel=%d msgID=%s", r.ChannelID, msgIDStr)
 }
 
 type SendMessage struct {
@@ -264,11 +264,11 @@ type Response struct {
 
 	CreateWriteChannelReply *CreateWriteChannelReply `cbor:"create_write_channel_reply"`
 
-	CreateReadChannelV2Reply *CreateReadChannelV2Reply `cbor:"create_read_channel_v2_reply"`
+	CreateReadChannelReply *CreateReadChannelReply `cbor:"create_read_channel_reply"`
 
-	WriteChannelV2Reply *WriteChannelV2Reply `cbor:"write_channel_v2_reply"`
+	WriteChannelReply *WriteChannelReply `cbor:"write_channel_reply"`
 
-	ReadChannelV2Reply *ReadChannelV2Reply `cbor:"read_channel_v2_reply"`
+	ReadChannelReply *ReadChannelReply `cbor:"read_channel_reply"`
 }
 
 type Request struct {
@@ -278,14 +278,14 @@ type Request struct {
 	// CreateWriteChannel is used to create a new Pigeonhole write channel.
 	CreateWriteChannel *CreateWriteChannel `cbor:"create_write_channel"`
 
-	// CreateReadChannelV2 is used to create a new Pigeonhole read channel.
-	CreateReadChannelV2 *CreateReadChannelV2 `cbor:"create_read_channel_v2"`
+	// CreateReadChannel is used to create a new Pigeonhole read channel.
+	CreateReadChannel *CreateReadChannel `cbor:"create_read_channel"`
 
-	// WriteChannelV2 is used to write to a Pigeonhole channel (new API).
-	WriteChannelV2 *WriteChannelV2 `cbor:"write_channel_v2"`
+	// WriteChannel is used to write to a Pigeonhole channel.
+	WriteChannel *WriteChannel `cbor:"write_channel"`
 
-	// ReadChannelV2 is used to read from a Pigeonhole channel (new API).
-	ReadChannelV2 *ReadChannelV2 `cbor:"read_channel_v2"`
+	// ReadChannel is used to read from a Pigeonhole channel.
+	ReadChannel *ReadChannel `cbor:"read_channel"`
 
 	// SendMessage is used to send a message through the mix network.
 	SendMessage *SendMessage `cbor:"send_message"`

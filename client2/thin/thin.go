@@ -414,10 +414,10 @@ func (t *ThinClient) worker() {
 				}
 			}
 
-		case message.CreateReadChannelV2Reply != nil:
-			t.log.Debug("CreateReadChannelV2Reply")
+		case message.CreateReadChannelReply != nil:
+			t.log.Debug("CreateReadChannelReply")
 			select {
-			case t.eventSink <- message.CreateReadChannelV2Reply:
+			case t.eventSink <- message.CreateReadChannelReply:
 				continue
 			case <-t.HaltCh():
 				return
@@ -431,18 +431,18 @@ func (t *ThinClient) worker() {
 				return
 			}
 
-		case message.WriteChannelV2Reply != nil:
-			t.log.Debug("WriteChannelV2Reply")
+		case message.WriteChannelReply != nil:
+			t.log.Debug("WriteChannelReply")
 			select {
-			case t.eventSink <- message.WriteChannelV2Reply:
+			case t.eventSink <- message.WriteChannelReply:
 				continue
 			case <-t.HaltCh():
 				return
 			}
-		case message.ReadChannelV2Reply != nil:
-			t.log.Debug("ReadChannelV2Reply")
+		case message.ReadChannelReply != nil:
+			t.log.Debug("ReadChannelReply")
 			select {
-			case t.eventSink <- message.ReadChannelV2Reply:
+			case t.eventSink <- message.ReadChannelReply:
 				continue
 			case <-t.HaltCh():
 				return
@@ -831,8 +831,8 @@ func (t *ThinClient) CreateWriteChannel(ctx context.Context, WriteCap *bacap.Wri
 	}
 }
 
-// CreateReadChannelV2 creates a read channel from a read capability.
-func (t *ThinClient) CreateReadChannelV2(ctx context.Context, readCap *bacap.ReadCap, messageBoxIndex *bacap.MessageBoxIndex) (uint16, *bacap.MessageBoxIndex, error) {
+// CreateReadChannel creates a read channel from a read capability.
+func (t *ThinClient) CreateReadChannel(ctx context.Context, readCap *bacap.ReadCap, messageBoxIndex *bacap.MessageBoxIndex) (uint16, *bacap.MessageBoxIndex, error) {
 	if ctx == nil {
 		return 0, nil, errContextCannotBeNil
 	}
@@ -841,7 +841,7 @@ func (t *ThinClient) CreateReadChannelV2(ctx context.Context, readCap *bacap.Rea
 	}
 
 	req := &Request{
-		CreateReadChannelV2: &CreateReadChannelV2{
+		CreateReadChannel: &CreateReadChannel{
 			ReadCap:         readCap,
 			MessageBoxIndex: messageBoxIndex,
 		},
@@ -866,7 +866,7 @@ func (t *ThinClient) CreateReadChannelV2(ctx context.Context, readCap *bacap.Rea
 		}
 
 		switch v := event.(type) {
-		case *CreateReadChannelV2Reply:
+		case *CreateReadChannelReply:
 			if v.ErrorCode != ThinClientSuccess {
 				return 0, nil, errors.New(ThinClientErrorToString(v.ErrorCode))
 			}
@@ -883,9 +883,9 @@ func (t *ThinClient) CreateReadChannelV2(ctx context.Context, readCap *bacap.Rea
 	}
 }
 
-// WriteChannelV2 prepares a write message for a pigeonhole channel and returns the SendMessage payload and next MessageBoxIndex.
+// WriteChannel prepares a write message for a pigeonhole channel and returns the SendMessage payload and next MessageBoxIndex.
 // The thin client must then call SendChannelQuery with the returned payload to actually send the message.
-func (t *ThinClient) WriteChannelV2(ctx context.Context, channelID uint16, payload []byte) ([]byte, *bacap.MessageBoxIndex, error) {
+func (t *ThinClient) WriteChannel(ctx context.Context, channelID uint16, payload []byte) ([]byte, *bacap.MessageBoxIndex, error) {
 	if ctx == nil {
 		return nil, nil, errContextCannotBeNil
 	}
@@ -896,7 +896,7 @@ func (t *ThinClient) WriteChannelV2(ctx context.Context, channelID uint16, paylo
 	}
 
 	req := &Request{
-		WriteChannelV2: &WriteChannelV2{
+		WriteChannel: &WriteChannel{
 			ChannelID: channelID,
 			Payload:   payload,
 		},
@@ -921,7 +921,7 @@ func (t *ThinClient) WriteChannelV2(ctx context.Context, channelID uint16, paylo
 		}
 
 		switch v := event.(type) {
-		case *WriteChannelV2Reply:
+		case *WriteChannelReply:
 			if v.ErrorCode != ThinClientSuccess {
 				return nil, nil, errors.New(ThinClientErrorToString(v.ErrorCode))
 			}
@@ -938,9 +938,9 @@ func (t *ThinClient) WriteChannelV2(ctx context.Context, channelID uint16, paylo
 	}
 }
 
-// ReadChannelV2 prepares a read query for a pigeonhole channel and returns the payload and next MessageBoxIndex.
+// ReadChannel prepares a read query for a pigeonhole channel and returns the payload and next MessageBoxIndex.
 // The thin client must then call SendChannelQuery with the returned payload to actually send the query.
-func (t *ThinClient) ReadChannelV2(ctx context.Context, channelID uint16, messageID *[MessageIDLength]byte) ([]byte, *bacap.MessageBoxIndex, error) {
+func (t *ThinClient) ReadChannel(ctx context.Context, channelID uint16, messageID *[MessageIDLength]byte) ([]byte, *bacap.MessageBoxIndex, error) {
 	if ctx == nil {
 		return nil, nil, errContextCannotBeNil
 	}
@@ -949,7 +949,7 @@ func (t *ThinClient) ReadChannelV2(ctx context.Context, channelID uint16, messag
 	}
 
 	req := &Request{
-		ReadChannelV2: &ReadChannelV2{
+		ReadChannel: &ReadChannel{
 			ChannelID: channelID,
 			MessageID: messageID,
 		},
@@ -974,7 +974,7 @@ func (t *ThinClient) ReadChannelV2(ctx context.Context, channelID uint16, messag
 		}
 
 		switch v := event.(type) {
-		case *ReadChannelV2Reply:
+		case *ReadChannelReply:
 			if v.ErrorCode != ThinClientSuccess {
 				return nil, nil, errors.New(ThinClientErrorToString(v.ErrorCode))
 			}
@@ -991,7 +991,7 @@ func (t *ThinClient) ReadChannelV2(ctx context.Context, channelID uint16, messag
 	}
 }
 
-// SendChannelQuery sends a channel query (prepared by WriteChannelV2 or ReadChannelV2) to the mixnet.
+// SendChannelQuery sends a channel query (prepared by WriteChannel or ReadChannel) to the mixnet.
 func (t *ThinClient) SendChannelQuery(
 	ctx context.Context,
 	channelID uint16,

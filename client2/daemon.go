@@ -344,12 +344,12 @@ func (d *Daemon) egressWorker() {
 
 			case request.CreateWriteChannel != nil:
 				d.createWriteChannel(request)
-			case request.CreateReadChannelV2 != nil:
-				d.createReadChannelV2(request)
-			case request.WriteChannelV2 != nil:
-				d.writeChannelV2(request)
-			case request.ReadChannelV2 != nil:
-				d.readChannelV2(request)
+			case request.CreateReadChannel != nil:
+				d.createReadChannel(request)
+			case request.WriteChannel != nil:
+				d.writeChannel(request)
+			case request.ReadChannel != nil:
+				d.readChannel(request)
 
 			default:
 				panic("send operation not fully specified")
