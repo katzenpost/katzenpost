@@ -1218,6 +1218,68 @@ func (d *Daemon) validateNewChannel(channelID uint16, channelDesc *ChannelDescri
 	return isReader, isWriter, nil
 }
 
+// validateReadReplySignature checks if the signature is valid (not all zeros)
+func (d *Daemon) validateReadReplySignature(signature [64]uint8) error {
+	var zeroSig [64]uint8
+	if signature == zeroSig {
+		d.log.Debugf("replica returned zero signature for read operation")
+		return fmt.Errorf("replica read reply has zero signature")
+	}
+	return nil
+}
+
+// decryptReadReplyPayload handles the decryption and extraction of the payload
+func (d *Daemon) decryptReadReplyPayload(params *NewReplyHandlerParams, readReply *pigeonhole.ReplicaReadReply) ([]byte, error) {
+	params.ChannelDesc.StatefulReaderLock.Lock()
+	defer params.ChannelDesc.StatefulReaderLock.Unlock()
+
+	boxid, err := params.ChannelDesc.StatefulReader.NextBoxID()
+	if err != nil {
+		d.log.Errorf("Failed to get next box ID for channel %d: %s", params.ChannelID, err)
+		return nil, fmt.Errorf("failed to get next box ID: %s", err)
+	}
+
+	// BACAP decrypt the payload
+	d.log.Debugf("BACAP DECRYPT: Starting decryption for BoxID %x with payload size %d bytes", boxid[:], len(readReply.Payload))
+	signature := (*[bacap.SignatureSize]byte)(readReply.Signature[:])
+	innerplaintext, err := params.ChannelDesc.StatefulReader.DecryptNext(
+		[]byte(constants.PIGEONHOLE_CTX),
+		*boxid,
+		readReply.Payload,
+		*signature)
+
+	if err != nil {
+		d.log.Errorf("BACAP DECRYPT FAILED for BoxID %x: %s", boxid[:], err)
+		return nil, fmt.Errorf("failed to decrypt next: %s", err)
+	}
+
+	d.log.Debugf("BACAP DECRYPT SUCCESS: Decrypted %d bytes for BoxID %x", len(innerplaintext), boxid[:])
+
+	// Extract the original message from the padded payload
+	originalMessage, err := pigeonhole.ExtractMessageFromPaddedPayload(innerplaintext)
+	if err != nil {
+		d.log.Errorf("Failed to extract message from padded payload: %s", err)
+		return nil, fmt.Errorf("failed to extract message from padded payload: %s", err)
+	}
+
+	d.log.Debugf("Successfully extracted %d bytes from %d padded bytes for channel %d", len(originalMessage), len(innerplaintext), params.ChannelID)
+	return originalMessage, nil
+}
+
+// processReadReplyPayload processes the read reply and returns payload and error
+func (d *Daemon) processReadReplyPayload(params *NewReplyHandlerParams, readReply *pigeonhole.ReplicaReadReply) ([]byte, error) {
+	if readReply.ErrorCode != 0 {
+		d.log.Errorf("read failed for channel %d with error code %d", params.ChannelID, readReply.ErrorCode)
+		return nil, fmt.Errorf("read failed with error code %d", readReply.ErrorCode)
+	}
+
+	if err := d.validateReadReplySignature(readReply.Signature); err != nil {
+		return nil, err
+	}
+
+	return d.decryptReadReplyPayload(params, readReply)
+}
+
 // handleNewReadReply processes a read reply (new API)
 func (d *Daemon) handleNewReadReply(params *NewReplyHandlerParams, readReply *pigeonhole.ReplicaReadReply) error {
 	if !params.IsReader {
@@ -1225,56 +1287,7 @@ func (d *Daemon) handleNewReadReply(params *NewReplyHandlerParams, readReply *pi
 		return fmt.Errorf("bug 4, invalid book keeping for channelID %d", params.ChannelID)
 	}
 
-	var replyErr error
-	var payload []byte
-
-	if readReply.ErrorCode != 0 {
-		replyErr = fmt.Errorf("read failed with error code %d", readReply.ErrorCode)
-		d.log.Errorf("read failed for channel %d with error code %d", params.ChannelID, readReply.ErrorCode)
-	} else {
-		// Check if signature is all zeros (equivalent to nil check)
-		var zeroSig [64]uint8
-		if readReply.Signature == zeroSig {
-			replyErr = fmt.Errorf("replica read reply has zero signature")
-			d.log.Debugf("replica returned zero signature for read operation")
-		} else {
-			// For new API, get the next BoxID from the StatefulReader
-			params.ChannelDesc.StatefulReaderLock.Lock()
-			boxid, err := params.ChannelDesc.StatefulReader.NextBoxID()
-			if err != nil {
-				params.ChannelDesc.StatefulReaderLock.Unlock()
-				replyErr = fmt.Errorf("failed to get next box ID: %s", err)
-				d.log.Errorf("Failed to get next box ID for channel %d: %s", params.ChannelID, err)
-			} else {
-				// BACAP decrypt the payload
-				d.log.Debugf("BACAP DECRYPT: Starting decryption for BoxID %x with payload size %d bytes", boxid[:], len(readReply.Payload))
-				signature := (*[bacap.SignatureSize]byte)(readReply.Signature[:])
-				innerplaintext, err := params.ChannelDesc.StatefulReader.DecryptNext(
-					[]byte(constants.PIGEONHOLE_CTX),
-					*boxid,
-					readReply.Payload,
-					*signature)
-				params.ChannelDesc.StatefulReaderLock.Unlock()
-
-				if err != nil {
-					replyErr = fmt.Errorf("failed to decrypt next: %s", err)
-					d.log.Errorf("BACAP DECRYPT FAILED for BoxID %x: %s", boxid[:], err)
-				} else {
-					d.log.Debugf("BACAP DECRYPT SUCCESS: Decrypted %d bytes for BoxID %x", len(innerplaintext), boxid[:])
-
-					// Extract the original message from the padded payload
-					originalMessage, err := pigeonhole.ExtractMessageFromPaddedPayload(innerplaintext)
-					if err != nil {
-						replyErr = fmt.Errorf("failed to extract message from padded payload: %s", err)
-						d.log.Errorf("Failed to extract message from padded payload: %s", err)
-					} else {
-						payload = originalMessage
-						d.log.Debugf("Successfully extracted %d bytes from %d padded bytes for channel %d", len(originalMessage), len(innerplaintext), params.ChannelID)
-					}
-				}
-			}
-		}
-	}
+	payload, replyErr := d.processReadReplyPayload(params, readReply)
 
 	// For new API, use MessageReplyEvent to deliver the read result
 	err := params.Conn.sendResponse(&Response{
