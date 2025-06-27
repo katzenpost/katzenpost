@@ -17,6 +17,86 @@ import (
 	"github.com/katzenpost/katzenpost/client2/thin"
 )
 
+// attemptResult represents the result of a single query attempt
+type attemptResult struct {
+	payload []byte
+	retry   bool
+	success bool
+}
+
+// cleanupAttempt handles cleanup for a failed attempt
+func cleanupAttempt(t *testing.T, cancel context.CancelFunc, client *thin.ThinClient, eventSink chan thin.Event, attempt int, reason string) {
+	t.Logf("%s on attempt %d", reason, attempt)
+	cancel()
+	client.StopEventSink(eventSink)
+}
+
+// handleMessageReplyEvent processes MessageReplyEvent and returns the result
+func handleMessageReplyEvent(t *testing.T, v *thin.MessageReplyEvent, attempt int) attemptResult {
+	t.Log("MessageReplyEvent")
+
+	if v.Err != nil {
+		t.Logf("Message reply error on attempt %d: %v", attempt, v.Err)
+		return attemptResult{retry: true}
+	}
+
+	if v.Payload != nil && len(v.Payload) > 0 {
+		t.Logf("SUCCESS: Received non-empty payload on attempt %d (%d bytes)", attempt, len(v.Payload))
+		return attemptResult{payload: v.Payload, success: true}
+	}
+
+	t.Logf("Received nil/empty payload on attempt %d, retrying...", attempt)
+	return attemptResult{retry: true}
+}
+
+// handleEvent processes a single event and returns the result
+func handleEvent(t *testing.T, event thin.Event, attempt int) attemptResult {
+	switch v := event.(type) {
+	case *thin.MessageIDGarbageCollected:
+		t.Log("MessageIDGarbageCollected")
+	case *thin.ConnectionStatusEvent:
+		t.Log("ConnectionStatusEvent")
+		if !v.IsConnected {
+			t.Fatal("socket connection lost")
+		}
+	case *thin.NewDocumentEvent:
+		t.Log("NewPKIDocumentEvent")
+	case *thin.MessageSentEvent:
+		t.Log("MessageSentEvent")
+	case *thin.MessageReplyEvent:
+		return handleMessageReplyEvent(t, v, attempt)
+	default:
+		t.Logf("Ignoring event type: %T", event)
+	}
+	return attemptResult{} // Continue waiting
+}
+
+// waitForReply waits for a reply from the event sink
+func waitForReply(t *testing.T, client *thin.ThinClient, eventSink chan thin.Event, ctx context.Context, cancel context.CancelFunc, attempt int) attemptResult {
+	timeout := time.After(15 * time.Second)
+
+	for {
+		select {
+		case <-timeout:
+			cleanupAttempt(t, cancel, client, eventSink, attempt, "Timeout")
+			return attemptResult{retry: true}
+		case <-ctx.Done():
+			cleanupAttempt(t, cancel, client, eventSink, attempt, "Context cancelled")
+			return attemptResult{retry: true}
+		case event := <-eventSink:
+			result := handleEvent(t, event, attempt)
+			if result.success || result.retry {
+				if result.success || result.retry {
+					cancel()
+					client.StopEventSink(eventSink)
+				}
+				return result
+			}
+			// Continue waiting for more events
+		}
+	}
+}
+
 // sendQueryAndWait sends a channel query and waits for the reply with retry logic
 func sendQueryAndWait(t *testing.T, client *thin.ThinClient, channelID uint16, message []byte, nodeID *[32]byte, queueID []byte) []byte {
 	maxRetries := 5
@@ -31,59 +111,12 @@ func sendQueryAndWait(t *testing.T, client *thin.ThinClient, channelID uint16, m
 		err := client.SendChannelQuery(ctx, channelID, message, nodeID, queueID)
 		require.NoError(t, err)
 
-		// Wait for reply
-		timeout := time.After(15 * time.Second)
-		for {
-			select {
-			case <-timeout:
-				t.Logf("Timeout on attempt %d", attempt)
-				cancel()
-				client.StopEventSink(eventSink)
-				goto nextAttempt
-			case <-ctx.Done():
-				t.Logf("Context cancelled on attempt %d", attempt)
-				cancel()
-				client.StopEventSink(eventSink)
-				goto nextAttempt
-			case event := <-eventSink:
-				switch v := event.(type) {
-				case *thin.MessageIDGarbageCollected:
-					t.Log("MessageIDGarbageCollected")
-				case *thin.ConnectionStatusEvent:
-					t.Log("ConnectionStatusEvent")
-					if !v.IsConnected {
-						t.Fatal("socket connection lost")
-					}
-				case *thin.NewDocumentEvent:
-					t.Log("NewPKIDocumentEvent")
-				case *thin.MessageSentEvent:
-					t.Log("MessageSentEvent")
-				case *thin.MessageReplyEvent:
-					t.Log("MessageReplyEvent")
-					if v.Err != nil {
-						t.Logf("Message reply error on attempt %d: %v", attempt, v.Err)
-						cancel()
-						client.StopEventSink(eventSink)
-						goto nextAttempt
-					}
-					if v.Payload != nil && len(v.Payload) > 0 {
-						t.Logf("SUCCESS: Received non-empty payload on attempt %d (%d bytes)", attempt, len(v.Payload))
-						cancel()
-						client.StopEventSink(eventSink)
-						return v.Payload
-					} else {
-						t.Logf("Received nil/empty payload on attempt %d, retrying...", attempt)
-						cancel()
-						client.StopEventSink(eventSink)
-						goto nextAttempt
-					}
-				default:
-					t.Logf("Ignoring event type: %T", event)
-				}
-			}
+		result := waitForReply(t, client, eventSink, ctx, cancel, attempt)
+
+		if result.success {
+			return result.payload
 		}
 
-	nextAttempt:
 		if attempt < maxRetries {
 			t.Logf("Waiting %v before retry...", retryDelay)
 			time.Sleep(retryDelay)
