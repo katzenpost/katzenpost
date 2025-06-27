@@ -179,25 +179,6 @@ func (d *Daemon) initLogging() error {
 	return err
 }
 
-// generateUniqueNewChannelID generates a unique uint16 channel ID for the new API
-func (d *Daemon) generateUniqueNewChannelID() uint16 {
-	d.newChannelMapLock.Lock()
-	defer d.newChannelMapLock.Unlock()
-
-	for {
-		// Generate a random uint16
-		var channelID uint16
-		binary.Read(rand.Reader, binary.BigEndian, &channelID)
-
-		// Check if it's already in use
-		if _, exists := d.newChannelMap[channelID]; !exists {
-			// Reserve the ID by adding an empty entry (will be replaced with actual descriptor)
-			d.newChannelMap[channelID] = nil
-			return channelID
-		}
-	}
-}
-
 // Shutdown cleanly shuts down a given Server instance.
 func (d *Daemon) Shutdown() {
 	d.haltOnce.Do(func() { d.halt() })
