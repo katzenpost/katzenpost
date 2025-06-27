@@ -93,6 +93,44 @@ func NewPigeonholeChannel() (*bacap.StatefulWriter, *bacap.ReadCap, *bacap.Write
 	return statefulWriter, bobReadCap, owner
 }
 
+// createEnvelopeFromMessage creates a CourierEnvelope from a ReplicaInnerMessage
+func createEnvelopeFromMessage(msg *pigeonhole.ReplicaInnerMessage, doc *cpki.Document, isRead bool) (*pigeonhole.CourierEnvelope, nike.PrivateKey, error) {
+	intermediateReplicas, replicaPubKeys, err := pigeonhole.GetRandomIntermediateReplicas(doc)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	mkemPrivateKey, mkemCiphertext := replicaCommon.MKEMNikeScheme.Encapsulate(
+		replicaPubKeys, msg.Bytes(),
+	)
+	mkemPublicKey := mkemPrivateKey.Public()
+
+	var dek1, dek2 [60]uint8
+	copy(dek1[:], mkemCiphertext.DEKCiphertexts[0][:])
+	copy(dek2[:], mkemCiphertext.DEKCiphertexts[1][:])
+
+	senderPubkeyBytes := mkemPublicKey.Bytes()
+
+	var isReadFlag uint8 = 0
+	if isRead {
+		isReadFlag = 1
+	}
+
+	envelope := &pigeonhole.CourierEnvelope{
+		IntermediateReplicas: intermediateReplicas,
+		Dek1:                 dek1,
+		Dek2:                 dek2,
+		ReplyIndex:           0,
+		Epoch:                doc.Epoch,
+		SenderPubkeyLen:      uint16(len(senderPubkeyBytes)),
+		SenderPubkey:         senderPubkeyBytes,
+		CiphertextLen:        uint32(len(mkemCiphertext.Envelope)),
+		Ciphertext:           mkemCiphertext.Envelope,
+		IsRead:               isReadFlag,
+	}
+	return envelope, mkemPrivateKey, nil
+}
+
 func CreateChannelWriteRequest(
 	statefulWriter *bacap.StatefulWriter,
 	payload []byte,
@@ -137,34 +175,7 @@ func CreateChannelWriteRequest(
 		WriteMsg:    writeRequest,
 	}
 
-	intermediateReplicas, replicaPubKeys, err := pigeonhole.GetRandomIntermediateReplicas(doc)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	mkemPrivateKey, mkemCiphertext := replicaCommon.MKEMNikeScheme.Encapsulate(
-		replicaPubKeys, msg.Bytes(),
-	)
-	mkemPublicKey := mkemPrivateKey.Public()
-
-	var dek1, dek2 [60]uint8
-	copy(dek1[:], mkemCiphertext.DEKCiphertexts[0][:])
-	copy(dek2[:], mkemCiphertext.DEKCiphertexts[1][:])
-
-	senderPubkeyBytes := mkemPublicKey.Bytes()
-	envelope := &pigeonhole.CourierEnvelope{
-		IntermediateReplicas: intermediateReplicas,
-		Dek1:                 dek1,
-		Dek2:                 dek2,
-		ReplyIndex:           0,
-		Epoch:                doc.Epoch,
-		SenderPubkeyLen:      uint16(len(senderPubkeyBytes)),
-		SenderPubkey:         senderPubkeyBytes,
-		CiphertextLen:        uint32(len(mkemCiphertext.Envelope)),
-		Ciphertext:           mkemCiphertext.Envelope,
-		IsRead:               0, // 0 = write
-	}
-	return envelope, mkemPrivateKey, err
+	return createEnvelopeFromMessage(msg, doc, false)
 }
 
 // CreateChannelWriteRequestPrepareOnly prepares a write request WITHOUT advancing StatefulWriter state.
@@ -209,34 +220,7 @@ func CreateChannelWriteRequestPrepareOnly(
 		WriteMsg:    writeRequest,
 	}
 
-	intermediateReplicas, replicaPubKeys, err := pigeonhole.GetRandomIntermediateReplicas(doc)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	mkemPrivateKey, mkemCiphertext := replicaCommon.MKEMNikeScheme.Encapsulate(
-		replicaPubKeys, msg.Bytes(),
-	)
-	mkemPublicKey := mkemPrivateKey.Public()
-
-	var dek1, dek2 [60]uint8
-	copy(dek1[:], mkemCiphertext.DEKCiphertexts[0][:])
-	copy(dek2[:], mkemCiphertext.DEKCiphertexts[1][:])
-
-	senderPubkeyBytes := mkemPublicKey.Bytes()
-	envelope := &pigeonhole.CourierEnvelope{
-		IntermediateReplicas: intermediateReplicas,
-		Dek1:                 dek1,
-		Dek2:                 dek2,
-		ReplyIndex:           0,
-		Epoch:                doc.Epoch,
-		SenderPubkeyLen:      uint16(len(senderPubkeyBytes)),
-		SenderPubkey:         senderPubkeyBytes,
-		CiphertextLen:        uint32(len(mkemCiphertext.Envelope)),
-		Ciphertext:           mkemCiphertext.Envelope,
-		IsRead:               0, // 0 = write
-	}
-	return envelope, mkemPrivateKey, err
+	return createEnvelopeFromMessage(msg, doc, false)
 }
 
 func CreateChannelReadRequest(channelID [thin.ChannelIDLength]byte,
@@ -266,37 +250,17 @@ func CreateChannelReadRequestWithBoxID(channelID [thin.ChannelIDLength]byte,
 		},
 	}
 
-	intermediateReplicas, replicaPubKeys, err := pigeonhole.GetRandomIntermediateReplicas(doc)
+	fmt.Printf("BOB MKEM ENCRYPT: Starting encryption with message size %d bytes\n", len(msg.Bytes()))
+	envelope, mkemPrivateKey, err := createEnvelopeFromMessage(msg, doc, true)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	fmt.Printf("BOB MKEM ENCRYPT: Starting encryption with message size %d bytes\n", len(msg.Bytes()))
-	mkemPrivateKey, mkemCiphertext := replicaCommon.MKEMNikeScheme.Encapsulate(replicaPubKeys, msg.Bytes())
-
 	// DEBUG: Log Bob's MKEM private key for envelope creation
 	mkemPrivateKeyBytes, _ := mkemPrivateKey.MarshalBinary()
 	fmt.Printf("BOB CREATES ENVELOPE WITH MKEM KEY: %x\n", mkemPrivateKeyBytes[:16]) // First 16 bytes for brevity
-	fmt.Printf("BOB MKEM ENCRYPT SUCCESS: Encrypted to %d bytes\n", len(mkemCiphertext.Envelope))
+	fmt.Printf("BOB MKEM ENCRYPT SUCCESS: Encrypted to %d bytes\n", len(envelope.Ciphertext))
 
-	// Convert DEK ciphertexts to arrays
-	var dek1, dek2 [60]uint8
-	copy(dek1[:], mkemCiphertext.DEKCiphertexts[0][:])
-	copy(dek2[:], mkemCiphertext.DEKCiphertexts[1][:])
-
-	senderPubkeyBytes := mkemPrivateKey.Public().Bytes()
-	envelope := &pigeonhole.CourierEnvelope{
-		IntermediateReplicas: intermediateReplicas,
-		Dek1:                 dek1,
-		Dek2:                 dek2,
-		ReplyIndex:           0,
-		Epoch:                doc.Epoch,
-		SenderPubkeyLen:      uint16(len(senderPubkeyBytes)),
-		SenderPubkey:         senderPubkeyBytes,
-		CiphertextLen:        uint32(len(mkemCiphertext.Envelope)),
-		Ciphertext:           mkemCiphertext.Envelope,
-		IsRead:               1, // 1 = read
-	}
 	return envelope, mkemPrivateKey, nil
 }
 
@@ -478,57 +442,56 @@ func (d *Daemon) createOrResumeStatefulWriter(request *Request) (*bacap.Stateful
 	return statefulWriter, nil
 }
 
-func (d *Daemon) sendCreateWriteChannelError(request *Request, errorCode uint8) {
+// sendErrorResponse sends an error response for various channel operations
+func (d *Daemon) sendErrorResponse(request *Request, errorCode uint8, responseType string) {
 	conn := d.listener.getConnection(request.AppID)
-	if conn != nil {
-		conn.sendResponse(&Response{
-			AppID: request.AppID,
-			CreateWriteChannelReply: &thin.CreateWriteChannelReply{
-				ChannelID: 0,
-				ErrorCode: errorCode,
-			},
-		})
+	if conn == nil {
+		return
 	}
+
+	response := &Response{AppID: request.AppID}
+
+	switch responseType {
+	case "CreateWriteChannel":
+		response.CreateWriteChannelReply = &thin.CreateWriteChannelReply{
+			ChannelID: 0,
+			ErrorCode: errorCode,
+		}
+	case "CreateReadChannel":
+		response.CreateReadChannelReply = &thin.CreateReadChannelReply{
+			ChannelID: 0,
+			ErrorCode: errorCode,
+		}
+	case "WriteChannel":
+		response.WriteChannelReply = &thin.WriteChannelReply{
+			ChannelID: request.WriteChannel.ChannelID,
+			ErrorCode: errorCode,
+		}
+	case "ReadChannel":
+		response.ReadChannelReply = &thin.ReadChannelReply{
+			MessageID: request.ReadChannel.MessageID,
+			ChannelID: request.ReadChannel.ChannelID,
+			ErrorCode: errorCode,
+		}
+	}
+
+	conn.sendResponse(response)
+}
+
+func (d *Daemon) sendCreateWriteChannelError(request *Request, errorCode uint8) {
+	d.sendErrorResponse(request, errorCode, "CreateWriteChannel")
 }
 
 func (d *Daemon) sendCreateReadChannelError(request *Request, errorCode uint8) {
-	conn := d.listener.getConnection(request.AppID)
-	if conn != nil {
-		conn.sendResponse(&Response{
-			AppID: request.AppID,
-			CreateReadChannelReply: &thin.CreateReadChannelReply{
-				ChannelID: 0,
-				ErrorCode: errorCode,
-			},
-		})
-	}
+	d.sendErrorResponse(request, errorCode, "CreateReadChannel")
 }
 
 func (d *Daemon) sendWriteChannelError(request *Request, errorCode uint8) {
-	conn := d.listener.getConnection(request.AppID)
-	if conn != nil {
-		conn.sendResponse(&Response{
-			AppID: request.AppID,
-			WriteChannelReply: &thin.WriteChannelReply{
-				ChannelID: request.WriteChannel.ChannelID,
-				ErrorCode: errorCode,
-			},
-		})
-	}
+	d.sendErrorResponse(request, errorCode, "WriteChannel")
 }
 
 func (d *Daemon) sendReadChannelError(request *Request, errorCode uint8) {
-	conn := d.listener.getConnection(request.AppID)
-	if conn != nil {
-		conn.sendResponse(&Response{
-			AppID: request.AppID,
-			ReadChannelReply: &thin.ReadChannelReply{
-				MessageID: request.ReadChannel.MessageID,
-				ChannelID: request.ReadChannel.ChannelID,
-				ErrorCode: errorCode,
-			},
-		})
-	}
+	d.sendErrorResponse(request, errorCode, "ReadChannel")
 }
 
 func (d *Daemon) createOrResumeStatefulReader(request *Request) (*bacap.StatefulReader, error) {
@@ -726,34 +689,12 @@ func (d *Daemon) readChannel(request *Request) {
 		},
 	}
 
-	intermediateReplicas, replicaPubKeys, err := pigeonhole.GetRandomIntermediateReplicas(doc)
+	courierEnvelope, envelopePrivateKey, err := createEnvelopeFromMessage(msg, doc, true)
 	if err != nil {
-		d.log.Errorf("readChannel failure: failed to get intermediate replicas: %s", err)
+		d.log.Errorf("readChannel failure: failed to create envelope: %s", err)
 		d.sendReadChannelError(request, thin.ThinClientErrorInternalError)
 		return
 	}
-
-	mkemPrivateKey, mkemCiphertext := replicaCommon.MKEMNikeScheme.Encapsulate(replicaPubKeys, msg.Bytes())
-
-	// Convert DEK ciphertexts to arrays
-	var dek1, dek2 [60]uint8
-	copy(dek1[:], mkemCiphertext.DEKCiphertexts[0][:])
-	copy(dek2[:], mkemCiphertext.DEKCiphertexts[1][:])
-
-	senderPubkeyBytes := mkemPrivateKey.Public().Bytes()
-	courierEnvelope := &pigeonhole.CourierEnvelope{
-		IntermediateReplicas: intermediateReplicas,
-		Dek1:                 dek1,
-		Dek2:                 dek2,
-		ReplyIndex:           0,
-		Epoch:                doc.Epoch,
-		SenderPubkeyLen:      uint16(len(senderPubkeyBytes)),
-		SenderPubkey:         senderPubkeyBytes,
-		CiphertextLen:        uint32(len(mkemCiphertext.Envelope)),
-		Ciphertext:           mkemCiphertext.Envelope,
-		IsRead:               1, // 1 = read
-	}
-	envelopePrivateKey := mkemPrivateKey
 
 	envHash := courierEnvelope.EnvelopeHash()
 	channelDesc.EnvelopeDescriptorsLock.Lock()
