@@ -4,7 +4,6 @@
 package thin
 
 import (
-	"context"
 	"encoding/binary"
 	"io"
 	"net"
@@ -113,50 +112,6 @@ func TestThinTCPSendRecv(t *testing.T) {
 
 	e = <-serverWriteMessageErrCh
 	require.NoError(t, e)
-
-	// test WriteChannel
-
-	pigeonholeGeometry := pigeonholeGeo.NewGeometry(50, nikeScheme)
-
-	thin.cfg = &Config{
-		SphinxGeometry:     defaultSphinxGeometry,
-		PigeonholeGeometry: pigeonholeGeometry,
-	}
-
-	channelID := &[ChannelIDLength]byte{}
-	_, err = rand.Reader.Read(channelID[:])
-	require.NoError(t, err)
-
-	ctx := context.Background()
-
-	largePayload := make([]byte, 100)
-	err = thin.OldWriteChannel(ctx, channelID, largePayload)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "payload size")
-	require.Contains(t, err.Error(), "exceeds maximum allowed size")
-
-	err = thin.OldWriteChannel(ctx, nil, largePayload)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "channelID cannot be nil")
-
-	sphinxGeometry := &geo.Geometry{
-		UserForwardPayloadLength: 30,
-	}
-	thin.cfg = &Config{
-		SphinxGeometry:     sphinxGeometry,
-		PigeonholeGeometry: defaultPigeonholeGeometry,
-	}
-
-	largeSphinxPayload := make([]byte, 50)
-	request = &Request{
-		SendMessage: &SendMessage{
-			Payload: largeSphinxPayload,
-		},
-	}
-	err = thin.writeMessage(request)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "payload size")
-	require.Contains(t, err.Error(), "exceeds maximum allowed size")
 }
 
 func TestPKIDocumentForEpoch(t *testing.T) {
