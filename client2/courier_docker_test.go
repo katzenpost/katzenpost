@@ -12,117 +12,188 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	_ "github.com/katzenpost/katzenpost/client2/thin" // Used by helper functions
+	"github.com/katzenpost/hpqc/hash"
+	"github.com/katzenpost/katzenpost/client2/common"
+	"github.com/katzenpost/katzenpost/client2/thin"
 )
 
-func testDockerCourierService(t *testing.T) {
-	t.Log("TESTING COURIER SERVICE - Starting pigeonhole channel test")
+// attemptResult represents the result of a single query attempt
+type attemptResult struct {
+	payload []byte
+	retry   bool
+	success bool
+}
 
-	// Create separate thin clients for Alice and Bob
-	t.Log("Creating Alice's thin client")
+// cleanupAttempt handles cleanup for a failed attempt
+func cleanupAttempt(t *testing.T, cancel context.CancelFunc, client *thin.ThinClient, eventSink chan thin.Event, attempt int, reason string) {
+	t.Logf("%s on attempt %d", reason, attempt)
+	cancel()
+	client.StopEventSink(eventSink)
+}
+
+// handleMessageReplyEvent processes MessageReplyEvent and returns the result
+func handleMessageReplyEvent(t *testing.T, v *thin.MessageReplyEvent, attempt int) attemptResult {
+	t.Log("MessageReplyEvent")
+
+	if v.Err != "" {
+		t.Logf("Message reply error on attempt %d: %v", attempt, v.Err)
+		return attemptResult{retry: true}
+	}
+
+	if v.Payload != nil && len(v.Payload) > 0 {
+		t.Logf("SUCCESS: Received non-empty payload on attempt %d (%d bytes)", attempt, len(v.Payload))
+		return attemptResult{payload: v.Payload, success: true}
+	}
+
+	t.Logf("Received nil/empty payload on attempt %d, retrying...", attempt)
+	return attemptResult{retry: true}
+}
+
+// handleEvent processes a single event and returns the result
+func handleEvent(t *testing.T, event thin.Event, attempt int) attemptResult {
+	switch v := event.(type) {
+	case *thin.MessageIDGarbageCollected:
+		t.Log("MessageIDGarbageCollected")
+	case *thin.ConnectionStatusEvent:
+		t.Log("ConnectionStatusEvent")
+		if !v.IsConnected {
+			t.Fatal("socket connection lost")
+		}
+	case *thin.NewDocumentEvent:
+		t.Log("NewPKIDocumentEvent")
+	case *thin.MessageSentEvent:
+		t.Log("MessageSentEvent")
+	case *thin.MessageReplyEvent:
+		return handleMessageReplyEvent(t, v, attempt)
+	default:
+		t.Logf("Ignoring event type: %T", event)
+	}
+	return attemptResult{} // Continue waiting
+}
+
+// waitForReply waits for a reply from the event sink
+func waitForReply(t *testing.T, client *thin.ThinClient, eventSink chan thin.Event, ctx context.Context, cancel context.CancelFunc, attempt int) attemptResult {
+	timeout := time.After(15 * time.Second)
+
+	for {
+		select {
+		case <-timeout:
+			cleanupAttempt(t, cancel, client, eventSink, attempt, "Timeout")
+			return attemptResult{retry: true}
+		case <-ctx.Done():
+			cleanupAttempt(t, cancel, client, eventSink, attempt, "Context cancelled")
+			return attemptResult{retry: true}
+		case event := <-eventSink:
+			result := handleEvent(t, event, attempt)
+			if result.success || result.retry {
+				if result.success || result.retry {
+					cancel()
+					client.StopEventSink(eventSink)
+				}
+				return result
+			}
+			// Continue waiting for more events
+		}
+	}
+}
+
+// sendQueryAndWait sends a channel query and waits for the reply with retry logic
+func sendQueryAndWait(t *testing.T, client *thin.ThinClient, channelID uint16, message []byte, nodeID *[32]byte, queueID []byte) []byte {
+	maxRetries := 5
+	retryDelay := 3 * time.Second
+
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		t.Logf("Sending channel query (attempt %d/%d)", attempt, maxRetries)
+
+		eventSink := client.EventSink()
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+
+		err := client.SendChannelQuery(ctx, channelID, message, nodeID, queueID)
+		require.NoError(t, err)
+
+		result := waitForReply(t, client, eventSink, ctx, cancel, attempt)
+
+		if result.success {
+			return result.payload
+		}
+
+		if attempt < maxRetries {
+			t.Logf("Waiting %v before retry...", retryDelay)
+			time.Sleep(retryDelay)
+		}
+	}
+
+	t.Fatalf("Failed to receive valid payload after %d attempts", maxRetries)
+	return nil
+}
+
+func TestDockerCourierServiceNewThinclientAPI(t *testing.T) {
+	t.Log("TESTING COURIER SERVICE - New thin client API")
+	// NOTE: The new API automatically extracts messages from padded payloads in the daemon,
+	// so clients receive the original message directly, not the raw padded payload.
+
+	// Setup clients and get current epoch
 	aliceThinClient := setupThinClient(t)
-	t.Log("Alice's thin client connected")
-
-	t.Log("Creating Bob's thin client")
+	defer aliceThinClient.Close()
 	bobThinClient := setupThinClient(t)
-	t.Log("Bob's thin client connected")
+	defer bobThinClient.Close()
 
-	// Wait for PKI document (both clients should have it)
-	_ = validatePKIDocument(t, aliceThinClient)
-	_ = validatePKIDocument(t, bobThinClient)
+	currentDoc := validatePKIDocument(t, aliceThinClient)
+	currentEpoch := currentDoc.Epoch
+	bobDoc := validatePKIDocument(t, bobThinClient)
+	require.Equal(t, currentEpoch, bobDoc.Epoch, "Alice and Bob must use same PKI epoch")
+	t.Logf("Using PKI document for epoch %d", currentEpoch)
 
-	// Test message to send
-	plaintextMessage := []byte("Hello world from Alice to Bob!")
-
-	// Create context with timeout for operations
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
-	// === ALICE (Writer) ===
-	t.Log("Alice: Creating pigeonhole channel")
-	aliceChannelID, readCap, err := aliceThinClient.CreateChannel(ctx)
+	// Alice creates write channel
+	t.Log("Alice: Creating write channel")
+	channelID, readCap, _, _, err := aliceThinClient.CreateWriteChannel(ctx, nil, nil)
 	require.NoError(t, err)
-	require.NotNil(t, aliceChannelID)
-	require.NotNil(t, readCap)
-	t.Logf("Alice: Created write channel %x", aliceChannelID[:])
+	t.Logf("Alice: Created write channel %d", channelID)
 
-	t.Log("Alice: Writing message to channel")
-	err = aliceThinClient.WriteChannel(ctx, aliceChannelID, plaintextMessage)
+	// Bob creates read channel
+	t.Log("Bob: Creating read channel")
+	bobChannelID, _, err := bobThinClient.CreateReadChannel(ctx, readCap, nil)
 	require.NoError(t, err)
-	t.Log("Alice: Successfully wrote message")
+	t.Logf("Bob: Created read channel %d", bobChannelID)
 
-	// Wait for message to propagate through the system
-	t.Log("Waiting 10 seconds for message propagation...")
-	time.Sleep(10 * time.Second)
-
-	// === BOB (Reader) ===
-	t.Log("Bob: Creating read channel from Alice's readCap")
-	bobChannelID, err := bobThinClient.CreateReadChannel(ctx, readCap)
+	// Alice writes message
+	originalMessage := []byte("Hello from Alice to Bob via new channel API!")
+	t.Log("Alice: Writing message")
+	writePayload, _, err := aliceThinClient.WriteChannel(ctx, channelID, originalMessage)
 	require.NoError(t, err)
-	require.NotNil(t, bobChannelID)
-	t.Logf("Bob: Created read channel %x (different from Alice's %x)", bobChannelID[:], aliceChannelID[:])
+	require.NotNil(t, writePayload)
+	t.Logf("Alice: Generated write payload (%d bytes)", len(writePayload))
 
-	// Bob reads the message (may need to retry as the message might not be immediately available)
-	// Use a consistent message ID for all read attempts to enable courier envelope reuse
-	readMessageID := bobThinClient.NewMessageID()
-	t.Logf("Bob: Using message ID %x for all read attempts", readMessageID[:])
+	// Alice sends write query via courier
+	epochDoc, err := aliceThinClient.PKIDocumentForEpoch(currentEpoch)
+	require.NoError(t, err)
+	courierServices := common.FindServices("courier", epochDoc)
+	require.True(t, len(courierServices) > 0, "No courier services found")
+	courierService := courierServices[0]
 
-	var receivedMessage []byte
-	maxRetries := 10
-	for i := 0; i < maxRetries; i++ {
-		t.Logf("Bob: Reading message attempt %d/%d", i+1, maxRetries)
+	identityHash := hash.Sum256(courierService.MixDescriptor.IdentityKey)
+	err = aliceThinClient.SendChannelQuery(ctx, channelID, writePayload, &identityHash, courierService.RecipientQueueID)
+	require.NoError(t, err)
+	t.Log("Alice: Sent write query to courier")
 
-		// Add a longer delay before the first read to allow message propagation
-		if i == 0 {
-			t.Log("Bob: Waiting for message to propagate through the system...")
-			time.Sleep(5 * time.Second)
-		}
+	// Wait for message propagation
+	time.Sleep(3 * time.Second)
 
-		// Create a fresh context with 10-minute timeout for each read attempt
-		readCtx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
-		receivedMessage, err = bobThinClient.ReadChannel(readCtx, bobChannelID, readMessageID)
-		cancel()
+	// Bob reads message using the helper function
+	t.Log("Bob: Reading message")
+	messageID := bobThinClient.NewMessageID()
+	readPayload, _, err := bobThinClient.ReadChannel(ctx, bobChannelID, messageID)
+	require.NoError(t, err)
+	require.NotNil(t, readPayload)
+	t.Logf("Bob: Generated read payload (%d bytes)", len(readPayload))
 
-		if err != nil {
-			t.Logf("Bob: Read attempt %d failed: %v", i+1, err)
-			if i < maxRetries-1 {
-				time.Sleep(3 * time.Second) // Wait before retry
-				continue
-			}
-			// On the last attempt, log the error but don't fail immediately
-			t.Logf("Bob: Final read attempt failed: %v", err)
-			break
-		}
+	// Bob sends read query and waits for reply using helper
+	t.Log("Bob: Sending read query and waiting for reply...")
+	receivedPayload := sendQueryAndWait(t, bobThinClient, bobChannelID, readPayload, &identityHash, courierService.RecipientQueueID)
+	require.NotNil(t, receivedPayload, "Bob: Received nil payload")
 
-		if len(receivedMessage) > 0 {
-			t.Log("Bob: Successfully read message")
-			break
-		}
-
-		if i < maxRetries-1 {
-			t.Log("Bob: No message available yet, retrying...")
-			time.Sleep(3 * time.Second)
-		}
-	}
-
-	// Verify the messages match
-	if len(receivedMessage) == 0 {
-		t.Log("FAILURE: Bob did not receive any message")
-		t.Logf("Original message: %s", string(plaintextMessage))
-		t.Log("This could indicate:")
-		t.Log("1. Message propagation delay (try increasing wait times)")
-		t.Log("2. Issue with courier-replica communication")
-		t.Log("3. Problem with read channel setup")
-		require.NotEmpty(t, receivedMessage)
-	}
-
-	require.Equal(t, plaintextMessage, receivedMessage)
-
-	t.Log("SUCCESS: Alice and Bob successfully communicated through pigeonhole channel!")
-	t.Logf("Original message: %s", string(plaintextMessage))
-	t.Logf("Received message: %s", string(receivedMessage))
-
-	t.Log("Test Completed. Disconnecting...")
-	aliceThinClient.Close()
-	bobThinClient.Close()
+	require.Equal(t, originalMessage, receivedPayload, "Bob should receive the original message")
 }

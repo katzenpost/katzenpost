@@ -4,7 +4,6 @@
 package thin
 
 import (
-	"context"
 	"encoding/binary"
 	"io"
 	"net"
@@ -14,6 +13,7 @@ import (
 	"github.com/katzenpost/hpqc/nike/schemes"
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/katzenpost/core/log"
+	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	pigeonholeGeo "github.com/katzenpost/katzenpost/pigeonhole/geo"
 	"github.com/stretchr/testify/require"
@@ -112,86 +112,38 @@ func TestThinTCPSendRecv(t *testing.T) {
 
 	e = <-serverWriteMessageErrCh
 	require.NoError(t, e)
-
-	// test WriteChannel
-
-	pigeonholeGeometry := pigeonholeGeo.NewGeometry(50, nikeScheme)
-
-	thin.cfg = &Config{
-		SphinxGeometry:     defaultSphinxGeometry,
-		PigeonholeGeometry: pigeonholeGeometry,
-	}
-
-	channelID := &[ChannelIDLength]byte{}
-	_, err = rand.Reader.Read(channelID[:])
-	require.NoError(t, err)
-
-	ctx := context.Background()
-
-	largePayload := make([]byte, 100)
-	err = thin.WriteChannel(ctx, channelID, largePayload)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "payload size")
-	require.Contains(t, err.Error(), "exceeds maximum allowed size")
-
-	err = thin.WriteChannel(ctx, nil, largePayload)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "channelID cannot be nil")
-
-	sphinxGeometry := &geo.Geometry{
-		UserForwardPayloadLength: 30,
-	}
-	thin.cfg = &Config{
-		SphinxGeometry:     sphinxGeometry,
-		PigeonholeGeometry: defaultPigeonholeGeometry,
-	}
-
-	largeSphinxPayload := make([]byte, 50)
-	request = &Request{
-		SendMessage: &SendMessage{
-			Payload: largeSphinxPayload,
-		},
-	}
-	err = thin.writeMessage(request)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "payload size")
-	require.Contains(t, err.Error(), "exceeds maximum allowed size")
 }
 
-func TestCopyChannelValidation(t *testing.T) {
+func TestPKIDocumentForEpoch(t *testing.T) {
 	logBackend, err := log.New("", "DEBUG", false)
 	require.NoError(t, err)
 
-	client, _ := net.Pipe()
-	defaultSphinxGeometry := &geo.Geometry{
-		UserForwardPayloadLength: 1000,
-	}
-	nikeScheme := schemes.ByName("x25519")
-	defaultPigeonholeGeometry := pigeonholeGeo.NewGeometry(1000, nikeScheme)
-
-	thin := ThinClient{
-		cfg: &Config{
-			SphinxGeometry:     defaultSphinxGeometry,
-			PigeonholeGeometry: defaultPigeonholeGeometry,
-		},
-		log:   logBackend.GetLogger("thinclient"),
-		isTCP: true,
-		conn:  client,
+	thin := &ThinClient{
+		log:         logBackend.GetLogger("thinclient"),
+		pkiDocCache: make(map[uint64]*cpki.Document),
 	}
 
-	ctx := context.Background()
-
-	// Test with nil channelID
-	err = thin.CopyChannel(ctx, nil)
+	// Test with empty cache - should return error
+	doc, err := thin.PKIDocumentForEpoch(12345)
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "channelID cannot be nil")
+	require.Nil(t, doc)
+	require.Contains(t, err.Error(), "no PKI document available for the requested epoch")
 
-	// Test with nil context
-	channelID := &[ChannelIDLength]byte{}
-	_, err = rand.Reader.Read(channelID[:])
+	// Test with cached document - should return document
+	testDoc := &cpki.Document{
+		Epoch: 12345,
+	}
+	thin.pkiDocCache[12345] = testDoc
+
+	doc, err = thin.PKIDocumentForEpoch(12345)
 	require.NoError(t, err)
+	require.NotNil(t, doc)
+	require.Equal(t, uint64(12345), doc.Epoch)
+	require.Equal(t, testDoc, doc)
 
-	err = thin.CopyChannel(nil, channelID)
+	// Test with different epoch - should return error
+	doc, err = thin.PKIDocumentForEpoch(54321)
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "context cannot be nil")
+	require.Nil(t, doc)
+	require.Contains(t, err.Error(), "no PKI document available for the requested epoch")
 }

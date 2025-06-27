@@ -1,4 +1,4 @@
-.PHONY: clean clean-local clean-local-dryrun clean-image-% clean-container-% clean-images test rootshell shell run-ping go-mod-tidy go-mod-upgrade help start stop client-restart clean-client client-logs config-only
+.PHONY: clean clean-local clean-local-dryrun clean-image-% clean-container-% clean-images test rootshell shell run-ping go-mod-tidy go-mod-upgrade help start stop client-restart clean-client client-logs config-only watch-replicas watch-auth watch-mixes watch-courier watch-servicenode watch-gateway watch-all-separate
 
 help:
 	@echo "These make targets allow you to control the test network:"
@@ -9,6 +9,13 @@ help:
 	@echo " client-logs        - view kpclientd daemon logs"
 	@echo " wait               - wait for testnet to have consensus"
 	@echo " watch              - tail -F all logs"
+	@echo " watch-replicas     - monitor all replica logs"
+	@echo " watch-auth         - monitor all directory authority logs"
+	@echo " watch-mixes        - monitor all mix node logs"
+	@echo " watch-courier      - monitor courier service log"
+	@echo " watch-servicenode  - monitor service node log"
+	@echo " watch-gateway      - monitor gateway log"
+	@echo " watch-all-separate - monitor all logs with component labels"
 	@echo " status             - show testnet consensus status"
 	@echo " show-latest-vote   - does what it says"
 	@echo " run-ping           - send a ping over the testnet"
@@ -158,6 +165,42 @@ client-logs:
 
 watch:
 	tail -F $(net_name)/*/*.log
+
+# Additional log monitoring targets for debugging
+watch-replicas:
+	@echo "Monitoring all replica logs (Ctrl+C to exit)..."
+	tail -F $(net_name)/replica*/katzenpost.log
+
+watch-auth:
+	@echo "Monitoring all directory authority logs (Ctrl+C to exit)..."
+	tail -F $(net_name)/auth*/katzenpost.log
+
+watch-mixes:
+	@echo "Monitoring all mix node logs (Ctrl+C to exit)..."
+	tail -F $(net_name)/mix*/katzenpost.log
+
+watch-courier:
+	@echo "Monitoring courier service log (Ctrl+C to exit)..."
+	tail -F $(net_name)/servicenode1/courier/courier.log
+
+watch-servicenode:
+	@echo "Monitoring service node log (Ctrl+C to exit)..."
+	tail -F $(net_name)/servicenode1/katzenpost.log
+
+watch-gateway:
+	@echo "Monitoring gateway log (Ctrl+C to exit)..."
+	tail -F $(net_name)/gateway1/katzenpost.log
+
+watch-all-separate:
+	@echo "Monitoring all logs with component labels (Ctrl+C to exit)..."
+	@echo "Starting log monitoring in background processes..."
+	@(tail -F $(net_name)/replica*/katzenpost.log | sed 's/^/[REPLICA] /' &) ; \
+	(tail -F $(net_name)/auth*/katzenpost.log | sed 's/^/[AUTH] /' &) ; \
+	(tail -F $(net_name)/mix*/katzenpost.log | sed 's/^/[MIX] /' &) ; \
+	(tail -F $(net_name)/servicenode1/katzenpost.log | sed 's/^/[SERVICENODE] /' &) ; \
+	(tail -F $(net_name)/servicenode1/courier/courier.log | sed 's/^/[COURIER] /' &) ; \
+	(tail -F $(net_name)/gateway1/katzenpost.log | sed 's/^/[GATEWAY] /' &) ; \
+	wait
 
 ps:
 	cd $(net_name); $(docker_compose) ps

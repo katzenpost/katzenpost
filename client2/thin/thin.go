@@ -80,6 +80,10 @@ type ThinClient struct {
 	pkidoc      *cpki.Document
 	pkidocMutex sync.RWMutex
 
+	// PKI document cache by epoch to ensure consistency during epoch transitions
+	pkiDocCache     map[uint64]*cpki.Document
+	pkiDocCacheLock sync.RWMutex
+
 	eventSink   chan Event
 	drainAdd    chan chan Event
 	drainRemove chan chan Event
@@ -89,9 +93,6 @@ type ThinClient struct {
 	// used by BlockingSendReliableMessage only
 	sentWaitChanMap  sync.Map // MessageID -> chan error
 	replyWaitChanMap sync.Map // MessageID -> chan *MessageReplyEvent
-
-	// used by ReadChannel only
-	readChannelWaitChanMap sync.Map // MessageID -> chan *ReadChannelReply
 
 	closeOnce sync.Once
 }
@@ -164,6 +165,7 @@ func NewThinClient(cfg *Config, logging *config.Logging) *ThinClient {
 		eventSink:   make(chan Event, 2),
 		drainAdd:    make(chan chan Event),
 		drainRemove: make(chan chan Event),
+		pkiDocCache: make(map[uint64]*cpki.Document),
 	}
 }
 
@@ -371,8 +373,12 @@ func (t *ThinClient) worker() {
 				if ok {
 					isArq = true
 					sentWaitChan := sentWaitChanRaw.(chan error)
+					var err error
+					if message.MessageSentEvent.Err != "" {
+						err = errors.New(message.MessageSentEvent.Err)
+					}
 					select {
-					case sentWaitChan <- message.MessageSentEvent.Err:
+					case sentWaitChan <- err:
 					case <-t.HaltCh():
 						return
 					}
@@ -411,14 +417,7 @@ func (t *ThinClient) worker() {
 					return
 				}
 			}
-		case message.CreateChannelReply != nil:
-			t.log.Debug("CreateChannelReply")
-			select {
-			case t.eventSink <- message.CreateChannelReply:
-				continue
-			case <-t.HaltCh():
-				return
-			}
+
 		case message.CreateReadChannelReply != nil:
 			t.log.Debug("CreateReadChannelReply")
 			select {
@@ -427,6 +426,15 @@ func (t *ThinClient) worker() {
 			case <-t.HaltCh():
 				return
 			}
+		case message.CreateWriteChannelReply != nil:
+			t.log.Debug("CreateWriteChannelReply")
+			select {
+			case t.eventSink <- message.CreateWriteChannelReply:
+				continue
+			case <-t.HaltCh():
+				return
+			}
+
 		case message.WriteChannelReply != nil:
 			t.log.Debug("WriteChannelReply")
 			select {
@@ -436,30 +444,12 @@ func (t *ThinClient) worker() {
 				return
 			}
 		case message.ReadChannelReply != nil:
-			t.log.Debugf("ReadChannelReply: MessageID %x, ChannelID %x, Payload size %d bytes",
-				message.ReadChannelReply.MessageID[:], message.ReadChannelReply.ChannelID[:], len(message.ReadChannelReply.Payload))
-			isDirectReply := false
-			if message.ReadChannelReply.MessageID != nil {
-				readWaitChanRaw, ok := t.readChannelWaitChanMap.Load(*message.ReadChannelReply.MessageID)
-				if ok {
-					isDirectReply = true
-					readWaitChan := readWaitChanRaw.(chan *ReadChannelReply)
-					select {
-					case readWaitChan <- message.ReadChannelReply:
-					case <-t.HaltCh():
-						return
-					}
-				} else {
-					t.log.Debugf("No wait channel found for MessageID %x", message.ReadChannelReply.MessageID[:])
-				}
-			}
-			if !isDirectReply {
-				select {
-				case t.eventSink <- message.ReadChannelReply:
-					continue
-				case <-t.HaltCh():
-					return
-				}
+			t.log.Debug("ReadChannelReply")
+			select {
+			case t.eventSink <- message.ReadChannelReply:
+				continue
+			case <-t.HaltCh():
+				return
 			}
 		default:
 			t.log.Error("bug: received invalid thin client message")
@@ -528,9 +518,30 @@ func (t *ThinClient) parsePKIDoc(payload []byte) (*cpki.Document, error) {
 		t.log.Errorf("failed to unmarshal CBOR PKI doc: %s", err.Error())
 		return nil, err
 	}
+
+	// Update current document
 	t.pkidocMutex.Lock()
 	t.pkidoc = doc
 	t.pkidocMutex.Unlock()
+
+	// Cache document by epoch for consistency during epoch transitions
+	t.pkiDocCacheLock.Lock()
+	t.pkiDocCache[doc.Epoch] = doc
+	t.log.Debugf("Cached PKI document for epoch %d", doc.Epoch)
+
+	// Clean up old cached documents (keep last 5 epochs)
+	const maxCachedEpochs = 5
+	if len(t.pkiDocCache) > maxCachedEpochs {
+		oldestEpoch := doc.Epoch - maxCachedEpochs
+		for epoch := range t.pkiDocCache {
+			if epoch < oldestEpoch {
+				delete(t.pkiDocCache, epoch)
+				t.log.Debugf("Removed old PKI document for epoch %d", epoch)
+			}
+		}
+	}
+	t.pkiDocCacheLock.Unlock()
+
 	return doc, nil
 }
 
@@ -539,6 +550,20 @@ func (t *ThinClient) PKIDocument() *cpki.Document {
 	t.pkidocMutex.RLock()
 	defer t.pkidocMutex.RUnlock()
 	return t.pkidoc
+}
+
+// PKIDocumentForEpoch returns the PKI document for a specific epoch from cache.
+// If the document for the requested epoch is not cached, returns the current document.
+// This ensures consistency during epoch transitions where Alice and Bob might
+// use different PKI documents, leading to different envelope hashes.
+func (t *ThinClient) PKIDocumentForEpoch(epoch uint64) (*cpki.Document, error) {
+	t.pkiDocCacheLock.RLock()
+	defer t.pkiDocCacheLock.RUnlock()
+	if doc, exists := t.pkiDocCache[epoch]; exists {
+		t.log.Debugf("Using cached PKI document for epoch %d", epoch)
+		return doc, nil
+	}
+	return nil, errors.New("no PKI document available for the requested epoch")
 }
 
 // GetServices returns the services matching the specified service name
@@ -733,8 +758,8 @@ func (t *ThinClient) BlockingSendReliableMessage(ctx context.Context, messageID 
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	case reply := <-replyWaitChan:
-		if reply.Err != nil {
-			return nil, reply.Err
+		if reply.Err != "" {
+			return nil, errors.New(reply.Err)
 		}
 		return reply.Payload, nil
 	case <-t.HaltCh():
@@ -744,14 +769,141 @@ func (t *ThinClient) BlockingSendReliableMessage(ctx context.Context, messageID 
 	// unreachable
 }
 
-// CreateChannel creates a new pigeonhole channel and returns the channel ID and read capability.
-func (t *ThinClient) CreateChannel(ctx context.Context) (*[ChannelIDLength]byte, *bacap.ReadCap, error) {
+/****
+
+NEW PIGEONHOLE CHANNEL API
+
+****/
+
+// CreateWriteChannel creates a new pigeonhole write channel and returns the channel ID, read capability, and write capability.
+func (t *ThinClient) CreateWriteChannel(ctx context.Context, WriteCap *bacap.WriteCap, messageBoxIndex *bacap.MessageBoxIndex) (uint16, *bacap.ReadCap, *bacap.WriteCap, *bacap.MessageBoxIndex, error) {
+	if ctx == nil {
+		return 0, nil, nil, nil, errContextCannotBeNil
+	}
+
+	switch {
+	case WriteCap == nil && messageBoxIndex == nil:
+		// Creating a new channel
+	case WriteCap != nil && messageBoxIndex == nil:
+		return 0, nil, nil, nil, errors.New("messageBoxIndex cannot be nil when resuming an existing channel")
+	case WriteCap == nil && messageBoxIndex != nil:
+		return 0, nil, nil, nil, errors.New("WriteCap cannot be nil when resuming an existing channel")
+	case WriteCap != nil && messageBoxIndex != nil:
+		// Resuming an existing channel
+	}
+
+	req := &Request{
+		CreateWriteChannel: &CreateWriteChannel{
+			WriteCap:        WriteCap,
+			MessageBoxIndex: messageBoxIndex,
+		},
+	}
+
+	eventSink := t.EventSink()
+	defer t.StopEventSink(eventSink)
+
+	err := t.writeMessage(req)
+	if err != nil {
+		return 0, nil, nil, nil, err
+	}
+
+	for {
+		var event Event
+		select {
+		case <-ctx.Done():
+			return 0, nil, nil, nil, ctx.Err()
+		case event = <-eventSink:
+		case <-t.HaltCh():
+			return 0, nil, nil, nil, errHalting
+		}
+
+		switch v := event.(type) {
+		case *CreateWriteChannelReply:
+			if v.ErrorCode != ThinClientSuccess {
+				return 0, nil, nil, nil, errors.New(ThinClientErrorToString(v.ErrorCode))
+			}
+			return v.ChannelID, v.ReadCap, v.WriteCap, v.NextMessageIndex, nil
+		case *ConnectionStatusEvent:
+			if !v.IsConnected {
+				return 0, nil, nil, nil, errConnectionLost
+			}
+		case *NewDocumentEvent:
+			// Ignore PKI document updates
+		default:
+			// Ignore other events
+		}
+	}
+}
+
+// CreateReadChannel creates a read channel from a read capability.
+func (t *ThinClient) CreateReadChannel(ctx context.Context, readCap *bacap.ReadCap, messageBoxIndex *bacap.MessageBoxIndex) (uint16, *bacap.MessageBoxIndex, error) {
+	if ctx == nil {
+		return 0, nil, errContextCannotBeNil
+	}
+	if readCap == nil {
+		return 0, nil, errors.New("readCap cannot be nil")
+	}
+
+	req := &Request{
+		CreateReadChannel: &CreateReadChannel{
+			ReadCap:         readCap,
+			MessageBoxIndex: messageBoxIndex,
+		},
+	}
+
+	eventSink := t.EventSink()
+	defer t.StopEventSink(eventSink)
+
+	err := t.writeMessage(req)
+	if err != nil {
+		return 0, nil, err
+	}
+
+	for {
+		var event Event
+		select {
+		case <-ctx.Done():
+			return 0, nil, ctx.Err()
+		case event = <-eventSink:
+		case <-t.HaltCh():
+			return 0, nil, errHalting
+		}
+
+		switch v := event.(type) {
+		case *CreateReadChannelReply:
+			if v.ErrorCode != ThinClientSuccess {
+				return 0, nil, errors.New(ThinClientErrorToString(v.ErrorCode))
+			}
+			return v.ChannelID, v.NextMessageIndex, nil
+		case *ConnectionStatusEvent:
+			if !v.IsConnected {
+				return 0, nil, errConnectionLost
+			}
+		case *NewDocumentEvent:
+			// Ignore PKI document updates
+		default:
+			// Ignore other events
+		}
+	}
+}
+
+// WriteChannel prepares a write message for a pigeonhole channel and returns the SendMessage payload and next MessageBoxIndex.
+// The thin client must then call SendChannelQuery with the returned payload to actually send the message.
+func (t *ThinClient) WriteChannel(ctx context.Context, channelID uint16, payload []byte) ([]byte, *bacap.MessageBoxIndex, error) {
 	if ctx == nil {
 		return nil, nil, errContextCannotBeNil
 	}
 
+	// Validate payload size against pigeonhole geometry
+	if len(payload) > t.cfg.PigeonholeGeometry.BoxPayloadLength {
+		return nil, nil, fmt.Errorf("payload size %d exceeds maximum allowed size %d", len(payload), t.cfg.PigeonholeGeometry.BoxPayloadLength)
+	}
+
 	req := &Request{
-		CreateChannel: &CreateChannel{},
+		WriteChannel: &WriteChannel{
+			ChannelID: channelID,
+			Payload:   payload,
+		},
 	}
 
 	eventSink := t.EventSink()
@@ -773,64 +925,15 @@ func (t *ThinClient) CreateChannel(ctx context.Context) (*[ChannelIDLength]byte,
 		}
 
 		switch v := event.(type) {
-		case *CreateChannelReply:
-			if v.Err != "" {
-				return nil, nil, errors.New(v.Err)
+		case *WriteChannelReply:
+			if v.ErrorCode != ThinClientSuccess {
+				return nil, nil, errors.New(ThinClientErrorToString(v.ErrorCode))
 			}
-			return &v.ChannelID, v.ReadCap, nil
+			return v.SendMessagePayload, v.NextMessageIndex, nil
 		case *ConnectionStatusEvent:
 			if !v.IsConnected {
 				return nil, nil, errConnectionLost
 			}
-		default:
-			// Ignore other events
-		}
-	}
-}
-
-// CreateReadChannel creates a read channel from a read capability.
-func (t *ThinClient) CreateReadChannel(ctx context.Context, readCap *bacap.ReadCap) (*[ChannelIDLength]byte, error) {
-	if ctx == nil {
-		return nil, errContextCannotBeNil
-	}
-	if readCap == nil {
-		return nil, errors.New("readCap cannot be nil")
-	}
-
-	req := &Request{
-		CreateReadChannel: &CreateReadChannel{
-			ReadCap: readCap,
-		},
-	}
-
-	eventSink := t.EventSink()
-	defer t.StopEventSink(eventSink)
-
-	err := t.writeMessage(req)
-	if err != nil {
-		return nil, err
-	}
-
-	for {
-		var event Event
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		case event = <-eventSink:
-		case <-t.HaltCh():
-			return nil, errHalting
-		}
-
-		switch v := event.(type) {
-		case *CreateReadChannelReply:
-			if v.Err != "" {
-				return nil, errors.New(v.Err)
-			}
-			return &v.ChannelID, nil
-		case *ConnectionStatusEvent:
-			if !v.IsConnected {
-				return nil, errConnectionLost
-			}
 		case *NewDocumentEvent:
 			// Ignore PKI document updates
 		default:
@@ -839,162 +942,50 @@ func (t *ThinClient) CreateReadChannel(ctx context.Context, readCap *bacap.ReadC
 	}
 }
 
-// WriteChannel writes data to a pigeonhole channel.
-func (t *ThinClient) WriteChannel(ctx context.Context, channelID *[ChannelIDLength]byte, payload []byte) error {
+// ReadChannel prepares a read query for a pigeonhole channel and returns the payload and next MessageBoxIndex.
+// The thin client must then call SendChannelQuery with the returned payload to actually send the query.
+func (t *ThinClient) ReadChannel(ctx context.Context, channelID uint16, messageID *[MessageIDLength]byte) ([]byte, *bacap.MessageBoxIndex, error) {
 	if ctx == nil {
-		return errContextCannotBeNil
-	}
-	if channelID == nil {
-		return errChannelIDCannotBeNil
-	}
-
-	// Validate payload size against pigeonhole geometry
-	if len(payload) > t.cfg.PigeonholeGeometry.BoxPayloadLength {
-		return fmt.Errorf("payload size %d exceeds maximum allowed size %d", len(payload), t.cfg.PigeonholeGeometry.BoxPayloadLength)
-	}
-
-	req := &Request{
-		WriteChannel: &WriteChannel{
-			ChannelID: *channelID,
-			Payload:   payload,
-		},
-	}
-
-	eventSink := t.EventSink()
-	defer t.StopEventSink(eventSink)
-
-	err := t.writeMessage(req)
-	if err != nil {
-		return err
-	}
-
-	for {
-		var event Event
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case event = <-eventSink:
-		case <-t.HaltCh():
-			return errHalting
-		}
-
-		switch v := event.(type) {
-		case *WriteChannelReply:
-			if v.Err != "" {
-				return errors.New(v.Err)
-			}
-			return nil
-		case *ConnectionStatusEvent:
-			if !v.IsConnected {
-				return errConnectionLost
-			}
-		case *NewDocumentEvent:
-			// Ignore PKI document updates
-		default:
-			// Ignore other events
-		}
-	}
-}
-
-// ReadChannel reads data from a pigeonhole channel.
-func (t *ThinClient) ReadChannel(ctx context.Context, channelID *[ChannelIDLength]byte, messageID *[MessageIDLength]byte) ([]byte, error) {
-	if ctx == nil {
-		return nil, errContextCannotBeNil
-	}
-	if channelID == nil {
-		return nil, errChannelIDCannotBeNil
+		return nil, nil, errContextCannotBeNil
 	}
 	if messageID == nil {
-		return nil, errors.New("messageID cannot be nil")
+		return nil, nil, errors.New("messageID cannot be nil")
 	}
 
 	req := &Request{
 		ReadChannel: &ReadChannel{
-			ChannelID: *channelID,
-			ID:        messageID,
-		},
-	}
-
-	// Set up direct message ID correlation for ReadChannelReply
-	// Always create or reuse a persistent wait channel for this MessageID
-	readWaitChanRaw, exists := t.readChannelWaitChanMap.Load(*messageID)
-	var readWaitChan chan *ReadChannelReply
-	if exists {
-		readWaitChan = readWaitChanRaw.(chan *ReadChannelReply)
-	} else {
-		readWaitChan = make(chan *ReadChannelReply, 1) // Buffered to prevent blocking
-		t.readChannelWaitChanMap.Store(*messageID, readWaitChan)
-	}
-
-	err := t.writeMessage(req)
-	if err != nil {
-		return nil, err
-	}
-
-	select {
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	case reply := <-readWaitChan:
-		if reply.Err != "" {
-			return nil, errors.New(reply.Err)
-		}
-		return reply.Payload, nil
-	case <-t.HaltCh():
-		t.readChannelWaitChanMap.Delete(*messageID)
-		return nil, errHalting
-	}
-}
-
-// CopyChannel copies data from a pigeonhole channel to replicas via courier.
-func (t *ThinClient) CopyChannel(ctx context.Context, channelID *[ChannelIDLength]byte) error {
-	if ctx == nil {
-		return errContextCannotBeNil
-	}
-	if channelID == nil {
-		return errChannelIDCannotBeNil
-	}
-
-	// Generate a message ID for correlation
-	messageID := new([MessageIDLength]byte)
-	_, err := io.ReadFull(rand.Reader, messageID[:])
-	if err != nil {
-		return err
-	}
-
-	req := &Request{
-		CopyChannel: &CopyChannel{
-			ChannelID: *channelID,
-			ID:        messageID,
+			ChannelID: channelID,
+			MessageID: messageID,
 		},
 	}
 
 	eventSink := t.EventSink()
 	defer t.StopEventSink(eventSink)
 
-	err = t.writeMessage(req)
+	err := t.writeMessage(req)
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
 
 	for {
 		var event Event
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return nil, nil, ctx.Err()
 		case event = <-eventSink:
 		case <-t.HaltCh():
-			return errHalting
+			return nil, nil, errHalting
 		}
 
 		switch v := event.(type) {
-		case *CopyChannelReply:
-			if v.Err != "" {
-				return errors.New(v.Err)
+		case *ReadChannelReply:
+			if v.ErrorCode != ThinClientSuccess {
+				return nil, nil, errors.New(ThinClientErrorToString(v.ErrorCode))
 			}
-			return nil
+			return v.SendMessagePayload, v.NextMessageIndex, nil
 		case *ConnectionStatusEvent:
 			if !v.IsConnected {
-				return errConnectionLost
+				return nil, nil, errConnectionLost
 			}
 		case *NewDocumentEvent:
 			// Ignore PKI document updates
@@ -1002,4 +993,32 @@ func (t *ThinClient) CopyChannel(ctx context.Context, channelID *[ChannelIDLengt
 			// Ignore other events
 		}
 	}
+}
+
+// SendChannelQuery sends a channel query (prepared by WriteChannel or ReadChannel) to the mixnet.
+func (t *ThinClient) SendChannelQuery(
+	ctx context.Context,
+	channelID uint16,
+	payload []byte,
+	destNode *[32]byte,
+	destQueue []byte,
+) error {
+
+	if ctx == nil {
+		return errContextCannotBeNil
+	}
+
+	surbID := t.NewSURBID()
+	req := &Request{
+		SendMessage: &SendMessage{
+			ChannelID:         &channelID,
+			SURBID:            surbID,
+			WithSURB:          true,
+			Payload:           payload,
+			DestinationIdHash: destNode,
+			RecipientQueueID:  destQueue,
+		},
+	}
+
+	return t.writeMessage(req)
 }
