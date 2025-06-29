@@ -44,6 +44,23 @@ func randUser() string {
 	return fmt.Sprintf("%x", user[:])
 }
 
+// getLogFilePath creates a temporary log file with a ping-specific pattern
+func getLogFilePath() string {
+	// Create a temporary file with a ping-specific pattern
+	// The pattern will create files like: /tmp/ping.log.123456.tmp
+	tmpFile, err := os.CreateTemp("", "ping.log.*.tmp")
+	if err != nil {
+		// If we can't create a temp file, fall back to no logging
+		return ""
+	}
+
+	// Get the file path and close the file (we just want the path)
+	logPath := tmpFile.Name()
+	tmpFile.Close()
+
+	return logPath
+}
+
 // Config holds the command line configuration
 type Config struct {
 	ConfigFile     string
@@ -53,6 +70,7 @@ type Config struct {
 	Concurrency    int
 	PrintDiff      bool
 	ThinClientOnly bool
+	LogLevel       string
 }
 
 // newRootCommand creates the root cobra command
@@ -80,7 +98,13 @@ the success rate of message delivery. It supports both thin client mode
 				return fmt.Errorf("must specify service name with -s/--service")
 			}
 
-			thinClient, daemon := initializeClient(cfg.ConfigFile, cfg.ThinClientOnly)
+			// Print log file location for user reference
+			logPath := getLogFilePath()
+			if logPath != "" {
+				fmt.Printf("Logging to: %s (level: %s)\n", logPath, cfg.LogLevel)
+			}
+
+			thinClient, daemon := initializeClient(cfg.ConfigFile, cfg.ThinClientOnly, logPath, cfg.LogLevel)
 			defer cleanup(daemon)
 
 			executePing(thinClient, cfg.Service, cfg.Count, cfg.Concurrency, cfg.PrintDiff)
@@ -96,6 +120,7 @@ the success rate of message delivery. It supports both thin client mode
 	cmd.Flags().IntVarP(&cfg.Concurrency, "concurrency", "C", 1, "number of concurrent ping operations")
 	cmd.Flags().BoolVar(&cfg.PrintDiff, "print-diff", false, "print payload contents if reply is different than original")
 	cmd.Flags().BoolVar(&cfg.ThinClientOnly, "thin", false, "use thin client mode (connect to existing daemon)")
+	cmd.Flags().StringVar(&cfg.LogLevel, "log-level", "DEBUG", "logging level (DEBUG, INFO, NOTICE, WARNING, ERROR, CRITICAL)")
 
 	// Mark required flags
 	cmd.MarkFlagRequired("service")
@@ -104,15 +129,15 @@ the success rate of message delivery. It supports both thin client mode
 }
 
 // initializeClient sets up either thin client or full daemon mode
-func initializeClient(configFile string, thinClientOnly bool) (*thin.ThinClient, *client2.Daemon) {
+func initializeClient(configFile string, thinClientOnly bool, logPath string, logLevel string) (*thin.ThinClient, *client2.Daemon) {
 	if thinClientOnly {
-		return initializeThinClient(configFile), nil
+		return initializeThinClient(configFile, logPath, logLevel), nil
 	}
-	return initializeFullClient(configFile)
+	return initializeFullClient(configFile, logPath, logLevel)
 }
 
 // initializeThinClient sets up thin client mode
-func initializeThinClient(configFile string) *thin.ThinClient {
+func initializeThinClient(configFile string, logPath string, logLevel string) *thin.ThinClient {
 	cfg, err := thin.LoadFile(configFile)
 	if err != nil {
 		panic(fmt.Errorf("failed to open thin client config: %s", err))
@@ -120,8 +145,8 @@ func initializeThinClient(configFile string) *thin.ThinClient {
 
 	logging := &config.Logging{
 		Disable: false,
-		File:    "",
-		Level:   "DEBUG",
+		File:    logPath,
+		Level:   logLevel,
 	}
 
 	thinClient := thin.NewThinClient(cfg, logging)
@@ -133,11 +158,19 @@ func initializeThinClient(configFile string) *thin.ThinClient {
 }
 
 // initializeFullClient sets up full daemon mode
-func initializeFullClient(configFile string) (*thin.ThinClient, *client2.Daemon) {
+func initializeFullClient(configFile string, logPath string, logLevel string) (*thin.ThinClient, *client2.Daemon) {
 	cfg, err := config.LoadFile(configFile)
 	if err != nil {
 		panic(fmt.Errorf("failed to open config: %s", err))
 	}
+
+	// Override logging configuration to use our log file
+	if cfg.Logging == nil {
+		cfg.Logging = &config.Logging{}
+	}
+	cfg.Logging.File = logPath
+	cfg.Logging.Level = logLevel
+	cfg.Logging.Disable = false
 
 	// create a client and connect to the mixnet Gateway
 	daemon, err := client2.NewDaemon(cfg)
