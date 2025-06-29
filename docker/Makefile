@@ -307,7 +307,7 @@ clean: clean-images clean-local
 
 run-ping: $(net_name)/ping.$(distro) $(net_name)/running.stamp | $(cache_dir)
 	$(docker) run --network=host ${docker_args} $(mount_net_name) --rm  katzenpost-$(distro)_base \
-        /$(net_name)/ping.$(distro) -thin -c /go/katzenpost/client2/testdata/thinclient.toml -s echo -printDiff -n 10
+        /$(net_name)/ping.$(distro) --thin -c /go/katzenpost/client2/testdata/thinclient.toml -s echo --print-diff -n 10
 
 shell: $(distro)_base.stamp | $(net_name) $(cache_dir)
 	$(docker) run --network=host ${docker_args} $(mount_net_name) -w /go/katzenpost/docker/$(net_name) --rm -it katzenpost-$(distro)_base $(sh)
