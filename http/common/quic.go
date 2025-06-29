@@ -36,8 +36,8 @@ import (
 
 // QuicConn wraps a conn and a single stream and implements net.Conn
 type QuicConn struct {
-	Stream quic.Stream
-	Conn   quic.Connection
+	Stream *quic.Stream
+	Conn   *quic.Conn
 }
 
 // LocalAddr implements net.Conn
