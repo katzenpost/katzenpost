@@ -124,7 +124,7 @@ type MixDescriptor struct {
 
 	// Kaetzchen is the map of provider autoresponder agents by capability
 	// to parameters.
-	Kaetzchen map[string]map[string]interface{} `cbor:"omitempty"`
+	Kaetzchen map[string]map[string]interface{}
 
 	// KaetzchenAdvertizedData is used by the operator to advertize
 	// additional information about specific services. This is different
