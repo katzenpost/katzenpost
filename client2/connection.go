@@ -24,7 +24,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"github.com/katzenpost/katzenpost/core/worker"
-	"github.com/katzenpost/katzenpost/http/common"
+	"github.com/katzenpost/katzenpost/quic/common"
 )
 
 var (

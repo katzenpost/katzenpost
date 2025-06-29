@@ -23,7 +23,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
-	"github.com/katzenpost/katzenpost/http/proxy/common"
+	"github.com/katzenpost/katzenpost/quic/proxy/common"
 	"gopkg.in/op/go-logging.v1"
 
 	"bufio"

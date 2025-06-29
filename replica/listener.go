@@ -13,7 +13,7 @@ import (
 	"sync"
 	"time"
 
-	httpCommon "github.com/katzenpost/katzenpost/http/common"
+	httpCommon "github.com/katzenpost/katzenpost/quic/common"
 
 	"github.com/quic-go/quic-go"
 	"gopkg.in/op/go-logging.v1"

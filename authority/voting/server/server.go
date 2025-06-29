@@ -43,7 +43,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/utils"
-	"github.com/katzenpost/katzenpost/http/common"
+	"github.com/katzenpost/katzenpost/quic/common"
 )
 
 // ErrGenerateOnly is the error returned when the server initialization
