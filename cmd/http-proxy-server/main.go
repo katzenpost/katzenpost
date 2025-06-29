@@ -31,7 +31,7 @@ import (
 
 	cbor "github.com/fxamacker/cbor/v2"
 	"github.com/katzenpost/katzenpost/core/log"
-	"github.com/katzenpost/katzenpost/http/proxy/common"
+	"github.com/katzenpost/katzenpost/quic/proxy/common"
 	"github.com/katzenpost/katzenpost/server/cborplugin"
 
 	"gopkg.in/op/go-logging.v1"

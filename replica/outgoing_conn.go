@@ -25,7 +25,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
-	httpCommon "github.com/katzenpost/katzenpost/http/common"
+	httpCommon "github.com/katzenpost/katzenpost/quic/common"
 )
 
 var outgoingConnID uint64
