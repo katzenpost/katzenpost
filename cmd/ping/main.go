@@ -17,16 +17,18 @@
 package main
 
 import (
-	"flag"
+	"context"
 	"fmt"
 	"os"
 	"time"
 
 	"github.com/carlmjohnson/versioninfo"
+	"github.com/charmbracelet/fang"
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/katzenpost/client2"
 	"github.com/katzenpost/katzenpost/client2/config"
 	"github.com/katzenpost/katzenpost/client2/thin"
+	"github.com/spf13/cobra"
 )
 
 const (
@@ -42,29 +44,63 @@ func randUser() string {
 	return fmt.Sprintf("%x", user[:])
 }
 
-// parseFlags handles command line flag parsing and validation
-func parseFlags() (configFile, service string, count, concurrency int, printDiff, thinClientOnly bool) {
-	var timeout int
-	flag.StringVar(&configFile, "c", "", "configuration file")
-	flag.StringVar(&service, "s", "", "service name")
-	flag.IntVar(&count, "n", 5, "count")
-	flag.IntVar(&timeout, "t", 45, "timeout")
-	flag.IntVar(&concurrency, "C", 1, "concurrency")
-	flag.BoolVar(&printDiff, "printDiff", false, "print payload contents if reply is different than original")
-	flag.BoolVar(&thinClientOnly, "thin", false, "use thin client mode (connect to existing daemon)")
-	version := flag.Bool("v", false, "Get version info.")
-	flag.Parse()
+// Config holds the command line configuration
+type Config struct {
+	ConfigFile     string
+	Service        string
+	Count          int
+	Timeout        int
+	Concurrency    int
+	PrintDiff      bool
+	ThinClientOnly bool
+}
 
-	if *version {
-		fmt.Printf("version is %s\n", versioninfo.Short())
-		os.Exit(0)
+// newRootCommand creates the root cobra command
+func newRootCommand() *cobra.Command {
+	var cfg Config
+
+	cmd := &cobra.Command{
+		Use:   "ping",
+		Short: "Katzenpost mixnet ping tool",
+		Long: `A ping tool for testing and debugging Katzenpost mixnet services.
+
+This tool sends test messages to a specified service in the mixnet and measures
+the success rate of message delivery. It supports both thin client mode
+(connecting to an existing daemon) and full client mode.`,
+		Example: `  # Ping the echo service using thin client mode
+  ping -c client.toml -s echo --thin
+
+  # Ping with custom count and concurrency
+  ping -c client.toml -s echo -n 10 -C 3
+
+  # Show payload differences on mismatch
+  ping -c client.toml -s echo --print-diff`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if cfg.Service == "" {
+				return fmt.Errorf("must specify service name with -s/--service")
+			}
+
+			thinClient, daemon := initializeClient(cfg.ConfigFile, cfg.ThinClientOnly)
+			defer cleanup(daemon)
+
+			executePing(thinClient, cfg.Service, cfg.Count, cfg.Concurrency, cfg.PrintDiff)
+			return nil
+		},
 	}
 
-	if service == "" {
-		panic("must specify service name with -s")
-	}
+	// Add flags
+	cmd.Flags().StringVarP(&cfg.ConfigFile, "config", "c", "", "configuration file")
+	cmd.Flags().StringVarP(&cfg.Service, "service", "s", "", "service name")
+	cmd.Flags().IntVarP(&cfg.Count, "count", "n", 5, "number of ping messages to send")
+	cmd.Flags().IntVarP(&cfg.Timeout, "timeout", "t", 45, "timeout in seconds")
+	cmd.Flags().IntVarP(&cfg.Concurrency, "concurrency", "C", 1, "number of concurrent ping operations")
+	cmd.Flags().BoolVar(&cfg.PrintDiff, "print-diff", false, "print payload contents if reply is different than original")
+	cmd.Flags().BoolVar(&cfg.ThinClientOnly, "thin", false, "use thin client mode (connect to existing daemon)")
 
-	return configFile, service, count, concurrency, printDiff, thinClientOnly
+	// Mark required flags
+	cmd.MarkFlagRequired("service")
+
+	return cmd
 }
 
 // initializeClient sets up either thin client or full daemon mode
@@ -142,8 +178,14 @@ func cleanup(daemon *client2.Daemon) {
 }
 
 func main() {
-	configFile, service, count, concurrency, printDiff, thinClientOnly := parseFlags()
-	thinClient, daemon := initializeClient(configFile, thinClientOnly)
-	executePing(thinClient, service, count, concurrency, printDiff)
-	cleanup(daemon)
+	rootCmd := newRootCommand()
+
+	// Use fang to execute the command with all its features
+	if err := fang.Execute(
+		context.Background(),
+		rootCmd,
+		fang.WithVersion(versioninfo.Short()),
+	); err != nil {
+		os.Exit(1)
+	}
 }
