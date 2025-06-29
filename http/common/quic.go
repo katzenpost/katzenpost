@@ -40,6 +40,21 @@ type QuicConn struct {
 	Conn   *quic.Conn
 }
 
+// NewQuicConn creates a new QuicConn with the provided connection and stream.
+// Both conn and stream must be non-nil.
+func NewQuicConn(conn *quic.Conn, stream *quic.Stream) *QuicConn {
+	if conn == nil {
+		panic("QuicConn requires a non-nil connection")
+	}
+	if stream == nil {
+		panic("QuicConn requires a non-nil stream")
+	}
+	return &QuicConn{
+		Conn:   conn,
+		Stream: stream,
+	}
+}
+
 // LocalAddr implements net.Conn
 func (q *QuicConn) LocalAddr() net.Addr {
 	return q.Conn.LocalAddr()
@@ -98,7 +113,7 @@ func (l *QuicListener) Accept() (net.Conn, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &QuicConn{Conn: conn, Stream: stream}, nil
+	return NewQuicConn(conn, stream), nil
 }
 
 func (l *QuicListener) Addr() net.Addr {
@@ -170,7 +185,7 @@ func DialURL(u *url.URL, ctx context.Context, dialFn func(ctx context.Context, n
 			stream, err := qconn.OpenStream()
 			if err == nil {
 				// wrap the stream and conn to implement net.Conn
-				return &QuicConn{Stream: stream, Conn: qconn}, nil
+				return NewQuicConn(qconn, stream), nil
 			}
 			return nil, err
 		}
