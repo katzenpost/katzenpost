@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/http/httptrace"
 	"strconv"
 	"strings"
 	"sync"
@@ -16,7 +17,6 @@ import (
 	"golang.org/x/net/idna"
 
 	"github.com/quic-go/qpack"
-	"github.com/quic-go/quic-go"
 )
 
 const bodyCopyBufferSize = 8 * 1024
@@ -36,14 +36,18 @@ func newRequestWriter() *requestWriter {
 	}
 }
 
-func (w *requestWriter) WriteRequestHeader(str quic.Stream, req *http.Request, gzip bool) error {
+func (w *requestWriter) WriteRequestHeader(wr io.Writer, req *http.Request, gzip bool) error {
 	// TODO: figure out how to add support for trailers
 	buf := &bytes.Buffer{}
 	if err := w.writeHeaders(buf, req, gzip); err != nil {
 		return err
 	}
-	_, err := str.Write(buf.Bytes())
-	return err
+	if _, err := wr.Write(buf.Bytes()); err != nil {
+		return err
+	}
+	trace := httptrace.ContextClientTrace(req.Context())
+	traceWroteHeaders(trace)
+	return nil
 }
 
 func (w *requestWriter) writeHeaders(wr io.Writer, req *http.Request, gzip bool) error {
@@ -198,16 +202,16 @@ func (w *requestWriter) encodeHeaders(req *http.Request, addGzipHeader bool, tra
 	// 	return errRequestHeaderListSize
 	// }
 
-	// trace := httptrace.ContextClientTrace(req.Context())
-	// traceHeaders := traceHasWroteHeaderField(trace)
+	trace := httptrace.ContextClientTrace(req.Context())
+	traceHeaders := traceHasWroteHeaderField(trace)
 
 	// Header list size is ok. Write the headers.
 	enumerateHeaders(func(name, value string) {
 		name = strings.ToLower(name)
 		w.encoder.WriteField(qpack.HeaderField{Name: name, Value: value})
-		// if traceHeaders {
-		// 	traceWroteHeaderField(trace, name, value)
-		// }
+		if traceHeaders {
+			traceWroteHeaderField(trace, name, value)
+		}
 	})
 
 	return nil
