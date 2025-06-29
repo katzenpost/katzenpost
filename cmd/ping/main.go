@@ -81,11 +81,13 @@ func newRootCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "ping",
 		Short: "Katzenpost mixnet ping tool",
-		Long: `A ping tool for testing and debugging Katzenpost mixnet services.
+		Long: `A ping tool for testing and debugging Katzenpost mixnet connectivity.
 
-This tool sends test messages to a specified service in the mixnet and measures
-the success rate of message delivery. It supports both thin client mode
-(connecting to an existing daemon) and full client mode.`,
+This ping tools sends Sphinx packets destined to the specified service but it's designed to
+work with the "echo" mixnet service which replies with the same payload that it receives.
+We measure the success rate of Sphinx packet delivery. This ping tool is a mixnet client
+and thus supports both thin client mode by connecting to an existing kpclientd daemon and
+full client mode where this ping tool starts it's own client daemon.`,
 		Example: `  # Ping the echo service using thin client mode
   ping -c client.toml -s echo --thin
 
@@ -115,7 +117,7 @@ the success rate of message delivery. It supports both thin client mode
 
 	// Add flags
 	cmd.Flags().StringVarP(&cfg.ConfigFile, "config", "c", "", "configuration file")
-	cmd.Flags().StringVarP(&cfg.Service, "service", "s", "", "service name")
+	cmd.Flags().StringVarP(&cfg.Service, "service", "s", "echo", "service name")
 	cmd.Flags().IntVarP(&cfg.Count, "count", "n", 5, "number of ping messages to send")
 	cmd.Flags().IntVarP(&cfg.Timeout, "timeout", "t", 45, "timeout in seconds")
 	cmd.Flags().IntVarP(&cfg.Concurrency, "concurrency", "C", 1, "number of concurrent ping operations")
