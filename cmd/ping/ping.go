@@ -23,6 +23,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/charmbracelet/lipgloss/v2"
 	"github.com/fxamacker/cbor/v2"
 
 	"github.com/katzenpost/hpqc/hash"
@@ -48,6 +49,14 @@ produced various designs. Of these, mix networks are among the most practical
 and can readily scale to millions of users.
 `)
 
+// Color styles for ping output
+var (
+	successStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("10")).Bold(true) // Bright green
+	failureStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Bold(true)  // Bright red
+	infoStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("14")).Bold(true) // Bright cyan
+	headerStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("11")).Bold(true) // Bright yellow
+)
+
 func sendPing(session *thin.ThinClient, serviceDesc *common.ServiceDescriptor, printDiff bool) bool {
 	var nonce [32]byte
 
@@ -71,7 +80,7 @@ func sendPing(session *thin.ThinClient, serviceDesc *common.ServiceDescriptor, p
 	reply, err := session.BlockingSendMessage(ctx, cborPayload, &id, serviceDesc.RecipientQueueID)
 	if err != nil {
 		fmt.Printf("\nerror: %v\n", err)
-		fmt.Printf(".") // Fail, did not receive a reply.
+		fmt.Printf("%s", failureStyle.Render(".")) // Fail, did not receive a reply.
 		return false
 	}
 
@@ -98,7 +107,7 @@ func sendPing(session *thin.ThinClient, serviceDesc *common.ServiceDescriptor, p
 
 func sendPings(session *thin.ThinClient, serviceDesc *common.ServiceDescriptor, count int, concurrency int, printDiff bool) {
 	id := hash.Sum256(serviceDesc.MixDescriptor.IdentityKey)
-	fmt.Printf("Sending %d Sphinx packets to %x@%x\n", count, id, serviceDesc.RecipientQueueID)
+	fmt.Printf("%s\n", headerStyle.Render(fmt.Sprintf("Sending %d Sphinx packets to %x@%x", count, id, serviceDesc.RecipientQueueID)))
 
 	var passed, failed uint64
 
@@ -114,20 +123,27 @@ func sendPings(session *thin.ThinClient, serviceDesc *common.ServiceDescriptor, 
 		// make new goroutine for each ping to send them in parallel
 		go func() {
 			if sendPing(session, serviceDesc, printDiff) {
-				fmt.Printf("!")
+				fmt.Printf("%s", successStyle.Render("!"))
 				atomic.AddUint64(&passed, 1)
 			} else {
-				fmt.Printf("~")
+				fmt.Printf("%s", failureStyle.Render("~"))
 				atomic.AddUint64(&failed, 1)
 			}
 			wg.Done()
 			<-sem
 		}()
 	}
-	fmt.Printf("\n")
 
 	wg.Wait()
+	fmt.Printf("\n")
 
 	percent := (float64(passed) * float64(100)) / float64(count)
-	fmt.Printf("Success rate is %f percent %d/%d)\n", percent, passed, count)
+	successMsg := fmt.Sprintf("Success rate is %f percent %d/%d)", percent, passed, count)
+	if percent >= 90.0 {
+		fmt.Printf("%s\n", successStyle.Render(successMsg))
+	} else if percent >= 50.0 {
+		fmt.Printf("%s\n", infoStyle.Render(successMsg))
+	} else {
+		fmt.Printf("%s\n", failureStyle.Render(successMsg))
+	}
 }

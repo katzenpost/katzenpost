@@ -71,6 +71,7 @@ type Config struct {
 	PrintDiff      bool
 	ThinClientOnly bool
 	LogLevel       string
+	ForceColor     bool
 }
 
 // newRootCommand creates the root cobra command
@@ -121,6 +122,7 @@ the success rate of message delivery. It supports both thin client mode
 	cmd.Flags().BoolVar(&cfg.PrintDiff, "print-diff", false, "print payload contents if reply is different than original")
 	cmd.Flags().BoolVar(&cfg.ThinClientOnly, "thin", false, "use thin client mode (connect to existing daemon)")
 	cmd.Flags().StringVar(&cfg.LogLevel, "log-level", "DEBUG", "logging level (DEBUG, INFO, NOTICE, WARNING, ERROR, CRITICAL)")
+	cmd.Flags().BoolVar(&cfg.ForceColor, "force-color", false, "force colorful output even when not in a TTY")
 
 	// Mark required flags
 	cmd.MarkFlagRequired("service")
@@ -212,6 +214,18 @@ func cleanup(daemon *client2.Daemon) {
 
 func main() {
 	rootCmd := newRootCommand()
+
+	// Check for force-color flag before fang processes the command
+	for _, arg := range os.Args {
+		if arg == "--force-color" {
+			os.Setenv("FORCE_COLOR", "1")
+			os.Setenv("TERM", "xterm-256color")
+			os.Setenv("COLORTERM", "truecolor")
+			os.Setenv("CLICOLOR_FORCE", "1")
+
+			break
+		}
+	}
 
 	// Use fang to execute the command with all its features
 	if err := fang.Execute(
