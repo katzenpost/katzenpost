@@ -4,12 +4,8 @@
 package main
 
 import (
-	"context"
 	"fmt"
-	"os"
 
-	"github.com/carlmjohnson/versioninfo"
-	"github.com/charmbracelet/fang"
 	"github.com/spf13/cobra"
 
 	kempem "github.com/katzenpost/hpqc/kem/pem"
@@ -171,16 +167,7 @@ be used by Katzenpost servers, clients, and other network components.`,
 
 func main() {
 	rootCmd := newRootCommand()
-
-	// Use fang to execute the command with enhanced features and custom error handler
-	if err := fang.Execute(
-		context.Background(),
-		rootCmd,
-		fang.WithVersion(versioninfo.Short()),
-		fang.WithErrorHandler(common.ErrorHandlerWithUsage(rootCmd)),
-	); err != nil {
-		os.Exit(1)
-	}
+	common.ExecuteWithFang(rootCmd)
 }
 
 // runGenKeypair generates the specified key pair

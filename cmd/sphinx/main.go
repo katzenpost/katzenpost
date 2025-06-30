@@ -4,7 +4,6 @@
 package main
 
 import (
-	"context"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/hex"
@@ -16,8 +15,6 @@ import (
 	"strings"
 
 	"github.com/BurntSushi/toml"
-	"github.com/carlmjohnson/versioninfo"
-	"github.com/charmbracelet/fang"
 	"github.com/spf13/cobra"
 
 	"github.com/katzenpost/hpqc/hash"
@@ -387,15 +384,7 @@ func init() {
 }
 
 func main() {
-	// Use fang to execute the command with enhanced features and custom error handler
-	if err := fang.Execute(
-		context.Background(),
-		rootCmd,
-		fang.WithVersion(versioninfo.Short()),
-		fang.WithErrorHandler(common.ErrorHandlerWithUsage(rootCmd)),
-	); err != nil {
-		os.Exit(1)
-	}
+	common.ExecuteWithFang(rootCmd)
 }
 
 // handleUnknownCommand provides a more helpful error message for unknown commands

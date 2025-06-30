@@ -19,11 +19,8 @@ package main
 import (
 	"context"
 	"fmt"
-	"os"
 	"time"
 
-	"github.com/carlmjohnson/versioninfo"
-	"github.com/charmbracelet/fang"
 	"github.com/spf13/cobra"
 
 	"github.com/katzenpost/katzenpost/client"
@@ -90,16 +87,7 @@ and inspecting the current state of the mixnet topology.`,
 
 func main() {
 	rootCmd := newRootCommand()
-
-	// Use fang to execute the command with enhanced features and custom error handler
-	if err := fang.Execute(
-		context.Background(),
-		rootCmd,
-		fang.WithVersion(versioninfo.Short()),
-		fang.WithErrorHandler(common.ErrorHandlerWithUsage(rootCmd)),
-	); err != nil {
-		os.Exit(1)
-	}
+	common.ExecuteWithFang(rootCmd)
 }
 
 // runFetch fetches network documents from directory authorities

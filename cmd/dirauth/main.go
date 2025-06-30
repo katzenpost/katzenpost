@@ -17,14 +17,11 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
 
-	"github.com/carlmjohnson/versioninfo"
-	"github.com/charmbracelet/fang"
 	"github.com/spf13/cobra"
 
 	"github.com/katzenpost/katzenpost/authority/voting/server"
@@ -93,16 +90,7 @@ authority can compromise the network's security or availability.`,
 
 func main() {
 	rootCmd := newRootCommand()
-
-	// Use fang to execute the command with enhanced features and custom error handler
-	if err := fang.Execute(
-		context.Background(),
-		rootCmd,
-		fang.WithVersion(versioninfo.Short()),
-		fang.WithErrorHandler(common.ErrorHandlerWithUsage(rootCmd)),
-	); err != nil {
-		os.Exit(1)
-	}
+	common.ExecuteWithFang(rootCmd)
 }
 
 // runAuthority starts the directory authority server

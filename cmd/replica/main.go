@@ -4,15 +4,12 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"os/signal"
 	"runtime"
 	"syscall"
 
-	"github.com/carlmjohnson/versioninfo"
-	"github.com/charmbracelet/fang"
 	"github.com/spf13/cobra"
 
 	"github.com/katzenpost/katzenpost/common"
@@ -105,16 +102,7 @@ BACAP for addressing and message encryption.
 
 func main() {
 	rootCmd := newRootCommand()
-
-	// Use fang to execute the command with enhanced features and custom error handler
-	if err := fang.Execute(
-		context.Background(),
-		rootCmd,
-		fang.WithVersion(versioninfo.Short()),
-		fang.WithErrorHandler(common.ErrorHandlerWithUsage(rootCmd)),
-	); err != nil {
-		os.Exit(1)
-	}
+	common.ExecuteWithFang(rootCmd)
 }
 
 // runReplicaServer starts the replica server

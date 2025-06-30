@@ -2,15 +2,31 @@
 package common
 
 import (
+	"context"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 
+	"github.com/carlmjohnson/versioninfo"
 	"github.com/charmbracelet/colorprofile"
 	"github.com/charmbracelet/fang"
 	"github.com/charmbracelet/lipgloss/v2"
 	"github.com/spf13/cobra"
 )
+
+// ExecuteWithFang executes a cobra command using fang with standard katzenpost options.
+// This reduces boilerplate across all CLI tools by providing a common execution pattern.
+func ExecuteWithFang(cmd *cobra.Command) {
+	if err := fang.Execute(
+		context.Background(),
+		cmd,
+		fang.WithVersion(versioninfo.Short()),
+		fang.WithErrorHandler(ErrorHandlerWithUsage(cmd)),
+	); err != nil {
+		os.Exit(1)
+	}
+}
 
 // ErrorHandlerWithUsage creates a custom error handler that displays error messages
 // followed by usage help for CLI argument errors. This provides better user experience
@@ -28,7 +44,7 @@ func ErrorHandlerWithUsage(cmd *cobra.Command) fang.ErrorHandler {
 			helpFunc := cmd.HelpFunc()
 			if helpFunc != nil {
 				// Create a colorprofile writer for the help output
-				helpWriter := colorprofile.NewWriter(w, nil)
+				_ = colorprofile.NewWriter(w, nil)
 				helpFunc(cmd, []string{})
 			}
 		} else {

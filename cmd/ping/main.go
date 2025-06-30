@@ -17,13 +17,10 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"time"
 
-	"github.com/carlmjohnson/versioninfo"
-	"github.com/charmbracelet/fang"
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/katzenpost/client2"
 	"github.com/katzenpost/katzenpost/client2/config"
@@ -215,14 +212,5 @@ func cleanup(daemon *client2.Daemon) {
 
 func main() {
 	rootCmd := newRootCommand()
-
-	// Use fang to execute the command with enhanced features and custom error handler
-	if err := fang.Execute(
-		context.Background(),
-		rootCmd,
-		fang.WithVersion(versioninfo.Short()),
-		fang.WithErrorHandler(common.ErrorHandlerWithUsage(rootCmd)),
-	); err != nil {
-		os.Exit(1)
-	}
+	common.ExecuteWithFang(rootCmd)
 }
