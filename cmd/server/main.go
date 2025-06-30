@@ -52,10 +52,23 @@ The server operates as one of three possible roles in the mix network:
 2. A gateway node
 3. A service node
 
-When operating as a mix node, it functions as a standard
+Please see our admin guide for practical documentation regarding
+the server, here:
+• https://katzenpost.network/docs/admin_guide/components.html#intro-mix
+• https://katzenpost.network/docs/admin_guide/components.html#mix-config
+• https://katzenpost.network/docs/admin_guide/components.html#gateway-config
+• https://katzenpost.network/docs/admin_guide/components.html#service-config
+
+And our design specifications, here:
+• https://katzenpost.network/docs/specs/
+
+When operating as a mix node, it functions as a
 mix node in the network topology, performing packet
-mixing, routing, and relay services. It connects to other mix nodes and
-directory authorities to participate in the mixnet infrastructure.
+mixing and routing. It connects to other mix nodes and
+maintains an outbound connection pool to the mixes in
+the next routing topoology layer.  It also connects to
+directory authorities to download the latest PKI documents and
+to upload it's mix descriptor so that it gets published next epoch. 
 
 Key features:
 • Supports one of three roles: mix node, gateway node, or service node

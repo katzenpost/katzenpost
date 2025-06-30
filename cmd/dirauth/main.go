@@ -47,6 +47,16 @@ func newRootCommand() *cobra.Command {
 Infrastructure) for the mixnet. It coordinates with other authorities to
 establish network consensus and publish a new PKI document every epoch.
 
+For more information please see our design specifications, here:
+https://katzenpost.network/docs/specs/
+
+Especially the "Katzenpost Mix Network Public Key Infrastructure Specification"
+https://katzenpost.network/docs/specs/pki.html
+
+However our Admin Guide has more practical documentation regarding
+the dirauth, here:
+https://katzenpost.network/docs/admin_guide/components.html#intro-dirauth
+
 Core responsibilities:
 • Maintains authoritative network routing topology
 • Coordinates voting rounds with other directory authorities for consensus
