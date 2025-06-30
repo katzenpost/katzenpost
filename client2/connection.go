@@ -321,8 +321,6 @@ func (c *connection) doConnect(dialCtx context.Context) {
 			return
 		}
 
-		c.log.Debug("doConnect, before for loop")
-
 		for _, addr := range dstAddrs {
 			select {
 			case <-time.After(time.Duration(atomic.LoadInt64(&c.retryDelay))):
@@ -421,7 +419,6 @@ func (c *connection) onNetConn(conn net.Conn) {
 	defer w.Close()
 
 	// Bind the session to the conn, handshake, authenticate.
-	c.log.Debug("onTCPConn: before handshake")
 	conn.SetDeadline(time.Now().Add(handshakeTimeout))
 	if err = w.Initialize(conn); err != nil {
 		c.log.Errorf("Handshake failed: %v", err)

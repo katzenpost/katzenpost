@@ -203,7 +203,6 @@ func (t *ThinClient) Close() error {
 
 // Dial dials the client daemon
 func (t *ThinClient) Dial() error {
-	t.log.Debug("Dial begin")
 
 	network := t.cfg.Network
 	address := t.cfg.Address
@@ -247,7 +246,6 @@ func (t *ThinClient) Dial() error {
 	t.parsePKIDoc(message2.NewPKIDocumentEvent.Payload)
 	t.Go(t.eventSinkWorker)
 	t.Go(t.worker)
-	t.log.Debug("Dial end")
 	return nil
 }
 
@@ -354,7 +352,10 @@ func (t *ThinClient) worker() {
 			t.log.Debug("NewPKIDocumentEvent")
 			doc, err := t.parsePKIDoc(message.NewPKIDocumentEvent.Payload)
 			if err != nil {
-				t.log.Fatalf("parsePKIDoc %s", err)
+				t.log.Errorf("Failed to parse PKI document: %s", err)
+				// Gracefully halt the client on PKI parsing failure
+				go t.Halt()
+				return
 			}
 			event := &NewDocumentEvent{
 				Document: doc,
@@ -472,8 +473,6 @@ func (t *ThinClient) StopEventSink(ch chan Event) {
 
 // eventSinkWorker adds and removes channels receiving Events
 func (t *ThinClient) eventSinkWorker() {
-	t.log.Debug("STARTING eventSinkWorker")
-	defer t.log.Debug("STOPPING eventSinkWorker")
 	drains := make(map[chan Event]struct{}, 0)
 	for {
 		select {

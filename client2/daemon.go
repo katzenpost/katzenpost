@@ -274,12 +274,10 @@ func (d *Daemon) Start() error {
 	})
 	d.timerQueue.Start()
 	d.arqTimerQueue = NewTimerQueue(func(rawSurbID interface{}) {
-		d.log.Info("ARQ TimerQueue callback!")
 		surbID, ok := rawSurbID.(*[sphinxConstants.SURBIDLength]byte)
 		if !ok {
 			panic("wtf, failed type assertion!")
 		}
-		d.log.Warning("BEFORE ARQ resend")
 		// Use a timeout to prevent blocking during shutdown
 		go func() {
 			select {
@@ -292,7 +290,6 @@ func (d *Daemon) Start() error {
 				d.arqResend(surbID)
 			}
 		}()
-		d.log.Warning("AFTER ARQ resend")
 	})
 	d.arqTimerQueue.Start()
 	d.gcTimerQueue = NewTimerQueue(func(rawGCReply interface{}) {
