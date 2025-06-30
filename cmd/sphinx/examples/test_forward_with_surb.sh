@@ -9,13 +9,13 @@ echo "Installing Sphinx CLI tool..."
 go install .
 
 echo "Building genkeypair tool..."
-(cd /home/human/code/katzenpost/genkeypair && go build -o genkeypair .)
+(cd /home/human/code/katzenpost/cmd/genkeypair && go build -o genkeypair .)
 
 # Generate required key files if they don't exist
 echo "Generating test key files..."
 for node in node1 node2 node3 node4 node5 node6 node7 node8 node9 node10; do
-    if [ ! -f /home/human/code/katzenpost/genkeypair/${node}.nike_public.pem ]; then
-        (cd /home/human/code/katzenpost/genkeypair && ./genkeypair -type nike -scheme x25519 -out ${node})
+    if [ ! -f /home/human/code/katzenpost/cmd/genkeypair/${node}.nike_public.pem ]; then
+        (cd /home/human/code/katzenpost/cmd/genkeypair && ./genkeypair --type nike --scheme x25519 --out ${node})
     fi
 done
 
@@ -36,51 +36,51 @@ sphinx newpacket \
   --geometry geometry_5hop.toml \
   --payload forward_message.txt \
   --output forward_with_surb.bin \
-  --hop="b49ef25e17c77eca3945955bf99fae538a59865067a7fc7afd92ef9153e8ac30,/home/human/code/katzenpost/genkeypair/node1.nike_public.pem" \
-  --hop="2062050ca17fe7e4c0db07e8481b7c9e4e8196bf5cd0a0f7cfa8c08bb7e055ba,/home/human/code/katzenpost/genkeypair/node2.nike_public.pem" \
-  --hop="8e0cc4461f928837c4937458c52279d4a2c33ee440be41261a05cb128484c2d2,/home/human/code/katzenpost/genkeypair/node3.nike_public.pem" \
-  --hop="859c16b009fbcabba7ca1335558ae8338ce6ca4bff04bc75a3b78168f4cdb4f4,/home/human/code/katzenpost/genkeypair/node4.nike_public.pem" \
-  --hop="f72a065d9923c5b8a5c5b8a5c5b8a5c5b8a5c5b8a5c5b8a5c5b8a5c5b8a5c5b8,/home/human/code/katzenpost/genkeypair/node5.nike_public.pem" \
+  --hop="b49ef25e17c77eca3945955bf99fae538a59865067a7fc7afd92ef9153e8ac30,/home/human/code/katzenpost/cmd/genkeypair/node1.nike_public.pem" \
+  --hop="2062050ca17fe7e4c0db07e8481b7c9e4e8196bf5cd0a0f7cfa8c08bb7e055ba,/home/human/code/katzenpost/cmd/genkeypair/node2.nike_public.pem" \
+  --hop="8e0cc4461f928837c4937458c52279d4a2c33ee440be41261a05cb128484c2d2,/home/human/code/katzenpost/cmd/genkeypair/node3.nike_public.pem" \
+  --hop="859c16b009fbcabba7ca1335558ae8338ce6ca4bff04bc75a3b78168f4cdb4f4,/home/human/code/katzenpost/cmd/genkeypair/node4.nike_public.pem" \
+  --hop="f72a065d9923c5b8a5c5b8a5c5b8a5c5b8a5c5b8a5c5b8a5c5b8a5c5b8a5c5b8,/home/human/code/katzenpost/cmd/genkeypair/node5.nike_public.pem" \
   --include-surb \
-  --surb-hop="a1b2c3d4e5f67890123456789012345678901234567890123456789012345678,/home/human/code/katzenpost/genkeypair/node6.nike_public.pem" \
-  --surb-hop="b2c3d4e5f67890123456789012345678901234567890123456789012345678a1,/home/human/code/katzenpost/genkeypair/node7.nike_public.pem" \
-  --surb-hop="c3d4e5f67890123456789012345678901234567890123456789012345678a1b2,/home/human/code/katzenpost/genkeypair/node8.nike_public.pem" \
-  --surb-hop="d4e5f67890123456789012345678901234567890123456789012345678a1b2c3,/home/human/code/katzenpost/genkeypair/node9.nike_public.pem" \
-  --surb-hop="e5f67890123456789012345678901234567890123456789012345678a1b2c3d4,/home/human/code/katzenpost/genkeypair/node10.nike_public.pem" \
+  --surb-hop="a1b2c3d4e5f67890123456789012345678901234567890123456789012345678,/home/human/code/katzenpost/cmd/genkeypair/node6.nike_public.pem" \
+  --surb-hop="b2c3d4e5f67890123456789012345678901234567890123456789012345678a1,/home/human/code/katzenpost/cmd/genkeypair/node7.nike_public.pem" \
+  --surb-hop="c3d4e5f67890123456789012345678901234567890123456789012345678a1b2,/home/human/code/katzenpost/cmd/genkeypair/node8.nike_public.pem" \
+  --surb-hop="d4e5f67890123456789012345678901234567890123456789012345678a1b2c3,/home/human/code/katzenpost/cmd/genkeypair/node9.nike_public.pem" \
+  --surb-hop="e5f67890123456789012345678901234567890123456789012345678a1b2c3d4,/home/human/code/katzenpost/cmd/genkeypair/node10.nike_public.pem" \
   --output-surb-keys forward_surb.keys
 
 echo -e "\n2. Unwrapping forward packet (hop 1)..."
 sphinx unwrap \
   --geometry geometry_5hop.toml \
-  --private-key /home/human/code/katzenpost/genkeypair/node1.nike_private.pem \
+  --private-key /home/human/code/katzenpost/cmd/genkeypair/node1.nike_private.pem \
   --packet forward_with_surb.bin \
   --output-packet forward_processed1.bin
 
 echo -e "\n3. Unwrapping forward packet (hop 2)..."
 sphinx unwrap \
   --geometry geometry_5hop.toml \
-  --private-key /home/human/code/katzenpost/genkeypair/node2.nike_private.pem \
+  --private-key /home/human/code/katzenpost/cmd/genkeypair/node2.nike_private.pem \
   --packet forward_processed1.bin \
   --output-packet forward_processed2.bin
 
 echo -e "\n4. Unwrapping forward packet (hop 3)..."
 sphinx unwrap \
   --geometry geometry_5hop.toml \
-  --private-key /home/human/code/katzenpost/genkeypair/node3.nike_private.pem \
+  --private-key /home/human/code/katzenpost/cmd/genkeypair/node3.nike_private.pem \
   --packet forward_processed2.bin \
   --output-packet forward_processed3.bin
 
 echo -e "\n5. Unwrapping forward packet (hop 4)..."
 sphinx unwrap \
   --geometry geometry_5hop.toml \
-  --private-key /home/human/code/katzenpost/genkeypair/node4.nike_private.pem \
+  --private-key /home/human/code/katzenpost/cmd/genkeypair/node4.nike_private.pem \
   --packet forward_processed3.bin \
   --output-packet forward_processed4.bin
 
 echo -e "\n6. Unwrapping forward packet (hop 5 - final destination)..."
 sphinx unwrap \
   --geometry geometry_5hop.toml \
-  --private-key /home/human/code/katzenpost/genkeypair/node5.nike_private.pem \
+  --private-key /home/human/code/katzenpost/cmd/genkeypair/node5.nike_private.pem \
   --packet forward_processed4.bin \
   --output forward_final_payload.bin \
   --output-surb extracted_surb.surb
@@ -108,11 +108,11 @@ sphinx newsurb \
   --geometry geometry_5hop.toml \
   --output-surb test_reply_surb.surb \
   --output-keys test_reply_surb.keys \
-  --hop="a1b2c3d4e5f67890123456789012345678901234567890123456789012345678,/home/human/code/katzenpost/genkeypair/node6.nike_public.pem" \
-  --hop="b2c3d4e5f67890123456789012345678901234567890123456789012345678a1,/home/human/code/katzenpost/genkeypair/node7.nike_public.pem" \
-  --hop="c3d4e5f67890123456789012345678901234567890123456789012345678a1b2,/home/human/code/katzenpost/genkeypair/node8.nike_public.pem" \
-  --hop="d4e5f67890123456789012345678901234567890123456789012345678a1b2c3,/home/human/code/katzenpost/genkeypair/node9.nike_public.pem" \
-  --hop="e5f67890123456789012345678901234567890123456789012345678a1b2c3d4,/home/human/code/katzenpost/genkeypair/node10.nike_public.pem"
+  --hop="a1b2c3d4e5f67890123456789012345678901234567890123456789012345678,/home/human/code/katzenpost/cmd/genkeypair/node6.nike_public.pem" \
+  --hop="b2c3d4e5f67890123456789012345678901234567890123456789012345678a1,/home/human/code/katzenpost/cmd/genkeypair/node7.nike_public.pem" \
+  --hop="c3d4e5f67890123456789012345678901234567890123456789012345678a1b2,/home/human/code/katzenpost/cmd/genkeypair/node8.nike_public.pem" \
+  --hop="d4e5f67890123456789012345678901234567890123456789012345678a1b2c3,/home/human/code/katzenpost/cmd/genkeypair/node9.nike_public.pem" \
+  --hop="e5f67890123456789012345678901234567890123456789012345678a1b2c3d4,/home/human/code/katzenpost/cmd/genkeypair/node10.nike_public.pem"
 
 echo -e "\n10. Creating reply packet from SURB..."
 sphinx newpacketfromsurb \
@@ -124,35 +124,35 @@ sphinx newpacketfromsurb \
 echo -e "\n11. Unwrapping reply packet (hop 1)..."
 sphinx unwrap \
   --geometry geometry_5hop.toml \
-  --private-key /home/human/code/katzenpost/genkeypair/node6.nike_private.pem \
+  --private-key /home/human/code/katzenpost/cmd/genkeypair/node6.nike_private.pem \
   --packet reply_packet.bin \
   --output-packet reply_processed1.bin
 
 echo -e "\n12. Unwrapping reply packet (hop 2)..."
 sphinx unwrap \
   --geometry geometry_5hop.toml \
-  --private-key /home/human/code/katzenpost/genkeypair/node7.nike_private.pem \
+  --private-key /home/human/code/katzenpost/cmd/genkeypair/node7.nike_private.pem \
   --packet reply_processed1.bin \
   --output-packet reply_processed2.bin
 
 echo -e "\n13. Unwrapping reply packet (hop 3)..."
 sphinx unwrap \
   --geometry geometry_5hop.toml \
-  --private-key /home/human/code/katzenpost/genkeypair/node8.nike_private.pem \
+  --private-key /home/human/code/katzenpost/cmd/genkeypair/node8.nike_private.pem \
   --packet reply_processed2.bin \
   --output-packet reply_processed3.bin
 
 echo -e "\n14. Unwrapping reply packet (hop 4)..."
 sphinx unwrap \
   --geometry geometry_5hop.toml \
-  --private-key /home/human/code/katzenpost/genkeypair/node9.nike_private.pem \
+  --private-key /home/human/code/katzenpost/cmd/genkeypair/node9.nike_private.pem \
   --packet reply_processed3.bin \
   --output-packet reply_processed4.bin
 
 echo -e "\n15. Unwrapping reply packet (hop 5 - back to original sender)..."
 sphinx unwrap \
   --geometry geometry_5hop.toml \
-  --private-key /home/human/code/katzenpost/genkeypair/node10.nike_private.pem \
+  --private-key /home/human/code/katzenpost/cmd/genkeypair/node10.nike_private.pem \
   --packet reply_processed4.bin \
   --output reply_final_payload.bin
 
