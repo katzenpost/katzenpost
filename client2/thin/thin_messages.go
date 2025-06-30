@@ -176,7 +176,11 @@ type ReadChannel struct {
 	// MessageID is used for correlating the read request with its response.
 	// This allows the client to match responses to specific read operations.
 	// This field is required.
-	MessageID *[MessageIDLength]byte `cbor:"id,omitempty"`
+	MessageID *[MessageIDLength]byte `cbor:"message_id"`
+
+	// ReplyIndex is the index of the reply to return. It is optional and
+	// a default of zero will be used if not specified.
+	ReplyIndex *uint8 `cbor:"reply_index,omitempty"`
 }
 
 // String returns a string representation of the ReadChannel request.
@@ -185,7 +189,20 @@ func (r *ReadChannel) String() string {
 	if r.MessageID != nil {
 		msgIDStr = fmt.Sprintf("%x", r.MessageID[:8]) // First 8 bytes for brevity
 	}
-	return fmt.Sprintf("ReadChannel: channel=%d msgID=%s", r.ChannelID, msgIDStr)
+	replyIndexStr := ""
+	if r.ReplyIndex != nil {
+		replyIndexStr = fmt.Sprintf(" replyIndex=%d", *r.ReplyIndex)
+	}
+	return fmt.Sprintf("ReadChannel: channel=%d msgID=%s%s", r.ChannelID, msgIDStr, replyIndexStr)
+}
+
+// CloseChannel requests closing a pigeonhole channel.
+type CloseChannel struct {
+	ChannelID uint16 `cbor:"channel_id"`
+}
+
+func (c *CloseChannel) String() string {
+	return fmt.Sprintf("CloseChannel: channel=%d", c.ChannelID)
 }
 
 type SendMessage struct {
@@ -286,6 +303,9 @@ type Request struct {
 
 	// ReadChannel is used to read from a Pigeonhole channel.
 	ReadChannel *ReadChannel `cbor:"read_channel"`
+
+	// CloseChannel is used to close a Pigeonhole channel.
+	CloseChannel *CloseChannel `cbor:"close_channel"`
 
 	// SendMessage is used to send a message through the mix network.
 	SendMessage *SendMessage `cbor:"send_message"`

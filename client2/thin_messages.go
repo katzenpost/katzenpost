@@ -53,6 +53,7 @@ func FromThinRequest(r *thin.Request, appid *[AppIDLength]byte) *Request {
 		CreateReadChannel:  r.CreateReadChannel,
 		WriteChannel:       r.WriteChannel,
 		ReadChannel:        r.ReadChannel,
+		CloseChannel:       r.CloseChannel,
 
 		SendMessage:    r.SendMessage,
 		SendARQMessage: r.SendARQMessage,
@@ -70,6 +71,8 @@ type Request struct {
 	WriteChannel *thin.WriteChannel
 
 	ReadChannel *thin.ReadChannel
+
+	CloseChannel *thin.CloseChannel
 
 	SendMessage *thin.SendMessage
 

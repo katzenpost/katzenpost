@@ -185,10 +185,10 @@ func TestDockerCourierServiceNewThinclientAPI(t *testing.T) {
 	// Bob reads message using the helper function
 	t.Log("Bob: Reading message")
 	messageID := bobThinClient.NewMessageID()
-	readPayload, _, err := bobThinClient.ReadChannel(ctx, bobChannelID, messageID)
+	readPayload, _, replyIndex, err := bobThinClient.ReadChannel(ctx, bobChannelID, messageID, nil)
 	require.NoError(t, err)
 	require.NotNil(t, readPayload)
-	t.Logf("Bob: Generated read payload (%d bytes)", len(readPayload))
+	t.Logf("Bob: Generated read payload (%d bytes), replyIndex: %v", len(readPayload), replyIndex)
 
 	// Bob sends read query and waits for reply using helper
 	t.Log("Bob: Sending read query and waiting for reply...")

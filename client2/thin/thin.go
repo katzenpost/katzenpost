@@ -942,20 +942,21 @@ func (t *ThinClient) WriteChannel(ctx context.Context, channelID uint16, payload
 	}
 }
 
-// ReadChannel prepares a read query for a pigeonhole channel and returns the payload and next MessageBoxIndex.
+// ReadChannel prepares a read query for a pigeonhole channel and returns the payload, next MessageBoxIndex, and used ReplyIndex.
 // The thin client must then call SendChannelQuery with the returned payload to actually send the query.
-func (t *ThinClient) ReadChannel(ctx context.Context, channelID uint16, messageID *[MessageIDLength]byte) ([]byte, *bacap.MessageBoxIndex, error) {
+func (t *ThinClient) ReadChannel(ctx context.Context, channelID uint16, messageID *[MessageIDLength]byte, replyIndex *uint8) ([]byte, *bacap.MessageBoxIndex, *uint8, error) {
 	if ctx == nil {
-		return nil, nil, errContextCannotBeNil
+		return nil, nil, nil, errContextCannotBeNil
 	}
 	if messageID == nil {
-		return nil, nil, errors.New("messageID cannot be nil")
+		return nil, nil, nil, errors.New("messageID cannot be nil")
 	}
 
 	req := &Request{
 		ReadChannel: &ReadChannel{
-			ChannelID: channelID,
-			MessageID: messageID,
+			ChannelID:  channelID,
+			MessageID:  messageID,
+			ReplyIndex: replyIndex,
 		},
 	}
 
@@ -964,28 +965,28 @@ func (t *ThinClient) ReadChannel(ctx context.Context, channelID uint16, messageI
 
 	err := t.writeMessage(req)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	for {
 		var event Event
 		select {
 		case <-ctx.Done():
-			return nil, nil, ctx.Err()
+			return nil, nil, nil, ctx.Err()
 		case event = <-eventSink:
 		case <-t.HaltCh():
-			return nil, nil, errHalting
+			return nil, nil, nil, errHalting
 		}
 
 		switch v := event.(type) {
 		case *ReadChannelReply:
 			if v.ErrorCode != ThinClientSuccess {
-				return nil, nil, errors.New(ThinClientErrorToString(v.ErrorCode))
+				return nil, nil, nil, errors.New(ThinClientErrorToString(v.ErrorCode))
 			}
-			return v.SendMessagePayload, v.NextMessageIndex, nil
+			return v.SendMessagePayload, v.NextMessageIndex, v.ReplyIndex, nil
 		case *ConnectionStatusEvent:
 			if !v.IsConnected {
-				return nil, nil, errConnectionLost
+				return nil, nil, nil, errConnectionLost
 			}
 		case *NewDocumentEvent:
 			// Ignore PKI document updates
@@ -993,6 +994,21 @@ func (t *ThinClient) ReadChannel(ctx context.Context, channelID uint16, messageI
 			// Ignore other events
 		}
 	}
+}
+
+// CloseChannel closes a pigeonhole channel.
+func (t *ThinClient) CloseChannel(ctx context.Context, channelID uint16) error {
+	if ctx == nil {
+		return errContextCannotBeNil
+	}
+
+	req := &Request{
+		CloseChannel: &CloseChannel{
+			ChannelID: channelID,
+		},
+	}
+
+	return t.writeMessage(req)
 }
 
 // SendChannelQuery sends a channel query (prepared by WriteChannel or ReadChannel) to the mixnet.

@@ -371,6 +371,8 @@ func (d *Daemon) egressWorker() {
 				d.writeChannel(request)
 			case request.ReadChannel != nil:
 				d.readChannel(request)
+			case request.CloseChannel != nil:
+				d.closeChannel(request)
 
 			default:
 				panic("send operation not fully specified")
@@ -619,6 +621,7 @@ func (d *Daemon) handleNewChannelReply(appid *[AppIDLength]byte,
 				IsReader:    isReader,
 				IsWriter:    isWriter,
 				Conn:        conn,
+				ReplyIndex:  courierQueryReply.EnvelopeReply.ReplyIndex,
 			}
 			return d.handleNewReadReply(params, innerMsg.ReadReply)
 		case innerMsg.WriteReply != nil:
@@ -631,6 +634,7 @@ func (d *Daemon) handleNewChannelReply(appid *[AppIDLength]byte,
 				IsReader:    isReader,
 				IsWriter:    isWriter,
 				Conn:        conn,
+				ReplyIndex:  courierQueryReply.EnvelopeReply.ReplyIndex,
 			}
 			return d.handleNewWriteReply(params, innerMsg.WriteReply)
 		}
@@ -818,6 +822,7 @@ type NewReplyHandlerParams struct {
 	IsReader    bool
 	IsWriter    bool
 	Conn        *incomingConn
+	ReplyIndex  uint8
 }
 
 // handleReadReply processes a replica read reply
@@ -1344,9 +1349,10 @@ func (d *Daemon) handleNewReadReply(params *NewReplyHandlerParams, readReply *pi
 	err := params.Conn.sendResponse(&Response{
 		AppID: params.AppID,
 		MessageReplyEvent: &thin.MessageReplyEvent{
-			MessageID: params.MessageID,
-			Payload:   payload,
-			Err:       errStr,
+			MessageID:  params.MessageID,
+			Payload:    payload,
+			ReplyIndex: &params.ReplyIndex,
+			Err:        errStr,
 		},
 	})
 	if err != nil {
