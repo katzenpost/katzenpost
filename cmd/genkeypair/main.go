@@ -19,7 +19,8 @@ import (
 	signpem "github.com/katzenpost/hpqc/sign/pem"
 	signschemes "github.com/katzenpost/hpqc/sign/schemes"
 
-	"github.com/katzenpost/katzenpost/core/utils"
+	"github.com/katzenpost/katzenpost/common"
+github.com/katzenpost/katzenpost/core/utils
 )
 
 const (
@@ -171,11 +172,12 @@ be used by Katzenpost servers, clients, and other network components.`,
 func main() {
 	rootCmd := newRootCommand()
 
-	// Use fang to execute the command with enhanced features
+	// Use fang to execute the command with enhanced features and custom error handler
 	if err := fang.Execute(
 		context.Background(),
 		rootCmd,
 		fang.WithVersion(versioninfo.Short()),
+		fang.WithErrorHandler(common.ErrorHandlerWithUsage(rootCmd)),
 	); err != nil {
 		os.Exit(1)
 	}

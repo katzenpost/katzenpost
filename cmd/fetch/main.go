@@ -28,6 +28,7 @@ import (
 
 	"github.com/katzenpost/katzenpost/client"
 	"github.com/katzenpost/katzenpost/client/config"
+	"github.com/katzenpost/katzenpost/common"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/pki"
 )
@@ -90,11 +91,12 @@ and inspecting the current state of the mixnet topology.`,
 func main() {
 	rootCmd := newRootCommand()
 
-	// Use fang to execute the command with enhanced features
+	// Use fang to execute the command with enhanced features and custom error handler
 	if err := fang.Execute(
 		context.Background(),
 		rootCmd,
 		fang.WithVersion(versioninfo.Short()),
+		fang.WithErrorHandler(common.ErrorHandlerWithUsage(rootCmd)),
 	); err != nil {
 		os.Exit(1)
 	}

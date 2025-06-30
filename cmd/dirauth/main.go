@@ -29,6 +29,7 @@ import (
 
 	"github.com/katzenpost/katzenpost/authority/voting/server"
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
+	"github.com/katzenpost/katzenpost/common"
 	"github.com/katzenpost/katzenpost/core/compat"
 )
 
@@ -93,11 +94,12 @@ authority can compromise the network's security or availability.`,
 func main() {
 	rootCmd := newRootCommand()
 
-	// Use fang to execute the command with enhanced features
+	// Use fang to execute the command with enhanced features and custom error handler
 	if err := fang.Execute(
 		context.Background(),
 		rootCmd,
 		fang.WithVersion(versioninfo.Short()),
+		fang.WithErrorHandler(common.ErrorHandlerWithUsage(rootCmd)),
 	); err != nil {
 		os.Exit(1)
 	}

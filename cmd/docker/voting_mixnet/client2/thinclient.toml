@@ -1,0 +1,27 @@
+Network = "tcp"
+Address = "localhost:64331"
+
+[SphinxGeometry]
+  PacketLength = 3082
+  NrHops = 5
+  HeaderLength = 476
+  RoutingInfoLength = 410
+  PerHopRoutingInfoLength = 82
+  SURBLength = 572
+  SphinxPlaintextHeaderLength = 2
+  PayloadTagLength = 32
+  ForwardPayloadLength = 2574
+  UserForwardPayloadLength = 2000
+  NextNodeHopLength = 65
+  SPRPKeyMaterialLength = 64
+  NIKEName = "x25519"
+  KEMName = ""
+
+[PigeonholeGeometry]
+  BoxPayloadLength = 1556
+  CourierQueryReadLength = 360
+  CourierQueryWriteLength = 2000
+  CourierQueryReplyReadLength = 1701
+  CourierQueryReplyWriteLength = 50
+  NIKEName = "CTIDH1024-X25519"
+  SignatureSchemeName = "Ed25519"

@@ -32,6 +32,7 @@ import (
 	cConfig "github.com/katzenpost/katzenpost/client/config"
 	cConfig2 "github.com/katzenpost/katzenpost/client2/config"
 	"github.com/katzenpost/katzenpost/client2/thin"
+	"github.com/katzenpost/katzenpost/common"
 	"github.com/katzenpost/katzenpost/common/config"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
@@ -1065,11 +1066,12 @@ func generateOutputFiles(s *katzenpost, cfg *Config) error {
 func main() {
 	rootCmd := newRootCommand()
 
-	// Use fang to execute the command with enhanced features
+	// Use fang to execute the command with enhanced features and custom error handler
 	if err := fang.Execute(
 		context.Background(),
 		rootCmd,
 		fang.WithVersion(versioninfo.Short()),
+		fang.WithErrorHandler(common.ErrorHandlerWithUsage(rootCmd)),
 	); err != nil {
 		os.Exit(1)
 	}

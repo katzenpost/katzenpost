@@ -28,6 +28,7 @@ import (
 	nikepem "github.com/katzenpost/hpqc/nike/pem"
 	"github.com/katzenpost/hpqc/nike/schemes"
 
+	"github.com/katzenpost/katzenpost/common"
 	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/katzenpost/katzenpost/core/sphinx/commands"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
@@ -386,18 +387,13 @@ func init() {
 }
 
 func main() {
-	// Use fang to execute the command with enhanced features
+	// Use fang to execute the command with enhanced features and custom error handler
 	if err := fang.Execute(
 		context.Background(),
 		rootCmd,
 		fang.WithVersion(versioninfo.Short()),
+		fang.WithErrorHandler(common.ErrorHandlerWithUsage(rootCmd)),
 	); err != nil {
-		// Check if this is an unknown command error
-		if strings.Contains(err.Error(), "unknown command") {
-			handleUnknownCommand(err)
-		} else {
-			fmt.Fprintf(os.Stderr, errFormat, err)
-		}
 		os.Exit(1)
 	}
 }

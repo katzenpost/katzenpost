@@ -17,6 +17,7 @@ import (
 
 	"github.com/katzenpost/katzenpost/client2"
 	"github.com/katzenpost/katzenpost/client2/config"
+	"github.com/katzenpost/katzenpost/common"
 )
 
 // Config holds the command line configuration
@@ -75,11 +76,12 @@ anonymity through traffic mixing.`,
 func main() {
 	rootCmd := newRootCommand()
 
-	// Use fang to execute the command with enhanced features
+	// Use fang to execute the command with enhanced features and custom error handler
 	if err := fang.Execute(
 		context.Background(),
 		rootCmd,
 		fang.WithVersion(versioninfo.Short()),
+		fang.WithErrorHandler(common.ErrorHandlerWithUsage(rootCmd)),
 	); err != nil {
 		os.Exit(1)
 	}
