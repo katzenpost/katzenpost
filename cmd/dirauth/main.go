@@ -17,55 +17,116 @@
 package main
 
 import (
-	"flag"
+	"context"
 	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
 
 	"github.com/carlmjohnson/versioninfo"
+	"github.com/charmbracelet/fang"
+	"github.com/spf13/cobra"
 
 	"github.com/katzenpost/katzenpost/authority/voting/server"
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/katzenpost/core/compat"
 )
 
-func main() {
-	cfgFile := flag.String("f", "katzenpost-authority.toml", "Path to the authority config file.")
-	genOnly := flag.Bool("g", false, "Generate the keys and exit immediately.")
-	version := flag.Bool("v", false, "Get version info.")
+// Config holds the command line configuration
+type Config struct {
+	ConfigFile string
+	GenOnly    bool
+}
 
-	flag.Parse()
+// newRootCommand creates the root cobra command
+func newRootCommand() *cobra.Command {
+	var cfg Config
 
-	if *version {
-		fmt.Printf("version is %s\n", versioninfo.Short())
-		return
+	cmd := &cobra.Command{
+		Use:   "dirauth",
+		Short: "Katzenpost directory authority server",
+		Long: `The Katzenpost directory authority implements a voting-based PKI (Public Key
+Infrastructure) for the mixnet. It coordinates with other authorities to
+establish network consensus and publishes network topology documents.
+
+Core responsibilities:
+• Maintains authoritative network topology and routing information
+• Coordinates voting rounds with other directory authorities for consensus
+• Publishes signed network documents containing mix descriptors and keys
+• Validates mix node registrations and key rotations
+• Enforces network policies and operational parameters
+• Provides PKI services for secure mix node authentication
+
+The authority operates in a distributed voting system where multiple authorities
+must reach consensus before publishing network documents. This ensures no single
+authority can compromise the network's security or availability.`,
+		Example: `  # Start authority with default configuration
+  dirauth
+
+  # Start authority with custom configuration file
+  dirauth --config /etc/katzenpost/authority.toml
+
+  # Start authority with specific config file (short form)
+  dirauth -f /path/to/custom-authority.toml
+
+  # Generate cryptographic keys only and exit (useful for setup)
+  dirauth --generate-only
+
+  # Generate keys with custom config and exit
+  dirauth -f /etc/katzenpost/authority.toml --generate-only`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runAuthority(cfg)
+		},
 	}
 
+	// Configuration flags
+	cmd.Flags().StringVarP(&cfg.ConfigFile, "config", "f", "katzenpost-authority.toml",
+		"path to the authority configuration file (TOML format)")
+
+	// Operation mode flags
+	cmd.Flags().BoolVarP(&cfg.GenOnly, "generate-only", "g", false,
+		"generate cryptographic keys and exit without starting authority")
+
+	return cmd
+}
+
+func main() {
+	rootCmd := newRootCommand()
+
+	// Use fang to execute the command with enhanced features
+	if err := fang.Execute(
+		context.Background(),
+		rootCmd,
+		fang.WithVersion(versioninfo.Short()),
+	); err != nil {
+		os.Exit(1)
+	}
+}
+
+// runAuthority starts the directory authority server
+func runAuthority(cfg Config) error {
 	// Set the umask to something "paranoid".
 	compat.Umask(0077)
 
-	cfg, err := config.LoadFile(*cfgFile, *genOnly)
+	authorityCfg, err := config.LoadFile(cfg.ConfigFile, cfg.GenOnly)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to load config file '%v': %v\n", *cfgFile, err)
-		os.Exit(-1)
+		return fmt.Errorf("failed to load config file '%v': %v", cfg.ConfigFile, err)
 	}
 
 	// Setup the signal handling.
-	ch := make(chan os.Signal)
+	ch := make(chan os.Signal, 1)
 	signal.Notify(ch, os.Interrupt, syscall.SIGTERM)
 
-	rotateCh := make(chan os.Signal)
+	rotateCh := make(chan os.Signal, 1)
 	signal.Notify(rotateCh, syscall.SIGHUP)
 
 	// Start up the authority.
-	svr, err := server.New(cfg)
+	svr, err := server.New(authorityCfg)
 	if err != nil {
 		if err == server.ErrGenerateOnly {
-			os.Exit(0)
+			return nil // Exit successfully for generate-only mode
 		}
-		fmt.Fprintf(os.Stderr, "Failed to spawn authority instance: %v\n", err)
-		os.Exit(-1)
+		return fmt.Errorf("failed to spawn authority instance: %v", err)
 	}
 	defer svr.Shutdown()
 
@@ -83,4 +144,5 @@ func main() {
 
 	// Wait for the authority to explode or be terminated.
 	svr.Wait()
+	return nil
 }

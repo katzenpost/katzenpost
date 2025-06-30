@@ -4,8 +4,13 @@
 package main
 
 import (
-	"flag"
+	"context"
 	"fmt"
+	"os"
+
+	"github.com/carlmjohnson/versioninfo"
+	"github.com/charmbracelet/fang"
+	"github.com/spf13/cobra"
 
 	kempem "github.com/katzenpost/hpqc/kem/pem"
 	kemschemes "github.com/katzenpost/hpqc/kem/schemes"
@@ -108,22 +113,87 @@ func generateSignKeypair(schemeName, outName string) {
 	}
 }
 
-func main() {
-	keyType := flag.String("type", "kem", "type is either: nike, kem or sign")
-	schemeName := flag.String("scheme", "x25519", "name of the nike, kem or sign scheme")
-	outName := flag.String("out", "out", "output keypair name")
-	flag.Parse()
+// Config holds the command line configuration
+type Config struct {
+	KeyType    string
+	SchemeName string
+	OutName    string
+}
 
-	validateArgs(*keyType, *schemeName, *outName)
+// newRootCommand creates the root cobra command
+func newRootCommand() *cobra.Command {
+	var cfg Config
 
-	switch *keyType {
-	case "kem":
-		generateKemKeypair(*schemeName, *outName)
-	case "nike":
-		generateNikeKeypair(*schemeName, *outName)
-	case "sign":
-		generateSignKeypair(*schemeName, *outName)
-	default:
-		panic("key type must be kem, nike or sign")
+	cmd := &cobra.Command{
+		Use:   "genkeypair",
+		Short: "Generate cryptographic key pairs",
+		Long: `Generate cryptographic key pairs for Katzenpost mixnet components.
+Supports generating NIKE (Non-Interactive Key Exchange), KEM (Key Encapsulation
+Mechanism), and digital signature key pairs using various cryptographic schemes.
+
+Supported key types:
+• NIKE: Non-Interactive Key Exchange keys for Sphinx packet encryption
+• KEM: Key Encapsulation Mechanism keys for post-quantum cryptography
+• Sign: Digital signature keys for authentication and integrity
+
+The tool generates both private and public key files in PEM format, which can
+be used by Katzenpost servers, clients, and other network components.`,
+		Example: `  # Generate X25519 NIKE key pair (default)
+  genkeypair --type nike --scheme x25519 --out server_nike
+
+  # Generate Kyber768 KEM key pair for post-quantum security
+  genkeypair --type kem --scheme kyber768 --out server_kem
+
+  # Generate Ed25519 signature key pair
+  genkeypair --type sign --scheme ed25519 --out server_sign
+
+  # Generate key pair with short flags
+  genkeypair -t kem -s kyber1024 -o authority_kem
+
+  # Generate default key pair (X25519 NIKE)
+  genkeypair --out my_keys`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runGenKeypair(cfg)
+		},
 	}
+
+	// Key generation flags
+	cmd.Flags().StringVarP(&cfg.KeyType, "type", "t", "kem",
+		"cryptographic key type (nike, kem, sign)")
+	cmd.Flags().StringVarP(&cfg.SchemeName, "scheme", "s", "x25519",
+		"cryptographic scheme name")
+	cmd.Flags().StringVarP(&cfg.OutName, "out", "o", "out",
+		"output file name prefix for key pair")
+
+	return cmd
+}
+
+func main() {
+	rootCmd := newRootCommand()
+
+	// Use fang to execute the command with enhanced features
+	if err := fang.Execute(
+		context.Background(),
+		rootCmd,
+		fang.WithVersion(versioninfo.Short()),
+	); err != nil {
+		os.Exit(1)
+	}
+}
+
+// runGenKeypair generates the specified key pair
+func runGenKeypair(cfg Config) error {
+	validateArgs(cfg.KeyType, cfg.SchemeName, cfg.OutName)
+
+	switch cfg.KeyType {
+	case "kem":
+		generateKemKeypair(cfg.SchemeName, cfg.OutName)
+	case "nike":
+		generateNikeKeypair(cfg.SchemeName, cfg.OutName)
+	case "sign":
+		generateSignKeypair(cfg.SchemeName, cfg.OutName)
+	default:
+		return fmt.Errorf("key type must be kem, nike or sign, got: %s", cfg.KeyType)
+	}
+	return nil
 }

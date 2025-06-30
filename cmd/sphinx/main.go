@@ -4,6 +4,7 @@
 package main
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/hex"
@@ -15,6 +16,8 @@ import (
 	"strings"
 
 	"github.com/BurntSushi/toml"
+	"github.com/carlmjohnson/versioninfo"
+	"github.com/charmbracelet/fang"
 	"github.com/spf13/cobra"
 
 	"github.com/katzenpost/hpqc/hash"
@@ -66,9 +69,47 @@ type NewPacket struct {
 }
 
 var rootCmd = &cobra.Command{
-	Use:           "sphinx",
-	Short:         "Sphinx packet manipulation tool",
-	Long:          "A CLI tool for creating and manipulating Sphinx packets for composing ad-hoc mixnets.",
+	Use:   "sphinx",
+	Short: "Sphinx packet manipulation tool for mixnet communication",
+	Long: `The Sphinx CLI tool implements the Sphinx packet format for anonymous communication
+through mixnets. It provides complete functionality for creating forward packets,
+reply mechanisms through SURBs (Single Use Reply Blocks), and packet processing.
+
+Core capabilities:
+• Create forward Sphinx packets with optional embedded SURBs for replies
+• Generate standalone SURBs for reply mechanisms
+• Unwrap and process packets at each "hop"
+• Create reply packets from existing SURBs
+• Decrypt SURB reply payloads using SURB keys
+• Extract embedded SURBs from forward packets
+
+The tool supports both NIKE (Non-Interactive Key Exchange) and KEM (Key Encapsulation
+Mechanism) cryptographic schemes for post-quantum security. All operations require
+a geometry configuration file that defines the cryptographic parameters and packet
+structure for the target mixnet.`,
+	Example: `  # Create a forward packet through two mix nodes
+  sphinx newpacket --geometry config.toml \
+    --hop "abc123...,node1_key.pem" \
+    --hop "789abc...,node2_key.pem"
+
+  # Create packet with embedded SURB for replies
+  sphinx newpacket --geometry config.toml \
+    --hop "abc123...,node1_key.pem" \
+    --hop "789abc...,node2_key.pem" \
+    --include-surb \
+    --surb-hop "def456...,node3_key.pem" \
+    --output-surb-keys reply.keys
+
+  # Generate standalone SURB for replies
+  sphinx newsurb --geometry config.toml \
+    --hop "abc123...,node1_key.pem" \
+    --hop "789abc...,node2_key.pem" \
+    --output-surb reply.surb
+
+  # Unwrap packet at mix node
+  sphinx unwrap --geometry config.toml \
+    --private-key node_private.pem \
+    --packet incoming.bin`,
 	SilenceErrors: true,
 	SilenceUsage:  true,
 }
@@ -345,7 +386,12 @@ func init() {
 }
 
 func main() {
-	if err := rootCmd.Execute(); err != nil {
+	// Use fang to execute the command with enhanced features
+	if err := fang.Execute(
+		context.Background(),
+		rootCmd,
+		fang.WithVersion(versioninfo.Short()),
+	); err != nil {
 		// Check if this is an unknown command error
 		if strings.Contains(err.Error(), "unknown command") {
 			handleUnknownCommand(err)

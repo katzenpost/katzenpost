@@ -88,8 +88,33 @@ The Sphinx CLI tool implements the Sphinx packet format for anonymous communicat
 ## Installation
 
 ```bash
-cd core/sphinx/cmd/sphinx
+cd cmd/sphinx
 go build -o sphinx .
+```
+
+Or install directly:
+
+```bash
+go install github.com/katzenpost/katzenpost/cmd/sphinx@latest
+```
+
+## Getting Help
+
+The sphinx tool provides comprehensive help through the fang CLI framework:
+
+```bash
+# Show main help and available commands
+./sphinx --help
+
+# Show help for a specific command
+./sphinx newpacket --help
+./sphinx newsurb --help
+
+# Show version information
+./sphinx --version
+
+# Generate man pages (if mango feature is available)
+./sphinx --man
 ```
 
 ## Commands
@@ -99,13 +124,14 @@ go build -o sphinx .
 Creates a new Sphinx packet for forward communication through a mixnet.
 
 ```bash
-./sphinx newpacket [flags] hop1 hop2 ... hopN
+./sphinx newpacket [flags]
 ```
 
 **Flags:**
 - `--geometry FILE` - TOML geometry configuration file (required)
 - `--payload FILE` - Payload file (default: stdin)
 - `--output FILE` - Output packet file (default: stdout)
+- `--hop HOP` - Hop specification: node_id_hex,public_key_pem_file (required, multiple)
 - `--include-surb` - Embed a SURB in the packet payload
 - `--surb-hop HOP` - SURB hop specification (required with --include-surb)
 - `--output-surb-keys FILE` - SURB keys output file (required with --include-surb)
@@ -118,8 +144,8 @@ Creates a new Sphinx packet for forward communication through a mixnet.
   --geometry geometry.toml \
   --payload message.txt \
   --output packet.bin \
-  --hop="abc123...,node1.pem" \
-  --hop="def456...,node2.pem"
+  --hop "abc123...,node1.pem" \
+  --hop "def456...,node2.pem"
 ```
 
 **With Embedded SURB:**
@@ -128,11 +154,11 @@ Creates a new Sphinx packet for forward communication through a mixnet.
   --geometry geometry.toml \
   --payload message.txt \
   --output packet.bin \
-  --hop="abc123...,node1.pem" \
-  --hop="def456...,node2.pem" \
+  --hop "abc123...,node1.pem" \
+  --hop "def456...,node2.pem" \
   --include-surb \
-  --surb-hop="789abc...,node3.pem" \
-  --surb-hop="012def...,node4.pem" \
+  --surb-hop "789abc...,node3.pem" \
+  --surb-hop "012def...,node4.pem" \
   --output-surb-keys reply.keys
 ```
 
@@ -148,7 +174,7 @@ Creates a Single Use Reply Block for anonymous replies.
 - `--geometry FILE` - TOML geometry configuration file (required)
 - `--output-surb FILE` - SURB output file (required)
 - `--output-keys FILE` - SURB keys output file (required)
-- `--hop HOP` - Hop specification (required, multiple)
+- `--hop HOP` - Hop specification: node_id_hex,public_key_pem_file (required, multiple)
 
 **Example:**
 ```bash
@@ -156,8 +182,8 @@ Creates a Single Use Reply Block for anonymous replies.
   --geometry geometry.toml \
   --output-surb reply.surb \
   --output-keys reply.keys \
-  --hop="abc123...,node1.pem" \
-  --hop="def456...,node2.pem"
+  --hop "abc123...,node1.pem" \
+  --hop "def456...,node2.pem"
 ```
 
 **Output:**
@@ -257,13 +283,21 @@ Creates a Sphinx geometry configuration file with calculated packet parameters.
 
 **Flags:**
 - `--nike SCHEME` - NIKE scheme (e.g., x25519, x448)
-- `--kem SCHEME` - KEM scheme (e.g., kyber768, kyber1024)
-- `--hops N` - Number of hops in the path (required)
-- `--output FILE` - Output geometry file (required)
+- `--kem SCHEME` - KEM scheme (e.g., MLKEM768, kyber1024)
+- `--nrMixLayers N` - Number of mix layers/hops (default: 3)
+- `--UserForwardPayloadLength N` - User forward payload length (default: 2000)
+- `--file FILE` - Output geometry file (empty for stdout)
 
-**Example:**
+**Examples:**
 ```bash
-./sphinx createGeometry --nike x25519 --hops 2 --output geometry.toml
+# Create geometry with NIKE scheme
+./sphinx createGeometry --nike x25519 --nrMixLayers 2 --file geometry.toml
+
+# Create geometry with KEM scheme
+./sphinx createGeometry --kem MLKEM768 --nrMixLayers 3 --file geometry.toml
+
+# Output to stdout
+./sphinx createGeometry --nike x25519 --nrMixLayers 2
 ```
 
 ### `genNodeID` - Generate Node IDs
@@ -271,7 +305,15 @@ Creates a Sphinx geometry configuration file with calculated packet parameters.
 Generates a deterministic node ID from a public key file.
 
 ```bash
-./sphinx genNodeID public_key.pem
+./sphinx genNodeID [flags]
+```
+
+**Flags:**
+- `--key FILE` - Path to public key PEM file (required)
+
+**Example:**
+```bash
+./sphinx genNodeID --key node1.nike_public.pem
 ```
 
 ## Configuration
@@ -304,12 +346,12 @@ Geometry files are created using the `createGeometry` subcommand. The geometry d
 
 **Create geometry with NIKE scheme:**
 ```bash
-./sphinx createGeometry --nike x25519 --hops 2 --output geometry.toml
+./sphinx createGeometry --nike x25519 --nrMixLayers 2 --file geometry.toml
 ```
 
 **Create geometry with KEM scheme:**
 ```bash
-./sphinx createGeometry --kem kyber768 --hops 3 --output geometry.toml
+./sphinx createGeometry --kem MLKEM768 --nrMixLayers 3 --file geometry.toml
 ```
 
 **Network operators** typically generate geometry files as part of network configuration and distribute them to clients.
@@ -326,7 +368,7 @@ Geometry files are created using the `createGeometry` subcommand. The geometry d
 
 **Recipient creates SURB:**
 ```bash
-./sphinx newsurb --geometry geo.toml --output-surb reply.surb --output-keys reply.keys --hop="..." --hop="..."
+./sphinx newsurb --geometry geo.toml --output-surb reply.surb --output-keys reply.keys --hop "..." --hop "..."
 # Share: reply.surb + first_hop_id
 # Keep: reply.keys
 ```
@@ -347,8 +389,8 @@ Geometry files are created using the `createGeometry` subcommand. The geometry d
 **Sender creates forward packet with embedded SURB:**
 ```bash
 ./sphinx newpacket --geometry geo.toml --payload msg.txt --output packet.bin \
-  --hop="..." --hop="..." \
-  --include-surb --surb-hop="..." --surb-hop="..." --output-surb-keys reply.keys
+  --hop "..." --hop "..." \
+  --include-surb --surb-hop "..." --surb-hop "..." --output-surb-keys reply.keys
 ```
 
 **Recipient extracts SURB and message:**
@@ -399,10 +441,10 @@ A SURB consists of:
 ### SURB Keys File Format
 
 ```toml
-surb_ids = [
-  "hop0_surb_id_hex",
-  "hop1_surb_id_hex"
-]
+# SURB Keys File
+# Generated by Sphinx CLI tool
+
+surb_id = "7b6055d66b03e1dc3fab3381b701415a"
 
 key_data = "base64_encoded_decryption_keys"
 ```

@@ -18,11 +18,13 @@ package main
 
 import (
 	"context"
-	"errors"
-	"flag"
 	"fmt"
-	"log"
+	"os"
 	"time"
+
+	"github.com/carlmjohnson/versioninfo"
+	"github.com/charmbracelet/fang"
+	"github.com/spf13/cobra"
 
 	"github.com/katzenpost/katzenpost/client"
 	"github.com/katzenpost/katzenpost/client/config"
@@ -30,21 +32,84 @@ import (
 	"github.com/katzenpost/katzenpost/core/pki"
 )
 
-func main() {
-	cfgFile := flag.String("f", "katzenpost-authority.toml", "Path to the authority config file.")
-	retry := flag.Int("r", 10, "Number of times to retry")
-	delay := flag.Int("d", 30, "Seconds to wait between retries")
+// Config holds the command line configuration
+type Config struct {
+	ConfigFile string
+	Retry      int
+	Delay      int
+}
 
-	flag.Parse()
+// newRootCommand creates the root cobra command
+func newRootCommand() *cobra.Command {
+	var cfg Config
 
-	var err error
-	cfg, err := config.LoadFile(*cfgFile)
-	if err != nil {
-		log.Fatal(err)
+	cmd := &cobra.Command{
+		Use:   "fetch",
+		Short: "Fetch network documents from Katzenpost directory authorities",
+		Long: `Fetch and display network topology documents from Katzenpost directory
+authorities. This tool connects to the mixnet PKI system to retrieve the
+current network consensus document containing mix node information.
+
+Core functionality:
+• Connects to directory authorities using client configuration
+• Establishes TOFU (Trust On First Use) session for PKI access
+• Retrieves current network consensus documents
+• Displays network topology and mix node information
+• Supports retry logic for robust network document fetching
+• Handles epoch timing for document availability
+
+The tool is useful for network monitoring, debugging connectivity issues,
+and inspecting the current state of the mixnet topology.`,
+		Example: `  # Fetch network document with default settings
+  fetch --config client.toml
+
+  # Fetch with custom retry parameters
+  fetch --config client.toml --retry 5 --delay 10
+
+  # Fetch with short flags
+  fetch -f client.toml -r 3 -d 5
+
+  # Fetch for network monitoring
+  fetch --config /etc/katzenpost/client.toml --retry 1`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runFetch(cfg)
+		},
 	}
-	cc, err := client.New(cfg)
+
+	// Configuration flags
+	cmd.Flags().StringVarP(&cfg.ConfigFile, "config", "f", "katzenpost-authority.toml",
+		"path to the client configuration file (TOML format)")
+	cmd.Flags().IntVarP(&cfg.Retry, "retry", "r", 10,
+		"number of connection retry attempts")
+	cmd.Flags().IntVarP(&cfg.Delay, "delay", "d", 30,
+		"seconds to wait between retry attempts")
+
+	return cmd
+}
+
+func main() {
+	rootCmd := newRootCommand()
+
+	// Use fang to execute the command with enhanced features
+	if err := fang.Execute(
+		context.Background(),
+		rootCmd,
+		fang.WithVersion(versioninfo.Short()),
+	); err != nil {
+		os.Exit(1)
+	}
+}
+
+// runFetch fetches network documents from directory authorities
+func runFetch(cfg Config) error {
+	clientCfg, err := config.LoadFile(cfg.ConfigFile)
 	if err != nil {
-		log.Fatal(err)
+		return fmt.Errorf("failed to load config file: %v", err)
+	}
+
+	cc, err := client.New(clientCfg)
+	if err != nil {
+		return fmt.Errorf("failed to create client: %v", err)
 	}
 
 	var session *client.Session
@@ -53,21 +118,28 @@ func main() {
 		session, err = cc.NewTOFUSession(context.Background())
 		switch err {
 		case nil:
+			// Success, continue
 		case pki.ErrNoDocument:
+			// Wait for next epoch
 			_, _, till := epochtime.Now()
 			<-time.After(till)
 		default:
-			if retries == *retry {
-				log.Fatal(errors.New("Failed to connect within retry limit"))
+			if retries >= cfg.Retry {
+				return fmt.Errorf("failed to connect within retry limit: %v", err)
 			}
-			<-time.After(time.Duration(*delay) * time.Second)
+			<-time.After(time.Duration(cfg.Delay) * time.Second)
 		}
-		retries += 1
+		retries++
 	}
+
 	session.WaitForDocument(context.Background())
 	doc := session.CurrentDocument()
 	if doc != nil {
-		// XXX: prettyprint
+		// Display the network document
 		fmt.Printf("%v", doc)
+	} else {
+		return fmt.Errorf("no network document available")
 	}
+
+	return nil
 }
