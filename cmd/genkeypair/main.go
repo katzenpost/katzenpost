@@ -20,7 +20,7 @@ import (
 	signschemes "github.com/katzenpost/hpqc/sign/schemes"
 
 	"github.com/katzenpost/katzenpost/common"
-github.com/katzenpost/katzenpost/core/utils
+	"github.com/katzenpost/katzenpost/core/utils"
 )
 
 const (
