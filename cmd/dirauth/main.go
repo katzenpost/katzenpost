@@ -47,15 +47,15 @@ func newRootCommand() *cobra.Command {
 		Short: "Katzenpost directory authority server",
 		Long: `The Katzenpost directory authority implements a voting-based PKI (Public Key
 Infrastructure) for the mixnet. It coordinates with other authorities to
-establish network consensus and publishes network topology documents.
+establish network consensus and publish a new PKI document every epoch.
 
 Core responsibilities:
-• Maintains authoritative network topology and routing information
+• Maintains authoritative network routing topology
 • Coordinates voting rounds with other directory authorities for consensus
-• Publishes signed network documents containing mix descriptors and keys
-• Validates mix node registrations and key rotations
+• Publishes signed PKI documents containing mix descriptors and keys
+• Validates mix descriptor uploads and key rotations
 • Enforces network policies and operational parameters
-• Provides PKI services for secure mix node authentication
+• Provides PKI services for secure authentication with our PQ Noise based transport
 
 The authority operates in a distributed voting system where multiple authorities
 must reach consensus before publishing network documents. This ensures no single
