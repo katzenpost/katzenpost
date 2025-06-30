@@ -138,7 +138,7 @@ func sendPings(session *thin.ThinClient, serviceDesc *common.ServiceDescriptor, 
 	fmt.Printf("\n")
 
 	percent := (float64(passed) * float64(100)) / float64(count)
-	successMsg := fmt.Sprintf("Success rate is %f percent %d/%d)", percent, passed, count)
+	successMsg := fmt.Sprintf("Success rate is %.0f percent (%d/%d)", percent, passed, count)
 	if percent >= 90.0 {
 		fmt.Printf("%s\n", successStyle.Render(successMsg))
 	} else if percent >= 50.0 {
