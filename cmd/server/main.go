@@ -17,7 +17,7 @@
 package main
 
 import (
-	"flag"
+	"context"
 	"fmt"
 	"os"
 	"os/signal"
@@ -25,24 +25,108 @@ import (
 	"syscall"
 
 	"github.com/carlmjohnson/versioninfo"
+	"github.com/charmbracelet/fang"
+	"github.com/spf13/cobra"
 
 	"github.com/katzenpost/katzenpost/core/compat"
 	"github.com/katzenpost/katzenpost/server"
 	"github.com/katzenpost/katzenpost/server/config"
 )
 
-func main() {
-	cfgFile := flag.String("f", "katzenpost.toml", "Path to the server config file.")
-	genOnly := flag.Bool("g", false, "Generate the keys and exit immediately.")
-	version := flag.Bool("v", false, "Get version info.")
+// Config holds the command line configuration
+type Config struct {
+	ConfigFile string
+	GenOnly    bool
+}
 
-	flag.Parse()
+// newRootCommand creates the root cobra command
+func newRootCommand() *cobra.Command {
+	var cfg Config
 
-	if *version {
-		fmt.Printf("version is %s\n", versioninfo.Short())
-		return
+	cmd := &cobra.Command{
+		Use:   "server",
+		Short: "Katzenpost mixnet server node",
+		Long: `The Katzenpost server is a mixnet node that provides anonymous communication
+services as part of the Katzenpost decentralized anonymous communication network.
+
+The server operates as one of three possible roles in the mix network:
+1. A mix node
+2. A gateway node
+3. A service node
+
+When operating as a mix node, it functions as a standard
+mix node in the network topology, performing packet
+mixing, routing, and relay services. It connects to other mix nodes and
+directory authorities to participate in the mixnet infrastructure.
+
+Key features:
+• Supports one of three roles: mix node, gateway node, or service node
+• Sphinx (Classical and Post quantum) packet mixing for traffic analysis resistance
+• Decoy traffic generation to obscure communication patterns
+• Integration with directory authority services, updating its mix descriptor
+  and participating in the network's PKI (Public Key Infrastructure) by uploading
+  a new MixDescriptor every epoch.
+• Cryptographic key management and rotation. Rotates mix keys every epoch.
+• Real-time network status monitoring
+• Implements the continuous time mixing strategy and delays packets for the
+  time duration specified by the "Delay" Sphinx routing command.
+
+The server is designed to run as a long-lived daemon process and requires
+proper configuration for network participation, cryptographic keys, and
+operational parameters.`,
+		Example: `  # Start server with default configuration
+  server
+
+  # Start server with custom configuration file
+  server --config /etc/katzenpost/server.toml
+
+  # Start server with specific config file (short form)
+  server -f /path/to/custom-config.toml
+
+  # Generate cryptographic keys only and exit (useful for setup)
+  server --generate-only
+
+  # Generate keys with custom config and exit
+  server -f /etc/katzenpost/server.toml --generate-only
+
+  # Start server with environment variable override
+  KATZENPOST_CONFIG=/opt/katzenpost/server.toml server
+
+  # Run server in foreground with verbose logging
+  server --config /etc/katzenpost/server.toml --log-level debug
+
+  # Validate configuration without starting server
+  server --config /etc/katzenpost/server.toml --validate-only`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runServer(cfg)
+		},
 	}
 
+	// Configuration flags
+	cmd.Flags().StringVarP(&cfg.ConfigFile, "config", "f", "katzenpost.toml",
+		"path to the server configuration file (TOML format)")
+
+	// Operation mode flags
+	cmd.Flags().BoolVarP(&cfg.GenOnly, "generate-only", "g", false,
+		"generate cryptographic keys and exit without starting server")
+
+	return cmd
+}
+
+func main() {
+	rootCmd := newRootCommand()
+
+	// Use fang to execute the command with enhanced features including automatic man page generation
+	if err := fang.Execute(
+		context.Background(),
+		rootCmd,
+		fang.WithVersion(versioninfo.Short()),
+	); err != nil {
+		os.Exit(1)
+	}
+}
+
+func runServer(cfg Config) error {
 	// Set the umask to something "paranoid".
 	compat.Umask(0077)
 
@@ -56,30 +140,28 @@ func main() {
 		}
 	}
 
-	cfg, err := config.LoadFile(*cfgFile)
+	serverCfg, err := config.LoadFile(cfg.ConfigFile)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to load config file '%v': %v\n", *cfgFile, err)
-		os.Exit(-1)
+		return fmt.Errorf("failed to load config file '%v': %v", cfg.ConfigFile, err)
 	}
-	if *genOnly && !cfg.Debug.GenerateOnly {
-		cfg.Debug.GenerateOnly = true
+	if cfg.GenOnly && !serverCfg.Debug.GenerateOnly {
+		serverCfg.Debug.GenerateOnly = true
 	}
 
 	// Setup the signal handling.
-	haltCh := make(chan os.Signal)
+	haltCh := make(chan os.Signal, 1)
 	signal.Notify(haltCh, os.Interrupt, syscall.SIGTERM)
 
-	rotateCh := make(chan os.Signal)
+	rotateCh := make(chan os.Signal, 1)
 	signal.Notify(rotateCh, syscall.SIGHUP)
 
 	// Start up the server.
-	svr, err := server.New(cfg)
+	svr, err := server.New(serverCfg)
 	if err != nil {
 		if err == server.ErrGenerateOnly {
-			os.Exit(0)
+			return nil // Exit successfully for generate-only mode
 		}
-		fmt.Fprintf(os.Stderr, "Failed to spawn server instance: %v\n", err)
-		os.Exit(-1)
+		return fmt.Errorf("failed to spawn server instance: %v", err)
 	}
 	defer svr.Shutdown()
 
@@ -97,4 +179,5 @@ func main() {
 
 	// Wait for the server to explode or be terminated.
 	svr.Wait()
+	return nil
 }
