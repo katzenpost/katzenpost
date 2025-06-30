@@ -236,7 +236,6 @@ func (d *Daemon) halt() {
 }
 
 func (d *Daemon) Start() error {
-	d.log.Debug("Start daemon")
 	var err error
 	rates := &Rates{}
 	if d.cfg.CachedDocument != nil {
@@ -336,7 +335,6 @@ func (d *Daemon) egressWorker() {
 	for {
 		select {
 		case <-d.HaltCh():
-			d.log.Debug("egressWorker shutting down")
 			return
 		case surbID := <-d.arqResendCh:
 			d.arqDoResend(surbID)
@@ -466,7 +464,7 @@ func (d *Daemon) handleReply(reply *sphinxReply) {
 
 	plaintext, err := d.client.sphinx.DecryptSURBPayload(reply.ciphertext, desc.surbKey)
 	if err != nil {
-		d.log.Infof("SURB reply decryption error: %s", err.Error())
+		d.log.Debugf("SURB reply decryption error: %s", err.Error())
 		return
 	}
 
@@ -483,7 +481,6 @@ func (d *Daemon) handleReply(reply *sphinxReply) {
 	if isChannelReply {
 		err := d.handleChannelReply(desc.appID, desc.ID, reply.surbID, plaintext, conn)
 		if err == nil {
-			d.log.Infof("Handled channel reply book keeping for SURB ID %x, sent response to client", reply.surbID[:])
 			d.channelRepliesLock.Lock()
 			delete(d.channelReplies, *reply.surbID)
 			d.channelRepliesLock.Unlock()
@@ -514,16 +511,12 @@ func (d *Daemon) handleChannelReply(appid *[AppIDLength]byte,
 	plaintext []byte,
 	conn *incomingConn) error {
 
-	d.log.Infof("CHANNEL REPLY: Looking up SURB ID %x, payload size: %d bytes", surbid[:8], len(plaintext))
-
 	// Use new API only
 	newChannelID, newChannelDesc, newErr := d.lookupNewChannel(surbid)
 	if newErr != nil {
 		d.log.Errorf("SURB ID %x not found in new API maps", surbid[:8])
 		return fmt.Errorf("SURB ID not found: %v", newErr)
 	}
-
-	d.log.Infof("NEW API: Found channel %d for SURB ID %x, payload size: %d bytes", newChannelID, surbid[:8], len(plaintext))
 	return d.handleNewChannelReply(appid, mesgID, surbid, plaintext, conn, newChannelID, newChannelDesc)
 }
 
@@ -536,10 +529,7 @@ func (d *Daemon) handleNewChannelReply(appid *[AppIDLength]byte,
 	channelID uint16,
 	channelDesc *ChannelDescriptor) error {
 
-	d.log.Infof("NEW API REPLY: Processing reply for channel %d, payload size: %d bytes", channelID, len(plaintext))
-
 	if len(plaintext) == 0 {
-		d.log.Infof("NEW API REPLY: Empty payload for channel %d, not sending response", channelID)
 		return nil
 	}
 
@@ -549,7 +539,6 @@ func (d *Daemon) handleNewChannelReply(appid *[AppIDLength]byte,
 	}
 
 	// First, parse the courier query reply to check what type of reply it is
-	d.log.Infof("NEW API REPLY: Parsing courier query reply...")
 	courierQueryReply, err := pigeonhole.ParseCourierQueryReply(plaintext)
 	if err != nil {
 		d.log.Errorf("NEW API REPLY: Failed to unmarshal courier query reply: %s", err)
@@ -560,11 +549,8 @@ func (d *Daemon) handleNewChannelReply(appid *[AppIDLength]byte,
 
 	// Handle envelope replies (read/write operations)
 	if courierQueryReply.EnvelopeReply != nil {
-		d.log.Infof("NEW API REPLY: Handling envelope reply")
-
 		// Check if the envelope reply has an empty payload (no data available yet)
 		if len(courierQueryReply.EnvelopeReply.Payload) == 0 {
-			d.log.Infof("NEW API REPLY: Empty payload - no data available yet, sending empty response")
 			// Send empty response to client so they can retry
 			err := conn.sendResponse(&Response{
 				AppID: appid,
@@ -587,7 +573,6 @@ func (d *Daemon) handleNewChannelReply(appid *[AppIDLength]byte,
 			return err
 		}
 
-		d.log.Infof("NEW API REPLY: Decrypting MKEM envelope...")
 		innerMsg, err := d.decryptMKEMEnvelope(env, envelopeDesc, privateKey)
 		if err != nil {
 			d.log.Errorf("NEW API REPLY: Failed to decrypt MKEM envelope: %s", err)
@@ -689,8 +674,6 @@ func (d *Daemon) decryptMKEMEnvelope(env *pigeonhole.CourierEnvelopeReply, envel
 	mkemPrivateKeyBytes, _ := privateKey.MarshalBinary()
 	fmt.Printf("BOB DECRYPTS WITH MKEM KEY: %x\n", mkemPrivateKeyBytes[:16]) // First 16 bytes for brevity
 
-	d.log.Debugf("MKEM DECRYPT: Starting decryption with payload size %d bytes", len(env.Payload))
-
 	_, doc := d.client.CurrentDocument()
 	if doc == nil {
 		d.log.Errorf("no pki doc found")
@@ -704,37 +687,30 @@ func (d *Daemon) decryptMKEMEnvelope(env *pigeonhole.CourierEnvelopeReply, envel
 	for _, replicaNum := range envelopeDesc.ReplicaNums {
 		desc, err := replicaCommon.ReplicaNum(replicaNum, doc)
 		if err != nil {
-			d.log.Debugf("failed to get replica descriptor for replica %d: %s", replicaNum, err)
 			continue
 		}
 
 		replicaPubKeyBytes, ok := desc.EnvelopeKeys[replicaEpoch]
 		if !ok || len(replicaPubKeyBytes) == 0 {
-			d.log.Debugf("replica public key not available for replica %d epoch %d", replicaNum, replicaEpoch)
 			continue
 		}
 
 		replicaPubKey, err := replicaCommon.NikeScheme.UnmarshalBinaryPublicKey(replicaPubKeyBytes)
 		if err != nil {
-			d.log.Debugf("failed to unmarshal public key for replica %d: %s", replicaNum, err)
 			continue
 		}
 
 		// Try to decrypt with this replica's public key
 		rawInnerMsg, err = replicaCommon.MKEMNikeScheme.DecryptEnvelope(privateKey, replicaPubKey, env.Payload)
 		if err == nil {
-			d.log.Debugf("MKEM DECRYPT SUCCESS with replica %d: Decrypted %d bytes", replicaNum, len(rawInnerMsg))
 			break
 		}
-		d.log.Debugf("MKEM DECRYPT failed with replica %d: %s", replicaNum, err)
 	}
 
 	if rawInnerMsg == nil {
 		d.log.Errorf("MKEM DECRYPT FAILED with all possible replicas")
 		return nil, fmt.Errorf("failed to decrypt envelope with any replica key")
 	}
-
-	d.log.Debugf("MKEM DECRYPT SUCCESS: Decrypted %d bytes", len(rawInnerMsg))
 	innerMsg, err := pigeonhole.ParseReplicaMessageReplyInnerMessage(rawInnerMsg)
 	if err != nil {
 		d.log.Errorf("failed to unmarshal inner message: %s", err)
@@ -773,11 +749,7 @@ func (d *Daemon) send(request *Request) {
 
 	surbKey, rtt, err = d.client.SendCiphertext(request)
 	if err != nil {
-		d.log.Infof("SendCiphertext error: %s", err.Error())
-	}
-
-	if request.SendARQMessage != nil {
-		d.log.Infof("ARQ RTT %s", rtt)
+		d.log.Debugf("SendCiphertext error: %s", err.Error())
 	}
 
 	// Check if this is a request with SURB (either SendMessage or SendARQMessage)
@@ -867,10 +839,6 @@ func (d *Daemon) send(request *Request) {
 	if request.SendMessage != nil {
 		// Check if this is a new API channel query (has ChannelID field)
 		if request.SendMessage.ChannelID != nil {
-			d.log.Infof("NEW API: Processing SendMessage with ChannelID %d, SURB ID %x",
-				*request.SendMessage.ChannelID, request.SendMessage.SURBID[:8])
-
-			d.log.Infof("NEW API: Storing SURB ID %x with Channel ID %d", request.SendMessage.SURBID[:8], *request.SendMessage.ChannelID)
 
 			// New API: store in channel replies and new SURB ID map
 			d.channelRepliesLock.Lock()
@@ -884,9 +852,6 @@ func (d *Daemon) send(request *Request) {
 			d.newSurbIDToChannelMapLock.Lock()
 			d.newSurbIDToChannelMap[*request.SendMessage.SURBID] = *request.SendMessage.ChannelID
 			d.newSurbIDToChannelMapLock.Unlock()
-
-			d.log.Infof("NEW API: Stored SURB ID %x -> Channel ID %d mapping",
-				request.SendMessage.SURBID[:8], *request.SendMessage.ChannelID)
 		} else {
 			// Old API: store in regular replies
 			d.replies[*request.SendMessage.SURBID] = replyDescriptor{
@@ -983,7 +948,6 @@ func (d *Daemon) arqResend(surbID *[sphinxConstants.SURBIDLength]byte) {
 }
 
 func (d *Daemon) arqDoResend(surbID *[sphinxConstants.SURBIDLength]byte) {
-	defer d.log.Info("resend end")
 
 	d.replyLock.Lock()
 	message, ok := d.arqSurbIDMap[*surbID]
@@ -1104,7 +1068,6 @@ func (d *Daemon) decryptReadReplyPayload(params *NewReplyHandlerParams, readRepl
 	}
 
 	// BACAP decrypt the payload
-	d.log.Debugf("BACAP DECRYPT: Starting decryption for BoxID %x with payload size %d bytes", boxid[:], len(readReply.Payload))
 	signature := (*[bacap.SignatureSize]byte)(readReply.Signature[:])
 	innerplaintext, err := params.ChannelDesc.StatefulReader.DecryptNext(
 		[]byte(constants.PIGEONHOLE_CTX),
@@ -1117,8 +1080,6 @@ func (d *Daemon) decryptReadReplyPayload(params *NewReplyHandlerParams, readRepl
 		return nil, fmt.Errorf("failed to decrypt next: %s", err)
 	}
 
-	d.log.Debugf("BACAP DECRYPT SUCCESS: Decrypted %d bytes for BoxID %x", len(innerplaintext), boxid[:])
-
 	// Extract the original message from the padded payload
 	originalMessage, err := pigeonhole.ExtractMessageFromPaddedPayload(innerplaintext)
 	if err != nil {
@@ -1126,7 +1087,6 @@ func (d *Daemon) decryptReadReplyPayload(params *NewReplyHandlerParams, readRepl
 		return nil, fmt.Errorf("failed to extract message from padded payload: %s", err)
 	}
 
-	d.log.Debugf("Successfully extracted %d bytes from %d padded bytes for channel %d", len(originalMessage), len(innerplaintext), params.ChannelID)
 	return originalMessage, nil
 }
 
