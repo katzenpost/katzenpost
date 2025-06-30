@@ -38,7 +38,7 @@ jobs:
             ${{ runner.os }}-${{ matrix.arch }}-go-
 
       - name: Generate mixnet configuration
-        run: cd cmd/genconfig && go build && ./genconfig -wirekem xwing -v -b /conf -o ../../docker/voting_mixnet/
+        run: cd cmd/genconfig && go build && ./genconfig --wirekem xwing --voting --baseDir /conf --outDir ../../docker/voting_mixnet/
 
       - name: Run ${{ matrix.test-suite.name }} unit tests
         run: cd ${{ matrix.test-suite.path }} && GORACE=history_size=7 go test -coverprofile=coverage.out -race -v -failfast -timeout ${{ matrix.test-suite.timeout }} ./...

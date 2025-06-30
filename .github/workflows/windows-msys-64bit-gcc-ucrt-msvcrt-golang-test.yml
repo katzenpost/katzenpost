@@ -71,7 +71,7 @@ jobs:
       - name: Generate mixnet configuration
         shell: msys2 {0}
         run: |
-          cd cmd/genconfig && go build && ./genconfig -wirekem xwing -v -b /conf -o ../../docker/voting_mixnet/
+          cd cmd/genconfig && go build && ./genconfig --wirekem xwing --voting --baseDir /conf --outDir ../../docker/voting_mixnet/
 
       - name: Run ${{ matrix.test-suite.name }} unit tests
         shell: msys2 {0}
