@@ -400,16 +400,16 @@ func (e *Courier) handleNewMessage(envHash *[hash.HashSize]byte, courierMessage 
 	if err := e.handleCourierEnvelope(courierMessage); err != nil {
 		e.log.Errorf("Failed to handle courier envelope: %s", err)
 		if err == errNilDEKElements {
-			return e.createEnvelopeErrorReply(envHash, envelopeErrorNilDEKElements)
+			return e.createEnvelopeErrorReply(envHash, envelopeErrorNilDEKElements, courierMessage.ReplyIndex)
 		}
-		return e.createEnvelopeErrorReply(envHash, envelopeErrorInternalError)
+		return e.createEnvelopeErrorReply(envHash, envelopeErrorInternalError, courierMessage.ReplyIndex)
 	}
 
 	reply := &pigeonhole.CourierQueryReply{
 		ReplyType: 0, // 0 = envelope_reply
 		EnvelopeReply: &pigeonhole.CourierEnvelopeReply{
 			EnvelopeHash: *envHash,
-			ReplyIndex:   0,
+			ReplyIndex:   courierMessage.ReplyIndex,
 			PayloadLen:   0,
 			Payload:      nil,
 			ErrorCode:    1, // Error code for timeout
@@ -424,7 +424,7 @@ func (e *Courier) handleOldMessage(cacheEntry *CourierBookKeeping, envHash *[has
 	// Check if cacheEntry is nil before accessing its fields
 	if cacheEntry == nil {
 		e.log.Debugf("Cache entry is nil, no replies available")
-		return e.createEnvelopeErrorReply(envHash, envelopeErrorCacheCorruption)
+		return e.createEnvelopeErrorReply(envHash, envelopeErrorCacheCorruption, courierMessage.ReplyIndex)
 	}
 
 	// Log cache state
@@ -481,15 +481,17 @@ func (e *Courier) OnCommand(cmd cborplugin.Command) error {
 		e.log.Debugf("Failed to decode CourierQuery trunnel blob: %s (received %d bytes, expected %d for write or %d for read)",
 			err, actualSize, expectedWriteSize, expectedReadSize)
 
-		// Send error reply back to client
+		// Since parsing failed, we can't access the envelope hash or reply index
+		// Create a generic error response with zero values
+		var zeroHash [32]byte
 		errorReply := &pigeonhole.CourierQueryReply{
 			ReplyType: 0, // 0 = envelope_reply
 			EnvelopeReply: &pigeonhole.CourierEnvelopeReply{
-				EnvelopeHash: *courierQuery.Envelope.EnvelopeHash(),
-				ReplyIndex:   0,
+				EnvelopeHash: zeroHash,
+				ReplyIndex:   0, // Default to 0 since we can't determine the intended ReplyIndex
 				PayloadLen:   0,
 				Payload:      nil,
-				ErrorCode:    1, // Error code for timeout
+				ErrorCode:    1, // Error code for parsing failure
 			},
 		}
 		go func() {
@@ -563,13 +565,13 @@ func (e *Courier) cacheHandleCourierEnvelope(courierMessage *pigeonhole.CourierE
 // Copy command functions have been removed as requested
 
 // createEnvelopeErrorReply creates a CourierEnvelopeReply with the specified error code
-func (e *Courier) createEnvelopeErrorReply(envHash *[hash.HashSize]byte, errorCode uint8) *pigeonhole.CourierQueryReply {
+func (e *Courier) createEnvelopeErrorReply(envHash *[hash.HashSize]byte, errorCode uint8, replyIndex uint8) *pigeonhole.CourierQueryReply {
 	e.log.Debugf("Envelope operation failed with error code %d: %s", errorCode, envelopeErrorToString(errorCode))
 	return &pigeonhole.CourierQueryReply{
 		ReplyType: 0, // 0 = envelope_reply
 		EnvelopeReply: &pigeonhole.CourierEnvelopeReply{
 			EnvelopeHash: *envHash,
-			ReplyIndex:   0,
+			ReplyIndex:   replyIndex,
 			PayloadLen:   0,
 			Payload:      nil,
 			ErrorCode:    1, // Error code for timeout

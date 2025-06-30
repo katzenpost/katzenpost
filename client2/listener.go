@@ -93,7 +93,6 @@ func (l *listener) updatePKIDocWorker() {
 }
 
 func (l *listener) worker() {
-	l.log.Debug("Listener worker begin")
 	addr := l.listener.Addr()
 	l.log.Infof("Listening on: %v", addr)
 	defer func() {
@@ -121,7 +120,6 @@ func (l *listener) worker() {
 }
 
 func (l *listener) onNewConn(conn net.Conn) {
-	l.log.Debug("onNewConn begin")
 	// make sure we can serve a document before anything else
 	docBlob, doc := l.client.CurrentDocument()
 	if doc == nil {
@@ -139,16 +137,9 @@ func (l *listener) onNewConn(conn net.Conn) {
 	l.conns[*c.appID] = c
 	l.connsLock.Unlock()
 
-	l.log.Debug("get connection status")
 	status := l.getConnectionStatus()
-	l.log.Debug("send connection status")
 	c.updateConnectionStatus(status)
-	l.log.Debug("getting current pki doc")
-
-	l.log.Debug("send pki doc")
 	c.sendPKIDoc(docBlob)
-
-	l.log.Debug("onNewConn end")
 }
 
 func (l *listener) onClosedConn(c *incomingConn) {
