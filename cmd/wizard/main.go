@@ -11,10 +11,14 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	kempem "github.com/katzenpost/hpqc/kem/pem"
 	kemschemes "github.com/katzenpost/hpqc/kem/schemes"
+	nikepem "github.com/katzenpost/hpqc/nike/pem"
 	"github.com/katzenpost/hpqc/nike/schemes"
+	signpem "github.com/katzenpost/hpqc/sign/pem"
 	signschemes "github.com/katzenpost/hpqc/sign/schemes"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
+	"github.com/katzenpost/katzenpost/core/utils"
 )
 
 // Application states
@@ -258,6 +262,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case sphinxGeometryView:
 			return m.updateSphinxGeometry(msg)
+		case keyGenerationView:
+			return m.updateKeyGeneration(msg)
 		}
 	}
 
@@ -448,6 +454,229 @@ func (m model) generateSphinxGeometry() (tea.Model, tea.Cmd) {
 	return m, tea.Quit
 }
 
+// updateKeyGeneration handles key generation configuration
+func (m model) updateKeyGeneration(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
+		m.schemeList.SetWidth(msg.Width)
+		m.schemeList.SetHeight(msg.Height - 6)
+		m.textInput.Width = msg.Width - 4
+		return m, nil
+
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "q", "ctrl+c":
+			m.quitting = true
+			return m, tea.Quit
+		case "esc":
+			// Go back to main menu
+			m.state = menuView
+			return m, nil
+		case "enter":
+			return m.handleKeyGenerationStep()
+		}
+
+		// Handle input based on current step
+		switch m.keyConfig.currentStep {
+		case 0, 1: // key type or scheme selection - use list
+			var cmd tea.Cmd
+			m.schemeList, cmd = m.schemeList.Update(msg)
+			return m, cmd
+		case 2: // output name input - use text input
+			if msg.String() != "enter" {
+				var cmd tea.Cmd
+				m.textInput, cmd = m.textInput.Update(msg)
+				return m, cmd
+			}
+		}
+	}
+	return m, nil
+}
+
+// handleKeyGenerationStep processes the current step in key generation configuration
+func (m model) handleKeyGenerationStep() (tea.Model, tea.Cmd) {
+	switch m.keyConfig.currentStep {
+	case 0: // Key type selection (nike, kem, or sign)
+		if selected, ok := m.schemeList.SelectedItem().(menuItem); ok {
+			m.keyConfig.keyType = string(selected)
+			m.keyConfig.currentStep = 1
+
+			// Setup scheme selection list based on key type
+			var schemes []list.Item
+			var title string
+			switch m.keyConfig.keyType {
+			case "nike":
+				schemes = getNikeSchemes()
+				title = "Choose NIKE scheme:"
+			case "kem":
+				schemes = getKemSchemes()
+				title = "Choose KEM scheme:"
+			case "sign":
+				schemes = getSignSchemes()
+				title = "Choose signature scheme:"
+			}
+
+			m.schemeList = list.New(schemes, menuDelegate{}, m.width, m.height-6)
+			m.schemeList.Title = title
+			m.schemeList.SetShowStatusBar(false)
+			m.schemeList.SetFilteringEnabled(false)
+		}
+
+	case 1: // Specific scheme selection
+		if selected, ok := m.schemeList.SelectedItem().(menuItem); ok {
+			m.keyConfig.schemeName = string(selected)
+			m.keyConfig.currentStep = 2
+
+			// Setup text input for output name
+			m.textInput = textinput.New()
+			m.textInput.Placeholder = "out"
+			m.textInput.Focus()
+			m.textInput.CharLimit = 50
+			m.textInput.Width = 30
+		}
+
+	case 2: // Output name input
+		if m.textInput.Value() != "" {
+			m.keyConfig.outName = m.textInput.Value()
+		} else {
+			// Use default
+			m.keyConfig.outName = "out"
+		}
+
+		// Generate the keys
+		return m.generateKeys()
+	}
+
+	return m, nil
+}
+
+// generateKeys creates and saves the key pair
+func (m model) generateKeys() (tea.Model, tea.Cmd) {
+	var pubout, privout string
+	var err error
+
+	switch m.keyConfig.keyType {
+	case "kem":
+		pubout = fmt.Sprintf("%s.kem_public.pem", m.keyConfig.outName)
+		privout = fmt.Sprintf("%s.kem_private.pem", m.keyConfig.outName)
+		err = m.generateKemKeypair(pubout, privout)
+
+	case "nike":
+		pubout = fmt.Sprintf("%s.nike_public.pem", m.keyConfig.outName)
+		privout = fmt.Sprintf("%s.nike_private.pem", m.keyConfig.outName)
+		err = m.generateNikeKeypair(pubout, privout)
+
+	case "sign":
+		pubout = fmt.Sprintf("%s.sign_public.pem", m.keyConfig.outName)
+		privout = fmt.Sprintf("%s.sign_private.pem", m.keyConfig.outName)
+		err = m.generateSignKeypair(pubout, privout)
+	}
+
+	if err != nil {
+		m.err = err
+		return m, nil
+	}
+
+	// Store the key generation info for printing after exit
+	m.keyConfig.generatedKeys = fmt.Sprintf("Writing keypair to %s and %s", pubout, privout)
+
+	// Exit after generating
+	m.quitting = true
+	return m, tea.Quit
+}
+
+// generateKemKeypair generates a KEM key pair
+func (m model) generateKemKeypair(pubout, privout string) error {
+	// Check if files already exist
+	if utils.BothExists(privout, pubout) {
+		return fmt.Errorf("both keys already exist")
+	}
+	if !utils.BothNotExists(privout, pubout) {
+		return fmt.Errorf("one of the keys already exists")
+	}
+
+	scheme := kemschemes.ByName(m.keyConfig.schemeName)
+	if scheme == nil {
+		return fmt.Errorf("failed to resolve KEM scheme %s", m.keyConfig.schemeName)
+	}
+
+	pubkey, privkey, err := scheme.GenerateKeyPair()
+	if err != nil {
+		return err
+	}
+
+	if err := kempem.PublicKeyToFile(pubout, pubkey); err != nil {
+		return err
+	}
+	if err := kempem.PrivateKeyToFile(privout, privkey); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// generateNikeKeypair generates a NIKE key pair
+func (m model) generateNikeKeypair(pubout, privout string) error {
+	// Check if files already exist
+	if utils.BothExists(privout, pubout) {
+		return fmt.Errorf("both keys already exist")
+	}
+	if !utils.BothNotExists(privout, pubout) {
+		return fmt.Errorf("one of the keys already exists")
+	}
+
+	scheme := schemes.ByName(m.keyConfig.schemeName)
+	if scheme == nil {
+		return fmt.Errorf("failed to resolve NIKE scheme %s", m.keyConfig.schemeName)
+	}
+
+	pubkey, privkey, err := scheme.GenerateKeyPair()
+	if err != nil {
+		return err
+	}
+
+	if err := nikepem.PublicKeyToFile(pubout, pubkey, scheme); err != nil {
+		return err
+	}
+	if err := nikepem.PrivateKeyToFile(privout, privkey, scheme); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// generateSignKeypair generates a signature key pair
+func (m model) generateSignKeypair(pubout, privout string) error {
+	// Check if files already exist
+	if utils.BothExists(privout, pubout) {
+		return fmt.Errorf("both keys already exist")
+	}
+	if !utils.BothNotExists(privout, pubout) {
+		return fmt.Errorf("one of the keys already exists")
+	}
+
+	scheme := signschemes.ByName(m.keyConfig.schemeName)
+	if scheme == nil {
+		return fmt.Errorf("failed to resolve signature scheme %s", m.keyConfig.schemeName)
+	}
+
+	pubkey, privkey, err := scheme.GenerateKey()
+	if err != nil {
+		return err
+	}
+
+	if err := signpem.PublicKeyToFile(pubout, pubkey); err != nil {
+		return err
+	}
+	if err := signpem.PrivateKeyToFile(privout, privkey); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 // View renders the current view
 func (m model) View() string {
 	switch m.state {
@@ -460,6 +689,8 @@ func (m model) View() string {
 		return "\n" + m.list.View()
 	case sphinxGeometryView:
 		return m.renderSphinxGeometryView()
+	case keyGenerationView:
+		return m.renderKeyGenerationView()
 	default:
 		return "Unknown state"
 	}
@@ -526,6 +757,46 @@ func (m model) getSelectedScheme() string {
 	return m.sphinxConfig.kemScheme
 }
 
+// renderKeyGenerationView renders the key generation configuration screen
+func (m model) renderKeyGenerationView() string {
+	if m.err != nil {
+		return fmt.Sprintf("Error: %v\n\nPress 'q' to quit or 'esc' to go back", m.err)
+	}
+
+	title := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("205")).
+		Bold(true).
+		Render("Generate Keys")
+
+	var content string
+
+	switch m.keyConfig.currentStep {
+	case 0: // Key type selection
+		content = "\nStep 1/3: Choose the key type\n\n" + m.schemeList.View()
+
+	case 1: // Specific scheme selection
+		keyType := m.keyConfig.keyType
+		content = fmt.Sprintf("\nStep 2/3: Choose the %s scheme\n\n", strings.ToUpper(keyType)) + m.schemeList.View()
+
+	case 2: // Output name input
+		content = fmt.Sprintf("\nStep 3/3: Output file name prefix\n\n"+
+			"Current selection:\n"+
+			"• Key Type: %s\n"+
+			"• Scheme: %s\n\n"+
+			"Enter output name prefix (default: out): %s\n\n"+
+			"Press Enter to generate keys, Esc to go back",
+			strings.ToUpper(m.keyConfig.keyType),
+			m.keyConfig.schemeName,
+			m.textInput.View())
+	}
+
+	instructions := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("240")).
+		Render("\nUse ↑/↓ or j/k to navigate, Enter to select, Esc to go back, q to quit")
+
+	return title + content + instructions
+}
+
 func main() {
 	// Initialize the program WITHOUT alt screen so it doesn't clear on exit
 	p := tea.NewProgram(initialModel())
@@ -535,8 +806,13 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Print geometry if it was generated
-	if m, ok := finalModel.(model); ok && m.sphinxConfig.generatedGeometry != "" {
-		fmt.Printf("\n\n\n%s\n\n", m.sphinxConfig.generatedGeometry)
+	// Print results if anything was generated
+	if m, ok := finalModel.(model); ok {
+		if m.sphinxConfig.generatedGeometry != "" {
+			fmt.Printf("\n\n%s", m.sphinxConfig.generatedGeometry)
+		}
+		if m.keyConfig.generatedKeys != "" {
+			fmt.Printf("\n\n%s\n", m.keyConfig.generatedKeys)
+		}
 	}
 }
