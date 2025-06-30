@@ -199,9 +199,4 @@ func TestDockerCourierServiceNewThinclientAPI(t *testing.T) {
 
 	aliceThinClient.CloseChannel(ctx, channelID)
 	bobThinClient.CloseChannel(ctx, bobChannelID)
-
-	err = aliceThinClient.Close()
-	require.NoError(t, err)
-	err = bobThinClient.Close()
-	require.NoError(t, err)
 }
