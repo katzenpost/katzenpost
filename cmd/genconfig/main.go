@@ -4,7 +4,7 @@
 package main
 
 import (
-	"flag"
+	"context"
 	"fmt"
 	"io"
 	"log"
@@ -14,6 +14,9 @@ import (
 	"sort"
 
 	"github.com/BurntSushi/toml"
+	"github.com/carlmjohnson/versioninfo"
+	"github.com/charmbracelet/fang"
+	"github.com/spf13/cobra"
 
 	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/kem"
@@ -169,7 +172,7 @@ func addressesFromURLs(addrs []string) map[string][]string {
 // this generates the thin client config and NOT the client2 daemon config
 func (s *katzenpost) genClient2ThinCfg(net, addr string) error {
 	log.Print("genClient2ThinCfg begin")
-	os.Mkdir(filepath.Join(s.outDir, "client2"), 0700)
+	os.MkdirAll(filepath.Join(s.outDir, "client2"), 0700)
 	cfg := new(thin.Config)
 
 	cfg.SphinxGeometry = s.sphinxGeometry
@@ -190,8 +193,8 @@ func (s *katzenpost) genClient2ThinCfg(net, addr string) error {
 
 func (s *katzenpost) genClient2Cfg(net, addr string) error {
 	log.Print("genClient2Cfg begin")
-	os.Mkdir(filepath.Join(s.outDir, "client2"), 0700)
-	os.Mkdir(filepath.Join(s.outDir, "thinclient"), 0700)
+	os.MkdirAll(filepath.Join(s.outDir, "client2"), 0700)
+	os.MkdirAll(filepath.Join(s.outDir, "thinclient"), 0700)
 
 	cfg := new(cConfig2.Config)
 
@@ -255,7 +258,7 @@ func (s *katzenpost) genClient2Cfg(net, addr string) error {
 }
 
 func (s *katzenpost) genClientCfg() error {
-	os.Mkdir(filepath.Join(s.outDir, "client"), 0700)
+	os.MkdirAll(filepath.Join(s.outDir, "client"), 0700)
 	cfg := new(cConfig.Config)
 
 	cfg.WireKEMScheme = s.wireKEMScheme
@@ -341,7 +344,7 @@ func (s *katzenpost) genReplicaNodeConfig() error {
 	s.lastReplicaPort++
 
 	cfg.DataDir = filepath.Join(s.baseDir, cfg.Identifier)
-	os.Mkdir(filepath.Join(s.outDir, cfg.Identifier), 0700)
+	os.MkdirAll(filepath.Join(s.outDir, cfg.Identifier), 0700)
 
 	authorities := make([]*vConfig.Authority, 0, len(s.authorities))
 	i := 0
@@ -396,7 +399,7 @@ func (s *katzenpost) genNodeConfig(isGateway, isServiceNode bool, isVoting bool)
 	}
 	cfg.Server.DataDir = filepath.Join(s.baseDir, n)
 
-	os.Mkdir(filepath.Join(s.outDir, cfg.Server.Identifier), 0700)
+	os.MkdirAll(filepath.Join(s.outDir, cfg.Server.Identifier), 0700)
 
 	cfg.Server.IsGatewayNode = isGateway
 	cfg.Server.IsServiceNode = isServiceNode
@@ -446,7 +449,7 @@ func (s *katzenpost) genNodeConfig(isGateway, isServiceNode bool, isVoting bool)
 
 		serviceNodeDataDir := filepath.Join(s.outDir, cfg.Server.Identifier)
 		courierDataDir := filepath.Join(serviceNodeDataDir, courierService)
-		os.Mkdir(courierDataDir, 0700)
+		os.MkdirAll(courierDataDir, 0700)
 
 		internalCourierDatadir := filepath.Join(s.baseDir, cfg.Server.Identifier, courierService)
 		courierCfg := s.genCourierConfig(internalCourierDatadir)
@@ -543,7 +546,7 @@ func (s *katzenpost) genVotingAuthoritiesCfg(numAuthorities int, parameters *vCo
 			Addresses:          []string{fmt.Sprintf(tcpAddrFormat, s.lastPort)},
 			DataDir:            filepath.Join(s.baseDir, fmt.Sprintf(authNodeFormat, i)),
 		}
-		os.Mkdir(filepath.Join(s.outDir, cfg.Server.Identifier), 0700)
+		os.MkdirAll(filepath.Join(s.outDir, cfg.Server.Identifier), 0700)
 		s.lastPort += 1
 		cfg.Logging = &vConfig.Logging{
 			Disable: false,
@@ -618,93 +621,218 @@ func (s *katzenpost) genAuthorizedNodes() ([]*vConfig.Node, []*vConfig.Node, []*
 	return replicas, gateways, serviceNodes, mixes, nil
 }
 
-// parseFlags handles all command line flag parsing and returns a Config struct
-func parseFlags() *Config {
-	cfg := &Config{}
+// newRootCommand creates the root cobra command
+func newRootCommand() *cobra.Command {
+	var cfg Config
 
-	nrLayers := flag.Int("L", nrLayers, "Number of layers.")
-	nrNodes := flag.Int("n", nrNodes, "Number of mixes.")
-	nrGateways := flag.Int("gateways", nrGateways, "Number of gateway nodes.")
-	nrServiceNodes := flag.Int("serviceNodes", nrServiceNodes, "Number of service nodes.")
-	nrStorageNodes := flag.Int("storageNodes", nrStorageNodes, "Number of storage replica nodes.")
+	cmd := &cobra.Command{
+		Use:   "genconfig",
+		Short: "Generate Katzenpost mixnet configuration files",
+		Long: `Generate comprehensive configuration files for a Katzenpost mixnet deployment.
+This tool creates all necessary configuration files for directory authorities,
+mix nodes, gateway nodes, service nodes, storage replicas, and client configurations.
 
-	voting := flag.Bool("v", false, "Generate voting configuration")
-	nrVoting := flag.Int("nv", nrAuthorities, "Generate voting configuration")
-	baseDir := flag.String("b", "", "Path to use as baseDir option")
-	basePort := flag.Int("P", basePort, "First port number to use")
-	bindAddr := flag.String("a", bindAddr, "Address to bind to")
-	outDir := flag.String("o", "", "Path to write files to")
-	dockerImage := flag.String("d", "katzenpost-go_mod", "Docker image for compose-compose")
-	binSuffix := flag.String("S", "", "suffix for binaries in docker-compose.yml")
-	logLevel := flag.String("log_level", debugLogLevel, "logging level could be set to: DEBUG, INFO, NOTICE, WARNING, ERROR, CRITICAL")
-	omitTopology := flag.Bool("D", false, "Dynamic topology (omit fixed topology definition)")
-	wirekem := flag.String("wirekem", "", "Name of the KEM Scheme to be used with wire protocol")
-	kem := flag.String("kem", "", "Name of the KEM Scheme to be used with Sphinx")
-	nike := flag.String("nike", "x25519", "Name of the NIKE Scheme to be used with Sphinx")
+Core functionality:
+• Generates voting directory authority configurations with PKI consensus
+• Creates mix node configurations for packet forwarding through the network
+• Configures gateway nodes for client connections and traffic ingress/egress
+• Sets up service nodes with plugins for storage, HTTP proxy, and other services
+• Generates storage replica configurations for the Pigeonhole storage system
+• Creates client configurations for both legacy and modern client implementations
+• Produces Docker Compose files for easy deployment and testing
+• Generates Prometheus monitoring configurations for network metrics
 
-	UserForwardPayloadLength := flag.Int("UserForwardPayloadLength", 2000, "UserForwardPayloadLength")
-	pkiSignatureScheme := flag.String("pkiScheme", "ed25519", "PKI Signature Scheme to be used")
-	noDecoy := flag.Bool("noDecoy", true, "Disable decoy traffic for the client")
-	noMixDecoy := flag.Bool("noMixDecoy", true, "Disable decoy traffic for the mixes")
-	dialTimeout := flag.Int("dialTimeout", 0, "Session dial timeout")
-	maxPKIDelay := flag.Int("maxPKIDelay", 0, "Initial maximum PKI retrieval delay")
-	pollingIntvl := flag.Int("pollingIntvl", 0, "Polling interval")
+The tool supports both classical and post-quantum cryptographic schemes,
+configurable network topologies, and comprehensive parameter tuning for
+performance optimization and security requirements.`,
+		Example: `  # Generate basic voting mixnet with default settings
+  genconfig --voting --wirekem MLKEM768 --nike x25519 --baseDir /tmp/mixnet --outDir ./configs
 
-	sr := flag.Uint64("sr", 0, "Sendrate limit")
-	mu := flag.Float64("mu", 0.005, "Inverse of mean of per hop delay.")
-	muMax := flag.Uint64("muMax", 1000, "Maximum delay for Mu.")
-	lP := flag.Float64("lP", 0.001, "Inverse of mean for client send rate LambdaP")
-	lPMax := flag.Uint64("lPMax", 1000, "Maximum delay for LambdaP.")
-	lL := flag.Float64("lL", 0.0005, "Inverse of mean of loop decoy send rate LambdaL")
-	lLMax := flag.Uint64("lLMax", 1000, "Maximum delay for LambdaL")
-	lD := flag.Float64("lD", 0.0005, "Inverse of mean of drop decoy send rate LambdaD")
-	lDMax := flag.Uint64("lDMax", 3000, "Maximum delay for LambaD")
-	lM := flag.Float64("lM", 0.2, "Inverse of mean of mix decoy send rate")
-	lMMax := flag.Uint64("lMMax", 100, "Maximum delay for LambdaM")
-	lGMax := flag.Uint64("lGMax", 100, "Maximum delay for LambdaM")
+  # Generate larger network with custom parameters
+  genconfig --voting --nrVoting 5 --layers 5 --nodes 15 --gateways 3 \
+    --serviceNodes 2 --storageNodes 7 --wirekem MLKEM768 --nike x25519 \
+    --baseDir /opt/katzenpost --outDir ./production-configs
 
-	flag.Parse()
+  # Generate test network with post-quantum KEM for Sphinx
+  genconfig --voting --wirekem MLKEM768 --kem MLKEM768 \
+    --baseDir /tmp/test --outDir ./test-configs --dockerImage katzenpost:latest
 
-	// Assign parsed values to config struct
-	cfg.nrLayers = *nrLayers
-	cfg.nrNodes = *nrNodes
-	cfg.nrGateways = *nrGateways
-	cfg.nrServiceNodes = *nrServiceNodes
-	cfg.nrStorageNodes = *nrStorageNodes
-	cfg.voting = *voting
-	cfg.nrVoting = *nrVoting
-	cfg.baseDir = *baseDir
-	cfg.basePort = *basePort
-	cfg.bindAddr = *bindAddr
-	cfg.outDir = *outDir
-	cfg.dockerImage = *dockerImage
-	cfg.binSuffix = *binSuffix
-	cfg.logLevel = *logLevel
-	cfg.omitTopology = *omitTopology
-	cfg.wirekem = *wirekem
-	cfg.kem = *kem
-	cfg.nike = *nike
-	cfg.UserForwardPayloadLength = *UserForwardPayloadLength
-	cfg.pkiSignatureScheme = *pkiSignatureScheme
-	cfg.noDecoy = *noDecoy
-	cfg.noMixDecoy = *noMixDecoy
-	cfg.dialTimeout = *dialTimeout
-	cfg.maxPKIDelay = *maxPKIDelay
-	cfg.pollingIntvl = *pollingIntvl
-	cfg.sr = *sr
-	cfg.mu = *mu
-	cfg.muMax = *muMax
-	cfg.lP = *lP
-	cfg.lPMax = *lPMax
-	cfg.lL = *lL
-	cfg.lLMax = *lLMax
-	cfg.lD = *lD
-	cfg.lDMax = *lDMax
-	cfg.lM = *lM
-	cfg.lMMax = *lMMax
-	cfg.lGMax = *lGMax
+  # Generate network with custom timing parameters
+  genconfig --voting --wirekem MLKEM768 --nike x25519 \
+    --mu 0.01 --lP 0.002 --lM 0.1 --baseDir /tmp/mixnet --outDir ./configs`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runGenConfig(cfg)
+		},
+	}
 
-	return cfg
+	// Network topology flags
+	cmd.Flags().IntVarP(&cfg.nrLayers, "layers", "L", nrLayers,
+		"number of mix layers in the network topology")
+	cmd.Flags().IntVarP(&cfg.nrNodes, "nodes", "n", nrNodes,
+		"number of mix nodes to generate")
+	cmd.Flags().IntVar(&cfg.nrGateways, "gateways", nrGateways,
+		"number of gateway nodes for client connections")
+	cmd.Flags().IntVar(&cfg.nrServiceNodes, "serviceNodes", nrServiceNodes,
+		"number of service nodes with plugins (storage, HTTP proxy, etc.)")
+	cmd.Flags().IntVar(&cfg.nrStorageNodes, "storageNodes", nrStorageNodes,
+		"number of storage replica nodes for Pigeonhole system")
+
+	// Authority and voting flags
+	cmd.Flags().BoolVarP(&cfg.voting, "voting", "v", false,
+		"generate voting directory authority configuration")
+	cmd.Flags().IntVar(&cfg.nrVoting, "nrVoting", nrAuthorities,
+		"number of voting directory authorities to generate")
+	cmd.Flags().BoolVarP(&cfg.omitTopology, "dynamic", "D", false,
+		"use dynamic topology (omit fixed topology definition)")
+
+	// Directory and deployment flags
+	cmd.Flags().StringVarP(&cfg.baseDir, "baseDir", "b", "",
+		"base directory path for runtime data and configurations")
+	cmd.Flags().StringVarP(&cfg.outDir, "outDir", "o", "",
+		"output directory path for generated configuration files")
+	cmd.Flags().IntVarP(&cfg.basePort, "port", "P", basePort,
+		"starting port number for network services")
+	cmd.Flags().StringVarP(&cfg.bindAddr, "addr", "a", bindAddr,
+		"IP address to bind network services to")
+
+	// Docker and deployment flags
+	cmd.Flags().StringVarP(&cfg.dockerImage, "dockerImage", "d", "katzenpost-go_mod",
+		"Docker image name for docker-compose.yml generation")
+	cmd.Flags().StringVarP(&cfg.binSuffix, "binSuffix", "S", "",
+		"suffix for binary names in docker-compose.yml")
+
+	// Cryptographic scheme flags
+	cmd.Flags().StringVar(&cfg.wirekem, "wirekem", "",
+		"KEM scheme for wire protocol (required, e.g., MLKEM768, XWING)")
+	cmd.Flags().StringVar(&cfg.kem, "kem", "",
+		"KEM scheme for Sphinx packet encryption (e.g., MLKEM768, FrodoKEM-640-SHAKE)")
+	cmd.Flags().StringVar(&cfg.nike, "nike", "x25519",
+		"NIKE scheme for Sphinx packet encryption (e.g., x25519, x448)")
+	cmd.Flags().StringVar(&cfg.pkiSignatureScheme, "pkiScheme", "ed25519",
+		"PKI signature scheme for authentication (e.g., ed25519, dilithium2)")
+
+	// Sphinx and payload flags
+	cmd.Flags().IntVar(&cfg.UserForwardPayloadLength, "UserForwardPayloadLength", 2000,
+		"user forward payload length in bytes for Sphinx packets")
+
+	// Traffic and timing flags
+	cmd.Flags().BoolVar(&cfg.noDecoy, "noDecoy", true,
+		"disable decoy traffic generation for clients")
+	cmd.Flags().BoolVar(&cfg.noMixDecoy, "noMixDecoy", true,
+		"disable decoy traffic generation for mix nodes")
+	cmd.Flags().IntVar(&cfg.dialTimeout, "dialTimeout", 0,
+		"session dial timeout in seconds (0 for default)")
+	cmd.Flags().IntVar(&cfg.maxPKIDelay, "maxPKIDelay", 0,
+		"initial maximum PKI retrieval delay in seconds (0 for default)")
+	cmd.Flags().IntVar(&cfg.pollingIntvl, "pollingIntvl", 0,
+		"PKI polling interval in seconds (0 for default)")
+
+	// Advanced timing parameters
+	cmd.Flags().Uint64Var(&cfg.sr, "sendRate", 0,
+		"client send rate limit per minute (0 for unlimited)")
+	cmd.Flags().Float64Var(&cfg.mu, "mu", 0.005,
+		"inverse of mean per-hop delay (higher = faster)")
+	cmd.Flags().Uint64Var(&cfg.muMax, "muMax", 1000,
+		"maximum delay for mu parameter in milliseconds")
+	cmd.Flags().Float64Var(&cfg.lP, "lambdaP", 0.001,
+		"inverse of mean client send rate (higher = more frequent)")
+	cmd.Flags().Uint64Var(&cfg.lPMax, "lambdaPMax", 1000,
+		"maximum delay for lambdaP in milliseconds")
+	cmd.Flags().Float64Var(&cfg.lL, "lambdaL", 0.0005,
+		"inverse of mean loop decoy send rate")
+	cmd.Flags().Uint64Var(&cfg.lLMax, "lambdaLMax", 1000,
+		"maximum delay for lambdaL in milliseconds")
+	cmd.Flags().Float64Var(&cfg.lD, "lambdaD", 0.0005,
+		"inverse of mean drop decoy send rate")
+	cmd.Flags().Uint64Var(&cfg.lDMax, "lambdaDMax", 3000,
+		"maximum delay for lambdaD in milliseconds")
+	cmd.Flags().Float64Var(&cfg.lM, "lambdaM", 0.2,
+		"inverse of mean mix decoy send rate")
+	cmd.Flags().Uint64Var(&cfg.lMMax, "lambdaMMax", 100,
+		"maximum delay for lambdaM in milliseconds")
+	cmd.Flags().Uint64Var(&cfg.lGMax, "lambdaGMax", 100,
+		"maximum delay for gateway lambda in milliseconds")
+
+	// Logging flags
+	cmd.Flags().StringVar(&cfg.logLevel, "logLevel", debugLogLevel,
+		"logging level (DEBUG, INFO, NOTICE, WARNING, ERROR, CRITICAL)")
+
+	// Mark required flags
+	cmd.MarkFlagRequired("wirekem")
+	cmd.MarkFlagRequired("baseDir")
+	cmd.MarkFlagRequired("outDir")
+
+	return cmd
+}
+
+// runGenConfig executes the main configuration generation logic
+func runGenConfig(cfg Config) error {
+	// Validate configuration
+	if err := validateConfig(&cfg); err != nil {
+		return err
+	}
+
+	// Create parameters struct for voting authorities
+	parameters := &vConfig.Parameters{
+		SendRatePerMinute: cfg.sr,
+		Mu:                cfg.mu,
+		MuMaxDelay:        cfg.muMax,
+		LambdaP:           cfg.lP,
+		LambdaPMaxDelay:   cfg.lPMax,
+		LambdaL:           cfg.lL,
+		LambdaLMaxDelay:   cfg.lLMax,
+		LambdaD:           cfg.lD,
+		LambdaDMaxDelay:   cfg.lDMax,
+		LambdaM:           cfg.lM,
+		LambdaMMaxDelay:   cfg.lMMax,
+		LambdaGMaxDelay:   cfg.lGMax,
+	}
+
+	// Initialize katzenpost struct
+	s := initializeKatzenpost(&cfg)
+
+	// Setup cryptographic schemes and geometries
+	if err := setupGeometry(s, &cfg); err != nil {
+		return err
+	}
+
+	// Create output directories
+	os.MkdirAll(s.outDir, 0700)
+	os.MkdirAll(filepath.Join(s.outDir, s.baseDir), 0700)
+
+	// Generate voting authority configurations if needed
+	if cfg.voting {
+		if err := s.genVotingAuthoritiesCfg(cfg.nrVoting, parameters, cfg.nrLayers, cfg.wirekem); err != nil {
+			return fmt.Errorf("getVotingAuthoritiesCfg failed: %s", err)
+		}
+	}
+
+	// Generate all node configurations
+	if err := generateNodes(s, &cfg); err != nil {
+		return err
+	}
+
+	// Configure voting authorities and topology
+	if err := configureAuthorities(s, &cfg); err != nil {
+		return err
+	}
+
+	// Save all configurations to disk
+	if err := saveConfigurations(s, &cfg); err != nil {
+		return err
+	}
+
+	// Generate client configurations
+	if err := generateClientConfigurations(s); err != nil {
+		return err
+	}
+
+	// Generate output files (docker-compose, prometheus)
+	if err := generateOutputFiles(s, &cfg); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // validateConfig validates the parsed configuration and returns any errors
@@ -935,72 +1063,15 @@ func generateOutputFiles(s *katzenpost, cfg *Config) error {
 }
 
 func main() {
-	// Parse command line flags
-	cfg := parseFlags()
+	rootCmd := newRootCommand()
 
-	// Validate configuration
-	if err := validateConfig(cfg); err != nil {
-		log.Fatal(err)
-	}
-
-	// Create parameters struct for voting authorities
-	parameters := &vConfig.Parameters{
-		SendRatePerMinute: cfg.sr,
-		Mu:                cfg.mu,
-		MuMaxDelay:        cfg.muMax,
-		LambdaP:           cfg.lP,
-		LambdaPMaxDelay:   cfg.lPMax,
-		LambdaL:           cfg.lL,
-		LambdaLMaxDelay:   cfg.lLMax,
-		LambdaD:           cfg.lD,
-		LambdaDMaxDelay:   cfg.lDMax,
-		LambdaM:           cfg.lM,
-		LambdaMMaxDelay:   cfg.lMMax,
-		LambdaGMaxDelay:   cfg.lGMax,
-	}
-
-	// Initialize katzenpost struct
-	s := initializeKatzenpost(cfg)
-
-	// Setup cryptographic schemes and geometries
-	if err := setupGeometry(s, cfg); err != nil {
-		log.Fatal(err)
-	}
-
-	// Create output directories
-	os.Mkdir(s.outDir, 0700)
-	os.Mkdir(filepath.Join(s.outDir, s.baseDir), 0700)
-
-	// Generate voting authority configurations if needed
-	if cfg.voting {
-		if err := s.genVotingAuthoritiesCfg(cfg.nrVoting, parameters, cfg.nrLayers, cfg.wirekem); err != nil {
-			log.Fatalf("getVotingAuthoritiesCfg failed: %s", err)
-		}
-	}
-
-	// Generate all node configurations
-	if err := generateNodes(s, cfg); err != nil {
-		log.Fatal(err)
-	}
-
-	// Configure voting authorities and topology
-	if err := configureAuthorities(s, cfg); err != nil {
-		log.Fatal(err)
-	}
-
-	// Save all configurations to disk
-	if err := saveConfigurations(s, cfg); err != nil {
-		log.Fatal(err)
-	}
-
-	// Generate client configurations
-	if err := generateClientConfigurations(s); err != nil {
-		log.Fatal(err)
-	}
-
-	// Generate output files (docker-compose, prometheus)
-	if err := generateOutputFiles(s, cfg); err != nil {
-		log.Fatal(err)
+	// Use fang to execute the command with enhanced features
+	if err := fang.Execute(
+		context.Background(),
+		rootCmd,
+		fang.WithVersion(versioninfo.Short()),
+	); err != nil {
+		os.Exit(1)
 	}
 }
 

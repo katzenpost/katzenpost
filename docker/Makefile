@@ -67,11 +67,11 @@ cache_dir=cache
 
 # no_decoy and no_mixdecoy control enabling dockerized mixnets with or without decoy traffic
 ifeq ($(no_mixdecoy),true)
-  noMixDecoy=-noMixDecoy
+  noMixDecoy=--noMixDecoy
 endif
 
 ifeq ($(no_decoy),true)
-  noDecoy=-noDecoy
+  noDecoy=--noDecoy
 endif
 
 # log_level can be DEBUG, INFO, NOTICE, WARNING, ERROR, CRITICAL
@@ -112,27 +112,27 @@ $(cache_dir)/go:
 $(docker_compose_yml): ../cmd/genconfig/main.go $(distro)_base.stamp | $(net_name) $(cache_dir)
 	$(docker) run ${docker_args} --rm katzenpost-$(distro)_base \
 		$(sh) -c 'cd cmd/genconfig && go build && cd ../../docker \
-		&& ../cmd/genconfig/genconfig -wirekem $(wirekem) -a ${bind_addr} -nv ${auths} -n ${mixes} -gateways ${gateways} \
-		-serviceNodes ${serviceNodes} \
-		-sr ${sr} -mu ${mu} -muMax ${muMax} -lP ${lP} -lPMax ${lPMax} -lL ${lL} \
-		-lLMax ${lLMax} -lD ${lD} -lDMax ${lDMax} -lM ${lM} -lMMax ${lMMax} \
-		-S .$(distro) -v -o ./$(net_name) -b /$(net_name) -P $(base_port) \
-		-nike "$(nike)" -kem "$(kem)" -d katzenpost-$(distro)_base \
+		&& ../cmd/genconfig/genconfig --wirekem $(wirekem) --addr ${bind_addr} --nrVoting ${auths} --nodes ${mixes} --gateways ${gateways} \
+		--serviceNodes ${serviceNodes} \
+		--sendRate ${sr} --mu ${mu} --muMax ${muMax} --lambdaP ${lP} --lambdaPMax ${lPMax} --lambdaL ${lL} \
+		--lambdaLMax ${lLMax} --lambdaD ${lD} --lambdaDMax ${lDMax} --lambdaM ${lM} --lambdaMMax ${lMMax} \
+		--binSuffix .$(distro) --voting --outDir ./$(net_name) --baseDir /$(net_name) --port $(base_port) \
+		--nike "$(nike)" --kem "$(kem)" --dockerImage katzenpost-$(distro)_base \
 		${noMixDecoy} ${noDecoy} \
-		-UserForwardPayloadLength $(UserForwardPayloadLength) -log_level $(log_level)'
+		--UserForwardPayloadLength $(UserForwardPayloadLength) --logLevel $(log_level)'
 
 # Generate configuration files only (without docker containers)
 # This is useful for tests that depend on config files existing (e.g., client2/testdata symlinks)
 config-only: | $(net_name)
 	@echo "Generating mixnet configuration files without docker containers..."
-	cd ../cmd/genconfig && go build && ./genconfig -wirekem $(wirekem) -a ${bind_addr} -nv ${auths} -n ${mixes} -gateways ${gateways} \
-		-serviceNodes ${serviceNodes} \
-		-sr ${sr} -mu ${mu} -muMax ${muMax} -lP ${lP} -lPMax ${lPMax} -lL ${lL} \
-		-lLMax ${lLMax} -lD ${lD} -lDMax ${lDMax} -lM ${lM} -lMMax ${lMMax} \
-		-v -o ../docker/$(net_name) -b /$(net_name) -P $(base_port) \
-		-nike "$(nike)" -kem "$(kem)" \
+	cd ../cmd/genconfig && go build && ./genconfig --wirekem $(wirekem) --addr ${bind_addr} --nrVoting ${auths} --nodes ${mixes} --gateways ${gateways} \
+		--serviceNodes ${serviceNodes} \
+		--sendRate ${sr} --mu ${mu} --muMax ${muMax} --lambdaP ${lP} --lambdaPMax ${lPMax} --lambdaL ${lL} \
+		--lambdaLMax ${lLMax} --lambdaD ${lD} --lambdaDMax ${lDMax} --lambdaM ${lM} --lambdaMMax ${lMMax} \
+		--voting --outDir ../docker/$(net_name) --baseDir /$(net_name) --port $(base_port) \
+		--nike "$(nike)" --kem "$(kem)" \
 		${noMixDecoy} ${noDecoy} \
-		-UserForwardPayloadLength $(UserForwardPayloadLength) -log_level $(log_level)
+		--UserForwardPayloadLength $(UserForwardPayloadLength) --logLevel $(log_level)
 	@echo "Configuration files generated in ./$(net_name)/"
 	@echo "Tests can now use the symlinked configs (e.g., client2/testdata/client.toml -> ../../docker/$(net_name)/client2/client.toml)"
 
