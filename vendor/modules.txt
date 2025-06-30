@@ -19,6 +19,12 @@ github.com/BurntSushi/toml/internal
 # github.com/agl/gcmsiv v0.0.0-20190418185415-e8dcd2f151dc
 ## explicit
 github.com/agl/gcmsiv
+# github.com/atotto/clipboard v0.1.4
+## explicit
+github.com/atotto/clipboard
+# github.com/aymanbagabas/go-osc52/v2 v2.0.1
+## explicit; go 1.16
+github.com/aymanbagabas/go-osc52/v2
 # github.com/beorn7/perks v1.0.1
 ## explicit; go 1.11
 github.com/beorn7/perks/quantile
@@ -28,12 +34,28 @@ github.com/carlmjohnson/versioninfo
 # github.com/cespare/xxhash/v2 v2.3.0
 ## explicit; go 1.11
 github.com/cespare/xxhash/v2
+# github.com/charmbracelet/bubbles v0.21.0
+## explicit; go 1.23.0
+github.com/charmbracelet/bubbles/cursor
+github.com/charmbracelet/bubbles/help
+github.com/charmbracelet/bubbles/key
+github.com/charmbracelet/bubbles/list
+github.com/charmbracelet/bubbles/paginator
+github.com/charmbracelet/bubbles/runeutil
+github.com/charmbracelet/bubbles/spinner
+github.com/charmbracelet/bubbles/textinput
+# github.com/charmbracelet/bubbletea v1.3.5
+## explicit; go 1.23.0
+github.com/charmbracelet/bubbletea
 # github.com/charmbracelet/colorprofile v0.3.0
 ## explicit; go 1.23.0
 github.com/charmbracelet/colorprofile
 # github.com/charmbracelet/fang v0.2.0
 ## explicit; go 1.23.0
 github.com/charmbracelet/fang
+# github.com/charmbracelet/lipgloss v1.1.0
+## explicit; go 1.18
+github.com/charmbracelet/lipgloss
 # github.com/charmbracelet/lipgloss/v2 v2.0.0-beta1
 ## explicit; go 1.23.0
 github.com/charmbracelet/lipgloss/v2
@@ -59,6 +81,9 @@ github.com/davecgh/go-spew/spew
 # github.com/dchest/siphash v1.2.3
 ## explicit; go 1.16
 github.com/dchest/siphash
+# github.com/erikgeiser/coninput v0.0.0-20211004153227-1c3628e74d0f
+## explicit; go 1.16
+github.com/erikgeiser/coninput
 # github.com/fxamacker/cbor/v2 v2.8.0
 ## explicit; go 1.20
 github.com/fxamacker/cbor/v2
@@ -219,12 +244,22 @@ github.com/linxGnu/grocksdb
 # github.com/lucasb-eyer/go-colorful v1.2.0
 ## explicit; go 1.12
 github.com/lucasb-eyer/go-colorful
+# github.com/mattn/go-isatty v0.0.20
+## explicit; go 1.15
+github.com/mattn/go-isatty
+# github.com/mattn/go-localereader v0.0.1
+## explicit
+github.com/mattn/go-localereader
 # github.com/mattn/go-pointer v0.0.1
 ## explicit
 github.com/mattn/go-pointer
 # github.com/mattn/go-runewidth v0.0.16
 ## explicit; go 1.9
 github.com/mattn/go-runewidth
+# github.com/muesli/ansi v0.0.0-20230316100256-276c6243b2f6
+## explicit; go 1.17
+github.com/muesli/ansi
+github.com/muesli/ansi/compressor
 # github.com/muesli/cancelreader v0.2.2
 ## explicit; go 1.17
 github.com/muesli/cancelreader
@@ -240,6 +275,9 @@ github.com/muesli/mango-pflag
 # github.com/muesli/roff v0.1.0
 ## explicit; go 1.17
 github.com/muesli/roff
+# github.com/muesli/termenv v0.16.0
+## explicit; go 1.17
+github.com/muesli/termenv
 # github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822
 ## explicit
 github.com/munnerz/goautoneg
@@ -315,6 +353,9 @@ github.com/rfjakob/eme
 # github.com/rivo/uniseg v0.4.7
 ## explicit; go 1.18
 github.com/rivo/uniseg
+# github.com/sahilm/fuzzy v0.1.1
+## explicit
+github.com/sahilm/fuzzy
 # github.com/schwarmco/go-cartesian-product v0.0.0-20230921023625-e02d1c150053
 ## explicit; go 1.21.0
 github.com/schwarmco/go-cartesian-product
