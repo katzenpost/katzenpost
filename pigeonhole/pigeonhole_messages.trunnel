@@ -33,9 +33,6 @@ struct courier_envelope {
     // Encrypted payload (variable length)
     u32 ciphertext_len;
     u8 ciphertext[ciphertext_len];
-
-    // Read/Write flag
-    u8 is_read;
 }
 
 // CourierEnvelopeReply - reply envelope structure

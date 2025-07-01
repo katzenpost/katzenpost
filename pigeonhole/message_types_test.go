@@ -61,7 +61,6 @@ func TestCourierEnvelopeEncodeDecode(t *testing.T) {
 		SenderPubkey:         senderPubkey,
 		CiphertextLen:        uint32(len(ciphertext)),
 		Ciphertext:           ciphertext,
-		IsRead:               1,
 	}
 
 	// Encode
@@ -104,9 +103,6 @@ func TestCourierEnvelopeEncodeDecode(t *testing.T) {
 	}
 	if !bytes.Equal(decoded.Ciphertext, original.Ciphertext) {
 		t.Errorf("Ciphertext mismatch")
-	}
-	if decoded.IsRead != original.IsRead {
-		t.Errorf("IsRead mismatch: got %d, want %d", decoded.IsRead, original.IsRead)
 	}
 }
 
@@ -520,7 +516,6 @@ func TestEmptyPayloads(t *testing.T) {
 		SenderPubkey:         []uint8{},
 		CiphertextLen:        0,
 		Ciphertext:           []uint8{},
-		IsRead:               0,
 	}
 
 	encoded, err := original.MarshalBinary()
@@ -558,7 +553,6 @@ func TestMaxValues(t *testing.T) {
 		SenderPubkey:         maxSenderPubkey,
 		CiphertextLen:        uint32(len(maxCiphertext)),
 		Ciphertext:           maxCiphertext,
-		IsRead:               255,
 	}
 
 	// Fill arrays with max values

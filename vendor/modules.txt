@@ -146,7 +146,7 @@ github.com/katzenpost/circl/sign/ed448
 github.com/katzenpost/circl/sign/eddilithium2
 github.com/katzenpost/circl/sign/eddilithium3
 github.com/katzenpost/circl/simd/keccakf1600
-# github.com/katzenpost/hpqc v0.0.66
+# github.com/katzenpost/hpqc v0.0.67
 ## explicit; go 1.23.0
 github.com/katzenpost/hpqc/bacap
 github.com/katzenpost/hpqc/hash
