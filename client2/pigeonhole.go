@@ -112,11 +112,6 @@ func createEnvelopeFromMessage(msg *pigeonhole.ReplicaInnerMessage, doc *cpki.Do
 
 	senderPubkeyBytes := mkemPublicKey.Bytes()
 
-	var isReadFlag uint8 = 0
-	if isRead {
-		isReadFlag = 1
-	}
-
 	envelope := &pigeonhole.CourierEnvelope{
 		IntermediateReplicas: intermediateReplicas,
 		Dek1:                 dek1,
@@ -127,7 +122,6 @@ func createEnvelopeFromMessage(msg *pigeonhole.ReplicaInnerMessage, doc *cpki.Do
 		SenderPubkey:         senderPubkeyBytes,
 		CiphertextLen:        uint32(len(mkemCiphertext.Envelope)),
 		Ciphertext:           mkemCiphertext.Envelope,
-		IsRead:               isReadFlag,
 	}
 	return envelope, mkemPrivateKey, nil
 }
