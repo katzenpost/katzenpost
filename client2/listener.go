@@ -38,6 +38,9 @@ type listener struct {
 
 	updatePKIDocCh chan *cpki.Document
 	updateStatusCh chan error
+
+	// Callback function to clean up channels when a connection closes
+	onAppDisconnectFn func(*[AppIDLength]byte)
 }
 
 func (l *listener) Shutdown() {
@@ -146,6 +149,11 @@ func (l *listener) onClosedConn(c *incomingConn) {
 	l.connsLock.Lock()
 	delete(l.conns, *c.appID)
 	l.connsLock.Unlock()
+
+	// Clean up all channels associated with this App ID
+	if l.onAppDisconnectFn != nil {
+		l.onAppDisconnectFn(c.appID)
+	}
 }
 
 func (l *listener) getConnectionStatus() error {
@@ -225,16 +233,17 @@ func (l *listener) getConnection(appID *[AppIDLength]byte) *incomingConn {
 }
 
 // New creates a new listener.
-func NewListener(client *Client, rates *Rates, egressCh chan *Request, logBackend *log.Backend) (*listener, error) {
+func NewListener(client *Client, rates *Rates, egressCh chan *Request, logBackend *log.Backend, onAppDisconnectFn func(*[AppIDLength]byte)) (*listener, error) {
 	ingressSize := 200
 	l := &listener{
-		client:         client,
-		logBackend:     logBackend,
-		conns:          make(map[[AppIDLength]byte]*incomingConn),
-		connsLock:      new(sync.RWMutex),
-		ingressCh:      make(chan *Request, ingressSize),
-		updatePKIDocCh: make(chan *cpki.Document, 2),
-		updateStatusCh: make(chan error, 2),
+		client:            client,
+		logBackend:        logBackend,
+		conns:             make(map[[AppIDLength]byte]*incomingConn),
+		connsLock:         new(sync.RWMutex),
+		ingressCh:         make(chan *Request, ingressSize),
+		updatePKIDocCh:    make(chan *cpki.Document, 2),
+		updateStatusCh:    make(chan error, 2),
+		onAppDisconnectFn: onAppDisconnectFn,
 	}
 
 	l.log = l.logBackend.GetLogger("client2/listener")
