@@ -327,7 +327,6 @@ func (c *ClientWriter) ComposeSendNextMessage(message []byte) *pigeonhole.Courie
 		SenderPubkey:         senderPubkey,
 		CiphertextLen:        uint32(len(mkemCiphertext.Envelope)),
 		Ciphertext:           mkemCiphertext.Envelope,
-		IsRead:               0, // 0 = write
 	}
 	return envelope
 }
@@ -382,7 +381,6 @@ func (c *ClientReader) ComposeReadNextMessage() (nike.PrivateKey, *pigeonhole.Co
 		SenderPubkey:         senderPubkey,
 		CiphertextLen:        uint32(len(mkemCiphertext.Envelope)),
 		Ciphertext:           mkemCiphertext.Envelope,
-		IsRead:               1, // 1 = read
 	}
 	return mkemPrivateKey, envelope
 }

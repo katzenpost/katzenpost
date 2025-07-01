@@ -236,7 +236,6 @@ func TestGeometryPrecisePredictions(t *testing.T) {
 			SenderPubkey:         senderPubkeyBytes,
 			CiphertextLen:        uint32(len(mkemCiphertext.Envelope)),
 			Ciphertext:           mkemCiphertext.Envelope,
-			IsRead:               0, // 0 = write, 1 = read
 		}
 
 		// Create CourierQuery like integration tests
@@ -281,10 +280,9 @@ func TestGeometryPrecisePredictions(t *testing.T) {
 		const epochSize = 8                // uint64
 		const senderPubkeyLenSize = 2      // uint16
 		const ciphertextLenSize = 4        // uint32
-		const isReadSize = 1               // uint8
 
 		expectedFixedOverhead := intermediateReplicasSize + dek1Size + dek2Size +
-			replyIndexSize + epochSize + senderPubkeyLenSize + ciphertextLenSize + isReadSize
+			replyIndexSize + epochSize + senderPubkeyLenSize + ciphertextLenSize
 		expectedTotalOverhead := expectedFixedOverhead + senderPubkeySize
 
 		t.Logf("Sender pubkey size: %d", senderPubkeySize)
@@ -388,7 +386,6 @@ func TestGeometryPrecisePredictions(t *testing.T) {
 			SenderPubkey:         senderPubkeyBytes,
 			CiphertextLen:        uint32(len(mkemCiphertext.Envelope)),
 			Ciphertext:           mkemCiphertext.Envelope,
-			IsRead:               0,
 		}
 
 		envelopeBytes := envelope.Bytes()
@@ -402,10 +399,9 @@ func TestGeometryPrecisePredictions(t *testing.T) {
 		const epochSize = 8                // uint64
 		const senderPubkeyLenSize = 2      // uint16
 		const ciphertextLenSize = 4        // uint32
-		const isReadSize = 1               // uint8
 
 		expectedCourierEnvelopeOverhead := intermediateReplicasSize + dek1Size + dek2Size +
-			replyIndexSize + epochSize + senderPubkeyLenSize + ciphertextLenSize + isReadSize + len(senderPubkeyBytes)
+			replyIndexSize + epochSize + senderPubkeyLenSize + ciphertextLenSize + len(senderPubkeyBytes)
 
 		t.Logf("Layer 5 - CourierEnvelope:")
 		t.Logf("  MKEM ciphertext: %d bytes", len(mkemCiphertext.Envelope))
@@ -471,7 +467,7 @@ func TestGeometryPrecisePredictions(t *testing.T) {
 
 		// Step 5: CourierEnvelope
 		senderPubkeySize := nikeScheme.PublicKeySize()
-		courierEnvelopeFixedOverhead := 2 + 60 + 60 + 1 + 8 + 2 + 4 + 1 // All fixed fields
+		courierEnvelopeFixedOverhead := 2 + 60 + 60 + 1 + 8 + 2 + 4 // All fixed fields
 		courierEnvelopeOverhead := courierEnvelopeFixedOverhead + senderPubkeySize
 		courierEnvelopeSize := courierEnvelopeOverhead + mkemCiphertextSize
 		t.Logf("Step 5 - CourierEnvelope: (%d + %d) + %d = %d", courierEnvelopeFixedOverhead, senderPubkeySize, mkemCiphertextSize, courierEnvelopeSize)

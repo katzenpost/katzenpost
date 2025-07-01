@@ -79,8 +79,8 @@ type Courier struct {
 	copyCacheLock sync.RWMutex
 	copyCache     map[[hash.HashSize]byte]chan *commands.ReplicaMessageReply
 
-	pendingReadLock sync.RWMutex
-	pendingReads    map[[hash.HashSize]byte]*PendingReadRequest
+	pendingRequestsLock sync.RWMutex
+	pendingRequests     map[[hash.HashSize]byte]*PendingReadRequest
 }
 
 // NewCourier returns a new Courier type.
@@ -91,15 +91,15 @@ func NewCourier(s *Server, cmds *commands.Commands, scheme nike.Scheme) *Courier
 	}
 
 	courier := &Courier{
-		server:         s,
-		log:            s.logBackend.GetLogger("courier"),
-		cmds:           cmds,
-		geo:            s.cfg.SphinxGeometry,
-		envelopeScheme: scheme,
-		pigeonholeGeo:  pigeonholeGeo,
-		dedupCache:     make(map[[hash.HashSize]byte]*CourierBookKeeping),
-		copyCache:      make(map[[hash.HashSize]byte]chan *commands.ReplicaMessageReply),
-		pendingReads:   make(map[[hash.HashSize]byte]*PendingReadRequest),
+		server:          s,
+		log:             s.logBackend.GetLogger("courier"),
+		cmds:            cmds,
+		geo:             s.cfg.SphinxGeometry,
+		envelopeScheme:  scheme,
+		pigeonholeGeo:   pigeonholeGeo,
+		dedupCache:      make(map[[hash.HashSize]byte]*CourierBookKeeping),
+		copyCache:       make(map[[hash.HashSize]byte]chan *commands.ReplicaMessageReply),
+		pendingRequests: make(map[[hash.HashSize]byte]*PendingReadRequest),
 	}
 	return courier
 }
@@ -281,10 +281,10 @@ func (e *Courier) logFinalCacheState(reply *commands.ReplicaMessageReply) {
 func (e *Courier) tryImmediateReplyProxy(reply *commands.ReplicaMessageReply) bool {
 	e.log.Debugf("tryImmediateReplyProxy: Checking for pending read request for envelope hash %x", reply.EnvelopeHash)
 
-	e.pendingReadLock.Lock()
-	defer e.pendingReadLock.Unlock()
+	e.pendingRequestsLock.Lock()
+	defer e.pendingRequestsLock.Unlock()
 
-	pendingRequest, exists := e.pendingReads[*reply.EnvelopeHash]
+	pendingRequest, exists := e.pendingRequests[*reply.EnvelopeHash]
 	if !exists {
 		e.log.Debugf("tryImmediateReplyProxy: No pending read request found for envelope hash %x", reply.EnvelopeHash)
 		return false
@@ -295,12 +295,12 @@ func (e *Courier) tryImmediateReplyProxy(reply *commands.ReplicaMessageReply) bo
 	// Check if the request has timed out
 	if time.Now().After(pendingRequest.Timeout) {
 		e.log.Debugf("Pending read request for envelope hash %x has timed out, removing", reply.EnvelopeHash)
-		delete(e.pendingReads, *reply.EnvelopeHash)
+		delete(e.pendingRequests, *reply.EnvelopeHash)
 		return false
 	}
 
 	// Remove the pending request since we're about to fulfill it
-	delete(e.pendingReads, *reply.EnvelopeHash)
+	delete(e.pendingRequests, *reply.EnvelopeHash)
 
 	e.log.Debugf("tryImmediateReplyProxy: Sending immediate reply for envelope hash %x", reply.EnvelopeHash)
 
@@ -330,15 +330,15 @@ func (e *Courier) tryImmediateReplyProxy(reply *commands.ReplicaMessageReply) bo
 	return true
 }
 
-// storePendingReadRequest stores a pending read request with a 4-second timeout
-func (e *Courier) storePendingReadRequest(envHash *[hash.HashSize]byte, requestID uint64, surb []byte) {
-	e.pendingReadLock.Lock()
-	defer e.pendingReadLock.Unlock()
+// storePendingRequest stores a pending request with a 4-second timeout
+func (e *Courier) storePendingRequest(envHash *[hash.HashSize]byte, requestID uint64, surb []byte) {
+	e.pendingRequestsLock.Lock()
+	defer e.pendingRequestsLock.Unlock()
 
 	// Set 4-second timeout as requested
 	timeout := time.Now().Add(4 * time.Second)
 
-	e.pendingReads[*envHash] = &PendingReadRequest{
+	e.pendingRequests[*envHash] = &PendingReadRequest{
 		RequestID: requestID,
 		SURB:      surb,
 		Timeout:   timeout,
@@ -355,19 +355,17 @@ func (e *Courier) cleanupExpiredRequest(envHash *[hash.HashSize]byte, timeout ti
 	// Wait until the timeout expires
 	time.Sleep(time.Until(timeout))
 
-	e.pendingReadLock.Lock()
-	defer e.pendingReadLock.Unlock()
+	e.pendingRequestsLock.Lock()
+	defer e.pendingRequestsLock.Unlock()
 
 	// Check if the request is still there and has expired
-	if pendingRequest, exists := e.pendingReads[*envHash]; exists && time.Now().After(pendingRequest.Timeout) {
-		delete(e.pendingReads, *envHash)
+	if pendingRequest, exists := e.pendingRequests[*envHash]; exists && time.Now().After(pendingRequest.Timeout) {
+		delete(e.pendingRequests, *envHash)
 		e.log.Debugf("Cleaned up expired pending read request for envelope hash %x", envHash)
 	}
 }
 
 func (e *Courier) handleCourierEnvelope(courierMessage *pigeonhole.CourierEnvelope) error {
-	e.log.Debugf("Copy: Processing CourierEnvelope (IsRead=%t)", courierMessage.IsRead)
-
 	replicas := make([]*commands.ReplicaMessage, 2)
 
 	firstReplicaID := courierMessage.IntermediateReplicas[0]
@@ -400,16 +398,16 @@ func (e *Courier) handleNewMessage(envHash *[hash.HashSize]byte, courierMessage 
 	if err := e.handleCourierEnvelope(courierMessage); err != nil {
 		e.log.Errorf("Failed to handle courier envelope: %s", err)
 		if err == errNilDEKElements {
-			return e.createEnvelopeErrorReply(envHash, envelopeErrorNilDEKElements)
+			return e.createEnvelopeErrorReply(envHash, envelopeErrorNilDEKElements, courierMessage.ReplyIndex)
 		}
-		return e.createEnvelopeErrorReply(envHash, envelopeErrorInternalError)
+		return e.createEnvelopeErrorReply(envHash, envelopeErrorInternalError, courierMessage.ReplyIndex)
 	}
 
 	reply := &pigeonhole.CourierQueryReply{
 		ReplyType: 0, // 0 = envelope_reply
 		EnvelopeReply: &pigeonhole.CourierEnvelopeReply{
 			EnvelopeHash: *envHash,
-			ReplyIndex:   0,
+			ReplyIndex:   courierMessage.ReplyIndex,
 			PayloadLen:   0,
 			Payload:      nil,
 			ErrorCode:    1, // Error code for timeout
@@ -424,7 +422,7 @@ func (e *Courier) handleOldMessage(cacheEntry *CourierBookKeeping, envHash *[has
 	// Check if cacheEntry is nil before accessing its fields
 	if cacheEntry == nil {
 		e.log.Debugf("Cache entry is nil, no replies available")
-		return e.createEnvelopeErrorReply(envHash, envelopeErrorCacheCorruption)
+		return e.createEnvelopeErrorReply(envHash, envelopeErrorCacheCorruption, courierMessage.ReplyIndex)
 	}
 
 	// Log cache state
@@ -481,15 +479,17 @@ func (e *Courier) OnCommand(cmd cborplugin.Command) error {
 		e.log.Debugf("Failed to decode CourierQuery trunnel blob: %s (received %d bytes, expected %d for write or %d for read)",
 			err, actualSize, expectedWriteSize, expectedReadSize)
 
-		// Send error reply back to client
+		// Since parsing failed, we can't access the envelope hash or reply index
+		// Create a generic error response with zero values
+		var zeroHash [32]byte
 		errorReply := &pigeonhole.CourierQueryReply{
 			ReplyType: 0, // 0 = envelope_reply
 			EnvelopeReply: &pigeonhole.CourierEnvelopeReply{
-				EnvelopeHash: *courierQuery.Envelope.EnvelopeHash(),
-				ReplyIndex:   0,
+				EnvelopeHash: zeroHash,
+				ReplyIndex:   0, // Default to 0 since we can't determine the intended ReplyIndex
 				PayloadLen:   0,
 				Payload:      nil,
-				ErrorCode:    1, // Error code for timeout
+				ErrorCode:    1, // Error code for parsing failure
 			},
 		}
 		go func() {
@@ -537,11 +537,7 @@ func (e *Courier) cacheHandleCourierEnvelope(courierMessage *pigeonhole.CourierE
 
 	e.log.Debugf("OnCommand: No cached entry for envelope hash %x, calling handleNewMessage", envHash)
 
-	// For read requests, store pending request info for immediate reply proxying
-	if courierMessage.IsRead == 1 { // 1 = read, 0 = write
-		e.log.Debugf("OnCommand: Storing pending read request for envelope hash %x", envHash)
-		e.storePendingReadRequest(envHash, requestID, surb)
-	}
+	e.storePendingRequest(envHash, requestID, surb)
 
 	e.dedupCacheLock.Lock()
 
@@ -563,13 +559,13 @@ func (e *Courier) cacheHandleCourierEnvelope(courierMessage *pigeonhole.CourierE
 // Copy command functions have been removed as requested
 
 // createEnvelopeErrorReply creates a CourierEnvelopeReply with the specified error code
-func (e *Courier) createEnvelopeErrorReply(envHash *[hash.HashSize]byte, errorCode uint8) *pigeonhole.CourierQueryReply {
+func (e *Courier) createEnvelopeErrorReply(envHash *[hash.HashSize]byte, errorCode uint8, replyIndex uint8) *pigeonhole.CourierQueryReply {
 	e.log.Debugf("Envelope operation failed with error code %d: %s", errorCode, envelopeErrorToString(errorCode))
 	return &pigeonhole.CourierQueryReply{
 		ReplyType: 0, // 0 = envelope_reply
 		EnvelopeReply: &pigeonhole.CourierEnvelopeReply{
 			EnvelopeHash: *envHash,
-			ReplyIndex:   0,
+			ReplyIndex:   replyIndex,
 			PayloadLen:   0,
 			Payload:      nil,
 			ErrorCode:    1, // Error code for timeout

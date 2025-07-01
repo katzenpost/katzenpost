@@ -151,7 +151,6 @@ func (c *Client) ForceFetch() {
 // ForceFetchPKI attempts to force client's pkiclient to wake and fetch
 // consensus documents immediately.
 func (c *Client) ForceFetchPKI() {
-	c.log.Debug("ForceFetchPKI()")
 	select {
 	case c.pki.forceUpdateCh <- true:
 	default:
@@ -159,8 +158,6 @@ func (c *Client) ForceFetchPKI() {
 }
 
 func (c *connection) getDescriptor() error {
-	c.log.Debug("getDescriptor")
-
 	ok := false
 	defer func() {
 		if !ok {
@@ -238,8 +235,6 @@ func (c *connection) getDescriptor() error {
 }
 
 func (c *connection) connectWorker() {
-	c.log.Debug("connectWorker begin")
-
 	defer c.log.Debugf("Terminating connect worker.")
 
 	dialCtx, cancelFn := context.WithCancel(context.Background())
@@ -263,7 +258,6 @@ func (c *connection) connectWorker() {
 }
 
 func (c *connection) doConnect(dialCtx context.Context) {
-	c.log.Debug("doConnect begin")
 	const (
 		retryIncrement = 15 * time.Second
 		maxRetryDelay  = 2 * time.Minute
@@ -287,8 +281,6 @@ func (c *connection) doConnect(dialCtx context.Context) {
 				c.isShutdownLock.RUnlock()
 				if !isShutdown {
 					c.client.cfg.Callbacks.OnConnFn(connErr)
-				} else {
-					c.log.Debug("already shutting down, skipping OnConnFn callback")
 				}
 			}
 		}
@@ -320,8 +312,6 @@ func (c *connection) doConnect(dialCtx context.Context) {
 			connErr = newConnectError("no suitable addreses found")
 			return
 		}
-
-		c.log.Debug("doConnect, before for loop")
 
 		for _, addr := range dstAddrs {
 			select {
@@ -378,7 +368,6 @@ func (c *connection) doConnect(dialCtx context.Context) {
 }
 
 func (c *connection) onNetConn(conn net.Conn) {
-	c.log.Debug("onNetConn begin")
 	const handshakeTimeout = 1 * time.Minute
 	var err error
 
@@ -386,8 +375,6 @@ func (c *connection) onNetConn(conn net.Conn) {
 		c.log.Debugf("connection closed.")
 		conn.Close()
 	}()
-
-	c.log.Debug("onNetConn: GenerateKeypair")
 	_, linkKey, err := c.client.wireKEMScheme.GenerateKeyPair()
 	if err != nil {
 		panic(err)
@@ -409,7 +396,6 @@ func (c *connection) onNetConn(conn net.Conn) {
 		AuthenticationKey: linkKey,
 		RandomReader:      rand.Reader,
 	}
-	c.log.Debug("onNetConn: NewSession")
 	w, err := wire.NewSession(cfg, true)
 	if err != nil {
 		c.log.Errorf("Failed to allocate session: %v", err)
@@ -421,7 +407,6 @@ func (c *connection) onNetConn(conn net.Conn) {
 	defer w.Close()
 
 	// Bind the session to the conn, handshake, authenticate.
-	c.log.Debug("onTCPConn: before handshake")
 	conn.SetDeadline(time.Now().Add(handshakeTimeout))
 	if err = w.Initialize(conn); err != nil {
 		c.log.Errorf("Handshake failed: %v", err)
@@ -434,12 +419,10 @@ func (c *connection) onNetConn(conn net.Conn) {
 	conn.SetDeadline(time.Time{})
 	c.client.pki.setClockSkew(int64(w.ClockSkew().Seconds()))
 
-	c.log.Debug("onNetConn end")
 	c.onWireConn(w)
 }
 
 func (c *connection) onWireConn(w *wire.Session) {
-	c.log.Debug("onWireConn")
 	c.onConnStatusChange(nil)
 
 	var wireErr error
@@ -919,7 +902,6 @@ func (c *connection) Shutdown() {
 }
 
 func (c *connection) start() {
-	c.log.Debug("start")
 	c.Go(c.connectWorker)
 }
 
@@ -927,7 +909,6 @@ func newConnection(c *Client) *connection {
 	k := new(connection)
 	k.client = c
 	k.log = c.logbackend.GetLogger("client2/conn")
-	k.log.Debug("newConnection")
 	k.fetchCh = make(chan interface{}, 1)
 	k.sendCh = make(chan *connSendCtx)
 	k.getConsensusCh = make(chan *getConsensusCtx, 1)

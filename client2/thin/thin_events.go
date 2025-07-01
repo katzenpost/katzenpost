@@ -59,6 +59,10 @@ type MessageReplyEvent struct {
 	// Payload is the reply payload if any.
 	Payload []byte `cbor:"payload"`
 
+	// ReplyIndex is the index of the reply that was actually used when processing
+	// this message. This is particularly relevant for pigeonhole channel reads.
+	ReplyIndex *uint8 `cbor:"reply_index,omitempty"`
+
 	// Err is the error message if any error was encountered when servicing the request.
 	// Empty string indicates no error occurred.
 	Err string `cbor:"err,omitempty"`
@@ -66,10 +70,14 @@ type MessageReplyEvent struct {
 
 // String returns a string representation of the MessageReplyEvent.
 func (e *MessageReplyEvent) String() string {
-	if e.Err != "" {
-		return fmt.Sprintf("MessageReply: %v failed: %v", hex.EncodeToString(e.MessageID[:]), e.Err)
+	replyIndexStr := ""
+	if e.ReplyIndex != nil {
+		replyIndexStr = fmt.Sprintf(" replyIndex=%d", *e.ReplyIndex)
 	}
-	return fmt.Sprintf("KaetzchenReply: %v (%v bytes)", hex.EncodeToString(e.MessageID[:]), len(e.Payload))
+	if e.Err != "" {
+		return fmt.Sprintf("MessageReply: %v%s failed: %v", hex.EncodeToString(e.MessageID[:]), replyIndexStr, e.Err)
+	}
+	return fmt.Sprintf("KaetzchenReply: %v%s (%v bytes)", hex.EncodeToString(e.MessageID[:]), replyIndexStr, len(e.Payload))
 }
 
 // MessageSentEvent is the event sent when a message has been fully transmitted.
@@ -239,6 +247,10 @@ type ReadChannelReply struct {
 	// reading the current message.
 	NextMessageIndex *bacap.MessageBoxIndex `cbor:"next_message_index"`
 
+	// ReplyIndex is the index of the reply that was used when creating this ReadChannelReply.
+	// This corresponds to the ReplyIndex parameter from the ReadChannel request.
+	ReplyIndex *uint8 `cbor:"reply_index,omitempty"`
+
 	// ErrorCode indicates the success or failure of preparing the read operation.
 	// A value of ThinClientErrorSuccess indicates the query is ready to send.
 	ErrorCode uint8 `cbor:"error_code,omitempty"`
@@ -250,8 +262,12 @@ func (e *ReadChannelReply) String() string {
 	if e.MessageID != nil {
 		msgIDStr = fmt.Sprintf("%x", e.MessageID[:8]) // First 8 bytes for brevity
 	}
-	if e.ErrorCode != ThinClientSuccess {
-		return fmt.Sprintf("ReadChannelReply: msgID=%s channel=%d (error: %s)", msgIDStr, e.ChannelID, ThinClientErrorToString(e.ErrorCode))
+	replyIndexStr := ""
+	if e.ReplyIndex != nil {
+		replyIndexStr = fmt.Sprintf(" replyIndex=%d", *e.ReplyIndex)
 	}
-	return fmt.Sprintf("ReadChannelReply: msgID=%s channel=%d (%d bytes payload)", msgIDStr, e.ChannelID, len(e.SendMessagePayload))
+	if e.ErrorCode != ThinClientSuccess {
+		return fmt.Sprintf("ReadChannelReply: msgID=%s channel=%d%s (error: %s)", msgIDStr, e.ChannelID, replyIndexStr, ThinClientErrorToString(e.ErrorCode))
+	}
+	return fmt.Sprintf("ReadChannelReply: msgID=%s channel=%d%s (%d bytes payload)", msgIDStr, e.ChannelID, replyIndexStr, len(e.SendMessagePayload))
 }

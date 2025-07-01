@@ -18,6 +18,7 @@ import (
 	"github.com/katzenpost/katzenpost/client2/constants"
 	"github.com/katzenpost/katzenpost/client2/thin"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
+	sphinxConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/pigeonhole"
 	pigeonholeGeo "github.com/katzenpost/katzenpost/pigeonhole/geo"
 	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
@@ -94,7 +95,7 @@ func NewPigeonholeChannel() (*bacap.StatefulWriter, *bacap.ReadCap, *bacap.Write
 }
 
 // createEnvelopeFromMessage creates a CourierEnvelope from a ReplicaInnerMessage
-func createEnvelopeFromMessage(msg *pigeonhole.ReplicaInnerMessage, doc *cpki.Document, isRead bool) (*pigeonhole.CourierEnvelope, nike.PrivateKey, error) {
+func createEnvelopeFromMessage(msg *pigeonhole.ReplicaInnerMessage, doc *cpki.Document, isRead bool, replyIndex uint8) (*pigeonhole.CourierEnvelope, nike.PrivateKey, error) {
 	intermediateReplicas, replicaPubKeys, err := pigeonhole.GetRandomIntermediateReplicas(doc)
 	if err != nil {
 		return nil, nil, err
@@ -111,22 +112,16 @@ func createEnvelopeFromMessage(msg *pigeonhole.ReplicaInnerMessage, doc *cpki.Do
 
 	senderPubkeyBytes := mkemPublicKey.Bytes()
 
-	var isReadFlag uint8 = 0
-	if isRead {
-		isReadFlag = 1
-	}
-
 	envelope := &pigeonhole.CourierEnvelope{
 		IntermediateReplicas: intermediateReplicas,
 		Dek1:                 dek1,
 		Dek2:                 dek2,
-		ReplyIndex:           0,
+		ReplyIndex:           replyIndex,
 		Epoch:                doc.Epoch,
 		SenderPubkeyLen:      uint16(len(senderPubkeyBytes)),
 		SenderPubkey:         senderPubkeyBytes,
 		CiphertextLen:        uint32(len(mkemCiphertext.Envelope)),
 		Ciphertext:           mkemCiphertext.Envelope,
-		IsRead:               isReadFlag,
 	}
 	return envelope, mkemPrivateKey, nil
 }
@@ -175,7 +170,7 @@ func CreateChannelWriteRequest(
 		WriteMsg:    writeRequest,
 	}
 
-	return createEnvelopeFromMessage(msg, doc, false)
+	return createEnvelopeFromMessage(msg, doc, false, 0)
 }
 
 // CreateChannelWriteRequestPrepareOnly prepares a write request WITHOUT advancing StatefulWriter state.
@@ -220,7 +215,7 @@ func CreateChannelWriteRequestPrepareOnly(
 		WriteMsg:    writeRequest,
 	}
 
-	return createEnvelopeFromMessage(msg, doc, false)
+	return createEnvelopeFromMessage(msg, doc, false, 0)
 }
 
 func CreateChannelReadRequest(channelID [thin.ChannelIDLength]byte,
@@ -251,7 +246,7 @@ func CreateChannelReadRequestWithBoxID(channelID [thin.ChannelIDLength]byte,
 	}
 
 	fmt.Printf("BOB MKEM ENCRYPT: Starting encryption with message size %d bytes\n", len(msg.Bytes()))
-	envelope, mkemPrivateKey, err := createEnvelopeFromMessage(msg, doc, true)
+	envelope, mkemPrivateKey, err := createEnvelopeFromMessage(msg, doc, true, 0)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -689,7 +684,13 @@ func (d *Daemon) readChannel(request *Request) {
 		},
 	}
 
-	courierEnvelope, envelopePrivateKey, err := createEnvelopeFromMessage(msg, doc, true)
+	// Use the ReplyIndex from the request, defaulting to 0 if not specified
+	replyIndex := uint8(0)
+	if request.ReadChannel.ReplyIndex != nil {
+		replyIndex = *request.ReadChannel.ReplyIndex
+	}
+
+	courierEnvelope, envelopePrivateKey, err := createEnvelopeFromMessage(msg, doc, true, replyIndex)
 	if err != nil {
 		d.log.Errorf("readChannel failure: failed to create envelope: %s", err)
 		d.sendReadChannelError(request, thin.ThinClientErrorInternalError)
@@ -723,7 +724,40 @@ func (d *Daemon) readChannel(request *Request) {
 			ChannelID:          channelID,
 			SendMessagePayload: courierQuery.Bytes(),
 			NextMessageIndex:   nextMessageIndex,
+			ReplyIndex:         request.ReadChannel.ReplyIndex,
 			ErrorCode:          thin.ThinClientSuccess,
 		},
 	})
+}
+
+// closeChannel closes a pigeonhole channel and cleans up its resources
+func (d *Daemon) closeChannel(request *Request) {
+	channelID := request.CloseChannel.ChannelID
+
+	d.newChannelMapLock.Lock()
+	_, ok := d.newChannelMap[channelID]
+	if ok {
+		delete(d.newChannelMap, channelID)
+	}
+	d.newChannelMapLock.Unlock()
+
+	if !ok {
+		d.log.Debugf("closeChannel: channel %d not found (already closed or never existed)", channelID)
+		return
+	}
+
+	// Clean up any stored SURB ID mappings for this channel
+	d.newSurbIDToChannelMapLock.Lock()
+	toDelete := make([][sphinxConstants.SURBIDLength]byte, 0)
+	for surbID, mappedChannelID := range d.newSurbIDToChannelMap {
+		if mappedChannelID == channelID {
+			toDelete = append(toDelete, surbID)
+		}
+	}
+	for _, surbID := range toDelete {
+		delete(d.newSurbIDToChannelMap, surbID)
+	}
+	d.newSurbIDToChannelMapLock.Unlock()
+
+	d.log.Infof("closeChannel: successfully closed channel %d", channelID)
 }

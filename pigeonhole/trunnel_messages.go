@@ -17,7 +17,6 @@ type CourierEnvelope struct {
 	SenderPubkey         []uint8
 	CiphertextLen        uint32
 	Ciphertext           []uint8
-	IsRead               uint8
 }
 
 func (c *CourierEnvelope) Parse(data []byte) ([]byte, error) {
@@ -97,13 +96,6 @@ func (c *CourierEnvelope) Parse(data []byte) ([]byte, error) {
 			cur = cur[1:]
 		}
 	}
-	{
-		if len(cur) < 1 {
-			return nil, errors.New("data too short")
-		}
-		c.IsRead = cur[0]
-		cur = cur[1:]
-	}
 	return cur, nil
 }
 
@@ -149,7 +141,6 @@ func (c *CourierEnvelope) encodeBinary() []byte {
 	for idx := 0; idx < int(c.CiphertextLen); idx++ {
 		buf = append(buf, byte(c.Ciphertext[idx]))
 	}
-	buf = append(buf, byte(c.IsRead))
 	return buf
 }
 

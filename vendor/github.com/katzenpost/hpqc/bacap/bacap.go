@@ -270,7 +270,7 @@ func (m *MessageBoxIndex) VerifyBox(box [BoxIDSize]byte, ciphertext []byte, sig 
 	if err = boxPk.FromBytes(box[:]); err != nil {
 		return
 	}
-	if false == boxPk.Verify(sig, ciphertext) {
+	if !boxPk.Verify(sig, ciphertext) {
 		return false, errors.New("signature verification failed")
 	}
 	return true, nil
@@ -303,7 +303,7 @@ func (m *MessageBoxIndex) DecryptForContext(box [BoxIDSize]byte, ctx []byte, cip
 	if err = boxPk.FromBytes(box[:]); err != nil {
 		return
 	}
-	if false == boxPk.Verify(sig, ciphertext) {
+	if !boxPk.Verify(sig, ciphertext) {
 		return nil, errors.New("signature verification failed")
 	}
 	eICtx := m.deriveEForContext(ctx)
@@ -453,13 +453,13 @@ func (o *WriteCap) UnmarshalBinary(data []byte) error {
 		return errors.New("invalid BoxOwnerCap binary size")
 	}
 	o.rootPrivateKey = new(ed25519.PrivateKey)
-	err := o.rootPrivateKey.FromBytes(data[:64])
+	err := o.rootPrivateKey.FromBytes(data[:ed25519.PrivateKeySize])
 	if err != nil {
 		return err
 	}
 	o.rootPublicKey = o.rootPrivateKey.PublicKey()
 	o.firstMessageBoxIndex = &MessageBoxIndex{}
-	if err := o.firstMessageBoxIndex.UnmarshalBinary(data[64:]); err != nil {
+	if err := o.firstMessageBoxIndex.UnmarshalBinary(data[ed25519.PrivateKeySize:]); err != nil {
 		return err
 	}
 	return nil
@@ -517,12 +517,12 @@ func (u *ReadCap) UnmarshalBinary(data []byte) error {
 		return errors.New("invalid ReadCap binary size")
 	}
 	u.rootPublicKey = new(ed25519.PublicKey)
-	err := u.rootPublicKey.FromBytes(data[:32])
+	err := u.rootPublicKey.FromBytes(data[:ed25519.PublicKeySize])
 	if err != nil {
 		return err
 	}
 	u.firstMessageBoxIndex = &MessageBoxIndex{}
-	if err := u.firstMessageBoxIndex.UnmarshalBinary(data[32:]); err != nil {
+	if err := u.firstMessageBoxIndex.UnmarshalBinary(data[ed25519.PublicKeySize:]); err != nil {
 		return err
 	}
 	return nil

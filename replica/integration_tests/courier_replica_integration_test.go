@@ -114,20 +114,12 @@ func createMKEMEnvelope(t *testing.T, sharding *shardingResult, innerMessage *pi
 	mkemPublicKey := mkemPrivateKey.Public()
 	replicaEpoch, _, _ := replicaCommon.ReplicaNow()
 
-	var isReadUint8 uint8
-	if isRead {
-		isReadUint8 = 1
-	} else {
-		isReadUint8 = 0
-	}
-
 	return &pigeonhole.CourierEnvelope{
 		SenderPubkey:         mkemPublicKey.Bytes(),
 		IntermediateReplicas: sharding.ReplicaIndices,
 		Dek1:                 *mkemCiphertext.DEKCiphertexts[0],
 		Dek2:                 *mkemCiphertext.DEKCiphertexts[1],
 		Ciphertext:           mkemCiphertext.Envelope,
-		IsRead:               isReadUint8,
 		Epoch:                replicaEpoch,
 	}
 }
@@ -791,7 +783,6 @@ func aliceComposesNextMessageWithIsLast(t *testing.T, message []byte, env *testE
 		SenderPubkey:         senderPubkeyBytes,
 		CiphertextLen:        uint32(len(mkemCiphertext.Envelope)),
 		Ciphertext:           mkemCiphertext.Envelope,
-		IsRead:               0, // 0 = write, 1 = read
 	}
 }
 
@@ -1057,7 +1048,6 @@ func composeReadRequest(t *testing.T, env *testEnvironment, reader *bacap.Statef
 		SenderPubkey:         senderPubkeyBytes,
 		CiphertextLen:        uint32(len(mkemCiphertext.Envelope)),
 		Ciphertext:           mkemCiphertext.Envelope,
-		IsRead:               1, // 1 = read, 0 = write
 	}, mkemPrivateKey
 }
 

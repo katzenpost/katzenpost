@@ -87,10 +87,9 @@ func calculateCourierEnvelopeOverhead(_ int, senderPubkeySize int) int {
 	const epochSize = 8                // uint64
 	const senderPubkeyLenSize = 2      // uint16
 	const ciphertextLenSize = 4        // uint32
-	const isReadSize = 1               // uint8
 
 	courierEnvelopeFixedOverhead := intermediateReplicasSize + dek1Size + dek2Size +
-		replyIndexSize + epochSize + senderPubkeyLenSize + ciphertextLenSize + isReadSize
+		replyIndexSize + epochSize + senderPubkeyLenSize + ciphertextLenSize
 
 	return courierEnvelopeFixedOverhead + senderPubkeySize
 }
