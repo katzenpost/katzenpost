@@ -7,7 +7,9 @@ toolchain go1.23.6
 require (
 	github.com/BurntSushi/toml v1.5.0
 	github.com/carlmjohnson/versioninfo v0.22.5
+	github.com/charmbracelet/colorprofile v0.3.0
 	github.com/charmbracelet/fang v0.2.0
+	github.com/charmbracelet/lipgloss/v2 v2.0.0-beta1
 	github.com/fxamacker/cbor/v2 v2.8.0
 	github.com/grafana/pyroscope-go v1.2.2
 	github.com/jackc/pgx v3.6.2+incompatible
@@ -39,8 +41,6 @@ require (
 	github.com/agl/gcmsiv v0.0.0-20190418185415-e8dcd2f151dc // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
-	github.com/charmbracelet/colorprofile v0.3.0 // indirect
-	github.com/charmbracelet/lipgloss/v2 v2.0.0-beta1 // indirect
 	github.com/charmbracelet/x/ansi v0.8.0 // indirect
 	github.com/charmbracelet/x/cellbuf v0.0.13 // indirect
 	github.com/charmbracelet/x/exp/charmtone v0.0.0-20250603201427-c31516f43444 // indirect
