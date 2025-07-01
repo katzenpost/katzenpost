@@ -175,7 +175,6 @@ func TestOfflineChannelOperations(t *testing.T) {
 
 	// Test that offline mode state is correctly set
 	require.False(t, thin.IsConnected())
-	require.True(t, thin.IsOfflineMode())
 
 	// Test that operations requiring mixnet connectivity fail with appropriate errors
 	ctx := context.Background()
@@ -281,7 +280,6 @@ func TestOfflineDialAndChannelOperations(t *testing.T) {
 
 	// Verify offline mode state
 	require.False(t, thin.IsConnected(), "Should not be connected to mixnet")
-	require.True(t, thin.IsOfflineMode(), "Should be in offline mode")
 
 	t.Log("Successfully dialed daemon in offline mode")
 	t.Log("Channel operations would work but require daemon responses to complete")

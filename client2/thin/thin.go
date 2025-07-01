@@ -188,12 +188,6 @@ func (t *ThinClient) IsConnected() bool {
 	return t.isConnected
 }
 
-// IsOfflineMode returns true if the thin client is in offline mode
-// (daemon not connected to mixnet but channel operations still work)
-func (t *ThinClient) IsOfflineMode() bool {
-	return !t.isConnected
-}
-
 // Close halts the thin client worker thread and closes the socket
 // connection with the client daemon.
 func (t *ThinClient) Close() error {
