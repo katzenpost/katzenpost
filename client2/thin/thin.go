@@ -183,6 +183,17 @@ func (t *ThinClient) GetLogger(prefix string) *logging.Logger {
 	return t.logBackend.GetLogger(prefix)
 }
 
+// IsConnected returns true if the daemon is connected to the mixnet
+func (t *ThinClient) IsConnected() bool {
+	return t.isConnected
+}
+
+// IsOfflineMode returns true if the thin client is in offline mode
+// (daemon not connected to mixnet but channel operations still work)
+func (t *ThinClient) IsOfflineMode() bool {
+	return !t.isConnected
+}
+
 // Close halts the thin client worker thread and closes the socket
 // connection with the client daemon.
 func (t *ThinClient) Close() error {
@@ -222,7 +233,7 @@ func (t *ThinClient) Dial() error {
 		}
 	}
 
-	// WAIT UNTIL we have a Noise cryptographic connection with an edge node
+	// WAIT for connection status message from daemon
 	t.log.Debugf("Waiting for a connection status message")
 	message1, err := t.readMessage()
 	if err != nil {
@@ -231,8 +242,14 @@ func (t *ThinClient) Dial() error {
 	if message1.ConnectionStatusEvent == nil {
 		panic("bug: thin client protocol sequence violation")
 	}
-	if !message1.ConnectionStatusEvent.IsConnected {
-		return errors.New("not connected")
+
+	// Set connection state - allow both connected and offline modes
+	t.isConnected = message1.ConnectionStatusEvent.IsConnected
+
+	if !t.isConnected {
+		t.log.Infof("Daemon is not connected to mixnet - entering offline mode (channel operations will work)")
+	} else {
+		t.log.Debugf("Daemon is connected to mixnet - full functionality available")
 	}
 
 	t.log.Debugf("Waiting for a PKI doc message")
@@ -595,8 +612,13 @@ func (t *ThinClient) NewSURBID() *[sConstants.SURBIDLength]byte {
 }
 
 // SendMessageWithoutReply sends a message encapsulated in a Sphinx packet, without any SURB.
-// No reply will be possible.
+// No reply will be possible. This method requires mixnet connectivity.
 func (t *ThinClient) SendMessageWithoutReply(payload []byte, destNode *[32]byte, destQueue []byte) error {
+	// Check if we're in offline mode
+	if !t.isConnected {
+		return errors.New("cannot send message in offline mode - daemon not connected to mixnet")
+	}
+
 	req := &Request{
 		SendMessage: &SendMessage{
 			WithSURB:          false,
@@ -614,10 +636,17 @@ func (t *ThinClient) SendMessageWithoutReply(payload []byte, destNode *[32]byte,
 // This method of sending messages should be considered to be asynchronous because it does NOT actually wait until
 // the client daemon sends the message. Nor does it wait for a reply. The only blocking aspect to it's behavior is
 // merely blocking until the client daemon receives our request to send a message.
+// This method requires mixnet connectivity.
 func (t *ThinClient) SendMessage(surbID *[sConstants.SURBIDLength]byte, payload []byte, destNode *[32]byte, destQueue []byte) error {
 	if surbID == nil {
 		return errors.New("surbID cannot be nil")
 	}
+
+	// Check if we're in offline mode
+	if !t.isConnected {
+		return errors.New("cannot send message in offline mode - daemon not connected to mixnet")
+	}
+
 	req := &Request{
 		SendMessage: &SendMessage{
 			SURBID:            surbID,
@@ -632,10 +661,17 @@ func (t *ThinClient) SendMessage(surbID *[sConstants.SURBIDLength]byte, payload 
 }
 
 // BlockingSendMessage blocks until a reply is received and returns it or an error.
+// This method requires mixnet connectivity.
 func (t *ThinClient) BlockingSendMessage(ctx context.Context, payload []byte, destNode *[32]byte, destQueue []byte) ([]byte, error) {
 	if ctx == nil {
 		return nil, errContextCannotBeNil
 	}
+
+	// Check if we're in offline mode
+	if !t.isConnected {
+		return nil, errors.New("cannot send message in offline mode - daemon not connected to mixnet")
+	}
+
 	surbID := t.NewSURBID()
 	eventSink := t.EventSink()
 	defer t.StopEventSink(eventSink)
@@ -679,6 +715,11 @@ func (t *ThinClient) BlockingSendMessage(ctx context.Context, payload []byte, de
 }
 
 func (t *ThinClient) SendReliableMessage(messageID *[MessageIDLength]byte, payload []byte, destNode *[32]byte, destQueue []byte) error {
+	// Check if we're in offline mode
+	if !t.isConnected {
+		return errors.New("cannot send reliable message in offline mode - daemon not connected to mixnet")
+	}
+
 	req := &Request{
 		SendARQMessage: &SendARQMessage{
 			ID:                messageID,
@@ -693,9 +734,15 @@ func (t *ThinClient) SendReliableMessage(messageID *[MessageIDLength]byte, paylo
 }
 
 // BlockingSendReliableMessage blocks until the message is reliably sent and the ARQ reply is received.
+// This method requires mixnet connectivity.
 func (t *ThinClient) BlockingSendReliableMessage(ctx context.Context, messageID *[MessageIDLength]byte, payload []byte, destNode *[32]byte, destQueue []byte) (reply []byte, err error) {
 	if ctx == nil {
 		return nil, errContextCannotBeNil
+	}
+
+	// Check if we're in offline mode
+	if !t.isConnected {
+		return nil, errors.New("cannot send reliable message in offline mode - daemon not connected to mixnet")
 	}
 
 	if messageID == nil {
@@ -810,9 +857,8 @@ func (t *ThinClient) CreateWriteChannel(ctx context.Context, WriteCap *bacap.Wri
 			}
 			return v.ChannelID, v.ReadCap, v.WriteCap, v.NextMessageIndex, nil
 		case *ConnectionStatusEvent:
-			if !v.IsConnected {
-				return 0, nil, nil, nil, errConnectionLost
-			}
+			// Update connection state but don't fail channel operations
+			t.isConnected = v.IsConnected
 		case *NewDocumentEvent:
 			// Ignore PKI document updates
 		default:
@@ -862,9 +908,8 @@ func (t *ThinClient) CreateReadChannel(ctx context.Context, readCap *bacap.ReadC
 			}
 			return v.ChannelID, v.NextMessageIndex, nil
 		case *ConnectionStatusEvent:
-			if !v.IsConnected {
-				return 0, nil, errConnectionLost
-			}
+			// Update connection state but don't fail channel operations
+			t.isConnected = v.IsConnected
 		case *NewDocumentEvent:
 			// Ignore PKI document updates
 		default:
@@ -917,9 +962,8 @@ func (t *ThinClient) WriteChannel(ctx context.Context, channelID uint16, payload
 			}
 			return v.SendMessagePayload, v.NextMessageIndex, nil
 		case *ConnectionStatusEvent:
-			if !v.IsConnected {
-				return nil, nil, errConnectionLost
-			}
+			// Update connection state but don't fail channel operations
+			t.isConnected = v.IsConnected
 		case *NewDocumentEvent:
 			// Ignore PKI document updates
 		default:
@@ -971,9 +1015,8 @@ func (t *ThinClient) ReadChannel(ctx context.Context, channelID uint16, messageI
 			}
 			return v.SendMessagePayload, v.NextMessageIndex, v.ReplyIndex, nil
 		case *ConnectionStatusEvent:
-			if !v.IsConnected {
-				return nil, nil, nil, errConnectionLost
-			}
+			// Update connection state but don't fail channel operations
+			t.isConnected = v.IsConnected
 		case *NewDocumentEvent:
 			// Ignore PKI document updates
 		default:
@@ -998,6 +1041,7 @@ func (t *ThinClient) CloseChannel(ctx context.Context, channelID uint16) error {
 }
 
 // SendChannelQuery sends a channel query (prepared by WriteChannel or ReadChannel) to the mixnet.
+// This method requires mixnet connectivity and will fail in offline mode.
 func (t *ThinClient) SendChannelQuery(
 	ctx context.Context,
 	channelID uint16,
@@ -1008,6 +1052,11 @@ func (t *ThinClient) SendChannelQuery(
 
 	if ctx == nil {
 		return errContextCannotBeNil
+	}
+
+	// Check if we're in offline mode
+	if !t.isConnected {
+		return errors.New("cannot send channel query in offline mode - daemon not connected to mixnet")
 	}
 
 	surbID := t.NewSURBID()
