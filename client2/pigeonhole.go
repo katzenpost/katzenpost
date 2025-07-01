@@ -58,6 +58,9 @@ type StoredEnvelopeData struct {
 // ChannelDescriptor describes a pigeonhole channel and supplies us with
 // everthing we need to read or write to the channel.
 type ChannelDescriptor struct {
+	// AppID tracks which thin client owns this channel for cleanup purposes
+	AppID *[AppIDLength]byte
+
 	StatefulWriter     *bacap.StatefulWriter
 	StatefulWriterLock sync.Mutex
 
@@ -290,6 +293,7 @@ func (d *Daemon) createWriteChannel(request *Request) {
 	channelID := d.generateUniqueChannelID()
 	d.newChannelMapLock.Lock()
 	d.newChannelMap[channelID] = &ChannelDescriptor{
+		AppID:               request.AppID,
 		StatefulWriter:      statefulWriter,
 		EnvelopeDescriptors: make(map[[hash.HashSize]byte]*EnvelopeDescriptor),
 		StoredEnvelopes:     make(map[[thin.MessageIDLength]byte]*StoredEnvelopeData),
@@ -522,6 +526,7 @@ func (d *Daemon) createReadChannel(request *Request) {
 	channelID := d.generateUniqueChannelID()
 	d.newChannelMapLock.Lock()
 	d.newChannelMap[channelID] = &ChannelDescriptor{
+		AppID:               request.AppID,
 		StatefulReader:      statefulReader,
 		EnvelopeDescriptors: make(map[[hash.HashSize]byte]*EnvelopeDescriptor),
 		StoredEnvelopes:     make(map[[thin.MessageIDLength]byte]*StoredEnvelopeData),
@@ -767,75 +772,70 @@ func (d *Daemon) closeChannel(request *Request) {
 func (d *Daemon) cleanupChannelsForAppID(appID *[AppIDLength]byte) {
 	d.log.Infof("cleanupChannelsForAppID: cleaning up channels for App ID %x", appID[:])
 
-	// Find all channels that belong to this App ID by checking channel replies
-	// Since channel replies contain the App ID, we can use this to identify channels
-	channelsToCleanup := make(map[uint16]bool)
-
+	// Acquire all locks in a consistent order to prevent deadlocks
+	// Order: channelReplies -> newSurbIDToChannelMap -> newChannelMap
 	d.channelRepliesLock.Lock()
+	d.newSurbIDToChannelMapLock.Lock()
+	d.newChannelMapLock.Lock()
+	defer d.newChannelMapLock.Unlock()
+	defer d.newSurbIDToChannelMapLock.Unlock()
+	defer d.channelRepliesLock.Unlock()
+
+	// Find all channels and SURB IDs that belong to this App ID
+	channelsToCleanup := make(map[uint16]bool)
+	surbIDsToDelete := make([][sphinxConstants.SURBIDLength]byte, 0)
+
+	// First pass: find all channels that belong to this App ID directly
+	for channelID, channelDesc := range d.newChannelMap {
+		if channelDesc.AppID != nil && *channelDesc.AppID == *appID {
+			channelsToCleanup[channelID] = true
+		}
+	}
+
+	// Second pass: identify all SURB IDs that belong to this App ID
 	for surbID, replyDesc := range d.channelReplies {
 		if replyDesc.appID != nil && *replyDesc.appID == *appID {
-			// Find the channel ID for this SURB ID
-			d.newSurbIDToChannelMapLock.RLock()
+			surbIDsToDelete = append(surbIDsToDelete, surbID)
+			// Also mark any channels found via SURB mappings (defensive)
 			if channelID, exists := d.newSurbIDToChannelMap[surbID]; exists {
 				channelsToCleanup[channelID] = true
 			}
-			d.newSurbIDToChannelMapLock.RUnlock()
 		}
 	}
-	d.channelRepliesLock.Unlock()
 
-	if len(channelsToCleanup) == 0 {
-		d.log.Debugf("cleanupChannelsForAppID: no channels found for App ID %x", appID[:])
+	if len(channelsToCleanup) == 0 && len(surbIDsToDelete) == 0 {
+		d.log.Debugf("cleanupChannelsForAppID: no channels or SURB mappings found for App ID %x", appID[:])
 		return
 	}
 
-	d.log.Infof("cleanupChannelsForAppID: found %d channels to clean up for App ID %x", len(channelsToCleanup), appID[:])
+	d.log.Infof("cleanupChannelsForAppID: found %d channels and %d SURB mappings to clean up for App ID %x",
+		len(channelsToCleanup), len(surbIDsToDelete), appID[:])
 
-	// Clean up each channel
+	// Clean up all identified resources atomically
+
+	// Remove channels from channel map
 	for channelID := range channelsToCleanup {
-		d.log.Debugf("cleanupChannelsForAppID: cleaning up channel %d for App ID %x", channelID, appID[:])
-
-		// Remove from channel map
-		d.newChannelMapLock.Lock()
-		_, ok := d.newChannelMap[channelID]
-		if ok {
+		if _, exists := d.newChannelMap[channelID]; exists {
 			delete(d.newChannelMap, channelID)
-		}
-		d.newChannelMapLock.Unlock()
-
-		if !ok {
-			d.log.Debugf("cleanupChannelsForAppID: channel %d not found in channel map (already cleaned up)", channelID)
-			continue
-		}
-
-		// Clean up any stored SURB ID mappings for this channel
-		d.newSurbIDToChannelMapLock.Lock()
-		toDelete := make([][sphinxConstants.SURBIDLength]byte, 0)
-		for surbID, mappedChannelID := range d.newSurbIDToChannelMap {
-			if mappedChannelID == channelID {
-				toDelete = append(toDelete, surbID)
-			}
-		}
-		for _, surbID := range toDelete {
-			delete(d.newSurbIDToChannelMap, surbID)
-		}
-		d.newSurbIDToChannelMapLock.Unlock()
-
-		d.log.Debugf("cleanupChannelsForAppID: successfully cleaned up channel %d for App ID %x", channelID, appID[:])
-	}
-
-	// Clean up any channel replies for this App ID
-	d.channelRepliesLock.Lock()
-	toDeleteReplies := make([][sphinxConstants.SURBIDLength]byte, 0)
-	for surbID, replyDesc := range d.channelReplies {
-		if replyDesc.appID != nil && *replyDesc.appID == *appID {
-			toDeleteReplies = append(toDeleteReplies, surbID)
+			d.log.Debugf("cleanupChannelsForAppID: removed channel %d for App ID %x", channelID, appID[:])
 		}
 	}
-	for _, surbID := range toDeleteReplies {
+
+	// Remove SURB ID to channel mappings for these channels
+	surbIDMappingsToDelete := make([][sphinxConstants.SURBIDLength]byte, 0)
+	for surbID, channelID := range d.newSurbIDToChannelMap {
+		if channelsToCleanup[channelID] {
+			surbIDMappingsToDelete = append(surbIDMappingsToDelete, surbID)
+		}
+	}
+	for _, surbID := range surbIDMappingsToDelete {
+		delete(d.newSurbIDToChannelMap, surbID)
+	}
+
+	// Remove channel replies for this App ID
+	for _, surbID := range surbIDsToDelete {
 		delete(d.channelReplies, surbID)
 	}
-	d.channelRepliesLock.Unlock()
 
 	d.log.Infof("cleanupChannelsForAppID: completed cleanup of %d channels for App ID %x", len(channelsToCleanup), appID[:])
 }
