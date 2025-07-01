@@ -12,7 +12,7 @@ require (
 	github.com/grafana/pyroscope-go v1.2.2
 	github.com/jackc/pgx v3.6.2+incompatible
 	github.com/katzenpost/circl v1.3.9-0.20240222183521-1cd9a34e9a0c
-	github.com/katzenpost/hpqc v0.0.66
+	github.com/katzenpost/hpqc v0.0.67
 	github.com/katzenpost/nyquist v0.0.10
 	github.com/linxGnu/grocksdb v1.10.1
 	github.com/prometheus/client_golang v1.22.0
