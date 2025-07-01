@@ -761,3 +761,81 @@ func (d *Daemon) closeChannel(request *Request) {
 
 	d.log.Infof("closeChannel: successfully closed channel %d", channelID)
 }
+
+// cleanupChannelsForAppID cleans up all channels associated with a given App ID
+// This is called when a thin client disconnects to ensure proper cleanup
+func (d *Daemon) cleanupChannelsForAppID(appID *[AppIDLength]byte) {
+	d.log.Infof("cleanupChannelsForAppID: cleaning up channels for App ID %x", appID[:])
+
+	// Find all channels that belong to this App ID by checking channel replies
+	// Since channel replies contain the App ID, we can use this to identify channels
+	channelsToCleanup := make(map[uint16]bool)
+
+	d.channelRepliesLock.Lock()
+	for surbID, replyDesc := range d.channelReplies {
+		if replyDesc.appID != nil && *replyDesc.appID == *appID {
+			// Find the channel ID for this SURB ID
+			d.newSurbIDToChannelMapLock.RLock()
+			if channelID, exists := d.newSurbIDToChannelMap[surbID]; exists {
+				channelsToCleanup[channelID] = true
+			}
+			d.newSurbIDToChannelMapLock.RUnlock()
+		}
+	}
+	d.channelRepliesLock.Unlock()
+
+	if len(channelsToCleanup) == 0 {
+		d.log.Debugf("cleanupChannelsForAppID: no channels found for App ID %x", appID[:])
+		return
+	}
+
+	d.log.Infof("cleanupChannelsForAppID: found %d channels to clean up for App ID %x", len(channelsToCleanup), appID[:])
+
+	// Clean up each channel
+	for channelID := range channelsToCleanup {
+		d.log.Debugf("cleanupChannelsForAppID: cleaning up channel %d for App ID %x", channelID, appID[:])
+
+		// Remove from channel map
+		d.newChannelMapLock.Lock()
+		_, ok := d.newChannelMap[channelID]
+		if ok {
+			delete(d.newChannelMap, channelID)
+		}
+		d.newChannelMapLock.Unlock()
+
+		if !ok {
+			d.log.Debugf("cleanupChannelsForAppID: channel %d not found in channel map (already cleaned up)", channelID)
+			continue
+		}
+
+		// Clean up any stored SURB ID mappings for this channel
+		d.newSurbIDToChannelMapLock.Lock()
+		toDelete := make([][sphinxConstants.SURBIDLength]byte, 0)
+		for surbID, mappedChannelID := range d.newSurbIDToChannelMap {
+			if mappedChannelID == channelID {
+				toDelete = append(toDelete, surbID)
+			}
+		}
+		for _, surbID := range toDelete {
+			delete(d.newSurbIDToChannelMap, surbID)
+		}
+		d.newSurbIDToChannelMapLock.Unlock()
+
+		d.log.Debugf("cleanupChannelsForAppID: successfully cleaned up channel %d for App ID %x", channelID, appID[:])
+	}
+
+	// Clean up any channel replies for this App ID
+	d.channelRepliesLock.Lock()
+	toDeleteReplies := make([][sphinxConstants.SURBIDLength]byte, 0)
+	for surbID, replyDesc := range d.channelReplies {
+		if replyDesc.appID != nil && *replyDesc.appID == *appID {
+			toDeleteReplies = append(toDeleteReplies, surbID)
+		}
+	}
+	for _, surbID := range toDeleteReplies {
+		delete(d.channelReplies, surbID)
+	}
+	d.channelRepliesLock.Unlock()
+
+	d.log.Infof("cleanupChannelsForAppID: completed cleanup of %d channels for App ID %x", len(channelsToCleanup), appID[:])
+}
