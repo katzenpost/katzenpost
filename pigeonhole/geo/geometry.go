@@ -14,25 +14,34 @@ import (
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 )
 
-// Geometry provides mathematically precise geometry calculations using
-// trunnel's fixed binary format. No more variable overhead!
+// Geometry is a "pigeonhole geometry" object which provides mathematically
+// precise geometry calculations using trunnel's fixed binary format.
 //
 // It supports 3 distinct use cases:
-// 1. Given BoxPayloadLength → derive all envelope sizes
-// 2. Given precomputed Geometry → derive accommodating Sphinx Geometry
-// 3. Given Sphinx Geometry constraint → derive optimal Geometry
+// 1. Given MaxPlaintextPayloadLength → compute a Pigeonhole Geometry which can derive all envelope sizes
+// 2. Given precomputed Pigeonhole Geometry → derive accommodating Sphinx Geometry
+// 3. Given Sphinx Geometry constraint → derive optimal Pigeonhole Geometry
 type Geometry struct {
-	// Core payload size
-	BoxPayloadLength int
+	// MaxPlaintextPayloadLength is the maximum usable plaintext payload size within a Box
+	MaxPlaintextPayloadLength int
 
-	// Calculated envelope sizes
-	CourierQueryReadLength       int
-	CourierQueryWriteLength      int
-	CourierQueryReplyReadLength  int
+	// CourierQueryReadLength is the size of a CourierQuery containing a ReplicaRead
+	CourierQueryReadLength int
+
+	// CourierQueryWriteLength is the size of a CourierQuery containing a ReplicaWrite
+	CourierQueryWriteLength int
+
+	// CourierQueryReplyReadLength is the size of a CourierQueryReply containing a ReplicaReadReply
+	CourierQueryReplyReadLength int
+
+	// CourierQueryReplyWriteLength is the size of a CourierQueryReply containing a ReplicaWriteReply
 	CourierQueryReplyWriteLength int
 
-	// Crypto scheme names
-	NIKEName            string
+	// NIKEName specifies the NIKE scheme to be used in our MKEM scheme for encrypting
+	// to multiple storage replicas
+	NIKEName string
+
+	// SignatureSchemeName specifies the signature scheme used for BACAP
 	SignatureSchemeName string
 }
 
@@ -105,15 +114,15 @@ func calculateCourierQueryWrapperOverhead(_ int, _ nike.Scheme) int {
 	return queryTypeSize
 }
 
-// NewGeometry creates a Geometry from BoxPayloadLength (Use Case 1)
+// NewGeometry creates a Geometry from MaxPlaintextPayloadLength (Use Case 1)
 //
 // This is the most common use case: given a desired payload size, calculate
 // all the envelope sizes with mathematical precision using trunnel's fixed format.
 func NewGeometry(boxPayloadLength int, nikeScheme nike.Scheme) *Geometry {
 	g := &Geometry{
-		BoxPayloadLength:    boxPayloadLength,
-		NIKEName:            nikeScheme.Name(),
-		SignatureSchemeName: signatureSchemeName,
+		MaxPlaintextPayloadLength: boxPayloadLength,
+		NIKEName:                  nikeScheme.Name(),
+		SignatureSchemeName:       signatureSchemeName,
 	}
 
 	// Calculate all envelope sizes with perfect precision!
@@ -128,13 +137,13 @@ func NewGeometry(boxPayloadLength int, nikeScheme nike.Scheme) *Geometry {
 // NewGeometryFromSphinx creates a Geometry from Sphinx constraints (Use Case 3)
 //
 // Given a Sphinx geometry with limited UserForwardPayloadLength, find the optimal
-// BoxPayloadLength that maximizes usage of the available space by directly calculating
+// MaxPlaintextPayloadLength that maximizes usage of the available space by directly calculating
 // the overhead layers and subtracting them from the target size.
 func NewGeometryFromSphinx(sphinxGeo *geo.Geometry, nikeScheme nike.Scheme) (*Geometry, error) {
 	targetSize := sphinxGeo.UserForwardPayloadLength
 
 	// Calculate all overhead layers for CourierQueryWrite (the largest envelope type)
-	// Working backwards from CourierQuery to BoxPayloadLength:
+	// Working backwards from CourierQuery to MaxPlaintextPayloadLength:
 
 	// 1. CourierQuery wrapper overhead
 	courierQueryOverhead := 1 // QueryType discriminator
@@ -155,11 +164,14 @@ func NewGeometryFromSphinx(sphinxGeo *geo.Geometry, nikeScheme nike.Scheme) (*Ge
 	// 6. BACAP encryption overhead
 	bacapOverhead := bacapEncryptionOverhead
 
+	// 7. Length prefix overhead for padded payloads
+	lengthPrefixOverhead := lengthPrefixSize
+
 	// Calculate total overhead
 	totalOverhead := courierQueryOverhead + courierEnvelopeOverhead + mkemOverhead +
-		replicaInnerMessageOverhead + replicaWriteOverhead + bacapOverhead
+		replicaInnerMessageOverhead + replicaWriteOverhead + bacapOverhead + lengthPrefixOverhead
 
-	// Calculate the BoxPayloadLength by subtracting all overheads from target
+	// Calculate the MaxPlaintextPayloadLength by subtracting all overheads from target
 	boxPayloadLength := targetSize - totalOverhead
 
 	if boxPayloadLength <= 0 {
@@ -217,8 +229,8 @@ func (g *Geometry) Validate() error {
 	if g == nil {
 		return errors.New("geometry is nil")
 	}
-	if g.BoxPayloadLength <= 0 {
-		return errors.New("BoxPayloadLength must be positive")
+	if g.MaxPlaintextPayloadLength <= 0 {
+		return errors.New("MaxPlaintextPayloadLength must be positive")
 	}
 	if g.NIKEName == "" {
 		return errors.New("NIKEName must be set")
@@ -234,20 +246,20 @@ func (g *Geometry) Validate() error {
 
 // PaddedPayloadLength returns the payload size after adding length prefix
 func (g *Geometry) PaddedPayloadLength() int {
-	return g.BoxPayloadLength + lengthPrefixSize
+	return g.MaxPlaintextPayloadLength + lengthPrefixSize
 }
 
 // String returns a human-readable representation
 func (g *Geometry) String() string {
 	return fmt.Sprintf(`Geometry:
-  BoxPayloadLength: %d bytes
-  CourierQueryReadLength: %d bytes  
+  MaxPlaintextPayloadLength: %d bytes
+  CourierQueryReadLength: %d bytes
   CourierQueryWriteLength: %d bytes
   CourierQueryReplyReadLength: %d bytes
   CourierQueryReplyWriteLength: %d bytes
   NIKEName: %s
   SignatureSchemeName: %s`,
-		g.BoxPayloadLength,
+		g.MaxPlaintextPayloadLength,
 		g.CourierQueryReadLength,
 		g.CourierQueryWriteLength,
 		g.CourierQueryReplyReadLength,
@@ -286,8 +298,8 @@ func (g *Geometry) calculateCourierQueryReadLength() int {
 func (g *Geometry) calculateCourierQueryWriteLength() int {
 	nikeScheme := g.NIKEScheme()
 
-	// BACAP-encrypted payload (padded payload already includes length prefix + BACAP overhead)
-	bacapPayloadSize := g.BoxPayloadLength + bacapEncryptionOverhead
+	// BACAP-encrypted payload (MaxPlaintextPayloadLength + length prefix + BACAP overhead)
+	bacapPayloadSize := g.MaxPlaintextPayloadLength + lengthPrefixSize + bacapEncryptionOverhead
 
 	// ReplicaWrite containing the BACAP payload
 	// BoxID + Signature + PayloadLen + BACAP payload (using actual scheme sizes)
@@ -317,7 +329,7 @@ func (g *Geometry) calculateCourierQueryReplyReadLength() int {
 	// ReplicaReadReply containing the user payload
 	// BoxID + Success + PayloadLen + Payload + Signature (using BACAP constants)
 	replicaReadReplyFixedSize := bacap.BoxIDSize + successFieldSize + payloadLenFieldSize + bacap.SignatureSize // BoxID + Success + PayloadLen + Signature
-	replicaReadReplySize := replicaReadReplyFixedSize + g.BoxPayloadLength
+	replicaReadReplySize := replicaReadReplyFixedSize + g.MaxPlaintextPayloadLength
 
 	// ReplicaMessageReplyInnerMessage wrapping ReplicaReadReply (calculate dynamically)
 	replicaMessageReplySize := messageTypeSize + replicaReadReplySize // MessageType + ReplicaReadReply
@@ -351,4 +363,9 @@ func (g *Geometry) calculateCourierQueryReplyWriteLength() int {
 
 	// CourierQueryReply wrapping CourierEnvelopeReply (no ErrorMsg for success, calculate dynamically)
 	return errorLenFieldSize + courierEnvelopeReplySize
+}
+
+// CalculateBoxCiphertextLength calculates the ciphertext size for a Box.
+func (g *Geometry) CalculateBoxCiphertextLength() int {
+	return g.MaxPlaintextPayloadLength + lengthPrefixSize + bacapEncryptionOverhead
 }

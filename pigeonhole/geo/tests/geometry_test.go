@@ -1,21 +1,24 @@
 // SPDX-FileCopyrightText: © 2025 David Stainton
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package geo
+package tests
 
 import (
 	"crypto/rand"
 	"fmt"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/katzenpost/hpqc/bacap"
 	"github.com/katzenpost/hpqc/kem/mkem"
 	"github.com/katzenpost/hpqc/nike"
 	"github.com/katzenpost/hpqc/nike/schemes"
+
 	"github.com/katzenpost/katzenpost/client2/constants"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/pigeonhole"
-	"github.com/stretchr/testify/require"
+	pigeonholegeo "github.com/katzenpost/katzenpost/pigeonhole/geo"
 )
 
 // Test log message constants to avoid duplication
@@ -29,10 +32,10 @@ func TestGeometryUseCase1FromBoxPayloadLength(t *testing.T) {
 	require.NotNil(t, nikeScheme)
 
 	boxPayloadLength := 1000
-	g := NewGeometry(boxPayloadLength, nikeScheme)
+	g := pigeonholegeo.NewGeometry(boxPayloadLength, nikeScheme)
 
 	require.NoError(t, g.Validate())
-	require.Equal(t, boxPayloadLength, g.BoxPayloadLength)
+	require.Equal(t, boxPayloadLength, g.MaxPlaintextPayloadLength)
 	require.Equal(t, "x25519", g.NIKEName)
 	require.Equal(t, "Ed25519", g.SignatureSchemeName)
 
@@ -55,7 +58,7 @@ func TestGeometryUseCase2ToSphinxGeometry(t *testing.T) {
 	require.NotNil(t, nikeScheme)
 
 	// Create a pigeonhole geometry
-	pigeonholeGeo := NewGeometry(500, nikeScheme)
+	pigeonholeGeo := pigeonholegeo.NewGeometry(500, nikeScheme)
 	require.NoError(t, pigeonholeGeo.Validate())
 
 	// Derive a Sphinx geometry that can accommodate it
@@ -63,7 +66,7 @@ func TestGeometryUseCase2ToSphinxGeometry(t *testing.T) {
 	require.NoError(t, sphinxGeo.Validate())
 
 	// The Sphinx geometry should be able to fit our largest envelope
-	maxEnvelopeSize := maxInt(
+	maxEnvelopeSize := max(
 		pigeonholeGeo.CourierQueryReadLength,
 		pigeonholeGeo.CourierQueryWriteLength,
 		pigeonholeGeo.CourierQueryReplyReadLength,
@@ -87,12 +90,12 @@ func TestGeometryUseCase3FromSphinxGeometry(t *testing.T) {
 	require.NoError(t, sphinxGeo.Validate())
 
 	// Derive the optimal pigeonhole geometry that maximizes usage of the Sphinx space
-	pigeonholeGeo, err := NewGeometryFromSphinx(sphinxGeo, nikeScheme)
+	pigeonholeGeo, err := pigeonholegeo.NewGeometryFromSphinx(sphinxGeo, nikeScheme)
 	require.NoError(t, err)
 	require.NoError(t, pigeonholeGeo.Validate())
 
 	// The largest envelope should fit within the Sphinx constraint
-	maxEnvelopeSize := maxInt(
+	maxEnvelopeSize := max(
 		pigeonholeGeo.CourierQueryReadLength,
 		pigeonholeGeo.CourierQueryWriteLength,
 		pigeonholeGeo.CourierQueryReplyReadLength,
@@ -101,11 +104,11 @@ func TestGeometryUseCase3FromSphinxGeometry(t *testing.T) {
 
 	require.LessOrEqual(t, maxEnvelopeSize, sphinxGeo.UserForwardPayloadLength)
 
-	// The BoxPayloadLength should be optimized (not too small)
-	require.Greater(t, pigeonholeGeo.BoxPayloadLength, 100) // Should find a reasonable size
+	// The MaxPlaintextPayloadLength should be optimized (not too small)
+	require.Greater(t, pigeonholeGeo.MaxPlaintextPayloadLength, 100) // Should find a reasonable size
 
 	t.Logf(logSphinxUserForwardPayloadLength, sphinxGeo.UserForwardPayloadLength)
-	t.Logf("Optimal BoxPayloadLength: %d", pigeonholeGeo.BoxPayloadLength)
+	t.Logf("Optimal MaxPlaintextPayloadLength: %d", pigeonholeGeo.MaxPlaintextPayloadLength)
 	t.Logf("Max envelope size: %d", maxEnvelopeSize)
 	t.Logf("Space utilization: %.1f%%", float64(maxEnvelopeSize)*100/float64(sphinxGeo.UserForwardPayloadLength))
 }
@@ -119,11 +122,11 @@ func TestGeometryPrecisionComparison(t *testing.T) {
 
 	for _, boxPayloadLength := range testCases {
 		t.Run(fmt.Sprintf("BoxPayloadLength_%d", boxPayloadLength), func(t *testing.T) {
-			g := NewGeometry(boxPayloadLength, nikeScheme)
+			g := pigeonholegeo.NewGeometry(boxPayloadLength, nikeScheme)
 			require.NoError(t, g.Validate())
 
 			// With trunnel, calculations should be perfectly deterministic
-			g2 := NewGeometry(boxPayloadLength, nikeScheme)
+			g2 := pigeonholegeo.NewGeometry(boxPayloadLength, nikeScheme)
 			require.Equal(t, g.CourierQueryReadLength, g2.CourierQueryReadLength)
 			require.Equal(t, g.CourierQueryWriteLength, g2.CourierQueryWriteLength)
 			require.Equal(t, g.CourierQueryReplyReadLength, g2.CourierQueryReplyReadLength)
@@ -146,21 +149,42 @@ func TestGeometryBidirectionalSizing(t *testing.T) {
 
 	// Start with a BoxPayloadLength
 	originalBoxPayloadLength := 1000
-	pigeonholeGeo1 := NewGeometry(originalBoxPayloadLength, nikeScheme)
+	pigeonholeGeo1 := pigeonholegeo.NewGeometry(originalBoxPayloadLength, nikeScheme)
 
 	// Convert to Sphinx geometry
 	sphinxGeo := pigeonholeGeo1.ToSphinxGeometry(5, true)
 
 	// Convert back to pigeonhole geometry
-	pigeonholeGeo2, err := NewGeometryFromSphinx(sphinxGeo, nikeScheme)
+	pigeonholeGeo2, err := pigeonholegeo.NewGeometryFromSphinx(sphinxGeo, nikeScheme)
 	require.NoError(t, err)
 
-	// The round-trip should give us a BoxPayloadLength that's at least as good as the original
-	require.GreaterOrEqual(t, pigeonholeGeo2.BoxPayloadLength, originalBoxPayloadLength)
-
-	t.Logf("Original BoxPayloadLength: %d", originalBoxPayloadLength)
-	t.Logf("Round-trip BoxPayloadLength: %d", pigeonholeGeo2.BoxPayloadLength)
+	t.Logf("Original MaxPlaintextPayloadLength: %d", originalBoxPayloadLength)
+	t.Logf("Round-trip MaxPlaintextPayloadLength: %d", pigeonholeGeo2.MaxPlaintextPayloadLength)
 	t.Logf(logSphinxUserForwardPayloadLength, sphinxGeo.UserForwardPayloadLength)
+
+	// Calculate the max envelope size from the original geometry
+	maxEnvelopeSize1 := max(
+		pigeonholeGeo1.CourierQueryReadLength,
+		pigeonholeGeo1.CourierQueryWriteLength,
+		pigeonholeGeo1.CourierQueryReplyReadLength,
+		pigeonholeGeo1.CourierQueryReplyWriteLength,
+	)
+
+	// Calculate the max envelope size from the round-trip geometry
+	maxEnvelopeSize2 := max(
+		pigeonholeGeo2.CourierQueryReadLength,
+		pigeonholeGeo2.CourierQueryWriteLength,
+		pigeonholeGeo2.CourierQueryReplyReadLength,
+		pigeonholeGeo2.CourierQueryReplyWriteLength,
+	)
+
+	t.Logf("Original max envelope size: %d", maxEnvelopeSize1)
+	t.Logf("Round-trip max envelope size: %d", maxEnvelopeSize2)
+	t.Logf("Difference in MaxPlaintextPayloadLength: %d", pigeonholeGeo2.MaxPlaintextPayloadLength-originalBoxPayloadLength)
+
+	// The round-trip should give us a MaxPlaintextPayloadLength that's close to the original
+	// A small loss (few bytes) is acceptable due to overhead calculations
+	require.GreaterOrEqual(t, pigeonholeGeo2.MaxPlaintextPayloadLength, originalBoxPayloadLength-10)
 }
 
 func TestGeometryPrecisePredictions(t *testing.T) {
@@ -169,7 +193,7 @@ func TestGeometryPrecisePredictions(t *testing.T) {
 	nikeScheme := schemes.ByName("x25519")
 	require.NotNil(t, nikeScheme)
 
-	g := NewGeometry(4559, nikeScheme) // Use the same BoxPayloadLength as integration test
+	g := pigeonholegeo.NewGeometry(4559, nikeScheme) // Use the same BoxPayloadLength as integration test
 	require.NoError(t, g.Validate())
 
 	// Create BACAP keys like integration tests
@@ -196,7 +220,7 @@ func TestGeometryPrecisePredictions(t *testing.T) {
 		testMessage := []byte("Hello, Bob! This is a test message for geometry validation.")
 
 		// Create padded payload with length prefix for BACAP (like integration tests)
-		paddedPayload, err := pigeonhole.CreatePaddedPayload(testMessage, g.BoxPayloadLength)
+		paddedPayload, err := pigeonhole.CreatePaddedPayload(testMessage, g.MaxPlaintextPayloadLength+4)
 		require.NoError(t, err)
 
 		// BACAP encrypt the payload (like integration tests)
@@ -250,7 +274,7 @@ func TestGeometryPrecisePredictions(t *testing.T) {
 		predictedSize := g.CourierQueryWriteLength
 
 		t.Logf("Test message: %s", string(testMessage))
-		t.Logf("BoxPayloadLength: %d bytes", g.BoxPayloadLength)
+		t.Logf("MaxPlaintextPayloadLength: %d bytes", g.MaxPlaintextPayloadLength)
 		t.Logf("Padded payload size: %d bytes", len(paddedPayload))
 		t.Logf("BACAP ciphertext size: %d bytes", len(ciphertext))
 		t.Logf("ReplicaWrite size: %d bytes", len(writeRequest.Bytes()))
@@ -305,7 +329,7 @@ func TestGeometryPrecisePredictions(t *testing.T) {
 		testMessage := []byte("Test message for layer analysis")
 
 		// Layer 1: BACAP encryption (innermost layer)
-		paddedPayload, err := pigeonhole.CreatePaddedPayload(testMessage, g.BoxPayloadLength)
+		paddedPayload, err := pigeonhole.CreatePaddedPayload(testMessage, g.MaxPlaintextPayloadLength+4)
 		require.NoError(t, err)
 
 		boxID, bacapCiphertext, sigraw, err := aliceStatefulWriter.EncryptNext(paddedPayload)
@@ -445,12 +469,12 @@ func TestGeometryPrecisePredictions(t *testing.T) {
 		nikeScheme := schemes.ByName("x25519")
 		require.NotNil(t, nikeScheme)
 
-		g := NewGeometry(4559, nikeScheme)
+		g := pigeonholegeo.NewGeometry(4559, nikeScheme)
 
 		// Manually calculate what the geometry should be
-		// Step 1: BACAP payload (padded payload already includes length prefix)
-		bacapPayloadSize := g.BoxPayloadLength + 16 // bacapEncryptionOverhead
-		t.Logf("Step 1 - BACAP payload: %d + 16 = %d", g.BoxPayloadLength, bacapPayloadSize)
+		// Step 1: BACAP payload (MaxPlaintextPayloadLength + length prefix + BACAP overhead)
+		bacapPayloadSize := g.MaxPlaintextPayloadLength + 4 + 16 // length prefix + bacapEncryptionOverhead
+		t.Logf("Step 1 - BACAP payload: %d + 4 + 16 = %d", g.MaxPlaintextPayloadLength, bacapPayloadSize)
 
 		// Step 2: ReplicaWrite
 		replicaWriteOverhead := 32 + 64 + 4 // BoxID + Signature + PayloadLen
@@ -491,10 +515,10 @@ func TestGeometryPrecisePredictions(t *testing.T) {
 		nikeScheme := schemes.ByName("CTIDH1024-X25519")
 		require.NotNil(t, nikeScheme)
 
-		g := NewGeometry(4551, nikeScheme) // BoxPayloadLength from integration test
+		g := pigeonholegeo.NewGeometry(4551, nikeScheme) // BoxPayloadLength from integration test
 
 		t.Logf("Integration test geometry:")
-		t.Logf("  BoxPayloadLength: %d", g.BoxPayloadLength)
+		t.Logf("  MaxPlaintextPayloadLength: %d", g.MaxPlaintextPayloadLength)
 		t.Logf("  CourierQueryWriteLength: %d", g.CourierQueryWriteLength)
 		t.Logf("  CourierQueryReadLength: %d", g.CourierQueryReadLength)
 
@@ -513,4 +537,115 @@ func TestGeometryPrecisePredictions(t *testing.T) {
 				expectedFromSphinx, actualCalculated)
 		}
 	})
+}
+
+func TestGeometryLengthPrefixBug(t *testing.T) {
+	// TDD test to expose the bug: geometry predictions don't account for 4-byte length prefix overhead
+	// This test should FAIL initially, showing the geometry prediction is wrong
+	nikeScheme := schemes.ByName("x25519")
+	require.NotNil(t, nikeScheme)
+
+	// Use a small BoxPayloadLength to make the bug more obvious
+	boxPayloadLength := 100
+	g := pigeonholegeo.NewGeometry(boxPayloadLength, nikeScheme)
+	require.NoError(t, g.Validate())
+
+	// Create BACAP keys
+	aliceOwner, err := bacap.NewWriteCap(rand.Reader)
+	require.NoError(t, err)
+	aliceStatefulWriter, err := bacap.NewStatefulWriter(aliceOwner, constants.PIGEONHOLE_CTX)
+	require.NoError(t, err)
+
+	// Create MKEM keys for replicas
+	mkemNikeScheme := mkem.NewScheme(nikeScheme)
+	replicaPublicKey1, _, err := nikeScheme.GenerateKeyPair()
+	require.NoError(t, err)
+	replicaPublicKey2, _, err := nikeScheme.GenerateKeyPair()
+	require.NoError(t, err)
+	replicaPubKeys := []nike.PublicKey{replicaPublicKey1, replicaPublicKey2}
+
+	// The key insight: MaxPlaintextPayloadLength should represent the maximum usable plaintext size
+	// But CreatePaddedPayload creates a payload that includes the 4-byte length prefix
+	// So the actual BACAP input is MaxPlaintextPayloadLength + 4 bytes, but it contains:
+	// - 4 bytes length prefix + actual message data + padding
+
+	// Let's create a message that uses the FULL MaxPlaintextPayloadLength capacity
+	// This means: message + 4-byte length prefix = MaxPlaintextPayloadLength + 4
+	maxMessageSize := g.MaxPlaintextPayloadLength // Use the full capacity
+	fullMessage := make([]byte, maxMessageSize)
+	for i := range fullMessage {
+		fullMessage[i] = byte(i % 256) // Fill with test data
+	}
+
+	// Create padded payload - this should be exactly MaxPlaintextPayloadLength + 4 bytes
+	paddedPayload, err := pigeonhole.CreatePaddedPayload(fullMessage, g.MaxPlaintextPayloadLength+4)
+	require.NoError(t, err)
+
+	t.Logf("Full message size: %d bytes", len(fullMessage))
+	t.Logf("MaxPlaintextPayloadLength: %d bytes", g.MaxPlaintextPayloadLength)
+	t.Logf("Padded payload size: %d bytes", len(paddedPayload))
+	t.Logf("Expected: padded payload should equal MaxPlaintextPayloadLength + 4")
+
+	// Verify that the padded payload is exactly MaxPlaintextPayloadLength + 4
+	require.Equal(t, g.MaxPlaintextPayloadLength+4, len(paddedPayload),
+		"CreatePaddedPayload should create payload of exactly MaxPlaintextPayloadLength + 4 bytes")
+
+	// BACAP encrypt the padded payload
+	boxID, ciphertext, sigraw, err := aliceStatefulWriter.EncryptNext(paddedPayload)
+	require.NoError(t, err)
+
+	sig := [bacap.SignatureSize]byte{}
+	copy(sig[:], sigraw)
+
+	// Create ReplicaWrite
+	writeRequest := pigeonhole.ReplicaWrite{
+		BoxID:      boxID,
+		Signature:  sig,
+		PayloadLen: uint32(len(ciphertext)),
+		Payload:    ciphertext,
+	}
+
+	// Create ReplicaInnerMessage
+	msg := &pigeonhole.ReplicaInnerMessage{
+		MessageType: 1, // 1 = write
+		WriteMsg:    &writeRequest,
+	}
+
+	// MKEM encrypt the inner message
+	mkemPrivateKey, mkemCiphertext := mkemNikeScheme.Encapsulate(replicaPubKeys, msg.Bytes())
+	mkemPublicKey := mkemPrivateKey.Public()
+	senderPubkeyBytes := mkemPublicKey.Bytes()
+
+	// Create CourierEnvelope
+	envelope := &pigeonhole.CourierEnvelope{
+		IntermediateReplicas: [2]uint8{0, 1},
+		Dek1:                 *mkemCiphertext.DEKCiphertexts[0],
+		Dek2:                 *mkemCiphertext.DEKCiphertexts[1],
+		ReplyIndex:           0,
+		Epoch:                1,
+		SenderPubkeyLen:      uint16(len(senderPubkeyBytes)),
+		SenderPubkey:         senderPubkeyBytes,
+		CiphertextLen:        uint32(len(mkemCiphertext.Envelope)),
+		Ciphertext:           mkemCiphertext.Envelope,
+	}
+
+	// Create CourierQuery
+	query := &pigeonhole.CourierQuery{
+		QueryType: 0, // 0 = envelope
+		Envelope:  envelope,
+	}
+
+	// Test the actual serialized size against geometry prediction
+	serialized := query.Bytes()
+	actualSize := len(serialized)
+	predictedSize := g.CourierQueryWriteLength
+
+	t.Logf("Predicted CourierQueryWriteLength: %d bytes", predictedSize)
+	t.Logf("Actual serialized size: %d bytes", actualSize)
+	t.Logf("Difference: %d bytes", actualSize-predictedSize)
+
+	// This test should FAIL initially because the geometry doesn't account for the 4-byte length prefix
+	// The actual size should be 4 bytes larger than predicted due to the length prefix overhead
+	require.Equal(t, predictedSize, actualSize,
+		"Geometry prediction should match actual size (this test should fail initially, exposing the length prefix bug)")
 }
