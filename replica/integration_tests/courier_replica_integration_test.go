@@ -732,7 +732,7 @@ func aliceComposesNextMessage(t *testing.T, message []byte, env *testEnvironment
 
 func aliceComposesNextMessageWithIsLast(t *testing.T, message []byte, env *testEnvironment, aliceStatefulWriter *bacap.StatefulWriter, isLast bool) *pigeonhole.CourierEnvelope {
 	// Create padded payload with length prefix for BACAP
-	paddedPayload, err := pigeonhole.CreatePaddedPayload(message, env.geometry.BoxPayloadLength)
+	paddedPayload, err := pigeonhole.CreatePaddedPayload(message, env.geometry.MaxPlaintextPayloadLength+4)
 	require.NoError(t, err)
 
 	boxID, ciphertext, sigraw, err := aliceStatefulWriter.EncryptNext(paddedPayload)
@@ -1153,7 +1153,7 @@ func createCourierEnvelopesForMessages(t *testing.T, env *testEnvironment, final
 		t.Logf("Creating CourierEnvelope %d for message: %s", i+1, string(message[:50])+"...")
 
 		// BACAP encrypt the message for the final destination sequence
-		paddedMessage, err := common.CreatePaddedPayload(message, env.geometry.BoxPayloadLength)
+		paddedMessage, err := common.CreatePaddedPayload(message, env.geometry.MaxPlaintextPayloadLength + 4)
 		require.NoError(t, err)
 
 		boxID, bacapCiphertext, sigraw, err := finalDestinationWriter.EncryptNext(paddedMessage)
@@ -1175,8 +1175,8 @@ func createCourierEnvelopesForMessages(t *testing.T, env *testEnvironment, final
 
 // chunkCourierEnvelopes CBOR encodes and chunks the CourierEnvelopes
 func chunkCourierEnvelopes(t *testing.T, env *testEnvironment, courierEnvelopes []*pigeonhole.CourierEnvelope) ([][]byte, []byte) {
-	boxPayloadLength := env.geometry.BoxPayloadLength
-	t.Logf("Using BoxPayloadLength: %d bytes", boxPayloadLength)
+	maxPlaintextPayloadLength := env.geometry.MaxPlaintextPayloadLength
+	t.Logf("Using MaxPlaintextPayloadLength: %d bytes", maxPlaintextPayloadLength)
 
 	var chunks [][]byte
 	var currentChunk []byte
@@ -1189,7 +1189,7 @@ func chunkCourierEnvelopes(t *testing.T, env *testEnvironment, courierEnvelopes 
 
 		remainingBytes := envelopeBytes
 		for len(remainingBytes) > 0 {
-			availableSpace := boxPayloadLength - len(currentChunk)
+			availableSpace := maxPlaintextPayloadLength - len(currentChunk)
 
 			if availableSpace <= 0 {
 				if len(currentChunk) > 0 {
@@ -1197,7 +1197,7 @@ func chunkCourierEnvelopes(t *testing.T, env *testEnvironment, courierEnvelopes 
 					t.Logf("Created chunk %d: %d bytes", len(chunks), len(currentChunk))
 				}
 				currentChunk = nil
-				availableSpace = boxPayloadLength
+				availableSpace = maxPlaintextPayloadLength
 			}
 
 			chunkSize := len(remainingBytes)

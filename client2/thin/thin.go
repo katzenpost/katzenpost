@@ -920,8 +920,8 @@ func (t *ThinClient) WriteChannel(ctx context.Context, channelID uint16, payload
 	}
 
 	// Validate payload size against pigeonhole geometry
-	if len(payload) > t.cfg.PigeonholeGeometry.BoxPayloadLength {
-		return nil, nil, fmt.Errorf("payload size %d exceeds maximum allowed size %d", len(payload), t.cfg.PigeonholeGeometry.BoxPayloadLength)
+	if len(payload) > t.cfg.PigeonholeGeometry.MaxPlaintextPayloadLength {
+		return nil, nil, fmt.Errorf("payload size %d exceeds maximum allowed size %d", len(payload), t.cfg.PigeonholeGeometry.MaxPlaintextPayloadLength)
 	}
 
 	req := &Request{
