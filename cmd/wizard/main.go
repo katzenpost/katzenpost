@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Copyright (C) 2025 David Stainton
+// SPDX-License-Identifier: AGPL-3.0-only
+
 package main
 
 import (
@@ -11,12 +14,14 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+
 	kempem "github.com/katzenpost/hpqc/kem/pem"
 	kemschemes "github.com/katzenpost/hpqc/kem/schemes"
 	nikepem "github.com/katzenpost/hpqc/nike/pem"
 	"github.com/katzenpost/hpqc/nike/schemes"
 	signpem "github.com/katzenpost/hpqc/sign/pem"
 	signschemes "github.com/katzenpost/hpqc/sign/schemes"
+
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/utils"
 )
