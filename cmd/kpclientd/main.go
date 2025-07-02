@@ -29,32 +29,28 @@ func newRootCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "kpclientd",
 		Short: "Katzenpost client daemon",
-		Long: `The Katzenpost client daemon provides a persistent client service for applications
+		Long: `The Katzenpost client daemon allows multiple client applications
 to send and receive messages through the mixnet. It maintains connections to the
-network, handles key management, and provides APIs for client applications.
+network, handles all the mixnet cryptography, Sphinx packet route selection,
+retransmissions, and SURB reply handling. Client applications connect to the
+daemon using a thin client library which provides a simple API for sending and
+receiving messages.
 
 Core functionality:
 • Maintains persistent connections to gateway nodes and directory authorities
 • Handles automatic key rotation and network topology updates
-• Provides REST API and Unix socket interfaces for client applications
 • Manages message queuing, retry logic, and delivery confirmations
 • Implements decoy traffic generation for traffic analysis resistance
 • Supports both reliable and unreliable message delivery modes
 
 The daemon is designed to run as a background service, allowing multiple client
-applications to share a single network connection and benefit from improved
-anonymity through traffic mixing.`,
-		Example: `  # Start client daemon with default configuration
-  kpclientd
-
-  # Start daemon with custom configuration file
+applications to share a single network connection.`,
+		Example: `
+  # Start daemon with configuration file
   kpclientd --config /etc/katzenpost/client.toml
 
   # Start daemon with specific config file (short form)
-  kpclientd -c /path/to/custom-client.toml
-
-  # Run daemon in foreground for debugging
-  kpclientd -c /etc/katzenpost/client.toml --foreground`,
+  kpclientd -c /path/to/custom-client.toml`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runClientDaemon(cfg)
 		},

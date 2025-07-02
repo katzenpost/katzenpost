@@ -68,10 +68,7 @@ Core responsibilities:
 The authority operates in a distributed voting system where multiple authorities
 must reach consensus before publishing network documents. This ensures no single
 authority can compromise the network's security or availability.`,
-		Example: `  # Start authority with default configuration
-  dirauth
-
-  # Start authority with custom configuration file
+		Example: `# Start authority with custom configuration file
   dirauth --config /etc/katzenpost/authority.toml
 
   # Start authority with specific config file (short form)
@@ -85,6 +82,8 @@ authority can compromise the network's security or availability.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runAuthority(cfg)
 		},
+		SilenceErrors: true,
+		SilenceUsage:  true,
 	}
 
 	// Configuration flags

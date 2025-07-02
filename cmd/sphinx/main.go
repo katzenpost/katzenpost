@@ -387,49 +387,6 @@ func main() {
 	common.ExecuteWithFang(rootCmd)
 }
 
-// handleUnknownCommand provides a more helpful error message for unknown commands
-func handleUnknownCommand(err error) {
-	// Extract the unknown command from the error message
-	errStr := err.Error()
-	var unknownCmd string
-
-	// Parse error message like: unknown command "meow" for "sphinx"
-	if strings.Contains(errStr, "unknown command") && strings.Contains(errStr, "\"") {
-		parts := strings.Split(errStr, "\"")
-		if len(parts) >= 2 {
-			unknownCmd = parts[1]
-		}
-	}
-
-	if unknownCmd == "" {
-		unknownCmd = "<unknown>"
-	}
-
-	fmt.Fprintf(os.Stderr, "Error: unknown command '%s'\n\n", unknownCmd)
-	fmt.Fprintf(os.Stderr, "Available commands:\n")
-
-	// List all available commands with their descriptions
-	availableCommands := []struct {
-		name string
-		desc string
-	}{
-		{"createGeometry", "Generate Sphinx geometry configuration"},
-		{"newpacket", "Create a new Sphinx packet"},
-		{"genNodeID", "Generate node ID from public key file"},
-		{"unwrap", "Unwrap/decrypt a Sphinx packet"},
-		{"newsurb", "Create a new Sphinx SURB (Single Use Reply Block)"},
-		{"newpacketfromsurb", "Create a new Sphinx packet from a SURB"},
-		{"decryptsurbpayload", "Decrypt a SURB payload using SURB keys"},
-	}
-
-	for _, cmd := range availableCommands {
-		fmt.Fprintf(os.Stderr, "  %-20s %s\n", cmd.name, cmd.desc)
-	}
-
-	fmt.Fprintf(os.Stderr, "\nRun 'sphinx --help' for more information about available commands.\n")
-	fmt.Fprintf(os.Stderr, "Run 'sphinx <command> --help' for help with a specific command.\n")
-}
-
 func createGeometryFromNIKE(nikeName string, userForwardPayloadLength, nrHops int) *geo.Geometry {
 	nikeScheme := schemes.ByName(nikeName)
 	if nikeScheme == nil {
