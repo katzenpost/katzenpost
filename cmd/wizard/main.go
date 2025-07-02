@@ -161,12 +161,6 @@ func (d menuDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 
 // Menu options
 var menuItems = []list.Item{
-	menuItem("Setup Directory Authority node"),
-	menuItem("Setup Mix node"),
-	menuItem("Setup Service node"),
-	menuItem("Setup Gateway node"),
-	menuItem("Setup storage Replica node"),
-	menuItem("Setup client"),
 	menuItem("Generate keys"),
 	menuItem("Generate sphinx geometry"),
 	menuItem("Exit"),
