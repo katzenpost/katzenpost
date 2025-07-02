@@ -772,6 +772,171 @@ func TestCourierEnvelopeCiphertextSizePredictions(t *testing.T) {
 	})
 }
 
+func TestEnvelopeReplySizePredictions(t *testing.T) {
+	// Test that the new EnvelopeReply helper methods give accurate predictions
+	nikeScheme := schemes.ByName("x25519")
+	require.NotNil(t, nikeScheme)
+
+	maxPlaintextPayloadLength := 500
+	g := pigeonholegeo.NewGeometry(maxPlaintextPayloadLength, nikeScheme)
+	require.NoError(t, g.Validate())
+
+	// Create BACAP keys for testing
+	aliceOwner, err := bacap.NewWriteCap(rand.Reader)
+	require.NoError(t, err)
+	aliceStatefulWriter, err := bacap.NewStatefulWriter(aliceOwner, constants.PIGEONHOLE_CTX)
+	require.NoError(t, err)
+
+	// Create MKEM scheme and keys for EnvelopeReply
+	mkemNikeScheme := mkem.NewScheme(nikeScheme)
+	_, replicaPrivateKey, err := nikeScheme.GenerateKeyPair()
+	require.NoError(t, err)
+	senderPublicKey, _, err := nikeScheme.GenerateKeyPair()
+	require.NoError(t, err)
+
+	t.Run("ReadEnvelopeReplySizePrediction", func(t *testing.T) {
+		// Test read reply EnvelopeReply size prediction
+		predictedSize := g.CalculateEnvelopeReplySizeRead()
+
+		// Create test message that uses the full capacity
+		testMessage := make([]byte, g.MaxPlaintextPayloadLength)
+		for i := range testMessage {
+			testMessage[i] = byte(i % 256)
+		}
+
+		// Create padded payload and BACAP encrypt it
+		paddedPayload, err := pigeonhole.CreatePaddedPayload(testMessage, g.MaxPlaintextPayloadLength+4)
+		require.NoError(t, err)
+
+		boxID, ciphertext, sigraw, err := aliceStatefulWriter.EncryptNext(paddedPayload)
+		require.NoError(t, err)
+
+		sig := [bacap.SignatureSize]byte{}
+		copy(sig[:], sigraw)
+
+		// Create ReplicaReadReply
+		readReply := &pigeonhole.ReplicaReadReply{
+			ErrorCode:  0, // success
+			BoxID:      boxID,
+			Signature:  sig,
+			PayloadLen: uint32(len(ciphertext)),
+			Payload:    ciphertext,
+		}
+
+		// Create ReplicaMessageReplyInnerMessage
+		replyInnerMessage := &pigeonhole.ReplicaMessageReplyInnerMessage{
+			MessageType: 0, // 0 = read_reply
+			ReadReply:   readReply,
+		}
+
+		// Create EnvelopeReply using MKEM scheme
+		replyInnerMessageBlob := replyInnerMessage.Bytes()
+		envelopeReply := mkemNikeScheme.EnvelopeReply(replicaPrivateKey, senderPublicKey, replyInnerMessageBlob)
+
+		// Measure the actual EnvelopeReply size
+		actualSize := len(envelopeReply.Envelope)
+
+		t.Logf("Read EnvelopeReply prediction: %d bytes", predictedSize)
+		t.Logf("Actual read EnvelopeReply size: %d bytes", actualSize)
+		t.Logf("Difference: %d bytes", actualSize-predictedSize)
+
+		// The prediction should match exactly
+		require.Equal(t, predictedSize, actualSize,
+			"Read EnvelopeReply size prediction should be exact")
+	})
+
+	t.Run("WriteEnvelopeReplySizePrediction", func(t *testing.T) {
+		// Test write reply EnvelopeReply size prediction
+		predictedSize := g.CalculateEnvelopeReplySizeWrite()
+
+		// Create ReplicaWriteReply (just an error code)
+		writeReply := &pigeonhole.ReplicaWriteReply{
+			ErrorCode: 0, // success
+		}
+
+		// Create ReplicaMessageReplyInnerMessage
+		replyInnerMessage := &pigeonhole.ReplicaMessageReplyInnerMessage{
+			MessageType: 1, // 1 = write_reply
+			WriteReply:  writeReply,
+		}
+
+		// Create EnvelopeReply using MKEM scheme
+		replyInnerMessageBlob := replyInnerMessage.Bytes()
+		envelopeReply := mkemNikeScheme.EnvelopeReply(replicaPrivateKey, senderPublicKey, replyInnerMessageBlob)
+
+		// Measure the actual EnvelopeReply size
+		actualSize := len(envelopeReply.Envelope)
+
+		t.Logf("Write EnvelopeReply prediction: %d bytes", predictedSize)
+		t.Logf("Actual write EnvelopeReply size: %d bytes", actualSize)
+		t.Logf("Difference: %d bytes", actualSize-predictedSize)
+
+		// The prediction should match exactly
+		require.Equal(t, predictedSize, actualSize,
+			"Write EnvelopeReply size prediction should be exact")
+	})
+
+	t.Run("VariousPayloadSizesEnvelopeReply", func(t *testing.T) {
+		// Test predictions with different payload sizes
+		testSizes := []int{100, 250, 500, 1000}
+
+		for _, size := range testSizes {
+			t.Run(fmt.Sprintf("PayloadSize_%d", size), func(t *testing.T) {
+				testGeometry := pigeonholegeo.NewGeometry(size, nikeScheme)
+				require.NoError(t, testGeometry.Validate())
+
+				// Test read EnvelopeReply prediction
+				readPrediction := testGeometry.CalculateEnvelopeReplySizeRead()
+
+				// Create read reply with actual payload
+				testPayload := make([]byte, size)
+				paddedPayload, err := pigeonhole.CreatePaddedPayload(testPayload, size+4)
+				require.NoError(t, err)
+
+				boxID, ciphertext, sigraw, err := aliceStatefulWriter.EncryptNext(paddedPayload)
+				require.NoError(t, err)
+
+				sig := [bacap.SignatureSize]byte{}
+				copy(sig[:], sigraw)
+
+				readReply := &pigeonhole.ReplicaReadReply{
+					ErrorCode:  0,
+					BoxID:      boxID,
+					Signature:  sig,
+					PayloadLen: uint32(len(ciphertext)),
+					Payload:    ciphertext,
+				}
+				replyInnerMessage := &pigeonhole.ReplicaMessageReplyInnerMessage{
+					MessageType: 0,
+					ReadReply:   readReply,
+				}
+				envelopeReply := mkemNikeScheme.EnvelopeReply(replicaPrivateKey, senderPublicKey, replyInnerMessage.Bytes())
+				actualReadSize := len(envelopeReply.Envelope)
+
+				require.Equal(t, readPrediction, actualReadSize,
+					"Read EnvelopeReply prediction failed for payload size %d", size)
+
+				// Test write EnvelopeReply prediction
+				writePrediction := testGeometry.CalculateEnvelopeReplySizeWrite()
+
+				writeReply := &pigeonhole.ReplicaWriteReply{ErrorCode: 0}
+				writeReplyInnerMessage := &pigeonhole.ReplicaMessageReplyInnerMessage{
+					MessageType: 1,
+					WriteReply:  writeReply,
+				}
+				writeEnvelopeReply := mkemNikeScheme.EnvelopeReply(replicaPrivateKey, senderPublicKey, writeReplyInnerMessage.Bytes())
+				actualWriteSize := len(writeEnvelopeReply.Envelope)
+
+				require.Equal(t, writePrediction, actualWriteSize,
+					"Write EnvelopeReply prediction failed for payload size %d", size)
+
+				t.Logf("Size %d: Read EnvelopeReply %d bytes, Write EnvelopeReply %d bytes",
+					size, actualReadSize, actualWriteSize)
+			})
+		}
+	})
+}
+
 func TestGeometryLengthPrefixBug(t *testing.T) {
 	// TDD test to expose the bug: geometry predictions don't account for 4-byte length prefix overhead
 	// This test should FAIL initially, showing the geometry prediction is wrong
@@ -881,4 +1046,244 @@ func TestGeometryLengthPrefixBug(t *testing.T) {
 	// The actual size should be 4 bytes larger than predicted due to the length prefix overhead
 	require.Equal(t, predictedSize, actualSize,
 		"Geometry prediction should match actual size (this test should fail initially, exposing the length prefix bug)")
+}
+
+func TestCalculateEnvelopeReplySizeRead(t *testing.T) {
+	// Test the CalculateEnvelopeReplySizeRead function by creating real EnvelopeReply messages
+	// and comparing their actual sizes with the geometry predictions
+	nikeScheme := schemes.ByName("x25519")
+	require.NotNil(t, nikeScheme)
+
+	// Test with different payload sizes to ensure the function works correctly across various scenarios
+	testSizes := []int{100, 500, 1000, 2000}
+
+	for _, maxPlaintextPayloadLength := range testSizes {
+		t.Run(fmt.Sprintf("PayloadSize_%d", maxPlaintextPayloadLength), func(t *testing.T) {
+			g := pigeonholegeo.NewGeometry(maxPlaintextPayloadLength, nikeScheme)
+			require.NoError(t, g.Validate())
+
+			// Create BACAP keys for testing
+			aliceOwner, err := bacap.NewWriteCap(rand.Reader)
+			require.NoError(t, err)
+			aliceStatefulWriter, err := bacap.NewStatefulWriter(aliceOwner, constants.PIGEONHOLE_CTX)
+			require.NoError(t, err)
+
+			// Create MKEM scheme and keys for EnvelopeReply
+			mkemNikeScheme := mkem.NewScheme(nikeScheme)
+			_, replicaPrivateKey, err := nikeScheme.GenerateKeyPair()
+			require.NoError(t, err)
+			senderPublicKey, _, err := nikeScheme.GenerateKeyPair()
+			require.NoError(t, err)
+
+			// Get the prediction from the function we're testing
+			predictedSize := g.CalculateEnvelopeReplySizeRead()
+
+			// Create test message that uses the full capacity
+			testMessage := make([]byte, g.MaxPlaintextPayloadLength)
+			for i := range testMessage {
+				testMessage[i] = byte(i % 256)
+			}
+
+			// Create padded payload and BACAP encrypt it
+			paddedPayload, err := pigeonhole.CreatePaddedPayload(testMessage, g.MaxPlaintextPayloadLength+4)
+			require.NoError(t, err)
+
+			boxID, ciphertext, sigraw, err := aliceStatefulWriter.EncryptNext(paddedPayload)
+			require.NoError(t, err)
+
+			sig := [bacap.SignatureSize]byte{}
+			copy(sig[:], sigraw)
+
+			// Create ReplicaReadReply
+			readReply := &pigeonhole.ReplicaReadReply{
+				ErrorCode:  0, // success
+				BoxID:      boxID,
+				Signature:  sig,
+				PayloadLen: uint32(len(ciphertext)),
+				Payload:    ciphertext,
+			}
+
+			// Create ReplicaMessageReplyInnerMessage
+			replyInnerMessage := &pigeonhole.ReplicaMessageReplyInnerMessage{
+				MessageType: 0, // 0 = read_reply
+				ReadReply:   readReply,
+			}
+
+			// Create EnvelopeReply using MKEM scheme
+			replyInnerMessageBlob := replyInnerMessage.Bytes()
+			envelopeReply := mkemNikeScheme.EnvelopeReply(replicaPrivateKey, senderPublicKey, replyInnerMessageBlob)
+
+			// Measure the actual EnvelopeReply size
+			actualSize := len(envelopeReply.Envelope)
+
+			t.Logf("MaxPlaintextPayloadLength: %d bytes", g.MaxPlaintextPayloadLength)
+			t.Logf("Test message size: %d bytes", len(testMessage))
+			t.Logf("Padded payload size: %d bytes", len(paddedPayload))
+			t.Logf("BACAP ciphertext size: %d bytes", len(ciphertext))
+			t.Logf("ReplicaReadReply size: %d bytes", len(readReply.Bytes()))
+			t.Logf("ReplicaMessageReplyInnerMessage size: %d bytes", len(replyInnerMessageBlob))
+			t.Logf("Predicted EnvelopeReply size: %d bytes", predictedSize)
+			t.Logf("Actual EnvelopeReply size: %d bytes", actualSize)
+			t.Logf("Difference: %d bytes", actualSize-predictedSize)
+
+			// The prediction should match exactly
+			require.Equal(t, predictedSize, actualSize,
+				"CalculateEnvelopeReplySizeRead prediction should be exact for payload size %d", maxPlaintextPayloadLength)
+		})
+	}
+}
+
+func TestCalculateEnvelopeReplySizeReadDetailed(t *testing.T) {
+	// Detailed test that validates the internal calculation steps of CalculateEnvelopeReplySizeRead
+	nikeScheme := schemes.ByName("x25519")
+	require.NotNil(t, nikeScheme)
+
+	maxPlaintextPayloadLength := 500
+	g := pigeonholegeo.NewGeometry(maxPlaintextPayloadLength, nikeScheme)
+	require.NoError(t, g.Validate())
+
+	// Create BACAP keys for testing
+	aliceOwner, err := bacap.NewWriteCap(rand.Reader)
+	require.NoError(t, err)
+	aliceStatefulWriter, err := bacap.NewStatefulWriter(aliceOwner, constants.PIGEONHOLE_CTX)
+	require.NoError(t, err)
+
+	// Create MKEM scheme and keys for EnvelopeReply
+	mkemNikeScheme := mkem.NewScheme(nikeScheme)
+	_, replicaPrivateKey, err := nikeScheme.GenerateKeyPair()
+	require.NoError(t, err)
+	senderPublicKey, _, err := nikeScheme.GenerateKeyPair()
+	require.NoError(t, err)
+
+	t.Run("StepByStepCalculation", func(t *testing.T) {
+		// Manually calculate what CalculateEnvelopeReplySizeRead should return
+		// and verify each step matches the actual implementation
+
+		// Step 1: BACAP ciphertext size
+		bacapCiphertextSize := g.CalculateBoxCiphertextLength()
+		expectedBACAPSize := g.MaxPlaintextPayloadLength + 4 + 16 // lengthPrefix + bacapOverhead
+		require.Equal(t, expectedBACAPSize, bacapCiphertextSize)
+		t.Logf("Step 1 - BACAP ciphertext: %d bytes", bacapCiphertextSize)
+
+		// Step 2: ReplicaReadReply size
+		// ErrorCode (1) + BoxID (32) + Signature (64) + PayloadLen (4) + Payload
+		expectedReplicaReadReplySize := 1 + bacap.BoxIDSize + bacap.SignatureSize + 4 + bacapCiphertextSize
+		t.Logf("Step 2 - ReplicaReadReply: 1 + %d + %d + 4 + %d = %d bytes",
+			bacap.BoxIDSize, bacap.SignatureSize, bacapCiphertextSize, expectedReplicaReadReplySize)
+
+		// Step 3: ReplicaMessageReplyInnerMessage size
+		// MessageType (1) + ReplicaReadReply
+		expectedReplicaMessageReplyInnerSize := 1 + expectedReplicaReadReplySize
+		t.Logf("Step 3 - ReplicaMessageReplyInnerMessage: 1 + %d = %d bytes",
+			expectedReplicaReadReplySize, expectedReplicaMessageReplyInnerSize)
+
+		// Step 4: EnvelopeReply encryption overhead
+		// ChaCha20Poly1305: 12-byte nonce + 16-byte auth tag
+		envelopeReplyOverhead := 12 + 16
+		expectedEnvelopeReplySize := expectedReplicaMessageReplyInnerSize + envelopeReplyOverhead
+		t.Logf("Step 4 - EnvelopeReply: %d + %d = %d bytes",
+			expectedReplicaMessageReplyInnerSize, envelopeReplyOverhead, expectedEnvelopeReplySize)
+
+		// Compare with the function's calculation
+		actualPrediction := g.CalculateEnvelopeReplySizeRead()
+		t.Logf("Function prediction: %d bytes", actualPrediction)
+		t.Logf("Manual calculation: %d bytes", expectedEnvelopeReplySize)
+
+		require.Equal(t, expectedEnvelopeReplySize, actualPrediction,
+			"Manual calculation should match function prediction")
+	})
+
+	t.Run("ActualMessageValidation", func(t *testing.T) {
+		// Create a real message and validate the prediction
+		testMessage := make([]byte, g.MaxPlaintextPayloadLength)
+		for i := range testMessage {
+			testMessage[i] = byte(i % 256)
+		}
+
+		// Create padded payload and BACAP encrypt it
+		paddedPayload, err := pigeonhole.CreatePaddedPayload(testMessage, g.MaxPlaintextPayloadLength+4)
+		require.NoError(t, err)
+
+		boxID, ciphertext, sigraw, err := aliceStatefulWriter.EncryptNext(paddedPayload)
+		require.NoError(t, err)
+
+		sig := [bacap.SignatureSize]byte{}
+		copy(sig[:], sigraw)
+
+		// Create ReplicaReadReply
+		readReply := &pigeonhole.ReplicaReadReply{
+			ErrorCode:  0, // success
+			BoxID:      boxID,
+			Signature:  sig,
+			PayloadLen: uint32(len(ciphertext)),
+			Payload:    ciphertext,
+		}
+
+		// Verify ReplicaReadReply size matches our calculation
+		replicaReadReplyBytes := readReply.Bytes()
+		expectedReplicaReadReplySize := 1 + bacap.BoxIDSize + bacap.SignatureSize + 4 + len(ciphertext)
+		require.Equal(t, expectedReplicaReadReplySize, len(replicaReadReplyBytes),
+			"ReplicaReadReply size should match calculation")
+
+		// Create ReplicaMessageReplyInnerMessage
+		replyInnerMessage := &pigeonhole.ReplicaMessageReplyInnerMessage{
+			MessageType: 0, // 0 = read_reply
+			ReadReply:   readReply,
+		}
+
+		// Verify ReplicaMessageReplyInnerMessage size
+		replyInnerMessageBytes := replyInnerMessage.Bytes()
+		expectedReplyInnerSize := 1 + len(replicaReadReplyBytes)
+		require.Equal(t, expectedReplyInnerSize, len(replyInnerMessageBytes),
+			"ReplicaMessageReplyInnerMessage size should match calculation")
+
+		// Create EnvelopeReply using MKEM scheme
+		envelopeReply := mkemNikeScheme.EnvelopeReply(replicaPrivateKey, senderPublicKey, replyInnerMessageBytes)
+
+		// Verify the final EnvelopeReply size
+		actualSize := len(envelopeReply.Envelope)
+		predictedSize := g.CalculateEnvelopeReplySizeRead()
+
+		t.Logf("ReplicaReadReply size: %d bytes", len(replicaReadReplyBytes))
+		t.Logf("ReplicaMessageReplyInnerMessage size: %d bytes", len(replyInnerMessageBytes))
+		t.Logf("EnvelopeReply predicted size: %d bytes", predictedSize)
+		t.Logf("EnvelopeReply actual size: %d bytes", actualSize)
+
+		require.Equal(t, predictedSize, actualSize,
+			"EnvelopeReply size prediction should be exact")
+	})
+
+	t.Run("ErrorCaseHandling", func(t *testing.T) {
+		// Test with an error reply to ensure the function works for different scenarios
+		// Create ReplicaReadReply with error
+		errorReply := &pigeonhole.ReplicaReadReply{
+			ErrorCode:  1,                           // error
+			BoxID:      [bacap.BoxIDSize]byte{},     // empty BoxID for error case
+			Signature:  [bacap.SignatureSize]byte{}, // empty signature for error case
+			PayloadLen: 0,                           // no payload for error case
+			Payload:    nil,
+		}
+
+		// Create ReplicaMessageReplyInnerMessage
+		errorReplyInnerMessage := &pigeonhole.ReplicaMessageReplyInnerMessage{
+			MessageType: 0, // 0 = read_reply
+			ReadReply:   errorReply,
+		}
+
+		// Create EnvelopeReply
+		errorReplyInnerMessageBytes := errorReplyInnerMessage.Bytes()
+		errorEnvelopeReply := mkemNikeScheme.EnvelopeReply(replicaPrivateKey, senderPublicKey, errorReplyInnerMessageBytes)
+
+		// The prediction should still be based on the maximum possible size (success case)
+		// because the geometry function calculates for the worst-case scenario
+		predictedSize := g.CalculateEnvelopeReplySizeRead()
+		actualErrorSize := len(errorEnvelopeReply.Envelope)
+
+		t.Logf("Error reply size: %d bytes", actualErrorSize)
+		t.Logf("Predicted size (success case): %d bytes", predictedSize)
+
+		// The error case should be smaller than the predicted size
+		require.Less(t, actualErrorSize, predictedSize,
+			"Error reply should be smaller than the predicted maximum size")
+	})
 }

@@ -7,7 +7,9 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/katzenpost/chacha20poly1305"
 	"github.com/katzenpost/hpqc/bacap"
+	"github.com/katzenpost/hpqc/kem/mkem"
 	"github.com/katzenpost/hpqc/nike"
 	"github.com/katzenpost/hpqc/nike/schemes"
 
@@ -53,13 +55,16 @@ const (
 	lengthPrefixSize = 4
 
 	// MKEM encryption overhead (ChaCha20-Poly1305)
-	mkemEncryptionOverhead = 28
+	mkemEncryptionOverhead = chacha20poly1305.NonceSize + chacha20poly1305.Overhead
 
 	// Signature scheme (always Ed25519 for BACAP)
 	signatureSchemeName = "Ed25519"
 
 	// Message type field size
 	messageTypeSize = 1
+
+	// Error code field size
+	errorCodeFieldSize = 1
 
 	// Success field size
 	successFieldSize = 1
@@ -79,6 +84,15 @@ const (
 	// CourierEnvelopeReply field sizes
 	timestampFieldSize     = 8 // uint64
 	ciphertextLenFieldSize = 4 // uint32
+
+	// CourierEnvelope field sizes
+	intermediateReplicasSize = 2 // [2]uint8
+	replyIndexSize           = 1 // uint8
+	epochSize                = 8 // uint64
+	senderPubkeyLenSize      = 2 // uint16
+
+	// CourierQuery field sizes
+	queryTypeSize = 1 // uint8 discriminator
 )
 
 // replicaWriteFixedOverhead calculates the fixed overhead for ReplicaWrite using actual BACAP sizes
@@ -89,16 +103,8 @@ func replicaWriteFixedOverhead() int {
 // calculateCourierEnvelopeOverhead dynamically calculates the overhead for CourierEnvelope
 func calculateCourierEnvelopeOverhead(_ int, senderPubkeySize int) int {
 	// CourierEnvelope fixed fields from trunnel definition
-	const intermediateReplicasSize = 2 // [2]uint8
-	const dek1Size = 60                // [60]uint8
-	const dek2Size = 60                // [60]uint8
-	const replyIndexSize = 1           // uint8
-	const epochSize = 8                // uint64
-	const senderPubkeyLenSize = 2      // uint16
-	const ciphertextLenSize = 4        // uint32
-
-	courierEnvelopeFixedOverhead := intermediateReplicasSize + dek1Size + dek2Size +
-		replyIndexSize + epochSize + senderPubkeyLenSize + ciphertextLenSize
+	courierEnvelopeFixedOverhead := intermediateReplicasSize + mkem.DEKSize + mkem.DEKSize +
+		replyIndexSize + epochSize + senderPubkeyLenSize + ciphertextLenFieldSize
 
 	return courierEnvelopeFixedOverhead + senderPubkeySize
 }
@@ -109,8 +115,6 @@ func calculateCourierQueryWrapperOverhead(_ int, _ nike.Scheme) int {
 	// QueryType: uint8 = 1 byte (union discriminator)
 	// Envelope: *CourierEnvelope (embedded struct, no length prefix)
 	// CopyCommand: *CopyCommand (mutually exclusive with Envelope)
-	const queryTypeSize = 1 // uint8 discriminator
-
 	return queryTypeSize
 }
 
@@ -146,7 +150,7 @@ func NewGeometryFromSphinx(sphinxGeo *geo.Geometry, nikeScheme nike.Scheme) (*Ge
 	// Working backwards from CourierQuery to MaxPlaintextPayloadLength:
 
 	// 1. CourierQuery wrapper overhead
-	courierQueryOverhead := 1 // QueryType discriminator
+	courierQueryOverhead := queryTypeSize // QueryType discriminator
 
 	// 2. CourierEnvelope overhead (fixed fields + sender pubkey)
 	senderPubkeySize := nikeScheme.PublicKeySize()
@@ -404,4 +408,51 @@ func (g *Geometry) CalculateCourierEnvelopeCiphertextSizeWrite() int {
 	mkemCiphertextSize := replicaInnerMessageSize + mkemEncryptionOverhead
 
 	return mkemCiphertextSize
+}
+
+// CalculateEnvelopeReplySizeRead calculates the size of the EnvelopeReply
+// for a read operation (ReplicaMessageReply.EnvelopeReply field).
+func (g *Geometry) CalculateEnvelopeReplySizeRead() int {
+	// For read replies, the EnvelopeReply contains an encrypted ReplicaMessageReplyInnerMessage
+	// with a ReplicaReadReply containing the BACAP-encrypted payload
+
+	// ReplicaReadReply structure:
+	// - ErrorCode: 1 byte
+	// - BoxID: 32 bytes (bacap.BoxIDSize)
+	// - Signature: 64 bytes (bacap.SignatureSize)
+	// - PayloadLen: 4 bytes (uint32)
+	// - Payload: BACAP ciphertext (MaxPlaintextPayloadLength + lengthPrefix + bacapOverhead)
+	bacapCiphertextSize := g.CalculateBoxCiphertextLength()
+	replicaReadReplySize := errorCodeFieldSize + bacap.BoxIDSize + bacap.SignatureSize + payloadLenFieldSize + bacapCiphertextSize
+
+	// ReplicaMessageReplyInnerMessage wrapping ReplicaReadReply
+	// MessageType: 1 byte + ReplicaReadReply
+	replicaMessageReplyInnerSize := messageTypeSize + replicaReadReplySize
+
+	// MKEM EnvelopeReply encryption overhead (nonce + auth tag)
+	// This is different from full MKEM - it's just AEAD encryption
+	envelopeReplyOverhead := chacha20poly1305.NonceSize + chacha20poly1305.Overhead
+
+	return replicaMessageReplyInnerSize + envelopeReplyOverhead
+}
+
+// CalculateEnvelopeReplySizeWrite calculates the size of the EnvelopeReply
+// for a write operation (ReplicaMessageReply.EnvelopeReply field).
+func (g *Geometry) CalculateEnvelopeReplySizeWrite() int {
+	// For write replies, the EnvelopeReply contains an encrypted ReplicaMessageReplyInnerMessage
+	// with a ReplicaWriteReply (just an error code)
+
+	// ReplicaWriteReply structure:
+	// - ErrorCode: 1 byte
+	replicaWriteReplySize := errorCodeFieldSize
+
+	// ReplicaMessageReplyInnerMessage wrapping ReplicaWriteReply
+	// MessageType: 1 byte + ReplicaWriteReply
+	replicaMessageReplyInnerSize := messageTypeSize + replicaWriteReplySize
+
+	// MKEM EnvelopeReply encryption overhead (nonce + auth tag)
+	// This is different from full MKEM - it's just AEAD encryption
+	envelopeReplyOverhead := chacha20poly1305.NonceSize + chacha20poly1305.Overhead
+
+	return replicaMessageReplyInnerSize + envelopeReplyOverhead
 }
