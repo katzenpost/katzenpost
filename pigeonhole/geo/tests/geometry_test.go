@@ -539,6 +539,239 @@ func TestGeometryPrecisePredictions(t *testing.T) {
 	})
 }
 
+func TestGeometryCourierEnvelopeCiphertextSizeHelpers(t *testing.T) {
+	// Test the new exported helper methods for calculating courier envelope ciphertext sizes
+	nikeScheme := schemes.ByName("x25519")
+	require.NotNil(t, nikeScheme)
+
+	maxPlaintextPayloadLength := 1000
+	g := pigeonholegeo.NewGeometry(maxPlaintextPayloadLength, nikeScheme)
+	require.NoError(t, g.Validate())
+
+	t.Run("ReadCiphertextSize", func(t *testing.T) {
+		// Test CalculateCourierEnvelopeCiphertextSizeRead
+		readCiphertextSize := g.CalculateCourierEnvelopeCiphertextSizeRead()
+
+		// Verify it matches the calculation from calculateCourierQueryReadLength
+		// BoxID + MessageType + MKEM overhead
+		expectedReadSize := bacap.BoxIDSize + 1 + 28 // BoxID + MessageType + MKEM overhead
+		require.Equal(t, expectedReadSize, readCiphertextSize)
+
+		t.Logf("Read ciphertext size: %d bytes", readCiphertextSize)
+		t.Logf("  BoxID: %d bytes", bacap.BoxIDSize)
+		t.Logf("  MessageType: 1 byte")
+		t.Logf("  MKEM overhead: 28 bytes")
+	})
+
+	t.Run("WriteCiphertextSize", func(t *testing.T) {
+		// Test CalculateCourierEnvelopeCiphertextSizeWrite
+		writeCiphertextSize := g.CalculateCourierEnvelopeCiphertextSizeWrite()
+
+		// Verify it matches the calculation from calculateCourierQueryWriteLength
+		// BACAP ciphertext = MaxPlaintextPayloadLength + lengthPrefix + bacapOverhead
+		bacapCiphertextSize := g.CalculateBoxCiphertextLength()
+		expectedWriteSize := 1 + 100 + bacapCiphertextSize + 28 // MessageType + ReplicaWriteFixedOverhead + BACAP ciphertext + MKEM overhead
+		require.Equal(t, expectedWriteSize, writeCiphertextSize)
+
+		t.Logf("Write ciphertext size: %d bytes", writeCiphertextSize)
+		t.Logf("  MessageType: 1 byte")
+		t.Logf("  ReplicaWrite fixed overhead: 100 bytes")
+		t.Logf("  BACAP ciphertext: %d bytes", bacapCiphertextSize)
+		t.Logf("    MaxPlaintextPayloadLength: %d bytes", g.MaxPlaintextPayloadLength)
+		t.Logf("    Length prefix: 4 bytes")
+		t.Logf("    BACAP encryption overhead: 16 bytes")
+		t.Logf("  MKEM overhead: 28 bytes")
+	})
+
+	t.Run("CompareWithActualGeometry", func(t *testing.T) {
+		// Verify the helper methods produce sizes that are consistent with the geometry calculations
+		readCiphertextSize := g.CalculateCourierEnvelopeCiphertextSizeRead()
+		writeCiphertextSize := g.CalculateCourierEnvelopeCiphertextSizeWrite()
+
+		// The ciphertext sizes should be reasonable compared to the overall query sizes
+		require.Greater(t, g.CourierQueryReadLength, readCiphertextSize)
+		require.Greater(t, g.CourierQueryWriteLength, writeCiphertextSize)
+
+		t.Logf("CourierQueryReadLength: %d bytes (includes %d bytes ciphertext)",
+			g.CourierQueryReadLength, readCiphertextSize)
+		t.Logf("CourierQueryWriteLength: %d bytes (includes %d bytes ciphertext)",
+			g.CourierQueryWriteLength, writeCiphertextSize)
+
+		// Write ciphertext should be much larger than read ciphertext
+		require.Greater(t, writeCiphertextSize, readCiphertextSize)
+	})
+}
+
+func TestCourierEnvelopeCiphertextSizePredictions(t *testing.T) {
+	// Test that the new helper methods give accurate predictions by creating real messages
+	nikeScheme := schemes.ByName("x25519")
+	require.NotNil(t, nikeScheme)
+
+	maxPlaintextPayloadLength := 500
+	g := pigeonholegeo.NewGeometry(maxPlaintextPayloadLength, nikeScheme)
+	require.NoError(t, g.Validate())
+
+	// Create BACAP keys for testing
+	aliceOwner, err := bacap.NewWriteCap(rand.Reader)
+	require.NoError(t, err)
+	aliceStatefulWriter, err := bacap.NewStatefulWriter(aliceOwner, constants.PIGEONHOLE_CTX)
+	require.NoError(t, err)
+
+	// Create MKEM keys for replicas
+	mkemNikeScheme := mkem.NewScheme(nikeScheme)
+	replicaPublicKey1, _, err := nikeScheme.GenerateKeyPair()
+	require.NoError(t, err)
+	replicaPublicKey2, _, err := nikeScheme.GenerateKeyPair()
+	require.NoError(t, err)
+	replicaPubKeys := []nike.PublicKey{replicaPublicKey1, replicaPublicKey2}
+
+	t.Run("ReadCiphertextSizePrediction", func(t *testing.T) {
+		// Test read query ciphertext size prediction
+		predictedSize := g.CalculateCourierEnvelopeCiphertextSizeRead()
+
+		// Create a real read query
+		boxID := [bacap.BoxIDSize]byte{}
+		_, err := rand.Read(boxID[:])
+		require.NoError(t, err)
+
+		// Create ReplicaRead
+		readRequest := pigeonhole.ReplicaRead{
+			BoxID: boxID,
+		}
+
+		// Create ReplicaInnerMessage
+		msg := &pigeonhole.ReplicaInnerMessage{
+			MessageType: 0, // 0 = read
+			ReadMsg:     &readRequest,
+		}
+
+		// MKEM encrypt the inner message
+		_, mkemCiphertext := mkemNikeScheme.Encapsulate(replicaPubKeys, msg.Bytes())
+
+		// Measure the actual ciphertext size
+		actualSize := len(mkemCiphertext.Envelope)
+
+		t.Logf("Read ciphertext prediction: %d bytes", predictedSize)
+		t.Logf("Actual read ciphertext size: %d bytes", actualSize)
+		t.Logf("Difference: %d bytes", actualSize-predictedSize)
+
+		// The prediction should match exactly
+		require.Equal(t, predictedSize, actualSize,
+			"Read ciphertext size prediction should be exact")
+	})
+
+	t.Run("WriteCiphertextSizePrediction", func(t *testing.T) {
+		// Test write query ciphertext size prediction
+		predictedSize := g.CalculateCourierEnvelopeCiphertextSizeWrite()
+
+		// Create test message that uses the full capacity
+		testMessage := make([]byte, g.MaxPlaintextPayloadLength)
+		for i := range testMessage {
+			testMessage[i] = byte(i % 256)
+		}
+
+		// Create padded payload with length prefix for BACAP
+		paddedPayload, err := pigeonhole.CreatePaddedPayload(testMessage, g.MaxPlaintextPayloadLength+4)
+		require.NoError(t, err)
+
+		// BACAP encrypt the padded payload
+		boxID, ciphertext, sigraw, err := aliceStatefulWriter.EncryptNext(paddedPayload)
+		require.NoError(t, err)
+
+		sig := [bacap.SignatureSize]byte{}
+		copy(sig[:], sigraw)
+
+		// Create ReplicaWrite
+		writeRequest := pigeonhole.ReplicaWrite{
+			BoxID:      boxID,
+			Signature:  sig,
+			PayloadLen: uint32(len(ciphertext)),
+			Payload:    ciphertext,
+		}
+
+		// Create ReplicaInnerMessage
+		msg := &pigeonhole.ReplicaInnerMessage{
+			MessageType: 1, // 1 = write
+			WriteMsg:    &writeRequest,
+		}
+
+		// MKEM encrypt the inner message
+		_, mkemCiphertext := mkemNikeScheme.Encapsulate(replicaPubKeys, msg.Bytes())
+
+		// Measure the actual ciphertext size
+		actualSize := len(mkemCiphertext.Envelope)
+
+		t.Logf("Write ciphertext prediction: %d bytes", predictedSize)
+		t.Logf("Actual write ciphertext size: %d bytes", actualSize)
+		t.Logf("Difference: %d bytes", actualSize-predictedSize)
+
+		// The prediction should match exactly
+		require.Equal(t, predictedSize, actualSize,
+			"Write ciphertext size prediction should be exact")
+	})
+
+	t.Run("VariousPayloadSizes", func(t *testing.T) {
+		// Test predictions with different payload sizes
+		testSizes := []int{100, 250, 500, 1000, 2000}
+
+		for _, size := range testSizes {
+			t.Run(fmt.Sprintf("PayloadSize_%d", size), func(t *testing.T) {
+				testGeometry := pigeonholegeo.NewGeometry(size, nikeScheme)
+				require.NoError(t, testGeometry.Validate())
+
+				// Test read prediction
+				readPrediction := testGeometry.CalculateCourierEnvelopeCiphertextSizeRead()
+
+				// Create minimal read message
+				boxID := [bacap.BoxIDSize]byte{}
+				readRequest := pigeonhole.ReplicaRead{BoxID: boxID}
+				readMsg := &pigeonhole.ReplicaInnerMessage{
+					MessageType: 0,
+					ReadMsg:     &readRequest,
+				}
+				_, readCiphertext := mkemNikeScheme.Encapsulate(replicaPubKeys, readMsg.Bytes())
+				actualReadSize := len(readCiphertext.Envelope)
+
+				require.Equal(t, readPrediction, actualReadSize,
+					"Read prediction failed for payload size %d", size)
+
+				// Test write prediction
+				writePrediction := testGeometry.CalculateCourierEnvelopeCiphertextSizeWrite()
+
+				// Create write message with actual payload
+				testPayload := make([]byte, size)
+				paddedPayload, err := pigeonhole.CreatePaddedPayload(testPayload, size+4)
+				require.NoError(t, err)
+
+				boxID, ciphertext, sigraw, err := aliceStatefulWriter.EncryptNext(paddedPayload)
+				require.NoError(t, err)
+
+				sig := [bacap.SignatureSize]byte{}
+				copy(sig[:], sigraw)
+
+				writeRequest := pigeonhole.ReplicaWrite{
+					BoxID:      boxID,
+					Signature:  sig,
+					PayloadLen: uint32(len(ciphertext)),
+					Payload:    ciphertext,
+				}
+				writeMsg := &pigeonhole.ReplicaInnerMessage{
+					MessageType: 1,
+					WriteMsg:    &writeRequest,
+				}
+				_, writeCiphertext := mkemNikeScheme.Encapsulate(replicaPubKeys, writeMsg.Bytes())
+				actualWriteSize := len(writeCiphertext.Envelope)
+
+				require.Equal(t, writePrediction, actualWriteSize,
+					"Write prediction failed for payload size %d", size)
+
+				t.Logf("Size %d: Read %d bytes, Write %d bytes",
+					size, actualReadSize, actualWriteSize)
+			})
+		}
+	})
+}
+
 func TestGeometryLengthPrefixBug(t *testing.T) {
 	// TDD test to expose the bug: geometry predictions don't account for 4-byte length prefix overhead
 	// This test should FAIL initially, showing the geometry prediction is wrong

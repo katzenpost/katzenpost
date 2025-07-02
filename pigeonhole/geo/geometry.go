@@ -369,3 +369,39 @@ func (g *Geometry) calculateCourierQueryReplyWriteLength() int {
 func (g *Geometry) CalculateBoxCiphertextLength() int {
 	return g.MaxPlaintextPayloadLength + lengthPrefixSize + bacapEncryptionOverhead
 }
+
+// CalculateCourierEnvelopeCiphertextSizeRead calculates the MKEM ciphertext size
+// for a CourierEnvelope containing a read query.
+func (g *Geometry) CalculateCourierEnvelopeCiphertextSizeRead() int {
+	// For read queries, the ciphertext contains a ReplicaInnerMessage with a ReplicaRead
+	// ReplicaRead: just the BoxID (using BACAP constant)
+	replicaReadSize := bacap.BoxIDSize
+
+	// ReplicaInnerMessage wrapping ReplicaRead
+	replicaInnerMessageSize := messageTypeSize + replicaReadSize // MessageType + ReplicaRead
+
+	// MKEM encryption of ReplicaInnerMessage
+	mkemCiphertextSize := replicaInnerMessageSize + mkemEncryptionOverhead
+
+	return mkemCiphertextSize
+}
+
+// CalculateCourierEnvelopeCiphertextSizeWrite calculates the MKEM ciphertext size
+// for a CourierEnvelope containing a write query.
+func (g *Geometry) CalculateCourierEnvelopeCiphertextSizeWrite() int {
+	// For write queries, the ciphertext contains a ReplicaInnerMessage with a ReplicaWrite
+	// The ReplicaWrite contains the BACAP-encrypted payload
+	bacapCiphertextSize := g.CalculateBoxCiphertextLength()
+
+	// ReplicaWrite containing the BACAP payload
+	// BoxID + Signature + PayloadLen + BACAP payload (using actual scheme sizes)
+	replicaWriteSize := replicaWriteFixedOverhead() + bacapCiphertextSize
+
+	// ReplicaInnerMessage wrapping ReplicaWrite
+	replicaInnerMessageSize := messageTypeSize + replicaWriteSize // MessageType + ReplicaWrite
+
+	// MKEM encryption of ReplicaInnerMessage
+	mkemCiphertextSize := replicaInnerMessageSize + mkemEncryptionOverhead
+
+	return mkemCiphertextSize
+}
