@@ -34,7 +34,7 @@ func TestListenerBasic(t *testing.T) {
 
 	logBackend, err := log.New("", "debug", false)
 	require.NoError(t, err)
-	listener, err := NewListener(client, rates, egressCh, logBackend)
+	listener, err := NewListener(client, rates, egressCh, logBackend, nil)
 	require.NoError(t, err)
 
 	listener.connectionStatus = errors.New("fail")

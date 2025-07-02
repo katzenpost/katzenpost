@@ -247,7 +247,7 @@ func (d *Daemon) Start() error {
 		return err
 	}
 
-	d.listener, err = NewListener(d.client, rates, d.egressCh, d.logbackend)
+	d.listener, err = NewListener(d.client, rates, d.egressCh, d.logbackend, d.cleanupChannelsForAppID)
 	if err != nil {
 		return err
 	}
