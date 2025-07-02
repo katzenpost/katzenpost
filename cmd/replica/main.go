@@ -87,6 +87,8 @@ BACAP for addressing and message encryption.
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runReplicaServer(cfg)
 		},
+		SilenceErrors: true,
+		SilenceUsage:  true,
 	}
 
 	// Configuration flags

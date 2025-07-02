@@ -68,7 +68,7 @@ mixing and routing. It connects to other mix nodes and
 maintains an outbound connection pool to the mixes in
 the next routing topoology layer.  It also connects to
 directory authorities to download the latest PKI documents and
-to upload it's mix descriptor so that it gets published next epoch. 
+to upload it's mix descriptor so that it gets published next epoch.
 
 Key features:
 • Supports one of three roles: mix node, gateway node, or service node
@@ -85,10 +85,8 @@ Key features:
 The server is designed to run as a long-lived daemon process and requires
 proper configuration for network participation, cryptographic keys, and
 operational parameters.`,
-		Example: `  # Start server with default configuration
-  server
-
-  # Start server with custom configuration file
+		Example: `
+  # Start server with configuration file
   server --config /etc/katzenpost/server.toml
 
   # Start server with specific config file (short form)
@@ -111,6 +109,8 @@ operational parameters.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runServer(cfg)
 		},
+		SilenceErrors: true,
+		SilenceUsage:  true,
 	}
 
 	// Configuration flags
