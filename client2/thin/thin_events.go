@@ -25,7 +25,7 @@ type Event interface {
 type ShutdownEvent struct{}
 
 func (e *ShutdownEvent) String() string {
-	return fmt.Sprint("ShutdownEvent")
+	return "ShutdownEvent"
 }
 
 // ConnectionStatusEvent is the event sent when an account's connection status

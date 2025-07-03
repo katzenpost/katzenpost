@@ -39,10 +39,9 @@ const (
 
 var (
 	// Error variables for reuse
-	errContextCannotBeNil   = errors.New("context cannot be nil")
-	errChannelIDCannotBeNil = errors.New("channelID cannot be nil")
-	errConnectionLost       = errors.New("connection lost")
-	errHalting              = errors.New("halting")
+	errContextCannotBeNil = errors.New("context cannot be nil")
+	errConnectionLost     = errors.New("connection lost")
+	errHalting            = errors.New("halting")
 )
 
 // ThinResponse is used to encapsulate a message response
@@ -74,8 +73,7 @@ type ThinClient struct {
 	log        *logging.Logger
 	logBackend *log.Backend
 
-	conn         net.Conn
-	destUnixAddr *net.UnixAddr
+	conn net.Conn
 
 	pkidoc      *cpki.Document
 	pkidocMutex sync.RWMutex
@@ -93,8 +91,6 @@ type ThinClient struct {
 	// used by BlockingSendReliableMessage only
 	sentWaitChanMap  sync.Map // MessageID -> chan error
 	replyWaitChanMap sync.Map // MessageID -> chan *MessageReplyEvent
-
-	closeOnce sync.Once
 }
 
 // Config is the thin client config.
@@ -1074,61 +1070,12 @@ func (t *ThinClient) SendChannelQuery(
 	return t.writeMessage(req)
 }
 
-// sendChannelQueryAndWait sends a channel query and waits for the reply
-func (t *ThinClient) sendChannelQueryAndWait(ctx context.Context, channelID uint16, payload []byte, destNode *[32]byte, destQueue []byte) ([]byte, error) {
-	eventSink := t.EventSink()
-	defer t.StopEventSink(eventSink)
-
-	err := t.SendChannelQuery(ctx, channelID, payload, destNode, destQueue)
-	if err != nil {
-		return nil, err
-	}
-
-	for {
-		var event Event
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		case event = <-eventSink:
-		case <-t.HaltCh():
-			return nil, errHalting
-		}
-
-		switch v := event.(type) {
-		case *MessageIDGarbageCollected:
-			t.log.Debugf("sendChannelQueryAndWait: Received MessageIDGarbageCollected")
-		case *ConnectionStatusEvent:
-			t.log.Debugf("sendChannelQueryAndWait: Received ConnectionStatusEvent: connected=%v", v.IsConnected)
-			// Update connection state
-			t.isConnected = v.IsConnected
-			if !v.IsConnected {
-				return nil, errors.New("connection lost during channel query")
-			}
-		case *NewDocumentEvent:
-			t.log.Debugf("sendChannelQueryAndWait: Received NewDocumentEvent")
-		case *MessageSentEvent:
-			t.log.Debugf("sendChannelQueryAndWait: Received MessageSentEvent")
-		case *MessageReplyEvent:
-			t.log.Debugf("sendChannelQueryAndWait: Received MessageReplyEvent: Err=%s, PayloadLen=%d", v.Err, len(v.Payload))
-			if v.Err != "" {
-				return nil, fmt.Errorf("channel query failed: %s", v.Err)
-			}
-			if len(v.Payload) == 0 {
-				return nil, errors.New("received empty payload")
-			}
-			t.log.Debugf("sendChannelQueryAndWait: Received valid payload")
-			return v.Payload, nil
-		default:
-			t.log.Debugf("sendChannelQueryAndWait: Received unknown event type: %T", event)
-		}
-	}
-}
-
 // ReadChannelWithRetry sends a read query for a pigeonhole channel with automatic reply index retry.
 // It first tries reply index 0 up to 3 times, and if that fails, it tries reply index 1 up to 3 times.
 // This method handles the common case where the courier has cached replies at different indices
 // and accounts for timing issues where messages may not have propagated yet.
 // This method requires mixnet connectivity and will fail in offline mode.
+// The method matches replies by messageID to ensure correct correlation.
 func (t *ThinClient) ReadChannelWithRetry(ctx context.Context, channelID uint16, messageID *[MessageIDLength]byte, destNode *[32]byte, destQueue []byte) ([]byte, error) {
 	if ctx == nil {
 		return nil, errContextCannotBeNil
@@ -1164,7 +1111,7 @@ func (t *ThinClient) ReadChannelWithRetry(ctx context.Context, channelID uint16,
 
 			// Create a timeout context for this individual attempt
 			attemptCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
-			result, err := t.sendChannelQueryAndWait(attemptCtx, channelID, payload, destNode, destQueue)
+			result, err := t.sendChannelQueryAndWaitForMessageID(attemptCtx, channelID, payload, destNode, destQueue, messageID)
 			cancel()
 
 			if err == nil {
@@ -1192,4 +1139,65 @@ func (t *ThinClient) ReadChannelWithRetry(ctx context.Context, channelID uint16,
 	// All reply indices and attempts failed
 	t.log.Debugf("ReadChannelWithRetry: All reply indices failed after %d attempts each", maxRetries)
 	return nil, errors.New("all reply indices failed after multiple attempts")
+}
+
+// sendChannelQueryAndWaitForMessageID sends a channel query and waits for a reply with the specified messageID
+func (t *ThinClient) sendChannelQueryAndWaitForMessageID(ctx context.Context, channelID uint16, payload []byte, destNode *[32]byte, destQueue []byte, expectedMessageID *[MessageIDLength]byte) ([]byte, error) {
+	eventSink := t.EventSink()
+	defer t.StopEventSink(eventSink)
+
+	err := t.SendChannelQuery(ctx, channelID, payload, destNode, destQueue)
+	if err != nil {
+		return nil, err
+	}
+
+	for {
+		var event Event
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case event = <-eventSink:
+		case <-t.HaltCh():
+			return nil, errHalting
+		}
+
+		switch v := event.(type) {
+		case *MessageIDGarbageCollected:
+			t.log.Debugf("sendChannelQueryAndWaitForMessageID: Received MessageIDGarbageCollected")
+		case *ConnectionStatusEvent:
+			t.log.Debugf("sendChannelQueryAndWaitForMessageID: Received ConnectionStatusEvent: connected=%v", v.IsConnected)
+			// Update connection state
+			t.isConnected = v.IsConnected
+			if !v.IsConnected {
+				return nil, errors.New("connection lost during channel query")
+			}
+		case *NewDocumentEvent:
+			t.log.Debugf("sendChannelQueryAndWaitForMessageID: Received NewDocumentEvent")
+		case *MessageSentEvent:
+			t.log.Debugf("sendChannelQueryAndWaitForMessageID: Received MessageSentEvent")
+		case *MessageReplyEvent:
+			// Check if this reply matches our expected messageID
+			if v.MessageID == nil {
+				t.log.Debugf("sendChannelQueryAndWaitForMessageID: Received MessageReplyEvent with nil MessageID, ignoring")
+				continue
+			}
+			if *v.MessageID != *expectedMessageID {
+				t.log.Debugf("sendChannelQueryAndWaitForMessageID: Received MessageReplyEvent with mismatched MessageID (expected %x, got %x), ignoring",
+					expectedMessageID[:8], v.MessageID[:8])
+				continue
+			}
+
+			t.log.Debugf("sendChannelQueryAndWaitForMessageID: Received matching MessageReplyEvent: Err=%s, PayloadLen=%d", v.Err, len(v.Payload))
+			if v.Err != "" {
+				return nil, fmt.Errorf("channel query failed: %s", v.Err)
+			}
+			if len(v.Payload) == 0 {
+				return nil, errors.New("received empty payload")
+			}
+			t.log.Debugf("sendChannelQueryAndWaitForMessageID: Received valid payload for messageID %x", expectedMessageID[:8])
+			return v.Payload, nil
+		default:
+			t.log.Debugf("sendChannelQueryAndWaitForMessageID: Received unknown event type: %T", event)
+		}
+	}
 }
