@@ -6,12 +6,8 @@
 package server
 
 import (
-	"crypto/hmac"
-	"net"
-	"net/url"
 	"os"
 	"path/filepath"
-	"sync"
 	"testing"
 	"time"
 
@@ -32,6 +28,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"github.com/katzenpost/katzenpost/courier/server/config"
+	pgeo "github.com/katzenpost/katzenpost/pigeonhole/geo"
 )
 
 var (
@@ -137,8 +134,13 @@ func TestConnector(t *testing.T) {
 	require.NoError(t, err)
 	payload := []byte("hello")
 
+	// Create pigeonhole geometry for proper ReplicaWrite
+	pigeonholeGeo, err := pgeo.NewGeometryFromSphinx(g, nikeScheme)
+	require.NoError(t, err)
+
 	replicaWrite := commands.ReplicaWrite{
-		Cmds: commands.NewStorageReplicaCommands(g, nikeScheme),
+		Cmds:               commands.NewStorageReplicaCommands(g, nikeScheme),
+		PigeonholeGeometry: pigeonholeGeo,
 
 		BoxID:     boxid,
 		Signature: sig,
@@ -149,9 +151,9 @@ func TestConnector(t *testing.T) {
 	dek := &[mkem.DEKSize]byte{}
 	copy(dek[:], envelope1.DEKCiphertexts[0][:])
 	mesg := &commands.ReplicaMessage{
-		Cmds:   commands.NewStorageReplicaCommands(g, nikeScheme),
-		Geo:    g,
-		Scheme: nikeScheme,
+		Cmds:               commands.NewStorageReplicaCommands(g, nikeScheme),
+		PigeonholeGeometry: pigeonholeGeo,
+		Scheme:             nikeScheme,
 
 		SenderEPubKey: mkemPubkey.Bytes(),
 		DEK:           dek,

@@ -469,6 +469,8 @@ func (c *outgoingConn) handleCommand(rawCmd commands.Command) bool {
 		c.log.Debugf("DEBUG: Received ReplicaMessageReply - IsRead: %v, ErrorCode: %d, EnvelopeReplyLen: %d",
 			replycmd.IsRead, replycmd.ErrorCode, len(replycmd.EnvelopeReply))
 		c.courier.HandleReply(replycmd)
+	case *commands.ReplicaDecoy:
+		c.log.Debugf("Received ReplicaDecoy.")
 	default:
 		c.log.Errorf("BUG, Received unexpected command from replica peer: %s", rawCmd)
 		return false

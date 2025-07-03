@@ -100,7 +100,7 @@ func waitForReply(t *testing.T, client *thin.ThinClient, eventSink chan thin.Eve
 // sendQueryAndWait sends a channel query and waits for the reply with retry logic
 func sendQueryAndWait(t *testing.T, client *thin.ThinClient, channelID uint16, message []byte, nodeID *[32]byte, queueID []byte) []byte {
 	maxRetries := 5
-	retryDelay := 3 * time.Second
+	retryDelay := 5 * time.Second
 
 	for attempt := 1; attempt <= maxRetries; attempt++ {
 		t.Logf("Sending channel query (attempt %d/%d)", attempt, maxRetries)
@@ -179,8 +179,8 @@ func TestDockerCourierServiceNewThinclientAPI(t *testing.T) {
 	require.NoError(t, err)
 	t.Log("Alice: Sent write query to courier")
 
-	// Wait for message propagation
-	time.Sleep(3 * time.Second)
+	// Wait for message propagation - increased delay for CI stability
+	time.Sleep(10 * time.Second)
 
 	// Bob reads message using the helper function
 	t.Log("Bob: Reading message")

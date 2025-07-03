@@ -135,16 +135,16 @@ func CreateChannelWriteRequest(
 	doc *cpki.Document,
 	geometry *pigeonholeGeo.Geometry) (*pigeonhole.CourierEnvelope, nike.PrivateKey, error) {
 
-	// Validate that the payload can fit within the geometry's BoxPayloadLength
+	// Validate that the payload can fit within the geometry's MaxPlaintextPayloadLength
 	// CreatePaddedPayload requires 4 bytes for length prefix plus the payload
 	minRequiredSize := len(payload) + 4
-	if minRequiredSize > geometry.BoxPayloadLength {
-		return nil, nil, fmt.Errorf("payload too large: %d bytes (+ 4 byte length prefix) exceeds BoxPayloadLength of %d bytes",
-			len(payload), geometry.BoxPayloadLength)
+	if minRequiredSize > geometry.MaxPlaintextPayloadLength+4 {
+		return nil, nil, fmt.Errorf("payload too large: %d bytes (+ 4 byte length prefix) exceeds MaxPlaintextPayloadLength + 4 of %d bytes",
+			len(payload), geometry.MaxPlaintextPayloadLength+4)
 	}
 
-	// Pad the payload to the geometry's BoxPayloadLength to fill the user forward sphinx payloads
-	paddedPayload, err := pigeonhole.CreatePaddedPayload(payload, geometry.BoxPayloadLength)
+	// Pad the payload to the geometry's MaxPlaintextPayloadLength + 4 to fill the user forward sphinx payloads
+	paddedPayload, err := pigeonhole.CreatePaddedPayload(payload, geometry.MaxPlaintextPayloadLength+4)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -184,16 +184,16 @@ func CreateChannelWriteRequestPrepareOnly(
 	doc *cpki.Document,
 	geometry *pigeonholeGeo.Geometry) (*pigeonhole.CourierEnvelope, nike.PrivateKey, error) {
 
-	// Validate that the payload can fit within the geometry's BoxPayloadLength
+	// Validate that the payload can fit within the geometry's MaxPlaintextPayloadLength
 	// CreatePaddedPayload requires 4 bytes for length prefix plus the payload
 	minRequiredSize := len(payload) + 4
-	if minRequiredSize > geometry.BoxPayloadLength {
-		return nil, nil, fmt.Errorf("payload too large: %d bytes (+ 4 byte length prefix) exceeds BoxPayloadLength of %d bytes",
-			len(payload), geometry.BoxPayloadLength)
+	if minRequiredSize > geometry.MaxPlaintextPayloadLength+4 {
+		return nil, nil, fmt.Errorf("payload too large: %d bytes (+ 4 byte length prefix) exceeds MaxPlaintextPayloadLength + 4 of %d bytes",
+			len(payload), geometry.MaxPlaintextPayloadLength+4)
 	}
 
-	// Pad the payload to the geometry's BoxPayloadLength to fill the user forward sphinx payloads
-	paddedPayload, err := pigeonhole.CreatePaddedPayload(payload, geometry.BoxPayloadLength)
+	// Pad the payload to the geometry's MaxPlaintextPayloadLength + 4 to fill the user forward sphinx payloads
+	paddedPayload, err := pigeonhole.CreatePaddedPayload(payload, geometry.MaxPlaintextPayloadLength+4)
 	if err != nil {
 		return nil, nil, err
 	}

@@ -402,7 +402,11 @@ func (t *ThinClient) worker() {
 			}
 		case message.MessageReplyEvent != nil:
 			if message.MessageReplyEvent.Payload == nil {
-				t.log.Error("message.Payload is nil")
+				if message.MessageReplyEvent.Err != "" {
+					t.log.Errorf("message.Payload is nil due to error: %s", message.MessageReplyEvent.Err)
+				} else {
+					t.log.Error("message.Payload is nil")
+				}
 			}
 			isArq := false
 			if message.MessageReplyEvent.MessageID != nil {
@@ -920,8 +924,8 @@ func (t *ThinClient) WriteChannel(ctx context.Context, channelID uint16, payload
 	}
 
 	// Validate payload size against pigeonhole geometry
-	if len(payload) > t.cfg.PigeonholeGeometry.BoxPayloadLength {
-		return nil, nil, fmt.Errorf("payload size %d exceeds maximum allowed size %d", len(payload), t.cfg.PigeonholeGeometry.BoxPayloadLength)
+	if len(payload) > t.cfg.PigeonholeGeometry.MaxPlaintextPayloadLength {
+		return nil, nil, fmt.Errorf("payload size %d exceeds maximum allowed size %d", len(payload), t.cfg.PigeonholeGeometry.MaxPlaintextPayloadLength)
 	}
 
 	req := &Request{

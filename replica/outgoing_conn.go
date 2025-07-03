@@ -381,6 +381,8 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 			case *commands.Disconnect:
 				c.log.Debugf("replica outgoingConn: Received Disconnect from peer.")
 				return
+			case *commands.ReplicaDecoy:
+				c.log.Debugf("replica outgoingConn: Received ReplicaDecoy.")
 			case *commands.ReplicaWriteReply:
 				c.log.Debugf("replica outgoingConn: Received ReplicaWriteReply error code: %d", responseCmd.ErrorCode)
 			case *commands.ReplicaMessageReply:

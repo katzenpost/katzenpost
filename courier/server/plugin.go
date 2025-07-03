@@ -370,9 +370,9 @@ func (e *Courier) handleCourierEnvelope(courierMessage *pigeonhole.CourierEnvelo
 
 	firstReplicaID := courierMessage.IntermediateReplicas[0]
 	replicas[0] = &commands.ReplicaMessage{
-		Cmds:   e.cmds,
-		Geo:    e.geo,
-		Scheme: e.envelopeScheme,
+		Cmds:               e.cmds,
+		PigeonholeGeometry: e.pigeonholeGeo,
+		Scheme:             e.envelopeScheme,
 
 		SenderEPubKey: courierMessage.SenderPubkey,
 		DEK:           &courierMessage.Dek1,
@@ -382,9 +382,9 @@ func (e *Courier) handleCourierEnvelope(courierMessage *pigeonhole.CourierEnvelo
 
 	secondReplicaID := courierMessage.IntermediateReplicas[1]
 	replicas[1] = &commands.ReplicaMessage{
-		Cmds:   e.cmds,
-		Geo:    e.geo,
-		Scheme: e.envelopeScheme,
+		Cmds:               e.cmds,
+		PigeonholeGeometry: e.pigeonholeGeo,
+		Scheme:             e.envelopeScheme,
 
 		SenderEPubKey: courierMessage.SenderPubkey,
 		DEK:           &courierMessage.Dek2,

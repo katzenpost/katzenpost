@@ -1,4 +1,4 @@
-package geo
+package tests
 
 import (
 	"testing"
