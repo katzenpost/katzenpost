@@ -129,7 +129,7 @@ config-only: | $(net_name)
 		--serviceNodes ${serviceNodes} \
 		--sendRate ${sr} --mu ${mu} --muMax ${muMax} --lambdaP ${lP} --lambdaPMax ${lPMax} --lambdaL ${lL} \
 		--lambdaLMax ${lLMax} --lambdaD ${lD} --lambdaDMax ${lDMax} --lambdaM ${lM} --lambdaMMax ${lMMax} \
-		--voting --outDir ../docker/$(net_name) --baseDir /$(net_name) --port $(base_port) \
+		--voting --outDir ../../docker/$(net_name) --baseDir /$(net_name) --port $(base_port) \
 		--nike "$(nike)" --kem "$(kem)" \
 		${noMixDecoy} ${noDecoy} \
 		--UserForwardPayloadLength $(UserForwardPayloadLength) --logLevel $(log_level)
