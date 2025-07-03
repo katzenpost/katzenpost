@@ -970,8 +970,10 @@ func (t *ThinClient) WriteChannel(ctx context.Context, channelID uint16, payload
 	}
 }
 
-// ReadChannel prepares a read query for a pigeonhole channel and returns the payload, next MessageBoxIndex, and used ReplyIndex.
-// The thin client must then call SendChannelQuery with the returned payload to actually send the query.
+// ReadChannel prepares a read query for a pigeonhole channel and
+// returns the payload, next MessageBoxIndex, and used ReplyIndex.
+// The thin client must then call SendChannelQuery with the
+// returned payload to actually send the query.
 func (t *ThinClient) ReadChannel(ctx context.Context, channelID uint16, messageID *[MessageIDLength]byte, replyIndex *uint8) ([]byte, *bacap.MessageBoxIndex, *uint8, error) {
 	if ctx == nil {
 		return nil, nil, nil, errContextCannotBeNil
@@ -1070,4 +1072,124 @@ func (t *ThinClient) SendChannelQuery(
 	}
 
 	return t.writeMessage(req)
+}
+
+// sendChannelQueryAndWait sends a channel query and waits for the reply
+func (t *ThinClient) sendChannelQueryAndWait(ctx context.Context, channelID uint16, payload []byte, destNode *[32]byte, destQueue []byte) ([]byte, error) {
+	eventSink := t.EventSink()
+	defer t.StopEventSink(eventSink)
+
+	err := t.SendChannelQuery(ctx, channelID, payload, destNode, destQueue)
+	if err != nil {
+		return nil, err
+	}
+
+	for {
+		var event Event
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case event = <-eventSink:
+		case <-t.HaltCh():
+			return nil, errHalting
+		}
+
+		switch v := event.(type) {
+		case *MessageIDGarbageCollected:
+			t.log.Debugf("sendChannelQueryAndWait: Received MessageIDGarbageCollected")
+		case *ConnectionStatusEvent:
+			t.log.Debugf("sendChannelQueryAndWait: Received ConnectionStatusEvent: connected=%v", v.IsConnected)
+			// Update connection state
+			t.isConnected = v.IsConnected
+			if !v.IsConnected {
+				return nil, errors.New("connection lost during channel query")
+			}
+		case *NewDocumentEvent:
+			t.log.Debugf("sendChannelQueryAndWait: Received NewDocumentEvent")
+		case *MessageSentEvent:
+			t.log.Debugf("sendChannelQueryAndWait: Received MessageSentEvent")
+		case *MessageReplyEvent:
+			t.log.Debugf("sendChannelQueryAndWait: Received MessageReplyEvent: Err=%s, PayloadLen=%d", v.Err, len(v.Payload))
+			if v.Err != "" {
+				return nil, fmt.Errorf("channel query failed: %s", v.Err)
+			}
+			if len(v.Payload) == 0 {
+				return nil, errors.New("received empty payload")
+			}
+			t.log.Debugf("sendChannelQueryAndWait: Received valid payload")
+			return v.Payload, nil
+		default:
+			t.log.Debugf("sendChannelQueryAndWait: Received unknown event type: %T", event)
+		}
+	}
+}
+
+// ReadChannelWithRetry sends a read query for a pigeonhole channel with automatic reply index retry.
+// It first tries reply index 0 up to 3 times, and if that fails, it tries reply index 1 up to 3 times.
+// This method handles the common case where the courier has cached replies at different indices
+// and accounts for timing issues where messages may not have propagated yet.
+// This method requires mixnet connectivity and will fail in offline mode.
+func (t *ThinClient) ReadChannelWithRetry(ctx context.Context, channelID uint16, messageID *[MessageIDLength]byte, destNode *[32]byte, destQueue []byte) ([]byte, error) {
+	if ctx == nil {
+		return nil, errContextCannotBeNil
+	}
+	if messageID == nil {
+		return nil, errors.New("messageID cannot be nil")
+	}
+	if destNode == nil {
+		return nil, errors.New("destNode cannot be nil")
+	}
+	if destQueue == nil {
+		return nil, errors.New("destQueue cannot be nil")
+	}
+
+	// Check if we're in offline mode
+	if !t.isConnected {
+		return nil, errors.New("cannot send channel query in offline mode - daemon not connected to mixnet")
+	}
+
+	const maxRetries = 2
+	replyIndices := []uint8{0, 1}
+
+	for _, replyIndex := range replyIndices {
+		// Prepare the read query for this reply index
+		payload, _, _, err := t.ReadChannel(ctx, channelID, messageID, &replyIndex)
+		if err != nil {
+			return nil, fmt.Errorf("failed to prepare read query with reply index %d: %w", replyIndex, err)
+		}
+
+		// Try this reply index up to maxRetries times
+		for attempt := 1; attempt <= maxRetries; attempt++ {
+			t.log.Debugf("ReadChannelWithRetry: Trying reply index %d (attempt %d/%d)", replyIndex, attempt, maxRetries)
+
+			// Create a timeout context for this individual attempt
+			attemptCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+			result, err := t.sendChannelQueryAndWait(attemptCtx, channelID, payload, destNode, destQueue)
+			cancel()
+
+			if err == nil {
+				t.log.Debugf("ReadChannelWithRetry: Reply index %d succeeded on attempt %d", replyIndex, attempt)
+				return result, nil
+			}
+
+			t.log.Debugf("ReadChannelWithRetry: Reply index %d attempt %d failed: %v", replyIndex, attempt, err)
+
+			// If this was the last attempt for this reply index, move to next reply index
+			if attempt == maxRetries {
+				break
+			}
+
+			// Add a small delay between retries to allow for message propagation
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(2 * time.Second):
+				// Continue to next attempt
+			}
+		}
+	}
+
+	// All reply indices and attempts failed
+	t.log.Debugf("ReadChannelWithRetry: All reply indices failed after %d attempts each", maxRetries)
+	return nil, errors.New("all reply indices failed after multiple attempts")
 }
