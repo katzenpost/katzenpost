@@ -39,10 +39,9 @@ const (
 
 var (
 	// Error variables for reuse
-	errContextCannotBeNil   = errors.New("context cannot be nil")
-	errChannelIDCannotBeNil = errors.New("channelID cannot be nil")
-	errConnectionLost       = errors.New("connection lost")
-	errHalting              = errors.New("halting")
+	errContextCannotBeNil = errors.New("context cannot be nil")
+	errConnectionLost     = errors.New("connection lost")
+	errHalting            = errors.New("halting")
 )
 
 // ThinResponse is used to encapsulate a message response
@@ -74,8 +73,7 @@ type ThinClient struct {
 	log        *logging.Logger
 	logBackend *log.Backend
 
-	conn         net.Conn
-	destUnixAddr *net.UnixAddr
+	conn net.Conn
 
 	pkidoc      *cpki.Document
 	pkidocMutex sync.RWMutex
@@ -93,8 +91,6 @@ type ThinClient struct {
 	// used by BlockingSendReliableMessage only
 	sentWaitChanMap  sync.Map // MessageID -> chan error
 	replyWaitChanMap sync.Map // MessageID -> chan *MessageReplyEvent
-
-	closeOnce sync.Once
 }
 
 // Config is the thin client config.
@@ -970,8 +966,10 @@ func (t *ThinClient) WriteChannel(ctx context.Context, channelID uint16, payload
 	}
 }
 
-// ReadChannel prepares a read query for a pigeonhole channel and returns the payload, next MessageBoxIndex, and used ReplyIndex.
-// The thin client must then call SendChannelQuery with the returned payload to actually send the query.
+// ReadChannel prepares a read query for a pigeonhole channel and
+// returns the payload, next MessageBoxIndex, and used ReplyIndex.
+// The thin client must then call SendChannelQuery with the
+// returned payload to actually send the query.
 func (t *ThinClient) ReadChannel(ctx context.Context, channelID uint16, messageID *[MessageIDLength]byte, replyIndex *uint8) ([]byte, *bacap.MessageBoxIndex, *uint8, error) {
 	if ctx == nil {
 		return nil, nil, nil, errContextCannotBeNil
@@ -1046,6 +1044,7 @@ func (t *ThinClient) SendChannelQuery(
 	payload []byte,
 	destNode *[32]byte,
 	destQueue []byte,
+	messageID *[MessageIDLength]byte,
 ) error {
 
 	if ctx == nil {
@@ -1060,6 +1059,7 @@ func (t *ThinClient) SendChannelQuery(
 	surbID := t.NewSURBID()
 	req := &Request{
 		SendMessage: &SendMessage{
+			ID:                messageID,
 			ChannelID:         &channelID,
 			SURBID:            surbID,
 			WithSURB:          true,
@@ -1070,4 +1070,184 @@ func (t *ThinClient) SendChannelQuery(
 	}
 
 	return t.writeMessage(req)
+}
+
+// ReadChannelWithRetry sends a read query for a pigeonhole channel with automatic reply index retry.
+// It first tries reply index 0 up to 3 times, and if that fails, it tries reply index 1 up to 3 times.
+// This method handles the common case where the courier has cached replies at different indices
+// and accounts for timing issues where messages may not have propagated yet.
+// This method requires mixnet connectivity and will fail in offline mode.
+// The method matches replies by messageID to ensure correct correlation.
+func (t *ThinClient) ReadChannelWithRetry(ctx context.Context, channelID uint16, messageID *[MessageIDLength]byte, destNode *[32]byte, destQueue []byte) ([]byte, error) {
+	if ctx == nil {
+		return nil, errContextCannotBeNil
+	}
+	if messageID == nil {
+		return nil, errors.New("messageID cannot be nil")
+	}
+	if destNode == nil {
+		return nil, errors.New("destNode cannot be nil")
+	}
+	if destQueue == nil {
+		return nil, errors.New("destQueue cannot be nil")
+	}
+
+	// Check if we're in offline mode
+	if !t.isConnected {
+		return nil, errors.New("cannot send channel query in offline mode - daemon not connected to mixnet")
+	}
+
+	const maxRetries = 2
+	replyIndices := []uint8{0, 1}
+
+	for _, replyIndex := range replyIndices {
+		// Prepare the read query for this reply index
+		payload, _, _, err := t.ReadChannel(ctx, channelID, messageID, &replyIndex)
+		if err != nil {
+			return nil, fmt.Errorf("failed to prepare read query with reply index %d: %w", replyIndex, err)
+		}
+
+		// Try this reply index up to maxRetries times
+		for attempt := 1; attempt <= maxRetries; attempt++ {
+			t.log.Debugf("ReadChannelWithRetry: Trying reply index %d (attempt %d/%d)", replyIndex, attempt, maxRetries)
+
+			// Create a timeout context for this individual attempt
+			attemptCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+			result, err := t.sendChannelQueryAndWaitForMessageID(attemptCtx, channelID, payload, destNode, destQueue, messageID, true)
+			cancel()
+
+			if err == nil {
+				// For read operations, we should only consider it successful if we got actual data
+				if len(result) > 0 {
+					t.log.Debugf("ReadChannelWithRetry: Reply index %d succeeded on attempt %d with %d bytes", replyIndex, attempt, len(result))
+					return result, nil
+				} else {
+					t.log.Debugf("ReadChannelWithRetry: Reply index %d attempt %d got empty payload, treating as failure", replyIndex, attempt)
+					err = errors.New("received empty payload - message not available yet")
+				}
+			}
+
+			t.log.Debugf("ReadChannelWithRetry: Reply index %d attempt %d failed: %v", replyIndex, attempt, err)
+
+			// If this was the last attempt for this reply index, move to next reply index
+			if attempt == maxRetries {
+				break
+			}
+
+			// Add a small delay between retries to allow for message propagation
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(2 * time.Second):
+				// Continue to next attempt
+			}
+		}
+	}
+
+	// All reply indices and attempts failed
+	t.log.Debugf("ReadChannelWithRetry: All reply indices failed after %d attempts each", maxRetries)
+	return nil, errors.New("all reply indices failed after multiple attempts")
+}
+
+// WriteChannelWithReply writes a message to a pigeonhole channel and waits for the write confirmation.
+// This method handles the complete write flow: preparing the write payload, sending it to the courier,
+// and waiting for the write completion confirmation.
+// This method requires mixnet connectivity and will fail in offline mode.
+func (t *ThinClient) WriteChannelWithReply(ctx context.Context, channelID uint16, payload []byte, destNode *[32]byte, destQueue []byte) error {
+	if ctx == nil {
+		return errContextCannotBeNil
+	}
+	if destNode == nil {
+		return errors.New("destNode cannot be nil")
+	}
+	if destQueue == nil {
+		return errors.New("destQueue cannot be nil")
+	}
+
+	// Check if we're in offline mode
+	if !t.isConnected {
+		return errors.New("cannot send channel query in offline mode - daemon not connected to mixnet")
+	}
+
+	// Prepare the write message
+	writePayload, _, err := t.WriteChannel(ctx, channelID, payload)
+	if err != nil {
+		return fmt.Errorf("failed to prepare write message: %w", err)
+	}
+
+	// Generate a messageID for this write operation
+	writeMessageID := t.NewMessageID()
+
+	// Send the write query and wait for completion
+	// For write operations, we don't care about the payload, just that it succeeded
+	_, err = t.sendChannelQueryAndWaitForMessageID(ctx, channelID, writePayload, destNode, destQueue, writeMessageID, false)
+	return err
+}
+
+// sendChannelQueryAndWaitForMessageID sends a channel query and waits for a reply with the specified messageID
+func (t *ThinClient) sendChannelQueryAndWaitForMessageID(ctx context.Context, channelID uint16, payload []byte, destNode *[32]byte, destQueue []byte, expectedMessageID *[MessageIDLength]byte, isReadOperation bool) ([]byte, error) {
+	eventSink := t.EventSink()
+	defer t.StopEventSink(eventSink)
+
+	err := t.SendChannelQuery(ctx, channelID, payload, destNode, destQueue, expectedMessageID)
+	if err != nil {
+		return nil, err
+	}
+
+	for {
+		var event Event
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case event = <-eventSink:
+		case <-t.HaltCh():
+			return nil, errHalting
+		}
+
+		switch v := event.(type) {
+		case *MessageIDGarbageCollected:
+			t.log.Debugf("sendChannelQueryAndWaitForMessageID: Received MessageIDGarbageCollected")
+		case *ConnectionStatusEvent:
+			t.log.Debugf("sendChannelQueryAndWaitForMessageID: Received ConnectionStatusEvent: connected=%v", v.IsConnected)
+			// Update connection state
+			t.isConnected = v.IsConnected
+			if !v.IsConnected {
+				return nil, errors.New("connection lost during channel query")
+			}
+		case *NewDocumentEvent:
+			t.log.Debugf("sendChannelQueryAndWaitForMessageID: Received NewDocumentEvent")
+		case *MessageSentEvent:
+			t.log.Debugf("sendChannelQueryAndWaitForMessageID: Received MessageSentEvent")
+		case *MessageReplyEvent:
+			// Check if this reply matches our expected messageID
+			if v.MessageID == nil {
+				t.log.Debugf("sendChannelQueryAndWaitForMessageID: Received MessageReplyEvent with nil MessageID, ignoring")
+				continue
+			}
+			if *v.MessageID != *expectedMessageID {
+				t.log.Debugf("sendChannelQueryAndWaitForMessageID: Received MessageReplyEvent with mismatched MessageID (expected %x, got %x), ignoring",
+					expectedMessageID[:8], v.MessageID[:8])
+				continue
+			}
+
+			t.log.Debugf("sendChannelQueryAndWaitForMessageID: Received matching MessageReplyEvent: Err=%s, PayloadLen=%d", v.Err, len(v.Payload))
+			if v.Err != "" {
+				return nil, fmt.Errorf("channel query failed: %s", v.Err)
+			}
+			// Handle empty payload based on operation type
+			if len(v.Payload) == 0 {
+				if isReadOperation {
+					t.log.Debugf("sendChannelQueryAndWaitForMessageID: Received empty payload for read operation - message not available yet for messageID %x", expectedMessageID[:8])
+					return nil, errors.New("message not available yet - empty payload")
+				} else {
+					t.log.Debugf("sendChannelQueryAndWaitForMessageID: Received successful reply with empty payload (write operation) for messageID %x", expectedMessageID[:8])
+					return []byte{}, nil // Return empty byte slice to indicate success
+				}
+			}
+			t.log.Debugf("sendChannelQueryAndWaitForMessageID: Received valid payload for messageID %x", expectedMessageID[:8])
+			return v.Payload, nil
+		default:
+			t.log.Debugf("sendChannelQueryAndWaitForMessageID: Received unknown event type: %T", event)
+		}
+	}
 }
