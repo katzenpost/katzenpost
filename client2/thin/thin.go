@@ -1044,6 +1044,7 @@ func (t *ThinClient) SendChannelQuery(
 	payload []byte,
 	destNode *[32]byte,
 	destQueue []byte,
+	messageID *[MessageIDLength]byte,
 ) error {
 
 	if ctx == nil {
@@ -1055,7 +1056,6 @@ func (t *ThinClient) SendChannelQuery(
 		return errors.New("cannot send channel query in offline mode - daemon not connected to mixnet")
 	}
 
-	messageID := t.NewMessageID()
 	surbID := t.NewSURBID()
 	req := &Request{
 		SendMessage: &SendMessage{
