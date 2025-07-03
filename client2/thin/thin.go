@@ -402,7 +402,11 @@ func (t *ThinClient) worker() {
 			}
 		case message.MessageReplyEvent != nil:
 			if message.MessageReplyEvent.Payload == nil {
-				t.log.Error("message.Payload is nil")
+				if message.MessageReplyEvent.Err != "" {
+					t.log.Errorf("message.Payload is nil due to error: %s", message.MessageReplyEvent.Err)
+				} else {
+					t.log.Error("message.Payload is nil")
+				}
 			}
 			isArq := false
 			if message.MessageReplyEvent.MessageID != nil {

@@ -1093,8 +1093,9 @@ func (d *Daemon) decryptReadReplyPayload(params *NewReplyHandlerParams, readRepl
 // processReadReplyPayload processes the read reply and returns payload and error
 func (d *Daemon) processReadReplyPayload(params *NewReplyHandlerParams, readReply *pigeonhole.ReplicaReadReply) ([]byte, error) {
 	if readReply.ErrorCode != 0 {
-		d.log.Errorf("read failed for channel %d with error code %d", params.ChannelID, readReply.ErrorCode)
-		return nil, fmt.Errorf("read failed with error code %d", readReply.ErrorCode)
+		errorMsg := pigeonhole.ReplicaErrorToString(readReply.ErrorCode)
+		d.log.Errorf("read failed for channel %d with error code %d (%s)", params.ChannelID, readReply.ErrorCode, errorMsg)
+		return nil, fmt.Errorf("read failed with error code %d (%s)", readReply.ErrorCode, errorMsg)
 	}
 
 	if err := d.validateReadReplySignature(readReply.Signature); err != nil {
