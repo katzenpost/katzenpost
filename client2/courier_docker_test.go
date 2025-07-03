@@ -63,28 +63,25 @@ func TestDockerCourierServiceNewThinclientAPI(t *testing.T) {
 	require.NoError(t, err)
 	t.Logf("Bob: Created read channel %d", bobChannelID)
 
-	// Alice writes message
+	// Alice writes message and waits for completion
 	originalMessage := []byte("Hello from Alice to Bob via new channel API!")
-	t.Log("Alice: Writing message")
-	writePayload, _, err := aliceThinClient.WriteChannel(ctx, channelID, originalMessage)
-	require.NoError(t, err)
-	require.NotNil(t, writePayload)
-	t.Logf("Alice: Generated write payload (%d bytes)", len(writePayload))
+	t.Log("Alice: Writing message and waiting for completion")
 
-	// Alice sends write query via courier
+	// Get courier service info
 	epochDoc, err := aliceThinClient.PKIDocumentForEpoch(currentEpoch)
 	require.NoError(t, err)
 	courierServices := common.FindServices("courier", epochDoc)
 	require.True(t, len(courierServices) > 0, "No courier services found")
 	courierService := courierServices[0]
-
 	identityHash := hash.Sum256(courierService.MixDescriptor.IdentityKey)
-	err = aliceThinClient.SendChannelQuery(ctx, channelID, writePayload, &identityHash, courierService.RecipientQueueID)
-	require.NoError(t, err)
-	t.Log("Alice: Sent write query to courier")
 
-	// Wait for message propagation - increased delay for CI stability
-	time.Sleep(10 * time.Second)
+	// Use WriteChannelWithReply to write and wait for completion
+	err = aliceThinClient.WriteChannelWithReply(ctx, channelID, originalMessage, &identityHash, courierService.RecipientQueueID)
+	require.NoError(t, err)
+	t.Log("Alice: Write operation completed successfully")
+
+	// Wait for message propagation to storage replicas
+	time.Sleep(5 * time.Second)
 
 	// Bob reads message using the helper function with automatic retry logic
 	t.Log("Bob: Reading message with automatic reply index retry")

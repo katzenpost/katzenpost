@@ -1044,6 +1044,7 @@ func (t *ThinClient) SendChannelQuery(
 	payload []byte,
 	destNode *[32]byte,
 	destQueue []byte,
+	messageID *[MessageIDLength]byte,
 ) error {
 
 	if ctx == nil {
@@ -1058,6 +1059,7 @@ func (t *ThinClient) SendChannelQuery(
 	surbID := t.NewSURBID()
 	req := &Request{
 		SendMessage: &SendMessage{
+			ID:                messageID,
 			ChannelID:         &channelID,
 			SURBID:            surbID,
 			WithSURB:          true,
@@ -1111,12 +1113,18 @@ func (t *ThinClient) ReadChannelWithRetry(ctx context.Context, channelID uint16,
 
 			// Create a timeout context for this individual attempt
 			attemptCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
-			result, err := t.sendChannelQueryAndWaitForMessageID(attemptCtx, channelID, payload, destNode, destQueue, messageID)
+			result, err := t.sendChannelQueryAndWaitForMessageID(attemptCtx, channelID, payload, destNode, destQueue, messageID, true)
 			cancel()
 
 			if err == nil {
-				t.log.Debugf("ReadChannelWithRetry: Reply index %d succeeded on attempt %d", replyIndex, attempt)
-				return result, nil
+				// For read operations, we should only consider it successful if we got actual data
+				if len(result) > 0 {
+					t.log.Debugf("ReadChannelWithRetry: Reply index %d succeeded on attempt %d with %d bytes", replyIndex, attempt, len(result))
+					return result, nil
+				} else {
+					t.log.Debugf("ReadChannelWithRetry: Reply index %d attempt %d got empty payload, treating as failure", replyIndex, attempt)
+					err = errors.New("received empty payload - message not available yet")
+				}
 			}
 
 			t.log.Debugf("ReadChannelWithRetry: Reply index %d attempt %d failed: %v", replyIndex, attempt, err)
@@ -1141,12 +1149,47 @@ func (t *ThinClient) ReadChannelWithRetry(ctx context.Context, channelID uint16,
 	return nil, errors.New("all reply indices failed after multiple attempts")
 }
 
+// WriteChannelWithReply writes a message to a pigeonhole channel and waits for the write confirmation.
+// This method handles the complete write flow: preparing the write payload, sending it to the courier,
+// and waiting for the write completion confirmation.
+// This method requires mixnet connectivity and will fail in offline mode.
+func (t *ThinClient) WriteChannelWithReply(ctx context.Context, channelID uint16, payload []byte, destNode *[32]byte, destQueue []byte) error {
+	if ctx == nil {
+		return errContextCannotBeNil
+	}
+	if destNode == nil {
+		return errors.New("destNode cannot be nil")
+	}
+	if destQueue == nil {
+		return errors.New("destQueue cannot be nil")
+	}
+
+	// Check if we're in offline mode
+	if !t.isConnected {
+		return errors.New("cannot send channel query in offline mode - daemon not connected to mixnet")
+	}
+
+	// Prepare the write message
+	writePayload, _, err := t.WriteChannel(ctx, channelID, payload)
+	if err != nil {
+		return fmt.Errorf("failed to prepare write message: %w", err)
+	}
+
+	// Generate a messageID for this write operation
+	writeMessageID := t.NewMessageID()
+
+	// Send the write query and wait for completion
+	// For write operations, we don't care about the payload, just that it succeeded
+	_, err = t.sendChannelQueryAndWaitForMessageID(ctx, channelID, writePayload, destNode, destQueue, writeMessageID, false)
+	return err
+}
+
 // sendChannelQueryAndWaitForMessageID sends a channel query and waits for a reply with the specified messageID
-func (t *ThinClient) sendChannelQueryAndWaitForMessageID(ctx context.Context, channelID uint16, payload []byte, destNode *[32]byte, destQueue []byte, expectedMessageID *[MessageIDLength]byte) ([]byte, error) {
+func (t *ThinClient) sendChannelQueryAndWaitForMessageID(ctx context.Context, channelID uint16, payload []byte, destNode *[32]byte, destQueue []byte, expectedMessageID *[MessageIDLength]byte, isReadOperation bool) ([]byte, error) {
 	eventSink := t.EventSink()
 	defer t.StopEventSink(eventSink)
 
-	err := t.SendChannelQuery(ctx, channelID, payload, destNode, destQueue)
+	err := t.SendChannelQuery(ctx, channelID, payload, destNode, destQueue, expectedMessageID)
 	if err != nil {
 		return nil, err
 	}
@@ -1191,8 +1234,15 @@ func (t *ThinClient) sendChannelQueryAndWaitForMessageID(ctx context.Context, ch
 			if v.Err != "" {
 				return nil, fmt.Errorf("channel query failed: %s", v.Err)
 			}
+			// Handle empty payload based on operation type
 			if len(v.Payload) == 0 {
-				return nil, errors.New("received empty payload")
+				if isReadOperation {
+					t.log.Debugf("sendChannelQueryAndWaitForMessageID: Received empty payload for read operation - message not available yet for messageID %x", expectedMessageID[:8])
+					return nil, errors.New("message not available yet - empty payload")
+				} else {
+					t.log.Debugf("sendChannelQueryAndWaitForMessageID: Received successful reply with empty payload (write operation) for messageID %x", expectedMessageID[:8])
+					return []byte{}, nil // Return empty byte slice to indicate success
+				}
 			}
 			t.log.Debugf("sendChannelQueryAndWaitForMessageID: Received valid payload for messageID %x", expectedMessageID[:8])
 			return v.Payload, nil

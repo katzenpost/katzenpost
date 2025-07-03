@@ -428,6 +428,15 @@ func (d *Daemon) handleReply(reply *sphinxReply) {
 	myChannelReplyDescriptor, isChannelReply := d.channelReplies[*reply.surbID]
 	d.channelRepliesLock.RUnlock()
 
+	// Debug logging for channel reply lookup
+	if isChannelReply {
+		if myChannelReplyDescriptor.ID != nil {
+			d.log.Errorf("DEBUG: Found channel reply descriptor with MessageID %x for SURBID %x", myChannelReplyDescriptor.ID[:8], reply.surbID[:8])
+		} else {
+			d.log.Errorf("DEBUG: WARNING: Found channel reply descriptor with nil MessageID for SURBID %x", reply.surbID[:8])
+		}
+	}
+
 	switch {
 	case isReply:
 		desc = myReplyDescriptor
@@ -840,9 +849,17 @@ func (d *Daemon) send(request *Request) {
 		// Check if this is a new API channel query (has ChannelID field)
 		if request.SendMessage.ChannelID != nil {
 
+			// Debug logging for MessageID
+			if request.SendMessage.ID != nil {
+				d.log.Errorf("DEBUG: Storing channel reply with MessageID %x for SURBID %x", request.SendMessage.ID[:8], request.SendMessage.SURBID[:8])
+			} else {
+				d.log.Errorf("DEBUG: WARNING: Storing channel reply with nil MessageID for SURBID %x", request.SendMessage.SURBID[:8])
+			}
+
 			// New API: store in channel replies and new SURB ID map
 			d.channelRepliesLock.Lock()
 			d.channelReplies[*request.SendMessage.SURBID] = replyDescriptor{
+				ID:      request.SendMessage.ID,
 				appID:   request.AppID,
 				surbKey: surbKey,
 			}
@@ -855,6 +872,7 @@ func (d *Daemon) send(request *Request) {
 		} else {
 			// Old API: store in regular replies
 			d.replies[*request.SendMessage.SURBID] = replyDescriptor{
+				ID:      request.SendMessage.ID,
 				appID:   request.AppID,
 				surbKey: surbKey,
 			}
@@ -1160,6 +1178,7 @@ func (d *Daemon) handleNewWriteReply(params *NewReplyHandlerParams, writeReply *
 		AppID: params.AppID,
 		MessageReplyEvent: &thin.MessageReplyEvent{
 			MessageID: params.MessageID,
+			Payload:   []byte{}, // Empty payload for write operations
 			Err:       errStr,
 		},
 	})
