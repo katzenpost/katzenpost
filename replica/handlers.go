@@ -51,6 +51,9 @@ func (c *incomingConn) onReplicaCommand(rawCmd commands.Command) (commands.Comma
 	case *commands.Disconnect:
 		c.log.Debug("Received disconnect from peer")
 		return nil, false
+	case *commands.ReplicaDecoy:
+		c.log.Debug("Received ReplicaDecoy from peer")
+		return nil, true
 	case *commands.ReplicaWrite:
 		c.log.Debugf("Processing ReplicaWrite command for BoxID: %x", cmd.BoxID)
 		// Convert wire command to trunnel type
