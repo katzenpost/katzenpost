@@ -172,7 +172,7 @@ type CreateWriteChannelReply struct {
 
 	// ErrorCode indicates the success or failure of the channel creation.
 	// A value of ThinClientErrorSuccess indicates successful creation.
-	ErrorCode uint8 `cbor:"error_code,omitempty"`
+	ErrorCode uint8 `cbor:"error_code"`
 }
 
 // CreateReadChannelReply is sent in response to a CreateReadChannel request.
@@ -189,7 +189,7 @@ type CreateReadChannelReply struct {
 
 	// ErrorCode indicates the success or failure of the channel creation.
 	// A value of ThinClientErrorSuccess indicates successful creation.
-	ErrorCode uint8 `cbor:"error_code,omitempty"`
+	ErrorCode uint8 `cbor:"error_code"`
 }
 
 // String returns a string representation of the CreateReadChannelReply.
@@ -217,7 +217,7 @@ type WriteChannelReply struct {
 
 	// ErrorCode indicates the success or failure of preparing the write operation.
 	// A value of ThinClientErrorSuccess indicates the payload is ready to send.
-	ErrorCode uint8 `cbor:"error_code,omitempty"`
+	ErrorCode uint8 `cbor:"error_code"`
 }
 
 // String returns a string representation of the WriteChannelReply.
@@ -253,7 +253,7 @@ type ReadChannelReply struct {
 
 	// ErrorCode indicates the success or failure of preparing the read operation.
 	// A value of ThinClientErrorSuccess indicates the query is ready to send.
-	ErrorCode uint8 `cbor:"error_code,omitempty"`
+	ErrorCode uint8 `cbor:"error_code"`
 }
 
 // String returns a string representation of the ReadChannelReply.
