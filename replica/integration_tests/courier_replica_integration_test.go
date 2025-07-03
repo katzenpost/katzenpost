@@ -1542,9 +1542,10 @@ func verifyTombstones(t *testing.T, env *testEnvironment, tempWriteCap *bacap.Wr
 // Uses the sharding algorithm to determine which replicas should store this BoxID.
 func aliceComposesDirectWriteToReplica(t *testing.T, env *testEnvironment, boxID *[bacap.BoxIDSize]byte, signature *[bacap.SignatureSize]byte, ciphertext []byte) *pigeonhole.CourierEnvelope {
 	writeRequest := commands.ReplicaWrite{
-		BoxID:     boxID,
-		Signature: signature,
-		Payload:   ciphertext,
+		PigeonholeGeometry: env.geometry,
+		BoxID:              boxID,
+		Signature:          signature,
+		Payload:            ciphertext,
 	}
 	msg := &pigeonhole.ReplicaInnerMessage{
 		ReplicaWrite: &writeRequest,

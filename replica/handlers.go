@@ -11,7 +11,36 @@ import (
 
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"github.com/katzenpost/katzenpost/pigeonhole"
+	pgeo "github.com/katzenpost/katzenpost/pigeonhole/geo"
 )
+
+// createReplicaMessageReply creates a ReplicaMessageReply with proper PigeonholeGeometry
+func (c *incomingConn) createReplicaMessageReply(nikeScheme string, errorCode uint8, envelopeHash *[32]byte, envelopeReply []byte, replicaID uint8, isRead bool) *commands.ReplicaMessageReply {
+	scheme := schemes.ByName(nikeScheme)
+	pigeonholeGeo, err := pgeo.NewGeometryFromSphinx(c.geo, scheme)
+	if err != nil {
+		// This should not happen in normal operation, but if it does, create without geometry
+		c.log.Errorf("Failed to create pigeonhole geometry: %v", err)
+		return &commands.ReplicaMessageReply{
+			Cmds:          commands.NewStorageReplicaCommands(c.geo, scheme),
+			ErrorCode:     errorCode,
+			EnvelopeHash:  envelopeHash,
+			EnvelopeReply: envelopeReply,
+			ReplicaID:     replicaID,
+			IsRead:        isRead,
+		}
+	}
+
+	return &commands.ReplicaMessageReply{
+		Cmds:               commands.NewStorageReplicaCommands(c.geo, scheme),
+		PigeonholeGeometry: pigeonholeGeo,
+		ErrorCode:          errorCode,
+		EnvelopeHash:       envelopeHash,
+		EnvelopeReply:      envelopeReply,
+		ReplicaID:          replicaID,
+		IsRead:             isRead,
+	}
+}
 
 func (c *incomingConn) onReplicaCommand(rawCmd commands.Command) (commands.Command, bool) {
 	c.log.Debugf("onReplicaCommand received command type: %T with value: %+v", rawCmd, rawCmd)
@@ -53,12 +82,7 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 	if err != nil {
 		c.log.Errorf("handleReplicaMessage failed to unmarshal SenderEPubKey: %s", err)
 		envelopeHash := replicaMessage.EnvelopeHash()
-		return &commands.ReplicaMessageReply{
-			Cmds:          commands.NewStorageReplicaCommands(c.geo, nikeScheme),
-			ErrorCode:     pigeonhole.ReplicaErrorInternalError,
-			EnvelopeHash:  envelopeHash,
-			EnvelopeReply: []byte{},
-		}
+		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, envelopeHash, []byte{}, 0, false)
 	}
 	ct := &mkem.Ciphertext{
 		EphemeralPublicKey: ephemeralPublicKey,
@@ -77,14 +101,7 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 	if err != nil {
 		c.log.Errorf("handleReplicaMessage Decapsulate failed: %s", err)
 		envelopeHash := replicaMessage.EnvelopeHash()
-		errReply := &commands.ReplicaMessageReply{
-			Cmds:          commands.NewStorageReplicaCommands(c.geo, nikeScheme),
-			ErrorCode:     pigeonhole.ReplicaErrorInternalError,
-			EnvelopeHash:  envelopeHash,
-			ReplicaID:     0, // We don't have a valid replica ID in this error case
-			EnvelopeReply: []byte{},
-		}
-		return errReply
+		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, envelopeHash, []byte{}, 0, false)
 	}
 
 	c.log.Debug("Successfully decapsulated message, parsing command")
@@ -99,12 +116,7 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 	keypair, err := c.l.server.envelopeKeys.GetKeypair(replicaEpoch)
 	if err != nil {
 		c.log.Errorf("handleReplicaMessage failed to get envelope keypair: %s", err)
-		return &commands.ReplicaMessageReply{
-			Cmds:          commands.NewStorageReplicaCommands(c.geo, nikeScheme),
-			ErrorCode:     pigeonhole.ReplicaErrorInvalidEpoch,
-			EnvelopeHash:  envelopeHash,
-			EnvelopeReply: []byte{},
-		}
+		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInvalidEpoch, envelopeHash, []byte{}, 0, false)
 	}
 	// Use the ephemeralPublicKey we already unmarshaled earlier
 	senderpubkey := ephemeralPublicKey
@@ -112,22 +124,12 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 	doc := c.l.server.PKIWorker.PKIDocument()
 	if doc == nil {
 		c.log.Error("handleReplicaMessage failed: no PKI document available")
-		return &commands.ReplicaMessageReply{
-			Cmds:          commands.NewStorageReplicaCommands(c.geo, nikeScheme),
-			ErrorCode:     pigeonhole.ReplicaErrorInvalidEpoch,
-			EnvelopeHash:  envelopeHash,
-			EnvelopeReply: []byte{},
-		}
+		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInvalidEpoch, envelopeHash, []byte{}, 0, false)
 	}
 	replicaID, err := doc.GetReplicaIDByIdentityKey(c.l.server.identityPublicKey)
 	if err != nil {
 		c.log.Errorf("handleReplicaMessage failed to get our own replica ID: %s", err)
-		return &commands.ReplicaMessageReply{
-			Cmds:          commands.NewStorageReplicaCommands(c.geo, nikeScheme),
-			ErrorCode:     pigeonhole.ReplicaErrorInternalError,
-			EnvelopeHash:  envelopeHash,
-			EnvelopeReply: []byte{},
-		}
+		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, envelopeHash, []byte{}, 0, false)
 	}
 
 	switch {
@@ -140,14 +142,7 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 		}
 		replyInnerMessageBlob := replyInnerMessage.Bytes()
 		envelopeReply := scheme.EnvelopeReply(keypair.PrivateKey, senderpubkey, replyInnerMessageBlob)
-		return &commands.ReplicaMessageReply{
-			Cmds:          commands.NewStorageReplicaCommands(c.geo, nikeScheme),
-			ErrorCode:     readReply.ErrorCode, // Use the actual read result error code
-			EnvelopeHash:  envelopeHash,
-			EnvelopeReply: envelopeReply.Envelope,
-			ReplicaID:     replicaID,
-			IsRead:        true,
-		}
+		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, readReply.ErrorCode, envelopeHash, envelopeReply.Envelope, replicaID, true)
 	case msg.WriteMsg != nil:
 		myCmd := msg.WriteMsg
 		c.log.Debugf("Processing decrypted ReplicaWrite command for BoxID: %x", myCmd.BoxID)
@@ -161,22 +156,10 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 		}
 		replyInnerMessageBlob := replyInnerMessage.Bytes()
 		envelopeReply := scheme.EnvelopeReply(keypair.PrivateKey, senderpubkey, replyInnerMessageBlob)
-		return &commands.ReplicaMessageReply{
-			Cmds:          commands.NewStorageReplicaCommands(c.geo, nikeScheme),
-			ErrorCode:     writeReply.ErrorCode, // Use the actual write result error code
-			EnvelopeHash:  envelopeHash,
-			EnvelopeReply: envelopeReply.Envelope,
-			ReplicaID:     replicaID,
-			IsRead:        false,
-		}
+		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, writeReply.ErrorCode, envelopeHash, envelopeReply.Envelope, replicaID, false)
 	default:
 		c.log.Error("BUG: handleReplicaMessage failed: invalid request was decrypted")
-		return &commands.ReplicaMessageReply{
-			Cmds:          commands.NewStorageReplicaCommands(c.geo, nikeScheme),
-			ErrorCode:     pigeonhole.ReplicaErrorInternalError,
-			EnvelopeHash:  envelopeHash,
-			EnvelopeReply: []byte{},
-		}
+		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, envelopeHash, []byte{}, 0, false)
 	}
 }
 
