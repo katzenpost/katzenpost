@@ -1044,7 +1044,6 @@ func (t *ThinClient) SendChannelQuery(
 	payload []byte,
 	destNode *[32]byte,
 	destQueue []byte,
-	messageID *[MessageIDLength]byte,
 ) error {
 
 	if ctx == nil {
@@ -1056,6 +1055,7 @@ func (t *ThinClient) SendChannelQuery(
 		return errors.New("cannot send channel query in offline mode - daemon not connected to mixnet")
 	}
 
+	messageID := t.NewMessageID()
 	surbID := t.NewSURBID()
 	req := &Request{
 		SendMessage: &SendMessage{
@@ -1077,13 +1077,9 @@ func (t *ThinClient) SendChannelQuery(
 // This method handles the common case where the courier has cached replies at different indices
 // and accounts for timing issues where messages may not have propagated yet.
 // This method requires mixnet connectivity and will fail in offline mode.
-// The method matches replies by messageID to ensure correct correlation.
-func (t *ThinClient) ReadChannelWithRetry(ctx context.Context, channelID uint16, messageID *[MessageIDLength]byte, destNode *[32]byte, destQueue []byte) ([]byte, error) {
+func (t *ThinClient) ReadChannelWithRetry(ctx context.Context, channelID uint16, destNode *[32]byte, destQueue []byte) ([]byte, error) {
 	if ctx == nil {
 		return nil, errContextCannotBeNil
-	}
-	if messageID == nil {
-		return nil, errors.New("messageID cannot be nil")
 	}
 	if destNode == nil {
 		return nil, errors.New("destNode cannot be nil")
@@ -1091,6 +1087,8 @@ func (t *ThinClient) ReadChannelWithRetry(ctx context.Context, channelID uint16,
 	if destQueue == nil {
 		return nil, errors.New("destQueue cannot be nil")
 	}
+
+	messageID := t.NewMessageID()
 
 	// Check if we're in offline mode
 	if !t.isConnected {
