@@ -40,6 +40,11 @@ func GetRandomIntermediateReplicas(doc *cpki.Document, boxid *[32]byte) ([2]uint
 		return [2]uint8{}, nil, errors.New("insufficient storage replicas: need at least 2")
 	}
 
+	// We need at least 4 replicas total: 2 for shards + 2 for intermediate replicas
+	if numReplicas < 4 {
+		return [2]uint8{}, nil, fmt.Errorf("insufficient storage replicas: need at least 4 replicas for intermediate routing, but only have %d", numReplicas)
+	}
+
 	// find indexes into doc.StorageReplicas that match the shard replica IDs
 	shardIndexes := make([]uint8, 2)
 	for i, shard := range shards {
