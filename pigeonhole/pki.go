@@ -5,6 +5,7 @@
 package pigeonhole
 
 import (
+	"crypto/hmac"
 	"errors"
 	"fmt"
 
@@ -20,7 +21,7 @@ var (
 )
 
 // GetRandomIntermediateReplicas returns two random replica numbers and their public keys.
-func GetRandomIntermediateReplicas(doc *cpki.Document) ([2]uint8, []nike.PublicKey, error) {
+func GetRandomIntermediateReplicas(doc *cpki.Document, boxid *[32]byte) ([2]uint8, []nike.PublicKey, error) {
 	// Validate PKI document
 	if doc == nil {
 		return [2]uint8{}, nil, errors.New("PKI document is nil")
@@ -29,15 +30,43 @@ func GetRandomIntermediateReplicas(doc *cpki.Document) ([2]uint8, []nike.PublicK
 		return [2]uint8{}, nil, errors.New("PKI document has nil StorageReplicas")
 	}
 
+	shards, err := replicaCommon.GetShards(boxid, doc)
+	if err != nil {
+		return [2]uint8{}, nil, err
+	}
+
 	numReplicas := uint8(len(doc.StorageReplicas))
 	if numReplicas < 2 {
 		return [2]uint8{}, nil, errors.New("insufficient storage replicas: need at least 2")
 	}
 
-	replica1 := uint8(secureRand.Intn(int(numReplicas)))
-	replica2 := uint8(secureRand.Intn(int(numReplicas)))
-	for replica2 == replica1 {
+	// find indexes into doc.StorageReplicas that match the shard replica IDs
+	shardIndexes := make([]uint8, 2)
+	for i, shard := range shards {
+		for j, replica := range doc.StorageReplicas {
+			if hmac.Equal(shard.IdentityKey, replica.IdentityKey) {
+				shardIndexes[i] = uint8(j)
+				break
+			}
+		}
+	}
+
+	// Select two random replicas that are not the replicas
+	// in our shardIndexes:
+	var replica1, replica2 uint8
+
+	for {
+		replica1 = uint8(secureRand.Intn(int(numReplicas)))
+		if replica1 != shardIndexes[0] && replica1 != shardIndexes[1] {
+			break
+		}
+	}
+
+	for {
 		replica2 = uint8(secureRand.Intn(int(numReplicas)))
+		if replica2 != replica1 && replica2 != shardIndexes[0] && replica2 != shardIndexes[1] {
+			break
+		}
 	}
 
 	replicaPubKeys := make([]nike.PublicKey, 2)
