@@ -99,7 +99,13 @@ func NewPigeonholeChannel() (*bacap.StatefulWriter, *bacap.ReadCap, *bacap.Write
 
 // createEnvelopeFromMessage creates a CourierEnvelope from a ReplicaInnerMessage
 func createEnvelopeFromMessage(msg *pigeonhole.ReplicaInnerMessage, doc *cpki.Document, isRead bool, replyIndex uint8) (*pigeonhole.CourierEnvelope, nike.PrivateKey, error) {
-	intermediateReplicas, replicaPubKeys, err := pigeonhole.GetRandomIntermediateReplicas(doc)
+	var boxid *[bacap.BoxIDSize]byte
+	if isRead {
+		boxid = &msg.ReadMsg.BoxID
+	} else {
+		boxid = &msg.WriteMsg.BoxID
+	}
+	intermediateReplicas, replicaPubKeys, err := pigeonhole.GetRandomIntermediateReplicas(doc, boxid)
 	if err != nil {
 		return nil, nil, err
 	}
