@@ -4,11 +4,18 @@
 package replica
 
 import (
+	"crypto/hmac"
+	"fmt"
+	"time"
+
 	"github.com/katzenpost/hpqc/kem/mkem"
+	"github.com/katzenpost/hpqc/nike"
 	"github.com/katzenpost/hpqc/nike/schemes"
 	"github.com/katzenpost/hpqc/sign/ed25519"
 	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
+	"golang.org/x/crypto/blake2b"
 
+	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"github.com/katzenpost/katzenpost/pigeonhole"
 	pgeo "github.com/katzenpost/katzenpost/pigeonhole/geo"
@@ -139,13 +146,45 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 	case msg.ReadMsg != nil:
 		myCmd := msg.ReadMsg
 		c.log.Debugf("Processing decrypted ReplicaRead command for BoxID: %x", myCmd.BoxID)
-		readReply := c.handleReplicaRead(myCmd)
-		replyInnerMessage := pigeonhole.ReplicaMessageReplyInnerMessage{
-			ReadReply: readReply,
+
+		// use sharding scheme to determine if BoxID belongs to this replica or another replica
+		shards, err := replicaCommon.GetShards(&myCmd.BoxID, doc)
+		if err != nil {
+			c.log.Errorf("handleReplicaMessage failed to get shards: %s", err)
+			return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, envelopeHash, []byte{}, 0, false)
 		}
-		replyInnerMessageBlob := replyInnerMessage.Bytes()
-		envelopeReply := scheme.EnvelopeReply(keypair.PrivateKey, senderpubkey, replyInnerMessageBlob)
-		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, readReply.ErrorCode, envelopeHash, envelopeReply.Envelope, replicaID, true)
+
+		// Check if this replica is one of the shards
+		isShard := false
+		myIdentityKey, err := c.l.server.identityPublicKey.MarshalBinary()
+		if err != nil {
+			c.log.Errorf("handleReplicaMessage failed to marshal identity key: %s", err)
+			return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, envelopeHash, []byte{}, 0, false)
+		}
+		for _, shard := range shards {
+			if hmac.Equal(shard.IdentityKey, myIdentityKey) {
+				isShard = true
+				break
+			}
+		}
+		if isShard {
+			readReply := c.handleReplicaRead(myCmd)
+			replyInnerMessage := pigeonhole.ReplicaMessageReplyInnerMessage{
+				ReadReply: readReply,
+			}
+			replyInnerMessageBlob := replyInnerMessage.Bytes()
+			envelopeReply := scheme.EnvelopeReply(keypair.PrivateKey, senderpubkey, replyInnerMessageBlob)
+			return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, readReply.ErrorCode, envelopeHash, envelopeReply.Envelope, replicaID, true)
+		}
+
+		// This replica is not a shard for the BoxID, so we need to proxy the request to the correct replica
+		// and send the reply back to the courier:
+		reply, err := c.proxyReadRequest(myCmd, shards)
+		if err != nil {
+			c.log.Errorf("Proxy read request failed: %s", err)
+			return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, envelopeHash, []byte{}, 0, false)
+		}
+		return reply
 	case msg.WriteMsg != nil:
 		myCmd := msg.WriteMsg
 		c.log.Debugf("Processing decrypted ReplicaWrite command for BoxID: %x", myCmd.BoxID)
@@ -219,5 +258,120 @@ func (c *incomingConn) handleReplicaWrite(replicaWrite *pigeonhole.ReplicaWrite)
 	c.log.Debug("Replica write successful")
 	return &pigeonhole.ReplicaWriteReply{
 		ErrorCode: pigeonhole.ReplicaErrorSuccess,
+	}
+}
+
+// proxyReadRequest forwards a read request to the appropriate shard replica
+// and returns the reply that should be sent back to the courier
+func (c *incomingConn) proxyReadRequest(replicaRead *pigeonhole.ReplicaRead, shards []*pki.ReplicaDescriptor) (*commands.ReplicaMessageReply, error) {
+	c.log.Debugf("Proxying read request for BoxID: %x to %d shards", replicaRead.BoxID, len(shards))
+
+	// Get our own identity key to exclude ourselves from the target shards
+	myIdentityKey, err := c.l.server.identityPublicKey.MarshalBinary()
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal identity key: %v", err)
+	}
+
+	// Find the first shard that is not ourselves
+	var targetShard *pki.ReplicaDescriptor
+	for _, shard := range shards {
+		if !hmac.Equal(shard.IdentityKey, myIdentityKey) {
+			targetShard = shard
+			break
+		}
+	}
+
+	if targetShard == nil {
+		return nil, fmt.Errorf("no suitable target shard found")
+	}
+
+	c.log.Debugf("Proxying read request to replica: %s", targetShard.Name)
+
+	// Create a ReplicaMessage to send to the target replica
+	nikeScheme := schemes.ByName(c.l.server.cfg.ReplicaNIKEScheme)
+	scheme := mkem.NewScheme(nikeScheme)
+
+	// Get the current epoch for envelope keys
+	doc := c.l.server.PKIWorker.PKIDocument()
+	if doc == nil {
+		return nil, fmt.Errorf("no PKI document available")
+	}
+	replicaEpoch := doc.Epoch
+
+	// Create the inner message containing the read request
+	innerMessage := pigeonhole.ReplicaInnerMessage{
+		ReadMsg: replicaRead,
+	}
+	innerMessageBlob := innerMessage.Bytes()
+
+	// Get the target replica's envelope public key
+	targetEnvelopeKeyBytes, exists := targetShard.EnvelopeKeys[replicaEpoch]
+	if !exists {
+		return nil, fmt.Errorf("no envelope key found for target replica at epoch %d", replicaEpoch)
+	}
+	targetEnvelopeKey, err := nikeScheme.UnmarshalBinaryPublicKey(targetEnvelopeKeyBytes)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unmarshal target envelope key: %v", err)
+	}
+
+	// Encapsulate the message for the target replica using MKEM
+	_, envelope := scheme.Encapsulate([]nike.PublicKey{targetEnvelopeKey}, innerMessageBlob)
+
+	// Create the ReplicaMessage command
+	replicaMessage := &commands.ReplicaMessage{
+		Cmds:               commands.NewStorageReplicaCommands(c.geo, nikeScheme),
+		PigeonholeGeometry: nil, // Will be set by the command system if needed
+		Scheme:             nikeScheme,
+		SenderEPubKey:      envelope.EphemeralPublicKey.Bytes(),
+		DEK:                envelope.DEKCiphertexts[0],
+		Ciphertext:         envelope.Envelope,
+	}
+
+	// Get the envelope hash for correlation
+	envelopeHash := replicaMessage.EnvelopeHash()
+
+	// Register this request for response correlation
+	timeout := 30 * time.Second // 30 second timeout for proxy requests
+	responseCh := c.l.server.proxyRequestManager.RegisterRequest(*envelopeHash, timeout)
+
+	// Calculate the target replica's identity hash for routing
+	idHash := blake2b.Sum256(targetShard.IdentityKey)
+
+	// Send the command to the target replica via the connector
+	c.l.server.connector.DispatchCommand(replicaMessage, &idHash)
+
+	c.log.Debugf("Sent proxy request to %s, waiting for response with envelope hash: %x", targetShard.Name, envelopeHash)
+
+	// Wait for the response with timeout
+	select {
+	case reply := <-responseCh:
+		if reply == nil {
+			c.log.Errorf("Received nil reply for proxy request to %s", targetShard.Name)
+			return c.createReplicaMessageReply(
+				c.l.server.cfg.ReplicaNIKEScheme,
+				pigeonhole.ReplicaErrorInternalError,
+				envelopeHash,
+				[]byte{},
+				0,
+				true,
+			), nil
+		}
+
+		c.log.Debugf("Received proxy reply from %s with error code: %d", targetShard.Name, reply.ErrorCode)
+
+		// Return the reply we received from the target replica
+		// The envelope reply is already encrypted for the original courier
+		return reply, nil
+
+	case <-time.After(timeout):
+		c.log.Errorf("Timeout waiting for proxy response from %s", targetShard.Name)
+		return c.createReplicaMessageReply(
+			c.l.server.cfg.ReplicaNIKEScheme,
+			pigeonhole.ReplicaErrorInternalError, // Use internal error for timeout
+			envelopeHash,
+			[]byte{},
+			0,
+			true,
+		), nil
 	}
 }
