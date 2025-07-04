@@ -113,14 +113,18 @@ func createMKEMEnvelope(t *testing.T, sharding *shardingResult, innerMessage *pi
 	mkemPrivateKey, mkemCiphertext := mkemNikeScheme.Encapsulate(sharding.ReplicaPubKeys, innerMessage.Bytes())
 	mkemPublicKey := mkemPrivateKey.Public()
 	replicaEpoch, _, _ := replicaCommon.ReplicaNow()
+	senderPubkeyBytes := mkemPublicKey.Bytes()
 
 	return &pigeonhole.CourierEnvelope{
-		SenderPubkey:         mkemPublicKey.Bytes(),
 		IntermediateReplicas: sharding.ReplicaIndices,
 		Dek1:                 *mkemCiphertext.DEKCiphertexts[0],
 		Dek2:                 *mkemCiphertext.DEKCiphertexts[1],
-		Ciphertext:           mkemCiphertext.Envelope,
+		ReplyIndex:           0,
 		Epoch:                replicaEpoch,
+		SenderPubkeyLen:      uint16(len(senderPubkeyBytes)),
+		SenderPubkey:         senderPubkeyBytes,
+		CiphertextLen:        uint32(len(mkemCiphertext.Envelope)),
+		Ciphertext:           mkemCiphertext.Envelope,
 	}
 }
 
@@ -1581,19 +1585,23 @@ func aliceComposesReadFromReplica(t *testing.T, env *testEnvironment, boxID *[ba
 
 func injectCourierEnvelope(t *testing.T, env *testEnvironment, envelope *pigeonhole.CourierEnvelope) *pigeonhole.CourierEnvelopeReply {
 	// Create a CBOR plugin command containing the CourierQuery with CourierEnvelope
+	t.Logf("COURIER_INJECT: Creating CourierQuery with envelope for intermediaries: %v", envelope.IntermediateReplicas)
 	courierQuery := &pigeonhole.CourierQuery{
 		Envelope:       envelope,
 		CopyCommandLen: 0,
 		CopyCommand:    nil,
 	}
 
+	t.Logf("COURIER_INJECT: Sending request to courier")
 	response := createRequestWithResponse(t, env, courierQuery, 10)
+	t.Logf("COURIER_INJECT: Received response from courier, payload length: %d", len(response.Payload))
 
 	courierQueryReply, err := pigeonhole.CourierQueryReplyFromBytes(response.Payload)
 	require.NoError(t, err)
 	require.NotNil(t, courierQueryReply)
 	require.NotNil(t, courierQueryReply.CourierEnvelopeReply)
 
+	t.Logf("COURIER_INJECT: Successfully parsed courier reply")
 	return courierQueryReply.CourierEnvelopeReply
 }
 
