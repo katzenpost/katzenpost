@@ -302,12 +302,8 @@ func (c *incomingConn) proxyReadRequest(replicaRead *pigeonhole.ReplicaRead, sha
 	nikeScheme := schemes.ByName(c.l.server.cfg.ReplicaNIKEScheme)
 	scheme := mkem.NewScheme(nikeScheme)
 
-	// Get the current epoch for envelope keys
-	doc := c.l.server.PKIWorker.PKIDocument()
-	if doc == nil {
-		return nil, fmt.Errorf("no PKI document available")
-	}
-	replicaEpoch := doc.Epoch
+	// Get the current replica epoch for envelope keys (not PKI epoch)
+	replicaEpoch, _, _ := replicaCommon.ReplicaNow()
 
 	// Create the inner message containing the read request
 	innerMessage := pigeonhole.ReplicaInnerMessage{
