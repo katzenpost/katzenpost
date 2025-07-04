@@ -1077,76 +1077,104 @@ func (t *ThinClient) SendChannelQuery(
 // This method handles the common case where the courier has cached replies at different indices
 // and accounts for timing issues where messages may not have propagated yet.
 // This method requires mixnet connectivity and will fail in offline mode.
-// The method matches replies by messageID to ensure correct correlation.
-func (t *ThinClient) ReadChannelWithRetry(ctx context.Context, channelID uint16, messageID *[MessageIDLength]byte, destNode *[32]byte, destQueue []byte) ([]byte, error) {
-	if ctx == nil {
-		return nil, errContextCannotBeNil
-	}
-	if messageID == nil {
-		return nil, errors.New("messageID cannot be nil")
-	}
-	if destNode == nil {
-		return nil, errors.New("destNode cannot be nil")
-	}
-	if destQueue == nil {
-		return nil, errors.New("destQueue cannot be nil")
+func (t *ThinClient) ReadChannelWithRetry(ctx context.Context, channelID uint16, destNode *[32]byte, destQueue []byte) ([]byte, error) {
+	if err := t.validateReadChannelWithRetryParams(ctx, destNode, destQueue); err != nil {
+		return nil, err
 	}
 
-	// Check if we're in offline mode
 	if !t.isConnected {
 		return nil, errors.New("cannot send channel query in offline mode - daemon not connected to mixnet")
 	}
 
-	const maxRetries = 2
+	messageID := t.NewMessageID()
 	replyIndices := []uint8{0, 1}
 
 	for _, replyIndex := range replyIndices {
-		// Prepare the read query for this reply index
-		payload, _, _, err := t.ReadChannel(ctx, channelID, messageID, &replyIndex)
-		if err != nil {
-			return nil, fmt.Errorf("failed to prepare read query with reply index %d: %w", replyIndex, err)
+		if result, err := t.tryReplyIndexWithRetries(ctx, channelID, messageID, replyIndex, destNode, destQueue); err == nil {
+			return result, nil
+		}
+	}
+
+	t.log.Debugf("ReadChannelWithRetry: All reply indices failed after multiple attempts")
+	return nil, errors.New("all reply indices failed after multiple attempts")
+}
+
+// validateReadChannelWithRetryParams validates the input parameters for ReadChannelWithRetry
+func (t *ThinClient) validateReadChannelWithRetryParams(ctx context.Context, destNode *[32]byte, destQueue []byte) error {
+	if ctx == nil {
+		return errContextCannotBeNil
+	}
+	if destNode == nil {
+		return errors.New("destNode cannot be nil")
+	}
+	if destQueue == nil {
+		return errors.New("destQueue cannot be nil")
+	}
+	return nil
+}
+
+// tryReplyIndexWithRetries attempts to read from a specific reply index with retries
+func (t *ThinClient) tryReplyIndexWithRetries(ctx context.Context, channelID uint16, messageID *[MessageIDLength]byte, replyIndex uint8, destNode *[32]byte, destQueue []byte) ([]byte, error) {
+	payload, err := t.prepareReadQuery(ctx, channelID, messageID, replyIndex)
+	if err != nil {
+		return nil, err
+	}
+
+	const maxRetries = 2
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		if result, err := t.attemptChannelRead(ctx, channelID, payload, destNode, destQueue, messageID, replyIndex, attempt, maxRetries); err == nil {
+			return result, nil
 		}
 
-		// Try this reply index up to maxRetries times
-		for attempt := 1; attempt <= maxRetries; attempt++ {
-			t.log.Debugf("ReadChannelWithRetry: Trying reply index %d (attempt %d/%d)", replyIndex, attempt, maxRetries)
-
-			// Create a timeout context for this individual attempt
-			attemptCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
-			result, err := t.sendChannelQueryAndWaitForMessageID(attemptCtx, channelID, payload, destNode, destQueue, messageID, true)
-			cancel()
-
-			if err == nil {
-				// For read operations, we should only consider it successful if we got actual data
-				if len(result) > 0 {
-					t.log.Debugf("ReadChannelWithRetry: Reply index %d succeeded on attempt %d with %d bytes", replyIndex, attempt, len(result))
-					return result, nil
-				} else {
-					t.log.Debugf("ReadChannelWithRetry: Reply index %d attempt %d got empty payload, treating as failure", replyIndex, attempt)
-					err = errors.New("received empty payload - message not available yet")
-				}
-			}
-
-			t.log.Debugf("ReadChannelWithRetry: Reply index %d attempt %d failed: %v", replyIndex, attempt, err)
-
-			// If this was the last attempt for this reply index, move to next reply index
-			if attempt == maxRetries {
-				break
-			}
-
-			// Add a small delay between retries to allow for message propagation
-			select {
-			case <-ctx.Done():
-				return nil, ctx.Err()
-			case <-time.After(2 * time.Second):
-				// Continue to next attempt
+		if attempt < maxRetries {
+			if err := t.waitBetweenRetries(ctx); err != nil {
+				return nil, err
 			}
 		}
 	}
 
-	// All reply indices and attempts failed
-	t.log.Debugf("ReadChannelWithRetry: All reply indices failed after %d attempts each", maxRetries)
-	return nil, errors.New("all reply indices failed after multiple attempts")
+	return nil, fmt.Errorf("reply index %d failed after %d attempts", replyIndex, maxRetries)
+}
+
+// prepareReadQuery prepares the read query payload for a specific reply index
+func (t *ThinClient) prepareReadQuery(ctx context.Context, channelID uint16, messageID *[MessageIDLength]byte, replyIndex uint8) ([]byte, error) {
+	payload, _, _, err := t.ReadChannel(ctx, channelID, messageID, &replyIndex)
+	if err != nil {
+		return nil, fmt.Errorf("failed to prepare read query with reply index %d: %w", replyIndex, err)
+	}
+	return payload, nil
+}
+
+// attemptChannelRead performs a single attempt to read from the channel
+func (t *ThinClient) attemptChannelRead(ctx context.Context, channelID uint16, payload []byte, destNode *[32]byte, destQueue []byte, messageID *[MessageIDLength]byte, replyIndex uint8, attempt, maxRetries int) ([]byte, error) {
+	t.log.Debugf("ReadChannelWithRetry: Trying reply index %d (attempt %d/%d)", replyIndex, attempt, maxRetries)
+
+	attemptCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+
+	result, err := t.sendChannelQueryAndWaitForMessageID(attemptCtx, channelID, payload, destNode, destQueue, messageID, true)
+	if err != nil {
+		t.log.Debugf("ReadChannelWithRetry: Reply index %d attempt %d failed: %v", replyIndex, attempt, err)
+		return nil, err
+	}
+
+	if len(result) > 0 {
+		t.log.Debugf("ReadChannelWithRetry: Reply index %d succeeded on attempt %d with %d bytes", replyIndex, attempt, len(result))
+		return result, nil
+	}
+
+	t.log.Debugf("ReadChannelWithRetry: Reply index %d attempt %d got empty payload, treating as failure", replyIndex, attempt)
+	return nil, errors.New("received empty payload - message not available yet")
+}
+
+// waitBetweenRetries adds a delay between retry attempts
+func (t *ThinClient) waitBetweenRetries(ctx context.Context) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-time.After(2 * time.Second):
+		return nil
+	}
 }
 
 // WriteChannelWithReply writes a message to a pigeonhole channel and waits for the write confirmation.

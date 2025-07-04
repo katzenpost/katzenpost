@@ -85,8 +85,7 @@ func TestDockerCourierServiceNewThinclientAPI(t *testing.T) {
 
 	// Bob reads message using the helper function with automatic retry logic
 	t.Log("Bob: Reading message with automatic reply index retry")
-	messageID := bobThinClient.NewMessageID()
-	receivedPayload, err := bobThinClient.ReadChannelWithRetry(ctx, bobChannelID, messageID, &identityHash, courierService.RecipientQueueID)
+	receivedPayload, err := bobThinClient.ReadChannelWithRetry(ctx, bobChannelID, &identityHash, courierService.RecipientQueueID)
 	require.NoError(t, err)
 	require.NotNil(t, receivedPayload, "Bob: Received nil payload")
 
