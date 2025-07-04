@@ -9,14 +9,15 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
-
-	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
+	"time"
 
 	"gopkg.in/op/go-logging.v1"
 
 	"github.com/katzenpost/hpqc/kem"
+	"github.com/katzenpost/hpqc/kem/mkem"
 	kempem "github.com/katzenpost/hpqc/kem/pem"
 	kemSchemes "github.com/katzenpost/hpqc/kem/schemes"
+	"github.com/katzenpost/hpqc/nike"
 	nikeSchemes "github.com/katzenpost/hpqc/nike/schemes"
 	"github.com/katzenpost/hpqc/sign"
 	signpem "github.com/katzenpost/hpqc/sign/pem"
@@ -27,8 +28,110 @@ import (
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/utils"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
+	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
 	"github.com/katzenpost/katzenpost/replica/config"
 )
+
+// PendingProxyRequest represents a proxy request waiting for a response
+type PendingProxyRequest struct {
+	ResponseCh      chan *commands.ReplicaMessageReply
+	Timeout         time.Time
+	MKEMPrivateKey  nike.PrivateKey // Store the MKEM private key for decrypting replies
+	TargetPublicKey nike.PublicKey  // Store the target replica's public key for decryption
+}
+
+// ProxyRequestManager manages pending proxy requests
+type ProxyRequestManager struct {
+	sync.RWMutex
+	pendingRequests map[[32]byte]*PendingProxyRequest
+	log             *logging.Logger
+}
+
+// NewProxyRequestManager creates a new proxy request manager
+func NewProxyRequestManager(log *logging.Logger) *ProxyRequestManager {
+	return &ProxyRequestManager{
+		pendingRequests: make(map[[32]byte]*PendingProxyRequest),
+		log:             log,
+	}
+}
+
+// RegisterRequest registers a new proxy request and returns a response channel
+func (p *ProxyRequestManager) RegisterRequest(envelopeHash [32]byte, timeout time.Duration, mkemPrivateKey nike.PrivateKey, targetPublicKey nike.PublicKey) chan *commands.ReplicaMessageReply {
+	p.Lock()
+	defer p.Unlock()
+
+	responseCh := make(chan *commands.ReplicaMessageReply, 1)
+	p.pendingRequests[envelopeHash] = &PendingProxyRequest{
+		ResponseCh:      responseCh,
+		Timeout:         time.Now().Add(timeout),
+		MKEMPrivateKey:  mkemPrivateKey,
+		TargetPublicKey: targetPublicKey,
+	}
+
+	p.log.Debugf("Registered proxy request for envelope hash: %x", envelopeHash)
+	return responseCh
+}
+
+// HandleReply processes an incoming reply and routes it to the waiting request
+func (p *ProxyRequestManager) HandleReply(reply *commands.ReplicaMessageReply) bool {
+	if reply.EnvelopeHash == nil {
+		p.log.Warningf("Received reply with nil envelope hash")
+		return false
+	}
+
+	p.Lock()
+	defer p.Unlock()
+
+	request, exists := p.pendingRequests[*reply.EnvelopeHash]
+	if !exists {
+		p.log.Debugf("No pending request found for envelope hash: %x", reply.EnvelopeHash)
+		return false
+	}
+
+	// Decrypt the envelope reply if it contains data
+	if len(reply.EnvelopeReply) > 0 {
+		nikeScheme := nikeSchemes.ByName("X25519") // Use the same scheme as the replica
+		scheme := mkem.NewScheme(nikeScheme)
+
+		decryptedReply, err := scheme.DecryptEnvelope(request.MKEMPrivateKey, request.TargetPublicKey, reply.EnvelopeReply)
+		if err != nil {
+			p.log.Errorf("Failed to decrypt proxy reply envelope: %v", err)
+			// Still send the original reply, but log the error
+		} else {
+			// Replace the envelope reply with the decrypted content
+			reply.EnvelopeReply = decryptedReply
+			p.log.Debugf("Successfully decrypted proxy reply envelope, decrypted size: %d bytes", len(decryptedReply))
+		}
+	}
+
+	// Send the reply to the waiting channel
+	select {
+	case request.ResponseCh <- reply:
+		p.log.Debugf("PROXY REPLY ROUTED: Successfully routed reply to waiting proxy request for envelope hash: %x", reply.EnvelopeHash)
+	default:
+		p.log.Warningf("PROXY REPLY FAILED: Failed to send reply to channel for envelope hash: %x", reply.EnvelopeHash)
+	}
+
+	// Clean up the request
+	delete(p.pendingRequests, *reply.EnvelopeHash)
+	close(request.ResponseCh)
+	return true
+}
+
+// CleanupExpiredRequests removes expired requests
+func (p *ProxyRequestManager) CleanupExpiredRequests() {
+	p.Lock()
+	defer p.Unlock()
+
+	now := time.Now()
+	for hash, request := range p.pendingRequests {
+		if now.After(request.Timeout) {
+			p.log.Debugf("Cleaning up expired proxy request for envelope hash: %x", hash)
+			close(request.ResponseCh)
+			delete(p.pendingRequests, hash)
+		}
+	}
+}
 
 // ErrGenerateOnly is the error returned when the server initialization
 // terminates due to the `GenerateOnly` debug config option.
@@ -65,6 +168,9 @@ type Server struct {
 	linkKey            kem.PrivateKey
 
 	envelopeKeys *EnvelopeKeys
+
+	// Proxy request management for replica-to-replica communication
+	proxyRequestManager *ProxyRequestManager
 
 	logBackend *log.Backend
 	log        *logging.Logger
@@ -194,6 +300,12 @@ func newServerWithPKI(cfg *config.Config, pkiClient pki.Client) (*Server, error)
 
 	s.state = newState(s)
 	s.state.initDB()
+
+	// Initialize proxy request manager
+	s.proxyRequestManager = NewProxyRequestManager(s.log)
+
+	// Start cleanup worker for expired proxy requests
+	go s.proxyRequestCleanupWorker()
 
 	s.fatalErrCh = make(chan error)
 	s.haltedCh = make(chan interface{})
@@ -400,4 +512,20 @@ func (s *Server) startServices(pkiClient pki.Client) error {
 	s.connector = newConnector(s)
 
 	return nil
+}
+
+// proxyRequestCleanupWorker periodically cleans up expired proxy requests
+func (s *Server) proxyRequestCleanupWorker() {
+	ticker := time.NewTicker(30 * time.Second) // Clean up every 30 seconds
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-s.haltedCh:
+			s.log.Debug("Proxy request cleanup worker terminating")
+			return
+		case <-ticker.C:
+			s.proxyRequestManager.CleanupExpiredRequests()
+		}
+	}
 }
