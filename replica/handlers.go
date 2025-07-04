@@ -316,17 +316,41 @@ func (c *incomingConn) proxyReadRequest(replicaRead *pigeonhole.ReplicaRead, sha
 	innerMessageBlob := innerMessage.Bytes()
 
 	// Get the target replica's envelope public key
+	// Try current epoch first, then next epoch
+	var targetEnvelopeKeyBytes []byte
+	var targetEnvelopeKey nike.PublicKey
+	var keyEpoch uint64
+
 	targetEnvelopeKeyBytes, exists := targetShard.EnvelopeKeys[replicaEpoch]
-	if !exists {
-		return nil, fmt.Errorf("no envelope key found for target replica at epoch %d", replicaEpoch)
-	}
-	targetEnvelopeKey, err := nikeScheme.UnmarshalBinaryPublicKey(targetEnvelopeKeyBytes)
-	if err != nil {
-		return nil, fmt.Errorf("failed to unmarshal target envelope key: %v", err)
+	if exists {
+		keyEpoch = replicaEpoch
+	} else {
+		// Try next epoch
+		targetEnvelopeKeyBytes, exists = targetShard.EnvelopeKeys[replicaEpoch+1]
+		if exists {
+			keyEpoch = replicaEpoch + 1
+		}
 	}
 
+	if !exists {
+		// Log available epochs for debugging
+		availableEpochs := make([]uint64, 0, len(targetShard.EnvelopeKeys))
+		for epoch := range targetShard.EnvelopeKeys {
+			availableEpochs = append(availableEpochs, epoch)
+		}
+		return nil, fmt.Errorf("no envelope key found for target replica %s at epoch %d or %d, available epochs: %v",
+			targetShard.Name, replicaEpoch, replicaEpoch+1, availableEpochs)
+	}
+
+	targetEnvelopeKey, err = nikeScheme.UnmarshalBinaryPublicKey(targetEnvelopeKeyBytes)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unmarshal target envelope key for epoch %d: %v", keyEpoch, err)
+	}
+
+	c.log.Debugf("Using envelope key for target replica %s at epoch %d", targetShard.Name, keyEpoch)
+
 	// Encapsulate the message for the target replica using MKEM
-	_, envelope := scheme.Encapsulate([]nike.PublicKey{targetEnvelopeKey}, innerMessageBlob)
+	mkemPrivateKey, envelope := scheme.Encapsulate([]nike.PublicKey{targetEnvelopeKey}, innerMessageBlob)
 
 	// Create the ReplicaMessage command
 	replicaMessage := &commands.ReplicaMessage{
@@ -341,9 +365,9 @@ func (c *incomingConn) proxyReadRequest(replicaRead *pigeonhole.ReplicaRead, sha
 	// Get the envelope hash for correlation
 	envelopeHash := replicaMessage.EnvelopeHash()
 
-	// Register this request for response correlation
+	// Register this request for response correlation, storing the MKEM private key for decryption
 	timeout := 30 * time.Second // 30 second timeout for proxy requests
-	responseCh := c.l.server.proxyRequestManager.RegisterRequest(*envelopeHash, timeout)
+	responseCh := c.l.server.proxyRequestManager.RegisterRequest(*envelopeHash, timeout, mkemPrivateKey, targetEnvelopeKey)
 
 	// Calculate the target replica's identity hash for routing
 	idHash := blake2b.Sum256(targetShard.IdentityKey)

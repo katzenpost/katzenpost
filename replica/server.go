@@ -16,8 +16,10 @@ import (
 	"gopkg.in/op/go-logging.v1"
 
 	"github.com/katzenpost/hpqc/kem"
+	"github.com/katzenpost/hpqc/kem/mkem"
 	kempem "github.com/katzenpost/hpqc/kem/pem"
 	kemSchemes "github.com/katzenpost/hpqc/kem/schemes"
+	"github.com/katzenpost/hpqc/nike"
 	nikeSchemes "github.com/katzenpost/hpqc/nike/schemes"
 	"github.com/katzenpost/hpqc/sign"
 	signpem "github.com/katzenpost/hpqc/sign/pem"
@@ -33,8 +35,10 @@ import (
 
 // PendingProxyRequest represents a proxy request waiting for a response
 type PendingProxyRequest struct {
-	ResponseCh chan *commands.ReplicaMessageReply
-	Timeout    time.Time
+	ResponseCh      chan *commands.ReplicaMessageReply
+	Timeout         time.Time
+	MKEMPrivateKey  nike.PrivateKey // Store the MKEM private key for decrypting replies
+	TargetPublicKey nike.PublicKey  // Store the target replica's public key for decryption
 }
 
 // ProxyRequestManager manages pending proxy requests
@@ -53,14 +57,16 @@ func NewProxyRequestManager(log *logging.Logger) *ProxyRequestManager {
 }
 
 // RegisterRequest registers a new proxy request and returns a response channel
-func (p *ProxyRequestManager) RegisterRequest(envelopeHash [32]byte, timeout time.Duration) chan *commands.ReplicaMessageReply {
+func (p *ProxyRequestManager) RegisterRequest(envelopeHash [32]byte, timeout time.Duration, mkemPrivateKey nike.PrivateKey, targetPublicKey nike.PublicKey) chan *commands.ReplicaMessageReply {
 	p.Lock()
 	defer p.Unlock()
 
 	responseCh := make(chan *commands.ReplicaMessageReply, 1)
 	p.pendingRequests[envelopeHash] = &PendingProxyRequest{
-		ResponseCh: responseCh,
-		Timeout:    time.Now().Add(timeout),
+		ResponseCh:      responseCh,
+		Timeout:         time.Now().Add(timeout),
+		MKEMPrivateKey:  mkemPrivateKey,
+		TargetPublicKey: targetPublicKey,
 	}
 
 	p.log.Debugf("Registered proxy request for envelope hash: %x", envelopeHash)
@@ -81,6 +87,22 @@ func (p *ProxyRequestManager) HandleReply(reply *commands.ReplicaMessageReply) b
 	if !exists {
 		p.log.Debugf("No pending request found for envelope hash: %x", reply.EnvelopeHash)
 		return false
+	}
+
+	// Decrypt the envelope reply if it contains data
+	if len(reply.EnvelopeReply) > 0 {
+		nikeScheme := nikeSchemes.ByName("X25519") // Use the same scheme as the replica
+		scheme := mkem.NewScheme(nikeScheme)
+
+		decryptedReply, err := scheme.DecryptEnvelope(request.MKEMPrivateKey, request.TargetPublicKey, reply.EnvelopeReply)
+		if err != nil {
+			p.log.Errorf("Failed to decrypt proxy reply envelope: %v", err)
+			// Still send the original reply, but log the error
+		} else {
+			// Replace the envelope reply with the decrypted content
+			reply.EnvelopeReply = decryptedReply
+			p.log.Debugf("Successfully decrypted proxy reply envelope, decrypted size: %d bytes", len(decryptedReply))
+		}
 	}
 
 	// Send the reply to the waiting channel
