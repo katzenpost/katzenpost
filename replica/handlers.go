@@ -154,6 +154,13 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 			return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, envelopeHash, []byte{}, 0, false)
 		}
 
+		// Log shard information for debugging
+		shardNames := make([]string, len(shards))
+		for i, shard := range shards {
+			shardNames[i] = shard.Name
+		}
+		c.log.Debugf("BoxID %x is assigned to shards: %v", myCmd.BoxID, shardNames)
+
 		// Check if this replica is one of the shards
 		isShard := false
 		myIdentityKey, err := c.l.server.identityPublicKey.MarshalBinary()
@@ -167,7 +174,9 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 				break
 			}
 		}
+
 		if isShard {
+			c.log.Debugf("This replica IS a shard for BoxID %x - handling read locally", myCmd.BoxID)
 			readReply := c.handleReplicaRead(myCmd)
 			replyInnerMessage := pigeonhole.ReplicaMessageReplyInnerMessage{
 				ReadReply: readReply,
@@ -177,13 +186,15 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 			return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, readReply.ErrorCode, envelopeHash, envelopeReply.Envelope, replicaID, true)
 		}
 
-		// This replica is not a shard for the BoxID, so we need to proxy the request to the correct replica
+		// This replica is NOT a shard for the BoxID, so we need to proxy the request to the correct replica
 		// and send the reply back to the courier:
+		c.log.Debugf("This replica is NOT a shard for BoxID %x - PROXYING read request to appropriate shard", myCmd.BoxID)
 		reply, err := c.proxyReadRequest(myCmd, shards)
 		if err != nil {
 			c.log.Errorf("Proxy read request failed: %s", err)
 			return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, envelopeHash, []byte{}, 0, false)
 		}
+		c.log.Debugf("Successfully completed proxy read request for BoxID %x", myCmd.BoxID)
 		return reply
 	case msg.WriteMsg != nil:
 		myCmd := msg.WriteMsg

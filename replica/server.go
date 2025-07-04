@@ -86,9 +86,9 @@ func (p *ProxyRequestManager) HandleReply(reply *commands.ReplicaMessageReply) b
 	// Send the reply to the waiting channel
 	select {
 	case request.ResponseCh <- reply:
-		p.log.Debugf("Routed reply to waiting proxy request for envelope hash: %x", reply.EnvelopeHash)
+		p.log.Debugf("PROXY REPLY ROUTED: Successfully routed reply to waiting proxy request for envelope hash: %x", reply.EnvelopeHash)
 	default:
-		p.log.Warningf("Failed to send reply to channel for envelope hash: %x", reply.EnvelopeHash)
+		p.log.Warningf("PROXY REPLY FAILED: Failed to send reply to channel for envelope hash: %x", reply.EnvelopeHash)
 	}
 
 	// Clean up the request
