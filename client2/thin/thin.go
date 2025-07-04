@@ -1181,7 +1181,7 @@ func (t *ThinClient) waitBetweenRetries(ctx context.Context) error {
 // This method handles the complete write flow: preparing the write payload, sending it to the courier,
 // and waiting for the write completion confirmation.
 // This method requires mixnet connectivity and will fail in offline mode.
-func (t *ThinClient) WriteChannelWithReply(ctx context.Context, channelID uint16, payload []byte, destNode *[32]byte, destQueue []byte) error {
+func (t *ThinClient) WriteChannelWithRetry(ctx context.Context, channelID uint16, payload []byte, destNode *[32]byte, destQueue []byte) error {
 	if ctx == nil {
 		return errContextCannotBeNil
 	}

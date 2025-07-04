@@ -76,7 +76,7 @@ func TestDockerCourierServiceNewThinclientAPI(t *testing.T) {
 	identityHash := hash.Sum256(courierService.MixDescriptor.IdentityKey)
 
 	// Use WriteChannelWithReply to write and wait for completion
-	err = aliceThinClient.WriteChannelWithReply(ctx, channelID, originalMessage, &identityHash, courierService.RecipientQueueID)
+	err = aliceThinClient.WriteChannelWithRetry(ctx, channelID, originalMessage, &identityHash, courierService.RecipientQueueID)
 	require.NoError(t, err)
 	t.Log("Alice: Write operation completed successfully")
 

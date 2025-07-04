@@ -526,13 +526,12 @@ func (d *Daemon) handleChannelReply(appid *[AppIDLength]byte,
 		d.log.Errorf("SURB ID %x not found in new API maps", surbid[:8])
 		return fmt.Errorf("SURB ID not found: %v", newErr)
 	}
-	return d.handleNewChannelReply(appid, mesgID, surbid, plaintext, conn, newChannelID, newChannelDesc)
+	return d.handleNewChannelReply(appid, mesgID, plaintext, conn, newChannelID, newChannelDesc)
 }
 
 // handleNewChannelReply handles channel replies for the new API
 func (d *Daemon) handleNewChannelReply(appid *[AppIDLength]byte,
 	mesgID *[MessageIDLength]byte,
-	surbid *[sphinxConstants.SURBIDLength]byte,
 	plaintext []byte,
 	conn *incomingConn,
 	channelID uint16,
