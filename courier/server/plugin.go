@@ -306,19 +306,27 @@ func (e *Courier) tryImmediateReplyProxy(reply *commands.ReplicaMessageReply) bo
 
 	// Send the immediate reply
 	go func() {
+		// Map replica ID to correct reply index (replica 0 → index 0, others → index 1)
+		var replyIndex uint8
+		if reply.ReplicaID == 0 {
+			replyIndex = 0
+		} else {
+			replyIndex = 1
+		}
+
 		// Create proper CourierQueryReply with the replica's response
 		courierReply := &pigeonhole.CourierQueryReply{
 			ReplyType: 0, // 0 = envelope_reply
 			EnvelopeReply: &pigeonhole.CourierEnvelopeReply{
 				EnvelopeHash: *reply.EnvelopeHash,
-				ReplyIndex:   reply.ReplicaID, // Use the replica ID that responded
+				ReplyIndex:   replyIndex, // Use the correct reply index, not replica ID
 				PayloadLen:   uint32(len(reply.EnvelopeReply)),
 				Payload:      reply.EnvelopeReply,
 				ErrorCode:    0,
 			},
 		}
 
-		e.log.Debugf("tryImmediateReplyProxy: Sending response with %d bytes of ciphertext", len(reply.EnvelopeReply))
+		e.log.Debugf("tryImmediateReplyProxy: Sending response with %d bytes of ciphertext, replyIndex=%d", len(reply.EnvelopeReply), replyIndex)
 
 		e.write(&cborplugin.Response{
 			ID:      pendingRequest.RequestID,
@@ -330,13 +338,13 @@ func (e *Courier) tryImmediateReplyProxy(reply *commands.ReplicaMessageReply) bo
 	return true
 }
 
-// storePendingRequest stores a pending request with a 4-second timeout
+// storePendingRequest stores a pending request with a 30-second timeout
 func (e *Courier) storePendingRequest(envHash *[hash.HashSize]byte, requestID uint64, surb []byte) {
 	e.pendingRequestsLock.Lock()
 	defer e.pendingRequestsLock.Unlock()
 
-	// Set 4-second timeout as requested
-	timeout := time.Now().Add(4 * time.Second)
+	// Set 30-second timeout to allow for replica response delays
+	timeout := time.Now().Add(30 * time.Second)
 
 	e.pendingRequests[*envHash] = &PendingReadRequest{
 		RequestID: requestID,
@@ -344,7 +352,7 @@ func (e *Courier) storePendingRequest(envHash *[hash.HashSize]byte, requestID ui
 		Timeout:   timeout,
 	}
 
-	e.log.Debugf("Stored pending read request for envelope hash %x with 4-second timeout", envHash)
+	e.log.Debugf("Stored pending read request for envelope hash %x with 30-second timeout", envHash)
 
 	// Start a goroutine to clean up expired requests
 	go e.cleanupExpiredRequest(envHash, timeout)
