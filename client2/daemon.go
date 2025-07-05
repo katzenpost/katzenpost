@@ -558,9 +558,26 @@ func (d *Daemon) handleNewChannelReply(appid *[AppIDLength]byte,
 
 	// Handle envelope replies (read/write operations)
 	if courierQueryReply.EnvelopeReply != nil {
+                if courierQueryReply.EnvelopeReply.ErrorCode != 0 {
+                   err := conn.sendResponse(&Response{
+                      AppID: appid,
+                      MessageReplyEvent: &thin.MessageReplyEvent{
+                         MessageID: mesgID,
+                         Payload: nil,
+                         Err: pigeonhole.ReplicaErrorToString(readReply.ErrorCode)
+                      },
+                   })
+                   if err != nil {
+                      d.log.Errorf("courierQueryReply.EnvelopeReply: %v Failed to send error response: %s | for err %s", mesgID, err, pigeonhole.ReplicaErrorToString(readReply.ErrorCode))
+                   } else {
+                      d.log.Errorf("courierQueryReply.EnvelopeReply: %v had replica err: %s", mesgID, pigeonhole.ReplicaErrorToString(readReply.ErrorCode))
+                   }
+                   return err
+                }
 		// Check if the envelope reply has an empty payload (no data available yet)
 		if len(courierQueryReply.EnvelopeReply.Payload) == 0 {
 			// Send empty response to client so they can retry
+                        d.log.Errorf("sending bullshit payload response for empty payload with ErrorCode %v", courierQueryReply.EnvelopeReply.ErrorCode)
 			err := conn.sendResponse(&Response{
 				AppID: appid,
 				MessageReplyEvent: &thin.MessageReplyEvent{
@@ -1076,6 +1093,7 @@ func (d *Daemon) validateReadReplySignature(signature [64]uint8) error {
 
 // decryptReadReplyPayload handles the decryption and extraction of the payload
 func (d *Daemon) decryptReadReplyPayload(params *NewReplyHandlerParams, readReply *pigeonhole.ReplicaReadReply) ([]byte, error) {
+        d.log.Errorf("decryptReadReplyPayload")
 	params.ChannelDesc.StatefulReaderLock.Lock()
 	defer params.ChannelDesc.StatefulReaderLock.Unlock()
 
@@ -1117,9 +1135,10 @@ func (d *Daemon) processReadReplyPayload(params *NewReplyHandlerParams, readRepl
 	}
 
 	if err := d.validateReadReplySignature(readReply.Signature); err != nil {
+                d.log.Errorf("validateReadReplySignature failed in processReadReplyPayload")
 		return nil, err
 	}
-
+        d.log.Errorf("processReadReplyPayload proceding to decryptReadReplyPayload")
 	return d.decryptReadReplyPayload(params, readReply)
 }
 
@@ -1137,6 +1156,7 @@ func (d *Daemon) handleNewReadReply(params *NewReplyHandlerParams, readReply *pi
 	if replyErr != nil {
 		errStr = replyErr.Error()
 	}
+        d.log.Errorf("sendResponse for mid %v payload: %v  err: %v", params.MessageID, payload, errStr)
 	err := params.Conn.sendResponse(&Response{
 		AppID: params.AppID,
 		MessageReplyEvent: &thin.MessageReplyEvent{

@@ -556,6 +556,7 @@ func (d *Daemon) checkWriteCapabilityDedup(writeCap *bacap.WriteCap) error {
 	if err != nil {
 		return err
 	}
+	return nil
 
 	capHash := hash.Sum256(writeCapBytes)
 	d.capabilityLock.Lock()
