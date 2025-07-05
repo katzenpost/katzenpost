@@ -132,8 +132,9 @@ func createSyntheticPKIDocument(t *testing.T) *cpki.Document {
 	nikeScheme := replicaCommon.NikeScheme
 	require.NotNil(t, nikeScheme, "NIKE scheme should be available")
 
-	// Create 3 replica descriptors like integration tests
-	numReplicas := 3
+	// Create 5 replica descriptors to ensure we have enough for intermediate routing
+	// (need at least 4: 2 for shards + 2 for intermediate replicas)
+	numReplicas := 5
 	replicaDescriptors := make([]*cpki.ReplicaDescriptor, numReplicas)
 
 	for i := 0; i < numReplicas; i++ {

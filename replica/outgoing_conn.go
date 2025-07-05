@@ -387,6 +387,15 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 				c.log.Debugf("replica outgoingConn: Received ReplicaWriteReply error code: %d", responseCmd.ErrorCode)
 			case *commands.ReplicaMessageReply:
 				c.log.Debugf("replica outgoingConn: Received ReplicaMessageReply error code: %d", responseCmd.ErrorCode)
+				// Route the reply to the proxy manager
+				if c.co.Server().ProxyManager() != nil {
+					handled := c.co.Server().ProxyManager().HandleReply(responseCmd)
+					if handled {
+						c.log.Debugf("replica outgoingConn: ReplicaMessageReply routed to proxy manager")
+					} else {
+						c.log.Debugf("replica outgoingConn: ReplicaMessageReply not handled by proxy manager")
+					}
+				}
 			default:
 				c.log.Errorf("replica outgoingConn: BUG, Received unexpected command from replica peer: %s", responseCmd)
 				return

@@ -170,17 +170,12 @@ func (e *Courier) CacheReply(reply *commands.ReplicaMessageReply) {
 
 // validateReply checks if the reply should be cached
 func (e *Courier) validateReply(reply *commands.ReplicaMessageReply) bool {
-	if !reply.IsRead {
-		e.log.Debug("CacheReply: not caching write reply")
-		return false
-	}
-
-	e.log.Debug("CacheReply: caching read reply")
-
 	if reply.EnvelopeHash == nil {
 		e.log.Debugf("CacheReply: envelope hash is nil, not caching - error: %s", errNilEnvelopeHash)
 		return false
 	}
+
+	e.log.Debug("CacheReply: caching reply")
 
 	return true
 }
@@ -306,19 +301,48 @@ func (e *Courier) tryImmediateReplyProxy(reply *commands.ReplicaMessageReply) bo
 
 	// Send the immediate reply
 	go func() {
+		// Find the correct reply index by looking up the replica's position in IntermediateReplicas
+		var replyIndex uint8 = 255 // Default to invalid index
+
+		// Get the cache entry to find the IntermediateReplicas array
+		e.dedupCacheLock.RLock()
+		cacheEntry, exists := e.dedupCache[*reply.EnvelopeHash]
+		e.dedupCacheLock.RUnlock()
+
+		if exists && cacheEntry != nil {
+			// Find the replica's position in the IntermediateReplicas array
+			for i, replicaID := range cacheEntry.IntermediateReplicas {
+				if replicaID == reply.ReplicaID {
+					replyIndex = uint8(i)
+					break
+				}
+			}
+		}
+
+		// If we couldn't find the replica in the cache, fall back to the old logic
+		// This shouldn't happen in normal operation but provides a safety net
+		if replyIndex == 255 {
+			e.log.Warningf("Could not find replica %d in IntermediateReplicas, falling back to default mapping", reply.ReplicaID)
+			if reply.ReplicaID == 0 {
+				replyIndex = 0
+			} else {
+				replyIndex = 1
+			}
+		}
+
 		// Create proper CourierQueryReply with the replica's response
 		courierReply := &pigeonhole.CourierQueryReply{
 			ReplyType: 0, // 0 = envelope_reply
 			EnvelopeReply: &pigeonhole.CourierEnvelopeReply{
 				EnvelopeHash: *reply.EnvelopeHash,
-				ReplyIndex:   reply.ReplicaID, // Use the replica ID that responded
+				ReplyIndex:   replyIndex, // Use the correct reply index, not replica ID
 				PayloadLen:   uint32(len(reply.EnvelopeReply)),
 				Payload:      reply.EnvelopeReply,
 				ErrorCode:    0,
 			},
 		}
 
-		e.log.Debugf("tryImmediateReplyProxy: Sending response with %d bytes of ciphertext", len(reply.EnvelopeReply))
+		e.log.Debugf("tryImmediateReplyProxy: Sending response with %d bytes of ciphertext, replyIndex=%d", len(reply.EnvelopeReply), replyIndex)
 
 		e.write(&cborplugin.Response{
 			ID:      pendingRequest.RequestID,
@@ -330,13 +354,13 @@ func (e *Courier) tryImmediateReplyProxy(reply *commands.ReplicaMessageReply) bo
 	return true
 }
 
-// storePendingRequest stores a pending request with a 4-second timeout
+// storePendingRequest stores a pending request with a 30-second timeout
 func (e *Courier) storePendingRequest(envHash *[hash.HashSize]byte, requestID uint64, surb []byte) {
 	e.pendingRequestsLock.Lock()
 	defer e.pendingRequestsLock.Unlock()
 
-	// Set 4-second timeout as requested
-	timeout := time.Now().Add(4 * time.Second)
+	// Set 30-second timeout to allow for replica response delays
+	timeout := time.Now().Add(30 * time.Second)
 
 	e.pendingRequests[*envHash] = &PendingReadRequest{
 		RequestID: requestID,
@@ -344,7 +368,7 @@ func (e *Courier) storePendingRequest(envHash *[hash.HashSize]byte, requestID ui
 		Timeout:   timeout,
 	}
 
-	e.log.Debugf("Stored pending read request for envelope hash %x with 4-second timeout", envHash)
+	e.log.Debugf("Stored pending read request for envelope hash %x with 30-second timeout", envHash)
 
 	// Start a goroutine to clean up expired requests
 	go e.cleanupExpiredRequest(envHash, timeout)
@@ -431,18 +455,14 @@ func (e *Courier) handleOldMessage(cacheEntry *CourierBookKeeping, envHash *[has
 	e.log.Debugf("Cache state - Reply[0]: %v, Reply[1]: %v", reply0Available, reply1Available)
 
 	var payload []byte
-	replyIndex := courierMessage.ReplyIndex
+	replyIndex := courierMessage.ReplyIndex // Always use the requested reply index
 
 	if cacheEntry.EnvelopeReplies[courierMessage.ReplyIndex] != nil {
 		e.log.Debugf("Found reply at requested index %d", courierMessage.ReplyIndex)
 		payload = cacheEntry.EnvelopeReplies[courierMessage.ReplyIndex].EnvelopeReply
-	} else if cacheEntry.EnvelopeReplies[courierMessage.ReplyIndex^1] != nil {
-		e.log.Debugf("No reply at requested index %d, checking alternate index %d", courierMessage.ReplyIndex, courierMessage.ReplyIndex^1)
-		payload = cacheEntry.EnvelopeReplies[courierMessage.ReplyIndex^1].EnvelopeReply
-		replyIndex = courierMessage.ReplyIndex ^ 1
 	} else {
-		e.log.Debugf("No replies available in cache")
-		payload = nil
+		e.log.Debugf("No reply available at requested index %d", courierMessage.ReplyIndex)
+		payload = nil // Return empty payload but keep the requested ReplyIndex
 	}
 
 	reply := &pigeonhole.CourierQueryReply{
