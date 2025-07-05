@@ -46,12 +46,15 @@ struct courier_envelope_reply {
     // the original courier envelope.
     u8 reply_index;
 
+    // ReplyType indicates the type of reply being sent
+    u8 reply_type IN [0, 1]; // 0=ACK, 1=PAYLOAD
+
     // Payload contains an embedded ReplicaMessageReply's EnvelopeReply.
     u32 payload_len;
     u8 payload[payload_len];
 
-    // ErrorCode if non-zero indicates an error. ReplyIndex and Payload
-    // maybe invalid if an error is indicated.
+    // ErrorCode indicates error conditions (0 = success, >0 = error)
+    // When ErrorCode > 0, ReplyType and Payload may be invalid
     u8 error_code;
 }
 
