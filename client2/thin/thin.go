@@ -1099,9 +1099,8 @@ func (t *ThinClient) ReadChannelWithRetry(ctx context.Context, channelID uint16)
 
 // ReadChannelWithReply sends a read query for a pigeonhole channel with a specific reply index.
 // This method requires mixnet connectivity and will fail in offline mode.
-func (t *ThinClient) ReadChannelWithReply(ctx context.Context, channelID uint16) ([]byte, error) {
+func (t *ThinClient) ReadChannelWithReply(ctx context.Context, channelID uint16, replyIndex uint8) ([]byte, error) {
 	messageID := t.NewMessageID()
-	replyIndex := uint8(0)
 	payload, err := t.prepareReadQuery(ctx, channelID, messageID, replyIndex)
 	if err != nil {
 		return nil, err

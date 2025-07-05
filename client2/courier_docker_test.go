@@ -12,8 +12,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/katzenpost/hpqc/hash"
-	"github.com/katzenpost/katzenpost/client2/common"
 	"github.com/katzenpost/katzenpost/client2/thin"
 )
 
@@ -67,16 +65,8 @@ func TestDockerCourierServiceNewThinclientAPI(t *testing.T) {
 	originalMessage := []byte("Hello from Alice to Bob via new channel API!")
 	t.Log("Alice: Writing message and waiting for completion")
 
-	// Get courier service info
-	epochDoc, err := aliceThinClient.PKIDocumentForEpoch(currentEpoch)
-	require.NoError(t, err)
-	courierServices := common.FindServices("courier", epochDoc)
-	require.True(t, len(courierServices) > 0, "No courier services found")
-	courierService := courierServices[0]
-	identityHash := hash.Sum256(courierService.MixDescriptor.IdentityKey)
-
-	// Use WriteChannelWithReply to write and wait for completion
-	err = aliceThinClient.WriteChannelWithRetry(ctx, channelID, originalMessage, &identityHash, courierService.RecipientQueueID)
+	// Use WriteChannelWithRetry to write and wait for completion
+	err = aliceThinClient.WriteChannelWithRetry(ctx, channelID, originalMessage)
 	require.NoError(t, err)
 	t.Log("Alice: Write operation completed successfully")
 
@@ -85,7 +75,7 @@ func TestDockerCourierServiceNewThinclientAPI(t *testing.T) {
 
 	// Bob reads message using the helper function with automatic retry logic
 	t.Log("Bob: Reading message with automatic reply index retry")
-	receivedPayload, err := bobThinClient.ReadChannelWithRetry(ctx, bobChannelID, &identityHash, courierService.RecipientQueueID)
+	receivedPayload, err := bobThinClient.ReadChannelWithRetry(ctx, bobChannelID)
 	require.NoError(t, err)
 	require.NotNil(t, receivedPayload, "Bob: Received nil payload")
 
@@ -133,16 +123,8 @@ func TestDockerCourierServiceSingleReadQuery(t *testing.T) {
 	originalMessage := []byte("Single read test: Hello from Alice to Bob!")
 	t.Log("Alice: Writing message and waiting for completion")
 
-	// Get courier service info
-	epochDoc, err := aliceThinClient.PKIDocumentForEpoch(currentEpoch)
-	require.NoError(t, err)
-	courierServices := common.FindServices("courier", epochDoc)
-	require.True(t, len(courierServices) > 0, "No courier services found")
-	courierService := courierServices[0]
-	identityHash := hash.Sum256(courierService.MixDescriptor.IdentityKey)
-
 	// Use WriteChannelWithRetry to write and wait for completion
-	err = aliceThinClient.WriteChannelWithRetry(ctx, channelID, originalMessage, &identityHash, courierService.RecipientQueueID)
+	err = aliceThinClient.WriteChannelWithRetry(ctx, channelID, originalMessage)
 	require.NoError(t, err)
 	t.Log("Alice: Write operation completed successfully")
 
@@ -150,74 +132,18 @@ func TestDockerCourierServiceSingleReadQuery(t *testing.T) {
 	t.Log("Waiting for message propagation to storage replicas...")
 	time.Sleep(10 * time.Second)
 
-	// Bob performs SINGLE read query without retries
-	t.Log("Bob: Performing SINGLE read query (no retries)")
-
-	// Generate a unique messageID for this read operation
-	readMessageID := bobThinClient.NewMessageID()
-
-	// Prepare read query with reply index 0
-	replyIndex := uint8(0)
-	readPayload, _, _, err := bobThinClient.ReadChannel(ctx, bobChannelID, readMessageID, &replyIndex)
-	require.NoError(t, err)
-	t.Logf("Bob: Prepared read query with messageID %x and reply index %d", readMessageID[:8], replyIndex)
-
-	// Send the single read query
-	err = bobThinClient.SendChannelQuery(ctx, bobChannelID, readPayload, &identityHash, courierService.RecipientQueueID, readMessageID)
-	require.NoError(t, err)
-	t.Log("Bob: Sent single read query to courier")
-
-	// Wait for the response using event sink
-	eventSink := bobThinClient.EventSink()
-	defer bobThinClient.StopEventSink(eventSink)
+	// Bob performs SINGLE read query without retries using ReadChannelWithReply
+	t.Log("Bob: Performing SINGLE read query using ReadChannelWithReply (no retries)")
 
 	readCtx, readCancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer readCancel()
 
-	var receivedPayload []byte
-	var responseReceived bool
-
-	// Wait for a single response - no infinite loop
-	select {
-	case event := <-eventSink:
-		switch v := event.(type) {
-		case *thin.MessageReplyEvent:
-			// Check if this reply matches our expected messageID
-			if v.MessageID != nil && *v.MessageID == *readMessageID {
-				t.Logf("Bob: Received MessageReplyEvent for messageID %x: Err=%s, PayloadLen=%d",
-					readMessageID[:8], v.Err, len(v.Payload))
-
-				if v.Err != "" {
-					t.Fatalf("Single read query failed with error: %s", v.Err)
-				}
-
-				receivedPayload = v.Payload
-				responseReceived = true
-			} else {
-				t.Fatal("Received reply for unexpected messageID or nil messageID")
-			}
-
-		case *thin.ConnectionStatusEvent:
-			if !v.IsConnected {
-				t.Fatal("Connection lost during read query")
-			} else {
-				t.Fatal("Received connection status event instead of message reply")
-			}
-		default:
-			t.Fatalf("Received unexpected event type: %T", event)
-		}
-	case <-readCtx.Done():
-		t.Fatal("Timeout waiting for single read query response")
-	case <-bobThinClient.HaltCh():
-		t.Fatal("Client halted during read query")
-	}
-
-	if !responseReceived {
-		t.Fatal("No valid response received for single read query")
-	}
+	replyIndex := uint8(0) // in theory it shoulnd't matter if this is 0 or 1
+	receivedPayload, err := bobThinClient.ReadChannelWithReply(readCtx, bobChannelID, replyIndex)
+	require.NoError(t, err, "Single read query must succeed")
+	t.Log("Bob: ReadChannelWithReply completed successfully")
 
 	// Test MUST fail if we get nil or zero-length payload
-	require.NoError(t, err, "Single read query must succeed")
 	require.NotNil(t, receivedPayload, "Single read query must return non-nil payload")
 	require.Greater(t, len(receivedPayload), 0, "Single read query must return non-empty payload - proxy functionality failed")
 
