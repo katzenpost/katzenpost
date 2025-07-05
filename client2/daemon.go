@@ -547,18 +547,26 @@ func (d *Daemon) handleNewChannelReply(appid *[AppIDLength]byte,
 	}
 
 	// First, parse the courier query reply to check what type of reply it is
+	d.log.Debugf("NEW API REPLY: Parsing courier query reply from plaintext of length %d", len(plaintext))
 	courierQueryReply, err := pigeonhole.ParseCourierQueryReply(plaintext)
 	if err != nil {
 		d.log.Errorf("NEW API REPLY: Failed to unmarshal courier query reply: %s", err)
 		return fmt.Errorf("failed to unmarshal courier query reply: %s", err)
 	}
+	d.log.Debugf("NEW API REPLY: Parsed courier query reply - ReplyType: %d", courierQueryReply.ReplyType)
 
 	// Copy command replies are not supported in the new API
 
 	// Handle envelope replies (read/write operations)
 	if courierQueryReply.EnvelopeReply != nil {
+		d.log.Debugf("NEW API REPLY: EnvelopeReply - PayloadLen: %d, Payload length: %d, ErrorCode: %d, ReplyIndex: %d",
+			courierQueryReply.EnvelopeReply.PayloadLen,
+			len(courierQueryReply.EnvelopeReply.Payload),
+			courierQueryReply.EnvelopeReply.ErrorCode,
+			courierQueryReply.EnvelopeReply.ReplyIndex)
 		// Check if the envelope reply has an empty payload (no data available yet)
 		if len(courierQueryReply.EnvelopeReply.Payload) == 0 {
+			d.log.Debugf("NEW API REPLY: Empty payload detected, sending empty response to client")
 			// Send empty response to client so they can retry
 			err := conn.sendResponse(&Response{
 				AppID: appid,
