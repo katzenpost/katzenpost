@@ -1120,7 +1120,7 @@ func (t *ThinClient) tryReplyIndexWithRetries(ctx context.Context, channelID uin
 		return nil, err
 	}
 
-	const maxRetries = 2
+	const maxRetries = 4
 	for attempt := 1; attempt <= maxRetries; attempt++ {
 		if result, err := t.attemptChannelRead(ctx, channelID, payload, destNode, destQueue, messageID, replyIndex, attempt, maxRetries); err == nil {
 			return result, nil
@@ -1172,7 +1172,7 @@ func (t *ThinClient) waitBetweenRetries(ctx context.Context) error {
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
-	case <-time.After(2 * time.Second):
+	case <-time.After(5 * time.Second):
 		return nil
 	}
 }

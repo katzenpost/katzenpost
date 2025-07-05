@@ -81,7 +81,7 @@ func TestDockerCourierServiceNewThinclientAPI(t *testing.T) {
 	t.Log("Alice: Write operation completed successfully")
 
 	// Wait for message propagation to storage replicas
-	time.Sleep(5 * time.Second)
+	time.Sleep(10 * time.Second)
 
 	// Bob reads message using the helper function with automatic retry logic
 	t.Log("Bob: Reading message with automatic reply index retry")
