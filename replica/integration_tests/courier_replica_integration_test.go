@@ -719,7 +719,18 @@ func (c *mockPKIClient) Post(ctx context.Context, epoch uint64, signingPrivateKe
 }
 
 func (c *mockPKIClient) PostReplica(ctx context.Context, epoch uint64, signingPrivateKey sign.PrivateKey, signingPublicKey sign.PublicKey, d *pki.ReplicaDescriptor) error {
-	c.t.Log("mockPKIClient: PostReplica not implemented")
+	c.t.Logf("mockPKIClient: PostReplica called for replica %s, epoch %d", d.Name, epoch)
+
+	// Validate the descriptor
+	if err := pki.IsReplicaDescriptorWellFormed(d, epoch); err != nil {
+		c.t.Logf("mockPKIClient: PostReplica validation failed: %v", err)
+		return err
+	}
+
+	// In a real implementation, this would post to the authority
+	// For the mock, we just acknowledge the post without modifying documents
+	// since we've already created synthetic PKI documents with all replicas
+	c.t.Logf("mockPKIClient: PostReplica acknowledged for replica %s", d.Name)
 	return nil
 }
 
