@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/katzenpost/hpqc/nike"
+	"github.com/katzenpost/hpqc/sign/ed25519"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
 
@@ -19,22 +20,59 @@ import (
 
 func TestProxyIntegration(t *testing.T) {
 	// This test specifically verifies that proxy functionality works end-to-end
-	// by deliberately sending requests to non-shard replicas
+	// by deliberately sending requests to non-shard replicas using 6 replicas:
+	// - Replicas 0,1: intermediary replicas for Alice's write operations
+	// - Replicas 2,3: final destination replicas (determined by hash-based sharding)
+	// - Replicas 4,5: intermediary replicas for Bob's read operations (proxy to 2,3)
 
-	env := setupTestEnvironment(t)
-	defer env.cleanup()
+	env := setupTestEnvironment6Replicas(t)
+	// Don't defer cleanup immediately - let replicas run longer
+	// But ensure cleanup happens if test fails
+	var cleanupDone bool
+	defer func() {
+		if !cleanupDone {
+			env.cleanup()
+		}
+	}()
 
-	// Wait for replicas to be ready
+	// Wait for replicas to be ready and PKI documents to be synchronized
+	t.Logf("PROXY_TEST: Waiting for replicas to fully initialize...")
+	time.Sleep(5 * time.Second)
+
+	// Force all replicas to fetch PKI documents to ensure consistency
+	for i, replica := range env.replicas {
+		t.Logf("PROXY_TEST: Forcing PKI fetch for replica %d", i)
+		err := replica.PKIWorker.ForceFetchPKI()
+		require.NoError(t, err)
+	}
+
+	// Wait a bit more for PKI synchronization
 	time.Sleep(2 * time.Second)
 
-	// Create a test BoxID
-	boxID := [32]byte{}
-	copy(boxID[:], "test_proxy_integration_box")
+	// Generate a proper Ed25519 key pair for testing
+	ed25519Scheme := ed25519.Scheme()
+	publicKey, privateKey, err := ed25519Scheme.GenerateKey()
+	require.NoError(t, err)
 
-	// Get the correct shards for this BoxID
+	// The BoxID must be the public key bytes
+	publicKeyBytes, err := publicKey.MarshalBinary()
+	require.NoError(t, err)
+	require.Equal(t, 32, len(publicKeyBytes), "Ed25519 public key must be 32 bytes")
+
+	var boxIDFromKey [32]uint8
+	copy(boxIDFromKey[:], publicKeyBytes)
+
+	// Calculate the correct shards for this BoxID
 	currentEpoch, _, _ := epochtime.Now()
 	doc := env.mockPKIClient.docs[currentEpoch]
-	correctShards, err := replicaCommon.GetShards(&boxID, doc)
+
+	// Debug: Check how many replicas are in the PKI document
+	t.Logf("PKI document has %d storage replicas", len(doc.StorageReplicas))
+	for i, replica := range doc.StorageReplicas {
+		t.Logf("Replica %d: Name=%s, IdentityKey=%x", i, replica.Name, replica.IdentityKey[:8])
+	}
+
+	correctShards, err := replicaCommon.GetShards(&boxIDFromKey, doc)
 	require.NoError(t, err)
 	require.Len(t, correctShards, 2, "Should have exactly 2 shards")
 
@@ -53,46 +91,38 @@ func TestProxyIntegration(t *testing.T) {
 	require.Equal(t, 2, shardCount, "Should find both shards")
 
 	t.Logf("BoxID %x should be stored on replicas: %d, %d",
-		boxID[:8], correctShardIndices[0], correctShardIndices[1])
+		boxIDFromKey[:8], correctShardIndices[0], correctShardIndices[1])
 
-	// Find intermediary replicas that are NOT the correct shards
-	var wrongIntermediaryIndices [2]uint8
-	wrongCount := 0
-	for i := 0; i < len(doc.StorageReplicas) && wrongCount < 2; i++ {
-		isCorrectShard := false
-		for _, correctIndex := range correctShardIndices {
-			if uint8(i) == correctIndex {
-				isCorrectShard = true
-				break
-			}
-		}
-		if !isCorrectShard {
-			wrongIntermediaryIndices[wrongCount] = uint8(i)
-			wrongCount++
-		}
+	// Debug: Print the identity keys of the correct shards for comparison
+	for i, shard := range correctShards {
+		t.Logf("Correct shard %d: Name=%s, IdentityKey=%x", i, shard.Name, shard.IdentityKey[:8])
 	}
 
-	// If we don't have enough wrong replicas, skip the test
-	if wrongCount < 1 {
-		t.Skip("Not enough non-shard replicas available to test proxy functionality")
-		return
-	}
+	// Alice's write intermediaries: use replicas 0,1
+	aliceIntermediaryIndices := [2]uint8{0, 1}
+	t.Logf("Alice will use intermediary replicas: %d, %d for writing",
+		aliceIntermediaryIndices[0], aliceIntermediaryIndices[1])
 
-	// Use at least one wrong replica to trigger proxy
-	if wrongCount == 1 {
-		wrongIntermediaryIndices[1] = correctShardIndices[0]
-	}
+	// Bob's read intermediaries: use replicas 4,5 (these will proxy to the correct shards)
+	bobIntermediaryIndices := [2]uint8{4, 5}
+	t.Logf("Bob will use intermediary replicas: %d, %d for reading (will proxy to correct shards: %d, %d)",
+		bobIntermediaryIndices[0], bobIntermediaryIndices[1], correctShardIndices[0], correctShardIndices[1])
 
-	t.Logf("Using intermediary replicas: %d, %d (deliberately choosing non-shards to force proxying)",
-		wrongIntermediaryIndices[0], wrongIntermediaryIndices[1])
-
-	// First, write some data using correct intermediaries
+	// STEP 1: Alice writes data using intermediary replicas 0,1
 	writeData := []byte("test data for proxy integration")
-	correctSharding := getShardingInfo(t, env, &boxID)
+
+	// Sign the payload with the private key
+	signatureBytes := ed25519Scheme.Sign(privateKey, writeData, nil)
+	require.Equal(t, 64, len(signatureBytes), "Ed25519 signature must be 64 bytes")
+
+	var signature [64]uint8
+	copy(signature[:], signatureBytes)
 
 	writeRequest := &pigeonhole.ReplicaWrite{
-		BoxID:   boxID,
-		Payload: writeData,
+		BoxID:      boxIDFromKey,
+		Signature:  signature,
+		PayloadLen: uint32(len(writeData)),
+		Payload:    writeData,
 	}
 
 	writeMsg := &pigeonhole.ReplicaInnerMessage{
@@ -100,21 +130,46 @@ func TestProxyIntegration(t *testing.T) {
 		WriteMsg:    writeRequest,
 	}
 
-	t.Logf("PROXY_TEST: Creating write envelope with correct sharding: %v", correctSharding.ReplicaIndices)
-	writeEnvelope := createMKEMEnvelope(t, correctSharding, writeMsg, false)
+	// Create MKEM envelope using Alice's intermediary replicas (0,1)
+	t.Logf("PROXY_TEST: Creating write envelope using Alice's intermediaries: %v", aliceIntermediaryIndices)
+	replicaEpoch, _, _ := replicaCommon.ReplicaNow()
+	var aliceReplicaPubKeys []nike.PublicKey
+
+	for _, replicaIndex := range aliceIntermediaryIndices {
+		pubKey := env.replicaKeys[replicaIndex][replicaEpoch]
+		aliceReplicaPubKeys = append(aliceReplicaPubKeys, pubKey)
+	}
+
+	aliceMkemPrivateKey, aliceMkemCiphertext := mkemNikeScheme.Encapsulate(aliceReplicaPubKeys, writeMsg.Bytes())
+	aliceMkemPublicKey := aliceMkemPrivateKey.Public()
+	aliceSenderPubkeyBytes := aliceMkemPublicKey.Bytes()
+
+	writeEnvelope := &pigeonhole.CourierEnvelope{
+		IntermediateReplicas: aliceIntermediaryIndices,
+		Dek1:                 *aliceMkemCiphertext.DEKCiphertexts[0],
+		Dek2:                 *aliceMkemCiphertext.DEKCiphertexts[1],
+		ReplyIndex:           0,
+		Epoch:                replicaEpoch,
+		SenderPubkeyLen:      uint16(len(aliceSenderPubkeyBytes)),
+		SenderPubkey:         aliceSenderPubkeyBytes,
+		CiphertextLen:        uint32(len(aliceMkemCiphertext.Envelope)),
+		Ciphertext:           aliceMkemCiphertext.Envelope,
+	}
+
 	t.Logf("PROXY_TEST: Write envelope created, injecting to courier")
 	writeReply := injectCourierEnvelope(t, env, writeEnvelope)
 	require.NotNil(t, writeReply)
 
-	t.Logf("PROXY_TEST: Write completed using correct intermediaries: %v", correctSharding.ReplicaIndices)
+	t.Logf("PROXY_TEST: Write completed using Alice's intermediaries: %v", aliceIntermediaryIndices)
 
-	// Wait for write to complete
-	time.Sleep(3 * time.Second)
+	// Wait for write and replication to complete
+	t.Logf("PROXY_TEST: Waiting for replication to complete...")
+	time.Sleep(10 * time.Second)
 
-	// Now create a read request using wrong intermediaries to force proxy
-	t.Logf("PROXY_TEST: Creating read request for BoxID %x using wrong intermediaries: %v", boxID, wrongIntermediaryIndices)
+	// STEP 2: Bob reads data using intermediary replicas 4,5 (which will proxy to correct shards)
+	t.Logf("PROXY_TEST: Creating read request for BoxID %x using Bob's intermediaries: %v", boxIDFromKey, bobIntermediaryIndices)
 	readRequest := &pigeonhole.ReplicaRead{
-		BoxID: boxID,
+		BoxID: boxIDFromKey,
 	}
 
 	readMsg := &pigeonhole.ReplicaInnerMessage{
@@ -122,60 +177,77 @@ func TestProxyIntegration(t *testing.T) {
 		ReadMsg:     readRequest,
 	}
 
-	// Create MKEM envelope using wrong intermediary replicas
-	t.Logf("PROXY_TEST: Creating read envelope with wrong sharding to force proxy: %v", wrongIntermediaryIndices)
-	replicaEpoch, _, _ := replicaCommon.ReplicaNow()
-	var wrongReplicaPubKeys []nike.PublicKey
+	// Create MKEM envelope using Bob's intermediary replicas (4,5)
+	t.Logf("PROXY_TEST: Creating read envelope with Bob's intermediaries to force proxy: %v", bobIntermediaryIndices)
+	var bobReplicaPubKeys []nike.PublicKey
 
-	for _, replicaIndex := range wrongIntermediaryIndices {
+	for _, replicaIndex := range bobIntermediaryIndices {
 		pubKey := env.replicaKeys[replicaIndex][replicaEpoch]
-		wrongReplicaPubKeys = append(wrongReplicaPubKeys, pubKey)
+		bobReplicaPubKeys = append(bobReplicaPubKeys, pubKey)
 	}
 
-	mkemPrivateKey, mkemCiphertext := mkemNikeScheme.Encapsulate(wrongReplicaPubKeys, readMsg.Bytes())
-	mkemPublicKey := mkemPrivateKey.Public()
-	senderPubkeyBytes := mkemPublicKey.Bytes()
+	bobMkemPrivateKey, bobMkemCiphertext := mkemNikeScheme.Encapsulate(bobReplicaPubKeys, readMsg.Bytes())
+	bobMkemPublicKey := bobMkemPrivateKey.Public()
+	bobSenderPubkeyBytes := bobMkemPublicKey.Bytes()
 
 	proxyReadEnvelope := &pigeonhole.CourierEnvelope{
-		IntermediateReplicas: wrongIntermediaryIndices, // Using wrong intermediaries!
-		Dek1:                 *mkemCiphertext.DEKCiphertexts[0],
-		Dek2:                 *mkemCiphertext.DEKCiphertexts[1],
+		IntermediateReplicas: bobIntermediaryIndices, // Using Bob's intermediaries (will proxy)!
+		Dek1:                 *bobMkemCiphertext.DEKCiphertexts[0],
+		Dek2:                 *bobMkemCiphertext.DEKCiphertexts[1],
 		ReplyIndex:           0,
 		Epoch:                replicaEpoch,
-		SenderPubkeyLen:      uint16(len(senderPubkeyBytes)),
-		SenderPubkey:         senderPubkeyBytes,
-		CiphertextLen:        uint32(len(mkemCiphertext.Envelope)),
-		Ciphertext:           mkemCiphertext.Envelope,
+		SenderPubkeyLen:      uint16(len(bobSenderPubkeyBytes)),
+		SenderPubkey:         bobSenderPubkeyBytes,
+		CiphertextLen:        uint32(len(bobMkemCiphertext.Envelope)),
+		Ciphertext:           bobMkemCiphertext.Envelope,
 	}
 
-	t.Logf("PROXY_TEST: Sending read request to wrong intermediaries: %v (should trigger proxy to correct shards: %v)",
-		wrongIntermediaryIndices, correctShardIndices)
+	t.Logf("PROXY_TEST: Sending read request to Bob's intermediaries: %v (should trigger proxy to correct shards: %v)",
+		bobIntermediaryIndices, correctShardIndices)
 
 	// Send proxy read request
 	t.Logf("PROXY_TEST: Read envelope created, injecting to courier")
 	proxyReadReply := injectCourierEnvelope(t, env, proxyReadEnvelope)
-	require.NotNil(t, proxyReadReply)
+	require.NotNil(t, proxyReadReply, "Courier should return a reply")
 
-	if len(proxyReadReply.Payload) > 0 {
-		t.Logf("SUCCESS: Received proxy reply with payload length: %d", len(proxyReadReply.Payload))
+	// Test must fail if no payload is received
+	require.Greater(t, len(proxyReadReply.Payload), 0, "Proxy read must return a payload - proxy functionality failed")
 
-		// Decrypt and verify the response
-		replicaIndex := int(wrongIntermediaryIndices[proxyReadReply.ReplyIndex])
-		replicaPubKey := env.replicaKeys[replicaIndex][replicaEpoch]
-		rawInnerMsg, err := mkemNikeScheme.DecryptEnvelope(mkemPrivateKey, replicaPubKey, proxyReadReply.Payload)
-		require.NoError(t, err)
+	t.Logf("SUCCESS: Received proxy reply with payload length: %d", len(proxyReadReply.Payload))
 
-		innerMsg, err := pigeonhole.ParseReplicaMessageReplyInnerMessage(rawInnerMsg)
-		require.NoError(t, err)
-		require.NotNil(t, innerMsg.ReadReply)
+	// Decrypt and verify the response
+	replicaIndex := int(bobIntermediaryIndices[proxyReadReply.ReplyIndex])
+	replicaPubKey := env.replicaKeys[replicaIndex][replicaEpoch]
+	rawInnerMsg, err := mkemNikeScheme.DecryptEnvelope(bobMkemPrivateKey, replicaPubKey, proxyReadReply.Payload)
+	require.NoError(t, err, "Failed to decrypt proxy reply")
 
-		if innerMsg.ReadReply.ErrorCode == pigeonhole.ReplicaErrorSuccess {
-			t.Logf("SUCCESS: Proxy read succeeded! Retrieved data: %s", string(innerMsg.ReadReply.Payload))
-			require.Equal(t, writeData, innerMsg.ReadReply.Payload, "Retrieved data should match written data")
-		} else {
-			t.Logf("Proxy read returned error code: %d", innerMsg.ReadReply.ErrorCode)
-		}
-	} else {
-		t.Logf("No payload in proxy reply - checking if proxy functionality is working")
-	}
+	innerMsg, err := pigeonhole.ParseReplicaMessageReplyInnerMessage(rawInnerMsg)
+	require.NoError(t, err, "Failed to parse replica message reply")
+	require.NotNil(t, innerMsg.ReadReply, "ReadReply should not be nil")
+
+	// Test must fail if the operation was not successful
+	require.Equal(t, pigeonhole.ReplicaErrorSuccess, innerMsg.ReadReply.ErrorCode,
+		"Proxy read must succeed - error code: %d", innerMsg.ReadReply.ErrorCode)
+
+	// Test must fail if the data doesn't match
+	require.Equal(t, writeData, innerMsg.ReadReply.Payload,
+		"Retrieved data must match written data - proxy functionality failed")
+
+	t.Logf("SUCCESS: Proxy read succeeded! Retrieved data: %s", string(innerMsg.ReadReply.Payload))
+
+	// Wait a bit longer to ensure all operations complete
+	time.Sleep(5 * time.Second)
+
+	// Now cleanup the environment
+	cleanupDone = true
+	env.cleanup()
+}
+
+// setupTestEnvironment6Replicas creates a test environment with 6 replicas for proxy testing
+func setupTestEnvironment6Replicas(t *testing.T) *testEnvironment {
+	// We need 6 replicas for the proxy integration test with specific allocation:
+	// - Replicas 0,1: Alice's write intermediaries
+	// - Replicas 2,3: Final destination replicas (determined by sharding)
+	// - Replicas 4,5: Bob's read intermediaries (will proxy to 2,3)
+	return setupTestEnvironmentWithReplicas(t, 6, "courier_replica_proxy_test_*")
 }

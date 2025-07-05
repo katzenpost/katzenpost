@@ -312,7 +312,12 @@ func (rr *responseRouter) writeFunc(cmd cborplugin.Command) {
 }
 
 func setupTestEnvironment(t *testing.T) *testEnvironment {
-	tempDir, err := os.MkdirTemp("", "courier_replica_test_*")
+	return setupTestEnvironmentWithReplicas(t, 3, "courier_replica_test_*")
+}
+
+// setupTestEnvironmentWithReplicas creates a test environment with the specified number of replicas
+func setupTestEnvironmentWithReplicas(t *testing.T, numReplicas int, tempDirPattern string) *testEnvironment {
+	tempDir, err := os.MkdirTemp("", tempDirPattern)
 	require.NoError(t, err)
 
 	// Use unique port base for each test to avoid conflicts
@@ -330,7 +335,6 @@ func setupTestEnvironment(t *testing.T) *testEnvironment {
 	_, courierLinkPubKey := generateCourierLinkKeys(t, courierDir, courierCfg.WireKEMScheme)
 	serviceDesc := makeServiceDescriptor(t, courierLinkPubKey)
 
-	numReplicas := 3
 	replicaDescriptors := make([]*pki.ReplicaDescriptor, numReplicas)
 	replicaConfigs := make([]*config.Config, numReplicas)
 	replicaKeys := make([]map[uint64]nike.PublicKey, numReplicas)
