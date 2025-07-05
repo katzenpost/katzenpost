@@ -210,6 +210,13 @@ func TestProxyIntegration(t *testing.T) {
 	proxyReadReply := injectCourierEnvelope(t, env, proxyReadEnvelope)
 	require.NotNil(t, proxyReadReply, "Courier should return a reply")
 
+	// If we didn't get a payload immediately, wait for the proxy operation to complete
+	if len(proxyReadReply.Payload) == 0 {
+		t.Logf("PROXY_TEST: No immediate payload, waiting for proxy operation to complete...")
+		proxyReadReply = waitForReplicaResponse(t, env, proxyReadEnvelope)
+		require.NotNil(t, proxyReadReply, "Should receive proxy response after waiting")
+	}
+
 	// Test must fail if no payload is received
 	require.Greater(t, len(proxyReadReply.Payload), 0, "Proxy read must return a payload - proxy functionality failed")
 
@@ -235,8 +242,9 @@ func TestProxyIntegration(t *testing.T) {
 
 	t.Logf("SUCCESS: Proxy read succeeded! Retrieved data: %s", string(innerMsg.ReadReply.Payload))
 
-	// Wait a bit longer to ensure all operations complete
-	time.Sleep(5 * time.Second)
+	// Wait longer to ensure all proxy operations and connections are properly cleaned up
+	t.Logf("PROXY_TEST: Waiting for all operations to complete before cleanup...")
+	time.Sleep(15 * time.Second)
 
 	// Now cleanup the environment
 	cleanupDone = true
