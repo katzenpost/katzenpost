@@ -21,10 +21,12 @@ import (
 	"gopkg.in/op/go-logging.v1"
 
 	"github.com/katzenpost/hpqc/bacap"
+	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/rand"
 
 	"github.com/katzenpost/katzenpost/client2/common"
 	"github.com/katzenpost/katzenpost/client2/config"
+	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/log"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
@@ -1077,11 +1079,7 @@ func (t *ThinClient) SendChannelQuery(
 // This method handles the common case where the courier has cached replies at different indices
 // and accounts for timing issues where messages may not have propagated yet.
 // This method requires mixnet connectivity and will fail in offline mode.
-func (t *ThinClient) ReadChannelWithRetry(ctx context.Context, channelID uint16, destNode *[32]byte, destQueue []byte) ([]byte, error) {
-	if err := t.validateReadChannelWithRetryParams(ctx, destNode, destQueue); err != nil {
-		return nil, err
-	}
-
+func (t *ThinClient) ReadChannelWithRetry(ctx context.Context, channelID uint16) ([]byte, error) {
 	if !t.isConnected {
 		return nil, errors.New("cannot send channel query in offline mode - daemon not connected to mixnet")
 	}
@@ -1090,7 +1088,7 @@ func (t *ThinClient) ReadChannelWithRetry(ctx context.Context, channelID uint16,
 	replyIndices := []uint8{0, 1}
 
 	for _, replyIndex := range replyIndices {
-		if result, err := t.tryReplyIndexWithRetries(ctx, channelID, messageID, replyIndex, destNode, destQueue); err == nil {
+		if result, err := t.tryReplyIndexWithRetries(ctx, channelID, messageID, replyIndex); err == nil {
 			return result, nil
 		}
 	}
@@ -1099,22 +1097,24 @@ func (t *ThinClient) ReadChannelWithRetry(ctx context.Context, channelID uint16,
 	return nil, errors.New("all reply indices failed after multiple attempts")
 }
 
-// validateReadChannelWithRetryParams validates the input parameters for ReadChannelWithRetry
-func (t *ThinClient) validateReadChannelWithRetryParams(ctx context.Context, destNode *[32]byte, destQueue []byte) error {
-	if ctx == nil {
-		return errContextCannotBeNil
+// ReadChannelWithReply sends a read query for a pigeonhole channel with a specific reply index.
+// This method requires mixnet connectivity and will fail in offline mode.
+func (t *ThinClient) ReadChannelWithReply(ctx context.Context, channelID uint16) ([]byte, error) {
+	messageID := t.NewMessageID()
+	replyIndex := uint8(0)
+	payload, err := t.prepareReadQuery(ctx, channelID, messageID, replyIndex)
+	if err != nil {
+		return nil, err
 	}
-	if destNode == nil {
-		return errors.New("destNode cannot be nil")
-	}
-	if destQueue == nil {
-		return errors.New("destQueue cannot be nil")
-	}
-	return nil
+	const (
+		attempt    = 1
+		maxRetries = 1
+	)
+	return t.attemptChannelRead(ctx, channelID, payload, messageID, replyIndex, attempt, maxRetries)
 }
 
 // tryReplyIndexWithRetries attempts to read from a specific reply index with retries
-func (t *ThinClient) tryReplyIndexWithRetries(ctx context.Context, channelID uint16, messageID *[MessageIDLength]byte, replyIndex uint8, destNode *[32]byte, destQueue []byte) ([]byte, error) {
+func (t *ThinClient) tryReplyIndexWithRetries(ctx context.Context, channelID uint16, messageID *[MessageIDLength]byte, replyIndex uint8) ([]byte, error) {
 	payload, err := t.prepareReadQuery(ctx, channelID, messageID, replyIndex)
 	if err != nil {
 		return nil, err
@@ -1122,7 +1122,7 @@ func (t *ThinClient) tryReplyIndexWithRetries(ctx context.Context, channelID uin
 
 	const maxRetries = 4
 	for attempt := 1; attempt <= maxRetries; attempt++ {
-		if result, err := t.attemptChannelRead(ctx, channelID, payload, destNode, destQueue, messageID, replyIndex, attempt, maxRetries); err == nil {
+		if result, err := t.attemptChannelRead(ctx, channelID, payload, messageID, replyIndex, attempt, maxRetries); err == nil {
 			return result, nil
 		}
 
@@ -1146,24 +1146,18 @@ func (t *ThinClient) prepareReadQuery(ctx context.Context, channelID uint16, mes
 }
 
 // attemptChannelRead performs a single attempt to read from the channel
-func (t *ThinClient) attemptChannelRead(ctx context.Context, channelID uint16, payload []byte, destNode *[32]byte, destQueue []byte, messageID *[MessageIDLength]byte, replyIndex uint8, attempt, maxRetries int) ([]byte, error) {
-	t.log.Debugf("ReadChannelWithRetry: Trying reply index %d (attempt %d/%d)", replyIndex, attempt, maxRetries)
-
+func (t *ThinClient) attemptChannelRead(ctx context.Context, channelID uint16, payload []byte, messageID *[MessageIDLength]byte, replyIndex uint8, attempt, maxRetries int) ([]byte, error) {
 	attemptCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
 
-	result, err := t.sendChannelQueryAndWaitForMessageID(attemptCtx, channelID, payload, destNode, destQueue, messageID, true)
+	result, err := t.sendChannelQueryAndWaitForMessageID(attemptCtx, channelID, payload, messageID, true)
 	if err != nil {
-		t.log.Debugf("ReadChannelWithRetry: Reply index %d attempt %d failed: %v", replyIndex, attempt, err)
 		return nil, err
 	}
 
 	if len(result) > 0 {
-		t.log.Debugf("ReadChannelWithRetry: Reply index %d succeeded on attempt %d with %d bytes", replyIndex, attempt, len(result))
 		return result, nil
 	}
-
-	t.log.Debugf("ReadChannelWithRetry: Reply index %d attempt %d got empty payload, treating as failure", replyIndex, attempt)
 	return nil, errors.New("received empty payload - message not available yet")
 }
 
@@ -1181,15 +1175,9 @@ func (t *ThinClient) waitBetweenRetries(ctx context.Context) error {
 // This method handles the complete write flow: preparing the write payload, sending it to the courier,
 // and waiting for the write completion confirmation.
 // This method requires mixnet connectivity and will fail in offline mode.
-func (t *ThinClient) WriteChannelWithRetry(ctx context.Context, channelID uint16, payload []byte, destNode *[32]byte, destQueue []byte) error {
+func (t *ThinClient) WriteChannelWithRetry(ctx context.Context, channelID uint16, payload []byte) error {
 	if ctx == nil {
 		return errContextCannotBeNil
-	}
-	if destNode == nil {
-		return errors.New("destNode cannot be nil")
-	}
-	if destQueue == nil {
-		return errors.New("destQueue cannot be nil")
 	}
 
 	// Check if we're in offline mode
@@ -1208,16 +1196,37 @@ func (t *ThinClient) WriteChannelWithRetry(ctx context.Context, channelID uint16
 
 	// Send the write query and wait for completion
 	// For write operations, we don't care about the payload, just that it succeeded
-	_, err = t.sendChannelQueryAndWaitForMessageID(ctx, channelID, writePayload, destNode, destQueue, writeMessageID, false)
+	_, err = t.sendChannelQueryAndWaitForMessageID(ctx, channelID, writePayload, writeMessageID, false)
 	return err
 }
 
+func (t *ThinClient) getCourierDestination() (*[32]byte, []byte, error) {
+	epoch, _, _ := epochtime.Now()
+	epochDoc, err := t.PKIDocumentForEpoch(epoch)
+	if err != nil {
+		return nil, nil, err
+	}
+	courierServices := common.FindServices("courier", epochDoc)
+	if len(courierServices) == 0 {
+		return nil, nil, errors.New("no courier services found")
+	}
+	courierService := courierServices[0]
+	destNode := hash.Sum256(courierService.MixDescriptor.IdentityKey)
+	destQueue := courierService.RecipientQueueID
+	return &destNode, destQueue, nil
+}
+
 // sendChannelQueryAndWaitForMessageID sends a channel query and waits for a reply with the specified messageID
-func (t *ThinClient) sendChannelQueryAndWaitForMessageID(ctx context.Context, channelID uint16, payload []byte, destNode *[32]byte, destQueue []byte, expectedMessageID *[MessageIDLength]byte, isReadOperation bool) ([]byte, error) {
+func (t *ThinClient) sendChannelQueryAndWaitForMessageID(ctx context.Context, channelID uint16, payload []byte, expectedMessageID *[MessageIDLength]byte, isReadOperation bool) ([]byte, error) {
 	eventSink := t.EventSink()
 	defer t.StopEventSink(eventSink)
 
-	err := t.SendChannelQuery(ctx, channelID, payload, destNode, destQueue, expectedMessageID)
+	destNode, destQueue, err := t.getCourierDestination()
+	if err != nil {
+		return nil, err
+	}
+
+	err = t.SendChannelQuery(ctx, channelID, payload, destNode, destQueue, expectedMessageID)
 	if err != nil {
 		return nil, err
 	}
