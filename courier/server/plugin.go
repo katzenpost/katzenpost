@@ -458,16 +458,13 @@ func (e *Courier) handleOldMessage(cacheEntry *CourierBookKeeping, envHash *[has
 	e.log.Debugf("Cache state - Reply[0]: %v, Reply[1]: %v", reply0Available, reply1Available)
 
 	var payload []byte
-	var errorCode uint8
 
 	if cacheEntry.EnvelopeReplies[courierMessage.ReplyIndex] != nil {
 		e.log.Debugf("Found reply at requested index %d", courierMessage.ReplyIndex)
 		payload = cacheEntry.EnvelopeReplies[courierMessage.ReplyIndex].EnvelopeReply
-		errorCode = cacheEntry.EnvelopeReplies[courierMessage.ReplyIndex].ErrorCode
 	} else {
 		e.log.Debugf("No reply available at requested index %d", courierMessage.ReplyIndex)
-		payload = nil                               // Return empty payload but keep the requested ReplyIndex
-		errorCode = pigeonhole.EnvelopeErrorSuccess // Default to success when no cached reply
+		payload = nil // Return empty payload but keep the requested ReplyIndex
 	}
 
 	// Determine reply type based on whether there's actual payload data
@@ -486,7 +483,7 @@ func (e *Courier) handleOldMessage(cacheEntry *CourierBookKeeping, envHash *[has
 			ReplyType:    replyType,
 			PayloadLen:   uint32(len(payload)),
 			Payload:      payload,
-			ErrorCode:    errorCode,
+			ErrorCode:    pigeonhole.EnvelopeErrorSuccess,
 		},
 	}
 
