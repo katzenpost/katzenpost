@@ -498,6 +498,25 @@ func (d *Daemon) handleReply(reply *sphinxReply) {
 		err := d.handleChannelReply(desc.appID, desc.ID, reply.surbID, surbPayload)
 		if err != nil {
 			d.log.Errorf("BUG!Failed to handle channel reply: %s", err)
+
+			// send error code back to client
+			conn := d.listener.getConnection(desc.appID)
+			if conn == nil {
+				d.log.Errorf("no connection associated with AppID %x", desc.appID[:])
+				return
+			}
+			err := conn.sendResponse(&Response{
+				AppID: desc.appID,
+				MessageReplyEvent: &thin.MessageReplyEvent{
+					MessageID: desc.ID,
+					SURBID:    reply.surbID,
+					Payload:   []byte{},
+					ErrorCode: thin.ThinClientErrorInternalError,
+				},
+			})
+			if err != nil {
+				d.log.Errorf("failed to send error response to client: %s", err)
+			}
 		}
 
 		d.channelRepliesLock.Lock()
