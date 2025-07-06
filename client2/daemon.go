@@ -1166,14 +1166,15 @@ func (d *Daemon) handleNewReadReply(params *ReplyHandlerParams, readReply *pigeo
 		return fmt.Errorf("bug 4, invalid book keeping for channelID %d", params.ChannelID)
 	}
 
-	payload, err := d.processReadReplyPayload(params, readReply)
-	if err != nil {
-		return err
-	}
-
 	conn := d.listener.getConnection(params.AppID)
 	if conn == nil {
 		return fmt.Errorf("BUG, no connection associated with AppID %x", params.AppID[:])
+	}
+
+	payload, err := d.processReadReplyPayload(params, readReply)
+	if err != nil {
+		// log an error
+		d.log.Errorf("failed to process read reply payload: %s", err)
 	}
 
 	// deliver the read result to thin client
@@ -1183,7 +1184,7 @@ func (d *Daemon) handleNewReadReply(params *ReplyHandlerParams, readReply *pigeo
 			MessageID:  params.MessageID,
 			Payload:    payload,
 			ReplyIndex: &params.ReplyIndex,
-			ErrorCode:  thin.ThinClientSuccess,
+			ErrorCode:  readReply.ErrorCode,
 		},
 	})
 	if err != nil {
@@ -1208,9 +1209,10 @@ func (d *Daemon) handleNewWriteReply(params *ReplyHandlerParams, writeReply *pig
 	err := conn.sendResponse(&Response{
 		AppID: params.AppID,
 		MessageReplyEvent: &thin.MessageReplyEvent{
-			MessageID: params.MessageID,
-			Payload:   []byte{}, // Empty payload for write operations
-			ErrorCode: writeReply.ErrorCode,
+			MessageID:  params.MessageID,
+			Payload:    []byte{}, // Empty payload for write operations
+			ReplyIndex: &params.ReplyIndex,
+			ErrorCode:  writeReply.ErrorCode,
 		},
 	})
 	if err != nil {
