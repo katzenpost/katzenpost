@@ -8,12 +8,14 @@ import (
 	"fmt"
 	"time"
 
+	"golang.org/x/crypto/blake2b"
+
 	"github.com/katzenpost/hpqc/kem/mkem"
 	"github.com/katzenpost/hpqc/nike"
 	"github.com/katzenpost/hpqc/nike/schemes"
+	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/hpqc/sign/ed25519"
 	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
-	"golang.org/x/crypto/blake2b"
 
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
@@ -308,7 +310,7 @@ func (c *incomingConn) proxyReadRequest(replicaRead *pigeonhole.ReplicaRead, ori
 	}
 
 	// Select a random shard for load distribution
-	targetShard := availableShards[rand.Intn(len(availableShards))]
+	targetShard := availableShards[rand.NewMath().Intn(len(availableShards))]
 	c.log.Debugf("PROXY_REQUEST: Proxying read request to replica: %s", targetShard.Name)
 
 	// Get current replica epoch and keypair
