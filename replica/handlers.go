@@ -287,20 +287,28 @@ func (c *incomingConn) proxyReadRequest(replicaRead *pigeonhole.ReplicaRead, ori
 		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, originalEnvelopeHash, []byte{}, 0, false)
 	}
 
-	// Find the first shard that is not ourselves
-	var targetShard *pki.ReplicaDescriptor
+	// Select a random shard that is not ourselves
+	var availableShards []*pki.ReplicaDescriptor
 	for _, shard := range shards {
 		if !hmac.Equal(shard.IdentityKey, myIdentityKey) {
-			targetShard = shard
-			break
+			availableShards = append(availableShards, shard)
 		}
 	}
 
-	if targetShard == nil {
+	if len(availableShards) == 0 {
 		c.log.Error("PROXY_REQUEST: no suitable target shard found")
-		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, originalEnvelopeHash, []byte{}, 0, false)
+		return c.createReplicaMessageReply(
+			c.l.server.cfg.ReplicaNIKEScheme,
+			pigeonhole.ReplicaErrorInternalError,
+			originalEnvelopeHash,
+			[]byte{},
+			0,
+			false,
+		)
 	}
 
+	// Select a random shard for load distribution
+	targetShard := availableShards[rand.Intn(len(availableShards))]
 	c.log.Debugf("PROXY_REQUEST: Proxying read request to replica: %s", targetShard.Name)
 
 	// Get current replica epoch and keypair
