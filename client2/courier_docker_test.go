@@ -141,10 +141,7 @@ func TestDockerCourierServiceSingleReadQuery(t *testing.T) {
 	replyIndex := uint8(0) // in theory it shoulnd't matter if this is 0 or 1
 	receivedPayload, err := bobThinClient.ReadChannelWithReply(readCtx, bobChannelID, replyIndex)
 	require.NoError(t, err, "Single read query must succeed")
-	t.Log("Bob: ReadChannelWithReply completed successfully")
-
-	// Test MUST fail if we get nil or zero-length payload
-	require.NotNil(t, receivedPayload, "Single read query must return non-nil payload")
+	require.NotNil(t, receivedPayload)
 	require.Greater(t, len(receivedPayload), 0, "Single read query must return non-empty payload - proxy functionality failed")
 
 	// Payload must match what Alice originally sent

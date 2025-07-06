@@ -1105,11 +1105,18 @@ func (t *ThinClient) ReadChannelWithReply(ctx context.Context, channelID uint16,
 	if err != nil {
 		return nil, err
 	}
-	const (
-		attempt    = 1
-		maxRetries = 1
-	)
-	return t.attemptChannelRead(ctx, channelID, payload, messageID, replyIndex, attempt, maxRetries)
+	maxRetries := 4
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		if result, err := t.attemptChannelRead(ctx, channelID, payload, messageID, replyIndex, attempt, maxRetries); err == nil {
+			return result, nil
+		}
+		if attempt < maxRetries {
+			if err := t.waitBetweenRetries(ctx); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return nil, fmt.Errorf("reply index %d failed after %d attempts", replyIndex, maxRetries)
 }
 
 // tryReplyIndexWithRetries attempts to read from a specific reply index with retries
