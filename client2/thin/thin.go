@@ -1217,7 +1217,7 @@ func (t *ThinClient) getCourierDestination() (*[32]byte, []byte, error) {
 		return nil, nil, errors.New("no courier services found")
 	}
 	// Select a random courier service for load distribution
-	courierService := courierServices[rand.Intn(len(courierServices))]
+	courierService := courierServices[rand.NewMath().Intn(len(courierServices))]
 	destNode := hash.Sum256(courierService.MixDescriptor.IdentityKey)
 	destQueue := courierService.RecipientQueueID
 	return &destNode, destQueue, nil
