@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	pgeo "github.com/katzenpost/katzenpost/pigeonhole/geo"
 	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
 
 	"github.com/stretchr/testify/require"
@@ -225,9 +226,14 @@ func TestIncomingConn(t *testing.T) {
 	_, err = rand.Reader.Read(ciphertext)
 	require.NoError(t, err)
 
+	// Create pigeonhole geometry from sphinx geometry
+	pigeonholeGeo, err := pgeo.NewGeometryFromSphinx(geometry, replicaScheme)
+	require.NoError(t, err)
+
 	replicaMessage := &commands.ReplicaMessage{
-		Cmds: commands.NewStorageReplicaCommands(geometry, replicaScheme),
-		Geo:  geometry,
+		Cmds:               commands.NewStorageReplicaCommands(geometry, replicaScheme),
+		PigeonholeGeometry: pigeonholeGeo,
+		Scheme:             replicaScheme,
 
 		SenderEPubKey: senderEPubKey,
 		DEK:           dek,

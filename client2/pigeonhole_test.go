@@ -45,12 +45,12 @@ func TestCreateChannelWriteRequest(t *testing.T) {
 	// Create synthetic PKI document with real replica descriptors
 	doc := createSyntheticPKIDocument(t)
 
-	// Create geometry with a reasonable BoxPayloadLength that can accommodate our payload
-	// The CreateChannelWriteRequest function should pad to the geometry's BoxPayloadLength
-	// BoxPayloadLength must be larger than payload + 4-byte length prefix
+	// Create geometry with a reasonable MaxPlaintextPayloadLength that can accommodate our payload
+	// The CreateChannelWriteRequest function should pad to the geometry's MaxPlaintextPayloadLength + 4
+	// MaxPlaintextPayloadLength must be larger than payload (4-byte length prefix is added separately)
 	nikeScheme := replicaCommon.NikeScheme
-	boxPayloadLength := len(payload) + 100 // Add overhead for padding and length prefix
-	geometry := pigeonholeGeo.NewGeometry(boxPayloadLength, nikeScheme)
+	maxPlaintextPayloadLength := len(payload) + 100 // Add overhead for padding
+	geometry := pigeonholeGeo.NewGeometry(maxPlaintextPayloadLength, nikeScheme)
 
 	// Create the CourierEnvelope using the geometry for proper padding
 	courierEnvelope, _, err := CreateChannelWriteRequest(
@@ -88,15 +88,15 @@ func TestCreateChannelWriteRequestPayloadTooLarge(t *testing.T) {
 	require.NoError(t, err)
 
 	// Create a payload that's too large
-	smallBoxPayloadLength := 10                         // Very small BoxPayloadLength
-	largePayload := make([]byte, smallBoxPayloadLength) // This will be too large after adding 4-byte length prefix
+	smallMaxPlaintextPayloadLength := 10                            // Very small MaxPlaintextPayloadLength
+	largePayload := make([]byte, smallMaxPlaintextPayloadLength+10) // This will be too large even with the 4-byte length prefix
 
 	// Create synthetic PKI document
 	doc := createSyntheticPKIDocument(t)
 
-	// Create geometry with small BoxPayloadLength
+	// Create geometry with small MaxPlaintextPayloadLength
 	nikeScheme := replicaCommon.NikeScheme
-	geometry := pigeonholeGeo.NewGeometry(smallBoxPayloadLength, nikeScheme)
+	geometry := pigeonholeGeo.NewGeometry(smallMaxPlaintextPayloadLength, nikeScheme)
 
 	// This should fail with payload too large error
 	_, _, err = CreateChannelWriteRequest(
@@ -107,7 +107,7 @@ func TestCreateChannelWriteRequestPayloadTooLarge(t *testing.T) {
 
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "payload too large")
-	require.Contains(t, err.Error(), "exceeds BoxPayloadLength")
+	require.Contains(t, err.Error(), "exceeds MaxPlaintextPayloadLength")
 	t.Logf("Expected error: %s", err.Error())
 }
 
@@ -132,8 +132,9 @@ func createSyntheticPKIDocument(t *testing.T) *cpki.Document {
 	nikeScheme := replicaCommon.NikeScheme
 	require.NotNil(t, nikeScheme, "NIKE scheme should be available")
 
-	// Create 3 replica descriptors like integration tests
-	numReplicas := 3
+	// Create 5 replica descriptors to ensure we have enough for intermediate routing
+	// (need at least 4: 2 for shards + 2 for intermediate replicas)
+	numReplicas := 5
 	replicaDescriptors := make([]*cpki.ReplicaDescriptor, numReplicas)
 
 	for i := 0; i < numReplicas; i++ {

@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Copyright (C) 2024 David Stainton
+// SPDX-FileCopyrightText: Copyright (C) 2025 David Stainton
 // SPDX-License-Identifier: AGPL-3.0-only
 
 package replica
@@ -66,6 +66,9 @@ type Server struct {
 
 	envelopeKeys *EnvelopeKeys
 
+	// Proxy request manager for handling async proxy requests
+	proxyManager *ProxyRequestManager
+
 	logBackend *log.Backend
 	log        *logging.Logger
 
@@ -102,6 +105,11 @@ func (s *Server) initDataDir() error {
 
 func (s *Server) LogBackend() *log.Backend {
 	return s.logBackend
+}
+
+// ProxyManager returns the proxy request manager
+func (s *Server) ProxyManager() *ProxyRequestManager {
+	return s.proxyManager
 }
 
 func (s *Server) initLogging() error {
@@ -141,6 +149,11 @@ func (s *Server) halt() {
 	// Then halt the connector to stop outgoing connections
 	if s.connector != nil {
 		s.connector.Halt()
+	}
+
+	// Shutdown the proxy manager to clean up pending requests
+	if s.proxyManager != nil {
+		s.proxyManager.Shutdown()
 	}
 
 	// Now it's safe to close the database since no more requests are coming in
@@ -213,6 +226,9 @@ func newServerWithPKI(cfg *config.Config, pkiClient pki.Client) (*Server, error)
 	if err := s.initEnvelopeKeys(); err != nil {
 		return nil, err
 	}
+
+	// Initialize proxy request manager
+	s.proxyManager = NewProxyRequestManager(s.log)
 
 	if s.cfg.GenerateOnly {
 		return nil, ErrGenerateOnly

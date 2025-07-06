@@ -13,6 +13,7 @@ import (
 
 	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
+	pgeo "github.com/katzenpost/katzenpost/pigeonhole/geo"
 )
 
 func TestReplicaMessageReplyWithoutPadding(t *testing.T) {
@@ -101,8 +102,12 @@ func TestReplicaMessage(t *testing.T) {
 	geo := geo.GeometryFromUserForwardPayloadLength(sphinxNike, forwardPayloadLength, true, nrHops)
 	cmds := NewStorageReplicaCommands(geo, nike)
 
+	// Create pigeonhole geometry from sphinx geometry
+	pgeo, err := pgeo.NewGeometryFromSphinx(geo, nike)
+	require.NoError(t, err)
+
 	senderKey := make([]byte, HybridKeySize(nike))
-	_, err := rand.Reader.Read(senderKey[:])
+	_, err = rand.Reader.Read(senderKey[:])
 	require.NoError(t, err)
 
 	dek := &[mkem.DEKSize]byte{}
@@ -110,9 +115,9 @@ func TestReplicaMessage(t *testing.T) {
 	require.NoError(t, err)
 
 	replicaMessage1 := &ReplicaMessage{
-		Geo:    geo,
-		Cmds:   cmds,
-		Scheme: nike,
+		PigeonholeGeometry: pgeo,
+		Cmds:               cmds,
+		Scheme:             nike,
 
 		SenderEPubKey: senderKey,
 		DEK:           dek,
@@ -199,7 +204,6 @@ func TestReplicaWriteWithoutPadding(t *testing.T) {
 
 func TestReplicaWriteReply(t *testing.T) {
 	t.Parallel()
-	const payload = "A free man must be able to endure it when his fellow men act and live otherwise than he considers proper. He must free himself from the habit, just as soon as something does not please him, of calling for the police."
 
 	nike := ecdh.Scheme(rand.Reader)
 	forwardPayloadLength := 1234

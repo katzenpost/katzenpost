@@ -152,8 +152,10 @@ var otherArgsRe = regexp.MustCompile(`(\[.*\])`)
 
 // styleUsage stylized styleUsage line for a given command.
 func styleUsage(c *cobra.Command, styles Program, complete bool) string {
-	// XXX: maybe use c.UseLine() here?
 	u := c.Use
+	if complete {
+		u = c.UseLine()
+	}
 	hasArgs := strings.Contains(u, "[args]")
 	hasFlags := strings.Contains(u, "[flags]") || strings.Contains(u, "[--flags]") || c.HasFlags() || c.HasPersistentFlags() || c.HasAvailableFlags()
 	hasCommands := strings.Contains(u, "[command]") || c.HasAvailableSubCommands()
@@ -173,11 +175,15 @@ func styleUsage(c *cobra.Command, styles Program, complete bool) string {
 
 	u = strings.TrimSpace(u)
 
-	useLine := []string{
-		styles.Name.Render(u),
-	}
-	if !complete {
-		useLine[0] = styles.Command.Render(u)
+	useLine := []string{}
+	if complete {
+		parts := strings.Fields(u)
+		useLine = append(useLine, styles.Name.Render(parts[0]))
+		if len(parts) > 1 {
+			useLine = append(useLine, styles.Command.Render(strings.Join(parts[1:], " ")))
+		}
+	} else {
+		useLine = append(useLine, styles.Command.Render(u))
 	}
 	if hasCommands {
 		useLine = append(
@@ -222,7 +228,7 @@ func styleExamples(c *cobra.Command, styles Styles) []string {
 		}
 		s := styleExample(c, line, indent, styles.Codeblock)
 		usage = append(usage, s)
-		indent = len(line) > 1 && line[len(line)-1] == '\\'
+		indent = len(line) > 1 && (line[len(line)-1] == '\\' || line[len(line)-1] == '|')
 	}
 
 	return usage
@@ -246,16 +252,28 @@ func styleExample(c *cobra.Command, line string, indent bool, styles Codeblock) 
 
 	var isQuotedString bool
 	var foundProgramName bool
-	programName := c.Name()
+	programName := c.Root().Name()
 	args := strings.Fields(line)
+	var cleanArgs []string
 	for i, arg := range args {
-		isQuoteStart := arg[0] == '"'
-		isQuoteEnd := arg[len(arg)-1] == '"'
-		isFlagStart := arg[0] == '-'
+		isQuoteStart := arg[0] == '"' || arg[0] == '\''
+		isQuoteEnd := arg[len(arg)-1] == '"' || arg[len(arg)-1] == '\''
+		isFlag := arg[0] == '-'
 
-		if i == len(args)-1 && len(arg) == 1 && arg[0] == '\\' {
-			args[i] = styles.Program.DimmedArgument.UnsetPadding().Render(arg)
-			continue
+		if len(arg) == 1 {
+			switch arg[0] {
+			case '\\':
+				if i == len(args)-1 {
+					args[i] = styles.Program.DimmedArgument.UnsetPadding().Render(arg)
+					continue
+				}
+			case '|':
+				args[i] = styles.Program.DimmedArgument.PaddingRight(1).Render(arg)
+				continue
+			case '-':
+				args[i] = styles.Program.Argument.PaddingRight(1).Render(arg)
+				continue
+			}
 		}
 
 		if !foundProgramName { //nolint:nestif
@@ -282,7 +300,11 @@ func styleExample(c *cobra.Command, line string, indent bool, styles Codeblock) 
 			}
 		}
 
-		if !isQuoteStart && !isFlagStart && isSubCommand(c, arg) {
+		if !isQuoteStart && !isQuotedString && !isFlag {
+			cleanArgs = append(cleanArgs, arg)
+		}
+
+		if !isQuoteStart && !isFlag && isSubCommand(c, cleanArgs, arg) {
 			args[i] = styles.Program.Command.Render(arg)
 			continue
 		}
@@ -293,7 +315,7 @@ func styleExample(c *cobra.Command, line string, indent bool, styles Codeblock) 
 			continue
 		}
 		// handle a flag
-		if arg[0] == '-' {
+		if isFlag {
 			name, value, ok := strings.Cut(arg, "=")
 			// it is --flag=value
 			if ok {
@@ -311,7 +333,15 @@ func styleExample(c *cobra.Command, line string, indent bool, styles Codeblock) 
 			)
 			continue
 		}
-		args[i] = styles.Program.Argument.Render(arg)
+
+		argStyle := styles.Program.Argument
+		if indent {
+			argStyle = argStyle.PaddingLeft(2)
+		}
+		if !foundProgramName && !indent && i == 0 {
+			argStyle = argStyle.PaddingLeft(0)
+		}
+		args[i] = argStyle.Render(arg)
 	}
 
 	return lipgloss.JoinHorizontal(
@@ -408,7 +438,7 @@ func calculateSpace(k1, k2 []string) int {
 	return space
 }
 
-func isSubCommand(c *cobra.Command, arg string) bool {
-	cmd, _, _ := c.Traverse([]string{arg})
-	return cmd != nil && cmd.Name() == arg
+func isSubCommand(c *cobra.Command, args []string, word string) bool {
+	cmd, _, _ := c.Root().Traverse(args)
+	return cmd != nil && cmd.Name() == word
 }

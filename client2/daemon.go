@@ -54,6 +54,18 @@ type replyDescriptor struct {
 	surbKey []byte
 }
 
+// ReplyHandlerParams groups parameters for reply handler functions
+type ReplyHandlerParams struct {
+	AppID       *[AppIDLength]byte
+	MessageID   *[MessageIDLength]byte
+	ChannelID   uint16
+	ChannelDesc *ChannelDescriptor
+	EnvHash     *[hash.HashSize]byte
+	IsReader    bool
+	IsWriter    bool
+	ReplyIndex  uint8
+}
+
 type Daemon struct {
 	worker.Worker
 
@@ -428,6 +440,15 @@ func (d *Daemon) handleReply(reply *sphinxReply) {
 	myChannelReplyDescriptor, isChannelReply := d.channelReplies[*reply.surbID]
 	d.channelRepliesLock.RUnlock()
 
+	// Debug logging for channel reply lookup
+	if isChannelReply {
+		if myChannelReplyDescriptor.ID != nil {
+			d.log.Errorf("DEBUG: Found channel reply descriptor with MessageID %x for SURBID %x", myChannelReplyDescriptor.ID[:8], reply.surbID[:8])
+		} else {
+			d.log.Errorf("DEBUG: WARNING: Found channel reply descriptor with nil MessageID for SURBID %x", reply.surbID[:8])
+		}
+	}
+
 	switch {
 	case isReply:
 		desc = myReplyDescriptor
@@ -462,7 +483,7 @@ func (d *Daemon) handleReply(reply *sphinxReply) {
 		return
 	}
 
-	plaintext, err := d.client.sphinx.DecryptSURBPayload(reply.ciphertext, desc.surbKey)
+	surbPayload, err := d.client.sphinx.DecryptSURBPayload(reply.ciphertext, desc.surbKey)
 	if err != nil {
 		d.log.Debugf("SURB reply decryption error: %s", err.Error())
 		return
@@ -473,31 +494,53 @@ func (d *Daemon) handleReply(reply *sphinxReply) {
 		return
 	}
 
-	conn := d.listener.getConnection(desc.appID)
-	if conn == nil {
-		d.log.Errorf("no connection associated with AppID %x", desc.appID[:])
-		return
-	}
 	if isChannelReply {
-		err := d.handleChannelReply(desc.appID, desc.ID, reply.surbID, plaintext, conn)
-		if err == nil {
-			d.channelRepliesLock.Lock()
-			delete(d.channelReplies, *reply.surbID)
-			d.channelRepliesLock.Unlock()
+		err := d.handleChannelReply(desc.appID, desc.ID, reply.surbID, surbPayload)
+		if err != nil {
+			d.log.Errorf("BUG!Failed to handle channel reply: %s", err)
 
-			// Clean up from new API maps
-			d.newSurbIDToChannelMapLock.Lock()
-			delete(d.newSurbIDToChannelMap, *reply.surbID)
-			d.newSurbIDToChannelMapLock.Unlock()
+			// send error code back to client
+			conn := d.listener.getConnection(desc.appID)
+			if conn == nil {
+				d.log.Errorf("no connection associated with AppID %x", desc.appID[:])
+				return
+			}
+			err := conn.sendResponse(&Response{
+				AppID: desc.appID,
+				MessageReplyEvent: &thin.MessageReplyEvent{
+					MessageID: desc.ID,
+					SURBID:    reply.surbID,
+					Payload:   []byte{},
+					ErrorCode: thin.ThinClientErrorInternalError,
+				},
+			})
+			if err != nil {
+				d.log.Errorf("failed to send error response to client: %s", err)
+			}
 		}
+
+		d.channelRepliesLock.Lock()
+		delete(d.channelReplies, *reply.surbID)
+		d.channelRepliesLock.Unlock()
+
+		d.newSurbIDToChannelMapLock.Lock()
+		delete(d.newSurbIDToChannelMap, *reply.surbID)
+		d.newSurbIDToChannelMapLock.Unlock()
 	} else {
+		// not a reply to a channel operation,
+		// thei is legacy API
+		conn := d.listener.getConnection(desc.appID)
+		if conn == nil {
+			d.log.Errorf("no connection associated with AppID %x", desc.appID[:])
+			return
+		}
 		conn.sendResponse(&Response{
 			AppID: desc.appID,
 			MessageReplyEvent: &thin.MessageReplyEvent{
 				MessageID: desc.ID,
 				SURBID:    reply.surbID,
-				Payload:   plaintext,
-				Err:       "", // No error
+				Payload:   surbPayload,
+				ErrorCode: thin.ThinClientSuccess, // No error
 			},
 		})
 	}
@@ -508,66 +551,105 @@ func (d *Daemon) handleReply(reply *sphinxReply) {
 func (d *Daemon) handleChannelReply(appid *[AppIDLength]byte,
 	mesgID *[MessageIDLength]byte,
 	surbid *[sphinxConstants.SURBIDLength]byte,
-	plaintext []byte,
-	conn *incomingConn) error {
+	payload []byte) error {
 
-	// Use new API only
-	newChannelID, newChannelDesc, newErr := d.lookupNewChannel(surbid)
-	if newErr != nil {
-		d.log.Errorf("SURB ID %x not found in new API maps", surbid[:8])
-		return fmt.Errorf("SURB ID not found: %v", newErr)
+	// First, parse the courier query reply to check what type of reply it is
+	courierQueryReply, err := pigeonhole.ParseCourierQueryReply(payload)
+	if err != nil {
+		return fmt.Errorf("BUG, failed to unmarshal courier query reply: %s", err)
 	}
-	return d.handleNewChannelReply(appid, mesgID, surbid, plaintext, conn, newChannelID, newChannelDesc)
+
+	// Handle envelope replies (read/write operations)
+	switch {
+	case courierQueryReply.ReplyType == 0:
+		return d.handleCourierEnvelopeReply(appid, mesgID, surbid, payload, courierQueryReply.EnvelopeReply)
+	case courierQueryReply.ReplyType == 1:
+		return fmt.Errorf("BUG, copy command replies are not supported in the new API yet")
+	}
+
+	// not reached
+	return nil
 }
 
-// handleNewChannelReply handles channel replies for the new API
-func (d *Daemon) handleNewChannelReply(appid *[AppIDLength]byte,
+func mapCourierErrorToThinClientError(courierErrorCode uint8) uint8 {
+	switch courierErrorCode {
+	case pigeonhole.EnvelopeErrorSuccess:
+		return thin.ThinClientSuccess
+	case pigeonhole.EnvelopeErrorInvalidEnvelope:
+		return thin.ThinClientErrorInvalidRequest
+	case pigeonhole.EnvelopeErrorCacheCorruption:
+		return thin.ThinClientErrorCourierCacheCorruption
+	case pigeonhole.EnvelopeErrorPropagationError:
+		return thin.ThinClientPropagationError
+	default:
+		return thin.ThinClientErrorInternalError
+	}
+}
+
+func (d *Daemon) handleCourierEnvelopeReply(appid *[AppIDLength]byte,
 	mesgID *[MessageIDLength]byte,
 	surbid *[sphinxConstants.SURBIDLength]byte,
-	plaintext []byte,
-	conn *incomingConn,
-	channelID uint16,
-	channelDesc *ChannelDescriptor) error {
+	payload []byte,
+	courierEnvelopeReply *pigeonhole.CourierEnvelopeReply) error {
 
-	if len(plaintext) == 0 {
-		return nil
+	channelID, channelDesc, err := d.lookupNewChannel(surbid)
+	if err != nil {
+		// NOTE(David): we could possibly send a reply to the thin client indicating this bug/error
+		// but instead we're going to rely on the logging. Either way it's not recoverable.
+		return fmt.Errorf("BUG, SURB ID not found: %v", err)
+	}
+
+	conn := d.listener.getConnection(appid)
+	if conn == nil {
+		return fmt.Errorf("BUG, no connection associated with AppID %x", appid[:])
 	}
 
 	isReader, isWriter, err := d.validateNewChannel(channelID, channelDesc)
 	if err != nil {
-		return err
+		return fmt.Errorf("BUG, invalid channel: %v", err)
 	}
 
-	// First, parse the courier query reply to check what type of reply it is
-	courierQueryReply, err := pigeonhole.ParseCourierQueryReply(plaintext)
-	if err != nil {
-		d.log.Errorf("NEW API REPLY: Failed to unmarshal courier query reply: %s", err)
-		return fmt.Errorf("failed to unmarshal courier query reply: %s", err)
+	if courierEnvelopeReply == nil {
+		return fmt.Errorf("BUG, courier envelope reply is nil")
 	}
 
-	// Copy command replies are not supported in the new API
+	switch {
+	case courierEnvelopeReply.ErrorCode != 0:
+		// send error response to client
+		return conn.sendResponse(&Response{
+			AppID: appid,
+			MessageReplyEvent: &thin.MessageReplyEvent{
+				MessageID: mesgID,
+				SURBID:    surbid,
+				Payload:   []byte{},
+				ErrorCode: mapCourierErrorToThinClientError(courierEnvelopeReply.ErrorCode),
+			},
+		})
+	case courierEnvelopeReply.Payload == nil:
+		// send empty response to client
+		return conn.sendResponse(&Response{
+			AppID: appid,
+			MessageReplyEvent: &thin.MessageReplyEvent{
+				MessageID: mesgID,
+				SURBID:    surbid,
+				Payload:   []byte{},
+				ErrorCode: thin.ThinClientSuccess,
+			},
+		})
+	case courierEnvelopeReply.ReplyType == pigeonhole.ReplyTypeACK:
+		// send empty response to client
+		return conn.sendResponse(&Response{
+			AppID: appid,
+			MessageReplyEvent: &thin.MessageReplyEvent{
+				MessageID: mesgID,
+				SURBID:    surbid,
+				Payload:   []byte{},
+				ErrorCode: thin.ThinClientSuccess,
+			},
+		})
+	case courierEnvelopeReply.ReplyType == pigeonhole.ReplyTypePayload:
 
-	// Handle envelope replies (read/write operations)
-	if courierQueryReply.EnvelopeReply != nil {
-		// Check if the envelope reply has an empty payload (no data available yet)
-		if len(courierQueryReply.EnvelopeReply.Payload) == 0 {
-			// Send empty response to client so they can retry
-			err := conn.sendResponse(&Response{
-				AppID: appid,
-				MessageReplyEvent: &thin.MessageReplyEvent{
-					MessageID: mesgID,
-					Payload:   nil, // Empty payload
-					Err:       "",  // No error - just no data yet
-				},
-			})
-			if err != nil {
-				d.log.Errorf("NEW API REPLY: Failed to send empty response: %s", err)
-				return err
-			}
-			return nil
-		}
-
-		env, envelopeDesc, privateKey, err := d.processEnvelopeReply(courierQueryReply.EnvelopeReply, channelDesc)
+		env, envelopeDesc, privateKey, err := d.processEnvelopeReply(courierEnvelopeReply, channelDesc)
 		if err != nil {
 			d.log.Errorf("NEW API REPLY: Failed to process envelope reply: %s", err)
 			return err
@@ -581,9 +663,10 @@ func (d *Daemon) handleNewChannelReply(appid *[AppIDLength]byte,
 
 		envHash := (*[hash.HashSize]byte)(env.EnvelopeHash[:])
 
+		// from here on here, these two switch cases are the success cases:
 		switch {
 		case innerMsg.ReadReply != nil:
-			params := &NewReplyHandlerParams{
+			params := &ReplyHandlerParams{
 				AppID:       appid,
 				MessageID:   mesgID,
 				ChannelID:   channelID,
@@ -591,12 +674,11 @@ func (d *Daemon) handleNewChannelReply(appid *[AppIDLength]byte,
 				EnvHash:     envHash,
 				IsReader:    isReader,
 				IsWriter:    isWriter,
-				Conn:        conn,
-				ReplyIndex:  courierQueryReply.EnvelopeReply.ReplyIndex,
+				ReplyIndex:  courierEnvelopeReply.ReplyIndex,
 			}
 			return d.handleNewReadReply(params, innerMsg.ReadReply)
 		case innerMsg.WriteReply != nil:
-			params := &NewReplyHandlerParams{
+			params := &ReplyHandlerParams{
 				AppID:       appid,
 				MessageID:   mesgID,
 				ChannelID:   channelID,
@@ -604,17 +686,28 @@ func (d *Daemon) handleNewChannelReply(appid *[AppIDLength]byte,
 				EnvHash:     envHash,
 				IsReader:    isReader,
 				IsWriter:    isWriter,
-				Conn:        conn,
-				ReplyIndex:  courierQueryReply.EnvelopeReply.ReplyIndex,
+				ReplyIndex:  courierEnvelopeReply.ReplyIndex,
 			}
 			return d.handleNewWriteReply(params, innerMsg.WriteReply)
 		}
+
+		// if we got this far something failed
 		d.log.Errorf("bug 6, invalid book keeping for channelID %d", channelID)
-		return fmt.Errorf("bug 6, invalid book keeping for channelID %d", channelID)
+
+		// send error code back to client
+		return conn.sendResponse(&Response{
+			AppID: appid,
+			MessageReplyEvent: &thin.MessageReplyEvent{
+				MessageID: mesgID,
+				SURBID:    surbid,
+				Payload:   []byte{},
+				ErrorCode: thin.ThinClientErrorInvalidChannel,
+			},
+		})
 	}
 
-	d.log.Errorf("courier query reply contains neither envelope reply nor copy command reply")
-	return fmt.Errorf("courier query reply contains neither envelope reply nor copy command reply")
+	// not reached
+	return nil
 }
 
 // lookupNewChannel finds the channel descriptor for a given SURB ID (new API)
@@ -718,19 +811,6 @@ func (d *Daemon) decryptMKEMEnvelope(env *pigeonhole.CourierEnvelopeReply, envel
 	}
 
 	return innerMsg, nil
-}
-
-// NewReplyHandlerParams groups parameters for reply handler functions
-type NewReplyHandlerParams struct {
-	AppID       *[AppIDLength]byte
-	MessageID   *[MessageIDLength]byte
-	ChannelID   uint16
-	ChannelDesc *ChannelDescriptor
-	EnvHash     *[hash.HashSize]byte
-	IsReader    bool
-	IsWriter    bool
-	Conn        *incomingConn
-	ReplyIndex  uint8
 }
 
 func (d *Daemon) send(request *Request) {
@@ -840,9 +920,17 @@ func (d *Daemon) send(request *Request) {
 		// Check if this is a new API channel query (has ChannelID field)
 		if request.SendMessage.ChannelID != nil {
 
+			// Debug logging for MessageID
+			if request.SendMessage.ID != nil {
+				d.log.Errorf("DEBUG: Storing channel reply with MessageID %x for SURBID %x", request.SendMessage.ID[:8], request.SendMessage.SURBID[:8])
+			} else {
+				d.log.Errorf("DEBUG: WARNING: Storing channel reply with nil MessageID for SURBID %x", request.SendMessage.SURBID[:8])
+			}
+
 			// New API: store in channel replies and new SURB ID map
 			d.channelRepliesLock.Lock()
 			d.channelReplies[*request.SendMessage.SURBID] = replyDescriptor{
+				ID:      request.SendMessage.ID,
 				appID:   request.AppID,
 				surbKey: surbKey,
 			}
@@ -855,6 +943,7 @@ func (d *Daemon) send(request *Request) {
 		} else {
 			// Old API: store in regular replies
 			d.replies[*request.SendMessage.SURBID] = replyDescriptor{
+				ID:      request.SendMessage.ID,
 				appID:   request.AppID,
 				surbKey: surbKey,
 			}
@@ -968,7 +1057,7 @@ func (d *Daemon) arqDoResend(surbID *[sphinxConstants.SURBIDLength]byte) {
 				MessageID: message.MessageID,
 				Payload:   []byte{},
 				SURBID:    surbID,
-				Err:       "max retries met",
+				ErrorCode: thin.ThinClientErrorMaxRetries,
 			},
 		}
 		incomingConn := d.listener.getConnection(message.AppID)
@@ -1057,7 +1146,7 @@ func (d *Daemon) validateReadReplySignature(signature [64]uint8) error {
 }
 
 // decryptReadReplyPayload handles the decryption and extraction of the payload
-func (d *Daemon) decryptReadReplyPayload(params *NewReplyHandlerParams, readReply *pigeonhole.ReplicaReadReply) ([]byte, error) {
+func (d *Daemon) decryptReadReplyPayload(params *ReplyHandlerParams, readReply *pigeonhole.ReplicaReadReply) ([]byte, error) {
 	params.ChannelDesc.StatefulReaderLock.Lock()
 	defer params.ChannelDesc.StatefulReaderLock.Unlock()
 
@@ -1091,7 +1180,7 @@ func (d *Daemon) decryptReadReplyPayload(params *NewReplyHandlerParams, readRepl
 }
 
 // processReadReplyPayload processes the read reply and returns payload and error
-func (d *Daemon) processReadReplyPayload(params *NewReplyHandlerParams, readReply *pigeonhole.ReplicaReadReply) ([]byte, error) {
+func (d *Daemon) processReadReplyPayload(params *ReplyHandlerParams, readReply *pigeonhole.ReplicaReadReply) ([]byte, error) {
 	if readReply.ErrorCode != 0 {
 		d.log.Errorf("read failed for channel %d with error code %d", params.ChannelID, readReply.ErrorCode)
 		return nil, fmt.Errorf("read failed with error code %d", readReply.ErrorCode)
@@ -1105,65 +1194,75 @@ func (d *Daemon) processReadReplyPayload(params *NewReplyHandlerParams, readRepl
 }
 
 // handleNewReadReply processes a read reply (new API)
-func (d *Daemon) handleNewReadReply(params *NewReplyHandlerParams, readReply *pigeonhole.ReplicaReadReply) error {
+func (d *Daemon) handleNewReadReply(params *ReplyHandlerParams, readReply *pigeonhole.ReplicaReadReply) error {
 	if !params.IsReader {
 		d.log.Errorf("bug 4, invalid book keeping for channelID %d", params.ChannelID)
 		return fmt.Errorf("bug 4, invalid book keeping for channelID %d", params.ChannelID)
 	}
 
-	payload, replyErr := d.processReadReplyPayload(params, readReply)
-
-	// For new API, use MessageReplyEvent to deliver the read result
-	var errStr string
-	if replyErr != nil {
-		errStr = replyErr.Error()
+	conn := d.listener.getConnection(params.AppID)
+	if conn == nil {
+		return fmt.Errorf("BUG, no connection associated with AppID %x", params.AppID[:])
 	}
-	err := params.Conn.sendResponse(&Response{
+
+	payload, err := d.processReadReplyPayload(params, readReply)
+	var errorCode uint8 = thin.ThinClientSuccess
+	if err != nil {
+		d.log.Errorf("failed to process read reply payload: %s", err)
+		payload = []byte{} // Ensure empty payload on error
+		errorCode = thin.ThinClientErrorInternalError
+	}
+
+	// deliver the read result to thin client
+	err = conn.sendResponse(&Response{
 		AppID: params.AppID,
 		MessageReplyEvent: &thin.MessageReplyEvent{
 			MessageID:  params.MessageID,
 			Payload:    payload,
 			ReplyIndex: &params.ReplyIndex,
-			Err:        errStr,
+			ErrorCode:  errorCode,
+		},
+	})
+
+	// deliver the read result to thin client
+	err = conn.sendResponse(&Response{
+		AppID: params.AppID,
+		MessageReplyEvent: &thin.MessageReplyEvent{
+			MessageID:  params.MessageID,
+			Payload:    payload,
+			ReplyIndex: &params.ReplyIndex,
+			ErrorCode:  readReply.ErrorCode,
 		},
 	})
 	if err != nil {
-		d.log.Errorf("Failed to send read response to client: %s", err)
 		return fmt.Errorf("failed to send read response to client: %s", err)
 	}
 
 	return nil
 }
 
-// handleNewWriteReply processes a write reply (new API)
-func (d *Daemon) handleNewWriteReply(params *NewReplyHandlerParams, writeReply *pigeonhole.ReplicaWriteReply) error {
+func (d *Daemon) handleNewWriteReply(params *ReplyHandlerParams, writeReply *pigeonhole.ReplicaWriteReply) error {
 	if !params.IsWriter {
 		d.log.Errorf("bug 5, invalid book keeping for channelID %d", params.ChannelID)
 		return fmt.Errorf("bug 5, invalid book keeping for channelID %d", params.ChannelID)
 	}
 
-	var replyErr error
-	if writeReply.ErrorCode != 0 {
-		replyErr = fmt.Errorf("write failed with error code %d", writeReply.ErrorCode)
-		d.log.Errorf("NEW API WRITE FAILED: Channel %d, Error Code %d", params.ChannelID, writeReply.ErrorCode)
-	} else {
-		d.log.Infof("NEW API WRITE SUCCESS: Channel %d completed successfully", params.ChannelID)
+	conn := d.listener.getConnection(params.AppID)
+	if conn == nil {
+		return fmt.Errorf("BUG, no connection associated with AppID %x", params.AppID[:])
 	}
 
-	// For new API, use MessageReplyEvent to deliver the write result
-	var errStr string
-	if replyErr != nil {
-		errStr = replyErr.Error()
-	}
-	err := params.Conn.sendResponse(&Response{
+	// deliver the write result to thin client
+	err := conn.sendResponse(&Response{
 		AppID: params.AppID,
 		MessageReplyEvent: &thin.MessageReplyEvent{
-			MessageID: params.MessageID,
-			Err:       errStr,
+			MessageID:  params.MessageID,
+			Payload:    []byte{}, // Empty payload for write operations
+			ReplyIndex: &params.ReplyIndex,
+			ErrorCode:  writeReply.ErrorCode,
 		},
 	})
 	if err != nil {
-		d.log.Errorf("Failed to send write response to client: %s", err)
 		return fmt.Errorf("failed to send write response to client: %s", err)
 	}
 

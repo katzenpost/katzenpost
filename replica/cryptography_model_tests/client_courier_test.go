@@ -24,6 +24,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"github.com/katzenpost/katzenpost/pigeonhole"
+	pgeo "github.com/katzenpost/katzenpost/pigeonhole/geo"
 )
 
 type Box struct {
@@ -207,6 +208,7 @@ type Courier struct {
 	Replicas      []*Replica
 	Cmds          *commands.Commands
 	Geo           *geo.Geometry
+	PigeonholeGeo *pgeo.Geometry
 	ReplicaScheme nike.Scheme
 }
 
@@ -234,9 +236,9 @@ func (c *Courier) ReceiveClientQuery(query []byte) *pigeonhole.CourierEnvelopeRe
 	// replica 0
 	firstReplicaID := courierMessage.IntermediateReplicas[0]
 	reply0 := c.SendToReplica(firstReplicaID, &commands.ReplicaMessage{
-		Cmds:   c.Cmds,
-		Geo:    c.Geo,
-		Scheme: c.ReplicaScheme,
+		Cmds:               c.Cmds,
+		PigeonholeGeometry: c.PigeonholeGeo,
+		Scheme:             c.ReplicaScheme,
 
 		SenderEPubKey: courierMessage.SenderPubkey,
 		DEK:           &courierMessage.Dek1,
@@ -246,9 +248,9 @@ func (c *Courier) ReceiveClientQuery(query []byte) *pigeonhole.CourierEnvelopeRe
 	// replica 1
 	secondReplicaID := courierMessage.IntermediateReplicas[1]
 	c.SendToReplica(secondReplicaID, &commands.ReplicaMessage{
-		Cmds:   c.Cmds,
-		Geo:    c.Geo,
-		Scheme: c.ReplicaScheme,
+		Cmds:               c.Cmds,
+		PigeonholeGeometry: c.PigeonholeGeo,
+		Scheme:             c.ReplicaScheme,
 
 		SenderEPubKey: courierMessage.SenderPubkey,
 		DEK:           &courierMessage.Dek2,
@@ -401,10 +403,15 @@ func TestClientCourierProtocolFlow(t *testing.T) {
 		}
 	}
 
+	// Create pigeonhole geometry from sphinx geometry
+	pigeonholeGeo, err := pgeo.NewGeometryFromSphinx(sphinxGeo, scheme)
+	require.NoError(t, err)
+
 	courier := &Courier{
 		Replicas:      replicas,
 		Cmds:          cmds,
 		Geo:           sphinxGeo,
+		PigeonholeGeo: pigeonholeGeo,
 		ReplicaScheme: scheme,
 	}
 

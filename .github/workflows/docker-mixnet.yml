@@ -44,6 +44,9 @@ jobs:
       - name: run NEW client Pigeonhole Channel end to end tests
         run: cd client2 && make testargs=-coverprofile=coverage.part dockertest-channels-new && cat coverage.part >> ../coverage.out
 
+      - name: run NEW client Pigeonhole Channel single read query test
+        run: cd client2 && make testargs=-coverprofile=coverage.part dockertest-single-read && cat coverage.part >> ../coverage.out
+
       - name: Stop the mixnet
         run: |
           cd docker && make stop

@@ -14,15 +14,43 @@ import (
 	"github.com/katzenpost/hpqc/kem/mkem"
 	"github.com/katzenpost/hpqc/nike"
 
-	"github.com/katzenpost/katzenpost/core/sphinx/geo"
+	pgeo "github.com/katzenpost/katzenpost/pigeonhole/geo"
 )
+
+/****
+
+NOTES ON TRAFFIC PADDING SCHEME FOR PQ NOISE WIRE PROTOCOL
+----------------------------------------------------------
+
+Outside of the mixnet the Pigeonhole system has 3 distinct sets of wire protocol
+commands:
+
+1. courier to replica
+    * ReplicaMessage: Always padded. Sent from Courier to Replica only.
+2. replica to courier
+    * ReplicaMessageReply: Always padded. Sent from Replica to Courier only.
+3. replica to replica
+    * ReplicaWrite: If embeded in a ReplicaMessage there is no padding.
+      Othewise it is sent between Replicas and MUST be padded.
+    * ReplicaWriteReply: If embeded in a ReplicaMessageReply there is no padding.
+      Othewise it is sent between Replicas and MUST be padded.
+
+However because of the limitations of our PQ Noise wire protocol implementation,
+we cannot create a listener that uses two sets of commands which is what's needed for
+a replica to use one set of commands to talk to other replicas and another command set
+for talking to couriers. Therefore we merge all three command sets into one set of
+commands where they are all traffic padded to the size of the largest command.
+
+Additionally we define the ReplicaDecoy command which is used by both replicas and couriers
+as a decoy message. After PQ Noise encryption it will be indistinguishable from the other
+commands, as they will all be uniformly padded to the same size.
+
+****/
 
 // HybridKeySize is a helper function which is used in our
 // geometry calculations below.
 func HybridKeySize(scheme nike.Scheme) int {
-	// NIKE scheme CTIDH1024-X25519 has 160 byte public keys
 	return scheme.PublicKeySize()
-
 }
 
 // ReplicaWrite has two distinct uses. Firstly, it is
@@ -34,6 +62,10 @@ type ReplicaWrite struct {
 	// Cmds is set to nil if you want to serialize this type
 	// without padding.
 	Cmds *Commands
+
+	// PigeonholeGeometry is used to calculate the precise payload size
+	// for padding. Set to nil if you don't want padding.
+	PigeonholeGeometry *pgeo.Geometry
 
 	BoxID     *[bacap.BoxIDSize]byte
 	Signature *[bacap.SignatureSize]byte
@@ -63,9 +95,8 @@ func (c *ReplicaWrite) ToBytes() []byte {
 }
 
 func (c *ReplicaWrite) Length() int {
-	// XXX FIX ME: largest ideal command size goes here
-	var payloadSize = c.Cmds.geo.PacketLength
-	return cmdOverhead + payloadSize + bacap.SignatureSize + bacap.BoxIDSize
+	var payloadSize = c.PigeonholeGeometry.CalculateBoxCiphertextLength()
+	return cmdOverhead + bacap.BoxIDSize + bacap.SignatureSize + payloadSize
 }
 
 func replicaWriteFromBytes(b []byte, cmds *Commands) (Command, error) {
@@ -114,15 +145,34 @@ func replicaWriteReplyFromBytes(b []byte, cmds *Commands) (Command, error) {
 }
 
 func (c *ReplicaWriteReply) Length() int {
-	return 0
+	return cmdOverhead + replicaWriteReplyLength
+}
+
+// ReplicaDecoy is a decoy message type used by replicas and couriers.
+type ReplicaDecoy struct {
+	Cmds *Commands
+}
+
+func (c *ReplicaDecoy) ToBytes() []byte {
+	out := make([]byte, cmdOverhead)
+	out[0] = byte(replicaDecoy)
+	return c.Cmds.padToMaxCommandSize(out, true)
+}
+
+func (c *ReplicaDecoy) Length() int {
+	return cmdOverhead
+}
+
+func replicaDecoyFromBytes(b []byte, cmds *Commands) (Command, error) {
+	return new(ReplicaDecoy), nil
 }
 
 // ReplicaMessage used over wire protocol from couriers to replicas,
 // one replica at a time.
 type ReplicaMessage struct {
-	Cmds   *Commands
-	Geo    *geo.Geometry
-	Scheme nike.Scheme
+	Cmds               *Commands
+	PigeonholeGeometry *pgeo.Geometry
+	Scheme             nike.Scheme
 
 	SenderEPubKey []byte
 	DEK           *[mkem.DEKSize]byte
@@ -149,7 +199,6 @@ func (c *ReplicaMessage) EnvelopeHash() *[hash.HashSize]byte {
 }
 
 func (c *ReplicaMessage) ToBytes() []byte {
-	const uint32len = 4
 	hkSize := len(c.SenderEPubKey)
 
 	// Validate that DEK is not nil to prevent panic
@@ -198,15 +247,18 @@ func replicaMessageFromBytes(b []byte, cmds *Commands) (Command, error) {
 	return c, nil
 }
 
+// Length is the largest possible length of a ReplicaMessage.
 func (c *ReplicaMessage) Length() int {
-	// XXX replace c.Geo.PacketLength with the precise payload size
-	return cmdOverhead + mkem.DEKSize + HybridKeySize(c.Scheme) + c.Geo.PacketLength
+	ciphertextLen := c.PigeonholeGeometry.CalculateCourierEnvelopeCiphertextSizeWrite()
+	return cmdOverhead + mkem.DEKSize + HybridKeySize(c.Scheme) + ciphertextLen
 }
 
 // ReplicaMessageReply is sent by replicas to couriers as a reply
 // to the ReplicaMessage command.
 type ReplicaMessageReply struct {
 	Cmds *Commands
+
+	PigeonholeGeometry *pgeo.Geometry
 
 	// ErrorCode indicates failure on non-zero.
 	ErrorCode uint8
@@ -263,6 +315,7 @@ func replicaMessageReplyFromBytes(b []byte, cmds *Commands) (Command, error) {
 	return r, nil
 }
 
+// Length calculates the largest possible length of a ReplicaMessageReply.
 func (c *ReplicaMessageReply) Length() int {
-	return cmdOverhead + 1 + 32 + 1 + 1 + len(c.EnvelopeReply)
+	return cmdOverhead + 1 + 32 + 1 + 1 + c.PigeonholeGeometry.CalculateEnvelopeReplySizeRead()
 }

@@ -34,8 +34,20 @@ type Connector struct {
 
 	replicationCh chan *commands.ReplicaWrite
 
+	// Retry queue for commands that couldn't be dispatched due to missing connections
+	retryQueue   []retryCommand
+	retryQueueMu sync.Mutex
+
 	closeAllCh chan interface{}
 	closeAllWg sync.WaitGroup
+}
+
+// retryCommand holds a command that needs to be retried when connections become available
+type retryCommand struct {
+	cmd      commands.Command
+	idHash   [32]byte
+	attempts int
+	lastTry  time.Time
 }
 
 func (co *Connector) Halt() {
@@ -72,20 +84,90 @@ func getBoxID(cmd commands.Command) *[32]byte {
 
 func (co *Connector) DispatchCommand(cmd commands.Command, idHash *[32]byte) {
 	co.RLock()
-	defer co.RUnlock()
+	c, ok := co.conns[*idHash]
+	co.RUnlock()
 
 	if cmd == nil {
 		co.log.Error("Dropping command: command is nil, wtf")
 		return
 	}
-	c, ok := co.conns[*idHash]
-	if !ok {
-		co.log.Debugf("Dropping command: %v (No connection for destination)", getBoxID(cmd))
+
+	if ok {
+		// Connection exists - dispatch immediately
+		co.log.Debugf("Dispatching command type %T to peer %x", cmd, idHash)
+		c.dispatchCommand(cmd)
+	} else {
+		// No connection - add to retry queue instead of dropping
+		co.log.Warningf("No connection for destination %x, queueing command for retry: %v", idHash[:8], getBoxID(cmd))
+		co.queueForRetry(cmd, *idHash)
+	}
+}
+
+// queueForRetry adds a command to the retry queue when no connection is available
+func (co *Connector) queueForRetry(cmd commands.Command, idHash [32]byte) {
+	const maxRetryAttempts = 5
+
+	co.retryQueueMu.Lock()
+	defer co.retryQueueMu.Unlock()
+
+	// Check if we already have this command in the retry queue
+	for i, retryCmd := range co.retryQueue {
+		if retryCmd.idHash == idHash {
+			// Update existing entry
+			co.retryQueue[i].cmd = cmd
+			co.retryQueue[i].lastTry = time.Now()
+			if co.retryQueue[i].attempts < maxRetryAttempts {
+				co.retryQueue[i].attempts++
+				co.log.Debugf("Updated retry queue entry for %x, attempt %d/%d", idHash[:8], co.retryQueue[i].attempts, maxRetryAttempts)
+			} else {
+				co.log.Errorf("Max retry attempts (%d) reached for destination %x, dropping command: %v", maxRetryAttempts, idHash[:8], getBoxID(cmd))
+				// Remove from retry queue
+				co.retryQueue = append(co.retryQueue[:i], co.retryQueue[i+1:]...)
+			}
+			return
+		}
+	}
+
+	// Add new entry to retry queue
+	retryCmd := retryCommand{
+		cmd:      cmd,
+		idHash:   idHash,
+		attempts: 1,
+		lastTry:  time.Now(),
+	}
+	co.retryQueue = append(co.retryQueue, retryCmd)
+	co.log.Debugf("Added command to retry queue for %x: %v", idHash[:8], getBoxID(cmd))
+}
+
+// processRetryQueue attempts to dispatch queued commands when connections become available
+func (co *Connector) processRetryQueue() {
+	co.retryQueueMu.Lock()
+	defer co.retryQueueMu.Unlock()
+
+	if len(co.retryQueue) == 0 {
 		return
 	}
 
-	co.log.Debugf("Dispatching command type %T to peer %x", cmd, idHash)
-	c.dispatchCommand(cmd)
+	co.log.Debugf("Processing retry queue with %d commands", len(co.retryQueue))
+
+	// Process retry queue in reverse order to safely remove items
+	for i := len(co.retryQueue) - 1; i >= 0; i-- {
+		retryCmd := co.retryQueue[i]
+
+		// Check if connection is now available
+		co.RLock()
+		c, ok := co.conns[retryCmd.idHash]
+		co.RUnlock()
+
+		if ok {
+			// Connection available - dispatch the command
+			co.log.Debugf("Retrying command for %x after %d attempts", retryCmd.idHash[:8], retryCmd.attempts)
+			c.dispatchCommand(retryCmd.cmd)
+
+			// Remove from retry queue
+			co.retryQueue = append(co.retryQueue[:i], co.retryQueue[i+1:]...)
+		}
+	}
 }
 
 func (co *Connector) DispatchReplication(cmd *commands.ReplicaWrite) {
@@ -132,11 +214,33 @@ func (co *Connector) doReplication(cmd *commands.ReplicaWrite) {
 		return
 	}
 
+	// Track replication success/failure
+	successCount := 0
+	totalTargets := len(descs)
+
 	for i, desc := range descs {
 		idHash := blake2b.Sum256(desc.IdentityKey)
 		co.log.Infof("REPLICATION: Dispatching to shard %d/%d: %s (ID: %x)", i+1, len(descs), desc.Name, idHash[:8])
 		fmt.Printf("REPLICATION: Dispatching to shard %d/%d: %s (ID: %x)\n", i+1, len(descs), desc.Name, idHash[:8])
+
+		// Check if connection exists before dispatching
+		co.RLock()
+		_, hasConnection := co.conns[idHash]
+		co.RUnlock()
+
+		if hasConnection {
+			successCount++
+		}
+
 		co.DispatchCommand(cmd, &idHash)
+	}
+
+	if successCount == totalTargets {
+		co.log.Infof("REPLICATION: Successfully dispatched to all %d targets for BoxID %x", totalTargets, cmd.BoxID)
+		fmt.Printf("REPLICATION: Successfully dispatched to all %d targets for BoxID %x\n", totalTargets, cmd.BoxID)
+	} else {
+		co.log.Warningf("REPLICATION: Only dispatched to %d/%d targets for BoxID %x (others queued for retry)", successCount, totalTargets, cmd.BoxID)
+		fmt.Printf("REPLICATION: Only dispatched to %d/%d targets for BoxID %x (others queued for retry)\n", successCount, totalTargets, cmd.BoxID)
 	}
 
 	co.log.Infof("REPLICATION: Dispatch completed for BoxID %x", cmd.BoxID)
@@ -189,6 +293,9 @@ func (co *Connector) worker() {
 		// Start outgoing connections as needed, based on the PKI documents
 		// and current time.
 		co.spawnNewConns()
+
+		// Process retry queue after spawning new connections
+		co.processRetryQueue()
 
 		timer.Reset(resweepInterval)
 	}
@@ -244,6 +351,13 @@ func (co *Connector) onNewConn(c *outgoingConn) {
 		co.log.Warningf("Connection to peer: '%x' already exists.", nodeID)
 	}
 	co.conns[nodeID] = c
+
+	// Process retry queue when a new connection is established
+	go func() {
+		// Small delay to ensure connection is fully established
+		time.Sleep(100 * time.Millisecond)
+		co.processRetryQueue()
+	}()
 }
 
 func (co *Connector) OnClosedConn(c *outgoingConn) {

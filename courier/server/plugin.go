@@ -24,27 +24,6 @@ import (
 	"github.com/katzenpost/katzenpost/server/cborplugin"
 )
 
-// Error message constants
-var (
-	errInvalidDestinationID = errors.New("invalid destination ID")
-	errConnectionNotFound   = errors.New("connection not found")
-	errNilEnvelopeHash      = errors.New("envelope hash is nil")
-	errNilDEKElements       = errors.New("DEK array contains nil elements")
-	errCBORDecodingFailed   = errors.New("CBOR decoding failed")
-)
-
-// CourierEnvelope operation error codes - using centralized error codes
-const (
-	envelopeErrorNilDEKElements  = pigeonhole.EnvelopeErrorNilDEKElements
-	envelopeErrorCacheCorruption = pigeonhole.EnvelopeErrorCacheCorruption
-	envelopeErrorInternalError   = pigeonhole.EnvelopeErrorInternalError
-)
-
-// envelopeErrorToString returns a human-readable string for envelope error codes
-func envelopeErrorToString(errorCode uint8) string {
-	return pigeonhole.EnvelopeErrorToString(errorCode)
-}
-
 // CourierBookKeeping is used for:
 // 1. deduping writes
 // 2. deduping reads
@@ -136,8 +115,6 @@ func (e *Courier) HandleReply(reply *commands.ReplicaMessageReply) {
 
 	if isCopy {
 		panic("NOT YET IMPLEMENTED")
-		//e.handleCopyReply(reply)
-		return
 	}
 	e.CacheReply(reply)
 }
@@ -170,17 +147,12 @@ func (e *Courier) CacheReply(reply *commands.ReplicaMessageReply) {
 
 // validateReply checks if the reply should be cached
 func (e *Courier) validateReply(reply *commands.ReplicaMessageReply) bool {
-	if !reply.IsRead {
-		e.log.Debug("CacheReply: not caching write reply")
-		return false
-	}
-
-	e.log.Debug("CacheReply: caching read reply")
-
 	if reply.EnvelopeHash == nil {
-		e.log.Debugf("CacheReply: envelope hash is nil, not caching - error: %s", errNilEnvelopeHash)
+		e.log.Debugf("CacheReply: envelope hash is nil, not caching")
 		return false
 	}
+
+	e.log.Debug("CacheReply: caching reply")
 
 	return true
 }
@@ -306,19 +278,58 @@ func (e *Courier) tryImmediateReplyProxy(reply *commands.ReplicaMessageReply) bo
 
 	// Send the immediate reply
 	go func() {
+		// Find the correct reply index by looking up the replica's position in IntermediateReplicas
+		var replyIndex uint8 = 255 // Default to invalid index
+
+		// Get the cache entry to find the IntermediateReplicas array
+		e.dedupCacheLock.RLock()
+		cacheEntry, exists := e.dedupCache[*reply.EnvelopeHash]
+		e.dedupCacheLock.RUnlock()
+
+		if exists && cacheEntry != nil {
+			// Find the replica's position in the IntermediateReplicas array
+			for i, replicaID := range cacheEntry.IntermediateReplicas {
+				if replicaID == reply.ReplicaID {
+					replyIndex = uint8(i)
+					break
+				}
+			}
+		}
+
+		// If we couldn't find the replica in the cache, fall back to the old logic
+		// This shouldn't happen in normal operation but provides a safety net
+		if replyIndex == 255 {
+			e.log.Warningf("Could not find replica %d in IntermediateReplicas, falling back to default mapping", reply.ReplicaID)
+			if reply.ReplicaID == 0 {
+				replyIndex = 0
+			} else {
+				replyIndex = 1
+			}
+		}
+
 		// Create proper CourierQueryReply with the replica's response
+		// Determine reply type based on whether there's actual payload data
+		var replyType uint8
+		if len(reply.EnvelopeReply) > 0 {
+			replyType = pigeonhole.ReplyTypePayload // Has actual data
+		} else {
+			replyType = pigeonhole.ReplyTypeACK // No data, just acknowledgment
+		}
+
 		courierReply := &pigeonhole.CourierQueryReply{
 			ReplyType: 0, // 0 = envelope_reply
 			EnvelopeReply: &pigeonhole.CourierEnvelopeReply{
 				EnvelopeHash: *reply.EnvelopeHash,
-				ReplyIndex:   reply.ReplicaID, // Use the replica ID that responded
+				ReplyIndex:   replyIndex, // Use the correct reply index, not replica ID
+				ReplyType:    replyType,
 				PayloadLen:   uint32(len(reply.EnvelopeReply)),
 				Payload:      reply.EnvelopeReply,
-				ErrorCode:    0,
+				ErrorCode:    pigeonhole.EnvelopeErrorSuccess,
 			},
 		}
 
-		e.log.Debugf("tryImmediateReplyProxy: Sending response with %d bytes of ciphertext", len(reply.EnvelopeReply))
+		e.log.Debugf("tryImmediateReplyProxy: Sending response with %d bytes of ciphertext, replyIndex=%d, ReplyType=%d",
+			len(reply.EnvelopeReply), replyIndex, replyType)
 
 		e.write(&cborplugin.Response{
 			ID:      pendingRequest.RequestID,
@@ -330,13 +341,14 @@ func (e *Courier) tryImmediateReplyProxy(reply *commands.ReplicaMessageReply) bo
 	return true
 }
 
-// storePendingRequest stores a pending request with a 4-second timeout
+// storePendingRequest stores a pending request with a timeout
 func (e *Courier) storePendingRequest(envHash *[hash.HashSize]byte, requestID uint64, surb []byte) {
 	e.pendingRequestsLock.Lock()
 	defer e.pendingRequestsLock.Unlock()
 
-	// Set 4-second timeout as requested
-	timeout := time.Now().Add(4 * time.Second)
+	// Set timeout to allow for replica response delays
+	seconds := 60
+	timeout := time.Now().Add(time.Duration(seconds) * time.Second)
 
 	e.pendingRequests[*envHash] = &PendingReadRequest{
 		RequestID: requestID,
@@ -344,7 +356,7 @@ func (e *Courier) storePendingRequest(envHash *[hash.HashSize]byte, requestID ui
 		Timeout:   timeout,
 	}
 
-	e.log.Debugf("Stored pending read request for envelope hash %x with 4-second timeout", envHash)
+	e.log.Debugf("Stored pending read request for envelope hash %x with %d-second timeout", envHash, seconds)
 
 	// Start a goroutine to clean up expired requests
 	go e.cleanupExpiredRequest(envHash, timeout)
@@ -365,52 +377,67 @@ func (e *Courier) cleanupExpiredRequest(envHash *[hash.HashSize]byte, timeout ti
 	}
 }
 
-func (e *Courier) handleCourierEnvelope(courierMessage *pigeonhole.CourierEnvelope) error {
-	replicas := make([]*commands.ReplicaMessage, 2)
+func (e *Courier) propagateQueryToReplicas(courierMessage *pigeonhole.CourierEnvelope) error {
+	e.log.Debugf("handleCourierEnvelope: Starting to handle envelope with intermediate replicas [%d, %d]",
+		courierMessage.IntermediateReplicas[0], courierMessage.IntermediateReplicas[1])
 
 	firstReplicaID := courierMessage.IntermediateReplicas[0]
-	replicas[0] = &commands.ReplicaMessage{
-		Cmds:   e.cmds,
-		Geo:    e.geo,
-		Scheme: e.envelopeScheme,
+	e.log.Debugf("handleCourierEnvelope: Preparing message for first replica ID %d", firstReplicaID)
+	replicaMsg1 := &commands.ReplicaMessage{
+		Cmds:               e.cmds,
+		PigeonholeGeometry: e.pigeonholeGeo,
+		Scheme:             e.envelopeScheme,
 
 		SenderEPubKey: courierMessage.SenderPubkey,
 		DEK:           &courierMessage.Dek1,
 		Ciphertext:    courierMessage.Ciphertext,
 	}
-	e.server.SendMessage(firstReplicaID, replicas[0])
+	e.log.Debugf("handleCourierEnvelope: Sending message to first replica ID %d", firstReplicaID)
+	e.server.SendMessage(firstReplicaID, replicaMsg1)
 
 	secondReplicaID := courierMessage.IntermediateReplicas[1]
-	replicas[1] = &commands.ReplicaMessage{
-		Cmds:   e.cmds,
-		Geo:    e.geo,
-		Scheme: e.envelopeScheme,
+	e.log.Debugf("handleCourierEnvelope: Preparing message for second replica ID %d", secondReplicaID)
+	replicaMsg2 := &commands.ReplicaMessage{
+		Cmds:               e.cmds,
+		PigeonholeGeometry: e.pigeonholeGeo,
+		Scheme:             e.envelopeScheme,
 
 		SenderEPubKey: courierMessage.SenderPubkey,
 		DEK:           &courierMessage.Dek2,
 		Ciphertext:    courierMessage.Ciphertext,
 	}
-	e.server.SendMessage(secondReplicaID, replicas[1])
+	e.log.Debugf("handleCourierEnvelope: Sending message to second replica ID %d", secondReplicaID)
+	e.server.SendMessage(secondReplicaID, replicaMsg2)
+
+	e.log.Debugf("handleCourierEnvelope: Successfully dispatched messages to both replicas")
 	return nil
 }
 
+// handleNewMessage processes new messages and dispatches them to replicas and then
+// returns an immediate ACK reply to confirm receipt and dispatch
 func (e *Courier) handleNewMessage(envHash *[hash.HashSize]byte, courierMessage *pigeonhole.CourierEnvelope) *pigeonhole.CourierQueryReply {
-	if err := e.handleCourierEnvelope(courierMessage); err != nil {
-		e.log.Errorf("Failed to handle courier envelope: %s", err)
-		if err == errNilDEKElements {
-			return e.createEnvelopeErrorReply(envHash, envelopeErrorNilDEKElements, courierMessage.ReplyIndex)
-		}
-		return e.createEnvelopeErrorReply(envHash, envelopeErrorInternalError, courierMessage.ReplyIndex)
+	e.log.Debugf("handleNewMessage: Processing new message for envelope hash %x", envHash)
+
+	if err := e.propagateQueryToReplicas(courierMessage); err != nil {
+		e.log.Errorf("handleNewMessage: Failed to handle courier envelope: %s", err)
+		e.log.Debugf("handleNewMessage: Returning error reply due to internal error")
+		return e.createEnvelopeErrorReply(envHash, pigeonhole.EnvelopeErrorPropagationError, courierMessage.ReplyIndex)
 	}
 
+	// SUCCESS CASE: Messages were successfully dispatched to replicas
+	// Return immediate ACK reply to confirm receipt and dispatch
+	// The actual response with data will come later via CacheReply/tryImmediateReplyProxy when replicas respond
+	e.log.Debugf("handleNewMessage: Successfully dispatched to replicas, returning immediate ACK reply (ReplyType=%d)",
+		pigeonhole.ReplyTypeACK)
 	reply := &pigeonhole.CourierQueryReply{
 		ReplyType: 0, // 0 = envelope_reply
 		EnvelopeReply: &pigeonhole.CourierEnvelopeReply{
 			EnvelopeHash: *envHash,
 			ReplyIndex:   courierMessage.ReplyIndex,
+			ReplyType:    pigeonhole.ReplyTypeACK, // ACK - Request received and dispatched
 			PayloadLen:   0,
 			Payload:      nil,
-			ErrorCode:    1, // Error code for timeout
+			ErrorCode:    pigeonhole.EnvelopeErrorSuccess, // Success - message accepted and dispatched
 		},
 	}
 	return reply
@@ -422,7 +449,7 @@ func (e *Courier) handleOldMessage(cacheEntry *CourierBookKeeping, envHash *[has
 	// Check if cacheEntry is nil before accessing its fields
 	if cacheEntry == nil {
 		e.log.Debugf("Cache entry is nil, no replies available")
-		return e.createEnvelopeErrorReply(envHash, envelopeErrorCacheCorruption, courierMessage.ReplyIndex)
+		return e.createEnvelopeErrorReply(envHash, pigeonhole.EnvelopeErrorCacheCorruption, courierMessage.ReplyIndex)
 	}
 
 	// Log cache state
@@ -431,32 +458,36 @@ func (e *Courier) handleOldMessage(cacheEntry *CourierBookKeeping, envHash *[has
 	e.log.Debugf("Cache state - Reply[0]: %v, Reply[1]: %v", reply0Available, reply1Available)
 
 	var payload []byte
-	replyIndex := courierMessage.ReplyIndex
 
 	if cacheEntry.EnvelopeReplies[courierMessage.ReplyIndex] != nil {
 		e.log.Debugf("Found reply at requested index %d", courierMessage.ReplyIndex)
 		payload = cacheEntry.EnvelopeReplies[courierMessage.ReplyIndex].EnvelopeReply
-	} else if cacheEntry.EnvelopeReplies[courierMessage.ReplyIndex^1] != nil {
-		e.log.Debugf("No reply at requested index %d, checking alternate index %d", courierMessage.ReplyIndex, courierMessage.ReplyIndex^1)
-		payload = cacheEntry.EnvelopeReplies[courierMessage.ReplyIndex^1].EnvelopeReply
-		replyIndex = courierMessage.ReplyIndex ^ 1
 	} else {
-		e.log.Debugf("No replies available in cache")
-		payload = nil
+		e.log.Debugf("No reply available at requested index %d", courierMessage.ReplyIndex)
+		payload = nil // Return empty payload but keep the requested ReplyIndex
+	}
+
+	// Determine reply type based on whether there's actual payload data
+	var replyType uint8
+	if len(payload) > 0 {
+		replyType = pigeonhole.ReplyTypePayload // Has actual data
+	} else {
+		replyType = pigeonhole.ReplyTypeACK // No data, just acknowledgment
 	}
 
 	reply := &pigeonhole.CourierQueryReply{
 		ReplyType: 0, // 0 = envelope_reply
 		EnvelopeReply: &pigeonhole.CourierEnvelopeReply{
 			EnvelopeHash: *envHash,
-			ReplyIndex:   replyIndex,
+			ReplyIndex:   courierMessage.ReplyIndex,
+			ReplyType:    replyType,
 			PayloadLen:   uint32(len(payload)),
 			Payload:      payload,
-			ErrorCode:    0,
+			ErrorCode:    pigeonhole.EnvelopeErrorSuccess,
 		},
 	}
 
-	e.log.Debugf("handleOldMessage returning payload length: %d", len(payload))
+	e.log.Debugf("handleOldMessage returning payload length: %d, ReplyType=%d", len(payload), replyType)
 	return reply
 }
 
@@ -471,35 +502,7 @@ func (e *Courier) OnCommand(cmd cborplugin.Command) error {
 
 	courierQuery, err := pigeonhole.CourierQueryFromBytes(request.Payload)
 	if err != nil {
-		// Provide detailed size information for debugging
-		expectedWriteSize := e.pigeonholeGeo.CourierQueryWriteLength
-		expectedReadSize := e.pigeonholeGeo.CourierQueryReadLength
-		actualSize := len(request.Payload)
-
-		e.log.Debugf("Failed to decode CourierQuery trunnel blob: %s (received %d bytes, expected %d for write or %d for read)",
-			err, actualSize, expectedWriteSize, expectedReadSize)
-
-		// Since parsing failed, we can't access the envelope hash or reply index
-		// Create a generic error response with zero values
-		var zeroHash [32]byte
-		errorReply := &pigeonhole.CourierQueryReply{
-			ReplyType: 0, // 0 = envelope_reply
-			EnvelopeReply: &pigeonhole.CourierEnvelopeReply{
-				EnvelopeHash: zeroHash,
-				ReplyIndex:   0, // Default to 0 since we can't determine the intended ReplyIndex
-				PayloadLen:   0,
-				Payload:      nil,
-				ErrorCode:    1, // Error code for parsing failure
-			},
-		}
-		go func() {
-			e.write(&cborplugin.Response{
-				ID:      request.ID,
-				SURB:    request.SURB,
-				Payload: errorReply.Bytes(),
-			})
-		}()
-		return errCBORDecodingFailed
+		return errors.New("CBOR decoding failed")
 	}
 
 	// Handle CourierEnvelope if present
@@ -516,59 +519,53 @@ func (e *Courier) OnCommand(cmd cborplugin.Command) error {
 		}()
 	}
 
-	// Copy command handling has been removed as requested
-
 	return nil
 }
 
 func (e *Courier) cacheHandleCourierEnvelope(courierMessage *pigeonhole.CourierEnvelope, requestID uint64, surb []byte) *pigeonhole.CourierQueryReply {
-	// Compute envelope hash using the new helper method
-	// This ensures consistency between courier and replica envelope hash calculations
 	envHash := courierMessage.EnvelopeHash()
 
 	e.dedupCacheLock.RLock()
 	cacheEntry, ok := e.dedupCache[*envHash]
 	e.dedupCacheLock.RUnlock()
 
-	if ok {
+	switch {
+	case ok:
 		e.log.Debugf("OnCommand: Found cached entry for envelope hash %x, calling handleOldMessage", envHash)
 		return e.handleOldMessage(cacheEntry, envHash, courierMessage)
+	case !ok:
+		e.log.Debugf("OnCommand: No cached entry for envelope hash %x, calling handleNewMessage", envHash)
+		e.storePendingRequest(envHash, requestID, surb)
+		e.dedupCacheLock.Lock()
+		currentEpoch := e.getCurrentEpoch()
+		e.dedupCache[*envHash] = &CourierBookKeeping{
+			Epoch:                currentEpoch,
+			IntermediateReplicas: courierMessage.IntermediateReplicas,
+			EnvelopeReplies:      [2]*commands.ReplicaMessageReply{nil, nil},
+		}
+		e.dedupCacheLock.Unlock()
+
+		return e.handleNewMessage(envHash, courierMessage)
 	}
 
-	e.log.Debugf("OnCommand: No cached entry for envelope hash %x, calling handleNewMessage", envHash)
-
-	e.storePendingRequest(envHash, requestID, surb)
-
-	e.dedupCacheLock.Lock()
-
-	// Get current epoch, defaulting to 0 if PKI document is not available yet
-	var currentEpoch uint64
-	if pkiDoc := e.server.PKI.PKIDocument(); pkiDoc != nil {
-		currentEpoch = pkiDoc.Epoch
-	}
-
-	e.dedupCache[*envHash] = &CourierBookKeeping{
-		Epoch:                currentEpoch,
-		IntermediateReplicas: courierMessage.IntermediateReplicas,
-		EnvelopeReplies:      [2]*commands.ReplicaMessageReply{nil, nil},
-	}
-	e.dedupCacheLock.Unlock()
-	return e.handleNewMessage(envHash, courierMessage)
+	// not reached
+	return nil
 }
 
 // Copy command functions have been removed as requested
 
 // createEnvelopeErrorReply creates a CourierEnvelopeReply with the specified error code
 func (e *Courier) createEnvelopeErrorReply(envHash *[hash.HashSize]byte, errorCode uint8, replyIndex uint8) *pigeonhole.CourierQueryReply {
-	e.log.Debugf("Envelope operation failed with error code %d: %s", errorCode, envelopeErrorToString(errorCode))
+	e.log.Debugf("Envelope operation failed with error code %d", errorCode)
 	return &pigeonhole.CourierQueryReply{
 		ReplyType: 0, // 0 = envelope_reply
 		EnvelopeReply: &pigeonhole.CourierEnvelopeReply{
 			EnvelopeHash: *envHash,
 			ReplyIndex:   replyIndex,
+			ReplyType:    pigeonhole.ReplyTypeACK, // Use ACK type for error replies (errors during dispatch)
 			PayloadLen:   0,
 			Payload:      nil,
-			ErrorCode:    1, // Error code for timeout
+			ErrorCode:    errorCode, // Use the actual error code
 		},
 	}
 }

@@ -648,9 +648,12 @@ func IsDocumentWellFormed(d *Document, verifiers []sign.PublicKey) error {
 // MarshalBinary implements encoding.BinaryMarshaler interface
 // and wraps a Document with a cert.Certificate
 func (d *Document) MarshalCertificate() ([]byte, error) {
-	// Serialize Document without calling this method
-	d.Version = DocumentVersion
-	payload, err := ccbor.Marshal((*document)(d))
+	// Create a copy to avoid modifying the original document (prevents data races)
+	docCopy := *d
+	docCopy.Version = DocumentVersion
+
+	// Serialize Document copy without calling this method
+	payload, err := ccbor.Marshal((*document)(&docCopy))
 	if err != nil {
 		return nil, err
 	}

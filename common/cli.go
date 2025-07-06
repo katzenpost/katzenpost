@@ -62,7 +62,7 @@ func ErrorHandlerWithUsage(cmd *cobra.Command) fang.ErrorHandler {
 
 // isUsageError determines if an error is related to CLI usage and should trigger
 // automatic display of usage help. This includes flag errors, unknown commands,
-// and invalid arguments.
+// invalid arguments, and configuration file errors.
 func isUsageError(err error) bool {
 	s := err.Error()
 	for _, prefix := range []string{
@@ -74,6 +74,9 @@ func isUsageError(err error) bool {
 		"required flag",
 		"accepts",
 		"arg(s), received",
+		"failed to load config file",
+		"failed to load server config file",
+		"config file must be specified",
 	} {
 		if strings.Contains(s, prefix) {
 			return true

@@ -180,7 +180,8 @@ func TestOfflineChannelOperations(t *testing.T) {
 	ctx := context.Background()
 
 	// Test SendChannelQuery fails in offline mode
-	err = thin.SendChannelQuery(ctx, 1, []byte("test"), &[32]byte{}, []byte("queue"))
+	testMessageID := thin.NewMessageID()
+	err = thin.SendChannelQuery(ctx, 1, []byte("test"), &[32]byte{}, []byte("queue"), testMessageID)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "cannot send channel query in offline mode")
 

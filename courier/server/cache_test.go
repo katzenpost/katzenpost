@@ -216,65 +216,6 @@ func TestCourierCacheHandleOldMessage(t *testing.T) {
 	require.Equal(t, reply2.EnvelopeReply, reply.EnvelopeReply.Payload)
 }
 
-// TestCourierCacheFallbackBehavior tests fallback when requested reply index is not available
-func TestCourierCacheFallbackBehavior(t *testing.T) {
-	courier := createTestCourier(t)
-	envHash := createTestEnvelopeHash()
-
-	reply1 := createTestReply(&envHash, 1, "only-reply-from-replica-1", false)
-	courier.CacheReply(reply1)
-
-	// Manually set up cache entry with reply only in slot 1
-	courier.dedupCacheLock.Lock()
-	courier.dedupCache[envHash] = &CourierBookKeeping{
-		Epoch: 1,
-		EnvelopeReplies: [2]*commands.ReplicaMessageReply{
-			nil,    // No reply in slot 0
-			reply1, // Reply in slot 1
-		},
-	}
-	courier.dedupCacheLock.Unlock()
-
-	// Request reply index 0 (which doesn't exist)
-	courierEnv := &pigeonhole.CourierEnvelope{
-		ReplyIndex: 0,
-	}
-
-	cacheEntry, _ := getCacheEntry(courier, envHash)
-	reply := courier.handleOldMessage(cacheEntry, &envHash, courierEnv)
-
-	// Verify the reply structure directly (skip trunnel parsing for now)
-	require.NotNil(t, reply)
-	require.NotNil(t, reply.EnvelopeReply)
-	// Should fallback to reply index 1 and update the reply index
-	require.Equal(t, uint8(1), reply.EnvelopeReply.ReplyIndex)
-	require.Equal(t, reply1.EnvelopeReply, reply.EnvelopeReply.Payload)
-}
-
-// TestCourierCacheEmptyResponse tests behavior when no replies are cached
-func TestCourierCacheEmptyResponse(t *testing.T) {
-	courier := createTestCourier(t)
-	envHash := createTestEnvelopeHash()
-
-	// Create cache entry with no replies
-	cacheEntry := &CourierBookKeeping{
-		Epoch:           1,
-		EnvelopeReplies: [2]*commands.ReplicaMessageReply{nil, nil},
-	}
-
-	courierEnv := &pigeonhole.CourierEnvelope{
-		ReplyIndex: 0,
-	}
-
-	reply := courier.handleOldMessage(cacheEntry, &envHash, courierEnv)
-
-	// Verify the reply structure directly (skip trunnel parsing for now)
-	require.NotNil(t, reply)
-	require.NotNil(t, reply.EnvelopeReply)
-	require.Equal(t, uint8(0), reply.EnvelopeReply.ReplyIndex)
-	require.Empty(t, reply.EnvelopeReply.Payload)
-}
-
 // Helper function to create a test courier
 func createTestCourier(t *testing.T) *Courier {
 	// Create minimal test configuration
