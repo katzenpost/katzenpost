@@ -7,9 +7,13 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"os"
+
+	"github.com/katzenpost/qrterminal"
 
 	kemschemes "github.com/katzenpost/hpqc/kem/schemes"
 	"github.com/katzenpost/hpqc/nike/schemes"
+	"github.com/katzenpost/hpqc/rand"
 
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 )
@@ -21,6 +25,7 @@ func main() {
 	kem := flag.String("kem", "", "Name of the KEM Scheme to be used with Sphinx")
 	nike := flag.String("nike", "x25519", "Name of the NIKE Scheme to be used with Sphinx")
 	UserForwardPayloadLength := flag.Int("UserForwardPayloadLength", 2000, "UserForwardPayloadLength")
+	isQRCode := flag.Bool("q", false, "print to stdout as QR code")
 	flag.Parse()
 
 	nrHops := *nrLayers + 2
@@ -52,5 +57,21 @@ func main() {
 		)
 	}
 
-	fmt.Printf("[SphinxGeometry]\n%s", sphinxGeometry.Display())
+	fmt.Printf("\n%s\n\n", sphinxGeometry.Display())
+
+	if *isQRCode {
+		config := qrterminal.Config{
+			Level:      qrterminal.L,
+			Writer:     os.Stdout,
+			HalfBlocks: true,
+			QuietZone:  1,
+		}
+
+		blob := make([]byte, 1000)
+		_, err := rand.Reader.Read(blob)
+		if err != nil {
+			panic(err)
+		}
+		qrterminal.GenerateWithConfig(sphinxGeometry.Display(), config)
+	}
 }
