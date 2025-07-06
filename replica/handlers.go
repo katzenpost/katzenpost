@@ -6,7 +6,6 @@ package replica
 import (
 	"crypto/hmac"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/katzenpost/hpqc/kem/mkem"
@@ -239,12 +238,6 @@ func (c *incomingConn) handleReplicaWrite(replicaWrite *pigeonhole.ReplicaWrite)
 	err = c.l.server.state.handleReplicaWrite(wireWrite)
 	if err != nil {
 		c.log.Errorf("handleReplicaWrite state update failed: %v", err)
-		// Check for specific error types
-		if strings.Contains(err.Error(), "storage full") {
-			return &pigeonhole.ReplicaWriteReply{
-				ErrorCode: pigeonhole.ReplicaErrorStorageFull,
-			}
-		}
 		return &pigeonhole.ReplicaWriteReply{
 			ErrorCode: pigeonhole.ReplicaErrorDatabaseError,
 		}
