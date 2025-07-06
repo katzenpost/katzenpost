@@ -12,8 +12,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/katzenpost/hpqc/hash"
-	"github.com/katzenpost/katzenpost/client2/common"
 	"github.com/katzenpost/katzenpost/client2/thin"
 )
 
@@ -67,29 +65,90 @@ func TestDockerCourierServiceNewThinclientAPI(t *testing.T) {
 	originalMessage := []byte("Hello from Alice to Bob via new channel API!")
 	t.Log("Alice: Writing message and waiting for completion")
 
-	// Get courier service info
-	epochDoc, err := aliceThinClient.PKIDocumentForEpoch(currentEpoch)
-	require.NoError(t, err)
-	courierServices := common.FindServices("courier", epochDoc)
-	require.True(t, len(courierServices) > 0, "No courier services found")
-	courierService := courierServices[0]
-	identityHash := hash.Sum256(courierService.MixDescriptor.IdentityKey)
-
-	// Use WriteChannelWithReply to write and wait for completion
-	err = aliceThinClient.WriteChannelWithReply(ctx, channelID, originalMessage, &identityHash, courierService.RecipientQueueID)
+	// Use WriteChannelWithRetry to write and wait for completion
+	err = aliceThinClient.WriteChannelWithRetry(ctx, channelID, originalMessage)
 	require.NoError(t, err)
 	t.Log("Alice: Write operation completed successfully")
 
 	// Wait for message propagation to storage replicas
-	time.Sleep(5 * time.Second)
+	time.Sleep(10 * time.Second)
 
 	// Bob reads message using the helper function with automatic retry logic
 	t.Log("Bob: Reading message with automatic reply index retry")
-	receivedPayload, err := bobThinClient.ReadChannelWithRetry(ctx, bobChannelID, &identityHash, courierService.RecipientQueueID)
+	receivedPayload, err := bobThinClient.ReadChannelWithRetry(ctx, bobChannelID)
 	require.NoError(t, err)
 	require.NotNil(t, receivedPayload, "Bob: Received nil payload")
 
 	require.Equal(t, originalMessage, receivedPayload, "Bob should receive the original message")
+
+	aliceThinClient.CloseChannel(ctx, channelID)
+	bobThinClient.CloseChannel(ctx, bobChannelID)
+}
+
+// TestDockerCourierServiceSingleReadQuery tests that after a write has been committed and replicated,
+// the courier returns the payload on the first read query without any retries.
+// This test validates the synchronous proxy behavior where intermediary replicas proxy requests
+// to destination replicas and return the data in a single request-response cycle.
+func TestDockerCourierServiceSingleReadQuery(t *testing.T) {
+	t.Log("TESTING COURIER SERVICE - Single Read Query (No Retries)")
+
+	// Setup clients and get current epoch
+	aliceThinClient := setupThinClient(t)
+	defer aliceThinClient.Close()
+	bobThinClient := setupThinClient(t)
+	defer bobThinClient.Close()
+
+	currentDoc := validatePKIDocument(t, aliceThinClient)
+	currentEpoch := currentDoc.Epoch
+	bobDoc := validatePKIDocument(t, bobThinClient)
+	require.Equal(t, currentEpoch, bobDoc.Epoch, "Alice and Bob must use same PKI epoch")
+	t.Logf("Using PKI document for epoch %d", currentEpoch)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
+	// Alice creates write channel
+	t.Log("Alice: Creating write channel")
+	channelID, readCap, _, _, err := aliceThinClient.CreateWriteChannel(ctx, nil, nil)
+	require.NoError(t, err)
+	t.Logf("Alice: Created write channel %d", channelID)
+
+	// Bob creates read channel
+	t.Log("Bob: Creating read channel")
+	bobChannelID, _, err := bobThinClient.CreateReadChannel(ctx, readCap, nil)
+	require.NoError(t, err)
+	t.Logf("Bob: Created read channel %d", bobChannelID)
+
+	// Alice writes message and waits for completion
+	originalMessage := []byte("Single read test: Hello from Alice to Bob!")
+	t.Log("Alice: Writing message and waiting for completion")
+
+	// Use WriteChannelWithRetry to write and wait for completion
+	err = aliceThinClient.WriteChannelWithRetry(ctx, channelID, originalMessage)
+	require.NoError(t, err)
+	t.Log("Alice: Write operation completed successfully")
+
+	// Wait for message propagation to storage replicas
+	t.Log("Waiting for message propagation to storage replicas...")
+	time.Sleep(10 * time.Second)
+
+	// Bob performs SINGLE read query without retries using ReadChannelWithReply
+	t.Log("Bob: Performing SINGLE read query using ReadChannelWithReply (no retries)")
+
+	readCtx, readCancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer readCancel()
+
+	replyIndex := uint8(0) // in theory it shoulnd't matter if this is 0 or 1
+	receivedPayload, err := bobThinClient.ReadChannelWithReply(readCtx, bobChannelID, replyIndex)
+	require.NoError(t, err, "Single read query must succeed")
+	require.NotNil(t, receivedPayload)
+	require.Greater(t, len(receivedPayload), 0, "Single read query must return non-empty payload - proxy functionality failed")
+
+	// Payload must match what Alice originally sent
+	require.Equal(t, originalMessage, receivedPayload, "Bob should receive the exact message Alice sent")
+
+	t.Logf("SUCCESS: Single read query returned payload of %d bytes: %s", len(receivedPayload), string(receivedPayload))
+	t.Log("SUCCESS: Courier + replicas responded to read query with a single query - proxy functionality working correctly")
 
 	aliceThinClient.CloseChannel(ctx, channelID)
 	bobThinClient.CloseChannel(ctx, bobChannelID)

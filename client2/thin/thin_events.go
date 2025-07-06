@@ -63,9 +63,10 @@ type MessageReplyEvent struct {
 	// this message. This is particularly relevant for pigeonhole channel reads.
 	ReplyIndex *uint8 `cbor:"reply_index,omitempty"`
 
-	// Err is the error message if any error was encountered when servicing the request.
-	// Empty string indicates no error occurred.
-	Err string `cbor:"err,omitempty"`
+	// ErrorCode indicates the success or failure of the message operation.
+	// A value of ThinClientSuccess (0) indicates no error occurred.
+	// Non-zero values indicate specific error conditions.
+	ErrorCode uint8 `cbor:"error_code"`
 }
 
 // String returns a string representation of the MessageReplyEvent.
@@ -74,8 +75,8 @@ func (e *MessageReplyEvent) String() string {
 	if e.ReplyIndex != nil {
 		replyIndexStr = fmt.Sprintf(" replyIndex=%d", *e.ReplyIndex)
 	}
-	if e.Err != "" {
-		return fmt.Sprintf("MessageReply: %v%s failed: %v", hex.EncodeToString(e.MessageID[:]), replyIndexStr, e.Err)
+	if e.ErrorCode != ThinClientSuccess {
+		return fmt.Sprintf("MessageReply: %v%s failed: %s", hex.EncodeToString(e.MessageID[:]), replyIndexStr, ThinClientErrorToString(e.ErrorCode))
 	}
 	return fmt.Sprintf("KaetzchenReply: %v%s (%v bytes)", hex.EncodeToString(e.MessageID[:]), replyIndexStr, len(e.Payload))
 }

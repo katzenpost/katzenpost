@@ -183,6 +183,7 @@ func (c *CourierEnvelope) validate() error {
 type CourierEnvelopeReply struct {
 	EnvelopeHash [32]uint8
 	ReplyIndex   uint8
+	ReplyType    uint8
 	PayloadLen   uint32
 	Payload      []uint8
 	ErrorCode    uint8
@@ -204,6 +205,16 @@ func (c *CourierEnvelopeReply) Parse(data []byte) ([]byte, error) {
 			return nil, errors.New("data too short")
 		}
 		c.ReplyIndex = cur[0]
+		cur = cur[1:]
+	}
+	{
+		if len(cur) < 1 {
+			return nil, errors.New("data too short")
+		}
+		c.ReplyType = cur[0]
+		if !(c.ReplyType == 0 || c.ReplyType == 1) {
+			return nil, errors.New("integer constraint violated")
+		}
 		cur = cur[1:]
 	}
 	{
@@ -248,6 +259,7 @@ func (c *CourierEnvelopeReply) encodeBinary() []byte {
 		buf = append(buf, byte(c.EnvelopeHash[idx]))
 	}
 	buf = append(buf, byte(c.ReplyIndex))
+	buf = append(buf, byte(c.ReplyType))
 	{
 		tmp := make([]byte, 4)
 		binary.BigEndian.PutUint32(tmp, c.PayloadLen)
@@ -272,6 +284,9 @@ func (c *CourierEnvelopeReply) validate() error {
 		return errors.New("array length constraint violated")
 	}
 	for idx := 0; idx < len(c.EnvelopeHash); idx++ {
+	}
+	if !(c.ReplyType == 0 || c.ReplyType == 1) {
+		return errors.New("integer constraint violated")
 	}
 	if len(c.Payload) != int(c.PayloadLen) {
 		return errors.New("array length constraint violated")

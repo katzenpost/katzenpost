@@ -4,6 +4,7 @@
 package server
 
 import (
+	"errors"
 	"sync"
 	"time"
 
@@ -37,12 +38,12 @@ func (co *Connector) destToNodeID(dest uint8) (*[constants.NodeIDLength]byte, er
 	doc := co.server.PKI.PKIDocument()
 	if doc == nil {
 		co.log.Errorf("destToNodeID: PKI document is nil")
-		return nil, errInvalidDestinationID
+		return nil, errors.New("invalid destination ID")
 	}
 	co.log.Debugf("destToNodeID: dest=%d, StorageReplicas count=%d", dest, len(doc.StorageReplicas))
 	if int(dest) >= len(doc.StorageReplicas) {
 		co.log.Errorf("destToNodeID: invalid destination ID %d >= %d", dest, len(doc.StorageReplicas))
-		return nil, errInvalidDestinationID
+		return nil, errors.New("invalid destination ID")
 	}
 	replica := doc.StorageReplicas[dest]
 	idKeyHash := hash.Sum256(replica.IdentityKey)
@@ -61,7 +62,7 @@ func (co *Connector) DispatchMessage(dest uint8, message *commands.ReplicaMessag
 	c, ok := co.conns[*id]
 	if !ok {
 		co.RUnlock()
-		co.log.Errorf("DispatchMessage failure: %s", errConnectionNotFound)
+		co.log.Errorf("DispatchMessage failure: connection not found")
 		return
 	}
 	co.RUnlock()
