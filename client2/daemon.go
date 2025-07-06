@@ -1206,10 +1206,24 @@ func (d *Daemon) handleNewReadReply(params *ReplyHandlerParams, readReply *pigeo
 	}
 
 	payload, err := d.processReadReplyPayload(params, readReply)
-	if err != nil {
-		// log an error
-		d.log.Errorf("failed to process read reply payload: %s", err)
-	}
+    payload, err := d.processReadReplyPayload(params, readReply)
+    var errorCode uint8 = thin.ThinClientSuccess
+    if err != nil {
+        d.log.Errorf("failed to process read reply payload: %s", err)
+        payload = []byte{} // Ensure empty payload on error
+        errorCode = thin.ThinClientErrorInternalError
+    }
+
+    // deliver the read result to thin client
+    err = conn.sendResponse(&Response{
+        AppID: params.AppID,
+        MessageReplyEvent: &thin.MessageReplyEvent{
+            MessageID:  params.MessageID,
+            Payload:    payload,
+            ReplyIndex: &params.ReplyIndex,
+            ErrorCode:  errorCode,
+        },
+    })
 
 	// deliver the read result to thin client
 	err = conn.sendResponse(&Response{
