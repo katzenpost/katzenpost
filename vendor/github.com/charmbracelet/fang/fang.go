@@ -6,10 +6,12 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"runtime/debug"
 
 	"github.com/charmbracelet/colorprofile"
 	"github.com/charmbracelet/lipgloss/v2"
+	"github.com/charmbracelet/x/term"
 	mango "github.com/muesli/mango-cobra"
 	"github.com/muesli/roff"
 	"github.com/spf13/cobra"
@@ -18,6 +20,9 @@ import (
 const shaLen = 7
 
 // ErrorHandler handles an error, printing them to the given [io.Writer].
+//
+// Note that this will only be used if the STDERR is a terminal, and should
+// be used for styling only.
 type ErrorHandler = func(w io.Writer, styles Styles, err error)
 
 // ColorSchemeFunc gets a [lipgloss.LightDarkFunc] and returns a [ColorScheme].
@@ -26,10 +31,12 @@ type ColorSchemeFunc = func(lipgloss.LightDarkFunc) ColorScheme
 type settings struct {
 	completions bool
 	manpages    bool
+	skipVersion bool
 	version     string
 	commit      string
 	colorscheme ColorSchemeFunc
 	errHandler  ErrorHandler
+	signals     []os.Signal
 }
 
 // Option changes fang settings.
@@ -74,6 +81,13 @@ func WithVersion(version string) Option {
 	}
 }
 
+// WithoutVersion skips the `-v`/`--version` functionality.
+func WithoutVersion() Option {
+	return func(s *settings) {
+		s.skipVersion = true
+	}
+}
+
 // WithCommit sets the commit SHA.
 func WithCommit(commit string) Option {
 	return func(s *settings) {
@@ -88,6 +102,14 @@ func WithErrorHandler(handler ErrorHandler) Option {
 	}
 }
 
+// WithNotifySignal sets the signals that should interrupt the execution of the
+// program.
+func WithNotifySignal(signals ...os.Signal) Option {
+	return func(s *settings) {
+		s.signals = signals
+	}
+}
+
 // Execute applies fang to the command and executes it.
 func Execute(ctx context.Context, root *cobra.Command, options ...Option) error {
 	opts := settings{
@@ -96,16 +118,22 @@ func Execute(ctx context.Context, root *cobra.Command, options ...Option) error 
 		colorscheme: DefaultColorScheme,
 		errHandler:  DefaultErrorHandler,
 	}
+
 	for _, option := range options {
 		option(&opts)
 	}
 
-	root.SetHelpFunc(func(c *cobra.Command, _ []string) {
+	helpFunc := func(c *cobra.Command, _ []string) {
 		w := colorprofile.NewWriter(c.OutOrStdout(), os.Environ())
 		helpFn(c, w, makeStyles(mustColorscheme(opts.colorscheme)))
-	})
+	}
+
 	root.SilenceUsage = true
 	root.SilenceErrors = true
+	if !opts.skipVersion {
+		root.Version = buildVersion(opts)
+	}
+	root.SetHelpFunc(helpFunc)
 
 	if opts.manpages {
 		root.AddCommand(&cobra.Command{
@@ -128,32 +156,47 @@ func Execute(ctx context.Context, root *cobra.Command, options ...Option) error 
 		})
 	}
 
-	if opts.completions {
-		root.InitDefaultCompletionCmd()
-	} else {
+	if !opts.completions {
 		root.CompletionOptions.DisableDefaultCmd = true
 	}
 
-	if opts.version == "" {
-		if info, ok := debug.ReadBuildInfo(); ok && info.Main.Sum != "" {
-			opts.version = info.Main.Version
-			opts.commit = getKey(info, "vcs.revision")
-		} else {
-			opts.version = "unknown (built from source)"
-		}
+	if len(opts.signals) > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = signal.NotifyContext(ctx, opts.signals...)
+		defer cancel()
 	}
-	if len(opts.commit) >= shaLen {
-		opts.version += " (" + opts.commit[:shaLen] + ")"
-	}
-
-	root.Version = opts.version
 
 	if err := root.ExecuteContext(ctx); err != nil {
+		if w, ok := root.ErrOrStderr().(term.File); ok {
+			// if stderr is not a tty, simply print the error without any
+			// styling or going through an [ErrorHandler]:
+			if !term.IsTerminal(w.Fd()) {
+				_, _ = fmt.Fprintln(w, err.Error())
+				return err //nolint:wrapcheck
+			}
+		}
 		w := colorprofile.NewWriter(root.ErrOrStderr(), os.Environ())
 		opts.errHandler(w, makeStyles(mustColorscheme(opts.colorscheme)), err)
 		return err //nolint:wrapcheck
 	}
 	return nil
+}
+
+func buildVersion(opts settings) string {
+	commit := opts.commit
+	version := opts.version
+	if version == "" {
+		if info, ok := debug.ReadBuildInfo(); ok && info.Main.Sum != "" {
+			version = info.Main.Version
+			commit = getKey(info, "vcs.revision")
+		} else {
+			version = "unknown (built from source)"
+		}
+	}
+	if len(commit) >= shaLen {
+		version += " (" + commit[:shaLen] + ")"
+	}
+	return version
 }
 
 func getKey(info *debug.BuildInfo, key string) string {

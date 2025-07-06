@@ -28,11 +28,11 @@ github.com/carlmjohnson/versioninfo
 # github.com/cespare/xxhash/v2 v2.3.0
 ## explicit; go 1.11
 github.com/cespare/xxhash/v2
-# github.com/charmbracelet/colorprofile v0.3.0
+# github.com/charmbracelet/colorprofile v0.3.1
 ## explicit; go 1.23.0
 github.com/charmbracelet/colorprofile
-# github.com/charmbracelet/fang v0.2.0
-## explicit; go 1.23.0
+# github.com/charmbracelet/fang v0.3.0
+## explicit; go 1.24.0
 github.com/charmbracelet/fang
 # github.com/charmbracelet/lipgloss/v2 v2.0.0-beta1
 ## explicit; go 1.23.0
@@ -190,6 +190,9 @@ github.com/katzenpost/nyquist/internal/tuplehash
 github.com/katzenpost/nyquist/kem
 github.com/katzenpost/nyquist/pattern
 github.com/katzenpost/nyquist/seec
+# github.com/katzenpost/qrterminal v0.0.0-20250706194004-f95c77b7c73e
+## explicit; go 1.20
+github.com/katzenpost/qrterminal
 # github.com/katzenpost/sntrup4591761 v0.0.0-20231024131303-8755eb1986b8
 ## explicit; go 1.13
 github.com/katzenpost/sntrup4591761
@@ -410,8 +413,12 @@ golang.org/x/sync/errgroup
 # golang.org/x/sys v0.33.0
 ## explicit; go 1.23.0
 golang.org/x/sys/cpu
+golang.org/x/sys/plan9
 golang.org/x/sys/unix
 golang.org/x/sys/windows
+# golang.org/x/term v0.32.0
+## explicit; go 1.23.0
+golang.org/x/term
 # golang.org/x/text v0.26.0
 ## explicit; go 1.23.0
 golang.org/x/text/cases
@@ -488,3 +495,8 @@ gopkg.in/op/go-logging.v1
 # gopkg.in/yaml.v3 v3.0.1
 ## explicit
 gopkg.in/yaml.v3
+# rsc.io/qr v0.2.0
+## explicit
+rsc.io/qr
+rsc.io/qr/coding
+rsc.io/qr/gf256

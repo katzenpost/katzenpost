@@ -1,21 +1,23 @@
 module github.com/katzenpost/katzenpost
 
-go 1.23.0
+go 1.24.0
 
-toolchain go1.23.6
+toolchain go1.24.4
 
 require (
 	github.com/BurntSushi/toml v1.5.0
 	github.com/carlmjohnson/versioninfo v0.22.5
-	github.com/charmbracelet/colorprofile v0.3.0
-	github.com/charmbracelet/fang v0.2.0
+	github.com/charmbracelet/colorprofile v0.3.1
+	github.com/charmbracelet/fang v0.3.0
 	github.com/charmbracelet/lipgloss/v2 v2.0.0-beta1
 	github.com/fxamacker/cbor/v2 v2.8.0
 	github.com/grafana/pyroscope-go v1.2.2
 	github.com/jackc/pgx v3.6.2+incompatible
+	github.com/katzenpost/chacha20poly1305 v0.0.1
 	github.com/katzenpost/circl v1.3.9-0.20240222183521-1cd9a34e9a0c
 	github.com/katzenpost/hpqc v0.0.67
 	github.com/katzenpost/nyquist v0.0.10
+	github.com/katzenpost/qrterminal v0.0.0-20250706194004-f95c77b7c73e
 	github.com/linxGnu/grocksdb v1.10.1
 	github.com/prometheus/client_golang v1.22.0
 	github.com/quic-go/quic-go v0.53.0
@@ -55,7 +57,6 @@ require (
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/jackc/fake v0.0.0-20150926172116-812a484cc733 // indirect
 	github.com/katzenpost/chacha20 v0.0.1 // indirect
-	github.com/katzenpost/chacha20poly1305 v0.0.1 // indirect
 	github.com/katzenpost/sntrup4591761 v0.0.0-20231024131303-8755eb1986b8 // indirect
 	github.com/katzenpost/sphincsplus v0.0.2 // indirect
 	github.com/klauspost/compress v1.18.0 // indirect
@@ -89,7 +90,9 @@ require (
 	golang.org/x/mod v0.25.0 // indirect
 	golang.org/x/sync v0.15.0 // indirect
 	golang.org/x/sys v0.33.0 // indirect
+	golang.org/x/term v0.32.0 // indirect
 	golang.org/x/tools v0.34.0 // indirect
 	google.golang.org/protobuf v1.36.5 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
+	rsc.io/qr v0.2.0 // indirect
 )
