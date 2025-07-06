@@ -4,6 +4,7 @@
 package replica
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -50,6 +51,11 @@ type ProxyRequestManager struct {
 	sync.RWMutex
 	pendingRequests map[[32]byte]*ProxyRequest
 	log             *logging.Logger
+
+	// Cleanup goroutine management
+	ctx       context.Context
+	cancel    context.CancelFunc
+	cleanupWg sync.WaitGroup
 }
 
 type GenericListener interface {
@@ -123,10 +129,20 @@ func (s *Server) initDataDir() error {
 
 // NewProxyRequestManager creates a new proxy request manager
 func NewProxyRequestManager(log *logging.Logger) *ProxyRequestManager {
-	return &ProxyRequestManager{
+	ctx, cancel := context.WithCancel(context.Background())
+
+	p := &ProxyRequestManager{
 		pendingRequests: make(map[[32]byte]*ProxyRequest),
 		log:             log,
+		ctx:             ctx,
+		cancel:          cancel,
 	}
+
+	// Start the periodic cleanup goroutine
+	p.cleanupWg.Add(1)
+	go p.periodicCleanup()
+
+	return p
 }
 
 // RegisterProxyRequest registers a new proxy request and returns a response channel
@@ -145,9 +161,6 @@ func (p *ProxyRequestManager) RegisterProxyRequest(envelopeHash [32]byte, mkemPr
 	}
 
 	p.log.Debugf("Registered proxy request for envelope hash: %x", envelopeHash)
-
-	// Start a cleanup timer for this specific request (30 seconds)
-	go p.cleanupExpiredRequest(&envelopeHash, 30*time.Second)
 
 	return responseCh
 }
@@ -184,19 +197,43 @@ func (p *ProxyRequestManager) HandleReply(reply *commands.ReplicaMessageReply) b
 	return true
 }
 
-// cleanupExpiredRequest removes a specific proxy request after its timeout expires
-func (p *ProxyRequestManager) cleanupExpiredRequest(envelopeHash *[32]byte, timeout time.Duration) {
-	// Wait until the timeout expires
-	time.Sleep(timeout)
+// periodicCleanup runs a periodic cleanup of expired proxy requests
+func (p *ProxyRequestManager) periodicCleanup() {
+	defer p.cleanupWg.Done()
 
+	// Clean up every 10 seconds
+	ticker := time.NewTicker(10 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-p.ctx.Done():
+			p.log.Debug("Proxy request manager cleanup goroutine shutting down")
+			return
+		case <-ticker.C:
+			p.CleanupExpiredRequests(30 * time.Second)
+		}
+	}
+}
+
+// Shutdown gracefully shuts down the proxy request manager
+func (p *ProxyRequestManager) Shutdown() {
+	p.log.Debug("Shutting down proxy request manager")
+
+	// Cancel the context to stop the cleanup goroutine
+	p.cancel()
+
+	// Wait for the cleanup goroutine to finish
+	p.cleanupWg.Wait()
+
+	// Clean up any remaining requests
 	p.Lock()
 	defer p.Unlock()
 
-	// Check if the request is still there and clean it up
-	if request, exists := p.pendingRequests[*envelopeHash]; exists {
-		p.log.Warningf("Cleaning up expired proxy request for envelope hash: %x", envelopeHash)
+	for hash, request := range p.pendingRequests {
+		p.log.Debugf("Cleaning up remaining proxy request for envelope hash: %x", hash)
 		close(request.ResponseCh)
-		delete(p.pendingRequests, *envelopeHash)
+		delete(p.pendingRequests, hash)
 	}
 }
 
@@ -261,6 +298,11 @@ func (s *Server) halt() {
 	// Then halt the connector to stop outgoing connections
 	if s.connector != nil {
 		s.connector.Halt()
+	}
+
+	// Shutdown the proxy manager to clean up pending requests
+	if s.proxyManager != nil {
+		s.proxyManager.Shutdown()
 	}
 
 	// Now it's safe to close the database since no more requests are coming in
