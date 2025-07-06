@@ -571,6 +571,21 @@ func (d *Daemon) handleChannelReply(appid *[AppIDLength]byte,
 	return nil
 }
 
+func mapCourierErrorToThinClientError(courierErrorCode uint8) uint8 {
+	switch courierErrorCode {
+	case pigeonhole.EnvelopeErrorSuccess:
+		return thin.ThinClientSuccess
+	case pigeonhole.EnvelopeErrorInvalidEnvelope:
+		return thin.ThinClientErrorInvalidRequest
+	case pigeonhole.EnvelopeErrorCacheCorruption:
+		return thin.ThinClientErrorCourierCacheCorruption
+	case pigeonhole.EnvelopeErrorPropagationError:
+		return thin.ThinClientPropagationError
+	default:
+		return thin.ThinClientErrorInternalError
+	}
+}
+
 func (d *Daemon) handleCourierEnvelopeReply(appid *[AppIDLength]byte,
 	mesgID *[MessageIDLength]byte,
 	surbid *[sphinxConstants.SURBIDLength]byte,
@@ -607,7 +622,7 @@ func (d *Daemon) handleCourierEnvelopeReply(appid *[AppIDLength]byte,
 				MessageID: mesgID,
 				SURBID:    surbid,
 				Payload:   []byte{},
-				ErrorCode: thin.ThinClientErrorInternalError,
+				ErrorCode: mapCourierErrorToThinClientError(courierEnvelopeReply.ErrorCode),
 			},
 		})
 	case courierEnvelopeReply.Payload == nil:

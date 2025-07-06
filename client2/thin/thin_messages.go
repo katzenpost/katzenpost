@@ -64,6 +64,14 @@ const (
 	// ThinClientErrorDuplicateCapability indicates that the provided capability
 	// (read or write cap) has already been used and is considered a duplicate.
 	ThinClientErrorDuplicateCapability uint8 = 11
+
+	// ThinClientErrorCourierCacheCorruption indicates that the courier's cache
+	// has detected corruption.
+	ThinClientErrorCourierCacheCorruption uint8 = 12
+
+	// ThinClientPropagationError indicates that the request could not be
+	// propagated to replicas.
+	ThinClientPropagationError uint8 = 13
 )
 
 // ThinClientErrorToString converts a thin client error code to a human-readable string.
