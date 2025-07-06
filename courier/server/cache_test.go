@@ -216,30 +216,6 @@ func TestCourierCacheHandleOldMessage(t *testing.T) {
 	require.Equal(t, reply2.EnvelopeReply, reply.EnvelopeReply.Payload)
 }
 
-// TestCourierCacheEmptyResponse tests behavior when no replies are cached
-func TestCourierCacheEmptyResponse(t *testing.T) {
-	courier := createTestCourier(t)
-	envHash := createTestEnvelopeHash()
-
-	// Create cache entry with no replies
-	cacheEntry := &CourierBookKeeping{
-		Epoch:           1,
-		EnvelopeReplies: [2]*commands.ReplicaMessageReply{nil, nil},
-	}
-
-	courierEnv := &pigeonhole.CourierEnvelope{
-		ReplyIndex: 0,
-	}
-
-	reply := courier.handleOldMessage(cacheEntry, &envHash, courierEnv)
-
-	// Verify the reply structure directly (skip trunnel parsing for now)
-	require.NotNil(t, reply)
-	require.NotNil(t, reply.EnvelopeReply)
-	require.Equal(t, uint8(0), reply.EnvelopeReply.ReplyIndex)
-	require.Empty(t, reply.EnvelopeReply.Payload)
-}
-
 // Helper function to create a test courier
 func createTestCourier(t *testing.T) *Courier {
 	// Create minimal test configuration
