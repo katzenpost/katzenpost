@@ -6,6 +6,7 @@ package replica
 import (
 	"crypto/hmac"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/katzenpost/hpqc/kem/mkem"
@@ -109,7 +110,8 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 	c.log.Debug("Successfully decapsulated message, parsing command")
 	msg, err := pigeonhole.ParseReplicaInnerMessage(requestRaw)
 	if err != nil {
-		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, envelopeHash, []byte{}, 0, false)
+		c.log.Errorf("handleReplicaMessage failed to parse inner message: %s", err)
+		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInvalidPayload, envelopeHash, []byte{}, 0, false)
 	}
 	c.log.Debug("Successfully parsed command")
 
@@ -237,6 +239,12 @@ func (c *incomingConn) handleReplicaWrite(replicaWrite *pigeonhole.ReplicaWrite)
 	err = c.l.server.state.handleReplicaWrite(wireWrite)
 	if err != nil {
 		c.log.Errorf("handleReplicaWrite state update failed: %v", err)
+		// Check for specific error types
+		if strings.Contains(err.Error(), "storage full") {
+			return &pigeonhole.ReplicaWriteReply{
+				ErrorCode: pigeonhole.ReplicaErrorStorageFull,
+			}
+		}
 		return &pigeonhole.ReplicaWriteReply{
 			ErrorCode: pigeonhole.ReplicaErrorDatabaseError,
 		}
@@ -356,7 +364,7 @@ func (c *incomingConn) proxyReadRequest(replicaRead *pigeonhole.ReplicaRead, ori
 	reply, err := c.sendProxyRequestSync(replicaMessage, &idHash, targetShard, mkemPrivateKey, targetEnvelopeKey, scheme)
 	if err != nil {
 		c.log.Errorf("Failed to send proxy request to %s: %v", targetShard.Name, err)
-		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, originalEnvelopeHash, []byte{}, replicaID, false)
+		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorReplicationFailed, originalEnvelopeHash, []byte{}, replicaID, false)
 	}
 
 	// Process the reply and re-encrypt for the original client
