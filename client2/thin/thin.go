@@ -400,8 +400,8 @@ func (t *ThinClient) worker() {
 			}
 		case message.MessageReplyEvent != nil:
 			if message.MessageReplyEvent.Payload == nil {
-				if message.MessageReplyEvent.Err != "" {
-					t.log.Errorf("message.Payload is nil due to error: %s", message.MessageReplyEvent.Err)
+				if message.MessageReplyEvent.ErrorCode != ThinClientSuccess {
+					t.log.Errorf("message.Payload is nil due to error: %s", ThinClientErrorToString(message.MessageReplyEvent.ErrorCode))
 				} else {
 					t.log.Error("message.Payload is nil")
 				}
@@ -787,8 +787,8 @@ func (t *ThinClient) BlockingSendReliableMessage(ctx context.Context, messageID 
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	case reply := <-replyWaitChan:
-		if reply.Err != "" {
-			return nil, errors.New(reply.Err)
+		if reply.ErrorCode != ThinClientSuccess {
+			return nil, fmt.Errorf("message reply error: %s", ThinClientErrorToString(reply.ErrorCode))
 		}
 		return reply.Payload, nil
 	case <-t.HaltCh():
@@ -1266,9 +1266,9 @@ func (t *ThinClient) sendChannelQueryAndWaitForMessageID(ctx context.Context, ch
 				continue
 			}
 
-			t.log.Debugf("sendChannelQueryAndWaitForMessageID: Received matching MessageReplyEvent: Err=%s, PayloadLen=%d", v.Err, len(v.Payload))
-			if v.Err != "" {
-				return nil, fmt.Errorf("channel query failed: %s", v.Err)
+			t.log.Debugf("sendChannelQueryAndWaitForMessageID: Received matching MessageReplyEvent: ErrorCode=%d, PayloadLen=%d", v.ErrorCode, len(v.Payload))
+			if v.ErrorCode != ThinClientSuccess {
+				return nil, fmt.Errorf("channel query failed: %s", ThinClientErrorToString(v.ErrorCode))
 			}
 			// Handle empty payload based on operation type
 			if len(v.Payload) == 0 {
