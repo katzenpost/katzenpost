@@ -29,6 +29,37 @@ func cleanupAttempt(t *testing.T, cancel context.CancelFunc, client *thin.ThinCl
 	client.StopEventSink(eventSink)
 }
 
+func TestChannelClose(t *testing.T) {
+	aliceThinClient := setupThinClient(t)
+	defer aliceThinClient.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
+	channelID, _, writeCap, messageBoxIndex, err := aliceThinClient.CreateWriteChannel(ctx, nil, nil)
+	require.NoError(t, err)
+
+	err = aliceThinClient.CloseChannel(ctx, channelID)
+	require.NoError(t, err)
+
+	channelID, _, _, _, err = aliceThinClient.CreateWriteChannel(ctx, writeCap, messageBoxIndex)
+	require.NoError(t, err)
+
+	_, _, _, _, err = aliceThinClient.CreateWriteChannel(ctx, writeCap, messageBoxIndex)
+	require.Error(t, err)
+
+	err = aliceThinClient.CloseChannel(ctx, channelID)
+	require.NoError(t, err)
+
+	channelID, _, _, _, err = aliceThinClient.CreateWriteChannel(ctx, writeCap, messageBoxIndex)
+	require.NoError(t, err)
+
+	err = aliceThinClient.CloseChannel(ctx, channelID)
+	require.NoError(t, err)
+
+	t.Log("done.")
+}
+
 func TestDockerCourierServiceNewThinclientAPI(t *testing.T) {
 	t.Log("TESTING COURIER SERVICE - New thin client API")
 	// NOTE: The new API automatically extracts messages from padded payloads in the daemon,
