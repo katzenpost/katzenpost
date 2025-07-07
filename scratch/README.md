@@ -27,7 +27,7 @@ stopping a local mixnet using the make commands.
 Once you have a mixnet running, e.g.:
 
 ```bash
-git clone https://github.com/katzenpost/katzenpost cd katzenpost/docker && make start wait
+git clone https://github.com/katzenpost/katzenpost && cd katzenpost/docker && make start wait
 ```
 
 You can then run the end-to-end tests like so:
