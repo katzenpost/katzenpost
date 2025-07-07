@@ -25,8 +25,8 @@ const (
 
 // Courier envelope operation error codes
 const (
-	EnvelopeErrorSuccess         uint8 = 0 // Operation completed successfully
-	EnvelopeErrorInvalidEnvelope uint8 = 1 // Invalid envelope format
-	EnvelopeErrorCacheCorruption uint8 = 2 // Cache data corruption detected
-	EnvelopeErrorInternalError   uint8 = 3 // Internal courier error
+	EnvelopeErrorSuccess          uint8 = 0 // Operation completed successfully
+	EnvelopeErrorInvalidEnvelope  uint8 = 1 // Invalid envelope format
+	EnvelopeErrorCacheCorruption  uint8 = 2 // Cache data corruption detected
+	EnvelopeErrorPropagationError uint8 = 3 // Error propagating request to replicas
 )
