@@ -7,11 +7,7 @@ docker=$(shell if which podman|grep -q .; then echo podman; else echo docker; fi
 distro=alpine
 image=katzenpost-$(distro)_base
 cache_dir=$(shell readlink -f ../docker)/cache
-<<<<<<<< HEAD:scratch/Makefile
 docker_args=--user ${docker_user} -v $(shell readlink -f ..):/go/katzenpost --network=host --rm -v $(cache_dir)/go:/go/ -e GORACE=history_size=7 -e GOCACHE=/go/cache -w /go/katzenpost/scratch/client
-========
-docker_args=--user ${docker_user} -v $(shell readlink -f ..):/go/katzenpost --network=host --rm -v $(cache_dir)/go:/go/ -e GORACE=history_size=7 -e GOCACHE=/go/cache -w /go/katzenpost/map/client
->>>>>>>> origin/main:map/Makefile
 
 test:
 	go test $(testargs) -ldflags ${ldflags} -race -v -timeout 30m -failfast ./...
