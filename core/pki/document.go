@@ -281,6 +281,26 @@ func (d *Document) GetServiceNodeByKeyHash(keyhash *[32]byte) (*MixDescriptor, e
 	return nil, fmt.Errorf("pki: service not found")
 }
 
+func (d *Document) GetReplicaIDByIdentityKey(idkey sign.PublicKey) (uint8, error) {
+	keyblob, err := idkey.MarshalBinary()
+	if err != nil {
+		return 0, err
+	}
+	for i := 0; i < len(d.StorageReplicas); i++ {
+		if hmac.Equal(keyblob, d.StorageReplicas[i].IdentityKey) {
+			return uint8(i), nil
+		}
+	}
+	return 0, errors.New("replica not found")
+}
+
+func (d *Document) GetReplicaNodeByReplicaID(replicaID uint8) (*ReplicaDescriptor, error) {
+	if replicaID > uint8(len(d.StorageReplicas)-1) {
+		panic("replicaID out of bounds")
+	}
+	return d.StorageReplicas[replicaID], nil
+}
+
 func (d *Document) GetReplicaNodeByKeyHash(keyhash *[32]byte) (*ReplicaDescriptor, error) {
 	for _, v := range d.StorageReplicas {
 		if v.IdentityKey == nil {
@@ -628,9 +648,12 @@ func IsDocumentWellFormed(d *Document, verifiers []sign.PublicKey) error {
 // MarshalBinary implements encoding.BinaryMarshaler interface
 // and wraps a Document with a cert.Certificate
 func (d *Document) MarshalCertificate() ([]byte, error) {
-	// Serialize Document without calling this method
-	d.Version = DocumentVersion
-	payload, err := ccbor.Marshal((*document)(d))
+	// Create a copy to avoid modifying the original document (prevents data races)
+	docCopy := *d
+	docCopy.Version = DocumentVersion
+
+	// Serialize Document copy without calling this method
+	payload, err := ccbor.Marshal((*document)(&docCopy))
 	if err != nil {
 		return nil, err
 	}

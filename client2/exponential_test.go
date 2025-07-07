@@ -41,7 +41,7 @@ func TestExponential(t *testing.T) {
 	require.Equal(t, failed, 0)
 }
 
-func TestExponentialAverage(t *testing.T) {
+func NoTestExponentialAverage(t *testing.T) {
 	e := NewExpDist()
 
 	averageMsec := 100

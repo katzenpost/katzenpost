@@ -8,12 +8,14 @@ import (
 	"encoding/binary"
 	"errors"
 
+	"github.com/katzenpost/hpqc/kem/mkem"
 	"github.com/katzenpost/hpqc/nike"
 	"github.com/katzenpost/hpqc/sign"
 
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/utils"
+	pgeo "github.com/katzenpost/katzenpost/pigeonhole/geo"
 )
 
 var (
@@ -83,7 +85,8 @@ func NewMixnetCommands(geo *geo.Geometry) *Commands {
 	return c
 }
 
-// NewStorageReplicaCommands creates a Commands instance suitale to be used by storage replica nodes.
+// NewStorageReplicaCommands creates a Commands instance suitale to be used by storage replica nodes
+// and couriers. This ensures all messages are padded to the same size.
 func NewStorageReplicaCommands(geo *geo.Geometry, scheme nike.Scheme) *Commands {
 	c := &Commands{
 		geo:                geo,
@@ -91,34 +94,47 @@ func NewStorageReplicaCommands(geo *geo.Geometry, scheme nike.Scheme) *Commands 
 		replicaNikeScheme:  scheme,
 	}
 	payload := make([]byte, geo.PacketLength) // XXX TODO(David): Pick a more precise size.
-	c.serverToClientCommands = []Command{
+
+	// Create pigeonhole geometry from sphinx geometry for proper length calculations
+	pigeonholeGeo, err := pgeo.NewGeometryFromSphinx(geo, scheme)
+	if err != nil {
+		panic(err) // This should not happen in normal operation
+	}
+
+	c.clientToServerCommands = []Command{
 		&ReplicaMessage{
-			Geo:    geo,
-			Cmds:   c,
-			Scheme: scheme,
+			PigeonholeGeometry: pigeonholeGeo,
+			Cmds:               c,
+			Scheme:             scheme,
 
 			SenderEPubKey: make([]byte, HybridKeySize(scheme)),
-			DEK:           &[32]byte{},
+			DEK:           &[mkem.DEKSize]byte{},
 			Ciphertext:    payload,
 		},
 		&ReplicaMessageReply{
-			Cmds: c,
-		},
-		&ReplicaRead{
-			Cmds: c,
-		},
-		&ReplicaReadReply{
-			Cmds: c,
-			Geo:  geo,
+			Cmds:               c,
+			PigeonholeGeometry: pigeonholeGeo,
 		},
 		&ReplicaWrite{
-			Cmds: c,
+			Cmds:               c,
+			PigeonholeGeometry: pigeonholeGeo,
 		},
 		&ReplicaWriteReply{
 			Cmds: c,
 		},
+		&ReplicaDecoy{
+			Cmds: c,
+		},
+		&NoOp{
+			Cmds: c,
+		},
+		&Disconnect{
+			Cmds: c,
+		},
 	}
-	c.clientToServerCommands = c.serverToClientCommands
+
+	c.serverToClientCommands = c.clientToServerCommands
+
 	c.shouldPad = true
 	c.MaxMessageLenClientToServer = c.calcMaxMessageLenClientToServer()
 	c.MaxMessageLenServerToClient = c.calcMaxMessageLenServerToClient()
@@ -141,8 +157,8 @@ func NewPKICommands(pkiSignatureScheme sign.Scheme) *Commands {
 		// These larger commands contain the entire PKI document and can be
 		// very large depending on the ciphersuites, the Sphinx KEM/NIKE and PKI Signature scheme.
 		// Increase the size if your PKI doc doesn't fit.
-		MaxMessageLenClientToServer: 50000,
-		MaxMessageLenServerToClient: 50000,
+		MaxMessageLenClientToServer: 50000000,
+		MaxMessageLenServerToClient: 50000000,
 	}
 	return c
 }
@@ -344,16 +360,16 @@ func (c *Commands) FromBytes(b []byte) (Command, error) {
 		return postReplicaDescriptorFromBytes(b)
 	case postReplicaDescriptorStatus:
 		return postReplicaDescriptorStatusFromBytes(b)
-	case replicaRead:
-		return replicaReadFromBytes(b, c)
-	case replicaReadReply:
-		return replicaReadReplyFromBytes(b, c)
 	case replicaWrite:
 		return replicaWriteFromBytes(b, c)
 	case replicaWriteReply:
 		return replicaWriteReplyFromBytes(b, c)
 	case replicaMessage:
 		return replicaMessageFromBytes(b, c)
+	case replicaMessageReply:
+		return replicaMessageReplyFromBytes(b, c)
+	case replicaDecoy:
+		return replicaDecoyFromBytes(b, c)
 	case sendRetrievePacket:
 		return sendRetrievePacketFromBytes(b, c)
 	case sendRetrievePacketReply:

@@ -11,9 +11,9 @@ import (
 	"gopkg.in/op/go-logging.v1"
 
 	"github.com/katzenpost/katzenpost/core/epochtime"
+	"github.com/katzenpost/katzenpost/core/utils"
 	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/katzenpost/katzenpost/server/internal/constants"
-	"github.com/katzenpost/katzenpost/server/internal/debug"
 	"github.com/katzenpost/katzenpost/server/internal/glue"
 	"github.com/katzenpost/katzenpost/server/internal/instrument"
 	"github.com/katzenpost/katzenpost/server/internal/packet"
@@ -106,7 +106,7 @@ func (sch *scheduler) worker() {
 					toEnqueue = append(toEnqueue, pkt)
 					instrument.MixQueueSize(uint64(len(toEnqueue)))
 				} else {
-					sID := debug.NodeIDToPrintString(&pkt.NextNodeHop.ID)
+					sID := utils.NodeIDToPrintString(&pkt.NextNodeHop.ID)
 					sch.log.Debugf("Dropping packet: %v (Next hop is invalid: %v)", pkt.ID, sID)
 					instrument.PacketsDropped()
 					instrument.MixPacketsDropped()

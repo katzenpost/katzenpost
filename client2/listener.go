@@ -7,13 +7,14 @@ import (
 	"errors"
 	"net"
 	"sync"
+	"time"
 
 	"github.com/fxamacker/cbor/v2"
+	"gopkg.in/op/go-logging.v1"
 
 	"github.com/katzenpost/katzenpost/core/log"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/worker"
-	"gopkg.in/op/go-logging.v1"
 )
 
 type listener struct {
@@ -37,15 +38,42 @@ type listener struct {
 
 	updatePKIDocCh chan *cpki.Document
 	updateStatusCh chan error
+
+	// Callback function to clean up channels when a connection closes
+	onAppDisconnectFn func(*[AppIDLength]byte)
 }
 
 func (l *listener) Shutdown() {
+	shutdownStart := time.Now()
+	l.log.Debug("Starting listener shutdown")
+
 	// Close the listener, wait for worker() to return.
 	l.listener.Close()
-	// stop listener, and stop Accepting connections
-	l.Halt()
-	// stop the decoy Sender
-	l.decoySender.Halt()
+
+	// Parallelize listener and decoy sender shutdown for faster cleanup
+	var shutdownWg sync.WaitGroup
+	shutdownWg.Add(2)
+
+	go func() {
+		defer shutdownWg.Done()
+		start := time.Now()
+		l.log.Debug("Stopping listener worker")
+		// stop listener, and stop Accepting connections
+		l.Halt()
+		l.log.Debugf("Listener worker stopped in %v", time.Since(start))
+	}()
+
+	go func() {
+		defer shutdownWg.Done()
+		start := time.Now()
+		l.log.Debug("Stopping decoy sender")
+		// stop the decoy Sender
+		l.decoySender.Halt()
+		l.log.Debugf("Decoy sender stopped in %v", time.Since(start))
+	}()
+
+	shutdownWg.Wait()
+	l.log.Debugf("Listener shutdown complete in %v", time.Since(shutdownStart))
 }
 
 func (l *listener) updateFromPKIDoc(doc *cpki.Document) {
@@ -68,7 +96,6 @@ func (l *listener) updatePKIDocWorker() {
 }
 
 func (l *listener) worker() {
-	l.log.Debug("Listener worker begin")
 	addr := l.listener.Addr()
 	l.log.Infof("Listening on: %v", addr)
 	defer func() {
@@ -96,7 +123,6 @@ func (l *listener) worker() {
 }
 
 func (l *listener) onNewConn(conn net.Conn) {
-	l.log.Debug("onNewConn begin")
 	// make sure we can serve a document before anything else
 	docBlob, doc := l.client.CurrentDocument()
 	if doc == nil {
@@ -114,22 +140,20 @@ func (l *listener) onNewConn(conn net.Conn) {
 	l.conns[*c.appID] = c
 	l.connsLock.Unlock()
 
-	l.log.Debug("get connection status")
 	status := l.getConnectionStatus()
-	l.log.Debug("send connection status")
 	c.updateConnectionStatus(status)
-	l.log.Debug("getting current pki doc")
-
-	l.log.Debug("send pki doc")
 	c.sendPKIDoc(docBlob)
-
-	l.log.Debug("onNewConn end")
 }
 
 func (l *listener) onClosedConn(c *incomingConn) {
 	l.connsLock.Lock()
 	delete(l.conns, *c.appID)
 	l.connsLock.Unlock()
+
+	// Clean up all channels associated with this App ID
+	if l.onAppDisconnectFn != nil {
+		l.onAppDisconnectFn(c.appID)
+	}
 }
 
 func (l *listener) getConnectionStatus() error {
@@ -209,16 +233,17 @@ func (l *listener) getConnection(appID *[AppIDLength]byte) *incomingConn {
 }
 
 // New creates a new listener.
-func NewListener(client *Client, rates *Rates, egressCh chan *Request, logBackend *log.Backend) (*listener, error) {
+func NewListener(client *Client, rates *Rates, egressCh chan *Request, logBackend *log.Backend, onAppDisconnectFn func(*[AppIDLength]byte)) (*listener, error) {
 	ingressSize := 200
 	l := &listener{
-		client:         client,
-		logBackend:     logBackend,
-		conns:          make(map[[AppIDLength]byte]*incomingConn),
-		connsLock:      new(sync.RWMutex),
-		ingressCh:      make(chan *Request, ingressSize),
-		updatePKIDocCh: make(chan *cpki.Document, 2),
-		updateStatusCh: make(chan error, 2),
+		client:            client,
+		logBackend:        logBackend,
+		conns:             make(map[[AppIDLength]byte]*incomingConn),
+		connsLock:         new(sync.RWMutex),
+		ingressCh:         make(chan *Request, ingressSize),
+		updatePKIDocCh:    make(chan *cpki.Document, 2),
+		updateStatusCh:    make(chan error, 2),
+		onAppDisconnectFn: onAppDisconnectFn,
 	}
 
 	l.log = l.logBackend.GetLogger("client2/listener")

@@ -31,18 +31,11 @@ import (
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
+	pigeonholeGeo "github.com/katzenpost/katzenpost/pigeonhole/geo"
 )
 
 // document contains fields from Document but not the encoding.BinaryMarshaler methods
 type document cpki.Document
-
-type mixKeys struct {
-	idpubkey  []sign.PublicKey
-	idprivkey []sign.PrivateKey
-
-	pubkeys  []nike.PublicKey
-	privkeys []nike.PrivateKey
-}
 
 func generateDescriptor(t *testing.T, pkiScheme sign.Scheme, linkScheme kem.Scheme, sphinxNikeScheme nike.Scheme, sphinxKemScheme kem.Scheme) *cpki.MixDescriptor {
 	idkey := make([]byte, pkiScheme.PublicKeySize())
@@ -53,27 +46,10 @@ func generateDescriptor(t *testing.T, pkiScheme sign.Scheme, linkScheme kem.Sche
 	_, err = rand.Reader.Read(linkkey)
 	require.NoError(t, err)
 
-	var mixkey0 []byte
-	var mixkey1 []byte
-
-	if sphinxNikeScheme == nil {
-		mixkey0 = make([]byte, sphinxKemScheme.PublicKeySize())
-		mixkey1 = make([]byte, sphinxKemScheme.PublicKeySize())
-	} else {
-		mixkey0 = make([]byte, sphinxNikeScheme.PublicKeySize())
-		mixkey1 = make([]byte, sphinxNikeScheme.PublicKeySize())
-	}
-
-	_, err = rand.Reader.Read(mixkey0)
-	require.NoError(t, err)
-	_, err = rand.Reader.Read(mixkey1)
-	require.NoError(t, err)
-
 	return &cpki.MixDescriptor{
 		Name:        "fake mix node name",
 		IdentityKey: idkey,
 		LinkKey:     linkkey,
-		MixKeys:     map[uint64][]byte{0: mixkey0, 1: mixkey1},
 		Addresses:   map[string][]string{"tcp": []string{"tcp://127.0.0.1:12345"}},
 	}
 }
@@ -179,12 +155,17 @@ func TestConnection(t *testing.T) {
 	numMixNodes := 3
 	numStorageReplicas := 0
 
+	// Compute pigeonhole geometry from sphinx geometry for test
+	pigeonholeGeometry, err := pigeonholeGeo.NewGeometryFromSphinx(g, sphinxNikeScheme)
+	require.NoError(t, err)
+
 	clientCfg := &config.Config{
 		ListenNetwork:      "tcp",
 		ListenAddress:      "127.0.0.1:63445",
 		PKISignatureScheme: "ed25519",
 		WireKEMScheme:      "x25519",
 		SphinxGeometry:     g,
+		PigeonholeGeometry: pigeonholeGeometry,
 		Logging: &config.Logging{
 			Disable: false,
 			File:    "",
@@ -334,20 +315,30 @@ func TestConnection(t *testing.T) {
 
 	}()
 
+	// Initialize callbacks for test - all callbacks are intentionally empty as this test
+	// focuses on connection establishment and document retrieval, not event handling
 	clientCfg.Callbacks = &config.Callbacks{}
+	// Empty callback for test - connection events are not relevant for this test
 	clientCfg.Callbacks.OnConnFn = func(err error) {
-		return
+		// Intentionally empty - connection events not tested here
 	}
+	// Empty callback for test - document processing is handled elsewhere in test
 	clientCfg.Callbacks.OnDocumentFn = func(*cpki.Document) {
-		return
+		// Intentionally empty - document processing tested separately
 	}
+	// Empty callback for test - empty message events are not tested here
 	clientCfg.Callbacks.OnEmptyFn = func() error {
+		// Intentionally empty - empty message events not relevant for connection test
 		return nil
 	}
+	// Empty callback for test - message handling is not the focus of this test
 	clientCfg.Callbacks.OnMessageFn = func([]byte) error {
+		// Intentionally empty - message handling not tested in this connection test
 		return nil
 	}
+	// Empty callback for test - ACK handling is not tested in this connection test
 	clientCfg.Callbacks.OnACKFn = func(*[constants.SURBIDLength]byte, []byte) error {
+		// Intentionally empty - ACK handling not relevant for connection establishment test
 		return nil
 	}
 

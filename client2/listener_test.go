@@ -18,6 +18,9 @@ func TestListenerBasic(t *testing.T) {
 	cfg, err := config.LoadFile("testdata/client.toml")
 	require.NoError(t, err)
 
+	// Use dynamic port to avoid conflicts
+	cfg.ListenAddress = "127.0.0.1:0"
+
 	client := &Client{
 		cfg: cfg,
 	}
@@ -31,7 +34,7 @@ func TestListenerBasic(t *testing.T) {
 
 	logBackend, err := log.New("", "debug", false)
 	require.NoError(t, err)
-	listener, err := NewListener(client, rates, egressCh, logBackend)
+	listener, err := NewListener(client, rates, egressCh, logBackend, nil)
 	require.NoError(t, err)
 
 	listener.connectionStatus = errors.New("fail")

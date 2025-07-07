@@ -1,0 +1,502 @@
+# codeberg.org/vula/highctidh v1.0.2024092800
+## explicit; go 1.19
+codeberg.org/vula/highctidh/src/ctidh1024
+codeberg.org/vula/highctidh/src/ctidh2048
+codeberg.org/vula/highctidh/src/ctidh511
+codeberg.org/vula/highctidh/src/ctidh512
+# filippo.io/edwards25519 v1.0.0
+## explicit; go 1.17
+filippo.io/edwards25519
+filippo.io/edwards25519/field
+# filippo.io/mlkem768 v0.0.0-20240221181710-5ce91625fdc1
+## explicit; go 1.21.3
+filippo.io/mlkem768
+filippo.io/mlkem768/xwing
+# github.com/BurntSushi/toml v1.5.0
+## explicit; go 1.18
+github.com/BurntSushi/toml
+github.com/BurntSushi/toml/internal
+# github.com/agl/gcmsiv v0.0.0-20190418185415-e8dcd2f151dc
+## explicit
+github.com/agl/gcmsiv
+# github.com/beorn7/perks v1.0.1
+## explicit; go 1.11
+github.com/beorn7/perks/quantile
+# github.com/carlmjohnson/versioninfo v0.22.5
+## explicit; go 1.16
+github.com/carlmjohnson/versioninfo
+# github.com/cespare/xxhash/v2 v2.3.0
+## explicit; go 1.11
+github.com/cespare/xxhash/v2
+# github.com/charmbracelet/colorprofile v0.3.1
+## explicit; go 1.23.0
+github.com/charmbracelet/colorprofile
+# github.com/charmbracelet/fang v0.3.0
+## explicit; go 1.24.0
+github.com/charmbracelet/fang
+# github.com/charmbracelet/lipgloss/v2 v2.0.0-beta1
+## explicit; go 1.23.0
+github.com/charmbracelet/lipgloss/v2
+# github.com/charmbracelet/x/ansi v0.8.0
+## explicit; go 1.18
+github.com/charmbracelet/x/ansi
+github.com/charmbracelet/x/ansi/kitty
+github.com/charmbracelet/x/ansi/parser
+# github.com/charmbracelet/x/cellbuf v0.0.13
+## explicit; go 1.18
+github.com/charmbracelet/x/cellbuf
+# github.com/charmbracelet/x/exp/charmtone v0.0.0-20250603201427-c31516f43444
+## explicit; go 1.23.0
+github.com/charmbracelet/x/exp/charmtone
+# github.com/charmbracelet/x/term v0.2.1
+## explicit; go 1.18
+github.com/charmbracelet/x/term
+# github.com/cockroachdb/apd v1.1.0
+## explicit
+# github.com/davecgh/go-spew v1.1.1
+## explicit
+github.com/davecgh/go-spew/spew
+# github.com/dchest/siphash v1.2.3
+## explicit; go 1.16
+github.com/dchest/siphash
+# github.com/fxamacker/cbor/v2 v2.8.0
+## explicit; go 1.20
+github.com/fxamacker/cbor/v2
+# github.com/go-faster/xor v1.0.0
+## explicit; go 1.15
+github.com/go-faster/xor
+# github.com/gofrs/uuid v4.4.0+incompatible
+## explicit
+# github.com/grafana/pyroscope-go v1.2.2
+## explicit; go 1.17
+github.com/grafana/pyroscope-go
+github.com/grafana/pyroscope-go/internal/flameql
+github.com/grafana/pyroscope-go/internal/pprof
+github.com/grafana/pyroscope-go/internal/sortedmap
+github.com/grafana/pyroscope-go/upstream
+github.com/grafana/pyroscope-go/upstream/remote
+# github.com/grafana/pyroscope-go/godeltaprof v0.1.8
+## explicit; go 1.18
+github.com/grafana/pyroscope-go/godeltaprof
+github.com/grafana/pyroscope-go/godeltaprof/internal/pprof
+# github.com/henrydcase/nobs v0.0.0-20230313231516-25b66236df73
+## explicit; go 1.12
+github.com/henrydcase/nobs/dh/csidh
+# github.com/inconshreveable/mousetrap v1.1.0
+## explicit; go 1.18
+github.com/inconshreveable/mousetrap
+# github.com/jackc/fake v0.0.0-20150926172116-812a484cc733
+## explicit
+# github.com/jackc/pgx v3.6.2+incompatible
+## explicit
+github.com/jackc/pgx
+github.com/jackc/pgx/chunkreader
+github.com/jackc/pgx/internal/sanitize
+github.com/jackc/pgx/pgio
+github.com/jackc/pgx/pgproto3
+github.com/jackc/pgx/pgtype
+# github.com/katzenpost/chacha20 v0.0.1
+## explicit; go 1.23.0
+github.com/katzenpost/chacha20
+github.com/katzenpost/chacha20/internal/api
+github.com/katzenpost/chacha20/internal/hardware
+github.com/katzenpost/chacha20/internal/ref
+# github.com/katzenpost/chacha20poly1305 v0.0.1
+## explicit; go 1.23.0
+github.com/katzenpost/chacha20poly1305
+# github.com/katzenpost/circl v1.3.9-0.20240222183521-1cd9a34e9a0c
+## explicit; go 1.19
+github.com/katzenpost/circl/dh/x448
+github.com/katzenpost/circl/ecc/goldilocks
+github.com/katzenpost/circl/internal/conv
+github.com/katzenpost/circl/internal/nist
+github.com/katzenpost/circl/internal/sha3
+github.com/katzenpost/circl/kem/frodo/frodo640shake
+github.com/katzenpost/circl/kem/kyber/kyber768
+github.com/katzenpost/circl/kem/mceliece/internal
+github.com/katzenpost/circl/kem/mceliece/mceliece348864
+github.com/katzenpost/circl/kem/mceliece/mceliece348864f
+github.com/katzenpost/circl/kem/mceliece/mceliece460896
+github.com/katzenpost/circl/kem/mceliece/mceliece460896f
+github.com/katzenpost/circl/kem/mceliece/mceliece6688128
+github.com/katzenpost/circl/kem/mceliece/mceliece6688128f
+github.com/katzenpost/circl/kem/mceliece/mceliece6960119
+github.com/katzenpost/circl/kem/mceliece/mceliece6960119f
+github.com/katzenpost/circl/kem/mceliece/mceliece8192128
+github.com/katzenpost/circl/kem/mceliece/mceliece8192128f
+github.com/katzenpost/circl/math
+github.com/katzenpost/circl/math/fp25519
+github.com/katzenpost/circl/math/fp448
+github.com/katzenpost/circl/math/gf2e12
+github.com/katzenpost/circl/math/gf2e13
+github.com/katzenpost/circl/math/mlsbset
+github.com/katzenpost/circl/pke/kyber/internal/common
+github.com/katzenpost/circl/pke/kyber/internal/common/params
+github.com/katzenpost/circl/pke/kyber/kyber768
+github.com/katzenpost/circl/pke/kyber/kyber768/internal
+github.com/katzenpost/circl/sign
+github.com/katzenpost/circl/sign/dilithium/internal/common
+github.com/katzenpost/circl/sign/dilithium/internal/common/params
+github.com/katzenpost/circl/sign/dilithium/mode2
+github.com/katzenpost/circl/sign/dilithium/mode2/internal
+github.com/katzenpost/circl/sign/dilithium/mode3
+github.com/katzenpost/circl/sign/dilithium/mode3/internal
+github.com/katzenpost/circl/sign/ed25519
+github.com/katzenpost/circl/sign/ed448
+github.com/katzenpost/circl/sign/eddilithium2
+github.com/katzenpost/circl/sign/eddilithium3
+github.com/katzenpost/circl/simd/keccakf1600
+# github.com/katzenpost/hpqc v0.0.67
+## explicit; go 1.23.0
+github.com/katzenpost/hpqc/bacap
+github.com/katzenpost/hpqc/hash
+github.com/katzenpost/hpqc/kem
+github.com/katzenpost/hpqc/kem/adapter
+github.com/katzenpost/hpqc/kem/combiner
+github.com/katzenpost/hpqc/kem/hybrid
+github.com/katzenpost/hpqc/kem/mkem
+github.com/katzenpost/hpqc/kem/mlkem768
+github.com/katzenpost/hpqc/kem/pem
+github.com/katzenpost/hpqc/kem/schemes
+github.com/katzenpost/hpqc/kem/sntrup
+github.com/katzenpost/hpqc/kem/util
+github.com/katzenpost/hpqc/kem/xwing
+github.com/katzenpost/hpqc/nike
+github.com/katzenpost/hpqc/nike/csidh
+github.com/katzenpost/hpqc/nike/ctidh/ctidh1024
+github.com/katzenpost/hpqc/nike/ctidh/ctidh2048
+github.com/katzenpost/hpqc/nike/ctidh/ctidh511
+github.com/katzenpost/hpqc/nike/ctidh/ctidh512
+github.com/katzenpost/hpqc/nike/hybrid
+github.com/katzenpost/hpqc/nike/pem
+github.com/katzenpost/hpqc/nike/schemes
+github.com/katzenpost/hpqc/nike/x25519
+github.com/katzenpost/hpqc/nike/x448
+github.com/katzenpost/hpqc/rand
+github.com/katzenpost/hpqc/sign
+github.com/katzenpost/hpqc/sign/ed25519
+github.com/katzenpost/hpqc/sign/hybrid
+github.com/katzenpost/hpqc/sign/pem
+github.com/katzenpost/hpqc/sign/schemes
+github.com/katzenpost/hpqc/sign/sphincsplus
+github.com/katzenpost/hpqc/util
+# github.com/katzenpost/nyquist v0.0.10
+## explicit; go 1.21.3
+github.com/katzenpost/nyquist
+github.com/katzenpost/nyquist/cipher
+github.com/katzenpost/nyquist/dh
+github.com/katzenpost/nyquist/hash
+github.com/katzenpost/nyquist/internal/tuplehash
+github.com/katzenpost/nyquist/kem
+github.com/katzenpost/nyquist/pattern
+github.com/katzenpost/nyquist/seec
+# github.com/katzenpost/qrterminal v0.0.0-20250706194004-f95c77b7c73e
+## explicit; go 1.20
+github.com/katzenpost/qrterminal
+# github.com/katzenpost/sntrup4591761 v0.0.0-20231024131303-8755eb1986b8
+## explicit; go 1.13
+github.com/katzenpost/sntrup4591761
+github.com/katzenpost/sntrup4591761/r3
+github.com/katzenpost/sntrup4591761/r3/mod3
+github.com/katzenpost/sntrup4591761/r3/vector
+github.com/katzenpost/sntrup4591761/rq
+github.com/katzenpost/sntrup4591761/rq/modq
+github.com/katzenpost/sntrup4591761/rq/vector
+github.com/katzenpost/sntrup4591761/zx
+# github.com/katzenpost/sphincsplus v0.0.2
+## explicit; go 1.22.0
+github.com/katzenpost/sphincsplus/ref
+github.com/katzenpost/sphincsplus/ref/params
+# github.com/klauspost/compress v1.18.0
+## explicit; go 1.22
+github.com/klauspost/compress/flate
+github.com/klauspost/compress/gzip
+github.com/klauspost/compress/internal/le
+# github.com/kr/text v0.2.0
+## explicit
+# github.com/lib/pq v1.10.9
+## explicit; go 1.13
+# github.com/linxGnu/grocksdb v1.10.1
+## explicit; go 1.17
+github.com/linxGnu/grocksdb
+# github.com/lucasb-eyer/go-colorful v1.2.0
+## explicit; go 1.12
+github.com/lucasb-eyer/go-colorful
+# github.com/mattn/go-pointer v0.0.1
+## explicit
+github.com/mattn/go-pointer
+# github.com/mattn/go-runewidth v0.0.16
+## explicit; go 1.9
+github.com/mattn/go-runewidth
+# github.com/muesli/cancelreader v0.2.2
+## explicit; go 1.17
+github.com/muesli/cancelreader
+# github.com/muesli/mango v0.1.0
+## explicit; go 1.17
+github.com/muesli/mango
+# github.com/muesli/mango-cobra v1.2.0
+## explicit; go 1.17
+github.com/muesli/mango-cobra
+# github.com/muesli/mango-pflag v0.1.0
+## explicit; go 1.17
+github.com/muesli/mango-pflag
+# github.com/muesli/roff v0.1.0
+## explicit; go 1.17
+github.com/muesli/roff
+# github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822
+## explicit
+github.com/munnerz/goautoneg
+# github.com/oasisprotocol/curve25519-voi v0.0.0-20230904125328-1f23a7beb09a
+## explicit; go 1.17
+github.com/oasisprotocol/curve25519-voi/curve
+github.com/oasisprotocol/curve25519-voi/curve/scalar
+github.com/oasisprotocol/curve25519-voi/internal/disalloweq
+github.com/oasisprotocol/curve25519-voi/internal/field
+github.com/oasisprotocol/curve25519-voi/internal/lattice
+github.com/oasisprotocol/curve25519-voi/internal/scalar128
+github.com/oasisprotocol/curve25519-voi/internal/subtle
+github.com/oasisprotocol/curve25519-voi/internal/toolchain
+github.com/oasisprotocol/curve25519-voi/primitives/ed25519
+github.com/oasisprotocol/curve25519-voi/primitives/x25519
+# github.com/oasisprotocol/deoxysii v0.0.0-20220228165953-2091330c22b7
+## explicit; go 1.16
+github.com/oasisprotocol/deoxysii
+github.com/oasisprotocol/deoxysii/internal/api
+github.com/oasisprotocol/deoxysii/internal/ct32
+github.com/oasisprotocol/deoxysii/internal/ct64
+github.com/oasisprotocol/deoxysii/internal/ext/aes/ct32
+github.com/oasisprotocol/deoxysii/internal/ext/aes/ct64
+github.com/oasisprotocol/deoxysii/internal/hardware
+# github.com/pkg/errors v0.9.1
+## explicit
+github.com/pkg/errors
+# github.com/pmezard/go-difflib v1.0.0
+## explicit
+github.com/pmezard/go-difflib/difflib
+# github.com/prometheus/client_golang v1.22.0
+## explicit; go 1.22
+github.com/prometheus/client_golang/internal/github.com/golang/gddo/httputil
+github.com/prometheus/client_golang/internal/github.com/golang/gddo/httputil/header
+github.com/prometheus/client_golang/prometheus
+github.com/prometheus/client_golang/prometheus/internal
+github.com/prometheus/client_golang/prometheus/promhttp
+github.com/prometheus/client_golang/prometheus/promhttp/internal
+# github.com/prometheus/client_model v0.6.1
+## explicit; go 1.19
+github.com/prometheus/client_model/go
+# github.com/prometheus/common v0.62.0
+## explicit; go 1.21
+github.com/prometheus/common/expfmt
+github.com/prometheus/common/model
+# github.com/prometheus/procfs v0.15.1
+## explicit; go 1.20
+github.com/prometheus/procfs
+github.com/prometheus/procfs/internal/fs
+github.com/prometheus/procfs/internal/util
+# github.com/quic-go/qpack v0.5.1
+## explicit; go 1.22
+github.com/quic-go/qpack
+# github.com/quic-go/quic-go v0.53.0
+## explicit; go 1.23
+github.com/quic-go/quic-go
+github.com/quic-go/quic-go/http3
+github.com/quic-go/quic-go/internal/ackhandler
+github.com/quic-go/quic-go/internal/congestion
+github.com/quic-go/quic-go/internal/flowcontrol
+github.com/quic-go/quic-go/internal/handshake
+github.com/quic-go/quic-go/internal/protocol
+github.com/quic-go/quic-go/internal/qerr
+github.com/quic-go/quic-go/internal/utils
+github.com/quic-go/quic-go/internal/utils/linkedlist
+github.com/quic-go/quic-go/internal/utils/ringbuffer
+github.com/quic-go/quic-go/internal/wire
+github.com/quic-go/quic-go/logging
+github.com/quic-go/quic-go/quicvarint
+# github.com/rfjakob/eme v1.1.2
+## explicit; go 1.16
+github.com/rfjakob/eme
+# github.com/rivo/uniseg v0.4.7
+## explicit; go 1.18
+github.com/rivo/uniseg
+# github.com/schwarmco/go-cartesian-product v0.0.0-20230921023625-e02d1c150053
+## explicit; go 1.21.0
+github.com/schwarmco/go-cartesian-product
+# github.com/shopspring/decimal v1.4.0
+## explicit; go 1.10
+# github.com/spf13/cobra v1.9.1
+## explicit; go 1.15
+github.com/spf13/cobra
+# github.com/spf13/pflag v1.0.6
+## explicit; go 1.12
+github.com/spf13/pflag
+# github.com/stretchr/testify v1.10.0
+## explicit; go 1.17
+github.com/stretchr/testify/assert
+github.com/stretchr/testify/assert/yaml
+github.com/stretchr/testify/require
+# github.com/ugorji/go/codec v1.3.0
+## explicit; go 1.21
+github.com/ugorji/go/codec
+# github.com/x448/float16 v0.8.4
+## explicit; go 1.11
+github.com/x448/float16
+# github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e
+## explicit; go 1.19
+github.com/xo/terminfo
+# github.com/yawning/bloom v0.0.0-20181019144233-44d6c5c71ed1
+## explicit
+github.com/yawning/bloom
+# gitlab.com/yawning/aez.git v0.0.0-20211027044916-e49e68abd344
+## explicit
+gitlab.com/yawning/aez.git
+# gitlab.com/yawning/avl.git v0.0.0-20180224045358-04c7c776e391
+## explicit
+gitlab.com/yawning/avl.git
+# gitlab.com/yawning/bsaes.git v0.0.0-20190805113838-0a714cd429ec
+## explicit; go 1.12
+gitlab.com/yawning/bsaes.git
+gitlab.com/yawning/bsaes.git/ct32
+gitlab.com/yawning/bsaes.git/ct64
+gitlab.com/yawning/bsaes.git/ghash
+gitlab.com/yawning/bsaes.git/internal/modes
+# gitlab.com/yawning/x448.git v0.0.0-20221003101044-617eb9b7d9b7
+## explicit; go 1.16
+gitlab.com/yawning/x448.git
+gitlab.com/yawning/x448.git/internal/field
+gitlab.com/yawning/x448.git/internal/toolchain
+# go.etcd.io/bbolt v1.4.2
+## explicit; go 1.23
+go.etcd.io/bbolt
+go.etcd.io/bbolt/errors
+go.etcd.io/bbolt/internal/common
+go.etcd.io/bbolt/internal/freelist
+# go.uber.org/mock v0.5.0
+## explicit; go 1.22
+go.uber.org/mock/mockgen
+go.uber.org/mock/mockgen/model
+# golang.org/x/crypto v0.39.0
+## explicit; go 1.23.0
+golang.org/x/crypto/blake2b
+golang.org/x/crypto/blake2s
+golang.org/x/crypto/chacha20
+golang.org/x/crypto/chacha20poly1305
+golang.org/x/crypto/curve25519
+golang.org/x/crypto/hkdf
+golang.org/x/crypto/internal/alias
+golang.org/x/crypto/internal/poly1305
+golang.org/x/crypto/nacl/secretbox
+golang.org/x/crypto/pbkdf2
+golang.org/x/crypto/poly1305
+golang.org/x/crypto/salsa20/salsa
+golang.org/x/crypto/sha3
+# golang.org/x/mod v0.25.0
+## explicit; go 1.23.0
+golang.org/x/mod/internal/lazyregexp
+golang.org/x/mod/modfile
+golang.org/x/mod/module
+golang.org/x/mod/semver
+# golang.org/x/net v0.41.0
+## explicit; go 1.23.0
+golang.org/x/net/bpf
+golang.org/x/net/http/httpguts
+golang.org/x/net/http2/hpack
+golang.org/x/net/idna
+golang.org/x/net/internal/iana
+golang.org/x/net/internal/socket
+golang.org/x/net/internal/socks
+golang.org/x/net/ipv4
+golang.org/x/net/ipv6
+golang.org/x/net/proxy
+# golang.org/x/sync v0.15.0
+## explicit; go 1.23.0
+golang.org/x/sync/errgroup
+# golang.org/x/sys v0.33.0
+## explicit; go 1.23.0
+golang.org/x/sys/cpu
+golang.org/x/sys/plan9
+golang.org/x/sys/unix
+golang.org/x/sys/windows
+# golang.org/x/term v0.32.0
+## explicit; go 1.23.0
+golang.org/x/term
+# golang.org/x/text v0.26.0
+## explicit; go 1.23.0
+golang.org/x/text/cases
+golang.org/x/text/internal
+golang.org/x/text/internal/language
+golang.org/x/text/internal/language/compact
+golang.org/x/text/internal/tag
+golang.org/x/text/language
+golang.org/x/text/runes
+golang.org/x/text/secure/bidirule
+golang.org/x/text/secure/precis
+golang.org/x/text/transform
+golang.org/x/text/unicode/bidi
+golang.org/x/text/unicode/norm
+golang.org/x/text/width
+# golang.org/x/tools v0.34.0
+## explicit; go 1.23.0
+golang.org/x/tools/go/ast/astutil
+golang.org/x/tools/go/gcexportdata
+golang.org/x/tools/go/packages
+golang.org/x/tools/go/types/objectpath
+golang.org/x/tools/go/types/typeutil
+golang.org/x/tools/imports
+golang.org/x/tools/internal/aliases
+golang.org/x/tools/internal/event
+golang.org/x/tools/internal/event/core
+golang.org/x/tools/internal/event/keys
+golang.org/x/tools/internal/event/label
+golang.org/x/tools/internal/gcimporter
+golang.org/x/tools/internal/gocommand
+golang.org/x/tools/internal/gopathwalk
+golang.org/x/tools/internal/imports
+golang.org/x/tools/internal/modindex
+golang.org/x/tools/internal/packagesinternal
+golang.org/x/tools/internal/pkgbits
+golang.org/x/tools/internal/stdlib
+golang.org/x/tools/internal/typeparams
+golang.org/x/tools/internal/typesinternal
+golang.org/x/tools/internal/versions
+# google.golang.org/protobuf v1.36.5
+## explicit; go 1.21
+google.golang.org/protobuf/encoding/protodelim
+google.golang.org/protobuf/encoding/prototext
+google.golang.org/protobuf/encoding/protowire
+google.golang.org/protobuf/internal/descfmt
+google.golang.org/protobuf/internal/descopts
+google.golang.org/protobuf/internal/detrand
+google.golang.org/protobuf/internal/editiondefaults
+google.golang.org/protobuf/internal/encoding/defval
+google.golang.org/protobuf/internal/encoding/messageset
+google.golang.org/protobuf/internal/encoding/tag
+google.golang.org/protobuf/internal/encoding/text
+google.golang.org/protobuf/internal/errors
+google.golang.org/protobuf/internal/filedesc
+google.golang.org/protobuf/internal/filetype
+google.golang.org/protobuf/internal/flags
+google.golang.org/protobuf/internal/genid
+google.golang.org/protobuf/internal/impl
+google.golang.org/protobuf/internal/order
+google.golang.org/protobuf/internal/pragma
+google.golang.org/protobuf/internal/protolazy
+google.golang.org/protobuf/internal/set
+google.golang.org/protobuf/internal/strs
+google.golang.org/protobuf/internal/version
+google.golang.org/protobuf/proto
+google.golang.org/protobuf/reflect/protoreflect
+google.golang.org/protobuf/reflect/protoregistry
+google.golang.org/protobuf/runtime/protoiface
+google.golang.org/protobuf/runtime/protoimpl
+google.golang.org/protobuf/types/known/timestamppb
+# gopkg.in/op/go-logging.v1 v1.0.0-20160211212156-b2cb9fa56473
+## explicit
+gopkg.in/op/go-logging.v1
+# gopkg.in/yaml.v3 v3.0.1
+## explicit
+gopkg.in/yaml.v3
+# rsc.io/qr v0.2.0
+## explicit
+rsc.io/qr
+rsc.io/qr/coding
+rsc.io/qr/gf256

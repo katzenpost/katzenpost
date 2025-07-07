@@ -20,12 +20,11 @@ import (
 	"github.com/katzenpost/hpqc/rand"
 	"gopkg.in/op/go-logging.v1"
 
-	"github.com/katzenpost/katzenpost/core/epochtime"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"github.com/katzenpost/katzenpost/core/worker"
-	"github.com/katzenpost/katzenpost/http/common"
+	"github.com/katzenpost/katzenpost/quic/common"
 )
 
 var (
@@ -42,9 +41,8 @@ var (
 		Timeout:   connectTimeout,
 	}
 
-	keepAliveInterval   = 3 * time.Minute
-	connectTimeout      = 1 * time.Minute
-	pkiFallbackInterval = epochtime.Period / 16
+	keepAliveInterval = 3 * time.Minute
+	connectTimeout    = 1 * time.Minute
 )
 
 // ConnectError is the error used to indicate that a connect attempt has failed.
@@ -111,11 +109,19 @@ type connection struct {
 	isConnectedLock sync.RWMutex
 	isConnected     bool
 
-	gateway *[32]byte
-	queueID []byte
+	gatewayLock sync.RWMutex
+	gateway     *[32]byte
+	queueID     []byte
 
 	isShutdownLock sync.RWMutex
 	isShutdown     bool
+}
+
+// getGateway safely returns the current gateway hash
+func (c *connection) getGateway() *[32]byte {
+	c.gatewayLock.RLock()
+	defer c.gatewayLock.RUnlock()
+	return c.gateway
 }
 
 type getConsensusCtx struct {
@@ -136,6 +142,8 @@ type connSendCtx struct {
 func (c *Client) ForceFetch() {
 	select {
 	case c.conn.fetchCh <- true:
+	case <-c.HaltCh():
+		// Client is shutting down, don't send
 	default:
 	}
 }
@@ -143,7 +151,6 @@ func (c *Client) ForceFetch() {
 // ForceFetchPKI attempts to force client's pkiclient to wake and fetch
 // consensus documents immediately.
 func (c *Client) ForceFetchPKI() {
-	c.log.Debug("ForceFetchPKI()")
 	select {
 	case c.pki.forceUpdateCh <- true:
 	default:
@@ -151,8 +158,6 @@ func (c *Client) ForceFetchPKI() {
 }
 
 func (c *connection) getDescriptor() error {
-	c.log.Debug("getDescriptor")
-
 	ok := false
 	defer func() {
 		if !ok {
@@ -166,11 +171,13 @@ func (c *connection) getDescriptor() error {
 		c.log.Debugf("No PKI document for current epoch or cached PKI document provide.")
 		n := len(c.client.cfg.PinnedGateways.Gateways)
 		if n == 0 {
-			return errors.New("No PinnedGateways")
+			return errors.New("no PinnedGateways")
 		}
 		gateway := c.client.cfg.PinnedGateways.Gateways[rand.NewMath().Intn(n)]
 		idHash := hash.Sum256From(gateway.IdentityKey)
+		c.gatewayLock.Lock()
 		c.gateway = &idHash
+		c.gatewayLock.Unlock()
 
 		idkey, err := gateway.IdentityKey.MarshalBinary()
 		if err != nil {
@@ -201,7 +208,9 @@ func (c *connection) getDescriptor() error {
 		}
 		gateway := doc.GatewayNodes[rand.NewMath().Intn(n)]
 		idHash := hash.Sum256(gateway.IdentityKey)
+		c.gatewayLock.Lock()
 		c.gateway = &idHash
+		c.gatewayLock.Unlock()
 		desc, err := doc.GetGateway(gateway.Name)
 		if err != nil {
 			c.log.Debugf("Failed to find descriptor for Gateway: %v", err)
@@ -226,8 +235,6 @@ func (c *connection) getDescriptor() error {
 }
 
 func (c *connection) connectWorker() {
-	c.log.Debug("connectWorker begin")
-
 	defer c.log.Debugf("Terminating connect worker.")
 
 	dialCtx, cancelFn := context.WithCancel(context.Background())
@@ -251,7 +258,6 @@ func (c *connection) connectWorker() {
 }
 
 func (c *connection) doConnect(dialCtx context.Context) {
-	c.log.Debug("doConnect begin")
 	const (
 		retryIncrement = 15 * time.Second
 		maxRetryDelay  = 2 * time.Minute
@@ -275,8 +281,6 @@ func (c *connection) doConnect(dialCtx context.Context) {
 				c.isShutdownLock.RUnlock()
 				if !isShutdown {
 					c.client.cfg.Callbacks.OnConnFn(connErr)
-				} else {
-					c.log.Debug("already shutting down, skipping OnConnFn callback")
 				}
 			}
 		}
@@ -308,8 +312,6 @@ func (c *connection) doConnect(dialCtx context.Context) {
 			connErr = newConnectError("no suitable addreses found")
 			return
 		}
-
-		c.log.Debug("doConnect, before for loop")
 
 		for _, addr := range dstAddrs {
 			select {
@@ -366,7 +368,6 @@ func (c *connection) doConnect(dialCtx context.Context) {
 }
 
 func (c *connection) onNetConn(conn net.Conn) {
-	c.log.Debug("onNetConn begin")
 	const handshakeTimeout = 1 * time.Minute
 	var err error
 
@@ -374,8 +375,6 @@ func (c *connection) onNetConn(conn net.Conn) {
 		c.log.Debugf("connection closed.")
 		conn.Close()
 	}()
-
-	c.log.Debug("onNetConn: GenerateKeypair")
 	_, linkKey, err := c.client.wireKEMScheme.GenerateKeyPair()
 	if err != nil {
 		panic(err)
@@ -397,7 +396,6 @@ func (c *connection) onNetConn(conn net.Conn) {
 		AuthenticationKey: linkKey,
 		RandomReader:      rand.Reader,
 	}
-	c.log.Debug("onNetConn: NewSession")
 	w, err := wire.NewSession(cfg, true)
 	if err != nil {
 		c.log.Errorf("Failed to allocate session: %v", err)
@@ -409,7 +407,6 @@ func (c *connection) onNetConn(conn net.Conn) {
 	defer w.Close()
 
 	// Bind the session to the conn, handshake, authenticate.
-	c.log.Debug("onTCPConn: before handshake")
 	conn.SetDeadline(time.Now().Add(handshakeTimeout))
 	if err = w.Initialize(conn); err != nil {
 		c.log.Errorf("Handshake failed: %v", err)
@@ -422,12 +419,10 @@ func (c *connection) onNetConn(conn net.Conn) {
 	conn.SetDeadline(time.Time{})
 	c.client.pki.setClockSkew(int64(w.ClockSkew().Seconds()))
 
-	c.log.Debug("onNetConn end")
 	c.onWireConn(w)
 }
 
 func (c *connection) onWireConn(w *wire.Session) {
-	c.log.Debug("onWireConn")
 	c.onConnStatusChange(nil)
 
 	var wireErr error
@@ -445,7 +440,8 @@ func (c *connection) onWireConn(w *wire.Session) {
 	cmdCloseCh := make(chan interface{})
 	defer func() {
 		if wireErr == nil {
-			panic("BUG: wireErr is nil on connection teardown.")
+			// Set a default error if wireErr is nil during shutdown
+			wireErr = ErrShutdown
 		}
 		c.onConnStatusChange(wireErr)
 	}()
@@ -478,9 +474,14 @@ func (c *connection) onWireConn(w *wire.Session) {
 	dispatchOnEmpty := func() error {
 		if c.client.cfg.Callbacks.OnEmptyFn != nil {
 			c.Go(func() {
-				if err := c.client.cfg.Callbacks.OnEmptyFn(); err != nil {
-					c.log.Debugf("Caller failed to handle MessageEmpty: %v", err)
-					forceCloseConn(err)
+				select {
+				case <-c.HaltCh():
+					return
+				default:
+					if err := c.client.cfg.Callbacks.OnEmptyFn(); err != nil {
+						c.log.Debugf("Caller failed to handle MessageEmpty: %v", err)
+						forceCloseConn(err)
+					}
 				}
 			})
 		}
@@ -635,10 +636,14 @@ func (c *connection) onWireConn(w *wire.Session) {
 			nrResps++
 			if c.client.cfg.Callbacks.OnMessageFn != nil {
 				c.Go(func() {
-					// this is without a cancelFn... can block ? XXX
-					if err := c.client.cfg.Callbacks.OnMessageFn(cmd.Payload); err != nil {
-						c.log.Debugf("Caller failed to handle Message: %v", err)
-						forceCloseConn(err)
+					select {
+					case <-c.HaltCh():
+						return
+					default:
+						if err := c.client.cfg.Callbacks.OnMessageFn(cmd.Payload); err != nil {
+							c.log.Debugf("Caller failed to handle Message: %v", err)
+							forceCloseConn(err)
+						}
 					}
 				})
 			}
@@ -658,9 +663,14 @@ func (c *connection) onWireConn(w *wire.Session) {
 			nrResps++
 			if c.client.cfg.Callbacks.OnACKFn != nil {
 				c.Go(func() {
-					if err := c.client.cfg.Callbacks.OnACKFn(&cmd.ID, cmd.Payload); err != nil {
-						c.log.Debugf("Caller failed to handle MessageACK: %v", err)
-						forceCloseConn(err)
+					select {
+					case <-c.HaltCh():
+						return
+					default:
+						if err := c.client.cfg.Callbacks.OnACKFn(&cmd.ID, cmd.Payload); err != nil {
+							c.log.Debugf("Caller failed to handle MessageACK: %v", err)
+							forceCloseConn(err)
+						}
 					}
 				})
 			} else {
@@ -681,7 +691,10 @@ func (c *connection) onWireConn(w *wire.Session) {
 				}
 				if int(cmd.ChunkNum) == (dechunker.ChunkTotal - 1) {
 					if len(dechunker.Output) == 0 {
-						panic("wtf len(dechunker.Output) == 0")
+						// Handle empty dechunker output gracefully during shutdown
+						c.log.Debugf("Dechunker output is empty, likely due to shutdown")
+						wireErr = newProtocolError("empty consensus response during shutdown")
+						return
 					}
 
 					// last chunk
@@ -785,6 +798,14 @@ func (c *connection) sendPacket(pkt []byte) error {
 	}
 	c.isConnectedLock.RUnlock()
 
+	// Check if we're shutting down before sending
+	c.isShutdownLock.RLock()
+	if c.isShutdown {
+		c.isShutdownLock.RUnlock()
+		return ErrShutdown
+	}
+	c.isShutdownLock.RUnlock()
+
 	errCh := make(chan error)
 	select {
 	case c.sendCh <- &connSendCtx{
@@ -803,8 +824,6 @@ func (c *connection) sendPacket(pkt []byte) error {
 	case <-c.HaltCh():
 		return ErrShutdown
 	}
-
-	return nil
 }
 
 func (c *connection) GetConsensus(ctx context.Context, epoch uint64) (*commands.Consensus2, error) {
@@ -883,7 +902,6 @@ func (c *connection) Shutdown() {
 }
 
 func (c *connection) start() {
-	c.log.Debug("start")
 	c.Go(c.connectWorker)
 }
 
@@ -891,7 +909,6 @@ func newConnection(c *Client) *connection {
 	k := new(connection)
 	k.client = c
 	k.log = c.logbackend.GetLogger("client2/conn")
-	k.log.Debug("newConnection")
 	k.fetchCh = make(chan interface{}, 1)
 	k.sendCh = make(chan *connSendCtx)
 	k.getConsensusCh = make(chan *getConsensusCtx, 1)

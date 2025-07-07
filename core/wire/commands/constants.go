@@ -5,7 +5,9 @@
 package commands
 
 const (
-	cmdOverhead = 1 + 1 + 4
+	// CmdOverhead is the wire protocol overhead for commands (command ID + reserved byte + 4-byte length field).
+	CmdOverhead = 1 + 1 + 4
+	cmdOverhead = CmdOverhead // deprecated: use CmdOverhead
 
 	retreiveMessageLength = 4
 	messageBaseLength     = 1 + 1 + 4
@@ -37,22 +39,16 @@ const (
 	sendRetrievePacket      commandID = 3
 	sendRetrievePacketReply commandID = 4
 
-	// used by Pigeonhole Couriers when talking to the Storage Replicas
-	replicaMessage      commandID = 8
-	replicaMessageReply commandID = 9
-
 	// used by Pigeonhole Storage Replicas when talking to the PKI
 	postReplicaDescriptorStatus commandID = 10
 	postReplicaDescriptor       commandID = 11
 
-	// used by Pigeonhole Storage Replicas when talking amonst themselves
-	replicaWrite      commandID = 12
-	replicaWriteReply commandID = 13
-
-	// these commands are only used encapsulated within
-	// replicaMessage and replicaMessageReply respectively
-	replicaRead      commandID = 14
-	replicaReadReply commandID = 15
+	// used by Pigeonhole Storage System
+	replicaMessage      commandID = 8
+	replicaMessageReply commandID = 9
+	replicaWrite        commandID = 12
+	replicaWriteReply   commandID = 13
+	replicaDecoy        commandID = 33
 
 	// used by old client
 	retreiveMessage commandID = 16

@@ -10,14 +10,32 @@ docker/debian_base.stamp
 docker/debian_go_mod.stamp
 docker/cache
 docker/voting_mixnet
-genconfig/genconfig
+cmd/genconfig/genconfig
+cmd/server/server
+cmd/dirauth/dirauth
+cmd/fetch/fetch
+cmd/kpclientd/kpclientd
+cmd/courier/courier
+cmd/replica/replica
+cmd/sphinx/sphinx
+cmd/map/map
+cmd/katzencat/katzencat
+cmd/katzencopy/katzencopy
+cmd/gensphinx/gensphinx
+cmd/ping/ping
+cmd/genkeypair/genkeypair
+cmd/http-proxy-client/http-proxy-client
+cmd/http-proxy-server/http-proxy-server
+cmd/echo-plugin/echo-plugin
 memspool/server/cmd/memspool/memspool
 panda/server/cmd/panda_server/panda_server
 reunion/servers/reunion_katzenpost_server/reunion_katzenpost_server
-server/cmd/server/server
-server_plugins/cbor_plugins/echo-go/echo_server
 .idea
 
 dist/
 
 docs/web/Admin_guide/target/en/
+
+pigeonhole/testdata/fuzz
+
+

@@ -1,0 +1,781 @@
+*****************************
+Performing SIV_GCM - Two Keys:
+*****************************
+
+AAD_len = 0 bytes
+MSG_len = 0 bytes
+                                            BYTES ORDER         
+                                LSB--------------------------MSB
+                                00010203040506070809101112131415
+                                --------------------------------
+
+K1 = K =                        01000000000000000000000000000000
+NONCE =                         030000000000000000000000
+
+AAD =                           
+
+MSG =                           
+
+PADDED_AAD =                    
+
+PADDED_MSG =                    
+
+Record_Hash_Key =               d9b360279694941ac5dbc6987ada7377
+
+Record_Enc_Key =                4004a0dcd862f2a57360219d2d44ef6c
+
+LENBLK =                        00000000000000000000000000000000
+
+POLYVAL xor N (Msbit cleared) = 03000000000000000000000000000000
+
+TAG =                           dc20e2d83f25705bb49e439eca56de25
+
+CTRBLK =                        dc20e2d83f25705bb49e439eca56dea5
+
+Encryption_Key =                4004a0dcd862f2a57360219d2d44ef6c
+
+TAG' =                          dc20e2d83f25705bb49e439eca56de25
+
+AAD =                           
+
+CIPHERTEXT =                    
+
+Decrypted MSG =                 
+SIV_GCM_2_KEYS Passed
+
+*****************************
+Performing SIV_GCM - Two Keys:
+*****************************
+
+AAD_len = 0 bytes
+MSG_len = 8 bytes
+                                            BYTES ORDER         
+                                LSB--------------------------MSB
+                                00010203040506070809101112131415
+                                --------------------------------
+
+K1 = K =                        01000000000000000000000000000000
+NONCE =                         030000000000000000000000
+
+AAD =                           
+
+MSG =                           0100000000000000
+
+PADDED_AAD =                    
+
+PADDED_MSG =                    01000000000000000000000000000000
+
+Record_Hash_Key =               d9b360279694941ac5dbc6987ada7377
+
+Record_Enc_Key =                4004a0dcd862f2a57360219d2d44ef6c
+
+LENBLK =                        00000000000000004000000000000000
+
+POLYVAL xor N (Msbit cleared) = e893b7740962c5e49d2a90a7dc5cec74
+
+TAG =                           578782fff6013b815b287c22493a364c
+
+CTRBLK =                        578782fff6013b815b287c22493a36cc
+
+Encryption_Key =                4004a0dcd862f2a57360219d2d44ef6c
+
+TAG' =                          578782fff6013b815b287c22493a364c
+
+AAD =                           
+
+CIPHERTEXT =                    b5d839330ac7b786
+
+Decrypted MSG =                 0100000000000000
+SIV_GCM_2_KEYS Passed
+
+*****************************
+Performing SIV_GCM - Two Keys:
+*****************************
+
+AAD_len = 0 bytes
+MSG_len = 12 bytes
+                                            BYTES ORDER         
+                                LSB--------------------------MSB
+                                00010203040506070809101112131415
+                                --------------------------------
+
+K1 = K =                        01000000000000000000000000000000
+NONCE =                         030000000000000000000000
+
+AAD =                           
+
+MSG =                           010000000000000000000000
+
+PADDED_AAD =                    
+
+PADDED_MSG =                    01000000000000000000000000000000
+
+Record_Hash_Key =               d9b360279694941ac5dbc6987ada7377
+
+Record_Enc_Key =                4004a0dcd862f2a57360219d2d44ef6c
+
+LENBLK =                        00000000000000006000000000000000
+
+POLYVAL xor N (Msbit cleared) = 4beb6c6c5a2dbe4a1dde508fee06361b
+
+TAG =                           a4978db357391a0bc4fdec8b0d106639
+
+CTRBLK =                        a4978db357391a0bc4fdec8b0d1066b9
+
+Encryption_Key =                4004a0dcd862f2a57360219d2d44ef6c
+
+TAG' =                          a4978db357391a0bc4fdec8b0d106639
+
+AAD =                           
+
+CIPHERTEXT =                    7323ea61d05932260047d942
+
+Decrypted MSG =                 010000000000000000000000
+SIV_GCM_2_KEYS Passed
+
+*****************************
+Performing SIV_GCM - Two Keys:
+*****************************
+
+AAD_len = 0 bytes
+MSG_len = 16 bytes
+                                            BYTES ORDER         
+                                LSB--------------------------MSB
+                                00010203040506070809101112131415
+                                --------------------------------
+
+K1 = K =                        01000000000000000000000000000000
+NONCE =                         030000000000000000000000
+
+AAD =                           
+
+MSG =                           01000000000000000000000000000000
+
+PADDED_AAD =                    
+
+PADDED_MSG =                    01000000000000000000000000000000
+
+Record_Hash_Key =               d9b360279694941ac5dbc6987ada7377
+
+Record_Enc_Key =                4004a0dcd862f2a57360219d2d44ef6c
+
+LENBLK =                        00000000000000008000000000000000
+
+POLYVAL xor N (Msbit cleared) = 23806c26e3c1de019e11125570803156
+
+TAG =                           303aaf90f6fe21199c6068577437a0c4
+
+CTRBLK =                        303aaf90f6fe21199c6068577437a0c4
+
+Encryption_Key =                4004a0dcd862f2a57360219d2d44ef6c
+
+TAG' =                          303aaf90f6fe21199c6068577437a0c4
+
+AAD =                           
+
+CIPHERTEXT =                    743f7c8077ab25f8624e2e948579cf77
+
+Decrypted MSG =                 01000000000000000000000000000000
+SIV_GCM_2_KEYS Passed
+
+*****************************
+Performing SIV_GCM - Two Keys:
+*****************************
+
+AAD_len = 0 bytes
+MSG_len = 32 bytes
+                                            BYTES ORDER         
+                                LSB--------------------------MSB
+                                00010203040506070809101112131415
+                                --------------------------------
+
+K1 = K =                        01000000000000000000000000000000
+NONCE =                         030000000000000000000000
+
+AAD =                           
+
+MSG =                           01000000000000000000000000000000
+                                02000000000000000000000000000000
+
+PADDED_AAD =                    
+
+PADDED_MSG =                    01000000000000000000000000000000
+                                02000000000000000000000000000000
+
+Record_Hash_Key =               d9b360279694941ac5dbc6987ada7377
+
+Record_Enc_Key =                4004a0dcd862f2a57360219d2d44ef6c
+
+LENBLK =                        00000000000000000001000000000000
+
+POLYVAL xor N (Msbit cleared) = cd6edc9a50b36d9a98986bbf6a261c3b
+
+TAG =                           1a8e45dcd4578c667cd86847bf6155ff
+
+CTRBLK =                        1a8e45dcd4578c667cd86847bf6155ff
+
+Encryption_Key =                4004a0dcd862f2a57360219d2d44ef6c
+
+TAG' =                          1a8e45dcd4578c667cd86847bf6155ff
+
+AAD =                           
+
+CIPHERTEXT =                    84e07e62ba83a6585417245d7ec413a9
+                                fe427d6315c09b57ce45f2e3936a9445
+
+Decrypted MSG =                 01000000000000000000000000000000
+                                02000000000000000000000000000000
+SIV_GCM_2_KEYS Passed
+
+*****************************
+Performing SIV_GCM - Two Keys:
+*****************************
+
+AAD_len = 0 bytes
+MSG_len = 48 bytes
+                                            BYTES ORDER         
+                                LSB--------------------------MSB
+                                00010203040506070809101112131415
+                                --------------------------------
+
+K1 = K =                        01000000000000000000000000000000
+NONCE =                         030000000000000000000000
+
+AAD =                           
+
+MSG =                           01000000000000000000000000000000
+                                02000000000000000000000000000000
+                                03000000000000000000000000000000
+
+PADDED_AAD =                    
+
+PADDED_MSG =                    01000000000000000000000000000000
+                                02000000000000000000000000000000
+                                03000000000000000000000000000000
+
+Record_Hash_Key =               d9b360279694941ac5dbc6987ada7377
+
+Record_Enc_Key =                4004a0dcd862f2a57360219d2d44ef6c
+
+LENBLK =                        00000000000000008001000000000000
+
+POLYVAL xor N (Msbit cleared) = 82388746bc22d26b2abc3dcb15754222
+
+TAG =                           5e6e311dbf395d35b0fe39c2714388f8
+
+CTRBLK =                        5e6e311dbf395d35b0fe39c2714388f8
+
+Encryption_Key =                4004a0dcd862f2a57360219d2d44ef6c
+
+TAG' =                          5e6e311dbf395d35b0fe39c2714388f8
+
+AAD =                           
+
+CIPHERTEXT =                    3fd24ce1f5a67b75bf2351f181a475c7
+                                b800a5b4d3dcf70106b1eea82fa1d64d
+                                f42bf7226122fa92e17a40eeaac1201b
+
+Decrypted MSG =                 01000000000000000000000000000000
+                                02000000000000000000000000000000
+                                03000000000000000000000000000000
+SIV_GCM_2_KEYS Passed
+
+*****************************
+Performing SIV_GCM - Two Keys:
+*****************************
+
+AAD_len = 0 bytes
+MSG_len = 64 bytes
+                                            BYTES ORDER         
+                                LSB--------------------------MSB
+                                00010203040506070809101112131415
+                                --------------------------------
+
+K1 = K =                        01000000000000000000000000000000
+NONCE =                         030000000000000000000000
+
+AAD =                           
+
+MSG =                           01000000000000000000000000000000
+                                02000000000000000000000000000000
+                                03000000000000000000000000000000
+                                04000000000000000000000000000000
+
+PADDED_AAD =                    
+
+PADDED_MSG =                    01000000000000000000000000000000
+                                02000000000000000000000000000000
+                                03000000000000000000000000000000
+                                04000000000000000000000000000000
+
+Record_Hash_Key =               d9b360279694941ac5dbc6987ada7377
+
+Record_Enc_Key =                4004a0dcd862f2a57360219d2d44ef6c
+
+LENBLK =                        00000000000000000002000000000000
+
+POLYVAL xor N (Msbit cleared) = 1d39b6d3344d348f6044f89935d1cf78
+
+TAG =                           8a263dd317aa88d56bdf3936dba75bb8
+
+CTRBLK =                        8a263dd317aa88d56bdf3936dba75bb8
+
+Encryption_Key =                4004a0dcd862f2a57360219d2d44ef6c
+
+TAG' =                          8a263dd317aa88d56bdf3936dba75bb8
+
+AAD =                           
+
+CIPHERTEXT =                    2433668f1058190f6d43e360f4f35cd8
+                                e475127cfca7028ea8ab5c20f7ab2af0
+                                2516a2bdcbc08d521be37ff28c152bba
+                                36697f25b4cd169c6590d1dd39566d3f
+
+Decrypted MSG =                 01000000000000000000000000000000
+                                02000000000000000000000000000000
+                                03000000000000000000000000000000
+                                04000000000000000000000000000000
+SIV_GCM_2_KEYS Passed
+
+*****************************
+Performing SIV_GCM - Two Keys:
+*****************************
+
+AAD_len = 1 bytes
+MSG_len = 8 bytes
+                                            BYTES ORDER         
+                                LSB--------------------------MSB
+                                00010203040506070809101112131415
+                                --------------------------------
+
+K1 = K =                        01000000000000000000000000000000
+NONCE =                         030000000000000000000000
+
+AAD =                           01
+
+MSG =                           0200000000000000
+
+PADDED_AAD =                    01000000000000000000000000000000
+
+PADDED_MSG =                    02000000000000000000000000000000
+
+Record_Hash_Key =               d9b360279694941ac5dbc6987ada7377
+
+Record_Enc_Key =                4004a0dcd862f2a57360219d2d44ef6c
+
+LENBLK =                        08000000000000004000000000000000
+
+POLYVAL xor N (Msbit cleared) = b16781e7e2c1376f96bec195f3709b2a
+
+TAG =                           3b0a1a2560969cdf790d99759abd1508
+
+CTRBLK =                        3b0a1a2560969cdf790d99759abd1588
+
+Encryption_Key =                4004a0dcd862f2a57360219d2d44ef6c
+
+TAG' =                          3b0a1a2560969cdf790d99759abd1508
+
+AAD =                           01
+
+CIPHERTEXT =                    1e6daba35669f427
+
+Decrypted MSG =                 0200000000000000
+SIV_GCM_2_KEYS Passed
+
+*****************************
+Performing SIV_GCM - Two Keys:
+*****************************
+
+AAD_len = 1 bytes
+MSG_len = 12 bytes
+                                            BYTES ORDER         
+                                LSB--------------------------MSB
+                                00010203040506070809101112131415
+                                --------------------------------
+
+K1 = K =                        01000000000000000000000000000000
+NONCE =                         030000000000000000000000
+
+AAD =                           01
+
+MSG =                           020000000000000000000000
+
+PADDED_AAD =                    01000000000000000000000000000000
+
+PADDED_MSG =                    02000000000000000000000000000000
+
+Record_Hash_Key =               d9b360279694941ac5dbc6987ada7377
+
+Record_Enc_Key =                4004a0dcd862f2a57360219d2d44ef6c
+
+LENBLK =                        08000000000000006000000000000000
+
+POLYVAL xor N (Msbit cleared) = 121f5affb18e4cc1164a01bdc12a4145
+
+TAG =                           08299c5102745aaa3a0c469fad9e075a
+
+CTRBLK =                        08299c5102745aaa3a0c469fad9e07da
+
+Encryption_Key =                4004a0dcd862f2a57360219d2d44ef6c
+
+TAG' =                          08299c5102745aaa3a0c469fad9e075a
+
+AAD =                           01
+
+CIPHERTEXT =                    296c7889fd99f41917f44620
+
+Decrypted MSG =                 020000000000000000000000
+SIV_GCM_2_KEYS Passed
+
+*****************************
+Performing SIV_GCM - Two Keys:
+*****************************
+
+AAD_len = 1 bytes
+MSG_len = 16 bytes
+                                            BYTES ORDER         
+                                LSB--------------------------MSB
+                                00010203040506070809101112131415
+                                --------------------------------
+
+K1 = K =                        01000000000000000000000000000000
+NONCE =                         030000000000000000000000
+
+AAD =                           01
+
+MSG =                           02000000000000000000000000000000
+
+PADDED_AAD =                    01000000000000000000000000000000
+
+PADDED_MSG =                    02000000000000000000000000000000
+
+Record_Hash_Key =               d9b360279694941ac5dbc6987ada7377
+
+Record_Enc_Key =                4004a0dcd862f2a57360219d2d44ef6c
+
+LENBLK =                        08000000000000008000000000000000
+
+POLYVAL xor N (Msbit cleared) = 7a745ab508622c8a958543675fac4608
+
+TAG =                           8f8936ec039e4e4bb97ebd8c4457441f
+
+CTRBLK =                        8f8936ec039e4e4bb97ebd8c4457449f
+
+Encryption_Key =                4004a0dcd862f2a57360219d2d44ef6c
+
+TAG' =                          8f8936ec039e4e4bb97ebd8c4457441f
+
+AAD =                           01
+
+CIPHERTEXT =                    e2b0c5da79a901c1745f700525cb335b
+
+Decrypted MSG =                 02000000000000000000000000000000
+SIV_GCM_2_KEYS Passed
+
+*****************************
+Performing SIV_GCM - Two Keys:
+*****************************
+
+AAD_len = 1 bytes
+MSG_len = 32 bytes
+                                            BYTES ORDER         
+                                LSB--------------------------MSB
+                                00010203040506070809101112131415
+                                --------------------------------
+
+K1 = K =                        01000000000000000000000000000000
+NONCE =                         030000000000000000000000
+
+AAD =                           01
+
+MSG =                           02000000000000000000000000000000
+                                03000000000000000000000000000000
+
+PADDED_AAD =                    01000000000000000000000000000000
+
+PADDED_MSG =                    02000000000000000000000000000000
+                                03000000000000000000000000000000
+
+Record_Hash_Key =               d9b360279694941ac5dbc6987ada7377
+
+Record_Enc_Key =                4004a0dcd862f2a57360219d2d44ef6c
+
+LENBLK =                        08000000000000000001000000000000
+
+POLYVAL xor N (Msbit cleared) = 2fe7daaf7c89490822051255b12eca6b
+
+TAG =                           e6af6a7f87287da059a71684ed3498e1
+
+CTRBLK =                        e6af6a7f87287da059a71684ed3498e1
+
+Encryption_Key =                4004a0dcd862f2a57360219d2d44ef6c
+
+TAG' =                          e6af6a7f87287da059a71684ed3498e1
+
+AAD =                           01
+
+CIPHERTEXT =                    620048ef3c1e73e57e02bb8562c416a3
+                                19e73e4caac8e96a1ecb2933145a1d71
+
+Decrypted MSG =                 02000000000000000000000000000000
+                                03000000000000000000000000000000
+SIV_GCM_2_KEYS Passed
+
+*****************************
+Performing SIV_GCM - Two Keys:
+*****************************
+
+AAD_len = 1 bytes
+MSG_len = 48 bytes
+                                            BYTES ORDER         
+                                LSB--------------------------MSB
+                                00010203040506070809101112131415
+                                --------------------------------
+
+K1 = K =                        01000000000000000000000000000000
+NONCE =                         030000000000000000000000
+
+AAD =                           01
+
+MSG =                           02000000000000000000000000000000
+                                03000000000000000000000000000000
+                                04000000000000000000000000000000
+
+PADDED_AAD =                    01000000000000000000000000000000
+
+PADDED_MSG =                    02000000000000000000000000000000
+                                03000000000000000000000000000000
+                                04000000000000000000000000000000
+
+Record_Hash_Key =               d9b360279694941ac5dbc6987ada7377
+
+Record_Enc_Key =                4004a0dcd862f2a57360219d2d44ef6c
+
+LENBLK =                        08000000000000008001000000000000
+
+POLYVAL xor N (Msbit cleared) = 9fa987715d69c1786711dfcd22f8307c
+
+TAG =                           6a8cc3865f76897c2e4b245cf31c51f2
+
+CTRBLK =                        6a8cc3865f76897c2e4b245cf31c51f2
+
+Encryption_Key =                4004a0dcd862f2a57360219d2d44ef6c
+
+TAG' =                          6a8cc3865f76897c2e4b245cf31c51f2
+
+AAD =                           01
+
+CIPHERTEXT =                    50c8303ea93925d64090d07bd109dfd9
+                                515a5a33431019c17d93465999a8b005
+                                3201d723120a8562b838cdff25bf9d1e
+
+Decrypted MSG =                 02000000000000000000000000000000
+                                03000000000000000000000000000000
+                                04000000000000000000000000000000
+SIV_GCM_2_KEYS Passed
+
+*****************************
+Performing SIV_GCM - Two Keys:
+*****************************
+
+AAD_len = 1 bytes
+MSG_len = 64 bytes
+                                            BYTES ORDER         
+                                LSB--------------------------MSB
+                                00010203040506070809101112131415
+                                --------------------------------
+
+K1 = K =                        01000000000000000000000000000000
+NONCE =                         030000000000000000000000
+
+AAD =                           01
+
+MSG =                           02000000000000000000000000000000
+                                03000000000000000000000000000000
+                                04000000000000000000000000000000
+                                05000000000000000000000000000000
+
+PADDED_AAD =                    01000000000000000000000000000000
+
+PADDED_MSG =                    02000000000000000000000000000000
+                                03000000000000000000000000000000
+                                04000000000000000000000000000000
+                                05000000000000000000000000000000
+
+Record_Hash_Key =               d9b360279694941ac5dbc6987ada7377
+
+Record_Enc_Key =                4004a0dcd862f2a57360219d2d44ef6c
+
+LENBLK =                        08000000000000000002000000000000
+
+POLYVAL xor N (Msbit cleared) = fccd05d5770f34ad9267f0a59994b15a
+
+TAG =                           cdc46ae475563de037001ef84ae21744
+
+CTRBLK =                        cdc46ae475563de037001ef84ae217c4
+
+Encryption_Key =                4004a0dcd862f2a57360219d2d44ef6c
+
+TAG' =                          cdc46ae475563de037001ef84ae21744
+
+AAD =                           01
+
+CIPHERTEXT =                    2f5c64059db55ee0fb847ed513003746
+                                aca4e61c711b5de2e7a77ffd02da42fe
+                                ec601910d3467bb8b36ebbaebce5fba3
+                                0d36c95f48a3e7980f0e7ac299332a80
+
+Decrypted MSG =                 02000000000000000000000000000000
+                                03000000000000000000000000000000
+                                04000000000000000000000000000000
+                                05000000000000000000000000000000
+SIV_GCM_2_KEYS Passed
+
+*****************************
+Performing SIV_GCM - Two Keys:
+*****************************
+
+AAD_len = 12 bytes
+MSG_len = 4 bytes
+                                            BYTES ORDER         
+                                LSB--------------------------MSB
+                                00010203040506070809101112131415
+                                --------------------------------
+
+K1 = K =                        01000000000000000000000000000000
+NONCE =                         030000000000000000000000
+
+AAD =                           010000000000000000000000
+
+MSG =                           02000000
+
+PADDED_AAD =                    01000000000000000000000000000000
+
+PADDED_MSG =                    02000000000000000000000000000000
+
+Record_Hash_Key =               d9b360279694941ac5dbc6987ada7377
+
+Record_Enc_Key =                4004a0dcd862f2a57360219d2d44ef6c
+
+LENBLK =                        60000000000000002000000000000000
+
+POLYVAL xor N (Msbit cleared) = f5ce9d3dcd68a2fd603c7ecc18fb9918
+
+TAG =                           07eb1f84fb28f8cb73de8e99e2f48a14
+
+CTRBLK =                        07eb1f84fb28f8cb73de8e99e2f48a94
+
+Encryption_Key =                4004a0dcd862f2a57360219d2d44ef6c
+
+TAG' =                          07eb1f84fb28f8cb73de8e99e2f48a14
+
+AAD =                           010000000000000000000000
+
+CIPHERTEXT =                    a8fe3e87
+
+Decrypted MSG =                 02000000
+SIV_GCM_2_KEYS Passed
+
+*****************************
+Performing SIV_GCM - Two Keys:
+*****************************
+
+AAD_len = 18 bytes
+MSG_len = 20 bytes
+                                            BYTES ORDER         
+                                LSB--------------------------MSB
+                                00010203040506070809101112131415
+                                --------------------------------
+
+K1 = K =                        01000000000000000000000000000000
+NONCE =                         030000000000000000000000
+
+AAD =                           01000000000000000000000000000000
+                                0200
+
+MSG =                           03000000000000000000000000000000
+                                04000000
+
+PADDED_AAD =                    01000000000000000000000000000000
+                                02000000000000000000000000000000
+
+PADDED_MSG =                    03000000000000000000000000000000
+                                04000000000000000000000000000000
+
+Record_Hash_Key =               d9b360279694941ac5dbc6987ada7377
+
+Record_Enc_Key =                4004a0dcd862f2a57360219d2d44ef6c
+
+LENBLK =                        9000000000000000a000000000000000
+
+POLYVAL xor N (Msbit cleared) = 4481d492cb8f926c504caa36f610087e
+
+TAG =                           24afc9805e976f451e6d87f6fe106514
+
+CTRBLK =                        24afc9805e976f451e6d87f6fe106594
+
+Encryption_Key =                4004a0dcd862f2a57360219d2d44ef6c
+
+TAG' =                          24afc9805e976f451e6d87f6fe106514
+
+AAD =                           01000000000000000000000000000000
+                                0200
+
+CIPHERTEXT =                    6bb0fecf5ded9b77f902c7d5da236a43
+                                91dd0297
+
+Decrypted MSG =                 03000000000000000000000000000000
+                                04000000
+SIV_GCM_2_KEYS Passed
+
+*****************************
+Performing SIV_GCM - Two Keys:
+*****************************
+
+AAD_len = 20 bytes
+MSG_len = 18 bytes
+                                            BYTES ORDER         
+                                LSB--------------------------MSB
+                                00010203040506070809101112131415
+                                --------------------------------
+
+K1 = K =                        01000000000000000000000000000000
+NONCE =                         030000000000000000000000
+
+AAD =                           01000000000000000000000000000000
+                                02000000
+
+MSG =                           03000000000000000000000000000000
+                                0400
+
+PADDED_AAD =                    01000000000000000000000000000000
+                                02000000000000000000000000000000
+
+PADDED_MSG =                    03000000000000000000000000000000
+                                04000000000000000000000000000000
+
+Record_Hash_Key =               d9b360279694941ac5dbc6987ada7377
+
+Record_Enc_Key =                4004a0dcd862f2a57360219d2d44ef6c
+
+LENBLK =                        a0000000000000009000000000000000
+
+POLYVAL xor N (Msbit cleared) = 76cbc23a1a10e348aeb8e384b5cc797d
+
+TAG =                           bff9b2ef00fb47920cc72a0c0f13b9fd
+
+CTRBLK =                        bff9b2ef00fb47920cc72a0c0f13b9fd
+
+Encryption_Key =                4004a0dcd862f2a57360219d2d44ef6c
+
+TAG' =                          bff9b2ef00fb47920cc72a0c0f13b9fd
+
+AAD =                           01000000000000000000000000000000
+                                02000000
+
+CIPHERTEXT =                    44d0aaf6fb2f1f34add5e8064e83e12a
+                                2ada
+
+Decrypted MSG =                 03000000000000000000000000000000
+                                0400
+SIV_GCM_2_KEYS Passed

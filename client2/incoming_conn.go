@@ -18,8 +18,6 @@ import (
 	"github.com/katzenpost/katzenpost/client2/thin"
 )
 
-var incomingConnID uint64
-
 // incomingConn type is used along with listener type
 type incomingConn struct {
 	listener *listener
@@ -33,34 +31,28 @@ type incomingConn struct {
 
 func (c *incomingConn) recvRequest() (*Request, error) {
 	req := new(thin.Request)
-	c.log.Debug("recvRequest TCP")
 	const prefixLength = 4
 	lenPrefix := [prefixLength]byte{}
 	count, err := io.ReadFull(c.conn, lenPrefix[:])
 	if err != nil {
 		return nil, err
 	}
-	c.log.Debug("read length prefix")
 	if count != prefixLength {
 		return nil, errors.New("failed to read length prefix")
 	}
 	blobLen := binary.BigEndian.Uint32(lenPrefix[:])
-	c.log.Debugf("length prefix is %d", blobLen)
 	blob := make([]byte, blobLen)
 	if count, err = io.ReadFull(c.conn, blob); err != nil {
 		return nil, err
 	}
-	c.log.Debug("after blob read")
 	if uint32(count) != blobLen {
 		return nil, errors.New("failed to read blob")
 	}
-	c.log.Debug("before Unmarshal")
 	err = cbor.Unmarshal(blob[:count], &req)
 	if err != nil {
 		c.log.Infof("error decoding cbor from client: %s\n", err)
 		return nil, err
 	}
-	c.log.Debug("after Unmarshal")
 	return FromThinRequest(req, c.appID), nil
 }
 
@@ -144,6 +136,8 @@ func (c *incomingConn) worker() {
 				// c.worker() is returning for some reason, give up on
 				// trying to write the command, and just return.
 				return
+			case <-c.listener.HaltCh():
+				return
 			}
 		}
 	})
@@ -173,7 +167,7 @@ func (c *incomingConn) worker() {
 			if !ok {
 				return
 			}
-			if rawReq.IsThinClose {
+			if rawReq.ThinClose != nil {
 				c.log.Info("Thin client sent a disconnect request, closing thin client connection.")
 				return
 			}

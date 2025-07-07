@@ -5,24 +5,32 @@ package client2
 
 import (
 	"crypto/hmac"
+	"crypto/rand"
+	"encoding/binary"
 	"errors"
+	"fmt"
 	mrand "math/rand"
 	"path/filepath"
 	"sync"
 	"time"
 
-	"github.com/katzenpost/hpqc/hash"
-	"github.com/katzenpost/hpqc/rand"
 	"gopkg.in/op/go-logging.v1"
+
+	"github.com/katzenpost/hpqc/bacap"
+	"github.com/katzenpost/hpqc/hash"
+	"github.com/katzenpost/hpqc/nike"
+	hpqcRand "github.com/katzenpost/hpqc/rand"
 
 	"github.com/katzenpost/katzenpost/client2/common"
 	"github.com/katzenpost/katzenpost/client2/config"
+	"github.com/katzenpost/katzenpost/client2/constants"
 	"github.com/katzenpost/katzenpost/client2/thin"
 	"github.com/katzenpost/katzenpost/core/log"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
-	"github.com/katzenpost/katzenpost/core/sphinx/constants"
-	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
+	sphinxConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/worker"
+	"github.com/katzenpost/katzenpost/pigeonhole"
+	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
 )
 
 const (
@@ -36,7 +44,7 @@ type gcReply struct {
 }
 
 type sphinxReply struct {
-	surbID     *[constants.SURBIDLength]byte
+	surbID     *[sphinxConstants.SURBIDLength]byte
 	ciphertext []byte
 }
 
@@ -44,6 +52,18 @@ type replyDescriptor struct {
 	ID      *[MessageIDLength]byte
 	appID   *[AppIDLength]byte
 	surbKey []byte
+}
+
+// ReplyHandlerParams groups parameters for reply handler functions
+type ReplyHandlerParams struct {
+	AppID       *[AppIDLength]byte
+	MessageID   *[MessageIDLength]byte
+	ChannelID   uint16
+	ChannelDesc *ChannelDescriptor
+	EnvHash     *[hash.HashSize]byte
+	IsReader    bool
+	IsWriter    bool
+	ReplyIndex  uint8
 }
 
 type Daemon struct {
@@ -57,20 +77,38 @@ type Daemon struct {
 	listener *listener
 	egressCh chan *Request
 
-	replies   map[[sConstants.SURBIDLength]byte]replyDescriptor
-	decoys    map[[sConstants.SURBIDLength]byte]replyDescriptor
+	replies   map[[sphinxConstants.SURBIDLength]byte]replyDescriptor
+	decoys    map[[sphinxConstants.SURBIDLength]byte]replyDescriptor
 	replyLock *sync.Mutex
 
 	timerQueue *TimerQueue
 	ingressCh  chan *sphinxReply
-	gcSurbIDCh chan *[sConstants.SURBIDLength]byte
+	gcSurbIDCh chan *[sphinxConstants.SURBIDLength]byte
 
 	gcTimerQueue *TimerQueue
 	gcReplyCh    chan *gcReply
 
 	arqTimerQueue *TimerQueue
-	arqSurbIDMap  map[[sConstants.SURBIDLength]byte]*ARQMessage
-	arqResendCh   chan *[sConstants.SURBIDLength]byte
+	arqSurbIDMap  map[[sphinxConstants.SURBIDLength]byte]*ARQMessage
+	arqResendCh   chan *[sphinxConstants.SURBIDLength]byte
+
+	// Channel reply tracking (used by both old and new API)
+	channelReplies     map[[sphinxConstants.SURBIDLength]byte]replyDescriptor
+	channelRepliesLock *sync.RWMutex
+
+	// Channel management (new API)
+	newSurbIDToChannelMap     map[[sphinxConstants.SURBIDLength]byte]uint16
+	newSurbIDToChannelMapLock *sync.RWMutex
+	newChannelMap             map[uint16]*ChannelDescriptor
+	newChannelMapLock         *sync.RWMutex
+
+	// Capability deduplication maps to prevent reusing read/write capabilities
+	usedReadCaps   map[[hash.HashSize]byte]bool // Maps hash of ReadCap to true
+	usedWriteCaps  map[[hash.HashSize]byte]bool // Maps hash of WriteCap to true
+	capabilityLock *sync.RWMutex                // Protects both capability maps
+
+	// Cryptographically secure random number generator
+	secureRand *mrand.Rand
 
 	haltOnce sync.Once
 }
@@ -82,19 +120,52 @@ func NewDaemon(cfg *config.Config) (*Daemon, error) {
 		cfg:          cfg,
 		egressCh:     make(chan *Request, egressSize),
 		ingressCh:    make(chan *sphinxReply, ingressSize),
-		replies:      make(map[[sConstants.SURBIDLength]byte]replyDescriptor),
-		decoys:       make(map[[sConstants.SURBIDLength]byte]replyDescriptor),
-		gcSurbIDCh:   make(chan *[sConstants.SURBIDLength]byte),
+		replies:      make(map[[sphinxConstants.SURBIDLength]byte]replyDescriptor),
+		decoys:       make(map[[sphinxConstants.SURBIDLength]byte]replyDescriptor),
+		gcSurbIDCh:   make(chan *[sphinxConstants.SURBIDLength]byte),
 		gcReplyCh:    make(chan *gcReply),
 		replyLock:    new(sync.Mutex),
-		arqSurbIDMap: make(map[[sConstants.SURBIDLength]byte]*ARQMessage),
-		arqResendCh:  make(chan *[sConstants.SURBIDLength]byte, 2),
+		arqSurbIDMap: make(map[[sphinxConstants.SURBIDLength]byte]*ARQMessage),
+		arqResendCh:  make(chan *[sphinxConstants.SURBIDLength]byte, 2),
+		// Channel reply tracking
+		channelReplies:     make(map[[sphinxConstants.SURBIDLength]byte]replyDescriptor),
+		channelRepliesLock: new(sync.RWMutex),
+		// Channel management (new API)
+		newSurbIDToChannelMap:     make(map[[sphinxConstants.SURBIDLength]byte]uint16),
+		newSurbIDToChannelMapLock: new(sync.RWMutex),
+		newChannelMap:             make(map[uint16]*ChannelDescriptor),
+		newChannelMapLock:         new(sync.RWMutex),
+		// capability deduplication fields:
+		usedReadCaps:   make(map[[hash.HashSize]byte]bool),
+		usedWriteCaps:  make(map[[hash.HashSize]byte]bool),
+		capabilityLock: new(sync.RWMutex),
+		// Initialize cryptographically secure random number generator
+		secureRand: hpqcRand.NewMath(),
 	}
 	err := d.initLogging()
 	if err != nil {
 		return nil, err
 	}
 	return d, nil
+}
+
+// generateUniqueChannelID generates a unique uint16 channel ID that's not already in use
+func (d *Daemon) generateUniqueChannelID() uint16 {
+	d.newChannelMapLock.Lock()
+	defer d.newChannelMapLock.Unlock()
+
+	for {
+		// Generate a random uint16
+		var channelID uint16
+		binary.Read(rand.Reader, binary.BigEndian, &channelID)
+
+		// Check if it's already in use
+		if _, exists := d.newChannelMap[channelID]; !exists {
+			// Reserve the ID by adding an empty entry (will be replaced with actual descriptor)
+			d.newChannelMap[channelID] = nil
+			return channelID
+		}
+	}
 }
 
 func (d *Daemon) initLogging() error {
@@ -119,22 +190,64 @@ func (d *Daemon) Shutdown() {
 }
 
 func (d *Daemon) halt() {
+	shutdownStart := time.Now()
+	d.log.Info("Starting graceful daemon shutdown")
+
+	// Step 1: Stop listener
+	listenerStart := time.Now()
 	d.log.Debug("Stopping thin client listener")
 	d.listener.Shutdown()
-	d.log.Debug("Stopping timerQueue")
-	d.timerQueue.Halt()
-	d.log.Debug("Stopping gcTimerQueue")
-	d.gcTimerQueue.Halt()
-	d.log.Debug("Stopping arqTimerQueue")
-	d.arqTimerQueue.Halt()
+	d.log.Infof("Listener stopped in %v", time.Since(listenerStart))
 
+	// Step 2: Stop workers
+	workersStart := time.Now()
+	d.log.Debug("Stopping workers first to prevent channel deadlocks")
+	d.Halt() // shutdown ingressWorker and egressWorker first
+	d.log.Infof("Workers stopped in %v", time.Since(workersStart))
+
+	// Step 3: Parallelize timer queue shutdown for faster shutdown
+	timerStart := time.Now()
+	d.log.Debug("Stopping timer queues in parallel")
+	var timerWg sync.WaitGroup
+	timerWg.Add(3)
+
+	go func() {
+		defer timerWg.Done()
+		start := time.Now()
+		d.log.Debug("Stopping timerQueue")
+		d.timerQueue.Halt()
+		d.log.Debugf("timerQueue stopped in %v", time.Since(start))
+	}()
+
+	go func() {
+		defer timerWg.Done()
+		start := time.Now()
+		d.log.Debug("Stopping gcTimerQueue")
+		d.gcTimerQueue.Halt()
+		d.log.Debugf("gcTimerQueue stopped in %v", time.Since(start))
+	}()
+
+	go func() {
+		defer timerWg.Done()
+		start := time.Now()
+		d.log.Debug("Stopping arqTimerQueue")
+		d.arqTimerQueue.Halt()
+		d.log.Debugf("arqTimerQueue stopped in %v", time.Since(start))
+	}()
+
+	timerWg.Wait()
+	d.log.Infof("All timer queues stopped in %v", time.Since(timerStart))
+
+	// Step 4: Stop client
+	clientStart := time.Now()
 	d.log.Debug("Stopping client")
 	d.client.Shutdown()
-	d.Halt() // shutdown ingressWorker and egressWorker
+	d.log.Infof("Client stopped in %v", time.Since(clientStart))
+
+	d.log.Infof("Daemon shutdown complete in %v", time.Since(shutdownStart))
 }
 
 func (d *Daemon) Start() error {
-	d.log.Debug("Start daemon")
 	var err error
 	rates := &Rates{}
 	if d.cfg.CachedDocument != nil {
@@ -146,7 +259,7 @@ func (d *Daemon) Start() error {
 		return err
 	}
 
-	d.listener, err = NewListener(d.client, rates, d.egressCh, d.logbackend)
+	d.listener, err = NewListener(d.client, rates, d.egressCh, d.logbackend, d.cleanupChannelsForAppID)
 	if err != nil {
 		return err
 	}
@@ -157,7 +270,7 @@ func (d *Daemon) Start() error {
 	d.cfg.Callbacks.OnDocumentFn = d.onDocument
 
 	d.timerQueue = NewTimerQueue(func(rawSurbID interface{}) {
-		surbID, ok := rawSurbID.(*[sConstants.SURBIDLength]byte)
+		surbID, ok := rawSurbID.(*[sphinxConstants.SURBIDLength]byte)
 		if !ok {
 			panic("wtf, failed type assertion!")
 		}
@@ -165,18 +278,29 @@ func (d *Daemon) Start() error {
 		case d.gcSurbIDCh <- surbID:
 		case <-d.HaltCh():
 			return
+		case <-time.After(5 * time.Second):
+			d.log.Debugf("Timeout sending to gcSurbIDCh for SURB ID %x", surbID[:])
+			return
 		}
 	})
 	d.timerQueue.Start()
 	d.arqTimerQueue = NewTimerQueue(func(rawSurbID interface{}) {
-		d.log.Info("ARQ TimerQueue callback!")
-		surbID, ok := rawSurbID.(*[sConstants.SURBIDLength]byte)
+		surbID, ok := rawSurbID.(*[sphinxConstants.SURBIDLength]byte)
 		if !ok {
 			panic("wtf, failed type assertion!")
 		}
-		d.log.Warning("BEFORE ARQ resend")
-		d.arqResend(surbID)
-		d.log.Warning("AFTER ARQ resend")
+		// Use a timeout to prevent blocking during shutdown
+		go func() {
+			select {
+			case <-d.HaltCh():
+				return
+			case <-time.After(10 * time.Second):
+				d.log.Debugf("ARQ resend timeout for SURB ID %x", surbID[:])
+				return
+			default:
+				d.arqResend(surbID)
+			}
+		}()
 	})
 	d.arqTimerQueue.Start()
 	d.gcTimerQueue = NewTimerQueue(func(rawGCReply interface{}) {
@@ -187,6 +311,9 @@ func (d *Daemon) Start() error {
 		select {
 		case d.gcReplyCh <- myGcReply:
 		case <-d.HaltCh():
+			return
+		case <-time.After(5 * time.Second):
+			d.log.Debugf("Timeout sending to gcReplyCh for message ID %x", myGcReply.id[:])
 			return
 		}
 	})
@@ -200,12 +327,12 @@ func (d *Daemon) Start() error {
 
 func (d *Daemon) onDocument(doc *cpki.Document) {
 	slopFactor := 0.8
-	pollProviderMsec := time.Duration((1.0 / (doc.LambdaP + doc.LambdaL)) * slopFactor * float64(time.Millisecond))
-	d.client.SetPollInterval(pollProviderMsec)
+	pollProvider := time.Duration((1.0 / (doc.LambdaP + doc.LambdaL)) * slopFactor * float64(time.Millisecond))
+	d.client.SetPollInterval(pollProvider)
 	d.listener.updateFromPKIDoc(doc)
 }
 
-func (d *Daemon) proxyReplies(surbID *[constants.SURBIDLength]byte, ciphertext []byte) error {
+func (d *Daemon) proxyReplies(surbID *[sphinxConstants.SURBIDLength]byte, ciphertext []byte) error {
 	select {
 	case d.ingressCh <- &sphinxReply{
 		surbID:     surbID,
@@ -220,20 +347,33 @@ func (d *Daemon) egressWorker() {
 	for {
 		select {
 		case <-d.HaltCh():
-			d.log.Debug("egressWorker shutting down")
 			return
 		case surbID := <-d.arqResendCh:
 			d.arqDoResend(surbID)
 		case request := <-d.egressCh:
 			switch {
-			case request.IsLoopDecoy == true:
+			case request.SendLoopDecoy != nil:
 				d.sendLoopDecoy(request)
-			case request.IsDropDecoy == true:
+			case request.SendDropDecoy != nil:
 				d.sendDropDecoy()
-			case request.IsSendOp == true:
+			case request.SendMessage != nil:
 				d.send(request)
-			case request.IsARQSendOp == true:
+			case request.SendARQMessage != nil:
 				d.send(request)
+
+				// New Pigeonhole Channel related commands proceed here:
+
+			case request.CreateWriteChannel != nil:
+				d.createWriteChannel(request)
+			case request.CreateReadChannel != nil:
+				d.createReadChannel(request)
+			case request.WriteChannel != nil:
+				d.writeChannel(request)
+			case request.ReadChannel != nil:
+				d.readChannel(request)
+			case request.CloseChannel != nil:
+				d.closeChannel(request)
+
 			default:
 				panic("send operation not fully specified")
 			}
@@ -263,6 +403,15 @@ func (d *Daemon) ingressWorker() {
 				d.log.Errorf("failed to send Response: %s", err)
 			}
 		case surbID := <-d.gcSurbIDCh:
+			d.channelRepliesLock.RLock()
+			_, ok := d.channelReplies[*surbID]
+			d.channelRepliesLock.RUnlock()
+
+			if ok {
+				d.log.Debugf("Timer expired for channel SURB ID %x, but keeping state for retries", surbID[:])
+				continue
+			}
+
 			d.replyLock.Lock()
 			delete(d.replies, *surbID)
 			delete(d.decoys, *surbID)
@@ -274,44 +423,69 @@ func (d *Daemon) ingressWorker() {
 }
 
 func (d *Daemon) handleReply(reply *sphinxReply) {
+	isChannelReply := false
+	isReply := false
+	isARQReply := false
 	isDecoy := false
+	desc := replyDescriptor{}
+	arqMessage := &ARQMessage{}
 
 	d.replyLock.Lock()
-	desc, ok := d.replies[*reply.surbID]
-	if !ok {
-		desc, ok = d.decoys[*reply.surbID]
-		if ok {
-			isDecoy = true
-		} else {
-			arqMessage, ok := d.arqSurbIDMap[*reply.surbID]
-			if ok {
-				desc = replyDescriptor{
-					ID:      arqMessage.MessageID,
-					appID:   arqMessage.AppID,
-					surbKey: arqMessage.SURBDecryptionKeys,
-				}
-				peeked := d.arqTimerQueue.Peek()
-				if peeked != nil {
-					peekSurbId := peeked.Value.(*[sConstants.SURBIDLength]byte)
-					if hmac.Equal(arqMessage.SURBID[:], peekSurbId[:]) {
-						d.arqTimerQueue.Pop()
-					}
-				}
-			} else {
-				d.replyLock.Unlock()
-				return
-			}
-		}
-
-	}
-	delete(d.replies, *reply.surbID)
-	delete(d.decoys, *reply.surbID)
-	delete(d.arqSurbIDMap, *reply.surbID)
+	myReplyDescriptor, isReply := d.replies[*reply.surbID]
+	myDecoyDescriptor, isDecoy := d.decoys[*reply.surbID]
+	arqMessage, isARQReply = d.arqSurbIDMap[*reply.surbID]
 	d.replyLock.Unlock()
 
-	plaintext, err := d.client.sphinx.DecryptSURBPayload(reply.ciphertext, desc.surbKey)
+	d.channelRepliesLock.RLock()
+	myChannelReplyDescriptor, isChannelReply := d.channelReplies[*reply.surbID]
+	d.channelRepliesLock.RUnlock()
+
+	// Debug logging for channel reply lookup
+	if isChannelReply {
+		if myChannelReplyDescriptor.ID != nil {
+			d.log.Errorf("DEBUG: Found channel reply descriptor with MessageID %x for SURBID %x", myChannelReplyDescriptor.ID[:8], reply.surbID[:8])
+		} else {
+			d.log.Errorf("DEBUG: WARNING: Found channel reply descriptor with nil MessageID for SURBID %x", reply.surbID[:8])
+		}
+	}
+
+	switch {
+	case isReply:
+		desc = myReplyDescriptor
+		d.replyLock.Lock()
+		delete(d.replies, *reply.surbID)
+		d.replyLock.Unlock()
+	case isDecoy:
+		desc = myDecoyDescriptor
+		d.replyLock.Lock()
+		delete(d.decoys, *reply.surbID)
+		d.replyLock.Unlock()
+	case isARQReply:
+		desc = replyDescriptor{
+			ID:      arqMessage.MessageID,
+			appID:   arqMessage.AppID,
+			surbKey: arqMessage.SURBDecryptionKeys,
+		}
+		peeked := d.arqTimerQueue.Peek()
+		if peeked != nil {
+			peekSurbId := peeked.Value.(*[sphinxConstants.SURBIDLength]byte)
+			if hmac.Equal(arqMessage.SURBID[:], peekSurbId[:]) {
+				d.arqTimerQueue.Pop()
+			}
+		}
+		d.replyLock.Lock()
+		delete(d.arqSurbIDMap, *reply.surbID)
+		d.replyLock.Unlock()
+	case isChannelReply:
+		d.log.Debugf("Received channel reply for SURB ID %x", reply.surbID[:])
+		desc = myChannelReplyDescriptor
+	default:
+		return
+	}
+
+	surbPayload, err := d.client.sphinx.DecryptSURBPayload(reply.ciphertext, desc.surbKey)
 	if err != nil {
-		d.log.Infof("SURB reply decryption error: %s", err.Error())
+		d.log.Debugf("SURB reply decryption error: %s", err.Error())
 		return
 	}
 
@@ -320,31 +494,334 @@ func (d *Daemon) handleReply(reply *sphinxReply) {
 		return
 	}
 
-	conn := d.listener.getConnection(desc.appID)
-	if conn == nil {
-		d.log.Errorf("no connection associated with AppID %x", desc.appID[:])
-		return
-	}
-	conn.sendResponse(&Response{
-		AppID: desc.appID,
-		MessageReplyEvent: &thin.MessageReplyEvent{
-			MessageID: desc.ID,
-			SURBID:    reply.surbID,
-			Payload:   plaintext,
-		},
-	})
+	if isChannelReply {
+		err := d.handleChannelReply(desc.appID, desc.ID, reply.surbID, surbPayload)
+		if err != nil {
+			d.log.Errorf("BUG!Failed to handle channel reply: %s", err)
 
+			// send error code back to client
+			conn := d.listener.getConnection(desc.appID)
+			if conn == nil {
+				d.log.Errorf("no connection associated with AppID %x", desc.appID[:])
+				return
+			}
+			err := conn.sendResponse(&Response{
+				AppID: desc.appID,
+				MessageReplyEvent: &thin.MessageReplyEvent{
+					MessageID: desc.ID,
+					SURBID:    reply.surbID,
+					Payload:   []byte{},
+					ErrorCode: thin.ThinClientErrorInternalError,
+				},
+			})
+			if err != nil {
+				d.log.Errorf("failed to send error response to client: %s", err)
+			}
+		}
+
+		d.channelRepliesLock.Lock()
+		delete(d.channelReplies, *reply.surbID)
+		d.channelRepliesLock.Unlock()
+
+		d.newSurbIDToChannelMapLock.Lock()
+		delete(d.newSurbIDToChannelMap, *reply.surbID)
+		d.newSurbIDToChannelMapLock.Unlock()
+	} else {
+		// not a reply to a channel operation,
+		// thei is legacy API
+		conn := d.listener.getConnection(desc.appID)
+		if conn == nil {
+			d.log.Errorf("no connection associated with AppID %x", desc.appID[:])
+			return
+		}
+		conn.sendResponse(&Response{
+			AppID: desc.appID,
+			MessageReplyEvent: &thin.MessageReplyEvent{
+				MessageID: desc.ID,
+				SURBID:    reply.surbID,
+				Payload:   surbPayload,
+				ErrorCode: thin.ThinClientSuccess, // No error
+			},
+		})
+	}
+}
+
+// handleChannelReply tries to handle the reply and if successful it sends a
+// response to the appropriate thin client connection. Otherwise it returns an error.
+func (d *Daemon) handleChannelReply(appid *[AppIDLength]byte,
+	mesgID *[MessageIDLength]byte,
+	surbid *[sphinxConstants.SURBIDLength]byte,
+	payload []byte) error {
+
+	// First, parse the courier query reply to check what type of reply it is
+	courierQueryReply, err := pigeonhole.ParseCourierQueryReply(payload)
+	if err != nil {
+		return fmt.Errorf("BUG, failed to unmarshal courier query reply: %s", err)
+	}
+
+	// Handle envelope replies (read/write operations)
+	switch {
+	case courierQueryReply.ReplyType == 0:
+		return d.handleCourierEnvelopeReply(appid, mesgID, surbid, payload, courierQueryReply.EnvelopeReply)
+	case courierQueryReply.ReplyType == 1:
+		return fmt.Errorf("BUG, copy command replies are not supported in the new API yet")
+	}
+
+	// not reached
+	return nil
+}
+
+func mapCourierErrorToThinClientError(courierErrorCode uint8) uint8 {
+	switch courierErrorCode {
+	case pigeonhole.EnvelopeErrorSuccess:
+		return thin.ThinClientSuccess
+	case pigeonhole.EnvelopeErrorInvalidEnvelope:
+		return thin.ThinClientErrorInvalidRequest
+	case pigeonhole.EnvelopeErrorCacheCorruption:
+		return thin.ThinClientErrorCourierCacheCorruption
+	case pigeonhole.EnvelopeErrorPropagationError:
+		return thin.ThinClientPropagationError
+	default:
+		return thin.ThinClientErrorInternalError
+	}
+}
+
+func (d *Daemon) handleCourierEnvelopeReply(appid *[AppIDLength]byte,
+	mesgID *[MessageIDLength]byte,
+	surbid *[sphinxConstants.SURBIDLength]byte,
+	payload []byte,
+	courierEnvelopeReply *pigeonhole.CourierEnvelopeReply) error {
+
+	channelID, channelDesc, err := d.lookupNewChannel(surbid)
+	if err != nil {
+		// NOTE(David): we could possibly send a reply to the thin client indicating this bug/error
+		// but instead we're going to rely on the logging. Either way it's not recoverable.
+		return fmt.Errorf("BUG, SURB ID not found: %v", err)
+	}
+
+	conn := d.listener.getConnection(appid)
+	if conn == nil {
+		return fmt.Errorf("BUG, no connection associated with AppID %x", appid[:])
+	}
+
+	isReader, isWriter, err := d.validateNewChannel(channelID, channelDesc)
+	if err != nil {
+		return fmt.Errorf("BUG, invalid channel: %v", err)
+	}
+
+	if courierEnvelopeReply == nil {
+		return fmt.Errorf("BUG, courier envelope reply is nil")
+	}
+
+	switch {
+	case courierEnvelopeReply.ErrorCode != 0:
+		// send error response to client
+		return conn.sendResponse(&Response{
+			AppID: appid,
+			MessageReplyEvent: &thin.MessageReplyEvent{
+				MessageID: mesgID,
+				SURBID:    surbid,
+				Payload:   []byte{},
+				ErrorCode: mapCourierErrorToThinClientError(courierEnvelopeReply.ErrorCode),
+			},
+		})
+	case courierEnvelopeReply.Payload == nil:
+		// send empty response to client
+		return conn.sendResponse(&Response{
+			AppID: appid,
+			MessageReplyEvent: &thin.MessageReplyEvent{
+				MessageID: mesgID,
+				SURBID:    surbid,
+				Payload:   []byte{},
+				ErrorCode: thin.ThinClientSuccess,
+			},
+		})
+	case courierEnvelopeReply.ReplyType == pigeonhole.ReplyTypeACK:
+		// send empty response to client
+		return conn.sendResponse(&Response{
+			AppID: appid,
+			MessageReplyEvent: &thin.MessageReplyEvent{
+				MessageID: mesgID,
+				SURBID:    surbid,
+				Payload:   []byte{},
+				ErrorCode: thin.ThinClientSuccess,
+			},
+		})
+	case courierEnvelopeReply.ReplyType == pigeonhole.ReplyTypePayload:
+
+		env, envelopeDesc, privateKey, err := d.processEnvelopeReply(courierEnvelopeReply, channelDesc)
+		if err != nil {
+			d.log.Errorf("NEW API REPLY: Failed to process envelope reply: %s", err)
+			return err
+		}
+
+		innerMsg, err := d.decryptMKEMEnvelope(env, envelopeDesc, privateKey)
+		if err != nil {
+			d.log.Errorf("NEW API REPLY: Failed to decrypt MKEM envelope: %s", err)
+			return err
+		}
+
+		envHash := (*[hash.HashSize]byte)(env.EnvelopeHash[:])
+
+		// from here on here, these two switch cases are the success cases:
+		switch {
+		case innerMsg.ReadReply != nil:
+			params := &ReplyHandlerParams{
+				AppID:       appid,
+				MessageID:   mesgID,
+				ChannelID:   channelID,
+				ChannelDesc: channelDesc,
+				EnvHash:     envHash,
+				IsReader:    isReader,
+				IsWriter:    isWriter,
+				ReplyIndex:  courierEnvelopeReply.ReplyIndex,
+			}
+			return d.handleNewReadReply(params, innerMsg.ReadReply)
+		case innerMsg.WriteReply != nil:
+			params := &ReplyHandlerParams{
+				AppID:       appid,
+				MessageID:   mesgID,
+				ChannelID:   channelID,
+				ChannelDesc: channelDesc,
+				EnvHash:     envHash,
+				IsReader:    isReader,
+				IsWriter:    isWriter,
+				ReplyIndex:  courierEnvelopeReply.ReplyIndex,
+			}
+			return d.handleNewWriteReply(params, innerMsg.WriteReply)
+		}
+
+		// if we got this far something failed
+		d.log.Errorf("bug 6, invalid book keeping for channelID %d", channelID)
+
+		// send error code back to client
+		return conn.sendResponse(&Response{
+			AppID: appid,
+			MessageReplyEvent: &thin.MessageReplyEvent{
+				MessageID: mesgID,
+				SURBID:    surbid,
+				Payload:   []byte{},
+				ErrorCode: thin.ThinClientErrorInvalidChannel,
+			},
+		})
+	}
+
+	// not reached
+	return nil
+}
+
+// lookupNewChannel finds the channel descriptor for a given SURB ID (new API)
+func (d *Daemon) lookupNewChannel(surbid *[sphinxConstants.SURBIDLength]byte) (uint16, *ChannelDescriptor, error) {
+	d.newSurbIDToChannelMapLock.RLock()
+	channelID, ok := d.newSurbIDToChannelMap[*surbid]
+	d.newSurbIDToChannelMapLock.RUnlock()
+	if !ok {
+		d.log.Errorf("BUG no channelID found for surbID %x in new API", surbid[:])
+		return 0, nil, fmt.Errorf("no channelID found for surbID %x in new API", surbid[:])
+	}
+
+	d.newChannelMapLock.RLock()
+	channelDesc, ok := d.newChannelMap[channelID]
+	d.newChannelMapLock.RUnlock()
+	if !ok {
+		d.log.Errorf("BUG no channel found for channelID %d in new API", channelID)
+		return 0, nil, fmt.Errorf("no channel found for channelID %d in new API", channelID)
+	}
+
+	return channelID, channelDesc, nil
+}
+
+// processEnvelopeReply processes the courier envelope reply and extracts necessary information
+func (d *Daemon) processEnvelopeReply(env *pigeonhole.CourierEnvelopeReply, channelDesc *ChannelDescriptor) (*pigeonhole.CourierEnvelopeReply, *EnvelopeDescriptor, nike.PrivateKey, error) {
+	envHash := (*[hash.HashSize]byte)(env.EnvelopeHash[:])
+
+	// DEBUG: Log envelope hash and map size when processing reply
+	channelDesc.EnvelopeDescriptorsLock.RLock()
+	mapSize := len(channelDesc.EnvelopeDescriptors)
+	envelopeDesc, ok := channelDesc.EnvelopeDescriptors[*envHash]
+	channelDesc.EnvelopeDescriptorsLock.RUnlock()
+
+	fmt.Printf("PROCESSING REPLY ENVELOPE HASH: %x (map size: %d, exists: %t)\n", envHash[:], mapSize, ok)
+
+	if !ok {
+		d.log.Errorf("no envelope descriptor found for hash %x", envHash[:])
+		return nil, nil, nil, fmt.Errorf("no envelope descriptor found for hash %x", envHash[:])
+	}
+
+	privateKey, err := replicaCommon.NikeScheme.UnmarshalBinaryPrivateKey(envelopeDesc.EnvelopeKey)
+	if err != nil {
+		d.log.Errorf("failed to unmarshal private key: %s", err)
+		return nil, nil, nil, fmt.Errorf("failed to unmarshal private key: %s", err)
+	}
+
+	if len(env.Payload) == 0 {
+		d.log.Debugf("received empty payload for envelope hash %x - no data available yet", envHash[:])
+		return nil, nil, nil, fmt.Errorf("no data available for read operation")
+	}
+
+	return env, envelopeDesc, privateKey, nil
+}
+
+// decryptMKEMEnvelope decrypts the MKEM envelope and returns the inner message
+func (d *Daemon) decryptMKEMEnvelope(env *pigeonhole.CourierEnvelopeReply, envelopeDesc *EnvelopeDescriptor, privateKey nike.PrivateKey) (*pigeonhole.ReplicaMessageReplyInnerMessage, error) {
+	mkemPrivateKeyBytes, _ := privateKey.MarshalBinary()
+	fmt.Printf("BOB DECRYPTS WITH MKEM KEY: %x\n", mkemPrivateKeyBytes[:16]) // First 16 bytes for brevity
+
+	_, doc := d.client.CurrentDocument()
+	if doc == nil {
+		d.log.Errorf("no pki doc found")
+		return nil, fmt.Errorf("no pki doc found")
+	}
+
+	replicaEpoch := replicaCommon.ConvertNormalToReplicaEpoch(envelopeDesc.Epoch)
+
+	// Try both replicas from the original envelope
+	var rawInnerMsg []byte
+	for _, replicaNum := range envelopeDesc.ReplicaNums {
+		desc, err := replicaCommon.ReplicaNum(replicaNum, doc)
+		if err != nil {
+			continue
+		}
+
+		replicaPubKeyBytes, ok := desc.EnvelopeKeys[replicaEpoch]
+		if !ok || len(replicaPubKeyBytes) == 0 {
+			continue
+		}
+
+		replicaPubKey, err := replicaCommon.NikeScheme.UnmarshalBinaryPublicKey(replicaPubKeyBytes)
+		if err != nil {
+			continue
+		}
+
+		// Try to decrypt with this replica's public key
+		rawInnerMsg, err = replicaCommon.MKEMNikeScheme.DecryptEnvelope(privateKey, replicaPubKey, env.Payload)
+		if err == nil {
+			break
+		}
+	}
+
+	if rawInnerMsg == nil {
+		d.log.Errorf("MKEM DECRYPT FAILED with all possible replicas")
+		return nil, fmt.Errorf("failed to decrypt envelope with any replica key")
+	}
+	innerMsg, err := pigeonhole.ParseReplicaMessageReplyInnerMessage(rawInnerMsg)
+	if err != nil {
+		d.log.Errorf("failed to unmarshal inner message: %s", err)
+		return nil, fmt.Errorf("failed to unmarshal inner message: %s", err)
+	}
+
+	return innerMsg, nil
 }
 
 func (d *Daemon) send(request *Request) {
-	surbKey := []byte{}
+	var surbKey []byte
 	var rtt time.Duration
 	var err error
 	var now time.Time
 
-	if request.IsARQSendOp == true {
-		request.SURBID = &[sConstants.SURBIDLength]byte{}
-		_, err = rand.Reader.Read(request.SURBID[:])
+	if request.SendARQMessage != nil {
+		request.SendARQMessage.SURBID = &[sphinxConstants.SURBIDLength]byte{}
+		_, err = rand.Reader.Read(request.SendARQMessage.SURBID[:])
 		if err != nil {
 			panic(err)
 		}
@@ -352,35 +829,53 @@ func (d *Daemon) send(request *Request) {
 
 	surbKey, rtt, err = d.client.SendCiphertext(request)
 	if err != nil {
-		d.log.Infof("SendCiphertext error: %s", err.Error())
+		d.log.Debugf("SendCiphertext error: %s", err.Error())
 	}
 
-	if request.IsARQSendOp == true {
-		d.log.Infof("ARQ RTT %s", rtt)
+	// Check if this is a request with SURB (either SendMessage or SendARQMessage)
+	var withSURB bool
+	var surbID *[sphinxConstants.SURBIDLength]byte
+	var messageID *[MessageIDLength]byte
+	var isLoopDecoy bool
+
+	if request.SendMessage != nil {
+		withSURB = request.SendMessage.WithSURB
+		surbID = request.SendMessage.SURBID
+		messageID = request.SendMessage.ID
+		isLoopDecoy = (request.SendLoopDecoy != nil)
+	} else if request.SendARQMessage != nil {
+		withSURB = request.SendARQMessage.WithSURB
+		surbID = request.SendARQMessage.SURBID
+		messageID = request.SendARQMessage.ID
+		isLoopDecoy = false
 	}
 
-	if request.WithSURB {
+	if withSURB {
 		now = time.Now()
 		// XXX  this is too aggressive, and must be at least the fetchInterval + rtt + some slopfactor to account for path delays
-	
+
 		fetchInterval := d.client.GetPollInterval()
 		slop := time.Second
 		duration := rtt + fetchInterval + slop
 		replyArrivalTime := now.Add(duration)
 
-		d.timerQueue.Push(uint64(replyArrivalTime.UnixNano()), request.SURBID)
+		d.timerQueue.Push(uint64(replyArrivalTime.UnixNano()), surbID)
 
-		if request.IsLoopDecoy == false {
+		if !isLoopDecoy {
 			incomingConn := d.listener.getConnection(request.AppID)
 			if incomingConn != nil {
+				var errStr string
+				if err != nil {
+					errStr = err.Error()
+				}
 				response := &Response{
 					AppID: request.AppID,
 					MessageSentEvent: &thin.MessageSentEvent{
-						MessageID: request.ID,
-						SURBID:    request.SURBID,
+						MessageID: messageID,
+						SURBID:    surbID,
 						SentAt:    now,
 						ReplyETA:  rtt,
-						Err:       err,
+						Err:       errStr,
 					},
 				}
 				err = incomingConn.sendResponse(response)
@@ -392,15 +887,15 @@ func (d *Daemon) send(request *Request) {
 	}
 
 	d.replyLock.Lock()
-	if request.IsARQSendOp == true {
+	if request.SendARQMessage != nil {
 		message := &ARQMessage{
 			AppID:              request.AppID,
-			MessageID:          request.ID,
-			SURBID:             request.SURBID,
-			Payload:            request.Payload,
-			DestinationIdHash:  request.DestinationIdHash,
+			MessageID:          request.SendARQMessage.ID,
+			SURBID:             request.SendARQMessage.SURBID,
+			Payload:            request.SendARQMessage.Payload,
+			DestinationIdHash:  request.SendARQMessage.DestinationIdHash,
 			Retransmissions:    0,
-			RecipientQueueID:   request.RecipientQueueID,
+			RecipientQueueID:   request.SendARQMessage.RecipientQueueID,
 			SURBDecryptionKeys: surbKey,
 			SentAt:             time.Now(),
 			ReplyETA:           rtt,
@@ -416,22 +911,49 @@ func (d *Daemon) send(request *Request) {
 		slop := time.Minute * 5 // very conservative
 		replyArrivalTime := time.Now().Add(rtt + slop)
 		d.gcTimerQueue.Push(uint64(replyArrivalTime.UnixNano()), &gcReply{
-			id:    request.ID,
+			id:    request.SendARQMessage.ID,
 			appID: request.AppID,
 		})
 	}
 
-	if request.IsSendOp {
-		d.replies[*request.SURBID] = replyDescriptor{
-			appID:   request.AppID,
-			surbKey: surbKey,
+	if request.SendMessage != nil {
+		// Check if this is a new API channel query (has ChannelID field)
+		if request.SendMessage.ChannelID != nil {
+
+			// Debug logging for MessageID
+			if request.SendMessage.ID != nil {
+				d.log.Errorf("DEBUG: Storing channel reply with MessageID %x for SURBID %x", request.SendMessage.ID[:8], request.SendMessage.SURBID[:8])
+			} else {
+				d.log.Errorf("DEBUG: WARNING: Storing channel reply with nil MessageID for SURBID %x", request.SendMessage.SURBID[:8])
+			}
+
+			// New API: store in channel replies and new SURB ID map
+			d.channelRepliesLock.Lock()
+			d.channelReplies[*request.SendMessage.SURBID] = replyDescriptor{
+				ID:      request.SendMessage.ID,
+				appID:   request.AppID,
+				surbKey: surbKey,
+			}
+			d.channelRepliesLock.Unlock()
+
+			// Store the SURB ID to channel ID mapping in the NEW API maps
+			d.newSurbIDToChannelMapLock.Lock()
+			d.newSurbIDToChannelMap[*request.SendMessage.SURBID] = *request.SendMessage.ChannelID
+			d.newSurbIDToChannelMapLock.Unlock()
+		} else {
+			// Old API: store in regular replies
+			d.replies[*request.SendMessage.SURBID] = replyDescriptor{
+				ID:      request.SendMessage.ID,
+				appID:   request.AppID,
+				surbKey: surbKey,
+			}
 		}
 		d.replyLock.Unlock()
 		return
 	}
 
-	if request.IsLoopDecoy {
-		d.decoys[*request.SURBID] = replyDescriptor{
+	if isLoopDecoy {
+		d.decoys[*surbID] = replyDescriptor{
 			appID:   request.AppID,
 			surbKey: surbKey,
 		}
@@ -452,22 +974,25 @@ func (d *Daemon) sendLoopDecoy(request *Request) {
 	if len(echoServices) == 0 {
 		panic("wtf no echo services")
 	}
-	echoService := echoServices[mrand.Intn(len(echoServices))]
+	echoService := echoServices[d.secureRand.Intn(len(echoServices))]
 
 	serviceIdHash := hash.Sum256(echoService.MixDescriptor.IdentityKey)
 	payload := make([]byte, d.client.geo.UserForwardPayloadLength)
-	surbID := &[sConstants.SURBIDLength]byte{}
+	surbID := &[sphinxConstants.SURBIDLength]byte{}
 	_, err := rand.Reader.Read(surbID[:])
 	if err != nil {
 		panic(err)
 
 	}
 
-	request.Payload = payload
-	request.SURBID = surbID
-	request.DestinationIdHash = &serviceIdHash
-	request.RecipientQueueID = echoService.RecipientQueueID
-	request.IsLoopDecoy = true
+	// Convert to SendMessage for actual sending
+	request.SendMessage = &thin.SendMessage{
+		Payload:           payload,
+		SURBID:            surbID,
+		DestinationIdHash: &serviceIdHash,
+		RecipientQueueID:  echoService.RecipientQueueID,
+		WithSURB:          true,
+	}
 
 	d.send(request)
 }
@@ -481,31 +1006,37 @@ func (d *Daemon) sendDropDecoy() {
 	if len(echoServices) == 0 {
 		panic("wtf no echo services")
 	}
-	echoService := echoServices[mrand.Intn(len(echoServices))]
+	echoService := echoServices[d.secureRand.Intn(len(echoServices))]
 
 	serviceIdHash := hash.Sum256(echoService.MixDescriptor.IdentityKey)
 	payload := make([]byte, d.client.geo.UserForwardPayloadLength)
 
-	request := &Request{}
-	request.WithSURB = false
-	request.Payload = payload
-	request.DestinationIdHash = &serviceIdHash
-	request.RecipientQueueID = echoService.RecipientQueueID
-	request.IsDropDecoy = true
+	request := &Request{
+		SendMessage: &thin.SendMessage{
+			WithSURB:          false,
+			Payload:           payload,
+			DestinationIdHash: &serviceIdHash,
+			RecipientQueueID:  echoService.RecipientQueueID,
+		},
+	}
 
 	d.send(request)
 }
 
-func (d *Daemon) arqResend(surbID *[sConstants.SURBIDLength]byte) {
+func (d *Daemon) arqResend(surbID *[sphinxConstants.SURBIDLength]byte) {
 	select {
 	case <-d.HaltCh():
 		return
 	case d.arqResendCh <- surbID:
+	default:
+		// If we can't send immediately and we're not halted,
+		// the channel might be full or the receiver is busy.
+		// Don't block during shutdown.
+		d.log.Debugf("ARQ resend channel full, dropping resend for SURB ID %x", surbID[:])
 	}
 }
 
-func (d *Daemon) arqDoResend(surbID *[sConstants.SURBIDLength]byte) {
-	defer d.log.Info("resend end")
+func (d *Daemon) arqDoResend(surbID *[sphinxConstants.SURBIDLength]byte) {
 
 	d.replyLock.Lock()
 	message, ok := d.arqSurbIDMap[*surbID]
@@ -524,9 +1055,9 @@ func (d *Daemon) arqDoResend(surbID *[sConstants.SURBIDLength]byte) {
 			AppID: message.AppID,
 			MessageReplyEvent: &thin.MessageReplyEvent{
 				MessageID: message.MessageID,
-				Err:       errors.New("Max retries met."),
 				Payload:   []byte{},
 				SURBID:    surbID,
+				ErrorCode: thin.ThinClientErrorMaxRetries,
 			},
 		}
 		incomingConn := d.listener.getConnection(message.AppID)
@@ -543,20 +1074,21 @@ func (d *Daemon) arqDoResend(surbID *[sConstants.SURBIDLength]byte) {
 	d.log.Warningf("resend ----------------- REMOVING SURB ID %x", surbID[:])
 	delete(d.arqSurbIDMap, *surbID)
 
-	newsurbID := &[sConstants.SURBIDLength]byte{}
+	newsurbID := &[sphinxConstants.SURBIDLength]byte{}
 	_, err := rand.Reader.Read(newsurbID[:])
 	if err != nil {
 		panic(err)
 	}
 	pkt, k, rtt, err := d.client.ComposeSphinxPacket(&Request{
-		ID:                message.MessageID,
-		AppID:             message.AppID,
-		WithSURB:          true,
-		DestinationIdHash: message.DestinationIdHash,
-		RecipientQueueID:  message.RecipientQueueID,
-		Payload:           message.Payload,
-		SURBID:            newsurbID,
-		IsARQSendOp:       true,
+		AppID: message.AppID,
+		SendARQMessage: &thin.SendARQMessage{
+			ID:                message.MessageID,
+			WithSURB:          true,
+			DestinationIdHash: message.DestinationIdHash,
+			RecipientQueueID:  message.RecipientQueueID,
+			Payload:           message.Payload,
+			SURBID:            newsurbID,
+		},
 	})
 	if err != nil {
 		d.log.Errorf("failed to send sphinx packet: %s", err.Error())
@@ -580,4 +1112,159 @@ func (d *Daemon) arqDoResend(surbID *[sConstants.SURBIDLength]byte) {
 	if err != nil {
 		d.log.Warningf("ARQ resend failure: %s", err)
 	}
+}
+
+// validateNewChannel performs sanity checks on the channel descriptor and determines channel type (new API)
+func (d *Daemon) validateNewChannel(channelID uint16, channelDesc *ChannelDescriptor) (bool, bool, error) {
+	// sanity check
+	if channelDesc.StatefulReader == nil && channelDesc.StatefulWriter == nil {
+		d.log.Errorf("bug 1, invalid book keeping for channelID %d", channelID)
+		return false, false, fmt.Errorf("bug 1, invalid book keeping for channelID %d", channelID)
+	}
+	if channelDesc.StatefulReader != nil && channelDesc.StatefulWriter != nil {
+		d.log.Errorf("bug 2, invalid book keeping for channelID %d", channelID)
+		return false, false, fmt.Errorf("bug 2, invalid book keeping for channelID %d", channelID)
+	}
+	if channelDesc.EnvelopeDescriptors == nil {
+		d.log.Errorf("bug 3, invalid book keeping for channelID %d", channelID)
+		return false, false, fmt.Errorf("bug 3, invalid book keeping for channelID %d", channelID)
+	}
+
+	isReader := channelDesc.StatefulReader != nil
+	isWriter := channelDesc.StatefulWriter != nil
+	return isReader, isWriter, nil
+}
+
+// validateReadReplySignature checks if the signature is valid (not all zeros)
+func (d *Daemon) validateReadReplySignature(signature [64]uint8) error {
+	var zeroSig [64]uint8
+	if signature == zeroSig {
+		d.log.Debugf("replica returned zero signature for read operation")
+		return fmt.Errorf("replica read reply has zero signature")
+	}
+	return nil
+}
+
+// decryptReadReplyPayload handles the decryption and extraction of the payload
+func (d *Daemon) decryptReadReplyPayload(params *ReplyHandlerParams, readReply *pigeonhole.ReplicaReadReply) ([]byte, error) {
+	params.ChannelDesc.StatefulReaderLock.Lock()
+	defer params.ChannelDesc.StatefulReaderLock.Unlock()
+
+	boxid, err := params.ChannelDesc.StatefulReader.NextBoxID()
+	if err != nil {
+		d.log.Errorf("Failed to get next box ID for channel %d: %s", params.ChannelID, err)
+		return nil, fmt.Errorf("failed to get next box ID: %s", err)
+	}
+
+	// BACAP decrypt the payload
+	signature := (*[bacap.SignatureSize]byte)(readReply.Signature[:])
+	innerplaintext, err := params.ChannelDesc.StatefulReader.DecryptNext(
+		[]byte(constants.PIGEONHOLE_CTX),
+		*boxid,
+		readReply.Payload,
+		*signature)
+
+	if err != nil {
+		d.log.Errorf("BACAP DECRYPT FAILED for BoxID %x: %s", boxid[:], err)
+		return nil, fmt.Errorf("failed to decrypt next: %s", err)
+	}
+
+	// Extract the original message from the padded payload
+	originalMessage, err := pigeonhole.ExtractMessageFromPaddedPayload(innerplaintext)
+	if err != nil {
+		d.log.Errorf("Failed to extract message from padded payload: %s", err)
+		return nil, fmt.Errorf("failed to extract message from padded payload: %s", err)
+	}
+
+	return originalMessage, nil
+}
+
+// processReadReplyPayload processes the read reply and returns payload and error
+func (d *Daemon) processReadReplyPayload(params *ReplyHandlerParams, readReply *pigeonhole.ReplicaReadReply) ([]byte, error) {
+	if readReply.ErrorCode != 0 {
+		d.log.Errorf("read failed for channel %d with error code %d", params.ChannelID, readReply.ErrorCode)
+		return nil, fmt.Errorf("read failed with error code %d", readReply.ErrorCode)
+	}
+
+	if err := d.validateReadReplySignature(readReply.Signature); err != nil {
+		return nil, err
+	}
+
+	return d.decryptReadReplyPayload(params, readReply)
+}
+
+// handleNewReadReply processes a read reply (new API)
+func (d *Daemon) handleNewReadReply(params *ReplyHandlerParams, readReply *pigeonhole.ReplicaReadReply) error {
+	if !params.IsReader {
+		d.log.Errorf("bug 4, invalid book keeping for channelID %d", params.ChannelID)
+		return fmt.Errorf("bug 4, invalid book keeping for channelID %d", params.ChannelID)
+	}
+
+	conn := d.listener.getConnection(params.AppID)
+	if conn == nil {
+		return fmt.Errorf("BUG, no connection associated with AppID %x", params.AppID[:])
+	}
+
+	payload, err := d.processReadReplyPayload(params, readReply)
+	var errorCode uint8 = thin.ThinClientSuccess
+	if err != nil {
+		d.log.Errorf("failed to process read reply payload: %s", err)
+		payload = []byte{} // Ensure empty payload on error
+		errorCode = thin.ThinClientErrorInternalError
+	}
+
+	// deliver the read result to thin client
+	err = conn.sendResponse(&Response{
+		AppID: params.AppID,
+		MessageReplyEvent: &thin.MessageReplyEvent{
+			MessageID:  params.MessageID,
+			Payload:    payload,
+			ReplyIndex: &params.ReplyIndex,
+			ErrorCode:  errorCode,
+		},
+	})
+
+	// deliver the read result to thin client
+	err = conn.sendResponse(&Response{
+		AppID: params.AppID,
+		MessageReplyEvent: &thin.MessageReplyEvent{
+			MessageID:  params.MessageID,
+			Payload:    payload,
+			ReplyIndex: &params.ReplyIndex,
+			ErrorCode:  readReply.ErrorCode,
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("failed to send read response to client: %s", err)
+	}
+
+	return nil
+}
+
+func (d *Daemon) handleNewWriteReply(params *ReplyHandlerParams, writeReply *pigeonhole.ReplicaWriteReply) error {
+	if !params.IsWriter {
+		d.log.Errorf("bug 5, invalid book keeping for channelID %d", params.ChannelID)
+		return fmt.Errorf("bug 5, invalid book keeping for channelID %d", params.ChannelID)
+	}
+
+	conn := d.listener.getConnection(params.AppID)
+	if conn == nil {
+		return fmt.Errorf("BUG, no connection associated with AppID %x", params.AppID[:])
+	}
+
+	// deliver the write result to thin client
+	err := conn.sendResponse(&Response{
+		AppID: params.AppID,
+		MessageReplyEvent: &thin.MessageReplyEvent{
+			MessageID:  params.MessageID,
+			Payload:    []byte{}, // Empty payload for write operations
+			ReplyIndex: &params.ReplyIndex,
+			ErrorCode:  writeReply.ErrorCode,
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("failed to send write response to client: %s", err)
+	}
+
+	return nil
 }

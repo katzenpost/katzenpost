@@ -1,0 +1,1 @@
+#define crypto_declassify NAMESPACEBITS(crypto_declassify)
