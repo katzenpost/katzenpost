@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"sync"
 
+"github.com/fxamacker/cbor/v2"
+
 	"github.com/katzenpost/hpqc/bacap"
 	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/nike"
@@ -40,13 +42,13 @@ const (
 // Epoch in which the envelope was sent.
 type EnvelopeDescriptor struct {
 	// Epoch is the Katzenpost epoch in which the ReplyIndex is valid.
-	Epoch uint64
+	Epoch uint64 `cbor:"epoch"`
 
 	// ReplicaNums are the replica numbers used for this envelope.
-	ReplicaNums [2]uint8
+	ReplicaNums [2]uint8 `cbor:"replica_nums"`
 
 	// EnvelopeKeys is tyhe Private NIKE Key used with our MKEM scheme.
-	EnvelopeKey []byte
+	EnvelopeKey []byte `cbor:"envelope_key"`
 }
 
 // StoredEnvelopeData contains the envelope and associated box ID for reuse
@@ -56,7 +58,7 @@ type StoredEnvelopeData struct {
 }
 
 // ChannelDescriptor describes a pigeonhole channel and supplies us with
-// everthing we need to read or write to the channel.
+// everything we need to read or write to the channel.
 type ChannelDescriptor struct {
 	// AppID tracks which thin client owns this channel for cleanup purposes
 	AppID *[AppIDLength]byte
@@ -137,7 +139,7 @@ func CreateChannelWriteRequest(
 
 	// Validate that the payload can fit within the geometry's MaxPlaintextPayloadLength
 	// CreatePaddedPayload requires 4 bytes for length prefix plus the payload
-	minRequiredSize := len(payload) + 4
+	minRequiredSize := len(payload) + 4 // why do we add +4 on both sides?
 	if minRequiredSize > geometry.MaxPlaintextPayloadLength+4 {
 		return nil, nil, fmt.Errorf("payload too large: %d bytes (+ 4 byte length prefix) exceeds MaxPlaintextPayloadLength + 4 of %d bytes",
 			len(payload), geometry.MaxPlaintextPayloadLength+4)
@@ -300,9 +302,8 @@ func (d *Daemon) createWriteChannel(request *Request) {
 	}
 	d.newChannelMapLock.Unlock()
 
-	currentMessageIndex := statefulWriter.NextIndex
 	bobReadCap := statefulWriter.Wcap.ReadCap()
-	d.sendWriteChannelSuccessResponse(request, channelID, bobReadCap, statefulWriter.Wcap, currentMessageIndex)
+	d.sendWriteChannelSuccessResponse(request, channelID, bobReadCap, statefulWriter.Wcap, statefulWriter.NextIndex)
 }
 
 // getStoredEnvelope retrieves a previously stored envelope and its private key
@@ -348,7 +349,7 @@ func (d *Daemon) getStoredEnvelope(messageID *[thin.MessageIDLength]byte, channe
 }
 
 // storeEnvelopeDescriptor stores the envelope descriptor for new envelopes (not reused ones)
-func (d *Daemon) storeEnvelopeDescriptor(courierEnvelope *pigeonhole.CourierEnvelope, envelopePrivateKey nike.PrivateKey, channelDesc *ChannelDescriptor, doc *cpki.Document) error {
+func (d *Daemon) StoreEnvelopeDescriptor(courierEnvelope *pigeonhole.CourierEnvelope, envelopePrivateKey nike.PrivateKey, channelDesc *ChannelDescriptor, doc *cpki.Document) error {
 	envHash := courierEnvelope.EnvelopeHash()
 
 	// DEBUG: Log envelope hash and map size when storing
@@ -463,6 +464,8 @@ func (d *Daemon) sendErrorResponse(request *Request, errorCode uint8, responseTy
 		}
 	case "WriteChannel":
 		response.WriteChannelReply = &thin.WriteChannelReply{
+                        //MessageID: request.WriteChannel.MessageID,
+			// TODO add EnvelopeHash
 			ChannelID: request.WriteChannel.ChannelID,
 			ErrorCode: errorCode,
 		}
@@ -614,12 +617,13 @@ func (d *Daemon) writeChannel(request *Request) {
 	channelDesc.StatefulWriterLock.Unlock()
 
 	envHash := courierEnvelope.EnvelopeHash()
-	channelDesc.EnvelopeDescriptorsLock.Lock()
-	channelDesc.EnvelopeDescriptors[*envHash] = &EnvelopeDescriptor{
+        envDescriptor := EnvelopeDescriptor{
 		Epoch:       doc.Epoch,
 		ReplicaNums: courierEnvelope.IntermediateReplicas,
 		EnvelopeKey: envelopePrivateKey.Bytes(),
 	}
+        channelDesc.EnvelopeDescriptorsLock.Lock()
+	channelDesc.EnvelopeDescriptors[*envHash] = &envDescriptor
 	channelDesc.EnvelopeDescriptorsLock.Unlock()
 
 	courierQuery := &pigeonhole.CourierQuery{
@@ -633,10 +637,15 @@ func (d *Daemon) writeChannel(request *Request) {
 		d.sendWriteChannelError(request, thin.ThinClientErrorConnectionLost)
 		return
 	}
-	conn.sendResponse(&Response{
+	envDescriptorBytes , err := cbor.Marshal(envDescriptor)
+	if nil != err { panic(err) }
+
+        conn.sendResponse(&Response{
 		AppID: request.AppID,
 		WriteChannelReply: &thin.WriteChannelReply{
 			ChannelID:          channelID,
+			EnvelopeHash: *envHash,
+			EnvelopeDescriptor: envDescriptorBytes,
 			SendMessagePayload: courierQuery.Bytes(),
 			NextMessageIndex:   nextMessageIndex,
 			ErrorCode:          thin.ThinClientSuccess,
@@ -704,12 +713,13 @@ func (d *Daemon) readChannel(request *Request) {
 	}
 
 	envHash := courierEnvelope.EnvelopeHash()
-	channelDesc.EnvelopeDescriptorsLock.Lock()
-	channelDesc.EnvelopeDescriptors[*envHash] = &EnvelopeDescriptor{
+	envDescriptor := EnvelopeDescriptor{
 		Epoch:       doc.Epoch,
 		ReplicaNums: courierEnvelope.IntermediateReplicas,
 		EnvelopeKey: envelopePrivateKey.Bytes(),
 	}
+	channelDesc.EnvelopeDescriptorsLock.Lock()
+	channelDesc.EnvelopeDescriptors[*envHash] = &envDescriptor
 	channelDesc.EnvelopeDescriptorsLock.Unlock()
 
 	courierQuery := &pigeonhole.CourierQuery{
@@ -723,11 +733,16 @@ func (d *Daemon) readChannel(request *Request) {
 		d.sendReadChannelError(request, thin.ThinClientErrorConnectionLost)
 		return
 	}
+        envDescriptorBytes , err := cbor.Marshal(envDescriptor)
+	if nil != err { panic(err) }
+
 	conn.sendResponse(&Response{
 		AppID: request.AppID,
 		ReadChannelReply: &thin.ReadChannelReply{
 			MessageID:          request.ReadChannel.MessageID,
 			ChannelID:          channelID,
+			EnvelopeHash: *envHash,
+			EnvelopeDescriptor: envDescriptorBytes,
 			SendMessagePayload: courierQuery.Bytes(),
 			NextMessageIndex:   nextMessageIndex,
 			ReplyIndex:         request.ReadChannel.ReplyIndex,

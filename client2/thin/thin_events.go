@@ -207,6 +207,11 @@ type WriteChannelReply struct {
 	// ChannelID identifies the channel this reply corresponds to.
 	ChannelID uint16 `cbor:"channel_id"`
 
+	MessageID *[MessageIDLength]byte `cbor:"message_id"`
+
+	EnvelopeHash [32]byte `cbor:"envelope_hash"`
+	EnvelopeDescriptor []byte `cbor:"envelope_descriptor"`
+
 	// SendMessagePayload contains the prepared Sphinx packet that should be
 	// sent via SendChannelQuery to complete the write operation.
 	SendMessagePayload []byte `cbor:"send_message_payload"`
@@ -238,6 +243,9 @@ type ReadChannelReply struct {
 
 	// ChannelID identifies the channel this reply corresponds to.
 	ChannelID uint16 `cbor:"channel_id"`
+
+	EnvelopeHash [32]byte `cbor:"envelope_hash"`
+	EnvelopeDescriptor []byte `cbor:"envelope_descriptor"`
 
 	// SendMessagePayload contains the prepared query that should be sent via
 	// SendChannelQuery to retrieve the next message from the channel.

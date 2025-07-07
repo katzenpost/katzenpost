@@ -267,7 +267,7 @@ type ThinClose struct {
 }
 
 type Response struct {
-	ShutdownEvent *ShutdownEvent `cbor:"shudown_event"`
+	ShutdownEvent *ShutdownEvent `cbor:"shutdown_event"`
 
 	ConnectionStatusEvent *ConnectionStatusEvent `cbor:"connection_status_event"`
 

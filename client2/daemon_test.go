@@ -27,6 +27,8 @@ func getFreePort() (int, error) {
 	return listener.Addr().(*net.TCPAddr).Port, nil
 }
 
+func TestDaemonUniqueChannels
+
 func TestDaemonStartStop(t *testing.T) {
 	cfg, err := config.LoadFile("testdata/client.toml")
 	require.NoError(t, err)

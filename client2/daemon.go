@@ -6,7 +6,7 @@ package client2
 import (
 	"crypto/hmac"
 	"crypto/rand"
-	"encoding/binary"
+//	"encoding/binary"
 	"errors"
 	"fmt"
 	mrand "math/rand"
@@ -139,19 +139,25 @@ func NewDaemon(cfg *config.Config) (*Daemon, error) {
 
 // generateUniqueChannelID generates a unique uint16 channel ID that's not already in use
 func (d *Daemon) generateUniqueChannelID() uint16 {
+	var channelID uint16
+
 	d.newChannelMapLock.Lock()
 	defer d.newChannelMapLock.Unlock()
 
+	channelID = uint16(len(d.newChannelMap))
+	if 0 == channelID {
+	  channelID += 1
+	}
 	for {
-		// Generate a random uint16
-		var channelID uint16
-		binary.Read(rand.Reader, binary.BigEndian, &channelID)
-
 		// Check if it's already in use
 		if _, exists := d.newChannelMap[channelID]; !exists {
 			// Reserve the ID by adding an empty entry (will be replaced with actual descriptor)
 			d.newChannelMap[channelID] = nil
 			return channelID
+		}
+		channelID += 1
+		if 0 == channelID {
+		   panic("newChannelMap is full")
 		}
 	}
 }
@@ -564,13 +570,12 @@ func (d *Daemon) handleNewChannelReply(appid *[AppIDLength]byte,
                       MessageReplyEvent: &thin.MessageReplyEvent{
                          MessageID: mesgID,
                          Payload: nil,
-                         Err: pigeonhole.ReplicaErrorToString(readReply.ErrorCode)
-                      },
-                   })
+                         Err: pigeonhole.ReplicaErrorToString(courierQueryReply.EnvelopeReply.ErrorCode),
+                      }})
                    if err != nil {
-                      d.log.Errorf("courierQueryReply.EnvelopeReply: %v Failed to send error response: %s | for err %s", mesgID, err, pigeonhole.ReplicaErrorToString(readReply.ErrorCode))
+                      d.log.Errorf("courierQueryReply.EnvelopeReply: %v Failed to send error response: %s | for err %s", mesgID, err, pigeonhole.ReplicaErrorToString(courierQueryReply.EnvelopeReply.ErrorCode))
                    } else {
-                      d.log.Errorf("courierQueryReply.EnvelopeReply: %v had replica err: %s", mesgID, pigeonhole.ReplicaErrorToString(readReply.ErrorCode))
+                      d.log.Errorf("courierQueryReply.EnvelopeReply: %v had replica err: %s", mesgID, pigeonhole.ReplicaErrorToString(courierQueryReply.EnvelopeReply.ErrorCode))
                    }
                    return err
                 }
