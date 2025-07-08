@@ -61,11 +61,6 @@ func TestChannelClose(t *testing.T) {
 }
 
 func TestChannelAPIBasics(t *testing.T) {
-	t.Log("TESTING COURIER SERVICE - New thin client API")
-	// NOTE: The new API automatically extracts messages from padded payloads in the daemon,
-	// so clients receive the original message directly, not the raw padded payload.
-
-	// Setup clients and get current epoch
 	aliceThinClient := setupThinClient(t)
 	defer aliceThinClient.Close()
 	bobThinClient := setupThinClient(t)
