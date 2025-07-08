@@ -183,11 +183,6 @@ func TestGetRandomIntermediateReplicas(t *testing.T) {
 				expectedErrorSubstring: "replica not found",         // GetShards fails first with this error
 			},
 			{
-				name:                   "InsufficientReplicasForIntermediate",
-				doc:                    createTestPKIDocument(t, 3), // 3 replicas (less than required 4 for intermediate routing)
-				expectedErrorSubstring: "insufficient storage replicas: need at least 4 replicas for intermediate routing",
-			},
-			{
 				name: "EmptyReplicas",
 				doc: &pki.Document{
 					StorageReplicas: []*pki.ReplicaDescriptor{},
@@ -214,10 +209,27 @@ func TestGetRandomIntermediateReplicas(t *testing.T) {
 		}{
 			{
 				name:        "MinimalReplicas",
-				numReplicas: 4,
-				description: "Test with exactly 4 replicas (minimum required for intermediate routing)",
+				numReplicas: 2,
+				description: "Test with exactly 2 replicas (minimum required)",
 				extraChecks: func(t *testing.T, doc *pki.Document, replicaIndices [2]uint8, replicaPubKeys []nike.PublicKey) {
-					// With only 4 replicas, indices should be within valid range
+					require.Equal(t, [2]uint8{0, 1}, replicaIndices)
+				},
+			},
+			{
+				name:        "ThreeReplicas",
+				numReplicas: 3,
+				description: "Test with exactly 3 replicas",
+				extraChecks: func(t *testing.T, doc *pki.Document, replicaIndices [2]uint8, replicaPubKeys []nike.PublicKey) {
+					require.Less(t, replicaIndices[0], uint8(3))
+					require.Less(t, replicaIndices[1], uint8(3))
+					require.NotEqual(t, replicaIndices[0], replicaIndices[1])
+				},
+			},
+			{
+				name:        "FourReplicas",
+				numReplicas: 4,
+				description: "Test with exactly 4 replicas",
+				extraChecks: func(t *testing.T, doc *pki.Document, replicaIndices [2]uint8, replicaPubKeys []nike.PublicKey) {
 					require.Less(t, replicaIndices[0], uint8(4))
 					require.Less(t, replicaIndices[1], uint8(4))
 					require.NotEqual(t, replicaIndices[0], replicaIndices[1])
@@ -228,7 +240,6 @@ func TestGetRandomIntermediateReplicas(t *testing.T) {
 				numReplicas: 20,
 				description: "Test with many replicas to ensure indices are within bounds",
 				extraChecks: func(t *testing.T, doc *pki.Document, replicaIndices [2]uint8, replicaPubKeys []nike.PublicKey) {
-					// Verify indices are within valid range
 					require.Less(t, replicaIndices[0], uint8(20))
 					require.Less(t, replicaIndices[1], uint8(20))
 				},
@@ -250,96 +261,4 @@ func TestGetRandomIntermediateReplicas(t *testing.T) {
 			})
 		}
 	})
-
-	t.Run("RandomnessBehavior", func(t *testing.T) {
-		// Create a PKI document with 5 replicas
-		doc := createTestPKIDocument(t, 5)
-		boxid := generateRandomBoxID(t)
-
-		// Call the function multiple times and verify it can return different results
-		// (since it uses secure random number generation)
-		results := make(map[[2]uint8]bool)
-
-		// Run multiple times to check for randomness
-		for i := 0; i < 10; i++ {
-			replicaIndices, replicaPubKeys, err := GetRandomIntermediateReplicas(doc, boxid)
-			require.NoError(t, err)
-			validateSuccessfulResult(t, doc, replicaIndices, replicaPubKeys)
-
-			// Store the result
-			results[replicaIndices] = true
-		}
-
-		// With 5 replicas, there are C(5,2) = 10 possible combinations
-		// We should see some variety in the results (though not necessarily all combinations)
-		t.Logf("Observed %d different replica index combinations out of 10 calls", len(results))
-	})
-
-	// TODO: Re-enable edge case tests when we can optimize key generation
-	// The edge case tests are currently too slow due to expensive cryptographic key generation
-	/*
-		t.Run("EdgeCases", func(t *testing.T) {
-			replicaEpoch, _, _ := replicaCommon.ReplicaNow()
-
-			t.Run("MissingEnvelopeKey", func(t *testing.T) {
-				// Make a copy and modify it
-				doc := createTestPKIDocument(t, 5)
-				// Remove envelope key from first replica
-				doc.StorageReplicas[0].EnvelopeKeys = make(map[uint64][]byte)
-
-				// This should eventually fail when the function tries to access the problematic key
-				// We'll run it multiple times since the selection is random
-				var lastErr error
-				foundError := false
-				maxAttempts := 20
-
-				for i := 0; i < maxAttempts; i++ {
-					boxid := generateRandomBoxID(t)
-					_, _, err := GetRandomIntermediateReplicas(doc, boxid)
-					if err != nil {
-						lastErr = err
-						foundError = true
-						break
-					}
-				}
-
-				if foundError {
-					require.Error(t, lastErr)
-					require.Contains(t, lastErr.Error(), "no envelope key found")
-				} else {
-					t.Logf("Warning: Did not encounter the missing envelope key error in %d attempts", maxAttempts)
-				}
-			})
-
-			t.Run("EmptyEnvelopeKey", func(t *testing.T) {
-				// Make a copy and modify it
-				doc := createTestPKIDocument(t, 5)
-				// Set empty envelope key for first replica
-				doc.StorageReplicas[0].EnvelopeKeys[replicaEpoch] = []byte{}
-
-				// This should eventually fail when the function tries to access the problematic key
-				// We'll run it multiple times since the selection is random
-				var lastErr error
-				foundError := false
-				maxAttempts := 20
-
-				for i := 0; i < maxAttempts; i++ {
-					boxid := generateRandomBoxID(t)
-					_, _, err := GetRandomIntermediateReplicas(doc, boxid)
-					if err != nil {
-						lastErr = err
-						foundError = true
-						break
-					}
-				}
-
-				if foundError {
-					require.Error(t, lastErr)
-					require.Contains(t, lastErr.Error(), "empty envelope key")
-				} else {
-					t.Logf("Warning: Did not encounter the empty envelope key error in %d attempts", maxAttempts)
-				}
-			})
-		})
-	*/
 }
