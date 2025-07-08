@@ -20,7 +20,7 @@ import (
 	_ "net/http/pprof"
 )
 
-func TestAllClient2Tests(t *testing.T) {
+func TestLegacyTests(t *testing.T) {
 	// Setup signal handling for graceful shutdown
 	haltCh := make(chan os.Signal, 1)
 	signal.Notify(haltCh, os.Interrupt, syscall.SIGTERM)
@@ -33,8 +33,6 @@ func TestAllClient2Tests(t *testing.T) {
 	t.Run("TestDockerMultiplexClients", testDockerMultiplexClients)
 	t.Run("TestDockerClientARQSendReceive", testDockerClientARQSendReceive)
 	t.Run("TestDockerClientSendReceive", testDockerClientSendReceive)
-
-	t.Run("TestDockerCourierServiceNewThinclientAPI", TestDockerCourierServiceNewThinclientAPI)
 }
 
 func testDockerMultiplexClients(t *testing.T) {

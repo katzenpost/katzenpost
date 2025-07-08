@@ -25,19 +25,19 @@ coverage-html:
 dockertest-legacy:
 	cd ../docker && make $(distro)_base.stamp
 	$(docker) run -w /go/katzenpost/client2 ${docker_args} $(image) \
-		go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 1h -run "TestAllClient2Tests/(TestDockerMultiplexClients|TestDockerClientARQSendReceive|TestDockerClientSendReceive)"
+		go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 1h -run "TestLegacyTests"
 
-dockertest-channels-new:
+dockertest_channel_basics_test:
 	cd ../docker && make $(distro)_base.stamp
 	$(docker) run -w /go/katzenpost/client2 ${docker_args} $(image) \
-		go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 1h -run "TestDockerCourierServiceNewThinclientAPI"
+		go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 1h -run "TestChannelAPIBasics"
 
-dockertest-single-read:
+dockertest_single_read_test:
 	cd ../docker && make $(distro)_base.stamp
 	$(docker) run -w /go/katzenpost/client2 ${docker_args} $(image) \
-		go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 1h -run "TestDockerCourierServiceSingleReadQuery"
+		go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 1h -run "TestChannelSingleReadQuery"
 
-dockertest-channel-close:
+dockertest_channel_close_test:
 	cd ../docker && make $(distro)_base.stamp
 	$(docker) run -w /go/katzenpost/client2 ${docker_args} $(image) \
 		go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 1h -run "TestChannelClose"

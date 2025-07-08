@@ -42,10 +42,14 @@ jobs:
         run: cd client2 && make testargs=-coverprofile=coverage.part dockertest-legacy && cat coverage.part >> ../coverage.out
 
       - name: run NEW client Pigeonhole Channel end to end tests
-        run: cd client2 && make testargs=-coverprofile=coverage.part dockertest-channels-new && cat coverage.part >> ../coverage.out
+        run: cd client2 && make testargs=-coverprofile=coverage.part dockertest_channel_basics_test && cat coverage.part >> ../coverage.out
 
-      - name: run NEW client Pigeonhole Channel single read query test
-        run: cd client2 && make testargs=-coverprofile=coverage.part dockertest-single-read && cat coverage.part >> ../coverage.out
+      - name: run NEW client Pigeonhole single read query test
+        run: cd client2 && make testargs=-coverprofile=coverage.part dockertest_single_read_test && cat coverage.part >> ../coverage.out
+
+      - name: run NEW client Pigeonhole close channel test
+        run: cd client2 && make testargs=-coverprofile=coverage.part dockertest_channel_close_test && cat coverage.part >> ../coverage.out
+
 
       - name: Stop the mixnet
         run: |
