@@ -37,6 +37,7 @@ import (
 
 const (
 	MessageIDLength = 16
+	QueryIDLength   = 16
 )
 
 var (
@@ -607,6 +608,16 @@ func (t *ThinClient) NewSURBID() *[sConstants.SURBIDLength]byte {
 	return id
 }
 
+// NewQueryID returns a new query id.
+func (t *ThinClient) NewQueryID() *[QueryIDLength]byte {
+	id := new([QueryIDLength]byte)
+	_, err := rand.Reader.Read(id[:])
+	if err != nil {
+		panic(err)
+	}
+	return id
+}
+
 // SendMessageWithoutReply sends a message encapsulated in a Sphinx packet, without any SURB.
 // No reply will be possible. This method requires mixnet connectivity.
 func (t *ThinClient) SendMessageWithoutReply(payload []byte, destNode *[32]byte, destQueue []byte) error {
@@ -914,12 +925,15 @@ func (t *ThinClient) CreateReadChannel(ctx context.Context, readCap *bacap.ReadC
 	}
 }
 
-// WriteChannel prepares a write message for a pigeonhole channel and returns the SendMessage payload and next MessageBoxIndex.
+// WriteChannel prepares a write message for a pigeonhole channel
+// and returns the prepared payload and next MessageBoxIndex.
 // The thin client must then call SendChannelQuery with the returned payload to actually send the message.
 func (t *ThinClient) WriteChannel(ctx context.Context, channelID uint16, payload []byte) ([]byte, *bacap.MessageBoxIndex, error) {
 	if ctx == nil {
 		return nil, nil, errContextCannotBeNil
 	}
+
+	queryID := t.NewQueryID()
 
 	// Validate payload size against pigeonhole geometry
 	if len(payload) > t.cfg.PigeonholeGeometry.MaxPlaintextPayloadLength {
@@ -929,6 +943,7 @@ func (t *ThinClient) WriteChannel(ctx context.Context, channelID uint16, payload
 	req := &Request{
 		WriteChannel: &WriteChannel{
 			ChannelID: channelID,
+			QueryID:   queryID,
 			Payload:   payload,
 		},
 	}
@@ -952,7 +967,14 @@ func (t *ThinClient) WriteChannel(ctx context.Context, channelID uint16, payload
 		}
 
 		switch v := event.(type) {
+		// match our queryID
 		case *WriteChannelReply:
+			if v.QueryID == nil {
+				continue
+			}
+			if *v.QueryID != *queryID {
+				continue
+			}
 			if v.ErrorCode != ThinClientSuccess {
 				return nil, nil, errors.New(ThinClientErrorToString(v.ErrorCode))
 			}
@@ -972,18 +994,17 @@ func (t *ThinClient) WriteChannel(ctx context.Context, channelID uint16, payload
 // returns the payload, next MessageBoxIndex, and used ReplyIndex.
 // The thin client must then call SendChannelQuery with the
 // returned payload to actually send the query.
-func (t *ThinClient) ReadChannel(ctx context.Context, channelID uint16, messageID *[MessageIDLength]byte, replyIndex *uint8) ([]byte, *bacap.MessageBoxIndex, *uint8, error) {
+func (t *ThinClient) ReadChannel(ctx context.Context, channelID uint16, replyIndex *uint8) ([]byte, *bacap.MessageBoxIndex, *uint8, error) {
 	if ctx == nil {
 		return nil, nil, nil, errContextCannotBeNil
 	}
-	if messageID == nil {
-		return nil, nil, nil, errors.New("messageID cannot be nil")
-	}
+
+	queryID := t.NewQueryID()
 
 	req := &Request{
 		ReadChannel: &ReadChannel{
 			ChannelID:  channelID,
-			MessageID:  messageID,
+			QueryID:    queryID,
 			ReplyIndex: replyIndex,
 		},
 	}
@@ -1007,7 +1028,14 @@ func (t *ThinClient) ReadChannel(ctx context.Context, channelID uint16, messageI
 		}
 
 		switch v := event.(type) {
+		// match our queryID
 		case *ReadChannelReply:
+			if v.QueryID == nil {
+				continue
+			}
+			if *v.QueryID != *queryID {
+				continue
+			}
 			if v.ErrorCode != ThinClientSuccess {
 				return nil, nil, nil, errors.New(ThinClientErrorToString(v.ErrorCode))
 			}
@@ -1101,7 +1129,7 @@ func (t *ThinClient) ReadChannelWithRetry(ctx context.Context, channelID uint16)
 // This method requires mixnet connectivity and will fail in offline mode.
 func (t *ThinClient) ReadChannelWithReply(ctx context.Context, channelID uint16, replyIndex uint8) ([]byte, error) {
 	messageID := t.NewMessageID()
-	payload, err := t.prepareReadQuery(ctx, channelID, messageID, replyIndex)
+	payload, err := t.prepareReadQuery(ctx, channelID, replyIndex)
 	if err != nil {
 		return nil, err
 	}
@@ -1121,7 +1149,7 @@ func (t *ThinClient) ReadChannelWithReply(ctx context.Context, channelID uint16,
 
 // tryReplyIndexWithRetries attempts to read from a specific reply index with retries
 func (t *ThinClient) tryReplyIndexWithRetries(ctx context.Context, channelID uint16, messageID *[MessageIDLength]byte, replyIndex uint8) ([]byte, error) {
-	payload, err := t.prepareReadQuery(ctx, channelID, messageID, replyIndex)
+	payload, err := t.prepareReadQuery(ctx, channelID, replyIndex)
 	if err != nil {
 		return nil, err
 	}
@@ -1143,8 +1171,8 @@ func (t *ThinClient) tryReplyIndexWithRetries(ctx context.Context, channelID uin
 }
 
 // prepareReadQuery prepares the read query payload for a specific reply index
-func (t *ThinClient) prepareReadQuery(ctx context.Context, channelID uint16, messageID *[MessageIDLength]byte, replyIndex uint8) ([]byte, error) {
-	payload, _, _, err := t.ReadChannel(ctx, channelID, messageID, &replyIndex)
+func (t *ThinClient) prepareReadQuery(ctx context.Context, channelID uint16, replyIndex uint8) ([]byte, error) {
+	payload, _, _, err := t.ReadChannel(ctx, channelID, &replyIndex)
 	if err != nil {
 		return nil, fmt.Errorf("failed to prepare read query with reply index %d: %w", replyIndex, err)
 	}

@@ -128,6 +128,11 @@ type ChannelMap struct {
 // to a persistent communication channel that can be read by holders of the
 // corresponding read capability.
 type CreateWriteChannel struct {
+
+	// QueryID is used for correlating this thin client request with the
+	// thin client reponse, the CreateWriteChannelReply.
+	QueryID *[QueryIDLength]byte `cbor:"query_id"`
+
 	// WriteCap is the write capability for resuming an existing channel.
 	// If nil, a new channel will be created. If provided, the channel will
 	// be resumed from the specified MessageBoxIndex position.
@@ -151,6 +156,10 @@ func (e *CreateWriteChannelReply) String() string {
 // from an existing read capability. Read channels allow receiving messages
 // from a communication channel created by the holder of the write capability.
 type CreateReadChannel struct {
+	// QueryID is used for correlating this thin client request with the
+	// thin client reponse, the CreateWriteChannelReply.
+	QueryID *[QueryIDLength]byte `cbor:"query_id"`
+
 	// ReadCap is the read capability that grants access to the channel.
 	// This capability is typically shared by the channel creator and allows
 	// reading messages from the specified channel.
@@ -169,6 +178,11 @@ type WriteChannel struct {
 	// This ID was returned when the channel was created.
 	ChannelID uint16 `cbor:"channel_id"`
 
+	// QueryID is used for correlating the write request with its response.
+	// This allows the client to match responses to specific write operations.
+	// This field is required.
+	QueryID *[QueryIDLength]byte `cbor:"query_id"`
+
 	// Payload contains the message data to write to the channel.
 	// The payload size must not exceed the channel's configured limits.
 	Payload []byte `cbor:"payload"`
@@ -176,7 +190,7 @@ type WriteChannel struct {
 
 // String returns a string representation of the WriteChannel request.
 func (w *WriteChannel) String() string {
-	return fmt.Sprintf("WriteChannel: channel=%d (%d bytes payload)", w.ChannelID, len(w.Payload))
+	return fmt.Sprintf("WriteChannel: ChannelID=%x QueryID=%x PayloadSize=(%d bytes payload)", w.ChannelID, *w.QueryID, len(w.Payload))
 }
 
 // ReadChannel requests reading the next message from a pigeonhole channel.
@@ -187,27 +201,22 @@ type ReadChannel struct {
 	// This ID was returned when the channel was created.
 	ChannelID uint16 `cbor:"channel_id"`
 
-	// MessageID is used for correlating the read request with its response.
-	// This allows the client to match responses to specific read operations.
-	// This field is required.
-	MessageID *[MessageIDLength]byte `cbor:"message_id"`
+	// QueryID is used for correlating this thin client request with the
+	// thin client reponse, the ReadChannelReply.
+	QueryID *[QueryIDLength]byte `cbor:"query_id"`
 
 	// ReplyIndex is the index of the reply to return. It is optional and
 	// a default of zero will be used if not specified.
-	ReplyIndex *uint8 `cbor:"reply_index,omitempty"`
+	ReplyIndex *uint8 `cbor:"reply_index"`
 }
 
 // String returns a string representation of the ReadChannel request.
 func (r *ReadChannel) String() string {
-	msgIDStr := "nil"
-	if r.MessageID != nil {
-		msgIDStr = fmt.Sprintf("%x", r.MessageID[:8]) // First 8 bytes for brevity
-	}
 	replyIndexStr := ""
 	if r.ReplyIndex != nil {
-		replyIndexStr = fmt.Sprintf(" replyIndex=%d", *r.ReplyIndex)
+		replyIndexStr = fmt.Sprintf("ReplyIndex=%d", *r.ReplyIndex)
 	}
-	return fmt.Sprintf("ReadChannel: channel=%d msgID=%s%s", r.ChannelID, msgIDStr, replyIndexStr)
+	return fmt.Sprintf("ReadChannel: ChannelID=%x QueryID=%x %s", r.ChannelID, r.QueryID, replyIndexStr)
 }
 
 // CloseChannel requests closing a pigeonhole channel.
