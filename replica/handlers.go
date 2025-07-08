@@ -56,12 +56,10 @@ func (c *incomingConn) onReplicaCommand(rawCmd commands.Command) (commands.Comma
 		return nil, true
 	case *commands.ReplicaWrite:
 		c.log.Debugf("Processing ReplicaWrite command for BoxID: %x", cmd.BoxID)
-		// Convert wire command to trunnel type
 		trunnelWrite := pigeonhole.WireCommandToTrunnelReplicaWrite(cmd)
-		trunnelResp := c.handleReplicaWrite(trunnelWrite)
-		// Convert trunnel response back to wire command
-		resp := pigeonhole.TrunnelReplicaWriteReplyToWireCommand(trunnelResp, cmd.Cmds)
-		return resp, true
+		resp := c.handleReplicaWrite(trunnelWrite)
+		respWire := pigeonhole.TrunnelReplicaWriteReplyToWireCommand(resp, cmd.Cmds)
+		return respWire, true
 	case *commands.ReplicaMessage:
 		c.log.Debugf("Processing ReplicaMessage command with ciphertext length: %d", len(cmd.Ciphertext))
 		resp := c.handleReplicaMessage(cmd)
@@ -234,9 +232,7 @@ func (c *incomingConn) handleReplicaWrite(replicaWrite *pigeonhole.ReplicaWrite)
 		}
 	}
 	// Convert trunnel type to wire command for state handling
-	nikeScheme := schemes.ByName(c.l.server.cfg.ReplicaNIKEScheme)
-	cmds := commands.NewStorageReplicaCommands(c.l.server.cfg.SphinxGeometry, nikeScheme)
-	wireWrite := pigeonhole.TrunnelReplicaWriteToWireCommand(replicaWrite, cmds)
+	wireWrite := pigeonhole.TrunnelReplicaWriteToWireCommand(replicaWrite, nil)
 	err = c.l.server.state.handleReplicaWrite(wireWrite)
 	if err != nil {
 		c.log.Errorf("handleReplicaWrite state update failed: %v", err)
