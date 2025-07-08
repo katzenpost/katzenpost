@@ -71,6 +71,14 @@ func (c *incomingConn) onReplicaCommand(rawCmd commands.Command) (commands.Comma
 	// not reached
 }
 
+func (c *incomingConn) countReplicas(doc *pki.Document) (int, error) {
+	replicaKeys, err := replicaCommon.GetReplicaKeys(doc)
+	if err != nil {
+		return 0, err
+	}
+	return len(replicaKeys), nil
+}
+
 // replicaMessage's are sent from the courier to the replica storage servers
 func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMessage) commands.Command {
 	c.log.Debug("REPLICA_HANDLER: Starting handleReplicaMessage processing")
@@ -122,6 +130,11 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 		c.log.Error("handleReplicaMessage failed: no PKI document available")
 		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInvalidEpoch, envelopeHash, []byte{}, 0, false)
 	}
+	numReplicas, err := c.countReplicas(doc)
+	if err != nil {
+		c.log.Errorf("handleReplicaMessage failed to count replicas: %s", err)
+		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, envelopeHash, []byte{}, 0, false)
+	}
 	replicaID, err := doc.GetReplicaIDByIdentityKey(c.l.server.identityPublicKey)
 	if err != nil {
 		c.log.Errorf("handleReplicaMessage failed to get our own replica ID: %s", err)
@@ -155,31 +168,34 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 			}
 		}
 
-		if isShard {
-			// This replica IS responsible for the BoxID - handle locally
-			c.log.Debugf("REPLICA_HANDLER: This replica IS a shard for BoxID %x - handling read locally", myCmd.BoxID)
-			readReply := c.handleReplicaRead(myCmd)
-			replyInnerMessage := pigeonhole.ReplicaMessageReplyInnerMessage{
-				ReadReply: readReply,
+		if !isShard {
+			if numReplicas >= 3 {
+				// This replica is NOT responsible for the BoxID - proxy to the correct replica
+				c.log.Debugf("REPLICA_HANDLER: This replica is NOT a shard for BoxID %x - PROXYING read request to appropriate shard", myCmd.BoxID)
+				reply := c.proxyReadRequest(myCmd, senderpubkey, envelopeHash)
+				c.log.Debugf("REPLICA_HANDLER: Successfully completed proxy read request for BoxID %x", myCmd.BoxID)
+				return reply
 			}
-			replyInnerMessageBlob := replyInnerMessage.Bytes()
-			envelopeReply := scheme.EnvelopeReply(keypair.PrivateKey, senderpubkey, replyInnerMessageBlob)
-			return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, readReply.ErrorCode, envelopeHash, envelopeReply.Envelope, replicaID, true)
-		} else {
-			// This replica is NOT responsible for the BoxID - proxy to the correct replica
-			c.log.Debugf("REPLICA_HANDLER: This replica is NOT a shard for BoxID %x - PROXYING read request to appropriate shard", myCmd.BoxID)
-			reply := c.proxyReadRequest(myCmd, senderpubkey, envelopeHash)
-			c.log.Debugf("REPLICA_HANDLER: Successfully completed proxy read request for BoxID %x", myCmd.BoxID)
-			return reply
 		}
+
+		readReply := c.handleReplicaRead(myCmd)
+		replyInnerMessage := pigeonhole.ReplicaMessageReplyInnerMessage{
+			ReadReply: readReply,
+		}
+		replyInnerMessageBlob := replyInnerMessage.Bytes()
+		envelopeReply := scheme.EnvelopeReply(keypair.PrivateKey, senderpubkey, replyInnerMessageBlob)
+		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, readReply.ErrorCode, envelopeHash, envelopeReply.Envelope, replicaID, true)
 	case msg.WriteMsg != nil:
 		myCmd := msg.WriteMsg
 		c.log.Debugf("Processing decrypted ReplicaWrite command for BoxID: %x", myCmd.BoxID)
 		writeReply := c.handleReplicaWrite(myCmd)
-		// Convert trunnel type to wire command for replication
-		cmds := commands.NewStorageReplicaCommands(c.geo, nikeScheme)
-		wireCmd := pigeonhole.TrunnelReplicaWriteToWireCommand(myCmd, cmds)
-		c.l.server.connector.DispatchReplication(wireCmd)
+
+		if numReplicas >= 3 {
+			cmds := commands.NewStorageReplicaCommands(c.geo, nikeScheme)
+			wireCmd := pigeonhole.TrunnelReplicaWriteToWireCommand(myCmd, cmds)
+			c.l.server.connector.DispatchReplication(wireCmd)
+		}
+
 		replyInnerMessage := pigeonhole.ReplicaMessageReplyInnerMessage{
 			WriteReply: writeReply,
 		}
