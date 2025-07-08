@@ -7,8 +7,6 @@ import (
 	"fmt"
 	"path/filepath"
 
-	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
-
 	"github.com/linxGnu/grocksdb"
 	"golang.org/x/crypto/blake2b"
 	"gopkg.in/op/go-logging.v1"
@@ -18,6 +16,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"github.com/katzenpost/katzenpost/pigeonhole"
+	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
 )
 
 const (
