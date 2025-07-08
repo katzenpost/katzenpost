@@ -6,7 +6,6 @@ package client2
 import (
 	"crypto/hmac"
 	"crypto/rand"
-	"encoding/binary"
 	"errors"
 	"fmt"
 	mrand "math/rand"
@@ -155,13 +154,9 @@ func (d *Daemon) generateUniqueChannelID() uint16 {
 	defer d.newChannelMapLock.Unlock()
 
 	for {
-		// Generate a random uint16
-		var channelID uint16
-		binary.Read(rand.Reader, binary.BigEndian, &channelID)
+		channelID := uint16(hpqcRand.NewMath().Intn(65535) + 1) // [1, 65535]
 
-		// Check if it's already in use
 		if _, exists := d.newChannelMap[channelID]; !exists {
-			// Reserve the ID by adding an empty entry (will be replaced with actual descriptor)
 			d.newChannelMap[channelID] = nil
 			return channelID
 		}
