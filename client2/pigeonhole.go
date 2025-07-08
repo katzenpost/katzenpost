@@ -743,10 +743,12 @@ func (d *Daemon) readChannel(request *Request) {
 
 // closeChannel closes a pigeonhole channel and cleans up its resources
 func (d *Daemon) closeChannel(request *Request) {
+	d.log.Debug("closeChannel: closing channel")
+
 	channelID := request.CloseChannel.ChannelID
 
 	d.newChannelMapLock.Lock()
-	_, ok := d.newChannelMap[channelID]
+	channelDesc, ok := d.newChannelMap[channelID]
 	if ok {
 		delete(d.newChannelMap, channelID)
 	}
@@ -769,6 +771,27 @@ func (d *Daemon) closeChannel(request *Request) {
 		delete(d.newSurbIDToChannelMap, surbID)
 	}
 	d.newSurbIDToChannelMapLock.Unlock()
+
+	d.capabilityLock.Lock()
+	switch {
+	case channelDesc.StatefulReader != nil:
+		readCapBlob, err := channelDesc.StatefulReader.Rcap.MarshalBinary()
+		if err != nil {
+			d.log.Errorf("closeChannel: failed to marshal read cap: %s", err)
+			return
+		}
+		readCapHash := hash.Sum256(readCapBlob)
+		delete(d.usedReadCaps, readCapHash)
+	case channelDesc.StatefulWriter != nil:
+		writeCapBlob, err := channelDesc.StatefulWriter.Wcap.MarshalBinary()
+		if err != nil {
+			d.log.Errorf("closeChannel: failed to marshal write cap: %s", err)
+			return
+		}
+		writeCapHash := hash.Sum256(writeCapBlob)
+		delete(d.usedWriteCaps, writeCapHash)
+	}
+	d.capabilityLock.Unlock()
 
 	d.log.Infof("closeChannel: successfully closed channel %d", channelID)
 }

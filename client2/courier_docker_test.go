@@ -29,7 +29,38 @@ func cleanupAttempt(t *testing.T, cancel context.CancelFunc, client *thin.ThinCl
 	client.StopEventSink(eventSink)
 }
 
-func TestDockerCourierServiceNewThinclientAPI(t *testing.T) {
+func TestChannelClose(t *testing.T) {
+	aliceThinClient := setupThinClient(t)
+	defer aliceThinClient.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
+	channelID, _, writeCap, messageBoxIndex, err := aliceThinClient.CreateWriteChannel(ctx, nil, nil)
+	require.NoError(t, err)
+
+	err = aliceThinClient.CloseChannel(ctx, channelID)
+	require.NoError(t, err)
+
+	channelID, _, _, _, err = aliceThinClient.CreateWriteChannel(ctx, writeCap, messageBoxIndex)
+	require.NoError(t, err)
+
+	_, _, _, _, err = aliceThinClient.CreateWriteChannel(ctx, writeCap, messageBoxIndex)
+	require.Error(t, err)
+
+	err = aliceThinClient.CloseChannel(ctx, channelID)
+	require.NoError(t, err)
+
+	channelID, _, _, _, err = aliceThinClient.CreateWriteChannel(ctx, writeCap, messageBoxIndex)
+	require.NoError(t, err)
+
+	err = aliceThinClient.CloseChannel(ctx, channelID)
+	require.NoError(t, err)
+
+	t.Log("done.")
+}
+
+func TestChannelAPIBasics(t *testing.T) {
 	t.Log("TESTING COURIER SERVICE - New thin client API")
 	// NOTE: The new API automatically extracts messages from padded payloads in the daemon,
 	// so clients receive the original message directly, not the raw padded payload.
@@ -89,7 +120,7 @@ func TestDockerCourierServiceNewThinclientAPI(t *testing.T) {
 // the courier returns the payload on the first read query without any retries.
 // This test validates the synchronous proxy behavior where intermediary replicas proxy requests
 // to destination replicas and return the data in a single request-response cycle.
-func TestDockerCourierServiceSingleReadQuery(t *testing.T) {
+func TestChannelSingleReadQuery(t *testing.T) {
 	t.Log("TESTING COURIER SERVICE - Single Read Query (No Retries)")
 
 	// Setup clients and get current epoch
