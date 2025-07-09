@@ -82,17 +82,14 @@ func TestChannelCleanupOnAppDisconnect(t *testing.T) {
 	d.newChannelMap[testChannelID1] = &ChannelDescriptor{
 		AppID:               testAppID,
 		EnvelopeDescriptors: make(map[[hash.HashSize]byte]*EnvelopeDescriptor),
-		StoredEnvelopes:     make(map[[MessageIDLength]byte]*StoredEnvelopeData),
 	}
 	d.newChannelMap[testChannelID2] = &ChannelDescriptor{
 		AppID:               testAppID,
 		EnvelopeDescriptors: make(map[[hash.HashSize]byte]*EnvelopeDescriptor),
-		StoredEnvelopes:     make(map[[MessageIDLength]byte]*StoredEnvelopeData),
 	}
 	d.newChannelMap[otherChannelID] = &ChannelDescriptor{
 		AppID:               otherAppID,
 		EnvelopeDescriptors: make(map[[hash.HashSize]byte]*EnvelopeDescriptor),
-		StoredEnvelopes:     make(map[[MessageIDLength]byte]*StoredEnvelopeData),
 	}
 	d.newChannelMapLock.Unlock()
 

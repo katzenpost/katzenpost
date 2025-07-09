@@ -89,9 +89,6 @@ type ChannelDescriptor struct {
 
 	EnvelopeDescriptors     map[[hash.HashSize]byte]*EnvelopeDescriptor
 	EnvelopeDescriptorsLock sync.RWMutex
-
-	StoredEnvelopes     map[[thin.MessageIDLength]byte]*StoredEnvelopeData
-	StoredEnvelopesLock sync.RWMutex
 }
 
 func GetRandomCourier(doc *cpki.Document) (*[hash.HashSize]byte, []byte) {
@@ -288,8 +285,30 @@ func CreateChannelReadRequestWithBoxID(channelID [thin.ChannelIDLength]byte,
 	return envelope, mkemPrivateKey, nil
 }
 
-// sendWriteChannelSuccessResponse sends a successful response for write channel creation
-func (d *Daemon) sendWriteChannelSuccessResponse(request *Request, channelID uint16, bobReadCap *bacap.ReadCap, writeCap *bacap.WriteCap, currentMessageIndex *bacap.MessageBoxIndex) {
+func (d *Daemon) createWriteChannel(request *Request) {
+	newWriteCap, err := bacap.NewWriteCap(rand.Reader)
+	if err != nil {
+		d.log.Errorf("createWriteChannel failure: %s", err)
+		d.sendCreateWriteChannelError(request, thin.ThinClientImpossibleNewWriteCapError)
+		return
+	}
+	statefulWriter, err := bacap.NewStatefulWriter(newWriteCap, constants.PIGEONHOLE_CTX)
+	if err != nil {
+		d.log.Errorf("createWriteChannel failure: %s", err)
+		d.sendCreateWriteChannelError(request, thin.ThinClientImpossibleNewStatefulWriterError)
+		return
+	}
+	channelID := d.generateUniqueChannelID()
+	d.newChannelMapLock.Lock()
+	d.newChannelMap[channelID] = &ChannelDescriptor{
+		AppID:               request.AppID,
+		StatefulWriter:      statefulWriter,
+		EnvelopeDescriptors: make(map[[hash.HashSize]byte]*EnvelopeDescriptor),
+	}
+	d.newChannelMapLock.Unlock()
+
+	readCap := statefulWriter.Wcap.ReadCap()
+
 	conn := d.listener.getConnection(request.AppID)
 	if conn == nil {
 		d.log.Errorf(errNoConnectionForAppID, request.AppID[:])
@@ -299,74 +318,13 @@ func (d *Daemon) sendWriteChannelSuccessResponse(request *Request, channelID uin
 	conn.sendResponse(&Response{
 		AppID: request.AppID,
 		CreateWriteChannelReply: &thin.CreateWriteChannelReply{
-			QueryID:          request.CreateWriteChannel.QueryID,
-			ChannelID:        channelID,
-			ReadCap:          bobReadCap,
-			WriteCap:         writeCap,
-			NextMessageIndex: currentMessageIndex,
-			ErrorCode:        thin.ThinClientSuccess,
+			QueryID:   request.CreateWriteChannel.QueryID,
+			ChannelID: channelID,
+			ReadCap:   readCap,
+			WriteCap:  statefulWriter.Wcap,
+			ErrorCode: thin.ThinClientSuccess,
 		},
 	})
-}
-
-func (d *Daemon) createWriteChannel(request *Request) {
-	statefulWriter, err := d.createOrResumeStatefulWriter(request)
-	if err != nil {
-		d.log.Errorf("createWriteChannel failure: %s", err)
-		d.sendCreateWriteChannelError(request, thin.ThinClientErrorInternalError)
-		return
-	}
-
-	channelID := d.generateUniqueChannelID()
-	d.newChannelMapLock.Lock()
-	d.newChannelMap[channelID] = &ChannelDescriptor{
-		AppID:               request.AppID,
-		StatefulWriter:      statefulWriter,
-		EnvelopeDescriptors: make(map[[hash.HashSize]byte]*EnvelopeDescriptor),
-		StoredEnvelopes:     make(map[[thin.MessageIDLength]byte]*StoredEnvelopeData),
-	}
-	d.newChannelMapLock.Unlock()
-
-	currentMessageIndex := statefulWriter.NextIndex
-	bobReadCap := statefulWriter.Wcap.ReadCap()
-	d.sendWriteChannelSuccessResponse(request, channelID, bobReadCap, statefulWriter.Wcap, currentMessageIndex)
-}
-
-func (d *Daemon) createOrResumeStatefulWriter(request *Request) (*bacap.StatefulWriter, error) {
-	isResuming := request.CreateWriteChannel.WriteCap != nil
-	var statefulWriter *bacap.StatefulWriter
-	var err error
-	if isResuming {
-		if err := d.checkWriteCapabilityDedup(request.CreateWriteChannel.WriteCap); err != nil {
-			return nil, err
-		}
-		if request.CreateWriteChannel.MessageBoxIndex == nil {
-			statefulWriter, err = bacap.NewStatefulWriter(request.CreateWriteChannel.WriteCap, constants.PIGEONHOLE_CTX)
-			if err != nil {
-				return nil, err
-			}
-		} else {
-			statefulWriter, err = bacap.NewStatefulWriterWithIndex(
-				request.CreateWriteChannel.WriteCap,
-				constants.PIGEONHOLE_CTX,
-				request.CreateWriteChannel.MessageBoxIndex)
-			if err != nil {
-				return nil, err
-			}
-		}
-	} else {
-		// Create a new WriteCap for a new channel
-		newWriteCap, err := bacap.NewWriteCap(rand.Reader)
-		if err != nil {
-			return nil, err
-		}
-		statefulWriter, err = bacap.NewStatefulWriter(newWriteCap, constants.PIGEONHOLE_CTX)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	return statefulWriter, nil
 }
 
 // sendErrorResponse sends an error response for various channel operations
@@ -422,35 +380,42 @@ func (d *Daemon) sendReadChannelError(request *Request, errorCode uint8) {
 	d.sendErrorResponse(request, errorCode, "ReadChannel")
 }
 
-func (d *Daemon) createOrResumeStatefulReader(request *Request) (*bacap.StatefulReader, error) {
+func validateReadChannelRequest(request *Request) error {
+	if request.CreateReadChannel.QueryID == nil {
+		return errors.New("QueryID is nil")
+	}
 	if request.CreateReadChannel.ReadCap == nil {
-		return nil, errors.New("CreateReadChannel requires a ReadCap")
+		return errors.New("ReadCap is nil")
 	}
-
-	var statefulReader *bacap.StatefulReader
-	var err error
-
-	if request.CreateReadChannel.MessageBoxIndex == nil {
-		statefulReader, err = bacap.NewStatefulReader(request.CreateReadChannel.ReadCap, constants.PIGEONHOLE_CTX)
-		if err != nil {
-			return nil, err
-		}
-	} else {
-		statefulReader, err = bacap.NewStatefulReaderWithIndex(request.CreateReadChannel.ReadCap, constants.PIGEONHOLE_CTX, request.CreateReadChannel.MessageBoxIndex)
-		if err != nil {
-			return nil, err
-		}
-	}
-	return statefulReader, nil
+	return nil
 }
 
 func (d *Daemon) createReadChannel(request *Request) {
-	statefulReader, err := d.createOrResumeStatefulReader(request)
+	err := validateReadChannelRequest(request)
+	if err != nil {
+		d.log.Errorf("createReadChannel failure: %s", err)
+		d.sendCreateReadChannelError(request, thin.ThinClientErrorInvalidRequest)
+		return
+	}
+
+	statefulReader, err := bacap.NewStatefulReader(request.CreateReadChannel.ReadCap, constants.PIGEONHOLE_CTX)
 	if err != nil {
 		d.log.Errorf("createReadChannel failure: %s", err)
 		d.sendCreateReadChannelError(request, thin.ThinClientErrorInternalError)
 		return
 	}
+
+	// note the read cap so that we cannot create duplicates
+	readCapBlob, err := request.CreateReadChannel.ReadCap.MarshalBinary()
+	if err != nil {
+		d.log.Errorf("createReadChannel failure: %s", err)
+		d.sendCreateReadChannelError(request, thin.ThinClientErrorInternalError)
+		return
+	}
+	readCapHash := hash.Sum256(readCapBlob)
+	d.capabilityLock.Lock()
+	d.usedReadCaps[readCapHash] = true
+	d.capabilityLock.Unlock()
 
 	channelID := d.generateUniqueChannelID()
 	d.newChannelMapLock.Lock()
@@ -458,11 +423,9 @@ func (d *Daemon) createReadChannel(request *Request) {
 		AppID:               request.AppID,
 		StatefulReader:      statefulReader,
 		EnvelopeDescriptors: make(map[[hash.HashSize]byte]*EnvelopeDescriptor),
-		StoredEnvelopes:     make(map[[thin.MessageIDLength]byte]*StoredEnvelopeData),
 	}
 	d.newChannelMapLock.Unlock()
 
-	currentMessageIndex := statefulReader.NextIndex
 	conn := d.listener.getConnection(request.AppID)
 	if conn == nil {
 		d.log.Errorf("createReadChannel failure: "+errNoConnectionForAppID, request.AppID[:])
@@ -472,10 +435,9 @@ func (d *Daemon) createReadChannel(request *Request) {
 	conn.sendResponse(&Response{
 		AppID: request.AppID,
 		CreateReadChannelReply: &thin.CreateReadChannelReply{
-			QueryID:          request.CreateReadChannel.QueryID,
-			ChannelID:        channelID,
-			NextMessageIndex: currentMessageIndex,
-			ErrorCode:        thin.ThinClientSuccess,
+			QueryID:   request.CreateReadChannel.QueryID,
+			ChannelID: channelID,
+			ErrorCode: thin.ThinClientSuccess,
 		},
 	})
 }
@@ -565,10 +527,10 @@ func (d *Daemon) writeChannel(request *Request) {
 	conn.sendResponse(&Response{
 		AppID: request.AppID,
 		WriteChannelReply: &thin.WriteChannelReply{
+			QueryID:            request.WriteChannel.QueryID,
 			ChannelID:          channelID,
 			SendMessagePayload: courierQuery.Bytes(),
 			NextMessageIndex:   nextMessageIndex,
-			QueryID:            request.WriteChannel.QueryID,
 			EnvelopeHash:       *envHash,
 			EnvelopeDescriptor: channelDesc.EnvelopeDescriptors[*envHash].Bytes(),
 			ErrorCode:          thin.ThinClientSuccess,
@@ -599,6 +561,14 @@ func (d *Daemon) readChannel(request *Request) {
 	_, doc := d.client.CurrentDocument()
 
 	channelDesc.StatefulReaderLock.Lock()
+
+	// It is legit and possible to read the same BACAP box twice because you
+	// want to read the replies of two different replicas because the first one
+	// failed.
+	if request.ReadChannel.MessageBoxIndex != nil {
+		channelDesc.StatefulReader.NextIndex = request.ReadChannel.MessageBoxIndex
+	}
+
 	boxID, err := channelDesc.StatefulReader.NextBoxID()
 	if err != nil {
 		channelDesc.StatefulReaderLock.Unlock()
@@ -658,12 +628,12 @@ func (d *Daemon) readChannel(request *Request) {
 	conn.sendResponse(&Response{
 		AppID: request.AppID,
 		ReadChannelReply: &thin.ReadChannelReply{
-			ChannelID:          channelID,
 			QueryID:            request.ReadChannel.QueryID,
+			ChannelID:          channelID,
+			ErrorCode:          thin.ThinClientSuccess,
 			SendMessagePayload: courierQuery.Bytes(),
 			NextMessageIndex:   nextMessageIndex,
 			ReplyIndex:         request.ReadChannel.ReplyIndex,
-			ErrorCode:          thin.ThinClientSuccess,
 		},
 	})
 }

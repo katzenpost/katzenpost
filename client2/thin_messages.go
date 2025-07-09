@@ -44,6 +44,10 @@ type Response struct {
 	WriteChannelReply *thin.WriteChannelReply
 
 	ReadChannelReply *thin.ReadChannelReply
+
+	ResumeWriteChannelReply *thin.ResumeWriteChannelReply
+
+	ResumeReadChannelReply *thin.ResumeReadChannelReply
 }
 
 func FromThinRequest(r *thin.Request, appid *[AppIDLength]byte) *Request {
@@ -71,6 +75,10 @@ type Request struct {
 	WriteChannel *thin.WriteChannel
 
 	ReadChannel *thin.ReadChannel
+
+	ResumeWriteChannel *thin.ResumeWriteChannel
+
+	ResumeReadChannel *thin.ResumeReadChannel
 
 	CloseChannel *thin.CloseChannel
 

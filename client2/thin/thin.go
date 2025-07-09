@@ -4,6 +4,7 @@
 package thin
 
 import (
+	"bytes"
 	"context"
 	"crypto/hmac"
 	"encoding/binary"
@@ -21,12 +22,10 @@ import (
 	"gopkg.in/op/go-logging.v1"
 
 	"github.com/katzenpost/hpqc/bacap"
-	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/rand"
 
 	"github.com/katzenpost/katzenpost/client2/common"
 	"github.com/katzenpost/katzenpost/client2/config"
-	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/log"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
@@ -816,26 +815,15 @@ NEW PIGEONHOLE CHANNEL API
 ****/
 
 // CreateWriteChannel creates a new pigeonhole write channel and returns the channel ID, read capability, and write capability.
-func (t *ThinClient) CreateWriteChannel(ctx context.Context, WriteCap *bacap.WriteCap, messageBoxIndex *bacap.MessageBoxIndex) (uint16, *bacap.ReadCap, *bacap.WriteCap, *bacap.MessageBoxIndex, error) {
+func (t *ThinClient) CreateWriteChannel(ctx context.Context) (uint16, *bacap.ReadCap, *bacap.WriteCap, error) {
 	if ctx == nil {
-		return 0, nil, nil, nil, errContextCannotBeNil
+		return 0, nil, nil, errContextCannotBeNil
 	}
 
-	switch {
-	case WriteCap == nil && messageBoxIndex == nil:
-		// Creating a new channel
-	case WriteCap != nil && messageBoxIndex == nil:
-		return 0, nil, nil, nil, errors.New("messageBoxIndex cannot be nil when resuming an existing channel")
-	case WriteCap == nil && messageBoxIndex != nil:
-		return 0, nil, nil, nil, errors.New("WriteCap cannot be nil when resuming an existing channel")
-	case WriteCap != nil && messageBoxIndex != nil:
-		// Resuming an existing channel
-	}
-
+	queryID := t.NewQueryID()
 	req := &Request{
 		CreateWriteChannel: &CreateWriteChannel{
-			WriteCap:        WriteCap,
-			MessageBoxIndex: messageBoxIndex,
+			QueryID: queryID,
 		},
 	}
 
@@ -844,25 +832,33 @@ func (t *ThinClient) CreateWriteChannel(ctx context.Context, WriteCap *bacap.Wri
 
 	err := t.writeMessage(req)
 	if err != nil {
-		return 0, nil, nil, nil, err
+		return 0, nil, nil, err
 	}
 
 	for {
 		var event Event
 		select {
 		case <-ctx.Done():
-			return 0, nil, nil, nil, ctx.Err()
+			return 0, nil, nil, ctx.Err()
 		case event = <-eventSink:
 		case <-t.HaltCh():
-			return 0, nil, nil, nil, errHalting
+			return 0, nil, nil, errHalting
 		}
 
 		switch v := event.(type) {
 		case *CreateWriteChannelReply:
-			if v.ErrorCode != ThinClientSuccess {
-				return 0, nil, nil, nil, errors.New(ThinClientErrorToString(v.ErrorCode))
+			if v.QueryID == nil {
+				t.log.Debugf("CreateWriteChannel: Received CreateWriteChannelReply with nil QueryID, ignoring")
+				continue
 			}
-			return v.ChannelID, v.ReadCap, v.WriteCap, v.NextMessageIndex, nil
+			if !bytes.Equal(v.QueryID[:], queryID[:]) {
+				t.log.Debugf("CreateWriteChannel: Received CreateWriteChannelReply with mismatched QueryID, ignoring")
+				continue
+			}
+			if v.ErrorCode != ThinClientSuccess {
+				return 0, nil, nil, errors.New(ThinClientErrorToString(v.ErrorCode))
+			}
+			return v.ChannelID, v.ReadCap, v.WriteCap, nil
 		case *ConnectionStatusEvent:
 			// Update connection state but don't fail channel operations
 			t.isConnected = v.IsConnected
@@ -875,18 +871,19 @@ func (t *ThinClient) CreateWriteChannel(ctx context.Context, WriteCap *bacap.Wri
 }
 
 // CreateReadChannel creates a read channel from a read capability.
-func (t *ThinClient) CreateReadChannel(ctx context.Context, readCap *bacap.ReadCap, messageBoxIndex *bacap.MessageBoxIndex) (uint16, *bacap.MessageBoxIndex, error) {
+func (t *ThinClient) CreateReadChannel(ctx context.Context, readCap *bacap.ReadCap) (uint16, error) {
 	if ctx == nil {
-		return 0, nil, errContextCannotBeNil
+		return 0, errContextCannotBeNil
 	}
 	if readCap == nil {
-		return 0, nil, errors.New("readCap cannot be nil")
+		return 0, errors.New("readCap cannot be nil")
 	}
+	queryID := t.NewQueryID()
 
 	req := &Request{
 		CreateReadChannel: &CreateReadChannel{
-			ReadCap:         readCap,
-			MessageBoxIndex: messageBoxIndex,
+			QueryID: queryID,
+			ReadCap: readCap,
 		},
 	}
 
@@ -895,25 +892,33 @@ func (t *ThinClient) CreateReadChannel(ctx context.Context, readCap *bacap.ReadC
 
 	err := t.writeMessage(req)
 	if err != nil {
-		return 0, nil, err
+		return 0, err
 	}
 
 	for {
 		var event Event
 		select {
 		case <-ctx.Done():
-			return 0, nil, ctx.Err()
+			return 0, ctx.Err()
 		case event = <-eventSink:
 		case <-t.HaltCh():
-			return 0, nil, errHalting
+			return 0, errHalting
 		}
 
 		switch v := event.(type) {
 		case *CreateReadChannelReply:
-			if v.ErrorCode != ThinClientSuccess {
-				return 0, nil, errors.New(ThinClientErrorToString(v.ErrorCode))
+			if v.QueryID == nil {
+				t.log.Debugf("CreateReadChannel: Received CreateReadChannelReply with nil QueryID, ignoring")
+				continue
 			}
-			return v.ChannelID, v.NextMessageIndex, nil
+			if !bytes.Equal(v.QueryID[:], queryID[:]) {
+				t.log.Debugf("CreateReadChannel: Received CreateReadChannelReply with mismatched QueryID, ignoring")
+				continue
+			}
+			if v.ErrorCode != ThinClientSuccess {
+				return 0, errors.New(ThinClientErrorToString(v.ErrorCode))
+			}
+			return v.ChannelID, nil
 		case *ConnectionStatusEvent:
 			// Update connection state but don't fail channel operations
 			t.isConnected = v.IsConnected
@@ -928,16 +933,16 @@ func (t *ThinClient) CreateReadChannel(ctx context.Context, readCap *bacap.ReadC
 // WriteChannel prepares a write message for a pigeonhole channel
 // and returns the prepared payload and next MessageBoxIndex.
 // The thin client must then call SendChannelQuery with the returned payload to actually send the message.
-func (t *ThinClient) WriteChannel(ctx context.Context, channelID uint16, payload []byte) ([]byte, *bacap.MessageBoxIndex, error) {
+func (t *ThinClient) WriteChannel(ctx context.Context, channelID uint16, payload []byte) (*WriteChannelReply, error) {
 	if ctx == nil {
-		return nil, nil, errContextCannotBeNil
+		return nil, errContextCannotBeNil
 	}
 
 	queryID := t.NewQueryID()
 
 	// Validate payload size against pigeonhole geometry
 	if len(payload) > t.cfg.PigeonholeGeometry.MaxPlaintextPayloadLength {
-		return nil, nil, fmt.Errorf("payload size %d exceeds maximum allowed size %d", len(payload), t.cfg.PigeonholeGeometry.MaxPlaintextPayloadLength)
+		return nil, fmt.Errorf("payload size %d exceeds maximum allowed size %d", len(payload), t.cfg.PigeonholeGeometry.MaxPlaintextPayloadLength)
 	}
 
 	req := &Request{
@@ -953,32 +958,34 @@ func (t *ThinClient) WriteChannel(ctx context.Context, channelID uint16, payload
 
 	err := t.writeMessage(req)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	for {
 		var event Event
 		select {
 		case <-ctx.Done():
-			return nil, nil, ctx.Err()
+			return nil, ctx.Err()
 		case event = <-eventSink:
 		case <-t.HaltCh():
-			return nil, nil, errHalting
+			return nil, errHalting
 		}
 
 		switch v := event.(type) {
 		// match our queryID
 		case *WriteChannelReply:
 			if v.QueryID == nil {
+				t.log.Debugf("WriteChannel: Received WriteChannelReply with nil QueryID, ignoring")
 				continue
 			}
-			if *v.QueryID != *queryID {
+			if !bytes.Equal(v.QueryID[:], queryID[:]) {
+				t.log.Debugf("WriteChannel: Received WriteChannelReply with mismatched QueryID, ignoring")
 				continue
 			}
 			if v.ErrorCode != ThinClientSuccess {
-				return nil, nil, errors.New(ThinClientErrorToString(v.ErrorCode))
+				return nil, errors.New(ThinClientErrorToString(v.ErrorCode))
 			}
-			return v.SendMessagePayload, v.NextMessageIndex, nil
+			return v, nil
 		case *ConnectionStatusEvent:
 			// Update connection state but don't fail channel operations
 			t.isConnected = v.IsConnected
@@ -990,22 +997,35 @@ func (t *ThinClient) WriteChannel(ctx context.Context, channelID uint16, payload
 	}
 }
 
-// ReadChannel prepares a read query for a pigeonhole channel and
-// returns the payload, next MessageBoxIndex, and used ReplyIndex.
-// The thin client must then call SendChannelQuery with the
-// returned payload to actually send the query.
-func (t *ThinClient) ReadChannel(ctx context.Context, channelID uint16, replyIndex *uint8) ([]byte, *bacap.MessageBoxIndex, *uint8, error) {
+// ResumeWriteChannel causes the client daemon to resume to
+// a previous state. Note that the last two arguments are optional and can be nil:
+// envelopeDescriptor and envelopeHash
+func (t *ThinClient) ResumeWriteChannel(
+	ctx context.Context,
+	writeCap *bacap.WriteCap,
+	messageBoxIndex *bacap.MessageBoxIndex,
+	envelopeDescriptor []byte,
+	envelopeHash *[32]byte) (uint16, error) {
+
 	if ctx == nil {
-		return nil, nil, nil, errContextCannotBeNil
+		return 0, errContextCannotBeNil
+	}
+	if writeCap == nil {
+		return 0, errors.New("writeCap cannot be nil")
+	}
+	if messageBoxIndex == nil {
+		return 0, errors.New("messageBoxIndex cannot be nil")
 	}
 
 	queryID := t.NewQueryID()
 
 	req := &Request{
-		ReadChannel: &ReadChannel{
-			ChannelID:  channelID,
-			QueryID:    queryID,
-			ReplyIndex: replyIndex,
+		ResumeWriteChannel: &ResumeWriteChannel{
+			QueryID:            queryID,
+			WriteCap:           writeCap,
+			MessageBoxIndex:    messageBoxIndex,
+			EnvelopeDescriptor: envelopeDescriptor,
+			EnvelopeHash:       envelopeHash,
 		},
 	}
 
@@ -1014,32 +1034,33 @@ func (t *ThinClient) ReadChannel(ctx context.Context, channelID uint16, replyInd
 
 	err := t.writeMessage(req)
 	if err != nil {
-		return nil, nil, nil, err
+		return 0, err
 	}
-
 	for {
 		var event Event
 		select {
 		case <-ctx.Done():
-			return nil, nil, nil, ctx.Err()
+			return 0, ctx.Err()
 		case event = <-eventSink:
 		case <-t.HaltCh():
-			return nil, nil, nil, errHalting
+			return 0, errHalting
 		}
 
 		switch v := event.(type) {
 		// match our queryID
-		case *ReadChannelReply:
+		case *ResumeWriteChannelReply:
 			if v.QueryID == nil {
+				t.log.Debugf("ResumeWriteChannel: Received ResumeWriteChannelReply with nil QueryID, ignoring")
 				continue
 			}
-			if *v.QueryID != *queryID {
+			if !bytes.Equal(v.QueryID[:], queryID[:]) {
+				t.log.Debugf("ResumeWriteChannel: Received ResumeWriteChannelReply with mismatched QueryID, ignoring")
 				continue
 			}
 			if v.ErrorCode != ThinClientSuccess {
-				return nil, nil, nil, errors.New(ThinClientErrorToString(v.ErrorCode))
+				return 0, errors.New(ThinClientErrorToString(v.ErrorCode))
 			}
-			return v.SendMessagePayload, v.NextMessageIndex, v.ReplyIndex, nil
+			return v.ChannelID, nil
 		case *ConnectionStatusEvent:
 			// Update connection state but don't fail channel operations
 			t.isConnected = v.IsConnected
@@ -1049,6 +1070,139 @@ func (t *ThinClient) ReadChannel(ctx context.Context, channelID uint16, replyInd
 			// Ignore other events
 		}
 	}
+	panic("unreachable")
+}
+
+// ReadChannel prepares a read query for a pigeonhole channel and
+// returns the payload, next MessageBoxIndex, and used ReplyIndex.
+// The thin client must then call SendChannelQuery with the
+// returned payload to actually send the query.
+// The messageBoxIndex and replyIndex parameters are optional and can be nil.
+func (t *ThinClient) ReadChannel(ctx context.Context, channelID uint16, messageBoxIndex *bacap.MessageBoxIndex, replyIndex *uint8) (*ReadChannelReply, error) {
+	if ctx == nil {
+		return nil, errContextCannotBeNil
+	}
+
+	queryID := t.NewQueryID()
+
+	req := &Request{
+		ReadChannel: &ReadChannel{
+			ChannelID:       channelID,
+			QueryID:         queryID,
+			MessageBoxIndex: messageBoxIndex,
+			ReplyIndex:      replyIndex,
+		},
+	}
+
+	eventSink := t.EventSink()
+	defer t.StopEventSink(eventSink)
+
+	err := t.writeMessage(req)
+	if err != nil {
+		return nil, err
+	}
+
+	for {
+		var event Event
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case event = <-eventSink:
+		case <-t.HaltCh():
+			return nil, errHalting
+		}
+
+		switch v := event.(type) {
+		// match our queryID
+		case *ReadChannelReply:
+			if v.QueryID == nil {
+				t.log.Debugf("ReadChannel: Received ReadChannelReply with nil QueryID, ignoring")
+				continue
+			}
+			if !bytes.Equal(v.QueryID[:], queryID[:]) {
+				continue
+			}
+			if v.ErrorCode != ThinClientSuccess {
+				return nil, errors.New(ThinClientErrorToString(v.ErrorCode))
+			}
+			return v, nil
+		case *ConnectionStatusEvent:
+			// Update connection state but don't fail channel operations
+			t.isConnected = v.IsConnected
+		case *NewDocumentEvent:
+			// Ignore PKI document updates
+		default:
+			// Ignore other events
+		}
+	}
+}
+
+// ResumeReadChannel causes the client daemon to resume to
+// a previous state. Note that the last two arguments are optional and can be nil:
+// envelopeDescriptor and envelopeHash
+func (t *ThinClient) ResumeReadChannel(
+	ctx context.Context,
+	readCap *bacap.ReadCap,
+	messageBoxIndex *bacap.MessageBoxIndex,
+	nextMessageIndex *bacap.MessageBoxIndex,
+	replyIndex *uint8,
+	envelopeDescriptor []byte,
+	envelopeHash *[32]byte) (uint16, error) {
+
+	queryID := t.NewQueryID()
+	req := &Request{
+		ResumeReadChannel: &ResumeReadChannel{
+			QueryID:            queryID,
+			ReadCap:            readCap,
+			MessageBoxIndex:    messageBoxIndex,
+			NextMessageIndex:   nextMessageIndex,
+			ReplyIndex:         replyIndex,
+			EnvelopeDescriptor: envelopeDescriptor,
+			EnvelopeHash:       envelopeHash,
+		},
+	}
+
+	eventSink := t.EventSink()
+	defer t.StopEventSink(eventSink)
+	err := t.writeMessage(req)
+	if err != nil {
+		return 0, err
+	}
+	for {
+		var event Event
+		select {
+		case <-ctx.Done():
+			return 0, ctx.Err()
+		case event = <-eventSink:
+		case <-t.HaltCh():
+			return 0, errHalting
+		}
+
+		switch v := event.(type) {
+		// match our queryID
+		case *ResumeReadChannelReply:
+			if v.QueryID == nil {
+				t.log.Debugf("ResumeReadChannel: Received ResumeReadChannelReply with nil QueryID, ignoring")
+				continue
+			}
+			if !bytes.Equal(v.QueryID[:], queryID[:]) {
+				t.log.Debugf("ResumeReadChannel: Received ResumeReadChannelReply with mismatched QueryID, ignoring")
+				continue
+			}
+			if v.ErrorCode != ThinClientSuccess {
+				return 0, errors.New(ThinClientErrorToString(v.ErrorCode))
+			}
+			return v.ChannelID, nil
+		case *ConnectionStatusEvent:
+			// Update connection state but don't fail channel operations
+			t.isConnected = v.IsConnected
+		case *NewDocumentEvent:
+			// Ignore PKI document updates
+		default:
+			// Ignore other events
+		}
+	}
+	panic("unreachable")
 }
 
 // CloseChannel closes a pigeonhole channel.
@@ -1100,226 +1254,4 @@ func (t *ThinClient) SendChannelQuery(
 	}
 
 	return t.writeMessage(req)
-}
-
-// ReadChannelWithRetry sends a read query for a pigeonhole channel with automatic reply index retry.
-// It first tries reply index 0 up to 3 times, and if that fails, it tries reply index 1 up to 3 times.
-// This method handles the common case where the courier has cached replies at different indices
-// and accounts for timing issues where messages may not have propagated yet.
-// This method requires mixnet connectivity and will fail in offline mode.
-func (t *ThinClient) ReadChannelWithRetry(ctx context.Context, channelID uint16) ([]byte, error) {
-	if !t.isConnected {
-		return nil, errors.New("cannot send channel query in offline mode - daemon not connected to mixnet")
-	}
-
-	messageID := t.NewMessageID()
-	replyIndices := []uint8{0, 1}
-
-	for _, replyIndex := range replyIndices {
-		if result, err := t.tryReplyIndexWithRetries(ctx, channelID, messageID, replyIndex); err == nil {
-			return result, nil
-		}
-	}
-
-	t.log.Debugf("ReadChannelWithRetry: All reply indices failed after multiple attempts")
-	return nil, errors.New("all reply indices failed after multiple attempts")
-}
-
-// ReadChannelWithReply sends a read query for a pigeonhole channel with a specific reply index.
-// This method requires mixnet connectivity and will fail in offline mode.
-func (t *ThinClient) ReadChannelWithReply(ctx context.Context, channelID uint16, replyIndex uint8) ([]byte, error) {
-	messageID := t.NewMessageID()
-	payload, err := t.prepareReadQuery(ctx, channelID, replyIndex)
-	if err != nil {
-		return nil, err
-	}
-	maxRetries := 4
-	for attempt := 1; attempt <= maxRetries; attempt++ {
-		if result, err := t.attemptChannelRead(ctx, channelID, payload, messageID, replyIndex, attempt, maxRetries); err == nil {
-			return result, nil
-		}
-		if attempt < maxRetries {
-			if err := t.waitBetweenRetries(ctx); err != nil {
-				return nil, err
-			}
-		}
-	}
-	return nil, fmt.Errorf("reply index %d failed after %d attempts", replyIndex, maxRetries)
-}
-
-// tryReplyIndexWithRetries attempts to read from a specific reply index with retries
-func (t *ThinClient) tryReplyIndexWithRetries(ctx context.Context, channelID uint16, messageID *[MessageIDLength]byte, replyIndex uint8) ([]byte, error) {
-	payload, err := t.prepareReadQuery(ctx, channelID, replyIndex)
-	if err != nil {
-		return nil, err
-	}
-
-	const maxRetries = 4
-	for attempt := 1; attempt <= maxRetries; attempt++ {
-		if result, err := t.attemptChannelRead(ctx, channelID, payload, messageID, replyIndex, attempt, maxRetries); err == nil {
-			return result, nil
-		}
-
-		if attempt < maxRetries {
-			if err := t.waitBetweenRetries(ctx); err != nil {
-				return nil, err
-			}
-		}
-	}
-
-	return nil, fmt.Errorf("reply index %d failed after %d attempts", replyIndex, maxRetries)
-}
-
-// prepareReadQuery prepares the read query payload for a specific reply index
-func (t *ThinClient) prepareReadQuery(ctx context.Context, channelID uint16, replyIndex uint8) ([]byte, error) {
-	payload, _, _, err := t.ReadChannel(ctx, channelID, &replyIndex)
-	if err != nil {
-		return nil, fmt.Errorf("failed to prepare read query with reply index %d: %w", replyIndex, err)
-	}
-	return payload, nil
-}
-
-// attemptChannelRead performs a single attempt to read from the channel
-func (t *ThinClient) attemptChannelRead(ctx context.Context, channelID uint16, payload []byte, messageID *[MessageIDLength]byte, replyIndex uint8, attempt, maxRetries int) ([]byte, error) {
-	attemptCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
-	defer cancel()
-
-	result, err := t.sendChannelQueryAndWaitForMessageID(attemptCtx, channelID, payload, messageID, true)
-	if err != nil {
-		return nil, err
-	}
-
-	if len(result) > 0 {
-		return result, nil
-	}
-	return nil, errors.New("received empty payload - message not available yet")
-}
-
-// waitBetweenRetries adds a delay between retry attempts
-func (t *ThinClient) waitBetweenRetries(ctx context.Context) error {
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-time.After(5 * time.Second):
-		return nil
-	}
-}
-
-// WriteChannelWithReply writes a message to a pigeonhole channel and waits for the write confirmation.
-// This method handles the complete write flow: preparing the write payload, sending it to the courier,
-// and waiting for the write completion confirmation.
-// This method requires mixnet connectivity and will fail in offline mode.
-func (t *ThinClient) WriteChannelWithRetry(ctx context.Context, channelID uint16, payload []byte) error {
-	if ctx == nil {
-		return errContextCannotBeNil
-	}
-
-	// Check if we're in offline mode
-	if !t.isConnected {
-		return errors.New("cannot send channel query in offline mode - daemon not connected to mixnet")
-	}
-
-	// Prepare the write message
-	writePayload, _, err := t.WriteChannel(ctx, channelID, payload)
-	if err != nil {
-		return fmt.Errorf("failed to prepare write message: %w", err)
-	}
-
-	// Generate a messageID for this write operation
-	writeMessageID := t.NewMessageID()
-
-	// Send the write query and wait for completion
-	// For write operations, we don't care about the payload, just that it succeeded
-	_, err = t.sendChannelQueryAndWaitForMessageID(ctx, channelID, writePayload, writeMessageID, false)
-	return err
-}
-
-func (t *ThinClient) getCourierDestination() (*[32]byte, []byte, error) {
-	epoch, _, _ := epochtime.Now()
-	epochDoc, err := t.PKIDocumentForEpoch(epoch)
-	if err != nil {
-		return nil, nil, err
-	}
-	courierServices := common.FindServices("courier", epochDoc)
-	if len(courierServices) == 0 {
-		return nil, nil, errors.New("no courier services found")
-	}
-	// Select a random courier service for load distribution
-	courierService := courierServices[rand.NewMath().Intn(len(courierServices))]
-	destNode := hash.Sum256(courierService.MixDescriptor.IdentityKey)
-	destQueue := courierService.RecipientQueueID
-	return &destNode, destQueue, nil
-}
-
-// sendChannelQueryAndWaitForMessageID sends a channel query and waits for a reply with the specified messageID
-func (t *ThinClient) sendChannelQueryAndWaitForMessageID(ctx context.Context, channelID uint16, payload []byte, expectedMessageID *[MessageIDLength]byte, isReadOperation bool) ([]byte, error) {
-	eventSink := t.EventSink()
-	defer t.StopEventSink(eventSink)
-
-	destNode, destQueue, err := t.getCourierDestination()
-	if err != nil {
-		return nil, err
-	}
-
-	err = t.SendChannelQuery(ctx, channelID, payload, destNode, destQueue, expectedMessageID)
-	if err != nil {
-		return nil, err
-	}
-
-	for {
-		var event Event
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		case event = <-eventSink:
-		case <-t.HaltCh():
-			return nil, errHalting
-		}
-
-		switch v := event.(type) {
-		case *MessageIDGarbageCollected:
-			t.log.Debugf("sendChannelQueryAndWaitForMessageID: Received MessageIDGarbageCollected")
-		case *ConnectionStatusEvent:
-			t.log.Debugf("sendChannelQueryAndWaitForMessageID: Received ConnectionStatusEvent: connected=%v", v.IsConnected)
-			// Update connection state
-			t.isConnected = v.IsConnected
-			if !v.IsConnected {
-				return nil, errors.New("connection lost during channel query")
-			}
-		case *NewDocumentEvent:
-			t.log.Debugf("sendChannelQueryAndWaitForMessageID: Received NewDocumentEvent")
-		case *MessageSentEvent:
-			t.log.Debugf("sendChannelQueryAndWaitForMessageID: Received MessageSentEvent")
-		case *MessageReplyEvent:
-			// Check if this reply matches our expected messageID
-			if v.MessageID == nil {
-				t.log.Debugf("sendChannelQueryAndWaitForMessageID: Received MessageReplyEvent with nil MessageID, ignoring")
-				continue
-			}
-			if *v.MessageID != *expectedMessageID {
-				t.log.Debugf("sendChannelQueryAndWaitForMessageID: Received MessageReplyEvent with mismatched MessageID (expected %x, got %x), ignoring",
-					expectedMessageID[:8], v.MessageID[:8])
-				continue
-			}
-
-			t.log.Debugf("sendChannelQueryAndWaitForMessageID: Received matching MessageReplyEvent: ErrorCode=%d, PayloadLen=%d", v.ErrorCode, len(v.Payload))
-			if v.ErrorCode != ThinClientSuccess {
-				return nil, fmt.Errorf("channel query failed: %s", ThinClientErrorToString(v.ErrorCode))
-			}
-			// Handle empty payload based on operation type
-			if len(v.Payload) == 0 {
-				if isReadOperation {
-					t.log.Debugf("sendChannelQueryAndWaitForMessageID: Received empty payload for read operation - message not available yet for messageID %x", expectedMessageID[:8])
-					return nil, errors.New("message not available yet - empty payload")
-				} else {
-					t.log.Debugf("sendChannelQueryAndWaitForMessageID: Received successful reply with empty payload (write operation) for messageID %x", expectedMessageID[:8])
-					return []byte{}, nil // Return empty byte slice to indicate success
-				}
-			}
-			t.log.Debugf("sendChannelQueryAndWaitForMessageID: Received valid payload for messageID %x", expectedMessageID[:8])
-			return v.Payload, nil
-		default:
-			t.log.Debugf("sendChannelQueryAndWaitForMessageID: Received unknown event type: %T", event)
-		}
-	}
 }

@@ -171,10 +171,6 @@ type CreateWriteChannelReply struct {
 	// persistence and resumption across client restarts.
 	WriteCap *bacap.WriteCap `cbor:"write_cap"`
 
-	// NextMessageIndex indicates the current write position in the channel,
-	// used for tracking message ordering and resumption.
-	NextMessageIndex *bacap.MessageBoxIndex `cbor:"next_message_index"`
-
 	// ErrorCode indicates the success or failure of the channel creation.
 	// A value of ThinClientErrorSuccess indicates successful creation.
 	ErrorCode uint8 `cbor:"error_code"`
@@ -191,10 +187,6 @@ type CreateReadChannelReply struct {
 	// ChannelID is the unique identifier for the created read channel, used in
 	// subsequent ReadChannel operations.
 	ChannelID uint16 `cbor:"channel_id"`
-
-	// NextMessageIndex indicates the current read position in the channel,
-	// showing where the next read operation will start from.
-	NextMessageIndex *bacap.MessageBoxIndex `cbor:"next_message_index"`
 
 	// ErrorCode indicates the success or failure of the channel creation.
 	// A value of ThinClientErrorSuccess indicates successful creation.
@@ -213,6 +205,10 @@ func (e *CreateReadChannelReply) String() string {
 // It provides the prepared message payload that should be sent through the mixnet
 // to complete the channel write operation.
 type WriteChannelReply struct {
+	// QueryID is used for correlating this reply with the WriteChannel request
+	// that created it.
+	QueryID *[QueryIDLength]byte `cbor:"query_id"`
+
 	// ChannelID identifies the channel this reply corresponds to.
 	ChannelID uint16 `cbor:"channel_id"`
 
@@ -223,10 +219,6 @@ type WriteChannelReply struct {
 	// NextMessageIndex indicates the message index to use after the courier
 	// acknowledges successful delivery of this message.
 	NextMessageIndex *bacap.MessageBoxIndex `cbor:"next_message_index"`
-
-	// QueryID is used for correlating this reply with the WriteChannel request
-	// that created it.
-	QueryID *[QueryIDLength]byte `cbor:"query_id"`
 
 	// EnvelopeHash is the hash of the CourierEnvelope that was sent to the
 	EnvelopeHash [32]byte `cbor:"envelope_hash"`
@@ -259,9 +251,16 @@ type ReadChannelReply struct {
 	// ChannelID identifies the channel this reply corresponds to.
 	ChannelID uint16 `cbor:"channel_id"`
 
+	// ErrorCode indicates the success or failure of preparing the read operation.
+	// A value of ThinClientErrorSuccess indicates the query is ready to send.
+	ErrorCode uint8 `cbor:"error_code"`
+
 	// SendMessagePayload contains the prepared query that should be sent via
 	// SendChannelQuery to retrieve the next message from the channel.
 	SendMessagePayload []byte `cbor:"send_message_payload"`
+
+	// NOTE(David): The fields below are only used for resumption of a
+	// this read channel.
 
 	// NextMessageIndex indicates the message index to use after successfully
 	// reading the current message.
@@ -271,9 +270,16 @@ type ReadChannelReply struct {
 	// This corresponds to the ReplyIndex parameter from the ReadChannel request.
 	ReplyIndex *uint8 `cbor:"reply_index"`
 
-	// ErrorCode indicates the success or failure of preparing the read operation.
-	// A value of ThinClientErrorSuccess indicates the query is ready to send.
-	ErrorCode uint8 `cbor:"error_code"`
+	// NOTE(David): The fields below are only used for resumption of a
+	// previously prepared read query which.
+
+	// EnvelopeHash is the hash of the CourierEnvelope that was sent to the
+	// mixnet and is used to resume the read operation.
+	EnvelopeHash *[32]byte `cbor:"envelope_hash"`
+
+	// EnvelopeDescriptor contains the serialized EnvelopeDescriptor that
+	// contains the private key material needed to decrypt the envelope reply.
+	EnvelopeDescriptor []byte `cbor:"envelope_descriptor"`
 }
 
 // String returns a string representation of the ReadChannelReply.
@@ -290,4 +296,62 @@ func (e *ReadChannelReply) String() string {
 		return fmt.Sprintf("ReadChannelReply: msgID=%s channel=%d%s (error: %s)", msgIDStr, e.ChannelID, replyIndexStr, ThinClientErrorToString(e.ErrorCode))
 	}
 	return fmt.Sprintf("ReadChannelReply: msgID=%s channel=%d%s (%d bytes payload)", msgIDStr, e.ChannelID, replyIndexStr, len(e.SendMessagePayload))
+}
+
+// ResumeWriteChannelReply is sent in response to a ResumeWriteChannel request.
+// It indicates whether the resume operation was successful or not.
+type ResumeWriteChannelReply struct {
+	// QueryID is used for correlating this reply with the ResumeWriteChannel request
+	// that created it.
+	QueryID *[QueryIDLength]byte `cbor:"query_id"`
+
+	// ChannelID is the unique identifier for the resumed channel, used in
+	// subsequent WriteChannel operations.
+	ChannelID uint16 `cbor:"channel_id"`
+
+	// ErrorCode indicates the success or failure of preparing the write operation
+	// resumption. A value of ThinClientErrorSuccess indicates the payload is ready
+	// to send in a subsequent SendChannelQuery call.
+	ErrorCode uint8 `cbor:"error_code"`
+}
+
+// String returns a string representation of the ResumeWriteChannelReply.
+func (e *ResumeWriteChannelReply) String() string {
+	msgIDStr := "nil"
+	if e.QueryID != nil {
+		msgIDStr = fmt.Sprintf("%x", e.QueryID)
+	}
+	if e.ErrorCode != ThinClientSuccess {
+		return fmt.Sprintf("ResumeWriteChannelReply: msgID=%s (error: %s)", msgIDStr, ThinClientErrorToString(e.ErrorCode))
+	}
+	return fmt.Sprintf("ResumeWriteChannelReply: msgID=%s", msgIDStr)
+}
+
+// ResumeReadChannelReply is sent in response to a ResumeReadChannel request.
+// It indicates whether the resume operation was successful or not.
+type ResumeReadChannelReply struct {
+	// QueryID is used for correlating this reply with the ResumeReadChannel request
+	// that created it.
+	QueryID *[QueryIDLength]byte `cbor:"query_id"`
+
+	// ChannelID is the unique identifier for the resumed channel, used in
+	// subsequent ReadChannel operations.
+	ChannelID uint16 `cbor:"channel_id"`
+
+	// ErrorCode indicates the success or failure of preparing the read operation
+	// resumption. A value of ThinClientErrorSuccess indicates the query is ready
+	// to send in a subsequent SendChannelQuery call.
+	ErrorCode uint8 `cbor:"error_code"`
+}
+
+// String returns a string representation of the ResumeReadChannelReply.
+func (e *ResumeReadChannelReply) String() string {
+	msgIDStr := "nil"
+	if e.QueryID != nil {
+		msgIDStr = fmt.Sprintf("%x", e.QueryID)
+	}
+	if e.ErrorCode != ThinClientSuccess {
+		return fmt.Sprintf("ResumeReadChannelReply: msgID=%s (error: %s)", msgIDStr, ThinClientErrorToString(e.ErrorCode))
+	}
+	return fmt.Sprintf("ResumeReadChannelReply: msgID=%s", msgIDStr)
 }
