@@ -1292,10 +1292,6 @@ func (t *ThinClient) SendChannelQueryAwaitReply(
 	if err != nil {
 		return nil, err
 	}
-
-	if err != nil {
-		return nil, err
-	}
 	for {
 		var event Event
 		select {
@@ -1327,8 +1323,6 @@ func (t *ThinClient) SendChannelQueryAwaitReply(
 			// Ignore other events
 		}
 	}
-
-	panic("unreachable")
 }
 
 func (t *ThinClient) GetCourierDestination() (*[32]byte, []byte, error) {
