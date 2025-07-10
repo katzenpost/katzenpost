@@ -46,20 +46,12 @@ func TestChannelClose(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Log("Alice: Resuming write channel")
-	channelID, err = aliceThinClient.ResumeWriteChannel(ctx, writeCap, nil, nil, nil)
+	channelID, err = aliceThinClient.ResumeWriteChannel(ctx, writeCap, nil)
 	require.NoError(t, err)
 
 	t.Log("Alice: Resuming write channel with nil message box index")
-	_, err = aliceThinClient.ResumeWriteChannel(ctx, writeCap, nil, nil, nil)
+	_, err = aliceThinClient.ResumeWriteChannel(ctx, writeCap, nil)
 	require.Error(t, err)
-
-	t.Log("Alice: Closing channel")
-	err = aliceThinClient.CloseChannel(ctx, channelID)
-	require.NoError(t, err)
-
-	t.Log("Alice: Creating write channel")
-	channelID, _, writeCap, err = aliceThinClient.CreateWriteChannel(ctx)
-	require.NoError(t, err)
 
 	t.Log("Alice: Closing channel")
 	err = aliceThinClient.CloseChannel(ctx, channelID)
@@ -209,7 +201,7 @@ func TestResumeQuery(t *testing.T) {
 	aliceThinClient.CloseChannel(ctx, aliceChannelID)
 
 	t.Log("Alice: Resuming write channel")
-	aliceChannelID, err = aliceThinClient.ResumeWriteChannel(
+	aliceChannelID, err = aliceThinClient.ResumeWriteChannelQuery(
 		ctx,
 		writeCap,
 		writeChannelReply.NextMessageIndex,

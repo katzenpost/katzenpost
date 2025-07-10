@@ -469,7 +469,7 @@ type Response struct {
 
 	ResumeWriteChannelReply *ResumeWriteChannelReply `cbor:"resume_write_channel_reply"`
 
-	ResumeWriteChannelQueryReply *ResumeWriteChannelQueryReply `cbor:"resume_read_channel_query_reply"`
+	ResumeWriteChannelQueryReply *ResumeWriteChannelQueryReply `cbor:"resume_write_channel_query_reply"`
 
 	ResumeReadChannelReply *ResumeReadChannelReply `cbor:"resume_read_channel_reply"`
 

@@ -8,17 +8,19 @@ import (
 
 func IntoThinResponse(r *Response) *thin.Response {
 	return &thin.Response{
-		ConnectionStatusEvent:     r.ConnectionStatusEvent,
-		NewPKIDocumentEvent:       r.NewPKIDocumentEvent,
-		MessageSentEvent:          r.MessageSentEvent,
-		MessageReplyEvent:         r.MessageReplyEvent,
-		MessageIDGarbageCollected: r.MessageIDGarbageCollected,
-		CreateWriteChannelReply:   r.CreateWriteChannelReply,
-		CreateReadChannelReply:    r.CreateReadChannelReply,
-		WriteChannelReply:         r.WriteChannelReply,
-		ReadChannelReply:          r.ReadChannelReply,
-		ResumeWriteChannelReply:   r.ResumeWriteChannelReply,
-		ResumeReadChannelReply:    r.ResumeReadChannelReply,
+		ConnectionStatusEvent:        r.ConnectionStatusEvent,
+		NewPKIDocumentEvent:          r.NewPKIDocumentEvent,
+		MessageSentEvent:             r.MessageSentEvent,
+		MessageReplyEvent:            r.MessageReplyEvent,
+		MessageIDGarbageCollected:    r.MessageIDGarbageCollected,
+		CreateWriteChannelReply:      r.CreateWriteChannelReply,
+		CreateReadChannelReply:       r.CreateReadChannelReply,
+		WriteChannelReply:            r.WriteChannelReply,
+		ReadChannelReply:             r.ReadChannelReply,
+		ResumeWriteChannelReply:      r.ResumeWriteChannelReply,
+		ResumeReadChannelReply:       r.ResumeReadChannelReply,
+		ResumeWriteChannelQueryReply: r.ResumeWriteChannelQueryReply,
+		ResumeReadChannelQueryReply:  r.ResumeReadChannelQueryReply,
 	}
 }
 
@@ -58,14 +60,16 @@ type Response struct {
 
 func FromThinRequest(r *thin.Request, appid *[AppIDLength]byte) *Request {
 	return &Request{
-		AppID:              appid,
-		CreateWriteChannel: r.CreateWriteChannel,
-		CreateReadChannel:  r.CreateReadChannel,
-		WriteChannel:       r.WriteChannel,
-		ReadChannel:        r.ReadChannel,
-		ResumeWriteChannel: r.ResumeWriteChannel,
-		ResumeReadChannel:  r.ResumeReadChannel,
-		CloseChannel:       r.CloseChannel,
+		AppID:                   appid,
+		CreateWriteChannel:      r.CreateWriteChannel,
+		CreateReadChannel:       r.CreateReadChannel,
+		WriteChannel:            r.WriteChannel,
+		ReadChannel:             r.ReadChannel,
+		ResumeWriteChannel:      r.ResumeWriteChannel,
+		ResumeWriteChannelQuery: r.ResumeWriteChannelQuery,
+		ResumeReadChannel:       r.ResumeReadChannel,
+		ResumeReadChannelQuery:  r.ResumeReadChannelQuery,
+		CloseChannel:            r.CloseChannel,
 
 		SendMessage:    r.SendMessage,
 		SendARQMessage: r.SendARQMessage,

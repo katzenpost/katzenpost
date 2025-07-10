@@ -1347,13 +1347,13 @@ func (t *ThinClient) ResumeReadChannelQuery(
 
 		switch v := event.(type) {
 		// match our queryID
-		case *ResumeReadChannelReply:
+		case *ResumeReadChannelQueryReply:
 			if v.QueryID == nil {
-				t.log.Debugf("ResumeReadChannel: Received ResumeReadChannelReply with nil QueryID, ignoring")
+				t.log.Debugf("ResumeReadChannelQuery: Received ResumeReadChannelQueryReply with nil QueryID, ignoring")
 				continue
 			}
 			if !bytes.Equal(v.QueryID[:], queryID[:]) {
-				t.log.Debugf("ResumeReadChannel: Received ResumeReadChannelReply with mismatched QueryID, ignoring")
+				t.log.Debugf("ResumeReadChannelQuery: Received ResumeReadChannelQueryReply with mismatched QueryID, ignoring")
 				continue
 			}
 			if v.ErrorCode != ThinClientSuccess {

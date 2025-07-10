@@ -560,6 +560,17 @@ func (d *Daemon) validateResumeWriteChannelRequest(request *Request) error {
 	return nil
 }
 
+func (d *Daemon) validateResumeWriteChannelQueryRequest(request *Request) error {
+	if request.ResumeWriteChannelQuery.QueryID == nil {
+		return fmt.Errorf("QueryID cannot be nil when resuming an existing channel")
+	}
+	if request.ResumeWriteChannelQuery.WriteCap == nil {
+		return fmt.Errorf("WriteCap cannot be nil when resuming an existing channel")
+	}
+	// Note(David): The rest of the fields are optional.
+	return nil
+}
+
 func (d *Daemon) resumeWriteChannel(request *Request) {
 	// validate request
 	if err := d.validateResumeWriteChannelRequest(request); err != nil {
@@ -625,9 +636,9 @@ func (d *Daemon) resumeWriteChannel(request *Request) {
 
 func (d *Daemon) resumeWriteChannelQuery(request *Request) {
 	// validate request
-	if err := d.validateResumeWriteChannelRequest(request); err != nil {
+	if err := d.validateResumeWriteChannelQueryRequest(request); err != nil {
 		d.log.Errorf("BUG, invalid request: %v", err)
-		d.sendResumeWriteChannelError(request, thin.ThinClientErrorInternalError)
+		d.sendResumeWriteChannelQueryError(request, thin.ThinClientErrorInternalError)
 		return
 	}
 
@@ -654,9 +665,9 @@ func (d *Daemon) resumeWriteChannelQuery(request *Request) {
 	channelID := d.generateUniqueChannelID()
 	var statefulWriter *bacap.StatefulWriter
 	statefulWriter, err = bacap.NewStatefulWriterWithIndex(
-		request.ResumeWriteChannel.WriteCap,
+		request.ResumeWriteChannelQuery.WriteCap,
 		constants.PIGEONHOLE_CTX,
-		request.ResumeWriteChannel.MessageBoxIndex)
+		request.ResumeWriteChannelQuery.MessageBoxIndex)
 	if err != nil {
 		d.log.Errorf("BUG, failed to create stateful writer: %v", err)
 		d.sendResumeWriteChannelError(request, thin.ThinClientErrorInternalError)
@@ -687,7 +698,7 @@ func (d *Daemon) resumeWriteChannelQuery(request *Request) {
 	}
 	conn.sendResponse(&Response{
 		AppID: request.AppID,
-		ResumeWriteChannelReply: &thin.ResumeWriteChannelReply{
+		ResumeWriteChannelQueryReply: &thin.ResumeWriteChannelQueryReply{
 			QueryID:   request.ResumeWriteChannelQuery.QueryID,
 			ChannelID: channelID,
 			ErrorCode: thin.ThinClientSuccess,
@@ -730,6 +741,16 @@ func (d *Daemon) validateResumeReadChannelRequest(request *Request) error {
 		return fmt.Errorf("queryID cannot be nil")
 	}
 	if request.ResumeReadChannel.NextMessageIndex == nil {
+		return fmt.Errorf("nextMessageIndex cannot be nil")
+	}
+	return nil
+}
+
+func (d *Daemon) validateResumeReadChannelQueryRequest(request *Request) error {
+	if request.ResumeReadChannelQuery.QueryID == nil {
+		return fmt.Errorf("queryID cannot be nil")
+	}
+	if request.ResumeReadChannelQuery.NextMessageIndex == nil {
 		return fmt.Errorf("nextMessageIndex cannot be nil")
 	}
 	return nil
@@ -823,7 +844,7 @@ func (d *Daemon) resumeReadChannelQuery(request *Request) {
 	// 3. create new channel descriptor
 	// 4. inspect optional request fields that are only used for resumption of a previously prepared read query blob
 
-	err := d.validateResumeReadChannelRequest(request)
+	err := d.validateResumeReadChannelQueryRequest(request)
 	if err != nil {
 		d.log.Errorf("BUG, invalid request: %v", err)
 		d.sendResumeReadChannelQueryError(request, thin.ThinClientErrorInvalidResumeReadChannelRequest)
@@ -853,9 +874,9 @@ func (d *Daemon) resumeReadChannelQuery(request *Request) {
 	channelID := d.generateUniqueChannelID()
 	var statefulReader *bacap.StatefulReader
 	statefulReader, err = bacap.NewStatefulReaderWithIndex(
-		request.ResumeReadChannel.ReadCap,
+		request.ResumeReadChannelQuery.ReadCap,
 		constants.PIGEONHOLE_CTX,
-		request.ResumeReadChannel.NextMessageIndex)
+		request.ResumeReadChannelQuery.NextMessageIndex)
 	if err != nil {
 		d.log.Errorf("BUG, failed to create stateful reader: %v", err)
 		d.sendResumeReadChannelQueryError(request, thin.ThinClientErrorInternalError)
@@ -880,7 +901,7 @@ func (d *Daemon) resumeReadChannelQuery(request *Request) {
 	// send reply back to client
 	conn.sendResponse(&Response{
 		AppID: request.AppID,
-		ResumeReadChannelReply: &thin.ResumeReadChannelReply{
+		ResumeReadChannelQueryReply: &thin.ResumeReadChannelQueryReply{
 			QueryID:   request.ResumeReadChannelQuery.QueryID,
 			ChannelID: channelID,
 			ErrorCode: thin.ThinClientSuccess,
