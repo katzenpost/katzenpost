@@ -100,63 +100,64 @@ func TestChannelAPIBasics(t *testing.T) {
 	t.Log("Alice: Writing message and waiting for completion")
 
 	// Use WriteChannelWithRetry to write and wait for completion
-	aliceWriteReply, err := aliceThinClient.WriteChannel(ctx, aliceChannelID, originalMessage)
+	aliceWriteReply1, err := aliceThinClient.WriteChannel(ctx, aliceChannelID, originalMessage)
 	require.NoError(t, err)
-	require.Equal(t, aliceWriteReply.ErrorCode, thin.ThinClientSuccess, "Alice: Write operation failed")
+	require.Equal(t, aliceWriteReply1.ErrorCode, thin.ThinClientSuccess, "Alice: Write operation failed")
 	t.Log("Alice: Write operation completed successfully")
 
 	destNode, destQueue, err := aliceThinClient.GetCourierDestination()
 	require.NoError(t, err)
-	aliceMessageID := aliceThinClient.NewMessageID()
+	aliceMessageID1 := aliceThinClient.NewMessageID()
 
-	for i := 0; i < 2; i++ {
-		t.Logf("Alice: write attempt %d", i+1)
-		_, err = aliceThinClient.SendChannelQueryAwaitReply(ctx, aliceChannelID, aliceWriteReply.SendMessagePayload, destNode, destQueue, aliceMessageID)
-		require.NoError(t, err)
-	}
+	_, err = aliceThinClient.SendChannelQueryAwaitReply(ctx, aliceChannelID, aliceWriteReply1.SendMessagePayload, destNode, destQueue, aliceMessageID1)
+	require.NoError(t, err)
 
 	// alice writes a second message
 	secondMessage := []byte("hello2")
 	t.Log("Alice: Writing second message and waiting for completion")
 
-	aliceWriteReply, err = aliceThinClient.WriteChannel(ctx, aliceChannelID, secondMessage)
+	aliceWriteReply2, err := aliceThinClient.WriteChannel(ctx, aliceChannelID, secondMessage)
 	require.NoError(t, err)
-	require.Equal(t, aliceWriteReply.ErrorCode, thin.ThinClientSuccess, "Alice: Write operation failed")
+	require.Equal(t, aliceWriteReply2.ErrorCode, thin.ThinClientSuccess, "Alice: Write operation failed")
 	t.Log("Alice: Second write operation completed successfully")
 
-	for i := 0; i < 2; i++ {
-		t.Logf("Alice: second write attempt %d", i+1)
-		_, err = aliceThinClient.SendChannelQueryAwaitReply(ctx, aliceChannelID, aliceWriteReply.SendMessagePayload, destNode, destQueue, aliceMessageID)
-		require.NoError(t, err)
-	}
-	// Wait for message propagation to storage replicas
-	//time.Sleep(10 * time.Second)
+	aliceMessageID2 := aliceThinClient.NewMessageID()
 
-	// Bob reads message using the helper function with automatic retry logic
-	t.Log("Bob: Reading message with automatic reply index retry")
-	readReply, err := bobThinClient.ReadChannel(ctx, bobChannelID, nil, nil)
+	_, err = aliceThinClient.SendChannelQueryAwaitReply(ctx, aliceChannelID, aliceWriteReply2.SendMessagePayload, destNode, destQueue, aliceMessageID2)
 	require.NoError(t, err)
-	require.Equal(t, readReply.ErrorCode, thin.ThinClientSuccess, "Bob: Read operation failed")
 
-	// bob reads first message
-	bobMessageID := bobThinClient.NewMessageID()
+	// Wait for message propagation to storage replicas
+	t.Log("Waiting for message propagation to storage replicas")
+	time.Sleep(10 * time.Second)
+
+	// Bob reads first message
+	t.Log("Bob: Reading first message")
+	readReply1, err := bobThinClient.ReadChannel(ctx, bobChannelID, nil, nil)
+	require.NoError(t, err)
+	require.Equal(t, readReply1.ErrorCode, thin.ThinClientSuccess, "Bob: Read operation failed")
+
+	bobMessageID1 := bobThinClient.NewMessageID()
 	var bobReplyPayload []byte
-	for i := 0; i < 10; i++ {
-		t.Logf("Bob: read attempt %d", i+1)
-		bobReplyPayload, err = bobThinClient.SendChannelQueryAwaitReply(ctx, bobChannelID, readReply.SendMessagePayload, destNode, destQueue, bobMessageID)
-		require.NoError(t, err)
 
+	for i := 0; i < 10; i++ {
+		bobReplyPayload, err = bobThinClient.SendChannelQueryAwaitReply(ctx, bobChannelID, readReply1.SendMessagePayload, destNode, destQueue, bobMessageID1)
+		require.NoError(t, err)
 		if len(bobReplyPayload) > 0 {
 			break
 		}
 	}
 	require.Equal(t, originalMessage, bobReplyPayload, "Bob: Reply payload mismatch")
 
-	// bob reads second message
-	bobMessageID = bobThinClient.NewMessageID()
+	// Bob reads second message
+	t.Log("Bob: Reading second message")
+	readReply2, err := bobThinClient.ReadChannel(ctx, bobChannelID, nil, nil)
+	require.NoError(t, err)
+	require.Equal(t, readReply2.ErrorCode, thin.ThinClientSuccess, "Bob: Second read operation failed")
+
+	bobMessageID2 := bobThinClient.NewMessageID()
 	for i := 0; i < 10; i++ {
 		t.Logf("Bob: second read attempt %d", i+1)
-		bobReplyPayload, err = bobThinClient.SendChannelQueryAwaitReply(ctx, bobChannelID, readReply.SendMessagePayload, destNode, destQueue, bobMessageID)
+		bobReplyPayload, err = bobThinClient.SendChannelQueryAwaitReply(ctx, bobChannelID, readReply2.SendMessagePayload, destNode, destQueue, bobMessageID2)
 		require.NoError(t, err)
 
 		if len(bobReplyPayload) > 0 {

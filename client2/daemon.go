@@ -764,7 +764,7 @@ func (d *Daemon) handleChannelReply(appid *[AppIDLength]byte,
 	// Handle envelope replies (read/write operations)
 	switch {
 	case courierQueryReply.ReplyType == 0:
-		return d.handleCourierEnvelopeReply(appid, mesgID, surbid, payload, courierQueryReply.EnvelopeReply)
+		return d.handleCourierEnvelopeReply(appid, mesgID, surbid, courierQueryReply.EnvelopeReply)
 	case courierQueryReply.ReplyType == 1:
 		return fmt.Errorf("BUG, copy command replies are not supported in the new API yet")
 	}
@@ -791,7 +791,6 @@ func mapCourierErrorToThinClientError(courierErrorCode uint8) uint8 {
 func (d *Daemon) handleCourierEnvelopeReply(appid *[AppIDLength]byte,
 	mesgID *[MessageIDLength]byte,
 	surbid *[sphinxConstants.SURBIDLength]byte,
-	payload []byte,
 	courierEnvelopeReply *pigeonhole.CourierEnvelopeReply) error {
 
 	channelID, channelDesc, err := d.lookupNewChannel(surbid)
@@ -827,7 +826,7 @@ func (d *Daemon) handleCourierEnvelopeReply(appid *[AppIDLength]byte,
 				ErrorCode: mapCourierErrorToThinClientError(courierEnvelopeReply.ErrorCode),
 			},
 		})
-	case courierEnvelopeReply.Payload == nil:
+	case courierEnvelopeReply.Payload == nil || courierEnvelopeReply.PayloadLen == 0:
 		// send empty response to client
 		return conn.sendResponse(&Response{
 			AppID: appid,
