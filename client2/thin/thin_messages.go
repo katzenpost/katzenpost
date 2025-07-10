@@ -99,6 +99,7 @@ const (
 	ThinClientImpossibleNewWriteCapError uint8 = 19
 
 	// ThinClientImpossibleNewStatefulWriterError indicates that the daemon was unable
+	// to create a new stateful writer.
 	ThinClientImpossibleNewStatefulWriterError uint8 = 20
 
 	// ThinClientCapabilityAlreadyInUse indicates that the provided capability
