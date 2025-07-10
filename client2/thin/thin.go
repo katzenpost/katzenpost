@@ -580,6 +580,16 @@ func (t *ThinClient) PKIDocumentForEpoch(epoch uint64) (*cpki.Document, error) {
 	if doc, exists := t.pkiDocCache[epoch]; exists {
 		return doc, nil
 	}
+
+	// If the requested epoch is not cached, return the current document
+	t.pkidocMutex.RLock()
+	currentDoc := t.pkidoc
+	t.pkidocMutex.RUnlock()
+
+	if currentDoc != nil {
+		return currentDoc, nil
+	}
+
 	return nil, errors.New("no PKI document available for the requested epoch")
 }
 
@@ -1318,7 +1328,7 @@ func (t *ThinClient) SendChannelQueryAwaitReply(
 		}
 	}
 
-	return nil, errors.New("impossible unreachable error in SendChannelQueryAwaitReply")
+	panic("unreachable")
 }
 
 func (t *ThinClient) GetCourierDestination() (*[32]byte, []byte, error) {
