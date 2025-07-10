@@ -366,10 +366,14 @@ func (d *Daemon) egressWorker() {
 				d.writeChannel(request)
 			case request.ResumeWriteChannel != nil:
 				d.resumeWriteChannel(request)
+			case request.ResumeWriteChannelQuery != nil:
+				d.resumeWriteChannelQuery(request)
 			case request.ReadChannel != nil:
 				d.readChannel(request)
 			case request.ResumeReadChannel != nil:
 				d.resumeReadChannel(request)
+			case request.ResumeReadChannelQuery != nil:
+				d.resumeReadChannelQuery(request)
 			case request.CloseChannel != nil:
 				d.closeChannel(request)
 
@@ -557,15 +561,6 @@ func (d *Daemon) validateResumeWriteChannelRequest(request *Request) error {
 }
 
 func (d *Daemon) resumeWriteChannel(request *Request) {
-
-	// NOTE(David):
-	// handle the request in several steps:
-	// 1. validate request
-	// 2. set used write cap map entry
-	// 3. create new channel descriptor
-	// 4. inspect optional request fields that are only used for resumption of a previously prepared read query blob
-	// 5. send reply back to client
-
 	// validate request
 	if err := d.validateResumeWriteChannelRequest(request); err != nil {
 		d.log.Errorf("BUG, invalid request: %v", err)
@@ -595,14 +590,7 @@ func (d *Daemon) resumeWriteChannel(request *Request) {
 	// use fields from the request to mutate our current state
 	channelID := d.generateUniqueChannelID()
 	var statefulWriter *bacap.StatefulWriter
-	if request.ResumeWriteChannel.MessageBoxIndex == nil {
-		statefulWriter, err = bacap.NewStatefulWriter(request.ResumeWriteChannel.WriteCap, constants.PIGEONHOLE_CTX)
-	} else {
-		statefulWriter, err = bacap.NewStatefulWriterWithIndex(
-			request.ResumeWriteChannel.WriteCap,
-			constants.PIGEONHOLE_CTX,
-			request.ResumeWriteChannel.MessageBoxIndex)
-	}
+	statefulWriter, err = bacap.NewStatefulWriter(request.ResumeWriteChannel.WriteCap, constants.PIGEONHOLE_CTX)
 	if err != nil {
 		d.log.Errorf("BUG, failed to create stateful writer: %v", err)
 		d.sendResumeWriteChannelError(request, thin.ThinClientErrorInternalError)
@@ -613,14 +601,6 @@ func (d *Daemon) resumeWriteChannel(request *Request) {
 		AppID:               request.AppID,
 		StatefulWriter:      statefulWriter,
 		EnvelopeDescriptors: make(map[[hash.HashSize]byte]*EnvelopeDescriptor),
-	}
-
-	// handle optional fields which are only used for resumption of a previously prepared write query blob
-	if request.ResumeWriteChannel.EnvelopeDescriptor != nil {
-		// store envelope descriptor for later use
-		envelopeDesc := EnvelopeDescriptorFromBytes(request.ResumeWriteChannel.EnvelopeDescriptor)
-		envHash := request.ResumeWriteChannel.EnvelopeHash
-		myNewChannelDescriptor.EnvelopeDescriptors[*envHash] = envelopeDesc
 	}
 
 	d.newChannelMapLock.Lock()
@@ -639,6 +619,93 @@ func (d *Daemon) resumeWriteChannel(request *Request) {
 			QueryID:   request.ResumeWriteChannel.QueryID,
 			ChannelID: channelID,
 			ErrorCode: thin.ThinClientSuccess,
+		},
+	})
+}
+
+func (d *Daemon) resumeWriteChannelQuery(request *Request) {
+	// validate request
+	if err := d.validateResumeWriteChannelRequest(request); err != nil {
+		d.log.Errorf("BUG, invalid request: %v", err)
+		d.sendResumeWriteChannelError(request, thin.ThinClientErrorInternalError)
+		return
+	}
+
+	// set used write cap map entry
+	writeCapBlob, err := request.ResumeWriteChannelQuery.WriteCap.MarshalBinary()
+	if err != nil {
+		d.log.Errorf("BUG, failed to marshal write cap: %v", err)
+		d.sendResumeWriteChannelQueryError(request, thin.ThinClientImpossibleHashError)
+		return
+	}
+	writeCapHash := hash.Sum256(writeCapBlob)
+	d.capabilityLock.Lock()
+	_, ok := d.usedWriteCaps[writeCapHash]
+	if ok {
+		d.log.Errorf("BUG, write cap already in use")
+		d.sendResumeWriteChannelQueryError(request, thin.ThinClientCapabilityAlreadyInUse)
+		d.capabilityLock.Unlock()
+		return
+	}
+	d.usedWriteCaps[writeCapHash] = true
+	d.capabilityLock.Unlock()
+
+	// use fields from the request to mutate our current state
+	channelID := d.generateUniqueChannelID()
+	var statefulWriter *bacap.StatefulWriter
+	statefulWriter, err = bacap.NewStatefulWriterWithIndex(
+		request.ResumeWriteChannel.WriteCap,
+		constants.PIGEONHOLE_CTX,
+		request.ResumeWriteChannel.MessageBoxIndex)
+	if err != nil {
+		d.log.Errorf("BUG, failed to create stateful writer: %v", err)
+		d.sendResumeWriteChannelError(request, thin.ThinClientErrorInternalError)
+		return
+	}
+
+	myNewChannelDescriptor := &ChannelDescriptor{
+		AppID:               request.AppID,
+		StatefulWriter:      statefulWriter,
+		EnvelopeDescriptors: make(map[[hash.HashSize]byte]*EnvelopeDescriptor),
+	}
+
+	// handle optional fields which are only used for resumption of a previously prepared write query blob
+	// store envelope descriptor for later use
+	envelopeDesc := EnvelopeDescriptorFromBytes(request.ResumeWriteChannelQuery.EnvelopeDescriptor)
+	envHash := request.ResumeWriteChannelQuery.EnvelopeHash
+	myNewChannelDescriptor.EnvelopeDescriptors[*envHash] = envelopeDesc
+
+	d.newChannelMapLock.Lock()
+	d.newChannelMap[channelID] = myNewChannelDescriptor
+	d.newChannelMapLock.Unlock()
+
+	// send reply back to client
+	conn := d.listener.getConnection(request.AppID)
+	if conn == nil {
+		d.log.Errorf("no connection associated with AppID %x", request.AppID[:])
+		return
+	}
+	conn.sendResponse(&Response{
+		AppID: request.AppID,
+		ResumeWriteChannelReply: &thin.ResumeWriteChannelReply{
+			QueryID:   request.ResumeWriteChannelQuery.QueryID,
+			ChannelID: channelID,
+			ErrorCode: thin.ThinClientSuccess,
+		},
+	})
+}
+
+func (d *Daemon) sendResumeWriteChannelQueryError(request *Request, errorCode uint8) {
+	conn := d.listener.getConnection(request.AppID)
+	if conn == nil {
+		d.log.Errorf("no connection associated with AppID %x", request.AppID[:])
+		return
+	}
+	conn.sendResponse(&Response{
+		AppID: request.AppID,
+		ResumeWriteChannelQueryReply: &thin.ResumeWriteChannelQueryReply{
+			QueryID:   request.ResumeWriteChannelQuery.QueryID,
+			ErrorCode: errorCode,
 		},
 	})
 }
@@ -705,14 +772,7 @@ func (d *Daemon) resumeReadChannel(request *Request) {
 	}
 	channelID := d.generateUniqueChannelID()
 	var statefulReader *bacap.StatefulReader
-	if request.ResumeReadChannel.NextMessageIndex == nil {
-		statefulReader, err = bacap.NewStatefulReader(request.ResumeReadChannel.ReadCap, constants.PIGEONHOLE_CTX)
-	} else {
-		statefulReader, err = bacap.NewStatefulReaderWithIndex(
-			request.ResumeReadChannel.ReadCap,
-			constants.PIGEONHOLE_CTX,
-			request.ResumeReadChannel.NextMessageIndex)
-	}
+	statefulReader, err = bacap.NewStatefulReader(request.ResumeReadChannel.ReadCap, constants.PIGEONHOLE_CTX)
 	if err != nil {
 		d.log.Errorf("BUG, failed to create stateful reader: %v", err)
 		d.sendResumeReadChannelError(request, thin.ThinClientErrorInternalError)
@@ -725,14 +785,6 @@ func (d *Daemon) resumeReadChannel(request *Request) {
 		EnvelopeDescriptors: make(map[[hash.HashSize]byte]*EnvelopeDescriptor),
 	}
 
-	// inspect optional request fields that are only used for resumption of a previously prepared read query blob
-	if request.ResumeReadChannel.EnvelopeDescriptor != nil {
-		// store envelope descriptor for later use
-		envelopeDesc := EnvelopeDescriptorFromBytes(request.ResumeReadChannel.EnvelopeDescriptor)
-		envHash := request.ResumeReadChannel.EnvelopeHash
-		myNewChannelDescriptor.EnvelopeDescriptors[*envHash] = envelopeDesc
-	}
-
 	d.newChannelMapLock.Lock()
 	d.newChannelMap[channelID] = myNewChannelDescriptor
 	d.newChannelMapLock.Unlock()
@@ -742,6 +794,94 @@ func (d *Daemon) resumeReadChannel(request *Request) {
 		AppID: request.AppID,
 		ResumeReadChannelReply: &thin.ResumeReadChannelReply{
 			QueryID:   request.ResumeReadChannel.QueryID,
+			ChannelID: channelID,
+			ErrorCode: thin.ThinClientSuccess,
+		},
+	})
+}
+
+func (d *Daemon) sendResumeReadChannelQueryError(request *Request, errorCode uint8) {
+	conn := d.listener.getConnection(request.AppID)
+	if conn == nil {
+		d.log.Errorf("no connection associated with AppID %x", request.AppID[:])
+		return
+	}
+	conn.sendResponse(&Response{
+		AppID: request.AppID,
+		ResumeReadChannelQueryReply: &thin.ResumeReadChannelQueryReply{
+			QueryID:   request.ResumeReadChannelQuery.QueryID,
+			ErrorCode: errorCode,
+		},
+	})
+}
+
+func (d *Daemon) resumeReadChannelQuery(request *Request) {
+	// NOTE(David):
+	// handle the request in several steps:
+	// 1. validate request
+	// 2. set used read cap map entry
+	// 3. create new channel descriptor
+	// 4. inspect optional request fields that are only used for resumption of a previously prepared read query blob
+
+	err := d.validateResumeReadChannelRequest(request)
+	if err != nil {
+		d.log.Errorf("BUG, invalid request: %v", err)
+		d.sendResumeReadChannelQueryError(request, thin.ThinClientErrorInvalidResumeReadChannelRequest)
+		return
+	}
+
+	readCapBlob, err := request.ResumeReadChannelQuery.ReadCap.MarshalBinary()
+	readCapHash := hash.Sum256(readCapBlob)
+
+	d.capabilityLock.Lock()
+	_, ok := d.usedReadCaps[readCapHash]
+	if ok {
+		d.log.Errorf("BUG, read cap already in use")
+		d.sendResumeReadChannelQueryError(request, thin.ThinClientCapabilityAlreadyInUse)
+		d.capabilityLock.Unlock()
+		return
+	}
+	d.usedReadCaps[readCapHash] = true
+	d.capabilityLock.Unlock()
+
+	conn := d.listener.getConnection(request.AppID)
+	if conn == nil {
+		d.log.Errorf("no connection associated with AppID %x", request.AppID[:])
+		d.sendResumeReadChannelQueryError(request, thin.ThinClientErrorConnectionLost)
+		return
+	}
+	channelID := d.generateUniqueChannelID()
+	var statefulReader *bacap.StatefulReader
+	statefulReader, err = bacap.NewStatefulReaderWithIndex(
+		request.ResumeReadChannel.ReadCap,
+		constants.PIGEONHOLE_CTX,
+		request.ResumeReadChannel.NextMessageIndex)
+	if err != nil {
+		d.log.Errorf("BUG, failed to create stateful reader: %v", err)
+		d.sendResumeReadChannelQueryError(request, thin.ThinClientErrorInternalError)
+		return
+	}
+
+	myNewChannelDescriptor := &ChannelDescriptor{
+		AppID:               request.AppID,
+		StatefulReader:      statefulReader,
+		EnvelopeDescriptors: make(map[[hash.HashSize]byte]*EnvelopeDescriptor),
+	}
+
+	// store envelope descriptor for later use
+	envelopeDesc := EnvelopeDescriptorFromBytes(request.ResumeReadChannelQuery.EnvelopeDescriptor)
+	envHash := request.ResumeReadChannelQuery.EnvelopeHash
+	myNewChannelDescriptor.EnvelopeDescriptors[*envHash] = envelopeDesc
+
+	d.newChannelMapLock.Lock()
+	d.newChannelMap[channelID] = myNewChannelDescriptor
+	d.newChannelMapLock.Unlock()
+
+	// send reply back to client
+	conn.sendResponse(&Response{
+		AppID: request.AppID,
+		ResumeReadChannelReply: &thin.ResumeReadChannelReply{
+			QueryID:   request.ResumeReadChannelQuery.QueryID,
 			ChannelID: channelID,
 			ErrorCode: thin.ThinClientSuccess,
 		},

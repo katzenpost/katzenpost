@@ -472,6 +472,21 @@ func (t *ThinClient) worker() {
 			case <-t.HaltCh():
 				return
 			}
+		case message.ResumeWriteChannelQueryReply != nil:
+			select {
+			case t.eventSink <- message.ResumeWriteChannelQueryReply:
+				continue
+			case <-t.HaltCh():
+				return
+			}
+		case message.ResumeReadChannelQueryReply != nil:
+			select {
+			case t.eventSink <- message.ResumeReadChannelQueryReply:
+				continue
+			case <-t.HaltCh():
+				return
+			}
+
 		default:
 			t.log.Error("bug: received invalid thin client message")
 		}
@@ -1029,6 +1044,74 @@ func (t *ThinClient) WriteChannel(ctx context.Context, channelID uint16, payload
 func (t *ThinClient) ResumeWriteChannel(
 	ctx context.Context,
 	writeCap *bacap.WriteCap,
+	messageBoxIndex *bacap.MessageBoxIndex) (uint16, error) {
+
+	if ctx == nil {
+		return 0, errContextCannotBeNil
+	}
+	if writeCap == nil {
+		return 0, errors.New("writeCap cannot be nil")
+	}
+	queryID := t.NewQueryID()
+
+	req := &Request{
+		ResumeWriteChannel: &ResumeWriteChannel{
+			QueryID:         queryID,
+			WriteCap:        writeCap,
+			MessageBoxIndex: messageBoxIndex,
+		},
+	}
+
+	eventSink := t.EventSink()
+	defer t.StopEventSink(eventSink)
+
+	err := t.writeMessage(req)
+	if err != nil {
+		return 0, err
+	}
+	for {
+		var event Event
+		select {
+		case <-ctx.Done():
+			return 0, ctx.Err()
+		case event = <-eventSink:
+		case <-t.HaltCh():
+			return 0, errHalting
+		}
+
+		switch v := event.(type) {
+		// match our queryID
+		case *ResumeWriteChannelReply:
+			if v.QueryID == nil {
+				t.log.Debugf("ResumeWriteChannel: Received ResumeWriteChannelReply with nil QueryID, ignoring")
+				continue
+			}
+			if !bytes.Equal(v.QueryID[:], queryID[:]) {
+				t.log.Debugf("ResumeWriteChannel: Received ResumeWriteChannelReply with mismatched QueryID, ignoring")
+				continue
+			}
+			if v.ErrorCode != ThinClientSuccess {
+				return 0, errors.New(ThinClientErrorToString(v.ErrorCode))
+			}
+			return v.ChannelID, nil
+		case *ConnectionStatusEvent:
+			// Update connection state but don't fail channel operations
+			t.isConnected = v.IsConnected
+		case *NewDocumentEvent:
+			// Ignore PKI document updates
+		default:
+			// Ignore other events
+		}
+	}
+	panic("unreachable")
+}
+
+// ResumeWriteChannel causes the client daemon to resume to
+// a previous state. Note that the last two arguments are optional and can be nil:
+// envelopeDescriptor and envelopeHash
+func (t *ThinClient) ResumeWriteChannelQuery(
+	ctx context.Context,
+	writeCap *bacap.WriteCap,
 	messageBoxIndex *bacap.MessageBoxIndex,
 	envelopeDescriptor []byte,
 	envelopeHash *[32]byte) (uint16, error) {
@@ -1042,7 +1125,7 @@ func (t *ThinClient) ResumeWriteChannel(
 	queryID := t.NewQueryID()
 
 	req := &Request{
-		ResumeWriteChannel: &ResumeWriteChannel{
+		ResumeWriteChannelQuery: &ResumeWriteChannelQuery{
 			QueryID:            queryID,
 			WriteCap:           writeCap,
 			MessageBoxIndex:    messageBoxIndex,
@@ -1070,7 +1153,7 @@ func (t *ThinClient) ResumeWriteChannel(
 
 		switch v := event.(type) {
 		// match our queryID
-		case *ResumeWriteChannelReply:
+		case *ResumeWriteChannelQueryReply:
 			if v.QueryID == nil {
 				t.log.Debugf("ResumeWriteChannel: Received ResumeWriteChannelReply with nil QueryID, ignoring")
 				continue
@@ -1173,6 +1256,70 @@ func (t *ThinClient) ResumeReadChannel(
 	queryID := t.NewQueryID()
 	req := &Request{
 		ResumeReadChannel: &ResumeReadChannel{
+			QueryID:          queryID,
+			ReadCap:          readCap,
+			NextMessageIndex: nextMessageIndex,
+			ReplyIndex:       replyIndex,
+		},
+	}
+
+	eventSink := t.EventSink()
+	defer t.StopEventSink(eventSink)
+	err := t.writeMessage(req)
+	if err != nil {
+		return 0, err
+	}
+	for {
+		var event Event
+		select {
+		case <-ctx.Done():
+			return 0, ctx.Err()
+		case event = <-eventSink:
+		case <-t.HaltCh():
+			return 0, errHalting
+		}
+
+		switch v := event.(type) {
+		// match our queryID
+		case *ResumeReadChannelReply:
+			if v.QueryID == nil {
+				t.log.Debugf("ResumeReadChannel: Received ResumeReadChannelReply with nil QueryID, ignoring")
+				continue
+			}
+			if !bytes.Equal(v.QueryID[:], queryID[:]) {
+				t.log.Debugf("ResumeReadChannel: Received ResumeReadChannelReply with mismatched QueryID, ignoring")
+				continue
+			}
+			if v.ErrorCode != ThinClientSuccess {
+				return 0, errors.New(ThinClientErrorToString(v.ErrorCode))
+			}
+			return v.ChannelID, nil
+		case *ConnectionStatusEvent:
+			// Update connection state but don't fail channel operations
+			t.isConnected = v.IsConnected
+		case *NewDocumentEvent:
+			// Ignore PKI document updates
+		default:
+			// Ignore other events
+		}
+	}
+	panic("unreachable")
+}
+
+// ResumeReadChannelQuery causes the client daemon to resume to
+// a previous state. Note that the last two arguments are optional and can be nil:
+// envelopeDescriptor and envelopeHash
+func (t *ThinClient) ResumeReadChannelQuery(
+	ctx context.Context,
+	readCap *bacap.ReadCap,
+	nextMessageIndex *bacap.MessageBoxIndex,
+	replyIndex *uint8,
+	envelopeDescriptor []byte,
+	envelopeHash *[32]byte) (uint16, error) {
+
+	queryID := t.NewQueryID()
+	req := &Request{
+		ResumeReadChannelQuery: &ResumeReadChannelQuery{
 			QueryID:            queryID,
 			ReadCap:            readCap,
 			NextMessageIndex:   nextMessageIndex,

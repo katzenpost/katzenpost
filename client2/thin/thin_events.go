@@ -327,6 +327,35 @@ func (e *ResumeWriteChannelReply) String() string {
 	return fmt.Sprintf("ResumeWriteChannelReply: msgID=%s", msgIDStr)
 }
 
+// ResumeWriteChannelReply is sent in response to a ResumeWriteChannel request.
+// It indicates whether the resume operation was successful or not.
+type ResumeWriteChannelQueryReply struct {
+	// QueryID is used for correlating this reply with the ResumeWriteChannel request
+	// that created it.
+	QueryID *[QueryIDLength]byte `cbor:"query_id"`
+
+	// ChannelID is the unique identifier for the resumed channel, used in
+	// subsequent WriteChannel operations.
+	ChannelID uint16 `cbor:"channel_id"`
+
+	// ErrorCode indicates the success or failure of preparing the write operation
+	// resumption. A value of ThinClientErrorSuccess indicates the payload is ready
+	// to send in a subsequent SendChannelQuery call.
+	ErrorCode uint8 `cbor:"error_code"`
+}
+
+// String returns a string representation of the ResumeWriteChannelReply.
+func (e *ResumeWriteChannelQueryReply) String() string {
+	msgIDStr := "nil"
+	if e.QueryID != nil {
+		msgIDStr = fmt.Sprintf("%x", e.QueryID)
+	}
+	if e.ErrorCode != ThinClientSuccess {
+		return fmt.Sprintf("ResumeWriteChannelReply: msgID=%s (error: %s)", msgIDStr, ThinClientErrorToString(e.ErrorCode))
+	}
+	return fmt.Sprintf("ResumeWriteChannelReply: msgID=%s", msgIDStr)
+}
+
 // ResumeReadChannelReply is sent in response to a ResumeReadChannel request.
 // It indicates whether the resume operation was successful or not.
 type ResumeReadChannelReply struct {
@@ -346,6 +375,35 @@ type ResumeReadChannelReply struct {
 
 // String returns a string representation of the ResumeReadChannelReply.
 func (e *ResumeReadChannelReply) String() string {
+	msgIDStr := "nil"
+	if e.QueryID != nil {
+		msgIDStr = fmt.Sprintf("%x", e.QueryID)
+	}
+	if e.ErrorCode != ThinClientSuccess {
+		return fmt.Sprintf("ResumeReadChannelReply: msgID=%s (error: %s)", msgIDStr, ThinClientErrorToString(e.ErrorCode))
+	}
+	return fmt.Sprintf("ResumeReadChannelReply: msgID=%s", msgIDStr)
+}
+
+// ResumeReadChannelReply is sent in response to a ResumeReadChannel request.
+// It indicates whether the resume operation was successful or not.
+type ResumeReadChannelQueryReply struct {
+	// QueryID is used for correlating this reply with the ResumeReadChannel request
+	// that created it.
+	QueryID *[QueryIDLength]byte `cbor:"query_id"`
+
+	// ChannelID is the unique identifier for the resumed channel, used in
+	// subsequent ReadChannel operations.
+	ChannelID uint16 `cbor:"channel_id"`
+
+	// ErrorCode indicates the success or failure of preparing the read operation
+	// resumption. A value of ThinClientErrorSuccess indicates the query is ready
+	// to send in a subsequent SendChannelQuery call.
+	ErrorCode uint8 `cbor:"error_code"`
+}
+
+// String returns a string representation of the ResumeReadChannelReply.
+func (e *ResumeReadChannelQueryReply) String() string {
 	msgIDStr := "nil"
 	if e.QueryID != nil {
 		msgIDStr = fmt.Sprintf("%x", e.QueryID)

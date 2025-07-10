@@ -233,9 +233,31 @@ type ResumeWriteChannel struct {
 	// This field is required when resuming an existing channel (WriteCap != nil)
 	// and optional when creating a new channel (defaults to a random starting point).
 	MessageBoxIndex *bacap.MessageBoxIndex `cbor:"message_box_index,omitempty"`
+}
 
-	// NOTE(David): the fields below are optional and only used for resumption
-	// of a previously prepared write operation:
+// String returns a string representation of the ResumeWriteChannel request.
+func (r *ResumeWriteChannel) String() string {
+	return fmt.Sprintf("ResumeWriteChannel: QueryID=%x", r.QueryID)
+}
+
+// ResumeWriteChannel requests resuming a write operation that was previously
+// initiated but not yet completed.
+type ResumeWriteChannelQuery struct {
+
+	// QueryID is used for correlating the write request with its response.
+	// This allows the client to match responses to specific write operations.
+	// This field is required.
+	QueryID *[QueryIDLength]byte `cbor:"query_id"`
+
+	// WriteCap is the write capability for resuming an existing channel.
+	// If nil, a new channel will be created. If provided, the channel will
+	// be resumed from the specified MessageBoxIndex position.
+	WriteCap *bacap.WriteCap `cbor:"write_cap,omitempty"`
+
+	// MessageBoxIndex specifies the starting or resume point for the channel.
+	// This field is required when resuming an existing channel (WriteCap != nil)
+	// and optional when creating a new channel (defaults to a random starting point).
+	MessageBoxIndex *bacap.MessageBoxIndex `cbor:"message_box_index,omitempty"`
 
 	// EnvelopeDescriptor contains the serialized EnvelopeDescriptor that
 	// contains the private key material needed to decrypt the envelope reply.
@@ -246,7 +268,7 @@ type ResumeWriteChannel struct {
 }
 
 // String returns a string representation of the ResumeWriteChannel request.
-func (r *ResumeWriteChannel) String() string {
+func (r *ResumeWriteChannelQuery) String() string {
 	return fmt.Sprintf("ResumeWriteChannel: QueryID=%x", r.QueryID)
 }
 
@@ -304,9 +326,37 @@ type ResumeReadChannel struct {
 	// ReplyIndex is the index of the reply to return. It is optional and
 	// a default of zero will be used if not specified.
 	ReplyIndex *uint8 `cbor:"reply_index"`
+}
 
-	// NOTE(David): the fields below are optional and only used for resumption
-	// of a previously prepared read operation:
+// String returns a string representation of the ResumeReadChannel request.
+func (r *ResumeReadChannel) String() string {
+	replyIndexStr := ""
+	if r.ReplyIndex != nil {
+		replyIndexStr = fmt.Sprintf("ReplyIndex=%d", *r.ReplyIndex)
+	}
+	return fmt.Sprintf("ResumeReadChannel: QueryID=%x %s", r.QueryID, replyIndexStr)
+}
+
+// ResumeReadChannel requests resuming a read operation that was previously
+// initiated but not yet completed.
+type ResumeReadChannelQuery struct {
+	// QueryID is used for correlating the read request with its response.
+	// This allows the client to match responses to specific read operations.
+	// This field is required.
+	QueryID *[QueryIDLength]byte `cbor:"query_id"`
+
+	// ReadCap is the read capability that grants access to the channel.
+	// This capability is typically shared by the channel creator and allows
+	// reading messages from the specified channel.
+	ReadCap *bacap.ReadCap `cbor:"read_cap"`
+
+	// NextMessageIndex indicates the message index to use after successfully
+	// reading the current message.
+	NextMessageIndex *bacap.MessageBoxIndex `cbor:"next_message_index"`
+
+	// ReplyIndex is the index of the reply to return. It is optional and
+	// a default of zero will be used if not specified.
+	ReplyIndex *uint8 `cbor:"reply_index"`
 
 	// EnvelopeDescriptor contains the serialized EnvelopeDescriptor that
 	// contains the private key material needed to decrypt the envelope reply.
@@ -318,7 +368,7 @@ type ResumeReadChannel struct {
 }
 
 // String returns a string representation of the ResumeReadChannel request.
-func (r *ResumeReadChannel) String() string {
+func (r *ResumeReadChannelQuery) String() string {
 	replyIndexStr := ""
 	if r.ReplyIndex != nil {
 		replyIndexStr = fmt.Sprintf("ReplyIndex=%d", *r.ReplyIndex)
@@ -419,7 +469,11 @@ type Response struct {
 
 	ResumeWriteChannelReply *ResumeWriteChannelReply `cbor:"resume_write_channel_reply"`
 
+	ResumeWriteChannelQueryReply *ResumeWriteChannelQueryReply `cbor:"resume_read_channel_query_reply"`
+
 	ResumeReadChannelReply *ResumeReadChannelReply `cbor:"resume_read_channel_reply"`
+
+	ResumeReadChannelQueryReply *ResumeReadChannelQueryReply `cbor:"resume_read_channel_query_reply"`
 }
 
 type Request struct {
@@ -441,8 +495,14 @@ type Request struct {
 	// ResumeWriteChannel is used to resume a write operation that was previously
 	ResumeWriteChannel *ResumeWriteChannel `cbor:"resume_write_channel"`
 
+	// ResumeWriteChannelQuery is used to resume a write operation that was previously
+	ResumeWriteChannelQuery *ResumeWriteChannelQuery `cbor:"resume_write_channel_query"`
+
 	// ResumeReadChannel is used to resume a read operation that was previously
 	ResumeReadChannel *ResumeReadChannel `cbor:"resume_read_channel"`
+
+	// ResumeReadChannelQuery is used to resume a read operation that was previously
+	ResumeReadChannelQuery *ResumeReadChannelQuery `cbor:"resume_read_channel_query"`
 
 	// CloseChannel is used to close a Pigeonhole channel.
 	CloseChannel *CloseChannel `cbor:"close_channel"`
