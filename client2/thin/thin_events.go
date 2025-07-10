@@ -176,6 +176,14 @@ type CreateWriteChannelReply struct {
 	ErrorCode uint8 `cbor:"error_code"`
 }
 
+// String returns a string representation of the CreateWriteChannelReply.
+func (e *CreateWriteChannelReply) String() string {
+	if e.ErrorCode != ThinClientSuccess {
+		return fmt.Sprintf("CreateWriteChannelReply: %d (error: %s)", e.ChannelID, ThinClientErrorToString(e.ErrorCode))
+	}
+	return fmt.Sprintf("CreateWriteChannelReply: %d", e.ChannelID)
+}
+
 // CreateReadChannelReply is sent in response to a CreateReadChannel request.
 // It provides the channel ID and current read position for the newly created
 // pigeonhole read channel.

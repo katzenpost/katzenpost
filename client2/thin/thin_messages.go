@@ -164,16 +164,8 @@ type ChannelMap struct {
 type CreateWriteChannel struct {
 
 	// QueryID is used for correlating this thin client request with the
-	// thin client reponse, the CreateWriteChannelReply.
+	// thin client reponse.
 	QueryID *[QueryIDLength]byte `cbor:"query_id"`
-}
-
-// String returns a string representation of the CreateWriteChannelReply.
-func (e *CreateWriteChannelReply) String() string {
-	if e.ErrorCode != ThinClientSuccess {
-		return fmt.Sprintf("CreateWriteChannelReply: %d (error: %s)", e.ChannelID, ThinClientErrorToString(e.ErrorCode))
-	}
-	return fmt.Sprintf("CreateWriteChannelReply: %d", e.ChannelID)
 }
 
 // CreateReadChannel requests the creation of a new pigeonhole read channel
@@ -182,7 +174,7 @@ func (e *CreateWriteChannelReply) String() string {
 type CreateReadChannel struct {
 
 	// QueryID is used for correlating this thin client request with the
-	// thin client reponse, the CreateWriteChannelReply.
+	// thin client reponse.
 	QueryID *[QueryIDLength]byte `cbor:"query_id"`
 
 	// ReadCap is the read capability that grants access to the channel.
@@ -210,11 +202,6 @@ type WriteChannel struct {
 	Payload []byte `cbor:"payload"`
 }
 
-// String returns a string representation of the WriteChannel request.
-func (w *WriteChannel) String() string {
-	return fmt.Sprintf("WriteChannel: ChannelID=%x QueryID=%x PayloadSize=(%d bytes payload)", w.ChannelID, *w.QueryID, len(w.Payload))
-}
-
 // ResumeWriteChannel requests resuming a write operation that was previously
 // initiated but not yet completed.
 type ResumeWriteChannel struct {
@@ -233,11 +220,6 @@ type ResumeWriteChannel struct {
 	// This field is required when resuming an existing channel (WriteCap != nil)
 	// and optional when creating a new channel (defaults to a random starting point).
 	MessageBoxIndex *bacap.MessageBoxIndex `cbor:"message_box_index,omitempty"`
-}
-
-// String returns a string representation of the ResumeWriteChannel request.
-func (r *ResumeWriteChannel) String() string {
-	return fmt.Sprintf("ResumeWriteChannel: QueryID=%x", r.QueryID)
 }
 
 // ResumeWriteChannel requests resuming a write operation that was previously
@@ -267,11 +249,6 @@ type ResumeWriteChannelQuery struct {
 	EnvelopeHash *[32]byte `cbor:"envelope_hash"`
 }
 
-// String returns a string representation of the ResumeWriteChannel request.
-func (r *ResumeWriteChannelQuery) String() string {
-	return fmt.Sprintf("ResumeWriteChannel: QueryID=%x", r.QueryID)
-}
-
 // ReadChannel requests reading the next message from a pigeonhole channel.
 // The daemon will prepare a query for the next available message and return
 // the serialized payload that should be sent via SendChannelQuery.
@@ -297,15 +274,6 @@ type ReadChannel struct {
 	ReplyIndex *uint8 `cbor:"reply_index"`
 }
 
-// String returns a string representation of the ReadChannel request.
-func (r *ReadChannel) String() string {
-	replyIndexStr := ""
-	if r.ReplyIndex != nil {
-		replyIndexStr = fmt.Sprintf("ReplyIndex=%d", *r.ReplyIndex)
-	}
-	return fmt.Sprintf("ReadChannel: ChannelID=%x QueryID=%x %s", r.ChannelID, r.QueryID, replyIndexStr)
-}
-
 // ResumeReadChannel requests resuming a read operation that was previously
 // initiated but not yet completed.
 type ResumeReadChannel struct {
@@ -326,15 +294,6 @@ type ResumeReadChannel struct {
 	// ReplyIndex is the index of the reply to return. It is optional and
 	// a default of zero will be used if not specified.
 	ReplyIndex *uint8 `cbor:"reply_index"`
-}
-
-// String returns a string representation of the ResumeReadChannel request.
-func (r *ResumeReadChannel) String() string {
-	replyIndexStr := ""
-	if r.ReplyIndex != nil {
-		replyIndexStr = fmt.Sprintf("ReplyIndex=%d", *r.ReplyIndex)
-	}
-	return fmt.Sprintf("ResumeReadChannel: QueryID=%x %s", r.QueryID, replyIndexStr)
 }
 
 // ResumeReadChannel requests resuming a read operation that was previously
@@ -367,22 +326,9 @@ type ResumeReadChannelQuery struct {
 	EnvelopeHash *[32]byte `cbor:"envelope_hash"`
 }
 
-// String returns a string representation of the ResumeReadChannel request.
-func (r *ResumeReadChannelQuery) String() string {
-	replyIndexStr := ""
-	if r.ReplyIndex != nil {
-		replyIndexStr = fmt.Sprintf("ReplyIndex=%d", *r.ReplyIndex)
-	}
-	return fmt.Sprintf("ResumeReadChannel: QueryID=%x %s", r.QueryID, replyIndexStr)
-}
-
 // CloseChannel requests closing a pigeonhole channel.
 type CloseChannel struct {
 	ChannelID uint16 `cbor:"channel_id"`
-}
-
-func (c *CloseChannel) String() string {
-	return fmt.Sprintf("CloseChannel: channel=%d", c.ChannelID)
 }
 
 type SendMessage struct {
