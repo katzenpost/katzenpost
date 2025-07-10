@@ -814,6 +814,9 @@ func (d *Daemon) handleCourierEnvelopeReply(appid *[AppIDLength]byte,
 		return fmt.Errorf("BUG, courier envelope reply is nil")
 	}
 
+	d.log.Debugf("DEBUG: Processing courier envelope reply - ReplyType=%d, ErrorCode=%d, PayloadLen=%d, isWriter=%v, isReader=%v",
+		courierEnvelopeReply.ReplyType, courierEnvelopeReply.ErrorCode, courierEnvelopeReply.PayloadLen, isWriter, isReader)
+
 	switch {
 	case courierEnvelopeReply.ErrorCode != 0:
 		// send error response to client
@@ -826,7 +829,22 @@ func (d *Daemon) handleCourierEnvelopeReply(appid *[AppIDLength]byte,
 				ErrorCode: mapCourierErrorToThinClientError(courierEnvelopeReply.ErrorCode),
 			},
 		})
-	case courierEnvelopeReply.Payload == nil || courierEnvelopeReply.PayloadLen == 0:
+	case courierEnvelopeReply.ReplyType == pigeonhole.ReplyTypeACK:
+		d.log.Debugf("DEBUG: Received ACK reply for channel %d, isWriter=%v", channelID, isWriter)
+		// ACK indicates successful write operation - advance StatefulWriter state
+		if isWriter {
+			channelDesc.StatefulWriterLock.Lock()
+			d.log.Debugf("DEBUG: Advancing StatefulWriter state for channel %d", channelID)
+			err := channelDesc.StatefulWriter.AdvanceState()
+			channelDesc.StatefulWriterLock.Unlock()
+			if err != nil {
+				d.log.Errorf("Failed to advance StatefulWriter state for channel %d: %s", channelID, err)
+				// Continue to send response even if state advancement fails
+			} else {
+				d.log.Debugf("DEBUG: Successfully advanced StatefulWriter state for channel %d", channelID)
+			}
+		}
+
 		// send empty response to client
 		return conn.sendResponse(&Response{
 			AppID: appid,
@@ -837,8 +855,8 @@ func (d *Daemon) handleCourierEnvelopeReply(appid *[AppIDLength]byte,
 				ErrorCode: thin.ThinClientSuccess,
 			},
 		})
-	case courierEnvelopeReply.ReplyType == pigeonhole.ReplyTypeACK:
-		// send empty response to client
+	case courierEnvelopeReply.Payload == nil || courierEnvelopeReply.PayloadLen == 0:
+		// send empty response to client (for non-ACK empty replies)
 		return conn.sendResponse(&Response{
 			AppID: appid,
 			MessageReplyEvent: &thin.MessageReplyEvent{
@@ -1452,6 +1470,8 @@ func (d *Daemon) handleNewWriteReply(params *ReplyHandlerParams, writeReply *pig
 	if conn == nil {
 		return fmt.Errorf("BUG, no connection associated with AppID %x", params.AppID[:])
 	}
+
+	// Note: StatefulWriter state is advanced in handleCourierEnvelopeReply when ACK is received
 
 	// deliver the write result to thin client
 	err := conn.sendResponse(&Response{
