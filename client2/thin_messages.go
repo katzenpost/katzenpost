@@ -17,6 +17,8 @@ func IntoThinResponse(r *Response) *thin.Response {
 		CreateReadChannelReply:    r.CreateReadChannelReply,
 		WriteChannelReply:         r.WriteChannelReply,
 		ReadChannelReply:          r.ReadChannelReply,
+		ResumeWriteChannelReply:   r.ResumeWriteChannelReply,
+		ResumeReadChannelReply:    r.ResumeReadChannelReply,
 	}
 }
 
@@ -57,6 +59,8 @@ func FromThinRequest(r *thin.Request, appid *[AppIDLength]byte) *Request {
 		CreateReadChannel:  r.CreateReadChannel,
 		WriteChannel:       r.WriteChannel,
 		ReadChannel:        r.ReadChannel,
+		ResumeWriteChannel: r.ResumeWriteChannel,
+		ResumeReadChannel:  r.ResumeReadChannel,
 		CloseChannel:       r.CloseChannel,
 
 		SendMessage:    r.SendMessage,

@@ -306,6 +306,16 @@ func (d *Daemon) createWriteChannel(request *Request) {
 		EnvelopeDescriptors: make(map[[hash.HashSize]byte]*EnvelopeDescriptor),
 	}
 	d.newChannelMapLock.Unlock()
+	writeCapBlob, err := newWriteCap.MarshalBinary()
+	if err != nil {
+		d.log.Errorf("createWriteChannel failure: %s", err)
+		d.sendCreateWriteChannelError(request, thin.ThinClientImpossibleNewWriteCapError)
+		return
+	}
+	writeCapHash := hash.Sum256(writeCapBlob)
+	d.capabilityLock.Lock()
+	d.usedWriteCaps[writeCapHash] = true
+	d.capabilityLock.Unlock()
 
 	readCap := statefulWriter.Wcap.ReadCap()
 
@@ -414,6 +424,13 @@ func (d *Daemon) createReadChannel(request *Request) {
 	}
 	readCapHash := hash.Sum256(readCapBlob)
 	d.capabilityLock.Lock()
+	_, ok := d.usedReadCaps[readCapHash]
+	if ok {
+		d.log.Errorf("createReadChannel failure: read cap already in use")
+		d.sendCreateReadChannelError(request, thin.ThinClientCapabilityAlreadyInUse)
+		d.capabilityLock.Unlock()
+		return
+	}
 	d.usedReadCaps[readCapHash] = true
 	d.capabilityLock.Unlock()
 
@@ -531,7 +548,7 @@ func (d *Daemon) writeChannel(request *Request) {
 			ChannelID:          channelID,
 			SendMessagePayload: courierQuery.Bytes(),
 			NextMessageIndex:   nextMessageIndex,
-			EnvelopeHash:       *envHash,
+			EnvelopeHash:       envHash,
 			EnvelopeDescriptor: channelDesc.EnvelopeDescriptors[*envHash].Bytes(),
 			ErrorCode:          thin.ThinClientSuccess,
 		},

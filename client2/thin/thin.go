@@ -22,10 +22,12 @@ import (
 	"gopkg.in/op/go-logging.v1"
 
 	"github.com/katzenpost/hpqc/bacap"
+	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/rand"
 
 	"github.com/katzenpost/katzenpost/client2/common"
 	"github.com/katzenpost/katzenpost/client2/config"
+	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/log"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
@@ -452,6 +454,20 @@ func (t *ThinClient) worker() {
 		case message.ReadChannelReply != nil:
 			select {
 			case t.eventSink <- message.ReadChannelReply:
+				continue
+			case <-t.HaltCh():
+				return
+			}
+		case message.ResumeWriteChannelReply != nil:
+			select {
+			case t.eventSink <- message.ResumeWriteChannelReply:
+				continue
+			case <-t.HaltCh():
+				return
+			}
+		case message.ResumeReadChannelReply != nil:
+			select {
+			case t.eventSink <- message.ResumeReadChannelReply:
 				continue
 			case <-t.HaltCh():
 				return
@@ -1013,10 +1029,6 @@ func (t *ThinClient) ResumeWriteChannel(
 	if writeCap == nil {
 		return 0, errors.New("writeCap cannot be nil")
 	}
-	if messageBoxIndex == nil {
-		return 0, errors.New("messageBoxIndex cannot be nil")
-	}
-
 	queryID := t.NewQueryID()
 
 	req := &Request{
@@ -1143,7 +1155,6 @@ func (t *ThinClient) ReadChannel(ctx context.Context, channelID uint16, messageB
 func (t *ThinClient) ResumeReadChannel(
 	ctx context.Context,
 	readCap *bacap.ReadCap,
-	messageBoxIndex *bacap.MessageBoxIndex,
 	nextMessageIndex *bacap.MessageBoxIndex,
 	replyIndex *uint8,
 	envelopeDescriptor []byte,
@@ -1154,7 +1165,6 @@ func (t *ThinClient) ResumeReadChannel(
 		ResumeReadChannel: &ResumeReadChannel{
 			QueryID:            queryID,
 			ReadCap:            readCap,
-			MessageBoxIndex:    messageBoxIndex,
 			NextMessageIndex:   nextMessageIndex,
 			ReplyIndex:         replyIndex,
 			EnvelopeDescriptor: envelopeDescriptor,
@@ -1254,4 +1264,76 @@ func (t *ThinClient) SendChannelQuery(
 	}
 
 	return t.writeMessage(req)
+}
+
+func (t *ThinClient) SendChannelQueryAwaitReply(
+	ctx context.Context,
+	channelID uint16,
+	payload []byte,
+	destNode *[32]byte,
+	destQueue []byte,
+	messageID *[MessageIDLength]byte,
+) ([]byte, error) {
+
+	eventSink := t.EventSink()
+	defer t.StopEventSink(eventSink)
+
+	err := t.SendChannelQuery(ctx, channelID, payload, destNode, destQueue, messageID)
+	if err != nil {
+		return nil, err
+	}
+
+	if err != nil {
+		return nil, err
+	}
+	for {
+		var event Event
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case event = <-eventSink:
+		case <-t.HaltCh():
+			return nil, errHalting
+		}
+
+		switch v := event.(type) {
+		// match our queryID
+		case *MessageReplyEvent:
+			if v.MessageID == nil {
+				t.log.Debugf("SendChannelQueryAwaitReply: Received MessageReplyEvent with nil MessageID, ignoring")
+				continue
+			}
+			if !bytes.Equal(v.MessageID[:], messageID[:]) {
+				t.log.Debugf("SendChannelQueryAwaitReply: Received MessageReplyEvent with mismatched MessageID, ignoring")
+				continue
+			}
+			return v.Payload, nil
+		case *ConnectionStatusEvent:
+			// Update connection state but don't fail channel operations
+			t.isConnected = v.IsConnected
+		case *NewDocumentEvent:
+			// Ignore PKI document updates
+		default:
+			// Ignore other events
+		}
+	}
+
+	return nil, errors.New("impossible unreachable error in SendChannelQueryAwaitReply")
+}
+
+func (t *ThinClient) GetCourierDestination() (*[32]byte, []byte, error) {
+	epoch, _, _ := epochtime.Now()
+	epochDoc, err := t.PKIDocumentForEpoch(epoch)
+	if err != nil {
+		return nil, nil, err
+	}
+	courierServices := common.FindServices("courier", epochDoc)
+	if len(courierServices) == 0 {
+		return nil, nil, errors.New("no courier services found")
+	}
+	// Select a random courier service for load distribution
+	courierService := courierServices[rand.NewMath().Intn(len(courierServices))]
+	destNode := hash.Sum256(courierService.MixDescriptor.IdentityKey)
+	destQueue := courierService.RecipientQueueID
+	return &destNode, destQueue, nil
 }

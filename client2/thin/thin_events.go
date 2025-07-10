@@ -221,7 +221,7 @@ type WriteChannelReply struct {
 	NextMessageIndex *bacap.MessageBoxIndex `cbor:"next_message_index"`
 
 	// EnvelopeHash is the hash of the CourierEnvelope that was sent to the
-	EnvelopeHash [32]byte `cbor:"envelope_hash"`
+	EnvelopeHash *[32]byte `cbor:"envelope_hash"`
 
 	// EnvelopeDescriptor contains the serialized EnvelopeDescriptor that
 	// contains the private key material needed to decrypt the envelope reply.

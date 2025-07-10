@@ -552,9 +552,6 @@ func (d *Daemon) validateResumeWriteChannelRequest(request *Request) error {
 	if request.ResumeWriteChannel.WriteCap == nil {
 		return fmt.Errorf("WriteCap cannot be nil when resuming an existing channel")
 	}
-	if request.ResumeWriteChannel.MessageBoxIndex == nil {
-		return fmt.Errorf("MessageBoxIndex cannot be nil when resuming an existing channel")
-	}
 	// Note(David): The rest of the fields are optional.
 	return nil
 }
@@ -585,15 +582,27 @@ func (d *Daemon) resumeWriteChannel(request *Request) {
 	}
 	writeCapHash := hash.Sum256(writeCapBlob)
 	d.capabilityLock.Lock()
+	_, ok := d.usedWriteCaps[writeCapHash]
+	if ok {
+		d.log.Errorf("BUG, write cap already in use")
+		d.sendResumeWriteChannelError(request, thin.ThinClientCapabilityAlreadyInUse)
+		d.capabilityLock.Unlock()
+		return
+	}
 	d.usedWriteCaps[writeCapHash] = true
 	d.capabilityLock.Unlock()
 
 	// use fields from the request to mutate our current state
 	channelID := d.generateUniqueChannelID()
-	statefulWriter, err := bacap.NewStatefulWriterWithIndex(
-		request.ResumeWriteChannel.WriteCap,
-		constants.PIGEONHOLE_CTX,
-		request.ResumeWriteChannel.MessageBoxIndex)
+	var statefulWriter *bacap.StatefulWriter
+	if request.ResumeWriteChannel.MessageBoxIndex == nil {
+		statefulWriter, err = bacap.NewStatefulWriter(request.ResumeWriteChannel.WriteCap, constants.PIGEONHOLE_CTX)
+	} else {
+		statefulWriter, err = bacap.NewStatefulWriterWithIndex(
+			request.ResumeWriteChannel.WriteCap,
+			constants.PIGEONHOLE_CTX,
+			request.ResumeWriteChannel.MessageBoxIndex)
+	}
 	if err != nil {
 		d.log.Errorf("BUG, failed to create stateful writer: %v", err)
 		d.sendResumeWriteChannelError(request, thin.ThinClientErrorInternalError)
@@ -656,9 +665,6 @@ func (d *Daemon) validateResumeReadChannelRequest(request *Request) error {
 	if request.ResumeReadChannel.NextMessageIndex == nil {
 		return fmt.Errorf("nextMessageIndex cannot be nil")
 	}
-	if request.ResumeReadChannel.ReplyIndex == nil {
-		return fmt.Errorf("replyIndex cannot be nil")
-	}
 	return nil
 }
 
@@ -681,6 +687,13 @@ func (d *Daemon) resumeReadChannel(request *Request) {
 	readCapHash := hash.Sum256(readCapBlob)
 
 	d.capabilityLock.Lock()
+	_, ok := d.usedReadCaps[readCapHash]
+	if ok {
+		d.log.Errorf("BUG, read cap already in use")
+		d.sendResumeReadChannelError(request, thin.ThinClientCapabilityAlreadyInUse)
+		d.capabilityLock.Unlock()
+		return
+	}
 	d.usedReadCaps[readCapHash] = true
 	d.capabilityLock.Unlock()
 

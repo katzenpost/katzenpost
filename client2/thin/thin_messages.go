@@ -100,6 +100,10 @@ const (
 
 	// ThinClientImpossibleNewStatefulWriterError indicates that the daemon was unable
 	ThinClientImpossibleNewStatefulWriterError uint8 = 20
+
+	// ThinClientCapabilityAlreadyInUse indicates that the provided capability
+	// is already in use.
+	ThinClientCapabilityAlreadyInUse uint8 = 21
 )
 
 // ThinClientErrorToString converts a thin client error code to a human-readable string.
@@ -291,10 +295,6 @@ type ResumeReadChannel struct {
 	// This capability is typically shared by the channel creator and allows
 	// reading messages from the specified channel.
 	ReadCap *bacap.ReadCap `cbor:"read_cap"`
-
-	// MessageBoxIndex specifies the starting read position for the channel.
-	// If nil, reading will start from the beginning of the channel.
-	MessageBoxIndex *bacap.MessageBoxIndex `cbor:"message_box_index,omitempty"`
 
 	// NextMessageIndex indicates the message index to use after successfully
 	// reading the current message.

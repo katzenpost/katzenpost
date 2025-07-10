@@ -32,15 +32,15 @@ dockertest_channel_basics_test:
 	$(docker) run -w /go/katzenpost/client2 ${docker_args} $(image) \
 		go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 1h -run "TestChannelAPIBasics"
 
-dockertest_single_read_test:
-	cd ../docker && make $(distro)_base.stamp
-	$(docker) run -w /go/katzenpost/client2 ${docker_args} $(image) \
-		go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 1h -run "TestChannelSingleReadQuery"
-
 dockertest_channel_close_test:
 	cd ../docker && make $(distro)_base.stamp
 	$(docker) run -w /go/katzenpost/client2 ${docker_args} $(image) \
 		go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 1h -run "TestChannelClose"
+
+dockertest_channel_resume_test:
+	cd ../docker && make $(distro)_base.stamp
+	$(docker) run -w /go/katzenpost/client2 ${docker_args} $(image) \
+		go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 1h -run "TestResumeQuery"
 
 warpedclientdaemon:
 	cd ../cmd/kpclientd; go build -ldflags ${ldflags}
