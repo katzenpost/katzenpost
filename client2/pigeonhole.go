@@ -500,7 +500,20 @@ func (d *Daemon) writeChannel(request *Request) {
 
 	_, doc := d.client.CurrentDocument()
 
+	// Debug: Check if PigeonholeGeometry is nil
+	if d.cfg.PigeonholeGeometry == nil {
+		d.log.Errorf("writeChannel failure: PigeonholeGeometry is nil")
+		d.sendWriteChannelError(request, thin.ThinClientErrorInternalError)
+		return
+	}
+
 	channelDesc.StatefulWriterLock.Lock()
+
+	// Debug: Log geometry and payload information
+	d.log.Debugf("writeChannel: payload size=%d, geometry MaxPlaintextPayloadLength=%d",
+		len(request.WriteChannel.Payload), d.cfg.PigeonholeGeometry.MaxPlaintextPayloadLength)
+	d.log.Debugf("writeChannel: geometry NIKEName=%s", d.cfg.PigeonholeGeometry.NIKEName)
+
 	courierEnvelope, envelopePrivateKey, err := CreateChannelWriteRequestPrepareOnly(
 		channelDesc.StatefulWriter,
 		request.WriteChannel.Payload,

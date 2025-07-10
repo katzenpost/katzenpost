@@ -704,9 +704,24 @@ func (d *Daemon) resumeReadChannel(request *Request) {
 		return
 	}
 	channelID := d.generateUniqueChannelID()
+	var statefulReader *bacap.StatefulReader
+	if request.ResumeReadChannel.NextMessageIndex == nil {
+		statefulReader, err = bacap.NewStatefulReader(request.ResumeReadChannel.ReadCap, constants.PIGEONHOLE_CTX)
+	} else {
+		statefulReader, err = bacap.NewStatefulReaderWithIndex(
+			request.ResumeReadChannel.ReadCap,
+			constants.PIGEONHOLE_CTX,
+			request.ResumeReadChannel.NextMessageIndex)
+	}
+	if err != nil {
+		d.log.Errorf("BUG, failed to create stateful reader: %v", err)
+		d.sendResumeReadChannelError(request, thin.ThinClientErrorInternalError)
+		return
+	}
+
 	myNewChannelDescriptor := &ChannelDescriptor{
 		AppID:               request.AppID,
-		StatefulReader:      nil,
+		StatefulReader:      statefulReader,
 		EnvelopeDescriptors: make(map[[hash.HashSize]byte]*EnvelopeDescriptor),
 	}
 
