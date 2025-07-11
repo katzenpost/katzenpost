@@ -9,6 +9,7 @@ import (
 	"github.com/katzenpost/hpqc/bacap"
 	"github.com/katzenpost/hpqc/hash"
 
+	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 )
 
@@ -149,11 +150,6 @@ func ThinClientErrorToString(errorCode uint8) string {
 	default:
 		return fmt.Sprintf("Unknown thin client error code: %d", errorCode)
 	}
-}
-
-type ChannelMap struct {
-	ReadChannels  map[[ChannelIDLength]byte]*bacap.StatefulReader `cbor:"read_channels"`
-	WriteChannels map[[ChannelIDLength]byte]*bacap.StatefulWriter `cbor:"write_channels"`
 }
 
 // CreateWriteChannel requests the creation of a new pigeonhole write channel.
@@ -345,7 +341,7 @@ type SendMessage struct {
 
 	// SURBID must be a unique identity for each request.
 	// This field should be nil if WithSURB is false.
-	SURBID *[sConstants.SURBIDLength]byte `cbor:"surbid"`
+	SURBID *[constants.SURBIDLength]byte `cbor:"surbid"`
 
 	// DestinationIdHash is 32 byte hash of the destination Provider's
 	// identity public key.
@@ -410,49 +406,68 @@ type SendChannelQuery struct {
 	Payload []byte `cbor:"payload"`
 }
 
-type SendLoopDecoy struct {
-}
-
-type SendDropDecoy struct {
-}
-
+// ThinClose is used to indicate that the thin client is disconnecting
+// from the daemon.
 type ThinClose struct {
 }
 
+// Response is the client daemon's response message to the thin client.
 type Response struct {
+
+	// ShutdownEvent is sent when the client daemon is shutting down.
 	ShutdownEvent *ShutdownEvent `cbor:"shudown_event"`
 
+	// ConnectionStatusEvent is sent when the client daemon's connection status changes.
 	ConnectionStatusEvent *ConnectionStatusEvent `cbor:"connection_status_event"`
 
+	// NewPKIDocumentEvent is sent when the client daemon receives a new PKI document.
 	NewPKIDocumentEvent *NewPKIDocumentEvent `cbor:"new_pki_document_event"`
 
+	// NewDocumentEvent is sent when the client daemon receives a new PKI document.
+	NewDocumentEvent *NewDocumentEvent `cbor:"new_document_event"`
+
+	// MessageSentEvent is sent when the client daemon successfully sends a message.
 	MessageSentEvent *MessageSentEvent `cbor:"message_sent_event"`
 
+	// MessageReplyEvent is sent when the client daemon receives a reply to a message.
 	MessageReplyEvent *MessageReplyEvent `cbor:"message_reply_event"`
 
+	// MessageIDGarbageCollected is sent when the client daemon garbage collects a message ID.
 	MessageIDGarbageCollected *MessageIDGarbageCollected `cbor:"message_id_garbage_collected"`
 
+	// CreateWriteChannelReply is sent when the client daemon successfully creates a write channel.
 	CreateWriteChannelReply *CreateWriteChannelReply `cbor:"create_write_channel_reply"`
 
+	// CreateReadChannelReply is sent when the client daemon successfully creates a read channel.
 	CreateReadChannelReply *CreateReadChannelReply `cbor:"create_read_channel_reply"`
 
+	// WriteChannelReply is sent when the client daemon successfully writes a message to a channel.
 	WriteChannelReply *WriteChannelReply `cbor:"write_channel_reply"`
 
+	// ReadChannelReply is sent when the client daemon successfully reads a message from a channel.
 	ReadChannelReply *ReadChannelReply `cbor:"read_channel_reply"`
 
+	// ResumeWriteChannelReply is sent when the client daemon successfully resumes a write channel.
 	ResumeWriteChannelReply *ResumeWriteChannelReply `cbor:"resume_write_channel_reply"`
 
+	// ResumeWriteChannelQueryReply is sent when the client daemon successfully resumes a write channel.
 	ResumeWriteChannelQueryReply *ResumeWriteChannelQueryReply `cbor:"resume_write_channel_query_reply"`
 
+	// ResumeReadChannelReply is sent when the client daemon successfully resumes a read channel.
 	ResumeReadChannelReply *ResumeReadChannelReply `cbor:"resume_read_channel_reply"`
 
+	// ResumeReadChannelQueryReply is sent when the client daemon successfully resumes a read channel.
 	ResumeReadChannelQueryReply *ResumeReadChannelQueryReply `cbor:"resume_read_channel_query_reply"`
 
+	// ChannelQuerySentEvent is sent when the client daemon successfully sends a channel query.
 	ChannelQuerySentEvent *ChannelQuerySentEvent `cbor:"channel_query_sent_event"`
 
+	// ChannelQueryReplyEvent is sent when the client daemon receives a reply to a channel query.
 	ChannelQueryReplyEvent *ChannelQueryReplyEvent `cbor:"channel_query_reply_event"`
 }
 
+// Request is the thin client's request message to the client daemon.
+// It can result in one or more Response messages being sent back to the thin client.
 type Request struct {
 
 	// NEW CHANNEL API
@@ -494,15 +509,13 @@ type Request struct {
 	// Legacy API
 
 	// SendMessage is used to send a message through the mix network.
+	// Note that this is part of the legacy API and should not be used for newer
+	// works using the Pigeonhole protocol.
 	SendMessage *SendMessage `cbor:"send_message"`
 
 	// SendARQMessage is used to send a message through the mix network
 	// using the naive ARQ error correction scheme.
+	// Note that this is part of the legacy API and should not be used for newer
+	// works using the Pigeonhole protocol.
 	SendARQMessage *SendARQMessage `cbor:"send_arq_message"`
-
-	// SendLoopDecoy is used to send a loop decoy message.
-	SendLoopDecoy *SendLoopDecoy `cbor:"send_loop_decoy"`
-
-	// SendDropDecoy is used to send a drop decoy message.
-	SendDropDecoy *SendDropDecoy `cbor:"send_drop_decoy"`
 }

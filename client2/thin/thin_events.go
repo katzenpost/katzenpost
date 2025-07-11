@@ -10,7 +10,7 @@ import (
 	"github.com/katzenpost/hpqc/bacap"
 
 	cpki "github.com/katzenpost/katzenpost/core/pki"
-	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 )
 
 const ChannelIDLength = 32
@@ -21,8 +21,10 @@ type Event interface {
 	String() string
 }
 
+// ShutdownEvent is the event sent when the client daemon is shutting down.
 type ShutdownEvent struct{}
 
+// String returns a string representation of the ShutdownEvent.
 func (e *ShutdownEvent) String() string {
 	return "ShutdownEvent"
 }
@@ -53,7 +55,7 @@ type MessageReplyEvent struct {
 
 	// SURBID must be a unique identity for each request.
 	// This field should be nil if WithSURB is false.
-	SURBID *[sConstants.SURBIDLength]byte `cbor:"surbid"`
+	SURBID *[constants.SURBIDLength]byte `cbor:"surbid"`
 
 	// Payload is the reply payload if any.
 	Payload []byte `cbor:"payload"`
@@ -88,7 +90,7 @@ type MessageSentEvent struct {
 
 	// SURBID must be a unique identity for each request.
 	// This field should be nil if WithSURB is false.
-	SURBID *[sConstants.SURBIDLength]byte `cbor:"surbid"`
+	SURBID *[constants.SURBIDLength]byte `cbor:"surbid"`
 
 	// SentAt contains the time the message was sent.
 	SentAt time.Time `cbor:"sent_at"`

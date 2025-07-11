@@ -80,10 +80,14 @@ func FromThinRequest(r *thin.Request, appid *[AppIDLength]byte) *Request {
 
 		SendMessage:    r.SendMessage,
 		SendARQMessage: r.SendARQMessage,
-		SendLoopDecoy:  r.SendLoopDecoy,
-		SendDropDecoy:  r.SendDropDecoy,
 		ThinClose:      r.ThinClose,
 	}
+}
+
+type SendLoopDecoy struct {
+}
+
+type SendDropDecoy struct {
 }
 
 type Request struct {
@@ -119,7 +123,7 @@ type Request struct {
 
 	SendARQMessage *thin.SendARQMessage
 
-	SendLoopDecoy *thin.SendLoopDecoy
+	SendLoopDecoy *SendLoopDecoy
 
-	SendDropDecoy *thin.SendDropDecoy
+	SendDropDecoy *SendDropDecoy
 }
