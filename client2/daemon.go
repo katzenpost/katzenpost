@@ -601,11 +601,20 @@ func (d *Daemon) resumeWriteChannel(request *Request) {
 	// use fields from the request to mutate our current state
 	channelID := d.generateUniqueChannelID()
 	var statefulWriter *bacap.StatefulWriter
-	statefulWriter, err = bacap.NewStatefulWriterWithIndex(request.ResumeWriteChannel.WriteCap, constants.PIGEONHOLE_CTX, request.ResumeWriteChannel.MessageBoxIndex)
-	if err != nil {
-		d.log.Errorf("BUG, failed to create stateful writer: %v", err)
-		d.sendResumeWriteChannelError(request, thin.ThinClientErrorInternalError)
-		return
+	if request.ResumeWriteChannel.MessageBoxIndex == nil {
+		statefulWriter, err = bacap.NewStatefulWriter(request.ResumeWriteChannel.WriteCap, constants.PIGEONHOLE_CTX)
+		if err != nil {
+			d.log.Errorf("BUG, failed to create stateful writer: %v", err)
+			d.sendResumeWriteChannelError(request, thin.ThinClientErrorInternalError)
+			return
+		}
+	} else {
+		statefulWriter, err = bacap.NewStatefulWriterWithIndex(request.ResumeWriteChannel.WriteCap, constants.PIGEONHOLE_CTX, request.ResumeWriteChannel.MessageBoxIndex)
+		if err != nil {
+			d.log.Errorf("BUG, failed to create stateful writer: %v", err)
+			d.sendResumeWriteChannelError(request, thin.ThinClientErrorInternalError)
+			return
+		}
 	}
 
 	myNewChannelDescriptor := &ChannelDescriptor{

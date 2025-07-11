@@ -30,34 +30,26 @@ func cleanupAttempt(t *testing.T, cancel context.CancelFunc, client *thin.ThinCl
 }
 
 func TestChannelClose(t *testing.T) {
-	t.Log("TESTING CHANNEL CLOSE")
 	aliceThinClient := setupThinClient(t)
 	defer aliceThinClient.Close()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
-	t.Log("Alice: Creating write channel")
 	channelID, _, writeCap, err := aliceThinClient.CreateWriteChannel(ctx)
 	require.NoError(t, err)
 
-	t.Log("Alice: Closing channel")
 	err = aliceThinClient.CloseChannel(ctx, channelID)
 	require.NoError(t, err)
 
-	t.Log("Alice: Resuming write channel")
 	channelID, err = aliceThinClient.ResumeWriteChannel(ctx, writeCap, nil)
 	require.NoError(t, err)
 
-	t.Log("Alice: Resuming write channel with nil message box index")
 	_, err = aliceThinClient.ResumeWriteChannel(ctx, writeCap, nil)
 	require.Error(t, err)
 
-	t.Log("Alice: Closing channel")
 	err = aliceThinClient.CloseChannel(ctx, channelID)
 	require.NoError(t, err)
-
-	t.Log("done.")
 }
 
 func TestChannelAPIBasics(t *testing.T) {
