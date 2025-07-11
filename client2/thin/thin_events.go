@@ -16,13 +16,27 @@ import (
 // ChannelIDLength is the length of the channel ID in bytes.
 const ChannelIDLength = 32
 
-// Event is the generic event sent over the event listener channel.
+// Event is the generic interface for all events sent by the thin client.
+//
+// Events are sent through channels returned by EventSink() and provide
+// asynchronous notification of various client operations and status changes.
+// Applications should use type assertions to handle specific event types.
+//
+// Common event types include:
+//   - ConnectionStatusEvent: Connection state changes
+//   - MessageReplyEvent: Replies to sent messages
+//   - NewDocumentEvent: PKI document updates
+//   - Channel operation events (CreateWriteChannelReply, etc.)
 type Event interface {
-	// String returns a string representation of the Event.
+	// String returns a human-readable string representation of the Event.
 	String() string
 }
 
-// ShutdownEvent is the event sent when the client daemon is shutting down.
+// ShutdownEvent is sent when the client daemon is shutting down.
+//
+// This event indicates that the daemon is terminating and the thin client
+// connection will be lost. Applications should handle this event by
+// performing cleanup and potentially attempting to reconnect.
 type ShutdownEvent struct{}
 
 // String returns a string representation of the ShutdownEvent.
@@ -30,13 +44,25 @@ func (e *ShutdownEvent) String() string {
 	return "ShutdownEvent"
 }
 
-// ConnectionStatusEvent is the event sent when an account's connection status
-// changes.
+// ConnectionStatusEvent is sent when the daemon's connection status changes.
+//
+// This event indicates whether the client daemon is currently connected to
+// the mixnet infrastructure. When IsConnected is false, the client operates
+// in "offline mode" where channel preparation operations work but actual
+// message transmission will fail.
+//
+// Applications can use this event to:
+//   - Display connection status to users
+//   - Queue operations for later transmission when offline
+//   - Implement retry logic for failed operations
 type ConnectionStatusEvent struct {
-	// IsConnected is true iff the client is connected to the entry node.
+	// IsConnected indicates whether the daemon is connected to the mixnet.
+	// When true, full functionality is available. When false, only offline
+	// operations (channel preparation) will work.
 	IsConnected bool `cbor:"is_connected"`
 
-	// Err is the error encountered when connecting or by the connection if any.
+	// Err contains any error that caused a disconnection. This field is
+	// nil when IsConnected is true or when the disconnection was intentional.
 	Err error `cbor:"err"`
 }
 
