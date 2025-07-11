@@ -1418,7 +1418,6 @@ func (t *ThinClient) SendChannelQuery(
 
 	req := &Request{
 		SendChannelQuery: &SendChannelQuery{
-			QueryID:           t.NewQueryID(),
 			MessageID:         messageID,
 			ChannelID:         &channelID,
 			Payload:           payload,
