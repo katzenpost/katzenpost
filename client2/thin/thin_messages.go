@@ -324,7 +324,9 @@ type ResumeReadChannelQuery struct {
 	EnvelopeHash *[32]byte `cbor:"envelope_hash"`
 }
 
-// CloseChannel requests closing a pigeonhole channel.
+// CloseChannel requests closing a pigeonhole channel. NOTE however that there
+// is no corresponding reply type for this request to tell us if the close failed
+// or not.
 type CloseChannel struct {
 	ChannelID uint16 `cbor:"channel_id"`
 }

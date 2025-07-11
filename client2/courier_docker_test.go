@@ -29,6 +29,8 @@ func cleanupAttempt(t *testing.T, cancel context.CancelFunc, client *thin.ThinCl
 	client.StopEventSink(eventSink)
 }
 
+// note that this test is meaningful although the close command does not
+// have a corresponding reply type to tell us if the close failed or not.
 func TestChannelClose(t *testing.T) {
 	aliceThinClient := setupThinClient(t)
 	defer aliceThinClient.Close()
@@ -39,15 +41,19 @@ func TestChannelClose(t *testing.T) {
 	channelID, _, writeCap, err := aliceThinClient.CreateWriteChannel(ctx)
 	require.NoError(t, err)
 
+	// closing the channel erases the daemon's internal state tracking that channel
 	err = aliceThinClient.CloseChannel(ctx, channelID)
 	require.NoError(t, err)
 
+	// we should be able to resume now that the channel is gone
 	channelID, err = aliceThinClient.ResumeWriteChannel(ctx, writeCap, nil)
 	require.NoError(t, err)
 
+	// resuming again should fail because the writeCap is already in use
 	_, err = aliceThinClient.ResumeWriteChannel(ctx, writeCap, nil)
 	require.Error(t, err)
 
+	// closing the channel again should work
 	err = aliceThinClient.CloseChannel(ctx, channelID)
 	require.NoError(t, err)
 }

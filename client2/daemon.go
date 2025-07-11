@@ -599,8 +599,8 @@ func (d *Daemon) resumeWriteChannel(request *Request) {
 	_, ok := d.usedWriteCaps[writeCapHash]
 	if ok {
 		d.log.Errorf("BUG, write cap already in use")
-		d.sendResumeWriteChannelError(request, thin.ThinClientCapabilityAlreadyInUse)
 		d.capabilityLock.Unlock()
+		d.sendResumeWriteChannelError(request, thin.ThinClientCapabilityAlreadyInUse)
 		return
 	}
 	d.usedWriteCaps[writeCapHash] = true
@@ -671,8 +671,8 @@ func (d *Daemon) resumeWriteChannelQuery(request *Request) {
 	_, ok := d.usedWriteCaps[writeCapHash]
 	if ok {
 		d.log.Errorf("BUG, write cap already in use")
-		d.sendResumeWriteChannelQueryError(request, thin.ThinClientCapabilityAlreadyInUse)
 		d.capabilityLock.Unlock()
+		d.sendResumeWriteChannelQueryError(request, thin.ThinClientCapabilityAlreadyInUse)
 		return
 	}
 	d.usedWriteCaps[writeCapHash] = true
