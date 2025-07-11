@@ -41,14 +41,17 @@ jobs:
       - name: run old client core end to end tests
         run: cd client2 && make testargs=-coverprofile=coverage.part dockertest-legacy && cat coverage.part >> ../coverage.out
 
-      - name: run NEW client Pigeonhole Channel end to end tests
-        run: cd client2 && make testargs=-coverprofile=coverage.part dockertest_channel_basics_test && cat coverage.part >> ../coverage.out
+      - name: run client Pigeonhole Channel end to end tests
+        run: cd client2 && make testargs=-coverprofile=coverage.part dockertest_channel_basics && cat coverage.part >> ../coverage.out
 
-      - name: run NEW client Pigeonhole close channel test
-        run: cd client2 && make testargs=-coverprofile=coverage.part dockertest_channel_close_test && cat coverage.part >> ../coverage.out
+      - name: run client Pigeonhole close channel test
+        run: cd client2 && make testargs=-coverprofile=coverage.part dockertest_channel_close && cat coverage.part >> ../coverage.out
 
-      - name: run NEW client Pigeonhole resume channel test
-        run: cd client2 && make testargs=-coverprofile=coverage.part dockertest_channel_resume_test && cat coverage.part >> ../coverage.out
+      - name: run client Pigeonhole resume channel test
+        run: cd client2 && make testargs=-coverprofile=coverage.part dockertest_channel_resume && cat coverage.part >> ../coverage.out
+
+      - name: run client Pigeonhole resume channel query test
+        run: cd client2 && make testargs=-coverprofile=coverage.part dockertest_channel_resume_query && cat coverage.part >> ../coverage.out
 
       - name: Stop the mixnet
         run: |
