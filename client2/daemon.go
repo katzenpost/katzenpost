@@ -795,6 +795,11 @@ func (d *Daemon) resumeReadChannel(request *Request) {
 	}
 
 	readCapBlob, err := request.ResumeReadChannel.ReadCap.MarshalBinary()
+	if err != nil {
+		d.log.Errorf("BUG, failed to marshal read cap: %v", err)
+		d.sendResumeReadChannelError(request, thin.ThinClientErrorInternalError)
+		return
+	}
 	readCapHash := hash.Sum256(readCapBlob)
 
 	d.capabilityLock.Lock()
