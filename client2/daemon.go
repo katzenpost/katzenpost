@@ -570,6 +570,12 @@ func (d *Daemon) validateResumeWriteChannelQueryRequest(request *Request) error 
 	if request.ResumeWriteChannelQuery.MessageBoxIndex == nil {
 		return fmt.Errorf("MessageBoxIndex cannot be nil when resuming an existing channel")
 	}
+	if request.ResumeWriteChannelQuery.EnvelopeDescriptor == nil {
+		return fmt.Errorf("EnvelopeDescriptor cannot be nil when resuming an existing channel")
+	}
+	if request.ResumeWriteChannelQuery.EnvelopeHash == nil {
+		return fmt.Errorf("EnvelopeHash cannot be nil when resuming an existing channel")
+	}
 	return nil
 }
 
@@ -764,6 +770,12 @@ func (d *Daemon) validateResumeReadChannelQueryRequest(request *Request) error {
 	if request.ResumeReadChannelQuery.NextMessageIndex == nil {
 		return fmt.Errorf("nextMessageIndex cannot be nil")
 	}
+	if request.ResumeReadChannelQuery.EnvelopeDescriptor == nil {
+		return fmt.Errorf("envelopeDescriptor cannot be nil")
+	}
+	if request.ResumeReadChannelQuery.EnvelopeHash == nil {
+		return fmt.Errorf("envelopeHash cannot be nil")
+	}
 	return nil
 }
 
@@ -910,16 +922,9 @@ func (d *Daemon) resumeReadChannelQuery(request *Request) {
 	}
 
 	// store envelope descriptor for later use
-	switch {
-	case request.ResumeReadChannelQuery.EnvelopeDescriptor == nil:
-		fallthrough
-	case len(request.ResumeReadChannelQuery.EnvelopeDescriptor) == 0:
-		d.log.Debugf("no envelope descriptor provided, skipping")
-	default:
-		envelopeDesc := EnvelopeDescriptorFromBytes(request.ResumeReadChannelQuery.EnvelopeDescriptor)
-		envHash := request.ResumeReadChannelQuery.EnvelopeHash
-		myNewChannelDescriptor.EnvelopeDescriptors[*envHash] = envelopeDesc
-	}
+	envelopeDesc := EnvelopeDescriptorFromBytes(request.ResumeReadChannelQuery.EnvelopeDescriptor)
+	envHash := request.ResumeReadChannelQuery.EnvelopeHash
+	myNewChannelDescriptor.EnvelopeDescriptors[*envHash] = envelopeDesc
 
 	d.newChannelMapLock.Lock()
 	d.newChannelMap[channelID] = myNewChannelDescriptor

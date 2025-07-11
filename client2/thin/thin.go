@@ -37,8 +37,11 @@ import (
 )
 
 const (
+	// MessageIDLength is the length of a message ID in bytes.
 	MessageIDLength = 16
-	QueryIDLength   = 16
+
+	// QueryIDLength is the length of a query ID in bytes.
+	QueryIDLength = 16
 )
 
 var (
@@ -144,7 +147,7 @@ func LoadFile(filename string) (*Config, error) {
 	return cfg, nil
 }
 
-// NewThinClient creates a new thing client.
+// NewThinClient creates a new thin client.
 func NewThinClient(cfg *Config, logging *config.Logging) *ThinClient {
 	if cfg.SphinxGeometry == nil {
 		panic("SphinxGeometry cannot be nil")
@@ -169,21 +172,22 @@ func NewThinClient(cfg *Config, logging *config.Logging) *ThinClient {
 	}
 }
 
+// Shutdown cleanly shuts down a given ThinClient instance.
 func (t *ThinClient) Shutdown() {
 	t.Halt()
 }
 
-// GetConfig returns the config
+// GetConfig returns the config.
 func (t *ThinClient) GetConfig() *Config {
 	return t.cfg
 }
 
-// GetLogger(prefix) returns a logger with prefix
+// GetLogger(prefix) returns a logger with prefix.
 func (t *ThinClient) GetLogger(prefix string) *logging.Logger {
 	return t.logBackend.GetLogger(prefix)
 }
 
-// IsConnected returns true if the daemon is connected to the mixnet
+// IsConnected returns true if the daemon is connected to the mixnet.
 func (t *ThinClient) IsConnected() bool {
 	return t.isConnected
 }
@@ -206,7 +210,7 @@ func (t *ThinClient) Close() error {
 	return err
 }
 
-// Dial dials the client daemon
+// Dial dials the client daemon.
 func (t *ThinClient) Dial() error {
 
 	network := t.cfg.Network
@@ -671,6 +675,7 @@ func (t *ThinClient) NewQueryID() *[QueryIDLength]byte {
 
 // SendMessageWithoutReply sends a message encapsulated in a Sphinx packet, without any SURB.
 // No reply will be possible. This method requires mixnet connectivity.
+// Note that this is part of the legacy API and should not be used for newer works using the Pigeonhole protocol.
 func (t *ThinClient) SendMessageWithoutReply(payload []byte, destNode *[32]byte, destQueue []byte) error {
 	// Check if we're in offline mode
 	if !t.isConnected {
@@ -694,7 +699,8 @@ func (t *ThinClient) SendMessageWithoutReply(payload []byte, destNode *[32]byte,
 // This method of sending messages should be considered to be asynchronous because it does NOT actually wait until
 // the client daemon sends the message. Nor does it wait for a reply. The only blocking aspect to it's behavior is
 // merely blocking until the client daemon receives our request to send a message.
-// This method requires mixnet connectivity.
+// This method requires mixnet connectivity. NOTE that this is part of the legacy API and should not be used for
+// newer works using the Pigeonhole protocol.
 func (t *ThinClient) SendMessage(surbID *[sConstants.SURBIDLength]byte, payload []byte, destNode *[32]byte, destQueue []byte) error {
 	if surbID == nil {
 		return errors.New("surbID cannot be nil")
@@ -772,6 +778,8 @@ func (t *ThinClient) BlockingSendMessage(ctx context.Context, payload []byte, de
 	// unreachable
 }
 
+// SendReliableMessage sends a message with automatic retransmission. This is part of the legacy API and should
+// not be used for newer works using the Pigeonhole protocol.
 func (t *ThinClient) SendReliableMessage(messageID *[MessageIDLength]byte, payload []byte, destNode *[32]byte, destQueue []byte) error {
 	// Check if we're in offline mode
 	if !t.isConnected {
@@ -792,7 +800,8 @@ func (t *ThinClient) SendReliableMessage(messageID *[MessageIDLength]byte, paylo
 }
 
 // BlockingSendReliableMessage blocks until the message is reliably sent and the ARQ reply is received.
-// This method requires mixnet connectivity.
+// This method requires mixnet connectivity. This is part of the legacy API and should not be used for newer
+// works using the Pigeonhole protocol.
 func (t *ThinClient) BlockingSendReliableMessage(ctx context.Context, messageID *[MessageIDLength]byte, payload []byte, destNode *[32]byte, destQueue []byte) (reply []byte, err error) {
 	if ctx == nil {
 		return nil, errContextCannotBeNil
@@ -1114,12 +1123,10 @@ func (t *ThinClient) ResumeWriteChannel(
 			// Ignore other events
 		}
 	}
-	panic("unreachable")
 }
 
 // ResumeWriteChannel causes the client daemon to resume to
-// a previous state. Note that the last two arguments are optional and can be nil:
-// envelopeDescriptor and envelopeHash
+// a previous state. Note that all arguments are required.
 func (t *ThinClient) ResumeWriteChannelQuery(
 	ctx context.Context,
 	writeCap *bacap.WriteCap,
@@ -1186,7 +1193,6 @@ func (t *ThinClient) ResumeWriteChannelQuery(
 			// Ignore other events
 		}
 	}
-	panic("unreachable")
 }
 
 // ReadChannel prepares a read query for a pigeonhole channel and
@@ -1312,12 +1318,12 @@ func (t *ThinClient) ResumeReadChannel(
 			// Ignore other events
 		}
 	}
-	panic("unreachable")
 }
 
 // ResumeReadChannelQuery causes the client daemon to resume to
-// a previous state. Note that the last two arguments are optional and can be nil:
-// envelopeDescriptor and envelopeHash
+// a previous state. Note that only replyIndex may be nil. All
+// other arguments are required. If replyIndex is nil then it
+// will default to 0.
 func (t *ThinClient) ResumeReadChannelQuery(
 	ctx context.Context,
 	readCap *bacap.ReadCap,
@@ -1378,7 +1384,6 @@ func (t *ThinClient) ResumeReadChannelQuery(
 			// Ignore other events
 		}
 	}
-	panic("unreachable")
 }
 
 // CloseChannel closes a pigeonhole channel.
@@ -1429,6 +1434,8 @@ func (t *ThinClient) SendChannelQuery(
 	return t.writeMessage(req)
 }
 
+// SendChannelQueryAwaitReply sends a channel query (prepared by WriteChannel or ReadChannel) to the specified courier service
+// and waits for a reply. This method requires mixnet connectivity and will fail in offline mode.
 func (t *ThinClient) SendChannelQueryAwaitReply(
 	ctx context.Context,
 	channelID uint16,
@@ -1493,6 +1500,7 @@ func (t *ThinClient) SendChannelQueryAwaitReply(
 	}
 }
 
+// GetCourierDestination returns the courier service node and queue for the current epoch.
 func (t *ThinClient) GetCourierDestination() (*[32]byte, []byte, error) {
 	epoch, _, _ := epochtime.Now()
 	epochDoc, err := t.PKIDocumentForEpoch(epoch)
