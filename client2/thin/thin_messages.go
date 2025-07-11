@@ -184,9 +184,8 @@ type CreateReadChannel struct {
 // serialized payload that should be sent via SendChannelQuery.
 type WriteChannel struct {
 
-	// QueryID is used for correlating the write request with its response.
-	// This allows the client to match responses to specific write operations.
-	// This field is required.
+	// QueryID is used for correlating this thin client request with the
+	// thin client reponse.
 	QueryID *[QueryIDLength]byte `cbor:"query_id"`
 
 	// ChannelID identifies the target channel for the write operation.
@@ -198,13 +197,14 @@ type WriteChannel struct {
 	Payload []byte `cbor:"payload"`
 }
 
-// ResumeWriteChannel requests resuming a write operation that was previously
-// initiated but not yet completed.
+// ResumeWriteChannel requests resuming a write channel that was previously
+// either written to or created but not yet written to. This command cannot
+// resume a write operation that was in progress, for that you must used the
+// ResumeWriteChannelQuery command instead.
 type ResumeWriteChannel struct {
 
-	// QueryID is used for correlating the write request with its response.
-	// This allows the client to match responses to specific write operations.
-	// This field is required.
+	// QueryID is used for correlating this thin client request with the
+	// thin client reponse.
 	QueryID *[QueryIDLength]byte `cbor:"query_id"`
 
 	// WriteCap is the write capability for resuming an existing channel.
@@ -213,8 +213,10 @@ type ResumeWriteChannel struct {
 	WriteCap *bacap.WriteCap `cbor:"write_cap,omitempty"`
 
 	// MessageBoxIndex specifies the starting or resume point for the channel.
-	// This field is required when resuming an existing channel (WriteCap != nil)
-	// and optional when creating a new channel (defaults to a random starting point).
+	// This field is can be nil when resuming a write channel which has not
+	// yet been written to. If this field is provided, it is used to resume
+	// the write channel from a specific message index. You must populate this
+	// field with the NextMessageIndex from the previous WriteChannelReply.
 	MessageBoxIndex *bacap.MessageBoxIndex `cbor:"message_box_index,omitempty"`
 }
 
@@ -222,9 +224,8 @@ type ResumeWriteChannel struct {
 // initiated but not yet completed.
 type ResumeWriteChannelQuery struct {
 
-	// QueryID is used for correlating the write request with its response.
-	// This allows the client to match responses to specific write operations.
-	// This field is required.
+	// QueryID is used for correlating this thin client request with the
+	// thin client reponse.
 	QueryID *[QueryIDLength]byte `cbor:"query_id"`
 
 	// WriteCap is the write capability for resuming an existing channel.
@@ -232,9 +233,8 @@ type ResumeWriteChannelQuery struct {
 	// be resumed from the specified MessageBoxIndex position.
 	WriteCap *bacap.WriteCap `cbor:"write_cap,omitempty"`
 
-	// MessageBoxIndex specifies the starting or resume point for the channel.
-	// This field is required when resuming an existing channel (WriteCap != nil)
-	// and optional when creating a new channel (defaults to a random starting point).
+	// MessageBoxIndex specifies the resume point for the channel.
+	// This field is required.
 	MessageBoxIndex *bacap.MessageBoxIndex `cbor:"message_box_index,omitempty"`
 
 	// EnvelopeDescriptor contains the serialized EnvelopeDescriptor that
@@ -248,21 +248,25 @@ type ResumeWriteChannelQuery struct {
 // ReadChannel requests reading the next message from a pigeonhole channel.
 // The daemon will prepare a query for the next available message and return
 // the serialized payload that should be sent via SendChannelQuery.
+// Note that the last two fields are useful if you want to send two read queries
+// to the same Box id in order to retrieve two different replies.
 type ReadChannel struct {
 	// ChannelID identifies the source channel for the read operation.
 	// This ID was returned when the channel was created.
 	ChannelID uint16 `cbor:"channel_id"`
 
 	// QueryID is used for correlating this thin client request with the
-	// thin client reponse, the ReadChannelReply.
+	// thin client reponse.
 	QueryID *[QueryIDLength]byte `cbor:"query_id"`
 
 	// MessageBoxIndex specifies the starting read position for the channel.
-	// If nil, reading will start from the current index in the client daemon's
-	// stateful reader. NOTE(David): This field is only needed because the
-	// next field, ReplyIndex, requires us to specify *which* message should
-	// be returned, since presumably the application will perform two read
-	// queries if the first result is not available.
+	// If this field is nil, reading will start from the current index in the client daemon's
+	// stateful reader, which is what you want most of the time.
+	// This field and the next field, ReplyIndex are complicated to use properly, like so:
+	//
+	// This field is only needed because the next field, ReplyIndex, requires us to
+	// specify *which* message should be returned, since presumably the application
+	// will perform two read queries *on the same Box* if the first result is not available.
 	MessageBoxIndex *bacap.MessageBoxIndex `cbor:"message_box_index,omitempty"`
 
 	// ReplyIndex is the index of the reply to return. It is optional and
@@ -273,9 +277,8 @@ type ReadChannel struct {
 // ResumeReadChannel requests resuming a read operation that was previously
 // initiated but not yet completed.
 type ResumeReadChannel struct {
-	// QueryID is used for correlating the read request with its response.
-	// This allows the client to match responses to specific read operations.
-	// This field is required.
+	// QueryID is used for correlating this thin client request with the
+	// thin client reponse.
 	QueryID *[QueryIDLength]byte `cbor:"query_id"`
 
 	// ReadCap is the read capability that grants access to the channel.
@@ -295,9 +298,8 @@ type ResumeReadChannel struct {
 // ResumeReadChannel requests resuming a read operation that was previously
 // initiated but not yet completed.
 type ResumeReadChannelQuery struct {
-	// QueryID is used for correlating the read request with its response.
-	// This allows the client to match responses to specific read operations.
-	// This field is required.
+	// QueryID is used for correlating this thin client request with the
+	// thin client reponse.
 	QueryID *[QueryIDLength]byte `cbor:"query_id"`
 
 	// ReadCap is the read capability that grants access to the channel.

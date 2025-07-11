@@ -13,6 +13,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 )
 
+// ChannelIDLength is the length of the channel ID in bytes.
 const ChannelIDLength = 32
 
 // Event is the generic event sent over the event listener channel.
