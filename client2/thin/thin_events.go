@@ -4,7 +4,6 @@
 package thin
 
 import (
-	"encoding/hex"
 	"fmt"
 	"time"
 
@@ -76,9 +75,9 @@ func (e *MessageReplyEvent) String() string {
 		replyIndexStr = fmt.Sprintf(" replyIndex=%d", *e.ReplyIndex)
 	}
 	if e.ErrorCode != ThinClientSuccess {
-		return fmt.Sprintf("MessageReply: %v%s failed: %s", hex.EncodeToString(e.MessageID[:]), replyIndexStr, ThinClientErrorToString(e.ErrorCode))
+		return fmt.Sprintf("MessageReply: %x %s failed: %s", e.MessageID[:], replyIndexStr, ThinClientErrorToString(e.ErrorCode))
 	}
-	return fmt.Sprintf("KaetzchenReply: %v%s (%v bytes)", hex.EncodeToString(e.MessageID[:]), replyIndexStr, len(e.Payload))
+	return fmt.Sprintf("KaetzchenReply: %x %s (%v bytes)", e.MessageID[:], replyIndexStr, len(e.Payload))
 }
 
 // MessageSentEvent is the event sent when a message has been fully transmitted.
@@ -105,9 +104,9 @@ type MessageSentEvent struct {
 // String returns a string representation of a MessageSentEvent.
 func (e *MessageSentEvent) String() string {
 	if e.Err != "" {
-		return fmt.Sprintf("MessageSent: %v failed: %v", hex.EncodeToString(e.MessageID[:]), e.Err)
+		return fmt.Sprintf("MessageSent: %x failed: %v", e.MessageID[:], e.Err)
 	}
-	return fmt.Sprintf("MessageSent: %v", hex.EncodeToString(e.MessageID[:]))
+	return fmt.Sprintf("MessageSent: %x", e.MessageID[:])
 }
 
 // MessageIDGarbageCollected is the event used to signal when a given
@@ -119,7 +118,7 @@ type MessageIDGarbageCollected struct {
 
 // String returns a string representation of a MessageIDGarbageCollected.
 func (e *MessageIDGarbageCollected) String() string {
-	return fmt.Sprintf("MessageIDGarbageCollected: %v", hex.EncodeToString(e.MessageID[:]))
+	return fmt.Sprintf("MessageIDGarbageCollected: %x", e.MessageID[:])
 }
 
 // NewDocumentEvent is the new document event, signaling that
@@ -420,4 +419,55 @@ func (e *ResumeReadChannelQueryReply) String() string {
 		return fmt.Sprintf("ResumeReadChannelReply: msgID=%s (error: %s)", msgIDStr, ThinClientErrorToString(e.ErrorCode))
 	}
 	return fmt.Sprintf("ResumeReadChannelReply: msgID=%s", msgIDStr)
+}
+
+// ChannelQuerySentEvent is the event sent when a message has been fully transmitted.
+type ChannelQuerySentEvent struct {
+	// QueryID is used for correlating this reply with the ResumeReadChannel request
+	// that created it.
+	QueryID *[QueryIDLength]byte `cbor:"query_id"`
+
+	// SentAt contains the time the message was sent.
+	SentAt time.Time `cbor:"sent_at"`
+
+	// ReplyETA is the expected round trip time to receive a response.
+	ReplyETA time.Duration `cbor:"reply_eta"`
+
+	// ErrorCode indicates the success or failure of sending the channel query.
+	// A value of ThinClientErrorSuccess indicates the query was successfully sent.
+	ErrorCode uint8 `cbor:"error_code"`
+}
+
+// String returns a string representation of a MessageSentEvent.
+func (e *ChannelQuerySentEvent) String() string {
+	if e.ErrorCode != ThinClientSuccess {
+		return fmt.Sprintf("ChannelQuerySentEvent: %x failed: %s", e.QueryID[:], ThinClientErrorToString(e.ErrorCode))
+	}
+	return fmt.Sprintf("ChannelQuerySentEvent: %x", e.QueryID[:])
+}
+
+// ChannelQueryReplyEvent is the event sent when a new message is received.
+type ChannelQueryReplyEvent struct {
+	// MessageID is the unique identifier for the request associated with the
+	// query sent in the SendChannelQuery command.
+	MessageID *[MessageIDLength]byte `cbor:"message_id"`
+
+	// Payload is the reply payload if any.
+	Payload []byte `cbor:"payload"`
+
+	// ReplyIndex is the index of the reply that was actually used when processing
+	// this message. This is particularly relevant for pigeonhole channel reads.
+	ReplyIndex *uint8 `cbor:"reply_index"`
+
+	// ErrorCode indicates the success or failure of sending the channel query.
+	// A value of ThinClientErrorSuccess indicates the query was successfully sent.
+	ErrorCode uint8 `cbor:"error_code"`
+}
+
+// String returns a string representation of the ChannelQueryReplyEvent.
+func (e *ChannelQueryReplyEvent) String() string {
+	if e.ErrorCode != ThinClientSuccess {
+		return fmt.Sprintf("ChannelQueryReplyEvent: msgID=%x (error: %s)", e.MessageID[:], ThinClientErrorToString(e.ErrorCode))
+	}
+	return fmt.Sprintf("ChannelQueryReplyEvent: msgID=%x", e.MessageID[:])
 }

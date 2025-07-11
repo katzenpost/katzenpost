@@ -21,6 +21,8 @@ func IntoThinResponse(r *Response) *thin.Response {
 		ResumeReadChannelReply:       r.ResumeReadChannelReply,
 		ResumeWriteChannelQueryReply: r.ResumeWriteChannelQueryReply,
 		ResumeReadChannelQueryReply:  r.ResumeReadChannelQueryReply,
+		ChannelQuerySentEvent:        r.ChannelQuerySentEvent,
+		ChannelQueryReplyEvent:       r.ChannelQueryReplyEvent,
 	}
 }
 
@@ -56,11 +58,16 @@ type Response struct {
 	ResumeWriteChannelQueryReply *thin.ResumeWriteChannelQueryReply
 
 	ResumeReadChannelQueryReply *thin.ResumeReadChannelQueryReply
+
+	ChannelQuerySentEvent *thin.ChannelQuerySentEvent
+
+	ChannelQueryReplyEvent *thin.ChannelQueryReplyEvent
 }
 
 func FromThinRequest(r *thin.Request, appid *[AppIDLength]byte) *Request {
 	return &Request{
 		AppID:                   appid,
+		SendChannelQuery:        r.SendChannelQuery,
 		CreateWriteChannel:      r.CreateWriteChannel,
 		CreateReadChannel:       r.CreateReadChannel,
 		WriteChannel:            r.WriteChannel,
@@ -80,6 +87,10 @@ func FromThinRequest(r *thin.Request, appid *[AppIDLength]byte) *Request {
 }
 
 type Request struct {
+	// AppID must be a unique identity for the client application
+	// that is sending this Request.
+	AppID *[AppIDLength]byte
+
 	CreateWriteChannel *thin.CreateWriteChannel
 
 	CreateReadChannel *thin.CreateReadChannel
@@ -98,6 +109,12 @@ type Request struct {
 
 	CloseChannel *thin.CloseChannel
 
+	ThinClose *thin.ThinClose
+
+	SendChannelQuery *thin.SendChannelQuery
+
+	// Legacy API
+
 	SendMessage *thin.SendMessage
 
 	SendARQMessage *thin.SendARQMessage
@@ -105,10 +122,4 @@ type Request struct {
 	SendLoopDecoy *thin.SendLoopDecoy
 
 	SendDropDecoy *thin.SendDropDecoy
-
-	ThinClose *thin.ThinClose
-
-	// AppID must be a unique identity for the client application
-	// that is sending this Request.
-	AppID *[AppIDLength]byte
 }

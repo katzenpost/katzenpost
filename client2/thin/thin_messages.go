@@ -383,6 +383,29 @@ type SendARQMessage struct {
 	Payload []byte `cbor:"payload"`
 }
 
+type SendChannelQuery struct {
+	// QueryID is used for correlating the request with its response.
+	QueryID *[QueryIDLength]byte `cbor:"query_id"`
+
+	// MessageID is the unique identifier for the request associated with the
+	// query reply via the ChannelQueryReplyEvent.
+	MessageID *[MessageIDLength]byte `cbor:"message_id"`
+
+	// ChannelID is optional and only used for sending channel messages.
+	// For non-channel messages, this field should be nil.
+	ChannelID *uint16 `cbor:"channel_id,omitempty"`
+
+	// DestinationIdHash is 32 byte hash of the destination Service's
+	// identity public key.
+	DestinationIdHash *[hash.HashSize]byte `cbor:"destination_id_hash"`
+
+	// RecipientQueueID is the queue identity which will receive the message.
+	RecipientQueueID []byte `cbor:"recipient_queue_id"`
+
+	// Payload is the Pigeonole protocol ciphertext payload which will be encapsulated in the Sphinx payload.
+	Payload []byte `cbor:"payload"`
+}
+
 type SendLoopDecoy struct {
 }
 
@@ -420,6 +443,10 @@ type Response struct {
 	ResumeReadChannelReply *ResumeReadChannelReply `cbor:"resume_read_channel_reply"`
 
 	ResumeReadChannelQueryReply *ResumeReadChannelQueryReply `cbor:"resume_read_channel_query_reply"`
+
+	ChannelQuerySentEvent *ChannelQuerySentEvent `cbor:"channel_query_sent_event"`
+
+	ChannelQueryReplyEvent *ChannelQueryReplyEvent `cbor:"channel_query_reply_event"`
 }
 
 type Request struct {
@@ -453,6 +480,15 @@ type Request struct {
 	// CloseChannel is used to close a Pigeonhole channel.
 	CloseChannel *CloseChannel `cbor:"close_channel"`
 
+	// ThinClose is used to indicate that the thin client is disconnecting
+	// from the daemon.
+	ThinClose *ThinClose `cbor:"thin_close"`
+
+	// SendChannelQuery is used to send a message through the mix network
+	SendChannelQuery *SendChannelQuery `cbor:"send_channel_query"`
+
+	// Legacy API
+
 	// SendMessage is used to send a message through the mix network.
 	SendMessage *SendMessage `cbor:"send_message"`
 
@@ -465,8 +501,4 @@ type Request struct {
 
 	// SendDropDecoy is used to send a drop decoy message.
 	SendDropDecoy *SendDropDecoy `cbor:"send_drop_decoy"`
-
-	// ThinClose is used to indicate that the thin client is disconnecting
-	// from the daemon.
-	ThinClose *ThinClose `cbor:"thin_close"`
 }

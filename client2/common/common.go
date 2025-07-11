@@ -4,7 +4,10 @@
 package common
 
 import (
+	"github.com/katzenpost/hpqc/rand"
+
 	cpki "github.com/katzenpost/katzenpost/core/pki"
+	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 )
 
 // ServiceDescriptor describe a mixnet Gateway-side service.
@@ -33,4 +36,13 @@ func FindServices(capability string, doc *cpki.Document) []*ServiceDescriptor {
 		}
 	}
 	return services
+}
+
+func NewSURBID() *[constants.SURBIDLength]byte {
+	id := new([constants.SURBIDLength]byte)
+	_, err := rand.Reader.Read(id[:])
+	if err != nil {
+		panic(err)
+	}
+	return id
 }

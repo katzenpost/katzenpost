@@ -358,6 +358,8 @@ func (d *Daemon) egressWorker() {
 
 				// New Pigeonhole Channel related commands proceed here:
 
+			case request.SendChannelQuery != nil:
+				d.sendChannelQuery(request)
 			case request.CreateWriteChannel != nil:
 				d.createWriteChannel(request)
 			case request.CreateReadChannel != nil:
@@ -510,10 +512,8 @@ func (d *Daemon) handleReply(reply *sphinxReply) {
 			}
 			err := conn.sendResponse(&Response{
 				AppID: desc.appID,
-				MessageReplyEvent: &thin.MessageReplyEvent{
+				ChannelQueryReplyEvent: &thin.ChannelQueryReplyEvent{
 					MessageID: desc.ID,
-					SURBID:    reply.surbID,
-					Payload:   []byte{},
 					ErrorCode: thin.ThinClientErrorInternalError,
 				},
 			})
@@ -1023,11 +1023,11 @@ func (d *Daemon) handleCourierEnvelopeReply(appid *[AppIDLength]byte,
 	switch {
 	case courierEnvelopeReply.ErrorCode != 0:
 		// send error response to client
+		// mapCourierErrorToThinClientError(courierEnvelopeReply.ErrorCode)
 		return conn.sendResponse(&Response{
 			AppID: appid,
-			MessageReplyEvent: &thin.MessageReplyEvent{
+			ChannelQueryReplyEvent: &thin.ChannelQueryReplyEvent{
 				MessageID: mesgID,
-				SURBID:    surbid,
 				Payload:   []byte{},
 				ErrorCode: mapCourierErrorToThinClientError(courierEnvelopeReply.ErrorCode),
 			},
@@ -1051,9 +1051,8 @@ func (d *Daemon) handleCourierEnvelopeReply(appid *[AppIDLength]byte,
 		// send empty response to client
 		return conn.sendResponse(&Response{
 			AppID: appid,
-			MessageReplyEvent: &thin.MessageReplyEvent{
+			ChannelQueryReplyEvent: &thin.ChannelQueryReplyEvent{
 				MessageID: mesgID,
-				SURBID:    surbid,
 				Payload:   []byte{},
 				ErrorCode: thin.ThinClientSuccess,
 			},
@@ -1062,9 +1061,8 @@ func (d *Daemon) handleCourierEnvelopeReply(appid *[AppIDLength]byte,
 		// send empty response to client (for non-ACK empty replies)
 		return conn.sendResponse(&Response{
 			AppID: appid,
-			MessageReplyEvent: &thin.MessageReplyEvent{
+			ChannelQueryReplyEvent: &thin.ChannelQueryReplyEvent{
 				MessageID: mesgID,
-				SURBID:    surbid,
 				Payload:   []byte{},
 				ErrorCode: thin.ThinClientSuccess,
 			},
@@ -1119,9 +1117,8 @@ func (d *Daemon) handleCourierEnvelopeReply(appid *[AppIDLength]byte,
 		// send error code back to client
 		return conn.sendResponse(&Response{
 			AppID: appid,
-			MessageReplyEvent: &thin.MessageReplyEvent{
+			ChannelQueryReplyEvent: &thin.ChannelQueryReplyEvent{
 				MessageID: mesgID,
-				SURBID:    surbid,
 				Payload:   []byte{},
 				ErrorCode: thin.ThinClientErrorInvalidChannel,
 			},
@@ -1233,6 +1230,87 @@ func (d *Daemon) decryptMKEMEnvelope(env *pigeonhole.CourierEnvelopeReply, envel
 	}
 
 	return innerMsg, nil
+}
+
+func (d *Daemon) validateSendChannelQueryRequest(request *Request) error {
+	if request.SendChannelQuery.QueryID == nil {
+		return fmt.Errorf("QueryID cannot be nil")
+	}
+	if request.SendChannelQuery.MessageID == nil {
+		return fmt.Errorf("MessageID cannot be nil")
+	}
+	if request.SendChannelQuery.ChannelID == nil {
+		return fmt.Errorf("ChannelID cannot be nil")
+	}
+	if request.SendChannelQuery.DestinationIdHash == nil {
+		return fmt.Errorf("DestinationIdHash cannot be nil")
+	}
+	if request.SendChannelQuery.RecipientQueueID == nil {
+		return fmt.Errorf("RecipientQueueID cannot be nil")
+	}
+	if request.SendChannelQuery.Payload == nil {
+		return fmt.Errorf("Payload cannot be nil")
+	}
+	return nil
+}
+
+func (d *Daemon) sendChannelQuery(request *Request) {
+	err := d.validateSendChannelQueryRequest(request)
+	if err != nil {
+		d.log.Errorf("BUG, invalid request: %v", err)
+		d.sendErrorResponse(request, thin.ThinClientErrorInvalidRequest, "SendChannelQuery")
+		return
+	}
+
+	var surbKey []byte
+	var rtt time.Duration
+	var now time.Time
+
+	surbID := common.NewSURBID()
+	surbKey, rtt, err = d.client.SendChannelQuery(request.SendChannelQuery, surbID)
+	if err != nil {
+		d.log.Debugf("SendCiphertext error: %s", err.Error())
+	}
+
+	now = time.Now()
+	fetchInterval := d.client.GetPollInterval()
+	slop := time.Second
+	duration := rtt + fetchInterval + slop
+	replyArrivalTime := now.Add(duration)
+
+	d.timerQueue.Push(uint64(replyArrivalTime.UnixNano()), surbID)
+
+	incomingConn := d.listener.getConnection(request.AppID)
+	if incomingConn == nil {
+		d.log.Errorf("no connection associated with AppID %x", request.AppID[:])
+		return
+	}
+
+	response := &Response{
+		AppID: request.AppID,
+		ChannelQuerySentEvent: &thin.ChannelQuerySentEvent{
+			QueryID:   request.SendChannelQuery.QueryID,
+			SentAt:    now,
+			ReplyETA:  rtt,
+			ErrorCode: thin.ThinClientSuccess,
+		},
+	}
+	err = incomingConn.sendResponse(response)
+	if err != nil {
+		d.log.Errorf("failed to send Response: %s", err)
+	}
+
+	d.channelRepliesLock.Lock()
+	d.channelReplies[*surbID] = replyDescriptor{
+		ID:      request.SendChannelQuery.MessageID,
+		appID:   request.AppID,
+		surbKey: surbKey,
+	}
+	d.channelRepliesLock.Unlock()
+
+	d.newSurbIDToChannelMapLock.Lock()
+	d.newSurbIDToChannelMap[*surbID] = *request.SendChannelQuery.ChannelID
+	d.newSurbIDToChannelMapLock.Unlock()
 }
 
 func (d *Daemon) send(request *Request) {
@@ -1649,7 +1727,7 @@ func (d *Daemon) handleNewReadReply(params *ReplyHandlerParams, readReply *pigeo
 	// deliver the read result to thin client
 	err = conn.sendResponse(&Response{
 		AppID: params.AppID,
-		MessageReplyEvent: &thin.MessageReplyEvent{
+		ChannelQueryReplyEvent: &thin.ChannelQueryReplyEvent{
 			MessageID:  params.MessageID,
 			Payload:    payload,
 			ReplyIndex: &params.ReplyIndex,
@@ -1679,7 +1757,7 @@ func (d *Daemon) handleNewWriteReply(params *ReplyHandlerParams, writeReply *pig
 	// deliver the write result to thin client
 	err := conn.sendResponse(&Response{
 		AppID: params.AppID,
-		MessageReplyEvent: &thin.MessageReplyEvent{
+		ChannelQueryReplyEvent: &thin.ChannelQueryReplyEvent{
 			MessageID:  params.MessageID,
 			Payload:    []byte{}, // Empty payload for write operations
 			ReplyIndex: &params.ReplyIndex,

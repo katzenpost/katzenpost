@@ -640,12 +640,7 @@ func (t *ThinClient) NewMessageID() *[MessageIDLength]byte {
 
 // NewSURBID returns a new surb id.
 func (t *ThinClient) NewSURBID() *[sConstants.SURBIDLength]byte {
-	id := new([sConstants.SURBIDLength]byte)
-	_, err := rand.Reader.Read(id[:])
-	if err != nil {
-		panic(err)
-	}
-	return id
+	return common.NewSURBID()
 }
 
 // NewQueryID returns a new query id.
