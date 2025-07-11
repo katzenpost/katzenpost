@@ -890,9 +890,16 @@ func (d *Daemon) resumeReadChannelQuery(request *Request) {
 	}
 
 	// store envelope descriptor for later use
-	envelopeDesc := EnvelopeDescriptorFromBytes(request.ResumeReadChannelQuery.EnvelopeDescriptor)
-	envHash := request.ResumeReadChannelQuery.EnvelopeHash
-	myNewChannelDescriptor.EnvelopeDescriptors[*envHash] = envelopeDesc
+	switch {
+	case request.ResumeReadChannelQuery.EnvelopeDescriptor == nil:
+		fallthrough
+	case len(request.ResumeReadChannelQuery.EnvelopeDescriptor) == 0:
+		d.log.Debugf("no envelope descriptor provided, skipping")
+	default:
+		envelopeDesc := EnvelopeDescriptorFromBytes(request.ResumeReadChannelQuery.EnvelopeDescriptor)
+		envHash := request.ResumeReadChannelQuery.EnvelopeHash
+		myNewChannelDescriptor.EnvelopeDescriptors[*envHash] = envelopeDesc
+	}
 
 	d.newChannelMapLock.Lock()
 	d.newChannelMap[channelID] = myNewChannelDescriptor

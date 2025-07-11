@@ -607,7 +607,8 @@ func (d *Daemon) readChannel(request *Request) {
 		d.sendReadChannelError(request, thin.ThinClientErrorInternalError)
 		return
 	}
-	nextMessageIndex, err := channelDesc.StatefulReader.NextIndex.NextIndex()
+	nextMessageIndex, err := channelDesc.StatefulReader.GetNextMessageIndex()
+	currentMessageIndex := channelDesc.StatefulReader.GetCurrentMessageIndex()
 	channelDesc.StatefulReaderLock.Unlock()
 
 	if err != nil {
@@ -659,12 +660,15 @@ func (d *Daemon) readChannel(request *Request) {
 	conn.sendResponse(&Response{
 		AppID: request.AppID,
 		ReadChannelReply: &thin.ReadChannelReply{
-			QueryID:            request.ReadChannel.QueryID,
-			ChannelID:          channelID,
-			ErrorCode:          thin.ThinClientSuccess,
-			SendMessagePayload: courierQuery.Bytes(),
-			NextMessageIndex:   nextMessageIndex,
-			ReplyIndex:         request.ReadChannel.ReplyIndex,
+			QueryID:             request.ReadChannel.QueryID,
+			ChannelID:           channelID,
+			ErrorCode:           thin.ThinClientSuccess,
+			SendMessagePayload:  courierQuery.Bytes(),
+			CurrentMessageIndex: currentMessageIndex,
+			NextMessageIndex:    nextMessageIndex,
+			ReplyIndex:          request.ReadChannel.ReplyIndex,
+			EnvelopeHash:        envHash,
+			EnvelopeDescriptor:  channelDesc.EnvelopeDescriptors[*envHash].Bytes(),
 		},
 	})
 }

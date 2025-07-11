@@ -1249,9 +1249,7 @@ func (t *ThinClient) ResumeReadChannel(
 	ctx context.Context,
 	readCap *bacap.ReadCap,
 	nextMessageIndex *bacap.MessageBoxIndex,
-	replyIndex *uint8,
-	envelopeDescriptor []byte,
-	envelopeHash *[32]byte) (uint16, error) {
+	replyIndex *uint8) (uint16, error) {
 
 	queryID := t.NewQueryID()
 	req := &Request{

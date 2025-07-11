@@ -270,8 +270,8 @@ type ReadChannelReply struct {
 	// SendChannelQuery to retrieve the next message from the channel.
 	SendMessagePayload []byte `cbor:"send_message_payload"`
 
-	// NOTE(David): The fields below are only used for resumption of a
-	// this read channel.
+	// CurrentMessageIndex indicates the message index for the current message.
+	CurrentMessageIndex *bacap.MessageBoxIndex `cbor:"current_message_index"`
 
 	// NextMessageIndex indicates the message index to use after successfully
 	// reading the current message.
@@ -280,9 +280,6 @@ type ReadChannelReply struct {
 	// ReplyIndex is the index of the reply that was used when creating this ReadChannelReply.
 	// This corresponds to the ReplyIndex parameter from the ReadChannel request.
 	ReplyIndex *uint8 `cbor:"reply_index"`
-
-	// NOTE(David): The fields below are only used for resumption of a
-	// previously prepared read query which.
 
 	// EnvelopeHash is the hash of the CourierEnvelope that was sent to the
 	// mixnet and is used to resume the read operation.
