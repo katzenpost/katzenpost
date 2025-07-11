@@ -8,15 +8,21 @@ import (
 
 func IntoThinResponse(r *Response) *thin.Response {
 	return &thin.Response{
-		ConnectionStatusEvent:     r.ConnectionStatusEvent,
-		NewPKIDocumentEvent:       r.NewPKIDocumentEvent,
-		MessageSentEvent:          r.MessageSentEvent,
-		MessageReplyEvent:         r.MessageReplyEvent,
-		MessageIDGarbageCollected: r.MessageIDGarbageCollected,
-		CreateWriteChannelReply:   r.CreateWriteChannelReply,
-		CreateReadChannelReply:    r.CreateReadChannelReply,
-		WriteChannelReply:         r.WriteChannelReply,
-		ReadChannelReply:          r.ReadChannelReply,
+		ConnectionStatusEvent:        r.ConnectionStatusEvent,
+		NewPKIDocumentEvent:          r.NewPKIDocumentEvent,
+		MessageSentEvent:             r.MessageSentEvent,
+		MessageReplyEvent:            r.MessageReplyEvent,
+		MessageIDGarbageCollected:    r.MessageIDGarbageCollected,
+		CreateWriteChannelReply:      r.CreateWriteChannelReply,
+		CreateReadChannelReply:       r.CreateReadChannelReply,
+		WriteChannelReply:            r.WriteChannelReply,
+		ReadChannelReply:             r.ReadChannelReply,
+		ResumeWriteChannelReply:      r.ResumeWriteChannelReply,
+		ResumeReadChannelReply:       r.ResumeReadChannelReply,
+		ResumeWriteChannelQueryReply: r.ResumeWriteChannelQueryReply,
+		ResumeReadChannelQueryReply:  r.ResumeReadChannelQueryReply,
+		ChannelQuerySentEvent:        r.ChannelQuerySentEvent,
+		ChannelQueryReplyEvent:       r.ChannelQueryReplyEvent,
 	}
 }
 
@@ -44,26 +50,51 @@ type Response struct {
 	WriteChannelReply *thin.WriteChannelReply
 
 	ReadChannelReply *thin.ReadChannelReply
+
+	ResumeWriteChannelReply *thin.ResumeWriteChannelReply
+
+	ResumeReadChannelReply *thin.ResumeReadChannelReply
+
+	ResumeWriteChannelQueryReply *thin.ResumeWriteChannelQueryReply
+
+	ResumeReadChannelQueryReply *thin.ResumeReadChannelQueryReply
+
+	ChannelQuerySentEvent *thin.ChannelQuerySentEvent
+
+	ChannelQueryReplyEvent *thin.ChannelQueryReplyEvent
 }
 
 func FromThinRequest(r *thin.Request, appid *[AppIDLength]byte) *Request {
 	return &Request{
-		AppID:              appid,
-		CreateWriteChannel: r.CreateWriteChannel,
-		CreateReadChannel:  r.CreateReadChannel,
-		WriteChannel:       r.WriteChannel,
-		ReadChannel:        r.ReadChannel,
-		CloseChannel:       r.CloseChannel,
+		AppID:                   appid,
+		SendChannelQuery:        r.SendChannelQuery,
+		CreateWriteChannel:      r.CreateWriteChannel,
+		CreateReadChannel:       r.CreateReadChannel,
+		WriteChannel:            r.WriteChannel,
+		ReadChannel:             r.ReadChannel,
+		ResumeWriteChannel:      r.ResumeWriteChannel,
+		ResumeWriteChannelQuery: r.ResumeWriteChannelQuery,
+		ResumeReadChannel:       r.ResumeReadChannel,
+		ResumeReadChannelQuery:  r.ResumeReadChannelQuery,
+		CloseChannel:            r.CloseChannel,
 
 		SendMessage:    r.SendMessage,
 		SendARQMessage: r.SendARQMessage,
-		SendLoopDecoy:  r.SendLoopDecoy,
-		SendDropDecoy:  r.SendDropDecoy,
 		ThinClose:      r.ThinClose,
 	}
 }
 
+type SendLoopDecoy struct {
+}
+
+type SendDropDecoy struct {
+}
+
 type Request struct {
+	// AppID must be a unique identity for the client application
+	// that is sending this Request.
+	AppID *[AppIDLength]byte
+
 	CreateWriteChannel *thin.CreateWriteChannel
 
 	CreateReadChannel *thin.CreateReadChannel
@@ -72,19 +103,27 @@ type Request struct {
 
 	ReadChannel *thin.ReadChannel
 
+	ResumeWriteChannel *thin.ResumeWriteChannel
+
+	ResumeReadChannel *thin.ResumeReadChannel
+
+	ResumeWriteChannelQuery *thin.ResumeWriteChannelQuery
+
+	ResumeReadChannelQuery *thin.ResumeReadChannelQuery
+
 	CloseChannel *thin.CloseChannel
+
+	ThinClose *thin.ThinClose
+
+	SendChannelQuery *thin.SendChannelQuery
+
+	// Legacy API
 
 	SendMessage *thin.SendMessage
 
 	SendARQMessage *thin.SendARQMessage
 
-	SendLoopDecoy *thin.SendLoopDecoy
+	SendLoopDecoy *SendLoopDecoy
 
-	SendDropDecoy *thin.SendDropDecoy
-
-	ThinClose *thin.ThinClose
-
-	// AppID must be a unique identity for the client application
-	// that is sending this Request.
-	AppID *[AppIDLength]byte
+	SendDropDecoy *SendDropDecoy
 }

@@ -4,7 +4,6 @@
 package client2
 
 import (
-	"github.com/katzenpost/katzenpost/client2/thin"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/worker"
 	"gopkg.in/op/go-logging.v1"
@@ -115,12 +114,12 @@ func (s *sender) UpdateRates(rates *Rates) {
 
 func newLoopDecoy() *Request {
 	return &Request{
-		SendLoopDecoy: &thin.SendLoopDecoy{},
+		SendLoopDecoy: &SendLoopDecoy{},
 	}
 }
 
 func newDropDecoy() *Request {
 	return &Request{
-		SendDropDecoy: &thin.SendDropDecoy{},
+		SendDropDecoy: &SendDropDecoy{},
 	}
 }

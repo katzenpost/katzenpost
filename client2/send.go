@@ -10,6 +10,7 @@ import (
 
 	"github.com/katzenpost/hpqc/rand"
 
+	"github.com/katzenpost/katzenpost/client2/thin"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx"
@@ -239,4 +240,88 @@ func (c *Client) logPath(doc *cpki.Document, p []*sphinx.PathHop) error {
 		c.log.Debug(v)
 	}
 	return nil
+}
+
+// ComposeSphinxPacketForQuery is used to compose Sphinx packets for channel queries.
+func (c *Client) ComposeSphinxPacketForQuery(request *thin.SendChannelQuery, surbID *[sConstants.SURBIDLength]byte) (pkt []byte, surbkey []byte, rtt time.Duration, err error) {
+
+	if len(request.Payload) > c.geo.UserForwardPayloadLength {
+		return nil, nil, 0, fmt.Errorf("ComposeSphinxPacketForQuery Payload field too large: %v > %v", len(request.Payload), c.geo.UserForwardPayloadLength)
+	}
+
+	for {
+		// Check if we're shutting down to avoid races
+		select {
+		case <-c.HaltCh():
+			return nil, nil, 0, ErrShutdown
+		default:
+		}
+
+		unixTime := c.pki.skewedUnixTime()
+		_, _, budget := epochtime.FromUnix(unixTime)
+		start := time.Now()
+
+		// Select the forward path.
+		now := time.Unix(unixTime, 0)
+
+		gateway := c.conn.getGateway()
+		if gateway == nil {
+			panic("source gateway cannot be nil")
+		}
+
+		fwdPath, then, err := c.makePath(request.RecipientQueueID, request.DestinationIdHash, surbID, now, true, gateway)
+		if err != nil {
+			return nil, nil, 0, err
+		}
+
+		revPath := make([]*sphinx.PathHop, 0)
+		if surbID != nil {
+			if c.conn.queueID == nil {
+				panic("sender queueID cannot be nil")
+			}
+			revPath, then, err = c.makePath(c.conn.queueID, request.DestinationIdHash, surbID, then, false, gateway)
+			if err != nil {
+				return nil, nil, 0, err
+			}
+		}
+
+		// If the path selection process ends up straddling an epoch
+		// transition, then redo the path selection.
+		if time.Since(start) > budget {
+			continue
+		}
+
+		// It is possible, but unlikely that a series of delays exceeding
+		// the PKI publication imposted limitations will be selected.  When
+		// that happens, the path selection must be redone.
+		if then.Sub(now) < epochtime.Period*2 {
+			payload := make([]byte, 2, 2+c.geo.SURBLength+len(request.Payload))
+			payload[0] = 1 // Packet has a SURB.
+			surb, k, err := c.sphinx.NewSURB(rand.Reader, revPath)
+			if err != nil {
+				return nil, nil, 0, err
+			}
+			payload = append(payload, surb...)
+			payload = append(payload, request.Payload...)
+
+			blob := make([]byte, c.geo.ForwardPayloadLength)
+			copy(blob, payload)
+
+			pkt, err := c.sphinx.NewPacket(rand.Reader, fwdPath, blob)
+			if err != nil {
+				return nil, nil, 0, err
+			}
+			return pkt, k, then.Sub(now), err
+		}
+	}
+}
+
+// SendChannelQuery
+func (c *Client) SendChannelQuery(sendQuery *thin.SendChannelQuery, surbID *[sConstants.SURBIDLength]byte) (surbKey []byte, rtt time.Duration, err error) {
+	pkt, k, rtt, err := c.ComposeSphinxPacketForQuery(sendQuery, surbID)
+	if err != nil {
+		return nil, 0, err
+	}
+	err = c.conn.sendPacket(pkt)
+	return k, rtt, err
 }
