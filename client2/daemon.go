@@ -1414,36 +1414,11 @@ func (d *Daemon) send(request *Request) {
 	}
 
 	if request.SendMessage != nil {
-		// Check if this is a new API channel query (has ChannelID field)
-		if request.SendMessage.ChannelID != nil {
-
-			// Debug logging for MessageID
-			if request.SendMessage.ID != nil {
-				d.log.Errorf("DEBUG: Storing channel reply with MessageID %x for SURBID %x", request.SendMessage.ID[:8], request.SendMessage.SURBID[:8])
-			} else {
-				d.log.Errorf("DEBUG: WARNING: Storing channel reply with nil MessageID for SURBID %x", request.SendMessage.SURBID[:8])
-			}
-
-			// New API: store in channel replies and new SURB ID map
-			d.channelRepliesLock.Lock()
-			d.channelReplies[*request.SendMessage.SURBID] = replyDescriptor{
-				ID:      request.SendMessage.ID,
-				appID:   request.AppID,
-				surbKey: surbKey,
-			}
-			d.channelRepliesLock.Unlock()
-
-			// Store the SURB ID to channel ID mapping in the NEW API maps
-			d.newSurbIDToChannelMapLock.Lock()
-			d.newSurbIDToChannelMap[*request.SendMessage.SURBID] = *request.SendMessage.ChannelID
-			d.newSurbIDToChannelMapLock.Unlock()
-		} else {
-			// Old API: store in regular replies
-			d.replies[*request.SendMessage.SURBID] = replyDescriptor{
-				ID:      request.SendMessage.ID,
-				appID:   request.AppID,
-				surbKey: surbKey,
-			}
+		// Old API: store in regular replies
+		d.replies[*request.SendMessage.SURBID] = replyDescriptor{
+			ID:      request.SendMessage.ID,
+			appID:   request.AppID,
+			surbKey: surbKey,
 		}
 		d.replyLock.Unlock()
 		return
