@@ -57,6 +57,8 @@ dockertest_resume_read_channel_query:
 	$(docker) run -w /go/katzenpost/client2 ${docker_args} $(image) \
 		go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 1h -run "TestResumeReadChannelQuery"
 
+all_channels_tests: dockertest_channel_basics dockertest_channel_close dockertest_resume_write_channel dockertest_resume_write_channel_query dockertest_resume_read_channel dockertest_resume_read_channel_query
+
 warpedclientdaemon:
 	cd ../cmd/kpclientd; go build -ldflags ${ldflags}
 

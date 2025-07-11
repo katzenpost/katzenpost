@@ -567,7 +567,9 @@ func (d *Daemon) validateResumeWriteChannelQueryRequest(request *Request) error 
 	if request.ResumeWriteChannelQuery.WriteCap == nil {
 		return fmt.Errorf("WriteCap cannot be nil when resuming an existing channel")
 	}
-	// Note(David): The rest of the fields are optional.
+	if request.ResumeWriteChannelQuery.MessageBoxIndex == nil {
+		return fmt.Errorf("MessageBoxIndex cannot be nil when resuming an existing channel")
+	}
 	return nil
 }
 
@@ -673,13 +675,10 @@ func (d *Daemon) resumeWriteChannelQuery(request *Request) {
 	// use fields from the request to mutate our current state
 	channelID := d.generateUniqueChannelID()
 	var statefulWriter *bacap.StatefulWriter
-	statefulWriter, err = bacap.NewStatefulWriterWithIndex(
-		request.ResumeWriteChannelQuery.WriteCap,
-		constants.PIGEONHOLE_CTX,
-		request.ResumeWriteChannelQuery.MessageBoxIndex)
+	statefulWriter, err = bacap.NewStatefulWriterWithIndex(request.ResumeWriteChannelQuery.WriteCap, constants.PIGEONHOLE_CTX, request.ResumeWriteChannelQuery.MessageBoxIndex)
 	if err != nil {
 		d.log.Errorf("BUG, failed to create stateful writer: %v", err)
-		d.sendResumeWriteChannelError(request, thin.ThinClientErrorInternalError)
+		d.sendResumeWriteChannelQueryError(request, thin.ThinClientErrorInternalError)
 		return
 	}
 
@@ -749,8 +748,8 @@ func (d *Daemon) validateResumeReadChannelRequest(request *Request) error {
 	if request.ResumeReadChannel.QueryID == nil {
 		return fmt.Errorf("queryID cannot be nil")
 	}
-	if request.ResumeReadChannel.NextMessageIndex == nil {
-		return fmt.Errorf("nextMessageIndex cannot be nil")
+	if request.ResumeReadChannel.ReadCap == nil {
+		return fmt.Errorf("readCap cannot be nil")
 	}
 	return nil
 }
@@ -758,6 +757,9 @@ func (d *Daemon) validateResumeReadChannelRequest(request *Request) error {
 func (d *Daemon) validateResumeReadChannelQueryRequest(request *Request) error {
 	if request.ResumeReadChannelQuery.QueryID == nil {
 		return fmt.Errorf("queryID cannot be nil")
+	}
+	if request.ResumeReadChannelQuery.ReadCap == nil {
+		return fmt.Errorf("readCap cannot be nil")
 	}
 	if request.ResumeReadChannelQuery.NextMessageIndex == nil {
 		return fmt.Errorf("nextMessageIndex cannot be nil")
@@ -802,11 +804,20 @@ func (d *Daemon) resumeReadChannel(request *Request) {
 	}
 	channelID := d.generateUniqueChannelID()
 	var statefulReader *bacap.StatefulReader
-	statefulReader, err = bacap.NewStatefulReaderWithIndex(request.ResumeReadChannel.ReadCap, constants.PIGEONHOLE_CTX, request.ResumeReadChannel.NextMessageIndex)
-	if err != nil {
-		d.log.Errorf("BUG, failed to create stateful reader: %v", err)
-		d.sendResumeReadChannelError(request, thin.ThinClientErrorInternalError)
-		return
+	if request.ResumeReadChannel.NextMessageIndex == nil {
+		statefulReader, err = bacap.NewStatefulReader(request.ResumeReadChannel.ReadCap, constants.PIGEONHOLE_CTX)
+		if err != nil {
+			d.log.Errorf("BUG, failed to create stateful reader: %v", err)
+			d.sendResumeReadChannelError(request, thin.ThinClientErrorInternalError)
+			return
+		}
+	} else {
+		statefulReader, err = bacap.NewStatefulReaderWithIndex(request.ResumeReadChannel.ReadCap, constants.PIGEONHOLE_CTX, request.ResumeReadChannel.NextMessageIndex)
+		if err != nil {
+			d.log.Errorf("BUG, failed to create stateful reader: %v", err)
+			d.sendResumeReadChannelError(request, thin.ThinClientErrorInternalError)
+			return
+		}
 	}
 
 	myNewChannelDescriptor := &ChannelDescriptor{

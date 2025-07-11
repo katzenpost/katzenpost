@@ -479,7 +479,28 @@ func (d *Daemon) checkWriteCapabilityDedup(writeCap *bacap.WriteCap) error {
 	return nil
 }
 
+func (d *Daemon) validateWriteChannelRequest(request *thin.WriteChannel) error {
+	if request.QueryID == nil {
+		return errors.New("QueryID is nil")
+	}
+	if request.ChannelID == 0 {
+		return errors.New("ChannelID is 0")
+	}
+	if request.Payload == nil {
+		return errors.New("Payload is nil")
+	}
+	return nil
+}
+
 func (d *Daemon) writeChannel(request *Request) {
+
+	err := d.validateWriteChannelRequest(request.WriteChannel)
+	if err != nil {
+		d.log.Errorf("writeChannel failure: %s", err)
+		d.sendWriteChannelError(request, thin.ThinClientErrorInvalidRequest)
+		return
+	}
+
 	channelID := request.WriteChannel.ChannelID
 
 	d.newChannelMapLock.RLock()
