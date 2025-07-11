@@ -601,7 +601,7 @@ func (d *Daemon) resumeWriteChannel(request *Request) {
 	// use fields from the request to mutate our current state
 	channelID := d.generateUniqueChannelID()
 	var statefulWriter *bacap.StatefulWriter
-	statefulWriter, err = bacap.NewStatefulWriter(request.ResumeWriteChannel.WriteCap, constants.PIGEONHOLE_CTX)
+	statefulWriter, err = bacap.NewStatefulWriterWithIndex(request.ResumeWriteChannel.WriteCap, constants.PIGEONHOLE_CTX, request.ResumeWriteChannel.MessageBoxIndex)
 	if err != nil {
 		d.log.Errorf("BUG, failed to create stateful writer: %v", err)
 		d.sendResumeWriteChannelError(request, thin.ThinClientErrorInternalError)
@@ -793,7 +793,7 @@ func (d *Daemon) resumeReadChannel(request *Request) {
 	}
 	channelID := d.generateUniqueChannelID()
 	var statefulReader *bacap.StatefulReader
-	statefulReader, err = bacap.NewStatefulReader(request.ResumeReadChannel.ReadCap, constants.PIGEONHOLE_CTX)
+	statefulReader, err = bacap.NewStatefulReaderWithIndex(request.ResumeReadChannel.ReadCap, constants.PIGEONHOLE_CTX, request.ResumeReadChannel.NextMessageIndex)
 	if err != nil {
 		d.log.Errorf("BUG, failed to create stateful reader: %v", err)
 		d.sendResumeReadChannelError(request, thin.ThinClientErrorInternalError)

@@ -224,6 +224,9 @@ type WriteChannelReply struct {
 	// sent via SendChannelQuery to complete the write operation.
 	SendMessagePayload []byte `cbor:"send_message_payload"`
 
+	// CurrentMessageIndex indicates the message index for the current message.
+	CurrentMessageIndex *bacap.MessageBoxIndex `cbor:"current_message_index"`
+
 	// NextMessageIndex indicates the message index to use after the courier
 	// acknowledges successful delivery of this message.
 	NextMessageIndex *bacap.MessageBoxIndex `cbor:"next_message_index"`

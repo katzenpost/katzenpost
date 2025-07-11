@@ -557,13 +557,14 @@ func (d *Daemon) writeChannel(request *Request) {
 	conn.sendResponse(&Response{
 		AppID: request.AppID,
 		WriteChannelReply: &thin.WriteChannelReply{
-			QueryID:            request.WriteChannel.QueryID,
-			ChannelID:          channelID,
-			SendMessagePayload: courierQuery.Bytes(),
-			NextMessageIndex:   nextMessageIndex,
-			EnvelopeHash:       envHash,
-			EnvelopeDescriptor: channelDesc.EnvelopeDescriptors[*envHash].Bytes(),
-			ErrorCode:          thin.ThinClientSuccess,
+			QueryID:             request.WriteChannel.QueryID,
+			ChannelID:           channelID,
+			SendMessagePayload:  courierQuery.Bytes(),
+			CurrentMessageIndex: channelDesc.StatefulWriter.GetCurrentMessageIndex(),
+			NextMessageIndex:    nextMessageIndex,
+			EnvelopeHash:        envHash,
+			EnvelopeDescriptor:  channelDesc.EnvelopeDescriptors[*envHash].Bytes(),
+			ErrorCode:           thin.ThinClientSuccess,
 		},
 	})
 }
