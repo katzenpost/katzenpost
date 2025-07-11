@@ -331,6 +331,9 @@ type CloseChannel struct {
 	ChannelID uint16 `cbor:"channel_id"`
 }
 
+// SendMessage is used to send a message through the mix network
+// it is part of the legacy API and should not be used for newer
+// works using the Pigeonhole protocol.
 type SendMessage struct {
 	// ID is the unique identifier with respect to the Payload.
 	// This is only used by the ARQ.
@@ -339,10 +342,6 @@ type SendMessage struct {
 	// WithSURB indicates if the message should be sent with a SURB
 	// in the Sphinx payload.
 	WithSURB bool `cbor:"with_surb"`
-
-	// ChannelID is optional and only used for sending channel messages.
-	// For non-channel messages, this field should be nil.
-	ChannelID *uint16 `cbor:"channel_id,omitempty"`
 
 	// SURBID must be a unique identity for each request.
 	// This field should be nil if WithSURB is false.
@@ -359,6 +358,9 @@ type SendMessage struct {
 	Payload []byte `cbor:"payload"`
 }
 
+// SendARQMessage is used to send a message through the mix network
+// using the simple ARQ error correction scheme. It is part of the legacy API
+// and should not be used for newer works using the Pigeonhole protocol.
 type SendARQMessage struct {
 	// ID is the unique identifier with respect to the Payload.
 	// This is only used by the ARQ.
@@ -383,6 +385,10 @@ type SendARQMessage struct {
 	Payload []byte `cbor:"payload"`
 }
 
+// SendChannelQuery is used to send a Pigeonhole protocol ciphertext query payload
+// through the mix network. The result of sending this message type is two more events:
+// ChannelQuerySentEvent and ChannelQueryReplyEvent both of which can be matched
+// by the MessageID field.
 type SendChannelQuery struct {
 	// MessageID is the unique identifier for the request associated with the
 	// query reply via the ChannelQueryReplyEvent.
@@ -397,6 +403,7 @@ type SendChannelQuery struct {
 	DestinationIdHash *[hash.HashSize]byte `cbor:"destination_id_hash"`
 
 	// RecipientQueueID is the queue identity which will receive the message.
+	// This queue ID is meant to be the queue ID of the Pigeonhole protocol Courier service.
 	RecipientQueueID []byte `cbor:"recipient_queue_id"`
 
 	// Payload is the Pigeonole protocol ciphertext payload which will be encapsulated in the Sphinx payload.
