@@ -423,9 +423,9 @@ func (e *ResumeReadChannelQueryReply) String() string {
 
 // ChannelQuerySentEvent is the event sent when a message has been fully transmitted.
 type ChannelQuerySentEvent struct {
-	// QueryID is used for correlating this reply with the ResumeReadChannel request
-	// that created it.
-	QueryID *[QueryIDLength]byte `cbor:"query_id"`
+	// MessageID is the unique identifier for the request associated with the
+	// query sent in the SendChannelQuery command.
+	MessageID *[MessageIDLength]byte `cbor:"message_id"`
 
 	// SentAt contains the time the message was sent.
 	SentAt time.Time `cbor:"sent_at"`
@@ -441,9 +441,9 @@ type ChannelQuerySentEvent struct {
 // String returns a string representation of a MessageSentEvent.
 func (e *ChannelQuerySentEvent) String() string {
 	if e.ErrorCode != ThinClientSuccess {
-		return fmt.Sprintf("ChannelQuerySentEvent: %x failed: %s", e.QueryID[:], ThinClientErrorToString(e.ErrorCode))
+		return fmt.Sprintf("ChannelQuerySentEvent: %x failed: %s", e.MessageID[:], ThinClientErrorToString(e.ErrorCode))
 	}
-	return fmt.Sprintf("ChannelQuerySentEvent: %x", e.QueryID[:])
+	return fmt.Sprintf("ChannelQuerySentEvent: %x", e.MessageID[:])
 }
 
 // ChannelQueryReplyEvent is the event sent when a new message is received.

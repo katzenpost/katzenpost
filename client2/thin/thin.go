@@ -429,6 +429,22 @@ func (t *ThinClient) worker() {
 				}
 			}
 
+			/**  New Channel API **/
+
+		case message.ChannelQuerySentEvent != nil:
+			select {
+			case t.eventSink <- message.ChannelQuerySentEvent:
+				continue
+			case <-t.HaltCh():
+				return
+			}
+		case message.ChannelQueryReplyEvent != nil:
+			select {
+			case t.eventSink <- message.ChannelQueryReplyEvent:
+				continue
+			case <-t.HaltCh():
+				return
+			}
 		case message.CreateReadChannelReply != nil:
 			select {
 			case t.eventSink <- message.CreateReadChannelReply:
@@ -488,7 +504,7 @@ func (t *ThinClient) worker() {
 			}
 
 		default:
-			t.log.Error("bug: received invalid thin client message")
+			t.log.Errorf("bug: received invalid thin client message: %v", message)
 		}
 	}
 }
@@ -1402,6 +1418,7 @@ func (t *ThinClient) SendChannelQuery(
 
 	req := &Request{
 		SendChannelQuery: &SendChannelQuery{
+			QueryID:           t.NewQueryID(),
 			MessageID:         messageID,
 			ChannelID:         &channelID,
 			Payload:           payload,
@@ -1440,8 +1457,20 @@ func (t *ThinClient) SendChannelQueryAwaitReply(
 		}
 
 		switch v := event.(type) {
-		// match our queryID
-		case *MessageReplyEvent:
+		case *ChannelQuerySentEvent:
+			if v.MessageID == nil {
+				t.log.Debugf("SendChannelQueryAwaitReply: Received ChannelQuerySentEvent with nil MessageID, ignoring")
+				continue
+			}
+			if !bytes.Equal(v.MessageID[:], messageID[:]) {
+				t.log.Debugf("SendChannelQueryAwaitReply: Received ChannelQuerySentEvent with mismatched MessageID, ignoring")
+				continue
+			}
+			if v.ErrorCode != ThinClientSuccess {
+				return nil, errors.New(ThinClientErrorToString(v.ErrorCode))
+			}
+			continue
+		case *ChannelQueryReplyEvent:
 			if v.MessageID == nil {
 				t.log.Debugf("SendChannelQueryAwaitReply: Received MessageReplyEvent with nil MessageID, ignoring")
 				continue
@@ -1449,6 +1478,9 @@ func (t *ThinClient) SendChannelQueryAwaitReply(
 			if !bytes.Equal(v.MessageID[:], messageID[:]) {
 				t.log.Debugf("SendChannelQueryAwaitReply: Received MessageReplyEvent with mismatched MessageID, ignoring")
 				continue
+			}
+			if v.ErrorCode != ThinClientSuccess {
+				return nil, errors.New(ThinClientErrorToString(v.ErrorCode))
 			}
 			return v.Payload, nil
 		case *ConnectionStatusEvent:

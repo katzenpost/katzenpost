@@ -384,9 +384,6 @@ type SendARQMessage struct {
 }
 
 type SendChannelQuery struct {
-	// QueryID is used for correlating the request with its response.
-	QueryID *[QueryIDLength]byte `cbor:"query_id"`
-
 	// MessageID is the unique identifier for the request associated with the
 	// query reply via the ChannelQueryReplyEvent.
 	MessageID *[MessageIDLength]byte `cbor:"message_id"`

@@ -1233,9 +1233,6 @@ func (d *Daemon) decryptMKEMEnvelope(env *pigeonhole.CourierEnvelopeReply, envel
 }
 
 func (d *Daemon) validateSendChannelQueryRequest(request *Request) error {
-	if request.SendChannelQuery.QueryID == nil {
-		return fmt.Errorf("QueryID cannot be nil")
-	}
 	if request.SendChannelQuery.MessageID == nil {
 		return fmt.Errorf("MessageID cannot be nil")
 	}
@@ -1289,7 +1286,7 @@ func (d *Daemon) sendChannelQuery(request *Request) {
 	response := &Response{
 		AppID: request.AppID,
 		ChannelQuerySentEvent: &thin.ChannelQuerySentEvent{
-			QueryID:   request.SendChannelQuery.QueryID,
+			MessageID: request.SendChannelQuery.MessageID,
 			SentAt:    now,
 			ReplyETA:  rtt,
 			ErrorCode: thin.ThinClientSuccess,
