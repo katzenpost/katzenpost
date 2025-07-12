@@ -84,6 +84,9 @@ type Config struct {
 	// KeepAliveInterval specifies the TCP keep-alive interval in milliseconds.
 	KeepAliveInterval int
 
+	// DisableDecoyTraffic disables sending decoy traffic.
+	DisableDecoyTraffic bool
+
 	// GenerateOnly halts and cleans up the server right after long term
 	// key generation.
 	GenerateOnly bool

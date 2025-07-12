@@ -61,6 +61,9 @@ type Config struct {
 	// MaxQueueSize specifies the maximum number of messages that can be queued
 	// for an outgoing connection before blocking.
 	MaxQueueSize int
+
+	// DisableDecoyTraffic disables sending decoy traffic.
+	DisableDecoyTraffic bool
 }
 
 func (c *Config) FixupAndValidate() error {
