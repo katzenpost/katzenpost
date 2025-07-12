@@ -25,7 +25,7 @@ with the mix network. The reason we call it a thin client library is because it 
 do any mixnet related cryptography since that is already handled by the client2 daemon.
 In particular, the PKI document is stripped by the daemon before it's passed on to the
 thin clients. Likewise, thin clients don't decrypt SURB replies or compose Sphinx packets,
-instead all the that PQ Noise, Sphinx and PKI related cryptography is handled by the daemon.
+instead all the PQ Noise, Sphinx and PKI related cryptography are handled by the daemon.
 
 For more details, please see our Thin client design document:
 https://katzenpost.network/docs/specs/thin_client.html
