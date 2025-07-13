@@ -150,14 +150,13 @@ func NewDaemon(cfg *config.Config) (*Daemon, error) {
 
 // generateUniqueChannelID generates a unique uint16 channel ID that's not already in use
 func (d *Daemon) generateUniqueChannelID() uint16 {
-	d.newChannelMapLock.Lock()
-	defer d.newChannelMapLock.Unlock()
+	d.newChannelMapLock.RLock()
+	defer d.newChannelMapLock.RUnlock()
 
 	for {
 		channelID := uint16(hpqcRand.NewMath().Intn(65535) + 1) // [1, 65535]
 
 		if _, exists := d.newChannelMap[channelID]; !exists {
-			d.newChannelMap[channelID] = nil
 			return channelID
 		}
 	}
@@ -1162,7 +1161,7 @@ func (d *Daemon) lookupNewChannel(surbid *[sphinxConstants.SURBIDLength]byte) (u
 	d.newChannelMapLock.RLock()
 	channelDesc, ok := d.newChannelMap[channelID]
 	d.newChannelMapLock.RUnlock()
-	if !ok {
+	if !ok || channelDesc == nil {
 		d.log.Errorf("BUG no channel found for channelID %d in new API", channelID)
 		return 0, nil, fmt.Errorf("no channel found for channelID %d in new API", channelID)
 	}

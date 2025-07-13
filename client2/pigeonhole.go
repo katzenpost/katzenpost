@@ -506,7 +506,7 @@ func (d *Daemon) writeChannel(request *Request) {
 	d.newChannelMapLock.RLock()
 	channelDesc, ok := d.newChannelMap[channelID]
 	d.newChannelMapLock.RUnlock()
-	if !ok {
+	if !ok || channelDesc == nil {
 		d.log.Errorf("writeChannel failure: no channel found for channelID %d", channelID)
 		d.sendWriteChannelError(request, thin.ThinClientErrorChannelNotFound)
 		return
@@ -604,7 +604,7 @@ func (d *Daemon) readChannel(request *Request) {
 	channelDesc, ok := d.newChannelMap[channelID]
 	d.newChannelMapLock.RUnlock()
 
-	if !ok {
+	if !ok || channelDesc == nil {
 		d.log.Errorf("readChannel failure: no channel found for channelID %d", channelID)
 		d.sendReadChannelError(request, thin.ThinClientErrorChannelNotFound)
 		return
@@ -721,7 +721,7 @@ func (d *Daemon) closeChannel(request *Request) {
 	}
 	d.newChannelMapLock.Unlock()
 
-	if !ok {
+	if !ok || channelDesc == nil {
 		d.log.Debugf("closeChannel: channel %d not found (already closed or never existed)", channelID)
 		return
 	}
@@ -783,6 +783,10 @@ func (d *Daemon) cleanupChannelsForAppID(appID *[AppIDLength]byte) {
 
 	// First pass: find all channels that belong to this App ID directly
 	for channelID, channelDesc := range d.newChannelMap {
+		// Skip nil channel descriptors (these are placeholders from generateUniqueChannelID)
+		if channelDesc == nil {
+			continue
+		}
 		if channelDesc.AppID != nil && *channelDesc.AppID == *appID {
 			channelsToCleanup[channelID] = true
 		}
