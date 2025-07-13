@@ -60,13 +60,13 @@ func (e *EnvelopeDescriptor) Bytes() []byte {
 }
 
 // EnvelopeDescriptorFromBytes uses CBOR to deserialize the EnvelopeDescriptor.
-func EnvelopeDescriptorFromBytes(blob []byte) *EnvelopeDescriptor {
+func EnvelopeDescriptorFromBytes(blob []byte) (*EnvelopeDescriptor, error) {
 	var desc EnvelopeDescriptor
 	err := cbor.Unmarshal(blob, &desc)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
-	return &desc
+	return &desc, nil
 }
 
 // StoredEnvelopeData contains the envelope and associated box ID for reuse

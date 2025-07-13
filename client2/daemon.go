@@ -696,7 +696,12 @@ func (d *Daemon) resumeWriteChannelQuery(request *Request) {
 
 	// handle optional fields which are only used for resumption of a previously prepared write query blob
 	// store envelope descriptor for later use
-	envelopeDesc := EnvelopeDescriptorFromBytes(request.ResumeWriteChannelQuery.EnvelopeDescriptor)
+	envelopeDesc, err := EnvelopeDescriptorFromBytes(request.ResumeWriteChannelQuery.EnvelopeDescriptor)
+	if err != nil {
+		d.log.Errorf("resumeWriteChannelQuery: Failed to parse envelope descriptor: %v", err)
+		d.sendResumeWriteChannelQueryError(request, thin.ThinClientErrorInvalidRequest)
+		return
+	}
 	envHash := request.ResumeWriteChannelQuery.EnvelopeHash
 	myNewChannelDescriptor.EnvelopeDescriptors[*envHash] = envelopeDesc
 
@@ -927,7 +932,12 @@ func (d *Daemon) resumeReadChannelQuery(request *Request) {
 	}
 
 	// store envelope descriptor for later use
-	envelopeDesc := EnvelopeDescriptorFromBytes(request.ResumeReadChannelQuery.EnvelopeDescriptor)
+	envelopeDesc, err := EnvelopeDescriptorFromBytes(request.ResumeReadChannelQuery.EnvelopeDescriptor)
+	if err != nil {
+		d.log.Errorf("resumeReadChannelQuery: Failed to parse envelope descriptor: %v", err)
+		d.sendResumeReadChannelQueryError(request, thin.ThinClientErrorInvalidRequest)
+		return
+	}
 	envHash := request.ResumeReadChannelQuery.EnvelopeHash
 	myNewChannelDescriptor.EnvelopeDescriptors[*envHash] = envelopeDesc
 
