@@ -51,22 +51,22 @@ type EnvelopeDescriptor struct {
 }
 
 // Bytes uses CBOR to serialize the EnvelopeDescriptor.
-func (e *EnvelopeDescriptor) Bytes() []byte {
+func (e *EnvelopeDescriptor) Bytes() ([]byte, error) {
 	blob, err := cbor.Marshal(e)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
-	return blob
+	return blob, nil
 }
 
 // EnvelopeDescriptorFromBytes uses CBOR to deserialize the EnvelopeDescriptor.
-func EnvelopeDescriptorFromBytes(blob []byte) *EnvelopeDescriptor {
+func EnvelopeDescriptorFromBytes(blob []byte) (*EnvelopeDescriptor, error) {
 	var desc EnvelopeDescriptor
 	err := cbor.Unmarshal(blob, &desc)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
-	return &desc
+	return &desc, nil
 }
 
 // StoredEnvelopeData contains the envelope and associated box ID for reuse
@@ -91,14 +91,14 @@ type ChannelDescriptor struct {
 	EnvelopeDescriptorsLock sync.RWMutex
 }
 
-func GetRandomCourier(doc *cpki.Document) (*[hash.HashSize]byte, []byte) {
+func GetRandomCourier(doc *cpki.Document) (*[hash.HashSize]byte, []byte, error) {
 	courierServices := common.FindServices(constants.CourierServiceName, doc)
 	if len(courierServices) == 0 {
-		panic("wtf no courier services")
+		return nil, nil, fmt.Errorf("no courier services found in PKI document")
 	}
 	courierService := courierServices[secureRand.Intn(len(courierServices))]
 	serviceIdHash := hash.Sum256(courierService.MixDescriptor.IdentityKey)
-	return &serviceIdHash, courierService.RecipientQueueID
+	return &serviceIdHash, courierService.RecipientQueueID, nil
 }
 
 func NewPigeonholeChannel() (*bacap.StatefulWriter, *bacap.ReadCap, *bacap.WriteCap) {
@@ -506,7 +506,7 @@ func (d *Daemon) writeChannel(request *Request) {
 	d.newChannelMapLock.RLock()
 	channelDesc, ok := d.newChannelMap[channelID]
 	d.newChannelMapLock.RUnlock()
-	if !ok {
+	if !ok || channelDesc == nil {
 		d.log.Errorf("writeChannel failure: no channel found for channelID %d", channelID)
 		d.sendWriteChannelError(request, thin.ThinClientErrorChannelNotFound)
 		return
@@ -575,6 +575,13 @@ func (d *Daemon) writeChannel(request *Request) {
 		d.sendWriteChannelError(request, thin.ThinClientErrorConnectionLost)
 		return
 	}
+	envelopeDescriptorBytes, err := channelDesc.EnvelopeDescriptors[*envHash].Bytes()
+	if err != nil {
+		d.log.Errorf("writeChannel failure: failed to serialize envelope descriptor: %s", err)
+		d.sendWriteChannelError(request, thin.ThinClientErrorInternalError)
+		return
+	}
+
 	conn.sendResponse(&Response{
 		AppID: request.AppID,
 		WriteChannelReply: &thin.WriteChannelReply{
@@ -584,7 +591,7 @@ func (d *Daemon) writeChannel(request *Request) {
 			CurrentMessageIndex: channelDesc.StatefulWriter.GetCurrentMessageIndex(),
 			NextMessageIndex:    nextMessageIndex,
 			EnvelopeHash:        envHash,
-			EnvelopeDescriptor:  channelDesc.EnvelopeDescriptors[*envHash].Bytes(),
+			EnvelopeDescriptor:  envelopeDescriptorBytes,
 			ErrorCode:           thin.ThinClientSuccess,
 		},
 	})
@@ -597,7 +604,7 @@ func (d *Daemon) readChannel(request *Request) {
 	channelDesc, ok := d.newChannelMap[channelID]
 	d.newChannelMapLock.RUnlock()
 
-	if !ok {
+	if !ok || channelDesc == nil {
 		d.log.Errorf("readChannel failure: no channel found for channelID %d", channelID)
 		d.sendReadChannelError(request, thin.ThinClientErrorChannelNotFound)
 		return
@@ -678,6 +685,13 @@ func (d *Daemon) readChannel(request *Request) {
 		d.sendReadChannelError(request, thin.ThinClientErrorConnectionLost)
 		return
 	}
+	envelopeDescriptorBytes, err := channelDesc.EnvelopeDescriptors[*envHash].Bytes()
+	if err != nil {
+		d.log.Errorf("readChannel failure: failed to serialize envelope descriptor: %s", err)
+		d.sendReadChannelError(request, thin.ThinClientErrorInternalError)
+		return
+	}
+
 	conn.sendResponse(&Response{
 		AppID: request.AppID,
 		ReadChannelReply: &thin.ReadChannelReply{
@@ -689,7 +703,7 @@ func (d *Daemon) readChannel(request *Request) {
 			NextMessageIndex:    nextMessageIndex,
 			ReplyIndex:          request.ReadChannel.ReplyIndex,
 			EnvelopeHash:        envHash,
-			EnvelopeDescriptor:  channelDesc.EnvelopeDescriptors[*envHash].Bytes(),
+			EnvelopeDescriptor:  envelopeDescriptorBytes,
 		},
 	})
 }
@@ -707,7 +721,7 @@ func (d *Daemon) closeChannel(request *Request) {
 	}
 	d.newChannelMapLock.Unlock()
 
-	if !ok {
+	if !ok || channelDesc == nil {
 		d.log.Debugf("closeChannel: channel %d not found (already closed or never existed)", channelID)
 		return
 	}
@@ -769,6 +783,10 @@ func (d *Daemon) cleanupChannelsForAppID(appID *[AppIDLength]byte) {
 
 	// First pass: find all channels that belong to this App ID directly
 	for channelID, channelDesc := range d.newChannelMap {
+		// Skip nil channel descriptors (these are placeholders from generateUniqueChannelID)
+		if channelDesc == nil {
+			continue
+		}
 		if channelDesc.AppID != nil && *channelDesc.AppID == *appID {
 			channelsToCleanup[channelID] = true
 		}

@@ -150,14 +150,13 @@ func NewDaemon(cfg *config.Config) (*Daemon, error) {
 
 // generateUniqueChannelID generates a unique uint16 channel ID that's not already in use
 func (d *Daemon) generateUniqueChannelID() uint16 {
-	d.newChannelMapLock.Lock()
-	defer d.newChannelMapLock.Unlock()
+	d.newChannelMapLock.RLock()
+	defer d.newChannelMapLock.RUnlock()
 
 	for {
 		channelID := uint16(hpqcRand.NewMath().Intn(65535) + 1) // [1, 65535]
 
 		if _, exists := d.newChannelMap[channelID]; !exists {
-			d.newChannelMap[channelID] = nil
 			return channelID
 		}
 	}
@@ -696,7 +695,12 @@ func (d *Daemon) resumeWriteChannelQuery(request *Request) {
 
 	// handle optional fields which are only used for resumption of a previously prepared write query blob
 	// store envelope descriptor for later use
-	envelopeDesc := EnvelopeDescriptorFromBytes(request.ResumeWriteChannelQuery.EnvelopeDescriptor)
+	envelopeDesc, err := EnvelopeDescriptorFromBytes(request.ResumeWriteChannelQuery.EnvelopeDescriptor)
+	if err != nil {
+		d.log.Errorf("resumeWriteChannelQuery: Failed to parse envelope descriptor: %v", err)
+		d.sendResumeWriteChannelQueryError(request, thin.ThinClientErrorInvalidRequest)
+		return
+	}
 	envHash := request.ResumeWriteChannelQuery.EnvelopeHash
 	myNewChannelDescriptor.EnvelopeDescriptors[*envHash] = envelopeDesc
 
@@ -927,7 +931,12 @@ func (d *Daemon) resumeReadChannelQuery(request *Request) {
 	}
 
 	// store envelope descriptor for later use
-	envelopeDesc := EnvelopeDescriptorFromBytes(request.ResumeReadChannelQuery.EnvelopeDescriptor)
+	envelopeDesc, err := EnvelopeDescriptorFromBytes(request.ResumeReadChannelQuery.EnvelopeDescriptor)
+	if err != nil {
+		d.log.Errorf("resumeReadChannelQuery: Failed to parse envelope descriptor: %v", err)
+		d.sendResumeReadChannelQueryError(request, thin.ThinClientErrorInvalidRequest)
+		return
+	}
 	envHash := request.ResumeReadChannelQuery.EnvelopeHash
 	myNewChannelDescriptor.EnvelopeDescriptors[*envHash] = envelopeDesc
 
@@ -1152,7 +1161,7 @@ func (d *Daemon) lookupNewChannel(surbid *[sphinxConstants.SURBIDLength]byte) (u
 	d.newChannelMapLock.RLock()
 	channelDesc, ok := d.newChannelMap[channelID]
 	d.newChannelMapLock.RUnlock()
-	if !ok {
+	if !ok || channelDesc == nil {
 		d.log.Errorf("BUG no channel found for channelID %d in new API", channelID)
 		return 0, nil, fmt.Errorf("no channel found for channelID %d in new API", channelID)
 	}
