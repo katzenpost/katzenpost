@@ -29,8 +29,10 @@ func cleanupAttempt(t *testing.T, cancel context.CancelFunc, client *thin.ThinCl
 	client.StopEventSink(eventSink)
 }
 
-// note that this test is meaningful although the close command does not
-// have a corresponding reply type to tell us if the close failed or not.
+// Note that the close command does not have a corresponding reply type to tell
+// us if the close failed or not. We are not using the return error from CloseChannel
+// to determine if it was successful, instead we use ResumeWriteChannel to determine
+// if our CloseChannel was successful.
 func TestChannelClose(t *testing.T) {
 	aliceThinClient := setupThinClient(t)
 	defer aliceThinClient.Close()
@@ -58,6 +60,12 @@ func TestChannelClose(t *testing.T) {
 	require.NoError(t, err)
 }
 
+// In this test:
+// 1. Alice creates a write channel
+// 2. write two messages to the channel
+// 4. Bob creates the read channel
+// 5. Bob reads those two messages
+// 6. Verify payloads match.
 func TestChannelAPIBasics(t *testing.T) {
 	aliceThinClient := setupThinClient(t)
 	defer aliceThinClient.Close()
@@ -160,6 +168,16 @@ func TestChannelAPIBasics(t *testing.T) {
 	bobThinClient.CloseChannel(ctx, bobChannelID)
 }
 
+// this test tests the resumption of a write channel
+// using our ResumeWriteChannel method, in several steps:
+// 1. create a write channel
+// 2. write the first message onto the channel
+// 3. close the channel
+// 4. resume the channel
+// 5. write the second message onto the channel
+// 6. create a read channel
+// 7. read first and second message from the channel
+// 8. verify payloads match
 func TestResumeWriteChannel(t *testing.T) {
 	aliceThinClient := setupThinClient(t)
 	defer aliceThinClient.Close()
@@ -269,6 +287,18 @@ func TestResumeWriteChannel(t *testing.T) {
 	bobThinClient.CloseChannel(ctx, bobChannelID)
 }
 
+// testing of the ResumeWriteChannelQuery method
+// which allows us to resume *after* we've already
+// written to the channel. in several steps:
+// 1. create write channel
+// 2. create first write query message but do not sendto channel yet
+// 3. close channel
+// 4. resume write channel with query via ResumeWriteChannelQuery
+// 5. send resumed write query to channel
+// 6. send second message to channel
+// 7. create read channel
+// 8. read both messages from channel
+// 9. verify payloads match
 func TestResumeWriteChannelQuery(t *testing.T) {
 	aliceThinClient := setupThinClient(t)
 	defer aliceThinClient.Close()
@@ -384,6 +414,16 @@ func TestResumeWriteChannelQuery(t *testing.T) {
 	bobThinClient.CloseChannel(ctx, bobChannelID)
 }
 
+// here we test our ResumeReadChannel method in several steps:
+// 1. create a write channel
+// 2. write two messages to the channel
+// 3. create a read channel
+// 4. read the first message from the channel
+// 5. verify payload matches
+// 6. close the read channel
+// 7. resume the read channel
+// 8. read the second message from the channel
+// 9. verify payload matches
 func TestResumeReadChannel(t *testing.T) {
 	aliceThinClient := setupThinClient(t)
 	defer aliceThinClient.Close()
@@ -490,6 +530,17 @@ func TestResumeReadChannel(t *testing.T) {
 	bobThinClient.CloseChannel(ctx, bobChannelID)
 }
 
+// test ResumeReadChannelQuery method in several steps:
+// 1. create a write channel
+// 2. write two messages to the channel
+// 3. create read channel
+// 4. make read query but do not send it
+// 5. close read channel
+// 6. resume read channel query with ResumeReadChannelQuery method
+// 7. send previously made read query to channel
+// 8. verify received payload matches
+// 9. read second message from channel
+// 10. verify received payload matches
 func TestResumeReadChannelQuery(t *testing.T) {
 	aliceThinClient := setupThinClient(t)
 	defer aliceThinClient.Close()
