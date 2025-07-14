@@ -146,7 +146,7 @@ github.com/katzenpost/circl/sign/ed448
 github.com/katzenpost/circl/sign/eddilithium2
 github.com/katzenpost/circl/sign/eddilithium3
 github.com/katzenpost/circl/simd/keccakf1600
-# github.com/katzenpost/hpqc v0.0.67
+# github.com/katzenpost/hpqc v0.0.68
 ## explicit; go 1.23.0
 github.com/katzenpost/hpqc/bacap
 github.com/katzenpost/hpqc/hash
@@ -407,7 +407,7 @@ golang.org/x/net/internal/socks
 golang.org/x/net/ipv4
 golang.org/x/net/ipv6
 golang.org/x/net/proxy
-# golang.org/x/sync v0.15.0
+# golang.org/x/sync v0.16.0
 ## explicit; go 1.23.0
 golang.org/x/sync/errgroup
 # golang.org/x/sys v0.33.0
@@ -419,7 +419,7 @@ golang.org/x/sys/windows
 # golang.org/x/term v0.32.0
 ## explicit; go 1.23.0
 golang.org/x/term
-# golang.org/x/text v0.26.0
+# golang.org/x/text v0.27.0
 ## explicit; go 1.23.0
 golang.org/x/text/cases
 golang.org/x/text/internal

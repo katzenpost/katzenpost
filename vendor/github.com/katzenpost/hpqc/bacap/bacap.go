@@ -428,7 +428,13 @@ func (o *WriteCap) ReadCap() *ReadCap {
 	ret.rootPublicKey = o.rootPublicKey
 	// NB: o is the firstIndex that we know about/can read,
 	// not necessarily the first index in the conversation:
-	ret.firstMessageBoxIndex = o.firstMessageBoxIndex
+	// Create a copy of the firstMessageBoxIndex to avoid pointer sharing
+	ret.firstMessageBoxIndex = &MessageBoxIndex{
+		Idx64:             o.firstMessageBoxIndex.Idx64,
+		CurBlindingFactor: o.firstMessageBoxIndex.CurBlindingFactor,
+		CurEncryptionKey:  o.firstMessageBoxIndex.CurEncryptionKey,
+		HKDFState:         o.firstMessageBoxIndex.HKDFState,
+	}
 	return &ret
 }
 

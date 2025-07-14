@@ -4,37 +4,65 @@
 package thin
 
 import (
-	"encoding/hex"
 	"fmt"
 	"time"
 
 	"github.com/katzenpost/hpqc/bacap"
 
 	cpki "github.com/katzenpost/katzenpost/core/pki"
-	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 )
 
+// ChannelIDLength is the length of the channel ID in bytes.
 const ChannelIDLength = 32
 
-// Event is the generic event sent over the event listener channel.
+// Event is the generic interface for all events sent by the thin client.
+//
+// Events are sent through channels returned by EventSink() and provide
+// asynchronous notification of various client operations and status changes.
+// Applications should use type assertions to handle specific event types.
+//
+// Common event types include:
+//   - ConnectionStatusEvent: Connection state changes
+//   - MessageReplyEvent: Replies to sent messages
+//   - NewDocumentEvent: PKI document updates
+//   - Channel operation events (CreateWriteChannelReply, etc.)
 type Event interface {
-	// String returns a string representation of the Event.
+	// String returns a human-readable string representation of the Event.
 	String() string
 }
 
+// ShutdownEvent is sent when the client daemon is shutting down.
+//
+// This event indicates that the daemon is terminating and the thin client
+// connection will be lost. Applications should handle this event by
+// performing cleanup and potentially attempting to reconnect.
 type ShutdownEvent struct{}
 
+// String returns a string representation of the ShutdownEvent.
 func (e *ShutdownEvent) String() string {
 	return "ShutdownEvent"
 }
 
-// ConnectionStatusEvent is the event sent when an account's connection status
-// changes.
+// ConnectionStatusEvent is sent when the daemon's connection status changes.
+//
+// This event indicates whether the client daemon is currently connected to
+// the mixnet infrastructure. When IsConnected is false, the client operates
+// in "offline mode" where channel preparation operations work but actual
+// message transmission will fail.
+//
+// Applications can use this event to:
+//   - Display connection status to users
+//   - Queue operations for later transmission when offline
+//   - Implement retry logic for failed operations
 type ConnectionStatusEvent struct {
-	// IsConnected is true iff the client is connected to the entry node.
+	// IsConnected indicates whether the daemon is connected to the mixnet.
+	// When true, full functionality is available. When false, only offline
+	// operations (channel preparation) will work.
 	IsConnected bool `cbor:"is_connected"`
 
-	// Err is the error encountered when connecting or by the connection if any.
+	// Err contains any error that caused a disconnection. This field is
+	// nil when IsConnected is true or when the disconnection was intentional.
 	Err error `cbor:"err"`
 }
 
@@ -54,7 +82,7 @@ type MessageReplyEvent struct {
 
 	// SURBID must be a unique identity for each request.
 	// This field should be nil if WithSURB is false.
-	SURBID *[sConstants.SURBIDLength]byte `cbor:"surbid"`
+	SURBID *[constants.SURBIDLength]byte `cbor:"surbid"`
 
 	// Payload is the reply payload if any.
 	Payload []byte `cbor:"payload"`
@@ -76,9 +104,9 @@ func (e *MessageReplyEvent) String() string {
 		replyIndexStr = fmt.Sprintf(" replyIndex=%d", *e.ReplyIndex)
 	}
 	if e.ErrorCode != ThinClientSuccess {
-		return fmt.Sprintf("MessageReply: %v%s failed: %s", hex.EncodeToString(e.MessageID[:]), replyIndexStr, ThinClientErrorToString(e.ErrorCode))
+		return fmt.Sprintf("MessageReply: %x %s failed: %s", e.MessageID[:], replyIndexStr, ThinClientErrorToString(e.ErrorCode))
 	}
-	return fmt.Sprintf("KaetzchenReply: %v%s (%v bytes)", hex.EncodeToString(e.MessageID[:]), replyIndexStr, len(e.Payload))
+	return fmt.Sprintf("KaetzchenReply: %x %s (%v bytes)", e.MessageID[:], replyIndexStr, len(e.Payload))
 }
 
 // MessageSentEvent is the event sent when a message has been fully transmitted.
@@ -89,7 +117,7 @@ type MessageSentEvent struct {
 
 	// SURBID must be a unique identity for each request.
 	// This field should be nil if WithSURB is false.
-	SURBID *[sConstants.SURBIDLength]byte `cbor:"surbid"`
+	SURBID *[constants.SURBIDLength]byte `cbor:"surbid"`
 
 	// SentAt contains the time the message was sent.
 	SentAt time.Time `cbor:"sent_at"`
@@ -105,9 +133,9 @@ type MessageSentEvent struct {
 // String returns a string representation of a MessageSentEvent.
 func (e *MessageSentEvent) String() string {
 	if e.Err != "" {
-		return fmt.Sprintf("MessageSent: %v failed: %v", hex.EncodeToString(e.MessageID[:]), e.Err)
+		return fmt.Sprintf("MessageSent: %x failed: %v", e.MessageID[:], e.Err)
 	}
-	return fmt.Sprintf("MessageSent: %v", hex.EncodeToString(e.MessageID[:]))
+	return fmt.Sprintf("MessageSent: %x", e.MessageID[:])
 }
 
 // MessageIDGarbageCollected is the event used to signal when a given
@@ -119,7 +147,7 @@ type MessageIDGarbageCollected struct {
 
 // String returns a string representation of a MessageIDGarbageCollected.
 func (e *MessageIDGarbageCollected) String() string {
-	return fmt.Sprintf("MessageIDGarbageCollected: %v", hex.EncodeToString(e.MessageID[:]))
+	return fmt.Sprintf("MessageIDGarbageCollected: %x", e.MessageID[:])
 }
 
 // NewDocumentEvent is the new document event, signaling that
@@ -171,13 +199,17 @@ type CreateWriteChannelReply struct {
 	// persistence and resumption across client restarts.
 	WriteCap *bacap.WriteCap `cbor:"write_cap"`
 
-	// NextMessageIndex indicates the current write position in the channel,
-	// used for tracking message ordering and resumption.
-	NextMessageIndex *bacap.MessageBoxIndex `cbor:"next_message_index"`
-
 	// ErrorCode indicates the success or failure of the channel creation.
 	// A value of ThinClientErrorSuccess indicates successful creation.
 	ErrorCode uint8 `cbor:"error_code"`
+}
+
+// String returns a string representation of the CreateWriteChannelReply.
+func (e *CreateWriteChannelReply) String() string {
+	if e.ErrorCode != ThinClientSuccess {
+		return fmt.Sprintf("CreateWriteChannelReply: %d (error: %s)", e.ChannelID, ThinClientErrorToString(e.ErrorCode))
+	}
+	return fmt.Sprintf("CreateWriteChannelReply: %d", e.ChannelID)
 }
 
 // CreateReadChannelReply is sent in response to a CreateReadChannel request.
@@ -191,10 +223,6 @@ type CreateReadChannelReply struct {
 	// ChannelID is the unique identifier for the created read channel, used in
 	// subsequent ReadChannel operations.
 	ChannelID uint16 `cbor:"channel_id"`
-
-	// NextMessageIndex indicates the current read position in the channel,
-	// showing where the next read operation will start from.
-	NextMessageIndex *bacap.MessageBoxIndex `cbor:"next_message_index"`
 
 	// ErrorCode indicates the success or failure of the channel creation.
 	// A value of ThinClientErrorSuccess indicates successful creation.
@@ -213,6 +241,10 @@ func (e *CreateReadChannelReply) String() string {
 // It provides the prepared message payload that should be sent through the mixnet
 // to complete the channel write operation.
 type WriteChannelReply struct {
+	// QueryID is used for correlating this reply with the WriteChannel request
+	// that created it.
+	QueryID *[QueryIDLength]byte `cbor:"query_id"`
+
 	// ChannelID identifies the channel this reply corresponds to.
 	ChannelID uint16 `cbor:"channel_id"`
 
@@ -220,16 +252,15 @@ type WriteChannelReply struct {
 	// sent via SendChannelQuery to complete the write operation.
 	SendMessagePayload []byte `cbor:"send_message_payload"`
 
+	// CurrentMessageIndex indicates the message index for the current message.
+	CurrentMessageIndex *bacap.MessageBoxIndex `cbor:"current_message_index"`
+
 	// NextMessageIndex indicates the message index to use after the courier
 	// acknowledges successful delivery of this message.
 	NextMessageIndex *bacap.MessageBoxIndex `cbor:"next_message_index"`
 
-	// QueryID is used for correlating this reply with the WriteChannel request
-	// that created it.
-	QueryID *[QueryIDLength]byte `cbor:"query_id"`
-
 	// EnvelopeHash is the hash of the CourierEnvelope that was sent to the
-	EnvelopeHash [32]byte `cbor:"envelope_hash"`
+	EnvelopeHash *[32]byte `cbor:"envelope_hash"`
 
 	// EnvelopeDescriptor contains the serialized EnvelopeDescriptor that
 	// contains the private key material needed to decrypt the envelope reply.
@@ -259,9 +290,16 @@ type ReadChannelReply struct {
 	// ChannelID identifies the channel this reply corresponds to.
 	ChannelID uint16 `cbor:"channel_id"`
 
+	// ErrorCode indicates the success or failure of preparing the read operation.
+	// A value of ThinClientErrorSuccess indicates the query is ready to send.
+	ErrorCode uint8 `cbor:"error_code"`
+
 	// SendMessagePayload contains the prepared query that should be sent via
 	// SendChannelQuery to retrieve the next message from the channel.
 	SendMessagePayload []byte `cbor:"send_message_payload"`
+
+	// CurrentMessageIndex indicates the message index for the current message.
+	CurrentMessageIndex *bacap.MessageBoxIndex `cbor:"current_message_index"`
 
 	// NextMessageIndex indicates the message index to use after successfully
 	// reading the current message.
@@ -271,9 +309,13 @@ type ReadChannelReply struct {
 	// This corresponds to the ReplyIndex parameter from the ReadChannel request.
 	ReplyIndex *uint8 `cbor:"reply_index"`
 
-	// ErrorCode indicates the success or failure of preparing the read operation.
-	// A value of ThinClientErrorSuccess indicates the query is ready to send.
-	ErrorCode uint8 `cbor:"error_code"`
+	// EnvelopeHash is the hash of the CourierEnvelope that was sent to the
+	// mixnet and is used to resume the read operation.
+	EnvelopeHash *[32]byte `cbor:"envelope_hash"`
+
+	// EnvelopeDescriptor contains the serialized EnvelopeDescriptor that
+	// contains the private key material needed to decrypt the envelope reply.
+	EnvelopeDescriptor []byte `cbor:"envelope_descriptor"`
 }
 
 // String returns a string representation of the ReadChannelReply.
@@ -290,4 +332,171 @@ func (e *ReadChannelReply) String() string {
 		return fmt.Sprintf("ReadChannelReply: msgID=%s channel=%d%s (error: %s)", msgIDStr, e.ChannelID, replyIndexStr, ThinClientErrorToString(e.ErrorCode))
 	}
 	return fmt.Sprintf("ReadChannelReply: msgID=%s channel=%d%s (%d bytes payload)", msgIDStr, e.ChannelID, replyIndexStr, len(e.SendMessagePayload))
+}
+
+// ResumeWriteChannelReply is sent in response to a ResumeWriteChannel request.
+// It indicates whether the resume operation was successful or not.
+type ResumeWriteChannelReply struct {
+	// QueryID is used for correlating this reply with the ResumeWriteChannel request
+	// that created it.
+	QueryID *[QueryIDLength]byte `cbor:"query_id"`
+
+	// ChannelID is the unique identifier for the resumed channel, used in
+	// subsequent WriteChannel operations.
+	ChannelID uint16 `cbor:"channel_id"`
+
+	// ErrorCode indicates the success or failure of preparing the write operation
+	// resumption. A value of ThinClientErrorSuccess indicates the payload is ready
+	// to send in a subsequent SendChannelQuery call.
+	ErrorCode uint8 `cbor:"error_code"`
+}
+
+// String returns a string representation of the ResumeWriteChannelReply.
+func (e *ResumeWriteChannelReply) String() string {
+	msgIDStr := "nil"
+	if e.QueryID != nil {
+		msgIDStr = fmt.Sprintf("%x", e.QueryID)
+	}
+	if e.ErrorCode != ThinClientSuccess {
+		return fmt.Sprintf("ResumeWriteChannelReply: msgID=%s (error: %s)", msgIDStr, ThinClientErrorToString(e.ErrorCode))
+	}
+	return fmt.Sprintf("ResumeWriteChannelReply: msgID=%s", msgIDStr)
+}
+
+// ResumeWriteChannelReply is sent in response to a ResumeWriteChannel request.
+// It indicates whether the resume operation was successful or not.
+type ResumeWriteChannelQueryReply struct {
+	// QueryID is used for correlating this reply with the ResumeWriteChannel request
+	// that created it.
+	QueryID *[QueryIDLength]byte `cbor:"query_id"`
+
+	// ChannelID is the unique identifier for the resumed channel, used in
+	// subsequent WriteChannel operations.
+	ChannelID uint16 `cbor:"channel_id"`
+
+	// ErrorCode indicates the success or failure of preparing the write operation
+	// resumption. A value of ThinClientErrorSuccess indicates the payload is ready
+	// to send in a subsequent SendChannelQuery call.
+	ErrorCode uint8 `cbor:"error_code"`
+}
+
+// String returns a string representation of the ResumeWriteChannelReply.
+func (e *ResumeWriteChannelQueryReply) String() string {
+	msgIDStr := "nil"
+	if e.QueryID != nil {
+		msgIDStr = fmt.Sprintf("%x", e.QueryID)
+	}
+	if e.ErrorCode != ThinClientSuccess {
+		return fmt.Sprintf("ResumeWriteChannelReply: msgID=%s (error: %s)", msgIDStr, ThinClientErrorToString(e.ErrorCode))
+	}
+	return fmt.Sprintf("ResumeWriteChannelReply: msgID=%s", msgIDStr)
+}
+
+// ResumeReadChannelReply is sent in response to a ResumeReadChannel request.
+// It indicates whether the resume operation was successful or not.
+type ResumeReadChannelReply struct {
+	// QueryID is used for correlating this reply with the ResumeReadChannel request
+	// that created it.
+	QueryID *[QueryIDLength]byte `cbor:"query_id"`
+
+	// ChannelID is the unique identifier for the resumed channel, used in
+	// subsequent ReadChannel operations.
+	ChannelID uint16 `cbor:"channel_id"`
+
+	// ErrorCode indicates the success or failure of preparing the read operation
+	// resumption. A value of ThinClientErrorSuccess indicates the query is ready
+	// to send in a subsequent SendChannelQuery call.
+	ErrorCode uint8 `cbor:"error_code"`
+}
+
+// String returns a string representation of the ResumeReadChannelReply.
+func (e *ResumeReadChannelReply) String() string {
+	msgIDStr := "nil"
+	if e.QueryID != nil {
+		msgIDStr = fmt.Sprintf("%x", e.QueryID)
+	}
+	if e.ErrorCode != ThinClientSuccess {
+		return fmt.Sprintf("ResumeReadChannelReply: msgID=%s (error: %s)", msgIDStr, ThinClientErrorToString(e.ErrorCode))
+	}
+	return fmt.Sprintf("ResumeReadChannelReply: msgID=%s", msgIDStr)
+}
+
+// ResumeReadChannelReply is sent in response to a ResumeReadChannel request.
+// It indicates whether the resume operation was successful or not.
+type ResumeReadChannelQueryReply struct {
+	// QueryID is used for correlating this reply with the ResumeReadChannel request
+	// that created it.
+	QueryID *[QueryIDLength]byte `cbor:"query_id"`
+
+	// ChannelID is the unique identifier for the resumed channel, used in
+	// subsequent ReadChannel operations.
+	ChannelID uint16 `cbor:"channel_id"`
+
+	// ErrorCode indicates the success or failure of preparing the read operation
+	// resumption. A value of ThinClientErrorSuccess indicates the query is ready
+	// to send in a subsequent SendChannelQuery call.
+	ErrorCode uint8 `cbor:"error_code"`
+}
+
+// String returns a string representation of the ResumeReadChannelReply.
+func (e *ResumeReadChannelQueryReply) String() string {
+	msgIDStr := "nil"
+	if e.QueryID != nil {
+		msgIDStr = fmt.Sprintf("%x", e.QueryID)
+	}
+	if e.ErrorCode != ThinClientSuccess {
+		return fmt.Sprintf("ResumeReadChannelReply: msgID=%s (error: %s)", msgIDStr, ThinClientErrorToString(e.ErrorCode))
+	}
+	return fmt.Sprintf("ResumeReadChannelReply: msgID=%s", msgIDStr)
+}
+
+// ChannelQuerySentEvent is the event sent when a message has been fully transmitted.
+type ChannelQuerySentEvent struct {
+	// MessageID is the unique identifier for the request associated with the
+	// query sent in the SendChannelQuery command.
+	MessageID *[MessageIDLength]byte `cbor:"message_id"`
+
+	// SentAt contains the time the message was sent.
+	SentAt time.Time `cbor:"sent_at"`
+
+	// ReplyETA is the expected round trip time to receive a response.
+	ReplyETA time.Duration `cbor:"reply_eta"`
+
+	// ErrorCode indicates the success or failure of sending the channel query.
+	// A value of ThinClientErrorSuccess indicates the query was successfully sent.
+	ErrorCode uint8 `cbor:"error_code"`
+}
+
+// String returns a string representation of a MessageSentEvent.
+func (e *ChannelQuerySentEvent) String() string {
+	if e.ErrorCode != ThinClientSuccess {
+		return fmt.Sprintf("ChannelQuerySentEvent: %x failed: %s", e.MessageID[:], ThinClientErrorToString(e.ErrorCode))
+	}
+	return fmt.Sprintf("ChannelQuerySentEvent: %x", e.MessageID[:])
+}
+
+// ChannelQueryReplyEvent is the event sent when a new message is received.
+type ChannelQueryReplyEvent struct {
+	// MessageID is the unique identifier for the request associated with the
+	// query sent in the SendChannelQuery command.
+	MessageID *[MessageIDLength]byte `cbor:"message_id"`
+
+	// Payload is the reply payload if any.
+	Payload []byte `cbor:"payload"`
+
+	// ReplyIndex is the index of the reply that was actually used when processing
+	// this message. This is particularly relevant for pigeonhole channel reads.
+	ReplyIndex *uint8 `cbor:"reply_index"`
+
+	// ErrorCode indicates the success or failure of sending the channel query.
+	// A value of ThinClientErrorSuccess indicates the query was successfully sent.
+	ErrorCode uint8 `cbor:"error_code"`
+}
+
+// String returns a string representation of the ChannelQueryReplyEvent.
+func (e *ChannelQueryReplyEvent) String() string {
+	if e.ErrorCode != ThinClientSuccess {
+		return fmt.Sprintf("ChannelQueryReplyEvent: msgID=%x (error: %s)", e.MessageID[:], ThinClientErrorToString(e.ErrorCode))
+	}
+	return fmt.Sprintf("ChannelQueryReplyEvent: msgID=%x", e.MessageID[:])
 }
