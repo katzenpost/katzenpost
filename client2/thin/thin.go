@@ -2079,14 +2079,11 @@ func (t *ThinClient) ResumeWriteChannelQuery(
 // to retrieve the next message from the channel. The actual transmission is
 // performed separately using SendChannelQuery() or SendChannelQueryAwaitReply().
 //
-// The method allows for both sequential reading (by passing nil for both
-// optional parameters) and random access reading (by specifying exact
-// message and reply indices).
-//
-// This separation allows for:
-//   - State management and persistence between preparation and transmission
-//   - Retry logic and error recovery
-//   - Offline operation (preparation works without mixnet connectivity)
+// Note that the last two parameters are useful if you want to send two read
+// queries to the same Box id in order to retrieve two different replies. Our
+// current sharding scheme ensures that two storage replicas will store a copy
+// of the Box we are interested in reading. Thus we can optionally select the
+// specific storage replica to query.
 //
 // Parameters:
 //   - ctx: Context for cancellation and timeout control
@@ -2098,7 +2095,7 @@ func (t *ThinClient) ResumeWriteChannelQuery(
 //   - *ReadChannelReply: Contains prepared query payload and state information
 //   - error: Any error encountered during preparation
 //
-// Example (sequential reading):
+// Example:
 //
 //	// Read the next message in sequence
 //	readReply, err := client.ReadChannel(ctx, channelID, nil, nil)
@@ -2111,13 +2108,6 @@ func (t *ThinClient) ResumeWriteChannelQuery(
 //	messageID := client.NewMessageID()
 //	replyPayload, err := client.SendChannelQueryAwaitReply(ctx, channelID,
 //		readReply.SendMessagePayload, destNode, destQueue, messageID)
-//
-// Example (random access reading):
-//
-//	// Read a specific message
-//	messageIndex := &bacap.MessageBoxIndex{...} // specific index
-//	replyIndex := uint8(0) // first reply in the message
-//	readReply, err := client.ReadChannel(ctx, channelID, messageIndex, &replyIndex)
 func (t *ThinClient) ReadChannel(ctx context.Context, channelID uint16, messageBoxIndex *bacap.MessageBoxIndex, replyIndex *uint8) (*ReadChannelReply, error) {
 	if ctx == nil {
 		return nil, errContextCannotBeNil
