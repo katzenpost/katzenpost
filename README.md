@@ -37,6 +37,21 @@ specification documents for the new protocols:
 [Pigeonhole Protocol Specification](https://katzenpost.network/docs/specs/pigeonhole/)
 [Group Chat Protocol Specification](https://katzenpost.network/docs/specs/group_chat.html)
 
+Within this repo there are some old deprecated APIs which are associated with the "old client":
+
+* client
+* minclient
+* stream
+* map
+* cmd/http-proxy-client
+* cmd/http-proxy-server
+* cmd/katzencat
+* cmd/katzencopy
+* cmd/map
+
+**PLEASE TAKE CARE TO AVOID USING THESE DEPRECATED SECTIONS OF OUR CODEBASE!**
+
+
 # Building Katzenpost
 
 ## Build Targets
@@ -131,14 +146,24 @@ the makefile in the docker directory to get a usage menu:
 ```bash
 $ cd katzenpost/docker; make 
 These make targets allow you to control the test network:
- run                - run the testnet in the foreground, until ctrl-C
- start              - start the testnet in the background
+ config-only        - generate configuration files only (no docker containers)
+ start              - start the testnet
  stop               - stop the testnet
+ client-restart     - restart just the kpclientd daemon
+ client-logs        - view kpclientd daemon logs
  wait               - wait for testnet to have consensus
  watch              - tail -F all logs
+ watch-replicas     - monitor all replica logs
+ watch-auth         - monitor all directory authority logs
+ watch-mixes        - monitor all mix node logs
+ watch-courier      - monitor courier service log
+ watch-servicenode  - monitor service node log
+ watch-gateway      - monitor gateway log
+ watch-all-separate - monitor all logs with component labels
  status             - show testnet consensus status
  show-latest-vote   - does what it says
  run-ping           - send a ping over the testnet
+ clean-bin          - stop, and delete compiled binaries
  clean-local        - stop, and delete data and binaries
  clean-local-dryrun - show what clean-local would delete
  clean              - the above, plus cleans includes go_deps images
