@@ -17,9 +17,7 @@ type sender struct {
 	in  chan *Request
 	out chan *Request
 
-	sendMessageOrDrop *ExpDist
-	sendDrop          *ExpDist
-	sendLoop          *ExpDist
+	sendMessageOrLoop *ExpDist
 
 	disableDecoys bool
 }
@@ -30,12 +28,10 @@ type sender struct {
 // a rate set.
 func newSender(in chan *Request, out chan *Request, disableDecoys bool, logBackend *log.Backend) *sender {
 	s := &sender{
-		log:               logBackend.GetLogger("client2/daemon"),
+		log:               logBackend.GetLogger("client2/sender"),
 		in:                in,
 		out:               out,
-		sendMessageOrDrop: NewExpDist(),
-		sendLoop:          NewExpDist(),
-		sendDrop:          NewExpDist(),
+		sendMessageOrLoop: NewExpDist(),
 		disableDecoys:     disableDecoys,
 	}
 	s.Go(s.worker)
@@ -44,26 +40,15 @@ func newSender(in chan *Request, out chan *Request, disableDecoys bool, logBacke
 
 // halt is called by the worker() routine when it exits
 func (s *sender) halt() {
-	s.log.Debug("sender stopping ExpDist workers")
-	s.sendMessageOrDrop.Halt()
-	s.log.Debug("sendMessageOrDrop stopped")
-	s.sendLoop.Halt()
-	s.log.Debug("sendLoop stopped")
-	s.sendDrop.Halt()
-	s.log.Debug("sendDrop stopped")
+	s.log.Debug("sender stopping ExpDist worker")
+	s.sendMessageOrLoop.Halt()
 }
 
 func (s *sender) worker() {
-	dropDecoyCh := s.sendDrop.OutCh()
-	loopDecoyCh := s.sendLoop.OutCh()
-	if s.disableDecoys {
-		loopDecoyCh = make(<-chan struct{})
-		dropDecoyCh = make(<-chan struct{})
-	}
 	defer s.halt() // shutdown expdist workers on return after read from HaltCh()
 	for {
 		select {
-		case <-s.sendMessageOrDrop.OutCh():
+		case <-s.sendMessageOrLoop.OutCh():
 			var toSend *Request
 			select {
 			case toSend = <-s.in:
@@ -73,22 +58,8 @@ func (s *sender) worker() {
 				if s.disableDecoys {
 					continue
 				}
-				toSend = newDropDecoy()
+				toSend = newLoopDecoy()
 			}
-			select {
-			case s.out <- toSend:
-			case <-s.HaltCh():
-				return
-			}
-		case <-loopDecoyCh:
-			toSend := newLoopDecoy()
-			select {
-			case s.out <- toSend:
-			case <-s.HaltCh():
-				return
-			}
-		case <-dropDecoyCh:
-			toSend := newDropDecoy()
 			select {
 			case s.out <- toSend:
 			case <-s.HaltCh():
@@ -101,25 +72,15 @@ func (s *sender) worker() {
 }
 
 func (s *sender) UpdateConnectionStatus(isConnected bool) {
-	s.sendMessageOrDrop.UpdateConnectionStatus(isConnected)
-	s.sendLoop.UpdateConnectionStatus(isConnected)
-	s.sendDrop.UpdateConnectionStatus(isConnected)
+	s.sendMessageOrLoop.UpdateConnectionStatus(isConnected)
 }
 
 func (s *sender) UpdateRates(rates *Rates) {
-	s.sendMessageOrDrop.UpdateRate(uint64(1/rates.messageOrDrop), rates.messageOrDropMaxDelay)
-	s.sendLoop.UpdateRate(uint64(1/rates.loop), rates.loopMaxDelay)
-	s.sendDrop.UpdateRate(uint64(1/rates.drop), rates.dropMaxDelay)
+	s.sendMessageOrLoop.UpdateRate(uint64(1/rates.messageOrDrop), rates.messageOrDropMaxDelay)
 }
 
 func newLoopDecoy() *Request {
 	return &Request{
 		SendLoopDecoy: &SendLoopDecoy{},
-	}
-}
-
-func newDropDecoy() *Request {
-	return &Request{
-		SendDropDecoy: &SendDropDecoy{},
 	}
 }

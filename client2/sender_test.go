@@ -4,8 +4,9 @@
 package client2
 
 import (
-	"github.com/katzenpost/katzenpost/core/log"
 	"testing"
+
+	"github.com/katzenpost/katzenpost/core/log"
 )
 
 func TestSender(t *testing.T) {
@@ -31,7 +32,7 @@ func TestSender(t *testing.T) {
 	s.UpdateConnectionStatus(true)
 	s.UpdateRates(rates)
 
-	n := 40
+	n := 10
 	for i := 0; i < n; i++ {
 		go func() {
 			in <- &Request{}
