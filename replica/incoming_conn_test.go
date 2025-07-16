@@ -242,7 +242,6 @@ func TestIncomingConn(t *testing.T) {
 	reply3 := inConn.handleReplicaMessage(replicaMessage)
 	require.NotNil(t, reply3)
 	// Expect an error reply since we're using invalid cryptographic material
-	require.True(t, ok)
 	require.NotEqual(t, uint8(0), reply3.ErrorCode)
 
 	// 30 seconds is too slow
