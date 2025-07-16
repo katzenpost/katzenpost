@@ -95,6 +95,8 @@ type Request struct {
 	// that is sending this Request.
 	AppID *[AppIDLength]byte
 
+	// Channel API
+
 	CreateWriteChannel *thin.CreateWriteChannel
 
 	CreateReadChannel *thin.CreateReadChannel
@@ -113,17 +115,21 @@ type Request struct {
 
 	CloseChannel *thin.CloseChannel
 
+	SendChannelQuery *thin.SendChannelQuery
+
+	// Core functionality
+
 	ThinClose *thin.ThinClose
 
-	SendChannelQuery *thin.SendChannelQuery
+	// Decoys
+
+	SendLoopDecoy *SendLoopDecoy
+
+	SendDropDecoy *SendDropDecoy
 
 	// Legacy API
 
 	SendMessage *thin.SendMessage
 
 	SendARQMessage *thin.SendARQMessage
-
-	SendLoopDecoy *SendLoopDecoy
-
-	SendDropDecoy *SendDropDecoy
 }
