@@ -587,7 +587,8 @@ func generateTestPKIDocument(t *testing.T, epoch uint64, serviceDesc *pki.MixDes
 	return &pki.Document{
 		Epoch:              epoch,
 		SendRatePerMinute:  100,
-		LambdaP:            0.1,
+		LambdaP:            0.002,
+		LambdaPMaxDelay:    10000,
 		LambdaL:            0.1,
 		LambdaD:            0.1,
 		LambdaM:            0.1,
@@ -774,7 +775,7 @@ func aliceAndBobKeyExchangeKeys(t *testing.T, env *testEnvironment) (*bacap.Stat
 
 // waitForCourierPKI waits for the courier to have a PKI document
 func waitForCourierPKI(t *testing.T, env *testEnvironment) {
-	maxWait := 30 * time.Second
+	maxWait := 60 * time.Second // Increased for mixnet timing
 	checkInterval := 100 * time.Millisecond
 	start := time.Now()
 
@@ -791,7 +792,7 @@ func waitForCourierPKI(t *testing.T, env *testEnvironment) {
 
 // waitForReplicasPKI waits for all replicas to have PKI documents
 func waitForReplicasPKI(t *testing.T, env *testEnvironment) {
-	maxWait := 30 * time.Second
+	maxWait := 60 * time.Second // Increased for mixnet timing
 	checkInterval := 100 * time.Millisecond
 	start := time.Now()
 
@@ -1027,7 +1028,7 @@ func composeReadRequest(t *testing.T, env *testEnvironment, reader *bacap.Statef
 // waitForReplicaResponse waits for the courier to receive a reply by repeatedly trying the request
 // until we get a non-nil payload, indicating the replica response has been received
 func waitForReplicaResponse(t *testing.T, env *testEnvironment, envelope *pigeonhole.CourierEnvelope) *pigeonhole.CourierEnvelopeReply {
-	maxWait := 10 * time.Second
+	maxWait := 120 * time.Second // Increased to accommodate mixnet timing with constant time traffic
 	checkInterval := 100 * time.Millisecond
 	start := time.Now()
 
