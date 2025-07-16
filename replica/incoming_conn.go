@@ -104,26 +104,42 @@ func (c *incomingConn) worker() {
 
 	// Constant time message output whether or not decoy traffic
 	// is enabled.
-	inCh := make(chan *senderRequest)
+	inCh := make(chan *senderRequest, 100)
 	outCh := make(chan *senderRequest)
 	nikeScheme := nikeschemes.ByName(c.l.server.cfg.ReplicaNIKEScheme)
 	cmds := commands.NewStorageReplicaCommands(c.geo, nikeScheme)
 	sender := newSender(inCh, outCh, c.l.server.cfg.DisableDecoyTraffic, c.l.server.logBackend, cmds)
-	defer sender.halt()
 	sender.UpdateConnectionStatus(true)
 	doc := c.l.server.PKIWorker.PKIDocument()
+	if doc == nil {
+		c.log.Errorf("Failed to get PKI document")
+		return
+	}
 	// XXX FIXME(David): add a new lamda parameter to our pki doc format, lambdaR.
 	// for now use lambdaP
-	rate := uint64(1 / doc.LambdaP)
+	// LambdaP is the inverse of the rate, so rate = 1/LambdaP
+	rate := uint64(1.0 / doc.LambdaP)
+	if rate == 0 {
+		rate = 1 // Minimum rate of 1 message per time unit
+	}
 	maxDelay := doc.LambdaPMaxDelay
 	sender.UpdateRate(rate, maxDelay)
+
 	// Start command processing
 	c.Go(func() {
+		defer sender.UpdateConnectionStatus(false) // Mark as disconnected when command processing stops
 		c.processCommands(session, creds, inCh)
 	})
 	c.Go(func() {
 		c.egressSender(session, outCh)
 	})
+
+	// Wait for the connection to close
+	c.Wait()
+
+	// Halt sender after all workers have finished
+	sender.Halt()
+	sender.Wait()
 }
 
 func (c *incomingConn) egressSender(session *wire.Session, outCh chan *senderRequest) {
@@ -146,6 +162,7 @@ func (c *incomingConn) sendResponse(session *wire.Session, resp *senderRequest) 
 			return
 		}
 		if err := session.SendCommand(cmd); err != nil {
+			// Only log as debug since this is expected when connections close
 			c.log.Debugf("Failed to send response: %v", err)
 		}
 	} else {

@@ -75,6 +75,8 @@ func (s *sender) worker() {
 	defer s.halt() // shutdown expdist workers on return after read from HaltCh()
 	for {
 		select {
+		case <-s.HaltCh():
+			return
 		case <-s.sendQueryOrDecoy.OutCh():
 			var toSend *senderRequest
 			select {
