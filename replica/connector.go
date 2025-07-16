@@ -202,7 +202,7 @@ func (co *Connector) doReplication(cmd *commands.ReplicaWrite) {
 	successCount := 0
 	totalTargets := len(descs)
 
-	for i, desc := range descs {
+	for _, desc := range descs {
 		idHash := blake2b.Sum256(desc.IdentityKey)
 
 		// Check if connection exists before dispatching
