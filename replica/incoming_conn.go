@@ -29,11 +29,14 @@ import (
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
+	"github.com/katzenpost/katzenpost/core/worker"
 )
 
 var incomingConnID uint64
 
 type incomingConn struct {
+	worker.Worker
+
 	scheme        kem.Scheme
 	pkiSignScheme sign.Scheme
 
@@ -89,7 +92,7 @@ func (c *incomingConn) worker() {
 	defer session.Close()
 
 	// Perform handshake and authentication
-	creds, blob, err := c.performHandshakeAndAuth(session)
+	creds, err := c.performHandshakeAndAuth(session)
 	if err != nil {
 		return
 	}
@@ -99,8 +102,55 @@ func (c *incomingConn) worker() {
 		return
 	}
 
+	// Constant time message output whether or not decoy traffic
+	// is enabled.
+	inCh := make(chan *senderRequest)
+	outCh := make(chan *senderRequest)
+	nikeScheme := nikeschemes.ByName(c.l.server.cfg.ReplicaNIKEScheme)
+	cmds := commands.NewStorageReplicaCommands(c.geo, nikeScheme)
+	sender := newSender(inCh, outCh, c.l.server.cfg.DisableDecoyTraffic, c.l.server.logBackend, cmds)
+	defer sender.halt()
+	sender.UpdateConnectionStatus(true)
+	doc := c.l.server.PKIWorker.PKIDocument()
+	// XXX FIXME(David): add a new lamda parameter to our pki doc format, lambdaR.
+	// for now use lambdaP
+	rate := uint64(1 / doc.LambdaP)
+	maxDelay := doc.LambdaPMaxDelay
+	sender.UpdateRate(rate, maxDelay)
 	// Start command processing
-	c.processCommands(session, creds, blob)
+	c.Go(func() {
+		c.processCommands(session, creds, inCh)
+	})
+	c.Go(func() {
+		c.egressSender(session, outCh)
+	})
+}
+
+func (c *incomingConn) egressSender(session *wire.Session, outCh chan *senderRequest) {
+	for {
+		select {
+		case <-c.HaltCh():
+			return
+		case resp := <-outCh:
+			c.sendResponse(session, resp)
+		}
+	}
+}
+
+// sendResponse sends a response command if one is provided
+func (c *incomingConn) sendResponse(session *wire.Session, resp *senderRequest) {
+	if resp != nil {
+		cmd := resp.command()
+		if cmd == nil {
+			c.log.Debugf("Failed to send response: nil command")
+			return
+		}
+		if err := session.SendCommand(cmd); err != nil {
+			c.log.Debugf("Failed to send response: %v", err)
+		}
+	} else {
+		c.log.Debugf("No response to send (resp is nil)")
+	}
 }
 
 // initializeSession creates and configures the wire session
@@ -147,30 +197,22 @@ func (c *incomingConn) initializeSession() (*wire.Session, error) {
 }
 
 // performHandshakeAndAuth handles the handshake and authentication process
-func (c *incomingConn) performHandshakeAndAuth(session *wire.Session) (*wire.PeerCredentials, []byte, error) {
-	// Bind the session to the conn, handshake, authenticate.
+func (c *incomingConn) performHandshakeAndAuth(session *wire.Session) (*wire.PeerCredentials, error) {
 	timeoutMs := time.Duration(c.l.server.cfg.HandshakeTimeout) * time.Millisecond
 	c.c.SetDeadline(time.Now().Add(timeoutMs))
 	if err := session.Initialize(c.c); err != nil {
 		c.log.Errorf("Handshake failed: %v", err)
-		return nil, nil, err
+		return nil, err
 	}
 	c.log.Debugf("Handshake completed.")
 	c.c.SetDeadline(time.Time{})
 	c.l.onInitializedConn(c)
-
-	// Log the connection source.
 	creds, err := session.PeerCredentials()
 	if err != nil {
 		c.log.Debugf("Session failure: %s", err)
-		return nil, nil, err
+		return nil, err
 	}
-	blob, err := creds.PublicKey.MarshalBinary()
-	if err != nil {
-		panic(err)
-	}
-
-	return creds, blob, nil
+	return creds, nil
 }
 
 // closeOldConnections ensures only one connection per peer
@@ -188,7 +230,7 @@ func (c *incomingConn) closeOldConnections() error {
 }
 
 // processCommands handles the main command processing loop
-func (c *incomingConn) processCommands(session *wire.Session, creds *wire.PeerCredentials, blob []byte) {
+func (c *incomingConn) processCommands(session *wire.Session, creds *wire.PeerCredentials, inCh chan *senderRequest) {
 	// Start the reauthenticate ticker.
 	reauthMs := time.Duration(c.l.server.cfg.ReauthInterval) * time.Millisecond
 	reauth := time.NewTicker(reauthMs)
@@ -211,12 +253,11 @@ func (c *incomingConn) processCommands(session *wire.Session, creds *wire.PeerCr
 		// Handle all of the storage replica commands.
 		resp, allGood := c.onReplicaCommand(rawCmd)
 		if !allGood {
-			c.log.Debugf("Failed to handle replica command: %v", rawCmd)
+			c.log.Debugf("Got a disconnect or we failed to handle replica command: %v", rawCmd)
 			return
 		}
 
-		// Send the response, if any.
-		c.sendResponse(session, resp, blob)
+		inCh <- resp
 	}
 }
 
@@ -263,20 +304,6 @@ func (c *incomingConn) handleSelectCases(reauthCh <-chan time.Time, creds *wire.
 			return nil, false
 		}
 		return rawCmd, true
-	}
-}
-
-// sendResponse sends a response command if one is provided
-func (c *incomingConn) sendResponse(session *wire.Session, resp commands.Command, blob []byte) {
-	if resp != nil {
-		c.log.Debugf("Sending response: %T", resp)
-		if err := session.SendCommand(resp); err != nil {
-			c.log.Debugf("Peer %v: Failed to send response: %v", hash.Sum256(blob), err)
-		} else {
-			c.log.Debugf("Successfully sent response: %T", resp)
-		}
-	} else {
-		c.log.Debugf("No response to send (resp is nil)")
 	}
 }
 
