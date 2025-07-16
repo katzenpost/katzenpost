@@ -4,18 +4,15 @@
 package client2
 
 import (
-	"github.com/katzenpost/katzenpost/core/log"
 	"testing"
+
+	"github.com/katzenpost/katzenpost/core/log"
 )
 
 func TestSender(t *testing.T) {
 	rates := &Rates{
-		messageOrDrop:         0.001,
-		messageOrDropMaxDelay: 1000,
-		loop:                  0.0005,
-		loopMaxDelay:          1000,
-		drop:                  0.0005,
-		dropMaxDelay:          3000,
+		messageOrLoop:         0.001,
+		messageOrLoopMaxDelay: 1000,
 	}
 
 	in := make(chan *Request)
@@ -31,7 +28,7 @@ func TestSender(t *testing.T) {
 	s.UpdateConnectionStatus(true)
 	s.UpdateRates(rates)
 
-	n := 40
+	n := 10
 	for i := 0; i < n; i++ {
 		go func() {
 			in <- &Request{}

@@ -53,7 +53,10 @@ func (c *incomingConn) onReplicaCommand(rawCmd commands.Command) (commands.Comma
 		return nil, false
 	case *commands.ReplicaDecoy:
 		c.log.Debug("Received ReplicaDecoy from peer")
-		return nil, true
+		decoyReply := &commands.ReplicaDecoy{
+			Cmds: commands.NewStorageReplicaCommands(c.geo, schemes.ByName(c.l.server.cfg.ReplicaNIKEScheme)),
+		}
+		return decoyReply, true
 	case *commands.ReplicaWrite:
 		c.log.Debugf("Processing ReplicaWrite command for BoxID: %x", cmd.BoxID)
 		trunnelWrite := pigeonhole.WireCommandToTrunnelReplicaWrite(cmd)

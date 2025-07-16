@@ -4,11 +4,8 @@
 package replica
 
 import (
-	"fmt"
 	"sync"
 	"time"
-
-	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
 
 	"golang.org/x/crypto/blake2b"
 	"gopkg.in/op/go-logging.v1"
@@ -20,6 +17,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"github.com/katzenpost/katzenpost/core/worker"
+	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
 )
 
 type Connector struct {
@@ -136,7 +134,6 @@ func (co *Connector) queueForRetry(cmd commands.Command, idHash [32]byte) {
 		lastTry:  time.Now(),
 	}
 	co.retryQueue = append(co.retryQueue, retryCmd)
-	co.log.Debugf("Added command to retry queue for %x: %v", idHash[:8], getBoxID(cmd))
 }
 
 // processRetryQueue attempts to dispatch queued commands when connections become available
@@ -171,19 +168,13 @@ func (co *Connector) processRetryQueue() {
 }
 
 func (co *Connector) DispatchReplication(cmd *commands.ReplicaWrite) {
-	co.log.Infof("REPLICATION: Queueing replication for BoxID: %x", cmd.BoxID)
-	fmt.Printf("REPLICATION: Queueing replication for BoxID: %x\n", cmd.BoxID)
 	co.replicationCh <- cmd
 }
 
 func (co *Connector) doReplication(cmd *commands.ReplicaWrite) {
-	co.log.Infof("REPLICATION: Starting replication for BoxID: %x", cmd.BoxID)
-	fmt.Printf("REPLICATION: Starting replication for BoxID: %x\n", cmd.BoxID)
-
 	doc := co.server.PKIWorker.PKIDocument()
 	if doc == nil {
 		co.log.Error("REPLICATION: Failed - no PKI document available")
-		fmt.Printf("REPLICATION: Failed - no PKI document available\n")
 		return
 	}
 
@@ -191,26 +182,19 @@ func (co *Connector) doReplication(cmd *commands.ReplicaWrite) {
 	myIdBytes, err := co.server.identityPublicKey.MarshalBinary()
 	if err != nil {
 		co.log.Errorf("REPLICATION: Failed to marshal identity key: %v", err)
-		fmt.Printf("REPLICATION: Failed to marshal identity key: %v\n", err)
 	} else {
 		myIdHash := blake2b.Sum256(myIdBytes)
 		co.log.Infof("REPLICATION: My identity: %x", myIdHash[:8])
-		fmt.Printf("REPLICATION: My identity: %x\n", myIdHash[:8])
 	}
 
 	descs, err := replicaCommon.GetRemoteShards(co.server.identityPublicKey, cmd.BoxID, doc)
 	if err != nil {
 		co.log.Errorf("REPLICATION: Failed - GetRemoteShards err: %v", err)
-		fmt.Printf("REPLICATION: Failed - GetRemoteShards err: %v\n", err)
 		panic(err)
 	}
 
-	co.log.Infof("REPLICATION: Found %d remote shards for BoxID %x", len(descs), cmd.BoxID)
-	fmt.Printf("REPLICATION: Found %d remote shards for BoxID %x\n", len(descs), cmd.BoxID)
-
 	if len(descs) == 0 {
 		co.log.Infof("REPLICATION: No remote shards needed for BoxID %x", cmd.BoxID)
-		fmt.Printf("REPLICATION: No remote shards needed for BoxID %x\n", cmd.BoxID)
 		return
 	}
 
@@ -218,10 +202,8 @@ func (co *Connector) doReplication(cmd *commands.ReplicaWrite) {
 	successCount := 0
 	totalTargets := len(descs)
 
-	for i, desc := range descs {
+	for _, desc := range descs {
 		idHash := blake2b.Sum256(desc.IdentityKey)
-		co.log.Infof("REPLICATION: Dispatching to shard %d/%d: %s (ID: %x)", i+1, len(descs), desc.Name, idHash[:8])
-		fmt.Printf("REPLICATION: Dispatching to shard %d/%d: %s (ID: %x)\n", i+1, len(descs), desc.Name, idHash[:8])
 
 		// Check if connection exists before dispatching
 		co.RLock()
@@ -237,28 +219,20 @@ func (co *Connector) doReplication(cmd *commands.ReplicaWrite) {
 
 	if successCount == totalTargets {
 		co.log.Infof("REPLICATION: Successfully dispatched to all %d targets for BoxID %x", totalTargets, cmd.BoxID)
-		fmt.Printf("REPLICATION: Successfully dispatched to all %d targets for BoxID %x\n", totalTargets, cmd.BoxID)
 	} else {
 		co.log.Warningf("REPLICATION: Only dispatched to %d/%d targets for BoxID %x (others queued for retry)", successCount, totalTargets, cmd.BoxID)
-		fmt.Printf("REPLICATION: Only dispatched to %d/%d targets for BoxID %x (others queued for retry)\n", successCount, totalTargets, cmd.BoxID)
 	}
-
-	co.log.Infof("REPLICATION: Dispatch completed for BoxID %x", cmd.BoxID)
-	fmt.Printf("REPLICATION: Dispatch completed for BoxID %x\n", cmd.BoxID)
 }
 
 func (co *Connector) replicationWorker() {
 	co.log.Infof("REPLICATION: Starting replication worker")
-	fmt.Printf("REPLICATION: Starting replication worker\n")
 	for {
 		select {
 		case <-co.HaltCh():
 			co.log.Infof("REPLICATION: Worker terminating gracefully")
-			fmt.Printf("REPLICATION: Worker terminating gracefully\n")
 			return
 		case writeCmd := <-co.replicationCh:
 			co.log.Infof("REPLICATION: Worker received write command for BoxID: %x", writeCmd.BoxID)
-			fmt.Printf("REPLICATION: Worker received write command for BoxID: %x\n", writeCmd.BoxID)
 			co.doReplication(writeCmd)
 		}
 	}
