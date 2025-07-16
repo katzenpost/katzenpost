@@ -76,7 +76,11 @@ func (s *sender) UpdateConnectionStatus(isConnected bool) {
 }
 
 func (s *sender) UpdateRates(rates *Rates) {
-	s.sendMessageOrLoop.UpdateRate(uint64(1/rates.messageOrDrop), rates.messageOrDropMaxDelay)
+	if rates.messageOrLoop <= 0 {
+		s.log.Warning("Invalid messageOrDrop rate, using default")
+		return
+	}
+	s.sendMessageOrLoop.UpdateRate(uint64(1/rates.messageOrLoop), rates.messageOrLoopMaxDelay)
 }
 
 func newLoopDecoy() *Request {

@@ -26,7 +26,7 @@ func TestListenerBasic(t *testing.T) {
 	}
 
 	rates := &Rates{
-		messageOrDrop: 555,
+		messageOrLoop: 555,
 	}
 
 	egressSize := 123
@@ -47,7 +47,7 @@ func TestListenerBasic(t *testing.T) {
 
 	doc1 := &cpki.Document{
 		Epoch:   epoch,
-		LambdaP: rates.messageOrDrop,
+		LambdaP: rates.messageOrLoop,
 	}
 
 	listener.doUpdateFromPKIDoc(doc1)
@@ -55,11 +55,6 @@ func TestListenerBasic(t *testing.T) {
 
 	listener.doUpdateConnectionStatus(nil)
 	require.Nil(t, listener.getConnectionStatus())
-
-	//listener.connectionStatus = errors.New("fail")
-	//listener.updateConnectionStatus(nil)
-	//time.Sleep(1 * time.Second)
-	//require.Nil(t, listener.getConnectionStatus())
 
 	listener.Shutdown()
 }
