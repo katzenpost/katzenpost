@@ -109,7 +109,6 @@ func (c *incomingConn) worker() {
 	nikeScheme := nikeschemes.ByName(c.l.server.cfg.ReplicaNIKEScheme)
 	cmds := commands.NewStorageReplicaCommands(c.geo, nikeScheme)
 	sender := newSender(inCh, outCh, c.l.server.cfg.DisableDecoyTraffic, c.l.server.logBackend, cmds)
-	sender.UpdateConnectionStatus(true)
 	doc := c.l.server.PKIWorker.PKIDocument()
 	if doc == nil {
 		c.log.Errorf("Failed to get PKI document")
@@ -124,6 +123,7 @@ func (c *incomingConn) worker() {
 	}
 	maxDelay := doc.LambdaPMaxDelay
 	sender.UpdateRate(rate, maxDelay)
+	sender.UpdateConnectionStatus(true)
 
 	// Start command processing
 	c.Go(func() {
