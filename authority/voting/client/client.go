@@ -144,6 +144,15 @@ func (p *connector) initSession(ctx context.Context, linkKey kem.PrivateKey, sig
 	var conn net.Conn
 	var err error
 
+	// Helper function to create peer info string
+	peerInfo := func() string {
+		return fmt.Sprintf("peer %s (%s, identity=%s, link=%s)",
+			peer.Identifier,
+			strings.Join(peer.Addresses, ","),
+			strings.TrimSpace(signpem.ToPublicPEMString(peer.IdentityPublicKey)),
+			strings.TrimSpace(kempem.ToPublicPEMString(peer.LinkPublicKey)))
+	}
+
 	// Connect to the peer.
 	dialFn := p.cfg.DialContextFn
 	if dialFn == nil {
@@ -155,9 +164,11 @@ func (p *connector) initSession(ctx context.Context, linkKey kem.PrivateKey, sig
 	idxs := r.Perm(len(peer.Addresses))
 
 	// try each Address until a connection is successful or fail
+	var lastErr error
 	for i, idx := range idxs {
 		u, err := url.Parse(peer.Addresses[idx])
 		if err != nil {
+			lastErr = fmt.Errorf("%s: invalid URL %s: %v", peerInfo(), peer.Addresses[idx], err)
 			continue
 		}
 		ictx, cancelFn := context.WithCancel(ctx)
@@ -166,8 +177,9 @@ func (p *connector) initSession(ctx context.Context, linkKey kem.PrivateKey, sig
 		if err == nil {
 			break
 		}
+		lastErr = fmt.Errorf("%s: failed to connect to %s: %v", peerInfo(), peer.Addresses[idx], err)
 		if i == len(peer.Addresses)-1 {
-			return nil, err
+			return nil, fmt.Errorf("%s: all connection attempts failed, last error: %v", peerInfo(), lastErr)
 		}
 	}
 
@@ -179,14 +191,28 @@ func (p *connector) initSession(ctx context.Context, linkKey kem.PrivateKey, sig
 
 	// Initialize the wire protocol session.
 	var ad []byte
+	var signingKeyInfo string
 	if signingKey != nil {
 		keyHash := hash.Sum256From(signingKey)
 		ad = keyHash[:]
+		signingKeyInfo = fmt.Sprintf(", signing_key=%s", strings.TrimSpace(signpem.ToPublicPEMString(signingKey)))
+	} else {
+		signingKeyInfo = ", signing_key=none"
+	}
+
+	// Get scheme information for error reporting
+	kemScheme := schemes.ByName(peer.WireKEMScheme)
+	signatureScheme := signSchemes.ByName(peer.PKISignatureScheme)
+	if kemScheme == nil {
+		return nil, fmt.Errorf("%s: unsupported KEM scheme: %s", peerInfo(), peer.WireKEMScheme)
+	}
+	if signatureScheme == nil {
+		return nil, fmt.Errorf("%s: unsupported signature scheme: %s", peerInfo(), peer.PKISignatureScheme)
 	}
 
 	cfg := &wire.SessionConfig{
-		KEMScheme:          schemes.ByName(peer.WireKEMScheme),
-		PKISignatureScheme: signSchemes.ByName(peer.PKISignatureScheme),
+		KEMScheme:          kemScheme,
+		PKISignatureScheme: signatureScheme,
 		Geometry:           p.cfg.Geo,
 		Authenticator:      peerAuthenticator,
 		AdditionalData:     ad,
@@ -195,13 +221,17 @@ func (p *connector) initSession(ctx context.Context, linkKey kem.PrivateKey, sig
 	}
 	s, err := wire.NewPKISession(cfg, true)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%s: failed to create PKI session (connection: %s -> %s, KEM: %s, signature: %s%s): %v",
+			peerInfo(), conn.LocalAddr(), conn.RemoteAddr(),
+			peer.WireKEMScheme, peer.PKISignatureScheme, signingKeyInfo, err)
 	}
 
 	// Handshake.
 	if err = s.Initialize(conn); err != nil {
 		conn.Close()
-		return nil, err
+		return nil, fmt.Errorf("%s: handshake failed (connection: %s -> %s, KEM: %s, signature: %s%s): %v",
+			peerInfo(), conn.LocalAddr(), conn.RemoteAddr(),
+			peer.WireKEMScheme, peer.PKISignatureScheme, signingKeyInfo, err)
 	}
 
 	return &connection{
