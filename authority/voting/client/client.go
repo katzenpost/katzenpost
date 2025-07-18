@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"strings"
 
 	"gopkg.in/op/go-logging.v1"
 
@@ -33,6 +34,7 @@ import (
 	"github.com/katzenpost/hpqc/kem/schemes"
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/hpqc/sign"
+	signpem "github.com/katzenpost/hpqc/sign/pem"
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
@@ -215,27 +217,45 @@ func (p *connector) roundTrip(s *wire.Session, cmd commands.Command) (commands.C
 	return s.RecvCommand()
 }
 
-func (p *connector) allPeersRoundTrip(ctx context.Context, linkKey kem.PrivateKey, signingKey sign.PublicKey, cmd commands.Command) ([]commands.Command, error) {
-	responses := []commands.Command{}
+// PeerResponse represents a response from a specific peer
+type PeerResponse struct {
+	Peer     *config.Authority
+	Response commands.Command
+	Error    error
+}
+
+func (p *connector) allPeersRoundTrip(ctx context.Context, linkKey kem.PrivateKey, signingKey sign.PublicKey, cmd commands.Command) ([]PeerResponse, error) {
+	peerResponses := []PeerResponse{}
 	for _, peer := range p.cfg.Authorities {
 		ictx, cancelFn := context.WithCancel(ctx)
 		defer cancelFn()
 		conn, err := p.initSession(ictx, linkKey, signingKey, peer)
 		if err != nil {
 			p.log.Noticef("pki/voting/client: failure to connect to Authority %s (%x)\n", peer.Identifier, hash.Sum256From(peer.IdentityPublicKey))
+			peerResponses = append(peerResponses, PeerResponse{
+				Peer:  peer,
+				Error: fmt.Errorf("connection failed: %v", err),
+			})
 			continue
 		}
 		resp, err := p.roundTrip(conn.session, cmd)
 		if err != nil {
 			p.log.Noticef("pki/voting/client: failure in sending command to Authority peer %s: %s", peer, err)
+			peerResponses = append(peerResponses, PeerResponse{
+				Peer:  peer,
+				Error: fmt.Errorf("round trip failed: %v", err),
+			})
 			continue
 		}
-		responses = append(responses, resp)
+		peerResponses = append(peerResponses, PeerResponse{
+			Peer:     peer,
+			Response: resp,
+		})
 	}
-	if len(responses) == 0 {
+	if len(peerResponses) == 0 {
 		return nil, errors.New("allPeerRoundTrip failure, got zero responses")
 	}
-	return responses, nil
+	return peerResponses, nil
 }
 
 func (p *connector) fetchConsensus(auth *config.Authority, ctx context.Context, linkKey kem.PrivateKey, epoch uint64) (commands.Command, error) {
@@ -308,30 +328,54 @@ func (c *Client) Post(ctx context.Context, epoch uint64, signingPrivateKey sign.
 		Epoch:   epoch,
 		Payload: []byte(signed),
 	}
-	responses, err := c.pool.allPeersRoundTrip(ctx, c.cfg.LinkKey, signingPublicKey, cmd)
+	peerResponses, err := c.pool.allPeersRoundTrip(ctx, c.cfg.LinkKey, signingPublicKey, cmd)
 	if err != nil {
 		return err
 	}
 	// Parse the post_descriptor_status command.
 	errs := []error{}
-	for _, resp := range responses {
-		r, ok := resp.(*commands.PostDescriptorStatus)
+	for _, peerResp := range peerResponses {
+		if peerResp.Error != nil {
+			errs = append(errs, fmt.Errorf("peer %s (%s, identity=%s, link=%s): %v",
+				peerResp.Peer.Identifier,
+				strings.Join(peerResp.Peer.Addresses, ","),
+				strings.TrimSpace(signpem.ToPublicPEMString(peerResp.Peer.IdentityPublicKey)),
+				strings.TrimSpace(kempem.ToPublicPEMString(peerResp.Peer.LinkPublicKey)),
+				peerResp.Error))
+			continue
+		}
+		r, ok := peerResp.Response.(*commands.PostDescriptorStatus)
 		if !ok {
-			errs = append(errs, fmt.Errorf("voting/Client: Post() unexpected reply: %T", resp))
+			errs = append(errs, fmt.Errorf("peer %s (%s, identity=%s, link=%s): unexpected reply: %T",
+				peerResp.Peer.Identifier,
+				strings.Join(peerResp.Peer.Addresses, ","),
+				strings.TrimSpace(signpem.ToPublicPEMString(peerResp.Peer.IdentityPublicKey)),
+				strings.TrimSpace(kempem.ToPublicPEMString(peerResp.Peer.LinkPublicKey)),
+				peerResp.Response))
 			continue
 		}
 		switch r.ErrorCode {
 		case commands.DescriptorOk:
 		case commands.DescriptorConflict:
-			errs = append(errs, pki.ErrInvalidPostEpoch)
+			errs = append(errs, fmt.Errorf("peer %s (%s, identity=%s, link=%s): %v",
+				peerResp.Peer.Identifier,
+				strings.Join(peerResp.Peer.Addresses, ","),
+				strings.TrimSpace(signpem.ToPublicPEMString(peerResp.Peer.IdentityPublicKey)),
+				strings.TrimSpace(kempem.ToPublicPEMString(peerResp.Peer.LinkPublicKey)),
+				pki.ErrInvalidPostEpoch))
 		default:
-			errs = append(errs, fmt.Errorf("voting/Client: Post() rejected by authority: %v", postErrorToString(r.ErrorCode)))
+			errs = append(errs, fmt.Errorf("peer %s (%s, identity=%s, link=%s): rejected by authority: %v",
+				peerResp.Peer.Identifier,
+				strings.Join(peerResp.Peer.Addresses, ","),
+				strings.TrimSpace(signpem.ToPublicPEMString(peerResp.Peer.IdentityPublicKey)),
+				strings.TrimSpace(kempem.ToPublicPEMString(peerResp.Peer.LinkPublicKey)),
+				postErrorToString(r.ErrorCode)))
 		}
 	}
 	if len(errs) == 0 {
 		return nil
 	}
-	return fmt.Errorf("failure to Post(%d) to %d Directory Authorities: %v", epoch, len(errs), errs)
+	return fmt.Errorf("failure to Post(%d) to Directory Authorities: %v", epoch, errs)
 }
 
 // PostReplica posts the node's descriptor to the PKI for the provided epoch.
@@ -360,30 +404,54 @@ func (c *Client) PostReplica(ctx context.Context, epoch uint64, signingPrivateKe
 		Epoch:   epoch,
 		Payload: []byte(signed),
 	}
-	responses, err := c.pool.allPeersRoundTrip(ctx, c.cfg.LinkKey, signingPublicKey, cmd)
+	peerResponses, err := c.pool.allPeersRoundTrip(ctx, c.cfg.LinkKey, signingPublicKey, cmd)
 	if err != nil {
 		return err
 	}
 	// Parse the post_descriptor_status command.
 	errs := []error{}
-	for _, resp := range responses {
-		r, ok := resp.(*commands.PostDescriptorStatus)
+	for _, peerResp := range peerResponses {
+		if peerResp.Error != nil {
+			errs = append(errs, fmt.Errorf("peer %s (%s, identity=%s, link=%s): %v",
+				peerResp.Peer.Identifier,
+				strings.Join(peerResp.Peer.Addresses, ","),
+				strings.TrimSpace(signpem.ToPublicPEMString(peerResp.Peer.IdentityPublicKey)),
+				strings.TrimSpace(kempem.ToPublicPEMString(peerResp.Peer.LinkPublicKey)),
+				peerResp.Error))
+			continue
+		}
+		r, ok := peerResp.Response.(*commands.PostDescriptorStatus)
 		if !ok {
-			errs = append(errs, fmt.Errorf("voting/Client: Post() unexpected reply: %T", resp))
+			errs = append(errs, fmt.Errorf("peer %s (%s, identity=%s, link=%s): unexpected reply: %T",
+				peerResp.Peer.Identifier,
+				strings.Join(peerResp.Peer.Addresses, ","),
+				strings.TrimSpace(signpem.ToPublicPEMString(peerResp.Peer.IdentityPublicKey)),
+				strings.TrimSpace(kempem.ToPublicPEMString(peerResp.Peer.LinkPublicKey)),
+				peerResp.Response))
 			continue
 		}
 		switch r.ErrorCode {
 		case commands.DescriptorOk:
 		case commands.DescriptorConflict:
-			errs = append(errs, pki.ErrInvalidPostEpoch)
+			errs = append(errs, fmt.Errorf("peer %s (%s, identity=%s, link=%s): %v",
+				peerResp.Peer.Identifier,
+				strings.Join(peerResp.Peer.Addresses, ","),
+				strings.TrimSpace(signpem.ToPublicPEMString(peerResp.Peer.IdentityPublicKey)),
+				strings.TrimSpace(kempem.ToPublicPEMString(peerResp.Peer.LinkPublicKey)),
+				pki.ErrInvalidPostEpoch))
 		default:
-			errs = append(errs, fmt.Errorf("voting/Client: Post() rejected by authority: %v", postErrorToString(r.ErrorCode)))
+			errs = append(errs, fmt.Errorf("peer %s (%s, identity=%s, link=%s): rejected by authority: %v",
+				peerResp.Peer.Identifier,
+				strings.Join(peerResp.Peer.Addresses, ","),
+				strings.TrimSpace(signpem.ToPublicPEMString(peerResp.Peer.IdentityPublicKey)),
+				strings.TrimSpace(kempem.ToPublicPEMString(peerResp.Peer.LinkPublicKey)),
+				postErrorToString(r.ErrorCode)))
 		}
 	}
 	if len(errs) == 0 {
 		return nil
 	}
-	return fmt.Errorf("failure to Post(%d) to %d Directory Authorities: %v", epoch, len(errs), errs)
+	return fmt.Errorf("failure to Post(%d) to Directory Authorities: %v", epoch, errs)
 }
 
 // Get returns the PKI document along with the raw serialized form for the provided epoch.

@@ -41,6 +41,7 @@ import (
 
 	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/kem"
+	kempem "github.com/katzenpost/hpqc/kem/pem"
 	"github.com/katzenpost/hpqc/kem/schemes"
 	signpem "github.com/katzenpost/hpqc/sign/pem"
 
@@ -717,6 +718,8 @@ func (s *state) IsPeerValid(creds *wire.PeerCredentials) bool {
 }
 
 func (s *state) sendCommandToPeer(peer *config.Authority, cmd commands.Command) (commands.Command, error) {
+	s.log.Debugf("sendCommandToPeer: peer.Identifier: %s peer.PublicKey: %s, IdentityPublicKey: %s", peer.Identifier, kempem.ToPublicPEMString(peer.LinkPublicKey), signpem.ToPublicPEMString(peer.IdentityPublicKey))
+
 	var conn net.Conn
 	var err error
 	for i, a := range peer.Addresses {
