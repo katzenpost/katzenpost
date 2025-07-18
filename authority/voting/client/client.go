@@ -268,6 +268,8 @@ func (p *connector) fetchConsensus(auth *config.Authority, ctx context.Context, 
 		return nil, err
 	}
 	p.log.Debugf("sending getConsensus to %s", auth.Identifier)
+	p.log.Debugf("remote peer %s identity key: %s", auth.Identifier, strings.TrimSpace(signpem.ToPublicPEMString(auth.IdentityPublicKey)))
+	p.log.Debugf("remote peer %s link key: %s", auth.Identifier, strings.TrimSpace(kempem.ToPublicPEMString(auth.LinkPublicKey)))
 	cmd := &commands.GetConsensus{
 		Epoch:              epoch,
 		Cmds:               commands.NewPKICommands(p.cfg.PKISignatureScheme),
@@ -468,32 +470,68 @@ func (c *Client) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, 
 	r := rand.NewMath()
 	idxs := r.Perm(len(c.cfg.Authorities))
 
+	// Collect detailed error information from each peer
+	var peerErrors []error
+
 	for _, idx := range idxs {
 		auth := c.cfg.Authorities[idx]
 		ctx, cancelFn := context.WithCancel(ctx)
 		resp, err := c.pool.fetchConsensus(auth, ctx, linkKey, epoch)
 		defer cancelFn()
 		if err != nil {
+			peerErr := fmt.Errorf("peer %s (%s, identity=%s, link=%s): fetchConsensus failed: %v",
+				auth.Identifier,
+				strings.Join(auth.Addresses, ","),
+				strings.TrimSpace(signpem.ToPublicPEMString(auth.IdentityPublicKey)),
+				strings.TrimSpace(kempem.ToPublicPEMString(auth.LinkPublicKey)),
+				err)
 			c.log.Errorf("GetConsensus from %s failed: %s", auth.Identifier, err)
+			peerErrors = append(peerErrors, peerErr)
 			continue
 		}
 
 		// Parse the consensus command.
 		r, ok := resp.(*commands.Consensus)
 		if !ok {
+			peerErr := fmt.Errorf("peer %s (%s, identity=%s, link=%s): unexpected reply: %T",
+				auth.Identifier,
+				strings.Join(auth.Addresses, ","),
+				strings.TrimSpace(signpem.ToPublicPEMString(auth.IdentityPublicKey)),
+				strings.TrimSpace(kempem.ToPublicPEMString(auth.LinkPublicKey)),
+				resp)
 			c.log.Errorf("GetConsensus from %s returned unexpected reply: %T", auth.Identifier, resp)
+			peerErrors = append(peerErrors, peerErr)
 			continue
 		}
 		switch r.ErrorCode {
 		case commands.ConsensusOk:
 		case commands.ConsensusGone:
+			peerErr := fmt.Errorf("peer %s (%s, identity=%s, link=%s): consensus gone",
+				auth.Identifier,
+				strings.Join(auth.Addresses, ","),
+				strings.TrimSpace(signpem.ToPublicPEMString(auth.IdentityPublicKey)),
+				strings.TrimSpace(kempem.ToPublicPEMString(auth.LinkPublicKey)))
 			c.log.Errorf("GetConsensus from %s returned ConsensusGone", auth.Identifier)
+			peerErrors = append(peerErrors, peerErr)
 			continue
 		case commands.ConsensusNotFound:
-			c.log.Errorf("GetConsensus from %s returned ConsensusGone", auth.Identifier)
+			peerErr := fmt.Errorf("peer %s (%s, identity=%s, link=%s): consensus not found",
+				auth.Identifier,
+				strings.Join(auth.Addresses, ","),
+				strings.TrimSpace(signpem.ToPublicPEMString(auth.IdentityPublicKey)),
+				strings.TrimSpace(kempem.ToPublicPEMString(auth.LinkPublicKey)))
+			c.log.Errorf("GetConsensus from %s returned ConsensusNotFound", auth.Identifier)
+			peerErrors = append(peerErrors, peerErr)
 			continue
 		default:
+			peerErr := fmt.Errorf("peer %s (%s, identity=%s, link=%s): rejected with %v",
+				auth.Identifier,
+				strings.Join(auth.Addresses, ","),
+				strings.TrimSpace(signpem.ToPublicPEMString(auth.IdentityPublicKey)),
+				strings.TrimSpace(kempem.ToPublicPEMString(auth.LinkPublicKey)),
+				getErrorToString(r.ErrorCode))
 			c.log.Errorf("GetConsensus from %s rejected with %v", auth.Identifier, getErrorToString(r.ErrorCode))
+			peerErrors = append(peerErrors, peerErr)
 			continue
 		}
 
@@ -501,7 +539,14 @@ func (c *Client) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, 
 		doc := &pki.Document{}
 		_, good, bad, err := cert.VerifyThreshold(c.verifiers, c.threshold, r.Payload)
 		if err != nil {
+			peerErr := fmt.Errorf("peer %s (%s, identity=%s, link=%s): signature verification failed: %d good, %d bad: %v",
+				auth.Identifier,
+				strings.Join(auth.Addresses, ","),
+				strings.TrimSpace(signpem.ToPublicPEMString(auth.IdentityPublicKey)),
+				strings.TrimSpace(kempem.ToPublicPEMString(auth.LinkPublicKey)),
+				len(good), len(bad), err)
 			c.log.Errorf("VerifyThreshold failure: %d good signatures, %d bad signatures: %v", len(good), len(bad), err)
+			peerErrors = append(peerErrors, peerErr)
 			continue
 		}
 		if len(good) == len(c.cfg.Authorities) {
@@ -519,24 +564,56 @@ func (c *Client) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, 
 		}
 		doc, err = pki.ParseDocument(r.Payload)
 		if err != nil {
+			peerErr := fmt.Errorf("peer %s (%s, identity=%s, link=%s): invalid consensus document: %v",
+				auth.Identifier,
+				strings.Join(auth.Addresses, ","),
+				strings.TrimSpace(signpem.ToPublicPEMString(auth.IdentityPublicKey)),
+				strings.TrimSpace(kempem.ToPublicPEMString(auth.LinkPublicKey)),
+				err)
 			c.log.Errorf("voting/Client: Get() invalid consensus document: %s", err)
+			peerErrors = append(peerErrors, peerErr)
 			continue
 		}
 
 		err = pki.IsDocumentWellFormed(doc, c.verifiers)
 		if err != nil {
+			peerErr := fmt.Errorf("peer %s (%s, identity=%s, link=%s): document not well formed: %v",
+				auth.Identifier,
+				strings.Join(auth.Addresses, ","),
+				strings.TrimSpace(signpem.ToPublicPEMString(auth.IdentityPublicKey)),
+				strings.TrimSpace(kempem.ToPublicPEMString(auth.LinkPublicKey)),
+				err)
 			c.log.Errorf("voting/Client: IsDocumentWellFormed: %s", err)
+			peerErrors = append(peerErrors, peerErr)
 			continue
 		}
 
 		if doc.Epoch != epoch {
+			peerErr := fmt.Errorf("peer %s (%s, identity=%s, link=%s): wrong epoch: got %d, expected %d",
+				auth.Identifier,
+				strings.Join(auth.Addresses, ","),
+				strings.TrimSpace(signpem.ToPublicPEMString(auth.IdentityPublicKey)),
+				strings.TrimSpace(kempem.ToPublicPEMString(auth.LinkPublicKey)),
+				doc.Epoch, epoch)
 			c.log.Errorf("voting/Client: Get() consensus document for WRONG epoch: %v", doc.Epoch)
+			peerErrors = append(peerErrors, peerErr)
 			continue
 		}
 		c.log.Debugf("voting/Client: Get() document:\n%s", doc)
 		return doc, r.Payload, nil
 	}
+
+	// All authorities failed, return detailed error information
 	e, _, _ := epochtime.Now()
+	if len(peerErrors) > 0 {
+		if epoch <= e {
+			return nil, nil, fmt.Errorf("failed to get consensus document (epoch %d <= current %d): %v", epoch, e, peerErrors)
+		} else {
+			return nil, nil, fmt.Errorf("failed to get consensus document (epoch %d > current %d): %v", epoch, e, peerErrors)
+		}
+	}
+
+	// Fallback to original errors if no peer errors collected
 	if epoch <= e {
 		return nil, nil, pki.ErrDocumentGone
 	} else {
