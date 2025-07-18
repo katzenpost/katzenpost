@@ -121,6 +121,7 @@ func (e *ExpDist) worker() {
 			}
 		}
 
+		// Always recalculate the interval and reset timer when needed
 		if isConnected && e.averageRate != 0 && e.maxDelay != 0 {
 			mRng := rand.NewMath()
 			rateMsec = uint64(rand.Exp(mRng, float64(1/float64(e.averageRate))))
@@ -132,14 +133,10 @@ func (e *ExpDist) worker() {
 			rateInterval = time.Duration(maxDuration)
 		}
 
-		if mustResetTimer {
+		// Reset timer if configuration changed OR if timer fired
+		if mustResetTimer || rateFired {
 			rateTimer.Reset(rateInterval)
 			mustResetTimer = false
-		} else {
-			// reset only the timer that fired
-			if rateFired {
-				rateTimer.Reset(rateInterval)
-			}
 		}
 	} // end for
 }
