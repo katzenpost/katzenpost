@@ -265,7 +265,12 @@ func (p *connector) fetchConsensus(auth *config.Authority, ctx context.Context, 
 
 	conn, err := p.initSession(ctx, linkKey, nil, auth)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("peer %s (%s, identity=%s, link=%s): connection failed: %v",
+			auth.Identifier,
+			strings.Join(auth.Addresses, ","),
+			strings.TrimSpace(signpem.ToPublicPEMString(auth.IdentityPublicKey)),
+			strings.TrimSpace(kempem.ToPublicPEMString(auth.LinkPublicKey)),
+			err)
 	}
 	p.log.Debugf("sending getConsensus to %s", auth.Identifier)
 	p.log.Debugf("remote peer %s identity key: %s", auth.Identifier, strings.TrimSpace(signpem.ToPublicPEMString(auth.IdentityPublicKey)))
@@ -279,16 +284,30 @@ func (p *connector) fetchConsensus(auth *config.Authority, ctx context.Context, 
 	if err != nil {
 		r, ok := resp.(*commands.Consensus)
 		if !ok {
-			return nil, fmt.Errorf("voting/Client: GetConsensus() from %s: %v", auth.Identifier, err)
+			return nil, fmt.Errorf("peer %s (%s, identity=%s, link=%s): round trip failed: %v",
+				auth.Identifier,
+				strings.Join(auth.Addresses, ","),
+				strings.TrimSpace(signpem.ToPublicPEMString(auth.IdentityPublicKey)),
+				strings.TrimSpace(kempem.ToPublicPEMString(auth.LinkPublicKey)),
+				err)
 		} else {
-
-			p.log.Noticef("got response from %s to GetConsensus(%d) (err=%vr res=%s)", auth.Identifier, epoch, err, getErrorToString(r.ErrorCode))
-			return nil, err
+			p.log.Noticef("got response from %s to GetConsensus(%d) (err=%v res=%s)", auth.Identifier, epoch, err, getErrorToString(r.ErrorCode))
+			return nil, fmt.Errorf("peer %s (%s, identity=%s, link=%s): consensus error: %v (%s)",
+				auth.Identifier,
+				strings.Join(auth.Addresses, ","),
+				strings.TrimSpace(signpem.ToPublicPEMString(auth.IdentityPublicKey)),
+				strings.TrimSpace(kempem.ToPublicPEMString(auth.LinkPublicKey)),
+				err, getErrorToString(r.ErrorCode))
 		}
 	}
 	r, ok := resp.(*commands.Consensus)
 	if !ok {
-		return nil, fmt.Errorf("voting/Client: GetConsensus() %s: invalid command %T", auth.Identifier, resp)
+		return nil, fmt.Errorf("peer %s (%s, identity=%s, link=%s): invalid command type: %T",
+			auth.Identifier,
+			strings.Join(auth.Addresses, ","),
+			strings.TrimSpace(signpem.ToPublicPEMString(auth.IdentityPublicKey)),
+			strings.TrimSpace(kempem.ToPublicPEMString(auth.LinkPublicKey)),
+			resp)
 	}
 
 	return r, nil
