@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/katzenpost/hpqc/hash"
+	kempem "github.com/katzenpost/hpqc/kem/pem"
 	"github.com/katzenpost/hpqc/kem/schemes"
 	ecdh "github.com/katzenpost/hpqc/nike/x25519"
 	"github.com/katzenpost/hpqc/rand"
@@ -383,14 +384,17 @@ func (a *wireAuthenticator) IsPeerValid(creds *wire.PeerCredentials) bool {
 		linkKey, ok := a.s.state.authorityLinkKeys[pk]
 		if !ok {
 			a.s.log.Warning("Rejecting authority authentication, no link key entry.")
+			a.s.log.Warningf("Remote Peer Credentials: additional_data=%x, public_key=%s", creds.AdditionalData[:hash.HashSize], kempem.ToPublicPEMString(creds.PublicKey))
 			return false
 		}
 		if creds.PublicKey == nil {
 			a.s.log.Warning("Rejecting authority authentication, public key is nil.")
+			a.s.log.Warningf("Remote Peer Credentials: additional_data=%x, public_key=nil", creds.AdditionalData[:hash.HashSize])
 			return false
 		}
 		if !linkKey.Equal(creds.PublicKey) {
 			a.s.log.Warning("Rejecting authority authentication, public key mismatch.")
+			a.s.log.Warningf("Remote Peer Credentials: additional_data=%x, public_key=%s", creds.AdditionalData[:hash.HashSize], kempem.ToPublicPEMString(creds.PublicKey))
 			return false
 		}
 		a.isAuthority = true
@@ -400,6 +404,7 @@ func (a *wireAuthenticator) IsPeerValid(creds *wire.PeerCredentials) bool {
 		return true
 	default:
 		a.s.log.Warning("Rejecting authority authentication, public key mismatch.")
+		a.s.log.Warningf("Remote Peer Credentials: additional_data=%x, public_key=%s", creds.AdditionalData[:hash.HashSize], kempem.ToPublicPEMString(creds.PublicKey))
 		return false
 	}
 	// not reached
