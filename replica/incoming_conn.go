@@ -105,7 +105,7 @@ func (c *incomingConn) worker() {
 	// Constant time message output whether or not decoy traffic
 	// is enabled.
 	inCh := make(chan *senderRequest, 100)
-	outCh := make(chan *senderRequest)
+	outCh := make(chan *senderRequest, 100)
 	nikeScheme := nikeschemes.ByName(c.l.server.cfg.ReplicaNIKEScheme)
 	cmds := commands.NewStorageReplicaCommands(c.geo, nikeScheme)
 	sender := newSender(inCh, outCh, c.l.server.cfg.DisableDecoyTraffic, c.l.server.logBackend, cmds)
@@ -161,9 +161,12 @@ func (c *incomingConn) sendResponse(session *wire.Session, resp *senderRequest) 
 			c.log.Debugf("Failed to send response: nil command")
 			return
 		}
+		c.log.Debugf("Sending response command: %T", cmd)
 		if err := session.SendCommand(cmd); err != nil {
 			// Only log as debug since this is expected when connections close
 			c.log.Debugf("Failed to send response: %v", err)
+		} else {
+			c.log.Debugf("Successfully sent response command: %T", cmd)
 		}
 	} else {
 		c.log.Debugf("No response to send (resp is nil)")
@@ -274,7 +277,13 @@ func (c *incomingConn) processCommands(session *wire.Session, creds *wire.PeerCr
 			return
 		}
 
-		inCh <- resp
+		if resp != nil {
+			c.log.Debugf("Sending response to inCh: %T", resp)
+			inCh <- resp
+			c.log.Debugf("Successfully sent response to inCh")
+		} else {
+			c.log.Debugf("No response to send (resp is nil)")
+		}
 	}
 }
 

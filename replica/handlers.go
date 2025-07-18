@@ -64,12 +64,14 @@ func (c *incomingConn) onReplicaCommand(rawCmd commands.Command) (*senderRequest
 		trunnelWrite := pigeonhole.WireCommandToTrunnelReplicaWrite(cmd)
 		resp := c.handleReplicaWrite(trunnelWrite)
 		respWire := pigeonhole.TrunnelReplicaWriteReplyToWireCommand(resp, cmd.Cmds)
+		c.log.Debugf("handleReplicaWrite returned: %T", respWire)
 		return &senderRequest{
 			ReplicaWriteReply: respWire,
 		}, true
 	case *commands.ReplicaMessage:
 		c.log.Debugf("Processing ReplicaMessage command with ciphertext length: %d", len(cmd.Ciphertext))
 		resp := c.handleReplicaMessage(cmd)
+		c.log.Debugf("handleReplicaMessage returned: %T", resp)
 		return &senderRequest{
 			ReplicaMessageReply: resp,
 		}, true

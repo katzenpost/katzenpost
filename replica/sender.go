@@ -80,12 +80,15 @@ func (s *sender) worker() {
 		case <-s.HaltCh():
 			return
 		case <-s.sendQueryOrDecoy.OutCh():
+			// ExpDist tick - send real message if available, otherwise send decoy
 			var toSend *senderRequest
 			select {
 			case toSend = <-s.in:
+				// Real response available - send it
 			case <-s.HaltCh():
 				return
 			default:
+				// No real response - send decoy if enabled
 				if s.disableDecoys {
 					continue
 				}
