@@ -4,6 +4,8 @@
 package replica
 
 import (
+	"fmt"
+
 	"gopkg.in/op/go-logging.v1"
 
 	"github.com/katzenpost/katzenpost/common"
@@ -98,8 +100,6 @@ func (s *sender) worker() {
 			case <-s.HaltCh():
 				return
 			}
-		case <-s.HaltCh():
-			return
 		}
 	}
 }
@@ -108,10 +108,10 @@ func (s *sender) UpdateConnectionStatus(isConnected bool) {
 	s.sendQueryOrDecoy.UpdateConnectionStatus(isConnected)
 }
 
-func (s *sender) UpdateRate(rate, maxDelay uint64) {
+func (s *sender) UpdateRate(rate, maxDelay uint64) error {
 	if rate <= 0 {
-		s.log.Warning("Invalid queryOrDecoy rate, using default")
-		return
+		return fmt.Errorf("invalid rate: %v", rate)
 	}
 	s.sendQueryOrDecoy.UpdateRate(rate, maxDelay)
+	return nil
 }
