@@ -106,8 +106,12 @@ func sendPing(session *thin.ThinClient, serviceDesc *common.ServiceDescriptor, p
 }
 
 func sendPings(session *thin.ThinClient, serviceDesc *common.ServiceDescriptor, count int, concurrency int, printDiff bool) {
-	id := hash.Sum256(serviceDesc.MixDescriptor.IdentityKey)
-	fmt.Printf("%s\n", headerStyle.Render(fmt.Sprintf("Sending %d Sphinx packets to %x@%x", count, id, serviceDesc.RecipientQueueID)))
+	// Extract service name from RecipientQueueID (remove leading '+' if present)
+	serviceName := string(serviceDesc.RecipientQueueID)
+	nodeName := serviceDesc.MixDescriptor.Name
+
+	fmt.Println("Control-C to abort...")
+	fmt.Printf("%s\n", headerStyle.Render(fmt.Sprintf("Sending %d Sphinx packets to %s@%s", count, serviceName, nodeName)))
 
 	var passed, failed uint64
 
