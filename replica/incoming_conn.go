@@ -134,12 +134,12 @@ func (c *incomingConn) worker() {
 		c.egressSender(session, outCh)
 	})
 
-	// Wait for the connection to close
-	c.Wait()
-
-	// Halt sender after all workers have finished
+	// Halt sender first to stop generating messages
 	sender.Halt()
 	sender.Wait()
+
+	// Then wait for the connection workers to finish
+	c.Wait()
 }
 
 func (c *incomingConn) egressSender(session *wire.Session, outCh chan *senderRequest) {

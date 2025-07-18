@@ -95,10 +95,12 @@ func (s *sender) worker() {
 					},
 				}
 			}
-			select {
-			case s.out <- toSend:
-			case <-s.HaltCh():
-				return
+			if toSend != nil {
+				select {
+				case s.out <- toSend:
+				case <-s.HaltCh():
+					return
+				}
 			}
 		}
 	}
