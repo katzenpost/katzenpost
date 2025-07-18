@@ -62,10 +62,12 @@ func (a *authorityAuthenticator) IsPeerValid(creds *wire.PeerCredentials) bool {
 	identityHash := hash.Sum256From(a.IdentityPublicKey)
 	if !hmac.Equal(identityHash[:], creds.AdditionalData[:hash.HashSize]) {
 		a.log.Warningf("voting/Client: IsPeerValid(): AD mismatch: %x != %x", identityHash[:], creds.AdditionalData[:hash.HashSize])
+		a.log.Warningf("voting/Client: IsPeerValid(): Remote Peer Credentials: additional_data=%x, public_key=%s", creds.AdditionalData, kempem.ToPublicPEMString(creds.PublicKey))
 		return false
 	}
 	if !a.LinkPublicKey.Equal(creds.PublicKey) {
 		a.log.Warningf("voting/Client: IsPeerValid(): Link Public Key mismatch: %s != %s", kempem.ToPublicPEMString(a.LinkPublicKey), kempem.ToPublicPEMString(creds.PublicKey))
+		a.log.Warningf("voting/Client: IsPeerValid(): Remote Peer Credentials: additional_data=%x", creds.AdditionalData[:hash.HashSize])
 		return false
 	}
 	return true
