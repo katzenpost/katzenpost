@@ -714,6 +714,18 @@ func (s *state) IsPeerValid(creds *wire.PeerCredentials) bool {
 	if ok {
 		return true
 	}
+
+	// Enhanced error logging with peer information
+	s.log.Warningf("dirauth/state: IsPeerValid(): Rejecting unauthorized authority")
+	s.log.Warningf("dirauth/state: IsPeerValid(): Remote Peer Credentials: identity_hash=%x, link_key=%s",
+		ad[:], strings.TrimSpace(kempem.ToPublicPEMString(creds.PublicKey)))
+
+	// Log expected authorized authorities for debugging
+	s.log.Warningf("dirauth/state: IsPeerValid(): Authorized authorities:")
+	for authHash := range s.authorizedAuthorities {
+		s.log.Warningf("dirauth/state: IsPeerValid():   - identity_hash=%x", authHash[:])
+	}
+
 	return false
 }
 

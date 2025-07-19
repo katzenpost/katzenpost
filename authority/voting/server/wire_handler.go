@@ -19,6 +19,7 @@ package server
 import (
 	"crypto/hmac"
 	"net"
+	"strings"
 	"time"
 
 	"github.com/katzenpost/hpqc/hash"
@@ -26,7 +27,6 @@ import (
 	"github.com/katzenpost/hpqc/kem/schemes"
 	ecdh "github.com/katzenpost/hpqc/nike/x25519"
 	"github.com/katzenpost/hpqc/rand"
-
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/pki"
@@ -362,6 +362,8 @@ func (a *wireAuthenticator) IsPeerValid(creds *wire.PeerCredentials) bool {
 	case hash.HashSize:
 	default:
 		a.s.log.Warning("Rejecting authentication, invalid AD size.")
+		a.s.log.Warningf("dirauth/wireAuth: IsPeerValid(): Remote Peer Credentials: ad_size=%d (expected: 0 or %d), link_key=%s",
+			len(creds.AdditionalData), hash.HashSize, strings.TrimSpace(kempem.ToPublicPEMString(creds.PublicKey)))
 		return false
 	}
 
@@ -384,17 +386,30 @@ func (a *wireAuthenticator) IsPeerValid(creds *wire.PeerCredentials) bool {
 		linkKey, ok := a.s.state.authorityLinkKeys[pk]
 		if !ok {
 			a.s.log.Warning("Rejecting authority authentication, no link key entry.")
-			a.s.log.Warningf("Remote Peer Credentials: additional_data=%x, public_key=%s", creds.AdditionalData[:hash.HashSize], kempem.ToPublicPEMString(creds.PublicKey))
+			a.s.log.Warningf("dirauth/wireAuth: IsPeerValid(): Remote Peer Credentials: identity_hash=%x, link_key=%s",
+				creds.AdditionalData[:hash.HashSize], strings.TrimSpace(kempem.ToPublicPEMString(creds.PublicKey)))
+			// Log expected authorities for debugging
+			a.s.log.Warningf("dirauth/wireAuth: IsPeerValid(): Expected authority link keys:")
+			for authHash, authLinkKey := range a.s.state.authorityLinkKeys {
+				a.s.log.Warningf("dirauth/wireAuth: IsPeerValid():   - identity_hash=%x, link_key=%s",
+					authHash[:], strings.TrimSpace(kempem.ToPublicPEMString(authLinkKey)))
+			}
 			return false
 		}
 		if creds.PublicKey == nil {
 			a.s.log.Warning("Rejecting authority authentication, public key is nil.")
-			a.s.log.Warningf("Remote Peer Credentials: additional_data=%x, public_key=nil", creds.AdditionalData[:hash.HashSize])
+			a.s.log.Warningf("dirauth/wireAuth: IsPeerValid(): Remote Peer Credentials: identity_hash=%x, link_key=nil",
+				creds.AdditionalData[:hash.HashSize])
 			return false
 		}
 		if !linkKey.Equal(creds.PublicKey) {
 			a.s.log.Warning("Rejecting authority authentication, public key mismatch.")
-			a.s.log.Warningf("Remote Peer Credentials: additional_data=%x, public_key=%s", creds.AdditionalData[:hash.HashSize], kempem.ToPublicPEMString(creds.PublicKey))
+			a.s.log.Warningf("dirauth/wireAuth: IsPeerValid(): Expected link key: %s",
+				strings.TrimSpace(kempem.ToPublicPEMString(linkKey)))
+			a.s.log.Warningf("dirauth/wireAuth: IsPeerValid(): Received link key: %s",
+				strings.TrimSpace(kempem.ToPublicPEMString(creds.PublicKey)))
+			a.s.log.Warningf("dirauth/wireAuth: IsPeerValid(): Remote Peer Credentials: identity_hash=%x",
+				creds.AdditionalData[:hash.HashSize])
 			return false
 		}
 		a.isAuthority = true
@@ -403,8 +418,11 @@ func (a *wireAuthenticator) IsPeerValid(creds *wire.PeerCredentials) bool {
 		a.isReplica = true
 		return true
 	default:
-		a.s.log.Warning("Rejecting authority authentication, public key mismatch.")
-		a.s.log.Warningf("Remote Peer Credentials: additional_data=%x, public_key=%s", creds.AdditionalData[:hash.HashSize], kempem.ToPublicPEMString(creds.PublicKey))
+		a.s.log.Warning("Rejecting authentication, peer not found in any authorized category.")
+		a.s.log.Warningf("dirauth/wireAuth: IsPeerValid(): Remote Peer Credentials: identity_hash=%x, link_key=%s",
+			creds.AdditionalData[:hash.HashSize], strings.TrimSpace(kempem.ToPublicPEMString(creds.PublicKey)))
+		a.s.log.Warningf("dirauth/wireAuth: IsPeerValid(): Peer not found in: mixes=%t, gateways=%t, services=%t, authorities=%t, replicas=%t",
+			isMix, isGatewayNode, isServiceNode, isAuthority, isReplicaNode)
 		return false
 	}
 	// not reached
