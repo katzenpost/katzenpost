@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"math"
 	"net"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -28,6 +29,7 @@ import (
 
 	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/kem"
+	kempem "github.com/katzenpost/hpqc/kem/pem"
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/hpqc/sign"
 
@@ -72,6 +74,18 @@ type incomingConn struct {
 }
 
 func (c *incomingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
+	// Helper function to get peer name
+	getPeerName := func() string {
+		if doc, err := c.l.glue.PKI().CurrentDocument(); err == nil && doc != nil {
+			var adHash [32]byte
+			copy(adHash[:], creds.AdditionalData)
+			if node, err := doc.GetNodeByKeyHash(&adHash); err == nil {
+				return node.Name
+			}
+		}
+		return "unknown"
+	}
+
 	gateway := c.l.glue.Gateway()
 	// this node is a provider
 	if gateway != nil {
@@ -87,6 +101,10 @@ func (c *incomingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 		if !isClient && c.fromClient {
 			// This used to be a client, but is no longer listed in
 			// the user db.  Reject.
+			peerName := getPeerName()
+			c.log.Warningf("server/incoming: IsPeerValid(): Client '%s' no longer in user db", peerName)
+			c.log.Warningf("server/incoming: IsPeerValid(): Remote Peer Credentials: name=%s, identity_hash=%x, link_key=%s",
+				peerName, creds.AdditionalData, strings.TrimSpace(kempem.ToPublicPEMString(creds.PublicKey)))
 			c.canSend = false
 			return false
 		} else if isClient {
@@ -148,11 +166,15 @@ func (c *incomingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 	if isValid {
 		c.fromMix = true
 	} else {
+		peerName := getPeerName()
 		blob, err := creds.PublicKey.MarshalBinary()
 		if err != nil {
 			panic(err)
 		}
-		c.log.Debugf("Authentication failed: '%x' (%x)", creds.AdditionalData, hash.Sum256(blob))
+		c.log.Warningf("server/incoming: IsPeerValid(): Authentication failed for peer '%s'", peerName)
+		c.log.Warningf("server/incoming: IsPeerValid(): Remote Peer Credentials: name=%s, identity_hash=%x, link_key=%s",
+			peerName, creds.AdditionalData, strings.TrimSpace(kempem.ToPublicPEMString(creds.PublicKey)))
+		c.log.Warningf("server/incoming: IsPeerValid(): Link key hash: %x", hash.Sum256(blob))
 	}
 
 	return isValid
