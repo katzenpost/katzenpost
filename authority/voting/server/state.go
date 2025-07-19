@@ -76,14 +76,31 @@ const (
 )
 
 var (
-	MixPublishDeadline       = epochtime.Period / 8
-	AuthorityVoteDeadline    = MixPublishDeadline + epochtime.Period/8
-	AuthorityRevealDeadline  = AuthorityVoteDeadline + epochtime.Period/8
-	AuthorityCertDeadline    = AuthorityRevealDeadline + epochtime.Period/8
-	PublishConsensusDeadline = AuthorityCertDeadline + epochtime.Period/8
-	errGone                  = errors.New("authority: Requested epoch will never get a Document")
-	errNotYet                = errors.New("authority: Document is not ready yet")
-	errInvalidTopology       = errors.New("authority: Invalid Topology")
+	// Clock skew tolerance for directory authority coordination
+	// This accounts for time differences between authority servers, network latency,
+	// and handshake/processing delays observed in production logs
+	// Scale with epoch duration: 5% of epoch period, min 5s, max 90s
+	clockSkewTolerance = func() time.Duration {
+		tolerance := epochtime.Period / 20 // 5% of epoch period
+		if tolerance < 5*time.Second {
+			tolerance = 5 * time.Second // Minimum 5 seconds for Docker testing
+		}
+		if tolerance > 90*time.Second {
+			tolerance = 90 * time.Second // Maximum 90 seconds for production
+		}
+		return tolerance
+	}()
+
+	// Original deadlines with proportional clock skew tolerance added
+	MixPublishDeadline       = epochtime.Period/8 + clockSkewTolerance
+	AuthorityVoteDeadline    = MixPublishDeadline + epochtime.Period/8 + clockSkewTolerance
+	AuthorityRevealDeadline  = AuthorityVoteDeadline + epochtime.Period/8 + clockSkewTolerance
+	AuthorityCertDeadline    = AuthorityRevealDeadline + epochtime.Period/8 + clockSkewTolerance
+	PublishConsensusDeadline = AuthorityCertDeadline + epochtime.Period/8 + clockSkewTolerance
+
+	errGone            = errors.New("authority: Requested epoch will never get a Document")
+	errNotYet          = errors.New("authority: Document is not ready yet")
+	errInvalidTopology = errors.New("authority: Invalid Topology")
 
 	// Peer survey constants
 	peerSurveyInterval = 5 * time.Minute
@@ -282,8 +299,10 @@ func (s *state) fsm() <-chan time.Time {
 		s.genesisEpoch = 0
 		s.backgroundFetchConsensus(epoch - 1)
 		s.backgroundFetchConsensus(epoch)
-		if elapsed > MixPublishDeadline {
-			s.log.Errorf("Too late to vote this round, sleeping until %s", nextEpoch)
+		// Add clock skew tolerance to bootstrap timing for more forgiving coordination
+		bootstrapDeadline := MixPublishDeadline + clockSkewTolerance
+		if elapsed > bootstrapDeadline {
+			s.log.Errorf("Too late to vote this round (elapsed %v > deadline %v), sleeping until %s", elapsed, bootstrapDeadline, nextEpoch)
 			sleep = nextEpoch
 			s.votingEpoch = epoch + 2
 			s.state = stateBootstrap
@@ -2113,7 +2132,8 @@ func (s *state) onDescriptorUpload(rawDesc []byte, desc *pki.MixDescriptor, epoc
 }
 
 func (s *state) documentForEpoch(epoch uint64) ([]byte, error) {
-	var generationDeadline = 7 * (epochtime.Period / 8)
+	// Add clock skew tolerance to generation deadline for more forgiving coordination
+	var generationDeadline = 7*(epochtime.Period/8) + clockSkewTolerance
 
 	s.RLock()
 	defer s.RUnlock()
