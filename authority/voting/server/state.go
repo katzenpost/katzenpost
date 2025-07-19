@@ -91,12 +91,12 @@ var (
 		return tolerance
 	}()
 
-	// Original deadlines with proportional clock skew tolerance added
+	// Original deadlines with proportional clock skew tolerance added once
 	MixPublishDeadline       = epochtime.Period/8 + clockSkewTolerance
-	AuthorityVoteDeadline    = MixPublishDeadline + epochtime.Period/8 + clockSkewTolerance
-	AuthorityRevealDeadline  = AuthorityVoteDeadline + epochtime.Period/8 + clockSkewTolerance
-	AuthorityCertDeadline    = AuthorityRevealDeadline + epochtime.Period/8 + clockSkewTolerance
-	PublishConsensusDeadline = AuthorityCertDeadline + epochtime.Period/8 + clockSkewTolerance
+	AuthorityVoteDeadline    = MixPublishDeadline + epochtime.Period/8
+	AuthorityRevealDeadline  = AuthorityVoteDeadline + epochtime.Period/8
+	AuthorityCertDeadline    = AuthorityRevealDeadline + epochtime.Period/8
+	PublishConsensusDeadline = AuthorityCertDeadline + epochtime.Period/8
 
 	errGone            = errors.New("authority: Requested epoch will never get a Document")
 	errNotYet          = errors.New("authority: Document is not ready yet")
