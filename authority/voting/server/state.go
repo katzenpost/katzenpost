@@ -2446,36 +2446,6 @@ func (s *state) peerSurveyWorker() {
 	}
 }
 
-// runPeerSurvey performs connectivity tests to all authority peers
-func (s *state) runPeerSurvey() {
-	s.Lock()
-	defer s.Unlock()
-
-	s.log.Debugf("Running peer connectivity survey...")
-
-	for peerID, surveyData := range s.peerSurveyData {
-		// Find the peer config
-		var peer *config.Authority
-		for _, p := range s.s.cfg.Authorities {
-			if hash.Sum256From(p.IdentityPublicKey) == peerID {
-				peer = p
-				break
-			}
-		}
-
-		if peer == nil {
-			s.log.Errorf("Peer survey: Could not find config for peer %x", peerID)
-			continue
-		}
-
-		// Test connectivity to this peer
-		s.testPeerConnectivity(peer, surveyData)
-	}
-
-	// Log survey summary
-	s.logPeerSurveySummary()
-}
-
 // testPeerConnectivity tests connectivity to a single peer
 func (s *state) testPeerConnectivity(peer *config.Authority, surveyData *PeerSurveyData) {
 	startTime := time.Now()
@@ -2635,14 +2605,6 @@ func (s *state) recordConnectionAttempt(surveyData *PeerSurveyData, success bool
 		surveyData.ConsecutiveFailures++
 		now := time.Now()
 		surveyData.LastFailedConn = &now
-	}
-}
-
-// logPeerSurveySummary logs a concise summary of all peer connectivity status
-func (s *state) logPeerSurveySummary() {
-	s.log.Debugf("=== PEER SURVEY (%d peers) ===", len(s.peerSurveyData))
-	for _, surveyData := range s.peerSurveyData {
-		s.logPeerDetails(surveyData)
 	}
 }
 
