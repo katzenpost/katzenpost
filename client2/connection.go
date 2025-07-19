@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -736,13 +737,23 @@ func (c *connection) IsPeerValid(creds *wire.PeerCredentials) bool {
 		}
 		expected := pem.ToPublicPEMString(expectedLinkPubKey)
 		got := pem.ToPublicPEMString(gotLinkPubKey)
-		c.log.Debugf("IsPeerValid failure creds.PublicKey mismatch, expected: %s but got %s", expected, got)
+
+		c.log.Warningf("client2/connection: IsPeerValid(): Link key mismatch for peer '%s'", c.descriptor.Name)
+		c.log.Warningf("client2/connection: IsPeerValid(): Expected link key: %s", strings.TrimSpace(expected))
+		c.log.Warningf("client2/connection: IsPeerValid(): Received link key: %s", strings.TrimSpace(got))
+		c.log.Warningf("client2/connection: IsPeerValid(): Remote Peer Credentials: name=%s, identity_hash=%x",
+			c.descriptor.Name, creds.AdditionalData)
 		return false
 	}
 
 	identityHash := hash.Sum256(c.descriptor.IdentityKey)
 	if !hmac.Equal(identityHash[:], creds.AdditionalData) {
-		c.log.Debugf("IsPeerValid failure creds.AdditionalData mismatch, expected: %x but got %x", identityHash[:], creds.AdditionalData)
+		c.log.Warningf("client2/connection: IsPeerValid(): Identity hash mismatch for peer '%s'", c.descriptor.Name)
+		c.log.Warningf("client2/connection: IsPeerValid(): Expected identity hash: %x", identityHash[:])
+		c.log.Warningf("client2/connection: IsPeerValid(): Received identity hash: %x", creds.AdditionalData)
+		c.log.Warningf("client2/connection: IsPeerValid(): Expected identity key (raw): %x", c.descriptor.IdentityKey)
+		c.log.Warningf("client2/connection: IsPeerValid(): Remote Peer Credentials: name=%s, link_key=%s",
+			c.descriptor.Name, strings.TrimSpace(pem.ToPublicPEMString(creds.PublicKey)))
 		return false
 	}
 	return true

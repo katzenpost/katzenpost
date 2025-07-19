@@ -14,6 +14,7 @@ import (
 	"gopkg.in/op/go-logging.v1"
 
 	"github.com/katzenpost/hpqc/hash"
+	kempem "github.com/katzenpost/hpqc/kem/pem"
 	"github.com/katzenpost/hpqc/kem/schemes"
 
 	"github.com/katzenpost/katzenpost/core/epochtime"
@@ -81,13 +82,41 @@ func (p *gateway) AuthenticateClient(c *wire.PeerCredentials) bool {
 		if err != nil {
 			panic(err)
 		}
+
+		// Try to get a human-readable username from AdditionalData
+		username := "unknown"
+		if len(c.AdditionalData) > 0 && len(c.AdditionalData) < 256 {
+			// Check if it looks like a printable username
+			if isPrintableASCII(c.AdditionalData) {
+				username = string(c.AdditionalData)
+			} else {
+				username = fmt.Sprintf("user_%x", c.AdditionalData)
+			}
+		}
+
 		if len(c.AdditionalData) == sConstants.NodeIDLength {
-			p.log.Errorf("Authentication failed: User: '%x', Key: '%x' (Probably a peer)", c.AdditionalData, hash.Sum256(blob))
+			p.log.Warningf("gateway: AuthenticateClient(): Authentication failed for peer (probably a mix node)")
+			p.log.Warningf("gateway: AuthenticateClient(): Remote Peer Credentials: name=%s, identity_hash=%x, link_key=%s",
+				username, c.AdditionalData, strings.TrimSpace(kempem.ToPublicPEMString(c.PublicKey)))
+			p.log.Warningf("gateway: AuthenticateClient(): Link key hash: %x", hash.Sum256(blob))
 		} else {
-			p.log.Errorf("Authentication failed: User: '%x', Key: '%x'", c.AdditionalData, hash.Sum256(blob))
+			p.log.Warningf("gateway: AuthenticateClient(): Authentication failed for client '%s'", username)
+			p.log.Warningf("gateway: AuthenticateClient(): Remote Peer Credentials: name=%s, user_id=%x, link_key=%s",
+				username, c.AdditionalData, strings.TrimSpace(kempem.ToPublicPEMString(c.PublicKey)))
+			p.log.Warningf("gateway: AuthenticateClient(): Link key hash: %x", hash.Sum256(blob))
 		}
 	}
 	return isValid
+}
+
+// isPrintableASCII checks if all bytes in the slice are printable ASCII characters
+func isPrintableASCII(data []byte) bool {
+	for _, b := range data {
+		if b < 32 || b > 126 {
+			return false
+		}
+	}
+	return true
 }
 
 func (p *gateway) OnPacket(pkt *packet.Packet) {
