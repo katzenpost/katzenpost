@@ -100,7 +100,7 @@ type document struct {
 	raw []byte
 }
 
-// PeerConnectionAttempt represents a single connection attempt to a peer
+// PeerConnectionAttempt represents a single connection attempt to/from a peer
 type PeerConnectionAttempt struct {
 	Timestamp     time.Time
 	Success       bool
@@ -108,21 +108,38 @@ type PeerConnectionAttempt struct {
 	Duration      time.Duration
 	AddressUsed   string
 	ErrorCategory string // "network", "handshake", "timeout", "auth", etc.
+	Direction     string // "outbound" or "inbound"
 }
 
 // PeerSurveyData tracks historical connectivity information for a peer
 type PeerSurveyData struct {
-	PeerID              [publicKeyHashSize]byte
-	PeerName            string
-	IdentityPublicKey   sign.PublicKey
-	LinkPublicKey       kem.PublicKey
-	Addresses           []string
-	ConnectionHistory   []PeerConnectionAttempt
+	PeerID            [publicKeyHashSize]byte
+	PeerName          string
+	IdentityPublicKey sign.PublicKey
+	LinkPublicKey     kem.PublicKey
+	Addresses         []string
+	ConnectionHistory []PeerConnectionAttempt
+
+	// Overall statistics
 	LastSuccessfulConn  *time.Time
 	LastFailedConn      *time.Time
 	ConsecutiveFailures int
 	TotalAttempts       int
 	SuccessfulAttempts  int
+
+	// Outbound connection statistics
+	OutboundAttempts        int
+	OutboundSuccessful      int
+	OutboundConsecutiveFail int
+	LastOutboundSuccess     *time.Time
+	LastOutboundFailure     *time.Time
+
+	// Inbound connection statistics
+	InboundAttempts        int
+	InboundSuccessful      int
+	InboundConsecutiveFail int
+	LastInboundSuccess     *time.Time
+	LastInboundFailure     *time.Time
 }
 
 type state struct {
@@ -758,8 +775,16 @@ func (s *state) IsPeerValid(creds *wire.PeerCredentials) bool {
 	var ad [publicKeyHashSize]byte
 	copy(ad[:], creds.AdditionalData[:publicKeyHashSize])
 	_, ok := s.authorizedAuthorities[ad]
+
+	// Record incoming connection attempt
 	if ok {
+		// Successful incoming connection from authorized authority
+		s.recordIncomingConnection(ad, true, nil)
 		return true
+	} else {
+		// Failed incoming connection - unauthorized
+		s.recordIncomingConnection(ad, false, errors.New("unauthorized peer"))
+		return false
 	}
 
 	// Try to get peer name from current PKI document
@@ -798,13 +823,19 @@ func (s *state) IsPeerValid(creds *wire.PeerCredentials) bool {
 func (s *state) sendCommandToPeer(peer *config.Authority, cmd commands.Command) (commands.Command, error) {
 	s.log.Debugf("sendCommandToPeer: peer.Identifier: %s peer.PublicKey: %s, IdentityPublicKey: %s", peer.Identifier, kempem.ToPublicPEMString(peer.LinkPublicKey), signpem.ToPublicPEMString(peer.IdentityPublicKey))
 
+	peerID := hash.Sum256From(peer.IdentityPublicKey)
+	startTime := time.Now()
+
 	var conn net.Conn
 	var err error
+	var addressUsed string
+
 	for i, a := range peer.Addresses {
 		u, err := url.Parse(a)
 		if err != nil {
 			continue
 		}
+		addressUsed = a
 		defaultDialer := &net.Dialer{}
 		ctx, cancelFn := context.WithCancel(context.Background())
 		conn, err = common.DialURL(u, ctx, defaultDialer.DialContext)
@@ -813,7 +844,9 @@ func (s *state) sendCommandToPeer(peer *config.Authority, cmd commands.Command) 
 			defer conn.Close()
 			break
 		} else {
-			s.log.Errorf("Got err from Peer: %v", err)
+			s.log.Errorf("Got err from Peer %s: %v", peer.Identifier, err)
+			// Record failed connection attempt
+			s.recordConnectionAttempt(peerID, false, err, time.Since(startTime), addressUsed, "outbound")
 		}
 		if i == len(peer.Addresses)-1 {
 			return nil, err
@@ -843,16 +876,25 @@ func (s *state) sendCommandToPeer(peer *config.Authority, cmd commands.Command) 
 	defer session.Close()
 
 	if err = session.Initialize(conn); err != nil {
+		// Record handshake failure
+		s.recordConnectionAttempt(peerID, false, err, time.Since(startTime), addressUsed, "outbound")
 		return nil, err
 	}
 	err = session.SendCommand(cmd)
 	if err != nil {
+		// Record protocol failure
+		s.recordConnectionAttempt(peerID, false, err, time.Since(startTime), addressUsed, "outbound")
 		return nil, err
 	}
 	resp, err := session.RecvCommand()
 	if err != nil {
+		// Record protocol failure
+		s.recordConnectionAttempt(peerID, false, err, time.Since(startTime), addressUsed, "outbound")
 		return nil, err
 	}
+
+	// Record successful connection
+	s.recordConnectionAttempt(peerID, true, nil, time.Since(startTime), addressUsed, "outbound")
 	return resp, nil
 }
 
@@ -1259,7 +1301,6 @@ func (s *state) logConsensusFailureDetails(epoch uint64) {
 
 // logVoteStatus logs detailed information about vote reception
 func (s *state) logVoteStatus(epoch uint64) {
-	s.log.Errorf("=== VOTE STATUS FOR EPOCH %v ===", epoch)
 	s.log.Errorf("Required threshold: %d votes", s.threshold)
 	s.log.Errorf("Total authorities: %d", len(s.verifiers))
 
@@ -1280,12 +1321,11 @@ func (s *state) logVoteStatus(epoch uint64) {
 			s.log.Errorf("  ❌ %s", name)
 		}
 	}
-	s.log.Errorf("=== END VOTE STATUS ===")
 }
 
 // logParameterVotingDetails logs why parameter consensus failed
 func (s *state) logParameterVotingDetails(epoch uint64, mixParams map[string][]*pki.Document) {
-	s.log.Errorf("=== PARAMETER VOTING DETAILS FOR EPOCH %v ===", epoch)
+	s.log.Errorf("Parameter voting details:")
 	s.log.Errorf("Required threshold: %d votes", s.threshold)
 
 	for _, votes := range mixParams {
@@ -1307,7 +1347,6 @@ func (s *state) logParameterVotingDetails(epoch uint64, mixParams map[string][]*
 			}
 		}
 	}
-	s.log.Errorf("=== END PARAMETER VOTING DETAILS ===")
 }
 
 func (s *state) computeSharedRandom(epoch uint64, commits map[[publicKeyHashSize]byte][]byte, reveals map[[publicKeyHashSize]byte][]byte) ([]byte, error) {
@@ -2485,168 +2524,4 @@ func (s *state) reveal(epoch uint64) []byte {
 		s.s.fatalErrCh <- errors.New("reveal() called without commit")
 	}
 	return signed
-}
-
-// initPeerSurvey initializes the peer survey system
-func (s *state) initPeerSurvey() {
-	s.peerSurveyData = make(map[[publicKeyHashSize]byte]*PeerSurveyData)
-	s.surveyStopCh = make(chan struct{})
-
-	// Initialize survey data for each configured authority peer
-	for _, peer := range s.s.cfg.Authorities {
-		peerID := hash.Sum256From(peer.IdentityPublicKey)
-
-		// Skip self
-		if peerID == s.identityPubKeyHash() {
-			continue
-		}
-
-		s.peerSurveyData[peerID] = &PeerSurveyData{
-			PeerID:            peerID,
-			PeerName:          peer.Identifier,
-			IdentityPublicKey: peer.IdentityPublicKey,
-			LinkPublicKey:     peer.LinkPublicKey,
-			Addresses:         peer.Addresses,
-			ConnectionHistory: make([]PeerConnectionAttempt, 0, maxSurveyHistory),
-		}
-	}
-
-	// Start the survey worker
-	s.surveyTicker = time.NewTicker(peerSurveyInterval)
-	s.Go(s.peerSurveyWorker)
-}
-
-// peerSurveyWorker runs the periodic peer connectivity survey
-func (s *state) peerSurveyWorker() {
-	defer s.surveyTicker.Stop()
-
-	s.log.Debugf("Peer survey worker started, running every %v", peerSurveyInterval)
-
-	// Run initial survey
-	s.runPeerSurvey()
-
-	for {
-		select {
-		case <-s.HaltCh():
-			s.log.Debugf("Peer survey worker terminating gracefully.")
-			return
-		case <-s.surveyStopCh:
-			s.log.Debugf("Peer survey worker stopped.")
-			return
-		case <-s.surveyTicker.C:
-			s.runPeerSurvey()
-		}
-	}
-}
-
-// runPeerSurvey logs peer status based on actual voting protocol interactions
-func (s *state) runPeerSurvey() {
-	s.Lock()
-	defer s.Unlock()
-
-	s.log.Debugf("Peer status summary based on voting protocol interactions...")
-	s.logPeerSurveySummary()
-}
-
-// logPeerSurveySummary logs a concise summary of all peer connectivity status
-func (s *state) logPeerSurveySummary() {
-	s.log.Debugf("=== PEER SURVEY (%d peers) ===", len(s.peerSurveyData))
-	for _, surveyData := range s.peerSurveyData {
-		s.logPeerDetails(surveyData)
-	}
-}
-
-// logPeerDetails logs concise but comprehensive information about a specific peer
-func (s *state) logPeerDetails(surveyData *PeerSurveyData) {
-	// Calculate success rate
-	successRate := float64(0)
-	if surveyData.TotalAttempts > 0 {
-		successRate = float64(surveyData.SuccessfulAttempts) / float64(surveyData.TotalAttempts) * 100
-	}
-
-	// Peer header with connectivity stats
-	s.log.Debugf("--- %s: %d/%d attempts (%.1f%%), %d consecutive failures",
-		surveyData.PeerName,
-		surveyData.SuccessfulAttempts,
-		surveyData.TotalAttempts,
-		successRate,
-		surveyData.ConsecutiveFailures)
-
-	// Addresses (compact format)
-	addrs := make([]string, len(surveyData.Addresses))
-	for i, addr := range surveyData.Addresses {
-		if u, err := url.Parse(addr); err == nil {
-			addrs[i] = fmt.Sprintf("%s://%s", u.Scheme, u.Host)
-		} else {
-			addrs[i] = addr
-		}
-	}
-	s.log.Debugf("    Addresses: %s", strings.Join(addrs, ", "))
-
-	// Last connection times
-	lastSuccess := "Never"
-	lastFailed := "Never"
-	if surveyData.LastSuccessfulConn != nil {
-		lastSuccess = surveyData.LastSuccessfulConn.Format("2006-01-02 15:04:05")
-	}
-	if surveyData.LastFailedConn != nil {
-		lastFailed = surveyData.LastFailedConn.Format("2006-01-02 15:04:05")
-	}
-	s.log.Debugf("    Last success: %s | Last failure: %s", lastSuccess, lastFailed)
-
-	// Keys (truncated)
-	s.log.Debugf("    Identity: %s", kpcommon.TruncatePEMForLogging(signpem.ToPublicPEMString(surveyData.IdentityPublicKey)))
-	s.log.Debugf("    Link: %s", kpcommon.TruncatePEMForLogging(kempem.ToPublicPEMString(surveyData.LinkPublicKey)))
-
-	// Recent connection history (last 5 attempts for brevity)
-	historyCount := len(surveyData.ConnectionHistory)
-	if historyCount > 0 {
-		s.log.Debugf("    Recent history (last %d):", min(historyCount, 5))
-		start := max(0, historyCount-5)
-		for i := start; i < historyCount; i++ {
-			attempt := surveyData.ConnectionHistory[i]
-			status := "OK"
-			errorInfo := ""
-			if !attempt.Success {
-				status = "FAIL"
-				errorInfo = fmt.Sprintf(" (%s)", attempt.ErrorCategory)
-				if attempt.Error != "" {
-					errorInfo += fmt.Sprintf(" - %s", attempt.Error)
-				}
-			}
-			s.log.Debugf("      [%s] %s via %s (%.2fs)%s",
-				attempt.Timestamp.Format("15:04:05"),
-				status,
-				attempt.AddressUsed,
-				attempt.Duration.Seconds(),
-				errorInfo)
-		}
-	} else {
-		s.log.Debugf("    Recent history: No attempts recorded")
-	}
-}
-
-// Helper functions for min/max
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
-}
-
-// stopPeerSurvey stops the peer survey worker
-func (s *state) stopPeerSurvey() {
-	if s.surveyTicker != nil {
-		s.surveyTicker.Stop()
-	}
-	if s.surveyStopCh != nil {
-		close(s.surveyStopCh)
-	}
 }
