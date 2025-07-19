@@ -184,7 +184,6 @@ type state struct {
 	// Peer survey data
 	peerSurveyData map[[publicKeyHashSize]byte]*PeerSurveyData
 	surveyTicker   *time.Ticker
-	surveyStopCh   chan struct{}
 }
 
 func (s *state) Halt() {
@@ -193,9 +192,17 @@ func (s *state) Halt() {
 	// Stop peer survey worker
 	s.stopPeerSurvey()
 
-	// Gracefully close the persistence store.
-	s.db.Sync()
-	s.db.Close()
+	// Gracefully close the persistence store
+	if s.db != nil {
+		// Sync first (this can be slow but is important for data integrity)
+		if err := s.db.Sync(); err != nil {
+			s.log.Errorf("Database sync failed: %v", err)
+		}
+		// Always close the database (this must complete for data safety)
+		if err := s.db.Close(); err != nil {
+			s.log.Errorf("Database close failed: %v", err)
+		}
+	}
 }
 
 func (s *state) onUpdate() {

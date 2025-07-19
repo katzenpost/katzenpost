@@ -28,7 +28,6 @@ import (
 // initPeerSurvey initializes the peer survey system
 func (s *state) initPeerSurvey() {
 	s.peerSurveyData = make(map[[publicKeyHashSize]byte]*PeerSurveyData)
-	s.surveyStopCh = make(chan struct{})
 
 	// Initialize survey data for each configured authority peer
 	for _, peer := range s.s.cfg.Authorities {
@@ -68,9 +67,6 @@ func (s *state) peerSurveyWorker() {
 		case <-s.HaltCh():
 			s.log.Debugf("Peer survey worker terminating gracefully.")
 			return
-		case <-s.surveyStopCh:
-			s.log.Debugf("Peer survey worker stopped.")
-			return
 		case <-s.surveyTicker.C:
 			s.runPeerSurvey()
 		}
@@ -99,9 +95,7 @@ func (s *state) logPeerSurveySummary() {
 func (s *state) stopPeerSurvey() {
 	if s.surveyTicker != nil {
 		s.surveyTicker.Stop()
-	}
-	if s.surveyStopCh != nil {
-		close(s.surveyStopCh)
+		s.log.Debugf("Peer survey ticker stopped")
 	}
 }
 
