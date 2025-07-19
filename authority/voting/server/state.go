@@ -49,6 +49,7 @@ import (
 	"github.com/katzenpost/hpqc/sign"
 	"github.com/katzenpost/katzenpost/authority/voting/client"
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
+	kpcommon "github.com/katzenpost/katzenpost/common"
 	"github.com/katzenpost/katzenpost/core/cert"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/pki"
@@ -766,7 +767,7 @@ func (s *state) IsPeerValid(creds *wire.PeerCredentials) bool {
 	// Enhanced error logging with peer information
 	s.log.Warningf("dirauth/state: IsPeerValid(): Rejecting unauthorized authority '%s'", peerName)
 	s.log.Warningf("dirauth/state: IsPeerValid(): Remote Peer Credentials: name=%s, identity_hash=%x, link_key=%s",
-		peerName, ad[:], strings.TrimSpace(kempem.ToPublicPEMString(creds.PublicKey)))
+		peerName, ad[:], kpcommon.TruncatePEMForLogging(kempem.ToPublicPEMString(creds.PublicKey)))
 
 	// Log expected authorized authorities for debugging
 	s.log.Warningf("dirauth/state: IsPeerValid(): Authorized authorities:")
@@ -2600,15 +2601,6 @@ func (s *state) logPeerSurveySummary() {
 	s.log.Debugf("=== END PEER SURVEY SUMMARY ===")
 }
 
-// truncatePEMForLogging truncates a PEM string to first two lines plus "..."
-func truncatePEMForLogging(pemStr string) string {
-	lines := strings.Split(strings.TrimSpace(pemStr), "\n")
-	if len(lines) <= 2 {
-		return pemStr
-	}
-	return strings.Join(lines[:2], "\n") + "\n..."
-}
-
 // logPeerDetails logs detailed information about a specific peer
 func (s *state) logPeerDetails(surveyData *PeerSurveyData) {
 	s.log.Debugf("--- Peer: %s ---", surveyData.PeerName)
@@ -2630,9 +2622,9 @@ func (s *state) logPeerDetails(surveyData *PeerSurveyData) {
 	linkPEM := kempem.ToPublicPEMString(surveyData.LinkPublicKey)
 
 	s.log.Debugf("Identity Public Key (PEM):")
-	s.log.Debugf("%s", truncatePEMForLogging(identityPEM))
+	s.log.Debugf("%s", kpcommon.TruncatePEMForLogging(identityPEM))
 	s.log.Debugf("Link Public Key (PEM):")
-	s.log.Debugf("%s", truncatePEMForLogging(linkPEM))
+	s.log.Debugf("%s", kpcommon.TruncatePEMForLogging(linkPEM))
 
 	// Log connectivity statistics
 	successRate := float64(0)

@@ -9,6 +9,7 @@ import (
 
 	"github.com/katzenpost/hpqc/kem"
 	kempem "github.com/katzenpost/hpqc/kem/pem"
+	"github.com/katzenpost/katzenpost/common"
 )
 
 // HandshakeState represents the current state of the handshake
@@ -141,10 +142,10 @@ func (e *HandshakeError) Verbose() string {
 	// Key material
 	b.WriteString("\n--- KEY MATERIAL ---\n")
 	if e.LocalStaticKey != nil {
-		fmt.Fprintf(&b, "Local Static Key: %s\n", strings.TrimSpace(kempem.ToPublicPEMString(e.LocalStaticKey)))
+		fmt.Fprintf(&b, "Local Static Key: %s\n", common.TruncatePEMForLogging(kempem.ToPublicPEMString(e.LocalStaticKey)))
 	}
 	if e.RemoteStaticKey != nil {
-		fmt.Fprintf(&b, "Remote Static Key: %s\n", strings.TrimSpace(kempem.ToPublicPEMString(e.RemoteStaticKey)))
+		fmt.Fprintf(&b, "Remote Static Key: %s\n", common.TruncatePEMForLogging(kempem.ToPublicPEMString(e.RemoteStaticKey)))
 	}
 
 	// Authentication information
@@ -156,7 +157,7 @@ func (e *HandshakeError) Verbose() string {
 		if e.PeerCredentials != nil {
 			fmt.Fprintf(&b, "Peer Additional Data: %x\n", e.PeerCredentials.AdditionalData)
 			if e.PeerCredentials.PublicKey != nil {
-				fmt.Fprintf(&b, "Peer Public Key: %s\n", strings.TrimSpace(kempem.ToPublicPEMString(e.PeerCredentials.PublicKey)))
+				fmt.Fprintf(&b, "Peer Public Key: %s\n", common.TruncatePEMForLogging(kempem.ToPublicPEMString(e.PeerCredentials.PublicKey)))
 			}
 		}
 	}
@@ -248,7 +249,7 @@ func (e *AuthenticationError) Verbose() string {
 	if e.PeerCredentials != nil {
 		fmt.Fprintf(&b, "Additional Data: %x\n", e.PeerCredentials.AdditionalData)
 		if e.PeerCredentials.PublicKey != nil {
-			fmt.Fprintf(&b, "Public Key: %s\n", strings.TrimSpace(kempem.ToPublicPEMString(e.PeerCredentials.PublicKey)))
+			fmt.Fprintf(&b, "Public Key: %s\n", common.TruncatePEMForLogging(kempem.ToPublicPEMString(e.PeerCredentials.PublicKey)))
 		}
 	}
 

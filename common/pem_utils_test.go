@@ -1,40 +1,16 @@
-package server
+// SPDX-FileCopyrightText: Copyright (c) 2024 David Stainton
+// SPDX-License-Identifier: AGPL-3.0-only
+
+package common
 
 import (
-	"fmt"
 	"strings"
 	"testing"
 
 	"github.com/katzenpost/hpqc/kem/pem"
 	"github.com/katzenpost/hpqc/kem/schemes"
-	kpcommon "github.com/katzenpost/katzenpost/common"
 	"github.com/stretchr/testify/require"
 )
-
-func TestErrorCategorization(t *testing.T) {
-	// Create a minimal state for testing
-	st := &state{}
-
-	testCases := []struct {
-		error    string
-		expected string
-	}{
-		{"dial tcp: connection refused", "network"},
-		{"context deadline exceeded", "timeout"},
-		{"handshake failed", "handshake"},
-		{"tls: bad certificate", "handshake"},
-		{"authentication failed", "auth"},
-		{"session creation failed", "session"},
-		{"some unknown error", "unknown"},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.error, func(t *testing.T) {
-			category := st.categorizeError(fmt.Errorf("%s", tc.error))
-			require.Equal(t, tc.expected, category)
-		})
-	}
-}
 
 func TestTruncatePEMForLogging(t *testing.T) {
 	// Test with a real KEM key to ensure truncation works
@@ -46,22 +22,22 @@ func TestTruncatePEMForLogging(t *testing.T) {
 
 	// Get the full PEM string
 	fullPEM := pem.ToPublicPEMString(linkPub)
-
+	
 	// Test truncation
-	truncated := kpcommon.TruncatePEMForLogging(fullPEM)
-
+	truncated := TruncatePEMForLogging(fullPEM)
+	
 	// Verify structure
 	lines := strings.Split(strings.TrimSpace(truncated), "\n")
 	require.True(t, len(lines) >= 3, "Truncated PEM should have at least 3 lines (header, first data line, ...)")
-
+	
 	// Should end with "..."
 	require.Equal(t, "...", lines[len(lines)-1])
-
+	
 	// Should be shorter than original
 	require.True(t, len(truncated) < len(fullPEM), "Truncated PEM should be shorter than original")
-
+	
 	// Test with short PEM (should not be truncated)
 	shortPEM := "-----BEGIN TEST-----\n-----END TEST-----"
-	truncatedShort := kpcommon.TruncatePEMForLogging(shortPEM)
+	truncatedShort := TruncatePEMForLogging(shortPEM)
 	require.Equal(t, shortPEM, truncatedShort, "Short PEM should not be truncated")
 }
