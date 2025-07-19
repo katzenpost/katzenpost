@@ -94,8 +94,10 @@ func (s *Server) onConn(conn net.Conn) {
 	cmd, err := wireConn.RecvCommand()
 	if err != nil {
 		s.log.Debugf("Peer %v: Failed to receive command: %v", rAddr, err)
-		// Record failed connection for survey tracking
-		s.recordConnectionTiming(auth, rAddr, false, err, &timing)
+		// Record failed connection for survey tracking (authority peers only)
+		if auth.isAuthority {
+			s.recordConnectionTiming(auth, rAddr, false, err, &timing)
+		}
 		return
 	}
 	conn.SetDeadline(time.Time{})
@@ -114,8 +116,10 @@ func (s *Server) onConn(conn net.Conn) {
 		panic("wtf") // should only happen if there is a bug in wireAuthenticator
 	}
 
-	// Record successful connection for survey tracking
-	s.recordConnectionTiming(auth, rAddr, true, nil, &timing)
+	// Record successful connection for survey tracking (authority peers only)
+	if auth.isAuthority {
+		s.recordConnectionTiming(auth, rAddr, true, nil, &timing)
+	}
 
 	// Send the response, if any.
 	if resp != nil {
