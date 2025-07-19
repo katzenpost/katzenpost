@@ -393,10 +393,8 @@ func (s *state) doSignDocument(signer sign.PrivateKey, verifier sign.PublicKey, 
 }
 
 // getCertificate is the same as a vote but it contains all SharedRandomCommits and SharedRandomReveals seen
+// Caller must hold write lock.
 func (s *state) getCertificate(epoch uint64) (*pki.Document, error) {
-	if s.TryLock() {
-		panic("write lock not held in getCertificate(epoch)")
-	}
 
 	mixes, replicas, params, err := s.tallyVotes(epoch)
 	if err != nil {
@@ -438,10 +436,8 @@ func (s *state) getCertificate(epoch uint64) (*pki.Document, error) {
 }
 
 // getConsensus computes the final document using the computed SharedRandomValue
+// Caller must hold write lock.
 func (s *state) getMyConsensus(epoch uint64) (*pki.Document, error) {
-	if s.TryLock() {
-		panic("write lock not held in getMyConsensus(epoch)")
-	}
 
 	certificates, ok := s.certificates[epoch]
 	if !ok {
@@ -490,11 +486,9 @@ func (s *state) getMyConsensus(epoch uint64) (*pki.Document, error) {
 }
 
 // getThresholdConsensus returns a *pki.Document iff a threshold consensus is reached or error
+// getThresholdConsensus ranges over the certificates we have collected and see if we can collect enough signatures to make a consensus
+// Caller must hold write lock.
 func (s *state) getThresholdConsensus(epoch uint64) (*pki.Document, error) {
-	// range over the certificates we have collected and see if we can collect enough signatures to make a consensus
-	if s.TryLock() {
-		panic("write lock not held in getThresholdConsensus(epoch)")
-	}
 
 	ourConsensus, ok := s.myconsensus[epoch]
 	if !ok {
@@ -2209,10 +2203,9 @@ func newState(s *Server) (*state, error) {
 	return st, nil
 }
 
+// backgroundFetchConsensus fetches consensus from other authorities if we don't have one for the given epoch.
+// Caller must hold write lock.
 func (s *state) backgroundFetchConsensus(epoch uint64) {
-	if s.TryLock() {
-		panic("write lock not held in backgroundFetchConsensus(epoch)")
-	}
 
 	// If there isn't a consensus for the previous epoch, ask the other
 	// authorities for a consensus.
@@ -2396,196 +2389,13 @@ func (s *state) peerSurveyWorker() {
 	}
 }
 
-// runPeerSurvey performs connectivity tests to all authority peers
+// runPeerSurvey logs peer status based on actual voting protocol interactions
 func (s *state) runPeerSurvey() {
 	s.Lock()
 	defer s.Unlock()
 
-	s.log.Debugf("Running peer connectivity survey...")
-
-	for peerID, surveyData := range s.peerSurveyData {
-		// Find the peer config
-		var peer *config.Authority
-		for _, p := range s.s.cfg.Authorities {
-			if hash.Sum256From(p.IdentityPublicKey) == peerID {
-				peer = p
-				break
-			}
-		}
-
-		if peer == nil {
-			s.log.Errorf("Peer survey: Could not find config for peer %x", peerID)
-			continue
-		}
-
-		// Test connectivity to this peer
-		s.testPeerConnectivity(peer, surveyData)
-	}
-
-	// Log survey summary
+	s.log.Debugf("Peer status summary based on voting protocol interactions...")
 	s.logPeerSurveySummary()
-}
-
-// testPeerConnectivity tests connectivity to a single peer
-func (s *state) testPeerConnectivity(peer *config.Authority, surveyData *PeerSurveyData) {
-	startTime := time.Now()
-
-	// Create a simple GetConsensus command for testing connectivity
-	cmd := &commands.GetConsensus{
-		Epoch: s.votingEpoch,
-	}
-
-	var lastErr error
-	var addressUsed string
-	var errorCategory string
-
-	// Try each address until one succeeds or all fail
-	for _, addr := range peer.Addresses {
-		addressUsed = addr
-
-		// Attempt connection
-		resp, err := s.testPeerConnection(peer, cmd, addr)
-		if err != nil {
-			lastErr = err
-			errorCategory = s.categorizeError(err)
-			s.log.Debugf("Peer survey: Connection to %s (%s) failed: %v", peer.Identifier, addr, err)
-			continue
-		}
-
-		// Connection succeeded
-		duration := time.Since(startTime)
-		s.recordConnectionAttempt(surveyData, true, "", duration, addressUsed, "")
-
-		// Log successful response details if available
-		if resp != nil {
-			s.log.Debugf("Peer survey: Connection to %s (%s) succeeded in %v", peer.Identifier, addr, duration)
-		}
-		return
-	}
-
-	// All addresses failed
-	duration := time.Since(startTime)
-	errorMsg := ""
-	if lastErr != nil {
-		errorMsg = lastErr.Error()
-	}
-	s.recordConnectionAttempt(surveyData, false, errorMsg, duration, addressUsed, errorCategory)
-}
-
-// testPeerConnection attempts to connect to a specific peer address
-func (s *state) testPeerConnection(peer *config.Authority, cmd commands.Command, address string) (commands.Command, error) {
-	u, err := url.Parse(address)
-	if err != nil {
-		return nil, fmt.Errorf("invalid address format: %v", err)
-	}
-
-	// Set a reasonable timeout for survey connections
-	ctx, cancelFn := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancelFn()
-
-	defaultDialer := &net.Dialer{}
-	conn, err := common.DialURL(u, ctx, defaultDialer.DialContext)
-	if err != nil {
-		return nil, fmt.Errorf("dial failed: %v", err)
-	}
-	defer conn.Close()
-
-	// Set up wire protocol session
-	identityHash := hash.Sum256From(s.s.identityPublicKey)
-
-	kemscheme := schemes.ByName(s.s.cfg.Server.WireKEMScheme)
-	if kemscheme == nil {
-		return nil, fmt.Errorf("kem scheme not found in registry")
-	}
-
-	cfg := &wire.SessionConfig{
-		KEMScheme:         kemscheme,
-		Geometry:          s.geo,
-		Authenticator:     s,
-		AdditionalData:    identityHash[:],
-		AuthenticationKey: s.s.linkKey,
-		RandomReader:      rand.Reader,
-	}
-
-	session, err := wire.NewPKISession(cfg, true)
-	if err != nil {
-		return nil, fmt.Errorf("session creation failed: %v", err)
-	}
-	defer session.Close()
-
-	// Initialize session with timeout
-	conn.SetDeadline(time.Now().Add(15 * time.Second))
-	if err = session.Initialize(conn); err != nil {
-		return nil, fmt.Errorf("handshake failed: %v", err)
-	}
-
-	// Send command
-	conn.SetDeadline(time.Now().Add(10 * time.Second))
-	err = session.SendCommand(cmd)
-	if err != nil {
-		return nil, fmt.Errorf("send command failed: %v", err)
-	}
-
-	// Receive response
-	resp, err := session.RecvCommand()
-	if err != nil {
-		return nil, fmt.Errorf("receive response failed: %v", err)
-	}
-
-	return resp, nil
-}
-
-// categorizeError categorizes connection errors for better reporting
-func (s *state) categorizeError(err error) string {
-	errStr := strings.ToLower(err.Error())
-
-	switch {
-	case strings.Contains(errStr, "dial") || strings.Contains(errStr, "connection refused") || strings.Contains(errStr, "no route"):
-		return "network"
-	case strings.Contains(errStr, "timeout") || strings.Contains(errStr, "deadline"):
-		return "timeout"
-	case strings.Contains(errStr, "handshake") || strings.Contains(errStr, "tls") || strings.Contains(errStr, "certificate"):
-		return "handshake"
-	case strings.Contains(errStr, "auth") || strings.Contains(errStr, "permission") || strings.Contains(errStr, "unauthorized"):
-		return "auth"
-	case strings.Contains(errStr, "session"):
-		return "session"
-	default:
-		return "unknown"
-	}
-}
-
-// recordConnectionAttempt records a connection attempt in the peer's history
-func (s *state) recordConnectionAttempt(surveyData *PeerSurveyData, success bool, errorMsg string, duration time.Duration, addressUsed, errorCategory string) {
-	attempt := PeerConnectionAttempt{
-		Timestamp:     time.Now(),
-		Success:       success,
-		Error:         errorMsg,
-		Duration:      duration,
-		AddressUsed:   addressUsed,
-		ErrorCategory: errorCategory,
-	}
-
-	// Add to history
-	surveyData.ConnectionHistory = append(surveyData.ConnectionHistory, attempt)
-
-	// Trim history if it exceeds max size
-	if len(surveyData.ConnectionHistory) > maxSurveyHistory {
-		surveyData.ConnectionHistory = surveyData.ConnectionHistory[1:]
-	}
-
-	// Update statistics
-	surveyData.TotalAttempts++
-	if success {
-		surveyData.SuccessfulAttempts++
-		surveyData.ConsecutiveFailures = 0
-		now := time.Now()
-		surveyData.LastSuccessfulConn = &now
-	} else {
-		surveyData.ConsecutiveFailures++
-		now := time.Now()
-		surveyData.LastFailedConn = &now
-	}
 }
 
 // logPeerSurveySummary logs a concise summary of all peer connectivity status
