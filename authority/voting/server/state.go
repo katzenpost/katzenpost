@@ -2600,6 +2600,15 @@ func (s *state) logPeerSurveySummary() {
 	s.log.Debugf("=== END PEER SURVEY SUMMARY ===")
 }
 
+// truncatePEMForLogging truncates a PEM string to first two lines plus "..."
+func truncatePEMForLogging(pemStr string) string {
+	lines := strings.Split(strings.TrimSpace(pemStr), "\n")
+	if len(lines) <= 2 {
+		return pemStr
+	}
+	return strings.Join(lines[:2], "\n") + "\n..."
+}
+
 // logPeerDetails logs detailed information about a specific peer
 func (s *state) logPeerDetails(surveyData *PeerSurveyData) {
 	s.log.Debugf("--- Peer: %s ---", surveyData.PeerName)
@@ -2616,14 +2625,14 @@ func (s *state) logPeerDetails(surveyData *PeerSurveyData) {
 		}
 	}
 
-	// Log key materials in PEM format
+	// Log key materials in PEM format (truncated for brevity)
 	identityPEM := signpem.ToPublicPEMString(surveyData.IdentityPublicKey)
 	linkPEM := kempem.ToPublicPEMString(surveyData.LinkPublicKey)
 
 	s.log.Debugf("Identity Public Key (PEM):")
-	s.log.Debugf("%s", identityPEM)
+	s.log.Debugf("%s", truncatePEMForLogging(identityPEM))
 	s.log.Debugf("Link Public Key (PEM):")
-	s.log.Debugf("%s", linkPEM)
+	s.log.Debugf("%s", truncatePEMForLogging(linkPEM))
 
 	// Log connectivity statistics
 	successRate := float64(0)
