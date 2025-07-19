@@ -147,6 +147,37 @@ type PeerSurveyData struct {
 	LastInboundFailure     *time.Time
 }
 
+// MixConnectionAttempt represents a single connection attempt from a mix node
+type MixConnectionAttempt struct {
+	Timestamp     time.Time
+	Success       bool
+	Error         string
+	AddressUsed   string // Remote address of the connecting mix
+	ErrorCategory string // "network", "handshake", "timeout", "auth", etc.
+	NodeType      string // "mix", "gateway", "service", "replica"
+
+	// Detailed timing information (available for all inbound connections)
+	HandshakeDuration time.Duration // Time for crypto handshake
+	NoOpDuration      time.Duration // Time for NoOp exchange (if applicable)
+	TotalWireDuration time.Duration // Total wire protocol time
+}
+
+// MixSurveyData tracks historical connectivity information for mix nodes (inbound only)
+type MixSurveyData struct {
+	NodeID            [publicKeyHashSize]byte
+	NodeName          string
+	NodeType          string // "mix", "gateway", "service", "replica"
+	IdentityPublicKey sign.PublicKey
+	ConnectionHistory []MixConnectionAttempt
+
+	// Inbound connection statistics (mix nodes only connect to us)
+	LastSuccessfulConn  *time.Time
+	LastFailedConn      *time.Time
+	ConsecutiveFailures int
+	TotalAttempts       int
+	SuccessfulAttempts  int
+}
+
 type state struct {
 	sync.RWMutex
 	worker.Worker
@@ -187,7 +218,8 @@ type state struct {
 	state        string
 
 	// Peer survey data
-	peerSurveyData map[[publicKeyHashSize]byte]*PeerSurveyData
+	peerSurveyData map[[publicKeyHashSize]byte]*PeerSurveyData // Directory authority peers
+	mixSurveyData  map[[publicKeyHashSize]byte]*MixSurveyData  // Mix nodes (inbound only)
 	surveyTicker   *time.Ticker
 }
 

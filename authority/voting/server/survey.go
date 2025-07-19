@@ -23,12 +23,14 @@ import (
 	kempem "github.com/katzenpost/hpqc/kem/pem"
 	signpem "github.com/katzenpost/hpqc/sign/pem"
 	kpcommon "github.com/katzenpost/katzenpost/common"
+	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/wire"
 )
 
 // initPeerSurvey initializes the peer survey system
 func (s *state) initPeerSurvey() {
 	s.peerSurveyData = make(map[[publicKeyHashSize]byte]*PeerSurveyData)
+	s.mixSurveyData = make(map[[publicKeyHashSize]byte]*MixSurveyData)
 
 	// Initialize survey data for each configured authority peer
 	for _, peer := range s.s.cfg.Authorities {
@@ -85,10 +87,24 @@ func (s *state) runPeerSurvey() {
 
 // logPeerSurveySummary logs a concise summary of all peer connectivity status
 func (s *state) logPeerSurveySummary() {
-	s.log.Debugf("=== PEER SURVEY (%d peers) ===", len(s.peerSurveyData))
-	for _, surveyData := range s.peerSurveyData {
-		s.logPeerDetails(surveyData)
+	s.log.Debugf("=== PEER SURVEY (%d authority peers, %d mix nodes) ===", len(s.peerSurveyData), len(s.mixSurveyData))
+
+	// Log directory authority peers
+	if len(s.peerSurveyData) > 0 {
+		s.log.Debugf("--- DIRECTORY AUTHORITY PEERS ---")
+		for _, surveyData := range s.peerSurveyData {
+			s.logPeerDetails(surveyData)
+		}
 	}
+
+	// Log mix nodes
+	if len(s.mixSurveyData) > 0 {
+		s.log.Debugf("--- MIX NODES (inbound only) ---")
+		for _, mixData := range s.mixSurveyData {
+			s.logMixDetails(mixData)
+		}
+	}
+
 	s.log.Debugf("=== END PEER SURVEY ===")
 }
 
@@ -295,6 +311,89 @@ func (s *state) recordIncomingConnection(peerID [publicKeyHashSize]byte, success
 	s.recordConnectionAttempt(peerID, success, err, 0, "incoming", "inbound")
 }
 
+// recordMixConnection records a connection attempt from a mix node
+func (s *state) recordMixConnection(nodeID [publicKeyHashSize]byte, success bool, err error, remoteAddr string, nodeType string, timing *wire.SessionTiming) {
+	s.Lock()
+	defer s.Unlock()
+
+	// Get or create mix survey data
+	mixData, exists := s.mixSurveyData[nodeID]
+	if !exists {
+		// Create new mix survey data
+		nodeName := s.getNodeName(nodeID)
+		mixData = &MixSurveyData{
+			NodeID:            nodeID,
+			NodeName:          nodeName,
+			NodeType:          nodeType,
+			ConnectionHistory: make([]MixConnectionAttempt, 0, maxSurveyHistory),
+		}
+		s.mixSurveyData[nodeID] = mixData
+	}
+
+	now := time.Now()
+	attempt := MixConnectionAttempt{
+		Timestamp:   now,
+		Success:     success,
+		AddressUsed: remoteAddr,
+		NodeType:    nodeType,
+	}
+
+	// Add detailed timing information if available
+	if timing != nil {
+		attempt.HandshakeDuration = timing.HandshakeDuration
+		attempt.NoOpDuration = timing.NoOpDuration
+		attempt.TotalWireDuration = timing.TotalDuration
+	}
+
+	if err != nil {
+		attempt.Error = err.Error()
+		attempt.ErrorCategory = s.categorizeError(err)
+
+		// Log connection failures immediately for mix nodes
+		s.log.Errorf("Mix node %s (%s) connection failed from %s: %v [%s]",
+			mixData.NodeName, nodeType, remoteAddr, err, attempt.ErrorCategory)
+	}
+
+	// Update connection history
+	mixData.ConnectionHistory = append(mixData.ConnectionHistory, attempt)
+	if len(mixData.ConnectionHistory) > maxSurveyHistory {
+		// Remove oldest entry
+		mixData.ConnectionHistory = mixData.ConnectionHistory[1:]
+	}
+
+	// Update overall counters
+	mixData.TotalAttempts++
+	if success {
+		mixData.SuccessfulAttempts++
+		mixData.ConsecutiveFailures = 0
+		mixData.LastSuccessfulConn = &now
+	} else {
+		mixData.ConsecutiveFailures++
+		mixData.LastFailedConn = &now
+	}
+}
+
+// getNodeName attempts to get a human-readable name for a node
+func (s *state) getNodeName(nodeID [publicKeyHashSize]byte) string {
+	// Try to find the node in current documents
+	epoch, _, _ := epochtime.Now()
+	if doc, exists := s.documents[epoch]; exists {
+		if node, err := doc.GetNodeByKeyHash(&nodeID); err == nil {
+			return node.Name
+		}
+	}
+
+	// Try previous epoch
+	if doc, exists := s.documents[epoch-1]; exists {
+		if node, err := doc.GetNodeByKeyHash(&nodeID); err == nil {
+			return node.Name
+		}
+	}
+
+	// Return truncated hash if name not found
+	return fmt.Sprintf("node_%x", nodeID[:8])
+}
+
 // logPeerDetails logs concise but comprehensive information about a specific peer
 func (s *state) logPeerDetails(surveyData *PeerSurveyData) {
 	// Calculate success rates
@@ -412,6 +511,71 @@ func (s *state) logPeerDetails(surveyData *PeerSurveyData) {
 				status,
 				attempt.AddressUsed,
 				attempt.Duration.Seconds(),
+				timingInfo,
+				errorInfo)
+		}
+	} else {
+		s.log.Debugf("    Recent history: No attempts recorded")
+	}
+}
+
+// logMixDetails logs concise but comprehensive information about a specific mix node
+func (s *state) logMixDetails(mixData *MixSurveyData) {
+	// Calculate success rate
+	successRate := float64(0)
+	if mixData.TotalAttempts > 0 {
+		successRate = float64(mixData.SuccessfulAttempts) / float64(mixData.TotalAttempts) * 100
+	}
+
+	// Mix node header with connectivity stats
+	s.log.Debugf("--- %s (%s): %d/%d inbound (%.1f%%), %d consecutive failures",
+		mixData.NodeName,
+		mixData.NodeType,
+		mixData.SuccessfulAttempts,
+		mixData.TotalAttempts,
+		successRate,
+		mixData.ConsecutiveFailures)
+
+	// Last connection times
+	lastSuccess := "Never"
+	lastFailed := "Never"
+	if mixData.LastSuccessfulConn != nil {
+		lastSuccess = mixData.LastSuccessfulConn.Format("2006-01-02 15:04:05")
+	}
+	if mixData.LastFailedConn != nil {
+		lastFailed = mixData.LastFailedConn.Format("2006-01-02 15:04:05")
+	}
+	s.log.Debugf("    Last success: %s | Last failure: %s", lastSuccess, lastFailed)
+
+	// Recent connection history (last 5 attempts for brevity)
+	historyCount := len(mixData.ConnectionHistory)
+	if historyCount > 0 {
+		s.log.Debugf("    Recent history (last %d):", min(historyCount, 5))
+		start := max(0, historyCount-5)
+		for i := start; i < historyCount; i++ {
+			attempt := mixData.ConnectionHistory[i]
+			status := "OK"
+			errorInfo := ""
+			timingInfo := ""
+
+			if !attempt.Success {
+				status = "FAIL"
+				errorInfo = fmt.Sprintf(" (%s)", attempt.ErrorCategory)
+				if attempt.Error != "" {
+					errorInfo += fmt.Sprintf(" - %s", attempt.Error)
+				}
+			} else if attempt.HandshakeDuration > 0 || attempt.NoOpDuration > 0 || attempt.TotalWireDuration > 0 {
+				// Show detailed timing if any timing data is available
+				timingInfo = fmt.Sprintf(" [hs:%.0fms noop:%.0fms wire:%.0fms]",
+					attempt.HandshakeDuration.Seconds()*1000,
+					attempt.NoOpDuration.Seconds()*1000,
+					attempt.TotalWireDuration.Seconds()*1000)
+			}
+
+			s.log.Debugf("      [%s] inbound %s from %s%s%s",
+				attempt.Timestamp.Format("15:04:05"),
+				status,
+				attempt.AddressUsed,
 				timingInfo,
 				errorInfo)
 		}
