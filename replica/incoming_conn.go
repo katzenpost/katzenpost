@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -311,7 +312,9 @@ func (c *incomingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 		return c.authenticateReplica(creds)
 	}
 
-	c.log.Debug("IncomingConn: Authentication failed, invalid AdditionalData length")
+	c.log.Warningf("replica/incoming: IsPeerValid(): Authentication failed, invalid AdditionalData length")
+	c.log.Warningf("replica/incoming: IsPeerValid(): Remote Peer Credentials: ad_length=%d (expected: 0 or %d), link_key=%s",
+		len(creds.AdditionalData), sConstants.NodeIDLength, strings.TrimSpace(pem.ToPublicPEMString(creds.PublicKey)))
 	return false
 }
 
@@ -319,6 +322,9 @@ func (c *incomingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 func (c *incomingConn) authenticateCourier(creds *wire.PeerCredentials) bool {
 	doc := c.findPKIDocument()
 	if doc == nil {
+		c.log.Warningf("replica/incoming: authenticateCourier(): No PKI document available")
+		c.log.Warningf("replica/incoming: authenticateCourier(): Remote Peer Credentials: link_key=%s",
+			strings.TrimSpace(pem.ToPublicPEMString(creds.PublicKey)))
 		return false
 	}
 
@@ -328,11 +334,24 @@ func (c *incomingConn) authenticateCourier(creds *wire.PeerCredentials) bool {
 			continue
 		}
 		if c.validateCourierKey(desc, creds.PublicKey) {
-			c.log.Debug("IncomingConn: Authenticated courier connection")
+			c.log.Debugf("replica/incoming: authenticateCourier(): Authenticated courier connection for '%s'", desc.Name)
 			return true
 		}
 	}
-	c.log.Debug("IncomingConn: Courier authentication failed")
+
+	c.log.Warningf("replica/incoming: authenticateCourier(): Courier authentication failed")
+	c.log.Warningf("replica/incoming: authenticateCourier(): Remote Peer Credentials: link_key=%s",
+		strings.TrimSpace(pem.ToPublicPEMString(creds.PublicKey)))
+	c.log.Warningf("replica/incoming: authenticateCourier(): Available service nodes with courier capability:")
+	for _, desc := range doc.ServiceNodes {
+		if desc.Kaetzchen != nil {
+			rawLinkKey, err := desc.GetRawCourierLinkKey()
+			if err == nil {
+				c.log.Warningf("replica/incoming: authenticateCourier():   - name=%s, link_key=%s",
+					desc.Name, strings.TrimSpace(rawLinkKey))
+			}
+		}
+	}
 	return false
 }
 
@@ -344,7 +363,17 @@ func (c *incomingConn) authenticateReplica(creds *wire.PeerCredentials) bool {
 	// Get replica descriptor from the replica map
 	replicaDesc, isReplica := c.l.server.PKIWorker.replicas.GetReplicaDescriptor(&nodeID)
 	if !isReplica {
-		c.log.Debugf("Authentication failed: node ID %x not found in replica list", nodeID)
+		c.log.Warningf("replica/incoming: authenticateReplica(): Authentication failed: node ID %x not found in replica list", nodeID)
+		c.log.Warningf("replica/incoming: authenticateReplica(): Remote Peer Credentials: node_id=%x, link_key=%s",
+			nodeID, strings.TrimSpace(pem.ToPublicPEMString(creds.PublicKey)))
+
+		// Log available replicas for debugging
+		c.log.Warningf("replica/incoming: authenticateReplica(): Available replicas:")
+		allReplicas := c.l.server.PKIWorker.replicas.Copy()
+		for replicaID, replica := range allReplicas {
+			c.log.Warningf("replica/incoming: authenticateReplica():   - name=%s, node_id=%x, link_key=%x",
+				replica.Name, replicaID[:], replica.LinkKey)
+		}
 		return false
 	}
 
@@ -354,11 +383,16 @@ func (c *incomingConn) authenticateReplica(creds *wire.PeerCredentials) bool {
 		panic(err)
 	}
 	if !hmac.Equal(replicaDesc.LinkKey, blob) {
-		c.log.Debugf("Authentication failed: link key mismatch for replica %x", nodeID)
+		c.log.Warningf("replica/incoming: authenticateReplica(): Authentication failed: link key mismatch for replica '%s'", replicaDesc.Name)
+		c.log.Warningf("replica/incoming: authenticateReplica(): Expected link key: %x", replicaDesc.LinkKey)
+		c.log.Warningf("replica/incoming: authenticateReplica(): Received link key: %s",
+			strings.TrimSpace(pem.ToPublicPEMString(creds.PublicKey)))
+		c.log.Warningf("replica/incoming: authenticateReplica(): Remote Peer Credentials: name=%s, node_id=%x",
+			replicaDesc.Name, nodeID)
 		return false
 	}
 
-	c.log.Debug("IncomingConn: Authenticated replica connection")
+	c.log.Debugf("replica/incoming: authenticateReplica(): Authenticated replica connection for '%s'", replicaDesc.Name)
 	return true
 }
 

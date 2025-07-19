@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -29,6 +30,7 @@ import (
 
 	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/kem"
+	kempem "github.com/katzenpost/hpqc/kem/pem"
 	"github.com/katzenpost/hpqc/rand"
 
 	"github.com/katzenpost/katzenpost/core/epochtime"
@@ -62,9 +64,27 @@ func (c *outgoingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 	// At a minimum, the peer's credentials should match what we started out
 	// with.  This is enforced even if mix authentication is disabled.
 
+	// Helper function to get peer name
+	getPeerName := func() string {
+		if doc, err := c.co.glue.PKI().CurrentDocument(); err == nil && doc != nil {
+			var adHash [32]byte
+			copy(adHash[:], creds.AdditionalData)
+			if node, err := doc.GetNodeByKeyHash(&adHash); err == nil {
+				return node.Name
+			}
+		}
+		return "unknown"
+	}
+
 	idHash := hash.Sum256(c.dst.IdentityKey)
 	if !hmac.Equal(idHash[:], creds.AdditionalData) {
-		c.log.Debug("IsPeerValid false, identity hash mismatch")
+		peerName := getPeerName()
+		c.log.Warningf("server/outgoing: IsPeerValid(): Identity hash mismatch for peer '%s'", peerName)
+		c.log.Warningf("server/outgoing: IsPeerValid(): Expected identity hash: %x", idHash[:])
+		c.log.Warningf("server/outgoing: IsPeerValid(): Received identity hash: %x", creds.AdditionalData)
+		c.log.Warningf("server/outgoing: IsPeerValid(): Expected identity key (raw): %x", c.dst.IdentityKey)
+		c.log.Warningf("server/outgoing: IsPeerValid(): Received link key: %s",
+			strings.TrimSpace(kempem.ToPublicPEMString(creds.PublicKey)))
 		return false
 	}
 	keyblob, err := creds.PublicKey.MarshalBinary()
@@ -72,7 +92,12 @@ func (c *outgoingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 		panic(err)
 	}
 	if !hmac.Equal(c.dst.LinkKey, keyblob) {
-		c.log.Debug("IsPeerValid false, link key mismatch")
+		peerName := getPeerName()
+		c.log.Warningf("server/outgoing: IsPeerValid(): Link key mismatch for peer '%s'", peerName)
+		c.log.Warningf("server/outgoing: IsPeerValid(): Expected link key (raw): %x", c.dst.LinkKey)
+		c.log.Warningf("server/outgoing: IsPeerValid(): Received link key: %s",
+			strings.TrimSpace(kempem.ToPublicPEMString(creds.PublicKey)))
+		c.log.Warningf("server/outgoing: IsPeerValid(): Identity hash: %x", creds.AdditionalData)
 		return false
 	}
 
@@ -82,7 +107,10 @@ func (c *outgoingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 	_, c.canSend, isValid = c.co.glue.PKI().AuthenticateConnection(creds, true)
 
 	if !isValid {
-		c.log.Debug("failed to authenticate connect via latest PKI doc")
+		peerName := getPeerName()
+		c.log.Warningf("server/outgoing: IsPeerValid(): Failed to authenticate peer '%s' via latest PKI doc", peerName)
+		c.log.Warningf("server/outgoing: IsPeerValid(): Remote Peer Credentials: name=%s, identity_hash=%x, link_key=%s",
+			peerName, creds.AdditionalData, strings.TrimSpace(kempem.ToPublicPEMString(creds.PublicKey)))
 	}
 	return isValid
 }
