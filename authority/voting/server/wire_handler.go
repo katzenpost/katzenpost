@@ -43,6 +43,15 @@ func (s *Server) onConn(conn net.Conn) {
 	rAddr := conn.RemoteAddr()
 	s.log.Debugf("Accepted new connection: %v", rAddr)
 
+	// Check if we're shutting down before processing
+	select {
+	case <-s.haltedCh:
+		s.log.Debugf("Peer %v: Closing connection due to shutdown", rAddr)
+		conn.Close()
+		return
+	default:
+	}
+
 	// Initialize the wire protocol session.
 	auth := &wireAuthenticator{s: s}
 	keyHash := hash.Sum256From(s.identityPublicKey)
@@ -84,6 +93,15 @@ func (s *Server) onConn(conn net.Conn) {
 		s.log.Debugf("Peer %v: Failed session handshake after %v: %v", rAddr, time.Since(handshakeStart), err)
 		return
 	}
+
+	// Check if we're shutting down after handshake (which can take up to 90s)
+	select {
+	case <-s.haltedCh:
+		s.log.Debugf("Peer %v: Closing connection due to shutdown after handshake", rAddr)
+		return
+	default:
+	}
+
 	// Get timing information from the wire session
 	timing := wireConn.Timing()
 
