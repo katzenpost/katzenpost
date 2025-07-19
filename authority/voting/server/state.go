@@ -178,6 +178,14 @@ type MixSurveyData struct {
 	SuccessfulAttempts  int
 }
 
+// state manages the directory authority's voting state and consensus process.
+//
+// LOCKING DISCIPLINE:
+// - Methods with "Locked" suffix assume the appropriate lock is already held
+// - Public methods acquire their own locks and call internal "Locked" methods
+// - Methods called from fsm() assume write lock is held (documented as "Caller must hold write lock")
+// - Always acquire locks in consistent order: write lock before read lock
+// - Avoid holding locks across network operations or long-running computations
 type state struct {
 	sync.RWMutex
 	worker.Worker
@@ -816,6 +824,13 @@ func (s *state) verifyCommits(epoch uint64) (map[[publicKeyHashSize]byte][]byte,
 // for our link layer wire protocol as specified by
 // the PeerAuthenticator interface in core/wire/session.go
 func (s *state) IsPeerValid(creds *wire.PeerCredentials) bool {
+	s.RLock()
+	defer s.RUnlock()
+	return s.isPeerValidLocked(creds)
+}
+
+// isPeerValidLocked is the internal implementation that assumes RLock is held
+func (s *state) isPeerValidLocked(creds *wire.PeerCredentials) bool {
 	var ad [publicKeyHashSize]byte
 	copy(ad[:], creds.AdditionalData[:publicKeyHashSize])
 	_, ok := s.authorizedAuthorities[ad]
@@ -829,37 +844,39 @@ func (s *state) IsPeerValid(creds *wire.PeerCredentials) bool {
 		// Failed incoming connection - unauthorized
 		s.recordIncomingConnection(ad, false, errors.New("unauthorized peer"))
 
-		// Try to get peer name from current PKI document
-		peerName := "unknown"
-		epoch, _, _ := epochtime.Now()
-		s.RLock()
-		if doc, exists := s.documents[epoch]; exists {
-			if node, err := doc.GetNodeByKeyHash(&ad); err == nil {
-				peerName = node.Name
-			}
-		}
-		s.RUnlock()
-
-		// Enhanced error logging with peer information
-		s.log.Warningf("dirauth/state: IsPeerValid(): Rejecting unauthorized authority '%s'", peerName)
-		s.log.Warningf("dirauth/state: IsPeerValid(): Remote Peer Credentials: name=%s, identity_hash=%x, link_key=%s",
-			peerName, ad[:], kpcommon.TruncatePEMForLogging(kempem.ToPublicPEMString(creds.PublicKey)))
-
-		// Log expected authorized authorities for debugging
-		s.log.Warningf("dirauth/state: IsPeerValid(): Authorized authorities:")
-		for authHash := range s.authorizedAuthorities {
-			authName := "unknown"
-			s.RLock()
-			if doc, exists := s.documents[epoch]; exists {
-				if node, err := doc.GetNodeByKeyHash(&authHash); err == nil {
-					authName = node.Name
-				}
-			}
-			s.RUnlock()
-			s.log.Warningf("dirauth/state: IsPeerValid():   - name=%s, identity_hash=%x", authName, authHash[:])
-		}
-
+		// Get peer name and log detailed error information
+		s.logUnauthorizedPeerDetailsLocked(creds, ad)
 		return false
+	}
+}
+
+// logUnauthorizedPeerDetailsLocked logs detailed information about unauthorized peer attempts
+// Caller must hold RLock
+func (s *state) logUnauthorizedPeerDetailsLocked(creds *wire.PeerCredentials, ad [publicKeyHashSize]byte) {
+	// Try to get peer name from current PKI document
+	peerName := "unknown"
+	epoch, _, _ := epochtime.Now()
+	if doc, exists := s.documents[epoch]; exists {
+		if node, err := doc.GetNodeByKeyHash(&ad); err == nil {
+			peerName = node.Name
+		}
+	}
+
+	// Enhanced error logging with peer information
+	s.log.Warningf("dirauth/state: IsPeerValid(): Rejecting unauthorized authority '%s'", peerName)
+	s.log.Warningf("dirauth/state: IsPeerValid(): Remote Peer Credentials: name=%s, identity_hash=%x, link_key=%s",
+		peerName, ad[:], kpcommon.TruncatePEMForLogging(kempem.ToPublicPEMString(creds.PublicKey)))
+
+	// Log expected authorized authorities for debugging
+	s.log.Warningf("dirauth/state: IsPeerValid(): Authorized authorities:")
+	for authHash := range s.authorizedAuthorities {
+		authName := "unknown"
+		if doc, exists := s.documents[epoch]; exists {
+			if node, err := doc.GetNodeByKeyHash(&authHash); err == nil {
+				authName = node.Name
+			}
+		}
+		s.log.Warningf("dirauth/state: IsPeerValid():   - name=%s, identity_hash=%x", authName, authHash[:])
 	}
 }
 
@@ -2438,50 +2455,60 @@ func newState(s *Server) (*state, error) {
 // backgroundFetchConsensus fetches consensus from other authorities if we don't have one for the given epoch.
 // Caller must hold write lock.
 func (s *state) backgroundFetchConsensus(epoch uint64) {
-
-	// If there isn't a consensus for the previous epoch, ask the other
-	// authorities for a consensus.
+	// Check if we already have the document while holding the lock
 	_, ok := s.documents[epoch]
-	if !ok {
-		kemscheme := schemes.ByName(s.s.cfg.Server.WireKEMScheme)
-		if kemscheme == nil {
-			panic("kem scheme not found in registry")
-		}
-		pkiSignatureScheme := signSchemes.ByName(s.s.cfg.Server.PKISignatureScheme)
-		if pkiSignatureScheme == nil {
-			panic("pki signature scheme not found in registry")
-		}
-		s.Go(func() {
-			cfg := &client.Config{
-				KEMScheme:          kemscheme,
-				PKISignatureScheme: pkiSignatureScheme,
-				LinkKey:            s.s.linkKey,
-				LogBackend:         s.s.logBackend,
-				Authorities:        s.s.cfg.Authorities,
-				DialContextFn:      nil,
-				Geo:                s.geo,
-			}
-			c, err := client.New(cfg)
-			if err != nil {
-				return
-			}
-			ctx, cancel := context.WithTimeout(context.Background(), time.Minute*2)
-			defer cancel()
-			doc, _, err := c.Get(ctx, epoch)
-			if err != nil {
-				return
-			}
-			s.Lock()
-			defer s.Unlock()
-
-			// It's possible that the state has changed
-			// if backgroundFetchConsensus was called
-			// multiple times during bootstrapping
-			if _, ok := s.documents[epoch]; !ok {
-				s.documents[epoch] = doc
-			}
-		})
+	if ok {
+		return // Already have the document
 	}
+
+	// Start background fetch without holding the lock to avoid deadlock
+	s.backgroundFetchConsensusAsync(epoch)
+}
+
+// backgroundFetchConsensusAsync starts an async fetch operation
+// This method can be called while holding a lock since it doesn't acquire any locks itself
+func (s *state) backgroundFetchConsensusAsync(epoch uint64) {
+	kemscheme := schemes.ByName(s.s.cfg.Server.WireKEMScheme)
+	if kemscheme == nil {
+		panic("kem scheme not found in registry")
+	}
+	pkiSignatureScheme := signSchemes.ByName(s.s.cfg.Server.PKISignatureScheme)
+	if pkiSignatureScheme == nil {
+		panic("pki signature scheme not found in registry")
+	}
+
+	s.Go(func() {
+		cfg := &client.Config{
+			KEMScheme:          kemscheme,
+			PKISignatureScheme: pkiSignatureScheme,
+			LinkKey:            s.s.linkKey,
+			LogBackend:         s.s.logBackend,
+			Authorities:        s.s.cfg.Authorities,
+			DialContextFn:      nil,
+			Geo:                s.geo,
+		}
+		c, err := client.New(cfg)
+		if err != nil {
+			return
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), time.Minute*2)
+		defer cancel()
+		doc, _, err := c.Get(ctx, epoch)
+		if err != nil {
+			return
+		}
+
+		// Now acquire the lock to update the documents
+		s.Lock()
+		defer s.Unlock()
+
+		// It's possible that the state has changed
+		// if backgroundFetchConsensus was called
+		// multiple times during bootstrapping
+		if _, ok := s.documents[epoch]; !ok {
+			s.documents[epoch] = doc
+		}
+	})
 }
 
 func epochToBytes(e uint64) []byte {
