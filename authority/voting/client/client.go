@@ -64,11 +64,20 @@ func (a *authorityAuthenticator) IsPeerValid(creds *wire.PeerCredentials) bool {
 	identityHash := hash.Sum256From(a.IdentityPublicKey)
 	if !hmac.Equal(identityHash[:], creds.AdditionalData[:hash.HashSize]) {
 		a.log.Warningf("voting/Client: IsPeerValid(): AD mismatch: %x != %x", identityHash[:], creds.AdditionalData[:hash.HashSize])
-		a.log.Warningf("voting/Client: IsPeerValid(): Remote Peer Credentials: additional_data=%x, public_key=%s", creds.AdditionalData, kempem.ToPublicPEMString(creds.PublicKey))
+		a.log.Warningf("voting/Client: IsPeerValid(): Expected identity key: %s (hash: %x)",
+			strings.TrimSpace(signpem.ToPublicPEMString(a.IdentityPublicKey)), identityHash[:])
+		a.log.Warningf("voting/Client: IsPeerValid(): Remote Peer Credentials: additional_data=%x, link_key=%s",
+			creds.AdditionalData, strings.TrimSpace(kempem.ToPublicPEMString(creds.PublicKey)))
 		return false
 	}
 	if !a.LinkPublicKey.Equal(creds.PublicKey) {
-		a.log.Warningf("voting/Client: IsPeerValid(): Link Public Key mismatch: %s != %s", kempem.ToPublicPEMString(a.LinkPublicKey), kempem.ToPublicPEMString(creds.PublicKey))
+		a.log.Warningf("voting/Client: IsPeerValid(): Link Public Key mismatch")
+		a.log.Warningf("voting/Client: IsPeerValid(): Expected link key: %s",
+			strings.TrimSpace(kempem.ToPublicPEMString(a.LinkPublicKey)))
+		a.log.Warningf("voting/Client: IsPeerValid(): Received link key: %s",
+			strings.TrimSpace(kempem.ToPublicPEMString(creds.PublicKey)))
+		a.log.Warningf("voting/Client: IsPeerValid(): Expected identity key: %s (hash: %x)",
+			strings.TrimSpace(signpem.ToPublicPEMString(a.IdentityPublicKey)), identityHash[:])
 		a.log.Warningf("voting/Client: IsPeerValid(): Remote Peer Credentials: additional_data=%x", creds.AdditionalData[:hash.HashSize])
 		return false
 	}
@@ -202,12 +211,16 @@ func (p *connector) initSession(ctx context.Context, linkKey kem.PrivateKey, sig
 
 	// Get scheme information for error reporting
 	kemScheme := schemes.ByName(peer.WireKEMScheme)
-	signatureScheme := signSchemes.ByName(peer.PKISignatureScheme)
 	if kemScheme == nil {
 		return nil, fmt.Errorf("%s: unsupported KEM scheme: %s", peerInfo(), peer.WireKEMScheme)
 	}
-	if signatureScheme == nil {
-		return nil, fmt.Errorf("%s: unsupported signature scheme: %s", peerInfo(), peer.PKISignatureScheme)
+
+	var signatureScheme sign.Scheme
+	if peer.PKISignatureScheme != "" {
+		signatureScheme = signSchemes.ByName(peer.PKISignatureScheme)
+		if signatureScheme == nil {
+			return nil, fmt.Errorf("%s: unsupported signature scheme: %s", peerInfo(), peer.PKISignatureScheme)
+		}
 	}
 
 	cfg := &wire.SessionConfig{
