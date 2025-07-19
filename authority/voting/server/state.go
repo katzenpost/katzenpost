@@ -631,10 +631,9 @@ func (s *state) hasEnoughDescriptors(m map[[publicKeyHashSize]byte]*pki.MixDescr
 	return (nrGateways > 0) && (nrServiceNodes > 0) && (nrNodes >= minNodes)
 }
 
+// verifyCommits verifies that each authority presented the same commit to every other authority.
+// Caller must hold write lock.
 func (s *state) verifyCommits(epoch uint64) (map[[publicKeyHashSize]byte][]byte, map[[publicKeyHashSize]byte][]byte) {
-	if s.TryLock() {
-		panic("write lock not held in verifyCommits(epoch)")
-	}
 
 	// check that each authority presented the same commit to every other authority
 	badnodes := make(map[[publicKeyHashSize]byte]bool)
@@ -841,11 +840,9 @@ func (s *state) sendCommandToPeer(peer *config.Authority, cmd commands.Command) 
 	return resp, nil
 }
 
-// sendCommitToAuthorities sends our cert to all Directory Authorities
+// sendCertToAuthorities sends our cert to all Directory Authorities.
+// Caller must hold write lock.
 func (s *state) sendCertToAuthorities(cert []byte, epoch uint64) {
-	if s.TryLock() {
-		panic("write lock not held in sendCertToAuthorities(cert, epoch)")
-	}
 
 	s.log.Noticef("Sending Certificate for epoch %v, to all Directory Authorities.", epoch)
 	cmd := &commands.Cert{
@@ -891,11 +888,9 @@ func (s *state) sendCertToAuthorities(cert []byte, epoch uint64) {
 	}
 }
 
-// sendVoteToAuthorities sends s.descriptors[epoch] to all Directory Authorities
+// sendVoteToAuthorities sends s.descriptors[epoch] to all Directory Authorities.
+// Caller must hold write lock.
 func (s *state) sendVoteToAuthorities(vote []byte, epoch uint64) {
-	if s.TryLock() {
-		panic("write lock not held in sendVoteToAuthorities(vote, epoch)")
-	}
 
 	s.log.Noticef("Sending Vote for epoch %v, to all Directory Authorities.", epoch)
 
@@ -983,10 +978,9 @@ func (s *state) sendRevealToAuthorities(reveal []byte, epoch uint64) {
 	}
 }
 
+// sendSigToAuthorities sends signatures to all Directory Authorities.
+// Caller must hold write lock.
 func (s *state) sendSigToAuthorities(sig []byte, epoch uint64) {
-	if s.TryLock() {
-		panic("write lock not held in sendSigToAuthorities(sig, epoch)")
-	}
 
 	s.log.Noticef("Sending Signature for epoch %v, to all Directory Authorities.", epoch)
 
@@ -1027,10 +1021,9 @@ func (s *state) sendSigToAuthorities(sig []byte, epoch uint64) {
 	}
 }
 
+// tallyVotes tallies votes for the given epoch and returns descriptors and parameters.
+// Caller must hold write lock.
 func (s *state) tallyVotes(epoch uint64) ([]*pki.MixDescriptor, []*pki.ReplicaDescriptor, *config.Parameters, error) {
-	if s.TryLock() {
-		panic("write lock not held in tallyVotes(epoch)")
-	}
 
 	_, ok := s.votes[epoch]
 	if !ok {
@@ -1383,10 +1376,9 @@ func (s *state) generateRandomTopology(nodes []*pki.MixDescriptor, srv []byte) [
 	return topology
 }
 
+// pruneDocuments removes old documents to prevent memory leaks.
+// Caller must hold write lock.
 func (s *state) pruneDocuments() {
-	if s.TryLock() {
-		panic("write lock not held in pruneDocuments()")
-	}
 
 	// Looking a bit into the past is probably ok, if more past documents
 	// need to be accessible, then methods that query the DB could always
