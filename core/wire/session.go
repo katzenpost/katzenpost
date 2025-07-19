@@ -21,6 +21,7 @@ import (
 	"crypto/subtle"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"sync"
@@ -75,6 +76,20 @@ var (
 	errAuthenticationFailed = errors.New("wire/session: authentication failed")
 	errMsgSize              = errors.New("wire/session: invalid message size")
 )
+
+// handleReadError provides consistent error handling for TCP read operations
+func handleReadError(err error, context string) error {
+	if err == nil {
+		return nil
+	}
+	if err == io.EOF {
+		return fmt.Errorf("wire/session: peer closed connection during %s", context)
+	}
+	if ne, ok := err.(net.Error); ok && ne.Timeout() {
+		return fmt.Errorf("wire/session: read timeout during %s: %v", context, err)
+	}
+	return fmt.Errorf("wire/session: read error during %s: %v", context, err)
+}
 
 type authenticateMessage struct {
 	ad       []byte
@@ -262,7 +277,7 @@ func (s *Session) handshake() error {
 		// -> ekem, s, (auth)
 		msg2 := make([]byte, s.msg2Len())
 		if _, err = io.ReadFull(s.conn, msg2); err != nil {
-			return err
+			return handleReadError(err, "handshake message 2")
 		}
 
 		now := time.Now()
@@ -310,7 +325,7 @@ func (s *Session) handshake() error {
 		// -> skem
 		msg4 := make([]byte, s.msg4Len())
 		if _, err = io.ReadFull(s.conn, msg4); err != nil {
-			return err
+			return handleReadError(err, "handshake message 4")
 		}
 		_, err = handshake.ReadMessage(nil, msg4)
 		switch err {
@@ -325,7 +340,7 @@ func (s *Session) handshake() error {
 		// -> (prologue), e
 		msg1 := make([]byte, s.msg1Len())
 		if _, err = io.ReadFull(s.conn, msg1); err != nil {
-			return err
+			return handleReadError(err, "handshake message 1")
 		}
 		if subtle.ConstantTimeCompare(prologue, msg1[0:1]) != 1 {
 			return errors.New("wire/session: unsupported protocol version")
@@ -355,7 +370,7 @@ func (s *Session) handshake() error {
 		msg3 := make([]byte, s.msg3Len())
 		rawAuth = make([]byte, 0, authLen)
 		if _, err = io.ReadFull(s.conn, msg3); err != nil {
-			return err
+			return handleReadError(err, "handshake message 3")
 		}
 		rawAuth, err = handshake.ReadMessage(rawAuth, msg3)
 		if err != nil {
@@ -516,7 +531,7 @@ func (s *Session) recvCommandImpl() (commands.Command, error) {
 	// Read, decrypt and parse the CiphertextHeader.
 	var ctHdrCt [macLen + 4]byte
 	if _, err := io.ReadFull(s.conn, ctHdrCt[:]); err != nil {
-		return nil, err
+		return nil, handleReadError(err, "command header")
 	}
 	s.rxKeyMutex.RLock()
 	ctHdr, err := s.rx.DecryptWithAd(nil, nil, ctHdrCt[:])
@@ -535,7 +550,7 @@ func (s *Session) recvCommandImpl() (commands.Command, error) {
 	// Read and decrypt the Ciphertext.
 	ct := make([]byte, ctLen)
 	if _, err := io.ReadFull(s.conn, ct); err != nil {
-		return nil, err
+		return nil, handleReadError(err, "command payload")
 	}
 	s.rxKeyMutex.RLock()
 	pt, err := s.rx.DecryptWithAd(nil, nil, ct)
