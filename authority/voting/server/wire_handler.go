@@ -36,7 +36,7 @@ import (
 
 func (s *Server) onConn(conn net.Conn) {
 	const (
-		initialDeadline  = 30 * time.Second
+		initialDeadline  = 90 * time.Second // Increased from 30s to 90s for authority handshakes
 		responseDeadline = 60 * time.Second
 	)
 
@@ -69,18 +69,23 @@ func (s *Server) onConn(conn net.Conn) {
 
 	// wireConn.Close calls conn.Close. In quic, sends are nonblocking and Close
 	// tears down the connection before the response was sent.
-	// So this waits 100ms after the response has been served before closing the connection.
+	// So this waits 1000ms after the response has been served before closing the connection.
+	// Increased from 100ms to 1000ms to allow sufficient time for NoOp command exchange
+	// on slower network paths between authority nodes.
 	defer func() {
-		<-time.After(time.Millisecond * 100)
+		<-time.After(time.Millisecond * 1000)
 		wireConn.Close()
 	}()
 
 	// Handshake.
+	handshakeStart := time.Now()
 	conn.SetDeadline(time.Now().Add(initialDeadline))
 	if err = wireConn.Initialize(conn); err != nil {
-		s.log.Debugf("Peer %v: Failed session handshake: %v", rAddr, err)
+		s.log.Debugf("Peer %v: Failed session handshake after %v: %v", rAddr, time.Since(handshakeStart), err)
 		return
 	}
+	handshakeDuration := time.Since(handshakeStart)
+	s.log.Debugf("Peer %v: Handshake completed successfully in %v", rAddr, handshakeDuration)
 
 	// Receive a command.
 	cmd, err := wireConn.RecvCommand()
@@ -453,6 +458,17 @@ func (a *wireAuthenticator) IsPeerValid(creds *wire.PeerCredentials) bool {
 				peerName, creds.AdditionalData[:hash.HashSize])
 			return false
 		}
+		// Log successful authority authentication
+		peerName := "unknown"
+		epoch, _, _ := epochtime.Now()
+		a.s.state.RLock()
+		if doc, exists := a.s.state.documents[epoch]; exists {
+			if node, err := doc.GetNodeByKeyHash(&pk); err == nil {
+				peerName = node.Name
+			}
+		}
+		a.s.state.RUnlock()
+		a.s.log.Debugf("Authority authentication successful for '%s' (identity_hash=%x)", peerName, pk[:])
 		a.isAuthority = true
 		return true
 	case isReplicaNode:
