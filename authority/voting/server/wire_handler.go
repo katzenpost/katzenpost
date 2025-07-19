@@ -385,31 +385,72 @@ func (a *wireAuthenticator) IsPeerValid(creds *wire.PeerCredentials) bool {
 	case isAuthority:
 		linkKey, ok := a.s.state.authorityLinkKeys[pk]
 		if !ok {
-			a.s.log.Warning("Rejecting authority authentication, no link key entry.")
-			a.s.log.Warningf("dirauth/wireAuth: IsPeerValid(): Remote Peer Credentials: identity_hash=%x, link_key=%s",
-				creds.AdditionalData[:hash.HashSize], strings.TrimSpace(kempem.ToPublicPEMString(creds.PublicKey)))
+			// Try to get peer name from current PKI document
+			peerName := "unknown"
+			epoch, _, _ := epochtime.Now()
+			a.s.state.RLock()
+			if doc, exists := a.s.state.documents[epoch]; exists {
+				if node, err := doc.GetNodeByKeyHash(&pk); err == nil {
+					peerName = node.Name
+				}
+			}
+			a.s.state.RUnlock()
+
+			a.s.log.Warningf("Rejecting authority authentication, no link key entry for '%s'.", peerName)
+			a.s.log.Warningf("dirauth/wireAuth: IsPeerValid(): Remote Peer Credentials: name=%s, identity_hash=%x, link_key=%s",
+				peerName, creds.AdditionalData[:hash.HashSize], strings.TrimSpace(kempem.ToPublicPEMString(creds.PublicKey)))
 			// Log expected authorities for debugging
 			a.s.log.Warningf("dirauth/wireAuth: IsPeerValid(): Expected authority link keys:")
 			for authHash, authLinkKey := range a.s.state.authorityLinkKeys {
-				a.s.log.Warningf("dirauth/wireAuth: IsPeerValid():   - identity_hash=%x, link_key=%s",
-					authHash[:], strings.TrimSpace(kempem.ToPublicPEMString(authLinkKey)))
+				authName := "unknown"
+				a.s.state.RLock()
+				if doc, exists := a.s.state.documents[epoch]; exists {
+					if node, err := doc.GetNodeByKeyHash(&authHash); err == nil {
+						authName = node.Name
+					}
+				}
+				a.s.state.RUnlock()
+				a.s.log.Warningf("dirauth/wireAuth: IsPeerValid():   - name=%s, identity_hash=%x, link_key=%s",
+					authName, authHash[:], strings.TrimSpace(kempem.ToPublicPEMString(authLinkKey)))
 			}
 			return false
 		}
 		if creds.PublicKey == nil {
-			a.s.log.Warning("Rejecting authority authentication, public key is nil.")
-			a.s.log.Warningf("dirauth/wireAuth: IsPeerValid(): Remote Peer Credentials: identity_hash=%x, link_key=nil",
-				creds.AdditionalData[:hash.HashSize])
+			// Try to get peer name from current PKI document
+			peerName := "unknown"
+			epoch, _, _ := epochtime.Now()
+			a.s.state.RLock()
+			if doc, exists := a.s.state.documents[epoch]; exists {
+				if node, err := doc.GetNodeByKeyHash(&pk); err == nil {
+					peerName = node.Name
+				}
+			}
+			a.s.state.RUnlock()
+
+			a.s.log.Warningf("Rejecting authority authentication, public key is nil for '%s'.", peerName)
+			a.s.log.Warningf("dirauth/wireAuth: IsPeerValid(): Remote Peer Credentials: name=%s, identity_hash=%x, link_key=nil",
+				peerName, creds.AdditionalData[:hash.HashSize])
 			return false
 		}
 		if !linkKey.Equal(creds.PublicKey) {
-			a.s.log.Warning("Rejecting authority authentication, public key mismatch.")
-			a.s.log.Warningf("dirauth/wireAuth: IsPeerValid(): Expected link key: %s",
-				strings.TrimSpace(kempem.ToPublicPEMString(linkKey)))
-			a.s.log.Warningf("dirauth/wireAuth: IsPeerValid(): Received link key: %s",
-				strings.TrimSpace(kempem.ToPublicPEMString(creds.PublicKey)))
-			a.s.log.Warningf("dirauth/wireAuth: IsPeerValid(): Remote Peer Credentials: identity_hash=%x",
-				creds.AdditionalData[:hash.HashSize])
+			// Try to get peer name from current PKI document
+			peerName := "unknown"
+			epoch, _, _ := epochtime.Now()
+			a.s.state.RLock()
+			if doc, exists := a.s.state.documents[epoch]; exists {
+				if node, err := doc.GetNodeByKeyHash(&pk); err == nil {
+					peerName = node.Name
+				}
+			}
+			a.s.state.RUnlock()
+
+			a.s.log.Warningf("Rejecting authority authentication, public key mismatch for '%s'.", peerName)
+			a.s.log.Warningf("dirauth/wireAuth: IsPeerValid(): Expected link key for '%s': %s",
+				peerName, strings.TrimSpace(kempem.ToPublicPEMString(linkKey)))
+			a.s.log.Warningf("dirauth/wireAuth: IsPeerValid(): Received link key for '%s': %s",
+				peerName, strings.TrimSpace(kempem.ToPublicPEMString(creds.PublicKey)))
+			a.s.log.Warningf("dirauth/wireAuth: IsPeerValid(): Remote Peer Credentials: name=%s, identity_hash=%x",
+				peerName, creds.AdditionalData[:hash.HashSize])
 			return false
 		}
 		a.isAuthority = true
@@ -418,11 +459,22 @@ func (a *wireAuthenticator) IsPeerValid(creds *wire.PeerCredentials) bool {
 		a.isReplica = true
 		return true
 	default:
-		a.s.log.Warning("Rejecting authentication, peer not found in any authorized category.")
-		a.s.log.Warningf("dirauth/wireAuth: IsPeerValid(): Remote Peer Credentials: identity_hash=%x, link_key=%s",
-			creds.AdditionalData[:hash.HashSize], strings.TrimSpace(kempem.ToPublicPEMString(creds.PublicKey)))
-		a.s.log.Warningf("dirauth/wireAuth: IsPeerValid(): Peer not found in: mixes=%t, gateways=%t, services=%t, authorities=%t, replicas=%t",
-			isMix, isGatewayNode, isServiceNode, isAuthority, isReplicaNode)
+		// Try to get peer name from current PKI document
+		peerName := "unknown"
+		epoch, _, _ := epochtime.Now()
+		a.s.state.RLock()
+		if doc, exists := a.s.state.documents[epoch]; exists {
+			if node, err := doc.GetNodeByKeyHash(&pk); err == nil {
+				peerName = node.Name
+			}
+		}
+		a.s.state.RUnlock()
+
+		a.s.log.Warningf("Rejecting authentication, peer '%s' not found in any authorized category.", peerName)
+		a.s.log.Warningf("dirauth/wireAuth: IsPeerValid(): Remote Peer Credentials: name=%s, identity_hash=%x, link_key=%s",
+			peerName, creds.AdditionalData[:hash.HashSize], strings.TrimSpace(kempem.ToPublicPEMString(creds.PublicKey)))
+		a.s.log.Warningf("dirauth/wireAuth: IsPeerValid(): Peer '%s' not found in: mixes=%t, gateways=%t, services=%t, authorities=%t, replicas=%t",
+			peerName, isMix, isGatewayNode, isServiceNode, isAuthority, isReplicaNode)
 		return false
 	}
 	// not reached
