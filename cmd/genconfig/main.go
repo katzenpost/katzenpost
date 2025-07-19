@@ -79,6 +79,7 @@ type Config struct {
 	dockerImage              string
 	binSuffix                string
 	logLevel                 string
+	authLogLevel             string
 	omitTopology             bool
 	wirekem                  string
 	kem                      string
@@ -105,11 +106,12 @@ type Config struct {
 }
 
 type katzenpost struct {
-	baseDir   string
-	outDir    string
-	binSuffix string
-	logLevel  string
-	logWriter io.Writer
+	baseDir      string
+	outDir       string
+	binSuffix    string
+	logLevel     string
+	authLogLevel string
+	logWriter    io.Writer
 
 	wireKEMScheme      string
 	pkiSignatureScheme sign.Scheme
@@ -549,7 +551,7 @@ func (s *katzenpost) genVotingAuthoritiesCfg(numAuthorities int, parameters *vCo
 		cfg.Logging = &vConfig.Logging{
 			Disable: false,
 			File:    serverLogFile,
-			Level:   s.logLevel,
+			Level:   s.authLogLevel,
 		}
 		cfg.Parameters = parameters
 		cfg.Debug = &vConfig.Debug{
@@ -754,6 +756,8 @@ performance optimization and security requirements.`,
 	// Logging flags
 	cmd.Flags().StringVar(&cfg.logLevel, "logLevel", debugLogLevel,
 		"logging level (DEBUG, INFO, NOTICE, WARNING, ERROR, CRITICAL)")
+	cmd.Flags().StringVar(&cfg.authLogLevel, "authLogLevel", debugLogLevel,
+		"logging level for directory authorities (DEBUG, INFO, NOTICE, WARNING, ERROR, CRITICAL)")
 
 	// Mark required flags
 	cmd.MarkFlagRequired("wirekem")
@@ -866,6 +870,7 @@ func initializeKatzenpost(cfg *Config) *katzenpost {
 	s.lastReplicaPort = s.basePort + 3000
 	s.bindAddr = cfg.bindAddr
 	s.logLevel = cfg.logLevel
+	s.authLogLevel = cfg.authLogLevel
 	s.debugConfig = &cConfig.Debug{
 		DisableDecoyTraffic:         cfg.noDecoy,
 		SessionDialTimeout:          cfg.dialTimeout,

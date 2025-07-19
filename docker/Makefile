@@ -116,7 +116,7 @@ $(docker_compose_yml): ../cmd/genconfig/main.go $(distro)_base.stamp | $(net_nam
 		--serviceNodes ${serviceNodes} \
 		--sendRate ${sr} --mu ${mu} --muMax ${muMax} --lambdaP ${lP} --lambdaPMax ${lPMax} --lambdaL ${lL} \
 		--lambdaLMax ${lLMax} --lambdaD ${lD} --lambdaDMax ${lDMax} --lambdaM ${lM} --lambdaMMax ${lMMax} \
-		--binSuffix .$(distro) --voting --outDir ./$(net_name) --baseDir /$(net_name) --port $(base_port) \
+		--binSuffix .$(distro) --voting --authLogLevel DEBUG --outDir ./$(net_name) --baseDir /$(net_name) --port $(base_port) \
 		--nike "$(nike)" --kem "$(kem)" --dockerImage katzenpost-$(distro)_base \
 		${noMixDecoy} ${noDecoy} \
 		--UserForwardPayloadLength $(UserForwardPayloadLength) --logLevel $(log_level)'
@@ -129,7 +129,7 @@ config-only: | $(net_name)
 		--serviceNodes ${serviceNodes} \
 		--sendRate ${sr} --mu ${mu} --muMax ${muMax} --lambdaP ${lP} --lambdaPMax ${lPMax} --lambdaL ${lL} \
 		--lambdaLMax ${lLMax} --lambdaD ${lD} --lambdaDMax ${lDMax} --lambdaM ${lM} --lambdaMMax ${lMMax} \
-		--voting --outDir ../../docker/$(net_name) --baseDir /$(net_name) --port $(base_port) \
+		--voting --authLogLevel DEBUG --outDir ../../docker/$(net_name) --baseDir /$(net_name) --port $(base_port) \
 		--nike "$(nike)" --kem "$(kem)" \
 		${noMixDecoy} ${noDecoy} \
 		--UserForwardPayloadLength $(UserForwardPayloadLength) --logLevel $(log_level)
