@@ -153,7 +153,8 @@ func (s *state) recordConnectionAttempt(peerID [publicKeyHashSize]byte, success 
 	}
 
 	// Update direction-specific counters
-	if direction == "outbound" {
+	switch direction {
+	case "outbound":
 		surveyData.OutboundAttempts++
 		if success {
 			surveyData.OutboundSuccessful++
@@ -163,7 +164,7 @@ func (s *state) recordConnectionAttempt(peerID [publicKeyHashSize]byte, success 
 			surveyData.OutboundConsecutiveFail++
 			surveyData.LastOutboundFailure = &now
 		}
-	} else if direction == "inbound" {
+	case "inbound":
 		surveyData.InboundAttempts++
 		if success {
 			surveyData.InboundSuccessful++
