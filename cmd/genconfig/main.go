@@ -549,7 +549,7 @@ func (s *katzenpost) genVotingAuthoritiesCfg(numAuthorities int, parameters *vCo
 		cfg.Logging = &vConfig.Logging{
 			Disable: false,
 			File:    serverLogFile,
-			Level:   debugLogLevel, // Use DEBUG for directory authorities
+			Level:   s.logLevel,
 		}
 		cfg.Parameters = parameters
 		cfg.Debug = &vConfig.Debug{
