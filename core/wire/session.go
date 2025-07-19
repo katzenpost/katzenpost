@@ -57,6 +57,10 @@ const (
 	// send arbitrary sized PKI documents and the like. Therefore this maximum constant is only applicable
 	// to wire protocol connections among the dirauths and among the mix nodes.
 	MaxMessageSize = 500000000
+
+	// CommandReadTimeout is the timeout for reading commands from the wire.
+	// Set to 30 seconds to prevent indefinite hangs during command reception.
+	CommandReadTimeout = 30 * time.Second
 )
 
 var (
@@ -664,6 +668,12 @@ func (s *Session) recvCommandImpl() (commands.Command, error) {
 	if atomic.LoadUint32(&s.state) != stateEstablished {
 		return nil, errInvalidState
 	}
+
+	// Set read timeout to prevent indefinite hangs
+	if err := s.conn.SetReadDeadline(time.Now().Add(CommandReadTimeout)); err != nil {
+		return nil, fmt.Errorf("wire/session: failed to set read deadline: %v", err)
+	}
+	defer s.conn.SetReadDeadline(time.Time{}) // Clear deadline when done
 
 	// Read, decrypt and parse the CiphertextHeader.
 	var ctHdrCt [macLen + 4]byte
