@@ -299,10 +299,9 @@ func (s *state) fsm() <-chan time.Time {
 		s.genesisEpoch = 0
 		s.backgroundFetchConsensus(epoch - 1)
 		s.backgroundFetchConsensus(epoch)
-		// Add clock skew tolerance to bootstrap timing for more forgiving coordination
-		bootstrapDeadline := MixPublishDeadline + clockSkewTolerance
-		if elapsed > bootstrapDeadline {
-			s.log.Errorf("Too late to vote this round (elapsed %v > deadline %v), sleeping until %s", elapsed, bootstrapDeadline, nextEpoch)
+		// MixPublishDeadline already includes clock skew tolerance
+		if elapsed > MixPublishDeadline {
+			s.log.Errorf("Too late to vote this round (elapsed %v > deadline %v), sleeping until %s", elapsed, MixPublishDeadline, nextEpoch)
 			sleep = nextEpoch
 			s.votingEpoch = epoch + 2
 			s.state = stateBootstrap
