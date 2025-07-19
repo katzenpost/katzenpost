@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-// TruncatePEMForLogging truncates a PEM string to first two lines plus "..."
+// TruncatePEMForLogging truncates a PEM string to first two lines only
 // This is useful for logging PEM keys in a more concise format while preserving
 // the header and first line of data for debugging purposes.
 func TruncatePEMForLogging(pemStr string) string {
@@ -15,5 +15,5 @@ func TruncatePEMForLogging(pemStr string) string {
 	if len(lines) <= 2 {
 		return pemStr
 	}
-	return strings.Join(lines[:2], "\n") + "\n..."
+	return strings.Join(lines[:2], "\n")
 }

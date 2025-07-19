@@ -52,10 +52,10 @@ func TestTruncatePEMForLogging(t *testing.T) {
 
 	// Verify structure
 	lines := strings.Split(strings.TrimSpace(truncated), "\n")
-	require.True(t, len(lines) >= 3, "Truncated PEM should have at least 3 lines (header, first data line, ...)")
+	require.Equal(t, 2, len(lines), "Truncated PEM should have exactly 2 lines (header, first data line)")
 
-	// Should end with "..."
-	require.Equal(t, "...", lines[len(lines)-1])
+	// Should start with BEGIN header
+	require.Contains(t, lines[0], "-----BEGIN")
 
 	// Should be shorter than original
 	require.True(t, len(truncated) < len(fullPEM), "Truncated PEM should be shorter than original")

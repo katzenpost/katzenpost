@@ -22,20 +22,20 @@ func TestTruncatePEMForLogging(t *testing.T) {
 
 	// Get the full PEM string
 	fullPEM := pem.ToPublicPEMString(linkPub)
-	
+
 	// Test truncation
 	truncated := TruncatePEMForLogging(fullPEM)
-	
+
 	// Verify structure
 	lines := strings.Split(strings.TrimSpace(truncated), "\n")
-	require.True(t, len(lines) >= 3, "Truncated PEM should have at least 3 lines (header, first data line, ...)")
-	
-	// Should end with "..."
-	require.Equal(t, "...", lines[len(lines)-1])
-	
+	require.Equal(t, 2, len(lines), "Truncated PEM should have exactly 2 lines (header, first data line)")
+
+	// Should start with BEGIN header
+	require.Contains(t, lines[0], "-----BEGIN")
+
 	// Should be shorter than original
 	require.True(t, len(truncated) < len(fullPEM), "Truncated PEM should be shorter than original")
-	
+
 	// Test with short PEM (should not be truncated)
 	shortPEM := "-----BEGIN TEST-----\n-----END TEST-----"
 	truncatedShort := TruncatePEMForLogging(shortPEM)
