@@ -23,6 +23,7 @@ import (
 	kempem "github.com/katzenpost/hpqc/kem/pem"
 	signpem "github.com/katzenpost/hpqc/sign/pem"
 	kpcommon "github.com/katzenpost/katzenpost/common"
+	"github.com/katzenpost/katzenpost/core/wire"
 )
 
 // initPeerSurvey initializes the peer survey system
@@ -101,6 +102,17 @@ func (s *state) stopPeerSurvey() {
 
 // recordConnectionAttempt records a connection attempt to/from a peer for survey tracking
 func (s *state) recordConnectionAttempt(peerID [publicKeyHashSize]byte, success bool, err error, duration time.Duration, addressUsed string, direction string) {
+	s.recordConnectionAttemptWithTiming(peerID, success, err, duration, addressUsed, direction, nil)
+}
+
+// recordSessionAttempt is a helper that extracts timing from session and records the attempt
+func (s *state) recordSessionAttempt(session *wire.Session, peerID [publicKeyHashSize]byte, success bool, err error, startTime time.Time, addressUsed string) {
+	timing := session.Timing()
+	s.recordConnectionAttemptWithTiming(peerID, success, err, time.Since(startTime), addressUsed, "outbound", &timing)
+}
+
+// recordConnectionAttemptWithTiming records a connection attempt with detailed wire protocol timing
+func (s *state) recordConnectionAttemptWithTiming(peerID [publicKeyHashSize]byte, success bool, err error, duration time.Duration, addressUsed string, direction string, timing *wire.SessionTiming) {
 	s.Lock()
 	defer s.Unlock()
 
@@ -116,6 +128,13 @@ func (s *state) recordConnectionAttempt(peerID [publicKeyHashSize]byte, success 
 		Duration:    duration,
 		AddressUsed: addressUsed,
 		Direction:   direction,
+	}
+
+	// Add detailed timing information if available
+	if timing != nil {
+		attempt.HandshakeDuration = timing.HandshakeDuration
+		attempt.NoOpDuration = timing.NoOpDuration
+		attempt.TotalWireDuration = timing.TotalDuration
 	}
 
 	if err != nil {
@@ -371,19 +390,29 @@ func (s *state) logPeerDetails(surveyData *PeerSurveyData) {
 			attempt := surveyData.ConnectionHistory[i]
 			status := "OK"
 			errorInfo := ""
+			timingInfo := ""
+
 			if !attempt.Success {
 				status = "FAIL"
 				errorInfo = fmt.Sprintf(" (%s)", attempt.ErrorCategory)
 				if attempt.Error != "" {
 					errorInfo += fmt.Sprintf(" - %s", attempt.Error)
 				}
+			} else if attempt.HandshakeDuration > 0 || attempt.NoOpDuration > 0 || attempt.TotalWireDuration > 0 {
+				// Show detailed timing if any timing data is available
+				timingInfo = fmt.Sprintf(" [hs:%.0fms noop:%.0fms wire:%.0fms]",
+					attempt.HandshakeDuration.Seconds()*1000,
+					attempt.NoOpDuration.Seconds()*1000,
+					attempt.TotalWireDuration.Seconds()*1000)
 			}
-			s.log.Debugf("      [%s] %s %s via %s (%.2fs)%s",
+
+			s.log.Debugf("      [%s] %s %s via %s (%.2fs)%s%s",
 				attempt.Timestamp.Format("15:04:05"),
 				attempt.Direction,
 				status,
 				attempt.AddressUsed,
 				attempt.Duration.Seconds(),
+				timingInfo,
 				errorInfo)
 		}
 	} else {

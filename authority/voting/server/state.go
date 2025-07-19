@@ -109,6 +109,11 @@ type PeerConnectionAttempt struct {
 	AddressUsed   string
 	ErrorCategory string // "network", "handshake", "timeout", "auth", etc.
 	Direction     string // "outbound" or "inbound"
+
+	// Detailed timing information (only available for outbound connections)
+	HandshakeDuration time.Duration // Time for crypto handshake (0 if not available)
+	NoOpDuration      time.Duration // Time for NoOp exchange (0 if not available)
+	TotalWireDuration time.Duration // Total wire protocol time (0 if not available)
 }
 
 // PeerSurveyData tracks historical connectivity information for a peer
@@ -852,8 +857,8 @@ func (s *state) sendCommandToPeer(peer *config.Authority, cmd commands.Command) 
 			break
 		} else {
 			s.log.Errorf("Got err from Peer %s: %v", peer.Identifier, err)
-			// Record failed connection attempt
-			s.recordConnectionAttempt(peerID, false, err, time.Since(startTime), addressUsed, "outbound")
+			// Record failed connection attempt (network level, no wire timing available)
+			s.recordConnectionAttemptWithTiming(peerID, false, err, time.Since(startTime), addressUsed, "outbound", nil)
 		}
 		if i == len(peer.Addresses)-1 {
 			return nil, err
@@ -883,25 +888,25 @@ func (s *state) sendCommandToPeer(peer *config.Authority, cmd commands.Command) 
 	defer session.Close()
 
 	if err = session.Initialize(conn); err != nil {
-		// Record handshake failure
-		s.recordConnectionAttempt(peerID, false, err, time.Since(startTime), addressUsed, "outbound")
+		// Record handshake failure with timing details (even partial timing is valuable)
+		s.recordSessionAttempt(session, peerID, false, err, startTime, addressUsed)
 		return nil, err
 	}
 	err = session.SendCommand(cmd)
 	if err != nil {
-		// Record protocol failure
-		s.recordConnectionAttempt(peerID, false, err, time.Since(startTime), addressUsed, "outbound")
+		// Record command send failure with timing details
+		s.recordSessionAttempt(session, peerID, false, err, startTime, addressUsed)
 		return nil, err
 	}
 	resp, err := session.RecvCommand()
 	if err != nil {
-		// Record protocol failure
-		s.recordConnectionAttempt(peerID, false, err, time.Since(startTime), addressUsed, "outbound")
+		// Record command receive failure with timing details
+		s.recordSessionAttempt(session, peerID, false, err, startTime, addressUsed)
 		return nil, err
 	}
 
-	// Record successful connection
-	s.recordConnectionAttempt(peerID, true, nil, time.Since(startTime), addressUsed, "outbound")
+	// Record successful connection with timing details
+	s.recordSessionAttempt(session, peerID, true, nil, startTime, addressUsed)
 	return resp, nil
 }
 
