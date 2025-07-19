@@ -38,6 +38,7 @@ import (
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
+	kpcommon "github.com/katzenpost/katzenpost/common"
 	"github.com/katzenpost/katzenpost/core/cert"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/log"
@@ -65,19 +66,19 @@ func (a *authorityAuthenticator) IsPeerValid(creds *wire.PeerCredentials) bool {
 	if !hmac.Equal(identityHash[:], creds.AdditionalData[:hash.HashSize]) {
 		a.log.Warningf("voting/Client: IsPeerValid(): AD mismatch: %x != %x", identityHash[:], creds.AdditionalData[:hash.HashSize])
 		a.log.Warningf("voting/Client: IsPeerValid(): Expected identity key: %s (hash: %x)",
-			strings.TrimSpace(signpem.ToPublicPEMString(a.IdentityPublicKey)), identityHash[:])
+			kpcommon.TruncatePEMForLogging(signpem.ToPublicPEMString(a.IdentityPublicKey)), identityHash[:])
 		a.log.Warningf("voting/Client: IsPeerValid(): Remote Peer Credentials: additional_data=%x, link_key=%s",
-			creds.AdditionalData, strings.TrimSpace(kempem.ToPublicPEMString(creds.PublicKey)))
+			creds.AdditionalData, kpcommon.TruncatePEMForLogging(kempem.ToPublicPEMString(creds.PublicKey)))
 		return false
 	}
 	if !a.LinkPublicKey.Equal(creds.PublicKey) {
 		a.log.Warningf("voting/Client: IsPeerValid(): Link Public Key mismatch")
 		a.log.Warningf("voting/Client: IsPeerValid(): Expected link key: %s",
-			strings.TrimSpace(kempem.ToPublicPEMString(a.LinkPublicKey)))
+			kpcommon.TruncatePEMForLogging(kempem.ToPublicPEMString(a.LinkPublicKey)))
 		a.log.Warningf("voting/Client: IsPeerValid(): Received link key: %s",
-			strings.TrimSpace(kempem.ToPublicPEMString(creds.PublicKey)))
+			kpcommon.TruncatePEMForLogging(kempem.ToPublicPEMString(creds.PublicKey)))
 		a.log.Warningf("voting/Client: IsPeerValid(): Expected identity key: %s (hash: %x)",
-			strings.TrimSpace(signpem.ToPublicPEMString(a.IdentityPublicKey)), identityHash[:])
+			kpcommon.TruncatePEMForLogging(signpem.ToPublicPEMString(a.IdentityPublicKey)), identityHash[:])
 		a.log.Warningf("voting/Client: IsPeerValid(): Remote Peer Credentials: additional_data=%x", creds.AdditionalData[:hash.HashSize])
 		return false
 	}
@@ -158,8 +159,8 @@ func (p *connector) initSession(ctx context.Context, linkKey kem.PrivateKey, sig
 		return fmt.Sprintf("peer %s (%s, identity=%s, link=%s)",
 			peer.Identifier,
 			strings.Join(peer.Addresses, ","),
-			strings.TrimSpace(signpem.ToPublicPEMString(peer.IdentityPublicKey)),
-			strings.TrimSpace(kempem.ToPublicPEMString(peer.LinkPublicKey)))
+			kpcommon.TruncatePEMForLogging(signpem.ToPublicPEMString(peer.IdentityPublicKey)),
+			kpcommon.TruncatePEMForLogging(kempem.ToPublicPEMString(peer.LinkPublicKey)))
 	}
 
 	// Connect to the peer.
@@ -204,7 +205,7 @@ func (p *connector) initSession(ctx context.Context, linkKey kem.PrivateKey, sig
 	if signingKey != nil {
 		keyHash := hash.Sum256From(signingKey)
 		ad = keyHash[:]
-		signingKeyInfo = fmt.Sprintf(", signing_key=%s", strings.TrimSpace(signpem.ToPublicPEMString(signingKey)))
+		signingKeyInfo = fmt.Sprintf(", signing_key=%s", kpcommon.TruncatePEMForLogging(signpem.ToPublicPEMString(signingKey)))
 	} else {
 		signingKeyInfo = ", signing_key=none"
 	}
@@ -311,13 +312,13 @@ func (p *connector) fetchConsensus(auth *config.Authority, ctx context.Context, 
 		return nil, fmt.Errorf("peer %s (%s, identity=%s, link=%s): connection failed: %v",
 			auth.Identifier,
 			strings.Join(auth.Addresses, ","),
-			strings.TrimSpace(signpem.ToPublicPEMString(auth.IdentityPublicKey)),
-			strings.TrimSpace(kempem.ToPublicPEMString(auth.LinkPublicKey)),
+			kpcommon.TruncatePEMForLogging(signpem.ToPublicPEMString(auth.IdentityPublicKey)),
+			kpcommon.TruncatePEMForLogging(kempem.ToPublicPEMString(auth.LinkPublicKey)),
 			err)
 	}
 	p.log.Debugf("sending getConsensus to %s", auth.Identifier)
-	p.log.Debugf("remote peer %s identity key: %s", auth.Identifier, strings.TrimSpace(signpem.ToPublicPEMString(auth.IdentityPublicKey)))
-	p.log.Debugf("remote peer %s link key: %s", auth.Identifier, strings.TrimSpace(kempem.ToPublicPEMString(auth.LinkPublicKey)))
+	p.log.Debugf("remote peer %s identity key: %s", auth.Identifier, kpcommon.TruncatePEMForLogging(signpem.ToPublicPEMString(auth.IdentityPublicKey)))
+	p.log.Debugf("remote peer %s link key: %s", auth.Identifier, kpcommon.TruncatePEMForLogging(kempem.ToPublicPEMString(auth.LinkPublicKey)))
 	cmd := &commands.GetConsensus{
 		Epoch:              epoch,
 		Cmds:               commands.NewPKICommands(p.cfg.PKISignatureScheme),
@@ -330,8 +331,8 @@ func (p *connector) fetchConsensus(auth *config.Authority, ctx context.Context, 
 			return nil, fmt.Errorf("peer %s (%s, identity=%s, link=%s): round trip failed: %v",
 				auth.Identifier,
 				strings.Join(auth.Addresses, ","),
-				strings.TrimSpace(signpem.ToPublicPEMString(auth.IdentityPublicKey)),
-				strings.TrimSpace(kempem.ToPublicPEMString(auth.LinkPublicKey)),
+				kpcommon.TruncatePEMForLogging(signpem.ToPublicPEMString(auth.IdentityPublicKey)),
+				kpcommon.TruncatePEMForLogging(kempem.ToPublicPEMString(auth.LinkPublicKey)),
 				err)
 		} else {
 			p.log.Noticef("got response from %s to GetConsensus(%d) (err=%v res=%s)", auth.Identifier, epoch, err, getErrorToString(r.ErrorCode))
@@ -544,8 +545,8 @@ func (c *Client) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, 
 			peerErr := fmt.Errorf("peer %s (%s, identity=%s, link=%s): fetchConsensus failed: %v",
 				auth.Identifier,
 				strings.Join(auth.Addresses, ","),
-				strings.TrimSpace(signpem.ToPublicPEMString(auth.IdentityPublicKey)),
-				strings.TrimSpace(kempem.ToPublicPEMString(auth.LinkPublicKey)),
+				kpcommon.TruncatePEMForLogging(signpem.ToPublicPEMString(auth.IdentityPublicKey)),
+				kpcommon.TruncatePEMForLogging(kempem.ToPublicPEMString(auth.LinkPublicKey)),
 				err)
 			c.log.Errorf("GetConsensus from %s failed: %s", auth.Identifier, err)
 			peerErrors = append(peerErrors, peerErr)
@@ -604,8 +605,8 @@ func (c *Client) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, 
 			peerErr := fmt.Errorf("peer %s (%s, identity=%s, link=%s): signature verification failed: %d good, %d bad: %v",
 				auth.Identifier,
 				strings.Join(auth.Addresses, ","),
-				strings.TrimSpace(signpem.ToPublicPEMString(auth.IdentityPublicKey)),
-				strings.TrimSpace(kempem.ToPublicPEMString(auth.LinkPublicKey)),
+				kpcommon.TruncatePEMForLogging(signpem.ToPublicPEMString(auth.IdentityPublicKey)),
+				kpcommon.TruncatePEMForLogging(kempem.ToPublicPEMString(auth.LinkPublicKey)),
 				len(good), len(bad), err)
 			c.log.Errorf("VerifyThreshold failure: %d good signatures, %d bad signatures: %v", len(good), len(bad), err)
 			peerErrors = append(peerErrors, peerErr)

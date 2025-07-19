@@ -22,7 +22,6 @@ import (
 	"fmt"
 	"net"
 	"net/url"
-	"strings"
 	"sync/atomic"
 	"time"
 
@@ -33,6 +32,7 @@ import (
 	kempem "github.com/katzenpost/hpqc/kem/pem"
 	"github.com/katzenpost/hpqc/rand"
 
+	kpcommon "github.com/katzenpost/katzenpost/common"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
@@ -84,7 +84,7 @@ func (c *outgoingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 		c.log.Warningf("server/outgoing: IsPeerValid(): Received identity hash: %x", creds.AdditionalData)
 		c.log.Warningf("server/outgoing: IsPeerValid(): Expected identity key (raw): %x", c.dst.IdentityKey)
 		c.log.Warningf("server/outgoing: IsPeerValid(): Received link key: %s",
-			strings.TrimSpace(kempem.ToPublicPEMString(creds.PublicKey)))
+			kpcommon.TruncatePEMForLogging(kempem.ToPublicPEMString(creds.PublicKey)))
 		return false
 	}
 	keyblob, err := creds.PublicKey.MarshalBinary()
@@ -96,7 +96,7 @@ func (c *outgoingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 		c.log.Warningf("server/outgoing: IsPeerValid(): Link key mismatch for peer '%s'", peerName)
 		c.log.Warningf("server/outgoing: IsPeerValid(): Expected link key (raw): %x", c.dst.LinkKey)
 		c.log.Warningf("server/outgoing: IsPeerValid(): Received link key: %s",
-			strings.TrimSpace(kempem.ToPublicPEMString(creds.PublicKey)))
+			kpcommon.TruncatePEMForLogging(kempem.ToPublicPEMString(creds.PublicKey)))
 		c.log.Warningf("server/outgoing: IsPeerValid(): Identity hash: %x", creds.AdditionalData)
 		return false
 	}
@@ -110,7 +110,7 @@ func (c *outgoingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 		peerName := getPeerName()
 		c.log.Warningf("server/outgoing: IsPeerValid(): Failed to authenticate peer '%s' via latest PKI doc", peerName)
 		c.log.Warningf("server/outgoing: IsPeerValid(): Remote Peer Credentials: name=%s, identity_hash=%x, link_key=%s",
-			peerName, creds.AdditionalData, strings.TrimSpace(kempem.ToPublicPEMString(creds.PublicKey)))
+			peerName, creds.AdditionalData, kpcommon.TruncatePEMForLogging(kempem.ToPublicPEMString(creds.PublicKey)))
 	}
 	return isValid
 }
