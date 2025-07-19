@@ -79,14 +79,14 @@ var (
 	// Clock skew tolerance for directory authority coordination
 	// This accounts for time differences between authority servers, network latency,
 	// and handshake/processing delays observed in production logs
-	// Scale with epoch duration: 5% of epoch period, min 5s, max 90s
+	// Scale with epoch duration: 2.5% of epoch period, min 2s, max 60s
 	clockSkewTolerance = func() time.Duration {
-		tolerance := epochtime.Period / 20 // 5% of epoch period
-		if tolerance < 5*time.Second {
-			tolerance = 5 * time.Second // Minimum 5 seconds for Docker testing
+		tolerance := epochtime.Period / 40 // 2.5% of epoch period
+		if tolerance < 2*time.Second {
+			tolerance = 2 * time.Second // Minimum 2 seconds for Docker testing
 		}
-		if tolerance > 90*time.Second {
-			tolerance = 90 * time.Second // Maximum 90 seconds for production
+		if tolerance > 60*time.Second {
+			tolerance = 60 * time.Second // Maximum 60 seconds for production
 		}
 		return tolerance
 	}()
