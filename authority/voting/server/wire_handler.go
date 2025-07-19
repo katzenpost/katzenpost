@@ -87,10 +87,15 @@ func (s *Server) onConn(conn net.Conn) {
 	handshakeDuration := time.Since(handshakeStart)
 	s.log.Debugf("Peer %v: Handshake completed successfully in %v", rAddr, handshakeDuration)
 
+	// Get timing information from the wire session
+	timing := wireConn.Timing()
+
 	// Receive a command.
 	cmd, err := wireConn.RecvCommand()
 	if err != nil {
 		s.log.Debugf("Peer %v: Failed to receive command: %v", rAddr, err)
+		// Record failed connection for survey tracking
+		s.recordConnectionTiming(auth, rAddr, false, err, &timing)
 		return
 	}
 	conn.SetDeadline(time.Time{})
@@ -108,6 +113,9 @@ func (s *Server) onConn(conn net.Conn) {
 	} else {
 		panic("wtf") // should only happen if there is a bug in wireAuthenticator
 	}
+
+	// Record successful connection for survey tracking
+	s.recordConnectionTiming(auth, rAddr, true, nil, &timing)
 
 	// Send the response, if any.
 	if resp != nil {
@@ -494,4 +502,17 @@ func (a *wireAuthenticator) IsPeerValid(creds *wire.PeerCredentials) bool {
 		return false
 	}
 	// not reached
+}
+
+// recordConnectionTiming records connection timing information for survey tracking
+func (s *Server) recordConnectionTiming(auth *wireAuthenticator, rAddr net.Addr, success bool, err error, timing *wire.SessionTiming) {
+	if auth.isAuthority {
+		// Record authority peer connection
+		if len(auth.peerIdentityKeyHash) == hash.HashSize {
+			var peerID [hash.HashSize]byte
+			copy(peerID[:], auth.peerIdentityKeyHash)
+			s.state.recordIncomingConnection(peerID, success, err)
+		}
+	}
+	// Note: We only track authority connections for minimal survey implementation
 }
