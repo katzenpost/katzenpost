@@ -2345,7 +2345,7 @@ func (s *state) initPeerSurvey() {
 func (s *state) peerSurveyWorker() {
 	defer s.surveyTicker.Stop()
 
-	s.log.Noticef("Peer survey worker started, running every %v", peerSurveyInterval)
+	s.log.Debugf("Peer survey worker started, running every %v", peerSurveyInterval)
 
 	// Run initial survey
 	s.runPeerSurvey()
@@ -2558,30 +2558,30 @@ func (s *state) recordConnectionAttempt(surveyData *PeerSurveyData, success bool
 
 // logPeerSurveySummary logs a comprehensive summary of all peer connectivity status
 func (s *state) logPeerSurveySummary() {
-	s.log.Noticef("=== PEER CONNECTIVITY SURVEY SUMMARY ===")
-	s.log.Noticef("Survey timestamp: %s", time.Now().Format(time.RFC3339))
-	s.log.Noticef("Total peers monitored: %d", len(s.peerSurveyData))
+	s.log.Debugf("=== PEER CONNECTIVITY SURVEY SUMMARY ===")
+	s.log.Debugf("Survey timestamp: %s", time.Now().Format(time.RFC3339))
+	s.log.Debugf("Total peers monitored: %d", len(s.peerSurveyData))
 
 	for _, surveyData := range s.peerSurveyData {
 		s.logPeerDetails(surveyData)
 	}
 
-	s.log.Noticef("=== END PEER SURVEY SUMMARY ===")
+	s.log.Debugf("=== END PEER SURVEY SUMMARY ===")
 }
 
 // logPeerDetails logs detailed information about a specific peer
 func (s *state) logPeerDetails(surveyData *PeerSurveyData) {
-	s.log.Noticef("--- Peer: %s ---", surveyData.PeerName)
-	s.log.Noticef("Peer ID Hash: %x", surveyData.PeerID)
+	s.log.Debugf("--- Peer: %s ---", surveyData.PeerName)
+	s.log.Debugf("Peer ID Hash: %x", surveyData.PeerID)
 
 	// Log addresses
-	s.log.Noticef("Addresses:")
+	s.log.Debugf("Addresses:")
 	for i, addr := range surveyData.Addresses {
 		u, err := url.Parse(addr)
 		if err == nil {
-			s.log.Noticef("  [%d] %s://%s", i+1, u.Scheme, u.Host)
+			s.log.Debugf("  [%d] %s://%s", i+1, u.Scheme, u.Host)
 		} else {
-			s.log.Noticef("  [%d] %s (invalid format)", i+1, addr)
+			s.log.Debugf("  [%d] %s (invalid format)", i+1, addr)
 		}
 	}
 
@@ -2589,10 +2589,10 @@ func (s *state) logPeerDetails(surveyData *PeerSurveyData) {
 	identityPEM := signpem.ToPublicPEMString(surveyData.IdentityPublicKey)
 	linkPEM := kempem.ToPublicPEMString(surveyData.LinkPublicKey)
 
-	s.log.Noticef("Identity Public Key (PEM):")
-	s.log.Noticef("%s", identityPEM)
-	s.log.Noticef("Link Public Key (PEM):")
-	s.log.Noticef("%s", linkPEM)
+	s.log.Debugf("Identity Public Key (PEM):")
+	s.log.Debugf("%s", identityPEM)
+	s.log.Debugf("Link Public Key (PEM):")
+	s.log.Debugf("%s", linkPEM)
 
 	// Log connectivity statistics
 	successRate := float64(0)
@@ -2600,28 +2600,28 @@ func (s *state) logPeerDetails(surveyData *PeerSurveyData) {
 		successRate = float64(surveyData.SuccessfulAttempts) / float64(surveyData.TotalAttempts) * 100
 	}
 
-	s.log.Noticef("Connectivity Statistics:")
-	s.log.Noticef("  Total attempts: %d", surveyData.TotalAttempts)
-	s.log.Noticef("  Successful attempts: %d", surveyData.SuccessfulAttempts)
-	s.log.Noticef("  Success rate: %.1f%%", successRate)
-	s.log.Noticef("  Consecutive failures: %d", surveyData.ConsecutiveFailures)
+	s.log.Debugf("Connectivity Statistics:")
+	s.log.Debugf("  Total attempts: %d", surveyData.TotalAttempts)
+	s.log.Debugf("  Successful attempts: %d", surveyData.SuccessfulAttempts)
+	s.log.Debugf("  Success rate: %.1f%%", successRate)
+	s.log.Debugf("  Consecutive failures: %d", surveyData.ConsecutiveFailures)
 
 	if surveyData.LastSuccessfulConn != nil {
-		s.log.Noticef("  Last successful connection: %s", surveyData.LastSuccessfulConn.Format(time.RFC3339))
+		s.log.Debugf("  Last successful connection: %s", surveyData.LastSuccessfulConn.Format(time.RFC3339))
 	} else {
-		s.log.Noticef("  Last successful connection: Never")
+		s.log.Debugf("  Last successful connection: Never")
 	}
 
 	if surveyData.LastFailedConn != nil {
-		s.log.Noticef("  Last failed connection: %s", surveyData.LastFailedConn.Format(time.RFC3339))
+		s.log.Debugf("  Last failed connection: %s", surveyData.LastFailedConn.Format(time.RFC3339))
 	} else {
-		s.log.Noticef("  Last failed connection: Never")
+		s.log.Debugf("  Last failed connection: Never")
 	}
 
 	// Log recent connection history (last 10 attempts)
 	historyCount := len(surveyData.ConnectionHistory)
 	if historyCount > 0 {
-		s.log.Noticef("Recent Connection History (last %d attempts):", min(historyCount, 10))
+		s.log.Debugf("Recent Connection History (last %d attempts):", min(historyCount, 10))
 
 		start := max(0, historyCount-10)
 		for i := start; i < historyCount; i++ {
@@ -2631,7 +2631,7 @@ func (s *state) logPeerDetails(surveyData *PeerSurveyData) {
 				status = fmt.Sprintf("FAILED (%s)", attempt.ErrorCategory)
 			}
 
-			s.log.Noticef("  [%s] %s via %s (%.2fs) %s",
+			s.log.Debugf("  [%s] %s via %s (%.2fs) %s",
 				attempt.Timestamp.Format("15:04:05"),
 				status,
 				attempt.AddressUsed,
@@ -2644,7 +2644,7 @@ func (s *state) logPeerDetails(surveyData *PeerSurveyData) {
 				}())
 		}
 	} else {
-		s.log.Noticef("Recent Connection History: No attempts recorded")
+		s.log.Debugf("Recent Connection History: No attempts recorded")
 	}
 }
 
