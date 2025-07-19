@@ -76,14 +76,38 @@ const (
 )
 
 var (
-	MixPublishDeadline       = epochtime.Period / 8
+	// Clock skew tolerance for directory authority coordination
+	// This accounts for time differences between authority servers, network latency,
+	// and handshake/processing delays observed in production logs
+	// Docker (2min): 3s tolerance, Production (20min): 2min tolerance
+	clockSkewTolerance = func() time.Duration {
+		if epochtime.Period <= 3*time.Minute {
+			// Docker/testing: tight tolerance (2.5% of epoch, min 3s)
+			tolerance := epochtime.Period / 40
+			if tolerance < 3*time.Second {
+				tolerance = 3 * time.Second
+			}
+			return tolerance
+		} else {
+			// Production: generous tolerance (10% of epoch, max 2min)
+			tolerance := epochtime.Period / 10
+			if tolerance > 2*time.Minute {
+				tolerance = 2 * time.Minute
+			}
+			return tolerance
+		}
+	}()
+
+	// Original deadlines with proportional clock skew tolerance added once
+	MixPublishDeadline       = epochtime.Period/8 + clockSkewTolerance
 	AuthorityVoteDeadline    = MixPublishDeadline + epochtime.Period/8
 	AuthorityRevealDeadline  = AuthorityVoteDeadline + epochtime.Period/8
 	AuthorityCertDeadline    = AuthorityRevealDeadline + epochtime.Period/8
 	PublishConsensusDeadline = AuthorityCertDeadline + epochtime.Period/8
-	errGone                  = errors.New("authority: Requested epoch will never get a Document")
-	errNotYet                = errors.New("authority: Document is not ready yet")
-	errInvalidTopology       = errors.New("authority: Invalid Topology")
+
+	errGone            = errors.New("authority: Requested epoch will never get a Document")
+	errNotYet          = errors.New("authority: Document is not ready yet")
+	errInvalidTopology = errors.New("authority: Invalid Topology")
 
 	// Peer survey constants
 	peerSurveyInterval = 5 * time.Minute
@@ -100,7 +124,7 @@ type document struct {
 	raw []byte
 }
 
-// PeerConnectionAttempt represents a single connection attempt to a peer
+// PeerConnectionAttempt represents a single connection attempt to/from a peer
 type PeerConnectionAttempt struct {
 	Timestamp     time.Time
 	Success       bool
@@ -108,16 +132,69 @@ type PeerConnectionAttempt struct {
 	Duration      time.Duration
 	AddressUsed   string
 	ErrorCategory string // "network", "handshake", "timeout", "auth", etc.
+	Direction     string // "outbound" or "inbound"
+
+	// Detailed timing information (only available for outbound connections)
+	HandshakeDuration time.Duration // Time for crypto handshake (0 if not available)
+	NoOpDuration      time.Duration // Time for NoOp exchange (0 if not available)
+	TotalWireDuration time.Duration // Total wire protocol time (0 if not available)
 }
 
 // PeerSurveyData tracks historical connectivity information for a peer
 type PeerSurveyData struct {
-	PeerID              [publicKeyHashSize]byte
-	PeerName            string
-	IdentityPublicKey   sign.PublicKey
-	LinkPublicKey       kem.PublicKey
-	Addresses           []string
-	ConnectionHistory   []PeerConnectionAttempt
+	PeerID            [publicKeyHashSize]byte
+	PeerName          string
+	IdentityPublicKey sign.PublicKey
+	LinkPublicKey     kem.PublicKey
+	Addresses         []string
+	ConnectionHistory []PeerConnectionAttempt
+
+	// Overall statistics
+	LastSuccessfulConn  *time.Time
+	LastFailedConn      *time.Time
+	ConsecutiveFailures int
+	TotalAttempts       int
+	SuccessfulAttempts  int
+
+	// Outbound connection statistics
+	OutboundAttempts        int
+	OutboundSuccessful      int
+	OutboundConsecutiveFail int
+	LastOutboundSuccess     *time.Time
+	LastOutboundFailure     *time.Time
+
+	// Inbound connection statistics
+	InboundAttempts        int
+	InboundSuccessful      int
+	InboundConsecutiveFail int
+	LastInboundSuccess     *time.Time
+	LastInboundFailure     *time.Time
+}
+
+// MixConnectionAttempt represents a single connection attempt from a mix node
+type MixConnectionAttempt struct {
+	Timestamp     time.Time
+	Success       bool
+	Error         string
+	AddressUsed   string // Remote address of the connecting mix
+	ErrorCategory string // "network", "handshake", "timeout", "auth", etc.
+	NodeType      string // "mix", "gateway", "service", "replica"
+
+	// Detailed timing information (available for all inbound connections)
+	HandshakeDuration time.Duration // Time for crypto handshake
+	NoOpDuration      time.Duration // Time for NoOp exchange (if applicable)
+	TotalWireDuration time.Duration // Total wire protocol time
+}
+
+// MixSurveyData tracks historical connectivity information for mix nodes (inbound only)
+type MixSurveyData struct {
+	NodeID            [publicKeyHashSize]byte
+	NodeName          string
+	NodeType          string // "mix", "gateway", "service", "replica"
+	IdentityPublicKey sign.PublicKey
+	ConnectionHistory []MixConnectionAttempt
+
+	// Inbound connection statistics (mix nodes only connect to us)
 	LastSuccessfulConn  *time.Time
 	LastFailedConn      *time.Time
 	ConsecutiveFailures int
@@ -125,6 +202,14 @@ type PeerSurveyData struct {
 	SuccessfulAttempts  int
 }
 
+// state manages the directory authority's voting state and consensus process.
+//
+// LOCKING DISCIPLINE:
+// - Methods with "Locked" suffix assume the appropriate lock is already held
+// - Public methods acquire their own locks and call internal "Locked" methods
+// - Methods called from fsm() assume write lock is held (documented as "Caller must hold write lock")
+// - Always acquire locks in consistent order: write lock before read lock
+// - Avoid holding locks across network operations or long-running computations
 type state struct {
 	sync.RWMutex
 	worker.Worker
@@ -165,9 +250,9 @@ type state struct {
 	state        string
 
 	// Peer survey data
-	peerSurveyData map[[publicKeyHashSize]byte]*PeerSurveyData
+	peerSurveyData map[[publicKeyHashSize]byte]*PeerSurveyData // Directory authority peers
+	mixSurveyData  map[[publicKeyHashSize]byte]*MixSurveyData  // Mix nodes (inbound only)
 	surveyTicker   *time.Ticker
-	surveyStopCh   chan struct{}
 }
 
 func (s *state) Halt() {
@@ -176,9 +261,17 @@ func (s *state) Halt() {
 	// Stop peer survey worker
 	s.stopPeerSurvey()
 
-	// Gracefully close the persistence store.
-	s.db.Sync()
-	s.db.Close()
+	// Gracefully close the persistence store
+	if s.db != nil {
+		// Sync first (this can be slow but is important for data integrity)
+		if err := s.db.Sync(); err != nil {
+			s.log.Errorf("Database sync failed: %v", err)
+		}
+		// Always close the database (this must complete for data safety)
+		if err := s.db.Close(); err != nil {
+			s.log.Errorf("Database close failed: %v", err)
+		}
+	}
 }
 
 func (s *state) onUpdate() {
@@ -213,8 +306,9 @@ func (s *state) fsm() <-chan time.Time {
 		s.genesisEpoch = 0
 		s.backgroundFetchConsensus(epoch - 1)
 		s.backgroundFetchConsensus(epoch)
+		// MixPublishDeadline already includes clock skew tolerance
 		if elapsed > MixPublishDeadline {
-			s.log.Errorf("Too late to vote this round, sleeping until %s", nextEpoch)
+			s.log.Errorf("Too late to vote this round (elapsed %v > deadline %v), sleeping until %s", elapsed, MixPublishDeadline, nextEpoch)
 			sleep = nextEpoch
 			s.votingEpoch = epoch + 2
 			s.state = stateBootstrap
@@ -253,12 +347,13 @@ func (s *state) fsm() <-chan time.Time {
 		if err == nil {
 			serialized, err := signed.MarshalCertificate()
 			if err == nil {
+				s.log.Noticef("✅ Certificate generated successfully for epoch %v", s.votingEpoch)
 				s.sendCertToAuthorities(serialized, s.votingEpoch)
 			} else {
-				s.log.Errorf("Failed to serialize certificate for epoch %v", s.votingEpoch)
+				s.log.Errorf("❌ CERTIFICATE FAILURE: Failed to serialize certificate for epoch %v: %v", s.votingEpoch, err)
 			}
 		} else {
-			s.log.Errorf("Failed to compute certificate for epoch %v", s.votingEpoch)
+			s.log.Errorf("❌ CERTIFICATE FAILURE: Failed to compute certificate for epoch %v: %v", s.votingEpoch, err)
 		}
 		s.state = stateAcceptCert
 		_, nowelapsed, _ := epochtime.Now()
@@ -288,7 +383,7 @@ func (s *state) fsm() <-chan time.Time {
 			}
 			s.sendSigToAuthorities(signed, s.votingEpoch)
 		} else {
-			s.log.Errorf("Failed to compute our view of consensus for %v with %s", s.votingEpoch, err)
+			s.log.Errorf("❌ CONSENSUS FAILURE: Failed to compute our view of consensus for epoch %v: %s", s.votingEpoch, err)
 		}
 		s.state = stateAcceptSignature
 		_, nowelapsed, _ := epochtime.Now()
@@ -299,11 +394,13 @@ func (s *state) fsm() <-chan time.Time {
 		_, err := s.getThresholdConsensus(s.votingEpoch)
 		_, _, nextEpoch := epochtime.Now()
 		if err == nil {
+			s.log.Noticef("✅ CONSENSUS SUCCESS: Threshold consensus achieved for epoch %v", s.votingEpoch)
 			s.state = stateAcceptDescriptor
 			sleep = MixPublishDeadline + nextEpoch
 			s.votingEpoch++
 		} else {
-			s.log.Error(err.Error())
+			s.log.Errorf("❌ CONSENSUS FAILURE: Failed to achieve threshold consensus for epoch %v: %v", s.votingEpoch, err)
+			s.logConsensusFailureDetails(s.votingEpoch)
 			s.state = stateBootstrap
 			s.votingEpoch = epoch + 2 // vote on epoch+2 in epoch+1
 			sleep = nextEpoch
@@ -393,10 +490,8 @@ func (s *state) doSignDocument(signer sign.PrivateKey, verifier sign.PublicKey, 
 }
 
 // getCertificate is the same as a vote but it contains all SharedRandomCommits and SharedRandomReveals seen
+// Caller must hold write lock.
 func (s *state) getCertificate(epoch uint64) (*pki.Document, error) {
-	if s.TryLock() {
-		panic("write lock not held in getCertificate(epoch)")
-	}
 
 	mixes, replicas, params, err := s.tallyVotes(epoch)
 	if err != nil {
@@ -438,10 +533,8 @@ func (s *state) getCertificate(epoch uint64) (*pki.Document, error) {
 }
 
 // getConsensus computes the final document using the computed SharedRandomValue
+// Caller must hold write lock.
 func (s *state) getMyConsensus(epoch uint64) (*pki.Document, error) {
-	if s.TryLock() {
-		panic("write lock not held in getMyConsensus(epoch)")
-	}
 
 	certificates, ok := s.certificates[epoch]
 	if !ok {
@@ -456,6 +549,7 @@ func (s *state) getMyConsensus(epoch uint64) (*pki.Document, error) {
 	// verify that all shared random commit and reveal are present for this epoch
 	commits, reveals := s.verifyCommits(epoch)
 	if len(commits) < s.threshold {
+		s.log.Errorf("❌ SHARED RANDOM FAILURE: Insufficient commits for consensus: have %d, need %d", len(commits), s.threshold)
 		return nil, fmt.Errorf("No way to make consensus with too few SharedRandom commits!, only %d commits", len(commits))
 	}
 	if len(commits) != len(reveals) {
@@ -490,14 +584,13 @@ func (s *state) getMyConsensus(epoch uint64) (*pki.Document, error) {
 }
 
 // getThresholdConsensus returns a *pki.Document iff a threshold consensus is reached or error
+// getThresholdConsensus ranges over the certificates we have collected and see if we can collect enough signatures to make a consensus
+// Caller must hold write lock.
 func (s *state) getThresholdConsensus(epoch uint64) (*pki.Document, error) {
-	// range over the certificates we have collected and see if we can collect enough signatures to make a consensus
-	if s.TryLock() {
-		panic("write lock not held in getThresholdConsensus(epoch)")
-	}
 
 	ourConsensus, ok := s.myconsensus[epoch]
 	if !ok {
+		s.log.Errorf("❌ THRESHOLD CONSENSUS FAILURE: No local consensus view for epoch %v", epoch)
 		return nil, fmt.Errorf("We have no view of consensus!")
 	}
 	for pk, signature := range s.signatures[epoch] {
@@ -514,22 +607,33 @@ func (s *state) getThresholdConsensus(epoch uint64) (*pki.Document, error) {
 		return nil, err
 	}
 	_, good, bad, err := cert.VerifyThreshold(s.getVerifiers(), s.threshold, signedConsensus)
-	for _, b := range bad {
-		s.log.Errorf("Consensus NOT signed by %s", s.authorityNames[hash.Sum256From(b)])
-	}
+
+	s.log.Noticef("=== SIGNATURE VERIFICATION RESULTS FOR EPOCH %v ===", epoch)
+	s.log.Noticef("Required threshold: %d/%d signatures", s.threshold, len(s.verifiers))
+	s.log.Noticef("Valid signatures: %d", len(good))
+
 	for _, g := range good {
-		s.log.Noticef("Consensus signed by %s", s.authorityNames[hash.Sum256From(g)])
+		s.log.Noticef("  ✓ Valid signature from %s", s.authorityNames[hash.Sum256From(g)])
 	}
+
+	if len(bad) > 0 {
+		s.log.Errorf("Invalid signatures: %d", len(bad))
+		for _, b := range bad {
+			s.log.Errorf("  ❌ Invalid signature from %s", s.authorityNames[hash.Sum256From(b)])
+		}
+	}
+
 	if err == nil {
-		s.log.Noticef("Consensus made for epoch %d with %d/%d signatures: %v", epoch, len(good), len(s.verifiers), ourConsensus)
+		s.log.Noticef("✅ THRESHOLD CONSENSUS SUCCESS: Achieved %d/%d signatures for epoch %d", len(good), len(s.verifiers), epoch)
 		// Persist the document to disk.
 		s.persistDocument(epoch, signedConsensus)
 		s.documents[epoch] = ourConsensus
 		return ourConsensus, nil
 	} else {
-		s.log.Errorf("VerifyThreshold failed!: %s", err)
+		s.log.Errorf("❌ THRESHOLD CONSENSUS FAILURE: VerifyThreshold failed for epoch %v: %s", epoch, err)
+		s.log.Errorf("Signatures collected: %d/%d (need %d)", len(good), len(s.verifiers), s.threshold)
 	}
-	return nil, fmt.Errorf("No consensus found for epoch %d", epoch)
+	return nil, fmt.Errorf("No consensus found for epoch %d: insufficient signatures (%d/%d)", epoch, len(good), s.threshold)
 }
 
 func (s *state) getVerifiers() []sign.PublicKey {
@@ -637,10 +741,9 @@ func (s *state) hasEnoughDescriptors(m map[[publicKeyHashSize]byte]*pki.MixDescr
 	return (nrGateways > 0) && (nrServiceNodes > 0) && (nrNodes >= minNodes)
 }
 
+// verifyCommits verifies that each authority presented the same commit to every other authority.
+// Caller must hold write lock.
 func (s *state) verifyCommits(epoch uint64) (map[[publicKeyHashSize]byte][]byte, map[[publicKeyHashSize]byte][]byte) {
-	if s.TryLock() {
-		panic("write lock not held in verifyCommits(epoch)")
-	}
 
 	// check that each authority presented the same commit to every other authority
 	badnodes := make(map[[publicKeyHashSize]byte]bool)
@@ -746,23 +849,43 @@ func (s *state) verifyCommits(epoch uint64) (map[[publicKeyHashSize]byte][]byte,
 // for our link layer wire protocol as specified by
 // the PeerAuthenticator interface in core/wire/session.go
 func (s *state) IsPeerValid(creds *wire.PeerCredentials) bool {
+	s.RLock()
+	defer s.RUnlock()
+	return s.isPeerValidLocked(creds)
+}
+
+// isPeerValidLocked is the internal implementation that assumes RLock is held
+func (s *state) isPeerValidLocked(creds *wire.PeerCredentials) bool {
 	var ad [publicKeyHashSize]byte
 	copy(ad[:], creds.AdditionalData[:publicKeyHashSize])
 	_, ok := s.authorizedAuthorities[ad]
-	if ok {
-		return true
-	}
 
+	// Record incoming connection attempt
+	if ok {
+		// Successful incoming connection from authorized authority
+		s.recordIncomingConnection(ad, true, nil)
+		return true
+	} else {
+		// Failed incoming connection - unauthorized
+		s.recordIncomingConnection(ad, false, errors.New("unauthorized peer"))
+
+		// Get peer name and log detailed error information
+		s.logUnauthorizedPeerDetailsLocked(creds, ad)
+		return false
+	}
+}
+
+// logUnauthorizedPeerDetailsLocked logs detailed information about unauthorized peer attempts
+// Caller must hold RLock
+func (s *state) logUnauthorizedPeerDetailsLocked(creds *wire.PeerCredentials, ad [publicKeyHashSize]byte) {
 	// Try to get peer name from current PKI document
 	peerName := "unknown"
 	epoch, _, _ := epochtime.Now()
-	s.RLock()
 	if doc, exists := s.documents[epoch]; exists {
 		if node, err := doc.GetNodeByKeyHash(&ad); err == nil {
 			peerName = node.Name
 		}
 	}
-	s.RUnlock()
 
 	// Enhanced error logging with peer information
 	s.log.Warningf("dirauth/state: IsPeerValid(): Rejecting unauthorized authority '%s'", peerName)
@@ -773,29 +896,31 @@ func (s *state) IsPeerValid(creds *wire.PeerCredentials) bool {
 	s.log.Warningf("dirauth/state: IsPeerValid(): Authorized authorities:")
 	for authHash := range s.authorizedAuthorities {
 		authName := "unknown"
-		s.RLock()
 		if doc, exists := s.documents[epoch]; exists {
 			if node, err := doc.GetNodeByKeyHash(&authHash); err == nil {
 				authName = node.Name
 			}
 		}
-		s.RUnlock()
 		s.log.Warningf("dirauth/state: IsPeerValid():   - name=%s, identity_hash=%x", authName, authHash[:])
 	}
-
-	return false
 }
 
 func (s *state) sendCommandToPeer(peer *config.Authority, cmd commands.Command) (commands.Command, error) {
 	s.log.Debugf("sendCommandToPeer: peer.Identifier: %s peer.PublicKey: %s, IdentityPublicKey: %s", peer.Identifier, kempem.ToPublicPEMString(peer.LinkPublicKey), signpem.ToPublicPEMString(peer.IdentityPublicKey))
 
+	peerID := hash.Sum256From(peer.IdentityPublicKey)
+	startTime := time.Now()
+
 	var conn net.Conn
 	var err error
+	var addressUsed string
+
 	for i, a := range peer.Addresses {
 		u, err := url.Parse(a)
 		if err != nil {
 			continue
 		}
+		addressUsed = a
 		defaultDialer := &net.Dialer{}
 		ctx, cancelFn := context.WithCancel(context.Background())
 		conn, err = common.DialURL(u, ctx, defaultDialer.DialContext)
@@ -804,7 +929,9 @@ func (s *state) sendCommandToPeer(peer *config.Authority, cmd commands.Command) 
 			defer conn.Close()
 			break
 		} else {
-			s.log.Errorf("Got err from Peer: %v", err)
+			s.log.Errorf("Got err from Peer %s: %v", peer.Identifier, err)
+			// Record failed connection attempt (network level, no wire timing available)
+			s.recordConnectionAttemptWithTiming(peerID, false, err, time.Since(startTime), addressUsed, "outbound", nil)
 		}
 		if i == len(peer.Addresses)-1 {
 			return nil, err
@@ -834,24 +961,31 @@ func (s *state) sendCommandToPeer(peer *config.Authority, cmd commands.Command) 
 	defer session.Close()
 
 	if err = session.Initialize(conn); err != nil {
+		// Record handshake failure with timing details (even partial timing is valuable)
+		s.recordSessionAttempt(session, peerID, false, err, startTime, addressUsed)
 		return nil, err
 	}
 	err = session.SendCommand(cmd)
 	if err != nil {
+		// Record command send failure with timing details
+		s.recordSessionAttempt(session, peerID, false, err, startTime, addressUsed)
 		return nil, err
 	}
 	resp, err := session.RecvCommand()
 	if err != nil {
+		// Record command receive failure with timing details
+		s.recordSessionAttempt(session, peerID, false, err, startTime, addressUsed)
 		return nil, err
 	}
+
+	// Record successful connection with timing details
+	s.recordSessionAttempt(session, peerID, true, nil, startTime, addressUsed)
 	return resp, nil
 }
 
-// sendCommitToAuthorities sends our cert to all Directory Authorities
+// sendCertToAuthorities sends our cert to all Directory Authorities.
+// Caller must hold write lock.
 func (s *state) sendCertToAuthorities(cert []byte, epoch uint64) {
-	if s.TryLock() {
-		panic("write lock not held in sendCertToAuthorities(cert, epoch)")
-	}
 
 	s.log.Noticef("Sending Certificate for epoch %v, to all Directory Authorities.", epoch)
 	cmd := &commands.Cert{
@@ -897,11 +1031,9 @@ func (s *state) sendCertToAuthorities(cert []byte, epoch uint64) {
 	}
 }
 
-// sendVoteToAuthorities sends s.descriptors[epoch] to all Directory Authorities
+// sendVoteToAuthorities sends s.descriptors[epoch] to all Directory Authorities.
+// Caller must hold write lock.
 func (s *state) sendVoteToAuthorities(vote []byte, epoch uint64) {
-	if s.TryLock() {
-		panic("write lock not held in sendVoteToAuthorities(vote, epoch)")
-	}
 
 	s.log.Noticef("Sending Vote for epoch %v, to all Directory Authorities.", epoch)
 
@@ -989,10 +1121,9 @@ func (s *state) sendRevealToAuthorities(reveal []byte, epoch uint64) {
 	}
 }
 
+// sendSigToAuthorities sends signatures to all Directory Authorities.
+// Caller must hold write lock.
 func (s *state) sendSigToAuthorities(sig []byte, epoch uint64) {
-	if s.TryLock() {
-		panic("write lock not held in sendSigToAuthorities(sig, epoch)")
-	}
 
 	s.log.Noticef("Sending Signature for epoch %v, to all Directory Authorities.", epoch)
 
@@ -1033,17 +1164,19 @@ func (s *state) sendSigToAuthorities(sig []byte, epoch uint64) {
 	}
 }
 
+// tallyVotes tallies votes for the given epoch and returns descriptors and parameters.
+// Caller must hold write lock.
 func (s *state) tallyVotes(epoch uint64) ([]*pki.MixDescriptor, []*pki.ReplicaDescriptor, *config.Parameters, error) {
-	if s.TryLock() {
-		panic("write lock not held in tallyVotes(epoch)")
-	}
 
 	_, ok := s.votes[epoch]
 	if !ok {
+		s.log.Errorf("❌ VOTE TALLY FAILURE: No votes received for epoch %v", epoch)
 		return nil, nil, nil, fmt.Errorf("no votes for epoch %v", epoch)
 	}
 	if len(s.votes[epoch]) < s.threshold {
-		return nil, nil, nil, fmt.Errorf("not enough votes for epoch %v", epoch)
+		s.log.Errorf("❌ VOTE TALLY FAILURE: Insufficient votes for epoch %v: have %d, need %d", epoch, len(s.votes[epoch]), s.threshold)
+		s.logVoteStatus(epoch)
+		return nil, nil, nil, fmt.Errorf("not enough votes for epoch %v: have %d, need %d", epoch, len(s.votes[epoch]), s.threshold)
 	}
 
 	nodes := make([]*pki.MixDescriptor, 0)
@@ -1186,16 +1319,152 @@ func (s *state) tallyVotes(epoch uint64) ([]*pki.MixDescriptor, []*pki.ReplicaDe
 		}
 
 	}
+	s.log.Errorf("❌ CONSENSUS FAILURE: No parameter sets achieved threshold votes for epoch %v", epoch)
+	s.logParameterVotingDetails(epoch, mixParams)
 	return nil, nil, nil, errors.New("consensus failure (mixParams empty)")
+}
+
+// logConsensusFailureDetails provides comprehensive logging of why consensus failed
+func (s *state) logConsensusFailureDetails(epoch uint64) {
+	s.log.Errorf("=== CONSENSUS FAILURE ANALYSIS FOR EPOCH %v ===", epoch)
+
+	// Check vote status
+	if votes, ok := s.votes[epoch]; ok {
+		s.log.Errorf("Votes: %d/%d received (threshold: %d)", len(votes), len(s.verifiers), s.threshold)
+		for pk, vote := range votes {
+			name := s.authorityNames[pk]
+			s.log.Errorf("  ✓ Vote from %s: %d topology layers, %d storage replicas", name, len(vote.Topology), len(vote.StorageReplicas))
+		}
+	} else {
+		s.log.Errorf("Votes: No votes received for epoch %v", epoch)
+	}
+
+	// Check certificate status
+	if certs, ok := s.certificates[epoch]; ok {
+		s.log.Errorf("Certificates: %d/%d received", len(certs), len(s.verifiers))
+		for pk := range certs {
+			name := s.authorityNames[pk]
+			s.log.Errorf("  ✓ Certificate from %s", name)
+		}
+	} else {
+		s.log.Errorf("Certificates: No certificates received for epoch %v", epoch)
+	}
+
+	// Check signature status
+	if sigs, ok := s.signatures[epoch]; ok {
+		s.log.Errorf("Signatures: %d/%d received (threshold: %d)", len(sigs), len(s.verifiers), s.threshold)
+		for pk := range sigs {
+			name := s.authorityNames[pk]
+			s.log.Errorf("  ✓ Signature from %s", name)
+		}
+	} else {
+		s.log.Errorf("Signatures: No signatures received for epoch %v", epoch)
+	}
+
+	// Check commit/reveal status
+	if commits, ok := s.commits[epoch]; ok {
+		s.log.Errorf("Commits: %d/%d received", len(commits), len(s.verifiers))
+	} else {
+		s.log.Errorf("Commits: No commits received for epoch %v", epoch)
+	}
+
+	if reveals, ok := s.reveals[epoch]; ok {
+		s.log.Errorf("Reveals: %d/%d received", len(reveals), len(s.verifiers))
+	} else {
+		s.log.Errorf("Reveals: No reveals received for epoch %v", epoch)
+	}
+
+	// Check our own consensus view
+	if _, ok := s.myconsensus[epoch]; ok {
+		s.log.Errorf("Our consensus: Generated successfully")
+	} else {
+		s.log.Errorf("Our consensus: Failed to generate")
+	}
+
+	s.log.Errorf("=== END CONSENSUS FAILURE ANALYSIS ===")
+}
+
+// logVoteStatus logs detailed information about vote reception
+func (s *state) logVoteStatus(epoch uint64) {
+	s.log.Errorf("Required threshold: %d votes", s.threshold)
+	s.log.Errorf("Total authorities: %d", len(s.verifiers))
+
+	if votes, ok := s.votes[epoch]; ok {
+		s.log.Errorf("Votes received: %d", len(votes))
+		for pk := range votes {
+			name := s.authorityNames[pk]
+			s.log.Errorf("  ✓ %s", name)
+		}
+	} else {
+		s.log.Errorf("Votes received: 0")
+	}
+
+	// Log missing votes
+	s.log.Errorf("Missing votes from:")
+	for pk, name := range s.authorityNames {
+		if votes, ok := s.votes[epoch]; !ok || votes[pk] == nil {
+			s.log.Errorf("  ❌ %s", name)
+		}
+	}
+}
+
+// logParameterVotingDetails logs why parameter consensus failed
+func (s *state) logParameterVotingDetails(epoch uint64, mixParams map[string][]*pki.Document) {
+	s.log.Errorf("Parameter voting details:")
+	s.log.Errorf("Required threshold: %d votes", s.threshold)
+
+	for _, votes := range mixParams {
+		s.log.Errorf("Parameter set: %d votes", len(votes))
+		if len(votes) >= s.threshold {
+			s.log.Errorf("  ✓ PASSED threshold")
+		} else if len(votes) >= s.dissenters {
+			s.log.Errorf("  ⚠ Failed threshold but above dissenter limit")
+		} else {
+			s.log.Errorf("  ❌ Below dissenter limit")
+		}
+
+		for _, vote := range votes {
+			// Find the authority name by looking up the signature
+			for pk := range vote.Signatures {
+				name := s.authorityNames[pk]
+				s.log.Errorf("    - %s", name)
+				break // Only log first signature per vote
+			}
+		}
+	}
 }
 
 func (s *state) computeSharedRandom(epoch uint64, commits map[[publicKeyHashSize]byte][]byte, reveals map[[publicKeyHashSize]byte][]byte) ([]byte, error) {
 	if len(commits) < s.threshold {
-		s.log.Errorf("Insufficient commits for epoch %d to make consensus", epoch)
-		for id, _ := range commits {
-			s.log.Errorf("Have commits for epoch %d from %x", epoch, id)
+		s.log.Errorf("❌ SHARED RANDOM FAILURE: Insufficient commits for epoch %d: have %d, need %d", epoch, len(commits), s.threshold)
+		s.log.Errorf("Commits received from:")
+		for id := range commits {
+			name := s.authorityNames[id]
+			s.log.Errorf("  ✓ %s", name)
 		}
-		return nil, errors.New("Insuffiient commits to make threshold vote")
+		s.log.Errorf("Missing commits from:")
+		for id, name := range s.authorityNames {
+			if _, ok := commits[id]; !ok {
+				s.log.Errorf("  ❌ %s", name)
+			}
+		}
+		return nil, errors.New("Insufficient commits to make threshold vote")
+	}
+
+	if len(reveals) < s.threshold {
+		s.log.Errorf("❌ SHARED RANDOM FAILURE: Insufficient reveals for epoch %d: have %d, need %d", epoch, len(reveals), s.threshold)
+		s.log.Errorf("Reveals received from:")
+		for id := range reveals {
+			name := s.authorityNames[id]
+			s.log.Errorf("  ✓ %s", name)
+		}
+		s.log.Errorf("Missing reveals from:")
+		for id, name := range s.authorityNames {
+			if _, ok := reveals[id]; !ok {
+				s.log.Errorf("  ❌ %s", name)
+			}
+		}
+		return nil, errors.New("Insufficient reveals to make threshold vote")
 	}
 	type Reveal struct {
 		PublicKey [publicKeyHashSize]byte
@@ -1389,10 +1658,9 @@ func (s *state) generateRandomTopology(nodes []*pki.MixDescriptor, srv []byte) [
 	return topology
 }
 
+// pruneDocuments removes old documents to prevent memory leaks.
+// Caller must hold write lock.
 func (s *state) pruneDocuments() {
-	if s.TryLock() {
-		panic("write lock not held in pruneDocuments()")
-	}
 
 	// Looking a bit into the past is probably ok, if more past documents
 	// need to be accessible, then methods that query the DB could always
@@ -1870,7 +2138,8 @@ func (s *state) onDescriptorUpload(rawDesc []byte, desc *pki.MixDescriptor, epoc
 }
 
 func (s *state) documentForEpoch(epoch uint64) ([]byte, error) {
-	var generationDeadline = 7 * (epochtime.Period / 8)
+	// Add clock skew tolerance to generation deadline for more forgiving coordination
+	var generationDeadline = 7*(epochtime.Period/8) + clockSkewTolerance
 
 	s.RLock()
 	defer s.RUnlock()
@@ -2209,54 +2478,63 @@ func newState(s *Server) (*state, error) {
 	return st, nil
 }
 
+// backgroundFetchConsensus fetches consensus from other authorities if we don't have one for the given epoch.
+// Caller must hold write lock.
 func (s *state) backgroundFetchConsensus(epoch uint64) {
-	if s.TryLock() {
-		panic("write lock not held in backgroundFetchConsensus(epoch)")
-	}
-
-	// If there isn't a consensus for the previous epoch, ask the other
-	// authorities for a consensus.
+	// Check if we already have the document while holding the lock
 	_, ok := s.documents[epoch]
-	if !ok {
-		kemscheme := schemes.ByName(s.s.cfg.Server.WireKEMScheme)
-		if kemscheme == nil {
-			panic("kem scheme not found in registry")
-		}
-		pkiSignatureScheme := signSchemes.ByName(s.s.cfg.Server.PKISignatureScheme)
-		if pkiSignatureScheme == nil {
-			panic("pki signature scheme not found in registry")
-		}
-		s.Go(func() {
-			cfg := &client.Config{
-				KEMScheme:          kemscheme,
-				PKISignatureScheme: pkiSignatureScheme,
-				LinkKey:            s.s.linkKey,
-				LogBackend:         s.s.logBackend,
-				Authorities:        s.s.cfg.Authorities,
-				DialContextFn:      nil,
-				Geo:                s.geo,
-			}
-			c, err := client.New(cfg)
-			if err != nil {
-				return
-			}
-			ctx, cancel := context.WithTimeout(context.Background(), time.Minute*2)
-			defer cancel()
-			doc, _, err := c.Get(ctx, epoch)
-			if err != nil {
-				return
-			}
-			s.Lock()
-			defer s.Unlock()
-
-			// It's possible that the state has changed
-			// if backgroundFetchConsensus was called
-			// multiple times during bootstrapping
-			if _, ok := s.documents[epoch]; !ok {
-				s.documents[epoch] = doc
-			}
-		})
+	if ok {
+		return // Already have the document
 	}
+
+	// Start background fetch without holding the lock to avoid deadlock
+	s.backgroundFetchConsensusAsync(epoch)
+}
+
+// backgroundFetchConsensusAsync starts an async fetch operation
+// This method can be called while holding a lock since it doesn't acquire any locks itself
+func (s *state) backgroundFetchConsensusAsync(epoch uint64) {
+	kemscheme := schemes.ByName(s.s.cfg.Server.WireKEMScheme)
+	if kemscheme == nil {
+		panic("kem scheme not found in registry")
+	}
+	pkiSignatureScheme := signSchemes.ByName(s.s.cfg.Server.PKISignatureScheme)
+	if pkiSignatureScheme == nil {
+		panic("pki signature scheme not found in registry")
+	}
+
+	s.Go(func() {
+		cfg := &client.Config{
+			KEMScheme:          kemscheme,
+			PKISignatureScheme: pkiSignatureScheme,
+			LinkKey:            s.s.linkKey,
+			LogBackend:         s.s.logBackend,
+			Authorities:        s.s.cfg.Authorities,
+			DialContextFn:      nil,
+			Geo:                s.geo,
+		}
+		c, err := client.New(cfg)
+		if err != nil {
+			return
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), time.Minute*2)
+		defer cancel()
+		doc, _, err := c.Get(ctx, epoch)
+		if err != nil {
+			return
+		}
+
+		// Now acquire the lock to update the documents
+		s.Lock()
+		defer s.Unlock()
+
+		// It's possible that the state has changed
+		// if backgroundFetchConsensus was called
+		// multiple times during bootstrapping
+		if _, ok := s.documents[epoch]; !ok {
+			s.documents[epoch] = doc
+		}
+	})
 }
 
 func epochToBytes(e uint64) []byte {
@@ -2342,351 +2620,4 @@ func (s *state) reveal(epoch uint64) []byte {
 		s.s.fatalErrCh <- errors.New("reveal() called without commit")
 	}
 	return signed
-}
-
-// initPeerSurvey initializes the peer survey system
-func (s *state) initPeerSurvey() {
-	s.peerSurveyData = make(map[[publicKeyHashSize]byte]*PeerSurveyData)
-	s.surveyStopCh = make(chan struct{})
-
-	// Initialize survey data for each configured authority peer
-	for _, peer := range s.s.cfg.Authorities {
-		peerID := hash.Sum256From(peer.IdentityPublicKey)
-
-		// Skip self
-		if peerID == s.identityPubKeyHash() {
-			continue
-		}
-
-		s.peerSurveyData[peerID] = &PeerSurveyData{
-			PeerID:            peerID,
-			PeerName:          peer.Identifier,
-			IdentityPublicKey: peer.IdentityPublicKey,
-			LinkPublicKey:     peer.LinkPublicKey,
-			Addresses:         peer.Addresses,
-			ConnectionHistory: make([]PeerConnectionAttempt, 0, maxSurveyHistory),
-		}
-	}
-
-	// Start the survey worker
-	s.surveyTicker = time.NewTicker(peerSurveyInterval)
-	s.Go(s.peerSurveyWorker)
-}
-
-// peerSurveyWorker runs the periodic peer connectivity survey
-func (s *state) peerSurveyWorker() {
-	defer s.surveyTicker.Stop()
-
-	s.log.Debugf("Peer survey worker started, running every %v", peerSurveyInterval)
-
-	// Run initial survey
-	s.runPeerSurvey()
-
-	for {
-		select {
-		case <-s.HaltCh():
-			s.log.Debugf("Peer survey worker terminating gracefully.")
-			return
-		case <-s.surveyStopCh:
-			s.log.Debugf("Peer survey worker stopped.")
-			return
-		case <-s.surveyTicker.C:
-			s.runPeerSurvey()
-		}
-	}
-}
-
-// runPeerSurvey performs connectivity tests to all authority peers
-func (s *state) runPeerSurvey() {
-	s.Lock()
-	defer s.Unlock()
-
-	s.log.Debugf("Running peer connectivity survey...")
-
-	for peerID, surveyData := range s.peerSurveyData {
-		// Find the peer config
-		var peer *config.Authority
-		for _, p := range s.s.cfg.Authorities {
-			if hash.Sum256From(p.IdentityPublicKey) == peerID {
-				peer = p
-				break
-			}
-		}
-
-		if peer == nil {
-			s.log.Errorf("Peer survey: Could not find config for peer %x", peerID)
-			continue
-		}
-
-		// Test connectivity to this peer
-		s.testPeerConnectivity(peer, surveyData)
-	}
-
-	// Log survey summary
-	s.logPeerSurveySummary()
-}
-
-// testPeerConnectivity tests connectivity to a single peer
-func (s *state) testPeerConnectivity(peer *config.Authority, surveyData *PeerSurveyData) {
-	startTime := time.Now()
-
-	// Create a simple GetConsensus command for testing connectivity
-	cmd := &commands.GetConsensus{
-		Epoch: s.votingEpoch,
-	}
-
-	var lastErr error
-	var addressUsed string
-	var errorCategory string
-
-	// Try each address until one succeeds or all fail
-	for _, addr := range peer.Addresses {
-		addressUsed = addr
-
-		// Attempt connection
-		resp, err := s.testPeerConnection(peer, cmd, addr)
-		if err != nil {
-			lastErr = err
-			errorCategory = s.categorizeError(err)
-			s.log.Debugf("Peer survey: Connection to %s (%s) failed: %v", peer.Identifier, addr, err)
-			continue
-		}
-
-		// Connection succeeded
-		duration := time.Since(startTime)
-		s.recordConnectionAttempt(surveyData, true, "", duration, addressUsed, "")
-
-		// Log successful response details if available
-		if resp != nil {
-			s.log.Debugf("Peer survey: Connection to %s (%s) succeeded in %v", peer.Identifier, addr, duration)
-		}
-		return
-	}
-
-	// All addresses failed
-	duration := time.Since(startTime)
-	errorMsg := ""
-	if lastErr != nil {
-		errorMsg = lastErr.Error()
-	}
-	s.recordConnectionAttempt(surveyData, false, errorMsg, duration, addressUsed, errorCategory)
-}
-
-// testPeerConnection attempts to connect to a specific peer address
-func (s *state) testPeerConnection(peer *config.Authority, cmd commands.Command, address string) (commands.Command, error) {
-	u, err := url.Parse(address)
-	if err != nil {
-		return nil, fmt.Errorf("invalid address format: %v", err)
-	}
-
-	// Set a reasonable timeout for survey connections
-	ctx, cancelFn := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancelFn()
-
-	defaultDialer := &net.Dialer{}
-	conn, err := common.DialURL(u, ctx, defaultDialer.DialContext)
-	if err != nil {
-		return nil, fmt.Errorf("dial failed: %v", err)
-	}
-	defer conn.Close()
-
-	// Set up wire protocol session
-	identityHash := hash.Sum256From(s.s.identityPublicKey)
-
-	kemscheme := schemes.ByName(s.s.cfg.Server.WireKEMScheme)
-	if kemscheme == nil {
-		return nil, fmt.Errorf("kem scheme not found in registry")
-	}
-
-	cfg := &wire.SessionConfig{
-		KEMScheme:         kemscheme,
-		Geometry:          s.geo,
-		Authenticator:     s,
-		AdditionalData:    identityHash[:],
-		AuthenticationKey: s.s.linkKey,
-		RandomReader:      rand.Reader,
-	}
-
-	session, err := wire.NewPKISession(cfg, true)
-	if err != nil {
-		return nil, fmt.Errorf("session creation failed: %v", err)
-	}
-	defer session.Close()
-
-	// Initialize session with timeout
-	conn.SetDeadline(time.Now().Add(15 * time.Second))
-	if err = session.Initialize(conn); err != nil {
-		return nil, fmt.Errorf("handshake failed: %v", err)
-	}
-
-	// Send command
-	conn.SetDeadline(time.Now().Add(10 * time.Second))
-	err = session.SendCommand(cmd)
-	if err != nil {
-		return nil, fmt.Errorf("send command failed: %v", err)
-	}
-
-	// Receive response
-	resp, err := session.RecvCommand()
-	if err != nil {
-		return nil, fmt.Errorf("receive response failed: %v", err)
-	}
-
-	return resp, nil
-}
-
-// categorizeError categorizes connection errors for better reporting
-func (s *state) categorizeError(err error) string {
-	errStr := strings.ToLower(err.Error())
-
-	switch {
-	case strings.Contains(errStr, "dial") || strings.Contains(errStr, "connection refused") || strings.Contains(errStr, "no route"):
-		return "network"
-	case strings.Contains(errStr, "timeout") || strings.Contains(errStr, "deadline"):
-		return "timeout"
-	case strings.Contains(errStr, "handshake") || strings.Contains(errStr, "tls") || strings.Contains(errStr, "certificate"):
-		return "handshake"
-	case strings.Contains(errStr, "auth") || strings.Contains(errStr, "permission") || strings.Contains(errStr, "unauthorized"):
-		return "auth"
-	case strings.Contains(errStr, "session"):
-		return "session"
-	default:
-		return "unknown"
-	}
-}
-
-// recordConnectionAttempt records a connection attempt in the peer's history
-func (s *state) recordConnectionAttempt(surveyData *PeerSurveyData, success bool, errorMsg string, duration time.Duration, addressUsed, errorCategory string) {
-	attempt := PeerConnectionAttempt{
-		Timestamp:     time.Now(),
-		Success:       success,
-		Error:         errorMsg,
-		Duration:      duration,
-		AddressUsed:   addressUsed,
-		ErrorCategory: errorCategory,
-	}
-
-	// Add to history
-	surveyData.ConnectionHistory = append(surveyData.ConnectionHistory, attempt)
-
-	// Trim history if it exceeds max size
-	if len(surveyData.ConnectionHistory) > maxSurveyHistory {
-		surveyData.ConnectionHistory = surveyData.ConnectionHistory[1:]
-	}
-
-	// Update statistics
-	surveyData.TotalAttempts++
-	if success {
-		surveyData.SuccessfulAttempts++
-		surveyData.ConsecutiveFailures = 0
-		now := time.Now()
-		surveyData.LastSuccessfulConn = &now
-	} else {
-		surveyData.ConsecutiveFailures++
-		now := time.Now()
-		surveyData.LastFailedConn = &now
-	}
-}
-
-// logPeerSurveySummary logs a concise summary of all peer connectivity status
-func (s *state) logPeerSurveySummary() {
-	s.log.Debugf("=== PEER SURVEY (%d peers) ===", len(s.peerSurveyData))
-	for _, surveyData := range s.peerSurveyData {
-		s.logPeerDetails(surveyData)
-	}
-}
-
-// logPeerDetails logs concise but comprehensive information about a specific peer
-func (s *state) logPeerDetails(surveyData *PeerSurveyData) {
-	// Calculate success rate
-	successRate := float64(0)
-	if surveyData.TotalAttempts > 0 {
-		successRate = float64(surveyData.SuccessfulAttempts) / float64(surveyData.TotalAttempts) * 100
-	}
-
-	// Peer header with connectivity stats
-	s.log.Debugf("--- %s: %d/%d attempts (%.1f%%), %d consecutive failures",
-		surveyData.PeerName,
-		surveyData.SuccessfulAttempts,
-		surveyData.TotalAttempts,
-		successRate,
-		surveyData.ConsecutiveFailures)
-
-	// Addresses (compact format)
-	addrs := make([]string, len(surveyData.Addresses))
-	for i, addr := range surveyData.Addresses {
-		if u, err := url.Parse(addr); err == nil {
-			addrs[i] = fmt.Sprintf("%s://%s", u.Scheme, u.Host)
-		} else {
-			addrs[i] = addr
-		}
-	}
-	s.log.Debugf("    Addresses: %s", strings.Join(addrs, ", "))
-
-	// Last connection times
-	lastSuccess := "Never"
-	lastFailed := "Never"
-	if surveyData.LastSuccessfulConn != nil {
-		lastSuccess = surveyData.LastSuccessfulConn.Format("2006-01-02 15:04:05")
-	}
-	if surveyData.LastFailedConn != nil {
-		lastFailed = surveyData.LastFailedConn.Format("2006-01-02 15:04:05")
-	}
-	s.log.Debugf("    Last success: %s | Last failure: %s", lastSuccess, lastFailed)
-
-	// Keys (truncated)
-	s.log.Debugf("    Identity: %s", kpcommon.TruncatePEMForLogging(signpem.ToPublicPEMString(surveyData.IdentityPublicKey)))
-	s.log.Debugf("    Link: %s", kpcommon.TruncatePEMForLogging(kempem.ToPublicPEMString(surveyData.LinkPublicKey)))
-
-	// Recent connection history (last 5 attempts for brevity)
-	historyCount := len(surveyData.ConnectionHistory)
-	if historyCount > 0 {
-		s.log.Debugf("    Recent history (last %d):", min(historyCount, 5))
-		start := max(0, historyCount-5)
-		for i := start; i < historyCount; i++ {
-			attempt := surveyData.ConnectionHistory[i]
-			status := "OK"
-			errorInfo := ""
-			if !attempt.Success {
-				status = "FAIL"
-				errorInfo = fmt.Sprintf(" (%s)", attempt.ErrorCategory)
-				if attempt.Error != "" {
-					errorInfo += fmt.Sprintf(" - %s", attempt.Error)
-				}
-			}
-			s.log.Debugf("      [%s] %s via %s (%.2fs)%s",
-				attempt.Timestamp.Format("15:04:05"),
-				status,
-				attempt.AddressUsed,
-				attempt.Duration.Seconds(),
-				errorInfo)
-		}
-	} else {
-		s.log.Debugf("    Recent history: No attempts recorded")
-	}
-}
-
-// Helper functions for min/max
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
-}
-
-// stopPeerSurvey stops the peer survey worker
-func (s *state) stopPeerSurvey() {
-	if s.surveyTicker != nil {
-		s.surveyTicker.Stop()
-	}
-	if s.surveyStopCh != nil {
-		close(s.surveyStopCh)
-	}
 }

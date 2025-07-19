@@ -374,7 +374,7 @@ func (c *connection) doConnect(dialCtx context.Context) {
 }
 
 func (c *connection) onNetConn(conn net.Conn) {
-	const handshakeTimeout = 1 * time.Minute
+	const handshakeTimeout = 90 * time.Second
 	var err error
 
 	defer func() {

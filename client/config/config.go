@@ -41,7 +41,7 @@ const (
 	defaultLogLevel                    = "NOTICE"
 	defaultPollingInterval             = 10
 	defaultInitialMaxPKIRetrievalDelay = 30
-	defaultSessionDialTimeout          = 30
+	defaultSessionDialTimeout          = 90
 )
 
 var defaultLogging = Logging{
