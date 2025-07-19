@@ -118,11 +118,11 @@ type PeerSurveyData struct {
 	LinkPublicKey       kem.PublicKey
 	Addresses           []string
 	ConnectionHistory   []PeerConnectionAttempt
-	LastSuccessfulConn  *time.Time
-	LastFailedConn      *time.Time
-	ConsecutiveFailures int
 	TotalAttempts       int
 	SuccessfulAttempts  int
+	ConsecutiveFailures int
+	LastSuccessfulConn  *time.Time
+	LastFailedConn      *time.Time
 }
 
 type state struct {
@@ -174,7 +174,12 @@ func (s *state) Halt() {
 	s.Worker.Halt()
 
 	// Stop peer survey worker
-	s.stopPeerSurvey()
+	if s.surveyTicker != nil {
+		s.surveyTicker.Stop()
+	}
+	if s.surveyStopCh != nil {
+		close(s.surveyStopCh)
+	}
 
 	// Gracefully close the persistence store.
 	s.db.Sync()
@@ -2207,6 +2212,51 @@ func newState(s *Server) (*state, error) {
 	st.initPeerSurvey()
 
 	return st, nil
+}
+
+// recordIncomingConnection records an incoming connection attempt from a peer
+func (s *state) recordIncomingConnection(peerID [publicKeyHashSize]byte, success bool, err error) {
+	s.Lock()
+	defer s.Unlock()
+
+	// Initialize peer data if not exists
+	if s.peerSurveyData[peerID] == nil {
+		s.peerSurveyData[peerID] = &PeerSurveyData{
+			PeerID:            peerID,
+			ConnectionHistory: make([]PeerConnectionAttempt, 0),
+		}
+	}
+
+	peer := s.peerSurveyData[peerID]
+	now := time.Now()
+
+	// Create connection attempt record
+	attempt := PeerConnectionAttempt{
+		Timestamp: now,
+		Success:   success,
+		Duration:  0, // Incoming connections don't track duration
+	}
+
+	if err != nil {
+		attempt.Error = err.Error()
+	}
+
+	// Update statistics
+	peer.TotalAttempts++
+	if success {
+		peer.SuccessfulAttempts++
+		peer.ConsecutiveFailures = 0
+		peer.LastSuccessfulConn = &now
+	} else {
+		peer.ConsecutiveFailures++
+		peer.LastFailedConn = &now
+	}
+
+	// Add to history (keep last maxSurveyHistory entries)
+	peer.ConnectionHistory = append(peer.ConnectionHistory, attempt)
+	if len(peer.ConnectionHistory) > maxSurveyHistory {
+		peer.ConnectionHistory = peer.ConnectionHistory[1:]
+	}
 }
 
 func (s *state) backgroundFetchConsensus(epoch uint64) {
