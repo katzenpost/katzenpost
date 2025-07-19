@@ -76,30 +76,7 @@ const (
 )
 
 var (
-	// Clock skew tolerance for directory authority coordination
-	// This accounts for time differences between authority servers, network latency,
-	// and handshake/processing delays observed in production logs
-	// Docker (2min): 3s tolerance, Production (20min): 2min tolerance
-	clockSkewTolerance = func() time.Duration {
-		if epochtime.Period <= 3*time.Minute {
-			// Docker/testing: tight tolerance (2.5% of epoch, min 3s)
-			tolerance := epochtime.Period / 40
-			if tolerance < 3*time.Second {
-				tolerance = 3 * time.Second
-			}
-			return tolerance
-		} else {
-			// Production: generous tolerance (10% of epoch, max 2min)
-			tolerance := epochtime.Period / 10
-			if tolerance > 2*time.Minute {
-				tolerance = 2 * time.Minute
-			}
-			return tolerance
-		}
-	}()
-
-	// Original deadlines with proportional clock skew tolerance added once
-	MixPublishDeadline       = epochtime.Period/8 + clockSkewTolerance
+	MixPublishDeadline       = epochtime.Period / 8
 	AuthorityVoteDeadline    = MixPublishDeadline + epochtime.Period/8
 	AuthorityRevealDeadline  = AuthorityVoteDeadline + epochtime.Period/8
 	AuthorityCertDeadline    = AuthorityRevealDeadline + epochtime.Period/8
@@ -306,9 +283,8 @@ func (s *state) fsm() <-chan time.Time {
 		s.genesisEpoch = 0
 		s.backgroundFetchConsensus(epoch - 1)
 		s.backgroundFetchConsensus(epoch)
-		// MixPublishDeadline already includes clock skew tolerance
 		if elapsed > MixPublishDeadline {
-			s.log.Errorf("Too late to vote this round (elapsed %v > deadline %v), sleeping until %s", elapsed, MixPublishDeadline, nextEpoch)
+			s.log.Errorf("Too late to vote this round, sleeping until %s", nextEpoch)
 			sleep = nextEpoch
 			s.votingEpoch = epoch + 2
 			s.state = stateBootstrap
@@ -2138,8 +2114,7 @@ func (s *state) onDescriptorUpload(rawDesc []byte, desc *pki.MixDescriptor, epoc
 }
 
 func (s *state) documentForEpoch(epoch uint64) ([]byte, error) {
-	// Add clock skew tolerance to generation deadline for more forgiving coordination
-	var generationDeadline = 7*(epochtime.Period/8) + clockSkewTolerance
+	var generationDeadline = 7 * (epochtime.Period / 8)
 
 	s.RLock()
 	defer s.RUnlock()
