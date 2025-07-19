@@ -59,8 +59,9 @@ const (
 	MaxMessageSize = 500000000
 
 	// CommandReadTimeout is the timeout for reading commands from the wire.
-	// Set to 30 seconds to prevent indefinite hangs during command reception.
-	CommandReadTimeout = 30 * time.Second
+	// Set to 5 minutes to prevent indefinite hangs during command reception.
+	// Increased from 30s to accommodate slower CI environments and channel operations.
+	CommandReadTimeout = 5 * time.Minute
 )
 
 var (

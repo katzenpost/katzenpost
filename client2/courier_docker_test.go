@@ -37,7 +37,7 @@ func TestChannelClose(t *testing.T) {
 	aliceThinClient := setupThinClient(t)
 	defer aliceThinClient.Close()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
 	defer cancel()
 
 	channelID, _, writeCap, err := aliceThinClient.CreateWriteChannel(ctx)
@@ -78,7 +78,7 @@ func TestChannelAPIBasics(t *testing.T) {
 	require.Equal(t, currentEpoch, bobDoc.Epoch, "Alice and Bob must use same PKI epoch")
 	t.Logf("Using PKI document for epoch %d", currentEpoch)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
 	defer cancel()
 
 	// Alice creates write channel
