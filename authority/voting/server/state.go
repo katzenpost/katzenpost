@@ -828,40 +828,39 @@ func (s *state) IsPeerValid(creds *wire.PeerCredentials) bool {
 	} else {
 		// Failed incoming connection - unauthorized
 		s.recordIncomingConnection(ad, false, errors.New("unauthorized peer"))
-		return false
-	}
 
-	// Try to get peer name from current PKI document
-	peerName := "unknown"
-	epoch, _, _ := epochtime.Now()
-	s.RLock()
-	if doc, exists := s.documents[epoch]; exists {
-		if node, err := doc.GetNodeByKeyHash(&ad); err == nil {
-			peerName = node.Name
-		}
-	}
-	s.RUnlock()
-
-	// Enhanced error logging with peer information
-	s.log.Warningf("dirauth/state: IsPeerValid(): Rejecting unauthorized authority '%s'", peerName)
-	s.log.Warningf("dirauth/state: IsPeerValid(): Remote Peer Credentials: name=%s, identity_hash=%x, link_key=%s",
-		peerName, ad[:], kpcommon.TruncatePEMForLogging(kempem.ToPublicPEMString(creds.PublicKey)))
-
-	// Log expected authorized authorities for debugging
-	s.log.Warningf("dirauth/state: IsPeerValid(): Authorized authorities:")
-	for authHash := range s.authorizedAuthorities {
-		authName := "unknown"
+		// Try to get peer name from current PKI document
+		peerName := "unknown"
+		epoch, _, _ := epochtime.Now()
 		s.RLock()
 		if doc, exists := s.documents[epoch]; exists {
-			if node, err := doc.GetNodeByKeyHash(&authHash); err == nil {
-				authName = node.Name
+			if node, err := doc.GetNodeByKeyHash(&ad); err == nil {
+				peerName = node.Name
 			}
 		}
 		s.RUnlock()
-		s.log.Warningf("dirauth/state: IsPeerValid():   - name=%s, identity_hash=%x", authName, authHash[:])
-	}
 
-	return false
+		// Enhanced error logging with peer information
+		s.log.Warningf("dirauth/state: IsPeerValid(): Rejecting unauthorized authority '%s'", peerName)
+		s.log.Warningf("dirauth/state: IsPeerValid(): Remote Peer Credentials: name=%s, identity_hash=%x, link_key=%s",
+			peerName, ad[:], kpcommon.TruncatePEMForLogging(kempem.ToPublicPEMString(creds.PublicKey)))
+
+		// Log expected authorized authorities for debugging
+		s.log.Warningf("dirauth/state: IsPeerValid(): Authorized authorities:")
+		for authHash := range s.authorizedAuthorities {
+			authName := "unknown"
+			s.RLock()
+			if doc, exists := s.documents[epoch]; exists {
+				if node, err := doc.GetNodeByKeyHash(&authHash); err == nil {
+					authName = node.Name
+				}
+			}
+			s.RUnlock()
+			s.log.Warningf("dirauth/state: IsPeerValid():   - name=%s, identity_hash=%x", authName, authHash[:])
+		}
+
+		return false
+	}
 }
 
 func (s *state) sendCommandToPeer(peer *config.Authority, cmd commands.Command) (commands.Command, error) {
