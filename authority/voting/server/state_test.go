@@ -350,11 +350,14 @@ func testVoteWithAuthorities(t *testing.T, authNum int, expectedSuccessfulConsen
 		require.NoError(err)
 		_, err = pki.SignDocument(s.s.identityPrivateKey, s.s.identityPublicKey, myCertificate)
 		require.NoError(err)
+		// Distribute certificate to other authorities with proper locking
 		for j, a := range stateAuthority {
 			if j == i {
 				continue
 			}
+			a.Lock()
 			a.certificates[s.votingEpoch][hash.Sum256From(s.s.identityPublicKey)] = myCertificate
+			a.Unlock()
 		}
 		s.Unlock()
 	}
@@ -374,11 +377,14 @@ func testVoteWithAuthorities(t *testing.T, authNum int, expectedSuccessfulConsen
 		mySignature, ok := s.myconsensus[s.votingEpoch].Signatures[id]
 		require.True(ok)
 
+		// Distribute signature to other authorities with proper locking
 		for j, a := range stateAuthority {
 			if j == i {
 				continue
 			}
+			a.Lock()
 			a.signatures[s.votingEpoch][hash.Sum256From(s.s.identityPublicKey)] = &mySignature
+			a.Unlock()
 		}
 	}
 	// verify that each authority produced an identital consensus
