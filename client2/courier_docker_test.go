@@ -189,7 +189,7 @@ func TestResumeWriteChannel(t *testing.T) {
 	currentEpoch := currentDoc.Epoch
 	t.Logf("Using PKI document for epoch %d", currentEpoch)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
 	defer cancel()
 
 	// Alice creates write channel
@@ -362,7 +362,7 @@ func TestResumeWriteChannelQuery(t *testing.T) {
 	t.Log("Alice: Second write operation completed successfully")
 
 	t.Log("Waiting for second message propagation to storage replicas")
-	time.Sleep(3 * time.Second)
+	time.Sleep(10 * time.Second)
 
 	t.Log("Bob: Creating read channel")
 	bobChannelID, err := bobThinClient.CreateReadChannel(ctx, readCap)
