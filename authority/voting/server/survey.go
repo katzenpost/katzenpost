@@ -83,4 +83,6 @@ func (s *state) logPeerSurveySummary() {
 			}
 		}
 	}
+
+	s.log.Debugf("=== END PEER SURVEY ===")
 }

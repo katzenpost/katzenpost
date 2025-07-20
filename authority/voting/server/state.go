@@ -404,7 +404,7 @@ func (s *state) getCertificate(epoch uint64) (*pki.Document, error) {
 
 	mixes, replicas, params, err := s.tallyVotes(epoch)
 	if err != nil {
-		s.log.Warningf("❌ CERTIFICATE FAILURE: No document for epoch %v, aborting!, %v", epoch, err)
+		s.log.Errorf("❌ CERTIFICATE FAILURE: tallyVotes failed for epoch %v: %v", epoch, err)
 		return nil, err
 	}
 	s.log.Debug("Mixes tallied, now making a document")
@@ -1165,25 +1165,51 @@ func (s *state) tallyVotes(epoch uint64) ([]*pki.MixDescriptor, []*pki.ReplicaDe
 	sortReplicaNodesByPublicKey(replicaNodes)
 
 	// include parameters that have a threshold of votes
+	s.log.Errorf("=== PARAMETER CONSENSUS FAILURE ANALYSIS FOR EPOCH %v ===", epoch)
+	s.log.Errorf("Total votes: %d, Threshold needed: %d", len(s.votes[epoch]), s.threshold)
+	s.log.Errorf("Parameter sets found: %d", len(mixParams))
+
+	paramSetIndex := 0
 	for bs, votes := range mixParams {
+		paramSetIndex++
 		params := &config.Parameters{}
 		d := gob.NewDecoder(strings.NewReader(bs))
 		if err := d.Decode(params); err != nil {
-			s.log.Errorf("tallyVotes: failed to decode params: err=%v: bs=%v", err, bs)
+			s.log.Errorf("Failed to decode parameter set #%d: %v", paramSetIndex, err)
 			continue
+		}
+
+		s.log.Errorf("Parameter Set #%d: %d votes (need %d)", paramSetIndex, len(votes), s.threshold)
+		s.log.Errorf("  SendRatePerMinute=%d, Mu=%f, LambdaP=%f, LambdaL=%f, LambdaD=%f, LambdaM=%f, LambdaG=%f",
+			params.SendRatePerMinute, params.Mu, params.LambdaP, params.LambdaL, params.LambdaD, params.LambdaM, params.LambdaG)
+		s.log.Errorf("  Votes from authorities:")
+		for _, vote := range votes {
+			// Find which authority this vote came from
+			for authPk, authVote := range s.votes[epoch] {
+				if authVote == vote {
+					authName := s.authorityNames[authPk]
+					s.log.Errorf("    ✓ %s", authName)
+					break
+				}
+			}
 		}
 
 		if len(votes) >= s.threshold {
 			sortNodesByPublicKey(nodes)
 			// successful tally
+			s.log.Errorf("✅ Parameter Set #%d achieved threshold!", paramSetIndex)
+			s.log.Errorf("=== END PARAMETER CONSENSUS ANALYSIS ===")
 			return nodes, replicaNodes, params, nil
 		} else if len(votes) >= s.dissenters {
-			s.log.Errorf("tallyVotes: failed threshold with params: %v", params)
+			s.log.Errorf("❌ Parameter Set #%d failed threshold (%d < %d)", paramSetIndex, len(votes), s.threshold)
 			continue
+		} else {
+			s.log.Errorf("❌ Parameter Set #%d insufficient votes (%d < %d)", paramSetIndex, len(votes), s.dissenters)
 		}
 
 	}
 	s.log.Errorf("❌ CONSENSUS FAILURE: No parameter sets achieved threshold votes for epoch %v", epoch)
+	s.log.Errorf("=== END PARAMETER CONSENSUS FAILURE ANALYSIS ===")
 	return nil, nil, nil, errors.New("consensus failure (mixParams empty)")
 }
 
@@ -2090,10 +2116,8 @@ func newState(s *Server) (*state, error) {
 		st.verifiers[hash.Sum256From(auth.IdentityPublicKey)] = auth.IdentityPublicKey
 	}
 	st.verifiers[hash.Sum256From(s.IdentityKey())] = sign.PublicKey(s.IdentityKey())
-	// Use consistent count for threshold calculations
-	totalAuthorities := len(st.verifiers)
-	st.threshold = totalAuthorities/2 + 1
-	st.dissenters = totalAuthorities/2 - 1
+	st.threshold = len(st.verifiers)/2 + 1
+	st.dissenters = len(s.cfg.Authorities)/2 - 1
 
 	st.s.cfg.Server.PKISignatureScheme = s.cfg.Server.PKISignatureScheme
 	pkiSignatureScheme := signSchemes.ByName(s.cfg.Server.PKISignatureScheme)
@@ -2197,12 +2221,7 @@ func newState(s *Server) (*state, error) {
 		st.reverseHash[pk] = v.IdentityPublicKey
 		st.authorityNames[pk] = v.Identifier
 	}
-
-	// Add self to the mappings
-	selfPk := hash.Sum256From(st.s.identityPublicKey)
-	st.reverseHash[selfPk] = st.s.identityPublicKey
-	st.authorityNames[selfPk] = st.s.cfg.Server.Identifier
-	st.authorizedAuthorities[selfPk] = true
+	st.reverseHash[hash.Sum256From(st.s.identityPublicKey)] = st.s.identityPublicKey
 
 	st.documents = make(map[uint64]*pki.Document)
 	st.myconsensus = make(map[uint64]*pki.Document)
@@ -2545,135 +2564,6 @@ func (s *state) peerSurveyWorker() {
 		case <-s.surveyTicker.C:
 			s.runPeerSurvey()
 		}
-	}
-}
-
-// testPeerConnectivity tests connectivity to a single peer
-func (s *state) testPeerConnectivity(peer *config.Authority, surveyData *PeerSurveyData) {
-	startTime := time.Now()
-
-	// Create a simple GetConsensus command for testing connectivity
-	cmd := &commands.GetConsensus{
-		Epoch: s.votingEpoch,
-	}
-
-	var lastErr error
-	var addressUsed string
-	var errorCategory string
-
-	// Try each address until one succeeds or all fail
-	for _, addr := range peer.Addresses {
-		addressUsed = addr
-
-		// Attempt connection
-		resp, err := s.testPeerConnection(peer, cmd, addr)
-		if err != nil {
-			lastErr = err
-			errorCategory = s.categorizeError(err)
-			s.log.Debugf("Peer survey: Connection to %s (%s) failed: %v", peer.Identifier, addr, err)
-			continue
-		}
-
-		// Connection succeeded
-		duration := time.Since(startTime)
-		s.recordConnectionAttempt(surveyData, true, "", duration, addressUsed, "")
-
-		// Log successful response details if available
-		if resp != nil {
-			s.log.Debugf("Peer survey: Connection to %s (%s) succeeded in %v", peer.Identifier, addr, duration)
-		}
-		return
-	}
-
-	// All addresses failed
-	duration := time.Since(startTime)
-	errorMsg := ""
-	if lastErr != nil {
-		errorMsg = lastErr.Error()
-	}
-	s.recordConnectionAttempt(surveyData, false, errorMsg, duration, addressUsed, errorCategory)
-}
-
-// testPeerConnection attempts to connect to a specific peer address
-func (s *state) testPeerConnection(peer *config.Authority, cmd commands.Command, address string) (commands.Command, error) {
-	u, err := url.Parse(address)
-	if err != nil {
-		return nil, fmt.Errorf("invalid address format: %v", err)
-	}
-
-	// Set a reasonable timeout for survey connections
-	ctx, cancelFn := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancelFn()
-
-	defaultDialer := &net.Dialer{}
-	conn, err := common.DialURL(u, ctx, defaultDialer.DialContext)
-	if err != nil {
-		return nil, fmt.Errorf("dial failed: %v", err)
-	}
-	defer conn.Close()
-
-	// Set up wire protocol session
-	identityHash := hash.Sum256From(s.s.identityPublicKey)
-
-	kemscheme := schemes.ByName(s.s.cfg.Server.WireKEMScheme)
-	if kemscheme == nil {
-		return nil, fmt.Errorf("kem scheme not found in registry")
-	}
-
-	cfg := &wire.SessionConfig{
-		KEMScheme:         kemscheme,
-		Geometry:          s.geo,
-		Authenticator:     s,
-		AdditionalData:    identityHash[:],
-		AuthenticationKey: s.s.linkKey,
-		RandomReader:      rand.Reader,
-	}
-
-	session, err := wire.NewPKISession(cfg, true)
-	if err != nil {
-		return nil, fmt.Errorf("session creation failed: %v", err)
-	}
-	defer session.Close()
-
-	// Initialize session with timeout
-	conn.SetDeadline(time.Now().Add(15 * time.Second))
-	if err = session.Initialize(conn); err != nil {
-		return nil, fmt.Errorf("handshake failed: %v", err)
-	}
-
-	// Send command
-	conn.SetDeadline(time.Now().Add(10 * time.Second))
-	err = session.SendCommand(cmd)
-	if err != nil {
-		return nil, fmt.Errorf("send command failed: %v", err)
-	}
-
-	// Receive response
-	resp, err := session.RecvCommand()
-	if err != nil {
-		return nil, fmt.Errorf("receive response failed: %v", err)
-	}
-
-	return resp, nil
-}
-
-// categorizeError categorizes connection errors for better reporting
-func (s *state) categorizeError(err error) string {
-	errStr := strings.ToLower(err.Error())
-
-	switch {
-	case strings.Contains(errStr, "dial") || strings.Contains(errStr, "connection refused") || strings.Contains(errStr, "no route"):
-		return "network"
-	case strings.Contains(errStr, "timeout") || strings.Contains(errStr, "deadline"):
-		return "timeout"
-	case strings.Contains(errStr, "handshake") || strings.Contains(errStr, "tls") || strings.Contains(errStr, "certificate"):
-		return "handshake"
-	case strings.Contains(errStr, "auth") || strings.Contains(errStr, "permission") || strings.Contains(errStr, "unauthorized"):
-		return "auth"
-	case strings.Contains(errStr, "session"):
-		return "session"
-	default:
-		return "unknown"
 	}
 }
 
