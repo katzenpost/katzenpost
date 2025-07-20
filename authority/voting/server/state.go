@@ -850,6 +850,7 @@ func (s *state) sendCommandToPeer(peer *config.Authority, cmd commands.Command) 
 		AdditionalData:    identityHash[:],
 		AuthenticationKey: s.s.linkKey,
 		RandomReader:      rand.Reader,
+		CommandTimeout:    responseTimeout, // Use same timeout as response deadline
 	}
 	session, err := wire.NewPKISession(cfg, true)
 	if err != nil {

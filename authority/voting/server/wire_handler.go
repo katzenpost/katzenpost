@@ -62,6 +62,7 @@ func (s *Server) onConn(conn net.Conn) {
 		AdditionalData:     keyHash[:],
 		AuthenticationKey:  s.linkKey,
 		RandomReader:       rand.Reader,
+		CommandTimeout:     responseDeadline, // Use same timeout as response deadline
 	}
 	wireConn, err := wire.NewPKISession(cfg, false)
 	if err != nil {

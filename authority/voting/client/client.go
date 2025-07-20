@@ -257,6 +257,7 @@ func (p *connector) initSession(ctx context.Context, linkKey kem.PrivateKey, sig
 		AdditionalData:     ad,
 		AuthenticationKey:  linkKey,
 		RandomReader:       rand.Reader,
+		CommandTimeout:     responseTimeout, // Use same timeout as response deadline
 	}
 	s, err := wire.NewPKISession(cfg, true)
 	if err != nil {
