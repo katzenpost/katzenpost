@@ -349,11 +349,14 @@ func TestVote(t *testing.T) {
 		require.NoError(err)
 		_, err = pki.SignDocument(s.s.identityPrivateKey, s.s.identityPublicKey, myCertificate)
 		require.NoError(err)
+		// Distribute certificate to other authorities with proper locking
 		for j, a := range stateAuthority {
 			if j == i {
 				continue
 			}
+			a.Lock()
 			a.certificates[s.votingEpoch][hash.Sum256From(s.s.identityPublicKey)] = myCertificate
+			a.Unlock()
 		}
 		s.Unlock()
 	}
@@ -368,16 +371,21 @@ func TestVote(t *testing.T) {
 
 	// exchange signatures over the consensus
 	for i, s := range stateAuthority {
+		s.Lock()
 		s.state = stateAcceptSignature
 		id := hash.Sum256From(s.s.identityPublicKey)
 		mySignature, ok := s.myconsensus[s.votingEpoch].Signatures[id]
+		s.Unlock()
 		require.True(ok)
 
+		// Distribute signature to other authorities with proper locking
 		for j, a := range stateAuthority {
 			if j == i {
 				continue
 			}
+			a.Lock()
 			a.signatures[s.votingEpoch][hash.Sum256From(s.s.identityPublicKey)] = &mySignature
+			a.Unlock()
 		}
 	}
 	// verify that each authority produced an identital consensus
@@ -714,18 +722,26 @@ func TestVote4Authorities(t *testing.T) {
 		myCertificate, err := s.getCertificate(s.votingEpoch)
 		if err != nil {
 			t.Logf("Authority %s FAILED to generate certificate: %v", authCfgs[i].Server.Identifier, err)
+			s.Unlock()
 			require.NoError(err)
 		}
 		t.Logf("Authority %s successfully generated certificate", authCfgs[i].Server.Identifier)
 		_, err = pki.SignDocument(s.s.identityPrivateKey, s.s.identityPublicKey, myCertificate)
-		require.NoError(err)
+		if err != nil {
+			s.Unlock()
+			require.NoError(err)
+		}
+		s.Unlock()
+
+		// Distribute certificate to other authorities with proper locking
 		for j, a := range stateAuthority {
 			if j == i {
 				continue
 			}
+			a.Lock()
 			a.certificates[s.votingEpoch][hash.Sum256From(s.s.identityPublicKey)] = myCertificate
+			a.Unlock()
 		}
-		s.Unlock()
 	}
 
 	// Try to produce consensus - this should test the 3/4 scenario
@@ -758,16 +774,21 @@ func TestVote4Authorities(t *testing.T) {
 			continue
 		}
 		successfulAuthorities++
+		s.Lock()
 		s.state = stateAcceptSignature
 		id := hash.Sum256From(s.s.identityPublicKey)
 		mySignature, ok := s.myconsensus[s.votingEpoch].Signatures[id]
+		s.Unlock()
 		require.True(ok)
 
+		// Distribute signature to other authorities with proper locking
 		for j, a := range stateAuthority {
 			if j == i {
 				continue
 			}
+			a.Lock()
 			a.signatures[s.votingEpoch][hash.Sum256From(s.s.identityPublicKey)] = &mySignature
+			a.Unlock()
 		}
 	}
 
