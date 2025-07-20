@@ -25,6 +25,7 @@ import (
 	"net"
 	"net/url"
 	"strings"
+	"time"
 
 	"gopkg.in/op/go-logging.v1"
 
@@ -108,9 +109,25 @@ type Config struct {
 
 	// Geo is the geometry used for the Sphinx packet construction.
 	Geo *geo.Geometry
+
+	// Network timeouts (seconds) - should match server config
+	DialTimeoutSec      int // TCP connection (default: 30)
+	HandshakeTimeoutSec int // Wire handshake (default: 180)
+	ResponseTimeoutSec  int // Command exchange (default: 90)
 }
 
 func (cfg *Config) validate() error {
+	// Set timeout defaults if not specified (same as server)
+	if cfg.DialTimeoutSec == 0 {
+		cfg.DialTimeoutSec = 30
+	}
+	if cfg.HandshakeTimeoutSec == 0 {
+		cfg.HandshakeTimeoutSec = 180
+	}
+	if cfg.ResponseTimeoutSec == 0 {
+		cfg.ResponseTimeoutSec = 90
+	}
+
 	if cfg.LogBackend == nil {
 		return fmt.Errorf("voting/client: LogBackend is mandatory")
 	}
@@ -164,9 +181,17 @@ func (p *connector) initSession(ctx context.Context, linkKey kem.PrivateKey, sig
 	}
 
 	// Connect to the peer.
+	dialTimeout := time.Duration(p.cfg.DialTimeoutSec) * time.Second
+	handshakeTimeout := time.Duration(p.cfg.HandshakeTimeoutSec) * time.Second
+	responseTimeout := time.Duration(p.cfg.ResponseTimeoutSec) * time.Second
+
+	p.log.Debugf("Client timeouts: dial=%v, handshake=%v, response=%v",
+		dialTimeout, handshakeTimeout, responseTimeout)
+
 	dialFn := p.cfg.DialContextFn
 	if dialFn == nil {
-		dialFn = defaultDialer.DialContext
+		dialer := &net.Dialer{Timeout: dialTimeout}
+		dialFn = dialer.DialContext
 	}
 
 	// permute the order the client tries Addresses
@@ -232,6 +257,7 @@ func (p *connector) initSession(ctx context.Context, linkKey kem.PrivateKey, sig
 		AdditionalData:     ad,
 		AuthenticationKey:  linkKey,
 		RandomReader:       rand.Reader,
+		CommandTimeout:     responseTimeout, // Use same timeout as response deadline
 	}
 	s, err := wire.NewPKISession(cfg, true)
 	if err != nil {
@@ -241,12 +267,16 @@ func (p *connector) initSession(ctx context.Context, linkKey kem.PrivateKey, sig
 	}
 
 	// Handshake.
+	conn.SetDeadline(time.Now().Add(handshakeTimeout))
 	if err = s.Initialize(conn); err != nil {
 		conn.Close()
 		return nil, fmt.Errorf("%s: handshake failed (connection: %s -> %s, KEM: %s, signature: %s%s): %v",
 			peerInfo(), conn.LocalAddr(), conn.RemoteAddr(),
 			peer.WireKEMScheme, peer.PKISignatureScheme, signingKeyInfo, err)
 	}
+
+	// Set response timeout for command exchange
+	conn.SetDeadline(time.Now().Add(responseTimeout))
 
 	return &connection{
 		conn:    conn,

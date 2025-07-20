@@ -794,17 +794,31 @@ func (s *state) IsPeerValid(creds *wire.PeerCredentials) bool {
 }
 
 func (s *state) sendCommandToPeer(peer *config.Authority, cmd commands.Command) (commands.Command, error) {
+	// Use timeout configuration from config file
+	dialTimeout := time.Duration(s.s.cfg.Server.DialTimeoutSec) * time.Second
+	handshakeTimeout := time.Duration(s.s.cfg.Server.HandshakeTimeoutSec) * time.Second
+	responseTimeout := time.Duration(s.s.cfg.Server.ResponseTimeoutSec) * time.Second
+
 	s.log.Debugf("sendCommandToPeer: peer.Identifier: %s peer.PublicKey: %s, IdentityPublicKey: %s", peer.Identifier, kempem.ToPublicPEMString(peer.LinkPublicKey), signpem.ToPublicPEMString(peer.IdentityPublicKey))
+	s.log.Debugf("Outgoing timeouts: dial=%v, handshake=%v, response=%v",
+		dialTimeout, handshakeTimeout, responseTimeout)
+
+	peerID := hash.Sum256From(peer.IdentityPublicKey)
+	startTime := time.Now()
 
 	var conn net.Conn
 	var err error
+	var addressUsed string
 	for i, a := range peer.Addresses {
 		u, err := url.Parse(a)
 		if err != nil {
 			continue
 		}
-		defaultDialer := &net.Dialer{}
-		ctx, cancelFn := context.WithCancel(context.Background())
+		addressUsed = a
+		defaultDialer := &net.Dialer{
+			Timeout: dialTimeout,
+		}
+		ctx, cancelFn := context.WithTimeout(context.Background(), dialTimeout)
 		conn, err = common.DialURL(u, ctx, defaultDialer.DialContext)
 		cancelFn()
 		if err == nil {
@@ -814,6 +828,9 @@ func (s *state) sendCommandToPeer(peer *config.Authority, cmd commands.Command) 
 			s.log.Errorf("Got err from Peer: %v", err)
 		}
 		if i == len(peer.Addresses)-1 {
+			// Record failed outgoing connection
+			duration := time.Since(startTime)
+			s.recordOutgoingConnection(peerID, false, err, duration, addressUsed)
 			return nil, err
 		}
 	}
@@ -833,24 +850,42 @@ func (s *state) sendCommandToPeer(peer *config.Authority, cmd commands.Command) 
 		AdditionalData:    identityHash[:],
 		AuthenticationKey: s.s.linkKey,
 		RandomReader:      rand.Reader,
+		CommandTimeout:    responseTimeout, // Use same timeout as response deadline
 	}
 	session, err := wire.NewPKISession(cfg, true)
 	if err != nil {
+		duration := time.Since(startTime)
+		s.recordOutgoingConnection(peerID, false, err, duration, addressUsed)
 		return nil, err
 	}
 	defer session.Close()
 
+	// Set handshake timeout
+	conn.SetDeadline(time.Now().Add(handshakeTimeout))
 	if err = session.Initialize(conn); err != nil {
+		duration := time.Since(startTime)
+		s.recordOutgoingConnection(peerID, false, err, duration, addressUsed)
 		return nil, err
 	}
+
+	// Set response timeout for command exchange
+	conn.SetDeadline(time.Now().Add(responseTimeout))
 	err = session.SendCommand(cmd)
 	if err != nil {
+		duration := time.Since(startTime)
+		s.recordOutgoingConnection(peerID, false, err, duration, addressUsed)
 		return nil, err
 	}
 	resp, err := session.RecvCommand()
 	if err != nil {
+		duration := time.Since(startTime)
+		s.recordOutgoingConnection(peerID, false, err, duration, addressUsed)
 		return nil, err
 	}
+
+	// Record successful outgoing connection
+	duration := time.Since(startTime)
+	s.recordOutgoingConnection(peerID, true, nil, duration, addressUsed)
 	return resp, nil
 }
 
@@ -2278,7 +2313,14 @@ func (s *state) recordIncomingConnection(peerID [publicKeyHashSize]byte, success
 	}
 
 	if err != nil {
-		attempt.Error = err.Error()
+		attempt.ErrorCategory = s.categorizeConnectionError(err)
+		// Truncate very long error messages (wire protocol errors can be huge)
+		errMsg := err.Error()
+		if len(errMsg) > 200 {
+			attempt.Error = errMsg[:200] + "..."
+		} else {
+			attempt.Error = errMsg
+		}
 	}
 
 	// Update statistics
@@ -2296,6 +2338,87 @@ func (s *state) recordIncomingConnection(peerID [publicKeyHashSize]byte, success
 	peer.ConnectionHistory = append(peer.ConnectionHistory, attempt)
 	if len(peer.ConnectionHistory) > maxSurveyHistory {
 		peer.ConnectionHistory = peer.ConnectionHistory[1:]
+	}
+}
+
+// recordOutgoingConnection records an outgoing connection attempt to a peer
+func (s *state) recordOutgoingConnection(peerID [publicKeyHashSize]byte, success bool, err error, duration time.Duration, addressUsed string) {
+	s.Lock()
+	defer s.Unlock()
+
+	// Initialize peer data if not exists
+	if s.peerSurveyData[peerID] == nil {
+		s.peerSurveyData[peerID] = &PeerSurveyData{
+			PeerID:            peerID,
+			ConnectionHistory: make([]PeerConnectionAttempt, 0),
+		}
+	}
+
+	peer := s.peerSurveyData[peerID]
+	now := time.Now()
+
+	// Create connection attempt record
+	attempt := PeerConnectionAttempt{
+		Timestamp:   now,
+		Success:     success,
+		Duration:    duration,
+		AddressUsed: addressUsed,
+	}
+
+	if err != nil {
+		attempt.ErrorCategory = s.categorizeConnectionError(err)
+		// Truncate very long error messages (wire protocol errors can be huge)
+		errMsg := err.Error()
+		if len(errMsg) > 200 {
+			attempt.Error = errMsg[:200] + "..."
+		} else {
+			attempt.Error = errMsg
+		}
+	}
+
+	// Update statistics
+	peer.TotalAttempts++
+	if success {
+		peer.SuccessfulAttempts++
+		peer.ConsecutiveFailures = 0
+		peer.LastSuccessfulConn = &now
+	} else {
+		peer.ConsecutiveFailures++
+		peer.LastFailedConn = &now
+	}
+
+	// Add to history (keep last maxSurveyHistory entries)
+	peer.ConnectionHistory = append(peer.ConnectionHistory, attempt)
+	if len(peer.ConnectionHistory) > maxSurveyHistory {
+		peer.ConnectionHistory = peer.ConnectionHistory[1:]
+	}
+}
+
+// categorizeConnectionError categorizes connection errors for better reporting
+func (s *state) categorizeConnectionError(err error) string {
+	if err == nil {
+		return ""
+	}
+
+	errStr := strings.ToLower(err.Error())
+
+	switch {
+	case strings.Contains(errStr, "dial") || strings.Contains(errStr, "connection refused") || strings.Contains(errStr, "no route"):
+		return "network"
+	case strings.Contains(errStr, "timeout") || strings.Contains(errStr, "deadline"):
+		return "timeout"
+	case strings.Contains(errStr, "handshake") || strings.Contains(errStr, "tls") || strings.Contains(errStr, "certificate"):
+		return "handshake"
+	case strings.Contains(errStr, "wire/session") || strings.Contains(errStr, "session"):
+		return "session"
+	case strings.Contains(errStr, "auth") || strings.Contains(errStr, "permission") || strings.Contains(errStr, "unauthorized"):
+		return "auth"
+	case strings.Contains(errStr, "kem") || strings.Contains(errStr, "key"):
+		return "crypto"
+	case strings.Contains(errStr, "unexpected eof") || strings.Contains(errStr, "connection reset"):
+		return "protocol"
+	default:
+		return "unknown"
 	}
 }
 
@@ -2520,14 +2643,9 @@ func (s *state) initPeerSurvey() {
 	s.peerSurveyData = make(map[[publicKeyHashSize]byte]*PeerSurveyData)
 	s.surveyStopCh = make(chan struct{})
 
-	// Initialize survey data for each configured authority peer
+	// Initialize survey data for each configured authority peer (including self)
 	for _, peer := range s.s.cfg.Authorities {
 		peerID := hash.Sum256From(peer.IdentityPublicKey)
-
-		// Skip self
-		if peerID == s.identityPubKeyHash() {
-			continue
-		}
 
 		s.peerSurveyData[peerID] = &PeerSurveyData{
 			PeerID:            peerID,
@@ -2535,6 +2653,19 @@ func (s *state) initPeerSurvey() {
 			IdentityPublicKey: peer.IdentityPublicKey,
 			LinkPublicKey:     peer.LinkPublicKey,
 			Addresses:         peer.Addresses,
+			ConnectionHistory: make([]PeerConnectionAttempt, 0, maxSurveyHistory),
+		}
+	}
+
+	// Also add self with server identifier if not already present
+	selfID := s.identityPubKeyHash()
+	if s.peerSurveyData[selfID] == nil {
+		s.peerSurveyData[selfID] = &PeerSurveyData{
+			PeerID:            selfID,
+			PeerName:          s.s.cfg.Server.Identifier + " (self)",
+			IdentityPublicKey: s.s.identityPublicKey,
+			LinkPublicKey:     s.s.linkKey.Public(),
+			Addresses:         s.s.cfg.Server.Addresses,
 			ConnectionHistory: make([]PeerConnectionAttempt, 0, maxSurveyHistory),
 		}
 	}
@@ -2564,109 +2695,6 @@ func (s *state) peerSurveyWorker() {
 		case <-s.surveyTicker.C:
 			s.runPeerSurvey()
 		}
-	}
-}
-
-// recordConnectionAttempt records a connection attempt in the peer's history
-func (s *state) recordConnectionAttempt(surveyData *PeerSurveyData, success bool, errorMsg string, duration time.Duration, addressUsed, errorCategory string) {
-	attempt := PeerConnectionAttempt{
-		Timestamp:     time.Now(),
-		Success:       success,
-		Error:         errorMsg,
-		Duration:      duration,
-		AddressUsed:   addressUsed,
-		ErrorCategory: errorCategory,
-	}
-
-	// Add to history
-	surveyData.ConnectionHistory = append(surveyData.ConnectionHistory, attempt)
-
-	// Trim history if it exceeds max size
-	if len(surveyData.ConnectionHistory) > maxSurveyHistory {
-		surveyData.ConnectionHistory = surveyData.ConnectionHistory[1:]
-	}
-
-	// Update statistics
-	surveyData.TotalAttempts++
-	if success {
-		surveyData.SuccessfulAttempts++
-		surveyData.ConsecutiveFailures = 0
-		now := time.Now()
-		surveyData.LastSuccessfulConn = &now
-	} else {
-		surveyData.ConsecutiveFailures++
-		now := time.Now()
-		surveyData.LastFailedConn = &now
-	}
-}
-
-// logPeerDetails logs concise but comprehensive information about a specific peer
-func (s *state) logPeerDetails(surveyData *PeerSurveyData) {
-	// Calculate success rate
-	successRate := float64(0)
-	if surveyData.TotalAttempts > 0 {
-		successRate = float64(surveyData.SuccessfulAttempts) / float64(surveyData.TotalAttempts) * 100
-	}
-
-	// Peer header with connectivity stats
-	s.log.Debugf("--- %s: %d/%d attempts (%.1f%%), %d consecutive failures",
-		surveyData.PeerName,
-		surveyData.SuccessfulAttempts,
-		surveyData.TotalAttempts,
-		successRate,
-		surveyData.ConsecutiveFailures)
-
-	// Addresses (compact format)
-	addrs := make([]string, len(surveyData.Addresses))
-	for i, addr := range surveyData.Addresses {
-		if u, err := url.Parse(addr); err == nil {
-			addrs[i] = fmt.Sprintf("%s://%s", u.Scheme, u.Host)
-		} else {
-			addrs[i] = addr
-		}
-	}
-	s.log.Debugf("    Addresses: %s", strings.Join(addrs, ", "))
-
-	// Last connection times
-	lastSuccess := "Never"
-	lastFailed := "Never"
-	if surveyData.LastSuccessfulConn != nil {
-		lastSuccess = surveyData.LastSuccessfulConn.Format("2006-01-02 15:04:05")
-	}
-	if surveyData.LastFailedConn != nil {
-		lastFailed = surveyData.LastFailedConn.Format("2006-01-02 15:04:05")
-	}
-	s.log.Debugf("    Last success: %s | Last failure: %s", lastSuccess, lastFailed)
-
-	// Keys (truncated)
-	s.log.Debugf("    Identity: %s", kpcommon.TruncatePEMForLogging(signpem.ToPublicPEMString(surveyData.IdentityPublicKey)))
-	s.log.Debugf("    Link: %s", kpcommon.TruncatePEMForLogging(kempem.ToPublicPEMString(surveyData.LinkPublicKey)))
-
-	// Recent connection history (last 5 attempts for brevity)
-	historyCount := len(surveyData.ConnectionHistory)
-	if historyCount > 0 {
-		s.log.Debugf("    Recent history (last %d):", min(historyCount, 5))
-		start := max(0, historyCount-5)
-		for i := start; i < historyCount; i++ {
-			attempt := surveyData.ConnectionHistory[i]
-			status := "OK"
-			errorInfo := ""
-			if !attempt.Success {
-				status = "FAIL"
-				errorInfo = fmt.Sprintf(" (%s)", attempt.ErrorCategory)
-				if attempt.Error != "" {
-					errorInfo += fmt.Sprintf(" - %s", attempt.Error)
-				}
-			}
-			s.log.Debugf("      [%s] %s via %s (%.2fs)%s",
-				attempt.Timestamp.Format("15:04:05"),
-				status,
-				attempt.AddressUsed,
-				attempt.Duration.Seconds(),
-				errorInfo)
-		}
-	} else {
-		s.log.Debugf("    Recent history: No attempts recorded")
 	}
 }
 

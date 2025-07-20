@@ -426,10 +426,41 @@ type Server struct {
 
 	// DataDir is the absolute path to the server's state files.
 	DataDir string
+
+	// Network timeout configuration for authority operations
+	// These timeouts are used for both incoming and outgoing connections
+	// and should be tuned for post-quantum crypto performance
+
+	// DialTimeoutSec is the timeout for TCP connection establishment (default: 30)
+	DialTimeoutSec int
+
+	// HandshakeTimeoutSec is the timeout for wire protocol handshake completion (default: 180)
+	// Increased for post-quantum crypto operations (KYBER768-X25519 + Ed25519 Sphincs+)
+	HandshakeTimeoutSec int
+
+	// ResponseTimeoutSec is the timeout for command send/receive operations (default: 90)
+	ResponseTimeoutSec int
+
+	// CloseDelaySec is the delay before closing connections to allow NoOp finalization (default: 10)
+	CloseDelaySec int
 }
 
 // Validate parses and checks the Server configuration.
 func (sCfg *Server) validate() error {
+	// Set timeout defaults if not specified
+	if sCfg.DialTimeoutSec == 0 {
+		sCfg.DialTimeoutSec = 30
+	}
+	if sCfg.HandshakeTimeoutSec == 0 {
+		sCfg.HandshakeTimeoutSec = 180
+	}
+	if sCfg.ResponseTimeoutSec == 0 {
+		sCfg.ResponseTimeoutSec = 90
+	}
+	if sCfg.CloseDelaySec == 0 {
+		sCfg.CloseDelaySec = 10
+	}
+
 	if sCfg.WireKEMScheme == "" {
 		return errors.New("WireKEMScheme was not set")
 	} else {

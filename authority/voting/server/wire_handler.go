@@ -35,13 +35,15 @@ import (
 )
 
 func (s *Server) onConn(conn net.Conn) {
-	const (
-		initialDeadline  = 90 * time.Second // Increased from 30s to 90s for authority handshakes
-		responseDeadline = 60 * time.Second
-	)
+	// Use timeout configuration from config file
+	initialDeadline := time.Duration(s.cfg.Server.HandshakeTimeoutSec) * time.Second
+	responseDeadline := time.Duration(s.cfg.Server.ResponseTimeoutSec) * time.Second
+	closeDelay := time.Duration(s.cfg.Server.CloseDelaySec) * time.Second
 
 	rAddr := conn.RemoteAddr()
 	s.log.Debugf("Accepted new connection: %v", rAddr)
+	s.log.Debugf("Network timeouts: handshake=%v, response=%v, close_delay=%v",
+		initialDeadline, responseDeadline, closeDelay)
 
 	// Initialize the wire protocol session.
 	auth := &wireAuthenticator{s: s}
@@ -60,6 +62,7 @@ func (s *Server) onConn(conn net.Conn) {
 		AdditionalData:     keyHash[:],
 		AuthenticationKey:  s.linkKey,
 		RandomReader:       rand.Reader,
+		CommandTimeout:     responseDeadline, // Use same timeout as response deadline
 	}
 	wireConn, err := wire.NewPKISession(cfg, false)
 	if err != nil {
@@ -69,11 +72,11 @@ func (s *Server) onConn(conn net.Conn) {
 
 	// wireConn.Close calls conn.Close. In quic, sends are nonblocking and Close
 	// tears down the connection before the response was sent.
-	// So this waits 1000ms after the response has been served before closing the connection.
-	// Increased from 100ms to 1000ms to allow sufficient time for NoOp command exchange
-	// on slower network paths between authority nodes.
+	// So this waits after the response has been served before closing the connection.
+	// Using closeDelay to allow sufficient time for post-quantum NoOp command exchange
+	// on slower network paths between authority nodes with heavy crypto operations.
 	defer func() {
-		<-time.After(time.Millisecond * 1000)
+		<-time.After(closeDelay)
 		wireConn.Close()
 	}()
 
@@ -100,7 +103,8 @@ func (s *Server) onConn(conn net.Conn) {
 		}
 		return
 	}
-	conn.SetDeadline(time.Time{})
+	// Keep deadline active for response phase
+	conn.SetDeadline(time.Now().Add(responseDeadline))
 
 	// Parse the command, and craft the response.
 	var resp commands.Command
@@ -123,7 +127,7 @@ func (s *Server) onConn(conn net.Conn) {
 
 	// Send the response, if any.
 	if resp != nil {
-		conn.SetDeadline(time.Now().Add(responseDeadline))
+		// Deadline already set above, no need to reset
 		if err = wireConn.SendCommand(resp); err != nil {
 			s.log.Debugf("Peer %v: Failed to send response: %v", rAddr, err)
 		}
