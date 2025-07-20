@@ -59,12 +59,13 @@ var sphinxGeometry = geo.GeometryFromUserForwardPayloadLength(
 	5,
 )
 
-func TestVote(t *testing.T) {
-	t.Parallel()
+// testVoteWithAuthorities is a parameterized test function that tests voting
+// with different numbers of directory authorities
+func testVoteWithAuthorities(t *testing.T, authNum int, expectedSuccessfulConsensus int) {
 	require := require.New(t)
 
-	// instantiate states
-	authNum := 3
+	t.Logf("=== TESTING %d AUTHORITIES SCENARIO ===", authNum)
+	t.Logf("Expected successful consensus: %d", expectedSuccessfulConsensus)
 	stateAuthority := make([]*state, authNum)
 	votingEpoch, _, _ := epochtime.Now()
 	votingEpoch += 5
@@ -194,10 +195,10 @@ func TestVote(t *testing.T) {
 	topology.Layers[2].Nodes = []config.Node{config.Node{IdentityPublicKeyPem: idKeys[4].identityPublicKeyPem},
 		config.Node{IdentityPublicKeyPem: idKeys[5].identityPublicKeyPem}}
 
-	// generate a Topology section
-	authCfgs[0].Topology = &topology
-	authCfgs[1].Topology = &topology
-	authCfgs[2].Topology = &topology
+	// set topology for all authorities
+	for i := 0; i < authNum; i++ {
+		authCfgs[i].Topology = &topology
+	}
 
 	// generate gateways
 	for i := 0; i < m; i++ {
@@ -319,11 +320,14 @@ func TestVote(t *testing.T) {
 		_, err = pki.ParseDocument(raw)
 		require.NoError(err)
 		s.state = stateAcceptVote
+		// Distribute vote to other authorities with proper locking
 		for j, a := range stateAuthority {
 			if j == i {
 				continue
 			}
+			a.Lock()
 			a.votes[s.votingEpoch][hash.Sum256From(s.s.identityPublicKey)] = myVote
+			a.Unlock()
 		}
 	}
 
@@ -331,11 +335,14 @@ func TestVote(t *testing.T) {
 	for i, s := range stateAuthority {
 		s.state = stateAcceptReveal
 		c := s.reveal(s.votingEpoch)
+		// Distribute reveal to other authorities with proper locking
 		for j, a := range stateAuthority {
 			if j == i {
 				continue
 			}
+			a.Lock()
 			a.reveals[a.votingEpoch][hash.Sum256From(s.s.identityPublicKey)] = c
+			a.Unlock()
 			t.Logf("%s sent %s reveal", authCfgs[i].Server.Identifier, authCfgs[j].Server.Identifier)
 		}
 
@@ -349,11 +356,14 @@ func TestVote(t *testing.T) {
 		require.NoError(err)
 		_, err = pki.SignDocument(s.s.identityPrivateKey, s.s.identityPublicKey, myCertificate)
 		require.NoError(err)
+		// Distribute certificate to other authorities with proper locking
 		for j, a := range stateAuthority {
 			if j == i {
 				continue
 			}
+			a.Lock()
 			a.certificates[s.votingEpoch][hash.Sum256From(s.s.identityPublicKey)] = myCertificate
+			a.Unlock()
 		}
 		s.Unlock()
 	}
@@ -373,11 +383,14 @@ func TestVote(t *testing.T) {
 		mySignature, ok := s.myconsensus[s.votingEpoch].Signatures[id]
 		require.True(ok)
 
+		// Distribute signature to other authorities with proper locking
 		for j, a := range stateAuthority {
 			if j == i {
 				continue
 			}
+			a.Lock()
 			a.signatures[s.votingEpoch][hash.Sum256From(s.s.identityPublicKey)] = &mySignature
+			a.Unlock()
 		}
 	}
 	// verify that each authority produced an identital consensus
@@ -394,6 +407,32 @@ func TestVote(t *testing.T) {
 			require.Equal(consensusHash, string(hash[:]))
 		}
 	}
+}
+
+// Test functions for different numbers of authorities
+func TestVote3Authorities(t *testing.T) {
+	testVoteWithAuthorities(t, 3, 3) // All 3 authorities should achieve consensus
+}
+
+func TestVote4Authorities(t *testing.T) {
+	testVoteWithAuthorities(t, 4, 3) // 3 out of 4 authorities should achieve consensus
+}
+
+func TestVote5Authorities(t *testing.T) {
+	testVoteWithAuthorities(t, 5, 3) // 3 out of 5 authorities should achieve consensus
+}
+
+func TestVote6Authorities(t *testing.T) {
+	testVoteWithAuthorities(t, 6, 4) // 4 out of 6 authorities should achieve consensus
+}
+
+func TestVote7Authorities(t *testing.T) {
+	testVoteWithAuthorities(t, 7, 4) // 4 out of 7 authorities should achieve consensus
+}
+
+// Legacy test function for backward compatibility
+func TestVote(t *testing.T) {
+	testVoteWithAuthorities(t, 3, 3) // Same as TestVote3Authorities
 }
 
 type peerKeys struct {

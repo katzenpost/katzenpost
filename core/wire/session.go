@@ -57,11 +57,6 @@ const (
 	// send arbitrary sized PKI documents and the like. Therefore this maximum constant is only applicable
 	// to wire protocol connections among the dirauths and among the mix nodes.
 	MaxMessageSize = 500000000
-
-	// DefaultCommandReadTimeout is the default timeout for reading commands from the wire.
-	// Set to 5 minutes to prevent indefinite hangs during command reception.
-	// Can be overridden via SessionConfig.CommandTimeout for better integration.
-	DefaultCommandReadTimeout = 5 * time.Minute
 )
 
 var (
@@ -207,9 +202,6 @@ type Session struct {
 
 	// Timing information for debugging
 	timing SessionTiming
-
-	// Command timeout for reading commands from the wire
-	commandTimeout time.Duration
 }
 
 // client
@@ -699,15 +691,8 @@ func (s *Session) recvCommandImpl() (commands.Command, error) {
 		return nil, errInvalidState
 	}
 
-	// Set read timeout to prevent indefinite hangs
-	timeout := s.commandTimeout
-	if timeout == 0 {
-		timeout = DefaultCommandReadTimeout
-	}
-	if err := s.conn.SetReadDeadline(time.Now().Add(timeout)); err != nil {
-		return nil, fmt.Errorf("wire/session: failed to set read deadline: %v", err)
-	}
-	defer s.conn.SetReadDeadline(time.Time{}) // Clear deadline when done
+	// Note: Connection deadline management is handled by the calling authority components
+	// Wire session respects whatever deadline is already set on the connection
 
 	// Read, decrypt and parse the CiphertextHeader.
 	var ctHdrCt [macLen + 4]byte
@@ -849,7 +834,6 @@ func NewPKISession(cfg *SessionConfig, isInitiator bool) (*Session, error) {
 		txKeyMutex:     new(sync.RWMutex),
 		commands:       commands.NewPKICommands(cfg.PKISignatureScheme),
 		maxMesgSize:    -1,
-		commandTimeout: cfg.CommandTimeout,
 	}
 	s.authenticationKEMKey = cfg.AuthenticationKey
 
@@ -889,7 +873,6 @@ func NewStorageReplicaSession(cfg *SessionConfig, scheme nike.Scheme, isInitiato
 		rxKeyMutex:     new(sync.RWMutex),
 		txKeyMutex:     new(sync.RWMutex),
 		commands:       commands.NewStorageReplicaCommands(cfg.Geometry, scheme),
-		commandTimeout: cfg.CommandTimeout,
 	}
 	s.authenticationKEMKey = cfg.AuthenticationKey
 
@@ -930,7 +913,6 @@ func NewSession(cfg *SessionConfig, isInitiator bool) (*Session, error) {
 		txKeyMutex:     new(sync.RWMutex),
 		commands:       commands.NewMixnetCommands(cfg.Geometry),
 		maxMesgSize:    -1,
-		commandTimeout: cfg.CommandTimeout,
 	}
 	s.authenticationKEMKey = cfg.AuthenticationKey
 
@@ -965,8 +947,4 @@ type SessionConfig struct {
 	// Geometry is the geometry of the Sphinx cryptographic packets
 	// that we will use with our wire protocol.
 	Geometry *geo.Geometry
-
-	// CommandTimeout is the timeout for reading commands from the wire.
-	// If zero, defaults to 5 minutes for backward compatibility.
-	CommandTimeout time.Duration
 }

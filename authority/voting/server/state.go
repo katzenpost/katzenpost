@@ -481,6 +481,13 @@ func (s *state) getMyConsensus(epoch uint64) (*pki.Document, error) {
 		return nil, err
 	}
 	consensusOfOne := s.getDocument(mixes, replicas, params, srv)
+
+	// Add the SharedRandomCommit and SharedRandomReveal that were used to compute the consensus
+	// This is required for document validation - consensus documents must include the commits
+	// and reveals that were used to generate the SharedRandomValue
+	consensusOfOne.SharedRandomCommit = s.commits[epoch]
+	consensusOfOne.SharedRandomReveal = s.reveals[epoch]
+
 	_, err = s.doSignDocument(s.s.identityPrivateKey, s.s.identityPublicKey, consensusOfOne)
 	if err != nil {
 		return nil, err
@@ -850,7 +857,6 @@ func (s *state) sendCommandToPeer(peer *config.Authority, cmd commands.Command) 
 		AdditionalData:    identityHash[:],
 		AuthenticationKey: s.s.linkKey,
 		RandomReader:      rand.Reader,
-		CommandTimeout:    responseTimeout, // Use same timeout as response deadline
 	}
 	session, err := wire.NewPKISession(cfg, true)
 	if err != nil {
@@ -2522,13 +2528,13 @@ func (s *state) doCommit(epoch uint64) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	// sign the serialized commit
-	signedCommit, err := cert.Sign(s.s.identityPrivateKey, s.s.identityPublicKey, commit, epoch)
+	// sign the serialized commit with expiration 5 epochs in the future
+	signedCommit, err := cert.Sign(s.s.identityPrivateKey, s.s.identityPublicKey, commit, epoch+5)
 	if err != nil {
 		return nil, err
 	}
-	// sign the reveal
-	signedReveal, err := cert.Sign(s.s.identityPrivateKey, s.s.identityPublicKey, srv.Reveal(), epoch)
+	// sign the reveal with expiration 5 epochs in the future
+	signedReveal, err := cert.Sign(s.s.identityPrivateKey, s.s.identityPublicKey, srv.Reveal(), epoch+5)
 	if err != nil {
 		return nil, err
 	}
