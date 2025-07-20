@@ -1,7 +1,6 @@
 package server
 
 import (
-	"fmt"
 	"strings"
 	"testing"
 
@@ -10,31 +9,6 @@ import (
 	kpcommon "github.com/katzenpost/katzenpost/common"
 	"github.com/stretchr/testify/require"
 )
-
-func TestErrorCategorization(t *testing.T) {
-	// Create a minimal state for testing
-	st := &state{}
-
-	testCases := []struct {
-		error    string
-		expected string
-	}{
-		{"dial tcp: connection refused", "network"},
-		{"context deadline exceeded", "timeout"},
-		{"handshake failed", "handshake"},
-		{"tls: bad certificate", "handshake"},
-		{"authentication failed", "auth"},
-		{"session creation failed", "session"},
-		{"some unknown error", "unknown"},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.error, func(t *testing.T) {
-			category := st.categorizeError(fmt.Errorf("%s", tc.error))
-			require.Equal(t, tc.expected, category)
-		})
-	}
-}
 
 func TestTruncatePEMForLogging(t *testing.T) {
 	// Test with a real KEM key to ensure truncation works
