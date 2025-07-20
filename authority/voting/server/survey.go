@@ -52,10 +52,46 @@ func (s *state) logPeerSurveySummary() {
 			lastFailure = peer.LastFailedConn.Format("15:04:05")
 		}
 
-		// Log concise peer status
-		s.log.Debugf("--- %s: %d/%d attempts (%.1f%%), %d consecutive failures",
+		// Separate incoming vs outgoing connections
+		incomingCount := 0
+		outgoingCount := 0
+		incomingSuccess := 0
+		outgoingSuccess := 0
+
+		for _, attempt := range peer.ConnectionHistory {
+			if attempt.Duration == 0 {
+				// Incoming connection (duration is 0)
+				incomingCount++
+				if attempt.Success {
+					incomingSuccess++
+				}
+			} else {
+				// Outgoing connection (has duration)
+				outgoingCount++
+				if attempt.Success {
+					outgoingSuccess++
+				}
+			}
+		}
+
+		// Log concise peer status with incoming/outgoing breakdown
+		s.log.Debugf("--- %s: %d/%d total (%.1f%%), %d consecutive failures",
 			peer.PeerName, peer.SuccessfulAttempts, peer.TotalAttempts,
 			successRate, peer.ConsecutiveFailures)
+
+		if incomingCount > 0 || outgoingCount > 0 {
+			incomingRate := 0.0
+			if incomingCount > 0 {
+				incomingRate = float64(incomingSuccess) / float64(incomingCount) * 100.0
+			}
+			outgoingRate := 0.0
+			if outgoingCount > 0 {
+				outgoingRate = float64(outgoingSuccess) / float64(outgoingCount) * 100.0
+			}
+			s.log.Debugf("    Incoming: %d/%d (%.1f%%) | Outgoing: %d/%d (%.1f%%)",
+				incomingSuccess, incomingCount, incomingRate,
+				outgoingSuccess, outgoingCount, outgoingRate)
+		}
 
 		if len(peer.Addresses) > 0 {
 			s.log.Debugf("    Addresses: %v", peer.Addresses)
@@ -74,12 +110,25 @@ func (s *state) logPeerSurveySummary() {
 			for i := start; i < historyCount; i++ {
 				attempt := peer.ConnectionHistory[i]
 				status := "OK"
+				direction := "IN"
 				if !attempt.Success {
 					status = "FAIL"
 				}
-				s.log.Debugf("      [%s] %s via %s (%.2fs)",
-					attempt.Timestamp.Format("15:04:05"), status,
-					attempt.AddressUsed, attempt.Duration.Seconds())
+				if attempt.Duration > 0 {
+					direction = "OUT"
+				}
+				errorInfo := ""
+				if !attempt.Success {
+					if attempt.ErrorCategory != "" {
+						errorInfo = fmt.Sprintf(" (%s)", attempt.ErrorCategory)
+					}
+					if attempt.Error != "" {
+						errorInfo += fmt.Sprintf(" - %s", attempt.Error)
+					}
+				}
+				s.log.Debugf("      [%s] %s %s via %s (%.2fs)%s",
+					attempt.Timestamp.Format("15:04:05"), direction, status,
+					attempt.AddressUsed, attempt.Duration.Seconds(), errorInfo)
 			}
 		}
 	}
