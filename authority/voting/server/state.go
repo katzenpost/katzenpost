@@ -76,14 +76,19 @@ const (
 )
 
 var (
-	MixPublishDeadline       = epochtime.Period / 8
-	AuthorityVoteDeadline    = MixPublishDeadline + epochtime.Period/8
-	AuthorityRevealDeadline  = AuthorityVoteDeadline + epochtime.Period/8
-	AuthorityCertDeadline    = AuthorityRevealDeadline + epochtime.Period/8
-	PublishConsensusDeadline = AuthorityCertDeadline + epochtime.Period/8
-	errGone                  = errors.New("authority: Requested epoch will never get a Document")
-	errNotYet                = errors.New("authority: Document is not ready yet")
-	errInvalidTopology       = errors.New("authority: Invalid Topology")
+	// Clock skew tolerance for dirauth peer synchronization
+	ClockSkewTolerance = 30 * time.Second
+
+	// More forgiving deadlines with clock skew tolerance
+	MixPublishDeadline       = epochtime.Period/6 + ClockSkewTolerance   // ~3.8 minutes (was 2.5)
+	AuthorityVoteDeadline    = epochtime.Period/3 + ClockSkewTolerance   // ~7.2 minutes (was 5.0)
+	AuthorityRevealDeadline  = epochtime.Period/2 + ClockSkewTolerance   // ~10.5 minutes (was 7.5)
+	AuthorityCertDeadline    = epochtime.Period*2/3 + ClockSkewTolerance // ~13.8 minutes (was 10.0)
+	PublishConsensusDeadline = epochtime.Period*5/6 + ClockSkewTolerance // ~17.2 minutes (was 12.5)
+
+	errGone            = errors.New("authority: Requested epoch will never get a Document")
+	errNotYet          = errors.New("authority: Document is not ready yet")
+	errInvalidTopology = errors.New("authority: Invalid Topology")
 
 	// Peer survey constants
 	peerSurveyInterval = 5 * time.Minute
@@ -218,16 +223,24 @@ func (s *state) fsm() <-chan time.Time {
 		s.genesisEpoch = 0
 		s.backgroundFetchConsensus(epoch - 1)
 		s.backgroundFetchConsensus(epoch)
-		if elapsed > MixPublishDeadline {
-			s.log.Errorf("Too late to vote this round, sleeping until %s", nextEpoch)
+		// Be more forgiving of clock skew - allow participation even if slightly late
+		if elapsed > MixPublishDeadline+ClockSkewTolerance {
+			s.log.Errorf("Too late to vote this round (elapsed: %v, deadline: %v + tolerance: %v), sleeping until %s",
+				elapsed, MixPublishDeadline, ClockSkewTolerance, nextEpoch)
 			sleep = nextEpoch
 			s.votingEpoch = epoch + 2
 			s.state = stateBootstrap
 		} else {
+			if elapsed > MixPublishDeadline {
+				s.log.Warningf("Starting vote late due to clock skew (elapsed: %v, deadline: %v), but within tolerance",
+					elapsed, MixPublishDeadline)
+			}
 			s.votingEpoch = epoch + 1
 			s.state = stateAcceptDescriptor
 			sleep = MixPublishDeadline - elapsed
+			// Handle clock skew gracefully - if we're late, proceed immediately
 			if sleep < 0 {
+				s.log.Debugf("Proceeding immediately due to clock skew (sleep would be %v)", sleep)
 				sleep = 0
 			}
 			s.log.Noticef("Bootstrapping for %d", s.votingEpoch)
@@ -247,12 +260,20 @@ func (s *state) fsm() <-chan time.Time {
 		s.state = stateAcceptVote
 		_, nowelapsed, _ := epochtime.Now()
 		sleep = AuthorityVoteDeadline - nowelapsed
+		if sleep < 0 {
+			s.log.Debugf("Vote deadline passed due to clock skew, proceeding immediately (sleep would be %v)", sleep)
+			sleep = 0
+		}
 	case stateAcceptVote:
 		signed := s.reveal(s.votingEpoch)
 		s.sendRevealToAuthorities(signed, s.votingEpoch)
 		s.state = stateAcceptReveal
 		_, nowelapsed, _ := epochtime.Now()
 		sleep = AuthorityRevealDeadline - nowelapsed
+		if sleep < 0 {
+			s.log.Debugf("Reveal deadline passed due to clock skew, proceeding immediately (sleep would be %v)", sleep)
+			sleep = 0
+		}
 	case stateAcceptReveal:
 		signed, err := s.getCertificate(s.votingEpoch)
 		if err == nil {
@@ -268,6 +289,10 @@ func (s *state) fsm() <-chan time.Time {
 		s.state = stateAcceptCert
 		_, nowelapsed, _ := epochtime.Now()
 		sleep = AuthorityCertDeadline - nowelapsed
+		if sleep < 0 {
+			s.log.Debugf("Cert deadline passed due to clock skew, proceeding immediately (sleep would be %v)", sleep)
+			sleep = 0
+		}
 	case stateAcceptCert:
 		doc, err := s.getMyConsensus(s.votingEpoch)
 		if err == nil {
@@ -298,6 +323,10 @@ func (s *state) fsm() <-chan time.Time {
 		s.state = stateAcceptSignature
 		_, nowelapsed, _ := epochtime.Now()
 		sleep = PublishConsensusDeadline - nowelapsed
+		if sleep < 0 {
+			s.log.Debugf("Consensus deadline passed due to clock skew, proceeding immediately (sleep would be %v)", sleep)
+			sleep = 0
+		}
 	case stateAcceptSignature:
 		// combine signatures over a certificate and see if we make a threshold consensus
 		s.log.Noticef("Combining signatures for epoch %v", s.votingEpoch)
@@ -2081,9 +2110,11 @@ func newState(s *Server) (*state, error) {
 	// set voting schedule at runtime
 
 	st.log.Debugf("State initialized with epoch Period: %s", epochtime.Period)
+	st.log.Debugf("State initialized with ClockSkewTolerance: %s", ClockSkewTolerance)
 	st.log.Debugf("State initialized with MixPublishDeadline: %s", MixPublishDeadline)
 	st.log.Debugf("State initialized with AuthorityVoteDeadline: %s", AuthorityVoteDeadline)
 	st.log.Debugf("State initialized with AuthorityRevealDeadline: %s", AuthorityRevealDeadline)
+	st.log.Debugf("State initialized with AuthorityCertDeadline: %s", AuthorityCertDeadline)
 	st.log.Debugf("State initialized with PublishConsensusDeadline: %s", PublishConsensusDeadline)
 	st.verifiers = make(map[[publicKeyHashSize]byte]sign.PublicKey)
 	for _, auth := range s.cfg.Authorities {
