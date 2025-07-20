@@ -2118,10 +2118,8 @@ func newState(s *Server) (*state, error) {
 		st.verifiers[hash.Sum256From(auth.IdentityPublicKey)] = auth.IdentityPublicKey
 	}
 	st.verifiers[hash.Sum256From(s.IdentityKey())] = sign.PublicKey(s.IdentityKey())
-	// Use consistent count for threshold calculations
-	totalAuthorities := len(st.verifiers)
-	st.threshold = totalAuthorities/2 + 1
-	st.dissenters = totalAuthorities/2 - 1
+	st.threshold = len(st.verifiers)/2 + 1
+	st.dissenters = len(s.cfg.Authorities)/2 - 1
 
 	st.s.cfg.Server.PKISignatureScheme = s.cfg.Server.PKISignatureScheme
 	pkiSignatureScheme := signSchemes.ByName(s.cfg.Server.PKISignatureScheme)
@@ -2225,12 +2223,7 @@ func newState(s *Server) (*state, error) {
 		st.reverseHash[pk] = v.IdentityPublicKey
 		st.authorityNames[pk] = v.Identifier
 	}
-
-	// Add self to the mappings
-	selfPk := hash.Sum256From(st.s.identityPublicKey)
-	st.reverseHash[selfPk] = st.s.identityPublicKey
-	st.authorityNames[selfPk] = st.s.cfg.Server.Identifier
-	st.authorizedAuthorities[selfPk] = true
+	st.reverseHash[hash.Sum256From(st.s.identityPublicKey)] = st.s.identityPublicKey
 
 	st.documents = make(map[uint64]*pki.Document)
 	st.myconsensus = make(map[uint64]*pki.Document)
