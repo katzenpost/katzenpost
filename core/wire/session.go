@@ -57,11 +57,6 @@ const (
 	// send arbitrary sized PKI documents and the like. Therefore this maximum constant is only applicable
 	// to wire protocol connections among the dirauths and among the mix nodes.
 	MaxMessageSize = 500000000
-
-	// DefaultCommandReadTimeout is the default timeout for reading commands from the wire.
-	// Set to 5 minutes to prevent indefinite hangs during command reception.
-	// Can be overridden via SessionConfig.CommandTimeout for better integration.
-	DefaultCommandReadTimeout = 5 * time.Minute
 )
 
 var (
