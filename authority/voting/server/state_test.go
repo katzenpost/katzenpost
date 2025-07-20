@@ -396,6 +396,421 @@ func TestVote(t *testing.T) {
 	}
 }
 
+func TestVote4Authorities(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+
+	// instantiate states - 4 authorities to test 3/4 consensus failure
+	authNum := 4
+	stateAuthority := make([]*state, authNum)
+	votingEpoch, _, _ := epochtime.Now()
+	votingEpoch += 5
+	parameters := &config.Parameters{
+		SendRatePerMinute: 100, Mu: 0.001, MuMaxDelay: 9000,
+		LambdaP: 0.002, LambdaPMaxDelay: 9000,
+		LambdaL: 0.0005, LambdaLMaxDelay: 9000,
+		LambdaD: 0.0005, LambdaDMaxDelay: 9000,
+		LambdaM: 0.2, LambdaMMaxDelay: 9000,
+	}
+
+	peerKeys, authCfgs, err := genVotingAuthoritiesCfg(parameters, authNum)
+	require.NoError(err)
+
+	reverseHash := make(map[[publicKeyHashSize]byte]sign.PublicKey)
+	authorityNames := make(map[[publicKeyHashSize]byte]string)
+
+	// set up authorities from configuration
+	for i := 0; i < authNum; i++ {
+		st := new(state)
+		st.votingEpoch = votingEpoch
+		cfg := authCfgs[i]
+		st.verifiers = make(map[[publicKeyHashSize]byte]sign.PublicKey)
+		for j, _ := range peerKeys {
+			st.verifiers[hash.Sum256From(peerKeys[j].idPubKey)] = sign.PublicKey(peerKeys[j].idPubKey)
+		}
+		st.threshold = len(st.verifiers)/2 + 1 // 4/2 + 1 = 3 (need 3 out of 4)
+		st.dissenters = len(cfg.Authorities)/2 - 1
+
+		s := &Server{
+			cfg:                cfg,
+			identityPrivateKey: peerKeys[i].idKey,
+			identityPublicKey:  peerKeys[i].idPubKey,
+			fatalErrCh:         make(chan error),
+			haltedCh:           make(chan interface{}),
+		}
+		pk := hash.Sum256From(peerKeys[i].idPubKey)
+		reverseHash[pk] = peerKeys[i].idPubKey
+		authorityNames[pk] = authCfgs[i].Server.Identifier
+
+		go func() {
+			for {
+				select {
+				case err := <-s.fatalErrCh:
+					require.NoError(err)
+				case _, ok := <-s.haltedCh:
+					if !ok {
+						return
+					}
+				}
+			}
+		}()
+		st.s = s
+		s.logBackend, err = log.New(cfg.Logging.File, s.cfg.Logging.Level, s.cfg.Logging.Disable)
+		st.log = s.logBackend.GetLogger(fmt.Sprintf("state%d", i))
+		if err == nil {
+			s.log = s.logBackend.GetLogger("authority")
+		}
+
+		st.documents = make(map[uint64]*pki.Document)
+		st.myconsensus = make(map[uint64]*pki.Document)
+		st.descriptors = make(map[uint64]map[[hash.HashSize]byte]*pki.MixDescriptor)
+		st.votes = make(map[uint64]map[[hash.HashSize]byte]*pki.Document)
+		st.votes[votingEpoch] = make(map[[hash.HashSize]byte]*pki.Document)
+		st.certificates = make(map[uint64]map[[hash.HashSize]byte]*pki.Document)
+		st.certificates[st.votingEpoch] = make(map[[hash.HashSize]byte]*pki.Document)
+		st.commits = make(map[uint64]map[[hash.HashSize]byte][]byte)
+		st.reveals = make(map[uint64]map[[hash.HashSize]byte][]byte)
+		st.signatures = make(map[uint64]map[[hash.HashSize]byte]*cert.Signature)
+		st.signatures[st.votingEpoch] = make(map[[hash.HashSize]byte]*cert.Signature)
+		st.reveals[st.votingEpoch] = make(map[[hash.HashSize]byte][]byte)
+		st.reverseHash = make(map[[publicKeyHashSize]byte]sign.PublicKey)
+		stateAuthority[i] = st
+		tmpDir, err := os.MkdirTemp("", cfg.Server.Identifier)
+		require.NoError(err)
+		dbPath := filepath.Join(tmpDir, "persistance.db")
+		db, err := bolt.Open(dbPath, 0600, nil)
+		require.NoError(err)
+		st.db = db
+		// create all the db cruft
+		err = st.restorePersistence()
+		require.NoError(err)
+	}
+
+	// create a voting PKI configuration
+	authorities := make([]*config.Authority, 0)
+	for i, aCfg := range authCfgs {
+		require.NoError(err)
+		auth := &config.Authority{Addresses: aCfg.Server.Addresses,
+			WireKEMScheme:      testingSchemeName,
+			PKISignatureScheme: testSignatureScheme.Name(),
+			IdentityPublicKey:  peerKeys[i].idPubKey,
+			LinkPublicKey:      peerKeys[i].linkKey.Public(),
+		}
+		if len(aCfg.Server.Addresses) == 0 {
+			panic("wtf")
+		}
+		authorities = append(authorities, auth)
+	}
+	votingPKI := &sConfig.PKI{
+		Voting: &sConfig.Voting{
+			Authorities: authorities,
+		},
+	}
+
+	// generate mixes
+	n := 3 * 2 // 3 layer, 2 nodes per layer
+	m := 2     // 2 providers
+	idKeys := make([]*identityKey, 0)
+	mixCfgs := make([]*sConfig.Config, 0)
+	port := uint16(30000)
+	for i := 0; i < n; i++ {
+		idKey, c, err := genMixConfig(fmt.Sprintf("node-%d", i), votingPKI, port)
+		require.NoError(err)
+		mixCfgs = append(mixCfgs, c)
+		idKeys = append(idKeys, idKey)
+		port++
+		reverseHash[hash.Sum256From(idKey.pubKey)] = idKey.pubKey
+	}
+
+	// generate a Topology section
+	topology := config.Topology{Layers: make([]config.Layer, 3)}
+	topology.Layers[0].Nodes = []config.Node{config.Node{IdentityPublicKeyPem: idKeys[0].identityPublicKeyPem},
+		config.Node{IdentityPublicKeyPem: idKeys[1].identityPublicKeyPem}}
+	topology.Layers[1].Nodes = []config.Node{config.Node{IdentityPublicKeyPem: idKeys[2].identityPublicKeyPem},
+		config.Node{IdentityPublicKeyPem: idKeys[3].identityPublicKeyPem}}
+	topology.Layers[2].Nodes = []config.Node{config.Node{IdentityPublicKeyPem: idKeys[4].identityPublicKeyPem},
+		config.Node{IdentityPublicKeyPem: idKeys[5].identityPublicKeyPem}}
+
+	// set topology for all 4 authorities
+	for i := 0; i < authNum; i++ {
+		authCfgs[i].Topology = &topology
+	}
+
+	// generate gateways
+	for i := 0; i < m; i++ {
+		idKey, c, err := genGatewayConfig(fmt.Sprintf("gateway-%d", i), votingPKI, port)
+		require.NoError(err)
+		mixCfgs = append(mixCfgs, c)
+		idKeys = append(idKeys, idKey)
+		port++
+		reverseHash[hash.Sum256From(idKey.pubKey)] = idKey.pubKey
+	}
+	// generate serviceNodes
+	for i := 0; i < m; i++ {
+		idKey, c, err := genServiceNodeConfig(fmt.Sprintf("serviceNode-%d", i), votingPKI, port)
+		require.NoError(err)
+		mixCfgs = append(mixCfgs, c)
+		idKeys = append(idKeys, idKey)
+		port++
+		reverseHash[hash.Sum256From(idKey.pubKey)] = idKey.pubKey
+	}
+
+	for i := 0; i < len(stateAuthority); i++ {
+		stateAuthority[i].reverseHash = reverseHash
+		stateAuthority[i].authorityNames = authorityNames
+	}
+
+	// post descriptors from nodes
+	mixDescs := make([]*pki.MixDescriptor, 0)
+	gatewayDescs := make([]*pki.MixDescriptor, 0)
+	serviceDescs := make([]*pki.MixDescriptor, 0)
+	for i := 0; i < len(mixCfgs); i++ {
+		mkeys := genMixKeys(votingEpoch)
+		addr := make(map[string][]string)
+		addr[pki.TransportTCPv4] = []string{"tcp4://127.0.0.1:1234"}
+		linkPubKey, _, err := testingScheme.GenerateKeyPair()
+		linkBlob, err := linkPubKey.MarshalBinary()
+		if err != nil {
+			panic(err)
+		}
+		idkeyblob, err := idKeys[i].pubKey.MarshalBinary()
+		require.NoError(err)
+
+		desc := &pki.MixDescriptor{
+			Name:          mixCfgs[i].Server.Identifier,
+			Epoch:         votingEpoch,
+			IdentityKey:   idkeyblob,
+			LinkKey:       linkBlob,
+			MixKeys:       mkeys,
+			IsGatewayNode: mixCfgs[i].Server.IsGatewayNode,
+			IsServiceNode: mixCfgs[i].Server.IsServiceNode,
+			Addresses:     addr,
+		}
+
+		err = pki.IsDescriptorWellFormed(desc, votingEpoch)
+		require.NoError(err)
+
+		if mixCfgs[i].Server.IsServiceNode {
+			serviceDescs = append(serviceDescs, desc)
+		} else if mixCfgs[i].Server.IsGatewayNode {
+			gatewayDescs = append(gatewayDescs, desc)
+		} else {
+			mixDescs = append(mixDescs, desc)
+		}
+	}
+
+	// create and exchange signed commits and reveals
+	// IMPORTANT: Only create commits/reveals for the 3 participating authorities
+	// to simulate the production scenario where the 4th authority is missing
+	commits := make(map[uint64]map[[hash.HashSize]byte][]byte)
+	commits[votingEpoch] = make(map[[hash.HashSize]byte][]byte)
+
+	// exchange commit and create reveals - only from the first 3 authorities
+	for i := 0; i < authNum-1; i++ { // Only first 3 authorities
+		s := stateAuthority[i]
+		reveals := make(map[uint64]map[[hash.HashSize]byte][]byte)
+		reveals[votingEpoch] = make(map[[hash.HashSize]byte][]byte)
+
+		srv := new(pki.SharedRandom)
+		commit, err := srv.Commit(votingEpoch)
+		require.NoError(err)
+		signedCommit, err := cert.Sign(s.s.identityPrivateKey, s.s.identityPublicKey, commit, votingEpoch+1)
+		require.NoError(err)
+		commits[votingEpoch][hash.Sum256From(s.s.identityPublicKey)] = signedCommit
+
+		reveal := srv.Reveal()
+		signedReveal, err := cert.Sign(s.s.identityPrivateKey, s.s.identityPublicKey, reveal, votingEpoch+1)
+		require.NoError(err)
+		reveals[votingEpoch][hash.Sum256From(s.s.identityPublicKey)] = signedReveal
+
+		// Set commits and reveals for this authority
+		s.commits = commits
+		s.reveals = reveals
+	}
+
+	// Share commits and reveals with all authorities (including the 4th one)
+	for i := 0; i < authNum; i++ {
+		stateAuthority[i].commits = commits
+		stateAuthority[i].reveals = make(map[uint64]map[[hash.HashSize]byte][]byte)
+		stateAuthority[i].reveals[votingEpoch] = make(map[[hash.HashSize]byte][]byte)
+	}
+
+	// populate the authorities with the descriptors
+	for _, s := range stateAuthority {
+		s.descriptors[votingEpoch] = make(map[[hash.HashSize]byte]*pki.MixDescriptor)
+		s.authorizedMixes = make(map[[hash.HashSize]byte]bool)
+		s.authorizedGatewayNodes = make(map[[hash.HashSize]byte]string)
+		s.authorizedServiceNodes = make(map[[hash.HashSize]byte]string)
+		for _, d := range mixDescs {
+			s.descriptors[votingEpoch][hash.Sum256(d.IdentityKey)] = d
+			s.authorizedMixes[hash.Sum256(d.IdentityKey)] = true
+		}
+		for _, d := range gatewayDescs {
+			s.descriptors[votingEpoch][hash.Sum256(d.IdentityKey)] = d
+			s.authorizedGatewayNodes[hash.Sum256(d.IdentityKey)] = d.Name
+		}
+		for _, d := range serviceDescs {
+			s.descriptors[votingEpoch][hash.Sum256(d.IdentityKey)] = d
+			s.authorizedServiceNodes[hash.Sum256(d.IdentityKey)] = d.Name
+		}
+	}
+
+	// SIMULATE PRODUCTION ISSUE: Only 3 out of 4 authorities exchange votes
+	// This should replicate the consensus failure you're seeing
+	t.Logf("=== SIMULATING 3/4 VOTE SCENARIO ===")
+	t.Logf("Threshold: %d, Total authorities: %d", stateAuthority[0].threshold, authNum)
+
+	// exchange votes - but SKIP the 4th authority to simulate missing vote
+	for i := 0; i < authNum-1; i++ { // Only first 3 authorities
+		s := stateAuthority[i]
+		s.votingEpoch = votingEpoch
+		s.genesisEpoch = s.votingEpoch
+		myVote, err := s.getVote(s.votingEpoch)
+		require.Equal(len(myVote.Signatures), 1)
+		require.NoError(err)
+		require.NotNil(myVote)
+		raw, err := myVote.MarshalCertificate()
+		require.NoError(err)
+		_, err = pki.ParseDocument(raw)
+		require.NoError(err)
+		s.state = stateAcceptVote
+
+		// Send vote to all other authorities (including the 4th one)
+		for j, a := range stateAuthority {
+			if j == i {
+				continue
+			}
+			a.votes[s.votingEpoch][hash.Sum256From(s.s.identityPublicKey)] = myVote
+			t.Logf("Authority %s sent vote to %s", authCfgs[i].Server.Identifier, authCfgs[j].Server.Identifier)
+		}
+	}
+
+	// Log vote counts for each authority
+	for i, s := range stateAuthority {
+		voteCount := len(s.votes[votingEpoch])
+		t.Logf("Authority %s has %d votes (threshold: %d)", authCfgs[i].Server.Identifier, voteCount, s.threshold)
+	}
+
+	// exchange reveals - only from the 3 authorities that voted
+	for i := 0; i < authNum-1; i++ {
+		s := stateAuthority[i]
+		s.state = stateAcceptReveal
+		c := s.reveal(s.votingEpoch)
+		for j, a := range stateAuthority {
+			if j == i {
+				continue
+			}
+			a.reveals[a.votingEpoch][hash.Sum256From(s.s.identityPublicKey)] = c
+			t.Logf("%s sent %s reveal", authCfgs[i].Server.Identifier, authCfgs[j].Server.Identifier)
+		}
+	}
+
+	// exchange certificates - only from the 3 authorities
+	for i := 0; i < authNum-1; i++ {
+		s := stateAuthority[i]
+		s.Lock()
+		s.state = stateAcceptCert
+		t.Logf("Authority %s generating certificate...", authCfgs[i].Server.Identifier)
+		myCertificate, err := s.getCertificate(s.votingEpoch)
+		if err != nil {
+			t.Logf("Authority %s FAILED to generate certificate: %v", authCfgs[i].Server.Identifier, err)
+			require.NoError(err)
+		}
+		t.Logf("Authority %s successfully generated certificate", authCfgs[i].Server.Identifier)
+		_, err = pki.SignDocument(s.s.identityPrivateKey, s.s.identityPublicKey, myCertificate)
+		require.NoError(err)
+		for j, a := range stateAuthority {
+			if j == i {
+				continue
+			}
+			a.certificates[s.votingEpoch][hash.Sum256From(s.s.identityPublicKey)] = myCertificate
+		}
+		s.Unlock()
+	}
+
+	// Try to produce consensus - this should test the 3/4 scenario
+	t.Logf("=== ATTEMPTING CONSENSUS GENERATION ===")
+
+	// Debug: Check commits and reveals counts for each authority
+	for i, s := range stateAuthority {
+		commitCount := len(s.commits[votingEpoch])
+		revealCount := len(s.reveals[votingEpoch])
+		t.Logf("Authority %s has %d commits and %d reveals", authCfgs[i].Server.Identifier, commitCount, revealCount)
+	}
+
+	consensusResults := make([]bool, authNum)
+	for i, s := range stateAuthority {
+		s.Lock()
+		_, err := s.getMyConsensus(s.votingEpoch)
+		consensusResults[i] = (err == nil)
+		if err != nil {
+			t.Logf("Authority %s FAILED to generate consensus: %v", authCfgs[i].Server.Identifier, err)
+		} else {
+			t.Logf("Authority %s successfully generated consensus", authCfgs[i].Server.Identifier)
+		}
+		s.Unlock()
+	}
+
+	// exchange signatures over the consensus - only from authorities that succeeded
+	successfulAuthorities := 0
+	for i, s := range stateAuthority {
+		if !consensusResults[i] {
+			continue
+		}
+		successfulAuthorities++
+		s.state = stateAcceptSignature
+		id := hash.Sum256From(s.s.identityPublicKey)
+		mySignature, ok := s.myconsensus[s.votingEpoch].Signatures[id]
+		require.True(ok)
+
+		for j, a := range stateAuthority {
+			if j == i {
+				continue
+			}
+			a.signatures[s.votingEpoch][hash.Sum256From(s.s.identityPublicKey)] = &mySignature
+		}
+	}
+
+	t.Logf("=== FINAL CONSENSUS ATTEMPT ===")
+	t.Logf("Successful authorities: %d, Threshold: %d", successfulAuthorities, stateAuthority[0].threshold)
+
+	// Try to get threshold consensus
+	finalConsensusResults := make([]bool, authNum)
+	for i, s := range stateAuthority {
+		s.Lock()
+		doc, err := s.getThresholdConsensus(s.votingEpoch)
+		finalConsensusResults[i] = (err == nil)
+		if err != nil {
+			t.Logf("Authority %s FAILED threshold consensus: %v", authCfgs[i].Server.Identifier, err)
+		} else {
+			t.Logf("Authority %s achieved threshold consensus with hash: %x", authCfgs[i].Server.Identifier, doc.Sum256())
+		}
+		s.Unlock()
+	}
+
+	// Count how many authorities achieved final consensus
+	finalSuccessCount := 0
+	for _, success := range finalConsensusResults {
+		if success {
+			finalSuccessCount++
+		}
+	}
+
+	t.Logf("=== TEST RESULTS ===")
+	t.Logf("Votes received: 3/4")
+	t.Logf("Threshold required: %d", stateAuthority[0].threshold)
+	t.Logf("Authorities that generated consensus: %d", successfulAuthorities)
+	t.Logf("Authorities that achieved threshold consensus: %d", finalSuccessCount)
+
+	// This test should demonstrate the consensus failure scenario
+	// In production, you might expect this to fail or behave unexpectedly
+	if finalSuccessCount < stateAuthority[0].threshold {
+		t.Logf("CONSENSUS FAILURE: Only %d authorities achieved consensus (need %d)", finalSuccessCount, stateAuthority[0].threshold)
+	} else {
+		t.Logf("CONSENSUS SUCCESS: %d authorities achieved consensus", finalSuccessCount)
+	}
+}
+
 type peerKeys struct {
 	linkKey  kem.PrivateKey
 	idKey    sign.PrivateKey

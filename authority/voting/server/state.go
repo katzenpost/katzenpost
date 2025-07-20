@@ -481,6 +481,13 @@ func (s *state) getMyConsensus(epoch uint64) (*pki.Document, error) {
 		return nil, err
 	}
 	consensusOfOne := s.getDocument(mixes, replicas, params, srv)
+
+	// Add the SharedRandomCommit and SharedRandomReveal that were used to compute the consensus
+	// This is required for document validation - consensus documents must include the commits
+	// and reveals that were used to generate the SharedRandomValue
+	consensusOfOne.SharedRandomCommit = s.commits[epoch]
+	consensusOfOne.SharedRandomReveal = s.reveals[epoch]
+
 	_, err = s.doSignDocument(s.s.identityPrivateKey, s.s.identityPublicKey, consensusOfOne)
 	if err != nil {
 		return nil, err
