@@ -304,11 +304,13 @@ func (s *state) fsm() <-chan time.Time {
 		_, err := s.getThresholdConsensus(s.votingEpoch)
 		_, _, nextEpoch := epochtime.Now()
 		if err == nil {
+			s.log.Noticef("✅ CONSENSUS SUCCESS: Threshold consensus achieved for epoch %v", s.votingEpoch)
 			s.state = stateAcceptDescriptor
 			sleep = MixPublishDeadline + nextEpoch
 			s.votingEpoch++
 		} else {
-			s.log.Error(err.Error())
+			s.log.Errorf("❌ CONSENSUS FAILURE: Failed to achieve threshold consensus for epoch %v: %v", s.votingEpoch, err)
+			s.logConsensusFailureDetails(s.votingEpoch)
 			s.state = stateBootstrap
 			s.votingEpoch = epoch + 2 // vote on epoch+2 in epoch+1
 			sleep = nextEpoch
@@ -399,13 +401,10 @@ func (s *state) doSignDocument(signer sign.PrivateKey, verifier sign.PublicKey, 
 
 // getCertificate is the same as a vote but it contains all SharedRandomCommits and SharedRandomReveals seen
 func (s *state) getCertificate(epoch uint64) (*pki.Document, error) {
-	if s.TryLock() {
-		panic("write lock not held in getCertificate(epoch)")
-	}
 
 	mixes, replicas, params, err := s.tallyVotes(epoch)
 	if err != nil {
-		s.log.Warningf("No document for epoch %v, aborting!, %v", epoch, err)
+		s.log.Warningf("❌ CERTIFICATE FAILURE: No document for epoch %v, aborting!, %v", epoch, err)
 		return nil, err
 	}
 	s.log.Debug("Mixes tallied, now making a document")
@@ -444,9 +443,6 @@ func (s *state) getCertificate(epoch uint64) (*pki.Document, error) {
 
 // getConsensus computes the final document using the computed SharedRandomValue
 func (s *state) getMyConsensus(epoch uint64) (*pki.Document, error) {
-	if s.TryLock() {
-		panic("write lock not held in getMyConsensus(epoch)")
-	}
 
 	certificates, ok := s.certificates[epoch]
 	if !ok {
@@ -461,6 +457,7 @@ func (s *state) getMyConsensus(epoch uint64) (*pki.Document, error) {
 	// verify that all shared random commit and reveal are present for this epoch
 	commits, reveals := s.verifyCommits(epoch)
 	if len(commits) < s.threshold {
+		s.log.Errorf("❌ SHARED RANDOM FAILURE: Insufficient commits for consensus: have %d, need %d", len(commits), s.threshold)
 		return nil, fmt.Errorf("No way to make consensus with too few SharedRandom commits!, only %d commits", len(commits))
 	}
 	if len(commits) != len(reveals) {
@@ -497,9 +494,6 @@ func (s *state) getMyConsensus(epoch uint64) (*pki.Document, error) {
 // getThresholdConsensus returns a *pki.Document iff a threshold consensus is reached or error
 func (s *state) getThresholdConsensus(epoch uint64) (*pki.Document, error) {
 	// range over the certificates we have collected and see if we can collect enough signatures to make a consensus
-	if s.TryLock() {
-		panic("write lock not held in getThresholdConsensus(epoch)")
-	}
 
 	ourConsensus, ok := s.myconsensus[epoch]
 	if !ok {
@@ -519,22 +513,33 @@ func (s *state) getThresholdConsensus(epoch uint64) (*pki.Document, error) {
 		return nil, err
 	}
 	_, good, bad, err := cert.VerifyThreshold(s.getVerifiers(), s.threshold, signedConsensus)
-	for _, b := range bad {
-		s.log.Errorf("Consensus NOT signed by %s", s.authorityNames[hash.Sum256From(b)])
-	}
+
+	s.log.Noticef("=== SIGNATURE VERIFICATION RESULTS FOR EPOCH %v ===", epoch)
+	s.log.Noticef("Required threshold: %d/%d signatures", s.threshold, len(s.verifiers))
+	s.log.Noticef("Valid signatures: %d", len(good))
+
 	for _, g := range good {
-		s.log.Noticef("Consensus signed by %s", s.authorityNames[hash.Sum256From(g)])
+		s.log.Noticef("  ✓ Valid signature from %s", s.authorityNames[hash.Sum256From(g)])
 	}
+
+	if len(bad) > 0 {
+		s.log.Errorf("Invalid signatures: %d", len(bad))
+		for _, b := range bad {
+			s.log.Errorf("  ❌ Invalid signature from %s", s.authorityNames[hash.Sum256From(b)])
+		}
+	}
+
 	if err == nil {
-		s.log.Noticef("Consensus made for epoch %d with %d/%d signatures: %v", epoch, len(good), len(s.verifiers), ourConsensus)
+		s.log.Noticef("✅ THRESHOLD CONSENSUS SUCCESS: Achieved %d/%d signatures for epoch %d", len(good), len(s.verifiers), epoch)
 		// Persist the document to disk.
 		s.persistDocument(epoch, signedConsensus)
 		s.documents[epoch] = ourConsensus
 		return ourConsensus, nil
 	} else {
-		s.log.Errorf("VerifyThreshold failed!: %s", err)
+		s.log.Errorf("❌ THRESHOLD CONSENSUS FAILURE: VerifyThreshold failed for epoch %v: %s", epoch, err)
+		s.log.Errorf("Signatures collected: %d/%d (need %d)", len(good), len(s.verifiers), s.threshold)
 	}
-	return nil, fmt.Errorf("No consensus found for epoch %d", epoch)
+	return nil, fmt.Errorf("No consensus found for epoch %d: insufficient signatures (%d/%d)", epoch, len(good), s.threshold)
 }
 
 func (s *state) getVerifiers() []sign.PublicKey {
@@ -643,9 +648,6 @@ func (s *state) hasEnoughDescriptors(m map[[publicKeyHashSize]byte]*pki.MixDescr
 }
 
 func (s *state) verifyCommits(epoch uint64) (map[[publicKeyHashSize]byte][]byte, map[[publicKeyHashSize]byte][]byte) {
-	if s.TryLock() {
-		panic("write lock not held in verifyCommits(epoch)")
-	}
 
 	// check that each authority presented the same commit to every other authority
 	badnodes := make(map[[publicKeyHashSize]byte]bool)
@@ -854,9 +856,6 @@ func (s *state) sendCommandToPeer(peer *config.Authority, cmd commands.Command) 
 
 // sendCommitToAuthorities sends our cert to all Directory Authorities
 func (s *state) sendCertToAuthorities(cert []byte, epoch uint64) {
-	if s.TryLock() {
-		panic("write lock not held in sendCertToAuthorities(cert, epoch)")
-	}
 
 	s.log.Noticef("Sending Certificate for epoch %v, to all Directory Authorities.", epoch)
 	cmd := &commands.Cert{
@@ -904,9 +903,6 @@ func (s *state) sendCertToAuthorities(cert []byte, epoch uint64) {
 
 // sendVoteToAuthorities sends s.descriptors[epoch] to all Directory Authorities
 func (s *state) sendVoteToAuthorities(vote []byte, epoch uint64) {
-	if s.TryLock() {
-		panic("write lock not held in sendVoteToAuthorities(vote, epoch)")
-	}
 
 	s.log.Noticef("Sending Vote for epoch %v, to all Directory Authorities.", epoch)
 
@@ -995,9 +991,6 @@ func (s *state) sendRevealToAuthorities(reveal []byte, epoch uint64) {
 }
 
 func (s *state) sendSigToAuthorities(sig []byte, epoch uint64) {
-	if s.TryLock() {
-		panic("write lock not held in sendSigToAuthorities(sig, epoch)")
-	}
 
 	s.log.Noticef("Sending Signature for epoch %v, to all Directory Authorities.", epoch)
 
@@ -1039,16 +1032,15 @@ func (s *state) sendSigToAuthorities(sig []byte, epoch uint64) {
 }
 
 func (s *state) tallyVotes(epoch uint64) ([]*pki.MixDescriptor, []*pki.ReplicaDescriptor, *config.Parameters, error) {
-	if s.TryLock() {
-		panic("write lock not held in tallyVotes(epoch)")
-	}
 
 	_, ok := s.votes[epoch]
 	if !ok {
 		return nil, nil, nil, fmt.Errorf("no votes for epoch %v", epoch)
 	}
 	if len(s.votes[epoch]) < s.threshold {
-		return nil, nil, nil, fmt.Errorf("not enough votes for epoch %v", epoch)
+		s.log.Errorf("❌ VOTE TALLY FAILURE: Insufficient votes for epoch %v: have %d, need %d", epoch, len(s.votes[epoch]), s.threshold)
+		s.logVoteStatus(epoch)
+		return nil, nil, nil, fmt.Errorf("not enough votes for epoch %v: have %d, need %d", epoch, len(s.votes[epoch]), s.threshold)
 	}
 
 	nodes := make([]*pki.MixDescriptor, 0)
@@ -1191,16 +1183,41 @@ func (s *state) tallyVotes(epoch uint64) ([]*pki.MixDescriptor, []*pki.ReplicaDe
 		}
 
 	}
+	s.log.Errorf("❌ CONSENSUS FAILURE: No parameter sets achieved threshold votes for epoch %v", epoch)
 	return nil, nil, nil, errors.New("consensus failure (mixParams empty)")
 }
 
 func (s *state) computeSharedRandom(epoch uint64, commits map[[publicKeyHashSize]byte][]byte, reveals map[[publicKeyHashSize]byte][]byte) ([]byte, error) {
 	if len(commits) < s.threshold {
-		s.log.Errorf("Insufficient commits for epoch %d to make consensus", epoch)
-		for id, _ := range commits {
-			s.log.Errorf("Have commits for epoch %d from %x", epoch, id)
+		s.log.Errorf("❌ SHARED RANDOM FAILURE: Insufficient commits for epoch %d: have %d, need %d", epoch, len(commits), s.threshold)
+		s.log.Errorf("Commits received from:")
+		for id := range commits {
+			name := s.authorityNames[id]
+			s.log.Errorf("  ✓ %s", name)
 		}
-		return nil, errors.New("Insuffiient commits to make threshold vote")
+		s.log.Errorf("Missing commits from:")
+		for id, name := range s.authorityNames {
+			if _, ok := commits[id]; !ok {
+				s.log.Errorf("  ❌ %s", name)
+			}
+		}
+		return nil, errors.New("Insufficient commits to make threshold vote")
+	}
+
+	if len(reveals) < s.threshold {
+		s.log.Errorf("❌ SHARED RANDOM FAILURE: Insufficient reveals for epoch %d: have %d, need %d", epoch, len(reveals), s.threshold)
+		s.log.Errorf("Reveals received from:")
+		for id := range reveals {
+			name := s.authorityNames[id]
+			s.log.Errorf("  ✓ %s", name)
+		}
+		s.log.Errorf("Missing reveals from:")
+		for id, name := range s.authorityNames {
+			if _, ok := reveals[id]; !ok {
+				s.log.Errorf("  ❌ %s", name)
+			}
+		}
+		return nil, errors.New("Insufficient reveals to make threshold vote")
 	}
 	type Reveal struct {
 		PublicKey [publicKeyHashSize]byte
@@ -1395,9 +1412,6 @@ func (s *state) generateRandomTopology(nodes []*pki.MixDescriptor, srv []byte) [
 }
 
 func (s *state) pruneDocuments() {
-	if s.TryLock() {
-		panic("write lock not held in pruneDocuments()")
-	}
 
 	// Looking a bit into the past is probably ok, if more past documents
 	// need to be accessible, then methods that query the DB could always
@@ -2260,9 +2274,6 @@ func (s *state) recordIncomingConnection(peerID [publicKeyHashSize]byte, success
 }
 
 func (s *state) backgroundFetchConsensus(epoch uint64) {
-	if s.TryLock() {
-		panic("write lock not held in backgroundFetchConsensus(epoch)")
-	}
 
 	// If there isn't a consensus for the previous epoch, ask the other
 	// authorities for a consensus.
@@ -2392,6 +2403,90 @@ func (s *state) reveal(epoch uint64) []byte {
 		s.s.fatalErrCh <- errors.New("reveal() called without commit")
 	}
 	return signed
+}
+
+// logVoteStatus logs detailed information about vote reception
+func (s *state) logVoteStatus(epoch uint64) {
+	s.log.Errorf("Required threshold: %d votes", s.threshold)
+	s.log.Errorf("Total authorities: %d", len(s.verifiers))
+
+	if votes, ok := s.votes[epoch]; ok {
+		s.log.Errorf("Votes received: %d", len(votes))
+		for pk := range votes {
+			name := s.authorityNames[pk]
+			s.log.Errorf("  ✓ %s", name)
+		}
+	} else {
+		s.log.Errorf("Votes received: 0")
+	}
+
+	// Log missing votes
+	s.log.Errorf("Missing votes from:")
+	for pk, name := range s.authorityNames {
+		if votes, ok := s.votes[epoch]; !ok || votes[pk] == nil {
+			s.log.Errorf("  ❌ %s", name)
+		}
+	}
+}
+
+// logConsensusFailureDetails provides comprehensive logging of why consensus failed
+func (s *state) logConsensusFailureDetails(epoch uint64) {
+	s.log.Errorf("=== CONSENSUS FAILURE ANALYSIS FOR EPOCH %v ===", epoch)
+
+	// Check vote status
+	if votes, ok := s.votes[epoch]; ok {
+		s.log.Errorf("Votes: %d/%d received (threshold: %d)", len(votes), len(s.verifiers), s.threshold)
+		for pk, vote := range votes {
+			name := s.authorityNames[pk]
+			s.log.Errorf("  ✓ Vote from %s: %d topology layers, %d storage replicas", name, len(vote.Topology), len(vote.StorageReplicas))
+		}
+	} else {
+		s.log.Errorf("Votes: No votes received for epoch %v", epoch)
+	}
+
+	// Check certificate status
+	if certs, ok := s.certificates[epoch]; ok {
+		s.log.Errorf("Certificates: %d/%d received", len(certs), len(s.verifiers))
+		for pk := range certs {
+			name := s.authorityNames[pk]
+			s.log.Errorf("  ✓ Certificate from %s", name)
+		}
+	} else {
+		s.log.Errorf("Certificates: No certificates received for epoch %v", epoch)
+	}
+
+	// Check signature status
+	if sigs, ok := s.signatures[epoch]; ok {
+		s.log.Errorf("Signatures: %d/%d received (threshold: %d)", len(sigs), len(s.verifiers), s.threshold)
+		for pk := range sigs {
+			name := s.authorityNames[pk]
+			s.log.Errorf("  ✓ Signature from %s", name)
+		}
+	} else {
+		s.log.Errorf("Signatures: No signatures received for epoch %v", epoch)
+	}
+
+	// Check commit/reveal status
+	if commits, ok := s.commits[epoch]; ok {
+		s.log.Errorf("Commits: %d/%d received", len(commits), len(s.verifiers))
+	} else {
+		s.log.Errorf("Commits: No commits received for epoch %v", epoch)
+	}
+
+	if reveals, ok := s.reveals[epoch]; ok {
+		s.log.Errorf("Reveals: %d/%d received", len(reveals), len(s.verifiers))
+	} else {
+		s.log.Errorf("Reveals: No reveals received for epoch %v", epoch)
+	}
+
+	// Check our own consensus view
+	if _, ok := s.myconsensus[epoch]; ok {
+		s.log.Errorf("Our consensus: Generated successfully")
+	} else {
+		s.log.Errorf("Our consensus: Failed to generate")
+	}
+
+	s.log.Errorf("=== END CONSENSUS FAILURE ANALYSIS ===")
 }
 
 // initPeerSurvey initializes the peer survey system

@@ -316,9 +316,7 @@ func (p *connector) fetchConsensus(auth *config.Authority, ctx context.Context, 
 			kpcommon.TruncatePEMForLogging(kempem.ToPublicPEMString(auth.LinkPublicKey)),
 			err)
 	}
-	p.log.Debugf("sending getConsensus to %s", auth.Identifier)
-	p.log.Debugf("remote peer %s identity key: %s", auth.Identifier, kpcommon.TruncatePEMForLogging(signpem.ToPublicPEMString(auth.IdentityPublicKey)))
-	p.log.Debugf("remote peer %s link key: %s", auth.Identifier, kpcommon.TruncatePEMForLogging(kempem.ToPublicPEMString(auth.LinkPublicKey)))
+	// Removed verbose debug logs that print keys
 	cmd := &commands.GetConsensus{
 		Epoch:              epoch,
 		Cmds:               commands.NewPKICommands(p.cfg.PKISignatureScheme),
