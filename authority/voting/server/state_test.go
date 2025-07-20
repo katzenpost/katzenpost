@@ -411,7 +411,6 @@ func testVoteWithAuthorities(t *testing.T, authNum int, expectedSuccessfulConsen
 
 // Test functions for different numbers of authorities
 func TestVote3Authorities(t *testing.T) {
-	t.Parallel()
 	testVoteWithAuthorities(t, 3, 3) // All 3 authorities should achieve consensus
 }
 
@@ -433,7 +432,6 @@ func TestVote7Authorities(t *testing.T) {
 
 // Legacy test function for backward compatibility
 func TestVote(t *testing.T) {
-	t.Parallel()
 	testVoteWithAuthorities(t, 3, 3) // Same as TestVote3Authorities
 }
 
