@@ -118,11 +118,11 @@ type PeerSurveyData struct {
 	LinkPublicKey       kem.PublicKey
 	Addresses           []string
 	ConnectionHistory   []PeerConnectionAttempt
-	LastSuccessfulConn  *time.Time
-	LastFailedConn      *time.Time
-	ConsecutiveFailures int
 	TotalAttempts       int
 	SuccessfulAttempts  int
+	ConsecutiveFailures int
+	LastSuccessfulConn  *time.Time
+	LastFailedConn      *time.Time
 }
 
 type state struct {
@@ -174,7 +174,12 @@ func (s *state) Halt() {
 	s.Worker.Halt()
 
 	// Stop peer survey worker
-	s.stopPeerSurvey()
+	if s.surveyTicker != nil {
+		s.surveyTicker.Stop()
+	}
+	if s.surveyStopCh != nil {
+		close(s.surveyStopCh)
+	}
 
 	// Gracefully close the persistence store.
 	s.db.Sync()
@@ -2209,6 +2214,51 @@ func newState(s *Server) (*state, error) {
 	return st, nil
 }
 
+// recordIncomingConnection records an incoming connection attempt from a peer
+func (s *state) recordIncomingConnection(peerID [publicKeyHashSize]byte, success bool, err error) {
+	s.Lock()
+	defer s.Unlock()
+
+	// Initialize peer data if not exists
+	if s.peerSurveyData[peerID] == nil {
+		s.peerSurveyData[peerID] = &PeerSurveyData{
+			PeerID:            peerID,
+			ConnectionHistory: make([]PeerConnectionAttempt, 0),
+		}
+	}
+
+	peer := s.peerSurveyData[peerID]
+	now := time.Now()
+
+	// Create connection attempt record
+	attempt := PeerConnectionAttempt{
+		Timestamp: now,
+		Success:   success,
+		Duration:  0, // Incoming connections don't track duration
+	}
+
+	if err != nil {
+		attempt.Error = err.Error()
+	}
+
+	// Update statistics
+	peer.TotalAttempts++
+	if success {
+		peer.SuccessfulAttempts++
+		peer.ConsecutiveFailures = 0
+		peer.LastSuccessfulConn = &now
+	} else {
+		peer.ConsecutiveFailures++
+		peer.LastFailedConn = &now
+	}
+
+	// Add to history (keep last maxSurveyHistory entries)
+	peer.ConnectionHistory = append(peer.ConnectionHistory, attempt)
+	if len(peer.ConnectionHistory) > maxSurveyHistory {
+		peer.ConnectionHistory = peer.ConnectionHistory[1:]
+	}
+}
+
 func (s *state) backgroundFetchConsensus(epoch uint64) {
 	if s.TryLock() {
 		panic("write lock not held in backgroundFetchConsensus(epoch)")
@@ -2396,36 +2446,6 @@ func (s *state) peerSurveyWorker() {
 	}
 }
 
-// runPeerSurvey performs connectivity tests to all authority peers
-func (s *state) runPeerSurvey() {
-	s.Lock()
-	defer s.Unlock()
-
-	s.log.Debugf("Running peer connectivity survey...")
-
-	for peerID, surveyData := range s.peerSurveyData {
-		// Find the peer config
-		var peer *config.Authority
-		for _, p := range s.s.cfg.Authorities {
-			if hash.Sum256From(p.IdentityPublicKey) == peerID {
-				peer = p
-				break
-			}
-		}
-
-		if peer == nil {
-			s.log.Errorf("Peer survey: Could not find config for peer %x", peerID)
-			continue
-		}
-
-		// Test connectivity to this peer
-		s.testPeerConnectivity(peer, surveyData)
-	}
-
-	// Log survey summary
-	s.logPeerSurveySummary()
-}
-
 // testPeerConnectivity tests connectivity to a single peer
 func (s *state) testPeerConnectivity(peer *config.Authority, surveyData *PeerSurveyData) {
 	startTime := time.Now()
@@ -2585,14 +2605,6 @@ func (s *state) recordConnectionAttempt(surveyData *PeerSurveyData, success bool
 		surveyData.ConsecutiveFailures++
 		now := time.Now()
 		surveyData.LastFailedConn = &now
-	}
-}
-
-// logPeerSurveySummary logs a concise summary of all peer connectivity status
-func (s *state) logPeerSurveySummary() {
-	s.log.Debugf("=== PEER SURVEY (%d peers) ===", len(s.peerSurveyData))
-	for _, surveyData := range s.peerSurveyData {
-		s.logPeerDetails(surveyData)
 	}
 }
 

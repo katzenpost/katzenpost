@@ -344,6 +344,11 @@ func (s *katzenpost) genReplicaNodeConfig() error {
 	cfg.DataDir = filepath.Join(s.baseDir, cfg.Identifier)
 	os.MkdirAll(filepath.Join(s.outDir, cfg.Identifier), 0700)
 
+	// Set timeout values explicitly to use common config defaults
+	cfg.ConnectTimeout = config.DefaultConnectTimeout
+	cfg.HandshakeTimeout = config.DefaultHandshakeTimeout
+	cfg.ReauthInterval = config.DefaultReauthInterval
+
 	authorities := make([]*vConfig.Authority, 0, len(s.authorities))
 	i := 0
 	for _, auth := range s.authorities {

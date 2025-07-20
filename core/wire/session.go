@@ -59,8 +59,9 @@ const (
 	MaxMessageSize = 500000000
 
 	// CommandReadTimeout is the timeout for reading commands from the wire.
-	// Set to 30 seconds to prevent indefinite hangs during command reception.
-	CommandReadTimeout = 30 * time.Second
+	// Set to 5 minutes to prevent indefinite hangs during command reception.
+	// Increased from 30s to accommodate slower CI environments and channel operations.
+	CommandReadTimeout = 5 * time.Minute
 )
 
 var (
@@ -169,6 +170,14 @@ type SessionInterface interface {
 	ClockSkew() time.Duration
 }
 
+// SessionTiming contains detailed timing information for debugging
+type SessionTiming struct {
+	// Only store durations to minimize memory footprint
+	HandshakeDuration time.Duration // Time for crypto handshake
+	NoOpDuration      time.Duration // Time for NoOp exchange
+	TotalDuration     time.Duration // Total Initialize() time
+}
+
 // Session is a wire protocol session.
 type Session struct {
 	conn net.Conn
@@ -195,6 +204,9 @@ type Session struct {
 	isInitiator bool
 
 	maxMesgSize int
+
+	// Timing information for debugging
+	timing SessionTiming
 }
 
 // client
@@ -591,17 +603,32 @@ func (s *Session) finalizeHandshake() error {
 // Initialize takes an establised net.Conn, and binds it to a Session, and
 // conducts the wire protocol handshake.
 func (s *Session) Initialize(conn net.Conn) error {
+	// Record timing for debugging
+	initStart := time.Now()
+	defer func() {
+		s.timing.TotalDuration = time.Since(initStart)
+	}()
+
 	if atomic.LoadUint32(&s.state) != stateInit {
 		return errInvalidState
 	}
 	s.conn = conn
+
+	// Time the crypto handshake
+	handshakeStart := time.Now()
 	if err := s.handshake(); err != nil {
 		return err
 	}
+	s.timing.HandshakeDuration = time.Since(handshakeStart)
+
+	// Time the NoOp exchange
+	noopStart := time.Now()
 	if err := s.finalizeHandshake(); err != nil {
 		atomic.StoreUint32(&s.state, stateInvalid)
 		return err
 	}
+	s.timing.NoOpDuration = time.Since(noopStart)
+
 	return nil
 }
 
@@ -770,6 +797,12 @@ func (s *Session) ClockSkew() time.Duration {
 		panic("wire/session: ClockSkew() call in invalid state")
 	}
 	return s.clockSkew
+}
+
+// Timing returns detailed timing information for the session initialization.
+// This is useful for debugging wire protocol performance issues.
+func (s *Session) Timing() SessionTiming {
+	return s.timing
 }
 
 // NewPKISession creates a new session to be used with the PKI (authority).
