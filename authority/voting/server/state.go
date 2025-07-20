@@ -794,7 +794,14 @@ func (s *state) IsPeerValid(creds *wire.PeerCredentials) bool {
 }
 
 func (s *state) sendCommandToPeer(peer *config.Authority, cmd commands.Command) (commands.Command, error) {
+	// Use timeout configuration from config file
+	dialTimeout := time.Duration(s.s.cfg.Server.DialTimeoutSec) * time.Second
+	handshakeTimeout := time.Duration(s.s.cfg.Server.HandshakeTimeoutSec) * time.Second
+	responseTimeout := time.Duration(s.s.cfg.Server.ResponseTimeoutSec) * time.Second
+
 	s.log.Debugf("sendCommandToPeer: peer.Identifier: %s peer.PublicKey: %s, IdentityPublicKey: %s", peer.Identifier, kempem.ToPublicPEMString(peer.LinkPublicKey), signpem.ToPublicPEMString(peer.IdentityPublicKey))
+	s.log.Debugf("Outgoing timeouts: dial=%v, handshake=%v, response=%v",
+		dialTimeout, handshakeTimeout, responseTimeout)
 
 	peerID := hash.Sum256From(peer.IdentityPublicKey)
 	startTime := time.Now()
@@ -808,8 +815,10 @@ func (s *state) sendCommandToPeer(peer *config.Authority, cmd commands.Command) 
 			continue
 		}
 		addressUsed = a
-		defaultDialer := &net.Dialer{}
-		ctx, cancelFn := context.WithCancel(context.Background())
+		defaultDialer := &net.Dialer{
+			Timeout: dialTimeout,
+		}
+		ctx, cancelFn := context.WithTimeout(context.Background(), dialTimeout)
 		conn, err = common.DialURL(u, ctx, defaultDialer.DialContext)
 		cancelFn()
 		if err == nil {
@@ -850,11 +859,16 @@ func (s *state) sendCommandToPeer(peer *config.Authority, cmd commands.Command) 
 	}
 	defer session.Close()
 
+	// Set handshake timeout
+	conn.SetDeadline(time.Now().Add(handshakeTimeout))
 	if err = session.Initialize(conn); err != nil {
 		duration := time.Since(startTime)
 		s.recordOutgoingConnection(peerID, false, err, duration, addressUsed)
 		return nil, err
 	}
+
+	// Set response timeout for command exchange
+	conn.SetDeadline(time.Now().Add(responseTimeout))
 	err = session.SendCommand(cmd)
 	if err != nil {
 		duration := time.Since(startTime)
