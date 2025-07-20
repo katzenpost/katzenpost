@@ -2528,13 +2528,13 @@ func (s *state) doCommit(epoch uint64) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	// sign the serialized commit
-	signedCommit, err := cert.Sign(s.s.identityPrivateKey, s.s.identityPublicKey, commit, epoch)
+	// sign the serialized commit with expiration 5 epochs in the future
+	signedCommit, err := cert.Sign(s.s.identityPrivateKey, s.s.identityPublicKey, commit, epoch+5)
 	if err != nil {
 		return nil, err
 	}
-	// sign the reveal
-	signedReveal, err := cert.Sign(s.s.identityPrivateKey, s.s.identityPublicKey, srv.Reveal(), epoch)
+	// sign the reveal with expiration 5 epochs in the future
+	signedReveal, err := cert.Sign(s.s.identityPrivateKey, s.s.identityPublicKey, srv.Reveal(), epoch+5)
 	if err != nil {
 		return nil, err
 	}
