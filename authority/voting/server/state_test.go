@@ -320,11 +320,14 @@ func testVoteWithAuthorities(t *testing.T, authNum int, expectedSuccessfulConsen
 		_, err = pki.ParseDocument(raw)
 		require.NoError(err)
 		s.state = stateAcceptVote
+		// Distribute vote to other authorities with proper locking
 		for j, a := range stateAuthority {
 			if j == i {
 				continue
 			}
+			a.Lock()
 			a.votes[s.votingEpoch][hash.Sum256From(s.s.identityPublicKey)] = myVote
+			a.Unlock()
 		}
 	}
 
@@ -332,11 +335,14 @@ func testVoteWithAuthorities(t *testing.T, authNum int, expectedSuccessfulConsen
 	for i, s := range stateAuthority {
 		s.state = stateAcceptReveal
 		c := s.reveal(s.votingEpoch)
+		// Distribute reveal to other authorities with proper locking
 		for j, a := range stateAuthority {
 			if j == i {
 				continue
 			}
+			a.Lock()
 			a.reveals[a.votingEpoch][hash.Sum256From(s.s.identityPublicKey)] = c
+			a.Unlock()
 			t.Logf("%s sent %s reveal", authCfgs[i].Server.Identifier, authCfgs[j].Server.Identifier)
 		}
 
@@ -410,22 +416,18 @@ func TestVote3Authorities(t *testing.T) {
 }
 
 func TestVote4Authorities(t *testing.T) {
-	t.Parallel()
 	testVoteWithAuthorities(t, 4, 3) // 3 out of 4 authorities should achieve consensus
 }
 
 func TestVote5Authorities(t *testing.T) {
-	t.Parallel()
 	testVoteWithAuthorities(t, 5, 3) // 3 out of 5 authorities should achieve consensus
 }
 
 func TestVote6Authorities(t *testing.T) {
-	t.Parallel()
 	testVoteWithAuthorities(t, 6, 4) // 4 out of 6 authorities should achieve consensus
 }
 
 func TestVote7Authorities(t *testing.T) {
-	t.Parallel()
 	testVoteWithAuthorities(t, 7, 4) // 4 out of 7 authorities should achieve consensus
 }
 
