@@ -402,14 +402,11 @@ func (s *state) doSignDocument(signer sign.PrivateKey, verifier sign.PublicKey, 
 // getCertificate is the same as a vote but it contains all SharedRandomCommits and SharedRandomReveals seen
 func (s *state) getCertificate(epoch uint64) (*pki.Document, error) {
 
-	s.log.Noticef("=== CERTIFICATE GENERATION FOR EPOCH %v ===", epoch)
-	s.log.Noticef("Attempting to tally votes...")
 	mixes, replicas, params, err := s.tallyVotes(epoch)
 	if err != nil {
 		s.log.Errorf("❌ CERTIFICATE FAILURE: tallyVotes failed for epoch %v: %v", epoch, err)
 		return nil, err
 	}
-	s.log.Noticef("✅ Vote tally successful: %d mixes, %d replicas", len(mixes), len(replicas))
 	s.log.Debug("Mixes tallied, now making a document")
 	var zeros [32]byte
 	srv := zeros[:]
@@ -1168,7 +1165,7 @@ func (s *state) tallyVotes(epoch uint64) ([]*pki.MixDescriptor, []*pki.ReplicaDe
 	sortReplicaNodesByPublicKey(replicaNodes)
 
 	// include parameters that have a threshold of votes
-	s.log.Errorf("=== PARAMETER CONSENSUS ANALYSIS FOR EPOCH %v ===", epoch)
+	s.log.Errorf("=== PARAMETER CONSENSUS FAILURE ANALYSIS FOR EPOCH %v ===", epoch)
 	s.log.Errorf("Total votes: %d, Threshold needed: %d", len(s.votes[epoch]), s.threshold)
 	s.log.Errorf("Parameter sets found: %d", len(mixParams))
 
@@ -1178,7 +1175,7 @@ func (s *state) tallyVotes(epoch uint64) ([]*pki.MixDescriptor, []*pki.ReplicaDe
 		params := &config.Parameters{}
 		d := gob.NewDecoder(strings.NewReader(bs))
 		if err := d.Decode(params); err != nil {
-			s.log.Errorf("tallyVotes: failed to decode params: err=%v: bs=%v", err, bs)
+			s.log.Errorf("Failed to decode parameter set #%d: %v", paramSetIndex, err)
 			continue
 		}
 
@@ -1201,6 +1198,7 @@ func (s *state) tallyVotes(epoch uint64) ([]*pki.MixDescriptor, []*pki.ReplicaDe
 			sortNodesByPublicKey(nodes)
 			// successful tally
 			s.log.Errorf("✅ Parameter Set #%d achieved threshold!", paramSetIndex)
+			s.log.Errorf("=== END PARAMETER CONSENSUS ANALYSIS ===")
 			return nodes, replicaNodes, params, nil
 		} else if len(votes) >= s.dissenters {
 			s.log.Errorf("❌ Parameter Set #%d failed threshold (%d < %d)", paramSetIndex, len(votes), s.threshold)
@@ -1211,7 +1209,7 @@ func (s *state) tallyVotes(epoch uint64) ([]*pki.MixDescriptor, []*pki.ReplicaDe
 
 	}
 	s.log.Errorf("❌ CONSENSUS FAILURE: No parameter sets achieved threshold votes for epoch %v", epoch)
-	s.log.Errorf("=== END PARAMETER CONSENSUS ANALYSIS ===")
+	s.log.Errorf("=== END PARAMETER CONSENSUS FAILURE ANALYSIS ===")
 	return nil, nil, nil, errors.New("consensus failure (mixParams empty)")
 }
 
