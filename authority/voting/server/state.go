@@ -443,18 +443,23 @@ func (s *state) getCertificate(epoch uint64) (*pki.Document, error) {
 
 // getConsensus computes the final document using the computed SharedRandomValue
 func (s *state) getMyConsensus(epoch uint64) (*pki.Document, error) {
+	s.log.Noticef("🔍 CERTIFICATE GENERATION: Starting consensus computation for epoch %v", epoch)
 
 	certificates, ok := s.certificates[epoch]
 	if !ok {
+		s.log.Errorf("❌ CERTIFICATE GENERATION FAILURE: No certificates for epoch %d", epoch)
 		return nil, fmt.Errorf("No certificates for epoch %d", epoch)
 	}
+	s.log.Noticef("✅ CERTIFICATE GENERATION: Found %d certificates for epoch %v (threshold: %d)", len(certificates), epoch, s.threshold)
 
 	// well this isn't going to work then is it?
 	if len(certificates) < s.threshold {
+		s.log.Errorf("❌ CERTIFICATE GENERATION FAILURE: Insufficient certificates: have %d, need %d", len(certificates), s.threshold)
 		return nil, fmt.Errorf("No way to make consensus with too few votes!, only %d certificates", len(certificates))
 	}
 
 	// verify that all shared random commit and reveal are present for this epoch
+	s.log.Noticef("🔍 CERTIFICATE GENERATION: Verifying shared random commits and reveals for epoch %v", epoch)
 	commits, reveals := s.verifyCommits(epoch)
 	if len(commits) < s.threshold {
 		s.log.Errorf("❌ SHARED RANDOM FAILURE: Insufficient commits for consensus: have %d, need %d", len(commits), s.threshold)
@@ -463,12 +468,17 @@ func (s *state) getMyConsensus(epoch uint64) (*pki.Document, error) {
 	if len(commits) != len(reveals) {
 		panic("ShouldNotBePossible")
 	}
+	s.log.Noticef("✅ CERTIFICATE GENERATION: Shared random verification passed - commits: %d, reveals: %d", len(commits), len(reveals))
 
 	// compute the shared random for the consensus
+	s.log.Noticef("🔍 CERTIFICATE GENERATION: Computing shared random value for epoch %v", epoch)
 	srv, err := s.computeSharedRandom(epoch, commits, reveals)
 	if err != nil {
+		s.log.Errorf("❌ CERTIFICATE GENERATION FAILURE: Failed to compute shared random: %v", err)
 		return nil, err
 	}
+	s.log.Noticef("✅ CERTIFICATE GENERATION: Shared random computed successfully")
+
 	// if there are no prior SRV values, copy the current srv twice
 	if epoch == s.genesisEpoch {
 		s.priorSRV = [][]byte{srv, srv}
@@ -476,10 +486,19 @@ func (s *state) getMyConsensus(epoch uint64) (*pki.Document, error) {
 		// rotate the weekly epochs if it is time to do so.
 		s.priorSRV = [][]byte{srv, s.priorSRV[0]}
 	}
+
+	s.log.Noticef("🔍 CERTIFICATE GENERATION: Tallying votes for epoch %v", epoch)
 	mixes, replicas, params, err := s.tallyVotes(epoch)
 	if err != nil {
+		s.log.Errorf("❌ CERTIFICATE GENERATION FAILURE: Vote tallying failed: %v", err)
 		return nil, err
 	}
+	s.log.Noticef("✅ CERTIFICATE GENERATION: Vote tallying completed - mixes: %d, replicas: %d", len(mixes), len(replicas))
+
+	// Log detailed breakdown of what we got from vote tallying
+	s.logVoteTallyResults(epoch, mixes, replicas, params)
+
+	s.log.Noticef("🔍 CERTIFICATE GENERATION: Creating document for epoch %v", epoch)
 	consensusOfOne := s.getDocument(mixes, replicas, params, srv)
 
 	// Add the SharedRandomCommit and SharedRandomReveal that were used to compute the consensus
@@ -487,14 +506,19 @@ func (s *state) getMyConsensus(epoch uint64) (*pki.Document, error) {
 	// and reveals that were used to generate the SharedRandomValue
 	consensusOfOne.SharedRandomCommit = s.commits[epoch]
 	consensusOfOne.SharedRandomReveal = s.reveals[epoch]
+	s.log.Noticef("✅ CERTIFICATE GENERATION: Document created, adding shared random data")
 
+	s.log.Noticef("🔍 CERTIFICATE GENERATION: Signing document for epoch %v", epoch)
 	_, err = s.doSignDocument(s.s.identityPrivateKey, s.s.identityPublicKey, consensusOfOne)
 	if err != nil {
+		s.log.Errorf("❌ CERTIFICATE GENERATION FAILURE: Failed to sign document: %v", err)
 		return nil, err
 	}
+	s.log.Noticef("✅ CERTIFICATE GENERATION: Document signed successfully")
 
 	// save our view of the conseusus
 	s.myconsensus[epoch] = consensusOfOne
+	s.log.Noticef("✅ CERTIFICATE GENERATION: Consensus computation completed successfully for epoch %v", epoch)
 	return consensusOfOne, nil
 }
 
@@ -651,7 +675,30 @@ func (s *state) hasEnoughDescriptors(m map[[publicKeyHashSize]byte]*pki.MixDescr
 	nrNodes := len(m) - nrGateways - nrServiceNodes
 
 	minNodes := s.s.cfg.Debug.Layers * s.s.cfg.Debug.MinNodesPerLayer
-	return (nrGateways > 0) && (nrServiceNodes > 0) && (nrNodes >= minNodes)
+	hasEnough := (nrGateways > 0) && (nrServiceNodes > 0) && (nrNodes >= minNodes)
+
+	s.log.Noticef("🔍 DESCRIPTOR VALIDATION: Checking if we have enough descriptors")
+	s.log.Noticef("  Gateways: %d (need: >0) ✓", nrGateways)
+	s.log.Noticef("  Service nodes: %d (need: >0) %s", nrServiceNodes, func() string {
+		if nrServiceNodes > 0 {
+			return "✓"
+		}
+		return "❌"
+	}())
+	s.log.Noticef("  Mix nodes: %d (need: %d) %s", nrNodes, minNodes, func() string {
+		if nrNodes >= minNodes {
+			return "✓"
+		}
+		return "❌"
+	}())
+	s.log.Noticef("  Overall result: %s", func() string {
+		if hasEnough {
+			return "✅ SUFFICIENT DESCRIPTORS"
+		}
+		return "❌ INSUFFICIENT DESCRIPTORS"
+	}())
+
+	return hasEnough
 }
 
 func (s *state) verifyCommits(epoch uint64) (map[[publicKeyHashSize]byte][]byte, map[[publicKeyHashSize]byte][]byte) {
@@ -1174,34 +1221,92 @@ func (s *state) tallyVotes(epoch uint64) ([]*pki.MixDescriptor, []*pki.ReplicaDe
 		}
 	}
 	// include mixes that have a threshold of votes
+	s.log.Noticef("🔍 VOTE TALLY: Processing %d mix descriptors for threshold votes", len(mixTally))
+	acceptedNodes := 0
+	rejectedNodes := 0
 	for rawDesc, votes := range mixTally {
 		if len(votes) >= s.threshold {
 			// this shouldn't fail as the descriptors have already been verified
 			desc := new(pki.MixDescriptor)
 			err := desc.UnmarshalBinary([]byte(rawDesc))
 			if err != nil {
+				s.log.Errorf("❌ VOTE TALLY: Failed to unmarshal mix descriptor: %v", err)
 				return nil, nil, nil, err
 			}
 			// only add nodes we have authorized
 			if s.isDescriptorAuthorized(desc) {
 				nodes = append(nodes, desc)
+				acceptedNodes++
+				s.log.Debugf("✅ VOTE TALLY: Accepted %s node '%s' with %d votes",
+					func() string {
+						if desc.IsGatewayNode {
+							return "gateway"
+						} else if desc.IsServiceNode {
+							return "service"
+						}
+						return "mix"
+					}(), desc.Name, len(votes))
+			} else {
+				rejectedNodes++
+				s.log.Errorf("❌ VOTE TALLY: Rejected unauthorized %s node '%s' with %d votes",
+					func() string {
+						if desc.IsGatewayNode {
+							return "gateway"
+						} else if desc.IsServiceNode {
+							return "service"
+						}
+						return "mix"
+					}(), desc.Name, len(votes))
+			}
+		} else {
+			rejectedNodes++
+			desc := new(pki.MixDescriptor)
+			err := desc.UnmarshalBinary([]byte(rawDesc))
+			if err == nil {
+				s.log.Debugf("❌ VOTE TALLY: Rejected %s node '%s' - insufficient votes: %d < %d",
+					func() string {
+						if desc.IsGatewayNode {
+							return "gateway"
+						} else if desc.IsServiceNode {
+							return "service"
+						}
+						return "mix"
+					}(), desc.Name, len(votes), s.threshold)
 			}
 		}
 	}
+	s.log.Noticef("✅ VOTE TALLY: Mix nodes - accepted: %d, rejected: %d", acceptedNodes, rejectedNodes)
+	s.log.Noticef("🔍 VOTE TALLY: Processing %d replica descriptors for threshold votes", len(replicaTally))
+	acceptedReplicas := 0
+	rejectedReplicas := 0
 	for rawDesc, votes := range replicaTally {
 		if len(votes) >= s.threshold {
 			// this shouldn't fail as the descriptors have already been verified
 			desc := new(pki.ReplicaDescriptor)
 			err := desc.Unmarshal([]byte(rawDesc))
 			if err != nil {
+				s.log.Errorf("❌ VOTE TALLY: Failed to unmarshal replica descriptor: %v", err)
 				return nil, nil, nil, err
 			}
 			// only add nodes we have authorized
 			if s.isReplicaDescriptorAuthorized(desc) {
 				replicaNodes = append(replicaNodes, desc)
+				acceptedReplicas++
+				s.log.Debugf("✅ VOTE TALLY: Accepted replica node '%s' with %d votes", desc.Name, len(votes))
+			} else {
+				rejectedReplicas++
+				s.log.Errorf("❌ VOTE TALLY: Rejected unauthorized replica node '%s' with %d votes", desc.Name, len(votes))
+			}
+		} else {
+			rejectedReplicas++
+			desc := new(pki.ReplicaDescriptor)
+			err := desc.Unmarshal([]byte(rawDesc))
+			if err == nil {
+				s.log.Debugf("❌ VOTE TALLY: Rejected replica node '%s' - insufficient votes: %d < %d", desc.Name, len(votes), s.threshold)
 			}
 		}
 	}
+	s.log.Noticef("✅ VOTE TALLY: Replica nodes - accepted: %d, rejected: %d", acceptedReplicas, rejectedReplicas)
 
 	sortReplicaNodesByPublicKey(replicaNodes)
 
@@ -1519,29 +1624,58 @@ func (s *state) isReplicaDescriptorAuthorized(desc *pki.ReplicaDescriptor) bool 
 	pk := hash.Sum256(desc.IdentityKey)
 	name, ok := s.authorizedReplicaNodes[pk]
 	if !ok {
+		s.log.Errorf("❌ AUTHORIZATION: Replica node '%s' (key: %x) not in authorized list", desc.Name, pk)
+		s.log.Errorf("❌ AUTHORIZATION: Available authorized replica nodes:")
+		for authPk, authName := range s.authorizedReplicaNodes {
+			s.log.Errorf("  - %s (key: %x)", authName, authPk)
+		}
 		return false
 	}
-	return name == desc.Name
+	if name != desc.Name {
+		s.log.Errorf("❌ AUTHORIZATION: Replica node name mismatch - expected '%s', got '%s' (key: %x)", name, desc.Name, pk)
+		return false
+	}
+	s.log.Debugf("✅ AUTHORIZATION: Replica node '%s' authorized", desc.Name)
+	return true
 }
 
 func (s *state) isDescriptorAuthorized(desc *pki.MixDescriptor) bool {
 	pk := hash.Sum256(desc.IdentityKey)
 	if !desc.IsGatewayNode && !desc.IsServiceNode {
-		return s.authorizedMixes[pk]
+		authorized := s.authorizedMixes[pk]
+		if !authorized {
+			s.log.Debugf("❌ AUTHORIZATION: Mix node '%s' (key: %x) not in authorized list", desc.Name, pk)
+		}
+		return authorized
 	}
 	if desc.IsGatewayNode {
 		name, ok := s.authorizedGatewayNodes[pk]
 		if !ok {
+			s.log.Errorf("❌ AUTHORIZATION: Gateway node '%s' (key: %x) not in authorized list", desc.Name, pk)
 			return false
 		}
-		return name == desc.Name
+		if name != desc.Name {
+			s.log.Errorf("❌ AUTHORIZATION: Gateway node name mismatch - expected '%s', got '%s' (key: %x)", name, desc.Name, pk)
+			return false
+		}
+		return true
 	}
 	if desc.IsServiceNode {
 		name, ok := s.authorizedServiceNodes[pk]
 		if !ok {
+			s.log.Errorf("❌ AUTHORIZATION: Service node '%s' (key: %x) not in authorized list", desc.Name, pk)
+			s.log.Errorf("❌ AUTHORIZATION: Available authorized service nodes:")
+			for authPk, authName := range s.authorizedServiceNodes {
+				s.log.Errorf("  - %s (key: %x)", authName, authPk)
+			}
 			return false
 		}
-		return name == desc.Name
+		if name != desc.Name {
+			s.log.Errorf("❌ AUTHORIZATION: Service node name mismatch - expected '%s', got '%s' (key: %x)", name, desc.Name, pk)
+			return false
+		}
+		s.log.Debugf("✅ AUTHORIZATION: Service node '%s' authorized", desc.Name)
+		return true
 	}
 	panic("impossible")
 }
@@ -1904,6 +2038,23 @@ func (s *state) onDescriptorUpload(rawDesc []byte, desc *pki.MixDescriptor, epoc
 	// Note: Caller ensures that the epoch is the current epoch +- 1.
 	pk := hash.Sum256(desc.IdentityKey)
 
+	nodeType := "mix"
+	if desc.IsGatewayNode {
+		nodeType = "gateway"
+	} else if desc.IsServiceNode {
+		nodeType = "service"
+	}
+
+	s.log.Noticef("📥 DESCRIPTOR UPLOAD: Received %s node descriptor from '%s' (key: %x) for epoch %v",
+		nodeType, desc.Name, pk, epoch)
+
+	// Check if this node is authorized
+	if !s.isDescriptorAuthorized(desc) {
+		s.log.Errorf("❌ DESCRIPTOR UPLOAD: Rejecting unauthorized %s node '%s' (key: %x) for epoch %v",
+			nodeType, desc.Name, pk, epoch)
+		return fmt.Errorf("state: node %s (%x): Not authorized for epoch %v", desc.Name, pk, epoch)
+	}
+
 	// Get the public key -> descriptor map for the epoch.
 	_, ok := s.descriptors[epoch]
 	if !ok {
@@ -1917,13 +2068,18 @@ func (s *state) onDescriptorUpload(rawDesc []byte, desc *pki.MixDescriptor, epoc
 		// nodes from reneging on uploads.
 		serialized, err := d.MarshalBinary()
 		if err != nil {
+			s.log.Errorf("❌ DESCRIPTOR UPLOAD: Failed to serialize existing descriptor for %s node '%s': %v",
+				nodeType, desc.Name, err)
 			return err
 		}
 		if !hmac.Equal(serialized, rawDesc) {
+			s.log.Errorf("❌ DESCRIPTOR UPLOAD: Conflicting descriptor from %s node '%s' (key: %x) for epoch %v",
+				nodeType, desc.Name, pk, epoch)
 			return fmt.Errorf("state: node %s (%x): Conflicting descriptor for epoch %v", desc.Name, hash.Sum256(desc.IdentityKey), epoch)
 		}
 
 		// Redundant uploads that don't change are harmless.
+		s.log.Debugf("📥 DESCRIPTOR UPLOAD: Redundant upload from %s node '%s' - ignoring", nodeType, desc.Name)
 		return nil
 	}
 
@@ -1931,6 +2087,8 @@ func (s *state) onDescriptorUpload(rawDesc []byte, desc *pki.MixDescriptor, epoc
 	if s.documents[epoch] != nil {
 		// If there is a document already, the descriptor is late, and will
 		// never appear in a document, so reject it.
+		s.log.Errorf("❌ DESCRIPTOR UPLOAD: Late descriptor from %s node '%s' for epoch %v (document already exists)",
+			nodeType, desc.Name, epoch)
 		return fmt.Errorf("state: Node %v: Late descriptor upload for for epoch %v", desc.IdentityKey, epoch)
 	}
 
@@ -1944,13 +2102,33 @@ func (s *state) onDescriptorUpload(rawDesc []byte, desc *pki.MixDescriptor, epoc
 		return eBkt.Put(pk[:], rawDesc)
 	}); err != nil {
 		// Persistence failures are FATAL.
+		s.log.Errorf("❌ DESCRIPTOR UPLOAD: Failed to persist descriptor for %s node '%s': %v",
+			nodeType, desc.Name, err)
 		s.s.fatalErrCh <- err
 	}
 
 	// Store the parsed descriptor
 	s.descriptors[epoch][pk] = desc
 
-	s.log.Noticef("Node %x: Successfully submitted descriptor for epoch %v.", pk, epoch)
+	s.log.Noticef("✅ DESCRIPTOR UPLOAD: Successfully accepted %s node '%s' (key: %x) descriptor for epoch %v",
+		nodeType, desc.Name, pk, epoch)
+
+	// Log current descriptor counts
+	gateways := 0
+	serviceNodes := 0
+	mixNodes := 0
+	for _, d := range s.descriptors[epoch] {
+		if d.IsGatewayNode {
+			gateways++
+		} else if d.IsServiceNode {
+			serviceNodes++
+		} else {
+			mixNodes++
+		}
+	}
+	s.log.Noticef("📊 DESCRIPTOR COUNT: Epoch %v now has %d total descriptors (gateways: %d, service: %d, mix: %d)",
+		epoch, len(s.descriptors[epoch]), gateways, serviceNodes, mixNodes)
+
 	s.onUpdate()
 	return nil
 }
@@ -2624,12 +2802,20 @@ func (s *state) logConsensusFailureDetails(epoch uint64) {
 	// Check commit/reveal status
 	if commits, ok := s.commits[epoch]; ok {
 		s.log.Errorf("Commits: %d/%d received", len(commits), len(s.verifiers))
+		for pk := range commits {
+			name := s.authorityNames[pk]
+			s.log.Errorf("  ✓ Commit from %s", name)
+		}
 	} else {
 		s.log.Errorf("Commits: No commits received for epoch %v", epoch)
 	}
 
 	if reveals, ok := s.reveals[epoch]; ok {
 		s.log.Errorf("Reveals: %d/%d received", len(reveals), len(s.verifiers))
+		for pk := range reveals {
+			name := s.authorityNames[pk]
+			s.log.Errorf("  ✓ Reveal from %s", name)
+		}
 	} else {
 		s.log.Errorf("Reveals: No reveals received for epoch %v", epoch)
 	}
@@ -2641,7 +2827,119 @@ func (s *state) logConsensusFailureDetails(epoch uint64) {
 		s.log.Errorf("Our consensus: Failed to generate")
 	}
 
+	// Check descriptor counts for this epoch
+	if descriptors, ok := s.descriptors[epoch]; ok {
+		gateways := 0
+		serviceNodes := 0
+		mixNodes := 0
+		for _, desc := range descriptors {
+			if desc.IsGatewayNode {
+				gateways++
+			} else if desc.IsServiceNode {
+				serviceNodes++
+			} else {
+				mixNodes++
+			}
+		}
+		s.log.Errorf("Descriptors for epoch %v: total=%d, gateways=%d, service=%d, mix=%d",
+			epoch, len(descriptors), gateways, serviceNodes, mixNodes)
+
+		minNodes := s.s.cfg.Debug.Layers * s.s.cfg.Debug.MinNodesPerLayer
+		s.log.Errorf("Minimum requirements: gateways>0 (%s), service>0 (%s), mix>=%d (%s)",
+			func() string {
+				if gateways > 0 {
+					return "✅"
+				}
+				return "❌"
+			}(),
+			func() string {
+				if serviceNodes > 0 {
+					return "✅"
+				}
+				return "❌"
+			}(),
+			minNodes,
+			func() string {
+				if mixNodes >= minNodes {
+					return "✅"
+				}
+				return "❌"
+			}())
+	} else {
+		s.log.Errorf("Descriptors: No descriptors received for epoch %v", epoch)
+	}
+
+	// Check replica descriptors
+	if replicas, ok := s.replicaDescriptors[epoch]; ok {
+		s.log.Errorf("Replica descriptors for epoch %v: %d received", epoch, len(replicas))
+		for _, desc := range replicas {
+			s.log.Errorf("  ✓ Replica: %s", desc.Name)
+		}
+	} else {
+		s.log.Errorf("Replica descriptors: None received for epoch %v", epoch)
+	}
+
 	s.log.Errorf("=== END CONSENSUS FAILURE ANALYSIS ===")
+}
+
+// logVoteTallyResults provides detailed logging of vote tally results
+func (s *state) logVoteTallyResults(epoch uint64, mixes []*pki.MixDescriptor, replicas []*pki.ReplicaDescriptor, params *config.Parameters) {
+	s.log.Noticef("=== VOTE TALLY RESULTS FOR EPOCH %v ===", epoch)
+
+	// Count different types of nodes
+	gateways := 0
+	serviceNodes := 0
+	mixNodes := 0
+
+	for _, mix := range mixes {
+		if mix.IsGatewayNode {
+			gateways++
+		} else if mix.IsServiceNode {
+			serviceNodes++
+		} else {
+			mixNodes++
+		}
+	}
+
+	s.log.Noticef("Node counts after vote tally:")
+	s.log.Noticef("  Gateway nodes: %d", gateways)
+	s.log.Noticef("  Service nodes: %d", serviceNodes)
+	s.log.Noticef("  Mix nodes: %d", mixNodes)
+	s.log.Noticef("  Storage replicas: %d", len(replicas))
+
+	// Check if we meet minimum requirements
+	minNodes := s.s.cfg.Debug.Layers * s.s.cfg.Debug.MinNodesPerLayer
+	s.log.Noticef("Minimum requirements check:")
+	s.log.Noticef("  Need gateways: >0, have: %d %s", gateways, func() string {
+		if gateways > 0 {
+			return "✅"
+		}
+		return "❌"
+	}())
+	s.log.Noticef("  Need service nodes: >0, have: %d %s", serviceNodes, func() string {
+		if serviceNodes > 0 {
+			return "✅"
+		}
+		return "❌"
+	}())
+	s.log.Noticef("  Need mix nodes: >=%d, have: %d %s", minNodes, mixNodes, func() string {
+		if mixNodes >= minNodes {
+			return "✅"
+		}
+		return "❌"
+	}())
+
+	// Log parameters
+	s.log.Noticef("Consensus parameters:")
+	s.log.Noticef("  SendRatePerMinute: %d", params.SendRatePerMinute)
+	s.log.Noticef("  Mu: %f", params.Mu)
+	s.log.Noticef("  LambdaP: %f", params.LambdaP)
+	s.log.Noticef("  LambdaL: %f", params.LambdaL)
+	s.log.Noticef("  LambdaD: %f", params.LambdaD)
+	s.log.Noticef("  LambdaM: %f", params.LambdaM)
+	s.log.Noticef("  LambdaG: %f", params.LambdaG)
+
+	s.log.Noticef("=== END VOTE TALLY RESULTS ===")
 }
 
 // initPeerSurvey initializes the peer survey system
