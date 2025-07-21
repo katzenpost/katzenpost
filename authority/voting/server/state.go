@@ -499,6 +499,57 @@ func (s *state) getMyConsensus(epoch uint64) (*pki.Document, error) {
 	s.logVoteTallyResults(epoch, mixes, replicas, params)
 
 	s.log.Noticef("🔍 CERTIFICATE GENERATION: Creating document for epoch %v", epoch)
+
+	// Validate we have minimum required nodes before creating document
+	gateways := 0
+	serviceNodes := 0
+	mixNodes := 0
+	for _, mix := range mixes {
+		if mix.IsGatewayNode {
+			gateways++
+		} else if mix.IsServiceNode {
+			serviceNodes++
+		} else {
+			mixNodes++
+		}
+	}
+
+	minMixNodes := s.s.cfg.Debug.Layers * s.s.cfg.Debug.MinNodesPerLayer
+	s.log.Noticef("🔍 CERTIFICATE GENERATION: Pre-document validation for epoch %v", epoch)
+	s.log.Noticef("  Gateway nodes: %d (required: >0) %s", gateways, func() string {
+		if gateways > 0 {
+			return "✅"
+		}
+		return "❌"
+	}())
+	s.log.Noticef("  Service nodes: %d (required: >0) %s", serviceNodes, func() string {
+		if serviceNodes > 0 {
+			return "✅"
+		}
+		return "❌"
+	}())
+	s.log.Noticef("  Mix nodes: %d (required: >=%d) %s", mixNodes, minMixNodes, func() string {
+		if mixNodes >= minMixNodes {
+			return "✅"
+		}
+		return "❌"
+	}())
+	s.log.Noticef("  Storage replicas: %d", len(replicas))
+
+	if gateways == 0 {
+		s.log.Errorf("❌ CERTIFICATE GENERATION FAILURE: No gateway nodes available")
+		return nil, fmt.Errorf("certificate generation failed: no gateway nodes")
+	}
+	if serviceNodes == 0 {
+		s.log.Errorf("❌ CERTIFICATE GENERATION FAILURE: No service nodes available")
+		return nil, fmt.Errorf("certificate generation failed: no service nodes")
+	}
+	if mixNodes < minMixNodes {
+		s.log.Errorf("❌ CERTIFICATE GENERATION FAILURE: Insufficient mix nodes: have %d, need %d", mixNodes, minMixNodes)
+		return nil, fmt.Errorf("certificate generation failed: insufficient mix nodes")
+	}
+
+	s.log.Noticef("✅ CERTIFICATE GENERATION: All node requirements met, proceeding with document creation")
 	consensusOfOne := s.getDocument(mixes, replicas, params, srv)
 
 	// Add the SharedRandomCommit and SharedRandomReveal that were used to compute the consensus
@@ -588,6 +639,8 @@ func (s *state) identityPubKeyHash() [publicKeyHashSize]byte {
 }
 
 func (s *state) getDocument(descriptors []*pki.MixDescriptor, replicaDescriptors []*pki.ReplicaDescriptor, params *config.Parameters, srv []byte) *pki.Document {
+	s.log.Noticef("🔍 DOCUMENT CREATION: Starting document creation with %d descriptors, %d replicas", len(descriptors), len(replicaDescriptors))
+
 	// Carve out the descriptors between providers and nodes.
 	gateways := []*pki.MixDescriptor{}
 	serviceNodes := []*pki.MixDescriptor{}
@@ -596,12 +649,18 @@ func (s *state) getDocument(descriptors []*pki.MixDescriptor, replicaDescriptors
 	for _, v := range descriptors {
 		if v.IsGatewayNode {
 			gateways = append(gateways, v)
+			s.log.Debugf("🔍 DOCUMENT CREATION: Added gateway node '%s'", v.Name)
 		} else if v.IsServiceNode {
 			serviceNodes = append(serviceNodes, v)
+			s.log.Debugf("🔍 DOCUMENT CREATION: Added service node '%s'", v.Name)
 		} else {
 			nodes = append(nodes, v)
+			s.log.Debugf("🔍 DOCUMENT CREATION: Added mix node '%s'", v.Name)
 		}
 	}
+
+	s.log.Noticef("🔍 DOCUMENT CREATION: Node categorization complete - gateways: %d, service: %d, mix: %d",
+		len(gateways), len(serviceNodes), len(nodes))
 
 	// Assign nodes to layers.
 	var topology [][]*pki.MixDescriptor
