@@ -426,44 +426,52 @@ func (c *Client) Post(ctx context.Context, epoch uint64, signingPrivateKey sign.
 	}
 	// Parse the post_descriptor_status command.
 	errs := []error{}
+	successCount := 0
+
+	c.log.Noticef("📤 DESCRIPTOR POST: Processing responses from %d authorities for epoch %d", len(peerResponses), epoch)
+
 	for _, peerResp := range peerResponses {
+		peerInfo := fmt.Sprintf("peer %s (%s, identity=%s, link=%s)",
+			peerResp.Peer.Identifier,
+			strings.Join(peerResp.Peer.Addresses, ","),
+			strings.TrimSpace(signpem.ToPublicPEMString(peerResp.Peer.IdentityPublicKey)),
+			strings.TrimSpace(kempem.ToPublicPEMString(peerResp.Peer.LinkPublicKey)))
+
 		if peerResp.Error != nil {
-			errs = append(errs, fmt.Errorf("peer %s (%s, identity=%s, link=%s): %v",
-				peerResp.Peer.Identifier,
-				strings.Join(peerResp.Peer.Addresses, ","),
-				strings.TrimSpace(signpem.ToPublicPEMString(peerResp.Peer.IdentityPublicKey)),
-				strings.TrimSpace(kempem.ToPublicPEMString(peerResp.Peer.LinkPublicKey)),
-				peerResp.Error))
+			c.log.Errorf("❌ DESCRIPTOR POST: Connection/transport error to %s: %v", peerResp.Peer.Identifier, peerResp.Error)
+			errs = append(errs, fmt.Errorf("%s: %v", peerInfo, peerResp.Error))
 			continue
 		}
+
 		r, ok := peerResp.Response.(*commands.PostDescriptorStatus)
 		if !ok {
-			errs = append(errs, fmt.Errorf("peer %s (%s, identity=%s, link=%s): unexpected reply: %T",
-				peerResp.Peer.Identifier,
-				strings.Join(peerResp.Peer.Addresses, ","),
-				strings.TrimSpace(signpem.ToPublicPEMString(peerResp.Peer.IdentityPublicKey)),
-				strings.TrimSpace(kempem.ToPublicPEMString(peerResp.Peer.LinkPublicKey)),
-				peerResp.Response))
+			c.log.Errorf("❌ DESCRIPTOR POST: Invalid response type from %s: got %T, expected PostDescriptorStatus",
+				peerResp.Peer.Identifier, peerResp.Response)
+			errs = append(errs, fmt.Errorf("%s: unexpected reply: %T", peerInfo, peerResp.Response))
 			continue
 		}
+
 		switch r.ErrorCode {
 		case commands.DescriptorOk:
+			c.log.Noticef("✅ DESCRIPTOR POST: Successfully uploaded to %s for epoch %d", peerResp.Peer.Identifier, epoch)
+			successCount++
 		case commands.DescriptorConflict:
-			errs = append(errs, fmt.Errorf("peer %s (%s, identity=%s, link=%s): %v",
-				peerResp.Peer.Identifier,
-				strings.Join(peerResp.Peer.Addresses, ","),
-				strings.TrimSpace(signpem.ToPublicPEMString(peerResp.Peer.IdentityPublicKey)),
-				strings.TrimSpace(kempem.ToPublicPEMString(peerResp.Peer.LinkPublicKey)),
-				pki.ErrInvalidPostEpoch))
+			c.log.Errorf("❌ DESCRIPTOR POST: Conflict/Late descriptor rejected by %s for epoch %d", peerResp.Peer.Identifier, epoch)
+			errs = append(errs, fmt.Errorf("%s: %v", peerInfo, pki.ErrInvalidPostEpoch))
+		case commands.DescriptorForbidden:
+			c.log.Errorf("❌ DESCRIPTOR POST: Descriptor forbidden by %s for epoch %d - likely authorization failure", peerResp.Peer.Identifier, epoch)
+			errs = append(errs, fmt.Errorf("%s: rejected by authority: %v (FORBIDDEN - check authorization)", peerInfo, postErrorToString(r.ErrorCode)))
+		case commands.DescriptorInvalid:
+			c.log.Errorf("❌ DESCRIPTOR POST: Invalid descriptor rejected by %s for epoch %d - malformed descriptor", peerResp.Peer.Identifier, epoch)
+			errs = append(errs, fmt.Errorf("%s: rejected by authority: %v (INVALID - malformed descriptor)", peerInfo, postErrorToString(r.ErrorCode)))
 		default:
-			errs = append(errs, fmt.Errorf("peer %s (%s, identity=%s, link=%s): rejected by authority: %v",
-				peerResp.Peer.Identifier,
-				strings.Join(peerResp.Peer.Addresses, ","),
-				strings.TrimSpace(signpem.ToPublicPEMString(peerResp.Peer.IdentityPublicKey)),
-				strings.TrimSpace(kempem.ToPublicPEMString(peerResp.Peer.LinkPublicKey)),
-				postErrorToString(r.ErrorCode)))
+			c.log.Errorf("❌ DESCRIPTOR POST: Unknown error from %s for epoch %d: %v", peerResp.Peer.Identifier, epoch, postErrorToString(r.ErrorCode))
+			errs = append(errs, fmt.Errorf("%s: rejected by authority: %v", peerInfo, postErrorToString(r.ErrorCode)))
 		}
 	}
+
+	c.log.Noticef("📊 DESCRIPTOR POST SUMMARY: %d successes, %d failures out of %d authorities for epoch %d",
+		successCount, len(errs), len(peerResponses), epoch)
 	if len(errs) == 0 {
 		return nil
 	}
