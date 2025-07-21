@@ -140,7 +140,9 @@ func (p *pki) worker() {
 			return
 		}
 		if err != nil {
-			p.log.Warningf("Failed to post to PKI: %v", err)
+			p.log.Errorf("❌ PKI UPLOAD FAILURE: Failed to post to PKI: %v", err)
+			p.log.Errorf("❌ PKI UPLOAD FAILURE: This service node will not appear in authority votes")
+			p.log.Errorf("❌ PKI UPLOAD FAILURE: Check detailed error messages above for specific failure reasons")
 		}
 		// Fetch the PKI documents as required.
 		var didUpdate bool
@@ -451,19 +453,31 @@ func (p *pki) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 	}
 
 	// Post the descriptor to all the authorities.
+	nodeType := "mix"
+	if desc.IsGatewayNode {
+		nodeType = "gateway"
+	} else if desc.IsServiceNode {
+		nodeType = "service"
+	}
+
+	p.log.Noticef("🔄 DESCRIPTOR UPLOAD: Attempting to upload %s node descriptor '%s' for epoch %d", nodeType, desc.Name, doPublishEpoch)
+	p.log.Noticef("🔄 DESCRIPTOR UPLOAD: Node details - IsGateway: %v, IsService: %v", desc.IsGatewayNode, desc.IsServiceNode)
+
 	err = p.impl.Post(pkiCtx, doPublishEpoch, p.glue.IdentityKey(), p.glue.IdentityPublicKey(), desc, p.glue.Decoy().GetStats(doPublishEpoch))
 	switch err {
 	case nil:
-		p.log.Debugf("Posted descriptor for epoch: %v", doPublishEpoch)
+		p.log.Noticef("✅ DESCRIPTOR UPLOAD: Successfully posted %s node descriptor '%s' for epoch %d", nodeType, desc.Name, doPublishEpoch)
 		p.lastPublishedEpoch = doPublishEpoch
 	case cpki.ErrInvalidPostEpoch:
 		// Treat this class (conflict/late descriptor) as a permanent rejection
 		// and suppress further uploads.
-		p.log.Warningf("Authority rejected upload for epoch: %v (Conflict/Late)", doPublishEpoch)
+		p.log.Errorf("❌ DESCRIPTOR UPLOAD: Authority rejected %s node '%s' upload for epoch %d (Conflict/Late)", nodeType, desc.Name, doPublishEpoch)
 		p.lastPublishedEpoch = doPublishEpoch
 	default:
 		// XXX: the voting authority implementation does not return any of the above error types...
 		// and the mix will continue to fail to submit the same descriptor repeatedly.
+		p.log.Errorf("❌ DESCRIPTOR UPLOAD: Failed to upload %s node '%s' descriptor for epoch %d: %v", nodeType, desc.Name, doPublishEpoch, err)
+		p.log.Errorf("❌ DESCRIPTOR UPLOAD: This means the %s node will not appear in the consensus", nodeType)
 		p.lastPublishedEpoch = doPublishEpoch
 	}
 
