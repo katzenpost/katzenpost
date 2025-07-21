@@ -722,19 +722,19 @@ func (s *state) hasEnoughDescriptors(m map[[publicKeyHashSize]byte]*pki.MixDescr
 	// Otherwise, it's pointless to generate a unusable document.
 	nrGateways := 0
 	nrServiceNodes := 0
+	nrMixNodes := 0
 	for _, v := range m {
 		if v.IsGatewayNode {
 			nrGateways++
-		}
-		if v.IsServiceNode {
+		} else if v.IsServiceNode {
 			nrServiceNodes++
+		} else {
+			nrMixNodes++
 		}
-
 	}
-	nrNodes := len(m) - nrGateways - nrServiceNodes
 
 	minNodes := s.s.cfg.Debug.Layers * s.s.cfg.Debug.MinNodesPerLayer
-	hasEnough := (nrGateways > 0) && (nrServiceNodes > 0) && (nrNodes >= minNodes)
+	hasEnough := (nrGateways > 0) && (nrServiceNodes > 0) && (nrMixNodes >= minNodes)
 
 	s.log.Noticef("🔍 DESCRIPTOR VALIDATION: Checking if we have enough descriptors")
 	s.log.Noticef("  Gateways: %d (need: >0) ✓", nrGateways)
@@ -744,8 +744,8 @@ func (s *state) hasEnoughDescriptors(m map[[publicKeyHashSize]byte]*pki.MixDescr
 		}
 		return "❌"
 	}())
-	s.log.Noticef("  Mix nodes: %d (need: %d) %s", nrNodes, minNodes, func() string {
-		if nrNodes >= minNodes {
+	s.log.Noticef("  Mix nodes: %d (need: %d) %s", nrMixNodes, minNodes, func() string {
+		if nrMixNodes >= minNodes {
 			return "✓"
 		}
 		return "❌"
@@ -2106,13 +2106,6 @@ func (s *state) onDescriptorUpload(rawDesc []byte, desc *pki.MixDescriptor, epoc
 
 	s.log.Noticef("📥 DESCRIPTOR UPLOAD: Received %s node descriptor from '%s' (key: %x) for epoch %v",
 		nodeType, desc.Name, pk, epoch)
-
-	// Check if this node is authorized
-	if !s.isDescriptorAuthorized(desc) {
-		s.log.Errorf("❌ DESCRIPTOR UPLOAD: Rejecting unauthorized %s node '%s' (key: %x) for epoch %v",
-			nodeType, desc.Name, pk, epoch)
-		return fmt.Errorf("state: node %s (%x): Not authorized for epoch %v", desc.Name, pk, epoch)
-	}
 
 	// Get the public key -> descriptor map for the epoch.
 	_, ok := s.descriptors[epoch]

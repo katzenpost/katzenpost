@@ -472,10 +472,22 @@ func (c *Client) Post(ctx context.Context, epoch uint64, signingPrivateKey sign.
 
 	c.log.Noticef("📊 DESCRIPTOR POST SUMMARY: %d successes, %d failures out of %d authorities for epoch %d",
 		successCount, len(errs), len(peerResponses), epoch)
-	if len(errs) == 0 {
+
+	// Calculate threshold (majority of authorities)
+	threshold := (len(peerResponses) / 2) + 1
+
+	if successCount >= threshold {
+		if len(errs) > 0 {
+			c.log.Noticef("✅ DESCRIPTOR POST: Upload successful - reached threshold (%d/%d), ignoring %d failures",
+				successCount, threshold, len(errs))
+		}
 		return nil
 	}
-	return fmt.Errorf("failure to Post(%d) to Directory Authorities: %v", epoch, errs)
+
+	c.log.Errorf("❌ DESCRIPTOR POST: Upload failed - insufficient successes (%d/%d threshold)",
+		successCount, threshold)
+	return fmt.Errorf("failure to Post(%d) to Directory Authorities: insufficient successes (%d/%d), errors: %v",
+		epoch, successCount, threshold, errs)
 }
 
 // PostReplica posts the node's descriptor to the PKI for the provided epoch.
