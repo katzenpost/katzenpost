@@ -29,7 +29,7 @@ warped?=true
 no_decoy?=true
 no_mixdecoy?=true
 mixes=3
-auths=3
+auths=4
 gateways=1
 serviceNodes=1
 
@@ -113,7 +113,7 @@ $(docker_compose_yml): ../cmd/genconfig/main.go $(distro)_base.stamp | $(net_nam
 	$(docker) run ${docker_args} --rm katzenpost-$(distro)_base \
 		$(sh) -c 'cd cmd/genconfig && go build && cd ../../docker \
 		&& ../cmd/genconfig/genconfig --wirekem $(wirekem) --addr ${bind_addr} --nrVoting ${auths} --nodes ${mixes} --gateways ${gateways} \
-		--serviceNodes ${serviceNodes} \
+		--serviceNodes ${serviceNodes} --storageNodes 0 \
 		--sendRate ${sr} --mu ${mu} --muMax ${muMax} --lambdaP ${lP} --lambdaPMax ${lPMax} --lambdaL ${lL} \
 		--lambdaLMax ${lLMax} --lambdaD ${lD} --lambdaDMax ${lDMax} --lambdaM ${lM} --lambdaMMax ${lMMax} \
 		--binSuffix .$(distro) --voting --outDir ./$(net_name) --baseDir /$(net_name) --port $(base_port) \
@@ -126,7 +126,7 @@ $(docker_compose_yml): ../cmd/genconfig/main.go $(distro)_base.stamp | $(net_nam
 config-only: | $(net_name)
 	@echo "Generating mixnet configuration files without docker containers..."
 	cd ../cmd/genconfig && go build && ./genconfig --wirekem $(wirekem) --addr ${bind_addr} --nrVoting ${auths} --nodes ${mixes} --gateways ${gateways} \
-		--serviceNodes ${serviceNodes} \
+		--serviceNodes ${serviceNodes} --storageNodes 0 \
 		--sendRate ${sr} --mu ${mu} --muMax ${muMax} --lambdaP ${lP} --lambdaPMax ${lPMax} --lambdaL ${lL} \
 		--lambdaLMax ${lLMax} --lambdaD ${lD} --lambdaDMax ${lDMax} --lambdaM ${lM} --lambdaMMax ${lMMax} \
 		--voting --outDir ../../docker/$(net_name) --baseDir /$(net_name) --port $(base_port) \
