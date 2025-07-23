@@ -298,46 +298,66 @@ type PeerResponse struct {
 }
 
 func (p *connector) allPeersRoundTrip(ctx context.Context, linkKey kem.PrivateKey, signingKey sign.PublicKey, cmd commands.Command) ([]PeerResponse, error) {
+	p.log.Debugf("allPeersRoundTrip: Starting round trip to %d authorities", len(p.cfg.Authorities))
 	peerResponses := []PeerResponse{}
-	for _, peer := range p.cfg.Authorities {
+	successfulConnections := 0
+	failedConnections := 0
+
+	for i, peer := range p.cfg.Authorities {
+		p.log.Debugf("allPeersRoundTrip: Attempting connection %d/%d to authority %s", i+1, len(p.cfg.Authorities), peer.Identifier)
 		ictx, cancelFn := context.WithCancel(ctx)
 		defer cancelFn()
 		conn, err := p.initSession(ictx, linkKey, signingKey, peer)
 		if err != nil {
-			p.log.Noticef("pki/voting/client: failure to connect to Authority %s (%x)\n", peer.Identifier, hash.Sum256From(peer.IdentityPublicKey))
+			failedConnections++
+			p.log.Errorf("allPeersRoundTrip: Failed to connect to authority %s (%x): %v", peer.Identifier, hash.Sum256From(peer.IdentityPublicKey), err)
 			peerResponses = append(peerResponses, PeerResponse{
 				Peer:  peer,
 				Error: fmt.Errorf("connection failed: %v", err),
 			})
 			continue
 		}
+		p.log.Debugf("allPeersRoundTrip: Successfully connected to authority %s", peer.Identifier)
+
 		resp, err := p.roundTrip(conn.session, cmd)
 		if err != nil {
-			p.log.Noticef("pki/voting/client: failure in sending command to Authority peer %s: %s", peer, err)
+			failedConnections++
+			p.log.Errorf("allPeersRoundTrip: Round trip failed to authority %s: %s", peer.Identifier, err)
 			peerResponses = append(peerResponses, PeerResponse{
 				Peer:  peer,
 				Error: fmt.Errorf("round trip failed: %v", err),
 			})
 			continue
 		}
+		successfulConnections++
+		p.log.Debugf("allPeersRoundTrip: Successfully completed round trip to authority %s", peer.Identifier)
 		peerResponses = append(peerResponses, PeerResponse{
 			Peer:     peer,
 			Response: resp,
 		})
 	}
+
+	p.log.Debugf("allPeersRoundTrip: Completed round trip attempts: %d successful, %d failed out of %d total", successfulConnections, failedConnections, len(p.cfg.Authorities))
+
 	if len(peerResponses) == 0 {
+		p.log.Errorf("allPeersRoundTrip: CRITICAL FAILURE - got zero responses from all %d authorities", len(p.cfg.Authorities))
 		return nil, errors.New("allPeerRoundTrip failure, got zero responses")
 	}
 	return peerResponses, nil
 }
 
 func (p *connector) fetchConsensus(auth *config.Authority, ctx context.Context, linkKey kem.PrivateKey, epoch uint64) (commands.Command, error) {
+	p.log.Debugf("fetchConsensus: Starting consensus fetch from authority %s for epoch %d", auth.Identifier, epoch)
+
 	if len(p.cfg.Authorities) == 0 {
+		p.log.Errorf("fetchConsensus: CONFIGURATION ERROR - zero authorities specified")
 		return nil, errors.New("error: zero Authorities specified in configuration")
 	}
 
+	p.log.Debugf("fetchConsensus: Initializing session with authority %s (addresses: %s)", auth.Identifier, strings.Join(auth.Addresses, ","))
 	conn, err := p.initSession(ctx, linkKey, nil, auth)
 	if err != nil {
+		p.log.Errorf("fetchConsensus: Session initialization failed with authority %s: %v", auth.Identifier, err)
 		return nil, fmt.Errorf("peer %s (%s, identity=%s, link=%s): connection failed: %v",
 			auth.Identifier,
 			strings.Join(auth.Addresses, ","),
@@ -345,16 +365,22 @@ func (p *connector) fetchConsensus(auth *config.Authority, ctx context.Context, 
 			kpcommon.TruncatePEMForLogging(kempem.ToPublicPEMString(auth.LinkPublicKey)),
 			err)
 	}
+	p.log.Debugf("fetchConsensus: Successfully established session with authority %s", auth.Identifier)
+
 	// Removed verbose debug logs that print keys
 	cmd := &commands.GetConsensus{
 		Epoch:              epoch,
 		Cmds:               commands.NewPKICommands(p.cfg.PKISignatureScheme),
 		MixnetTransmission: false, // Disable padding for direct dirauth transmission
 	}
+	p.log.Debugf("fetchConsensus: Sending GetConsensus command to authority %s for epoch %d", auth.Identifier, epoch)
+
 	resp, err := p.roundTrip(conn.session, cmd)
 	if err != nil {
+		p.log.Errorf("fetchConsensus: Round trip failed to authority %s for epoch %d: %v", auth.Identifier, epoch, err)
 		r, ok := resp.(*commands.Consensus)
 		if !ok {
+			p.log.Errorf("fetchConsensus: Round trip failed and response is not Consensus type from authority %s", auth.Identifier)
 			return nil, fmt.Errorf("peer %s (%s, identity=%s, link=%s): round trip failed: %v",
 				auth.Identifier,
 				strings.Join(auth.Addresses, ","),
@@ -362,7 +388,7 @@ func (p *connector) fetchConsensus(auth *config.Authority, ctx context.Context, 
 				kpcommon.TruncatePEMForLogging(kempem.ToPublicPEMString(auth.LinkPublicKey)),
 				err)
 		} else {
-			p.log.Noticef("got response from %s to GetConsensus(%d) (err=%v res=%s)", auth.Identifier, epoch, err, getErrorToString(r.ErrorCode))
+			p.log.Errorf("fetchConsensus: Got consensus response with error from authority %s for epoch %d: error=%v, errorCode=%s", auth.Identifier, epoch, err, getErrorToString(r.ErrorCode))
 			return nil, fmt.Errorf("peer %s (%s, identity=%s, link=%s): consensus error: %v (%s)",
 				auth.Identifier,
 				strings.Join(auth.Addresses, ","),
@@ -371,8 +397,11 @@ func (p *connector) fetchConsensus(auth *config.Authority, ctx context.Context, 
 				err, getErrorToString(r.ErrorCode))
 		}
 	}
+	p.log.Debugf("fetchConsensus: Successfully received response from authority %s for epoch %d", auth.Identifier, epoch)
+
 	r, ok := resp.(*commands.Consensus)
 	if !ok {
+		p.log.Errorf("fetchConsensus: Response from authority %s is not Consensus type: %T", auth.Identifier, resp)
 		return nil, fmt.Errorf("peer %s (%s, identity=%s, link=%s): invalid command type: %T",
 			auth.Identifier,
 			strings.Join(auth.Addresses, ","),
@@ -381,6 +410,7 @@ func (p *connector) fetchConsensus(auth *config.Authority, ctx context.Context, 
 			resp)
 	}
 
+	p.log.Debugf("fetchConsensus: Successfully fetched consensus from authority %s for epoch %d", auth.Identifier, epoch)
 	return r, nil
 }
 
@@ -568,23 +598,30 @@ func (c *Client) PostReplica(ctx context.Context, epoch uint64, signingPrivateKe
 
 // Get returns the PKI document along with the raw serialized form for the provided epoch.
 func (c *Client) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, error) {
-	c.log.Noticef("Get(ctx, %d)", epoch)
+	c.log.Noticef("Get: Starting consensus fetch for epoch %d from %d authorities", epoch, len(c.cfg.Authorities))
 
 	// Generate a random keypair to use for the link authentication.
 	_, linkKey, err := c.cfg.KEMScheme.GenerateKeyPair()
 	if err != nil {
+		c.log.Errorf("Get: Failed to generate link key for epoch %d: %v", epoch, err)
 		return nil, nil, err
 	}
+	c.log.Debugf("Get: Generated link key for epoch %d", epoch)
 
 	// permute the order the client tries Authorities
 	r := rand.NewMath()
 	idxs := r.Perm(len(c.cfg.Authorities))
+	c.log.Debugf("Get: Randomized authority order for epoch %d: %v", epoch, idxs)
 
 	// Collect detailed error information from each peer
 	var peerErrors []error
+	attemptCount := 0
 
 	for _, idx := range idxs {
+		attemptCount++
 		auth := c.cfg.Authorities[idx]
+		c.log.Debugf("Get: Attempt %d/%d - trying authority %s for epoch %d", attemptCount, len(c.cfg.Authorities), auth.Identifier, epoch)
+
 		ctx, cancelFn := context.WithCancel(ctx)
 		resp, err := c.pool.fetchConsensus(auth, ctx, linkKey, epoch)
 		defer cancelFn()
@@ -595,12 +632,14 @@ func (c *Client) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, 
 				kpcommon.TruncatePEMForLogging(signpem.ToPublicPEMString(auth.IdentityPublicKey)),
 				kpcommon.TruncatePEMForLogging(kempem.ToPublicPEMString(auth.LinkPublicKey)),
 				err)
-			c.log.Errorf("GetConsensus from %s failed: %s", auth.Identifier, err)
+			c.log.Errorf("Get: Attempt %d/%d failed - fetchConsensus from authority %s for epoch %d failed: %s", attemptCount, len(c.cfg.Authorities), auth.Identifier, epoch, err)
 			peerErrors = append(peerErrors, peerErr)
 			continue
 		}
+		c.log.Debugf("Get: Attempt %d/%d - successfully fetched response from authority %s for epoch %d", attemptCount, len(c.cfg.Authorities), auth.Identifier, epoch)
 
 		// Parse the consensus command.
+		c.log.Debugf("Get: Parsing consensus response from authority %s for epoch %d", auth.Identifier, epoch)
 		r, ok := resp.(*commands.Consensus)
 		if !ok {
 			peerErr := fmt.Errorf("peer %s (%s, identity=%s, link=%s): unexpected reply: %T",
@@ -609,19 +648,22 @@ func (c *Client) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, 
 				strings.TrimSpace(signpem.ToPublicPEMString(auth.IdentityPublicKey)),
 				strings.TrimSpace(kempem.ToPublicPEMString(auth.LinkPublicKey)),
 				resp)
-			c.log.Errorf("GetConsensus from %s returned unexpected reply: %T", auth.Identifier, resp)
+			c.log.Errorf("Get: Authority %s returned unexpected reply type %T for epoch %d", auth.Identifier, resp, epoch)
 			peerErrors = append(peerErrors, peerErr)
 			continue
 		}
+		c.log.Debugf("Get: Successfully parsed consensus response from authority %s for epoch %d, error code: %s", auth.Identifier, epoch, getErrorToString(r.ErrorCode))
+
 		switch r.ErrorCode {
 		case commands.ConsensusOk:
+			c.log.Debugf("Get: Authority %s returned ConsensusOk for epoch %d", auth.Identifier, epoch)
 		case commands.ConsensusGone:
 			peerErr := fmt.Errorf("peer %s (%s, identity=%s, link=%s): consensus gone",
 				auth.Identifier,
 				strings.Join(auth.Addresses, ","),
 				strings.TrimSpace(signpem.ToPublicPEMString(auth.IdentityPublicKey)),
 				strings.TrimSpace(kempem.ToPublicPEMString(auth.LinkPublicKey)))
-			c.log.Errorf("GetConsensus from %s returned ConsensusGone", auth.Identifier)
+			c.log.Errorf("Get: Authority %s returned ConsensusGone for epoch %d - document will never be available", auth.Identifier, epoch)
 			peerErrors = append(peerErrors, peerErr)
 			continue
 		case commands.ConsensusNotFound:
@@ -630,7 +672,7 @@ func (c *Client) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, 
 				strings.Join(auth.Addresses, ","),
 				strings.TrimSpace(signpem.ToPublicPEMString(auth.IdentityPublicKey)),
 				strings.TrimSpace(kempem.ToPublicPEMString(auth.LinkPublicKey)))
-			c.log.Errorf("GetConsensus from %s returned ConsensusNotFound", auth.Identifier)
+			c.log.Errorf("Get: Authority %s returned ConsensusNotFound for epoch %d - document not yet available", auth.Identifier, epoch)
 			peerErrors = append(peerErrors, peerErr)
 			continue
 		default:
@@ -640,12 +682,13 @@ func (c *Client) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, 
 				strings.TrimSpace(signpem.ToPublicPEMString(auth.IdentityPublicKey)),
 				strings.TrimSpace(kempem.ToPublicPEMString(auth.LinkPublicKey)),
 				getErrorToString(r.ErrorCode))
-			c.log.Errorf("GetConsensus from %s rejected with %v", auth.Identifier, getErrorToString(r.ErrorCode))
+			c.log.Errorf("Get: Authority %s rejected request for epoch %d with error: %v", auth.Identifier, epoch, getErrorToString(r.ErrorCode))
 			peerErrors = append(peerErrors, peerErr)
 			continue
 		}
 
 		// Verify document signatures.
+		c.log.Debugf("Get: Verifying threshold signatures from authority %s for epoch %d (threshold: %d)", auth.Identifier, epoch, c.threshold)
 		doc := &pki.Document{}
 		_, good, bad, err := cert.VerifyThreshold(c.verifiers, c.threshold, r.Payload)
 		if err != nil {
@@ -655,23 +698,27 @@ func (c *Client) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, 
 				kpcommon.TruncatePEMForLogging(signpem.ToPublicPEMString(auth.IdentityPublicKey)),
 				kpcommon.TruncatePEMForLogging(kempem.ToPublicPEMString(auth.LinkPublicKey)),
 				len(good), len(bad), err)
-			c.log.Errorf("VerifyThreshold failure: %d good signatures, %d bad signatures: %v", len(good), len(bad), err)
+			c.log.Errorf("Get: Signature verification failed from authority %s for epoch %d: %d good signatures, %d bad signatures: %v", auth.Identifier, epoch, len(good), len(bad), err)
 			peerErrors = append(peerErrors, peerErr)
 			continue
 		}
+		c.log.Debugf("Get: Signature verification passed from authority %s for epoch %d: %d good, %d bad signatures", auth.Identifier, epoch, len(good), len(bad))
+
 		if len(good) == len(c.cfg.Authorities) {
-			c.log.Notice("OK, received fully signed consensus document.")
+			c.log.Noticef("Get: Received fully signed consensus document from authority %s for epoch %d", auth.Identifier, epoch)
 		} else {
-			c.log.Noticef("OK, received consensus document with %d of %d signatures)", len(good), len(c.cfg.Authorities))
-			for _, auth := range c.cfg.Authorities {
+			c.log.Noticef("Get: Received consensus document from authority %s for epoch %d with %d of %d signatures", auth.Identifier, epoch, len(good), len(c.cfg.Authorities))
+			for _, authConfig := range c.cfg.Authorities {
 				for _, badauth := range bad {
-					if badauth == auth.IdentityPublicKey {
-						c.log.Noticef("missing or invalid signature from %s", auth.Identifier)
+					if badauth == authConfig.IdentityPublicKey {
+						c.log.Warningf("Get: Missing or invalid signature from authority %s for epoch %d", authConfig.Identifier, epoch)
 						break
 					}
 				}
 			}
 		}
+
+		c.log.Debugf("Get: Parsing consensus document from authority %s for epoch %d", auth.Identifier, epoch)
 		doc, err = pki.ParseDocument(r.Payload)
 		if err != nil {
 			peerErr := fmt.Errorf("peer %s (%s, identity=%s, link=%s): invalid consensus document: %v",
@@ -680,11 +727,13 @@ func (c *Client) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, 
 				strings.TrimSpace(signpem.ToPublicPEMString(auth.IdentityPublicKey)),
 				strings.TrimSpace(kempem.ToPublicPEMString(auth.LinkPublicKey)),
 				err)
-			c.log.Errorf("voting/Client: Get() invalid consensus document: %s", err)
+			c.log.Errorf("Get: Failed to parse consensus document from authority %s for epoch %d: %s", auth.Identifier, epoch, err)
 			peerErrors = append(peerErrors, peerErr)
 			continue
 		}
+		c.log.Debugf("Get: Successfully parsed consensus document from authority %s for epoch %d", auth.Identifier, epoch)
 
+		c.log.Debugf("Get: Validating document structure from authority %s for epoch %d", auth.Identifier, epoch)
 		err = pki.IsDocumentWellFormed(doc, c.verifiers)
 		if err != nil {
 			peerErr := fmt.Errorf("peer %s (%s, identity=%s, link=%s): document not well formed: %v",
@@ -693,10 +742,11 @@ func (c *Client) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, 
 				strings.TrimSpace(signpem.ToPublicPEMString(auth.IdentityPublicKey)),
 				strings.TrimSpace(kempem.ToPublicPEMString(auth.LinkPublicKey)),
 				err)
-			c.log.Errorf("voting/Client: IsDocumentWellFormed: %s", err)
+			c.log.Errorf("Get: Document validation failed from authority %s for epoch %d: %s", auth.Identifier, epoch, err)
 			peerErrors = append(peerErrors, peerErr)
 			continue
 		}
+		c.log.Debugf("Get: Document structure validation passed from authority %s for epoch %d", auth.Identifier, epoch)
 
 		if doc.Epoch != epoch {
 			peerErr := fmt.Errorf("peer %s (%s, identity=%s, link=%s): wrong epoch: got %d, expected %d",
@@ -705,20 +755,31 @@ func (c *Client) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, 
 				strings.TrimSpace(signpem.ToPublicPEMString(auth.IdentityPublicKey)),
 				strings.TrimSpace(kempem.ToPublicPEMString(auth.LinkPublicKey)),
 				doc.Epoch, epoch)
-			c.log.Errorf("voting/Client: Get() consensus document for WRONG epoch: %v", doc.Epoch)
+			c.log.Errorf("Get: EPOCH MISMATCH from authority %s: got epoch %d, expected %d", auth.Identifier, doc.Epoch, epoch)
 			peerErrors = append(peerErrors, peerErr)
 			continue
 		}
-		c.log.Debugf("voting/Client: Get() document:\n%s", doc)
+		c.log.Debugf("Get: Epoch validation passed from authority %s: document epoch %d matches requested epoch %d", auth.Identifier, doc.Epoch, epoch)
+
+		c.log.Noticef("Get: SUCCESS! Retrieved valid consensus document from authority %s for epoch %d", auth.Identifier, epoch)
+		c.log.Debugf("Get: Final consensus details - epoch: %d, genesis: %d, mix nodes: %d, gateways: %d, services: %d, replicas: %d",
+			doc.Epoch, doc.GenesisEpoch, len(doc.Topology), len(doc.GatewayNodes), len(doc.ServiceNodes), len(doc.StorageReplicas))
+		c.log.Debugf("Get: Consensus document from authority %s for epoch %d:\n%s", auth.Identifier, epoch, doc)
 		return doc, r.Payload, nil
 	}
 
 	// All authorities failed, return detailed error information
+	c.log.Errorf("Get: CRITICAL FAILURE - All %d authorities failed for epoch %d", len(c.cfg.Authorities), epoch)
 	e, _, _ := epochtime.Now()
 	if len(peerErrors) > 0 {
+		for i, peerErr := range peerErrors {
+			c.log.Errorf("Get: Authority %d failure: %s", i+1, peerErr.Error())
+		}
 		if epoch <= e {
+			c.log.Errorf("Get: Failed to get consensus for past/current epoch %d (current: %d)", epoch, e)
 			return nil, nil, fmt.Errorf("failed to get consensus document (epoch %d <= current %d): %v", epoch, e, peerErrors)
 		} else {
+			c.log.Errorf("Get: Failed to get consensus for future epoch %d (current: %d)", epoch, e)
 			return nil, nil, fmt.Errorf("failed to get consensus document (epoch %d > current %d): %v", epoch, e, peerErrors)
 		}
 	}
