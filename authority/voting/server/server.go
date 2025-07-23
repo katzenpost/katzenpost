@@ -349,9 +349,13 @@ func New(cfg *config.Config) (*Server, error) {
 	go func() {
 		err, ok := <-s.fatalErrCh
 		if !ok {
+			s.log.Debugf("Fatal error channel closed gracefully")
 			return
 		}
-		s.log.Warningf("Shutting down due to error: %v", err)
+		s.log.Errorf("FATAL ERROR DETECTED - Authority shutting down immediately!")
+		s.log.Errorf("Fatal error details: %v", err)
+		s.log.Errorf("Fatal error type: %T", err)
+		s.log.Errorf("This fatal error has triggered an emergency shutdown of the authority")
 		s.Shutdown()
 	}()
 

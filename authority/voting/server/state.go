@@ -271,15 +271,17 @@ func (s *state) fsm() <-chan time.Time {
 			// detach signature and send to authorities
 			sig, ok := doc.Signatures[s.identityPubKeyHash()]
 			if !ok {
-				s.log.Errorf("FSM: Failed to find our signature for epoch %v in consensus document", s.votingEpoch)
-				s.s.fatalErrCh <- err
+				fatalErr := fmt.Errorf("FSM FATAL: Failed to find our signature for epoch %v in consensus document - this indicates a critical consensus building failure", s.votingEpoch)
+				s.log.Errorf("FSM: %v", fatalErr)
+				s.s.fatalErrCh <- fatalErr
 				break
 			}
 			s.log.Debugf("FSM: Found our signature in consensus document for epoch %d", s.votingEpoch)
 			serialized, err := sig.Marshal()
 			if err != nil {
-				s.log.Errorf("FSM: Failed to serialize our signature for epoch %v: %s", s.votingEpoch, err)
-				s.s.fatalErrCh <- err
+				fatalErr := fmt.Errorf("FSM FATAL: Failed to serialize our signature for epoch %v: %s - this indicates a critical cryptographic failure", s.votingEpoch, err)
+				s.log.Errorf("FSM: %v", fatalErr)
+				s.s.fatalErrCh <- fatalErr
 				break
 			}
 			s.log.Debugf("FSM: Successfully serialized our signature for epoch %d", s.votingEpoch)
@@ -339,7 +341,9 @@ func (s *state) persistDocument(epoch uint64, doc []byte) {
 		return bkt.Put(epochToBytes(epoch), doc)
 	}); err != nil {
 		// Persistence failures are FATAL.
-		s.s.fatalErrCh <- err
+		fatalErr := fmt.Errorf("PERSISTENCE FATAL: Failed to persist consensus document for epoch %d to database: %v - this indicates critical storage failure", epoch, err)
+		s.log.Errorf("persistDocument: %v", fatalErr)
+		s.s.fatalErrCh <- fatalErr
 	}
 }
 
@@ -1759,22 +1763,31 @@ func (s *state) onRevealUpload(reveal *commands.Reveal) commands.Command {
 	defer s.Unlock()
 	resp := commands.RevealStatus{}
 	pk := hash.Sum256From(reveal.PublicKey)
+	authorityName := s.authorityNames[pk]
+
+	s.log.Debugf("onRevealUpload: Received reveal from authority %s (%x) for epoch %d", authorityName, pk, reveal.Epoch)
 
 	// if not authorized
 	_, ok := s.authorizedAuthorities[pk]
 	if !ok {
-		s.log.Error("Voter not authorized.")
+		s.log.Errorf("onRevealUpload: AUTHORIZATION FAILED - reveal from authority %s (%x) not authorized for epoch %d", authorityName, pk, reveal.Epoch)
 		resp.ErrorCode = commands.RevealNotAuthorized
 		return &resp
 	}
+	s.log.Debugf("onRevealUpload: Authorization check passed for authority %s for epoch %d", authorityName, reveal.Epoch)
 
 	// verify the signature on the payload
+	s.log.Debugf("onRevealUpload: Verifying reveal signature from authority %s for epoch %d", authorityName, reveal.Epoch)
+	s.log.Debugf("onRevealUpload: Reveal payload size: %d bytes from authority %s", len(reveal.Payload), authorityName)
 	certified, err := cert.Verify(reveal.PublicKey, reveal.Payload)
 	if err != nil {
-		s.log.Error("Reveal from %s failed to verify.", s.authorityNames[pk])
+		s.log.Errorf("onRevealUpload: SIGNATURE VERIFICATION FAILED - reveal from authority %s failed to verify for epoch %d: %v", authorityName, reveal.Epoch, err)
+		s.log.Errorf("onRevealUpload: This is the exact error that caused 'RevealNotSigned' - authority %s submitted an invalid reveal signature", authorityName)
+		s.log.Errorf("onRevealUpload: Reveal payload length: %d bytes", len(reveal.Payload))
 		resp.ErrorCode = commands.RevealNotSigned
 		return &resp
 	}
+	s.log.Debugf("onRevealUpload: Reveal signature verification passed for authority %s for epoch %d", authorityName, reveal.Epoch)
 
 	e := epochFromBytes(certified[:8])
 	// received too late
@@ -2584,9 +2597,18 @@ func (s *state) doCommit(epoch uint64) ([]byte, error) {
 }
 
 func (s *state) reveal(epoch uint64) []byte {
+	s.log.Debugf("reveal: Retrieving reveal for epoch %d", epoch)
 	signed, ok := s.reveals[epoch][s.identityPubKeyHash()]
 	if !ok {
-		s.s.fatalErrCh <- errors.New("reveal() called without commit")
+		fatalErr := fmt.Errorf("REVEAL FATAL: reveal() called without commit for epoch %d - this indicates a critical SharedRandom protocol violation", epoch)
+		s.log.Errorf("reveal: %v", fatalErr)
+		s.log.Errorf("reveal: Available reveals for epoch %d: %d", epoch, len(s.reveals[epoch]))
+		for pk := range s.reveals[epoch] {
+			authorityName := s.authorityNames[pk]
+			s.log.Errorf("reveal: Have reveal from authority %s (%x)", authorityName, pk)
+		}
+		s.s.fatalErrCh <- fatalErr
 	}
+	s.log.Debugf("reveal: Successfully retrieved reveal for epoch %d", epoch)
 	return signed
 }
