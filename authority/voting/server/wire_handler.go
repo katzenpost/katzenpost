@@ -22,12 +22,11 @@ import (
 	"time"
 
 	"github.com/katzenpost/hpqc/hash"
-	kempem "github.com/katzenpost/hpqc/kem/pem"
 	"github.com/katzenpost/hpqc/kem/schemes"
 	ecdh "github.com/katzenpost/hpqc/nike/x25519"
 	"github.com/katzenpost/hpqc/rand"
+
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
-	kpcommon "github.com/katzenpost/katzenpost/common"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/wire"
@@ -35,15 +34,13 @@ import (
 )
 
 func (s *Server) onConn(conn net.Conn) {
-	// Use timeout configuration from config file
-	initialDeadline := time.Duration(s.cfg.Server.HandshakeTimeoutSec) * time.Second
-	responseDeadline := time.Duration(s.cfg.Server.ResponseTimeoutSec) * time.Second
-	closeDelay := time.Duration(s.cfg.Server.CloseDelaySec) * time.Second
+	const (
+		initialDeadline  = 30 * time.Second
+		responseDeadline = 60 * time.Second
+	)
 
 	rAddr := conn.RemoteAddr()
 	s.log.Debugf("Accepted new connection: %v", rAddr)
-	s.log.Debugf("Network timeouts: handshake=%v, response=%v, close_delay=%v",
-		initialDeadline, responseDeadline, closeDelay)
 
 	// Initialize the wire protocol session.
 	auth := &wireAuthenticator{s: s}
@@ -71,39 +68,26 @@ func (s *Server) onConn(conn net.Conn) {
 
 	// wireConn.Close calls conn.Close. In quic, sends are nonblocking and Close
 	// tears down the connection before the response was sent.
-	// So this waits after the response has been served before closing the connection.
-	// Using closeDelay to allow sufficient time for post-quantum NoOp command exchange
-	// on slower network paths between authority nodes with heavy crypto operations.
+	// So this waits 100ms after the response has been served before closing the connection.
 	defer func() {
-		<-time.After(closeDelay)
+		<-time.After(time.Millisecond * 100)
 		wireConn.Close()
 	}()
 
 	// Handshake.
-	handshakeStart := time.Now()
 	conn.SetDeadline(time.Now().Add(initialDeadline))
 	if err = wireConn.Initialize(conn); err != nil {
-		s.log.Debugf("Peer %v: Failed session handshake after %v: %v", rAddr, time.Since(handshakeStart), err)
+		s.log.Debugf("Peer %v: Failed session handshake: %v", rAddr, err)
 		return
 	}
-	handshakeDuration := time.Since(handshakeStart)
-	s.log.Debugf("Peer %v: Handshake completed successfully in %v", rAddr, handshakeDuration)
-
-	// Get timing information from the wire session
-	timing := wireConn.Timing()
 
 	// Receive a command.
 	cmd, err := wireConn.RecvCommand()
 	if err != nil {
 		s.log.Debugf("Peer %v: Failed to receive command: %v", rAddr, err)
-		// Record failed connection for survey tracking (authority peers only)
-		if auth.isAuthority {
-			s.recordConnectionTiming(auth, rAddr, false, err, &timing)
-		}
 		return
 	}
-	// Keep deadline active for response phase
-	conn.SetDeadline(time.Now().Add(responseDeadline))
+	conn.SetDeadline(time.Time{})
 
 	// Parse the command, and craft the response.
 	var resp commands.Command
@@ -119,14 +103,9 @@ func (s *Server) onConn(conn net.Conn) {
 		panic("wtf") // should only happen if there is a bug in wireAuthenticator
 	}
 
-	// Record successful connection for survey tracking (authority peers only)
-	if auth.isAuthority {
-		s.recordConnectionTiming(auth, rAddr, true, nil, &timing)
-	}
-
 	// Send the response, if any.
 	if resp != nil {
-		// Deadline already set above, no need to reset
+		conn.SetDeadline(time.Now().Add(responseDeadline))
 		if err = wireConn.SendCommand(resp); err != nil {
 			s.log.Debugf("Peer %v: Failed to send response: %v", rAddr, err)
 		}
@@ -374,28 +353,6 @@ type wireAuthenticator struct {
 	isAuthority         bool
 }
 
-// getPeerName looks up a peer's name by identity hash, checking config first then PKI document
-func (a *wireAuthenticator) getPeerName(identityHash [hash.HashSize]byte) string {
-	// First try to find in authority config (most reliable)
-	for _, auth := range a.s.cfg.Authorities {
-		if hash.Sum256From(auth.IdentityPublicKey) == identityHash {
-			return auth.Identifier
-		}
-	}
-
-	// Fallback to PKI document lookup
-	epoch, _, _ := epochtime.Now()
-	a.s.state.RLock()
-	defer a.s.state.RUnlock()
-	if doc, exists := a.s.state.documents[epoch]; exists {
-		if node, err := doc.GetNodeByKeyHash(&identityHash); err == nil {
-			return node.Name
-		}
-	}
-
-	return "unknown"
-}
-
 func (a *wireAuthenticator) IsPeerValid(creds *wire.PeerCredentials) bool {
 	switch len(creds.AdditionalData) {
 	case 0:
@@ -404,8 +361,6 @@ func (a *wireAuthenticator) IsPeerValid(creds *wire.PeerCredentials) bool {
 	case hash.HashSize:
 	default:
 		a.s.log.Warning("Rejecting authentication, invalid AD size.")
-		a.s.log.Warningf("dirauth/wireAuth: IsPeerValid(): Remote Peer Credentials: ad_size=%d (expected: 0 or %d), link_key=%s",
-			len(creds.AdditionalData), hash.HashSize, kpcommon.TruncatePEMForLogging(kempem.ToPublicPEMString(creds.PublicKey)))
 		return false
 	}
 
@@ -427,66 +382,25 @@ func (a *wireAuthenticator) IsPeerValid(creds *wire.PeerCredentials) bool {
 	case isAuthority:
 		linkKey, ok := a.s.state.authorityLinkKeys[pk]
 		if !ok {
-			peerName := a.getPeerName(pk)
-			a.s.log.Warningf("Rejecting authority authentication, no link key entry for '%s'.", peerName)
-			a.s.log.Warningf("dirauth/wireAuth: IsPeerValid(): Remote Peer Credentials: name=%s, identity_hash=%x, link_key=%s",
-				peerName, creds.AdditionalData[:hash.HashSize], kpcommon.TruncatePEMForLogging(kempem.ToPublicPEMString(creds.PublicKey)))
-			// Log expected authorities for debugging
-			a.s.log.Warningf("dirauth/wireAuth: IsPeerValid(): Expected authority link keys:")
-			for authHash, authLinkKey := range a.s.state.authorityLinkKeys {
-				authName := a.getPeerName(authHash)
-				a.s.log.Warningf("dirauth/wireAuth: IsPeerValid():   - name=%s, identity_hash=%x, link_key=%s",
-					authName, authHash[:], kpcommon.TruncatePEMForLogging(kempem.ToPublicPEMString(authLinkKey)))
-			}
+			a.s.log.Warning("Rejecting authority authentication, no link key entry.")
 			return false
 		}
 		if creds.PublicKey == nil {
-			peerName := a.getPeerName(pk)
-			a.s.log.Warningf("Rejecting authority authentication, public key is nil for '%s'.", peerName)
-			a.s.log.Warningf("dirauth/wireAuth: IsPeerValid(): Remote Peer Credentials: name=%s, identity_hash=%x, link_key=nil",
-				peerName, creds.AdditionalData[:hash.HashSize])
+			a.s.log.Warning("Rejecting authority authentication, public key is nil.")
 			return false
 		}
 		if !linkKey.Equal(creds.PublicKey) {
-			peerName := a.getPeerName(pk)
-			a.s.log.Warningf("Rejecting authority authentication, public key mismatch for '%s'.", peerName)
-			a.s.log.Warningf("dirauth/wireAuth: IsPeerValid(): Expected link key for '%s': %s",
-				peerName, kpcommon.TruncatePEMForLogging(kempem.ToPublicPEMString(linkKey)))
-			a.s.log.Warningf("dirauth/wireAuth: IsPeerValid(): Received link key for '%s': %s",
-				peerName, kpcommon.TruncatePEMForLogging(kempem.ToPublicPEMString(creds.PublicKey)))
-			a.s.log.Warningf("dirauth/wireAuth: IsPeerValid(): Remote Peer Credentials: name=%s, identity_hash=%x",
-				peerName, creds.AdditionalData[:hash.HashSize])
+			a.s.log.Warning("Rejecting authority authentication, public key mismatch.")
 			return false
 		}
-		// Log successful authority authentication
-		peerName := a.getPeerName(pk)
-		a.s.log.Debugf("Authority authentication successful for '%s' (identity_hash=%x)", peerName, pk[:])
 		a.isAuthority = true
 		return true
 	case isReplicaNode:
 		a.isReplica = true
 		return true
 	default:
-		peerName := a.getPeerName(pk)
-		a.s.log.Warningf("Rejecting authentication, peer '%s' not found in any authorized category.", peerName)
-		a.s.log.Warningf("dirauth/wireAuth: IsPeerValid(): Remote Peer Credentials: name=%s, identity_hash=%x, link_key=%s",
-			peerName, creds.AdditionalData[:hash.HashSize], kpcommon.TruncatePEMForLogging(kempem.ToPublicPEMString(creds.PublicKey)))
-		a.s.log.Warningf("dirauth/wireAuth: IsPeerValid(): Peer '%s' not found in: mixes=%t, gateways=%t, services=%t, authorities=%t, replicas=%t",
-			peerName, isMix, isGatewayNode, isServiceNode, isAuthority, isReplicaNode)
+		a.s.log.Warning("Rejecting authority authentication, public key mismatch.")
 		return false
 	}
 	// not reached
-}
-
-// recordConnectionTiming records connection timing information for survey tracking
-func (s *Server) recordConnectionTiming(auth *wireAuthenticator, rAddr net.Addr, success bool, err error, timing *wire.SessionTiming) {
-	if auth.isAuthority {
-		// Record authority peer connection
-		if len(auth.peerIdentityKeyHash) == hash.HashSize {
-			var peerID [hash.HashSize]byte
-			copy(peerID[:], auth.peerIdentityKeyHash)
-			s.state.recordIncomingConnection(peerID, success, err)
-		}
-	}
-	// Note: We only track authority connections for minimal survey implementation
 }
