@@ -200,9 +200,44 @@ func (s *state) fsm() <-chan time.Time {
 		}
 		s.log.Debugf("FSM: Currently have %d descriptors for epoch %d", descriptorCount, s.votingEpoch)
 
+		// Check if we already have our own vote/commit stored
+		if votes, ok := s.votes[s.votingEpoch]; ok {
+			if _, hasOurVote := votes[s.identityPubKeyHash()]; hasOurVote {
+				s.log.Debugf("FSM: Already have our own vote stored for epoch %d", s.votingEpoch)
+			}
+		}
+		if commits, ok := s.commits[s.votingEpoch]; ok {
+			if _, hasOurCommit := commits[s.identityPubKeyHash()]; hasOurCommit {
+				s.log.Debugf("FSM: Already have our own commit stored for epoch %d", s.votingEpoch)
+			}
+		}
+
+		s.log.Debugf("FSM: Generating vote for epoch %d", s.votingEpoch)
 		signed, err := s.getVote(s.votingEpoch)
 		if err == nil {
 			s.log.Noticef("FSM: Successfully generated vote for epoch %d", s.votingEpoch)
+
+			// Verify our vote and commit were stored
+			if votes, ok := s.votes[s.votingEpoch]; ok {
+				if _, hasOurVote := votes[s.identityPubKeyHash()]; hasOurVote {
+					s.log.Debugf("FSM: Confirmed our vote is stored for epoch %d", s.votingEpoch)
+				} else {
+					s.log.Errorf("FSM: CRITICAL - our vote was NOT stored for epoch %d", s.votingEpoch)
+				}
+			} else {
+				s.log.Errorf("FSM: CRITICAL - no votes map exists for epoch %d", s.votingEpoch)
+			}
+
+			if commits, ok := s.commits[s.votingEpoch]; ok {
+				if _, hasOurCommit := commits[s.identityPubKeyHash()]; hasOurCommit {
+					s.log.Debugf("FSM: Confirmed our commit is stored for epoch %d", s.votingEpoch)
+				} else {
+					s.log.Errorf("FSM: CRITICAL - our commit was NOT stored for epoch %d", s.votingEpoch)
+				}
+			} else {
+				s.log.Errorf("FSM: CRITICAL - no commits map exists for epoch %d", s.votingEpoch)
+			}
+
 			serialized, err := signed.MarshalCertificate()
 			if err == nil {
 				s.log.Debugf("FSM: Successfully serialized vote certificate for epoch %d", s.votingEpoch)
@@ -2566,38 +2601,76 @@ func (s *state) verifyTopology(topology [][]*pki.MixDescriptor) error {
 
 // generate commit and reveal values and save them
 func (s *state) doCommit(epoch uint64) ([]byte, error) {
-	s.log.Debugf("Generating SharedRandom Commit for %d", epoch)
+	s.log.Debugf("doCommit: Generating SharedRandom Commit for epoch %d", epoch)
+	s.log.Debugf("doCommit: Our identity hash: %x", s.identityPubKeyHash())
+
 	srv := new(pki.SharedRandom)
 	commit, err := srv.Commit(epoch)
 	if err != nil {
+		s.log.Errorf("doCommit: Failed to generate commit for epoch %d: %v", epoch, err)
 		return nil, err
 	}
+	s.log.Debugf("doCommit: Successfully generated commit for epoch %d", epoch)
+
 	// sign the serialized commit
+	s.log.Debugf("doCommit: Signing commit for epoch %d", epoch)
 	signedCommit, err := cert.Sign(s.s.identityPrivateKey, s.s.identityPublicKey, commit, epoch)
 	if err != nil {
+		s.log.Errorf("doCommit: Failed to sign commit for epoch %d: %v", epoch, err)
 		return nil, err
 	}
+	s.log.Debugf("doCommit: Successfully signed commit for epoch %d", epoch)
+
 	// sign the reveal
+	s.log.Debugf("doCommit: Signing reveal for epoch %d", epoch)
 	signedReveal, err := cert.Sign(s.s.identityPrivateKey, s.s.identityPublicKey, srv.Reveal(), epoch)
 	if err != nil {
+		s.log.Errorf("doCommit: Failed to sign reveal for epoch %d: %v", epoch, err)
 		return nil, err
 	}
+	s.log.Debugf("doCommit: Successfully signed reveal for epoch %d", epoch)
+
 	// save our commit
 	if _, ok := s.commits[epoch]; !ok {
+		s.log.Debugf("doCommit: Creating commits map for epoch %d", epoch)
 		s.commits[epoch] = make(map[[pki.PublicKeyHashSize]byte][]byte)
 	}
 	s.commits[epoch][s.identityPubKeyHash()] = signedCommit
+	s.log.Debugf("doCommit: Stored our commit for epoch %d", epoch)
 
 	// save our reveal
 	if _, ok := s.reveals[epoch]; !ok {
+		s.log.Debugf("doCommit: Creating reveals map for epoch %d", epoch)
 		s.reveals[epoch] = make(map[[pki.PublicKeyHashSize]byte][]byte)
 	}
 	s.reveals[epoch][s.identityPubKeyHash()] = signedReveal
+	s.log.Debugf("doCommit: Stored our reveal for epoch %d", epoch)
 	return signedCommit, nil
 }
 
 func (s *state) reveal(epoch uint64) []byte {
 	s.log.Debugf("reveal: Retrieving reveal for epoch %d", epoch)
+	s.log.Debugf("reveal: Our identity hash: %x", s.identityPubKeyHash())
+
+	// Check if reveals map exists for this epoch
+	if _, ok := s.reveals[epoch]; !ok {
+		s.log.Errorf("reveal: No reveals map exists for epoch %d", epoch)
+	} else {
+		s.log.Debugf("reveal: Reveals map exists for epoch %d with %d entries", epoch, len(s.reveals[epoch]))
+	}
+
+	// Check if commits map exists and has our commit
+	if commits, ok := s.commits[epoch]; ok {
+		if _, hasOurCommit := commits[s.identityPubKeyHash()]; hasOurCommit {
+			s.log.Debugf("reveal: We DO have our commit stored for epoch %d", epoch)
+		} else {
+			s.log.Errorf("reveal: We do NOT have our commit stored for epoch %d", epoch)
+		}
+		s.log.Debugf("reveal: Total commits for epoch %d: %d", epoch, len(commits))
+	} else {
+		s.log.Errorf("reveal: No commits map exists for epoch %d", epoch)
+	}
+
 	signed, ok := s.reveals[epoch][s.identityPubKeyHash()]
 	if !ok {
 		fatalErr := fmt.Errorf("REVEAL FATAL: reveal() called without commit for epoch %d - this indicates a critical SharedRandom protocol violation", epoch)
