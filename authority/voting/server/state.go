@@ -717,6 +717,12 @@ func (s *state) IsPeerValid(creds *wire.PeerCredentials) bool {
 }
 
 func (s *state) sendCommandToPeer(peer *config.Authority, cmd commands.Command) (commands.Command, error) {
+	const (
+		dialTimeout      = 30 * time.Second  // TCP connection timeout
+		handshakeTimeout = 180 * time.Second // Wire handshake timeout
+		responseTimeout  = 90 * time.Second  // Command exchange timeout
+	)
+
 	var conn net.Conn
 	var err error
 	for i, a := range peer.Addresses {
@@ -724,8 +730,9 @@ func (s *state) sendCommandToPeer(peer *config.Authority, cmd commands.Command) 
 		if err != nil {
 			continue
 		}
-		defaultDialer := &net.Dialer{}
-		ctx, cancelFn := context.WithCancel(context.Background())
+		// Create dialer with timeout
+		defaultDialer := &net.Dialer{Timeout: dialTimeout}
+		ctx, cancelFn := context.WithTimeout(context.Background(), dialTimeout)
 		conn, err = common.DialURL(u, ctx, defaultDialer.DialContext)
 		cancelFn()
 		if err == nil {
@@ -761,13 +768,20 @@ func (s *state) sendCommandToPeer(peer *config.Authority, cmd commands.Command) 
 	}
 	defer session.Close()
 
+	// Set handshake timeout before Initialize()
+	conn.SetDeadline(time.Now().Add(handshakeTimeout))
 	if err = session.Initialize(conn); err != nil {
 		return nil, err
 	}
+
+	// Set response timeout for command exchange
+	conn.SetDeadline(time.Now().Add(responseTimeout))
 	err = session.SendCommand(cmd)
 	if err != nil {
 		return nil, err
 	}
+
+	// Keep response timeout for receiving reply
 	resp, err := session.RecvCommand()
 	if err != nil {
 		return nil, err
