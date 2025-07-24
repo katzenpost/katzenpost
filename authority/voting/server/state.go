@@ -167,22 +167,18 @@ func (s *state) fsm() <-chan time.Time {
 	s.Lock()
 	var sleep time.Duration
 	epoch, elapsed, nextEpoch := epochtime.Now()
-	s.log.Debugf("FSM: Current epoch %d, elapsed: %s, remaining time: %s, current state: %s", epoch, elapsed, nextEpoch, s.state)
+	s.log.Debugf("Current epoch %d, remaining time: %s", epoch, nextEpoch)
 
 	switch s.state {
 	case stateBootstrap:
-		s.log.Noticef("FSM: Entering bootstrap state for epoch %d", epoch)
 		s.genesisEpoch = 0
-		s.log.Debugf("FSM: Fetching consensus for previous epoch %d", epoch-1)
 		s.backgroundFetchConsensus(epoch - 1)
-		s.log.Debugf("FSM: Fetching consensus for current epoch %d", epoch)
 		s.backgroundFetchConsensus(epoch)
 		if elapsed > MixPublishDeadline {
-			s.log.Errorf("FSM: Too late to vote this round (elapsed %s > deadline %s), sleeping until next epoch %s", elapsed, MixPublishDeadline, nextEpoch)
+			s.log.Errorf("Too late to vote this round, sleeping until %s", nextEpoch)
 			sleep = nextEpoch
 			s.votingEpoch = epoch + 2
 			s.state = stateBootstrap
-			s.log.Warningf("FSM: Staying in bootstrap state, will vote for epoch %d", s.votingEpoch)
 		} else {
 			s.votingEpoch = epoch + 1
 			s.state = stateAcceptDescriptor
@@ -190,179 +186,90 @@ func (s *state) fsm() <-chan time.Time {
 			if sleep < 0 {
 				sleep = 0
 			}
-			s.log.Noticef("FSM: Bootstrapping complete, transitioning to %s state for voting epoch %d, sleeping for %s", s.state, s.votingEpoch, sleep)
+			s.log.Noticef("Bootstrapping for %d", s.votingEpoch)
 		}
 	case stateAcceptDescriptor:
-		s.log.Noticef("FSM: Entering stateAcceptDescriptor for epoch %d", s.votingEpoch)
-		descriptorCount := 0
-		if descs, ok := s.descriptors[s.votingEpoch]; ok {
-			descriptorCount = len(descs)
-		}
-		s.log.Debugf("FSM: Currently have %d descriptors for epoch %d", descriptorCount, s.votingEpoch)
-
-		// Check if we already have our own vote/commit stored
-		if votes, ok := s.votes[s.votingEpoch]; ok {
-			if _, hasOurVote := votes[s.identityPubKeyHash()]; hasOurVote {
-				s.log.Debugf("FSM: Already have our own vote stored for epoch %d", s.votingEpoch)
-			}
-		}
-		if commits, ok := s.commits[s.votingEpoch]; ok {
-			if _, hasOurCommit := commits[s.identityPubKeyHash()]; hasOurCommit {
-				s.log.Debugf("FSM: Already have our own commit stored for epoch %d", s.votingEpoch)
-			}
-		}
-
-		s.log.Debugf("FSM: Generating vote for epoch %d", s.votingEpoch)
 		signed, err := s.getVote(s.votingEpoch)
 		if err == nil {
-			s.log.Noticef("FSM: Successfully generated vote for epoch %d", s.votingEpoch)
-
-			// Verify our vote and commit were stored
-			if votes, ok := s.votes[s.votingEpoch]; ok {
-				if _, hasOurVote := votes[s.identityPubKeyHash()]; hasOurVote {
-					s.log.Debugf("FSM: Confirmed our vote is stored for epoch %d", s.votingEpoch)
-				} else {
-					s.log.Errorf("FSM: CRITICAL - our vote was NOT stored for epoch %d", s.votingEpoch)
-				}
-			} else {
-				s.log.Errorf("FSM: CRITICAL - no votes map exists for epoch %d", s.votingEpoch)
-			}
-
-			if commits, ok := s.commits[s.votingEpoch]; ok {
-				if _, hasOurCommit := commits[s.identityPubKeyHash()]; hasOurCommit {
-					s.log.Debugf("FSM: Confirmed our commit is stored for epoch %d", s.votingEpoch)
-				} else {
-					s.log.Errorf("FSM: CRITICAL - our commit was NOT stored for epoch %d", s.votingEpoch)
-				}
-			} else {
-				s.log.Errorf("FSM: CRITICAL - no commits map exists for epoch %d", s.votingEpoch)
-			}
-
 			serialized, err := signed.MarshalCertificate()
 			if err == nil {
-				s.log.Debugf("FSM: Successfully serialized vote certificate for epoch %d", s.votingEpoch)
 				s.sendVoteToAuthorities(serialized, s.votingEpoch)
 			} else {
-				s.log.Errorf("FSM: Failed to serialize certificate for epoch %v: %s", s.votingEpoch, err)
+				s.log.Errorf("Failed to serialize certificate for epoch %v: %s", s.votingEpoch, err)
 			}
 		} else {
-			s.log.Errorf("FSM: Failed to compute vote for epoch %v: %s", s.votingEpoch, err)
+			s.log.Errorf("Failed to compute vote for epoch %v: %s", s.votingEpoch, err)
 		}
 		s.state = stateAcceptVote
 		_, nowelapsed, _ := epochtime.Now()
 		sleep = AuthorityVoteDeadline - nowelapsed
-		s.log.Noticef("FSM: Transitioning to %s state, sleeping for %s until vote deadline", s.state, sleep)
 	case stateAcceptVote:
-		s.log.Noticef("FSM: Entering stateAcceptVote for epoch %d", s.votingEpoch)
-		voteCount := 0
-		if votes, ok := s.votes[s.votingEpoch]; ok {
-			voteCount = len(votes)
-		}
-		s.log.Debugf("FSM: Currently have %d votes for epoch %d (threshold: %d)", voteCount, s.votingEpoch, s.threshold)
-
 		signed := s.reveal(s.votingEpoch)
-		s.log.Debugf("FSM: Generated reveal for epoch %d", s.votingEpoch)
 		s.sendRevealToAuthorities(signed, s.votingEpoch)
 		s.state = stateAcceptReveal
 		_, nowelapsed, _ := epochtime.Now()
 		sleep = AuthorityRevealDeadline - nowelapsed
-		s.log.Noticef("FSM: Transitioning to %s state, sleeping for %s until reveal deadline", s.state, sleep)
 	case stateAcceptReveal:
-		s.log.Noticef("FSM: Entering stateAcceptReveal for epoch %d", s.votingEpoch)
-		revealCount := 0
-		if reveals, ok := s.reveals[s.votingEpoch]; ok {
-			revealCount = len(reveals)
-		}
-		s.log.Debugf("FSM: Currently have %d reveals for epoch %d (threshold: %d)", revealCount, s.votingEpoch, s.threshold)
-
 		signed, err := s.getCertificate(s.votingEpoch)
 		if err == nil {
-			s.log.Noticef("FSM: Successfully generated certificate for epoch %d", s.votingEpoch)
 			serialized, err := signed.MarshalCertificate()
 			if err == nil {
-				s.log.Debugf("FSM: Successfully serialized certificate for epoch %d", s.votingEpoch)
 				s.sendCertToAuthorities(serialized, s.votingEpoch)
 			} else {
-				s.log.Errorf("FSM: Failed to serialize certificate for epoch %v: %s", s.votingEpoch, err)
+				s.log.Errorf("Failed to serialize certificate for epoch %v", s.votingEpoch)
 			}
 		} else {
-			s.log.Errorf("FSM: Failed to compute certificate for epoch %v: %s", s.votingEpoch, err)
+			s.log.Errorf("Failed to compute certificate for epoch %v", s.votingEpoch)
 		}
 		s.state = stateAcceptCert
 		_, nowelapsed, _ := epochtime.Now()
 		sleep = AuthorityCertDeadline - nowelapsed
-		s.log.Noticef("FSM: Transitioning to %s state, sleeping for %s until cert deadline", s.state, sleep)
 	case stateAcceptCert:
-		s.log.Noticef("FSM: Entering stateAcceptCert for epoch %d", s.votingEpoch)
-		certCount := 0
-		if certs, ok := s.certificates[s.votingEpoch]; ok {
-			certCount = len(certs)
-		}
-		s.log.Debugf("FSM: Currently have %d certificates for epoch %d (threshold: %d)", certCount, s.votingEpoch, s.threshold)
-
 		doc, err := s.getMyConsensus(s.votingEpoch)
 		if err == nil {
-			s.log.Noticef("FSM: Successfully computed my view of consensus for epoch %d: %x\n%s", s.votingEpoch, s.identityPubKeyHash(), doc)
+			s.log.Noticef("my view of consensus: %x\n%s", s.identityPubKeyHash(), doc)
 			// detach signature and send to authorities
 			sig, ok := doc.Signatures[s.identityPubKeyHash()]
 			if !ok {
-				fatalErr := fmt.Errorf("FSM FATAL: Failed to find our signature for epoch %v in consensus document - this indicates a critical consensus building failure", s.votingEpoch)
-				s.log.Errorf("FSM: %v", fatalErr)
-				s.s.fatalErrCh <- fatalErr
-				break
-			}
-			s.log.Debugf("FSM: Found our signature in consensus document for epoch %d", s.votingEpoch)
-			serialized, err := sig.Marshal()
-			if err != nil {
-				fatalErr := fmt.Errorf("FSM FATAL: Failed to serialize our signature for epoch %v: %s - this indicates a critical cryptographic failure", s.votingEpoch, err)
-				s.log.Errorf("FSM: %v", fatalErr)
-				s.s.fatalErrCh <- fatalErr
-				break
-			}
-			s.log.Debugf("FSM: Successfully serialized our signature for epoch %d", s.votingEpoch)
-			signed, err := cert.Sign(s.s.identityPrivateKey, s.s.identityPublicKey, serialized, s.votingEpoch)
-			if err != nil {
-				s.log.Errorf("FSM: Failed to sign our signature for epoch %v: %s", s.votingEpoch, err)
+				s.log.Errorf("Failed to find our signature for epoch %v", s.votingEpoch)
 				s.s.fatalErrCh <- err
 				break
 			}
-			s.log.Debugf("FSM: Successfully signed our signature for epoch %d", s.votingEpoch)
+			serialized, err := sig.Marshal()
+			if err != nil {
+				s.log.Errorf("Failed to serialize our signature for epoch %v", s.votingEpoch)
+				s.s.fatalErrCh <- err
+				break
+			}
+			signed, err := cert.Sign(s.s.identityPrivateKey, s.s.identityPublicKey, serialized, s.votingEpoch)
+			if err != nil {
+				s.log.Errorf("Failed to sign our signature for epoch %v: %s", s.votingEpoch, err)
+				s.s.fatalErrCh <- err
+				break
+			}
 			s.sendSigToAuthorities(signed, s.votingEpoch)
 		} else {
-			s.log.Errorf("FSM: Failed to compute our view of consensus for epoch %v: %s", s.votingEpoch, err)
+			s.log.Errorf("Failed to compute our view of consensus for %v with %s", s.votingEpoch, err)
 		}
 		s.state = stateAcceptSignature
 		_, nowelapsed, _ := epochtime.Now()
 		sleep = PublishConsensusDeadline - nowelapsed
-		s.log.Noticef("FSM: Transitioning to %s state, sleeping for %s until consensus deadline", s.state, sleep)
 	case stateAcceptSignature:
-		s.log.Noticef("FSM: Entering stateAcceptSignature for epoch %d", s.votingEpoch)
-		sigCount := 0
-		if sigs, ok := s.signatures[s.votingEpoch]; ok {
-			sigCount = len(sigs)
-		}
-		s.log.Debugf("FSM: Currently have %d signatures for epoch %d (threshold: %d)", sigCount, s.votingEpoch, s.threshold)
-
 		// combine signatures over a certificate and see if we make a threshold consensus
-		s.log.Noticef("FSM: Attempting to combine signatures for threshold consensus for epoch %v", s.votingEpoch)
-		consensus, err := s.getThresholdConsensus(s.votingEpoch)
+		s.log.Noticef("Combining signatures for epoch %v", s.votingEpoch)
+		_, err := s.getThresholdConsensus(s.votingEpoch)
 		_, _, nextEpoch := epochtime.Now()
 		if err == nil {
-			s.log.Noticef("FSM: SUCCESS! Achieved threshold consensus for epoch %d: %v", s.votingEpoch, consensus)
 			s.state = stateAcceptDescriptor
 			sleep = MixPublishDeadline + nextEpoch
 			s.votingEpoch++
-			s.log.Noticef("FSM: Consensus successful, transitioning to %s state for next voting epoch %d, sleeping for %s", s.state, s.votingEpoch, sleep)
 		} else {
-			s.log.Errorf("FSM: CONSENSUS FAILURE for epoch %d: %s", s.votingEpoch, err)
-			s.log.Errorf("FSM: Had %d signatures out of %d required threshold", sigCount, s.threshold)
+			s.log.Error(err.Error())
 			s.state = stateBootstrap
 			s.votingEpoch = epoch + 2 // vote on epoch+2 in epoch+1
 			sleep = nextEpoch
-			s.log.Errorf("FSM: Consensus failed, transitioning to %s state, will vote for epoch %d, sleeping for %s", s.state, s.votingEpoch, sleep)
 		}
 	default:
-		s.log.Errorf("FSM: Unknown state: %s", s.state)
 	}
 	s.pruneDocuments()
 	s.log.Debugf("authority: FSM in state %v until %s", s.state, sleep)
@@ -376,88 +283,59 @@ func (s *state) persistDocument(epoch uint64, doc []byte) {
 		return bkt.Put(epochToBytes(epoch), doc)
 	}); err != nil {
 		// Persistence failures are FATAL.
-		fatalErr := fmt.Errorf("PERSISTENCE FATAL: Failed to persist consensus document for epoch %d to database: %v - this indicates critical storage failure", epoch, err)
-		s.log.Errorf("persistDocument: %v", fatalErr)
-		s.s.fatalErrCh <- fatalErr
+		s.s.fatalErrCh <- err
 	}
 }
 
 // getVote produces a pki.Document using all MixDescriptors that we have seen
 func (s *state) getVote(epoch uint64) (*pki.Document, error) {
-	s.log.Debugf("getVote: Generating vote for epoch %d", epoch)
-
 	// Is there a prior consensus? If so, obtain the GenesisEpoch and prior SRV values
 	if d, ok := s.documents[s.votingEpoch-1]; ok {
-		s.log.Debugf("getVote: Restoring genesisEpoch %d from document cache for epoch %d", d.GenesisEpoch, s.votingEpoch-1)
+		s.log.Debugf("Restoring genesisEpoch %d from document cache", d.GenesisEpoch)
 		s.genesisEpoch = d.GenesisEpoch
 		s.priorSRV = d.PriorSharedRandom
 		d.PKISignatureScheme = s.s.cfg.Server.PKISignatureScheme
-		s.log.Debugf("getVote: Using prior SRV values from previous consensus")
 	} else {
-		s.log.Debugf("getVote: No prior consensus found, setting genesisEpoch %d from votingEpoch", s.votingEpoch)
+		s.log.Debugf("Setting genesisEpoch %d from votingEpoch", s.votingEpoch)
 		s.genesisEpoch = s.votingEpoch
 	}
 
 	descriptors := []*pki.MixDescriptor{}
-	if descs, ok := s.descriptors[epoch]; ok {
-		for _, desc := range descs {
-			descriptors = append(descriptors, desc)
-		}
-		s.log.Debugf("getVote: Collected %d mix descriptors for epoch %d", len(descriptors), epoch)
-	} else {
-		s.log.Warningf("getVote: No mix descriptors found for epoch %d", epoch)
+	for _, desc := range s.descriptors[epoch] {
+		descriptors = append(descriptors, desc)
 	}
 
 	replicaDescriptors := []*pki.ReplicaDescriptor{}
-	if repDescs, ok := s.replicaDescriptors[epoch]; ok {
-		for _, desc := range repDescs {
-			replicaDescriptors = append(replicaDescriptors, desc)
-		}
-		s.log.Debugf("getVote: Collected %d replica descriptors for epoch %d", len(replicaDescriptors), epoch)
-	} else {
-		s.log.Debugf("getVote: No replica descriptors found for epoch %d", epoch)
-	}
-
-	// Check if we have enough descriptors to make a meaningful vote
-	if !s.hasEnoughDescriptors(s.descriptors[epoch]) {
-		s.log.Errorf("getVote: Insufficient descriptors for epoch %d to generate meaningful vote", epoch)
-		return nil, fmt.Errorf("insufficient descriptors for epoch %d", epoch)
+	for _, desc := range s.replicaDescriptors[epoch] {
+		replicaDescriptors = append(replicaDescriptors, desc)
 	}
 
 	// vote topology is irrelevent.
 	var zeros [32]byte
-	s.log.Debugf("getVote: Generating document with %d mix descriptors and %d replica descriptors", len(descriptors), len(replicaDescriptors))
 	vote := s.getDocument(descriptors, replicaDescriptors, s.s.cfg.Parameters, zeros[:])
 
 	// create our SharedRandom Commit
-	s.log.Debugf("getVote: Generating SharedRandom commit for epoch %d", epoch)
 	signedCommit, err := s.doCommit(epoch)
 	if err != nil {
-		s.log.Errorf("getVote: Failed to generate SharedRandom commit for epoch %d: %s", epoch, err)
 		return nil, err
 	}
 	commits := make(map[[hash.HashSize]byte][]byte)
 	commits[s.identityPubKeyHash()] = signedCommit
 	vote.SharedRandomCommit = commits
-	s.log.Debugf("getVote: Added SharedRandom commit to vote for epoch %d", epoch)
 
-	s.log.Debugf("getVote: Signing vote document for epoch %d", epoch)
 	_, err = s.doSignDocument(s.s.identityPrivateKey, s.s.identityPublicKey, vote)
 	if err != nil {
-		s.log.Errorf("getVote: Failed to sign vote document for epoch %d: %s", epoch, err)
 		return nil, err
 	}
 
-	s.log.Debugf("getVote: Ready to send our vote for epoch %d:\n%s", epoch, vote)
+	s.log.Debugf("Ready to send our vote:\n%s", vote)
 	// save our own vote
 	if _, ok := s.votes[epoch]; !ok {
 		s.votes[epoch] = make(map[[publicKeyHashSize]byte]*pki.Document)
 	}
 	if _, ok := s.votes[epoch][s.identityPubKeyHash()]; !ok {
 		s.votes[epoch][s.identityPubKeyHash()] = vote
-		s.log.Debugf("getVote: Successfully saved our vote for epoch %d", epoch)
 	} else {
-		s.log.Errorf("getVote: Vote already present for epoch %d, this should never happen", epoch)
 		return nil, errors.New("failure: vote already present, this should never happen")
 	}
 	return vote, nil
@@ -526,75 +404,49 @@ func (s *state) getMyConsensus(epoch uint64) (*pki.Document, error) {
 		panic("write lock not held in getMyConsensus(epoch)")
 	}
 
-	s.log.Debugf("getMyConsensus: Computing consensus for epoch %d", epoch)
-
 	certificates, ok := s.certificates[epoch]
 	if !ok {
-		s.log.Errorf("getMyConsensus: No certificates found for epoch %d", epoch)
-		return nil, fmt.Errorf("no certificates for epoch %d", epoch)
+		return nil, fmt.Errorf("No certificates for epoch %d", epoch)
 	}
-	s.log.Debugf("getMyConsensus: Found %d certificates for epoch %d", len(certificates), epoch)
 
 	// well this isn't going to work then is it?
 	if len(certificates) < s.threshold {
-		s.log.Errorf("getMyConsensus: Insufficient certificates for consensus: have %d, need %d for epoch %d", len(certificates), s.threshold, epoch)
-		return nil, fmt.Errorf("no way to make consensus with too few votes!, only %d certificates", len(certificates))
+		return nil, fmt.Errorf("No way to make consensus with too few votes!, only %d certificates", len(certificates))
 	}
-	s.log.Debugf("getMyConsensus: Have sufficient certificates (%d >= %d) for epoch %d", len(certificates), s.threshold, epoch)
 
 	// verify that all shared random commit and reveal are present for this epoch
-	s.log.Debugf("getMyConsensus: Verifying SharedRandom commits and reveals for epoch %d", epoch)
 	commits, reveals := s.verifyCommits(epoch)
 	if len(commits) < s.threshold {
-		s.log.Errorf("getMyConsensus: Insufficient SharedRandom commits for consensus: have %d, need %d for epoch %d", len(commits), s.threshold, epoch)
-		return nil, fmt.Errorf("no way to make consensus with too few SharedRandom commits!, only %d commits", len(commits))
+		return nil, fmt.Errorf("No way to make consensus with too few SharedRandom commits!, only %d commits", len(commits))
 	}
 	if len(commits) != len(reveals) {
-		s.log.Errorf("getMyConsensus: Mismatch between commits (%d) and reveals (%d) for epoch %d", len(commits), len(reveals), epoch)
 		panic("ShouldNotBePossible")
 	}
-	s.log.Debugf("getMyConsensus: Have sufficient SharedRandom commits (%d) and reveals (%d) for epoch %d", len(commits), len(reveals), epoch)
 
 	// compute the shared random for the consensus
-	s.log.Debugf("getMyConsensus: Computing SharedRandom value for epoch %d", epoch)
 	srv, err := s.computeSharedRandom(epoch, commits, reveals)
 	if err != nil {
-		s.log.Errorf("getMyConsensus: Failed to compute SharedRandom for epoch %d: %s", epoch, err)
 		return nil, err
 	}
-	s.log.Debugf("getMyConsensus: Successfully computed SharedRandom value for epoch %d: %x", epoch, srv)
-
 	// if there are no prior SRV values, copy the current srv twice
 	if epoch == s.genesisEpoch {
 		s.priorSRV = [][]byte{srv, srv}
-		s.log.Debugf("getMyConsensus: Genesis epoch %d, initializing priorSRV with current SRV", epoch)
 	} else if epoch%epochtime.WeekOfEpochs == 0 {
 		// rotate the weekly epochs if it is time to do so.
 		s.priorSRV = [][]byte{srv, s.priorSRV[0]}
-		s.log.Debugf("getMyConsensus: Weekly epoch rotation for epoch %d", epoch)
 	}
-
-	s.log.Debugf("getMyConsensus: Tallying votes for epoch %d", epoch)
 	mixes, replicas, params, err := s.tallyVotes(epoch)
 	if err != nil {
-		s.log.Errorf("getMyConsensus: Failed to tally votes for epoch %d: %s", epoch, err)
 		return nil, err
 	}
-	s.log.Debugf("getMyConsensus: Successfully tallied votes: %d mixes, %d replicas for epoch %d", len(mixes), len(replicas), epoch)
-
-	s.log.Debugf("getMyConsensus: Generating consensus document for epoch %d", epoch)
 	consensusOfOne := s.getDocument(mixes, replicas, params, srv)
-
-	s.log.Debugf("getMyConsensus: Signing consensus document for epoch %d", epoch)
 	_, err = s.doSignDocument(s.s.identityPrivateKey, s.s.identityPublicKey, consensusOfOne)
 	if err != nil {
-		s.log.Errorf("getMyConsensus: Failed to sign consensus document for epoch %d: %s", epoch, err)
 		return nil, err
 	}
 
 	// save our view of the conseusus
 	s.myconsensus[epoch] = consensusOfOne
-	s.log.Noticef("getMyConsensus: Successfully computed and saved consensus for epoch %d", epoch)
 	return consensusOfOne, nil
 }
 
@@ -605,75 +457,40 @@ func (s *state) getThresholdConsensus(epoch uint64) (*pki.Document, error) {
 		panic("write lock not held in getThresholdConsensus(epoch)")
 	}
 
-	s.log.Debugf("getThresholdConsensus: Attempting to reach threshold consensus for epoch %d", epoch)
-
 	ourConsensus, ok := s.myconsensus[epoch]
 	if !ok {
-		s.log.Errorf("getThresholdConsensus: No consensus view available for epoch %d", epoch)
-		return nil, fmt.Errorf("we have no view of consensus!")
+		return nil, fmt.Errorf("We have no view of consensus!")
 	}
-	s.log.Debugf("getThresholdConsensus: Found our consensus view for epoch %d", epoch)
-
-	sigCount := 0
-	if sigs, ok := s.signatures[epoch]; ok {
-		sigCount = len(sigs)
-	}
-	s.log.Debugf("getThresholdConsensus: Processing %d signatures for epoch %d (threshold: %d)", sigCount, epoch, s.threshold)
-
-	successfulSigs := 0
-	failedSigs := 0
 	for pk, signature := range s.signatures[epoch] {
-		authorityName := s.authorityNames[pk]
-		s.log.Debugf("getThresholdConsensus: Processing signature from authority %s (%x) for epoch %d", authorityName, pk, epoch)
+		s.log.Debugf("Checking signature from %x on our certificates", pk)
 		v := s.reverseHash[pk]
 		err := ourConsensus.AddSignature(v, *signature)
 		if err != nil {
-			s.log.Errorf("getThresholdConsensus: Failed to add signature from authority %s (%x) to consensus for epoch %d: %s", authorityName, pk, epoch, err)
-			failedSigs++
-		} else {
-			s.log.Debugf("getThresholdConsensus: Successfully added signature from authority %s (%x) to consensus for epoch %d", authorityName, pk, epoch)
-			successfulSigs++
+			s.log.Errorf("Failed to AddSignature from %x on our consensus: %s", pk, err)
 		}
 	}
-	s.log.Debugf("getThresholdConsensus: Signature processing complete for epoch %d: %d successful, %d failed", epoch, successfulSigs, failedSigs)
-
 	// now see if we managed to get a threshold number of signatures
-	s.log.Debugf("getThresholdConsensus: Marshaling consensus certificate for threshold verification for epoch %d", epoch)
 	signedConsensus, err := ourConsensus.MarshalCertificate()
 	if err != nil {
-		s.log.Errorf("getThresholdConsensus: Failed to marshal consensus certificate for epoch %d: %s", epoch, err)
 		return nil, err
 	}
-
-	s.log.Debugf("getThresholdConsensus: Verifying threshold signatures for epoch %d", epoch)
 	_, good, bad, err := cert.VerifyThreshold(s.getVerifiers(), s.threshold, signedConsensus)
-
-	s.log.Debugf("getThresholdConsensus: Threshold verification results for epoch %d: %d good signatures, %d bad signatures", epoch, len(good), len(bad))
-
 	for _, b := range bad {
-		authorityName := s.authorityNames[hash.Sum256From(b)]
-		s.log.Errorf("getThresholdConsensus: Consensus NOT signed by authority %s for epoch %d", authorityName, epoch)
+		s.log.Errorf("Consensus NOT signed by %s", s.authorityNames[hash.Sum256From(b)])
 	}
 	for _, g := range good {
-		authorityName := s.authorityNames[hash.Sum256From(g)]
-		s.log.Noticef("getThresholdConsensus: Consensus signed by authority %s for epoch %d", authorityName, epoch)
+		s.log.Noticef("Consensus signed by %s", s.authorityNames[hash.Sum256From(g)])
 	}
-
 	if err == nil {
-		s.log.Noticef("getThresholdConsensus: SUCCESS! Threshold consensus achieved for epoch %d with %d/%d signatures", epoch, len(good), len(s.verifiers))
-		s.log.Debugf("getThresholdConsensus: Consensus document for epoch %d: %v", epoch, ourConsensus)
+		s.log.Noticef("Consensus made for epoch %d with %d/%d signatures: %v", epoch, len(good), len(s.verifiers), ourConsensus)
 		// Persist the document to disk.
-		s.log.Debugf("getThresholdConsensus: Persisting consensus document to disk for epoch %d", epoch)
 		s.persistDocument(epoch, signedConsensus)
 		s.documents[epoch] = ourConsensus
-		s.log.Noticef("getThresholdConsensus: Consensus document successfully persisted and stored for epoch %d", epoch)
 		return ourConsensus, nil
 	} else {
-		s.log.Errorf("getThresholdConsensus: THRESHOLD VERIFICATION FAILED for epoch %d: %s", epoch, err)
-		s.log.Errorf("getThresholdConsensus: Had %d good signatures, %d bad signatures, needed %d for threshold", len(good), len(bad), s.threshold)
+		s.log.Errorf("VerifyThreshold failed!: %s", err)
 	}
-	s.log.Errorf("getThresholdConsensus: No consensus achieved for epoch %d", epoch)
-	return nil, fmt.Errorf("no consensus found for epoch %d", epoch)
+	return nil, fmt.Errorf("No consensus found for epoch %d", epoch)
 }
 
 func (s *state) getVerifiers() []sign.PublicKey {
@@ -786,151 +603,103 @@ func (s *state) verifyCommits(epoch uint64) (map[[publicKeyHashSize]byte][]byte,
 		panic("write lock not held in verifyCommits(epoch)")
 	}
 
-	s.log.Debugf("verifyCommits: Starting SharedRandom commit verification for epoch %d", epoch)
-
 	// check that each authority presented the same commit to every other authority
 	badnodes := make(map[[publicKeyHashSize]byte]bool)
 	comitted := make(map[[publicKeyHashSize]byte][]byte)
 	revealed := make(map[[publicKeyHashSize]byte][]byte)
 
-	certificateCount := 0
-	if certs, ok := s.certificates[epoch]; ok {
-		certificateCount = len(certs)
-	}
-	s.log.Debugf("verifyCommits: Processing %d certificates for epoch %d", certificateCount, epoch)
-
 	// verify that each authority only submitted one commit value to all the authorities
 	for pk, certificate := range s.certificates[epoch] {
-		authorityName := s.authorityNames[pk]
-		s.log.Debugf("verifyCommits: Processing certificate from authority %s (%x) for epoch %d", authorityName, pk, epoch)
-
 		// skip badnodes
 		if _, ok := badnodes[pk]; ok {
-			s.log.Debugf("verifyCommits: Skipping bad authority %s (%x) for epoch %d", authorityName, pk, epoch)
 			continue
 		}
-
-		commitCount := len(certificate.SharedRandomCommit)
-		s.log.Debugf("verifyCommits: Authority %s has %d SharedRandom commits in certificate for epoch %d", authorityName, commitCount, epoch)
-
 		for pk2, signedCommit := range certificate.SharedRandomCommit {
-			authorityName2 := s.authorityNames[pk2]
-			s.log.Debugf("verifyCommits: Processing commit from authority %s (%x) in certificate from %s for epoch %d", authorityName2, pk2, authorityName, epoch)
-
 			// skip badnodes
 			if _, ok := badnodes[pk2]; ok {
-				s.log.Debugf("verifyCommits: Skipping commit from bad authority %s (%x) for epoch %d", authorityName2, pk2, epoch)
 				continue
 			}
 			// verify that pk2 is authorized
 			v, ok := s.reverseHash[pk2]
 			if !ok {
-				s.log.Errorf("verifyCommits: AUTHORIZATION FAILED - commit from invalid peer %x (%s) in certificate from %s for epoch %d", pk2, authorityName2, authorityName, epoch)
+				s.log.Errorf("Commit from invaid peer %x in certificate from %s", pk2, s.authorityNames[pk])
 				badnodes[pk] = true
 				break
 			}
-			s.log.Debugf("verifyCommits: Authorization check passed for authority %s in certificate from %s for epoch %d", authorityName2, authorityName, epoch)
-
 			// verify that the allged commit is signed by pk2
-			s.log.Debugf("verifyCommits: Verifying commit signature from authority %s in certificate from %s for epoch %d", authorityName2, authorityName, epoch)
 			commit, err := cert.Verify(v, signedCommit)
 			if err != nil {
 				// pk didn't validate commit in its certificate!
 				badnodes[pk] = true
-				s.log.Errorf("verifyCommits: SIGNATURE VERIFICATION FAILED - invalid signature over commit from %s in certificate from %s, rejecting %s from consensus for epoch %d: %v", authorityName2, authorityName, authorityName, epoch, err)
+				s.log.Errorf("Invalid signature over commit from %s in certificate from %s, rejecting %s from consensus", s.authorityNames[pk2], s.authorityNames[pk], s.authorityNames[pk])
 				// do not bother checking any more of pk's SharedRandomCommits
 				break
 			}
-			s.log.Debugf("verifyCommits: Commit signature verification passed for authority %s in certificate from %s for epoch %d", authorityName2, authorityName, epoch)
 			// verify that the commit is accompanied by a reaveal
-			s.log.Debugf("verifyCommits: Checking for reveal from authority %s in certificate from %s for epoch %d", authorityName2, authorityName, epoch)
 			signedReveal, ok := certificate.SharedRandomReveal[pk2]
 			if !ok {
-				s.log.Errorf("verifyCommits: REVEAL MISSING - certificate from %s has commit for %s but not reveal for epoch %d", authorityName, authorityName2, epoch)
+				s.log.Errorf("Certificate from %s has Commit for %s but not Reveal", s.authorityNames[pk], s.authorityNames[pk2])
 				badnodes[pk] = true
 				// do not bother checking any more of pk's SharedRandomCommits
 				break
 			}
-			s.log.Debugf("verifyCommits: Found reveal from authority %s in certificate from %s for epoch %d", authorityName2, authorityName, epoch)
-
 			// verify that the alleged reveal is signed by pk2
-			s.log.Debugf("verifyCommits: Verifying reveal signature from authority %s in certificate from %s for epoch %d", authorityName2, authorityName, epoch)
 			reveal, err := cert.Verify(v, signedReveal)
 			if err != nil {
-				s.log.Errorf("verifyCommits: REVEAL SIGNATURE VERIFICATION FAILED - reveal in certificate from %s has invalid signature on reveal from %s for epoch %d: %v", authorityName, authorityName2, epoch, err)
+				s.log.Errorf("Reveal in certificate from %s has invalid signature on reveal from %s", s.authorityNames[pk], s.authorityNames[pk2])
 				badnodes[pk] = true
 				// do not bother checking any more of pk's SharedRandomCommits
 				break
 			}
-			s.log.Debugf("verifyCommits: Reveal signature verification passed for authority %s in certificate from %s for epoch %d", authorityName2, authorityName, epoch)
-
 			srv := new(pki.SharedRandom)
 			srv.SetCommit(commit)
 			// verify that the SharedRandom is for the correct epoch
-			s.log.Debugf("verifyCommits: Verifying epoch in SharedRandom from authority %s in certificate from %s: got %d, expected %d", authorityName2, authorityName, srv.GetEpoch(), epoch)
 			if srv.GetEpoch() != epoch {
-				s.log.Errorf("verifyCommits: EPOCH MISMATCH - SharedRandomCommit in certificate from %s contains bad epoch %d from %s (expected %d)", authorityName, srv.GetEpoch(), authorityName2, epoch)
+				s.log.Errorf("SharedRandomCommit in certificate from %s contains bad Epoch from %s", s.authorityNames[pk], s.authorityNames[pk2])
 				badnodes[pk] = true
 				badnodes[pk2] = true
 				// do not bother checking any more of pk's SharedRandomCommits
 				break
 			}
-			s.log.Debugf("verifyCommits: Epoch verification passed for SharedRandom from authority %s in certificate from %s for epoch %d", authorityName2, authorityName, epoch)
 
 			// verify that the commit is validate by the revealed value
-			s.log.Debugf("verifyCommits: Verifying commit-reveal pair from authority %s in certificate from %s for epoch %d", authorityName2, authorityName, epoch)
 			if !srv.Verify(reveal) {
-				s.log.Errorf("verifyCommits: COMMIT-REVEAL VERIFICATION FAILED - reveal in certificate from %s has invalid reveal from %s for epoch %d", authorityName, authorityName2, epoch)
+				s.log.Errorf("Reveal in certificate from %s has invalid reveal from %s", s.authorityNames[pk], s.authorityNames[pk2])
 				// pk should have validated the Reveal, and pk2 signed an invalid Reveal
 				badnodes[pk] = true
 				badnodes[pk2] = true
 				break
 			}
-			s.log.Debugf("verifyCommits: Commit-reveal verification passed for authority %s in certificate from %s for epoch %d", authorityName2, authorityName, epoch)
 			// see if we saw a different commit from pk2
-			s.log.Debugf("verifyCommits: Checking for consistency of commit from authority %s for epoch %d", authorityName2, epoch)
 			signedCommit2, ok := comitted[pk2]
 			if ok {
 				// check that the commits were the same
 				if !bytes.Equal(signedCommit, signedCommit2) {
-					s.log.Errorf("verifyCommits: COMMIT INCONSISTENCY - authority %s submitted commit %x to %s and previously submitted %x for epoch %d", authorityName2, signedCommit[:32], authorityName, signedCommit2[:32], epoch)
+					s.log.Errorf("%s submitted commit %x to %s and previously submitted %x", s.authorityNames[pk2], signedCommit[:32], s.authorityNames[pk], signedCommit2[:32])
 					badnodes[pk2] = true
-				} else {
-					s.log.Debugf("verifyCommits: Commit consistency verified for authority %s for epoch %d", authorityName2, epoch)
 				}
 			} else {
 				// first time we saw a commit from pk2
-				s.log.Debugf("verifyCommits: Recording first commit from authority %s for epoch %d", authorityName2, epoch)
 				comitted[pk2] = signedCommit
 			}
 			// see if we saw a different reveal from pk2
-			s.log.Debugf("verifyCommits: Checking for consistency of reveal from authority %s for epoch %d", authorityName2, epoch)
 			signedReveal2, ok := revealed[pk2]
 			if ok {
 				if !bytes.Equal(signedReveal, signedReveal2) {
-					s.log.Errorf("verifyCommits: REVEAL INCONSISTENCY - authority %s submitted reveal %x to %s and previously submitted %x for epoch %d", authorityName2, signedReveal[:32], authorityName, signedReveal2[:32], epoch)
+					s.log.Errorf("%s submitted commit %x to %s and previously submitted %x", s.authorityNames[pk2], signedReveal, s.authorityNames[pk], signedReveal2)
 					badnodes[pk2] = true
-				} else {
-					s.log.Debugf("verifyCommits: Reveal consistency verified for authority %s for epoch %d", authorityName2, epoch)
 				}
 			} else {
-				s.log.Debugf("verifyCommits: Recording first reveal from authority %s for epoch %d", authorityName2, epoch)
 				revealed[pk2] = signedReveal
 			}
 		}
-		s.log.Debugf("verifyCommits: Completed processing certificate from authority %s for epoch %d", authorityName, epoch)
 	}
-
 	// ensure we have enough commits to make a threshold consensus
-	s.log.Debugf("verifyCommits: Removing bad nodes from commit/reveal sets for epoch %d", epoch)
-	for pk := range badnodes {
-		authorityName := s.authorityNames[pk]
-		s.log.Warningf("verifyCommits: Removing bad authority %s (%x) from consensus for epoch %d", authorityName, pk, epoch)
+	for pk, _ := range badnodes {
+		s.log.Warningf("Found bad node %s", s.authorityNames[pk])
 		delete(comitted, pk)
 		delete(revealed, pk)
 	}
-
-	s.log.Noticef("verifyCommits: Verification complete for epoch %d: %d valid commits, %d valid reveals, %d bad nodes", epoch, len(comitted), len(revealed), len(badnodes))
 	return comitted, revealed
 }
 
@@ -948,12 +717,6 @@ func (s *state) IsPeerValid(creds *wire.PeerCredentials) bool {
 }
 
 func (s *state) sendCommandToPeer(peer *config.Authority, cmd commands.Command) (commands.Command, error) {
-	const (
-		dialTimeout      = 30 * time.Second  // TCP connection timeout
-		handshakeTimeout = 180 * time.Second // Wire handshake timeout
-		responseTimeout  = 90 * time.Second  // Command exchange timeout
-	)
-
 	var conn net.Conn
 	var err error
 	for i, a := range peer.Addresses {
@@ -961,9 +724,8 @@ func (s *state) sendCommandToPeer(peer *config.Authority, cmd commands.Command) 
 		if err != nil {
 			continue
 		}
-		// Create dialer with timeout
-		defaultDialer := &net.Dialer{Timeout: dialTimeout}
-		ctx, cancelFn := context.WithTimeout(context.Background(), dialTimeout)
+		defaultDialer := &net.Dialer{}
+		ctx, cancelFn := context.WithCancel(context.Background())
 		conn, err = common.DialURL(u, ctx, defaultDialer.DialContext)
 		cancelFn()
 		if err == nil {
@@ -999,20 +761,13 @@ func (s *state) sendCommandToPeer(peer *config.Authority, cmd commands.Command) 
 	}
 	defer session.Close()
 
-	// Set handshake timeout before Initialize()
-	conn.SetDeadline(time.Now().Add(handshakeTimeout))
 	if err = session.Initialize(conn); err != nil {
 		return nil, err
 	}
-
-	// Set response timeout for command exchange
-	conn.SetDeadline(time.Now().Add(responseTimeout))
 	err = session.SendCommand(cmd)
 	if err != nil {
 		return nil, err
 	}
-
-	// Keep response timeout for receiving reply
 	resp, err := session.RecvCommand()
 	if err != nil {
 		return nil, err
@@ -1211,31 +966,20 @@ func (s *state) tallyVotes(epoch uint64) ([]*pki.MixDescriptor, []*pki.ReplicaDe
 		panic("write lock not held in tallyVotes(epoch)")
 	}
 
-	s.log.Debugf("tallyVotes: Starting vote tally for epoch %d", epoch)
-
 	_, ok := s.votes[epoch]
 	if !ok {
-		s.log.Errorf("tallyVotes: No votes found for epoch %d", epoch)
 		return nil, nil, nil, fmt.Errorf("no votes for epoch %v", epoch)
 	}
-	voteCount := len(s.votes[epoch])
-	if voteCount < s.threshold {
-		s.log.Errorf("tallyVotes: Insufficient votes for epoch %d: have %d, need %d", epoch, voteCount, s.threshold)
+	if len(s.votes[epoch]) < s.threshold {
 		return nil, nil, nil, fmt.Errorf("not enough votes for epoch %v", epoch)
 	}
-	s.log.Debugf("tallyVotes: Have sufficient votes for epoch %d: %d >= %d", epoch, voteCount, s.threshold)
 
 	nodes := make([]*pki.MixDescriptor, 0)
 	mixTally := make(map[string][]*pki.Document)
 	mixParams := make(map[string][]*pki.Document)
 	replicaTally := make(map[string][]*pki.Document)
 	replicaNodes := make([]*pki.ReplicaDescriptor, 0)
-
-	s.log.Debugf("tallyVotes: Processing %d votes for epoch %d", voteCount, epoch)
 	for id, vote := range s.votes[epoch] {
-		authorityName := s.authorityNames[id]
-		s.log.Debugf("tallyVotes: Processing vote from authority %s (%x) for epoch %d", authorityName, id, epoch)
-
 		// serialize the vote parameters and tally these as well.
 		params := &config.Parameters{
 			SendRatePerMinute: vote.SendRatePerMinute,
@@ -1256,7 +1000,7 @@ func (s *state) tallyVotes(epoch uint64) ([]*pki.MixDescriptor, []*pki.ReplicaDe
 		e := gob.NewEncoder(&b)
 		err := e.Encode(params)
 		if err != nil {
-			s.log.Errorf("tallyVotes: Skipping vote from authority %s (%x) whose MixParameters failed to encode: %v", authorityName, id, err)
+			s.log.Errorf("Skipping vote from Authority %s whose MixParameters failed to encode?! %v", s.authorityNames[id], err)
 			continue
 		}
 		bs := b.String()
@@ -1264,15 +1008,12 @@ func (s *state) tallyVotes(epoch uint64) ([]*pki.MixDescriptor, []*pki.ReplicaDe
 			mixParams[bs] = make([]*pki.Document, 0)
 		}
 		mixParams[bs] = append(mixParams[bs], vote)
-		s.log.Debugf("tallyVotes: Added parameters from authority %s to tally for epoch %d", authorityName, epoch)
 
 		// include edge nodes in the tally.
-		gatewayCount := len(vote.GatewayNodes)
-		s.log.Debugf("tallyVotes: Processing %d gateway nodes from authority %s for epoch %d", gatewayCount, authorityName, epoch)
 		for _, desc := range vote.GatewayNodes {
 			rawDesc, err := desc.MarshalBinary()
 			if err != nil {
-				s.log.Errorf("tallyVotes: Skipping gateway node from authority %s (%x) whose MixDescriptor failed to encode: %v", authorityName, id, err)
+				s.log.Errorf("Skipping vote from Authority %s whose MixDescriptor failed to encode?! %v", s.authorityNames[id], err)
 				continue
 			}
 			k := string(rawDesc)
@@ -1281,13 +1022,10 @@ func (s *state) tallyVotes(epoch uint64) ([]*pki.MixDescriptor, []*pki.ReplicaDe
 			}
 			mixTally[k] = append(mixTally[k], vote)
 		}
-
-		serviceCount := len(vote.ServiceNodes)
-		s.log.Debugf("tallyVotes: Processing %d service nodes from authority %s for epoch %d", serviceCount, authorityName, epoch)
 		for _, desc := range vote.ServiceNodes {
 			rawDesc, err := desc.MarshalBinary()
 			if err != nil {
-				s.log.Errorf("tallyVotes: Skipping service node from authority %s (%x) whose MixDescriptor failed to encode: %v", authorityName, id, err)
+				s.log.Errorf("Skipping vote from Authority %s whose MixDescriptor failed to encode?! %v", s.authorityNames[id], err)
 				continue
 			}
 			k := string(rawDesc)
@@ -1296,19 +1034,12 @@ func (s *state) tallyVotes(epoch uint64) ([]*pki.MixDescriptor, []*pki.ReplicaDe
 			}
 			mixTally[k] = append(mixTally[k], vote)
 		}
-
 		// include the rest of the mixes in the tally.
-		topologyNodeCount := 0
 		for _, l := range vote.Topology {
-			topologyNodeCount += len(l)
-		}
-		s.log.Debugf("tallyVotes: Processing %d topology nodes from authority %s for epoch %d", topologyNodeCount, authorityName, epoch)
-		for layerIdx, l := range vote.Topology {
-			s.log.Debugf("tallyVotes: Processing layer %d with %d nodes from authority %s for epoch %d", layerIdx, len(l), authorityName, epoch)
 			for _, desc := range l {
 				rawDesc, err := desc.MarshalBinary()
 				if err != nil {
-					s.log.Errorf("tallyVotes: Skipping topology node from authority %s (%x) whose MixDescriptor failed to encode: %v", authorityName, id, err)
+					s.log.Errorf("Skipping vote from Authority %s whose MixDescriptor failed to encode?! %v", s.authorityNames[id], err)
 					continue
 				}
 
@@ -1319,13 +1050,10 @@ func (s *state) tallyVotes(epoch uint64) ([]*pki.MixDescriptor, []*pki.ReplicaDe
 				mixTally[k] = append(mixTally[k], vote)
 			}
 		}
-
-		replicaCount := len(vote.StorageReplicas)
-		s.log.Debugf("tallyVotes: Processing %d storage replicas from authority %s for epoch %d", replicaCount, authorityName, epoch)
 		for _, desc := range vote.StorageReplicas {
 			rawDesc, err := desc.Marshal()
 			if err != nil {
-				s.log.Errorf("tallyVotes: Skipping storage replica from authority %s (%x) whose ReplicaDescriptor failed to encode: %v", authorityName, id, err)
+				s.log.Errorf("Skipping vote from Authority %s whose ReplicaDescriptor failed to encode?! %v", s.authorityNames[id], err)
 				continue
 			}
 			k := string(rawDesc)
@@ -1334,171 +1062,106 @@ func (s *state) tallyVotes(epoch uint64) ([]*pki.MixDescriptor, []*pki.ReplicaDe
 			}
 			replicaTally[k] = append(replicaTally[k], vote)
 		}
-		s.log.Debugf("tallyVotes: Completed processing vote from authority %s: %d gateways, %d services, %d topology, %d replicas", authorityName, gatewayCount, serviceCount, topologyNodeCount, replicaCount)
 	}
-	s.log.Debugf("tallyVotes: Starting threshold evaluation for epoch %d", epoch)
-	s.log.Debugf("tallyVotes: Have %d unique mix descriptors and %d unique replica descriptors to evaluate", len(mixTally), len(replicaTally))
-
 	// include mixes that have a threshold of votes
-	acceptedMixes := 0
-	rejectedMixes := 0
 	for rawDesc, votes := range mixTally {
 		if len(votes) >= s.threshold {
 			// this shouldn't fail as the descriptors have already been verified
 			desc := new(pki.MixDescriptor)
 			err := desc.UnmarshalBinary([]byte(rawDesc))
 			if err != nil {
-				s.log.Errorf("tallyVotes: Failed to unmarshal mix descriptor for epoch %d: %s", epoch, err)
 				return nil, nil, nil, err
 			}
 			// only add nodes we have authorized
 			if s.isDescriptorAuthorized(desc) {
 				nodes = append(nodes, desc)
-				acceptedMixes++
-				s.log.Debugf("tallyVotes: Accepted mix descriptor %s with %d votes (>= %d threshold) for epoch %d", desc.Name, len(votes), s.threshold, epoch)
-			} else {
-				rejectedMixes++
-				s.log.Warningf("tallyVotes: Rejected unauthorized mix descriptor %s for epoch %d", desc.Name, epoch)
 			}
-		} else {
-			rejectedMixes++
-			s.log.Debugf("tallyVotes: Rejected mix descriptor with insufficient votes: %d < %d threshold for epoch %d", len(votes), s.threshold, epoch)
 		}
 	}
-	s.log.Debugf("tallyVotes: Mix descriptor evaluation complete for epoch %d: %d accepted, %d rejected", epoch, acceptedMixes, rejectedMixes)
-
-	acceptedReplicas := 0
-	rejectedReplicas := 0
 	for rawDesc, votes := range replicaTally {
 		if len(votes) >= s.threshold {
 			// this shouldn't fail as the descriptors have already been verified
 			desc := new(pki.ReplicaDescriptor)
 			err := desc.Unmarshal([]byte(rawDesc))
 			if err != nil {
-				s.log.Errorf("tallyVotes: Failed to unmarshal replica descriptor for epoch %d: %s", epoch, err)
 				return nil, nil, nil, err
 			}
 			// only add nodes we have authorized
 			if s.isReplicaDescriptorAuthorized(desc) {
 				replicaNodes = append(replicaNodes, desc)
-				acceptedReplicas++
-				s.log.Debugf("tallyVotes: Accepted replica descriptor %s with %d votes (>= %d threshold) for epoch %d", desc.Name, len(votes), s.threshold, epoch)
-			} else {
-				rejectedReplicas++
-				s.log.Warningf("tallyVotes: Rejected unauthorized replica descriptor %s for epoch %d", desc.Name, epoch)
 			}
-		} else {
-			rejectedReplicas++
-			s.log.Debugf("tallyVotes: Rejected replica descriptor with insufficient votes: %d < %d threshold for epoch %d", len(votes), s.threshold, epoch)
 		}
 	}
-	s.log.Debugf("tallyVotes: Replica descriptor evaluation complete for epoch %d: %d accepted, %d rejected", epoch, acceptedReplicas, rejectedReplicas)
 
 	sortReplicaNodesByPublicKey(replicaNodes)
-	s.log.Debugf("tallyVotes: Sorted replica nodes by public key for epoch %d", epoch)
 
 	// include parameters that have a threshold of votes
-	s.log.Debugf("tallyVotes: Evaluating %d parameter sets for threshold consensus for epoch %d", len(mixParams), epoch)
-	paramSetsEvaluated := 0
 	for bs, votes := range mixParams {
-		paramSetsEvaluated++
 		params := &config.Parameters{}
 		d := gob.NewDecoder(strings.NewReader(bs))
 		if err := d.Decode(params); err != nil {
-			s.log.Errorf("tallyVotes: Failed to decode parameter set %d for epoch %d: %v", paramSetsEvaluated, epoch, err)
+			s.log.Errorf("tallyVotes: failed to decode params: err=%v: bs=%v", err, bs)
 			continue
 		}
 
 		if len(votes) >= s.threshold {
-			s.log.Noticef("tallyVotes: SUCCESS! Found parameter consensus with %d votes (>= %d threshold) for epoch %d", len(votes), s.threshold, epoch)
 			sortNodesByPublicKey(nodes)
-			s.log.Debugf("tallyVotes: Sorted mix nodes by public key for epoch %d", epoch)
-			s.log.Noticef("tallyVotes: Final tally for epoch %d: %d mix nodes, %d replica nodes", epoch, len(nodes), len(replicaNodes))
 			// successful tally
 			return nodes, replicaNodes, params, nil
 		} else if len(votes) >= s.dissenters {
-			s.log.Warningf("tallyVotes: Parameter set %d has %d votes (>= %d dissenters but < %d threshold) for epoch %d", paramSetsEvaluated, len(votes), s.dissenters, s.threshold, epoch)
+			s.log.Errorf("tallyVotes: failed threshold with params: %v", params)
 			continue
-		} else {
-			s.log.Debugf("tallyVotes: Parameter set %d has insufficient votes: %d < %d threshold for epoch %d", paramSetsEvaluated, len(votes), s.threshold, epoch)
 		}
+
 	}
-	s.log.Errorf("tallyVotes: CONSENSUS FAILURE - no parameter set achieved threshold for epoch %d (evaluated %d sets)", epoch, paramSetsEvaluated)
 	return nil, nil, nil, errors.New("consensus failure (mixParams empty)")
 }
 
 func (s *state) computeSharedRandom(epoch uint64, commits map[[publicKeyHashSize]byte][]byte, reveals map[[publicKeyHashSize]byte][]byte) ([]byte, error) {
-	s.log.Debugf("computeSharedRandom: Starting SharedRandom computation for epoch %d", epoch)
-	s.log.Debugf("computeSharedRandom: Have %d commits and %d reveals for epoch %d (threshold: %d)", len(commits), len(reveals), epoch, s.threshold)
-
 	if len(commits) < s.threshold {
-		s.log.Errorf("computeSharedRandom: INSUFFICIENT COMMITS for epoch %d: have %d, need %d", epoch, len(commits), s.threshold)
-		for id := range commits {
-			authorityName := s.authorityNames[id]
-			s.log.Errorf("computeSharedRandom: Have commit for epoch %d from authority %s (%x)", epoch, authorityName, id)
+		s.log.Errorf("Insufficient commits for epoch %d to make consensus", epoch)
+		for id, _ := range commits {
+			s.log.Errorf("Have commits for epoch %d from %x", epoch, id)
 		}
-		return nil, errors.New("insufficient commits to make threshold vote")
+		return nil, errors.New("Insuffiient commits to make threshold vote")
 	}
-	s.log.Debugf("computeSharedRandom: Sufficient commits available for epoch %d", epoch)
-
 	type Reveal struct {
 		PublicKey [publicKeyHashSize]byte
 		Digest    []byte
 	}
 	sortedreveals := make([]Reveal, 0, len(reveals))
-	s.log.Debugf("computeSharedRandom: Processing %d reveals for epoch %d", len(reveals), epoch)
-
 	for pk, srr := range reveals {
-		authorityName := s.authorityNames[pk]
-		s.log.Debugf("computeSharedRandom: Processing reveal from authority %s (%x) for epoch %d", authorityName, pk, epoch)
 		digest, err := cert.GetCertified(srr)
 		if err != nil {
-			s.log.Errorf("computeSharedRandom: REVEAL PROCESSING FAILED for authority %s (%x) for epoch %d: %v", authorityName, pk, epoch, err)
 			return nil, err
 		}
 		sortedreveals = append(sortedreveals, Reveal{PublicKey: pk, Digest: digest})
-		s.log.Debugf("computeSharedRandom: Successfully processed reveal from authority %s for epoch %d", authorityName, epoch)
 	}
-	s.log.Debugf("computeSharedRandom: Processed all %d reveals for epoch %d", len(sortedreveals), epoch)
-
-	s.log.Debugf("computeSharedRandom: Initializing BLAKE2b hasher for epoch %d", epoch)
 	srv, err := blake2b.New256(nil)
 	if err != nil {
-		s.log.Errorf("computeSharedRandom: HASHER INITIALIZATION FAILED for epoch %d: %v", epoch, err)
 		panic(err)
 	}
 
-	s.log.Debugf("computeSharedRandom: Writing shared-random prefix and epoch %d to hasher", epoch)
 	srv.Write([]byte("shared-random"))
 	srv.Write(epochToBytes(epoch))
 
-	s.log.Debugf("computeSharedRandom: Sorting %d reveals for deterministic computation for epoch %d", len(sortedreveals), epoch)
 	sort.Slice(sortedreveals, func(i, j int) bool {
 		return string(sortedreveals[i].Digest) > string(sortedreveals[j].Digest)
 	})
 
-	s.log.Debugf("computeSharedRandom: Writing sorted reveals to hasher for epoch %d", epoch)
-	for i, reveal := range sortedreveals {
-		authorityName := s.authorityNames[reveal.PublicKey]
-		s.log.Debugf("computeSharedRandom: Writing reveal %d from authority %s to hasher for epoch %d", i+1, authorityName, epoch)
+	for _, reveal := range sortedreveals {
 		srv.Write(reveal.PublicKey[:])
 		srv.Write(reveal.Digest)
 	}
-
 	// XXX: Tor also hashes in the previous srv or 32 bytes of 0x00
 	//      How do we bootstrap a new authority?
 	zeros := make([]byte, 32)
 	if vot, ok := s.documents[s.votingEpoch-1]; ok {
-		s.log.Debugf("computeSharedRandom: Writing previous SharedRandom value from epoch %d to hasher for epoch %d", s.votingEpoch-1, epoch)
 		srv.Write(vot.SharedRandomValue)
 	} else {
-		s.log.Debugf("computeSharedRandom: No previous SharedRandom value available, writing zeros for epoch %d", epoch)
 		srv.Write(zeros)
 	}
-
-	result := srv.Sum(nil)
-	s.log.Noticef("computeSharedRandom: SUCCESS! Computed SharedRandom value for epoch %d: %x", epoch, result)
-	return result, nil
+	return srv.Sum(nil), nil
 }
 
 func (s *state) generateTopology(nodeList []*pki.MixDescriptor, doc *pki.Document, srv []byte) [][]*pki.MixDescriptor {
@@ -1812,31 +1475,22 @@ func (s *state) onRevealUpload(reveal *commands.Reveal) commands.Command {
 	defer s.Unlock()
 	resp := commands.RevealStatus{}
 	pk := hash.Sum256From(reveal.PublicKey)
-	authorityName := s.authorityNames[pk]
-
-	s.log.Debugf("onRevealUpload: Received reveal from authority %s (%x) for epoch %d", authorityName, pk, reveal.Epoch)
 
 	// if not authorized
 	_, ok := s.authorizedAuthorities[pk]
 	if !ok {
-		s.log.Errorf("onRevealUpload: AUTHORIZATION FAILED - reveal from authority %s (%x) not authorized for epoch %d", authorityName, pk, reveal.Epoch)
+		s.log.Error("Voter not authorized.")
 		resp.ErrorCode = commands.RevealNotAuthorized
 		return &resp
 	}
-	s.log.Debugf("onRevealUpload: Authorization check passed for authority %s for epoch %d", authorityName, reveal.Epoch)
 
 	// verify the signature on the payload
-	s.log.Debugf("onRevealUpload: Verifying reveal signature from authority %s for epoch %d", authorityName, reveal.Epoch)
-	s.log.Debugf("onRevealUpload: Reveal payload size: %d bytes from authority %s", len(reveal.Payload), authorityName)
 	certified, err := cert.Verify(reveal.PublicKey, reveal.Payload)
 	if err != nil {
-		s.log.Errorf("onRevealUpload: SIGNATURE VERIFICATION FAILED - reveal from authority %s failed to verify for epoch %d: %v", authorityName, reveal.Epoch, err)
-		s.log.Errorf("onRevealUpload: This is the exact error that caused 'RevealNotSigned' - authority %s submitted an invalid reveal signature", authorityName)
-		s.log.Errorf("onRevealUpload: Reveal payload length: %d bytes", len(reveal.Payload))
+		s.log.Error("Reveal from %s failed to verify.", s.authorityNames[pk])
 		resp.ErrorCode = commands.RevealNotSigned
 		return &resp
 	}
-	s.log.Debugf("onRevealUpload: Reveal signature verification passed for authority %s for epoch %d", authorityName, reveal.Epoch)
 
 	e := epochFromBytes(certified[:8])
 	// received too late
@@ -1889,107 +1543,84 @@ func (s *state) onVoteUpload(vote *commands.Vote) commands.Command {
 	defer s.Unlock()
 	resp := commands.VoteStatus{}
 	pk := hash.Sum256From(vote.PublicKey)
-	authorityName := s.authorityNames[pk]
-
-	s.log.Debugf("onVoteUpload: Received vote from authority %s (%x) for epoch %d", authorityName, pk, vote.Epoch)
 
 	// if not authorized
 	_, ok := s.authorizedAuthorities[pk]
 	if !ok {
-		s.log.Errorf("onVoteUpload: AUTHORIZATION FAILED - voter %s (%x) not authorized for epoch %d", authorityName, pk, vote.Epoch)
+		s.log.Error("Voter not authorized.")
 		resp.ErrorCode = commands.VoteNotAuthorized
 		return &resp
 	}
-	s.log.Debugf("onVoteUpload: Authorization check passed for authority %s for epoch %d", authorityName, vote.Epoch)
 
 	// XXX: this ought to use state, to prevent out-of-order protocol events, in case
 	// we have any bugs in our implmementation
-	s.log.Debugf("onVoteUpload: Validating epoch timing for authority %s: vote epoch %d, voting epoch %d", authorityName, vote.Epoch, s.votingEpoch)
 	if vote.Epoch < s.votingEpoch {
-		s.log.Errorf("onVoteUpload: EPOCH TOO EARLY - vote from %s received too early: %d < %d", authorityName, vote.Epoch, s.votingEpoch)
+		s.log.Errorf("Vote from %s received too early: %d < %d", s.authorityNames[pk], vote.Epoch, s.votingEpoch)
 		resp.ErrorCode = commands.VoteTooEarly
 		return &resp
 	}
 	if vote.Epoch > s.votingEpoch {
-		s.log.Errorf("onVoteUpload: EPOCH TOO LATE - vote from %s received too late: %d > %d", authorityName, vote.Epoch, s.votingEpoch)
+		s.log.Errorf("Vote from %s received too late: %d > %d", s.authorityNames[pk], vote.Epoch, s.votingEpoch)
 		resp.ErrorCode = commands.VoteTooLate
 		return &resp
 	}
-	s.log.Debugf("onVoteUpload: Epoch validation passed for authority %s for epoch %d", authorityName, vote.Epoch)
 
 	// haven't received a vote yet for this epoch
 	if _, ok := s.votes[s.votingEpoch]; !ok {
-		s.log.Debugf("onVoteUpload: Initializing votes map for epoch %d", s.votingEpoch)
 		s.votes[s.votingEpoch] = make(map[[publicKeyHashSize]byte]*pki.Document)
 	}
 
 	// haven't received a commit yet for this epoch
 	if _, ok = s.commits[s.votingEpoch]; !ok {
-		s.log.Debugf("onVoteUpload: Initializing commits map for epoch %d", s.votingEpoch)
 		s.commits[s.votingEpoch] = make(map[[publicKeyHashSize]byte][]byte)
 	}
 
 	// peer has already voted for this epoch
 	_, ok = s.votes[s.votingEpoch][pk]
 	if ok {
-		s.log.Errorf("onVoteUpload: DUPLICATE VOTE - vote from authority %s already received for epoch %d", authorityName, s.votingEpoch)
+		s.log.Errorf("Vote from %s already received", s.authorityNames[pk])
 		resp.ErrorCode = commands.VoteAlreadyReceived
 		return &resp
 	}
-	s.log.Debugf("onVoteUpload: No duplicate vote detected for authority %s for epoch %d", authorityName, s.votingEpoch)
 
 	// ensure vote.PublicKey verifies the payload (ie Vote has a signature from this peer)
-	s.log.Debugf("onVoteUpload: Verifying vote signature from authority %s for epoch %d", authorityName, vote.Epoch)
 	_, err := cert.Verify(vote.PublicKey, vote.Payload)
 	if err != nil {
-		s.log.Errorf("onVoteUpload: SIGNATURE VERIFICATION FAILED - vote from authority %s failed to verify for epoch %d: %v", authorityName, vote.Epoch, err)
+		s.log.Errorf("Vote from %s failed to verify.", s.authorityNames[pk])
 		resp.ErrorCode = commands.VoteNotSigned
 		return &resp
 	}
-	s.log.Debugf("onVoteUpload: Vote signature verification passed for authority %s for epoch %d", authorityName, vote.Epoch)
 
-	s.log.Debugf("onVoteUpload: Parsing vote document from authority %s for epoch %d", authorityName, vote.Epoch)
 	doc, err := s.doParseDocument(vote.Payload)
 	if err != nil {
-		s.log.Errorf("onVoteUpload: DOCUMENT PARSING FAILED - vote from authority %s failed signature verification for epoch %d: %v", authorityName, vote.Epoch, err)
+		s.log.Errorf("Vote from %s failed signature verification.", s.authorityNames[pk])
 		resp.ErrorCode = commands.VoteNotSigned
 		return &resp
 	}
-	s.log.Debugf("onVoteUpload: Successfully parsed vote document from authority %s for epoch %d", authorityName, vote.Epoch)
 
 	// Check that the deserialiezd payload was signed for the correct Epoch
-	s.log.Debugf("onVoteUpload: Validating document epoch from authority %s: document epoch %d, expected %d", authorityName, doc.Epoch, s.votingEpoch)
 	if doc.Epoch != s.votingEpoch {
-		s.log.Errorf("onVoteUpload: EPOCH MISMATCH - vote from authority %s contains wrong epoch %d (expected %d)", authorityName, doc.Epoch, s.votingEpoch)
+		s.log.Errorf("Vote from %s contains wrong Epoch %d", s.authorityNames[pk], doc.Epoch)
 		resp.ErrorCode = commands.VoteMalformed
 		return &resp
 	}
-	s.log.Debugf("onVoteUpload: Document epoch validation passed for authority %s for epoch %d", authorityName, doc.Epoch)
 
 	// extract commit from document and verify that it was signed by this peer
 	// IsDocumentWellFormed has already verified that any commit is for
 	// this Epoch and is signed by a known verifier
-	s.log.Debugf("onVoteUpload: Extracting SharedRandom commit from vote document from authority %s for epoch %d", authorityName, vote.Epoch)
 	commit, ok := doc.SharedRandomCommit[pk]
 	if !ok {
 		// It's possible that an authority submitted another authoritys vote on its behalf,
 		// but we are not going to allow that behavior as it is not specified.
-		s.log.Errorf("onVoteUpload: COMMIT MISSING - vote from authority %s did not contain SharedRandom commit for epoch %d", authorityName, vote.Epoch)
+		s.log.Error("Vote from %s did not contain SharedRandom Commit.", s.authorityNames[pk])
 		resp.ErrorCode = commands.VoteMalformed
 		return &resp
 	}
-	s.log.Debugf("onVoteUpload: Successfully extracted SharedRandom commit from authority %s for epoch %d", authorityName, vote.Epoch)
-
 	// save the vote
-	s.log.Debugf("onVoteUpload: Saving vote from authority %s for epoch %d", authorityName, vote.Epoch)
 	s.votes[s.votingEpoch][pk] = doc
 	// save the commit
-	s.log.Debugf("onVoteUpload: Saving SharedRandom commit from authority %s for epoch %d", authorityName, vote.Epoch)
 	s.commits[s.votingEpoch][pk] = commit
-
-	currentVoteCount := len(s.votes[s.votingEpoch])
-	s.log.Noticef("onVoteUpload: SUCCESS! Vote accepted from authority %s for epoch %d (total votes: %d/%d)", authorityName, vote.Epoch, currentVoteCount, len(s.authorizedAuthorities))
-	s.log.Debugf("onVoteUpload: Vote document from authority %s for epoch %d:\n%s", authorityName, vote.Epoch, doc)
+	s.log.Noticef("Vote OK from: %s\n%s", s.authorityNames[pk], doc)
 	resp.ErrorCode = commands.VoteOk
 	return &resp
 }
@@ -1999,68 +1630,52 @@ func (s *state) onSigUpload(sig *commands.Sig) commands.Command {
 	defer s.Unlock()
 	resp := commands.SigStatus{}
 	pk := hash.Sum256From(sig.PublicKey)
-	authorityName := s.authorityNames[pk]
-
-	s.log.Debugf("onSigUpload: Received signature from authority %s (%x) for epoch %d", authorityName, pk, sig.Epoch)
 
 	_, ok := s.authorizedAuthorities[pk]
 	if !ok {
-		s.log.Errorf("onSigUpload: AUTHORIZATION FAILED - signature from authority %s (%x) not authorized for epoch %d", authorityName, pk, sig.Epoch)
+		s.log.Error("Signature not authorized.")
 		resp.ErrorCode = commands.SigNotAuthorized
 		return &resp
 	}
-	s.log.Debugf("onSigUpload: Authorization check passed for authority %s for epoch %d", authorityName, sig.Epoch)
-
-	s.log.Debugf("onSigUpload: Validating epoch timing for authority %s: signature epoch %d, voting epoch %d", authorityName, sig.Epoch, s.votingEpoch)
 	if sig.Epoch < s.votingEpoch {
-		s.log.Errorf("onSigUpload: EPOCH TOO EARLY - signature from authority %s received too early: %d < %d", authorityName, sig.Epoch, s.votingEpoch)
+		s.log.Errorf("Signature from %s received too early: %d < %d", s.authorityNames[pk], sig.Epoch, s.votingEpoch)
 		resp.ErrorCode = commands.SigTooEarly
 		return &resp
 	}
 	if sig.Epoch > s.votingEpoch {
-		s.log.Errorf("onSigUpload: EPOCH TOO LATE - signature from authority %s received too late: %d > %d", authorityName, sig.Epoch, s.votingEpoch)
+		s.log.Errorf("Signature from %s received too late: %d > %d", s.authorityNames[pk], sig.Epoch, s.votingEpoch)
 		resp.ErrorCode = commands.SigTooLate
 		return &resp
 	}
-	s.log.Debugf("onSigUpload: Epoch validation passed for authority %s for epoch %d", authorityName, sig.Epoch)
-
-	s.log.Debugf("onSigUpload: Verifying signature from authority %s for epoch %d", authorityName, sig.Epoch)
 	verified, err := cert.Verify(sig.PublicKey, sig.Payload)
 	if err != nil {
-		s.log.Errorf("onSigUpload: SIGNATURE VERIFICATION FAILED - signature from authority %s failed verification for epoch %d: %v", authorityName, sig.Epoch, err)
+		s.log.Error("Sig failed signature verification.")
 		resp.ErrorCode = commands.SigNotSigned
 		return &resp
 	}
-	s.log.Debugf("onSigUpload: Signature verification passed for authority %s for epoch %d", authorityName, sig.Epoch)
 
 	// haven't received a sig yet for this epoch
 	if _, ok := s.signatures[s.votingEpoch]; !ok {
-		s.log.Debugf("onSigUpload: Initializing signatures map for epoch %d", s.votingEpoch)
 		s.signatures[s.votingEpoch] = make(map[[publicKeyHashSize]byte]*cert.Signature)
 	}
 
 	// peer has not yet submitted a signature
-	s.log.Debugf("onSigUpload: Checking for duplicate signature from authority %s for epoch %d", authorityName, sig.Epoch)
 	if !s.dupSig(*sig) {
-		s.log.Debugf("onSigUpload: No duplicate signature detected, processing signature from authority %s for epoch %d", authorityName, sig.Epoch)
 		csig := new(cert.Signature)
 		err := csig.Unmarshal(verified)
 		if err != nil {
 			resp.ErrorCode = commands.SigInvalid
-			s.log.Errorf("onSigUpload: SIGNATURE DESERIALIZATION FAILED - signature failed to deserialize from authority %s for epoch %d: %v", authorityName, sig.Epoch, err)
+			s.log.Errorf("Signature failed to deserialize from: %s", s.authorityNames[pk])
 			return &resp
 		}
-		s.log.Debugf("onSigUpload: Successfully deserialized signature from authority %s for epoch %d", authorityName, sig.Epoch)
-
+		s.log.Noticef("Signature OK from: %s", s.authorityNames[pk])
 		s.signatures[s.votingEpoch][hash.Sum256From(sig.PublicKey)] = csig
-		currentSigCount := len(s.signatures[s.votingEpoch])
-		s.log.Noticef("onSigUpload: SUCCESS! Signature accepted from authority %s for epoch %d (total signatures: %d/%d)", authorityName, sig.Epoch, currentSigCount, len(s.authorizedAuthorities))
 		resp.ErrorCode = commands.SigOk
 		return &resp
 	} else {
 		// peer is behaving strangely
 		// error; two sigs from same peer
-		s.log.Errorf("onSigUpload: DUPLICATE SIGNATURE - authority %s attempted to submit multiple signatures for epoch %d", authorityName, sig.Epoch)
+		s.log.Error("Sig command invalid: more than one sig from same peer is not allowed.")
 		resp.ErrorCode = commands.SigAlreadyReceived
 		return &resp
 	}
@@ -2615,87 +2230,40 @@ func (s *state) verifyTopology(topology [][]*pki.MixDescriptor) error {
 
 // generate commit and reveal values and save them
 func (s *state) doCommit(epoch uint64) ([]byte, error) {
-	s.log.Debugf("doCommit: Generating SharedRandom Commit for epoch %d", epoch)
-	s.log.Debugf("doCommit: Our identity hash: %x", s.identityPubKeyHash())
-
+	s.log.Debugf("Generating SharedRandom Commit for %d", epoch)
 	srv := new(pki.SharedRandom)
 	commit, err := srv.Commit(epoch)
 	if err != nil {
-		s.log.Errorf("doCommit: Failed to generate commit for epoch %d: %v", epoch, err)
 		return nil, err
 	}
-	s.log.Debugf("doCommit: Successfully generated commit for epoch %d", epoch)
-
 	// sign the serialized commit
-	s.log.Debugf("doCommit: Signing commit for epoch %d", epoch)
 	signedCommit, err := cert.Sign(s.s.identityPrivateKey, s.s.identityPublicKey, commit, epoch)
 	if err != nil {
-		s.log.Errorf("doCommit: Failed to sign commit for epoch %d: %v", epoch, err)
 		return nil, err
 	}
-	s.log.Debugf("doCommit: Successfully signed commit for epoch %d", epoch)
-
 	// sign the reveal
-	s.log.Debugf("doCommit: Signing reveal for epoch %d", epoch)
 	signedReveal, err := cert.Sign(s.s.identityPrivateKey, s.s.identityPublicKey, srv.Reveal(), epoch)
 	if err != nil {
-		s.log.Errorf("doCommit: Failed to sign reveal for epoch %d: %v", epoch, err)
 		return nil, err
 	}
-	s.log.Debugf("doCommit: Successfully signed reveal for epoch %d", epoch)
-
 	// save our commit
 	if _, ok := s.commits[epoch]; !ok {
-		s.log.Debugf("doCommit: Creating commits map for epoch %d", epoch)
 		s.commits[epoch] = make(map[[pki.PublicKeyHashSize]byte][]byte)
 	}
 	s.commits[epoch][s.identityPubKeyHash()] = signedCommit
-	s.log.Debugf("doCommit: Stored our commit for epoch %d", epoch)
 
 	// save our reveal
 	if _, ok := s.reveals[epoch]; !ok {
-		s.log.Debugf("doCommit: Creating reveals map for epoch %d", epoch)
 		s.reveals[epoch] = make(map[[pki.PublicKeyHashSize]byte][]byte)
 	}
 	s.reveals[epoch][s.identityPubKeyHash()] = signedReveal
-	s.log.Debugf("doCommit: Stored our reveal for epoch %d", epoch)
 	return signedCommit, nil
 }
 
 func (s *state) reveal(epoch uint64) []byte {
-	s.log.Debugf("reveal: Retrieving reveal for epoch %d", epoch)
-	s.log.Debugf("reveal: Our identity hash: %x", s.identityPubKeyHash())
-
-	// Check if reveals map exists for this epoch
-	if _, ok := s.reveals[epoch]; !ok {
-		s.log.Errorf("reveal: No reveals map exists for epoch %d", epoch)
-	} else {
-		s.log.Debugf("reveal: Reveals map exists for epoch %d with %d entries", epoch, len(s.reveals[epoch]))
-	}
-
-	// Check if commits map exists and has our commit
-	if commits, ok := s.commits[epoch]; ok {
-		if _, hasOurCommit := commits[s.identityPubKeyHash()]; hasOurCommit {
-			s.log.Debugf("reveal: We DO have our commit stored for epoch %d", epoch)
-		} else {
-			s.log.Errorf("reveal: We do NOT have our commit stored for epoch %d", epoch)
-		}
-		s.log.Debugf("reveal: Total commits for epoch %d: %d", epoch, len(commits))
-	} else {
-		s.log.Errorf("reveal: No commits map exists for epoch %d", epoch)
-	}
-
 	signed, ok := s.reveals[epoch][s.identityPubKeyHash()]
 	if !ok {
-		fatalErr := fmt.Errorf("REVEAL FATAL: reveal() called without commit for epoch %d - this indicates a critical SharedRandom protocol violation", epoch)
-		s.log.Errorf("reveal: %v", fatalErr)
-		s.log.Errorf("reveal: Available reveals for epoch %d: %d", epoch, len(s.reveals[epoch]))
-		for pk := range s.reveals[epoch] {
-			authorityName := s.authorityNames[pk]
-			s.log.Errorf("reveal: Have reveal from authority %s (%x)", authorityName, pk)
-		}
-		s.s.fatalErrCh <- fatalErr
+		s.s.fatalErrCh <- errors.New("reveal() called without commit")
 	}
-	s.log.Debugf("reveal: Successfully retrieved reveal for epoch %d", epoch)
 	return signed
 }
