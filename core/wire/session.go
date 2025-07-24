@@ -21,7 +21,6 @@ import (
 	"crypto/subtle"
 	"encoding/binary"
 	"errors"
-	"fmt"
 	"io"
 	"net"
 	"sync"
@@ -76,29 +75,6 @@ var (
 	errAuthenticationFailed = errors.New("wire/session: authentication failed")
 	errMsgSize              = errors.New("wire/session: invalid message size")
 )
-
-// enhanceHandshakeErrorWithReadContext enhances a HandshakeError with TCP read error context
-func enhanceHandshakeErrorWithReadContext(hsErr *HandshakeError, err error) *HandshakeError {
-	if err == nil {
-		return hsErr
-	}
-
-	// Set the underlying error if not already set
-	if hsErr.UnderlyingError == nil {
-		hsErr.UnderlyingError = err
-	}
-
-	// Enhance the message based on the type of read error
-	if err == io.EOF {
-		hsErr.Message = hsErr.Message + " (peer closed connection)"
-	} else if ne, ok := err.(net.Error); ok && ne.Timeout() {
-		hsErr.Message = hsErr.Message + " (read timeout)"
-	} else {
-		hsErr.Message = hsErr.Message + " (read error)"
-	}
-
-	return hsErr
-}
 
 type authenticateMessage struct {
 	ad       []byte
@@ -165,14 +141,6 @@ type SessionInterface interface {
 	ClockSkew() time.Duration
 }
 
-// SessionTiming contains detailed timing information for debugging
-type SessionTiming struct {
-	// Only store durations to minimize memory footprint
-	HandshakeDuration time.Duration // Time for crypto handshake
-	NoOpDuration      time.Duration // Time for NoOp exchange
-	TotalDuration     time.Duration // Total Initialize() time
-}
-
 // Session is a wire protocol session.
 type Session struct {
 	conn net.Conn
@@ -199,9 +167,6 @@ type Session struct {
 	isInitiator bool
 
 	maxMesgSize int
-
-	// Timing information for debugging
-	timing SessionTiming
 }
 
 // client
@@ -257,32 +222,6 @@ func (s *Session) GetCommands() *commands.Commands {
 	return s.commands
 }
 
-// getConnectionInfo safely gets detailed connection information
-func (s *Session) getConnectionInfo() *ConnectionInfo {
-	return ExtractConnectionInfo(s.conn)
-}
-
-// createHandshakeError creates a detailed handshake error with context
-func (s *Session) createHandshakeError(state HandshakeState, message string, err error) *HandshakeError {
-	hsErr := &HandshakeError{
-		State:           state,
-		Message:         message,
-		UnderlyingError: err,
-		IsInitiator:     s.isInitiator,
-		Connection:      s.getConnectionInfo(),
-		ProtocolName:    "PqXX",
-		KEMScheme:       s.protocol.KEM.Name(),
-		AdditionalData:  s.additionalData,
-	}
-
-	// Add local static key if available
-	if s.authenticationKEMKey != nil {
-		hsErr.LocalStaticKey = s.authenticationKEMKey.Public()
-	}
-
-	return hsErr
-}
-
 func (s *Session) handshake() error {
 	defer func() {
 		// XXX FIXME: s.authenticationKEMKey.Reset()
@@ -304,7 +243,7 @@ func (s *Session) handshake() error {
 
 	handshake, err := nyquist.NewHandshake(cfg)
 	if err != nil {
-		return s.createHandshakeError(HandshakeStateInit, "failed to create handshake", err)
+		return err
 	}
 	defer handshake.Reset()
 
@@ -314,65 +253,41 @@ func (s *Session) handshake() error {
 		msg1 = append(msg1, prologue...)
 		msg1, err = handshake.WriteMessage(msg1, nil)
 		if err != nil {
-			hsErr := s.createHandshakeError(HandshakeStateMsg1Send, "failed to create message 1", err)
-			hsErr.MessageNumber = 1
-			hsErr.ExpectedSize = s.msg1Len()
-			return hsErr
+			return err
 		}
 		if _, err = s.conn.Write(msg1); err != nil {
-			hsErr := s.createHandshakeError(HandshakeStateMsg1Send, "failed to send message 1", err)
-			hsErr.MessageNumber = 1
-			hsErr.MessageSize = len(msg1)
-			return hsErr
+			return err
 		}
 
-		// <- ekem, s, (auth)
+		// -> ekem, s, (auth)
 		msg2 := make([]byte, s.msg2Len())
 		if _, err = io.ReadFull(s.conn, msg2); err != nil {
-			hsErr := s.createHandshakeError(HandshakeStateMsg2Receive, "failed to receive message 2", err)
-			hsErr.MessageNumber = 2
-			hsErr.ExpectedSize = s.msg2Len()
-			return enhanceHandshakeErrorWithReadContext(hsErr, err)
+			return err
 		}
 
 		now := time.Now()
 		rawAuth := make([]byte, 0, authLen)
 		rawAuth, err = handshake.ReadMessage(rawAuth, msg2)
 		if err != nil {
-			hsErr := s.createHandshakeError(HandshakeStateMsg2Receive, "failed to process message 2", err)
-			hsErr.MessageNumber = 2
-			hsErr.MessageSize = len(msg2)
-			hsErr.ExpectedSize = s.msg2Len()
-			return hsErr
+			return err
 		}
 		peerAuth := authenticateMessageFromBytes(rawAuth)
 
 		// Authenticate the peer.
 		remoteKeyBlob, err := handshake.GetStatus().KEM.RemoteStatic.MarshalBinary()
 		if err != nil {
-			hsErr := s.createHandshakeError(HandshakeStateAuthentication, "failed to marshal remote static key", err)
-			hsErr.MessageNumber = 2
-			return hsErr
+			return err
 		}
 		peerAuthenticationKEMKey, err := s.protocol.KEM.UnmarshalBinaryPublicKey(remoteKeyBlob)
 		if err != nil {
-			hsErr := s.createHandshakeError(HandshakeStateAuthentication, "failed to unmarshal peer authentication key", err)
-			hsErr.MessageNumber = 2
-			return hsErr
+			return err
 		}
 		s.peerCredentials = &PeerCredentials{
 			AdditionalData: peerAuth.ad,
 			PublicKey:      peerAuthenticationKEMKey,
 		}
-
-		// Add remote static key to error context
-		hsErr := s.createHandshakeError(HandshakeStateAuthentication, "", nil)
-		hsErr.RemoteStaticKey = peerAuthenticationKEMKey
-		hsErr.PeerCredentials = s.peerCredentials
-
 		if !s.authenticator.IsPeerValid(s.peerCredentials) {
-			hsErr.Message = "peer authentication failed"
-			return hsErr
+			return errAuthenticationFailed
 		}
 
 		// Cache the clock skew.
@@ -386,66 +301,38 @@ func (s *Session) handshake() error {
 		msg3 := make([]byte, 0, s.msg3Len())
 		msg3, err = handshake.WriteMessage(msg3, rawAuth)
 		if err != nil {
-			hsErr := s.createHandshakeError(HandshakeStateMsg3Send, "failed to create message 3", err)
-			hsErr.MessageNumber = 3
-			hsErr.ExpectedSize = s.msg3Len()
-			return hsErr
+			return err
 		}
 		if _, err = s.conn.Write(msg3); err != nil {
-			hsErr := s.createHandshakeError(HandshakeStateMsg3Send, "failed to send message 3", err)
-			hsErr.MessageNumber = 3
-			hsErr.MessageSize = len(msg3)
-			return hsErr
+			return err
 		}
 
-		// <- skem
+		// -> skem
 		msg4 := make([]byte, s.msg4Len())
 		if _, err = io.ReadFull(s.conn, msg4); err != nil {
-			hsErr := s.createHandshakeError(HandshakeStateMsg4Receive, "failed to receive message 4", err)
-			hsErr.MessageNumber = 4
-			hsErr.ExpectedSize = s.msg4Len()
-			return enhanceHandshakeErrorWithReadContext(hsErr, err)
+			return err
 		}
 		_, err = handshake.ReadMessage(nil, msg4)
 		switch err {
 		case nyquist.ErrDone:
 			// happy path
 		case nil:
-			hsErr := s.createHandshakeError(HandshakeStateMsg4Receive, "unexpected handshake state after message 4", nil)
-			hsErr.MessageNumber = 4
-			hsErr.MessageSize = len(msg4)
-			return hsErr
+			return errors.New("wire/session: weird handshake failure")
 		default:
-			hsErr := s.createHandshakeError(HandshakeStateMsg4Receive, "failed to process message 4", err)
-			hsErr.MessageNumber = 4
-			hsErr.MessageSize = len(msg4)
-			hsErr.ExpectedSize = s.msg4Len()
-			return hsErr
+			return err
 		}
 	} else {
-		// <- (prologue), e
+		// -> (prologue), e
 		msg1 := make([]byte, s.msg1Len())
 		if _, err = io.ReadFull(s.conn, msg1); err != nil {
-			hsErr := s.createHandshakeError(HandshakeStateMsg1Receive, "failed to receive message 1", err)
-			hsErr.MessageNumber = 1
-			hsErr.ExpectedSize = s.msg1Len()
-			return enhanceHandshakeErrorWithReadContext(hsErr, err)
+			return err
 		}
 		if subtle.ConstantTimeCompare(prologue, msg1[0:1]) != 1 {
-			hsErr := &ProtocolVersionError{
-				Expected:   prologue,
-				Received:   msg1[0:1],
-				Connection: s.getConnectionInfo(),
-			}
-			return hsErr
+			return errors.New("wire/session: unsupported protocol version")
 		}
 		msg1 = msg1[1:]
 		if _, err = handshake.ReadMessage(nil, msg1); err != nil {
-			hsErr := s.createHandshakeError(HandshakeStateMsg1Receive, "failed to process message 1", err)
-			hsErr.MessageNumber = 1
-			hsErr.MessageSize = len(msg1) + 1 // +1 for prologue
-			hsErr.ExpectedSize = s.msg1Len()
-			return hsErr
+			return err
 		}
 
 		// -> ekem, s, (auth)
@@ -458,64 +345,40 @@ func (s *Session) handshake() error {
 		msg2 := make([]byte, 0, s.msg2Len())
 		msg2, err = handshake.WriteMessage(msg2, rawAuth)
 		if err != nil {
-			hsErr := s.createHandshakeError(HandshakeStateMsg2Send, "failed to create message 2", err)
-			hsErr.MessageNumber = 2
-			hsErr.ExpectedSize = s.msg2Len()
-			return hsErr
+			return err
 		}
 		if _, err = s.conn.Write(msg2); err != nil {
-			hsErr := s.createHandshakeError(HandshakeStateMsg2Send, "failed to send message 2", err)
-			hsErr.MessageNumber = 2
-			hsErr.MessageSize = len(msg2)
-			return hsErr
+			return err
 		}
 
-		// <- skem, s, (auth)
+		// -> skem, s, (auth)
 		msg3 := make([]byte, s.msg3Len())
 		rawAuth = make([]byte, 0, authLen)
 		if _, err = io.ReadFull(s.conn, msg3); err != nil {
-			hsErr := s.createHandshakeError(HandshakeStateMsg3Receive, "failed to receive message 3", err)
-			hsErr.MessageNumber = 3
-			hsErr.ExpectedSize = s.msg3Len()
-			return enhanceHandshakeErrorWithReadContext(hsErr, err)
+			return err
 		}
 		rawAuth, err = handshake.ReadMessage(rawAuth, msg3)
 		if err != nil {
-			hsErr := s.createHandshakeError(HandshakeStateMsg3Receive, "failed to process message 3", err)
-			hsErr.MessageNumber = 3
-			hsErr.MessageSize = len(msg3)
-			hsErr.ExpectedSize = s.msg3Len()
-			return hsErr
+			return err
 		}
 		peerAuth := authenticateMessageFromBytes(rawAuth)
 
 		// Authenticate the peer.
 		remoteKeyBlob, err := handshake.GetStatus().KEM.RemoteStatic.MarshalBinary()
 		if err != nil {
-			hsErr := s.createHandshakeError(HandshakeStateAuthentication, "failed to marshal remote static key", err)
-			hsErr.MessageNumber = 3
-			return hsErr
+			return err
 		}
 		peerAuthenticationKEMKey, err := s.protocol.KEM.UnmarshalBinaryPublicKey(remoteKeyBlob)
 		if err != nil {
-			hsErr := s.createHandshakeError(HandshakeStateAuthentication, "failed to unmarshal peer authentication key", err)
-			hsErr.MessageNumber = 3
-			return hsErr
+			return err
 		}
 
 		s.peerCredentials = &PeerCredentials{
 			AdditionalData: peerAuth.ad,
 			PublicKey:      peerAuthenticationKEMKey,
 		}
-
-		// Add remote static key to error context
-		hsErr := s.createHandshakeError(HandshakeStateAuthentication, "", nil)
-		hsErr.RemoteStaticKey = peerAuthenticationKEMKey
-		hsErr.PeerCredentials = s.peerCredentials
-
 		if !s.authenticator.IsPeerValid(s.peerCredentials) {
-			hsErr.Message = "peer authentication failed"
-			return hsErr
+			return errAuthenticationFailed
 		}
 
 		// -> skem
@@ -526,35 +389,17 @@ func (s *Session) handshake() error {
 		case nyquist.ErrDone:
 			// happy path
 		case nil:
-			hsErr := s.createHandshakeError(HandshakeStateMsg4Send, "unexpected handshake state after creating message 4", nil)
-			hsErr.MessageNumber = 4
-			hsErr.MessageSize = len(msg4)
-			return hsErr
+			return errors.New("wire/session: weird handshake failure")
 		default:
-			hsErr := s.createHandshakeError(HandshakeStateMsg4Send, "failed to create message 4", err)
-			hsErr.MessageNumber = 4
-			hsErr.ExpectedSize = s.msg4Len()
-			return hsErr
+			return err
 		}
 
 		if _, err = s.conn.Write(msg4); err != nil {
-			hsErr := s.createHandshakeError(HandshakeStateMsg4Send, "failed to send message 4", err)
-			hsErr.MessageNumber = 4
-			hsErr.MessageSize = len(msg4)
-			return hsErr
+			return err
 		}
 	}
 
 	status := handshake.GetStatus()
-	if status == nil {
-		return s.createHandshakeError(HandshakeStateFinalization, "handshake status is nil", nil)
-	}
-	if len(status.CipherStates) != 2 {
-		hsErr := s.createHandshakeError(HandshakeStateFinalization, "invalid cipher states count", nil)
-		hsErr.Message = fmt.Sprintf("expected 2 cipher states, got %d", len(status.CipherStates))
-		return hsErr
-	}
-
 	if s.isInitiator {
 		s.tx, s.rx = status.CipherStates[0], status.CipherStates[1]
 	} else {
@@ -570,14 +415,11 @@ func (s *Session) finalizeHandshake() error {
 		// completing the handshake.
 		cmd, err := s.RecvCommand()
 		if err != nil {
-			hsErr := s.createHandshakeError(HandshakeStateFinalization, "failed to receive NoOp command from peer", err)
-			return hsErr
+			return err
 		}
 		if _, ok := cmd.(*commands.NoOp); !ok {
 			// Protocol violation, the peer sent something other than a NoOp.
-			hsErr := s.createHandshakeError(HandshakeStateFinalization, "protocol violation: expected NoOp command", nil)
-			hsErr.Message = fmt.Sprintf("protocol violation: expected NoOp command, got %T", cmd)
-			return hsErr
+			return errInvalidState
 		}
 		return nil
 	}
@@ -587,43 +429,23 @@ func (s *Session) finalizeHandshake() error {
 	noOpCmd := &commands.NoOp{
 		Cmds: s.commands,
 	}
-	err := s.SendCommand(noOpCmd)
-	if err != nil {
-		hsErr := s.createHandshakeError(HandshakeStateFinalization, "failed to send NoOp command to peer", err)
-		return hsErr
-	}
-	return nil
+	return s.SendCommand(noOpCmd)
 }
 
 // Initialize takes an establised net.Conn, and binds it to a Session, and
 // conducts the wire protocol handshake.
 func (s *Session) Initialize(conn net.Conn) error {
-	// Record timing for debugging
-	initStart := time.Now()
-	defer func() {
-		s.timing.TotalDuration = time.Since(initStart)
-	}()
-
 	if atomic.LoadUint32(&s.state) != stateInit {
 		return errInvalidState
 	}
 	s.conn = conn
-
-	// Time the crypto handshake
-	handshakeStart := time.Now()
 	if err := s.handshake(); err != nil {
 		return err
 	}
-	s.timing.HandshakeDuration = time.Since(handshakeStart)
-
-	// Time the NoOp exchange
-	noopStart := time.Now()
 	if err := s.finalizeHandshake(); err != nil {
 		atomic.StoreUint32(&s.state, stateInvalid)
 		return err
 	}
-	s.timing.NoOpDuration = time.Since(noopStart)
-
 	return nil
 }
 
@@ -691,19 +513,10 @@ func (s *Session) recvCommandImpl() (commands.Command, error) {
 		return nil, errInvalidState
 	}
 
-	// Note: Connection deadline management is handled by the calling authority components
-	// Wire session respects whatever deadline is already set on the connection
-
 	// Read, decrypt and parse the CiphertextHeader.
 	var ctHdrCt [macLen + 4]byte
 	if _, err := io.ReadFull(s.conn, ctHdrCt[:]); err != nil {
-		if err == io.EOF {
-			return nil, fmt.Errorf("wire/session: peer closed connection while reading command header")
-		} else if ne, ok := err.(net.Error); ok && ne.Timeout() {
-			return nil, fmt.Errorf("wire/session: read timeout while reading command header: %v", err)
-		} else {
-			return nil, fmt.Errorf("wire/session: read error while reading command header: %v", err)
-		}
+		return nil, err
 	}
 	s.rxKeyMutex.RLock()
 	ctHdr, err := s.rx.DecryptWithAd(nil, nil, ctHdrCt[:])
@@ -722,13 +535,7 @@ func (s *Session) recvCommandImpl() (commands.Command, error) {
 	// Read and decrypt the Ciphertext.
 	ct := make([]byte, ctLen)
 	if _, err := io.ReadFull(s.conn, ct); err != nil {
-		if err == io.EOF {
-			return nil, fmt.Errorf("wire/session: peer closed connection while reading command payload")
-		} else if ne, ok := err.(net.Error); ok && ne.Timeout() {
-			return nil, fmt.Errorf("wire/session: read timeout while reading command payload: %v", err)
-		} else {
-			return nil, fmt.Errorf("wire/session: read error while reading command payload: %v", err)
-		}
+		return nil, err
 	}
 	s.rxKeyMutex.RLock()
 	pt, err := s.rx.DecryptWithAd(nil, nil, ct)
@@ -789,12 +596,6 @@ func (s *Session) ClockSkew() time.Duration {
 		panic("wire/session: ClockSkew() call in invalid state")
 	}
 	return s.clockSkew
-}
-
-// Timing returns detailed timing information for the session initialization.
-// This is useful for debugging wire protocol performance issues.
-func (s *Session) Timing() SessionTiming {
-	return s.timing
 }
 
 // NewPKISession creates a new session to be used with the PKI (authority).
