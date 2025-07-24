@@ -31,7 +31,14 @@ import (
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
+	"github.com/katzenpost/katzenpost/quic/common"
 )
+
+// isQUICConn returns true if the connection is a QUIC connection
+func isQUICConn(conn net.Conn) bool {
+	_, ok := conn.(*common.QuicConn)
+	return ok
+}
 
 func (s *Server) onConn(conn net.Conn) {
 	const (
@@ -70,7 +77,10 @@ func (s *Server) onConn(conn net.Conn) {
 	// tears down the connection before the response was sent.
 	// So this waits 100ms after the response has been served before closing the connection.
 	defer func() {
-		<-time.After(time.Millisecond * 100)
+		// Only delay for QUIC connections if needed
+		if isQUICConn(conn) {
+			<-time.After(time.Millisecond * 100)
+		}
 		wireConn.Close()
 	}()
 
