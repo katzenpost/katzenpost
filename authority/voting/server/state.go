@@ -167,18 +167,22 @@ func (s *state) fsm() <-chan time.Time {
 	s.Lock()
 	var sleep time.Duration
 	epoch, elapsed, nextEpoch := epochtime.Now()
-	s.log.Debugf("Current epoch %d, remaining time: %s", epoch, nextEpoch)
+	s.log.Debugf("FSM: Current epoch %d, elapsed: %v, remaining time: %v, current state: %v", epoch, elapsed, nextEpoch, s.state)
 
 	switch s.state {
 	case stateBootstrap:
+		s.log.Noticef("FSM: Entering bootstrap state for epoch %d", epoch)
 		s.genesisEpoch = 0
+		s.log.Debugf("FSM: Fetching consensus for previous epoch %d", epoch-1)
 		s.backgroundFetchConsensus(epoch - 1)
+		s.log.Debugf("FSM: Fetching consensus for current epoch %d", epoch)
 		s.backgroundFetchConsensus(epoch)
 		if elapsed > MixPublishDeadline {
-			s.log.Errorf("Too late to vote this round, sleeping until %s", nextEpoch)
+			s.log.Errorf("FSM: Too late to vote this round (elapsed %s > deadline %s), sleeping until next epoch %s", elapsed, MixPublishDeadline, nextEpoch)
 			sleep = nextEpoch
 			s.votingEpoch = epoch + 2
 			s.state = stateBootstrap
+			s.log.Warningf("FSM: Staying in bootstrap state, will vote for epoch %d", s.votingEpoch)
 		} else {
 			s.votingEpoch = epoch + 1
 			s.state = stateAcceptDescriptor
@@ -186,88 +190,142 @@ func (s *state) fsm() <-chan time.Time {
 			if sleep < 0 {
 				sleep = 0
 			}
-			s.log.Noticef("Bootstrapping for %d", s.votingEpoch)
+			s.log.Noticef("FSM: Bootstrapping complete, transitioning to %s state for voting epoch %d, sleeping for %s", s.state, s.votingEpoch, sleep)
 		}
 	case stateAcceptDescriptor:
+		s.log.Noticef("FSM: Entering stateAcceptDescriptor for epoch %d", s.votingEpoch)
+		descriptorCount := 0
+		if descs, ok := s.descriptors[s.votingEpoch]; ok {
+			descriptorCount = len(descs)
+		}
+		s.log.Debugf("FSM: Currently have %d descriptors for epoch %d", descriptorCount, s.votingEpoch)
+
+		s.log.Debugf("FSM: Generating vote for epoch %d", s.votingEpoch)
 		signed, err := s.getVote(s.votingEpoch)
 		if err == nil {
+			s.log.Noticef("FSM: Successfully generated vote for epoch %d", s.votingEpoch)
 			serialized, err := signed.MarshalCertificate()
 			if err == nil {
+				s.log.Debugf("FSM: Successfully serialized vote certificate for epoch %d", s.votingEpoch)
 				s.sendVoteToAuthorities(serialized, s.votingEpoch)
 			} else {
-				s.log.Errorf("Failed to serialize certificate for epoch %v: %s", s.votingEpoch, err)
+				s.log.Errorf("FSM: Failed to serialize certificate for epoch %v: %s", s.votingEpoch, err)
 			}
 		} else {
-			s.log.Errorf("Failed to compute vote for epoch %v: %s", s.votingEpoch, err)
+			s.log.Errorf("FSM: Failed to compute vote for epoch %v: %s", s.votingEpoch, err)
 		}
 		s.state = stateAcceptVote
 		_, nowelapsed, _ := epochtime.Now()
 		sleep = AuthorityVoteDeadline - nowelapsed
+		s.log.Noticef("FSM: Transitioning to %s state, sleeping for %s until vote deadline", s.state, sleep)
 	case stateAcceptVote:
+		s.log.Noticef("FSM: Entering stateAcceptVote for epoch %d", s.votingEpoch)
+		voteCount := 0
+		if votes, ok := s.votes[s.votingEpoch]; ok {
+			voteCount = len(votes)
+		}
+		s.log.Debugf("FSM: Currently have %d votes for epoch %d (threshold: %d)", voteCount, s.votingEpoch, s.threshold)
+
 		signed := s.reveal(s.votingEpoch)
+		s.log.Debugf("FSM: Generated reveal for epoch %d", s.votingEpoch)
 		s.sendRevealToAuthorities(signed, s.votingEpoch)
 		s.state = stateAcceptReveal
 		_, nowelapsed, _ := epochtime.Now()
 		sleep = AuthorityRevealDeadline - nowelapsed
+		s.log.Noticef("FSM: Transitioning to %s state, sleeping for %s until reveal deadline", s.state, sleep)
 	case stateAcceptReveal:
+		s.log.Noticef("FSM: Entering stateAcceptReveal for epoch %d", s.votingEpoch)
+		revealCount := 0
+		if reveals, ok := s.reveals[s.votingEpoch]; ok {
+			revealCount = len(reveals)
+		}
+		s.log.Debugf("FSM: Currently have %d reveals for epoch %d (threshold: %d)", revealCount, s.votingEpoch, s.threshold)
+
 		signed, err := s.getCertificate(s.votingEpoch)
 		if err == nil {
+			s.log.Noticef("FSM: Successfully generated certificate for epoch %d", s.votingEpoch)
 			serialized, err := signed.MarshalCertificate()
 			if err == nil {
+				s.log.Debugf("FSM: Successfully serialized certificate for epoch %d", s.votingEpoch)
 				s.sendCertToAuthorities(serialized, s.votingEpoch)
 			} else {
-				s.log.Errorf("Failed to serialize certificate for epoch %v", s.votingEpoch)
+				s.log.Errorf("FSM: Failed to serialize certificate for epoch %v: %s", s.votingEpoch, err)
 			}
 		} else {
-			s.log.Errorf("Failed to compute certificate for epoch %v", s.votingEpoch)
+			s.log.Errorf("FSM: Failed to compute certificate for epoch %v: %s", s.votingEpoch, err)
 		}
 		s.state = stateAcceptCert
 		_, nowelapsed, _ := epochtime.Now()
 		sleep = AuthorityCertDeadline - nowelapsed
+		s.log.Noticef("FSM: Transitioning to %s state, sleeping for %s until cert deadline", s.state, sleep)
 	case stateAcceptCert:
+		s.log.Noticef("FSM: Entering stateAcceptCert for epoch %d", s.votingEpoch)
+		certCount := 0
+		if certs, ok := s.certificates[s.votingEpoch]; ok {
+			certCount = len(certs)
+		}
+		s.log.Debugf("FSM: Currently have %d certificates for epoch %d (threshold: %d)", certCount, s.votingEpoch, s.threshold)
+
 		doc, err := s.getMyConsensus(s.votingEpoch)
 		if err == nil {
-			s.log.Noticef("my view of consensus: %x\n%s", s.identityPubKeyHash(), doc)
+			s.log.Noticef("FSM: Successfully computed my view of consensus for epoch %d: %x\n%s", s.votingEpoch, s.identityPubKeyHash(), doc)
 			// detach signature and send to authorities
 			sig, ok := doc.Signatures[s.identityPubKeyHash()]
 			if !ok {
-				s.log.Errorf("Failed to find our signature for epoch %v", s.votingEpoch)
-				s.s.fatalErrCh <- err
+				fatalErr := fmt.Errorf("FSM FATAL: Failed to find our signature for epoch %v in consensus document - this indicates a critical consensus building failure", s.votingEpoch)
+				s.log.Errorf("FSM: %v", fatalErr)
+				s.s.fatalErrCh <- fatalErr
 				break
 			}
+			s.log.Debugf("FSM: Found our signature in consensus document for epoch %d", s.votingEpoch)
 			serialized, err := sig.Marshal()
 			if err != nil {
-				s.log.Errorf("Failed to serialize our signature for epoch %v", s.votingEpoch)
-				s.s.fatalErrCh <- err
+				fatalErr := fmt.Errorf("FSM FATAL: Failed to serialize our signature for epoch %v: %s - this indicates a critical cryptographic failure", s.votingEpoch, err)
+				s.log.Errorf("FSM: %v", fatalErr)
+				s.s.fatalErrCh <- fatalErr
 				break
 			}
+			s.log.Debugf("FSM: Successfully serialized our signature for epoch %d", s.votingEpoch)
 			signed, err := cert.Sign(s.s.identityPrivateKey, s.s.identityPublicKey, serialized, s.votingEpoch)
 			if err != nil {
-				s.log.Errorf("Failed to sign our signature for epoch %v: %s", s.votingEpoch, err)
+				s.log.Errorf("FSM: Failed to sign our signature for epoch %v: %s", s.votingEpoch, err)
 				s.s.fatalErrCh <- err
 				break
 			}
+			s.log.Debugf("FSM: Successfully signed our signature for epoch %d", s.votingEpoch)
 			s.sendSigToAuthorities(signed, s.votingEpoch)
 		} else {
-			s.log.Errorf("Failed to compute our view of consensus for %v with %s", s.votingEpoch, err)
+			s.log.Errorf("FSM: Failed to compute our view of consensus for epoch %v: %s", s.votingEpoch, err)
 		}
 		s.state = stateAcceptSignature
 		_, nowelapsed, _ := epochtime.Now()
 		sleep = PublishConsensusDeadline - nowelapsed
+		s.log.Noticef("FSM: Transitioning to %s state, sleeping for %s until consensus deadline", s.state, sleep)
 	case stateAcceptSignature:
+		s.log.Noticef("FSM: Entering stateAcceptSignature for epoch %d", s.votingEpoch)
+		sigCount := 0
+		if sigs, ok := s.signatures[s.votingEpoch]; ok {
+			sigCount = len(sigs)
+		}
+		s.log.Debugf("FSM: Currently have %d signatures for epoch %d (threshold: %d)", sigCount, s.votingEpoch, s.threshold)
+
 		// combine signatures over a certificate and see if we make a threshold consensus
-		s.log.Noticef("Combining signatures for epoch %v", s.votingEpoch)
-		_, err := s.getThresholdConsensus(s.votingEpoch)
+		s.log.Noticef("FSM: Attempting to combine signatures for threshold consensus for epoch %v", s.votingEpoch)
+		consensus, err := s.getThresholdConsensus(s.votingEpoch)
 		_, _, nextEpoch := epochtime.Now()
 		if err == nil {
+			s.log.Noticef("FSM: SUCCESS! Achieved threshold consensus for epoch %d: %v", s.votingEpoch, consensus)
 			s.state = stateAcceptDescriptor
 			sleep = MixPublishDeadline + nextEpoch
 			s.votingEpoch++
+			s.log.Noticef("FSM: Consensus successful, transitioning to %s state for next voting epoch %d, sleeping for %s", s.state, s.votingEpoch, sleep)
 		} else {
-			s.log.Error(err.Error())
+			s.log.Errorf("FSM: CONSENSUS FAILURE for epoch %d: %s", s.votingEpoch, err)
+			s.log.Errorf("FSM: Had %d signatures out of %d required threshold", sigCount, s.threshold)
 			s.state = stateBootstrap
 			s.votingEpoch = epoch + 2 // vote on epoch+2 in epoch+1
 			sleep = nextEpoch
+			s.log.Errorf("FSM: Consensus failed, transitioning to %s state, will vote for epoch %d, sleeping for %s", s.state, s.votingEpoch, sleep)
 		}
 	default:
 	}
@@ -283,59 +341,82 @@ func (s *state) persistDocument(epoch uint64, doc []byte) {
 		return bkt.Put(epochToBytes(epoch), doc)
 	}); err != nil {
 		// Persistence failures are FATAL.
-		s.s.fatalErrCh <- err
+		fatalErr := fmt.Errorf("PERSISTENCE FATAL: Failed to persist consensus document for epoch %d to database: %v - this indicates critical storage failure", epoch, err)
+		s.log.Errorf("persistDocument: %v", fatalErr)
+		s.s.fatalErrCh <- fatalErr
 	}
 }
 
 // getVote produces a pki.Document using all MixDescriptors that we have seen
 func (s *state) getVote(epoch uint64) (*pki.Document, error) {
+	s.log.Debugf("getVote: Generating vote for epoch %d", epoch)
+
 	// Is there a prior consensus? If so, obtain the GenesisEpoch and prior SRV values
 	if d, ok := s.documents[s.votingEpoch-1]; ok {
-		s.log.Debugf("Restoring genesisEpoch %d from document cache", d.GenesisEpoch)
+		s.log.Debugf("getVote: Restoring genesisEpoch %d from document cache for epoch %d", d.GenesisEpoch, s.votingEpoch-1)
 		s.genesisEpoch = d.GenesisEpoch
 		s.priorSRV = d.PriorSharedRandom
 		d.PKISignatureScheme = s.s.cfg.Server.PKISignatureScheme
+		s.log.Debugf("getVote: Using prior SRV values from previous consensus")
 	} else {
-		s.log.Debugf("Setting genesisEpoch %d from votingEpoch", s.votingEpoch)
+		s.log.Debugf("getVote: No prior consensus found, setting genesisEpoch %d from votingEpoch", s.votingEpoch)
 		s.genesisEpoch = s.votingEpoch
 	}
 
 	descriptors := []*pki.MixDescriptor{}
-	for _, desc := range s.descriptors[epoch] {
-		descriptors = append(descriptors, desc)
+	if descs, ok := s.descriptors[epoch]; ok {
+		for _, desc := range descs {
+			descriptors = append(descriptors, desc)
+		}
+		s.log.Debugf("getVote: Collected %d mix descriptors for epoch %d", len(descriptors), epoch)
+	} else {
+		s.log.Warningf("getVote: No mix descriptors found for epoch %d", epoch)
 	}
 
 	replicaDescriptors := []*pki.ReplicaDescriptor{}
-	for _, desc := range s.replicaDescriptors[epoch] {
-		replicaDescriptors = append(replicaDescriptors, desc)
+	if repDescs, ok := s.replicaDescriptors[epoch]; ok {
+		for _, desc := range repDescs {
+			replicaDescriptors = append(replicaDescriptors, desc)
+		}
+		s.log.Debugf("getVote: Collected %d replica descriptors for epoch %d", len(replicaDescriptors), epoch)
+	} else {
+		s.log.Debugf("getVote: No replica descriptors found for epoch %d", epoch)
 	}
 
 	// vote topology is irrelevent.
 	var zeros [32]byte
+	s.log.Debugf("getVote: Generating document with %d mix descriptors and %d replica descriptors", len(descriptors), len(replicaDescriptors))
 	vote := s.getDocument(descriptors, replicaDescriptors, s.s.cfg.Parameters, zeros[:])
 
 	// create our SharedRandom Commit
+	s.log.Debugf("getVote: Generating SharedRandom commit for epoch %d", epoch)
 	signedCommit, err := s.doCommit(epoch)
 	if err != nil {
+		s.log.Errorf("getVote: Failed to generate SharedRandom commit for epoch %d: %s", epoch, err)
 		return nil, err
 	}
 	commits := make(map[[hash.HashSize]byte][]byte)
 	commits[s.identityPubKeyHash()] = signedCommit
 	vote.SharedRandomCommit = commits
+	s.log.Debugf("getVote: Added SharedRandom commit to vote for epoch %d", epoch)
 
+	s.log.Debugf("getVote: Signing vote document for epoch %d", epoch)
 	_, err = s.doSignDocument(s.s.identityPrivateKey, s.s.identityPublicKey, vote)
 	if err != nil {
+		s.log.Errorf("getVote: Failed to sign vote document for epoch %d: %s", epoch, err)
 		return nil, err
 	}
 
-	s.log.Debugf("Ready to send our vote:\n%s", vote)
+	s.log.Debugf("getVote: Ready to send our vote for epoch %d:\n%s", epoch, vote)
 	// save our own vote
 	if _, ok := s.votes[epoch]; !ok {
 		s.votes[epoch] = make(map[[publicKeyHashSize]byte]*pki.Document)
 	}
 	if _, ok := s.votes[epoch][s.identityPubKeyHash()]; !ok {
 		s.votes[epoch][s.identityPubKeyHash()] = vote
+		s.log.Debugf("getVote: Successfully saved our vote for epoch %d", epoch)
 	} else {
+		s.log.Errorf("getVote: Vote already present for epoch %d, this should never happen", epoch)
 		return nil, errors.New("failure: vote already present, this should never happen")
 	}
 	return vote, nil
@@ -2244,40 +2325,71 @@ func (s *state) verifyTopology(topology [][]*pki.MixDescriptor) error {
 
 // generate commit and reveal values and save them
 func (s *state) doCommit(epoch uint64) ([]byte, error) {
-	s.log.Debugf("Generating SharedRandom Commit for %d", epoch)
+	s.log.Debugf("doCommit: Generating SharedRandom Commit for epoch %d", epoch)
+	s.log.Debugf("doCommit: Our identity hash: %x", s.identityPubKeyHash())
+
 	srv := new(pki.SharedRandom)
 	commit, err := srv.Commit(epoch)
 	if err != nil {
+		s.log.Errorf("doCommit: Failed to generate commit for epoch %d: %v", epoch, err)
 		return nil, err
 	}
+	s.log.Debugf("doCommit: Successfully generated commit for epoch %d", epoch)
+
 	// sign the serialized commit
+	s.log.Debugf("doCommit: Signing commit for epoch %d", epoch)
 	signedCommit, err := cert.Sign(s.s.identityPrivateKey, s.s.identityPublicKey, commit, epoch)
 	if err != nil {
+		s.log.Errorf("doCommit: Failed to sign commit for epoch %d: %v", epoch, err)
 		return nil, err
 	}
+	s.log.Debugf("doCommit: Successfully signed commit for epoch %d", epoch)
+
 	// sign the reveal
+	s.log.Debugf("doCommit: Signing reveal for epoch %d", epoch)
 	signedReveal, err := cert.Sign(s.s.identityPrivateKey, s.s.identityPublicKey, srv.Reveal(), epoch)
 	if err != nil {
+		s.log.Errorf("doCommit: Failed to sign reveal for epoch %d: %v", epoch, err)
 		return nil, err
 	}
+	s.log.Debugf("doCommit: Successfully signed reveal for epoch %d", epoch)
+
 	// save our commit
 	if _, ok := s.commits[epoch]; !ok {
+		s.log.Debugf("doCommit: Creating commits map for epoch %d", epoch)
 		s.commits[epoch] = make(map[[pki.PublicKeyHashSize]byte][]byte)
 	}
 	s.commits[epoch][s.identityPubKeyHash()] = signedCommit
+	s.log.Debugf("doCommit: Stored our commit for epoch %d", epoch)
 
 	// save our reveal
 	if _, ok := s.reveals[epoch]; !ok {
+		s.log.Debugf("doCommit: Creating reveals map for epoch %d", epoch)
 		s.reveals[epoch] = make(map[[pki.PublicKeyHashSize]byte][]byte)
 	}
 	s.reveals[epoch][s.identityPubKeyHash()] = signedReveal
+	s.log.Debugf("doCommit: Stored our reveal for epoch %d", epoch)
 	return signedCommit, nil
 }
 
 func (s *state) reveal(epoch uint64) []byte {
+	s.log.Debugf("reveal: Retrieving reveal for epoch %d", epoch)
+	s.log.Debugf("reveal: Our identity hash: %x", s.identityPubKeyHash())
+
+	if _, ok := s.reveals[epoch]; !ok {
+		s.log.Errorf("reveal: No reveals map exists for epoch %d", epoch)
+	}
+	if _, ok := s.commits[epoch]; !ok {
+		s.log.Errorf("reveal: No commits map exists for epoch %d", epoch)
+	}
+
 	signed, ok := s.reveals[epoch][s.identityPubKeyHash()]
 	if !ok {
-		s.s.fatalErrCh <- errors.New("reveal() called without commit")
+		fatalErr := fmt.Errorf("REVEAL FATAL: reveal() called without commit for epoch %d - this indicates a critical SharedRandom protocol violation", epoch)
+		s.log.Errorf("reveal: %v", fatalErr)
+		s.log.Errorf("reveal: Available reveals for epoch %d: %d", epoch, len(s.reveals[epoch]))
+		s.s.fatalErrCh <- fatalErr
 	}
+	s.log.Debugf("reveal: Successfully retrieved reveal for epoch %d", epoch)
 	return signed
 }
