@@ -22,12 +22,11 @@ import (
 	"time"
 
 	"github.com/katzenpost/hpqc/hash"
-	kempem "github.com/katzenpost/hpqc/kem/pem"
 	"github.com/katzenpost/hpqc/kem/schemes"
 	ecdh "github.com/katzenpost/hpqc/nike/x25519"
 	"github.com/katzenpost/hpqc/rand"
+
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
-	kpcommon "github.com/katzenpost/katzenpost/common"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/wire"
@@ -35,15 +34,13 @@ import (
 )
 
 func (s *Server) onConn(conn net.Conn) {
-	// Use timeout configuration from config file
-	initialDeadline := time.Duration(s.cfg.Server.HandshakeTimeoutSec) * time.Second
-	responseDeadline := time.Duration(s.cfg.Server.ResponseTimeoutSec) * time.Second
-	closeDelay := time.Duration(s.cfg.Server.CloseDelaySec) * time.Second
+	const (
+		initialDeadline  = 30 * time.Second
+		responseDeadline = 60 * time.Second
+	)
 
 	rAddr := conn.RemoteAddr()
 	s.log.Debugf("Accepted new connection: %v", rAddr)
-	s.log.Debugf("Network timeouts: handshake=%v, response=%v, close_delay=%v",
-		initialDeadline, responseDeadline, closeDelay)
 
 	// Initialize the wire protocol session.
 	auth := &wireAuthenticator{s: s}
@@ -71,39 +68,26 @@ func (s *Server) onConn(conn net.Conn) {
 
 	// wireConn.Close calls conn.Close. In quic, sends are nonblocking and Close
 	// tears down the connection before the response was sent.
-	// So this waits after the response has been served before closing the connection.
-	// Using closeDelay to allow sufficient time for post-quantum NoOp command exchange
-	// on slower network paths between authority nodes with heavy crypto operations.
+	// So this waits 100ms after the response has been served before closing the connection.
 	defer func() {
-		<-time.After(closeDelay)
+		<-time.After(time.Millisecond * 100)
 		wireConn.Close()
 	}()
 
 	// Handshake.
-	handshakeStart := time.Now()
 	conn.SetDeadline(time.Now().Add(initialDeadline))
 	if err = wireConn.Initialize(conn); err != nil {
-		s.log.Debugf("Peer %v: Failed session handshake after %v: %v", rAddr, time.Since(handshakeStart), err)
+		s.log.Debugf("Peer %v: Failed session handshake: %v", rAddr, err)
 		return
 	}
-	handshakeDuration := time.Since(handshakeStart)
-	s.log.Debugf("Peer %v: Handshake completed successfully in %v", rAddr, handshakeDuration)
-
-	// Get timing information from the wire session
-	timing := wireConn.Timing()
 
 	// Receive a command.
 	cmd, err := wireConn.RecvCommand()
 	if err != nil {
 		s.log.Debugf("Peer %v: Failed to receive command: %v", rAddr, err)
-		// Record failed connection for survey tracking (authority peers only)
-		if auth.isAuthority {
-			s.recordConnectionTiming(auth, rAddr, false, err, &timing)
-		}
 		return
 	}
-	// Keep deadline active for response phase
-	conn.SetDeadline(time.Now().Add(responseDeadline))
+	conn.SetDeadline(time.Time{})
 
 	// Parse the command, and craft the response.
 	var resp commands.Command
@@ -119,14 +103,9 @@ func (s *Server) onConn(conn net.Conn) {
 		panic("wtf") // should only happen if there is a bug in wireAuthenticator
 	}
 
-	// Record successful connection for survey tracking (authority peers only)
-	if auth.isAuthority {
-		s.recordConnectionTiming(auth, rAddr, true, nil, &timing)
-	}
-
 	// Send the response, if any.
 	if resp != nil {
-		// Deadline already set above, no need to reset
+		conn.SetDeadline(time.Now().Add(responseDeadline))
 		if err = wireConn.SendCommand(resp); err != nil {
 			s.log.Debugf("Peer %v: Failed to send response: %v", rAddr, err)
 		}
@@ -175,40 +154,51 @@ func (s *Server) onReplica(rAddr net.Addr, cmd commands.Command, peerIdentityKey
 }
 
 func (s *Server) onAuthority(rAddr net.Addr, cmd commands.Command) commands.Command {
+	s.log.Debugf("onAuthority: Received command from authority peer %v: %T", rAddr, cmd)
 	var resp commands.Command
 	switch c := cmd.(type) {
 	case *commands.GetConsensus:
+		s.log.Debugf("onAuthority: Processing GetConsensus request from authority %v for epoch %d", rAddr, c.Epoch)
 		resp = s.onGetConsensus(rAddr, c)
 	case *commands.Vote:
+		s.log.Debugf("onAuthority: Processing Vote upload from authority %v for epoch %d", rAddr, c.Epoch)
 		resp = s.state.onVoteUpload(c)
 	case *commands.Cert:
+		s.log.Debugf("onAuthority: Processing Certificate upload from authority %v for epoch %d", rAddr, c.Epoch)
 		resp = s.state.onCertUpload(c)
 	case *commands.Reveal:
+		s.log.Debugf("onAuthority: Processing Reveal upload from authority %v for epoch %d", rAddr, c.Epoch)
 		resp = s.state.onRevealUpload(c)
 	case *commands.Sig:
+		s.log.Debugf("onAuthority: Processing Signature upload from authority %v for epoch %d", rAddr, c.Epoch)
 		resp = s.state.onSigUpload(c)
 	default:
-		s.log.Debugf("Peer %v: Invalid request: %T", rAddr, c)
+		s.log.Errorf("onAuthority: INVALID REQUEST from authority peer %v: unsupported command type %T", rAddr, c)
 		return nil
 	}
+	s.log.Debugf("onAuthority: Completed processing command %T from authority %v", cmd, rAddr)
 	return resp
 }
 
 func (s *Server) onGetConsensus(rAddr net.Addr, cmd *commands.GetConsensus) commands.Command {
+	s.log.Debugf("onGetConsensus: Processing consensus request from %v for epoch %d", rAddr, cmd.Epoch)
 	resp := &commands.Consensus{}
 	doc, err := s.state.documentForEpoch(cmd.Epoch)
 	if err != nil {
 		switch err {
 		case errGone:
+			s.log.Debugf("onGetConsensus: Consensus document for epoch %d is gone (too old) for peer %v", cmd.Epoch, rAddr)
 			resp.ErrorCode = commands.ConsensusGone
 		default:
+			s.log.Debugf("onGetConsensus: Consensus document for epoch %d not found (not yet available) for peer %v: %v", cmd.Epoch, rAddr, err)
 			resp.ErrorCode = commands.ConsensusNotFound
 		}
 	} else {
-		s.log.Debugf("Peer: %v: Serving document for epoch %v.", rAddr, cmd.Epoch)
+		s.log.Debugf("onGetConsensus: Successfully retrieved consensus document for epoch %d for peer %v", cmd.Epoch, rAddr)
 		resp.ErrorCode = commands.ConsensusOk
 		resp.Payload = doc
 	}
+	s.log.Debugf("onGetConsensus: Returning response to peer %v for epoch %d: error code %d", rAddr, cmd.Epoch, resp.ErrorCode)
 	return resp
 }
 
@@ -288,78 +278,95 @@ func (s *Server) onPostReplicaDescriptor(rAddr net.Addr, cmd *commands.PostRepli
 }
 
 func (s *Server) onPostDescriptor(rAddr net.Addr, cmd *commands.PostDescriptor, pubKeyHash []byte) commands.Command {
+	s.log.Debugf("onPostDescriptor: Received descriptor from peer %v for epoch %d", rAddr, cmd.Epoch)
 	resp := &commands.PostDescriptorStatus{
 		ErrorCode: commands.DescriptorInvalid,
 	}
 
 	// Ensure the epoch is somewhat sane.
 	now, _, _ := epochtime.Now()
+	s.log.Debugf("onPostDescriptor: Validating epoch from peer %v: descriptor epoch %d, current epoch %d", rAddr, cmd.Epoch, now)
 	switch cmd.Epoch {
 	case now - 1, now, now + 1:
 		// Nodes will always publish the descriptor for the current epoch on
 		// launch, which may be off by one period, depending on how skewed
 		// the node's clock is and the current time.
+		s.log.Debugf("onPostDescriptor: Epoch validation passed from peer %v: epoch %d is within acceptable range", rAddr, cmd.Epoch)
 	default:
 		// The peer is publishing for an epoch that's invalid.
-		s.log.Errorf("Peer %v: Invalid descriptor epoch '%v'", rAddr, cmd.Epoch)
+		s.log.Errorf("onPostDescriptor: EPOCH VALIDATION FAILED from peer %v: invalid descriptor epoch %d (current: %d, acceptable: %d-%d)", rAddr, cmd.Epoch, now, now-1, now+1)
 		return resp
 	}
 
 	// Validate and deserialize the SignedUpload.
+	s.log.Debugf("onPostDescriptor: Deserializing SignedUpload from peer %v", rAddr)
 	signedUpload := new(pki.SignedUpload)
 	err := signedUpload.Unmarshal(cmd.Payload)
 	if err != nil {
-		s.log.Errorf("Peer %v: Invalid descriptor: %v", rAddr, err)
+		s.log.Errorf("onPostDescriptor: DESERIALIZATION FAILED from peer %v: invalid descriptor: %v", rAddr, err)
 		return resp
 	}
+	s.log.Debugf("onPostDescriptor: Successfully deserialized SignedUpload from peer %v", rAddr)
 
 	desc := signedUpload.MixDescriptor
+	s.log.Debugf("onPostDescriptor: Processing descriptor for node %s from peer %v", desc.Name, rAddr)
 
 	// Ensure that the descriptor is signed by the peer that is posting.
+	s.log.Debugf("onPostDescriptor: Verifying identity key hash for node %s from peer %v", desc.Name, rAddr)
 	identityKeyHash := hash.Sum256(desc.IdentityKey)
 	if !hmac.Equal(identityKeyHash[:], pubKeyHash) {
-		s.log.Errorf("Peer %v: Identity key hash '%x' is not link key '%v'.", rAddr, hash.Sum256(desc.IdentityKey), pubKeyHash)
+		s.log.Errorf("onPostDescriptor: IDENTITY KEY MISMATCH for node %s from peer %v: identity key hash %x != link key %x", desc.Name, rAddr, hash.Sum256(desc.IdentityKey), pubKeyHash)
 		resp.ErrorCode = commands.DescriptorForbidden
 		return resp
 	}
+	s.log.Debugf("onPostDescriptor: Identity key hash verification passed for node %s from peer %v", desc.Name, rAddr)
+
 	pkiSignatureScheme := signSchemes.ByName(s.cfg.Server.PKISignatureScheme)
 
+	s.log.Debugf("onPostDescriptor: Unmarshaling identity public key for node %s from peer %v", desc.Name, rAddr)
 	descIdPubKey, err := pkiSignatureScheme.UnmarshalBinaryPublicKey(desc.IdentityKey)
 	if err != nil {
-		s.log.Error("failed to unmarshal descriptor IdentityKey")
+		s.log.Errorf("onPostDescriptor: IDENTITY KEY UNMARSHAL FAILED for node %s from peer %v: %v", desc.Name, rAddr, err)
 		resp.ErrorCode = commands.DescriptorForbidden
 		return resp
 	}
+	s.log.Debugf("onPostDescriptor: Successfully unmarshaled identity public key for node %s from peer %v", desc.Name, rAddr)
 
+	s.log.Debugf("onPostDescriptor: Verifying SignedUpload signature for node %s from peer %v", desc.Name, rAddr)
 	if !signedUpload.Verify(descIdPubKey) {
-		s.log.Error("PostDescriptorStatus contained a SignedUpload with an invalid signature")
+		s.log.Errorf("onPostDescriptor: SIGNATURE VERIFICATION FAILED for node %s from peer %v: SignedUpload has invalid signature", desc.Name, rAddr)
 		resp.ErrorCode = commands.DescriptorForbidden
 		return resp
 	}
+	s.log.Debugf("onPostDescriptor: SignedUpload signature verification passed for node %s from peer %v", desc.Name, rAddr)
 
 	// Ensure that the descriptor is from an allowed peer.
+	s.log.Debugf("onPostDescriptor: Checking authorization for node %s from peer %v", desc.Name, rAddr)
 	if !s.state.isDescriptorAuthorized(desc) {
-		s.log.Errorf("Peer %v: Identity key hash '%x' not authorized", rAddr, hash.Sum256(desc.IdentityKey))
+		s.log.Errorf("onPostDescriptor: AUTHORIZATION FAILED for node %s from peer %v: identity key hash %x not authorized", desc.Name, rAddr, hash.Sum256(desc.IdentityKey))
 		resp.ErrorCode = commands.DescriptorForbidden
 		return resp
 	}
+	s.log.Debugf("onPostDescriptor: Authorization check passed for node %s from peer %v", desc.Name, rAddr)
 
 	// TODO(david): Use the packet loss statistics to make decisions about how to generate the consensus document.
 
 	// Hand the descriptor off to the state worker.  As long as this returns
 	// a nil, the authority "accepts" the descriptor.
+	s.log.Debugf("onPostDescriptor: Submitting descriptor for node %s (epoch %d) to state worker from peer %v", desc.Name, cmd.Epoch, rAddr)
 	err = s.state.onDescriptorUpload(cmd.Payload, desc, cmd.Epoch)
 	if err != nil {
 		// This is either a internal server error or the peer is trying to
 		// retroactively modify their descriptor.  This should disambituate
 		// the condition, but the latter is more likely.
-		s.log.Errorf("Peer %v: Rejected probably a conflict: %v", rAddr, err)
+		s.log.Errorf("onPostDescriptor: DESCRIPTOR UPLOAD FAILED for node %s from peer %v: probably a conflict: %v", desc.Name, rAddr, err)
 		resp.ErrorCode = commands.DescriptorConflict
 		return resp
 	}
+	s.log.Debugf("onPostDescriptor: Successfully submitted descriptor for node %s to state worker from peer %v", desc.Name, rAddr)
 
 	// Return a successful response.
-	s.log.Debugf("Peer %v: Accepted descriptor for epoch %v: '%v'", rAddr, cmd.Epoch, desc)
+	s.log.Noticef("onPostDescriptor: SUCCESS! Accepted descriptor for node %s (epoch %d) from peer %v", desc.Name, cmd.Epoch, rAddr)
 	resp.ErrorCode = commands.DescriptorOk
 	return resp
 }
@@ -374,28 +381,6 @@ type wireAuthenticator struct {
 	isAuthority         bool
 }
 
-// getPeerName looks up a peer's name by identity hash, checking config first then PKI document
-func (a *wireAuthenticator) getPeerName(identityHash [hash.HashSize]byte) string {
-	// First try to find in authority config (most reliable)
-	for _, auth := range a.s.cfg.Authorities {
-		if hash.Sum256From(auth.IdentityPublicKey) == identityHash {
-			return auth.Identifier
-		}
-	}
-
-	// Fallback to PKI document lookup
-	epoch, _, _ := epochtime.Now()
-	a.s.state.RLock()
-	defer a.s.state.RUnlock()
-	if doc, exists := a.s.state.documents[epoch]; exists {
-		if node, err := doc.GetNodeByKeyHash(&identityHash); err == nil {
-			return node.Name
-		}
-	}
-
-	return "unknown"
-}
-
 func (a *wireAuthenticator) IsPeerValid(creds *wire.PeerCredentials) bool {
 	switch len(creds.AdditionalData) {
 	case 0:
@@ -404,8 +389,6 @@ func (a *wireAuthenticator) IsPeerValid(creds *wire.PeerCredentials) bool {
 	case hash.HashSize:
 	default:
 		a.s.log.Warning("Rejecting authentication, invalid AD size.")
-		a.s.log.Warningf("dirauth/wireAuth: IsPeerValid(): Remote Peer Credentials: ad_size=%d (expected: 0 or %d), link_key=%s",
-			len(creds.AdditionalData), hash.HashSize, kpcommon.TruncatePEMForLogging(kempem.ToPublicPEMString(creds.PublicKey)))
 		return false
 	}
 
@@ -427,66 +410,25 @@ func (a *wireAuthenticator) IsPeerValid(creds *wire.PeerCredentials) bool {
 	case isAuthority:
 		linkKey, ok := a.s.state.authorityLinkKeys[pk]
 		if !ok {
-			peerName := a.getPeerName(pk)
-			a.s.log.Warningf("Rejecting authority authentication, no link key entry for '%s'.", peerName)
-			a.s.log.Warningf("dirauth/wireAuth: IsPeerValid(): Remote Peer Credentials: name=%s, identity_hash=%x, link_key=%s",
-				peerName, creds.AdditionalData[:hash.HashSize], kpcommon.TruncatePEMForLogging(kempem.ToPublicPEMString(creds.PublicKey)))
-			// Log expected authorities for debugging
-			a.s.log.Warningf("dirauth/wireAuth: IsPeerValid(): Expected authority link keys:")
-			for authHash, authLinkKey := range a.s.state.authorityLinkKeys {
-				authName := a.getPeerName(authHash)
-				a.s.log.Warningf("dirauth/wireAuth: IsPeerValid():   - name=%s, identity_hash=%x, link_key=%s",
-					authName, authHash[:], kpcommon.TruncatePEMForLogging(kempem.ToPublicPEMString(authLinkKey)))
-			}
+			a.s.log.Warning("Rejecting authority authentication, no link key entry.")
 			return false
 		}
 		if creds.PublicKey == nil {
-			peerName := a.getPeerName(pk)
-			a.s.log.Warningf("Rejecting authority authentication, public key is nil for '%s'.", peerName)
-			a.s.log.Warningf("dirauth/wireAuth: IsPeerValid(): Remote Peer Credentials: name=%s, identity_hash=%x, link_key=nil",
-				peerName, creds.AdditionalData[:hash.HashSize])
+			a.s.log.Warning("Rejecting authority authentication, public key is nil.")
 			return false
 		}
 		if !linkKey.Equal(creds.PublicKey) {
-			peerName := a.getPeerName(pk)
-			a.s.log.Warningf("Rejecting authority authentication, public key mismatch for '%s'.", peerName)
-			a.s.log.Warningf("dirauth/wireAuth: IsPeerValid(): Expected link key for '%s': %s",
-				peerName, kpcommon.TruncatePEMForLogging(kempem.ToPublicPEMString(linkKey)))
-			a.s.log.Warningf("dirauth/wireAuth: IsPeerValid(): Received link key for '%s': %s",
-				peerName, kpcommon.TruncatePEMForLogging(kempem.ToPublicPEMString(creds.PublicKey)))
-			a.s.log.Warningf("dirauth/wireAuth: IsPeerValid(): Remote Peer Credentials: name=%s, identity_hash=%x",
-				peerName, creds.AdditionalData[:hash.HashSize])
+			a.s.log.Warning("Rejecting authority authentication, public key mismatch.")
 			return false
 		}
-		// Log successful authority authentication
-		peerName := a.getPeerName(pk)
-		a.s.log.Debugf("Authority authentication successful for '%s' (identity_hash=%x)", peerName, pk[:])
 		a.isAuthority = true
 		return true
 	case isReplicaNode:
 		a.isReplica = true
 		return true
 	default:
-		peerName := a.getPeerName(pk)
-		a.s.log.Warningf("Rejecting authentication, peer '%s' not found in any authorized category.", peerName)
-		a.s.log.Warningf("dirauth/wireAuth: IsPeerValid(): Remote Peer Credentials: name=%s, identity_hash=%x, link_key=%s",
-			peerName, creds.AdditionalData[:hash.HashSize], kpcommon.TruncatePEMForLogging(kempem.ToPublicPEMString(creds.PublicKey)))
-		a.s.log.Warningf("dirauth/wireAuth: IsPeerValid(): Peer '%s' not found in: mixes=%t, gateways=%t, services=%t, authorities=%t, replicas=%t",
-			peerName, isMix, isGatewayNode, isServiceNode, isAuthority, isReplicaNode)
+		a.s.log.Warning("Rejecting authority authentication, public key mismatch.")
 		return false
 	}
 	// not reached
-}
-
-// recordConnectionTiming records connection timing information for survey tracking
-func (s *Server) recordConnectionTiming(auth *wireAuthenticator, rAddr net.Addr, success bool, err error, timing *wire.SessionTiming) {
-	if auth.isAuthority {
-		// Record authority peer connection
-		if len(auth.peerIdentityKeyHash) == hash.HashSize {
-			var peerID [hash.HashSize]byte
-			copy(peerID[:], auth.peerIdentityKeyHash)
-			s.state.recordIncomingConnection(peerID, success, err)
-		}
-	}
-	// Note: We only track authority connections for minimal survey implementation
 }
