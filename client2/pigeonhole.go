@@ -359,15 +359,25 @@ func (d *Daemon) sendErrorResponse(request *Request, errorCode uint8, responseTy
 		}
 	case "WriteChannel":
 		response.WriteChannelReply = &thin.WriteChannelReply{
-			QueryID:   request.WriteChannel.QueryID,
-			ChannelID: request.WriteChannel.ChannelID,
-			ErrorCode: errorCode,
+			QueryID:             request.WriteChannel.QueryID,
+			ChannelID:           request.WriteChannel.ChannelID,
+			SendMessagePayload:  []byte{},    // Empty payload for error responses
+			CurrentMessageIndex: []byte{},    // Empty message index for error responses
+			NextMessageIndex:    []byte{},    // Empty message index for error responses
+			EnvelopeHash:        &[32]byte{}, // Empty envelope hash for error responses
+			EnvelopeDescriptor:  []byte{},    // Empty envelope descriptor for error responses
+			ErrorCode:           errorCode,
 		}
 	case "ReadChannel":
 		response.ReadChannelReply = &thin.ReadChannelReply{
-			QueryID:   request.ReadChannel.QueryID,
-			ChannelID: request.ReadChannel.ChannelID,
-			ErrorCode: errorCode,
+			QueryID:             request.ReadChannel.QueryID,
+			ChannelID:           request.ReadChannel.ChannelID,
+			SendMessagePayload:  []byte{},    // Empty payload for error responses
+			CurrentMessageIndex: []byte{},    // Empty message index for error responses
+			NextMessageIndex:    []byte{},    // Empty message index for error responses
+			EnvelopeHash:        &[32]byte{}, // Empty envelope hash for error responses
+			EnvelopeDescriptor:  []byte{},    // Empty envelope descriptor for error responses
+			ErrorCode:           errorCode,
 		}
 	}
 
@@ -582,14 +592,28 @@ func (d *Daemon) writeChannel(request *Request) {
 		return
 	}
 
+	// Marshal message indices to bytes for external thin clients
+	currentMessageIndexBytes, err := channelDesc.StatefulWriter.GetCurrentMessageIndex().MarshalBinary()
+	if err != nil {
+		d.log.Errorf("writeChannel failure: failed to marshal current message index: %s", err)
+		d.sendWriteChannelError(request, thin.ThinClientErrorInternalError)
+		return
+	}
+	nextMessageIndexBytes, err := nextMessageIndex.MarshalBinary()
+	if err != nil {
+		d.log.Errorf("writeChannel failure: failed to marshal next message index: %s", err)
+		d.sendWriteChannelError(request, thin.ThinClientErrorInternalError)
+		return
+	}
+
 	conn.sendResponse(&Response{
 		AppID: request.AppID,
 		WriteChannelReply: &thin.WriteChannelReply{
 			QueryID:             request.WriteChannel.QueryID,
 			ChannelID:           channelID,
 			SendMessagePayload:  courierQuery.Bytes(),
-			CurrentMessageIndex: channelDesc.StatefulWriter.GetCurrentMessageIndex(),
-			NextMessageIndex:    nextMessageIndex,
+			CurrentMessageIndex: currentMessageIndexBytes,
+			NextMessageIndex:    nextMessageIndexBytes,
 			EnvelopeHash:        envHash,
 			EnvelopeDescriptor:  envelopeDescriptorBytes,
 			ErrorCode:           thin.ThinClientSuccess,
@@ -692,6 +716,20 @@ func (d *Daemon) readChannel(request *Request) {
 		return
 	}
 
+	// Marshal message indices to bytes for external thin clients
+	currentMessageIndexBytes, err := currentMessageIndex.MarshalBinary()
+	if err != nil {
+		d.log.Errorf("readChannel failure: failed to marshal current message index: %s", err)
+		d.sendReadChannelError(request, thin.ThinClientErrorInternalError)
+		return
+	}
+	nextMessageIndexBytes, err := nextMessageIndex.MarshalBinary()
+	if err != nil {
+		d.log.Errorf("readChannel failure: failed to marshal next message index: %s", err)
+		d.sendReadChannelError(request, thin.ThinClientErrorInternalError)
+		return
+	}
+
 	conn.sendResponse(&Response{
 		AppID: request.AppID,
 		ReadChannelReply: &thin.ReadChannelReply{
@@ -699,8 +737,8 @@ func (d *Daemon) readChannel(request *Request) {
 			ChannelID:           channelID,
 			ErrorCode:           thin.ThinClientSuccess,
 			SendMessagePayload:  courierQuery.Bytes(),
-			CurrentMessageIndex: currentMessageIndex,
-			NextMessageIndex:    nextMessageIndex,
+			CurrentMessageIndex: currentMessageIndexBytes,
+			NextMessageIndex:    nextMessageIndexBytes,
 			ReplyIndex:          request.ReadChannel.ReplyIndex,
 			EnvelopeHash:        envHash,
 			EnvelopeDescriptor:  envelopeDescriptorBytes,
