@@ -94,6 +94,17 @@ func (s *Server) StartPlugin() {
 	courier := NewCourier(s, cmds, scheme)
 	s.Courier = courier
 
+	// Force a PKI refresh on startup to ensure we have current documents
+	// even if there were previous fetch failures
+	go func() {
+		time.Sleep(2 * time.Second) // Give the PKI worker time to start
+		if err := s.PKI.ForceFetchPKI(); err != nil {
+			s.log.Warningf("Failed to force fetch PKI on startup: %v", err)
+		} else {
+			s.log.Debugf("Successfully force fetched PKI on startup")
+		}
+	}()
+
 	server := cborplugin.NewServer(s.LogBackend().GetLogger("courier_plugin"), socketFile, new(cborplugin.RequestFactory), courier)
 	fmt.Printf("%s\n", socketFile)
 	server.Accept()

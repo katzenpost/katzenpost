@@ -12,6 +12,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/katzenpost/hpqc/bacap"
 	"github.com/katzenpost/katzenpost/client2/thin"
 )
 
@@ -215,10 +216,12 @@ func TestResumeWriteChannel(t *testing.T) {
 	aliceThinClient.CloseChannel(ctx, aliceChannelID)
 
 	t.Log("Alice: Resuming write channel")
+	nextMessageIndex, err := bacap.NewEmptyMessageBoxIndexFromBytes(writeChannelReply.NextMessageIndex)
+	require.NoError(t, err)
 	aliceChannelID, err = aliceThinClient.ResumeWriteChannel(
 		ctx,
 		writeCap,
-		writeChannelReply.NextMessageIndex)
+		nextMessageIndex)
 	require.NoError(t, err)
 	require.NotZero(t, aliceChannelID, "Alice: Resume write channel failed")
 	t.Logf("Alice: Resumed write channel with ID %d", aliceChannelID)
@@ -335,10 +338,12 @@ func TestResumeWriteChannelQuery(t *testing.T) {
 	aliceThinClient.CloseChannel(ctx, aliceChannelID)
 
 	t.Log("Alice: Resuming write channel")
+	currentMessageIndex, err := bacap.NewEmptyMessageBoxIndexFromBytes(writeChannelReply.CurrentMessageIndex)
+	require.NoError(t, err)
 	aliceChannelID, err = aliceThinClient.ResumeWriteChannelQuery(
 		ctx,
 		writeCap,
-		writeChannelReply.CurrentMessageIndex,
+		currentMessageIndex,
 		writeChannelReply.EnvelopeDescriptor,
 		writeChannelReply.EnvelopeHash)
 	require.NoError(t, err)
@@ -498,7 +503,9 @@ func TestResumeReadChannel(t *testing.T) {
 	bobThinClient.CloseChannel(ctx, bobChannelID)
 
 	t.Log("Bob: Resuming read channel")
-	bobChannelID, err = bobThinClient.ResumeReadChannel(ctx, readCap, readReply.NextMessageIndex, readReply.ReplyIndex)
+	nextMessageIndex, err := bacap.NewEmptyMessageBoxIndexFromBytes(readReply.NextMessageIndex)
+	require.NoError(t, err)
+	bobChannelID, err = bobThinClient.ResumeReadChannel(ctx, readCap, nextMessageIndex, readReply.ReplyIndex)
 	require.NoError(t, err)
 	require.NotZero(t, bobChannelID, "Bob: Resume read channel failed")
 	t.Logf("Bob: Resumed read channel with ID %d", bobChannelID)
@@ -601,10 +608,12 @@ func TestResumeReadChannelQuery(t *testing.T) {
 	bobThinClient.CloseChannel(ctx, bobChannelID)
 
 	t.Log("Bob: Resuming read channel")
+	currentMessageIndex, err := bacap.NewEmptyMessageBoxIndexFromBytes(readReply.CurrentMessageIndex)
+	require.NoError(t, err)
 	bobChannelID, err = bobThinClient.ResumeReadChannelQuery(
 		ctx,
 		readCap,
-		readReply.CurrentMessageIndex,
+		currentMessageIndex,
 		readReply.ReplyIndex,
 		readReply.EnvelopeDescriptor,
 		readReply.EnvelopeHash)
