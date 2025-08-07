@@ -148,6 +148,19 @@ func (p *PKIWorker) worker() {
 
 // fetchDocuments fetches PKI documents for required epochs
 func (p *PKIWorker) fetchDocuments(pkiCtx context.Context, isCanceled func() bool) bool {
+	// If we don't have a current PKI document, be more aggressive about retrying
+	currentEpoch, _, _ := epochtime.Now()
+	if p.EntryForEpoch(currentEpoch) == nil {
+		p.GetLogger().Debugf("No current PKI document for epoch %v, clearing failed fetches to force retry", currentEpoch)
+		p.ClearFailedFetch(currentEpoch)
+		// Also clear failed fetches for recent epochs to allow retries
+		for i := uint64(0); i < 3; i++ {
+			if currentEpoch >= i {
+				p.ClearFailedFetch(currentEpoch - i)
+			}
+		}
+	}
+
 	results := p.FetchDocuments(pkiCtx, isCanceled)
 	if len(results) == 0 {
 		return false
