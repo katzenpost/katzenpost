@@ -5,19 +5,15 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"github.com/fxamacker/cbor/v2"
+	"github.com/katzenpost/hpqc/bacap"
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/katzenpost/client"
 	"github.com/katzenpost/katzenpost/client2"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/worker"
-	mClient "github.com/katzenpost/katzenpost/map/client"
-	"github.com/katzenpost/katzenpost/map/common"
-	"golang.org/x/crypto/hkdf"
-	"golang.org/x/crypto/nacl/secretbox"
 	"io"
 	"math"
 	"os"
@@ -38,7 +34,7 @@ var (
 	retryDelay         = epochtime.Period       // how often to retransmit unacknowledged frames
 	averageRetryRate   = epochtime.Period / 2   // how often to retransmit Get requests
 	averageReadRate    = epochtime.Period / 256 // how often to send Get requests
-	averageSendRate    = epochtime.Period / 256 // how often to send Get requests
+	averageSendRate    = epochtime.Period / 256 // how often to send Put requests
 	defaultTimeout     = 0 * time.Second
 	ErrStreamClosed    = errors.New("Stream Closed")
 	ErrFrameDecrypt    = errors.New("Failed to decrypt")
@@ -126,8 +122,11 @@ const (
 
 // FrameWithPriority implmeents client.Item and holds the retransmit deadline and Frame for use with a TimerQueue
 type FrameWithPriority struct {
-	Frame         *Frame // payload of message
-	FramePriority uint64 // the time in nanoseconds of when to retransmit an unacknowledged message
+	FramePriority uint64   // the time in nanoseconds of when to retransmit an unacknowledged message
+	FrameID       uint64   // FrameID is used for end to end acknowldgements and retransmissions
+	ID            [32]byte // box ID to write to
+	Signature     [64]byte
+	Ciphertext    []byte
 }
 
 // Priority implements client.Item interface; used by TimerQueue for retransmissions
@@ -136,13 +135,14 @@ func (s *FrameWithPriority) Priority() uint64 {
 }
 
 // nextEpoch returns a FrameWithPriority for next epoch
-func nextEpoch(f *Frame) *FrameWithPriority {
+func nextEpoch(f *FrameWithPriority) *FrameWithPriority {
 	_, _, til := epochtime.Now()
-	return &FrameWithPriority{Frame: f, FramePriority: uint64(time.Now().Add(til).UnixNano())}
+	f.FramePriority = uint64(time.Now().Add(til).UnixNano())
+	return f
 }
 
 // nextSRV returns a FrameWithPriority for the next shared random epoch
-func nextSRV(f *Frame) *FrameWithPriority {
+func nextSRV(f *FrameWithPriority) *FrameWithPriority {
 	epoch, _, til := epochtime.Now()
 	// XXX: this isn't how we define the weekly srv rotation yet, #689
 	epochsLeft := epochtime.WeekOfEpochs - (epoch % epochtime.WeekOfEpochs)
@@ -150,7 +150,8 @@ func nextSRV(f *Frame) *FrameWithPriority {
 	when := time.Now().Add(timeLeft).UnixNano()
 
 	// XXX: add some noise to avoid stampeding herd
-	return &FrameWithPriority{Frame: f, FramePriority: uint64(when)}
+	f.FramePriority = uint64(when)
+	return f
 }
 
 type stream Stream
@@ -186,7 +187,26 @@ type Stream struct {
 	l *sync.Mutex
 	worker.Worker
 
+	// Transport holds the storage interface Put(addr []byte, payload []byte) and Get([]addr)
+	// that is used to send and receive ciphertexts
+	transport Transport
+
+	// statefulWriter and statefulReader provide sequental access with forward secrecy and
+	// modify ReadCap and WriteCap's HKDF save state on each operation
+	sw *bacap.StatefulWriter
+	sr *bacap.StatefulReader
+
+	// ctx
+	Context []byte
+
+	// ReadCap is the bacap UniversalReadCap of the peer we are reading from
+	ReadCap *bacap.UniversalReadCap
+
+	// WriteCap is the bacap OwnerCap of our own sequence of messages we write
+	WriteCap *bacap.BoxOwnerCap
+
 	startOnce *sync.Once
+
 	// address of the Stream
 	Addr *StreamAddr
 
@@ -200,17 +220,6 @@ type Stream struct {
 	readerExpDist *client2.ExpDist
 	senderExpDist *client2.ExpDist
 
-	// Transport provides Put and Get
-	transport Transport
-	// frame encryption secrets
-	WriteKey *[keySize]byte // secretbox key to encrypt with
-	ReadKey  *[keySize]byte // secretbox key to decrypt with
-
-	// read/write secrets initialized from handshake
-	WriteIDBase common.MessageID
-	ReadIDBase  common.MessageID
-
-	// XXX: bytes.Buffer is not restored by cbor.Marshal
 	WriteBuf []byte
 	writeBuf *bytes.Buffer // buffer to enqueue data before being transmitted
 	ReadBuf  []byte
@@ -266,6 +275,7 @@ func (s *Stream) SetTransport(t Transport) {
 	s.l.Lock()
 	defer s.l.Unlock()
 	s.transport = t
+	// XXX: if stream is not new this should be checked
 	s.PayloadSize = PayloadSize(t)
 }
 
@@ -305,7 +315,7 @@ func (r *ReTx) Push(i client.Item) error {
 	}
 
 	r.Lock()
-	_, ok = r.Wack[m.Frame.Id]
+	_, ok = r.Wack[m.FrameID]
 	r.Unlock()
 	if !ok {
 		// Already Acknowledged
@@ -321,7 +331,7 @@ func (r *ReTx) Push(i client.Item) error {
 	// do not block Push() on txFrame BlockingSend
 	r.s.Go(func() {
 		r.s.txEnqueue(m)
-		err := r.s.txFrame(m.Frame)
+		err := r.s.txFrame(m)
 		if err == nil {
 			r.s.doOnWrite()
 		}
@@ -362,6 +372,7 @@ func (s *Stream) reader() {
 			return
 		case <-s.readerExpDist.OutCh():
 		}
+
 		f, err := s.readFrame()
 		switch err {
 		case nil:
@@ -615,7 +626,6 @@ func (s *Stream) writer() {
 
 		f := new(Frame)
 		f.Id = s.WriteIdx
-		s.WriteIdx += 1
 
 		// Set frame Ack if EndToEnd
 		if s.Mode == EndToEnd {
@@ -645,12 +655,18 @@ func (s *Stream) writer() {
 		}
 		f.Payload = f.Payload[:n]
 		if n > 0 || mustAck || mustTeardown {
+			s.WriteIdx += 1
+			fw, err := s.encFrame(f)
+			if err != nil {
+				// Fatal
+				return
+			}
 			// schedules a retransmission in the next epoch if not acknowledged
 			if mode == EndToEnd && !mustTeardown {
-				s.txEnqueue(nextEpoch(f))
+				s.txEnqueue(nextEpoch(fw))
 			}
 
-			err = s.txFrame(f)
+			err = s.txFrame(fw)
 			switch err {
 			case nil:
 				s.doOnWrite()
@@ -660,196 +676,51 @@ func (s *Stream) writer() {
 	}
 }
 
-// derive the reader frame ID for frame_num
-func (s *Stream) rxFrameID(frame_num uint64) common.MessageID {
-	f := make([]byte, 8)
-	binary.BigEndian.PutUint64(f, frame_num)
-	return H(append(s.ReadIDBase[:], f...))
-}
-
-func (s *Stream) rxFrameKey(frame_num uint64) *[keySize]byte {
-	f := make([]byte, 8)
-	binary.BigEndian.PutUint64(f, frame_num)
-	hk := H(append(s.ReadKey[:], f...))
-	k := [keySize]byte(hk)
-	return &k
-}
-
-func (s *Stream) txFrameKey(frame_num uint64) *[keySize]byte {
-	f := make([]byte, 8)
-	binary.BigEndian.PutUint64(f, frame_num)
-	hk := H(append(s.WriteKey[:], f...))
-	k := [keySize]byte(hk)
-	return &k
-}
-
-// derive the writer frame ID for frame_num
-func (s *Stream) txFrameID(frame_num uint64) common.MessageID {
-	f := make([]byte, 8)
-	binary.BigEndian.PutUint64(f, frame_num)
-	return H(append(s.WriteIDBase[:], f...))
-}
-
-func (s *Stream) txFrame(frame *Frame) (err error) {
+// encFrame encrypts frame and returns the box ID, ciphertet and signature as a FrameWithPriority
+func (s *Stream) encFrame(frame *Frame) (*FrameWithPriority, error) {
 	serialized, err := cbor.Marshal(frame)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	frame_id := s.txFrameID(frame.Id)
-	frame_key := s.txFrameKey(frame.Id)
 
-	// zero extend ciphertext until maximum PayloadSize
+	// zero extend payload
 	if s.PayloadSize-len(serialized) > 0 {
 		padding := make([]byte, s.PayloadSize-len(serialized))
 		serialized = append(serialized, padding...)
 	}
 
-	// use frame_id bytes as nonce
-	nonce := [nonceSize]byte{}
-	copy(nonce[:], frame_id[:nonceSize])
-	ciphertext := secretbox.Seal(nil, serialized, &nonce, frame_key)
-	return s.transport.Put(frame_id[:], ciphertext)
+	// encrypt frame and return the boxID
+	boxID, ciphertext, sig, err := s.sw.EncryptNext(serialized)
+	if err != nil {
+		return nil, err
+	}
+	sig64 := [64]byte{}
+	copy(sig64[:], sig)
+
+	return &FrameWithPriority{FrameID: frame.Id, ID: boxID, Ciphertext: ciphertext, Signature: sig64}, nil
+}
+
+// txFrame transmits a ciphertext over the wire
+func (s *Stream) txFrame(f *FrameWithPriority) error {
+	var ctx context.Context
+	var cancelFn func()
+	if s.Timeout != 0 {
+		ctx, cancelFn = context.WithTimeout(context.Background(), s.Timeout)
+		defer cancelFn()
+	} else {
+		// this should probably not block for longer than 1 epoch
+		ctx, cancelFn = context.WithTimeout(context.Background(), epochtime.Period)
+		defer cancelFn()
+	}
+	return s.transport.Put(ctx, f.ID, f.Signature, f.Ciphertext)
 }
 
 func (s *Stream) txEnqueue(m *FrameWithPriority) {
 	// use a timerqueue here and set an acknowledgement retransmit timeout; ideally we would know the effective durability of the storage medium and maximize the retransmission delay so that we retransmit a message as little as possible.
 	s.R.Lock()
-	s.R.Wack[m.Frame.Id] = m
+	s.R.Wack[m.FrameID] = m
 	s.R.Unlock()
 	s.TQ.Push(m)
-}
-
-func H(i []byte) (res common.MessageID) {
-	return common.MessageID(sha256.Sum256(i))
-}
-
-// Dial returns a Stream initialized with secret address
-func Dial(c Transport, network, addr string) (*Stream, error) {
-	s := newStream(EndToEnd)
-	s.SetTransport(c)
-	a := &StreamAddr{Snetwork: network, Saddress: addr}
-	err := s.keyAsDialer(a)
-	if err != nil {
-		return nil, err
-	}
-	s.Start()
-	return s, nil
-}
-
-// configure keymaterial as dialer from a shared secret
-func (s *Stream) keyAsDialer(addr *StreamAddr) error {
-	listenerSecret, dialerSecret, err := deriveListenerDialerSecrets(addr.String())
-	if err != nil {
-		return err
-	}
-	s.Addr = addr
-	s.Initiator = false
-	salt := []byte("stream_reader_writer_keymaterial")
-	reader_keymaterial := hkdf.New(hash, listenerSecret[:], salt, nil)
-	writer_keymaterial := hkdf.New(hash, dialerSecret[:], salt, nil)
-
-	// obtain the frame encryption key and sequence seed
-	_, err = io.ReadFull(writer_keymaterial, s.WriteKey[:])
-	if err != nil {
-		panic(err)
-	}
-	_, err = io.ReadFull(writer_keymaterial, s.WriteIDBase[:])
-	if err != nil {
-		panic(err)
-	}
-
-	// obtain the frame decryption key and sequence seed
-	_, err = io.ReadFull(reader_keymaterial, s.ReadKey[:])
-	if err != nil {
-		panic(err)
-	}
-	_, err = io.ReadFull(reader_keymaterial, s.ReadIDBase[:])
-	if err != nil {
-		panic(err)
-	}
-	return nil
-}
-
-// generate a new address secret to Listen() or Dial() with
-func generate() string {
-	newsecret := &[keySize]byte{}
-	_, err := io.ReadFull(rand.Reader, newsecret[:])
-	if err != nil {
-		panic(err)
-	}
-	return base64.StdEncoding.EncodeToString(newsecret[:])
-}
-
-// convert base64 string into tuple of secrets for reader/writer
-func deriveListenerDialerSecrets(addr string) ([]byte, []byte, error) {
-	// get base secret
-	secret, err := base64.StdEncoding.DecodeString(addr)
-	if err != nil {
-		return nil, nil, err
-	}
-	if len(secret) < keySize {
-		return nil, nil, ErrInvalidAddr
-	}
-	salt := []byte("stream_reader_writer_keymaterial")
-	keymaterial := hkdf.New(hash, secret, salt, nil)
-	listenerSecret := &[keySize]byte{}
-	dialerSecret := &[keySize]byte{}
-	_, err = io.ReadFull(keymaterial, listenerSecret[:])
-	if err != nil {
-		panic(err)
-	}
-	_, err = io.ReadFull(keymaterial, dialerSecret[:])
-	if err != nil {
-		panic(err)
-	}
-	return listenerSecret[:], dialerSecret[:], nil
-}
-
-// Listen should be net.Listener
-func Listen(c Transport, network, addr string) (*Stream, error) {
-	s := newStream(EndToEnd)
-	s.SetTransport(c)
-	a := &StreamAddr{Snetwork: network, Saddress: addr}
-	err := s.keyAsListener(a)
-	if err != nil {
-		return nil, err
-	}
-	s.Start()
-	return s, nil
-}
-
-// configure keymaterial as dialer from a shared secret
-func (s *Stream) keyAsListener(addr *StreamAddr) error {
-	listenerSecret, dialerSecret, err := deriveListenerDialerSecrets(addr.String())
-	if err != nil {
-		return err
-	}
-	s.Addr = addr
-	s.Initiator = true
-	salt := []byte("stream_reader_writer_keymaterial")
-	reader_keymaterial := hkdf.New(hash, dialerSecret[:], salt, nil)
-	writer_keymaterial := hkdf.New(hash, listenerSecret[:], salt, nil)
-
-	// obtain the frame encryption key and sequence seed
-	_, err = io.ReadFull(writer_keymaterial, s.WriteKey[:])
-	if err != nil {
-		panic(err)
-	}
-	_, err = io.ReadFull(writer_keymaterial, s.WriteIDBase[:])
-	if err != nil {
-		panic(err)
-	}
-
-	// obtain the frame decryption key and sequence seed
-	_, err = io.ReadFull(reader_keymaterial, s.ReadKey[:])
-	if err != nil {
-		panic(err)
-	}
-	_, err = io.ReadFull(reader_keymaterial, s.ReadIDBase[:])
-	if err != nil {
-		panic(err)
-	}
-	return nil
 }
 
 func (s *Stream) doFlush() {
@@ -876,8 +747,11 @@ func (s *Stream) doOnWrite() {
 func (s *Stream) readFrame() (*Frame, error) {
 	s.l.Lock()
 	idx := s.ReadIdx
+	box_id, err := s.sr.NextBoxID()
 	s.l.Unlock()
-	frame_id := s.rxFrameID(idx)
+	if err != nil {
+		return nil, err
+	}
 	ctx, cancelFn := context.WithCancel(context.Background())
 	s.Go(func() {
 		select {
@@ -889,24 +763,24 @@ func (s *Stream) readFrame() (*Frame, error) {
 		}
 	})
 
-	ciphertext, err := s.transport.GetWithContext(ctx, frame_id[:])
+	ciphertext, sig, err := s.transport.Get(ctx, box_id.ByteArray())
 	cancelFn()
 	if err != nil {
+		//panic(err)
 		return nil, err
 	}
-	// use frame_id bytes as nonce
-	nonce := [nonceSize]byte{}
-	copy(nonce[:], frame_id[:nonceSize])
-	plaintext, ok := secretbox.Open(nil, ciphertext, &nonce, s.rxFrameKey(idx))
-	if !ok {
-		// damaged Stream, abort / retry / fail ?
-		// TODO: indicate serious error somehow
-		return nil, ErrFrameDecrypt
+
+	plaintext, err := s.sr.DecryptNext(s.Context, box_id.ByteArray(), ciphertext, sig)
+	if err != nil {
+		panic(err)
+		return nil, err
 	}
+
 	f := new(Frame)
 	f.Id = idx
 	_, err = cbor.UnmarshalFirst(plaintext, f)
 	if err != nil {
+		panic(err)
 		return nil, err
 	}
 	return f, nil
@@ -934,17 +808,17 @@ func (s *Stream) processAck(f *Frame) {
 
 // StreamAddr implements net.Addr
 type StreamAddr struct {
-	Snetwork, Saddress string
+	Secret string
 }
 
 // Network implements net.Addr
 func (s *StreamAddr) Network() string {
-	return s.Snetwork
+	return ""
 }
 
 // String implements net.Addr String()
 func (s *StreamAddr) String() string {
-	return s.Saddress
+	return s.Secret
 }
 
 // LocalAddr implements net.Addr LocalAddr()
@@ -958,7 +832,11 @@ func (s *Stream) RemoteAddr() *StreamAddr {
 }
 
 // Transport describes the interface to Get or Put Frames
-type Transport mClient.ReadWriteClient
+type Transport interface {
+	Get(ctx context.Context, addr [32]byte) (ciphertext []byte, signature [64]byte, err error)
+	Put(ctx context.Context, addr [32]byte, signature [64]byte, payload []byte) error
+	PayloadSize() int
+}
 
 func newStream(mode StreamMode) *Stream {
 	s := new(Stream)
@@ -979,64 +857,42 @@ func newStream(mode StreamMode) *Stream {
 	s.writeBuf = new(bytes.Buffer)
 	s.readBuf = new(bytes.Buffer)
 
-	s.WriteKey = &[keySize]byte{}
-	s.ReadKey = &[keySize]byte{}
-
 	s.AckIdx = no_ack
 	s.PeerAckIdx = no_ack
 	return s
 }
 
-// NewMulticastStream generates a new address and starts the read/write workers with Multicast mode
-func NewMulticastStream(s *client.Session) *Stream {
-	c, _ := mClient.NewClient(s)
-	addr := &StreamAddr{Snetwork: "", Saddress: generate()}
-	t := mClient.DuplexFromSeed(c, true, []byte(addr.String()))
+// NewMulticastSendStream returns a Multicast Writer with no Acknowledgements
+func NewMulticastSendStream(t Transport, writeCap *bacap.BoxOwnerCap) *Stream {
 	st := newStream(Multicast)
+	st.WriteCap = writeCap
 	st.SetTransport(t)
-	err := st.keyAsListener(addr)
-	if err != nil {
-		panic(err)
-	}
-	st.Mode = Multicast
-	st.Start()
 	return st
 }
 
-// NewStream generates a new address and starts the read/write workers with End to End mode
-// func NewStream(c Transport, identity sign.PrivateKey, sign.PublicKey) *Stream {
-func NewStream(s *client.Session) *Stream {
-	c, _ := mClient.NewClient(s)
-	addr := &StreamAddr{Snetwork: "", Saddress: generate()}
-	t := mClient.DuplexFromSeed(c, true, []byte(addr.String()))
+// NewMulticastRecvStream returns a Multicast Reader with no Acknowledgements
+func NewMulticastRecvStream(t Transport, readCap *bacap.UniversalReadCap) *Stream {
+	st := newStream(Multicast)
+	st.ReadCap = readCap
+	st.SetTransport(t)
+	return st
+}
+
+// NewStream generates a new address and initializes a Stream as listener. It does not start it.
+func NewStream(writeCap *bacap.BoxOwnerCap, readCap *bacap.UniversalReadCap, context []byte) *Stream {
 	st := newStream(EndToEnd)
-	st.SetTransport(t)
-	err := st.keyAsListener(addr)
-	if err != nil {
-		panic(err)
-	}
-	st.Start()
+	st.ReadCap = readCap
+	st.WriteCap = writeCap
+	st.Context = context
 	return st
-}
-
-type nilTransport int
-
-func (*nilTransport) Put(addr, payload []byte) error {
-	panic("NilTransport")
-}
-func (*nilTransport) GetWithContext(ctx context.Context, addr []byte) ([]byte, error) {
-	panic("NilTransport")
-}
-func (*nilTransport) Get(addr []byte) ([]byte, error) {
-	panic("NilTransport")
-}
-func (*nilTransport) PayloadSize() int {
-	return 0
 }
 
 // LoadStream initializes a Stream from state saved by Save()
 func LoadStream(state []byte) (*Stream, error) {
 	st := newStream(EndToEnd)
+	st.ReadCap = &bacap.UniversalReadCap{}
+	st.WriteCap = &bacap.BoxOwnerCap{}
+
 	_, err := cbor.UnmarshalFirst(state, st)
 	if err != nil {
 		return nil, err
@@ -1061,7 +917,7 @@ func (s *Stream) String() string {
 	unACKdstats := ""
 	s.R.Lock()
 	for id, f := range s.R.Wack {
-		unACKdstats += fmt.Sprintf("Wait: : %d %v\n", id, f.Frame.String())
+		unACKdstats += fmt.Sprintf("UnAcked: Frame: %d BoxID: %x\n", id, f.ID)
 	}
 	s.R.Unlock()
 	rwState := fmt.Sprintf("%v %v\n", ssStr(s.RState), ssStr(s.WState))
@@ -1095,6 +951,20 @@ func (s *Stream) StartWithTransport(trans Transport) {
 			}
 			s.R.Unlock()
 		})
+
+		// sequential reads and writes using bacap using the StatefulReader and StatefulWriter helper types
+		// for each stream we always use a unique context so that with one UniversalReadCap
+		// from a PAKE we can create many different streams.
+		sr, err := bacap.NewStatefulReader(s.ReadCap, s.Context)
+		if err != nil {
+			panic(err)
+		}
+		sw, err := bacap.NewStatefulWriter(s.WriteCap, s.Context)
+		if err != nil {
+			panic(err)
+		}
+		s.sr, s.sw = sr, sw
+
 		s.WindowSize = defaultWindowSize
 		s.MaxWriteBufSize = int(s.WindowSize) * PayloadSize(s.transport)
 		s.onFlush = make(chan struct{}, 1)
@@ -1103,8 +973,18 @@ func (s *Stream) StartWithTransport(trans Transport) {
 		s.onWrite = make(chan struct{})
 		s.onRead = make(chan struct{})
 		s.TQ.Start()
-		s.Go(s.reader)
-		s.Go(s.writer)
+
+		// In Mode Multicast, a Stream may be either a
+		if s.Mode == Multicast {
+			if s.ReadCap != nil {
+				s.Go(s.reader)
+			} else {
+				s.Go(s.writer)
+			}
+		} else {
+			s.Go(s.reader)
+			s.Go(s.writer)
+		}
 	})
 }
 
@@ -1120,61 +1000,13 @@ func (s *Stream) setDefaultPollingRates() {
 	s.senderExpDist.UpdateRate(uint64(averageSendRate/time.Millisecond), uint64(epochtime.Period/time.Millisecond))
 }
 
-// DialDuplex returns a stream using capability backed map storage (Duplex)
-func DialDuplex(s *client.Session, network, addr string) (*Stream, error) {
-	c, err := mClient.NewClient(s)
-	if err != nil {
-		return nil, err
-	}
-	t := mClient.DuplexFromSeed(c, false, []byte(addr))
-	st := newStream(EndToEnd)
-	st.SetTransport(t)
-	a := &StreamAddr{Snetwork: network, Saddress: addr}
-
-	err = st.keyAsDialer(a)
-	if err != nil {
-		return nil, err
-	}
-	st.Start()
-	return st, nil
-}
-
-// ListenDuplex returns a Stream using capability map storage (Duplex) as initiator
-func ListenDuplex(s *client.Session, network, addr string) (*Stream, error) {
-	c, _ := mClient.NewClient(s)
-	st := newStream(EndToEnd)
-	st.SetTransport(mClient.DuplexFromSeed(c, true, []byte(addr)))
-	a := &StreamAddr{Snetwork: network, Saddress: addr}
-	err := st.keyAsListener(a)
-	if err != nil {
-		return nil, err
-	}
-	st.Start()
-	return st, nil
-}
-
-// NewDuplex returns a Stream using capability map storage (Duplex) a Listener
-func NewDuplex(s *client.Session) (*Stream, error) {
-	c, err := mClient.NewClient(s)
-	if err != nil {
-		return nil, err
-	}
-	a := &StreamAddr{Snetwork: "", Saddress: generate()}
-	st := newStream(EndToEnd)
-	st.SetTransport(mClient.DuplexFromSeed(c, true, []byte(a.String())))
-	err = st.keyAsListener(a)
-	if err != nil {
-		return nil, err
-	}
-	st.Start()
-	return st, nil
-}
-
 func init() {
 	b, _ := cbor.Marshal(Frame{})
 	cborFrameOverhead = len(b)
 }
 
+// Payloadsize returns the maximum frame size that can be sent with Transport
 func PayloadSize(c Transport) int {
-	return c.PayloadSize() - cborFrameOverhead - secretbox.Overhead - nonceSize
+	bacapOverhead := 0 // XXX: what is bacap overhead
+	return c.PayloadSize() - cborFrameOverhead - bacapOverhead
 }
