@@ -76,7 +76,7 @@ type StoredEnvelopeData struct {
 }
 
 // ChannelDescriptor describes a pigeonhole channel and supplies us with
-// everthing we need to read or write to the channel.
+// everything we need to read or write to the channel.
 type ChannelDescriptor struct {
 	// AppID tracks which thin client owns this channel for cleanup purposes
 	AppID *[AppIDLength]byte
@@ -299,6 +299,7 @@ func (d *Daemon) createWriteChannel(request *Request) {
 		return
 	}
 	channelID := d.generateUniqueChannelID()
+	// TODO there's a race here, should check if channelID was used (after .Lock() and before assigning below):
 	d.newChannelMapLock.Lock()
 	d.newChannelMap[channelID] = &ChannelDescriptor{
 		AppID:               request.AppID,
@@ -306,16 +307,16 @@ func (d *Daemon) createWriteChannel(request *Request) {
 		EnvelopeDescriptors: make(map[[hash.HashSize]byte]*EnvelopeDescriptor),
 	}
 	d.newChannelMapLock.Unlock()
-	writeCapBlob, err := newWriteCap.MarshalBinary()
+	_, err = newWriteCap.MarshalBinary()
 	if err != nil {
 		d.log.Errorf("createWriteChannel failure: %s", err)
 		d.sendCreateWriteChannelError(request, thin.ThinClientImpossibleNewWriteCapError)
 		return
 	}
-	writeCapHash := hash.Sum256(writeCapBlob)
-	d.capabilityLock.Lock()
-	d.usedWriteCaps[writeCapHash] = true
-	d.capabilityLock.Unlock()
+	//writeCapHash := hash.Sum256(writeCapBlob)
+	//d.capabilityLock.Lock()
+	//d.usedWriteCaps[writeCapHash] = true
+	//d.capabilityLock.Unlock()
 
 	readCap := statefulWriter.Wcap.ReadCap()
 
@@ -426,23 +427,23 @@ func (d *Daemon) createReadChannel(request *Request) {
 	}
 
 	// note the read cap so that we cannot create duplicates
-	readCapBlob, err := request.CreateReadChannel.ReadCap.MarshalBinary()
+	_, err = request.CreateReadChannel.ReadCap.MarshalBinary()
 	if err != nil {
 		d.log.Errorf("createReadChannel failure: %s", err)
 		d.sendCreateReadChannelError(request, thin.ThinClientErrorInternalError)
 		return
 	}
-	readCapHash := hash.Sum256(readCapBlob)
-	d.capabilityLock.Lock()
-	_, ok := d.usedReadCaps[readCapHash]
-	if ok {
-		d.log.Errorf("createReadChannel failure: read cap already in use")
-		d.sendCreateReadChannelError(request, thin.ThinClientCapabilityAlreadyInUse)
-		d.capabilityLock.Unlock()
-		return
-	}
-	d.usedReadCaps[readCapHash] = true
-	d.capabilityLock.Unlock()
+	//readCapHash := hash.Sum256(readCapBlob)
+	//d.capabilityLock.Lock()
+	//_, ok := d.usedReadCaps[readCapHash]
+	//if ok {
+	//	d.log.Errorf("createReadChannel failure: read cap already in use")
+	//	d.sendCreateReadChannelError(request, thin.ThinClientCapabilityAlreadyInUse)
+	//	d.capabilityLock.Unlock()
+	//	return
+	//}
+	//d.usedReadCaps[readCapHash] = true
+	//d.capabilityLock.Unlock()
 
 	channelID := d.generateUniqueChannelID()
 	d.newChannelMapLock.Lock()
@@ -476,16 +477,16 @@ func (d *Daemon) checkWriteCapabilityDedup(writeCap *bacap.WriteCap) error {
 		return err
 	}
 
-	capHash := hash.Sum256(writeCapBytes)
-	d.capabilityLock.Lock()
-	defer d.capabilityLock.Unlock()
+	_ = hash.Sum256(writeCapBytes)
+	//d.capabilityLock.Lock()
+	//defer d.capabilityLock.Unlock()
 
-	if d.usedWriteCaps[capHash] {
-		return errors.New("capability already in use")
-	}
+	//if d.usedWriteCaps[capHash] {
+	//	return errors.New("capability already in use")
+	//}
 
 	// Mark this capability as used
-	d.usedWriteCaps[capHash] = true
+	//d.usedWriteCaps[capHash] = true
 	return nil
 }
 
@@ -585,7 +586,9 @@ func (d *Daemon) writeChannel(request *Request) {
 		d.sendWriteChannelError(request, thin.ThinClientErrorConnectionLost)
 		return
 	}
+	channelDesc.EnvelopeDescriptorsLock.Lock()
 	envelopeDescriptorBytes, err := channelDesc.EnvelopeDescriptors[*envHash].Bytes()
+	channelDesc.EnvelopeDescriptorsLock.Unlock()
 	if err != nil {
 		d.log.Errorf("writeChannel failure: failed to serialize envelope descriptor: %s", err)
 		d.sendWriteChannelError(request, thin.ThinClientErrorInternalError)
@@ -780,21 +783,21 @@ func (d *Daemon) closeChannel(request *Request) {
 	d.capabilityLock.Lock()
 	switch {
 	case channelDesc.StatefulReader != nil:
-		readCapBlob, err := channelDesc.StatefulReader.Rcap.MarshalBinary()
-		if err != nil {
-			d.log.Errorf("closeChannel: failed to marshal read cap: %s", err)
-			return
-		}
-		readCapHash := hash.Sum256(readCapBlob)
-		delete(d.usedReadCaps, readCapHash)
+		//readCapBlob, err := channelDesc.StatefulReader.Rcap.MarshalBinary()
+		//if err != nil {
+		//	d.log.Errorf("closeChannel: failed to marshal read cap: %s", err)
+		//	return
+		//}
+		//readCapHash := hash.Sum256(readCapBlob)
+		//delete(d.usedReadCaps, readCapHash)
 	case channelDesc.StatefulWriter != nil:
-		writeCapBlob, err := channelDesc.StatefulWriter.Wcap.MarshalBinary()
-		if err != nil {
-			d.log.Errorf("closeChannel: failed to marshal write cap: %s", err)
-			return
-		}
-		writeCapHash := hash.Sum256(writeCapBlob)
-		delete(d.usedWriteCaps, writeCapHash)
+		//writeCapBlob, err := channelDesc.StatefulWriter.Wcap.MarshalBinary()
+		//if err != nil {
+		//	d.log.Errorf("closeChannel: failed to marshal write cap: %s", err)
+		//	return
+		//}
+		//writeCapHash := hash.Sum256(writeCapBlob)
+		//delete(d.usedWriteCaps, writeCapHash)
 	}
 	d.capabilityLock.Unlock()
 
