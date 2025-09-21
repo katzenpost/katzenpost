@@ -256,8 +256,10 @@ func (p *pki) getDocument(ctx context.Context, epoch uint64) ([]byte, *cpki.Docu
 	switch err {
 	case nil:
 	case cpki.ErrNoDocument:
+		p.log.Debugf("getDocument [%v]: ErrNoDocument", epoch)
 		return nil, nil, err
 	default:
+		p.log.Errorf("getDocument [%v]: %s", epoch, err.Error())
 		return nil, nil, err
 	}
 

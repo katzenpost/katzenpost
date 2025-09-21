@@ -310,7 +310,7 @@ func (c *connection) doConnect(dialCtx context.Context) {
 		if len(dstAddrs) == 0 {
 			c.log.Warningf("Aborting connect loop, no suitable addresses found.")
 			c.descriptor = nil // Give up till the next PKI fetch.
-			connErr = newConnectError("no suitable addreses found")
+			connErr = newConnectError("no suitable addresses found")
 			return
 		}
 
@@ -359,7 +359,7 @@ func (c *connection) doConnect(dialCtx context.Context) {
 			c.onNetConn(conn)
 
 			// Re-iterate through the address/ports on a sucessful connect.
-			c.log.Debugf("Connection terminated, will reconnect.")
+			c.log.Debugf("Connection terminated (onNetConn done), will reconnect.")
 
 			// Emit a ConnectError when disconnected.
 			c.onConnStatusChange(ErrNotConnected)
@@ -417,7 +417,10 @@ func (c *connection) onNetConn(conn net.Conn) {
 		return
 	}
 	c.log.Debugf("onTCPConn: Handshake completed.")
-	conn.SetDeadline(time.Time{})
+	conn.SetDeadline(time.Time{}) // client can take however long it wants
+	//if err = conn.SetDeadline(time.Now().Add(90 * time.Second)); err != nil {
+	//   panic(err)
+	//}
 	c.client.pki.setClockSkew(int64(w.ClockSkew().Seconds()))
 
 	c.onWireConn(w)
@@ -455,13 +458,15 @@ func (c *connection) onWireConn(w *wire.Session) {
 			rawCmd, err := w.RecvCommand()
 			if err != nil {
 				c.log.Debugf("Failed to receive command: %v", err)
+				//14:49:09.849 DEBU client2/conn: Failed to receive command:
+				//read tcp 127.0.0.1:34688->127.0.0.1:30004: use of closed network connection
 				select {
 				case <-c.HaltCh():
 				case cmdCh <- err:
 				}
 				return
 			}
-			atomic.StoreInt64(&c.retryDelay, 0)
+			atomic.StoreInt64(&c.retryDelay, int64(2 * time.Second))
 			select {
 			case <-c.HaltCh():
 				return
@@ -774,6 +779,7 @@ func (c *connection) onConnStatusChange(err error) {
 		c.isConnected = true
 		c.isConnectedLock.Unlock()
 	} else {
+		c.log.Info("onConnStatusChange %s", err.Error())
 		c.isConnectedLock.Lock()
 		c.isConnected = false
 		c.isConnectedLock.Unlock()
