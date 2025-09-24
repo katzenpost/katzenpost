@@ -321,9 +321,14 @@ func (e *Courier) tryImmediateReplyProxy(reply *commands.ReplicaMessageReply) bo
 		// Create proper CourierQueryReply with the replica's response
 		// Determine reply type based on whether there's actual payload data
 		var replyType uint8
-		if len(reply.EnvelopeReply) > 0 {
+		if len(reply.EnvelopeReply) > 29 {
+		   // we sometimes get a small RepliceMessageReply thing here, and we shouldn't return it as data
+		   // because clientd can't decode it
 			replyType = pigeonhole.ReplyTypePayload // Has actual data
-		} else {
+		e.log.Errorf("tryImmediateReplyProxy: setting ReplyType:=ReplyTypePayload because len(reply.EnvelopeReply)==%d: %v",
+						      len(reply.EnvelopeReply), reply)
+
+			} else {
 			replyType = pigeonhole.ReplyTypeACK // No data, just acknowledgment
 		}
 
@@ -480,7 +485,12 @@ func (e *Courier) handleOldMessage(cacheEntry *CourierBookKeeping, envHash *[has
 
 	// Determine reply type based on whether there's actual payload data
 	var replyType uint8
-	if len(payload) > 0 {
+	if len(payload) > 29 {
+	        // whatever it is that the courier stuffs in here of length 29
+		// cannot be decoded by the clientd. whether that's a bug in the courier or the clientd
+		// is unclear, but for now...
+		// note that we have the same hack in tryImmediateReplyProxy because the logic
+		// to synthesize CourierEnvelopeReply is duplicated there.
 		replyType = pigeonhole.ReplyTypePayload // Has actual data
 	} else {
 		replyType = pigeonhole.ReplyTypeACK // No data, just acknowledgment

@@ -755,12 +755,15 @@ func (d *Daemon) closeChannel(request *Request) {
 
 	channelID := request.CloseChannel.ChannelID
 
+	d.newChannelMapXXXLock.Lock()
 	d.newChannelMapLock.Lock()
 	channelDesc, ok := d.newChannelMap[channelID]
 	if ok {
 		delete(d.newChannelMap, channelID)
+		delete(d.newChannelMapXXX, channelID)
 	}
 	d.newChannelMapLock.Unlock()
+	d.newChannelMapXXXLock.Unlock()
 
 	if !ok || channelDesc == nil {
 		d.log.Debugf("closeChannel: channel %d not found (already closed or never existed)", channelID)
@@ -813,8 +816,10 @@ func (d *Daemon) cleanupChannelsForAppID(appID *[AppIDLength]byte) {
 	// Order: channelReplies -> newSurbIDToChannelMap -> newChannelMap
 	d.channelRepliesLock.Lock()
 	d.newSurbIDToChannelMapLock.Lock()
+	d.newSurbIDToChannelMapXXXLock.Lock()
 	d.newChannelMapLock.Lock()
 	defer d.newChannelMapLock.Unlock()
+	defer d.newChannelMapXXXLock.Unlock()
 	defer d.newSurbIDToChannelMapLock.Unlock()
 	defer d.channelRepliesLock.Unlock()
 
@@ -858,6 +863,7 @@ func (d *Daemon) cleanupChannelsForAppID(appID *[AppIDLength]byte) {
 	for channelID := range channelsToCleanup {
 		if _, exists := d.newChannelMap[channelID]; exists {
 			delete(d.newChannelMap, channelID)
+			delete(d.newChannelMapXXX, channelID)
 			d.log.Debugf("cleanupChannelsForAppID: removed channel %d for App ID %x", channelID, appID[:])
 		}
 	}
