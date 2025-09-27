@@ -82,7 +82,8 @@ func (e *EnvelopeKey) PurgeKeyFiles(dataDir string, scheme nike.Scheme, epoch ui
 func (e *EnvelopeKey) WriteKeyFiles(dataDir string, scheme nike.Scheme, epoch uint64) error {
 	privKeyFile, pubKeyFile := e.KeyFileNames(dataDir, scheme, epoch)
 	if utils.BothExists(privKeyFile, pubKeyFile) {
-		return errors.New("key files already exist")
+		// return errors.New("key files already exist")
+		return nil // if they already exist that's great?
 	} else if utils.BothNotExists(privKeyFile, pubKeyFile) {
 		var err error
 		e.PublicKey, e.PrivateKey, err = scheme.GenerateKeyPair()

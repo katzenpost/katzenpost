@@ -772,7 +772,6 @@ func (c *connection) onConnStatusChange(err error) {
 	if isShutdown {
 		return
 	}
-	c.log.Info("onConnStatusChange")
 
 	if err == nil {
 		c.isConnectedLock.Lock()

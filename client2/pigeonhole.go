@@ -299,7 +299,6 @@ func (d *Daemon) createWriteChannel(request *Request) {
 		return
 	}
 	channelID := d.generateUniqueChannelID()
-	// TODO there's a race here, should check if channelID was used (after .Lock() and before assigning below):
 	d.newChannelMapLock.Lock()
 	d.newChannelMap[channelID] = &ChannelDescriptor{
 		AppID:               request.AppID,
@@ -529,6 +528,7 @@ func (d *Daemon) writeChannel(request *Request) {
 		d.sendWriteChannelError(request, thin.ThinClientErrorInvalidChannel)
 		return
 	}
+	
 
 	_, doc := d.client.CurrentDocument()
 
@@ -653,6 +653,7 @@ func (d *Daemon) readChannel(request *Request) {
 	// failed.
 	if request.ReadChannel.MessageBoxIndex != nil {
 		channelDesc.StatefulReader.NextIndex = request.ReadChannel.MessageBoxIndex
+		d.log.Errorf("readChannel reset NextIndex from MessageBoxIndex")
 	}
 
 	boxID, err := channelDesc.StatefulReader.NextBoxID()
@@ -752,18 +753,22 @@ func (d *Daemon) readChannel(request *Request) {
 // closeChannel closes a pigeonhole channel and cleans up its resources
 func (d *Daemon) closeChannel(request *Request) {
 	d.log.Debug("closeChannel: closing channel")
+	d.newChannelMapXXXLock.Lock()
+	defer d.newChannelMapXXXLock.Unlock()
 
 	channelID := request.CloseChannel.ChannelID
+	_, okxxx := d.newChannelMapXXX[channelID]
+	if okxxx {
+	   delete(d.newChannelMapXXX, channelID)
+	}
 
-	d.newChannelMapXXXLock.Lock()
+
 	d.newChannelMapLock.Lock()
 	channelDesc, ok := d.newChannelMap[channelID]
 	if ok {
 		delete(d.newChannelMap, channelID)
-		delete(d.newChannelMapXXX, channelID)
 	}
 	d.newChannelMapLock.Unlock()
-	d.newChannelMapXXXLock.Unlock()
 
 	if !ok || channelDesc == nil {
 		d.log.Debugf("closeChannel: channel %d not found (already closed or never existed)", channelID)
@@ -816,10 +821,10 @@ func (d *Daemon) cleanupChannelsForAppID(appID *[AppIDLength]byte) {
 	// Order: channelReplies -> newSurbIDToChannelMap -> newChannelMap
 	d.channelRepliesLock.Lock()
 	d.newSurbIDToChannelMapLock.Lock()
-	d.newSurbIDToChannelMapXXXLock.Lock()
 	d.newChannelMapLock.Lock()
-	defer d.newChannelMapLock.Unlock()
+	d.newChannelMapXXXLock.Lock()
 	defer d.newChannelMapXXXLock.Unlock()
+	defer d.newChannelMapLock.Unlock()
 	defer d.newSurbIDToChannelMapLock.Unlock()
 	defer d.channelRepliesLock.Unlock()
 
@@ -861,9 +866,11 @@ func (d *Daemon) cleanupChannelsForAppID(appID *[AppIDLength]byte) {
 
 	// Remove channels from channel map
 	for channelID := range channelsToCleanup {
+	    	if _, xxxexists := d.newChannelMapXXX[channelID]; xxxexists {
+			delete(d.newChannelMapXXX, channelID)
+		}
 		if _, exists := d.newChannelMap[channelID]; exists {
 			delete(d.newChannelMap, channelID)
-			delete(d.newChannelMapXXX, channelID)
 			d.log.Debugf("cleanupChannelsForAppID: removed channel %d for App ID %x", channelID, appID[:])
 		}
 	}

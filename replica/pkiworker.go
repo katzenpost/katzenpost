@@ -29,8 +29,8 @@ var (
 	PublishDeadline     = vServer.MixPublishDeadline
 	mixServerCacheDelay = epochtime.Period / 16
 	nextFetchTill       = epochtime.Period - (PublishDeadline + mixServerCacheDelay)
-	client2FetchDelay   = 2 * time.Minute
-	recheckInterval     = epochtime.Period / 16
+	client2FetchDelay   = 1 * time.Minute
+	recheckInterval     = epochtime.Period / 32
 )
 
 type PKIWorker struct {

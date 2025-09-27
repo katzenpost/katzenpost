@@ -154,6 +154,8 @@ func NewDaemon(cfg *config.Config) (*Daemon, error) {
 
 // generateUniqueChannelID generates a unique uint16 channel ID that's not already in use
 func (d *Daemon) generateUniqueChannelID() uint16 {
+	d.newChannelMapLock.Lock()
+	defer d.newChannelMapLock.Unlock()
 	d.newChannelMapXXXLock.Lock()
 	defer d.newChannelMapXXXLock.Unlock()
 
@@ -702,6 +704,8 @@ func (d *Daemon) resumeWriteChannelQuery(request *Request) {
 	// store envelope descriptor for later use
 	envelopeDesc, err := EnvelopeDescriptorFromBytes(request.ResumeWriteChannelQuery.EnvelopeDescriptor)
 	if err != nil {
+	// 20:40:22.483 ERRO katzenpost/client2: resumeWriteChannelQuery: Failed to parse envelope descriptor: cbor: 1999 bytes of extraneous data starting at index 1
+	// 
 		d.log.Errorf("resumeWriteChannelQuery: Failed to parse envelope descriptor: %v", err)
 		d.sendResumeWriteChannelQueryError(request, thin.ThinClientErrorInvalidRequest)
 		return
@@ -1060,6 +1064,7 @@ func (d *Daemon) handleCourierEnvelopeReply(appid *[AppIDLength]byte,
 		d.log.Debugf("DEBUG: Received ACK reply for channel %d, isWriter=%v", channelID, isWriter)
 		// ACK indicates successful write operation - advance StatefulWriter state
 		if isWriter {
+		        // is this what we want?
 			channelDesc.StatefulWriterLock.Lock()
 			d.log.Debugf("DEBUG: Advancing StatefulWriter state for channel %d", channelID)
 			err := channelDesc.StatefulWriter.AdvanceState()
@@ -1098,6 +1103,8 @@ func (d *Daemon) handleCourierEnvelopeReply(appid *[AppIDLength]byte,
 			d.log.Errorf("NEW API REPLY: Failed to process envelope reply: %s", err)
 			return err
 		}
+
+		d.log.Infof("NEW API REPLY: Decrypting MKEM Envelope env:%v envelopeDesc:%v", env, envelopeDesc)
 
 		innerMsg, err := d.decryptMKEMEnvelope(env, envelopeDesc, privateKey)
 		if err != nil {
@@ -1223,22 +1230,26 @@ func (d *Daemon) decryptMKEMEnvelope(env *pigeonhole.CourierEnvelopeReply, envel
 	for _, replicaNum := range envelopeDesc.ReplicaNums {
 		desc, err := replicaCommon.ReplicaNum(replicaNum, doc)
 		if err != nil {
+		        d.log.Errorf("MKEM DECRYPT: no replicaNum:%v in doc:%v", replicaNum, doc)
 			continue
 		}
 
 		replicaPubKeyBytes, ok := desc.EnvelopeKeys[replicaEpoch]
 		if !ok || len(replicaPubKeyBytes) == 0 {
+		        d.log.Errorf("MKEM DECRYPT: no usable replicaPubKeyBytes in replicaEpoch:%v", replicaEpoch)
 			continue
 		}
 
 		replicaPubKey, err := replicaCommon.NikeScheme.UnmarshalBinaryPublicKey(replicaPubKeyBytes)
 		if err != nil {
+		        d.log.Errorf("MKEM DECRYPT: can't parse replicaPubKey: %v", err)
 			continue
 		}
 
 		// Try to decrypt with this replica's public key
 		rawInnerMsg, err = replicaCommon.MKEMNikeScheme.DecryptEnvelope(privateKey, replicaPubKey, env.Payload)
 		if err == nil {
+		        d.log.Errorf("MKEM DECRYPT: no rawInnerMsg for replicaNum:%v: %v", replicaNum, err)
 			break
 		}
 	}
@@ -1249,7 +1260,7 @@ func (d *Daemon) decryptMKEMEnvelope(env *pigeonhole.CourierEnvelopeReply, envel
 	}
 	innerMsg, err := pigeonhole.ParseReplicaMessageReplyInnerMessage(rawInnerMsg)
 	if err != nil {
-		d.log.Errorf("failed to unmarshal inner message: %s", err)
+		d.log.Errorf("failed to unmarshal inner message: %s %v", err, rawInnerMsg)
 		return nil, fmt.Errorf("failed to unmarshal inner message: %s", err)
 	}
 
@@ -1651,6 +1662,7 @@ func (d *Daemon) decryptReadReplyPayload(params *ReplyHandlerParams, readReply *
 		d.log.Errorf("Failed to get next box ID for channel %d: %s", params.ChannelID, err)
 		return nil, fmt.Errorf("failed to get next box ID: %s", err)
 	}
+        saved := params.ChannelDesc.StatefulReader.NextIndex
 
 	// BACAP decrypt the payload
 	signature := (*[bacap.SignatureSize]byte)(readReply.Signature[:])
@@ -1663,6 +1675,13 @@ func (d *Daemon) decryptReadReplyPayload(params *ReplyHandlerParams, readReply *
 	if err != nil {
 		d.log.Errorf("BACAP DECRYPT FAILED for BoxID %x: %s", boxid[:], err)
 		return nil, fmt.Errorf("failed to decrypt next: %s", err)
+	} else {
+	       //if params.ReadChannel.MessageBoxIndex != nil {
+                      params.ChannelDesc.StatefulReader.NextIndex = saved // restore it because DecryptNext advanced it
+	       	      d.log.Errorf("BACAP state NOTNOT advanced for channel %d BoxID %x", params.ChannelID, boxid[:])
+	      // } else {
+	      // 	      d.log.Errorf("BACAP state advanced for channel %d BoxID %x", params.ChannelID, boxid[:])
+	      //  }
 	}
 
 	// Extract the original message from the padded payload
@@ -1704,7 +1723,7 @@ func (d *Daemon) handleNewReadReply(params *ReplyHandlerParams, readReply *pigeo
 	payload, err := d.processReadReplyPayload(params, readReply)
 	var errorCode uint8 = thin.ThinClientSuccess
 	if err != nil {
-		d.log.Errorf("failed to process read reply payload: %s", err)
+		d.log.Errorf("chan %v failed to process read reply payload: %s", params.ChannelID, err)
 		payload = []byte{} // Ensure empty payload on error
 		errorCode = thin.ThinClientErrorInternalError
 	}
