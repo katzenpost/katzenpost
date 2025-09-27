@@ -1063,7 +1063,10 @@ func (d *Daemon) handleCourierEnvelopeReply(appid *[AppIDLength]byte,
 	case courierEnvelopeReply.ReplyType == pigeonhole.ReplyTypeACK:
 		d.log.Debugf("DEBUG: Received ACK reply for channel %d, isWriter=%v", channelID, isWriter)
 		// ACK indicates successful write operation - advance StatefulWriter state
-		if isWriter {
+		if false { // if isWriter {
+		        // TODO: the application can (and will) resend the same message several times to the courier,
+			// each of them warranting an ACK, which will cause the stream to skip messages.
+			// For now, clients should use the ResumeWriteChannel API to set the index.
 		        // is this what we want?
 			channelDesc.StatefulWriterLock.Lock()
 			d.log.Debugf("DEBUG: Advancing StatefulWriter state for channel %d", channelID)
