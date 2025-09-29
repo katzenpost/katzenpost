@@ -100,8 +100,8 @@ type Daemon struct {
 	newSurbIDToChannelMapLock *sync.RWMutex
 	newChannelMap             map[uint16]*ChannelDescriptor
 	newChannelMapLock         *sync.RWMutex
-	newChannelMapXXX             map[uint16]bool
-	newChannelMapXXXLock         *sync.RWMutex
+	newChannelMapXXX          map[uint16]bool
+	newChannelMapXXXLock      *sync.RWMutex
 
 	// Capability deduplication maps to prevent reusing read/write capabilities
 	usedReadCaps   map[[hash.HashSize]byte]bool // Maps hash of ReadCap to true
@@ -136,8 +136,8 @@ func NewDaemon(cfg *config.Config) (*Daemon, error) {
 		newSurbIDToChannelMapLock: new(sync.RWMutex),
 		newChannelMap:             make(map[uint16]*ChannelDescriptor),
 		newChannelMapLock:         new(sync.RWMutex),
-		newChannelMapXXX:             make(map[uint16]bool),
-		newChannelMapXXXLock:         new(sync.RWMutex),
+		newChannelMapXXX:          make(map[uint16]bool),
+		newChannelMapXXXLock:      new(sync.RWMutex),
 		// capability deduplication fields:
 		usedReadCaps:   make(map[[hash.HashSize]byte]bool),
 		usedWriteCaps:  make(map[[hash.HashSize]byte]bool),
@@ -163,7 +163,7 @@ func (d *Daemon) generateUniqueChannelID() uint16 {
 		channelID := uint16(hpqcRand.NewMath().Intn(65535) + 1) // [1, 65535]
 
 		if _, exists := d.newChannelMapXXX[channelID]; !exists {
-		        d.newChannelMapXXX[channelID] = true // reserve it
+			d.newChannelMapXXX[channelID] = true // reserve it
 			return channelID
 		}
 	}
@@ -704,8 +704,8 @@ func (d *Daemon) resumeWriteChannelQuery(request *Request) {
 	// store envelope descriptor for later use
 	envelopeDesc, err := EnvelopeDescriptorFromBytes(request.ResumeWriteChannelQuery.EnvelopeDescriptor)
 	if err != nil {
-	// 20:40:22.483 ERRO katzenpost/client2: resumeWriteChannelQuery: Failed to parse envelope descriptor: cbor: 1999 bytes of extraneous data starting at index 1
-	// 
+		// 20:40:22.483 ERRO katzenpost/client2: resumeWriteChannelQuery: Failed to parse envelope descriptor: cbor: 1999 bytes of extraneous data starting at index 1
+		//
 		d.log.Errorf("resumeWriteChannelQuery: Failed to parse envelope descriptor: %v", err)
 		d.sendResumeWriteChannelQueryError(request, thin.ThinClientErrorInvalidRequest)
 		return
@@ -1064,10 +1064,10 @@ func (d *Daemon) handleCourierEnvelopeReply(appid *[AppIDLength]byte,
 		d.log.Debugf("DEBUG: Received ACK reply for channel %d, isWriter=%v", channelID, isWriter)
 		// ACK indicates successful write operation - advance StatefulWriter state
 		if false { // if isWriter {
-		        // TODO: the application can (and will) resend the same message several times to the courier,
+			// TODO: the application can (and will) resend the same message several times to the courier,
 			// each of them warranting an ACK, which will cause the stream to skip messages.
 			// For now, clients should use the ResumeWriteChannel API to set the index.
-		        // is this what we want?
+			// is this what we want?
 			channelDesc.StatefulWriterLock.Lock()
 			d.log.Debugf("DEBUG: Advancing StatefulWriter state for channel %d", channelID)
 			err := channelDesc.StatefulWriter.AdvanceState()
@@ -1234,26 +1234,26 @@ func (d *Daemon) decryptMKEMEnvelope(env *pigeonhole.CourierEnvelopeReply, envel
 	for _, replicaNum := range envelopeDesc.ReplicaNums {
 		desc, err := replicaCommon.ReplicaNum(replicaNum, doc)
 		if err != nil {
-		        d.log.Errorf("MKEM DECRYPT: no replicaNum:%v in doc:%v", replicaNum, doc)
+			d.log.Errorf("MKEM DECRYPT: no replicaNum:%v in doc:%v", replicaNum, doc)
 			continue
 		}
 
 		replicaPubKeyBytes, ok := desc.EnvelopeKeys[replicaEpoch]
 		if !ok || len(replicaPubKeyBytes) == 0 {
-		        d.log.Errorf("MKEM DECRYPT: no usable replicaPubKeyBytes in replicaEpoch:%v", replicaEpoch)
+			d.log.Errorf("MKEM DECRYPT: no usable replicaPubKeyBytes in replicaEpoch:%v", replicaEpoch)
 			continue
 		}
 
 		replicaPubKey, err := replicaCommon.NikeScheme.UnmarshalBinaryPublicKey(replicaPubKeyBytes)
 		if err != nil {
-		        d.log.Errorf("MKEM DECRYPT: can't parse replicaPubKey: %v", err)
+			d.log.Errorf("MKEM DECRYPT: can't parse replicaPubKey: %v", err)
 			continue
 		}
 
 		// Try to decrypt with this replica's public key
 		rawInnerMsg, err = replicaCommon.MKEMNikeScheme.DecryptEnvelope(privateKey, replicaPubKey, env.Payload)
 		if err == nil {
-		        d.log.Errorf("MKEM DECRYPT: no rawInnerMsg for replicaNum:%v: %v", replicaNum, err)
+			d.log.Errorf("MKEM DECRYPT: no rawInnerMsg for replicaNum:%v: %v", replicaNum, err)
 			break
 		}
 	}
@@ -1666,7 +1666,7 @@ func (d *Daemon) decryptReadReplyPayload(params *ReplyHandlerParams, readReply *
 		d.log.Errorf("Failed to get next box ID for channel %d: %s", params.ChannelID, err)
 		return nil, fmt.Errorf("failed to get next box ID: %s", err)
 	}
-        saved := params.ChannelDesc.StatefulReader.NextIndex
+	saved := params.ChannelDesc.StatefulReader.NextIndex
 
 	// BACAP decrypt the payload
 	signature := (*[bacap.SignatureSize]byte)(readReply.Signature[:])
@@ -1680,12 +1680,12 @@ func (d *Daemon) decryptReadReplyPayload(params *ReplyHandlerParams, readReply *
 		d.log.Errorf("BACAP DECRYPT FAILED for BoxID %x: %s", boxid[:], err)
 		return nil, fmt.Errorf("failed to decrypt next: %s", err)
 	} else {
-	       //if params.ReadChannel.MessageBoxIndex != nil {
-                      params.ChannelDesc.StatefulReader.NextIndex = saved // restore it because DecryptNext advanced it
-	       	      d.log.Errorf("BACAP state NOTNOT advanced for channel %d BoxID %x", params.ChannelID, boxid[:])
-	      // } else {
-	      // 	      d.log.Errorf("BACAP state advanced for channel %d BoxID %x", params.ChannelID, boxid[:])
-	      //  }
+		//if params.ReadChannel.MessageBoxIndex != nil {
+		params.ChannelDesc.StatefulReader.NextIndex = saved // restore it because DecryptNext advanced it
+		d.log.Errorf("BACAP state NOTNOT advanced for channel %d BoxID %x", params.ChannelID, boxid[:])
+		// } else {
+		// 	      d.log.Errorf("BACAP state advanced for channel %d BoxID %x", params.ChannelID, boxid[:])
+		//  }
 	}
 
 	// Extract the original message from the padded payload
@@ -1727,38 +1727,38 @@ func (d *Daemon) handleNewReadReply(params *ReplyHandlerParams, readReply *pigeo
 	var errorCode uint8 = thin.ThinClientSuccess
 	var payload []byte
 	var err error
-        if readReply.ErrorCode == 1 {
+	if readReply.ErrorCode == 1 {
 		// this is "box not found"
 		payload = []byte{}
 	} else {
-	   if readReply.ErrorCode == 0 {
-         	   payload, err = d.processReadReplyPayload(params, readReply)
-	       if err != nil {
-	  	d.log.Errorf("chan %v failed to process read reply payload: %s", params.ChannelID, err)
-	  	payload = []byte{} // Ensure empty payload on error
-		errorCode = thin.ThinClientErrorInvalidPayload
-	      }
-	   } else {
-	    payload = []byte{}
-	     errorCode = thin.ThinClientErrorInternalError // TODO this is a lie, it's a replica error.
-	   }
-        }
+		if readReply.ErrorCode == 0 {
+			payload, err = d.processReadReplyPayload(params, readReply)
+			if err != nil {
+				d.log.Errorf("chan %v failed to process read reply payload: %s", params.ChannelID, err)
+				payload = []byte{} // Ensure empty payload on error
+				errorCode = thin.ThinClientErrorInvalidPayload
+			}
+		} else {
+			payload = []byte{}
+			errorCode = thin.ThinClientErrorInternalError // TODO this is a lie, it's a replica error.
+		}
+	}
 
 	if readReply.ErrorCode == 0 {
-           // deliver the read result to thin client if we can decrypt it
-	    err = conn.sendResponse(&Response{
-		AppID: params.AppID,
-		MessageReplyEvent: &thin.MessageReplyEvent{
-			MessageID:  params.MessageID,
-			Payload:    payload,
-			ReplyIndex: &params.ReplyIndex,
-			ErrorCode:  errorCode,
-		},
-	    })
-	    if err != nil {
-		    return fmt.Errorf("chan %d: failed to send MessageReplyEvent to client: %s", params.ChannelID, err)
-	    }
-        }
+		// deliver the read result to thin client if we can decrypt it
+		err = conn.sendResponse(&Response{
+			AppID: params.AppID,
+			MessageReplyEvent: &thin.MessageReplyEvent{
+				MessageID:  params.MessageID,
+				Payload:    payload,
+				ReplyIndex: &params.ReplyIndex,
+				ErrorCode:  errorCode,
+			},
+		})
+		if err != nil {
+			return fmt.Errorf("chan %d: failed to send MessageReplyEvent to client: %s", params.ChannelID, err)
+		}
+	}
 
 	// deliver the read result to thin client
 	err = conn.sendResponse(&Response{

@@ -528,7 +528,6 @@ func (d *Daemon) writeChannel(request *Request) {
 		d.sendWriteChannelError(request, thin.ThinClientErrorInvalidChannel)
 		return
 	}
-	
 
 	_, doc := d.client.CurrentDocument()
 
@@ -759,9 +758,8 @@ func (d *Daemon) closeChannel(request *Request) {
 	channelID := request.CloseChannel.ChannelID
 	_, okxxx := d.newChannelMapXXX[channelID]
 	if okxxx {
-	   delete(d.newChannelMapXXX, channelID)
+		delete(d.newChannelMapXXX, channelID)
 	}
-
 
 	d.newChannelMapLock.Lock()
 	channelDesc, ok := d.newChannelMap[channelID]
@@ -866,7 +864,7 @@ func (d *Daemon) cleanupChannelsForAppID(appID *[AppIDLength]byte) {
 
 	// Remove channels from channel map
 	for channelID := range channelsToCleanup {
-	    	if _, xxxexists := d.newChannelMapXXX[channelID]; xxxexists {
+		if _, xxxexists := d.newChannelMapXXX[channelID]; xxxexists {
 			delete(d.newChannelMapXXX, channelID)
 		}
 		if _, exists := d.newChannelMap[channelID]; exists {
