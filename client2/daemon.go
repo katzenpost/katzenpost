@@ -1738,10 +1738,9 @@ func (d *Daemon) handleNewReadReply(params *ReplyHandlerParams, readReply *pigeo
 	  	payload = []byte{} // Ensure empty payload on error
 		errorCode = thin.ThinClientErrorInvalidPayload
 	      }
-	   }
-	   else {
-	  payload = []byte{}
-	   errorCode = thin.ThinClientErrorInternalError // TODO this is a lie, it's a replica error.
+	   } else {
+	    payload = []byte{}
+	     errorCode = thin.ThinClientErrorInternalError // TODO this is a lie, it's a replica error.
 	   }
         }
 
