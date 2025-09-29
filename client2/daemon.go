@@ -1117,6 +1117,7 @@ func (d *Daemon) handleCourierEnvelopeReply(appid *[AppIDLength]byte,
 
 		envHash := (*[hash.HashSize]byte)(env.EnvelopeHash[:])
 
+		d.log.Errorf("channellID %d messageid:%v envHash:%v isReader:%v isWriter:%v innerMsg:%v", channelID, mesgID, envHash, isReader, isWriter, innerMsg)
 		// from here on here, these two switch cases are the success cases:
 		switch {
 		case innerMsg.ReadReply != nil:
@@ -1700,7 +1701,7 @@ func (d *Daemon) decryptReadReplyPayload(params *ReplyHandlerParams, readReply *
 // processReadReplyPayload processes the read reply and returns payload and error
 func (d *Daemon) processReadReplyPayload(params *ReplyHandlerParams, readReply *pigeonhole.ReplicaReadReply) ([]byte, error) {
 	if readReply.ErrorCode != 0 {
-		d.log.Errorf("read failed for channel %d with error code %d", params.ChannelID, readReply.ErrorCode)
+		d.log.Errorf("read failed for channel %d with error code %d (ReplicaErrorNotFound = 1)", params.ChannelID, readReply.ErrorCode)
 		return nil, fmt.Errorf("read failed with error code %d", readReply.ErrorCode)
 	}
 
@@ -1723,16 +1724,29 @@ func (d *Daemon) handleNewReadReply(params *ReplyHandlerParams, readReply *pigeo
 		return fmt.Errorf("BUG, no connection associated with AppID %x", params.AppID[:])
 	}
 
-	payload, err := d.processReadReplyPayload(params, readReply)
 	var errorCode uint8 = thin.ThinClientSuccess
-	if err != nil {
+	var payload []byte
+	var err error
+        if readReply.ErrorCode == 1 {
+		// this is "box not found"
+		payload = []byte{}
+	} else {
+	   if readReply.ErrorCode == 0 {
+	   payload, err = d.processReadReplyPayload(params, readReply)
+	   if err != nil {
 		d.log.Errorf("chan %v failed to process read reply payload: %s", params.ChannelID, err)
 		payload = []byte{} // Ensure empty payload on error
-		errorCode = thin.ThinClientErrorInternalError
-	}
+		errorCode = thin.ThinClientErrorInvalidPayload
+	   }}
+	   else {
+		   payload = []byte{}
+		   errorCode = thin.ThinClientErrorInternalError // TODO this is a lie, it's a replica error.
+	   }
+        }
 
-	// deliver the read result to thin client
-	err = conn.sendResponse(&Response{
+	if readReply.ErrorCode == 0 {
+           // deliver the read result to thin client if we can decrypt it
+	    err = conn.sendResponse(&Response{
 		AppID: params.AppID,
 		MessageReplyEvent: &thin.MessageReplyEvent{
 			MessageID:  params.MessageID,
@@ -1740,7 +1754,11 @@ func (d *Daemon) handleNewReadReply(params *ReplyHandlerParams, readReply *pigeo
 			ReplyIndex: &params.ReplyIndex,
 			ErrorCode:  errorCode,
 		},
-	})
+	    })
+	    if err != nil {
+		    return fmt.Errorf("chan %d: failed to send MessageReplyEvent to client: %s", params.ChannelID, err)
+	    }
+        }
 
 	// deliver the read result to thin client
 	err = conn.sendResponse(&Response{
@@ -1749,11 +1767,11 @@ func (d *Daemon) handleNewReadReply(params *ReplyHandlerParams, readReply *pigeo
 			MessageID:  params.MessageID,
 			Payload:    payload,
 			ReplyIndex: &params.ReplyIndex,
-			ErrorCode:  readReply.ErrorCode,
+			ErrorCode:  errorCode,
 		},
 	})
 	if err != nil {
-		return fmt.Errorf("failed to send read response to client: %s", err)
+		return fmt.Errorf("chan %d: failed to send read response to client: %s", params.ChannelID, err)
 	}
 
 	return nil
