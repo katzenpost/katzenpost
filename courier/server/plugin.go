@@ -345,8 +345,8 @@ func (e *Courier) tryImmediateReplyProxy(reply *commands.ReplicaMessageReply) bo
 			},
 		}
 
-		e.log.Errorf("tryImmediateReplyProxy: Sending response with %d bytes of ciphertext, replyIndex=%d, ReplyType=%d",
-			len(reply.EnvelopeReply), replyIndex, replyType)
+		e.log.Errorf("tryImmediateReplyProxy: Sending response with %d bytes of ciphertext, replyIndex=%d, ReplyType=%d EnvHash=%v",
+			len(reply.EnvelopeReply), replyIndex, replyType, *reply.EnvelopeHash)
 
 		e.write(&cborplugin.Response{
 			ID:      pendingRequest.RequestID,
@@ -472,16 +472,22 @@ func (e *Courier) handleOldMessage(cacheEntry *CourierBookKeeping, envHash *[has
 	// Log cache state
 	reply0Available := cacheEntry.EnvelopeReplies[0] != nil
 	reply1Available := cacheEntry.EnvelopeReplies[1] != nil
-	e.log.Debugf("Cache state - Reply[0]: %v, Reply[1]: %v", reply0Available, reply1Available)
+	e.log.Debugf("Cache state - Reply[0]: %v, Reply[1]: %v envHash:%v", reply0Available, reply1Available, envHash)
 
 	var payload []byte
 
 	if cacheEntry.EnvelopeReplies[courierMessage.ReplyIndex] != nil {
-		e.log.Debugf("Found reply at requested index %d", courierMessage.ReplyIndex)
 		payload = cacheEntry.EnvelopeReplies[courierMessage.ReplyIndex].EnvelopeReply
+		e.log.Debugf("Found reply [len:%d] at requested index %d for %v", len(payload), courierMessage.ReplyIndex, envHash)
 	} else {
 		e.log.Debugf("No reply available at requested index %d", courierMessage.ReplyIndex)
-		payload = nil // Return empty payload but keep the requested ReplyIndex
+		if cacheEntry.EnvelopeReplies[courierMessage.ReplyIndex ^ 1] != nil {
+		  courierMessage.ReplyIndex = courierMessage.ReplyIndex ^ 1
+		  payload = cacheEntry.EnvelopeReplies[courierMessage.ReplyIndex].EnvelopeReply
+		  e.log.Debugf("But there is a reply for %d, so returning that (envHash:%v)", courierMessage.ReplyIndex, envHash)
+		} else {
+                  payload = nil // Return empty payload but keep the requested ReplyIndex
+	        }
 	}
 
 	// Determine reply type based on whether there's actual payload data
