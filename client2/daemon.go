@@ -1732,15 +1732,16 @@ func (d *Daemon) handleNewReadReply(params *ReplyHandlerParams, readReply *pigeo
 		payload = []byte{}
 	} else {
 	   if readReply.ErrorCode == 0 {
-	   payload, err = d.processReadReplyPayload(params, readReply)
-	   if err != nil {
-		d.log.Errorf("chan %v failed to process read reply payload: %s", params.ChannelID, err)
-		payload = []byte{} // Ensure empty payload on error
+         	   payload, err = d.processReadReplyPayload(params, readReply)
+	       if err != nil {
+	  	d.log.Errorf("chan %v failed to process read reply payload: %s", params.ChannelID, err)
+	  	payload = []byte{} // Ensure empty payload on error
 		errorCode = thin.ThinClientErrorInvalidPayload
-	   }}
+	      }
+	   }
 	   else {
-		   payload = []byte{}
-		   errorCode = thin.ThinClientErrorInternalError // TODO this is a lie, it's a replica error.
+	  payload = []byte{}
+	   errorCode = thin.ThinClientErrorInternalError // TODO this is a lie, it's a replica error.
 	   }
         }
 
