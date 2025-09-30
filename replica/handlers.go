@@ -5,6 +5,7 @@ package replica
 
 import (
 	"crypto/hmac"
+	"errors"
 	"fmt"
 	"time"
 
@@ -214,24 +215,58 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 func (c *incomingConn) handleReplicaRead(replicaRead *pigeonhole.ReplicaRead) *pigeonhole.ReplicaReadReply {
 	c.log.Debugf("Handling replica read request for BoxID: %x", replicaRead.BoxID)
 	resp, err := c.l.server.state.handleReplicaRead(replicaRead)
-	if err != nil {
-		c.log.Errorf("Replica read failed: %v", err)
-		// Map specific errors to specific error codes
-		errorCode := pigeonhole.ReplicaErrorNotFound // Default to ReplicaErrorNotFound
+
+	switch {
+	case err == nil:
+		// no error, success code path
+		c.log.Debug("Replica read successful")
+		reply := &pigeonhole.ReplicaReadReply{
+			BoxID:      resp.BoxID,
+			Signature:  resp.Signature,
+			PayloadLen: uint32(len(resp.Payload)),
+			Payload:    resp.Payload,
+			ErrorCode:  pigeonhole.ReplicaErrorSuccess,
+		}
+		return reply
+	case errors.Is(err, ErrBoxIDNotFound):
+		// handle Box ID not found error here
+		// ThreeBitHacker says to emit a network message indicating sucess
+		c.log.Error("Replica read failed, Box ID not found")
+		reply := &pigeonhole.ReplicaReadReply{
+			BoxID:      resp.BoxID,
+			PayloadLen: uint32(0),
+			Payload:    nil,
+			ErrorCode:  pigeonhole.ReplicaErrorSuccess,
+		}
+		return reply
+	case errors.Is(err, ErrFailedDBRead):
+		// DB read has failed, handle it here
+		c.log.Error("Replica read failed, DB read failed")
+		errorCode := pigeonhole.ReplicaErrorNotFound // XXX ThreeBitHacker FIX ME: need more appropriate error code
+		reply := &pigeonhole.ReplicaReadReply{
+			ErrorCode: errorCode,
+		}
+		return reply
+	case errors.Is(err, ErrFailedToDeserialize):
+		// handle failure to deserialize here
+		c.log.Error("Replica read failed, failed to deserialize data from DB")
+		errorCode := pigeonhole.ReplicaErrorNotFound // XXX ThreeBitHacker FIX ME: need more appropriate error code
+		reply := &pigeonhole.ReplicaReadReply{
+			ErrorCode: errorCode,
+		}
+		return reply
+	case errors.Is(err, ErrDBClosed):
+		// this should never happen, probably a fatal error we cannot recover from
+		c.log.Error("Replica read failed, DB is closed")
+		errorCode := pigeonhole.ReplicaErrorNotFound // XXX ThreeBitHacker FIX ME: need more appropriate error code
 		reply := &pigeonhole.ReplicaReadReply{
 			ErrorCode: errorCode,
 		}
 		return reply
 	}
-	c.log.Debug("Replica read successful")
-	reply := &pigeonhole.ReplicaReadReply{
-		BoxID:      resp.BoxID,
-		Signature:  resp.Signature,
-		PayloadLen: uint32(len(resp.Payload)),
-		Payload:    resp.Payload,
-		ErrorCode:  pigeonhole.ReplicaErrorSuccess,
-	}
-	return reply
+
+	// NOT reachable
+	return nil
 }
 
 func (c *incomingConn) handleReplicaWrite(replicaWrite *pigeonhole.ReplicaWrite) *pigeonhole.ReplicaWriteReply {

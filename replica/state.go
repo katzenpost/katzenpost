@@ -4,6 +4,7 @@
 package replica
 
 import (
+	"errors"
 	"fmt"
 	"path/filepath"
 
@@ -21,6 +22,13 @@ import (
 
 const (
 	errDatabaseClosed = "database is closed"
+)
+
+var (
+	ErrBoxIDNotFound       = errors.New("Box ID not found")
+	ErrFailedDBRead        = errors.New("Failed to read from database")
+	ErrFailedToDeserialize = errors.New("Failed to deserialize data from DB")
+	ErrDBClosed            = errors.New("DB is closed")
 )
 
 type state struct {
@@ -73,7 +81,7 @@ func (s *state) handleReplicaRead(replicaRead *pigeonhole.ReplicaRead) (*pigeonh
 	// Check if database is still open
 	if s.db == nil {
 		s.log.Error("state: Database is closed, cannot perform read")
-		return nil, fmt.Errorf(errDatabaseClosed)
+		return nil, ErrDBClosed
 	}
 
 	ro := grocksdb.NewDefaultReadOptions()
@@ -83,11 +91,11 @@ func (s *state) handleReplicaRead(replicaRead *pigeonhole.ReplicaRead) (*pigeonh
 	value, err := s.db.Get(ro, replicaRead.BoxID[:])
 	if err != nil {
 		s.log.Errorf("state: Failed to read from database: %s", err)
-		return nil, err
+		return nil, ErrFailedDBRead
 	}
 	if value.Size() == 0 {
 		s.log.Debugf("state: No data found for BoxID: %x", replicaRead.BoxID)
-		return nil, fmt.Errorf("no data found for BoxID")
+		return nil, ErrBoxIDNotFound
 	}
 	s.log.Debugf("state: Successfully read %d bytes from database", value.Size())
 	data := make([]byte, value.Size())
@@ -97,7 +105,7 @@ func (s *state) handleReplicaRead(replicaRead *pigeonhole.ReplicaRead) (*pigeonh
 	box, err := pigeonhole.BoxFromBytes(data)
 	if err != nil {
 		s.log.Errorf("state: Failed to deserialize box: %s", err)
-		return nil, fmt.Errorf("invalid data retrieved from database: %s", err)
+		return nil, ErrFailedToDeserialize
 	}
 	s.log.Debugf("state: Successfully handled replica read, returning box with %d bytes payload", len(box.Payload))
 	return box, nil
