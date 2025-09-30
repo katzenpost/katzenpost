@@ -233,7 +233,7 @@ func (c *incomingConn) handleReplicaRead(replicaRead *pigeonhole.ReplicaRead) *p
 		// ThreeBitHacker says to emit a network message indicating sucess
 		c.log.Error("Replica read failed, Box ID not found")
 		reply := &pigeonhole.ReplicaReadReply{
-			BoxID:      resp.BoxID,
+			BoxID:      replicaRead.BoxID,
 			PayloadLen: uint32(0),
 			Payload:    nil,
 			ErrorCode:  pigeonhole.ReplicaErrorSuccess,
