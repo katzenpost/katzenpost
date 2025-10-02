@@ -799,7 +799,7 @@ func (d *Daemon) resumeReadChannel(request *Request) {
 	// 2. set used read cap map entry
 	// 3. create new channel descriptor
 	// 4. inspect optional request fields that are only used for resumption of a previously prepared read query blob
-
+	d.log.Debugf("daemon.resumeReadChannel")
 	err := d.validateResumeReadChannelRequest(request)
 	if err != nil {
 		d.log.Errorf("BUG, invalid request: %v", err)
@@ -833,8 +833,10 @@ func (d *Daemon) resumeReadChannel(request *Request) {
 		return
 	}
 	channelID := d.generateUniqueChannelID()
+        d.log.Debugf("chan:%d assigned to resumeReadRequest", channelID)
 	var statefulReader *bacap.StatefulReader
 	if request.ResumeReadChannel.NextMessageIndex == nil {
+		// TODO: in these cases we should clean up the channel reservation
 		statefulReader, err = bacap.NewStatefulReader(request.ResumeReadChannel.ReadCap, constants.PIGEONHOLE_CTX)
 		if err != nil {
 			d.log.Errorf("BUG, failed to create stateful reader: %v", err)
@@ -855,7 +857,7 @@ func (d *Daemon) resumeReadChannel(request *Request) {
 		StatefulReader:      statefulReader,
 		EnvelopeDescriptors: make(map[[hash.HashSize]byte]*EnvelopeDescriptor),
 	}
-
+        d.log.Debugf("chan:%d resumeReadRequest: updating newChannelMap with descriptor", channelID)
 	d.newChannelMapLock.Lock()
 	d.newChannelMap[channelID] = myNewChannelDescriptor
 	d.newChannelMapLock.Unlock()
