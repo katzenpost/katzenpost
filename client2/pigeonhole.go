@@ -751,7 +751,9 @@ func (d *Daemon) readChannel(request *Request) {
 
 // closeChannel closes a pigeonhole channel and cleans up its resources
 func (d *Daemon) closeChannel(request *Request) {
-	d.log.Debug("closeChannel: closing channel")
+	d.log.Debug("closeChannel: closing channel %d", request.CloseChannel.ChannelID)
+	d.newChannelMapLock.Lock() // must always be obtained before XXXLock
+	defer d.newChannelMapLock.Unlock()
 	d.newChannelMapXXXLock.Lock()
 	defer d.newChannelMapXXXLock.Unlock()
 
@@ -761,12 +763,10 @@ func (d *Daemon) closeChannel(request *Request) {
 		delete(d.newChannelMapXXX, channelID)
 	}
 
-	d.newChannelMapLock.Lock()
 	channelDesc, ok := d.newChannelMap[channelID]
 	if ok {
 		delete(d.newChannelMap, channelID)
 	}
-	d.newChannelMapLock.Unlock()
 
 	if !ok || channelDesc == nil {
 		d.log.Debugf("closeChannel: channel %d not found (already closed or never existed)", channelID)
