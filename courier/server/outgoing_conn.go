@@ -484,7 +484,7 @@ func (c *outgoingConn) processIncomingReply(replyCmd interface{}) commands.Comma
 	return nil
 }
 
-// handleCommand processes received commands
+// handleCommand processes received commands from the storage replicas
 func (c *outgoingConn) handleCommand(rawCmd commands.Command) bool {
 	c.log.Debugf("DEBUG: Handling response command: %T", rawCmd)
 	switch replycmd := rawCmd.(type) {
