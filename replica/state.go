@@ -75,7 +75,7 @@ func (s *state) initDB() {
 	s.log.Debug("state: Database initialized successfully")
 }
 
-func (s *state) handleReplicaRead(replicaRead *pigeonhole.ReplicaRead) (*pigeonhole.Box, error) {
+func (s *state) stateHandleReplicaRead(replicaRead *pigeonhole.ReplicaRead) (*pigeonhole.Box, error) {
 	s.log.Debugf("state: Starting replica read for BoxID: %x", replicaRead.BoxID)
 
 	// Check if database is still open
