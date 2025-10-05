@@ -291,12 +291,12 @@ func (c *incomingConn) handleReplicaWrite(replicaWrite *pigeonhole.ReplicaWrite)
 	if err != nil {
 		c.log.Errorf("handleReplicaWrite state update failed: %v", err)
 		return &pigeonhole.ReplicaWriteReply{
-			ErrorCode: pigeonhole.ReplicaErrorDatabaseError,
+			ErrorCode: pigeonhole.ReplicaErrorDatabaseFailure,
 		}
 	}
 	c.log.Debug("Replica write successful")
 	return &pigeonhole.ReplicaWriteReply{
-		ErrorCode: pigeonhole.ReplicaErrorSuccess,
+		ErrorCode: pigeonhole.ReplicaSuccess,
 	}
 }
 
