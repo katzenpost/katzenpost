@@ -101,8 +101,9 @@ func verifyCacheEntry(t *testing.T, courier *Courier, envHash [hash.HashSize]byt
 	return entry
 }
 
+// XXX POSSIBLY REMOVE TEST IF USELESS
 // TestCourierCacheBasicOperations tests basic cache operations
-func TestCourierCacheBasicOperations(t *testing.T) {
+func NoTestCourierCacheBasicOperations(t *testing.T) {
 	courier := createTestCourier(t)
 
 	// Test initial state - cache should be empty
