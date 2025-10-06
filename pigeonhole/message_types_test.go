@@ -268,7 +268,7 @@ func TestReplicaWriteEncodeDecode(t *testing.T) {
 
 func TestReplicaWriteReplyEncodeDecode(t *testing.T) {
 	original := &ReplicaWriteReply{
-		ErrorCode: ReplicaErrorSuccess,
+		ErrorCode: ReplicaSuccess,
 	}
 
 	// Note: ReplicaWriteReply doesn't have a Bytes() method in methods.go
