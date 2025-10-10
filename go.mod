@@ -20,7 +20,7 @@ require (
 	github.com/katzenpost/qrterminal v0.0.0-20250706194004-f95c77b7c73e
 	github.com/linxGnu/grocksdb v1.10.1
 	github.com/prometheus/client_golang v1.22.0
-	github.com/quic-go/quic-go v0.53.0
+	github.com/quic-go/quic-go v0.54.1
 	github.com/schwarmco/go-cartesian-product v0.0.0-20230921023625-e02d1c150053
 	github.com/spf13/cobra v1.9.1
 	github.com/stretchr/testify v1.10.0
