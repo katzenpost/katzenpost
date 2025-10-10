@@ -506,7 +506,11 @@ func (d *Daemon) handleReply(reply *sphinxReply) {
 			// send error code back to client
 			conn := d.listener.getConnection(desc.appID)
 			if conn == nil {
-				d.log.Errorf("no connection associated with AppID %x", desc.appID[:])
+				if desc.appID != nil {
+					d.log.Errorf("no connection associated with AppID %x", desc.appID[:])
+				} else {
+					d.log.Errorf("no connection associated with nil AppID")
+				}
 				return
 			}
 			err := conn.sendResponse(&Response{
@@ -533,7 +537,10 @@ func (d *Daemon) handleReply(reply *sphinxReply) {
 		// thei is legacy API
 		conn := d.listener.getConnection(desc.appID)
 		if conn == nil {
-			d.log.Errorf("no connection associated with AppID %x", desc.appID[:])
+			if desc.appID != nil {
+				d.log.Errorf("no connection associated with AppID %x", desc.appID[:])
+			}
+			// Silently ignore decoy replies (desc.appID == nil)
 			return
 		}
 		conn.sendResponse(&Response{
