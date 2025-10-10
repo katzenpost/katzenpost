@@ -26,7 +26,7 @@ help:
 	@echo
 
 warped?=true
-no_decoy?=true
+no_decoy?=false
 no_mixdecoy?=true
 mixes=3
 auths=3
