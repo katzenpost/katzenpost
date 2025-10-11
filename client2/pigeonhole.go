@@ -821,8 +821,8 @@ func (d *Daemon) cleanupChannelsForAppID(appID *[AppIDLength]byte) {
 	d.newSurbIDToChannelMapLock.Lock()
 	d.newChannelMapLock.Lock()
 	d.newChannelMapXXXLock.Lock()
-	defer d.newChannelMapXXXLock.Unlock()
 	defer d.newChannelMapLock.Unlock()
+	defer d.newChannelMapXXXLock.Unlock()
 	defer d.newSurbIDToChannelMapLock.Unlock()
 	defer d.channelRepliesLock.Unlock()
 
