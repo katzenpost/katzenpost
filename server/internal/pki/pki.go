@@ -240,7 +240,7 @@ func (p *pki) worker() {
 // updateTimer is used by the worker loop to determine when next to wake and fetch.
 func (p *pki) updateTimer(timer *time.Timer) {
 	now, elapsed, till := epochtime.Now()
-	p.log.Debugf("pki woke %v into epoch %v with %v remaining", elapsed, now, till)
+	p.log.Debugf("serverpki woke %v into epoch %v with %v remaining", elapsed, now, till)
 
 	// it's after the consensus publication deadline
 	if elapsed > vServer.PublishConsensusDeadline {
