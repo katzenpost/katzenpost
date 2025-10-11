@@ -861,7 +861,8 @@ func (d *Daemon) resumeReadChannel(request *Request) {
         d.log.Debugf("chan:%d resumeReadRequest: updated newChannelMapLock", channelID)
 
 	// send reply back to client
-	conn.sendResponse(&Response{
+        d.log.Debugf("chan:%d resumeReadRequest: sending ResumeReadChannelReply", channelID)
+	err = conn.sendResponse(&Response{
 		AppID: request.AppID,
 		ResumeReadChannelReply: &thin.ResumeReadChannelReply{
 			QueryID:   request.ResumeReadChannel.QueryID,
@@ -869,6 +870,10 @@ func (d *Daemon) resumeReadChannel(request *Request) {
 			ErrorCode: thin.ThinClientSuccess,
 		},
 	})
+	if err != nil {
+		d.log.Errorf("chan:%d resumeReadRequest: conn.sendResponse: %v", channelID, err)
+	}
+        d.log.Debugf("chan:%d resumeReadRequest: sent ResumeReadChannelReply", channelID)
 }
 
 func (d *Daemon) sendResumeReadChannelQueryError(request *Request, errorCode uint8) {
