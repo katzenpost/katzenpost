@@ -752,10 +752,8 @@ func (d *Daemon) readChannel(request *Request) {
 // closeChannel closes a pigeonhole channel and cleans up its resources
 func (d *Daemon) closeChannel(request *Request) {
 	d.log.Debug("closeChannel: closing channel %d", request.CloseChannel.ChannelID)
-	d.newChannelMapLock.Lock() // must always be obtained before XXXLock
+	d.newChannelMapLock.Lock()
 	defer d.newChannelMapLock.Unlock()
-	d.newChannelMapXXXLock.Lock()
-	defer d.newChannelMapXXXLock.Unlock()
 
 	channelID := request.CloseChannel.ChannelID
 	_, okxxx := d.newChannelMapXXX[channelID]
@@ -818,13 +816,11 @@ func (d *Daemon) cleanupChannelsForAppID(appID *[AppIDLength]byte) {
 	// Acquire all locks in a consistent order to prevent deadlocks
 	// Order: channelReplies -> newSurbIDToChannelMap -> newChannelMap
 	d.channelRepliesLock.Lock()
-	d.newSurbIDToChannelMapLock.Lock()
-	d.newChannelMapLock.Lock()
-	d.newChannelMapXXXLock.Lock()
-	defer d.newChannelMapLock.Unlock()
-	defer d.newChannelMapXXXLock.Unlock()
-	defer d.newSurbIDToChannelMapLock.Unlock()
 	defer d.channelRepliesLock.Unlock()
+	d.newSurbIDToChannelMapLock.Lock()
+	defer d.newSurbIDToChannelMapLock.Unlock()
+	d.newChannelMapLock.Lock()
+	defer d.newChannelMapLock.Unlock()
 
 	// Find all channels and SURB IDs that belong to this App ID
 	channelsToCleanup := make(map[uint16]bool)

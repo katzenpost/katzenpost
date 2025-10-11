@@ -101,7 +101,6 @@ type Daemon struct {
 	newChannelMap             map[uint16]*ChannelDescriptor
 	newChannelMapLock         *sync.RWMutex
 	newChannelMapXXX          map[uint16]bool
-	newChannelMapXXXLock      *sync.RWMutex
 
 	// Capability deduplication maps to prevent reusing read/write capabilities
 	usedReadCaps   map[[hash.HashSize]byte]bool // Maps hash of ReadCap to true
@@ -137,7 +136,6 @@ func NewDaemon(cfg *config.Config) (*Daemon, error) {
 		newChannelMap:             make(map[uint16]*ChannelDescriptor),
 		newChannelMapLock:         new(sync.RWMutex),
 		newChannelMapXXX:          make(map[uint16]bool),
-		newChannelMapXXXLock:      new(sync.RWMutex),
 		// capability deduplication fields:
 		usedReadCaps:   make(map[[hash.HashSize]byte]bool),
 		usedWriteCaps:  make(map[[hash.HashSize]byte]bool),
@@ -154,10 +152,9 @@ func NewDaemon(cfg *config.Config) (*Daemon, error) {
 
 // generateUniqueChannelID generates a unique uint16 channel ID that's not already in use
 func (d *Daemon) generateUniqueChannelID() uint16 {
+	d.log.Debug("generateUniqueChannelID: Taking newChannelMapLock")
 	d.newChannelMapLock.Lock()
 	defer d.newChannelMapLock.Unlock()
-	d.newChannelMapXXXLock.Lock()
-	defer d.newChannelMapXXXLock.Unlock()
 
 	for {
 		channelID := uint16(hpqcRand.NewMath().Intn(65535) + 1) // [1, 65535]
@@ -861,6 +858,7 @@ func (d *Daemon) resumeReadChannel(request *Request) {
 	d.newChannelMapLock.Lock()
 	d.newChannelMap[channelID] = myNewChannelDescriptor
 	d.newChannelMapLock.Unlock()
+        d.log.Debugf("chan:%d resumeReadRequest: updated newChannelMapLock", channelID)
 
 	// send reply back to client
 	conn.sendResponse(&Response{
