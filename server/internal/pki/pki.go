@@ -47,7 +47,7 @@ import (
 
 var (
 	errNotCached         = errors.New("pki: requested epoch document not in cache")
-	recheckInterval      = epochtime.Period / 32
+	recheckInterval      = epochtime.Period / 16
 	pkiEarlyConnectSlack = epochtime.Period / 8
 	PublishDeadline      = vServer.MixPublishDeadline
 	nextFetchTill        = epochtime.Period - PublishDeadline
