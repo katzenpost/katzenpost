@@ -110,7 +110,7 @@ func (p *PKIWorker) ForceFetchPKI() error {
 
 	// Fetch the PKI document directly from the client (like replica does)
 	ctx := context.Background()
-	d, rawDoc, err := p.impl.Get(ctx, epoch)
+	d, rawDoc, err := p.impl.GetPKIDocumentForEpoch(ctx, epoch)
 	if err != nil {
 		p.GetLogger().Warningf("Force fetch failed for epoch %v: %v", epoch, err)
 		return err
