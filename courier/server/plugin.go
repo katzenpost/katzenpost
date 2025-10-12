@@ -30,6 +30,7 @@ import (
 // 3. caching replica replies
 type CourierBookKeeping struct {
 	Epoch                uint64
+	QueryType            uint8
 	IntermediateReplicas [2]uint8 // Store the replica IDs that were contacted
 	EnvelopeReplies      [2]*commands.ReplicaMessageReply
 }
@@ -139,9 +140,11 @@ func (e *Courier) CacheReply(reply *commands.ReplicaMessageReply) {
 	}
 
 	// Check for pending read request and immediately proxy reply if found
-	if e.tryImmediateReplyProxy(reply) {
-		e.log.Errorf("Immediately proxied reply for envelope hash: %x", reply.EnvelopeHash)
-		// Still cache the reply for potential future requests
+	if reply.IsRead {
+		if e.tryImmediateReplyProxy(reply) {
+			e.log.Debugf("Immediately proxied reply for envelope hash: %x", reply.EnvelopeHash)
+			// Still cache the reply for potential future requests
+		}
 	}
 
 	e.dedupCacheLock.Lock()
@@ -519,6 +522,7 @@ func (e *Courier) handleOldMessage(cacheEntry *CourierBookKeeping, envHash *[has
 	return reply
 }
 
+// OnCommand is only called when we receive queries from the client via the mixnet
 func (e *Courier) OnCommand(cmd cborplugin.Command) error {
 	var request *cborplugin.Request
 	switch r := cmd.(type) {
@@ -535,7 +539,7 @@ func (e *Courier) OnCommand(cmd cborplugin.Command) error {
 
 	// Handle CourierEnvelope if present
 	if courierQuery.Envelope != nil {
-		reply := e.cacheHandleCourierEnvelope(courierQuery.Envelope, request.ID, request.SURB)
+		reply := e.cacheHandleCourierEnvelope(courierQuery.QueryType, courierQuery.Envelope, request.ID, request.SURB)
 
 		go func() {
 			// send reply
@@ -550,7 +554,7 @@ func (e *Courier) OnCommand(cmd cborplugin.Command) error {
 	return nil
 }
 
-func (e *Courier) cacheHandleCourierEnvelope(courierMessage *pigeonhole.CourierEnvelope, requestID uint64, surb []byte) *pigeonhole.CourierQueryReply {
+func (e *Courier) cacheHandleCourierEnvelope(queryType uint8, courierMessage *pigeonhole.CourierEnvelope, requestID uint64, surb []byte) *pigeonhole.CourierQueryReply {
 	envHash := courierMessage.EnvelopeHash()
 
 	e.dedupCacheLock.RLock()
@@ -568,6 +572,7 @@ func (e *Courier) cacheHandleCourierEnvelope(courierMessage *pigeonhole.CourierE
 		currentEpoch := e.getCurrentEpoch()
 		e.dedupCache[*envHash] = &CourierBookKeeping{
 			Epoch:                currentEpoch,
+			QueryType:            queryType,
 			IntermediateReplicas: courierMessage.IntermediateReplicas,
 			EnvelopeReplies:      [2]*commands.ReplicaMessageReply{nil, nil},
 		}

@@ -4,11 +4,11 @@ package pigeonhole
 
 // Replica error codes - used in ReplicaReadReply and ReplicaWriteReply
 const (
-	ReplicaErrorSuccess           uint8 = 0 // Operation completed successfully
-	ReplicaErrorNotFound          uint8 = 1 // Box/data not found
+	ReplicaSuccess                uint8 = 0 // Operation completed successfully
+	ReplicaErrorBoxIDNotFound     uint8 = 1 // Box ID/data not found
 	ReplicaErrorInvalidBoxID      uint8 = 2 // Invalid BoxID format
 	ReplicaErrorInvalidSignature  uint8 = 3 // Invalid or missing signature
-	ReplicaErrorDatabaseError     uint8 = 4 // Database operation failed
+	ReplicaErrorDatabaseFailure   uint8 = 4 // Database operation failed
 	ReplicaErrorInvalidPayload    uint8 = 5 // Invalid payload data
 	ReplicaErrorStorageFull       uint8 = 6 // Storage capacity exceeded
 	ReplicaErrorInternalError     uint8 = 7 // Internal server error

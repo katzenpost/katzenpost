@@ -233,7 +233,7 @@ func TestProxyIntegration(t *testing.T) {
 	require.NotNil(t, innerMsg.ReadReply, "ReadReply should not be nil")
 
 	// Test must fail if the operation was not successful
-	require.Equal(t, pigeonhole.ReplicaErrorSuccess, innerMsg.ReadReply.ErrorCode,
+	require.Equal(t, pigeonhole.ReplicaSuccess, innerMsg.ReadReply.ErrorCode,
 		"Proxy read must succeed - error code: %d", innerMsg.ReadReply.ErrorCode)
 
 	// Test must fail if the data doesn't match
