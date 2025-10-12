@@ -176,6 +176,11 @@ func (e *Courier) validateReply(reply *commands.ReplicaMessageReply) bool {
 func (e *Courier) handleExistingEntry(entry *CourierBookKeeping, reply *commands.ReplicaMessageReply) {
 	e.log.Errorf("CacheReply: found existing cache entry for envelope hash %x", reply.EnvelopeHash)
 
+	if reply.IsRead && reply.ErrorCode == 0 {
+		// we do want to overwrite old entries if we had an error and now don't
+		e.log.Errorf("handleExistingEntry: IsRead && ErrorCode == 0: entry=%v reply=%v", entry, reply)
+	}
+
 	replyIndex := e.findReplicaIndex(entry, reply.ReplicaID)
 	if replyIndex >= 0 {
 		e.storeReplyIfEmpty(entry, reply, replyIndex)

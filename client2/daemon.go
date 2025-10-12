@@ -1122,7 +1122,7 @@ func (d *Daemon) handleCourierEnvelopeReply(appid *[AppIDLength]byte,
 
 		envHash := (*[hash.HashSize]byte)(env.EnvelopeHash[:])
 
-		d.log.Errorf("channellID %d messageid:%v envHash:%v isReader:%v isWriter:%v innerMsg:%v", channelID, mesgID, envHash, isReader, isWriter, innerMsg)
+		d.log.Errorf("channellID %d decrypted MKEM envelope messageid:%v envHash:%v isReader:%v isWriter:%v innerMsg.ReadReply:%v innerMsg.WriteReply:", channelID, mesgID, envHash, isReader, isWriter, innerMsg.ReadReply, innerMsg.WriteReply)
 		// from here on here, these two switch cases are the success cases:
 		switch {
 		case innerMsg.ReadReply != nil:
@@ -1136,6 +1136,9 @@ func (d *Daemon) handleCourierEnvelopeReply(appid *[AppIDLength]byte,
 				IsWriter:    isWriter,
 				ReplyIndex:  courierEnvelopeReply.ReplyIndex,
 			}
+			if !isReader {
+				d.log.Errorf("channelID %d ReadReply for !isReader", channelID)
+			}
 			return d.handleNewReadReply(params, innerMsg.ReadReply)
 		case innerMsg.WriteReply != nil:
 			params := &ReplyHandlerParams{
@@ -1147,6 +1150,9 @@ func (d *Daemon) handleCourierEnvelopeReply(appid *[AppIDLength]byte,
 				IsReader:    isReader,
 				IsWriter:    isWriter,
 				ReplyIndex:  courierEnvelopeReply.ReplyIndex,
+			}
+			if !isWriter {
+				d.log.Errorf("channelID %d WriteReply for !isWriter", channelID)
 			}
 			return d.handleNewWriteReply(params, innerMsg.WriteReply)
 		}
@@ -1763,6 +1769,8 @@ func (d *Daemon) handleNewReadReply(params *ReplyHandlerParams, readReply *pigeo
 		if err != nil {
 			return fmt.Errorf("chan %d: failed to send MessageReplyEvent to client: %s", params.ChannelID, err)
 		}
+	} else {
+		d.log.Warningf("handleNewReadReply: readReply has ErrorCode: %v so not sending MessageReplyEvent", readReply.ErrorCode)
 	}
 
 	// deliver the read result to thin client
