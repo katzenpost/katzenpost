@@ -597,7 +597,7 @@ func (c *Client) PostReplica(ctx context.Context, epoch uint64, signingPrivateKe
 }
 
 // Get returns the PKI document along with the raw serialized form for the provided epoch.
-func (c *Client) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, error) {
+func (c *Client) GetPKIDocumentForEpoch(ctx context.Context, epoch uint64) (*pki.Document, []byte, error) {
 	c.log.Noticef("Get: Starting consensus fetch for epoch %d from %d authorities", epoch, len(c.cfg.Authorities))
 
 	// Generate a random keypair to use for the link authentication.
@@ -658,6 +658,7 @@ func (c *Client) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, 
 		case commands.ConsensusOk:
 			c.log.Debugf("Get: Authority %s returned ConsensusOk for epoch %d", auth.Identifier, epoch)
 		case commands.ConsensusGone:
+			// TODO: we should never try to fetch this again?
 			peerErr := fmt.Errorf("peer %s (%s, identity=%s, link=%s): consensus gone",
 				auth.Identifier,
 				strings.Join(auth.Addresses, ","),

@@ -20,7 +20,7 @@ var (
 	PublishConsensusDeadline = epochtime.Period - (epochtime.Period / 8)
 	mixServerCacheDelay      = epochtime.Period / 16
 	nextFetchTill            = epochtime.Period - (PublishConsensusDeadline + mixServerCacheDelay)
-	recheckInterval          = epochtime.Period / 16
+	recheckInterval          = epochtime.Period / 32
 )
 
 // WorkerBase provides common PKI worker functionality shared between courier and replica

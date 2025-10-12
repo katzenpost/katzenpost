@@ -188,6 +188,9 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 		}
 		replyInnerMessageBlob := replyInnerMessage.Bytes()
 		envelopeReply := scheme.EnvelopeReply(keypair.PrivateKey, senderpubkey, replyInnerMessageBlob)
+		if len(envelopeReply.Envelope) < 40 {
+		   c.log.Errorf("REPLICA_HANDLER: lenunder40: %v", replyInnerMessageBlob)
+		}
 		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, readReply.ErrorCode, envelopeHash, envelopeReply.Envelope, replicaID, true)
 	case msg.WriteMsg != nil:
 		myCmd := msg.WriteMsg
@@ -205,6 +208,9 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 		}
 		replyInnerMessageBlob := replyInnerMessage.Bytes()
 		envelopeReply := scheme.EnvelopeReply(keypair.PrivateKey, senderpubkey, replyInnerMessageBlob)
+		if len(envelopeReply.Envelope) < 40 {
+		   c.log.Errorf("whenwriting: lenunder40: %v", replyInnerMessage)
+		}
 		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, writeReply.ErrorCode, envelopeHash, envelopeReply.Envelope, replicaID, false)
 	default:
 		c.log.Error("BUG: handleReplicaMessage failed: invalid request was decrypted")

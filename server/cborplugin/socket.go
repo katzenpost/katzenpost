@@ -17,11 +17,11 @@
 package cborplugin
 
 import (
-	"net"
-	"time"
-
 	"github.com/fxamacker/cbor/v2"
 	"gopkg.in/op/go-logging.v1"
+	"net"
+	"os"
+	"time"
 
 	"github.com/katzenpost/katzenpost/core/worker"
 )
@@ -76,7 +76,7 @@ func (c *CommandIO) Start(initiator bool, socketFile string, commandBuilder Comm
 		// https://github.com/katzenpost/katzenpost/issues/477
 		var err error
 		started := false
-		for tries := 0; tries < 3; tries++ {
+		for tries := 0; tries < 40; tries++ {
 			err = c.dial(socketFile)
 			if err != nil {
 				time.Sleep(time.Second)
@@ -93,10 +93,18 @@ func (c *CommandIO) Start(initiator bool, socketFile string, commandBuilder Comm
 		c.Go(c.writer)
 	} else {
 		c.log.Debugf("listening to unix domain socket file: %s", socketFile)
+
 		var err error
 		c.listener, err = net.Listen("unix", socketFile)
 		if err != nil {
-			c.log.Fatal("listen error:", err)
+			// 99% of the time the problem is that the old socketFile
+			// is still there from previous time we ran, so let's
+			// try to remove it and see if that works:
+			os.Remove(socketFile)
+			c.listener, err = net.Listen("unix", socketFile)
+			if err != nil {
+				c.log.Fatal("listen error:", err)
+			}
 		}
 	}
 }

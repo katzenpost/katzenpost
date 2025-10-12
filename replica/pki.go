@@ -168,7 +168,16 @@ func (p *PKIWorker) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 
 		// I don't even know what the sane thing to do here is, just treat it
 		// as if the node's just started and publish for the current I guess.
-		doPublishEpoch = epoch
+		doPublishEpoch = epoch + 1
+		if till > PublishDeadline {
+				  p.GetLogger().Errorf("till [%v] > PublishDeadline [%v]", till, PublishDeadline)
+	             doPublishEpoch = epoch + 1
+	             break
+		} else {
+		  p.GetLogger().Errorf("till [%v] <= PublishDeadline [%v]", till, PublishDeadline)
+		  doPublishEpoch = epoch + 2
+		}
+
 	}
 
 	// Note: Why, yes I *could* cache the descriptor and save a trivial amount

@@ -29,8 +29,8 @@ var (
 	PublishDeadline     = vServer.MixPublishDeadline
 	mixServerCacheDelay = epochtime.Period / 16
 	nextFetchTill       = epochtime.Period - (PublishDeadline + mixServerCacheDelay)
-	client2FetchDelay   = 2 * time.Minute
-	recheckInterval     = epochtime.Period / 16
+	client2FetchDelay   = 1 * time.Minute
+	recheckInterval     = epochtime.Period / 32
 )
 
 type PKIWorker struct {
@@ -179,7 +179,7 @@ func (p *PKIWorker) ForceFetchPKI() error {
 
 	// Fetch the PKI document
 	ctx := context.Background()
-	d, rawDoc, err := p.impl.Get(ctx, epoch)
+	d, rawDoc, err := p.impl.GetPKIDocumentForEpoch(ctx, epoch)
 	if err != nil {
 		p.GetLogger().Warningf("Force fetch failed for epoch %v: %v", epoch, err)
 		return err
