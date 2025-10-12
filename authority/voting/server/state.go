@@ -2262,7 +2262,7 @@ func (s *state) backgroundFetchConsensus(epoch uint64) {
 			}
 			ctx, cancel := context.WithTimeout(context.Background(), time.Minute*2)
 			defer cancel()
-			doc, _, err := c.Get(ctx, epoch)
+			doc, _, err := c.GetPKIDocumentForEpoch(ctx, epoch)
 			if err != nil {
 				return
 			}
