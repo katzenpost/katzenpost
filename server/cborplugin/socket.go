@@ -102,7 +102,9 @@ func (c *CommandIO) Start(initiator bool, socketFile string, commandBuilder Comm
 			// try to remove it and see if that works:
 			os.Remove(socketFile)
 			c.listener, err = net.Listen("unix", socketFile)
-			c.log.Fatal("listen error:", err)
+			if err != nil {
+				c.log.Fatal("listen error:", err)
+			}
 		}
 	}
 }

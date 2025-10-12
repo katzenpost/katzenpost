@@ -1924,7 +1924,8 @@ func (s *state) documentForEpoch(epoch uint64) ([]byte, error) {
 		if epoch < now {
 			// Requested epoch is in the past, and it's not in the cache.
 			// We will never be able to satisfy this request.
-			s.log.Errorf("No document for epoch %v, because we are already in %v", epoch, now)
+			// This happens a lot when clients request old PKI documents. TODO: Why do they request the old ones?
+			s.log.Debugf("No document for epoch %v, because we are already in %v", epoch, now)
 			return nil, errGone
 		}
 		return nil, fmt.Errorf("state: Request for invalid epoch: %v", epoch)
