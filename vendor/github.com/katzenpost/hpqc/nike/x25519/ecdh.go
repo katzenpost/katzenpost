@@ -49,10 +49,7 @@ func Scheme(rng io.Reader) *scheme {
 	}
 }
 
-type PrivateKey struct {
-	pubKey    PublicKey
-	privBytes [GroupElementLength]byte
-}
+type PrivateKey [GroupElementLength]byte
 
 func (p *PrivateKey) Public() nike.PublicKey {
 	return Scheme(rand.Reader).DerivePublicKey(p)
@@ -67,8 +64,8 @@ func (p *PrivateKey) Reset() {
 }
 
 func (p *PrivateKey) Bytes() []byte {
-	b := make([]byte, PublicKeySize)
-	copy(b, p.privBytes[:])
+	b := make([]byte, PrivateKeySize)
+	copy(b, p[:])
 	return b
 }
 
@@ -77,9 +74,8 @@ func (p *PrivateKey) FromBytes(data []byte) error {
 		return errInvalidKey
 	}
 
-	copy(p.privBytes[:], data)
-	expG(&p.pubKey.pubBytes, &p.privBytes)
-	p.pubKey.rebuildB64String()
+	copy(p[:], data)
+	expG((*[GroupElementLength]byte)(p.Public().(*PublicKey)), (*[GroupElementLength]byte)(p))
 
 	return nil
 }
@@ -106,37 +102,29 @@ func (p *PrivateKey) UnmarshalText(data []byte) error {
 
 // Exp calculates the shared secret with the provided public key.
 func (k *PrivateKey) Exp(publicKey *PublicKey) []byte {
-	return Exp(publicKey.pubBytes[:], k.privBytes[:])
+	return Exp(publicKey[:], k[:])
 }
 
-type PublicKey struct {
-	pubBytes  [GroupElementLength]byte
-	b64String string
-}
+type PublicKey [GroupElementLength]byte
 
 func (p *PublicKey) Blind(blindingFactor nike.PrivateKey) error {
 	if len(blindingFactor.Bytes()) != GroupElementLength {
 		return ErrBlindDataSizeInvalid
 	}
-	pubBytes := Exp(p.pubBytes[:], blindingFactor.Bytes())
-	copy(p.pubBytes[:], pubBytes)
+	pubBytes := Exp(p[:], blindingFactor.Bytes())
+	copy(p[:], pubBytes)
 	util.ExplicitBzero(pubBytes)
 	return nil
 }
 
 func (p *PublicKey) Reset() {
-	util.ExplicitBzero(p.pubBytes[:])
-	p.b64String = "[scrubbed]"
+	util.ExplicitBzero(p[:])
 }
 
 func (p *PublicKey) Bytes() []byte {
 	b := make([]byte, PublicKeySize)
-	copy(b, p.pubBytes[:])
+	copy(b, p[:])
 	return b
-}
-
-func (p *PublicKey) rebuildB64String() {
-	p.b64String = base64.StdEncoding.EncodeToString(p.Bytes())
 }
 
 func (p *PublicKey) FromBytes(data []byte) error {
@@ -144,8 +132,7 @@ func (p *PublicKey) FromBytes(data []byte) error {
 		return errInvalidKey
 	}
 
-	copy(p.pubBytes[:], data)
-	p.rebuildB64String()
+	copy(p[:], data)
 
 	return nil
 }
@@ -201,7 +188,7 @@ func (e *scheme) PublicKeySize() int {
 
 // PrivateKeySize returns the size in bytes of the private key.
 func (e *scheme) PrivateKeySize() int {
-	return PublicKeySize
+	return PrivateKeySize
 }
 
 // NewEmptyPublicKey returns an uninitialized
@@ -230,7 +217,7 @@ func (e *scheme) DeriveSecret(privKey nike.PrivateKey, pubKey nike.PublicKey) []
 // DerivePublicKey derives a public key given a private key.
 func (e *scheme) DerivePublicKey(privKey nike.PrivateKey) nike.PublicKey {
 	pubKey := e.NewEmptyPublicKey()
-	expG(&pubKey.(*PublicKey).pubBytes, &privKey.(*PrivateKey).privBytes)
+	expG((*[GroupElementLength]byte)(pubKey.(*PublicKey)), (*[GroupElementLength]byte)(privKey.(*PrivateKey)))
 	return pubKey
 }
 
@@ -289,12 +276,11 @@ func expG(dst, y *[GroupElementLength]byte) {
 // source.
 func NewKeypair(r io.Reader) (*PrivateKey, error) {
 	k := new(PrivateKey)
-	if _, err := io.ReadFull(r, k.privBytes[:]); err != nil {
+	if _, err := io.ReadFull(r, k[:]); err != nil {
 		return nil, err
 	}
 
-	expG(&k.pubKey.pubBytes, &k.privBytes)
-	k.pubKey.rebuildB64String()
+	expG((*[GroupElementLength]byte)(k.Public().(*PublicKey)), (*[GroupElementLength]byte)(k))
 
 	return k, nil
 }
