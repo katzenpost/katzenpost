@@ -134,7 +134,7 @@ func (p *PKIWorker) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 		return nil
 	}
 
-	epoch, _, till := epochtime.Now()
+	epoch, elapsed, _ := epochtime.Now()
 	doPublishEpoch := uint64(0)
 	switch p.lastPublishedEpoch {
 	case 0:
@@ -143,7 +143,7 @@ func (p *PKIWorker) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 		doPublishEpoch = epoch
 	case epoch:
 		// Check the deadline for the next publication time.
-		if till > PublishDeadline {
+		if elapsed > PublishDeadline {
 			p.GetLogger().Debugf("Within the publication time for epoch: %v", epoch+1)
 			doPublishEpoch = epoch + 1
 			break
@@ -168,14 +168,13 @@ func (p *PKIWorker) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 
 		// I don't even know what the sane thing to do here is, just treat it
 		// as if the node's just started and publish for the current I guess.
-		doPublishEpoch = epoch + 1
-		if till > PublishDeadline {
-				  p.GetLogger().Errorf("till [%v] > PublishDeadline [%v]", till, PublishDeadline)
-	             doPublishEpoch = epoch + 1
-	             break
+		if elapsed > PublishDeadline {
+			p.GetLogger().Errorf("elapsed [%v] > PublishDeadline [%v]", elapsed, PublishDeadline)
+			doPublishEpoch = epoch + 1
+			break
 		} else {
-		  p.GetLogger().Errorf("till [%v] <= PublishDeadline [%v]", till, PublishDeadline)
-		  doPublishEpoch = epoch + 2
+			p.GetLogger().Errorf("elapsed [%v] <= PublishDeadline [%v]", elapsed, PublishDeadline)
+			doPublishEpoch = epoch + 2
 		}
 
 	}
