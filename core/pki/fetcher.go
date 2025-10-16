@@ -57,7 +57,7 @@ func (f *DocumentFetcher) FetchDocuments(
 		}
 
 		// Fetch the document
-		d, rawDoc, err := f.client.Get(ctx, epoch)
+		d, rawDoc, err := f.client.GetPKIDocumentForEpoch(ctx, epoch)
 		if isCanceled() {
 			f.log.Debug("Canceled mid-fetch")
 			return results

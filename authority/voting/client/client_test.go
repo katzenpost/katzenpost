@@ -406,7 +406,7 @@ func TestClient(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*100)
 	defer cancel()
 	epoch, _, _ := epochtime.Now()
-	doc, rawDoc, err := client.Get(ctx, epoch)
+	doc, rawDoc, err := client.GetPKIDocumentForEpoch(ctx, epoch)
 	require.NoError(err)
 	require.NotNil(doc)
 	require.Equal(epoch, doc.Epoch)

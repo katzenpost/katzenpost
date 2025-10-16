@@ -35,7 +35,7 @@ func (c *mockPKIClient) PostReplica(ctx context.Context, epoch uint64, signingPr
 	panic("not implemented")
 }
 
-func (c *mockPKIClient) Get(ctx context.Context, epoch uint64) (*cpki.Document, []byte, error) {
+func (c *mockPKIClient) GetPKIDocumentForEpoch(ctx context.Context, epoch uint64) (*cpki.Document, []byte, error) {
 	return nil, nil, nil // XXX
 }
 
