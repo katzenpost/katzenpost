@@ -276,7 +276,7 @@ func (d *Daemon) Start() error {
 		case d.gcSurbIDCh <- surbID:
 		case <-d.HaltCh():
 			return
-		case <-time.After(5 * time.Second):
+		case <-time.After(20 * time.Second):
 			d.log.Debugf("Timeout sending to gcSurbIDCh for SURB ID %x", surbID[:])
 			return
 		}
@@ -292,7 +292,7 @@ func (d *Daemon) Start() error {
 			select {
 			case <-d.HaltCh():
 				return
-			case <-time.After(10 * time.Second):
+			case <-time.After(20 * time.Second):
 				d.log.Debugf("ARQ resend timeout for SURB ID %x", surbID[:])
 				return
 			default:
@@ -310,7 +310,7 @@ func (d *Daemon) Start() error {
 		case d.gcReplyCh <- myGcReply:
 		case <-d.HaltCh():
 			return
-		case <-time.After(5 * time.Second):
+		case <-time.After(15 * time.Second):
 			d.log.Debugf("Timeout sending to gcReplyCh for message ID %x", myGcReply.id[:])
 			return
 		}
