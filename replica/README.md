@@ -57,3 +57,27 @@ and then you can run `go build` as usual:
 cd cmd/replica
 go build
 ```
+
+## Debugging (as replica operator)
+
+```shell
+apt install rocksdb-tools/testing
+```
+
+```shell
+for i in {1..5}; do echo "Replica $i"; ldb --db=voting_mixnet/replica${i}/replica.db --hex --ignore_unknown_options dump | awk -F '==' '/==/ {print "\t"$1}'; done
+```
+
+```
+Replica 1
+        0x3B0B39B05170202479198C5D63A7D8A2A30FF3D17A0C20EBCF4FF124A7D56DBC 
+        0xA9F171DCEE449B661CFDDCDAAF82E9808628BF105E2144AA779CFDA30C6B180A 
+Replica 2
+        0xA9F171DCEE449B661CFDDCDAAF82E9808628BF105E2144AA779CFDA30C6B180A 
+Replica 3
+Replica 4
+        0xA9F171DCEE449B661CFDDCDAAF82E9808628BF105E2144AA779CFDA30C6B180A 
+Replica 5
+        0x3B0B39B05170202479198C5D63A7D8A2A30FF3D17A0C20EBCF4FF124A7D56DBC 
+        0xA9F171DCEE449B661CFDDCDAAF82E9808628BF105E2144AA779CFDA30C6B180A
+```

@@ -7,8 +7,9 @@ import (
 	"context"
 	"crypto/hmac"
 	"errors"
+	"fmt"
 	"net/url"
-	"time"
+	"strings"
 
 	"golang.org/x/crypto/blake2b"
 	"gopkg.in/op/go-logging.v1"
@@ -26,11 +27,7 @@ import (
 const PKIDocNum = 3
 
 var (
-	PublishDeadline     = vServer.MixPublishDeadline
-	mixServerCacheDelay = epochtime.Period / 16
-	nextFetchTill       = epochtime.Period - (PublishDeadline + mixServerCacheDelay)
-	client2FetchDelay   = 2 * time.Minute
-	recheckInterval     = epochtime.Period / 16
+	PublishDeadline = vServer.MixPublishDeadline
 )
 
 type PKIWorker struct {
@@ -43,10 +40,8 @@ type PKIWorker struct {
 
 	impl pki.Client // PKI client for document fetching and publishing
 
-	descAddrMap               map[string][]string
-	lastPublishedEpoch        uint64
-	lastWarnedEpoch           uint64
-	lastPublishedReplicaEpoch uint64
+	descAddrMap        map[string][]string
+	lastPublishedEpoch uint64
 }
 
 // newPKIWorker creates a PKIWorker with the default voting client
@@ -84,20 +79,18 @@ func newPKIWorkerWithClient(server *Server, pkiClient pki.Client, log *logging.L
 	for _, v := range server.cfg.Addresses {
 		u, err := url.Parse(v)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("parse address %q: %w", v, err)
 		}
-		if _, ok := p.descAddrMap[u.Scheme]; ok {
-			p.descAddrMap[u.Scheme] = append(p.descAddrMap[u.Scheme], v)
-		} else {
-			p.descAddrMap[u.Scheme] = []string{v}
+		scheme := strings.ToLower(u.Scheme)
+		if scheme == "" {
+			return nil, fmt.Errorf("address missing scheme: %q", v)
 		}
+		p.descAddrMap[scheme] = append(p.descAddrMap[scheme], v)
 	}
 
 	p.Go(p.worker)
-
 	return p, nil
 }
-
 func replicaMap(doc *pki.Document) map[[32]byte]*pki.ReplicaDescriptor {
 	newReplicas := make(map[[32]byte]*pki.ReplicaDescriptor)
 	for _, replica := range doc.StorageReplicas {
@@ -109,7 +102,7 @@ func replicaMap(doc *pki.Document) map[[32]byte]*pki.ReplicaDescriptor {
 
 // isSubset returns true is a is a subset of b
 func isSubset(a, b map[[32]byte]*pki.ReplicaDescriptor) bool {
-	for key, _ := range a {
+	for key := range a {
 		_, ok := b[key]
 		if !ok {
 			return false
@@ -119,13 +112,13 @@ func isSubset(a, b map[[32]byte]*pki.ReplicaDescriptor) bool {
 }
 
 func equal(a, b map[[32]byte]*pki.ReplicaDescriptor) bool {
-	for key, _ := range a {
+	for key := range a {
 		_, ok := b[key]
 		if !ok {
 			return false
 		}
 	}
-	for key, _ := range b {
+	for key := range b {
 		_, ok := a[key]
 		if !ok {
 			return false

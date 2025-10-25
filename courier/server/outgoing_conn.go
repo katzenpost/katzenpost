@@ -494,8 +494,8 @@ func (c *outgoingConn) handleCommand(rawCmd commands.Command) bool {
 		c.log.Debugf("Received Disconnect from peer.")
 		return false
 	case *commands.ReplicaMessageReply:
-		c.log.Debugf("DEBUG: Received ReplicaMessageReply - IsRead: %v, ErrorCode: %d, EnvelopeReplyLen: %d",
-			replycmd.IsRead, replycmd.ErrorCode, len(replycmd.EnvelopeReply))
+		c.log.Debugf("DEBUG: Received ReplicaMessageReply - IsRead: %v, ErrorCode: %d, EnvelopeReplyLen: %d: %v",
+			replycmd.IsRead, replycmd.ErrorCode, len(replycmd.EnvelopeReply), replycmd.EnvelopeReply)
 		c.courier.HandleReply(replycmd)
 	case *commands.ReplicaDecoy:
 		c.log.Debugf("Received ReplicaDecoy.")
