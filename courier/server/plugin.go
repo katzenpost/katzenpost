@@ -135,6 +135,7 @@ func (e *Courier) CacheReply(reply *commands.ReplicaMessageReply) {
 	e.log.Debugf("CacheReply called with envelope hash: %x", reply.EnvelopeHash)
 
 	if !e.validateReply(reply) {
+		e.log.Errorf("courier/!e.validateReply(reply:%v)", reply)
 		return
 	}
 
