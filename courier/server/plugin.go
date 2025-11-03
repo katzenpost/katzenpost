@@ -152,11 +152,10 @@ func (e *Courier) CacheReply(reply *commands.ReplicaMessageReply) {
 	entry, ok := e.dedupCache[*reply.EnvelopeHash]
 	if ok {
 		e.handleExistingEntry(entry, reply)
+		e.logFinalCacheState(reply)
 	} else {
 		e.log.Errorf("Courier received reply with unknown envelope hash; %x", *reply.EnvelopeHash)
 	}
-
-	e.logFinalCacheState(reply)
 }
 
 // validateReply checks if the reply should be cached

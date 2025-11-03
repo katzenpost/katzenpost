@@ -285,6 +285,9 @@ func TestCourierCacheConcurrentAccess(t *testing.T) {
 	courier := createTestCourier(t)
 	envHash := createTestEnvelopeHash()
 
+	// Set up the cache entry properly with both replica IDs first
+	setupCacheEntry(courier, envHash, 1)
+
 	// Create multiple replies
 	replies := make([]*commands.ReplicaMessageReply, 10)
 	for i := 0; i < 10; i++ {
@@ -327,6 +330,11 @@ func TestCourierCacheMultipleEnvelopes(t *testing.T) {
 	envHashes := make([][hash.HashSize]byte, 5)
 	for i := 0; i < 5; i++ {
 		envHashes[i] = createTestEnvelopeHashWithSuffix(string(rune('A' + i)))
+	}
+
+	// Set up cache entries for each envelope first
+	for _, envHash := range envHashes {
+		setupCacheEntry(courier, envHash, 1)
 	}
 
 	// Cache replies for each envelope
@@ -386,6 +394,9 @@ func TestCourierCacheEpochTracking(t *testing.T) {
 	envHash := [hash.HashSize]byte{}
 	copy(envHash[:], []byte(testEnvelopeHashString))
 
+	// Set up the cache entry first
+	setupCacheEntry(courier, envHash, testEpoch)
+
 	reply := &commands.ReplicaMessageReply{
 		EnvelopeHash:  &envHash,
 		ReplicaID:     0,
@@ -408,6 +419,9 @@ func TestCourierCacheEpochTracking(t *testing.T) {
 func TestCourierCacheErrorReplies(t *testing.T) {
 	courier := createTestCourier(t)
 	envHash := createTestEnvelopeHash()
+
+	// Set up the cache entry first
+	setupCacheEntry(courier, envHash, 1)
 
 	errorReply := createTestErrorReply(&envHash, 0, 1, "error-occurred", true)
 	courier.CacheReply(errorReply)
