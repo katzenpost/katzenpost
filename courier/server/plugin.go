@@ -135,6 +135,7 @@ func (e *Courier) CacheReply(reply *commands.ReplicaMessageReply) {
 	e.log.Debugf("CacheReply called with envelope hash: %x", reply.EnvelopeHash)
 
 	if !e.validateReply(reply) {
+		e.log.Errorf("courier/!e.validateReply(reply:%v)", reply)
 		return
 	}
 
@@ -172,7 +173,12 @@ func (e *Courier) validateReply(reply *commands.ReplicaMessageReply) bool {
 
 // handleExistingEntry processes replies for existing cache entries
 func (e *Courier) handleExistingEntry(entry *CourierBookKeeping, reply *commands.ReplicaMessageReply) {
-	e.log.Debugf("CacheReply: found existing cache entry for envelope hash %x", reply.EnvelopeHash)
+	e.log.Errorf("CacheReply: found existing cache entry for envelope hash %x", reply.EnvelopeHash)
+
+	if reply.IsRead && reply.ErrorCode == 0 {
+		// we do want to overwrite old entries if we had an error and now don't
+		e.log.Errorf("handleExistingEntry: IsRead && ErrorCode == 0: entry=%v reply=%v", entry, reply)
+	}
 
 	replyIndex := e.findReplicaIndex(entry, reply.ReplicaID)
 	if replyIndex >= 0 {
@@ -181,7 +187,7 @@ func (e *Courier) handleExistingEntry(entry *CourierBookKeeping, reply *commands
 		// Check if we can accommodate this replica in an unused slot (marked as 255)
 		for i, id := range entry.IntermediateReplicas {
 			if id == 255 && entry.EnvelopeReplies[i] == nil {
-				e.log.Debugf("CacheReply: storing reply from replica %d in unused slot %d", reply.ReplicaID, i)
+				e.log.Errorf("CacheReply: storing reply from replica %d in unused slot %d", reply.ReplicaID, i)
 				entry.IntermediateReplicas[i] = reply.ReplicaID
 				entry.EnvelopeReplies[i] = reply
 				return
@@ -204,11 +210,46 @@ func (e *Courier) findReplicaIndex(entry *CourierBookKeeping, replicaID uint8) i
 // storeReplyIfEmpty stores the reply only if the slot is empty
 func (e *Courier) storeReplyIfEmpty(entry *CourierBookKeeping, reply *commands.ReplicaMessageReply, replyIndex int) {
 	if entry.EnvelopeReplies[replyIndex] == nil {
-		e.log.Debugf("CacheReply: storing reply from replica %d at IntermediateReplicas index %d", reply.ReplicaID, replyIndex)
+		e.log.Infof("CacheReply: storing reply from replica %d at IntermediateReplicas index %d", reply.ReplicaID, replyIndex)
 		entry.EnvelopeReplies[replyIndex] = reply
 	} else {
-		e.log.Debugf("CacheReply: reply from replica %d already cached, ignoring duplicate", reply.ReplicaID)
+		e.log.Infof("CacheReply: reply from replica %d already cached, ignoring duplicate", reply.ReplicaID)
 	}
+}
+
+// createNewEntry creates a new cache entry for unknown envelope hashes
+func (e *Courier) createNewEntry(reply *commands.ReplicaMessageReply) {
+	e.log.Infof("CacheReply: received reply for unknown EnvelopeHash %x, creating new cache entry", reply.EnvelopeHash)
+
+	// For read replies to unknown envelope hashes, we don't know which replicas were
+	// originally selected by the sharding algorithm, so we can't create a proper cache entry.
+	// However, we can try to accommodate the reply by creating a flexible entry.
+	currentEpoch := e.getCurrentEpoch()
+
+	// Create a cache entry that accommodates this replica ID in the correct slot
+	// Use replica ID to determine which slot to use: replica 0 → slot 0, replica 1 → slot 1
+	var intermediateReplicas [2]uint8
+	var replyIndex int
+
+	if reply.ReplicaID == 0 {
+		intermediateReplicas = [2]uint8{0, 255} // replica 0 in slot 0, slot 1 unknown
+		replyIndex = 0
+	} else {
+		intermediateReplicas = [2]uint8{255, reply.ReplicaID} // slot 0 unknown, replica in slot 1
+		replyIndex = 1
+	}
+
+	newEntry := &CourierBookKeeping{
+		Epoch:                currentEpoch,
+		IntermediateReplicas: intermediateReplicas,
+		EnvelopeReplies:      [2]*commands.ReplicaMessageReply{nil, nil},
+	}
+
+	// Store the reply in the correct slot based on replica ID
+	e.log.Debugf("CacheReply: creating new cache entry and storing reply from replica %d at index %d", reply.ReplicaID, replyIndex)
+	newEntry.EnvelopeReplies[replyIndex] = reply
+
+	e.dedupCache[*reply.EnvelopeHash] = newEntry
 }
 
 // getCurrentEpoch gets the current epoch from PKI document
@@ -288,8 +329,13 @@ func (e *Courier) tryImmediateReplyProxy(reply *commands.ReplicaMessageReply) bo
 		// Create proper CourierQueryReply with the replica's response
 		// Determine reply type based on whether there's actual payload data
 		var replyType uint8
-		if len(reply.EnvelopeReply) > 0 {
+		if len(reply.EnvelopeReply) > 29 {
+			// we sometimes get a small RepliceMessageReply thing here, and we shouldn't return it as data
+			// because clientd can't decode it
 			replyType = pigeonhole.ReplyTypePayload // Has actual data
+			e.log.Errorf("tryImmediateReplyProxy: setting ReplyType:=ReplyTypePayload because len(reply.EnvelopeReply)==%d: %v",
+				len(reply.EnvelopeReply), reply)
+
 		} else {
 			replyType = pigeonhole.ReplyTypeACK // No data, just acknowledgment
 		}
@@ -306,8 +352,8 @@ func (e *Courier) tryImmediateReplyProxy(reply *commands.ReplicaMessageReply) bo
 			},
 		}
 
-		e.log.Debugf("tryImmediateReplyProxy: Sending response with %d bytes of ciphertext, replyIndex=%d, ReplyType=%d",
-			len(reply.EnvelopeReply), replyIndex, replyType)
+		e.log.Errorf("tryImmediateReplyProxy: Sending response with %d bytes of ciphertext, replyIndex=%d, ReplyType=%d EnvHash=%v",
+			len(reply.EnvelopeReply), replyIndex, replyType, *reply.EnvelopeHash)
 
 		e.write(&cborplugin.Response{
 			ID:      pendingRequest.RequestID,
@@ -325,7 +371,7 @@ func (e *Courier) storePendingRequest(envHash *[hash.HashSize]byte, requestID ui
 	defer e.pendingRequestsLock.Unlock()
 
 	// Set timeout to allow for replica response delays
-	seconds := 60
+	seconds := 20
 	timeout := time.Now().Add(time.Duration(seconds) * time.Second)
 
 	e.pendingRequests[*envHash] = &PendingReadRequest{
@@ -433,21 +479,37 @@ func (e *Courier) handleOldMessage(cacheEntry *CourierBookKeeping, envHash *[has
 	// Log cache state
 	reply0Available := cacheEntry.EnvelopeReplies[0] != nil
 	reply1Available := cacheEntry.EnvelopeReplies[1] != nil
-	e.log.Debugf("Cache state - Reply[0]: %v, Reply[1]: %v", reply0Available, reply1Available)
+	e.log.Debugf("Cache state - Reply[0]: %v, Reply[1]: %v envHash:%v", reply0Available, reply1Available, envHash)
 
 	var payload []byte
 
 	if cacheEntry.EnvelopeReplies[courierMessage.ReplyIndex] != nil {
-		e.log.Debugf("Found reply at requested index %d", courierMessage.ReplyIndex)
-		payload = cacheEntry.EnvelopeReplies[courierMessage.ReplyIndex].EnvelopeReply
+		entry := cacheEntry.EnvelopeReplies[courierMessage.ReplyIndex]
+		payload = entry.EnvelopeReply
+		e.log.Debugf("Found reply [len:%d err:%d read:%v] at requested index %d for %v", len(payload), entry.ErrorCode, entry.IsRead, courierMessage.ReplyIndex, envHash)
+		if len(payload) == 0 && cacheEntry.EnvelopeReplies[courierMessage.ReplyIndex^1] != nil {
+			oentry := cacheEntry.EnvelopeReplies[courierMessage.ReplyIndex^1]
+			e.log.Debugf("entry at idx %v is empty; other: [len:%d err:%d read:%v]", courierMessage.ReplyIndex, len(oentry.EnvelopeReply), oentry.ErrorCode, oentry.IsRead)
+		}
 	} else {
 		e.log.Debugf("No reply available at requested index %d", courierMessage.ReplyIndex)
-		payload = nil // Return empty payload but keep the requested ReplyIndex
+		if cacheEntry.EnvelopeReplies[courierMessage.ReplyIndex^1] != nil {
+			courierMessage.ReplyIndex = courierMessage.ReplyIndex ^ 1
+			payload = cacheEntry.EnvelopeReplies[courierMessage.ReplyIndex].EnvelopeReply
+			e.log.Debugf("But there is a reply for %d, so returning that (envHash:%v)", courierMessage.ReplyIndex, envHash)
+		} else {
+			payload = nil // Return empty payload but keep the requested ReplyIndex
+		}
 	}
 
 	// Determine reply type based on whether there's actual payload data
 	var replyType uint8
-	if len(payload) > 0 {
+	if len(payload) > 29 {
+		// whatever it is that the courier stuffs in here of length 29
+		// cannot be decoded by the clientd. whether that's a bug in the courier or the clientd
+		// is unclear, but for now...
+		// note that we have the same hack in tryImmediateReplyProxy because the logic
+		// to synthesize CourierEnvelopeReply is duplicated there.
 		replyType = pigeonhole.ReplyTypePayload // Has actual data
 	} else {
 		replyType = pigeonhole.ReplyTypeACK // No data, just acknowledgment
@@ -513,7 +575,7 @@ func (e *Courier) cacheHandleCourierEnvelope(queryType uint8, courierMessage *pi
 		e.log.Debugf("OnCommand: Found cached entry for envelope hash %x, calling handleOldMessage", envHash)
 		return e.handleOldMessage(cacheEntry, envHash, courierMessage)
 	case !ok:
-		e.log.Debugf("OnCommand: No cached entry for envelope hash %x, calling handleNewMessage", envHash)
+		e.log.Errorf("OnCommand: No cached entry for envelope hash %x, calling handleNewMessage", envHash)
 		e.storePendingRequest(envHash, requestID, surb)
 		e.dedupCacheLock.Lock()
 		currentEpoch := e.getCurrentEpoch()
@@ -536,7 +598,7 @@ func (e *Courier) cacheHandleCourierEnvelope(queryType uint8, courierMessage *pi
 
 // createEnvelopeErrorReply creates a CourierEnvelopeReply with the specified error code
 func (e *Courier) createEnvelopeErrorReply(envHash *[hash.HashSize]byte, errorCode uint8, replyIndex uint8) *pigeonhole.CourierQueryReply {
-	e.log.Debugf("Envelope operation failed with error code %d", errorCode)
+	e.log.Errorf("Envelope operation failed with error code %d", errorCode)
 	return &pigeonhole.CourierQueryReply{
 		ReplyType: 0, // 0 = envelope_reply
 		EnvelopeReply: &pigeonhole.CourierEnvelopeReply{

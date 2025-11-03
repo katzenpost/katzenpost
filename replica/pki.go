@@ -11,7 +11,6 @@ import (
 	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
 
 	"github.com/katzenpost/katzenpost/core/epochtime"
-	"github.com/katzenpost/katzenpost/core/pki"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 )
 
@@ -38,13 +37,13 @@ func (p *PKIWorker) worker() {
 		return
 	}
 
-	pkiCtx, cancelFn, isCanceled := pki.SetupWorkerContext(p.HaltCh(), p.GetLogger())
+	pkiCtx, cancelFn, isCanceled := cpki.SetupWorkerContext(p.HaltCh(), p.GetLogger())
 	defer cancelFn()
 
 	var lastUpdateEpoch uint64
 
 	for {
-		if !pki.HandleTimerEvent(timer, pkiCtx, p.HaltCh(), p.GetLogger()) {
+		if !cpki.HandleTimerEvent(timer, pkiCtx, p.HaltCh(), p.GetLogger()) {
 			return
 		}
 
