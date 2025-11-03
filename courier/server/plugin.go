@@ -153,11 +153,10 @@ func (e *Courier) CacheReply(reply *commands.ReplicaMessageReply) {
 	entry, ok := e.dedupCache[*reply.EnvelopeHash]
 	if ok {
 		e.handleExistingEntry(entry, reply)
+		e.logFinalCacheState(reply)
 	} else {
-		e.createNewEntry(reply)
+		e.log.Errorf("Courier received reply with unknown envelope hash; %x", *reply.EnvelopeHash)
 	}
-
-	e.logFinalCacheState(reply)
 }
 
 // validateReply checks if the reply should be cached
@@ -331,13 +330,13 @@ func (e *Courier) tryImmediateReplyProxy(reply *commands.ReplicaMessageReply) bo
 		// Determine reply type based on whether there's actual payload data
 		var replyType uint8
 		if len(reply.EnvelopeReply) > 29 {
-		   // we sometimes get a small RepliceMessageReply thing here, and we shouldn't return it as data
-		   // because clientd can't decode it
+			// we sometimes get a small RepliceMessageReply thing here, and we shouldn't return it as data
+			// because clientd can't decode it
 			replyType = pigeonhole.ReplyTypePayload // Has actual data
-		e.log.Errorf("tryImmediateReplyProxy: setting ReplyType:=ReplyTypePayload because len(reply.EnvelopeReply)==%d: %v",
-						      len(reply.EnvelopeReply), reply)
+			e.log.Errorf("tryImmediateReplyProxy: setting ReplyType:=ReplyTypePayload because len(reply.EnvelopeReply)==%d: %v",
+				len(reply.EnvelopeReply), reply)
 
-			} else {
+		} else {
 			replyType = pigeonhole.ReplyTypeACK // No data, just acknowledgment
 		}
 
@@ -488,25 +487,25 @@ func (e *Courier) handleOldMessage(cacheEntry *CourierBookKeeping, envHash *[has
 		entry := cacheEntry.EnvelopeReplies[courierMessage.ReplyIndex]
 		payload = entry.EnvelopeReply
 		e.log.Debugf("Found reply [len:%d err:%d read:%v] at requested index %d for %v", len(payload), entry.ErrorCode, entry.IsRead, courierMessage.ReplyIndex, envHash)
-		if len(payload) == 0 && cacheEntry.EnvelopeReplies[courierMessage.ReplyIndex ^ 1] != nil {
-			oentry := cacheEntry.EnvelopeReplies[courierMessage.ReplyIndex ^ 1]
+		if len(payload) == 0 && cacheEntry.EnvelopeReplies[courierMessage.ReplyIndex^1] != nil {
+			oentry := cacheEntry.EnvelopeReplies[courierMessage.ReplyIndex^1]
 			e.log.Debugf("entry at idx %v is empty; other: [len:%d err:%d read:%v]", courierMessage.ReplyIndex, len(oentry.EnvelopeReply), oentry.ErrorCode, oentry.IsRead)
 		}
 	} else {
 		e.log.Debugf("No reply available at requested index %d", courierMessage.ReplyIndex)
-		if cacheEntry.EnvelopeReplies[courierMessage.ReplyIndex ^ 1] != nil {
-		  courierMessage.ReplyIndex = courierMessage.ReplyIndex ^ 1
-		  payload = cacheEntry.EnvelopeReplies[courierMessage.ReplyIndex].EnvelopeReply
-		  e.log.Debugf("But there is a reply for %d, so returning that (envHash:%v)", courierMessage.ReplyIndex, envHash)
+		if cacheEntry.EnvelopeReplies[courierMessage.ReplyIndex^1] != nil {
+			courierMessage.ReplyIndex = courierMessage.ReplyIndex ^ 1
+			payload = cacheEntry.EnvelopeReplies[courierMessage.ReplyIndex].EnvelopeReply
+			e.log.Debugf("But there is a reply for %d, so returning that (envHash:%v)", courierMessage.ReplyIndex, envHash)
 		} else {
-                  payload = nil // Return empty payload but keep the requested ReplyIndex
-	        }
+			payload = nil // Return empty payload but keep the requested ReplyIndex
+		}
 	}
 
 	// Determine reply type based on whether there's actual payload data
 	var replyType uint8
 	if len(payload) > 29 {
-	        // whatever it is that the courier stuffs in here of length 29
+		// whatever it is that the courier stuffs in here of length 29
 		// cannot be decoded by the clientd. whether that's a bug in the courier or the clientd
 		// is unclear, but for now...
 		// note that we have the same hack in tryImmediateReplyProxy because the logic
