@@ -248,7 +248,7 @@ func (p *pki) getDocument(ctx context.Context, epoch uint64) (*cpki.Document, er
 func (p *pki) getDocumentDirect(ctx context.Context, epoch uint64) (*cpki.Document, error) {
 	p.log.Debugf("Fetching PKI doc for epoch %v directly from authority.", epoch)
 
-	d, _, err := p.c.cfg.PKIClient.Get(ctx, epoch)
+	d, _, err := p.c.cfg.PKIClient.GetPKIDocumentForEpoch(ctx, epoch)
 	select {
 	case <-ctx.Done():
 		// Canceled mid-fetch.

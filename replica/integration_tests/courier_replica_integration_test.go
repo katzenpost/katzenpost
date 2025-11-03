@@ -614,7 +614,7 @@ func newMockPKIClient(t *testing.T) *mockPKIClient {
 	}
 }
 
-func (c *mockPKIClient) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, error) {
+func (c *mockPKIClient) GetPKIDocumentForEpoch(ctx context.Context, epoch uint64) (*pki.Document, []byte, error) {
 	// First, try to read from cache with read lock
 	c.mu.RLock()
 	doc, exists := c.docs[epoch]

@@ -458,7 +458,7 @@ type mockPKIClient struct {
 }
 
 // Get returns the PKI document along with the raw serialized form for the provided epoch.
-func (m *mockPKIClient) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, error) {
+func (m *mockPKIClient) GetPKIDocumentForEpoch(ctx context.Context, epoch uint64) (*pki.Document, []byte, error) {
 	blob, err := m.doc.MarshalCertificate()
 	if err != nil {
 		return nil, nil, err
