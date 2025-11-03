@@ -152,11 +152,10 @@ func (e *Courier) CacheReply(reply *commands.ReplicaMessageReply) {
 	entry, ok := e.dedupCache[*reply.EnvelopeHash]
 	if ok {
 		e.handleExistingEntry(entry, reply)
+		e.logFinalCacheState(reply)
 	} else {
-		e.createNewEntry(reply)
+		e.log.Errorf("Courier received reply with unknown envelope hash; %x", *reply.EnvelopeHash)
 	}
-
-	e.logFinalCacheState(reply)
 }
 
 // validateReply checks if the reply should be cached
@@ -210,41 +209,6 @@ func (e *Courier) storeReplyIfEmpty(entry *CourierBookKeeping, reply *commands.R
 	} else {
 		e.log.Debugf("CacheReply: reply from replica %d already cached, ignoring duplicate", reply.ReplicaID)
 	}
-}
-
-// createNewEntry creates a new cache entry for unknown envelope hashes
-func (e *Courier) createNewEntry(reply *commands.ReplicaMessageReply) {
-	e.log.Debugf("CacheReply: received reply for unknown EnvelopeHash %x, creating new cache entry", reply.EnvelopeHash)
-
-	// For read replies to unknown envelope hashes, we don't know which replicas were
-	// originally selected by the sharding algorithm, so we can't create a proper cache entry.
-	// However, we can try to accommodate the reply by creating a flexible entry.
-	currentEpoch := e.getCurrentEpoch()
-
-	// Create a cache entry that accommodates this replica ID in the correct slot
-	// Use replica ID to determine which slot to use: replica 0 → slot 0, replica 1 → slot 1
-	var intermediateReplicas [2]uint8
-	var replyIndex int
-
-	if reply.ReplicaID == 0 {
-		intermediateReplicas = [2]uint8{0, 255} // replica 0 in slot 0, slot 1 unknown
-		replyIndex = 0
-	} else {
-		intermediateReplicas = [2]uint8{255, reply.ReplicaID} // slot 0 unknown, replica in slot 1
-		replyIndex = 1
-	}
-
-	newEntry := &CourierBookKeeping{
-		Epoch:                currentEpoch,
-		IntermediateReplicas: intermediateReplicas,
-		EnvelopeReplies:      [2]*commands.ReplicaMessageReply{nil, nil},
-	}
-
-	// Store the reply in the correct slot based on replica ID
-	e.log.Debugf("CacheReply: creating new cache entry and storing reply from replica %d at index %d", reply.ReplicaID, replyIndex)
-	newEntry.EnvelopeReplies[replyIndex] = reply
-
-	e.dedupCache[*reply.EnvelopeHash] = newEntry
 }
 
 // getCurrentEpoch gets the current epoch from PKI document
