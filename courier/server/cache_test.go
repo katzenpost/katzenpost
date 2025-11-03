@@ -101,21 +101,27 @@ func verifyCacheEntry(t *testing.T, courier *Courier, envHash [hash.HashSize]byt
 	return entry
 }
 
-// XXX POSSIBLY REMOVE TEST IF USELESS
 // TestCourierCacheBasicOperations tests basic cache operations
-func NoTestCourierCacheBasicOperations(t *testing.T) {
+func TestCourierCacheBasicOperations(t *testing.T) {
 	courier := createTestCourier(t)
 
 	// Test initial state - cache should be empty
 	require.Equal(t, 0, len(courier.dedupCache))
 
 	envHash := createTestEnvelopeHash()
+
+	// Set up the cache entry first (simulates a client sending a message)
+	setupCacheEntry(courier, envHash, 1)
+
+	// Verify cache entry was created
+	require.Equal(t, 1, len(courier.dedupCache))
+
 	reply := createTestReply(&envHash, 0, "test-reply-payload", true)
 
 	// Test CacheReply - first reply
 	courier.CacheReply(reply)
 
-	// Verify cache entry was created
+	// Verify cache still has 1 entry (no new entries created)
 	require.Equal(t, 1, len(courier.dedupCache))
 
 	entry := verifyCacheEntry(t, courier, envHash)
