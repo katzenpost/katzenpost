@@ -1,6 +1,6 @@
-# Katzenpost Mix Network Map Library
+# Katzenpost Mix Network Scratch Library
 
-This library is provided for making an ephemeral read-write capability-based
+This library is provided for making an ephemeral capability-based
 storage system for Katzenpost, so that clients may exchange capabilities to
 read and write storage locations in order to establish asynchronous end-to-end
 communication channels.
@@ -27,13 +27,13 @@ stopping a local mixnet using the make commands.
 Once you have a mixnet running, e.g.:
 
 ```bash
-git clone https://github.com/katzenpost/katzenpost -b add_reliable_streams && cd katzenpost/docker && make start wait
+git clone https://github.com/katzenpost/katzenpost && cd katzenpost/docker && make start wait
 ```
 
 You can then run the end-to-end tests like so:
 
 ```bash
-  cd ../katzenpost/map && make dockerdockertest
+  cd ../katzenpost/scratch && make dockerdockertest
 ```
 
 # License
