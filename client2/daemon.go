@@ -597,17 +597,6 @@ func (d *Daemon) resumeWriteChannel(request *Request) {
 		d.sendResumeWriteChannelError(request, thin.ThinClientImpossibleHashError)
 		return
 	}
-	//writeCapHash := hash.Sum256(writeCapBlob)
-	//d.capabilityLock.Lock()
-	//_, ok := d.usedWriteCaps[writeCapHash]
-	//if ok {
-	//	d.log.Errorf("BUG, write cap already in use")
-	//	d.capabilityLock.Unlock()
-	//	d.sendResumeWriteChannelError(request, thin.ThinClientCapabilityAlreadyInUse)
-	//	return
-	//}
-	//d.usedWriteCaps[writeCapHash] = true
-	//d.capabilityLock.Unlock()
 
 	// use fields from the request to mutate our current state
 	channelID := d.generateUniqueChannelID()
@@ -669,17 +658,6 @@ func (d *Daemon) resumeWriteChannelQuery(request *Request) {
 		d.sendResumeWriteChannelQueryError(request, thin.ThinClientImpossibleHashError)
 		return
 	}
-	//writeCapHash := hash.Sum256(writeCapBlob)
-	//d.capabilityLock.Lock()
-	//_, ok := d.usedWriteCaps[writeCapHash]
-	//if ok {
-	//	d.log.Errorf("BUG, write cap already in use")
-	//	d.capabilityLock.Unlock()
-	//	d.sendResumeWriteChannelQueryError(request, thin.ThinClientCapabilityAlreadyInUse)
-	//	return
-	//}
-	//d.usedWriteCaps[writeCapHash] = true
-	//d.capabilityLock.Unlock()
 
 	// use fields from the request to mutate our current state
 	channelID := d.generateUniqueChannelID()
@@ -810,18 +788,6 @@ func (d *Daemon) resumeReadChannel(request *Request) {
 		d.sendResumeReadChannelError(request, thin.ThinClientErrorInternalError)
 		return
 	}
-	//readCapHash := hash.Sum256(readCapBlob)
-
-	//d.capabilityLock.Lock()
-	//_, ok := d.usedReadCaps[readCapHash]
-	//if ok {
-	//	d.log.Errorf("BUG, read cap already in use")
-	//	d.sendResumeReadChannelError(request, thin.ThinClientCapabilityAlreadyInUse)
-	//	d.capabilityLock.Unlock()
-	//	return
-	//}
-	//d.usedReadCaps[readCapHash] = true
-	//d.capabilityLock.Unlock()
 
 	conn := d.listener.getConnection(request.AppID)
 	if conn == nil {
@@ -905,20 +871,6 @@ func (d *Daemon) resumeReadChannelQuery(request *Request) {
 		d.sendResumeReadChannelQueryError(request, thin.ThinClientErrorInvalidResumeReadChannelRequest)
 		return
 	}
-
-	//readCapBlob, err := request.ResumeReadChannelQuery.ReadCap.MarshalBinary()
-	//readCapHash := hash.Sum256(readCapBlob)
-
-	//d.capabilityLock.Lock()
-	//_, ok := d.usedReadCaps[readCapHash]
-	//if ok {
-	//	d.log.Errorf("BUG, read cap already in use")
-	//	d.sendResumeReadChannelQueryError(request, thin.ThinClientCapabilityAlreadyInUse)
-	//	d.capabilityLock.Unlock()
-	//	return
-	//}
-	//d.usedReadCaps[readCapHash] = true
-	//d.capabilityLock.Unlock()
 
 	conn := d.listener.getConnection(request.AppID)
 	if conn == nil {
