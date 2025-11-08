@@ -721,10 +721,6 @@ func (d *Daemon) closeChannel(request *Request) {
 	defer d.newChannelMapLock.Unlock()
 
 	channelID := request.CloseChannel.ChannelID
-	_, okxxx := d.newChannelMapXXX[channelID]
-	if okxxx {
-		delete(d.newChannelMapXXX, channelID)
-	}
 
 	channelDesc, ok := d.newChannelMap[channelID]
 	if ok {
@@ -804,9 +800,6 @@ func (d *Daemon) cleanupChannelsForAppID(appID *[AppIDLength]byte) {
 
 	// Remove channels from channel map
 	for channelID := range channelsToCleanup {
-		if _, xxxexists := d.newChannelMapXXX[channelID]; xxxexists {
-			delete(d.newChannelMapXXX, channelID)
-		}
 		if _, exists := d.newChannelMap[channelID]; exists {
 			delete(d.newChannelMap, channelID)
 			d.log.Debugf("cleanupChannelsForAppID: removed channel %d for App ID %x", channelID, appID[:])
