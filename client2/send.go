@@ -175,7 +175,7 @@ func (c *Client) makePath(recipient []byte, destination *[32]byte, surbID *[sCon
 	// Get the current PKI document.
 	_, doc := c.CurrentDocument()
 	if doc == nil {
-		return nil, time.Time{}, newPKIError("client2: no PKI document for current epoch")
+		return nil, time.Time{}, newPKIError("client2: makePath: no PKI document for current epoch")
 	}
 
 	src, dst, err := c.getSourceAndDestinationNodes(doc, gateway, destination, isForward)
@@ -271,6 +271,7 @@ func (c *Client) ComposeSphinxPacketForQuery(request *thin.SendChannelQuery, sur
 
 		fwdPath, then, err := c.makePath(request.RecipientQueueID, request.DestinationIdHash, surbID, now, true, gateway)
 		if err != nil {
+			c.log.Errorf("ComposeSphinxPacketForQuery: c.makePath: fwdPath: err: %s", err.Error())
 			return nil, nil, 0, err
 		}
 
@@ -281,6 +282,7 @@ func (c *Client) ComposeSphinxPacketForQuery(request *thin.SendChannelQuery, sur
 			}
 			revPath, then, err = c.makePath(c.conn.queueID, request.DestinationIdHash, surbID, then, false, gateway)
 			if err != nil {
+				c.log.Errorf("ComposeSphinxPacketForQuery: c.makePath: revPath: err: %s", err.Error())
 				return nil, nil, 0, err
 			}
 		}

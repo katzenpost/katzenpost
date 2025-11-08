@@ -85,6 +85,7 @@ func (c *Client) GetDocumentByEpoch(epoch uint64) *cpki.Document {
 }
 
 func (c *Client) WaitForCurrentDocument() {
+     // what is the point of this when we aren't connected
 	_, doc := c.pki.currentDocument()
 	if doc != nil {
 		return
@@ -186,7 +187,7 @@ func (p *pki) worker() {
 				p.log.Debugf("Skipping fetch for epoch %v: %v", epoch, err)
 				continue
 			}
-
+			// we shouldn't do this before we are connected:
 			err := p.updateDocument(epoch)
 			if err != nil {
 				switch err {
@@ -230,6 +231,7 @@ func (p *pki) updateDocument(epoch uint64) error {
 		}
 	})
 
+	// why does this start going off before we are connected?
 	docBlob, d, err := p.getDocument(pkiCtx, epoch)
 	cancelFn()
 	if err != nil {
@@ -256,8 +258,10 @@ func (p *pki) getDocument(ctx context.Context, epoch uint64) ([]byte, *cpki.Docu
 	switch err {
 	case nil:
 	case cpki.ErrNoDocument:
+		p.log.Debugf("getDocument [%v]: ErrNoDocument", epoch)
 		return nil, nil, err
 	default:
+		p.log.Errorf("getDocument [%v]: %s", epoch, err.Error())
 		return nil, nil, err
 	}
 

@@ -183,10 +183,12 @@ func (l *listener) updateConnectionStatus(status error) {
 }
 
 func (l *listener) doUpdateConnectionStatus(status error) {
-	l.log.Debug("doUpdateConnectionStatus XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX")
+
 	l.connectionStatusMutex.Lock()
 	l.connectionStatus = status
 	l.connectionStatusMutex.Unlock()
+
+	l.decoySender.UpdateConnectionStatus(status == nil)
 
 	l.connsLock.RLock()
 	conns := l.conns
@@ -195,8 +197,6 @@ func (l *listener) doUpdateConnectionStatus(status error) {
 		l.conns[key].updateConnectionStatus(status)
 	}
 	l.connsLock.RUnlock()
-
-	l.decoySender.UpdateConnectionStatus(status == nil)
 }
 
 func (l *listener) doUpdateFromPKIDoc(doc *cpki.Document) {
@@ -223,9 +223,6 @@ func (l *listener) doUpdateFromPKIDoc(doc *cpki.Document) {
 }
 
 func (l *listener) getConnection(appID *[AppIDLength]byte) *incomingConn {
-	if appID == nil {
-		return nil
-	}
 	l.connsLock.RLock()
 	conn, ok := l.conns[*appID]
 	l.connsLock.RUnlock()

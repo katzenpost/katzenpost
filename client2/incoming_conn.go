@@ -88,6 +88,7 @@ func (c *incomingConn) sendResponse(r *Response) error {
 	response := IntoThinResponse(r)
 	blob, err := cbor.Marshal(response)
 	if err != nil {
+		c.log.Errorf("sendResponse: cbor.Marshal: %v", err)
 		return err
 	}
 
@@ -99,9 +100,11 @@ func (c *incomingConn) sendResponse(r *Response) error {
 
 	count, err := c.conn.Write(toSend)
 	if err != nil {
+		c.log.Errorf("sendResponse: Write: %v", err)
 		return err
 	}
 	if count != len(toSend) {
+		c.log.Errorf("sendResponse: Write: truncated write (%d/%d", count, len(toSend))
 		return fmt.Errorf("sendResponse error: only wrote %d bytes whereas buffer is size %d", count, len(toSend))
 	}
 	return nil
