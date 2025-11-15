@@ -8,21 +8,24 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"github.com/fxamacker/cbor/v2"
-	"github.com/katzenpost/hpqc/rand"
-	"github.com/katzenpost/katzenpost/client"
-	"github.com/katzenpost/katzenpost/client2"
-	"github.com/katzenpost/katzenpost/core/epochtime"
-	"github.com/katzenpost/katzenpost/core/worker"
-	mClient "github.com/katzenpost/katzenpost/map/client"
-	"github.com/katzenpost/katzenpost/map/common"
-	"golang.org/x/crypto/hkdf"
-	"golang.org/x/crypto/nacl/secretbox"
 	"io"
 	"math"
 	"os"
 	"sync"
 	"time"
+
+	"github.com/fxamacker/cbor/v2"
+	"golang.org/x/crypto/hkdf"
+	"golang.org/x/crypto/nacl/secretbox"
+
+	"github.com/katzenpost/hpqc/rand"
+
+	"github.com/katzenpost/katzenpost/client"
+	rootCommon "github.com/katzenpost/katzenpost/common"
+	"github.com/katzenpost/katzenpost/core/epochtime"
+	"github.com/katzenpost/katzenpost/core/worker"
+	mClient "github.com/katzenpost/katzenpost/map/client"
+	"github.com/katzenpost/katzenpost/map/common"
 )
 
 const (
@@ -196,9 +199,9 @@ type Stream struct {
 	// Mode indicates what type of Stream, e.g. EndToEnd or Finite
 	Mode StreamMode
 
-	retryExpDist  *client2.ExpDist
-	readerExpDist *client2.ExpDist
-	senderExpDist *client2.ExpDist
+	retryExpDist  *rootCommon.ExpDist
+	readerExpDist *rootCommon.ExpDist
+	senderExpDist *rootCommon.ExpDist
 
 	// Transport provides Put and Get
 	transport Transport
@@ -973,9 +976,9 @@ func newStream(mode StreamMode) *Stream {
 	s.R = &ReTx{s: s}
 	s.R.Wack = make(map[uint64]*FrameWithPriority)
 	s.TQ = client.NewTimerQueue(s.R)
-	s.retryExpDist = client2.NewExpDist()
-	s.readerExpDist = client2.NewExpDist()
-	s.senderExpDist = client2.NewExpDist()
+	s.retryExpDist = rootCommon.NewExpDist()
+	s.readerExpDist = rootCommon.NewExpDist()
+	s.senderExpDist = rootCommon.NewExpDist()
 	s.writeBuf = new(bytes.Buffer)
 	s.readBuf = new(bytes.Buffer)
 
