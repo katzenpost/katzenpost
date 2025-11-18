@@ -100,6 +100,7 @@ type Daemon struct {
 	newSurbIDToChannelMapLock *sync.RWMutex
 	newChannelMap             map[uint16]*ChannelDescriptor
 	newChannelMapLock         *sync.RWMutex
+	newChannelMapXXX          map[uint16]bool
 
 	// Capability deduplication maps to prevent reusing read/write capabilities
 	usedReadCaps   map[[hash.HashSize]byte]bool // Maps hash of ReadCap to true
@@ -134,6 +135,7 @@ func NewDaemon(cfg *config.Config) (*Daemon, error) {
 		newSurbIDToChannelMapLock: new(sync.RWMutex),
 		newChannelMap:             make(map[uint16]*ChannelDescriptor),
 		newChannelMapLock:         new(sync.RWMutex),
+		newChannelMapXXX:          make(map[uint16]bool),
 		// capability deduplication fields:
 		usedReadCaps:   make(map[[hash.HashSize]byte]bool),
 		usedWriteCaps:  make(map[[hash.HashSize]byte]bool),
@@ -150,13 +152,15 @@ func NewDaemon(cfg *config.Config) (*Daemon, error) {
 
 // generateUniqueChannelID generates a unique uint16 channel ID that's not already in use
 func (d *Daemon) generateUniqueChannelID() uint16 {
-	d.newChannelMapLock.RLock()
-	defer d.newChannelMapLock.RUnlock()
+	d.log.Debug("generateUniqueChannelID: Taking newChannelMapLock")
+	d.newChannelMapLock.Lock()
+	defer d.newChannelMapLock.Unlock()
 
 	for {
 		channelID := uint16(hpqcRand.NewMath().Intn(65535) + 1) // [1, 65535]
 
-		if _, exists := d.newChannelMap[channelID]; !exists {
+		if _, exists := d.newChannelMapXXX[channelID]; !exists {
+			d.newChannelMapXXX[channelID] = true // reserve it
 			return channelID
 		}
 	}
@@ -272,7 +276,7 @@ func (d *Daemon) Start() error {
 		case d.gcSurbIDCh <- surbID:
 		case <-d.HaltCh():
 			return
-		case <-time.After(5 * time.Second):
+		case <-time.After(20 * time.Second):
 			d.log.Debugf("Timeout sending to gcSurbIDCh for SURB ID %x", surbID[:])
 			return
 		}
@@ -288,7 +292,7 @@ func (d *Daemon) Start() error {
 			select {
 			case <-d.HaltCh():
 				return
-			case <-time.After(10 * time.Second):
+			case <-time.After(20 * time.Second):
 				d.log.Debugf("ARQ resend timeout for SURB ID %x", surbID[:])
 				return
 			default:
@@ -306,7 +310,7 @@ func (d *Daemon) Start() error {
 		case d.gcReplyCh <- myGcReply:
 		case <-d.HaltCh():
 			return
-		case <-time.After(5 * time.Second):
+		case <-time.After(15 * time.Second):
 			d.log.Debugf("Timeout sending to gcReplyCh for message ID %x", myGcReply.id[:])
 			return
 		}
@@ -506,11 +510,7 @@ func (d *Daemon) handleReply(reply *sphinxReply) {
 			// send error code back to client
 			conn := d.listener.getConnection(desc.appID)
 			if conn == nil {
-				if desc.appID != nil {
-					d.log.Errorf("no connection associated with AppID %x", desc.appID[:])
-				} else {
-					d.log.Errorf("no connection associated with nil AppID")
-				}
+				d.log.Errorf("no connection associated with AppID %x", desc.appID[:])
 				return
 			}
 			err := conn.sendResponse(&Response{
@@ -537,10 +537,7 @@ func (d *Daemon) handleReply(reply *sphinxReply) {
 		// thei is legacy API
 		conn := d.listener.getConnection(desc.appID)
 		if conn == nil {
-			if desc.appID != nil {
-				d.log.Errorf("no connection associated with AppID %x", desc.appID[:])
-			}
-			// Silently ignore decoy replies (desc.appID == nil)
+			d.log.Errorf("no connection associated with AppID %x", desc.appID[:])
 			return
 		}
 		conn.sendResponse(&Response{
@@ -594,23 +591,12 @@ func (d *Daemon) resumeWriteChannel(request *Request) {
 	}
 
 	// set used write cap map entry
-	writeCapBlob, err := request.ResumeWriteChannel.WriteCap.MarshalBinary()
+	_, err := request.ResumeWriteChannel.WriteCap.MarshalBinary()
 	if err != nil {
 		d.log.Errorf("BUG, failed to marshal write cap: %v", err)
 		d.sendResumeWriteChannelError(request, thin.ThinClientImpossibleHashError)
 		return
 	}
-	writeCapHash := hash.Sum256(writeCapBlob)
-	d.capabilityLock.Lock()
-	_, ok := d.usedWriteCaps[writeCapHash]
-	if ok {
-		d.log.Errorf("BUG, write cap already in use")
-		d.capabilityLock.Unlock()
-		d.sendResumeWriteChannelError(request, thin.ThinClientCapabilityAlreadyInUse)
-		return
-	}
-	d.usedWriteCaps[writeCapHash] = true
-	d.capabilityLock.Unlock()
 
 	// use fields from the request to mutate our current state
 	channelID := d.generateUniqueChannelID()
@@ -666,23 +652,12 @@ func (d *Daemon) resumeWriteChannelQuery(request *Request) {
 	}
 
 	// set used write cap map entry
-	writeCapBlob, err := request.ResumeWriteChannelQuery.WriteCap.MarshalBinary()
+	_, err := request.ResumeWriteChannelQuery.WriteCap.MarshalBinary()
 	if err != nil {
 		d.log.Errorf("BUG, failed to marshal write cap: %v", err)
 		d.sendResumeWriteChannelQueryError(request, thin.ThinClientImpossibleHashError)
 		return
 	}
-	writeCapHash := hash.Sum256(writeCapBlob)
-	d.capabilityLock.Lock()
-	_, ok := d.usedWriteCaps[writeCapHash]
-	if ok {
-		d.log.Errorf("BUG, write cap already in use")
-		d.capabilityLock.Unlock()
-		d.sendResumeWriteChannelQueryError(request, thin.ThinClientCapabilityAlreadyInUse)
-		return
-	}
-	d.usedWriteCaps[writeCapHash] = true
-	d.capabilityLock.Unlock()
 
 	// use fields from the request to mutate our current state
 	channelID := d.generateUniqueChannelID()
@@ -704,6 +679,8 @@ func (d *Daemon) resumeWriteChannelQuery(request *Request) {
 	// store envelope descriptor for later use
 	envelopeDesc, err := EnvelopeDescriptorFromBytes(request.ResumeWriteChannelQuery.EnvelopeDescriptor)
 	if err != nil {
+		// 20:40:22.483 ERRO katzenpost/client2: resumeWriteChannelQuery: Failed to parse envelope descriptor: cbor: 1999 bytes of extraneous data starting at index 1
+		//
 		d.log.Errorf("resumeWriteChannelQuery: Failed to parse envelope descriptor: %v", err)
 		d.sendResumeWriteChannelQueryError(request, thin.ThinClientErrorInvalidRequest)
 		return
@@ -797,7 +774,7 @@ func (d *Daemon) resumeReadChannel(request *Request) {
 	// 2. set used read cap map entry
 	// 3. create new channel descriptor
 	// 4. inspect optional request fields that are only used for resumption of a previously prepared read query blob
-
+	d.log.Debugf("daemon.resumeReadChannel")
 	err := d.validateResumeReadChannelRequest(request)
 	if err != nil {
 		d.log.Errorf("BUG, invalid request: %v", err)
@@ -805,24 +782,12 @@ func (d *Daemon) resumeReadChannel(request *Request) {
 		return
 	}
 
-	readCapBlob, err := request.ResumeReadChannel.ReadCap.MarshalBinary()
+	_, err = request.ResumeReadChannel.ReadCap.MarshalBinary()
 	if err != nil {
 		d.log.Errorf("BUG, failed to marshal read cap: %v", err)
 		d.sendResumeReadChannelError(request, thin.ThinClientErrorInternalError)
 		return
 	}
-	readCapHash := hash.Sum256(readCapBlob)
-
-	d.capabilityLock.Lock()
-	_, ok := d.usedReadCaps[readCapHash]
-	if ok {
-		d.log.Errorf("BUG, read cap already in use")
-		d.sendResumeReadChannelError(request, thin.ThinClientCapabilityAlreadyInUse)
-		d.capabilityLock.Unlock()
-		return
-	}
-	d.usedReadCaps[readCapHash] = true
-	d.capabilityLock.Unlock()
 
 	conn := d.listener.getConnection(request.AppID)
 	if conn == nil {
@@ -831,8 +796,10 @@ func (d *Daemon) resumeReadChannel(request *Request) {
 		return
 	}
 	channelID := d.generateUniqueChannelID()
+	d.log.Debugf("chan:%d assigned to resumeReadRequest", channelID)
 	var statefulReader *bacap.StatefulReader
 	if request.ResumeReadChannel.NextMessageIndex == nil {
+		// TODO: in these cases we should clean up the channel reservation
 		statefulReader, err = bacap.NewStatefulReader(request.ResumeReadChannel.ReadCap, constants.PIGEONHOLE_CTX)
 		if err != nil {
 			d.log.Errorf("BUG, failed to create stateful reader: %v", err)
@@ -853,13 +820,15 @@ func (d *Daemon) resumeReadChannel(request *Request) {
 		StatefulReader:      statefulReader,
 		EnvelopeDescriptors: make(map[[hash.HashSize]byte]*EnvelopeDescriptor),
 	}
-
+	d.log.Debugf("chan:%d resumeReadRequest: updating newChannelMap with descriptor", channelID)
 	d.newChannelMapLock.Lock()
 	d.newChannelMap[channelID] = myNewChannelDescriptor
 	d.newChannelMapLock.Unlock()
+	d.log.Debugf("chan:%d resumeReadRequest: updated newChannelMapLock", channelID)
 
 	// send reply back to client
-	conn.sendResponse(&Response{
+	d.log.Debugf("chan:%d resumeReadRequest: sending ResumeReadChannelReply", channelID)
+	err = conn.sendResponse(&Response{
 		AppID: request.AppID,
 		ResumeReadChannelReply: &thin.ResumeReadChannelReply{
 			QueryID:   request.ResumeReadChannel.QueryID,
@@ -867,6 +836,10 @@ func (d *Daemon) resumeReadChannel(request *Request) {
 			ErrorCode: thin.ThinClientSuccess,
 		},
 	})
+	if err != nil {
+		d.log.Errorf("chan:%d resumeReadRequest: conn.sendResponse: %v", channelID, err)
+	}
+	d.log.Debugf("chan:%d resumeReadRequest: sent ResumeReadChannelReply", channelID)
 }
 
 func (d *Daemon) sendResumeReadChannelQueryError(request *Request, errorCode uint8) {
@@ -898,20 +871,6 @@ func (d *Daemon) resumeReadChannelQuery(request *Request) {
 		d.sendResumeReadChannelQueryError(request, thin.ThinClientErrorInvalidResumeReadChannelRequest)
 		return
 	}
-
-	readCapBlob, err := request.ResumeReadChannelQuery.ReadCap.MarshalBinary()
-	readCapHash := hash.Sum256(readCapBlob)
-
-	d.capabilityLock.Lock()
-	_, ok := d.usedReadCaps[readCapHash]
-	if ok {
-		d.log.Errorf("BUG, read cap already in use")
-		d.sendResumeReadChannelQueryError(request, thin.ThinClientCapabilityAlreadyInUse)
-		d.capabilityLock.Unlock()
-		return
-	}
-	d.usedReadCaps[readCapHash] = true
-	d.capabilityLock.Unlock()
 
 	conn := d.listener.getConnection(request.AppID)
 	if conn == nil {
@@ -1061,7 +1020,11 @@ func (d *Daemon) handleCourierEnvelopeReply(appid *[AppIDLength]byte,
 	case courierEnvelopeReply.ReplyType == pigeonhole.ReplyTypeACK:
 		d.log.Debugf("DEBUG: Received ACK reply for channel %d, isWriter=%v", channelID, isWriter)
 		// ACK indicates successful write operation - advance StatefulWriter state
-		if isWriter {
+		if false { // if isWriter {
+			// TODO: the application can (and will) resend the same message several times to the courier,
+			// each of them warranting an ACK, which will cause the stream to skip messages.
+			// For now, clients should use the ResumeWriteChannel API to set the index.
+			// is this what we want?
 			channelDesc.StatefulWriterLock.Lock()
 			d.log.Debugf("DEBUG: Advancing StatefulWriter state for channel %d", channelID)
 			err := channelDesc.StatefulWriter.AdvanceState()
@@ -1101,6 +1064,8 @@ func (d *Daemon) handleCourierEnvelopeReply(appid *[AppIDLength]byte,
 			return err
 		}
 
+		d.log.Infof("NEW API REPLY: Decrypting MKEM Envelope env:%v envelopeDesc:%v", env, envelopeDesc)
+
 		innerMsg, err := d.decryptMKEMEnvelope(env, envelopeDesc, privateKey)
 		if err != nil {
 			d.log.Errorf("NEW API REPLY: Failed to decrypt MKEM envelope: %s", err)
@@ -1109,6 +1074,7 @@ func (d *Daemon) handleCourierEnvelopeReply(appid *[AppIDLength]byte,
 
 		envHash := (*[hash.HashSize]byte)(env.EnvelopeHash[:])
 
+		d.log.Errorf("channellID %d decrypted MKEM envelope messageid:%v envHash:%v isReader:%v isWriter:%v innerMsg.ReadReply:%v innerMsg.WriteReply:", channelID, mesgID, envHash, isReader, isWriter, innerMsg.ReadReply, innerMsg.WriteReply)
 		// from here on here, these two switch cases are the success cases:
 		switch {
 		case innerMsg.ReadReply != nil:
@@ -1122,6 +1088,9 @@ func (d *Daemon) handleCourierEnvelopeReply(appid *[AppIDLength]byte,
 				IsWriter:    isWriter,
 				ReplyIndex:  courierEnvelopeReply.ReplyIndex,
 			}
+			if !isReader {
+				d.log.Errorf("channelID %d ReadReply for !isReader", channelID)
+			}
 			return d.handleNewReadReply(params, innerMsg.ReadReply)
 		case innerMsg.WriteReply != nil:
 			params := &ReplyHandlerParams{
@@ -1133,6 +1102,9 @@ func (d *Daemon) handleCourierEnvelopeReply(appid *[AppIDLength]byte,
 				IsReader:    isReader,
 				IsWriter:    isWriter,
 				ReplyIndex:  courierEnvelopeReply.ReplyIndex,
+			}
+			if !isWriter {
+				d.log.Errorf("channelID %d WriteReply for !isWriter", channelID)
 			}
 			return d.handleNewWriteReply(params, innerMsg.WriteReply)
 		}
@@ -1225,22 +1197,26 @@ func (d *Daemon) decryptMKEMEnvelope(env *pigeonhole.CourierEnvelopeReply, envel
 	for _, replicaNum := range envelopeDesc.ReplicaNums {
 		desc, err := replicaCommon.ReplicaNum(replicaNum, doc)
 		if err != nil {
+			d.log.Errorf("MKEM DECRYPT: no replicaNum:%v in doc:%v", replicaNum, doc)
 			continue
 		}
 
 		replicaPubKeyBytes, ok := desc.EnvelopeKeys[replicaEpoch]
 		if !ok || len(replicaPubKeyBytes) == 0 {
+			d.log.Errorf("MKEM DECRYPT: no usable replicaPubKeyBytes in replicaEpoch:%v", replicaEpoch)
 			continue
 		}
 
 		replicaPubKey, err := replicaCommon.NikeScheme.UnmarshalBinaryPublicKey(replicaPubKeyBytes)
 		if err != nil {
+			d.log.Errorf("MKEM DECRYPT: can't parse replicaPubKey: %v", err)
 			continue
 		}
 
 		// Try to decrypt with this replica's public key
 		rawInnerMsg, err = replicaCommon.MKEMNikeScheme.DecryptEnvelope(privateKey, replicaPubKey, env.Payload)
 		if err == nil {
+			d.log.Errorf("MKEM DECRYPT: no rawInnerMsg for replicaNum:%v: %v", replicaNum, err)
 			break
 		}
 	}
@@ -1251,7 +1227,7 @@ func (d *Daemon) decryptMKEMEnvelope(env *pigeonhole.CourierEnvelopeReply, envel
 	}
 	innerMsg, err := pigeonhole.ParseReplicaMessageReplyInnerMessage(rawInnerMsg)
 	if err != nil {
-		d.log.Errorf("failed to unmarshal inner message: %s", err)
+		d.log.Errorf("failed to unmarshal inner message: %s %v", err, rawInnerMsg)
 		return nil, fmt.Errorf("failed to unmarshal inner message: %s", err)
 	}
 
@@ -1653,6 +1629,7 @@ func (d *Daemon) decryptReadReplyPayload(params *ReplyHandlerParams, readReply *
 		d.log.Errorf("Failed to get next box ID for channel %d: %s", params.ChannelID, err)
 		return nil, fmt.Errorf("failed to get next box ID: %s", err)
 	}
+	saved := params.ChannelDesc.StatefulReader.NextIndex
 
 	// BACAP decrypt the payload
 	signature := (*[bacap.SignatureSize]byte)(readReply.Signature[:])
@@ -1665,6 +1642,13 @@ func (d *Daemon) decryptReadReplyPayload(params *ReplyHandlerParams, readReply *
 	if err != nil {
 		d.log.Errorf("BACAP DECRYPT FAILED for BoxID %x: %s", boxid[:], err)
 		return nil, fmt.Errorf("failed to decrypt next: %s", err)
+	} else {
+		//if params.ReadChannel.MessageBoxIndex != nil {
+		params.ChannelDesc.StatefulReader.NextIndex = saved // restore it because DecryptNext advanced it
+		d.log.Errorf("BACAP state NOTNOT advanced for channel %d BoxID %x", params.ChannelID, boxid[:])
+		// } else {
+		// 	      d.log.Errorf("BACAP state advanced for channel %d BoxID %x", params.ChannelID, boxid[:])
+		//  }
 	}
 
 	// Extract the original message from the padded payload
@@ -1680,7 +1664,7 @@ func (d *Daemon) decryptReadReplyPayload(params *ReplyHandlerParams, readReply *
 // processReadReplyPayload processes the read reply and returns payload and error
 func (d *Daemon) processReadReplyPayload(params *ReplyHandlerParams, readReply *pigeonhole.ReplicaReadReply) ([]byte, error) {
 	if readReply.ErrorCode != 0 {
-		d.log.Errorf("read failed for channel %d with error code %d", params.ChannelID, readReply.ErrorCode)
+		d.log.Errorf("read failed for channel %d with error code %d (ReplicaErrorNotFound = 1)", params.ChannelID, readReply.ErrorCode)
 		return nil, fmt.Errorf("read failed with error code %d", readReply.ErrorCode)
 	}
 
@@ -1703,24 +1687,43 @@ func (d *Daemon) handleNewReadReply(params *ReplyHandlerParams, readReply *pigeo
 		return fmt.Errorf("BUG, no connection associated with AppID %x", params.AppID[:])
 	}
 
-	payload, err := d.processReadReplyPayload(params, readReply)
 	var errorCode uint8 = thin.ThinClientSuccess
-	if err != nil {
-		d.log.Errorf("failed to process read reply payload: %s", err)
-		payload = []byte{} // Ensure empty payload on error
-		errorCode = thin.ThinClientErrorInternalError
+	var payload []byte
+	var err error
+	if readReply.ErrorCode == 1 {
+		// this is "box not found"
+		payload = []byte{}
+	} else {
+		if readReply.ErrorCode == 0 {
+			payload, err = d.processReadReplyPayload(params, readReply)
+			if err != nil {
+				d.log.Errorf("chan %v failed to process read reply payload: %s", params.ChannelID, err)
+				payload = []byte{} // Ensure empty payload on error
+				errorCode = thin.ThinClientErrorInvalidPayload
+			}
+		} else {
+			payload = []byte{}
+			errorCode = thin.ThinClientErrorInternalError // TODO this is a lie, it's a replica error.
+		}
 	}
 
-	// deliver the read result to thin client
-	err = conn.sendResponse(&Response{
-		AppID: params.AppID,
-		MessageReplyEvent: &thin.MessageReplyEvent{
-			MessageID:  params.MessageID,
-			Payload:    payload,
-			ReplyIndex: &params.ReplyIndex,
-			ErrorCode:  errorCode,
-		},
-	})
+	if readReply.ErrorCode == 0 {
+		// deliver the read result to thin client if we can decrypt it
+		err = conn.sendResponse(&Response{
+			AppID: params.AppID,
+			MessageReplyEvent: &thin.MessageReplyEvent{
+				MessageID:  params.MessageID,
+				Payload:    payload,
+				ReplyIndex: &params.ReplyIndex,
+				ErrorCode:  errorCode,
+			},
+		})
+		if err != nil {
+			return fmt.Errorf("chan %d: failed to send MessageReplyEvent to client: %s", params.ChannelID, err)
+		}
+	} else {
+		d.log.Warningf("handleNewReadReply: readReply has ErrorCode: %v so not sending MessageReplyEvent", readReply.ErrorCode)
+	}
 
 	// deliver the read result to thin client
 	err = conn.sendResponse(&Response{
@@ -1729,11 +1732,11 @@ func (d *Daemon) handleNewReadReply(params *ReplyHandlerParams, readReply *pigeo
 			MessageID:  params.MessageID,
 			Payload:    payload,
 			ReplyIndex: &params.ReplyIndex,
-			ErrorCode:  readReply.ErrorCode,
+			ErrorCode:  errorCode,
 		},
 	})
 	if err != nil {
-		return fmt.Errorf("failed to send read response to client: %s", err)
+		return fmt.Errorf("chan %d: failed to send read response to client: %s", params.ChannelID, err)
 	}
 
 	return nil

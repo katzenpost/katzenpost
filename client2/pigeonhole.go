@@ -76,7 +76,7 @@ type StoredEnvelopeData struct {
 }
 
 // ChannelDescriptor describes a pigeonhole channel and supplies us with
-// everthing we need to read or write to the channel.
+// everything we need to read or write to the channel.
 type ChannelDescriptor struct {
 	// AppID tracks which thin client owns this channel for cleanup purposes
 	AppID *[AppIDLength]byte
@@ -306,16 +306,12 @@ func (d *Daemon) createWriteChannel(request *Request) {
 		EnvelopeDescriptors: make(map[[hash.HashSize]byte]*EnvelopeDescriptor),
 	}
 	d.newChannelMapLock.Unlock()
-	writeCapBlob, err := newWriteCap.MarshalBinary()
+	_, err = newWriteCap.MarshalBinary()
 	if err != nil {
 		d.log.Errorf("createWriteChannel failure: %s", err)
 		d.sendCreateWriteChannelError(request, thin.ThinClientImpossibleNewWriteCapError)
 		return
 	}
-	writeCapHash := hash.Sum256(writeCapBlob)
-	d.capabilityLock.Lock()
-	d.usedWriteCaps[writeCapHash] = true
-	d.capabilityLock.Unlock()
 
 	readCap := statefulWriter.Wcap.ReadCap()
 
@@ -426,23 +422,12 @@ func (d *Daemon) createReadChannel(request *Request) {
 	}
 
 	// note the read cap so that we cannot create duplicates
-	readCapBlob, err := request.CreateReadChannel.ReadCap.MarshalBinary()
+	_, err = request.CreateReadChannel.ReadCap.MarshalBinary()
 	if err != nil {
 		d.log.Errorf("createReadChannel failure: %s", err)
 		d.sendCreateReadChannelError(request, thin.ThinClientErrorInternalError)
 		return
 	}
-	readCapHash := hash.Sum256(readCapBlob)
-	d.capabilityLock.Lock()
-	_, ok := d.usedReadCaps[readCapHash]
-	if ok {
-		d.log.Errorf("createReadChannel failure: read cap already in use")
-		d.sendCreateReadChannelError(request, thin.ThinClientCapabilityAlreadyInUse)
-		d.capabilityLock.Unlock()
-		return
-	}
-	d.usedReadCaps[readCapHash] = true
-	d.capabilityLock.Unlock()
 
 	channelID := d.generateUniqueChannelID()
 	d.newChannelMapLock.Lock()
@@ -467,26 +452,6 @@ func (d *Daemon) createReadChannel(request *Request) {
 			ErrorCode: thin.ThinClientSuccess,
 		},
 	})
-}
-
-// checkWriteCapabilityDedup checks if a WriteCap is already in use and adds it to the dedup map
-func (d *Daemon) checkWriteCapabilityDedup(writeCap *bacap.WriteCap) error {
-	writeCapBytes, err := writeCap.MarshalBinary()
-	if err != nil {
-		return err
-	}
-
-	capHash := hash.Sum256(writeCapBytes)
-	d.capabilityLock.Lock()
-	defer d.capabilityLock.Unlock()
-
-	if d.usedWriteCaps[capHash] {
-		return errors.New("capability already in use")
-	}
-
-	// Mark this capability as used
-	d.usedWriteCaps[capHash] = true
-	return nil
 }
 
 func (d *Daemon) validateWriteChannelRequest(request *thin.WriteChannel) error {
@@ -585,7 +550,9 @@ func (d *Daemon) writeChannel(request *Request) {
 		d.sendWriteChannelError(request, thin.ThinClientErrorConnectionLost)
 		return
 	}
+	channelDesc.EnvelopeDescriptorsLock.Lock()
 	envelopeDescriptorBytes, err := channelDesc.EnvelopeDescriptors[*envHash].Bytes()
+	channelDesc.EnvelopeDescriptorsLock.Unlock()
 	if err != nil {
 		d.log.Errorf("writeChannel failure: failed to serialize envelope descriptor: %s", err)
 		d.sendWriteChannelError(request, thin.ThinClientErrorInternalError)
@@ -650,6 +617,7 @@ func (d *Daemon) readChannel(request *Request) {
 	// failed.
 	if request.ReadChannel.MessageBoxIndex != nil {
 		channelDesc.StatefulReader.NextIndex = request.ReadChannel.MessageBoxIndex
+		d.log.Errorf("readChannel reset NextIndex from MessageBoxIndex")
 	}
 
 	boxID, err := channelDesc.StatefulReader.NextBoxID()
@@ -748,16 +716,20 @@ func (d *Daemon) readChannel(request *Request) {
 
 // closeChannel closes a pigeonhole channel and cleans up its resources
 func (d *Daemon) closeChannel(request *Request) {
-	d.log.Debug("closeChannel: closing channel")
+	d.log.Debug("closeChannel: closing channel %d", request.CloseChannel.ChannelID)
+	d.newChannelMapLock.Lock()
+	defer d.newChannelMapLock.Unlock()
 
 	channelID := request.CloseChannel.ChannelID
+	_, okxxx := d.newChannelMapXXX[channelID]
+	if okxxx {
+		delete(d.newChannelMapXXX, channelID)
+	}
 
-	d.newChannelMapLock.Lock()
 	channelDesc, ok := d.newChannelMap[channelID]
 	if ok {
 		delete(d.newChannelMap, channelID)
 	}
-	d.newChannelMapLock.Unlock()
 
 	if !ok || channelDesc == nil {
 		d.log.Debugf("closeChannel: channel %d not found (already closed or never existed)", channelID)
@@ -777,27 +749,6 @@ func (d *Daemon) closeChannel(request *Request) {
 	}
 	d.newSurbIDToChannelMapLock.Unlock()
 
-	d.capabilityLock.Lock()
-	switch {
-	case channelDesc.StatefulReader != nil:
-		readCapBlob, err := channelDesc.StatefulReader.Rcap.MarshalBinary()
-		if err != nil {
-			d.log.Errorf("closeChannel: failed to marshal read cap: %s", err)
-			return
-		}
-		readCapHash := hash.Sum256(readCapBlob)
-		delete(d.usedReadCaps, readCapHash)
-	case channelDesc.StatefulWriter != nil:
-		writeCapBlob, err := channelDesc.StatefulWriter.Wcap.MarshalBinary()
-		if err != nil {
-			d.log.Errorf("closeChannel: failed to marshal write cap: %s", err)
-			return
-		}
-		writeCapHash := hash.Sum256(writeCapBlob)
-		delete(d.usedWriteCaps, writeCapHash)
-	}
-	d.capabilityLock.Unlock()
-
 	d.log.Infof("closeChannel: successfully closed channel %d", channelID)
 }
 
@@ -809,11 +760,11 @@ func (d *Daemon) cleanupChannelsForAppID(appID *[AppIDLength]byte) {
 	// Acquire all locks in a consistent order to prevent deadlocks
 	// Order: channelReplies -> newSurbIDToChannelMap -> newChannelMap
 	d.channelRepliesLock.Lock()
+	defer d.channelRepliesLock.Unlock()
 	d.newSurbIDToChannelMapLock.Lock()
+	defer d.newSurbIDToChannelMapLock.Unlock()
 	d.newChannelMapLock.Lock()
 	defer d.newChannelMapLock.Unlock()
-	defer d.newSurbIDToChannelMapLock.Unlock()
-	defer d.channelRepliesLock.Unlock()
 
 	// Find all channels and SURB IDs that belong to this App ID
 	channelsToCleanup := make(map[uint16]bool)
@@ -853,6 +804,9 @@ func (d *Daemon) cleanupChannelsForAppID(appID *[AppIDLength]byte) {
 
 	// Remove channels from channel map
 	for channelID := range channelsToCleanup {
+		if _, xxxexists := d.newChannelMapXXX[channelID]; xxxexists {
+			delete(d.newChannelMapXXX, channelID)
+		}
 		if _, exists := d.newChannelMap[channelID]; exists {
 			delete(d.newChannelMap, channelID)
 			d.log.Debugf("cleanupChannelsForAppID: removed channel %d for App ID %x", channelID, appID[:])
