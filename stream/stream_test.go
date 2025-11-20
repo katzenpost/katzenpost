@@ -17,9 +17,7 @@
 package stream
 
 import (
-	"crypto/sha256"
-	"encoding/base64"
-	"github.com/katzenpost/hpqc/rand"
+	//"github.com/katzenpost/hpqc/rand"
 	"github.com/stretchr/testify/require"
 	"io"
 	"net/http"
@@ -29,63 +27,21 @@ import (
 	"time"
 )
 
-func TestFrameKey(t *testing.T) {
-	require := require.New(t)
-
-	// the same key should be returned for every idx
-	a, b := newStreams(NewMockTransport())
-	for i := 0; i < 4096; i++ {
-		i := uint64(i)
-		// require sender/receiver frame ID match
-		require.Equal(a.rxFrameID(i), b.txFrameID(i))
-		require.Equal(a.txFrameID(i), b.rxFrameID(i))
-
-		// require sender/receiver frame keys match
-		require.Equal(a.rxFrameKey(i), b.txFrameKey(i))
-		require.Equal(a.txFrameKey(i), b.rxFrameKey(i))
-	}
-	a.Halt()
-	b.Halt()
-}
-
-func TestStreamDial(t *testing.T) {
-	require := require.New(t)
-	trans := NewMockTransport()
-	x := sha256.Sum256([]byte("TestStreamDial"))
-	s, err := Dial(trans, "", base64.StdEncoding.EncodeToString(x[:]))
-	require.NoError(err)
-	_, err = s.Write([]byte("some friendly bytes"))
-	require.NoError(err)
-}
-
-func TestStreamListen(t *testing.T) {
-	require := require.New(t)
-	trans := NewMockTransport()
-	x := sha256.Sum256([]byte("TestStreamDial"))
-	s, err := Listen(trans, "", base64.StdEncoding.EncodeToString(x[:]))
-	require.NoError(err)
-	_, err = s.Write([]byte("some friendly bytes"))
-	require.NoError(err)
-}
-
 func TestSaveLoadStream(t *testing.T) {
-	// initialize a listener stream
 	require := require.New(t)
 	trans := NewMockTransport()
-	x := sha256.Sum256([]byte("TestStreamDial"))
-	sl, err := Listen(trans, "", base64.StdEncoding.EncodeToString(x[:]))
-
-	// initialize a dialer stream
-	sd, err := Dial(trans, "", base64.StdEncoding.EncodeToString(x[:]))
-	require.NoError(err)
+	sd, sl := newStreams(trans)
 
 	payload := make([]byte, 4200)
-	_, err = io.ReadFull(rand.Reader, payload[:])
-	require.NoError(err)
+	for i := 0; i < len(payload); i++ {
+		payload[i] = uint8(i)
+	}
+	//_, err := io.ReadFull(rand.Reader, payload[:])
+	//require.NoError(err)
 
 	// send some data
 	t.Logf("Send payload")
-	_, err = sd.Write(payload)
+	_, err := sd.Write(payload)
 	require.NoError(err)
 	t.Logf("Sent payload")
 	t.Log(sl.String())

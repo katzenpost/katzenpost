@@ -132,6 +132,7 @@ type katzenpost struct {
 	gatewayIdx      int
 	serviceNodeIdx  int
 	noMixDecoy      bool
+	hasPanda        bool
 	debugConfig     *cConfig.Debug
 }
 
@@ -482,18 +483,19 @@ func (s *katzenpost) genNodeConfig(isGateway, isServiceNode bool, isVoting bool)
 			},
 		}
 
-		// NOTE: "map" service is an alternative storage service which does NOT
-		// have all the cool privacy properties that the protocol in our paper describes.
-		mapCfg := &sConfig.CBORPluginKaetzchen{
-			Capability:     "map",
-			Endpoint:       "+map",
-			Command:        s.baseDir + "/map" + s.binSuffix,
+		// NOTE: "scratch" service is a lightweight and efficient asynchronous ephemeral storage service
+		// that does not provide the same privacy properties as the Pigeonhole storage system
+		scratchCfg := &sConfig.CBORPluginKaetzchen{
+			Capability:     "scratch",
+			Endpoint:       "+scratch",
+			Command:        s.baseDir + "/scratch" + s.binSuffix,
 			MaxConcurrency: 1,
 			Config: map[string]interface{}{
-				"db":      s.baseDir + "/" + cfg.Server.Identifier + "/map.storage",
+				"db":      s.baseDir + "/" + cfg.Server.Identifier + "/scratch.storage",
 				"log_dir": s.baseDir + "/" + cfg.Server.Identifier,
 			},
 		}
+ 
 		proxyCfg := &sConfig.CBORPluginKaetzchen{
 			Capability:     "http",
 			Endpoint:       "+http",
@@ -507,7 +509,23 @@ func (s *katzenpost) genNodeConfig(isGateway, isServiceNode bool, isVoting bool)
 			},
 		}
 
-		cfg.ServiceNode.CBORPluginKaetzchen = []*sConfig.CBORPluginKaetzchen{courierPluginCfg, mapCfg, proxyCfg}
+		cfg.ServiceNode.CBORPluginKaetzchen = []*sConfig.CBORPluginKaetzchen{courierPluginCfg, scratchCfg, proxyCfg}
+
+		if !s.hasPanda {
+			pandaCfg := &sConfig.CBORPluginKaetzchen{
+				Capability:     "panda",
+				Endpoint:       "+panda",
+				Command:        s.baseDir + "/panda_server" + s.binSuffix,
+				MaxConcurrency: 1,
+				Config: map[string]interface{}{
+					"fileStore": s.baseDir + "/" + cfg.Server.Identifier + "/panda.storage",
+					"log_dir":   s.baseDir + "/" + cfg.Server.Identifier,
+					"log_level": s.logLevel,
+				},
+			}
+			cfg.ServiceNode.CBORPluginKaetzchen = append(cfg.ServiceNode.CBORPluginKaetzchen, pandaCfg)
+			s.hasPanda = true
+		}
 
 		cfg.Debug.NumKaetzchenWorkers = 4
 
