@@ -283,6 +283,9 @@ type Authority struct {
 	// Addresses are the listener addresses specified by a URL, e.g. tcp://1.2.3.4:1234 or quic://1.2.3.4:1234
 	// Both IPv4 and IPv6 as well as hostnames are valid.
 	Addresses []string
+	// BindAddresses are the IP addresses to bind to for incoming connections.
+	// If left empty, Addresses will be used.
+	BindAddresses []string
 }
 
 // UnmarshalTOML deserializes into non-nil instances of sign.PublicKey and kem.PublicKey
@@ -423,6 +426,10 @@ type Server struct {
 	// Addresses are the IP address/port combinations that the server will bind
 	// to for incoming connections.
 	Addresses []string
+
+	// BindAddresses are the IP addresses to bind to for incoming connections.
+	// If left empty, Addresses will be used.
+	BindAddresses []string
 
 	// DataDir is the absolute path to the server's state files.
 	DataDir string

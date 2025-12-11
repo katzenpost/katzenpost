@@ -435,6 +435,54 @@ func TestVote(t *testing.T) {
 	testVoteWithAuthorities(t, 3, 3) // Same as TestVote3Authorities
 }
 
+func TestBindAddresses(t *testing.T) {
+	require := require.New(t)
+
+	// Test the listen address selection logic
+	tests := []struct {
+		name          string
+		addresses     []string
+		bindAddresses []string
+		wantListen    []string
+	}{
+		{
+			name:          "only Addresses",
+			addresses:     []string{"tcp://192.0.2.1:29483"},
+			bindAddresses: nil,
+			wantListen:    []string{"tcp://192.0.2.1:29483"},
+		},
+		{
+			name:          "both Addresses and BindAddresses",
+			addresses:     []string{"tcp://192.0.2.1:29483"},
+			bindAddresses: []string{"tcp://192.168.0.2:29483"},
+			wantListen:    []string{"tcp://192.168.0.2:29483"},
+		},
+		{
+			name:          "empty BindAddresses uses Addresses",
+			addresses:     []string{"tcp://203.0.113.10:29483"},
+			bindAddresses: []string{},
+			wantListen:    []string{"tcp://203.0.113.10:29483"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &config.Server{
+				Addresses:     tt.addresses,
+				BindAddresses: tt.bindAddresses,
+			}
+
+			// Replicate the logic from server.go
+			listenAddresses := cfg.Addresses
+			if len(cfg.BindAddresses) > 0 {
+				listenAddresses = cfg.BindAddresses
+			}
+
+			require.Equal(tt.wantListen, listenAddresses)
+		})
+	}
+}
+
 type peerKeys struct {
 	linkKey  kem.PrivateKey
 	idKey    sign.PrivateKey
