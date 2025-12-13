@@ -7,15 +7,8 @@ test:
 lint:
 	golint ./...
 
-test-internal:
-	go test -race -cover -v ./internal/...
-
 test-voting:
 	go test -race -cover -v ./voting/...
-
-# no tests here
-test-nonvoting:
-	go test -race -cover -v ./nonvoting/...
 
 coverage-file:
 	go test ./... -coverprofile=coverage.out
