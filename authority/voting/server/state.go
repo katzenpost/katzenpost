@@ -35,6 +35,7 @@ import (
 
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 
+	"github.com/carlmjohnson/versioninfo"
 	bolt "go.etcd.io/bbolt"
 	"golang.org/x/crypto/blake2b"
 	"gopkg.in/op/go-logging.v1"
@@ -51,6 +52,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/cert"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/pki"
+	"github.com/katzenpost/katzenpost/core/retry"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
@@ -800,7 +802,7 @@ func (s *state) IsPeerValid(creds *wire.PeerCredentials) bool {
 }
 
 func (s *state) filterPeerAddresses(addrs []string) []string {
-	return filterUsableAddresses(
+	return retry.FilterUsableAddresses(
 		addrs,
 		s.hasIPv4,
 		s.hasIPv6,
@@ -810,7 +812,7 @@ func (s *state) filterPeerAddresses(addrs []string) []string {
 }
 
 func (s *state) peerRetryDelay(attempt int) time.Duration {
-	return retryDelay(
+	return retry.Delay(
 		s.s.cfg.Server.PeerRetryBaseDelay,
 		s.s.cfg.Server.PeerRetryMaxDelay,
 		s.s.cfg.Server.PeerRetryJitter,
@@ -818,21 +820,35 @@ func (s *state) peerRetryDelay(attempt int) time.Duration {
 	)
 }
 
-func (s *state) sendCommandToPeer(peer *config.Authority, cmd commands.Command) (commands.Command, error) {
-	maxAttempts := s.s.cfg.Server.PeerRetryMaxAttempts
-
+// sendCommandToPeerWithDeadline sends with retry but respects deadline.
+func (s *state) sendCommandToPeerWithDeadline(peer *config.Authority, cmd commands.Command, deadline time.Time) (commands.Command, error) {
 	addrs := s.filterPeerAddresses(peer.Addresses)
 	if len(addrs) == 0 {
-		s.log.Errorf("peer %s: no usable addresses (IPv4=%v IPv6=%v)", peer.Identifier, s.hasIPv4, s.hasIPv6)
 		return nil, fmt.Errorf("peer %s: no usable addresses", peer.Identifier)
 	}
 
+	maxAttempts := s.s.cfg.Server.PeerRetryMaxAttempts
 	var lastErr error
+
 	for attempt := 0; attempt <= maxAttempts; attempt++ {
+		if time.Now().After(deadline) {
+			s.log.Warningf("peer %s: deadline exceeded after %d attempts", peer.Identifier, attempt)
+			if lastErr != nil {
+				return nil, lastErr
+			}
+			return nil, fmt.Errorf("peer %s: deadline exceeded", peer.Identifier)
+		}
+
 		if attempt > 0 {
 			delay := s.peerRetryDelay(attempt - 1)
-			s.log.Debugf("peer %s: retry %d/%d after %v", peer.Identifier, attempt, maxAttempts, delay)
-			time.Sleep(delay)
+			remaining := time.Until(deadline)
+			if delay > remaining {
+				delay = remaining
+			}
+			if delay > 0 {
+				s.log.Debugf("peer %s: retry %d/%d after %v", peer.Identifier, attempt, maxAttempts, delay)
+				time.Sleep(delay)
+			}
 		}
 
 		resp, err := s.doSendCommand(peer, cmd, addrs)
@@ -844,14 +860,13 @@ func (s *state) sendCommandToPeer(peer *config.Authority, cmd commands.Command) 
 		}
 		lastErr = err
 
-		if !isTransientError(err) {
+		if !retry.IsTransientError(err) {
 			s.log.Debugf("peer %s: permanent error: %v", peer.Identifier, err)
 			return nil, err
 		}
-		s.log.Warningf("peer %s: attempt %d failed: %v", peer.Identifier, attempt+1, err)
+		s.log.Warningf("peer %s: attempt %d/%d failed: %v", peer.Identifier, attempt+1, maxAttempts+1, err)
 	}
-	s.log.Errorf("peer %s: exhausted %d attempts: %v", peer.Identifier, maxAttempts+1, lastErr)
-	return nil, fmt.Errorf("peer %s: exhausted %d attempts: %w", peer.Identifier, maxAttempts+1, lastErr)
+	return nil, lastErr
 }
 
 func (s *state) doSendCommand(peer *config.Authority, cmd commands.Command, addrs []string) (commands.Command, error) {
@@ -922,25 +937,40 @@ func (s *state) doSendCommand(peer *config.Authority, cmd commands.Command, addr
 	return resp, nil
 }
 
-// sendCommitToAuthorities sends our cert to all Directory Authorities
+// phaseDeadline returns the deadline for the current FSM phase.
+func (s *state) phaseDeadline(targetDeadline time.Duration) time.Time {
+	_, elapsed, _ := epochtime.Now()
+	remaining := targetDeadline - elapsed
+	if remaining < 0 {
+		remaining = 0
+	}
+	// Leave 5 seconds buffer before phase ends
+	buffer := 5 * time.Second
+	if remaining > buffer {
+		remaining -= buffer
+	}
+	return time.Now().Add(remaining)
+}
+
+// sendCertToAuthorities sends our cert to all Directory Authorities
 func (s *state) sendCertToAuthorities(cert []byte, epoch uint64) {
 	if s.TryLock() {
 		panic("write lock not held in sendCertToAuthorities(cert, epoch)")
 	}
-	s.log.Noticef("Sending certificate for epoch %d", epoch)
+	s.log.Noticef("Sending certificate for epoch %d to %d peers", epoch, len(s.s.cfg.Authorities)-1)
 	cmd := &commands.Cert{
 		Epoch:     epoch,
 		PublicKey: s.s.IdentityKey(),
 		Payload:   cert,
 	}
+	deadline := s.phaseDeadline(AuthorityCertDeadline)
 	for _, peer := range s.s.cfg.Authorities {
 		peer := peer
 		if peer.IdentityPublicKey.Equal(s.s.identityPublicKey) {
 			continue
 		}
 		s.Go(func() {
-			s.log.Debugf("Sending cert to %s", peer.Identifier)
-			resp, err := s.sendCommandToPeer(peer, cmd)
+			resp, err := s.sendCommandToPeerWithDeadline(peer, cmd, deadline)
 			if err != nil {
 				s.log.Errorf("Failed to send cert to %s: %v", peer.Identifier, err)
 				return
@@ -975,20 +1005,20 @@ func (s *state) sendVoteToAuthorities(vote []byte, epoch uint64) {
 	if s.TryLock() {
 		panic("write lock not held in sendVoteToAuthorities(vote, epoch)")
 	}
-	s.log.Noticef("Sending vote for epoch %d", epoch)
+	s.log.Noticef("Sending vote for epoch %d to %d peers", epoch, len(s.s.cfg.Authorities)-1)
 	cmd := &commands.Vote{
 		Epoch:     epoch,
 		PublicKey: s.s.IdentityKey(),
 		Payload:   vote,
 	}
+	deadline := s.phaseDeadline(AuthorityVoteDeadline)
 	for _, peer := range s.s.cfg.Authorities {
 		peer := peer
 		if peer.IdentityPublicKey.Equal(s.s.identityPublicKey) {
 			continue
 		}
 		s.Go(func() {
-			s.log.Debugf("Sending vote to %s", peer.Identifier)
-			resp, err := s.sendCommandToPeer(peer, cmd)
+			resp, err := s.sendCommandToPeerWithDeadline(peer, cmd, deadline)
 			if err != nil {
 				s.log.Errorf("Failed to send vote to %s: %v", peer.Identifier, err)
 				return
@@ -1015,20 +1045,20 @@ func (s *state) sendVoteToAuthorities(vote []byte, epoch uint64) {
 // sendRevealToAuthorities sends a Shared Random Reveal command to
 // all Directory Authorities
 func (s *state) sendRevealToAuthorities(reveal []byte, epoch uint64) {
-	s.log.Noticef("Sending reveal for epoch %d", epoch)
+	s.log.Noticef("Sending reveal for epoch %d to %d peers", epoch, len(s.s.cfg.Authorities)-1)
 	cmd := &commands.Reveal{
 		Epoch:     epoch,
 		PublicKey: s.s.IdentityKey(),
 		Payload:   reveal,
 	}
+	deadline := s.phaseDeadline(AuthorityRevealDeadline)
 	for _, peer := range s.s.cfg.Authorities {
 		peer := peer
 		if peer.IdentityPublicKey.Equal(s.s.identityPublicKey) {
 			continue
 		}
 		s.Go(func() {
-			s.log.Debugf("Sending reveal to %s", peer.Identifier)
-			resp, err := s.sendCommandToPeer(peer, cmd)
+			resp, err := s.sendCommandToPeerWithDeadline(peer, cmd, deadline)
 			if err != nil {
 				s.log.Errorf("Failed to send reveal to %s: %v", peer.Identifier, err)
 				return
@@ -1062,20 +1092,20 @@ func (s *state) sendSigToAuthorities(sig []byte, epoch uint64) {
 	if s.TryLock() {
 		panic("write lock not held in sendSigToAuthorities(sig, epoch)")
 	}
-	s.log.Noticef("Sending signature for epoch %d", epoch)
+	s.log.Noticef("Sending signature for epoch %d to %d peers", epoch, len(s.s.cfg.Authorities)-1)
 	cmd := &commands.Sig{
 		Epoch:     epoch,
 		PublicKey: s.s.IdentityKey(),
 		Payload:   sig,
 	}
+	deadline := s.phaseDeadline(PublishConsensusDeadline)
 	for _, peer := range s.s.cfg.Authorities {
 		peer := peer
 		if peer.IdentityPublicKey.Equal(s.s.identityPublicKey) {
 			continue
 		}
 		s.Go(func() {
-			s.log.Debugf("Sending signature to %s", peer.Identifier)
-			resp, err := s.sendCommandToPeer(peer, cmd)
+			resp, err := s.sendCommandToPeerWithDeadline(peer, cmd, deadline)
 			if err != nil {
 				s.log.Errorf("Failed to send signature to %s: %v", peer.Identifier, err)
 				return
@@ -2004,117 +2034,119 @@ func (s *state) restorePersistence() error {
 
 		if b := bkt.Get([]byte(versionKey)); b != nil {
 			// Well it looks like we loaded as opposed to created.
-			if len(b) != 1 || b[0] != 0 {
-				return fmt.Errorf("state: incompatible version: %d", uint(b[0]))
+			storedVersion := string(b)
+			currentVersion := versioninfo.Short()
+			if storedVersion != currentVersion {
+				s.log.Warningf("Software version changed (%s -> %s), ignoring persisted state", storedVersion, currentVersion)
+			} else {
+				// Figure out which epochs to restore for.
+				now, _, _ := epochtime.Now()
+				epochs := []uint64{now - 1, now, now + 1}
+
+				// Restore the replica descriptors.
+				for _, epoch := range epochs {
+					epochBytes := epochToBytes(epoch)
+					eDescsBkt := replicaDescsBkt.Bucket(epochBytes)
+					if eDescsBkt == nil {
+						s.log.Debugf("No persisted Descriptors for epoch: %v.", epoch)
+						continue
+					}
+					c := eDescsBkt.Cursor()
+					for wantHash, rawDesc := c.First(); wantHash != nil; wantHash, rawDesc = c.Next() {
+						if len(wantHash) != publicKeyHashSize {
+							panic("stored hash should be 32 bytes")
+						}
+						desc := new(pki.ReplicaDescriptor)
+						err := desc.Unmarshal(rawDesc)
+						if err != nil {
+							s.log.Errorf("Failed to validate persisted descriptor: %v", err)
+							continue
+						}
+						idHash := hash.Sum256(desc.IdentityKey)
+						if !hmac.Equal(wantHash, idHash[:]) {
+							s.log.Errorf("Discarding persisted descriptor: key mismatch")
+							continue
+						}
+
+						if !s.isReplicaDescriptorAuthorized(desc) {
+							s.log.Warningf("Discarding persisted descriptor: %v", desc)
+							continue
+						}
+
+						_, ok := s.replicaDescriptors[epoch]
+						if !ok {
+							s.replicaDescriptors[epoch] = make(map[[publicKeyHashSize]byte]*pki.ReplicaDescriptor)
+						}
+
+						s.replicaDescriptors[epoch][hash.Sum256(desc.IdentityKey)] = desc
+						s.log.Debugf("Restored replica descriptor for epoch %v: %+v", epoch, desc)
+					}
+				}
+
+				// Restore the documents and descriptors.
+				for _, epoch := range epochs {
+					epochBytes := epochToBytes(epoch)
+					if rawDoc := docsBkt.Get(epochBytes); rawDoc != nil {
+						_, _, _, err := cert.VerifyThreshold(s.getVerifiers(), s.threshold, rawDoc)
+						if err != nil {
+							s.log.Errorf("Failed to verify threshold on restored document")
+							break // or continue?
+						}
+						doc, err := s.doParseDocument(rawDoc)
+						if err != nil {
+							s.log.Errorf("Failed to validate persisted document: %v", err)
+						} else if doc.Epoch != epoch {
+							// The document for the wrong epoch was persisted?
+							s.log.Errorf("Persisted document has unexpected epoch: %v", doc.Epoch)
+						} else {
+							s.log.Debugf("Restored Document for epoch %v: %v.", epoch, doc)
+							s.documents[epoch] = doc
+						}
+					}
+
+					eDescsBkt := descsBkt.Bucket(epochBytes)
+					if eDescsBkt == nil {
+						s.log.Debugf("No persisted Descriptors for epoch: %v.", epoch)
+						continue
+					}
+
+					c := eDescsBkt.Cursor()
+					for wantHash, rawDesc := c.First(); wantHash != nil; wantHash, rawDesc = c.Next() {
+						if len(wantHash) != publicKeyHashSize {
+							panic("stored hash should be 32 bytes")
+						}
+						desc := new(pki.MixDescriptor)
+						err := desc.UnmarshalBinary(rawDesc)
+						if err != nil {
+							s.log.Errorf("Failed to validate persisted descriptor: %v", err)
+							continue
+						}
+						idHash := hash.Sum256(desc.IdentityKey)
+						if !hmac.Equal(wantHash, idHash[:]) {
+							s.log.Errorf("Discarding persisted descriptor: key mismatch")
+							continue
+						}
+
+						if !s.isDescriptorAuthorized(desc) {
+							s.log.Warningf("Discarding persisted descriptor: %v", desc)
+							continue
+						}
+
+						_, ok := s.descriptors[epoch]
+						if !ok {
+							s.descriptors[epoch] = make(map[[publicKeyHashSize]byte]*pki.MixDescriptor)
+						}
+
+						s.descriptors[epoch][hash.Sum256(desc.IdentityKey)] = desc
+						s.log.Debugf("Restored descriptor for epoch %v: %+v", epoch, desc)
+					}
+				}
+				return nil
 			}
-
-			// Figure out which epochs to restore for.
-			now, _, _ := epochtime.Now()
-			epochs := []uint64{now - 1, now, now + 1}
-
-			// Restore the replica descriptors.
-			for _, epoch := range epochs {
-				epochBytes := epochToBytes(epoch)
-				eDescsBkt := replicaDescsBkt.Bucket(epochBytes)
-				if eDescsBkt == nil {
-					s.log.Debugf("No persisted Descriptors for epoch: %v.", epoch)
-					continue
-				}
-				c := eDescsBkt.Cursor()
-				for wantHash, rawDesc := c.First(); wantHash != nil; wantHash, rawDesc = c.Next() {
-					if len(wantHash) != publicKeyHashSize {
-						panic("stored hash should be 32 bytes")
-					}
-					desc := new(pki.ReplicaDescriptor)
-					err := desc.Unmarshal(rawDesc)
-					if err != nil {
-						s.log.Errorf("Failed to validate persisted descriptor: %v", err)
-						continue
-					}
-					idHash := hash.Sum256(desc.IdentityKey)
-					if !hmac.Equal(wantHash, idHash[:]) {
-						s.log.Errorf("Discarding persisted descriptor: key mismatch")
-						continue
-					}
-
-					if !s.isReplicaDescriptorAuthorized(desc) {
-						s.log.Warningf("Discarding persisted descriptor: %v", desc)
-						continue
-					}
-
-					_, ok := s.replicaDescriptors[epoch]
-					if !ok {
-						s.replicaDescriptors[epoch] = make(map[[publicKeyHashSize]byte]*pki.ReplicaDescriptor)
-					}
-
-					s.replicaDescriptors[epoch][hash.Sum256(desc.IdentityKey)] = desc
-					s.log.Debugf("Restored replica descriptor for epoch %v: %+v", epoch, desc)
-				}
-			}
-
-			// Restore the documents and descriptors.
-			for _, epoch := range epochs {
-				epochBytes := epochToBytes(epoch)
-				if rawDoc := docsBkt.Get(epochBytes); rawDoc != nil {
-					_, _, _, err := cert.VerifyThreshold(s.getVerifiers(), s.threshold, rawDoc)
-					if err != nil {
-						s.log.Errorf("Failed to verify threshold on restored document")
-						break // or continue?
-					}
-					doc, err := s.doParseDocument(rawDoc)
-					if err != nil {
-						s.log.Errorf("Failed to validate persisted document: %v", err)
-					} else if doc.Epoch != epoch {
-						// The document for the wrong epoch was persisted?
-						s.log.Errorf("Persisted document has unexpected epoch: %v", doc.Epoch)
-					} else {
-						s.log.Debugf("Restored Document for epoch %v: %v.", epoch, doc)
-						s.documents[epoch] = doc
-					}
-				}
-
-				eDescsBkt := descsBkt.Bucket(epochBytes)
-				if eDescsBkt == nil {
-					s.log.Debugf("No persisted Descriptors for epoch: %v.", epoch)
-					continue
-				}
-
-				c := eDescsBkt.Cursor()
-				for wantHash, rawDesc := c.First(); wantHash != nil; wantHash, rawDesc = c.Next() {
-					if len(wantHash) != publicKeyHashSize {
-						panic("stored hash should be 32 bytes")
-					}
-					desc := new(pki.MixDescriptor)
-					err := desc.UnmarshalBinary(rawDesc)
-					if err != nil {
-						s.log.Errorf("Failed to validate persisted descriptor: %v", err)
-						continue
-					}
-					idHash := hash.Sum256(desc.IdentityKey)
-					if !hmac.Equal(wantHash, idHash[:]) {
-						s.log.Errorf("Discarding persisted descriptor: key mismatch")
-						continue
-					}
-
-					if !s.isDescriptorAuthorized(desc) {
-						s.log.Warningf("Discarding persisted descriptor: %v", desc)
-						continue
-					}
-
-					_, ok := s.descriptors[epoch]
-					if !ok {
-						s.descriptors[epoch] = make(map[[publicKeyHashSize]byte]*pki.MixDescriptor)
-					}
-
-					s.descriptors[epoch][hash.Sum256(desc.IdentityKey)] = desc
-					s.log.Debugf("Restored descriptor for epoch %v: %+v", epoch, desc)
-				}
-			}
-			return nil
 		}
 
-		// We created a new database, so populate the new `metadata` bucket.
-		return bkt.Put([]byte(versionKey), []byte{0})
+		// We created a new database (or version changed), so populate the `metadata` bucket.
+		return bkt.Put([]byte(versionKey), []byte(versioninfo.Short()))
 	})
 }
 
@@ -2126,7 +2158,7 @@ func newState(s *Server) (*state, error) {
 	st.geo = s.geo
 	st.log = s.logBackend.GetLogger("state")
 
-	st.hasIPv4, st.hasIPv6 = detectAddressCapabilities(s.cfg.Server.Addresses)
+	st.hasIPv4, st.hasIPv6 = retry.DetectAddressCapabilities(s.cfg.Server.Addresses)
 	st.log.Debugf("Address capabilities: IPv4=%v IPv6=%v", st.hasIPv4, st.hasIPv6)
 
 	// set voting schedule at runtime

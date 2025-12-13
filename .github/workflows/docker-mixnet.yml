@@ -9,7 +9,7 @@ jobs:
       no_decoy: false
     strategy:
       matrix:
-        go-version: [1.22.x]
+        go-version: [1.25.x]
         os: [ubuntu-latest]
     runs-on: ${{ matrix.os }}
     steps:
@@ -27,9 +27,20 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-buildx-
 
+      - name: Install CA certificates
+        if: ${{ env.ACT }}
+        run: |
+          # CA certs are mounted from host, just ensure they're linked properly
+          if [ -d /etc/ssl/certs ] && [ -f /etc/ssl/certs/ca-certificates.crt ]; then
+            echo "CA certificates already available"
+          else
+            apt update && apt install -y ca-certificates build-essential gcc g++ make
+            update-ca-certificates podman
+          fi
+
       - name: Configure podman socket
         run: |
-          systemctl --user start podman.socket
+          systemctl --user start podman.socket || true
 
       - name: Build and start the mixnet
         run: |

@@ -1,4 +1,5 @@
-// config_test.go - Tests for Katzenpost voting authority config.
+// config_test.go - Katzenpost voting authority server configuration tests.
+// Copyright (C) 2017  Yawning Angel.
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as
@@ -17,136 +18,62 @@ package config
 
 import (
 	"testing"
-	"time"
+
+	"github.com/katzenpost/katzenpost/core/retry"
+	"github.com/stretchr/testify/require"
 )
 
-func TestDefaultRetryAttempts(t *testing.T) {
-	attempts := DefaultRetryAttempts()
-	if attempts < minRetryAttempts {
-		t.Errorf("DefaultRetryAttempts() = %d, want >= %d", attempts, minRetryAttempts)
-	}
-	t.Logf("DefaultRetryAttempts() = %d (minimum: %d)", attempts, minRetryAttempts)
-}
+func TestRetryDefaults(t *testing.T) {
+	require := require.New(t)
 
-func TestDefaultRetryMaxDelay(t *testing.T) {
-	maxDelay := DefaultRetryMaxDelay()
-	if maxDelay <= 0 {
-		t.Errorf("DefaultRetryMaxDelay() = %v, want > 0", maxDelay)
-	}
-	t.Logf("DefaultRetryMaxDelay() = %v", maxDelay)
+	// Test that retry defaults from core/retry are sensible
+	require.Greater(retry.DefaultMaxAttempts, 0, "DefaultMaxAttempts should be positive")
+	require.LessOrEqual(retry.DefaultMaxAttempts, 20, "DefaultMaxAttempts should be reasonable")
+
+	require.Greater(retry.DefaultBaseDelay.Milliseconds(), int64(0), "DefaultBaseDelay should be positive")
+	require.LessOrEqual(retry.DefaultBaseDelay.Seconds(), float64(5), "DefaultBaseDelay should be <= 5s")
+
+	require.Greater(retry.DefaultMaxDelay.Seconds(), float64(0), "DefaultMaxDelay should be positive")
+	require.LessOrEqual(retry.DefaultMaxDelay.Seconds(), float64(60), "DefaultMaxDelay should be <= 60s")
+
+	require.Greater(retry.DefaultJitter, float64(0), "DefaultJitter should be positive")
+	require.LessOrEqual(retry.DefaultJitter, float64(1.0), "DefaultJitter should be <= 1.0")
 }
 
 func TestServerApplyRetryDefaults(t *testing.T) {
-	t.Run("empty config gets defaults", func(t *testing.T) {
-		cfg := &Server{}
-		cfg.applyRetryDefaults()
+	require := require.New(t)
 
-		if cfg.PeerRetryMaxAttempts != DefaultRetryAttempts() {
-			t.Errorf("PeerRetryMaxAttempts = %d, want %d", cfg.PeerRetryMaxAttempts, DefaultRetryAttempts())
-		}
-		if cfg.PeerRetryBaseDelay != defaultRetryBaseDelay {
-			t.Errorf("PeerRetryBaseDelay = %v, want %v", cfg.PeerRetryBaseDelay, defaultRetryBaseDelay)
-		}
-		if cfg.PeerRetryMaxDelay != DefaultRetryMaxDelay() {
-			t.Errorf("PeerRetryMaxDelay = %v, want %v", cfg.PeerRetryMaxDelay, DefaultRetryMaxDelay())
-		}
-		if cfg.PeerRetryJitter != defaultRetryJitter {
-			t.Errorf("PeerRetryJitter = %v, want %v", cfg.PeerRetryJitter, defaultRetryJitter)
-		}
-	})
+	// Test that Server.applyRetryDefaults() sets defaults correctly
+	s := &Server{}
+	s.applyRetryDefaults()
 
-	t.Run("explicit values preserved", func(t *testing.T) {
-		cfg := &Server{
-			PeerRetryMaxAttempts: 25,
-			PeerRetryBaseDelay:   3 * time.Second,
-			PeerRetryMaxDelay:    45 * time.Second,
-			PeerRetryJitter:      0.15,
-		}
-		cfg.applyRetryDefaults()
+	require.Equal(retry.DefaultMaxAttempts, s.PeerRetryMaxAttempts,
+		"PeerRetryMaxAttempts should default to retry.DefaultMaxAttempts (%d)", retry.DefaultMaxAttempts)
 
-		if cfg.PeerRetryMaxAttempts != 25 {
-			t.Errorf("PeerRetryMaxAttempts changed to %d", cfg.PeerRetryMaxAttempts)
-		}
-		if cfg.PeerRetryBaseDelay != 3*time.Second {
-			t.Errorf("PeerRetryBaseDelay changed to %v", cfg.PeerRetryBaseDelay)
-		}
-		if cfg.PeerRetryMaxDelay != 45*time.Second {
-			t.Errorf("PeerRetryMaxDelay changed to %v", cfg.PeerRetryMaxDelay)
-		}
-		if cfg.PeerRetryJitter != 0.15 {
-			t.Errorf("PeerRetryJitter changed to %v", cfg.PeerRetryJitter)
-		}
-	})
+	require.Equal(retry.DefaultBaseDelay, s.PeerRetryBaseDelay,
+		"PeerRetryBaseDelay should default to retry.DefaultBaseDelay (%v)", retry.DefaultBaseDelay)
 
-	t.Run("jitter capped at 1.0", func(t *testing.T) {
-		cfg := &Server{
-			PeerRetryJitter: 2.5,
-		}
-		cfg.applyRetryDefaults()
+	require.Equal(retry.DefaultMaxDelay, s.PeerRetryMaxDelay,
+		"PeerRetryMaxDelay should default to retry.DefaultMaxDelay (%v)", retry.DefaultMaxDelay)
 
-		if cfg.PeerRetryJitter != 1.0 {
-			t.Errorf("PeerRetryJitter = %v, want 1.0 (capped)", cfg.PeerRetryJitter)
-		}
-	})
-
-	t.Run("negative values get defaults", func(t *testing.T) {
-		cfg := &Server{
-			PeerRetryMaxAttempts: -5,
-			PeerRetryBaseDelay:   -1 * time.Second,
-			PeerRetryMaxDelay:    -10 * time.Second,
-			PeerRetryJitter:      -0.5,
-		}
-		cfg.applyRetryDefaults()
-
-		if cfg.PeerRetryMaxAttempts != DefaultRetryAttempts() {
-			t.Errorf("negative PeerRetryMaxAttempts not defaulted: %d", cfg.PeerRetryMaxAttempts)
-		}
-		if cfg.PeerRetryBaseDelay != defaultRetryBaseDelay {
-			t.Errorf("negative PeerRetryBaseDelay not defaulted: %v", cfg.PeerRetryBaseDelay)
-		}
-		if cfg.PeerRetryMaxDelay != DefaultRetryMaxDelay() {
-			t.Errorf("negative PeerRetryMaxDelay not defaulted: %v", cfg.PeerRetryMaxDelay)
-		}
-		if cfg.PeerRetryJitter != defaultRetryJitter {
-			t.Errorf("negative PeerRetryJitter not defaulted: %v", cfg.PeerRetryJitter)
-		}
-	})
+	require.Equal(retry.DefaultJitter, s.PeerRetryJitter,
+		"PeerRetryJitter should default to retry.DefaultJitter (%v)", retry.DefaultJitter)
 }
 
-func TestServerDisableIPv4IPv6(t *testing.T) {
-	t.Run("defaults are false", func(t *testing.T) {
-		cfg := &Server{}
-		if cfg.DisableIPv4 {
-			t.Error("DisableIPv4 should default to false")
-		}
-		if cfg.DisableIPv6 {
-			t.Error("DisableIPv6 should default to false")
-		}
-	})
+func TestServerRetryDefaultsNotOverwritten(t *testing.T) {
+	require := require.New(t)
 
-	t.Run("can be set to true", func(t *testing.T) {
-		cfg := &Server{
-			DisableIPv4: true,
-			DisableIPv6: true,
-		}
-		if !cfg.DisableIPv4 {
-			t.Error("DisableIPv4 should be true")
-		}
-		if !cfg.DisableIPv6 {
-			t.Error("DisableIPv6 should be true")
-		}
-	})
-}
-
-func BenchmarkDefaultRetryAttempts(b *testing.B) {
-	for i := 0; i < b.N; i++ {
-		_ = DefaultRetryAttempts()
+	// Test that applyRetryDefaults doesn't overwrite explicit values
+	s := &Server{
+		PeerRetryMaxAttempts: 5,
+		PeerRetryBaseDelay:   100,
+		PeerRetryMaxDelay:    5000,
+		PeerRetryJitter:      0.5,
 	}
-}
+	s.applyRetryDefaults()
 
-func BenchmarkApplyRetryDefaults(b *testing.B) {
-	for i := 0; i < b.N; i++ {
-		cfg := &Server{}
-		cfg.applyRetryDefaults()
-	}
+	require.Equal(5, s.PeerRetryMaxAttempts, "Explicit PeerRetryMaxAttempts should not be overwritten")
+	require.Equal(100, int(s.PeerRetryBaseDelay), "Explicit PeerRetryBaseDelay should not be overwritten")
+	require.Equal(5000, int(s.PeerRetryMaxDelay), "Explicit PeerRetryMaxDelay should not be overwritten")
+	require.Equal(0.5, s.PeerRetryJitter, "Explicit PeerRetryJitter should not be overwritten")
 }

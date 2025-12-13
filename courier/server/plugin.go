@@ -417,7 +417,10 @@ func (e *Courier) propagateQueryToReplicas(courierMessage *pigeonhole.CourierEnv
 		Ciphertext:    courierMessage.Ciphertext,
 	}
 	e.log.Debugf("handleCourierEnvelope: Sending message to first replica ID %d", firstReplicaID)
-	e.server.SendMessage(firstReplicaID, replicaMsg1)
+	if err := e.server.SendMessage(firstReplicaID, replicaMsg1); err != nil {
+		e.log.Errorf("handleCourierEnvelope: Failed to send message to first replica %d: %s", firstReplicaID, err)
+		return fmt.Errorf("failed to dispatch to replica %d: %w", firstReplicaID, err)
+	}
 
 	secondReplicaID := courierMessage.IntermediateReplicas[1]
 	e.log.Debugf("handleCourierEnvelope: Preparing message for second replica ID %d", secondReplicaID)
@@ -431,7 +434,10 @@ func (e *Courier) propagateQueryToReplicas(courierMessage *pigeonhole.CourierEnv
 		Ciphertext:    courierMessage.Ciphertext,
 	}
 	e.log.Debugf("handleCourierEnvelope: Sending message to second replica ID %d", secondReplicaID)
-	e.server.SendMessage(secondReplicaID, replicaMsg2)
+	if err := e.server.SendMessage(secondReplicaID, replicaMsg2); err != nil {
+		e.log.Errorf("handleCourierEnvelope: Failed to send message to second replica %d: %s", secondReplicaID, err)
+		return fmt.Errorf("failed to dispatch to replica %d: %w", secondReplicaID, err)
+	}
 
 	e.log.Debugf("handleCourierEnvelope: Successfully dispatched messages to both replicas")
 	return nil
