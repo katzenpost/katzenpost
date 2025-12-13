@@ -30,7 +30,7 @@ type GenericConnector interface {
 	CloseAllCh() chan interface{}
 	ForceUpdate()
 
-	DispatchMessage(dest uint8, message *commands.ReplicaMessage)
+	DispatchMessage(dest uint8, message *commands.ReplicaMessage) error
 }
 
 type Server struct {
@@ -213,8 +213,8 @@ func (s *Server) initLogging() error {
 	return err
 }
 
-func (s *Server) SendMessage(dest uint8, mesg *commands.ReplicaMessage) {
-	s.connector.DispatchMessage(dest, mesg)
+func (s *Server) SendMessage(dest uint8, mesg *commands.ReplicaMessage) error {
+	return s.connector.DispatchMessage(dest, mesg)
 }
 
 func (s *Server) ForceConnectorUpdate() {

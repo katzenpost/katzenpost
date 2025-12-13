@@ -40,7 +40,7 @@ import (
 	"github.com/katzenpost/hpqc/sign"
 	signpem "github.com/katzenpost/hpqc/sign/pem"
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
-	"github.com/katzenpost/katzenpost/core/epochtime"
+	"github.com/katzenpost/katzenpost/core/retry"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/utils"
 )
@@ -70,29 +70,12 @@ const (
 	defaultLambdaMMaxPercentile = 0.99999
 
 	publicKeyHashSize = 32
-
-	defaultRetryBaseDelay = 2 * time.Second
-	defaultRetryJitter    = 0.2
-	minRetryAttempts      = 5
 )
 
 var defaultLogging = Logging{
 	Disable: false,
 	File:    "",
 	Level:   defaultLogLevel,
-}
-
-func DefaultRetryAttempts() int {
-	windowSec := int((epochtime.Period / 8) / time.Second)
-	n := windowSec / 10
-	if n < minRetryAttempts {
-		return minRetryAttempts
-	}
-	return n
-}
-
-func DefaultRetryMaxDelay() time.Duration {
-	return epochtime.Period / 8
 }
 
 // Logging is the authority logging configuration.
@@ -470,27 +453,41 @@ type Server struct {
 	// CloseDelaySec is the delay before closing connections to allow NoOp finalization (default: 10)
 	CloseDelaySec int
 
-	// PeerRetryMaxAttempts sets the maximum retry attempts for peer connections.
-	// Default: 1 attempt per 10 seconds of consensus window (minimum 5)
+	// Peer retry configuration for authority-to-authority communication
+
+	// PeerRetryMaxAttempts is the maximum number of retry attempts for peer communication
 	PeerRetryMaxAttempts int
 
-	// PeerRetryBaseDelay is the initial delay between retry attempts.
-	// Default: 2s
+	// PeerRetryBaseDelay is the base delay for exponential backoff between retries
 	PeerRetryBaseDelay time.Duration
 
-	// PeerRetryMaxDelay caps the exponential backoff delay.
-	// Default: epochtime.Period/8 (the consensus window)
+	// PeerRetryMaxDelay is the maximum delay between retries
 	PeerRetryMaxDelay time.Duration
 
-	// PeerRetryJitter adds randomness to delays (0.0-1.0).
-	// Default: 0.2
+	// PeerRetryJitter is the jitter factor (0.0-1.0) applied to retry delays
 	PeerRetryJitter float64
 
-	// DisableIPv4 skips IPv4 peer addresses when connecting.
+	// DisableIPv4 disables IPv4 for peer connections
 	DisableIPv4 bool
 
-	// DisableIPv6 skips IPv6 peer addresses when connecting.
+	// DisableIPv6 disables IPv6 for peer connections
 	DisableIPv6 bool
+}
+
+// applyRetryDefaults sets default values for retry configuration
+func (sCfg *Server) applyRetryDefaults() {
+	if sCfg.PeerRetryMaxAttempts == 0 {
+		sCfg.PeerRetryMaxAttempts = retry.DefaultMaxAttempts
+	}
+	if sCfg.PeerRetryBaseDelay == 0 {
+		sCfg.PeerRetryBaseDelay = retry.DefaultBaseDelay
+	}
+	if sCfg.PeerRetryMaxDelay == 0 {
+		sCfg.PeerRetryMaxDelay = retry.DefaultMaxDelay
+	}
+	if sCfg.PeerRetryJitter == 0 {
+		sCfg.PeerRetryJitter = retry.DefaultJitter
+	}
 }
 
 // Validate parses and checks the Server configuration.
@@ -548,27 +545,7 @@ func (sCfg *Server) validate() error {
 	if !filepath.IsAbs(sCfg.DataDir) {
 		return fmt.Errorf("config: Authority: DataDir '%v' is not an absolute path", sCfg.DataDir)
 	}
-
-	sCfg.applyRetryDefaults()
 	return nil
-}
-
-func (sCfg *Server) applyRetryDefaults() {
-	if sCfg.PeerRetryMaxAttempts <= 0 {
-		sCfg.PeerRetryMaxAttempts = DefaultRetryAttempts()
-	}
-	if sCfg.PeerRetryBaseDelay <= 0 {
-		sCfg.PeerRetryBaseDelay = defaultRetryBaseDelay
-	}
-	if sCfg.PeerRetryMaxDelay <= 0 {
-		sCfg.PeerRetryMaxDelay = DefaultRetryMaxDelay()
-	}
-	if sCfg.PeerRetryJitter <= 0 {
-		sCfg.PeerRetryJitter = defaultRetryJitter
-	}
-	if sCfg.PeerRetryJitter > 1.0 {
-		sCfg.PeerRetryJitter = 1.0
-	}
 }
 
 // Config is the top level authority configuration.
@@ -666,6 +643,7 @@ func (cfg *Config) FixupAndValidate(forceGenOnly bool) error {
 	}
 	cfg.Parameters.applyDefaults()
 	cfg.Debug.applyDefaults()
+	cfg.Server.applyRetryDefaults()
 
 	pkiSignatureScheme := signSchemes.ByName(cfg.Server.PKISignatureScheme)
 

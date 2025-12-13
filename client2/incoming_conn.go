@@ -74,7 +74,7 @@ func (c *incomingConn) updateConnectionStatus(status error) {
 	message := &Response{
 		ConnectionStatusEvent: &thin.ConnectionStatusEvent{
 			IsConnected: status == nil,
-			Err:         status,
+			Err:         nil,
 		},
 	}
 	select {
@@ -115,7 +115,9 @@ func (c *incomingConn) start() {
 }
 
 func (c *incomingConn) worker() {
+	doneCh := make(chan struct{})
 	defer func() {
+		close(doneCh)
 		c.log.Debugf("Closing.")
 		c.conn.Close()
 		c.listener.onClosedConn(c) // Remove from the connection list.
@@ -149,6 +151,8 @@ func (c *incomingConn) worker() {
 		for {
 			select {
 			case <-c.listener.HaltCh():
+				return
+			case <-doneCh:
 				return
 			case message := <-c.sendToClientCh:
 				err := c.sendResponse(message)
