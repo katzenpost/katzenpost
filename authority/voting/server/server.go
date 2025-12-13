@@ -366,7 +366,11 @@ func New(cfg *config.Config) (*Server, error) {
 	s.state.Go(s.state.worker)
 
 	// Start up the listeners.
-	for _, v := range s.cfg.Server.Addresses {
+	listenAddresses := s.cfg.Server.Addresses
+	if len(s.cfg.Server.BindAddresses) > 0 {
+		listenAddresses = s.cfg.Server.BindAddresses
+	}
+	for _, v := range listenAddresses {
 		// parse the Address line as a URL
 		u, err := url.Parse(v)
 		if err == nil {
