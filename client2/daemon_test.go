@@ -169,3 +169,60 @@ func TestChannelCleanupOnAppDisconnect(t *testing.T) {
 
 	t.Log("Channel cleanup test completed successfully - target App ID cleaned up, other App ID preserved")
 }
+
+func TestDaemonStartsWithoutConsensus(t *testing.T) {
+	cfg, err := config.LoadFile("testdata/client.toml")
+	require.NoError(t, err)
+
+	port, err := getFreePort()
+	require.NoError(t, err)
+	cfg.ListenAddress = fmt.Sprintf("localhost:%d", port)
+
+	d, err := NewDaemon(cfg)
+	require.NoError(t, err)
+
+	err = d.Start()
+	require.NoError(t, err, "Daemon.Start() should succeed even without consensus")
+
+	conn, err := net.DialTimeout("tcp", cfg.ListenAddress, time.Second)
+	require.NoError(t, err, "Should be able to connect to listener without consensus")
+	conn.Close()
+
+	d.Shutdown()
+}
+
+func TestListenerAcceptsConnectionWithoutPKIDoc(t *testing.T) {
+	cfg, err := config.LoadFile("testdata/client.toml")
+	require.NoError(t, err)
+
+	cfg.ListenAddress = "127.0.0.1:0"
+
+	client := &Client{
+		cfg: cfg,
+		pki: nil,
+	}
+
+	rates := &Rates{}
+	egressCh := make(chan *Request, 10)
+
+	logBackend, err := log.New("", "debug", false)
+	require.NoError(t, err)
+
+	listener, err := NewListener(client, rates, egressCh, logBackend, nil)
+	require.NoError(t, err)
+
+	addr := listener.listener.Addr().String()
+
+	conn, err := net.Dial("tcp", addr)
+	require.NoError(t, err, "Connection should be accepted even without PKI doc")
+
+	time.Sleep(100 * time.Millisecond)
+
+	listener.connsLock.RLock()
+	connCount := len(listener.conns)
+	listener.connsLock.RUnlock()
+	require.Equal(t, 1, connCount, "Connection should be registered")
+
+	conn.Close()
+	listener.Shutdown()
+}

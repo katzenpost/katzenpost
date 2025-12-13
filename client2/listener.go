@@ -123,11 +123,10 @@ func (l *listener) worker() {
 }
 
 func (l *listener) onNewConn(conn net.Conn) {
-	// make sure we can serve a document before anything else
-	docBlob, doc := l.client.CurrentDocument()
-	if doc == nil {
-		l.log.Error("no pki document to serve")
-		return
+	// Get document if available (don't block or reject if not ready)
+	var docBlob []byte
+	if l.client.pki != nil {
+		docBlob, _ = l.client.pki.currentDocument()
 	}
 
 	c := newIncomingConn(l, conn)
@@ -142,7 +141,9 @@ func (l *listener) onNewConn(conn net.Conn) {
 
 	status := l.getConnectionStatus()
 	c.updateConnectionStatus(status)
-	c.sendPKIDoc(docBlob)
+	if docBlob != nil {
+		c.sendPKIDoc(docBlob)
+	}
 }
 
 func (l *listener) onClosedConn(c *incomingConn) {

@@ -320,7 +320,11 @@ func (d *Daemon) Start() error {
 	d.Go(d.ingressWorker)
 	d.Go(d.egressWorker)
 
-	return d.client.Start()
+	err = d.client.Start()
+	if err != nil {
+		d.log.Warningf("Client start failed (will keep retrying): %s", err)
+	}
+	return nil
 }
 
 func (d *Daemon) onDocument(doc *cpki.Document) {

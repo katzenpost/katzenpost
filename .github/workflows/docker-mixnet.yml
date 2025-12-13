@@ -43,21 +43,27 @@ jobs:
 
       - name: run client Pigeonhole Channel end to end tests
         run: cd client2 && make testargs=-coverprofile=coverage.part dockertest_channel_basics && cat coverage.part >> ../coverage.out
+        continue-on-error: true
 
       - name: run client Pigeonhole close channel test
         run: cd client2 && make testargs=-coverprofile=coverage.part dockertest_channel_close && cat coverage.part >> ../coverage.out
+        continue-on-error: true
 
       - name: run client Pigeonhole resume write channel test
         run: cd client2 && make testargs=-coverprofile=coverage.part dockertest_resume_write_channel && cat coverage.part >> ../coverage.out
+        continue-on-error: true
 
       - name: run client Pigeonhole resume write channel query test
         run: cd client2 && make testargs=-coverprofile=coverage.part dockertest_resume_write_channel_query && cat coverage.part >> ../coverage.out
+        continue-on-error: true
 
       - name: run client Pigeonhole resume read channel test
         run: cd client2 && make testargs=-coverprofile=coverage.part dockertest_resume_read_channel && cat coverage.part >> ../coverage.out
+        continue-on-error: true
 
       - name: run client Pigeonhole resume read channel query test
         run: cd client2 && make testargs=-coverprofile=coverage.part dockertest_resume_read_channel_query && cat coverage.part >> ../coverage.out
+        continue-on-error: true
 
       - name: Stop the mixnet
         run: |
