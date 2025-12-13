@@ -102,6 +102,8 @@ type state struct {
 	geo *geo.Geometry
 	log *logging.Logger
 
+	hasIPv4, hasIPv6 bool
+
 	db *bolt.DB
 
 	reverseHash            map[[publicKeyHashSize]byte]sign.PublicKey
@@ -797,21 +799,74 @@ func (s *state) IsPeerValid(creds *wire.PeerCredentials) bool {
 	return false
 }
 
-func (s *state) sendCommandToPeer(peer *config.Authority, cmd commands.Command) (commands.Command, error) {
-	const (
-		dialTimeout      = 30 * time.Second  // TCP connection timeout
-		handshakeTimeout = 180 * time.Second // Wire handshake timeout
-		responseTimeout  = 90 * time.Second  // Command exchange timeout
+func (s *state) filterPeerAddresses(addrs []string) []string {
+	return filterUsableAddresses(
+		addrs,
+		s.hasIPv4,
+		s.hasIPv6,
+		s.s.cfg.Server.DisableIPv4,
+		s.s.cfg.Server.DisableIPv6,
 	)
+}
+
+func (s *state) peerRetryDelay(attempt int) time.Duration {
+	return retryDelay(
+		s.s.cfg.Server.PeerRetryBaseDelay,
+		s.s.cfg.Server.PeerRetryMaxDelay,
+		s.s.cfg.Server.PeerRetryJitter,
+		attempt,
+	)
+}
+
+func (s *state) sendCommandToPeer(peer *config.Authority, cmd commands.Command) (commands.Command, error) {
+	maxAttempts := s.s.cfg.Server.PeerRetryMaxAttempts
+
+	addrs := s.filterPeerAddresses(peer.Addresses)
+	if len(addrs) == 0 {
+		s.log.Errorf("peer %s: no usable addresses (IPv4=%v IPv6=%v)", peer.Identifier, s.hasIPv4, s.hasIPv6)
+		return nil, fmt.Errorf("peer %s: no usable addresses", peer.Identifier)
+	}
+
+	var lastErr error
+	for attempt := 0; attempt <= maxAttempts; attempt++ {
+		if attempt > 0 {
+			delay := s.peerRetryDelay(attempt - 1)
+			s.log.Debugf("peer %s: retry %d/%d after %v", peer.Identifier, attempt, maxAttempts, delay)
+			time.Sleep(delay)
+		}
+
+		resp, err := s.doSendCommand(peer, cmd, addrs)
+		if err == nil {
+			if attempt > 0 {
+				s.log.Noticef("peer %s: succeeded after %d retries", peer.Identifier, attempt)
+			}
+			return resp, nil
+		}
+		lastErr = err
+
+		if !isTransientError(err) {
+			s.log.Debugf("peer %s: permanent error: %v", peer.Identifier, err)
+			return nil, err
+		}
+		s.log.Warningf("peer %s: attempt %d failed: %v", peer.Identifier, attempt+1, err)
+	}
+	s.log.Errorf("peer %s: exhausted %d attempts: %v", peer.Identifier, maxAttempts+1, lastErr)
+	return nil, fmt.Errorf("peer %s: exhausted %d attempts: %w", peer.Identifier, maxAttempts+1, lastErr)
+}
+
+func (s *state) doSendCommand(peer *config.Authority, cmd commands.Command, addrs []string) (commands.Command, error) {
+	dialTimeout := time.Duration(s.s.cfg.Server.DialTimeoutSec) * time.Second
+	handshakeTimeout := time.Duration(s.s.cfg.Server.HandshakeTimeoutSec) * time.Second
+	responseTimeout := time.Duration(s.s.cfg.Server.ResponseTimeoutSec) * time.Second
 
 	var conn net.Conn
 	var err error
-	for i, a := range peer.Addresses {
+	for i, a := range addrs {
 		u, err := url.Parse(a)
 		if err != nil {
+			s.log.Debugf("peer %s: invalid URL %s: %v", peer.Identifier, a, err)
 			continue
 		}
-		// Create dialer with timeout
 		defaultDialer := &net.Dialer{Timeout: dialTimeout}
 		ctx, cancelFn := context.WithTimeout(context.Background(), dialTimeout)
 		conn, err = common.DialURL(u, ctx, defaultDialer.DialContext)
@@ -819,13 +874,13 @@ func (s *state) sendCommandToPeer(peer *config.Authority, cmd commands.Command) 
 		if err == nil {
 			defer conn.Close()
 			break
-		} else {
-			s.log.Errorf("Got err from Peer: %v", err)
 		}
-		if i == len(peer.Addresses)-1 {
-			return nil, err
+		s.log.Debugf("peer %s: dial %s failed: %v", peer.Identifier, a, err)
+		if i == len(addrs)-1 {
+			return nil, fmt.Errorf("all addresses exhausted: %w", err)
 		}
 	}
+
 	s.s.Add(1)
 	defer s.s.Done()
 	identityHash := hash.Sum256From(s.s.identityPublicKey)
@@ -849,20 +904,17 @@ func (s *state) sendCommandToPeer(peer *config.Authority, cmd commands.Command) 
 	}
 	defer session.Close()
 
-	// Set handshake timeout before Initialize()
 	conn.SetDeadline(time.Now().Add(handshakeTimeout))
 	if err = session.Initialize(conn); err != nil {
 		return nil, err
 	}
 
-	// Set response timeout for command exchange
 	conn.SetDeadline(time.Now().Add(responseTimeout))
 	err = session.SendCommand(cmd)
 	if err != nil {
 		return nil, err
 	}
 
-	// Keep response timeout for receiving reply
 	resp, err := session.RecvCommand()
 	if err != nil {
 		return nil, err
@@ -875,46 +927,44 @@ func (s *state) sendCertToAuthorities(cert []byte, epoch uint64) {
 	if s.TryLock() {
 		panic("write lock not held in sendCertToAuthorities(cert, epoch)")
 	}
-
-	s.log.Noticef("Sending Certificate for epoch %v, to all Directory Authorities.", epoch)
+	s.log.Noticef("Sending certificate for epoch %d", epoch)
 	cmd := &commands.Cert{
 		Epoch:     epoch,
 		PublicKey: s.s.IdentityKey(),
 		Payload:   cert,
 	}
-
 	for _, peer := range s.s.cfg.Authorities {
 		peer := peer
 		if peer.IdentityPublicKey.Equal(s.s.identityPublicKey) {
-			continue // skip self
+			continue
 		}
 		s.Go(func() {
-			s.log.Noticef("Sending cert to %s", peer.Identifier)
+			s.log.Debugf("Sending cert to %s", peer.Identifier)
 			resp, err := s.sendCommandToPeer(peer, cmd)
 			if err != nil {
-				s.log.Error("Failed to send cert to %s", peer.Identifier)
+				s.log.Errorf("Failed to send cert to %s: %v", peer.Identifier, err)
 				return
 			}
 			r, ok := resp.(*commands.CertStatus)
 			if !ok {
-				s.log.Warningf("Cert response resulted in unexpected reply: %T", resp)
+				s.log.Warningf("Cert to %s: unexpected response %T", peer.Identifier, resp)
 				return
 			}
 			switch r.ErrorCode {
 			case commands.CertOk:
-				s.log.Notice("Cert submitted to %s", peer.Identifier)
+				s.log.Debugf("Cert accepted by %s", peer.Identifier)
 			case commands.CertTooLate:
-				s.log.Warningf("Cert rejected with CertTooLate by %s", peer.Identifier)
+				s.log.Warningf("Cert rejected (too late) by %s", peer.Identifier)
 			case commands.CertTooEarly:
-				s.log.Warningf("Cert rejected with CertTooEarly by %s", peer.Identifier)
+				s.log.Warningf("Cert rejected (too early) by %s", peer.Identifier)
 			case commands.CertAlreadyReceived:
-				s.log.Warningf("Cert rejected with CertAlreadyReceived by %s", peer.Identifier)
+				s.log.Debugf("Cert already received by %s", peer.Identifier)
 			case commands.CertNotAuthorized:
-				s.log.Warningf("Cert rejected with CertNotAuthoritzed by %s", peer.Identifier)
+				s.log.Errorf("Cert rejected (not authorized) by %s", peer.Identifier)
 			case commands.CertNotSigned:
-				s.log.Warningf("Cert rejected with CertNotSigned by %s", peer.Identifier)
+				s.log.Errorf("Cert rejected (not signed) by %s", peer.Identifier)
 			default:
-				s.log.Warningf("Cert rejected with unknown error code received by %s", peer.Identifier)
+				s.log.Warningf("Cert rejected (code %d) by %s", r.ErrorCode, peer.Identifier)
 			}
 		})
 	}
@@ -925,41 +975,38 @@ func (s *state) sendVoteToAuthorities(vote []byte, epoch uint64) {
 	if s.TryLock() {
 		panic("write lock not held in sendVoteToAuthorities(vote, epoch)")
 	}
-
-	s.log.Noticef("Sending Vote for epoch %v, to all Directory Authorities.", epoch)
-
+	s.log.Noticef("Sending vote for epoch %d", epoch)
 	cmd := &commands.Vote{
 		Epoch:     epoch,
 		PublicKey: s.s.IdentityKey(),
 		Payload:   vote,
 	}
-
 	for _, peer := range s.s.cfg.Authorities {
 		peer := peer
 		if peer.IdentityPublicKey.Equal(s.s.identityPublicKey) {
-			continue // skip self
+			continue
 		}
 		s.Go(func() {
-			s.log.Noticef("Sending Vote to %s", peer.Identifier)
+			s.log.Debugf("Sending vote to %s", peer.Identifier)
 			resp, err := s.sendCommandToPeer(peer, cmd)
 			if err != nil {
-				s.log.Error("Failed to send vote to %s: %s", peer.Identifier, err)
+				s.log.Errorf("Failed to send vote to %s: %v", peer.Identifier, err)
 				return
 			}
 			r, ok := resp.(*commands.VoteStatus)
 			if !ok {
-				s.log.Warningf("Vote response resulted in unexpected reply: %T", resp)
+				s.log.Warningf("Vote to %s: unexpected response %T", peer.Identifier, resp)
 				return
 			}
 			switch r.ErrorCode {
 			case commands.VoteOk:
-				s.log.Notice("Vote submitted to %s", peer.Identifier)
+				s.log.Debugf("Vote accepted by %s", peer.Identifier)
 			case commands.VoteTooLate:
-				s.log.Warningf("Vote rejected with VoteTooLate by %s", peer.Identifier)
+				s.log.Warningf("Vote rejected (too late) by %s", peer.Identifier)
 			case commands.VoteTooEarly:
-				s.log.Warningf("Vote rejected with VoteTooEarly by %s", peer.Identifier)
+				s.log.Warningf("Vote rejected (too early) by %s", peer.Identifier)
 			default:
-				s.log.Warningf("Vote rejected with unknown error code received by %s", peer.Identifier)
+				s.log.Warningf("Vote rejected (code %d) by %s", r.ErrorCode, peer.Identifier)
 			}
 		})
 	}
@@ -968,8 +1015,7 @@ func (s *state) sendVoteToAuthorities(vote []byte, epoch uint64) {
 // sendRevealToAuthorities sends a Shared Random Reveal command to
 // all Directory Authorities
 func (s *state) sendRevealToAuthorities(reveal []byte, epoch uint64) {
-	s.log.Noticef("Sending Shared Random Reveal for epoch %v, to all Directory Authorities.", epoch)
-
+	s.log.Noticef("Sending reveal for epoch %d", epoch)
 	cmd := &commands.Reveal{
 		Epoch:     epoch,
 		PublicKey: s.s.IdentityKey(),
@@ -978,35 +1024,35 @@ func (s *state) sendRevealToAuthorities(reveal []byte, epoch uint64) {
 	for _, peer := range s.s.cfg.Authorities {
 		peer := peer
 		if peer.IdentityPublicKey.Equal(s.s.identityPublicKey) {
-			continue // skip self
+			continue
 		}
 		s.Go(func() {
-			s.log.Noticef("Sending Reveal to %s", peer.Identifier)
+			s.log.Debugf("Sending reveal to %s", peer.Identifier)
 			resp, err := s.sendCommandToPeer(peer, cmd)
 			if err != nil {
-				s.log.Error("Failed to send reveal to %s: %s", peer.Identifier, err)
+				s.log.Errorf("Failed to send reveal to %s: %v", peer.Identifier, err)
 				return
 			}
 			r, ok := resp.(*commands.RevealStatus)
 			if !ok {
-				s.log.Error("Reveal response resulted in unexpected reply: %T", resp)
+				s.log.Errorf("Reveal to %s: unexpected response %T", peer.Identifier, resp)
 				return
 			}
 			switch r.ErrorCode {
 			case commands.RevealOk:
-				s.log.Notice("Reveal submitted to %s", peer.Identifier)
+				s.log.Debugf("Reveal accepted by %s", peer.Identifier)
 			case commands.RevealTooLate:
-				s.log.Warningf("Reveal rejected with RevealTooLate by %s", peer.Identifier)
+				s.log.Warningf("Reveal rejected (too late) by %s", peer.Identifier)
 			case commands.RevealTooEarly:
-				s.log.Warningf("Reveal rejected with RevealTooEarly by %s", peer.Identifier)
+				s.log.Warningf("Reveal rejected (too early) by %s", peer.Identifier)
 			case commands.RevealAlreadyReceived:
-				s.log.Warningf("Reveal rejected with RevealAlreadyReceived by %s", peer.Identifier)
+				s.log.Debugf("Reveal already received by %s", peer.Identifier)
 			case commands.RevealNotAuthorized:
-				s.log.Warningf("Reveal rejected with RevealNotAuthoritzed by %s", peer.Identifier)
+				s.log.Errorf("Reveal rejected (not authorized) by %s", peer.Identifier)
 			case commands.RevealNotSigned:
-				s.log.Warningf("Reveal rejected with RevealNotSigned by %s", peer.Identifier)
+				s.log.Errorf("Reveal rejected (not signed) by %s", peer.Identifier)
 			default:
-				s.log.Warningf("reveal rejected with unknown error code received by %s", peer.Identifier)
+				s.log.Warningf("Reveal rejected (code %d) by %s", r.ErrorCode, peer.Identifier)
 			}
 		})
 	}
@@ -1016,41 +1062,38 @@ func (s *state) sendSigToAuthorities(sig []byte, epoch uint64) {
 	if s.TryLock() {
 		panic("write lock not held in sendSigToAuthorities(sig, epoch)")
 	}
-
-	s.log.Noticef("Sending Signature for epoch %v, to all Directory Authorities.", epoch)
-
+	s.log.Noticef("Sending signature for epoch %d", epoch)
 	cmd := &commands.Sig{
 		Epoch:     epoch,
 		PublicKey: s.s.IdentityKey(),
 		Payload:   sig,
 	}
-
 	for _, peer := range s.s.cfg.Authorities {
 		peer := peer
 		if peer.IdentityPublicKey.Equal(s.s.identityPublicKey) {
-			continue // skip self
+			continue
 		}
 		s.Go(func() {
-			s.log.Noticef("Sending Signature to %s", peer.Identifier)
+			s.log.Debugf("Sending signature to %s", peer.Identifier)
 			resp, err := s.sendCommandToPeer(peer, cmd)
 			if err != nil {
-				s.log.Error("Failed to send Signature to %s", peer.Identifier)
+				s.log.Errorf("Failed to send signature to %s: %v", peer.Identifier, err)
 				return
 			}
 			r, ok := resp.(*commands.SigStatus)
 			if !ok {
-				s.log.Warningf("Signature resulted in unexpected reply: %T", resp)
+				s.log.Warningf("Signature to %s: unexpected response %T", peer.Identifier, resp)
 				return
 			}
 			switch r.ErrorCode {
 			case commands.SigOk:
-				s.log.Notice("Signature submitted to %s", peer.Identifier)
+				s.log.Debugf("Signature accepted by %s", peer.Identifier)
 			case commands.SigTooLate:
-				s.log.Warningf("Signature rejected with SigTooLate by %s", peer.Identifier)
+				s.log.Warningf("Signature rejected (too late) by %s", peer.Identifier)
 			case commands.SigTooEarly:
-				s.log.Warningf("Signature rejected with SigTooEarly by %s", peer.Identifier)
+				s.log.Warningf("Signature rejected (too early) by %s", peer.Identifier)
 			default:
-				s.log.Warningf("Signature rejected with unknown error code received by %s", peer.Identifier)
+				s.log.Warningf("Signature rejected (code %d) by %s", r.ErrorCode, peer.Identifier)
 			}
 		})
 	}
@@ -2083,6 +2126,9 @@ func newState(s *Server) (*state, error) {
 	st.geo = s.geo
 	st.log = s.logBackend.GetLogger("state")
 
+	st.hasIPv4, st.hasIPv6 = detectAddressCapabilities(s.cfg.Server.Addresses)
+	st.log.Debugf("Address capabilities: IPv4=%v IPv6=%v", st.hasIPv4, st.hasIPv6)
+
 	// set voting schedule at runtime
 
 	st.log.Debugf("State initialized with epoch Period: %s", epochtime.Period)
@@ -2090,6 +2136,9 @@ func newState(s *Server) (*state, error) {
 	st.log.Debugf("State initialized with AuthorityVoteDeadline: %s", AuthorityVoteDeadline)
 	st.log.Debugf("State initialized with AuthorityRevealDeadline: %s", AuthorityRevealDeadline)
 	st.log.Debugf("State initialized with PublishConsensusDeadline: %s", PublishConsensusDeadline)
+	st.log.Debugf("Retry config: attempts=%d base=%v max=%v jitter=%v",
+		s.cfg.Server.PeerRetryMaxAttempts, s.cfg.Server.PeerRetryBaseDelay,
+		s.cfg.Server.PeerRetryMaxDelay, s.cfg.Server.PeerRetryJitter)
 	st.verifiers = make(map[[publicKeyHashSize]byte]sign.PublicKey)
 	for _, auth := range s.cfg.Authorities {
 		st.verifiers[hash.Sum256From(auth.IdentityPublicKey)] = auth.IdentityPublicKey
