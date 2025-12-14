@@ -1,19 +1,8 @@
-// retry.go - Katzenpost voting authority retry logic.
+// retry.go - Shared retry logic for Katzenpost.
 //
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU Affero General Public License as
-// published by the Free Software Foundation, either version 3 of the
-// License, or (at your option) any later version.
-//
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU Affero General Public License for more details.
-//
-// You should have received a copy of the GNU Affero General Public License
-// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+// SPDX-License-Identifier: AGPL-3.0-only
 
-package server
+package retry
 
 import (
 	"errors"
@@ -23,7 +12,16 @@ import (
 	"time"
 )
 
-func isTransientError(err error) bool {
+// Default retry configuration - single source of truth
+const (
+	DefaultMaxAttempts = 10
+	DefaultBaseDelay   = 500 * time.Millisecond
+	DefaultMaxDelay    = 10 * time.Second
+	DefaultJitter      = float64(0.2)
+)
+
+// IsTransientError returns true if the error is likely transient.
+func IsTransientError(err error) bool {
 	if err == nil {
 		return false
 	}
@@ -50,7 +48,8 @@ func isTransientError(err error) bool {
 	return false
 }
 
-func retryDelay(baseDelay, maxDelay time.Duration, jitter float64, attempt int) time.Duration {
+// Delay calculates exponential backoff with jitter.
+func Delay(baseDelay, maxDelay time.Duration, jitter float64, attempt int) time.Duration {
 	delay := baseDelay * time.Duration(1<<uint(attempt))
 	if delay > maxDelay {
 		delay = maxDelay
@@ -61,7 +60,8 @@ func retryDelay(baseDelay, maxDelay time.Duration, jitter float64, attempt int) 
 	return delay
 }
 
-func detectAddressCapabilities(addresses []string) (hasIPv4, hasIPv6 bool) {
+// DetectAddressCapabilities examines addresses for IPv4/IPv6.
+func DetectAddressCapabilities(addresses []string) (hasIPv4, hasIPv6 bool) {
 	for _, addr := range addresses {
 		host := addr
 		if idx := strings.Index(addr, "://"); idx >= 0 {
@@ -89,7 +89,8 @@ func detectAddressCapabilities(addresses []string) (hasIPv4, hasIPv6 bool) {
 	return
 }
 
-func isUsableAddress(addr string, hasIPv4, hasIPv6, disableIPv4, disableIPv6 bool) bool {
+// IsUsableAddress checks if an address is usable given capabilities.
+func IsUsableAddress(addr string, hasIPv4, hasIPv6, disableIPv4, disableIPv6 bool) bool {
 	host := addr
 	if idx := strings.Index(addr, "://"); idx >= 0 {
 		host = addr[idx+3:]
@@ -111,10 +112,11 @@ func isUsableAddress(addr string, hasIPv4, hasIPv6, disableIPv4, disableIPv6 boo
 	return hasIPv6 && !disableIPv6
 }
 
-func filterUsableAddresses(addrs []string, hasIPv4, hasIPv6, disableIPv4, disableIPv6 bool) []string {
+// FilterUsableAddresses filters to usable addresses only.
+func FilterUsableAddresses(addrs []string, hasIPv4, hasIPv6, disableIPv4, disableIPv6 bool) []string {
 	result := make([]string, 0, len(addrs))
 	for _, addr := range addrs {
-		if isUsableAddress(addr, hasIPv4, hasIPv6, disableIPv4, disableIPv6) {
+		if IsUsableAddress(addr, hasIPv4, hasIPv6, disableIPv4, disableIPv6) {
 			result = append(result, addr)
 		}
 	}
