@@ -160,3 +160,5 @@ test-replica: test-config
 test:
 	go test -v -race -timeout 0 ./...
 
+act:
+	act --bind --container-options "-v /etc/ssl/certs:/etc/ssl/certs:ro -v /usr/share/ca-certificates:/usr/share/ca-certificates:ro" -P ubuntu-latest=catthehacker/ubuntu:act-22.04 -j test_e2e_client2

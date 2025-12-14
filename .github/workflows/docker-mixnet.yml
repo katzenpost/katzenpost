@@ -37,6 +37,7 @@ jobs:
             apt update && apt install -y ca-certificates build-essential gcc g++ make
             update-ca-certificates podman
           fi
+        continue-on-error: true
 
       - name: Configure podman socket
         run: |
