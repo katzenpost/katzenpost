@@ -64,53 +64,33 @@ sphinx:
 
 # Install RocksDB dependencies required for replica
 install-replica-deps:
-	@echo "Installing RocksDB dependencies..."
-	sudo apt-get update
-	sudo apt-get install -y cmake build-essential libsnappy-dev libzstd-dev liblz4-dev libz-dev
-	@echo "Installing gflags..."
-	@if [ ! -f /usr/local/lib/libgflags.so ]; then \
-		echo "Building gflags from source..."; \
-		cd /tmp && \
-		git clone https://github.com/gflags/gflags.git && \
-		cd gflags && \
-		mkdir build && \
-		cd build && \
-		cmake -DBUILD_SHARED_LIBS=1 -DGFLAGS_INSTALL_SHARED_LIBS=1 .. && \
-		make -j$$(nproc) && \
-		sudo make install && \
-		cd /tmp && \
-		rm -rf /tmp/gflags/; \
-	else \
-		echo "Using existing gflags installation"; \
-	fi
-	@echo "Installing RocksDB..."
-	@if [ ! -f /usr/local/rocksdb/lib/librocksdb.so ]; then \
-		echo "Building RocksDB from source..."; \
+	@echo "Checking for RocksDB..."
+	@pkg-config --exists gflags
+	@if [ 0 -ne $$? ]; then \
+		@echo "Installing RocksDB dependencies..." && \
+		sudo apt-get install -y cmake build-essential libsnappy-dev \
+			libzstd-dev liblz4-dev libz-dev libgflags-dev \
+			zlib1g-dev libbz2-dev liburing-dev libgflags-dev && \
+		@echo "Building RocksDB from source..." && \
 		cd /tmp && \
 		git clone https://github.com/facebook/rocksdb.git && \
 		cd rocksdb && \
 		git checkout v10.2.1 && \
-		make shared_lib -j$$(nproc) && \
-		sudo mkdir -p /usr/local/rocksdb/lib && \
-		sudo mkdir -p /usr/local/rocksdb/include && \
-		sudo cp librocksdb.so* /usr/local/rocksdb/lib && \
-		sudo cp /usr/local/rocksdb/lib/librocksdb.so* /usr/lib/ && \
-		sudo cp -r include /usr/local/rocksdb/ && \
-		sudo cp -r include/* /usr/include/ && \
+		CC=gcc-14 make shared_lib -j$$(nproc) && \
+		@echo "Installing RocksDB..." && \
 		cd /tmp && \
-		rm -rf /tmp/rocksdb/; \
+		rm -rf /tmp/rocksdb/ && \
+		sudo ldconfig \
+		@echo "RocksDB dependencies installed successfully!" \
 	else \
-		echo "Using existing RocksDB installation"; \
-		sudo cp /usr/local/rocksdb/lib/librocksdb.so* /usr/lib/ 2>/dev/null || true; \
-		sudo cp -r /usr/local/rocksdb/include/* /usr/include/ 2>/dev/null || true; \
+		@echo "Using existing RocksDB installation"; \
 	fi
-	sudo ldconfig
-	@echo "RocksDB dependencies installed successfully!"
+	@echo "Using existing RocksDB installation";
 
 # Build replica (requires RocksDB dependencies)
-replica:
-#	cd cmd/replica; go build
-	cd cmd/replica; CGO_ENABLE=1 CGO_LDFLAGS="-lrocksdb -lstdc++ -lbz2 -lm -lz -lsnappy -llz4 -lzstd -luring" go build -v -trimpath -ldflags "-extldflags '-Wl,-z,stack-size=0x1F40000'"
+# this may require gcc-14
+replica: install-replica-deps
+	cd cmd/replica; CC=gcc-14 CGO_ENABLE=1 CGO_LDFLAGS="-lrocksdb -lstdc++ -lbz2 -lm -lz -lsnappy -llz4 -lzstd -luring" go build -v -trimpath
 
 
 clean:
