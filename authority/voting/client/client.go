@@ -137,7 +137,6 @@ func (cfg *Config) validate() error {
 		return fmt.Errorf("voting/client: LogBackend is mandatory")
 	}
 
-	// Validate each authority - RESTORED
 	for _, v := range cfg.Authorities {
 		for _, a := range v.Addresses {
 			if len(a) == 0 {
@@ -202,7 +201,7 @@ func (p *connector) initSession(ctx context.Context, linkKey kem.PrivateKey, sig
 
 		ictx, cancelFn := context.WithCancel(ctx)
 		conn, err = common.DialURL(u, ictx, dialFn)
-		cancelFn()
+		defer cancelFn()
 		if err == nil {
 			break
 		}
@@ -240,7 +239,7 @@ func (p *connector) initSession(ctx context.Context, linkKey kem.PrivateKey, sig
 
 	cfg := &wire.SessionConfig{
 		KEMScheme:          kemScheme,
-		PKISignatureScheme: pkiSignatureScheme, // RESTORED - was missing!
+		PKISignatureScheme: pkiSignatureScheme,
 		Geometry:           p.cfg.Geo,
 		Authenticator:      peerAuthenticator,
 		AdditionalData:     ad,
@@ -373,7 +372,6 @@ func (c *Client) Post(ctx context.Context, epoch uint64, signingPrivateKey sign.
 		return err
 	}
 
-	// RESTORED: Original signature construction
 	signedUpload := &pki.SignedUpload{
 		MixDescriptor: d,
 		LoopStats:     loopstats,
@@ -438,7 +436,6 @@ func (c *Client) PostReplica(ctx context.Context, epoch uint64, signingPrivateKe
 		return err
 	}
 
-	// RESTORED: Original signature construction
 	signedUpload := &pki.SignedReplicaUpload{ReplicaDescriptor: d}
 	blob, err := signedUpload.Marshal()
 	if err != nil {

@@ -32,7 +32,6 @@ func NewEnvelopeKey(scheme nike.Scheme) *EnvelopeKey {
 		panic("replica NIKE scheme is nil")
 	}
 	pk, sk, err := scheme.GenerateKeyPair()
-
 	if err != nil {
 		panic(err)
 	}
@@ -47,6 +46,7 @@ func NewEnvelopeKey(scheme nike.Scheme) *EnvelopeKey {
 func EnvelopeKeyFromFiles(dataDir string, scheme nike.Scheme, epoch uint64) (*EnvelopeKey, error) {
 	e := &EnvelopeKey{}
 	privKeyFile, pubKeyFile := e.KeyFileNames(dataDir, scheme, epoch)
+
 	if utils.BothExists(privKeyFile, pubKeyFile) {
 		privateKey, err := nikepem.FromPrivatePEMFile(privKeyFile, scheme)
 		if err != nil {
@@ -64,7 +64,7 @@ func EnvelopeKeyFromFiles(dataDir string, scheme nike.Scheme, epoch uint64) (*En
 	} else {
 		return nil, errors.New("only one key file exists")
 	}
-	// no reached
+	// not reached
 }
 
 func (e *EnvelopeKey) KeyFileNames(dataDir string, scheme nike.Scheme, epoch uint64) (string, string) {
@@ -79,11 +79,27 @@ func (e *EnvelopeKey) PurgeKeyFiles(dataDir string, scheme nike.Scheme, epoch ui
 	os.Remove(pubKeyFile)
 }
 
+// WriteKeyFiles generates and writes new key files, or loads existing ones if they already exist.
+// This ensures that a replica can safely restart or re-publish for the same epoch without errors.
 func (e *EnvelopeKey) WriteKeyFiles(dataDir string, scheme nike.Scheme, epoch uint64) error {
 	privKeyFile, pubKeyFile := e.KeyFileNames(dataDir, scheme, epoch)
+
 	if utils.BothExists(privKeyFile, pubKeyFile) {
-		return errors.New("key files already exist")
+		// Keys already exist for this epoch - load them instead of erroring.
+		// This is a normal case when the replica restarts or re-publishes.
+		privateKey, err := nikepem.FromPrivatePEMFile(privKeyFile, scheme)
+		if err != nil {
+			return fmt.Errorf("failed to load existing private key: %w", err)
+		}
+		publicKey, err := nikepem.FromPublicPEMFile(pubKeyFile, scheme)
+		if err != nil {
+			return fmt.Errorf("failed to load existing public key: %w", err)
+		}
+		e.PrivateKey = privateKey
+		e.PublicKey = publicKey
+		return nil
 	} else if utils.BothNotExists(privKeyFile, pubKeyFile) {
+		// Generate new keys
 		var err error
 		e.PublicKey, e.PrivateKey, err = scheme.GenerateKeyPair()
 		if err != nil {

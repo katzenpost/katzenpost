@@ -108,8 +108,10 @@ install-replica-deps:
 	@echo "RocksDB dependencies installed successfully!"
 
 # Build replica (requires RocksDB dependencies)
-replica: install-replica-deps
-	cd cmd/replica; go build
+replica:
+#	cd cmd/replica; go build
+	cd cmd/replica; CGO_ENABLE=1 CGO_LDFLAGS="-lrocksdb -lstdc++ -lbz2 -lm -lz -lsnappy -llz4 -lzstd -luring" go build -v -trimpath -ldflags "-extldflags '-Wl,-z,stack-size=0x1F40000'"
+
 
 clean:
 	rm -f cmd/server/server cmd/dirauth/dirauth cmd/genconfig/genconfig cmd/ping/ping \
@@ -161,4 +163,5 @@ test:
 	go test -v -race -timeout 0 ./...
 
 act:
+	podman tag katzenpost-alpine_base localhost/katzenpost-alpine_base:latest 2>/dev/null || true
 	act --bind --container-options "-v /etc/ssl/certs:/etc/ssl/certs:ro -v /usr/share/ca-certificates:/usr/share/ca-certificates:ro" -P ubuntu-latest=catthehacker/ubuntu:act-22.04 -j test_e2e_client2
