@@ -135,7 +135,7 @@ test-unit: test-config
 # Run replica unit tests (requires RocksDB dependencies)
 test-replica: test-config
 	@echo "Running replica unit tests..."
-	cd replica && GORACE=history_size=7 go test -coverprofile=coverage.out -race -v -failfast -timeout 30m ./...
+	cd replica && GORACE=history_size=7 CC=gcc-14 CGO_ENABLE=1 CGO_LDFLAGS="-lrocksdb -lstdc++ -lbz2 -lm -lz -lsnappy -llz4 -lzstd -luring" go test -coverprofile=coverage.out -race -v -failfast -timeout 30m ./...
 	@echo "Replica unit tests completed successfully!"
 
 # Legacy test target (kept for backwards compatibility)
@@ -143,5 +143,5 @@ test:
 	go test -v -race -timeout 0 ./...
 
 act:
-	podman tag katzenpost-alpine_base localhost/katzenpost-alpine_base:latest 2>/dev/null || true
+	podman tag katzenpost-alpine_base localhost/katzenpost-alpine_base:latest
 	act --bind --container-options "-v /etc/ssl/certs:/etc/ssl/certs:ro -v /usr/share/ca-certificates:/usr/share/ca-certificates:ro" -P ubuntu-latest=catthehacker/ubuntu:act-22.04 -j test_e2e_client2
