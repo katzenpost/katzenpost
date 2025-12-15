@@ -65,12 +65,13 @@ sphinx:
 # Install RocksDB dependencies required for replica
 install-replica-deps:
 	@echo "Checking for RocksDB..."
-	@pkg-config --exists gflags
+	@pkg-config --exists rocksdb
 	@if [ 0 -ne $$? ]; then \
 		@echo "Installing RocksDB dependencies..." && \
 		sudo apt-get install -y cmake build-essential libsnappy-dev \
 			libzstd-dev liblz4-dev libz-dev libgflags-dev \
-			zlib1g-dev libbz2-dev liburing-dev libgflags-dev && \
+			zlib1g-dev libbz2-dev liburing-dev libgflags-dev \
+			pkg-config && \
 		@echo "Building RocksDB from source..." && \
 		cd /tmp && \
 		git clone https://github.com/facebook/rocksdb.git && \
