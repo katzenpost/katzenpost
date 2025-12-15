@@ -78,7 +78,7 @@ install-replica-deps:
 		git clone https://github.com/facebook/rocksdb.git; \
 		cd rocksdb; \
 		git checkout v10.2.1; \
-		CC=gcc-14 make shared_lib -j$$(nproc); \
+		env CC=gcc-14 CXX=g++-14 make shared_lib -j$$(nproc); \
 		echo "Installing RocksDB..."; \
 		sudo make install; \
 		sudo ldconfig; \
