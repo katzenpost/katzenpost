@@ -62,29 +62,28 @@ map:
 sphinx:
 	cd cmd/sphinx; go build
 
-# Install RocksDB dependencies required for replica
 install-replica-deps:
 	@echo "Checking for RocksDB..."
-	@pkg-config --exists rocksdb
-	@if [ 0 -ne $$? ]; then \
-		@echo "Installing RocksDB dependencies..." && \
+	@if ! pkg-config --exists rocksdb; then \
+		echo "RocksDB missing"; \
+		echo "Installing RocksDB dependencies..."; \
 		sudo apt-get install -y cmake build-essential libsnappy-dev \
 			libzstd-dev liblz4-dev libz-dev libgflags-dev \
 			zlib1g-dev libbz2-dev liburing-dev libgflags-dev \
-			pkg-config && \
-		@echo "Building RocksDB from source..." && \
-		cd /tmp && \
-		git clone https://github.com/facebook/rocksdb.git && \
-		cd rocksdb && \
-		git checkout v10.2.1 && \
-		CC=gcc-14 make shared_lib -j$$(nproc) && \
-		@echo "Installing RocksDB..." && \
-		cd /tmp && \
-		rm -rf /tmp/rocksdb/ && \
+			pkg-config; \
+		echo "Building RocksDB from source..." \
+		cd /tmp \
+		git clone https://github.com/facebook/rocksdb.git \
+		cd rocksdb \
+		git checkout v10.2.1 \
+		CC=gcc-14 make shared_lib -j$$(nproc) \
+		echo "Installing RocksDB..." \
+		cd /tmp  \
+		rm -rf /tmp/rocksdb/ \
 		sudo ldconfig \
-		@echo "RocksDB dependencies installed successfully!" \
+		echo "RocksDB dependencies installed successfully!" \
 	else \
-		@echo "Using existing RocksDB installation"; \
+		echo "Using existing RocksDB installation"; \
 	fi
 	@echo "Using existing RocksDB installation";
 
