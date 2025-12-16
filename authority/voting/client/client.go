@@ -182,7 +182,7 @@ func (p *connector) initSession(ctx context.Context, linkKey kem.PrivateKey, sig
 	responseTimeout := time.Duration(p.cfg.ResponseTimeoutSec) * time.Second
 
 	p.log.Debugf("Client timeouts: dial=%v, handshake=%v, response=%v",
-        dialTimeout, handshakeTimeout, responseTimeout)
+		dialTimeout, handshakeTimeout, responseTimeout)
 
 	dialFn := p.cfg.DialContextFn
 	if dialFn == nil {

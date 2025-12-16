@@ -103,8 +103,9 @@ func (c *incomingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 			// the user db.  Reject.
 			peerName := getPeerName()
 			c.log.Warningf("server/incoming: IsPeerValid(): Client '%s' no longer in user db", peerName)
-			c.log.Warningf("server/incoming: IsPeerValid(): Remote Peer Credentials: name=%s, identity_hash=%x, link_key=%s",
-				peerName, creds.AdditionalData, kpcommon.TruncatePEMForLogging(kempem.ToPublicPEMString(creds.PublicKey)))
+			c.log.Warningf("server/incoming: IsPeerValid(): Remote Peer Credentials: name=%s, identity_hash=%x", peerName, creds.AdditionalData)
+			c.log.Debugf("server/incoming: IsPeerValid(): Remote Peer link_key=%s",
+				kpcommon.TruncatePEMForLogging(kempem.ToPublicPEMString(creds.PublicKey)))
 			c.canSend = false
 			return false
 		} else if isClient {
@@ -172,8 +173,9 @@ func (c *incomingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 			panic(err)
 		}
 		c.log.Warningf("server/incoming: IsPeerValid(): Authentication failed for peer '%s'", peerName)
-		c.log.Warningf("server/incoming: IsPeerValid(): Remote Peer Credentials: name=%s, identity_hash=%x, link_key=%s",
-			peerName, creds.AdditionalData, kpcommon.TruncatePEMForLogging(kempem.ToPublicPEMString(creds.PublicKey)))
+		c.log.Warningf("server/incoming: IsPeerValid(): Remote Peer Credentials: name=%s, identity_hash=%x", peerName, creds.AdditionalData)
+		c.log.Debugf("server/incoming: IsPeerValid(): Remote Peer link_key=%s",
+			kpcommon.TruncatePEMForLogging(kempem.ToPublicPEMString(creds.PublicKey)))
 		c.log.Warningf("server/incoming: IsPeerValid(): Link key hash: %x", hash.Sum256(blob))
 	}
 

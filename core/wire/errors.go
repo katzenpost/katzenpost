@@ -68,20 +68,18 @@ type HandshakeError struct {
 	Connection *ConnectionInfo
 }
 
-// Error implements the error interface
+// Error implements the error interface.
+// Note: This method intentionally excludes sensitive information like IP addresses
+// and key material. Use Debug() for detailed information at debug log level only.
 func (e *HandshakeError) Error() string {
 	var b strings.Builder
 
-	// Basic error information
+	// Basic error information (no sensitive data)
 	fmt.Fprintf(&b, "wire/session: handshake failed at %s", e.State)
 	if e.IsInitiator {
 		b.WriteString(" (initiator)")
 	} else {
 		b.WriteString(" (responder)")
-	}
-
-	if e.Connection != nil && e.Connection.RemoteAddr != "" {
-		fmt.Fprintf(&b, " with peer %s (%s)", e.Connection.RemoteAddr, e.Connection.Protocol)
 	}
 
 	fmt.Fprintf(&b, ": %s", e.Message)
@@ -93,8 +91,10 @@ func (e *HandshakeError) Error() string {
 	return b.String()
 }
 
-// Verbose returns a detailed error message with all available information
-func (e *HandshakeError) Verbose() string {
+// Debug returns a detailed error message with all available information.
+// WARNING: This output contains sensitive information (IP addresses, key material)
+// and should ONLY be logged at DEBUG level.
+func (e *HandshakeError) Debug() string {
 	var b strings.Builder
 
 	// Header
@@ -183,16 +183,18 @@ type ProtocolVersionError struct {
 	Connection *ConnectionInfo
 }
 
+// Error implements the error interface.
+// Note: This method intentionally excludes sensitive information like IP addresses.
+// Use Debug() for detailed information at debug log level only.
 func (e *ProtocolVersionError) Error() string {
-	if e.Connection != nil {
-		return fmt.Sprintf("wire/session: protocol version mismatch: expected %x, received %x from %s (%s)",
-			e.Expected, e.Received, e.Connection.RemoteAddr, e.Connection.Protocol)
-	}
 	return fmt.Sprintf("wire/session: protocol version mismatch: expected %x, received %x",
 		e.Expected, e.Received)
 }
 
-func (e *ProtocolVersionError) Verbose() string {
+// Debug returns a detailed error message with all available information.
+// WARNING: This output contains sensitive information (IP addresses)
+// and should ONLY be logged at DEBUG level.
+func (e *ProtocolVersionError) Debug() string {
 	var b strings.Builder
 	b.WriteString("=== PROTOCOL VERSION MISMATCH ===\n")
 	fmt.Fprintf(&b, "Expected Version: %x\n", e.Expected)
@@ -217,15 +219,17 @@ type AuthenticationError struct {
 	ClockSkew       int64
 }
 
+// Error implements the error interface.
+// Note: This method intentionally excludes sensitive information like IP addresses
+// and key material. Use Debug() for detailed information at debug log level only.
 func (e *AuthenticationError) Error() string {
-	if e.Connection != nil {
-		return fmt.Sprintf("wire/session: peer authentication failed from %s (%s)",
-			e.Connection.RemoteAddr, e.Connection.Protocol)
-	}
 	return "wire/session: peer authentication failed"
 }
 
-func (e *AuthenticationError) Verbose() string {
+// Debug returns a detailed error message with all available information.
+// WARNING: This output contains sensitive information (IP addresses, key material)
+// and should ONLY be logged at DEBUG level.
+func (e *AuthenticationError) Debug() string {
 	var b strings.Builder
 	b.WriteString("=== PEER AUTHENTICATION FAILURE ===\n")
 
@@ -271,7 +275,10 @@ func (e *MessageSizeError) Error() string {
 		e.MessageNumber, e.State, e.ActualSize, e.ExpectedSize)
 }
 
-func (e *MessageSizeError) Verbose() string {
+// Debug returns a detailed error message with all available information.
+// Note: MessageSizeError does not contain sensitive information, but implements
+// the DebugError interface for consistency with other wire error types.
+func (e *MessageSizeError) Debug() string {
 	var b strings.Builder
 	b.WriteString("=== MESSAGE SIZE ERROR ===\n")
 	fmt.Fprintf(&b, "Handshake State: %s\n", e.State)
@@ -285,10 +292,12 @@ func (e *MessageSizeError) Verbose() string {
 	return b.String()
 }
 
-// VerboseError interface for errors that can provide detailed information
-type VerboseError interface {
+// DebugError interface for errors that can provide detailed information.
+// WARNING: The Debug() method returns sensitive information (IP addresses, key material)
+// and should ONLY be logged at DEBUG level.
+type DebugError interface {
 	error
-	Verbose() string
+	Debug() string
 }
 
 // IsHandshakeError checks if an error is a HandshakeError
@@ -315,10 +324,12 @@ func IsMessageSizeError(err error) bool {
 	return ok
 }
 
-// GetVerboseError returns verbose error information if available
-func GetVerboseError(err error) string {
-	if ve, ok := err.(VerboseError); ok {
-		return ve.Verbose()
+// GetDebugError returns detailed error information if available.
+// WARNING: This output contains sensitive information (IP addresses, key material)
+// and should ONLY be logged at DEBUG level.
+func GetDebugError(err error) string {
+	if de, ok := err.(DebugError); ok {
+		return de.Debug()
 	}
 	return err.Error()
 }

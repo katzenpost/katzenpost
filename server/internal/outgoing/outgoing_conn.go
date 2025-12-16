@@ -82,8 +82,8 @@ func (c *outgoingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 		c.log.Warningf("server/outgoing: IsPeerValid(): Identity hash mismatch for peer '%s'", peerName)
 		c.log.Warningf("server/outgoing: IsPeerValid(): Expected identity hash: %x", idHash[:])
 		c.log.Warningf("server/outgoing: IsPeerValid(): Received identity hash: %x", creds.AdditionalData)
-		c.log.Warningf("server/outgoing: IsPeerValid(): Expected identity key (raw): %x", c.dst.IdentityKey)
-		c.log.Warningf("server/outgoing: IsPeerValid(): Received link key: %s",
+		c.log.Debugf("server/outgoing: IsPeerValid(): Expected identity key (raw): %x", c.dst.IdentityKey)
+		c.log.Debugf("server/outgoing: IsPeerValid(): Received link key: %s",
 			kpcommon.TruncatePEMForLogging(kempem.ToPublicPEMString(creds.PublicKey)))
 		return false
 	}
@@ -94,8 +94,8 @@ func (c *outgoingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 	if !hmac.Equal(c.dst.LinkKey, keyblob) {
 		peerName := getPeerName()
 		c.log.Warningf("server/outgoing: IsPeerValid(): Link key mismatch for peer '%s'", peerName)
-		c.log.Warningf("server/outgoing: IsPeerValid(): Expected link key (raw): %x", c.dst.LinkKey)
-		c.log.Warningf("server/outgoing: IsPeerValid(): Received link key: %s",
+		c.log.Debugf("server/outgoing: IsPeerValid(): Expected link key (raw): %x", c.dst.LinkKey)
+		c.log.Debugf("server/outgoing: IsPeerValid(): Received link key: %s",
 			kpcommon.TruncatePEMForLogging(kempem.ToPublicPEMString(creds.PublicKey)))
 		c.log.Warningf("server/outgoing: IsPeerValid(): Identity hash: %x", creds.AdditionalData)
 		return false
@@ -109,8 +109,9 @@ func (c *outgoingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 	if !isValid {
 		peerName := getPeerName()
 		c.log.Warningf("server/outgoing: IsPeerValid(): Failed to authenticate peer '%s' via latest PKI doc", peerName)
-		c.log.Warningf("server/outgoing: IsPeerValid(): Remote Peer Credentials: name=%s, identity_hash=%x, link_key=%s",
-			peerName, creds.AdditionalData, kpcommon.TruncatePEMForLogging(kempem.ToPublicPEMString(creds.PublicKey)))
+		c.log.Warningf("server/outgoing: IsPeerValid(): Remote Peer Credentials: name=%s, identity_hash=%x", peerName, creds.AdditionalData)
+		c.log.Debugf("server/outgoing: IsPeerValid(): Remote Peer link_key=%s",
+			kpcommon.TruncatePEMForLogging(kempem.ToPublicPEMString(creds.PublicKey)))
 	}
 	return isValid
 }

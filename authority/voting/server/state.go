@@ -1608,7 +1608,8 @@ func (s *state) onCertUpload(certificate *commands.Cert) commands.Command {
 	// verify the structure of the certificate
 	doc, err := s.doParseDocument(certificate.Payload)
 	if err != nil {
-		s.log.Error("Certficate from %s failed to verify: %s", s.authorityNames[pk], certificate.PublicKey, err)
+		s.log.Errorf("Certificate from %s failed to verify: %s", s.authorityNames[pk], err)
+		s.log.Debugf("Certificate from %s failed to verify: %s %s", s.authorityNames[pk], certificate.PublicKey, err)
 		resp.ErrorCode = commands.CertNotSigned
 		return &resp
 	}

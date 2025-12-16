@@ -243,7 +243,7 @@ func (s *Server) onPostReplicaDescriptor(rAddr net.Addr, cmd *commands.PostRepli
 	// Ensure that the descriptor is signed by the peer that is posting.
 	identityKeyHash := hash.Sum256(desc.IdentityKey)
 	if !hmac.Equal(identityKeyHash[:], pubKeyHash) {
-		s.log.Errorf("Peer %v: Identity key hash '%x' is not link key '%v'.", rAddr, hash.Sum256(desc.IdentityKey), pubKeyHash)
+		s.log.Errorf("Peer %v: Identity key hash '%x' is not link key '%x'.", rAddr, hash.Sum256(desc.IdentityKey), pubKeyHash)
 		resp.ErrorCode = commands.DescriptorForbidden
 		return resp
 	}

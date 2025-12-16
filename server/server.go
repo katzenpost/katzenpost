@@ -459,7 +459,7 @@ func New(cfg *config.Config) (*Server, error) {
 	}
 	// Bring the listener(s) online.
 	s.listeners = make([]glue.Listener, 0, len(addresses))
-	for i, addr := range addresses  {
+	for i, addr := range addresses {
 		l, err := incoming.New(goo, s.inboundPackets, i, addr)
 		if err != nil {
 			s.log.Errorf("Failed to spawn listener on address: %v (%v).", addr, err)
