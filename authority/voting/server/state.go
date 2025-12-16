@@ -1528,29 +1528,53 @@ func (s *state) isReplicaDescriptorAuthorized(desc *pki.ReplicaDescriptor) bool 
 	pk := hash.Sum256(desc.IdentityKey)
 	name, ok := s.authorizedReplicaNodes[pk]
 	if !ok {
+		s.log.Errorf("StorageReplica authentication failure: key hash %x not in map", pk)
 		return false
 	}
-	return name == desc.Name
+	if name != desc.Name {
+		s.log.Errorf("StorageReplica authentication failure: name mismatch - map has '%s', descriptor has '%s'", name, desc.Name)
+		return false
+	}
+	s.log.Debugf("StorageReplica authentication OK: %s with hash %x", name, pk)
+	return true
 }
 
 func (s *state) isDescriptorAuthorized(desc *pki.MixDescriptor) bool {
 	pk := hash.Sum256(desc.IdentityKey)
 	if !desc.IsGatewayNode && !desc.IsServiceNode {
-		return s.authorizedMixes[pk]
+		authorized := s.authorizedMixes[pk]
+		if !authorized {
+			s.log.Errorf("Mix authentication failure: key hash %x not authorized", pk)
+		} else {
+			s.log.Debugf("Mix authentication OK: %s with hash %x", desc.Name, pk)
+		}
+		return authorized
 	}
 	if desc.IsGatewayNode {
 		name, ok := s.authorizedGatewayNodes[pk]
 		if !ok {
+			s.log.Errorf("Gateway authentication failure: key hash %x not in map", pk)
 			return false
 		}
-		return name == desc.Name
+		if name != desc.Name {
+			s.log.Errorf("Gateway authentication failure: name mismatch - map has '%s', descriptor has '%s'", name, desc.Name)
+			return false
+		}
+		s.log.Debugf("Gateway authentication OK: %s with hash %x", name, pk)
+		return true
 	}
 	if desc.IsServiceNode {
 		name, ok := s.authorizedServiceNodes[pk]
 		if !ok {
+			s.log.Errorf("ServiceNode authentication failure: key hash %x not in map", pk)
 			return false
 		}
-		return name == desc.Name
+		if name != desc.Name {
+			s.log.Errorf("ServiceNode authentication failure: name mismatch - map has '%s', descriptor has '%s'", name, desc.Name)
+			return false
+		}
+		s.log.Debugf("ServiceNode authentication OK: %s with hash %x", name, pk)
+		return true
 	}
 	panic("impossible")
 }
