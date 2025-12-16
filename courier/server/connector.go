@@ -38,9 +38,13 @@ func (co *Connector) destToNodeID(dest uint8) (*[constants.NodeIDLength]byte, er
 	doc := co.server.PKI.PKIDocument()
 	if doc == nil {
 		co.log.Errorf("destToNodeID: PKI document is nil")
-		return nil, errors.New("invalid destination ID")
+		return nil, errors.New("PKI document not available")
 	}
 	co.log.Debugf("destToNodeID: dest=%d, StorageReplicas count=%d", dest, len(doc.StorageReplicas))
+	if len(doc.StorageReplicas) == 0 {
+		co.log.Errorf("destToNodeID: no storage replicas in PKI document")
+		return nil, errors.New("no storage replicas available in PKI")
+	}
 	if int(dest) >= len(doc.StorageReplicas) {
 		co.log.Errorf("destToNodeID: invalid destination ID %d >= %d", dest, len(doc.StorageReplicas))
 		return nil, errors.New("invalid destination ID")
@@ -51,11 +55,11 @@ func (co *Connector) destToNodeID(dest uint8) (*[constants.NodeIDLength]byte, er
 	return &idKeyHash, nil
 }
 
-func (co *Connector) DispatchMessage(dest uint8, message *commands.ReplicaMessage) {
+func (co *Connector) DispatchMessage(dest uint8, message *commands.ReplicaMessage) error {
 	id, err := co.destToNodeID(dest)
 	if err != nil {
 		co.log.Errorf("DispatchMessage failure: %s", err)
-		return
+		return err
 	}
 
 	co.RLock()
@@ -63,10 +67,11 @@ func (co *Connector) DispatchMessage(dest uint8, message *commands.ReplicaMessag
 	if !ok {
 		co.RUnlock()
 		co.log.Errorf("DispatchMessage failure: connection not found")
-		return
+		return errors.New("connection not found")
 	}
 	co.RUnlock()
 	c.dispatchMessage(message)
+	return nil
 }
 
 func (co *Connector) Halt() {
