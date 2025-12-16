@@ -74,16 +74,16 @@ type incomingConn struct {
 }
 
 func (c *incomingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
-	// Helper function to get peer name
-	getPeerName := func() string {
+	// Helper function to get peer name - returns name and whether peer was found in PKI
+	getPeerName := func() (string, bool) {
 		if doc, err := c.l.glue.PKI().CurrentDocument(); err == nil && doc != nil {
 			var adHash [32]byte
 			copy(adHash[:], creds.AdditionalData)
 			if node, err := doc.GetNodeByKeyHash(&adHash); err == nil {
-				return node.Name
+				return node.Name, true
 			}
 		}
-		return "unknown"
+		return "", false
 	}
 
 	gateway := c.l.glue.Gateway()
@@ -101,11 +101,14 @@ func (c *incomingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 		if !isClient && c.fromClient {
 			// This used to be a client, but is no longer listed in
 			// the user db.  Reject.
-			peerName := getPeerName()
-			c.log.Warningf("server/incoming: IsPeerValid(): Client '%s' no longer in user db", peerName)
-			c.log.Warningf("server/incoming: IsPeerValid(): Remote Peer Credentials: name=%s, identity_hash=%x", peerName, creds.AdditionalData)
-			c.log.Debugf("server/incoming: IsPeerValid(): Remote Peer link_key=%s",
-				kpcommon.TruncatePEMForLogging(kempem.ToPublicPEMString(creds.PublicKey)))
+			peerName, found := getPeerName()
+			if found {
+				c.log.Warningf("server/incoming: IsPeerValid(): Client '%s' no longer in user db", peerName)
+			} else {
+				c.log.Warningf("server/incoming: IsPeerValid(): Client no longer in user db (identity_hash=%x not in current PKI)", creds.AdditionalData)
+			}
+			c.log.Debugf("server/incoming: IsPeerValid(): Remote Peer Credentials: name=%s, identity_hash=%x, link_key=%s",
+				peerName, creds.AdditionalData, kpcommon.TruncatePEMForLogging(kempem.ToPublicPEMString(creds.PublicKey)))
 			c.canSend = false
 			return false
 		} else if isClient {
@@ -167,16 +170,18 @@ func (c *incomingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 	if isValid {
 		c.fromMix = true
 	} else {
-		peerName := getPeerName()
+		peerName, found := getPeerName()
 		blob, err := creds.PublicKey.MarshalBinary()
 		if err != nil {
 			panic(err)
 		}
-		c.log.Warningf("server/incoming: IsPeerValid(): Authentication failed for peer '%s'", peerName)
-		c.log.Warningf("server/incoming: IsPeerValid(): Remote Peer Credentials: name=%s, identity_hash=%x", peerName, creds.AdditionalData)
-		c.log.Debugf("server/incoming: IsPeerValid(): Remote Peer link_key=%s",
-			kpcommon.TruncatePEMForLogging(kempem.ToPublicPEMString(creds.PublicKey)))
-		c.log.Warningf("server/incoming: IsPeerValid(): Link key hash: %x", hash.Sum256(blob))
+		if found {
+			c.log.Warningf("server/incoming: IsPeerValid(): Authentication failed for peer '%s' (link_key_hash=%x)", peerName, hash.Sum256(blob))
+		} else {
+			c.log.Warningf("server/incoming: IsPeerValid(): Authentication failed for unknown peer (identity_hash=%x not in current PKI, link_key_hash=%x)", creds.AdditionalData, hash.Sum256(blob))
+		}
+		c.log.Debugf("server/incoming: IsPeerValid(): Remote Peer Credentials: name=%s, identity_hash=%x, link_key=%s",
+			peerName, creds.AdditionalData, kpcommon.TruncatePEMForLogging(kempem.ToPublicPEMString(creds.PublicKey)))
 	}
 
 	return isValid

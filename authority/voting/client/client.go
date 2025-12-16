@@ -414,12 +414,8 @@ func (c *Client) Post(ctx context.Context, epoch uint64, signingPrivateKey sign.
 		switch r.ErrorCode {
 		case commands.DescriptorOk:
 			successCount++
-		case commands.DescriptorConflict:
-			errs = append(errs, fmt.Errorf("%s: conflict", peerResp.Peer.Identifier))
-		case commands.DescriptorForbidden:
-			errs = append(errs, fmt.Errorf("%s: forbidden", peerResp.Peer.Identifier))
 		default:
-			errs = append(errs, fmt.Errorf("%s: error %d", peerResp.Peer.Identifier, r.ErrorCode))
+			errs = append(errs, fmt.Errorf("%s: %s", peerResp.Peer.Identifier, commands.DescriptorErrorToString(r.ErrorCode)))
 		}
 	}
 
@@ -469,7 +465,7 @@ func (c *Client) PostReplica(ctx context.Context, epoch uint64, signingPrivateKe
 			continue
 		}
 		if r.ErrorCode != commands.DescriptorOk {
-			errs = append(errs, fmt.Errorf("%s: error %d", peerResp.Peer.Identifier, r.ErrorCode))
+			errs = append(errs, fmt.Errorf("%s: %s", peerResp.Peer.Identifier, commands.DescriptorErrorToString(r.ErrorCode)))
 		}
 	}
 	if len(errs) == 0 {

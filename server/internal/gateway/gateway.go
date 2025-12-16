@@ -84,29 +84,38 @@ func (p *gateway) AuthenticateClient(c *wire.PeerCredentials) bool {
 			panic(err)
 		}
 
-		// Try to get a human-readable username from AdditionalData
-		username := "unknown"
-		if len(c.AdditionalData) > 0 && len(c.AdditionalData) < 256 {
-			// Check if it looks like a printable username
-			if isPrintableASCII(c.AdditionalData) {
-				username = string(c.AdditionalData)
-			} else {
-				username = fmt.Sprintf("user_%x", c.AdditionalData)
-			}
-		}
-
 		if len(c.AdditionalData) == sConstants.NodeIDLength {
-			p.log.Warningf("gateway: AuthenticateClient(): Authentication failed for peer (probably a mix node)")
-			p.log.Warningf("gateway: AuthenticateClient(): Remote Peer Credentials: name=%s, identity_hash=%x", username, c.AdditionalData)
-			p.log.Debugf("gateway: AuthenticateClient(): Remote Peer link_key=%s",
-				kpcommon.TruncatePEMForLogging(kempem.ToPublicPEMString(c.PublicKey)))
-			p.log.Warningf("gateway: AuthenticateClient(): Link key hash: %x", hash.Sum256(blob))
+			// This looks like a mix node identity hash - try to look up the name
+			var nodeName string
+			if doc, err := p.glue.PKI().CurrentDocument(); err == nil && doc != nil {
+				var adHash [32]byte
+				copy(adHash[:], c.AdditionalData)
+				if node, err := doc.GetNodeByKeyHash(&adHash); err == nil {
+					nodeName = node.Name
+				}
+			}
+			if nodeName != "" {
+				p.log.Warningf("gateway: AuthenticateClient(): Authentication failed for mix node '%s' (link_key_hash=%x)", nodeName, hash.Sum256(blob))
+			} else {
+				p.log.Warningf("gateway: AuthenticateClient(): Authentication failed for unknown peer (identity_hash=%x not in current PKI, link_key_hash=%x)", c.AdditionalData, hash.Sum256(blob))
+			}
+			p.log.Debugf("gateway: AuthenticateClient(): Remote Peer Credentials: identity_hash=%x, link_key=%s",
+				c.AdditionalData, kpcommon.TruncatePEMForLogging(kempem.ToPublicPEMString(c.PublicKey)))
 		} else {
-			p.log.Warningf("gateway: AuthenticateClient(): Authentication failed for client '%s'", username)
-			p.log.Warningf("gateway: AuthenticateClient(): Remote Peer Credentials: name=%s, user_id=%x", username, c.AdditionalData)
-			p.log.Debugf("gateway: AuthenticateClient(): Remote Peer link_key=%s",
-				kpcommon.TruncatePEMForLogging(kempem.ToPublicPEMString(c.PublicKey)))
-			p.log.Warningf("gateway: AuthenticateClient(): Link key hash: %x", hash.Sum256(blob))
+			// This is a client - try to get a human-readable username from AdditionalData
+			username := ""
+			if len(c.AdditionalData) > 0 && len(c.AdditionalData) < 256 {
+				if isPrintableASCII(c.AdditionalData) {
+					username = string(c.AdditionalData)
+				}
+			}
+			if username != "" {
+				p.log.Warningf("gateway: AuthenticateClient(): Authentication failed for client '%s' (link_key_hash=%x)", username, hash.Sum256(blob))
+			} else {
+				p.log.Warningf("gateway: AuthenticateClient(): Authentication failed for client (user_id=%x, link_key_hash=%x)", c.AdditionalData, hash.Sum256(blob))
+			}
+			p.log.Debugf("gateway: AuthenticateClient(): Remote Peer Credentials: user_id=%x, link_key=%s",
+				c.AdditionalData, kpcommon.TruncatePEMForLogging(kempem.ToPublicPEMString(c.PublicKey)))
 		}
 	}
 	return isValid

@@ -65,26 +65,24 @@ func (c *outgoingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 	// with.  This is enforced even if mix authentication is disabled.
 
 	// Helper function to get peer name
-	getPeerName := func() string {
+	// Helper function to get peer name - returns name and whether peer was found in PKI
+	getPeerName := func() (string, bool) {
 		if doc, err := c.co.glue.PKI().CurrentDocument(); err == nil && doc != nil {
 			var adHash [32]byte
 			copy(adHash[:], creds.AdditionalData)
 			if node, err := doc.GetNodeByKeyHash(&adHash); err == nil {
-				return node.Name
+				return node.Name, true
 			}
 		}
-		return "unknown"
+		return "", false
 	}
 
 	idHash := hash.Sum256(c.dst.IdentityKey)
 	if !hmac.Equal(idHash[:], creds.AdditionalData) {
-		peerName := getPeerName()
-		c.log.Warningf("server/outgoing: IsPeerValid(): Identity hash mismatch for peer '%s'", peerName)
-		c.log.Warningf("server/outgoing: IsPeerValid(): Expected identity hash: %x", idHash[:])
-		c.log.Warningf("server/outgoing: IsPeerValid(): Received identity hash: %x", creds.AdditionalData)
-		c.log.Debugf("server/outgoing: IsPeerValid(): Expected identity key (raw): %x", c.dst.IdentityKey)
-		c.log.Debugf("server/outgoing: IsPeerValid(): Received link key: %s",
-			kpcommon.TruncatePEMForLogging(kempem.ToPublicPEMString(creds.PublicKey)))
+		// We know what we expected (c.dst.Name) even if the peer isn't in PKI
+		c.log.Warningf("server/outgoing: IsPeerValid(): Identity hash mismatch connecting to '%s' (expected=%x, received=%x)", c.dst.Name, idHash[:], creds.AdditionalData)
+		c.log.Debugf("server/outgoing: IsPeerValid(): Expected identity key (raw): %x, Received link key: %s",
+			c.dst.IdentityKey, kpcommon.TruncatePEMForLogging(kempem.ToPublicPEMString(creds.PublicKey)))
 		return false
 	}
 	keyblob, err := creds.PublicKey.MarshalBinary()
@@ -92,12 +90,9 @@ func (c *outgoingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 		panic(err)
 	}
 	if !hmac.Equal(c.dst.LinkKey, keyblob) {
-		peerName := getPeerName()
-		c.log.Warningf("server/outgoing: IsPeerValid(): Link key mismatch for peer '%s'", peerName)
-		c.log.Debugf("server/outgoing: IsPeerValid(): Expected link key (raw): %x", c.dst.LinkKey)
-		c.log.Debugf("server/outgoing: IsPeerValid(): Received link key: %s",
-			kpcommon.TruncatePEMForLogging(kempem.ToPublicPEMString(creds.PublicKey)))
-		c.log.Warningf("server/outgoing: IsPeerValid(): Identity hash: %x", creds.AdditionalData)
+		c.log.Warningf("server/outgoing: IsPeerValid(): Link key mismatch for peer '%s' (identity_hash=%x)", c.dst.Name, creds.AdditionalData)
+		c.log.Debugf("server/outgoing: IsPeerValid(): Expected link key (raw): %x, Received link key: %s",
+			c.dst.LinkKey, kpcommon.TruncatePEMForLogging(kempem.ToPublicPEMString(creds.PublicKey)))
 		return false
 	}
 
@@ -107,11 +102,14 @@ func (c *outgoingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 	_, c.canSend, isValid = c.co.glue.PKI().AuthenticateConnection(creds, true)
 
 	if !isValid {
-		peerName := getPeerName()
-		c.log.Warningf("server/outgoing: IsPeerValid(): Failed to authenticate peer '%s' via latest PKI doc", peerName)
-		c.log.Warningf("server/outgoing: IsPeerValid(): Remote Peer Credentials: name=%s, identity_hash=%x", peerName, creds.AdditionalData)
-		c.log.Debugf("server/outgoing: IsPeerValid(): Remote Peer link_key=%s",
-			kpcommon.TruncatePEMForLogging(kempem.ToPublicPEMString(creds.PublicKey)))
+		peerName, found := getPeerName()
+		if found {
+			c.log.Warningf("server/outgoing: IsPeerValid(): Failed to authenticate peer '%s' via latest PKI doc", peerName)
+		} else {
+			c.log.Warningf("server/outgoing: IsPeerValid(): Failed to authenticate peer via latest PKI doc (identity_hash=%x not in current PKI)", creds.AdditionalData)
+		}
+		c.log.Debugf("server/outgoing: IsPeerValid(): Remote Peer Credentials: name=%s, identity_hash=%x, link_key=%s",
+			peerName, creds.AdditionalData, kpcommon.TruncatePEMForLogging(kempem.ToPublicPEMString(creds.PublicKey)))
 	}
 	return isValid
 }

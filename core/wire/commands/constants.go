@@ -186,3 +186,19 @@ const (
 	// SigInvalid signifies that the signature failed to deserialiez.
 	SigInvalid = 26
 )
+
+// DescriptorErrorToString returns a human-readable string for descriptor error codes.
+func DescriptorErrorToString(code uint8) string {
+	switch code {
+	case DescriptorOk:
+		return "Ok"
+	case DescriptorInvalid:
+		return "Invalid"
+	case DescriptorConflict:
+		return "Conflict"
+	case DescriptorForbidden:
+		return "Forbidden"
+	default:
+		return "Unknown"
+	}
+}
