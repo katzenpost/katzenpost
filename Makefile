@@ -69,7 +69,7 @@ install-replica-deps:
 		echo "RocksDB missing"; \
 		echo "Installing build dependencies..."; \
 		sudo apt-get install -y \
-			cmake build-essential pkg-config \
+			cmake build-essential pkg-config gcc-14 g++-14 \
 			libsnappy-dev libzstd-dev liblz4-dev \
 			zlib1g-dev libbz2-dev liburing-dev libgflags-dev; \
 		echo "Building RocksDB from source..."; \
