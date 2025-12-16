@@ -97,13 +97,15 @@ func (p *gateway) AuthenticateClient(c *wire.PeerCredentials) bool {
 
 		if len(c.AdditionalData) == sConstants.NodeIDLength {
 			p.log.Warningf("gateway: AuthenticateClient(): Authentication failed for peer (probably a mix node)")
-			p.log.Warningf("gateway: AuthenticateClient(): Remote Peer Credentials: name=%s, identity_hash=%x, link_key=%s",
-				username, c.AdditionalData, kpcommon.TruncatePEMForLogging(kempem.ToPublicPEMString(c.PublicKey)))
+			p.log.Warningf("gateway: AuthenticateClient(): Remote Peer Credentials: name=%s, identity_hash=%x", username, c.AdditionalData)
+			p.log.Debugf("gateway: AuthenticateClient(): Remote Peer link_key=%s",
+				kpcommon.TruncatePEMForLogging(kempem.ToPublicPEMString(c.PublicKey)))
 			p.log.Warningf("gateway: AuthenticateClient(): Link key hash: %x", hash.Sum256(blob))
 		} else {
 			p.log.Warningf("gateway: AuthenticateClient(): Authentication failed for client '%s'", username)
-			p.log.Warningf("gateway: AuthenticateClient(): Remote Peer Credentials: name=%s, user_id=%x, link_key=%s",
-				username, c.AdditionalData, kpcommon.TruncatePEMForLogging(kempem.ToPublicPEMString(c.PublicKey)))
+			p.log.Warningf("gateway: AuthenticateClient(): Remote Peer Credentials: name=%s, user_id=%x", username, c.AdditionalData)
+			p.log.Debugf("gateway: AuthenticateClient(): Remote Peer link_key=%s",
+				kpcommon.TruncatePEMForLogging(kempem.ToPublicPEMString(c.PublicKey)))
 			p.log.Warningf("gateway: AuthenticateClient(): Link key hash: %x", hash.Sum256(blob))
 		}
 	}
