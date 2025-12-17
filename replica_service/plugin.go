@@ -4,6 +4,8 @@
 package replica_service
 
 import (
+	"path/filepath"
+
 	"gopkg.in/op/go-logging.v1"
 
 	"github.com/katzenpost/katzenpost/core/log"
@@ -15,7 +17,8 @@ import (
 type ReplicaService struct {
 	worker.Worker
 
-	cfg *config.Config
+	cfg   *config.Config
+	state *state
 
 	logBackend *log.Backend
 	write      func(cborplugin.Command)
@@ -23,10 +26,39 @@ type ReplicaService struct {
 }
 
 func New(cfg *config.Config) (*ReplicaService, error) {
-	return &ReplicaService{}, nil // XXX FIX ME
+	// Initialize logging
+	p := cfg.Logging.File
+	if !cfg.Logging.Disable && cfg.Logging.File != "" {
+		if !filepath.IsAbs(p) {
+			p = filepath.Join(cfg.DataDir, p)
+		}
+	}
+
+	logBackend, err := log.New(p, cfg.Logging.Level, cfg.Logging.Disable)
+	if err != nil {
+		return nil, err
+	}
+
+	r := &ReplicaService{
+		cfg:        cfg,
+		logBackend: logBackend,
+		log:        logBackend.GetLogger("replica_service"),
+	}
+
+	r.log.Notice("Starting Katzenpost Replica Service")
+
+	// Initialize state (database)
+	r.state = newState(cfg, logBackend.GetLogger("replica_service state"))
+	r.state.initDB()
+
+	return r, nil
 }
 
 func (r *ReplicaService) Shutdown() {
+	r.log.Notice("Shutting down Replica Service")
+	if r.state != nil {
+		r.state.Close()
+	}
 	r.Halt()
 }
 
@@ -36,12 +68,7 @@ func (r *ReplicaService) RotateLog() {
 	r.logBackend.Rotate()
 }
 
-/*** cbor mixnet service plugin methods below here ***/
-
-func (r *ReplicaService) OnCommand(cmd cborplugin.Command) error {
-	// XXX TODO
-	return nil
-}
+/** these two methods are for the cbor plugin **/
 
 func (r *ReplicaService) RegisterConsumer(s *cborplugin.Server) {
 	r.write = s.Write
