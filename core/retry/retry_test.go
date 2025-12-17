@@ -273,9 +273,9 @@ func TestExtractHostFromAddress(t *testing.T) {
 func TestDefaultConstants(t *testing.T) {
 	require := require.New(t)
 
-	require.Equal(10, DefaultMaxAttempts)
-	require.Equal(500*time.Millisecond, DefaultBaseDelay)
-	require.Equal(10*time.Second, DefaultMaxDelay)
+	require.Equal(20, DefaultMaxAttempts)
+	require.Equal(10*time.Millisecond, DefaultBaseDelay)
+	require.Equal(3*time.Second, DefaultMaxDelay)
 	require.Equal(0.2, DefaultJitter)
 }
 
