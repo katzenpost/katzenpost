@@ -30,13 +30,13 @@ import (
 // Default retry configuration constants
 const (
 	// DefaultMaxAttempts is the default maximum number of retry attempts
-	DefaultMaxAttempts = 10
+	DefaultMaxAttempts = 20
 
 	// DefaultBaseDelay is the default base delay between retries
-	DefaultBaseDelay = 500 * time.Millisecond
+	DefaultBaseDelay = 10 * time.Millisecond
 
 	// DefaultMaxDelay is the default maximum delay between retries
-	DefaultMaxDelay = 10 * time.Second
+	DefaultMaxDelay = 3 * time.Second
 
 	// DefaultJitter is the default jitter factor (0.0 to 1.0)
 	DefaultJitter = 0.2

@@ -45,6 +45,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
+	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/katzenpost/katzenpost/loops"
 	"github.com/katzenpost/katzenpost/quic/common"
 )
@@ -269,7 +270,11 @@ func (p *connector) initSessionWithRetry(ctx context.Context, linkKey kem.Privat
 		if attempt > 0 {
 			delay := retry.Delay(p.cfg.RetryBaseDelay, p.cfg.RetryMaxDelay, p.cfg.RetryJitter, attempt-1)
 			p.log.Debugf("authority %s: retry %d/%d after %v", peer.Identifier, attempt, p.cfg.RetryMaxAttempts, delay)
-			time.Sleep(delay)
+			select {
+			case <-time.After(delay):
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
 		}
 		conn, err := p.initSession(ctx, linkKey, signingKey, peer)
 		if err == nil {
@@ -301,26 +306,40 @@ type PeerResponse struct {
 }
 
 func (p *connector) allPeersRoundTrip(ctx context.Context, linkKey kem.PrivateKey, signingKey sign.PublicKey, cmd commands.Command) ([]PeerResponse, error) {
-	p.log.Debugf("allPeersRoundTrip: contacting %d authorities", len(p.cfg.Authorities))
-	peerResponses := []PeerResponse{}
+	p.log.Debugf("allPeersRoundTrip: contacting %d authorities in parallel", len(p.cfg.Authorities))
+
+	responseCh := make(chan PeerResponse, len(p.cfg.Authorities))
+	var w worker.Worker
 
 	for _, peer := range p.cfg.Authorities {
-		ictx, cancelFn := context.WithCancel(ctx)
-		defer cancelFn()
-		conn, err := p.initSessionWithRetry(ictx, linkKey, signingKey, peer)
-		if err != nil {
-			p.log.Errorf("allPeersRoundTrip: %s: %v", peer.Identifier, err)
-			peerResponses = append(peerResponses, PeerResponse{Peer: peer, Error: err})
-			continue
-		}
+		peer := peer
+		w.Go(func() {
+			ictx, cancelFn := context.WithCancel(ctx)
+			defer cancelFn()
+			conn, err := p.initSessionWithRetry(ictx, linkKey, signingKey, peer)
+			if err != nil {
+				p.log.Errorf("allPeersRoundTrip: %s: %v", peer.Identifier, err)
+				responseCh <- PeerResponse{Peer: peer, Error: err}
+				return
+			}
+			defer conn.conn.Close()
 
-		resp, err := p.roundTrip(conn.session, cmd)
-		if err != nil {
-			p.log.Errorf("allPeersRoundTrip: %s round trip failed: %v", peer.Identifier, err)
-			peerResponses = append(peerResponses, PeerResponse{Peer: peer, Error: err})
-			continue
-		}
-		peerResponses = append(peerResponses, PeerResponse{Peer: peer, Response: resp})
+			resp, err := p.roundTrip(conn.session, cmd)
+			if err != nil {
+				p.log.Errorf("allPeersRoundTrip: %s round trip failed: %v", peer.Identifier, err)
+				responseCh <- PeerResponse{Peer: peer, Error: err}
+				return
+			}
+			responseCh <- PeerResponse{Peer: peer, Response: resp}
+		})
+	}
+
+	w.Wait()
+	close(responseCh)
+
+	peerResponses := []PeerResponse{}
+	for resp := range responseCh {
+		peerResponses = append(peerResponses, resp)
 	}
 
 	if len(peerResponses) == 0 {
@@ -338,6 +357,7 @@ func (p *connector) fetchConsensus(auth *config.Authority, ctx context.Context, 
 	if err != nil {
 		return nil, fmt.Errorf("peer %s: connection failed: %v", auth.Identifier, err)
 	}
+	defer conn.conn.Close()
 
 	cmd := &commands.GetConsensus{
 		Epoch:              epoch,
