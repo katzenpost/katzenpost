@@ -1,4 +1,4 @@
-// client.go - Katzenpost voting authority client.
+// client_test.go - Katzenpost voting authority client tests.
 // Copyright (C) 2018  David Stainton
 //
 // This program is free software: you can redistribute it and/or modify
@@ -23,6 +23,7 @@ import (
 	"net"
 	"net/url"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -43,6 +44,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
+	"github.com/katzenpost/katzenpost/core/retry"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
@@ -411,4 +413,223 @@ func TestClient(t *testing.T) {
 	require.NotNil(doc)
 	require.Equal(epoch, doc.Epoch)
 	t.Logf("rawDoc size is %d", len(rawDoc))
+}
+
+// delayDialer wraps mockDialer to add configurable delays and failure modes
+type delayDialer struct {
+	delays      map[string]time.Duration
+	failures    map[string]bool
+	dialCount   int32
+	contactTime sync.Map // records first contact time per address
+	mu          sync.Mutex
+}
+
+func newDelayDialer() *delayDialer {
+	return &delayDialer{
+		delays:   make(map[string]time.Duration),
+		failures: make(map[string]bool),
+	}
+}
+
+func (d *delayDialer) dial(ctx context.Context, network, address string) (net.Conn, error) {
+	d.contactTime.LoadOrStore(address, time.Now())
+	atomic.AddInt32(&d.dialCount, 1)
+
+	d.mu.Lock()
+	delay := d.delays[address]
+	fail := d.failures[address]
+	d.mu.Unlock()
+
+	if fail {
+		return nil, fmt.Errorf("simulated failure to %s", address)
+	}
+	if delay > 0 {
+		select {
+		case <-time.After(delay):
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+	c, _ := net.Pipe()
+	return c, nil
+}
+
+// TestParallelAuthorityContact verifies authorities are contacted concurrently
+func TestParallelAuthorityContact(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+
+	logBackend, err := log.New("", "DEBUG", false)
+	require.NoError(err)
+
+	dialer := newDelayDialer()
+	var peers []*config.Authority
+	// 3 fast + 2 slow (would block if sequential)
+	for i := 0; i < 5; i++ {
+		peer, _, _, _, err := generatePeer(10000 + i)
+		require.NoError(err)
+		peers = append(peers, peer)
+		u, _ := url.Parse(peer.Addresses[0])
+		if i >= 3 {
+			dialer.delays[u.Host] = 5 * time.Second // slow but within context timeout
+		}
+	}
+
+	mynike := ecdh.Scheme(rand.Reader)
+	mygeo := geo.GeometryFromUserForwardPayloadLength(mynike, 2000, true, 5)
+
+	cfg := &Config{
+		KEMScheme:           testingScheme,
+		LogBackend:          logBackend,
+		Authorities:         peers,
+		DialContextFn:       dialer.dial,
+		Geo:                 mygeo,
+		DialTimeoutSec:      1,
+		HandshakeTimeoutSec: 1,
+		ResponseTimeoutSec:  1,
+		RetryMaxAttempts:    1, // No retries - fail fast
+	}
+	require.NoError(cfg.validate())
+	conn := newConnector(cfg)
+
+	// Context shorter than slow delay - parallel will timeout fast, sequential would block
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	_, linkKey, _ := testingScheme.GenerateKeyPair()
+	start := time.Now()
+	conn.allPeersRoundTrip(ctx, linkKey, nil, &commands.GetConsensus{Epoch: 1})
+	elapsed := time.Since(start)
+
+	// If parallel, all 5 contacted simultaneously, completes in ~2s (context timeout)
+	// If sequential with 2 slow nodes at 5s each, would take 10s+ just for dial
+	require.Less(elapsed, 3*time.Second, "authorities not contacted in parallel")
+	t.Logf("parallel contact completed in %v", elapsed)
+}
+
+// TestParallelFailingAuthorities verifies failures don't block other authorities
+func TestParallelFailingAuthorities(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+
+	logBackend, err := log.New("", "DEBUG", false)
+	require.NoError(err)
+
+	dialer := newDelayDialer()
+	var peers []*config.Authority
+	for i := 0; i < 5; i++ {
+		peer, _, _, _, err := generatePeer(20000 + i)
+		require.NoError(err)
+		peers = append(peers, peer)
+		u, _ := url.Parse(peer.Addresses[0])
+		if i >= 3 {
+			dialer.failures[u.Host] = true // 2 will fail immediately at dial
+		}
+	}
+
+	mynike := ecdh.Scheme(rand.Reader)
+	mygeo := geo.GeometryFromUserForwardPayloadLength(mynike, 2000, true, 5)
+
+	cfg := &Config{
+		KEMScheme:           testingScheme,
+		LogBackend:          logBackend,
+		Authorities:         peers,
+		DialContextFn:       dialer.dial,
+		Geo:                 mygeo,
+		DialTimeoutSec:      1,
+		HandshakeTimeoutSec: 1,
+		ResponseTimeoutSec:  1,
+		RetryMaxAttempts:    1, // No retries - fail fast
+	}
+	require.NoError(cfg.validate())
+	conn := newConnector(cfg)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	_, linkKey, _ := testingScheme.GenerateKeyPair()
+	start := time.Now()
+	responses, err := conn.allPeersRoundTrip(ctx, linkKey, nil, &commands.GetConsensus{Epoch: 1})
+	elapsed := time.Since(start)
+
+	require.NoError(err)
+	require.Len(responses, 5)
+	require.Less(elapsed, 3*time.Second, "failing authorities blocked operation")
+
+	var failCount int
+	for _, r := range responses {
+		if r.Error != nil {
+			failCount++
+		}
+	}
+	require.GreaterOrEqual(failCount, 2, "expected at least 2 failures")
+	t.Logf("got %d failures in %v", failCount, elapsed)
+}
+
+// TestParallelContextCancellation verifies context cancellation stops goroutines
+func TestParallelContextCancellation(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+
+	logBackend, err := log.New("", "DEBUG", false)
+	require.NoError(err)
+
+	dialer := newDelayDialer()
+	var peers []*config.Authority
+	for i := 0; i < 5; i++ {
+		peer, _, _, _, err := generatePeer(30000 + i)
+		require.NoError(err)
+		peers = append(peers, peer)
+		u, _ := url.Parse(peer.Addresses[0])
+		dialer.delays[u.Host] = 30 * time.Second // all very slow
+	}
+
+	mynike := ecdh.Scheme(rand.Reader)
+	mygeo := geo.GeometryFromUserForwardPayloadLength(mynike, 2000, true, 5)
+
+	cfg := &Config{
+		KEMScheme:           testingScheme,
+		LogBackend:          logBackend,
+		Authorities:         peers,
+		DialContextFn:       dialer.dial,
+		Geo:                 mygeo,
+		DialTimeoutSec:      60,
+		HandshakeTimeoutSec: 60,
+		ResponseTimeoutSec:  60,
+		RetryMaxAttempts:    1, // No retries
+	}
+	require.NoError(cfg.validate())
+	conn := newConnector(cfg)
+
+	// Very short context - should cancel quickly
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+
+	_, linkKey, _ := testingScheme.GenerateKeyPair()
+	start := time.Now()
+	conn.allPeersRoundTrip(ctx, linkKey, nil, &commands.GetConsensus{Epoch: 1})
+	elapsed := time.Since(start)
+
+	require.Less(elapsed, 1*time.Second, "context cancellation didn't stop operations")
+	t.Logf("cancelled in %v", elapsed)
+}
+
+// TestRetryDefaults verifies retry module defaults are used
+func TestRetryDefaults(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+
+	logBackend, err := log.New("", "DEBUG", false)
+	require.NoError(err)
+
+	cfg := &Config{
+		KEMScheme:  testingScheme,
+		LogBackend: logBackend,
+	}
+	require.NoError(cfg.validate())
+
+	require.Equal(retry.DefaultMaxAttempts, cfg.RetryMaxAttempts)
+	require.Equal(retry.DefaultBaseDelay, cfg.RetryBaseDelay)
+	require.Equal(retry.DefaultMaxDelay, cfg.RetryMaxDelay)
+	require.Equal(retry.DefaultJitter, cfg.RetryJitter)
 }
