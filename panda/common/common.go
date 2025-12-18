@@ -1,5 +1,5 @@
-// client_test.go - map service client tests
-// Copyright (C) 2021  Masala
+// common.go - code that is common to the PANDA client and server
+// Copyright (C) 2018  David Stainton
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as
@@ -14,22 +14,36 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-package client
+package common
 
 import (
-	"testing"
-
-	"github.com/stretchr/testify/require"
+	"errors"
 )
 
-func TestDuplexCapsFromSeed(t *testing.T) {
-	require := require.New(t)
+const (
+	PandaCapability = "panda"
+	PandaVersion    = 0
 
-	alice_read, alice_write := duplexCapsFromSeed(true, []byte("secret"))
-	bob_read, bob_write := duplexCapsFromSeed(false, []byte("secret"))
+	PandaStatusReceived1            = 0
+	PandaStatusReceived2            = 1
+	PandaStatusSyntaxError          = 2
+	PandaStatusTagContendedError    = 3
+	PandaStatusRequestRecordedError = 4
+	PandaStatusStorageError         = 5
 
-	require.Equal(alice_read.Addr([]byte("address1")), bob_write.Addr([]byte("address1")))
-	require.Equal(bob_read.Addr([]byte("address1")), alice_write.Addr([]byte("address1")))
-	require.NotEqual(alice_read.Addr([]byte("address1")), alice_write.Addr([]byte("address1")))
+	PandaTagLength = 32
+)
 
+var ErrNoSuchPandaTag = errors.New("Error: no such PANDA tag")
+
+type PandaRequest struct {
+	Version int
+	Tag     string
+	Message string
+}
+
+type PandaResponse struct {
+	Version    int
+	StatusCode int
+	Message    string
 }

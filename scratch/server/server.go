@@ -1,4 +1,4 @@
-// server.go - map service using cbor plugin system
+// server.go - scratch service using cbor plugin system
 // Copyright (C) 2021  Masala
 //
 // This program is free software: you can redistribute it and/or modify
@@ -26,58 +26,59 @@ import (
 	bolt "go.etcd.io/bbolt"
 	"gopkg.in/op/go-logging.v1"
 
+	"github.com/katzenpost/hpqc/sign/ed25519"
 	"github.com/katzenpost/katzenpost/core/worker"
-	"github.com/katzenpost/katzenpost/map/common"
+	"github.com/katzenpost/katzenpost/scratch/common"
 	"github.com/katzenpost/katzenpost/server/cborplugin"
 
 	"sync"
 )
 
 const (
-	mapBucket = "map"
-	gcBucket  = "gc"
+	scratchBucket = "scratch"
+	gcBucket         = "gc"
 )
 
-// Map holds reference to the database and logger and provides methods to store and retrieve data
-type Map struct {
+// Scratch holds reference to the database and logger and provides methods to store and retrieve data
+type Scratch struct {
 	worker.Worker
 	l   *sync.Mutex
 	log *logging.Logger
 	db  *bolt.DB
 
-	mapSize int // number of entries to keep
-	gcSize  int // number of entries to place in each garbage bucket
+	scratchSize int // number of entries to keep
+	gcSize         int // number of entries to place in each garbage bucket
 
-	waiting map[common.MessageID][]*cborplugin.Response
+	waiting map[[ed25519.PublicKeySize]byte][]*cborplugin.Response
 	write   func(cborplugin.Command)
 }
 
 // Wait adds pending cborplugin.Responses (with SURBs) by MessageID to a waiting map
-func (m *Map) Wait(msgID common.MessageID, response *cborplugin.Response) {
+func (m *Scratch) Wait(msgID *[ed25519.PublicKeySize]byte, response *cborplugin.Response) {
 	m.l.Lock()
 	defer m.l.Unlock()
-	_, ok := m.waiting[msgID]
+	_, ok := m.waiting[*msgID]
 	if !ok {
-		m.waiting[msgID] = []*cborplugin.Response{response}
+		m.waiting[*msgID] = []*cborplugin.Response{response}
 	} else {
-		m.waiting[msgID] = append(m.waiting[msgID], response)
+		m.waiting[*msgID] = append(m.waiting[*msgID], response)
 	}
 }
 
 // Wake returns the pending responses from the waiting map and removes the entries
-func (m *Map) Wake(msgID common.MessageID, payload []byte) error {
+func (m *Scratch) Wake(msgID *[ed25519.PublicKeySize]byte, payload []byte, signature *[ed25519.SignatureSize]byte) error {
 	m.l.Lock()
 	defer m.l.Unlock()
-	waiting, ok := m.waiting[msgID]
+	waiting, ok := m.waiting[*msgID]
 	if !ok {
 		return nil // nothing waiting is not an error
 	}
-	delete(m.waiting, msgID)
+	delete(m.waiting, *msgID)
 	m.log.Debugf("Woke %d: %x", len(waiting), msgID)
 
 	// prepare the response payload for pending requests
-	mapResponse := &common.MapResponse{Status: common.StatusOK, Payload: payload}
-	rawResp, err := mapResponse.Marshal()
+	scratchResponse := &common.ScratchResponse{Status: common.StatusOK, Payload: payload, Signature: *signature}
+	rawResp, err := scratchResponse.Marshal()
 	if err != nil {
 		m.log.Errorf("Wake(%x): %v", msgID, err)
 		return err
@@ -96,29 +97,31 @@ func (m *Map) Wake(msgID common.MessageID, payload []byte) error {
 }
 
 // Get retrieves an item from the db
-func (m *Map) Get(msgID common.MessageID) ([]byte, error) {
+func (m *Scratch) Get(msgID *[ed25519.PublicKeySize]byte) ([]byte, *[ed25519.SignatureSize]byte, error) {
+	sig := new([ed25519.SignatureSize]byte)
 	var resp []byte
 	err := m.db.View(func(tx *bolt.Tx) error {
-		mapBkt := tx.Bucket([]byte(mapBucket))
-		if mapBkt == nil {
-			return errors.New("mapBucket does not exist")
+		scratchBkt := tx.Bucket([]byte(scratchBucket))
+		if scratchBkt == nil {
+			return errors.New("scratchBucket does not exist")
 		}
-		p := mapBkt.Get(msgID[:])
+		p := scratchBkt.Get(msgID[:])
 		if p == nil {
 			// empty slot
 			return common.ErrStatusNotFound
 		}
-		resp = make([]byte, len(p))
-		copy(resp, p)
+		resp = make([]byte, len(p[ed25519.SignatureSize:]))
+		copy(resp, p[ed25519.SignatureSize:])
+		copy(sig[:], p[:ed25519.SignatureSize])
 		return nil
 	})
-	return resp, err
+	return resp, sig, err
 }
 
 // Put places an item in the db
-func (m *Map) Put(msgID common.MessageID, payload []byte) error {
+func (m *Scratch) Put(msgID *[ed25519.PublicKeySize]byte, payload []byte, sig *[ed25519.SignatureSize]byte) error {
 	err := m.db.Update(func(tx *bolt.Tx) error {
-		bkt := tx.Bucket([]byte(mapBucket))
+		bkt := tx.Bucket([]byte(scratchBucket))
 		p := bkt.Get(msgID[:])
 		if p != nil {
 			if !bytes.Equal(p, payload) {
@@ -126,8 +129,8 @@ func (m *Map) Put(msgID common.MessageID, payload []byte) error {
 			}
 		}
 
-		// store message in mapBucket
-		err := bkt.Put(msgID[:], payload)
+		// store message in scratchBucket
+		err := bkt.Put(msgID[:], append(sig[:], payload...))
 		if err != nil {
 			return err
 		}
@@ -171,16 +174,16 @@ func (m *Map) Put(msgID common.MessageID, payload []byte) error {
 	return nil
 }
 
-// GarbageCollect prunes the oldest bucket of entries when the map size limit is exceeded
-func (m *Map) GarbageCollect() error {
+// GarbageCollect prunes the oldest bucket of entries when the scratch size limit is exceeded
+func (m *Scratch) GarbageCollect() error {
 	return m.db.Update(func(tx *bolt.Tx) error {
 		bkt := tx.Bucket([]byte(gcBucket))
 		size := bkt.Stats().InlineBucketN * m.gcSize
-		if size > m.mapSize {
-			// delete map entries in the oldest gcBkt
+		if size > m.scratchSize {
+			// delete scratch entries in the oldest gcBkt
 			k, _ := bkt.Cursor().First()
 			gcbkt := bkt.Bucket(k)
-			mbkt := tx.Bucket([]byte(mapBucket))
+			mbkt := tx.Bucket([]byte(scratchBucket))
 			gcbkt.ForEach(func(k, v []byte) error {
 				return mbkt.Delete(k)
 			})
@@ -190,12 +193,12 @@ func (m *Map) GarbageCollect() error {
 	})
 }
 
-func (m *Map) Shutdown() {
+func (m *Scratch) Shutdown() {
 	m.db.Close()
 	m.Halt()
 }
 
-func (m *Map) worker() {
+func (m *Scratch) worker() {
 	m.log.Notice("Starting garbage collection worker")
 	defer m.log.Notice("Stopping garbage collection worker")
 	for {
@@ -208,14 +211,14 @@ func (m *Map) worker() {
 	}
 }
 
-// NewMap instantiates a map
-func NewMap(fileStore string, log *logging.Logger, gcSize int, mapSize int) (*Map, error) {
-	m := &Map{
-		l:       new(sync.Mutex),
-		log:     log,
-		mapSize: mapSize,
-		gcSize:  gcSize,
-		waiting: make(map[common.MessageID][]*cborplugin.Response),
+// NewScratch instantiates a scratch
+func NewScratch(fileStore string, log *logging.Logger, gcSize int, scratchSize int) (*Scratch, error) {
+	m := &Scratch{
+		l:              new(sync.Mutex),
+		log:            log,
+		scratchSize:    scratchSize,
+		gcSize:         gcSize,
+		waiting:        make(map[[ed25519.PublicKeySize]byte][]*cborplugin.Response),
 	}
 	db, err := bolt.Open(fileStore, 0600, nil)
 	if err != nil {
@@ -224,7 +227,7 @@ func NewMap(fileStore string, log *logging.Logger, gcSize int, mapSize int) (*Ma
 	}
 	m.db = db
 	if err = m.db.Update(func(tx *bolt.Tx) error {
-		if _, err := tx.CreateBucketIfNotExists([]byte(mapBucket)); err != nil {
+		if _, err := tx.CreateBucketIfNotExists([]byte(scratchBucket)); err != nil {
 			return err
 		}
 		if _, err := tx.CreateBucketIfNotExists([]byte(gcBucket)); err != nil {
@@ -240,31 +243,31 @@ func NewMap(fileStore string, log *logging.Logger, gcSize int, mapSize int) (*Ma
 	return m, nil
 }
 
-func (m *Map) OnCommand(cmd cborplugin.Command) error {
+func (m *Scratch) OnCommand(cmd cborplugin.Command) error {
 	switch r := cmd.(type) {
 	case *cborplugin.Request:
 		if r.SURB == nil {
 			return errors.New("no SURB, cannot reply")
 		}
-		req := &common.MapRequest{}
+		req := &common.ScratchRequest{}
 		dec := cbor.NewDecoder(bytes.NewReader(r.Payload))
 		err := dec.Decode(req)
 		if err != nil {
 			return err
 		}
 
-		resp := &common.MapResponse{}
-		// validate the capabilities of MapRequest
-		if !validateCap(req) {
-			resp.Status = common.StatusFailed
-			m.log.Errorf("validateCap failed for %x", req.ID)
-		} else {
-			// Write data if payload present
-			if len(req.Payload) > 0 {
+		resp := &common.ScratchResponse{}
+
+		// Verify if payload present
+		if len(req.Payload) > 0  {
+			if !validateBacap(req) {
+				m.log.Debugf("Put(%x): Failed to validate", req.ID)
+				resp.Status = common.StatusFailed
+			} else {
 				m.log.Debugf("Put(%x)", req.ID)
 
 				// save payload
-				err := m.Put(req.ID, req.Payload)
+				err := m.Put(&req.ID, req.Payload, &req.Signature)
 				if err != nil {
 					m.log.Debugf("Put(%x): Failed", req.ID)
 					resp.Status = common.StatusFailed
@@ -274,28 +277,29 @@ func (m *Map) OnCommand(cmd cborplugin.Command) error {
 				}
 
 				// Wake pending Get requests and respond with payload
-				err = m.Wake(req.ID, req.Payload)
+				err = m.Wake(&req.ID, req.Payload, &req.Signature)
 				if err != nil {
 					m.log.Errorf("Wake(%x): %v", req.ID, err)
 				}
-
-				// Otherwise request data
+			}
+		// Otherwise return data
+		} else {
+			p, sig, err := m.Get(&req.ID)
+			if err != nil {
+				m.log.Debugf("m.Get(%x): %v", req.ID, err)
+				// wait for future data
+				m.Wait(&req.ID, &cborplugin.Response{ID: r.ID, SURB: r.SURB})
+				// do not use SURB, return nil
+				return nil
 			} else {
-				p, err := m.Get(req.ID)
-				if err != nil {
-					m.log.Debugf("m.Get(%x): %v", req.ID, err)
-					// wait for future data
-					m.Wait(req.ID, &cborplugin.Response{ID: r.ID, SURB: r.SURB})
-					// do not use SURB, return nil
-					return nil
-				} else {
-					// data was found, respond immediately
-					m.log.Debugf("Get(%x): OK", req.ID)
-					resp.Status = common.StatusOK
-					resp.Payload = p
-				}
+				// data was found, respond immediately
+				m.log.Debugf("Get(%x): OK", req.ID)
+				resp.Status = common.StatusOK
+				resp.Payload = p
+				resp.Signature = *sig
 			}
 		}
+
 		// marshal response to this request
 		rawResp, err := resp.Marshal()
 		if err != nil {
@@ -311,18 +315,14 @@ func (m *Map) OnCommand(cmd cborplugin.Command) error {
 	}
 }
 
-func validateCap(req *common.MapRequest) bool {
-	if len(req.Payload) == 0 {
-		v := req.ID.ReadVerifier()
-		// verify v Signs the publickey bytes
-		return v.Verify(req.Signature, req.ID.Bytes())
-	} else {
-		v := req.ID.WriteVerifier()
-		// verify v Signs the payload bytes
-		return v.Verify(req.Signature, req.Payload)
+func validateBacap(req *common.ScratchRequest) bool {
+	var boxPk ed25519.PublicKey
+	if err := boxPk.FromBytes(req.ID[:]); err != nil {
+		return false
 	}
+	return boxPk.Verify(req.Signature[:], req.Payload)
 }
 
-func (m *Map) RegisterConsumer(svr *cborplugin.Server) {
+func (m *Scratch) RegisterConsumer(svr *cborplugin.Server) {
 	m.write = svr.Write
 }

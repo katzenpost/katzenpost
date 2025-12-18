@@ -13,15 +13,21 @@ import (
 	"time"
 
 	"github.com/fxamacker/cbor/v2"
+	"github.com/katzenpost/hpqc/bacap"
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/stretchr/testify/require"
 )
 
 var numEntries = 10
 
+type message struct {
+	payload   []byte
+	signature [64]byte
+}
+
 type mockTransport struct {
 	l    *sync.Mutex
-	data map[string][]byte
+	data map[[32]byte]message
 }
 
 type lossyMockTransport struct {
@@ -34,11 +40,11 @@ func NewLossyMockTransport(lossRate float64) Transport {
 	m.l = new(sync.Mutex)
 	m.l.Lock()
 	defer m.l.Unlock()
-	m.data = make(map[string][]byte)
+	m.data = make(map[[32]byte]message)
 	return m
 }
 
-func (m lossyMockTransport) Put(addr []byte, payload []byte) error {
+func (m lossyMockTransport) Put(ctx context.Context, addr [32]byte, sig [64]byte, payload []byte) error {
 	// probabalistically fail to put messages
 	if m.lossRate < 0 || m.lossRate > 1 {
 		panic("lossRate must be >=0 < 1")
@@ -48,21 +54,37 @@ func (m lossyMockTransport) Put(addr []byte, payload []byte) error {
 	if l > rate {
 		m.l.Lock()
 		defer m.l.Unlock()
-		m.data[string(addr)] = payload
+		m.data[addr] = message{signature: sig, payload: payload}
 	}
 	return nil
 }
 
 // newStreams returns an initialized pair of Streams
 func newStreams(t Transport) (*Stream, *Stream) {
+	// create a pair of Streams that correspond to each end
+	w1, err := bacap.NewBoxOwnerCap(rand.Reader)
+	if err != nil {
+		panic(err)
+	}
 
-	a := newStream(EndToEnd)
-	a.SetTransport(t)
-	addr := &StreamAddr{Saddress: generate()}
-	a.keyAsListener(addr)
-	b := newStream(EndToEnd)
-	b.SetTransport(t)
-	b.keyAsDialer(addr)
+	w2, err := bacap.NewBoxOwnerCap(rand.Reader)
+	if err != nil {
+		panic(err)
+	}
+
+	r1 := w1.UniversalReadCap()
+	r2 := w2.UniversalReadCap()
+
+	streamCtx := [32]byte{}
+	_, err = io.ReadFull(rand.Reader, streamCtx[:])
+	if err != nil {
+		panic(err)
+	}
+
+	a := NewStream(t, w1, r2, streamCtx[:])
+	b := NewStream(t, w2, r1, streamCtx[:])
+	a.Start()
+	b.Start()
 
 	if a == nil || b == nil {
 		panic("newStream returned nil")
@@ -75,34 +97,26 @@ func NewMockTransport() Transport {
 	m.l = new(sync.Mutex)
 	m.l.Lock()
 	defer m.l.Unlock()
-	m.data = make(map[string][]byte)
+	m.data = make(map[[32]byte]message)
 	return m
 }
 
-func (m mockTransport) Put(addr []byte, payload []byte) error {
+func (m mockTransport) Put(ctx context.Context, addr [32]byte, sig [64]byte, payload []byte) error {
 	m.l.Lock()
 	defer m.l.Unlock()
-	m.data[string(addr)] = payload
+	m.data[addr] = message{signature: sig, payload: payload}
 	return nil
 }
 
-func (m mockTransport) Get(addr []byte) ([]byte, error) {
+func (m mockTransport) Get(ctx context.Context, addr [32]byte) ([]byte, [64]byte, error) {
 	m.l.Lock()
-	d, ok := m.data[string(addr)]
+	d, ok := m.data[addr]
 	m.l.Unlock()
 	if !ok {
 		<-time.After(2 * time.Second)
-		return nil, errors.New("NotFound")
+		return nil, [64]byte{}, errors.New("NotFound")
 	}
-	return d, nil
-}
-
-func (m mockTransport) PutWithContext(ctx context.Context, addr []byte, payload []byte) error {
-	return m.Put(addr, payload)
-}
-
-func (m mockTransport) GetWithContext(ctx context.Context, addr []byte) ([]byte, error) {
-	return m.Get(addr)
+	return d.payload, d.signature, nil
 }
 
 func (m mockTransport) PayloadSize() int {
@@ -124,18 +138,18 @@ func TestMockTransport(t *testing.T) {
 	wg := new(sync.WaitGroup)
 	wg.Add(2)
 	go func() {
-		addr := make([]byte, 8)
+		addr := [32]byte{}
 		for i := 0; i < 4096; i++ {
-			binary.BigEndian.PutUint64(addr, uint64(i))
-			garbage.Put(addr, randPayload())
+			binary.BigEndian.PutUint64(addr[:], uint64(i))
+			garbage.Put(nil, addr, [64]byte{}, randPayload())
 		}
 		wg.Done()
 	}()
 	go func() {
-		addr := make([]byte, 8)
+		addr := [32]byte{}
 		for i := 0; i < 4096; i++ {
-			binary.BigEndian.PutUint64(addr, uint64(i))
-			garbage.Put(addr, randPayload())
+			binary.BigEndian.PutUint64(addr[:8], uint64(i))
+			garbage.Put(nil, addr, [64]byte{}, randPayload())
 		}
 		wg.Done()
 	}()
