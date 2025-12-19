@@ -26,7 +26,9 @@ package cborplugin
 import (
 	"bufio"
 	"io"
+	"os"
 	"os/exec"
+	"sync"
 	"syscall"
 	"time"
 
@@ -35,6 +37,57 @@ import (
 	"github.com/katzenpost/katzenpost/core/worker"
 	"gopkg.in/op/go-logging.v1"
 )
+
+// Process represents a running process that can be signaled and waited on
+type Process interface {
+	Signal(os.Signal) error
+	Wait() error
+	StdoutPipe() (io.ReadCloser, error)
+	StderrPipe() (io.ReadCloser, error)
+	Start() error
+	Path() string
+}
+
+// ProcessFactory creates Process instances
+type ProcessFactory interface {
+	NewProcess(command string, args []string) Process
+}
+
+// ExecProcess wraps exec.Cmd to implement Process interface
+type ExecProcess struct {
+	cmd *exec.Cmd
+}
+
+func (p *ExecProcess) Signal(sig os.Signal) error {
+	return p.cmd.Process.Signal(sig)
+}
+
+func (p *ExecProcess) Wait() error {
+	return p.cmd.Wait()
+}
+
+func (p *ExecProcess) StdoutPipe() (io.ReadCloser, error) {
+	return p.cmd.StdoutPipe()
+}
+
+func (p *ExecProcess) StderrPipe() (io.ReadCloser, error) {
+	return p.cmd.StderrPipe()
+}
+
+func (p *ExecProcess) Start() error {
+	return p.cmd.Start()
+}
+
+func (p *ExecProcess) Path() string {
+	return p.cmd.Path
+}
+
+// ExecProcessFactory is the default ProcessFactory using exec.Command
+type ExecProcessFactory struct{}
+
+func (f *ExecProcessFactory) NewProcess(command string, args []string) Process {
+	return &ExecProcess{cmd: exec.Command(command, args...)}
+}
 
 // Request is the struct type used in service query requests to plugins.
 type Request struct {
@@ -58,15 +111,6 @@ func (r *Request) Marshal() ([]byte, error) {
 // Unmarshal deserializes Request
 func (r *Request) Unmarshal(b []byte) error {
 	return cbor.Unmarshal(b, r)
-}
-
-// RequestFactory is a CommandBuilder for Requests
-type RequestFactory struct {
-}
-
-// Build returns a Request
-func (r *RequestFactory) Build() Command {
-	return new(Request)
 }
 
 // Response is the response received after sending a Request to the plugin
@@ -93,13 +137,70 @@ func (r *Response) Unmarshal(b []byte) error {
 	return cbor.Unmarshal(b, r)
 }
 
-// ResponseFactory is a CommandBuilder for Responses
-type ResponseFactory struct {
+// ParametersRequest is sent by the service node to request dynamic parameters from a plugin
+type ParametersRequest struct {
+	// RequestID is used to correlate requests with responses
+	RequestID uint64
 }
 
-// Build returns a Response
-func (r *ResponseFactory) Build() Command {
-	return new(Response)
+// ParametersResponse is sent by the plugin in response to a ParametersRequest
+type ParametersResponse struct {
+	// RequestID is used to correlate requests with responses
+	RequestID uint64
+	// Params contains the dynamic parameters from the plugin
+	Params Parameters
+}
+
+// RequestMessage is sent from the service node to the plugin.
+// Only one field should be non-nil at a time.
+type RequestMessage struct {
+	Request           *Request
+	ParametersRequest *ParametersRequest
+}
+
+// Marshal serializes RequestMessage
+func (m *RequestMessage) Marshal() ([]byte, error) {
+	return cbor.Marshal(m)
+}
+
+// Unmarshal deserializes RequestMessage
+func (m *RequestMessage) Unmarshal(b []byte) error {
+	return cbor.Unmarshal(b, m)
+}
+
+// RequestMessageFactory is a CommandBuilder for RequestMessages (used by plugins)
+type RequestMessageFactory struct {
+}
+
+// Build returns a RequestMessage
+func (m *RequestMessageFactory) Build() Command {
+	return new(RequestMessage)
+}
+
+// ResponseMessage is sent from the plugin to the service node.
+// Only one field should be non-nil at a time.
+type ResponseMessage struct {
+	Response           *Response
+	ParametersResponse *ParametersResponse
+}
+
+// Marshal serializes ResponseMessage
+func (m *ResponseMessage) Marshal() ([]byte, error) {
+	return cbor.Marshal(m)
+}
+
+// Unmarshal deserializes ResponseMessage
+func (m *ResponseMessage) Unmarshal(b []byte) error {
+	return cbor.Unmarshal(b, m)
+}
+
+// ResponseMessageFactory is a CommandBuilder for ResponseMessages (used by service node)
+type ResponseMessageFactory struct {
+}
+
+// Build returns a ResponseMessage
+func (m *ResponseMessageFactory) Build() Command {
+	return new(ResponseMessage)
 }
 
 // Parameters is an optional mapping that plugins can publish, these get
@@ -108,7 +209,7 @@ func (r *ResponseFactory) Build() Command {
 // associating with the service names to service parameters map.
 // This information is part of the Mix Descriptor which is defined here:
 // https://github.com/katzenpost/katzenpost/blob/master/core/pki/pki.go
-type Parameters map[string]string
+type Parameters map[string]interface{}
 
 // ServicePlugin is the interface that we expose for external
 // plugins to implement. This is similar to the internal Kaetzchen
@@ -146,27 +247,34 @@ type Client struct {
 	logBackend *log.Backend
 	log        *logging.Logger
 
-	socketFile string
-	cmd        *exec.Cmd
-	//conn       net.Conn
+	socketFile     string
+	process        Process
+	processFactory ProcessFactory
 
 	commandBuilder CommandBuilder
 
 	capability string
 	endpoint   string
+
+	// For parameter requests
+	paramRequestID  uint64
+	paramResponseCh chan *ParametersResponse
+	cachedParams    Parameters
+	mu              sync.Mutex
 }
 
-// New creates a new plugin client instance which represents the single execution
+// NewClient creates a new plugin client instance which represents the single execution
 // of the external plugin program.
-
 func NewClient(logBackend *log.Backend, capability, endpoint string, commandBuilder CommandBuilder) *Client {
 	return &Client{
-		socket:         NewCommandIO(logBackend.GetLogger("client_socket")),
-		logBackend:     logBackend,
-		log:            logBackend.GetLogger("client"),
-		commandBuilder: commandBuilder,
-		capability:     capability,
-		endpoint:       endpoint,
+		socket:          NewCommandIO(logBackend.GetLogger("client_socket")),
+		logBackend:      logBackend,
+		log:             logBackend.GetLogger("client"),
+		commandBuilder:  commandBuilder,
+		capability:      capability,
+		endpoint:        endpoint,
+		paramResponseCh: make(chan *ParametersResponse, 1),
+		processFactory:  &ExecProcessFactory{},
 	}
 }
 
@@ -174,10 +282,55 @@ func (c *Client) Capability() string {
 	return c.capability
 }
 
+// GetParameters returns static parameters (endpoint) merged with any cached dynamic parameters.
+// Use RequestParameters() to fetch fresh dynamic parameters from the plugin.
 func (c *Client) GetParameters() *map[string]interface{} {
 	responseParams := make(map[string]interface{})
 	responseParams["endpoint"] = c.endpoint
+
+	// Merge in any cached dynamic parameters from the plugin
+	c.mu.Lock()
+	for k, v := range c.cachedParams {
+		responseParams[k] = v
+	}
+	c.mu.Unlock()
+
 	return &responseParams
+}
+
+// RequestParameters sends a ParametersRequest to the plugin and waits for the response.
+// The response is cached and merged into GetParameters() results.
+func (c *Client) RequestParameters() (Parameters, error) {
+	c.mu.Lock()
+	c.paramRequestID++
+	reqID := c.paramRequestID
+	c.mu.Unlock()
+
+	// Send the request
+	msg := &RequestMessage{
+		ParametersRequest: &ParametersRequest{
+			RequestID: reqID,
+		},
+	}
+	c.WriteChan() <- msg
+
+	// Wait for response with timeout
+	select {
+	case resp := <-c.paramResponseCh:
+		if resp.RequestID == reqID {
+			c.mu.Lock()
+			c.cachedParams = resp.Params
+			c.mu.Unlock()
+			return resp.Params, nil
+		}
+		c.log.Warningf("Received ParametersResponse with unexpected RequestID: got %d, expected %d", resp.RequestID, reqID)
+		return nil, nil
+	case <-time.After(5 * time.Second):
+		c.log.Warningf("Timeout waiting for ParametersResponse from plugin %s", c.capability)
+		return nil, nil
+	case <-c.HaltCh():
+		return nil, nil
+	}
 }
 
 // Start execs the plugin and starts a worker thread to listen
@@ -195,18 +348,18 @@ func (c *Client) Start(command string, args []string) error {
 
 func (c *Client) reaper() {
 	<-c.HaltCh()
-	err := c.cmd.Process.Signal(syscall.SIGTERM)
+	err := c.process.Signal(syscall.SIGTERM)
 	if err != nil {
 		c.log.Errorf("CBOR plugin worker, error sending SIGTERM: %s\n", err)
 	}
-	err = c.cmd.Wait()
+	err = c.process.Wait()
 	if err != nil {
 		c.log.Errorf("CBOR plugin worker, command exec error: %s\n", err)
 	}
 }
 
 func (c *Client) logPluginStderr(stderr io.ReadCloser) {
-	logWriter := c.logBackend.GetLogWriter(c.cmd.Path, "DEBUG")
+	logWriter := c.logBackend.GetLogWriter(c.process.Path(), "DEBUG")
 	_, err := io.Copy(logWriter, stderr)
 	if err != nil {
 		c.log.Errorf("Failed to proxy cborplugin stderr to DEBUG log: %s", err)
@@ -216,18 +369,18 @@ func (c *Client) logPluginStderr(stderr io.ReadCloser) {
 
 func (c *Client) launch(command string, args []string) error {
 	// exec plugin
-	c.cmd = exec.Command(command, args...)
-	stdout, err := c.cmd.StdoutPipe()
+	c.process = c.processFactory.NewProcess(command, args)
+	stdout, err := c.process.StdoutPipe()
 	if err != nil {
 		c.log.Debugf("pipe failure: %s", err)
 		return err
 	}
-	stderr, err := c.cmd.StderrPipe()
+	stderr, err := c.process.StderrPipe()
 	if err != nil {
 		c.log.Debugf("pipe failure: %s", err)
 		return err
 	}
-	err = c.cmd.Start()
+	err = c.process.Start()
 	if err != nil {
 		c.log.Debugf("failed to exec: %s", err)
 		return err
@@ -247,10 +400,34 @@ func (c *Client) launch(command string, args []string) error {
 	return nil
 }
 
+// ReadChan returns the channel for reading commands from the plugin.
+// Note: ParametersResponse messages are filtered out and handled internally.
+// This channel will only receive Response messages (plugin service responses).
 func (c *Client) ReadChan() chan Command {
 	return c.socket.ReadChan()
 }
 
 func (c *Client) WriteChan() chan Command {
 	return c.socket.WriteChan()
+}
+
+// HandleMessage processes a ResponseMessage from the plugin, routing ParametersResponse
+// internally and returning true. Returns false for other message types which
+// should be handled by the caller.
+func (c *Client) HandleMessage(cmd Command) bool {
+	msg, ok := cmd.(*ResponseMessage)
+	if !ok {
+		return false
+	}
+
+	if msg.ParametersResponse != nil {
+		select {
+		case c.paramResponseCh <- msg.ParametersResponse:
+		default:
+			c.log.Warningf("ParametersResponse channel full, dropping response")
+		}
+		return true
+	}
+
+	return false
 }
