@@ -27,9 +27,44 @@ import (
 	"github.com/katzenpost/katzenpost/core/worker"
 )
 
+// Dialer creates network connections
+type Dialer interface {
+	Dial(network, address string) (net.Conn, error)
+}
+
+// ListenerFactory creates network listeners
+type ListenerFactory interface {
+	Listen(network, address string) (net.Listener, error)
+}
+
+// NetDialer is the default Dialer using net.Dial
+type NetDialer struct{}
+
+func (d *NetDialer) Dial(network, address string) (net.Conn, error) {
+	return net.Dial(network, address)
+}
+
+// NetListenerFactory is the default ListenerFactory using net.Listen
+type NetListenerFactory struct{}
+
+func (f *NetListenerFactory) Listen(network, address string) (net.Listener, error) {
+	return net.Listen(network, address)
+}
+
+// Logger interface for CommandIO logging needs
+type Logger interface {
+	Debugf(format string, args ...interface{})
+	Fatal(args ...interface{})
+}
+
 type ServerPlugin interface {
 	OnCommand(Command) error
 	RegisterConsumer(*Server)
+
+	// GetParameters returns dynamic parameters for PKI advertisement.
+	// This is called by the service node when publishing its descriptor.
+	// Return nil if no parameters need to be advertised.
+	GetParameters() Parameters
 }
 
 type ClientPlugin interface {
@@ -49,21 +84,42 @@ type CommandBuilder interface {
 type CommandIO struct {
 	worker.Worker
 
-	log      *logging.Logger
+	log      Logger
 	conn     net.Conn
 	listener net.Listener
 
 	readCh  chan Command
 	writeCh chan Command
 
-	commandBuilder CommandBuilder
+	commandBuilder  CommandBuilder
+	dialer          Dialer
+	listenerFactory ListenerFactory
+
+	// retryDelay is the delay between dial retries. Defaults to 1 second.
+	// Can be reduced for testing.
+	retryDelay time.Duration
 }
 
 func NewCommandIO(log *logging.Logger) *CommandIO {
 	return &CommandIO{
-		log:     log,
-		readCh:  make(chan Command),
-		writeCh: make(chan Command),
+		log:             log,
+		readCh:          make(chan Command),
+		writeCh:         make(chan Command),
+		dialer:          &NetDialer{},
+		listenerFactory: &NetListenerFactory{},
+		retryDelay:      time.Second,
+	}
+}
+
+// NewCommandIOWithDeps creates a CommandIO with injectable dependencies for testing
+func NewCommandIOWithDeps(log Logger, dialer Dialer, listenerFactory ListenerFactory) *CommandIO {
+	return &CommandIO{
+		log:             log,
+		readCh:          make(chan Command),
+		writeCh:         make(chan Command),
+		dialer:          dialer,
+		listenerFactory: listenerFactory,
+		retryDelay:      time.Second,
 	}
 }
 
@@ -80,14 +136,14 @@ func (c *CommandIO) Start(initiator bool, socketFile string, commandBuilder Comm
 		for tries := 0; tries < 40; tries++ {
 			err = c.dial(socketFile)
 			if err != nil {
-				time.Sleep(time.Second)
+				time.Sleep(c.retryDelay)
 				continue
 			} else {
 				started = true
 				break
 			}
 		}
-		if started != true {
+		if !started {
 			panic(err)
 		}
 		c.Go(c.reader)
@@ -96,13 +152,13 @@ func (c *CommandIO) Start(initiator bool, socketFile string, commandBuilder Comm
 		c.log.Debugf("listening to unix domain socket file: %s", socketFile)
 
 		var err error
-		c.listener, err = net.Listen("unix", socketFile)
+		c.listener, err = c.listenerFactory.Listen("unix", socketFile)
 		if err != nil {
 			// 99% of the time the problem is that the old socketFile
 			// is still there from previous time we ran, so let's
 			// try to remove it and see if that works:
 			os.Remove(socketFile)
-			c.listener, err = net.Listen("unix", socketFile)
+			c.listener, err = c.listenerFactory.Listen("unix", socketFile)
 			if err != nil {
 				c.log.Fatal("listen error:", err)
 			}
@@ -125,7 +181,7 @@ func (c *CommandIO) Accept() {
 func (c *CommandIO) dial(socketFile string) error {
 	c.log.Debugf("dialing unix domain socket file: %s", socketFile)
 	var err error
-	c.conn, err = net.Dial("unix", socketFile)
+	c.conn, err = c.dialer.Dial("unix", socketFile)
 	if err != nil {
 		return err
 	}
