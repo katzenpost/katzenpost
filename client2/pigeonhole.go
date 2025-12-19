@@ -757,7 +757,44 @@ func (d *Daemon) closeChannel(request *Request) {
 func (d *Daemon) cleanupChannelsForAppID(appID *[AppIDLength]byte) {
 	d.log.Infof("cleanupChannelsForAppID: cleaning up channels for App ID %x", appID[:])
 
-	// Acquire all locks in a consistent order to prevent deadlocks
+	cleanedARQ := 0
+	cleanedReplies := 0
+	cleanedDecoys := 0
+
+	// First, clean up ARQ entries, replies, and decoys for this AppID
+	// These use replyLock which is separate from the channel locks
+	if d.replyLock != nil {
+		d.replyLock.Lock()
+		if d.arqSurbIDMap != nil {
+			for surbID, message := range d.arqSurbIDMap {
+				if message.AppID != nil && *message.AppID == *appID {
+					delete(d.arqSurbIDMap, surbID)
+					cleanedARQ++
+				}
+			}
+		}
+
+		if d.replies != nil {
+			for surbID, desc := range d.replies {
+				if desc.appID != nil && *desc.appID == *appID {
+					delete(d.replies, surbID)
+					cleanedReplies++
+				}
+			}
+		}
+
+		if d.decoys != nil {
+			for surbID, desc := range d.decoys {
+				if desc.appID != nil && *desc.appID == *appID {
+					delete(d.decoys, surbID)
+					cleanedDecoys++
+				}
+			}
+		}
+		d.replyLock.Unlock()
+	}
+
+	// Acquire all channel locks in a consistent order to prevent deadlocks
 	// Order: channelReplies -> newSurbIDToChannelMap -> newChannelMap
 	d.channelRepliesLock.Lock()
 	defer d.channelRepliesLock.Unlock()
@@ -792,13 +829,13 @@ func (d *Daemon) cleanupChannelsForAppID(appID *[AppIDLength]byte) {
 		}
 	}
 
-	if len(channelsToCleanup) == 0 && len(surbIDsToDelete) == 0 {
+	if len(channelsToCleanup) == 0 && len(surbIDsToDelete) == 0 && cleanedARQ == 0 && cleanedReplies == 0 && cleanedDecoys == 0 {
 		d.log.Debugf("cleanupChannelsForAppID: no channels or SURB mappings found for App ID %x", appID[:])
 		return
 	}
 
-	d.log.Infof("cleanupChannelsForAppID: found %d channels and %d SURB mappings to clean up for App ID %x",
-		len(channelsToCleanup), len(surbIDsToDelete), appID[:])
+	d.log.Infof("cleanupChannelsForAppID: found %d channels, %d channel SURB mappings, %d ARQ, %d replies, %d decoys to clean up for App ID %x",
+		len(channelsToCleanup), len(surbIDsToDelete), cleanedARQ, cleanedReplies, cleanedDecoys, appID[:])
 
 	// Clean up all identified resources atomically
 
