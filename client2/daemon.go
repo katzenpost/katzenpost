@@ -1527,8 +1527,31 @@ func (d *Daemon) arqDoResend(surbID *[sphinxConstants.SURBIDLength]byte) {
 		d.replyLock.Unlock()
 		return
 	}
+
+	// Check if the listener exists (could be nil during shutdown or testing)
+	if d.listener == nil {
+		d.log.Debugf("ARQ resend: listener is nil, cleaning up SURB ID %x", surbID[:])
+		delete(d.arqSurbIDMap, *surbID)
+		d.replyLock.Unlock()
+		return
+	}
+
+	// Check if the connection still exists before attempting any resend operations.
+	// If the connection is gone, clean up and abort - there's no client to receive the response.
+	incomingConn := d.listener.getConnection(message.AppID)
+	if incomingConn == nil {
+		d.log.Debugf("ARQ resend: connection already closed for AppID %x, cleaning up SURB ID %x", message.AppID[:], surbID[:])
+		delete(d.arqSurbIDMap, *surbID)
+		d.replyLock.Unlock()
+		return
+	}
+
 	if (message.Retransmissions + 1) > MaxRetransmissions {
 		d.log.Warning("ARQ Max retries met.")
+
+		// Clean up the ARQ entry
+		delete(d.arqSurbIDMap, *surbID)
+
 		response := &Response{
 			AppID: message.AppID,
 			MessageReplyEvent: &thin.MessageReplyEvent{
@@ -1538,13 +1561,9 @@ func (d *Daemon) arqDoResend(surbID *[sphinxConstants.SURBIDLength]byte) {
 				ErrorCode: thin.ThinClientErrorMaxRetries,
 			},
 		}
-		incomingConn := d.listener.getConnection(message.AppID)
-		if incomingConn == nil {
-			panic("incomingConn is nil")
-		}
 		err := incomingConn.sendResponse(response)
 		if err != nil {
-			d.log.Warningf("failed to send MessageReplyEvent with max retry failure")
+			d.log.Warningf("failed to send MessageReplyEvent with max retry failure: %s", err)
 		}
 		d.replyLock.Unlock()
 		return
@@ -1579,6 +1598,12 @@ func (d *Daemon) arqDoResend(surbID *[sphinxConstants.SURBIDLength]byte) {
 	message.Retransmissions += 1
 	d.arqSurbIDMap[*newsurbID] = message
 	d.replyLock.Unlock()
+
+	// Check arqTimerQueue is not nil before pushing
+	if d.arqTimerQueue == nil {
+		d.log.Debugf("ARQ resend: arqTimerQueue is nil, skipping timer push for SURB ID %x", newsurbID[:])
+		return
+	}
 
 	d.log.Warningf("resend PUTTING INTO MAP, NEW SURB ID %x", newsurbID[:])
 	myRtt := message.SentAt.Add(message.ReplyETA)
