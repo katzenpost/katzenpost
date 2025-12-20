@@ -256,7 +256,11 @@ func (p *connector) initSession(ctx context.Context, linkKey kem.PrivateKey, sig
 	conn.SetDeadline(time.Now().Add(handshakeTimeout))
 	if err = s.Initialize(conn); err != nil {
 		conn.Close()
-		return nil, fmt.Errorf("%s: handshake failed: %v", peerInfo(), err)
+		// Log basic error at warning level (no sensitive info)
+		handshakeErr := fmt.Errorf("%s: handshake failed: %v", peerInfo(), err)
+		// Log detailed debug info (contains IPs, keys) at debug level only
+		p.log.Debugf("%s: handshake failure details:\n%s", peerInfo(), wire.GetDebugError(err))
+		return nil, handshakeErr
 	}
 
 	conn.SetDeadline(time.Now().Add(responseTimeout))
