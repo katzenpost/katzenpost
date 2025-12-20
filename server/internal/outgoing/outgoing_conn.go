@@ -306,6 +306,8 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 	conn.SetDeadline(time.Now().Add(timeoutMs))
 	if err = w.Initialize(conn); err != nil {
 		c.log.Errorf("Handshake failed: %v", err)
+		// Log detailed debug info (contains IPs, keys) at debug level only
+		c.log.Debugf("Handshake failure details:\n%s", wire.GetDebugError(err))
 		return
 	}
 	c.log.Debugf("Handshake completed.")

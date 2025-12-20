@@ -87,7 +87,9 @@ func (s *Server) onConn(conn net.Conn) {
 	// Handshake.
 	conn.SetDeadline(time.Now().Add(initialDeadline))
 	if err = wireConn.Initialize(conn); err != nil {
-		s.log.Debugf("Peer %v: Failed session handshake: %v", rAddr, err)
+		s.log.Errorf("Peer %v: Failed session handshake: %v", rAddr, err)
+		// Log detailed debug info (contains IPs, keys) at debug level only
+		s.log.Debugf("Peer %v: handshake failure details:\n%s", rAddr, wire.GetDebugError(err))
 		return
 	}
 
