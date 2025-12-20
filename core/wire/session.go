@@ -473,11 +473,11 @@ func (s *Session) finalizeHandshake() error {
 		// completing the handshake.
 		cmd, err := s.RecvCommand()
 		if err != nil {
-			return err
+			return s.buildHandshakeError(HandshakeStateFinalization, "failed to receive NoOp during finalization", err, 0, 0, 0)
 		}
 		if _, ok := cmd.(*commands.NoOp); !ok {
 			// Protocol violation, the peer sent something other than a NoOp.
-			return errInvalidState
+			return s.buildHandshakeError(HandshakeStateFinalization, "expected NoOp command during finalization", errInvalidState, 0, 0, 0)
 		}
 		return nil
 	}
@@ -487,7 +487,10 @@ func (s *Session) finalizeHandshake() error {
 	noOpCmd := &commands.NoOp{
 		Cmds: s.commands,
 	}
-	return s.SendCommand(noOpCmd)
+	if err := s.SendCommand(noOpCmd); err != nil {
+		return s.buildHandshakeError(HandshakeStateFinalization, "failed to send NoOp during finalization", err, 0, 0, 0)
+	}
+	return nil
 }
 
 // Initialize takes an establised net.Conn, and binds it to a Session, and
