@@ -17,15 +17,6 @@
 package main
 
 import (
-	cbor "github.com/fxamacker/cbor/v2"
-	"github.com/katzenpost/katzenpost/client"
-	"github.com/katzenpost/katzenpost/client/config"
-	"github.com/katzenpost/katzenpost/core/epochtime"
-	"github.com/katzenpost/katzenpost/core/log"
-	"github.com/katzenpost/katzenpost/core/pki"
-	"github.com/katzenpost/katzenpost/quic/proxy/common"
-	"gopkg.in/op/go-logging.v1"
-
 	"bufio"
 	"bytes"
 	"context"
@@ -36,6 +27,17 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"time"
+
+	"github.com/carlmjohnson/versioninfo"
+	cbor "github.com/fxamacker/cbor/v2"
+	"gopkg.in/op/go-logging.v1"
+
+	"github.com/katzenpost/katzenpost/client"
+	"github.com/katzenpost/katzenpost/client/config"
+	"github.com/katzenpost/katzenpost/core/epochtime"
+	"github.com/katzenpost/katzenpost/core/log"
+	"github.com/katzenpost/katzenpost/core/pki"
+	"github.com/katzenpost/katzenpost/quic/proxy/common"
 )
 
 var (
@@ -144,6 +146,8 @@ func main() {
 		panic(err)
 	}
 	clientLog := logBackend.GetLogger("http_proxy")
+	clientLog.Noticef("Katzenpost http-proxy-client version: %s", versioninfo.Short())
+	clientLog.Notice("Katzenpost is still pre-alpha.  DO NOT DEPEND ON IT FOR STRONG SECURITY OR ANONYMITY.")
 
 	addr := fmt.Sprintf(":%d", *port)
 	handler := &kttp{session: s, log: clientLog}

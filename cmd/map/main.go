@@ -24,6 +24,8 @@ import (
 	"path"
 	"path/filepath"
 
+	"github.com/carlmjohnson/versioninfo"
+
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/map/server"
 	"github.com/katzenpost/katzenpost/server/cborplugin"
@@ -71,6 +73,8 @@ func main() {
 		panic(err)
 	}
 	serverLog := logBackend.GetLogger("map_server")
+	serverLog.Noticef("Katzenpost map version: %s", versioninfo.Short())
+	serverLog.Notice("Katzenpost is still pre-alpha.  DO NOT DEPEND ON IT FOR STRONG SECURITY OR ANONYMITY.")
 
 	// start service
 	tmpDir, err := ioutil.TempDir("", "map_server")
