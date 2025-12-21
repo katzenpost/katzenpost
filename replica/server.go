@@ -10,10 +10,10 @@ import (
 	"path/filepath"
 	"sync"
 
-	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
-
+	"github.com/carlmjohnson/versioninfo"
 	"gopkg.in/op/go-logging.v1"
 
+	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/kem"
 	kempem "github.com/katzenpost/hpqc/kem/pem"
 	kemSchemes "github.com/katzenpost/hpqc/kem/schemes"
@@ -27,6 +27,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/utils"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
+	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
 	"github.com/katzenpost/katzenpost/replica/config"
 )
 
@@ -124,6 +125,8 @@ func (s *Server) initLogging() error {
 	s.logBackend, err = log.New(p, s.cfg.Logging.Level, s.cfg.Logging.Disable)
 	if err == nil {
 		s.log = s.logBackend.GetLogger("replica")
+		s.log.Noticef("Katzenpost replica version: %s", versioninfo.Short())
+		s.log.Notice("Katzenpost is still pre-alpha.  DO NOT DEPEND ON IT FOR STRONG SECURITY OR ANONYMITY.")
 	}
 	return err
 }
@@ -302,6 +305,9 @@ func (s *Server) initIdentityKeys() error {
 	} else {
 		return fmt.Errorf("%s and %s must either both exist or not exist", identityPrivateKeyFile, identityPublicKeyFile)
 	}
+
+	idPubKeyHash := hash.Sum256From(s.identityPublicKey)
+	s.log.Noticef("Replica identity public key hash is: %x", idPubKeyHash[:])
 
 	return nil
 }

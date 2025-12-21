@@ -6,6 +6,7 @@ package server
 import (
 	"path/filepath"
 
+	"github.com/carlmjohnson/versioninfo"
 	"gopkg.in/op/go-logging.v1"
 
 	"github.com/katzenpost/hpqc/kem"
@@ -209,6 +210,8 @@ func (s *Server) initLogging() error {
 	s.logBackend, err = log.New(p, s.cfg.Logging.Level, s.cfg.Logging.Disable)
 	if err == nil {
 		s.log = s.logBackend.GetLogger("courier server")
+		s.log.Noticef("Katzenpost courier version: %s", versioninfo.Short())
+		s.log.Notice("Katzenpost is still pre-alpha.  DO NOT DEPEND ON IT FOR STRONG SECURITY OR ANONYMITY.")
 	}
 	return err
 }
