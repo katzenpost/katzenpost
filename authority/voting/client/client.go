@@ -301,9 +301,11 @@ func (p *connector) initSessionWithRetry(ctx context.Context, linkKey kem.Privat
 }
 
 func (p *connector) roundTrip(s *wire.Session, cmd commands.Command) (commands.Command, error) {
+	sendStart := time.Now()
 	if err := s.SendCommand(cmd); err != nil {
 		return nil, err
 	}
+	p.log.Debugf("Sent %s in %v", cmd, time.Since(sendStart))
 	return s.RecvCommand()
 }
 
