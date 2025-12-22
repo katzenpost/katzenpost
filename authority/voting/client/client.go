@@ -254,6 +254,7 @@ func (p *connector) initSession(ctx context.Context, linkKey kem.PrivateKey, sig
 	}
 
 	conn.SetDeadline(time.Now().Add(handshakeTimeout))
+	handshakeStart := time.Now()
 	if err = s.Initialize(conn); err != nil {
 		conn.Close()
 		// Add peer name context to the error if it's a HandshakeError
@@ -264,6 +265,7 @@ func (p *connector) initSession(ctx context.Context, linkKey kem.PrivateKey, sig
 		p.log.Debugf("%s: handshake failure details:\n%s", peerInfo(), wire.GetDebugError(err))
 		return nil, err
 	}
+	p.log.Debugf("%s: Handshake completed in %v", peerInfo(), time.Since(handshakeStart))
 
 	conn.SetDeadline(time.Now().Add(responseTimeout))
 
