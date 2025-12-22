@@ -109,7 +109,7 @@ type state struct {
 	db *bolt.DB
 
 	reverseHash            map[[publicKeyHashSize]byte]sign.PublicKey
-	authorizedMixes        map[[publicKeyHashSize]byte]bool
+	authorizedMixes        map[[publicKeyHashSize]byte]string
 	authorizedGatewayNodes map[[publicKeyHashSize]byte]string
 	authorizedServiceNodes map[[publicKeyHashSize]byte]string
 	authorizedReplicaNodes map[[publicKeyHashSize]byte]string
@@ -992,6 +992,38 @@ func (s *state) PhaseInfo() (phase string, timeRemaining time.Duration) {
 	return
 }
 
+// PeerName returns the name of a peer given their identity key hash.
+// Returns empty string if peer is not found (e.g., clients).
+func (s *state) PeerName(identityKeyHash []byte) string {
+	if len(identityKeyHash) != publicKeyHashSize {
+		return ""
+	}
+	var pk [publicKeyHashSize]byte
+	copy(pk[:], identityKeyHash)
+
+	// Check mixes
+	if name, ok := s.authorizedMixes[pk]; ok {
+		return name
+	}
+	// Check gateway nodes
+	if name, ok := s.authorizedGatewayNodes[pk]; ok {
+		return name
+	}
+	// Check service nodes
+	if name, ok := s.authorizedServiceNodes[pk]; ok {
+		return name
+	}
+	// Check replica nodes
+	if name, ok := s.authorizedReplicaNodes[pk]; ok {
+		return name
+	}
+	// Check authorities
+	if name, ok := s.authorityNames[pk]; ok {
+		return name
+	}
+	return ""
+}
+
 // sendCertToAuthorities sends our cert to all Directory Authorities
 func (s *state) sendCertToAuthorities(cert []byte, epoch uint64) {
 	if s.TryLock() {
@@ -1583,13 +1615,17 @@ func (s *state) isReplicaDescriptorAuthorized(desc *pki.ReplicaDescriptor) bool 
 func (s *state) isDescriptorAuthorized(desc *pki.MixDescriptor) bool {
 	pk := hash.Sum256(desc.IdentityKey)
 	if !desc.IsGatewayNode && !desc.IsServiceNode {
-		authorized := s.authorizedMixes[pk]
-		if !authorized {
+		name, ok := s.authorizedMixes[pk]
+		if !ok {
 			s.log.Errorf("Mix authentication failure: key hash %x not authorized", pk)
-		} else {
-			s.log.Debugf("Mix authentication OK: %s with hash %x", desc.Name, pk)
+			return false
 		}
-		return authorized
+		if name != desc.Name {
+			s.log.Errorf("Mix name mismatch: expected %s, got %s", name, desc.Name)
+			return false
+		}
+		s.log.Debugf("Mix authentication OK: %s with hash %x", desc.Name, pk)
+		return true
 	}
 	if desc.IsGatewayNode {
 		name, ok := s.authorizedGatewayNodes[pk]
@@ -2260,7 +2296,7 @@ func newState(s *Server) (*state, error) {
 
 	// Initialize the authorized peer tables.
 	st.reverseHash = make(map[[publicKeyHashSize]byte]sign.PublicKey)
-	st.authorizedMixes = make(map[[publicKeyHashSize]byte]bool)
+	st.authorizedMixes = make(map[[publicKeyHashSize]byte]string)
 	for _, v := range st.s.cfg.Mixes {
 		var identityPublicKey sign.PublicKey
 		var err error
@@ -2278,7 +2314,7 @@ func newState(s *Server) (*state, error) {
 		}
 
 		pk := hash.Sum256From(identityPublicKey)
-		st.authorizedMixes[pk] = true
+		st.authorizedMixes[pk] = v.Identifier
 		st.reverseHash[pk] = identityPublicKey
 	}
 	st.authorizedGatewayNodes = make(map[[publicKeyHashSize]byte]string)
