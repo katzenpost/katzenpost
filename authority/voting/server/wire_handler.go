@@ -90,15 +90,22 @@ func (s *Server) onConn(conn net.Conn) {
 		s.log.Debugf("Peer %v: handshake failure details:\n%s", rAddr, wire.GetDebugError(err))
 		return
 	}
-	s.log.Debugf("Peer %v: Handshake completed in %v", rAddr, time.Since(handshakeStart))
+	handshakeDuration := time.Since(handshakeStart)
+	s.log.Debugf("Peer %v: Handshake completed in %v", rAddr, handshakeDuration)
 
 	// Receive a command.
+	recvStart := time.Now()
 	cmd, err := wireConn.RecvCommand()
 	if err != nil {
 		s.log.Debugf("Peer %v: Failed to receive command: %v", rAddr, err)
 		return
 	}
+	recvDuration := time.Since(recvStart)
 	conn.SetDeadline(time.Time{})
+
+	// Log timing for all commands
+	s.log.Debugf("Peer %v: Received %s in %v (handshake: %v, total: %v)",
+		rAddr, cmd, recvDuration, handshakeDuration, handshakeDuration+recvDuration)
 
 	// Parse the command, and craft the response.
 	var resp commands.Command
