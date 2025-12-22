@@ -959,6 +959,39 @@ func (s *state) phaseDeadline(targetDeadline time.Duration) time.Time {
 	return time.Now().Add(remaining)
 }
 
+// PhaseInfo returns the current phase name and time remaining until the next phase.
+// This is useful for debugging connection handling relative to the voting schedule.
+func (s *state) PhaseInfo() (phase string, timeRemaining time.Duration) {
+	s.RLock()
+	defer s.RUnlock()
+
+	_, elapsed, _ := epochtime.Now()
+	phase = s.state
+
+	// Calculate time remaining based on current phase
+	var deadline time.Duration
+	switch s.state {
+	case stateBootstrap, stateAcceptDescriptor:
+		deadline = MixPublishDeadline
+	case stateAcceptVote:
+		deadline = AuthorityVoteDeadline
+	case stateAcceptReveal:
+		deadline = AuthorityRevealDeadline
+	case stateAcceptCert:
+		deadline = AuthorityCertDeadline
+	case stateAcceptSignature:
+		deadline = PublishConsensusDeadline
+	default:
+		deadline = MixPublishDeadline
+	}
+
+	timeRemaining = deadline - elapsed
+	if timeRemaining < 0 {
+		timeRemaining = 0
+	}
+	return
+}
+
 // sendCertToAuthorities sends our cert to all Directory Authorities
 func (s *state) sendCertToAuthorities(cert []byte, epoch uint64) {
 	if s.TryLock() {
@@ -1885,6 +1918,13 @@ func (s *state) onReplicaDescriptorUpload(rawDesc []byte, desc *pki.ReplicaDescr
 	s.Lock()
 	defer s.Unlock()
 
+	// Check if we're past the descriptor upload phase deadline
+	_, elapsed, _ := epochtime.Now()
+	if elapsed > MixPublishDeadline {
+		s.log.Warningf("Replica %s: Descriptor upload for epoch %d arrived after upload phase ended (elapsed: %v, deadline: %v, late by: %v)",
+			desc.Name, epoch, elapsed, MixPublishDeadline, elapsed-MixPublishDeadline)
+	}
+
 	// Note: Caller ensures that the epoch is the current epoch +- 1.
 	pk := hash.Sum256(desc.IdentityKey)
 
@@ -1942,6 +1982,13 @@ func (s *state) onReplicaDescriptorUpload(rawDesc []byte, desc *pki.ReplicaDescr
 func (s *state) onDescriptorUpload(rawDesc []byte, desc *pki.MixDescriptor, epoch uint64) error {
 	s.Lock()
 	defer s.Unlock()
+
+	// Check if we're past the descriptor upload phase deadline
+	_, elapsed, _ := epochtime.Now()
+	if elapsed > MixPublishDeadline {
+		s.log.Warningf("Node %s: Descriptor upload for epoch %d arrived after upload phase ended (elapsed: %v, deadline: %v, late by: %v)",
+			desc.Name, epoch, elapsed, MixPublishDeadline, elapsed-MixPublishDeadline)
+	}
 
 	// Note: Caller ensures that the epoch is the current epoch +- 1.
 	pk := hash.Sum256(desc.IdentityKey)

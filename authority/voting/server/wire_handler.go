@@ -42,7 +42,8 @@ func isQUICConn(conn net.Conn) bool {
 
 func (s *Server) onConn(conn net.Conn) {
 	rAddr := conn.RemoteAddr()
-	s.log.Debugf("Accepted new connection: %v", rAddr)
+	phase, timeRemaining := s.state.PhaseInfo()
+	s.log.Debugf("Accepted new connection: %v (phase: %s, time remaining: %v)", rAddr, phase, timeRemaining)
 
 	// Initialize the wire protocol session.
 	auth := &wireAuthenticator{s: s}
@@ -214,6 +215,9 @@ func (s *Server) onGetConsensus(rAddr net.Addr, cmd *commands.GetConsensus) comm
 }
 
 func (s *Server) onPostReplicaDescriptor(rAddr net.Addr, cmd *commands.PostReplicaDescriptor, pubKeyHash []byte) commands.Command {
+	phase, timeRemaining := s.state.PhaseInfo()
+	s.log.Debugf("onPostReplicaDescriptor: Received from peer %v for epoch %d (phase: %s, time remaining: %v)", rAddr, cmd.Epoch, phase, timeRemaining)
+
 	resp := &commands.PostReplicaDescriptorStatus{
 		ErrorCode: commands.DescriptorInvalid,
 	}
@@ -289,7 +293,9 @@ func (s *Server) onPostReplicaDescriptor(rAddr net.Addr, cmd *commands.PostRepli
 }
 
 func (s *Server) onPostDescriptor(rAddr net.Addr, cmd *commands.PostDescriptor, pubKeyHash []byte) commands.Command {
-	s.log.Debugf("onPostDescriptor: Received descriptor from peer %v for epoch %d", rAddr, cmd.Epoch)
+	phase, timeRemaining := s.state.PhaseInfo()
+	s.log.Debugf("onPostDescriptor: Received descriptor from peer %v for epoch %d (phase: %s, time remaining: %v)", rAddr, cmd.Epoch, phase, timeRemaining)
+
 	resp := &commands.PostDescriptorStatus{
 		ErrorCode: commands.DescriptorInvalid,
 	}
