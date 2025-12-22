@@ -72,6 +72,8 @@ type ReplicaWrite struct {
 	Payload   []byte
 }
 
+func (c *ReplicaWrite) String() string { return "ReplicaWrite" }
+
 func (c *ReplicaWrite) ToBytes() []byte {
 	var cmdLen = bacap.BoxIDSize + bacap.SignatureSize + len(c.Payload)
 
@@ -120,6 +122,8 @@ type ReplicaWriteReply struct {
 	ErrorCode uint8
 }
 
+func (c *ReplicaWriteReply) String() string { return "ReplicaWriteReply" }
+
 func (c *ReplicaWriteReply) ToBytes() []byte {
 	out := make([]byte, cmdOverhead+replicaMessageReplyLength)
 	out[0] = byte(replicaWriteReply)
@@ -153,6 +157,8 @@ type ReplicaDecoy struct {
 	Cmds *Commands
 }
 
+func (c *ReplicaDecoy) String() string { return "ReplicaDecoy" }
+
 func (c *ReplicaDecoy) ToBytes() []byte {
 	out := make([]byte, cmdOverhead)
 	out[0] = byte(replicaDecoy)
@@ -178,6 +184,8 @@ type ReplicaMessage struct {
 	DEK           *[mkem.DEKSize]byte
 	Ciphertext    []byte
 }
+
+func (c *ReplicaMessage) String() string { return "ReplicaMessage" }
 
 func (c *ReplicaMessage) EnvelopeHash() *[hash.HashSize]byte {
 	h, err := blake2b.New256(nil)
@@ -275,6 +283,8 @@ type ReplicaMessageReply struct {
 	// EnvelopeReply contains the mkem ciphertext reply.
 	EnvelopeReply []byte
 }
+
+func (c *ReplicaMessageReply) String() string { return "ReplicaMessageReply" }
 
 func (c *ReplicaMessageReply) ToBytes() []byte {
 	out := make([]byte, cmdOverhead, cmdOverhead+1+32+1+1+len(c.EnvelopeReply))
