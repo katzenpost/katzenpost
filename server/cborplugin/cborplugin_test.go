@@ -321,16 +321,33 @@ type MockProcess struct {
 	started   bool
 	signaled  bool
 	waited    bool
+	mu        sync.Mutex
 }
 
 func (p *MockProcess) Signal(sig os.Signal) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	p.signaled = true
 	return p.signalErr
 }
 
 func (p *MockProcess) Wait() error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	p.waited = true
 	return p.waitErr
+}
+
+func (p *MockProcess) IsSignaled() bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.signaled
+}
+
+func (p *MockProcess) IsWaited() bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.waited
 }
 
 func (p *MockProcess) StdoutPipe() (io.ReadCloser, error) {
@@ -796,8 +813,8 @@ func TestClientReaper(t *testing.T) {
 	// Wait a bit for reaper to process
 	time.Sleep(50 * time.Millisecond)
 
-	require.True(t, mockProcess.signaled)
-	require.True(t, mockProcess.waited)
+	require.True(t, mockProcess.IsSignaled())
+	require.True(t, mockProcess.IsWaited())
 }
 
 func TestClientReaperSignalError(t *testing.T) {
@@ -815,8 +832,8 @@ func TestClientReaperSignalError(t *testing.T) {
 
 	time.Sleep(50 * time.Millisecond)
 
-	require.True(t, mockProcess.signaled)
-	require.True(t, mockProcess.waited)
+	require.True(t, mockProcess.IsSignaled())
+	require.True(t, mockProcess.IsWaited())
 }
 
 func TestClientReaperWaitError(t *testing.T) {
@@ -834,8 +851,8 @@ func TestClientReaperWaitError(t *testing.T) {
 
 	time.Sleep(50 * time.Millisecond)
 
-	require.True(t, mockProcess.signaled)
-	require.True(t, mockProcess.waited)
+	require.True(t, mockProcess.IsSignaled())
+	require.True(t, mockProcess.IsWaited())
 }
 
 func TestClientLogPluginStderr(t *testing.T) {
@@ -1368,9 +1385,22 @@ func TestServerAcceptAndWorker(t *testing.T) {
 
 	server := NewServer(log, socketFile, new(RequestMessageFactory), mockPlugin)
 
-	// Create a client connection
+	// Use a channel to signal when Accept has been called
+	acceptDone := make(chan struct{})
+
+	// Accept connection and run worker in goroutine
 	go func() {
-		time.Sleep(50 * time.Millisecond)
+		server.Accept()
+		close(acceptDone)
+	}()
+
+	// Wait for Accept to start (give it time to call Go())
+	time.Sleep(50 * time.Millisecond)
+
+	// Create a client connection
+	clientDone := make(chan struct{})
+	go func() {
+		defer close(clientDone)
 		conn, err := net.Dial("unix", socketFile)
 		if err != nil {
 			return
@@ -1390,16 +1420,17 @@ func TestServerAcceptAndWorker(t *testing.T) {
 		dec.Decode(&resp)
 	}()
 
-	// Accept connection and run worker in goroutine
-	go func() {
-		server.Accept()
-	}()
+	// Wait for client to finish
+	<-clientDone
 
-	// Wait for things to process
-	time.Sleep(200 * time.Millisecond)
+	// Wait a bit for server to process
+	time.Sleep(50 * time.Millisecond)
 
 	// Halt the server
 	server.Halt()
+
+	// Wait for accept goroutine to finish
+	<-acceptDone
 }
 
 func TestCommandIOReaderHaltDuringWrite(t *testing.T) {
