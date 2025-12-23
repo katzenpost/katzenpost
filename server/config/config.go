@@ -52,7 +52,7 @@ const (
 	defaultSendSlack           = 50        // 50 ms.
 	defaultDecoySlack          = 15 * 1000 // 15 sec.
 	defaultConnectTimeout      = 60 * 1000 // 60 sec.
-	defaultHandshakeTimeout    = 30 * 1000 // 30 sec.
+	defaultHandshakeTimeout    = 60 * 1000 // 60 sec.
 	defaultReauthInterval      = 30 * 1000 // 30 sec.
 	defaultGatewayDelay        = 500       // 500 ms.
 	defaultServiceDelay        = 500       // 500 ms.

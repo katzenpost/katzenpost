@@ -152,11 +152,12 @@ func (c *incomingConn) performHandshakeAndAuth(session *wire.Session) (*wire.Pee
 	// Bind the session to the conn, handshake, authenticate.
 	timeoutMs := time.Duration(c.l.server.cfg.HandshakeTimeout) * time.Millisecond
 	c.c.SetDeadline(time.Now().Add(timeoutMs))
+	handshakeStart := time.Now()
 	if err := session.Initialize(c.c); err != nil {
 		c.log.Errorf("Handshake failed: %v", err)
 		return nil, nil, err
 	}
-	c.log.Debugf("Handshake completed.")
+	c.log.Debugf("Handshake completed in %v", time.Since(handshakeStart))
 	c.c.SetDeadline(time.Time{})
 	c.l.onInitializedConn(c)
 

@@ -409,6 +409,7 @@ func (c *connection) onNetConn(conn net.Conn) {
 
 	// Bind the session to the conn, handshake, authenticate.
 	conn.SetDeadline(time.Now().Add(handshakeTimeout))
+	handshakeStart := time.Now()
 	if err = w.Initialize(conn); err != nil {
 		c.log.Errorf("Handshake failed: %v", err)
 		if c.client.cfg.Callbacks.OnConnFn != nil {
@@ -416,7 +417,7 @@ func (c *connection) onNetConn(conn net.Conn) {
 		}
 		return
 	}
-	c.log.Debugf("onTCPConn: Handshake completed.")
+	c.log.Debugf("Handshake completed in %v", time.Since(handshakeStart))
 	conn.SetDeadline(time.Time{}) // client can take however long it wants
 	//if err = conn.SetDeadline(time.Now().Add(90 * time.Second)); err != nil {
 	//   panic(err)
@@ -466,7 +467,7 @@ func (c *connection) onWireConn(w *wire.Session) {
 				}
 				return
 			}
-			atomic.StoreInt64(&c.retryDelay, int64(2 * time.Second))
+			atomic.StoreInt64(&c.retryDelay, int64(2*time.Second))
 			select {
 			case <-c.HaltCh():
 				return

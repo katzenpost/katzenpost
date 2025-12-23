@@ -72,6 +72,9 @@ func newPKIWorkerWithDefaultClient(server *Server, log *logging.Logger) (*PKIWor
 		LogBackend:  server.LogBackend(),
 		Authorities: server.cfg.PKI.Voting.Authorities,
 		Geo:         server.cfg.SphinxGeometry,
+		// Convert milliseconds to seconds for PKI client timeouts
+		DialTimeoutSec:      server.cfg.ConnectTimeout / 1000,
+		HandshakeTimeoutSec: server.cfg.HandshakeTimeout / 1000,
 	}
 
 	pkiClient, err := vClient.New(pkiCfg)
@@ -217,7 +220,7 @@ func (p *PKIWorker) AuthenticateReplicaConnection(c *wire.PeerCredentials) (*pki
 		panic(err)
 	}
 	if !hmac.Equal(replicaDesc.LinkKey, blob) {
-	        // TODO could be link key from prev/next epoch too?
+		// TODO could be link key from prev/next epoch too?
 		return nil, false
 	}
 	return replicaDesc, true

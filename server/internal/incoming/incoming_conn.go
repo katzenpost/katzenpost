@@ -221,13 +221,14 @@ func (c *incomingConn) worker() {
 	// Bind the session to the conn, handshake, authenticate.
 	timeoutMs := time.Duration(c.l.glue.Config().Debug.HandshakeTimeout) * time.Millisecond
 	c.c.SetDeadline(time.Now().Add(timeoutMs))
+	handshakeStart := time.Now()
 	if err = c.w.Initialize(c.c); err != nil {
 		c.log.Errorf("Handshake failed: %v", err)
 		// Log detailed debug info (contains IPs, keys) at debug level only
 		c.log.Debugf("Handshake failure details:\n%s", wire.GetDebugError(err))
 		return
 	}
-	c.log.Debugf("Handshake completed.")
+	c.log.Debugf("Handshake completed in %v", time.Since(handshakeStart))
 	c.c.SetDeadline(time.Time{})
 	c.l.onInitializedConn(c)
 

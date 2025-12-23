@@ -290,12 +290,12 @@ func testVoteWithAuthorities(t *testing.T, authNum int, expectedSuccessfulConsen
 	// populate the authorities with the descriptors
 	for _, s := range stateAuthority {
 		s.descriptors[votingEpoch] = make(map[[hash.HashSize]byte]*pki.MixDescriptor)
-		s.authorizedMixes = make(map[[hash.HashSize]byte]bool)
+		s.authorizedMixes = make(map[[hash.HashSize]byte]string)
 		s.authorizedGatewayNodes = make(map[[hash.HashSize]byte]string)
 		s.authorizedServiceNodes = make(map[[hash.HashSize]byte]string)
 		for _, d := range mixDescs {
 			s.descriptors[votingEpoch][hash.Sum256(d.IdentityKey)] = d
-			s.authorizedMixes[hash.Sum256(d.IdentityKey)] = true
+			s.authorizedMixes[hash.Sum256(d.IdentityKey)] = d.Name
 		}
 		for _, d := range gatewayDescs {
 			s.descriptors[votingEpoch][hash.Sum256(d.IdentityKey)] = d
