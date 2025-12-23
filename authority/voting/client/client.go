@@ -114,7 +114,7 @@ func (cfg *Config) validate() error {
 		cfg.DialTimeoutSec = 30
 	}
 	if cfg.HandshakeTimeoutSec == 0 {
-		cfg.HandshakeTimeoutSec = 180
+		cfg.HandshakeTimeoutSec = 60
 	}
 	if cfg.ResponseTimeoutSec == 0 {
 		cfg.ResponseTimeoutSec = 90
