@@ -9,6 +9,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -22,6 +23,11 @@ func newTestLogBackend(t *testing.T) *log.Backend {
 	logBackend, err := log.New("", "DEBUG", false)
 	require.NoError(t, err)
 	return logBackend
+}
+
+// testSocketPath returns a temporary socket file path suitable for the current OS
+func testSocketPath(name string) string {
+	return filepath.Join(os.TempDir(), name+"_"+time.Now().Format("20060102150405")+".sock")
 }
 
 // MockLogger implements the Logger interface for testing
@@ -1071,7 +1077,7 @@ func TestCommandIOStartNonInitiator(t *testing.T) {
 	log := logBackend.GetLogger("test")
 
 	// Create a temp socket file
-	socketFile := "/tmp/test_cborplugin_" + time.Now().Format("20060102150405") + ".sock"
+	socketFile := testSocketPath("test_cborplugin")
 	defer os.Remove(socketFile)
 
 	mockListener := &MockListener{
@@ -1090,7 +1096,7 @@ func TestCommandIOStartNonInitiatorRetry(t *testing.T) {
 	logBackend := newTestLogBackend(t)
 	log := logBackend.GetLogger("test")
 
-	socketFile := "/tmp/test_cborplugin_retry_" + time.Now().Format("20060102150405") + ".sock"
+	socketFile := testSocketPath("test_cborplugin_retry")
 	defer os.Remove(socketFile)
 
 	// First Listen fails, second succeeds (simulating stale socket file)
@@ -1212,7 +1218,7 @@ func TestNewServer(t *testing.T) {
 	logBackend := newTestLogBackend(t)
 	log := logBackend.GetLogger("test")
 
-	socketFile := "/tmp/test_server_" + time.Now().Format("20060102150405") + ".sock"
+	socketFile := testSocketPath("test_server")
 	defer os.Remove(socketFile)
 
 	mockPlugin := &MockServerPlugin{
@@ -1231,7 +1237,7 @@ func TestServerHandleCommandLegacy(t *testing.T) {
 	logBackend := newTestLogBackend(t)
 	log := logBackend.GetLogger("test")
 
-	socketFile := "/tmp/test_server_legacy_" + time.Now().Format("20060102150405") + ".sock"
+	socketFile := testSocketPath("test_server_legacy")
 	defer os.Remove(socketFile)
 
 	mockPlugin := &MockServerPlugin{}
@@ -1254,7 +1260,7 @@ func TestServerHandleRequestMessageWithRequest(t *testing.T) {
 	logBackend := newTestLogBackend(t)
 	log := logBackend.GetLogger("test")
 
-	socketFile := "/tmp/test_server_req_" + time.Now().Format("20060102150405") + ".sock"
+	socketFile := testSocketPath("test_server_req")
 	defer os.Remove(socketFile)
 
 	mockPlugin := &MockServerPlugin{}
@@ -1279,7 +1285,7 @@ func TestServerHandleRequestMessageWithParametersRequest(t *testing.T) {
 	logBackend := newTestLogBackend(t)
 	log := logBackend.GetLogger("test")
 
-	socketFile := "/tmp/test_server_params_" + time.Now().Format("20060102150405") + ".sock"
+	socketFile := testSocketPath("test_server_params")
 	defer os.Remove(socketFile)
 
 	mockPlugin := &MockServerPlugin{
@@ -1316,7 +1322,7 @@ func TestServerHandleRequestMessageEmpty(t *testing.T) {
 	logBackend := newTestLogBackend(t)
 	log := logBackend.GetLogger("test")
 
-	socketFile := "/tmp/test_server_empty_" + time.Now().Format("20060102150405") + ".sock"
+	socketFile := testSocketPath("test_server_empty")
 	defer os.Remove(socketFile)
 
 	mockPlugin := &MockServerPlugin{}
@@ -1337,7 +1343,7 @@ func TestServerWrite(t *testing.T) {
 	logBackend := newTestLogBackend(t)
 	log := logBackend.GetLogger("test")
 
-	socketFile := "/tmp/test_server_write_" + time.Now().Format("20060102150405") + ".sock"
+	socketFile := testSocketPath("test_server_write")
 	defer os.Remove(socketFile)
 
 	mockPlugin := &MockServerPlugin{}
@@ -1376,7 +1382,7 @@ func TestServerAcceptAndWorker(t *testing.T) {
 	logBackend := newTestLogBackend(t)
 	log := logBackend.GetLogger("test")
 
-	socketFile := "/tmp/test_server_worker_" + time.Now().Format("20060102150405") + ".sock"
+	socketFile := testSocketPath("test_server_worker")
 	defer os.Remove(socketFile)
 
 	mockPlugin := &MockServerPlugin{
@@ -1456,7 +1462,7 @@ func TestServerWorkerHaltPath(t *testing.T) {
 	logBackend := newTestLogBackend(t)
 	log := logBackend.GetLogger("test")
 
-	socketFile := "/tmp/test_server_halt_" + time.Now().Format("20060102150405") + ".sock"
+	socketFile := testSocketPath("test_server_halt")
 	defer os.Remove(socketFile)
 
 	mockPlugin := &MockServerPlugin{}
@@ -1475,7 +1481,7 @@ func TestServerWriteHaltPath(t *testing.T) {
 	logBackend := newTestLogBackend(t)
 	log := logBackend.GetLogger("test")
 
-	socketFile := "/tmp/test_server_write_halt_" + time.Now().Format("20060102150405") + ".sock"
+	socketFile := testSocketPath("test_server_write_halt")
 	defer os.Remove(socketFile)
 
 	mockPlugin := &MockServerPlugin{}
@@ -1496,7 +1502,7 @@ func TestServerHandleCommandLegacyWithError(t *testing.T) {
 	logBackend := newTestLogBackend(t)
 	log := logBackend.GetLogger("test")
 
-	socketFile := "/tmp/test_server_legacy_err_" + time.Now().Format("20060102150405") + ".sock"
+	socketFile := testSocketPath("test_server_legacy_err")
 	defer os.Remove(socketFile)
 
 	mockPlugin := &MockServerPlugin{
@@ -1521,7 +1527,7 @@ func TestServerHandleRequestMessageWithRequestError(t *testing.T) {
 	logBackend := newTestLogBackend(t)
 	log := logBackend.GetLogger("test")
 
-	socketFile := "/tmp/test_server_req_err_" + time.Now().Format("20060102150405") + ".sock"
+	socketFile := testSocketPath("test_server_req_err")
 	defer os.Remove(socketFile)
 
 	mockPlugin := &MockServerPlugin{
