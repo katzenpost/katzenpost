@@ -482,18 +482,6 @@ func (s *katzenpost) genNodeConfig(isGateway, isServiceNode bool, isVoting bool)
 			},
 		}
 
-		// NOTE: "map" service is an alternative storage service which does NOT
-		// have all the cool privacy properties that the protocol in our paper describes.
-		mapCfg := &sConfig.CBORPluginKaetzchen{
-			Capability:     "map",
-			Endpoint:       "+map",
-			Command:        s.baseDir + "/map" + s.binSuffix,
-			MaxConcurrency: 1,
-			Config: map[string]interface{}{
-				"db":      s.baseDir + "/" + cfg.Server.Identifier + "/map.storage",
-				"log_dir": s.baseDir + "/" + cfg.Server.Identifier,
-			},
-		}
 		proxyCfg := &sConfig.CBORPluginKaetzchen{
 			Capability:     "http",
 			Endpoint:       "+http",
@@ -507,7 +495,7 @@ func (s *katzenpost) genNodeConfig(isGateway, isServiceNode bool, isVoting bool)
 			},
 		}
 
-		cfg.ServiceNode.CBORPluginKaetzchen = []*sConfig.CBORPluginKaetzchen{courierPluginCfg, mapCfg, proxyCfg}
+		cfg.ServiceNode.CBORPluginKaetzchen = []*sConfig.CBORPluginKaetzchen{courierPluginCfg, proxyCfg}
 
 		cfg.Debug.NumKaetzchenWorkers = 4
 
