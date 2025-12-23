@@ -497,7 +497,7 @@ func (sCfg *Server) validate() error {
 		sCfg.DialTimeoutSec = 30
 	}
 	if sCfg.HandshakeTimeoutSec == 0 {
-		sCfg.HandshakeTimeoutSec = 180
+		sCfg.HandshakeTimeoutSec = 60
 	}
 	if sCfg.ResponseTimeoutSec == 0 {
 		sCfg.ResponseTimeoutSec = 90

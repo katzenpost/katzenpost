@@ -28,6 +28,7 @@ import (
 	"path/filepath"
 	"sync"
 
+	"github.com/carlmjohnson/versioninfo"
 	"github.com/quic-go/quic-go"
 	"gopkg.in/op/go-logging.v1"
 
@@ -224,6 +225,7 @@ func New(cfg *config.Config) (*Server, error) {
 		return nil, err
 	}
 
+	s.log.Noticef("Katzenpost directory authority version: %s", versioninfo.Short())
 	s.log.Notice("Katzenpost is still pre-alpha.  DO NOT DEPEND ON IT FOR STRONG SECURITY OR ANONYMITY.")
 	if s.cfg.Logging.Level == "DEBUG" {
 		s.log.Warning("Unsafe Debug logging is enabled.")
@@ -262,6 +264,9 @@ func New(cfg *config.Config) (*Server, error) {
 	} else {
 		return nil, fmt.Errorf("%s and %s must either both exist or not exist", identityPrivateKeyFile, identityPublicKeyFile)
 	}
+
+	idPubKeyHash := hash.Sum256From(s.identityPublicKey)
+	s.log.Noticef("Authority identity public key hash is: %x", idPubKeyHash[:])
 
 	scheme := schemes.ByName(cfg.Server.WireKEMScheme)
 	if scheme == nil {
@@ -314,7 +319,6 @@ func New(cfg *config.Config) (*Server, error) {
 
 	s.linkKey = linkPrivateKey
 
-	s.log.Noticef("Authority identity public key hash is: %x", hash.Sum256From(s.identityPublicKey))
 	linkBlob, err := s.linkKey.Public().MarshalBinary()
 	if err != nil {
 		return nil, err

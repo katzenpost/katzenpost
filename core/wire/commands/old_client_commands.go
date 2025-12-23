@@ -33,6 +33,8 @@ type SendPacket struct {
 	Cmds         *Commands
 }
 
+func (c *SendPacket) String() string { return "SendPacket" }
+
 // ToBytes serializes the SendPacket and returns the resulting slice.
 func (c *SendPacket) ToBytes() []byte {
 	out := make([]byte, cmdOverhead, cmdOverhead+len(c.SphinxPacket))
@@ -59,6 +61,8 @@ type RetrieveMessage struct {
 	Sequence uint32
 	Cmds     *Commands
 }
+
+func (c *RetrieveMessage) String() string { return "RetrieveMessage" }
 
 // ToBytes serializes the RetrieveMessage and returns the resulting slice.
 func (c *RetrieveMessage) ToBytes() []byte {
@@ -95,6 +99,8 @@ type MessageACK struct {
 	Payload       []byte
 }
 
+func (c *MessageACK) String() string { return "MessageACK" }
+
 // ToBytes serializes the MessageACK and returns the resulting slice.
 func (c *MessageACK) ToBytes() []byte {
 	if len(c.Payload) != c.Geo.PayloadTagLength+c.Geo.ForwardPayloadLength {
@@ -127,6 +133,8 @@ type Message struct {
 	Payload       []byte
 }
 
+func (c *Message) String() string { return "Message" }
+
 // ToBytes serializes the Message and returns the resulting slice.
 func (c *Message) ToBytes() []byte {
 	if len(c.Payload) != c.Geo.UserForwardPayloadLength {
@@ -153,6 +161,8 @@ type MessageEmpty struct {
 
 	Sequence uint32
 }
+
+func (c *MessageEmpty) String() string { return "MessageEmpty" }
 
 // ToBytes serializes the MessageEmpty and returns the resulting slice.
 func (c *MessageEmpty) ToBytes() []byte {

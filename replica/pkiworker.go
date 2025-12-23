@@ -56,6 +56,9 @@ func newPKIWorker(server *Server, log *logging.Logger) (*PKIWorker, error) {
 		LogBackend:  server.LogBackend(),
 		Authorities: server.cfg.PKI.Voting.Authorities,
 		Geo:         server.cfg.SphinxGeometry,
+		// Convert milliseconds to seconds for PKI client timeouts
+		DialTimeoutSec:      server.cfg.ConnectTimeout / 1000,
+		HandshakeTimeoutSec: server.cfg.HandshakeTimeout / 1000,
 	}
 
 	pkiClient, err := vClient.New(pkiCfg)

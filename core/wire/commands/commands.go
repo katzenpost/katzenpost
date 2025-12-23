@@ -215,6 +215,8 @@ type NoOp struct {
 	Cmds *Commands
 }
 
+func (c *NoOp) String() string { return "NoOp" }
+
 // ToBytes serializes the NoOp and returns the resulting slice.
 func (c *NoOp) ToBytes() []byte {
 	out := make([]byte, cmdOverhead)
@@ -230,6 +232,8 @@ func (c *NoOp) Length() int {
 type Disconnect struct {
 	Cmds *Commands
 }
+
+func (c *Disconnect) String() string { return "Disconnect" }
 
 // ToBytes serializes the Disconnect and returns the resulting slice.
 func (c *Disconnect) ToBytes() []byte {
@@ -250,6 +254,8 @@ type SendRetrievePacket struct {
 
 	SphinxPacket []byte
 }
+
+func (c *SendRetrievePacket) String() string { return "SendRetrievePacket" }
 
 func (c *SendRetrievePacket) ToBytes() []byte {
 	if len(c.SphinxPacket) != c.Geo.PacketLength {
@@ -284,6 +290,8 @@ type SendRetrievePacketReply struct {
 	SURBID  [constants.SURBIDLength]byte
 	Payload []byte
 }
+
+func (c *SendRetrievePacketReply) String() string { return "SendRetrievePacketReply" }
 
 func (c *SendRetrievePacketReply) ToBytes() []byte {
 	out := make([]byte, cmdOverhead+constants.SURBIDLength, cmdOverhead+constants.SURBIDLength+len(c.Payload))
