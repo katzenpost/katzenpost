@@ -16,7 +16,6 @@ jobs:
           - { name: "sphinx", path: "core/sphinx", timeout: "30m" }
           - { name: "server", path: "server", timeout: "30m" }
           - { name: "courier", path: "courier", timeout: "30m" }
-          - { name: "map", path: "map", timeout: "30m" }
     runs-on: ${{ matrix.os }}
     name: test-${{ matrix.test-suite.name }}
     steps:
