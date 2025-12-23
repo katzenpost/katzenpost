@@ -114,7 +114,7 @@ func (cfg *Config) validate() error {
 		cfg.DialTimeoutSec = 30
 	}
 	if cfg.HandshakeTimeoutSec == 0 {
-		cfg.HandshakeTimeoutSec = 180
+		cfg.HandshakeTimeoutSec = 60
 	}
 	if cfg.ResponseTimeoutSec == 0 {
 		cfg.ResponseTimeoutSec = 90
@@ -254,10 +254,18 @@ func (p *connector) initSession(ctx context.Context, linkKey kem.PrivateKey, sig
 	}
 
 	conn.SetDeadline(time.Now().Add(handshakeTimeout))
+	handshakeStart := time.Now()
 	if err = s.Initialize(conn); err != nil {
 		conn.Close()
-		return nil, fmt.Errorf("%s: handshake failed: %v", peerInfo(), err)
+		// Add peer name context to the error if it's a HandshakeError
+		if he, ok := wire.GetHandshakeError(err); ok {
+			he.WithPeerName(peer.Identifier)
+		}
+		// Log detailed debug info (contains IPs, keys, peer name) at debug level only
+		p.log.Debugf("%s: handshake failure details:\n%s", peerInfo(), wire.GetDebugError(err))
+		return nil, err
 	}
+	p.log.Debugf("%s: Handshake completed in %v", peerInfo(), time.Since(handshakeStart))
 
 	conn.SetDeadline(time.Now().Add(responseTimeout))
 
@@ -293,9 +301,11 @@ func (p *connector) initSessionWithRetry(ctx context.Context, linkKey kem.Privat
 }
 
 func (p *connector) roundTrip(s *wire.Session, cmd commands.Command) (commands.Command, error) {
+	sendStart := time.Now()
 	if err := s.SendCommand(cmd); err != nil {
 		return nil, err
 	}
+	p.log.Debugf("Sent %s in %v", cmd, time.Since(sendStart))
 	return s.RecvCommand()
 }
 

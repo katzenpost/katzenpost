@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/carlmjohnson/versioninfo"
 	"gopkg.in/op/go-logging.v1"
 
 	"github.com/katzenpost/hpqc/bacap"
@@ -178,6 +179,8 @@ func (d *Daemon) initLogging() error {
 	d.logbackend, err = log.New(f, d.cfg.Logging.Level, d.cfg.Logging.Disable)
 	if err == nil {
 		d.log = d.logbackend.GetLogger("katzenpost/client2")
+		d.log.Noticef("Katzenpost client daemon version: %s", versioninfo.Short())
+		d.log.Notice("Katzenpost is still pre-alpha.  DO NOT DEPEND ON IT FOR STRONG SECURITY OR ANONYMITY.")
 	}
 	return err
 }

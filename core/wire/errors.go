@@ -4,6 +4,7 @@
 package wire
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -38,6 +39,7 @@ type ConnectionInfo struct {
 	RemoteIP   string // Remote IP address only
 	LocalPort  string // Local port only
 	RemotePort string // Remote port only
+	PeerName   string // Optional: human-readable peer identifier (e.g., authority name)
 }
 
 // HandshakeError provides comprehensive information about handshake failures
@@ -68,6 +70,17 @@ type HandshakeError struct {
 	Connection *ConnectionInfo
 }
 
+// WithPeerName sets the peer name on the error's connection info.
+// If Connection is nil, it creates a new ConnectionInfo.
+// Returns the error for chaining.
+func (e *HandshakeError) WithPeerName(name string) *HandshakeError {
+	if e.Connection == nil {
+		e.Connection = &ConnectionInfo{}
+	}
+	e.Connection.PeerName = name
+	return e
+}
+
 // Error implements the error interface.
 // Note: This method intentionally excludes sensitive information like IP addresses
 // and key material. Use Debug() for detailed information at debug log level only.
@@ -75,7 +88,12 @@ func (e *HandshakeError) Error() string {
 	var b strings.Builder
 
 	// Basic error information (no sensitive data)
-	fmt.Fprintf(&b, "wire/session: handshake failed at %s", e.State)
+	b.WriteString("wire/session: ")
+	// Include peer name if available (not sensitive)
+	if e.Connection != nil && e.Connection.PeerName != "" {
+		fmt.Fprintf(&b, "peer %s: ", e.Connection.PeerName)
+	}
+	fmt.Fprintf(&b, "handshake failed at %s", e.State)
 	if e.IsInitiator {
 		b.WriteString(" (initiator)")
 	} else {
@@ -111,6 +129,9 @@ func (e *HandshakeError) Debug() string {
 
 	if e.Connection != nil {
 		b.WriteString("\n--- CONNECTION INFORMATION ---\n")
+		if e.Connection.PeerName != "" {
+			fmt.Fprintf(&b, "Peer: %s\n", e.Connection.PeerName)
+		}
 		fmt.Fprintf(&b, "Protocol: %s\n", e.Connection.Protocol)
 		fmt.Fprintf(&b, "Local Address: %s (%s:%s)\n", e.Connection.LocalAddr, e.Connection.LocalIP, e.Connection.LocalPort)
 		fmt.Fprintf(&b, "Remote Address: %s (%s:%s)\n", e.Connection.RemoteAddr, e.Connection.RemoteIP, e.Connection.RemotePort)
@@ -328,16 +349,32 @@ func IsMessageSizeError(err error) bool {
 // WARNING: This output contains sensitive information (IP addresses, key material)
 // and should ONLY be logged at DEBUG level.
 func GetDebugError(err error) string {
+	// First try direct type assertion
 	if de, ok := err.(DebugError); ok {
+		return de.Debug()
+	}
+	// Try to unwrap the error chain to find a DebugError
+	// This handles cases where the error was wrapped with fmt.Errorf("%w", err)
+	var de DebugError
+	if errors.As(err, &de) {
 		return de.Debug()
 	}
 	return err.Error()
 }
 
-// GetHandshakeError returns the HandshakeError if the error is one
+// GetHandshakeError returns the HandshakeError if the error is one,
+// unwrapping the error chain if necessary.
 func GetHandshakeError(err error) (*HandshakeError, bool) {
-	he, ok := err.(*HandshakeError)
-	return he, ok
+	// First try direct type assertion
+	if he, ok := err.(*HandshakeError); ok {
+		return he, true
+	}
+	// Try to unwrap the error chain
+	var he *HandshakeError
+	if errors.As(err, &he) {
+		return he, true
+	}
+	return nil, false
 }
 
 // ExtractConnectionInfo extracts detailed connection information from net.Conn
