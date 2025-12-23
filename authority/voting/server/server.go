@@ -319,7 +319,6 @@ func New(cfg *config.Config) (*Server, error) {
 
 	s.linkKey = linkPrivateKey
 
-	s.log.Noticef("Authority identity public key hash is: %x", hash.Sum256From(s.identityPublicKey))
 	linkBlob, err := s.linkKey.Public().MarshalBinary()
 	if err != nil {
 		return nil, err

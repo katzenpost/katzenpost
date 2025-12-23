@@ -711,6 +711,9 @@ func New(glue glue.Glue) (glue.PKI, error) {
 		LogBackend:  glue.LogBackend(),
 		Authorities: glue.Config().PKI.Voting.Authorities,
 		Geo:         glue.Config().SphinxGeometry,
+		// Convert milliseconds to seconds for PKI client timeouts
+		DialTimeoutSec:      glue.Config().Debug.ConnectTimeout / 1000,
+		HandshakeTimeoutSec: glue.Config().Debug.HandshakeTimeout / 1000,
 	}
 	p.impl, err = vClient.New(pkiCfg)
 	if err != nil {

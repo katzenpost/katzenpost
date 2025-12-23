@@ -109,7 +109,7 @@ type state struct {
 	db *bolt.DB
 
 	reverseHash            map[[publicKeyHashSize]byte]sign.PublicKey
-	authorizedMixes        map[[publicKeyHashSize]byte]bool
+	authorizedMixes        map[[publicKeyHashSize]byte]string
 	authorizedGatewayNodes map[[publicKeyHashSize]byte]string
 	authorizedServiceNodes map[[publicKeyHashSize]byte]string
 	authorizedReplicaNodes map[[publicKeyHashSize]byte]string
@@ -920,6 +920,7 @@ func (s *state) doSendCommand(peer *config.Authority, cmd commands.Command, addr
 	defer session.Close()
 
 	conn.SetDeadline(time.Now().Add(handshakeTimeout))
+	handshakeStart := time.Now()
 	if err = session.Initialize(conn); err != nil {
 		// Add peer name context to the error if it's a HandshakeError
 		if he, ok := wire.GetHandshakeError(err); ok {
@@ -929,6 +930,7 @@ func (s *state) doSendCommand(peer *config.Authority, cmd commands.Command, addr
 		s.log.Debugf("peer %s: handshake failure details:\n%s", peer.Identifier, wire.GetDebugError(err))
 		return nil, err
 	}
+	s.log.Debugf("peer %s: Handshake completed in %v", peer.Identifier, time.Since(handshakeStart))
 
 	conn.SetDeadline(time.Now().Add(responseTimeout))
 	err = session.SendCommand(cmd)
@@ -955,6 +957,71 @@ func (s *state) phaseDeadline(targetDeadline time.Duration) time.Time {
 		remaining -= buffer
 	}
 	return time.Now().Add(remaining)
+}
+
+// PhaseInfo returns the current phase name and time remaining until the next phase.
+// This is useful for debugging connection handling relative to the voting schedule.
+func (s *state) PhaseInfo() (phase string, timeRemaining time.Duration) {
+	s.RLock()
+	defer s.RUnlock()
+
+	_, elapsed, _ := epochtime.Now()
+	phase = s.state
+
+	// Calculate time remaining based on current phase
+	var deadline time.Duration
+	switch s.state {
+	case stateBootstrap, stateAcceptDescriptor:
+		deadline = MixPublishDeadline
+	case stateAcceptVote:
+		deadline = AuthorityVoteDeadline
+	case stateAcceptReveal:
+		deadline = AuthorityRevealDeadline
+	case stateAcceptCert:
+		deadline = AuthorityCertDeadline
+	case stateAcceptSignature:
+		deadline = PublishConsensusDeadline
+	default:
+		deadline = MixPublishDeadline
+	}
+
+	timeRemaining = deadline - elapsed
+	if timeRemaining < 0 {
+		timeRemaining = 0
+	}
+	return
+}
+
+// PeerName returns the name of a peer given their identity key hash.
+// Returns empty string if peer is not found (e.g., clients).
+func (s *state) PeerName(identityKeyHash []byte) string {
+	if len(identityKeyHash) != publicKeyHashSize {
+		return ""
+	}
+	var pk [publicKeyHashSize]byte
+	copy(pk[:], identityKeyHash)
+
+	// Check mixes
+	if name, ok := s.authorizedMixes[pk]; ok {
+		return name
+	}
+	// Check gateway nodes
+	if name, ok := s.authorizedGatewayNodes[pk]; ok {
+		return name
+	}
+	// Check service nodes
+	if name, ok := s.authorizedServiceNodes[pk]; ok {
+		return name
+	}
+	// Check replica nodes
+	if name, ok := s.authorizedReplicaNodes[pk]; ok {
+		return name
+	}
+	// Check authorities
+	if name, ok := s.authorityNames[pk]; ok {
+		return name
+	}
+	return ""
 }
 
 // sendCertToAuthorities sends our cert to all Directory Authorities
@@ -1548,13 +1615,17 @@ func (s *state) isReplicaDescriptorAuthorized(desc *pki.ReplicaDescriptor) bool 
 func (s *state) isDescriptorAuthorized(desc *pki.MixDescriptor) bool {
 	pk := hash.Sum256(desc.IdentityKey)
 	if !desc.IsGatewayNode && !desc.IsServiceNode {
-		authorized := s.authorizedMixes[pk]
-		if !authorized {
+		name, ok := s.authorizedMixes[pk]
+		if !ok {
 			s.log.Errorf("Mix authentication failure: key hash %x not authorized", pk)
-		} else {
-			s.log.Debugf("Mix authentication OK: %s with hash %x", desc.Name, pk)
+			return false
 		}
-		return authorized
+		if name != desc.Name {
+			s.log.Errorf("Mix name mismatch: expected %s, got %s", name, desc.Name)
+			return false
+		}
+		s.log.Debugf("Mix authentication OK: %s with hash %x", desc.Name, pk)
+		return true
 	}
 	if desc.IsGatewayNode {
 		name, ok := s.authorizedGatewayNodes[pk]
@@ -1883,6 +1954,13 @@ func (s *state) onReplicaDescriptorUpload(rawDesc []byte, desc *pki.ReplicaDescr
 	s.Lock()
 	defer s.Unlock()
 
+	// Check if we're past the descriptor upload phase deadline
+	_, elapsed, _ := epochtime.Now()
+	if elapsed > MixPublishDeadline {
+		s.log.Warningf("Replica %s: Descriptor upload for epoch %d arrived after upload phase ended (elapsed: %v, deadline: %v, late by: %v)",
+			desc.Name, epoch, elapsed, MixPublishDeadline, elapsed-MixPublishDeadline)
+	}
+
 	// Note: Caller ensures that the epoch is the current epoch +- 1.
 	pk := hash.Sum256(desc.IdentityKey)
 
@@ -1940,6 +2018,13 @@ func (s *state) onReplicaDescriptorUpload(rawDesc []byte, desc *pki.ReplicaDescr
 func (s *state) onDescriptorUpload(rawDesc []byte, desc *pki.MixDescriptor, epoch uint64) error {
 	s.Lock()
 	defer s.Unlock()
+
+	// Check if we're past the descriptor upload phase deadline
+	_, elapsed, _ := epochtime.Now()
+	if elapsed > MixPublishDeadline {
+		s.log.Warningf("Node %s: Descriptor upload for epoch %d arrived after upload phase ended (elapsed: %v, deadline: %v, late by: %v)",
+			desc.Name, epoch, elapsed, MixPublishDeadline, elapsed-MixPublishDeadline)
+	}
 
 	// Note: Caller ensures that the epoch is the current epoch +- 1.
 	pk := hash.Sum256(desc.IdentityKey)
@@ -2211,7 +2296,7 @@ func newState(s *Server) (*state, error) {
 
 	// Initialize the authorized peer tables.
 	st.reverseHash = make(map[[publicKeyHashSize]byte]sign.PublicKey)
-	st.authorizedMixes = make(map[[publicKeyHashSize]byte]bool)
+	st.authorizedMixes = make(map[[publicKeyHashSize]byte]string)
 	for _, v := range st.s.cfg.Mixes {
 		var identityPublicKey sign.PublicKey
 		var err error
@@ -2229,7 +2314,7 @@ func newState(s *Server) (*state, error) {
 		}
 
 		pk := hash.Sum256From(identityPublicKey)
-		st.authorizedMixes[pk] = true
+		st.authorizedMixes[pk] = v.Identifier
 		st.reverseHash[pk] = identityPublicKey
 	}
 	st.authorizedGatewayNodes = make(map[[publicKeyHashSize]byte]string)
