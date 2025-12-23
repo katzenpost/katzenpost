@@ -41,11 +41,6 @@ func isQUICConn(conn net.Conn) bool {
 }
 
 func (s *Server) onConn(conn net.Conn) {
-	const (
-		initialDeadline  = 30 * time.Second
-		responseDeadline = 60 * time.Second
-	)
-
 	rAddr := conn.RemoteAddr()
 	s.log.Debugf("Accepted new connection: %v", rAddr)
 
@@ -85,9 +80,12 @@ func (s *Server) onConn(conn net.Conn) {
 	}()
 
 	// Handshake.
-	conn.SetDeadline(time.Now().Add(initialDeadline))
+	handshakeTimeout := time.Duration(s.cfg.Server.HandshakeTimeoutSec) * time.Second
+	conn.SetDeadline(time.Now().Add(handshakeTimeout))
 	if err = wireConn.Initialize(conn); err != nil {
-		s.log.Debugf("Peer %v: Failed session handshake: %v", rAddr, err)
+		s.log.Errorf("Peer %v: Failed session handshake: %v", rAddr, err)
+		// Log detailed debug info (contains IPs, keys) at debug level only
+		s.log.Debugf("Peer %v: handshake failure details:\n%s", rAddr, wire.GetDebugError(err))
 		return
 	}
 
@@ -115,7 +113,8 @@ func (s *Server) onConn(conn net.Conn) {
 
 	// Send the response, if any.
 	if resp != nil {
-		conn.SetDeadline(time.Now().Add(responseDeadline))
+		responseTimeout := time.Duration(s.cfg.Server.ResponseTimeoutSec) * time.Second
+		conn.SetDeadline(time.Now().Add(responseTimeout))
 		if err = wireConn.SendCommand(resp); err != nil {
 			s.log.Debugf("Peer %v: Failed to send response: %v", rAddr, err)
 		}

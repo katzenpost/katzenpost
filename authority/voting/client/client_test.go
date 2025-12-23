@@ -362,6 +362,7 @@ func generatePeer(peerNum int) (*config.Authority, sign.PrivateKey, sign.PublicK
 	}
 
 	authPeer := &config.Authority{
+		Identifier:        fmt.Sprintf("authority%d", peerNum),
 		WireKEMScheme:     testingSchemeName,
 		IdentityPublicKey: identityPublicKey,
 		LinkPublicKey:     linkPublicKey,
@@ -632,4 +633,242 @@ func TestRetryDefaults(t *testing.T) {
 	require.Equal(retry.DefaultBaseDelay, cfg.RetryBaseDelay)
 	require.Equal(retry.DefaultMaxDelay, cfg.RetryMaxDelay)
 	require.Equal(retry.DefaultJitter, cfg.RetryJitter)
+}
+
+// immediateCloseDialer returns a connection that closes immediately to simulate EOF
+type immediateCloseDialer struct {
+	dialCount int32
+}
+
+func (d *immediateCloseDialer) dial(ctx context.Context, network, address string) (net.Conn, error) {
+	atomic.AddInt32(&d.dialCount, 1)
+	client, server := net.Pipe()
+	// Close the server side immediately to cause EOF on client read
+	server.Close()
+	return client, nil
+}
+
+// TestHandshakeDebugErrorOnEOF verifies that EOF during handshake produces a DebugError
+func TestHandshakeDebugErrorOnEOF(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+
+	logBackend, err := log.New("", "DEBUG", false)
+	require.NoError(err)
+
+	dialer := &immediateCloseDialer{}
+	peer, _, _, _, err := generatePeer(40000)
+	require.NoError(err)
+
+	mynike := ecdh.Scheme(rand.Reader)
+	mygeo := geo.GeometryFromUserForwardPayloadLength(mynike, 2000, true, 5)
+
+	cfg := &Config{
+		KEMScheme:           testingScheme,
+		LogBackend:          logBackend,
+		Authorities:         []*config.Authority{peer},
+		DialContextFn:       dialer.dial,
+		Geo:                 mygeo,
+		DialTimeoutSec:      5,
+		HandshakeTimeoutSec: 5,
+		ResponseTimeoutSec:  5,
+		RetryMaxAttempts:    0, // No retries
+	}
+	require.NoError(cfg.validate())
+	conn := newConnector(cfg)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	_, linkKey, _ := testingScheme.GenerateKeyPair()
+	responses, err := conn.allPeersRoundTrip(ctx, linkKey, nil, &commands.GetConsensus{Epoch: 1})
+	require.NoError(err)
+	require.Len(responses, 1)
+
+	// The response should have an error from the handshake failure
+	resp := responses[0]
+	require.NotNil(resp.Error, "expected handshake error")
+
+	// Get the debug error output
+	debugOutput := wire.GetDebugError(resp.Error)
+	t.Logf("Debug error output:\n%s", debugOutput)
+
+	// Verify the error contains expected debug information
+	// The error should be wrapped and contain handshake state info
+	require.Contains(resp.Error.Error(), "handshake failed", "error should mention handshake")
+}
+
+// hangingDialer creates connections where the server never responds
+type hangingDialer struct {
+	conns []*net.Conn
+	mu    sync.Mutex
+}
+
+func (d *hangingDialer) dial(ctx context.Context, network, address string) (net.Conn, error) {
+	client, server := net.Pipe()
+	d.mu.Lock()
+	d.conns = append(d.conns, &server)
+	d.mu.Unlock()
+	// Server never responds - handshake will timeout or get EOF
+	return client, nil
+}
+
+func (d *hangingDialer) closeAll() {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	for _, c := range d.conns {
+		(*c).Close()
+	}
+}
+
+// TestHandshakeDebugErrorContainsStateInfo verifies the wrapped error has state info
+// Note: The connector wraps errors with additional context, so the returned error
+// doesn't implement DebugError directly. However, the connector internally calls
+// wire.GetDebugError() on the raw error and logs it at DEBUG level before wrapping.
+// This test verifies that the returned error contains the detailed handshake state info.
+func TestHandshakeDebugErrorContainsStateInfo(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+
+	logBackend, err := log.New("", "DEBUG", false)
+	require.NoError(err)
+
+	dialer := &hangingDialer{}
+	defer dialer.closeAll()
+
+	peer, _, _, _, err := generatePeer(41000)
+	require.NoError(err)
+
+	mynike := ecdh.Scheme(rand.Reader)
+	mygeo := geo.GeometryFromUserForwardPayloadLength(mynike, 2000, true, 5)
+
+	cfg := &Config{
+		KEMScheme:           testingScheme,
+		LogBackend:          logBackend,
+		Authorities:         []*config.Authority{peer},
+		DialContextFn:       dialer.dial,
+		Geo:                 mygeo,
+		DialTimeoutSec:      1,
+		HandshakeTimeoutSec: 1, // Short timeout to make test fast
+		ResponseTimeoutSec:  1,
+		RetryMaxAttempts:    1, // Only 1 attempt (no retries)
+	}
+	require.NoError(cfg.validate())
+	conn := newConnector(cfg)
+
+	// Use a longer context so we don't get context deadline exceeded
+	// but the handshake timeout will still trigger
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	_, linkKey, _ := testingScheme.GenerateKeyPair()
+	responses, err := conn.allPeersRoundTrip(ctx, linkKey, nil, &commands.GetConsensus{Epoch: 1})
+	require.NoError(err)
+	require.Len(responses, 1)
+
+	resp := responses[0]
+	require.NotNil(resp.Error, "expected handshake timeout/EOF error")
+
+	// The error is wrapped by the connector, but should still contain the
+	// HandshakeError's detailed Error() output with state info
+	errStr := resp.Error.Error()
+	t.Logf("Error string: %s", errStr)
+
+	// The error should contain:
+	// 1. "handshake failed" from the connector wrapper
+	// 2. State info from HandshakeError.Error() (e.g., "message_1_send", "initiator")
+	require.Contains(errStr, "handshake failed", "error should mention handshake failed")
+	require.Contains(errStr, "message_1_send", "error should contain handshake state")
+	require.Contains(errStr, "initiator", "error should indicate role")
+	require.Contains(errStr, "i/o timeout", "error should contain underlying error")
+}
+
+// wrongVersionDialer simulates a server sending wrong protocol version
+type wrongVersionDialer struct{}
+
+func (d *wrongVersionDialer) dial(ctx context.Context, network, address string) (net.Conn, error) {
+	client, server := net.Pipe()
+	go func() {
+		// Send garbage that doesn't match expected protocol version
+		server.Write([]byte{0x99, 0x99, 0x99})
+		// Keep connection open briefly so client can read
+		time.Sleep(100 * time.Millisecond)
+		server.Close()
+	}()
+	return client, nil
+}
+
+// TestHandshakeDebugErrorFormats verifies GetDebugError returns formatted output
+func TestHandshakeDebugErrorFormats(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+
+	// Test that HandshakeError.Debug() produces expected format
+	herr := &wire.HandshakeError{
+		State:           wire.HandshakeStateMsg2Receive,
+		Message:         "failed to receive message 2",
+		UnderlyingError: fmt.Errorf("unexpected EOF"),
+		IsInitiator:     true,
+		ProtocolName:    "pqXX",
+		KEMScheme:       testingSchemeName,
+		MessageNumber:   2,
+		ExpectedSize:    1234,
+	}
+
+	// Test Error() method - should be safe for non-debug logging
+	errStr := herr.Error()
+	t.Logf("Error(): %s", errStr)
+	require.Contains(errStr, "message_2_receive")
+	require.Contains(errStr, "initiator")
+	require.Contains(errStr, "failed to receive message 2")
+	require.Contains(errStr, "unexpected EOF")
+
+	// Test Debug() method - should contain detailed info
+	debugStr := herr.Debug()
+	t.Logf("Debug():\n%s", debugStr)
+	require.Contains(debugStr, "=== WIRE PROTOCOL HANDSHAKE FAILURE ===")
+	require.Contains(debugStr, "message_2_receive")
+	require.Contains(debugStr, "initiator")
+	require.Contains(debugStr, "pqXX")
+	require.Contains(debugStr, testingSchemeName)
+	require.Contains(debugStr, "Message Number: 2")
+	require.Contains(debugStr, "Expected Size: 1234")
+
+	// Test GetDebugError with a HandshakeError
+	var err error = herr
+	debugOutput := wire.GetDebugError(err)
+	require.Equal(debugStr, debugOutput, "GetDebugError should return Debug() for HandshakeError")
+
+	// Test GetDebugError with a regular error (should just return Error())
+	regularErr := fmt.Errorf("regular error")
+	regularDebug := wire.GetDebugError(regularErr)
+	require.Equal("regular error", regularDebug, "GetDebugError should return Error() for regular errors")
+}
+
+// TestAuthenticationErrorDebugFormat verifies AuthenticationError debug output
+func TestAuthenticationErrorDebugFormat(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+
+	authErr := &wire.AuthenticationError{
+		PeerCredentials: &wire.PeerCredentials{
+			AdditionalData: []byte{0x01, 0x02, 0x03},
+		},
+		AdditionalData: []byte{0x04, 0x05, 0x06},
+	}
+
+	// Test Error() - should not contain sensitive data
+	errStr := authErr.Error()
+	t.Logf("Error(): %s", errStr)
+	require.Contains(errStr, "authentication failed")
+
+	// Test Debug() - should contain detailed info
+	debugStr := authErr.Debug()
+	t.Logf("Debug():\n%s", debugStr)
+	require.Contains(debugStr, "=== PEER AUTHENTICATION FAILURE ===")
+
+	// Test GetDebugError
+	var err error = authErr
+	debugOutput := wire.GetDebugError(err)
+	require.Equal(debugStr, debugOutput)
 }

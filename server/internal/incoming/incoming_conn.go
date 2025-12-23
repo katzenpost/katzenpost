@@ -223,6 +223,8 @@ func (c *incomingConn) worker() {
 	c.c.SetDeadline(time.Now().Add(timeoutMs))
 	if err = c.w.Initialize(c.c); err != nil {
 		c.log.Errorf("Handshake failed: %v", err)
+		// Log detailed debug info (contains IPs, keys) at debug level only
+		c.log.Debugf("Handshake failure details:\n%s", wire.GetDebugError(err))
 		return
 	}
 	c.log.Debugf("Handshake completed.")

@@ -921,6 +921,12 @@ func (s *state) doSendCommand(peer *config.Authority, cmd commands.Command, addr
 
 	conn.SetDeadline(time.Now().Add(handshakeTimeout))
 	if err = session.Initialize(conn); err != nil {
+		// Add peer name context to the error if it's a HandshakeError
+		if he, ok := wire.GetHandshakeError(err); ok {
+			he.WithPeerName(peer.Identifier)
+		}
+		// Log detailed debug info (contains IPs, keys, peer name) at debug level only
+		s.log.Debugf("peer %s: handshake failure details:\n%s", peer.Identifier, wire.GetDebugError(err))
 		return nil, err
 	}
 
