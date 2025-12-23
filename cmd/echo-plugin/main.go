@@ -28,7 +28,7 @@ import (
 	"github.com/katzenpost/katzenpost/server/cborplugin"
 )
 
-type Echo struct{
+type Echo struct {
 	write func(cborplugin.Command)
 }
 
@@ -46,6 +46,10 @@ func (e *Echo) OnCommand(cmd cborplugin.Command) error {
 
 func (e *Echo) RegisterConsumer(s *cborplugin.Server) {
 	e.write = s.Write
+}
+
+func (e *Echo) GetParameters() cborplugin.Parameters {
+	return nil
 }
 
 func main() {
@@ -83,7 +87,7 @@ func main() {
 	echo := new(Echo)
 
 	var server *cborplugin.Server
-	server = cborplugin.NewServer(serverLog, socketFile, new(cborplugin.RequestFactory), echo)
+	server = cborplugin.NewServer(serverLog, socketFile, new(cborplugin.RequestMessageFactory), echo)
 	fmt.Printf("%s\n", socketFile)
 	server.Accept()
 	server.Wait()

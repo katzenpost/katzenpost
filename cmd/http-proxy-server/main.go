@@ -134,7 +134,7 @@ func main() {
 	p := &proxy{allowedHost: make(map[string]struct{}), log: serverLog}
 	p.allowedHost[host] = struct{}{}
 
-	cmdBuilder := new(cborplugin.RequestFactory)
+	cmdBuilder := new(cborplugin.RequestMessageFactory)
 	server := cborplugin.NewServer(serverLog, socketFile, cmdBuilder, p)
 	fmt.Printf("%s\n", socketFile)
 	server.Accept()
@@ -145,4 +145,8 @@ func main() {
 func (p *proxy) RegisterConsumer(svr *cborplugin.Server) {
 	p.log.Debugf("RegisterConsumer called")
 	p.write = svr.Write
+}
+
+func (p *proxy) GetParameters() cborplugin.Parameters {
+	return nil
 }

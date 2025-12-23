@@ -106,7 +106,7 @@ func (s *Server) StartPlugin() {
 		}
 	}()
 
-	server := cborplugin.NewServer(s.LogBackend().GetLogger("courier_plugin"), socketFile, new(cborplugin.RequestFactory), courier)
+	server := cborplugin.NewServer(s.LogBackend().GetLogger("courier_plugin"), socketFile, new(cborplugin.RequestMessageFactory), courier)
 	fmt.Printf("%s\n", socketFile)
 	server.Accept()
 	server.Wait()
@@ -620,6 +620,10 @@ func (e *Courier) createEnvelopeErrorReply(envHash *[hash.HashSize]byte, errorCo
 
 func (e *Courier) RegisterConsumer(s *cborplugin.Server) {
 	e.write = s.Write
+}
+
+func (e *Courier) GetParameters() cborplugin.Parameters {
+	return nil
 }
 
 func (e *Courier) SetWriteFunc(writeFunc func(cborplugin.Command)) {
