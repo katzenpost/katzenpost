@@ -150,6 +150,9 @@ func (p *proxy) RegisterConsumer(svr *cborplugin.Server) {
 	p.write = svr.Write
 }
 
+// GetParameters satisfies the cborplugin.ServerPlugin interface.
+// This plugin does not need to advertise any dynamic parameters in the PKI,
+// so it returns nil.
 func (p *proxy) GetParameters() cborplugin.Parameters {
 	return nil
 }

@@ -50,6 +50,9 @@ func (e *Echo) RegisterConsumer(s *cborplugin.Server) {
 	e.write = s.Write
 }
 
+// GetParameters satisfies the cborplugin.ServerPlugin interface.
+// This plugin does not need to advertise any dynamic parameters in the PKI,
+// so it returns nil.
 func (e *Echo) GetParameters() cborplugin.Parameters {
 	return nil
 }
