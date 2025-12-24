@@ -61,11 +61,47 @@ func (s *Server) worker() {
 		case <-s.HaltCh():
 			return
 		case cmd := <-s.socket.ReadChan():
-			err := s.plugin.OnCommand(cmd)
-			if err != nil {
-				s.log.Debugf("plugin returned err: %s", err)
-			}
+			s.handleCommand(cmd)
 		}
+	}
+}
+
+func (s *Server) handleCommand(cmd Command) {
+	// Check if this is a RequestMessage (new protocol)
+	if msg, ok := cmd.(*RequestMessage); ok {
+		s.handleRequestMessage(msg)
+		return
+	}
+
+	// Legacy: direct Request command (old protocol for backward compatibility)
+	err := s.plugin.OnCommand(cmd)
+	if err != nil {
+		s.log.Debugf("plugin returned err: %s", err)
+	}
+}
+
+func (s *Server) handleRequestMessage(msg *RequestMessage) {
+	switch {
+	case msg.Request != nil:
+		// Service request - pass to plugin
+		err := s.plugin.OnCommand(msg.Request)
+		if err != nil {
+			s.log.Debugf("plugin returned err: %s", err)
+		}
+
+	case msg.ParametersRequest != nil:
+		// Parameters request - handle internally
+		params := s.plugin.GetParameters()
+		response := &ResponseMessage{
+			ParametersResponse: &ParametersResponse{
+				RequestID: msg.ParametersRequest.RequestID,
+				Params:    params,
+			},
+		}
+		s.Write(response)
+
+	default:
+		s.log.Debugf("received RequestMessage with no recognized command type")
 	}
 }
 
