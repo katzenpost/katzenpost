@@ -50,6 +50,13 @@ func (e *Echo) RegisterConsumer(s *cborplugin.Server) {
 	e.write = s.Write
 }
 
+// GetParameters satisfies the cborplugin.ServerPlugin interface.
+// This plugin does not need to advertise any dynamic parameters in the PKI,
+// so it returns nil.
+func (e *Echo) GetParameters() cborplugin.Parameters {
+	return nil
+}
+
 func main() {
 	var logLevel string
 	var logDir string
@@ -87,7 +94,7 @@ func main() {
 	echo := new(Echo)
 
 	var server *cborplugin.Server
-	server = cborplugin.NewServer(serverLog, socketFile, new(cborplugin.RequestFactory), echo)
+	server = cborplugin.NewServer(serverLog, socketFile, new(cborplugin.RequestMessageFactory), echo)
 	fmt.Printf("%s\n", socketFile)
 	server.Accept()
 	server.Wait()

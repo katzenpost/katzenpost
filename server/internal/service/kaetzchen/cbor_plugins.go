@@ -190,7 +190,7 @@ func (k *CBORPluginWorker) sendworker(pluginClient *cborplugin.Client) {
 	}
 }
 
-// KaetzchenForPKI returns the plugins Parameters map for publication in the PKI doc.
+// KaetzchenForPKI returns the plugins Parameters map for publication in the mix descriptor.
 func (k *CBORPluginWorker) KaetzchenForPKI() ServiceMap {
 	s := make(ServiceMap)
 	k.Lock()
@@ -213,6 +213,22 @@ func (k *CBORPluginWorker) KaetzchenForPKI() ServiceMap {
 	return s
 }
 
+// AdvertizedDataForPKI requests dynamic parameters from each plugin and returns
+// them for inclusion in the KaetzchenAdvertizedData field of the mix descriptor.
+func (k *CBORPluginWorker) AdvertizedDataForPKI() map[string]map[string]interface{} {
+	result := make(map[string]map[string]interface{})
+	k.Lock()
+	defer k.Unlock()
+	for _, client := range k.clients {
+		capa := client.Capability()
+		params := client.RequestParameters()
+		if params != nil && len(params) > 0 {
+			result[capa] = params
+		}
+	}
+	return result
+}
+
 // IsKaetzchen returns true if the given recipient is one of our workers.
 func (k *CBORPluginWorker) IsKaetzchen(recipient [constants.RecipientIDLength]byte) bool {
 	k.Lock()
@@ -228,7 +244,7 @@ func (k *CBORPluginWorker) isKaetzchen(recipient [constants.RecipientIDLength]by
 
 func (k *CBORPluginWorker) launch(command, capability, endpoint string, args []string) (*cborplugin.Client, error) {
 	k.log.Debugf("Launching plugin: %s", command)
-	plugin := cborplugin.NewClient(k.glue.LogBackend(), capability, endpoint, &cborplugin.ResponseFactory{})
+	plugin := cborplugin.NewClient(k.glue.LogBackend(), capability, endpoint, &cborplugin.ResponseMessageFactory{})
 	err := plugin.Start(command, args)
 	return plugin, err
 }

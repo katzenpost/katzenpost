@@ -106,7 +106,7 @@ func (s *Server) StartPlugin() {
 		}
 	}()
 
-	server := cborplugin.NewServer(s.LogBackend().GetLogger("courier_plugin"), socketFile, new(cborplugin.RequestFactory), courier)
+	server := cborplugin.NewServer(s.LogBackend().GetLogger("courier_plugin"), socketFile, new(cborplugin.RequestMessageFactory), courier)
 	fmt.Printf("%s\n", socketFile)
 	server.Accept()
 	server.Wait()
@@ -620,6 +620,13 @@ func (e *Courier) createEnvelopeErrorReply(envHash *[hash.HashSize]byte, errorCo
 
 func (e *Courier) RegisterConsumer(s *cborplugin.Server) {
 	e.write = s.Write
+}
+
+// GetParameters satisfies the cborplugin.ServerPlugin interface.
+// This plugin does not need to advertise any dynamic parameters in the PKI,
+// so it returns nil.
+func (e *Courier) GetParameters() cborplugin.Parameters {
+	return nil
 }
 
 func (e *Courier) SetWriteFunc(writeFunc func(cborplugin.Command)) {
