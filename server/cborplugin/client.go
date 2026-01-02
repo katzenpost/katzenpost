@@ -28,7 +28,6 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"sync"
 	"syscall"
 	"time"
 
@@ -257,10 +256,7 @@ type Client struct {
 	endpoint   string
 
 	// For parameter requests
-	paramRequestID  uint64
 	paramResponseCh chan *ParametersResponse
-	cachedParams    Parameters
-	mu              sync.Mutex
 }
 
 // NewClient creates a new plugin client instance which represents the single execution
@@ -282,54 +278,36 @@ func (c *Client) Capability() string {
 	return c.capability
 }
 
-// GetParameters returns static parameters (endpoint) merged with any cached dynamic parameters.
-// Use RequestParameters() to fetch fresh dynamic parameters from the plugin.
-func (c *Client) GetParameters() *map[string]interface{} {
-	responseParams := make(map[string]interface{})
+func (c *Client) Endpoint() string {
+	return c.endpoint
+}
+
+// GetParameters returns the static parameters for this plugin (just the endpoint).
+// This is used to populate the Kaetzchen field in the mix descriptor.
+func (c *Client) GetParameters() *Parameters {
+	responseParams := make(Parameters)
 	responseParams["endpoint"] = c.endpoint
-
-	// Merge in any cached dynamic parameters from the plugin
-	c.mu.Lock()
-	for k, v := range c.cachedParams {
-		responseParams[k] = v
-	}
-	c.mu.Unlock()
-
 	return &responseParams
 }
 
-// RequestParameters sends a ParametersRequest to the plugin and waits for the response.
-// The response is cached and merged into GetParameters() results.
-func (c *Client) RequestParameters() (Parameters, error) {
-	c.mu.Lock()
-	c.paramRequestID++
-	reqID := c.paramRequestID
-	c.mu.Unlock()
-
-	// Send the request
+// RequestParameters sends a ParametersRequest to the plugin and returns
+// any dynamic parameters the plugin wants to advertise. These go into
+// the KaetzchenAdvertizedData field of the mix descriptor.
+func (c *Client) RequestParameters() Parameters {
 	msg := &RequestMessage{
-		ParametersRequest: &ParametersRequest{
-			RequestID: reqID,
-		},
+		ParametersRequest: &ParametersRequest{},
 	}
 	c.WriteChan() <- msg
 
 	// Wait for response with timeout
 	select {
 	case resp := <-c.paramResponseCh:
-		if resp.RequestID == reqID {
-			c.mu.Lock()
-			c.cachedParams = resp.Params
-			c.mu.Unlock()
-			return resp.Params, nil
-		}
-		c.log.Warningf("Received ParametersResponse with unexpected RequestID: got %d, expected %d", resp.RequestID, reqID)
-		return nil, nil
+		return resp.Params
 	case <-time.After(5 * time.Second):
-		c.log.Warningf("Timeout waiting for ParametersResponse from plugin %s", c.capability)
-		return nil, nil
+		c.log.Warningf("Timeout waiting for parameters from plugin %s", c.capability)
+		return nil
 	case <-c.HaltCh():
-		return nil, nil
+		return nil
 	}
 }
 

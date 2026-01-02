@@ -68,6 +68,7 @@ func (p *serviceNode) KaetzchenForPKI() (map[string]map[string]interface{}, map[
 		}
 	}
 
+	// Start with static advertized data from config
 	kaetzchenAdvertizedData := make(map[string]map[string]interface{})
 	cfg := p.glue.Config()
 	for _, v := range cfg.ServiceNode.CBORPluginKaetzchen {
@@ -76,6 +77,19 @@ func (p *serviceNode) KaetzchenForPKI() (map[string]map[string]interface{}, map[
 			if ok {
 				kaetzchenAdvertizedData[v.Capability] = v.PKIAdvertizedData[v.Capability]
 			}
+		}
+	}
+
+	// Merge in dynamic advertized data from plugins
+	dynamicData := p.cborPluginKaetzchenWorker.AdvertizedDataForPKI()
+	for capa, params := range dynamicData {
+		if existing, ok := kaetzchenAdvertizedData[capa]; ok {
+			// Merge dynamic params into existing static params
+			for k, v := range params {
+				existing[k] = v
+			}
+		} else {
+			kaetzchenAdvertizedData[capa] = params
 		}
 	}
 

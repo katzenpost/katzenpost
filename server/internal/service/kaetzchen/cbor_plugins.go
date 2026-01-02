@@ -190,7 +190,7 @@ func (k *CBORPluginWorker) sendworker(pluginClient *cborplugin.Client) {
 	}
 }
 
-// KaetzchenForPKI returns the plugins Parameters map for publication in the PKI doc.
+// KaetzchenForPKI returns the plugins Parameters map for publication in the mix descriptor.
 func (k *CBORPluginWorker) KaetzchenForPKI() ServiceMap {
 	s := make(ServiceMap)
 	k.Lock()
@@ -211,6 +211,22 @@ func (k *CBORPluginWorker) KaetzchenForPKI() ServiceMap {
 		s[capa] = params
 	}
 	return s
+}
+
+// AdvertizedDataForPKI requests dynamic parameters from each plugin and returns
+// them for inclusion in the KaetzchenAdvertizedData field of the mix descriptor.
+func (k *CBORPluginWorker) AdvertizedDataForPKI() map[string]map[string]interface{} {
+	result := make(map[string]map[string]interface{})
+	k.Lock()
+	defer k.Unlock()
+	for _, client := range k.clients {
+		capa := client.Capability()
+		params := client.RequestParameters()
+		if params != nil && len(params) > 0 {
+			result[capa] = params
+		}
+	}
+	return result
 }
 
 // IsKaetzchen returns true if the given recipient is one of our workers.

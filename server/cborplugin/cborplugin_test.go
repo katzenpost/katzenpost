@@ -499,25 +499,47 @@ func TestNewClient(t *testing.T) {
 	require.NotNil(t, client.processFactory)
 }
 
-func TestClientGetParametersEmpty(t *testing.T) {
+func TestClientGetParametersReturnsEndpoint(t *testing.T) {
 	client := NewClient(nil, "echo", "+echo", new(RequestMessageFactory))
 	params := client.GetParameters()
 	require.NotNil(t, params)
 	require.Equal(t, "+echo", (*params)["endpoint"])
+	require.Len(t, *params, 1) // Only endpoint
 }
 
-func TestClientGetParametersWithCached(t *testing.T) {
-	client := NewClient(nil, "echo", "+echo", new(RequestMessageFactory))
-	client.mu.Lock()
-	client.cachedParams = Parameters{
-		"dynamic_key": "dynamic_value",
-	}
-	client.mu.Unlock()
+func TestClientRequestParametersSuccess(t *testing.T) {
+	logBackend := newTestLogBackend(t)
+	client := NewClient(logBackend, "echo", "+echo", new(RequestMessageFactory))
 
-	params := client.GetParameters()
+	// Consume from write channel and send response with dynamic params
+	go func() {
+		<-client.WriteChan()
+		client.paramResponseCh <- &ParametersResponse{
+			RequestID: 1,
+			Params:    Parameters{"dynamic_key": "dynamic_value"},
+		}
+	}()
+
+	params := client.RequestParameters()
 	require.NotNil(t, params)
-	require.Equal(t, "+echo", (*params)["endpoint"])
-	require.Equal(t, "dynamic_value", (*params)["dynamic_key"])
+	require.Equal(t, "dynamic_value", params["dynamic_key"])
+}
+
+func TestClientRequestParametersNil(t *testing.T) {
+	logBackend := newTestLogBackend(t)
+	client := NewClient(logBackend, "echo", "+echo", new(RequestMessageFactory))
+
+	// Consume from write channel and send response with nil params
+	go func() {
+		<-client.WriteChan()
+		client.paramResponseCh <- &ParametersResponse{
+			RequestID: 1,
+			Params:    nil,
+		}
+	}()
+
+	params := client.RequestParameters()
+	require.Nil(t, params)
 }
 
 // =============================================================================
@@ -987,51 +1009,8 @@ func TestHandleMessageChannelFull(t *testing.T) {
 }
 
 // =============================================================================
-// Client RequestParameters Test
+// Client GetParameters Tests (with plugin communication)
 // =============================================================================
-
-func TestClientRequestParametersSuccess(t *testing.T) {
-	logBackend := newTestLogBackend(t)
-	client := NewClient(logBackend, "test", "+test", new(RequestMessageFactory))
-
-	// The request ID starts at 0
-	initialID := client.paramRequestID
-
-	// Consume from write channel and send response
-	go func() {
-		// First consume the request from WriteChan (otherwise it blocks)
-		<-client.WriteChan()
-		// Then send the response
-		client.paramResponseCh <- &ParametersResponse{
-			RequestID: initialID + 1,
-			Params:    Parameters{"key": "value"},
-		}
-	}()
-
-	params, err := client.RequestParameters()
-	require.NoError(t, err)
-	require.Equal(t, "value", params["key"])
-	require.Equal(t, initialID+1, client.paramRequestID)
-}
-
-func TestClientRequestParametersMismatchedID(t *testing.T) {
-	logBackend := newTestLogBackend(t)
-	client := NewClient(logBackend, "test", "+test", new(RequestMessageFactory))
-
-	// Consume from write channel and send response with wrong ID
-	go func() {
-		<-client.WriteChan()
-		// Send response with wrong ID (999 instead of 1)
-		client.paramResponseCh <- &ParametersResponse{
-			RequestID: 999,
-			Params:    Parameters{"key": "value"},
-		}
-	}()
-
-	params, err := client.RequestParameters()
-	require.NoError(t, err)
-	require.Nil(t, params) // Should be nil due to ID mismatch
-}
 
 func TestClientRequestParametersHalt(t *testing.T) {
 	logBackend := newTestLogBackend(t)
@@ -1043,8 +1022,7 @@ func TestClientRequestParametersHalt(t *testing.T) {
 		client.Halt()
 	}()
 
-	params, err := client.RequestParameters()
-	require.NoError(t, err)
+	params := client.RequestParameters()
 	require.Nil(t, params)
 }
 
@@ -1059,10 +1037,9 @@ func TestClientRequestParametersTimeout(t *testing.T) {
 	}()
 
 	start := time.Now()
-	params, err := client.RequestParameters()
+	params := client.RequestParameters()
 	elapsed := time.Since(start)
 
-	require.NoError(t, err)
 	require.Nil(t, params)
 	// Should have taken at least 5 seconds (the timeout)
 	require.GreaterOrEqual(t, elapsed, 5*time.Second)

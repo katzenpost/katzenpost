@@ -243,7 +243,7 @@ func (k *KaetzchenWorker) worker() {
 			return
 		case e := <-ch:
 			pkt = e.(*packet.Packet)
-			if dwellTime := time.Now().Sub(pkt.DispatchAt); dwellTime > maxDwell {
+			if dwellTime := time.Since(pkt.DispatchAt); dwellTime > maxDwell {
 				count := k.incrementDropCounter()
 				k.log.Debugf("Dropping packet: %v (Spend %v in queue), total drops %d", pkt.ID, dwellTime, count)
 				instrument.PacketsDropped()
