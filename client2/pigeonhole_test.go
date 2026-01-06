@@ -141,6 +141,15 @@ func createSyntheticPKIDocument(t *testing.T) *cpki.Document {
 		replicaDescriptors[i] = createReplicaDescriptor(t, i, pkiScheme, linkScheme, nikeScheme)
 	}
 
+	// Build ConfiguredReplicaIDs and ConfiguredReplicaIdentityKeys from the replica descriptors
+	configuredReplicaIDs := make([]uint8, numReplicas)
+	configuredReplicaKeys := make([][]byte, numReplicas)
+	for i, desc := range replicaDescriptors {
+		configuredReplicaIDs[i] = desc.ReplicaID
+		configuredReplicaKeys[i] = make([]byte, len(desc.IdentityKey))
+		copy(configuredReplicaKeys[i], desc.IdentityKey)
+	}
+
 	// Create a basic sphinx geometry for the document
 	sphinxNikeScheme := nikeSchemes.ByName("X25519")
 	require.NotNil(t, sphinxNikeScheme, "X25519 NIKE scheme should be available for sphinx geometry")
@@ -150,18 +159,20 @@ func createSyntheticPKIDocument(t *testing.T) *cpki.Document {
 	currentEpoch, _, _ := epochtime.Now()
 
 	return &cpki.Document{
-		Epoch:              currentEpoch,
-		SendRatePerMinute:  100,
-		LambdaP:            0.1,
-		LambdaL:            0.1,
-		LambdaD:            0.1,
-		LambdaM:            0.1,
-		StorageReplicas:    replicaDescriptors,
-		Topology:           make([][]*cpki.MixDescriptor, 0),
-		GatewayNodes:       make([]*cpki.MixDescriptor, 0),
-		ServiceNodes:       make([]*cpki.MixDescriptor, 0),
-		SharedRandomValue:  make([]byte, 32),
-		SphinxGeometryHash: sphinxGeo.Hash(),
+		Epoch:                         currentEpoch,
+		SendRatePerMinute:             100,
+		LambdaP:                       0.1,
+		LambdaL:                       0.1,
+		LambdaD:                       0.1,
+		LambdaM:                       0.1,
+		StorageReplicas:               replicaDescriptors,
+		ConfiguredReplicaIDs:          configuredReplicaIDs,
+		ConfiguredReplicaIdentityKeys: configuredReplicaKeys,
+		Topology:                      make([][]*cpki.MixDescriptor, 0),
+		GatewayNodes:                  make([]*cpki.MixDescriptor, 0),
+		ServiceNodes:                  make([]*cpki.MixDescriptor, 0),
+		SharedRandomValue:             make([]byte, 32),
+		SphinxGeometryHash:            sphinxGeo.Hash(),
 	}
 }
 
@@ -190,6 +201,7 @@ func createReplicaDescriptor(t *testing.T, replicaID int, pkiScheme sign.Scheme,
 
 	return &cpki.ReplicaDescriptor{
 		Name:        fmt.Sprintf("replica%d", replicaID),
+		ReplicaID:   uint8(replicaID),
 		IdentityKey: identityPubKeyBytes,
 		LinkKey:     linkPubKeyBytes,
 		Addresses: map[string][]string{

@@ -28,6 +28,7 @@ import (
 	"net"
 	"net/url"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -96,6 +97,12 @@ type document struct {
 	raw []byte
 }
 
+// authorizedReplicaInfo holds the identifier and static ReplicaID for an authorized replica
+type authorizedReplicaInfo struct {
+	Identifier string
+	ReplicaID  uint8
+}
+
 type state struct {
 	sync.RWMutex
 	worker.Worker
@@ -112,7 +119,7 @@ type state struct {
 	authorizedMixes        map[[publicKeyHashSize]byte]string
 	authorizedGatewayNodes map[[publicKeyHashSize]byte]string
 	authorizedServiceNodes map[[publicKeyHashSize]byte]string
-	authorizedReplicaNodes map[[publicKeyHashSize]byte]string
+	authorizedReplicaNodes map[[publicKeyHashSize]byte]*authorizedReplicaInfo
 	authorizedAuthorities  map[[publicKeyHashSize]byte]bool
 	authorityLinkKeys      map[[publicKeyHashSize]byte]kem.PublicKey
 	authorityNames         map[[publicKeyHashSize]byte]string
@@ -629,31 +636,53 @@ func (s *state) getDocument(descriptors []*pki.MixDescriptor, replicaDescriptors
 	lambdaG := computeLambdaG(s.s.cfg)
 	s.log.Debugf("computed lambdaG is %f", lambdaG)
 
+	// Build ConfiguredReplicaIdentityKeys from all authorized replicas.
+	// This list remains stable even when replicas are offline, enabling consistent hashing.
+	configuredReplicaKeys := make([][]byte, 0, len(s.authorizedReplicaNodes))
+	for keyHash := range s.authorizedReplicaNodes {
+		pubKey, ok := s.reverseHash[keyHash]
+		if !ok {
+			s.log.Errorf("getDocument: missing reverse hash for authorized replica %x", keyHash)
+			continue
+		}
+		keyBytes, err := pubKey.MarshalBinary()
+		if err != nil {
+			s.log.Errorf("getDocument: failed to marshal identity key: %v", err)
+			continue
+		}
+		configuredReplicaKeys = append(configuredReplicaKeys, keyBytes)
+	}
+	// Sort for deterministic ordering across all authorities
+	slices.SortFunc(configuredReplicaKeys, func(a, b []byte) int {
+		return slices.Compare(a, b)
+	})
+
 	// Build the Document.
 	doc := &pki.Document{
-		Epoch:              s.votingEpoch,
-		GenesisEpoch:       s.genesisEpoch,
-		SendRatePerMinute:  params.SendRatePerMinute,
-		Mu:                 params.Mu,
-		MuMaxDelay:         params.MuMaxDelay,
-		LambdaP:            params.LambdaP,
-		LambdaPMaxDelay:    params.LambdaPMaxDelay,
-		LambdaL:            params.LambdaL,
-		LambdaLMaxDelay:    params.LambdaLMaxDelay,
-		LambdaD:            params.LambdaD,
-		LambdaDMaxDelay:    params.LambdaDMaxDelay,
-		LambdaM:            params.LambdaM,
-		LambdaMMaxDelay:    params.LambdaMMaxDelay,
-		LambdaG:            lambdaG,
-		LambdaGMaxDelay:    params.LambdaGMaxDelay,
-		Topology:           topology,
-		GatewayNodes:       gateways,
-		ServiceNodes:       serviceNodes,
-		StorageReplicas:    replicaDescriptors,
-		SharedRandomValue:  srv,
-		PriorSharedRandom:  s.priorSRV,
-		SphinxGeometryHash: s.geo.Hash(),
-		PKISignatureScheme: s.s.cfg.Server.PKISignatureScheme,
+		Epoch:                         s.votingEpoch,
+		GenesisEpoch:                  s.genesisEpoch,
+		SendRatePerMinute:             params.SendRatePerMinute,
+		Mu:                            params.Mu,
+		MuMaxDelay:                    params.MuMaxDelay,
+		LambdaP:                       params.LambdaP,
+		LambdaPMaxDelay:               params.LambdaPMaxDelay,
+		LambdaL:                       params.LambdaL,
+		LambdaLMaxDelay:               params.LambdaLMaxDelay,
+		LambdaD:                       params.LambdaD,
+		LambdaDMaxDelay:               params.LambdaDMaxDelay,
+		LambdaM:                       params.LambdaM,
+		LambdaMMaxDelay:               params.LambdaMMaxDelay,
+		LambdaG:                       lambdaG,
+		LambdaGMaxDelay:               params.LambdaGMaxDelay,
+		Topology:                      topology,
+		GatewayNodes:                  gateways,
+		ServiceNodes:                  serviceNodes,
+		StorageReplicas:               replicaDescriptors,
+		ConfiguredReplicaIdentityKeys: configuredReplicaKeys,
+		SharedRandomValue:             srv,
+		PriorSharedRandom:             s.priorSRV,
+		SphinxGeometryHash:            s.geo.Hash(),
+		PKISignatureScheme:            s.s.cfg.Server.PKISignatureScheme,
 	}
 	return doc
 }
@@ -1014,8 +1043,8 @@ func (s *state) PeerName(identityKeyHash []byte) string {
 		return name
 	}
 	// Check replica nodes
-	if name, ok := s.authorizedReplicaNodes[pk]; ok {
-		return name
+	if replicaInfo, ok := s.authorizedReplicaNodes[pk]; ok {
+		return replicaInfo.Identifier
 	}
 	// Check authorities
 	if name, ok := s.authorityNames[pk]; ok {
@@ -1599,16 +1628,20 @@ func (s *state) pruneDocuments() {
 
 func (s *state) isReplicaDescriptorAuthorized(desc *pki.ReplicaDescriptor) bool {
 	pk := hash.Sum256(desc.IdentityKey)
-	name, ok := s.authorizedReplicaNodes[pk]
+	replicaInfo, ok := s.authorizedReplicaNodes[pk]
 	if !ok {
 		s.log.Errorf("StorageReplica authentication failure: key hash %x not in map", pk)
 		return false
 	}
-	if name != desc.Name {
-		s.log.Errorf("StorageReplica authentication failure: name mismatch - map has '%s', descriptor has '%s'", name, desc.Name)
+	if replicaInfo.Identifier != desc.Name {
+		s.log.Errorf("StorageReplica authentication failure: name mismatch - map has '%s', descriptor has '%s'", replicaInfo.Identifier, desc.Name)
 		return false
 	}
-	s.log.Debugf("StorageReplica authentication OK: %s with hash %x", name, pk)
+	if replicaInfo.ReplicaID != desc.ReplicaID {
+		s.log.Errorf("StorageReplica authentication failure: ReplicaID mismatch - config has '%d', descriptor has '%d'", replicaInfo.ReplicaID, desc.ReplicaID)
+		return false
+	}
+	s.log.Debugf("StorageReplica authentication OK: %s (ReplicaID=%d) with hash %x", replicaInfo.Identifier, replicaInfo.ReplicaID, pk)
 	return true
 }
 
@@ -2361,7 +2394,7 @@ func newState(s *Server) (*state, error) {
 		st.authorizedServiceNodes[pk] = v.Identifier
 		st.reverseHash[pk] = identityPublicKey
 	}
-	st.authorizedReplicaNodes = make(map[[publicKeyHashSize]byte]string)
+	st.authorizedReplicaNodes = make(map[[publicKeyHashSize]byte]*authorizedReplicaInfo)
 	for _, v := range st.s.cfg.StorageReplicas {
 		var identityPublicKey sign.PublicKey
 		var err error
@@ -2380,7 +2413,11 @@ func newState(s *Server) (*state, error) {
 		}
 
 		pk := hash.Sum256From(identityPublicKey)
-		st.authorizedReplicaNodes[pk] = v.Identifier
+		st.authorizedReplicaNodes[pk] = &authorizedReplicaInfo{
+			Identifier: v.Identifier,
+			ReplicaID:  v.ReplicaID,
+		}
+		st.reverseHash[pk] = identityPublicKey
 	}
 
 	st.authorizedAuthorities = make(map[[publicKeyHashSize]byte]bool)

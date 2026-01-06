@@ -150,6 +150,17 @@ type Document struct {
 	// but are expected to handle connections from the Service Nodes and the other replicas.
 	StorageReplicas []*ReplicaDescriptor
 
+	// ConfiguredReplicaIDs is the complete set of ReplicaIDs configured for this network.
+	// This set is stable and does not change when replicas go offline.
+	// It is used for consistent sharding so that shard assignments remain stable
+	// even when replicas are temporarily unavailable.
+	ConfiguredReplicaIDs []uint8
+
+	// ConfiguredReplicaIdentityKeys is the complete set of identity public keys
+	// for all configured replicas. This set is stable and does not change when replicas
+	// go offline. It is used for consistent hashing to determine shard assignments.
+	ConfiguredReplicaIdentityKeys [][]byte
+
 	// Signatures holds detached Signatures from deserializing a signed Document
 	Signatures map[[PublicKeyHashSize]byte]cert.Signature `cbor:"-"`
 
@@ -286,19 +297,21 @@ func (d *Document) GetReplicaIDByIdentityKey(idkey sign.PublicKey) (uint8, error
 	if err != nil {
 		return 0, err
 	}
-	for i := 0; i < len(d.StorageReplicas); i++ {
-		if hmac.Equal(keyblob, d.StorageReplicas[i].IdentityKey) {
-			return uint8(i), nil
+	for _, replica := range d.StorageReplicas {
+		if hmac.Equal(keyblob, replica.IdentityKey) {
+			return replica.ReplicaID, nil
 		}
 	}
 	return 0, errors.New("replica not found")
 }
 
 func (d *Document) GetReplicaNodeByReplicaID(replicaID uint8) (*ReplicaDescriptor, error) {
-	if replicaID > uint8(len(d.StorageReplicas)-1) {
-		panic("replicaID out of bounds")
+	for _, replica := range d.StorageReplicas {
+		if replica.ReplicaID == replicaID {
+			return replica, nil
+		}
 	}
-	return d.StorageReplicas[replicaID], nil
+	return nil, fmt.Errorf("replica with ID %d not found", replicaID)
 }
 
 func (d *Document) GetReplicaNodeByKeyHash(keyhash *[32]byte) (*ReplicaDescriptor, error) {
