@@ -76,10 +76,11 @@ func generateReplica(t *testing.T, pkiScheme sign.Scheme, linkScheme kem.Scheme,
 
 	return &ReplicaDescriptor{
 		Name:         "fake replica name",
+		ReplicaID:    0,
 		IdentityKey:  idkey,
 		LinkKey:      linkkey,
 		EnvelopeKeys: map[uint64][]byte{epoch: replicakey},
-		Addresses:    map[string][]string{"tcp": []string{"tcp://127.0.0.1:12345"}},
+		Addresses:    map[string][]string{"tcp": {"tcp://127.0.0.1:12345"}},
 	}
 }
 

@@ -8,8 +8,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"golang.org/x/crypto/blake2b"
 
-	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/kem"
 	kemschemes "github.com/katzenpost/hpqc/kem/schemes"
 	"github.com/katzenpost/hpqc/nike"
@@ -128,7 +128,7 @@ func generateDescriptor(t *testing.T, pkiScheme sign.Scheme, linkScheme kem.Sche
 	}
 }
 
-func generateReplica(t *testing.T, name string, pkiScheme sign.Scheme, linkScheme kem.Scheme, replicaScheme nike.Scheme) *pki.ReplicaDescriptor {
+func generateReplica(t *testing.T, name string, replicaID uint8, pkiScheme sign.Scheme, linkScheme kem.Scheme, replicaScheme nike.Scheme) *pki.ReplicaDescriptor {
 	pubkey, _, err := pkiScheme.GenerateKey()
 	require.NoError(t, err)
 
@@ -149,6 +149,7 @@ func generateReplica(t *testing.T, name string, pkiScheme sign.Scheme, linkSchem
 
 	return &pki.ReplicaDescriptor{
 		Name:         name,
+		ReplicaID:    replicaID,
 		IdentityKey:  idkey,
 		LinkKey:      linkkey,
 		EnvelopeKeys: map[uint64][]byte{epoch: replicakey},
@@ -166,7 +167,14 @@ func generateDocument(t *testing.T, config *DocumentConfig) *pki.Document {
 	replicas := make([]*pki.ReplicaDescriptor, config.NumStorageReplicas)
 	for i := 0; i < config.NumStorageReplicas; i++ {
 		name := fmt.Sprintf("fake replica %d", i)
-		replicas[i] = generateReplica(t, name, config.PKIScheme, config.LinkScheme, config.ReplicaScheme)
+		replicas[i] = generateReplica(t, name, uint8(i), config.PKIScheme, config.LinkScheme, config.ReplicaScheme)
+	}
+
+	// Build ConfiguredReplicaIdentityKeys from the replicas
+	configuredReplicaKeys := make([][]byte, len(replicas))
+	for i, replica := range replicas {
+		configuredReplicaKeys[i] = make([]byte, len(replica.IdentityKey))
+		copy(configuredReplicaKeys[i], replica.IdentityKey)
 	}
 
 	srv := make([]byte, 32)
@@ -177,12 +185,13 @@ func generateDocument(t *testing.T, config *DocumentConfig) *pki.Document {
 	oldhashes := [][]byte{srv, srv}
 
 	return &pki.Document{
-		Topology:           topology,
-		StorageReplicas:    replicas,
-		SharedRandomValue:  srv,
-		PriorSharedRandom:  oldhashes,
-		SphinxGeometryHash: geohash,
-		PKISignatureScheme: config.PKIScheme.Name(),
+		Topology:                      topology,
+		StorageReplicas:               replicas,
+		ConfiguredReplicaIdentityKeys: configuredReplicaKeys,
+		SharedRandomValue:             srv,
+		PriorSharedRandom:             oldhashes,
+		SphinxGeometryHash:            geohash,
+		PKISignatureScheme:            config.PKIScheme.Name(),
 	}
 }
 
@@ -194,19 +203,21 @@ func TestGetShards(t *testing.T) {
 	require.Equal(t, len(replicaDescs), K)
 }
 
-func TestGetReplicaKeys(t *testing.T) {
+func TestGetConfiguredReplicaKeys(t *testing.T) {
 	config := createDefaultTestConfig()
 	doc := generateDocument(t, config)
-	replicaKeys, err := GetReplicaKeys(doc)
+	replicaKeys, err := GetConfiguredReplicaKeys(doc)
 	require.NoError(t, err)
 	require.Equal(t, config.NumStorageReplicas, len(replicaKeys))
 
 	boxid := generateRandomBoxID(t)
 
+	// Shard2 operates on full identity keys
 	orderedKeys := Shard2(boxid, replicaKeys)
 	for i := 0; i < len(orderedKeys); i++ {
-		hash := hash.Sum256(orderedKeys[i])
-		_, err := doc.GetReplicaNodeByKeyHash(&hash)
+		// Hash the identity key to look up the descriptor
+		keyHash := blake2b.Sum256(orderedKeys[i])
+		_, err := doc.GetReplicaNodeByKeyHash(&keyHash)
 		require.NoError(t, err)
 	}
 }
@@ -273,6 +284,139 @@ func TestReplicaNum(t *testing.T) {
 
 	_, err = ReplicaNum(uint8(config.NumStorageReplicas), doc)
 	require.Error(t, err)
+}
+
+func TestShard2ConsistentHashing(t *testing.T) {
+	numMessages := 1000
+	keySize := 32
+
+	for numReplicas := 4; numReplicas <= 10; numReplicas++ {
+		t.Run(fmt.Sprintf("%dReplicas", numReplicas), func(t *testing.T) {
+			// Generate replica keys
+			keys := generateRandomKeys(t, numReplicas, keySize)
+
+			// Generate random boxIDs (messages)
+			boxIDs := make([]*[32]byte, numMessages)
+			for i := 0; i < numMessages; i++ {
+				boxIDs[i] = &[32]byte{}
+				_, err := rand.Reader.Read(boxIDs[i][:])
+				require.NoError(t, err)
+			}
+
+			// Track distribution: how many times each replica is primary (index 0) and secondary (index 1)
+			primaryCount := make(map[string]int)
+			secondaryCount := make(map[string]int)
+
+			// Store original assignments for each boxID
+			originalAssignments := make(map[int][2]string) // boxID index -> [primary, secondary]
+
+			for i, boxID := range boxIDs {
+				shards := Shard2(boxID, keys)
+				require.Len(t, shards, K)
+
+				primary := string(shards[0])
+				secondary := string(shards[1])
+
+				primaryCount[primary]++
+				secondaryCount[secondary]++
+				originalAssignments[i] = [2]string{primary, secondary}
+			}
+
+			// Verify uniform distribution for primary assignments
+			expectedPerReplica := float64(numMessages) / float64(numReplicas)
+
+			t.Logf("Expected ~%.1f messages per replica (primary)", expectedPerReplica)
+
+			// Verify that all replicas got some assignments
+			replicasWithPrimary := len(primaryCount)
+			replicasWithSecondary := len(secondaryCount)
+			t.Logf("Replicas with primary assignments: %d/%d", replicasWithPrimary, numReplicas)
+			t.Logf("Replicas with secondary assignments: %d/%d", replicasWithSecondary, numReplicas)
+			require.Equal(t, numReplicas, replicasWithPrimary, "All replicas should have primary assignments")
+			require.Equal(t, numReplicas, replicasWithSecondary, "All replicas should have secondary assignments")
+
+			// Now remove one replica and verify consistent hashing properties
+			removedReplicaIdx := numReplicas / 2 // Remove replica in the middle
+			removedKey := string(keys[removedReplicaIdx])
+
+			// Create new key set without the removed replica
+			newKeys := make([][]byte, 0, numReplicas-1)
+			for i, key := range keys {
+				if i != removedReplicaIdx {
+					newKeys = append(newKeys, key)
+				}
+			}
+
+			// Track changes after removal
+			unchangedCount := 0
+			primaryPromotedCount := 0   // secondary became primary, new secondary assigned
+			secondaryReplacedCount := 0 // primary unchanged, secondary replaced
+			bothChangedCount := 0       // both changed (shouldn't happen for boxes not using removed replica)
+
+			for i, boxID := range boxIDs {
+				newShards := Shard2(boxID, newKeys)
+				require.Len(t, newShards, K)
+
+				newPrimary := string(newShards[0])
+				newSecondary := string(newShards[1])
+
+				oldPrimary := originalAssignments[i][0]
+				oldSecondary := originalAssignments[i][1]
+
+				hadRemovedReplica := (oldPrimary == removedKey || oldSecondary == removedKey)
+
+				if newPrimary == oldPrimary && newSecondary == oldSecondary {
+					unchangedCount++
+					require.False(t, hadRemovedReplica, "Box with removed replica should have changed")
+				} else if newPrimary == oldSecondary && oldPrimary == removedKey {
+					// Old primary was removed, secondary promoted to primary
+					primaryPromotedCount++
+					require.True(t, hadRemovedReplica)
+					// Verify new secondary is different from new primary (old secondary)
+					require.NotEqual(t, newSecondary, newPrimary, "New secondary should differ from promoted primary")
+					require.NotEqual(t, newSecondary, removedKey, "New secondary should not be the removed replica")
+				} else if newPrimary == oldPrimary && oldSecondary == removedKey {
+					// Old secondary was removed, primary stays, new secondary
+					secondaryReplacedCount++
+					require.True(t, hadRemovedReplica)
+					// Verify new secondary is different from primary and removed key
+					require.NotEqual(t, newSecondary, newPrimary, "New secondary should differ from primary")
+					require.NotEqual(t, newSecondary, removedKey, "New secondary should not be the removed replica")
+				} else if hadRemovedReplica {
+					// Some other change pattern when removed replica was involved
+					bothChangedCount++
+				} else {
+					// This shouldn't happen - boxes not using removed replica should be unchanged
+					t.Errorf("Unexpected change for box %d that didn't use removed replica: old=[%x, %x] new=[%x, %x]",
+						i, oldPrimary[:8], oldSecondary[:8], newPrimary[:8], newSecondary[:8])
+				}
+			}
+
+			affectedCount := primaryPromotedCount + secondaryReplacedCount + bothChangedCount
+			expectedAffected := float64(numMessages) * float64(K) / float64(numReplicas) // ~K/N of messages
+
+			t.Logf("After removing 1 of %d replicas:", numReplicas)
+			t.Logf("  Unchanged: %d (%.1f%%)", unchangedCount, float64(unchangedCount)*100/float64(numMessages))
+			t.Logf("  Primary promoted (old secondary->primary): %d", primaryPromotedCount)
+			t.Logf("  Secondary replaced (primary intact): %d", secondaryReplacedCount)
+			t.Logf("  Both changed: %d", bothChangedCount)
+			t.Logf("  Total affected: %d (expected ~%.0f, which is ~%.1f%%)", affectedCount, expectedAffected, expectedAffected*100/float64(numMessages))
+
+			// Verify that most boxes are unchanged
+			// With K=2 and N replicas, we expect ~2/N to be affected
+			// For N=4, that's 50%, for N=10 that's 20%
+			expectedUnchangedPct := float64(numReplicas-K) / float64(numReplicas)
+			minUnchanged := int(float64(numMessages) * expectedUnchangedPct * 0.8) // Allow 20% margin
+			require.Greater(t, unchangedCount, minUnchanged,
+				"Expected at least %.0f%% of boxes unchanged, got %.1f%%",
+				expectedUnchangedPct*80, float64(unchangedCount)*100/float64(numMessages))
+
+			// Verify affected count is roughly K/N (with some tolerance)
+			maxAffected := int(expectedAffected * 1.5) // Allow 50% over expected
+			require.Less(t, affectedCount, maxAffected,
+				"Expected at most %.0f affected boxes, got %d", expectedAffected*1.5, affectedCount)
+		})
+	}
 }
 
 func BenchmarkShard2(b *testing.B) {

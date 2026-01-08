@@ -183,6 +183,7 @@ func (p *PKIWorker) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 
 	desc := &cpki.ReplicaDescriptor{
 		Name:         p.server.cfg.Identifier,
+		ReplicaID:    p.server.cfg.ReplicaID,
 		Epoch:        doPublishEpoch,
 		IdentityKey:  idkeyblob,
 		LinkKey:      linkblob,
