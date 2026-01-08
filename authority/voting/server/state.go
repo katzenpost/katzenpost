@@ -664,10 +664,12 @@ func (s *state) getDocument(descriptors []*pki.MixDescriptor, replicaDescriptors
 		return slices.Compare(a, b)
 	})
 
-	// Build ReplicaEnvelopeKeys from cached envelope keys.
+	// Build ReplicaEnvelopeKeys from the tallied replica descriptors and cached keys.
+	// We use the tallied descriptors (which all authorities agree on) as the authoritative source,
+	// supplemented by cached keys for replicas that are temporarily offline.
 	// We keep keys for previous, current, and next replica epochs.
 	currentReplicaEpoch, _, _ := replicaCommon.ReplicaNow()
-	replicaEnvelopeKeys := s.buildReplicaEnvelopeKeys(currentReplicaEpoch)
+	replicaEnvelopeKeys := s.buildReplicaEnvelopeKeys(replicaDescriptors, currentReplicaEpoch)
 
 	// Build the Document.
 	doc := &pki.Document{
@@ -700,10 +702,12 @@ func (s *state) getDocument(descriptors []*pki.MixDescriptor, replicaDescriptors
 	return doc
 }
 
-// buildReplicaEnvelopeKeys builds the ReplicaEnvelopeKeys map for the document,
-// containing only keys for the previous, current, and next replica epochs.
+// buildReplicaEnvelopeKeys builds the ReplicaEnvelopeKeys map for the document.
+// It uses the tallied replica descriptors (which all authorities agree on) as the
+// authoritative source, supplemented by cached keys for replicas that are temporarily
+// offline. Only keys for the previous, current, and next replica epochs are included.
 // It also prunes old keys from the cache.
-func (s *state) buildReplicaEnvelopeKeys(currentReplicaEpoch uint64) map[uint8]map[uint64][]byte {
+func (s *state) buildReplicaEnvelopeKeys(talliedDescriptors []*pki.ReplicaDescriptor, currentReplicaEpoch uint64) map[uint8]map[uint64][]byte {
 	result := make(map[uint8]map[uint64][]byte)
 
 	// Define the range of replica epochs to keep: previous, current, next
@@ -713,16 +717,38 @@ func (s *state) buildReplicaEnvelopeKeys(currentReplicaEpoch uint64) map[uint8]m
 	}
 	maxEpoch := currentReplicaEpoch + 1
 
-	// Build the result map and prune old keys from cache
-	for replicaID, epochKeys := range s.cachedReplicaEnvelopeKeys {
-		result[replicaID] = make(map[uint64][]byte)
+	// Helper to add a key to the result if it's in the valid epoch range
+	addKey := func(replicaID uint8, replicaEpoch uint64, keyBytes []byte) {
+		if replicaEpoch < minEpoch || replicaEpoch > maxEpoch {
+			return
+		}
+		if _, ok := result[replicaID]; !ok {
+			result[replicaID] = make(map[uint64][]byte)
+		}
+		// Only add if not already present (tallied descriptors take precedence)
+		if _, exists := result[replicaID][replicaEpoch]; !exists {
+			keyCopy := make([]byte, len(keyBytes))
+			copy(keyCopy, keyBytes)
+			result[replicaID][replicaEpoch] = keyCopy
+		}
+	}
 
+	// First, add keys from tallied descriptors (these are authoritative - all authorities agree)
+	// Also cache these keys for future epochs when the replica might be temporarily offline.
+	for _, desc := range talliedDescriptors {
+		s.cacheEnvelopeKeys(desc)
+		for replicaEpoch, keyBytes := range desc.EnvelopeKeys {
+			addKey(desc.ReplicaID, replicaEpoch, keyBytes)
+		}
+	}
+
+	// Then, supplement with cached keys for replicas that may be temporarily offline.
+	// The cache may contain keys from previous PKI epochs for replicas that are
+	// not in the current tally but whose envelope keys are still valid.
+	for replicaID, epochKeys := range s.cachedReplicaEnvelopeKeys {
 		for replicaEpoch, keyBytes := range epochKeys {
 			if replicaEpoch >= minEpoch && replicaEpoch <= maxEpoch {
-				// Include this key in the result
-				keyCopy := make([]byte, len(keyBytes))
-				copy(keyCopy, keyBytes)
-				result[replicaID][replicaEpoch] = keyCopy
+				addKey(replicaID, replicaEpoch, keyBytes)
 			} else if replicaEpoch < minEpoch {
 				// Prune old keys from cache
 				delete(s.cachedReplicaEnvelopeKeys[replicaID], replicaEpoch)
@@ -730,11 +756,6 @@ func (s *state) buildReplicaEnvelopeKeys(currentReplicaEpoch uint64) map[uint8]m
 					replicaID, replicaEpoch, currentReplicaEpoch)
 			}
 			// Keys for future epochs beyond maxEpoch are kept in cache but not included in document
-		}
-
-		// Remove empty maps
-		if len(result[replicaID]) == 0 {
-			delete(result, replicaID)
 		}
 	}
 
@@ -2097,9 +2118,9 @@ func (s *state) onReplicaDescriptorUpload(rawDesc []byte, desc *pki.ReplicaDescr
 	// Store the parsed descriptor
 	s.replicaDescriptors[epoch][pk] = desc
 
-	// Cache envelope keys from this descriptor for persistence across PKI epochs.
-	// This allows envelope keys to remain available even if a replica goes offline.
-	s.cacheEnvelopeKeys(desc)
+	// Note: We don't cache envelope keys here. Caching happens after the tally
+	// in buildReplicaEnvelopeKeys, so only keys from consensus-agreed descriptors
+	// are cached. This ensures deterministic document generation across authorities.
 
 	s.log.Noticef("Node %x: Successfully submitted replica descriptor for epoch %v.", pk, epoch)
 	s.onUpdate()
