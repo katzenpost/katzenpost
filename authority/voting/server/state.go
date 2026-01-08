@@ -60,6 +60,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/katzenpost/katzenpost/quic/common"
+	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
 )
 
 const (
@@ -135,6 +136,12 @@ type state struct {
 	reveals            map[uint64]map[[publicKeyHashSize]byte][]byte
 	commits            map[uint64]map[[publicKeyHashSize]byte][]byte
 	verifiers          map[[publicKeyHashSize]byte]sign.PublicKey
+
+	// cachedReplicaEnvelopeKeys caches envelope keys from replica descriptors.
+	// Indexed by ReplicaID -> replica epoch -> public key bytes.
+	// This allows envelope keys to persist across PKI epochs even if a replica
+	// is temporarily offline.
+	cachedReplicaEnvelopeKeys map[uint8]map[uint64][]byte
 
 	updateCh chan interface{}
 
@@ -657,6 +664,11 @@ func (s *state) getDocument(descriptors []*pki.MixDescriptor, replicaDescriptors
 		return slices.Compare(a, b)
 	})
 
+	// Build ReplicaEnvelopeKeys from cached envelope keys.
+	// We keep keys for previous, current, and next replica epochs.
+	currentReplicaEpoch, _, _ := replicaCommon.ReplicaNow()
+	replicaEnvelopeKeys := s.buildReplicaEnvelopeKeys(currentReplicaEpoch)
+
 	// Build the Document.
 	doc := &pki.Document{
 		Epoch:                         s.votingEpoch,
@@ -679,12 +691,54 @@ func (s *state) getDocument(descriptors []*pki.MixDescriptor, replicaDescriptors
 		ServiceNodes:                  serviceNodes,
 		StorageReplicas:               replicaDescriptors,
 		ConfiguredReplicaIdentityKeys: configuredReplicaKeys,
+		ReplicaEnvelopeKeys:           replicaEnvelopeKeys,
 		SharedRandomValue:             srv,
 		PriorSharedRandom:             s.priorSRV,
 		SphinxGeometryHash:            s.geo.Hash(),
 		PKISignatureScheme:            s.s.cfg.Server.PKISignatureScheme,
 	}
 	return doc
+}
+
+// buildReplicaEnvelopeKeys builds the ReplicaEnvelopeKeys map for the document,
+// containing only keys for the previous, current, and next replica epochs.
+// It also prunes old keys from the cache.
+func (s *state) buildReplicaEnvelopeKeys(currentReplicaEpoch uint64) map[uint8]map[uint64][]byte {
+	result := make(map[uint8]map[uint64][]byte)
+
+	// Define the range of replica epochs to keep: previous, current, next
+	var minEpoch uint64
+	if currentReplicaEpoch > 0 {
+		minEpoch = currentReplicaEpoch - 1
+	}
+	maxEpoch := currentReplicaEpoch + 1
+
+	// Build the result map and prune old keys from cache
+	for replicaID, epochKeys := range s.cachedReplicaEnvelopeKeys {
+		result[replicaID] = make(map[uint64][]byte)
+
+		for replicaEpoch, keyBytes := range epochKeys {
+			if replicaEpoch >= minEpoch && replicaEpoch <= maxEpoch {
+				// Include this key in the result
+				keyCopy := make([]byte, len(keyBytes))
+				copy(keyCopy, keyBytes)
+				result[replicaID][replicaEpoch] = keyCopy
+			} else if replicaEpoch < minEpoch {
+				// Prune old keys from cache
+				delete(s.cachedReplicaEnvelopeKeys[replicaID], replicaEpoch)
+				s.log.Debugf("Pruned old envelope key for replica %d, replica epoch %d (current: %d)",
+					replicaID, replicaEpoch, currentReplicaEpoch)
+			}
+			// Keys for future epochs beyond maxEpoch are kept in cache but not included in document
+		}
+
+		// Remove empty maps
+		if len(result[replicaID]) == 0 {
+			delete(result, replicaID)
+		}
+	}
+
+	return result
 }
 
 func (s *state) hasEnoughDescriptors(m map[[publicKeyHashSize]byte]*pki.MixDescriptor) bool {
@@ -2043,9 +2097,33 @@ func (s *state) onReplicaDescriptorUpload(rawDesc []byte, desc *pki.ReplicaDescr
 	// Store the parsed descriptor
 	s.replicaDescriptors[epoch][pk] = desc
 
+	// Cache envelope keys from this descriptor for persistence across PKI epochs.
+	// This allows envelope keys to remain available even if a replica goes offline.
+	s.cacheEnvelopeKeys(desc)
+
 	s.log.Noticef("Node %x: Successfully submitted replica descriptor for epoch %v.", pk, epoch)
 	s.onUpdate()
 	return nil
+}
+
+// cacheEnvelopeKeys caches the envelope keys from a replica descriptor.
+// This method assumes the state lock is already held.
+func (s *state) cacheEnvelopeKeys(desc *pki.ReplicaDescriptor) {
+	replicaID := desc.ReplicaID
+
+	// Ensure the inner map exists for this replica
+	if _, ok := s.cachedReplicaEnvelopeKeys[replicaID]; !ok {
+		s.cachedReplicaEnvelopeKeys[replicaID] = make(map[uint64][]byte)
+	}
+
+	// Cache each envelope key from the descriptor
+	for replicaEpoch, keyBytes := range desc.EnvelopeKeys {
+		// Make a copy of the key bytes to avoid reference issues
+		keyCopy := make([]byte, len(keyBytes))
+		copy(keyCopy, keyBytes)
+		s.cachedReplicaEnvelopeKeys[replicaID][replicaEpoch] = keyCopy
+		s.log.Debugf("Cached envelope key for replica %d, replica epoch %d", replicaID, replicaEpoch)
+	}
 }
 
 func (s *state) onDescriptorUpload(rawDesc []byte, desc *pki.MixDescriptor, epoch uint64) error {
@@ -2442,6 +2520,7 @@ func newState(s *Server) (*state, error) {
 	st.signatures = make(map[uint64]map[[publicKeyHashSize]byte]*cert.Signature)
 	st.commits = make(map[uint64]map[[publicKeyHashSize]byte][]byte)
 	st.priorSRV = make([][]byte, 0)
+	st.cachedReplicaEnvelopeKeys = make(map[uint8]map[uint64][]byte)
 
 	// Initialize the persistence store and restore state.
 	dbPath := filepath.Join(s.cfg.Server.DataDir, dbFile)
