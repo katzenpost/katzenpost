@@ -40,7 +40,7 @@ import (
 )
 
 type listener struct {
-	sync.Mutex
+	sync.RWMutex
 	worker.Worker
 
 	glue glue.Glue
@@ -135,10 +135,8 @@ func (l *listener) onNewConn(conn net.Conn) {
 }
 
 func (l *listener) onInitializedConn(c *incomingConn) {
-	l.Lock()
-	defer l.Unlock()
-
-	c.isInitialized = true
+	// Use atomic store to avoid lock contention during handshake completion.
+	atomic.StoreUint32(&c.isInitialized, 1)
 }
 
 func (l *listener) onClosedConn(c *incomingConn) {
@@ -153,15 +151,15 @@ func (l *listener) onClosedConn(c *incomingConn) {
 // GetConnIdentities returns a slice of byte slices each corresponding
 // to a currently connected client identity.
 func (l *listener) GetConnIdentities() (map[[sConstants.RecipientIDLength]byte]interface{}, error) {
-	l.Lock()
-	defer l.Unlock()
+	l.RLock()
+	defer l.RUnlock()
 
 	identitySet := make(map[[sConstants.RecipientIDLength]byte]interface{})
 	for e := l.conns.Front(); e != nil; e = e.Next() {
 		cc := e.Value.(*incomingConn)
 
 		// Skip checking against pre-handshake conns.
-		if cc.w == nil || !cc.isInitialized {
+		if cc.w == nil || atomic.LoadUint32(&cc.isInitialized) == 0 {
 			continue
 		}
 
@@ -180,20 +178,21 @@ func (l *listener) GetConnIdentities() (map[[sConstants.RecipientIDLength]byte]i
 func (l *listener) CloseOldConns(ptr interface{}) error {
 	c := ptr.(*incomingConn)
 
-	l.Lock()
-	defer l.Unlock()
-
 	a, err := c.w.PeerCredentials()
 	if err != nil {
 		l.log.Errorf("Session fail: %s", err)
 		return err
 	}
 
+	// Collect connections to close under read lock, then close outside lock.
+	var toClose []*incomingConn
+
+	l.RLock()
 	for e := l.conns.Front(); e != nil; e = e.Next() {
 		cc := e.Value.(*incomingConn)
 
 		// Skip checking a conn against itself, or against pre-handshake conns.
-		if cc == c || cc.w == nil || !cc.isInitialized {
+		if cc == c || cc.w == nil || atomic.LoadUint32(&cc.isInitialized) == 0 {
 			continue
 		}
 
@@ -209,6 +208,12 @@ func (l *listener) CloseOldConns(ptr interface{}) error {
 		if !a.PublicKey.Equal(b.PublicKey) {
 			continue
 		}
+		toClose = append(toClose, cc)
+	}
+	l.RUnlock()
+
+	// Close connections outside the lock to avoid blocking other operations.
+	for _, cc := range toClose {
 		cc.Close()
 	}
 

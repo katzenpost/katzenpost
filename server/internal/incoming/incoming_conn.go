@@ -65,7 +65,7 @@ type incomingConn struct {
 	sendTokenIncr time.Duration
 	sendTokenLast time.Time
 
-	isInitialized bool // Set by listener.
+	isInitialized uint32 // Atomic flag, set by listener after handshake.
 	fromClient    bool
 	fromMix       bool
 	canSend       bool
@@ -199,6 +199,8 @@ func (c *incomingConn) worker() {
 	}()
 
 	// Allocate the session struct.
+	// Note: wire.NewSession() only creates the session object, it doesn't
+	// access shared state, so no lock is needed here.
 	identityHash := hash.Sum256From(c.l.glue.IdentityPublicKey())
 	cfg := &wire.SessionConfig{
 		KEMScheme:         c.scheme,
@@ -209,9 +211,7 @@ func (c *incomingConn) worker() {
 		RandomReader:      rand.Reader,
 	}
 	var err error
-	c.l.Lock()
 	c.w, err = wire.NewSession(cfg, false)
-	c.l.Unlock()
 	if err != nil {
 		c.log.Errorf("Failed to allocate session: %v", err)
 		return
