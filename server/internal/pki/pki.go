@@ -26,6 +26,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/katzenpost/hpqc/hash"
@@ -53,6 +54,15 @@ var (
 	nextFetchTill        = epochtime.Period - PublishDeadline
 )
 
+// authDocsCache holds a snapshot of documents for authentication.
+// This allows lock-free reads during connection authentication.
+type authDocsCache struct {
+	docs   []*pkicache.Entry
+	nowDoc *pkicache.Entry
+	now    uint64
+	till   time.Duration
+}
+
 type pki struct {
 	sync.RWMutex
 	worker.Worker
@@ -67,10 +77,46 @@ type pki struct {
 	failedFetches      map[uint64]error
 	lastPublishedEpoch uint64
 	lastWarnedEpoch    uint64
+
+	// cachedAuthDocs stores a snapshot of documents for lock-free authentication.
+	// Updated atomically when documents change.
+	cachedAuthDocs atomic.Value // stores *authDocsCache
 }
 
 func (p *pki) StartWorker() {
 	p.Go(p.worker)
+}
+
+// updateAuthDocsCache rebuilds and atomically stores the auth docs cache.
+// Must be called with p.RLock held or after document changes while holding p.Lock.
+func (p *pki) updateAuthDocsCache() {
+	now, _, till := epochtime.Now()
+	epochs := make([]uint64, 0, constants.NumMixKeys+1)
+	start := now
+	if till < pkiEarlyConnectSlack {
+		start = now + 1
+	}
+	for epoch := start; epoch > now-constants.NumMixKeys; epoch-- {
+		epochs = append(epochs, epoch)
+	}
+
+	var nowDoc *pkicache.Entry
+	docs := make([]*pkicache.Entry, 0, len(epochs))
+	for _, epoch := range epochs {
+		if e, ok := p.docs[epoch]; ok {
+			docs = append(docs, e)
+			if epoch == now {
+				nowDoc = e
+			}
+		}
+	}
+
+	p.cachedAuthDocs.Store(&authDocsCache{
+		docs:   docs,
+		nowDoc: nowDoc,
+		now:    now,
+		till:   till,
+	})
 }
 
 func (p *pki) worker() {
@@ -192,6 +238,7 @@ func (p *pki) worker() {
 			p.Lock()
 			p.rawDocs[epoch] = rawDoc
 			p.docs[epoch] = ent
+			p.updateAuthDocsCache()
 			p.Unlock()
 			didUpdate = true
 			instrument.FetchedPKIDocs(fmt.Sprintf("%v", epoch))
@@ -498,7 +545,19 @@ func (p *pki) documentsToFetch() []uint64 {
 }
 
 func (p *pki) documentsForAuthentication() ([]*pkicache.Entry, *pkicache.Entry, uint64, time.Duration) {
+	// Try to use the cached auth docs first (lock-free fast path).
+	if cached := p.cachedAuthDocs.Load(); cached != nil {
+		c := cached.(*authDocsCache)
+		// Check if cache is still valid for current epoch window.
+		now, _, till := epochtime.Now()
+		// Cache is valid if we're in the same epoch and slack window hasn't changed.
+		cacheValid := c.now == now || (till < pkiEarlyConnectSlack && c.now == now+1)
+		if cacheValid && len(c.docs) > 0 {
+			return c.docs, c.nowDoc, c.now, c.till
+		}
+	}
 
+	// Slow path: rebuild from docs map with lock.
 	// Figure out the list of epochs to consider valid.
 	//
 	// Note: The ordering is important and should not be changed without
