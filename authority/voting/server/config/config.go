@@ -27,6 +27,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/BurntSushi/toml"
 	"golang.org/x/net/idna"
@@ -39,6 +40,7 @@ import (
 	"github.com/katzenpost/hpqc/sign"
 	signpem "github.com/katzenpost/hpqc/sign/pem"
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
+	"github.com/katzenpost/katzenpost/core/retry"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/utils"
 )
@@ -283,6 +285,9 @@ type Authority struct {
 	// Addresses are the listener addresses specified by a URL, e.g. tcp://1.2.3.4:1234 or quic://1.2.3.4:1234
 	// Both IPv4 and IPv6 as well as hostnames are valid.
 	Addresses []string
+	// BindAddresses are the IP addresses to bind to for incoming connections.
+	// If left empty, Addresses will be used.
+	BindAddresses []string
 }
 
 // UnmarshalTOML deserializes into non-nil instances of sign.PublicKey and kem.PublicKey
@@ -424,12 +429,83 @@ type Server struct {
 	// to for incoming connections.
 	Addresses []string
 
+	// BindAddresses are the IP addresses to bind to for incoming connections.
+	// If left empty, Addresses will be used.
+	BindAddresses []string
+
 	// DataDir is the absolute path to the server's state files.
 	DataDir string
+
+	// Network timeout configuration for authority operations
+	// These timeouts are used for both incoming and outgoing connections
+	// and should be tuned for post-quantum crypto performance
+
+	// DialTimeoutSec is the timeout for TCP connection establishment (default: 30)
+	DialTimeoutSec int
+
+	// HandshakeTimeoutSec is the timeout for wire protocol handshake completion (default: 180)
+	// Increased for post-quantum crypto operations (KYBER768-X25519 + Ed25519 Sphincs+)
+	HandshakeTimeoutSec int
+
+	// ResponseTimeoutSec is the timeout for command send/receive operations (default: 90)
+	ResponseTimeoutSec int
+
+	// CloseDelaySec is the delay before closing connections to allow NoOp finalization (default: 10)
+	CloseDelaySec int
+
+	// Peer retry configuration for authority-to-authority communication
+
+	// PeerRetryMaxAttempts is the maximum number of retry attempts for peer communication
+	PeerRetryMaxAttempts int
+
+	// PeerRetryBaseDelay is the base delay for exponential backoff between retries
+	PeerRetryBaseDelay time.Duration
+
+	// PeerRetryMaxDelay is the maximum delay between retries
+	PeerRetryMaxDelay time.Duration
+
+	// PeerRetryJitter is the jitter factor (0.0-1.0) applied to retry delays
+	PeerRetryJitter float64
+
+	// DisableIPv4 disables IPv4 for peer connections
+	DisableIPv4 bool
+
+	// DisableIPv6 disables IPv6 for peer connections
+	DisableIPv6 bool
+}
+
+// applyRetryDefaults sets default values for retry configuration
+func (sCfg *Server) applyRetryDefaults() {
+	if sCfg.PeerRetryMaxAttempts == 0 {
+		sCfg.PeerRetryMaxAttempts = retry.DefaultMaxAttempts
+	}
+	if sCfg.PeerRetryBaseDelay == 0 {
+		sCfg.PeerRetryBaseDelay = retry.DefaultBaseDelay
+	}
+	if sCfg.PeerRetryMaxDelay == 0 {
+		sCfg.PeerRetryMaxDelay = retry.DefaultMaxDelay
+	}
+	if sCfg.PeerRetryJitter == 0 {
+		sCfg.PeerRetryJitter = retry.DefaultJitter
+	}
 }
 
 // Validate parses and checks the Server configuration.
 func (sCfg *Server) validate() error {
+	// Set timeout defaults if not specified
+	if sCfg.DialTimeoutSec == 0 {
+		sCfg.DialTimeoutSec = 30
+	}
+	if sCfg.HandshakeTimeoutSec == 0 {
+		sCfg.HandshakeTimeoutSec = 60
+	}
+	if sCfg.ResponseTimeoutSec == 0 {
+		sCfg.ResponseTimeoutSec = 90
+	}
+	if sCfg.CloseDelaySec == 0 {
+		sCfg.CloseDelaySec = 10
+	}
+
 	if sCfg.WireKEMScheme == "" {
 		return errors.New("WireKEMScheme was not set")
 	} else {
@@ -567,6 +643,7 @@ func (cfg *Config) FixupAndValidate(forceGenOnly bool) error {
 	}
 	cfg.Parameters.applyDefaults()
 	cfg.Debug.applyDefaults()
+	cfg.Server.applyRetryDefaults()
 
 	pkiSignatureScheme := signSchemes.ByName(cfg.Server.PKISignatureScheme)
 

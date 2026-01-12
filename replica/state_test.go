@@ -163,7 +163,7 @@ func TestState(t *testing.T) {
 	replicaReadCmd := &pigeonhole.ReplicaRead{}
 	copy(replicaReadCmd.BoxID[:], boxIDs[0][:])
 
-	box, err := st.handleReplicaRead(replicaReadCmd)
+	box, err := st.stateHandleReplicaRead(replicaReadCmd)
 	require.NoError(t, err)
 
 	require.Equal(t, box.BoxID[:], boxid[:])

@@ -14,8 +14,10 @@ import (
 	"gopkg.in/op/go-logging.v1"
 
 	"github.com/katzenpost/hpqc/hash"
+	kempem "github.com/katzenpost/hpqc/kem/pem"
 	"github.com/katzenpost/hpqc/kem/schemes"
 
+	kpcommon "github.com/katzenpost/katzenpost/common"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/thwack"
@@ -81,13 +83,52 @@ func (p *gateway) AuthenticateClient(c *wire.PeerCredentials) bool {
 		if err != nil {
 			panic(err)
 		}
+
 		if len(c.AdditionalData) == sConstants.NodeIDLength {
-			p.log.Errorf("Authentication failed: User: '%x', Key: '%x' (Probably a peer)", c.AdditionalData, hash.Sum256(blob))
+			// This looks like a mix node identity hash - try to look up the name
+			var nodeName string
+			if doc, err := p.glue.PKI().CurrentDocument(); err == nil && doc != nil {
+				var adHash [32]byte
+				copy(adHash[:], c.AdditionalData)
+				if node, err := doc.GetNodeByKeyHash(&adHash); err == nil {
+					nodeName = node.Name
+				}
+			}
+			if nodeName != "" {
+				p.log.Warningf("gateway: AuthenticateClient(): Authentication failed for mix node '%s' (link_key_hash=%x)", nodeName, hash.Sum256(blob))
+			} else {
+				p.log.Warningf("gateway: AuthenticateClient(): Authentication failed for unknown peer (identity_hash=%x not in current PKI, link_key_hash=%x)", c.AdditionalData, hash.Sum256(blob))
+			}
+			p.log.Debugf("gateway: AuthenticateClient(): Remote Peer Credentials: identity_hash=%x, link_key=%s",
+				c.AdditionalData, kpcommon.TruncatePEMForLogging(kempem.ToPublicPEMString(c.PublicKey)))
 		} else {
-			p.log.Errorf("Authentication failed: User: '%x', Key: '%x'", c.AdditionalData, hash.Sum256(blob))
+			// This is a client - try to get a human-readable username from AdditionalData
+			username := ""
+			if len(c.AdditionalData) > 0 && len(c.AdditionalData) < 256 {
+				if isPrintableASCII(c.AdditionalData) {
+					username = string(c.AdditionalData)
+				}
+			}
+			if username != "" {
+				p.log.Warningf("gateway: AuthenticateClient(): Authentication failed for client '%s' (link_key_hash=%x)", username, hash.Sum256(blob))
+			} else {
+				p.log.Warningf("gateway: AuthenticateClient(): Authentication failed for client (user_id=%x, link_key_hash=%x)", c.AdditionalData, hash.Sum256(blob))
+			}
+			p.log.Debugf("gateway: AuthenticateClient(): Remote Peer Credentials: user_id=%x, link_key=%s",
+				c.AdditionalData, kpcommon.TruncatePEMForLogging(kempem.ToPublicPEMString(c.PublicKey)))
 		}
 	}
 	return isValid
+}
+
+// isPrintableASCII checks if all bytes in the slice are printable ASCII characters
+func isPrintableASCII(data []byte) bool {
+	for _, b := range data {
+		if b < 32 || b > 126 {
+			return false
+		}
+	}
+	return true
 }
 
 func (p *gateway) OnPacket(pkt *packet.Packet) {

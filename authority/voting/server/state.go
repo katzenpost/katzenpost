@@ -35,6 +35,7 @@ import (
 
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 
+	"github.com/carlmjohnson/versioninfo"
 	bolt "go.etcd.io/bbolt"
 	"golang.org/x/crypto/blake2b"
 	"gopkg.in/op/go-logging.v1"
@@ -51,6 +52,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/cert"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/pki"
+	"github.com/katzenpost/katzenpost/core/retry"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
@@ -102,10 +104,12 @@ type state struct {
 	geo *geo.Geometry
 	log *logging.Logger
 
+	hasIPv4, hasIPv6 bool
+
 	db *bolt.DB
 
 	reverseHash            map[[publicKeyHashSize]byte]sign.PublicKey
-	authorizedMixes        map[[publicKeyHashSize]byte]bool
+	authorizedMixes        map[[publicKeyHashSize]byte]string
 	authorizedGatewayNodes map[[publicKeyHashSize]byte]string
 	authorizedServiceNodes map[[publicKeyHashSize]byte]string
 	authorizedReplicaNodes map[[publicKeyHashSize]byte]string
@@ -167,18 +171,22 @@ func (s *state) fsm() <-chan time.Time {
 	s.Lock()
 	var sleep time.Duration
 	epoch, elapsed, nextEpoch := epochtime.Now()
-	s.log.Debugf("Current epoch %d, remaining time: %s", epoch, nextEpoch)
+	s.log.Debugf("FSM: Current epoch %d, elapsed: %v, remaining time: %v, current state: %v", epoch, elapsed, nextEpoch, s.state)
 
 	switch s.state {
 	case stateBootstrap:
+		s.log.Noticef("FSM: Entering bootstrap state for epoch %d", epoch)
 		s.genesisEpoch = 0
+		s.log.Debugf("FSM: Fetching consensus for previous epoch %d", epoch-1)
 		s.backgroundFetchConsensus(epoch - 1)
+		s.log.Debugf("FSM: Fetching consensus for current epoch %d", epoch)
 		s.backgroundFetchConsensus(epoch)
 		if elapsed > MixPublishDeadline {
-			s.log.Errorf("Too late to vote this round, sleeping until %s", nextEpoch)
+			s.log.Errorf("FSM: Too late to vote this round (elapsed %s > deadline %s), sleeping until next epoch %s", elapsed, MixPublishDeadline, nextEpoch)
 			sleep = nextEpoch
 			s.votingEpoch = epoch + 2
 			s.state = stateBootstrap
+			s.log.Warningf("FSM: Staying in bootstrap state, will vote for epoch %d", s.votingEpoch)
 		} else {
 			s.votingEpoch = epoch + 1
 			s.state = stateAcceptDescriptor
@@ -186,88 +194,142 @@ func (s *state) fsm() <-chan time.Time {
 			if sleep < 0 {
 				sleep = 0
 			}
-			s.log.Noticef("Bootstrapping for %d", s.votingEpoch)
+			s.log.Noticef("FSM: Bootstrapping complete, transitioning to %s state for voting epoch %d, sleeping for %s", s.state, s.votingEpoch, sleep)
 		}
 	case stateAcceptDescriptor:
+		s.log.Noticef("FSM: Entering stateAcceptDescriptor for epoch %d", s.votingEpoch)
+		descriptorCount := 0
+		if descs, ok := s.descriptors[s.votingEpoch]; ok {
+			descriptorCount = len(descs)
+		}
+		s.log.Debugf("FSM: Currently have %d descriptors for epoch %d", descriptorCount, s.votingEpoch)
+
+		s.log.Debugf("FSM: Generating vote for epoch %d", s.votingEpoch)
 		signed, err := s.getVote(s.votingEpoch)
 		if err == nil {
+			s.log.Noticef("FSM: Successfully generated vote for epoch %d", s.votingEpoch)
 			serialized, err := signed.MarshalCertificate()
 			if err == nil {
+				s.log.Debugf("FSM: Successfully serialized vote certificate for epoch %d", s.votingEpoch)
 				s.sendVoteToAuthorities(serialized, s.votingEpoch)
 			} else {
-				s.log.Errorf("Failed to serialize certificate for epoch %v: %s", s.votingEpoch, err)
+				s.log.Errorf("FSM: Failed to serialize certificate for epoch %v: %s", s.votingEpoch, err)
 			}
 		} else {
-			s.log.Errorf("Failed to compute vote for epoch %v: %s", s.votingEpoch, err)
+			s.log.Errorf("FSM: Failed to compute vote for epoch %v: %s", s.votingEpoch, err)
 		}
 		s.state = stateAcceptVote
 		_, nowelapsed, _ := epochtime.Now()
 		sleep = AuthorityVoteDeadline - nowelapsed
+		s.log.Noticef("FSM: Transitioning to %s state, sleeping for %s until vote deadline", s.state, sleep)
 	case stateAcceptVote:
+		s.log.Noticef("FSM: Entering stateAcceptVote for epoch %d", s.votingEpoch)
+		voteCount := 0
+		if votes, ok := s.votes[s.votingEpoch]; ok {
+			voteCount = len(votes)
+		}
+		s.log.Debugf("FSM: Currently have %d votes for epoch %d (threshold: %d)", voteCount, s.votingEpoch, s.threshold)
+
 		signed := s.reveal(s.votingEpoch)
+		s.log.Debugf("FSM: Generated reveal for epoch %d", s.votingEpoch)
 		s.sendRevealToAuthorities(signed, s.votingEpoch)
 		s.state = stateAcceptReveal
 		_, nowelapsed, _ := epochtime.Now()
 		sleep = AuthorityRevealDeadline - nowelapsed
+		s.log.Noticef("FSM: Transitioning to %s state, sleeping for %s until reveal deadline", s.state, sleep)
 	case stateAcceptReveal:
+		s.log.Noticef("FSM: Entering stateAcceptReveal for epoch %d", s.votingEpoch)
+		revealCount := 0
+		if reveals, ok := s.reveals[s.votingEpoch]; ok {
+			revealCount = len(reveals)
+		}
+		s.log.Debugf("FSM: Currently have %d reveals for epoch %d (threshold: %d)", revealCount, s.votingEpoch, s.threshold)
+
 		signed, err := s.getCertificate(s.votingEpoch)
 		if err == nil {
+			s.log.Noticef("FSM: Successfully generated certificate for epoch %d", s.votingEpoch)
 			serialized, err := signed.MarshalCertificate()
 			if err == nil {
+				s.log.Debugf("FSM: Successfully serialized certificate for epoch %d", s.votingEpoch)
 				s.sendCertToAuthorities(serialized, s.votingEpoch)
 			} else {
-				s.log.Errorf("Failed to serialize certificate for epoch %v", s.votingEpoch)
+				s.log.Errorf("FSM: Failed to serialize certificate for epoch %v: %s", s.votingEpoch, err)
 			}
 		} else {
-			s.log.Errorf("Failed to compute certificate for epoch %v", s.votingEpoch)
+			s.log.Errorf("FSM: Failed to compute certificate for epoch %v: %s", s.votingEpoch, err)
 		}
 		s.state = stateAcceptCert
 		_, nowelapsed, _ := epochtime.Now()
 		sleep = AuthorityCertDeadline - nowelapsed
+		s.log.Noticef("FSM: Transitioning to %s state, sleeping for %s until cert deadline", s.state, sleep)
 	case stateAcceptCert:
+		s.log.Noticef("FSM: Entering stateAcceptCert for epoch %d", s.votingEpoch)
+		certCount := 0
+		if certs, ok := s.certificates[s.votingEpoch]; ok {
+			certCount = len(certs)
+		}
+		s.log.Debugf("FSM: Currently have %d certificates for epoch %d (threshold: %d)", certCount, s.votingEpoch, s.threshold)
+
 		doc, err := s.getMyConsensus(s.votingEpoch)
 		if err == nil {
-			s.log.Noticef("my view of consensus: %x\n%s", s.identityPubKeyHash(), doc)
+			s.log.Noticef("FSM: Successfully computed my view of consensus for epoch %d: %x\n%s", s.votingEpoch, s.identityPubKeyHash(), doc)
 			// detach signature and send to authorities
 			sig, ok := doc.Signatures[s.identityPubKeyHash()]
 			if !ok {
-				s.log.Errorf("Failed to find our signature for epoch %v", s.votingEpoch)
-				s.s.fatalErrCh <- err
+				fatalErr := fmt.Errorf("FSM FATAL: Failed to find our signature for epoch %v in consensus document - this indicates a critical consensus building failure", s.votingEpoch)
+				s.log.Errorf("FSM: %v", fatalErr)
+				s.s.fatalErrCh <- fatalErr
 				break
 			}
+			s.log.Debugf("FSM: Found our signature in consensus document for epoch %d", s.votingEpoch)
 			serialized, err := sig.Marshal()
 			if err != nil {
-				s.log.Errorf("Failed to serialize our signature for epoch %v", s.votingEpoch)
-				s.s.fatalErrCh <- err
+				fatalErr := fmt.Errorf("FSM FATAL: Failed to serialize our signature for epoch %v: %s - this indicates a critical cryptographic failure", s.votingEpoch, err)
+				s.log.Errorf("FSM: %v", fatalErr)
+				s.s.fatalErrCh <- fatalErr
 				break
 			}
+			s.log.Debugf("FSM: Successfully serialized our signature for epoch %d", s.votingEpoch)
 			signed, err := cert.Sign(s.s.identityPrivateKey, s.s.identityPublicKey, serialized, s.votingEpoch)
 			if err != nil {
-				s.log.Errorf("Failed to sign our signature for epoch %v: %s", s.votingEpoch, err)
+				s.log.Errorf("FSM: Failed to sign our signature for epoch %v: %s", s.votingEpoch, err)
 				s.s.fatalErrCh <- err
 				break
 			}
+			s.log.Debugf("FSM: Successfully signed our signature for epoch %d", s.votingEpoch)
 			s.sendSigToAuthorities(signed, s.votingEpoch)
 		} else {
-			s.log.Errorf("Failed to compute our view of consensus for %v with %s", s.votingEpoch, err)
+			s.log.Errorf("FSM: Failed to compute our view of consensus for epoch %v: %s", s.votingEpoch, err)
 		}
 		s.state = stateAcceptSignature
 		_, nowelapsed, _ := epochtime.Now()
 		sleep = PublishConsensusDeadline - nowelapsed
+		s.log.Noticef("FSM: Transitioning to %s state, sleeping for %s until consensus deadline", s.state, sleep)
 	case stateAcceptSignature:
+		s.log.Noticef("FSM: Entering stateAcceptSignature for epoch %d", s.votingEpoch)
+		sigCount := 0
+		if sigs, ok := s.signatures[s.votingEpoch]; ok {
+			sigCount = len(sigs)
+		}
+		s.log.Debugf("FSM: Currently have %d signatures for epoch %d (threshold: %d)", sigCount, s.votingEpoch, s.threshold)
+
 		// combine signatures over a certificate and see if we make a threshold consensus
-		s.log.Noticef("Combining signatures for epoch %v", s.votingEpoch)
-		_, err := s.getThresholdConsensus(s.votingEpoch)
+		s.log.Noticef("FSM: Attempting to combine signatures for threshold consensus for epoch %v", s.votingEpoch)
+		consensus, err := s.getThresholdConsensus(s.votingEpoch)
 		_, _, nextEpoch := epochtime.Now()
 		if err == nil {
+			s.log.Noticef("FSM: SUCCESS! Achieved threshold consensus for epoch %d: %v", s.votingEpoch, consensus)
 			s.state = stateAcceptDescriptor
 			sleep = MixPublishDeadline + nextEpoch
 			s.votingEpoch++
+			s.log.Noticef("FSM: Consensus successful, transitioning to %s state for next voting epoch %d, sleeping for %s", s.state, s.votingEpoch, sleep)
 		} else {
-			s.log.Error(err.Error())
+			s.log.Errorf("FSM: CONSENSUS FAILURE for epoch %d: %s", s.votingEpoch, err)
+			s.log.Errorf("FSM: Had %d signatures out of %d required threshold", sigCount, s.threshold)
 			s.state = stateBootstrap
 			s.votingEpoch = epoch + 2 // vote on epoch+2 in epoch+1
 			sleep = nextEpoch
+			s.log.Errorf("FSM: Consensus failed, transitioning to %s state, will vote for epoch %d, sleeping for %s", s.state, s.votingEpoch, sleep)
 		}
 	default:
 	}
@@ -283,59 +345,82 @@ func (s *state) persistDocument(epoch uint64, doc []byte) {
 		return bkt.Put(epochToBytes(epoch), doc)
 	}); err != nil {
 		// Persistence failures are FATAL.
-		s.s.fatalErrCh <- err
+		fatalErr := fmt.Errorf("PERSISTENCE FATAL: Failed to persist consensus document for epoch %d to database: %v - this indicates critical storage failure", epoch, err)
+		s.log.Errorf("persistDocument: %v", fatalErr)
+		s.s.fatalErrCh <- fatalErr
 	}
 }
 
 // getVote produces a pki.Document using all MixDescriptors that we have seen
 func (s *state) getVote(epoch uint64) (*pki.Document, error) {
+	s.log.Debugf("getVote: Generating vote for epoch %d", epoch)
+
 	// Is there a prior consensus? If so, obtain the GenesisEpoch and prior SRV values
 	if d, ok := s.documents[s.votingEpoch-1]; ok {
-		s.log.Debugf("Restoring genesisEpoch %d from document cache", d.GenesisEpoch)
+		s.log.Debugf("getVote: Restoring genesisEpoch %d from document cache for epoch %d", d.GenesisEpoch, s.votingEpoch-1)
 		s.genesisEpoch = d.GenesisEpoch
 		s.priorSRV = d.PriorSharedRandom
 		d.PKISignatureScheme = s.s.cfg.Server.PKISignatureScheme
+		s.log.Debugf("getVote: Using prior SRV values from previous consensus")
 	} else {
-		s.log.Debugf("Setting genesisEpoch %d from votingEpoch", s.votingEpoch)
+		s.log.Debugf("getVote: No prior consensus found, setting genesisEpoch %d from votingEpoch", s.votingEpoch)
 		s.genesisEpoch = s.votingEpoch
 	}
 
 	descriptors := []*pki.MixDescriptor{}
-	for _, desc := range s.descriptors[epoch] {
-		descriptors = append(descriptors, desc)
+	if descs, ok := s.descriptors[epoch]; ok {
+		for _, desc := range descs {
+			descriptors = append(descriptors, desc)
+		}
+		s.log.Debugf("getVote: Collected %d mix descriptors for epoch %d", len(descriptors), epoch)
+	} else {
+		s.log.Warningf("getVote: No mix descriptors found for epoch %d", epoch)
 	}
 
 	replicaDescriptors := []*pki.ReplicaDescriptor{}
-	for _, desc := range s.replicaDescriptors[epoch] {
-		replicaDescriptors = append(replicaDescriptors, desc)
+	if repDescs, ok := s.replicaDescriptors[epoch]; ok {
+		for _, desc := range repDescs {
+			replicaDescriptors = append(replicaDescriptors, desc)
+		}
+		s.log.Debugf("getVote: Collected %d replica descriptors for epoch %d", len(replicaDescriptors), epoch)
+	} else {
+		s.log.Debugf("getVote: No replica descriptors found for epoch %d", epoch)
 	}
 
 	// vote topology is irrelevent.
 	var zeros [32]byte
+	s.log.Debugf("getVote: Generating document with %d mix descriptors and %d replica descriptors", len(descriptors), len(replicaDescriptors))
 	vote := s.getDocument(descriptors, replicaDescriptors, s.s.cfg.Parameters, zeros[:])
 
 	// create our SharedRandom Commit
+	s.log.Debugf("getVote: Generating SharedRandom commit for epoch %d", epoch)
 	signedCommit, err := s.doCommit(epoch)
 	if err != nil {
+		s.log.Errorf("getVote: Failed to generate SharedRandom commit for epoch %d: %s", epoch, err)
 		return nil, err
 	}
 	commits := make(map[[hash.HashSize]byte][]byte)
 	commits[s.identityPubKeyHash()] = signedCommit
 	vote.SharedRandomCommit = commits
+	s.log.Debugf("getVote: Added SharedRandom commit to vote for epoch %d", epoch)
 
+	s.log.Debugf("getVote: Signing vote document for epoch %d", epoch)
 	_, err = s.doSignDocument(s.s.identityPrivateKey, s.s.identityPublicKey, vote)
 	if err != nil {
+		s.log.Errorf("getVote: Failed to sign vote document for epoch %d: %s", epoch, err)
 		return nil, err
 	}
 
-	s.log.Debugf("Ready to send our vote:\n%s", vote)
+	s.log.Debugf("getVote: Ready to send our vote for epoch %d:\n%s", epoch, vote)
 	// save our own vote
 	if _, ok := s.votes[epoch]; !ok {
 		s.votes[epoch] = make(map[[publicKeyHashSize]byte]*pki.Document)
 	}
 	if _, ok := s.votes[epoch][s.identityPubKeyHash()]; !ok {
 		s.votes[epoch][s.identityPubKeyHash()] = vote
+		s.log.Debugf("getVote: Successfully saved our vote for epoch %d", epoch)
 	} else {
+		s.log.Errorf("getVote: Vote already present for epoch %d, this should never happen", epoch)
 		return nil, errors.New("failure: vote already present, this should never happen")
 	}
 	return vote, nil
@@ -716,28 +801,101 @@ func (s *state) IsPeerValid(creds *wire.PeerCredentials) bool {
 	return false
 }
 
-func (s *state) sendCommandToPeer(peer *config.Authority, cmd commands.Command) (commands.Command, error) {
+func (s *state) filterPeerAddresses(addrs []string) []string {
+	return retry.FilterUsableAddresses(
+		addrs,
+		s.hasIPv4,
+		s.hasIPv6,
+		s.s.cfg.Server.DisableIPv4,
+		s.s.cfg.Server.DisableIPv6,
+	)
+}
+
+func (s *state) peerRetryDelay(attempt int) time.Duration {
+	return retry.Delay(
+		s.s.cfg.Server.PeerRetryBaseDelay,
+		s.s.cfg.Server.PeerRetryMaxDelay,
+		s.s.cfg.Server.PeerRetryJitter,
+		attempt,
+	)
+}
+
+// sendCommandToPeerWithDeadline sends with retry but respects deadline.
+func (s *state) sendCommandToPeerWithDeadline(peer *config.Authority, cmd commands.Command, deadline time.Time) (commands.Command, error) {
+	addrs := s.filterPeerAddresses(peer.Addresses)
+	if len(addrs) == 0 {
+		return nil, fmt.Errorf("peer %s: no usable addresses", peer.Identifier)
+	}
+
+	maxAttempts := s.s.cfg.Server.PeerRetryMaxAttempts
+	var lastErr error
+
+	for attempt := 0; attempt <= maxAttempts; attempt++ {
+		if time.Now().After(deadline) {
+			s.log.Warningf("peer %s: deadline exceeded after %d attempts", peer.Identifier, attempt)
+			if lastErr != nil {
+				return nil, lastErr
+			}
+			return nil, fmt.Errorf("peer %s: deadline exceeded", peer.Identifier)
+		}
+
+		if attempt > 0 {
+			delay := s.peerRetryDelay(attempt - 1)
+			remaining := time.Until(deadline)
+			if delay > remaining {
+				delay = remaining
+			}
+			if delay > 0 {
+				s.log.Debugf("peer %s: retry %d/%d after %v", peer.Identifier, attempt, maxAttempts, delay)
+				time.Sleep(delay)
+			}
+		}
+
+		resp, err := s.doSendCommand(peer, cmd, addrs)
+		if err == nil {
+			if attempt > 0 {
+				s.log.Noticef("peer %s: succeeded after %d retries", peer.Identifier, attempt)
+			}
+			return resp, nil
+		}
+		lastErr = err
+
+		if !retry.IsTransientError(err) {
+			s.log.Debugf("peer %s: permanent error: %v", peer.Identifier, err)
+			return nil, err
+		}
+		s.log.Warningf("peer %s: attempt %d/%d failed: %v", peer.Identifier, attempt+1, maxAttempts+1, err)
+	}
+	return nil, lastErr
+}
+
+func (s *state) doSendCommand(peer *config.Authority, cmd commands.Command, addrs []string) (commands.Command, error) {
+	dialTimeout := time.Duration(s.s.cfg.Server.DialTimeoutSec) * time.Second
+	handshakeTimeout := time.Duration(s.s.cfg.Server.HandshakeTimeoutSec) * time.Second
+	responseTimeout := time.Duration(s.s.cfg.Server.ResponseTimeoutSec) * time.Second
+
 	var conn net.Conn
 	var err error
-	for i, a := range peer.Addresses {
+	for i, a := range addrs {
 		u, err := url.Parse(a)
 		if err != nil {
+			s.log.Debugf("peer %s: invalid URL %s: %v", peer.Identifier, a, err)
 			continue
 		}
-		defaultDialer := &net.Dialer{}
-		ctx, cancelFn := context.WithCancel(context.Background())
+		defaultDialer := &net.Dialer{Timeout: dialTimeout}
+		ctx, cancelFn := context.WithTimeout(context.Background(), dialTimeout)
 		conn, err = common.DialURL(u, ctx, defaultDialer.DialContext)
 		cancelFn()
 		if err == nil {
 			defer conn.Close()
 			break
-		} else {
-			s.log.Errorf("Got err from Peer: %v", err)
 		}
-		if i == len(peer.Addresses)-1 {
-			return nil, err
+		s.log.Debugf("peer %s: dial %s failed: %v", peer.Identifier, a, err)
+		if i == len(addrs)-1 {
+			return nil, fmt.Errorf("all addresses exhausted: %w", err)
 		}
 	}
+
 	s.s.Add(1)
 	defer s.s.Done()
 	identityHash := hash.Sum256From(s.s.identityPublicKey)
@@ -761,13 +919,25 @@ func (s *state) sendCommandToPeer(peer *config.Authority, cmd commands.Command) 
 	}
 	defer session.Close()
 
+	conn.SetDeadline(time.Now().Add(handshakeTimeout))
+	handshakeStart := time.Now()
 	if err = session.Initialize(conn); err != nil {
+		// Add peer name context to the error if it's a HandshakeError
+		if he, ok := wire.GetHandshakeError(err); ok {
+			he.WithPeerName(peer.Identifier)
+		}
+		// Log detailed debug info (contains IPs, keys, peer name) at debug level only
+		s.log.Debugf("peer %s: handshake failure details:\n%s", peer.Identifier, wire.GetDebugError(err))
 		return nil, err
 	}
+	s.log.Debugf("peer %s: Handshake completed in %v", peer.Identifier, time.Since(handshakeStart))
+
+	conn.SetDeadline(time.Now().Add(responseTimeout))
 	err = session.SendCommand(cmd)
 	if err != nil {
 		return nil, err
 	}
+
 	resp, err := session.RecvCommand()
 	if err != nil {
 		return nil, err
@@ -775,51 +945,128 @@ func (s *state) sendCommandToPeer(peer *config.Authority, cmd commands.Command) 
 	return resp, nil
 }
 
-// sendCommitToAuthorities sends our cert to all Directory Authorities
+// phaseDeadline returns the deadline for the current FSM phase.
+func (s *state) phaseDeadline(targetDeadline time.Duration) time.Time {
+	_, elapsed, _ := epochtime.Now()
+	remaining := targetDeadline - elapsed
+	if remaining < 0 {
+		remaining = 0
+	}
+	buffer := 5 * time.Second
+	if remaining > buffer {
+		remaining -= buffer
+	}
+	return time.Now().Add(remaining)
+}
+
+// PhaseInfo returns the current phase name and time remaining until the next phase.
+// This is useful for debugging connection handling relative to the voting schedule.
+func (s *state) PhaseInfo() (phase string, timeRemaining time.Duration) {
+	s.RLock()
+	defer s.RUnlock()
+
+	_, elapsed, _ := epochtime.Now()
+	phase = s.state
+
+	// Calculate time remaining based on current phase
+	var deadline time.Duration
+	switch s.state {
+	case stateBootstrap, stateAcceptDescriptor:
+		deadline = MixPublishDeadline
+	case stateAcceptVote:
+		deadline = AuthorityVoteDeadline
+	case stateAcceptReveal:
+		deadline = AuthorityRevealDeadline
+	case stateAcceptCert:
+		deadline = AuthorityCertDeadline
+	case stateAcceptSignature:
+		deadline = PublishConsensusDeadline
+	default:
+		deadline = MixPublishDeadline
+	}
+
+	timeRemaining = deadline - elapsed
+	if timeRemaining < 0 {
+		timeRemaining = 0
+	}
+	return
+}
+
+// PeerName returns the name of a peer given their identity key hash.
+// Returns empty string if peer is not found (e.g., clients).
+func (s *state) PeerName(identityKeyHash []byte) string {
+	if len(identityKeyHash) != publicKeyHashSize {
+		return ""
+	}
+	var pk [publicKeyHashSize]byte
+	copy(pk[:], identityKeyHash)
+
+	// Check mixes
+	if name, ok := s.authorizedMixes[pk]; ok {
+		return name
+	}
+	// Check gateway nodes
+	if name, ok := s.authorizedGatewayNodes[pk]; ok {
+		return name
+	}
+	// Check service nodes
+	if name, ok := s.authorizedServiceNodes[pk]; ok {
+		return name
+	}
+	// Check replica nodes
+	if name, ok := s.authorizedReplicaNodes[pk]; ok {
+		return name
+	}
+	// Check authorities
+	if name, ok := s.authorityNames[pk]; ok {
+		return name
+	}
+	return ""
+}
+
+// sendCertToAuthorities sends our cert to all Directory Authorities
 func (s *state) sendCertToAuthorities(cert []byte, epoch uint64) {
 	if s.TryLock() {
 		panic("write lock not held in sendCertToAuthorities(cert, epoch)")
 	}
-
-	s.log.Noticef("Sending Certificate for epoch %v, to all Directory Authorities.", epoch)
+	s.log.Noticef("Sending certificate for epoch %d to %d peers", epoch, len(s.s.cfg.Authorities)-1)
 	cmd := &commands.Cert{
 		Epoch:     epoch,
 		PublicKey: s.s.IdentityKey(),
 		Payload:   cert,
 	}
-
+	deadline := s.phaseDeadline(AuthorityCertDeadline)
 	for _, peer := range s.s.cfg.Authorities {
 		peer := peer
 		if peer.IdentityPublicKey.Equal(s.s.identityPublicKey) {
-			continue // skip self
+			continue
 		}
 		s.Go(func() {
-			s.log.Noticef("Sending cert to %s", peer.Identifier)
-			resp, err := s.sendCommandToPeer(peer, cmd)
+			resp, err := s.sendCommandToPeerWithDeadline(peer, cmd, deadline)
 			if err != nil {
-				s.log.Error("Failed to send cert to %s", peer.Identifier)
+				s.log.Errorf("Failed to send cert to %s: %v", peer.Identifier, err)
 				return
 			}
 			r, ok := resp.(*commands.CertStatus)
 			if !ok {
-				s.log.Warningf("Cert response resulted in unexpected reply: %T", resp)
+				s.log.Warningf("Cert to %s: unexpected response %T", peer.Identifier, resp)
 				return
 			}
 			switch r.ErrorCode {
 			case commands.CertOk:
-				s.log.Notice("Cert submitted to %s", peer.Identifier)
+				s.log.Debugf("Cert accepted by %s", peer.Identifier)
 			case commands.CertTooLate:
-				s.log.Warningf("Cert rejected with CertTooLate by %s", peer.Identifier)
+				s.log.Warningf("Cert rejected (too late) by %s", peer.Identifier)
 			case commands.CertTooEarly:
-				s.log.Warningf("Cert rejected with CertTooEarly by %s", peer.Identifier)
+				s.log.Warningf("Cert rejected (too early) by %s", peer.Identifier)
 			case commands.CertAlreadyReceived:
-				s.log.Warningf("Cert rejected with CertAlreadyReceived by %s", peer.Identifier)
+				s.log.Debugf("Cert already received by %s", peer.Identifier)
 			case commands.CertNotAuthorized:
-				s.log.Warningf("Cert rejected with CertNotAuthoritzed by %s", peer.Identifier)
+				s.log.Errorf("Cert rejected (not authorized) by %s", peer.Identifier)
 			case commands.CertNotSigned:
-				s.log.Warningf("Cert rejected with CertNotSigned by %s", peer.Identifier)
+				s.log.Errorf("Cert rejected (not signed) by %s", peer.Identifier)
 			default:
-				s.log.Warningf("Cert rejected with unknown error code received by %s", peer.Identifier)
+				s.log.Warningf("Cert rejected (code %d) by %s", r.ErrorCode, peer.Identifier)
 			}
 		})
 	}
@@ -830,41 +1077,38 @@ func (s *state) sendVoteToAuthorities(vote []byte, epoch uint64) {
 	if s.TryLock() {
 		panic("write lock not held in sendVoteToAuthorities(vote, epoch)")
 	}
-
-	s.log.Noticef("Sending Vote for epoch %v, to all Directory Authorities.", epoch)
-
+	s.log.Noticef("Sending vote for epoch %d to %d peers", epoch, len(s.s.cfg.Authorities)-1)
 	cmd := &commands.Vote{
 		Epoch:     epoch,
 		PublicKey: s.s.IdentityKey(),
 		Payload:   vote,
 	}
-
+	deadline := s.phaseDeadline(AuthorityVoteDeadline)
 	for _, peer := range s.s.cfg.Authorities {
 		peer := peer
 		if peer.IdentityPublicKey.Equal(s.s.identityPublicKey) {
-			continue // skip self
+			continue
 		}
 		s.Go(func() {
-			s.log.Noticef("Sending Vote to %s", peer.Identifier)
-			resp, err := s.sendCommandToPeer(peer, cmd)
+			resp, err := s.sendCommandToPeerWithDeadline(peer, cmd, deadline)
 			if err != nil {
-				s.log.Error("Failed to send vote to %s: %s", peer.Identifier, err)
+				s.log.Errorf("Failed to send vote to %s: %v", peer.Identifier, err)
 				return
 			}
 			r, ok := resp.(*commands.VoteStatus)
 			if !ok {
-				s.log.Warningf("Vote response resulted in unexpected reply: %T", resp)
+				s.log.Warningf("Vote to %s: unexpected response %T", peer.Identifier, resp)
 				return
 			}
 			switch r.ErrorCode {
 			case commands.VoteOk:
-				s.log.Notice("Vote submitted to %s", peer.Identifier)
+				s.log.Debugf("Vote accepted by %s", peer.Identifier)
 			case commands.VoteTooLate:
-				s.log.Warningf("Vote rejected with VoteTooLate by %s", peer.Identifier)
+				s.log.Warningf("Vote rejected (too late) by %s", peer.Identifier)
 			case commands.VoteTooEarly:
-				s.log.Warningf("Vote rejected with VoteTooEarly by %s", peer.Identifier)
+				s.log.Warningf("Vote rejected (too early) by %s", peer.Identifier)
 			default:
-				s.log.Warningf("Vote rejected with unknown error code received by %s", peer.Identifier)
+				s.log.Warningf("Vote rejected (code %d) by %s", r.ErrorCode, peer.Identifier)
 			}
 		})
 	}
@@ -873,45 +1117,44 @@ func (s *state) sendVoteToAuthorities(vote []byte, epoch uint64) {
 // sendRevealToAuthorities sends a Shared Random Reveal command to
 // all Directory Authorities
 func (s *state) sendRevealToAuthorities(reveal []byte, epoch uint64) {
-	s.log.Noticef("Sending Shared Random Reveal for epoch %v, to all Directory Authorities.", epoch)
-
+	s.log.Noticef("Sending reveal for epoch %d to %d peers", epoch, len(s.s.cfg.Authorities)-1)
 	cmd := &commands.Reveal{
 		Epoch:     epoch,
 		PublicKey: s.s.IdentityKey(),
 		Payload:   reveal,
 	}
+	deadline := s.phaseDeadline(AuthorityRevealDeadline)
 	for _, peer := range s.s.cfg.Authorities {
 		peer := peer
 		if peer.IdentityPublicKey.Equal(s.s.identityPublicKey) {
-			continue // skip self
+			continue
 		}
 		s.Go(func() {
-			s.log.Noticef("Sending Reveal to %s", peer.Identifier)
-			resp, err := s.sendCommandToPeer(peer, cmd)
+			resp, err := s.sendCommandToPeerWithDeadline(peer, cmd, deadline)
 			if err != nil {
-				s.log.Error("Failed to send reveal to %s: %s", peer.Identifier, err)
+				s.log.Errorf("Failed to send reveal to %s: %v", peer.Identifier, err)
 				return
 			}
 			r, ok := resp.(*commands.RevealStatus)
 			if !ok {
-				s.log.Error("Reveal response resulted in unexpected reply: %T", resp)
+				s.log.Errorf("Reveal to %s: unexpected response %T", peer.Identifier, resp)
 				return
 			}
 			switch r.ErrorCode {
 			case commands.RevealOk:
-				s.log.Notice("Reveal submitted to %s", peer.Identifier)
+				s.log.Debugf("Reveal accepted by %s", peer.Identifier)
 			case commands.RevealTooLate:
-				s.log.Warningf("Reveal rejected with RevealTooLate by %s", peer.Identifier)
+				s.log.Warningf("Reveal rejected (too late) by %s", peer.Identifier)
 			case commands.RevealTooEarly:
-				s.log.Warningf("Reveal rejected with RevealTooEarly by %s", peer.Identifier)
+				s.log.Warningf("Reveal rejected (too early) by %s", peer.Identifier)
 			case commands.RevealAlreadyReceived:
-				s.log.Warningf("Reveal rejected with RevealAlreadyReceived by %s", peer.Identifier)
+				s.log.Debugf("Reveal already received by %s", peer.Identifier)
 			case commands.RevealNotAuthorized:
-				s.log.Warningf("Reveal rejected with RevealNotAuthoritzed by %s", peer.Identifier)
+				s.log.Errorf("Reveal rejected (not authorized) by %s", peer.Identifier)
 			case commands.RevealNotSigned:
-				s.log.Warningf("Reveal rejected with RevealNotSigned by %s", peer.Identifier)
+				s.log.Errorf("Reveal rejected (not signed) by %s", peer.Identifier)
 			default:
-				s.log.Warningf("reveal rejected with unknown error code received by %s", peer.Identifier)
+				s.log.Warningf("Reveal rejected (code %d) by %s", r.ErrorCode, peer.Identifier)
 			}
 		})
 	}
@@ -921,41 +1164,38 @@ func (s *state) sendSigToAuthorities(sig []byte, epoch uint64) {
 	if s.TryLock() {
 		panic("write lock not held in sendSigToAuthorities(sig, epoch)")
 	}
-
-	s.log.Noticef("Sending Signature for epoch %v, to all Directory Authorities.", epoch)
-
+	s.log.Noticef("Sending signature for epoch %d to %d peers", epoch, len(s.s.cfg.Authorities)-1)
 	cmd := &commands.Sig{
 		Epoch:     epoch,
 		PublicKey: s.s.IdentityKey(),
 		Payload:   sig,
 	}
-
+	deadline := s.phaseDeadline(PublishConsensusDeadline)
 	for _, peer := range s.s.cfg.Authorities {
 		peer := peer
 		if peer.IdentityPublicKey.Equal(s.s.identityPublicKey) {
-			continue // skip self
+			continue
 		}
 		s.Go(func() {
-			s.log.Noticef("Sending Signature to %s", peer.Identifier)
-			resp, err := s.sendCommandToPeer(peer, cmd)
+			resp, err := s.sendCommandToPeerWithDeadline(peer, cmd, deadline)
 			if err != nil {
-				s.log.Error("Failed to send Signature to %s", peer.Identifier)
+				s.log.Errorf("Failed to send signature to %s: %v", peer.Identifier, err)
 				return
 			}
 			r, ok := resp.(*commands.SigStatus)
 			if !ok {
-				s.log.Warningf("Signature resulted in unexpected reply: %T", resp)
+				s.log.Warningf("Signature to %s: unexpected response %T", peer.Identifier, resp)
 				return
 			}
 			switch r.ErrorCode {
 			case commands.SigOk:
-				s.log.Notice("Signature submitted to %s", peer.Identifier)
+				s.log.Debugf("Signature accepted by %s", peer.Identifier)
 			case commands.SigTooLate:
-				s.log.Warningf("Signature rejected with SigTooLate by %s", peer.Identifier)
+				s.log.Warningf("Signature rejected (too late) by %s", peer.Identifier)
 			case commands.SigTooEarly:
-				s.log.Warningf("Signature rejected with SigTooEarly by %s", peer.Identifier)
+				s.log.Warningf("Signature rejected (too early) by %s", peer.Identifier)
 			default:
-				s.log.Warningf("Signature rejected with unknown error code received by %s", peer.Identifier)
+				s.log.Warningf("Signature rejected (code %d) by %s", r.ErrorCode, peer.Identifier)
 			}
 		})
 	}
@@ -1361,29 +1601,57 @@ func (s *state) isReplicaDescriptorAuthorized(desc *pki.ReplicaDescriptor) bool 
 	pk := hash.Sum256(desc.IdentityKey)
 	name, ok := s.authorizedReplicaNodes[pk]
 	if !ok {
+		s.log.Errorf("StorageReplica authentication failure: key hash %x not in map", pk)
 		return false
 	}
-	return name == desc.Name
+	if name != desc.Name {
+		s.log.Errorf("StorageReplica authentication failure: name mismatch - map has '%s', descriptor has '%s'", name, desc.Name)
+		return false
+	}
+	s.log.Debugf("StorageReplica authentication OK: %s with hash %x", name, pk)
+	return true
 }
 
 func (s *state) isDescriptorAuthorized(desc *pki.MixDescriptor) bool {
 	pk := hash.Sum256(desc.IdentityKey)
 	if !desc.IsGatewayNode && !desc.IsServiceNode {
-		return s.authorizedMixes[pk]
+		name, ok := s.authorizedMixes[pk]
+		if !ok {
+			s.log.Errorf("Mix authentication failure: key hash %x not authorized", pk)
+			return false
+		}
+		if name != desc.Name {
+			s.log.Errorf("Mix name mismatch: expected %s, got %s", name, desc.Name)
+			return false
+		}
+		s.log.Debugf("Mix authentication OK: %s with hash %x", desc.Name, pk)
+		return true
 	}
 	if desc.IsGatewayNode {
 		name, ok := s.authorizedGatewayNodes[pk]
 		if !ok {
+			s.log.Errorf("Gateway authentication failure: key hash %x not in map", pk)
 			return false
 		}
-		return name == desc.Name
+		if name != desc.Name {
+			s.log.Errorf("Gateway authentication failure: name mismatch - map has '%s', descriptor has '%s'", name, desc.Name)
+			return false
+		}
+		s.log.Debugf("Gateway authentication OK: %s with hash %x", name, pk)
+		return true
 	}
 	if desc.IsServiceNode {
 		name, ok := s.authorizedServiceNodes[pk]
 		if !ok {
+			s.log.Errorf("ServiceNode authentication failure: key hash %x not in map", pk)
 			return false
 		}
-		return name == desc.Name
+		if name != desc.Name {
+			s.log.Errorf("ServiceNode authentication failure: name mismatch - map has '%s', descriptor has '%s'", name, desc.Name)
+			return false
+		}
+		s.log.Debugf("ServiceNode authentication OK: %s with hash %x", name, pk)
+		return true
 	}
 	panic("impossible")
 }
@@ -1441,7 +1709,8 @@ func (s *state) onCertUpload(certificate *commands.Cert) commands.Command {
 	// verify the structure of the certificate
 	doc, err := s.doParseDocument(certificate.Payload)
 	if err != nil {
-		s.log.Error("Certficate from %s failed to verify: %s", s.authorityNames[pk], certificate.PublicKey, err)
+		s.log.Errorf("Certificate from %s failed to verify: %s", s.authorityNames[pk], err)
+		s.log.Debugf("Certificate from %s failed to verify: %s %s", s.authorityNames[pk], certificate.PublicKey, err)
 		resp.ErrorCode = commands.CertNotSigned
 		return &resp
 	}
@@ -1685,6 +1954,13 @@ func (s *state) onReplicaDescriptorUpload(rawDesc []byte, desc *pki.ReplicaDescr
 	s.Lock()
 	defer s.Unlock()
 
+	// Check if we're past the descriptor upload phase deadline
+	_, elapsed, _ := epochtime.Now()
+	if elapsed > MixPublishDeadline {
+		s.log.Warningf("Replica %s: Descriptor upload for epoch %d arrived after upload phase ended (elapsed: %v, deadline: %v, late by: %v)",
+			desc.Name, epoch, elapsed, MixPublishDeadline, elapsed-MixPublishDeadline)
+	}
+
 	// Note: Caller ensures that the epoch is the current epoch +- 1.
 	pk := hash.Sum256(desc.IdentityKey)
 
@@ -1742,6 +2018,13 @@ func (s *state) onReplicaDescriptorUpload(rawDesc []byte, desc *pki.ReplicaDescr
 func (s *state) onDescriptorUpload(rawDesc []byte, desc *pki.MixDescriptor, epoch uint64) error {
 	s.Lock()
 	defer s.Unlock()
+
+	// Check if we're past the descriptor upload phase deadline
+	_, elapsed, _ := epochtime.Now()
+	if elapsed > MixPublishDeadline {
+		s.log.Warningf("Node %s: Descriptor upload for epoch %d arrived after upload phase ended (elapsed: %v, deadline: %v, late by: %v)",
+			desc.Name, epoch, elapsed, MixPublishDeadline, elapsed-MixPublishDeadline)
+	}
 
 	// Note: Caller ensures that the epoch is the current epoch +- 1.
 	pk := hash.Sum256(desc.IdentityKey)
@@ -1829,7 +2112,8 @@ func (s *state) documentForEpoch(epoch uint64) ([]byte, error) {
 		if epoch < now {
 			// Requested epoch is in the past, and it's not in the cache.
 			// We will never be able to satisfy this request.
-			s.log.Errorf("No document for epoch %v, because we are already in %v", epoch, now)
+			// This happens a lot when clients request old PKI documents. TODO: Why do they request the old ones?
+			s.log.Debugf("No document for epoch %v, because we are already in %v", epoch, now)
 			return nil, errGone
 		}
 		return nil, fmt.Errorf("state: Request for invalid epoch: %v", epoch)
@@ -1865,117 +2149,116 @@ func (s *state) restorePersistence() error {
 
 		if b := bkt.Get([]byte(versionKey)); b != nil {
 			// Well it looks like we loaded as opposed to created.
-			if len(b) != 1 || b[0] != 0 {
-				return fmt.Errorf("state: incompatible version: %d", uint(b[0]))
+			storedVersion := string(b)
+			currentVersion := versioninfo.Short()
+			if storedVersion != currentVersion {
+				s.log.Warningf("Software version changed (%s -> %s), ignoring persisted state", storedVersion, currentVersion)
+			} else {
+				// Figure out which epochs to restore for.
+				now, _, _ := epochtime.Now()
+				epochs := []uint64{now - 1, now, now + 1}
+
+				// Restore the replica descriptors.
+				for _, epoch := range epochs {
+					epochBytes := epochToBytes(epoch)
+					eDescsBkt := replicaDescsBkt.Bucket(epochBytes)
+					if eDescsBkt == nil {
+						s.log.Debugf("No persisted Descriptors for epoch: %v.", epoch)
+						continue
+					}
+					c := eDescsBkt.Cursor()
+					for wantHash, rawDesc := c.First(); wantHash != nil; wantHash, rawDesc = c.Next() {
+						if len(wantHash) != publicKeyHashSize {
+							panic("stored hash should be 32 bytes")
+						}
+						desc := new(pki.ReplicaDescriptor)
+						err := desc.Unmarshal(rawDesc)
+						if err != nil {
+							s.log.Errorf("Failed to validate persisted descriptor: %v", err)
+							continue
+						}
+						idHash := hash.Sum256(desc.IdentityKey)
+						if !hmac.Equal(wantHash, idHash[:]) {
+							s.log.Errorf("Discarding persisted descriptor: key mismatch")
+							continue
+						}
+
+						if !s.isReplicaDescriptorAuthorized(desc) {
+							s.log.Warningf("Discarding persisted descriptor: %v", desc)
+							continue
+						}
+
+						_, ok := s.replicaDescriptors[epoch]
+						if !ok {
+							s.replicaDescriptors[epoch] = make(map[[publicKeyHashSize]byte]*pki.ReplicaDescriptor)
+						}
+
+						s.replicaDescriptors[epoch][hash.Sum256(desc.IdentityKey)] = desc
+						s.log.Debugf("Restored replica descriptor for epoch %v: %+v", epoch, desc)
+					}
+				}
+
+				for _, epoch := range epochs {
+					epochBytes := epochToBytes(epoch)
+					if rawDoc := docsBkt.Get(epochBytes); rawDoc != nil {
+						_, _, _, err := cert.VerifyThreshold(s.getVerifiers(), s.threshold, rawDoc)
+						if err != nil {
+							s.log.Errorf("Failed to verify threshold on restored document")
+							break
+						}
+						doc, err := s.doParseDocument(rawDoc)
+						if err != nil {
+							s.log.Errorf("Failed to validate persisted document: %v", err)
+						} else if doc.Epoch != epoch {
+							s.log.Errorf("Persisted document has unexpected epoch: %v", doc.Epoch)
+						} else {
+							s.log.Debugf("Restored Document for epoch %v: %v.", epoch, doc)
+							s.documents[epoch] = doc
+						}
+					}
+
+					eDescsBkt := descsBkt.Bucket(epochBytes)
+					if eDescsBkt == nil {
+						s.log.Debugf("No persisted Descriptors for epoch: %v.", epoch)
+						continue
+					}
+
+					c := eDescsBkt.Cursor()
+					for wantHash, rawDesc := c.First(); wantHash != nil; wantHash, rawDesc = c.Next() {
+						if len(wantHash) != publicKeyHashSize {
+							panic("stored hash should be 32 bytes")
+						}
+						desc := new(pki.MixDescriptor)
+						err := desc.UnmarshalBinary(rawDesc)
+						if err != nil {
+							s.log.Errorf("Failed to validate persisted descriptor: %v", err)
+							continue
+						}
+						idHash := hash.Sum256(desc.IdentityKey)
+						if !hmac.Equal(wantHash, idHash[:]) {
+							s.log.Errorf("Discarding persisted descriptor: key mismatch")
+							continue
+						}
+
+						if !s.isDescriptorAuthorized(desc) {
+							s.log.Warningf("Discarding persisted descriptor: %v", desc)
+							continue
+						}
+
+						_, ok := s.descriptors[epoch]
+						if !ok {
+							s.descriptors[epoch] = make(map[[publicKeyHashSize]byte]*pki.MixDescriptor)
+						}
+
+						s.descriptors[epoch][hash.Sum256(desc.IdentityKey)] = desc
+						s.log.Debugf("Restored descriptor for epoch %v: %+v", epoch, desc)
+					}
+				}
+				return nil
 			}
-
-			// Figure out which epochs to restore for.
-			now, _, _ := epochtime.Now()
-			epochs := []uint64{now - 1, now, now + 1}
-
-			// Restore the replica descriptors.
-			for _, epoch := range epochs {
-				epochBytes := epochToBytes(epoch)
-				eDescsBkt := replicaDescsBkt.Bucket(epochBytes)
-				if eDescsBkt == nil {
-					s.log.Debugf("No persisted Descriptors for epoch: %v.", epoch)
-					continue
-				}
-				c := eDescsBkt.Cursor()
-				for wantHash, rawDesc := c.First(); wantHash != nil; wantHash, rawDesc = c.Next() {
-					if len(wantHash) != publicKeyHashSize {
-						panic("stored hash should be 32 bytes")
-					}
-					desc := new(pki.ReplicaDescriptor)
-					err := desc.Unmarshal(rawDesc)
-					if err != nil {
-						s.log.Errorf("Failed to validate persisted descriptor: %v", err)
-						continue
-					}
-					idHash := hash.Sum256(desc.IdentityKey)
-					if !hmac.Equal(wantHash, idHash[:]) {
-						s.log.Errorf("Discarding persisted descriptor: key mismatch")
-						continue
-					}
-
-					if !s.isReplicaDescriptorAuthorized(desc) {
-						s.log.Warningf("Discarding persisted descriptor: %v", desc)
-						continue
-					}
-
-					_, ok := s.replicaDescriptors[epoch]
-					if !ok {
-						s.replicaDescriptors[epoch] = make(map[[publicKeyHashSize]byte]*pki.ReplicaDescriptor)
-					}
-
-					s.replicaDescriptors[epoch][hash.Sum256(desc.IdentityKey)] = desc
-					s.log.Debugf("Restored replica descriptor for epoch %v: %+v", epoch, desc)
-				}
-			}
-
-			// Restore the documents and descriptors.
-			for _, epoch := range epochs {
-				epochBytes := epochToBytes(epoch)
-				if rawDoc := docsBkt.Get(epochBytes); rawDoc != nil {
-					_, _, _, err := cert.VerifyThreshold(s.getVerifiers(), s.threshold, rawDoc)
-					if err != nil {
-						s.log.Errorf("Failed to verify threshold on restored document")
-						break // or continue?
-					}
-					doc, err := s.doParseDocument(rawDoc)
-					if err != nil {
-						s.log.Errorf("Failed to validate persisted document: %v", err)
-					} else if doc.Epoch != epoch {
-						// The document for the wrong epoch was persisted?
-						s.log.Errorf("Persisted document has unexpected epoch: %v", doc.Epoch)
-					} else {
-						s.log.Debugf("Restored Document for epoch %v: %v.", epoch, doc)
-						s.documents[epoch] = doc
-					}
-				}
-
-				eDescsBkt := descsBkt.Bucket(epochBytes)
-				if eDescsBkt == nil {
-					s.log.Debugf("No persisted Descriptors for epoch: %v.", epoch)
-					continue
-				}
-
-				c := eDescsBkt.Cursor()
-				for wantHash, rawDesc := c.First(); wantHash != nil; wantHash, rawDesc = c.Next() {
-					if len(wantHash) != publicKeyHashSize {
-						panic("stored hash should be 32 bytes")
-					}
-					desc := new(pki.MixDescriptor)
-					err := desc.UnmarshalBinary(rawDesc)
-					if err != nil {
-						s.log.Errorf("Failed to validate persisted descriptor: %v", err)
-						continue
-					}
-					idHash := hash.Sum256(desc.IdentityKey)
-					if !hmac.Equal(wantHash, idHash[:]) {
-						s.log.Errorf("Discarding persisted descriptor: key mismatch")
-						continue
-					}
-
-					if !s.isDescriptorAuthorized(desc) {
-						s.log.Warningf("Discarding persisted descriptor: %v", desc)
-						continue
-					}
-
-					_, ok := s.descriptors[epoch]
-					if !ok {
-						s.descriptors[epoch] = make(map[[publicKeyHashSize]byte]*pki.MixDescriptor)
-					}
-
-					s.descriptors[epoch][hash.Sum256(desc.IdentityKey)] = desc
-					s.log.Debugf("Restored descriptor for epoch %v: %+v", epoch, desc)
-				}
-			}
-			return nil
 		}
 
-		// We created a new database, so populate the new `metadata` bucket.
-		return bkt.Put([]byte(versionKey), []byte{0})
+		return bkt.Put([]byte(versionKey), []byte(versioninfo.Short()))
 	})
 }
 
@@ -1987,6 +2270,9 @@ func newState(s *Server) (*state, error) {
 	st.geo = s.geo
 	st.log = s.logBackend.GetLogger("state")
 
+	st.hasIPv4, st.hasIPv6 = retry.DetectAddressCapabilities(s.cfg.Server.Addresses)
+	st.log.Debugf("Address capabilities: IPv4=%v IPv6=%v", st.hasIPv4, st.hasIPv6)
+
 	// set voting schedule at runtime
 
 	st.log.Debugf("State initialized with epoch Period: %s", epochtime.Period)
@@ -1994,6 +2280,9 @@ func newState(s *Server) (*state, error) {
 	st.log.Debugf("State initialized with AuthorityVoteDeadline: %s", AuthorityVoteDeadline)
 	st.log.Debugf("State initialized with AuthorityRevealDeadline: %s", AuthorityRevealDeadline)
 	st.log.Debugf("State initialized with PublishConsensusDeadline: %s", PublishConsensusDeadline)
+	st.log.Debugf("Retry config: attempts=%d base=%v max=%v jitter=%v",
+		s.cfg.Server.PeerRetryMaxAttempts, s.cfg.Server.PeerRetryBaseDelay,
+		s.cfg.Server.PeerRetryMaxDelay, s.cfg.Server.PeerRetryJitter)
 	st.verifiers = make(map[[publicKeyHashSize]byte]sign.PublicKey)
 	for _, auth := range s.cfg.Authorities {
 		st.verifiers[hash.Sum256From(auth.IdentityPublicKey)] = auth.IdentityPublicKey
@@ -2007,7 +2296,7 @@ func newState(s *Server) (*state, error) {
 
 	// Initialize the authorized peer tables.
 	st.reverseHash = make(map[[publicKeyHashSize]byte]sign.PublicKey)
-	st.authorizedMixes = make(map[[publicKeyHashSize]byte]bool)
+	st.authorizedMixes = make(map[[publicKeyHashSize]byte]string)
 	for _, v := range st.s.cfg.Mixes {
 		var identityPublicKey sign.PublicKey
 		var err error
@@ -2025,7 +2314,7 @@ func newState(s *Server) (*state, error) {
 		}
 
 		pk := hash.Sum256From(identityPublicKey)
-		st.authorizedMixes[pk] = true
+		st.authorizedMixes[pk] = v.Identifier
 		st.reverseHash[pk] = identityPublicKey
 	}
 	st.authorizedGatewayNodes = make(map[[publicKeyHashSize]byte]string)
@@ -2166,7 +2455,7 @@ func (s *state) backgroundFetchConsensus(epoch uint64) {
 			}
 			ctx, cancel := context.WithTimeout(context.Background(), time.Minute*2)
 			defer cancel()
-			doc, _, err := c.Get(ctx, epoch)
+			doc, _, err := c.GetPKIDocumentForEpoch(ctx, epoch)
 			if err != nil {
 				return
 			}
@@ -2230,40 +2519,71 @@ func (s *state) verifyTopology(topology [][]*pki.MixDescriptor) error {
 
 // generate commit and reveal values and save them
 func (s *state) doCommit(epoch uint64) ([]byte, error) {
-	s.log.Debugf("Generating SharedRandom Commit for %d", epoch)
+	s.log.Debugf("doCommit: Generating SharedRandom Commit for epoch %d", epoch)
+	s.log.Debugf("doCommit: Our identity hash: %x", s.identityPubKeyHash())
+
 	srv := new(pki.SharedRandom)
 	commit, err := srv.Commit(epoch)
 	if err != nil {
+		s.log.Errorf("doCommit: Failed to generate commit for epoch %d: %v", epoch, err)
 		return nil, err
 	}
+	s.log.Debugf("doCommit: Successfully generated commit for epoch %d", epoch)
+
 	// sign the serialized commit
+	s.log.Debugf("doCommit: Signing commit for epoch %d", epoch)
 	signedCommit, err := cert.Sign(s.s.identityPrivateKey, s.s.identityPublicKey, commit, epoch)
 	if err != nil {
+		s.log.Errorf("doCommit: Failed to sign commit for epoch %d: %v", epoch, err)
 		return nil, err
 	}
+	s.log.Debugf("doCommit: Successfully signed commit for epoch %d", epoch)
+
 	// sign the reveal
+	s.log.Debugf("doCommit: Signing reveal for epoch %d", epoch)
 	signedReveal, err := cert.Sign(s.s.identityPrivateKey, s.s.identityPublicKey, srv.Reveal(), epoch)
 	if err != nil {
+		s.log.Errorf("doCommit: Failed to sign reveal for epoch %d: %v", epoch, err)
 		return nil, err
 	}
+	s.log.Debugf("doCommit: Successfully signed reveal for epoch %d", epoch)
+
 	// save our commit
 	if _, ok := s.commits[epoch]; !ok {
+		s.log.Debugf("doCommit: Creating commits map for epoch %d", epoch)
 		s.commits[epoch] = make(map[[pki.PublicKeyHashSize]byte][]byte)
 	}
 	s.commits[epoch][s.identityPubKeyHash()] = signedCommit
+	s.log.Debugf("doCommit: Stored our commit for epoch %d", epoch)
 
 	// save our reveal
 	if _, ok := s.reveals[epoch]; !ok {
+		s.log.Debugf("doCommit: Creating reveals map for epoch %d", epoch)
 		s.reveals[epoch] = make(map[[pki.PublicKeyHashSize]byte][]byte)
 	}
 	s.reveals[epoch][s.identityPubKeyHash()] = signedReveal
+	s.log.Debugf("doCommit: Stored our reveal for epoch %d", epoch)
 	return signedCommit, nil
 }
 
 func (s *state) reveal(epoch uint64) []byte {
+	s.log.Debugf("reveal: Retrieving reveal for epoch %d", epoch)
+	s.log.Debugf("reveal: Our identity hash: %x", s.identityPubKeyHash())
+
+	if _, ok := s.reveals[epoch]; !ok {
+		s.log.Errorf("reveal: No reveals map exists for epoch %d", epoch)
+	}
+	if _, ok := s.commits[epoch]; !ok {
+		s.log.Errorf("reveal: No commits map exists for epoch %d", epoch)
+	}
+
 	signed, ok := s.reveals[epoch][s.identityPubKeyHash()]
 	if !ok {
-		s.s.fatalErrCh <- errors.New("reveal() called without commit")
+		fatalErr := fmt.Errorf("REVEAL FATAL: reveal() called without commit for epoch %d - this indicates a critical SharedRandom protocol violation", epoch)
+		s.log.Errorf("reveal: %v", fatalErr)
+		s.log.Errorf("reveal: Available reveals for epoch %d: %d", epoch, len(s.reveals[epoch]))
+		s.s.fatalErrCh <- fatalErr
 	}
+	s.log.Debugf("reveal: Successfully retrieved reveal for epoch %d", epoch)
 	return signed
 }

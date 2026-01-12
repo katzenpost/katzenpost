@@ -109,12 +109,19 @@ func TestCourierCacheBasicOperations(t *testing.T) {
 	require.Equal(t, 0, len(courier.dedupCache))
 
 	envHash := createTestEnvelopeHash()
+
+	// Set up the cache entry first (simulates a client sending a message)
+	setupCacheEntry(courier, envHash, 1)
+
+	// Verify cache entry was created
+	require.Equal(t, 1, len(courier.dedupCache))
+
 	reply := createTestReply(&envHash, 0, "test-reply-payload", true)
 
 	// Test CacheReply - first reply
 	courier.CacheReply(reply)
 
-	// Verify cache entry was created
+	// Verify cache still has 1 entry (no new entries created)
 	require.Equal(t, 1, len(courier.dedupCache))
 
 	entry := verifyCacheEntry(t, courier, envHash)
@@ -284,6 +291,9 @@ func TestCourierCacheConcurrentAccess(t *testing.T) {
 	courier := createTestCourier(t)
 	envHash := createTestEnvelopeHash()
 
+	// Set up the cache entry properly with both replica IDs first
+	setupCacheEntry(courier, envHash, 1)
+
 	// Create multiple replies
 	replies := make([]*commands.ReplicaMessageReply, 10)
 	for i := 0; i < 10; i++ {
@@ -326,6 +336,11 @@ func TestCourierCacheMultipleEnvelopes(t *testing.T) {
 	envHashes := make([][hash.HashSize]byte, 5)
 	for i := 0; i < 5; i++ {
 		envHashes[i] = createTestEnvelopeHashWithSuffix(string(rune('A' + i)))
+	}
+
+	// Set up cache entries for each envelope first
+	for _, envHash := range envHashes {
+		setupCacheEntry(courier, envHash, 1)
 	}
 
 	// Cache replies for each envelope
@@ -385,6 +400,9 @@ func TestCourierCacheEpochTracking(t *testing.T) {
 	envHash := [hash.HashSize]byte{}
 	copy(envHash[:], []byte(testEnvelopeHashString))
 
+	// Set up the cache entry first
+	setupCacheEntry(courier, envHash, testEpoch)
+
 	reply := &commands.ReplicaMessageReply{
 		EnvelopeHash:  &envHash,
 		ReplicaID:     0,
@@ -407,6 +425,9 @@ func TestCourierCacheEpochTracking(t *testing.T) {
 func TestCourierCacheErrorReplies(t *testing.T) {
 	courier := createTestCourier(t)
 	envHash := createTestEnvelopeHash()
+
+	// Set up the cache entry first
+	setupCacheEntry(courier, envHash, 1)
 
 	errorReply := createTestErrorReply(&envHash, 0, 1, "error-occurred", true)
 	courier.CacheReply(errorReply)
@@ -437,7 +458,7 @@ type mockPKIClient struct {
 }
 
 // Get returns the PKI document along with the raw serialized form for the provided epoch.
-func (m *mockPKIClient) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, error) {
+func (m *mockPKIClient) GetPKIDocumentForEpoch(ctx context.Context, epoch uint64) (*pki.Document, []byte, error) {
 	blob, err := m.doc.MarshalCertificate()
 	if err != nil {
 		return nil, nil, err

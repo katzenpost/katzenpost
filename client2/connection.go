@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -309,7 +310,7 @@ func (c *connection) doConnect(dialCtx context.Context) {
 		if len(dstAddrs) == 0 {
 			c.log.Warningf("Aborting connect loop, no suitable addresses found.")
 			c.descriptor = nil // Give up till the next PKI fetch.
-			connErr = newConnectError("no suitable addreses found")
+			connErr = newConnectError("no suitable addresses found")
 			return
 		}
 
@@ -358,7 +359,7 @@ func (c *connection) doConnect(dialCtx context.Context) {
 			c.onNetConn(conn)
 
 			// Re-iterate through the address/ports on a sucessful connect.
-			c.log.Debugf("Connection terminated, will reconnect.")
+			c.log.Debugf("Connection terminated (onNetConn done), will reconnect.")
 
 			// Emit a ConnectError when disconnected.
 			c.onConnStatusChange(ErrNotConnected)
@@ -408,6 +409,7 @@ func (c *connection) onNetConn(conn net.Conn) {
 
 	// Bind the session to the conn, handshake, authenticate.
 	conn.SetDeadline(time.Now().Add(handshakeTimeout))
+	handshakeStart := time.Now()
 	if err = w.Initialize(conn); err != nil {
 		c.log.Errorf("Handshake failed: %v", err)
 		if c.client.cfg.Callbacks.OnConnFn != nil {
@@ -415,8 +417,11 @@ func (c *connection) onNetConn(conn net.Conn) {
 		}
 		return
 	}
-	c.log.Debugf("onTCPConn: Handshake completed.")
-	conn.SetDeadline(time.Time{})
+	c.log.Debugf("Handshake completed in %v", time.Since(handshakeStart))
+	conn.SetDeadline(time.Time{}) // client can take however long it wants
+	//if err = conn.SetDeadline(time.Now().Add(90 * time.Second)); err != nil {
+	//   panic(err)
+	//}
 	c.client.pki.setClockSkew(int64(w.ClockSkew().Seconds()))
 
 	c.onWireConn(w)
@@ -454,13 +459,15 @@ func (c *connection) onWireConn(w *wire.Session) {
 			rawCmd, err := w.RecvCommand()
 			if err != nil {
 				c.log.Debugf("Failed to receive command: %v", err)
+				//14:49:09.849 DEBU client2/conn: Failed to receive command:
+				//read tcp 127.0.0.1:34688->127.0.0.1:30004: use of closed network connection
 				select {
 				case <-c.HaltCh():
 				case cmdCh <- err:
 				}
 				return
 			}
-			atomic.StoreInt64(&c.retryDelay, 0)
+			atomic.StoreInt64(&c.retryDelay, int64(2*time.Second))
 			select {
 			case <-c.HaltCh():
 				return
@@ -736,13 +743,23 @@ func (c *connection) IsPeerValid(creds *wire.PeerCredentials) bool {
 		}
 		expected := pem.ToPublicPEMString(expectedLinkPubKey)
 		got := pem.ToPublicPEMString(gotLinkPubKey)
-		c.log.Debugf("IsPeerValid failure creds.PublicKey mismatch, expected: %s but got %s", expected, got)
+
+		c.log.Warningf("client2/connection: IsPeerValid(): Link key mismatch for peer '%s'", c.descriptor.Name)
+		c.log.Warningf("client2/connection: IsPeerValid(): Expected link key: %s", strings.TrimSpace(expected))
+		c.log.Warningf("client2/connection: IsPeerValid(): Received link key: %s", strings.TrimSpace(got))
+		c.log.Warningf("client2/connection: IsPeerValid(): Remote Peer Credentials: name=%s, identity_hash=%x",
+			c.descriptor.Name, creds.AdditionalData)
 		return false
 	}
 
 	identityHash := hash.Sum256(c.descriptor.IdentityKey)
 	if !hmac.Equal(identityHash[:], creds.AdditionalData) {
-		c.log.Debugf("IsPeerValid failure creds.AdditionalData mismatch, expected: %x but got %x", identityHash[:], creds.AdditionalData)
+		c.log.Warningf("client2/connection: IsPeerValid(): Identity hash mismatch for peer '%s'", c.descriptor.Name)
+		c.log.Warningf("client2/connection: IsPeerValid(): Expected identity hash: %x", identityHash[:])
+		c.log.Warningf("client2/connection: IsPeerValid(): Received identity hash: %x", creds.AdditionalData)
+		c.log.Warningf("client2/connection: IsPeerValid(): Expected identity key (raw): %x", c.descriptor.IdentityKey)
+		c.log.Warningf("client2/connection: IsPeerValid(): Remote Peer Credentials: name=%s, link_key=%s",
+			c.descriptor.Name, strings.TrimSpace(pem.ToPublicPEMString(creds.PublicKey)))
 		return false
 	}
 	return true
@@ -756,13 +773,13 @@ func (c *connection) onConnStatusChange(err error) {
 	if isShutdown {
 		return
 	}
-	c.log.Info("onConnStatusChange")
 
 	if err == nil {
 		c.isConnectedLock.Lock()
 		c.isConnected = true
 		c.isConnectedLock.Unlock()
 	} else {
+		c.log.Info("onConnStatusChange %s", err.Error())
 		c.isConnectedLock.Lock()
 		c.isConnected = false
 		c.isConnectedLock.Unlock()

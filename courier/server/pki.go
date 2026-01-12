@@ -29,7 +29,7 @@ var (
 	PublishDeadline     = vServer.PublishConsensusDeadline
 	mixServerCacheDelay = epochtime.Period / 16
 	nextFetchTill       = epochtime.Period - (PublishDeadline + mixServerCacheDelay)
-	recheckInterval     = epochtime.Period / 16
+	recheckInterval     = epochtime.Period / 32
 )
 
 type PKIWorker struct {
@@ -72,6 +72,9 @@ func newPKIWorkerWithDefaultClient(server *Server, log *logging.Logger) (*PKIWor
 		LogBackend:  server.LogBackend(),
 		Authorities: server.cfg.PKI.Voting.Authorities,
 		Geo:         server.cfg.SphinxGeometry,
+		// Convert milliseconds to seconds for PKI client timeouts
+		DialTimeoutSec:      server.cfg.ConnectTimeout / 1000,
+		HandshakeTimeoutSec: server.cfg.HandshakeTimeout / 1000,
 	}
 
 	pkiClient, err := vClient.New(pkiCfg)
@@ -110,7 +113,7 @@ func (p *PKIWorker) ForceFetchPKI() error {
 
 	// Fetch the PKI document directly from the client (like replica does)
 	ctx := context.Background()
-	d, rawDoc, err := p.impl.Get(ctx, epoch)
+	d, rawDoc, err := p.impl.GetPKIDocumentForEpoch(ctx, epoch)
 	if err != nil {
 		p.GetLogger().Warningf("Force fetch failed for epoch %v: %v", epoch, err)
 		return err
@@ -148,6 +151,19 @@ func (p *PKIWorker) worker() {
 
 // fetchDocuments fetches PKI documents for required epochs
 func (p *PKIWorker) fetchDocuments(pkiCtx context.Context, isCanceled func() bool) bool {
+	// If we don't have a current PKI document, be more aggressive about retrying
+	currentEpoch, _, _ := epochtime.Now()
+	if p.EntryForEpoch(currentEpoch) == nil {
+		p.GetLogger().Debugf("No current PKI document for epoch %v, clearing failed fetches to force retry", currentEpoch)
+		p.ClearFailedFetch(currentEpoch)
+		// Also clear failed fetches for recent epochs to allow retries
+		for i := uint64(0); i < 3; i++ {
+			if currentEpoch >= i {
+				p.ClearFailedFetch(currentEpoch - i)
+			}
+		}
+	}
+
 	results := p.FetchDocuments(pkiCtx, isCanceled)
 	if len(results) == 0 {
 		return false
@@ -178,10 +194,10 @@ func (p *PKIWorker) processDocuments(didUpdate bool) {
 
 // updateCurrentEpoch updates components when a new epoch document is available
 func (p *PKIWorker) updateCurrentEpoch(lastUpdateEpoch *uint64) {
-	// Internal component depend on network wide paramemters, and or the
+	// Internal component depend on network wide parameters, and or the
 	// list of nodes.  Update if there is a new document for the current
 	// epoch.
-	if now, _, _ := epochtime.Now(); now != *lastUpdateEpoch {
+	if now, _, _ := epochtime.Now(); now > *lastUpdateEpoch {
 		if doc := p.EntryForEpoch(now); doc != nil {
 			*lastUpdateEpoch = now
 		}
@@ -204,6 +220,7 @@ func (p *PKIWorker) AuthenticateReplicaConnection(c *wire.PeerCredentials) (*pki
 		panic(err)
 	}
 	if !hmac.Equal(replicaDesc.LinkKey, blob) {
+		// TODO could be link key from prev/next epoch too?
 		return nil, false
 	}
 	return replicaDesc, true

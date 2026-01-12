@@ -24,6 +24,7 @@ import (
 	"path/filepath"
 	"sync"
 
+	"github.com/carlmjohnson/versioninfo"
 	"gitlab.com/yawning/aez.git"
 	"gopkg.in/op/go-logging.v1"
 
@@ -249,6 +250,7 @@ func New(cfg *config.Config) (*Server, error) {
 		return nil, fmt.Errorf("failed to start profiling: %w", err)
 	}
 
+	s.log.Noticef("Katzenpost server version: %s", versioninfo.Short())
 	s.log.Notice("Katzenpost is still pre-alpha.  DO NOT DEPEND ON IT FOR STRONG SECURITY OR ANONYMITY.")
 	if s.cfg.Logging.Level == "DEBUG" {
 		s.log.Warning("Unsafe Debug logging is enabled.")
@@ -459,7 +461,7 @@ func New(cfg *config.Config) (*Server, error) {
 	}
 	// Bring the listener(s) online.
 	s.listeners = make([]glue.Listener, 0, len(addresses))
-	for i, addr := range addresses  {
+	for i, addr := range addresses {
 		l, err := incoming.New(goo, s.inboundPackets, i, addr)
 		if err != nil {
 			s.log.Errorf("Failed to spawn listener on address: %v (%v).", addr, err)

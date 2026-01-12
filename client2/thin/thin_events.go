@@ -253,11 +253,13 @@ type WriteChannelReply struct {
 	SendMessagePayload []byte `cbor:"send_message_payload"`
 
 	// CurrentMessageIndex indicates the message index for the current message.
-	CurrentMessageIndex *bacap.MessageBoxIndex `cbor:"current_message_index"`
+	// This is serialized as bytes for compatibility with external thin clients.
+	CurrentMessageIndex []byte `cbor:"current_message_index"`
 
 	// NextMessageIndex indicates the message index to use after the courier
 	// acknowledges successful delivery of this message.
-	NextMessageIndex *bacap.MessageBoxIndex `cbor:"next_message_index"`
+	// This is serialized as bytes for compatibility with external thin clients.
+	NextMessageIndex []byte `cbor:"next_message_index"`
 
 	// EnvelopeHash is the hash of the CourierEnvelope that was sent to the
 	EnvelopeHash *[32]byte `cbor:"envelope_hash"`
@@ -299,11 +301,13 @@ type ReadChannelReply struct {
 	SendMessagePayload []byte `cbor:"send_message_payload"`
 
 	// CurrentMessageIndex indicates the message index for the current message.
-	CurrentMessageIndex *bacap.MessageBoxIndex `cbor:"current_message_index"`
+	// This is serialized as bytes for compatibility with external thin clients.
+	CurrentMessageIndex []byte `cbor:"current_message_index"`
 
 	// NextMessageIndex indicates the message index to use after successfully
 	// reading the current message.
-	NextMessageIndex *bacap.MessageBoxIndex `cbor:"next_message_index"`
+	// This is serialized as bytes for compatibility with external thin clients.
+	NextMessageIndex []byte `cbor:"next_message_index"`
 
 	// ReplyIndex is the index of the reply that was used when creating this ReadChannelReply.
 	// This corresponds to the ReplyIndex parameter from the ReadChannel request.

@@ -29,8 +29,10 @@ import (
 
 	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/kem"
+	kempem "github.com/katzenpost/hpqc/kem/pem"
 	"github.com/katzenpost/hpqc/rand"
 
+	kpcommon "github.com/katzenpost/katzenpost/common"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
@@ -62,9 +64,25 @@ func (c *outgoingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 	// At a minimum, the peer's credentials should match what we started out
 	// with.  This is enforced even if mix authentication is disabled.
 
+	// Helper function to get peer name
+	// Helper function to get peer name - returns name and whether peer was found in PKI
+	getPeerName := func() (string, bool) {
+		if doc, err := c.co.glue.PKI().CurrentDocument(); err == nil && doc != nil {
+			var adHash [32]byte
+			copy(adHash[:], creds.AdditionalData)
+			if node, err := doc.GetNodeByKeyHash(&adHash); err == nil {
+				return node.Name, true
+			}
+		}
+		return "", false
+	}
+
 	idHash := hash.Sum256(c.dst.IdentityKey)
 	if !hmac.Equal(idHash[:], creds.AdditionalData) {
-		c.log.Debug("IsPeerValid false, identity hash mismatch")
+		// We know what we expected (c.dst.Name) even if the peer isn't in PKI
+		c.log.Warningf("server/outgoing: IsPeerValid(): Identity hash mismatch connecting to '%s' (expected=%x, received=%x)", c.dst.Name, idHash[:], creds.AdditionalData)
+		c.log.Debugf("server/outgoing: IsPeerValid(): Expected identity key (raw): %x, Received link key: %s",
+			c.dst.IdentityKey, kpcommon.TruncatePEMForLogging(kempem.ToPublicPEMString(creds.PublicKey)))
 		return false
 	}
 	keyblob, err := creds.PublicKey.MarshalBinary()
@@ -72,7 +90,9 @@ func (c *outgoingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 		panic(err)
 	}
 	if !hmac.Equal(c.dst.LinkKey, keyblob) {
-		c.log.Debug("IsPeerValid false, link key mismatch")
+		c.log.Warningf("server/outgoing: IsPeerValid(): Link key mismatch for peer '%s' (identity_hash=%x)", c.dst.Name, creds.AdditionalData)
+		c.log.Debugf("server/outgoing: IsPeerValid(): Expected link key (raw): %x, Received link key: %s",
+			c.dst.LinkKey, kpcommon.TruncatePEMForLogging(kempem.ToPublicPEMString(creds.PublicKey)))
 		return false
 	}
 
@@ -82,7 +102,14 @@ func (c *outgoingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 	_, c.canSend, isValid = c.co.glue.PKI().AuthenticateConnection(creds, true)
 
 	if !isValid {
-		c.log.Debug("failed to authenticate connect via latest PKI doc")
+		peerName, found := getPeerName()
+		if found {
+			c.log.Warningf("server/outgoing: IsPeerValid(): Failed to authenticate peer '%s' via latest PKI doc", peerName)
+		} else {
+			c.log.Warningf("server/outgoing: IsPeerValid(): Failed to authenticate peer via latest PKI doc (identity_hash=%x not in current PKI)", creds.AdditionalData)
+		}
+		c.log.Debugf("server/outgoing: IsPeerValid(): Remote Peer Credentials: name=%s, identity_hash=%x, link_key=%s",
+			peerName, creds.AdditionalData, kpcommon.TruncatePEMForLogging(kempem.ToPublicPEMString(creds.PublicKey)))
 	}
 	return isValid
 }
@@ -277,11 +304,14 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 	// Bind the session to the conn, handshake, authenticate.
 	timeoutMs := time.Duration(c.co.glue.Config().Debug.HandshakeTimeout) * time.Millisecond
 	conn.SetDeadline(time.Now().Add(timeoutMs))
+	handshakeStart := time.Now()
 	if err = w.Initialize(conn); err != nil {
 		c.log.Errorf("Handshake failed: %v", err)
+		// Log detailed debug info (contains IPs, keys) at debug level only
+		c.log.Debugf("Handshake failure details:\n%s", wire.GetDebugError(err))
 		return
 	}
-	c.log.Debugf("Handshake completed.")
+	c.log.Debugf("Handshake completed in %v", time.Since(handshakeStart))
 	conn.SetDeadline(time.Time{})
 	c.retryDelay = 0 // Reset the retry delay on successful handshakes.
 

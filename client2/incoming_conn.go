@@ -74,7 +74,7 @@ func (c *incomingConn) updateConnectionStatus(status error) {
 	message := &Response{
 		ConnectionStatusEvent: &thin.ConnectionStatusEvent{
 			IsConnected: status == nil,
-			Err:         status,
+			Err:         nil,
 		},
 	}
 	select {
@@ -88,6 +88,7 @@ func (c *incomingConn) sendResponse(r *Response) error {
 	response := IntoThinResponse(r)
 	blob, err := cbor.Marshal(response)
 	if err != nil {
+		c.log.Errorf("sendResponse: cbor.Marshal: %v", err)
 		return err
 	}
 
@@ -99,9 +100,11 @@ func (c *incomingConn) sendResponse(r *Response) error {
 
 	count, err := c.conn.Write(toSend)
 	if err != nil {
+		c.log.Errorf("sendResponse: Write: %v", err)
 		return err
 	}
 	if count != len(toSend) {
+		c.log.Errorf("sendResponse: Write: truncated write (%d/%d", count, len(toSend))
 		return fmt.Errorf("sendResponse error: only wrote %d bytes whereas buffer is size %d", count, len(toSend))
 	}
 	return nil
@@ -112,7 +115,9 @@ func (c *incomingConn) start() {
 }
 
 func (c *incomingConn) worker() {
+	doneCh := make(chan struct{})
 	defer func() {
+		close(doneCh)
 		c.log.Debugf("Closing.")
 		c.conn.Close()
 		c.listener.onClosedConn(c) // Remove from the connection list.
@@ -146,6 +151,8 @@ func (c *incomingConn) worker() {
 		for {
 			select {
 			case <-c.listener.HaltCh():
+				return
+			case <-doneCh:
 				return
 			case message := <-c.sendToClientCh:
 				err := c.sendResponse(message)

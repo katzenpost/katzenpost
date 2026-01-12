@@ -344,6 +344,11 @@ func (s *katzenpost) genReplicaNodeConfig() error {
 	cfg.DataDir = filepath.Join(s.baseDir, cfg.Identifier)
 	os.MkdirAll(filepath.Join(s.outDir, cfg.Identifier), 0700)
 
+	// Set timeout values explicitly to use common config defaults
+	cfg.ConnectTimeout = config.DefaultConnectTimeout
+	cfg.HandshakeTimeout = config.DefaultHandshakeTimeout
+	cfg.ReauthInterval = config.DefaultReauthInterval
+
 	authorities := make([]*vConfig.Authority, 0, len(s.authorities))
 	i := 0
 	for _, auth := range s.authorities {
@@ -477,18 +482,6 @@ func (s *katzenpost) genNodeConfig(isGateway, isServiceNode bool, isVoting bool)
 			},
 		}
 
-		// NOTE: "map" service is an alternative storage service which does NOT
-		// have all the cool privacy properties that the protocol in our paper describes.
-		mapCfg := &sConfig.CBORPluginKaetzchen{
-			Capability:     "map",
-			Endpoint:       "+map",
-			Command:        s.baseDir + "/map" + s.binSuffix,
-			MaxConcurrency: 1,
-			Config: map[string]interface{}{
-				"db":      s.baseDir + "/" + cfg.Server.Identifier + "/map.storage",
-				"log_dir": s.baseDir + "/" + cfg.Server.Identifier,
-			},
-		}
 		proxyCfg := &sConfig.CBORPluginKaetzchen{
 			Capability:     "http",
 			Endpoint:       "+http",
@@ -502,7 +495,7 @@ func (s *katzenpost) genNodeConfig(isGateway, isServiceNode bool, isVoting bool)
 			},
 		}
 
-		cfg.ServiceNode.CBORPluginKaetzchen = []*sConfig.CBORPluginKaetzchen{courierPluginCfg, mapCfg, proxyCfg}
+		cfg.ServiceNode.CBORPluginKaetzchen = []*sConfig.CBORPluginKaetzchen{courierPluginCfg, proxyCfg}
 
 		cfg.Debug.NumKaetzchenWorkers = 4
 

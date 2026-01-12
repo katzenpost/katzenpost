@@ -28,9 +28,11 @@ import (
 
 	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/kem"
+	kempem "github.com/katzenpost/hpqc/kem/pem"
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/hpqc/sign"
 
+	kpcommon "github.com/katzenpost/katzenpost/common"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
@@ -72,6 +74,18 @@ type incomingConn struct {
 }
 
 func (c *incomingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
+	// Helper function to get peer name - returns name and whether peer was found in PKI
+	getPeerName := func() (string, bool) {
+		if doc, err := c.l.glue.PKI().CurrentDocument(); err == nil && doc != nil {
+			var adHash [32]byte
+			copy(adHash[:], creds.AdditionalData)
+			if node, err := doc.GetNodeByKeyHash(&adHash); err == nil {
+				return node.Name, true
+			}
+		}
+		return "", false
+	}
+
 	gateway := c.l.glue.Gateway()
 	// this node is a provider
 	if gateway != nil {
@@ -87,6 +101,14 @@ func (c *incomingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 		if !isClient && c.fromClient {
 			// This used to be a client, but is no longer listed in
 			// the user db.  Reject.
+			peerName, found := getPeerName()
+			if found {
+				c.log.Warningf("server/incoming: IsPeerValid(): Client '%s' no longer in user db", peerName)
+			} else {
+				c.log.Warningf("server/incoming: IsPeerValid(): Client no longer in user db (identity_hash=%x not in current PKI)", creds.AdditionalData)
+			}
+			c.log.Debugf("server/incoming: IsPeerValid(): Remote Peer Credentials: name=%s, identity_hash=%x, link_key=%s",
+				peerName, creds.AdditionalData, kpcommon.TruncatePEMForLogging(kempem.ToPublicPEMString(creds.PublicKey)))
 			c.canSend = false
 			return false
 		} else if isClient {
@@ -148,11 +170,18 @@ func (c *incomingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 	if isValid {
 		c.fromMix = true
 	} else {
+		peerName, found := getPeerName()
 		blob, err := creds.PublicKey.MarshalBinary()
 		if err != nil {
 			panic(err)
 		}
-		c.log.Debugf("Authentication failed: '%x' (%x)", creds.AdditionalData, hash.Sum256(blob))
+		if found {
+			c.log.Warningf("server/incoming: IsPeerValid(): Authentication failed for peer '%s' (link_key_hash=%x)", peerName, hash.Sum256(blob))
+		} else {
+			c.log.Warningf("server/incoming: IsPeerValid(): Authentication failed for unknown peer (identity_hash=%x not in current PKI, link_key_hash=%x)", creds.AdditionalData, hash.Sum256(blob))
+		}
+		c.log.Debugf("server/incoming: IsPeerValid(): Remote Peer Credentials: name=%s, identity_hash=%x, link_key=%s",
+			peerName, creds.AdditionalData, kpcommon.TruncatePEMForLogging(kempem.ToPublicPEMString(creds.PublicKey)))
 	}
 
 	return isValid
@@ -192,11 +221,14 @@ func (c *incomingConn) worker() {
 	// Bind the session to the conn, handshake, authenticate.
 	timeoutMs := time.Duration(c.l.glue.Config().Debug.HandshakeTimeout) * time.Millisecond
 	c.c.SetDeadline(time.Now().Add(timeoutMs))
+	handshakeStart := time.Now()
 	if err = c.w.Initialize(c.c); err != nil {
 		c.log.Errorf("Handshake failed: %v", err)
+		// Log detailed debug info (contains IPs, keys) at debug level only
+		c.log.Debugf("Handshake failure details:\n%s", wire.GetDebugError(err))
 		return
 	}
-	c.log.Debugf("Handshake completed.")
+	c.log.Debugf("Handshake completed in %v", time.Since(handshakeStart))
 	c.c.SetDeadline(time.Time{})
 	c.l.onInitializedConn(c)
 

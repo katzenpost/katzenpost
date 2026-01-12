@@ -6,6 +6,7 @@ package server
 import (
 	"path/filepath"
 
+	"github.com/carlmjohnson/versioninfo"
 	"gopkg.in/op/go-logging.v1"
 
 	"github.com/katzenpost/hpqc/kem"
@@ -30,7 +31,7 @@ type GenericConnector interface {
 	CloseAllCh() chan interface{}
 	ForceUpdate()
 
-	DispatchMessage(dest uint8, message *commands.ReplicaMessage)
+	DispatchMessage(dest uint8, message *commands.ReplicaMessage) error
 }
 
 type Server struct {
@@ -209,12 +210,14 @@ func (s *Server) initLogging() error {
 	s.logBackend, err = log.New(p, s.cfg.Logging.Level, s.cfg.Logging.Disable)
 	if err == nil {
 		s.log = s.logBackend.GetLogger("courier server")
+		s.log.Noticef("Katzenpost courier version: %s", versioninfo.Short())
+		s.log.Notice("Katzenpost is still pre-alpha.  DO NOT DEPEND ON IT FOR STRONG SECURITY OR ANONYMITY.")
 	}
 	return err
 }
 
-func (s *Server) SendMessage(dest uint8, mesg *commands.ReplicaMessage) {
-	s.connector.DispatchMessage(dest, mesg)
+func (s *Server) SendMessage(dest uint8, mesg *commands.ReplicaMessage) error {
+	return s.connector.DispatchMessage(dest, mesg)
 }
 
 func (s *Server) ForceConnectorUpdate() {

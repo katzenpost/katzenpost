@@ -47,7 +47,7 @@ import (
 
 var (
 	errNotCached         = errors.New("pki: requested epoch document not in cache")
-	recheckInterval      = epochtime.Period / 32
+	recheckInterval      = epochtime.Period / 16
 	pkiEarlyConnectSlack = epochtime.Period / 8
 	PublishDeadline      = vServer.MixPublishDeadline
 	nextFetchTill        = epochtime.Period - PublishDeadline
@@ -140,7 +140,9 @@ func (p *pki) worker() {
 			return
 		}
 		if err != nil {
-			p.log.Warningf("Failed to post to PKI: %v", err)
+			p.log.Errorf("❌ PKI UPLOAD FAILURE: Failed to post to PKI: %v", err)
+			p.log.Errorf("❌ PKI UPLOAD FAILURE: This service node will not appear in authority votes")
+			p.log.Errorf("❌ PKI UPLOAD FAILURE: Check detailed error messages above for specific failure reasons")
 		}
 		// Fetch the PKI documents as required.
 		var didUpdate bool
@@ -153,7 +155,7 @@ func (p *pki) worker() {
 				continue
 			}
 
-			d, rawDoc, err := p.impl.Get(pkiCtx, epoch)
+			d, rawDoc, err := p.impl.GetPKIDocumentForEpoch(pkiCtx, epoch)
 			if isCanceled() {
 				// Canceled mid-fetch.
 				p.log.Debug("Canceled mid-fetch")
@@ -238,7 +240,7 @@ func (p *pki) worker() {
 // updateTimer is used by the worker loop to determine when next to wake and fetch.
 func (p *pki) updateTimer(timer *time.Timer) {
 	now, elapsed, till := epochtime.Now()
-	p.log.Debugf("pki woke %v into epoch %v with %v remaining", elapsed, now, till)
+	p.log.Debugf("serverpki woke %v into epoch %v with %v remaining", elapsed, now, till)
 
 	// it's after the consensus publication deadline
 	if elapsed > vServer.PublishConsensusDeadline {
@@ -339,41 +341,23 @@ func (p *pki) pruneDocuments() {
 
 func (p *pki) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 
-	epoch, _, till := epochtime.Now()
+	epoch, elapsed, _ := epochtime.Now()
 	doPublishEpoch := uint64(0)
-	switch p.lastPublishedEpoch {
-	case 0:
-		// Initial startup.  Regardless of the deadline, publish.
-		p.log.Debugf("Initial startup or correcting for time jump.")
+	if p.lastPublishedEpoch > epoch {
+		p.log.Debugf("publishDescriptorIfNeeded: not needed (published: %d current: %d)", p.lastPublishedEpoch, epoch)
+		return nil
+	}
+	if p.lastPublishedEpoch == 0 {
 		doPublishEpoch = epoch
-	case epoch:
-		// Check the deadline for the next publication time.
-		if till > PublishDeadline {
-			p.log.Debugf("Within the publication time for epoch: %v", epoch+1)
+		// Check the deadline for the next publication time:
+	} else if elapsed < PublishDeadline {
+		p.log.Debugf("Within the publication time for epoch: %v", epoch+1)
+		doPublishEpoch = epoch
+		if p.lastPublishedEpoch == epoch {
 			doPublishEpoch = epoch + 1
-			break
 		}
-
-		// Well, we appeared to have missed the publication deadline for the
-		// next epoch, so give up till the transition.
-		if p.lastWarnedEpoch != epoch {
-			// Debounce this so we don't spam the log.
-			p.lastWarnedEpoch = epoch
-			return fmt.Errorf("missed publication deadline for epoch: %v", epoch+1)
-		}
-		return nil
-	case epoch + 1:
-		// The next epoch has been published.
-		return nil
-	default:
-		// What the fuck?  The last descriptor that we published is a time
-		// that we don't recognize.  The system's civil time probably jumped,
-		// even though the assumption is that all nodes run NTP.
-		p.log.Warningf("Last published epoch %v is wildly disjointed from %v.", p.lastPublishedEpoch, epoch)
-
-		// I don't even know what the sane thing to do here is, just treat it
-		// as if the node's just started and publish for the current I guess.
-		doPublishEpoch = epoch
+	} else {
+		doPublishEpoch = epoch + 1
 	}
 
 	// Note: Why, yes I *could* cache the descriptor and save a trivial amount
@@ -451,19 +435,31 @@ func (p *pki) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 	}
 
 	// Post the descriptor to all the authorities.
+	nodeType := "mix"
+	if desc.IsGatewayNode {
+		nodeType = "gateway"
+	} else if desc.IsServiceNode {
+		nodeType = "service"
+	}
+
+	p.log.Noticef("🔄 DESCRIPTOR UPLOAD: Attempting to upload %s node descriptor '%s' for epoch %d", nodeType, desc.Name, doPublishEpoch)
+	p.log.Noticef("🔄 DESCRIPTOR UPLOAD: Node details - IsGateway: %v, IsService: %v", desc.IsGatewayNode, desc.IsServiceNode)
+
 	err = p.impl.Post(pkiCtx, doPublishEpoch, p.glue.IdentityKey(), p.glue.IdentityPublicKey(), desc, p.glue.Decoy().GetStats(doPublishEpoch))
 	switch err {
 	case nil:
-		p.log.Debugf("Posted descriptor for epoch: %v", doPublishEpoch)
+		p.log.Noticef("✅ DESCRIPTOR UPLOAD: Successfully posted %s node descriptor '%s' for epoch %d", nodeType, desc.Name, doPublishEpoch)
 		p.lastPublishedEpoch = doPublishEpoch
 	case cpki.ErrInvalidPostEpoch:
 		// Treat this class (conflict/late descriptor) as a permanent rejection
 		// and suppress further uploads.
-		p.log.Warningf("Authority rejected upload for epoch: %v (Conflict/Late)", doPublishEpoch)
+		p.log.Errorf("❌ DESCRIPTOR UPLOAD: Authority rejected %s node '%s' upload for epoch %d (Conflict/Late)", nodeType, desc.Name, doPublishEpoch)
 		p.lastPublishedEpoch = doPublishEpoch
 	default:
 		// XXX: the voting authority implementation does not return any of the above error types...
 		// and the mix will continue to fail to submit the same descriptor repeatedly.
+		p.log.Errorf("❌ DESCRIPTOR UPLOAD: Failed to upload %s node '%s' descriptor for epoch %d: %v", nodeType, desc.Name, doPublishEpoch, err)
+		p.log.Errorf("❌ DESCRIPTOR UPLOAD: This means the %s node will not appear in the consensus", nodeType)
 		p.lastPublishedEpoch = doPublishEpoch
 	}
 
@@ -715,6 +711,9 @@ func New(glue glue.Glue) (glue.PKI, error) {
 		LogBackend:  glue.LogBackend(),
 		Authorities: glue.Config().PKI.Voting.Authorities,
 		Geo:         glue.Config().SphinxGeometry,
+		// Convert milliseconds to seconds for PKI client timeouts
+		DialTimeoutSec:      glue.Config().Debug.ConnectTimeout / 1000,
+		HandshakeTimeoutSec: glue.Config().Debug.HandshakeTimeout / 1000,
 	}
 	p.impl, err = vClient.New(pkiCfg)
 	if err != nil {

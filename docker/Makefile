@@ -26,7 +26,7 @@ help:
 	@echo
 
 warped?=true
-no_decoy?=true
+no_decoy?=false
 no_mixdecoy?=true
 mixes=3
 auths=3
@@ -99,7 +99,7 @@ make_args=--no-print-directory net_name=$(net_name) docker=$(docker) distro=$(di
 
 docker_run_sh=$(docker) run ${docker_args} $(mount_net_name) --rm katzenpost-$(distro)_base $(sh) -c
 
-testnet_binaries: $(net_name)/server.$(distro) $(net_name)/proxy_server.$(distro) $(net_name)/proxy_client.$(distro) $(net_name)/map.$(distro) $(net_name)/echo_server.$(distro) $(net_name)/dirauth.$(distro) $(net_name)/replica.$(distro) $(net_name)/courier.$(distro) $(net_name)/kpclientd.$(distro) | $(net_name) $(cache_dir)
+testnet_binaries: $(net_name)/server.$(distro) $(net_name)/proxy_server.$(distro) $(net_name)/proxy_client.$(distro) $(net_name)/echo_server.$(distro) $(net_name)/dirauth.$(distro) $(net_name)/replica.$(distro) $(net_name)/courier.$(distro) $(net_name)/kpclientd.$(distro) | $(net_name) $(cache_dir)
 
 $(net_name):
 	mkdir -vp $(net_name)
@@ -148,7 +148,7 @@ start_debug: $(docker_compose_yml) testnet_binaries
 	touch $(net_name)/running.stamp
 
 stop:
-	[ -e $(net_name) ] && cd $(net_name) && $(docker_compose) down --remove-orphans; rm -fv running.stamp
+	[ -e $(net_name) ] && cd $(net_name) && $(docker_compose) down --remove-orphans; rm -fv running.stamp voting_mixnet/servicenode*/courier/*.socket
 
 client-restart:
 	@echo "Cleaning and rebuilding kpclientd daemon..."
@@ -257,9 +257,6 @@ $(net_name)/proxy_client.$(distro): $(distro)_base.stamp | $(net_name) $(cache_d
 
 $(net_name)/proxy_server.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
 		$(docker_run_sh) 'cd cmd/http-proxy-server; go build -trimpath -ldflags ${ldflags} && mv http-proxy-server /$(net_name)/proxy_server.$(distro)'
-
-$(net_name)/map.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
-		$(docker_run_sh) 'cd cmd/map ; go build -trimpath -ldflags ${ldflags} && mv map /$(net_name)/map.$(distro)'
 
 $(net_name)/echo_server.$(distro): $(distro)_base.stamp | $(net_name) $(cache_dir)
 		$(docker_run_sh) 'cd cmd/echo-plugin ; go build -trimpath -ldflags ${ldflags} && mv echo-plugin /$(net_name)/echo_server.$(distro)'

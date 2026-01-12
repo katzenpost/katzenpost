@@ -62,54 +62,36 @@ map:
 sphinx:
 	cd cmd/sphinx; go build
 
-# Install RocksDB dependencies required for replica
 install-replica-deps:
-	@echo "Installing RocksDB dependencies..."
-	sudo apt-get update
-	sudo apt-get install -y cmake build-essential libsnappy-dev libzstd-dev liblz4-dev libz-dev
-	@echo "Installing gflags..."
-	@if [ ! -f /usr/local/lib/libgflags.so ]; then \
-		echo "Building gflags from source..."; \
-		cd /tmp && \
-		git clone https://github.com/gflags/gflags.git && \
-		cd gflags && \
-		mkdir build && \
-		cd build && \
-		cmake -DBUILD_SHARED_LIBS=1 -DGFLAGS_INSTALL_SHARED_LIBS=1 .. && \
-		make -j$$(nproc) && \
-		sudo make install && \
-		cd /tmp && \
-		rm -rf /tmp/gflags/; \
-	else \
-		echo "Using existing gflags installation"; \
-	fi
-	@echo "Installing RocksDB..."
-	@if [ ! -f /usr/local/rocksdb/lib/librocksdb.so ]; then \
+	@set -e; \
+	echo "Checking for RocksDB..."; \
+	if ! pkg-config --exists rocksdb; then \
+		echo "RocksDB missing"; \
+		echo "Installing build dependencies..."; \
+		sudo apt-get install -y \
+			cmake build-essential pkg-config gcc-14 g++-14 \
+			libsnappy-dev libzstd-dev liblz4-dev \
+			zlib1g-dev libbz2-dev liburing-dev libgflags-dev; \
 		echo "Building RocksDB from source..."; \
-		cd /tmp && \
-		git clone https://github.com/facebook/rocksdb.git && \
-		cd rocksdb && \
-		git checkout v10.2.1 && \
-		make shared_lib -j$$(nproc) && \
-		sudo mkdir -p /usr/local/rocksdb/lib && \
-		sudo mkdir -p /usr/local/rocksdb/include && \
-		sudo cp librocksdb.so* /usr/local/rocksdb/lib && \
-		sudo cp /usr/local/rocksdb/lib/librocksdb.so* /usr/lib/ && \
-		sudo cp -r include /usr/local/rocksdb/ && \
-		sudo cp -r include/* /usr/include/ && \
-		cd /tmp && \
-		rm -rf /tmp/rocksdb/; \
+		tmpdir="$$(mktemp -d)"; \
+		cd "$$tmpdir"; \
+		git clone https://github.com/facebook/rocksdb.git; \
+		cd rocksdb; \
+		git checkout v10.2.1; \
+		env CC=gcc-14 CXX=g++-14 make shared_lib -j$$(nproc); \
+		echo "Installing RocksDB..."; \
+		sudo make install; \
+		sudo ldconfig; \
+		echo "RocksDB installed successfully!"; \
 	else \
 		echo "Using existing RocksDB installation"; \
-		sudo cp /usr/local/rocksdb/lib/librocksdb.so* /usr/lib/ 2>/dev/null || true; \
-		sudo cp -r /usr/local/rocksdb/include/* /usr/include/ 2>/dev/null || true; \
 	fi
-	sudo ldconfig
-	@echo "RocksDB dependencies installed successfully!"
 
 # Build replica (requires RocksDB dependencies)
+# this may require gcc-14
 replica: install-replica-deps
-	cd cmd/replica; go build
+	cd cmd/replica; CC=gcc-14 CGO_ENABLE=1 CGO_LDFLAGS="-lrocksdb -lstdc++ -lbz2 -lm -lz -lsnappy -llz4 -lzstd -luring" go build -v -trimpath
+
 
 clean:
 	rm -f cmd/server/server cmd/dirauth/dirauth cmd/genconfig/genconfig cmd/ping/ping \
@@ -153,10 +135,18 @@ test-unit: test-config
 # Run replica unit tests (requires RocksDB dependencies)
 test-replica: test-config
 	@echo "Running replica unit tests..."
-	cd replica && GORACE=history_size=7 go test -coverprofile=coverage.out -race -v -failfast -timeout 30m ./...
+	cd replica && GORACE=history_size=7 CC=gcc-14 CGO_ENABLE=1 CGO_LDFLAGS="-lrocksdb -lstdc++ -lbz2 -lm -lz -lsnappy -llz4 -lzstd -luring" go test -coverprofile=coverage.out -race -v -failfast -timeout 30m ./...
 	@echo "Replica unit tests completed successfully!"
 
 # Legacy test target (kept for backwards compatibility)
 test:
 	go test -v -race -timeout 0 ./...
 
+act-clean:
+	@echo "Cleaning up docker mixnet environment..."
+	-podman rm -f $$(podman ps -aq --filter "name=voting_mixnet") 2>/dev/null || true
+	-cd docker && make clean-local 2>/dev/null || true
+	@echo "Cleanup complete."
+
+act: act-clean
+	act --bind --container-options "-v /etc/ssl/certs:/etc/ssl/certs:ro -v /usr/share/ca-certificates:/usr/share/ca-certificates:ro -v /run/user/$(shell id -u)/podman/podman.sock:/var/run/docker.sock" -P ubuntu-latest=catthehacker/ubuntu:act-22.04 -j test_e2e_client2

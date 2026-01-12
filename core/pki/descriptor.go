@@ -484,3 +484,10 @@ func (s *SignedReplicaUpload) Verify(pubKey sign.PublicKey) bool {
 
 	return pubKey.Scheme().Verify(pubKey, blob, s.Signature.Payload, nil)
 }
+
+func (d *ReplicaDescriptor) String() string {
+	if d == nil {
+		return "<nil>"
+	}
+	return fmt.Sprintf("{%s %x %v}", d.Name, d.IdentityKey, d.Addresses)
+}

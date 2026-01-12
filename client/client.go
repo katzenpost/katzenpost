@@ -69,7 +69,7 @@ func PKIBootstrap(ctx context.Context, c *Client, linkKey kem.PrivateKey) (pki.C
 		return nil, nil, err
 	}
 	currentEpoch, _, _ := epochtime.FromUnix(time.Now().Unix())
-	doc, _, err := pkiClient.Get(ctx, currentEpoch)
+	doc, _, err := pkiClient.GetPKIDocumentForEpoch(ctx, currentEpoch)
 	if err != nil {
 		return nil, nil, err
 	}

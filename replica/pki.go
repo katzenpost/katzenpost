@@ -6,13 +6,11 @@ package replica
 import (
 	"context"
 	"crypto/hmac"
-	"fmt"
 	"time"
 
 	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
 
 	"github.com/katzenpost/katzenpost/core/epochtime"
-	"github.com/katzenpost/katzenpost/core/pki"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 )
 
@@ -39,13 +37,13 @@ func (p *PKIWorker) worker() {
 		return
 	}
 
-	pkiCtx, cancelFn, isCanceled := pki.SetupWorkerContext(p.HaltCh(), p.GetLogger())
+	pkiCtx, cancelFn, isCanceled := cpki.SetupWorkerContext(p.HaltCh(), p.GetLogger())
 	defer cancelFn()
 
 	var lastUpdateEpoch uint64
 
 	for {
-		if !pki.HandleTimerEvent(timer, pkiCtx, p.HaltCh(), p.GetLogger()) {
+		if !cpki.HandleTimerEvent(timer, pkiCtx, p.HaltCh(), p.GetLogger()) {
 			return
 		}
 
@@ -134,41 +132,23 @@ func (p *PKIWorker) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 		return nil
 	}
 
-	epoch, _, till := epochtime.Now()
+	epoch, elapsed, _ := epochtime.Now()
 	doPublishEpoch := uint64(0)
-	switch p.lastPublishedEpoch {
-	case 0:
-		// Initial startup.  Regardless of the deadline, publish.
-		p.GetLogger().Debugf("Initial startup or correcting for time jump.")
+	if p.lastPublishedEpoch > epoch {
+		p.GetLogger().Debugf("publishDescriptorIfNeeded: not needed (published: %d current: %d)", p.lastPublishedEpoch, epoch)
+		return nil
+	}
+	if p.lastPublishedEpoch == 0 {
 		doPublishEpoch = epoch
-	case epoch:
-		// Check the deadline for the next publication time.
-		if till > PublishDeadline {
-			p.GetLogger().Debugf("Within the publication time for epoch: %v", epoch+1)
+		// Check the deadline for the next publication time:
+	} else if elapsed < PublishDeadline {
+		p.GetLogger().Debugf("Within the publication time for epoch: %v", epoch+1)
+		doPublishEpoch = epoch
+		if p.lastPublishedEpoch == epoch {
 			doPublishEpoch = epoch + 1
-			break
 		}
-
-		// Well, we appeared to have missed the publication deadline for the
-		// next epoch, so give up till the transition.
-		if p.lastWarnedEpoch != epoch {
-			// Debounce this so we don't spam the log.
-			p.lastWarnedEpoch = epoch
-			return fmt.Errorf("missed publication deadline for epoch: %v", epoch+1)
-		}
-		return nil
-	case epoch + 1:
-		// The next epoch has been published.
-		return nil
-	default:
-		// What the fuck?  The last descriptor that we published is a time
-		// that we don't recognize.  The system's civil time probably jumped,
-		// even though the assumption is that all nodes run NTP.
-		p.GetLogger().Warningf("Last published epoch %v is wildly disjointed from %v.", p.lastPublishedEpoch, epoch)
-
-		// I don't even know what the sane thing to do here is, just treat it
-		// as if the node's just started and publish for the current I guess.
-		doPublishEpoch = epoch
+	} else {
+		doPublishEpoch = epoch + 1
 	}
 
 	// Note: Why, yes I *could* cache the descriptor and save a trivial amount
