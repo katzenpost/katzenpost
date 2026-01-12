@@ -110,9 +110,11 @@ func (c *incomingConn) worker() {
 	nikeScheme := nikeschemes.ByName(c.l.server.cfg.ReplicaNIKEScheme)
 	cmds := commands.NewStorageReplicaCommands(c.geo, nikeScheme)
 	sender := newSender(inCh, outCh, c.l.server.cfg.DisableDecoyTraffic, c.l.server.logBackend, cmds)
+
 	doc := c.l.server.PKIWorker.PKIDocument()
 	if doc == nil {
 		c.log.Errorf("Failed to get PKI document")
+		sender.Halt()
 		return
 	}
 	// XXX FIXME(David): add a new lamda parameter to our pki doc format, lambdaR.
@@ -126,28 +128,47 @@ func (c *incomingConn) worker() {
 	sender.UpdateRate(rate, maxDelay)
 	sender.UpdateConnectionStatus(true)
 
-	// Start command processing
-	c.Go(func() {
-		defer sender.UpdateConnectionStatus(false) // Mark as disconnected when command processing stops
-		c.processCommands(session, creds, inCh)
-	})
-	c.Go(func() {
-		c.egressSender(session, outCh)
-	})
+	// Channel to signal egress sender to drain and exit
+	egressDoneCh := make(chan struct{})
 
-	// Halt sender first to stop generating messages
+	// Start egress sender goroutine (must be ready before processCommands sends responses)
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		c.egressSender(session, outCh, egressDoneCh)
+	}()
+
+	// Run command processing loop synchronously - blocks until connection closes
+	c.processCommands(session, creds, inCh)
+
+	// Connection closed - begin shutdown sequence:
+	// 1. Mark as disconnected (stops sender from generating new decoys)
+	sender.UpdateConnectionStatus(false)
+
+	// 2. Halt sender to stop its worker goroutine
 	sender.Halt()
-	sender.Wait()
 
-	// Then wait for the connection workers to finish
-	c.Wait()
+	// 3. Signal egressSender to drain remaining messages and exit
+	close(egressDoneCh)
+
+	// 4. Wait for egressSender to finish
+	wg.Wait()
 }
 
-func (c *incomingConn) egressSender(session *wire.Session, outCh chan *senderRequest) {
+func (c *incomingConn) egressSender(session *wire.Session, outCh chan *senderRequest, doneCh <-chan struct{}) {
 	for {
 		select {
-		case <-c.HaltCh():
-			return
+		case <-doneCh:
+			// Drain any remaining messages before returning
+			for {
+				select {
+				case resp := <-outCh:
+					c.sendResponse(session, resp)
+				default:
+					return
+				}
+			}
 		case resp := <-outCh:
 			c.sendResponse(session, resp)
 		}
