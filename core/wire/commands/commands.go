@@ -351,6 +351,10 @@ func (c *Commands) FromBytes(b []byte) (Command, error) {
 			return &Disconnect{
 				Cmds: c,
 			}, nil
+		case replicaDecoy:
+			return &ReplicaDecoy{
+				Cmds: c,
+			}, nil
 		case sendPacket, postDescriptor, sendRetrievePacket, sendRetrievePacketReply:
 			// Shouldn't happen, but the caller should reject this, not the
 			// de-serialization.

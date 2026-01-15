@@ -148,24 +148,26 @@ func TestReplicationErrorHandling(t *testing.T) {
 
 	t.Run("EmptyStorageReplicas", func(t *testing.T) {
 		doc := &pki.Document{
-			StorageReplicas: []*pki.ReplicaDescriptor{},
+			StorageReplicas:               []*pki.ReplicaDescriptor{},
+			ConfiguredReplicaIdentityKeys: [][]byte{},
 		}
 		boxID := generateRandomBoxID(t)
 
 		_, err := GetShards(boxID, doc)
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "doc.StorageReplicas is empty")
+		require.Contains(t, err.Error(), "insufficient configured replicas")
 	})
 
-	t.Run("NilStorageReplicas", func(t *testing.T) {
+	t.Run("NilConfiguredReplicaKeys", func(t *testing.T) {
 		doc := &pki.Document{
-			StorageReplicas: nil,
+			StorageReplicas:               nil,
+			ConfiguredReplicaIdentityKeys: nil,
 		}
 		boxID := generateRandomBoxID(t)
 
 		_, err := GetShards(boxID, doc)
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "doc.StorageReplicas is nil")
+		require.Contains(t, err.Error(), "ConfiguredReplicaIdentityKeys is nil")
 	})
 
 	t.Run("InsufficientReplicas", func(t *testing.T) {
@@ -176,7 +178,7 @@ func TestReplicationErrorHandling(t *testing.T) {
 
 		_, err := GetShards(boxID, doc)
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "replica not found")
+		require.Contains(t, err.Error(), "insufficient configured replicas")
 	})
 }
 
@@ -249,57 +251,93 @@ func TestReplicationWithMinimalReplicas(t *testing.T) {
 	}
 }
 
-// TestShard2Function tests the core Shard2 function with various scenarios
-func TestShard2Function(t *testing.T) {
+// TestGetConfiguredReplicaKeysFunction tests the core GetConfiguredReplicaKeys function with various scenarios
+func TestGetConfiguredReplicaKeysFunction(t *testing.T) {
 	t.Run("BasicFunctionality", func(t *testing.T) {
 		boxID := &[32]byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08}
-		serverKeys := [][]byte{
-			{0xa1, 0xa2, 0xa3, 0xa4},
-			{0xb1, 0xb2, 0xb3, 0xb4},
-			{0xc1, 0xc2, 0xc3, 0xc4},
-			{0xd1, 0xd2, 0xd3, 0xd4},
+		// Create 4 fake identity keys
+		keys := make([][]byte, 4)
+		for i := range keys {
+			keys[i] = make([]byte, 32)
+			keys[i][0] = byte(i)
+		}
+		doc := &pki.Document{
+			ConfiguredReplicaIdentityKeys: keys,
 		}
 
-		result := Shard2(boxID, serverKeys)
-		require.Equal(t, 2, len(result))          // Should return exactly 2 shards
-		require.NotEqual(t, result[0], result[1]) // Should be different shards
+		result, err := GetConfiguredReplicaKeys(doc)
+		require.NoError(t, err)
+		require.Equal(t, 4, len(result))
+
+		// Test Shard2 with these keys
+		shards := Shard2(boxID, result)
+		require.Equal(t, K, len(shards))
+		require.NotEqual(t, shards[0], shards[1]) // Should be different shards
 	})
 
 	t.Run("DeterministicBehavior", func(t *testing.T) {
 		boxID := generateRandomBoxID(t)
-		serverKeys := generateRandomKeys(t, 10, 32)
+		keys := make([][]byte, 10)
+		for i := range keys {
+			keys[i] = make([]byte, 32)
+			keys[i][0] = byte(i)
+		}
+		doc := &pki.Document{
+			ConfiguredReplicaIdentityKeys: keys,
+		}
 
-		result1 := Shard2(boxID, serverKeys)
-		result2 := Shard2(boxID, serverKeys)
+		result, err := GetConfiguredReplicaKeys(doc)
+		require.NoError(t, err)
 
-		require.Equal(t, result1, result2, "Shard2 should be deterministic")
+		shards1 := Shard2(boxID, result)
+		shards2 := Shard2(boxID, result)
+
+		require.Equal(t, shards1, shards2, "Shard2 should be deterministic")
 	})
 
 	t.Run("DifferentBoxIDsDifferentResults", func(t *testing.T) {
 		boxID1 := &[32]byte{0x01}
 		boxID2 := &[32]byte{0x02}
-		serverKeys := generateRandomKeys(t, 5, 32)
+		keys := make([][]byte, 5)
+		for i := range keys {
+			keys[i] = make([]byte, 32)
+			keys[i][0] = byte(i)
+		}
+		doc := &pki.Document{
+			ConfiguredReplicaIdentityKeys: keys,
+		}
 
-		result1 := Shard2(boxID1, serverKeys)
-		result2 := Shard2(boxID2, serverKeys)
+		result, err := GetConfiguredReplicaKeys(doc)
+		require.NoError(t, err)
+
+		shards1 := Shard2(boxID1, result)
+		shards2 := Shard2(boxID2, result)
 
 		// Different box IDs should generally produce different shard selections
-		// (though there's a small chance they could be the same)
-		require.Equal(t, 2, len(result1))
-		require.Equal(t, 2, len(result2))
+		require.Equal(t, K, len(shards1))
+		require.Equal(t, K, len(shards2))
 	})
 
-	t.Run("MinimalServerKeys", func(t *testing.T) {
+	t.Run("MinimalReplicas", func(t *testing.T) {
 		boxID := generateRandomBoxID(t)
-		serverKeys := generateRandomKeys(t, 2, 32) // Exactly 2 keys
+		// Exactly 2 keys (minimum for K=2)
+		keys := make([][]byte, 2)
+		keys[0] = make([]byte, 32)
+		keys[0][0] = 0x05
+		keys[1] = make([]byte, 32)
+		keys[1][0] = 0x10
+		doc := &pki.Document{
+			ConfiguredReplicaIdentityKeys: keys,
+		}
 
-		result := Shard2(boxID, serverKeys)
-		require.Equal(t, 2, len(result))
+		result, err := GetConfiguredReplicaKeys(doc)
+		require.NoError(t, err)
+		require.Equal(t, K, len(result))
 
+		shards := Shard2(boxID, result)
+		require.Equal(t, K, len(shards))
 		// With only 2 keys, both should be selected
-		require.Contains(t, serverKeys, result[0])
-		require.Contains(t, serverKeys, result[1])
-		require.NotEqual(t, result[0], result[1])
+		require.NotEqual(t, shards[0], shards[1])
 	})
 }
 

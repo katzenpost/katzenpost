@@ -40,12 +40,28 @@ func setupServer(t *testing.T, cfg *config.Config) *Server {
 }
 
 // setupPKIDoc creates a test PKI document with the given replicas and service nodes
-func setupPKIDoc(t *testing.T, replicas []*pki.ReplicaDescriptor, serviceNodes []*pki.MixDescriptor) *pki.Document {
+func setupPKIDoc(_ *testing.T, replicas []*pki.ReplicaDescriptor, serviceNodes []*pki.MixDescriptor) *pki.Document {
 	epoch, _, _ := epochtime.Now()
+
+	// Build ConfiguredReplicaIDs from the replica descriptors
+	configuredReplicaIDs := make([]uint8, len(replicas))
+	for i, desc := range replicas {
+		configuredReplicaIDs[i] = desc.ReplicaID
+	}
+
+	// Build ConfiguredReplicaIdentityKeys from the replica descriptors
+	configuredReplicaKeys := make([][]byte, len(replicas))
+	for i, desc := range replicas {
+		configuredReplicaKeys[i] = make([]byte, len(desc.IdentityKey))
+		copy(configuredReplicaKeys[i], desc.IdentityKey)
+	}
+
 	doc := &pki.Document{
-		Epoch:           epoch,
-		StorageReplicas: replicas,
-		ServiceNodes:    serviceNodes,
+		Epoch:                         epoch,
+		StorageReplicas:               replicas,
+		ConfiguredReplicaIDs:          configuredReplicaIDs,
+		ConfiguredReplicaIdentityKeys: configuredReplicaKeys,
+		ServiceNodes:                  serviceNodes,
 	}
 	return doc
 }
@@ -134,6 +150,7 @@ func TestAuthentication(t *testing.T) {
 	// Create replica descriptors with envelope keys
 	replica1Desc := &pki.ReplicaDescriptor{
 		Name:        "replica1",
+		ReplicaID:   0,
 		IdentityKey: replica1Keys.IdentityKeyBlob,
 		LinkKey:     replica1Keys.LinkKeyBlob,
 		Addresses:   map[string][]string{"tcp": {"127.0.0.1:4001"}},
@@ -145,6 +162,7 @@ func TestAuthentication(t *testing.T) {
 
 	replica2Desc := &pki.ReplicaDescriptor{
 		Name:        "replica2",
+		ReplicaID:   1,
 		IdentityKey: replica2Keys.IdentityKeyBlob,
 		LinkKey:     replica2Keys.LinkKeyBlob,
 		Addresses:   map[string][]string{"tcp": {"127.0.0.1:4002"}},

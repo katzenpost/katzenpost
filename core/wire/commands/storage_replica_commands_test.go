@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"encoding/binary"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -229,6 +230,51 @@ func TestReplicaWriteReply(t *testing.T) {
 	blob2 := writeCmd2.ToBytes()
 	require.Equal(t, blob1, blob2)
 
+}
+
+func TestReplicaDecoy(t *testing.T) {
+	t.Parallel()
+
+	nike := ecdh.Scheme(rand.Reader)
+	forwardPayloadLength := 1234
+	nrHops := 5
+
+	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
+	cmds := NewStorageReplicaCommands(geo, nike)
+
+	decoyCmd1 := &ReplicaDecoy{
+		Cmds: cmds,
+	}
+
+	blob1 := decoyCmd1.ToBytes()
+	t.Logf("ReplicaDecoy blob length: %d", len(blob1))
+	t.Logf("ReplicaDecoy blob[0] (command ID): %d", blob1[0])
+	t.Logf("ReplicaDecoy blob[1] (reserved): %d", blob1[1])
+	cmdLen := binary.BigEndian.Uint32(blob1[2:6])
+	t.Logf("ReplicaDecoy cmdLen: %d", cmdLen)
+
+	decoyCmd2, err := cmds.FromBytes(blob1)
+	require.NoError(t, err, "Failed to deserialize ReplicaDecoy command")
+	require.IsType(t, &ReplicaDecoy{}, decoyCmd2)
+
+	blob2 := decoyCmd2.ToBytes()
+	require.Equal(t, blob1, blob2)
+}
+
+func TestReplicaDecoyWithoutPadding(t *testing.T) {
+	t.Parallel()
+
+	decoyCmd1 := &ReplicaDecoy{
+		Cmds: nil,
+	}
+
+	blob1 := decoyCmd1.ToBytes()
+	decoyCmd2, err := replicaDecoyFromBytes(blob1[cmdOverhead:], nil)
+	require.NoError(t, err)
+	require.IsType(t, &ReplicaDecoy{}, decoyCmd2)
+
+	blob2 := decoyCmd2.ToBytes()
+	require.Equal(t, blob1, blob2)
 }
 
 func TestPostReplicaDescriptor(t *testing.T) {
