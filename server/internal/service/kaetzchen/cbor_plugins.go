@@ -152,8 +152,28 @@ func (k *CBORPluginWorker) sendworker(pluginClient *cborplugin.Client) {
 		case <-k.HaltCh():
 			return
 		case cborResponse := <-pluginClient.ReadChan():
-			switch r := cborResponse.(type) {
+			// Handle both ResponseMessage wrapper and ParametersResponse routing
+			if pluginClient.HandleMessage(cborResponse) {
+				continue // ParametersResponse was handled internally
+			}
+
+			// Extract Response from ResponseMessage wrapper
+			var r *cborplugin.Response
+			switch msg := cborResponse.(type) {
+			case *cborplugin.ResponseMessage:
+				r = msg.Response
+				if r == nil {
+					continue // Not a Response message, skip
+				}
 			case *cborplugin.Response:
+				r = msg
+			default:
+				k.log.Errorf("%v: Failed to handle Kaetzchen request, unknown command type: (%T), response: %s", pluginCap, cborResponse, cborResponse)
+				instrument.KaetzchenRequestsDropped(1)
+				continue
+			}
+
+			if r != nil {
 				if len(r.Payload) > k.geo.UserForwardPayloadLength {
 					// response is probably invalid, so drop it
 					k.log.Errorf("%v: Got response too long: %d > max (%d)",
@@ -181,10 +201,6 @@ func (k *CBORPluginWorker) sendworker(pluginClient *cborplugin.Client) {
 				} else {
 					k.log.Debugf("No SURB provided: %v", r.ID)
 				}
-			default:
-				// received some unknown command type
-				k.log.Errorf("%v: Failed to handle Kaetzchen request, unknown command type: (%v), response: %s", pluginCap, r, cborResponse)
-				instrument.KaetzchenRequestsDropped(1)
 			}
 		}
 	}
