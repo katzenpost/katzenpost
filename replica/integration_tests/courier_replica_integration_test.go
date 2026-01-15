@@ -379,17 +379,18 @@ func setupTestEnvironmentWithReplicas(t *testing.T, numReplicas int, tempDirPatt
 // is synthetic and does not connect to any real directory authorities.
 func createReplicaConfig(t *testing.T, dataDir string, pkiScheme sign.Scheme, linkScheme kem.Scheme, replicaID int, sphinxGeo *geo.Geometry, portBase int) *config.Config {
 	return &config.Config{
-		DataDir:            dataDir,
-		Identifier:         fmt.Sprintf(testReplicaNameFormat, replicaID),
-		WireKEMScheme:      linkScheme.Name(),
-		PKISignatureScheme: pkiScheme.Name(),
-		ReplicaNIKEScheme:  replicaCommon.NikeScheme.Name(),
-		SphinxGeometry:     sphinxGeo,
-		Addresses:          []string{fmt.Sprintf("tcp://127.0.0.1:%d", portBase+replicaID)},
-		GenerateOnly:       false,
-		ConnectTimeout:     60000,  // 60 seconds
-		HandshakeTimeout:   30000,  // 30 seconds
-		ReauthInterval:     300000, // 5 minutes
+		DisableDecoyTraffic: true,
+		DataDir:             dataDir,
+		Identifier:          fmt.Sprintf(testReplicaNameFormat, replicaID),
+		WireKEMScheme:       linkScheme.Name(),
+		PKISignatureScheme:  pkiScheme.Name(),
+		ReplicaNIKEScheme:   replicaCommon.NikeScheme.Name(),
+		SphinxGeometry:      sphinxGeo,
+		Addresses:           []string{fmt.Sprintf("tcp://127.0.0.1:%d", portBase+replicaID)},
+		GenerateOnly:        false,
+		ConnectTimeout:      60000,  // 60 seconds
+		HandshakeTimeout:    30000,  // 30 seconds
+		ReauthInterval:      300000, // 5 minutes
 		Logging: &config.Logging{
 			Disable: false,
 			Level:   "DEBUG",
@@ -587,7 +588,8 @@ func generateTestPKIDocument(t *testing.T, epoch uint64, serviceDesc *pki.MixDes
 	return &pki.Document{
 		Epoch:              epoch,
 		SendRatePerMinute:  100,
-		LambdaP:            0.1,
+		LambdaP:            0.002,
+		LambdaPMaxDelay:    10000,
 		LambdaL:            0.1,
 		LambdaD:            0.1,
 		LambdaM:            0.1,
@@ -774,7 +776,7 @@ func aliceAndBobKeyExchangeKeys(t *testing.T, env *testEnvironment) (*bacap.Stat
 
 // waitForCourierPKI waits for the courier to have a PKI document
 func waitForCourierPKI(t *testing.T, env *testEnvironment) {
-	maxWait := 30 * time.Second
+	maxWait := 60 * time.Second // Increased for mixnet timing
 	checkInterval := 100 * time.Millisecond
 	start := time.Now()
 
@@ -791,7 +793,7 @@ func waitForCourierPKI(t *testing.T, env *testEnvironment) {
 
 // waitForReplicasPKI waits for all replicas to have PKI documents
 func waitForReplicasPKI(t *testing.T, env *testEnvironment) {
-	maxWait := 30 * time.Second
+	maxWait := 60 * time.Second // Increased for mixnet timing
 	checkInterval := 100 * time.Millisecond
 	start := time.Now()
 
@@ -1027,7 +1029,7 @@ func composeReadRequest(t *testing.T, env *testEnvironment, reader *bacap.Statef
 // waitForReplicaResponse waits for the courier to receive a reply by repeatedly trying the request
 // until we get a non-nil payload, indicating the replica response has been received
 func waitForReplicaResponse(t *testing.T, env *testEnvironment, envelope *pigeonhole.CourierEnvelope) *pigeonhole.CourierEnvelopeReply {
-	maxWait := 10 * time.Second
+	maxWait := 120 * time.Second // Increased to accommodate mixnet timing with constant time traffic
 	checkInterval := 100 * time.Millisecond
 	start := time.Now()
 

@@ -43,7 +43,7 @@ func (c *incomingConn) createReplicaMessageReply(nikeScheme string, errorCode ui
 	}
 }
 
-func (c *incomingConn) onReplicaCommand(rawCmd commands.Command) (commands.Command, bool) {
+func (c *incomingConn) onReplicaCommand(rawCmd commands.Command) (*senderRequest, bool) {
 	c.log.Debugf("onReplicaCommand received command type: %T with value: %+v", rawCmd, rawCmd)
 	switch cmd := rawCmd.(type) {
 	case *commands.NoOp:
@@ -57,17 +57,25 @@ func (c *incomingConn) onReplicaCommand(rawCmd commands.Command) (commands.Comma
 		decoyReply := &commands.ReplicaDecoy{
 			Cmds: commands.NewStorageReplicaCommands(c.geo, schemes.ByName(c.l.server.cfg.ReplicaNIKEScheme)),
 		}
-		return decoyReply, true
+		return &senderRequest{
+			ReplicaDecoy: decoyReply,
+		}, true
 	case *commands.ReplicaWrite:
 		c.log.Debugf("Processing ReplicaWrite command for BoxID: %x", cmd.BoxID)
 		trunnelWrite := pigeonhole.WireCommandToTrunnelReplicaWrite(cmd)
 		resp := c.handleReplicaWrite(trunnelWrite)
 		respWire := pigeonhole.TrunnelReplicaWriteReplyToWireCommand(resp, cmd.Cmds)
-		return respWire, true
+		c.log.Debugf("handleReplicaWrite returned: %T", respWire)
+		return &senderRequest{
+			ReplicaWriteReply: respWire,
+		}, true
 	case *commands.ReplicaMessage:
 		c.log.Debugf("Processing ReplicaMessage command with ciphertext length: %d", len(cmd.Ciphertext))
 		resp := c.handleReplicaMessage(cmd)
-		return resp, true
+		c.log.Debugf("handleReplicaMessage returned: %T", resp)
+		return &senderRequest{
+			ReplicaMessageReply: resp,
+		}, true
 	default:
 		c.log.Errorf("Received unexpected command type: %T", cmd)
 		return nil, false
@@ -84,7 +92,7 @@ func (c *incomingConn) countReplicas(doc *pki.Document) (int, error) {
 }
 
 // replicaMessage's are sent from the courier to the replica storage servers
-func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMessage) commands.Command {
+func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMessage) *commands.ReplicaMessageReply {
 	c.log.Debug("REPLICA_HANDLER: Starting handleReplicaMessage processing")
 	nikeScheme := schemes.ByName(c.l.server.cfg.ReplicaNIKEScheme)
 	scheme := mkem.NewScheme(nikeScheme)
