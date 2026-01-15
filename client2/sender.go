@@ -4,9 +4,11 @@
 package client2
 
 import (
+	"gopkg.in/op/go-logging.v1"
+
+	"github.com/katzenpost/katzenpost/common"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/worker"
-	"gopkg.in/op/go-logging.v1"
 )
 
 type sender struct {
@@ -17,7 +19,7 @@ type sender struct {
 	in  chan *Request
 	out chan *Request
 
-	sendMessageOrLoop *ExpDist
+	sendMessageOrLoop *common.ExpDist
 
 	disableDecoys bool
 }
@@ -31,7 +33,7 @@ func newSender(in chan *Request, out chan *Request, disableDecoys bool, logBacke
 		log:               logBackend.GetLogger("client2/sender"),
 		in:                in,
 		out:               out,
-		sendMessageOrLoop: NewExpDist(),
+		sendMessageOrLoop: common.NewExpDist(),
 		disableDecoys:     disableDecoys,
 	}
 	s.Go(s.worker)
