@@ -1,5 +1,5 @@
 
-.PHONY: all test test-unit test-replica test-config sphincsplus clean server dirauth genconfig ping courier echo-plugin fetch genkeypair gensphinx http-proxy-client http-proxy-server katzencat katzencopy kpclientd map sphinx replica install-replica-deps
+.PHONY: all test test-unit test-replica bench-replica bench-handshake test-config sphincsplus clean server dirauth genconfig ping courier echo-plugin fetch genkeypair gensphinx http-proxy-client http-proxy-server katzencat katzencopy kpclientd map sphinx replica install-replica-deps
 
 .PHONY: update-go-deps
 update-go-deps:
@@ -137,6 +137,42 @@ test-replica: test-config
 	@echo "Running replica unit tests..."
 	cd replica && GORACE=history_size=7 CC=gcc-14 CGO_ENABLE=1 CGO_LDFLAGS="-lrocksdb -lstdc++ -lbz2 -lm -lz -lsnappy -llz4 -lzstd -luring" go test -coverprofile=coverage.out -race -v -failfast -timeout 30m ./...
 	@echo "Replica unit tests completed successfully!"
+
+# Run replica benchmarks (requires RocksDB dependencies)
+bench-replica:
+	@echo "Running replica benchmarks..."
+	cd replica && CC=gcc-14 CGO_ENABLE=1 CGO_LDFLAGS="-lrocksdb -lstdc++ -lbz2 -lm -lz -lsnappy -llz4 -lzstd -luring" go test -v -run=^$$ -bench=. -benchtime=3x ./...
+	@echo "Replica benchmarks completed successfully!"
+
+# Run all wire handshake benchmarks (client2, courier, mix server, dirauth, replica)
+bench-handshake:
+	@echo "Running all wire handshake benchmarks..."
+	@echo ""
+	@echo "=== Client2 Handshake Benchmarks ==="
+	go test -v -run=^$$ -bench=. -benchtime=3x ./client2/
+	@echo ""
+	@echo "=== Dirauth Client Handshake Benchmarks ==="
+	go test -v -run=^$$ -bench=. -benchtime=3x ./authority/voting/client/
+	@echo ""
+	@echo "=== Dirauth Server Handshake Benchmarks ==="
+	go test -v -run=^$$ -bench=. -benchtime=3x ./authority/voting/server/
+	@echo ""
+	@echo "=== Mix Server Incoming Handshake Benchmarks ==="
+	go test -v -run=^$$ -bench=. -benchtime=3x ./server/internal/incoming/
+	@echo ""
+	@echo "=== Mix Server Outgoing Handshake Benchmarks ==="
+	go test -v -run=^$$ -bench=. -benchtime=3x ./server/internal/outgoing/
+	@echo ""
+	@echo "=== Mix Server PKI Client Handshake Benchmarks ==="
+	go test -v -run=^$$ -bench=. -benchtime=3x ./server/internal/pki/
+	@echo ""
+	@echo "=== Courier Handshake Benchmarks ==="
+	go test -v -run=^$$ -bench=. -benchtime=3x ./courier/server/
+	@echo ""
+	@echo "=== Replica Handshake Benchmarks (requires RocksDB) ==="
+	cd replica && CC=gcc-14 CGO_ENABLE=1 CGO_LDFLAGS="-lrocksdb -lstdc++ -lbz2 -lm -lz -lsnappy -llz4 -lzstd -luring" go test -v -run=^$$ -bench=. -benchtime=3x ./...
+	@echo ""
+	@echo "All wire handshake benchmarks completed successfully!"
 
 # Legacy test target (kept for backwards compatibility)
 test:
