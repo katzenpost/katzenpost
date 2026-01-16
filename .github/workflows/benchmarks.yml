@@ -1,0 +1,115 @@
+name: Benchmarks
+
+on:
+  schedule:
+    # Run at 3 AM UTC every day
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+    inputs:
+      alert_threshold:
+        description: 'Alert threshold percentage (e.g., 110 = 10% regression)'
+        required: false
+        default: '110'
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    name: All Benchmarks
+    steps:
+      - name: Install Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24.x"
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-bench-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-bench-
+            ${{ runner.os }}-go-
+
+      - name: Install RocksDB dependencies
+        run: make install-replica-deps
+
+      - name: Generate mixnet configuration
+        run: cd cmd/genconfig && go build && ./genconfig --wirekem xwing --voting --baseDir /conf --outDir ../../docker/voting_mixnet/
+
+      - name: Run all benchmarks
+        run: |
+          # Sphinx benchmarks
+          echo "=== Sphinx Benchmarks ===" | tee benchmark-results.txt
+          go test -bench=. -benchmem -run='^$' ./core/sphinx/... 2>&1 | tee -a benchmark-results.txt
+
+          # Wire protocol benchmarks
+          echo "" | tee -a benchmark-results.txt
+          echo "=== Wire Protocol Benchmarks ===" | tee -a benchmark-results.txt
+          go test -bench=. -benchmem -run='^$' ./core/wire/... 2>&1 | tee -a benchmark-results.txt
+
+          # Authority benchmarks
+          echo "" | tee -a benchmark-results.txt
+          echo "=== Authority Benchmarks ===" | tee -a benchmark-results.txt
+          go test -bench=. -benchmem -run='^$' ./authority/... 2>&1 | tee -a benchmark-results.txt
+
+          # Client benchmarks
+          echo "" | tee -a benchmark-results.txt
+          echo "=== Client Benchmarks ===" | tee -a benchmark-results.txt
+          go test -bench=. -benchmem -run='^$' ./client2/... 2>&1 | tee -a benchmark-results.txt
+
+          # Server benchmarks
+          echo "" | tee -a benchmark-results.txt
+          echo "=== Server Benchmarks ===" | tee -a benchmark-results.txt
+          go test -bench=. -benchmem -run='^$' ./server/... 2>&1 | tee -a benchmark-results.txt
+
+          # Courier benchmarks
+          echo "" | tee -a benchmark-results.txt
+          echo "=== Courier Benchmarks ===" | tee -a benchmark-results.txt
+          go test -bench=. -benchmem -run='^$' ./courier/... 2>&1 | tee -a benchmark-results.txt
+
+          # Replica benchmarks (requires RocksDB)
+          echo "" | tee -a benchmark-results.txt
+          echo "=== Replica Benchmarks ===" | tee -a benchmark-results.txt
+          cd replica && CC=gcc-14 CGO_ENABLED=1 CGO_LDFLAGS="-lrocksdb -lstdc++ -lbz2 -lm -lz -lsnappy -llz4 -lzstd -luring" \
+            go test -bench=. -benchmem -run='^$' ./... 2>&1 | tee -a ../benchmark-results.txt
+
+      - name: Download previous benchmark data
+        uses: actions/cache@v4
+        with:
+          path: ./cache
+          key: benchmark-cache-${{ runner.os }}
+          restore-keys: |
+            benchmark-cache-
+
+      - name: Store benchmark result
+        uses: benchmark-action/github-action-benchmark@v1
+        with:
+          name: Katzenpost Benchmarks
+          tool: 'go'
+          output-file-path: benchmark-results.txt
+          external-data-json-path: ./cache/benchmark-data.json
+          # Alert if performance regresses by more than 10%
+          alert-threshold: ${{ github.event.inputs.alert_threshold || '110' }}%
+          fail-on-alert: true
+          # Create GitHub issue on regression
+          alert-comment-cc-users: '@katzenpost/core-maintainers'
+          comment-on-alert: true
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: benchmark-results
+          path: benchmark-results.txt
+          retention-days: 90
+
