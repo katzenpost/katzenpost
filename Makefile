@@ -1,5 +1,5 @@
 
-.PHONY: all test test-unit test-replica bench-replica bench-handshake test-config sphincsplus clean server dirauth genconfig ping courier echo-plugin fetch genkeypair gensphinx http-proxy-client http-proxy-server katzencat katzencopy kpclientd map sphinx replica install-replica-deps
+.PHONY: all test test-unit test-replica bench-replica bench-sphinx bench-handshake test-config sphincsplus clean server dirauth genconfig ping courier echo-plugin fetch genkeypair gensphinx http-proxy-client http-proxy-server katzencat katzencopy kpclientd map sphinx replica install-replica-deps
 
 .PHONY: update-go-deps
 update-go-deps:
@@ -143,6 +143,13 @@ bench-replica:
 	@echo "Running replica benchmarks..."
 	cd replica && CC=gcc-14 CGO_ENABLE=1 CGO_LDFLAGS="-lrocksdb -lstdc++ -lbz2 -lm -lz -lsnappy -llz4 -lzstd -luring" go test -v -run=^$$ -bench=. -benchtime=3x ./...
 	@echo "Replica benchmarks completed successfully!"
+
+# Run all sphinx benchmarks
+bench-sphinx:
+	@echo "Running Sphinx benchmarks..."
+	go test -v -run='^$$' -bench=. -benchmem ./core/sphinx/...
+	@echo ""
+	@echo "Sphinx benchmarks completed!"
 
 # Run all wire handshake benchmarks (client2, courier, mix server, dirauth, replica)
 bench-handshake:
