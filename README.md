@@ -95,17 +95,21 @@ make genconfig   # Build just the config generator
 ```
 
 ### Replica Component (Special Requirements)
-The replica component requires RocksDB dependencies and has its own target:
+
+**⚠️ The replica component requires RocksDB and cannot be built with standard `go build` commands.**
+
+RocksDB is a C++ library that must be compiled and installed system-wide before building the replica. Due to CGO linking requirements, the replica build requires specific compiler flags and environment variables. This is why we provide dedicated Makefile targets:
 
 ```bash
-make replica
+make install-replica-deps  # Install RocksDB and dependencies (requires sudo)
+make replica               # Build the replica executable
+make test-replica          # Run replica unit tests
+make bench-replica         # Run replica benchmarks
 ```
 
-This will:
-1. Install RocksDB dependencies (cmake, build tools, gflags, RocksDB v10.2.1)
-2. Build the replica executable
+The `make replica` target will automatically run `install-replica-deps` if RocksDB is not found.
 
-**Note:** The replica target requires sudo privileges to install system dependencies.
+**Note:** These targets require sudo privileges to install system dependencies and take several minutes to compile RocksDB from source.
 
 ### Cleaning Built Binaries
 To remove all built executables:
@@ -117,20 +121,26 @@ make clean
 ## Dependencies
 
 ### Standard Components
-Most Katzenpost components only require Go and standard system libraries.
+Most Katzenpost components require Go and basic build tools.
+
+**Debian/Ubuntu users** should first install build essentials:
+```bash
+sudo apt-get update
+sudo apt-get install -y build-essential
+```
 
 ### Replica Component Dependencies
-The replica component requires RocksDB, which has additional system dependencies:
 
-- **System packages**: cmake, build-essential, libsnappy-dev, libzstd-dev, liblz4-dev, libz-dev
-- **gflags**: Built from source (https://github.com/gflags/gflags.git)
-- **RocksDB v10.2.1**: Built from source (https://github.com/facebook/rocksdb.git)
+**⚠️ Do not attempt to build the replica with `go build` - it will fail.**
 
-The `make replica` target automatically handles installing these dependencies, but requires sudo privileges. If you prefer to install dependencies manually, you can use:
+The replica requires RocksDB, a C++ embedded database. Building RocksDB from source takes several minutes and requires:
 
-```bash
-make install-replica-deps  # Install RocksDB dependencies only
-```
+- **Compiler**: GCC 14 (gcc-14, g++-14)
+- **Build tools**: cmake, pkg-config
+- **Libraries**: libsnappy-dev, libzstd-dev, liblz4-dev, zlib1g-dev, libbz2-dev, liburing-dev, libgflags-dev
+- **RocksDB v10.2.1**: Compiled from source with `make shared_lib`
+
+Use the Makefile targets described above - they handle all of this automatically.
 
 # Client:
 
