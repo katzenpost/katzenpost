@@ -32,6 +32,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
@@ -150,6 +151,10 @@ type state struct {
 	threshold    int
 	dissenters   int
 	state        string
+
+	// cachedPhase stores the current phase name for lock-free access.
+	// Updated atomically whenever the state changes.
+	cachedPhase atomic.Value // stores string
 }
 
 func (s *state) Halt() {
@@ -158,6 +163,13 @@ func (s *state) Halt() {
 	// Gracefully close the persistence store.
 	s.db.Sync()
 	s.db.Close()
+}
+
+// setState updates the FSM state and the cached phase atomically.
+// This must be called with the write lock held.
+func (s *state) setState(newState string) {
+	s.state = newState
+	s.cachedPhase.Store(newState)
 }
 
 func (s *state) onUpdate() {
@@ -199,11 +211,11 @@ func (s *state) fsm() <-chan time.Time {
 			s.log.Errorf("FSM: Too late to vote this round (elapsed %s > deadline %s), sleeping until next epoch %s", elapsed, MixPublishDeadline, nextEpoch)
 			sleep = nextEpoch
 			s.votingEpoch = epoch + 2
-			s.state = stateBootstrap
+			s.setState(stateBootstrap)
 			s.log.Warningf("FSM: Staying in bootstrap state, will vote for epoch %d", s.votingEpoch)
 		} else {
 			s.votingEpoch = epoch + 1
-			s.state = stateAcceptDescriptor
+			s.setState(stateAcceptDescriptor)
 			sleep = MixPublishDeadline - elapsed
 			if sleep < 0 {
 				sleep = 0
@@ -232,7 +244,7 @@ func (s *state) fsm() <-chan time.Time {
 		} else {
 			s.log.Errorf("FSM: Failed to compute vote for epoch %v: %s", s.votingEpoch, err)
 		}
-		s.state = stateAcceptVote
+		s.setState(stateAcceptVote)
 		_, nowelapsed, _ := epochtime.Now()
 		sleep = AuthorityVoteDeadline - nowelapsed
 		s.log.Noticef("FSM: Transitioning to %s state, sleeping for %s until vote deadline", s.state, sleep)
@@ -247,7 +259,7 @@ func (s *state) fsm() <-chan time.Time {
 		signed := s.reveal(s.votingEpoch)
 		s.log.Debugf("FSM: Generated reveal for epoch %d", s.votingEpoch)
 		s.sendRevealToAuthorities(signed, s.votingEpoch)
-		s.state = stateAcceptReveal
+		s.setState(stateAcceptReveal)
 		_, nowelapsed, _ := epochtime.Now()
 		sleep = AuthorityRevealDeadline - nowelapsed
 		s.log.Noticef("FSM: Transitioning to %s state, sleeping for %s until reveal deadline", s.state, sleep)
@@ -272,7 +284,7 @@ func (s *state) fsm() <-chan time.Time {
 		} else {
 			s.log.Errorf("FSM: Failed to compute certificate for epoch %v: %s", s.votingEpoch, err)
 		}
-		s.state = stateAcceptCert
+		s.setState(stateAcceptCert)
 		_, nowelapsed, _ := epochtime.Now()
 		sleep = AuthorityCertDeadline - nowelapsed
 		s.log.Noticef("FSM: Transitioning to %s state, sleeping for %s until cert deadline", s.state, sleep)
@@ -315,7 +327,7 @@ func (s *state) fsm() <-chan time.Time {
 		} else {
 			s.log.Errorf("FSM: Failed to compute our view of consensus for epoch %v: %s", s.votingEpoch, err)
 		}
-		s.state = stateAcceptSignature
+		s.setState(stateAcceptSignature)
 		_, nowelapsed, _ := epochtime.Now()
 		sleep = PublishConsensusDeadline - nowelapsed
 		s.log.Noticef("FSM: Transitioning to %s state, sleeping for %s until consensus deadline", s.state, sleep)
@@ -333,14 +345,14 @@ func (s *state) fsm() <-chan time.Time {
 		_, _, nextEpoch := epochtime.Now()
 		if err == nil {
 			s.log.Noticef("FSM: SUCCESS! Achieved threshold consensus for epoch %d: %v", s.votingEpoch, consensus)
-			s.state = stateAcceptDescriptor
+			s.setState(stateAcceptDescriptor)
 			sleep = MixPublishDeadline + nextEpoch
 			s.votingEpoch++
 			s.log.Noticef("FSM: Consensus successful, transitioning to %s state for next voting epoch %d, sleeping for %s", s.state, s.votingEpoch, sleep)
 		} else {
 			s.log.Errorf("FSM: CONSENSUS FAILURE for epoch %d: %s", s.votingEpoch, err)
 			s.log.Errorf("FSM: Had %d signatures out of %d required threshold", sigCount, s.threshold)
-			s.state = stateBootstrap
+			s.setState(stateBootstrap)
 			s.votingEpoch = epoch + 2 // vote on epoch+2 in epoch+1
 			sleep = nextEpoch
 			s.log.Errorf("FSM: Consensus failed, transitioning to %s state, will vote for epoch %d, sleeping for %s", s.state, s.votingEpoch, sleep)
@@ -1065,16 +1077,20 @@ func (s *state) phaseDeadline(targetDeadline time.Duration) time.Time {
 
 // PhaseInfo returns the current phase name and time remaining until the next phase.
 // This is useful for debugging connection handling relative to the voting schedule.
+// This function is lock-free to avoid blocking incoming connections during state transitions.
 func (s *state) PhaseInfo() (phase string, timeRemaining time.Duration) {
-	s.RLock()
-	defer s.RUnlock()
-
 	_, elapsed, _ := epochtime.Now()
-	phase = s.state
+
+	// Use cached phase to avoid lock contention
+	if cached := s.cachedPhase.Load(); cached != nil {
+		phase = cached.(string)
+	} else {
+		phase = "unknown"
+	}
 
 	// Calculate time remaining based on current phase
 	var deadline time.Duration
-	switch s.state {
+	switch phase {
 	case stateBootstrap, stateAcceptDescriptor:
 		deadline = MixPublishDeadline
 	case stateAcceptVote:
@@ -2059,50 +2075,46 @@ func (s *state) onSigUpload(sig *commands.Sig) commands.Command {
 }
 
 func (s *state) onReplicaDescriptorUpload(rawDesc []byte, desc *pki.ReplicaDescriptor, epoch uint64) error {
-	s.Lock()
-	defer s.Unlock()
+	// Note: Caller ensures that the epoch is the current epoch +- 1.
+	pk := hash.Sum256(desc.IdentityKey)
 
-	// Check if we're past the descriptor upload phase deadline
+	// Phase 1: Check under read lock if we should proceed
+	s.RLock()
 	_, elapsed, _ := epochtime.Now()
 	if elapsed > MixPublishDeadline {
 		s.log.Warningf("Replica %s: Descriptor upload for epoch %d arrived after upload phase ended (elapsed: %v, deadline: %v, late by: %v)",
 			desc.Name, epoch, elapsed, MixPublishDeadline, elapsed-MixPublishDeadline)
 	}
 
-	// Note: Caller ensures that the epoch is the current epoch +- 1.
-	pk := hash.Sum256(desc.IdentityKey)
-
-	// Get the public key -> descriptor map for the epoch.
-	_, ok := s.replicaDescriptors[epoch]
-	if !ok {
-		s.replicaDescriptors[epoch] = make(map[[publicKeyHashSize]byte]*pki.ReplicaDescriptor)
-	}
-
 	// Check for redundant uploads.
-	d, ok := s.replicaDescriptors[epoch][pk]
-	if ok {
-		// If the descriptor changes, then it will be rejected to prevent
-		// nodes from reneging on uploads.
-		serialized, err := d.Marshal()
-		if err != nil {
-			return err
+	if epochDescs, ok := s.replicaDescriptors[epoch]; ok {
+		if d, ok := epochDescs[pk]; ok {
+			// If the descriptor changes, then it will be rejected to prevent
+			// nodes from reneging on uploads.
+			serialized, err := d.Marshal()
+			if err != nil {
+				s.RUnlock()
+				return err
+			}
+			if !hmac.Equal(serialized, rawDesc) {
+				s.RUnlock()
+				return fmt.Errorf("state: node %s (%x): Conflicting descriptor for epoch %v", desc.Name, hash.Sum256(desc.IdentityKey), epoch)
+			}
+			// Redundant uploads that don't change are harmless.
+			s.RUnlock()
+			return nil
 		}
-		if !hmac.Equal(serialized, rawDesc) {
-			return fmt.Errorf("state: node %s (%x): Conflicting descriptor for epoch %v", desc.Name, hash.Sum256(desc.IdentityKey), epoch)
-		}
-
-		// Redundant uploads that don't change are harmless.
-		return nil
 	}
 
-	// Ok, this is a new descriptor.
+	// Check if document already exists (late upload)
 	if s.documents[epoch] != nil {
-		// If there is a document already, the descriptor is late, and will
-		// never appear in a document, so reject it.
+		s.RUnlock()
 		return fmt.Errorf("state: Node %v: Late descriptor upload for for epoch %v", desc.IdentityKey, epoch)
 	}
+	s.RUnlock()
 
-	// Persist the raw descriptor to disk.
+	// Phase 2: Persist to disk WITHOUT holding the lock
+	// This is the expensive I/O operation that was blocking other goroutines
 	if err := s.db.Update(func(tx *bolt.Tx) error {
 		bkt := tx.Bucket([]byte(replicaDescriptorsBucket))
 		eBkt, err := bkt.CreateBucketIfNotExists(epochToBytes(epoch))
@@ -2113,6 +2125,22 @@ func (s *state) onReplicaDescriptorUpload(rawDesc []byte, desc *pki.ReplicaDescr
 	}); err != nil {
 		// Persistence failures are FATAL.
 		s.s.fatalErrCh <- err
+		return err
+	}
+
+	// Phase 3: Update in-memory state under write lock
+	s.Lock()
+	defer s.Unlock()
+
+	// Re-check conditions after acquiring write lock (another goroutine may have updated)
+	if _, ok := s.replicaDescriptors[epoch]; !ok {
+		s.replicaDescriptors[epoch] = make(map[[publicKeyHashSize]byte]*pki.ReplicaDescriptor)
+	}
+
+	// Check again for duplicate (race with another upload)
+	if _, ok := s.replicaDescriptors[epoch][pk]; ok {
+		// Another goroutine already added it, that's fine
+		return nil
 	}
 
 	// Store the parsed descriptor
@@ -2148,50 +2176,46 @@ func (s *state) cacheEnvelopeKeys(desc *pki.ReplicaDescriptor) {
 }
 
 func (s *state) onDescriptorUpload(rawDesc []byte, desc *pki.MixDescriptor, epoch uint64) error {
-	s.Lock()
-	defer s.Unlock()
+	// Note: Caller ensures that the epoch is the current epoch +- 1.
+	pk := hash.Sum256(desc.IdentityKey)
 
-	// Check if we're past the descriptor upload phase deadline
+	// Phase 1: Check under read lock if we should proceed
+	s.RLock()
 	_, elapsed, _ := epochtime.Now()
 	if elapsed > MixPublishDeadline {
 		s.log.Warningf("Node %s: Descriptor upload for epoch %d arrived after upload phase ended (elapsed: %v, deadline: %v, late by: %v)",
 			desc.Name, epoch, elapsed, MixPublishDeadline, elapsed-MixPublishDeadline)
 	}
 
-	// Note: Caller ensures that the epoch is the current epoch +- 1.
-	pk := hash.Sum256(desc.IdentityKey)
-
-	// Get the public key -> descriptor map for the epoch.
-	_, ok := s.descriptors[epoch]
-	if !ok {
-		s.descriptors[epoch] = make(map[[publicKeyHashSize]byte]*pki.MixDescriptor)
-	}
-
 	// Check for redundant uploads.
-	d, ok := s.descriptors[epoch][pk]
-	if ok {
-		// If the descriptor changes, then it will be rejected to prevent
-		// nodes from reneging on uploads.
-		serialized, err := d.MarshalBinary()
-		if err != nil {
-			return err
+	if epochDescs, ok := s.descriptors[epoch]; ok {
+		if d, ok := epochDescs[pk]; ok {
+			// If the descriptor changes, then it will be rejected to prevent
+			// nodes from reneging on uploads.
+			serialized, err := d.MarshalBinary()
+			if err != nil {
+				s.RUnlock()
+				return err
+			}
+			if !hmac.Equal(serialized, rawDesc) {
+				s.RUnlock()
+				return fmt.Errorf("state: node %s (%x): Conflicting descriptor for epoch %v", desc.Name, hash.Sum256(desc.IdentityKey), epoch)
+			}
+			// Redundant uploads that don't change are harmless.
+			s.RUnlock()
+			return nil
 		}
-		if !hmac.Equal(serialized, rawDesc) {
-			return fmt.Errorf("state: node %s (%x): Conflicting descriptor for epoch %v", desc.Name, hash.Sum256(desc.IdentityKey), epoch)
-		}
-
-		// Redundant uploads that don't change are harmless.
-		return nil
 	}
 
-	// Ok, this is a new descriptor.
+	// Check if document already exists (late upload)
 	if s.documents[epoch] != nil {
-		// If there is a document already, the descriptor is late, and will
-		// never appear in a document, so reject it.
+		s.RUnlock()
 		return fmt.Errorf("state: Node %v: Late descriptor upload for for epoch %v", desc.IdentityKey, epoch)
 	}
+	s.RUnlock()
 
-	// Persist the raw descriptor to disk.
+	// Phase 2: Persist to disk WITHOUT holding the lock
+	// This is the expensive I/O operation that was blocking other goroutines
 	if err := s.db.Update(func(tx *bolt.Tx) error {
 		bkt := tx.Bucket([]byte(descriptorsBucket))
 		eBkt, err := bkt.CreateBucketIfNotExists(epochToBytes(epoch))
@@ -2202,6 +2226,22 @@ func (s *state) onDescriptorUpload(rawDesc []byte, desc *pki.MixDescriptor, epoc
 	}); err != nil {
 		// Persistence failures are FATAL.
 		s.s.fatalErrCh <- err
+		return err
+	}
+
+	// Phase 3: Update in-memory state under write lock
+	s.Lock()
+	defer s.Unlock()
+
+	// Re-check conditions after acquiring write lock (another goroutine may have updated)
+	if _, ok := s.descriptors[epoch]; !ok {
+		s.descriptors[epoch] = make(map[[publicKeyHashSize]byte]*pki.MixDescriptor)
+	}
+
+	// Check again for duplicate (race with another upload)
+	if _, ok := s.descriptors[epoch][pk]; ok {
+		// Another goroutine already added it, that's fine
+		return nil
 	}
 
 	// Store the parsed descriptor
@@ -2556,6 +2596,7 @@ func newState(s *Server) (*state, error) {
 
 	// Set the initial state to bootstrap
 	st.state = stateBootstrap
+	st.cachedPhase.Store(stateBootstrap)
 	return st, nil
 }
 

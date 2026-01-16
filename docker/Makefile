@@ -75,7 +75,7 @@ ifeq ($(no_decoy),true)
 endif
 
 # log_level can be DEBUG, INFO, NOTICE, WARNING, ERROR, CRITICAL
-log_level=INFO
+log_level=DEBUG
 
 docker=$(shell if which podman|grep -q .; then echo podman; else echo docker; fi)
 
