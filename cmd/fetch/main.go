@@ -17,17 +17,15 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/spf13/cobra"
 
-	"github.com/katzenpost/katzenpost/client2"
 	"github.com/katzenpost/katzenpost/client2/config"
+	"github.com/katzenpost/katzenpost/client2/thin"
 	"github.com/katzenpost/katzenpost/common"
-	"github.com/katzenpost/katzenpost/core/epochtime"
-	"github.com/katzenpost/katzenpost/core/log"
-	"github.com/katzenpost/katzenpost/core/pki"
 )
 
 // Config holds the command line configuration
@@ -35,6 +33,7 @@ type Config struct {
 	ConfigFile string
 	Retry      int
 	Delay      int
+	LogLevel   string
 }
 
 // newRootCommand creates the root cobra command
@@ -45,16 +44,14 @@ func newRootCommand() *cobra.Command {
 		Use:   "fetch",
 		Short: "Fetch network documents from Katzenpost directory authorities",
 		Long: `Fetch and display network topology documents from Katzenpost directory
-authorities. This tool connects to the mixnet PKI system to retrieve the
+authorities. This tool connects to the client2 daemon to retrieve the
 current network consensus document containing mix node information.
 
 Core functionality:
-• Connects to directory authorities using client configuration
-• Establishes TOFU (Trust On First Use) session for PKI access
+• Connects to client2 daemon using thin client configuration
 • Retrieves current network consensus documents
 • Displays network topology and mix node information
 • Supports retry logic for robust network document fetching
-• Handles epoch timing for document availability
 
 The tool is useful for network monitoring, debugging connectivity issues,
 and inspecting the current state of the mixnet topology.`,
@@ -76,11 +73,13 @@ and inspecting the current state of the mixnet topology.`,
 
 	// Configuration flags
 	cmd.Flags().StringVarP(&cfg.ConfigFile, "config", "f", "katzenpost-authority.toml",
-		"path to the client configuration file (TOML format)")
+		"path to the thin client configuration file (TOML format)")
 	cmd.Flags().IntVarP(&cfg.Retry, "retry", "r", 10,
 		"number of connection retry attempts")
 	cmd.Flags().IntVarP(&cfg.Delay, "delay", "d", 30,
 		"seconds to wait between retry attempts")
+	cmd.Flags().StringVarP(&cfg.LogLevel, "log_level", "l", "DEBUG",
+		"logging level (DEBUG, INFO, NOTICE, WARNING, ERROR, CRITICAL)")
 
 	return cmd
 }
@@ -90,46 +89,43 @@ func main() {
 	common.ExecuteWithFang(rootCmd)
 }
 
-// runFetch fetches network documents from directory authorities
-func runFetch(cfg Config) error {
-	clientCfg, err := config.LoadFile(cfg.ConfigFile)
+// getThinClient connects to the client2 daemon and returns a ThinClient
+func getThinClient(cfgFile string, logLevel string, retry int, delay int) (*thin.ThinClient, error) {
+	cfg, err := thin.LoadFile(cfgFile)
 	if err != nil {
-		return fmt.Errorf("failed to load config file: %v", err)
+		return nil, err
 	}
 
-	logBackend, err := log.New("", clientCfg.Logging.Level, clientCfg.Logging.Disable)
-	if err != nil {
-		return fmt.Errorf("failed to create log backend: %v", err)
+	logging := &config.Logging{
+		Level: logLevel,
 	}
-
-	cc, err := client2.New(clientCfg, logBackend)
-	if err != nil {
-		return fmt.Errorf("failed to create client: %v", err)
-	}
-	defer cc.Shutdown()
+	client := thin.NewThinClient(cfg, logging)
 
 	retries := 0
 	for {
-		err = cc.Start()
+		err = client.Dial()
 		switch err {
 		case nil:
-			// Success, continue
-			goto connected
-		case pki.ErrNoDocument:
-			// Wait for next epoch
-			_, _, till := epochtime.Now()
-			<-time.After(till)
+			return client, nil
 		default:
-			if retries >= cfg.Retry {
-				return fmt.Errorf("failed to connect within retry limit: %v", err)
+			if retry >= 0 && retries >= retry {
+				return nil, errors.New("failed to connect within retry limit")
 			}
-			<-time.After(time.Duration(cfg.Delay) * time.Second)
+			<-time.After(time.Duration(delay) * time.Second)
 		}
 		retries++
 	}
+}
 
-connected:
-	_, doc := cc.CurrentDocument()
+// runFetch fetches network documents from directory authorities
+func runFetch(cfg Config) error {
+	client, err := getThinClient(cfg.ConfigFile, cfg.LogLevel, cfg.Retry, cfg.Delay)
+	if err != nil {
+		return fmt.Errorf("failed to connect to client2 daemon: %v", err)
+	}
+	defer client.Close()
+
+	doc := client.PKIDocument()
 	if doc != nil {
 		// Display the network document
 		fmt.Printf("%v", doc)
