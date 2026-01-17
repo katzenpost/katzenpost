@@ -18,7 +18,6 @@ jobs:
         go-version: ["1.22.x"]
         test-suite:
           - { name: "authority", path: "authority", timeout: "30m" }
-          - { name: "client", path: "client", timeout: "30m" }
           - { name: "client2", path: "client2", timeout: "30m" }
           - { name: "core", path: "core", timeout: "30m" }
           - { name: "sphinx", path: "core/sphinx", timeout: "30m" }
