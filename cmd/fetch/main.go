@@ -17,16 +17,16 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"time"
 
 	"github.com/spf13/cobra"
 
-	"github.com/katzenpost/katzenpost/client"
-	"github.com/katzenpost/katzenpost/client/config"
+	"github.com/katzenpost/katzenpost/client2"
+	"github.com/katzenpost/katzenpost/client2/config"
 	"github.com/katzenpost/katzenpost/common"
 	"github.com/katzenpost/katzenpost/core/epochtime"
+	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
 )
 
@@ -97,18 +97,24 @@ func runFetch(cfg Config) error {
 		return fmt.Errorf("failed to load config file: %v", err)
 	}
 
-	cc, err := client.New(clientCfg)
+	logBackend, err := log.New("", clientCfg.Logging.Level, clientCfg.Logging.Disable)
+	if err != nil {
+		return fmt.Errorf("failed to create log backend: %v", err)
+	}
+
+	cc, err := client2.New(clientCfg, logBackend)
 	if err != nil {
 		return fmt.Errorf("failed to create client: %v", err)
 	}
+	defer cc.Shutdown()
 
-	var session *client.Session
 	retries := 0
-	for session == nil {
-		session, err = cc.NewTOFUSession(context.Background())
+	for {
+		err = cc.Start()
 		switch err {
 		case nil:
 			// Success, continue
+			goto connected
 		case pki.ErrNoDocument:
 			// Wait for next epoch
 			_, _, till := epochtime.Now()
@@ -122,8 +128,8 @@ func runFetch(cfg Config) error {
 		retries++
 	}
 
-	session.WaitForDocument(context.Background())
-	doc := session.CurrentDocument()
+connected:
+	_, doc := cc.CurrentDocument()
 	if doc != nil {
 		// Display the network document
 		fmt.Printf("%v", doc)
