@@ -18,14 +18,12 @@ package main
 
 import (
 	"fmt"
-	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/katzenpost/katzenpost/client2/config"
 	"github.com/katzenpost/katzenpost/client2/thin"
 	"github.com/katzenpost/katzenpost/common"
-	"github.com/katzenpost/katzenpost/core/retry"
 )
 
 // Config holds the command line configuration
@@ -96,15 +94,23 @@ func runFetch(cfg Config) error {
 		return fmt.Errorf("failed to connect to client2 daemon: %v", err)
 	}
 
-	// Keep retrying until we get a PKI document
-	for attempt := 0; ; attempt++ {
-		doc := client.PKIDocument()
-		if doc != nil {
-			fmt.Printf("%v", doc)
+	// Check if we already have a PKI document
+	doc := client.PKIDocument()
+	if doc != nil {
+		fmt.Printf("%v", doc)
+		return nil
+	}
+
+	// Wait for PKI document via event sink
+	eventSink := client.EventSink()
+	defer client.StopEventSink(eventSink)
+
+	for event := range eventSink {
+		if docEvent, ok := event.(*thin.NewDocumentEvent); ok {
+			fmt.Printf("%v", docEvent.Document)
 			return nil
 		}
-
-		delay := retry.Delay(retry.DefaultBaseDelay, retry.DefaultMaxDelay, retry.DefaultJitter, attempt)
-		<-time.After(delay)
 	}
+
+	return fmt.Errorf("connection closed before receiving PKI document")
 }
