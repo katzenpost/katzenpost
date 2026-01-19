@@ -26,8 +26,7 @@ import (
 	signSchemes "github.com/katzenpost/hpqc/sign/schemes"
 
 	vConfig "github.com/katzenpost/katzenpost/authority/voting/server/config"
-	cConfig "github.com/katzenpost/katzenpost/client/config"
-	cConfig2 "github.com/katzenpost/katzenpost/client2/config"
+	cConfig "github.com/katzenpost/katzenpost/client2/config"
 	"github.com/katzenpost/katzenpost/client2/thin"
 	"github.com/katzenpost/katzenpost/common"
 	"github.com/katzenpost/katzenpost/common/config"
@@ -200,14 +199,14 @@ func (s *katzenpost) genClient2Cfg(net, addr string) error {
 	os.MkdirAll(filepath.Join(s.outDir, "client2"), 0700)
 	os.MkdirAll(filepath.Join(s.outDir, "thinclient"), 0700)
 
-	cfg := new(cConfig2.Config)
+	cfg := new(cConfig.Config)
 
 	// Use TCP by default so that the CI tests pass on all platforms
 	cfg.ListenNetwork = net
 	cfg.ListenAddress = addr
 
 	// Logging section.
-	cfg.Logging = &cConfig2.Logging{File: "", Level: debugLogLevel}
+	cfg.Logging = &cConfig.Logging{File: "", Level: debugLogLevel}
 
 	cfg.PKISignatureScheme = s.pkiSignatureScheme.Name()
 	cfg.WireKEMScheme = s.wireKEMScheme
@@ -215,7 +214,7 @@ func (s *katzenpost) genClient2Cfg(net, addr string) error {
 	cfg.PigeonholeGeometry = s.pigeonholeGeometry
 
 	// UpstreamProxy section
-	cfg.UpstreamProxy = &cConfig2.UpstreamProxy{Type: "none"}
+	cfg.UpstreamProxy = &cConfig.UpstreamProxy{Type: "none"}
 
 	// VotingAuthority section
 	peers := make([]*vConfig.Authority, 0)
@@ -223,12 +222,12 @@ func (s *katzenpost) genClient2Cfg(net, addr string) error {
 		peers = append(peers, peer)
 	}
 	sort.Sort(AuthById(peers))
-	cfg.VotingAuthority = &cConfig2.VotingAuthority{Peers: peers}
+	cfg.VotingAuthority = &cConfig.VotingAuthority{Peers: peers}
 
 	// Debug section
-	cfg.Debug = &cConfig2.Debug{DisableDecoyTraffic: s.debugConfig.DisableDecoyTraffic}
+	cfg.Debug = &cConfig.Debug{DisableDecoyTraffic: s.debugConfig.DisableDecoyTraffic}
 
-	gateways := make([]*cConfig2.Gateway, 0)
+	gateways := make([]*cConfig.Gateway, 0)
 	for i := 0; i < len(s.nodeConfigs); i++ {
 		if s.nodeConfigs[i].Gateway == nil {
 			continue
@@ -237,7 +236,7 @@ func (s *katzenpost) genClient2Cfg(net, addr string) error {
 		idPubKey := cfgIdKey(s.nodeConfigs[i], s.outDir)
 		linkPubKey := cfgLinkKey(s.nodeConfigs[i], s.outDir, cfg.WireKEMScheme)
 
-		gateway := &cConfig2.Gateway{
+		gateway := &cConfig.Gateway{
 			PKISignatureScheme: s.pkiSignatureScheme.Name(),
 			WireKEMScheme:      s.wireKEMScheme,
 			Name:               s.nodeConfigs[i].Server.Identifier,
@@ -250,46 +249,12 @@ func (s *katzenpost) genClient2Cfg(net, addr string) error {
 	if len(gateways) == 0 {
 		panic("wtf 0 gateways")
 	}
-	cfg.PinnedGateways = &cConfig2.Gateways{
+	cfg.PinnedGateways = &cConfig.Gateways{
 		Gateways: gateways,
 	}
 	err := saveCfg(cfg, s.outDir)
 	if err != nil {
 		log.Printf("save client2 config failure %s", err.Error())
-		return err
-	}
-	return nil
-}
-
-func (s *katzenpost) genClientCfg() error {
-	os.MkdirAll(filepath.Join(s.outDir, "client"), 0700)
-	cfg := new(cConfig.Config)
-
-	cfg.WireKEMScheme = s.wireKEMScheme
-	cfg.PKISignatureScheme = s.pkiSignatureScheme.Name()
-	cfg.SphinxGeometry = s.sphinxGeometry
-
-	// Logging section.
-	cfg.Logging = &cConfig.Logging{File: "", Level: s.logLevel}
-
-	// UpstreamProxy section
-	cfg.UpstreamProxy = &cConfig.UpstreamProxy{Type: "none"}
-
-	// VotingAuthority section
-
-	peers := make([]*vConfig.Authority, 0)
-	for _, peer := range s.authorities {
-		peers = append(peers, peer)
-	}
-
-	sort.Sort(AuthById(peers))
-
-	cfg.VotingAuthority = &cConfig.VotingAuthority{Peers: peers}
-
-	// Debug section
-	cfg.Debug = s.debugConfig
-	err := saveCfg(cfg, s.outDir)
-	if err != nil {
 		return err
 	}
 	return nil
@@ -1025,15 +990,10 @@ func saveConfigurations(s *katzenpost, cfg *Config) error {
 
 // generateClientConfigurations creates all client configuration files
 func generateClientConfigurations(s *katzenpost) error {
-	err := s.genClientCfg()
-	if err != nil {
-		return fmt.Errorf("failed to generate client config: %v", err)
-	}
-
 	clientDaemonNetwork := "tcp"
 	clientDaemonAddress := "localhost:64331"
 
-	err = s.genClient2Cfg(clientDaemonNetwork, clientDaemonAddress)
+	err := s.genClient2Cfg(clientDaemonNetwork, clientDaemonAddress)
 	if err != nil {
 		return fmt.Errorf("failed to generate client2 config: %v", err)
 	}
@@ -1069,8 +1029,6 @@ func main() {
 func identifier(cfg interface{}) string {
 	switch cfg.(type) {
 	case *cConfig.Config:
-		return clientIdentifier
-	case *cConfig2.Config:
 		return client2Identifier
 	case *thin.Config:
 		return client2Identifier
@@ -1091,8 +1049,6 @@ func identifier(cfg interface{}) string {
 func tomlName(cfg interface{}) string {
 	switch cfg.(type) {
 	case *cConfig.Config:
-		return clientIdentifier
-	case *cConfig2.Config:
 		return clientIdentifier
 	case *thin.Config:
 		return "thinclient"

@@ -601,7 +601,12 @@ func (t *ThinClient) Dial() error {
 	if message2.NewPKIDocumentEvent == nil {
 		panic("bug: thin client protocol sequence violation")
 	}
-	t.parsePKIDoc(message2.NewPKIDocumentEvent.Payload)
+	// Handle empty payload - daemon may not have a PKI document yet
+	if len(message2.NewPKIDocumentEvent.Payload) > 0 {
+		t.parsePKIDoc(message2.NewPKIDocumentEvent.Payload)
+	} else {
+		t.log.Infof("No PKI document available yet - will receive when available")
+	}
 	t.Go(t.eventSinkWorker)
 	t.Go(t.worker)
 	return nil

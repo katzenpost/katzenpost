@@ -154,18 +154,18 @@ type Document struct {
 	// This set is stable and does not change when replicas go offline.
 	// It is used for consistent sharding so that shard assignments remain stable
 	// even when replicas are temporarily unavailable.
-	ConfiguredReplicaIDs []uint8
+	ConfiguredReplicaIDs []uint8 `cbor:"ConfiguredReplicaIDs,omitempty"`
 
 	// ConfiguredReplicaIdentityKeys is the complete set of identity public keys
 	// for all configured replicas. This set is stable and does not change when replicas
 	// go offline. It is used for consistent hashing to determine shard assignments.
-	ConfiguredReplicaIdentityKeys [][]byte
+	ConfiguredReplicaIdentityKeys [][]byte `cbor:"ConfiguredReplicaIdentityKeys,omitempty"`
 
 	// ReplicaEnvelopeKeys contains envelope public keys for all configured replicas,
 	// indexed by ReplicaID and then by replica epoch. This map includes keys from
 	// replicas that are temporarily offline, using cached values from previous epochs.
 	// It contains keys for the previous, current, and next replica epochs.
-	ReplicaEnvelopeKeys map[uint8]map[uint64][]byte
+	ReplicaEnvelopeKeys map[uint8]map[uint64][]byte `cbor:"ReplicaEnvelopeKeys,omitempty"`
 
 	// Signatures holds detached Signatures from deserializing a signed Document
 	Signatures map[[PublicKeyHashSize]byte]cert.Signature `cbor:"-"`
