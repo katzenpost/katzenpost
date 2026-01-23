@@ -4,6 +4,7 @@ package client2
 
 import (
 	"github.com/katzenpost/hpqc/bacap"
+	"github.com/katzenpost/hpqc/rand"
 
 	"github.com/katzenpost/katzenpost/client2/thin"
 )
@@ -13,13 +14,21 @@ func (d *Daemon) newKeypair(request *Request) {
 	conn := d.listener.getConnection(request.AppID)
 	if conn == nil {
 		d.log.Errorf(errNoConnectionForAppID, request.AppID[:])
-		d.sendReadChannelError(request, thin.ThinClientErrorConnectionLost)
 		return
 	}
 	seed := request.NewKeypair.Seed
-	writeCap, err := bacap.NewWriteCapFromBytes(seed)
+	if len(seed) < 32 {
+		d.sendNewKeypairError(request, thin.ThinClientErrorInvalidRequest)
+		return
+	}
+	rng, err := rand.NewDeterministicRandReader(seed)
 	if err != nil {
-		d.sendReadChannelError(request, thin.ThinClientErrorInvalidRequest)
+		d.sendNewKeypairError(request, thin.ThinClientErrorInvalidRequest)
+		return
+	}
+	writeCap, err := bacap.NewWriteCap(rng)
+	if err != nil {
+		d.sendNewKeypairError(request, thin.ThinClientErrorInvalidRequest)
 		return
 	}
 	readCap := writeCap.ReadCap()
@@ -29,6 +38,20 @@ func (d *Daemon) newKeypair(request *Request) {
 			WriteCap:  writeCap,
 			ReadCap:   readCap,
 			ErrorCode: thin.ThinClientSuccess,
+		},
+	})
+}
+
+func (d *Daemon) sendNewKeypairError(request *Request, errorCode uint8) {
+	conn := d.listener.getConnection(request.AppID)
+	if conn == nil {
+		return
+	}
+	conn.sendResponse(&Response{
+		AppID: request.AppID,
+		NewKeypairReply: &thin.NewKeypairReply{
+			QueryID:   request.NewKeypair.QueryID,
+			ErrorCode: errorCode,
 		},
 	})
 }

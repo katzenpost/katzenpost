@@ -8,11 +8,20 @@ import (
 
 func IntoThinResponse(r *Response) *thin.Response {
 	return &thin.Response{
-		ConnectionStatusEvent:        r.ConnectionStatusEvent,
-		NewPKIDocumentEvent:          r.NewPKIDocumentEvent,
-		MessageSentEvent:             r.MessageSentEvent,
-		MessageReplyEvent:            r.MessageReplyEvent,
-		MessageIDGarbageCollected:    r.MessageIDGarbageCollected,
+		ConnectionStatusEvent:     r.ConnectionStatusEvent,
+		NewPKIDocumentEvent:       r.NewPKIDocumentEvent,
+		MessageSentEvent:          r.MessageSentEvent,
+		MessageReplyEvent:         r.MessageReplyEvent,
+		MessageIDGarbageCollected: r.MessageIDGarbageCollected,
+
+		// New Pigeonhole API:
+		NewKeypairReply:                      r.NewKeypairReply,
+		EncryptReadReply:                     r.EncryptReadReply,
+		EncryptWriteReply:                    r.EncryptWriteReply,
+		StartResendingEncryptedMessageReply:  r.StartResendingEncryptedMessageReply,
+		CancelResendingEncryptedMessageReply: r.CancelResendingEncryptedMessageReply,
+
+		// OLD Pigeonhole API:
 		CreateWriteChannelReply:      r.CreateWriteChannelReply,
 		CreateReadChannelReply:       r.CreateReadChannelReply,
 		WriteChannelReply:            r.WriteChannelReply,
