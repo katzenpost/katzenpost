@@ -20,31 +20,20 @@ const (
 	K = 2
 )
 
-// GetConfiguredReplicaKeys returns the stable set of replica identity keys
-// from the authority configuration. This set does NOT change when replicas go
-// offline, ensuring consistent sharding.
-func GetConfiguredReplicaKeys(doc *pki.Document) ([][]byte, error) {
-	if doc.ConfiguredReplicaIdentityKeys == nil {
-		return nil, errors.New("GetConfiguredReplicaKeys: doc.ConfiguredReplicaIdentityKeys is nil")
+func GetReplicaKeys(doc *pki.Document) ([][]byte, error) {
+	if doc.StorageReplicas == nil {
+		return nil, errors.New("GetReplicaKeys: doc.StorageReplicas is nil")
 	}
-	if len(doc.ConfiguredReplicaIdentityKeys) < K {
-		return nil, errors.New("GetConfiguredReplicaKeys: insufficient configured replicas")
+	if len(doc.StorageReplicas) == 0 {
+		return nil, errors.New("GetReplicaKeys: doc.StorageReplicas is empty")
 	}
 
-	keys := make([][]byte, len(doc.ConfiguredReplicaIdentityKeys))
-	for i, key := range doc.ConfiguredReplicaIdentityKeys {
-		keys[i] = make([]byte, len(key))
-		copy(keys[i], key)
+	keys := make([][]byte, len(doc.StorageReplicas))
+	for i, replica := range doc.StorageReplicas {
+		keys[i] = make([]byte, len(replica.IdentityKey))
+		copy(keys[i], replica.IdentityKey)
 	}
 	return keys, nil
-}
-
-// maxHash is the maximum possible 32-byte hash value (all 0xff bytes).
-var maxHash = [32]byte{
-	0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-	0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-	0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-	0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
 }
 
 // Shard2 implements our consistent hashing scheme for the sharded pigeonhole database
@@ -52,8 +41,10 @@ var maxHash = [32]byte{
 // It returns the first K`th entries from our sorted list of hashes
 // where each hash is the hash of the boxID concatenated with the server ID key.
 func Shard2(boxID *[32]byte, serverIdKeys [][]byte) [][]byte {
-	hashes := [2][32]byte{maxHash, maxHash}
-	keys := [2][]byte{nil, nil}
+	hashes := make([][32]byte, 2, 2)
+	keys := make([][]byte, 2, 2)
+	hashes[0] = [32]byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff}
+	hashes[1] = [32]byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff}
 	for _, key := range serverIdKeys {
 		hash := blake2b.Sum256(append(key[:], boxID[:32]...))
 		if slices.Compare(hashes[1][:], hash[:]) == -1 {
@@ -65,7 +56,7 @@ func Shard2(boxID *[32]byte, serverIdKeys [][]byte) [][]byte {
 		hashes[cmpidx] = hash
 		keys[cmpidx] = key[:]
 	}
-	return keys[:]
+	return keys
 }
 
 type serverDesc struct {
@@ -97,30 +88,23 @@ func Shard(boxID *[32]byte, serverIdKeys [][]byte) [][]byte {
 	return result
 }
 
-// GetShards returns the ReplicaDescriptors for the replicas that should store data for a boxID.
-// Uses the stable ConfiguredReplicaIdentityKeys for consistent sharding.
-// Only returns descriptors for replicas that are currently online (present in StorageReplicas).
-// The returned slice may have fewer than K elements if some shard replicas are offline.
 func GetShards(boxid *[32]byte, doc *pki.Document) ([]*pki.ReplicaDescriptor, error) {
-	replicaKeys, err := GetConfiguredReplicaKeys(doc)
+	replicaKeys, err := GetReplicaKeys(doc)
 	if err != nil {
 		return nil, err
 	}
-	// Shard2 returns the K keys with smallest H(key || boxID)
 	orderedKeys := Shard2(boxid, replicaKeys)
-	shards := make([]*pki.ReplicaDescriptor, 0, K)
-	for _, key := range orderedKeys {
-		// Hash the identity key to look up the descriptor
-		keyHash := blake2b.Sum256(key)
-		desc, err := doc.GetReplicaNodeByKeyHash(&keyHash)
+	shards := make([]*pki.ReplicaDescriptor, K)
+	for i, key := range orderedKeys {
+		hash := blake2b.Sum256(key)
+		desc, err := doc.GetReplicaNodeByKeyHash(&hash)
 		if err != nil {
-			// Replica is offline/not in document, skip it
-			continue
+			return nil, err
 		}
-		shards = append(shards, desc)
-	}
-	if len(shards) == 0 {
-		return nil, errors.New("GetShards: no shard replicas are currently online")
+		shards[i] = desc
+		if i == K-1 {
+			break
+		}
 	}
 	return shards, nil
 }

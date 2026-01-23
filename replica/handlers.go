@@ -84,10 +84,11 @@ func (c *incomingConn) onReplicaCommand(rawCmd commands.Command) (*senderRequest
 }
 
 func (c *incomingConn) countReplicas(doc *pki.Document) (int, error) {
-	if doc.ConfiguredReplicaIDs == nil {
-		return 0, errors.New("countReplicas: doc.ConfiguredReplicaIDs is nil")
+	replicaKeys, err := replicaCommon.GetReplicaKeys(doc)
+	if err != nil {
+		return 0, err
 	}
-	return len(doc.ConfiguredReplicaIDs), nil
+	return len(replicaKeys), nil
 }
 
 // replicaMessage's are sent from the courier to the replica storage servers

@@ -548,7 +548,6 @@ func makeReplicaDescriptor(t *testing.T,
 
 	desc := &pki.ReplicaDescriptor{
 		Name:        fmt.Sprintf(testReplicaNameFormat, replicaID),
-		ReplicaID:   uint8(replicaID),
 		IdentityKey: identityPubKeyBytes,
 		LinkKey:     linkPubKeyBytes,
 		Addresses: map[string][]string{
@@ -586,35 +585,20 @@ func createMockPKIClient(t *testing.T, sphinxGeo *geo.Geometry, serviceDesc *pki
 }
 
 func generateTestPKIDocument(t *testing.T, epoch uint64, serviceDesc *pki.MixDescriptor, replicaDescriptors []*pki.ReplicaDescriptor, sphinxGeo *geo.Geometry) *pki.Document {
-	// Build ConfiguredReplicaIDs from the replica descriptors
-	configuredReplicaIDs := make([]uint8, len(replicaDescriptors))
-	for i, desc := range replicaDescriptors {
-		configuredReplicaIDs[i] = desc.ReplicaID
-	}
-
-	// Build ConfiguredReplicaIdentityKeys from the replica descriptors
-	configuredReplicaKeys := make([][]byte, len(replicaDescriptors))
-	for i, desc := range replicaDescriptors {
-		configuredReplicaKeys[i] = make([]byte, len(desc.IdentityKey))
-		copy(configuredReplicaKeys[i], desc.IdentityKey)
-	}
-
 	return &pki.Document{
-		Epoch:                         epoch,
-		SendRatePerMinute:             100,
-		LambdaP:                       0.002,
-		LambdaPMaxDelay:               10000,
-		LambdaL:                       0.1,
-		LambdaD:                       0.1,
-		LambdaM:                       0.1,
-		StorageReplicas:               replicaDescriptors,
-		ConfiguredReplicaIDs:          configuredReplicaIDs,
-		ConfiguredReplicaIdentityKeys: configuredReplicaKeys,
-		Topology:                      make([][]*pki.MixDescriptor, 0),
-		GatewayNodes:                  make([]*pki.MixDescriptor, 0),
-		ServiceNodes:                  []*pki.MixDescriptor{serviceDesc},
-		SharedRandomValue:             make([]byte, 32),
-		SphinxGeometryHash:            sphinxGeo.Hash(),
+		Epoch:              epoch,
+		SendRatePerMinute:  100,
+		LambdaP:            0.002,
+		LambdaPMaxDelay:    10000,
+		LambdaL:            0.1,
+		LambdaD:            0.1,
+		LambdaM:            0.1,
+		StorageReplicas:    replicaDescriptors,
+		Topology:           make([][]*pki.MixDescriptor, 0),
+		GatewayNodes:       make([]*pki.MixDescriptor, 0),
+		ServiceNodes:       []*pki.MixDescriptor{serviceDesc},
+		SharedRandomValue:  make([]byte, 32),
+		SphinxGeometryHash: sphinxGeo.Hash(),
 	}
 }
 
@@ -658,20 +642,18 @@ func (c *mockPKIClient) GetPKIDocumentForEpoch(ctx context.Context, epoch uint64
 
 			// Create a copy of the template document with the requested epoch
 			doc = &pki.Document{
-				Epoch:                         epoch,
-				SendRatePerMinute:             templateDoc.SendRatePerMinute,
-				LambdaP:                       templateDoc.LambdaP,
-				LambdaL:                       templateDoc.LambdaL,
-				LambdaD:                       templateDoc.LambdaD,
-				LambdaM:                       templateDoc.LambdaM,
-				StorageReplicas:               templateDoc.StorageReplicas,
-				ConfiguredReplicaIDs:          templateDoc.ConfiguredReplicaIDs,
-				ConfiguredReplicaIdentityKeys: templateDoc.ConfiguredReplicaIdentityKeys,
-				Topology:                      templateDoc.Topology,
-				GatewayNodes:                  templateDoc.GatewayNodes,
-				ServiceNodes:                  templateDoc.ServiceNodes,
-				SharedRandomValue:             templateDoc.SharedRandomValue,
-				SphinxGeometryHash:            templateDoc.SphinxGeometryHash,
+				Epoch:              epoch,
+				SendRatePerMinute:  templateDoc.SendRatePerMinute,
+				LambdaP:            templateDoc.LambdaP,
+				LambdaL:            templateDoc.LambdaL,
+				LambdaD:            templateDoc.LambdaD,
+				LambdaM:            templateDoc.LambdaM,
+				StorageReplicas:    templateDoc.StorageReplicas,
+				Topology:           templateDoc.Topology,
+				GatewayNodes:       templateDoc.GatewayNodes,
+				ServiceNodes:       templateDoc.ServiceNodes,
+				SharedRandomValue:  templateDoc.SharedRandomValue,
+				SphinxGeometryHash: templateDoc.SphinxGeometryHash,
 			}
 
 			// Memoize the generated document for future requests
@@ -748,24 +730,26 @@ func aliceComposesNextMessageWithIsLast(t *testing.T, message []byte, env *testE
 		WriteMsg:    &writeRequest,
 	}
 
-	// Use proper sharding to determine which replicas should store this BoxID
-	sharding := getShardingInfo(t, env, &boxID)
-
-	for _, replicaIndex := range sharding.ReplicaIndices {
-		t.Logf("BoxID %x will be written to replica %d", boxID[:8], replicaIndex)
-	}
-
+	currentEpoch, _, _ := epochtime.Now()
 	replicaEpoch, _, _ := replicaCommon.ReplicaNow()
+	replicaPubKey1 := env.mockPKIClient.docs[currentEpoch].StorageReplicas[0].EnvelopeKeys[replicaEpoch]
+	replicaPubKey2 := env.mockPKIClient.docs[currentEpoch].StorageReplicas[1].EnvelopeKeys[replicaEpoch]
+
+	replicaPubKeys := make([]nike.PublicKey, 2)
+	replicaPubKeys[0], err = replicaCommon.NikeScheme.UnmarshalBinaryPublicKey(replicaPubKey1)
+	require.NoError(t, err)
+	replicaPubKeys[1], err = replicaCommon.NikeScheme.UnmarshalBinaryPublicKey(replicaPubKey2)
+	require.NoError(t, err)
 
 	mkemPrivateKey, mkemCiphertext := mkemNikeScheme.Encapsulate(
-		sharding.ReplicaPubKeys, msg.Bytes(),
+		replicaPubKeys, msg.Bytes(),
 	)
 	mkemPublicKey := mkemPrivateKey.Public()
 
 	senderPubkeyBytes := mkemPublicKey.Bytes()
 
 	return &pigeonhole.CourierEnvelope{
-		IntermediateReplicas: sharding.ReplicaIndices,
+		IntermediateReplicas: [2]uint8{0, 1}, // indices to pkidoc's StorageReplicas
 		Dek1:                 *mkemCiphertext.DEKCiphertexts[0],
 		Dek2:                 *mkemCiphertext.DEKCiphertexts[1],
 		ReplyIndex:           0,

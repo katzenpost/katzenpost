@@ -124,8 +124,7 @@ func TestReplicaMap(t *testing.T) {
 	r := replicaCommon.NewReplicaMap()
 	newMap := make(map[[32]byte]*pki.ReplicaDescriptor)
 	replica := &pki.ReplicaDescriptor{
-		Name:      "replica1",
-		ReplicaID: 0,
+		Name: "replica1",
 	}
 	id := [32]byte{}
 	_, err := rand.Reader.Read(id[:])
@@ -232,7 +231,6 @@ func TestAuthenticateReplicaConnection(t *testing.T) {
 
 	replicaDesc := &pki.ReplicaDescriptor{
 		Name:        "replica1",
-		ReplicaID:   0,
 		Epoch:       epoch,
 		IdentityKey: setup.idpubkeyblob,
 		LinkKey:     setup.libpubkeyblob,
