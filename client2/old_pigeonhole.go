@@ -22,7 +22,6 @@ import (
 	sphinxConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/pigeonhole"
 	pigeonholeGeo "github.com/katzenpost/katzenpost/pigeonhole/geo"
-	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
 )
 
 var (
@@ -112,44 +111,6 @@ func NewPigeonholeChannel() (*bacap.StatefulWriter, *bacap.ReadCap, *bacap.Write
 	}
 	bobReadCap := owner.ReadCap()
 	return statefulWriter, bobReadCap, owner
-}
-
-// createEnvelopeFromMessage creates a CourierEnvelope from a ReplicaInnerMessage
-func createEnvelopeFromMessage(msg *pigeonhole.ReplicaInnerMessage, doc *cpki.Document, isRead bool, replyIndex uint8) (*pigeonhole.CourierEnvelope, nike.PrivateKey, error) {
-	var boxid *[bacap.BoxIDSize]byte
-	if isRead {
-		boxid = &msg.ReadMsg.BoxID
-	} else {
-		boxid = &msg.WriteMsg.BoxID
-	}
-	intermediateReplicas, replicaPubKeys, err := pigeonhole.GetRandomIntermediateReplicas(doc, boxid)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	mkemPrivateKey, mkemCiphertext := replicaCommon.MKEMNikeScheme.Encapsulate(
-		replicaPubKeys, msg.Bytes(),
-	)
-	mkemPublicKey := mkemPrivateKey.Public()
-
-	var dek1, dek2 [60]uint8
-	copy(dek1[:], mkemCiphertext.DEKCiphertexts[0][:])
-	copy(dek2[:], mkemCiphertext.DEKCiphertexts[1][:])
-
-	senderPubkeyBytes := mkemPublicKey.Bytes()
-
-	envelope := &pigeonhole.CourierEnvelope{
-		IntermediateReplicas: intermediateReplicas,
-		Dek1:                 dek1,
-		Dek2:                 dek2,
-		ReplyIndex:           replyIndex,
-		Epoch:                doc.Epoch,
-		SenderPubkeyLen:      uint16(len(senderPubkeyBytes)),
-		SenderPubkey:         senderPubkeyBytes,
-		CiphertextLen:        uint32(len(mkemCiphertext.Envelope)),
-		Ciphertext:           mkemCiphertext.Envelope,
-	}
-	return envelope, mkemPrivateKey, nil
 }
 
 func CreateChannelWriteRequest(
