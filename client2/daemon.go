@@ -366,7 +366,12 @@ func (d *Daemon) egressWorker() {
 			case request.SendARQMessage != nil:
 				d.send(request)
 
-				// New Pigeonhole Channel related commands proceed here:
+				// New Pigeonhole Channel:
+
+			case request.NewKeypair != nil:
+				d.newKeypair(request)
+
+				// OLD Pigeonhole Channel:
 
 			case request.SendChannelQuery != nil:
 				d.sendChannelQuery(request)
