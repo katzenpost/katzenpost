@@ -43,6 +43,8 @@ type Response struct {
 
 	MessageIDGarbageCollected *thin.MessageIDGarbageCollected
 
+	// OLD Pigeonhole API:
+
 	CreateWriteChannelReply *thin.CreateWriteChannelReply
 
 	CreateReadChannelReply *thin.CreateReadChannelReply
@@ -95,7 +97,7 @@ type Request struct {
 	// that is sending this Request.
 	AppID *[AppIDLength]byte
 
-	// Channel API
+	// OLD Pigeonhole API:
 
 	CreateWriteChannel *thin.CreateWriteChannel
 

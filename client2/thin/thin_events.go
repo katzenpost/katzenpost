@@ -177,7 +177,103 @@ func (e *NewPKIDocumentEvent) String() string {
 	return fmt.Sprintf("PKI Document for epoch %d", doc.Epoch)
 }
 
-/**** NEW API ***/
+// New Pigeonhole API:
+
+// NewKeypairReply is the reply to a NewKeypair request.
+type NewKeypairReply struct {
+	// QueryID is used for correlating this reply with the NewKeypair request
+	QueryID *[QueryIDLength]byte `cbor:"query_id"`
+	// WriteCap is the write capability that should be stored for channel
+	WriteCap *bacap.WriteCap `cbor:"write_cap"`
+	// ReadCap is the read capability that can be shared with others to allow
+	// them to read messages from this channel.
+	ReadCap *bacap.ReadCap `cbor:"read_cap"`
+	// FirstMessageIndex is the first message index that should be used when
+	// writing messages to the channel.
+	FirstMessageIndex []byte `cbor:"first_message_index"`
+	// ErrorCode indicates the reason for a failure to create a new keypair if any.
+	// Otherwise it is set to zero for success.
+	ErrorCode uint8 `cbor:"error_code"`
+}
+
+// EncryptReadReply is the reply to an EncryptRead request.
+type EncryptReadReply struct {
+	// QueryID is used for correlating this reply with the EncryptRead request
+	QueryID *[QueryIDLength]byte `cbor:"query_id"`
+
+	// MessageCiphertext is the encrypted message ciphertext that should be sent
+	// to the Courier service.
+	MessageCiphertext []byte `cbor:"message_ciphertext"`
+
+	// NextMessageIndex is the next message index that should be used when
+	// encrypting the next read.
+	NextMessageIndex []byte `cbor:"next_message_index"`
+
+	// EnvelopeDescriptor contains the serialized EnvelopeDescriptor that
+	EnvelopeDescriptor []byte `cbor:"envelope_descriptor"`
+
+	// EnvelopeHash is the hash of the CourierEnvelope that was sent to the
+	// mixnet and is used to resume the read operation.
+	EnvelopeHash *[32]byte `cbor:"envelope_hash"`
+
+	// ReplicaEpoch is the epoch in which the envelope was sent.
+	ReplicaEpoch uint64 `cbor:"replica_epoch"`
+
+	// ErrorCode indicates the reason for a failure to encrypt the read if any.
+	// Otherwise it is set to zero for success.
+	ErrorCode uint8 `cbor:"error_code"`
+}
+
+// EncryptWriteReply is the reply to an EncryptWrite request.
+type EncryptWriteReply struct {
+	// QueryID is used for correlating this reply with the EncryptWrite request
+	QueryID *[QueryIDLength]byte `cbor:"query_id"`
+
+	// MessageCiphertext is the encrypted message ciphertext that should be sent
+	// to the Courier service.
+	MessageCiphertext []byte `cbor:"message_ciphertext"`
+
+	// ReplicaEpoch is the epoch in which the envelope was sent.
+	ReplicaEpoch uint64 `cbor:"replica_epoch"`
+
+	// EnvelopeDescriptor contains the serialized EnvelopeDescriptor that
+	// contains the private key material needed to decrypt the envelope reply.
+	EnvelopeDescriptor []byte `cbor:"envelope_descriptor"`
+
+	// EnvelopeHash is the hash of the CourierEnvelope that was sent to the
+	// mixnet and is used to resume the write operation.
+	EnvelopeHash *[32]byte `cbor:"envelope_hash"`
+
+	// ErrorCode indicates the reason for a failure to encrypt the write if any.
+	// Otherwise it is set to zero for success.
+	ErrorCode uint8 `cbor:"error_code"`
+}
+
+// StartResendingEncryptedMessageReply is the reply to a StartResendingEncryptedMessage request.
+type StartResendingEncryptedMessageReply struct {
+
+	// QueryID is used for correlating this reply with the StartResendingEncryptedMessage request
+	QueryID *[QueryIDLength]byte `cbor:"query_id"`
+
+	// Plaintext is the plaintext message that was read from the channel.
+	Plaintext []byte `cbor:"plaintext"`
+
+	// ErrorCode indicates the reason for a failure to start resending the encrypted message if any.
+	// Otherwise it is set to zero for success.
+	ErrorCode uint8 `cbor:"error_code"`
+}
+
+// CancelResendingEncryptedMessageReply is the reply to a CancelResendingEncryptedMessage request.
+type CancelResendingEncryptedMessageReply struct {
+	// QueryID is used for correlating this reply with the CancelResendingEncryptedMessage request
+	QueryID *[QueryIDLength]byte `cbor:"query_id"`
+
+	// ErrorCode indicates the reason for a failure to cancel resending the encrypted message if any.
+	// Otherwise it is set to zero for success.
+	ErrorCode uint8 `cbor:"error_code"`
+}
+
+// OLD Pigeonhole API:
 
 // CreateWriteChannelReply is sent in response to a CreateWriteChannel request.
 // It provides the channel ID and capabilities needed to use the newly created
