@@ -525,6 +525,23 @@ type Response struct {
 	// MessageIDGarbageCollected is sent when the client daemon garbage collects a message ID.
 	MessageIDGarbageCollected *MessageIDGarbageCollected `cbor:"message_id_garbage_collected"`
 
+	// New Pigeonhole API:
+
+	// NewKeypairReply is sent when the client daemon successfully creates a new keypair.
+	NewKeypairReply *NewKeypairReply `cbor:"new_keypair_reply"`
+
+	// EncryptReadReply is sent when the client daemon successfully encrypts a read operation.
+	EncryptReadReply *EncryptReadReply `cbor:"encrypt_read_reply"`
+
+	// EncryptWriteReply is sent when the client daemon successfully encrypts a write operation.
+	EncryptWriteReply *EncryptWriteReply `cbor:"encrypt_write_reply"`
+
+	// StartResendingEncryptedMessageReply is sent when the client daemon successfully starts resending an encrypted message.
+	StartResendingEncryptedMessageReply *StartResendingEncryptedMessageReply `cbor:"start_resending_encrypted_message_reply"`
+
+	// CancelResendingEncryptedMessageReply is sent when the client daemon successfully cancels resending an encrypted message.
+	CancelResendingEncryptedMessageReply *CancelResendingEncryptedMessageReply `cbor:"cancel_resending_encrypted_message_reply"`
+
 	// Old Pigeonhole API:
 
 	// CreateWriteChannelReply is sent when the client daemon successfully creates a write channel.
@@ -578,6 +595,23 @@ type Request struct {
 	// Note that this is part of the legacy API and should not be used for newer
 	// works using the Pigeonhole protocol.
 	SendARQMessage *SendARQMessage `cbor:"send_arq_message"`
+
+	// New Pigeonhole API:
+
+	// NewKeypair is used to create a new keypair for use with the Pigeonhole protocol.
+	NewKeypair *NewKeypair `cbor:"new_keypair"`
+
+	// EncryptRead is used to encrypt a read operation for a given read capability.
+	EncryptRead *EncryptRead `cbor:"encrypt_read"`
+
+	// EncryptWrite is used to encrypt a write operation for a given write capability.
+	EncryptWrite *EncryptWrite `cbor:"encrypt_write"`
+
+	// StartResendingEncryptedMessage is used to start resending an encrypted message.
+	StartResendingEncryptedMessage *StartResendingEncryptedMessage `cbor:"start_resending_encrypted_message"`
+
+	// CancelResendingEncryptedMessage is used to cancel resending an encrypted message.
+	CancelResendingEncryptedMessage *CancelResendingEncryptedMessage `cbor:"cancel_resending_encrypted_message"`
 
 	// OLD Pigeonhole API
 

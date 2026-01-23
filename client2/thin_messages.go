@@ -43,6 +43,18 @@ type Response struct {
 
 	MessageIDGarbageCollected *thin.MessageIDGarbageCollected
 
+	// New Pigeonhole API:
+
+	NewKeypairReply *thin.NewKeypairReply
+
+	EncryptReadReply *thin.EncryptReadReply
+
+	EncryptWriteReply *thin.EncryptWriteReply
+
+	StartResendingEncryptedMessageReply *thin.StartResendingEncryptedMessageReply
+
+	CancelResendingEncryptedMessageReply *thin.CancelResendingEncryptedMessageReply
+
 	// OLD Pigeonhole API:
 
 	CreateWriteChannelReply *thin.CreateWriteChannelReply
@@ -68,7 +80,16 @@ type Response struct {
 
 func FromThinRequest(r *thin.Request, appid *[AppIDLength]byte) *Request {
 	return &Request{
-		AppID:                   appid,
+		AppID: appid,
+
+		// New Pigeonhole API:
+		NewKeypair:                      r.NewKeypair,
+		EncryptRead:                     r.EncryptRead,
+		EncryptWrite:                    r.EncryptWrite,
+		StartResendingEncryptedMessage:  r.StartResendingEncryptedMessage,
+		CancelResendingEncryptedMessage: r.CancelResendingEncryptedMessage,
+
+		// Old Pigeonhole API:
 		SendChannelQuery:        r.SendChannelQuery,
 		CreateWriteChannel:      r.CreateWriteChannel,
 		CreateReadChannel:       r.CreateReadChannel,
@@ -96,6 +117,18 @@ type Request struct {
 	// AppID must be a unique identity for the client application
 	// that is sending this Request.
 	AppID *[AppIDLength]byte
+
+	// New Pigeonhole API:
+
+	NewKeypair *thin.NewKeypair
+
+	EncryptRead *thin.EncryptRead
+
+	EncryptWrite *thin.EncryptWrite
+
+	StartResendingEncryptedMessage *thin.StartResendingEncryptedMessage
+
+	CancelResendingEncryptedMessage *thin.CancelResendingEncryptedMessage
 
 	// OLD Pigeonhole API:
 
