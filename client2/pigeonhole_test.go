@@ -16,6 +16,8 @@ import (
 
 	"github.com/fxamacker/cbor/v2"
 	"github.com/katzenpost/hpqc/bacap"
+	"github.com/katzenpost/hpqc/nike"
+	nikeSchemes "github.com/katzenpost/hpqc/nike/schemes"
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/katzenpost/client2/config"
 	"github.com/katzenpost/katzenpost/client2/constants"
@@ -23,7 +25,10 @@ import (
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/log"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
+	"github.com/katzenpost/katzenpost/core/sphinx"
+	sphinxCommands "github.com/katzenpost/katzenpost/core/sphinx/commands"
 	sphinxConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/pigeonhole"
 	pigeonholeGeo "github.com/katzenpost/katzenpost/pigeonhole/geo"
 	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
 	"github.com/stretchr/testify/require"
@@ -209,10 +214,12 @@ func (m *mockIncomingConn) toIncomingConn(_ *listener, logBackend *log.Backend) 
 			}
 			// Convert to Response and forward to channel
 			resp := &Response{
-				AppID:             m.appID,
-				NewKeypairReply:   thinResp.NewKeypairReply,
-				EncryptReadReply:  thinResp.EncryptReadReply,
-				EncryptWriteReply: thinResp.EncryptWriteReply,
+				AppID:                                m.appID,
+				NewKeypairReply:                      thinResp.NewKeypairReply,
+				EncryptReadReply:                     thinResp.EncryptReadReply,
+				EncryptWriteReply:                    thinResp.EncryptWriteReply,
+				StartResendingEncryptedMessageReply:  thinResp.StartResendingEncryptedMessageReply,
+				CancelResendingEncryptedMessageReply: thinResp.CancelResendingEncryptedMessageReply,
 			}
 			m.responseCh <- resp
 		}
@@ -966,4 +973,221 @@ func TestArqDoResendWithNilListener(t *testing.T) {
 	// since we retry forever. This test just verifies no panic occurs.
 
 	t.Log("arqDoResend nil listener test completed successfully")
+}
+
+// TestARQSuccessWriteACK tests the ARQ success code path for write operations (ACK).
+// This tests the full path: SURB reply arrives -> handlePigeonholeARQReply -> success response sent.
+func TestARQSuccessWriteACK(t *testing.T) {
+	require := require.New(t)
+
+	// Create a minimal daemon with required fields
+	logBackend, err := log.New("", "debug", false)
+	require.NoError(err)
+
+	cfg, err := config.LoadFile("testdata/client.toml")
+	require.NoError(err)
+
+	port, err := getFreePort()
+	require.NoError(err)
+	cfg.ListenAddress = fmt.Sprintf("127.0.0.1:%d", port)
+
+	// Create the Sphinx instance for SURB operations
+	sphinxInstance, err := sphinx.FromGeometry(cfg.SphinxGeometry)
+	require.NoError(err)
+
+	// Create a Client with the sphinx instance
+	client := &Client{
+		cfg:    cfg,
+		sphinx: sphinxInstance,
+		geo:    cfg.SphinxGeometry,
+	}
+
+	rates := &Rates{}
+	egressCh := make(chan *Request, 10)
+
+	listener, err := NewListener(client, rates, egressCh, logBackend, nil)
+	require.NoError(err)
+	defer listener.Shutdown()
+
+	d := &Daemon{
+		logbackend:                logBackend,
+		log:                       logBackend.GetLogger("test"),
+		client:                    client,
+		listener:                  listener,
+		arqSurbIDMap:              make(map[[sphinxConstants.SURBIDLength]byte]*ARQMessage),
+		arqEnvelopeHashMap:        make(map[[32]byte]*[sphinxConstants.SURBIDLength]byte),
+		replies:                   make(map[[sphinxConstants.SURBIDLength]byte]replyDescriptor),
+		decoys:                    make(map[[sphinxConstants.SURBIDLength]byte]replyDescriptor),
+		replyLock:                 new(sync.Mutex),
+		newChannelMap:             make(map[uint16]*ChannelDescriptor),
+		newChannelMapLock:         new(sync.RWMutex),
+		newSurbIDToChannelMap:     make(map[[sphinxConstants.SURBIDLength]byte]uint16),
+		newSurbIDToChannelMapLock: new(sync.RWMutex),
+		channelReplies:            make(map[[sphinxConstants.SURBIDLength]byte]replyDescriptor),
+		channelRepliesLock:        new(sync.RWMutex),
+	}
+
+	// Generate test identifiers
+	testAppID := &[AppIDLength]byte{}
+	copy(testAppID[:], []byte("arq-success-appid"))
+
+	testQueryID := &[thin.QueryIDLength]byte{}
+	copy(testQueryID[:], []byte("arq-success-qryid"))
+
+	testEnvelopeHash := &[32]byte{}
+	copy(testEnvelopeHash[:], []byte("arq-success-envelope-hash123"))
+
+	// Create a SURB path for testing
+	nrHops := 5
+	nodes, path := createNikePathVector(require, cfg.SphinxGeometry.NIKEName, nrHops)
+
+	// Create the SURB
+	surb, surbKeys, err := sphinxInstance.NewSURB(rand.Reader, path)
+	require.NoError(err)
+
+	// Extract the SURB ID from the SURB (first 16 bytes after parsing)
+	testSURBID := &[sphinxConstants.SURBIDLength]byte{}
+	copy(testSURBID[:], surb[:sphinxConstants.SURBIDLength])
+
+	// Create a CourierQueryReply with ReplyType=0 (envelope reply) and
+	// CourierEnvelopeReply with ReplyType=0 (ACK) and ErrorCode=0 (success)
+	courierEnvelopeReply := &pigeonhole.CourierEnvelopeReply{
+		EnvelopeHash: *testEnvelopeHash,
+		ReplyIndex:   0,
+		ReplyType:    pigeonhole.ReplyTypeACK, // ACK for write success
+		PayloadLen:   0,
+		Payload:      []byte{},
+		ErrorCode:    0, // Success
+	}
+
+	courierQueryReply := &pigeonhole.CourierQueryReply{
+		ReplyType:     0, // envelope reply
+		EnvelopeReply: courierEnvelopeReply,
+	}
+
+	// Serialize the CourierQueryReply
+	replyPayload, err := courierQueryReply.MarshalBinary()
+	require.NoError(err)
+
+	// Pad the payload to the expected forward payload length
+	paddedPayload := make([]byte, cfg.SphinxGeometry.ForwardPayloadLength)
+	copy(paddedPayload, replyPayload)
+
+	// Create a reply packet using the SURB
+	pkt, _, err := sphinxInstance.NewPacketFromSURB(surb, paddedPayload)
+	require.NoError(err)
+
+	// Unwrap the packet through all hops to get the final ciphertext
+	var finalCiphertext []byte
+	for i := range nodes {
+		b, _, _, err := sphinxInstance.Unwrap(nodes[i].privateKey, pkt)
+		require.NoErrorf(err, "Hop %d: Unwrap failed", i)
+		if i == len(path)-1 {
+			// At the final hop, b contains the encrypted payload
+			finalCiphertext = b
+		}
+	}
+	require.NotNil(finalCiphertext)
+
+	// Set up the mock connection to receive responses
+	responseCh := make(chan *Response, 1)
+	mockConn := &mockIncomingConn{
+		appID:      testAppID,
+		responseCh: responseCh,
+	}
+
+	// Register the mock connection
+	listener.connsLock.Lock()
+	listener.conns[*testAppID] = mockConn.toIncomingConn(listener, logBackend)
+	listener.connsLock.Unlock()
+
+	// Register the ARQ message in the daemon's maps
+	arqMessage := &ARQMessage{
+		AppID:              testAppID,
+		QueryID:            testQueryID,
+		EnvelopeHash:       testEnvelopeHash,
+		SURBID:             testSURBID,
+		SURBDecryptionKeys: surbKeys,
+		IsRead:             false, // Write operation
+	}
+
+	d.replyLock.Lock()
+	d.arqSurbIDMap[*testSURBID] = arqMessage
+	d.arqEnvelopeHashMap[*testEnvelopeHash] = testSURBID
+	d.replyLock.Unlock()
+
+	// Create the sphinxReply that would come from the mixnet
+	reply := &sphinxReply{
+		surbID:     testSURBID,
+		ciphertext: finalCiphertext,
+	}
+
+	// Call handlePigeonholeARQReply directly
+	d.handlePigeonholeARQReply(arqMessage, reply)
+
+	// Verify the response
+	select {
+	case resp := <-responseCh:
+		require.NotNil(resp.StartResendingEncryptedMessageReply)
+		require.Equal(thin.ThinClientSuccess, resp.StartResendingEncryptedMessageReply.ErrorCode)
+		require.Equal(testQueryID, resp.StartResendingEncryptedMessageReply.QueryID)
+		require.Empty(resp.StartResendingEncryptedMessageReply.Plaintext) // ACK has no plaintext
+		t.Logf("ARQ success write ACK test passed - received success response with ErrorCode=%d",
+			resp.StartResendingEncryptedMessageReply.ErrorCode)
+	case <-time.After(2 * time.Second):
+		t.Fatal("Expected a response but got none within timeout")
+	}
+}
+
+// createNikePathVector creates a path of nodes for SURB testing
+func createNikePathVector(require *require.Assertions, nikeName string, nrHops int) ([]*nikeNodeParams, []*sphinx.PathHop) {
+	nikeScheme := nikeSchemes.ByName(nikeName)
+	require.NotNil(nikeScheme, "failed to find NIKE scheme: %s", nikeName)
+
+	const delayBase = 0xdeadbabe
+
+	// Generate the keypairs and node identifiers for the "nodes"
+	nodes := make([]*nikeNodeParams, nrHops)
+	for i := range nodes {
+		nodes[i] = &nikeNodeParams{}
+		_, err := rand.Reader.Read(nodes[i].id[:])
+		require.NoError(err, "failed to generate ID")
+		nodes[i].publicKey, nodes[i].privateKey, err = nikeScheme.GenerateKeyPair()
+		require.NoError(err, "GenerateKeyPair failed")
+	}
+
+	// Assemble the path vector
+	path := make([]*sphinx.PathHop, nrHops)
+	for i := range path {
+		path[i] = new(sphinx.PathHop)
+		copy(path[i].ID[:], nodes[i].id[:])
+		path[i].NIKEPublicKey = nodes[i].publicKey
+		if i < nrHops-1 {
+			// Non-terminal hop, add the delay
+			delay := new(sphinxCommands.NodeDelay)
+			delay.Delay = delayBase * uint32(i+1)
+			path[i].Commands = append(path[i].Commands, delay)
+		} else {
+			// Terminal hop, add the recipient
+			recipient := new(sphinxCommands.Recipient)
+			_, err := rand.Reader.Read(recipient.ID[:])
+			require.NoError(err, "failed to generate recipient")
+			path[i].Commands = append(path[i].Commands, recipient)
+
+			// This is a SURB, add a surb_reply
+			surbReply := new(sphinxCommands.SURBReply)
+			_, err = rand.Reader.Read(surbReply.ID[:])
+			require.NoError(err, "failed to generate surb_reply")
+			path[i].Commands = append(path[i].Commands, surbReply)
+		}
+	}
+
+	return nodes, path
+}
+
+// nikeNodeParams holds node parameters for SURB path testing
+type nikeNodeParams struct {
+	id         [sphinxConstants.NodeIDLength]byte
+	privateKey nike.PrivateKey
+	publicKey  nike.PublicKey
 }
