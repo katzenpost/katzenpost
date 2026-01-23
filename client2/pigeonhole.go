@@ -3,6 +3,9 @@
 package client2
 
 import (
+	"fmt"
+	"time"
+
 	"github.com/katzenpost/hpqc/bacap"
 	"github.com/katzenpost/hpqc/nike"
 	"github.com/katzenpost/hpqc/rand"
@@ -10,6 +13,7 @@ import (
 	"github.com/katzenpost/katzenpost/client2/constants"
 	"github.com/katzenpost/katzenpost/client2/thin"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
+	sphinxConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/pigeonhole"
 	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
 )
@@ -379,4 +383,309 @@ func createEnvelopeFromMessage(msg *pigeonhole.ReplicaInnerMessage, doc *cpki.Do
 		Ciphertext:           mkemCiphertext.Envelope,
 	}
 	return envelope, mkemPrivateKey, nil
+}
+
+// startResendingEncryptedMessage starts resending an encrypted Pigeonhole message
+// via the ARQ mechanism. It will retry forever until cancelled or successful.
+func (d *Daemon) startResendingEncryptedMessage(request *Request) {
+	conn := d.listener.getConnection(request.AppID)
+	if conn == nil {
+		d.log.Errorf(errNoConnectionForAppID, request.AppID[:])
+		return
+	}
+
+	req := request.StartResendingEncryptedMessage
+	if req.QueryID == nil {
+		d.sendStartResendingEncryptedMessageError(request, thin.ThinClientErrorInvalidRequest)
+		return
+	}
+	if req.EnvelopeHash == nil {
+		d.sendStartResendingEncryptedMessageError(request, thin.ThinClientErrorInvalidRequest)
+		return
+	}
+	if len(req.MessageCiphertext) == 0 {
+		d.sendStartResendingEncryptedMessageError(request, thin.ThinClientErrorInvalidRequest)
+		return
+	}
+	if len(req.EnvelopeDescriptor) == 0 {
+		d.sendStartResendingEncryptedMessageError(request, thin.ThinClientErrorInvalidRequest)
+		return
+	}
+	// Either ReadCap or WriteCap must be set, but not both
+	if (req.ReadCap == nil && req.WriteCap == nil) || (req.ReadCap != nil && req.WriteCap != nil) {
+		d.sendStartResendingEncryptedMessageError(request, thin.ThinClientErrorInvalidRequest)
+		return
+	}
+
+	isRead := req.ReadCap != nil
+
+	// Get a random Courier
+	_, doc := d.client.CurrentDocument()
+	if doc == nil {
+		d.log.Errorf("startResendingEncryptedMessage: no PKI document available")
+		d.sendStartResendingEncryptedMessageError(request, thin.ThinClientErrorInternalError)
+		return
+	}
+
+	destIdHash, recipientQueueID, err := GetRandomCourier(doc)
+	if err != nil {
+		d.log.Errorf("startResendingEncryptedMessage: failed to get courier: %s", err)
+		d.sendStartResendingEncryptedMessageError(request, thin.ThinClientErrorInternalError)
+		return
+	}
+
+	// Create a new SURB ID for this send
+	surbID := &[sphinxConstants.SURBIDLength]byte{}
+	_, err = rand.Reader.Read(surbID[:])
+	if err != nil {
+		d.log.Errorf("startResendingEncryptedMessage: failed to generate SURB ID: %s", err)
+		d.sendStartResendingEncryptedMessageError(request, thin.ThinClientErrorInternalError)
+		return
+	}
+
+	// Compose the packet
+	pkt, surbKey, rtt, err := d.client.ComposeSphinxPacketForQuery(&thin.SendChannelQuery{
+		DestinationIdHash: destIdHash,
+		RecipientQueueID:  recipientQueueID,
+		Payload:           req.MessageCiphertext,
+	}, surbID)
+	if err != nil {
+		d.log.Errorf("startResendingEncryptedMessage: failed to compose packet: %s", err)
+		d.sendStartResendingEncryptedMessageError(request, thin.ThinClientErrorInternalError)
+		return
+	}
+
+	// Create the ARQ message
+	message := &ARQMessage{
+		AppID:              request.AppID,
+		QueryID:            req.QueryID,
+		EnvelopeHash:       req.EnvelopeHash,
+		DestinationIdHash:  destIdHash,
+		RecipientQueueID:   recipientQueueID,
+		Payload:            req.MessageCiphertext,
+		SURBID:             surbID,
+		SURBDecryptionKeys: surbKey,
+		Retransmissions:    0,
+		SentAt:             time.Now(),
+		ReplyETA:           rtt,
+		EnvelopeDescriptor: req.EnvelopeDescriptor,
+		ReplicaEpoch:       req.ReplicaEpoch,
+		IsRead:             isRead,
+	}
+
+	// Store in ARQ maps
+	d.replyLock.Lock()
+	d.arqSurbIDMap[*surbID] = message
+	d.arqEnvelopeHashMap[*req.EnvelopeHash] = surbID
+	d.replyLock.Unlock()
+
+	// Schedule retry
+	myRtt := message.SentAt.Add(message.ReplyETA)
+	myRtt = myRtt.Add(RoundTripTimeSlop)
+	priority := uint64(myRtt.UnixNano())
+	d.arqTimerQueue.Push(priority, surbID)
+
+	// Send the packet
+	err = d.client.SendPacket(pkt)
+	if err != nil {
+		d.log.Errorf("startResendingEncryptedMessage: failed to send packet: %s", err)
+		// Don't return error - the ARQ will retry
+	}
+
+	// Send immediate acknowledgment to thin client
+	conn.sendResponse(&Response{
+		AppID: request.AppID,
+		StartResendingEncryptedMessageReply: &thin.StartResendingEncryptedMessageReply{
+			QueryID:   req.QueryID,
+			ErrorCode: thin.ThinClientSuccess,
+		},
+	})
+}
+
+func (d *Daemon) sendStartResendingEncryptedMessageError(request *Request, errorCode uint8) {
+	conn := d.listener.getConnection(request.AppID)
+	if conn == nil {
+		d.log.Errorf(errNoConnectionForAppID, request.AppID[:])
+		return
+	}
+	conn.sendResponse(&Response{
+		AppID: request.AppID,
+		StartResendingEncryptedMessageReply: &thin.StartResendingEncryptedMessageReply{
+			QueryID:   request.StartResendingEncryptedMessage.QueryID,
+			ErrorCode: errorCode,
+		},
+	})
+}
+
+// cancelResendingEncryptedMessage cancels a previously started resend operation.
+func (d *Daemon) cancelResendingEncryptedMessage(request *Request) {
+	conn := d.listener.getConnection(request.AppID)
+	if conn == nil {
+		d.log.Errorf(errNoConnectionForAppID, request.AppID[:])
+		return
+	}
+
+	req := request.CancelResendingEncryptedMessage
+	if req.QueryID == nil {
+		d.sendCancelResendingEncryptedMessageError(request, thin.ThinClientErrorInvalidRequest)
+		return
+	}
+	if req.EnvelopeHash == nil {
+		d.sendCancelResendingEncryptedMessageError(request, thin.ThinClientErrorInvalidRequest)
+		return
+	}
+
+	d.replyLock.Lock()
+	surbID, ok := d.arqEnvelopeHashMap[*req.EnvelopeHash]
+	if ok && surbID != nil {
+		delete(d.arqSurbIDMap, *surbID)
+		delete(d.arqEnvelopeHashMap, *req.EnvelopeHash)
+	}
+	d.replyLock.Unlock()
+
+	if !ok {
+		d.log.Debugf("cancelResendingEncryptedMessage: EnvelopeHash %x not found", req.EnvelopeHash[:])
+		// Still send success - the message may have already completed
+	}
+
+	conn.sendResponse(&Response{
+		AppID: request.AppID,
+		CancelResendingEncryptedMessageReply: &thin.CancelResendingEncryptedMessageReply{
+			QueryID:   req.QueryID,
+			ErrorCode: thin.ThinClientSuccess,
+		},
+	})
+}
+
+func (d *Daemon) sendCancelResendingEncryptedMessageError(request *Request, errorCode uint8) {
+	conn := d.listener.getConnection(request.AppID)
+	if conn == nil {
+		d.log.Errorf(errNoConnectionForAppID, request.AppID[:])
+		return
+	}
+	conn.sendResponse(&Response{
+		AppID: request.AppID,
+		CancelResendingEncryptedMessageReply: &thin.CancelResendingEncryptedMessageReply{
+			QueryID:   request.CancelResendingEncryptedMessage.QueryID,
+			ErrorCode: errorCode,
+		},
+	})
+}
+
+// handlePigeonholeARQReply handles replies to Pigeonhole ARQ messages.
+func (d *Daemon) handlePigeonholeARQReply(arqMessage *ARQMessage, reply *sphinxReply) {
+	conn := d.listener.getConnection(arqMessage.AppID)
+	if conn == nil {
+		d.log.Errorf("handlePigeonholeARQReply: no connection for AppID %x", arqMessage.AppID[:])
+		return
+	}
+
+	// Decrypt the SURB payload
+	surbPayload, err := d.client.sphinx.DecryptSURBPayload(reply.ciphertext, arqMessage.SURBDecryptionKeys)
+	if err != nil {
+		d.log.Errorf("handlePigeonholeARQReply: SURB payload decryption error: %s", err)
+		return
+	}
+
+	// Parse the CourierQueryReply
+	courierQueryReply, err := pigeonhole.ParseCourierQueryReply(surbPayload)
+	if err != nil {
+		d.log.Errorf("handlePigeonholeARQReply: failed to parse CourierQueryReply: %s", err)
+		return
+	}
+
+	// Handle envelope reply (type 0)
+	if courierQueryReply.ReplyType != 0 || courierQueryReply.EnvelopeReply == nil {
+		d.log.Errorf("handlePigeonholeARQReply: unexpected reply type %d", courierQueryReply.ReplyType)
+		return
+	}
+
+	courierEnvelopeReply := courierQueryReply.EnvelopeReply
+
+	// Check for error in the reply
+	if courierEnvelopeReply.ErrorCode != 0 {
+		d.log.Errorf("handlePigeonholeARQReply: courier reply error code %d", courierEnvelopeReply.ErrorCode)
+		// Send error to thin client
+		conn.sendResponse(&Response{
+			AppID: arqMessage.AppID,
+			StartResendingEncryptedMessageReply: &thin.StartResendingEncryptedMessageReply{
+				QueryID:   arqMessage.QueryID,
+				ErrorCode: courierEnvelopeReply.ErrorCode,
+			},
+		})
+		return
+	}
+
+	// For writes (ACK type = 0), just acknowledge success
+	if courierEnvelopeReply.ReplyType == pigeonhole.ReplyTypeACK {
+		d.log.Debugf("handlePigeonholeARQReply: write ACK received for EnvelopeHash %x", arqMessage.EnvelopeHash[:])
+		conn.sendResponse(&Response{
+			AppID: arqMessage.AppID,
+			StartResendingEncryptedMessageReply: &thin.StartResendingEncryptedMessageReply{
+				QueryID:   arqMessage.QueryID,
+				ErrorCode: thin.ThinClientSuccess,
+			},
+		})
+		return
+	}
+
+	// For reads (payload type = 1), decrypt and return plaintext
+	if courierEnvelopeReply.ReplyType == pigeonhole.ReplyTypePayload {
+		plaintext, err := d.decryptPigeonholeReply(arqMessage, courierEnvelopeReply)
+		if err != nil {
+			d.log.Errorf("handlePigeonholeARQReply: failed to decrypt reply: %s", err)
+			conn.sendResponse(&Response{
+				AppID: arqMessage.AppID,
+				StartResendingEncryptedMessageReply: &thin.StartResendingEncryptedMessageReply{
+					QueryID:   arqMessage.QueryID,
+					ErrorCode: thin.ThinClientErrorInternalError,
+				},
+			})
+			return
+		}
+
+		conn.sendResponse(&Response{
+			AppID: arqMessage.AppID,
+			StartResendingEncryptedMessageReply: &thin.StartResendingEncryptedMessageReply{
+				QueryID:   arqMessage.QueryID,
+				Plaintext: plaintext,
+				ErrorCode: thin.ThinClientSuccess,
+			},
+		})
+		return
+	}
+
+	d.log.Errorf("handlePigeonholeARQReply: unknown reply type %d", courierEnvelopeReply.ReplyType)
+}
+
+// decryptPigeonholeReply decrypts the Pigeonhole envelope reply using the stored EnvelopeDescriptor.
+func (d *Daemon) decryptPigeonholeReply(arqMessage *ARQMessage, env *pigeonhole.CourierEnvelopeReply) ([]byte, error) {
+	// Deserialize the EnvelopeDescriptor
+	envelopeDesc, err := EnvelopeDescriptorFromBytes(arqMessage.EnvelopeDescriptor)
+	if err != nil {
+		return nil, err
+	}
+
+	// Reconstruct the NIKE private key
+	privateKey, err := replicaCommon.NikeScheme.UnmarshalBinaryPrivateKey(envelopeDesc.EnvelopeKey)
+	if err != nil {
+		return nil, err
+	}
+
+	// Reuse the existing decryptMKEMEnvelope function
+	innerMsg, err := d.decryptMKEMEnvelope(env, envelopeDesc, privateKey)
+	if err != nil {
+		return nil, err
+	}
+
+	// Handle read reply
+	if innerMsg.MessageType == 0 && innerMsg.ReadReply != nil {
+		if innerMsg.ReadReply.ErrorCode != 0 {
+			return nil, fmt.Errorf("read reply error code: %d", innerMsg.ReadReply.ErrorCode)
+		}
+		// Return the decrypted plaintext from the read reply
+		return innerMsg.ReadReply.Payload, nil
+	}
+
+	return nil, fmt.Errorf("unexpected inner message type: %d", innerMsg.MessageType)
 }
