@@ -110,9 +110,8 @@ func FromThinRequest(r *thin.Request, appid *[AppIDLength]byte) *Request {
 		ResumeReadChannelQuery:  r.ResumeReadChannelQuery,
 		CloseChannel:            r.CloseChannel,
 
-		SendMessage:    r.SendMessage,
-		SendARQMessage: r.SendARQMessage,
-		ThinClose:      r.ThinClose,
+		SendMessage: r.SendMessage,
+		ThinClose:   r.ThinClose,
 	}
 }
 
@@ -174,6 +173,4 @@ type Request struct {
 	// Legacy API
 
 	SendMessage *thin.SendMessage
-
-	SendARQMessage *thin.SendARQMessage
 }
