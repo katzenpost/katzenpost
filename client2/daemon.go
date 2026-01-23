@@ -372,6 +372,8 @@ func (d *Daemon) egressWorker() {
 				d.newKeypair(request)
 			case request.EncryptRead != nil:
 				d.encryptRead(request)
+			case request.EncryptWrite != nil:
+				d.encryptWrite(request)
 
 				// OLD Pigeonhole Channel:
 

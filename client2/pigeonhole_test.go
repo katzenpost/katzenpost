@@ -24,6 +24,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/log"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	sphinxConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
+	pigeonholeGeo "github.com/katzenpost/katzenpost/pigeonhole/geo"
 	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
 	"github.com/stretchr/testify/require"
 )
@@ -208,9 +209,10 @@ func (m *mockIncomingConn) toIncomingConn(_ *listener, logBackend *log.Backend) 
 			}
 			// Convert to Response and forward to channel
 			resp := &Response{
-				AppID:            m.appID,
-				NewKeypairReply:  thinResp.NewKeypairReply,
-				EncryptReadReply: thinResp.EncryptReadReply,
+				AppID:             m.appID,
+				NewKeypairReply:   thinResp.NewKeypairReply,
+				EncryptReadReply:  thinResp.EncryptReadReply,
+				EncryptWriteReply: thinResp.EncryptWriteReply,
 			}
 			m.responseCh <- resp
 		}
@@ -418,6 +420,185 @@ func TestDaemonEncryptRead_NilReadCap(t *testing.T) {
 	case resp := <-responseCh:
 		require.NotNil(t, resp.EncryptReadReply)
 		require.Equal(t, thin.ThinClientErrorInvalidRequest, resp.EncryptReadReply.ErrorCode)
+	case <-time.After(time.Second):
+		t.Fatal("Expected a response but got none within timeout")
+	}
+}
+
+func TestDaemonEncryptWrite_Success(t *testing.T) {
+	logBackend, err := log.New("", "debug", false)
+	require.NoError(t, err)
+
+	cfg, err := config.LoadFile("testdata/client.toml")
+	require.NoError(t, err)
+
+	port, err := getFreePort()
+	require.NoError(t, err)
+	cfg.ListenAddress = fmt.Sprintf("127.0.0.1:%d", port)
+
+	// Add PigeonholeGeometry for write operations
+	cfg.PigeonholeGeometry = &pigeonholeGeo.Geometry{
+		MaxPlaintextPayloadLength: 1000,
+		NIKEName:                  replicaCommon.NikeScheme.Name(),
+	}
+
+	client := &Client{cfg: cfg}
+	rates := &Rates{}
+	egressCh := make(chan *Request, 10)
+
+	listener, err := NewListener(client, rates, egressCh, logBackend, nil)
+	require.NoError(t, err)
+	defer listener.Shutdown()
+
+	// Create a mock PKI document and store it in the client
+	doc := createMockPKIDocument(t)
+	currentEpoch, _, _ := epochtime.Now()
+	client.pki = &pki{
+		c:    client,
+		docs: sync.Map{},
+	}
+	client.pki.docs.Store(currentEpoch, &CachedDoc{
+		Doc:  doc,
+		Blob: nil,
+	})
+
+	d := &Daemon{
+		cfg:                       cfg,
+		logbackend:                logBackend,
+		log:                       logBackend.GetLogger("test"),
+		listener:                  listener,
+		client:                    client,
+		newChannelMap:             make(map[uint16]*ChannelDescriptor),
+		newChannelMapLock:         new(sync.RWMutex),
+		newSurbIDToChannelMap:     make(map[[sphinxConstants.SURBIDLength]byte]uint16),
+		newSurbIDToChannelMapLock: new(sync.RWMutex),
+		channelReplies:            make(map[[sphinxConstants.SURBIDLength]byte]replyDescriptor),
+		channelRepliesLock:        new(sync.RWMutex),
+	}
+
+	// Create a WriteCap for testing
+	writeCap, err := bacap.NewWriteCap(rand.Reader)
+	require.NoError(t, err)
+
+	// Create a StatefulWriter to get a valid MessageBoxIndex
+	statefulWriter, err := bacap.NewStatefulWriter(writeCap, constants.PIGEONHOLE_CTX)
+	require.NoError(t, err)
+	messageBoxIndex := statefulWriter.GetCurrentMessageIndex()
+
+	// Set up mock connection
+	testAppID := &[AppIDLength]byte{}
+	copy(testAppID[:], []byte("test-encryptwrite"))
+
+	responseCh := make(chan *Response, 1)
+	mockConn := &mockIncomingConn{
+		appID:      testAppID,
+		responseCh: responseCh,
+	}
+
+	listener.connsLock.Lock()
+	listener.conns[*testAppID] = mockConn.toIncomingConn(listener, logBackend)
+	listener.connsLock.Unlock()
+
+	// Create the EncryptWrite request
+	queryID := &[thin.QueryIDLength]byte{}
+	copy(queryID[:], []byte("query-encrypt-wr"))
+
+	plaintext := []byte("Hello, this is a test message for encryption!")
+
+	request := &Request{
+		AppID: testAppID,
+		EncryptWrite: &thin.EncryptWrite{
+			QueryID:         queryID,
+			Plaintext:       plaintext,
+			WriteCap:        writeCap,
+			MessageBoxIndex: messageBoxIndex,
+		},
+	}
+
+	// Call encryptWrite
+	d.encryptWrite(request)
+
+	// Check the response
+	select {
+	case resp := <-responseCh:
+		require.NotNil(t, resp.EncryptWriteReply)
+		require.Equal(t, thin.ThinClientSuccess, resp.EncryptWriteReply.ErrorCode)
+		require.Equal(t, queryID, resp.EncryptWriteReply.QueryID)
+		require.NotEmpty(t, resp.EncryptWriteReply.MessageCiphertext)
+		require.NotEmpty(t, resp.EncryptWriteReply.EnvelopeDescriptor)
+		require.NotNil(t, resp.EncryptWriteReply.EnvelopeHash)
+		require.NotZero(t, resp.EncryptWriteReply.ReplicaEpoch)
+	case <-time.After(time.Second):
+		t.Fatal("Expected a response but got none within timeout")
+	}
+}
+
+func TestDaemonEncryptWrite_NilWriteCap(t *testing.T) {
+	logBackend, err := log.New("", "debug", false)
+	require.NoError(t, err)
+
+	cfg, err := config.LoadFile("testdata/client.toml")
+	require.NoError(t, err)
+
+	port, err := getFreePort()
+	require.NoError(t, err)
+	cfg.ListenAddress = fmt.Sprintf("127.0.0.1:%d", port)
+
+	client := &Client{cfg: cfg}
+	rates := &Rates{}
+	egressCh := make(chan *Request, 10)
+
+	listener, err := NewListener(client, rates, egressCh, logBackend, nil)
+	require.NoError(t, err)
+	defer listener.Shutdown()
+
+	d := &Daemon{
+		cfg:                       cfg,
+		logbackend:                logBackend,
+		log:                       logBackend.GetLogger("test"),
+		listener:                  listener,
+		client:                    client,
+		newChannelMap:             make(map[uint16]*ChannelDescriptor),
+		newChannelMapLock:         new(sync.RWMutex),
+		newSurbIDToChannelMap:     make(map[[sphinxConstants.SURBIDLength]byte]uint16),
+		newSurbIDToChannelMapLock: new(sync.RWMutex),
+		channelReplies:            make(map[[sphinxConstants.SURBIDLength]byte]replyDescriptor),
+		channelRepliesLock:        new(sync.RWMutex),
+	}
+
+	testAppID := &[AppIDLength]byte{}
+	copy(testAppID[:], []byte("test-nil-writcap"))
+
+	responseCh := make(chan *Response, 1)
+	mockConn := &mockIncomingConn{
+		appID:      testAppID,
+		responseCh: responseCh,
+	}
+
+	listener.connsLock.Lock()
+	listener.conns[*testAppID] = mockConn.toIncomingConn(listener, logBackend)
+	listener.connsLock.Unlock()
+
+	queryID := &[thin.QueryIDLength]byte{}
+	copy(queryID[:], []byte("query-nil-wrtcap"))
+
+	// Create request with nil WriteCap
+	request := &Request{
+		AppID: testAppID,
+		EncryptWrite: &thin.EncryptWrite{
+			QueryID:         queryID,
+			Plaintext:       []byte("test"),
+			WriteCap:        nil, // nil WriteCap should cause error
+			MessageBoxIndex: nil,
+		},
+	}
+
+	d.encryptWrite(request)
+
+	select {
+	case resp := <-responseCh:
+		require.NotNil(t, resp.EncryptWriteReply)
+		require.Equal(t, thin.ThinClientErrorInvalidRequest, resp.EncryptWriteReply.ErrorCode)
 	case <-time.After(time.Second):
 		t.Fatal("Expected a response but got none within timeout")
 	}
