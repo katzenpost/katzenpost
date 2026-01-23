@@ -415,35 +415,6 @@ func (n *Node) validate(isProvider bool) error {
 	return nil
 }
 
-// StorageReplicaNode is a storage replica node entry.
-type StorageReplicaNode struct {
-	// Identifier is the human readable node identifier.
-	Identifier string
-
-	// IdentityPublicKeyPem is the node's public signing key also known
-	// as the identity key.
-	IdentityPublicKeyPem string
-
-	// ReplicaID is the static uint8 identifier for this replica.
-	// All dirauths must agree on this value for each replica.
-	ReplicaID uint8
-}
-
-func (n *StorageReplicaNode) validate() error {
-	if n.Identifier == "" {
-		return errors.New("config: StorageReplicaNode is missing Identifier")
-	}
-	var err error
-	n.Identifier, err = idna.Lookup.ToASCII(n.Identifier)
-	if err != nil {
-		return fmt.Errorf("config: Failed to normalize Identifier: %v", err)
-	}
-	if n.IdentityPublicKeyPem == "" {
-		return errors.New("config: StorageReplicaNode is missing IdentityPublicKeyPem")
-	}
-	return nil
-}
-
 type Server struct {
 	// Identifier is the human readable identifier for the node (eg: FQDN).
 	Identifier string
@@ -588,7 +559,7 @@ type Config struct {
 	Mixes           []*Node
 	GatewayNodes    []*Node
 	ServiceNodes    []*Node
-	StorageReplicas []*StorageReplicaNode
+	StorageReplicas []*Node
 	Topology        *Topology
 
 	SphinxGeometry *geo.Geometry
@@ -716,23 +687,16 @@ func (cfg *Config) FixupAndValidate(forceGenOnly bool) error {
 		pkMap[tmp] = v
 	}
 
-	replicaIdMap := make(map[string]*StorageReplicaNode)
-	replicaPkMap := make(map[[publicKeyHashSize]byte]*StorageReplicaNode)
-	replicaIDSet := make(map[uint8]*StorageReplicaNode)
+	idMap = make(map[string]*Node)
+	pkMap = make(map[[publicKeyHashSize]byte]*Node)
 	for _, v := range cfg.StorageReplicas {
-		if _, ok := replicaIdMap[v.Identifier]; ok {
+		if _, ok := idMap[v.Identifier]; ok {
 			return fmt.Errorf("config: Storage Replica Node: Identifier '%v' is present more than once", v.Identifier)
 		}
-		if err := v.validate(); err != nil {
+		if err := v.validate(true); err != nil {
 			return err
 		}
-		replicaIdMap[v.Identifier] = v
-
-		// Validate unique ReplicaIDs
-		if existing, ok := replicaIDSet[v.ReplicaID]; ok {
-			return fmt.Errorf("config: Storage Replica Node: ReplicaID '%v' is used by both '%v' and '%v'", v.ReplicaID, existing.Identifier, v.Identifier)
-		}
-		replicaIDSet[v.ReplicaID] = v
+		idMap[v.Identifier] = v
 
 		identityKey, err = signpem.FromPublicPEMFile(filepath.Join(cfg.Server.DataDir, v.IdentityPublicKeyPem), pkiSignatureScheme)
 		if err != nil {
@@ -740,10 +704,10 @@ func (cfg *Config) FixupAndValidate(forceGenOnly bool) error {
 		}
 
 		tmp := hash.Sum256From(identityKey)
-		if _, ok := replicaPkMap[tmp]; ok {
+		if _, ok := pkMap[tmp]; ok {
 			return fmt.Errorf("config: Storage Replica Node: IdentityPublicKeyPem '%v' is present more than once", v.IdentityPublicKeyPem)
 		}
-		replicaPkMap[tmp] = v
+		pkMap[tmp] = v
 	}
 
 	// if our own identity is not in cfg.Authorities return error

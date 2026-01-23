@@ -36,22 +36,14 @@ func GetRandomIntermediateReplicas(doc *cpki.Document, boxid *[32]byte) ([2]uint
 		return [2]uint8{}, nil, err
 	}
 
-	// shardReplicaIDs stores the static ReplicaID values for the shards,
-	// not array indices into StorageReplicas
-	shardReplicaIDs := make([]uint8, 2)
+	shardIndexes := make([]uint8, 2)
 	for i, shard := range shards {
-		for _, replica := range doc.StorageReplicas {
+		for j, replica := range doc.StorageReplicas {
 			if hmac.Equal(shard.IdentityKey, replica.IdentityKey) {
-				shardReplicaIDs[i] = replica.ReplicaID
+				shardIndexes[i] = uint8(j)
 				break
 			}
 		}
-	}
-
-	// Build a list of all available ReplicaIDs for random selection
-	allReplicaIDs := make([]uint8, len(doc.StorageReplicas))
-	for i, replica := range doc.StorageReplicas {
-		allReplicaIDs[i] = replica.ReplicaID
 	}
 
 	getReplicaPubKeys := func(replica1, replica2 uint8) ([]nike.PublicKey, error) {
@@ -77,39 +69,26 @@ func GetRandomIntermediateReplicas(doc *cpki.Document, boxid *[32]byte) ([2]uint
 		return replicaPubKeys, nil
 	}
 
-	// Helper to pick a random ReplicaID from allReplicaIDs, excluding certain IDs
-	pickRandomReplicaID := func(exclude ...uint8) uint8 {
-		for {
-			idx := secureRand.Intn(len(allReplicaIDs))
-			candidate := allReplicaIDs[idx]
-			excluded := false
-			for _, ex := range exclude {
-				if candidate == ex {
-					excluded = true
-					break
-				}
-			}
-			if !excluded {
-				return candidate
-			}
-		}
-	}
-
 	switch {
 	case numReplicas < 2:
 		return [2]uint8{}, nil, errors.New("insufficient storage replicas: need at least 2 replicas")
 	case numReplicas == 2:
-		// With only 2 replicas, use both of their ReplicaIDs
-		replicaPubKeys, err := getReplicaPubKeys(allReplicaIDs[0], allReplicaIDs[1])
+		replicaPubKeys, err := getReplicaPubKeys(0, 1)
 		if err != nil {
 			return [2]uint8{}, nil, err
 		}
-		return [2]uint8{allReplicaIDs[0], allReplicaIDs[1]}, replicaPubKeys, nil
+		return [2]uint8{0, 1}, replicaPubKeys, nil
 	case numReplicas == 3:
 		// We cannot select two random replicas because we have only 3 replicas,
 		// so only the second one is random.
-		replica1 := shardReplicaIDs[0]
-		replica2 := pickRandomReplicaID(replica1)
+		var replica2 uint8
+		replica1 := shardIndexes[0]
+		for {
+			replica2 = uint8(secureRand.Intn(int(numReplicas)))
+			if replica2 != replica1 {
+				break
+			}
+		}
 
 		replicaPubKeys, err := getReplicaPubKeys(replica1, replica2)
 		if err != nil {
@@ -119,9 +98,22 @@ func GetRandomIntermediateReplicas(doc *cpki.Document, boxid *[32]byte) ([2]uint
 		return [2]uint8{replica1, replica2}, replicaPubKeys, nil
 	case numReplicas >= 4:
 		// Select two random replicas that are not the replicas
-		// in our shardReplicaIDs:
-		replica1 := pickRandomReplicaID(shardReplicaIDs[0], shardReplicaIDs[1])
-		replica2 := pickRandomReplicaID(replica1, shardReplicaIDs[0], shardReplicaIDs[1])
+		// in our shardIndexes:
+		var replica1, replica2 uint8
+
+		for {
+			replica1 = uint8(secureRand.Intn(int(numReplicas)))
+			if replica1 != shardIndexes[0] && replica1 != shardIndexes[1] {
+				break
+			}
+		}
+
+		for {
+			replica2 = uint8(secureRand.Intn(int(numReplicas)))
+			if replica2 != replica1 && replica2 != shardIndexes[0] && replica2 != shardIndexes[1] {
+				break
+			}
+		}
 
 		replicaPubKeys, err := getReplicaPubKeys(replica1, replica2)
 		if err != nil {
@@ -131,6 +123,6 @@ func GetRandomIntermediateReplicas(doc *cpki.Document, boxid *[32]byte) ([2]uint
 		return [2]uint8{replica1, replica2}, replicaPubKeys, nil
 	}
 
-	// unreachable
+	// unreacable
 	panic("unreachable code path")
 }

@@ -328,10 +328,6 @@ type ReplicaDescriptor struct {
 	// Name is the unique name of the pigeonhole storage replica.
 	Name string
 
-	// ReplicaID is the static uint8 identifier for this replica.
-	// All dirauths and replicas must agree on this value.
-	ReplicaID uint8
-
 	// Epoch is the Epoch in which this descriptor was created
 	Epoch uint64
 
@@ -373,13 +369,12 @@ func (d *ReplicaDescriptor) DisplayWithSchemes(linkScheme kem.Scheme, identitySc
 
 	return fmt.Sprintf(`ReplicaDescriptor:
 Name: %s
-ReplicaID: %d
 Epoch: %d
 IdentityKey: %s
 LinkKey: %s
 EnvelopeKeys: %v
 Addresses: %s
-`, d.Name, d.ReplicaID, d.Epoch, idKey, linkKey, envelopeKeys, d.Addresses)
+`, d.Name, d.Epoch, idKey, linkKey, envelopeKeys, d.Addresses)
 }
 
 // IsReplicaDescriptorWellFormed validates the descriptor and returns a descriptive

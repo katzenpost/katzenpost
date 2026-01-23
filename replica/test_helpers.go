@@ -197,7 +197,6 @@ func GenerateTestReplica(t *testing.T, schemes *TestSchemes, index int) *pki.Rep
 	// Create replica descriptor
 	replica := &pki.ReplicaDescriptor{
 		Name:        fmt.Sprintf(testReplicaNameFormat, index),
-		ReplicaID:   uint8(index),
 		IdentityKey: keys.IdentityKeyBlob,
 		LinkKey:     keys.LinkKeyBlob,
 		Addresses:   map[string][]string{"tcp": {fmt.Sprintf("tcp://127.0.0.1:%d", 19000+index)}},
@@ -214,26 +213,10 @@ func GenerateTestReplica(t *testing.T, schemes *TestSchemes, index int) *pki.Rep
 // CreateTestPKIDocument creates a test PKI document
 func CreateTestPKIDocument(t *testing.T, replicas []*pki.ReplicaDescriptor, serviceNodes []*pki.MixDescriptor) *pki.Document {
 	epoch, _, _ := epochtime.Now()
-
-	// Build ConfiguredReplicaIDs from the replica descriptors
-	configuredReplicaIDs := make([]uint8, len(replicas))
-	for i, desc := range replicas {
-		configuredReplicaIDs[i] = desc.ReplicaID
-	}
-
-	// Build ConfiguredReplicaIdentityKeys from the replica descriptors
-	configuredReplicaKeys := make([][]byte, len(replicas))
-	for i, desc := range replicas {
-		configuredReplicaKeys[i] = make([]byte, len(desc.IdentityKey))
-		copy(configuredReplicaKeys[i], desc.IdentityKey)
-	}
-
 	return &pki.Document{
-		Epoch:                         epoch,
-		StorageReplicas:               replicas,
-		ConfiguredReplicaIDs:          configuredReplicaIDs,
-		ConfiguredReplicaIdentityKeys: configuredReplicaKeys,
-		ServiceNodes:                  serviceNodes,
+		Epoch:           epoch,
+		StorageReplicas: replicas,
+		ServiceNodes:    serviceNodes,
 	}
 }
 

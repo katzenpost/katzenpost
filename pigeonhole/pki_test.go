@@ -62,7 +62,6 @@ func createTestReplicaDescriptor(t *testing.T, name string, pkiScheme sign.Schem
 
 	return &pki.ReplicaDescriptor{
 		Name:        name,
-		ReplicaID:   0,
 		IdentityKey: identityKeyBytes,
 		LinkKey:     linkKeyBytes,
 		Addresses: map[string][]string{

@@ -34,9 +34,6 @@ type Connector struct {
 	closeAllWg sync.WaitGroup
 }
 
-// destToNodeID looks up a replica by its static ReplicaID and returns its identity key hash.
-// The dest parameter is the static uint8 identifier assigned to a replica,
-// not an array index into StorageReplicas.
 func (co *Connector) destToNodeID(dest uint8) (*[constants.NodeIDLength]byte, error) {
 	doc := co.server.PKI.PKIDocument()
 	if doc == nil {
@@ -48,11 +45,11 @@ func (co *Connector) destToNodeID(dest uint8) (*[constants.NodeIDLength]byte, er
 		co.log.Errorf("destToNodeID: no storage replicas in PKI document")
 		return nil, errors.New("no storage replicas available in PKI")
 	}
-	replica, err := doc.GetReplicaNodeByReplicaID(dest)
-	if err != nil {
-		co.log.Errorf("destToNodeID: replica with ID %d not found: %s", dest, err)
-		return nil, err
+	if int(dest) >= len(doc.StorageReplicas) {
+		co.log.Errorf("destToNodeID: invalid destination ID %d >= %d", dest, len(doc.StorageReplicas))
+		return nil, errors.New("invalid destination ID")
 	}
+	replica := doc.StorageReplicas[dest]
 	idKeyHash := hash.Sum256(replica.IdentityKey)
 	co.log.Debugf("destToNodeID: dest=%d mapped to replica %s", dest, replica.Name)
 	return &idKeyHash, nil
