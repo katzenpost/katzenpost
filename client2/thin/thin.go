@@ -34,8 +34,8 @@
 //   - SendMessage: Send a message with optional reply capability
 //   - SendMessageWithoutReply: Send a fire-and-forget message
 //   - BlockingSendMessage: Send a message and wait for reply
-//   - SendReliableMessage: Send with automatic retransmission (ARQ)
-//   - BlockingSendReliableMessage: Reliable send with blocking reply
+//
+// Note: ARQ (Automatic Repeat reQuest) is now used exclusively for the new Pigeonhole API.
 //
 // ## Pigeonhole Channel API
 //
@@ -193,7 +193,8 @@ type ThinClient struct {
 
 	isConnected bool
 
-	// used by BlockingSendReliableMessage only
+	// Legacy: These maps were previously used by BlockingSendReliableMessage (now removed).
+	// They may be removed in a future cleanup if no longer needed.
 	sentWaitChanMap  sync.Map // MessageID -> chan error
 	replyWaitChanMap sync.Map // MessageID -> chan *MessageReplyEvent
 }
