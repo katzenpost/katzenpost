@@ -1191,3 +1191,477 @@ type nikeNodeParams struct {
 	privateKey nike.PrivateKey
 	publicKey  nike.PublicKey
 }
+
+// TestStartResendingEncryptedMessage_ValidationErrors tests the validation logic
+// in startResendingEncryptedMessage without needing a full mixnet.
+func TestStartResendingEncryptedMessage_ValidationErrors(t *testing.T) {
+	logBackend, err := log.New("", "debug", false)
+	require.NoError(t, err)
+
+	cfg, err := config.LoadFile("testdata/client.toml")
+	require.NoError(t, err)
+
+	port, err := getFreePort()
+	require.NoError(t, err)
+	cfg.ListenAddress = fmt.Sprintf("127.0.0.1:%d", port)
+
+	client := &Client{cfg: cfg}
+	rates := &Rates{}
+	egressCh := make(chan *Request, 10)
+
+	listener, err := NewListener(client, rates, egressCh, logBackend, nil)
+	require.NoError(t, err)
+	defer listener.Shutdown()
+
+	d := &Daemon{
+		logbackend:                logBackend,
+		log:                       logBackend.GetLogger("test"),
+		listener:                  listener,
+		client:                    client,
+		newChannelMap:             make(map[uint16]*ChannelDescriptor),
+		newChannelMapLock:         new(sync.RWMutex),
+		newSurbIDToChannelMap:     make(map[[sphinxConstants.SURBIDLength]byte]uint16),
+		newSurbIDToChannelMapLock: new(sync.RWMutex),
+		channelReplies:            make(map[[sphinxConstants.SURBIDLength]byte]replyDescriptor),
+		channelRepliesLock:        new(sync.RWMutex),
+		arqSurbIDMap:              make(map[[sphinxConstants.SURBIDLength]byte]*ARQMessage),
+		arqEnvelopeHashMap:        make(map[[32]byte]*[sphinxConstants.SURBIDLength]byte),
+		replyLock:                 new(sync.Mutex),
+	}
+
+	testAppID := &[AppIDLength]byte{}
+	copy(testAppID[:], []byte("test-start-resnd"))
+
+	responseCh := make(chan *Response, 10)
+	mockConn := &mockIncomingConn{
+		appID:      testAppID,
+		responseCh: responseCh,
+	}
+
+	listener.connsLock.Lock()
+	listener.conns[*testAppID] = mockConn.toIncomingConn(listener, logBackend)
+	listener.connsLock.Unlock()
+
+	queryID := &[thin.QueryIDLength]byte{}
+	copy(queryID[:], []byte("test-query-id---"))
+
+	envelopeHash := &[32]byte{}
+	copy(envelopeHash[:], []byte("test-envelope-hash----------"))
+
+	writeCap, err := bacap.NewWriteCap(rand.Reader)
+	require.NoError(t, err)
+
+	// Test 1: nil QueryID
+	t.Run("nil QueryID", func(t *testing.T) {
+		request := &Request{
+			AppID: testAppID,
+			StartResendingEncryptedMessage: &thin.StartResendingEncryptedMessage{
+				QueryID:            nil,
+				EnvelopeHash:       envelopeHash,
+				MessageCiphertext:  []byte("test"),
+				EnvelopeDescriptor: []byte("desc"),
+				WriteCap:           writeCap,
+			},
+		}
+		d.startResendingEncryptedMessage(request)
+
+		select {
+		case resp := <-responseCh:
+			require.NotNil(t, resp.StartResendingEncryptedMessageReply)
+			require.Equal(t, thin.ThinClientErrorInvalidRequest, resp.StartResendingEncryptedMessageReply.ErrorCode)
+		case <-time.After(time.Second):
+			t.Fatal("Expected error response")
+		}
+	})
+
+	// Test 2: nil EnvelopeHash
+	t.Run("nil EnvelopeHash", func(t *testing.T) {
+		request := &Request{
+			AppID: testAppID,
+			StartResendingEncryptedMessage: &thin.StartResendingEncryptedMessage{
+				QueryID:            queryID,
+				EnvelopeHash:       nil,
+				MessageCiphertext:  []byte("test"),
+				EnvelopeDescriptor: []byte("desc"),
+				WriteCap:           writeCap,
+			},
+		}
+		d.startResendingEncryptedMessage(request)
+
+		select {
+		case resp := <-responseCh:
+			require.NotNil(t, resp.StartResendingEncryptedMessageReply)
+			require.Equal(t, thin.ThinClientErrorInvalidRequest, resp.StartResendingEncryptedMessageReply.ErrorCode)
+		case <-time.After(time.Second):
+			t.Fatal("Expected error response")
+		}
+	})
+
+	// Test 3: empty MessageCiphertext
+	t.Run("empty MessageCiphertext", func(t *testing.T) {
+		request := &Request{
+			AppID: testAppID,
+			StartResendingEncryptedMessage: &thin.StartResendingEncryptedMessage{
+				QueryID:            queryID,
+				EnvelopeHash:       envelopeHash,
+				MessageCiphertext:  []byte{},
+				EnvelopeDescriptor: []byte("desc"),
+				WriteCap:           writeCap,
+			},
+		}
+		d.startResendingEncryptedMessage(request)
+
+		select {
+		case resp := <-responseCh:
+			require.NotNil(t, resp.StartResendingEncryptedMessageReply)
+			require.Equal(t, thin.ThinClientErrorInvalidRequest, resp.StartResendingEncryptedMessageReply.ErrorCode)
+		case <-time.After(time.Second):
+			t.Fatal("Expected error response")
+		}
+	})
+
+	// Test 4: empty EnvelopeDescriptor
+	t.Run("empty EnvelopeDescriptor", func(t *testing.T) {
+		request := &Request{
+			AppID: testAppID,
+			StartResendingEncryptedMessage: &thin.StartResendingEncryptedMessage{
+				QueryID:            queryID,
+				EnvelopeHash:       envelopeHash,
+				MessageCiphertext:  []byte("test"),
+				EnvelopeDescriptor: []byte{},
+				WriteCap:           writeCap,
+			},
+		}
+		d.startResendingEncryptedMessage(request)
+
+		select {
+		case resp := <-responseCh:
+			require.NotNil(t, resp.StartResendingEncryptedMessageReply)
+			require.Equal(t, thin.ThinClientErrorInvalidRequest, resp.StartResendingEncryptedMessageReply.ErrorCode)
+		case <-time.After(time.Second):
+			t.Fatal("Expected error response")
+		}
+	})
+
+	// Test 5: neither ReadCap nor WriteCap set
+	t.Run("no capability set", func(t *testing.T) {
+		request := &Request{
+			AppID: testAppID,
+			StartResendingEncryptedMessage: &thin.StartResendingEncryptedMessage{
+				QueryID:            queryID,
+				EnvelopeHash:       envelopeHash,
+				MessageCiphertext:  []byte("test"),
+				EnvelopeDescriptor: []byte("desc"),
+				ReadCap:            nil,
+				WriteCap:           nil,
+			},
+		}
+		d.startResendingEncryptedMessage(request)
+
+		select {
+		case resp := <-responseCh:
+			require.NotNil(t, resp.StartResendingEncryptedMessageReply)
+			require.Equal(t, thin.ThinClientErrorInvalidRequest, resp.StartResendingEncryptedMessageReply.ErrorCode)
+		case <-time.After(time.Second):
+			t.Fatal("Expected error response")
+		}
+	})
+
+	// Test 6: both ReadCap and WriteCap set
+	t.Run("both capabilities set", func(t *testing.T) {
+		readCap := writeCap.ReadCap()
+		request := &Request{
+			AppID: testAppID,
+			StartResendingEncryptedMessage: &thin.StartResendingEncryptedMessage{
+				QueryID:            queryID,
+				EnvelopeHash:       envelopeHash,
+				MessageCiphertext:  []byte("test"),
+				EnvelopeDescriptor: []byte("desc"),
+				ReadCap:            readCap,
+				WriteCap:           writeCap,
+			},
+		}
+		d.startResendingEncryptedMessage(request)
+
+		select {
+		case resp := <-responseCh:
+			require.NotNil(t, resp.StartResendingEncryptedMessageReply)
+			require.Equal(t, thin.ThinClientErrorInvalidRequest, resp.StartResendingEncryptedMessageReply.ErrorCode)
+		case <-time.After(time.Second):
+			t.Fatal("Expected error response")
+		}
+	})
+
+	t.Log("All startResendingEncryptedMessage validation tests passed")
+}
+
+// TestCancelResendingEncryptedMessage tests the cancel functionality
+func TestCancelResendingEncryptedMessage(t *testing.T) {
+	logBackend, err := log.New("", "debug", false)
+	require.NoError(t, err)
+
+	cfg, err := config.LoadFile("testdata/client.toml")
+	require.NoError(t, err)
+
+	port, err := getFreePort()
+	require.NoError(t, err)
+	cfg.ListenAddress = fmt.Sprintf("127.0.0.1:%d", port)
+
+	client := &Client{cfg: cfg}
+	rates := &Rates{}
+	egressCh := make(chan *Request, 10)
+
+	listener, err := NewListener(client, rates, egressCh, logBackend, nil)
+	require.NoError(t, err)
+	defer listener.Shutdown()
+
+	d := &Daemon{
+		logbackend:                logBackend,
+		log:                       logBackend.GetLogger("test"),
+		listener:                  listener,
+		client:                    client,
+		newChannelMap:             make(map[uint16]*ChannelDescriptor),
+		newChannelMapLock:         new(sync.RWMutex),
+		newSurbIDToChannelMap:     make(map[[sphinxConstants.SURBIDLength]byte]uint16),
+		newSurbIDToChannelMapLock: new(sync.RWMutex),
+		channelReplies:            make(map[[sphinxConstants.SURBIDLength]byte]replyDescriptor),
+		channelRepliesLock:        new(sync.RWMutex),
+		arqSurbIDMap:              make(map[[sphinxConstants.SURBIDLength]byte]*ARQMessage),
+		arqEnvelopeHashMap:        make(map[[32]byte]*[sphinxConstants.SURBIDLength]byte),
+		replyLock:                 new(sync.Mutex),
+	}
+
+	testAppID := &[AppIDLength]byte{}
+	copy(testAppID[:], []byte("test-cancel-rsnd"))
+
+	responseCh := make(chan *Response, 10)
+	mockConn := &mockIncomingConn{
+		appID:      testAppID,
+		responseCh: responseCh,
+	}
+
+	listener.connsLock.Lock()
+	listener.conns[*testAppID] = mockConn.toIncomingConn(listener, logBackend)
+	listener.connsLock.Unlock()
+
+	queryID := &[thin.QueryIDLength]byte{}
+	copy(queryID[:], []byte("cancel-query-id-"))
+
+	envelopeHash := &[32]byte{}
+	copy(envelopeHash[:], []byte("cancel-envelope-hash--------"))
+
+	surbID := &[sphinxConstants.SURBIDLength]byte{}
+	copy(surbID[:], []byte("cancel-surb-id--"))
+
+	// Pre-populate the ARQ maps to simulate an in-flight message
+	d.replyLock.Lock()
+	d.arqSurbIDMap[*surbID] = &ARQMessage{
+		AppID:        testAppID,
+		QueryID:      queryID,
+		EnvelopeHash: envelopeHash,
+		SURBID:       surbID,
+	}
+	d.arqEnvelopeHashMap[*envelopeHash] = surbID
+	d.replyLock.Unlock()
+
+	// Verify the maps are populated
+	d.replyLock.Lock()
+	require.Len(t, d.arqSurbIDMap, 1)
+	require.Len(t, d.arqEnvelopeHashMap, 1)
+	d.replyLock.Unlock()
+
+	// Test 1: Cancel existing message
+	t.Run("cancel existing message", func(t *testing.T) {
+		request := &Request{
+			AppID: testAppID,
+			CancelResendingEncryptedMessage: &thin.CancelResendingEncryptedMessage{
+				QueryID:      queryID,
+				EnvelopeHash: envelopeHash,
+			},
+		}
+		d.cancelResendingEncryptedMessage(request)
+
+		select {
+		case resp := <-responseCh:
+			require.NotNil(t, resp.CancelResendingEncryptedMessageReply)
+			require.Equal(t, thin.ThinClientSuccess, resp.CancelResendingEncryptedMessageReply.ErrorCode)
+			require.Equal(t, queryID, resp.CancelResendingEncryptedMessageReply.QueryID)
+		case <-time.After(time.Second):
+			t.Fatal("Expected success response")
+		}
+
+		// Verify the maps are now empty
+		d.replyLock.Lock()
+		require.Len(t, d.arqSurbIDMap, 0, "arqSurbIDMap should be empty after cancel")
+		require.Len(t, d.arqEnvelopeHashMap, 0, "arqEnvelopeHashMap should be empty after cancel")
+		d.replyLock.Unlock()
+	})
+
+	// Test 2: Cancel non-existent message (should still succeed)
+	t.Run("cancel non-existent message", func(t *testing.T) {
+		nonExistentHash := &[32]byte{}
+		copy(nonExistentHash[:], []byte("non-existent-envelope-hash--"))
+
+		request := &Request{
+			AppID: testAppID,
+			CancelResendingEncryptedMessage: &thin.CancelResendingEncryptedMessage{
+				QueryID:      queryID,
+				EnvelopeHash: nonExistentHash,
+			},
+		}
+		d.cancelResendingEncryptedMessage(request)
+
+		select {
+		case resp := <-responseCh:
+			require.NotNil(t, resp.CancelResendingEncryptedMessageReply)
+			require.Equal(t, thin.ThinClientSuccess, resp.CancelResendingEncryptedMessageReply.ErrorCode)
+		case <-time.After(time.Second):
+			t.Fatal("Expected success response")
+		}
+	})
+
+	// Test 3: Cancel with nil QueryID
+	t.Run("cancel with nil QueryID", func(t *testing.T) {
+		request := &Request{
+			AppID: testAppID,
+			CancelResendingEncryptedMessage: &thin.CancelResendingEncryptedMessage{
+				QueryID:      nil,
+				EnvelopeHash: envelopeHash,
+			},
+		}
+		d.cancelResendingEncryptedMessage(request)
+
+		select {
+		case resp := <-responseCh:
+			require.NotNil(t, resp.CancelResendingEncryptedMessageReply)
+			require.Equal(t, thin.ThinClientErrorInvalidRequest, resp.CancelResendingEncryptedMessageReply.ErrorCode)
+		case <-time.After(time.Second):
+			t.Fatal("Expected error response")
+		}
+	})
+
+	// Test 4: Cancel with nil EnvelopeHash
+	t.Run("cancel with nil EnvelopeHash", func(t *testing.T) {
+		request := &Request{
+			AppID: testAppID,
+			CancelResendingEncryptedMessage: &thin.CancelResendingEncryptedMessage{
+				QueryID:      queryID,
+				EnvelopeHash: nil,
+			},
+		}
+		d.cancelResendingEncryptedMessage(request)
+
+		select {
+		case resp := <-responseCh:
+			require.NotNil(t, resp.CancelResendingEncryptedMessageReply)
+			require.Equal(t, thin.ThinClientErrorInvalidRequest, resp.CancelResendingEncryptedMessageReply.ErrorCode)
+		case <-time.After(time.Second):
+			t.Fatal("Expected error response")
+		}
+	})
+
+	t.Log("All cancelResendingEncryptedMessage tests passed")
+}
+
+// TestCancelResendingDuringARQRetry tests that cancellation works correctly
+// when an ARQ message is in the middle of being retried.
+func TestCancelResendingDuringARQRetry(t *testing.T) {
+	logBackend, err := log.New("", "debug", false)
+	require.NoError(t, err)
+
+	cfg, err := config.LoadFile("testdata/client.toml")
+	require.NoError(t, err)
+
+	port, err := getFreePort()
+	require.NoError(t, err)
+	cfg.ListenAddress = fmt.Sprintf("127.0.0.1:%d", port)
+
+	client := &Client{cfg: cfg}
+	rates := &Rates{}
+	egressCh := make(chan *Request, 10)
+
+	listener, err := NewListener(client, rates, egressCh, logBackend, nil)
+	require.NoError(t, err)
+	defer listener.Shutdown()
+
+	d := &Daemon{
+		logbackend:                logBackend,
+		log:                       logBackend.GetLogger("test"),
+		listener:                  listener,
+		client:                    client,
+		newChannelMap:             make(map[uint16]*ChannelDescriptor),
+		newChannelMapLock:         new(sync.RWMutex),
+		newSurbIDToChannelMap:     make(map[[sphinxConstants.SURBIDLength]byte]uint16),
+		newSurbIDToChannelMapLock: new(sync.RWMutex),
+		channelReplies:            make(map[[sphinxConstants.SURBIDLength]byte]replyDescriptor),
+		channelRepliesLock:        new(sync.RWMutex),
+		arqSurbIDMap:              make(map[[sphinxConstants.SURBIDLength]byte]*ARQMessage),
+		arqEnvelopeHashMap:        make(map[[32]byte]*[sphinxConstants.SURBIDLength]byte),
+		replyLock:                 new(sync.Mutex),
+	}
+
+	testAppID := &[AppIDLength]byte{}
+	copy(testAppID[:], []byte("test-cancel-rtry"))
+
+	responseCh := make(chan *Response, 10)
+	mockConn := &mockIncomingConn{
+		appID:      testAppID,
+		responseCh: responseCh,
+	}
+
+	listener.connsLock.Lock()
+	listener.conns[*testAppID] = mockConn.toIncomingConn(listener, logBackend)
+	listener.connsLock.Unlock()
+
+	queryID := &[thin.QueryIDLength]byte{}
+	copy(queryID[:], []byte("retry-query-id--"))
+
+	envelopeHash := &[32]byte{}
+	copy(envelopeHash[:], []byte("retry-envelope-hash---------"))
+
+	surbID := &[sphinxConstants.SURBIDLength]byte{}
+	copy(surbID[:], []byte("retry-surb-id---"))
+
+	// Pre-populate with a message that has been retried multiple times
+	d.replyLock.Lock()
+	d.arqSurbIDMap[*surbID] = &ARQMessage{
+		AppID:           testAppID,
+		QueryID:         queryID,
+		EnvelopeHash:    envelopeHash,
+		SURBID:          surbID,
+		Retransmissions: 50, // Simulating many retries
+	}
+	d.arqEnvelopeHashMap[*envelopeHash] = surbID
+	d.replyLock.Unlock()
+
+	// Cancel the message
+	request := &Request{
+		AppID: testAppID,
+		CancelResendingEncryptedMessage: &thin.CancelResendingEncryptedMessage{
+			QueryID:      queryID,
+			EnvelopeHash: envelopeHash,
+		},
+	}
+	d.cancelResendingEncryptedMessage(request)
+
+	select {
+	case resp := <-responseCh:
+		require.NotNil(t, resp.CancelResendingEncryptedMessageReply)
+		require.Equal(t, thin.ThinClientSuccess, resp.CancelResendingEncryptedMessageReply.ErrorCode)
+	case <-time.After(time.Second):
+		t.Fatal("Expected success response")
+	}
+
+	// Verify the maps are empty
+	d.replyLock.Lock()
+	require.Len(t, d.arqSurbIDMap, 0)
+	require.Len(t, d.arqEnvelopeHashMap, 0)
+	d.replyLock.Unlock()
+
+	// Now try to resend - should not find the message
+	require.NotPanics(t, func() {
+		d.arqDoResend(surbID)
+	}, "arqDoResend should not panic after cancel")
+
+	t.Log("Cancel during ARQ retry test passed")
+}
