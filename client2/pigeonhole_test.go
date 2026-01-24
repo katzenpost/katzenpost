@@ -926,6 +926,389 @@ func TestRaceConditionARQResendAfterDisconnect(t *testing.T) {
 	t.Log("Race condition test completed successfully - no panics during concurrent operations")
 }
 
+// TestAliceSendsBobMessage tests the complete end-to-end flow of Alice sending Bob a message
+// using the new Pigeonhole API. This test simulates:
+// 1. Alice creates a WriteCap and gives Bob the ReadCap
+// 2. Alice encrypts a message using encryptWrite
+// 3. Bob encrypts a read request using encryptRead
+// 4. Bob decrypts Alice's message
+func TestAliceSendsBobMessage(t *testing.T) {
+	require := require.New(t)
+
+	logBackend, err := log.New("", "debug", false)
+	require.NoError(err)
+
+	cfg, err := config.LoadFile("testdata/client.toml")
+	require.NoError(err)
+
+	port, err := getFreePort()
+	require.NoError(err)
+	cfg.ListenAddress = fmt.Sprintf("127.0.0.1:%d", port)
+
+	// Add PigeonholeGeometry for write operations
+	cfg.PigeonholeGeometry = &pigeonholeGeo.Geometry{
+		MaxPlaintextPayloadLength: 1000,
+		NIKEName:                  replicaCommon.NikeScheme.Name(),
+	}
+
+	client := &Client{cfg: cfg}
+	rates := &Rates{}
+	egressCh := make(chan *Request, 10)
+
+	listener, err := NewListener(client, rates, egressCh, logBackend, nil)
+	require.NoError(err)
+	defer listener.Shutdown()
+
+	// Create a mock PKI document
+	doc := createMockPKIDocument(t)
+	currentEpoch, _, _ := epochtime.Now()
+	client.pki = &pki{
+		c:    client,
+		docs: sync.Map{},
+	}
+	client.pki.docs.Store(currentEpoch, &CachedDoc{
+		Doc:  doc,
+		Blob: nil,
+	})
+
+	d := &Daemon{
+		logbackend:                logBackend,
+		log:                       logBackend.GetLogger("test-alice-bob"),
+		listener:                  listener,
+		client:                    client,
+		cfg:                       cfg,
+		newChannelMap:             make(map[uint16]*ChannelDescriptor),
+		newChannelMapLock:         new(sync.RWMutex),
+		newSurbIDToChannelMap:     make(map[[sphinxConstants.SURBIDLength]byte]uint16),
+		newSurbIDToChannelMapLock: new(sync.RWMutex),
+		channelReplies:            make(map[[sphinxConstants.SURBIDLength]byte]replyDescriptor),
+		channelRepliesLock:        new(sync.RWMutex),
+	}
+
+	t.Log("=== Step 1: Alice creates WriteCap and derives ReadCap for Bob ===")
+
+	// Alice creates a new keypair
+	aliceSeed := make([]byte, 32)
+	_, err = rand.Reader.Read(aliceSeed)
+	require.NoError(err)
+
+	aliceRng, err := rand.NewDeterministicRandReader(aliceSeed)
+	require.NoError(err)
+
+	aliceWriteCap, err := bacap.NewWriteCap(aliceRng)
+	require.NoError(err)
+	require.NotNil(aliceWriteCap)
+
+	// Alice derives ReadCap for Bob
+	bobReadCap := aliceWriteCap.ReadCap()
+	require.NotNil(bobReadCap)
+	t.Logf("   ✓ Alice created WriteCap and derived ReadCap for Bob")
+
+	t.Log("=== Step 2: Alice encrypts a message for Bob ===")
+
+	// Alice's message to Bob
+	aliceMessage := []byte("Bob, Beware they are jamming GPS.")
+
+	// Set up Alice's mock connection
+	aliceAppID := &[AppIDLength]byte{}
+	copy(aliceAppID[:], []byte("alice-app-id----"))
+
+	aliceResponseCh := make(chan *Response, 1)
+	aliceMockConn := &mockIncomingConn{
+		appID:      aliceAppID,
+		responseCh: aliceResponseCh,
+	}
+
+	listener.connsLock.Lock()
+	listener.conns[*aliceAppID] = aliceMockConn.toIncomingConn(listener, logBackend)
+	listener.connsLock.Unlock()
+
+	// Alice gets the current MessageBoxIndex from her WriteCap
+	aliceStatefulWriter, err := bacap.NewStatefulWriter(aliceWriteCap, constants.PIGEONHOLE_CTX)
+	require.NoError(err)
+	aliceMessageBoxIndex := aliceStatefulWriter.GetCurrentMessageIndex()
+
+	// Alice creates an EncryptWrite request
+	aliceQueryID := &[thin.QueryIDLength]byte{}
+	copy(aliceQueryID[:], []byte("alice-write-qry-"))
+
+	aliceWriteRequest := &Request{
+		AppID: aliceAppID,
+		EncryptWrite: &thin.EncryptWrite{
+			QueryID:         aliceQueryID,
+			Plaintext:       aliceMessage,
+			WriteCap:        aliceWriteCap,
+			MessageBoxIndex: aliceMessageBoxIndex,
+		},
+	}
+
+	// Alice calls encryptWrite
+	d.encryptWrite(aliceWriteRequest)
+
+	// Get Alice's encrypted write response
+	select {
+	case resp := <-aliceResponseCh:
+		require.NotNil(resp.EncryptWriteReply)
+		require.Equal(thin.ThinClientSuccess, resp.EncryptWriteReply.ErrorCode)
+		t.Logf("   ✓ Alice encrypted message: %d bytes plaintext -> %d bytes ciphertext",
+			len(aliceMessage), len(resp.EncryptWriteReply.MessageCiphertext))
+	case <-time.After(time.Second):
+		t.Fatal("Expected Alice's write response but got none within timeout")
+	}
+
+	t.Log("=== Step 3: Bob encrypts a read request ===")
+
+	// Set up Bob's mock connection
+	bobAppID := &[AppIDLength]byte{}
+	copy(bobAppID[:], []byte("bob-app-id------"))
+
+	bobResponseCh := make(chan *Response, 1)
+	bobMockConn := &mockIncomingConn{
+		appID:      bobAppID,
+		responseCh: bobResponseCh,
+	}
+
+	listener.connsLock.Lock()
+	listener.conns[*bobAppID] = bobMockConn.toIncomingConn(listener, logBackend)
+	listener.connsLock.Unlock()
+
+	// Bob creates a StatefulReader from the ReadCap Alice gave him
+	// Bob starts reading from the same MessageBoxIndex that Alice wrote to
+	bobStatefulReader, err := bacap.NewStatefulReaderWithIndex(bobReadCap, constants.PIGEONHOLE_CTX, aliceMessageBoxIndex)
+	require.NoError(err)
+
+	// Bob creates an EncryptRead request
+	bobQueryID := &[thin.QueryIDLength]byte{}
+	copy(bobQueryID[:], []byte("bob-read-query--"))
+
+	bobReadRequest := &Request{
+		AppID: bobAppID,
+		EncryptRead: &thin.EncryptRead{
+			QueryID:         bobQueryID,
+			ReadCap:         bobReadCap,
+			MessageBoxIndex: aliceMessageBoxIndex,
+		},
+	}
+
+	// Bob calls encryptRead
+	d.encryptRead(bobReadRequest)
+
+	// Get Bob's encrypted read response
+	select {
+	case resp := <-bobResponseCh:
+		require.NotNil(resp.EncryptReadReply)
+		require.Equal(thin.ThinClientSuccess, resp.EncryptReadReply.ErrorCode)
+		t.Logf("   ✓ Bob created read request: %d bytes", len(resp.EncryptReadReply.MessageCiphertext))
+	case <-time.After(time.Second):
+		t.Fatal("Expected Bob's read response but got none within timeout")
+	}
+
+	t.Log("=== Step 4: Verify BoxIDs match (Alice's write and Bob's read target the same box) ===")
+
+	// Verify that both Alice and Bob are targeting the same BoxID
+	// by using the BACAP API directly
+	aliceBoxID, err := aliceStatefulWriter.NextBoxID()
+	require.NoError(err)
+
+	bobBoxID, err := bobStatefulReader.NextBoxID()
+	require.NoError(err)
+
+	require.Equal(aliceBoxID.Bytes(), bobBoxID[:], "Alice's write BoxID should match Bob's read BoxID")
+	t.Logf("   ✓ BoxIDs match: %x...", aliceBoxID.Bytes()[:8])
+
+	t.Log("=== Step 5: Simulate Bob decrypting Alice's message ===")
+
+	// In a real scenario, the courier would forward Alice's write to the replicas,
+	// and Bob's read would retrieve it. Here we simulate Bob decrypting directly
+	// using the BACAP primitives.
+
+	// Get the BoxID, ciphertext, and signature that Alice created
+	aliceBoxIDFromWriter, aliceCiphertext, aliceSigRaw, err := aliceStatefulWriter.PrepareNext(aliceMessage)
+	require.NoError(err)
+
+	aliceSig := [bacap.SignatureSize]byte{}
+	copy(aliceSig[:], aliceSigRaw)
+
+	// Bob decrypts using his StatefulReader
+	bobDecrypted, err := bobStatefulReader.DecryptNext(constants.PIGEONHOLE_CTX, aliceBoxIDFromWriter, aliceCiphertext, aliceSig)
+	require.NoError(err)
+
+	require.Equal(aliceMessage, bobDecrypted, "Bob should decrypt Alice's original message")
+	t.Logf("   ✓ Bob successfully decrypted Alice's message: %q", string(bobDecrypted))
+
+	t.Log("=== ✓ End-to-end test complete: Alice successfully sent Bob a message! ===")
+}
+
+// TestAliceSendsMultipleMessagesToBob tests Alice sending multiple sequential messages to Bob
+// using the new Pigeonhole API with proper state advancement.
+func TestAliceSendsMultipleMessagesToBob(t *testing.T) {
+	require := require.New(t)
+
+	logBackend, err := log.New("", "debug", false)
+	require.NoError(err)
+
+	cfg, err := config.LoadFile("testdata/client.toml")
+	require.NoError(err)
+
+	port, err := getFreePort()
+	require.NoError(err)
+	cfg.ListenAddress = fmt.Sprintf("127.0.0.1:%d", port)
+
+	// Add PigeonholeGeometry for write operations
+	cfg.PigeonholeGeometry = &pigeonholeGeo.Geometry{
+		MaxPlaintextPayloadLength: 1000,
+		NIKEName:                  replicaCommon.NikeScheme.Name(),
+	}
+
+	client := &Client{cfg: cfg}
+	rates := &Rates{}
+	egressCh := make(chan *Request, 10)
+
+	listener, err := NewListener(client, rates, egressCh, logBackend, nil)
+	require.NoError(err)
+	defer listener.Shutdown()
+
+	// Create a mock PKI document
+	doc := createMockPKIDocument(t)
+	currentEpoch, _, _ := epochtime.Now()
+	client.pki = &pki{
+		c:    client,
+		docs: sync.Map{},
+	}
+	client.pki.docs.Store(currentEpoch, &CachedDoc{
+		Doc:  doc,
+		Blob: nil,
+	})
+
+	d := &Daemon{
+		logbackend:                logBackend,
+		log:                       logBackend.GetLogger("test-multi-msg"),
+		listener:                  listener,
+		client:                    client,
+		cfg:                       cfg,
+		newChannelMap:             make(map[uint16]*ChannelDescriptor),
+		newChannelMapLock:         new(sync.RWMutex),
+		newSurbIDToChannelMap:     make(map[[sphinxConstants.SURBIDLength]byte]uint16),
+		newSurbIDToChannelMapLock: new(sync.RWMutex),
+		channelReplies:            make(map[[sphinxConstants.SURBIDLength]byte]replyDescriptor),
+		channelRepliesLock:        new(sync.RWMutex),
+	}
+
+	t.Log("=== Setup: Alice creates WriteCap and gives Bob the ReadCap ===")
+
+	// Alice creates a new keypair
+	aliceSeed := make([]byte, 32)
+	_, err = rand.Reader.Read(aliceSeed)
+	require.NoError(err)
+
+	aliceRng, err := rand.NewDeterministicRandReader(aliceSeed)
+	require.NoError(err)
+
+	aliceWriteCap, err := bacap.NewWriteCap(aliceRng)
+	require.NoError(err)
+
+	bobReadCap := aliceWriteCap.ReadCap()
+	require.NotNil(bobReadCap)
+
+	// Create stateful writer and reader
+	aliceStatefulWriter, err := bacap.NewStatefulWriter(aliceWriteCap, constants.PIGEONHOLE_CTX)
+	require.NoError(err)
+
+	bobStatefulReader, err := bacap.NewStatefulReader(bobReadCap, constants.PIGEONHOLE_CTX)
+	require.NoError(err)
+
+	// Set up Alice's mock connection
+	aliceAppID := &[AppIDLength]byte{}
+	copy(aliceAppID[:], []byte("alice-multi-msg-"))
+
+	aliceResponseCh := make(chan *Response, 10)
+	aliceMockConn := &mockIncomingConn{
+		appID:      aliceAppID,
+		responseCh: aliceResponseCh,
+	}
+
+	listener.connsLock.Lock()
+	listener.conns[*aliceAppID] = aliceMockConn.toIncomingConn(listener, logBackend)
+	listener.connsLock.Unlock()
+
+	// Set up Bob's mock connection
+	bobAppID := &[AppIDLength]byte{}
+	copy(bobAppID[:], []byte("bob-multi-msg---"))
+
+	bobResponseCh := make(chan *Response, 10)
+	bobMockConn := &mockIncomingConn{
+		appID:      bobAppID,
+		responseCh: bobResponseCh,
+	}
+
+	listener.connsLock.Lock()
+	listener.conns[*bobAppID] = bobMockConn.toIncomingConn(listener, logBackend)
+	listener.connsLock.Unlock()
+
+	t.Log("=== Testing: Alice sends 5 sequential messages to Bob ===")
+
+	numMessages := 5
+	for i := 0; i < numMessages; i++ {
+		message := []byte(fmt.Sprintf("Message %d from Alice to Bob", i))
+		t.Logf("\n--- Message %d ---", i)
+
+		// Alice gets current MessageBoxIndex
+		aliceMessageBoxIndex := aliceStatefulWriter.GetCurrentMessageIndex()
+
+		// Alice encrypts the message
+		aliceQueryID := &[thin.QueryIDLength]byte{}
+		copy(aliceQueryID[:], []byte(fmt.Sprintf("alice-msg-%d-----", i)))
+
+		aliceWriteRequest := &Request{
+			AppID: aliceAppID,
+			EncryptWrite: &thin.EncryptWrite{
+				QueryID:         aliceQueryID,
+				Plaintext:       message,
+				WriteCap:        aliceWriteCap,
+				MessageBoxIndex: aliceMessageBoxIndex,
+			},
+		}
+
+		d.encryptWrite(aliceWriteRequest)
+
+		// Get Alice's response
+		select {
+		case resp := <-aliceResponseCh:
+			require.NotNil(resp.EncryptWriteReply)
+			require.Equal(thin.ThinClientSuccess, resp.EncryptWriteReply.ErrorCode)
+			t.Logf("   ✓ Alice encrypted message %d", i)
+		case <-time.After(time.Second):
+			t.Fatalf("Expected Alice's write response for message %d but got none", i)
+		}
+
+		// Get the encrypted data using PrepareNext (doesn't advance state)
+		aliceBoxID, aliceCiphertext, aliceSigRaw, err := aliceStatefulWriter.PrepareNext(message)
+		require.NoError(err)
+
+		aliceSig := [bacap.SignatureSize]byte{}
+		copy(aliceSig[:], aliceSigRaw)
+
+		// Bob decrypts the message
+		bobDecrypted, err := bobStatefulReader.DecryptNext(constants.PIGEONHOLE_CTX, aliceBoxID, aliceCiphertext, aliceSig)
+		require.NoError(err)
+		require.Equal(message, bobDecrypted)
+		t.Logf("   ✓ Bob decrypted message %d: %q", i, string(bobDecrypted))
+
+		// Simulate ACK: Alice advances her state after successful write
+		err = aliceStatefulWriter.AdvanceState()
+		require.NoError(err)
+		t.Logf("   ✓ Alice advanced state after ACK for message %d", i)
+
+		// Verify that Alice and Bob's indices are in sync
+		aliceNextIdx := aliceStatefulWriter.GetCurrentMessageIndex().Idx64
+		bobNextIdx := bobStatefulReader.GetCurrentMessageIndex().Idx64
+		require.Equal(aliceNextIdx, bobNextIdx, "Alice and Bob should be at the same index")
+		t.Logf("   ✓ Alice and Bob indices in sync: %d", aliceNextIdx)
+	}
+
+	t.Log("=== ✓ Multi-message test complete: Alice sent 5 messages to Bob successfully! ===")
+}
+
 func TestArqDoResendWithNilListener(t *testing.T) {
 	d := &Daemon{
 		arqSurbIDMap:              make(map[[sphinxConstants.SURBIDLength]byte]*ARQMessage),
