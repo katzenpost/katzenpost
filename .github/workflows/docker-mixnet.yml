@@ -77,6 +77,14 @@ jobs:
         run: cd client2 && make testargs=-coverprofile=coverage.part dockertest_resume_read_channel_query && cat coverage.part >> ../coverage.out
         continue-on-error: true
 
+      - name: run new Pigeonhole API Alice sends Bob test
+        run: cd client2 && make testargs=-coverprofile=coverage.part dockertest_new_pigeonhole_alice_sends_bob && cat coverage.part >> ../coverage.out
+        continue-on-error: true
+
+      - name: run new Pigeonhole API multiple messages test
+        run: cd client2 && make testargs=-coverprofile=coverage.part dockertest_new_pigeonhole_multiple_messages && cat coverage.part >> ../coverage.out
+        continue-on-error: true
+
       - name: Stop the mixnet
         run: |
           cd docker && make stop
