@@ -1,6 +1,6 @@
 //go:build docker_test
 
-// SPDX-FileCopyrightText: Copyright (C) 2025 David Stainton
+// SPDX-FileCopyrightText: Copyright (C) 2026 David Stainton
 // SPDX-License-Identifier: AGPL-3.0-only
 
 package client2
@@ -66,7 +66,7 @@ func TestNewPigeonholeAPIAliceSendsBob(t *testing.T) {
 	aliceMessage := []byte("Bob, the eagle has landed. Rendezvous at dawn.")
 	t.Logf("Alice: Original message: %q", aliceMessage)
 
-	aliceWriteIndex, err := bacap.MessageBoxIndexFromBytes(aliceFirstIndex)
+	aliceWriteIndex, err := bacap.NewEmptyMessageBoxIndexFromBytes(aliceFirstIndex)
 	require.NoError(t, err)
 
 	aliceCiphertext, aliceEnvDesc, aliceEnvHash, aliceEpoch, err := aliceThinClient.EncryptWrite(ctx, aliceMessage, aliceWriteCap, aliceWriteIndex)
@@ -98,7 +98,7 @@ func TestNewPigeonholeAPIAliceSendsBob(t *testing.T) {
 
 	// Step 4: Bob encrypts a read request using EncryptRead
 	t.Log("=== Step 4: Bob encrypts a read request using EncryptRead ===")
-	bobReadIndex, err := bacap.MessageBoxIndexFromBytes(aliceFirstIndex)
+	bobReadIndex, err := bacap.NewEmptyMessageBoxIndexFromBytes(aliceFirstIndex)
 	require.NoError(t, err)
 
 	bobCiphertext, bobNextIndex, bobEnvDesc, bobEnvHash, bobEpoch, err := aliceThinClient.EncryptRead(ctx, bobReadCap, bobReadIndex)
@@ -189,7 +189,7 @@ func TestNewPigeonholeAPIMultipleMessages(t *testing.T) {
 
 		// Alice encrypts and sends message
 		t.Logf("Alice: Encrypting message %d: %q", i+1, aliceMessage)
-		aliceWriteIndex, err := bacap.MessageBoxIndexFromBytes(aliceCurrentIndex)
+		aliceWriteIndex, err := bacap.NewEmptyMessageBoxIndexFromBytes(aliceCurrentIndex)
 		require.NoError(t, err)
 
 		aliceCiphertext, aliceEnvDesc, aliceEnvHash, aliceEpoch, err := aliceThinClient.EncryptWrite(ctx, aliceMessage, aliceWriteCap, aliceWriteIndex)
@@ -219,7 +219,7 @@ func TestNewPigeonholeAPIMultipleMessages(t *testing.T) {
 
 		// Bob encrypts read request
 		t.Logf("Bob: Encrypting read request for message %d", i+1)
-		bobReadIndex, err := bacap.MessageBoxIndexFromBytes(bobCurrentIndex)
+		bobReadIndex, err := bacap.NewEmptyMessageBoxIndexFromBytes(bobCurrentIndex)
 		require.NoError(t, err)
 
 		bobCiphertext, bobNextIndex, bobEnvDesc, bobEnvHash, bobEpoch, err := aliceThinClient.EncryptRead(ctx, bobReadCap, bobReadIndex)
@@ -249,11 +249,15 @@ func TestNewPigeonholeAPIMultipleMessages(t *testing.T) {
 
 		// Advance state for next message
 		t.Logf("Advancing state for next message")
-		aliceWriteIndex.PrepareNext()
-		aliceCurrentIndex = aliceWriteIndex.Bytes()
+		aliceWriteIndex, err = aliceWriteIndex.NextIndex()
+		require.NoError(t, err)
+		aliceCurrentIndex, err = aliceWriteIndex.MarshalBinary()
+		require.NoError(t, err)
 
-		bobReadIndex.PrepareNext()
-		bobCurrentIndex = bobReadIndex.Bytes()
+		bobReadIndex, err = bobReadIndex.NextIndex()
+		require.NoError(t, err)
+		bobCurrentIndex, err = bobReadIndex.MarshalBinary()
+		require.NoError(t, err)
 
 		// Cleanup: Cancel resending for this message
 		err = aliceThinClient.CancelResendingEncryptedMessage(ctx, aliceEnvHash)
