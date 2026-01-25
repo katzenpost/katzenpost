@@ -1,0 +1,87 @@
+name: Sphinx Benchmarks
+
+on:
+  schedule:
+    # Run once per month on the 1st at 3 AM UTC
+    - cron: "0 3 1 * *"
+  workflow_dispatch:
+    inputs:
+      alert_threshold:
+        description: "Alert threshold percentage (e.g., 150 = 50% regression)"
+        required: false
+        default: "150"
+
+permissions:
+  contents: write
+
+jobs:
+  sphinx-benchmark:
+    runs-on: ubuntu-latest
+    name: Sphinx Cryptographic Benchmarks
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24.x"
+          cache: false
+
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-sphinx-bench-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-sphinx-bench-
+            ${{ runner.os }}-go-
+
+      - name: Run Sphinx benchmarks
+        run: |
+          set -e
+          echo "=== Sphinx Benchmarks ===" | tee sphinx-benchmark-results.txt
+          go test -bench=. -benchmem -benchtime=10s -run='^$' ./core/sphinx/... 2>&1 | tee -a sphinx-benchmark-results.txt
+
+      - name: Ensure benchmark cache dir exists
+        run: mkdir -p cache
+
+      - name: Restore previous benchmark data
+        uses: actions/cache/restore@v4
+        with:
+          path: ./cache
+          key: sphinx-benchmark-cache-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: |
+            sphinx-benchmark-cache-${{ runner.os }}-
+
+      - name: Store benchmark result
+        uses: benchmark-action/github-action-benchmark@v1
+        with:
+          name: Katzenpost Sphinx Benchmarks
+          tool: go
+          output-file-path: sphinx-benchmark-results.txt
+          external-data-json-path: ./cache/sphinx-benchmark-data.json
+          alert-threshold: ${{ github.event.inputs.alert_threshold || '150' }}%
+          fail-on-alert: false
+          comment-on-alert: true
+          alert-comment-cc-users: "@katzenpost/core-maintainers"
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Save updated benchmark data
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: ./cache
+          key: sphinx-benchmark-cache-${{ runner.os }}-${{ github.run_id }}
+
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: sphinx-benchmark-results
+          path: sphinx-benchmark-results.txt
+          retention-days: 90
+
