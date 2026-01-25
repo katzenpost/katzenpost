@@ -287,6 +287,7 @@ func TestDaemonEncryptRead_Success(t *testing.T) {
 	currentEpoch, _, _ := epochtime.Now()
 	client.pki = &pki{
 		c:    client,
+		log:  logBackend.GetLogger("pki"),
 		docs: sync.Map{},
 	}
 	client.pki.docs.Store(currentEpoch, &CachedDoc{
@@ -462,6 +463,7 @@ func TestDaemonEncryptWrite_Success(t *testing.T) {
 	currentEpoch, _, _ := epochtime.Now()
 	client.pki = &pki{
 		c:    client,
+		log:  logBackend.GetLogger("pki"),
 		docs: sync.Map{},
 	}
 	client.pki.docs.Store(currentEpoch, &CachedDoc{
@@ -964,6 +966,7 @@ func TestAliceSendsBobMessage(t *testing.T) {
 	currentEpoch, _, _ := epochtime.Now()
 	client.pki = &pki{
 		c:    client,
+		log:  logBackend.GetLogger("pki"),
 		docs: sync.Map{},
 	}
 	client.pki.docs.Store(currentEpoch, &CachedDoc{
@@ -1173,6 +1176,7 @@ func TestAliceSendsMultipleMessagesToBob(t *testing.T) {
 	currentEpoch, _, _ := epochtime.Now()
 	client.pki = &pki{
 		c:    client,
+		log:  logBackend.GetLogger("pki"),
 		docs: sync.Map{},
 	}
 	client.pki.docs.Store(currentEpoch, &CachedDoc{
