@@ -196,6 +196,14 @@ type NewKeypairReply struct {
 	ErrorCode uint8 `cbor:"error_code"`
 }
 
+// String returns a string representation of the NewKeypairReply.
+func (e *NewKeypairReply) String() string {
+	if e.ErrorCode != ThinClientSuccess {
+		return fmt.Sprintf("NewKeypairReply (error: %s)", ThinClientErrorToString(e.ErrorCode))
+	}
+	return "NewKeypairReply: success"
+}
+
 // EncryptReadReply is the reply to an EncryptRead request.
 type EncryptReadReply struct {
 	// QueryID is used for correlating this reply with the EncryptRead request
@@ -224,6 +232,14 @@ type EncryptReadReply struct {
 	ErrorCode uint8 `cbor:"error_code"`
 }
 
+// String returns a string representation of the EncryptReadReply.
+func (e *EncryptReadReply) String() string {
+	if e.ErrorCode != ThinClientSuccess {
+		return fmt.Sprintf("EncryptReadReply (error: %s)", ThinClientErrorToString(e.ErrorCode))
+	}
+	return fmt.Sprintf("EncryptReadReply: %d bytes ciphertext", len(e.MessageCiphertext))
+}
+
 // EncryptWriteReply is the reply to an EncryptWrite request.
 type EncryptWriteReply struct {
 	// QueryID is used for correlating this reply with the EncryptWrite request
@@ -249,6 +265,14 @@ type EncryptWriteReply struct {
 	ErrorCode uint8 `cbor:"error_code"`
 }
 
+// String returns a string representation of the EncryptWriteReply.
+func (e *EncryptWriteReply) String() string {
+	if e.ErrorCode != ThinClientSuccess {
+		return fmt.Sprintf("EncryptWriteReply (error: %s)", ThinClientErrorToString(e.ErrorCode))
+	}
+	return fmt.Sprintf("EncryptWriteReply: %d bytes ciphertext", len(e.MessageCiphertext))
+}
+
 // StartResendingEncryptedMessageReply is the reply to a StartResendingEncryptedMessage request.
 type StartResendingEncryptedMessageReply struct {
 
@@ -263,6 +287,14 @@ type StartResendingEncryptedMessageReply struct {
 	ErrorCode uint8 `cbor:"error_code"`
 }
 
+// String returns a string representation of the StartResendingEncryptedMessageReply.
+func (e *StartResendingEncryptedMessageReply) String() string {
+	if e.ErrorCode != ThinClientSuccess {
+		return fmt.Sprintf("StartResendingEncryptedMessageReply (error: %s)", ThinClientErrorToString(e.ErrorCode))
+	}
+	return fmt.Sprintf("StartResendingEncryptedMessageReply: %d bytes plaintext", len(e.Plaintext))
+}
+
 // CancelResendingEncryptedMessageReply is the reply to a CancelResendingEncryptedMessage request.
 type CancelResendingEncryptedMessageReply struct {
 	// QueryID is used for correlating this reply with the CancelResendingEncryptedMessage request
@@ -271,6 +303,14 @@ type CancelResendingEncryptedMessageReply struct {
 	// ErrorCode indicates the reason for a failure to cancel resending the encrypted message if any.
 	// Otherwise it is set to zero for success.
 	ErrorCode uint8 `cbor:"error_code"`
+}
+
+// String returns a string representation of the CancelResendingEncryptedMessageReply.
+func (e *CancelResendingEncryptedMessageReply) String() string {
+	if e.ErrorCode != ThinClientSuccess {
+		return fmt.Sprintf("CancelResendingEncryptedMessageReply (error: %s)", ThinClientErrorToString(e.ErrorCode))
+	}
+	return "CancelResendingEncryptedMessageReply: success"
 }
 
 // OLD Pigeonhole API:
