@@ -31,36 +31,6 @@ dockertest-legacy:
 	$(docker) run -w /go/katzenpost/client2 ${docker_args} $(image) \
 		go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 1h -run "TestLegacyTests"
 
-dockertest_channel_basics:
-	cd ../docker && make $(distro)_base.stamp
-	$(docker) run -w /go/katzenpost/client2 ${docker_args} $(image) \
-		go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 1h -run "TestChannelAPIBasics"
-
-dockertest_channel_close:
-	cd ../docker && make $(distro)_base.stamp
-	$(docker) run -w /go/katzenpost/client2 ${docker_args} $(image) \
-		go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 1h -run "TestChannelClose"
-
-dockertest_resume_write_channel:
-	cd ../docker && make $(distro)_base.stamp
-	$(docker) run -w /go/katzenpost/client2 ${docker_args} $(image) \
-		go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 1h -run "TestResumeWriteChannel"
-
-dockertest_resume_write_channel_query:
-	cd ../docker && make $(distro)_base.stamp
-	$(docker) run -w /go/katzenpost/client2 ${docker_args} $(image) \
-		go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 1h -run "TestResumeWriteChannelQuery"
-
-dockertest_resume_read_channel:
-	cd ../docker && make $(distro)_base.stamp
-	$(docker) run -w /go/katzenpost/client2 ${docker_args} $(image) \
-		go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 1h -run "TestResumeReadChannel"
-
-dockertest_resume_read_channel_query:
-	cd ../docker && make $(distro)_base.stamp
-	$(docker) run -w /go/katzenpost/client2 ${docker_args} $(image) \
-		go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 1h -run "TestResumeReadChannelQuery"
-
 dockertest_new_pigeonhole_alice_sends_bob:
 	cd ../docker && make $(distro)_base.stamp
 	$(docker) run -w /go/katzenpost/client2 ${docker_args} $(image) \
