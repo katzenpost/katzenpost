@@ -780,6 +780,44 @@ func (t *ThinClient) worker() {
 				return
 			}
 
+			/**  New Pigeonhole API **/
+
+		case message.NewKeypairReply != nil:
+			select {
+			case t.eventSink <- message.NewKeypairReply:
+				continue
+			case <-t.HaltCh():
+				return
+			}
+		case message.EncryptReadReply != nil:
+			select {
+			case t.eventSink <- message.EncryptReadReply:
+				continue
+			case <-t.HaltCh():
+				return
+			}
+		case message.EncryptWriteReply != nil:
+			select {
+			case t.eventSink <- message.EncryptWriteReply:
+				continue
+			case <-t.HaltCh():
+				return
+			}
+		case message.StartResendingEncryptedMessageReply != nil:
+			select {
+			case t.eventSink <- message.StartResendingEncryptedMessageReply:
+				continue
+			case <-t.HaltCh():
+				return
+			}
+		case message.CancelResendingEncryptedMessageReply != nil:
+			select {
+			case t.eventSink <- message.CancelResendingEncryptedMessageReply:
+				continue
+			case <-t.HaltCh():
+				return
+			}
+
 		default:
 			t.log.Errorf("bug: received invalid thin client message: %v", message)
 		}
