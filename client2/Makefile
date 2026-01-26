@@ -41,8 +41,6 @@ dockertest_new_pigeonhole_multiple_messages:
 	$(docker) run -w /go/katzenpost/client2 ${docker_args} $(image) \
 		go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 1h -run "TestNewPigeonholeAPIMultipleMessages"
 
-all_channels_tests: dockertest_channel_basics dockertest_channel_close dockertest_resume_write_channel dockertest_resume_write_channel_query dockertest_resume_read_channel dockertest_resume_read_channel_query
-
 all_new_pigeonhole_tests: dockertest_new_pigeonhole_alice_sends_bob dockertest_new_pigeonhole_multiple_messages
 
 warpedclientdaemon:
