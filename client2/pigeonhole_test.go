@@ -965,9 +965,10 @@ func TestAliceSendsBobMessage(t *testing.T) {
 	doc := createMockPKIDocument(t)
 	currentEpoch, _, _ := epochtime.Now()
 	client.pki = &pki{
-		c:    client,
-		log:  logBackend.GetLogger("pki"),
-		docs: sync.Map{},
+		c:               client,
+		log:             logBackend.GetLogger("pki"),
+		docs:            sync.Map{},
+		consensusGetter: &mockConsensusGetter{},
 	}
 	client.pki.docs.Store(currentEpoch, &CachedDoc{
 		Doc:  doc,
