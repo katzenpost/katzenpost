@@ -60,10 +60,18 @@ func TestNewPigeonholeAPIAliceSendsBob(t *testing.T) {
 	require.NotNil(t, bobReadCap, "Alice: ReadCap is nil")
 	t.Log("Alice: Created WriteCap and derived ReadCap for Bob")
 
+	// Verify that Alice's write box ID matches Bob's read box ID
+	aliceBoxID := aliceWriteCap.DeriveBoxID(aliceFirstIndex)
+	bobBoxID := bobReadCap.DeriveBoxID(aliceFirstIndex)
+	require.Equal(t, aliceBoxID.Bytes(), bobBoxID.Bytes(), "Box IDs must match: Alice's write box ID != Bob's read box ID")
+	t.Logf("✓ Verified: Alice and Bob box IDs match: %x", aliceBoxID.Bytes())
+
 	// Step 2: Alice encrypts a message using EncryptWrite
 	t.Log("=== Step 2: Alice encrypts a message using EncryptWrite ===")
-	aliceMessage := []byte("Bob, the eagle has landed. Rendezvous at dawn.")
-	t.Logf("Alice: Original message: %q", aliceMessage)
+	// Make message bigger than 29 bytes to ensure courier returns ReplyTypePayload
+	// (courier uses >29 byte threshold to distinguish between ACK and Payload replies)
+	aliceMessage := []byte("Bob, the eagle has landed. Rendezvous at dawn. Bring the package and await further instructions.")
+	t.Logf("Alice: Original message (%d bytes): %q", len(aliceMessage), aliceMessage)
 
 	aliceCiphertext, aliceEnvDesc, aliceEnvHash, aliceEpoch, err := aliceThinClient.EncryptWrite(ctx, aliceMessage, aliceWriteCap, aliceFirstIndex)
 	require.NoError(t, err)
@@ -89,8 +97,8 @@ func TestNewPigeonholeAPIAliceSendsBob(t *testing.T) {
 	t.Log("Alice: Started resending encrypted write message")
 
 	// Wait for message propagation to storage replicas
-	t.Log("Waiting for message propagation to storage replicas (10 seconds)")
-	time.Sleep(10 * time.Second)
+	t.Log("Waiting for message propagation to storage replicas (30 seconds)")
+	time.Sleep(30 * time.Second)
 
 	// Step 4: Bob encrypts a read request using EncryptRead
 	t.Log("=== Step 4: Bob encrypts a read request using EncryptRead ===")
