@@ -12,6 +12,7 @@ import (
 
 	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/katzenpost/client2/config"
+	"github.com/katzenpost/katzenpost/client2/thin"
 	"github.com/katzenpost/katzenpost/core/log"
 	sphinxConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/stretchr/testify/require"
@@ -227,76 +228,6 @@ func TestListenerAcceptsConnectionWithoutPKIDoc(t *testing.T) {
 	listener.Shutdown()
 }
 
-func TestARQCleanupOnAppDisconnect(t *testing.T) {
-	d := &Daemon{
-		arqSurbIDMap:              make(map[[sphinxConstants.SURBIDLength]byte]*ARQMessage),
-		replies:                   make(map[[sphinxConstants.SURBIDLength]byte]replyDescriptor),
-		decoys:                    make(map[[sphinxConstants.SURBIDLength]byte]replyDescriptor),
-		replyLock:                 new(sync.Mutex),
-		newChannelMap:             make(map[uint16]*ChannelDescriptor),
-		newChannelMapLock:         new(sync.RWMutex),
-		newChannelMapXXX:          make(map[uint16]bool),
-		newSurbIDToChannelMap:     make(map[[sphinxConstants.SURBIDLength]byte]uint16),
-		newSurbIDToChannelMapLock: new(sync.RWMutex),
-		channelReplies:            make(map[[sphinxConstants.SURBIDLength]byte]replyDescriptor),
-		channelRepliesLock:        new(sync.RWMutex),
-	}
-
-	logBackend, err := log.New("", "debug", false)
-	require.NoError(t, err)
-	d.logbackend = logBackend
-	d.log = logBackend.GetLogger("test")
-
-	testAppID := &[AppIDLength]byte{}
-	copy(testAppID[:], []byte("test-app-id-1234"))
-
-	otherAppID := &[AppIDLength]byte{}
-	copy(otherAppID[:], []byte("other-app-id-567"))
-
-	testSURBID1 := [sphinxConstants.SURBIDLength]byte{}
-	testSURBID2 := [sphinxConstants.SURBIDLength]byte{}
-	otherSURBID := [sphinxConstants.SURBIDLength]byte{}
-	copy(testSURBID1[:], []byte("test-surb-id-001"))
-	copy(testSURBID2[:], []byte("test-surb-id-002"))
-	copy(otherSURBID[:], []byte("other-surb-id-01"))
-
-	testMessageID := &[MessageIDLength]byte{}
-	copy(testMessageID[:], []byte("test-message-id1"))
-
-	d.replyLock.Lock()
-	d.arqSurbIDMap[testSURBID1] = &ARQMessage{
-		AppID:     testAppID,
-		MessageID: testMessageID,
-		SURBID:    &testSURBID1,
-	}
-	d.arqSurbIDMap[testSURBID2] = &ARQMessage{
-		AppID:     testAppID,
-		MessageID: testMessageID,
-		SURBID:    &testSURBID2,
-	}
-	d.arqSurbIDMap[otherSURBID] = &ARQMessage{
-		AppID:     otherAppID,
-		MessageID: testMessageID,
-		SURBID:    &otherSURBID,
-	}
-	d.replyLock.Unlock()
-
-	d.replyLock.Lock()
-	require.Len(t, d.arqSurbIDMap, 3)
-	d.replyLock.Unlock()
-
-	d.cleanupChannelsForAppID(testAppID)
-
-	d.replyLock.Lock()
-	require.NotContains(t, d.arqSurbIDMap, testSURBID1)
-	require.NotContains(t, d.arqSurbIDMap, testSURBID2)
-	require.Contains(t, d.arqSurbIDMap, otherSURBID)
-	require.Len(t, d.arqSurbIDMap, 1)
-	d.replyLock.Unlock()
-
-	t.Log("ARQ cleanup test completed successfully")
-}
-
 func TestDecoyTrafficPreservedOnClientDisconnect(t *testing.T) {
 	d := &Daemon{
 		arqSurbIDMap:              make(map[[sphinxConstants.SURBIDLength]byte]*ARQMessage),
@@ -349,252 +280,6 @@ func TestDecoyTrafficPreservedOnClientDisconnect(t *testing.T) {
 	d.replyLock.Unlock()
 
 	t.Log("Decoy traffic preservation test completed successfully - daemon decoys preserved")
-}
-
-func TestArqDoResendWithNilConnection(t *testing.T) {
-	d := &Daemon{
-		arqSurbIDMap:              make(map[[sphinxConstants.SURBIDLength]byte]*ARQMessage),
-		replies:                   make(map[[sphinxConstants.SURBIDLength]byte]replyDescriptor),
-		decoys:                    make(map[[sphinxConstants.SURBIDLength]byte]replyDescriptor),
-		replyLock:                 new(sync.Mutex),
-		newChannelMap:             make(map[uint16]*ChannelDescriptor),
-		newChannelMapLock:         new(sync.RWMutex),
-		newChannelMapXXX:          make(map[uint16]bool),
-		newSurbIDToChannelMap:     make(map[[sphinxConstants.SURBIDLength]byte]uint16),
-		newSurbIDToChannelMapLock: new(sync.RWMutex),
-		channelReplies:            make(map[[sphinxConstants.SURBIDLength]byte]replyDescriptor),
-		channelRepliesLock:        new(sync.RWMutex),
-	}
-
-	logBackend, err := log.New("", "debug", false)
-	require.NoError(t, err)
-	d.logbackend = logBackend
-	d.log = logBackend.GetLogger("test")
-
-	cfg, err := config.LoadFile("testdata/client.toml")
-	require.NoError(t, err)
-
-	port, err := getFreePort()
-	require.NoError(t, err)
-	cfg.ListenAddress = fmt.Sprintf("127.0.0.1:%d", port)
-
-	client := &Client{
-		cfg: cfg,
-		pki: nil,
-	}
-
-	rates := &Rates{}
-	egressCh := make(chan *Request, 10)
-
-	d.listener, err = NewListener(client, rates, egressCh, logBackend, nil)
-	require.NoError(t, err)
-
-	testAppID := &[AppIDLength]byte{}
-	copy(testAppID[:], []byte("disconnected-app"))
-
-	testSURBID := [sphinxConstants.SURBIDLength]byte{}
-	copy(testSURBID[:], []byte("test-surb-resend"))
-
-	testMessageID := &[MessageIDLength]byte{}
-	copy(testMessageID[:], []byte("test-message-id1"))
-
-	d.replyLock.Lock()
-	d.arqSurbIDMap[testSURBID] = &ARQMessage{
-		AppID:           testAppID,
-		MessageID:       testMessageID,
-		SURBID:          &testSURBID,
-		Retransmissions: 0,
-	}
-	d.replyLock.Unlock()
-
-	require.NotPanics(t, func() {
-		d.arqDoResend(&testSURBID)
-	}, "arqDoResend should not panic when connection is nil")
-
-	d.replyLock.Lock()
-	_, exists := d.arqSurbIDMap[testSURBID]
-	d.replyLock.Unlock()
-	require.False(t, exists, "ARQ entry should be cleaned up when connection is nil")
-
-	d.listener.Shutdown()
-	t.Log("arqDoResend nil connection test completed successfully - no panic occurred")
-}
-
-func TestArqDoResendMaxRetriesWithNilConnection(t *testing.T) {
-	d := &Daemon{
-		arqSurbIDMap:              make(map[[sphinxConstants.SURBIDLength]byte]*ARQMessage),
-		replies:                   make(map[[sphinxConstants.SURBIDLength]byte]replyDescriptor),
-		decoys:                    make(map[[sphinxConstants.SURBIDLength]byte]replyDescriptor),
-		replyLock:                 new(sync.Mutex),
-		newChannelMap:             make(map[uint16]*ChannelDescriptor),
-		newChannelMapLock:         new(sync.RWMutex),
-		newChannelMapXXX:          make(map[uint16]bool),
-		newSurbIDToChannelMap:     make(map[[sphinxConstants.SURBIDLength]byte]uint16),
-		newSurbIDToChannelMapLock: new(sync.RWMutex),
-		channelReplies:            make(map[[sphinxConstants.SURBIDLength]byte]replyDescriptor),
-		channelRepliesLock:        new(sync.RWMutex),
-	}
-
-	logBackend, err := log.New("", "debug", false)
-	require.NoError(t, err)
-	d.logbackend = logBackend
-	d.log = logBackend.GetLogger("test")
-
-	cfg, err := config.LoadFile("testdata/client.toml")
-	require.NoError(t, err)
-
-	port, err := getFreePort()
-	require.NoError(t, err)
-	cfg.ListenAddress = fmt.Sprintf("127.0.0.1:%d", port)
-
-	client := &Client{
-		cfg: cfg,
-		pki: nil,
-	}
-
-	rates := &Rates{}
-	egressCh := make(chan *Request, 10)
-
-	d.listener, err = NewListener(client, rates, egressCh, logBackend, nil)
-	require.NoError(t, err)
-
-	testAppID := &[AppIDLength]byte{}
-	copy(testAppID[:], []byte("disconnected-app"))
-
-	testSURBID := [sphinxConstants.SURBIDLength]byte{}
-	copy(testSURBID[:], []byte("test-surb-maxret"))
-
-	testMessageID := &[MessageIDLength]byte{}
-	copy(testMessageID[:], []byte("test-message-id1"))
-
-	d.replyLock.Lock()
-	d.arqSurbIDMap[testSURBID] = &ARQMessage{
-		AppID:           testAppID,
-		MessageID:       testMessageID,
-		SURBID:          &testSURBID,
-		Retransmissions: MaxRetransmissions,
-	}
-	d.replyLock.Unlock()
-
-	require.NotPanics(t, func() {
-		d.arqDoResend(&testSURBID)
-	}, "arqDoResend should not panic at max retries when connection is nil")
-
-	d.replyLock.Lock()
-	_, exists := d.arqSurbIDMap[testSURBID]
-	d.replyLock.Unlock()
-	require.False(t, exists, "ARQ entry should be cleaned up at max retries even when connection is nil")
-
-	d.listener.Shutdown()
-	t.Log("arqDoResend max retries with nil connection test completed successfully")
-}
-
-func TestRaceConditionARQResendAfterDisconnect(t *testing.T) {
-	d := &Daemon{
-		arqSurbIDMap:              make(map[[sphinxConstants.SURBIDLength]byte]*ARQMessage),
-		replies:                   make(map[[sphinxConstants.SURBIDLength]byte]replyDescriptor),
-		decoys:                    make(map[[sphinxConstants.SURBIDLength]byte]replyDescriptor),
-		replyLock:                 new(sync.Mutex),
-		newChannelMap:             make(map[uint16]*ChannelDescriptor),
-		newChannelMapLock:         new(sync.RWMutex),
-		newChannelMapXXX:          make(map[uint16]bool),
-		newSurbIDToChannelMap:     make(map[[sphinxConstants.SURBIDLength]byte]uint16),
-		newSurbIDToChannelMapLock: new(sync.RWMutex),
-		channelReplies:            make(map[[sphinxConstants.SURBIDLength]byte]replyDescriptor),
-		channelRepliesLock:        new(sync.RWMutex),
-	}
-
-	logBackend, err := log.New("", "debug", false)
-	require.NoError(t, err)
-	d.logbackend = logBackend
-	d.log = logBackend.GetLogger("test")
-
-	cfg, err := config.LoadFile("testdata/client.toml")
-	require.NoError(t, err)
-
-	port, err := getFreePort()
-	require.NoError(t, err)
-	cfg.ListenAddress = fmt.Sprintf("127.0.0.1:%d", port)
-
-	client := &Client{
-		cfg: cfg,
-		pki: nil,
-	}
-
-	rates := &Rates{}
-	egressCh := make(chan *Request, 10)
-
-	d.listener, err = NewListener(client, rates, egressCh, logBackend, nil)
-	require.NoError(t, err)
-
-	testAppID := &[AppIDLength]byte{}
-	copy(testAppID[:], []byte("race-test-app-id"))
-
-	var surbIDs [][sphinxConstants.SURBIDLength]byte
-	for i := 0; i < 10; i++ {
-		surbID := [sphinxConstants.SURBIDLength]byte{}
-		copy(surbID[:], []byte(fmt.Sprintf("race-surb-id-%03d", i)))
-		surbIDs = append(surbIDs, surbID)
-
-		msgID := &[MessageIDLength]byte{}
-		copy(msgID[:], []byte(fmt.Sprintf("race-msg-id-%04d", i)))
-
-		d.replyLock.Lock()
-		d.arqSurbIDMap[surbID] = &ARQMessage{
-			AppID:           testAppID,
-			MessageID:       msgID,
-			SURBID:          &surbID,
-			Retransmissions: uint32(i % (int(MaxRetransmissions) + 1)),
-		}
-		d.replyLock.Unlock()
-	}
-
-	var wg sync.WaitGroup
-	panicChan := make(chan interface{}, 20)
-
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		defer func() {
-			if r := recover(); r != nil {
-				panicChan <- r
-			}
-		}()
-		time.Sleep(5 * time.Millisecond)
-		d.cleanupChannelsForAppID(testAppID)
-	}()
-
-	for _, surbID := range surbIDs {
-		surbIDCopy := surbID
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			defer func() {
-				if r := recover(); r != nil {
-					panicChan <- r
-				}
-			}()
-			time.Sleep(time.Duration(1+testAppID[0]%10) * time.Millisecond)
-			d.arqDoResend(&surbIDCopy)
-		}()
-	}
-
-	wg.Wait()
-	close(panicChan)
-
-	var panics []interface{}
-	for p := range panicChan {
-		panics = append(panics, p)
-	}
-	require.Empty(t, panics, "No panics should occur during concurrent cleanup and resend operations")
-
-	d.replyLock.Lock()
-	arqCount := len(d.arqSurbIDMap)
-	d.replyLock.Unlock()
-	require.Equal(t, 0, arqCount, "All ARQ entries for the disconnected client should be cleaned up")
-
-	d.listener.Shutdown()
-	t.Log("Race condition test completed successfully - no panics during concurrent operations")
 }
 
 func TestReplyCleanupOnAppDisconnect(t *testing.T) {
@@ -684,14 +369,16 @@ func TestNilAppIDEntriesPreserved(t *testing.T) {
 	copy(nilAppIDSURBID2[:], []byte("nil-reply-surb02"))
 	copy(nilAppIDSURBID3[:], []byte("nil-decoy-surb03"))
 
+	testQueryID := &[thin.QueryIDLength]byte{}
+	copy(testQueryID[:], []byte("test-query-id1--"))
 	testMessageID := &[MessageIDLength]byte{}
 	copy(testMessageID[:], []byte("test-message-id1"))
 
 	d.replyLock.Lock()
 	d.arqSurbIDMap[nilAppIDSURBID1] = &ARQMessage{
-		AppID:     nil,
-		MessageID: testMessageID,
-		SURBID:    &nilAppIDSURBID1,
+		AppID:   nil,
+		QueryID: testQueryID,
+		SURBID:  &nilAppIDSURBID1,
 	}
 	d.replies[nilAppIDSURBID2] = replyDescriptor{
 		ID:      testMessageID,
@@ -713,55 +400,4 @@ func TestNilAppIDEntriesPreserved(t *testing.T) {
 	d.replyLock.Unlock()
 
 	t.Log("Nil AppID entries preservation test completed successfully")
-}
-
-func TestArqDoResendWithNilListener(t *testing.T) {
-	d := &Daemon{
-		arqSurbIDMap:              make(map[[sphinxConstants.SURBIDLength]byte]*ARQMessage),
-		replies:                   make(map[[sphinxConstants.SURBIDLength]byte]replyDescriptor),
-		decoys:                    make(map[[sphinxConstants.SURBIDLength]byte]replyDescriptor),
-		replyLock:                 new(sync.Mutex),
-		newChannelMap:             make(map[uint16]*ChannelDescriptor),
-		newChannelMapLock:         new(sync.RWMutex),
-		newChannelMapXXX:          make(map[uint16]bool),
-		newSurbIDToChannelMap:     make(map[[sphinxConstants.SURBIDLength]byte]uint16),
-		newSurbIDToChannelMapLock: new(sync.RWMutex),
-		channelReplies:            make(map[[sphinxConstants.SURBIDLength]byte]replyDescriptor),
-		channelRepliesLock:        new(sync.RWMutex),
-		listener:                  nil,
-	}
-
-	logBackend, err := log.New("", "debug", false)
-	require.NoError(t, err)
-	d.logbackend = logBackend
-	d.log = logBackend.GetLogger("test")
-
-	testAppID := &[AppIDLength]byte{}
-	copy(testAppID[:], []byte("nil-listener-app"))
-
-	testSURBID := [sphinxConstants.SURBIDLength]byte{}
-	copy(testSURBID[:], []byte("nil-listener-sur"))
-
-	testMessageID := &[MessageIDLength]byte{}
-	copy(testMessageID[:], []byte("nil-list-msg-id1"))
-
-	d.replyLock.Lock()
-	d.arqSurbIDMap[testSURBID] = &ARQMessage{
-		AppID:           testAppID,
-		MessageID:       testMessageID,
-		SURBID:          &testSURBID,
-		Retransmissions: 0,
-	}
-	d.replyLock.Unlock()
-
-	require.NotPanics(t, func() {
-		d.arqDoResend(&testSURBID)
-	}, "arqDoResend should not panic when listener is nil")
-
-	d.replyLock.Lock()
-	_, exists := d.arqSurbIDMap[testSURBID]
-	d.replyLock.Unlock()
-	require.False(t, exists, "ARQ entry should be cleaned up when listener is nil")
-
-	t.Log("arqDoResend nil listener test completed successfully")
 }

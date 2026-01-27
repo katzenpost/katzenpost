@@ -453,6 +453,133 @@ func TestCourierCacheNilEnvelopeHash(t *testing.T) {
 	require.Equal(t, 0, len(courier.dedupCache))
 }
 
+// TestCourierCacheErrorToSuccessReplacement tests that cached error responses
+// are replaced when successful responses arrive (fixes the "box not found" bug)
+func TestCourierCacheErrorToSuccessReplacement(t *testing.T) {
+	courier := createTestCourier(t)
+	envHash := createTestEnvelopeHash()
+
+	// Set up the cache entry first
+	setupCacheEntry(courier, envHash, 1)
+
+	// Step 1: Cache an error reply (e.g., "box not found")
+	errorReply := createTestErrorReply(&envHash, 0, 1, "box not found", true)
+	courier.CacheReply(errorReply)
+
+	// Verify error reply is cached
+	entry := verifyCacheEntry(t, courier, envHash)
+	require.Equal(t, errorReply, entry.EnvelopeReplies[0])
+	require.Equal(t, uint8(1), entry.EnvelopeReplies[0].ErrorCode)
+	require.Equal(t, []byte("box not found"), entry.EnvelopeReplies[0].EnvelopeReply)
+
+	// Step 2: Cache a successful reply (box was written and now exists)
+	successReply := createTestReply(&envHash, 0, "actual box data", true)
+	courier.CacheReply(successReply)
+
+	// Verify the error was replaced with the success
+	entry = verifyCacheEntry(t, courier, envHash)
+	require.Equal(t, successReply, entry.EnvelopeReplies[0])
+	require.Equal(t, uint8(0), entry.EnvelopeReplies[0].ErrorCode)
+	require.Equal(t, []byte("actual box data"), entry.EnvelopeReplies[0].EnvelopeReply)
+}
+
+// TestCourierCacheErrorToSuccessReplacementBothReplicas tests error-to-success
+// replacement for both replica slots independently
+func TestCourierCacheErrorToSuccessReplacementBothReplicas(t *testing.T) {
+	courier := createTestCourier(t)
+	envHash := createTestEnvelopeHash()
+
+	// Set up the cache entry first
+	setupCacheEntry(courier, envHash, 1)
+
+	// Cache error replies from both replicas
+	errorReply0 := createTestErrorReply(&envHash, 0, 2, "replica 0 error", true)
+	errorReply1 := createTestErrorReply(&envHash, 1, 3, "replica 1 error", true)
+	courier.CacheReply(errorReply0)
+	courier.CacheReply(errorReply1)
+
+	// Verify both errors are cached
+	entry := verifyCacheEntry(t, courier, envHash)
+	require.Equal(t, uint8(2), entry.EnvelopeReplies[0].ErrorCode)
+	require.Equal(t, uint8(3), entry.EnvelopeReplies[1].ErrorCode)
+
+	// Replace replica 0's error with success
+	successReply0 := createTestReply(&envHash, 0, "replica 0 success", true)
+	courier.CacheReply(successReply0)
+
+	// Verify replica 0 was replaced, replica 1 still has error
+	entry = verifyCacheEntry(t, courier, envHash)
+	require.Equal(t, uint8(0), entry.EnvelopeReplies[0].ErrorCode)
+	require.Equal(t, []byte("replica 0 success"), entry.EnvelopeReplies[0].EnvelopeReply)
+	require.Equal(t, uint8(3), entry.EnvelopeReplies[1].ErrorCode)
+	require.Equal(t, []byte("replica 1 error"), entry.EnvelopeReplies[1].EnvelopeReply)
+
+	// Replace replica 1's error with success
+	successReply1 := createTestReply(&envHash, 1, "replica 1 success", true)
+	courier.CacheReply(successReply1)
+
+	// Verify both replicas now have success
+	entry = verifyCacheEntry(t, courier, envHash)
+	require.Equal(t, uint8(0), entry.EnvelopeReplies[0].ErrorCode)
+	require.Equal(t, []byte("replica 0 success"), entry.EnvelopeReplies[0].EnvelopeReply)
+	require.Equal(t, uint8(0), entry.EnvelopeReplies[1].ErrorCode)
+	require.Equal(t, []byte("replica 1 success"), entry.EnvelopeReplies[1].EnvelopeReply)
+}
+
+// TestCourierCacheSuccessNotReplacedByError tests that successful responses
+// are NOT replaced by error responses (only errors are replaced by success)
+func TestCourierCacheSuccessNotReplacedByError(t *testing.T) {
+	courier := createTestCourier(t)
+	envHash := createTestEnvelopeHash()
+
+	// Set up the cache entry first
+	setupCacheEntry(courier, envHash, 1)
+
+	// Cache a successful reply first
+	successReply := createTestReply(&envHash, 0, "successful data", true)
+	courier.CacheReply(successReply)
+
+	// Verify success is cached
+	entry := verifyCacheEntry(t, courier, envHash)
+	require.Equal(t, uint8(0), entry.EnvelopeReplies[0].ErrorCode)
+	require.Equal(t, []byte("successful data"), entry.EnvelopeReplies[0].EnvelopeReply)
+
+	// Try to cache an error reply (should be ignored)
+	errorReply := createTestErrorReply(&envHash, 0, 5, "late error", true)
+	courier.CacheReply(errorReply)
+
+	// Verify the success was NOT replaced by the error
+	entry = verifyCacheEntry(t, courier, envHash)
+	require.Equal(t, uint8(0), entry.EnvelopeReplies[0].ErrorCode)
+	require.Equal(t, []byte("successful data"), entry.EnvelopeReplies[0].EnvelopeReply)
+}
+
+// TestCourierCacheSuccessNotReplacedBySuccess tests that successful responses
+// are NOT replaced by other successful responses (first success wins)
+func TestCourierCacheSuccessNotReplacedBySuccess(t *testing.T) {
+	courier := createTestCourier(t)
+	envHash := createTestEnvelopeHash()
+
+	// Set up the cache entry first
+	setupCacheEntry(courier, envHash, 1)
+
+	// Cache first successful reply
+	successReply1 := createTestReply(&envHash, 0, "first success", true)
+	courier.CacheReply(successReply1)
+
+	// Verify first success is cached
+	entry := verifyCacheEntry(t, courier, envHash)
+	require.Equal(t, []byte("first success"), entry.EnvelopeReplies[0].EnvelopeReply)
+
+	// Try to cache second successful reply (should be ignored)
+	successReply2 := createTestReply(&envHash, 0, "second success", true)
+	courier.CacheReply(successReply2)
+
+	// Verify the first success was NOT replaced
+	entry = verifyCacheEntry(t, courier, envHash)
+	require.Equal(t, []byte("first success"), entry.EnvelopeReplies[0].EnvelopeReply)
+}
+
 type mockPKIClient struct {
 	doc *pki.Document
 }

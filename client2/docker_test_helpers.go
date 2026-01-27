@@ -6,7 +6,6 @@
 package client2
 
 import (
-	"context"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -118,7 +117,7 @@ func sendAndWait(t *testing.T, client *thin.ThinClient, message []byte, nodeID *
 				panic("socket connection lost")
 			}
 		case *thin.NewDocumentEvent:
-			t.Log("NewPKIDocumentEvent")
+			t.Log("NewDocumentEvent")
 		case *thin.MessageSentEvent:
 			t.Log("MessageSentEvent")
 		case *thin.MessageReplyEvent:
@@ -136,17 +135,6 @@ func sendAndWait(t *testing.T, client *thin.ThinClient, message []byte, nodeID *
 func repeatSendAndWait(t *testing.T, client *thin.ThinClient, message []byte, nodeID *[32]byte, queueID []byte, count int) {
 	for i := 0; i < count; i++ {
 		reply := sendAndWait(t, client, message, nodeID, queueID)
-		require.Equal(t, message, reply[:len(message)])
-	}
-}
-
-// repeatBlockingSendReliableMessage sends the same message multiple times using BlockingSendReliableMessage
-func repeatBlockingSendReliableMessage(t *testing.T, client *thin.ThinClient, message []byte, nodeID *[32]byte, queueID []byte, count int) {
-	for i := 0; i < count; i++ {
-		messageID := client.NewMessageID()
-		reply, err := client.BlockingSendReliableMessage(context.Background(), messageID, message, nodeID, queueID)
-		require.NoError(t, err)
-		require.NotEqual(t, reply, []byte{})
 		require.Equal(t, message, reply[:len(message)])
 	}
 }
