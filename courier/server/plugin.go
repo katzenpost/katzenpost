@@ -330,17 +330,17 @@ func (e *Courier) tryImmediateReplyProxy(reply *commands.ReplicaMessageReply) bo
 		}
 
 		// Create proper CourierQueryReply with the replica's response
-		// Determine reply type based on whether there's actual payload data
+		// Determine reply type based on whether this is a read operation
+		// For reads: return ReplyTypePayload (contains encrypted message data)
+		// For writes: return ReplyTypeACK (acknowledgment only)
 		var replyType uint8
-		if len(reply.EnvelopeReply) > 29 {
-			// we sometimes get a small RepliceMessageReply thing here, and we shouldn't return it as data
-			// because clientd can't decode it
-			replyType = pigeonhole.ReplyTypePayload // Has actual data
-			e.log.Errorf("tryImmediateReplyProxy: setting ReplyType:=ReplyTypePayload because len(reply.EnvelopeReply)==%d: %v",
-				len(reply.EnvelopeReply), reply)
-
+		if reply.IsRead {
+			replyType = pigeonhole.ReplyTypePayload // Read operation - has encrypted message data
+			e.log.Debugf("tryImmediateReplyProxy: setting ReplyType:=ReplyTypePayload (read operation) with %d bytes of encrypted data",
+				len(reply.EnvelopeReply))
 		} else {
-			replyType = pigeonhole.ReplyTypeACK // No data, just acknowledgment
+			replyType = pigeonhole.ReplyTypeACK // Write operation - just acknowledgment
+			e.log.Debugf("tryImmediateReplyProxy: setting ReplyType:=ReplyTypeACK (write operation)")
 		}
 
 		courierReply := &pigeonhole.CourierQueryReply{
@@ -491,10 +491,12 @@ func (e *Courier) handleOldMessage(cacheEntry *CourierBookKeeping, envHash *[has
 	e.log.Debugf("Cache state - Reply[0]: %v, Reply[1]: %v envHash:%v", reply0Available, reply1Available, envHash)
 
 	var payload []byte
+	var isRead bool
 
 	if cacheEntry.EnvelopeReplies[courierMessage.ReplyIndex] != nil {
 		entry := cacheEntry.EnvelopeReplies[courierMessage.ReplyIndex]
 		payload = entry.EnvelopeReply
+		isRead = entry.IsRead
 		e.log.Debugf("Found reply [len:%d err:%d read:%v] at requested index %d for %v", len(payload), entry.ErrorCode, entry.IsRead, courierMessage.ReplyIndex, envHash)
 		if len(payload) == 0 && cacheEntry.EnvelopeReplies[courierMessage.ReplyIndex^1] != nil {
 			oentry := cacheEntry.EnvelopeReplies[courierMessage.ReplyIndex^1]
@@ -504,24 +506,24 @@ func (e *Courier) handleOldMessage(cacheEntry *CourierBookKeeping, envHash *[has
 		e.log.Debugf("No reply available at requested index %d", courierMessage.ReplyIndex)
 		if cacheEntry.EnvelopeReplies[courierMessage.ReplyIndex^1] != nil {
 			courierMessage.ReplyIndex = courierMessage.ReplyIndex ^ 1
-			payload = cacheEntry.EnvelopeReplies[courierMessage.ReplyIndex].EnvelopeReply
+			entry := cacheEntry.EnvelopeReplies[courierMessage.ReplyIndex]
+			payload = entry.EnvelopeReply
+			isRead = entry.IsRead
 			e.log.Debugf("But there is a reply for %d, so returning that (envHash:%v)", courierMessage.ReplyIndex, envHash)
 		} else {
 			payload = nil // Return empty payload but keep the requested ReplyIndex
+			isRead = false
 		}
 	}
 
-	// Determine reply type based on whether there's actual payload data
+	// Determine reply type based on whether this is a read operation
+	// For reads: return ReplyTypePayload (contains encrypted message data)
+	// For writes: return ReplyTypeACK (acknowledgment only)
 	var replyType uint8
-	if len(payload) > 29 {
-		// whatever it is that the courier stuffs in here of length 29
-		// cannot be decoded by the clientd. whether that's a bug in the courier or the clientd
-		// is unclear, but for now...
-		// note that we have the same hack in tryImmediateReplyProxy because the logic
-		// to synthesize CourierEnvelopeReply is duplicated there.
-		replyType = pigeonhole.ReplyTypePayload // Has actual data
+	if isRead {
+		replyType = pigeonhole.ReplyTypePayload // Read operation - has encrypted message data
 	} else {
-		replyType = pigeonhole.ReplyTypeACK // No data, just acknowledgment
+		replyType = pigeonhole.ReplyTypeACK // Write operation - just acknowledgment
 	}
 
 	reply := &pigeonhole.CourierQueryReply{
