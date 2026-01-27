@@ -41,12 +41,18 @@ func (d *Daemon) newKeypair(request *Request) {
 		return
 	}
 	readCap := writeCap.ReadCap()
+
+	// Get the first message index from the WriteCap
+	firstIndex := writeCap.GetFirstMessageBoxIndex()
+
 	conn.sendResponse(&Response{
 		AppID: request.AppID,
 		NewKeypairReply: &thin.NewKeypairReply{
-			WriteCap:  writeCap,
-			ReadCap:   readCap,
-			ErrorCode: thin.ThinClientSuccess,
+			QueryID:           request.NewKeypair.QueryID,
+			WriteCap:          writeCap,
+			ReadCap:           readCap,
+			FirstMessageIndex: firstIndex,
+			ErrorCode:         thin.ThinClientSuccess,
 		},
 	})
 }

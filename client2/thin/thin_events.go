@@ -190,7 +190,7 @@ type NewKeypairReply struct {
 	ReadCap *bacap.ReadCap `cbor:"read_cap"`
 	// FirstMessageIndex is the first message index that should be used when
 	// writing messages to the channel.
-	FirstMessageIndex []byte `cbor:"first_message_index"`
+	FirstMessageIndex *bacap.MessageBoxIndex `cbor:"first_message_index"`
 	// ErrorCode indicates the reason for a failure to create a new keypair if any.
 	// Otherwise it is set to zero for success.
 	ErrorCode uint8 `cbor:"error_code"`

@@ -25,7 +25,7 @@ import (
 // Returns:
 //   - *bacap.WriteCap: Write capability for sending messages
 //   - *bacap.ReadCap: Read capability that can be shared with recipients
-//   - []byte: First message index to use when writing
+//   - *bacap.MessageBoxIndex: First message index to use when writing
 //   - error: Any error encountered during keypair creation
 //
 // Example:
@@ -44,7 +44,7 @@ import (
 //
 //	// Share readCap with Bob so he can read messages
 //	// Store writeCap for sending messages
-func (t *ThinClient) NewKeypair(ctx context.Context, seed []byte) (*bacap.WriteCap, *bacap.ReadCap, []byte, error) {
+func (t *ThinClient) NewKeypair(ctx context.Context, seed []byte) (*bacap.WriteCap, *bacap.ReadCap, *bacap.MessageBoxIndex, error) {
 	if ctx == nil {
 		return nil, nil, nil, errContextCannotBeNil
 	}

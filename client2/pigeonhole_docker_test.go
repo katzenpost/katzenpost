@@ -12,7 +12,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/katzenpost/hpqc/bacap"
 	"github.com/katzenpost/hpqc/rand"
 )
 
@@ -66,10 +65,7 @@ func TestNewPigeonholeAPIAliceSendsBob(t *testing.T) {
 	aliceMessage := []byte("Bob, the eagle has landed. Rendezvous at dawn.")
 	t.Logf("Alice: Original message: %q", aliceMessage)
 
-	aliceWriteIndex, err := bacap.NewEmptyMessageBoxIndexFromBytes(aliceFirstIndex)
-	require.NoError(t, err)
-
-	aliceCiphertext, aliceEnvDesc, aliceEnvHash, aliceEpoch, err := aliceThinClient.EncryptWrite(ctx, aliceMessage, aliceWriteCap, aliceWriteIndex)
+	aliceCiphertext, aliceEnvDesc, aliceEnvHash, aliceEpoch, err := aliceThinClient.EncryptWrite(ctx, aliceMessage, aliceWriteCap, aliceFirstIndex)
 	require.NoError(t, err)
 	require.NotEmpty(t, aliceCiphertext, "Alice: EncryptWrite returned empty ciphertext")
 	t.Logf("Alice: Encrypted message (%d bytes ciphertext)", len(aliceCiphertext))
@@ -98,10 +94,8 @@ func TestNewPigeonholeAPIAliceSendsBob(t *testing.T) {
 
 	// Step 4: Bob encrypts a read request using EncryptRead
 	t.Log("=== Step 4: Bob encrypts a read request using EncryptRead ===")
-	bobReadIndex, err := bacap.NewEmptyMessageBoxIndexFromBytes(aliceFirstIndex)
-	require.NoError(t, err)
 
-	bobCiphertext, bobNextIndex, bobEnvDesc, bobEnvHash, bobEpoch, err := aliceThinClient.EncryptRead(ctx, bobReadCap, bobReadIndex)
+	bobCiphertext, bobNextIndex, bobEnvDesc, bobEnvHash, bobEpoch, err := aliceThinClient.EncryptRead(ctx, bobReadCap, aliceFirstIndex)
 	require.NoError(t, err)
 	require.NotEmpty(t, bobCiphertext, "Bob: EncryptRead returned empty ciphertext")
 	t.Logf("Bob: Encrypted read request (%d bytes ciphertext)", len(bobCiphertext))
@@ -189,10 +183,8 @@ func TestNewPigeonholeAPIMultipleMessages(t *testing.T) {
 
 		// Alice encrypts and sends message
 		t.Logf("Alice: Encrypting message %d: %q", i+1, aliceMessage)
-		aliceWriteIndex, err := bacap.NewEmptyMessageBoxIndexFromBytes(aliceCurrentIndex)
-		require.NoError(t, err)
 
-		aliceCiphertext, aliceEnvDesc, aliceEnvHash, aliceEpoch, err := aliceThinClient.EncryptWrite(ctx, aliceMessage, aliceWriteCap, aliceWriteIndex)
+		aliceCiphertext, aliceEnvDesc, aliceEnvHash, aliceEpoch, err := aliceThinClient.EncryptWrite(ctx, aliceMessage, aliceWriteCap, aliceCurrentIndex)
 		require.NoError(t, err)
 		require.NotEmpty(t, aliceCiphertext, "Alice: EncryptWrite returned empty ciphertext for message %d", i+1)
 		t.Logf("Alice: Encrypted message %d (%d bytes ciphertext)", i+1, len(aliceCiphertext))
@@ -219,10 +211,8 @@ func TestNewPigeonholeAPIMultipleMessages(t *testing.T) {
 
 		// Bob encrypts read request
 		t.Logf("Bob: Encrypting read request for message %d", i+1)
-		bobReadIndex, err := bacap.NewEmptyMessageBoxIndexFromBytes(bobCurrentIndex)
-		require.NoError(t, err)
 
-		bobCiphertext, bobNextIndex, bobEnvDesc, bobEnvHash, bobEpoch, err := aliceThinClient.EncryptRead(ctx, bobReadCap, bobReadIndex)
+		bobCiphertext, bobNextIndex, bobEnvDesc, bobEnvHash, bobEpoch, err := aliceThinClient.EncryptRead(ctx, bobReadCap, bobCurrentIndex)
 		require.NoError(t, err)
 		require.NotEmpty(t, bobCiphertext, "Bob: EncryptRead returned empty ciphertext for message %d", i+1)
 		t.Logf("Bob: Encrypted read request %d (%d bytes ciphertext)", i+1, len(bobCiphertext))
@@ -249,14 +239,10 @@ func TestNewPigeonholeAPIMultipleMessages(t *testing.T) {
 
 		// Advance state for next message
 		t.Logf("Advancing state for next message")
-		aliceWriteIndex, err = aliceWriteIndex.NextIndex()
-		require.NoError(t, err)
-		aliceCurrentIndex, err = aliceWriteIndex.MarshalBinary()
+		aliceCurrentIndex, err = aliceCurrentIndex.NextIndex()
 		require.NoError(t, err)
 
-		bobReadIndex, err = bobReadIndex.NextIndex()
-		require.NoError(t, err)
-		bobCurrentIndex, err = bobReadIndex.MarshalBinary()
+		bobCurrentIndex, err = bobCurrentIndex.NextIndex()
 		require.NoError(t, err)
 
 		// Cleanup: Cancel resending for this message
