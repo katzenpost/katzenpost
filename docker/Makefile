@@ -1,4 +1,4 @@
-.PHONY: clean clean-local clean-local-dryrun clean-image-% clean-container-% clean-images test rootshell shell run-ping go-mod-tidy go-mod-upgrade help start stop client-restart clean-client client-logs config-only watch-replicas watch-auth watch-mixes watch-courier watch-servicenode watch-gateway watch-all-separate
+.PHONY: clean clean-local clean-local-dryrun clean-image-% clean-container-% clean-images test rootshell shell run-ping go-mod-tidy go-mod-upgrade help start stop client-restart clean-client client-logs courier-restart config-only watch-replicas watch-auth watch-mixes watch-courier watch-servicenode watch-gateway watch-all-separate
 
 help:
 	@echo "These make targets allow you to control the test network:"
@@ -7,6 +7,7 @@ help:
 	@echo " stop               - stop the testnet"
 	@echo " client-restart     - restart just the kpclientd daemon"
 	@echo " client-logs        - view kpclientd daemon logs"
+	@echo " courier-restart    - restart the courier service plugin"
 	@echo " wait               - wait for testnet to have consensus"
 	@echo " watch              - tail -F all logs"
 	@echo " watch-replicas     - monitor all replica logs"
@@ -161,6 +162,17 @@ client-restart:
 client-logs:
 	@echo "Tailing kpclientd daemon logs (Ctrl+C to exit)..."
 	cd $(net_name) && $(docker_compose) logs -f --tail 20 kpclientd
+
+courier-restart:
+	@echo "Stopping courier plugin via thwack management interface..."
+	@echo "STOP_KAETZCHEN courier" | nc -U $(net_name)/servicenode1/management_sock || true
+	@sleep 1
+	@echo "Cleaning and rebuilding courier binary..."
+	rm -fv $(net_name)/courier.$(distro)
+	make $(make_args) $(net_name)/courier.$(distro)
+	@echo "Starting courier plugin via thwack management interface..."
+	@echo "START_KAETZCHEN courier" | nc -U $(net_name)/servicenode1/management_sock
+	@echo "Courier service restarted with updated code"
 
 watch:
 	tail -F $(net_name)/*/*.log
