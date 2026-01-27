@@ -275,6 +275,19 @@ func (e *Courier) logFinalCacheState(reply *commands.ReplicaMessageReply) {
 func (e *Courier) tryImmediateReplyProxy(reply *commands.ReplicaMessageReply) bool {
 	e.log.Debugf("tryImmediateReplyProxy: Checking for pending read request for envelope hash %x", reply.EnvelopeHash)
 
+	// Skip proxying if the reply has an error code or empty payload
+	// The client will timeout and retry, no need to waste mixnet bandwidth
+	if reply.ErrorCode != pigeonhole.ReplicaSuccess {
+		e.log.Debugf("tryImmediateReplyProxy: Skipping proxy for error reply (ErrorCode=%d) for envelope hash %x",
+			reply.ErrorCode, reply.EnvelopeHash)
+		return false
+	}
+
+	if len(reply.EnvelopeReply) == 0 {
+		e.log.Debugf("tryImmediateReplyProxy: Skipping proxy for empty reply for envelope hash %x", reply.EnvelopeHash)
+		return false
+	}
+
 	e.pendingRequestsLock.Lock()
 	defer e.pendingRequestsLock.Unlock()
 
