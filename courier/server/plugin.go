@@ -459,8 +459,7 @@ func (e *Courier) propagateQueryToReplicas(courierMessage *pigeonhole.CourierEnv
 	return nil
 }
 
-// handleNewMessage processes new messages and dispatches them to replicas and then
-// returns an immediate ACK reply to confirm receipt and dispatch
+// handleNewMessage processes new messages and dispatches them to replicas.
 func (e *Courier) handleNewMessage(envHash *[hash.HashSize]byte, courierMessage *pigeonhole.CourierEnvelope) *pigeonhole.CourierQueryReply {
 	e.log.Debugf("handleNewMessage: Processing new message for envelope hash %x", envHash)
 
@@ -470,23 +469,8 @@ func (e *Courier) handleNewMessage(envHash *[hash.HashSize]byte, courierMessage 
 		return e.createEnvelopeErrorReply(envHash, pigeonhole.EnvelopeErrorPropagationError, courierMessage.ReplyIndex)
 	}
 
-	// SUCCESS CASE: Messages were successfully dispatched to replicas
-	// Return immediate ACK reply to confirm receipt and dispatch
-	// The actual response with data will come later via CacheReply/tryImmediateReplyProxy when replicas respond
-	e.log.Debugf("handleNewMessage: Successfully dispatched to replicas, returning immediate ACK reply (ReplyType=%d)",
-		pigeonhole.ReplyTypeACK)
-	reply := &pigeonhole.CourierQueryReply{
-		ReplyType: 0, // 0 = envelope_reply
-		EnvelopeReply: &pigeonhole.CourierEnvelopeReply{
-			EnvelopeHash: *envHash,
-			ReplyIndex:   courierMessage.ReplyIndex,
-			ReplyType:    pigeonhole.ReplyTypeACK, // ACK - Request received and dispatched
-			PayloadLen:   0,
-			Payload:      nil,
-			ErrorCode:    pigeonhole.EnvelopeErrorSuccess, // Success - message accepted and dispatched
-		},
-	}
-	return reply
+	e.log.Debugf("handleNewMessage: Successfully dispatched to replicas, waiting for replica responses (no immediate reply)")
+	return nil
 }
 
 func (e *Courier) handleOldMessage(cacheEntry *CourierBookKeeping, envHash *[hash.HashSize]byte, courierMessage *pigeonhole.CourierEnvelope) *pigeonhole.CourierQueryReply {
