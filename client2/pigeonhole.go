@@ -223,6 +223,7 @@ func (d *Daemon) encryptWrite(request *Request) {
 		d.sendEncryptWriteError(request, thin.ThinClientErrorInvalidRequest)
 		return
 	}
+	d.log.Debugf("encryptWrite: MessageBoxIndex Idx64=%d, CurBlindingFactor=%x", messageBoxIndex.Idx64, messageBoxIndex.CurBlindingFactor)
 
 	plaintext := request.EncryptWrite.Plaintext
 	if plaintext == nil {
@@ -279,6 +280,7 @@ func (d *Daemon) encryptWrite(request *Request) {
 		d.sendEncryptWriteError(request, thin.ThinClientErrorInternalError)
 		return
 	}
+	d.log.Debugf("encryptWrite: Generated BoxID: %x", boxID)
 
 	sig := [bacap.SignatureSize]byte{}
 	copy(sig[:], sigraw)
@@ -497,15 +499,6 @@ func (d *Daemon) startResendingEncryptedMessage(request *Request) {
 		d.log.Errorf("startResendingEncryptedMessage: failed to send packet: %s", err)
 		// Don't return error - the ARQ will retry
 	}
-
-	// Send immediate acknowledgment to thin client
-	conn.sendResponse(&Response{
-		AppID: request.AppID,
-		StartResendingEncryptedMessageReply: &thin.StartResendingEncryptedMessageReply{
-			QueryID:   req.QueryID,
-			ErrorCode: thin.ThinClientSuccess,
-		},
-	})
 }
 
 func (d *Daemon) sendStartResendingEncryptedMessageError(request *Request, errorCode uint8) {
@@ -666,32 +659,44 @@ func (d *Daemon) handlePigeonholeARQReply(arqMessage *ARQMessage, reply *sphinxR
 
 // decryptPigeonholeReply decrypts the Pigeonhole envelope reply using the stored EnvelopeDescriptor.
 func (d *Daemon) decryptPigeonholeReply(arqMessage *ARQMessage, env *pigeonhole.CourierEnvelopeReply) ([]byte, error) {
+	d.log.Debugf("decryptPigeonholeReply: Starting decryption, env.Payload length: %d", len(env.Payload))
+
 	// Deserialize the EnvelopeDescriptor
 	envelopeDesc, err := EnvelopeDescriptorFromBytes(arqMessage.EnvelopeDescriptor)
 	if err != nil {
+		d.log.Errorf("decryptPigeonholeReply: Failed to deserialize EnvelopeDescriptor: %v", err)
 		return nil, err
 	}
+	d.log.Debugf("decryptPigeonholeReply: EnvelopeDescriptor deserialized, ReplicaNums: %v", envelopeDesc.ReplicaNums)
 
 	// Reconstruct the NIKE private key
 	privateKey, err := replicaCommon.NikeScheme.UnmarshalBinaryPrivateKey(envelopeDesc.EnvelopeKey)
 	if err != nil {
+		d.log.Errorf("decryptPigeonholeReply: Failed to unmarshal private key: %v", err)
 		return nil, err
 	}
+	d.log.Debugf("decryptPigeonholeReply: Private key reconstructed")
 
 	// Reuse the existing decryptMKEMEnvelope function
 	innerMsg, err := d.decryptMKEMEnvelope(env, envelopeDesc, privateKey)
 	if err != nil {
+		d.log.Errorf("decryptPigeonholeReply: Failed to decrypt MKEM envelope: %v", err)
 		return nil, err
 	}
+	d.log.Debugf("decryptPigeonholeReply: MKEM envelope decrypted, MessageType: %d", innerMsg.MessageType)
 
 	// Handle read reply
 	if innerMsg.MessageType == 0 && innerMsg.ReadReply != nil {
+		d.log.Debugf("decryptPigeonholeReply: Processing read reply, ErrorCode: %d, Payload length: %d",
+			innerMsg.ReadReply.ErrorCode, len(innerMsg.ReadReply.Payload))
 		if innerMsg.ReadReply.ErrorCode != 0 {
 			return nil, fmt.Errorf("read reply error code: %d", innerMsg.ReadReply.ErrorCode)
 		}
 		// Return the decrypted plaintext from the read reply
+		d.log.Debugf("decryptPigeonholeReply: Returning plaintext of length %d", len(innerMsg.ReadReply.Payload))
 		return innerMsg.ReadReply.Payload, nil
 	}
 
+	d.log.Errorf("decryptPigeonholeReply: Unexpected inner message type: %d", innerMsg.MessageType)
 	return nil, fmt.Errorf("unexpected inner message type: %d", innerMsg.MessageType)
 }
