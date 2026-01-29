@@ -15,7 +15,7 @@ const (
 
 	// RoundTripTimeSlop is the slop added to the expected packet
 	// round trip timeout threshold.
-	RoundTripTimeSlop = (30 * time.Second)
+	RoundTripTimeSlop = (60 * time.Second)
 )
 
 // ARQMessage is used by ARQ for automatic retransmission of Pigeonhole messages.
