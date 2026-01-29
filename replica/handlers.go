@@ -190,6 +190,9 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 		}
 
 		readReply := c.handleReplicaRead(myCmd)
+		if readReply.ErrorCode != pigeonhole.ReplicaSuccess {
+			return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, readReply.ErrorCode, envelopeHash, []byte{}, replicaID, true)
+		}
 		replyInnerMessage := pigeonhole.ReplicaMessageReplyInnerMessage{
 			ReadReply: readReply,
 		}
