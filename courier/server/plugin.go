@@ -166,6 +166,11 @@ func (e *Courier) validateReply(reply *commands.ReplicaMessageReply) bool {
 		return false
 	}
 
+	if reply.ErrorCode != pigeonhole.ReplicaSuccess {
+		e.log.Debugf("CacheReply: reply has error code %d, not caching", reply.ErrorCode)
+		return false
+	}
+
 	e.log.Debug("CacheReply: caching reply")
 
 	return true
