@@ -47,17 +47,8 @@ http-proxy-client:
 http-proxy-server:
 	cd cmd/http-proxy-server; go build
 
-katzencat:
-	cd cmd/katzencat; go build
-
-katzencopy:
-	cd cmd/katzencopy; go build
-
 kpclientd:
 	cd cmd/kpclientd; go build
-
-map:
-	cd cmd/map; go build
 
 sphinx:
 	cd cmd/sphinx; go build
