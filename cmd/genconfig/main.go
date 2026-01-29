@@ -279,16 +279,17 @@ func (s *katzenpost) genCourierConfig(datadir string) *courierConfig.Config {
 	const logFile = "courier.log"
 	logPath := filepath.Join(datadir, logFile)
 	return &courierConfig.Config{
-		PKI:              pki,
-		Logging:          &courierConfig.Logging{File: logPath, Level: debugLogLevel},
-		WireKEMScheme:    s.wireKEMScheme,
-		PKIScheme:        s.pkiSignatureScheme.Name(),
-		EnvelopeScheme:   s.replicaNIKEScheme.Name(),
-		DataDir:          datadir,
-		SphinxGeometry:   s.sphinxGeometry,
-		ConnectTimeout:   config.DefaultConnectTimeout,
-		HandshakeTimeout: config.DefaultHandshakeTimeout,
-		ReauthInterval:   config.DefaultReauthInterval,
+		PKI:                 pki,
+		Logging:             &courierConfig.Logging{File: logPath, Level: debugLogLevel},
+		WireKEMScheme:       s.wireKEMScheme,
+		PKIScheme:           s.pkiSignatureScheme.Name(),
+		EnvelopeScheme:      s.replicaNIKEScheme.Name(),
+		DataDir:             datadir,
+		SphinxGeometry:      s.sphinxGeometry,
+		ConnectTimeout:      config.DefaultConnectTimeout,
+		HandshakeTimeout:    config.DefaultHandshakeTimeout,
+		ReauthInterval:      config.DefaultReauthInterval,
+		DisableDecoyTraffic: true,
 	}
 }
 
@@ -313,6 +314,9 @@ func (s *katzenpost) genReplicaNodeConfig() error {
 	cfg.ConnectTimeout = config.DefaultConnectTimeout
 	cfg.HandshakeTimeout = config.DefaultHandshakeTimeout
 	cfg.ReauthInterval = config.DefaultReauthInterval
+
+	// Disable decoy traffic for replicas
+	cfg.DisableDecoyTraffic = true
 
 	authorities := make([]*vConfig.Authority, 0, len(s.authorities))
 	i := 0

@@ -14,7 +14,6 @@ import (
 	"github.com/katzenpost/hpqc/kem/mkem"
 	"github.com/katzenpost/hpqc/nike"
 	"github.com/katzenpost/hpqc/nike/schemes"
-	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/hpqc/sign/ed25519"
 	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
 
@@ -191,6 +190,9 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 		}
 
 		readReply := c.handleReplicaRead(myCmd)
+		if readReply.ErrorCode != pigeonhole.ReplicaSuccess {
+			return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, readReply.ErrorCode, envelopeHash, []byte{}, replicaID, true)
+		}
 		replyInnerMessage := pigeonhole.ReplicaMessageReplyInnerMessage{
 			ReadReply: readReply,
 		}
@@ -340,23 +342,33 @@ func (c *incomingConn) proxyReadRequest(replicaRead *pigeonhole.ReplicaRead, ori
 		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, originalEnvelopeHash, []byte{}, 0, false)
 	}
 
-	// Get our own identity key to exclude ourselves from the target shards
+	// Validate: GetShards should ALWAYS return exactly 2 replicas (K=2)
+	if len(shards) != 2 {
+		c.log.Errorf("PROXY_REQUEST: BUG - GetShards returned %d replicas instead of 2 for BoxID %x", len(shards), replicaRead.BoxID[:8])
+		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, originalEnvelopeHash, []byte{}, 0, false)
+	}
+
+	c.log.Debugf("PROXY_REQUEST: Shard replicas for BoxID %x: [%s, %s]", replicaRead.BoxID[:8], shards[0].Name, shards[1].Name)
+
+	// Get our own identity key to find the other replica in this shard
 	myIdentityKey, err := c.l.server.identityPublicKey.MarshalBinary()
 	if err != nil {
 		c.log.Errorf("proxyReadRequest: failed to marshal identity key: %v", err)
 		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, originalEnvelopeHash, []byte{}, 0, false)
 	}
 
-	// Select a random shard that is not ourselves
-	var availableShards []*pki.ReplicaDescriptor
+	// Find the other replica in this shard (the one that's not us)
+	var otherReplica *pki.ReplicaDescriptor
 	for _, shard := range shards {
 		if !hmac.Equal(shard.IdentityKey, myIdentityKey) {
-			availableShards = append(availableShards, shard)
+			otherReplica = shard
+			break
 		}
 	}
 
-	if len(availableShards) == 0 {
-		c.log.Error("PROXY_REQUEST: no suitable target shard found")
+	// Validate: After filtering self, should have exactly 1 other replica
+	if otherReplica == nil {
+		c.log.Errorf("PROXY_REQUEST: BUG - Could not find other replica in shard for BoxID %x (both replicas are self?)", replicaRead.BoxID[:8])
 		return c.createReplicaMessageReply(
 			c.l.server.cfg.ReplicaNIKEScheme,
 			pigeonhole.ReplicaErrorInternalError,
@@ -367,9 +379,10 @@ func (c *incomingConn) proxyReadRequest(replicaRead *pigeonhole.ReplicaRead, ori
 		)
 	}
 
-	// Select a random shard for load distribution
-	targetShard := availableShards[rand.NewMath().Intn(len(availableShards))]
-	c.log.Debugf("PROXY_REQUEST: Proxying read request to replica: %s", targetShard.Name)
+	c.log.Debugf("PROXY_REQUEST: Proxying read request to other replica in shard: %s", otherReplica.Name)
+
+	// Use the other replica in this shard (no randomization needed since K=2)
+	targetShard := otherReplica
 
 	// Get current replica epoch and keypair
 	replicaEpoch, _, _ := replicaCommon.ReplicaNow()

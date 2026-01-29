@@ -10,7 +10,6 @@ import (
 	"github.com/katzenpost/hpqc/hash"
 
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
-	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 )
 
 // Thin client error codes provide standardized error reporting across the protocol.
@@ -151,6 +150,93 @@ func ThinClientErrorToString(errorCode uint8) string {
 		return fmt.Sprintf("Unknown thin client error code: %d", errorCode)
 	}
 }
+
+// New Pigeonhole API:
+
+// NewKeypair requests the creation of a new keypair for use with the Pigeonhole protocol.
+// The reply type, is NewKeypairReply.
+type NewKeypair struct {
+	// QueryID is used for correlating this thin client request with the
+	// thin client reponse.
+	QueryID *[QueryIDLength]byte `cbor:"query_id"`
+	// Seed is the 32 byte seed used to derive the keypair.
+	Seed []byte `cbor:"seed"`
+}
+
+// EncryptRead requests the encryption of a read operation for a given read capability.
+type EncryptRead struct {
+	// QueryID is used for correlating this thin client request with the
+	// thin client reponse.
+	QueryID *[QueryIDLength]byte `cbor:"query_id"`
+
+	// ReadCap is the read capability that grants access to the channel.
+	ReadCap *bacap.ReadCap `cbor:"read_cap"`
+
+	// MessageBoxIndex specifies the starting read position for the channel.
+	MessageBoxIndex *bacap.MessageBoxIndex `cbor:"message_box_index"`
+}
+
+// EncryptWrite requests the encryption of a write operation for a given write capability.
+type EncryptWrite struct {
+	// QueryID is used for correlating this thin client request with the
+	// thin client reponse.
+	QueryID *[QueryIDLength]byte `cbor:"query_id"`
+
+	// Plaintext is the plaintext message to be encrypted.
+	Plaintext []byte `cbor:"plaintext"`
+
+	// WriteCap is the write capability that grants access to the channel.
+	WriteCap *bacap.WriteCap `cbor:"write_cap"`
+
+	// MessageBoxIndex specifies the starting write position for the channel.
+	MessageBoxIndex *bacap.MessageBoxIndex `cbor:"message_box_index"`
+}
+
+// StartResendingEncryptedMessage requests the daemon to start resending an encrypted message.
+type StartResendingEncryptedMessage struct {
+	// QueryID is used for correlating this thin client request with the
+	// thin client reponse.
+	QueryID *[QueryIDLength]byte `cbor:"query_id"`
+
+	// ReadCap is the read capability that grants access to the channel.
+	ReadCap *bacap.ReadCap `cbor:"read_cap"`
+
+	// WriteCap is the write capability that grants access to the channel.
+	WriteCap *bacap.WriteCap `cbor:"write_cap"`
+
+	// NextMessageIndex is the next message index that should be used when
+	// encrypting the next read.
+	NextMessageIndex []byte `cbor:"next_message_index"`
+
+	// ReplyIndex is the index of the reply that was actually used when processing
+	ReplyIndex *uint8 `cbor:"reply_index"`
+
+	// EnvelopeDescriptor contains the serialized EnvelopeDescriptor that
+	// contains the private key material needed to decrypt the envelope reply.
+	EnvelopeDescriptor []byte `cbor:"envelope_descriptor"`
+
+	// MessageCiphertext is the encrypted message ciphertext that should be sent
+	MessageCiphertext []byte `cbor:"message_ciphertext"`
+
+	// EnvelopeHash is the hash of the CourierEnvelope that was sent to the
+	// mixnet and is used to resume the read operation.
+	EnvelopeHash *[32]byte `cbor:"envelope_hash"`
+
+	// ReplicaEpoch is the epoch in which the envelope was sent.
+	ReplicaEpoch uint64 `cbor:"replica_epoch"`
+}
+
+// CancelResendingEncryptedMessage requests the daemon to cancel resending an encrypted message.
+type CancelResendingEncryptedMessage struct {
+	// QueryID is used for correlating this thin client request with the
+	// thin client reponse.
+	QueryID *[QueryIDLength]byte `cbor:"query_id"`
+
+	// EnvelopeHash is the hash of the CourierEnvelope that was sent to the
+	EnvelopeHash *[32]byte `cbor:"envelope_hash"`
+}
+
+// OLD Pigeonhole API:
 
 // CreateWriteChannel requests the creation of a new pigeonhole write channel.
 // For channel resumption, please see the ResumeWriteChannel type below.
@@ -331,6 +417,33 @@ type CloseChannel struct {
 	ChannelID uint16 `cbor:"channel_id"`
 }
 
+// SendChannelQuery is used to send a Pigeonhole protocol ciphertext query payload
+// through the mix network. The result of sending this message type is two more events:
+// ChannelQuerySentEvent and ChannelQueryReplyEvent both of which can be matched
+// by the MessageID field.
+type SendChannelQuery struct {
+	// MessageID is the unique identifier for the request associated with the
+	// query reply via the ChannelQueryReplyEvent.
+	MessageID *[MessageIDLength]byte `cbor:"message_id"`
+
+	// ChannelID is optional and only used for sending channel messages.
+	// For non-channel messages, this field should be nil.
+	ChannelID *uint16 `cbor:"channel_id,omitempty"`
+
+	// DestinationIdHash is 32 byte hash of the destination Service's
+	// identity public key.
+	DestinationIdHash *[hash.HashSize]byte `cbor:"destination_id_hash"`
+
+	// RecipientQueueID is the queue identity which will receive the message.
+	// This queue ID is meant to be the queue ID of the Pigeonhole protocol Courier service.
+	RecipientQueueID []byte `cbor:"recipient_queue_id"`
+
+	// Payload is the Pigeonole protocol ciphertext payload which will be encapsulated in the Sphinx payload.
+	Payload []byte `cbor:"payload"`
+}
+
+// Common API:
+
 // SendMessage is used to send a message through the mix network
 // it is part of the legacy API and should not be used for newer
 // works using the Pigeonhole protocol.
@@ -355,58 +468,6 @@ type SendMessage struct {
 	RecipientQueueID []byte `cbor:"recipient_queue_id"`
 
 	// Payload is the actual Sphinx packet.
-	Payload []byte `cbor:"payload"`
-}
-
-// SendARQMessage is used to send a message through the mix network
-// using the simple ARQ error correction scheme. It is part of the legacy API
-// and should not be used for newer works using the Pigeonhole protocol.
-type SendARQMessage struct {
-	// ID is the unique identifier with respect to the Payload.
-	// This is only used by the ARQ.
-	ID *[MessageIDLength]byte `cbor:"id"`
-
-	// WithSURB indicates if the message should be sent with a SURB
-	// in the Sphinx payload.
-	WithSURB bool `cbor:"with_surb"`
-
-	// SURBID must be a unique identity for each request.
-	// This field should be nil if WithSURB is false.
-	SURBID *[sConstants.SURBIDLength]byte `cbor:"surbid"`
-
-	// DestinationIdHash is 32 byte hash of the destination Provider's
-	// identity public key.
-	DestinationIdHash *[hash.HashSize]byte `cbor:"destination_id_hash"`
-
-	// RecipientQueueID is the queue identity which will receive the message.
-	RecipientQueueID []byte `cbor:"recipient_queue_id"`
-
-	// Payload is the actual Sphinx packet.
-	Payload []byte `cbor:"payload"`
-}
-
-// SendChannelQuery is used to send a Pigeonhole protocol ciphertext query payload
-// through the mix network. The result of sending this message type is two more events:
-// ChannelQuerySentEvent and ChannelQueryReplyEvent both of which can be matched
-// by the MessageID field.
-type SendChannelQuery struct {
-	// MessageID is the unique identifier for the request associated with the
-	// query reply via the ChannelQueryReplyEvent.
-	MessageID *[MessageIDLength]byte `cbor:"message_id"`
-
-	// ChannelID is optional and only used for sending channel messages.
-	// For non-channel messages, this field should be nil.
-	ChannelID *uint16 `cbor:"channel_id,omitempty"`
-
-	// DestinationIdHash is 32 byte hash of the destination Service's
-	// identity public key.
-	DestinationIdHash *[hash.HashSize]byte `cbor:"destination_id_hash"`
-
-	// RecipientQueueID is the queue identity which will receive the message.
-	// This queue ID is meant to be the queue ID of the Pigeonhole protocol Courier service.
-	RecipientQueueID []byte `cbor:"recipient_queue_id"`
-
-	// Payload is the Pigeonole protocol ciphertext payload which will be encapsulated in the Sphinx payload.
 	Payload []byte `cbor:"payload"`
 }
 
@@ -435,6 +496,25 @@ type Response struct {
 
 	// MessageIDGarbageCollected is sent when the client daemon garbage collects a message ID.
 	MessageIDGarbageCollected *MessageIDGarbageCollected `cbor:"message_id_garbage_collected"`
+
+	// New Pigeonhole API:
+
+	// NewKeypairReply is sent when the client daemon successfully creates a new keypair.
+	NewKeypairReply *NewKeypairReply `cbor:"new_keypair_reply"`
+
+	// EncryptReadReply is sent when the client daemon successfully encrypts a read operation.
+	EncryptReadReply *EncryptReadReply `cbor:"encrypt_read_reply"`
+
+	// EncryptWriteReply is sent when the client daemon successfully encrypts a write operation.
+	EncryptWriteReply *EncryptWriteReply `cbor:"encrypt_write_reply"`
+
+	// StartResendingEncryptedMessageReply is sent when the client daemon successfully starts resending an encrypted message.
+	StartResendingEncryptedMessageReply *StartResendingEncryptedMessageReply `cbor:"start_resending_encrypted_message_reply"`
+
+	// CancelResendingEncryptedMessageReply is sent when the client daemon successfully cancels resending an encrypted message.
+	CancelResendingEncryptedMessageReply *CancelResendingEncryptedMessageReply `cbor:"cancel_resending_encrypted_message_reply"`
+
+	// Old Pigeonhole API:
 
 	// CreateWriteChannelReply is sent when the client daemon successfully creates a write channel.
 	CreateWriteChannelReply *CreateWriteChannelReply `cbor:"create_write_channel_reply"`
@@ -471,7 +551,35 @@ type Response struct {
 // It can result in one or more Response messages being sent back to the thin client.
 type Request struct {
 
-	// NEW CHANNEL API
+	// ThinClose is used to indicate that the thin client is disconnecting
+	// from the daemon.
+	ThinClose *ThinClose `cbor:"thin_close"`
+
+	// Legacy API
+
+	// SendMessage is used to send a message through the mix network.
+	// Note that this is part of the legacy API and should not be used for newer
+	// works using the Pigeonhole protocol.
+	SendMessage *SendMessage `cbor:"send_message"`
+
+	// New Pigeonhole API:
+
+	// NewKeypair is used to create a new keypair for use with the Pigeonhole protocol.
+	NewKeypair *NewKeypair `cbor:"new_keypair"`
+
+	// EncryptRead is used to encrypt a read operation for a given read capability.
+	EncryptRead *EncryptRead `cbor:"encrypt_read"`
+
+	// EncryptWrite is used to encrypt a write operation for a given write capability.
+	EncryptWrite *EncryptWrite `cbor:"encrypt_write"`
+
+	// StartResendingEncryptedMessage is used to start resending an encrypted message.
+	StartResendingEncryptedMessage *StartResendingEncryptedMessage `cbor:"start_resending_encrypted_message"`
+
+	// CancelResendingEncryptedMessage is used to cancel resending an encrypted message.
+	CancelResendingEncryptedMessage *CancelResendingEncryptedMessage `cbor:"cancel_resending_encrypted_message"`
+
+	// OLD Pigeonhole API
 
 	// CreateWriteChannel is used to create a new Pigeonhole write channel.
 	CreateWriteChannel *CreateWriteChannel `cbor:"create_write_channel"`
@@ -500,23 +608,6 @@ type Request struct {
 	// CloseChannel is used to close a Pigeonhole channel.
 	CloseChannel *CloseChannel `cbor:"close_channel"`
 
-	// ThinClose is used to indicate that the thin client is disconnecting
-	// from the daemon.
-	ThinClose *ThinClose `cbor:"thin_close"`
-
 	// SendChannelQuery is used to send a message through the mix network
 	SendChannelQuery *SendChannelQuery `cbor:"send_channel_query"`
-
-	// Legacy API
-
-	// SendMessage is used to send a message through the mix network.
-	// Note that this is part of the legacy API and should not be used for newer
-	// works using the Pigeonhole protocol.
-	SendMessage *SendMessage `cbor:"send_message"`
-
-	// SendARQMessage is used to send a message through the mix network
-	// using the naive ARQ error correction scheme.
-	// Note that this is part of the legacy API and should not be used for newer
-	// works using the Pigeonhole protocol.
-	SendARQMessage *SendARQMessage `cbor:"send_arq_message"`
 }

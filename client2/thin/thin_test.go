@@ -201,17 +201,6 @@ func TestOfflineChannelOperations(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "cannot send message in offline mode")
 
-	// Test SendReliableMessage fails in offline mode
-	messageID := thin.NewMessageID()
-	err = thin.SendReliableMessage(messageID, []byte("test"), &[32]byte{}, []byte("queue"))
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "cannot send reliable message in offline mode")
-
-	// Test BlockingSendReliableMessage fails in offline mode
-	_, err = thin.BlockingSendReliableMessage(ctx, messageID, []byte("test"), &[32]byte{}, []byte("queue"))
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "cannot send reliable message in offline mode")
-
 	t.Log("All offline mode error handling tests passed")
 }
 
