@@ -1243,10 +1243,13 @@ func (d *Daemon) decryptMKEMEnvelope(env *pigeonhole.CourierEnvelopeReply, envel
 
 		// Try to decrypt with this replica's public key
 		rawInnerMsg, err = replicaCommon.MKEMNikeScheme.DecryptEnvelope(privateKey, replicaPubKey, env.Payload)
-		if err == nil {
-			d.log.Errorf("MKEM DECRYPT: no rawInnerMsg for replicaNum:%v: %v", replicaNum, err)
-			break
+		if err != nil {
+			d.log.Errorf("MKEM DECRYPT: failed to decrypt with replicaNum:%v: %v", replicaNum, err)
+			continue
 		}
+		// Successfully decrypted
+		d.log.Debugf("MKEM DECRYPT: successfully decrypted with replicaNum:%v", replicaNum)
+		break
 	}
 
 	if rawInnerMsg == nil {
