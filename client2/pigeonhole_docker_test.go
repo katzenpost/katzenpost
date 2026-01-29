@@ -103,7 +103,7 @@ func TestNewPigeonholeAPIAliceSendsBob(t *testing.T) {
 	// Step 4: Bob encrypts a read request using EncryptRead
 	t.Log("=== Step 4: Bob encrypts a read request using EncryptRead ===")
 
-	bobCiphertext, bobNextIndex, bobEnvDesc, bobEnvHash, bobEpoch, err := aliceThinClient.EncryptRead(ctx, bobReadCap, aliceFirstIndex)
+	bobCiphertext, bobNextIndex, bobEnvDesc, bobEnvHash, bobEpoch, err := bobThinClient.EncryptRead(ctx, bobReadCap, aliceFirstIndex)
 	require.NoError(t, err)
 	require.NotEmpty(t, bobCiphertext, "Bob: EncryptRead returned empty ciphertext")
 	t.Logf("Bob: Encrypted read request (%d bytes ciphertext)", len(bobCiphertext))
@@ -220,7 +220,7 @@ func TestNewPigeonholeAPIMultipleMessages(t *testing.T) {
 		// Bob encrypts read request
 		t.Logf("Bob: Encrypting read request for message %d", i+1)
 
-		bobCiphertext, bobNextIndex, bobEnvDesc, bobEnvHash, bobEpoch, err := aliceThinClient.EncryptRead(ctx, bobReadCap, bobCurrentIndex)
+		bobCiphertext, bobNextIndex, bobEnvDesc, bobEnvHash, bobEpoch, err := bobThinClient.EncryptRead(ctx, bobReadCap, bobCurrentIndex)
 		require.NoError(t, err)
 		require.NotEmpty(t, bobCiphertext, "Bob: EncryptRead returned empty ciphertext for message %d", i+1)
 		t.Logf("Bob: Encrypted read request %d (%d bytes ciphertext)", i+1, len(bobCiphertext))
