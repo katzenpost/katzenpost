@@ -513,8 +513,9 @@ func (e *Courier) handleOldMessage(cacheEntry *CourierBookKeeping, envHash *[has
 			isRead = entry.IsRead
 			e.log.Debugf("But there is a reply for %d, so returning that (envHash:%v)", courierMessage.ReplyIndex, envHash)
 		} else {
-			payload = nil // Return empty payload but keep the requested ReplyIndex
-			isRead = false
+			// No cached replies available yet - return nil to let ARQ retry
+			e.log.Debugf("No cached replies available for envelope hash %x, returning nil (ARQ will retry)", envHash)
+			return nil
 		}
 	}
 
