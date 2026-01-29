@@ -427,9 +427,6 @@ type Response struct {
 	// NewPKIDocumentEvent is sent when the client daemon receives a new PKI document.
 	NewPKIDocumentEvent *NewPKIDocumentEvent `cbor:"new_pki_document_event"`
 
-	// NewDocumentEvent is sent when the client daemon receives a new PKI document.
-	NewDocumentEvent *NewDocumentEvent `cbor:"new_document_event"`
-
 	// MessageSentEvent is sent when the client daemon successfully sends a message.
 	MessageSentEvent *MessageSentEvent `cbor:"message_sent_event"`
 

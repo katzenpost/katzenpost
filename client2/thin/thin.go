@@ -22,7 +22,6 @@
 //
 // The thin client provides a simple API for:
 //   - Sending and receiving messages
-//   - Creating and managing communication channels
 //   - Handling events and status updates
 //
 // # APIs
@@ -38,93 +37,27 @@
 //   - SendReliableMessage: Send with automatic retransmission (ARQ)
 //   - BlockingSendReliableMessage: Reliable send with blocking reply
 //
-// ## Pigeonhole Channel API (recommended)
+// ## Pigeonhole Channel API
 //
-// The new Pigeonhole protocol provides reliable, ordered communication channels:
+// For more information about this API please see our API documentation, here:
+// https://katzenpost.network/docs/client_integration/#pigeonhole-channel-api
+//
+// The new Pigeonhole protocol provides the following messages and their corresponding
+// replies/events:
+//   - NewKeypair
+//   - EncryptRead
+//   - EncryptWrite
+//   - StartResendingEncryptedMessage
+//   - CancelResendingEncryptedMessage
+//
+// The old Pigeonhole protocol API provides:
+//
 //   - CreateWriteChannel: Create a new channel for sending messages
 //   - CreateReadChannel: Create a channel for receiving messages
 //   - WriteChannel: Prepare a message for transmission
 //   - ReadChannel: Prepare a query to read the next message
 //   - SendChannelQuery: Send prepared queries to the mixnet
 //   - ResumeWriteChannel/ResumeReadChannel: Resume channels after restart
-//
-// # Basic Usage Example
-//
-//	// Load configuration
-//	cfg, err := thin.LoadFile("thinclient.toml")
-//	if err != nil {
-//		log.Fatal(err)
-//	}
-//
-//	// Create and connect thin client
-//	logging := &config.Logging{Level: "INFO"}
-//	client := thin.NewThinClient(cfg, logging)
-//	err = client.Dial()
-//	if err != nil {
-//		log.Fatal(err)
-//	}
-//	defer client.Close()
-//
-//	// Create a communication channel (Alice side)
-//	ctx := context.Background()
-//	channelID, readCap, writeCap, err := client.CreateWriteChannel(ctx)
-//	if err != nil {
-//		log.Fatal(err)
-//	}
-//
-//	// Write a message
-//	message := []byte("Hello, Bob!")
-//	writeReply, err := client.WriteChannel(ctx, channelID, message)
-//	if err != nil {
-//		log.Fatal(err)
-//	}
-//
-//	// Send the prepared message through the mixnet
-//	destNode, destQueue, err := client.GetCourierDestination()
-//	if err != nil {
-//		log.Fatal(err)
-//	}
-//	messageID := client.NewMessageID()
-//	_, err = client.SendChannelQueryAwaitReply(ctx, channelID,
-//		writeReply.SendMessagePayload, destNode, destQueue, messageID)
-//	if err != nil {
-//		log.Fatal(err)
-//	}
-//
-// # Channel Communication Pattern
-//
-// Pigeonhole channels use a two-step process:
-//
-// 1. Prepare: Call WriteChannel or ReadChannel to prepare the cryptographic payload
-// 2. Send: Call SendChannelQuery to actually transmit through the mixnet
-//
-// This separation allows for:
-//   - State management and persistence
-//   - Retry logic and error recovery
-//   - Offline operation (preparation can happen without mixnet connectivity)
-//
-// # Error Handling
-//
-// The API uses structured error codes defined in thin_messages.go. Check the ErrorCode
-// field in reply events and use ThinClientErrorToString() for human-readable messages.
-//
-// # Event Handling
-//
-// The thin client provides an event-driven interface:
-//
-//	eventSink := client.EventSink()
-//	defer client.StopEventSink(eventSink)
-//
-//	for event := range eventSink {
-//		switch e := event.(type) {
-//		case *MessageReplyEvent:
-//			// Handle message reply
-//		case *ConnectionStatusEvent:
-//			// Handle connection changes
-//		case *NewDocumentEvent:
-//			// Handle PKI updates
-//		}
-//	}
 //
 // # Configuration
 //
@@ -134,12 +67,6 @@
 //   - Pigeonhole geometry parameters
 //
 // See the testdata/thinclient.toml file for an example configuration.
-//
-// # Thread Safety
-//
-// The ThinClient is safe for concurrent use. Multiple goroutines can call methods
-// simultaneously. However, individual channels and their state should be managed
-// carefully in concurrent environments.
 package thin
 
 import (

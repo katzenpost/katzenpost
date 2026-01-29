@@ -118,7 +118,7 @@ func sendAndWait(t *testing.T, client *thin.ThinClient, message []byte, nodeID *
 				panic("socket connection lost")
 			}
 		case *thin.NewDocumentEvent:
-			t.Log("NewPKIDocumentEvent")
+			t.Log("NewDocumentEvent")
 		case *thin.MessageSentEvent:
 			t.Log("MessageSentEvent")
 		case *thin.MessageReplyEvent:
