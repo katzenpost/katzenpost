@@ -132,12 +132,20 @@ func (e *Courier) HandleReply(reply *commands.ReplicaMessageReply) {
 }
 
 func (e *Courier) CacheReply(reply *commands.ReplicaMessageReply) {
-	e.log.Debugf("CacheReply called with envelope hash: %x", reply.EnvelopeHash)
+	e.log.Debugf("CacheReply called with envelope hash: %x from replica ID: %d", reply.EnvelopeHash, reply.ReplicaID)
 
 	if !e.validateReply(reply) {
 		e.log.Errorf("courier/!e.validateReply(reply:%v)", reply)
 		return
 	}
+
+	// DEBUG: Log which replica sent this reply
+	e.dedupCacheLock.Lock()
+	entry, ok := e.dedupCache[*reply.EnvelopeHash]
+	if ok {
+		e.log.Debugf("CacheReply: Reply from replica %d, intermediaries are: %v", reply.ReplicaID, entry.IntermediateReplicas)
+	}
+	e.dedupCacheLock.Unlock()
 
 	// Check for pending read request and immediately proxy reply if found
 	if reply.IsRead {
@@ -150,9 +158,9 @@ func (e *Courier) CacheReply(reply *commands.ReplicaMessageReply) {
 	e.dedupCacheLock.Lock()
 	defer e.dedupCacheLock.Unlock()
 
-	entry, ok := e.dedupCache[*reply.EnvelopeHash]
-	if ok {
-		e.handleExistingEntry(entry, reply)
+	entry2, ok2 := e.dedupCache[*reply.EnvelopeHash]
+	if ok2 {
+		e.handleExistingEntry(entry2, reply)
 		e.logFinalCacheState(reply)
 	} else {
 		e.log.Errorf("Courier received reply with unknown envelope hash; %x", *reply.EnvelopeHash)
@@ -504,9 +512,19 @@ func (e *Courier) handleOldMessage(cacheEntry *CourierBookKeeping, envHash *[has
 			payload = cacheEntry.EnvelopeReplies[courierMessage.ReplyIndex].EnvelopeReply
 			e.log.Debugf("But there is a reply for %d, so returning that (envHash:%v)", courierMessage.ReplyIndex, envHash)
 		} else {
-			// No cached replies available yet - return nil to let ARQ retry
-			e.log.Debugf("No cached replies available for envelope hash %x, returning nil (ARQ will retry)", envHash)
-			return nil
+			// No cached replies available yet - return ACK to keep ARQ happy
+			e.log.Debugf("No cached replies available for envelope hash %x, returning ACK", envHash)
+			return &pigeonhole.CourierQueryReply{
+				ReplyType: 0, // 0 = envelope_reply
+				EnvelopeReply: &pigeonhole.CourierEnvelopeReply{
+					EnvelopeHash: *envHash,
+					ReplyIndex:   courierMessage.ReplyIndex,
+					ReplyType:    pigeonhole.ReplyTypeACK,
+					PayloadLen:   0,
+					Payload:      nil,
+					ErrorCode:    pigeonhole.EnvelopeErrorSuccess,
+				},
+			}
 		}
 	}
 
@@ -558,14 +576,17 @@ func (e *Courier) OnCommand(cmd cborplugin.Command) error {
 	if courierQuery.Envelope != nil {
 		reply := e.cacheHandleCourierEnvelope(courierQuery.QueryType, courierQuery.Envelope, request.ID, request.SURB)
 
-		go func() {
-			// send reply
-			e.write(&cborplugin.Response{
-				ID:      request.ID,
-				SURB:    request.SURB,
-				Payload: reply.Bytes(),
-			})
-		}()
+		// Only send reply if it's not nil (nil means ARQ should retry)
+		if reply != nil {
+			go func() {
+				// send reply
+				e.write(&cborplugin.Response{
+					ID:      request.ID,
+					SURB:    request.SURB,
+					Payload: reply.Bytes(),
+				})
+			}()
+		}
 	}
 
 	return nil
