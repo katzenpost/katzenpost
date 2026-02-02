@@ -46,7 +46,7 @@ const (
 	nrNodes                = 6
 	nrGateways             = 1
 	nrServiceNodes         = 1
-	nrStorageNodes         = 5
+	nrStorageNodes         = 3
 	nrAuthorities          = 3
 	serverLogFile          = "katzenpost.log"
 	tcpAddrFormat          = "tcp://127.0.0.1:%d"
