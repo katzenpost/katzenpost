@@ -146,6 +146,12 @@ func (a NodeById) Len() int           { return len(a) }
 func (a NodeById) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
 func (a NodeById) Less(i, j int) bool { return a[i].Identifier < a[j].Identifier }
 
+type StorageReplicaNodeById []*vConfig.StorageReplicaNode
+
+func (a StorageReplicaNodeById) Len() int           { return len(a) }
+func (a StorageReplicaNodeById) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
+func (a StorageReplicaNodeById) Less(i, j int) bool { return a[i].Identifier < a[j].Identifier }
+
 func addressesFromURLs(addrs []string) map[string][]string {
 	addresses := make(map[string][]string)
 	for _, addr := range addrs {
@@ -299,6 +305,7 @@ func (s *katzenpost) genReplicaNodeConfig() error {
 	cfg := new(rConfig.Config)
 
 	cfg.Identifier = fmt.Sprintf("replica%d", s.replicaNodeIdx+1)
+	cfg.ReplicaID = uint8(s.replicaNodeIdx)
 	cfg.SphinxGeometry = s.sphinxGeometry
 	cfg.WireKEMScheme = s.wireKEMScheme
 	cfg.ReplicaNIKEScheme = s.replicaNIKEScheme.Name()
@@ -546,12 +553,13 @@ func (s *katzenpost) genVotingAuthoritiesCfg(numAuthorities int, parameters *vCo
 	return nil
 }
 
-func (s *katzenpost) genAuthorizedNodes() ([]*vConfig.Node, []*vConfig.Node, []*vConfig.Node, []*vConfig.Node, error) {
-	replicas := []*vConfig.Node{}
+func (s *katzenpost) genAuthorizedNodes() ([]*vConfig.StorageReplicaNode, []*vConfig.Node, []*vConfig.Node, []*vConfig.Node, error) {
+	replicas := []*vConfig.StorageReplicaNode{}
 	for _, replicaCfg := range s.replicaNodeConfigs {
-		node := &vConfig.Node{
+		node := &vConfig.StorageReplicaNode{
 			Identifier:           replicaCfg.Identifier,
 			IdentityPublicKeyPem: filepath.Join("../", replicaCfg.Identifier, identityPublicKeyFile),
+			ReplicaID:            replicaCfg.ReplicaID,
 		}
 		replicas = append(replicas, node)
 	}
@@ -573,7 +581,7 @@ func (s *katzenpost) genAuthorizedNodes() ([]*vConfig.Node, []*vConfig.Node, []*
 		}
 	}
 
-	sort.Sort(NodeById(replicas))
+	sort.Sort(StorageReplicaNodeById(replicas))
 	sort.Sort(NodeById(mixes))
 	sort.Sort(NodeById(gateways))
 	sort.Sort(NodeById(serviceNodes))
