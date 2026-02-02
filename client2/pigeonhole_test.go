@@ -236,6 +236,8 @@ func createMockPKIDocument(t *testing.T) *cpki.Document {
 
 	// Create 2 replica descriptors with envelope keys
 	replicaDescriptors := make([]*cpki.ReplicaDescriptor, 2)
+	configuredReplicaKeys := make([][]byte, 2)
+
 	for i := 0; i < 2; i++ {
 		// Generate a NIKE key pair for each replica
 		pubKey, _, err := replicaCommon.NikeScheme.GenerateKeyPair()
@@ -255,11 +257,16 @@ func createMockPKIDocument(t *testing.T) *cpki.Document {
 				replicaEpoch: pubKeyBytes,
 			},
 		}
+
+		// Store identity key for ConfiguredReplicaIdentityKeys
+		configuredReplicaKeys[i] = make([]byte, len(identityKey))
+		copy(configuredReplicaKeys[i], identityKey)
 	}
 
 	return &cpki.Document{
-		Epoch:           currentEpoch,
-		StorageReplicas: replicaDescriptors,
+		Epoch:                         currentEpoch,
+		StorageReplicas:               replicaDescriptors,
+		ConfiguredReplicaIdentityKeys: configuredReplicaKeys,
 	}
 }
 
