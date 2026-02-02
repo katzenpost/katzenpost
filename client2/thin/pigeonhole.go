@@ -297,6 +297,10 @@ func (t *ThinClient) EncryptWrite(ctx context.Context, plaintext []byte, writeCa
 //
 // This is used for both read and write operations in the new Pigeonhole API.
 //
+// For all operations, this method first waits for an ACK reply from the courier.
+// For read operations (readCap != nil), after receiving the ACK, it automatically
+// requests the payload data by incrementing the replyIndex.
+//
 // Parameters:
 //   - ctx: Context for cancellation and timeout control
 //   - readCap: Read capability (can be nil for write operations)
@@ -329,6 +333,11 @@ func (t *ThinClient) StartResendingEncryptedMessage(ctx context.Context, readCap
 		return nil, errors.New("envelopeHash cannot be nil")
 	}
 
+	isRead := readCap != nil
+
+	// Step 1: Send request and wait for ACK
+	t.log.Debugf("StartResendingEncryptedMessage: Sending request (isRead=%v, replyIndex=%d)", isRead, *replyIndex)
+
 	queryID := t.NewQueryID()
 	req := &Request{
 		StartResendingEncryptedMessage: &StartResendingEncryptedMessage{
@@ -352,6 +361,7 @@ func (t *ThinClient) StartResendingEncryptedMessage(ctx context.Context, readCap
 		return nil, err
 	}
 
+	// Wait for ACK reply
 	for {
 		var event Event
 		select {
@@ -375,7 +385,76 @@ func (t *ThinClient) StartResendingEncryptedMessage(ctx context.Context, readCap
 			if v.ErrorCode != ThinClientSuccess {
 				return nil, errors.New(ThinClientErrorToString(v.ErrorCode))
 			}
-			return v.Plaintext, nil
+
+			// For write operations, ACK is the final reply
+			if !isRead {
+				t.log.Debugf("StartResendingEncryptedMessage: Write operation - received ACK, returning empty plaintext")
+				return v.Plaintext, nil
+			}
+
+			// For read operations, ACK should be empty - now request the payload
+			t.log.Debugf("StartResendingEncryptedMessage: Read operation - received ACK (len=%d), now requesting payload", len(v.Plaintext))
+
+			// Step 2: For reads, increment replyIndex and request the payload
+			nextReplyIndex := *replyIndex + 1
+			t.log.Debugf("StartResendingEncryptedMessage: Requesting payload with replyIndex=%d", nextReplyIndex)
+
+			queryID2 := t.NewQueryID()
+			req2 := &Request{
+				StartResendingEncryptedMessage: &StartResendingEncryptedMessage{
+					QueryID:            queryID2,
+					ReadCap:            readCap,
+					WriteCap:           writeCap,
+					NextMessageIndex:   nextMessageIndex,
+					ReplyIndex:         &nextReplyIndex,
+					EnvelopeDescriptor: envelopeDescriptor,
+					MessageCiphertext:  messageCiphertext,
+					EnvelopeHash:       envelopeHash,
+					ReplicaEpoch:       replicaEpoch,
+				},
+			}
+
+			err := t.writeMessage(req2)
+			if err != nil {
+				return nil, err
+			}
+
+			// Wait for payload reply
+			for {
+				var event2 Event
+				select {
+				case <-ctx.Done():
+					return nil, ctx.Err()
+				case event2 = <-eventSink:
+				case <-t.HaltCh():
+					return nil, errHalting
+				}
+
+				switch v2 := event2.(type) {
+				case *StartResendingEncryptedMessageReply:
+					if v2.QueryID == nil {
+						t.log.Debugf("StartResendingEncryptedMessage: Received payload reply with nil QueryID, ignoring")
+						continue
+					}
+					if !bytes.Equal(v2.QueryID[:], queryID2[:]) {
+						t.log.Debugf("StartResendingEncryptedMessage: Received payload reply with mismatched QueryID, ignoring")
+						continue
+					}
+					if v2.ErrorCode != ThinClientSuccess {
+						return nil, errors.New(ThinClientErrorToString(v2.ErrorCode))
+					}
+
+					t.log.Debugf("StartResendingEncryptedMessage: Read operation - received payload (len=%d)", len(v2.Plaintext))
+					return v2.Plaintext, nil
+				case *ConnectionStatusEvent:
+					t.isConnected = v2.IsConnected
+				case *NewDocumentEvent:
+					// Ignore PKI document updates
+				default:
+					// Ignore other events
+				}
+			}
+
 		case *ConnectionStatusEvent:
 			t.isConnected = v.IsConnected
 		case *NewDocumentEvent:
