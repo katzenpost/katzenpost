@@ -655,10 +655,14 @@ func (s *state) getDocument(descriptors []*pki.MixDescriptor, replicaDescriptors
 	lambdaG := computeLambdaG(s.s.cfg)
 	s.log.Debugf("computed lambdaG is %f", lambdaG)
 
-	// Build ConfiguredReplicaIdentityKeys from all authorized replicas.
-	// This list remains stable even when replicas are offline, enabling consistent hashing.
-	configuredReplicaKeys := make([][]byte, 0, len(s.authorizedReplicaNodes))
-	for keyHash := range s.authorizedReplicaNodes {
+	// Build ConfiguredReplicaIDs and ConfiguredReplicaIdentityKeys from all authorized replicas.
+	// These lists remain stable even when replicas are offline, enabling consistent hashing.
+	type replicaInfo struct {
+		id  uint8
+		key []byte
+	}
+	replicaInfos := make([]replicaInfo, 0, len(s.authorizedReplicaNodes))
+	for keyHash, info := range s.authorizedReplicaNodes {
 		pubKey, ok := s.reverseHash[keyHash]
 		if !ok {
 			s.log.Errorf("getDocument: missing reverse hash for authorized replica %x", keyHash)
@@ -669,12 +673,23 @@ func (s *state) getDocument(descriptors []*pki.MixDescriptor, replicaDescriptors
 			s.log.Errorf("getDocument: failed to marshal identity key: %v", err)
 			continue
 		}
-		configuredReplicaKeys = append(configuredReplicaKeys, keyBytes)
+		replicaInfos = append(replicaInfos, replicaInfo{
+			id:  info.ReplicaID,
+			key: keyBytes,
+		})
 	}
-	// Sort for deterministic ordering across all authorities
-	slices.SortFunc(configuredReplicaKeys, func(a, b []byte) int {
-		return slices.Compare(a, b)
+	// Sort by identity key for deterministic ordering across all authorities
+	slices.SortFunc(replicaInfos, func(a, b replicaInfo) int {
+		return slices.Compare(a.key, b.key)
 	})
+
+	// Extract sorted IDs and keys
+	configuredReplicaIDs := make([]uint8, len(replicaInfos))
+	configuredReplicaKeys := make([][]byte, len(replicaInfos))
+	for i, info := range replicaInfos {
+		configuredReplicaIDs[i] = info.id
+		configuredReplicaKeys[i] = info.key
+	}
 
 	// Build ReplicaEnvelopeKeys from the tallied replica descriptors and cached keys.
 	// We use the tallied descriptors (which all authorities agree on) as the authoritative source,
@@ -704,6 +719,7 @@ func (s *state) getDocument(descriptors []*pki.MixDescriptor, replicaDescriptors
 		GatewayNodes:                  gateways,
 		ServiceNodes:                  serviceNodes,
 		StorageReplicas:               replicaDescriptors,
+		ConfiguredReplicaIDs:          configuredReplicaIDs,
 		ConfiguredReplicaIdentityKeys: configuredReplicaKeys,
 		ReplicaEnvelopeKeys:           replicaEnvelopeKeys,
 		SharedRandomValue:             srv,
