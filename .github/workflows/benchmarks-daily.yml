@@ -1,0 +1,119 @@
+name: Daily Benchmarks
+
+on:
+  schedule:
+    # Run daily at 3 AM UTC
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+    inputs:
+      alert_threshold:
+        description: "Alert threshold percentage (e.g., 130 = 30% regression)"
+        required: false
+        default: "130"
+
+permissions:
+  contents: write
+
+jobs:
+  daily-benchmarks:
+    runs-on: ubuntu-latest
+    name: Daily Performance Benchmarks
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24.x"
+          cache: false
+
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-bench-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-bench-
+            ${{ runner.os }}-go-
+
+      - name: Install RocksDB dependencies
+        run: make install-replica-deps
+
+      - name: Generate mixnet configuration
+        run: |
+          cd cmd/genconfig
+          go build
+          ./genconfig --wirekem xwing --voting --baseDir /conf --outDir ../../docker/voting_mixnet/
+
+      - name: Run daily benchmarks
+        run: |
+          set -e
+
+          echo "=== Wire Protocol Benchmarks ===" | tee benchmark-results.txt
+          go test -bench=. -benchmem -run='^$' ./core/wire/... 2>&1 | tee -a benchmark-results.txt
+
+          echo "" | tee -a benchmark-results.txt
+          echo "=== Authority Benchmarks ===" | tee -a benchmark-results.txt
+          go test -bench=. -benchmem -run='^$' ./authority/... 2>&1 | tee -a benchmark-results.txt
+
+          echo "" | tee -a benchmark-results.txt
+          echo "=== Client Benchmarks ===" | tee -a benchmark-results.txt
+          go test -bench=. -benchmem -run='^$' ./client2/... 2>&1 | tee -a benchmark-results.txt
+
+          echo "" | tee -a benchmark-results.txt
+          echo "=== Server Benchmarks ===" | tee -a benchmark-results.txt
+          go test -bench=. -benchmem -run='^$' ./server/... 2>&1 | tee -a benchmark-results.txt
+
+          echo "" | tee -a benchmark-results.txt
+          echo "=== Courier Benchmarks ===" | tee -a benchmark-results.txt
+          go test -bench=. -benchmem -run='^$' ./courier/... 2>&1 | tee -a benchmark-results.txt
+
+          echo "" | tee -a benchmark-results.txt
+          echo "=== Replica Benchmarks ===" | tee -a benchmark-results.txt
+          (cd replica && \
+            CC=gcc-14 CGO_ENABLED=1 CGO_LDFLAGS="-lrocksdb -lstdc++ -lbz2 -lm -lz -lsnappy -llz4 -lzstd -luring" \
+            go test -bench=. -benchmem -run='^$' ./... 2>&1) | tee -a benchmark-results.txt
+
+      - name: Ensure benchmark cache dir exists
+        run: mkdir -p cache
+
+      - name: Restore previous benchmark data
+        uses: actions/cache/restore@v4
+        with:
+          path: ./cache
+          key: daily-benchmark-cache-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: |
+            daily-benchmark-cache-${{ runner.os }}-
+
+      - name: Store benchmark result
+        uses: benchmark-action/github-action-benchmark@v1
+        with:
+          name: Katzenpost Daily Benchmarks
+          tool: go
+          output-file-path: benchmark-results.txt
+          external-data-json-path: ./cache/daily-benchmark-data.json
+          alert-threshold: ${{ github.event.inputs.alert_threshold || '130' }}%
+          fail-on-alert: false
+          comment-on-alert: true
+          alert-comment-cc-users: "@katzenpost/core-maintainers"
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Save updated benchmark data
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: ./cache
+          key: daily-benchmark-cache-${{ runner.os }}-${{ github.run_id }}
+
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: daily-benchmark-results
+          path: benchmark-results.txt
+          retention-days: 90
+
