@@ -48,6 +48,10 @@ type PKIWorker struct {
 }
 
 func newPKIWorker(server *Server, pkiClient pki.Client, log *logging.Logger) (*PKIWorker, error) {
+	// Reduce PKI worker log verbosity to WARNING level to reduce log noise
+	// This suppresses DEBUG and INFO messages from the PKI worker
+	server.logBackend.SetLevel(logging.WARNING, "courier-pkiworker")
+
 	p := &PKIWorker{
 		server:     server,
 		WorkerBase: pki.NewWorkerBase(pkiClient, log),
