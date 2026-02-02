@@ -395,9 +395,8 @@ func (t *ThinClient) StartResendingEncryptedMessage(ctx context.Context, readCap
 			// For read operations, ACK should be empty - now request the payload
 			t.log.Debugf("StartResendingEncryptedMessage: Read operation - received ACK (len=%d), now requesting payload", len(v.Plaintext))
 
-			// Step 2: For reads, increment replyIndex and request the payload
-			nextReplyIndex := *replyIndex + 1
-			t.log.Debugf("StartResendingEncryptedMessage: Requesting payload with replyIndex=%d", nextReplyIndex)
+			// Step 2: For reads, send the same request again with the SAME replyIndex to get the payload
+			t.log.Debugf("StartResendingEncryptedMessage: Requesting payload with same replyIndex=%d", *replyIndex)
 
 			queryID2 := t.NewQueryID()
 			req2 := &Request{
@@ -406,7 +405,7 @@ func (t *ThinClient) StartResendingEncryptedMessage(ctx context.Context, readCap
 					ReadCap:            readCap,
 					WriteCap:           writeCap,
 					NextMessageIndex:   nextMessageIndex,
-					ReplyIndex:         &nextReplyIndex,
+					ReplyIndex:         replyIndex,
 					EnvelopeDescriptor: envelopeDescriptor,
 					MessageCiphertext:  messageCiphertext,
 					EnvelopeHash:       envelopeHash,
