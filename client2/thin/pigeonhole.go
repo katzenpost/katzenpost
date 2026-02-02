@@ -11,6 +11,42 @@ import (
 	"github.com/katzenpost/hpqc/bacap"
 )
 
+// errorCodeToSentinel maps error codes to sentinel errors for StartResendingEncryptedMessage.
+// This allows callers to use errors.Is() for specific error handling.
+//
+// The daemon sends back pigeonhole replica error codes (1-9) for replica-level errors.
+// For other errors, a generic error is returned with the error code string.
+func errorCodeToSentinel(errorCode uint8) error {
+	switch errorCode {
+	case ThinClientSuccess:
+		return nil
+
+	// Pigeonhole replica error codes (from pigeonhole/errors.go)
+	case 1: // ReplicaErrorBoxIDNotFound
+		return ErrBoxIDNotFound
+	case 2: // ReplicaErrorInvalidBoxID
+		return ErrInvalidBoxID
+	case 3: // ReplicaErrorInvalidSignature
+		return ErrInvalidSignature
+	case 4: // ReplicaErrorDatabaseFailure
+		return ErrDatabaseFailure
+	case 5: // ReplicaErrorInvalidPayload
+		return ErrInvalidPayload
+	case 6: // ReplicaErrorStorageFull
+		return ErrStorageFull
+	case 7: // ReplicaErrorInternalError
+		return ErrReplicaInternalError
+	case 8: // ReplicaErrorInvalidEpoch
+		return ErrInvalidEpoch
+	case 9: // ReplicaErrorReplicationFailed
+		return ErrReplicationFailed
+
+	default:
+		// For other error codes (thin client errors, etc.), return a generic error
+		return errors.New(ThinClientErrorToString(errorCode))
+	}
+}
+
 // NewKeypair creates a new keypair for use with the Pigeonhole protocol.
 //
 // This method generates a WriteCap and ReadCap from the provided seed using
@@ -297,9 +333,12 @@ func (t *ThinClient) EncryptWrite(ctx context.Context, plaintext []byte, writeCa
 //
 // This is used for both read and write operations in the new Pigeonhole API.
 //
-// For all operations, this method first waits for an ACK reply from the courier.
-// For read operations (readCap != nil), after receiving the ACK, it automatically
-// requests the payload data by incrementing the replyIndex.
+// The daemon implements a finite state machine (FSM) for handling the stop-and-wait ARQ protocol:
+//   - For write operations (writeCap != nil, readCap == nil):
+//     The method waits for an ACK from the courier and returns immediately.
+//   - For read operations (readCap != nil, writeCap == nil):
+//     The method waits for an ACK from the courier, then the daemon automatically
+//     sends a new SURB to request the payload, and this method waits for the payload.
 //
 // Parameters:
 //   - ctx: Context for cancellation and timeout control
@@ -314,7 +353,17 @@ func (t *ThinClient) EncryptWrite(ctx context.Context, plaintext []byte, writeCa
 //
 // Returns:
 //   - []byte: Decrypted plaintext from the reply (for reads) or empty (for writes)
-//   - error: Any error encountered during the operation
+//   - error: Any error encountered during the operation. Specific errors can be checked
+//     using errors.Is():
+//   - ErrBoxIDNotFound: The requested box ID was not found on the replica
+//   - ErrInvalidBoxID: The box ID format is invalid
+//   - ErrInvalidSignature: Signature verification failed
+//   - ErrDatabaseFailure: Replica database error
+//   - ErrInvalidPayload: Invalid payload data
+//   - ErrStorageFull: Replica storage capacity exceeded
+//   - ErrReplicaInternalError: Internal replica error
+//   - ErrInvalidEpoch: Invalid or expired epoch
+//   - ErrReplicationFailed: Replication to other replicas failed
 //
 // Example:
 //
@@ -322,7 +371,11 @@ func (t *ThinClient) EncryptWrite(ctx context.Context, plaintext []byte, writeCa
 //	plaintext, err := client.StartResendingEncryptedMessage(
 //		ctx, readCap, nil, nextIndex, &replyIdx, envDesc, ciphertext, envHash, epoch)
 //	if err != nil {
-//		log.Fatal("Failed to start resending:", err)
+//		if errors.Is(err, thin.ErrBoxIDNotFound) {
+//			log.Println("Box not found - may be empty or expired")
+//		} else {
+//			log.Fatal("Failed to start resending:", err)
+//		}
 //	}
 //	fmt.Printf("Received: %s\n", plaintext)
 func (t *ThinClient) StartResendingEncryptedMessage(ctx context.Context, readCap *bacap.ReadCap, writeCap *bacap.WriteCap, nextMessageIndex []byte, replyIndex *uint8, envelopeDescriptor []byte, messageCiphertext []byte, envelopeHash *[32]byte, replicaEpoch uint64) ([]byte, error) {
@@ -335,7 +388,7 @@ func (t *ThinClient) StartResendingEncryptedMessage(ctx context.Context, readCap
 
 	isRead := readCap != nil
 
-	// Step 1: Send request and wait for ACK
+	// Send request - the daemon will handle the FSM for ACK and payload
 	t.log.Debugf("StartResendingEncryptedMessage: Sending request (isRead=%v, replyIndex=%d)", isRead, *replyIndex)
 
 	queryID := t.NewQueryID()
@@ -361,7 +414,10 @@ func (t *ThinClient) StartResendingEncryptedMessage(ctx context.Context, readCap
 		return nil, err
 	}
 
-	// Wait for ACK reply
+	// Wait for reply from daemon
+	// For writes: daemon sends reply after receiving ACK
+	// For reads: daemon sends reply after receiving payload (after ACK)
+	// The daemon may also send error responses (e.g., BoxIDNotFound) which will cause this to exit
 	for {
 		var event Event
 		select {
@@ -382,77 +438,24 @@ func (t *ThinClient) StartResendingEncryptedMessage(ctx context.Context, readCap
 				t.log.Debugf("StartResendingEncryptedMessage: Received reply with mismatched QueryID, ignoring")
 				continue
 			}
+
+			// Check for any error (including BoxIDNotFound, internal errors, etc.)
+			// Map error codes to sentinel errors for better error handling
 			if v.ErrorCode != ThinClientSuccess {
-				return nil, errors.New(ThinClientErrorToString(v.ErrorCode))
-			}
-
-			// For write operations, ACK is the final reply
-			if !isRead {
-				t.log.Debugf("StartResendingEncryptedMessage: Write operation - received ACK, returning empty plaintext")
-				return v.Plaintext, nil
-			}
-
-			// For read operations, ACK should be empty - now request the payload
-			t.log.Debugf("StartResendingEncryptedMessage: Read operation - received ACK (len=%d), now requesting payload", len(v.Plaintext))
-
-			// Step 2: For reads, send the same request again with the SAME replyIndex to get the payload
-			t.log.Debugf("StartResendingEncryptedMessage: Requesting payload with same replyIndex=%d", *replyIndex)
-
-			queryID2 := t.NewQueryID()
-			req2 := &Request{
-				StartResendingEncryptedMessage: &StartResendingEncryptedMessage{
-					QueryID:            queryID2,
-					ReadCap:            readCap,
-					WriteCap:           writeCap,
-					NextMessageIndex:   nextMessageIndex,
-					ReplyIndex:         replyIndex,
-					EnvelopeDescriptor: envelopeDescriptor,
-					MessageCiphertext:  messageCiphertext,
-					EnvelopeHash:       envelopeHash,
-					ReplicaEpoch:       replicaEpoch,
-				},
-			}
-
-			err := t.writeMessage(req2)
-			if err != nil {
+				err := errorCodeToSentinel(v.ErrorCode)
+				t.log.Debugf("StartResendingEncryptedMessage: Received error response: %v", err)
 				return nil, err
 			}
 
-			// Wait for payload reply
-			for {
-				var event2 Event
-				select {
-				case <-ctx.Done():
-					return nil, ctx.Err()
-				case event2 = <-eventSink:
-				case <-t.HaltCh():
-					return nil, errHalting
-				}
-
-				switch v2 := event2.(type) {
-				case *StartResendingEncryptedMessageReply:
-					if v2.QueryID == nil {
-						t.log.Debugf("StartResendingEncryptedMessage: Received payload reply with nil QueryID, ignoring")
-						continue
-					}
-					if !bytes.Equal(v2.QueryID[:], queryID2[:]) {
-						t.log.Debugf("StartResendingEncryptedMessage: Received payload reply with mismatched QueryID, ignoring")
-						continue
-					}
-					if v2.ErrorCode != ThinClientSuccess {
-						return nil, errors.New(ThinClientErrorToString(v2.ErrorCode))
-					}
-
-					t.log.Debugf("StartResendingEncryptedMessage: Read operation - received payload (len=%d)", len(v2.Plaintext))
-					return v2.Plaintext, nil
-				case *ConnectionStatusEvent:
-					t.isConnected = v2.IsConnected
-				case *NewDocumentEvent:
-					// Ignore PKI document updates
-				default:
-					// Ignore other events
-				}
+			// Success case
+			// For write operations, this is the ACK reply
+			// For read operations, this is the payload reply
+			if !isRead {
+				t.log.Debugf("StartResendingEncryptedMessage: Write operation complete")
+			} else {
+				t.log.Debugf("StartResendingEncryptedMessage: Read operation complete, payload length=%d", len(v.Plaintext))
 			}
+			return v.Plaintext, nil
 
 		case *ConnectionStatusEvent:
 			t.isConnected = v.IsConnected

@@ -111,6 +111,50 @@ var (
 	errContextCannotBeNil = errors.New("context cannot be nil")
 	errConnectionLost     = errors.New("connection lost")
 	errHalting            = errors.New("halting")
+
+	// Pigeonhole ARQ error sentinels
+	// These errors can be returned by StartResendingEncryptedMessage and can be
+	// checked using errors.Is() for specific error handling.
+
+	// ErrBoxIDNotFound indicates that the requested box ID was not found on the replica.
+	// This typically occurs when attempting to read from a non-existent mailbox.
+	ErrBoxIDNotFound = errors.New("box ID not found")
+
+	// ErrInvalidBoxID indicates that the box ID format is invalid.
+	ErrInvalidBoxID = errors.New("invalid box ID")
+
+	// ErrInvalidSignature indicates that the signature verification failed.
+	ErrInvalidSignature = errors.New("invalid signature")
+
+	// ErrDatabaseFailure indicates that the replica encountered a database error.
+	ErrDatabaseFailure = errors.New("database failure")
+
+	// ErrInvalidPayload indicates that the payload data is invalid.
+	ErrInvalidPayload = errors.New("invalid payload")
+
+	// ErrStorageFull indicates that the replica's storage capacity has been exceeded.
+	ErrStorageFull = errors.New("storage full")
+
+	// ErrReplicaInternalError indicates an internal error on the replica.
+	ErrReplicaInternalError = errors.New("replica internal error")
+
+	// ErrInvalidEpoch indicates that the epoch is invalid or expired.
+	ErrInvalidEpoch = errors.New("invalid epoch")
+
+	// ErrReplicationFailed indicates that replication to other replicas failed.
+	ErrReplicationFailed = errors.New("replication failed")
+
+	// ErrInvalidEnvelope indicates that the courier envelope format is invalid.
+	ErrInvalidEnvelope = errors.New("invalid envelope")
+
+	// ErrCacheCorruption indicates that cache data corruption was detected.
+	ErrCacheCorruption = errors.New("cache corruption")
+
+	// ErrPropagationError indicates an error propagating the request to replicas.
+	ErrPropagationError = errors.New("propagation error")
+
+	// ErrInternalError indicates an internal client error.
+	ErrInternalError = errors.New("internal error")
 )
 
 // ThinResponse encapsulates a message response from the mixnet that is passed

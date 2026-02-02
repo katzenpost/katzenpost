@@ -18,6 +18,24 @@ const (
 	RoundTripTimeSlop = (60 * time.Second)
 )
 
+// ARQState represents the state of an ARQ message in the stop-and-wait protocol.
+type ARQState uint8
+
+const (
+	// ARQStateWaitingForACK is the initial state when a query is sent.
+	// The client is waiting for an ACK from the courier.
+	ARQStateWaitingForACK ARQState = 0
+
+	// ARQStateACKReceived indicates that an ACK has been received from the courier.
+	// For read queries, the client now needs to send another SURB to receive the payload.
+	// For write queries, this is the terminal state.
+	ARQStateACKReceived ARQState = 1
+
+	// ARQStatePayloadReceived indicates that the payload has been received.
+	// This is the terminal state for read queries.
+	ARQStatePayloadReceived ARQState = 2
+)
+
 // ARQMessage is used by ARQ for automatic retransmission of Pigeonhole messages.
 // It retries forever until cancelled via CancelResendingEncryptedMessage or successful.
 type ARQMessage struct {
@@ -63,4 +81,7 @@ type ARQMessage struct {
 
 	// IsRead indicates whether this is a read operation (true) or write (false).
 	IsRead bool
+
+	// State tracks the current state in the stop-and-wait ARQ protocol.
+	State ARQState
 }

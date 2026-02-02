@@ -463,7 +463,7 @@ func (d *Daemon) startResendingEncryptedMessage(request *Request) {
 		return
 	}
 
-	// Create the ARQ message
+	// Create the ARQ message with initial state WaitingForACK
 	message := &ARQMessage{
 		AppID:              request.AppID,
 		QueryID:            req.QueryID,
@@ -479,6 +479,7 @@ func (d *Daemon) startResendingEncryptedMessage(request *Request) {
 		EnvelopeDescriptor: req.EnvelopeDescriptor,
 		ReplicaEpoch:       req.ReplicaEpoch,
 		IsRead:             isRead,
+		State:              ARQStateWaitingForACK,
 	}
 
 	// Store in ARQ maps
@@ -572,6 +573,10 @@ func (d *Daemon) sendCancelResendingEncryptedMessageError(request *Request, erro
 }
 
 // handlePigeonholeARQReply handles replies to Pigeonhole ARQ messages.
+// It implements a finite state machine for the stop-and-wait ARQ protocol:
+// - WaitingForACK: Initial state, waiting for ACK from courier
+// - ACKReceived: ACK received, for reads we need to send another SURB for payload
+// - PayloadReceived: Terminal state for reads after receiving payload
 func (d *Daemon) handlePigeonholeARQReply(arqMessage *ARQMessage, reply *sphinxReply) {
 	conn := d.listener.getConnection(arqMessage.AppID)
 	if conn == nil {
@@ -604,7 +609,12 @@ func (d *Daemon) handlePigeonholeARQReply(arqMessage *ARQMessage, reply *sphinxR
 	// Check for error in the reply
 	if courierEnvelopeReply.ErrorCode != 0 {
 		d.log.Errorf("handlePigeonholeARQReply: courier reply error code %d", courierEnvelopeReply.ErrorCode)
-		// Send error to thin client
+		// Remove from ARQ tracking and send error to thin client
+		d.replyLock.Lock()
+		delete(d.arqSurbIDMap, *arqMessage.SURBID)
+		delete(d.arqEnvelopeHashMap, *arqMessage.EnvelopeHash)
+		d.replyLock.Unlock()
+
 		conn.sendResponse(&Response{
 			AppID: arqMessage.AppID,
 			StartResendingEncryptedMessageReply: &thin.StartResendingEncryptedMessageReply{
@@ -615,46 +625,174 @@ func (d *Daemon) handlePigeonholeARQReply(arqMessage *ARQMessage, reply *sphinxR
 		return
 	}
 
-	// For writes (ACK type = 0), just acknowledge success
-	if courierEnvelopeReply.ReplyType == pigeonhole.ReplyTypeACK {
-		d.log.Debugf("handlePigeonholeARQReply: write ACK received for EnvelopeHash %x", arqMessage.EnvelopeHash[:])
-		conn.sendResponse(&Response{
-			AppID: arqMessage.AppID,
-			StartResendingEncryptedMessageReply: &thin.StartResendingEncryptedMessageReply{
-				QueryID:   arqMessage.QueryID,
-				ErrorCode: thin.ThinClientSuccess,
-			},
-		})
+	// FSM: Handle state transitions based on current state and reply type
+	switch arqMessage.State {
+	case ARQStateWaitingForACK:
+		// We're waiting for an ACK
+		if courierEnvelopeReply.ReplyType == pigeonhole.ReplyTypeACK {
+			d.log.Debugf("handlePigeonholeARQReply: ACK received for EnvelopeHash %x, IsRead=%v",
+				arqMessage.EnvelopeHash[:], arqMessage.IsRead)
+
+			// Transition to ACKReceived state
+			arqMessage.State = ARQStateACKReceived
+
+			// For write queries, ACK is the terminal state - we're done
+			if !arqMessage.IsRead {
+				d.log.Debugf("handlePigeonholeARQReply: Write query complete")
+				// Remove from ARQ tracking
+				d.replyLock.Lock()
+				delete(d.arqSurbIDMap, *arqMessage.SURBID)
+				delete(d.arqEnvelopeHashMap, *arqMessage.EnvelopeHash)
+				d.replyLock.Unlock()
+
+				// Send success to thin client
+				conn.sendResponse(&Response{
+					AppID: arqMessage.AppID,
+					StartResendingEncryptedMessageReply: &thin.StartResendingEncryptedMessageReply{
+						QueryID:   arqMessage.QueryID,
+						ErrorCode: thin.ThinClientSuccess,
+					},
+				})
+				return
+			}
+
+			// For read queries, we need to send another SURB to get the payload
+			// Generate a new SURB and send it to the courier
+			d.log.Debugf("handlePigeonholeARQReply: Read query ACK received, sending new SURB for payload")
+
+			// Create a new SURB ID for the payload request
+			newSurbID := &[sphinxConstants.SURBIDLength]byte{}
+			_, err := rand.Reader.Read(newSurbID[:])
+			if err != nil {
+				d.log.Errorf("handlePigeonholeARQReply: failed to generate SURB ID for payload: %s", err)
+				return
+			}
+
+			// Compose a new packet with a new SURB for the payload request
+			pkt, surbKey, rtt, err := d.client.ComposeSphinxPacketForQuery(&thin.SendChannelQuery{
+				DestinationIdHash: arqMessage.DestinationIdHash,
+				RecipientQueueID:  arqMessage.RecipientQueueID,
+				Payload:           arqMessage.Payload,
+			}, newSurbID)
+			if err != nil {
+				d.log.Errorf("handlePigeonholeARQReply: failed to compose packet for payload: %s", err)
+				return
+			}
+
+			// Update ARQ message with new SURB
+			d.replyLock.Lock()
+			// Remove old SURB ID mapping
+			delete(d.arqSurbIDMap, *arqMessage.SURBID)
+			// Update message with new SURB
+			arqMessage.SURBID = newSurbID
+			arqMessage.SURBDecryptionKeys = surbKey
+			arqMessage.Retransmissions++
+			arqMessage.SentAt = time.Now()
+			arqMessage.ReplyETA = rtt
+			// Add new SURB ID mapping
+			d.arqSurbIDMap[*newSurbID] = arqMessage
+			d.replyLock.Unlock()
+
+			// Schedule retry for payload
+			myRtt := arqMessage.SentAt.Add(arqMessage.ReplyETA)
+			myRtt = myRtt.Add(RoundTripTimeSlop)
+			priority := uint64(myRtt.UnixNano())
+			d.arqTimerQueue.Push(priority, newSurbID)
+
+			// Send the packet
+			err = d.client.SendPacket(pkt)
+			if err != nil {
+				d.log.Errorf("handlePigeonholeARQReply: failed to send payload request packet: %s", err)
+				// Don't return error - the ARQ will retry
+			}
+
+			d.log.Debugf("handlePigeonholeARQReply: Sent new SURB for payload, waiting for payload reply")
+			return
+		} else if courierEnvelopeReply.ReplyType == pigeonhole.ReplyTypePayload {
+			// Unexpected: we got payload before ACK
+			d.log.Warningf("handlePigeonholeARQReply: Received payload while waiting for ACK")
+			// Treat this as if we got both ACK and payload
+			arqMessage.State = ARQStatePayloadReceived
+			d.handlePayloadReply(arqMessage, courierEnvelopeReply, conn)
+			return
+		}
+
+	case ARQStateACKReceived:
+		// We've received ACK, now waiting for payload (only for reads)
+		if courierEnvelopeReply.ReplyType == pigeonhole.ReplyTypePayload {
+			d.log.Debugf("handlePigeonholeARQReply: Payload received for EnvelopeHash %x", arqMessage.EnvelopeHash[:])
+			arqMessage.State = ARQStatePayloadReceived
+			d.handlePayloadReply(arqMessage, courierEnvelopeReply, conn)
+			return
+		} else if courierEnvelopeReply.ReplyType == pigeonhole.ReplyTypeACK {
+			// Duplicate ACK, ignore
+			d.log.Debugf("handlePigeonholeARQReply: Duplicate ACK received, ignoring")
+			return
+		}
+
+	case ARQStatePayloadReceived:
+		// Terminal state, shouldn't receive more replies
+		d.log.Warningf("handlePigeonholeARQReply: Received reply in terminal state, ignoring")
 		return
 	}
 
-	// For reads (payload type = 1), decrypt and return plaintext
-	if courierEnvelopeReply.ReplyType == pigeonhole.ReplyTypePayload {
-		plaintext, err := d.decryptPigeonholeReply(arqMessage, courierEnvelopeReply)
-		if err != nil {
-			d.log.Errorf("handlePigeonholeARQReply: failed to decrypt reply: %s", err)
+	d.log.Errorf("handlePigeonholeARQReply: Unexpected state/reply combination: state=%d, replyType=%d",
+		arqMessage.State, courierEnvelopeReply.ReplyType)
+}
+
+// handlePayloadReply processes a payload reply and sends it to the thin client.
+func (d *Daemon) handlePayloadReply(arqMessage *ARQMessage, courierEnvelopeReply *pigeonhole.CourierEnvelopeReply, conn *incomingConn) {
+	plaintext, err := d.decryptPigeonholeReply(arqMessage, courierEnvelopeReply)
+	if err != nil {
+		d.log.Errorf("handlePayloadReply: failed to decrypt reply: %s", err)
+
+		// Check if this is a BoxIDNotFound error
+		// The error is embedded in the ReplicaReadReply
+		if err.Error() == "read reply error code: 1" {
+			// BoxIDNotFound error
+			d.log.Debugf("handlePayloadReply: BoxID not found")
+			// Remove from ARQ tracking
+			d.replyLock.Lock()
+			delete(d.arqSurbIDMap, *arqMessage.SURBID)
+			delete(d.arqEnvelopeHashMap, *arqMessage.EnvelopeHash)
+			d.replyLock.Unlock()
+
 			conn.sendResponse(&Response{
 				AppID: arqMessage.AppID,
 				StartResendingEncryptedMessageReply: &thin.StartResendingEncryptedMessageReply{
 					QueryID:   arqMessage.QueryID,
-					ErrorCode: thin.ThinClientErrorInternalError,
+					ErrorCode: pigeonhole.ReplicaErrorBoxIDNotFound,
 				},
 			})
 			return
 		}
 
+		// Other decryption error
 		conn.sendResponse(&Response{
 			AppID: arqMessage.AppID,
 			StartResendingEncryptedMessageReply: &thin.StartResendingEncryptedMessageReply{
 				QueryID:   arqMessage.QueryID,
-				Plaintext: plaintext,
-				ErrorCode: thin.ThinClientSuccess,
+				ErrorCode: thin.ThinClientErrorInternalError,
 			},
 		})
 		return
 	}
 
-	d.log.Errorf("handlePigeonholeARQReply: unknown reply type %d", courierEnvelopeReply.ReplyType)
+	// Remove from ARQ tracking
+	d.replyLock.Lock()
+	delete(d.arqSurbIDMap, *arqMessage.SURBID)
+	delete(d.arqEnvelopeHashMap, *arqMessage.EnvelopeHash)
+	d.replyLock.Unlock()
+
+	// Send success with plaintext to thin client
+	conn.sendResponse(&Response{
+		AppID: arqMessage.AppID,
+		StartResendingEncryptedMessageReply: &thin.StartResendingEncryptedMessageReply{
+			QueryID:   arqMessage.QueryID,
+			Plaintext: plaintext,
+			ErrorCode: thin.ThinClientSuccess,
+		},
+	})
 }
 
 // decryptPigeonholeReply decrypts the Pigeonhole envelope reply using the stored EnvelopeDescriptor.
