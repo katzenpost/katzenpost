@@ -142,10 +142,10 @@ func (e *Courier) CacheReply(reply *commands.ReplicaMessageReply) {
 	// DEBUG: Log which replica sent this reply
 	e.dedupCacheLock.Lock()
 	entry, ok := e.dedupCache[*reply.EnvelopeHash]
+	e.dedupCacheLock.Unlock()
 	if ok {
 		e.log.Debugf("CacheReply: Reply from replica %d, intermediaries are: %v", reply.ReplicaID, entry.IntermediateReplicas)
 	}
-	e.dedupCacheLock.Unlock()
 
 	// Check for pending read request and immediately proxy reply if found
 	if reply.IsRead {
@@ -223,41 +223,6 @@ func (e *Courier) storeReplyIfEmpty(entry *CourierBookKeeping, reply *commands.R
 	} else {
 		e.log.Infof("CacheReply: reply from replica %d already cached, ignoring duplicate", reply.ReplicaID)
 	}
-}
-
-// createNewEntry creates a new cache entry for unknown envelope hashes
-func (e *Courier) createNewEntry(reply *commands.ReplicaMessageReply) {
-	e.log.Infof("CacheReply: received reply for unknown EnvelopeHash %x, creating new cache entry", reply.EnvelopeHash)
-
-	// For read replies to unknown envelope hashes, we don't know which replicas were
-	// originally selected by the sharding algorithm, so we can't create a proper cache entry.
-	// However, we can try to accommodate the reply by creating a flexible entry.
-	currentEpoch := e.getCurrentEpoch()
-
-	// Create a cache entry that accommodates this replica ID in the correct slot
-	// Use replica ID to determine which slot to use: replica 0 → slot 0, replica 1 → slot 1
-	var intermediateReplicas [2]uint8
-	var replyIndex int
-
-	if reply.ReplicaID == 0 {
-		intermediateReplicas = [2]uint8{0, 255} // replica 0 in slot 0, slot 1 unknown
-		replyIndex = 0
-	} else {
-		intermediateReplicas = [2]uint8{255, reply.ReplicaID} // slot 0 unknown, replica in slot 1
-		replyIndex = 1
-	}
-
-	newEntry := &CourierBookKeeping{
-		Epoch:                currentEpoch,
-		IntermediateReplicas: intermediateReplicas,
-		EnvelopeReplies:      [2]*commands.ReplicaMessageReply{nil, nil},
-	}
-
-	// Store the reply in the correct slot based on replica ID
-	e.log.Debugf("CacheReply: creating new cache entry and storing reply from replica %d at index %d", reply.ReplicaID, replyIndex)
-	newEntry.EnvelopeReplies[replyIndex] = reply
-
-	e.dedupCache[*reply.EnvelopeHash] = newEntry
 }
 
 // getCurrentEpoch gets the current epoch from PKI document
@@ -512,19 +477,7 @@ func (e *Courier) handleOldMessage(cacheEntry *CourierBookKeeping, envHash *[has
 			payload = cacheEntry.EnvelopeReplies[courierMessage.ReplyIndex].EnvelopeReply
 			e.log.Debugf("But there is a reply for %d, so returning that (envHash:%v)", courierMessage.ReplyIndex, envHash)
 		} else {
-			// No cached replies available yet - return ACK to keep ARQ happy
-			e.log.Debugf("No cached replies available for envelope hash %x, returning ACK", envHash)
-			return &pigeonhole.CourierQueryReply{
-				ReplyType: 0, // 0 = envelope_reply
-				EnvelopeReply: &pigeonhole.CourierEnvelopeReply{
-					EnvelopeHash: *envHash,
-					ReplyIndex:   courierMessage.ReplyIndex,
-					ReplyType:    pigeonhole.ReplyTypeACK,
-					PayloadLen:   0,
-					Payload:      nil,
-					ErrorCode:    pigeonhole.EnvelopeErrorSuccess,
-				},
-			}
+			payload = nil
 		}
 	}
 
