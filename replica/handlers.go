@@ -82,13 +82,6 @@ func (c *incomingConn) onReplicaCommand(rawCmd commands.Command) (*senderRequest
 	// not reached
 }
 
-func (c *incomingConn) countReplicas(doc *pki.Document) (int, error) {
-	if doc.ConfiguredReplicaIDs == nil {
-		return 0, errors.New("countReplicas: doc.ConfiguredReplicaIDs is nil")
-	}
-	return len(doc.ConfiguredReplicaIDs), nil
-}
-
 // replicaMessage's are sent from the courier to the replica storage servers
 func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMessage) *commands.ReplicaMessageReply {
 	c.log.Debug("REPLICA_HANDLER: Starting handleReplicaMessage processing")
@@ -140,11 +133,6 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 		c.log.Error("handleReplicaMessage failed: no PKI document available")
 		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInvalidEpoch, envelopeHash, []byte{}, 0, false)
 	}
-	numReplicas, err := c.countReplicas(doc)
-	if err != nil {
-		c.log.Errorf("handleReplicaMessage failed to count replicas: %s", err)
-		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, envelopeHash, []byte{}, 0, false)
-	}
 	replicaID, err := doc.GetReplicaIDByIdentityKey(c.l.server.identityPublicKey)
 	if err != nil {
 		c.log.Errorf("handleReplicaMessage failed to get our own replica ID: %s", err)
@@ -179,13 +167,11 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 		}
 
 		if !isShard {
-			if numReplicas >= 3 {
-				// This replica is NOT responsible for the BoxID - proxy to the correct replica
-				c.log.Debugf("REPLICA_HANDLER: This replica is NOT a shard for BoxID %x - PROXYING read request to appropriate shard", myCmd.BoxID)
-				reply := c.proxyReadRequest(myCmd, senderpubkey, envelopeHash)
-				c.log.Debugf("REPLICA_HANDLER: Successfully completed proxy read request for BoxID %x", myCmd.BoxID)
-				return reply
-			}
+			// This replica is NOT responsible for the BoxID - proxy to the correct replica
+			c.log.Debugf("REPLICA_HANDLER: This replica is NOT a shard for BoxID %x - PROXYING read request to appropriate shard", myCmd.BoxID)
+			reply := c.proxyReadRequest(myCmd, senderpubkey, envelopeHash)
+			c.log.Debugf("REPLICA_HANDLER: Successfully completed proxy read request for BoxID %x", myCmd.BoxID)
+			return reply
 		}
 
 		readReply := c.handleReplicaRead(myCmd)
@@ -203,11 +189,9 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 		c.log.Debugf("Processing decrypted ReplicaWrite command for BoxID: %x", myCmd.BoxID)
 		writeReply := c.handleReplicaWrite(myCmd)
 
-		if numReplicas >= 3 {
-			cmds := commands.NewStorageReplicaCommands(c.geo, nikeScheme)
-			wireCmd := pigeonhole.TrunnelReplicaWriteToWireCommand(myCmd, cmds)
-			c.l.server.connector.DispatchReplication(wireCmd)
-		}
+		cmds := commands.NewStorageReplicaCommands(c.geo, nikeScheme)
+		wireCmd := pigeonhole.TrunnelReplicaWriteToWireCommand(myCmd, cmds)
+		c.l.server.connector.DispatchReplication(wireCmd)
 
 		replyInnerMessage := pigeonhole.ReplicaMessageReplyInnerMessage{
 			WriteReply: writeReply,
