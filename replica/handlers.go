@@ -325,9 +325,9 @@ func (c *incomingConn) proxyReadRequest(replicaRead *pigeonhole.ReplicaRead, ori
 		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, originalEnvelopeHash, []byte{}, 0, false)
 	}
 
-	// Validate: GetShards should ALWAYS return exactly 2 replicas (K=2)
-	if len(shards) != 2 {
-		c.log.Errorf("PROXY_REQUEST: BUG - GetShards returned %d replicas instead of 2 for BoxID %x", len(shards), replicaRead.BoxID[:8])
+	// GetShards should ALWAYS return at least 1 replica but not more than K, our max shard size.
+	if len(shards) == 0 || len(shards) > replicaCommon.K {
+		c.log.Errorf("PROXY_REQUEST: BUG - GetShards returned %d replicas instead of %d for BoxID %x", len(shards), replicaCommon.K, replicaRead.BoxID[:8])
 		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, originalEnvelopeHash, []byte{}, 0, false)
 	}
 
