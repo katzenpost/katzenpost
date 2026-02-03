@@ -340,18 +340,17 @@ func (e *Courier) tryImmediateReplyProxy(reply *commands.ReplicaMessageReply) bo
 
 // storePendingRequest stores a pending request with a timeout
 func (e *Courier) storePendingRequest(envHash *[hash.HashSize]byte, requestID uint64, surb []byte) {
-	e.pendingRequestsLock.Lock()
-	defer e.pendingRequestsLock.Unlock()
-
 	// Set timeout to allow for replica response delays
 	seconds := 20
 	timeout := time.Now().Add(time.Duration(seconds) * time.Second)
 
+	e.pendingRequestsLock.Lock()
 	e.pendingRequests[*envHash] = &PendingReadRequest{
 		RequestID: requestID,
 		SURB:      surb,
 		Timeout:   timeout,
 	}
+	e.pendingRequestsLock.Unlock()
 
 	e.log.Debugf("Stored pending read request for envelope hash %x with %d-second timeout", envHash, seconds)
 
@@ -365,13 +364,15 @@ func (e *Courier) cleanupExpiredRequest(envHash *[hash.HashSize]byte, timeout ti
 	time.Sleep(time.Until(timeout))
 
 	e.pendingRequestsLock.Lock()
-	defer e.pendingRequestsLock.Unlock()
 
 	// Check if the request is still there and has expired
 	if pendingRequest, exists := e.pendingRequests[*envHash]; exists && time.Now().After(pendingRequest.Timeout) {
 		delete(e.pendingRequests, *envHash)
+		e.pendingRequestsLock.Unlock()
 		e.log.Debugf("Cleaned up expired pending read request for envelope hash %x", envHash)
+		return
 	}
+	e.pendingRequestsLock.Unlock()
 }
 
 func (e *Courier) propagateQueryToReplicas(courierMessage *pigeonhole.CourierEnvelope) error {
