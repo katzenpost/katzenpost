@@ -163,6 +163,10 @@ var (
 	// ErrBACAPDecryptionFailed indicates that BACAP decryption failed.
 	// This occurs when the BACAP payload cannot be decrypted or signature verification fails.
 	ErrBACAPDecryptionFailed = errors.New("BACAP decryption failed")
+
+	// ErrStartResendingCancelled indicates that a StartResendingEncryptedMessage
+	// operation was cancelled via CancelResendingEncryptedMessage before completion.
+	ErrStartResendingCancelled = errors.New("start resending cancelled")
 )
 
 // ThinResponse encapsulates a message response from the mixnet that is passed

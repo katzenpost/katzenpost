@@ -113,6 +113,10 @@ const (
 	// ThinClientErrorBACAPDecryptionFailed indicates that BACAP decryption failed.
 	// This occurs when the BACAP payload cannot be decrypted or signature verification fails.
 	ThinClientErrorBACAPDecryptionFailed uint8 = 23
+
+	// ThinClientErrorStartResendingCancelled indicates that a StartResendingEncryptedMessage
+	// operation was cancelled via CancelResendingEncryptedMessage before completion.
+	ThinClientErrorStartResendingCancelled uint8 = 24
 )
 
 // ThinClientErrorToString converts a thin client error code to a human-readable string.
@@ -158,6 +162,8 @@ func ThinClientErrorToString(errorCode uint8) string {
 		return "MKEM decryption failed"
 	case ThinClientErrorBACAPDecryptionFailed:
 		return "BACAP decryption failed"
+	case ThinClientErrorStartResendingCancelled:
+		return "Start resending cancelled"
 	default:
 		return fmt.Sprintf("Unknown thin client error code: %d", errorCode)
 	}

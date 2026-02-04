@@ -47,6 +47,10 @@ func errorCodeToSentinel(errorCode uint8) error {
 	case ThinClientErrorBACAPDecryptionFailed:
 		return ErrBACAPDecryptionFailed
 
+	// Thin client operation error codes
+	case ThinClientErrorStartResendingCancelled:
+		return ErrStartResendingCancelled
+
 	default:
 		// For other error codes (thin client errors, etc.), return a generic error
 		return errors.New(ThinClientErrorToString(errorCode))
@@ -374,6 +378,7 @@ func (t *ThinClient) EncryptWrite(ctx context.Context, plaintext []byte, writeCa
 //   - ErrReplicationFailed: Replication to other replicas failed
 //   - ErrMKEMDecryptionFailed: MKEM envelope decryption failed (outer layer)
 //   - ErrBACAPDecryptionFailed: BACAP payload decryption failed (inner layer)
+//   - ErrStartResendingCancelled: Operation was cancelled via CancelResendingEncryptedMessage
 //
 // Example:
 //

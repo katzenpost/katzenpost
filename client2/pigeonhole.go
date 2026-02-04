@@ -540,7 +540,9 @@ func (d *Daemon) cancelResendingEncryptedMessage(request *Request) {
 
 	d.replyLock.Lock()
 	surbID, ok := d.arqEnvelopeHashMap[*req.EnvelopeHash]
+	var arqMessage *ARQMessage
 	if ok && surbID != nil {
+		arqMessage = d.arqSurbIDMap[*surbID]
 		delete(d.arqSurbIDMap, *surbID)
 		delete(d.arqEnvelopeHashMap, *req.EnvelopeHash)
 	}
@@ -549,8 +551,20 @@ func (d *Daemon) cancelResendingEncryptedMessage(request *Request) {
 	if !ok {
 		d.log.Debugf("cancelResendingEncryptedMessage: EnvelopeHash %x not found", req.EnvelopeHash[:])
 		// Still send success - the message may have already completed
+	} else if arqMessage != nil {
+		// Send cancellation error to the original StartResendingEncryptedMessage call
+		d.log.Debugf("cancelResendingEncryptedMessage: Sending cancellation to original query %x", arqMessage.QueryID[:])
+		conn.sendResponse(&Response{
+			AppID: request.AppID,
+			StartResendingEncryptedMessageReply: &thin.StartResendingEncryptedMessageReply{
+				QueryID:   arqMessage.QueryID,
+				ErrorCode: thin.ThinClientErrorStartResendingCancelled,
+				Plaintext: nil,
+			},
+		})
 	}
 
+	// Send success response to the CancelResendingEncryptedMessage call
 	conn.sendResponse(&Response{
 		AppID: request.AppID,
 		CancelResendingEncryptedMessageReply: &thin.CancelResendingEncryptedMessageReply{
