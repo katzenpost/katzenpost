@@ -71,6 +71,7 @@ func newPKIWorker(server *Server, log *logging.Logger) (*PKIWorker, error) {
 
 // newPKIWorkerWithClient creates a PKIWorker with a custom pki.Client for testing
 func newPKIWorkerWithClient(server *Server, pkiClient pki.Client, log *logging.Logger) (*PKIWorker, error) {
+	server.logBackend.SetLevel(logging.WARNING, "replica pkiWorker")
 	p := &PKIWorker{
 		server:      server,
 		WorkerBase:  pki.NewWorkerBase(pkiClient, log),
