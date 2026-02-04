@@ -139,7 +139,12 @@ func (p *PKIWorker) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 		return nil
 	}
 	if p.lastPublishedEpoch == 0 {
-		doPublishEpoch = epoch
+		// First publication: check if we have enough time left in current epoch
+		if elapsed < PublishDeadline {
+			doPublishEpoch = epoch
+		} else {
+			doPublishEpoch = epoch + 1
+		}
 		// Check the deadline for the next publication time:
 	} else if elapsed < PublishDeadline {
 		p.GetLogger().Debugf("Within the publication time for epoch: %v", epoch+1)
