@@ -1867,23 +1867,55 @@ func TestCancelResendingEncryptedMessage(t *testing.T) {
 
 	// Test 1: Cancel existing message
 	t.Run("cancel existing message", func(t *testing.T) {
+		// Use a different QueryID for the cancel request than the original StartResendingEncryptedMessage
+		cancelQueryID := &[thin.QueryIDLength]byte{}
+		copy(cancelQueryID[:], []byte("cancel-query-id2"))
+
 		request := &Request{
 			AppID: testAppID,
 			CancelResendingEncryptedMessage: &thin.CancelResendingEncryptedMessage{
-				QueryID:      queryID,
+				QueryID:      cancelQueryID,
 				EnvelopeHash: envelopeHash,
 			},
 		}
 		d.cancelResendingEncryptedMessage(request)
 
-		select {
-		case resp := <-responseCh:
-			require.NotNil(t, resp.CancelResendingEncryptedMessageReply)
-			require.Equal(t, thin.ThinClientSuccess, resp.CancelResendingEncryptedMessageReply.ErrorCode)
-			require.Equal(t, queryID, resp.CancelResendingEncryptedMessageReply.QueryID)
-		case <-time.After(time.Second):
-			t.Fatal("Expected success response")
+		// We should receive TWO responses:
+		// 1. StartResendingEncryptedMessageReply with cancellation error (to the original StartResendingEncryptedMessage)
+		// 2. CancelResendingEncryptedMessageReply with success (to the CancelResendingEncryptedMessage call)
+
+		receivedStartReply := false
+		receivedCancelReply := false
+
+		for i := 0; i < 2; i++ {
+			select {
+			case resp := <-responseCh:
+				if resp.StartResendingEncryptedMessageReply != nil {
+					// This should be the cancellation notification to the original StartResendingEncryptedMessage
+					require.Equal(t, queryID, resp.StartResendingEncryptedMessageReply.QueryID,
+						"StartResendingEncryptedMessageReply should have the original query ID")
+					require.Equal(t, thin.ThinClientErrorStartResendingCancelled, resp.StartResendingEncryptedMessageReply.ErrorCode,
+						"StartResendingEncryptedMessageReply should have cancellation error code")
+					require.Nil(t, resp.StartResendingEncryptedMessageReply.Plaintext,
+						"StartResendingEncryptedMessageReply should have nil plaintext on cancellation")
+					receivedStartReply = true
+				} else if resp.CancelResendingEncryptedMessageReply != nil {
+					// This should be the success response to CancelResendingEncryptedMessage
+					require.Equal(t, cancelQueryID, resp.CancelResendingEncryptedMessageReply.QueryID,
+						"CancelResendingEncryptedMessageReply should have the cancel query ID")
+					require.Equal(t, thin.ThinClientSuccess, resp.CancelResendingEncryptedMessageReply.ErrorCode,
+						"CancelResendingEncryptedMessageReply should have success error code")
+					receivedCancelReply = true
+				} else {
+					t.Fatal("Received unexpected response type")
+				}
+			case <-time.After(time.Second):
+				t.Fatalf("Timeout waiting for response %d/2", i+1)
+			}
 		}
+
+		require.True(t, receivedStartReply, "Should have received StartResendingEncryptedMessageReply")
+		require.True(t, receivedCancelReply, "Should have received CancelResendingEncryptedMessageReply")
 
 		// Verify the maps are now empty
 		d.replyLock.Lock()
