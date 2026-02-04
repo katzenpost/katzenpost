@@ -155,6 +155,14 @@ var (
 
 	// ErrInternalError indicates an internal client error.
 	ErrInternalError = errors.New("internal error")
+
+	// ErrMKEMDecryptionFailed indicates that MKEM decryption failed.
+	// This occurs when the MKEM envelope cannot be decrypted with any of the replica keys.
+	ErrMKEMDecryptionFailed = errors.New("MKEM decryption failed")
+
+	// ErrBACAPDecryptionFailed indicates that BACAP decryption failed.
+	// This occurs when the BACAP payload cannot be decrypted or signature verification fails.
+	ErrBACAPDecryptionFailed = errors.New("BACAP decryption failed")
 )
 
 // ThinResponse encapsulates a message response from the mixnet that is passed

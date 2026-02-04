@@ -41,6 +41,12 @@ func errorCodeToSentinel(errorCode uint8) error {
 	case 9: // ReplicaErrorReplicationFailed
 		return ErrReplicationFailed
 
+	// Thin client decryption error codes
+	case ThinClientErrorMKEMDecryptionFailed:
+		return ErrMKEMDecryptionFailed
+	case ThinClientErrorBACAPDecryptionFailed:
+		return ErrBACAPDecryptionFailed
+
 	default:
 		// For other error codes (thin client errors, etc.), return a generic error
 		return errors.New(ThinClientErrorToString(errorCode))
@@ -339,20 +345,22 @@ func (t *ThinClient) EncryptWrite(ctx context.Context, plaintext []byte, writeCa
 //   - For read operations (readCap != nil, writeCap == nil):
 //     The method waits for an ACK from the courier, then the daemon automatically
 //     sends a new SURB to request the payload, and this method waits for the payload.
+//     The daemon performs all decryption (MKEM envelope + BACAP payload) and returns
+//     the fully decrypted plaintext.
 //
 // Parameters:
 //   - ctx: Context for cancellation and timeout control
-//   - readCap: Read capability (can be nil for write operations)
-//   - writeCap: Write capability (can be nil for read operations)
-//   - nextMessageIndex: Next message index for subsequent operations
+//   - readCap: Read capability (can be nil for write operations, required for reads)
+//   - writeCap: Write capability (can be nil for read operations, required for writes)
+//   - nextMessageIndex: Next message index for BACAP decryption (required for reads)
 //   - replyIndex: Index of the reply to use (typically 0 or 1)
-//   - envelopeDescriptor: Serialized envelope descriptor for decryption
-//   - messageCiphertext: Encrypted message to send
+//   - envelopeDescriptor: Serialized envelope descriptor for MKEM decryption
+//   - messageCiphertext: MKEM-encrypted message to send (from EncryptRead or EncryptWrite)
 //   - envelopeHash: Hash of the courier envelope
 //   - replicaEpoch: Epoch when the envelope was created
 //
 // Returns:
-//   - []byte: Decrypted plaintext from the reply (for reads) or empty (for writes)
+//   - []byte: Fully decrypted plaintext from the reply (for reads) or empty (for writes)
 //   - error: Any error encountered during the operation. Specific errors can be checked
 //     using errors.Is():
 //   - ErrBoxIDNotFound: The requested box ID was not found on the replica
@@ -364,6 +372,8 @@ func (t *ThinClient) EncryptWrite(ctx context.Context, plaintext []byte, writeCa
 //   - ErrReplicaInternalError: Internal replica error
 //   - ErrInvalidEpoch: Invalid or expired epoch
 //   - ErrReplicationFailed: Replication to other replicas failed
+//   - ErrMKEMDecryptionFailed: MKEM envelope decryption failed (outer layer)
+//   - ErrBACAPDecryptionFailed: BACAP payload decryption failed (inner layer)
 //
 // Example:
 //

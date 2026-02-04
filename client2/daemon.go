@@ -38,6 +38,24 @@ const (
 	AppIDLength = 16
 )
 
+var (
+	// errMKEMDecryptionFailed is returned when MKEM decryption fails with all replica keys
+	errMKEMDecryptionFailed = errors.New("MKEM decryption failed")
+
+	// errBACAPDecryptionFailed is returned when BACAP decryption or signature verification fails
+	errBACAPDecryptionFailed = errors.New("BACAP decryption failed")
+)
+
+// replicaError wraps a replica error code from the pigeonhole protocol.
+// This allows us to preserve the exact error code while using Go's error handling patterns.
+type replicaError struct {
+	code uint8
+}
+
+func (e *replicaError) Error() string {
+	return fmt.Sprintf("replica error code: %d", e.code)
+}
+
 type gcReply struct {
 	id    *[MessageIDLength]byte
 	appID *[AppIDLength]byte
@@ -1254,7 +1272,7 @@ func (d *Daemon) decryptMKEMEnvelope(env *pigeonhole.CourierEnvelopeReply, envel
 
 	if rawInnerMsg == nil {
 		d.log.Errorf("MKEM DECRYPT FAILED with all possible replicas")
-		return nil, fmt.Errorf("failed to decrypt envelope with any replica key")
+		return nil, errMKEMDecryptionFailed
 	}
 	innerMsg, err := pigeonhole.ParseReplicaMessageReplyInnerMessage(rawInnerMsg)
 	if err != nil {

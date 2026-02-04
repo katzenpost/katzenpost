@@ -5,6 +5,7 @@ package client2
 import (
 	"time"
 
+	"github.com/katzenpost/hpqc/bacap"
 	"github.com/katzenpost/katzenpost/client2/thin"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 )
@@ -84,4 +85,10 @@ type ARQMessage struct {
 
 	// State tracks the current state in the stop-and-wait ARQ protocol.
 	State ARQState
+
+	// ReadCap is the read capability for BACAP decryption (only for read operations).
+	ReadCap *bacap.ReadCap
+
+	// NextMessageIndex is the message index for BACAP decryption (only for read operations).
+	NextMessageIndex []byte
 }

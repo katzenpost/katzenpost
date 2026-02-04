@@ -3,6 +3,7 @@
 package client2
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
@@ -480,6 +481,8 @@ func (d *Daemon) startResendingEncryptedMessage(request *Request) {
 		ReplicaEpoch:       req.ReplicaEpoch,
 		IsRead:             isRead,
 		State:              ARQStateWaitingForACK,
+		ReadCap:            req.ReadCap,
+		NextMessageIndex:   req.NextMessageIndex,
 	}
 
 	// Store in ARQ maps
@@ -746,33 +749,42 @@ func (d *Daemon) handlePayloadReply(arqMessage *ARQMessage, courierEnvelopeReply
 	if err != nil {
 		d.log.Errorf("handlePayloadReply: failed to decrypt reply: %s", err)
 
-		// Check if this is a BoxIDNotFound error
-		// The error is embedded in the ReplicaReadReply
-		if err.Error() == "read reply error code: 1" {
-			// BoxIDNotFound error
-			d.log.Debugf("handlePayloadReply: BoxID not found")
-			// Remove from ARQ tracking
-			d.replyLock.Lock()
-			delete(d.arqSurbIDMap, *arqMessage.SURBID)
-			delete(d.arqEnvelopeHashMap, *arqMessage.EnvelopeHash)
-			d.replyLock.Unlock()
+		// Remove from ARQ tracking for all error cases
+		d.replyLock.Lock()
+		delete(d.arqSurbIDMap, *arqMessage.SURBID)
+		delete(d.arqEnvelopeHashMap, *arqMessage.EnvelopeHash)
+		d.replyLock.Unlock()
 
-			conn.sendResponse(&Response{
-				AppID: arqMessage.AppID,
-				StartResendingEncryptedMessageReply: &thin.StartResendingEncryptedMessageReply{
-					QueryID:   arqMessage.QueryID,
-					ErrorCode: pigeonhole.ReplicaErrorBoxIDNotFound,
-				},
-			})
-			return
+		// Determine the specific error type
+		var errorCode uint8
+		switch {
+		case errors.Is(err, errMKEMDecryptionFailed):
+			// MKEM decryption failed
+			d.log.Debugf("handlePayloadReply: MKEM decryption failed")
+			errorCode = thin.ThinClientErrorMKEMDecryptionFailed
+		case errors.Is(err, errBACAPDecryptionFailed):
+			// BACAP decryption failed
+			d.log.Debugf("handlePayloadReply: BACAP decryption failed")
+			errorCode = thin.ThinClientErrorBACAPDecryptionFailed
+		default:
+			// Check if this is a replica error (with error code)
+			var re *replicaError
+			if errors.As(err, &re) {
+				// Replica error - use the exact error code from the replica
+				d.log.Debugf("handlePayloadReply: Replica error code %d", re.code)
+				errorCode = re.code
+			} else {
+				// Other decryption or internal error
+				d.log.Debugf("handlePayloadReply: Other error: %v", err)
+				errorCode = thin.ThinClientErrorInternalError
+			}
 		}
 
-		// Other decryption error
 		conn.sendResponse(&Response{
 			AppID: arqMessage.AppID,
 			StartResendingEncryptedMessageReply: &thin.StartResendingEncryptedMessageReply{
 				QueryID:   arqMessage.QueryID,
-				ErrorCode: thin.ThinClientErrorInternalError,
+				ErrorCode: errorCode,
 			},
 		})
 		return
@@ -828,10 +840,46 @@ func (d *Daemon) decryptPigeonholeReply(arqMessage *ARQMessage, env *pigeonhole.
 		d.log.Debugf("decryptPigeonholeReply: Processing read reply, ErrorCode: %d, Payload length: %d",
 			innerMsg.ReadReply.ErrorCode, len(innerMsg.ReadReply.Payload))
 		if innerMsg.ReadReply.ErrorCode != 0 {
-			return nil, fmt.Errorf("read reply error code: %d", innerMsg.ReadReply.ErrorCode)
+			// Return a structured error with the replica error code
+			return nil, &replicaError{code: innerMsg.ReadReply.ErrorCode}
 		}
-		// Return the decrypted plaintext from the read reply
-		d.log.Debugf("decryptPigeonholeReply: Returning plaintext of length %d", len(innerMsg.ReadReply.Payload))
+
+		// Perform BACAP decryption if this is a read operation
+		if arqMessage.IsRead && arqMessage.ReadCap != nil && arqMessage.NextMessageIndex != nil {
+			d.log.Debugf("decryptPigeonholeReply: Performing BACAP decryption")
+
+			// Deserialize the NextMessageIndex
+			messageBoxIndex, err := bacap.NewEmptyMessageBoxIndexFromBytes(arqMessage.NextMessageIndex)
+			if err != nil {
+				d.log.Errorf("decryptPigeonholeReply: Failed to deserialize MessageBoxIndex: %v", err)
+				return nil, fmt.Errorf("%w: failed to deserialize MessageBoxIndex: %v", errBACAPDecryptionFailed, err)
+			}
+
+			// Create a StatefulReader from the ReadCap and NextMessageIndex
+			statefulReader, err := bacap.NewStatefulReaderWithIndex(arqMessage.ReadCap, constants.PIGEONHOLE_CTX, messageBoxIndex)
+			if err != nil {
+				d.log.Errorf("decryptPigeonholeReply: Failed to create StatefulReader: %v", err)
+				return nil, fmt.Errorf("%w: failed to create StatefulReader: %v", errBACAPDecryptionFailed, err)
+			}
+
+			// Decrypt the BACAP payload
+			signature := (*[bacap.SignatureSize]byte)(innerMsg.ReadReply.Signature[:])
+			plaintext, err := statefulReader.DecryptNext(
+				[]byte(constants.PIGEONHOLE_CTX),
+				innerMsg.ReadReply.BoxID,
+				innerMsg.ReadReply.Payload,
+				*signature)
+			if err != nil {
+				d.log.Errorf("decryptPigeonholeReply: BACAP decryption failed: %v", err)
+				return nil, fmt.Errorf("%w: %v", errBACAPDecryptionFailed, err)
+			}
+
+			d.log.Debugf("decryptPigeonholeReply: BACAP decryption successful, plaintext length: %d", len(plaintext))
+			return plaintext, nil
+		}
+
+		// If not a read operation, return the MKEM-decrypted payload as-is
+		d.log.Debugf("decryptPigeonholeReply: Returning MKEM-decrypted payload of length %d", len(innerMsg.ReadReply.Payload))
 		return innerMsg.ReadReply.Payload, nil
 	}
 

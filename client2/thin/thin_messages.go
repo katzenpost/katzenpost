@@ -105,6 +105,14 @@ const (
 	// ThinClientCapabilityAlreadyInUse indicates that the provided capability
 	// is already in use.
 	ThinClientCapabilityAlreadyInUse uint8 = 21
+
+	// ThinClientErrorMKEMDecryptionFailed indicates that MKEM decryption failed.
+	// This occurs when the MKEM envelope cannot be decrypted with any of the replica keys.
+	ThinClientErrorMKEMDecryptionFailed uint8 = 22
+
+	// ThinClientErrorBACAPDecryptionFailed indicates that BACAP decryption failed.
+	// This occurs when the BACAP payload cannot be decrypted or signature verification fails.
+	ThinClientErrorBACAPDecryptionFailed uint8 = 23
 )
 
 // ThinClientErrorToString converts a thin client error code to a human-readable string.
@@ -146,6 +154,10 @@ func ThinClientErrorToString(errorCode uint8) string {
 		return "Courier cache corruption"
 	case ThinClientPropagationError:
 		return "Propagation error"
+	case ThinClientErrorMKEMDecryptionFailed:
+		return "MKEM decryption failed"
+	case ThinClientErrorBACAPDecryptionFailed:
+		return "BACAP decryption failed"
 	default:
 		return fmt.Sprintf("Unknown thin client error code: %d", errorCode)
 	}
