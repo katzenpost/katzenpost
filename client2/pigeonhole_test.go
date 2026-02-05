@@ -1204,6 +1204,9 @@ func TestAliceSendsMultipleMessagesToBob(t *testing.T) {
 		newSurbIDToChannelMapLock: new(sync.RWMutex),
 		channelReplies:            make(map[[sphinxConstants.SURBIDLength]byte]replyDescriptor),
 		channelRepliesLock:        new(sync.RWMutex),
+		arqSurbIDMap:              make(map[[sphinxConstants.SURBIDLength]byte]*ARQMessage),
+		arqEnvelopeHashMap:        make(map[[32]byte]*[sphinxConstants.SURBIDLength]byte),
+		replyLock:                 new(sync.Mutex),
 	}
 
 	t.Log("=== Setup: Alice creates WriteCap and gives Bob the ReadCap ===")
