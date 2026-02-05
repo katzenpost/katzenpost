@@ -321,6 +321,7 @@ func (s *Katzenpost) GenReplicaNodeConfig() error {
 	cfg.ConnectTimeout = config.DefaultConnectTimeout
 	cfg.HandshakeTimeout = config.DefaultHandshakeTimeout
 	cfg.ReauthInterval = config.DefaultReauthInterval
+	cfg.DisableDecoyTraffic = true
 
 	authorities := make([]*vConfig.Authority, 0, len(s.Authorities))
 	i := 0
