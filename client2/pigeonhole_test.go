@@ -2071,12 +2071,27 @@ func TestCancelResendingDuringARQRetry(t *testing.T) {
 	}
 	d.cancelResendingEncryptedMessage(request)
 
+	// Should receive two responses:
+	// 1. StartResendingEncryptedMessageReply with cancellation error
+	// 2. CancelResendingEncryptedMessageReply with success
+
+	// First response: StartResendingEncryptedMessageReply with cancellation error
+	select {
+	case resp := <-responseCh:
+		require.NotNil(t, resp.StartResendingEncryptedMessageReply)
+		require.Equal(t, thin.ThinClientErrorStartResendingCancelled, resp.StartResendingEncryptedMessageReply.ErrorCode)
+		require.Nil(t, resp.StartResendingEncryptedMessageReply.Plaintext)
+	case <-time.After(time.Second):
+		t.Fatal("Expected StartResendingEncryptedMessageReply with cancellation error")
+	}
+
+	// Second response: CancelResendingEncryptedMessageReply with success
 	select {
 	case resp := <-responseCh:
 		require.NotNil(t, resp.CancelResendingEncryptedMessageReply)
 		require.Equal(t, thin.ThinClientSuccess, resp.CancelResendingEncryptedMessageReply.ErrorCode)
 	case <-time.After(time.Second):
-		t.Fatal("Expected success response")
+		t.Fatal("Expected CancelResendingEncryptedMessageReply with success")
 	}
 
 	// Verify the maps are empty
