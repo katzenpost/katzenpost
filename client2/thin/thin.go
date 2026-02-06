@@ -659,6 +659,13 @@ func (t *ThinClient) worker() {
 
 		message, err := t.readMessage()
 		if err != nil {
+			// Check if we're shutting down before logging the error
+			// to avoid spurious "use of closed network connection" errors
+			select {
+			case <-t.HaltCh():
+				return
+			default:
+			}
 			t.log.Errorf("thin client ReceiveMessage failed: %v", err)
 			if err == io.EOF {
 				// XXX: should we halt ThinClient on EOF??
