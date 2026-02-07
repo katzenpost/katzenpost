@@ -55,8 +55,6 @@ func (c *outgoingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 	if !c.validateReplicaInPKI(creds) {
 		return false
 	}
-
-	c.log.Debug("OutgoingConn: Authentication successful")
 	return true
 }
 
