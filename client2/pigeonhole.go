@@ -357,6 +357,54 @@ func (d *Daemon) sendEncryptWriteError(request *Request, errorCode uint8) {
 	})
 }
 
+// nextMessageBoxIndex increments a MessageBoxIndex using the BACAP NextIndex method.
+// This is used when sending multiple messages to different mailboxes using the same capability.
+func (d *Daemon) nextMessageBoxIndex(request *Request) {
+	conn := d.listener.getConnection(request.AppID)
+	if conn == nil {
+		d.log.Errorf(errNoConnectionForAppID, request.AppID[:])
+		return
+	}
+
+	messageBoxIndex := request.NextMessageBoxIndex.MessageBoxIndex
+	if messageBoxIndex == nil {
+		d.log.Error("nextMessageBoxIndex: MessageBoxIndex is nil")
+		d.sendNextMessageBoxIndexError(request, thin.ThinClientErrorInvalidRequest)
+		return
+	}
+
+	// Call the BACAP NextIndex method to increment the index
+	nextIndex, err := messageBoxIndex.NextIndex()
+	if err != nil {
+		d.log.Errorf("nextMessageBoxIndex: failed to increment index: %v", err)
+		d.sendNextMessageBoxIndexError(request, thin.ThinClientErrorInternalError)
+		return
+	}
+
+	conn.sendResponse(&Response{
+		AppID: request.AppID,
+		NextMessageBoxIndexReply: &thin.NextMessageBoxIndexReply{
+			QueryID:             request.NextMessageBoxIndex.QueryID,
+			NextMessageBoxIndex: nextIndex,
+			ErrorCode:           thin.ThinClientSuccess,
+		},
+	})
+}
+
+func (d *Daemon) sendNextMessageBoxIndexError(request *Request, errorCode uint8) {
+	conn := d.listener.getConnection(request.AppID)
+	if conn == nil {
+		return
+	}
+	conn.sendResponse(&Response{
+		AppID: request.AppID,
+		NextMessageBoxIndexReply: &thin.NextMessageBoxIndexReply{
+			QueryID:   request.NextMessageBoxIndex.QueryID,
+			ErrorCode: errorCode,
+		},
+	})
+}
+
 // createEnvelopeFromMessage creates a CourierEnvelope from a ReplicaInnerMessage
 func createEnvelopeFromMessage(msg *pigeonhole.ReplicaInnerMessage, doc *cpki.Document, isRead bool, replyIndex uint8) (*pigeonhole.CourierEnvelope, nike.PrivateKey, error) {
 	var boxid *[bacap.BoxIDSize]byte

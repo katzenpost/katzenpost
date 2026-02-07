@@ -246,12 +246,12 @@ func TestNewPigeonholeAPIMultipleMessages(t *testing.T) {
 		require.Equal(t, aliceMessage, bobPlaintext, "Message %d mismatch", i+1)
 		t.Logf("✓ Message %d verified successfully!", i+1)
 
-		// Advance state for next message
+		// Advance state for next message using thin client API
 		t.Logf("Advancing state for next message")
-		aliceCurrentIndex, err = aliceCurrentIndex.NextIndex()
+		aliceCurrentIndex, err = aliceThinClient.NextMessageBoxIndex(ctx, aliceCurrentIndex)
 		require.NoError(t, err)
 
-		bobCurrentIndex, err = bobCurrentIndex.NextIndex()
+		bobCurrentIndex, err = bobThinClient.NextMessageBoxIndex(ctx, bobCurrentIndex)
 		require.NoError(t, err)
 
 		// Cleanup: Cancel resending for this message

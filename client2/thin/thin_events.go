@@ -313,6 +313,27 @@ func (e *CancelResendingEncryptedMessageReply) String() string {
 	return "CancelResendingEncryptedMessageReply: success"
 }
 
+// NextMessageBoxIndexReply is the reply to a NextMessageBoxIndex request.
+type NextMessageBoxIndexReply struct {
+	// QueryID is used for correlating this reply with the NextMessageBoxIndex request
+	QueryID *[QueryIDLength]byte `cbor:"query_id"`
+
+	// NextMessageBoxIndex is the incremented message box index.
+	NextMessageBoxIndex *bacap.MessageBoxIndex `cbor:"next_message_box_index"`
+
+	// ErrorCode indicates the reason for a failure to increment the index if any.
+	// Otherwise it is set to zero for success.
+	ErrorCode uint8 `cbor:"error_code"`
+}
+
+// String returns a string representation of the NextMessageBoxIndexReply.
+func (e *NextMessageBoxIndexReply) String() string {
+	if e.ErrorCode != ThinClientSuccess {
+		return fmt.Sprintf("NextMessageBoxIndexReply (error: %s)", ThinClientErrorToString(e.ErrorCode))
+	}
+	return "NextMessageBoxIndexReply: success"
+}
+
 // OLD Pigeonhole API:
 
 // CreateWriteChannelReply is sent in response to a CreateWriteChannel request.

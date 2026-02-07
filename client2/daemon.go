@@ -396,6 +396,8 @@ func (d *Daemon) egressWorker() {
 				d.startResendingEncryptedMessage(request)
 			case request.CancelResendingEncryptedMessage != nil:
 				d.cancelResendingEncryptedMessage(request)
+			case request.NextMessageBoxIndex != nil:
+				d.nextMessageBoxIndex(request)
 
 				// OLD Pigeonhole Channel:
 

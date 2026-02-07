@@ -561,3 +561,88 @@ func (t *ThinClient) CancelResendingEncryptedMessage(ctx context.Context, envelo
 		}
 	}
 }
+
+// NextMessageBoxIndex increments a MessageBoxIndex using the BACAP NextIndex method.
+//
+// This method is used when sending multiple messages to different mailboxes using
+// the same WriteCap or ReadCap. It properly advances the cryptographic state by:
+//   - Incrementing the Idx64 counter
+//   - Deriving new encryption and blinding keys using HKDF
+//   - Updating the HKDF state for the next iteration
+//
+// The daemon handles the cryptographic operations internally, ensuring correct
+// BACAP protocol implementation.
+//
+// Parameters:
+//   - ctx: Context for cancellation and timeout control
+//   - messageBoxIndex: Current message box index to increment
+//
+// Returns:
+//   - *bacap.MessageBoxIndex: The next message box index
+//   - error: Any error encountered during increment
+//
+// Example:
+//
+//	ctx := context.Background()
+//	nextIndex, err := client.NextMessageBoxIndex(ctx, currentIndex)
+//	if err != nil {
+//		log.Fatal("Failed to increment index:", err)
+//	}
+//	// Use nextIndex for the next message
+func (t *ThinClient) NextMessageBoxIndex(ctx context.Context, messageBoxIndex *bacap.MessageBoxIndex) (*bacap.MessageBoxIndex, error) {
+	if ctx == nil {
+		return nil, errContextCannotBeNil
+	}
+	if messageBoxIndex == nil {
+		return nil, errors.New("messageBoxIndex cannot be nil")
+	}
+
+	queryID := t.NewQueryID()
+	req := &Request{
+		NextMessageBoxIndex: &NextMessageBoxIndex{
+			QueryID:         queryID,
+			MessageBoxIndex: messageBoxIndex,
+		},
+	}
+
+	eventSink := t.EventSink()
+	defer t.StopEventSink(eventSink)
+
+	err := t.writeMessage(req)
+	if err != nil {
+		return nil, err
+	}
+
+	for {
+		var event Event
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case event = <-eventSink:
+		case <-t.HaltCh():
+			return nil, errHalting
+		}
+
+		switch v := event.(type) {
+		case *NextMessageBoxIndexReply:
+			if v.QueryID == nil {
+				t.log.Debugf("NextMessageBoxIndex: Received reply with nil QueryID, ignoring")
+				continue
+			}
+			if !bytes.Equal(v.QueryID[:], queryID[:]) {
+				t.log.Debugf("NextMessageBoxIndex: Received reply with mismatched QueryID, ignoring")
+				continue
+			}
+			if v.ErrorCode != ThinClientSuccess {
+				return nil, errors.New(ThinClientErrorToString(v.ErrorCode))
+			}
+			return v.NextMessageBoxIndex, nil
+		case *ConnectionStatusEvent:
+			t.isConnected = v.IsConnected
+		case *NewDocumentEvent:
+			// Ignore PKI document updates
+		default:
+			// Ignore other events
+		}
+	}
+}

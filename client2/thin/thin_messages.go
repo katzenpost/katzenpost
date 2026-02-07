@@ -254,6 +254,18 @@ type CancelResendingEncryptedMessage struct {
 	EnvelopeHash *[32]byte `cbor:"envelope_hash"`
 }
 
+// NextMessageBoxIndex requests the daemon to increment a MessageBoxIndex.
+// This is used when sending multiple messages to different mailboxes using
+// the same WriteCap. The reply type is NextMessageBoxIndexReply.
+type NextMessageBoxIndex struct {
+	// QueryID is used for correlating this thin client request with the
+	// thin client reponse.
+	QueryID *[QueryIDLength]byte `cbor:"query_id"`
+
+	// MessageBoxIndex is the current index to increment.
+	MessageBoxIndex *bacap.MessageBoxIndex `cbor:"message_box_index"`
+}
+
 // OLD Pigeonhole API:
 
 // CreateWriteChannel requests the creation of a new pigeonhole write channel.
@@ -532,6 +544,9 @@ type Response struct {
 	// CancelResendingEncryptedMessageReply is sent when the client daemon successfully cancels resending an encrypted message.
 	CancelResendingEncryptedMessageReply *CancelResendingEncryptedMessageReply `cbor:"cancel_resending_encrypted_message_reply"`
 
+	// NextMessageBoxIndexReply is sent when the client daemon successfully increments a MessageBoxIndex.
+	NextMessageBoxIndexReply *NextMessageBoxIndexReply `cbor:"next_message_box_index_reply"`
+
 	// Old Pigeonhole API:
 
 	// CreateWriteChannelReply is sent when the client daemon successfully creates a write channel.
@@ -596,6 +611,9 @@ type Request struct {
 
 	// CancelResendingEncryptedMessage is used to cancel resending an encrypted message.
 	CancelResendingEncryptedMessage *CancelResendingEncryptedMessage `cbor:"cancel_resending_encrypted_message"`
+
+	// NextMessageBoxIndex is used to increment a MessageBoxIndex.
+	NextMessageBoxIndex *NextMessageBoxIndex `cbor:"next_message_box_index"`
 
 	// OLD Pigeonhole API
 

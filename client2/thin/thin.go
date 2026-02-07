@@ -881,6 +881,13 @@ func (t *ThinClient) worker() {
 			case <-t.HaltCh():
 				return
 			}
+		case message.NextMessageBoxIndexReply != nil:
+			select {
+			case t.eventSink <- message.NextMessageBoxIndexReply:
+				continue
+			case <-t.HaltCh():
+				return
+			}
 
 		default:
 			t.log.Errorf("bug: received invalid thin client message: %v", message)
