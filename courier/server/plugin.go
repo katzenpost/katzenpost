@@ -263,7 +263,15 @@ func (e *Courier) tryImmediateReplyProxy(reply *commands.ReplicaMessageReply) bo
 		return false
 	}
 
-	// Remove the pending request since we're about to fulfill it
+	// Only send immediate reply if this reply contains actual data (successful read)
+	// ErrorCode 0 = success, and we need actual envelope data
+	if reply.ErrorCode != 0 || len(reply.EnvelopeReply) == 0 {
+		e.log.Debugf("tryImmediateReplyProxy: Reply has no data (ErrorCode=%d, EnvelopeReplyLen=%d), not sending immediate reply",
+			reply.ErrorCode, len(reply.EnvelopeReply))
+		return false
+	}
+
+	// Remove the pending request since we're about to fulfill it with actual data
 	delete(e.pendingRequests, *reply.EnvelopeHash)
 
 	e.log.Debugf("tryImmediateReplyProxy: Sending immediate reply for envelope hash %x", reply.EnvelopeHash)
