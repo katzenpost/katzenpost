@@ -141,6 +141,20 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 		myCmd := msg.ReadMsg
 		c.log.Debugf("REPLICA_HANDLER: Processing decrypted ReplicaRead command for BoxID: %x", myCmd.BoxID)
 
+		// Try to read locally first (intermediate replicas may have cached data)
+		readReply := c.handleReplicaRead(myCmd)
+		if readReply.ErrorCode == pigeonhole.ReplicaSuccess {
+			// Data found locally - return it
+			c.log.Debugf("REPLICA_HANDLER: Found data locally for BoxID %x", myCmd.BoxID)
+			replyInnerMessage := pigeonhole.ReplicaMessageReplyInnerMessage{
+				ReadReply: readReply,
+			}
+			replyInnerMessageBlob := replyInnerMessage.Bytes()
+			envelopeReply := scheme.EnvelopeReply(keypair.PrivateKey, senderpubkey, replyInnerMessageBlob)
+			return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, readReply.ErrorCode, envelopeHash, envelopeReply.Envelope, replicaID, true)
+		}
+
+		// Data not found locally - check if we should proxy to a shard
 		shards, err := replicaCommon.GetShards(&myCmd.BoxID, doc)
 		if err != nil {
 			c.log.Errorf("handleReplicaMessage failed to get shards: %s", err)
@@ -166,25 +180,17 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 			}
 		}
 
-		// if this replica is a shard member then handle the read locally
+		// If this replica is a shard, data should have been here - return not found
 		if isShard {
-			readReply := c.handleReplicaRead(myCmd)
-			if readReply.ErrorCode != pigeonhole.ReplicaSuccess {
-				return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, readReply.ErrorCode, envelopeHash, []byte{}, replicaID, true)
-			}
-			replyInnerMessage := pigeonhole.ReplicaMessageReplyInnerMessage{
-				ReadReply: readReply,
-			}
-			replyInnerMessageBlob := replyInnerMessage.Bytes()
-			envelopeReply := scheme.EnvelopeReply(keypair.PrivateKey, senderpubkey, replyInnerMessageBlob)
-			return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, readReply.ErrorCode, envelopeHash, envelopeReply.Envelope, replicaID, true)
-		} else {
-			// This replica is NOT responsible for the BoxID - proxy to the correct replica
-			c.log.Debugf("REPLICA_HANDLER: This replica is NOT a shard for BoxID %x - PROXYING read request to appropriate shard", myCmd.BoxID)
-			reply := c.proxyReadRequest(myCmd, senderpubkey, envelopeHash)
-			c.log.Debugf("REPLICA_HANDLER: Successfully completed proxy read request for BoxID %x", myCmd.BoxID)
-			return reply
+			c.log.Debugf("REPLICA_HANDLER: This replica IS a shard for BoxID %x but data not found locally", myCmd.BoxID)
+			return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, readReply.ErrorCode, envelopeHash, []byte{}, replicaID, true)
 		}
+
+		// This replica is NOT a shard - proxy to the correct replica
+		c.log.Debugf("REPLICA_HANDLER: This replica is NOT a shard for BoxID %x - PROXYING read request to appropriate shard", myCmd.BoxID)
+		reply := c.proxyReadRequest(myCmd, senderpubkey, envelopeHash)
+		c.log.Debugf("REPLICA_HANDLER: Successfully completed proxy read request for BoxID %x", myCmd.BoxID)
+		return reply
 	case msg.WriteMsg != nil:
 		// write locally and then replicate to other shard
 		myCmd := msg.WriteMsg
