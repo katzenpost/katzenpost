@@ -742,8 +742,56 @@ func (d *Daemon) handlePigeonholeARQReply(arqMessage *ARQMessage, reply *sphinxR
 			d.handlePayloadReply(arqMessage, courierEnvelopeReply, conn)
 			return
 		} else if courierEnvelopeReply.ReplyType == pigeonhole.ReplyTypeACK {
-			// Duplicate ACK, ignore
-			d.log.Debugf("handlePigeonholeARQReply: Duplicate ACK received, ignoring")
+			// Duplicate ACK - data not ready yet, keep polling
+			d.log.Debugf("handlePigeonholeARQReply: Duplicate ACK received (data not ready), sending new SURB to continue polling")
+
+			// Create a new SURB ID for the next polling request
+			newSurbID := &[sphinxConstants.SURBIDLength]byte{}
+			_, err := rand.Reader.Read(newSurbID[:])
+			if err != nil {
+				d.log.Errorf("handlePigeonholeARQReply: failed to generate SURB ID for polling: %s", err)
+				return
+			}
+
+			// Compose a new packet with a new SURB for the next polling request
+			pkt, surbKey, rtt, err := d.client.ComposeSphinxPacketForQuery(&thin.SendChannelQuery{
+				DestinationIdHash: arqMessage.DestinationIdHash,
+				RecipientQueueID:  arqMessage.RecipientQueueID,
+				Payload:           arqMessage.Payload,
+			}, newSurbID)
+			if err != nil {
+				d.log.Errorf("handlePigeonholeARQReply: failed to compose packet for polling: %s", err)
+				return
+			}
+
+			// Update ARQ message with new SURB
+			d.replyLock.Lock()
+			// Remove old SURB ID mapping
+			delete(d.arqSurbIDMap, *arqMessage.SURBID)
+			// Update message with new SURB
+			arqMessage.SURBID = newSurbID
+			arqMessage.SURBDecryptionKeys = surbKey
+			arqMessage.Retransmissions++
+			arqMessage.SentAt = time.Now()
+			arqMessage.ReplyETA = rtt
+			// Add new SURB ID mapping
+			d.arqSurbIDMap[*newSurbID] = arqMessage
+			d.replyLock.Unlock()
+
+			// Schedule retry for next poll
+			myRtt := arqMessage.SentAt.Add(arqMessage.ReplyETA)
+			myRtt = myRtt.Add(RoundTripTimeSlop)
+			priority := uint64(myRtt.UnixNano())
+			d.arqTimerQueue.Push(priority, newSurbID)
+
+			// Send the packet
+			err = d.client.SendPacket(pkt)
+			if err != nil {
+				d.log.Errorf("handlePigeonholeARQReply: failed to send polling packet: %s", err)
+				// Don't return error - the ARQ will retry
+			}
+
+			d.log.Debugf("handlePigeonholeARQReply: Sent new SURB for continued polling, waiting for payload reply")
 			return
 		}
 
