@@ -147,13 +147,12 @@ func (e *Courier) CacheReply(reply *commands.ReplicaMessageReply) {
 		e.log.Debugf("CacheReply: Reply from replica %d, intermediaries are: %v", reply.ReplicaID, entry.IntermediateReplicas)
 	}
 
-	// Check for pending read request and immediately proxy reply if found
-	if reply.IsRead {
-		if e.tryImmediateReplyProxy(reply) {
-			e.log.Debugf("Immediately proxied reply for envelope hash: %x", reply.EnvelopeHash)
-			// Still cache the reply for potential future requests
-		}
-	}
+	// NOTE: We do NOT send immediate replies for read requests.
+	// The ARQ protocol requires:
+	// 1. Client sends first request with SURB #1 → Courier sends ACK on SURB #1
+	// 2. Client receives ACK, sends second request with SURB #2 (same envelope hash)
+	// 3. Courier returns cached payload on SURB #2 via handleOldMessage
+	// Trying to send the payload on SURB #1 would fail because the client has moved on to SURB #2.
 
 	e.dedupCacheLock.Lock()
 	defer e.dedupCacheLock.Unlock()
