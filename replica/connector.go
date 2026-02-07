@@ -258,7 +258,6 @@ func (co *Connector) worker() {
 			co.log.Debug("Forced connection update triggered")
 		case <-timer.C:
 			timerFired = true
-			co.log.Debug("Periodic connection update triggered")
 		}
 		if !timerFired && !timer.Stop() {
 			<-timer.C
