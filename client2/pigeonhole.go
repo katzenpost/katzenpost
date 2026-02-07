@@ -112,10 +112,11 @@ func (d *Daemon) encryptRead(request *Request) {
 		return
 	}
 
-	// Get the next message index (for the thin client to use on subsequent operations)
-	nextMessageIndex, err := statefulReader.GetNextMessageIndex()
-	if err != nil {
-		d.log.Errorf("encryptRead: failed to get next message index: %v", err)
+	// Get the CURRENT message index (the one we're reading from)
+	// This is needed for decryption later - we decrypt using the SAME index we read from
+	currentMessageIndex := statefulReader.GetCurrentMessageIndex()
+	if currentMessageIndex == nil {
+		d.log.Error("encryptRead: current message index is nil")
 		d.sendEncryptReadError(request, thin.ThinClientErrorInternalError)
 		return
 	}
@@ -165,10 +166,10 @@ func (d *Daemon) encryptRead(request *Request) {
 		Envelope:  courierEnvelope,
 	}
 
-	// Marshal the next message index to bytes
-	nextMessageIndexBytes, err := nextMessageIndex.MarshalBinary()
+	// Marshal the current message index to bytes
+	currentMessageIndexBytes, err := currentMessageIndex.MarshalBinary()
 	if err != nil {
-		d.log.Errorf("encryptRead: failed to marshal next message index: %v", err)
+		d.log.Errorf("encryptRead: failed to marshal current message index: %v", err)
 		d.sendEncryptReadError(request, thin.ThinClientErrorInternalError)
 		return
 	}
@@ -178,7 +179,7 @@ func (d *Daemon) encryptRead(request *Request) {
 		EncryptReadReply: &thin.EncryptReadReply{
 			QueryID:            request.EncryptRead.QueryID,
 			MessageCiphertext:  courierQuery.Bytes(),
-			NextMessageIndex:   nextMessageIndexBytes,
+			NextMessageIndex:   currentMessageIndexBytes,
 			EnvelopeDescriptor: envelopeDescriptorBytes,
 			EnvelopeHash:       envHash,
 			ReplicaEpoch:       doc.Epoch,
