@@ -114,7 +114,6 @@ func (co *Connector) worker() {
 	defer timer.Stop()
 
 	for {
-		co.log.Debug("BEFORE Connector worker thread select statement.")
 		timerFired := false
 		select {
 		case <-co.HaltCh():
@@ -124,8 +123,6 @@ func (co *Connector) worker() {
 		case <-timer.C:
 			timerFired = true
 		}
-
-		co.log.Debug("AFTER Connector select statement.")
 
 		if !timerFired && !timer.Stop() {
 			<-timer.C
