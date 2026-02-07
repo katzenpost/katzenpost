@@ -83,14 +83,6 @@ func (c *incomingConn) onReplicaCommand(rawCmd commands.Command) (*senderRequest
 	// not reached
 }
 
-func (c *incomingConn) countReplicas(doc *pki.Document) (int, error) {
-	replicaKeys, err := replicaCommon.GetReplicaKeys(doc)
-	if err != nil {
-		return 0, err
-	}
-	return len(replicaKeys), nil
-}
-
 // replicaMessage's are sent from the courier to the replica storage servers
 func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMessage) *commands.ReplicaMessageReply {
 	c.log.Debug("REPLICA_HANDLER: Starting handleReplicaMessage processing")
@@ -119,20 +111,16 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 		c.log.Errorf("handleReplicaMessage envelopeKeys.GetKeypair failed: %s", err)
 		return nil
 	}
-	c.log.Debug("Attempting to decapsulate message")
 	requestRaw, err := scheme.Decapsulate(keypair.PrivateKey, ct)
 	if err != nil {
 		c.log.Errorf("handleReplicaMessage Decapsulate failed: %s", err)
 		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, envelopeHash, []byte{}, 0, false)
 	}
-
-	c.log.Debug("Successfully decapsulated message, parsing command")
 	msg, err := pigeonhole.ParseReplicaInnerMessage(requestRaw)
 	if err != nil {
 		c.log.Errorf("handleReplicaMessage failed to parse inner message: %s", err)
 		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInvalidPayload, envelopeHash, []byte{}, 0, false)
 	}
-	c.log.Debug("Successfully parsed command")
 
 	// Use the ephemeralPublicKey we already unmarshaled earlier
 	senderpubkey := ephemeralPublicKey
@@ -141,11 +129,6 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 	if doc == nil {
 		c.log.Error("handleReplicaMessage failed: no PKI document available")
 		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInvalidEpoch, envelopeHash, []byte{}, 0, false)
-	}
-	numReplicas, err := c.countReplicas(doc)
-	if err != nil {
-		c.log.Errorf("handleReplicaMessage failed to count replicas: %s", err)
-		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, envelopeHash, []byte{}, 0, false)
 	}
 	replicaID, err := doc.GetReplicaIDByIdentityKey(c.l.server.identityPublicKey)
 	if err != nil {
@@ -158,14 +141,31 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 		myCmd := msg.ReadMsg
 		c.log.Debugf("REPLICA_HANDLER: Processing decrypted ReplicaRead command for BoxID: %x", myCmd.BoxID)
 
-		// Check if this replica is responsible for the BoxID using sharding
+		// Try to read locally first (intermediate replicas may have cached data)
+		readReply := c.handleReplicaRead(myCmd)
+		if readReply.ErrorCode == pigeonhole.ReplicaSuccess {
+			// Data found locally - return it
+			c.log.Debugf("REPLICA_HANDLER: Found data locally for BoxID %x", myCmd.BoxID)
+			replyInnerMessage := pigeonhole.ReplicaMessageReplyInnerMessage{
+				ReadReply: readReply,
+			}
+			replyInnerMessageBlob := replyInnerMessage.Bytes()
+			envelopeReply := scheme.EnvelopeReply(keypair.PrivateKey, senderpubkey, replyInnerMessageBlob)
+			return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, readReply.ErrorCode, envelopeHash, envelopeReply.Envelope, replicaID, true)
+		}
+
+		// Data not found locally - check if we should proxy to a shard
 		shards, err := replicaCommon.GetShards(&myCmd.BoxID, doc)
 		if err != nil {
 			c.log.Errorf("handleReplicaMessage failed to get shards: %s", err)
 			return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, envelopeHash, []byte{}, 0, false)
 		}
 
-		// Check if this replica is one of the shards for this BoxID
+		if len(shards) == 0 {
+			c.log.Errorf("handleReplicaMessage failed, zero shards available for BoxID: %x", myCmd.BoxID)
+			return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, envelopeHash, []byte{}, 0, false)
+		}
+
 		myIdentityKey, err := c.l.server.identityPublicKey.MarshalBinary()
 		if err != nil {
 			c.log.Errorf("handleReplicaMessage failed to marshal identity key: %s", err)
@@ -180,33 +180,26 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 			}
 		}
 
-		if !isShard {
-			if numReplicas >= 3 {
-				// This replica is NOT responsible for the BoxID - proxy to the correct replica
-				c.log.Debugf("REPLICA_HANDLER: This replica is NOT a shard for BoxID %x - PROXYING read request to appropriate shard", myCmd.BoxID)
-				reply := c.proxyReadRequest(myCmd, senderpubkey, envelopeHash)
-				c.log.Debugf("REPLICA_HANDLER: Successfully completed proxy read request for BoxID %x", myCmd.BoxID)
-				return reply
-			}
+		// If this replica is a shard, data should have been here - return not found
+		if isShard {
+			c.log.Debugf("REPLICA_HANDLER: This replica IS a shard for BoxID %x but data not found locally", myCmd.BoxID)
+			return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, readReply.ErrorCode, envelopeHash, []byte{}, replicaID, true)
 		}
 
-		readReply := c.handleReplicaRead(myCmd)
-		replyInnerMessage := pigeonhole.ReplicaMessageReplyInnerMessage{
-			ReadReply: readReply,
-		}
-		replyInnerMessageBlob := replyInnerMessage.Bytes()
-		envelopeReply := scheme.EnvelopeReply(keypair.PrivateKey, senderpubkey, replyInnerMessageBlob)
-		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, readReply.ErrorCode, envelopeHash, envelopeReply.Envelope, replicaID, true)
+		// This replica is NOT a shard - proxy to the correct replica
+		c.log.Debugf("REPLICA_HANDLER: This replica is NOT a shard for BoxID %x - PROXYING read request to appropriate shard", myCmd.BoxID)
+		reply := c.proxyReadRequest(myCmd, senderpubkey, envelopeHash)
+		c.log.Debugf("REPLICA_HANDLER: Successfully completed proxy read request for BoxID %x", myCmd.BoxID)
+		return reply
 	case msg.WriteMsg != nil:
+		// write locally and then replicate to other shard
 		myCmd := msg.WriteMsg
 		c.log.Debugf("Processing decrypted ReplicaWrite command for BoxID: %x", myCmd.BoxID)
 		writeReply := c.handleReplicaWrite(myCmd)
 
-		if numReplicas >= 3 {
-			cmds := commands.NewStorageReplicaCommands(c.geo, nikeScheme)
-			wireCmd := pigeonhole.TrunnelReplicaWriteToWireCommand(myCmd, cmds)
-			c.l.server.connector.DispatchReplication(wireCmd)
-		}
+		cmds := commands.NewStorageReplicaCommands(c.geo, nikeScheme)
+		wireCmd := pigeonhole.TrunnelReplicaWriteToWireCommand(myCmd, cmds)
+		c.l.server.connector.DispatchReplication(wireCmd)
 
 		replyInnerMessage := pigeonhole.ReplicaMessageReplyInnerMessage{
 			WriteReply: writeReply,
@@ -340,36 +333,8 @@ func (c *incomingConn) proxyReadRequest(replicaRead *pigeonhole.ReplicaRead, ori
 		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, originalEnvelopeHash, []byte{}, 0, false)
 	}
 
-	// Get our own identity key to exclude ourselves from the target shards
-	myIdentityKey, err := c.l.server.identityPublicKey.MarshalBinary()
-	if err != nil {
-		c.log.Errorf("proxyReadRequest: failed to marshal identity key: %v", err)
-		return c.createReplicaMessageReply(c.l.server.cfg.ReplicaNIKEScheme, pigeonhole.ReplicaErrorInternalError, originalEnvelopeHash, []byte{}, 0, false)
-	}
-
-	// Select a random shard that is not ourselves
-	var availableShards []*pki.ReplicaDescriptor
-	for _, shard := range shards {
-		if !hmac.Equal(shard.IdentityKey, myIdentityKey) {
-			availableShards = append(availableShards, shard)
-		}
-	}
-
-	if len(availableShards) == 0 {
-		c.log.Error("PROXY_REQUEST: no suitable target shard found")
-		return c.createReplicaMessageReply(
-			c.l.server.cfg.ReplicaNIKEScheme,
-			pigeonhole.ReplicaErrorInternalError,
-			originalEnvelopeHash,
-			[]byte{},
-			0,
-			false,
-		)
-	}
-
-	// Select a random shard for load distribution
-	targetShard := availableShards[rand.NewMath().Intn(len(availableShards))]
-	c.log.Debugf("PROXY_REQUEST: Proxying read request to replica: %s", targetShard.Name)
+	// select a random shard
+	targetShard := shards[rand.NewMath().Intn(len(shards))]
 
 	// Get current replica epoch and keypair
 	replicaEpoch, _, _ := replicaCommon.ReplicaNow()

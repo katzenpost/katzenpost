@@ -132,27 +132,34 @@ func (e *Courier) HandleReply(reply *commands.ReplicaMessageReply) {
 }
 
 func (e *Courier) CacheReply(reply *commands.ReplicaMessageReply) {
-	e.log.Debugf("CacheReply called with envelope hash: %x", reply.EnvelopeHash)
+	e.log.Debugf("CacheReply called with envelope hash: %x from replica ID: %d", reply.EnvelopeHash, reply.ReplicaID)
 
 	if !e.validateReply(reply) {
 		e.log.Errorf("courier/!e.validateReply(reply:%v)", reply)
 		return
 	}
 
-	// Check for pending read request and immediately proxy reply if found
-	if reply.IsRead {
-		if e.tryImmediateReplyProxy(reply) {
-			e.log.Debugf("Immediately proxied reply for envelope hash: %x", reply.EnvelopeHash)
-			// Still cache the reply for potential future requests
-		}
+	// DEBUG: Log which replica sent this reply
+	e.dedupCacheLock.Lock()
+	entry, ok := e.dedupCache[*reply.EnvelopeHash]
+	e.dedupCacheLock.Unlock()
+	if ok {
+		e.log.Debugf("CacheReply: Reply from replica %d, intermediaries are: %v", reply.ReplicaID, entry.IntermediateReplicas)
 	}
+
+	// NOTE: We do NOT send immediate replies for read requests.
+	// The ARQ protocol requires:
+	// 1. Client sends first request with SURB #1 → Courier sends ACK on SURB #1
+	// 2. Client receives ACK, sends second request with SURB #2 (same envelope hash)
+	// 3. Courier returns cached payload on SURB #2 via handleOldMessage
+	// Trying to send the payload on SURB #1 would fail because the client has moved on to SURB #2.
 
 	e.dedupCacheLock.Lock()
 	defer e.dedupCacheLock.Unlock()
 
-	entry, ok := e.dedupCache[*reply.EnvelopeHash]
-	if ok {
-		e.handleExistingEntry(entry, reply)
+	entry2, ok2 := e.dedupCache[*reply.EnvelopeHash]
+	if ok2 {
+		e.handleExistingEntry(entry2, reply)
 		e.logFinalCacheState(reply)
 	} else {
 		e.log.Errorf("Courier received reply with unknown envelope hash; %x", *reply.EnvelopeHash)
@@ -217,41 +224,6 @@ func (e *Courier) storeReplyIfEmpty(entry *CourierBookKeeping, reply *commands.R
 	}
 }
 
-// createNewEntry creates a new cache entry for unknown envelope hashes
-func (e *Courier) createNewEntry(reply *commands.ReplicaMessageReply) {
-	e.log.Infof("CacheReply: received reply for unknown EnvelopeHash %x, creating new cache entry", reply.EnvelopeHash)
-
-	// For read replies to unknown envelope hashes, we don't know which replicas were
-	// originally selected by the sharding algorithm, so we can't create a proper cache entry.
-	// However, we can try to accommodate the reply by creating a flexible entry.
-	currentEpoch := e.getCurrentEpoch()
-
-	// Create a cache entry that accommodates this replica ID in the correct slot
-	// Use replica ID to determine which slot to use: replica 0 → slot 0, replica 1 → slot 1
-	var intermediateReplicas [2]uint8
-	var replyIndex int
-
-	if reply.ReplicaID == 0 {
-		intermediateReplicas = [2]uint8{0, 255} // replica 0 in slot 0, slot 1 unknown
-		replyIndex = 0
-	} else {
-		intermediateReplicas = [2]uint8{255, reply.ReplicaID} // slot 0 unknown, replica in slot 1
-		replyIndex = 1
-	}
-
-	newEntry := &CourierBookKeeping{
-		Epoch:                currentEpoch,
-		IntermediateReplicas: intermediateReplicas,
-		EnvelopeReplies:      [2]*commands.ReplicaMessageReply{nil, nil},
-	}
-
-	// Store the reply in the correct slot based on replica ID
-	e.log.Debugf("CacheReply: creating new cache entry and storing reply from replica %d at index %d", reply.ReplicaID, replyIndex)
-	newEntry.EnvelopeReplies[replyIndex] = reply
-
-	e.dedupCache[*reply.EnvelopeHash] = newEntry
-}
-
 // getCurrentEpoch gets the current epoch from PKI document
 func (e *Courier) getCurrentEpoch() uint64 {
 	if pkiDoc := e.server.PKI.PKIDocument(); pkiDoc != nil {
@@ -290,7 +262,15 @@ func (e *Courier) tryImmediateReplyProxy(reply *commands.ReplicaMessageReply) bo
 		return false
 	}
 
-	// Remove the pending request since we're about to fulfill it
+	// Only send immediate reply if this reply contains actual data (successful read)
+	// ErrorCode 0 = success, and we need actual envelope data
+	if reply.ErrorCode != 0 || len(reply.EnvelopeReply) == 0 {
+		e.log.Debugf("tryImmediateReplyProxy: Reply has no data (ErrorCode=%d, EnvelopeReplyLen=%d), not sending immediate reply",
+			reply.ErrorCode, len(reply.EnvelopeReply))
+		return false
+	}
+
+	// Remove the pending request since we're about to fulfill it with actual data
 	delete(e.pendingRequests, *reply.EnvelopeHash)
 
 	e.log.Debugf("tryImmediateReplyProxy: Sending immediate reply for envelope hash %x", reply.EnvelopeHash)
@@ -367,18 +347,17 @@ func (e *Courier) tryImmediateReplyProxy(reply *commands.ReplicaMessageReply) bo
 
 // storePendingRequest stores a pending request with a timeout
 func (e *Courier) storePendingRequest(envHash *[hash.HashSize]byte, requestID uint64, surb []byte) {
-	e.pendingRequestsLock.Lock()
-	defer e.pendingRequestsLock.Unlock()
-
 	// Set timeout to allow for replica response delays
 	seconds := 20
 	timeout := time.Now().Add(time.Duration(seconds) * time.Second)
 
+	e.pendingRequestsLock.Lock()
 	e.pendingRequests[*envHash] = &PendingReadRequest{
 		RequestID: requestID,
 		SURB:      surb,
 		Timeout:   timeout,
 	}
+	e.pendingRequestsLock.Unlock()
 
 	e.log.Debugf("Stored pending read request for envelope hash %x with %d-second timeout", envHash, seconds)
 
@@ -392,13 +371,15 @@ func (e *Courier) cleanupExpiredRequest(envHash *[hash.HashSize]byte, timeout ti
 	time.Sleep(time.Until(timeout))
 
 	e.pendingRequestsLock.Lock()
-	defer e.pendingRequestsLock.Unlock()
 
 	// Check if the request is still there and has expired
 	if pendingRequest, exists := e.pendingRequests[*envHash]; exists && time.Now().After(pendingRequest.Timeout) {
 		delete(e.pendingRequests, *envHash)
+		e.pendingRequestsLock.Unlock()
 		e.log.Debugf("Cleaned up expired pending read request for envelope hash %x", envHash)
+		return
 	}
+	e.pendingRequestsLock.Unlock()
 }
 
 func (e *Courier) propagateQueryToReplicas(courierMessage *pigeonhole.CourierEnvelope) error {
@@ -504,7 +485,7 @@ func (e *Courier) handleOldMessage(cacheEntry *CourierBookKeeping, envHash *[has
 			payload = cacheEntry.EnvelopeReplies[courierMessage.ReplyIndex].EnvelopeReply
 			e.log.Debugf("But there is a reply for %d, so returning that (envHash:%v)", courierMessage.ReplyIndex, envHash)
 		} else {
-			payload = nil // Return empty payload but keep the requested ReplyIndex
+			payload = nil
 		}
 	}
 
@@ -556,14 +537,17 @@ func (e *Courier) OnCommand(cmd cborplugin.Command) error {
 	if courierQuery.Envelope != nil {
 		reply := e.cacheHandleCourierEnvelope(courierQuery.QueryType, courierQuery.Envelope, request.ID, request.SURB)
 
-		go func() {
-			// send reply
-			e.write(&cborplugin.Response{
-				ID:      request.ID,
-				SURB:    request.SURB,
-				Payload: reply.Bytes(),
-			})
-		}()
+		// Only send reply if it's not nil (nil means ARQ should retry)
+		if reply != nil {
+			go func() {
+				// send reply
+				e.write(&cborplugin.Response{
+					ID:      request.ID,
+					SURB:    request.SURB,
+					Payload: reply.Bytes(),
+				})
+			}()
+		}
 	}
 
 	return nil

@@ -33,14 +33,8 @@ func (c *Client) ComposeSphinxPacket(request *Request) (pkt []byte, surbkey []by
 		requestPayload = request.SendMessage.Payload
 		withSURB = request.SendMessage.WithSURB
 		surbID = request.SendMessage.SURBID
-	} else if request.SendARQMessage != nil {
-		destinationIdHash = request.SendARQMessage.DestinationIdHash
-		recipientQueueID = request.SendARQMessage.RecipientQueueID
-		requestPayload = request.SendARQMessage.Payload
-		withSURB = request.SendARQMessage.WithSURB
-		surbID = request.SendARQMessage.SURBID
 	} else {
-		return nil, nil, 0, errors.New("request must have SendMessage or SendARQMessage")
+		return nil, nil, 0, errors.New("request must have SendMessage")
 	}
 
 	if destinationIdHash == nil {
@@ -143,8 +137,8 @@ func (c *Client) ComposeSphinxPacket(request *Request) (pkt []byte, surbkey []by
 // round trip delay. Blocks until packet is sent on the wire.
 func (c *Client) SendCiphertext(request *Request) ([]byte, time.Duration, error) {
 	// Check that we have a valid send request
-	if request.SendMessage == nil && request.SendARQMessage == nil {
-		return nil, 0, errors.New("request must have SendMessage or SendARQMessage")
+	if request.SendMessage == nil {
+		return nil, 0, errors.New("request must have SendMessage")
 	}
 
 	pkt, k, rtt, err := c.ComposeSphinxPacket(request)
