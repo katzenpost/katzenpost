@@ -859,12 +859,26 @@ func (d *Daemon) handlePayloadReply(arqMessage *ARQMessage, courierEnvelopeReply
 	delete(d.arqEnvelopeHashMap, *arqMessage.EnvelopeHash)
 	d.replyLock.Unlock()
 
-	// Send success with plaintext to thin client
+	// Unpad the plaintext (remove length prefix and padding)
+	unpaddedPlaintext, err := pigeonhole.ExtractMessageFromPaddedPayload(plaintext)
+	if err != nil {
+		d.log.Errorf("handlePayloadReply: Failed to unpad plaintext: %v", err)
+		conn.sendResponse(&Response{
+			AppID: arqMessage.AppID,
+			StartResendingEncryptedMessageReply: &thin.StartResendingEncryptedMessageReply{
+				QueryID:   arqMessage.QueryID,
+				ErrorCode: thin.ThinClientErrorInternalError,
+			},
+		})
+		return
+	}
+
+	// Send success with unpadded plaintext to thin client
 	conn.sendResponse(&Response{
 		AppID: arqMessage.AppID,
 		StartResendingEncryptedMessageReply: &thin.StartResendingEncryptedMessageReply{
 			QueryID:   arqMessage.QueryID,
-			Plaintext: plaintext,
+			Plaintext: unpaddedPlaintext,
 			ErrorCode: thin.ThinClientSuccess,
 		},
 	})
