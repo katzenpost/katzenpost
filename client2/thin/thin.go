@@ -496,8 +496,9 @@ func (t *ThinClient) Close() error {
 		return err
 	}
 
-	err = t.conn.Close()
+	// Halt workers before closing connection to avoid spurious error logs
 	t.Halt()
+	err = t.conn.Close()
 	close(t.eventSink)
 	return err
 }
