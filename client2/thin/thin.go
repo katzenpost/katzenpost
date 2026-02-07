@@ -49,6 +49,7 @@
 //   - EncryptWrite
 //   - StartResendingEncryptedMessage
 //   - CancelResendingEncryptedMessage
+//   - NextMessageBoxIndex
 //
 // The old Pigeonhole protocol API provides:
 //
