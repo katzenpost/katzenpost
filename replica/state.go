@@ -139,6 +139,33 @@ func (s *state) handleReplicaWrite(replicaWrite *commands.ReplicaWrite) error {
 	return nil
 }
 
+// handleReplicaTombstone deletes a message box from the database.
+// Tombstones are BACAP messages with empty payloads that are used to delete
+// previously stored messages. This selectively breaks unlinkability guarantees
+// to allow users to delete messages after sending them.
+func (s *state) handleReplicaTombstone(boxID [32]uint8) error {
+	s.log.Debugf("state: Processing tombstone for BoxID: %x", boxID)
+
+	// Check if database is still open
+	if s.db == nil {
+		s.log.Error("state: Database is closed, cannot perform tombstone deletion")
+		return fmt.Errorf(errDatabaseClosed)
+	}
+
+	wo := grocksdb.NewDefaultWriteOptions()
+	defer wo.Destroy()
+
+	// Delete the entry from the database
+	err := s.db.Delete(wo, boxID[:])
+	if err != nil {
+		s.log.Errorf("state: Failed to delete BoxID %x from database: %s", boxID, err)
+		return err
+	}
+
+	s.log.Debugf("state: Successfully deleted BoxID: %x (tombstone processed)", boxID)
+	return nil
+}
+
 func (s *state) replicaWriteFromBlob(blob []byte) (*commands.ReplicaWrite, error) {
 	s.log.Debugf("state: Converting blob of size %d to ReplicaWrite", len(blob))
 	box, err := pigeonhole.BoxFromBytes(blob)

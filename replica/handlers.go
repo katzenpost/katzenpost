@@ -272,6 +272,15 @@ func (c *incomingConn) handleReplicaRead(replicaRead *pigeonhole.ReplicaRead) *p
 
 func (c *incomingConn) handleReplicaWrite(replicaWrite *pigeonhole.ReplicaWrite) *pigeonhole.ReplicaWriteReply {
 	c.log.Debugf("Handling replica write request for BoxID: %x", replicaWrite.BoxID)
+
+	// Check if this is a tombstone (empty payload)
+	isTombstone := replicaWrite.PayloadLen == 0 || len(replicaWrite.Payload) == 0
+
+	if isTombstone {
+		return c.handleTombstone(replicaWrite)
+	}
+
+	// Normal write path
 	s := ed25519.Scheme()
 	verifyKey, err := s.UnmarshalBinaryPublicKey(replicaWrite.BoxID[:])
 	if err != nil {
@@ -296,6 +305,44 @@ func (c *incomingConn) handleReplicaWrite(replicaWrite *pigeonhole.ReplicaWrite)
 		}
 	}
 	c.log.Debug("Replica write successful")
+	return &pigeonhole.ReplicaWriteReply{
+		ErrorCode: pigeonhole.ReplicaSuccess,
+	}
+}
+
+// handleTombstone processes a tombstone message, which is a BACAP message with
+// an empty payload used to delete previously stored messages. This selectively
+// breaks unlinkability guarantees to allow users to delete messages after sending them.
+func (c *incomingConn) handleTombstone(replicaWrite *pigeonhole.ReplicaWrite) *pigeonhole.ReplicaWriteReply {
+	c.log.Debugf("Processing tombstone for BoxID: %x", replicaWrite.BoxID)
+
+	// Verify the signature against an empty payload
+	s := ed25519.Scheme()
+	verifyKey, err := s.UnmarshalBinaryPublicKey(replicaWrite.BoxID[:])
+	if err != nil {
+		c.log.Errorf("handleTombstone failed to unmarshal BoxID as public key: %v", err)
+		return &pigeonhole.ReplicaWriteReply{
+			ErrorCode: pigeonhole.ReplicaErrorInvalidBoxID,
+		}
+	}
+
+	if !s.Verify(verifyKey, []byte{}, replicaWrite.Signature[:], nil) {
+		c.log.Error("handleTombstone signature verification failed")
+		return &pigeonhole.ReplicaWriteReply{
+			ErrorCode: pigeonhole.ReplicaErrorInvalidSignature,
+		}
+	}
+
+	// Delete the existing entry from the database
+	err = c.l.server.state.handleReplicaTombstone(replicaWrite.BoxID)
+	if err != nil {
+		c.log.Errorf("handleTombstone deletion failed: %v", err)
+		return &pigeonhole.ReplicaWriteReply{
+			ErrorCode: pigeonhole.ReplicaErrorDatabaseFailure,
+		}
+	}
+
+	c.log.Debugf("Tombstone processed successfully for BoxID: %x", replicaWrite.BoxID)
 	return &pigeonhole.ReplicaWriteReply{
 		ErrorCode: pigeonhole.ReplicaSuccess,
 	}
