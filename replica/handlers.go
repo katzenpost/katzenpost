@@ -276,38 +276,40 @@ func (c *incomingConn) handleReplicaWrite(replicaWrite *pigeonhole.ReplicaWrite)
 	// Check if this is a tombstone (empty payload)
 	isTombstone := replicaWrite.PayloadLen == 0 || len(replicaWrite.Payload) == 0
 
+	var reply *pigeonhole.ReplicaWriteReply
 	if isTombstone {
-		return c.handleTombstone(replicaWrite)
-	}
-
-	// Normal write path
-	s := ed25519.Scheme()
-	verifyKey, err := s.UnmarshalBinaryPublicKey(replicaWrite.BoxID[:])
-	if err != nil {
-		c.log.Errorf("handleReplicaWrite failed to unmarshal BoxID as public key: %v", err)
-		return &pigeonhole.ReplicaWriteReply{
-			ErrorCode: pigeonhole.ReplicaErrorInvalidBoxID,
+		reply = c.handleTombstone(replicaWrite)
+	} else {
+		// Normal write path
+		s := ed25519.Scheme()
+		verifyKey, err := s.UnmarshalBinaryPublicKey(replicaWrite.BoxID[:])
+		if err != nil {
+			c.log.Errorf("handleReplicaWrite failed to unmarshal BoxID as public key: %v", err)
+			return &pigeonhole.ReplicaWriteReply{
+				ErrorCode: pigeonhole.ReplicaErrorInvalidBoxID,
+			}
+		}
+		if !s.Verify(verifyKey, replicaWrite.Payload, replicaWrite.Signature[:], nil) {
+			c.log.Error("handleReplicaWrite signature verification failed")
+			return &pigeonhole.ReplicaWriteReply{
+				ErrorCode: pigeonhole.ReplicaErrorInvalidSignature,
+			}
+		}
+		// Convert trunnel type to wire command for state handling
+		wireWrite := pigeonhole.TrunnelReplicaWriteToWireCommand(replicaWrite, nil)
+		err = c.l.server.state.handleReplicaWrite(wireWrite)
+		if err != nil {
+			c.log.Errorf("handleReplicaWrite state update failed: %v", err)
+			return &pigeonhole.ReplicaWriteReply{
+				ErrorCode: pigeonhole.ReplicaErrorDatabaseFailure,
+			}
+		}
+		c.log.Debug("Replica write successful")
+		reply = &pigeonhole.ReplicaWriteReply{
+			ErrorCode: pigeonhole.ReplicaSuccess,
 		}
 	}
-	if !s.Verify(verifyKey, replicaWrite.Payload, replicaWrite.Signature[:], nil) {
-		c.log.Error("handleReplicaWrite signature verification failed")
-		return &pigeonhole.ReplicaWriteReply{
-			ErrorCode: pigeonhole.ReplicaErrorInvalidSignature,
-		}
-	}
-	// Convert trunnel type to wire command for state handling
-	wireWrite := pigeonhole.TrunnelReplicaWriteToWireCommand(replicaWrite, nil)
-	err = c.l.server.state.handleReplicaWrite(wireWrite)
-	if err != nil {
-		c.log.Errorf("handleReplicaWrite state update failed: %v", err)
-		return &pigeonhole.ReplicaWriteReply{
-			ErrorCode: pigeonhole.ReplicaErrorDatabaseFailure,
-		}
-	}
-	c.log.Debug("Replica write successful")
-	return &pigeonhole.ReplicaWriteReply{
-		ErrorCode: pigeonhole.ReplicaSuccess,
-	}
+	return reply
 }
 
 // handleTombstone processes a tombstone message, which is a BACAP message with
