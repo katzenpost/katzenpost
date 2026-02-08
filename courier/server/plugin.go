@@ -4,6 +4,7 @@
 package server
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"os"
@@ -13,14 +14,19 @@ import (
 
 	"gopkg.in/op/go-logging.v1"
 
+	"github.com/fxamacker/cbor/v2"
+	"github.com/katzenpost/hpqc/bacap"
 	"github.com/katzenpost/hpqc/hash"
+	"github.com/katzenpost/hpqc/kem/mkem"
 	"github.com/katzenpost/hpqc/nike"
 	"github.com/katzenpost/hpqc/nike/schemes"
 
+	"github.com/katzenpost/katzenpost/client2/constants"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"github.com/katzenpost/katzenpost/pigeonhole"
 	pigeonholeGeo "github.com/katzenpost/katzenpost/pigeonhole/geo"
+	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
 	"github.com/katzenpost/katzenpost/server/cborplugin"
 )
 
@@ -533,8 +539,8 @@ func (e *Courier) OnCommand(cmd cborplugin.Command) error {
 		return errors.New("CBOR decoding failed")
 	}
 
-	// Handle CourierEnvelope if present
-	if courierQuery.Envelope != nil {
+	switch {
+	case courierQuery.Envelope != nil:
 		reply := e.cacheHandleCourierEnvelope(courierQuery.QueryType, courierQuery.Envelope, request.ID, request.SURB)
 
 		// Only send reply if it's not nil (nil means ARQ should retry)
@@ -548,6 +554,15 @@ func (e *Courier) OnCommand(cmd cborplugin.Command) error {
 				})
 			}()
 		}
+	case courierQuery.CopyCommand != nil:
+		reply := e.handleCopyCommand(courierQuery.CopyCommand)
+		go func() {
+			e.write(&cborplugin.Response{
+				ID:      request.ID,
+				SURB:    request.SURB,
+				Payload: reply.Bytes(),
+			})
+		}()
 	}
 
 	return nil
@@ -584,7 +599,385 @@ func (e *Courier) cacheHandleCourierEnvelope(queryType uint8, courierMessage *pi
 	return nil
 }
 
-// Copy command functions have been removed as requested
+// CopyCommandWrapper wraps commands in the temporary channel with start/stop markers
+type CopyCommandWrapper struct {
+	Start   bool   `cbor:"start"`
+	Stop    bool   `cbor:"stop"`
+	Payload []byte `cbor:"payload"`
+}
+
+// handleCopyCommand reads all the boxes in the given BACAP sequence and interprets their
+// plaintext contents as CourierEnvelopes. It then sends all those CourierEnvelopes to the
+// specified intermediate replicas. Lastly it overwrites the initial sequence with tombstones.
+func (e *Courier) handleCopyCommand(copyCmd *pigeonhole.CopyCommand) *pigeonhole.CourierQueryReply {
+	e.log.Debugf("handleCopyCommand: Processing copy command with WriteCap length %d", copyCmd.WriteCapLen)
+
+	// Deserialize the WriteCap
+	writeCap, err := bacap.NewWriteCapFromBytes(copyCmd.WriteCap)
+	if err != nil {
+		e.log.Errorf("handleCopyCommand: Failed to deserialize WriteCap: %v", err)
+		return &pigeonhole.CourierQueryReply{
+			ReplyType: 1, // 1 = copy_command_reply
+			CopyCommandReply: &pigeonhole.CopyCommandReply{
+				ErrorCode: 1, // Error
+			},
+		}
+	}
+
+	// Derive ReadCap from WriteCap
+	readCap := writeCap.ReadCap()
+
+	// Create StatefulReader for the temporary channel
+	reader, err := bacap.NewStatefulReader(readCap, constants.PIGEONHOLE_CTX)
+	if err != nil {
+		e.log.Errorf("handleCopyCommand: Failed to create StatefulReader: %v", err)
+		return &pigeonhole.CourierQueryReply{
+			ReplyType: 1,
+			CopyCommandReply: &pigeonhole.CopyCommandReply{
+				ErrorCode: 1,
+			},
+		}
+	}
+
+	// Read all boxes into a buffer
+	boxIDList, buffer, err := e.readAllBoxes(reader)
+	if err != nil {
+		e.log.Errorf("handleCopyCommand: Failed to read boxes: %v", err)
+		return &pigeonhole.CourierQueryReply{
+			ReplyType: 1,
+			CopyCommandReply: &pigeonhole.CopyCommandReply{
+				ErrorCode: 1,
+			},
+		}
+	}
+
+	// Decode CourierEnvelopes from the buffer
+	envelopes, err := e.decodeCourierEnvelopes(buffer)
+	if err != nil {
+		e.log.Errorf("handleCopyCommand: Failed to decode envelopes: %v", err)
+		return &pigeonhole.CourierQueryReply{
+			ReplyType: 1,
+			CopyCommandReply: &pigeonhole.CopyCommandReply{
+				ErrorCode: 1,
+			},
+		}
+	}
+
+	// Send all envelopes to replicas
+	e.sendEnvelopesToReplicas(envelopes)
+
+	// Write tombstones to clean up the temporary channel
+	e.writeTombstonesToTempChannel(writeCap, boxIDList)
+
+	e.log.Debugf("handleCopyCommand: Successfully processed %d envelopes from %d boxes", len(envelopes), len(boxIDList))
+
+	// Return success
+	return &pigeonhole.CourierQueryReply{
+		ReplyType: 1, // 1 = copy_command_reply
+		CopyCommandReply: &pigeonhole.CopyCommandReply{
+			ErrorCode: 0, // Success
+		},
+	}
+}
+
+// readAllBoxes reads all boxes from the temporary channel and concatenates them into a buffer
+func (e *Courier) readAllBoxes(reader *bacap.StatefulReader) ([][bacap.BoxIDSize]byte, *bytes.Buffer, error) {
+	var boxIDList [][bacap.BoxIDSize]byte
+	buffer := bytes.NewBuffer(nil)
+	isLast := false
+
+	for !isLast {
+		// Get next BoxID
+		boxID, err := reader.NextBoxID()
+		if err != nil {
+			e.log.Errorf("readAllBoxes: Failed to get next BoxID: %v", err)
+			return nil, nil, err
+		}
+		boxIDList = append(boxIDList, *boxID)
+
+		// Read the box from replicas
+		boxPlaintext, last, err := e.readNextBox(reader, boxID)
+		if err != nil {
+			e.log.Errorf("readAllBoxes: Failed to read box %x: %v", boxID[:8], err)
+			return nil, nil, err
+		}
+
+		isLast = last
+		buffer.Write(boxPlaintext)
+	}
+
+	e.log.Debugf("readAllBoxes: Read %d boxes, total buffer size: %d bytes", len(boxIDList), buffer.Len())
+	return boxIDList, buffer, nil
+}
+
+// readNextBox reads a single box from the replicas, decrypts it, and unwraps the CBOR wrapper
+func (e *Courier) readNextBox(reader *bacap.StatefulReader, boxID *[bacap.BoxIDSize]byte) ([]byte, bool, error) {
+	// Read the box from replicas
+	replicaReadReply, err := e.readBoxFromReplicas(boxID)
+	if err != nil {
+		return nil, false, err
+	}
+
+	// Decrypt the box to get the CBOR-encoded wrapper
+	sig := [bacap.SignatureSize]byte{}
+	copy(sig[:], replicaReadReply.Signature[:])
+	decryptedPayload, err := reader.DecryptNext(constants.PIGEONHOLE_CTX, *boxID, replicaReadReply.Payload, sig)
+	if err != nil {
+		e.log.Errorf("readNextBox: Failed to decrypt box %x: %v", boxID[:8], err)
+		return nil, false, err
+	}
+
+	// Unwrap the CBOR wrapper to extract the chunk
+	var wrapper CopyCommandWrapper
+	if err := cbor.Unmarshal(decryptedPayload, &wrapper); err != nil {
+		e.log.Errorf("readNextBox: Failed to unmarshal CBOR wrapper: %v", err)
+		return nil, false, err
+	}
+
+	// Check for stop marker
+	if wrapper.Stop {
+		e.log.Debugf("readNextBox: Found stop marker in box %x", boxID[:8])
+		return nil, true, nil
+	}
+
+	// Log start marker if present
+	if wrapper.Start {
+		e.log.Debugf("readNextBox: Found start marker in box %x", boxID[:8])
+	}
+
+	// Return the payload chunk (partial CourierEnvelope data)
+	return wrapper.Payload, false, nil
+}
+
+// decodeCourierEnvelopes decodes multiple CourierEnvelopes from a buffer
+func (e *Courier) decodeCourierEnvelopes(buffer *bytes.Buffer) ([]*pigeonhole.CourierEnvelope, error) {
+	var envelopes []*pigeonhole.CourierEnvelope
+
+	for buffer.Len() > 0 {
+		envelope := &pigeonhole.CourierEnvelope{}
+		remaining, err := envelope.Parse(buffer.Bytes())
+		if err != nil {
+			e.log.Errorf("decodeCourierEnvelopes: Failed to parse envelope: %v", err)
+			return nil, err
+		}
+
+		envelopes = append(envelopes, envelope)
+
+		// Advance buffer past the parsed envelope
+		bytesConsumed := buffer.Len() - len(remaining)
+		buffer.Next(bytesConsumed)
+	}
+
+	e.log.Debugf("decodeCourierEnvelopes: Decoded %d envelopes", len(envelopes))
+	return envelopes, nil
+}
+
+// sendEnvelopesToReplicas sends all envelopes to their respective replicas
+func (e *Courier) sendEnvelopesToReplicas(envelopes []*pigeonhole.CourierEnvelope) {
+	for i, envelope := range envelopes {
+		e.log.Debugf("sendEnvelopesToReplicas: Sending envelope %d/%d", i+1, len(envelopes))
+		if err := e.propagateQueryToReplicas(envelope); err != nil {
+			e.log.Errorf("sendEnvelopesToReplicas: Failed to send envelope %d: %v", i+1, err)
+		}
+	}
+}
+
+// readBoxFromReplicas reads a box from the replicas by creating a read request
+func (e *Courier) readBoxFromReplicas(boxID *[bacap.BoxIDSize]byte) (*pigeonhole.ReplicaReadReply, error) {
+	e.log.Debugf("readBoxFromReplicas: Reading box %x", boxID[:8])
+
+	// Get PKI document and select random intermediate replicas
+	doc := e.server.PKI.PKIDocument()
+	if doc == nil {
+		return nil, fmt.Errorf("PKI document is nil")
+	}
+
+	_, replicaPubKeys, err := pigeonhole.GetRandomIntermediateReplicas(doc, boxID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get random intermediate replicas: %w", err)
+	}
+
+	// Create ReplicaRead request
+	readMsg := &pigeonhole.ReplicaRead{
+		BoxID: *boxID,
+	}
+	innerMsg := &pigeonhole.ReplicaInnerMessage{
+		ReadMsg: readMsg,
+	}
+
+	// Encrypt using MKEM
+	mkemScheme := mkem.NewScheme(e.envelopeScheme)
+	mkemPrivateKey, mkemCiphertext := mkemScheme.Encapsulate(replicaPubKeys, innerMsg.Bytes())
+	mkemPublicKey := mkemPrivateKey.Public()
+
+	// Create ReplicaMessage command
+	query := &commands.ReplicaMessage{
+		Cmds:               e.cmds,
+		PigeonholeGeometry: e.pigeonholeGeo,
+		Scheme:             e.envelopeScheme,
+		SenderEPubKey:      mkemPublicKey.Bytes(),
+		DEK:                mkemCiphertext.DEKCiphertexts[0],
+		Ciphertext:         mkemCiphertext.Envelope,
+	}
+
+	// Calculate envelope hash for cache lookup
+	envHash := query.EnvelopeHash()
+
+	// Create channel for reply
+	e.copyCacheLock.Lock()
+	e.copyCache[*envHash] = make(chan *commands.ReplicaMessageReply, 1)
+	e.copyCacheLock.Unlock()
+
+	// Send to replica (use replica ID 0 for now - the connector will route it)
+	if err := e.server.SendMessage(0, query); err != nil {
+		e.copyCacheLock.Lock()
+		delete(e.copyCache, *envHash)
+		e.copyCacheLock.Unlock()
+		return nil, fmt.Errorf("failed to send message to replica: %w", err)
+	}
+
+	// Wait for reply
+	reply := <-e.copyCache[*envHash]
+
+	// Clean up cache
+	e.copyCacheLock.Lock()
+	delete(e.copyCache, *envHash)
+	e.copyCacheLock.Unlock()
+
+	// Check for errors
+	if reply.ErrorCode != 0 {
+		return nil, fmt.Errorf("replica returned error code: %d", reply.ErrorCode)
+	}
+
+	// Decrypt the reply
+	rawPlaintext, err := mkemScheme.DecryptEnvelope(mkemPrivateKey, replicaPubKeys[0], reply.EnvelopeReply)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decrypt envelope reply: %w", err)
+	}
+
+	// Parse the inner message
+	replyInnerMsg, err := pigeonhole.ParseReplicaMessageReplyInnerMessage(rawPlaintext)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse inner message: %w", err)
+	}
+
+	// Extract ReplicaReadReply
+	if replyInnerMsg.ReadReply == nil {
+		return nil, fmt.Errorf("reply does not contain ReplicaReadReply")
+	}
+
+	return replyInnerMsg.ReadReply, nil
+}
+
+// writeTombstonesToTempChannel writes tombstones to clean up the temporary channel
+func (e *Courier) writeTombstonesToTempChannel(writeCap *bacap.WriteCap, boxIDs [][bacap.BoxIDSize]byte) {
+	e.log.Debugf("writeTombstonesToTempChannel: Writing %d tombstones", len(boxIDs))
+
+	// Create StatefulWriter from WriteCap
+	writer, err := bacap.NewStatefulWriter(writeCap, constants.PIGEONHOLE_CTX)
+	if err != nil {
+		e.log.Errorf("writeTombstonesToTempChannel: Failed to create StatefulWriter: %v", err)
+		return
+	}
+
+	// Get PKI document for replica selection
+	doc := e.server.PKI.PKIDocument()
+	if doc == nil {
+		e.log.Errorf("writeTombstonesToTempChannel: PKI document is nil")
+		return
+	}
+
+	// Write tombstones for each box
+	for i, boxID := range boxIDs {
+		// Create empty payload (tombstone)
+		emptyPayload := []byte{}
+
+		// Encrypt and sign the tombstone
+		encBoxID, ciphertext, sig, err := writer.EncryptNext(emptyPayload)
+		if err != nil {
+			e.log.Errorf("writeTombstonesToTempChannel: Failed to encrypt tombstone %d: %v", i, err)
+			continue
+		}
+
+		// Verify the BoxID matches
+		if encBoxID != boxID {
+			e.log.Errorf("writeTombstonesToTempChannel: BoxID mismatch for tombstone %d", i)
+			continue
+		}
+
+		// Get the actual storage shard replicas for this box (not intermediates)
+		shards, err := replicaCommon.GetShards(&boxID, doc)
+		if err != nil {
+			e.log.Errorf("writeTombstonesToTempChannel: Failed to get shards for box %d: %v", i, err)
+			continue
+		}
+		if len(shards) != 2 {
+			e.log.Errorf("writeTombstonesToTempChannel: Expected 2 shards, got %d for box %d", len(shards), i)
+			continue
+		}
+
+		// Get replica IDs and public keys
+		replicaEpoch, _, _ := replicaCommon.ReplicaNow()
+		replicaIDs := [2]uint8{shards[0].ReplicaID, shards[1].ReplicaID}
+		replicaPubKeys := make([]nike.PublicKey, 2)
+		for j, shard := range shards {
+			keyBytes, exists := shard.EnvelopeKeys[replicaEpoch]
+			if !exists {
+				e.log.Errorf("writeTombstonesToTempChannel: No envelope key for replica %d at epoch %d", shard.ReplicaID, replicaEpoch)
+				continue
+			}
+			replicaPubKeys[j], err = e.envelopeScheme.UnmarshalBinaryPublicKey(keyBytes)
+			if err != nil {
+				e.log.Errorf("writeTombstonesToTempChannel: Failed to unmarshal key for replica %d: %v", shard.ReplicaID, err)
+				continue
+			}
+		}
+
+		// Create ReplicaWrite with the tombstone
+		sigArray := [bacap.SignatureSize]byte{}
+		copy(sigArray[:], sig)
+
+		writeMsg := &pigeonhole.ReplicaWrite{
+			BoxID:      boxID,
+			Signature:  sigArray,
+			PayloadLen: uint32(len(ciphertext)),
+			Payload:    ciphertext,
+		}
+
+		// Wrap in ReplicaInnerMessage
+		innerMsg := &pigeonhole.ReplicaInnerMessage{
+			MessageType: 1, // 1 = write
+			WriteMsg:    writeMsg,
+		}
+
+		// Encrypt using MKEM for both replicas
+		mkemScheme := mkem.NewScheme(e.envelopeScheme)
+		mkemPrivateKey, mkemCiphertext := mkemScheme.Encapsulate(replicaPubKeys, innerMsg.Bytes())
+		mkemPublicKey := mkemPrivateKey.Public()
+
+		// Send directly to each storage replica
+		for j, replicaID := range replicaIDs {
+			query := &commands.ReplicaMessage{
+				Cmds:               e.cmds,
+				PigeonholeGeometry: e.pigeonholeGeo,
+				Scheme:             e.envelopeScheme,
+				SenderEPubKey:      mkemPublicKey.Bytes(),
+				DEK:                mkemCiphertext.DEKCiphertexts[j],
+				Ciphertext:         mkemCiphertext.Envelope,
+			}
+
+			// Send directly to storage replica
+			if err := e.server.SendMessage(replicaID, query); err != nil {
+				e.log.Errorf("writeTombstonesToTempChannel: Failed to send tombstone %d to replica %d: %v", i, replicaID, err)
+				continue
+			}
+
+			e.log.Debugf("writeTombstonesToTempChannel: Sent tombstone %d/%d for box %x to replica %d", i+1, len(boxIDs), boxID[:8], replicaID)
+		}
+	}
+
+	e.log.Debugf("writeTombstonesToTempChannel: Finished writing %d tombstones", len(boxIDs))
+}
 
 // createEnvelopeErrorReply creates a CourierEnvelopeReply with the specified error code
 func (e *Courier) createEnvelopeErrorReply(envHash *[hash.HashSize]byte, errorCode uint8, replyIndex uint8) *pigeonhole.CourierQueryReply {
