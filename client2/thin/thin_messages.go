@@ -472,6 +472,25 @@ type SendChannelQuery struct {
 	Payload []byte `cbor:"payload"`
 }
 
+// Copy Channel API:
+
+// CreateCourierEnvelope creates a CourierEnvelope for a write operation.
+// The returned envelope can be written to a temporary copy stream channel.
+type CreateCourierEnvelope struct {
+	// QueryID is used for correlating this thin client request with the
+	// thin client response.
+	QueryID *[QueryIDLength]byte `cbor:"query_id"`
+
+	// Plaintext is the message to encrypt.
+	Plaintext []byte `cbor:"plaintext"`
+
+	// DestWriteCap is the write capability for the final destination boxes.
+	DestWriteCap *bacap.WriteCap `cbor:"dest_write_cap"`
+
+	// DestMessageBoxIndex is the message box index for the destination.
+	DestMessageBoxIndex *bacap.MessageBoxIndex `cbor:"dest_message_box_index"`
+}
+
 // Common API:
 
 // SendMessage is used to send a message through the mix network
@@ -578,6 +597,11 @@ type Response struct {
 
 	// ChannelQueryReplyEvent is sent when the client daemon receives a reply to a channel query.
 	ChannelQueryReplyEvent *ChannelQueryReplyEvent `cbor:"channel_query_reply_event"`
+
+	// Copy Channel API:
+
+	// CreateCourierEnvelopeReply is sent when the client daemon successfully creates a courier envelope.
+	CreateCourierEnvelopeReply *CreateCourierEnvelopeReply `cbor:"create_courier_envelope_reply"`
 }
 
 // Request is the thin client's request message to the client daemon.
@@ -646,4 +670,9 @@ type Request struct {
 
 	// SendChannelQuery is used to send a message through the mix network
 	SendChannelQuery *SendChannelQuery `cbor:"send_channel_query"`
+
+	// Copy Channel API:
+
+	// CreateCourierEnvelope is used to create a CourierEnvelope for a write operation.
+	CreateCourierEnvelope *CreateCourierEnvelope `cbor:"create_courier_envelope"`
 }

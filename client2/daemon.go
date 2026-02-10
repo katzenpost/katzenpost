@@ -399,6 +399,11 @@ func (d *Daemon) egressWorker() {
 			case request.NextMessageBoxIndex != nil:
 				d.nextMessageBoxIndex(request)
 
+				// Copy Channel API:
+
+			case request.CreateCourierEnvelope != nil:
+				d.createCourierEnvelope(request)
+
 				// OLD Pigeonhole Channel:
 
 			case request.SendChannelQuery != nil:

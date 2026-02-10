@@ -7,8 +7,10 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/katzenpost/hpqc/bacap"
+	"github.com/katzenpost/katzenpost/pigeonhole"
 )
 
 // errorCodeToSentinel maps error codes to sentinel errors for StartResendingEncryptedMessage.
@@ -637,6 +639,211 @@ func (t *ThinClient) NextMessageBoxIndex(ctx context.Context, messageBoxIndex *b
 				return nil, errors.New(ThinClientErrorToString(v.ErrorCode))
 			}
 			return v.NextMessageBoxIndex, nil
+		case *ConnectionStatusEvent:
+			t.isConnected = v.IsConnected
+		case *NewDocumentEvent:
+			// Ignore PKI document updates
+		default:
+			// Ignore other events
+		}
+	}
+}
+
+// Copy Channel API:
+
+// SendCopyCommand sends a Copy command to the courier service.
+//
+// The Copy command instructs the courier to read encrypted write operations from a
+// temporary copy stream (identified by tempWriteCap) and execute them atomically.
+// This provides all-or-nothing retransmission to prevent correlation attacks.
+//
+// The workflow is:
+// 1. Create temporary copy stream using NewKeypair
+// 2. Create CourierEnvelopes using CreateCourierEnvelope
+// 3. Write envelopes to copy stream using EncryptWrite + StartResendingEncryptedMessage
+// 4. Send Copy command with tempWriteCap using this method
+//
+// This method uses the existing BlockingSendMessage infrastructure to send a
+// CourierQuery with QueryType=1 (copy_command) to the courier service.
+//
+// Parameters:
+//   - ctx: Context for cancellation and timeout control
+//   - tempWriteCap: Write capability for the temporary copy stream
+//   - courierIdHash: 32-byte hash of the courier's identity public key
+//   - courierQueueID: Queue ID for the courier service (typically "courier")
+//
+// Returns:
+//   - uint8: Courier error code (0 = success)
+//   - error: Any error encountered during command sending
+//
+// Example:
+//
+//	// Get courier destination
+//	courierService, err := client.GetService("courier")
+//	if err != nil {
+//		log.Fatal("Failed to get courier service:", err)
+//	}
+//	courierIdHash := hash.Sum256(courierService.MixDescriptor.IdentityKey)
+//	courierQueueID := courierService.RecipientQueueID
+//
+//	// Send Copy command
+//	courierErrorCode, err := client.SendCopyCommand(ctx, tempWriteCap, &courierIdHash, courierQueueID)
+//	if err != nil {
+//		log.Fatal("Failed to send copy command:", err)
+//	}
+//	if courierErrorCode != 0 {
+//		log.Printf("Courier returned error code: %d", courierErrorCode)
+//	}
+func (t *ThinClient) SendCopyCommand(ctx context.Context, tempWriteCap *bacap.WriteCap, courierIdHash *[32]byte, courierQueueID []byte) (uint8, error) {
+	if ctx == nil {
+		return 0, errContextCannotBeNil
+	}
+	if tempWriteCap == nil {
+		return 0, errors.New("tempWriteCap cannot be nil")
+	}
+	if courierIdHash == nil {
+		return 0, errors.New("courierIdHash cannot be nil")
+	}
+	if len(courierQueueID) == 0 {
+		return 0, errors.New("courierQueueID cannot be empty")
+	}
+
+	// Serialize the WriteCap
+	writeCapBytes, err := tempWriteCap.MarshalBinary()
+	if err != nil {
+		return 0, fmt.Errorf("failed to marshal WriteCap: %w", err)
+	}
+
+	// Create CopyCommand
+	copyCommand := &pigeonhole.CopyCommand{
+		WriteCapLen: uint32(len(writeCapBytes)),
+		WriteCap:    writeCapBytes,
+	}
+
+	// Create CourierQuery with copy command
+	courierQuery := &pigeonhole.CourierQuery{
+		QueryType:   1, // 1 = copy_command
+		CopyCommand: copyCommand,
+	}
+
+	// Serialize CourierQuery
+	queryBytes, err := courierQuery.MarshalBinary()
+	if err != nil {
+		return 0, fmt.Errorf("failed to marshal CourierQuery: %w", err)
+	}
+
+	// Send to courier using existing BlockingSendMessage
+	replyBytes, err := t.BlockingSendMessage(ctx, queryBytes, courierIdHash, courierQueueID)
+	if err != nil {
+		return 0, fmt.Errorf("failed to send copy command: %w", err)
+	}
+
+	// Parse CourierQueryReply
+	courierQueryReply, err := pigeonhole.ParseCourierQueryReply(replyBytes)
+	if err != nil {
+		return 0, fmt.Errorf("failed to parse CourierQueryReply: %w", err)
+	}
+
+	// Verify it's a copy command reply
+	if courierQueryReply.ReplyType != 1 {
+		return 0, fmt.Errorf("unexpected reply type: got %d, expected 1 (copy_command_reply)", courierQueryReply.ReplyType)
+	}
+
+	if courierQueryReply.CopyCommandReply == nil {
+		return 0, errors.New("copy command reply is nil")
+	}
+
+	return courierQueryReply.CopyCommandReply.ErrorCode, nil
+}
+
+// CreateCourierEnvelope creates a CourierEnvelope for a write operation.
+//
+// This method encrypts the plaintext message for the destination boxes using BACAP,
+// wraps it in a ReplicaInnerMessage, encrypts it with MKEM to the replica public keys,
+// and creates a CourierEnvelope. The returned envelope bytes can be written to a
+// temporary copy stream channel using EncryptWrite + StartResendingEncryptedMessage.
+//
+// The plaintext size is validated against the pigeonhole geometry to ensure the
+// resulting CourierEnvelope will fit within a Box. Use the daemon's geometry object
+// to query the maximum plaintext size via geometry.MaxCourierEnvelopePlaintext().
+//
+// Parameters:
+//   - ctx: Context for cancellation and timeout control
+//   - plaintext: Message to encrypt (must not exceed MaxCourierEnvelopePlaintext)
+//   - destWriteCap: Write capability for the final destination boxes
+//   - destMessageBoxIndex: Message box index for the destination
+//
+// Returns:
+//   - []byte: Serialized CourierEnvelope to write to the copy stream
+//   - error: Any error encountered during envelope creation, including payload too large
+//
+// Example:
+//
+//	// Create courier envelope for each message
+//	envelope, err := client.CreateCourierEnvelope(ctx, message, destWriteCap, msgIndex)
+//	if err != nil {
+//		log.Fatal("Failed to create courier envelope:", err)
+//	}
+//
+//	// Write envelope to temporary copy stream using existing API
+//	ciphertext, envDesc, envHash, epoch, err := client.EncryptWrite(ctx, envelope, tempWriteCap, copyIndex)
+//	if err != nil {
+//		log.Fatal("Failed to encrypt envelope:", err)
+//	}
+//	_, err = client.StartResendingEncryptedMessage(ctx, nil, tempWriteCap, copyIndex.Bytes(), nil, envDesc, ciphertext, envHash, epoch)
+func (t *ThinClient) CreateCourierEnvelope(ctx context.Context, plaintext []byte, destWriteCap *bacap.WriteCap, destMessageBoxIndex *bacap.MessageBoxIndex) ([]byte, error) {
+	if ctx == nil {
+		return nil, errContextCannotBeNil
+	}
+	if destWriteCap == nil {
+		return nil, errors.New("destWriteCap cannot be nil")
+	}
+	if destMessageBoxIndex == nil {
+		return nil, errors.New("destMessageBoxIndex cannot be nil")
+	}
+
+	queryID := t.NewQueryID()
+	req := &Request{
+		CreateCourierEnvelope: &CreateCourierEnvelope{
+			QueryID:             queryID,
+			Plaintext:           plaintext,
+			DestWriteCap:        destWriteCap,
+			DestMessageBoxIndex: destMessageBoxIndex,
+		},
+	}
+
+	eventSink := t.EventSink()
+	defer t.StopEventSink(eventSink)
+
+	err := t.writeMessage(req)
+	if err != nil {
+		return nil, err
+	}
+
+	for {
+		var event Event
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case event = <-eventSink:
+		case <-t.HaltCh():
+			return nil, errHalting
+		}
+
+		switch v := event.(type) {
+		case *CreateCourierEnvelopeReply:
+			if v.QueryID == nil {
+				t.log.Debugf("CreateCourierEnvelope: Received reply with nil QueryID, ignoring")
+				continue
+			}
+			if !bytes.Equal(v.QueryID[:], queryID[:]) {
+				t.log.Debugf("CreateCourierEnvelope: Received reply with mismatched QueryID, ignoring")
+				continue
+			}
+			if v.ErrorCode != ThinClientSuccess {
+				return nil, errors.New(ThinClientErrorToString(v.ErrorCode))
+			}
+			return v.CourierEnvelope, nil
 		case *ConnectionStatusEvent:
 			t.isConnected = v.IsConnected
 		case *NewDocumentEvent:

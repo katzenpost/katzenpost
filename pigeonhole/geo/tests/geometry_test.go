@@ -1287,3 +1287,139 @@ func TestCalculateEnvelopeReplySizeReadDetailed(t *testing.T) {
 			"Error reply should be smaller than the predicted maximum size")
 	})
 }
+
+func TestMaxCourierEnvelopePlaintext(t *testing.T) {
+	// Test that MaxCourierEnvelopePlaintext correctly calculates the maximum
+	// plaintext size such that the resulting CourierEnvelope fits in a Box
+	nikeScheme := schemes.ByName("x25519")
+	require.NotNil(t, nikeScheme)
+
+	boxPayloadLength := 1000
+	g := pigeonholegeo.NewGeometry(boxPayloadLength, nikeScheme)
+	require.NoError(t, g.Validate())
+
+	// Get the maximum plaintext size for a CourierEnvelope
+	maxPlaintext := g.MaxCourierEnvelopePlaintext()
+	require.Greater(t, maxPlaintext, 0, "MaxCourierEnvelopePlaintext should be positive")
+	require.Less(t, maxPlaintext, boxPayloadLength, "MaxCourierEnvelopePlaintext should be less than box payload")
+
+	t.Logf("Box payload length: %d bytes", boxPayloadLength)
+	t.Logf("Max CourierEnvelope plaintext: %d bytes", maxPlaintext)
+	t.Logf("Overhead: %d bytes", boxPayloadLength-maxPlaintext)
+
+	// Create a test CourierEnvelope with the maximum plaintext size
+	// and verify it fits in a Box
+	plaintext := make([]byte, maxPlaintext)
+	_, err := rand.Reader.Read(plaintext)
+	require.NoError(t, err)
+
+	// Create BACAP writer for destination
+	destSeed := make([]byte, 32)
+	_, err = rand.Reader.Read(destSeed)
+	require.NoError(t, err)
+	destWriter, err := bacap.NewStatefulWriter(destSeed, constants.PIGEONHOLE_CTX)
+	require.NoError(t, err)
+
+	// Encrypt plaintext with BACAP
+	bacapCiphertext, err := destWriter.Encrypt(plaintext)
+	require.NoError(t, err)
+
+	// Create ReplicaWrite
+	replicaWrite := &pigeonhole.ReplicaWrite{
+		BoxID:      destWriter.BoxID(),
+		Signature:  destWriter.Signature(),
+		PayloadLen: uint32(len(bacapCiphertext)),
+		Payload:    bacapCiphertext,
+	}
+
+	// Wrap in ReplicaInnerMessage
+	replicaInnerMsg := &pigeonhole.ReplicaInnerMessage{
+		MessageType: 1, // Write
+		Write:       replicaWrite,
+	}
+	replicaInnerBytes, err := replicaInnerMsg.MarshalBinary()
+	require.NoError(t, err)
+
+	// Encrypt with MKEM
+	mkemScheme := mkem.NewScheme(nikeScheme)
+
+	// Generate replica keys
+	replica1Pub, _, err := mkemScheme.GenerateKeyPair()
+	require.NoError(t, err)
+	replica2Pub, _, err := mkemScheme.GenerateKeyPair()
+	require.NoError(t, err)
+
+	replicaKeys := []nike.PublicKey{replica1Pub, replica2Pub}
+	ephPriv, mkemCiphertext := mkemScheme.Encapsulate(replicaKeys, replicaInnerBytes)
+
+	// Create CourierEnvelope
+	courierEnvelope := &pigeonhole.CourierEnvelope{
+		IntermediateReplicas: [2]uint8{0, 1},
+		Dek1:                 *mkemCiphertext.DEKCiphertexts[0],
+		Dek2:                 *mkemCiphertext.DEKCiphertexts[1],
+		ReplyIndex:           0,
+		Epoch:                0,
+		SenderPubkeyLen:      uint16(len(ephPriv.Public().Bytes())),
+		SenderPubkey:         ephPriv.Public().Bytes(),
+		CiphertextLen:        uint32(len(mkemCiphertext.Envelope)),
+		Ciphertext:           mkemCiphertext.Envelope,
+	}
+
+	// Serialize CourierEnvelope
+	courierEnvelopeBytes, err := courierEnvelope.MarshalBinary()
+	require.NoError(t, err)
+
+	// Verify it fits in a Box
+	require.LessOrEqual(t, len(courierEnvelopeBytes), boxPayloadLength,
+		"CourierEnvelope with max plaintext should fit in Box")
+
+	t.Logf("Actual CourierEnvelope size: %d bytes", len(courierEnvelopeBytes))
+	t.Logf("Remaining space in Box: %d bytes", boxPayloadLength-len(courierEnvelopeBytes))
+
+	// Test that plaintext larger than max fails to fit
+	oversizedPlaintext := make([]byte, maxPlaintext+100)
+	_, err = rand.Reader.Read(oversizedPlaintext)
+	require.NoError(t, err)
+
+	// This should produce a CourierEnvelope that's too large
+	bacapCiphertext2, err := destWriter.Encrypt(oversizedPlaintext)
+	require.NoError(t, err)
+
+	replicaWrite2 := &pigeonhole.ReplicaWrite{
+		BoxID:      destWriter.BoxID(),
+		Signature:  destWriter.Signature(),
+		PayloadLen: uint32(len(bacapCiphertext2)),
+		Payload:    bacapCiphertext2,
+	}
+
+	replicaInnerMsg2 := &pigeonhole.ReplicaInnerMessage{
+		MessageType: 1,
+		Write:       replicaWrite2,
+	}
+	replicaInnerBytes2, err := replicaInnerMsg2.MarshalBinary()
+	require.NoError(t, err)
+
+	_, mkemCiphertext2 := mkemScheme.Encapsulate(replicaKeys, replicaInnerBytes2)
+
+	courierEnvelope2 := &pigeonhole.CourierEnvelope{
+		IntermediateReplicas: [2]uint8{0, 1},
+		Dek1:                 *mkemCiphertext2.DEKCiphertexts[0],
+		Dek2:                 *mkemCiphertext2.DEKCiphertexts[1],
+		ReplyIndex:           0,
+		Epoch:                0,
+		SenderPubkeyLen:      uint16(len(ephPriv.Public().Bytes())),
+		SenderPubkey:         ephPriv.Public().Bytes(),
+		CiphertextLen:        uint32(len(mkemCiphertext2.Envelope)),
+		Ciphertext:           mkemCiphertext2.Envelope,
+	}
+
+	courierEnvelopeBytes2, err := courierEnvelope2.MarshalBinary()
+	require.NoError(t, err)
+
+	// Verify it does NOT fit in a Box
+	require.Greater(t, len(courierEnvelopeBytes2), boxPayloadLength,
+		"CourierEnvelope with oversized plaintext should NOT fit in Box")
+
+	t.Logf("Oversized CourierEnvelope size: %d bytes (exceeds box by %d bytes)",
+		len(courierEnvelopeBytes2), len(courierEnvelopeBytes2)-boxPayloadLength)
+}
