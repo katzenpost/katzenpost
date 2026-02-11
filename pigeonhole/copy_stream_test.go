@@ -313,15 +313,23 @@ func TestCopyStreamDecoder_SingleBox(t *testing.T) {
 	decoder := NewCopyStreamDecoder()
 	decoder.AddData(stream)
 
-	decoded, err := decoder.DecodeAvailable()
+	// Decode first envelope
+	decoded1, err := decoder.DecodeAvailable()
 	require.NoError(t, err)
-	require.Len(t, decoded, 2)
-	require.Equal(t, 0, decoder.Remaining())
+	require.NotNil(t, decoded1)
+	require.Equal(t, envelopes[0].Ciphertext, decoded1.Ciphertext)
 
-	// Verify envelopes match
-	for i := 0; i < 2; i++ {
-		require.Equal(t, envelopes[i].Ciphertext, decoded[i].Ciphertext)
-	}
+	// Decode second envelope
+	decoded2, err := decoder.DecodeAvailable()
+	require.NoError(t, err)
+	require.NotNil(t, decoded2)
+	require.Equal(t, envelopes[1].Ciphertext, decoded2.Ciphertext)
+
+	// No more envelopes
+	decoded3, err := decoder.DecodeAvailable()
+	require.NoError(t, err)
+	require.Nil(t, decoded3)
+	require.Equal(t, 0, decoder.Remaining())
 }
 
 func TestCopyStreamDecoder_MultipleBoxes(t *testing.T) {
@@ -350,10 +358,15 @@ func TestCopyStreamDecoder_MultipleBoxes(t *testing.T) {
 		// Add box data
 		decoder.AddData(chunk)
 
-		// Decode available envelopes
-		decoded, err := decoder.DecodeAvailable()
-		require.NoError(t, err)
-		allDecoded = append(allDecoded, decoded...)
+		// Decode available envelope (at most one per call)
+		for {
+			decoded, err := decoder.DecodeAvailable()
+			require.NoError(t, err)
+			if decoded == nil {
+				break
+			}
+			allDecoded = append(allDecoded, decoded)
+		}
 	}
 
 	// Verify all envelopes were decoded
@@ -378,16 +391,16 @@ func TestCopyStreamDecoder_PartialEnvelope(t *testing.T) {
 	decoder.AddData(stream[:len(stream)/2])
 	decoded, err := decoder.DecodeAvailable()
 	require.NoError(t, err)
-	require.Len(t, decoded, 0, "Should not decode incomplete envelope")
+	require.Nil(t, decoded, "Should not decode incomplete envelope")
 	require.Greater(t, decoder.Remaining(), 0, "Should have data in buffer")
 
 	// Add second half
 	decoder.AddData(stream[len(stream)/2:])
 	decoded, err = decoder.DecodeAvailable()
 	require.NoError(t, err)
-	require.Len(t, decoded, 1, "Should decode complete envelope")
+	require.NotNil(t, decoded, "Should decode complete envelope")
 	require.Equal(t, 0, decoder.Remaining())
-	require.Equal(t, envelope.Ciphertext, decoded[0].Ciphertext)
+	require.Equal(t, envelope.Ciphertext, decoded.Ciphertext)
 }
 
 func TestCopyStreamDecoder_InvalidLength(t *testing.T) {
@@ -431,9 +444,15 @@ func TestCopyStreamDecoder_IncrementalDecoding(t *testing.T) {
 
 	for i := 0; i < len(stream); i++ {
 		decoder.AddData(stream[i : i+1])
-		decoded, err := decoder.DecodeAvailable()
-		require.NoError(t, err)
-		allDecoded = append(allDecoded, decoded...)
+		// Keep decoding until no more envelopes available
+		for {
+			decoded, err := decoder.DecodeAvailable()
+			require.NoError(t, err)
+			if decoded == nil {
+				break
+			}
+			allDecoded = append(allDecoded, decoded)
+		}
 	}
 
 	require.Len(t, allDecoded, 3)
@@ -577,9 +596,15 @@ func TestCopyStreamEncoder_RoundTripWithDecoder(t *testing.T) {
 
 	for _, chunk := range chunks {
 		decoder.AddData(chunk)
-		decoded, err := decoder.DecodeAvailable()
-		require.NoError(t, err)
-		allDecoded = append(allDecoded, decoded...)
+		// Keep decoding until no more envelopes available
+		for {
+			decoded, err := decoder.DecodeAvailable()
+			require.NoError(t, err)
+			if decoded == nil {
+				break
+			}
+			allDecoded = append(allDecoded, decoded)
+		}
 	}
 
 	// Verify

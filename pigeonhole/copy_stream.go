@@ -159,54 +159,55 @@ func (d *CopyStreamDecoder) AddData(data []byte) {
 	d.buffer = append(d.buffer, data...)
 }
 
-// DecodeAvailable attempts to decode all complete envelopes from the current buffer.
-// Returns a slice of decoded envelopes and any error encountered.
+// DecodeAvailable attempts to decode one complete envelope from the current buffer.
+// Returns a pointer to the decoded envelope (nil if no complete envelope available) and any error encountered.
 // Incomplete envelopes remain in the buffer for the next call.
 //
-// This should be called after each AddData() to extract any complete envelopes.
-func (d *CopyStreamDecoder) DecodeAvailable() ([]*CourierEnvelope, error) {
-	var envelopes []*CourierEnvelope
-
-	for len(d.buffer) >= 4 {
-		// Read 4-byte length prefix
-		length := uint32(d.buffer[0])<<24 | uint32(d.buffer[1])<<16 | uint32(d.buffer[2])<<8 | uint32(d.buffer[3])
-
-		// Validate length
-		if length == 0 {
-			return nil, fmt.Errorf("invalid zero-length envelope at buffer offset 0")
-		}
-		if length > 1024*1024 { // Sanity check: 1MB max per envelope
-			return nil, fmt.Errorf("envelope length %d exceeds maximum (1MB)", length)
-		}
-
-		// Check if we have the complete envelope
-		if uint32(len(d.buffer)) < 4+length {
-			// Need more data, stop processing
-			break
-		}
-
-		// Extract envelope bytes
-		envelopeBytes := d.buffer[4 : 4+length]
-
-		// Parse the CourierEnvelope using trunnel
-		envelope := &CourierEnvelope{}
-		remaining, err := envelope.Parse(envelopeBytes)
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse envelope: %w", err)
-		}
-
-		// Verify that all bytes were consumed
-		if len(remaining) > 0 {
-			return nil, fmt.Errorf("envelope has %d trailing bytes", len(remaining))
-		}
-
-		envelopes = append(envelopes, envelope)
-
-		// Remove processed envelope from buffer
-		d.buffer = d.buffer[4+length:]
+// This should be called after each AddData() to extract any complete envelope.
+// Given the geometry (CourierEnvelope ~1300 bytes, Box ~1000 bytes), at most one envelope
+// will be available per call.
+func (d *CopyStreamDecoder) DecodeAvailable() (*CourierEnvelope, error) {
+	// Check if we have at least the length prefix
+	if len(d.buffer) < 4 {
+		return nil, nil
 	}
 
-	return envelopes, nil
+	// Read 4-byte length prefix
+	length := uint32(d.buffer[0])<<24 | uint32(d.buffer[1])<<16 | uint32(d.buffer[2])<<8 | uint32(d.buffer[3])
+
+	// Validate length
+	if length == 0 {
+		return nil, fmt.Errorf("invalid zero-length envelope at buffer offset 0")
+	}
+	if length > 1024*1024 { // Sanity check: 1MB max per envelope
+		return nil, fmt.Errorf("envelope length %d exceeds maximum (1MB)", length)
+	}
+
+	// Check if we have the complete envelope
+	if uint32(len(d.buffer)) < 4+length {
+		// Need more data
+		return nil, nil
+	}
+
+	// Extract envelope bytes
+	envelopeBytes := d.buffer[4 : 4+length]
+
+	// Parse the CourierEnvelope using trunnel
+	envelope := &CourierEnvelope{}
+	remaining, err := envelope.Parse(envelopeBytes)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse envelope: %w", err)
+	}
+
+	// Verify that all bytes were consumed
+	if len(remaining) > 0 {
+		return nil, fmt.Errorf("envelope has %d trailing bytes", len(remaining))
+	}
+
+	// Remove processed envelope from buffer
+	d.buffer = d.buffer[4+length:]
+
+	return envelope, nil
 }
 
 // Remaining returns the number of bytes remaining in the buffer.
