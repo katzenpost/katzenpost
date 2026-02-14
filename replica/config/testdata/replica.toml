@@ -1,5 +1,6 @@
 DataDir = "/voting_mixnet/replica1"
 Identifier = "replica1"
+ReplicaID = 0
 WireKEMScheme = "xwing"
 PKISignatureScheme = "Ed25519"
 ReplicaNIKEScheme = "CTIDH1024-X25519"

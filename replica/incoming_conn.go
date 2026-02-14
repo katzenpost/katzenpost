@@ -409,7 +409,6 @@ func (c *incomingConn) authenticateCourier(creds *wire.PeerCredentials) bool {
 			continue
 		}
 		if c.validateCourierKey(desc, creds.PublicKey) {
-			c.log.Debugf("replica/incoming: authenticateCourier(): Authenticated courier connection for '%s'", desc.Name)
 			return true
 		}
 	}
@@ -467,7 +466,6 @@ func (c *incomingConn) authenticateReplica(creds *wire.PeerCredentials) bool {
 		return false
 	}
 
-	c.log.Debugf("replica/incoming: authenticateReplica(): Authenticated replica connection for '%s'", replicaDesc.Name)
 	return true
 }
 

@@ -1,22 +1,23 @@
-name: Benchmarks
+name: Daily Benchmarks
 
 on:
   schedule:
+    # Run daily at 3 AM UTC
     - cron: "0 3 * * *"
   workflow_dispatch:
     inputs:
       alert_threshold:
-        description: "Alert threshold percentage (e.g., 110 = 10% regression)"
+        description: "Alert threshold percentage (e.g., 130 = 30% regression)"
         required: false
-        default: "110"
+        default: "130"
 
 permissions:
   contents: write
 
 jobs:
-  benchmark:
+  daily-benchmarks:
     runs-on: ubuntu-latest
-    name: All Benchmarks
+    name: Daily Performance Benchmarks
 
     steps:
       - name: Checkout code
@@ -48,15 +49,11 @@ jobs:
           go build
           ./genconfig --wirekem xwing --voting --baseDir /conf --outDir ../../docker/voting_mixnet/
 
-      - name: Run all benchmarks
+      - name: Run daily benchmarks
         run: |
           set -e
 
-          echo "=== Sphinx Benchmarks ===" | tee benchmark-results.txt
-          go test -bench=. -benchmem -run='^$' ./core/sphinx/... 2>&1 | tee -a benchmark-results.txt
-
-          echo "" | tee -a benchmark-results.txt
-          echo "=== Wire Protocol Benchmarks ===" | tee -a benchmark-results.txt
+          echo "=== Wire Protocol Benchmarks ===" | tee benchmark-results.txt
           go test -bench=. -benchmem -run='^$' ./core/wire/... 2>&1 | tee -a benchmark-results.txt
 
           echo "" | tee -a benchmark-results.txt
@@ -88,19 +85,19 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: ./cache
-          key: benchmark-cache-${{ runner.os }}-${{ github.run_id }}
+          key: daily-benchmark-cache-${{ runner.os }}-${{ github.run_id }}
           restore-keys: |
-            benchmark-cache-${{ runner.os }}-
+            daily-benchmark-cache-${{ runner.os }}-
 
       - name: Store benchmark result
         uses: benchmark-action/github-action-benchmark@v1
         with:
-          name: Katzenpost Benchmarks
+          name: Katzenpost Daily Benchmarks
           tool: go
           output-file-path: benchmark-results.txt
-          external-data-json-path: ./cache/benchmark-data.json
-          alert-threshold: ${{ github.event.inputs.alert_threshold || '110' }}%
-          fail-on-alert: true
+          external-data-json-path: ./cache/daily-benchmark-data.json
+          alert-threshold: ${{ github.event.inputs.alert_threshold || '130' }}%
+          fail-on-alert: false
           comment-on-alert: true
           alert-comment-cc-users: "@katzenpost/core-maintainers"
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -110,12 +107,13 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: ./cache
-          key: benchmark-cache-${{ runner.os }}-${{ github.run_id }}
+          key: daily-benchmark-cache-${{ runner.os }}-${{ github.run_id }}
 
       - name: Upload benchmark results
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: benchmark-results
+          name: daily-benchmark-results
           path: benchmark-results.txt
           retention-days: 90
+

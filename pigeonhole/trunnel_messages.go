@@ -1191,3 +1191,77 @@ func (c *CopyCommandReply) MarshalBinary() ([]byte, error) {
 func (c *CopyCommandReply) validate() error {
 	return nil
 }
+
+type CopyCommandWrapper struct {
+	Flags      uint8
+	PayloadLen uint32
+	Payload    []uint8
+}
+
+func (c *CopyCommandWrapper) Parse(data []byte) ([]byte, error) {
+	cur := data
+	{
+		if len(cur) < 1 {
+			return nil, errors.New("data too short")
+		}
+		c.Flags = cur[0]
+		cur = cur[1:]
+	}
+	{
+		if len(cur) < 4 {
+			return nil, errors.New("data too short")
+		}
+		c.PayloadLen = binary.BigEndian.Uint32(cur)
+		cur = cur[4:]
+	}
+	{
+		c.Payload = make([]uint8, int(c.PayloadLen))
+		for idx := 0; idx < int(c.PayloadLen); idx++ {
+			if len(cur) < 1 {
+				return nil, errors.New("data too short")
+			}
+			c.Payload[idx] = cur[0]
+			cur = cur[1:]
+		}
+	}
+	return cur, nil
+}
+
+func ParseCopyCommandWrapper(data []byte) (*CopyCommandWrapper, error) {
+	c := new(CopyCommandWrapper)
+	_, err := c.Parse(data)
+	if err != nil {
+		return nil, err
+	}
+	return c, nil
+}
+
+func (c *CopyCommandWrapper) encodeBinary() []byte {
+	var buf []byte
+	buf = append(buf, byte(c.Flags))
+	{
+		tmp := make([]byte, 4)
+		binary.BigEndian.PutUint32(tmp, c.PayloadLen)
+		buf = append(buf, tmp...)
+	}
+	for idx := 0; idx < int(c.PayloadLen); idx++ {
+		buf = append(buf, byte(c.Payload[idx]))
+	}
+	return buf
+}
+
+func (c *CopyCommandWrapper) MarshalBinary() ([]byte, error) {
+	if err := c.validate(); err != nil {
+		return nil, err
+	}
+	return c.encodeBinary(), nil
+}
+
+func (c *CopyCommandWrapper) validate() error {
+	if len(c.Payload) != int(c.PayloadLen) {
+		return errors.New("array length constraint violated")
+	}
+	for idx := 0; idx < len(c.Payload); idx++ {
+	}
+	return nil
+}
