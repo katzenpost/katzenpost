@@ -155,3 +155,15 @@ struct copy_command {
 struct copy_command_reply {
     u8 error_code;
 }
+
+// CopyCommandWrapper - wraps copy stream chunks with start/stop markers
+// Used in the temporary copy channel to mark the beginning and end of a copy stream.
+// Fixed overhead: 1 byte (flags) + 4 bytes (payload_len) = 5 bytes
+struct copy_command_wrapper {
+    // Flags byte: bit 0 = start, bit 1 = stop
+    u8 flags;
+
+    // Payload containing the copy stream chunk
+    u32 payload_len;
+    u8 payload[payload_len];
+}

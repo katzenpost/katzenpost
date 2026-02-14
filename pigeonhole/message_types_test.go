@@ -586,3 +586,125 @@ func TestMaxValues(t *testing.T) {
 		t.Errorf(errReplyIndexMismatch, decoded.ReplyIndex, original.ReplyIndex)
 	}
 }
+
+// CopyCommandWrapper flag constants (must match client2/pigeonhole.go)
+const (
+	CopyCommandWrapperFlagStart = 0x01
+	CopyCommandWrapperFlagStop  = 0x02
+)
+
+func TestCopyCommandWrapperEncodeDecode(t *testing.T) {
+	payload := randomBytes(1500)
+
+	original := &CopyCommandWrapper{
+		Flags:      CopyCommandWrapperFlagStart, // Start marker
+		PayloadLen: uint32(len(payload)),
+		Payload:    payload,
+	}
+
+	// Encode
+	encoded, err := original.MarshalBinary()
+	if err != nil {
+		t.Fatalf("Failed to encode CopyCommandWrapper: %v", err)
+	}
+
+	// Verify fixed overhead of 5 bytes (1 byte flags + 4 bytes payload_len)
+	expectedSize := 5 + len(payload)
+	if len(encoded) != expectedSize {
+		t.Errorf("Encoded size mismatch: got %d, want %d (overhead should be 5 bytes)", len(encoded), expectedSize)
+	}
+
+	// Decode
+	decoded, err := ParseCopyCommandWrapper(encoded)
+	if err != nil {
+		t.Fatalf("Failed to decode CopyCommandWrapper: %v", err)
+	}
+
+	// Compare fields
+	if decoded.Flags != original.Flags {
+		t.Errorf("Flags mismatch: got %d, want %d", decoded.Flags, original.Flags)
+	}
+	if decoded.PayloadLen != original.PayloadLen {
+		t.Errorf(errPayloadLenMismatch, decoded.PayloadLen, original.PayloadLen)
+	}
+	if !bytes.Equal(decoded.Payload, original.Payload) {
+		t.Errorf(errPayloadMismatch)
+	}
+}
+
+func TestCopyCommandWrapperFlags(t *testing.T) {
+	tests := []struct {
+		name      string
+		flags     uint8
+		wantStart bool
+		wantStop  bool
+	}{
+		{"no flags", 0x00, false, false},
+		{"start only", CopyCommandWrapperFlagStart, true, false},
+		{"stop only", CopyCommandWrapperFlagStop, false, true},
+		{"start and stop", CopyCommandWrapperFlagStart | CopyCommandWrapperFlagStop, true, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			payload := randomBytes(100)
+			original := &CopyCommandWrapper{
+				Flags:      tt.flags,
+				PayloadLen: uint32(len(payload)),
+				Payload:    payload,
+			}
+
+			// Encode and decode
+			encoded, err := original.MarshalBinary()
+			if err != nil {
+				t.Fatalf("Failed to encode: %v", err)
+			}
+			decoded, err := ParseCopyCommandWrapper(encoded)
+			if err != nil {
+				t.Fatalf("Failed to decode: %v", err)
+			}
+
+			// Check flag values
+			gotStart := decoded.Flags&CopyCommandWrapperFlagStart != 0
+			gotStop := decoded.Flags&CopyCommandWrapperFlagStop != 0
+
+			if gotStart != tt.wantStart {
+				t.Errorf("Start flag mismatch: got %v, want %v", gotStart, tt.wantStart)
+			}
+			if gotStop != tt.wantStop {
+				t.Errorf("Stop flag mismatch: got %v, want %v", gotStop, tt.wantStop)
+			}
+		})
+	}
+}
+
+func TestCopyCommandWrapperEmptyPayload(t *testing.T) {
+	// Test with empty payload (stop marker without data)
+	original := &CopyCommandWrapper{
+		Flags:      CopyCommandWrapperFlagStop,
+		PayloadLen: 0,
+		Payload:    []byte{},
+	}
+
+	encoded, err := original.MarshalBinary()
+	if err != nil {
+		t.Fatalf("Failed to encode empty CopyCommandWrapper: %v", err)
+	}
+
+	// Should be exactly 5 bytes (flags + payload_len only)
+	if len(encoded) != 5 {
+		t.Errorf("Empty payload encoded size should be 5 bytes, got %d", len(encoded))
+	}
+
+	decoded, err := ParseCopyCommandWrapper(encoded)
+	if err != nil {
+		t.Fatalf("Failed to decode empty CopyCommandWrapper: %v", err)
+	}
+
+	if decoded.PayloadLen != 0 {
+		t.Errorf("PayloadLen should be 0, got %d", decoded.PayloadLen)
+	}
+	if len(decoded.Payload) != 0 {
+		t.Errorf("Payload should be empty, got %d bytes", len(decoded.Payload))
+	}
+}

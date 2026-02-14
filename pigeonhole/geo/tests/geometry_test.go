@@ -1314,20 +1314,23 @@ func TestMaxCourierEnvelopePlaintext(t *testing.T) {
 	require.NoError(t, err)
 
 	// Create BACAP writer for destination
-	destSeed := make([]byte, 32)
-	_, err = rand.Reader.Read(destSeed)
+	destWriteCap, err := bacap.NewWriteCap(rand.Reader)
 	require.NoError(t, err)
-	destWriter, err := bacap.NewStatefulWriter(destSeed, constants.PIGEONHOLE_CTX)
+	destWriter, err := bacap.NewStatefulWriter(destWriteCap, constants.PIGEONHOLE_CTX)
 	require.NoError(t, err)
 
 	// Encrypt plaintext with BACAP
-	bacapCiphertext, err := destWriter.Encrypt(plaintext)
+	boxID, bacapCiphertext, sigRaw, err := destWriter.EncryptNext(plaintext)
 	require.NoError(t, err)
+
+	// Convert signature to fixed-size array
+	var sig [64]uint8
+	copy(sig[:], sigRaw)
 
 	// Create ReplicaWrite
 	replicaWrite := &pigeonhole.ReplicaWrite{
-		BoxID:      destWriter.BoxID(),
-		Signature:  destWriter.Signature(),
+		BoxID:      boxID,
+		Signature:  sig,
 		PayloadLen: uint32(len(bacapCiphertext)),
 		Payload:    bacapCiphertext,
 	}
@@ -1335,7 +1338,7 @@ func TestMaxCourierEnvelopePlaintext(t *testing.T) {
 	// Wrap in ReplicaInnerMessage
 	replicaInnerMsg := &pigeonhole.ReplicaInnerMessage{
 		MessageType: 1, // Write
-		Write:       replicaWrite,
+		WriteMsg:    replicaWrite,
 	}
 	replicaInnerBytes, err := replicaInnerMsg.MarshalBinary()
 	require.NoError(t, err)
@@ -1382,19 +1385,23 @@ func TestMaxCourierEnvelopePlaintext(t *testing.T) {
 	require.NoError(t, err)
 
 	// This should produce a CourierEnvelope that's too large
-	bacapCiphertext2, err := destWriter.Encrypt(oversizedPlaintext)
+	boxID2, bacapCiphertext2, sigRaw2, err := destWriter.EncryptNext(oversizedPlaintext)
 	require.NoError(t, err)
 
+	// Convert signature to fixed-size array
+	var sig2 [64]uint8
+	copy(sig2[:], sigRaw2)
+
 	replicaWrite2 := &pigeonhole.ReplicaWrite{
-		BoxID:      destWriter.BoxID(),
-		Signature:  destWriter.Signature(),
+		BoxID:      boxID2,
+		Signature:  sig2,
 		PayloadLen: uint32(len(bacapCiphertext2)),
 		Payload:    bacapCiphertext2,
 	}
 
 	replicaInnerMsg2 := &pigeonhole.ReplicaInnerMessage{
 		MessageType: 1,
-		Write:       replicaWrite2,
+		WriteMsg:    replicaWrite2,
 	}
 	replicaInnerBytes2, err := replicaInnerMsg2.MarshalBinary()
 	require.NoError(t, err)
