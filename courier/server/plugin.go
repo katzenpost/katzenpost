@@ -14,7 +14,6 @@ import (
 
 	"gopkg.in/op/go-logging.v1"
 
-	"github.com/fxamacker/cbor/v2"
 	"github.com/katzenpost/hpqc/bacap"
 	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/kem/mkem"
@@ -124,15 +123,14 @@ func (s *Server) StartPlugin() {
 }
 
 func (e *Courier) HandleReply(reply *commands.ReplicaMessageReply) {
-	isCopy := false
 	e.copyCacheLock.RLock()
-	if _, ok := e.copyCache[*reply.EnvelopeHash]; ok {
-		isCopy = true
-	}
+	ch, isCopy := e.copyCache[*reply.EnvelopeHash]
 	e.copyCacheLock.RUnlock()
 
 	if isCopy {
-		panic("NOT YET IMPLEMENTED")
+		// Send reply to waiting goroutine for copy command processing
+		ch <- reply
+		return
 	}
 	e.CacheReply(reply)
 }
@@ -599,12 +597,11 @@ func (e *Courier) cacheHandleCourierEnvelope(queryType uint8, courierMessage *pi
 	return nil
 }
 
-// CopyCommandWrapper wraps commands in the temporary channel with start/stop markers
-type CopyCommandWrapper struct {
-	Start   bool   `cbor:"start"`
-	Stop    bool   `cbor:"stop"`
-	Payload []byte `cbor:"payload"`
-}
+// CopyCommandWrapper flag constants (must match client2/pigeonhole.go)
+const (
+	CopyCommandWrapperFlagStart = 0x01
+	CopyCommandWrapperFlagStop  = 0x02
+)
 
 // handleCopyCommand reads all the boxes in the given BACAP sequence and interprets their
 // plaintext contents as CourierEnvelopes. It then sends all those CourierEnvelopes to the
@@ -755,31 +752,39 @@ func (e *Courier) readNextBox(reader *bacap.StatefulReader, boxID *[bacap.BoxIDS
 		return nil, false, err
 	}
 
-	// Decrypt the box to get the CBOR-encoded wrapper
+	// Decrypt the box to get the padded wrapper
 	sig := [bacap.SignatureSize]byte{}
 	copy(sig[:], replicaReadReply.Signature[:])
-	decryptedPayload, err := reader.DecryptNext(constants.PIGEONHOLE_CTX, *boxID, replicaReadReply.Payload, sig)
+	decryptedPadded, err := reader.DecryptNext(constants.PIGEONHOLE_CTX, *boxID, replicaReadReply.Payload, sig)
 	if err != nil {
 		e.log.Errorf("readNextBox: Failed to decrypt box %x: %v", boxID[:8], err)
 		return nil, false, err
 	}
 
-	// Unwrap the CBOR wrapper to extract the chunk
-	var wrapper CopyCommandWrapper
-	if err := cbor.Unmarshal(decryptedPayload, &wrapper); err != nil {
-		e.log.Errorf("readNextBox: Failed to unmarshal CBOR wrapper: %v", err)
+	// Extract the actual payload from the padded data
+	decryptedPayload, err := pigeonhole.ExtractMessageFromPaddedPayload(decryptedPadded)
+	if err != nil {
+		e.log.Errorf("readNextBox: Failed to extract payload from padded data: %v", err)
 		return nil, false, err
 	}
 
-	// Check for stop marker
-	if wrapper.Stop {
-		e.log.Debugf("readNextBox: Found stop marker in box %x", boxID[:8])
-		return nil, true, nil
+	// Unwrap the trunnel wrapper to extract the chunk
+	wrapper, err := pigeonhole.ParseCopyCommandWrapper(decryptedPayload)
+	if err != nil {
+		e.log.Errorf("readNextBox: Failed to parse trunnel wrapper: %v", err)
+		return nil, false, err
 	}
 
-	// Log start marker if present
-	if wrapper.Start {
+	// Log start marker if present (bit 0 of flags)
+	if wrapper.Flags&CopyCommandWrapperFlagStart != 0 {
 		e.log.Debugf("readNextBox: Found start marker in box %x", boxID[:8])
+	}
+
+	// Check for stop marker (bit 1 of flags)
+	if wrapper.Flags&CopyCommandWrapperFlagStop != 0 {
+		e.log.Debugf("readNextBox: Found stop marker in box %x", boxID[:8])
+		// Return payload if present (last data chunk can have both payload and stop marker)
+		return wrapper.Payload, true, nil
 	}
 
 	// Return the payload chunk (partial CourierEnvelope data)
@@ -819,7 +824,7 @@ func (e *Courier) readBoxFromReplicas(boxID *[bacap.BoxIDSize]byte) (*pigeonhole
 		return nil, fmt.Errorf("PKI document is nil")
 	}
 
-	_, replicaPubKeys, err := pigeonhole.GetRandomIntermediateReplicas(doc, boxID)
+	replicaIDs, replicaPubKeys, err := pigeonhole.GetRandomIntermediateReplicas(doc, boxID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get random intermediate replicas: %w", err)
 	}
@@ -829,7 +834,8 @@ func (e *Courier) readBoxFromReplicas(boxID *[bacap.BoxIDSize]byte) (*pigeonhole
 		BoxID: *boxID,
 	}
 	innerMsg := &pigeonhole.ReplicaInnerMessage{
-		ReadMsg: readMsg,
+		MessageType: 0, // 0 = read
+		ReadMsg:     readMsg,
 	}
 
 	// Encrypt using MKEM
@@ -855,8 +861,8 @@ func (e *Courier) readBoxFromReplicas(boxID *[bacap.BoxIDSize]byte) (*pigeonhole
 	e.copyCache[*envHash] = make(chan *commands.ReplicaMessageReply, 1)
 	e.copyCacheLock.Unlock()
 
-	// Send to replica (use replica ID 0 for now - the connector will route it)
-	if err := e.server.SendMessage(0, query); err != nil {
+	// Send to the first replica we encrypted for (it will proxy if needed)
+	if err := e.server.SendMessage(replicaIDs[0], query); err != nil {
 		e.copyCacheLock.Lock()
 		delete(e.copyCache, *envHash)
 		e.copyCacheLock.Unlock()
