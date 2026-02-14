@@ -59,6 +59,9 @@ jobs:
       - name: run new Pigeonhole API multiple messages test
         run: cd client2 && make testargs=-coverprofile=coverage.part dockertest_new_pigeonhole_multiple_messages && cat coverage.part >> ../coverage.out
 
+      - name: run pigeonhole copy command test
+        run: cd client2 && make testargs=-coverprofile=coverage.part dockertest_copy_command && cat coverage.part >> ../coverage.out
+
       - name: Stop the mixnet
         run: |
           cd docker && make stop
