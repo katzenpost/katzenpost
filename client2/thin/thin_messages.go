@@ -474,21 +474,27 @@ type SendChannelQuery struct {
 
 // Copy Channel API:
 
-// CreateCourierEnvelope creates a CourierEnvelope for a write operation.
-// The returned envelope can be written to a temporary copy stream channel.
-type CreateCourierEnvelope struct {
+// CreateCourierEnvelopesFromPayload creates multiple CourierEnvelopes from a payload of any size.
+// The payload is automatically chunked and each chunk is wrapped in a CourierEnvelope.
+// Each returned chunk is wrapped in CopyCommandWrapper CBOR format with appropriate Start/Stop markers.
+type CreateCourierEnvelopesFromPayload struct {
 	// QueryID is used for correlating this thin client request with the
 	// thin client response.
 	QueryID *[QueryIDLength]byte `cbor:"query_id"`
 
-	// Plaintext is the message to encrypt.
-	Plaintext []byte `cbor:"plaintext"`
+	// Payload is the data to be written (any size).
+	Payload []byte `cbor:"payload"`
 
-	// DestWriteCap is the write capability for the final destination boxes.
+	// DestWriteCap is the write capability for the destination channel.
 	DestWriteCap *bacap.WriteCap `cbor:"dest_write_cap"`
 
-	// DestMessageBoxIndex is the message box index for the destination.
-	DestMessageBoxIndex *bacap.MessageBoxIndex `cbor:"dest_message_box_index"`
+	// DestStartIndex is the starting index in the destination channel.
+	DestStartIndex *bacap.MessageBoxIndex `cbor:"dest_start_index"`
+
+	// IsLast indicates whether this is the last payload in the sequence.
+	// When true, a final chunk with Stop marker will be appended.
+	// The first chunk always gets a Start marker.
+	IsLast bool `cbor:"is_last"`
 }
 
 // Common API:
@@ -600,8 +606,8 @@ type Response struct {
 
 	// Copy Channel API:
 
-	// CreateCourierEnvelopeReply is sent when the client daemon successfully creates a courier envelope.
-	CreateCourierEnvelopeReply *CreateCourierEnvelopeReply `cbor:"create_courier_envelope_reply"`
+	// CreateCourierEnvelopesFromPayloadReply is sent when the client daemon successfully creates courier envelopes from a payload.
+	CreateCourierEnvelopesFromPayloadReply *CreateCourierEnvelopesFromPayloadReply `cbor:"create_courier_envelopes_from_payload_reply"`
 }
 
 // Request is the thin client's request message to the client daemon.
@@ -673,6 +679,6 @@ type Request struct {
 
 	// Copy Channel API:
 
-	// CreateCourierEnvelope is used to create a CourierEnvelope for a write operation.
-	CreateCourierEnvelope *CreateCourierEnvelope `cbor:"create_courier_envelope"`
+	// CreateCourierEnvelopesFromPayload is used to create multiple CourierEnvelopes from a payload of any size.
+	CreateCourierEnvelopesFromPayload *CreateCourierEnvelopesFromPayload `cbor:"create_courier_envelopes_from_payload"`
 }

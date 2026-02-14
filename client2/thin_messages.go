@@ -23,7 +23,7 @@ func IntoThinResponse(r *Response) *thin.Response {
 		NextMessageBoxIndexReply:             r.NextMessageBoxIndexReply,
 
 		// Copy Channel API:
-		CreateCourierEnvelopeReply: r.CreateCourierEnvelopeReply,
+		CreateCourierEnvelopesFromPayloadReply: r.CreateCourierEnvelopesFromPayloadReply,
 
 		// OLD Pigeonhole API:
 		CreateWriteChannelReply:      r.CreateWriteChannelReply,
@@ -72,7 +72,7 @@ type Response struct {
 
 	// Copy Channel API:
 
-	CreateCourierEnvelopeReply *thin.CreateCourierEnvelopeReply
+	CreateCourierEnvelopesFromPayloadReply *thin.CreateCourierEnvelopesFromPayloadReply
 
 	// OLD Pigeonhole API:
 
@@ -110,7 +110,7 @@ func FromThinRequest(r *thin.Request, appid *[AppIDLength]byte) *Request {
 		NextMessageBoxIndex:             r.NextMessageBoxIndex,
 
 		// Copy Channel API:
-		CreateCourierEnvelope: r.CreateCourierEnvelope,
+		CreateCourierEnvelopesFromPayload: r.CreateCourierEnvelopesFromPayload,
 
 		// Old Pigeonhole API:
 		SendChannelQuery:        r.SendChannelQuery,
@@ -156,7 +156,7 @@ type Request struct {
 
 	// Copy Channel API:
 
-	CreateCourierEnvelope *thin.CreateCourierEnvelope
+	CreateCourierEnvelopesFromPayload *thin.CreateCourierEnvelopesFromPayload
 
 	// OLD Pigeonhole API:
 

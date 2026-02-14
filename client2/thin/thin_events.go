@@ -664,26 +664,25 @@ func (e *ChannelQueryReplyEvent) String() string {
 
 // Copy Channel API:
 
-// CreateCourierEnvelopeReply is sent in response to a CreateCourierEnvelope request.
-// It provides the serialized CourierEnvelope that can be written to a copy stream.
-type CreateCourierEnvelopeReply struct {
-	// QueryID is used for correlating this reply with the CreateCourierEnvelope request
+// CreateCourierEnvelopesFromPayloadReply is sent in response to a CreateCourierEnvelopesFromPayload request.
+// It provides multiple serialized CourierEnvelopes, one for each chunk of the payload.
+type CreateCourierEnvelopesFromPayloadReply struct {
+	// QueryID is used for correlating this reply with the CreateCourierEnvelopesFromPayload request
 	// that created it.
 	QueryID *[QueryIDLength]byte `cbor:"query_id"`
 
-	// CourierEnvelope is the serialized CourierEnvelope containing the encrypted
-	// write instruction for the destination boxes.
-	CourierEnvelope []byte `cbor:"courier_envelope"`
+	// Envelopes is a slice of serialized CourierEnvelopes, one per chunk.
+	Envelopes [][]byte `cbor:"envelopes"`
 
 	// ErrorCode indicates the success or failure of the envelope creation.
 	// A value of ThinClientSuccess indicates successful creation.
 	ErrorCode uint8 `cbor:"error_code"`
 }
 
-// String returns a string representation of the CreateCourierEnvelopeReply.
-func (e *CreateCourierEnvelopeReply) String() string {
+// String returns a string representation of the CreateCourierEnvelopesFromPayloadReply.
+func (e *CreateCourierEnvelopesFromPayloadReply) String() string {
 	if e.ErrorCode != ThinClientSuccess {
-		return fmt.Sprintf("CreateCourierEnvelopeReply: queryID=%x (error: %s)", e.QueryID[:], ThinClientErrorToString(e.ErrorCode))
+		return fmt.Sprintf("CreateCourierEnvelopesFromPayloadReply: queryID=%x (error: %s)", e.QueryID[:], ThinClientErrorToString(e.ErrorCode))
 	}
-	return fmt.Sprintf("CreateCourierEnvelopeReply: queryID=%x envelopeLen=%d", e.QueryID[:], len(e.CourierEnvelope))
+	return fmt.Sprintf("CreateCourierEnvelopesFromPayloadReply: queryID=%x numEnvelopes=%d", e.QueryID[:], len(e.Envelopes))
 }

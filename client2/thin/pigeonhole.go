@@ -756,59 +756,79 @@ func (t *ThinClient) SendCopyCommand(ctx context.Context, tempWriteCap *bacap.Wr
 	return courierQueryReply.CopyCommandReply.ErrorCode, nil
 }
 
-// CreateCourierEnvelope creates a CourierEnvelope for a write operation.
+// CreateCourierEnvelopesFromPayload creates multiple CourierEnvelopes from a payload of any size.
 //
-// This method encrypts the plaintext message for the destination boxes using BACAP,
-// wraps it in a ReplicaInnerMessage, encrypts it with MKEM to the replica public keys,
-// and creates a CourierEnvelope. The returned envelope bytes can be written to a
-// temporary copy stream channel using EncryptWrite + StartResendingEncryptedMessage.
+// This method automatically chunks the payload into appropriately-sized pieces and
+// creates a CourierEnvelope for each chunk. The payload is limited to 10MB to prevent
+// accidental memory exhaustion.
 //
-// The plaintext size is validated against the pigeonhole geometry to ensure the
-// resulting CourierEnvelope will fit within a Box. Use the daemon's geometry object
-// to query the maximum plaintext size via geometry.MaxCourierEnvelopePlaintext().
+// Each returned chunk is wrapped in CopyCommandWrapper CBOR format with appropriate
+// Start/Stop markers. The first chunk always has Start=true. When isLast is true,
+// a final chunk with Stop=true is appended to signal the end of the stream.
+//
+// The returned chunks must be written to a temporary copy stream channel using
+// EncryptWrite + StartResendingEncryptedMessage. After the stream is complete,
+// a Copy command sent to the courier which contains the write capability for the
+// temporary copy stream.
 //
 // Parameters:
 //   - ctx: Context for cancellation and timeout control
-//   - plaintext: Message to encrypt (must not exceed MaxCourierEnvelopePlaintext)
-//   - destWriteCap: Write capability for the final destination boxes
-//   - destMessageBoxIndex: Message box index for the destination
+//   - payload: The data to be written (max 10MB)
+//   - destWriteCap: Write capability for the destination channel
+//   - destStartIndex: Starting index in the destination channel
+//   - isLast: Whether this is the last payload in the sequence (appends Stop marker)
 //
 // Returns:
-//   - []byte: Serialized CourierEnvelope to write to the copy stream
-//   - error: Any error encountered during envelope creation, including payload too large
+//   - [][]byte: Slice of CBOR-wrapped chunks ready to write to the copy stream
+//   - error: Any error encountered during envelope creation
 //
 // Example:
 //
-//	// Create courier envelope for each message
-//	envelope, err := client.CreateCourierEnvelope(ctx, message, destWriteCap, msgIndex)
+//	ctx := context.Background()
+//	largePayload := make([]byte, 1024*1024) // 1MB payload
+//	chunks, err := client.CreateCourierEnvelopesFromPayload(ctx, largePayload, destWriteCap, destStartIndex, true)
 //	if err != nil {
-//		log.Fatal("Failed to create courier envelope:", err)
+//		log.Fatal("Failed to create envelopes:", err)
 //	}
 //
-//	// Write envelope to temporary copy stream using existing API
-//	ciphertext, envDesc, envHash, epoch, err := client.EncryptWrite(ctx, envelope, tempWriteCap, copyIndex)
-//	if err != nil {
-//		log.Fatal("Failed to encrypt envelope:", err)
+//	// Write each chunk to the copy stream
+//	copyIndex := copyStartIndex
+//	for _, chunk := range chunks {
+//		ciphertext, envDesc, envHash, epoch, err := client.EncryptWrite(ctx, chunk, copyWriteCap, copyIndex)
+//		if err != nil {
+//			log.Fatal("Failed to encrypt chunk:", err)
+//		}
+//		_, err = client.StartResendingEncryptedMessage(ctx, nil, copyWriteCap, copyIndex.Bytes(), nil, envDesc, ciphertext, envHash, epoch)
+//		if err != nil {
+//			log.Fatal("Failed to send chunk:", err)
+//		}
+//		copyIndex, _ = client.NextMessageBoxIndex(ctx, copyIndex)
 //	}
-//	_, err = client.StartResendingEncryptedMessage(ctx, nil, tempWriteCap, copyIndex.Bytes(), nil, envDesc, ciphertext, envHash, epoch)
-func (t *ThinClient) CreateCourierEnvelope(ctx context.Context, plaintext []byte, destWriteCap *bacap.WriteCap, destMessageBoxIndex *bacap.MessageBoxIndex) ([]byte, error) {
+//
+//	// Send Copy command to courier
+//	errorCode, err := client.SendCopyCommand(ctx, copyReadCap, courierIdHash, courierQueueID)
+//	if err != nil || errorCode != 0 {
+//		log.Fatal("Copy command failed")
+//	}
+func (t *ThinClient) CreateCourierEnvelopesFromPayload(ctx context.Context, payload []byte, destWriteCap *bacap.WriteCap, destStartIndex *bacap.MessageBoxIndex, isLast bool) ([][]byte, error) {
 	if ctx == nil {
 		return nil, errContextCannotBeNil
 	}
 	if destWriteCap == nil {
 		return nil, errors.New("destWriteCap cannot be nil")
 	}
-	if destMessageBoxIndex == nil {
-		return nil, errors.New("destMessageBoxIndex cannot be nil")
+	if destStartIndex == nil {
+		return nil, errors.New("destStartIndex cannot be nil")
 	}
 
 	queryID := t.NewQueryID()
 	req := &Request{
-		CreateCourierEnvelope: &CreateCourierEnvelope{
-			QueryID:             queryID,
-			Plaintext:           plaintext,
-			DestWriteCap:        destWriteCap,
-			DestMessageBoxIndex: destMessageBoxIndex,
+		CreateCourierEnvelopesFromPayload: &CreateCourierEnvelopesFromPayload{
+			QueryID:        queryID,
+			Payload:        payload,
+			DestWriteCap:   destWriteCap,
+			DestStartIndex: destStartIndex,
+			IsLast:         isLast,
 		},
 	}
 
@@ -831,19 +851,19 @@ func (t *ThinClient) CreateCourierEnvelope(ctx context.Context, plaintext []byte
 		}
 
 		switch v := event.(type) {
-		case *CreateCourierEnvelopeReply:
+		case *CreateCourierEnvelopesFromPayloadReply:
 			if v.QueryID == nil {
-				t.log.Debugf("CreateCourierEnvelope: Received reply with nil QueryID, ignoring")
+				t.log.Debugf("CreateCourierEnvelopesFromPayload: Received reply with nil QueryID, ignoring")
 				continue
 			}
 			if !bytes.Equal(v.QueryID[:], queryID[:]) {
-				t.log.Debugf("CreateCourierEnvelope: Received reply with mismatched QueryID, ignoring")
+				t.log.Debugf("CreateCourierEnvelopesFromPayload: Received reply with mismatched QueryID, ignoring")
 				continue
 			}
 			if v.ErrorCode != ThinClientSuccess {
 				return nil, errors.New(ThinClientErrorToString(v.ErrorCode))
 			}
-			return v.CourierEnvelope, nil
+			return v.Envelopes, nil
 		case *ConnectionStatusEvent:
 			t.isConnected = v.IsConnected
 		case *NewDocumentEvent:

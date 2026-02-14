@@ -890,6 +890,16 @@ func (t *ThinClient) worker() {
 				return
 			}
 
+			/**  Copy Channel API **/
+
+		case message.CreateCourierEnvelopesFromPayloadReply != nil:
+			select {
+			case t.eventSink <- message.CreateCourierEnvelopesFromPayloadReply:
+				continue
+			case <-t.HaltCh():
+				return
+			}
+
 		default:
 			t.log.Errorf("bug: received invalid thin client message: %v", message)
 		}

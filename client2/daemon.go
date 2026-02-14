@@ -401,8 +401,8 @@ func (d *Daemon) egressWorker() {
 
 				// Copy Channel API:
 
-			case request.CreateCourierEnvelope != nil:
-				d.createCourierEnvelope(request)
+			case request.CreateCourierEnvelopesFromPayload != nil:
+				d.createCourierEnvelopesFromPayload(request)
 
 				// OLD Pigeonhole Channel:
 

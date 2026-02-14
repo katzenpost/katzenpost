@@ -19,6 +19,16 @@ import (
 	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
 )
 
+// CopyCommandWrapper flag constants
+const (
+	CopyCommandWrapperFlagStart = 0x01
+	CopyCommandWrapperFlagStop  = 0x02
+)
+
+// CopyCommandWrapperOverhead is the fixed trunnel encoding overhead for CopyCommandWrapper.
+// 1 byte (flags) + 4 bytes (payload_len) = 5 bytes
+const CopyCommandWrapperOverhead = 5
+
 // newKeypair creates a new keypair for use with the Pigeonhole protocol.
 func (d *Daemon) newKeypair(request *Request) {
 	conn := d.listener.getConnection(request.AppID)
@@ -357,146 +367,230 @@ func (d *Daemon) sendEncryptWriteError(request *Request, errorCode uint8) {
 	})
 }
 
-// createCourierEnvelope creates a CourierEnvelope for a write operation.
-// This is used for the Copy Channel API to create envelopes that will be written
-// to a temporary copy stream.
-func (d *Daemon) createCourierEnvelope(request *Request) {
+// createCourierEnvelopesFromPayload creates multiple CourierEnvelopes from a payload of any size.
+// This is used for the Copy Channel API to prepare all envelopes for a large payload.
+func (d *Daemon) createCourierEnvelopesFromPayload(request *Request) {
 	conn := d.listener.getConnection(request.AppID)
 	if conn == nil {
 		d.log.Errorf(errNoConnectionForAppID, request.AppID[:])
 		return
 	}
 
-	plaintext := request.CreateCourierEnvelope.Plaintext
-	destWriteCap := request.CreateCourierEnvelope.DestWriteCap
-	destMessageBoxIndex := request.CreateCourierEnvelope.DestMessageBoxIndex
+	payload := request.CreateCourierEnvelopesFromPayload.Payload
+	destWriteCap := request.CreateCourierEnvelopesFromPayload.DestWriteCap
+	destStartIndex := request.CreateCourierEnvelopesFromPayload.DestStartIndex
 
 	// Validate inputs
 	if destWriteCap == nil {
-		d.log.Error("createCourierEnvelope: DestWriteCap is nil")
-		d.sendCreateCourierEnvelopeError(request, thin.ThinClientErrorInvalidRequest)
+		d.log.Error("createCourierEnvelopesFromPayload: DestWriteCap is nil")
+		d.sendCreateCourierEnvelopesFromPayloadError(request, thin.ThinClientErrorInvalidRequest)
 		return
 	}
-	if destMessageBoxIndex == nil {
-		d.log.Error("createCourierEnvelope: DestMessageBoxIndex is nil")
-		d.sendCreateCourierEnvelopeError(request, thin.ThinClientErrorInvalidRequest)
+	if destStartIndex == nil {
+		d.log.Error("createCourierEnvelopesFromPayload: DestStartIndex is nil")
+		d.sendCreateCourierEnvelopesFromPayloadError(request, thin.ThinClientErrorInvalidRequest)
 		return
 	}
 
-	// Validate plaintext size against geometry
+	// Enforce 10MB size limit to prevent accidental memory exhaustion
+	const maxPayloadSize = 10 * 1024 * 1024 // 10MB
+	if len(payload) > maxPayloadSize {
+		d.log.Errorf("createCourierEnvelopesFromPayload: payload size %d exceeds maximum of %d bytes (10MB)", len(payload), maxPayloadSize)
+		d.sendCreateCourierEnvelopesFromPayloadError(request, thin.ThinClientErrorInvalidRequest)
+		return
+	}
+
+	// Calculate the maximum plaintext size per envelope
 	maxPlaintext := d.cfg.PigeonholeGeometry.MaxCourierEnvelopePlaintext()
-	if len(plaintext) > maxPlaintext {
-		d.log.Errorf("createCourierEnvelope: plaintext size %d exceeds maximum %d", len(plaintext), maxPlaintext)
-		d.sendCreateCourierEnvelopeError(request, thin.ThinClientErrorInvalidPayload)
+	if maxPlaintext <= 0 {
+		d.log.Error("createCourierEnvelopesFromPayload: invalid geometry, maxPlaintext <= 0")
+		d.sendCreateCourierEnvelopesFromPayloadError(request, thin.ThinClientErrorInternalError)
 		return
 	}
 
-	// Pad the payload to the geometry's MaxPlaintextPayloadLength + 4
-	paddedPayload, err := pigeonhole.CreatePaddedPayload(plaintext, d.cfg.PigeonholeGeometry.MaxPlaintextPayloadLength+4)
-	if err != nil {
-		d.log.Errorf("createCourierEnvelope: failed to pad payload: %v", err)
-		d.sendCreateCourierEnvelopeError(request, thin.ThinClientErrorInternalError)
-		return
+	// Chunk the payload and create CourierEnvelopes
+	var courierEnvelopes []*pigeonhole.CourierEnvelope
+	currentIndex := destStartIndex
+
+	for offset := 0; offset < len(payload); offset += maxPlaintext {
+		// Get the chunk
+		end := offset + maxPlaintext
+		if end > len(payload) {
+			end = len(payload)
+		}
+		chunk := payload[offset:end]
+
+		// Pad the chunk
+		paddedPayload, err := pigeonhole.CreatePaddedPayload(chunk, d.cfg.PigeonholeGeometry.MaxPlaintextPayloadLength+4)
+		if err != nil {
+			d.log.Errorf("createCourierEnvelopesFromPayload: failed to pad payload: %v", err)
+			d.sendCreateCourierEnvelopesFromPayloadError(request, thin.ThinClientErrorInternalError)
+			return
+		}
+
+		// Create a StatefulWriter from the destination WriteCap
+		statefulWriter, err := bacap.NewStatefulWriter(destWriteCap, []byte(constants.PIGEONHOLE_CTX))
+		if err != nil {
+			d.log.Errorf("createCourierEnvelopesFromPayload: failed to create stateful writer: %v", err)
+			d.sendCreateCourierEnvelopesFromPayloadError(request, thin.ThinClientErrorInternalError)
+			return
+		}
+
+		// Advance the writer to the current message box index
+		statefulWriter.NextIndex = currentIndex
+
+		// Encrypt the message using PrepareNext (doesn't advance state)
+		boxID, ciphertext, sigraw, err := statefulWriter.PrepareNext(paddedPayload)
+		if err != nil {
+			d.log.Errorf("createCourierEnvelopesFromPayload: failed to prepare next message: %v", err)
+			d.sendCreateCourierEnvelopesFromPayloadError(request, thin.ThinClientErrorInternalError)
+			return
+		}
+
+		sig := [bacap.SignatureSize]byte{}
+		copy(sig[:], sigraw)
+
+		// Create the ReplicaWrite message
+		writeRequest := &pigeonhole.ReplicaWrite{
+			BoxID:      boxID,
+			Signature:  sig,
+			PayloadLen: uint32(len(ciphertext)),
+			Payload:    ciphertext,
+		}
+
+		// Create the ReplicaInnerMessage for a write operation
+		msg := &pigeonhole.ReplicaInnerMessage{
+			MessageType: 1, // 1 = write
+			WriteMsg:    writeRequest,
+		}
+
+		// Get the current PKI document
+		_, doc := d.client.CurrentDocument()
+		if doc == nil {
+			d.log.Error("createCourierEnvelopesFromPayload: no PKI document available")
+			d.sendCreateCourierEnvelopesFromPayloadError(request, thin.ThinClientErrorInternalError)
+			return
+		}
+
+		// Get random intermediate replicas for this box
+		intermediateReplicas, replicaPubKeys, err := pigeonhole.GetRandomIntermediateReplicas(doc, &boxID)
+		if err != nil {
+			d.log.Errorf("createCourierEnvelopesFromPayload: failed to get intermediate replicas: %v", err)
+			d.sendCreateCourierEnvelopesFromPayloadError(request, thin.ThinClientErrorInternalError)
+			return
+		}
+
+		// Encrypt with MKEM to the replica public keys
+		mkemPrivateKey, mkemCiphertext := replicaCommon.MKEMNikeScheme.Encapsulate(
+			replicaPubKeys, msg.Bytes(),
+		)
+		mkemPublicKey := mkemPrivateKey.Public()
+		senderPubkey := mkemPublicKey.Bytes()
+
+		// Get the current replica epoch
+		replicaEpoch, _, _ := replicaCommon.ReplicaNow()
+
+		// Create the CourierEnvelope
+		courierEnvelope := &pigeonhole.CourierEnvelope{
+			IntermediateReplicas: intermediateReplicas,
+			Dek1:                 *mkemCiphertext.DEKCiphertexts[0],
+			Dek2:                 *mkemCiphertext.DEKCiphertexts[1],
+			ReplyIndex:           0, // Not used for copy stream writes
+			Epoch:                replicaEpoch,
+			SenderPubkeyLen:      uint16(len(senderPubkey)),
+			SenderPubkey:         senderPubkey,
+			CiphertextLen:        uint32(len(mkemCiphertext.Envelope)),
+			Ciphertext:           mkemCiphertext.Envelope,
+		}
+
+		courierEnvelopes = append(courierEnvelopes, courierEnvelope)
+
+		// Advance to the next index
+		currentIndex, err = currentIndex.NextIndex()
+		if err != nil {
+			d.log.Errorf("createCourierEnvelopesFromPayload: failed to advance index: %v", err)
+			d.sendCreateCourierEnvelopesFromPayloadError(request, thin.ThinClientErrorInternalError)
+			return
+		}
 	}
 
-	// Create a StatefulWriter from the destination WriteCap
-	statefulWriter, err := bacap.NewStatefulWriter(destWriteCap, []byte(constants.PIGEONHOLE_CTX))
-	if err != nil {
-		d.log.Errorf("createCourierEnvelope: failed to create stateful writer: %v", err)
-		d.sendCreateCourierEnvelopeError(request, thin.ThinClientErrorInternalError)
-		return
+	// Encode CourierEnvelopes into copy stream format using streaming encoder
+	// Subtract the CopyCommandWrapper overhead so the final wrapped chunk fits in MaxPlaintextPayloadLength
+	maxBoxSize := d.cfg.PigeonholeGeometry.MaxPlaintextPayloadLength - CopyCommandWrapperOverhead
+	encoder := pigeonhole.NewCopyStreamEncoder(maxBoxSize)
+	var rawChunks [][]byte
+
+	for _, envelope := range courierEnvelopes {
+		newChunks, err := encoder.AddEnvelope(envelope)
+		if err != nil {
+			d.log.Errorf("createCourierEnvelopesFromPayload: failed to encode envelope: %v", err)
+			d.sendCreateCourierEnvelopesFromPayloadError(request, thin.ThinClientErrorInternalError)
+			return
+		}
+		rawChunks = append(rawChunks, newChunks...)
 	}
 
-	// Advance the writer to the destination message box index
-	statefulWriter.NextIndex = destMessageBoxIndex
-
-	// Encrypt the message using PrepareNext (doesn't advance state)
-	boxID, ciphertext, sigraw, err := statefulWriter.PrepareNext(paddedPayload)
-	if err != nil {
-		d.log.Errorf("createCourierEnvelope: failed to prepare next message: %v", err)
-		d.sendCreateCourierEnvelopeError(request, thin.ThinClientErrorInternalError)
-		return
+	// Flush any remaining data
+	finalChunk := encoder.Flush()
+	if finalChunk != nil {
+		rawChunks = append(rawChunks, finalChunk)
 	}
 
-	sig := [bacap.SignatureSize]byte{}
-	copy(sig[:], sigraw)
+	// Wrap each chunk in CopyCommandWrapper with trunnel encoding
+	isLast := request.CreateCourierEnvelopesFromPayload.IsLast
+	var wrappedChunks [][]byte
+	numChunks := len(rawChunks)
 
-	// Create the ReplicaWrite message
-	writeRequest := &pigeonhole.ReplicaWrite{
-		BoxID:      boxID,
-		Signature:  sig,
-		PayloadLen: uint32(len(ciphertext)),
-		Payload:    ciphertext,
+	for i, chunk := range rawChunks {
+		isFirstChunk := (i == 0)
+		isLastChunk := isLast && (i == numChunks-1)
+
+		// Build flags byte: bit 0 = start, bit 1 = stop
+		var flags uint8
+		if isFirstChunk {
+			flags |= CopyCommandWrapperFlagStart
+		}
+		if isLastChunk {
+			flags |= CopyCommandWrapperFlagStop
+		}
+
+		wrapper := &pigeonhole.CopyCommandWrapper{
+			Flags:      flags,
+			PayloadLen: uint32(len(chunk)),
+			Payload:    chunk,
+		}
+		wrappedBytes, err := wrapper.MarshalBinary()
+		if err != nil {
+			d.log.Errorf("createCourierEnvelopesFromPayload: failed to trunnel encode wrapper: %v", err)
+			d.sendCreateCourierEnvelopesFromPayloadError(request, thin.ThinClientErrorInternalError)
+			return
+		}
+		wrappedChunks = append(wrappedChunks, wrappedBytes)
 	}
 
-	// Create the ReplicaInnerMessage for a write operation
-	msg := &pigeonhole.ReplicaInnerMessage{
-		MessageType: 1, // 1 = write
-		WriteMsg:    writeRequest,
-	}
-
-	// Get the current PKI document
-	_, doc := d.client.CurrentDocument()
-	if doc == nil {
-		d.log.Error("createCourierEnvelope: no PKI document available")
-		d.sendCreateCourierEnvelopeError(request, thin.ThinClientErrorInternalError)
-		return
-	}
-
-	// Get random intermediate replicas for this box
-	intermediateReplicas, replicaPubKeys, err := pigeonhole.GetRandomIntermediateReplicas(doc, &boxID)
-	if err != nil {
-		d.log.Errorf("createCourierEnvelope: failed to get intermediate replicas: %v", err)
-		d.sendCreateCourierEnvelopeError(request, thin.ThinClientErrorInternalError)
-		return
-	}
-
-	// Encrypt with MKEM to the replica public keys
-	mkemPrivateKey, mkemCiphertext := replicaCommon.MKEMNikeScheme.Encapsulate(
-		replicaPubKeys, msg.Bytes(),
-	)
-	mkemPublicKey := mkemPrivateKey.Public()
-	senderPubkey := mkemPublicKey.Bytes()
-
-	// Get the current replica epoch
-	replicaEpoch, _, _ := replicaCommon.ReplicaNow()
-
-	// Create the CourierEnvelope
-	courierEnvelope := &pigeonhole.CourierEnvelope{
-		IntermediateReplicas: intermediateReplicas,
-		Dek1:                 *mkemCiphertext.DEKCiphertexts[0],
-		Dek2:                 *mkemCiphertext.DEKCiphertexts[1],
-		ReplyIndex:           0, // Not used for copy stream writes
-		Epoch:                replicaEpoch,
-		SenderPubkeyLen:      uint16(len(senderPubkey)),
-		SenderPubkey:         senderPubkey,
-		CiphertextLen:        uint32(len(mkemCiphertext.Envelope)),
-		Ciphertext:           mkemCiphertext.Envelope,
-	}
-
-	// Serialize the CourierEnvelope
-	courierEnvelopeBytes := courierEnvelope.Bytes()
+	d.log.Debugf("createCourierEnvelopesFromPayload: created %d CourierEnvelopes, encoded into %d wrapped chunks (isLast=%v)",
+		len(courierEnvelopes), len(wrappedChunks), isLast)
 
 	// Send success response
 	conn.sendResponse(&Response{
 		AppID: request.AppID,
-		CreateCourierEnvelopeReply: &thin.CreateCourierEnvelopeReply{
-			QueryID:         request.CreateCourierEnvelope.QueryID,
-			CourierEnvelope: courierEnvelopeBytes,
-			ErrorCode:       thin.ThinClientSuccess,
+		CreateCourierEnvelopesFromPayloadReply: &thin.CreateCourierEnvelopesFromPayloadReply{
+			QueryID:   request.CreateCourierEnvelopesFromPayload.QueryID,
+			Envelopes: wrappedChunks,
+			ErrorCode: thin.ThinClientSuccess,
 		},
 	})
 }
 
-func (d *Daemon) sendCreateCourierEnvelopeError(request *Request, errorCode uint8) {
+func (d *Daemon) sendCreateCourierEnvelopesFromPayloadError(request *Request, errorCode uint8) {
 	conn := d.listener.getConnection(request.AppID)
 	if conn == nil {
 		return
 	}
 	conn.sendResponse(&Response{
 		AppID: request.AppID,
-		CreateCourierEnvelopeReply: &thin.CreateCourierEnvelopeReply{
-			QueryID:   request.CreateCourierEnvelope.QueryID,
+		CreateCourierEnvelopesFromPayloadReply: &thin.CreateCourierEnvelopesFromPayloadReply{
+			QueryID:   request.CreateCourierEnvelopesFromPayload.QueryID,
 			ErrorCode: errorCode,
 		},
 	})

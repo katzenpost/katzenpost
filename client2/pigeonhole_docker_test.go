@@ -266,20 +266,20 @@ func TestNewPigeonholeAPIMultipleMessages(t *testing.T) {
 	t.Logf("\n✓ SUCCESS: All %d messages sent and verified successfully!", numMessages)
 }
 
-// TestCopyChannelAPI tests the Copy Channel API end-to-end:
-// 1. Alice creates multiple CourierEnvelopes for different write operations
-// 2. Alice writes all CourierEnvelopes to a temporary copy stream
-// 3. Alice sends the Copy command to the courier with the temp WriteCap
-// 4. Courier executes all writes atomically to the destination channel
-// 5. Bob reads all messages from the destination channel
+// TestCreateCourierEnvelopesFromPayload tests the CreateCourierEnvelopesFromPayload API:
+// 1. Alice creates a large payload that will be automatically chunked
+// 2. Alice calls CreateCourierEnvelopesFromPayload to get copy stream chunks
+// 3. Alice writes all copy stream chunks to a temporary copy stream channel
+// 4. Alice sends the Copy command to the courier
+// 5. Bob reads all chunks from the destination channel and reconstructs the payload
 //
 // This test verifies:
-// - CreateCourierEnvelope creates valid envelopes
-// - Envelopes can be written to a temporary copy stream
-// - SendCopyCommand successfully triggers the courier's copy operation
-// - All writes are executed atomically (all-or-nothing)
-// - Bob can read all messages that were written via the Copy command
-func TestCopyChannelAPI(t *testing.T) {
+// - CreateCourierEnvelopesFromPayload correctly chunks large payloads and encodes them in copy stream format
+// - Copy stream chunks can be written to a temporary channel
+// - The Copy Channel API works with the copy stream format
+// - The courier can decode the copy stream and execute all writes atomically
+// - Bob can read and reconstruct the original large payload
+func TestCreateCourierEnvelopesFromPayload(t *testing.T) {
 	// Setup Alice and Bob thin clients
 	aliceThinClient := setupThinClient(t)
 	defer aliceThinClient.Close()
@@ -294,19 +294,19 @@ func TestCopyChannelAPI(t *testing.T) {
 	t.Logf("Using PKI document for epoch %d", currentEpoch)
 
 	// Find courier service
-	courierDesc, ok := currentDoc.ServiceNodes[0].Kaetzchen["courier"]
-	require.True(t, ok, "Courier service not found in PKI document")
-	courierNodeIDHash := hash.Sum256(currentDoc.ServiceNodes[0].IdentityKey)
-	courierQueueID := courierDesc.RecipientQueueID
+	courierService, err := aliceThinClient.GetService("courier")
+	require.NoError(t, err, "Courier service not found in PKI document")
+	courierNodeIDHash := hash.Sum256(courierService.MixDescriptor.IdentityKey)
+	courierQueueID := courierService.RecipientQueueID
 	t.Logf("Found courier service at node %x, queue %s", courierNodeIDHash[:8], courierQueueID)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Minute)
 	defer cancel()
 
-	// Step 1: Alice creates destination WriteCap for the final messages
+	// Step 1: Alice creates destination WriteCap for the final payload
 	t.Log("=== Step 1: Alice creates destination WriteCap ===")
 	destSeed := make([]byte, 32)
-	_, err := rand.Reader.Read(destSeed)
+	_, err = rand.Reader.Read(destSeed)
 	require.NoError(t, err)
 
 	destWriteCap, bobReadCap, destFirstIndex, err := aliceThinClient.NewKeypair(ctx, destSeed)
@@ -326,60 +326,59 @@ func TestCopyChannelAPI(t *testing.T) {
 	require.NotNil(t, tempWriteCap, "Temp WriteCap is nil")
 	t.Log("Alice: Created temporary copy stream WriteCap")
 
-	// Step 3: Create multiple messages and CourierEnvelopes
-	t.Log("=== Step 3: Creating CourierEnvelopes for multiple messages ===")
-	messages := []string{
-		"Message 1: The package has been delivered.",
-		"Message 2: Proceed to the safe house.",
-		"Message 3: Mission accomplished.",
-	}
-	numMessages := len(messages)
+	// Step 3: Create a large payload that will be chunked
+	t.Log("=== Step 3: Creating large payload ===")
+	// Create a payload that's large enough to require multiple chunks
+	// Each chunk can hold ~1KB, so let's create a 5KB payload to get ~5 chunks
+	largePayload := make([]byte, 5*1024)
+	_, err = rand.Reader.Read(largePayload)
+	require.NoError(t, err)
+	t.Logf("Alice: Created large payload (%d bytes)", len(largePayload))
 
-	destIndex := destFirstIndex
+	// Step 4: Create copy stream chunks from the large payload
+	t.Log("=== Step 4: Creating copy stream chunks from large payload ===")
+	copyStreamChunks, err := aliceThinClient.CreateCourierEnvelopesFromPayload(ctx, largePayload, destWriteCap, destFirstIndex, true /* isLast */)
+	require.NoError(t, err)
+	require.NotEmpty(t, copyStreamChunks, "CreateCourierEnvelopesFromPayload returned empty chunks")
+	numChunks := len(copyStreamChunks)
+	t.Logf("Alice: Created %d copy stream chunks from %d byte payload", numChunks, len(largePayload))
+
+	// Step 5: Write all copy stream chunks to the temporary copy stream
+	t.Log("=== Step 5: Writing copy stream chunks to temporary channel ===")
 	tempIndex := tempFirstIndex
 	replyIndex := uint8(0)
 
-	for i := 0; i < numMessages; i++ {
-		t.Logf("\n--- Creating CourierEnvelope %d/%d ---", i+1, numMessages)
-		message := []byte(messages[i])
+	for i, chunk := range copyStreamChunks {
+		t.Logf("--- Writing copy stream chunk %d/%d to temporary channel ---", i+1, numChunks)
 
-		// Create CourierEnvelope for this write operation
-		courierEnvelope, err := aliceThinClient.CreateCourierEnvelope(ctx, message, destWriteCap, destIndex)
+		// Encrypt the chunk for the copy stream
+		ciphertext, envDesc, envHash, epoch, err := aliceThinClient.EncryptWrite(ctx, chunk, tempWriteCap, tempIndex)
 		require.NoError(t, err)
-		require.NotEmpty(t, courierEnvelope, "CreateCourierEnvelope returned empty envelope")
-		t.Logf("Alice: Created CourierEnvelope %d (%d bytes)", i+1, len(courierEnvelope))
+		require.NotEmpty(t, ciphertext, "EncryptWrite returned empty ciphertext for chunk %d", i+1)
+		t.Logf("Alice: Encrypted copy stream chunk %d (%d bytes plaintext -> %d bytes ciphertext)", i+1, len(chunk), len(ciphertext))
 
-		// Write the CourierEnvelope to the temporary copy stream
-		ciphertext, envDesc, envHash, epoch, err := aliceThinClient.EncryptWrite(ctx, courierEnvelope, tempWriteCap, tempIndex)
-		require.NoError(t, err)
-		require.NotEmpty(t, ciphertext, "EncryptWrite returned empty ciphertext")
-		t.Logf("Alice: Encrypted CourierEnvelope %d for copy stream (%d bytes ciphertext)", i+1, len(ciphertext))
-
-		// Send the encrypted CourierEnvelope to the copy stream
+		// Send the encrypted chunk to the copy stream
 		_, err = aliceThinClient.StartResendingEncryptedMessage(
-			ctx, nil, tempWriteCap, tempIndex.Bytes(), &replyIndex,
+			ctx, nil, tempWriteCap, nil, &replyIndex,
 			envDesc, ciphertext, envHash, epoch)
 		require.NoError(t, err)
-		t.Logf("Alice: Sent CourierEnvelope %d to copy stream", i+1)
+		t.Logf("Alice: Sent copy stream chunk %d to temporary channel", i+1)
 
-		// Increment indices for next message
-		destIndex, err = aliceThinClient.NextMessageBoxIndex(ctx, destIndex)
-		require.NoError(t, err)
-
+		// Increment temp index for next chunk
 		tempIndex, err = aliceThinClient.NextMessageBoxIndex(ctx, tempIndex)
 		require.NoError(t, err)
 
-		// Cancel resending for this envelope
+		// Cancel resending for this chunk
 		err = aliceThinClient.CancelResendingEncryptedMessage(ctx, envHash)
 		require.NoError(t, err)
 	}
 
-	// Wait for all envelopes to propagate to the copy stream
-	t.Log("Waiting for CourierEnvelopes to propagate to copy stream (30 seconds)")
+	// Wait for all chunks to propagate to the copy stream
+	t.Log("Waiting for copy stream chunks to propagate to temporary channel (30 seconds)")
 	time.Sleep(30 * time.Second)
 
-	// Step 4: Send Copy command to courier
-	t.Log("=== Step 4: Sending Copy command to courier ===")
+	// Step 6: Send Copy command to courier
+	t.Log("=== Step 6: Sending Copy command to courier ===")
 	errorCode, err := aliceThinClient.SendCopyCommand(ctx, tempWriteCap, &courierNodeIDHash, courierQueueID)
 	require.NoError(t, err)
 	require.Equal(t, uint8(0), errorCode, "Copy command returned error code %d", errorCode)
@@ -389,12 +388,13 @@ func TestCopyChannelAPI(t *testing.T) {
 	t.Log("Waiting for courier to execute Copy command (30 seconds)")
 	time.Sleep(30 * time.Second)
 
-	// Step 5: Bob reads all messages from the destination channel
-	t.Log("=== Step 5: Bob reads all messages from destination channel ===")
+	// Step 7: Bob reads all chunks from the destination channel
+	t.Log("=== Step 7: Bob reads all chunks and reconstructs payload ===")
 	bobIndex := destFirstIndex
+	var reconstructedPayload []byte
 
-	for i := 0; i < numMessages; i++ {
-		t.Logf("\n--- Bob reading message %d/%d ---", i+1, numMessages)
+	for i := 0; i < numChunks; i++ {
+		t.Logf("--- Bob reading chunk %d/%d ---", i+1, numChunks)
 
 		// Bob encrypts read request
 		bobCiphertext, bobNextIndex, bobEnvDesc, bobEnvHash, bobEpoch, err := bobThinClient.EncryptRead(ctx, bobReadCap, bobIndex)
@@ -402,20 +402,18 @@ func TestCopyChannelAPI(t *testing.T) {
 		require.NotEmpty(t, bobCiphertext, "Bob: EncryptRead returned empty ciphertext")
 		t.Logf("Bob: Encrypted read request %d", i+1)
 
-		// Bob sends read request and receives message
+		// Bob sends read request and receives chunk
 		bobPlaintext, err := bobThinClient.StartResendingEncryptedMessage(
 			ctx, bobReadCap, nil, bobNextIndex, &replyIndex,
 			bobEnvDesc, bobCiphertext, bobEnvHash, bobEpoch)
 		require.NoError(t, err)
-		require.NotEmpty(t, bobPlaintext, "Bob: Failed to receive message %d", i+1)
-		t.Logf("Bob: Received and decrypted message %d: %q", i+1, bobPlaintext)
+		require.NotEmpty(t, bobPlaintext, "Bob: Failed to receive chunk %d", i+1)
+		t.Logf("Bob: Received and decrypted chunk %d (%d bytes)", i+1, len(bobPlaintext))
 
-		// Verify the message matches
-		expectedMessage := []byte(messages[i])
-		require.Equal(t, expectedMessage, bobPlaintext, "Message %d mismatch", i+1)
-		t.Logf("✓ Message %d verified successfully!", i+1)
+		// Append chunk to reconstructed payload
+		reconstructedPayload = append(reconstructedPayload, bobPlaintext...)
 
-		// Advance to next message
+		// Advance to next chunk
 		bobIndex, err = bobThinClient.NextMessageBoxIndex(ctx, bobIndex)
 		require.NoError(t, err)
 
@@ -424,5 +422,8 @@ func TestCopyChannelAPI(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	t.Logf("\n✓ SUCCESS: Copy Channel API test passed! All %d messages written atomically and read successfully!", numMessages)
+	// Verify the reconstructed payload matches the original
+	t.Logf("Bob: Reconstructed payload (%d bytes)", len(reconstructedPayload))
+	require.Equal(t, largePayload, reconstructedPayload, "Reconstructed payload doesn't match original")
+	t.Logf("\n✓ SUCCESS: CreateCourierEnvelopesFromPayload test passed! Large payload (%d bytes) encoded into %d copy stream chunks and reconstructed successfully!", len(largePayload), numChunks)
 }
