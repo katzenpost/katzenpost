@@ -127,6 +127,10 @@ type Daemon struct {
 	usedWriteCaps  map[[hash.HashSize]byte]bool // Maps hash of WriteCap to true
 	capabilityLock *sync.RWMutex                // Protects both capability maps
 
+	// Copy stream encoders for multi-call CreateCourierEnvelopesFromPayload
+	copyStreamEncoders     map[[thin.StreamIDLength]byte]*pigeonhole.CopyStreamEncoder
+	copyStreamEncodersLock *sync.Mutex
+
 	// Cryptographically secure random number generator
 	secureRand *mrand.Rand
 
@@ -161,6 +165,9 @@ func NewDaemon(cfg *config.Config) (*Daemon, error) {
 		usedReadCaps:   make(map[[hash.HashSize]byte]bool),
 		usedWriteCaps:  make(map[[hash.HashSize]byte]bool),
 		capabilityLock: new(sync.RWMutex),
+		// Copy stream encoder management:
+		copyStreamEncoders:     make(map[[thin.StreamIDLength]byte]*pigeonhole.CopyStreamEncoder),
+		copyStreamEncodersLock: new(sync.Mutex),
 		// Initialize cryptographically secure random number generator
 		secureRand: hpqcRand.NewMath(),
 	}

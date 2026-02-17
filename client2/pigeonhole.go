@@ -19,16 +19,6 @@ import (
 	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
 )
 
-// CopyCommandWrapper flag constants
-const (
-	CopyCommandWrapperFlagStart = 0x01
-	CopyCommandWrapperFlagStop  = 0x02
-)
-
-// CopyCommandWrapperOverhead is the fixed trunnel encoding overhead for CopyCommandWrapper.
-// 1 byte (flags) + 4 bytes (payload_len) = 5 bytes
-const CopyCommandWrapperOverhead = 5
-
 // newKeypair creates a new keypair for use with the Pigeonhole protocol.
 func (d *Daemon) newKeypair(request *Request) {
 	conn := d.listener.getConnection(request.AppID)
@@ -368,7 +358,7 @@ func (d *Daemon) sendEncryptWriteError(request *Request, errorCode uint8) {
 }
 
 // createCourierEnvelopesFromPayload creates multiple CourierEnvelopes from a payload of any size.
-// This is used for the Copy Channel API to prepare all envelopes for a large payload.
+// This is part of the Pigeonhole API to prepare for the Copy Command.
 func (d *Daemon) createCourierEnvelopesFromPayload(request *Request) {
 	conn := d.listener.getConnection(request.AppID)
 	if conn == nil {
@@ -400,10 +390,11 @@ func (d *Daemon) createCourierEnvelopesFromPayload(request *Request) {
 		return
 	}
 
-	// Calculate the maximum plaintext size per envelope
-	maxPlaintext := d.cfg.PigeonholeGeometry.MaxCourierEnvelopePlaintext()
-	if maxPlaintext <= 0 {
-		d.log.Error("createCourierEnvelopesFromPayload: invalid geometry, maxPlaintext <= 0")
+	// Calculate the maximum user payload size per envelope.
+	// We need to leave room for the 4-byte length prefix that CreatePaddedPayload adds.
+	maxPayload := d.cfg.PigeonholeGeometry.MaxPlaintextPayloadLength - 4
+	if maxPayload <= 0 {
+		d.log.Error("createCourierEnvelopesFromPayload: invalid geometry, maxPayload <= 0")
 		d.sendCreateCourierEnvelopesFromPayloadError(request, thin.ThinClientErrorInternalError)
 		return
 	}
@@ -412,16 +403,16 @@ func (d *Daemon) createCourierEnvelopesFromPayload(request *Request) {
 	var courierEnvelopes []*pigeonhole.CourierEnvelope
 	currentIndex := destStartIndex
 
-	for offset := 0; offset < len(payload); offset += maxPlaintext {
+	for offset := 0; offset < len(payload); offset += maxPayload {
 		// Get the chunk
-		end := offset + maxPlaintext
+		end := offset + maxPayload
 		if end > len(payload) {
 			end = len(payload)
 		}
 		chunk := payload[offset:end]
 
-		// Pad the chunk
-		paddedPayload, err := pigeonhole.CreatePaddedPayload(chunk, d.cfg.PigeonholeGeometry.MaxPlaintextPayloadLength+4)
+		// Pad the chunk to MaxPlaintextPayloadLength (which fits in a box)
+		paddedPayload, err := pigeonhole.CreatePaddedPayload(chunk, d.cfg.PigeonholeGeometry.MaxPlaintextPayloadLength)
 		if err != nil {
 			d.log.Errorf("createCourierEnvelopesFromPayload: failed to pad payload: %v", err)
 			d.sendCreateCourierEnvelopesFromPayloadError(request, thin.ThinClientErrorInternalError)
@@ -514,69 +505,57 @@ func (d *Daemon) createCourierEnvelopesFromPayload(request *Request) {
 		}
 	}
 
-	// Encode CourierEnvelopes into copy stream format using streaming encoder
-	// Subtract the CopyCommandWrapper overhead so the final wrapped chunk fits in MaxPlaintextPayloadLength
-	maxBoxSize := d.cfg.PigeonholeGeometry.MaxPlaintextPayloadLength - CopyCommandWrapperOverhead
-	encoder := pigeonhole.NewCopyStreamEncoder(maxBoxSize)
-	var rawChunks [][]byte
+	// Get or create encoder for this stream
+	streamID := request.CreateCourierEnvelopesFromPayload.StreamID
+	if streamID == nil {
+		d.log.Errorf("createCourierEnvelopesFromPayload: StreamID is required")
+		d.sendCreateCourierEnvelopesFromPayloadError(request, thin.ThinClientErrorInvalidRequest)
+		return
+	}
 
+	d.copyStreamEncodersLock.Lock()
+	encoder, exists := d.copyStreamEncoders[*streamID]
+	if !exists {
+		// First call for this stream - create new encoder
+		encoder = pigeonhole.NewCopyStreamEncoder(d.cfg.PigeonholeGeometry)
+		d.copyStreamEncoders[*streamID] = encoder
+	}
+	d.copyStreamEncodersLock.Unlock()
+
+	// Encode CourierEnvelopes into copy stream format
+	var elements [][]byte
 	for _, envelope := range courierEnvelopes {
-		newChunks, err := encoder.AddEnvelope(envelope)
+		newElements, err := encoder.AddEnvelope(envelope)
 		if err != nil {
 			d.log.Errorf("createCourierEnvelopesFromPayload: failed to encode envelope: %v", err)
 			d.sendCreateCourierEnvelopesFromPayloadError(request, thin.ThinClientErrorInternalError)
 			return
 		}
-		rawChunks = append(rawChunks, newChunks...)
+		elements = append(elements, newElements...)
 	}
 
-	// Flush any remaining data
-	finalChunk := encoder.Flush()
-	if finalChunk != nil {
-		rawChunks = append(rawChunks, finalChunk)
-	}
-
-	// Wrap each chunk in CopyCommandWrapper with trunnel encoding
+	// If this is the last call, flush and remove encoder
 	isLast := request.CreateCourierEnvelopesFromPayload.IsLast
-	var wrappedChunks [][]byte
-	numChunks := len(rawChunks)
-
-	for i, chunk := range rawChunks {
-		isFirstChunk := (i == 0)
-		isLastChunk := isLast && (i == numChunks-1)
-
-		// Build flags byte: bit 0 = start, bit 1 = stop
-		var flags uint8
-		if isFirstChunk {
-			flags |= CopyCommandWrapperFlagStart
+	if isLast {
+		finalElements := encoder.Flush()
+		if finalElements != nil {
+			elements = append(elements, finalElements...)
 		}
-		if isLastChunk {
-			flags |= CopyCommandWrapperFlagStop
-		}
-
-		wrapper := &pigeonhole.CopyCommandWrapper{
-			Flags:      flags,
-			PayloadLen: uint32(len(chunk)),
-			Payload:    chunk,
-		}
-		wrappedBytes, err := wrapper.MarshalBinary()
-		if err != nil {
-			d.log.Errorf("createCourierEnvelopesFromPayload: failed to trunnel encode wrapper: %v", err)
-			d.sendCreateCourierEnvelopesFromPayloadError(request, thin.ThinClientErrorInternalError)
-			return
-		}
-		wrappedChunks = append(wrappedChunks, wrappedBytes)
+		// Remove encoder from map
+		d.copyStreamEncodersLock.Lock()
+		delete(d.copyStreamEncoders, *streamID)
+		d.copyStreamEncodersLock.Unlock()
 	}
 
-	d.log.Debugf("createCourierEnvelopesFromPayload: created %d CourierEnvelopes, encoded into %d wrapped chunks (isLast=%v)",
-		len(courierEnvelopes), len(wrappedChunks), isLast)
+	d.log.Debugf("createCourierEnvelopesFromPayload: created %d CourierEnvelopes, encoded into %d elements (isLast=%v)",
+		len(courierEnvelopes), len(elements), isLast)
 
 	// Send success response
 	conn.sendResponse(&Response{
 		AppID: request.AppID,
 		CreateCourierEnvelopesFromPayloadReply: &thin.CreateCourierEnvelopesFromPayloadReply{
 			QueryID:   request.CreateCourierEnvelopesFromPayload.QueryID,
-			Envelopes: wrappedChunks,
+			Envelopes: elements,
 			ErrorCode: thin.ThinClientSuccess,
 		},
 	})
