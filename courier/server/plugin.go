@@ -881,11 +881,16 @@ func (e *Courier) writeTombstonesToTempChannel(writeCap *bacap.WriteCap, boxIDs 
 
 	// Write tombstones for each box
 	for i, boxID := range boxIDs {
-		// Create empty payload (tombstone)
-		emptyPayload := []byte{}
+		// Create properly padded tombstone payload (empty message padded to required size)
+		// This ensures tombstones are indistinguishable from regular writes to prevent traffic analysis
+		paddedPayload, err := pigeonhole.CreatePaddedPayload([]byte{}, e.pigeonholeGeo.PaddedPayloadLength())
+		if err != nil {
+			e.log.Errorf("writeTombstonesToTempChannel: Failed to create padded tombstone %d: %v", i, err)
+			continue
+		}
 
 		// Encrypt and sign the tombstone
-		encBoxID, ciphertext, sig, err := writer.EncryptNext(emptyPayload)
+		encBoxID, ciphertext, sig, err := writer.EncryptNext(paddedPayload)
 		if err != nil {
 			e.log.Errorf("writeTombstonesToTempChannel: Failed to encrypt tombstone %d: %v", i, err)
 			continue
