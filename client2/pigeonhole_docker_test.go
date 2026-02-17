@@ -344,6 +344,16 @@ func TestCreateCourierEnvelopesFromPayload(t *testing.T) {
 	numChunks := len(copyStreamChunks)
 	t.Logf("Alice: Created %d copy stream chunks from %d byte payload", numChunks, len(largePayload))
 
+	// Print the destination box IDs for each chunk
+	t.Log("=== Destination Box IDs ===")
+	currentDestIndex := destFirstIndex
+	for i := 0; i < numChunks; i++ {
+		boxID := currentDestIndex.BoxIDForContext(bobReadCap, constants.PIGEONHOLE_CTX)
+		t.Logf("Chunk %d/%d: Box ID = %x", i+1, numChunks, boxID.Bytes())
+		currentDestIndex, err = aliceThinClient.NextMessageBoxIndex(ctx, currentDestIndex)
+		require.NoError(t, err)
+	}
+
 	// Step 5: Write all copy stream chunks to the temporary copy stream
 	t.Log("=== Step 5: Writing copy stream chunks to temporary channel ===")
 	tempIndex := tempFirstIndex
