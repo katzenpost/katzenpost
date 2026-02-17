@@ -280,6 +280,26 @@ func (c *incomingConn) handleReplicaWrite(replicaWrite *pigeonhole.ReplicaWrite)
 	if isTombstone {
 		reply = c.handleTombstone(replicaWrite)
 	} else {
+		// Validate payload size against geometry limits
+		nikeScheme := schemes.ByName(c.l.server.cfg.ReplicaNIKEScheme)
+		pigeonholeGeo, err := pgeo.NewGeometryFromSphinx(c.geo, nikeScheme)
+		if err != nil {
+			c.log.Errorf("handleReplicaWrite failed to derive pigeonhole geometry: %v", err)
+			return &pigeonhole.ReplicaWriteReply{
+				ErrorCode: pigeonhole.ReplicaErrorInternalError,
+			}
+		}
+
+		// The payload is BACAP ciphertext, which must be exactly the expected size
+		expectedCiphertextSize := pigeonholeGeo.CalculateBoxCiphertextLength()
+		if len(replicaWrite.Payload) != expectedCiphertextSize {
+			c.log.Errorf("handleReplicaWrite invalid payload size: got %d bytes, expected exactly %d bytes",
+				len(replicaWrite.Payload), expectedCiphertextSize)
+			return &pigeonhole.ReplicaWriteReply{
+				ErrorCode: pigeonhole.ReplicaErrorInvalidPayload,
+			}
+		}
+
 		// Normal write path
 		s := ed25519.Scheme()
 		verifyKey, err := s.UnmarshalBinaryPublicKey(replicaWrite.BoxID[:])
