@@ -241,25 +241,30 @@ func (co *Connector) doReplication(cmd *commands.ReplicaWrite) {
 }
 
 func (co *Connector) replicationWorker() {
-	co.log.Infof("REPLICATION: Starting replication worker")
+	// Create a dedicated logger for this goroutine (go-logging requires one logger per goroutine)
+	log := co.server.LogBackend().GetLogger("replica replicationWorker")
+	log.Noticef("REPLICATION: Starting replication worker")
 	for {
 		select {
 		case <-co.HaltCh():
-			co.log.Infof("REPLICATION: Worker terminating gracefully")
+			log.Noticef("REPLICATION: Worker terminating gracefully")
 			return
 		case writeCmd := <-co.replicationCh:
-			co.log.Infof("REPLICATION: Worker received write command for BoxID: %x", writeCmd.BoxID)
+			log.Noticef("REPLICATION: Worker received write command for BoxID: %x", writeCmd.BoxID)
 			co.doReplication(writeCmd)
 		}
 	}
 }
 
 func (co *Connector) worker() {
+	// Create a dedicated logger for this goroutine (go-logging requires one logger per goroutine)
+	log := co.server.LogBackend().GetLogger("replica connectorWorker")
+
 	var (
 		resweepInterval = epochtime.Period / 8
 	)
 
-	co.log.Debug("Starting connector worker")
+	log.Debug("Starting connector worker")
 
 	// Try to spawn connections immediately on startup rather than waiting.
 	// This helps replicas connect to each other more promptly when the PKI
@@ -274,10 +279,10 @@ func (co *Connector) worker() {
 		timerFired := false
 		select {
 		case <-co.HaltCh():
-			co.log.Debugf("Connector worker terminating gracefully.")
+			log.Debugf("Connector worker terminating gracefully.")
 			return
 		case <-co.forceUpdateCh:
-			co.log.Debug("Forced connection update triggered")
+			log.Debug("Forced connection update triggered")
 		case <-timer.C:
 			timerFired = true
 		}
