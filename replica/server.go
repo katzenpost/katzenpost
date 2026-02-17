@@ -126,6 +126,7 @@ func (s *Server) initLogging() error {
 	if err == nil {
 		s.log = s.logBackend.GetLogger("replica")
 		s.log.Noticef("Katzenpost replica version: %s", versioninfo.Short())
+		s.log.Noticef("Katzenpost replica git revision: %s", versioninfo.Revision)
 		s.log.Notice("Katzenpost is still pre-alpha.  DO NOT DEPEND ON IT FOR STRONG SECURITY OR ANONYMITY.")
 	}
 	return err
