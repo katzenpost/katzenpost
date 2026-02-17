@@ -240,12 +240,18 @@ func (co *Connector) replicationWorker() {
 
 func (co *Connector) worker() {
 	var (
-		initialSpawnDelay = epochtime.Period / 64
-		resweepInterval   = epochtime.Period / 8
+		resweepInterval = epochtime.Period / 8
 	)
 
 	co.log.Debug("Starting connector worker")
-	timer := time.NewTimer(initialSpawnDelay)
+
+	// Try to spawn connections immediately on startup rather than waiting.
+	// This helps replicas connect to each other more promptly when the PKI
+	// document is already available.
+	co.spawnNewConns()
+	co.processRetryQueue()
+
+	timer := time.NewTimer(resweepInterval)
 	defer timer.Stop()
 
 	for {
