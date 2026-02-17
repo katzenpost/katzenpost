@@ -4,6 +4,7 @@
 package replica
 
 import (
+	"crypto/hmac"
 	"sync"
 	"time"
 
@@ -182,28 +183,38 @@ func (co *Connector) doReplication(cmd *commands.ReplicaWrite) {
 	myIdBytes, err := co.server.identityPublicKey.MarshalBinary()
 	if err != nil {
 		co.log.Errorf("REPLICATION: Failed to marshal identity key: %v", err)
-	} else {
-		myIdHash := blake2b.Sum256(myIdBytes)
-		co.log.Infof("REPLICATION: My identity: %x", myIdHash[:8])
+		return
 	}
+	myIdHash := blake2b.Sum256(myIdBytes)
+	co.log.Infof("REPLICATION: My identity: %x", myIdHash[:8])
 
-	descs, err := replicaCommon.GetRemoteShards(co.server.identityPublicKey, cmd.BoxID, doc)
+	// Get ALL shards for this BoxID (not just remote ones)
+	// This ensures we replicate to both shard replicas
+	allShards, err := replicaCommon.GetShards(cmd.BoxID, doc)
 	if err != nil {
-		co.log.Errorf("REPLICATION: Failed - GetRemoteShards err: %v", err)
+		co.log.Errorf("REPLICATION: Failed - GetShards err: %v", err)
 		panic(err)
 	}
 
-	if len(descs) == 0 {
-		co.log.Infof("REPLICATION: No remote shards needed for BoxID %x", cmd.BoxID)
+	if len(allShards) == 0 {
+		co.log.Warningf("REPLICATION: No shards available for BoxID %x", cmd.BoxID)
 		return
 	}
 
 	// Track replication success/failure
 	successCount := 0
-	totalTargets := len(descs)
+	totalTargets := 0
 
-	for _, desc := range descs {
+	for _, desc := range allShards {
 		idHash := blake2b.Sum256(desc.IdentityKey)
+
+		// Skip self - we already wrote locally
+		if hmac.Equal(idHash[:], myIdHash[:]) {
+			co.log.Debugf("REPLICATION: Skipping self for BoxID %x", cmd.BoxID)
+			continue
+		}
+
+		totalTargets++
 
 		// Check if connection exists before dispatching
 		co.RLock()
@@ -215,6 +226,11 @@ func (co *Connector) doReplication(cmd *commands.ReplicaWrite) {
 		}
 
 		co.DispatchCommand(cmd, &idHash)
+	}
+
+	if totalTargets == 0 {
+		co.log.Infof("REPLICATION: No remote shards needed for BoxID %x (we are the only shard)", cmd.BoxID)
+		return
 	}
 
 	if successCount == totalTargets {
