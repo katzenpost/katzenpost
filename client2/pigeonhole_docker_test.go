@@ -370,10 +370,11 @@ func TestCreateCourierEnvelopesFromPayload(t *testing.T) {
 
 	// Step 6: Send Copy command to courier
 	t.Log("=== Step 6: Sending Copy command to courier ===")
+	t.Logf("Alice: Sending Copy command to courier node %x, queue %s...", courierNodeIDHash[:8], courierQueueID)
 	errorCode, err := aliceThinClient.SendCopyCommand(ctx, tempWriteCap, &courierNodeIDHash, courierQueueID)
 	require.NoError(t, err)
 	require.Equal(t, uint8(0), errorCode, "Copy command returned error code %d", errorCode)
-	t.Log("Alice: Copy command sent successfully, courier will execute all writes atomically")
+	t.Logf("Alice: Copy command sent successfully to courier (error code: %d)", errorCode)
 
 	// Wait for courier to execute the copy command
 	t.Log("Waiting for courier to execute Copy command (30 seconds)")
