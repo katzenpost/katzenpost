@@ -4,628 +4,430 @@
 package pigeonhole
 
 import (
-	"bytes"
-	"crypto/rand"
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/katzenpost/katzenpost/pigeonhole/geo"
+	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
 )
 
-// Helper function to create a test CourierEnvelope
-func createTestCourierEnvelope(ciphertextSize int) *CourierEnvelope {
-	senderPubkey := make([]byte, 32)
-	rand.Read(senderPubkey)
-
-	ciphertext := make([]byte, ciphertextSize)
-	rand.Read(ciphertext)
-
-	var dek1, dek2 [60]byte
-	rand.Read(dek1[:])
-	rand.Read(dek2[:])
-
+// createTestEnvelope creates a simple test CourierEnvelope with the given ciphertext size.
+func createTestEnvelope(ciphertextSize int) *CourierEnvelope {
 	return &CourierEnvelope{
-		IntermediateReplicas: [2]uint8{1, 2},
-		Dek1:                 dek1,
-		Dek2:                 dek2,
-		ReplyIndex:           42,
-		Epoch:                12345678901234567890,
-		SenderPubkeyLen:      uint16(len(senderPubkey)),
-		SenderPubkey:         senderPubkey,
-		CiphertextLen:        uint32(len(ciphertext)),
-		Ciphertext:           ciphertext,
+		IntermediateReplicas: [2]uint8{0, 1},
+		Dek1:                 [60]uint8{},
+		Dek2:                 [60]uint8{},
+		ReplyIndex:           0,
+		Epoch:                12345,
+		SenderPubkeyLen:      32,
+		SenderPubkey:         make([]byte, 32),
+		CiphertextLen:        uint32(ciphertextSize),
+		Ciphertext:           make([]byte, ciphertextSize),
 	}
 }
 
-func TestEncodeCopyStream_Empty(t *testing.T) {
-	stream, err := EncodeCopyStream([]*CourierEnvelope{})
-	require.NoError(t, err)
-	require.Empty(t, stream)
+// createTestGeometry creates a geometry with the given max plaintext payload length.
+// Uses the same NIKE scheme (CTIDH1024-X25519) that the courier and client use.
+func createTestGeometry(maxPlaintextPayloadLength int) *geo.Geometry {
+	return geo.NewGeometry(maxPlaintextPayloadLength, replicaCommon.NikeScheme)
 }
 
-func TestEncodeCopyStream_SingleEnvelope(t *testing.T) {
-	envelope := createTestCourierEnvelope(100)
+// ===========================================================================
+// CLIENT SIDE TESTS - CopyStreamEncoder
+// ===========================================================================
 
-	stream, err := EncodeCopyStream([]*CourierEnvelope{envelope})
-	require.NoError(t, err)
-	require.NotEmpty(t, stream)
+func TestCopyStreamEncoder_NewEncoder(t *testing.T) {
+	geometry := createTestGeometry(1000)
+	encoder := NewCopyStreamEncoder(geometry)
 
-	// Verify format: [4-byte length][envelope bytes]
-	require.GreaterOrEqual(t, len(stream), 4, "Stream should have at least 4 bytes for length prefix")
-
-	// Decode and verify
-	decoded, err := DecodeCopyStream(stream)
-	require.NoError(t, err)
-	require.Len(t, decoded, 1)
-
-	// Verify the decoded envelope matches
-	require.Equal(t, envelope.IntermediateReplicas, decoded[0].IntermediateReplicas)
-	require.Equal(t, envelope.Dek1, decoded[0].Dek1)
-	require.Equal(t, envelope.Dek2, decoded[0].Dek2)
-	require.Equal(t, envelope.ReplyIndex, decoded[0].ReplyIndex)
-	require.Equal(t, envelope.Epoch, decoded[0].Epoch)
-	require.Equal(t, envelope.SenderPubkeyLen, decoded[0].SenderPubkeyLen)
-	require.Equal(t, envelope.SenderPubkey, decoded[0].SenderPubkey)
-	require.Equal(t, envelope.CiphertextLen, decoded[0].CiphertextLen)
-	require.Equal(t, envelope.Ciphertext, decoded[0].Ciphertext)
+	require.NotNil(t, encoder)
+	require.Equal(t, 1000-CopyStreamElementOverhead, encoder.maxChunkSize)
+	require.True(t, encoder.isFirstChunk)
+	require.Empty(t, encoder.buffer)
 }
 
-func TestEncodeCopyStream_MultipleEnvelopes(t *testing.T) {
-	envelopes := []*CourierEnvelope{
-		createTestCourierEnvelope(100),
-		createTestCourierEnvelope(200),
-		createTestCourierEnvelope(150),
-	}
+func TestCopyStreamEncoder_AddEnvelope_NilEnvelope(t *testing.T) {
+	geometry := createTestGeometry(1000)
+	encoder := NewCopyStreamEncoder(geometry)
 
-	stream, err := EncodeCopyStream(envelopes)
-	require.NoError(t, err)
-	require.NotEmpty(t, stream)
-
-	// Decode and verify
-	decoded, err := DecodeCopyStream(stream)
-	require.NoError(t, err)
-	require.Len(t, decoded, 3)
-
-	// Verify each envelope
-	for i := 0; i < 3; i++ {
-		require.Equal(t, envelopes[i].IntermediateReplicas, decoded[i].IntermediateReplicas)
-		require.Equal(t, envelopes[i].CiphertextLen, decoded[i].CiphertextLen)
-		require.Equal(t, envelopes[i].Ciphertext, decoded[i].Ciphertext)
-	}
-}
-
-func TestEncodeCopyStream_LargeEnvelope(t *testing.T) {
-	// Create a large envelope (2KB ciphertext)
-	envelope := createTestCourierEnvelope(2048)
-
-	stream, err := EncodeCopyStream([]*CourierEnvelope{envelope})
-	require.NoError(t, err)
-
-	// Decode and verify
-	decoded, err := DecodeCopyStream(stream)
-	require.NoError(t, err)
-	require.Len(t, decoded, 1)
-	require.Equal(t, envelope.Ciphertext, decoded[0].Ciphertext)
-}
-
-func TestEncodeCopyStream_NilEnvelope(t *testing.T) {
-	envelopes := []*CourierEnvelope{
-		createTestCourierEnvelope(100),
-		nil, // Nil envelope should cause error
-		createTestCourierEnvelope(100),
-	}
-
-	_, err := EncodeCopyStream(envelopes)
+	elements, err := encoder.AddEnvelope(nil)
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "envelope at index 1 is nil")
+	require.Contains(t, err.Error(), "envelope is nil")
+	require.Nil(t, elements)
 }
 
-func TestDecodeCopyStream_Empty(t *testing.T) {
-	decoded, err := DecodeCopyStream([]byte{})
+func TestCopyStreamEncoder_SmallEnvelope_BufferedForFlush(t *testing.T) {
+	// Small envelope that doesn't fill a complete chunk
+	geometry := createTestGeometry(1000)
+	encoder := NewCopyStreamEncoder(geometry)
+
+	envelope := createTestEnvelope(100)
+	elements, err := encoder.AddEnvelope(envelope)
+
 	require.NoError(t, err)
-	require.Empty(t, decoded)
+	// Small envelope should be buffered, not emitted (leaves data for Flush)
+	require.Empty(t, elements)
+	require.NotEmpty(t, encoder.buffer)
 }
 
-func TestDecodeCopyStream_IncompleteLength(t *testing.T) {
-	// Only 3 bytes instead of 4 for length prefix
-	data := []byte{0x00, 0x01, 0x02}
+func TestCopyStreamEncoder_LargeEnvelope_ProducesElements(t *testing.T) {
+	// Large envelope that spans multiple chunks
+	geometry := createTestGeometry(200) // Small box size for testing
+	encoder := NewCopyStreamEncoder(geometry)
 
-	_, err := DecodeCopyStream(data)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "incomplete length prefix")
+	// Create an envelope larger than maxChunkSize
+	envelope := createTestEnvelope(500)
+	elements, err := encoder.AddEnvelope(envelope)
+
+	require.NoError(t, err)
+	require.NotEmpty(t, elements)
+
+	// First element should have IsStart flag
+	firstElem := &CopyStreamElement{}
+	_, err = firstElem.Parse(elements[0])
+	require.NoError(t, err)
+	require.True(t, firstElem.IsStart(), "first element should have IsStart flag")
+	require.False(t, firstElem.IsFinal(), "non-flushed elements should not have IsFinal flag")
 }
 
-func TestDecodeCopyStream_IncompleteEnvelope(t *testing.T) {
-	// Length says 100 bytes, but only provide 50
-	data := make([]byte, 4+50)
-	data[0] = 0x00
-	data[1] = 0x00
-	data[2] = 0x00
-	data[3] = 0x64 // Length = 100
+func TestCopyStreamEncoder_Flush_SetsFinalFlag(t *testing.T) {
+	geometry := createTestGeometry(1000)
+	encoder := NewCopyStreamEncoder(geometry)
 
-	_, err := DecodeCopyStream(data)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "incomplete envelope")
+	envelope := createTestEnvelope(100)
+	_, err := encoder.AddEnvelope(envelope)
+	require.NoError(t, err)
+
+	finalElements := encoder.Flush()
+	require.NotEmpty(t, finalElements)
+
+	// Last element should have IsFinal flag
+	lastElem := &CopyStreamElement{}
+	_, err = lastElem.Parse(finalElements[len(finalElements)-1])
+	require.NoError(t, err)
+	require.True(t, lastElem.IsFinal(), "last element from Flush should have IsFinal flag")
 }
 
-func TestDecodeCopyStream_ZeroLength(t *testing.T) {
-	// Zero-length envelope should be rejected
-	data := []byte{0x00, 0x00, 0x00, 0x00}
+func TestCopyStreamEncoder_Flush_SingleEnvelope_HasBothFlags(t *testing.T) {
+	// Single small envelope - the final element should have both IsStart and IsFinal
+	geometry := createTestGeometry(1000)
+	encoder := NewCopyStreamEncoder(geometry)
 
-	_, err := DecodeCopyStream(data)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "invalid zero-length envelope")
+	envelope := createTestEnvelope(50)
+	_, err := encoder.AddEnvelope(envelope)
+	require.NoError(t, err)
+
+	finalElements := encoder.Flush()
+	require.Len(t, finalElements, 1)
+
+	elem := &CopyStreamElement{}
+	_, err = elem.Parse(finalElements[0])
+	require.NoError(t, err)
+	require.True(t, elem.IsStart(), "single element should have IsStart flag")
+	require.True(t, elem.IsFinal(), "single element should have IsFinal flag")
 }
 
-func TestDecodeCopyStream_ExcessiveLength(t *testing.T) {
-	// Length exceeds 1MB sanity check
-	data := make([]byte, 4)
-	data[0] = 0x01 // 16MB
-	data[1] = 0x00
-	data[2] = 0x00
-	data[3] = 0x00
+func TestCopyStreamEncoder_Flush_EmptyBuffer_ReturnsNil(t *testing.T) {
+	geometry := createTestGeometry(1000)
+	encoder := NewCopyStreamEncoder(geometry)
 
-	_, err := DecodeCopyStream(data)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "exceeds maximum")
-}
-
-func TestDecodeCopyStream_InvalidTrunnelData(t *testing.T) {
-	// Valid length prefix but invalid trunnel data
-	data := make([]byte, 4+10)
-	data[0] = 0x00
-	data[1] = 0x00
-	data[2] = 0x00
-	data[3] = 0x0A // Length = 10
-	// Fill with garbage
-	for i := 4; i < len(data); i++ {
-		data[i] = 0xFF
-	}
-
-	_, err := DecodeCopyStream(data)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "failed to parse envelope")
-}
-
-func TestEncodeDecode_RoundTrip(t *testing.T) {
-	// Test round-trip encoding and decoding with various envelope sizes
-	testCases := []struct {
-		name           string
-		envelopeCount  int
-		ciphertextSize int
-	}{
-		{"Single small envelope", 1, 50},
-		{"Single medium envelope", 1, 500},
-		{"Single large envelope", 1, 2000},
-		{"Multiple small envelopes", 5, 100},
-		{"Multiple medium envelopes", 3, 800},
-		{"Multiple large envelopes", 2, 1500},
-		{"Many tiny envelopes", 10, 10},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			// Create test envelopes
-			envelopes := make([]*CourierEnvelope, tc.envelopeCount)
-			for i := 0; i < tc.envelopeCount; i++ {
-				envelopes[i] = createTestCourierEnvelope(tc.ciphertextSize)
-			}
-
-			// Encode
-			stream, err := EncodeCopyStream(envelopes)
-			require.NoError(t, err)
-			require.NotEmpty(t, stream)
-
-			// Decode
-			decoded, err := DecodeCopyStream(stream)
-			require.NoError(t, err)
-			require.Len(t, decoded, tc.envelopeCount)
-
-			// Verify each envelope matches
-			for i := 0; i < tc.envelopeCount; i++ {
-				require.Equal(t, envelopes[i].IntermediateReplicas, decoded[i].IntermediateReplicas)
-				require.Equal(t, envelopes[i].Dek1, decoded[i].Dek1)
-				require.Equal(t, envelopes[i].Dek2, decoded[i].Dek2)
-				require.Equal(t, envelopes[i].ReplyIndex, decoded[i].ReplyIndex)
-				require.Equal(t, envelopes[i].Epoch, decoded[i].Epoch)
-				require.Equal(t, envelopes[i].SenderPubkeyLen, decoded[i].SenderPubkeyLen)
-				require.Equal(t, envelopes[i].SenderPubkey, decoded[i].SenderPubkey)
-				require.Equal(t, envelopes[i].CiphertextLen, decoded[i].CiphertextLen)
-				require.Equal(t, envelopes[i].Ciphertext, decoded[i].Ciphertext)
-			}
-		})
-	}
-}
-
-func TestEncodeDecode_StreamFormat(t *testing.T) {
-	// Test that the stream format is correct: [len1][env1][len2][env2]...
-	envelope1 := createTestCourierEnvelope(100)
-	envelope2 := createTestCourierEnvelope(200)
-
-	stream, err := EncodeCopyStream([]*CourierEnvelope{envelope1, envelope2})
-	require.NoError(t, err)
-
-	// Manually verify the format
-	offset := 0
-
-	// First envelope
-	length1 := int(stream[0])<<24 | int(stream[1])<<16 | int(stream[2])<<8 | int(stream[3])
-	offset += 4
-	require.Greater(t, length1, 0)
-	require.Less(t, length1, len(stream))
-	offset += length1
-
-	// Second envelope
-	require.Less(t, offset+4, len(stream), "Should have second length prefix")
-	length2 := int(stream[offset])<<24 | int(stream[offset+1])<<16 | int(stream[offset+2])<<8 | int(stream[offset+3])
-	offset += 4
-	require.Greater(t, length2, 0)
-	offset += length2
-
-	// Should have consumed entire stream
-	require.Equal(t, len(stream), offset)
-}
-
-func TestDecodeCopyStream_PartialRead(t *testing.T) {
-	// Test decoding when we have complete envelopes followed by incomplete data
-	envelopes := []*CourierEnvelope{
-		createTestCourierEnvelope(100),
-		createTestCourierEnvelope(150),
-	}
-
-	stream, err := EncodeCopyStream(envelopes)
-	require.NoError(t, err)
-
-	// Decode full stream - should work
-	decoded, err := DecodeCopyStream(stream)
-	require.NoError(t, err)
-	require.Len(t, decoded, 2)
-
-	// Decode partial stream (cut off in the middle of second envelope) - should fail
-	partialStream := stream[:len(stream)-50]
-	_, err = DecodeCopyStream(partialStream)
-	require.Error(t, err)
-}
-
-func TestEncodeCopyStream_DeterministicEncoding(t *testing.T) {
-	// Test that encoding the same envelope twice produces identical output
-	envelope := createTestCourierEnvelope(100)
-
-	stream1, err := EncodeCopyStream([]*CourierEnvelope{envelope})
-	require.NoError(t, err)
-
-	stream2, err := EncodeCopyStream([]*CourierEnvelope{envelope})
-	require.NoError(t, err)
-
-	require.True(t, bytes.Equal(stream1, stream2), "Encoding should be deterministic")
-}
-
-func TestCopyStreamDecoder_SingleBox(t *testing.T) {
-	// Create envelopes and encode them
-	envelopes := []*CourierEnvelope{
-		createTestCourierEnvelope(100),
-		createTestCourierEnvelope(150),
-	}
-
-	stream, err := EncodeCopyStream(envelopes)
-	require.NoError(t, err)
-
-	// Decode using streaming decoder with all data in one box
-	decoder := NewCopyStreamDecoder()
-	decoder.AddData(stream)
-
-	// Decode first envelope
-	decoded1, err := decoder.DecodeAvailable()
-	require.NoError(t, err)
-	require.NotNil(t, decoded1)
-	require.Equal(t, envelopes[0].Ciphertext, decoded1.Ciphertext)
-
-	// Decode second envelope
-	decoded2, err := decoder.DecodeAvailable()
-	require.NoError(t, err)
-	require.NotNil(t, decoded2)
-	require.Equal(t, envelopes[1].Ciphertext, decoded2.Ciphertext)
-
-	// No more envelopes
-	decoded3, err := decoder.DecodeAvailable()
-	require.NoError(t, err)
-	require.Nil(t, decoded3)
-	require.Equal(t, 0, decoder.Remaining())
-}
-
-func TestCopyStreamDecoder_MultipleBoxes(t *testing.T) {
-	// Create envelopes and encode them
-	envelopes := []*CourierEnvelope{
-		createTestCourierEnvelope(500),
-		createTestCourierEnvelope(600),
-		createTestCourierEnvelope(700),
-	}
-
-	stream, err := EncodeCopyStream(envelopes)
-	require.NoError(t, err)
-
-	// Split stream into box-sized chunks (simulate BACAP boxes)
-	boxSize := 400
-	decoder := NewCopyStreamDecoder()
-	var allDecoded []*CourierEnvelope
-
-	for offset := 0; offset < len(stream); offset += boxSize {
-		end := offset + boxSize
-		if end > len(stream) {
-			end = len(stream)
-		}
-		chunk := stream[offset:end]
-
-		// Add box data
-		decoder.AddData(chunk)
-
-		// Decode available envelope (at most one per call)
-		for {
-			decoded, err := decoder.DecodeAvailable()
-			require.NoError(t, err)
-			if decoded == nil {
-				break
-			}
-			allDecoded = append(allDecoded, decoded)
-		}
-	}
-
-	// Verify all envelopes were decoded
-	require.Len(t, allDecoded, 3)
-	require.Equal(t, 0, decoder.Remaining())
-
-	for i := 0; i < 3; i++ {
-		require.Equal(t, envelopes[i].Ciphertext, allDecoded[i].Ciphertext)
-	}
-}
-
-func TestCopyStreamDecoder_PartialEnvelope(t *testing.T) {
-	// Create envelope and encode it
-	envelope := createTestCourierEnvelope(1000)
-	stream, err := EncodeCopyStream([]*CourierEnvelope{envelope})
-	require.NoError(t, err)
-
-	// Split in the middle of the envelope
-	decoder := NewCopyStreamDecoder()
-
-	// Add first half
-	decoder.AddData(stream[:len(stream)/2])
-	decoded, err := decoder.DecodeAvailable()
-	require.NoError(t, err)
-	require.Nil(t, decoded, "Should not decode incomplete envelope")
-	require.Greater(t, decoder.Remaining(), 0, "Should have data in buffer")
-
-	// Add second half
-	decoder.AddData(stream[len(stream)/2:])
-	decoded, err = decoder.DecodeAvailable()
-	require.NoError(t, err)
-	require.NotNil(t, decoded, "Should decode complete envelope")
-	require.Equal(t, 0, decoder.Remaining())
-	require.Equal(t, envelope.Ciphertext, decoded.Ciphertext)
-}
-
-func TestCopyStreamDecoder_InvalidLength(t *testing.T) {
-	decoder := NewCopyStreamDecoder()
-
-	// Add data with zero length
-	data := []byte{0x00, 0x00, 0x00, 0x00}
-	decoder.AddData(data)
-
-	_, err := decoder.DecodeAvailable()
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "invalid zero-length envelope")
-}
-
-func TestCopyStreamDecoder_ExcessiveLength(t *testing.T) {
-	decoder := NewCopyStreamDecoder()
-
-	// Add data with excessive length (16MB)
-	data := []byte{0x01, 0x00, 0x00, 0x00}
-	decoder.AddData(data)
-
-	_, err := decoder.DecodeAvailable()
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "exceeds maximum")
-}
-
-func TestCopyStreamDecoder_IncrementalDecoding(t *testing.T) {
-	// Create multiple envelopes
-	envelopes := []*CourierEnvelope{
-		createTestCourierEnvelope(200),
-		createTestCourierEnvelope(300),
-		createTestCourierEnvelope(250),
-	}
-
-	stream, err := EncodeCopyStream(envelopes)
-	require.NoError(t, err)
-
-	// Feed data byte-by-byte (extreme case)
-	decoder := NewCopyStreamDecoder()
-	var allDecoded []*CourierEnvelope
-
-	for i := 0; i < len(stream); i++ {
-		decoder.AddData(stream[i : i+1])
-		// Keep decoding until no more envelopes available
-		for {
-			decoded, err := decoder.DecodeAvailable()
-			require.NoError(t, err)
-			if decoded == nil {
-				break
-			}
-			allDecoded = append(allDecoded, decoded)
-		}
-	}
-
-	require.Len(t, allDecoded, 3)
-	require.Equal(t, 0, decoder.Remaining())
-}
-
-func TestCopyStreamEncoder_SingleEnvelope(t *testing.T) {
-	envelope := createTestCourierEnvelope(500)
-	boxSize := 1024
-
-	encoder := NewCopyStreamEncoder(boxSize)
-	chunks, err := encoder.AddEnvelope(envelope)
-	require.NoError(t, err)
-
-	// Envelope should fit in buffer, no chunks yet
-	require.Empty(t, chunks)
-	require.Greater(t, encoder.Buffered(), 0)
-
-	// Flush to get final chunk
-	finalChunk := encoder.Flush()
-	require.NotNil(t, finalChunk)
-
-	// Decode and verify
-	decoded, err := DecodeCopyStream(finalChunk)
-	require.NoError(t, err)
-	require.Len(t, decoded, 1)
-	require.Equal(t, envelope.Ciphertext, decoded[0].Ciphertext)
+	// Flush without adding anything
+	elements := encoder.Flush()
+	require.Nil(t, elements)
 }
 
 func TestCopyStreamEncoder_MultipleEnvelopes(t *testing.T) {
-	envelopes := []*CourierEnvelope{
-		createTestCourierEnvelope(400),
-		createTestCourierEnvelope(500),
-		createTestCourierEnvelope(600),
-	}
-	boxSize := 1024
+	geometry := createTestGeometry(500)
+	encoder := NewCopyStreamEncoder(geometry)
 
-	encoder := NewCopyStreamEncoder(boxSize)
-	var allChunks [][]byte
+	// Add multiple envelopes
+	envelope1 := createTestEnvelope(100)
+	envelope2 := createTestEnvelope(150)
+	envelope3 := createTestEnvelope(120)
 
-	for _, envelope := range envelopes {
-		chunks, err := encoder.AddEnvelope(envelope)
-		require.NoError(t, err)
-		allChunks = append(allChunks, chunks...)
-	}
+	var allElements [][]byte
 
-	// Get final chunk
-	finalChunk := encoder.Flush()
-	if finalChunk != nil {
-		allChunks = append(allChunks, finalChunk)
-	}
-
-	// Reconstruct stream
-	var stream []byte
-	for _, chunk := range allChunks {
-		stream = append(stream, chunk...)
-	}
-
-	// Decode and verify
-	decoded, err := DecodeCopyStream(stream)
+	elems, err := encoder.AddEnvelope(envelope1)
 	require.NoError(t, err)
-	require.Len(t, decoded, 3)
+	allElements = append(allElements, elems...)
 
-	for i := 0; i < 3; i++ {
-		require.Equal(t, envelopes[i].Ciphertext, decoded[i].Ciphertext)
+	elems, err = encoder.AddEnvelope(envelope2)
+	require.NoError(t, err)
+	allElements = append(allElements, elems...)
+
+	elems, err = encoder.AddEnvelope(envelope3)
+	require.NoError(t, err)
+	allElements = append(allElements, elems...)
+
+	finalElems := encoder.Flush()
+	allElements = append(allElements, finalElems...)
+
+	require.NotEmpty(t, allElements)
+}
+
+// ===========================================================================
+// COURIER SIDE TESTS - CopyStreamDecoder and CopyStreamEnvelopeDecoder
+// ===========================================================================
+
+func TestCopyStreamDecoder_NewDecoder(t *testing.T) {
+	geometry := createTestGeometry(2000)
+	decoder := NewCopyStreamDecoder(geometry)
+
+	require.NotNil(t, decoder)
+	require.Equal(t, 2000, decoder.maxElementSize)
+	require.Empty(t, decoder.buffer)
+}
+
+func TestCopyStreamDecoder_AddData(t *testing.T) {
+	geometry := createTestGeometry(2000)
+	decoder := NewCopyStreamDecoder(geometry)
+
+	decoder.AddData([]byte{1, 2, 3})
+	require.Equal(t, 3, decoder.Remaining())
+
+	decoder.AddData([]byte{4, 5})
+	require.Equal(t, 5, decoder.Remaining())
+}
+
+func TestCopyStreamDecoder_DecodeAvailable_InsufficientData(t *testing.T) {
+	geometry := createTestGeometry(2000)
+	decoder := NewCopyStreamDecoder(geometry)
+
+	// Add less than 5 bytes (minimum element size)
+	decoder.AddData([]byte{0, 0, 0})
+
+	elem, err := decoder.DecodeAvailable()
+	require.NoError(t, err)
+	require.Nil(t, elem, "should return nil when insufficient data")
+}
+
+func TestCopyStreamDecoder_DecodeAvailable_CompleteElement(t *testing.T) {
+	geometry := createTestGeometry(2000)
+	decoder := NewCopyStreamDecoder(geometry)
+
+	// Create a valid element and serialize it
+	originalElem := &CopyStreamElement{
+		Flags:        CopyStreamFlagStart,
+		EnvelopeLen:  5,
+		EnvelopeData: []byte{1, 2, 3, 4, 5},
+	}
+	elemBytes, err := originalElem.MarshalBinary()
+	require.NoError(t, err)
+
+	decoder.AddData(elemBytes)
+
+	elem, err := decoder.DecodeAvailable()
+	require.NoError(t, err)
+	require.NotNil(t, elem)
+	require.True(t, elem.IsStart())
+	require.Equal(t, uint32(5), elem.EnvelopeLen)
+	require.Equal(t, []byte{1, 2, 3, 4, 5}, elem.EnvelopeData)
+}
+
+func TestCopyStreamDecoder_DecodeAvailable_ElementTooLarge(t *testing.T) {
+	geometry := createTestGeometry(10) // Very small max size
+	decoder := NewCopyStreamDecoder(geometry)
+
+	// Create an element larger than max
+	originalElem := &CopyStreamElement{
+		Flags:        0,
+		EnvelopeLen:  100,
+		EnvelopeData: make([]byte, 100),
+	}
+	elemBytes, err := originalElem.MarshalBinary()
+	require.NoError(t, err)
+
+	decoder.AddData(elemBytes)
+
+	_, err = decoder.DecodeAvailable()
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "exceeds maximum")
+}
+
+func TestCopyStreamDecoder_Remaining(t *testing.T) {
+	geometry := createTestGeometry(2000)
+	decoder := NewCopyStreamDecoder(geometry)
+
+	require.Equal(t, 0, decoder.Remaining())
+
+	decoder.AddData([]byte{1, 2, 3, 4, 5})
+	require.Equal(t, 5, decoder.Remaining())
+}
+
+func TestCopyStreamEnvelopeDecoder_NewDecoder(t *testing.T) {
+	geometry := createTestGeometry(2000)
+	decoder := NewCopyStreamEnvelopeDecoder(geometry)
+
+	require.NotNil(t, decoder)
+	require.NotNil(t, decoder.elementDecoder)
+	require.Empty(t, decoder.envelopeBuffer)
+	require.False(t, decoder.sawFinal)
+}
+
+func TestCopyStreamEnvelopeDecoder_Remaining(t *testing.T) {
+	geometry := createTestGeometry(2000)
+	decoder := NewCopyStreamEnvelopeDecoder(geometry)
+
+	require.Equal(t, 0, decoder.Remaining())
+
+	decoder.AddBoxData([]byte{1, 2, 3})
+	require.Equal(t, 3, decoder.Remaining())
+}
+
+// ===========================================================================
+// ROUND-TRIP TESTS - Encoder → Decoder Integration
+// ===========================================================================
+
+func TestCopyStream_RoundTrip_SingleEnvelope(t *testing.T) {
+	geometry := createTestGeometry(1000)
+
+	// Create encoder and add envelope
+	encoder := NewCopyStreamEncoder(geometry)
+	originalEnvelope := createTestEnvelope(100)
+
+	elements, err := encoder.AddEnvelope(originalEnvelope)
+	require.NoError(t, err)
+	finalElements := encoder.Flush()
+	allElements := append(elements, finalElements...)
+
+	// Create decoder and decode (use same geometry)
+	decoder := NewCopyStreamEnvelopeDecoder(geometry)
+	for _, elem := range allElements {
+		decoder.AddBoxData(elem)
+	}
+
+	envelopes, isFinal, err := decoder.DecodeEnvelopes()
+	require.NoError(t, err)
+	require.True(t, isFinal)
+	require.Len(t, envelopes, 1)
+
+	// Verify envelope contents
+	decoded := envelopes[0]
+	require.Equal(t, originalEnvelope.IntermediateReplicas, decoded.IntermediateReplicas)
+	require.Equal(t, originalEnvelope.Epoch, decoded.Epoch)
+	require.Equal(t, originalEnvelope.CiphertextLen, decoded.CiphertextLen)
+}
+
+func TestCopyStream_RoundTrip_MultipleEnvelopes(t *testing.T) {
+	geometry := createTestGeometry(500)
+
+	// Create encoder and add multiple envelopes
+	encoder := NewCopyStreamEncoder(geometry)
+	originalEnvelopes := []*CourierEnvelope{
+		createTestEnvelope(100),
+		createTestEnvelope(150),
+		createTestEnvelope(80),
+	}
+
+	var allElements [][]byte
+	for _, env := range originalEnvelopes {
+		elements, err := encoder.AddEnvelope(env)
+		require.NoError(t, err)
+		allElements = append(allElements, elements...)
+	}
+	finalElements := encoder.Flush()
+	allElements = append(allElements, finalElements...)
+
+	// Create decoder and decode (use same geometry)
+	decoder := NewCopyStreamEnvelopeDecoder(geometry)
+	for _, elem := range allElements {
+		decoder.AddBoxData(elem)
+	}
+
+	envelopes, isFinal, err := decoder.DecodeEnvelopes()
+	require.NoError(t, err)
+	require.True(t, isFinal)
+	require.Len(t, envelopes, 3)
+
+	// Verify each envelope
+	for i, decoded := range envelopes {
+		require.Equal(t, originalEnvelopes[i].CiphertextLen, decoded.CiphertextLen)
+		require.Equal(t, originalEnvelopes[i].Epoch, decoded.Epoch)
 	}
 }
 
-func TestCopyStreamEncoder_LargeEnvelopes(t *testing.T) {
-	// Create envelopes that will span multiple boxes
-	envelopes := []*CourierEnvelope{
-		createTestCourierEnvelope(2000),
-		createTestCourierEnvelope(2500),
-	}
-	boxSize := 1024
+func TestCopyStream_RoundTrip_LargeEnvelope(t *testing.T) {
+	// Test envelope larger than a single box
+	geometry := createTestGeometry(200)
 
-	encoder := NewCopyStreamEncoder(boxSize)
-	var allChunks [][]byte
+	encoder := NewCopyStreamEncoder(geometry)
+	originalEnvelope := createTestEnvelope(500) // Larger than box
 
-	for _, envelope := range envelopes {
-		chunks, err := encoder.AddEnvelope(envelope)
-		require.NoError(t, err)
-		allChunks = append(allChunks, chunks...)
-	}
-
-	finalChunk := encoder.Flush()
-	if finalChunk != nil {
-		allChunks = append(allChunks, finalChunk)
-	}
-
-	// Should have multiple chunks
-	require.Greater(t, len(allChunks), 1)
-
-	// Verify all chunks except last are exactly boxSize
-	for i := 0; i < len(allChunks)-1; i++ {
-		require.Equal(t, boxSize, len(allChunks[i]))
-	}
-
-	// Reconstruct and decode
-	var stream []byte
-	for _, chunk := range allChunks {
-		stream = append(stream, chunk...)
-	}
-
-	decoded, err := DecodeCopyStream(stream)
+	elements, err := encoder.AddEnvelope(originalEnvelope)
 	require.NoError(t, err)
-	require.Len(t, decoded, 2)
+	finalElements := encoder.Flush()
+	allElements := append(elements, finalElements...)
 
-	for i := 0; i < 2; i++ {
-		require.Equal(t, envelopes[i].Ciphertext, decoded[i].Ciphertext)
+	// Should produce multiple elements
+	require.Greater(t, len(allElements), 1, "large envelope should produce multiple elements")
+
+	// Decode (use same geometry)
+	decoder := NewCopyStreamEnvelopeDecoder(geometry)
+	for _, elem := range allElements {
+		decoder.AddBoxData(elem)
 	}
+
+	envelopes, isFinal, err := decoder.DecodeEnvelopes()
+	require.NoError(t, err)
+	require.True(t, isFinal)
+	require.Len(t, envelopes, 1)
+	require.Equal(t, originalEnvelope.CiphertextLen, envelopes[0].CiphertextLen)
 }
 
-func TestCopyStreamEncoder_RoundTripWithDecoder(t *testing.T) {
-	// Test encoder -> decoder round trip
-	envelopes := []*CourierEnvelope{
-		createTestCourierEnvelope(300),
-		createTestCourierEnvelope(400),
-		createTestCourierEnvelope(500),
-	}
-	boxSize := 800
+func TestCopyStream_RoundTrip_IncrementalDecoding(t *testing.T) {
+	// Simulate courier reading boxes one at a time
+	geometry := createTestGeometry(200)
 
-	// Encode
-	encoder := NewCopyStreamEncoder(boxSize)
-	var chunks [][]byte
+	encoder := NewCopyStreamEncoder(geometry)
+	envelope := createTestEnvelope(300)
 
-	for _, envelope := range envelopes {
-		newChunks, err := encoder.AddEnvelope(envelope)
+	elements, err := encoder.AddEnvelope(envelope)
+	require.NoError(t, err)
+	finalElements := encoder.Flush()
+	allElements := append(elements, finalElements...)
+
+	decoder := NewCopyStreamEnvelopeDecoder(geometry)
+	var decodedEnvelopes []*CourierEnvelope
+	sawFinal := false
+
+	// Feed elements one at a time
+	for _, elem := range allElements {
+		decoder.AddBoxData(elem)
+		envs, isFinal, err := decoder.DecodeEnvelopes()
 		require.NoError(t, err)
-		chunks = append(chunks, newChunks...)
-	}
-
-	finalChunk := encoder.Flush()
-	if finalChunk != nil {
-		chunks = append(chunks, finalChunk)
-	}
-
-	// Decode using streaming decoder
-	decoder := NewCopyStreamDecoder()
-	var allDecoded []*CourierEnvelope
-
-	for _, chunk := range chunks {
-		decoder.AddData(chunk)
-		// Keep decoding until no more envelopes available
-		for {
-			decoded, err := decoder.DecodeAvailable()
-			require.NoError(t, err)
-			if decoded == nil {
-				break
-			}
-			allDecoded = append(allDecoded, decoded)
+		decodedEnvelopes = append(decodedEnvelopes, envs...)
+		if isFinal {
+			sawFinal = true
 		}
 	}
 
-	// Verify
-	require.Len(t, allDecoded, 3)
-	require.Equal(t, 0, decoder.Remaining())
-
-	for i := 0; i < 3; i++ {
-		require.Equal(t, envelopes[i].Ciphertext, allDecoded[i].Ciphertext)
-	}
+	require.True(t, sawFinal)
+	require.Len(t, decodedEnvelopes, 1)
 }
 
-func TestCopyStreamEncoder_NilEnvelope(t *testing.T) {
-	encoder := NewCopyStreamEncoder(1024)
-	_, err := encoder.AddEnvelope(nil)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "envelope is nil")
-}
+func TestCopyStreamElement_Flags(t *testing.T) {
+	t.Run("IsStart", func(t *testing.T) {
+		elem := &CopyStreamElement{Flags: CopyStreamFlagStart}
+		require.True(t, elem.IsStart())
+		require.False(t, elem.IsFinal())
+	})
 
-func TestCopyStreamEncoder_EmptyFlush(t *testing.T) {
-	encoder := NewCopyStreamEncoder(1024)
-	finalChunk := encoder.Flush()
-	require.Nil(t, finalChunk)
-	require.Equal(t, 0, encoder.Buffered())
+	t.Run("IsFinal", func(t *testing.T) {
+		elem := &CopyStreamElement{Flags: CopyStreamFlagFinal}
+		require.False(t, elem.IsStart())
+		require.True(t, elem.IsFinal())
+	})
+
+	t.Run("BothFlags", func(t *testing.T) {
+		elem := &CopyStreamElement{Flags: CopyStreamFlagStart | CopyStreamFlagFinal}
+		require.True(t, elem.IsStart())
+		require.True(t, elem.IsFinal())
+	})
+
+	t.Run("NoFlags", func(t *testing.T) {
+		elem := &CopyStreamElement{Flags: 0}
+		require.False(t, elem.IsStart())
+		require.False(t, elem.IsFinal())
+	})
 }

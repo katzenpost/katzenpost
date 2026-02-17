@@ -1192,13 +1192,13 @@ func (c *CopyCommandReply) validate() error {
 	return nil
 }
 
-type CopyCommandWrapper struct {
-	Flags      uint8
-	PayloadLen uint32
-	Payload    []uint8
+type CopyStreamElement struct {
+	Flags        uint8
+	EnvelopeLen  uint32
+	EnvelopeData []uint8
 }
 
-func (c *CopyCommandWrapper) Parse(data []byte) ([]byte, error) {
+func (c *CopyStreamElement) Parse(data []byte) ([]byte, error) {
 	cur := data
 	{
 		if len(cur) < 1 {
@@ -1211,24 +1211,24 @@ func (c *CopyCommandWrapper) Parse(data []byte) ([]byte, error) {
 		if len(cur) < 4 {
 			return nil, errors.New("data too short")
 		}
-		c.PayloadLen = binary.BigEndian.Uint32(cur)
+		c.EnvelopeLen = binary.BigEndian.Uint32(cur)
 		cur = cur[4:]
 	}
 	{
-		c.Payload = make([]uint8, int(c.PayloadLen))
-		for idx := 0; idx < int(c.PayloadLen); idx++ {
+		c.EnvelopeData = make([]uint8, int(c.EnvelopeLen))
+		for idx := 0; idx < int(c.EnvelopeLen); idx++ {
 			if len(cur) < 1 {
 				return nil, errors.New("data too short")
 			}
-			c.Payload[idx] = cur[0]
+			c.EnvelopeData[idx] = cur[0]
 			cur = cur[1:]
 		}
 	}
 	return cur, nil
 }
 
-func ParseCopyCommandWrapper(data []byte) (*CopyCommandWrapper, error) {
-	c := new(CopyCommandWrapper)
+func ParseCopyStreamElement(data []byte) (*CopyStreamElement, error) {
+	c := new(CopyStreamElement)
 	_, err := c.Parse(data)
 	if err != nil {
 		return nil, err
@@ -1236,32 +1236,32 @@ func ParseCopyCommandWrapper(data []byte) (*CopyCommandWrapper, error) {
 	return c, nil
 }
 
-func (c *CopyCommandWrapper) encodeBinary() []byte {
+func (c *CopyStreamElement) encodeBinary() []byte {
 	var buf []byte
 	buf = append(buf, byte(c.Flags))
 	{
 		tmp := make([]byte, 4)
-		binary.BigEndian.PutUint32(tmp, c.PayloadLen)
+		binary.BigEndian.PutUint32(tmp, c.EnvelopeLen)
 		buf = append(buf, tmp...)
 	}
-	for idx := 0; idx < int(c.PayloadLen); idx++ {
-		buf = append(buf, byte(c.Payload[idx]))
+	for idx := 0; idx < int(c.EnvelopeLen); idx++ {
+		buf = append(buf, byte(c.EnvelopeData[idx]))
 	}
 	return buf
 }
 
-func (c *CopyCommandWrapper) MarshalBinary() ([]byte, error) {
+func (c *CopyStreamElement) MarshalBinary() ([]byte, error) {
 	if err := c.validate(); err != nil {
 		return nil, err
 	}
 	return c.encodeBinary(), nil
 }
 
-func (c *CopyCommandWrapper) validate() error {
-	if len(c.Payload) != int(c.PayloadLen) {
+func (c *CopyStreamElement) validate() error {
+	if len(c.EnvelopeData) != int(c.EnvelopeLen) {
 		return errors.New("array length constraint violated")
 	}
-	for idx := 0; idx < len(c.Payload); idx++ {
+	for idx := 0; idx < len(c.EnvelopeData); idx++ {
 	}
 	return nil
 }

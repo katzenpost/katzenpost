@@ -34,10 +34,6 @@ func (c *CourierEnvelope) EnvelopeHash() *[hash.HashSize]byte {
 	return hashOut
 }
 
-// CreatePaddedPayload creates a padded payload with a 4-byte length prefix.
-// This implements the pigeonhole protocol's 4-byte length prefix padding scheme
-// inside box payload plaintext. The geometry object tracks overhead across
-// nested layers of encapsulation/encoding/encryption.
 func CreatePaddedPayload(message []byte, targetSize int) ([]byte, error) {
 	// 4-byte length prefix + message data
 	const lengthPrefixSize = 4
@@ -57,7 +53,6 @@ func CreatePaddedPayload(message []byte, targetSize int) ([]byte, error) {
 	copy(paddedPayload[4:4+len(message)], message)
 
 	// The rest is zero padding (already initialized to zero by make())
-
 	return paddedPayload, nil
 }
 
