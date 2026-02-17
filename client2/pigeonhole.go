@@ -411,8 +411,9 @@ func (d *Daemon) createCourierEnvelopesFromPayload(request *Request) {
 		}
 		chunk := payload[offset:end]
 
-		// Pad the chunk to MaxPlaintextPayloadLength (which fits in a box)
-		paddedPayload, err := pigeonhole.CreatePaddedPayload(chunk, d.cfg.PigeonholeGeometry.MaxPlaintextPayloadLength)
+		// Pad the chunk to MaxPlaintextPayloadLength + 4 (length prefix is 4 bytes)
+		// This must match encryptWrite which also uses MaxPlaintextPayloadLength + 4
+		paddedPayload, err := pigeonhole.CreatePaddedPayload(chunk, d.cfg.PigeonholeGeometry.MaxPlaintextPayloadLength+4)
 		if err != nil {
 			d.log.Errorf("createCourierEnvelopesFromPayload: failed to pad payload: %v", err)
 			d.sendCreateCourierEnvelopesFromPayloadError(request, thin.ThinClientErrorInternalError)
