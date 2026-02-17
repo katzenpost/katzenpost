@@ -336,12 +336,14 @@ func (t *ThinClient) EncryptWrite(ctx context.Context, plaintext []byte, writeCa
 	}
 }
 
-// StartResendingEncryptedMessage starts resending an encrypted message via ARQ.
+// StartResendingEncryptedMessage sends an encrypted message via ARQ and blocks until completion.
 //
-// This method initiates automatic repeat request (ARQ) for an encrypted message,
-// which will be resent periodically until either:
-//   - A reply is received from the courier
-//   - The message is cancelled via CancelResendingEncryptedMessage
+// This method BLOCKS until a reply is received. CancelResendingEncryptedMessage is only
+// useful when called from another goroutine to interrupt this blocking call.
+//
+// The message will be resent periodically until either:
+//   - A reply is received from the courier (this method returns)
+//   - The message is cancelled via CancelResendingEncryptedMessage (from another goroutine)
 //   - The client is shut down
 //
 // This is used for both read and write operations in the new Pigeonhole API.
