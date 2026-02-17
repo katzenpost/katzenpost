@@ -81,7 +81,7 @@ install-replica-deps:
 # Build replica (requires RocksDB dependencies)
 # this may require gcc-14
 replica: install-replica-deps
-	cd cmd/replica; CC=gcc-14 CGO_ENABLE=1 CGO_LDFLAGS="-lrocksdb -lstdc++ -lbz2 -lm -lz -lsnappy -llz4 -lzstd -luring" go build -v -trimpath
+	cd cmd/replica; CC=gcc-14 CGO_ENABLE=1 CGO_LDFLAGS="-lrocksdb -lstdc++ -lbz2 -lm -lz -lsnappy -llz4 -lzstd -luring" go build -v -trimpath -ldflags "-X github.com/carlmjohnson/versioninfo.Revision=$$(git rev-parse --short HEAD)"
 
 
 clean:
