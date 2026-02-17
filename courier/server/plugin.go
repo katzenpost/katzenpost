@@ -656,7 +656,7 @@ func (e *Courier) handleCopyCommand(copyCmd *pigeonhole.CopyCommand) *pigeonhole
 		// Read the box from replicas (raw CopyStreamElement bytes)
 		boxPlaintext, err := e.readNextBox(reader, boxID)
 		if err != nil {
-			e.log.Errorf("handleCopyCommand: Failed to read box %x: %v", boxID[:8], err)
+			e.log.Errorf("handleCopyCommand: Failed to read box %x: %v", boxID[:], err)
 			return &pigeonhole.CourierQueryReply{
 				ReplyType: 1,
 				CopyCommandReply: &pigeonhole.CopyCommandReply{
@@ -691,7 +691,7 @@ func (e *Courier) handleCopyCommand(copyCmd *pigeonhole.CopyCommand) *pigeonhole
 
 		// Check if we've seen the final element
 		if isFinal {
-			e.log.Debugf("handleCopyCommand: Found final element in box %x", boxID[:8])
+			e.log.Debugf("handleCopyCommand: Found final element in box %x", boxID[:])
 			sawFinal = true
 		}
 	}
@@ -718,8 +718,9 @@ func (e *Courier) handleCopyCommand(copyCmd *pigeonhole.CopyCommand) *pigeonhole
 // readNextBox reads a single box from the replicas, decrypts it, and returns the raw payload.
 // The payload is a serialized CopyStreamElement which will be parsed by the envelope decoder.
 func (e *Courier) readNextBox(reader *bacap.StatefulReader, boxID *[bacap.BoxIDSize]byte) ([]byte, error) {
-	// Read the box from replicas
-	replicaReadReply, err := e.readBoxFromReplicas(boxID)
+	// Read the box directly from shard replicas (not intermediate replicas)
+	// This is used by the copy command which needs to read from where data is actually stored
+	replicaReadReply, err := e.readBoxFromShardReplicas(boxID)
 	if err != nil {
 		return nil, err
 	}
@@ -744,19 +745,47 @@ func (e *Courier) readNextBox(reader *bacap.StatefulReader, boxID *[bacap.BoxIDS
 	return decryptedPayload, nil
 }
 
-// readBoxFromReplicas reads a box from the replicas by creating a read request
-func (e *Courier) readBoxFromReplicas(boxID *[bacap.BoxIDSize]byte) (*pigeonhole.ReplicaReadReply, error) {
-	e.log.Debugf("readBoxFromReplicas: Reading box %x", boxID[:8])
+// readBoxFromShardReplicas reads a box directly from the shard replicas where the data is stored.
+// Unlike readBoxFromReplicas which uses intermediate replicas for privacy, this method
+// reads directly from the shards for use by the courier's copy command.
+func (e *Courier) readBoxFromShardReplicas(boxID *[bacap.BoxIDSize]byte) (*pigeonhole.ReplicaReadReply, error) {
+	e.log.Debugf("readBoxFromShardReplicas: Reading box %x", boxID[:8])
 
-	// Get PKI document and select random intermediate replicas
+	// Get PKI document
 	doc := e.server.PKI.PKIDocument()
 	if doc == nil {
 		return nil, fmt.Errorf("PKI document is nil")
 	}
 
-	replicaIDs, replicaPubKeys, err := pigeonhole.GetRandomIntermediateReplicas(doc, boxID)
+	// Get shard replicas for this BoxID (the actual replicas where data is stored)
+	shards, err := replicaCommon.GetShards(boxID, doc)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get random intermediate replicas: %w", err)
+		return nil, fmt.Errorf("failed to get shards: %w", err)
+	}
+	if len(shards) == 0 {
+		return nil, fmt.Errorf("no shards available for box")
+	}
+
+	// Get the current replica epoch for envelope key lookup
+	replicaEpoch, _, _ := replicaCommon.ReplicaNow()
+
+	// Get envelope public keys for the shard replicas
+	replicaPubKeys := make([]nike.PublicKey, len(shards))
+	replicaIDs := make([]uint8, len(shards))
+	for i, shard := range shards {
+		replicaIDs[i] = shard.ReplicaID
+		keyBytes, exists := shard.EnvelopeKeys[replicaEpoch]
+		if !exists {
+			return nil, fmt.Errorf("no envelope key found for shard replica %d at epoch %d", shard.ReplicaID, replicaEpoch)
+		}
+		if len(keyBytes) == 0 {
+			return nil, fmt.Errorf("empty envelope key for shard replica %d at epoch %d", shard.ReplicaID, replicaEpoch)
+		}
+		pubKey, err := replicaCommon.NikeScheme.UnmarshalBinaryPublicKey(keyBytes)
+		if err != nil {
+			return nil, fmt.Errorf("failed to unmarshal key for shard replica %d: %w", shard.ReplicaID, err)
+		}
+		replicaPubKeys[i] = pubKey
 	}
 
 	// Create ReplicaRead request
@@ -768,7 +797,7 @@ func (e *Courier) readBoxFromReplicas(boxID *[bacap.BoxIDSize]byte) (*pigeonhole
 		ReadMsg:     readMsg,
 	}
 
-	// Encrypt using MKEM
+	// Encrypt using MKEM with shard replica public keys
 	mkemScheme := mkem.NewScheme(e.envelopeScheme)
 	mkemPrivateKey, mkemCiphertext := mkemScheme.Encapsulate(replicaPubKeys, innerMsg.Bytes())
 	mkemPublicKey := mkemPrivateKey.Public()
@@ -791,12 +820,12 @@ func (e *Courier) readBoxFromReplicas(boxID *[bacap.BoxIDSize]byte) (*pigeonhole
 	e.copyCache[*envHash] = make(chan *commands.ReplicaMessageReply, 1)
 	e.copyCacheLock.Unlock()
 
-	// Send to the first replica we encrypted for (it will proxy if needed)
+	// Send directly to the first shard replica (not an intermediate replica)
 	if err := e.server.SendMessage(replicaIDs[0], query); err != nil {
 		e.copyCacheLock.Lock()
 		delete(e.copyCache, *envHash)
 		e.copyCacheLock.Unlock()
-		return nil, fmt.Errorf("failed to send message to replica: %w", err)
+		return nil, fmt.Errorf("failed to send message to shard replica: %w", err)
 	}
 
 	// Wait for reply
@@ -809,7 +838,7 @@ func (e *Courier) readBoxFromReplicas(boxID *[bacap.BoxIDSize]byte) (*pigeonhole
 
 	// Check for errors
 	if reply.ErrorCode != 0 {
-		return nil, fmt.Errorf("replica returned error code: %d", reply.ErrorCode)
+		return nil, fmt.Errorf("shard replica returned error code: %d", reply.ErrorCode)
 	}
 
 	// Decrypt the reply
