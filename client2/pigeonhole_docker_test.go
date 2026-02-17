@@ -40,11 +40,11 @@ func TestNewPigeonholeAPIAliceSendsBob(t *testing.T) {
 	bobThinClient := setupThinClient(t)
 	defer bobThinClient.Close()
 
-	// Validate PKI documents
-	currentDoc := validatePKIDocument(t, aliceThinClient)
-	currentEpoch := currentDoc.Epoch
-	bobDoc := validatePKIDocument(t, bobThinClient)
-	require.Equal(t, currentEpoch, bobDoc.Epoch, "Alice and Bob must use same PKI epoch")
+	// Validate PKI documents - use Alice's epoch for Bob to avoid race condition at epoch boundary
+	aliceDoc := validatePKIDocument(t, aliceThinClient)
+	currentEpoch := aliceDoc.Epoch
+	bobDoc := validatePKIDocumentForEpoch(t, bobThinClient, currentEpoch)
+	require.Equal(t, aliceDoc.Sum256(), bobDoc.Sum256(), "Alice and Bob must have the same PKI document")
 	t.Logf("Using PKI document for epoch %d", currentEpoch)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
@@ -151,11 +151,11 @@ func TestNewPigeonholeAPIMultipleMessages(t *testing.T) {
 	bobThinClient := setupThinClient(t)
 	defer bobThinClient.Close()
 
-	// Validate PKI documents
-	currentDoc := validatePKIDocument(t, aliceThinClient)
-	currentEpoch := currentDoc.Epoch
-	bobDoc := validatePKIDocument(t, bobThinClient)
-	require.Equal(t, currentEpoch, bobDoc.Epoch, "Alice and Bob must use same PKI epoch")
+	// Validate PKI documents - use Alice's epoch for Bob to avoid race condition at epoch boundary
+	aliceDoc := validatePKIDocument(t, aliceThinClient)
+	currentEpoch := aliceDoc.Epoch
+	bobDoc := validatePKIDocumentForEpoch(t, bobThinClient, currentEpoch)
+	require.Equal(t, aliceDoc.Sum256(), bobDoc.Sum256(), "Alice and Bob must have the same PKI document")
 	t.Logf("Using PKI document for epoch %d", currentEpoch)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Minute)
@@ -286,11 +286,11 @@ func TestCreateCourierEnvelopesFromPayload(t *testing.T) {
 	bobThinClient := setupThinClient(t)
 	defer bobThinClient.Close()
 
-	// Validate PKI documents
-	currentDoc := validatePKIDocument(t, aliceThinClient)
-	currentEpoch := currentDoc.Epoch
-	bobDoc := validatePKIDocument(t, bobThinClient)
-	require.Equal(t, currentEpoch, bobDoc.Epoch, "Alice and Bob must use same PKI epoch")
+	// Validate PKI documents - use Alice's epoch for Bob to avoid race condition at epoch boundary
+	aliceDoc := validatePKIDocument(t, aliceThinClient)
+	currentEpoch := aliceDoc.Epoch
+	bobDoc := validatePKIDocumentForEpoch(t, bobThinClient, currentEpoch)
+	require.Equal(t, aliceDoc.Sum256(), bobDoc.Sum256(), "Alice and Bob must have the same PKI document")
 	t.Logf("Using PKI document for epoch %d", currentEpoch)
 
 	// Find courier service
@@ -337,7 +337,8 @@ func TestCreateCourierEnvelopesFromPayload(t *testing.T) {
 
 	// Step 4: Create copy stream chunks from the large payload
 	t.Log("=== Step 4: Creating copy stream chunks from large payload ===")
-	copyStreamChunks, err := aliceThinClient.CreateCourierEnvelopesFromPayload(ctx, largePayload, destWriteCap, destFirstIndex, true /* isLast */)
+	streamID := aliceThinClient.NewStreamID()
+	copyStreamChunks, err := aliceThinClient.CreateCourierEnvelopesFromPayload(ctx, streamID, largePayload, destWriteCap, destFirstIndex, true /* isLast */)
 	require.NoError(t, err)
 	require.NotEmpty(t, copyStreamChunks, "CreateCourierEnvelopesFromPayload returned empty chunks")
 	numChunks := len(copyStreamChunks)
