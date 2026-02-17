@@ -130,15 +130,6 @@ func TestNewPigeonholeAPIAliceSendsBob(t *testing.T) {
 	// Verify the decrypted message matches Alice's original message
 	require.Equal(t, aliceMessage, bobPlaintext, "Message mismatch: Bob's decrypted message doesn't match Alice's original")
 	t.Log("✓ SUCCESS: Bob successfully decrypted Alice's message!")
-
-	// Cleanup: Cancel resending
-	err = aliceThinClient.CancelResendingEncryptedMessage(ctx, aliceEnvHash)
-	require.NoError(t, err)
-	t.Log("Alice: Cancelled resending encrypted write message")
-
-	err = bobThinClient.CancelResendingEncryptedMessage(ctx, bobEnvHash)
-	require.NoError(t, err)
-	t.Log("Bob: Cancelled resending encrypted read message")
 }
 
 // TestNewPigeonholeAPIMultipleMessages tests sending multiple sequential messages
@@ -253,13 +244,6 @@ func TestNewPigeonholeAPIMultipleMessages(t *testing.T) {
 		require.NoError(t, err)
 
 		bobCurrentIndex, err = bobThinClient.NextMessageBoxIndex(ctx, bobCurrentIndex)
-		require.NoError(t, err)
-
-		// Cleanup: Cancel resending for this message
-		err = aliceThinClient.CancelResendingEncryptedMessage(ctx, aliceEnvHash)
-		require.NoError(t, err)
-
-		err = bobThinClient.CancelResendingEncryptedMessage(ctx, bobEnvHash)
 		require.NoError(t, err)
 	}
 
@@ -378,10 +362,6 @@ func TestCreateCourierEnvelopesFromPayload(t *testing.T) {
 		// Increment temp index for next chunk
 		tempIndex, err = aliceThinClient.NextMessageBoxIndex(ctx, tempIndex)
 		require.NoError(t, err)
-
-		// Cancel resending for this chunk
-		err = aliceThinClient.CancelResendingEncryptedMessage(ctx, envHash)
-		require.NoError(t, err)
 	}
 
 	// Wait for all chunks to propagate to the copy stream
@@ -426,10 +406,6 @@ func TestCreateCourierEnvelopesFromPayload(t *testing.T) {
 
 		// Advance to next chunk
 		bobIndex, err = bobThinClient.NextMessageBoxIndex(ctx, bobIndex)
-		require.NoError(t, err)
-
-		// Cancel resending
-		err = bobThinClient.CancelResendingEncryptedMessage(ctx, bobEnvHash)
 		require.NoError(t, err)
 	}
 
