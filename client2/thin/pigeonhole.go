@@ -10,6 +10,7 @@ import (
 	"fmt"
 
 	"github.com/katzenpost/hpqc/bacap"
+	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/katzenpost/pigeonhole"
 )
 
@@ -649,111 +650,23 @@ func (t *ThinClient) NextMessageBoxIndex(ctx context.Context, messageBoxIndex *b
 	}
 }
 
-// Copy Channel API:
-
-// SendCopyCommand sends a Copy command to the courier service.
+// NewStreamID generates a new cryptographically random stream identifier.
 //
-// The Copy command instructs the courier to read encrypted write operations from a
-// temporary copy stream (identified by tempWriteCap) and execute them atomically.
-// This provides all-or-nothing retransmission to prevent correlation attacks.
-//
-// The workflow is:
-// 1. Create temporary copy stream using NewKeypair
-// 2. Create CourierEnvelopes using CreateCourierEnvelope
-// 3. Write envelopes to copy stream using EncryptWrite + StartResendingEncryptedMessage
-// 4. Send Copy command with tempWriteCap using this method
-//
-// This method uses the existing BlockingSendMessage infrastructure to send a
-// CourierQuery with QueryType=1 (copy_command) to the courier service.
-//
-// Parameters:
-//   - ctx: Context for cancellation and timeout control
-//   - tempWriteCap: Write capability for the temporary copy stream
-//   - courierIdHash: 32-byte hash of the courier's identity public key
-//   - courierQueueID: Queue ID for the courier service (typically "courier")
+// Stream IDs are used to correlate multiple CreateCourierEnvelopesFromPayload
+// calls that belong to the same copy stream. Each stream should have a unique ID.
 //
 // Returns:
-//   - uint8: Courier error code (0 = success)
-//   - error: Any error encountered during command sending
+//   - *[StreamIDLength]byte: A new random stream ID
 //
-// Example:
-//
-//	// Get courier destination
-//	courierService, err := client.GetService("courier")
-//	if err != nil {
-//		log.Fatal("Failed to get courier service:", err)
-//	}
-//	courierIdHash := hash.Sum256(courierService.MixDescriptor.IdentityKey)
-//	courierQueueID := courierService.RecipientQueueID
-//
-//	// Send Copy command
-//	courierErrorCode, err := client.SendCopyCommand(ctx, tempWriteCap, &courierIdHash, courierQueueID)
-//	if err != nil {
-//		log.Fatal("Failed to send copy command:", err)
-//	}
-//	if courierErrorCode != 0 {
-//		log.Printf("Courier returned error code: %d", courierErrorCode)
-//	}
-func (t *ThinClient) SendCopyCommand(ctx context.Context, tempWriteCap *bacap.WriteCap, courierIdHash *[32]byte, courierQueueID []byte) (uint8, error) {
-	if ctx == nil {
-		return 0, errContextCannotBeNil
-	}
-	if tempWriteCap == nil {
-		return 0, errors.New("tempWriteCap cannot be nil")
-	}
-	if courierIdHash == nil {
-		return 0, errors.New("courierIdHash cannot be nil")
-	}
-	if len(courierQueueID) == 0 {
-		return 0, errors.New("courierQueueID cannot be empty")
-	}
-
-	// Serialize the WriteCap
-	writeCapBytes, err := tempWriteCap.MarshalBinary()
+// Panics:
+//   - If the random number generator fails
+func (t *ThinClient) NewStreamID() *[StreamIDLength]byte {
+	id := new([StreamIDLength]byte)
+	_, err := rand.Reader.Read(id[:])
 	if err != nil {
-		return 0, fmt.Errorf("failed to marshal WriteCap: %w", err)
+		panic(err)
 	}
-
-	// Create CopyCommand
-	copyCommand := &pigeonhole.CopyCommand{
-		WriteCapLen: uint32(len(writeCapBytes)),
-		WriteCap:    writeCapBytes,
-	}
-
-	// Create CourierQuery with copy command
-	courierQuery := &pigeonhole.CourierQuery{
-		QueryType:   1, // 1 = copy_command
-		CopyCommand: copyCommand,
-	}
-
-	// Serialize CourierQuery
-	queryBytes, err := courierQuery.MarshalBinary()
-	if err != nil {
-		return 0, fmt.Errorf("failed to marshal CourierQuery: %w", err)
-	}
-
-	// Send to courier using existing BlockingSendMessage
-	replyBytes, err := t.BlockingSendMessage(ctx, queryBytes, courierIdHash, courierQueueID)
-	if err != nil {
-		return 0, fmt.Errorf("failed to send copy command: %w", err)
-	}
-
-	// Parse CourierQueryReply
-	courierQueryReply, err := pigeonhole.ParseCourierQueryReply(replyBytes)
-	if err != nil {
-		return 0, fmt.Errorf("failed to parse CourierQueryReply: %w", err)
-	}
-
-	// Verify it's a copy command reply
-	if courierQueryReply.ReplyType != 1 {
-		return 0, fmt.Errorf("unexpected reply type: got %d, expected 1 (copy_command_reply)", courierQueryReply.ReplyType)
-	}
-
-	if courierQueryReply.CopyCommandReply == nil {
-		return 0, errors.New("copy command reply is nil")
-	}
-
-	return courierQueryReply.CopyCommandReply.ErrorCode, nil
+	return id
 }
 
 // CreateCourierEnvelopesFromPayload creates multiple CourierEnvelopes from a payload of any size.
@@ -762,9 +675,8 @@ func (t *ThinClient) SendCopyCommand(ctx context.Context, tempWriteCap *bacap.Wr
 // creates a CourierEnvelope for each chunk. The payload is limited to 10MB to prevent
 // accidental memory exhaustion.
 //
-// Each returned chunk is wrapped in CopyCommandWrapper CBOR format with appropriate
-// Start/Stop markers. The first chunk always has Start=true. When isLast is true,
-// a final chunk with Stop=true is appended to signal the end of the stream.
+// Each returned chunk is a serialized CopyStreamElement ready to be written to a box.
+// The first element has IsStart=true. When isLast is true, the last element has IsFinal=true.
 //
 // The returned chunks must be written to a temporary copy stream channel using
 // EncryptWrite + StartResendingEncryptedMessage. After the stream is complete,
@@ -773,20 +685,22 @@ func (t *ThinClient) SendCopyCommand(ctx context.Context, tempWriteCap *bacap.Wr
 //
 // Parameters:
 //   - ctx: Context for cancellation and timeout control
+//   - streamID: Identifies the encoder instance (use NewStreamID() for first call)
 //   - payload: The data to be written (max 10MB)
 //   - destWriteCap: Write capability for the destination channel
 //   - destStartIndex: Starting index in the destination channel
-//   - isLast: Whether this is the last payload in the sequence (appends Stop marker)
+//   - isLast: Whether this is the last payload in the sequence (sets IsFinal flag)
 //
 // Returns:
-//   - [][]byte: Slice of CBOR-wrapped chunks ready to write to the copy stream
+//   - [][]byte: Slice of CopyStreamElements ready to write to the copy stream
 //   - error: Any error encountered during envelope creation
 //
 // Example:
 //
 //	ctx := context.Background()
+//	streamID := client.NewStreamID()
 //	largePayload := make([]byte, 1024*1024) // 1MB payload
-//	chunks, err := client.CreateCourierEnvelopesFromPayload(ctx, largePayload, destWriteCap, destStartIndex, true)
+//	chunks, err := client.CreateCourierEnvelopesFromPayload(ctx, streamID, largePayload, destWriteCap, destStartIndex, true)
 //	if err != nil {
 //		log.Fatal("Failed to create envelopes:", err)
 //	}
@@ -810,9 +724,12 @@ func (t *ThinClient) SendCopyCommand(ctx context.Context, tempWriteCap *bacap.Wr
 //	if err != nil || errorCode != 0 {
 //		log.Fatal("Copy command failed")
 //	}
-func (t *ThinClient) CreateCourierEnvelopesFromPayload(ctx context.Context, payload []byte, destWriteCap *bacap.WriteCap, destStartIndex *bacap.MessageBoxIndex, isLast bool) ([][]byte, error) {
+func (t *ThinClient) CreateCourierEnvelopesFromPayload(ctx context.Context, streamID *[StreamIDLength]byte, payload []byte, destWriteCap *bacap.WriteCap, destStartIndex *bacap.MessageBoxIndex, isLast bool) ([][]byte, error) {
 	if ctx == nil {
 		return nil, errContextCannotBeNil
+	}
+	if streamID == nil {
+		return nil, errors.New("streamID cannot be nil")
 	}
 	if destWriteCap == nil {
 		return nil, errors.New("destWriteCap cannot be nil")
@@ -825,6 +742,7 @@ func (t *ThinClient) CreateCourierEnvelopesFromPayload(ctx context.Context, payl
 	req := &Request{
 		CreateCourierEnvelopesFromPayload: &CreateCourierEnvelopesFromPayload{
 			QueryID:        queryID,
+			StreamID:       streamID,
 			Payload:        payload,
 			DestWriteCap:   destWriteCap,
 			DestStartIndex: destStartIndex,
@@ -872,4 +790,94 @@ func (t *ThinClient) CreateCourierEnvelopesFromPayload(ctx context.Context, payl
 			// Ignore other events
 		}
 	}
+}
+
+// Copy Channel API:
+
+// SendCopyCommand sends a Copy command to the courier service.
+//
+// The Copy command instructs the client daemon to send a Copy command to the
+// courier. This Copy command sent to the courier instructs it to read encrypted
+// write operations from a temporary copy stream (identified by tempWriteCap)
+// and execute them atomically. This provides all-or-nothing retransmission
+// to prevent correlation attacks.
+//
+// The workflow is:
+// 1. Create temporary copy stream channel using NewKeypair
+// 2. Call CreateCourierEnvelopesFromPayload many times until finished.
+// 3. Write envelopes to copy stream using EncryptWrite + StartResendingEncryptedMessage
+// 4. Send Copy command with WriteCap using this method
+//
+// This method uses the existing BlockingSendMessage method to send a
+// Copy command to the client daemon which in turn sends a Copy command to the courier.
+//
+// Parameters:
+//   - ctx: Context for cancellation and timeout control
+//   - writeCap: Write capability for the temporary copy stream
+//   - courierIdHash: 32-byte hash of the courier's identity public key
+//   - courierQueueID: Queue ID for the courier service (typically "courier")
+//
+// Returns:
+//   - uint8: Courier error code (0 = success)
+//   - error: Any error encountered during command sending
+func (t *ThinClient) SendCopyCommand(ctx context.Context, writeCap *bacap.WriteCap, courierIdHash *[32]byte, courierQueueID []byte) (uint8, error) {
+	if ctx == nil {
+		return 0, errContextCannotBeNil
+	}
+	if writeCap == nil {
+		return 0, errors.New("tempWriteCap cannot be nil")
+	}
+	if courierIdHash == nil {
+		return 0, errors.New("courierIdHash cannot be nil")
+	}
+	if len(courierQueueID) == 0 {
+		return 0, errors.New("courierQueueID cannot be empty")
+	}
+
+	// Serialize the WriteCap
+	writeCapBytes, err := writeCap.MarshalBinary()
+	if err != nil {
+		return 0, fmt.Errorf("failed to marshal WriteCap: %w", err)
+	}
+
+	// Create CopyCommand
+	copyCommand := &pigeonhole.CopyCommand{
+		WriteCapLen: uint32(len(writeCapBytes)),
+		WriteCap:    writeCapBytes,
+	}
+
+	// Create CourierQuery with copy command
+	courierQuery := &pigeonhole.CourierQuery{
+		QueryType:   1, // 1 = copy_command
+		CopyCommand: copyCommand,
+	}
+
+	// Serialize CourierQuery
+	queryBytes, err := courierQuery.MarshalBinary()
+	if err != nil {
+		return 0, fmt.Errorf("failed to marshal CourierQuery: %w", err)
+	}
+
+	// Send to courier using existing BlockingSendMessage
+	replyBytes, err := t.BlockingSendMessage(ctx, queryBytes, courierIdHash, courierQueueID)
+	if err != nil {
+		return 0, fmt.Errorf("failed to send copy command: %w", err)
+	}
+
+	// Parse CourierQueryReply
+	courierQueryReply, err := pigeonhole.ParseCourierQueryReply(replyBytes)
+	if err != nil {
+		return 0, fmt.Errorf("failed to parse CourierQueryReply: %w", err)
+	}
+
+	// Verify it's a copy command reply
+	if courierQueryReply.ReplyType != 1 {
+		return 0, fmt.Errorf("unexpected reply type: got %d, expected 1 (copy_command_reply)", courierQueryReply.ReplyType)
+	}
+
+	if courierQueryReply.CopyCommandReply == nil {
+		return 0, errors.New("copy command reply is nil")
+	}
+
+	return courierQueryReply.CopyCommandReply.ErrorCode, nil
 }

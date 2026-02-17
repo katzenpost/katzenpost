@@ -105,6 +105,9 @@ const (
 
 	// QueryIDLength is the length of a query ID in bytes.
 	QueryIDLength = 16
+
+	// StreamIDLength is the length of a stream ID in bytes.
+	StreamIDLength = 16
 )
 
 var (
