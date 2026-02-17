@@ -4,7 +4,6 @@
 package server
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"os"
@@ -597,15 +596,10 @@ func (e *Courier) cacheHandleCourierEnvelope(queryType uint8, courierMessage *pi
 	return nil
 }
 
-// CopyCommandWrapper flag constants (must match client2/pigeonhole.go)
-const (
-	CopyCommandWrapperFlagStart = 0x01
-	CopyCommandWrapperFlagStop  = 0x02
-)
-
 // handleCopyCommand reads all the boxes in the given BACAP sequence and interprets their
-// plaintext contents as CourierEnvelopes. It then sends all those CourierEnvelopes to the
-// specified intermediate replicas. Lastly it overwrites the initial sequence with tombstones.
+// plaintext contents as CopyStreamElements containing CourierEnvelopes. It reads boxes until
+// it finds an element with the IsFinal flag set. It then sends all those CourierEnvelopes to
+// the specified intermediate replicas. Lastly it overwrites the initial sequence with tombstones.
 func (e *Courier) handleCopyCommand(copyCmd *pigeonhole.CopyCommand) *pigeonhole.CourierQueryReply {
 	e.log.Debugf("handleCopyCommand: Processing copy command with WriteCap length %d", copyCmd.WriteCapLen)
 
@@ -636,14 +630,16 @@ func (e *Courier) handleCopyCommand(copyCmd *pigeonhole.CopyCommand) *pigeonhole
 		}
 	}
 
-	// Process copy stream box-by-box with bounded memory using streaming decoder.
-	// Envelopes are sent immediately to replicas without accumulating in memory.
+	// Process copy stream box-by-box with bounded memory using streaming envelope decoder.
+	// The decoder accumulates chunk data from CopyStreamElements and returns complete
+	// CourierEnvelopes which are sent immediately to replicas.
+	// We continue reading boxes until we encounter an element with IsFinal flag set.
 	var boxIDList [][bacap.BoxIDSize]byte
-	decoder := pigeonhole.NewCopyStreamDecoder()
+	decoder := pigeonhole.NewCopyStreamEnvelopeDecoder(e.pigeonholeGeo)
 	numEnvelopes := 0
-	isLast := false
+	sawFinal := false
 
-	for !isLast {
+	for !sawFinal {
 		// Get next BoxID
 		boxID, err := reader.NextBoxID()
 		if err != nil {
@@ -657,8 +653,8 @@ func (e *Courier) handleCopyCommand(copyCmd *pigeonhole.CopyCommand) *pigeonhole
 		}
 		boxIDList = append(boxIDList, *boxID)
 
-		// Read the box from replicas
-		boxPlaintext, last, err := e.readNextBox(reader, boxID)
+		// Read the box from replicas (raw CopyStreamElement bytes)
+		boxPlaintext, err := e.readNextBox(reader, boxID)
 		if err != nil {
 			e.log.Errorf("handleCopyCommand: Failed to read box %x: %v", boxID[:8], err)
 			return &pigeonhole.CourierQueryReply{
@@ -669,15 +665,13 @@ func (e *Courier) handleCopyCommand(copyCmd *pigeonhole.CopyCommand) *pigeonhole
 			}
 		}
 
-		isLast = last
+		// Add box data to streaming envelope decoder
+		decoder.AddBoxData(boxPlaintext)
 
-		// Add box data to streaming decoder
-		decoder.AddData(boxPlaintext)
-
-		// Decode any complete envelope (at most one per box given geometry)
-		envelope, err := decoder.DecodeAvailable()
+		// Decode any complete envelopes and check for final flag
+		envelopes, isFinal, err := decoder.DecodeEnvelopes()
 		if err != nil {
-			e.log.Errorf("handleCopyCommand: Failed to decode envelope: %v", err)
+			e.log.Errorf("handleCopyCommand: Failed to decode envelopes: %v", err)
 			return &pigeonhole.CourierQueryReply{
 				ReplyType: 1,
 				CopyCommandReply: &pigeonhole.CopyCommandReply{
@@ -686,12 +680,19 @@ func (e *Courier) handleCopyCommand(copyCmd *pigeonhole.CopyCommand) *pigeonhole
 			}
 		}
 
-		// Send envelope immediately to replicas if available (no accumulation in memory)
-		if envelope != nil {
+		// Process each decoded envelope
+		for _, envelope := range envelopes {
+			// Send envelope immediately to replicas
 			if err := e.propagateQueryToReplicas(envelope); err != nil {
 				e.log.Errorf("handleCopyCommand: Failed to send envelope: %v", err)
 			}
 			numEnvelopes++
+		}
+
+		// Check if we've seen the final element
+		if isFinal {
+			e.log.Debugf("handleCopyCommand: Found final element in box %x", boxID[:8])
+			sawFinal = true
 		}
 	}
 
@@ -714,104 +715,33 @@ func (e *Courier) handleCopyCommand(copyCmd *pigeonhole.CopyCommand) *pigeonhole
 	}
 }
 
-// readAllBoxes reads all boxes from the temporary channel and concatenates them into a buffer
-func (e *Courier) readAllBoxes(reader *bacap.StatefulReader) ([][bacap.BoxIDSize]byte, *bytes.Buffer, error) {
-	var boxIDList [][bacap.BoxIDSize]byte
-	buffer := bytes.NewBuffer(nil)
-	isLast := false
-
-	for !isLast {
-		// Get next BoxID
-		boxID, err := reader.NextBoxID()
-		if err != nil {
-			e.log.Errorf("readAllBoxes: Failed to get next BoxID: %v", err)
-			return nil, nil, err
-		}
-		boxIDList = append(boxIDList, *boxID)
-
-		// Read the box from replicas
-		boxPlaintext, last, err := e.readNextBox(reader, boxID)
-		if err != nil {
-			e.log.Errorf("readAllBoxes: Failed to read box %x: %v", boxID[:8], err)
-			return nil, nil, err
-		}
-
-		isLast = last
-		buffer.Write(boxPlaintext)
-	}
-
-	e.log.Debugf("readAllBoxes: Read %d boxes, total buffer size: %d bytes", len(boxIDList), buffer.Len())
-	return boxIDList, buffer, nil
-}
-
-// readNextBox reads a single box from the replicas, decrypts it, and unwraps the CBOR wrapper
-func (e *Courier) readNextBox(reader *bacap.StatefulReader, boxID *[bacap.BoxIDSize]byte) ([]byte, bool, error) {
+// readNextBox reads a single box from the replicas, decrypts it, and returns the raw payload.
+// The payload is a serialized CopyStreamElement which will be parsed by the envelope decoder.
+func (e *Courier) readNextBox(reader *bacap.StatefulReader, boxID *[bacap.BoxIDSize]byte) ([]byte, error) {
 	// Read the box from replicas
 	replicaReadReply, err := e.readBoxFromReplicas(boxID)
 	if err != nil {
-		return nil, false, err
+		return nil, err
 	}
 
-	// Decrypt the box to get the padded wrapper
+	// Decrypt the box to get the padded data
 	sig := [bacap.SignatureSize]byte{}
 	copy(sig[:], replicaReadReply.Signature[:])
 	decryptedPadded, err := reader.DecryptNext(constants.PIGEONHOLE_CTX, *boxID, replicaReadReply.Payload, sig)
 	if err != nil {
 		e.log.Errorf("readNextBox: Failed to decrypt box %x: %v", boxID[:8], err)
-		return nil, false, err
+		return nil, err
 	}
 
 	// Extract the actual payload from the padded data
 	decryptedPayload, err := pigeonhole.ExtractMessageFromPaddedPayload(decryptedPadded)
 	if err != nil {
 		e.log.Errorf("readNextBox: Failed to extract payload from padded data: %v", err)
-		return nil, false, err
-	}
-
-	// Unwrap the trunnel wrapper to extract the chunk
-	wrapper, err := pigeonhole.ParseCopyCommandWrapper(decryptedPayload)
-	if err != nil {
-		e.log.Errorf("readNextBox: Failed to parse trunnel wrapper: %v", err)
-		return nil, false, err
-	}
-
-	// Log start marker if present (bit 0 of flags)
-	if wrapper.Flags&CopyCommandWrapperFlagStart != 0 {
-		e.log.Debugf("readNextBox: Found start marker in box %x", boxID[:8])
-	}
-
-	// Check for stop marker (bit 1 of flags)
-	if wrapper.Flags&CopyCommandWrapperFlagStop != 0 {
-		e.log.Debugf("readNextBox: Found stop marker in box %x", boxID[:8])
-		// Return payload if present (last data chunk can have both payload and stop marker)
-		return wrapper.Payload, true, nil
-	}
-
-	// Return the payload chunk (partial CourierEnvelope data)
-	return wrapper.Payload, false, nil
-}
-
-// decodeCourierEnvelopes decodes multiple CourierEnvelopes from a buffer using the copy stream format
-func (e *Courier) decodeCourierEnvelopes(buffer *bytes.Buffer) ([]*pigeonhole.CourierEnvelope, error) {
-	// Use the copy stream decoder from pigeonhole package
-	envelopes, err := pigeonhole.DecodeCopyStream(buffer.Bytes())
-	if err != nil {
-		e.log.Errorf("decodeCourierEnvelopes: Failed to decode copy stream: %v", err)
 		return nil, err
 	}
 
-	e.log.Debugf("decodeCourierEnvelopes: Decoded %d envelopes from copy stream", len(envelopes))
-	return envelopes, nil
-}
-
-// sendEnvelopesToReplicas sends all envelopes to their respective replicas
-func (e *Courier) sendEnvelopesToReplicas(envelopes []*pigeonhole.CourierEnvelope) {
-	for i, envelope := range envelopes {
-		e.log.Debugf("sendEnvelopesToReplicas: Sending envelope %d/%d", i+1, len(envelopes))
-		if err := e.propagateQueryToReplicas(envelope); err != nil {
-			e.log.Errorf("sendEnvelopesToReplicas: Failed to send envelope %d: %v", i+1, err)
-		}
-	}
+	// Return the raw payload (a serialized CopyStreamElement)
+	return decryptedPayload, nil
 }
 
 // readBoxFromReplicas reads a box from the replicas by creating a read request
