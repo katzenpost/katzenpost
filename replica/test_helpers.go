@@ -289,3 +289,7 @@ func (m *mockConnector) DispatchReplication(cmd *commands.ReplicaWrite) {
 func (m *mockConnector) DispatchCommand(cmd commands.Command, idHash *[32]byte) {
 	// Mock implementation: no-op for testing purposes
 }
+
+func (m *mockConnector) QueueForRetry(cmd commands.Command, idHash [32]byte) {
+	// Mock implementation: no-op for testing purposes
+}

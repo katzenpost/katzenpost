@@ -49,6 +49,7 @@ type GenericConnector interface {
 	ForceUpdate()
 	DispatchCommand(cmd commands.Command, idHash *[32]byte)
 	DispatchReplication(cmd *commands.ReplicaWrite)
+	QueueForRetry(cmd commands.Command, idHash [32]byte)
 }
 
 type Server struct {

@@ -98,12 +98,12 @@ func (co *Connector) DispatchCommand(cmd commands.Command, idHash *[32]byte) {
 	} else {
 		// No connection - add to retry queue instead of dropping
 		co.log.Warningf("No connection for destination %x, queueing command for retry: %v", idHash[:8], getBoxID(cmd))
-		co.queueForRetry(cmd, *idHash)
+		co.QueueForRetry(cmd, *idHash)
 	}
 }
 
-// queueForRetry adds a command to the retry queue when no connection is available
-func (co *Connector) queueForRetry(cmd commands.Command, idHash [32]byte) {
+// QueueForRetry adds a command to the retry queue when no connection is available
+func (co *Connector) QueueForRetry(cmd commands.Command, idHash [32]byte) {
 	const maxRetryAttempts = 5
 
 	co.retryQueueMu.Lock()

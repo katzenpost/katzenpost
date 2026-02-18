@@ -116,6 +116,24 @@ func (c *outgoingConn) worker() {
 
 	defer func() {
 		c.log.Debugf("Halting connect worker.")
+		// Drain any pending commands from the channel and queue them for retry
+		// before closing. This prevents losing commands when connections fail.
+		idHash := hash.Sum256(c.dst.IdentityKey)
+		pendingCount := 0
+		for {
+			select {
+			case cmd := <-c.ch:
+				c.co.QueueForRetry(cmd, idHash)
+				pendingCount++
+			default:
+				// Channel is empty
+				if pendingCount > 0 {
+					c.log.Debugf("Queued %d pending commands for retry after connection closed", pendingCount)
+				}
+				goto done
+			}
+		}
+	done:
 		c.co.OnClosedConn(c)
 		close(c.ch)
 	}()
