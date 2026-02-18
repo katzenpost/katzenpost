@@ -37,12 +37,15 @@ func GetRandomIntermediateReplicas(doc *cpki.Document, boxid *[32]byte) ([2]uint
 	}
 
 	// shardReplicaIDs stores the static ReplicaID values for the shards,
-	// not array indices into StorageReplicas
-	shardReplicaIDs := make([]uint8, 2)
-	for i, shard := range shards {
+	// not array indices into StorageReplicas.
+	// We use a slice (not fixed array) to only include shards that are actually online,
+	// avoiding the bug where an uninitialized element with value 0 could incorrectly
+	// exclude a replica with ReplicaID 0.
+	shardReplicaIDs := make([]uint8, 0, len(shards))
+	for _, shard := range shards {
 		for _, replica := range doc.StorageReplicas {
 			if hmac.Equal(shard.IdentityKey, replica.IdentityKey) {
-				shardReplicaIDs[i] = replica.ReplicaID
+				shardReplicaIDs = append(shardReplicaIDs, replica.ReplicaID)
 				break
 			}
 		}
@@ -108,8 +111,15 @@ func GetRandomIntermediateReplicas(doc *cpki.Document, boxid *[32]byte) ([2]uint
 	case numReplicas == 3:
 		// We cannot select two random replicas because we have only 3 replicas,
 		// so only the second one is random.
-		replica1 := shardReplicaIDs[0]
-		replica2 := pickRandomReplicaID(replica1)
+		// If no shards are available, pick two random replicas.
+		var replica1, replica2 uint8
+		if len(shardReplicaIDs) > 0 {
+			replica1 = shardReplicaIDs[0]
+			replica2 = pickRandomReplicaID(replica1)
+		} else {
+			replica1 = pickRandomReplicaID()
+			replica2 = pickRandomReplicaID(replica1)
+		}
 
 		replicaPubKeys, err := getReplicaPubKeys(replica1, replica2)
 		if err != nil {
@@ -119,9 +129,10 @@ func GetRandomIntermediateReplicas(doc *cpki.Document, boxid *[32]byte) ([2]uint
 		return [2]uint8{replica1, replica2}, replicaPubKeys, nil
 	case numReplicas >= 4:
 		// Select two random replicas that are not the replicas
-		// in our shardReplicaIDs:
-		replica1 := pickRandomReplicaID(shardReplicaIDs[0], shardReplicaIDs[1])
-		replica2 := pickRandomReplicaID(replica1, shardReplicaIDs[0], shardReplicaIDs[1])
+		// in our shardReplicaIDs. The shardReplicaIDs slice contains only
+		// the ReplicaIDs of online shard replicas (may be 0, 1, or 2 elements).
+		replica1 := pickRandomReplicaID(shardReplicaIDs...)
+		replica2 := pickRandomReplicaID(append([]uint8{replica1}, shardReplicaIDs...)...)
 
 		replicaPubKeys, err := getReplicaPubKeys(replica1, replica2)
 		if err != nil {
