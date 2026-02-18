@@ -76,7 +76,8 @@ func newPKIWorkerWithClient(server *Server, pkiClient pki.Client, log *logging.L
 	server.logBackend.SetLevel(logging.WARNING, "replica pkiWorker")
 	server.logBackend.SetLevel(logging.WARNING, "pki/voting/client/connector")
 	server.logBackend.SetLevel(logging.WARNING, "pki/voting/Client")
-	server.logBackend.SetLevel(logging.WARNING, "replica Connector")
+	// Keep replica Connector at DEBUG for now to debug replication issues
+	// server.logBackend.SetLevel(logging.WARNING, "replica Connector")
 
 	p := &PKIWorker{
 		server:      server,
