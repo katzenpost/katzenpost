@@ -231,10 +231,6 @@ func (c *ReplicaMessage) ToBytes() []byte {
 	out = append(out, c.DEK[:]...)
 	out = append(out, c.Ciphertext...)
 
-	// optional traffic padding
-	if c.Cmds == nil {
-		return out
-	}
 	return c.Cmds.padToMaxCommandSize(out, true)
 }
 
