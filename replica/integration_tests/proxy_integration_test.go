@@ -4,14 +4,16 @@
 package replica
 
 import (
-	"crypto/hmac"
+	"bytes"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/katzenpost/hpqc/bacap"
 	"github.com/katzenpost/hpqc/nike"
-	"github.com/katzenpost/hpqc/sign/ed25519"
+	"github.com/katzenpost/hpqc/rand"
+	"github.com/katzenpost/katzenpost/client2/constants"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	replicaCommon "github.com/katzenpost/katzenpost/replica/common"
 
@@ -19,15 +21,11 @@ import (
 )
 
 func TestProxyIntegration(t *testing.T) {
-	// This test specifically verifies that proxy functionality works end-to-end
-	// by deliberately sending requests to non-shard replicas using 6 replicas:
-	// - Replicas 0,1: intermediary replicas for Alice's write operations
-	// - Replicas 2,3: final destination replicas (determined by hash-based sharding)
-	// - Replicas 4,5: intermediary replicas for Bob's read operations (proxy to 2,3)
+	// This test verifies proxy functionality works end-to-end using BACAP encryption.
+	// It writes data to correct shard replicas, then reads via non-shard replicas
+	// (forcing proxy behavior) and verifies the data is correctly retrieved.
 
 	env := setupTestEnvironment6Replicas(t)
-	// Don't defer cleanup immediately - let replicas run longer
-	// But ensure cleanup happens if test fails
 	var cleanupDone bool
 	defer func() {
 		if !cleanupDone {
@@ -45,153 +43,128 @@ func TestProxyIntegration(t *testing.T) {
 		err := replica.PKIWorker.ForceFetchPKI()
 		require.NoError(t, err)
 	}
-
-	// Wait a bit more for PKI synchronization
 	time.Sleep(2 * time.Second)
 
-	// Generate a proper Ed25519 key pair for testing
-	ed25519Scheme := ed25519.Scheme()
-	publicKey, privateKey, err := ed25519Scheme.GenerateKey()
+	// --- Setup BACAP: Alice creates a write capability and gives Bob a read capability ---
+	aliceOwner, err := bacap.NewWriteCap(rand.Reader)
+	require.NoError(t, err)
+	aliceStatefulWriter, err := bacap.NewStatefulWriter(aliceOwner, constants.PIGEONHOLE_CTX)
+	require.NoError(t, err)
+	bobReadCap := aliceOwner.ReadCap()
+	bobStatefulReader, err := bacap.NewStatefulReader(bobReadCap, constants.PIGEONHOLE_CTX)
 	require.NoError(t, err)
 
-	// The BoxID must be the public key bytes
-	publicKeyBytes, err := publicKey.MarshalBinary()
-	require.NoError(t, err)
-	require.Equal(t, 32, len(publicKeyBytes), "Ed25519 public key must be 32 bytes")
-
-	var boxIDFromKey [32]uint8
-	copy(boxIDFromKey[:], publicKeyBytes)
-
-	// Calculate the correct shards for this BoxID
-	currentEpoch, _, _ := epochtime.Now()
-	doc := env.mockPKIClient.docs[currentEpoch]
-
-	// Debug: Check how many replicas are in the PKI document
-	t.Logf("PKI document has %d storage replicas", len(doc.StorageReplicas))
-	for i, replica := range doc.StorageReplicas {
-		t.Logf("Replica %d: Name=%s, IdentityKey=%x", i, replica.Name, replica.IdentityKey[:8])
-	}
-
-	correctShards, err := replicaCommon.GetShards(&boxIDFromKey, doc)
-	require.NoError(t, err)
-	require.Len(t, correctShards, 2, "Should have exactly 2 shards")
-
-	// Find the indices of the correct shards
-	var correctShardIndices [2]uint8
-	shardCount := 0
-	for i, replica := range doc.StorageReplicas {
-		for _, shard := range correctShards {
-			if hmac.Equal(replica.IdentityKey, shard.IdentityKey) {
-				correctShardIndices[shardCount] = uint8(i)
-				shardCount++
-				break
-			}
-		}
-	}
-	require.Equal(t, 2, shardCount, "Should find both shards")
-
-	t.Logf("BoxID %x should be stored on replicas: %d, %d",
-		boxIDFromKey[:8], correctShardIndices[0], correctShardIndices[1])
-
-	// Debug: Print the identity keys of the correct shards for comparison
-	for i, shard := range correctShards {
-		t.Logf("Correct shard %d: Name=%s, IdentityKey=%x", i, shard.Name, shard.IdentityKey[:8])
-	}
-
-	// Alice's write intermediaries: use replicas 0,1
-	aliceIntermediaryIndices := [2]uint8{0, 1}
-	t.Logf("Alice will use intermediary replicas: %d, %d for writing",
-		aliceIntermediaryIndices[0], aliceIntermediaryIndices[1])
-
-	// Bob's read intermediaries: use replicas 4,5 (these will proxy to the correct shards)
-	bobIntermediaryIndices := [2]uint8{4, 5}
-	t.Logf("Bob will use intermediary replicas: %d, %d for reading (will proxy to correct shards: %d, %d)",
-		bobIntermediaryIndices[0], bobIntermediaryIndices[1], correctShardIndices[0], correctShardIndices[1])
-
-	// STEP 1: Alice writes data using intermediary replicas 0,1
+	// --- STEP 1: Alice writes data using BACAP encryption to correct shard replicas ---
 	writeData := []byte("test data for proxy integration")
 
-	// Sign the payload with the private key
-	signatureBytes := ed25519Scheme.Sign(privateKey, writeData, nil)
-	require.Equal(t, 64, len(signatureBytes), "Ed25519 signature must be 64 bytes")
+	// Create padded payload with length prefix for BACAP
+	paddedPayload, err := pigeonhole.CreatePaddedPayload(writeData, env.geometry.MaxPlaintextPayloadLength+4)
+	require.NoError(t, err)
 
-	var signature [64]uint8
-	copy(signature[:], signatureBytes)
+	// Encrypt with BACAP - this produces the correct ciphertext size
+	boxID, ciphertext, sigraw, err := aliceStatefulWriter.EncryptNext(paddedPayload)
+	require.NoError(t, err)
 
-	writeRequest := &pigeonhole.ReplicaWrite{
-		BoxID:      boxIDFromKey,
-		Signature:  signature,
-		PayloadLen: uint32(len(writeData)),
-		Payload:    writeData,
+	t.Logf("PROXY_TEST: Alice writes to BoxID: %x", boxID[:8])
+
+	sig := [bacap.SignatureSize]byte{}
+	copy(sig[:], sigraw)
+
+	writeRequest := pigeonhole.ReplicaWrite{
+		BoxID:      boxID,
+		Signature:  sig,
+		PayloadLen: uint32(len(ciphertext)),
+		Payload:    ciphertext,
 	}
-
 	writeMsg := &pigeonhole.ReplicaInnerMessage{
 		MessageType: 1, // 1 = write
-		WriteMsg:    writeRequest,
+		WriteMsg:    &writeRequest,
 	}
 
-	// Create MKEM envelope using Alice's intermediary replicas (0,1)
-	t.Logf("PROXY_TEST: Creating write envelope using Alice's intermediaries: %v", aliceIntermediaryIndices)
+	// Use proper sharding to determine which replicas should store this BoxID
+	sharding := getShardingInfo(t, env, &boxID)
+	t.Logf("PROXY_TEST: BoxID will be written to correct shard replicas: %d, %d",
+		sharding.ReplicaIndices[0], sharding.ReplicaIndices[1])
+
 	replicaEpoch, _, _ := replicaCommon.ReplicaNow()
-	var aliceReplicaPubKeys []nike.PublicKey
 
-	for _, replicaIndex := range aliceIntermediaryIndices {
-		pubKey := env.replicaKeys[replicaIndex][replicaEpoch]
-		aliceReplicaPubKeys = append(aliceReplicaPubKeys, pubKey)
-	}
-
-	aliceMkemPrivateKey, aliceMkemCiphertext := mkemNikeScheme.Encapsulate(aliceReplicaPubKeys, writeMsg.Bytes())
-	aliceMkemPublicKey := aliceMkemPrivateKey.Public()
-	aliceSenderPubkeyBytes := aliceMkemPublicKey.Bytes()
+	// Create MKEM envelope for the write operation to correct shards
+	mkemPrivateKey, mkemCiphertext := mkemNikeScheme.Encapsulate(sharding.ReplicaPubKeys, writeMsg.Bytes())
+	mkemPublicKey := mkemPrivateKey.Public()
+	senderPubkeyBytes := mkemPublicKey.Bytes()
 
 	writeEnvelope := &pigeonhole.CourierEnvelope{
-		IntermediateReplicas: aliceIntermediaryIndices,
-		Dek1:                 *aliceMkemCiphertext.DEKCiphertexts[0],
-		Dek2:                 *aliceMkemCiphertext.DEKCiphertexts[1],
+		IntermediateReplicas: sharding.ReplicaIndices,
+		Dek1:                 *mkemCiphertext.DEKCiphertexts[0],
+		Dek2:                 *mkemCiphertext.DEKCiphertexts[1],
 		ReplyIndex:           0,
 		Epoch:                replicaEpoch,
-		SenderPubkeyLen:      uint16(len(aliceSenderPubkeyBytes)),
-		SenderPubkey:         aliceSenderPubkeyBytes,
-		CiphertextLen:        uint32(len(aliceMkemCiphertext.Envelope)),
-		Ciphertext:           aliceMkemCiphertext.Envelope,
+		SenderPubkeyLen:      uint16(len(senderPubkeyBytes)),
+		SenderPubkey:         senderPubkeyBytes,
+		CiphertextLen:        uint32(len(mkemCiphertext.Envelope)),
+		Ciphertext:           mkemCiphertext.Envelope,
 	}
 
 	t.Logf("PROXY_TEST: Write envelope created, injecting to courier")
 	writeReply := injectCourierEnvelope(t, env, writeEnvelope)
 	require.NotNil(t, writeReply)
+	t.Logf("PROXY_TEST: Write completed to correct shards")
 
-	t.Logf("PROXY_TEST: Write completed using Alice's intermediaries: %v", aliceIntermediaryIndices)
+	// Wait for write to complete
+	time.Sleep(5 * time.Second)
 
-	// Wait for write and replication to complete
-	t.Logf("PROXY_TEST: Waiting for replication to complete...")
-	time.Sleep(10 * time.Second)
+	// --- STEP 2: Bob reads via NON-shard replicas (forcing proxy behavior) ---
+	// Find two replicas that are NOT the correct shards
+	var bobIntermediaryIndices [2]uint8
+	var bobReplicaPubKeys []nike.PublicKey = make([]nike.PublicKey, 2)
+	nonShardCount := 0
 
-	// STEP 2: Bob reads data using intermediary replicas 4,5 (which will proxy to correct shards)
-	t.Logf("PROXY_TEST: Creating read request for BoxID %x using Bob's intermediaries: %v", boxIDFromKey, bobIntermediaryIndices)
-	readRequest := &pigeonhole.ReplicaRead{
-		BoxID: boxIDFromKey,
+	currentEpoch, _, _ := epochtime.Now()
+	doc := env.mockPKIClient.docs[currentEpoch]
+
+	for i := 0; i < len(doc.StorageReplicas) && nonShardCount < 2; i++ {
+		isShard := false
+		for _, shardIdx := range sharding.ReplicaIndices {
+			if uint8(i) == shardIdx {
+				isShard = true
+				break
+			}
+		}
+		if !isShard {
+			bobIntermediaryIndices[nonShardCount] = uint8(i)
+			pubKey, err := replicaCommon.NikeScheme.UnmarshalBinaryPublicKey(
+				doc.StorageReplicas[i].EnvelopeKeys[replicaEpoch])
+			require.NoError(t, err)
+			bobReplicaPubKeys[nonShardCount] = pubKey
+			nonShardCount++
+		}
 	}
+	require.Equal(t, 2, nonShardCount, "Should find at least 2 non-shard replicas")
 
+	t.Logf("PROXY_TEST: Bob will read via non-shard replicas: %d, %d (will proxy to correct shards: %d, %d)",
+		bobIntermediaryIndices[0], bobIntermediaryIndices[1],
+		sharding.ReplicaIndices[0], sharding.ReplicaIndices[1])
+
+	// Get the BoxID Bob expects to read (same as what Alice wrote)
+	expectedBoxID, err := bobStatefulReader.NextBoxID()
+	require.NoError(t, err)
+	t.Logf("PROXY_TEST: Bob reads from BoxID: %x", expectedBoxID[:8])
+
+	readRequest := &pigeonhole.ReplicaRead{
+		BoxID: *expectedBoxID,
+	}
 	readMsg := &pigeonhole.ReplicaInnerMessage{
 		MessageType: 0, // 0 = read
 		ReadMsg:     readRequest,
 	}
 
-	// Create MKEM envelope using Bob's intermediary replicas (4,5)
-	t.Logf("PROXY_TEST: Creating read envelope with Bob's intermediaries to force proxy: %v", bobIntermediaryIndices)
-	var bobReplicaPubKeys []nike.PublicKey
-
-	for _, replicaIndex := range bobIntermediaryIndices {
-		pubKey := env.replicaKeys[replicaIndex][replicaEpoch]
-		bobReplicaPubKeys = append(bobReplicaPubKeys, pubKey)
-	}
-
+	// Create MKEM envelope for read - but target NON-shard replicas to force proxying
 	bobMkemPrivateKey, bobMkemCiphertext := mkemNikeScheme.Encapsulate(bobReplicaPubKeys, readMsg.Bytes())
 	bobMkemPublicKey := bobMkemPrivateKey.Public()
 	bobSenderPubkeyBytes := bobMkemPublicKey.Bytes()
 
 	proxyReadEnvelope := &pigeonhole.CourierEnvelope{
-		IntermediateReplicas: bobIntermediaryIndices, // Using Bob's intermediaries (will proxy)!
+		IntermediateReplicas: bobIntermediaryIndices, // Non-shard replicas - will proxy!
 		Dek1:                 *bobMkemCiphertext.DEKCiphertexts[0],
 		Dek2:                 *bobMkemCiphertext.DEKCiphertexts[1],
 		ReplyIndex:           0,
@@ -202,10 +175,6 @@ func TestProxyIntegration(t *testing.T) {
 		Ciphertext:           bobMkemCiphertext.Envelope,
 	}
 
-	t.Logf("PROXY_TEST: Sending read request to Bob's intermediaries: %v (should trigger proxy to correct shards: %v)",
-		bobIntermediaryIndices, correctShardIndices)
-
-	// Send proxy read request
 	t.Logf("PROXY_TEST: Read envelope created, injecting to courier")
 	proxyReadReply := injectCourierEnvelope(t, env, proxyReadEnvelope)
 	require.NotNil(t, proxyReadReply, "Courier should return a reply")
@@ -217,12 +186,10 @@ func TestProxyIntegration(t *testing.T) {
 		require.NotNil(t, proxyReadReply, "Should receive proxy response after waiting")
 	}
 
-	// Test must fail if no payload is received
-	require.Greater(t, len(proxyReadReply.Payload), 0, "Proxy read must return a payload - proxy functionality failed")
+	require.Greater(t, len(proxyReadReply.Payload), 0, "Proxy read must return a payload")
+	t.Logf("PROXY_TEST: Received proxy reply with payload length: %d", len(proxyReadReply.Payload))
 
-	t.Logf("SUCCESS: Received proxy reply with payload length: %d", len(proxyReadReply.Payload))
-
-	// Decrypt and verify the response
+	// Decrypt the MKEM envelope to get the inner message
 	replicaIndex := int(bobIntermediaryIndices[proxyReadReply.ReplyIndex])
 	replicaPubKey := env.replicaKeys[replicaIndex][replicaEpoch]
 	rawInnerMsg, err := mkemNikeScheme.DecryptEnvelope(bobMkemPrivateKey, replicaPubKey, proxyReadReply.Payload)
@@ -231,22 +198,27 @@ func TestProxyIntegration(t *testing.T) {
 	innerMsg, err := pigeonhole.ParseReplicaMessageReplyInnerMessage(rawInnerMsg)
 	require.NoError(t, err, "Failed to parse replica message reply")
 	require.NotNil(t, innerMsg.ReadReply, "ReadReply should not be nil")
-
-	// Test must fail if the operation was not successful
 	require.Equal(t, pigeonhole.ReplicaSuccess, innerMsg.ReadReply.ErrorCode,
 		"Proxy read must succeed - error code: %d", innerMsg.ReadReply.ErrorCode)
 
-	// Test must fail if the data doesn't match
-	require.Equal(t, writeData, innerMsg.ReadReply.Payload,
-		"Retrieved data must match written data - proxy functionality failed")
+	// Decrypt the BACAP payload using Bob's StatefulReader
+	var signature [64]byte
+	copy(signature[:], innerMsg.ReadReply.Signature[:])
+	bobPaddedPlaintext, err := bobStatefulReader.DecryptNext(
+		constants.PIGEONHOLE_CTX, *expectedBoxID, innerMsg.ReadReply.Payload, signature)
+	require.NoError(t, err, "Failed to decrypt BACAP payload")
 
-	t.Logf("SUCCESS: Proxy read succeeded! Retrieved data: %s", string(innerMsg.ReadReply.Payload))
+	// Extract the actual message data from the padded payload
+	bobPlaintext, err := pigeonhole.ExtractMessageFromPaddedPayload(bobPaddedPlaintext)
+	require.NoError(t, err, "Failed to extract message from padded payload")
 
-	// Wait longer to ensure all proxy operations and connections are properly cleaned up
-	t.Logf("PROXY_TEST: Waiting for all operations to complete before cleanup...")
-	time.Sleep(15 * time.Second)
+	require.True(t, bytes.Equal(writeData, bobPlaintext),
+		"Retrieved data must match written data - got: %s, expected: %s", string(bobPlaintext), string(writeData))
 
-	// Now cleanup the environment
+	t.Logf("SUCCESS: Proxy read succeeded! Retrieved data: %s", string(bobPlaintext))
+
+	// Wait for cleanup
+	time.Sleep(5 * time.Second)
 	cleanupDone = true
 	env.cleanup()
 }
