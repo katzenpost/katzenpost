@@ -383,7 +383,7 @@ func (e *Courier) OnCommand(cmd cborplugin.Command) error {
 
 	switch {
 	case courierQuery.Envelope != nil:
-		reply := e.cacheHandleCourierEnvelope(courierQuery.QueryType, courierQuery.Envelope, request.ID, request.SURB)
+		reply := e.cacheHandleCourierEnvelope(courierQuery.QueryType, courierQuery.Envelope)
 
 		// Only send reply if it's not nil (nil means ARQ should retry)
 		if reply != nil {
@@ -410,7 +410,7 @@ func (e *Courier) OnCommand(cmd cborplugin.Command) error {
 	return nil
 }
 
-func (e *Courier) cacheHandleCourierEnvelope(queryType uint8, courierMessage *pigeonhole.CourierEnvelope, requestID uint64, surb []byte) *pigeonhole.CourierQueryReply {
+func (e *Courier) cacheHandleCourierEnvelope(queryType uint8, courierMessage *pigeonhole.CourierEnvelope) *pigeonhole.CourierQueryReply {
 	envHash := courierMessage.EnvelopeHash()
 
 	e.dedupCacheLock.RLock()
