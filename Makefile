@@ -1,5 +1,5 @@
 
-.PHONY: all test test-unit test-replica bench-replica bench-sphinx bench-handshake test-config sphincsplus clean server dirauth genconfig ping courier echo-plugin fetch genkeypair gensphinx http-proxy-client http-proxy-server katzencat katzencopy kpclientd map sphinx replica install-replica-deps
+.PHONY: all test test-unit test-replica bench-replica bench-sphinx bench-handshake test-config sphincsplus clean server dirauth genconfig ping courier echo-plugin fetch genkeypair gensphinx http-proxy-client http-proxy-server kpclientd map sphinx replica install-replica-deps copycat
 
 .PHONY: update-go-deps
 update-go-deps:
@@ -12,7 +12,7 @@ ifneq (,$(wildcard vendor))
 	go mod vendor
 endif
 
-all: server dirauth genconfig ping courier echo-plugin fetch genkeypair gensphinx http-proxy-client http-proxy-server katzencat katzencopy kpclientd map sphinx
+all: server dirauth genconfig ping courier echo-plugin fetch genkeypair gensphinx http-proxy-client http-proxy-server katzencat katzencopy kpclientd map sphinx copycat
 
 server:
 	cd cmd/server; go build
@@ -53,6 +53,9 @@ kpclientd:
 sphinx:
 	cd cmd/sphinx; go build
 
+copycat:
+	cd cmd/copycat; go build
+
 install-replica-deps:
 	@set -e; \
 	echo "Checking for RocksDB..."; \
@@ -89,8 +92,8 @@ clean:
 		cmd/courier/courier cmd/echo-plugin/echo-plugin cmd/fetch/fetch \
 		cmd/genkeypair/genkeypair cmd/gensphinx/gensphinx \
 		cmd/http-proxy-client/http-proxy-client cmd/http-proxy-server/http-proxy-server \
-		cmd/katzencat/katzencat cmd/katzencopy/katzencopy cmd/kpclientd/kpclientd \
-		cmd/map/map cmd/sphinx/sphinx cmd/replica/replica
+		cmd/kpclientd/kpclientd \
+		cmd/sphinx/sphinx cmd/replica/replica cmd/copycat/copycat
 
 sphincsplus:
 	cd sphincsplus/ref && go test -v -race -timeout 0 ./...
