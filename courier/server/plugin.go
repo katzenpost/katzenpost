@@ -739,10 +739,34 @@ func (e *Courier) processCopyCommand(copyCmd *pigeonhole.CopyCommand) *pigeonhol
 		}
 		boxIDList = append(boxIDList, *boxID)
 
-		// Read the box from replicas (raw CopyStreamElement bytes)
-		boxPlaintext, err := e.readNextBox(reader, boxID)
-		if err != nil {
-			e.log.Errorf("processCopyCommand: Failed to read box %x: %v", boxID[:], err)
+		// Read the box from replicas (raw CopyStreamElement bytes) with retry logic
+		const maxReadRetries = 5
+		const baseReadDelay = 500 * time.Millisecond
+		var boxPlaintext []byte
+		var readErr error
+		readSuccess := false
+
+		for readAttempt := 0; readAttempt < maxReadRetries; readAttempt++ {
+			boxPlaintext, readErr = e.readNextBox(reader, boxID)
+			if readErr != nil {
+				if readAttempt < maxReadRetries-1 {
+					// Exponential backoff: 500ms, 1s, 2s, 4s
+					delay := baseReadDelay * time.Duration(1<<readAttempt)
+					e.log.Warningf("processCopyCommand: Failed to read box %x (attempt %d/%d): %v, retrying in %v",
+						boxID[:8], readAttempt+1, maxReadRetries, readErr, delay)
+					time.Sleep(delay)
+				}
+			} else {
+				readSuccess = true
+				if readAttempt > 0 {
+					e.log.Debugf("processCopyCommand: Successfully read box %x on attempt %d", boxID[:8], readAttempt+1)
+				}
+				break
+			}
+		}
+
+		if !readSuccess {
+			e.log.Errorf("processCopyCommand: Failed to read box %x after %d attempts: %v", boxID[:], maxReadRetries, readErr)
 			return &pigeonhole.CourierQueryReply{
 				ReplyType: 1,
 				CopyCommandReply: &pigeonhole.CopyCommandReply{
