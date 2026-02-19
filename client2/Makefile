@@ -49,9 +49,14 @@ dockertest_copy_command:
 dockertest_multichannel:
 	cd ../docker && make $(distro)_base.stamp
 	$(docker) run -w /go/katzenpost/client2 ${docker_args} $(image) \
-		go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 1h -run "TestCopyCommandMultiChannel"
+		go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 1h -run "TestCopyCommandMultiChannel$$"
 
-all_new_pigeonhole_tests: dockertest_new_pigeonhole_alice_sends_bob dockertest_new_pigeonhole_multiple_messages dockertest_copy_command dockertest_multichannel
+dockertest_multichannel_efficient:
+	cd ../docker && make $(distro)_base.stamp
+	$(docker) run -w /go/katzenpost/client2 ${docker_args} $(image) \
+		go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 1h -run "TestCopyCommandMultiChannelEfficient"
+
+all_new_pigeonhole_tests: dockertest_new_pigeonhole_alice_sends_bob dockertest_new_pigeonhole_multiple_messages dockertest_copy_command dockertest_multichannel dockertest_multichannel_efficient
 
 warpedclientdaemon:
 	cd ../cmd/kpclientd; go build -ldflags ${ldflags}
