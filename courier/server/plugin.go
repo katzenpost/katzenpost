@@ -201,21 +201,16 @@ func (e *Courier) validateReply(reply *commands.ReplicaMessageReply) bool {
 
 // handleExistingEntry processes replies for existing cache entries
 func (e *Courier) handleExistingEntry(entry *CourierBookKeeping, reply *commands.ReplicaMessageReply) {
-	e.log.Errorf("CacheReply: found existing cache entry for envelope hash %x", reply.EnvelopeHash)
-
-	if reply.IsRead && reply.ErrorCode == 0 {
-		// we do want to overwrite old entries if we had an error and now don't
-		e.log.Errorf("handleExistingEntry: IsRead && ErrorCode == 0: entry=%v reply=%v", entry, reply)
-	}
+	e.log.Debugf("CacheReply: found existing cache entry for envelope hash %x", reply.EnvelopeHash)
 
 	replyIndex := e.findReplicaIndex(entry, reply.ReplicaID)
 	if replyIndex >= 0 {
-		e.storeReplyIfEmpty(entry, reply, replyIndex)
+		e.storeOrReplaceReply(entry, reply, replyIndex)
 	} else {
 		// Check if we can accommodate this replica in an unused slot (marked as 255)
 		for i, id := range entry.IntermediateReplicas {
 			if id == 255 && entry.EnvelopeReplies[i] == nil {
-				e.log.Errorf("CacheReply: storing reply from replica %d in unused slot %d", reply.ReplicaID, i)
+				e.log.Debugf("CacheReply: storing reply from replica %d in unused slot %d", reply.ReplicaID, i)
 				entry.IntermediateReplicas[i] = reply.ReplicaID
 				entry.EnvelopeReplies[i] = reply
 				return
@@ -235,13 +230,20 @@ func (e *Courier) findReplicaIndex(entry *CourierBookKeeping, replicaID uint8) i
 	return -1
 }
 
-// storeReplyIfEmpty stores the reply only if the slot is empty
-func (e *Courier) storeReplyIfEmpty(entry *CourierBookKeeping, reply *commands.ReplicaMessageReply, replyIndex int) {
-	if entry.EnvelopeReplies[replyIndex] == nil {
+// storeOrReplaceReply stores the reply, replacing any existing error reply with a successful one
+func (e *Courier) storeOrReplaceReply(entry *CourierBookKeeping, reply *commands.ReplicaMessageReply, replyIndex int) {
+	existing := entry.EnvelopeReplies[replyIndex]
+	if existing == nil {
+		// No existing reply, store the new one
 		e.log.Infof("CacheReply: storing reply from replica %d at IntermediateReplicas index %d", reply.ReplicaID, replyIndex)
 		entry.EnvelopeReplies[replyIndex] = reply
+	} else if reply.IsRead && existing.ErrorCode != 0 && reply.ErrorCode == 0 {
+		// For read operations: replace cached error result with successful result
+		e.log.Infof("CacheReply: replacing error reply (err=%d) with success from replica %d at index %d",
+			existing.ErrorCode, reply.ReplicaID, replyIndex)
+		entry.EnvelopeReplies[replyIndex] = reply
 	} else {
-		e.log.Infof("CacheReply: reply from replica %d already cached, ignoring duplicate", reply.ReplicaID)
+		e.log.Debugf("CacheReply: reply from replica %d already cached, ignoring duplicate", reply.ReplicaID)
 	}
 }
 
