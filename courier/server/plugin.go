@@ -46,6 +46,15 @@ type PendingReadRequest struct {
 	Timeout   time.Time
 }
 
+// CopyCommandState tracks the state of a copy command for idempotency.
+// This allows copy commands to be safely retried via ARQ without duplicating work.
+type CopyCommandState struct {
+	InProgress  bool
+	Done        chan struct{}                 // Closed when the copy command completes
+	Result      *pigeonhole.CourierQueryReply // Cached result (nil if still in progress)
+	CompletedAt time.Time                     // When the copy command completed
+}
+
 // Courier handles the CBOR plugin interface for our courier service.
 type Courier struct {
 	write  func(cborplugin.Command)
@@ -65,7 +74,15 @@ type Courier struct {
 
 	pendingRequestsLock sync.RWMutex
 	pendingRequests     map[[hash.HashSize]byte]*PendingReadRequest
+
+	// Copy command deduplication cache - tracks in-progress and completed copy commands
+	// to support ARQ retries without duplicating work
+	copyDedupCacheLock sync.RWMutex
+	copyDedupCache     map[[hash.HashSize]byte]*CopyCommandState
 }
+
+// CopyDedupCacheTTL is how long completed copy command results are cached
+const CopyDedupCacheTTL = 5 * time.Minute
 
 // NewCourier returns a new Courier type.
 func NewCourier(s *Server, cmds *commands.Commands, scheme nike.Scheme) *Courier {
@@ -84,6 +101,7 @@ func NewCourier(s *Server, cmds *commands.Commands, scheme nike.Scheme) *Courier
 		dedupCache:      make(map[[hash.HashSize]byte]*CourierBookKeeping),
 		copyCache:       make(map[[hash.HashSize]byte]chan *commands.ReplicaMessageReply),
 		pendingRequests: make(map[[hash.HashSize]byte]*PendingReadRequest),
+		copyDedupCache:  make(map[[hash.HashSize]byte]*CopyCommandState),
 	}
 	return courier
 }
@@ -600,13 +618,79 @@ func (e *Courier) cacheHandleCourierEnvelope(queryType uint8, courierMessage *pi
 // plaintext contents as CopyStreamElements containing CourierEnvelopes. It reads boxes until
 // it finds an element with the IsFinal flag set. It then sends all those CourierEnvelopes to
 // the specified intermediate replicas. Lastly it overwrites the initial sequence with tombstones.
+//
+// This function is idempotent - duplicate copy commands (e.g., ARQ retries) will either:
+// 1. Wait for an in-progress copy to complete and return the same result
+// 2. Return a cached result if the copy was recently completed
 func (e *Courier) handleCopyCommand(copyCmd *pigeonhole.CopyCommand) *pigeonhole.CourierQueryReply {
 	e.log.Debugf("handleCopyCommand: Processing copy command with WriteCap length %d", copyCmd.WriteCapLen)
 
+	// Compute a hash of the WriteCap to use as the dedup key
+	copyKey := hash.Sum256(copyCmd.WriteCap)
+
+	// Check if this copy command is already in-progress or completed
+	e.copyDedupCacheLock.Lock()
+	state, exists := e.copyDedupCache[copyKey]
+	if exists {
+		if state.InProgress {
+			// Another goroutine is processing this copy command, wait for it
+			e.log.Debugf("handleCopyCommand: Copy command %x already in-progress, waiting", copyKey[:8])
+			doneChan := state.Done
+			e.copyDedupCacheLock.Unlock()
+
+			// Wait for the in-progress copy to complete
+			<-doneChan
+
+			// Return the cached result
+			e.copyDedupCacheLock.RLock()
+			result := e.copyDedupCache[copyKey].Result
+			e.copyDedupCacheLock.RUnlock()
+			e.log.Debugf("handleCopyCommand: Copy command %x completed by another goroutine", copyKey[:8])
+			return result
+		}
+
+		// Copy command already completed, check TTL
+		if time.Since(state.CompletedAt) < CopyDedupCacheTTL {
+			e.log.Debugf("handleCopyCommand: Returning cached result for copy command %x", copyKey[:8])
+			result := state.Result
+			e.copyDedupCacheLock.Unlock()
+			return result
+		}
+
+		// TTL expired, remove old entry and process again
+		e.log.Debugf("handleCopyCommand: Cached result for %x expired, reprocessing", copyKey[:8])
+		delete(e.copyDedupCache, copyKey)
+	}
+
+	// New copy command, create cache entry to mark as in-progress
+	state = &CopyCommandState{
+		InProgress: true,
+		Done:       make(chan struct{}),
+	}
+	e.copyDedupCache[copyKey] = state
+	e.copyDedupCacheLock.Unlock()
+
+	// Process the copy command and cache the result when done
+	result := e.processCopyCommand(copyCmd)
+
+	// Update cache with result
+	e.copyDedupCacheLock.Lock()
+	state.InProgress = false
+	state.Result = result
+	state.CompletedAt = time.Now()
+	close(state.Done) // Signal waiting goroutines
+	e.copyDedupCacheLock.Unlock()
+
+	return result
+}
+
+// processCopyCommand does the actual work of processing a copy command.
+// This is separated from handleCopyCommand to support the deduplication logic.
+func (e *Courier) processCopyCommand(copyCmd *pigeonhole.CopyCommand) *pigeonhole.CourierQueryReply {
 	// Deserialize the WriteCap
 	writeCap, err := bacap.NewWriteCapFromBytes(copyCmd.WriteCap)
 	if err != nil {
-		e.log.Errorf("handleCopyCommand: Failed to deserialize WriteCap: %v", err)
+		e.log.Errorf("processCopyCommand: Failed to deserialize WriteCap: %v", err)
 		return &pigeonhole.CourierQueryReply{
 			ReplyType: 1, // 1 = copy_command_reply
 			CopyCommandReply: &pigeonhole.CopyCommandReply{
@@ -621,7 +705,7 @@ func (e *Courier) handleCopyCommand(copyCmd *pigeonhole.CopyCommand) *pigeonhole
 	// Create StatefulReader for the temporary channel
 	reader, err := bacap.NewStatefulReader(readCap, constants.PIGEONHOLE_CTX)
 	if err != nil {
-		e.log.Errorf("handleCopyCommand: Failed to create StatefulReader: %v", err)
+		e.log.Errorf("processCopyCommand: Failed to create StatefulReader: %v", err)
 		return &pigeonhole.CourierQueryReply{
 			ReplyType: 1,
 			CopyCommandReply: &pigeonhole.CopyCommandReply{
@@ -643,7 +727,7 @@ func (e *Courier) handleCopyCommand(copyCmd *pigeonhole.CopyCommand) *pigeonhole
 		// Get next BoxID
 		boxID, err := reader.NextBoxID()
 		if err != nil {
-			e.log.Errorf("handleCopyCommand: Failed to get next BoxID: %v", err)
+			e.log.Errorf("processCopyCommand: Failed to get next BoxID: %v", err)
 			return &pigeonhole.CourierQueryReply{
 				ReplyType: 1,
 				CopyCommandReply: &pigeonhole.CopyCommandReply{
@@ -656,7 +740,7 @@ func (e *Courier) handleCopyCommand(copyCmd *pigeonhole.CopyCommand) *pigeonhole
 		// Read the box from replicas (raw CopyStreamElement bytes)
 		boxPlaintext, err := e.readNextBox(reader, boxID)
 		if err != nil {
-			e.log.Errorf("handleCopyCommand: Failed to read box %x: %v", boxID[:], err)
+			e.log.Errorf("processCopyCommand: Failed to read box %x: %v", boxID[:], err)
 			return &pigeonhole.CourierQueryReply{
 				ReplyType: 1,
 				CopyCommandReply: &pigeonhole.CopyCommandReply{
@@ -671,7 +755,7 @@ func (e *Courier) handleCopyCommand(copyCmd *pigeonhole.CopyCommand) *pigeonhole
 		// Decode any complete envelopes and check for final flag
 		envelopes, isFinal, err := decoder.DecodeEnvelopes()
 		if err != nil {
-			e.log.Errorf("handleCopyCommand: Failed to decode envelopes: %v", err)
+			e.log.Errorf("processCopyCommand: Failed to decode envelopes: %v", err)
 			return &pigeonhole.CourierQueryReply{
 				ReplyType: 1,
 				CopyCommandReply: &pigeonhole.CopyCommandReply{
@@ -684,27 +768,27 @@ func (e *Courier) handleCopyCommand(copyCmd *pigeonhole.CopyCommand) *pigeonhole
 		for _, envelope := range envelopes {
 			// Send envelope immediately to replicas
 			if err := e.propagateQueryToReplicas(envelope); err != nil {
-				e.log.Errorf("handleCopyCommand: Failed to send envelope: %v", err)
+				e.log.Errorf("processCopyCommand: Failed to send envelope: %v", err)
 			}
 			numEnvelopes++
 		}
 
 		// Check if we've seen the final element
 		if isFinal {
-			e.log.Debugf("handleCopyCommand: Found final element in box %x", boxID[:])
+			e.log.Debugf("processCopyCommand: Found final element in box %x", boxID[:])
 			sawFinal = true
 		}
 	}
 
 	// Verify all data was consumed
 	if decoder.Remaining() > 0 {
-		e.log.Warningf("handleCopyCommand: %d bytes remaining in decoder buffer after processing", decoder.Remaining())
+		e.log.Warningf("processCopyCommand: %d bytes remaining in decoder buffer after processing", decoder.Remaining())
 	}
 
 	// Write tombstones to clean up the temporary channel
 	e.writeTombstonesToTempChannel(writeCap, boxIDList)
 
-	e.log.Debugf("handleCopyCommand: Successfully processed %d envelopes from %d boxes", numEnvelopes, len(boxIDList))
+	e.log.Debugf("processCopyCommand: Successfully processed %d envelopes from %d boxes", numEnvelopes, len(boxIDList))
 
 	// Return success
 	return &pigeonhole.CourierQueryReply{
