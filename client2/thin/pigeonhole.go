@@ -7,11 +7,9 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"fmt"
 
 	"github.com/katzenpost/hpqc/bacap"
 	"github.com/katzenpost/hpqc/rand"
-	"github.com/katzenpost/katzenpost/pigeonhole"
 )
 
 // errorCodeToSentinel maps error codes to sentinel errors for StartResendingEncryptedMessage.
@@ -1052,78 +1050,4 @@ func (t *ThinClient) CreateCourierEnvelopesFromPayloads(ctx context.Context, str
 // 1. Create temporary copy stream channel using NewKeypair
 // 2. Call CreateCourierEnvelopesFromPayload many times until finished.
 // 3. Write envelopes to copy stream using EncryptWrite + StartResendingEncryptedMessage
-// 4. Send Copy command with WriteCap using this method
-//
-// This method uses the existing BlockingSendMessage method to send a
-// Copy command to the client daemon which in turn sends a Copy command to the courier.
-//
-// Parameters:
-//   - ctx: Context for cancellation and timeout control
-//   - writeCap: Write capability for the temporary copy stream
-//   - courierIdHash: 32-byte hash of the courier's identity public key
-//   - courierQueueID: Queue ID for the courier service (typically "courier")
-//
-// Returns:
-//   - uint8: Courier error code (0 = success)
-//   - error: Any error encountered during command sending
-func (t *ThinClient) SendCopyCommand(ctx context.Context, writeCap *bacap.WriteCap, courierIdHash *[32]byte, courierQueueID []byte) (uint8, error) {
-	if ctx == nil {
-		return 0, errContextCannotBeNil
-	}
-	if writeCap == nil {
-		return 0, errors.New("tempWriteCap cannot be nil")
-	}
-	if courierIdHash == nil {
-		return 0, errors.New("courierIdHash cannot be nil")
-	}
-	if len(courierQueueID) == 0 {
-		return 0, errors.New("courierQueueID cannot be empty")
-	}
-
-	// Serialize the WriteCap
-	writeCapBytes, err := writeCap.MarshalBinary()
-	if err != nil {
-		return 0, fmt.Errorf("failed to marshal WriteCap: %w", err)
-	}
-
-	// Create CopyCommand
-	copyCommand := &pigeonhole.CopyCommand{
-		WriteCapLen: uint32(len(writeCapBytes)),
-		WriteCap:    writeCapBytes,
-	}
-
-	// Create CourierQuery with copy command
-	courierQuery := &pigeonhole.CourierQuery{
-		QueryType:   1, // 1 = copy_command
-		CopyCommand: copyCommand,
-	}
-
-	// Serialize CourierQuery
-	queryBytes, err := courierQuery.MarshalBinary()
-	if err != nil {
-		return 0, fmt.Errorf("failed to marshal CourierQuery: %w", err)
-	}
-
-	// Send to courier using existing BlockingSendMessage
-	replyBytes, err := t.BlockingSendMessage(ctx, queryBytes, courierIdHash, courierQueueID)
-	if err != nil {
-		return 0, fmt.Errorf("failed to send copy command: %w", err)
-	}
-
-	// Parse CourierQueryReply
-	courierQueryReply, err := pigeonhole.ParseCourierQueryReply(replyBytes)
-	if err != nil {
-		return 0, fmt.Errorf("failed to parse CourierQueryReply: %w", err)
-	}
-
-	// Verify it's a copy command reply
-	if courierQueryReply.ReplyType != 1 {
-		return 0, fmt.Errorf("unexpected reply type: got %d, expected 1 (copy_command_reply)", courierQueryReply.ReplyType)
-	}
-
-	if courierQueryReply.CopyCommandReply == nil {
-		return 0, errors.New("copy command reply is nil")
-	}
-
-	return courierQueryReply.CopyCommandReply.ErrorCode, nil
-}
+// 4. Send Copy command with WriteCap using StartResendingCopyCommand

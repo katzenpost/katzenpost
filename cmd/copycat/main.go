@@ -246,12 +246,6 @@ func runSend(configFile string, thinClientOnly bool, writeCapB64, inputFile, sta
 		return fmt.Errorf("failed to read input: %w", err)
 	}
 
-	// Get courier destination
-	courierIdHash, courierQueueID, err := thinClient.GetCourierDestination()
-	if err != nil {
-		return fmt.Errorf("failed to get courier destination: %w", err)
-	}
-
 	// Create temporary copy stream channel
 	seed := make([]byte, 32)
 	if _, err := rand.Reader.Read(seed); err != nil {
@@ -297,14 +291,11 @@ func runSend(configFile string, thinClientOnly bool, writeCapB64, inputFile, sta
 		fmt.Fprintf(os.Stderr, "Wrote chunk %d/%d\n", i+1, len(chunks))
 	}
 
-	// Send Copy command to courier
+	// Send Copy command to courier using ARQ for reliable delivery
 	fmt.Fprintln(os.Stderr, "Sending Copy command to courier...")
-	errorCode, err := thinClient.SendCopyCommand(ctx, copyWriteCap, courierIdHash, courierQueueID)
+	err = thinClient.StartResendingCopyCommand(ctx, copyWriteCap)
 	if err != nil {
-		return fmt.Errorf("failed to send copy command: %w", err)
-	}
-	if errorCode != 0 {
-		return fmt.Errorf("copy command failed with error code: %d", errorCode)
+		return fmt.Errorf("copy command failed: %w", err)
 	}
 
 	fmt.Fprintln(os.Stderr, "Copy command completed successfully")
