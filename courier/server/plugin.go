@@ -615,9 +615,11 @@ func (e *Courier) cacheHandleCourierEnvelope(queryType uint8, courierMessage *pi
 }
 
 // handleCopyCommand reads all the boxes in the given BACAP sequence and interprets their
-// plaintext contents as CopyStreamElements containing CourierEnvelopes. It reads boxes until
-// it finds an element with the IsFinal flag set. It then sends all those CourierEnvelopes to
-// the specified intermediate replicas. Lastly it overwrites the initial sequence with tombstones.
+// plaintext contents as CopyStreamElements containing CourierEnvelopes. Envelopes are processed
+// one at a time and are transformed into 2 ReplicaMessage objects which are then sent to the intermediary
+// replica. It reads boxes until it finds an element with the IsFinal flag set. It then sends
+// all those CourierEnvelopes to the specified intermediate replicas. Lastly it overwrites the
+// initial sequence with tombstones.
 //
 // This function is idempotent - duplicate copy commands (e.g., ARQ retries) will either:
 // 1. Wait for an in-progress copy to complete and return the same result
