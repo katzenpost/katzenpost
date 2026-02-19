@@ -284,20 +284,26 @@ func (elem *CopyStreamElement) IsFinal() bool {
 //
 // This is the decoder the courier uses to process the copy stream.
 type CopyStreamEnvelopeDecoder struct {
-	elementDecoder *CopyStreamDecoder
-	envelopeBuffer []byte // Accumulated envelope stream data
-	sawFinal       bool   // Have we seen the final element?
+	elementDecoder  *CopyStreamDecoder
+	envelopeBuffer  []byte // Accumulated envelope stream data
+	sawFinal        bool   // Have we seen the final element?
+	maxEnvelopeSize int    // Maximum size of a single CourierEnvelope (for sanity checking)
 }
 
 // NewCopyStreamEnvelopeDecoder creates a new envelope decoder.
 //
 // Parameters:
-//   - geometry: The pigeonhole geometry object, used to determine max element size
+//   - geometry: The pigeonhole geometry object, used to determine max element and envelope size
+//
+// The decoder uses CourierQueryWriteLength from geometry as an upper bound for envelope size.
+// CourierEnvelopes in the copy stream contain write operations, so this is the correct
+// maximum. This prevents memory exhaustion attacks via malicious length prefix values.
 func NewCopyStreamEnvelopeDecoder(geometry *geo.Geometry) *CopyStreamEnvelopeDecoder {
 	return &CopyStreamEnvelopeDecoder{
-		elementDecoder: NewCopyStreamDecoder(geometry),
-		envelopeBuffer: make([]byte, 0),
-		sawFinal:       false,
+		elementDecoder:  NewCopyStreamDecoder(geometry),
+		envelopeBuffer:  make([]byte, 0),
+		sawFinal:        false,
+		maxEnvelopeSize: geometry.CourierQueryWriteLength,
 	}
 }
 
@@ -351,6 +357,13 @@ func (d *CopyStreamEnvelopeDecoder) DecodeEnvelopes() ([]*CourierEnvelope, bool,
 
 		// Read envelope length (big-endian)
 		envelopeLen := binary.BigEndian.Uint32(d.envelopeBuffer[:4])
+
+		// Security: validate envelope length before parsing to prevent large allocations
+		// from malicious length values. CourierEnvelopes have a fixed size determined by
+		// geometry, so any length exceeding maxEnvelopeSize indicates malicious data.
+		if d.maxEnvelopeSize > 0 && int(envelopeLen) > d.maxEnvelopeSize {
+			return envelopes, d.sawFinal, fmt.Errorf("envelope length %d exceeds maximum (%d)", envelopeLen, d.maxEnvelopeSize)
+		}
 
 		// Check if we have the complete envelope
 		totalSize := 4 + int(envelopeLen)

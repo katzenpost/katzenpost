@@ -33,6 +33,14 @@ func createTestGeometry(maxPlaintextPayloadLength int) *geo.Geometry {
 	return geo.NewGeometry(maxPlaintextPayloadLength, replicaCommon.NikeScheme)
 }
 
+// createTestEnvelopeFromGeometry creates a test CourierEnvelope with the correct ciphertext size
+// based on the geometry. This creates a valid envelope that would pass the decoder's size validation.
+func createTestEnvelopeFromGeometry(geometry *geo.Geometry) *CourierEnvelope {
+	// Get the expected MKEM ciphertext size for a write operation
+	ciphertextSize := geometry.CalculateCourierEnvelopeCiphertextSizeWrite()
+	return createTestEnvelope(ciphertextSize)
+}
+
 // ===========================================================================
 // CLIENT SIDE TESTS - CopyStreamEncoder
 // ===========================================================================
@@ -263,6 +271,8 @@ func TestCopyStreamEnvelopeDecoder_NewDecoder(t *testing.T) {
 	require.NotNil(t, decoder.elementDecoder)
 	require.Empty(t, decoder.envelopeBuffer)
 	require.False(t, decoder.sawFinal)
+	// Verify maxEnvelopeSize is set from geometry's CourierQueryWriteLength
+	require.Equal(t, geometry.CourierQueryWriteLength, decoder.maxEnvelopeSize)
 }
 
 func TestCopyStreamEnvelopeDecoder_Remaining(t *testing.T) {
@@ -273,6 +283,38 @@ func TestCopyStreamEnvelopeDecoder_Remaining(t *testing.T) {
 
 	decoder.AddBoxData([]byte{1, 2, 3})
 	require.Equal(t, 3, decoder.Remaining())
+}
+
+func TestCopyStreamEnvelopeDecoder_EnvelopeTooLarge(t *testing.T) {
+	// Security test: verify that maliciously large envelope length values are rejected
+	// to prevent memory exhaustion attacks
+	geometry := createTestGeometry(100) // Small geometry for testing
+	decoder := NewCopyStreamEnvelopeDecoder(geometry)
+
+	// Create a CopyStreamElement containing malicious envelope data
+	// The envelope data starts with a 4-byte length prefix claiming a huge envelope size
+	maliciousLength := uint32(0xFFFFFFFF) // ~4GB - way too large
+	lengthPrefix := make([]byte, 4)
+	lengthPrefix[0] = byte(maliciousLength >> 24)
+	lengthPrefix[1] = byte(maliciousLength >> 16)
+	lengthPrefix[2] = byte(maliciousLength >> 8)
+	lengthPrefix[3] = byte(maliciousLength)
+
+	// Create a valid element containing the malicious length prefix
+	elem := &CopyStreamElement{
+		Flags:        CopyStreamFlagStart | CopyStreamFlagFinal,
+		EnvelopeLen:  uint32(len(lengthPrefix)),
+		EnvelopeData: lengthPrefix,
+	}
+	elemBytes, err := elem.MarshalBinary()
+	require.NoError(t, err)
+
+	decoder.AddBoxData(elemBytes)
+
+	// This should fail with an error about envelope size exceeding maximum
+	_, _, err = decoder.DecodeEnvelopes()
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "exceeds maximum")
 }
 
 // ===========================================================================
@@ -348,11 +390,24 @@ func TestCopyStream_RoundTrip_MultipleEnvelopes(t *testing.T) {
 }
 
 func TestCopyStream_RoundTrip_LargeEnvelope(t *testing.T) {
-	// Test envelope larger than a single box
-	geometry := createTestGeometry(200)
+	// Test envelope larger than a single box.
+	// Use a large geometry to create an envelope with a valid ciphertext size
+	// that will span multiple elements when encoded with a small box size.
+	// We create the envelope with a geometry that has a large MaxPlaintextPayloadLength
+	// but encode it with an encoder that has a small box size.
+	largeGeometry := createTestGeometry(1000) // Large enough for valid envelope
+	originalEnvelope := createTestEnvelopeFromGeometry(largeGeometry)
 
-	encoder := NewCopyStreamEncoder(geometry)
-	originalEnvelope := createTestEnvelope(500) // Larger than box
+	// Verify the envelope is large enough to span multiple boxes
+	envelopeBytes, err := originalEnvelope.MarshalBinary()
+	require.NoError(t, err)
+	serializedSize := len(envelopeBytes) + 4 // +4 for length prefix
+	t.Logf("Envelope serialized size: %d bytes", serializedSize)
+
+	// Use a small box size for encoding so the envelope spans multiple elements
+	smallBoxSize := 200
+	smallGeometry := createTestGeometry(smallBoxSize)
+	encoder := NewCopyStreamEncoder(smallGeometry)
 
 	elements, err := encoder.AddEnvelope(originalEnvelope)
 	require.NoError(t, err)
@@ -362,8 +417,8 @@ func TestCopyStream_RoundTrip_LargeEnvelope(t *testing.T) {
 	// Should produce multiple elements
 	require.Greater(t, len(allElements), 1, "large envelope should produce multiple elements")
 
-	// Decode (use same geometry)
-	decoder := NewCopyStreamEnvelopeDecoder(geometry)
+	// Decode with the large geometry (which has a maxEnvelopeSize large enough for the envelope)
+	decoder := NewCopyStreamEnvelopeDecoder(largeGeometry)
 	for _, elem := range allElements {
 		decoder.AddBoxData(elem)
 	}
