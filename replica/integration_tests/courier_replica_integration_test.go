@@ -849,6 +849,9 @@ func testBoxRoundTrip(t *testing.T, env *testEnvironment) {
 	require.Equal(t, uint8(0), courierWriteReply1.ReplyIndex)
 	require.True(t, len(courierWriteReply1.Payload) == 0) // Payload should be empty for write operations
 
+	// Wait for write to propagate to replicas before reading
+	time.Sleep(5 * time.Second)
+
 	bobReadRequest1, bobPrivateKey1 := composeReadRequest(t, env, bobStatefulReader)
 
 	// First read request should now get immediate reply with payload due to immediate proxying
@@ -928,6 +931,9 @@ func testBoxSequenceRoundTrip(t *testing.T, env *testEnvironment) {
 
 		t.Logf("Successfully wrote box %d", i+1)
 	}
+
+	// Wait for writes to propagate to replicas before reading
+	time.Sleep(5 * time.Second)
 
 	// Now read back the sequence of boxes
 	t.Logf("Reading back sequence of %d boxes", len(messages))
