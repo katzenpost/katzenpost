@@ -7,6 +7,7 @@ package client2
 
 import (
 	"context"
+	"encoding/binary"
 	"testing"
 	"time"
 
@@ -304,12 +305,17 @@ func TestCreateCourierEnvelopesFromPayload(t *testing.T) {
 
 	// Step 3: Create a large payload that will be chunked
 	t.Log("=== Step 3: Creating large payload ===")
-	// Create a payload that's large enough to require multiple chunks
-	// Each chunk can hold ~1KB, so let's create a 5KB payload to get ~5 chunks
-	largePayload := make([]byte, 5*1024)
-	_, err = rand.Reader.Read(largePayload)
+	// Create a payload large enough to require multiple chunks
+	// Actual chunk count depends on pigeonhole geometry
+	// Use a 4-byte length prefix so Bob knows when to stop reading
+	randomData := make([]byte, 5*1024)
+	_, err = rand.Reader.Read(randomData)
 	require.NoError(t, err)
-	t.Logf("Alice: Created large payload (%d bytes)", len(largePayload))
+	// Length-prefix the payload: [4 bytes length][random data]
+	largePayload := make([]byte, 4+len(randomData))
+	binary.BigEndian.PutUint32(largePayload[:4], uint32(len(randomData)))
+	copy(largePayload[4:], randomData)
+	t.Logf("Alice: Created large payload (%d bytes = 4 byte length prefix + %d bytes data)", len(largePayload), len(randomData))
 
 	// Step 4: Create copy stream chunks from the large payload
 	t.Log("=== Step 4: Creating copy stream chunks from large payload ===")
@@ -367,30 +373,45 @@ func TestCreateCourierEnvelopesFromPayload(t *testing.T) {
 	require.NoError(t, err)
 	t.Log("Alice: Copy command completed successfully via ARQ")
 
-	// Step 7: Bob reads all chunks from the destination channel
+	// Step 7: Bob reads chunks until we have the full payload (based on length prefix)
 	t.Log("=== Step 7: Bob reads all chunks and reconstructs payload ===")
 	bobIndex := destFirstIndex
 	var reconstructedPayload []byte
+	var expectedLength uint32
+	chunkNum := 0
 
-	for i := 0; i < numChunks; i++ {
-		t.Logf("--- Bob reading chunk %d/%d ---", i+1, numChunks)
+	for {
+		chunkNum++
+		t.Logf("--- Bob reading chunk %d ---", chunkNum)
 
 		// Bob encrypts read request
 		bobCiphertext, bobNextIndex, bobEnvDesc, bobEnvHash, bobEpoch, err := bobThinClient.EncryptRead(ctx, bobReadCap, bobIndex)
 		require.NoError(t, err)
 		require.NotEmpty(t, bobCiphertext, "Bob: EncryptRead returned empty ciphertext")
-		t.Logf("Bob: Encrypted read request %d", i+1)
+		t.Logf("Bob: Encrypted read request %d", chunkNum)
 
 		// Bob sends read request and receives chunk
 		bobPlaintext, err := bobThinClient.StartResendingEncryptedMessage(
 			ctx, bobReadCap, nil, bobNextIndex, &replyIndex,
 			bobEnvDesc, bobCiphertext, bobEnvHash, bobEpoch)
 		require.NoError(t, err)
-		require.NotEmpty(t, bobPlaintext, "Bob: Failed to receive chunk %d", i+1)
-		t.Logf("Bob: Received and decrypted chunk %d (%d bytes)", i+1, len(bobPlaintext))
+		require.NotEmpty(t, bobPlaintext, "Bob: Failed to receive chunk %d", chunkNum)
+		t.Logf("Bob: Received and decrypted chunk %d (%d bytes)", chunkNum, len(bobPlaintext))
 
 		// Append chunk to reconstructed payload
 		reconstructedPayload = append(reconstructedPayload, bobPlaintext...)
+
+		// Extract expected length from the first 4 bytes once we have them
+		if expectedLength == 0 && len(reconstructedPayload) >= 4 {
+			expectedLength = binary.BigEndian.Uint32(reconstructedPayload[:4])
+			t.Logf("Bob: Expected payload length is %d bytes (+ 4 byte prefix = %d total)", expectedLength, expectedLength+4)
+		}
+
+		// Check if we have the full payload (4 byte prefix + expectedLength bytes)
+		if expectedLength > 0 && uint32(len(reconstructedPayload)) >= expectedLength+4 {
+			t.Logf("Bob: Received full payload after %d chunks", chunkNum)
+			break
+		}
 
 		// Advance to next chunk
 		bobIndex, err = bobThinClient.NextMessageBoxIndex(ctx, bobIndex)
@@ -400,5 +421,5 @@ func TestCreateCourierEnvelopesFromPayload(t *testing.T) {
 	// Verify the reconstructed payload matches the original
 	t.Logf("Bob: Reconstructed payload (%d bytes)", len(reconstructedPayload))
 	require.Equal(t, largePayload, reconstructedPayload, "Reconstructed payload doesn't match original")
-	t.Logf("\n✓ SUCCESS: CreateCourierEnvelopesFromPayload test passed! Large payload (%d bytes) encoded into %d copy stream chunks and reconstructed successfully!", len(largePayload), numChunks)
+	t.Logf("\n✓ SUCCESS: CreateCourierEnvelopesFromPayload test passed! Large payload (%d bytes data) encoded into %d copy stream chunks and reconstructed successfully!", len(randomData), numChunks)
 }
