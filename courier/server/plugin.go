@@ -768,9 +768,39 @@ func (e *Courier) processCopyCommand(copyCmd *pigeonhole.CopyCommand) *pigeonhol
 
 		// Process each decoded envelope
 		for _, envelope := range envelopes {
-			// Send envelope immediately to replicas
-			if err := e.propagateQueryToReplicas(envelope); err != nil {
-				e.log.Errorf("processCopyCommand: Failed to send envelope: %v", err)
+			// Send envelope immediately to replicas with retry logic
+			const maxRetries = 5
+			const baseDelay = 100 * time.Millisecond
+			var lastErr error
+			success := false
+
+			for attempt := 0; attempt < maxRetries; attempt++ {
+				if err := e.propagateQueryToReplicas(envelope); err != nil {
+					lastErr = err
+					if attempt < maxRetries-1 {
+						// Exponential backoff: 100ms, 200ms, 400ms, 800ms
+						delay := baseDelay * time.Duration(1<<attempt)
+						e.log.Warningf("processCopyCommand: Failed to send envelope (attempt %d/%d): %v, retrying in %v",
+							attempt+1, maxRetries, err, delay)
+						time.Sleep(delay)
+					}
+				} else {
+					success = true
+					if attempt > 0 {
+						e.log.Debugf("processCopyCommand: Successfully sent envelope on attempt %d", attempt+1)
+					}
+					break
+				}
+			}
+
+			if !success {
+				e.log.Errorf("processCopyCommand: Failed to send envelope after %d attempts: %v", maxRetries, lastErr)
+				return &pigeonhole.CourierQueryReply{
+					ReplyType: 1,
+					CopyCommandReply: &pigeonhole.CopyCommandReply{
+						ErrorCode: 1,
+					},
+				}
 			}
 			numEnvelopes++
 		}
