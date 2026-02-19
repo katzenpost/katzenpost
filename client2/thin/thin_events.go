@@ -722,3 +722,27 @@ func (e *CreateCourierEnvelopesFromPayloadReply) String() string {
 	}
 	return fmt.Sprintf("CreateCourierEnvelopesFromPayloadReply: queryID=%x numEnvelopes=%d", e.QueryID[:], len(e.Envelopes))
 }
+
+// CreateCourierEnvelopesFromPayloadsReply is sent in response to a CreateCourierEnvelopesFromPayloads request.
+// It provides multiple serialized CopyStreamElements packed efficiently from multiple destination payloads.
+type CreateCourierEnvelopesFromPayloadsReply struct {
+	// QueryID is used for correlating this reply with the CreateCourierEnvelopesFromPayloads request
+	// that created it.
+	QueryID *[QueryIDLength]byte `cbor:"query_id"`
+
+	// Envelopes is a slice of serialized CopyStreamElements containing all the courier envelopes
+	// from all destinations packed efficiently together.
+	Envelopes [][]byte `cbor:"envelopes"`
+
+	// ErrorCode indicates the success or failure of the envelope creation.
+	// A value of ThinClientSuccess indicates successful creation.
+	ErrorCode uint8 `cbor:"error_code"`
+}
+
+// String returns a string representation of the CreateCourierEnvelopesFromPayloadsReply.
+func (e *CreateCourierEnvelopesFromPayloadsReply) String() string {
+	if e.ErrorCode != ThinClientSuccess {
+		return fmt.Sprintf("CreateCourierEnvelopesFromPayloadsReply: queryID=%x (error: %s)", e.QueryID[:], ThinClientErrorToString(e.ErrorCode))
+	}
+	return fmt.Sprintf("CreateCourierEnvelopesFromPayloadsReply: queryID=%x numEnvelopes=%d", e.QueryID[:], len(e.Envelopes))
+}

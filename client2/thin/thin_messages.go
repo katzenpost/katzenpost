@@ -323,6 +323,45 @@ type CreateCourierEnvelopesFromPayload struct {
 	IsLast bool `cbor:"is_last"`
 }
 
+// DestinationPayload specifies a payload and its destination channel for multi-channel writes.
+type DestinationPayload struct {
+	// Payload is the data to be written to this destination.
+	Payload []byte `cbor:"payload"`
+
+	// WriteCap is the write capability for the destination channel.
+	WriteCap *bacap.WriteCap `cbor:"write_cap"`
+
+	// StartIndex is the starting index in the destination channel.
+	StartIndex *bacap.MessageBoxIndex `cbor:"start_index"`
+}
+
+// CreateCourierEnvelopesFromPayloads creates CourierEnvelopes from multiple payloads
+// going to different destination channels. This is more space-efficient than calling
+// CreateCourierEnvelopesFromPayload multiple times because envelopes from different
+// destinations are packed together in the copy stream without wasting space.
+//
+// Multiple calls can be made with the same StreamID to build up a stream incrementally.
+// The first call creates a new encoder (first element gets IsStart=true).
+// The final call should have IsLast=true (last element gets IsFinal=true).
+type CreateCourierEnvelopesFromPayloads struct {
+	// QueryID is used for correlating this thin client request with the
+	// thin client response.
+	QueryID *[QueryIDLength]byte `cbor:"query_id"`
+
+	// StreamID identifies the encoder instance for multi-call streams.
+	// All calls for the same stream must use the same StreamID.
+	// The encoder is created on first use and removed after IsLast=true.
+	StreamID *[StreamIDLength]byte `cbor:"stream_id"`
+
+	// Destinations is the list of payloads and their destination channels.
+	Destinations []DestinationPayload `cbor:"destinations"`
+
+	// IsLast indicates whether this is the last set of payloads in the sequence.
+	// When true, the final CopyStreamElement will have IsFinal=true and
+	// the encoder instance will be removed.
+	IsLast bool `cbor:"is_last"`
+}
+
 // Common API:
 
 // SendMessage is used to send a message through the mix network
@@ -440,6 +479,9 @@ type Response struct {
 
 	// CreateCourierEnvelopesFromPayloadReply is sent when the client daemon successfully creates courier envelopes from a payload.
 	CreateCourierEnvelopesFromPayloadReply *CreateCourierEnvelopesFromPayloadReply `cbor:"create_courier_envelopes_from_payload_reply"`
+
+	// CreateCourierEnvelopesFromPayloadsReply is sent when the client daemon successfully creates courier envelopes from multiple payloads.
+	CreateCourierEnvelopesFromPayloadsReply *CreateCourierEnvelopesFromPayloadsReply `cbor:"create_courier_envelopes_from_payloads_reply"`
 }
 
 // Request is the thin client's request message to the client daemon.
@@ -485,6 +527,11 @@ type Request struct {
 
 	// CreateCourierEnvelopesFromPayload is used to create multiple CourierEnvelopes from a payload of any size.
 	CreateCourierEnvelopesFromPayload *CreateCourierEnvelopesFromPayload `cbor:"create_courier_envelopes_from_payload"`
+
+	// CreateCourierEnvelopesFromPayloads is used to create CourierEnvelopes from multiple payloads
+	// going to different destination channels. This is more space-efficient than calling
+	// CreateCourierEnvelopesFromPayload multiple times.
+	CreateCourierEnvelopesFromPayloads *CreateCourierEnvelopesFromPayloads `cbor:"create_courier_envelopes_from_payloads"`
 
 	// OLD Pigeonhole API
 

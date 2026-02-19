@@ -961,6 +961,83 @@ func (t *ThinClient) CreateCourierEnvelopesFromPayload(ctx context.Context, stre
 	}
 }
 
+// CreateCourierEnvelopesFromPayloads creates CourierEnvelopes from multiple payloads
+// going to different destination channels. This is more space-efficient than calling
+// CreateCourierEnvelopesFromPayload multiple times because all envelopes from all
+// destinations are packed together in the same encoder without wasting space.
+//
+// Parameters:
+//   - ctx: Context for cancellation
+//   - streamID: Unique identifier for the stream (use NewStreamID() for first call)
+//   - destinations: Slice of DestinationPayload specifying payloads and their destination channels
+//   - isLast: Set to true on the final call to flush the encoder
+//
+// Returns:
+//   - [][]byte: Serialized CopyStreamElements ready to be written to boxes
+//   - error: Any error encountered
+func (t *ThinClient) CreateCourierEnvelopesFromPayloads(ctx context.Context, streamID *[StreamIDLength]byte, destinations []DestinationPayload, isLast bool) ([][]byte, error) {
+	if ctx == nil {
+		return nil, errContextCannotBeNil
+	}
+	if streamID == nil {
+		return nil, errors.New("streamID cannot be nil")
+	}
+	if len(destinations) == 0 {
+		return nil, errors.New("destinations cannot be empty")
+	}
+
+	queryID := t.NewQueryID()
+	req := &Request{
+		CreateCourierEnvelopesFromPayloads: &CreateCourierEnvelopesFromPayloads{
+			QueryID:      queryID,
+			StreamID:     streamID,
+			Destinations: destinations,
+			IsLast:       isLast,
+		},
+	}
+
+	eventSink := t.EventSink()
+	defer t.StopEventSink(eventSink)
+
+	err := t.writeMessage(req)
+	if err != nil {
+		return nil, err
+	}
+
+	for {
+		var event Event
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case event = <-eventSink:
+		case <-t.HaltCh():
+			return nil, errHalting
+		}
+
+		switch v := event.(type) {
+		case *CreateCourierEnvelopesFromPayloadsReply:
+			if v.QueryID == nil {
+				t.log.Debugf("CreateCourierEnvelopesFromPayloads: Received reply with nil QueryID, ignoring")
+				continue
+			}
+			if !bytes.Equal(v.QueryID[:], queryID[:]) {
+				t.log.Debugf("CreateCourierEnvelopesFromPayloads: Received reply with mismatched QueryID, ignoring")
+				continue
+			}
+			if v.ErrorCode != ThinClientSuccess {
+				return nil, errors.New(ThinClientErrorToString(v.ErrorCode))
+			}
+			return v.Envelopes, nil
+		case *ConnectionStatusEvent:
+			t.isConnected = v.IsConnected
+		case *NewDocumentEvent:
+			// Ignore PKI document updates
+		default:
+			// Ignore other events
+		}
+	}
+}
+
 // Copy Channel API:
 
 // SendCopyCommand sends a Copy command to the courier service.
