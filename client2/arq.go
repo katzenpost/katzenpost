@@ -37,9 +37,24 @@ const (
 	ARQStatePayloadReceived ARQState = 2
 )
 
+// ARQMessageType distinguishes between different types of ARQ messages.
+type ARQMessageType uint8
+
+const (
+	// ARQMessageTypeEnvelope is for encrypted read/write envelope operations.
+	ARQMessageTypeEnvelope ARQMessageType = 0
+
+	// ARQMessageTypeCopyCommand is for copy command operations.
+	ARQMessageTypeCopyCommand ARQMessageType = 1
+)
+
 // ARQMessage is used by ARQ for automatic retransmission of Pigeonhole messages.
 // It retries forever until cancelled via CancelResendingEncryptedMessage or successful.
 type ARQMessage struct {
+	// MessageType distinguishes between envelope operations and copy commands.
+	// This determines how the reply is processed.
+	MessageType ARQMessageType
+
 	// AppID identifies the application sending/receiving the message/reply.
 	AppID *[AppIDLength]byte
 
@@ -48,6 +63,7 @@ type ARQMessage struct {
 
 	// EnvelopeHash is the persistent identifier for this message.
 	// Used to cancel resending via CancelResendingEncryptedMessage.
+	// For copy commands, this is a hash of the WriteCap.
 	EnvelopeHash *[32]byte
 
 	// DestinationIdHash is 32 byte hash of the destination Courier's identity public key.

@@ -567,6 +567,173 @@ func (t *ThinClient) CancelResendingEncryptedMessage(ctx context.Context, envelo
 	}
 }
 
+// StartResendingCopyCommand sends a copy command via ARQ and blocks until completion.
+//
+// This method BLOCKS until a reply is received. It uses the ARQ (Automatic Repeat reQuest)
+// mechanism to reliably send copy commands to the courier, automatically retrying if
+// the reply is not received in time.
+//
+// The copy command instructs the courier to read from a temporary copy stream channel
+// and write the parsed envelopes to their destination channels. The courier:
+//  1. Derives a ReadCap from the WriteCap
+//  2. Reads boxes from the temporary channel
+//  3. Parses boxes into CourierEnvelopes
+//  4. Sends each envelope to intermediate replicas for replication
+//  5. Writes tombstones to clean up the temporary channel
+//
+// Parameters:
+//   - ctx: Context for cancellation and timeout control
+//   - writeCap: Write capability for the temporary copy stream channel
+//
+// Returns:
+//   - error: Any error encountered during the operation
+//
+// Example:
+//
+//	ctx := context.Background()
+//	err := client.StartResendingCopyCommand(ctx, tempWriteCap)
+//	if err != nil {
+//		log.Fatal("Copy command failed:", err)
+//	}
+func (t *ThinClient) StartResendingCopyCommand(ctx context.Context, writeCap *bacap.WriteCap) error {
+	if ctx == nil {
+		return errContextCannotBeNil
+	}
+	if writeCap == nil {
+		return errors.New("writeCap cannot be nil")
+	}
+
+	queryID := t.NewQueryID()
+	req := &Request{
+		StartResendingCopyCommand: &StartResendingCopyCommand{
+			QueryID:  queryID,
+			WriteCap: writeCap,
+		},
+	}
+
+	eventSink := t.EventSink()
+	defer t.StopEventSink(eventSink)
+
+	err := t.writeMessage(req)
+	if err != nil {
+		return err
+	}
+
+	for {
+		var event Event
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case event = <-eventSink:
+		case <-t.HaltCh():
+			return errHalting
+		}
+
+		switch v := event.(type) {
+		case *StartResendingCopyCommandReply:
+			if v.QueryID == nil {
+				t.log.Debugf("StartResendingCopyCommand: Received reply with nil QueryID, ignoring")
+				continue
+			}
+			if !bytes.Equal(v.QueryID[:], queryID[:]) {
+				t.log.Debugf("StartResendingCopyCommand: Received reply with mismatched QueryID, ignoring")
+				continue
+			}
+			if v.ErrorCode != ThinClientSuccess {
+				return errorCodeToSentinel(v.ErrorCode)
+			}
+			t.log.Debugf("StartResendingCopyCommand: Copy command completed successfully")
+			return nil
+		case *ConnectionStatusEvent:
+			t.isConnected = v.IsConnected
+		case *NewDocumentEvent:
+			// Ignore PKI document updates
+		default:
+			// Ignore other events
+		}
+	}
+}
+
+// CancelResendingCopyCommand cancels ARQ resending for a copy command.
+//
+// This method stops the automatic repeat request (ARQ) for a previously started
+// copy command. This is useful when:
+//   - A reply has been received through another channel
+//   - The operation should be aborted
+//   - The copy command is no longer needed
+//
+// Parameters:
+//   - ctx: Context for cancellation and timeout control
+//   - writeCapHash: Hash of the serialized WriteCap to cancel
+//
+// Returns:
+//   - error: Any error encountered during cancellation
+//
+// Example:
+//
+//	ctx := context.Background()
+//	err := client.CancelResendingCopyCommand(ctx, writeCapHash)
+//	if err != nil {
+//		log.Printf("Failed to cancel copy command: %v", err)
+//	}
+func (t *ThinClient) CancelResendingCopyCommand(ctx context.Context, writeCapHash *[32]byte) error {
+	if ctx == nil {
+		return errContextCannotBeNil
+	}
+	if writeCapHash == nil {
+		return errors.New("writeCapHash cannot be nil")
+	}
+
+	queryID := t.NewQueryID()
+	req := &Request{
+		CancelResendingCopyCommand: &CancelResendingCopyCommand{
+			QueryID:      queryID,
+			WriteCapHash: writeCapHash,
+		},
+	}
+
+	eventSink := t.EventSink()
+	defer t.StopEventSink(eventSink)
+
+	err := t.writeMessage(req)
+	if err != nil {
+		return err
+	}
+
+	for {
+		var event Event
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case event = <-eventSink:
+		case <-t.HaltCh():
+			return errHalting
+		}
+
+		switch v := event.(type) {
+		case *CancelResendingCopyCommandReply:
+			if v.QueryID == nil {
+				t.log.Debugf("CancelResendingCopyCommand: Received reply with nil QueryID, ignoring")
+				continue
+			}
+			if !bytes.Equal(v.QueryID[:], queryID[:]) {
+				t.log.Debugf("CancelResendingCopyCommand: Received reply with mismatched QueryID, ignoring")
+				continue
+			}
+			if v.ErrorCode != ThinClientSuccess {
+				return errors.New(ThinClientErrorToString(v.ErrorCode))
+			}
+			return nil
+		case *ConnectionStatusEvent:
+			t.isConnected = v.IsConnected
+		case *NewDocumentEvent:
+			// Ignore PKI document updates
+		default:
+			// Ignore other events
+		}
+	}
+}
+
 // NextMessageBoxIndex increments a MessageBoxIndex using the BACAP NextIndex method.
 //
 // This method is used when sending multiple messages to different mailboxes using

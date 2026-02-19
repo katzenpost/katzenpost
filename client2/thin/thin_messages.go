@@ -254,6 +254,31 @@ type CancelResendingEncryptedMessage struct {
 	EnvelopeHash *[32]byte `cbor:"envelope_hash"`
 }
 
+// StartResendingCopyCommand requests the daemon to send a copy command to a courier
+// with ARQ (automatic repeat request) for reliable delivery.
+// The copy command instructs the courier to read data from a temporary channel
+// and write it to the destination channel.
+type StartResendingCopyCommand struct {
+	// QueryID is used for correlating this thin client request with the
+	// thin client response.
+	QueryID *[QueryIDLength]byte `cbor:"query_id"`
+
+	// WriteCap is the write capability for the temporary channel that contains
+	// the data to be copied. The courier will derive a ReadCap from this
+	// to read the data.
+	WriteCap *bacap.WriteCap `cbor:"write_cap"`
+}
+
+// CancelResendingCopyCommand requests the daemon to cancel resending a copy command.
+type CancelResendingCopyCommand struct {
+	// QueryID is used for correlating this thin client request with the
+	// thin client response.
+	QueryID *[QueryIDLength]byte `cbor:"query_id"`
+
+	// WriteCapHash is the hash of the WriteCap used in StartResendingCopyCommand.
+	WriteCapHash *[32]byte `cbor:"write_cap_hash"`
+}
+
 // NextMessageBoxIndex requests the daemon to increment a MessageBoxIndex.
 // This is used when sending multiple messages to different mailboxes using
 // the same WriteCap. The reply type is NextMessageBoxIndexReply.
@@ -370,6 +395,12 @@ type Response struct {
 	// CancelResendingEncryptedMessageReply is sent when the client daemon successfully cancels resending an encrypted message.
 	CancelResendingEncryptedMessageReply *CancelResendingEncryptedMessageReply `cbor:"cancel_resending_encrypted_message_reply"`
 
+	// StartResendingCopyCommandReply is sent when the client daemon successfully sends a copy command with ARQ.
+	StartResendingCopyCommandReply *StartResendingCopyCommandReply `cbor:"start_resending_copy_command_reply"`
+
+	// CancelResendingCopyCommandReply is sent when the client daemon successfully cancels resending a copy command.
+	CancelResendingCopyCommandReply *CancelResendingCopyCommandReply `cbor:"cancel_resending_copy_command_reply"`
+
 	// NextMessageBoxIndexReply is sent when the client daemon successfully increments a MessageBoxIndex.
 	NextMessageBoxIndexReply *NextMessageBoxIndexReply `cbor:"next_message_box_index_reply"`
 
@@ -442,6 +473,12 @@ type Request struct {
 
 	// CancelResendingEncryptedMessage is used to cancel resending an encrypted message.
 	CancelResendingEncryptedMessage *CancelResendingEncryptedMessage `cbor:"cancel_resending_encrypted_message"`
+
+	// StartResendingCopyCommand is used to send a copy command with ARQ.
+	StartResendingCopyCommand *StartResendingCopyCommand `cbor:"start_resending_copy_command"`
+
+	// CancelResendingCopyCommand is used to cancel resending a copy command.
+	CancelResendingCopyCommand *CancelResendingCopyCommand `cbor:"cancel_resending_copy_command"`
 
 	// NextMessageBoxIndex is used to increment a MessageBoxIndex.
 	NextMessageBoxIndex *NextMessageBoxIndex `cbor:"next_message_box_index"`

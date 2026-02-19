@@ -885,6 +885,20 @@ func (t *ThinClient) worker() {
 			case <-t.HaltCh():
 				return
 			}
+		case message.StartResendingCopyCommandReply != nil:
+			select {
+			case t.eventSink <- message.StartResendingCopyCommandReply:
+				continue
+			case <-t.HaltCh():
+				return
+			}
+		case message.CancelResendingCopyCommandReply != nil:
+			select {
+			case t.eventSink <- message.CancelResendingCopyCommandReply:
+				continue
+			case <-t.HaltCh():
+				return
+			}
 		case message.NextMessageBoxIndexReply != nil:
 			select {
 			case t.eventSink <- message.NextMessageBoxIndexReply:

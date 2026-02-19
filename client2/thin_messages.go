@@ -20,6 +20,8 @@ func IntoThinResponse(r *Response) *thin.Response {
 		EncryptWriteReply:                    r.EncryptWriteReply,
 		StartResendingEncryptedMessageReply:  r.StartResendingEncryptedMessageReply,
 		CancelResendingEncryptedMessageReply: r.CancelResendingEncryptedMessageReply,
+		StartResendingCopyCommandReply:       r.StartResendingCopyCommandReply,
+		CancelResendingCopyCommandReply:      r.CancelResendingCopyCommandReply,
 		NextMessageBoxIndexReply:             r.NextMessageBoxIndexReply,
 
 		// Copy Channel API:
@@ -68,6 +70,10 @@ type Response struct {
 
 	CancelResendingEncryptedMessageReply *thin.CancelResendingEncryptedMessageReply
 
+	StartResendingCopyCommandReply *thin.StartResendingCopyCommandReply
+
+	CancelResendingCopyCommandReply *thin.CancelResendingCopyCommandReply
+
 	NextMessageBoxIndexReply *thin.NextMessageBoxIndexReply
 
 	// Copy Channel API:
@@ -107,6 +113,8 @@ func FromThinRequest(r *thin.Request, appid *[AppIDLength]byte) *Request {
 		EncryptWrite:                    r.EncryptWrite,
 		StartResendingEncryptedMessage:  r.StartResendingEncryptedMessage,
 		CancelResendingEncryptedMessage: r.CancelResendingEncryptedMessage,
+		StartResendingCopyCommand:       r.StartResendingCopyCommand,
+		CancelResendingCopyCommand:      r.CancelResendingCopyCommand,
 		NextMessageBoxIndex:             r.NextMessageBoxIndex,
 
 		// Copy Channel API:
@@ -151,6 +159,10 @@ type Request struct {
 	StartResendingEncryptedMessage *thin.StartResendingEncryptedMessage
 
 	CancelResendingEncryptedMessage *thin.CancelResendingEncryptedMessage
+
+	StartResendingCopyCommand *thin.StartResendingCopyCommand
+
+	CancelResendingCopyCommand *thin.CancelResendingCopyCommand
 
 	NextMessageBoxIndex *thin.NextMessageBoxIndex
 

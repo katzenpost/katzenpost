@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/katzenpost/hpqc/bacap"
+	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/nike"
 	"github.com/katzenpost/hpqc/rand"
 
@@ -883,9 +884,22 @@ func (d *Daemon) handlePigeonholeARQReply(arqMessage *ARQMessage, reply *sphinxR
 		return
 	}
 
+	// Dispatch based on ARQ message type
+	switch arqMessage.MessageType {
+	case ARQMessageTypeCopyCommand:
+		// Handle copy command reply (ReplyType: 1)
+		d.handleCopyCommandARQReply(arqMessage, courierQueryReply, conn)
+		return
+	case ARQMessageTypeEnvelope:
+		// Handle envelope reply (type 0) - fall through to existing logic
+	default:
+		d.log.Errorf("handlePigeonholeARQReply: unknown ARQ message type %d", arqMessage.MessageType)
+		return
+	}
+
 	// Handle envelope reply (type 0)
 	if courierQueryReply.ReplyType != 0 || courierQueryReply.EnvelopeReply == nil {
-		d.log.Errorf("handlePigeonholeARQReply: unexpected reply type %d", courierQueryReply.ReplyType)
+		d.log.Errorf("handlePigeonholeARQReply: unexpected reply type %d for envelope operation", courierQueryReply.ReplyType)
 		return
 	}
 
@@ -1071,6 +1085,247 @@ func (d *Daemon) handlePigeonholeARQReply(arqMessage *ARQMessage, reply *sphinxR
 
 	d.log.Errorf("handlePigeonholeARQReply: Unexpected state/reply combination: state=%d, replyType=%d",
 		arqMessage.State, courierEnvelopeReply.ReplyType)
+}
+
+// handleCopyCommandARQReply handles replies to copy command ARQ messages.
+// Copy commands have a simple protocol: send command, receive single reply with success/error.
+func (d *Daemon) handleCopyCommandARQReply(arqMessage *ARQMessage, courierQueryReply *pigeonhole.CourierQueryReply, conn *incomingConn) {
+	// Verify this is a copy command reply (ReplyType: 1)
+	if courierQueryReply.ReplyType != 1 || courierQueryReply.CopyCommandReply == nil {
+		d.log.Errorf("handleCopyCommandARQReply: expected copy command reply (type 1), got type %d",
+			courierQueryReply.ReplyType)
+		return
+	}
+
+	copyCommandReply := courierQueryReply.CopyCommandReply
+
+	d.log.Debugf("handleCopyCommandARQReply: Received copy command reply, ErrorCode=%d, WriteCapHash=%x",
+		copyCommandReply.ErrorCode, arqMessage.EnvelopeHash[:])
+
+	// Remove from ARQ tracking
+	d.replyLock.Lock()
+	delete(d.arqSurbIDMap, *arqMessage.SURBID)
+	delete(d.arqEnvelopeHashMap, *arqMessage.EnvelopeHash)
+	d.replyLock.Unlock()
+
+	// Send reply to thin client
+	conn.sendResponse(&Response{
+		AppID: arqMessage.AppID,
+		StartResendingCopyCommandReply: &thin.StartResendingCopyCommandReply{
+			QueryID:   arqMessage.QueryID,
+			ErrorCode: copyCommandReply.ErrorCode,
+		},
+	})
+}
+
+// startResendingCopyCommand starts resending a copy command via the ARQ mechanism.
+// It will retry forever until cancelled or successful.
+func (d *Daemon) startResendingCopyCommand(request *Request) {
+	conn := d.listener.getConnection(request.AppID)
+	if conn == nil {
+		d.log.Errorf(errNoConnectionForAppID, request.AppID[:])
+		return
+	}
+
+	req := request.StartResendingCopyCommand
+	if req.QueryID == nil {
+		d.sendStartResendingCopyCommandError(request, thin.ThinClientErrorInvalidRequest)
+		return
+	}
+	if req.WriteCap == nil {
+		d.sendStartResendingCopyCommandError(request, thin.ThinClientErrorInvalidRequest)
+		return
+	}
+
+	// Serialize WriteCap
+	writeCapBytes, err := req.WriteCap.MarshalBinary()
+	if err != nil {
+		d.log.Errorf("startResendingCopyCommand: failed to serialize WriteCap: %s", err)
+		d.sendStartResendingCopyCommandError(request, thin.ThinClientErrorInternalError)
+		return
+	}
+
+	// Create CopyCommand
+	copyCommand := &pigeonhole.CopyCommand{
+		WriteCapLen: uint32(len(writeCapBytes)),
+		WriteCap:    writeCapBytes,
+	}
+
+	// Create CourierQuery with QueryType=1 (copy command)
+	courierQuery := &pigeonhole.CourierQuery{
+		QueryType:   1, // CopyCommand
+		CopyCommand: copyCommand,
+	}
+
+	// Serialize to payload
+	payload, err := courierQuery.MarshalBinary()
+	if err != nil {
+		d.log.Errorf("startResendingCopyCommand: failed to serialize CourierQuery: %s", err)
+		d.sendStartResendingCopyCommandError(request, thin.ThinClientErrorInternalError)
+		return
+	}
+
+	// Compute hash of WriteCap for deduplication/cancellation key
+	writeCapHash := hash.Sum256(writeCapBytes)
+
+	// Get a random Courier
+	_, doc := d.client.CurrentDocument()
+	if doc == nil {
+		d.log.Errorf("startResendingCopyCommand: no PKI document available")
+		d.sendStartResendingCopyCommandError(request, thin.ThinClientErrorInternalError)
+		return
+	}
+
+	destIdHash, recipientQueueID, err := GetRandomCourier(doc)
+	if err != nil {
+		d.log.Errorf("startResendingCopyCommand: failed to get courier: %s", err)
+		d.sendStartResendingCopyCommandError(request, thin.ThinClientErrorInternalError)
+		return
+	}
+
+	// Create a new SURB ID for this send
+	surbID := &[sphinxConstants.SURBIDLength]byte{}
+	_, err = rand.Reader.Read(surbID[:])
+	if err != nil {
+		d.log.Errorf("startResendingCopyCommand: failed to generate SURB ID: %s", err)
+		d.sendStartResendingCopyCommandError(request, thin.ThinClientErrorInternalError)
+		return
+	}
+
+	// Compose the packet
+	pkt, surbKey, rtt, err := d.client.ComposeSphinxPacketForQuery(&thin.SendChannelQuery{
+		DestinationIdHash: destIdHash,
+		RecipientQueueID:  recipientQueueID,
+		Payload:           payload,
+	}, surbID)
+	if err != nil {
+		d.log.Errorf("startResendingCopyCommand: failed to compose packet: %s", err)
+		d.sendStartResendingCopyCommandError(request, thin.ThinClientErrorInternalError)
+		return
+	}
+
+	// Create the ARQ message for copy command
+	message := &ARQMessage{
+		MessageType:        ARQMessageTypeCopyCommand,
+		AppID:              request.AppID,
+		QueryID:            req.QueryID,
+		EnvelopeHash:       &writeCapHash, // Use WriteCap hash as envelope hash for dedup
+		DestinationIdHash:  destIdHash,
+		RecipientQueueID:   recipientQueueID,
+		Payload:            payload,
+		SURBID:             surbID,
+		SURBDecryptionKeys: surbKey,
+		Retransmissions:    0,
+		SentAt:             time.Now(),
+		ReplyETA:           rtt,
+		State:              ARQStateWaitingForACK, // Only one state for copy commands
+	}
+
+	// Store in ARQ maps
+	d.replyLock.Lock()
+	d.arqSurbIDMap[*surbID] = message
+	d.arqEnvelopeHashMap[writeCapHash] = surbID
+	d.replyLock.Unlock()
+
+	// Schedule retry
+	myRtt := message.SentAt.Add(message.ReplyETA)
+	myRtt = myRtt.Add(RoundTripTimeSlop)
+	priority := uint64(myRtt.UnixNano())
+	d.arqTimerQueue.Push(priority, surbID)
+
+	d.log.Debugf("startResendingCopyCommand: Sending copy command, QueryID=%x, WriteCapHash=%x",
+		req.QueryID[:], writeCapHash[:])
+
+	// Send the packet
+	err = d.client.SendPacket(pkt)
+	if err != nil {
+		d.log.Errorf("startResendingCopyCommand: failed to send packet: %s", err)
+		// Don't return error - the ARQ will retry
+	}
+}
+
+func (d *Daemon) sendStartResendingCopyCommandError(request *Request, errorCode uint8) {
+	conn := d.listener.getConnection(request.AppID)
+	if conn == nil {
+		d.log.Errorf(errNoConnectionForAppID, request.AppID[:])
+		return
+	}
+	conn.sendResponse(&Response{
+		AppID: request.AppID,
+		StartResendingCopyCommandReply: &thin.StartResendingCopyCommandReply{
+			QueryID:   request.StartResendingCopyCommand.QueryID,
+			ErrorCode: errorCode,
+		},
+	})
+}
+
+// cancelResendingCopyCommand cancels a previously started copy command resend operation.
+func (d *Daemon) cancelResendingCopyCommand(request *Request) {
+	conn := d.listener.getConnection(request.AppID)
+	if conn == nil {
+		d.log.Errorf(errNoConnectionForAppID, request.AppID[:])
+		return
+	}
+
+	req := request.CancelResendingCopyCommand
+	if req.QueryID == nil {
+		d.sendCancelResendingCopyCommandError(request, thin.ThinClientErrorInvalidRequest)
+		return
+	}
+	if req.WriteCapHash == nil {
+		d.sendCancelResendingCopyCommandError(request, thin.ThinClientErrorInvalidRequest)
+		return
+	}
+
+	// Look up SURB ID from EnvelopeHash map (using WriteCapHash as the key)
+	d.replyLock.Lock()
+	surbID, ok := d.arqEnvelopeHashMap[*req.WriteCapHash]
+	var arqMessage *ARQMessage
+	if ok && surbID != nil {
+		arqMessage = d.arqSurbIDMap[*surbID]
+		delete(d.arqSurbIDMap, *surbID)
+		delete(d.arqEnvelopeHashMap, *req.WriteCapHash)
+	}
+	d.replyLock.Unlock()
+
+	if !ok {
+		d.log.Debugf("cancelResendingCopyCommand: WriteCapHash %x not found", req.WriteCapHash[:])
+		// Still send success - the message may have already completed
+	} else if arqMessage != nil {
+		// Send cancellation error to the original StartResendingCopyCommand call
+		d.log.Debugf("cancelResendingCopyCommand: Sending cancellation to original query %x", arqMessage.QueryID[:])
+		conn.sendResponse(&Response{
+			AppID: request.AppID,
+			StartResendingCopyCommandReply: &thin.StartResendingCopyCommandReply{
+				QueryID:   arqMessage.QueryID,
+				ErrorCode: thin.ThinClientErrorStartResendingCancelled,
+			},
+		})
+	}
+
+	// Send success response to the CancelResendingCopyCommand call
+	conn.sendResponse(&Response{
+		AppID: request.AppID,
+		CancelResendingCopyCommandReply: &thin.CancelResendingCopyCommandReply{
+			QueryID:   req.QueryID,
+			ErrorCode: thin.ThinClientSuccess,
+		},
+	})
+}
+
+func (d *Daemon) sendCancelResendingCopyCommandError(request *Request, errorCode uint8) {
+	conn := d.listener.getConnection(request.AppID)
+	if conn == nil {
+		d.log.Errorf(errNoConnectionForAppID, request.AppID[:])
+		return
+	}
+	conn.sendResponse(&Response{
+		AppID: request.AppID,
+		CancelResendingCopyCommandReply: &thin.CancelResendingCopyCommandReply{
+			QueryID:   request.CancelResendingCopyCommand.QueryID,
+			ErrorCode: errorCode,
+		},
+	})
 }
 
 // handlePayloadReply processes a payload reply and sends it to the thin client.

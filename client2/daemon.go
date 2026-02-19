@@ -403,6 +403,10 @@ func (d *Daemon) egressWorker() {
 				d.startResendingEncryptedMessage(request)
 			case request.CancelResendingEncryptedMessage != nil:
 				d.cancelResendingEncryptedMessage(request)
+			case request.StartResendingCopyCommand != nil:
+				d.startResendingCopyCommand(request)
+			case request.CancelResendingCopyCommand != nil:
+				d.cancelResendingCopyCommand(request)
 			case request.NextMessageBoxIndex != nil:
 				d.nextMessageBoxIndex(request)
 

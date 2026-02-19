@@ -12,7 +12,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/rand"
 	"github.com/katzenpost/katzenpost/client2/constants"
 )
@@ -277,20 +276,13 @@ func TestCreateCourierEnvelopesFromPayload(t *testing.T) {
 	require.Equal(t, aliceDoc.Sum256(), bobDoc.Sum256(), "Alice and Bob must have the same PKI document")
 	t.Logf("Using PKI document for epoch %d", currentEpoch)
 
-	// Find courier service
-	courierService, err := aliceThinClient.GetService("courier")
-	require.NoError(t, err, "Courier service not found in PKI document")
-	courierNodeIDHash := hash.Sum256(courierService.MixDescriptor.IdentityKey)
-	courierQueueID := courierService.RecipientQueueID
-	t.Logf("Found courier service at node %x, queue %s", courierNodeIDHash[:8], courierQueueID)
-
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Minute)
 	defer cancel()
 
 	// Step 1: Alice creates destination WriteCap for the final payload
 	t.Log("=== Step 1: Alice creates destination WriteCap ===")
 	destSeed := make([]byte, 32)
-	_, err = rand.Reader.Read(destSeed)
+	_, err := rand.Reader.Read(destSeed)
 	require.NoError(t, err)
 
 	destWriteCap, bobReadCap, destFirstIndex, err := aliceThinClient.NewKeypair(ctx, destSeed)
@@ -368,17 +360,12 @@ func TestCreateCourierEnvelopesFromPayload(t *testing.T) {
 	t.Log("Waiting for copy stream chunks to propagate to temporary channel (30 seconds)")
 	time.Sleep(30 * time.Second)
 
-	// Step 6: Send Copy command to courier
-	t.Log("=== Step 6: Sending Copy command to courier ===")
-	t.Logf("Alice: Sending Copy command to courier node %x, queue %s...", courierNodeIDHash[:8], courierQueueID)
-	errorCode, err := aliceThinClient.SendCopyCommand(ctx, tempWriteCap, &courierNodeIDHash, courierQueueID)
+	// Step 6: Send Copy command to courier using ARQ
+	t.Log("=== Step 6: Sending Copy command to courier via ARQ ===")
+	t.Log("Alice: Sending Copy command to courier using StartResendingCopyCommand (ARQ)...")
+	err = aliceThinClient.StartResendingCopyCommand(ctx, tempWriteCap)
 	require.NoError(t, err)
-	require.Equal(t, uint8(0), errorCode, "Copy command returned error code %d", errorCode)
-	t.Logf("Alice: Copy command sent successfully to courier (error code: %d)", errorCode)
-
-	// Wait for courier to execute the copy command
-	t.Log("Waiting for courier to execute Copy command (30 seconds)")
-	time.Sleep(30 * time.Second)
+	t.Log("Alice: Copy command completed successfully via ARQ")
 
 	// Step 7: Bob reads all chunks from the destination channel
 	t.Log("=== Step 7: Bob reads all chunks and reconstructs payload ===")

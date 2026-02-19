@@ -313,6 +313,42 @@ func (e *CancelResendingEncryptedMessageReply) String() string {
 	return "CancelResendingEncryptedMessageReply: success"
 }
 
+// StartResendingCopyCommandReply is the reply to a StartResendingCopyCommand request.
+type StartResendingCopyCommandReply struct {
+	// QueryID is used for correlating this reply with the StartResendingCopyCommand request
+	QueryID *[QueryIDLength]byte `cbor:"query_id"`
+
+	// ErrorCode indicates the reason for a failure to execute the copy command if any.
+	// Otherwise it is set to zero for success.
+	ErrorCode uint8 `cbor:"error_code"`
+}
+
+// String returns a string representation of the StartResendingCopyCommandReply.
+func (e *StartResendingCopyCommandReply) String() string {
+	if e.ErrorCode != ThinClientSuccess {
+		return fmt.Sprintf("StartResendingCopyCommandReply (error: %s)", ThinClientErrorToString(e.ErrorCode))
+	}
+	return "StartResendingCopyCommandReply: success"
+}
+
+// CancelResendingCopyCommandReply is the reply to a CancelResendingCopyCommand request.
+type CancelResendingCopyCommandReply struct {
+	// QueryID is used for correlating this reply with the CancelResendingCopyCommand request
+	QueryID *[QueryIDLength]byte `cbor:"query_id"`
+
+	// ErrorCode indicates the reason for a failure to cancel the copy command if any.
+	// Otherwise it is set to zero for success.
+	ErrorCode uint8 `cbor:"error_code"`
+}
+
+// String returns a string representation of the CancelResendingCopyCommandReply.
+func (e *CancelResendingCopyCommandReply) String() string {
+	if e.ErrorCode != ThinClientSuccess {
+		return fmt.Sprintf("CancelResendingCopyCommandReply (error: %s)", ThinClientErrorToString(e.ErrorCode))
+	}
+	return "CancelResendingCopyCommandReply: success"
+}
+
 // NextMessageBoxIndexReply is the reply to a NextMessageBoxIndex request.
 type NextMessageBoxIndexReply struct {
 	// QueryID is used for correlating this reply with the NextMessageBoxIndex request
