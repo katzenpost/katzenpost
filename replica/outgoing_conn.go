@@ -383,13 +383,20 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 			continue
 		case cmd := <-c.ch:
 			if err := w.SendCommand(cmd); err != nil {
-				c.log.Debugf("SendCommand failed: %v", err)
+				c.log.Debugf("SendCommand failed: %v, queuing for retry", err)
+				// Re-queue the command for retry since we don't know if it was delivered
+				idHash := hash.Sum256(c.dst.IdentityKey)
+				c.co.QueueForRetry(cmd, idHash)
 				return
 			}
 
 			response, err := w.RecvCommand()
 			if err != nil {
-				c.log.Debugf("Failed to receive command: %v", err)
+				c.log.Debugf("Failed to receive command: %v, queuing for retry", err)
+				// Re-queue the command for retry since we don't know if it was delivered
+				// The command was sent but we didn't get acknowledgment
+				idHash := hash.Sum256(c.dst.IdentityKey)
+				c.co.QueueForRetry(cmd, idHash)
 				return
 			}
 			switch responseCmd := response.(type) {
