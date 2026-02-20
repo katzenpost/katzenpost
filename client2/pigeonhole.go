@@ -1392,19 +1392,31 @@ func (d *Daemon) startResendingCopyCommand(request *Request) {
 	// Compute hash of WriteCap for deduplication/cancellation key
 	writeCapHash := hash.Sum256(writeCapBytes)
 
-	// Get a random Courier
-	_, doc := d.client.CurrentDocument()
-	if doc == nil {
-		d.log.Errorf("startResendingCopyCommand: no PKI document available")
-		d.sendStartResendingCopyCommandError(request, thin.ThinClientErrorInternalError)
-		return
-	}
+	// Get courier - use specified courier if provided, otherwise random
+	var destIdHash *[32]byte
+	var recipientQueueID []byte
 
-	destIdHash, recipientQueueID, err := GetRandomCourier(doc)
-	if err != nil {
-		d.log.Errorf("startResendingCopyCommand: failed to get courier: %s", err)
-		d.sendStartResendingCopyCommandError(request, thin.ThinClientErrorInternalError)
-		return
+	if req.CourierIdentityHash != nil && len(req.CourierQueueID) > 0 {
+		// Use the specified courier
+		destIdHash = req.CourierIdentityHash
+		recipientQueueID = req.CourierQueueID
+		d.log.Debugf("startResendingCopyCommand: using specified courier %x", destIdHash[:8])
+	} else {
+		// Get a random Courier
+		_, doc := d.client.CurrentDocument()
+		if doc == nil {
+			d.log.Errorf("startResendingCopyCommand: no PKI document available")
+			d.sendStartResendingCopyCommandError(request, thin.ThinClientErrorInternalError)
+			return
+		}
+
+		var err error
+		destIdHash, recipientQueueID, err = GetRandomCourier(doc)
+		if err != nil {
+			d.log.Errorf("startResendingCopyCommand: failed to get courier: %s", err)
+			d.sendStartResendingCopyCommandError(request, thin.ThinClientErrorInternalError)
+			return
+		}
 	}
 
 	// Create a new SURB ID for this send
