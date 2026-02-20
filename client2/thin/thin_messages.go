@@ -267,6 +267,15 @@ type StartResendingCopyCommand struct {
 	// the data to be copied. The courier will derive a ReadCap from this
 	// to read the data.
 	WriteCap *bacap.WriteCap `cbor:"write_cap"`
+
+	// CourierIdentityHash is optional. If set, the daemon will send the copy command
+	// to this specific courier instead of selecting a random one.
+	// This enables nested copy commands with different couriers per layer.
+	CourierIdentityHash *[32]byte `cbor:"courier_identity_hash,omitempty"`
+
+	// CourierQueueID is optional. Must be set if CourierIdentityHash is set.
+	// This is the recipient queue ID for the specified courier.
+	CourierQueueID []byte `cbor:"courier_queue_id,omitempty"`
 }
 
 // CancelResendingCopyCommand requests the daemon to cancel resending a copy command.
