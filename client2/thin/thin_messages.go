@@ -242,8 +242,9 @@ type StartResendingEncryptedMessage struct {
 	// encrypting the next read.
 	NextMessageIndex []byte `cbor:"next_message_index"`
 
-	// ReplyIndex is the index of the reply that was actually used when processing
-	ReplyIndex *uint8 `cbor:"reply_index"`
+	// ReplyIndex is the index of the reply that was actually used when processing.
+	// This field is optional - if nil, the daemon will use the default reply index.
+	ReplyIndex *uint8 `cbor:"reply_index,omitempty"`
 
 	// EnvelopeDescriptor contains the serialized EnvelopeDescriptor that
 	// contains the private key material needed to decrypt the envelope reply.
