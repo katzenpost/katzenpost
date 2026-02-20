@@ -838,3 +838,60 @@ func TestNestedCopyCommands(t *testing.T) {
 	require.Equal(t, payload, received)
 	t.Logf("✓ Bob received: %s", string(received[4:]))
 }
+
+// TestTombstoning tests the tombstoning API:
+// 1. Alice writes a message to a box
+// 2. Bob reads and verifies the message
+// 3. Alice tombstones the box (overwrites with zeros)
+// 4. Bob reads again and verifies the tombstone
+func TestTombstoning(t *testing.T) {
+	alice := setupThinClient(t)
+	defer alice.Close()
+	bob := setupThinClient(t)
+	defer bob.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+
+	geo := alice.GetConfig().PigeonholeGeometry
+
+	// Create keypair
+	seed := make([]byte, 32)
+	_, err := rand.Reader.Read(seed)
+	require.NoError(t, err)
+
+	writeCap, readCap, firstIndex, err := alice.NewKeypair(ctx, seed)
+	require.NoError(t, err)
+	t.Log("✓ Created keypair")
+
+	// Step 1: Alice writes a message
+	message := []byte("Secret message that will be tombstoned")
+	ciphertext, envDesc, envHash, epoch, err := alice.EncryptWrite(ctx, message, writeCap, firstIndex)
+	require.NoError(t, err)
+
+	replyIndex := uint8(0)
+	_, err = alice.StartResendingEncryptedMessage(ctx, nil, writeCap, nil, &replyIndex, envDesc, ciphertext, envHash, epoch)
+	require.NoError(t, err)
+	t.Log("✓ Alice wrote message")
+
+	// Step 2: Bob reads and verifies
+	ciphertext, nextIdx, envDesc, envHash, epoch, err := bob.EncryptRead(ctx, readCap, firstIndex)
+	require.NoError(t, err)
+	plaintext, err := bob.StartResendingEncryptedMessage(ctx, readCap, nil, nextIdx, &replyIndex, envDesc, ciphertext, envHash, epoch)
+	require.NoError(t, err)
+	require.Equal(t, message, plaintext)
+	t.Logf("✓ Bob read message: %q", string(plaintext))
+
+	// Step 3: Alice tombstones the box
+	err = alice.TombstoneBox(ctx, geo, writeCap, firstIndex)
+	require.NoError(t, err)
+	t.Log("✓ Alice tombstoned the box")
+
+	// Step 4: Bob reads again and verifies tombstone
+	ciphertext, nextIdx, envDesc, envHash, epoch, err = bob.EncryptRead(ctx, readCap, firstIndex)
+	require.NoError(t, err)
+	plaintext, err = bob.StartResendingEncryptedMessage(ctx, readCap, nil, nextIdx, &replyIndex, envDesc, ciphertext, envHash, epoch)
+	require.NoError(t, err)
+	require.True(t, thin.IsTombstonePlaintext(geo, plaintext), "Expected tombstone plaintext (all zeros)")
+	t.Log("✓ Bob verified tombstone")
+}
