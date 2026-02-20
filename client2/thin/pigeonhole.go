@@ -652,6 +652,92 @@ func (t *ThinClient) StartResendingCopyCommand(ctx context.Context, writeCap *ba
 	}
 }
 
+// StartResendingCopyCommandWithCourier sends a copy command to a specific courier.
+//
+// This method is like StartResendingCopyCommand but allows specifying which courier
+// should process the copy command. This is useful for nested copy commands where
+// different couriers should handle different layers for improved privacy.
+//
+// Parameters:
+//   - ctx: Context for cancellation and timeout control
+//   - writeCap: Write capability for the temporary copy stream channel
+//   - courierIdentityHash: Hash of the courier's identity key
+//   - courierQueueID: Queue ID for the courier service
+//
+// Returns:
+//   - error: Any error encountered during the operation
+func (t *ThinClient) StartResendingCopyCommandWithCourier(
+	ctx context.Context,
+	writeCap *bacap.WriteCap,
+	courierIdentityHash *[32]byte,
+	courierQueueID []byte,
+) error {
+	if ctx == nil {
+		return errContextCannotBeNil
+	}
+	if writeCap == nil {
+		return errors.New("writeCap cannot be nil")
+	}
+	if courierIdentityHash == nil {
+		return errors.New("courierIdentityHash cannot be nil")
+	}
+	if len(courierQueueID) == 0 {
+		return errors.New("courierQueueID cannot be empty")
+	}
+
+	queryID := t.NewQueryID()
+	req := &Request{
+		StartResendingCopyCommand: &StartResendingCopyCommand{
+			QueryID:             queryID,
+			WriteCap:            writeCap,
+			CourierIdentityHash: courierIdentityHash,
+			CourierQueueID:      courierQueueID,
+		},
+	}
+
+	eventSink := t.EventSink()
+	defer t.StopEventSink(eventSink)
+
+	err := t.writeMessage(req)
+	if err != nil {
+		return err
+	}
+
+	for {
+		var event Event
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case event = <-eventSink:
+		case <-t.HaltCh():
+			return errHalting
+		}
+
+		switch v := event.(type) {
+		case *StartResendingCopyCommandReply:
+			if v.QueryID == nil {
+				t.log.Debugf("StartResendingCopyCommandWithCourier: Received reply with nil QueryID, ignoring")
+				continue
+			}
+			if !bytes.Equal(v.QueryID[:], queryID[:]) {
+				t.log.Debugf("StartResendingCopyCommandWithCourier: Received reply with mismatched QueryID, ignoring")
+				continue
+			}
+			if v.ErrorCode != ThinClientSuccess {
+				return errorCodeToSentinel(v.ErrorCode)
+			}
+			t.log.Debugf("StartResendingCopyCommandWithCourier: Copy command completed successfully")
+			return nil
+		case *ConnectionStatusEvent:
+			t.isConnected = v.IsConnected
+		case *NewDocumentEvent:
+			// Ignore PKI document updates
+		default:
+			// Ignore other events
+		}
+	}
+}
+
 // CancelResendingCopyCommand cancels ARQ resending for a copy command.
 //
 // This method stops the automatic repeat request (ARQ) for a previously started
