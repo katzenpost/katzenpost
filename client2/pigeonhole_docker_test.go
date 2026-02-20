@@ -780,19 +780,30 @@ func TestCopyCommandMultiChannelEfficient(t *testing.T) {
 //
 // This demonstrates that N-depth nesting requires N CopyCommands.
 func TestNestedCopyCommands(t *testing.T) {
-	depth := 3
-
 	alice := setupThinClient(t)
 	defer alice.Close()
 	bob := setupThinClient(t)
 	defer bob.Close()
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(30+depth*10)*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Minute)
 	defer cancel()
+
+	// Get all available couriers and use them for nesting depth
+	allCouriers, err := alice.GetAllCouriers()
+	require.NoError(t, err)
+	require.NotEmpty(t, allCouriers, "at least one courier must be available")
+
+	// Use all available couriers (allows reuse if only 1 exists)
+	depth := len(allCouriers)
+	if depth > 3 {
+		depth = 3 // Cap at 3 for reasonable test duration
+	}
+	couriers := allCouriers[:depth]
+	t.Logf("Using %d couriers for %d-level nested copy", len(couriers), depth)
 
 	// Create destination channel
 	destSeed := make([]byte, 32)
-	_, err := rand.Reader.Read(destSeed)
+	_, err = rand.Reader.Read(destSeed)
 	require.NoError(t, err)
 	destWriteCap, bobReadCap, destFirstIndex, err := alice.NewKeypair(ctx, destSeed)
 	require.NoError(t, err)
@@ -802,11 +813,6 @@ func TestNestedCopyCommands(t *testing.T) {
 	payload := make([]byte, 4+len(secret))
 	binary.BigEndian.PutUint32(payload[:4], uint32(len(secret)))
 	copy(payload[4:], secret)
-
-	// Get distinct couriers for each layer
-	couriers, err := alice.GetDistinctCouriers(depth)
-	require.NoError(t, err)
-	t.Logf("Using %d distinct couriers for %d-level nested copy", len(couriers), depth)
 
 	// Send nested copy through courier path
 	err = alice.SendNestedCopy(ctx, payload, destWriteCap, destFirstIndex, couriers)

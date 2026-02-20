@@ -33,7 +33,7 @@ no_mixdecoy?=true
 mixes=3
 auths=3
 gateways=1
-serviceNodes=1
+serviceNodes=3
 
 # Parameters
 sr=0
@@ -200,12 +200,12 @@ watch-mixes:
 	tail -F $(net_name)/mix*/katzenpost.log
 
 watch-courier:
-	@echo "Monitoring courier service log (Ctrl+C to exit)..."
-	tail -F $(net_name)/servicenode1/courier/courier.log
+	@echo "Monitoring all courier service logs (Ctrl+C to exit)..."
+	tail -F $(net_name)/servicenode*/courier/courier.log
 
 watch-servicenode:
-	@echo "Monitoring service node log (Ctrl+C to exit)..."
-	tail -F $(net_name)/servicenode1/katzenpost.log
+	@echo "Monitoring all service node logs (Ctrl+C to exit)..."
+	tail -F $(net_name)/servicenode*/katzenpost.log
 
 watch-gateway:
 	@echo "Monitoring gateway log (Ctrl+C to exit)..."
@@ -217,8 +217,8 @@ watch-all-separate:
 	@(tail -F $(net_name)/replica*/katzenpost.log | sed 's/^/[REPLICA] /' &) ; \
 	(tail -F $(net_name)/auth*/katzenpost.log | sed 's/^/[AUTH] /' &) ; \
 	(tail -F $(net_name)/mix*/katzenpost.log | sed 's/^/[MIX] /' &) ; \
-	(tail -F $(net_name)/servicenode1/katzenpost.log | sed 's/^/[SERVICENODE] /' &) ; \
-	(tail -F $(net_name)/servicenode1/courier/courier.log | sed 's/^/[COURIER] /' &) ; \
+	(tail -F $(net_name)/servicenode*/katzenpost.log | sed 's/^/[SERVICENODE] /' &) ; \
+	(tail -F $(net_name)/servicenode*/courier/courier.log | sed 's/^/[COURIER] /' &) ; \
 	(tail -F $(net_name)/gateway1/katzenpost.log | sed 's/^/[GATEWAY] /' &) ; \
 	wait
 
