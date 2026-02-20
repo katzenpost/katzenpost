@@ -408,7 +408,11 @@ func (t *ThinClient) StartResendingEncryptedMessage(ctx context.Context, readCap
 	isRead := readCap != nil
 
 	// Send request - the daemon will handle the FSM for ACK and payload
-	t.log.Debugf("StartResendingEncryptedMessage: Sending request (isRead=%v, replyIndex=%d)", isRead, *replyIndex)
+	if replyIndex != nil {
+		t.log.Debugf("StartResendingEncryptedMessage: Sending request (isRead=%v, replyIndex=%d)", isRead, *replyIndex)
+	} else {
+		t.log.Debugf("StartResendingEncryptedMessage: Sending request (isRead=%v, replyIndex=nil)", isRead)
+	}
 
 	queryID := t.NewQueryID()
 	req := &Request{
