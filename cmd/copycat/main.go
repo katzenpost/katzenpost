@@ -24,6 +24,9 @@ import (
 
 const (
 	defaultTimeout = 120 * time.Second
+	// chunkSize is the size of each chunk when streaming input data.
+	// Using 10MB chunks to balance memory usage and RPC overhead.
+	chunkSize = 10 * 1024 * 1024
 )
 
 func main() {
@@ -241,11 +244,6 @@ func runSend(configFile string, thinClientOnly bool, writeCapB64, inputFile, sta
 		input = os.Stdin
 	}
 
-	payload, err := io.ReadAll(input)
-	if err != nil {
-		return fmt.Errorf("failed to read input: %w", err)
-	}
-
 	// Create temporary copy stream channel
 	seed := make([]byte, 32)
 	if _, err := rand.Reader.Read(seed); err != nil {
@@ -259,36 +257,60 @@ func runSend(configFile string, thinClientOnly bool, writeCapB64, inputFile, sta
 	// Generate stream ID
 	streamID := thinClient.NewStreamID()
 
-	// Create courier envelopes from payload
-	chunks, err := thinClient.CreateCourierEnvelopesFromPayload(ctx, streamID, payload, writeCap, startIndex, true)
-	if err != nil {
-		return fmt.Errorf("failed to create courier envelopes: %w", err)
-	}
-
-	fmt.Fprintf(os.Stderr, "Writing %d chunks to copy stream...\n", len(chunks))
-
-	// Write each chunk to the copy stream
+	// Stream input in chunks to avoid loading entire file into RAM
 	copyIndex := copyStartIndex
-	for i, chunk := range chunks {
-		ciphertext, envDesc, envHash, epoch, err := thinClient.EncryptWrite(ctx, chunk, copyWriteCap, copyIndex)
-		if err != nil {
-			return fmt.Errorf("failed to encrypt chunk %d: %w", i, err)
+	chunkNum := 0
+	buf := make([]byte, chunkSize)
+
+	for {
+		n, readErr := io.ReadFull(input, buf)
+		if readErr != nil && readErr != io.EOF && readErr != io.ErrUnexpectedEOF {
+			return fmt.Errorf("failed to read input: %w", readErr)
 		}
 
-		nextIndexBytes, _ := copyIndex.MarshalBinary()
-		var replyIndex uint8 = 0
-		_, err = thinClient.StartResendingEncryptedMessage(ctx, nil, copyWriteCap, nextIndexBytes, &replyIndex, envDesc, ciphertext, envHash, epoch)
-		if err != nil {
-			return fmt.Errorf("failed to send chunk %d: %w", i, err)
+		// Determine if this is the last chunk
+		isLast := readErr == io.EOF || readErr == io.ErrUnexpectedEOF
+
+		// Skip empty final reads
+		if n == 0 && isLast {
+			break
 		}
 
-		// Advance to next index
-		copyIndex, err = thinClient.NextMessageBoxIndex(ctx, copyIndex)
+		payload := buf[:n]
+
+		// Create courier envelopes from this chunk
+		chunks, err := thinClient.CreateCourierEnvelopesFromPayload(ctx, streamID, payload, writeCap, startIndex, isLast)
 		if err != nil {
-			return fmt.Errorf("failed to get next index: %w", err)
+			return fmt.Errorf("failed to create courier envelopes for chunk %d: %w", chunkNum, err)
 		}
 
-		fmt.Fprintf(os.Stderr, "Wrote chunk %d/%d\n", i+1, len(chunks))
+		// Write each envelope to the copy stream
+		for i, chunk := range chunks {
+			ciphertext, envDesc, envHash, epoch, err := thinClient.EncryptWrite(ctx, chunk, copyWriteCap, copyIndex)
+			if err != nil {
+				return fmt.Errorf("failed to encrypt chunk %d envelope %d: %w", chunkNum, i, err)
+			}
+
+			nextIndexBytes, _ := copyIndex.MarshalBinary()
+			var replyIndex uint8 = 0
+			_, err = thinClient.StartResendingEncryptedMessage(ctx, nil, copyWriteCap, nextIndexBytes, &replyIndex, envDesc, ciphertext, envHash, epoch)
+			if err != nil {
+				return fmt.Errorf("failed to send chunk %d envelope %d: %w", chunkNum, i, err)
+			}
+
+			// Advance to next index
+			copyIndex, err = thinClient.NextMessageBoxIndex(ctx, copyIndex)
+			if err != nil {
+				return fmt.Errorf("failed to get next index: %w", err)
+			}
+		}
+
+		fmt.Fprintf(os.Stderr, "Processed chunk %d (%d bytes, %d envelopes)\n", chunkNum, n, len(chunks))
+		chunkNum++
+
+		if isLast {
+			break
+		}
 	}
 
 	// Send Copy command to courier using ARQ for reliable delivery
