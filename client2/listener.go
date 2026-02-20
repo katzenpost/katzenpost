@@ -125,8 +125,11 @@ func (l *listener) worker() {
 func (l *listener) onNewConn(conn net.Conn) {
 	// Get document if available (don't block or reject if not ready)
 	var docBlob []byte
-	if l.client.pki != nil {
-		docBlob, _ = l.client.pki.currentDocument()
+	l.client.RLock()
+	pki := l.client.pki
+	l.client.RUnlock()
+	if pki != nil {
+		docBlob, _ = pki.currentDocument()
 	}
 
 	c := newIncomingConn(l, conn)

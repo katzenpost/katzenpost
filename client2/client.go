@@ -72,10 +72,13 @@ func (c *Client) Shutdown() {
 
 	go func() {
 		defer clientShutdownWg.Done()
-		if c.pki != nil {
+		c.RLock()
+		pki := c.pki
+		c.RUnlock()
+		if pki != nil {
 			start := time.Now()
 			c.log.Debug("Stopping PKI worker")
-			c.pki.Halt()
+			pki.Halt()
 			c.log.Debugf("PKI worker stopped in %v", time.Since(start))
 		}
 	}()
@@ -125,7 +128,9 @@ func (c *Client) Start() error {
 	if err != nil {
 		return err
 	}
+	c.Lock()
 	c.pki = newPKI(c)
+	c.Unlock()
 	c.pki.start()
 	c.conn.start()
 	return nil
