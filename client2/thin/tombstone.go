@@ -43,22 +43,27 @@ func (c *ThinClient) TombstoneBox(
 	if err := g.Validate(); err != nil {
 		return err
 	}
+	if writeCap == nil {
+		return fmt.Errorf("nil writeCap")
+	}
+	if boxIndex == nil {
+		return fmt.Errorf("nil boxIndex")
+	}
 
 	tomb := make([]byte, g.MaxPlaintextPayloadLength)
 
-	// EncryptWrite returns: messageCiphertext, envelopeDescriptor, envelopeHash, replicaEpoch, error
-	messageCiphertext, envelopeDescriptor, envelopeHash, replicaEpoch, err := c.EncryptWrite(ctx, tomb, writeCap, boxIndex)
+	messageCiphertext, envelopeDescriptor, envelopeHash, replicaEpoch, err :=
+		c.EncryptWrite(ctx, tomb, writeCap, boxIndex)
 	if err != nil {
 		return fmt.Errorf("EncryptWrite failed: %w", err)
 	}
 
-	// Tombstoning is a write operation, so readCap must be nil
 	_, err = c.StartResendingEncryptedMessage(
 		ctx,
-		nil, // readCap - nil for write operations
+		nil,
 		writeCap,
-		nil, // nextMessageIndex - not needed for writes
-		nil, // replyIndex - not needed for writes
+		nil,
+		nil,
 		envelopeDescriptor,
 		messageCiphertext,
 		envelopeHash,
@@ -100,48 +105,32 @@ func (c *ThinClient) TombstoneRange(
 		return &TombstoneRangeResult{Tombstoned: 0, Next: start}, nil
 	}
 
-	tomb := make([]byte, g.MaxPlaintextPayloadLength)
-
-	// Derive ReadCap from WriteCap
-	readCap := writeCap.ReadCap()
-
 	cur := start
 	var done uint32
 
 	for done < maxCount {
-		// EncryptWrite returns: messageCiphertext, envelopeDescriptor, envelopeHash, replicaEpoch, error
-		messageCiphertext, envelopeDescriptor, envelopeHash, replicaEpoch, err := c.EncryptWrite(ctx, tomb, writeCap, cur)
-		if err != nil {
-			return &TombstoneRangeResult{Tombstoned: done, Next: cur},
-				fmt.Errorf("EncryptWrite failed: %w", err)
-		}
 
-		// StartResendingEncryptedMessage returns: plaintext, error
-		_, err = c.StartResendingEncryptedMessage(
-			ctx,
-			readCap,
-			writeCap,
-			nil, // nextMessageIndex - not needed for tombstoning
-			nil, // replyIndex
-			envelopeDescriptor,
-			messageCiphertext,
-			envelopeHash,
-			replicaEpoch,
-		)
-		if err != nil {
-			return &TombstoneRangeResult{Tombstoned: done, Next: cur},
-				fmt.Errorf("StartResendingEncryptedMessage failed: %w", err)
+		if err := c.TombstoneBox(ctx, g, writeCap, cur); err != nil {
+			return &TombstoneRangeResult{
+				Tombstoned: done,
+				Next:       cur,
+			}, err
 		}
 
 		done++
 
-		// Advance to next message box index
 		next, err := cur.NextIndex()
 		if err != nil {
-			return &TombstoneRangeResult{Tombstoned: done, Next: cur}, err
+			return &TombstoneRangeResult{
+				Tombstoned: done,
+				Next:       cur,
+			}, err
 		}
 		cur = next
 	}
 
-	return &TombstoneRangeResult{Tombstoned: done, Next: cur}, nil
+	return &TombstoneRangeResult{
+		Tombstoned: done,
+		Next:       cur,
+	}, nil
 }
