@@ -500,11 +500,13 @@ func (t *ThinClient) Close() error {
 		return err
 	}
 
-	// Halt workers before closing connection to avoid spurious error logs
+	// Halt workers before closing connection to avoid spurious error logs.
+	// Note: We intentionally do NOT close eventSink here. Closing a channel
+	// that workers might still be sending to can cause a panic. Workers will
+	// exit when HaltCh() is closed, and consumers should also monitor HaltCh()
+	// to know when to stop reading from eventSink.
 	t.Halt()
-	err = t.conn.Close()
-	close(t.eventSink)
-	return err
+	return t.conn.Close()
 }
 
 // Dial establishes a connection to the client daemon and initializes the client.
@@ -948,6 +950,10 @@ func (t *ThinClient) worker() {
 // Important: Always call StopEventSink() when done with the channel to prevent
 // resource leaks and ensure proper cleanup.
 //
+// Note: The event sink channel is NOT closed when the client shuts down.
+// Consumers should also select on HaltCh() to detect shutdown, or they
+// can check for a ShutdownEvent in the event stream.
+//
 // Returns:
 //   - chan Event: A buffered channel that will receive all client events
 //
@@ -956,14 +962,19 @@ func (t *ThinClient) worker() {
 //	eventSink := client.EventSink()
 //	defer client.StopEventSink(eventSink)
 //
-//	for event := range eventSink {
-//		switch e := event.(type) {
-//		case *MessageReplyEvent:
-//			fmt.Printf("Received reply: %s\n", e.Payload)
-//		case *ConnectionStatusEvent:
-//			fmt.Printf("Connection status: %v\n", e.IsConnected)
-//		case *NewDocumentEvent:
-//			fmt.Printf("New PKI document for epoch %d\n", e.Document.Epoch)
+//	for {
+//		select {
+//		case event := <-eventSink:
+//			switch e := event.(type) {
+//			case *MessageReplyEvent:
+//				fmt.Printf("Received reply: %s\n", e.Payload)
+//			case *ConnectionStatusEvent:
+//				fmt.Printf("Connection status: %v\n", e.IsConnected)
+//			case *NewDocumentEvent:
+//				fmt.Printf("New PKI document for epoch %d\n", e.Document.Epoch)
+//			}
+//		case <-client.HaltCh():
+//			return // Client is shutting down
 //		}
 //	}
 func (t *ThinClient) EventSink() chan Event {
