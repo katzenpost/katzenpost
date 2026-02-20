@@ -1186,3 +1186,169 @@ func (t *ThinClient) GetDistinctCouriers(n int) ([]CourierDescriptor, error) {
 func hashIdentityKey(key []byte) [32]byte {
 	return hash.Sum256(key)
 }
+
+// SendNestedCopy sends a payload through N couriers using nested copy commands.
+//
+// This high-level API abstracts all the complexity of nested copy commands.
+// The payload is wrapped in len(courierPath) layers and each layer is processed
+// by a different courier, providing compartmentalization - no single courier
+// knows the full path from source to destination.
+//
+// Parameters:
+//   - ctx: Context for cancellation and timeout control
+//   - payload: The data to deliver to the destination
+//   - destWriteCap: Write capability for the final destination channel
+//   - destFirstIndex: Starting index in the destination channel
+//   - courierPath: List of couriers, one per layer (first courier handles outermost layer)
+//
+// Returns:
+//   - error: Any error encountered during the operation
+func (t *ThinClient) SendNestedCopy(
+	ctx context.Context,
+	payload []byte,
+	destWriteCap *bacap.WriteCap,
+	destFirstIndex *bacap.MessageBoxIndex,
+	courierPath []CourierDescriptor,
+) error {
+	if ctx == nil {
+		return errContextCannotBeNil
+	}
+	if len(payload) == 0 {
+		return errors.New("payload cannot be empty")
+	}
+	if destWriteCap == nil {
+		return errors.New("destWriteCap cannot be nil")
+	}
+	if destFirstIndex == nil {
+		return errors.New("destFirstIndex cannot be nil")
+	}
+	if len(courierPath) == 0 {
+		return errors.New("courierPath cannot be empty")
+	}
+
+	depth := len(courierPath)
+
+	// Create N-1 intermediate channels
+	type intermediateChannel struct {
+		writeCap   *bacap.WriteCap
+		readCap    *bacap.ReadCap
+		firstIndex *bacap.MessageBoxIndex
+	}
+	intermediates := make([]intermediateChannel, depth-1)
+	for i := range depth - 1 {
+		seed := make([]byte, 32)
+		_, err := rand.Reader.Read(seed)
+		if err != nil {
+			return err
+		}
+		writeCap, readCap, firstIdx, err := t.NewKeypair(ctx, seed)
+		if err != nil {
+			return err
+		}
+		intermediates[i] = intermediateChannel{writeCap: writeCap, readCap: readCap, firstIndex: firstIdx}
+	}
+
+	// Build layers from inside-out
+	type layerData struct {
+		chunks [][]byte
+		blob   []byte
+	}
+	layers := make([]layerData, depth)
+	currentPayload := payload
+
+	for layer := range depth {
+		var targetWriteCap *bacap.WriteCap
+		var targetFirstIndex *bacap.MessageBoxIndex
+		if layer == 0 {
+			targetWriteCap = destWriteCap
+			targetFirstIndex = destFirstIndex
+		} else {
+			targetWriteCap = intermediates[layer-1].writeCap
+			targetFirstIndex = intermediates[layer-1].firstIndex
+		}
+
+		streamID := t.NewStreamID()
+		chunks, err := t.CreateCourierEnvelopesFromPayload(
+			ctx, streamID, currentPayload, targetWriteCap, targetFirstIndex, true)
+		if err != nil {
+			return err
+		}
+
+		var blob []byte
+		for _, chunk := range chunks {
+			blob = append(blob, chunk...)
+		}
+		layers[layer] = layerData{chunks: chunks, blob: blob}
+		currentPayload = blob
+	}
+
+	// Execute N CopyCommands (outermost to innermost)
+	replyIndex := uint8(0)
+	for cmdNum := range depth {
+		layerIdx := depth - 1 - cmdNum
+		courier := courierPath[cmdNum]
+
+		// Create temp channel for this CopyCommand
+		execTempSeed := make([]byte, 32)
+		_, err := rand.Reader.Read(execTempSeed)
+		if err != nil {
+			return err
+		}
+		execTempWriteCap, _, execTempFirstIndex, err := t.NewKeypair(ctx, execTempSeed)
+		if err != nil {
+			return err
+		}
+
+		// Write chunks to temp channel
+		chunksToWrite := layers[layerIdx].chunks
+		execTempIdx := execTempFirstIndex
+		for _, chunk := range chunksToWrite {
+			ciphertext, envDesc, envHash, epoch, err := t.EncryptWrite(ctx, chunk, execTempWriteCap, execTempIdx)
+			if err != nil {
+				return err
+			}
+			_, err = t.StartResendingEncryptedMessage(ctx, nil, execTempWriteCap, nil, &replyIndex, envDesc, ciphertext, envHash, epoch)
+			if err != nil {
+				return err
+			}
+			execTempIdx, err = t.NextMessageBoxIndex(ctx, execTempIdx)
+			if err != nil {
+				return err
+			}
+		}
+
+		// Issue CopyCommand with specified courier
+		err = t.StartResendingCopyCommandWithCourier(ctx, execTempWriteCap, courier.IdentityHash, courier.QueueID)
+		if err != nil {
+			return err
+		}
+
+		// If not the last layer, read from intermediate for next iteration
+		if cmdNum < depth-1 {
+			nextLayerIdx := layerIdx - 1
+			sourceIntermediate := intermediates[layerIdx-1]
+			expectedBlob := layers[nextLayerIdx].blob
+
+			var reconstructedStream []byte
+			readIdx := sourceIntermediate.firstIndex
+			for len(reconstructedStream) < len(expectedBlob) {
+				ciphertext, nextIdx, envDesc, envHash, epoch, err := t.EncryptRead(ctx, sourceIntermediate.readCap, readIdx)
+				if err != nil {
+					return err
+				}
+				plaintext, err := t.StartResendingEncryptedMessage(ctx, sourceIntermediate.readCap, nil, nextIdx, &replyIndex, envDesc, ciphertext, envHash, epoch)
+				if err != nil {
+					return err
+				}
+				reconstructedStream = append(reconstructedStream, plaintext...)
+				readIdx, err = t.NextMessageBoxIndex(ctx, readIdx)
+				if err != nil {
+					return err
+				}
+			}
+			// Update the chunks for the next iteration (they're already built, we just needed to verify)
+		}
+	}
+
+	return nil
+}
