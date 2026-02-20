@@ -9,6 +9,7 @@ import (
 	"errors"
 
 	"github.com/katzenpost/hpqc/bacap"
+	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/rand"
 )
 
@@ -1137,3 +1138,51 @@ func (t *ThinClient) CreateCourierEnvelopesFromPayloads(ctx context.Context, str
 // 2. Call CreateCourierEnvelopesFromPayload many times until finished.
 // 3. Write envelopes to copy stream using EncryptWrite + StartResendingEncryptedMessage
 // 4. Send Copy command with WriteCap using StartResendingCopyCommand
+
+// CourierDescriptor identifies a specific courier service for routing copy commands.
+type CourierDescriptor struct {
+	IdentityHash *[32]byte
+	QueueID      []byte
+}
+
+// GetAllCouriers returns all available courier services from the current PKI document.
+// Use this to select specific couriers for nested copy commands.
+func (t *ThinClient) GetAllCouriers() ([]CourierDescriptor, error) {
+	services, err := t.GetServices("courier")
+	if err != nil {
+		return nil, err
+	}
+	couriers := make([]CourierDescriptor, len(services))
+	for i, svc := range services {
+		idHash := hashIdentityKey(svc.MixDescriptor.IdentityKey)
+		couriers[i] = CourierDescriptor{
+			IdentityHash: &idHash,
+			QueueID:      svc.RecipientQueueID,
+		}
+	}
+	return couriers, nil
+}
+
+// GetDistinctCouriers returns N distinct random couriers for nested copy commands.
+// Returns an error if fewer than N couriers are available.
+func (t *ThinClient) GetDistinctCouriers(n int) ([]CourierDescriptor, error) {
+	couriers, err := t.GetAllCouriers()
+	if err != nil {
+		return nil, err
+	}
+	if len(couriers) < n {
+		return nil, errors.New("not enough couriers available")
+	}
+	// Shuffle and take first N
+	perm := rand.NewMath().Perm(len(couriers))
+	result := make([]CourierDescriptor, n)
+	for i := 0; i < n; i++ {
+		result[i] = couriers[perm[i]]
+	}
+	return result, nil
+}
+
+// hashIdentityKey computes the hash of an identity key
+func hashIdentityKey(key []byte) [32]byte {
+	return hash.Sum256(key)
+}
