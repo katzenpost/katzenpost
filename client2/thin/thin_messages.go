@@ -158,6 +158,22 @@ func ThinClientErrorToString(errorCode uint8) string {
 		return "Courier cache corruption"
 	case ThinClientPropagationError:
 		return "Propagation error"
+	case ThinClientErrorInvalidWriteCapability:
+		return "Invalid write capability"
+	case ThinClientErrorInvalidReadCapability:
+		return "Invalid read capability"
+	case ThinClientErrorInvalidResumeWriteChannelRequest:
+		return "Invalid resume write channel request"
+	case ThinClientErrorInvalidResumeReadChannelRequest:
+		return "Invalid resume read channel request"
+	case ThinClientImpossibleHashError:
+		return "Impossible hash error"
+	case ThinClientImpossibleNewWriteCapError:
+		return "Failed to create new write capability"
+	case ThinClientImpossibleNewStatefulWriterError:
+		return "Failed to create new stateful writer"
+	case ThinClientCapabilityAlreadyInUse:
+		return "Capability already in use"
 	case ThinClientErrorMKEMDecryptionFailed:
 		return "MKEM decryption failed"
 	case ThinClientErrorBACAPDecryptionFailed:
