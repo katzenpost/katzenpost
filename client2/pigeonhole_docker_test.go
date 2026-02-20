@@ -763,3 +763,72 @@ func TestCopyCommandMultiChannelEfficient(t *testing.T) {
 
 	t.Log("\n✓ SUCCESS: Efficient multi-channel Copy Command test passed! Both payloads packed efficiently and delivered to correct channels!")
 }
+
+// TestNestedCopyCommands tests N-depth nested Copy Commands (matryoshka dolls):
+//
+// The flow for N nested copies:
+//  1. Alice builds N layers from inside out:
+//     - Layer 0 (innermost): CourierEnvelopes(payload) → DEST
+//     - Layer 1: CourierEnvelopes(layer0_stream) → intermediate[0]
+//     - Layer N-1 (outermost): CourierEnvelopes(layerN-2_stream) → intermediate[N-2]
+//  2. Alice writes outermost layer to OUTER_TEMP channel
+//  3. Alice issues N CopyCommands, each time:
+//     - CopyCommand processes current layer
+//     - Read result from intermediate channel
+//     - Write to new exec temp channel (for next CopyCommand)
+//  4. Bob reads DEST → gets plaintext!
+//
+// This demonstrates that N-depth nesting requires N CopyCommands.
+func TestNestedCopyCommands(t *testing.T) {
+	depth := 3
+
+	alice := setupThinClient(t)
+	defer alice.Close()
+	bob := setupThinClient(t)
+	defer bob.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(30+depth*10)*time.Minute)
+	defer cancel()
+
+	// Create destination channel
+	destSeed := make([]byte, 32)
+	_, err := rand.Reader.Read(destSeed)
+	require.NoError(t, err)
+	destWriteCap, bobReadCap, destFirstIndex, err := alice.NewKeypair(ctx, destSeed)
+	require.NoError(t, err)
+
+	// Payload with length prefix
+	secret := []byte("🎁 THE SECRET MESSAGE AT THE CENTER OF THE MATRYOSHKA! 🪆")
+	payload := make([]byte, 4+len(secret))
+	binary.BigEndian.PutUint32(payload[:4], uint32(len(secret)))
+	copy(payload[4:], secret)
+
+	// Get distinct couriers for each layer
+	couriers, err := alice.GetDistinctCouriers(depth)
+	require.NoError(t, err)
+	t.Logf("Using %d distinct couriers for %d-level nested copy", len(couriers), depth)
+
+	// Send nested copy through courier path
+	err = alice.SendNestedCopy(ctx, payload, destWriteCap, destFirstIndex, couriers)
+	require.NoError(t, err)
+	t.Log("✓ SendNestedCopy completed")
+
+	// Bob reads the payload
+	var received []byte
+	readIdx := destFirstIndex
+	replyIndex := uint8(0)
+	for {
+		ciphertext, nextIdx, envDesc, envHash, epoch, err := bob.EncryptRead(ctx, bobReadCap, readIdx)
+		require.NoError(t, err)
+		chunk, err := bob.StartResendingEncryptedMessage(ctx, bobReadCap, nil, nextIdx, &replyIndex, envDesc, ciphertext, envHash, epoch)
+		require.NoError(t, err)
+		received = append(received, chunk...)
+		if len(received) >= 4 && uint32(len(received)) >= binary.BigEndian.Uint32(received[:4])+4 {
+			break
+		}
+		readIdx, _ = bob.NextMessageBoxIndex(ctx, readIdx)
+	}
+
+	require.Equal(t, payload, received)
+	t.Logf("✓ Bob received: %s", string(received[4:]))
+}
