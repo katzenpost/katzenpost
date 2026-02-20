@@ -23,7 +23,7 @@ import (
 )
 
 const (
-	defaultTimeout = 120 * time.Second
+	defaultTimeoutSeconds = 120
 	// chunkSize is the size of each chunk when streaming input data.
 	// Using 10MB chunks to balance memory usage and RPC overhead.
 	chunkSize = 10 * 1024 * 1024
@@ -77,7 +77,8 @@ The first index is used to specify the starting position for read/write operatio
 			thinClient, daemon := initializeClient(configFile, thinClientOnly)
 			defer cleanup(daemon, thinClient)
 
-			ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+			timeout := time.Duration(defaultTimeoutSeconds) * time.Second
+			ctx, cancel := context.WithTimeout(context.Background(), timeout)
 			defer cancel()
 
 			// Generate a random seed
@@ -130,6 +131,8 @@ func newSendCommand() *cobra.Command {
 	var writeCapB64 string
 	var inputFile string
 	var startIndexB64 string
+	var timeoutSeconds int
+	var logLevel string
 
 	cmd := &cobra.Command{
 		Use:   "send",
@@ -144,9 +147,12 @@ envelopes to the destination replicas.`,
   echo "Hello, World!" | copycat send -c client.toml -w <write_cap>
 
   # Send data from a file
-  copycat send -c client.toml -w <write_cap> -f message.txt`,
+  copycat send -c client.toml -w <write_cap> -f message.txt
+
+  # Send with custom timeout (10 minutes)
+  copycat send -c client.toml -w <write_cap> --timeout 600`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runSend(configFile, thinClientOnly, writeCapB64, inputFile, startIndexB64)
+			return runSend(configFile, thinClientOnly, writeCapB64, inputFile, startIndexB64, timeoutSeconds, logLevel)
 		},
 	}
 
@@ -155,6 +161,8 @@ envelopes to the destination replicas.`,
 	cmd.Flags().StringVarP(&writeCapB64, "write-cap", "w", "", "write capability (base64)")
 	cmd.Flags().StringVarP(&inputFile, "file", "f", "", "input file (default: stdin)")
 	cmd.Flags().StringVarP(&startIndexB64, "index", "i", "", "start index (base64)")
+	cmd.Flags().IntVar(&timeoutSeconds, "timeout", defaultTimeoutSeconds, "overall operation timeout in seconds")
+	cmd.Flags().StringVar(&logLevel, "log-level", "ERROR", "logging level (DEBUG, INFO, NOTICE, WARNING, ERROR)")
 	cmd.MarkFlagRequired("config")
 	cmd.MarkFlagRequired("write-cap")
 
@@ -168,6 +176,8 @@ func newReceiveCommand() *cobra.Command {
 	var readCapB64 string
 	var startIndexB64 string
 	var count int
+	var timeoutSeconds int
+	var logLevel string
 
 	cmd := &cobra.Command{
 		Use:   "receive",
@@ -180,9 +190,12 @@ read capability and writes the decrypted plaintext to stdout.`,
   copycat receive -c client.toml -r <read_cap>
 
   # Receive multiple messages
-  copycat receive -c client.toml -r <read_cap> -n 5`,
+  copycat receive -c client.toml -r <read_cap> -n 5
+
+  # Receive with custom timeout
+  copycat receive -c client.toml -r <read_cap> --timeout 300`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runReceive(configFile, thinClientOnly, readCapB64, startIndexB64, count)
+			return runReceive(configFile, thinClientOnly, readCapB64, startIndexB64, count, timeoutSeconds, logLevel)
 		},
 	}
 
@@ -191,6 +204,8 @@ read capability and writes the decrypted plaintext to stdout.`,
 	cmd.Flags().StringVarP(&readCapB64, "read-cap", "r", "", "read capability (base64)")
 	cmd.Flags().StringVarP(&startIndexB64, "index", "i", "", "start index (base64)")
 	cmd.Flags().IntVarP(&count, "count", "n", 1, "number of messages to receive")
+	cmd.Flags().IntVar(&timeoutSeconds, "timeout", defaultTimeoutSeconds, "overall operation timeout in seconds")
+	cmd.Flags().StringVar(&logLevel, "log-level", "ERROR", "logging level (DEBUG, INFO, NOTICE, WARNING, ERROR)")
 	cmd.MarkFlagRequired("config")
 	cmd.MarkFlagRequired("read-cap")
 
@@ -198,7 +213,7 @@ read capability and writes the decrypted plaintext to stdout.`,
 }
 
 // runSend reads from stdin or file and writes to a copy stream
-func runSend(configFile string, thinClientOnly bool, writeCapB64, inputFile, startIndexB64 string) error {
+func runSend(configFile string, thinClientOnly bool, writeCapB64, inputFile, startIndexB64 string, timeoutSeconds int, logLevel string) error {
 	// Decode write capability
 	writeCapBytes, err := base64.StdEncoding.DecodeString(writeCapB64)
 	if err != nil {
@@ -209,11 +224,12 @@ func runSend(configFile string, thinClientOnly bool, writeCapB64, inputFile, sta
 		return fmt.Errorf("failed to parse write capability: %w", err)
 	}
 
-	// Initialize client
-	thinClient, daemon := initializeClient(configFile, thinClientOnly)
+	// Initialize client with logging configuration
+	thinClient, daemon := initializeClientWithLogging(configFile, thinClientOnly, logLevel)
 	defer cleanup(daemon, thinClient)
 
-	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+	timeout := time.Duration(timeoutSeconds) * time.Second
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
 	// Determine start index
@@ -291,17 +307,17 @@ func runSend(configFile string, thinClientOnly bool, writeCapB64, inputFile, sta
 				return fmt.Errorf("failed to encrypt chunk %d envelope %d: %w", chunkNum, i, err)
 			}
 
-			nextIndexBytes, _ := copyIndex.MarshalBinary()
-			var replyIndex uint8 = 0
-			_, err = thinClient.StartResendingEncryptedMessage(ctx, nil, copyWriteCap, nextIndexBytes, &replyIndex, envDesc, ciphertext, envHash, epoch)
+			// For write operations, nextMessageIndex and replyIndex are not used by the daemon
+			// but the API still requires them. We pass nil/empty values.
+			_, err = thinClient.StartResendingEncryptedMessage(ctx, nil, copyWriteCap, nil, nil, envDesc, ciphertext, envHash, epoch)
 			if err != nil {
 				return fmt.Errorf("failed to send chunk %d envelope %d: %w", chunkNum, i, err)
 			}
 
-			// Advance to next index
-			copyIndex, err = thinClient.NextMessageBoxIndex(ctx, copyIndex)
+			// Advance to next index using local BACAP computation (no RPC needed)
+			copyIndex, err = copyIndex.NextIndex()
 			if err != nil {
-				return fmt.Errorf("failed to get next index: %w", err)
+				return fmt.Errorf("failed to compute next index: %w", err)
 			}
 		}
 
@@ -325,7 +341,7 @@ func runSend(configFile string, thinClientOnly bool, writeCapB64, inputFile, sta
 }
 
 // runReceive reads from a channel and writes to stdout
-func runReceive(configFile string, thinClientOnly bool, readCapB64, startIndexB64 string, count int) error {
+func runReceive(configFile string, thinClientOnly bool, readCapB64, startIndexB64 string, count int, timeoutSeconds int, logLevel string) error {
 	// Decode read capability
 	readCapBytes, err := base64.StdEncoding.DecodeString(readCapB64)
 	if err != nil {
@@ -336,11 +352,12 @@ func runReceive(configFile string, thinClientOnly bool, readCapB64, startIndexB6
 		return fmt.Errorf("failed to parse read capability: %w", err)
 	}
 
-	// Initialize client
-	thinClient, daemon := initializeClient(configFile, thinClientOnly)
+	// Initialize client with logging configuration
+	thinClient, daemon := initializeClientWithLogging(configFile, thinClientOnly, logLevel)
 	defer cleanup(daemon, thinClient)
 
-	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+	timeout := time.Duration(timeoutSeconds) * time.Second
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
 	// Determine start index
@@ -381,10 +398,10 @@ func runReceive(configFile string, thinClientOnly bool, readCapB64, startIndexB6
 			return fmt.Errorf("failed to write output: %w", err)
 		}
 
-		// Advance to next index
-		currentIndex, err = thinClient.NextMessageBoxIndex(ctx, currentIndex)
+		// Advance to next index using local BACAP computation (no RPC needed)
+		currentIndex, err = currentIndex.NextIndex()
 		if err != nil {
-			return fmt.Errorf("failed to get next index: %w", err)
+			return fmt.Errorf("failed to compute next index: %w", err)
 		}
 	}
 
