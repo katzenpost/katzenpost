@@ -105,12 +105,15 @@ func runFetch(cfg Config) error {
 	eventSink := client.EventSink()
 	defer client.StopEventSink(eventSink)
 
-	for event := range eventSink {
-		if docEvent, ok := event.(*thin.NewDocumentEvent); ok {
-			fmt.Printf("%v", docEvent.Document)
-			return nil
+	for {
+		select {
+		case event := <-eventSink:
+			if docEvent, ok := event.(*thin.NewDocumentEvent); ok {
+				fmt.Printf("%v", docEvent.Document)
+				return nil
+			}
+		case <-client.HaltCh():
+			return fmt.Errorf("connection closed before receiving PKI document")
 		}
 	}
-
-	return fmt.Errorf("connection closed before receiving PKI document")
 }
