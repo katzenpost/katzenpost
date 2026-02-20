@@ -411,7 +411,7 @@ func NewThinClient(cfg *Config, logging *config.Logging) *ThinClient {
 		panic(err)
 	}
 	return &ThinClient{
-		isTCP:       strings.HasPrefix(strings.ToLower(cfg.Network), cfg.Address),
+		isTCP:       strings.HasPrefix(strings.ToLower(cfg.Network), "tcp"),
 		cfg:         cfg,
 		log:         logBackend.GetLogger("thinclient"),
 		logBackend:  logBackend,
