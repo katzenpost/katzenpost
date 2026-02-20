@@ -409,7 +409,7 @@ type ThinClose struct {
 type Response struct {
 
 	// ShutdownEvent is sent when the client daemon is shutting down.
-	ShutdownEvent *ShutdownEvent `cbor:"shudown_event"`
+	ShutdownEvent *ShutdownEvent `cbor:"shutdown_event"`
 
 	// ConnectionStatusEvent is sent when the client daemon's connection status changes.
 	ConnectionStatusEvent *ConnectionStatusEvent `cbor:"connection_status_event"`
