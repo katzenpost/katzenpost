@@ -15,7 +15,7 @@ echo "=== Sending: $MSG ==="
 echo "$MSG" | $COPYCAT send -c "$CONFIG" --thin -w "$WRITE_CAP"
 
 echo "=== Receiving ==="
-RECEIVED=$($COPYCAT receive -c "$CONFIG" --thin -r "$READ_CAP" 2>&1 | grep -v "^Reading\|^Done")
+RECEIVED=$($COPYCAT receive -c "$CONFIG" --thin -r "$READ_CAP" 2>/dev/null)
 
 echo "=== Result ==="
 if [ "$MSG" = "$RECEIVED" ]; then
