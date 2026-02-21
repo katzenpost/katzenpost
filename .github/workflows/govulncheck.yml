@@ -22,8 +22,9 @@ jobs:
         run: |
           go run golang.org/x/vuln/cmd/govulncheck@latest -format json ./... > vulns.json || true
           # Check if there are any vulns other than the ignored pgx ones
+          # Only look for vuln IDs in "osv" fields (actual vulnerabilities, not SBOM versions)
           ignored="GO-2024-2605 GO-2024-2606"
-          found=$(cat vulns.json | grep -oE 'GO-[0-9]+-[0-9]+' | sort -u || true)
+          found=$(grep '"osv":' vulns.json | grep -oE 'GO-[0-9]{4}-[0-9]+' | sort -u || true)
           for vuln in $found; do
             if ! echo "$ignored" | grep -qw "$vuln"; then
               echo "Found unignored vulnerability: $vuln"
