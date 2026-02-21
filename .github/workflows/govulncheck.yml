@@ -18,5 +18,7 @@ jobs:
       - name: Install RocksDB dependencies
         run: make install-replica-deps
       - name: Run govulncheck
-        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+        # Ignoring GO-2024-2605 and GO-2024-2606: pgx v3 SQL injection vulns
+        # We are not migrating to pgx v4/v5 at this time
+        run: go run golang.org/x/vuln/cmd/govulncheck@latest -ignore GO-2024-2605,GO-2024-2606 ./...
 
