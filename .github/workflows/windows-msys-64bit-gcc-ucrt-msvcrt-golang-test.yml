@@ -37,7 +37,6 @@ jobs:
             mingw-w64-x86_64-toolchain
             mingw-w64-x86_64-pkg-config
             mingw-w64-x86_64-gcc
-            mingw-w64-x86_64-go
             make
             git
             gcc
