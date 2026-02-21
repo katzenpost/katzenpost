@@ -2,8 +2,10 @@ codeberg.org/vula/highctidh v1.0.2024092800 h1:mvAQCDPgTTwo0/w1ZztxOEKp8CnH2+q5z
 codeberg.org/vula/highctidh v1.0.2024092800/go.mod h1:admvznk7GhsrDih/BMy7jbIv9Y86U9vj7S5FVoquF/g=
 filippo.io/edwards25519 v1.0.0 h1:0wAIcmJUqRdI8IJ/3eGi5/HwXZWPujYXXlkrQogz0Ek=
 filippo.io/edwards25519 v1.0.0/go.mod h1:N1IkdkCkiLB6tki+MYJoSx2JTY9NUlxZE7eHn5EwJns=
-filippo.io/mlkem768 v0.0.0-20240221181710-5ce91625fdc1 h1:xbdqh5aDZeO0XqW896qVjKnAqRji9nkIwmsBEEbCA10=
-filippo.io/mlkem768 v0.0.0-20240221181710-5ce91625fdc1/go.mod h1:mIEHrcJ2xBlJRQwnRO0ujmZ+Rt6m6eNeCPq8E3Wkths=
+filippo.io/edwards25519 v1.1.1 h1:YpjwWWlNmGIDyXOn8zLzqiD+9TyIlPhGFG96P39uBpw=
+filippo.io/edwards25519 v1.1.1/go.mod h1:BxyFTGdWcka3PhytdK4V28tE5sGfRvvvRV7EaN4VDT4=
+filippo.io/mlkem768 v0.0.0-20260214141301-2e7bebc7d88d h1:YyLyABjdrdt2l/E6JAnku4BjhEDXhxQD2bPOnOvy8/M=
+filippo.io/mlkem768 v0.0.0-20260214141301-2e7bebc7d88d/go.mod h1:ym4egWKLpazdho3bHx0xuQlCq02ttP+vhxxKO8LgO9c=
 github.com/BurntSushi/toml v1.5.0 h1:W5quZX/G/csjUnuI8SUYlsHs9M38FC7znL0lIO+DvMg=
 github.com/BurntSushi/toml v1.5.0/go.mod h1:ukJfTF/6rtPPRCnwkur4qwRxa8vTRFBF0uk2lLoLwho=
 github.com/agl/gcmsiv v0.0.0-20190418185415-e8dcd2f151dc h1:MB338WDPuyQ8qXRiSRK2NVTv0EmLYsHXZAevEiQO1+c=
@@ -69,8 +71,10 @@ github.com/katzenpost/chacha20poly1305 v0.0.1 h1:yFPxgu/VSWsoCNQ2x15az8xBKKc/9GD
 github.com/katzenpost/chacha20poly1305 v0.0.1/go.mod h1:5sv//C8pWaXrnnP3CNiJXqAlA1/yfUZOl1tR9xsL9bI=
 github.com/katzenpost/circl v1.3.9-0.20240222183521-1cd9a34e9a0c h1:FYy03rLIjdyjklBOI6YSCb3q7OubTx0dVDWYOgDsvA8=
 github.com/katzenpost/circl v1.3.9-0.20240222183521-1cd9a34e9a0c/go.mod h1:+EBrwiGYs9S+qZqaqxujN1CReTNCMAG6p+31KkEDeeA=
-github.com/katzenpost/hpqc v0.0.68 h1:Soo5YlW6bsiBmMsM01wI2drPUeoa0j99kWHZ/8Uo2PI=
-github.com/katzenpost/hpqc v0.0.68/go.mod h1:yaVqoZyKeBmgiKnGBpgLNf+nfO4ll81f54RAnaL6OpI=
+github.com/katzenpost/hpqc v0.0.72 h1:xskEGnAU+FI6YEF7tc3aeRsLYkvfJpRbMEYXjUNHcuE=
+github.com/katzenpost/hpqc v0.0.72/go.mod h1:f/knmD/0Lx7IDGFDK6Zy61ONun6WrRNuNu7SUAoRiDg=
+github.com/katzenpost/hpqc v0.0.73 h1:LTKNqn4pf6A2x8lbnzFql/TCrkxGFMSec6QyMT0ViLw=
+github.com/katzenpost/hpqc v0.0.73/go.mod h1:FKTko//TflX91qipK3F5g4tcH/7Kr77lFtnBIVxBCzw=
 github.com/katzenpost/nyquist v0.0.10 h1:rh9TCEXCsutsg+cvbV6ASVFnzSAYBisWQ3fnwQSPa34=
 github.com/katzenpost/nyquist v0.0.10/go.mod h1:tyK92JiCptgsaE0iUAMlt5W2v2Rdw6mnUpIdIidIGHo=
 github.com/katzenpost/qrterminal v0.0.0-20250706194004-f95c77b7c73e h1:cbftK8/GNGA8ye2e2VWkVPLnO/62UadJmG3ddEa6ElU=
