@@ -15,7 +15,7 @@ jobs:
         OS: ["windows-2022"]
         CC: ["gcc"]
         ENVIRONMENT: ["MINGW64"] # https://www.msys2.org/docs/environments/
-        go-version: ["1.22.x"]
+        go-version: ["1.26.x"]
         test-suite:
           - { name: "authority", path: "authority", timeout: "30m" }
           - { name: "client2", path: "client2", timeout: "30m" }
@@ -29,24 +29,24 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Setup Go ${{ matrix.go-version }}
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go-version }}
+
       - name: Set up Msys2
         uses: msys2/setup-msys2@v2
         with:
           msystem: ${{ matrix.ENVIRONMENT }}
+          path-type: inherit
           install: >-
             base-devel
             mingw-w64-x86_64-toolchain
             mingw-w64-x86_64-pkg-config
             mingw-w64-x86_64-gcc
-            mingw-w64-x86_64-go
             make
             git
             gcc
-
-      - name: Setup Go ${{ matrix.go-version }}
-        uses: actions/setup-go@v5
-        with:
-          go-version: ${{ matrix.go-version }}
 
       - name: Cache Go modules
         uses: actions/cache@v4
