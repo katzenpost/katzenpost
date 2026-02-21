@@ -46,6 +46,14 @@ jobs:
         with:
           go-version: ${{ matrix.go-version }}
 
+      - name: Add Go to MSYS2 PATH
+        shell: msys2 {0}
+        run: |
+          # Find the Go binary installed by actions/setup-go and add to PATH
+          GOBIN=$(ls -d /c/hostedtoolcache/windows/go/*/x64/bin 2>/dev/null | head -1)
+          echo "export PATH=\"$GOBIN:\$PATH\"" >> ~/.bashrc
+          echo "Added $GOBIN to PATH"
+
       - name: Cache Go modules
         uses: actions/cache@v4
         with:
