@@ -167,28 +167,27 @@ func (t *ThinClient) NewKeypair(ctx context.Context, seed []byte) (*bacap.WriteC
 //   - []byte: Next message index for subsequent reads
 //   - []byte: Envelope descriptor for decrypting the reply
 //   - *[32]byte: Hash of the courier envelope
-//   - uint64: Replica epoch when envelope was created
 //   - error: Any error encountered during encryption
 //
 // Example:
 //
 //	ctx := context.Background()
-//	ciphertext, nextIndex, envDesc, envHash, epoch, err := client.EncryptRead(
+//	ciphertext, nextIndex, envDesc, envHash, err := client.EncryptRead(
 //		ctx, readCap, messageBoxIndex)
 //	if err != nil {
 //		log.Fatal("Failed to encrypt read:", err)
 //	}
 //
 //	// Send ciphertext via StartResendingEncryptedMessage
-func (t *ThinClient) EncryptRead(ctx context.Context, readCap *bacap.ReadCap, messageBoxIndex *bacap.MessageBoxIndex) ([]byte, []byte, []byte, *[32]byte, uint64, error) {
+func (t *ThinClient) EncryptRead(ctx context.Context, readCap *bacap.ReadCap, messageBoxIndex *bacap.MessageBoxIndex) ([]byte, []byte, []byte, *[32]byte, error) {
 	if ctx == nil {
-		return nil, nil, nil, nil, 0, errContextCannotBeNil
+		return nil, nil, nil, nil, errContextCannotBeNil
 	}
 	if readCap == nil {
-		return nil, nil, nil, nil, 0, errors.New("readCap cannot be nil")
+		return nil, nil, nil, nil, errors.New("readCap cannot be nil")
 	}
 	if messageBoxIndex == nil {
-		return nil, nil, nil, nil, 0, errors.New("messageBoxIndex cannot be nil")
+		return nil, nil, nil, nil, errors.New("messageBoxIndex cannot be nil")
 	}
 
 	queryID := t.NewQueryID()
@@ -205,17 +204,17 @@ func (t *ThinClient) EncryptRead(ctx context.Context, readCap *bacap.ReadCap, me
 
 	err := t.writeMessage(req)
 	if err != nil {
-		return nil, nil, nil, nil, 0, err
+		return nil, nil, nil, nil, err
 	}
 
 	for {
 		var event Event
 		select {
 		case <-ctx.Done():
-			return nil, nil, nil, nil, 0, ctx.Err()
+			return nil, nil, nil, nil, ctx.Err()
 		case event = <-eventSink:
 		case <-t.HaltCh():
-			return nil, nil, nil, nil, 0, errHalting
+			return nil, nil, nil, nil, errHalting
 		}
 
 		switch v := event.(type) {
@@ -229,9 +228,9 @@ func (t *ThinClient) EncryptRead(ctx context.Context, readCap *bacap.ReadCap, me
 				continue
 			}
 			if v.ErrorCode != ThinClientSuccess {
-				return nil, nil, nil, nil, 0, errors.New(ThinClientErrorToString(v.ErrorCode))
+				return nil, nil, nil, nil, errors.New(ThinClientErrorToString(v.ErrorCode))
 			}
-			return v.MessageCiphertext, v.NextMessageIndex, v.EnvelopeDescriptor, v.EnvelopeHash, v.ReplicaEpoch, nil
+			return v.MessageCiphertext, v.NextMessageIndex, v.EnvelopeDescriptor, v.EnvelopeHash, nil
 		case *ConnectionStatusEvent:
 			t.isConnected = v.IsConnected
 		case *NewDocumentEvent:
@@ -258,29 +257,28 @@ func (t *ThinClient) EncryptRead(ctx context.Context, readCap *bacap.ReadCap, me
 //   - []byte: Encrypted message ciphertext to send to courier
 //   - []byte: Envelope descriptor for decrypting the reply
 //   - *[32]byte: Hash of the courier envelope
-//   - uint64: Replica epoch when envelope was created
 //   - error: Any error encountered during encryption
 //
 // Example:
 //
 //	ctx := context.Background()
 //	plaintext := []byte("Hello, Bob!")
-//	ciphertext, envDesc, envHash, epoch, err := client.EncryptWrite(
+//	ciphertext, envDesc, envHash, err := client.EncryptWrite(
 //		ctx, plaintext, writeCap, messageBoxIndex)
 //	if err != nil {
 //		log.Fatal("Failed to encrypt write:", err)
 //	}
 //
 //	// Send ciphertext via StartResendingEncryptedMessage
-func (t *ThinClient) EncryptWrite(ctx context.Context, plaintext []byte, writeCap *bacap.WriteCap, messageBoxIndex *bacap.MessageBoxIndex) ([]byte, []byte, *[32]byte, uint64, error) {
+func (t *ThinClient) EncryptWrite(ctx context.Context, plaintext []byte, writeCap *bacap.WriteCap, messageBoxIndex *bacap.MessageBoxIndex) ([]byte, []byte, *[32]byte, error) {
 	if ctx == nil {
-		return nil, nil, nil, 0, errContextCannotBeNil
+		return nil, nil, nil, errContextCannotBeNil
 	}
 	if writeCap == nil {
-		return nil, nil, nil, 0, errors.New("writeCap cannot be nil")
+		return nil, nil, nil, errors.New("writeCap cannot be nil")
 	}
 	if messageBoxIndex == nil {
-		return nil, nil, nil, 0, errors.New("messageBoxIndex cannot be nil")
+		return nil, nil, nil, errors.New("messageBoxIndex cannot be nil")
 	}
 
 	queryID := t.NewQueryID()
@@ -298,17 +296,17 @@ func (t *ThinClient) EncryptWrite(ctx context.Context, plaintext []byte, writeCa
 
 	err := t.writeMessage(req)
 	if err != nil {
-		return nil, nil, nil, 0, err
+		return nil, nil, nil, err
 	}
 
 	for {
 		var event Event
 		select {
 		case <-ctx.Done():
-			return nil, nil, nil, 0, ctx.Err()
+			return nil, nil, nil, ctx.Err()
 		case event = <-eventSink:
 		case <-t.HaltCh():
-			return nil, nil, nil, 0, errHalting
+			return nil, nil, nil, errHalting
 		}
 
 		switch v := event.(type) {
@@ -322,9 +320,9 @@ func (t *ThinClient) EncryptWrite(ctx context.Context, plaintext []byte, writeCa
 				continue
 			}
 			if v.ErrorCode != ThinClientSuccess {
-				return nil, nil, nil, 0, errors.New(ThinClientErrorToString(v.ErrorCode))
+				return nil, nil, nil, errors.New(ThinClientErrorToString(v.ErrorCode))
 			}
-			return v.MessageCiphertext, v.EnvelopeDescriptor, v.EnvelopeHash, v.ReplicaEpoch, nil
+			return v.MessageCiphertext, v.EnvelopeDescriptor, v.EnvelopeHash, nil
 		case *ConnectionStatusEvent:
 			t.isConnected = v.IsConnected
 		case *NewDocumentEvent:
@@ -365,7 +363,6 @@ func (t *ThinClient) EncryptWrite(ctx context.Context, plaintext []byte, writeCa
 //   - envelopeDescriptor: Serialized envelope descriptor for MKEM decryption
 //   - messageCiphertext: MKEM-encrypted message to send (from EncryptRead or EncryptWrite)
 //   - envelopeHash: Hash of the courier envelope
-//   - replicaEpoch: Epoch when the envelope was created
 //
 // Returns:
 //   - []byte: Fully decrypted plaintext from the reply (for reads) or empty (for writes)
@@ -388,7 +385,7 @@ func (t *ThinClient) EncryptWrite(ctx context.Context, plaintext []byte, writeCa
 //
 //	ctx := context.Background()
 //	plaintext, err := client.StartResendingEncryptedMessage(
-//		ctx, readCap, nil, nextIndex, &replyIdx, envDesc, ciphertext, envHash, epoch)
+//		ctx, readCap, nil, nextIndex, &replyIdx, envDesc, ciphertext, envHash)
 //	if err != nil {
 //		if errors.Is(err, thin.ErrBoxIDNotFound) {
 //			log.Println("Box not found - may be empty or expired")
@@ -397,7 +394,7 @@ func (t *ThinClient) EncryptWrite(ctx context.Context, plaintext []byte, writeCa
 //		}
 //	}
 //	fmt.Printf("Received: %s\n", plaintext)
-func (t *ThinClient) StartResendingEncryptedMessage(ctx context.Context, readCap *bacap.ReadCap, writeCap *bacap.WriteCap, nextMessageIndex []byte, replyIndex *uint8, envelopeDescriptor []byte, messageCiphertext []byte, envelopeHash *[32]byte, replicaEpoch uint64) ([]byte, error) {
+func (t *ThinClient) StartResendingEncryptedMessage(ctx context.Context, readCap *bacap.ReadCap, writeCap *bacap.WriteCap, nextMessageIndex []byte, replyIndex *uint8, envelopeDescriptor []byte, messageCiphertext []byte, envelopeHash *[32]byte) ([]byte, error) {
 	if ctx == nil {
 		return nil, errContextCannotBeNil
 	}
@@ -425,7 +422,6 @@ func (t *ThinClient) StartResendingEncryptedMessage(ctx context.Context, readCap
 			EnvelopeDescriptor: envelopeDescriptor,
 			MessageCiphertext:  messageCiphertext,
 			EnvelopeHash:       envelopeHash,
-			ReplicaEpoch:       replicaEpoch,
 		},
 	}
 
@@ -1307,11 +1303,11 @@ func (t *ThinClient) SendNestedCopy(
 		chunksToWrite := layers[layerIdx].chunks
 		execTempIdx := execTempFirstIndex
 		for _, chunk := range chunksToWrite {
-			ciphertext, envDesc, envHash, epoch, err := t.EncryptWrite(ctx, chunk, execTempWriteCap, execTempIdx)
+			ciphertext, envDesc, envHash, err := t.EncryptWrite(ctx, chunk, execTempWriteCap, execTempIdx)
 			if err != nil {
 				return err
 			}
-			_, err = t.StartResendingEncryptedMessage(ctx, nil, execTempWriteCap, nil, &replyIndex, envDesc, ciphertext, envHash, epoch)
+			_, err = t.StartResendingEncryptedMessage(ctx, nil, execTempWriteCap, nil, &replyIndex, envDesc, ciphertext, envHash)
 			if err != nil {
 				return err
 			}
@@ -1336,11 +1332,11 @@ func (t *ThinClient) SendNestedCopy(
 			var reconstructedStream []byte
 			readIdx := sourceIntermediate.firstIndex
 			for len(reconstructedStream) < len(expectedBlob) {
-				ciphertext, nextIdx, envDesc, envHash, epoch, err := t.EncryptRead(ctx, sourceIntermediate.readCap, readIdx)
+				ciphertext, nextIdx, envDesc, envHash, err := t.EncryptRead(ctx, sourceIntermediate.readCap, readIdx)
 				if err != nil {
 					return err
 				}
-				plaintext, err := t.StartResendingEncryptedMessage(ctx, sourceIntermediate.readCap, nil, nextIdx, &replyIndex, envDesc, ciphertext, envHash, epoch)
+				plaintext, err := t.StartResendingEncryptedMessage(ctx, sourceIntermediate.readCap, nil, nextIdx, &replyIndex, envDesc, ciphertext, envHash)
 				if err != nil {
 					return err
 				}

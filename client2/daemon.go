@@ -1256,7 +1256,8 @@ func (d *Daemon) decryptMKEMEnvelope(env *pigeonhole.CourierEnvelopeReply, envel
 		return nil, fmt.Errorf("no pki doc found")
 	}
 
-	replicaEpoch := replicaCommon.ConvertNormalToReplicaEpoch(envelopeDesc.Epoch)
+	// EnvelopeDescriptor.Epoch already contains the replica epoch
+	replicaEpoch := envelopeDesc.Epoch
 
 	// Try both replicas from the original envelope
 	var rawInnerMsg []byte

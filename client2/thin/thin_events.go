@@ -224,9 +224,6 @@ type EncryptReadReply struct {
 	// mixnet and is used to resume the read operation.
 	EnvelopeHash *[32]byte `cbor:"envelope_hash"`
 
-	// ReplicaEpoch is the epoch in which the envelope was sent.
-	ReplicaEpoch uint64 `cbor:"replica_epoch"`
-
 	// ErrorCode indicates the reason for a failure to encrypt the read if any.
 	// Otherwise it is set to zero for success.
 	ErrorCode uint8 `cbor:"error_code"`
@@ -248,9 +245,6 @@ type EncryptWriteReply struct {
 	// MessageCiphertext is the encrypted message ciphertext that should be sent
 	// to the Courier service.
 	MessageCiphertext []byte `cbor:"message_ciphertext"`
-
-	// ReplicaEpoch is the epoch in which the envelope was sent.
-	ReplicaEpoch uint64 `cbor:"replica_epoch"`
 
 	// EnvelopeDescriptor contains the serialized EnvelopeDescriptor that
 	// contains the private key material needed to decrypt the envelope reply.

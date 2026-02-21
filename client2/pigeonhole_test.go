@@ -365,7 +365,6 @@ func TestDaemonEncryptRead_Success(t *testing.T) {
 		require.NotEmpty(t, resp.EncryptReadReply.NextMessageIndex)
 		require.NotEmpty(t, resp.EncryptReadReply.EnvelopeDescriptor)
 		require.NotNil(t, resp.EncryptReadReply.EnvelopeHash)
-		require.NotZero(t, resp.EncryptReadReply.ReplicaEpoch)
 	case <-time.After(time.Second):
 		t.Fatal("Expected a response but got none within timeout")
 	}
@@ -543,7 +542,6 @@ func TestDaemonEncryptWrite_Success(t *testing.T) {
 		require.NotEmpty(t, resp.EncryptWriteReply.MessageCiphertext)
 		require.NotEmpty(t, resp.EncryptWriteReply.EnvelopeDescriptor)
 		require.NotNil(t, resp.EncryptWriteReply.EnvelopeHash)
-		require.NotZero(t, resp.EncryptWriteReply.ReplicaEpoch)
 	case <-time.After(time.Second):
 		t.Fatal("Expected a response but got none within timeout")
 	}

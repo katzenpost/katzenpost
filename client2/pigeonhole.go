@@ -146,10 +146,11 @@ func (d *Daemon) encryptRead(request *Request) {
 		return
 	}
 
-	// Create the EnvelopeDescriptor
+	// Create the EnvelopeDescriptor with replica epoch
 	envHash := courierEnvelope.EnvelopeHash()
+	replicaEpoch := replicaCommon.ConvertNormalToReplicaEpoch(doc.Epoch)
 	envelopeDesc := &EnvelopeDescriptor{
-		Epoch:       doc.Epoch,
+		Epoch:       replicaEpoch,
 		ReplicaNums: courierEnvelope.IntermediateReplicas,
 		EnvelopeKey: envelopePrivateKey.Bytes(),
 	}
@@ -183,7 +184,6 @@ func (d *Daemon) encryptRead(request *Request) {
 			NextMessageIndex:   currentMessageIndexBytes,
 			EnvelopeDescriptor: envelopeDescriptorBytes,
 			EnvelopeHash:       envHash,
-			ReplicaEpoch:       doc.Epoch,
 			ErrorCode:          thin.ThinClientSuccess,
 		},
 	})
@@ -310,10 +310,11 @@ func (d *Daemon) encryptWrite(request *Request) {
 		return
 	}
 
-	// Create the EnvelopeDescriptor
+	// Create the EnvelopeDescriptor with replica epoch
 	envHash := courierEnvelope.EnvelopeHash()
+	replicaEpoch := replicaCommon.ConvertNormalToReplicaEpoch(doc.Epoch)
 	envelopeDesc := &EnvelopeDescriptor{
-		Epoch:       doc.Epoch,
+		Epoch:       replicaEpoch,
 		ReplicaNums: courierEnvelope.IntermediateReplicas,
 		EnvelopeKey: envelopePrivateKey.Bytes(),
 	}
@@ -336,7 +337,6 @@ func (d *Daemon) encryptWrite(request *Request) {
 		EncryptWriteReply: &thin.EncryptWriteReply{
 			QueryID:            request.EncryptWrite.QueryID,
 			MessageCiphertext:  courierQuery.Bytes(),
-			ReplicaEpoch:       doc.Epoch,
 			EnvelopeDescriptor: envelopeDescriptorBytes,
 			EnvelopeHash:       envHash,
 			ErrorCode:          thin.ThinClientSuccess,
@@ -873,12 +873,15 @@ func createEnvelopeFromMessage(msg *pigeonhole.ReplicaInnerMessage, doc *cpki.Do
 
 	senderPubkeyBytes := mkemPublicKey.Bytes()
 
+	// Convert PKI epoch to replica epoch for the CourierEnvelope
+	replicaEpoch := replicaCommon.ConvertNormalToReplicaEpoch(doc.Epoch)
+
 	envelope := &pigeonhole.CourierEnvelope{
 		IntermediateReplicas: intermediateReplicas,
 		Dek1:                 dek1,
 		Dek2:                 dek2,
 		ReplyIndex:           replyIndex,
-		Epoch:                doc.Epoch,
+		Epoch:                replicaEpoch,
 		SenderPubkeyLen:      uint16(len(senderPubkeyBytes)),
 		SenderPubkey:         senderPubkeyBytes,
 		CiphertextLen:        uint32(len(mkemCiphertext.Envelope)),
@@ -971,7 +974,6 @@ func (d *Daemon) startResendingEncryptedMessage(request *Request) {
 		SentAt:             time.Now(),
 		ReplyETA:           rtt,
 		EnvelopeDescriptor: req.EnvelopeDescriptor,
-		ReplicaEpoch:       req.ReplicaEpoch,
 		IsRead:             isRead,
 		State:              ARQStateWaitingForACK,
 		ReadCap:            req.ReadCap,

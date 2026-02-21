@@ -93,9 +93,6 @@ type ARQMessage struct {
 	// EnvelopeDescriptor contains the key material to decrypt replies.
 	EnvelopeDescriptor []byte
 
-	// ReplicaEpoch is the epoch in which the envelope was created.
-	ReplicaEpoch uint64
-
 	// IsRead indicates whether this is a read operation (true) or write (false).
 	IsRead bool
 

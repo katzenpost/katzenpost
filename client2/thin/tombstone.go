@@ -52,7 +52,7 @@ func (c *ThinClient) TombstoneBox(
 
 	tomb := make([]byte, g.MaxPlaintextPayloadLength)
 
-	messageCiphertext, envelopeDescriptor, envelopeHash, replicaEpoch, err :=
+	messageCiphertext, envelopeDescriptor, envelopeHash, err :=
 		c.EncryptWrite(ctx, tomb, writeCap, boxIndex)
 	if err != nil {
 		return fmt.Errorf("EncryptWrite failed: %w", err)
@@ -67,7 +67,6 @@ func (c *ThinClient) TombstoneBox(
 		envelopeDescriptor,
 		messageCiphertext,
 		envelopeHash,
-		replicaEpoch,
 	)
 	if err != nil {
 		return fmt.Errorf("StartResendingEncryptedMessage failed: %w", err)

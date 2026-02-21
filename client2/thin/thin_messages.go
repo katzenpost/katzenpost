@@ -256,9 +256,6 @@ type StartResendingEncryptedMessage struct {
 	// EnvelopeHash is the hash of the CourierEnvelope that was sent to the
 	// mixnet and is used to resume the read operation.
 	EnvelopeHash *[32]byte `cbor:"envelope_hash"`
-
-	// ReplicaEpoch is the epoch in which the envelope was sent.
-	ReplicaEpoch uint64 `cbor:"replica_epoch"`
 }
 
 // CancelResendingEncryptedMessage requests the daemon to cancel resending an encrypted message.
