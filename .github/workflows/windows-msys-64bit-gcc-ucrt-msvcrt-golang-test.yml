@@ -28,10 +28,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Setup Go ${{ matrix.go-version }}
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go-version }}
+
       - name: Set up Msys2
         uses: msys2/setup-msys2@v2
         with:
           msystem: ${{ matrix.ENVIRONMENT }}
+          path-type: inherit
           install: >-
             base-devel
             mingw-w64-x86_64-toolchain
@@ -40,19 +46,6 @@ jobs:
             make
             git
             gcc
-
-      - name: Setup Go ${{ matrix.go-version }}
-        uses: actions/setup-go@v5
-        with:
-          go-version: ${{ matrix.go-version }}
-
-      - name: Add Go to MSYS2 PATH
-        shell: msys2 {0}
-        run: |
-          # Find the Go binary installed by actions/setup-go and add to PATH
-          GOBIN=$(ls -d /c/hostedtoolcache/windows/go/*/x64/bin 2>/dev/null | head -1)
-          echo "export PATH=\"$GOBIN:\$PATH\"" >> ~/.bashrc
-          echo "Added $GOBIN to PATH"
 
       - name: Cache Go modules
         uses: actions/cache@v4
