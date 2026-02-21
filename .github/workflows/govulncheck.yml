@@ -1,6 +1,5 @@
 name: govulncheck
 on:
-  push:
   pull_request:
   workflow_dispatch:
 permissions:
