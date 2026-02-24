@@ -296,14 +296,14 @@ func runSend(configFile string, thinClientOnly bool, writeCapB64, inputFile, sta
 
 		// Write each envelope to the copy stream
 		for i, chunk := range chunks {
-			ciphertext, envDesc, envHash, epoch, err := thinClient.EncryptWrite(ctx, chunk, copyWriteCap, copyIndex)
+			ciphertext, envDesc, envHash, err := thinClient.EncryptWrite(ctx, chunk, copyWriteCap, copyIndex)
 			if err != nil {
 				return fmt.Errorf("failed to encrypt chunk %d envelope %d: %w", chunkNum, i, err)
 			}
 
 			// For write operations, nextMessageIndex and replyIndex are not used by the daemon
 			// but the API still requires them. We pass nil/empty values.
-			_, err = thinClient.StartResendingEncryptedMessage(ctx, nil, copyWriteCap, nil, nil, envDesc, ciphertext, envHash, epoch)
+			_, err = thinClient.StartResendingEncryptedMessage(ctx, nil, copyWriteCap, nil, nil, envDesc, ciphertext, envHash)
 			if err != nil {
 				return fmt.Errorf("failed to send chunk %d envelope %d: %w", chunkNum, i, err)
 			}
@@ -384,14 +384,14 @@ func runReceive(configFile string, thinClientOnly bool, readCapB64, startIndexB6
 
 		for attempt := 0; attempt < maxRetries; attempt++ {
 			// Encrypt read request
-			ciphertext, nextIndexBytes, envDesc, envHash, epoch, err := thinClient.EncryptRead(ctx, readCap, currentIndex)
+			ciphertext, nextIndexBytes, envDesc, envHash, err := thinClient.EncryptRead(ctx, readCap, currentIndex)
 			if err != nil {
 				return fmt.Errorf("failed to encrypt read for box %d: %w", boxNum, err)
 			}
 
 			// Send and wait for reply
 			var replyIndex uint8 = 0
-			plaintext, readErr = thinClient.StartResendingEncryptedMessage(ctx, readCap, nil, nextIndexBytes, &replyIndex, envDesc, ciphertext, envHash, epoch)
+			plaintext, readErr = thinClient.StartResendingEncryptedMessage(ctx, readCap, nil, nextIndexBytes, &replyIndex, envDesc, ciphertext, envHash)
 			if readErr == nil && len(plaintext) > 0 {
 				// Success
 				break
