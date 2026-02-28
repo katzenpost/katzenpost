@@ -36,14 +36,25 @@ func GetRandomIntermediateReplicas(doc *cpki.Document, boxid *[32]byte) ([2]uint
 		return [2]uint8{}, nil, err
 	}
 
-	shardIndexes := make([]uint8, 2)
-	for i, shard := range shards {
-		for j, replica := range doc.StorageReplicas {
+	// shardReplicaIDs stores the static ReplicaID values for the shards,
+	// not array indices into StorageReplicas.
+	// We use a slice (not fixed array) to only include shards that are actually online,
+	// avoiding the bug where an uninitialized element with value 0 could incorrectly
+	// exclude a replica with ReplicaID 0.
+	shardReplicaIDs := make([]uint8, 0, len(shards))
+	for _, shard := range shards {
+		for _, replica := range doc.StorageReplicas {
 			if hmac.Equal(shard.IdentityKey, replica.IdentityKey) {
-				shardIndexes[i] = uint8(j)
+				shardReplicaIDs = append(shardReplicaIDs, replica.ReplicaID)
 				break
 			}
 		}
+	}
+
+	// Build a list of all available ReplicaIDs for random selection
+	allReplicaIDs := make([]uint8, len(doc.StorageReplicas))
+	for i, replica := range doc.StorageReplicas {
+		allReplicaIDs[i] = replica.ReplicaID
 	}
 
 	getReplicaPubKeys := func(replica1, replica2 uint8) ([]nike.PublicKey, error) {
@@ -69,25 +80,45 @@ func GetRandomIntermediateReplicas(doc *cpki.Document, boxid *[32]byte) ([2]uint
 		return replicaPubKeys, nil
 	}
 
+	// Helper to pick a random ReplicaID from allReplicaIDs, excluding certain IDs
+	pickRandomReplicaID := func(exclude ...uint8) uint8 {
+		for {
+			idx := secureRand.Intn(len(allReplicaIDs))
+			candidate := allReplicaIDs[idx]
+			excluded := false
+			for _, ex := range exclude {
+				if candidate == ex {
+					excluded = true
+					break
+				}
+			}
+			if !excluded {
+				return candidate
+			}
+		}
+	}
+
 	switch {
 	case numReplicas < 2:
 		return [2]uint8{}, nil, errors.New("insufficient storage replicas: need at least 2 replicas")
 	case numReplicas == 2:
-		replicaPubKeys, err := getReplicaPubKeys(0, 1)
+		// With only 2 replicas, use both of their ReplicaIDs
+		replicaPubKeys, err := getReplicaPubKeys(allReplicaIDs[0], allReplicaIDs[1])
 		if err != nil {
 			return [2]uint8{}, nil, err
 		}
-		return [2]uint8{0, 1}, replicaPubKeys, nil
+		return [2]uint8{allReplicaIDs[0], allReplicaIDs[1]}, replicaPubKeys, nil
 	case numReplicas == 3:
 		// We cannot select two random replicas because we have only 3 replicas,
 		// so only the second one is random.
-		var replica2 uint8
-		replica1 := shardIndexes[0]
-		for {
-			replica2 = uint8(secureRand.Intn(int(numReplicas)))
-			if replica2 != replica1 {
-				break
-			}
+		// If no shards are available, pick two random replicas.
+		var replica1, replica2 uint8
+		if len(shardReplicaIDs) > 0 {
+			replica1 = shardReplicaIDs[0]
+			replica2 = pickRandomReplicaID(replica1)
+		} else {
+			replica1 = pickRandomReplicaID()
+			replica2 = pickRandomReplicaID(replica1)
 		}
 
 		replicaPubKeys, err := getReplicaPubKeys(replica1, replica2)
@@ -98,22 +129,10 @@ func GetRandomIntermediateReplicas(doc *cpki.Document, boxid *[32]byte) ([2]uint
 		return [2]uint8{replica1, replica2}, replicaPubKeys, nil
 	case numReplicas >= 4:
 		// Select two random replicas that are not the replicas
-		// in our shardIndexes:
-		var replica1, replica2 uint8
-
-		for {
-			replica1 = uint8(secureRand.Intn(int(numReplicas)))
-			if replica1 != shardIndexes[0] && replica1 != shardIndexes[1] {
-				break
-			}
-		}
-
-		for {
-			replica2 = uint8(secureRand.Intn(int(numReplicas)))
-			if replica2 != replica1 && replica2 != shardIndexes[0] && replica2 != shardIndexes[1] {
-				break
-			}
-		}
+		// in our shardReplicaIDs. The shardReplicaIDs slice contains only
+		// the ReplicaIDs of online shard replicas (may be 0, 1, or 2 elements).
+		replica1 := pickRandomReplicaID(shardReplicaIDs...)
+		replica2 := pickRandomReplicaID(append([]uint8{replica1}, shardReplicaIDs...)...)
 
 		replicaPubKeys, err := getReplicaPubKeys(replica1, replica2)
 		if err != nil {
@@ -123,6 +142,6 @@ func GetRandomIntermediateReplicas(doc *cpki.Document, boxid *[32]byte) ([2]uint
 		return [2]uint8{replica1, replica2}, replicaPubKeys, nil
 	}
 
-	// unreacable
+	// unreachable
 	panic("unreachable code path")
 }

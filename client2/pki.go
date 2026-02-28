@@ -85,7 +85,7 @@ func (c *Client) GetDocumentByEpoch(epoch uint64) *cpki.Document {
 }
 
 func (c *Client) WaitForCurrentDocument() {
-     // what is the point of this when we aren't connected
+	// what is the point of this when we aren't connected
 	_, doc := c.pki.currentDocument()
 	if doc != nil {
 		return
@@ -253,6 +253,10 @@ func (p *pki) getDocument(ctx context.Context, epoch uint64) ([]byte, *cpki.Docu
 	var err error
 
 	p.log.Debugf("Fetching PKI doc for epoch %v from Gateway.", epoch)
+
+	if p.consensusGetter == nil {
+		return nil, nil, fmt.Errorf("consensus getter not initialized")
+	}
 
 	resp, err := p.consensusGetter.GetConsensus(ctx, epoch)
 	switch err {

@@ -4,6 +4,7 @@
 package replica
 
 import (
+	"crypto/hmac"
 	"sync"
 	"time"
 
@@ -97,12 +98,12 @@ func (co *Connector) DispatchCommand(cmd commands.Command, idHash *[32]byte) {
 	} else {
 		// No connection - add to retry queue instead of dropping
 		co.log.Warningf("No connection for destination %x, queueing command for retry: %v", idHash[:8], getBoxID(cmd))
-		co.queueForRetry(cmd, *idHash)
+		co.QueueForRetry(cmd, *idHash)
 	}
 }
 
-// queueForRetry adds a command to the retry queue when no connection is available
-func (co *Connector) queueForRetry(cmd commands.Command, idHash [32]byte) {
+// QueueForRetry adds a command to the retry queue when no connection is available
+func (co *Connector) QueueForRetry(cmd commands.Command, idHash [32]byte) {
 	const maxRetryAttempts = 5
 
 	co.retryQueueMu.Lock()
@@ -182,28 +183,38 @@ func (co *Connector) doReplication(cmd *commands.ReplicaWrite) {
 	myIdBytes, err := co.server.identityPublicKey.MarshalBinary()
 	if err != nil {
 		co.log.Errorf("REPLICATION: Failed to marshal identity key: %v", err)
-	} else {
-		myIdHash := blake2b.Sum256(myIdBytes)
-		co.log.Infof("REPLICATION: My identity: %x", myIdHash[:8])
+		return
 	}
+	myIdHash := blake2b.Sum256(myIdBytes)
+	co.log.Infof("REPLICATION: My identity: %x", myIdHash[:8])
 
-	descs, err := replicaCommon.GetRemoteShards(co.server.identityPublicKey, cmd.BoxID, doc)
+	// Get ALL shards for this BoxID (not just remote ones)
+	// This ensures we replicate to both shard replicas
+	allShards, err := replicaCommon.GetShards(cmd.BoxID, doc)
 	if err != nil {
-		co.log.Errorf("REPLICATION: Failed - GetRemoteShards err: %v", err)
+		co.log.Errorf("REPLICATION: Failed - GetShards err: %v", err)
 		panic(err)
 	}
 
-	if len(descs) == 0 {
-		co.log.Infof("REPLICATION: No remote shards needed for BoxID %x", cmd.BoxID)
+	if len(allShards) == 0 {
+		co.log.Warningf("REPLICATION: No shards available for BoxID %x", cmd.BoxID)
 		return
 	}
 
 	// Track replication success/failure
 	successCount := 0
-	totalTargets := len(descs)
+	totalTargets := 0
 
-	for _, desc := range descs {
+	for _, desc := range allShards {
 		idHash := blake2b.Sum256(desc.IdentityKey)
+
+		// Skip self - we already wrote locally
+		if hmac.Equal(idHash[:], myIdHash[:]) {
+			co.log.Debugf("REPLICATION: Skipping self for BoxID %x", cmd.BoxID)
+			continue
+		}
+
+		totalTargets++
 
 		// Check if connection exists before dispatching
 		co.RLock()
@@ -217,6 +228,11 @@ func (co *Connector) doReplication(cmd *commands.ReplicaWrite) {
 		co.DispatchCommand(cmd, &idHash)
 	}
 
+	if totalTargets == 0 {
+		co.log.Infof("REPLICATION: No remote shards needed for BoxID %x (we are the only shard)", cmd.BoxID)
+		return
+	}
+
 	if successCount == totalTargets {
 		co.log.Infof("REPLICATION: Successfully dispatched to all %d targets for BoxID %x", totalTargets, cmd.BoxID)
 	} else {
@@ -225,40 +241,50 @@ func (co *Connector) doReplication(cmd *commands.ReplicaWrite) {
 }
 
 func (co *Connector) replicationWorker() {
-	co.log.Infof("REPLICATION: Starting replication worker")
+	// Create a dedicated logger for this goroutine (go-logging requires one logger per goroutine)
+	log := co.server.LogBackend().GetLogger("replica replicationWorker")
+	log.Noticef("REPLICATION: Starting replication worker")
 	for {
 		select {
 		case <-co.HaltCh():
-			co.log.Infof("REPLICATION: Worker terminating gracefully")
+			log.Noticef("REPLICATION: Worker terminating gracefully")
 			return
 		case writeCmd := <-co.replicationCh:
-			co.log.Infof("REPLICATION: Worker received write command for BoxID: %x", writeCmd.BoxID)
+			log.Noticef("REPLICATION: Worker received write command for BoxID: %x", writeCmd.BoxID)
 			co.doReplication(writeCmd)
 		}
 	}
 }
 
 func (co *Connector) worker() {
+	// Create a dedicated logger for this goroutine (go-logging requires one logger per goroutine)
+	log := co.server.LogBackend().GetLogger("replica connectorWorker")
+
 	var (
-		initialSpawnDelay = epochtime.Period / 64
-		resweepInterval   = epochtime.Period / 8
+		resweepInterval = epochtime.Period / 8
 	)
 
-	co.log.Debug("Starting connector worker")
-	timer := time.NewTimer(initialSpawnDelay)
+	log.Debug("Starting connector worker")
+
+	// Try to spawn connections immediately on startup rather than waiting.
+	// This helps replicas connect to each other more promptly when the PKI
+	// document is already available.
+	co.spawnNewConns()
+	co.processRetryQueue()
+
+	timer := time.NewTimer(resweepInterval)
 	defer timer.Stop()
 
 	for {
 		timerFired := false
 		select {
 		case <-co.HaltCh():
-			co.log.Debugf("Connector worker terminating gracefully.")
+			log.Debugf("Connector worker terminating gracefully.")
 			return
 		case <-co.forceUpdateCh:
-			co.log.Debug("Forced connection update triggered")
+			log.Debug("Forced connection update triggered")
 		case <-timer.C:
 			timerFired = true
-			co.log.Debug("Periodic connection update triggered")
 		}
 		if !timerFired && !timer.Stop() {
 			<-timer.C

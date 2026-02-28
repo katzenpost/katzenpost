@@ -38,6 +38,24 @@ const (
 	AppIDLength = 16
 )
 
+var (
+	// errMKEMDecryptionFailed is returned when MKEM decryption fails with all replica keys
+	errMKEMDecryptionFailed = errors.New("MKEM decryption failed")
+
+	// errBACAPDecryptionFailed is returned when BACAP decryption or signature verification fails
+	errBACAPDecryptionFailed = errors.New("BACAP decryption failed")
+)
+
+// replicaError wraps a replica error code from the pigeonhole protocol.
+// This allows us to preserve the exact error code while using Go's error handling patterns.
+type replicaError struct {
+	code uint8
+}
+
+func (e *replicaError) Error() string {
+	return fmt.Sprintf("replica error code: %d", e.code)
+}
+
 type gcReply struct {
 	id    *[MessageIDLength]byte
 	appID *[AppIDLength]byte
@@ -88,9 +106,10 @@ type Daemon struct {
 	gcTimerQueue *TimerQueue
 	gcReplyCh    chan *gcReply
 
-	arqTimerQueue *TimerQueue
-	arqSurbIDMap  map[[sphinxConstants.SURBIDLength]byte]*ARQMessage
-	arqResendCh   chan *[sphinxConstants.SURBIDLength]byte
+	arqTimerQueue      *TimerQueue
+	arqSurbIDMap       map[[sphinxConstants.SURBIDLength]byte]*ARQMessage
+	arqResendCh        chan *[sphinxConstants.SURBIDLength]byte
+	arqEnvelopeHashMap map[[32]byte]*[sphinxConstants.SURBIDLength]byte // EnvelopeHash -> SURB ID (for cancellation)
 
 	// Channel reply tracking (used by both old and new API)
 	channelReplies     map[[sphinxConstants.SURBIDLength]byte]replyDescriptor
@@ -108,6 +127,10 @@ type Daemon struct {
 	usedWriteCaps  map[[hash.HashSize]byte]bool // Maps hash of WriteCap to true
 	capabilityLock *sync.RWMutex                // Protects both capability maps
 
+	// Copy stream encoders for multi-call CreateCourierEnvelopesFromPayload
+	copyStreamEncoders     map[[thin.StreamIDLength]byte]*pigeonhole.CopyStreamEncoder
+	copyStreamEncodersLock *sync.Mutex
+
 	// Cryptographically secure random number generator
 	secureRand *mrand.Rand
 
@@ -118,16 +141,17 @@ func NewDaemon(cfg *config.Config) (*Daemon, error) {
 	egressSize := 2
 	ingressSize := 200
 	d := &Daemon{
-		cfg:          cfg,
-		egressCh:     make(chan *Request, egressSize),
-		ingressCh:    make(chan *sphinxReply, ingressSize),
-		replies:      make(map[[sphinxConstants.SURBIDLength]byte]replyDescriptor),
-		decoys:       make(map[[sphinxConstants.SURBIDLength]byte]replyDescriptor),
-		gcSurbIDCh:   make(chan *[sphinxConstants.SURBIDLength]byte),
-		gcReplyCh:    make(chan *gcReply),
-		replyLock:    new(sync.Mutex),
-		arqSurbIDMap: make(map[[sphinxConstants.SURBIDLength]byte]*ARQMessage),
-		arqResendCh:  make(chan *[sphinxConstants.SURBIDLength]byte, 2),
+		cfg:                cfg,
+		egressCh:           make(chan *Request, egressSize),
+		ingressCh:          make(chan *sphinxReply, ingressSize),
+		replies:            make(map[[sphinxConstants.SURBIDLength]byte]replyDescriptor),
+		decoys:             make(map[[sphinxConstants.SURBIDLength]byte]replyDescriptor),
+		gcSurbIDCh:         make(chan *[sphinxConstants.SURBIDLength]byte),
+		gcReplyCh:          make(chan *gcReply),
+		replyLock:          new(sync.Mutex),
+		arqSurbIDMap:       make(map[[sphinxConstants.SURBIDLength]byte]*ARQMessage),
+		arqResendCh:        make(chan *[sphinxConstants.SURBIDLength]byte, 2),
+		arqEnvelopeHashMap: make(map[[32]byte]*[sphinxConstants.SURBIDLength]byte),
 		// Channel reply tracking
 		channelReplies:     make(map[[sphinxConstants.SURBIDLength]byte]replyDescriptor),
 		channelRepliesLock: new(sync.RWMutex),
@@ -141,6 +165,9 @@ func NewDaemon(cfg *config.Config) (*Daemon, error) {
 		usedReadCaps:   make(map[[hash.HashSize]byte]bool),
 		usedWriteCaps:  make(map[[hash.HashSize]byte]bool),
 		capabilityLock: new(sync.RWMutex),
+		// Copy stream encoder management:
+		copyStreamEncoders:     make(map[[thin.StreamIDLength]byte]*pigeonhole.CopyStreamEncoder),
+		copyStreamEncodersLock: new(sync.Mutex),
 		// Initialize cryptographically secure random number generator
 		secureRand: hpqcRand.NewMath(),
 	}
@@ -363,10 +390,34 @@ func (d *Daemon) egressWorker() {
 				d.sendDropDecoy()
 			case request.SendMessage != nil:
 				d.send(request)
-			case request.SendARQMessage != nil:
-				d.send(request)
 
-				// New Pigeonhole Channel related commands proceed here:
+				// New Pigeonhole API (stateless):
+
+			case request.NewKeypair != nil:
+				d.newKeypair(request)
+			case request.EncryptRead != nil:
+				d.encryptRead(request)
+			case request.EncryptWrite != nil:
+				d.encryptWrite(request)
+			case request.StartResendingEncryptedMessage != nil:
+				d.startResendingEncryptedMessage(request)
+			case request.CancelResendingEncryptedMessage != nil:
+				d.cancelResendingEncryptedMessage(request)
+			case request.StartResendingCopyCommand != nil:
+				d.startResendingCopyCommand(request)
+			case request.CancelResendingCopyCommand != nil:
+				d.cancelResendingCopyCommand(request)
+			case request.NextMessageBoxIndex != nil:
+				d.nextMessageBoxIndex(request)
+
+				// Copy Channel API:
+
+			case request.CreateCourierEnvelopesFromPayload != nil:
+				d.createCourierEnvelopesFromPayload(request)
+			case request.CreateCourierEnvelopesFromPayloads != nil:
+				d.createCourierEnvelopesFromPayloads(request)
+
+				// OLD Pigeonhole Channel:
 
 			case request.SendChannelQuery != nil:
 				d.sendChannelQuery(request)
@@ -476,8 +527,9 @@ func (d *Daemon) handleReply(reply *sphinxReply) {
 		delete(d.decoys, *reply.surbID)
 		d.replyLock.Unlock()
 	case isARQReply:
+		// Pigeonhole ARQ reply handling
 		desc = replyDescriptor{
-			ID:      arqMessage.MessageID,
+			ID:      arqMessage.QueryID,
 			appID:   arqMessage.AppID,
 			surbKey: arqMessage.SURBDecryptionKeys,
 		}
@@ -490,7 +542,14 @@ func (d *Daemon) handleReply(reply *sphinxReply) {
 		}
 		d.replyLock.Lock()
 		delete(d.arqSurbIDMap, *reply.surbID)
+		if arqMessage.EnvelopeHash != nil {
+			delete(d.arqEnvelopeHashMap, *arqMessage.EnvelopeHash)
+		}
 		d.replyLock.Unlock()
+
+		// Handle the Pigeonhole ARQ reply
+		d.handlePigeonholeARQReply(arqMessage, reply)
+		return
 	case isChannelReply:
 		d.log.Debugf("Received channel reply for SURB ID %x", reply.surbID[:])
 		desc = myChannelReplyDescriptor
@@ -1197,7 +1256,8 @@ func (d *Daemon) decryptMKEMEnvelope(env *pigeonhole.CourierEnvelopeReply, envel
 		return nil, fmt.Errorf("no pki doc found")
 	}
 
-	replicaEpoch := replicaCommon.ConvertNormalToReplicaEpoch(envelopeDesc.Epoch)
+	// EnvelopeDescriptor.Epoch already contains the replica epoch
+	replicaEpoch := envelopeDesc.Epoch
 
 	// Try both replicas from the original envelope
 	var rawInnerMsg []byte
@@ -1222,15 +1282,18 @@ func (d *Daemon) decryptMKEMEnvelope(env *pigeonhole.CourierEnvelopeReply, envel
 
 		// Try to decrypt with this replica's public key
 		rawInnerMsg, err = replicaCommon.MKEMNikeScheme.DecryptEnvelope(privateKey, replicaPubKey, env.Payload)
-		if err == nil {
-			d.log.Errorf("MKEM DECRYPT: no rawInnerMsg for replicaNum:%v: %v", replicaNum, err)
-			break
+		if err != nil {
+			d.log.Errorf("MKEM DECRYPT: failed to decrypt with replicaNum:%v: %v", replicaNum, err)
+			continue
 		}
+		// Successfully decrypted
+		d.log.Debugf("MKEM DECRYPT: successfully decrypted with replicaNum:%v", replicaNum)
+		break
 	}
 
 	if rawInnerMsg == nil {
 		d.log.Errorf("MKEM DECRYPT FAILED with all possible replicas")
-		return nil, fmt.Errorf("failed to decrypt envelope with any replica key")
+		return nil, errMKEMDecryptionFailed
 	}
 	innerMsg, err := pigeonhole.ParseReplicaMessageReplyInnerMessage(rawInnerMsg)
 	if err != nil {
@@ -1325,20 +1388,12 @@ func (d *Daemon) send(request *Request) {
 	var err error
 	var now time.Time
 
-	if request.SendARQMessage != nil {
-		request.SendARQMessage.SURBID = &[sphinxConstants.SURBIDLength]byte{}
-		_, err = rand.Reader.Read(request.SendARQMessage.SURBID[:])
-		if err != nil {
-			panic(err)
-		}
-	}
-
 	surbKey, rtt, err = d.client.SendCiphertext(request)
 	if err != nil {
 		d.log.Debugf("SendCiphertext error: %s", err.Error())
 	}
 
-	// Check if this is a request with SURB (either SendMessage or SendARQMessage)
+	// Check if this is a request with SURB
 	var withSURB bool
 	var surbID *[sphinxConstants.SURBIDLength]byte
 	var messageID *[MessageIDLength]byte
@@ -1349,11 +1404,6 @@ func (d *Daemon) send(request *Request) {
 		surbID = request.SendMessage.SURBID
 		messageID = request.SendMessage.ID
 		isLoopDecoy = (request.SendLoopDecoy != nil)
-	} else if request.SendARQMessage != nil {
-		withSURB = request.SendARQMessage.WithSURB
-		surbID = request.SendARQMessage.SURBID
-		messageID = request.SendARQMessage.ID
-		isLoopDecoy = false
 	}
 
 	if withSURB {
@@ -1393,35 +1443,6 @@ func (d *Daemon) send(request *Request) {
 	}
 
 	d.replyLock.Lock()
-	if request.SendARQMessage != nil {
-		message := &ARQMessage{
-			AppID:              request.AppID,
-			MessageID:          request.SendARQMessage.ID,
-			SURBID:             request.SendARQMessage.SURBID,
-			Payload:            request.SendARQMessage.Payload,
-			DestinationIdHash:  request.SendARQMessage.DestinationIdHash,
-			Retransmissions:    0,
-			RecipientQueueID:   request.SendARQMessage.RecipientQueueID,
-			SURBDecryptionKeys: surbKey,
-			SentAt:             time.Now(),
-			ReplyETA:           rtt,
-		}
-
-		d.arqSurbIDMap[*message.SURBID] = message
-		myRtt := message.SentAt.Add(message.ReplyETA)
-		myRtt = myRtt.Add(RoundTripTimeSlop)
-		priority := uint64(myRtt.UnixNano())
-		d.arqTimerQueue.Push(priority, message.SURBID)
-
-		// ensure that we send the thin client an arq gc event so it cleans up it's arq specific book keeping
-		slop := time.Minute * 5 // very conservative
-		replyArrivalTime := time.Now().Add(rtt + slop)
-		d.gcTimerQueue.Push(uint64(replyArrivalTime.UnixNano()), &gcReply{
-			id:    request.SendARQMessage.ID,
-			appID: request.AppID,
-		})
-	}
-
 	if request.SendMessage != nil {
 		// Old API: store in regular replies
 		d.replies[*request.SendMessage.SURBID] = replyDescriptor{
@@ -1518,7 +1539,6 @@ func (d *Daemon) arqResend(surbID *[sphinxConstants.SURBIDLength]byte) {
 }
 
 func (d *Daemon) arqDoResend(surbID *[sphinxConstants.SURBIDLength]byte) {
-
 	d.replyLock.Lock()
 	message, ok := d.arqSurbIDMap[*surbID]
 
@@ -1535,6 +1555,9 @@ func (d *Daemon) arqDoResend(surbID *[sphinxConstants.SURBIDLength]byte) {
 	if d.listener == nil {
 		d.log.Debugf("ARQ resend: listener is nil, cleaning up SURB ID %x", surbID[:])
 		delete(d.arqSurbIDMap, *surbID)
+		if message.EnvelopeHash != nil {
+			delete(d.arqEnvelopeHashMap, *message.EnvelopeHash)
+		}
 		d.replyLock.Unlock()
 		return
 	}
@@ -1545,61 +1568,76 @@ func (d *Daemon) arqDoResend(surbID *[sphinxConstants.SURBIDLength]byte) {
 	if incomingConn == nil {
 		d.log.Debugf("ARQ resend: connection already closed for AppID %x, cleaning up SURB ID %x", message.AppID[:], surbID[:])
 		delete(d.arqSurbIDMap, *surbID)
-		d.replyLock.Unlock()
-		return
-	}
-
-	if (message.Retransmissions + 1) > MaxRetransmissions {
-		d.log.Warning("ARQ Max retries met.")
-
-		// Clean up the ARQ entry
-		delete(d.arqSurbIDMap, *surbID)
-
-		response := &Response{
-			AppID: message.AppID,
-			MessageReplyEvent: &thin.MessageReplyEvent{
-				MessageID: message.MessageID,
-				Payload:   []byte{},
-				SURBID:    surbID,
-				ErrorCode: thin.ThinClientErrorMaxRetries,
-			},
-		}
-		err := incomingConn.sendResponse(response)
-		if err != nil {
-			d.log.Warningf("failed to send MessageReplyEvent with max retry failure: %s", err)
+		if message.EnvelopeHash != nil {
+			delete(d.arqEnvelopeHashMap, *message.EnvelopeHash)
 		}
 		d.replyLock.Unlock()
 		return
 	}
-	d.log.Warningf("resend ----------------- REMOVING SURB ID %x", surbID[:])
+
+	// Pigeonhole ARQ: retry forever (no MaxRetransmissions check)
+	d.log.Debugf("Pigeonhole ARQ resend (attempt %d) for EnvelopeHash %x", message.Retransmissions+1, message.EnvelopeHash[:])
 	delete(d.arqSurbIDMap, *surbID)
 
+	// Get a new random Courier for this retry
+	_, doc := d.client.CurrentDocument()
+	if doc == nil {
+		d.log.Warningf("ARQ resend: no PKI document available, rescheduling")
+		// Re-add to map and reschedule
+		d.arqSurbIDMap[*surbID] = message
+		d.replyLock.Unlock()
+		// Reschedule for later
+		if d.arqTimerQueue != nil {
+			retryTime := time.Now().Add(RoundTripTimeSlop)
+			d.arqTimerQueue.Push(uint64(retryTime.UnixNano()), surbID)
+		}
+		return
+	}
+
+	destIdHash, recipientQueueID, err := GetRandomCourier(doc)
+	if err != nil {
+		d.log.Warningf("ARQ resend: failed to get courier: %s, rescheduling", err)
+		// Re-add to map and reschedule
+		d.arqSurbIDMap[*surbID] = message
+		d.replyLock.Unlock()
+		if d.arqTimerQueue != nil {
+			retryTime := time.Now().Add(RoundTripTimeSlop)
+			d.arqTimerQueue.Push(uint64(retryTime.UnixNano()), surbID)
+		}
+		return
+	}
+
 	newsurbID := &[sphinxConstants.SURBIDLength]byte{}
-	_, err := rand.Reader.Read(newsurbID[:])
+	_, err = rand.Reader.Read(newsurbID[:])
 	if err != nil {
 		panic(err)
 	}
-	pkt, k, rtt, err := d.client.ComposeSphinxPacket(&Request{
-		AppID: message.AppID,
-		SendARQMessage: &thin.SendARQMessage{
-			ID:                message.MessageID,
-			WithSURB:          true,
-			DestinationIdHash: message.DestinationIdHash,
-			RecipientQueueID:  message.RecipientQueueID,
-			Payload:           message.Payload,
-			SURBID:            newsurbID,
-		},
-	})
+
+	// Compose packet using ComposeSphinxPacketForQuery for Pigeonhole
+	pkt, k, rtt, err := d.client.ComposeSphinxPacketForQuery(&thin.SendChannelQuery{
+		DestinationIdHash: destIdHash,
+		RecipientQueueID:  recipientQueueID,
+		Payload:           message.Payload,
+	}, newsurbID)
 	if err != nil {
-		d.log.Errorf("failed to send sphinx packet: %s", err.Error())
+		d.log.Errorf("ARQ resend: failed to compose packet: %s", err.Error())
+		d.replyLock.Unlock()
+		return
 	}
 
 	message.SURBID = newsurbID
 	message.SURBDecryptionKeys = k
 	message.ReplyETA = rtt
 	message.SentAt = time.Now()
+	message.DestinationIdHash = destIdHash
+	message.RecipientQueueID = recipientQueueID
 	message.Retransmissions += 1
 	d.arqSurbIDMap[*newsurbID] = message
+
+	// Update EnvelopeHash map to point to new SURB ID
+	if message.EnvelopeHash != nil {
+		d.arqEnvelopeHashMap[*message.EnvelopeHash] = newsurbID
+	}
 	d.replyLock.Unlock()
 
 	// Check arqTimerQueue is not nil before pushing
@@ -1608,7 +1646,7 @@ func (d *Daemon) arqDoResend(surbID *[sphinxConstants.SURBIDLength]byte) {
 		return
 	}
 
-	d.log.Warningf("resend PUTTING INTO MAP, NEW SURB ID %x", newsurbID[:])
+	d.log.Debugf("ARQ resend scheduled for SURB ID %x", newsurbID[:])
 	myRtt := message.SentAt.Add(message.ReplyETA)
 	myRtt = myRtt.Add(RoundTripTimeSlop)
 	priority := uint64(myRtt.UnixNano())

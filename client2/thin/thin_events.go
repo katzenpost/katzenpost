@@ -177,7 +177,194 @@ func (e *NewPKIDocumentEvent) String() string {
 	return fmt.Sprintf("PKI Document for epoch %d", doc.Epoch)
 }
 
-/**** NEW API ***/
+// New Pigeonhole API:
+
+// NewKeypairReply is the reply to a NewKeypair request.
+type NewKeypairReply struct {
+	// QueryID is used for correlating this reply with the NewKeypair request
+	QueryID *[QueryIDLength]byte `cbor:"query_id"`
+	// WriteCap is the write capability that should be stored for channel
+	WriteCap *bacap.WriteCap `cbor:"write_cap"`
+	// ReadCap is the read capability that can be shared with others to allow
+	// them to read messages from this channel.
+	ReadCap *bacap.ReadCap `cbor:"read_cap"`
+	// FirstMessageIndex is the first message index that should be used when
+	// writing messages to the channel.
+	FirstMessageIndex *bacap.MessageBoxIndex `cbor:"first_message_index"`
+	// ErrorCode indicates the reason for a failure to create a new keypair if any.
+	// Otherwise it is set to zero for success.
+	ErrorCode uint8 `cbor:"error_code"`
+}
+
+// String returns a string representation of the NewKeypairReply.
+func (e *NewKeypairReply) String() string {
+	if e.ErrorCode != ThinClientSuccess {
+		return fmt.Sprintf("NewKeypairReply (error: %s)", ThinClientErrorToString(e.ErrorCode))
+	}
+	return "NewKeypairReply: success"
+}
+
+// EncryptReadReply is the reply to an EncryptRead request.
+type EncryptReadReply struct {
+	// QueryID is used for correlating this reply with the EncryptRead request
+	QueryID *[QueryIDLength]byte `cbor:"query_id"`
+
+	// MessageCiphertext is the encrypted message ciphertext that should be sent
+	// to the Courier service.
+	MessageCiphertext []byte `cbor:"message_ciphertext"`
+
+	// NextMessageIndex is the next message index that should be used when
+	// encrypting the next read.
+	NextMessageIndex []byte `cbor:"next_message_index"`
+
+	// EnvelopeDescriptor contains the serialized EnvelopeDescriptor that
+	EnvelopeDescriptor []byte `cbor:"envelope_descriptor"`
+
+	// EnvelopeHash is the hash of the CourierEnvelope that was sent to the
+	// mixnet and is used to resume the read operation.
+	EnvelopeHash *[32]byte `cbor:"envelope_hash"`
+
+	// ErrorCode indicates the reason for a failure to encrypt the read if any.
+	// Otherwise it is set to zero for success.
+	ErrorCode uint8 `cbor:"error_code"`
+}
+
+// String returns a string representation of the EncryptReadReply.
+func (e *EncryptReadReply) String() string {
+	if e.ErrorCode != ThinClientSuccess {
+		return fmt.Sprintf("EncryptReadReply (error: %s)", ThinClientErrorToString(e.ErrorCode))
+	}
+	return fmt.Sprintf("EncryptReadReply: %d bytes ciphertext", len(e.MessageCiphertext))
+}
+
+// EncryptWriteReply is the reply to an EncryptWrite request.
+type EncryptWriteReply struct {
+	// QueryID is used for correlating this reply with the EncryptWrite request
+	QueryID *[QueryIDLength]byte `cbor:"query_id"`
+
+	// MessageCiphertext is the encrypted message ciphertext that should be sent
+	// to the Courier service.
+	MessageCiphertext []byte `cbor:"message_ciphertext"`
+
+	// EnvelopeDescriptor contains the serialized EnvelopeDescriptor that
+	// contains the private key material needed to decrypt the envelope reply.
+	EnvelopeDescriptor []byte `cbor:"envelope_descriptor"`
+
+	// EnvelopeHash is the hash of the CourierEnvelope that was sent to the
+	// mixnet and is used to resume the write operation.
+	EnvelopeHash *[32]byte `cbor:"envelope_hash"`
+
+	// ErrorCode indicates the reason for a failure to encrypt the write if any.
+	// Otherwise it is set to zero for success.
+	ErrorCode uint8 `cbor:"error_code"`
+}
+
+// String returns a string representation of the EncryptWriteReply.
+func (e *EncryptWriteReply) String() string {
+	if e.ErrorCode != ThinClientSuccess {
+		return fmt.Sprintf("EncryptWriteReply (error: %s)", ThinClientErrorToString(e.ErrorCode))
+	}
+	return fmt.Sprintf("EncryptWriteReply: %d bytes ciphertext", len(e.MessageCiphertext))
+}
+
+// StartResendingEncryptedMessageReply is the reply to a StartResendingEncryptedMessage request.
+type StartResendingEncryptedMessageReply struct {
+
+	// QueryID is used for correlating this reply with the StartResendingEncryptedMessage request
+	QueryID *[QueryIDLength]byte `cbor:"query_id"`
+
+	// Plaintext is the plaintext message that was read from the channel.
+	Plaintext []byte `cbor:"plaintext"`
+
+	// ErrorCode indicates the reason for a failure to start resending the encrypted message if any.
+	// Otherwise it is set to zero for success.
+	ErrorCode uint8 `cbor:"error_code"`
+}
+
+// String returns a string representation of the StartResendingEncryptedMessageReply.
+func (e *StartResendingEncryptedMessageReply) String() string {
+	if e.ErrorCode != ThinClientSuccess {
+		return fmt.Sprintf("StartResendingEncryptedMessageReply (error: %s)", ThinClientErrorToString(e.ErrorCode))
+	}
+	return fmt.Sprintf("StartResendingEncryptedMessageReply: %d bytes plaintext", len(e.Plaintext))
+}
+
+// CancelResendingEncryptedMessageReply is the reply to a CancelResendingEncryptedMessage request.
+type CancelResendingEncryptedMessageReply struct {
+	// QueryID is used for correlating this reply with the CancelResendingEncryptedMessage request
+	QueryID *[QueryIDLength]byte `cbor:"query_id"`
+
+	// ErrorCode indicates the reason for a failure to cancel resending the encrypted message if any.
+	// Otherwise it is set to zero for success.
+	ErrorCode uint8 `cbor:"error_code"`
+}
+
+// String returns a string representation of the CancelResendingEncryptedMessageReply.
+func (e *CancelResendingEncryptedMessageReply) String() string {
+	if e.ErrorCode != ThinClientSuccess {
+		return fmt.Sprintf("CancelResendingEncryptedMessageReply (error: %s)", ThinClientErrorToString(e.ErrorCode))
+	}
+	return "CancelResendingEncryptedMessageReply: success"
+}
+
+// StartResendingCopyCommandReply is the reply to a StartResendingCopyCommand request.
+type StartResendingCopyCommandReply struct {
+	// QueryID is used for correlating this reply with the StartResendingCopyCommand request
+	QueryID *[QueryIDLength]byte `cbor:"query_id"`
+
+	// ErrorCode indicates the reason for a failure to execute the copy command if any.
+	// Otherwise it is set to zero for success.
+	ErrorCode uint8 `cbor:"error_code"`
+}
+
+// String returns a string representation of the StartResendingCopyCommandReply.
+func (e *StartResendingCopyCommandReply) String() string {
+	if e.ErrorCode != ThinClientSuccess {
+		return fmt.Sprintf("StartResendingCopyCommandReply (error: %s)", ThinClientErrorToString(e.ErrorCode))
+	}
+	return "StartResendingCopyCommandReply: success"
+}
+
+// CancelResendingCopyCommandReply is the reply to a CancelResendingCopyCommand request.
+type CancelResendingCopyCommandReply struct {
+	// QueryID is used for correlating this reply with the CancelResendingCopyCommand request
+	QueryID *[QueryIDLength]byte `cbor:"query_id"`
+
+	// ErrorCode indicates the reason for a failure to cancel the copy command if any.
+	// Otherwise it is set to zero for success.
+	ErrorCode uint8 `cbor:"error_code"`
+}
+
+// String returns a string representation of the CancelResendingCopyCommandReply.
+func (e *CancelResendingCopyCommandReply) String() string {
+	if e.ErrorCode != ThinClientSuccess {
+		return fmt.Sprintf("CancelResendingCopyCommandReply (error: %s)", ThinClientErrorToString(e.ErrorCode))
+	}
+	return "CancelResendingCopyCommandReply: success"
+}
+
+// NextMessageBoxIndexReply is the reply to a NextMessageBoxIndex request.
+type NextMessageBoxIndexReply struct {
+	// QueryID is used for correlating this reply with the NextMessageBoxIndex request
+	QueryID *[QueryIDLength]byte `cbor:"query_id"`
+
+	// NextMessageBoxIndex is the incremented message box index.
+	NextMessageBoxIndex *bacap.MessageBoxIndex `cbor:"next_message_box_index"`
+
+	// ErrorCode indicates the reason for a failure to increment the index if any.
+	// Otherwise it is set to zero for success.
+	ErrorCode uint8 `cbor:"error_code"`
+}
+
+// String returns a string representation of the NextMessageBoxIndexReply.
+func (e *NextMessageBoxIndexReply) String() string {
+	if e.ErrorCode != ThinClientSuccess {
+		return fmt.Sprintf("NextMessageBoxIndexReply (error: %s)", ThinClientErrorToString(e.ErrorCode))
+	}
+	return "NextMessageBoxIndexReply: success"
+}
+
+// OLD Pigeonhole API:
 
 // CreateWriteChannelReply is sent in response to a CreateWriteChannel request.
 // It provides the channel ID and capabilities needed to use the newly created
@@ -503,4 +690,53 @@ func (e *ChannelQueryReplyEvent) String() string {
 		return fmt.Sprintf("ChannelQueryReplyEvent: msgID=%x (error: %s)", e.MessageID[:], ThinClientErrorToString(e.ErrorCode))
 	}
 	return fmt.Sprintf("ChannelQueryReplyEvent: msgID=%x", e.MessageID[:])
+}
+
+// Copy Channel API:
+
+// CreateCourierEnvelopesFromPayloadReply is sent in response to a CreateCourierEnvelopesFromPayload request.
+// It provides multiple serialized CourierEnvelopes, one for each chunk of the payload.
+type CreateCourierEnvelopesFromPayloadReply struct {
+	// QueryID is used for correlating this reply with the CreateCourierEnvelopesFromPayload request
+	// that created it.
+	QueryID *[QueryIDLength]byte `cbor:"query_id"`
+
+	// Envelopes is a slice of serialized CourierEnvelopes, one per chunk.
+	Envelopes [][]byte `cbor:"envelopes"`
+
+	// ErrorCode indicates the success or failure of the envelope creation.
+	// A value of ThinClientSuccess indicates successful creation.
+	ErrorCode uint8 `cbor:"error_code"`
+}
+
+// String returns a string representation of the CreateCourierEnvelopesFromPayloadReply.
+func (e *CreateCourierEnvelopesFromPayloadReply) String() string {
+	if e.ErrorCode != ThinClientSuccess {
+		return fmt.Sprintf("CreateCourierEnvelopesFromPayloadReply: queryID=%x (error: %s)", e.QueryID[:], ThinClientErrorToString(e.ErrorCode))
+	}
+	return fmt.Sprintf("CreateCourierEnvelopesFromPayloadReply: queryID=%x numEnvelopes=%d", e.QueryID[:], len(e.Envelopes))
+}
+
+// CreateCourierEnvelopesFromPayloadsReply is sent in response to a CreateCourierEnvelopesFromPayloads request.
+// It provides multiple serialized CopyStreamElements packed efficiently from multiple destination payloads.
+type CreateCourierEnvelopesFromPayloadsReply struct {
+	// QueryID is used for correlating this reply with the CreateCourierEnvelopesFromPayloads request
+	// that created it.
+	QueryID *[QueryIDLength]byte `cbor:"query_id"`
+
+	// Envelopes is a slice of serialized CopyStreamElements containing all the courier envelopes
+	// from all destinations packed efficiently together.
+	Envelopes [][]byte `cbor:"envelopes"`
+
+	// ErrorCode indicates the success or failure of the envelope creation.
+	// A value of ThinClientSuccess indicates successful creation.
+	ErrorCode uint8 `cbor:"error_code"`
+}
+
+// String returns a string representation of the CreateCourierEnvelopesFromPayloadsReply.
+func (e *CreateCourierEnvelopesFromPayloadsReply) String() string {
+	if e.ErrorCode != ThinClientSuccess {
+		return fmt.Sprintf("CreateCourierEnvelopesFromPayloadsReply: queryID=%x (error: %s)", e.QueryID[:], ThinClientErrorToString(e.ErrorCode))
+	}
+	return fmt.Sprintf("CreateCourierEnvelopesFromPayloadsReply: queryID=%x numEnvelopes=%d", e.QueryID[:], len(e.Envelopes))
 }

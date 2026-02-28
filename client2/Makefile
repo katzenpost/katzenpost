@@ -31,37 +31,37 @@ dockertest-legacy:
 	$(docker) run -w /go/katzenpost/client2 ${docker_args} $(image) \
 		go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 1h -run "TestLegacyTests"
 
-dockertest_channel_basics:
+dockertest_new_pigeonhole_alice_sends_bob:
 	cd ../docker && make $(distro)_base.stamp
 	$(docker) run -w /go/katzenpost/client2 ${docker_args} $(image) \
-		go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 1h -run "TestChannelAPIBasics"
+		go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 1h -run "TestNewPigeonholeAPIAliceSendsBob"
 
-dockertest_channel_close:
+dockertest_new_pigeonhole_multiple_messages:
 	cd ../docker && make $(distro)_base.stamp
 	$(docker) run -w /go/katzenpost/client2 ${docker_args} $(image) \
-		go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 1h -run "TestChannelClose"
+		go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 1h -run "TestNewPigeonholeAPIMultipleMessages"
 
-dockertest_resume_write_channel:
+dockertest_copy_command:
 	cd ../docker && make $(distro)_base.stamp
 	$(docker) run -w /go/katzenpost/client2 ${docker_args} $(image) \
-		go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 1h -run "TestResumeWriteChannel"
+		go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 1h -run "TestCreateCourierEnvelopesFromPayload"
 
-dockertest_resume_write_channel_query:
+dockertest_multichannel:
 	cd ../docker && make $(distro)_base.stamp
 	$(docker) run -w /go/katzenpost/client2 ${docker_args} $(image) \
-		go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 1h -run "TestResumeWriteChannelQuery"
+		go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 1h -run "TestCopyCommandMultiChannel$$"
 
-dockertest_resume_read_channel:
+dockertest_multichannel_efficient:
 	cd ../docker && make $(distro)_base.stamp
 	$(docker) run -w /go/katzenpost/client2 ${docker_args} $(image) \
-		go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 1h -run "TestResumeReadChannel"
+		go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 1h -run "TestCopyCommandMultiChannelEfficient"
 
-dockertest_resume_read_channel_query:
+dockertest_nested_copy:
 	cd ../docker && make $(distro)_base.stamp
 	$(docker) run -w /go/katzenpost/client2 ${docker_args} $(image) \
-		go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 1h -run "TestResumeReadChannelQuery"
+		go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 1h -run "TestNestedCopyCommands"
 
-all_channels_tests: dockertest_channel_basics dockertest_channel_close dockertest_resume_write_channel dockertest_resume_write_channel_query dockertest_resume_read_channel dockertest_resume_read_channel_query
+all_new_pigeonhole_tests: dockertest_new_pigeonhole_alice_sends_bob dockertest_new_pigeonhole_multiple_messages dockertest_copy_command dockertest_multichannel dockertest_multichannel_efficient dockertest_nested_copy
 
 warpedclientdaemon:
 	cd ../cmd/kpclientd; go build -ldflags ${ldflags}

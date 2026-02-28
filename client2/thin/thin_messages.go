@@ -10,7 +10,6 @@ import (
 	"github.com/katzenpost/hpqc/hash"
 
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
-	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 )
 
 // Thin client error codes provide standardized error reporting across the protocol.
@@ -106,6 +105,18 @@ const (
 	// ThinClientCapabilityAlreadyInUse indicates that the provided capability
 	// is already in use.
 	ThinClientCapabilityAlreadyInUse uint8 = 21
+
+	// ThinClientErrorMKEMDecryptionFailed indicates that MKEM decryption failed.
+	// This occurs when the MKEM envelope cannot be decrypted with any of the replica keys.
+	ThinClientErrorMKEMDecryptionFailed uint8 = 22
+
+	// ThinClientErrorBACAPDecryptionFailed indicates that BACAP decryption failed.
+	// This occurs when the BACAP payload cannot be decrypted or signature verification fails.
+	ThinClientErrorBACAPDecryptionFailed uint8 = 23
+
+	// ThinClientErrorStartResendingCancelled indicates that a StartResendingEncryptedMessage
+	// operation was cancelled via CancelResendingEncryptedMessage before completion.
+	ThinClientErrorStartResendingCancelled uint8 = 24
 )
 
 // ThinClientErrorToString converts a thin client error code to a human-readable string.
@@ -147,189 +158,234 @@ func ThinClientErrorToString(errorCode uint8) string {
 		return "Courier cache corruption"
 	case ThinClientPropagationError:
 		return "Propagation error"
+	case ThinClientErrorInvalidWriteCapability:
+		return "Invalid write capability"
+	case ThinClientErrorInvalidReadCapability:
+		return "Invalid read capability"
+	case ThinClientErrorInvalidResumeWriteChannelRequest:
+		return "Invalid resume write channel request"
+	case ThinClientErrorInvalidResumeReadChannelRequest:
+		return "Invalid resume read channel request"
+	case ThinClientImpossibleHashError:
+		return "Impossible hash error"
+	case ThinClientImpossibleNewWriteCapError:
+		return "Failed to create new write capability"
+	case ThinClientImpossibleNewStatefulWriterError:
+		return "Failed to create new stateful writer"
+	case ThinClientCapabilityAlreadyInUse:
+		return "Capability already in use"
+	case ThinClientErrorMKEMDecryptionFailed:
+		return "MKEM decryption failed"
+	case ThinClientErrorBACAPDecryptionFailed:
+		return "BACAP decryption failed"
+	case ThinClientErrorStartResendingCancelled:
+		return "Start resending cancelled"
 	default:
 		return fmt.Sprintf("Unknown thin client error code: %d", errorCode)
 	}
 }
 
-// CreateWriteChannel requests the creation of a new pigeonhole write channel.
-// For channel resumption, please see the ResumeWriteChannel type below.
-// The reply will contain the channel ID, read capability, write capability,
-// and the current message index, all of which can be used by a clever client
-// to resume the channel in the future even in the face of system reboots etc.
-type CreateWriteChannel struct {
+// New Pigeonhole API:
 
+// NewKeypair requests the creation of a new keypair for use with the Pigeonhole protocol.
+// The reply type, is NewKeypairReply.
+type NewKeypair struct {
 	// QueryID is used for correlating this thin client request with the
 	// thin client reponse.
 	QueryID *[QueryIDLength]byte `cbor:"query_id"`
+	// Seed is the 32 byte seed used to derive the keypair.
+	Seed []byte `cbor:"seed"`
 }
 
-// CreateReadChannel requests the creation of a new pigeonhole read channel
-// from an existing read capability. Read channels allow receiving messages
-// from a communication channel created by the holder of the write capability.
-type CreateReadChannel struct {
-
+// EncryptRead requests the encryption of a read operation for a given read capability.
+type EncryptRead struct {
 	// QueryID is used for correlating this thin client request with the
 	// thin client reponse.
 	QueryID *[QueryIDLength]byte `cbor:"query_id"`
 
 	// ReadCap is the read capability that grants access to the channel.
-	// This capability is typically shared by the channel creator and allows
-	// reading messages from the specified channel.
 	ReadCap *bacap.ReadCap `cbor:"read_cap"`
-}
-
-// WriteChannel requests writing a message to an existing pigeonhole channel.
-// The daemon will prepare the message for transmission and return the
-// serialized payload that should be sent via SendChannelQuery.
-type WriteChannel struct {
-
-	// QueryID is used for correlating this thin client request with the
-	// thin client reponse.
-	QueryID *[QueryIDLength]byte `cbor:"query_id"`
-
-	// ChannelID identifies the target channel for the write operation.
-	// This ID was returned when the channel was created.
-	ChannelID uint16 `cbor:"channel_id"`
-
-	// Payload contains the message data to write to the channel.
-	// The payload size must not exceed the channel's configured limits.
-	Payload []byte `cbor:"payload"`
-}
-
-// ResumeWriteChannel requests resuming a write channel that was previously
-// either written to or created but not yet written to. This command cannot
-// resume a write operation that was in progress, for that you must used the
-// ResumeWriteChannelQuery command instead.
-type ResumeWriteChannel struct {
-
-	// QueryID is used for correlating this thin client request with the
-	// thin client reponse.
-	QueryID *[QueryIDLength]byte `cbor:"query_id"`
-
-	// WriteCap is the write capability for resuming an existing channel.
-	// If nil, a new channel will be created. If provided, the channel will
-	// be resumed from the specified MessageBoxIndex position.
-	WriteCap *bacap.WriteCap `cbor:"write_cap,omitempty"`
-
-	// MessageBoxIndex specifies the starting or resume point for the channel.
-	// This field is can be nil when resuming a write channel which has not
-	// yet been written to. If this field is provided, it is used to resume
-	// the write channel from a specific message index. You must populate this
-	// field with the NextMessageIndex from the previous WriteChannelReply.
-	MessageBoxIndex *bacap.MessageBoxIndex `cbor:"message_box_index,omitempty"`
-}
-
-// ResumeWriteChannel requests resuming a write operation that was previously
-// initiated but not yet completed.
-type ResumeWriteChannelQuery struct {
-
-	// QueryID is used for correlating this thin client request with the
-	// thin client reponse.
-	QueryID *[QueryIDLength]byte `cbor:"query_id"`
-
-	// WriteCap is the write capability for resuming an existing channel.
-	// If nil, a new channel will be created. If provided, the channel will
-	// be resumed from the specified MessageBoxIndex position.
-	WriteCap *bacap.WriteCap `cbor:"write_cap,omitempty"`
-
-	// MessageBoxIndex specifies the resume point for the channel.
-	// This field is required.
-	MessageBoxIndex *bacap.MessageBoxIndex `cbor:"message_box_index,omitempty"`
-
-	// EnvelopeDescriptor contains the serialized EnvelopeDescriptor that
-	// contains the private key material needed to decrypt the envelope reply.
-	EnvelopeDescriptor []byte `cbor:"envelope_descriptor"`
-
-	// EnvelopeHash is the hash of the CourierEnvelope that was sent to the
-	EnvelopeHash *[32]byte `cbor:"envelope_hash"`
-}
-
-// ReadChannel requests reading the next message from a pigeonhole channel.
-// The daemon will prepare a query for the next available message and return
-// the serialized payload that should be sent via SendChannelQuery.
-// Note that the last two fields are useful if you want to send two read queries
-// to the same Box id in order to retrieve two different replies.
-type ReadChannel struct {
-	// ChannelID identifies the source channel for the read operation.
-	// This ID was returned when the channel was created.
-	ChannelID uint16 `cbor:"channel_id"`
-
-	// QueryID is used for correlating this thin client request with the
-	// thin client reponse.
-	QueryID *[QueryIDLength]byte `cbor:"query_id"`
 
 	// MessageBoxIndex specifies the starting read position for the channel.
-	// If this field is nil, reading will start from the current index in the client daemon's
-	// stateful reader, which is what you want most of the time.
-	// This field and the next field, ReplyIndex are complicated to use properly, like so:
-	//
-	// This field is only needed because the next field, ReplyIndex, requires us to
-	// specify *which* message should be returned, since presumably the application
-	// will perform two read queries *on the same Box* if the first result is not available.
-	MessageBoxIndex *bacap.MessageBoxIndex `cbor:"message_box_index,omitempty"`
-
-	// ReplyIndex is the index of the reply to return. It is optional and
-	// a default of zero will be used if not specified.
-	ReplyIndex *uint8 `cbor:"reply_index"`
+	MessageBoxIndex *bacap.MessageBoxIndex `cbor:"message_box_index"`
 }
 
-// ResumeReadChannel requests resuming a read operation that was previously
-// initiated but not yet completed.
-type ResumeReadChannel struct {
+// EncryptWrite requests the encryption of a write operation for a given write capability.
+type EncryptWrite struct {
+	// QueryID is used for correlating this thin client request with the
+	// thin client reponse.
+	QueryID *[QueryIDLength]byte `cbor:"query_id"`
+
+	// Plaintext is the plaintext message to be encrypted.
+	Plaintext []byte `cbor:"plaintext"`
+
+	// WriteCap is the write capability that grants access to the channel.
+	WriteCap *bacap.WriteCap `cbor:"write_cap"`
+
+	// MessageBoxIndex specifies the starting write position for the channel.
+	MessageBoxIndex *bacap.MessageBoxIndex `cbor:"message_box_index"`
+}
+
+// StartResendingEncryptedMessage requests the daemon to start resending an encrypted message.
+type StartResendingEncryptedMessage struct {
 	// QueryID is used for correlating this thin client request with the
 	// thin client reponse.
 	QueryID *[QueryIDLength]byte `cbor:"query_id"`
 
 	// ReadCap is the read capability that grants access to the channel.
-	// This capability is typically shared by the channel creator and allows
-	// reading messages from the specified channel.
 	ReadCap *bacap.ReadCap `cbor:"read_cap"`
 
-	// NextMessageIndex indicates the message index to use after successfully
-	// reading the current message.
-	NextMessageIndex *bacap.MessageBoxIndex `cbor:"next_message_index"`
+	// WriteCap is the write capability that grants access to the channel.
+	WriteCap *bacap.WriteCap `cbor:"write_cap"`
 
-	// ReplyIndex is the index of the reply to return. It is optional and
-	// a default of zero will be used if not specified.
-	ReplyIndex *uint8 `cbor:"reply_index"`
-}
+	// NextMessageIndex is the next message index that should be used when
+	// encrypting the next read.
+	NextMessageIndex []byte `cbor:"next_message_index"`
 
-// ResumeReadChannel requests resuming a read operation that was previously
-// initiated but not yet completed.
-type ResumeReadChannelQuery struct {
-	// QueryID is used for correlating this thin client request with the
-	// thin client reponse.
-	QueryID *[QueryIDLength]byte `cbor:"query_id"`
-
-	// ReadCap is the read capability that grants access to the channel.
-	// This capability is typically shared by the channel creator and allows
-	// reading messages from the specified channel.
-	ReadCap *bacap.ReadCap `cbor:"read_cap"`
-
-	// NextMessageIndex indicates the message index to use after successfully
-	// reading the current message.
-	NextMessageIndex *bacap.MessageBoxIndex `cbor:"next_message_index"`
-
-	// ReplyIndex is the index of the reply to return. It is optional and
-	// a default of zero will be used if not specified.
-	ReplyIndex *uint8 `cbor:"reply_index"`
+	// ReplyIndex is the index of the reply that was actually used when processing.
+	// This field is optional - if nil, the daemon will use the default reply index.
+	ReplyIndex *uint8 `cbor:"reply_index,omitempty"`
 
 	// EnvelopeDescriptor contains the serialized EnvelopeDescriptor that
 	// contains the private key material needed to decrypt the envelope reply.
 	EnvelopeDescriptor []byte `cbor:"envelope_descriptor"`
+
+	// MessageCiphertext is the encrypted message ciphertext that should be sent
+	MessageCiphertext []byte `cbor:"message_ciphertext"`
 
 	// EnvelopeHash is the hash of the CourierEnvelope that was sent to the
 	// mixnet and is used to resume the read operation.
 	EnvelopeHash *[32]byte `cbor:"envelope_hash"`
 }
 
-// CloseChannel requests closing a pigeonhole channel. NOTE however that there
-// is no corresponding reply type for this request to tell us if the close failed
-// or not.
-type CloseChannel struct {
-	ChannelID uint16 `cbor:"channel_id"`
+// CancelResendingEncryptedMessage requests the daemon to cancel resending an encrypted message.
+type CancelResendingEncryptedMessage struct {
+	// QueryID is used for correlating this thin client request with the
+	// thin client reponse.
+	QueryID *[QueryIDLength]byte `cbor:"query_id"`
+
+	// EnvelopeHash is the hash of the CourierEnvelope that was sent to the
+	EnvelopeHash *[32]byte `cbor:"envelope_hash"`
 }
+
+// StartResendingCopyCommand requests the daemon to send a copy command to a courier
+// with ARQ (automatic repeat request) for reliable delivery.
+// The copy command instructs the courier to read data from a temporary channel
+// and write it to the destination channel.
+type StartResendingCopyCommand struct {
+	// QueryID is used for correlating this thin client request with the
+	// thin client response.
+	QueryID *[QueryIDLength]byte `cbor:"query_id"`
+
+	// WriteCap is the write capability for the temporary channel that contains
+	// the data to be copied. The courier will derive a ReadCap from this
+	// to read the data.
+	WriteCap *bacap.WriteCap `cbor:"write_cap"`
+
+	// CourierIdentityHash is optional. If set, the daemon will send the copy command
+	// to this specific courier instead of selecting a random one.
+	// This enables nested copy commands with different couriers per layer.
+	CourierIdentityHash *[32]byte `cbor:"courier_identity_hash,omitempty"`
+
+	// CourierQueueID is optional. Must be set if CourierIdentityHash is set.
+	// This is the recipient queue ID for the specified courier.
+	CourierQueueID []byte `cbor:"courier_queue_id,omitempty"`
+}
+
+// CancelResendingCopyCommand requests the daemon to cancel resending a copy command.
+type CancelResendingCopyCommand struct {
+	// QueryID is used for correlating this thin client request with the
+	// thin client response.
+	QueryID *[QueryIDLength]byte `cbor:"query_id"`
+
+	// WriteCapHash is the hash of the WriteCap used in StartResendingCopyCommand.
+	WriteCapHash *[32]byte `cbor:"write_cap_hash"`
+}
+
+// NextMessageBoxIndex requests the daemon to increment a MessageBoxIndex.
+// This is used when sending multiple messages to different mailboxes using
+// the same WriteCap. The reply type is NextMessageBoxIndexReply.
+type NextMessageBoxIndex struct {
+	// QueryID is used for correlating this thin client request with the
+	// thin client reponse.
+	QueryID *[QueryIDLength]byte `cbor:"query_id"`
+
+	// MessageBoxIndex is the current index to increment.
+	MessageBoxIndex *bacap.MessageBoxIndex `cbor:"message_box_index"`
+}
+
+// CreateCourierEnvelopesFromPayload creates multiple CourierEnvelopes from a payload of any size.
+// The payload is automatically chunked and each chunk is wrapped in a CourierEnvelope.
+// Each returned chunk is a serialized CopyStreamElement ready to be written to a box.
+//
+// Multiple calls can be made with the same StreamID to build up a stream incrementally.
+// The first call creates a new encoder (first element gets IsStart=true).
+// The final call should have IsLast=true (last element gets IsFinal=true).
+type CreateCourierEnvelopesFromPayload struct {
+	// QueryID is used for correlating this thin client request with the
+	// thin client response.
+	QueryID *[QueryIDLength]byte `cbor:"query_id"`
+
+	// StreamID identifies the encoder instance for multi-call streams.
+	// All calls for the same stream must use the same StreamID.
+	// The encoder is created on first use and removed after IsLast=true.
+	StreamID *[StreamIDLength]byte `cbor:"stream_id"`
+
+	// Payload is the data to be written (any size).
+	Payload []byte `cbor:"payload"`
+
+	// DestWriteCap is the write capability for the destination channel.
+	DestWriteCap *bacap.WriteCap `cbor:"dest_write_cap"`
+
+	// DestStartIndex is the starting index in the destination channel.
+	DestStartIndex *bacap.MessageBoxIndex `cbor:"dest_start_index"`
+
+	// IsLast indicates whether this is the last payload in the sequence.
+	// When true, the final CopyStreamElement will have IsFinal=true and
+	// the encoder instance will be removed.
+	IsLast bool `cbor:"is_last"`
+}
+
+// DestinationPayload specifies a payload and its destination channel for multi-channel writes.
+type DestinationPayload struct {
+	// Payload is the data to be written to this destination.
+	Payload []byte `cbor:"payload"`
+
+	// WriteCap is the write capability for the destination channel.
+	WriteCap *bacap.WriteCap `cbor:"write_cap"`
+
+	// StartIndex is the starting index in the destination channel.
+	StartIndex *bacap.MessageBoxIndex `cbor:"start_index"`
+}
+
+// CreateCourierEnvelopesFromPayloads creates CourierEnvelopes from multiple payloads
+// going to different destination channels. This is more space-efficient than calling
+// CreateCourierEnvelopesFromPayload multiple times because envelopes from different
+// destinations are packed together in the copy stream without wasting space.
+//
+// Multiple calls can be made with the same StreamID to build up a stream incrementally.
+// The first call creates a new encoder (first element gets IsStart=true).
+// The final call should have IsLast=true (last element gets IsFinal=true).
+type CreateCourierEnvelopesFromPayloads struct {
+	// QueryID is used for correlating this thin client request with the
+	// thin client response.
+	QueryID *[QueryIDLength]byte `cbor:"query_id"`
+
+	// StreamID identifies the encoder instance for multi-call streams.
+	// All calls for the same stream must use the same StreamID.
+	// The encoder is created on first use and removed after IsLast=true.
+	StreamID *[StreamIDLength]byte `cbor:"stream_id"`
+
+	// Destinations is the list of payloads and their destination channels.
+	Destinations []DestinationPayload `cbor:"destinations"`
+
+	// IsLast indicates whether this is the last set of payloads in the sequence.
+	// When true, the final CopyStreamElement will have IsFinal=true and
+	// the encoder instance will be removed.
+	IsLast bool `cbor:"is_last"`
+}
+
+// Common API:
 
 // SendMessage is used to send a message through the mix network
 // it is part of the legacy API and should not be used for newer
@@ -358,58 +414,6 @@ type SendMessage struct {
 	Payload []byte `cbor:"payload"`
 }
 
-// SendARQMessage is used to send a message through the mix network
-// using the simple ARQ error correction scheme. It is part of the legacy API
-// and should not be used for newer works using the Pigeonhole protocol.
-type SendARQMessage struct {
-	// ID is the unique identifier with respect to the Payload.
-	// This is only used by the ARQ.
-	ID *[MessageIDLength]byte `cbor:"id"`
-
-	// WithSURB indicates if the message should be sent with a SURB
-	// in the Sphinx payload.
-	WithSURB bool `cbor:"with_surb"`
-
-	// SURBID must be a unique identity for each request.
-	// This field should be nil if WithSURB is false.
-	SURBID *[sConstants.SURBIDLength]byte `cbor:"surbid"`
-
-	// DestinationIdHash is 32 byte hash of the destination Provider's
-	// identity public key.
-	DestinationIdHash *[hash.HashSize]byte `cbor:"destination_id_hash"`
-
-	// RecipientQueueID is the queue identity which will receive the message.
-	RecipientQueueID []byte `cbor:"recipient_queue_id"`
-
-	// Payload is the actual Sphinx packet.
-	Payload []byte `cbor:"payload"`
-}
-
-// SendChannelQuery is used to send a Pigeonhole protocol ciphertext query payload
-// through the mix network. The result of sending this message type is two more events:
-// ChannelQuerySentEvent and ChannelQueryReplyEvent both of which can be matched
-// by the MessageID field.
-type SendChannelQuery struct {
-	// MessageID is the unique identifier for the request associated with the
-	// query reply via the ChannelQueryReplyEvent.
-	MessageID *[MessageIDLength]byte `cbor:"message_id"`
-
-	// ChannelID is optional and only used for sending channel messages.
-	// For non-channel messages, this field should be nil.
-	ChannelID *uint16 `cbor:"channel_id,omitempty"`
-
-	// DestinationIdHash is 32 byte hash of the destination Service's
-	// identity public key.
-	DestinationIdHash *[hash.HashSize]byte `cbor:"destination_id_hash"`
-
-	// RecipientQueueID is the queue identity which will receive the message.
-	// This queue ID is meant to be the queue ID of the Pigeonhole protocol Courier service.
-	RecipientQueueID []byte `cbor:"recipient_queue_id"`
-
-	// Payload is the Pigeonole protocol ciphertext payload which will be encapsulated in the Sphinx payload.
-	Payload []byte `cbor:"payload"`
-}
-
 // ThinClose is used to indicate that the thin client is disconnecting
 // from the daemon.
 type ThinClose struct {
@@ -419,7 +423,7 @@ type ThinClose struct {
 type Response struct {
 
 	// ShutdownEvent is sent when the client daemon is shutting down.
-	ShutdownEvent *ShutdownEvent `cbor:"shudown_event"`
+	ShutdownEvent *ShutdownEvent `cbor:"shutdown_event"`
 
 	// ConnectionStatusEvent is sent when the client daemon's connection status changes.
 	ConnectionStatusEvent *ConnectionStatusEvent `cbor:"connection_status_event"`
@@ -435,6 +439,34 @@ type Response struct {
 
 	// MessageIDGarbageCollected is sent when the client daemon garbage collects a message ID.
 	MessageIDGarbageCollected *MessageIDGarbageCollected `cbor:"message_id_garbage_collected"`
+
+	// New Pigeonhole API:
+
+	// NewKeypairReply is sent when the client daemon successfully creates a new keypair.
+	NewKeypairReply *NewKeypairReply `cbor:"new_keypair_reply"`
+
+	// EncryptReadReply is sent when the client daemon successfully encrypts a read operation.
+	EncryptReadReply *EncryptReadReply `cbor:"encrypt_read_reply"`
+
+	// EncryptWriteReply is sent when the client daemon successfully encrypts a write operation.
+	EncryptWriteReply *EncryptWriteReply `cbor:"encrypt_write_reply"`
+
+	// StartResendingEncryptedMessageReply is sent when the client daemon successfully starts resending an encrypted message.
+	StartResendingEncryptedMessageReply *StartResendingEncryptedMessageReply `cbor:"start_resending_encrypted_message_reply"`
+
+	// CancelResendingEncryptedMessageReply is sent when the client daemon successfully cancels resending an encrypted message.
+	CancelResendingEncryptedMessageReply *CancelResendingEncryptedMessageReply `cbor:"cancel_resending_encrypted_message_reply"`
+
+	// StartResendingCopyCommandReply is sent when the client daemon successfully sends a copy command with ARQ.
+	StartResendingCopyCommandReply *StartResendingCopyCommandReply `cbor:"start_resending_copy_command_reply"`
+
+	// CancelResendingCopyCommandReply is sent when the client daemon successfully cancels resending a copy command.
+	CancelResendingCopyCommandReply *CancelResendingCopyCommandReply `cbor:"cancel_resending_copy_command_reply"`
+
+	// NextMessageBoxIndexReply is sent when the client daemon successfully increments a MessageBoxIndex.
+	NextMessageBoxIndexReply *NextMessageBoxIndexReply `cbor:"next_message_box_index_reply"`
+
+	// Old Pigeonhole API:
 
 	// CreateWriteChannelReply is sent when the client daemon successfully creates a write channel.
 	CreateWriteChannelReply *CreateWriteChannelReply `cbor:"create_write_channel_reply"`
@@ -465,13 +497,66 @@ type Response struct {
 
 	// ChannelQueryReplyEvent is sent when the client daemon receives a reply to a channel query.
 	ChannelQueryReplyEvent *ChannelQueryReplyEvent `cbor:"channel_query_reply_event"`
+
+	// Copy Channel API:
+
+	// CreateCourierEnvelopesFromPayloadReply is sent when the client daemon successfully creates courier envelopes from a payload.
+	CreateCourierEnvelopesFromPayloadReply *CreateCourierEnvelopesFromPayloadReply `cbor:"create_courier_envelopes_from_payload_reply"`
+
+	// CreateCourierEnvelopesFromPayloadsReply is sent when the client daemon successfully creates courier envelopes from multiple payloads.
+	CreateCourierEnvelopesFromPayloadsReply *CreateCourierEnvelopesFromPayloadsReply `cbor:"create_courier_envelopes_from_payloads_reply"`
 }
 
 // Request is the thin client's request message to the client daemon.
 // It can result in one or more Response messages being sent back to the thin client.
 type Request struct {
 
-	// NEW CHANNEL API
+	// ThinClose is used to indicate that the thin client is disconnecting
+	// from the daemon.
+	ThinClose *ThinClose `cbor:"thin_close"`
+
+	// Legacy API
+
+	// SendMessage is used to send a message through the mix network.
+	// Note that this is part of the legacy API and should not be used for newer
+	// works using the Pigeonhole protocol.
+	SendMessage *SendMessage `cbor:"send_message"`
+
+	// New Pigeonhole API:
+
+	// NewKeypair is used to create a new keypair for use with the Pigeonhole protocol.
+	NewKeypair *NewKeypair `cbor:"new_keypair"`
+
+	// EncryptRead is used to encrypt a read operation for a given read capability.
+	EncryptRead *EncryptRead `cbor:"encrypt_read"`
+
+	// EncryptWrite is used to encrypt a write operation for a given write capability.
+	EncryptWrite *EncryptWrite `cbor:"encrypt_write"`
+
+	// StartResendingEncryptedMessage is used to start resending an encrypted message.
+	StartResendingEncryptedMessage *StartResendingEncryptedMessage `cbor:"start_resending_encrypted_message"`
+
+	// CancelResendingEncryptedMessage is used to cancel resending an encrypted message.
+	CancelResendingEncryptedMessage *CancelResendingEncryptedMessage `cbor:"cancel_resending_encrypted_message"`
+
+	// StartResendingCopyCommand is used to send a copy command with ARQ.
+	StartResendingCopyCommand *StartResendingCopyCommand `cbor:"start_resending_copy_command"`
+
+	// CancelResendingCopyCommand is used to cancel resending a copy command.
+	CancelResendingCopyCommand *CancelResendingCopyCommand `cbor:"cancel_resending_copy_command"`
+
+	// NextMessageBoxIndex is used to increment a MessageBoxIndex.
+	NextMessageBoxIndex *NextMessageBoxIndex `cbor:"next_message_box_index"`
+
+	// CreateCourierEnvelopesFromPayload is used to create multiple CourierEnvelopes from a payload of any size.
+	CreateCourierEnvelopesFromPayload *CreateCourierEnvelopesFromPayload `cbor:"create_courier_envelopes_from_payload"`
+
+	// CreateCourierEnvelopesFromPayloads is used to create CourierEnvelopes from multiple payloads
+	// going to different destination channels. This is more space-efficient than calling
+	// CreateCourierEnvelopesFromPayload multiple times.
+	CreateCourierEnvelopesFromPayloads *CreateCourierEnvelopesFromPayloads `cbor:"create_courier_envelopes_from_payloads"`
+
+	// OLD Pigeonhole API
 
 	// CreateWriteChannel is used to create a new Pigeonhole write channel.
 	CreateWriteChannel *CreateWriteChannel `cbor:"create_write_channel"`
@@ -500,23 +585,6 @@ type Request struct {
 	// CloseChannel is used to close a Pigeonhole channel.
 	CloseChannel *CloseChannel `cbor:"close_channel"`
 
-	// ThinClose is used to indicate that the thin client is disconnecting
-	// from the daemon.
-	ThinClose *ThinClose `cbor:"thin_close"`
-
 	// SendChannelQuery is used to send a message through the mix network
 	SendChannelQuery *SendChannelQuery `cbor:"send_channel_query"`
-
-	// Legacy API
-
-	// SendMessage is used to send a message through the mix network.
-	// Note that this is part of the legacy API and should not be used for newer
-	// works using the Pigeonhole protocol.
-	SendMessage *SendMessage `cbor:"send_message"`
-
-	// SendARQMessage is used to send a message through the mix network
-	// using the naive ARQ error correction scheme.
-	// Note that this is part of the legacy API and should not be used for newer
-	// works using the Pigeonhole protocol.
-	SendARQMessage *SendARQMessage `cbor:"send_arq_message"`
 }

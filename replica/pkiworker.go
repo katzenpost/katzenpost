@@ -71,6 +71,14 @@ func newPKIWorker(server *Server, log *logging.Logger) (*PKIWorker, error) {
 
 // newPKIWorkerWithClient creates a PKIWorker with a custom pki.Client for testing
 func newPKIWorkerWithClient(server *Server, pkiClient pki.Client, log *logging.Logger) (*PKIWorker, error) {
+	// Reduce PKI worker and PKI client log verbosity to WARNING level to reduce log noise
+	// This suppresses DEBUG and INFO messages from the PKI worker, PKI client, and connector
+	server.logBackend.SetLevel(logging.WARNING, "replica pkiWorker")
+	server.logBackend.SetLevel(logging.WARNING, "pki/voting/client/connector")
+	server.logBackend.SetLevel(logging.WARNING, "pki/voting/Client")
+	// Keep replica Connector at DEBUG for now to debug replication issues
+	// server.logBackend.SetLevel(logging.WARNING, "replica Connector")
+
 	p := &PKIWorker{
 		server:      server,
 		WorkerBase:  pki.NewWorkerBase(pkiClient, log),

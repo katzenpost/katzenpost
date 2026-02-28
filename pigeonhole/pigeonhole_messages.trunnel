@@ -155,3 +155,14 @@ struct copy_command {
 struct copy_command_reply {
     u8 error_code;
 }
+
+// CopyStreamElement - wraps a CourierEnvelope chunk with stream position flags.
+// Overhead: 1 byte (flags) + 4 bytes (envelope_len) = 5 bytes
+struct copy_stream_element {
+    // Flags: bit 0 = isStart, bit 1 = isFinal
+    u8 flags;
+
+    // The CourierEnvelope serialized bytes
+    u32 envelope_len;
+    u8 envelope_data[envelope_len];
+}
