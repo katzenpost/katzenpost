@@ -827,8 +827,8 @@ func (t *ThinClient) CancelResendingCopyCommand(ctx context.Context, writeCapHas
 //   - Deriving new encryption and blinding keys using HKDF
 //   - Updating the HKDF state for the next iteration
 //
-// The daemon handles the cryptographic operations internally, ensuring correct
-// BACAP protocol implementation.
+// The client daemon handles the cryptographic operations using our BACAP library
+// documented here: https://pkg.go.dev/github.com/katzenpost/hpqc/bacap
 //
 // Parameters:
 //   - ctx: Context for cancellation and timeout control
@@ -907,6 +907,7 @@ func (t *ThinClient) NextMessageBoxIndex(ctx context.Context, messageBoxIndex *b
 // NewStreamID generates a new cryptographically random stream identifier.
 //
 // Stream IDs are used to correlate multiple CreateCourierEnvelopesFromPayload
+// and CreateCourierEnvelopesFromPayloads
 // calls that belong to the same copy stream. Each stream should have a unique ID.
 //
 // Returns:
@@ -930,7 +931,7 @@ func (t *ThinClient) NewStreamID() *[StreamIDLength]byte {
 // accidental memory exhaustion.
 //
 // Each returned chunk is a serialized CopyStreamElement ready to be written to a box.
-// The first element has IsStart=true. When isLast is true, the last element has IsFinal=true.
+// The CopyStreamElement has a flags fields for indicating the first and last box in the stream.
 //
 // The returned chunks must be written to a temporary copy stream channel using
 // EncryptWrite + StartResendingEncryptedMessage. After the stream is complete,
@@ -1163,7 +1164,7 @@ func (t *ThinClient) GetAllCouriers() ([]CourierDescriptor, error) {
 	return couriers, nil
 }
 
-// GetDistinctCouriers returns N distinct random couriers for nested copy commands.
+// GetDistinctCouriers returns N distinct random couriers.
 // Returns an error if fewer than N couriers are available.
 func (t *ThinClient) GetDistinctCouriers(n int) ([]CourierDescriptor, error) {
 	couriers, err := t.GetAllCouriers()
