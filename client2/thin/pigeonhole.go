@@ -92,7 +92,7 @@ func errorCodeToSentinel(errorCode uint8) error {
 //
 //	// Share readCap with Bob so he can read messages
 //	// Store writeCap for sending messages
-func (t *ThinClient) NewKeypair(ctx context.Context, seed []byte) (*bacap.WriteCap, *bacap.ReadCap, *bacap.MessageBoxIndex, error) {
+func (t *ThinClient) NewKeypair(ctx context.Context, seed []byte) (writeCap *bacap.WriteCap, readCap *bacap.ReadCap, firstMessageIndex *bacap.MessageBoxIndex, err error) {
 	if ctx == nil {
 		return nil, nil, nil, errContextCannotBeNil
 	}
@@ -111,7 +111,7 @@ func (t *ThinClient) NewKeypair(ctx context.Context, seed []byte) (*bacap.WriteC
 	eventSink := t.EventSink()
 	defer t.StopEventSink(eventSink)
 
-	err := t.writeMessage(req)
+	err = t.writeMessage(req)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -179,7 +179,7 @@ func (t *ThinClient) NewKeypair(ctx context.Context, seed []byte) (*bacap.WriteC
 //	}
 //
 //	// Send ciphertext via StartResendingEncryptedMessage
-func (t *ThinClient) EncryptRead(ctx context.Context, readCap *bacap.ReadCap, messageBoxIndex *bacap.MessageBoxIndex) ([]byte, []byte, []byte, *[32]byte, error) {
+func (t *ThinClient) EncryptRead(ctx context.Context, readCap *bacap.ReadCap, messageBoxIndex *bacap.MessageBoxIndex) (messageCiphertext []byte, nextMessageIndex []byte, envelopeDescriptor []byte, envelopeHash *[32]byte, err error) {
 	if ctx == nil {
 		return nil, nil, nil, nil, errContextCannotBeNil
 	}
@@ -202,7 +202,7 @@ func (t *ThinClient) EncryptRead(ctx context.Context, readCap *bacap.ReadCap, me
 	eventSink := t.EventSink()
 	defer t.StopEventSink(eventSink)
 
-	err := t.writeMessage(req)
+	err = t.writeMessage(req)
 	if err != nil {
 		return nil, nil, nil, nil, err
 	}
@@ -270,7 +270,7 @@ func (t *ThinClient) EncryptRead(ctx context.Context, readCap *bacap.ReadCap, me
 //	}
 //
 //	// Send ciphertext via StartResendingEncryptedMessage
-func (t *ThinClient) EncryptWrite(ctx context.Context, plaintext []byte, writeCap *bacap.WriteCap, messageBoxIndex *bacap.MessageBoxIndex) ([]byte, []byte, *[32]byte, error) {
+func (t *ThinClient) EncryptWrite(ctx context.Context, plaintext []byte, writeCap *bacap.WriteCap, messageBoxIndex *bacap.MessageBoxIndex) (messageCiphertext []byte, envelopeDescriptor []byte, envelopeHash *[32]byte, err error) {
 	if ctx == nil {
 		return nil, nil, nil, errContextCannotBeNil
 	}
@@ -294,7 +294,7 @@ func (t *ThinClient) EncryptWrite(ctx context.Context, plaintext []byte, writeCa
 	eventSink := t.EventSink()
 	defer t.StopEventSink(eventSink)
 
-	err := t.writeMessage(req)
+	err = t.writeMessage(req)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -394,7 +394,7 @@ func (t *ThinClient) EncryptWrite(ctx context.Context, plaintext []byte, writeCa
 //		}
 //	}
 //	fmt.Printf("Received: %s\n", plaintext)
-func (t *ThinClient) StartResendingEncryptedMessage(ctx context.Context, readCap *bacap.ReadCap, writeCap *bacap.WriteCap, nextMessageIndex []byte, replyIndex *uint8, envelopeDescriptor []byte, messageCiphertext []byte, envelopeHash *[32]byte) ([]byte, error) {
+func (t *ThinClient) StartResendingEncryptedMessage(ctx context.Context, readCap *bacap.ReadCap, writeCap *bacap.WriteCap, nextMessageIndex []byte, replyIndex *uint8, envelopeDescriptor []byte, messageCiphertext []byte, envelopeHash *[32]byte) (plaintext []byte, err error) {
 	if ctx == nil {
 		return nil, errContextCannotBeNil
 	}
@@ -428,7 +428,7 @@ func (t *ThinClient) StartResendingEncryptedMessage(ctx context.Context, readCap
 	eventSink := t.EventSink()
 	defer t.StopEventSink(eventSink)
 
-	err := t.writeMessage(req)
+	err = t.writeMessage(req)
 	if err != nil {
 		return nil, err
 	}
@@ -846,7 +846,7 @@ func (t *ThinClient) CancelResendingCopyCommand(ctx context.Context, writeCapHas
 //		log.Fatal("Failed to increment index:", err)
 //	}
 //	// Use nextIndex for the next message
-func (t *ThinClient) NextMessageBoxIndex(ctx context.Context, messageBoxIndex *bacap.MessageBoxIndex) (*bacap.MessageBoxIndex, error) {
+func (t *ThinClient) NextMessageBoxIndex(ctx context.Context, messageBoxIndex *bacap.MessageBoxIndex) (nextMessageBoxIndex *bacap.MessageBoxIndex, err error) {
 	if ctx == nil {
 		return nil, errContextCannotBeNil
 	}
@@ -865,7 +865,7 @@ func (t *ThinClient) NextMessageBoxIndex(ctx context.Context, messageBoxIndex *b
 	eventSink := t.EventSink()
 	defer t.StopEventSink(eventSink)
 
-	err := t.writeMessage(req)
+	err = t.writeMessage(req)
 	if err != nil {
 		return nil, err
 	}
@@ -979,7 +979,7 @@ func (t *ThinClient) NewStreamID() *[StreamIDLength]byte {
 //	if err != nil || errorCode != 0 {
 //		log.Fatal("Copy command failed")
 //	}
-func (t *ThinClient) CreateCourierEnvelopesFromPayload(ctx context.Context, streamID *[StreamIDLength]byte, payload []byte, destWriteCap *bacap.WriteCap, destStartIndex *bacap.MessageBoxIndex, isLast bool) ([][]byte, error) {
+func (t *ThinClient) CreateCourierEnvelopesFromPayload(ctx context.Context, streamID *[StreamIDLength]byte, payload []byte, destWriteCap *bacap.WriteCap, destStartIndex *bacap.MessageBoxIndex, isLast bool) (envelopes [][]byte, err error) {
 	if ctx == nil {
 		return nil, errContextCannotBeNil
 	}
@@ -1008,7 +1008,7 @@ func (t *ThinClient) CreateCourierEnvelopesFromPayload(ctx context.Context, stre
 	eventSink := t.EventSink()
 	defer t.StopEventSink(eventSink)
 
-	err := t.writeMessage(req)
+	err = t.writeMessage(req)
 	if err != nil {
 		return nil, err
 	}
@@ -1061,7 +1061,7 @@ func (t *ThinClient) CreateCourierEnvelopesFromPayload(ctx context.Context, stre
 // Returns:
 //   - [][]byte: Serialized CopyStreamElements ready to be written to boxes
 //   - error: Any error encountered
-func (t *ThinClient) CreateCourierEnvelopesFromPayloads(ctx context.Context, streamID *[StreamIDLength]byte, destinations []DestinationPayload, isLast bool) ([][]byte, error) {
+func (t *ThinClient) CreateCourierEnvelopesFromPayloads(ctx context.Context, streamID *[StreamIDLength]byte, destinations []DestinationPayload, isLast bool) (envelopes [][]byte, err error) {
 	if ctx == nil {
 		return nil, errContextCannotBeNil
 	}
@@ -1085,7 +1085,7 @@ func (t *ThinClient) CreateCourierEnvelopesFromPayloads(ctx context.Context, str
 	eventSink := t.EventSink()
 	defer t.StopEventSink(eventSink)
 
-	err := t.writeMessage(req)
+	err = t.writeMessage(req)
 	if err != nil {
 		return nil, err
 	}
@@ -1148,12 +1148,12 @@ type CourierDescriptor struct {
 
 // GetAllCouriers returns all available courier services from the current PKI document.
 // Use this to select specific couriers for nested copy commands.
-func (t *ThinClient) GetAllCouriers() ([]CourierDescriptor, error) {
+func (t *ThinClient) GetAllCouriers() (couriers []CourierDescriptor, err error) {
 	services, err := t.GetServices("courier")
 	if err != nil {
 		return nil, err
 	}
-	couriers := make([]CourierDescriptor, len(services))
+	couriers = make([]CourierDescriptor, len(services))
 	for i, svc := range services {
 		idHash := hashIdentityKey(svc.MixDescriptor.IdentityKey)
 		couriers[i] = CourierDescriptor{
@@ -1166,8 +1166,8 @@ func (t *ThinClient) GetAllCouriers() ([]CourierDescriptor, error) {
 
 // GetDistinctCouriers returns N distinct random couriers.
 // Returns an error if fewer than N couriers are available.
-func (t *ThinClient) GetDistinctCouriers(n int) ([]CourierDescriptor, error) {
-	couriers, err := t.GetAllCouriers()
+func (t *ThinClient) GetDistinctCouriers(n int) (couriers []CourierDescriptor, err error) {
+	couriers, err = t.GetAllCouriers()
 	if err != nil {
 		return nil, err
 	}
