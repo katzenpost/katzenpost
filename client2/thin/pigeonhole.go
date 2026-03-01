@@ -1382,49 +1382,41 @@ func (c *ThinClient) TombstoneBox(
 	g *phgeo.Geometry,
 	writeCap *bacap.WriteCap,
 	boxIndex *bacap.MessageBoxIndex,
-) error {
+) (messageCiphertext []byte, envelopeDescriptor []byte, envelopeHash *[32]byte, err error) {
 
 	if g == nil {
-		return fmt.Errorf("nil geometry")
+		err = fmt.Errorf("nil geometry")
+		return
 	}
-	if err := g.Validate(); err != nil {
-		return err
+	if err = g.Validate(); err != nil {
+		return
 	}
 	if writeCap == nil {
-		return fmt.Errorf("nil writeCap")
+		err = fmt.Errorf("nil writeCap")
+		return
 	}
 	if boxIndex == nil {
-		return fmt.Errorf("nil boxIndex")
+		err = fmt.Errorf("nil boxIndex")
+		return
 	}
 
 	tomb := make([]byte, g.MaxPlaintextPayloadLength)
 
-	messageCiphertext, envelopeDescriptor, envelopeHash, err :=
+	messageCiphertext, envelopeDescriptor, envelopeHash, err =
 		c.EncryptWrite(ctx, tomb, writeCap, boxIndex)
-	if err != nil {
-		return fmt.Errorf("EncryptWrite failed: %w", err)
-	}
+	return
+}
 
-	_, err = c.StartResendingEncryptedMessage(
-		ctx,
-		nil,
-		writeCap,
-		nil,
-		nil,
-		envelopeDescriptor,
-		messageCiphertext,
-		envelopeHash,
-	)
-	if err != nil {
-		return fmt.Errorf("StartResendingEncryptedMessage failed: %w", err)
-	}
-
-	return nil
+type TombstoneEnvelope struct {
+	MessageCiphertext  []byte
+	EnvelopeDescriptor []byte
+	EnvelopeHash       *[32]byte
+	BoxIndex           *bacap.MessageBoxIndex
 }
 
 type TombstoneRangeResult struct {
-	Tombstoned uint32
-	Next       *bacap.MessageBoxIndex
+	Envelopes []*TombstoneEnvelope
+	Next      *bacap.MessageBoxIndex
 }
 
 func (c *ThinClient) TombstoneRange(
@@ -1433,7 +1425,7 @@ func (c *ThinClient) TombstoneRange(
 	writeCap *bacap.WriteCap,
 	start *bacap.MessageBoxIndex,
 	maxCount uint32,
-) (*TombstoneRangeResult, error) {
+) (result *TombstoneRangeResult, err error) {
 
 	if g == nil {
 		return nil, fmt.Errorf("nil geometry")
@@ -1448,35 +1440,39 @@ func (c *ThinClient) TombstoneRange(
 		return nil, fmt.Errorf("nil start index")
 	}
 	if maxCount == 0 {
-		return &TombstoneRangeResult{Tombstoned: 0, Next: start}, nil
+		return &TombstoneRangeResult{Envelopes: nil, Next: start}, nil
 	}
 
 	cur := start
-	var done uint32
+	envelopes := make([]*TombstoneEnvelope, 0, maxCount)
 
-	for done < maxCount {
-
-		if err := c.TombstoneBox(ctx, g, writeCap, cur); err != nil {
-			return &TombstoneRangeResult{
-				Tombstoned: done,
-				Next:       cur,
-			}, err
-		}
-
-		done++
-
-		next, err := cur.NextIndex()
+	for uint32(len(envelopes)) < maxCount {
+		messageCiphertext, envelopeDescriptor, envelopeHash, err := c.TombstoneBox(ctx, g, writeCap, cur)
 		if err != nil {
 			return &TombstoneRangeResult{
-				Tombstoned: done,
-				Next:       cur,
+				Envelopes: envelopes,
+				Next:      cur,
 			}, err
 		}
-		cur = next
+
+		envelopes = append(envelopes, &TombstoneEnvelope{
+			MessageCiphertext:  messageCiphertext,
+			EnvelopeDescriptor: envelopeDescriptor,
+			EnvelopeHash:       envelopeHash,
+			BoxIndex:           cur,
+		})
+
+		cur, err = cur.NextIndex()
+		if err != nil {
+			return &TombstoneRangeResult{
+				Envelopes: envelopes,
+				Next:      cur,
+			}, err
+		}
 	}
 
 	return &TombstoneRangeResult{
-		Tombstoned: done,
-		Next:       cur,
+		Envelopes: envelopes,
+		Next:      cur,
 	}, nil
 }

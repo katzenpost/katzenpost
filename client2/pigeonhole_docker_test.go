@@ -870,6 +870,9 @@ func TestTombstoning(t *testing.T) {
 	require.NoError(t, err)
 	t.Log("✓ Alice wrote message")
 
+	t.Log("Waiting for 30 seconds for message propagation...")
+	time.Sleep(30 * time.Second)
+
 	// Step 2: Bob reads and verifies
 	ciphertext, nextIdx, envDesc, envHash, err := bob.EncryptRead(ctx, readCap, firstIndex)
 	require.NoError(t, err)
@@ -879,9 +882,14 @@ func TestTombstoning(t *testing.T) {
 	t.Logf("✓ Bob read message: %q", string(plaintext))
 
 	// Step 3: Alice tombstones the box
-	err = alice.TombstoneBox(ctx, geo, writeCap, firstIndex)
+	tombCiphertext, tombEnvDesc, tombEnvHash, err := alice.TombstoneBox(ctx, geo, writeCap, firstIndex)
+	require.NoError(t, err)
+	_, err = alice.StartResendingEncryptedMessage(ctx, nil, writeCap, nil, nil, tombEnvDesc, tombCiphertext, tombEnvHash)
 	require.NoError(t, err)
 	t.Log("✓ Alice tombstoned the box")
+
+	t.Log("Waiting for 60 seconds for tombstone propagation...")
+	time.Sleep(60 * time.Second)
 
 	// Step 4: Bob reads again and verifies tombstone
 	ciphertext, nextIdx, envDesc, envHash, err = bob.EncryptRead(ctx, readCap, firstIndex)
@@ -890,4 +898,103 @@ func TestTombstoning(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, thin.IsTombstonePlaintext(geo, plaintext), "Expected tombstone plaintext (all zeros)")
 	t.Log("✓ Bob verified tombstone")
+}
+
+// TestTombstoneRange tests the TombstoneRange API:
+// 1. Alice writes multiple messages to consecutive boxes
+// 2. Bob reads and verifies each message
+// 3. Alice tombstones all boxes using TombstoneRange
+// 4. Bob reads again and verifies all boxes are tombstoned
+func TestTombstoneRange(t *testing.T) {
+	alice := setupThinClient(t)
+	defer alice.Close()
+	bob := setupThinClient(t)
+	defer bob.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+	defer cancel()
+
+	geo := alice.GetConfig().PigeonholeGeometry
+
+	// Create keypair
+	seed := make([]byte, 32)
+	_, err := rand.Reader.Read(seed)
+	require.NoError(t, err)
+
+	writeCap, readCap, firstIndex, err := alice.NewKeypair(ctx, seed)
+	require.NoError(t, err)
+	t.Log("✓ Created keypair")
+
+	// Write 3 messages to consecutive boxes
+	const numMessages = 3
+	messages := [][]byte{
+		[]byte("Message 1 - will be tombstoned"),
+		[]byte("Message 2 - will be tombstoned"),
+		[]byte("Message 3 - will be tombstoned"),
+	}
+
+	writeIdx := firstIndex
+	replyIndex := uint8(0)
+	for i, msg := range messages {
+		ciphertext, envDesc, envHash, err := alice.EncryptWrite(ctx, msg, writeCap, writeIdx)
+		require.NoError(t, err)
+		_, err = alice.StartResendingEncryptedMessage(ctx, nil, writeCap, nil, &replyIndex, envDesc, ciphertext, envHash)
+		require.NoError(t, err)
+		t.Logf("✓ Alice wrote message %d", i+1)
+
+		writeIdx, err = alice.NextMessageBoxIndex(ctx, writeIdx)
+		require.NoError(t, err)
+	}
+
+	t.Log("Waiting for 30 seconds for message propagation...")
+	time.Sleep(30 * time.Second)
+
+	// Bob reads and verifies all messages
+	readIdx := firstIndex
+	for i, expectedMsg := range messages {
+		ciphertext, nextIdx, envDesc, envHash, err := bob.EncryptRead(ctx, readCap, readIdx)
+		require.NoError(t, err)
+		plaintext, err := bob.StartResendingEncryptedMessage(ctx, readCap, nil, nextIdx, &replyIndex, envDesc, ciphertext, envHash)
+		require.NoError(t, err)
+		require.Equal(t, expectedMsg, plaintext)
+		t.Logf("✓ Bob read message %d: %q", i+1, string(plaintext))
+
+		readIdx, err = bob.NextMessageBoxIndex(ctx, readIdx)
+		require.NoError(t, err)
+	}
+
+	// Alice tombstones all boxes using TombstoneRange
+	result, err := alice.TombstoneRange(ctx, geo, writeCap, firstIndex, numMessages)
+	require.NoError(t, err)
+	require.Len(t, result.Envelopes, numMessages)
+	t.Logf("✓ TombstoneRange created %d envelopes", len(result.Envelopes))
+
+	// Send all tombstone envelopes
+	for i, envelope := range result.Envelopes {
+		_, err = alice.StartResendingEncryptedMessage(
+			ctx, nil, writeCap, nil, nil,
+			envelope.EnvelopeDescriptor, envelope.MessageCiphertext, envelope.EnvelopeHash,
+		)
+		require.NoError(t, err)
+		t.Logf("✓ Sent tombstone envelope %d", i+1)
+	}
+
+	t.Log("Waiting for 60 seconds for tombstone propagation...")
+	time.Sleep(60 * time.Second)
+
+	// Bob reads again and verifies all boxes are tombstoned
+	readIdx = firstIndex
+	for i := 0; i < numMessages; i++ {
+		ciphertext, nextIdx, envDesc, envHash, err := bob.EncryptRead(ctx, readCap, readIdx)
+		require.NoError(t, err)
+		plaintext, err := bob.StartResendingEncryptedMessage(ctx, readCap, nil, nextIdx, &replyIndex, envDesc, ciphertext, envHash)
+		require.NoError(t, err)
+		require.True(t, thin.IsTombstonePlaintext(geo, plaintext), "Expected tombstone plaintext for box %d", i+1)
+		t.Logf("✓ Bob verified tombstone %d", i+1)
+
+		readIdx, err = bob.NextMessageBoxIndex(ctx, readIdx)
+		require.NoError(t, err)
+	}
+
+	t.Logf("✓ All %d boxes successfully tombstoned and verified", numMessages)
 }

@@ -56,6 +56,17 @@ dockertest_multichannel_efficient:
 	$(docker) run -w /go/katzenpost/client2 ${docker_args} $(image) \
 		go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 1h -run "TestCopyCommandMultiChannelEfficient"
 
+dockertest_tombstone_box:
+	cd ../docker && make $(distro)_base.stamp
+	$(docker) run -w /go/katzenpost/client2 ${docker_args} $(image) \
+		go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 1h -run "TestTombstoning"
+
+dockertest_tombstone_range:
+	cd ../docker && make $(distro)_base.stamp
+	$(docker) run -w /go/katzenpost/client2 ${docker_args} $(image) \
+		go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 1h -run "TestTombstoneRange"
+
+
 dockertest_nested_copy:
 	cd ../docker && make $(distro)_base.stamp
 	$(docker) run -w /go/katzenpost/client2 ${docker_args} $(image) \
