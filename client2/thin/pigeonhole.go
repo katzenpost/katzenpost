@@ -1055,6 +1055,14 @@ func (t *ThinClient) CreateCourierEnvelopesFromPayload(ctx context.Context, stre
 // CreateCourierEnvelopesFromPayload multiple times because all envelopes from all
 // destinations are packed together in the same encoder without wasting space.
 //
+// Please note that this method causes the client daemon to save state between multiple calls
+// using the same streamID. The streamID should be unique for each copy stream.
+// We MUST do this because the daemon needs to maintain state between calls to be able
+// to pack the envelopes together efficiently such that all the BACAP Box payload is used.
+//
+// **tl,dr;** If the client daemon crashes between calls using the same streamID, data will be lost.
+// The application will need to create a new stream and start over sending the data.
+//
 // Parameters:
 //   - ctx: Context for cancellation
 //   - streamID: Unique identifier for the stream (use NewStreamID() for first call)
