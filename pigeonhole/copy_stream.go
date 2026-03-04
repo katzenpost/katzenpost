@@ -193,6 +193,55 @@ func (e *CopyStreamEncoder) Flush() [][]byte {
 	return elements
 }
 
+// CopyStreamEncoderState holds the serializable state of a CopyStreamEncoder.
+// This can be used for crash recovery - get the state before shutdown, persist it,
+// then restore it on restart to continue the stream.
+type CopyStreamEncoderState struct {
+	// Buffer contains the accumulated serialized envelope data not yet output.
+	Buffer []byte `cbor:"buffer"`
+	// IsFirstChunk indicates whether the first chunk has been output yet.
+	// If true, the next chunk will get the IsStart flag.
+	IsFirstChunk bool `cbor:"is_first_chunk"`
+}
+
+// GetBuffer returns the current encoder state for persistence.
+//
+// This is useful for crash recovery: before shutdown (or periodically as a checkpoint),
+// call GetBuffer to get the buffered state, persist it to disk, and on restart use
+// SetBuffer to restore the state and continue the stream.
+//
+// ⚠️ Warning: The buffer contains data that has not yet been written to boxes.
+// If you don't persist and restore this state, the buffered data will be lost.
+func (e *CopyStreamEncoder) GetBuffer() *CopyStreamEncoderState {
+	// Make a copy of the buffer to avoid aliasing
+	bufCopy := make([]byte, len(e.buffer))
+	copy(bufCopy, e.buffer)
+
+	return &CopyStreamEncoderState{
+		Buffer:       bufCopy,
+		IsFirstChunk: e.isFirstChunk,
+	}
+}
+
+// SetBuffer restores the encoder state from a previously saved state.
+//
+// This is useful for crash recovery: after restart, call SetBuffer with the
+// state that was saved via GetBuffer before the crash/shutdown.
+//
+// Note: This should only be called on a fresh encoder (immediately after
+// NewCopyStreamEncoder) or on an encoder that you want to completely reset.
+// Any existing buffer contents will be replaced.
+func (e *CopyStreamEncoder) SetBuffer(state *CopyStreamEncoderState) {
+	if state == nil {
+		return
+	}
+
+	// Make a copy of the buffer to avoid aliasing
+	e.buffer = make([]byte, len(state.Buffer))
+	copy(e.buffer, state.Buffer)
+	e.isFirstChunk = state.IsFirstChunk
+}
+
 // ===========================================================================
 // COURIER SECTION - Used by courier/server/plugin.go
 // ===========================================================================

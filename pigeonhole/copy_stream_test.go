@@ -486,3 +486,141 @@ func TestCopyStreamElement_Flags(t *testing.T) {
 		require.False(t, elem.IsFinal())
 	})
 }
+
+// ===========================================================================
+// GetBuffer/SetBuffer TESTS - For crash recovery
+// ===========================================================================
+
+func TestCopyStreamEncoder_GetBuffer_Empty(t *testing.T) {
+	geometry := createTestGeometry(1000)
+	encoder := NewCopyStreamEncoder(geometry)
+
+	// Get buffer from fresh encoder
+	state := encoder.GetBuffer()
+	require.NotNil(t, state)
+	require.Empty(t, state.Buffer)
+	require.True(t, state.IsFirstChunk)
+}
+
+func TestCopyStreamEncoder_GetBuffer_WithData(t *testing.T) {
+	geometry := createTestGeometry(1000)
+	encoder := NewCopyStreamEncoder(geometry)
+
+	// Add some data (but not enough for a full chunk)
+	envelope := createTestEnvelopeFromGeometry(geometry)
+
+	// Add envelope - this will buffer the serialized data
+	elements, err := encoder.AddEnvelope(envelope)
+	require.NoError(t, err)
+	// Depending on size, we may or may not get elements back
+	_ = elements
+
+	// Get buffer - should have some data if envelope didn't fill a chunk
+	state := encoder.GetBuffer()
+	require.NotNil(t, state)
+
+	// Buffer state should reflect whether first chunk was output
+	t.Logf("Buffer size: %d, IsFirstChunk: %v", len(state.Buffer), state.IsFirstChunk)
+}
+
+func TestCopyStreamEncoder_SetBuffer_Restore(t *testing.T) {
+	geometry := createTestGeometry(1000)
+
+	// Create first encoder and add data
+	encoder1 := NewCopyStreamEncoder(geometry)
+	testData := []byte("test data for buffer")
+	encoder1.buffer = append(encoder1.buffer, testData...)
+	encoder1.isFirstChunk = false
+
+	// Get state from first encoder
+	state := encoder1.GetBuffer()
+	require.Equal(t, testData, state.Buffer)
+	require.False(t, state.IsFirstChunk)
+
+	// Create second encoder and restore state
+	encoder2 := NewCopyStreamEncoder(geometry)
+	encoder2.SetBuffer(state)
+
+	// Verify state was restored
+	require.Equal(t, testData, encoder2.buffer)
+	require.False(t, encoder2.isFirstChunk)
+}
+
+func TestCopyStreamEncoder_SetBuffer_Nil(t *testing.T) {
+	geometry := createTestGeometry(1000)
+	encoder := NewCopyStreamEncoder(geometry)
+
+	// Original state
+	originalBuffer := []byte("original")
+	encoder.buffer = originalBuffer
+	encoder.isFirstChunk = false
+
+	// SetBuffer with nil should be a no-op
+	encoder.SetBuffer(nil)
+
+	// State should be unchanged
+	require.Equal(t, originalBuffer, encoder.buffer)
+	require.False(t, encoder.isFirstChunk)
+}
+
+func TestCopyStreamEncoder_GetSetBuffer_RoundTrip(t *testing.T) {
+	geometry := createTestGeometry(1000)
+
+	// Simulate crash recovery scenario
+	encoder1 := NewCopyStreamEncoder(geometry)
+
+	// Add some envelopes
+	envelope := createTestEnvelopeFromGeometry(geometry)
+	_, err := encoder1.AddEnvelope(envelope)
+	require.NoError(t, err)
+
+	// "Save" state before "crash"
+	savedState := encoder1.GetBuffer()
+
+	// "Restart" with new encoder
+	encoder2 := NewCopyStreamEncoder(geometry)
+	encoder2.SetBuffer(savedState)
+
+	// Both should produce the same output when flushed
+	result1 := encoder1.Flush()
+	result2 := encoder2.Flush()
+
+	require.Equal(t, len(result1), len(result2))
+	for i := range result1 {
+		require.Equal(t, result1[i], result2[i])
+	}
+}
+
+func TestCopyStreamEncoder_GetBuffer_NoCopy(t *testing.T) {
+	// Verify GetBuffer returns a copy, not a reference
+	geometry := createTestGeometry(1000)
+	encoder := NewCopyStreamEncoder(geometry)
+	encoder.buffer = []byte("original data")
+
+	state := encoder.GetBuffer()
+
+	// Modify the returned buffer
+	state.Buffer[0] = 'X'
+
+	// Original should be unchanged
+	require.Equal(t, byte('o'), encoder.buffer[0])
+}
+
+func TestCopyStreamEncoder_SetBuffer_NoCopy(t *testing.T) {
+	// Verify SetBuffer makes a copy, not a reference
+	geometry := createTestGeometry(1000)
+	encoder := NewCopyStreamEncoder(geometry)
+
+	state := &CopyStreamEncoderState{
+		Buffer:       []byte("state data"),
+		IsFirstChunk: false,
+	}
+
+	encoder.SetBuffer(state)
+
+	// Modify the original state
+	state.Buffer[0] = 'X'
+
+	// Encoder buffer should be unchanged
+	require.Equal(t, byte('s'), encoder.buffer[0])
+}

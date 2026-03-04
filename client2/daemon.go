@@ -416,6 +416,8 @@ func (d *Daemon) egressWorker() {
 				d.createCourierEnvelopesFromPayload(request)
 			case request.CreateCourierEnvelopesFromPayloads != nil:
 				d.createCourierEnvelopesFromPayloads(request)
+			case request.SetStreamBuffer != nil:
+				d.setStreamBuffer(request)
 
 				// OLD Pigeonhole Channel:
 

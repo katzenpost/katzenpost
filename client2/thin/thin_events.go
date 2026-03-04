@@ -704,6 +704,14 @@ type CreateCourierEnvelopesFromPayloadReply struct {
 	// Envelopes is a slice of serialized CourierEnvelopes, one per chunk.
 	Envelopes [][]byte `cbor:"envelopes"`
 
+	// Buffer contains any data buffered by the encoder that hasn't been output yet.
+	// This can be persisted for crash recovery and restored via SetStreamBuffer.
+	Buffer []byte `cbor:"buffer"`
+
+	// IsFirstChunk indicates whether the first chunk has been output yet.
+	// If true, the next chunk will get the IsStart flag.
+	IsFirstChunk bool `cbor:"is_first_chunk"`
+
 	// ErrorCode indicates the success or failure of the envelope creation.
 	// A value of ThinClientSuccess indicates successful creation.
 	ErrorCode uint8 `cbor:"error_code"`
@@ -714,7 +722,7 @@ func (e *CreateCourierEnvelopesFromPayloadReply) String() string {
 	if e.ErrorCode != ThinClientSuccess {
 		return fmt.Sprintf("CreateCourierEnvelopesFromPayloadReply: queryID=%x (error: %s)", e.QueryID[:], ThinClientErrorToString(e.ErrorCode))
 	}
-	return fmt.Sprintf("CreateCourierEnvelopesFromPayloadReply: queryID=%x numEnvelopes=%d", e.QueryID[:], len(e.Envelopes))
+	return fmt.Sprintf("CreateCourierEnvelopesFromPayloadReply: queryID=%x numEnvelopes=%d bufferLen=%d", e.QueryID[:], len(e.Envelopes), len(e.Buffer))
 }
 
 // CreateCourierEnvelopesFromPayloadsReply is sent in response to a CreateCourierEnvelopesFromPayloads request.
@@ -728,6 +736,14 @@ type CreateCourierEnvelopesFromPayloadsReply struct {
 	// from all destinations packed efficiently together.
 	Envelopes [][]byte `cbor:"envelopes"`
 
+	// Buffer contains any data buffered by the encoder that hasn't been output yet.
+	// This can be persisted for crash recovery and restored via SetStreamBuffer.
+	Buffer []byte `cbor:"buffer"`
+
+	// IsFirstChunk indicates whether the first chunk has been output yet.
+	// If true, the next chunk will get the IsStart flag.
+	IsFirstChunk bool `cbor:"is_first_chunk"`
+
 	// ErrorCode indicates the success or failure of the envelope creation.
 	// A value of ThinClientSuccess indicates successful creation.
 	ErrorCode uint8 `cbor:"error_code"`
@@ -738,5 +754,23 @@ func (e *CreateCourierEnvelopesFromPayloadsReply) String() string {
 	if e.ErrorCode != ThinClientSuccess {
 		return fmt.Sprintf("CreateCourierEnvelopesFromPayloadsReply: queryID=%x (error: %s)", e.QueryID[:], ThinClientErrorToString(e.ErrorCode))
 	}
-	return fmt.Sprintf("CreateCourierEnvelopesFromPayloadsReply: queryID=%x numEnvelopes=%d", e.QueryID[:], len(e.Envelopes))
+	return fmt.Sprintf("CreateCourierEnvelopesFromPayloadsReply: queryID=%x numEnvelopes=%d bufferLen=%d", e.QueryID[:], len(e.Envelopes), len(e.Buffer))
+}
+
+// SetStreamBufferReply is sent in response to a SetStreamBuffer request.
+// It confirms that the buffer state has been restored for the given stream ID.
+type SetStreamBufferReply struct {
+	// QueryID is used for correlating this reply with the SetStreamBuffer request.
+	QueryID *[QueryIDLength]byte `cbor:"query_id"`
+
+	// ErrorCode indicates the success or failure of the operation.
+	ErrorCode uint8 `cbor:"error_code"`
+}
+
+// String returns a string representation of the SetStreamBufferReply.
+func (e *SetStreamBufferReply) String() string {
+	if e.ErrorCode != ThinClientSuccess {
+		return fmt.Sprintf("SetStreamBufferReply: queryID=%x (error: %s)", e.QueryID[:], ThinClientErrorToString(e.ErrorCode))
+	}
+	return fmt.Sprintf("SetStreamBufferReply: queryID=%x success", e.QueryID[:])
 }

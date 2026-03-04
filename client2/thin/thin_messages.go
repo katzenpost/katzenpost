@@ -385,6 +385,27 @@ type CreateCourierEnvelopesFromPayloads struct {
 	IsLast bool `cbor:"is_last"`
 }
 
+// SetStreamBuffer restores the buffered state for a given stream ID.
+// This is useful for crash recovery: after restart, call SetStreamBuffer with the
+// buffer state that was returned by CreateCourierEnvelopesFromPayload(s) before the crash/shutdown.
+//
+// Note: This will create a new encoder if one doesn't exist for this StreamID,
+// or replace the buffer contents if one already exists.
+type SetStreamBuffer struct {
+	// QueryID is used for correlating this thin client request with the response.
+	QueryID *[QueryIDLength]byte `cbor:"query_id"`
+
+	// StreamID identifies the encoder instance to set the buffer for.
+	StreamID *[StreamIDLength]byte `cbor:"stream_id"`
+
+	// Buffer contains the accumulated serialized envelope data not yet output.
+	Buffer []byte `cbor:"buffer"`
+
+	// IsFirstChunk indicates whether the first chunk has been output yet.
+	// If true, the next chunk will get the IsStart flag.
+	IsFirstChunk bool `cbor:"is_first_chunk"`
+}
+
 // Common API:
 
 // SendMessage is used to send a message through the mix network
@@ -505,6 +526,9 @@ type Response struct {
 
 	// CreateCourierEnvelopesFromPayloadsReply is sent when the client daemon successfully creates courier envelopes from multiple payloads.
 	CreateCourierEnvelopesFromPayloadsReply *CreateCourierEnvelopesFromPayloadsReply `cbor:"create_courier_envelopes_from_payloads_reply"`
+
+	// SetStreamBufferReply is sent when the client daemon restores the buffered state for a stream.
+	SetStreamBufferReply *SetStreamBufferReply `cbor:"set_stream_buffer_reply"`
 }
 
 // Request is the thin client's request message to the client daemon.
@@ -555,6 +579,9 @@ type Request struct {
 	// going to different destination channels. This is more space-efficient than calling
 	// CreateCourierEnvelopesFromPayload multiple times.
 	CreateCourierEnvelopesFromPayloads *CreateCourierEnvelopesFromPayloads `cbor:"create_courier_envelopes_from_payloads"`
+
+	// SetStreamBuffer is used to restore the buffered state for a stream (for crash recovery).
+	SetStreamBuffer *SetStreamBuffer `cbor:"set_stream_buffer"`
 
 	// OLD Pigeonhole API
 

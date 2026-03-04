@@ -27,6 +27,7 @@ func IntoThinResponse(r *Response) *thin.Response {
 		// Copy Channel API:
 		CreateCourierEnvelopesFromPayloadReply:  r.CreateCourierEnvelopesFromPayloadReply,
 		CreateCourierEnvelopesFromPayloadsReply: r.CreateCourierEnvelopesFromPayloadsReply,
+		SetStreamBufferReply:                    r.SetStreamBufferReply,
 
 		// OLD Pigeonhole API:
 		CreateWriteChannelReply:      r.CreateWriteChannelReply,
@@ -83,6 +84,8 @@ type Response struct {
 
 	CreateCourierEnvelopesFromPayloadsReply *thin.CreateCourierEnvelopesFromPayloadsReply
 
+	SetStreamBufferReply *thin.SetStreamBufferReply
+
 	// OLD Pigeonhole API:
 
 	CreateWriteChannelReply *thin.CreateWriteChannelReply
@@ -123,6 +126,7 @@ func FromThinRequest(r *thin.Request, appid *[AppIDLength]byte) *Request {
 		// Copy Channel API:
 		CreateCourierEnvelopesFromPayload:  r.CreateCourierEnvelopesFromPayload,
 		CreateCourierEnvelopesFromPayloads: r.CreateCourierEnvelopesFromPayloads,
+		SetStreamBuffer:                    r.SetStreamBuffer,
 
 		// Old Pigeonhole API:
 		SendChannelQuery:        r.SendChannelQuery,
@@ -175,6 +179,8 @@ type Request struct {
 	CreateCourierEnvelopesFromPayload *thin.CreateCourierEnvelopesFromPayload
 
 	CreateCourierEnvelopesFromPayloads *thin.CreateCourierEnvelopesFromPayloads
+
+	SetStreamBuffer *thin.SetStreamBuffer
 
 	// OLD Pigeonhole API:
 
