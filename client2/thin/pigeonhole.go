@@ -910,7 +910,7 @@ func (t *ThinClient) NextMessageBoxIndex(ctx context.Context, messageBoxIndex *b
 // NewStreamID generates a new cryptographically random stream identifier.
 //
 // Stream IDs are used to correlate multiple CreateCourierEnvelopesFromPayload
-// and CreateCourierEnvelopesFromPayloads
+// and CreateCourierEnvelopesFromMultiPayload
 // calls that belong to the same copy stream. Each stream should have a unique ID.
 //
 // Returns:
@@ -1050,7 +1050,7 @@ func (t *ThinClient) CreateCourierEnvelopesFromPayload(ctx context.Context, stre
 	}
 }
 
-// CreateCourierEnvelopesFromPayloads creates CourierEnvelopes from multiple payloads
+// CreateCourierEnvelopesFromMultiPayload creates CourierEnvelopes from multiple payloads
 // going to different destination channels. This is more space-efficient than calling
 // CreateCourierEnvelopesFromPayload multiple times because all envelopes from all
 // destinations are packed together in the same encoder without wasting space.
@@ -1072,7 +1072,7 @@ func (t *ThinClient) CreateCourierEnvelopesFromPayload(ctx context.Context, stre
 // Returns:
 //   - [][]byte: Serialized CopyStreamElements ready to be written to boxes
 //   - error: Any error encountered
-func (t *ThinClient) CreateCourierEnvelopesFromPayloads(ctx context.Context, streamID *[StreamIDLength]byte, destinations []DestinationPayload, isLast bool) (envelopes [][]byte, err error) {
+func (t *ThinClient) CreateCourierEnvelopesFromMultiPayload(ctx context.Context, streamID *[StreamIDLength]byte, destinations []DestinationPayload, isLast bool) (envelopes [][]byte, err error) {
 	if ctx == nil {
 		return nil, errContextCannotBeNil
 	}
@@ -1114,11 +1114,11 @@ func (t *ThinClient) CreateCourierEnvelopesFromPayloads(ctx context.Context, str
 		switch v := event.(type) {
 		case *CreateCourierEnvelopesFromPayloadsReply:
 			if v.QueryID == nil {
-				t.log.Debugf("CreateCourierEnvelopesFromPayloads: Received reply with nil QueryID, ignoring")
+				t.log.Debugf("CreateCourierEnvelopesFromMultiPayload: Received reply with nil QueryID, ignoring")
 				continue
 			}
 			if !bytes.Equal(v.QueryID[:], queryID[:]) {
-				t.log.Debugf("CreateCourierEnvelopesFromPayloads: Received reply with mismatched QueryID, ignoring")
+				t.log.Debugf("CreateCourierEnvelopesFromMultiPayload: Received reply with mismatched QueryID, ignoring")
 				continue
 			}
 			if v.ErrorCode != ThinClientSuccess {
