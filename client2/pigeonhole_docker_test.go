@@ -592,11 +592,11 @@ func TestCopyCommandMultiChannel(t *testing.T) {
 }
 
 // TestCopyCommandMultiChannelEfficient tests the space-efficient multi-channel copy command
-// using CreateCourierEnvelopesFromPayloads which packs envelopes from different destinations
+// using CreateCourierEnvelopesFromMultiPayload which packs envelopes from different destinations
 // together without wasting space in the copy stream.
 //
 // This test verifies:
-// - The CreateCourierEnvelopesFromPayloads API works correctly
+// - The CreateCourierEnvelopesFromMultiPayload API works correctly
 // - Multiple destination payloads are packed efficiently into the copy stream
 // - The courier processes all envelopes and writes to the correct destinations
 func TestCopyCommandMultiChannelEfficient(t *testing.T) {
@@ -660,7 +660,7 @@ func TestCopyCommandMultiChannelEfficient(t *testing.T) {
 	payload2 := []byte("This is the confidential data for Channel 2 packed efficiently with payload1.")
 	t.Logf("Alice: Created payload2 for Channel 2 (%d bytes)", len(payload2))
 
-	// Step 4: Create copy stream chunks using CreateCourierEnvelopesFromPayloads (efficient API)
+	// Step 4: Create copy stream chunks using CreateCourierEnvelopesFromMultiPayload (efficient API)
 	t.Log("=== Step 4: Creating copy stream chunks using efficient multi-destination API ===")
 	streamID := aliceThinClient.NewStreamID()
 
@@ -679,9 +679,9 @@ func TestCopyCommandMultiChannelEfficient(t *testing.T) {
 	}
 
 	// Single call packs all envelopes efficiently
-	allChunks, err := aliceThinClient.CreateCourierEnvelopesFromPayloads(ctx, streamID, destinations, true)
+	allChunks, err := aliceThinClient.CreateCourierEnvelopesFromMultiPayload(ctx, streamID, destinations, true)
 	require.NoError(t, err)
-	require.NotEmpty(t, allChunks, "CreateCourierEnvelopesFromPayloads returned empty chunks")
+	require.NotEmpty(t, allChunks, "CreateCourierEnvelopesFromMultiPayload returned empty chunks")
 	t.Logf("Alice: Created %d chunks for both channels (packed efficiently)", len(allChunks))
 
 	// Step 5: Write all copy stream chunks to the temporary channel
