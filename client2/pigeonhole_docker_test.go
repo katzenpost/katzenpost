@@ -679,18 +679,18 @@ func TestCopyCommandMultiChannelEfficient(t *testing.T) {
 	}
 
 	// Single call packs all envelopes efficiently
-	allChunks, err := aliceThinClient.CreateCourierEnvelopesFromMultiPayload(ctx, streamID, destinations, true)
+	allChunksResult, err := aliceThinClient.CreateCourierEnvelopesFromMultiPayload(ctx, streamID, destinations, true)
 	require.NoError(t, err)
-	require.NotEmpty(t, allChunks, "CreateCourierEnvelopesFromMultiPayload returned empty chunks")
-	t.Logf("Alice: Created %d chunks for both channels (packed efficiently)", len(allChunks))
+	require.NotEmpty(t, allChunksResult.Envelopes, "CreateCourierEnvelopesFromMultiPayload returned empty chunks")
+	t.Logf("Alice: Created %d chunks for both channels (packed efficiently)", len(allChunksResult.Envelopes))
 
 	// Step 5: Write all copy stream chunks to the temporary channel
 	t.Log("=== Step 5: Writing all chunks to temporary channel ===")
 	tempIndex := tempFirstIndex
 	replyIndex := uint8(0)
 
-	for i, chunk := range allChunks {
-		t.Logf("--- Writing chunk %d/%d to temporary channel ---", i+1, len(allChunks))
+	for i, chunk := range allChunksResult.Envelopes {
+		t.Logf("--- Writing chunk %d/%d to temporary channel ---", i+1, len(allChunksResult.Envelopes))
 
 		// Encrypt the chunk for the copy stream
 		ciphertext, envDesc, envHash, err := aliceThinClient.EncryptWrite(ctx, chunk, tempWriteCap, tempIndex)

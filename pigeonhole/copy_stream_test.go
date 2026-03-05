@@ -499,7 +499,6 @@ func TestCopyStreamEncoder_GetBuffer_Empty(t *testing.T) {
 	state := encoder.GetBuffer()
 	require.NotNil(t, state)
 	require.Empty(t, state.Buffer)
-	require.True(t, state.IsFirstChunk)
 }
 
 func TestCopyStreamEncoder_GetBuffer_WithData(t *testing.T) {
@@ -519,8 +518,8 @@ func TestCopyStreamEncoder_GetBuffer_WithData(t *testing.T) {
 	state := encoder.GetBuffer()
 	require.NotNil(t, state)
 
-	// Buffer state should reflect whether first chunk was output
-	t.Logf("Buffer size: %d, IsFirstChunk: %v", len(state.Buffer), state.IsFirstChunk)
+	// Buffer state should have some data
+	t.Logf("Buffer size: %d", len(state.Buffer))
 }
 
 func TestCopyStreamEncoder_SetBuffer_Restore(t *testing.T) {
@@ -535,7 +534,6 @@ func TestCopyStreamEncoder_SetBuffer_Restore(t *testing.T) {
 	// Get state from first encoder
 	state := encoder1.GetBuffer()
 	require.Equal(t, testData, state.Buffer)
-	require.False(t, state.IsFirstChunk)
 
 	// Create second encoder and restore state
 	encoder2 := NewCopyStreamEncoder(geometry)
@@ -543,7 +541,6 @@ func TestCopyStreamEncoder_SetBuffer_Restore(t *testing.T) {
 
 	// Verify state was restored
 	require.Equal(t, testData, encoder2.buffer)
-	require.False(t, encoder2.isFirstChunk)
 }
 
 func TestCopyStreamEncoder_SetBuffer_Nil(t *testing.T) {
@@ -612,8 +609,7 @@ func TestCopyStreamEncoder_SetBuffer_NoCopy(t *testing.T) {
 	encoder := NewCopyStreamEncoder(geometry)
 
 	state := &CopyStreamEncoderState{
-		Buffer:       []byte("state data"),
-		IsFirstChunk: false,
+		Buffer: []byte("state data"),
 	}
 
 	encoder.SetBuffer(state)
