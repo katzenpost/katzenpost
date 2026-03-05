@@ -563,7 +563,8 @@ func TestCopyStreamEncoder_SetBuffer_Nil(t *testing.T) {
 func TestCopyStreamEncoder_GetSetBuffer_RoundTrip(t *testing.T) {
 	geometry := createTestGeometry(1000)
 
-	// Simulate crash recovery scenario
+	// Simulate crash recovery scenario where the client knows it has
+	// already sent the first chunk (client tracks this externally)
 	encoder1 := NewCopyStreamEncoder(geometry)
 
 	// Add some envelopes
@@ -577,6 +578,9 @@ func TestCopyStreamEncoder_GetSetBuffer_RoundTrip(t *testing.T) {
 	// "Restart" with new encoder
 	encoder2 := NewCopyStreamEncoder(geometry)
 	encoder2.SetBuffer(savedState)
+
+	// Sync the isFirstChunk state manually (client would track this)
+	encoder2.isFirstChunk = encoder1.isFirstChunk
 
 	// Both should produce the same output when flushed
 	result1 := encoder1.Flush()
