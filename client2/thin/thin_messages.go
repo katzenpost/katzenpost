@@ -400,10 +400,6 @@ type SetStreamBuffer struct {
 
 	// Buffer contains the accumulated serialized envelope data not yet output.
 	Buffer []byte `cbor:"buffer"`
-
-	// IsFirstChunk indicates whether the first chunk has been output yet.
-	// If true, the next chunk will get the IsStart flag.
-	IsFirstChunk bool `cbor:"is_first_chunk"`
 }
 
 // Common API:
@@ -525,7 +521,7 @@ type Response struct {
 	CreateCourierEnvelopesFromPayloadReply *CreateCourierEnvelopesFromPayloadReply `cbor:"create_courier_envelopes_from_payload_reply"`
 
 	// CreateCourierEnvelopesFromPayloadsReply is sent when the client daemon successfully creates courier envelopes from multiple payloads.
-	CreateCourierEnvelopesFromPayloadsReply *CreateCourierEnvelopesFromPayloadsReply `cbor:"create_courier_envelopes_from_payloads_reply"`
+	CreateCourierEnvelopesFromPayloadsReply *CreateCourierEnvelopesFromPayloadsReply `cbor:"create_courier_envelopes_from_multi_payload_reply"`
 
 	// SetStreamBufferReply is sent when the client daemon restores the buffered state for a stream.
 	SetStreamBufferReply *SetStreamBufferReply `cbor:"set_stream_buffer_reply"`
@@ -578,7 +574,7 @@ type Request struct {
 	// CreateCourierEnvelopesFromPayloads is used to create CourierEnvelopes from multiple payloads
 	// going to different destination channels. This is more space-efficient than calling
 	// CreateCourierEnvelopesFromPayload multiple times.
-	CreateCourierEnvelopesFromPayloads *CreateCourierEnvelopesFromPayloads `cbor:"create_courier_envelopes_from_payloads"`
+	CreateCourierEnvelopesFromPayloads *CreateCourierEnvelopesFromPayloads `cbor:"create_courier_envelopes_from_multi_payload"`
 
 	// SetStreamBuffer is used to restore the buffered state for a stream (for crash recovery).
 	SetStreamBuffer *SetStreamBuffer `cbor:"set_stream_buffer"`

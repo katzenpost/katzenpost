@@ -550,8 +550,7 @@ func (d *Daemon) createCourierEnvelopesFromPayload(request *Request) {
 		d.copyStreamEncodersLock.Unlock()
 		// Buffer is empty after flush
 		bufferState = &pigeonhole.CopyStreamEncoderState{
-			Buffer:       nil,
-			IsFirstChunk: false,
+			Buffer: nil,
 		}
 	} else {
 		// Get the current buffer state for crash recovery
@@ -565,11 +564,10 @@ func (d *Daemon) createCourierEnvelopesFromPayload(request *Request) {
 	conn.sendResponse(&Response{
 		AppID: request.AppID,
 		CreateCourierEnvelopesFromPayloadReply: &thin.CreateCourierEnvelopesFromPayloadReply{
-			QueryID:      request.CreateCourierEnvelopesFromPayload.QueryID,
-			Envelopes:    elements,
-			Buffer:       bufferState.Buffer,
-			IsFirstChunk: bufferState.IsFirstChunk,
-			ErrorCode:    thin.ThinClientSuccess,
+			QueryID:   request.CreateCourierEnvelopesFromPayload.QueryID,
+			Envelopes: elements,
+			Buffer:    bufferState.Buffer,
+			ErrorCode: thin.ThinClientSuccess,
 		},
 	})
 }
@@ -785,8 +783,7 @@ func (d *Daemon) createCourierEnvelopesFromPayloads(request *Request) {
 		d.copyStreamEncodersLock.Unlock()
 		// Buffer is empty after flush
 		bufferState = &pigeonhole.CopyStreamEncoderState{
-			Buffer:       nil,
-			IsFirstChunk: false,
+			Buffer: nil,
 		}
 	} else {
 		// Get the current buffer state for crash recovery
@@ -800,11 +797,10 @@ func (d *Daemon) createCourierEnvelopesFromPayloads(request *Request) {
 	conn.sendResponse(&Response{
 		AppID: request.AppID,
 		CreateCourierEnvelopesFromPayloadsReply: &thin.CreateCourierEnvelopesFromPayloadsReply{
-			QueryID:      request.CreateCourierEnvelopesFromPayloads.QueryID,
-			Envelopes:    elements,
-			Buffer:       bufferState.Buffer,
-			IsFirstChunk: bufferState.IsFirstChunk,
-			ErrorCode:    thin.ThinClientSuccess,
+			QueryID:   request.CreateCourierEnvelopesFromPayloads.QueryID,
+			Envelopes: elements,
+			Buffer:    bufferState.Buffer,
+			ErrorCode: thin.ThinClientSuccess,
 		},
 	})
 }
@@ -825,7 +821,8 @@ func (d *Daemon) sendCreateCourierEnvelopesFromPayloadsError(request *Request, e
 
 // setStreamBuffer restores the buffered state for a given stream ID.
 // This is useful for crash recovery: after restart, the thin client calls this
-// with the state that was saved via getStreamBuffer before the crash/shutdown.
+// with the buffer state that was returned by CreateCourierEnvelopesFromPayload(s)
+// before the crash/shutdown.
 func (d *Daemon) setStreamBuffer(request *Request) {
 	conn := d.listener.getConnection(request.AppID)
 	if conn == nil {
@@ -842,8 +839,7 @@ func (d *Daemon) setStreamBuffer(request *Request) {
 
 	// Create the state to restore
 	state := &pigeonhole.CopyStreamEncoderState{
-		Buffer:       request.SetStreamBuffer.Buffer,
-		IsFirstChunk: request.SetStreamBuffer.IsFirstChunk,
+		Buffer: request.SetStreamBuffer.Buffer,
 	}
 
 	d.copyStreamEncodersLock.Lock()
@@ -857,8 +853,8 @@ func (d *Daemon) setStreamBuffer(request *Request) {
 	encoder.SetBuffer(state)
 	d.copyStreamEncodersLock.Unlock()
 
-	d.log.Debugf("setStreamBuffer: restored buffer for stream %x (bufferLen=%d, isFirstChunk=%v, newEncoder=%v)",
-		streamID[:], len(state.Buffer), state.IsFirstChunk, !exists)
+	d.log.Debugf("setStreamBuffer: restored buffer for stream %x (bufferLen=%d, newEncoder=%v)",
+		streamID[:], len(state.Buffer), !exists)
 
 	conn.sendResponse(&Response{
 		AppID: request.AppID,

@@ -909,6 +909,17 @@ func (t *ThinClient) NextMessageBoxIndex(ctx context.Context, messageBoxIndex *b
 
 // NewStreamID generates a new cryptographically random stream identifier.
 //
+// CreateEnvelopesResult contains the result of creating courier envelopes,
+// including the envelopes and buffer state for crash recovery.
+type CreateEnvelopesResult struct {
+	// Envelopes contains the serialized CopyStreamElements ready to be written to boxes.
+	Envelopes [][]byte
+
+	// Buffer contains any data buffered by the encoder that hasn't been output yet.
+	// This can be persisted for crash recovery and restored via SetStreamBuffer.
+	Buffer []byte
+}
+
 // Stream IDs are used to correlate multiple CreateCourierEnvelopesFromPayload
 // and CreateCourierEnvelopesFromMultiPayload
 // calls that belong to the same copy stream. Each stream should have a unique ID.
@@ -1070,9 +1081,9 @@ func (t *ThinClient) CreateCourierEnvelopesFromPayload(ctx context.Context, stre
 //   - isLast: Set to true on the final call to flush the encoder
 //
 // Returns:
-//   - [][]byte: Serialized CopyStreamElements ready to be written to boxes
+//   - *CreateEnvelopesResult: Contains envelopes and buffer state for crash recovery
 //   - error: Any error encountered
-func (t *ThinClient) CreateCourierEnvelopesFromMultiPayload(ctx context.Context, streamID *[StreamIDLength]byte, destinations []DestinationPayload, isLast bool) (envelopes [][]byte, err error) {
+func (t *ThinClient) CreateCourierEnvelopesFromMultiPayload(ctx context.Context, streamID *[StreamIDLength]byte, destinations []DestinationPayload, isLast bool) (*CreateEnvelopesResult, error) {
 	if ctx == nil {
 		return nil, errContextCannotBeNil
 	}
@@ -1096,7 +1107,7 @@ func (t *ThinClient) CreateCourierEnvelopesFromMultiPayload(ctx context.Context,
 	eventSink := t.EventSink()
 	defer t.StopEventSink(eventSink)
 
-	err = t.writeMessage(req)
+	err := t.writeMessage(req)
 	if err != nil {
 		return nil, err
 	}
@@ -1124,7 +1135,10 @@ func (t *ThinClient) CreateCourierEnvelopesFromMultiPayload(ctx context.Context,
 			if v.ErrorCode != ThinClientSuccess {
 				return nil, errors.New(ThinClientErrorToString(v.ErrorCode))
 			}
-			return v.Envelopes, nil
+			return &CreateEnvelopesResult{
+				Envelopes: v.Envelopes,
+				Buffer:    v.Buffer,
+			}, nil
 		case *ConnectionStatusEvent:
 			t.isConnected = v.IsConnected
 		case *NewDocumentEvent:

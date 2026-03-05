@@ -199,9 +199,6 @@ func (e *CopyStreamEncoder) Flush() [][]byte {
 type CopyStreamEncoderState struct {
 	// Buffer contains the accumulated serialized envelope data not yet output.
 	Buffer []byte `cbor:"buffer"`
-	// IsFirstChunk indicates whether the first chunk has been output yet.
-	// If true, the next chunk will get the IsStart flag.
-	IsFirstChunk bool `cbor:"is_first_chunk"`
 }
 
 // GetBuffer returns the current encoder state for persistence.
@@ -218,8 +215,7 @@ func (e *CopyStreamEncoder) GetBuffer() *CopyStreamEncoderState {
 	copy(bufCopy, e.buffer)
 
 	return &CopyStreamEncoderState{
-		Buffer:       bufCopy,
-		IsFirstChunk: e.isFirstChunk,
+		Buffer: bufCopy,
 	}
 }
 
@@ -239,7 +235,6 @@ func (e *CopyStreamEncoder) SetBuffer(state *CopyStreamEncoderState) {
 	// Make a copy of the buffer to avoid aliasing
 	e.buffer = make([]byte, len(state.Buffer))
 	copy(e.buffer, state.Buffer)
-	e.isFirstChunk = state.IsFirstChunk
 }
 
 // ===========================================================================

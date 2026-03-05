@@ -708,10 +708,6 @@ type CreateCourierEnvelopesFromPayloadReply struct {
 	// This can be persisted for crash recovery and restored via SetStreamBuffer.
 	Buffer []byte `cbor:"buffer"`
 
-	// IsFirstChunk indicates whether the first chunk has been output yet.
-	// If true, the next chunk will get the IsStart flag.
-	IsFirstChunk bool `cbor:"is_first_chunk"`
-
 	// ErrorCode indicates the success or failure of the envelope creation.
 	// A value of ThinClientSuccess indicates successful creation.
 	ErrorCode uint8 `cbor:"error_code"`
@@ -739,10 +735,6 @@ type CreateCourierEnvelopesFromPayloadsReply struct {
 	// Buffer contains any data buffered by the encoder that hasn't been output yet.
 	// This can be persisted for crash recovery and restored via SetStreamBuffer.
 	Buffer []byte `cbor:"buffer"`
-
-	// IsFirstChunk indicates whether the first chunk has been output yet.
-	// If true, the next chunk will get the IsStart flag.
-	IsFirstChunk bool `cbor:"is_first_chunk"`
 
 	// ErrorCode indicates the success or failure of the envelope creation.
 	// A value of ThinClientSuccess indicates successful creation.
