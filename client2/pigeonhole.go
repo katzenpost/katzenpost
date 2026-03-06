@@ -1714,6 +1714,21 @@ func (d *Daemon) handlePayloadReply(arqMessage *ARQMessage, courierEnvelopeReply
 	delete(d.arqEnvelopeHashMap, *arqMessage.EnvelopeHash)
 	d.replyLock.Unlock()
 
+	// Handle tombstones: empty plaintext means the box was tombstoned.
+	// Skip unpadding since tombstones have no padded payload.
+	if len(plaintext) == 0 {
+		d.log.Debugf("handlePayloadReply: Tombstone detected (empty plaintext)")
+		conn.sendResponse(&Response{
+			AppID: arqMessage.AppID,
+			StartResendingEncryptedMessageReply: &thin.StartResendingEncryptedMessageReply{
+				QueryID:   arqMessage.QueryID,
+				Plaintext: []byte{},
+				ErrorCode: thin.ThinClientSuccess,
+			},
+		})
+		return
+	}
+
 	// Unpad the plaintext (remove length prefix and padding)
 	unpaddedPlaintext, err := pigeonhole.ExtractMessageFromPaddedPayload(plaintext)
 	if err != nil {
