@@ -494,9 +494,14 @@ func (e *Courier) handleOldMessage(cacheEntry *CourierBookKeeping, envHash *[has
 		entry := cacheEntry.EnvelopeReplies[courierMessage.ReplyIndex]
 		payload = entry.EnvelopeReply
 		e.log.Debugf("Found reply [len:%d err:%d read:%v] at requested index %d for %v", len(payload), entry.ErrorCode, entry.IsRead, courierMessage.ReplyIndex, envHash)
+		// If the payload at requested index is empty, try the other index
 		if len(payload) == 0 && cacheEntry.EnvelopeReplies[courierMessage.ReplyIndex^1] != nil {
 			oentry := cacheEntry.EnvelopeReplies[courierMessage.ReplyIndex^1]
-			e.log.Debugf("entry at idx %v is empty; other: [len:%d err:%d read:%v]", courierMessage.ReplyIndex, len(oentry.EnvelopeReply), oentry.ErrorCode, oentry.IsRead)
+			if len(oentry.EnvelopeReply) > 0 {
+				e.log.Debugf("entry at idx %v is empty; using other index with [len:%d err:%d read:%v]", courierMessage.ReplyIndex, len(oentry.EnvelopeReply), oentry.ErrorCode, oentry.IsRead)
+				courierMessage.ReplyIndex = courierMessage.ReplyIndex ^ 1
+				payload = oentry.EnvelopeReply
+			}
 		}
 	} else {
 		e.log.Debugf("No reply available at requested index %d", courierMessage.ReplyIndex)
