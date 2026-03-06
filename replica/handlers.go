@@ -355,10 +355,10 @@ func (c *incomingConn) handleTombstone(replicaWrite *pigeonhole.ReplicaWrite) *p
 		}
 	}
 
-	// Delete the existing entry from the database
-	err = c.l.server.state.handleReplicaTombstone(replicaWrite.BoxID)
+	// Store the tombstone (empty payload with signature) in the database
+	err = c.l.server.state.handleReplicaTombstone(replicaWrite.BoxID, replicaWrite.Signature)
 	if err != nil {
-		c.log.Errorf("handleTombstone deletion failed: %v", err)
+		c.log.Errorf("handleTombstone storage failed: %v", err)
 		return &pigeonhole.ReplicaWriteReply{
 			ErrorCode: pigeonhole.ReplicaErrorDatabaseFailure,
 		}
