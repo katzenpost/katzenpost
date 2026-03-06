@@ -4,7 +4,6 @@
 package replica
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"os"
@@ -70,7 +69,7 @@ type shardingResult struct {
 	ReplicaPubKeys []nike.PublicKey
 }
 
-// getShardingInfo performs the common sharding logic and returns replica indices and public keys
+// getShardingInfo performs the common sharding logic and returns replica IDs and public keys
 func getShardingInfo(t *testing.T, env *testEnvironment, boxID *[bacap.BoxIDSize]byte) *shardingResult {
 	currentEpoch, _, _ := epochtime.Now()
 	replicaEpoch, _, _ := replicaCommon.ReplicaNow()
@@ -81,23 +80,15 @@ func getShardingInfo(t *testing.T, env *testEnvironment, boxID *[bacap.BoxIDSize
 	require.NoError(t, err)
 	require.Equal(t, 2, len(shardedReplicas), msgShouldGetExactly2ShardedReplicas)
 
-	// Find the indices of the sharded replicas in the StorageReplicas slice
+	// Use the static ReplicaID from each descriptor, not the array index
 	var replicaIndices [2]uint8
 	var replicaPubKeys []nike.PublicKey = make([]nike.PublicKey, 2)
 
 	for i, shardedReplica := range shardedReplicas {
-		// Find the index of this replica in the StorageReplicas slice
-		replicaIndex := -1
-		for j, storageReplica := range doc.StorageReplicas {
-			if bytes.Equal(shardedReplica.IdentityKey, storageReplica.IdentityKey) {
-				replicaIndex = j
-				break
-			}
-		}
-		require.NotEqual(t, -1, replicaIndex, msgShouldFindShardedReplicaInStorage)
-
-		replicaIndices[i] = uint8(replicaIndex)
-		replicaPubKey := doc.StorageReplicas[replicaIndex].EnvelopeKeys[replicaEpoch]
+		// Use the static ReplicaID field from the descriptor
+		// This is what the courier and replicas use to identify each other
+		replicaIndices[i] = shardedReplica.ReplicaID
+		replicaPubKey := shardedReplica.EnvelopeKeys[replicaEpoch]
 		replicaPubKeys[i], err = replicaCommon.NikeScheme.UnmarshalBinaryPublicKey(replicaPubKey)
 		require.NoError(t, err)
 	}
