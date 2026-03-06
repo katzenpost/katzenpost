@@ -79,8 +79,8 @@ github.com/katzenpost/chacha20poly1305 v0.0.1 h1:yFPxgu/VSWsoCNQ2x15az8xBKKc/9GD
 github.com/katzenpost/chacha20poly1305 v0.0.1/go.mod h1:5sv//C8pWaXrnnP3CNiJXqAlA1/yfUZOl1tR9xsL9bI=
 github.com/katzenpost/circl v1.3.9-0.20240222183521-1cd9a34e9a0c h1:FYy03rLIjdyjklBOI6YSCb3q7OubTx0dVDWYOgDsvA8=
 github.com/katzenpost/circl v1.3.9-0.20240222183521-1cd9a34e9a0c/go.mod h1:+EBrwiGYs9S+qZqaqxujN1CReTNCMAG6p+31KkEDeeA=
-github.com/katzenpost/hpqc v0.0.73 h1:LTKNqn4pf6A2x8lbnzFql/TCrkxGFMSec6QyMT0ViLw=
-github.com/katzenpost/hpqc v0.0.73/go.mod h1:FKTko//TflX91qipK3F5g4tcH/7Kr77lFtnBIVxBCzw=
+github.com/katzenpost/hpqc v0.0.74 h1:ZCOiRY/Ccgh9CZHMS9n+E6r4cQitAxdcRde7IzySgrU=
+github.com/katzenpost/hpqc v0.0.74/go.mod h1:FKTko//TflX91qipK3F5g4tcH/7Kr77lFtnBIVxBCzw=
 github.com/katzenpost/nyquist v0.0.10 h1:rh9TCEXCsutsg+cvbV6ASVFnzSAYBisWQ3fnwQSPa34=
 github.com/katzenpost/nyquist v0.0.10/go.mod h1:tyK92JiCptgsaE0iUAMlt5W2v2Rdw6mnUpIdIidIGHo=
 github.com/katzenpost/qrterminal v0.0.0-20250706194004-f95c77b7c73e h1:cbftK8/GNGA8ye2e2VWkVPLnO/62UadJmG3ddEa6ElU=
