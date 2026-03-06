@@ -120,6 +120,21 @@ func (s *state) handleReplicaWrite(replicaWrite *commands.ReplicaWrite) error {
 		return fmt.Errorf(errDatabaseClosed)
 	}
 
+	// Check if BoxID already exists (writes are immutable, only tombstones can overwrite)
+	ro := grocksdb.NewDefaultReadOptions()
+	defer ro.Destroy()
+	existing, err := s.db.Get(ro, replicaWrite.BoxID[:])
+	if err != nil {
+		s.log.Errorf("state: Failed to check existing entry for BoxID %x: %s", replicaWrite.BoxID, err)
+		return fmt.Errorf("failed to check existing entry: %w", err)
+	}
+	if existing.Size() > 0 {
+		existing.Free()
+		s.log.Debugf("state: BoxID %x already exists, rejecting write (writes are immutable)", replicaWrite.BoxID)
+		return fmt.Errorf("BoxID already exists, writes are immutable")
+	}
+	existing.Free()
+
 	wo := grocksdb.NewDefaultWriteOptions()
 	defer wo.Destroy()
 	box := &pigeonhole.Box{
@@ -130,7 +145,7 @@ func (s *state) handleReplicaWrite(replicaWrite *commands.ReplicaWrite) error {
 	copy(box.BoxID[:], replicaWrite.BoxID[:])
 	copy(box.Signature[:], replicaWrite.Signature[:])
 	s.log.Debugf("state: Attempting to write %d bytes to database", len(box.Bytes()))
-	err := s.db.Put(wo, box.BoxID[:], box.Bytes())
+	err = s.db.Put(wo, box.BoxID[:], box.Bytes())
 	if err != nil {
 		s.log.Errorf("state: Failed to write to database: %s", err)
 		return err
