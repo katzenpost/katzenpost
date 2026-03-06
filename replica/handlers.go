@@ -319,6 +319,13 @@ func (c *incomingConn) handleReplicaWrite(replicaWrite *pigeonhole.ReplicaWrite)
 		wireWrite := pigeonhole.TrunnelReplicaWriteToWireCommand(replicaWrite, nil)
 		err = c.l.server.state.handleReplicaWrite(wireWrite)
 		if err != nil {
+			// Check if this is the "already exists" case - this is expected during replication
+			if errors.Is(err, ErrBoxAlreadyExists) {
+				c.log.Debugf("handleReplicaWrite: BoxID already exists (idempotent write)")
+				return &pigeonhole.ReplicaWriteReply{
+					ErrorCode: pigeonhole.ReplicaErrorBoxAlreadyExists,
+				}
+			}
 			c.log.Errorf("handleReplicaWrite state update failed: %v", err)
 			return &pigeonhole.ReplicaWriteReply{
 				ErrorCode: pigeonhole.ReplicaErrorDatabaseFailure,

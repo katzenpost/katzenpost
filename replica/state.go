@@ -26,6 +26,7 @@ const (
 
 var (
 	ErrBoxIDNotFound       = errors.New("Box ID not found")
+	ErrBoxAlreadyExists    = errors.New("BoxID already exists, writes are immutable")
 	ErrFailedDBRead        = errors.New("Failed to read from database")
 	ErrFailedToDeserialize = errors.New("Failed to deserialize data from DB")
 	ErrDBClosed            = errors.New("DB is closed")
@@ -131,7 +132,7 @@ func (s *state) handleReplicaWrite(replicaWrite *commands.ReplicaWrite) error {
 	if existing.Size() > 0 {
 		existing.Free()
 		s.log.Debugf("state: BoxID %x already exists, rejecting write (writes are immutable)", replicaWrite.BoxID)
-		return fmt.Errorf("BoxID already exists, writes are immutable")
+		return ErrBoxAlreadyExists
 	}
 	existing.Free()
 
