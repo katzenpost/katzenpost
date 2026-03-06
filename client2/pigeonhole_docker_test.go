@@ -838,7 +838,7 @@ func TestNestedCopyCommands(t *testing.T) {
 // TestTombstoning tests the tombstoning API:
 // 1. Alice writes a message to a box
 // 2. Bob reads and verifies the message
-// 3. Alice tombstones the box (overwrites with zeros)
+// 3. Alice tombstones the box (deletes it with an empty payload)
 // 4. Bob reads again and verifies the tombstone
 func TestTombstoning(t *testing.T) {
 	alice := setupThinClient(t)
@@ -848,8 +848,6 @@ func TestTombstoning(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
-
-	geo := alice.GetConfig().PigeonholeGeometry
 
 	// Create keypair
 	seed := make([]byte, 32)
@@ -882,22 +880,35 @@ func TestTombstoning(t *testing.T) {
 	t.Logf("✓ Bob read message: %q", string(plaintext))
 
 	// Step 3: Alice tombstones the box
-	tombCiphertext, tombEnvDesc, tombEnvHash, err := alice.TombstoneBox(ctx, geo, writeCap, firstIndex)
+	tombCiphertext, tombEnvDesc, tombEnvHash, err := alice.TombstoneBox(ctx, writeCap, firstIndex)
 	require.NoError(t, err)
 	_, err = alice.StartResendingEncryptedMessage(ctx, nil, writeCap, nil, nil, tombEnvDesc, tombCiphertext, tombEnvHash)
 	require.NoError(t, err)
 	t.Log("✓ Alice tombstoned the box")
 
-	t.Log("Waiting for 60 seconds for tombstone propagation...")
-	time.Sleep(60 * time.Second)
+	// Step 4: Bob polls for tombstone with retries
+	const maxAttempts = 6
+	const pollInterval = 10 * time.Second
+	var tombstoneVerified bool
 
-	// Step 4: Bob reads again and verifies tombstone
-	ciphertext, nextIdx, envDesc, envHash, err = bob.EncryptRead(ctx, readCap, firstIndex)
-	require.NoError(t, err)
-	plaintext, err = bob.StartResendingEncryptedMessage(ctx, readCap, nil, nextIdx, &replyIndex, envDesc, ciphertext, envHash)
-	require.NoError(t, err)
-	require.True(t, thin.IsTombstonePlaintext(geo, plaintext), "Expected tombstone plaintext (all zeros)")
-	t.Log("✓ Bob verified tombstone")
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		t.Logf("Polling for tombstone (attempt %d/%d)...", attempt, maxAttempts)
+		time.Sleep(pollInterval)
+
+		ciphertext, nextIdx, envDesc, envHash, err = bob.EncryptRead(ctx, readCap, firstIndex)
+		require.NoError(t, err)
+		plaintext, err = bob.StartResendingEncryptedMessage(ctx, readCap, nil, nextIdx, &replyIndex, envDesc, ciphertext, envHash)
+		require.NoError(t, err)
+
+		if len(plaintext) == 0 {
+			tombstoneVerified = true
+			t.Logf("✓ Bob verified tombstone on attempt %d", attempt)
+			break
+		}
+		t.Logf("  Still seeing original message, retrying...")
+	}
+
+	require.True(t, tombstoneVerified, "Tombstone not propagated after %d attempts", maxAttempts)
 }
 
 // TestTombstoneRange tests the TombstoneRange API:
@@ -913,8 +924,6 @@ func TestTombstoneRange(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
 	defer cancel()
-
-	geo := alice.GetConfig().PigeonholeGeometry
 
 	// Create keypair
 	seed := make([]byte, 32)
@@ -964,7 +973,7 @@ func TestTombstoneRange(t *testing.T) {
 	}
 
 	// Alice tombstones all boxes using TombstoneRange
-	result, err := alice.TombstoneRange(ctx, geo, writeCap, firstIndex, numMessages)
+	result, err := alice.TombstoneRange(ctx, writeCap, firstIndex, numMessages)
 	require.NoError(t, err)
 	require.Len(t, result.Envelopes, numMessages)
 	t.Logf("✓ TombstoneRange created %d envelopes", len(result.Envelopes))
@@ -989,7 +998,7 @@ func TestTombstoneRange(t *testing.T) {
 		require.NoError(t, err)
 		plaintext, err := bob.StartResendingEncryptedMessage(ctx, readCap, nil, nextIdx, &replyIndex, envDesc, ciphertext, envHash)
 		require.NoError(t, err)
-		require.True(t, thin.IsTombstonePlaintext(geo, plaintext), "Expected tombstone plaintext for box %d", i+1)
+		require.True(t, len(plaintext) == 0, "Expected tombstone plaintext (empty) for box %d", i+1)
 		t.Logf("✓ Bob verified tombstone %d", i+1)
 
 		readIdx, err = bob.NextMessageBoxIndex(ctx, readIdx)
