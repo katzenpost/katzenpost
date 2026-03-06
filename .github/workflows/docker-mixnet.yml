@@ -68,6 +68,12 @@ jobs:
       - name: run pigeonhole efficient multi-channel copy command test
         run: cd client2 && make testargs=-coverprofile=coverage.part dockertest_multichannel_efficient && cat coverage.part >> ../coverage.out
 
+      - name: run pigeonhole tombstone box test
+        run: cd client2 && make testargs=-coverprofile=coverage.part dockertest_tombstone_box && cat coverage.part >> ../coverage.out
+
+      - name: run pigeonhole tombstone range test
+        run: cd client2 && make testargs=-coverprofile=coverage.part dockertest_tombstone_range && cat coverage.part >> ../coverage.out
+
       - name: Stop the mixnet
         run: |
           cd docker && make stop
