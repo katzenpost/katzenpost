@@ -235,14 +235,6 @@ func (d *Daemon) encryptWrite(request *Request) {
 		return
 	}
 
-	// Create a StatefulWriter from the provided WriteCap and MessageBoxIndex
-	statefulWriter, err := bacap.NewStatefulWriterWithIndex(writeCap, constants.PIGEONHOLE_CTX, messageBoxIndex)
-	if err != nil {
-		d.log.Errorf("encryptWrite: failed to create stateful writer: %v", err)
-		d.sendEncryptWriteError(request, thin.ThinClientErrorInternalError)
-		return
-	}
-
 	// Get the current PKI document
 	_, doc := d.client.CurrentDocument()
 	if doc == nil {
@@ -258,35 +250,60 @@ func (d *Daemon) encryptWrite(request *Request) {
 		return
 	}
 
-	// Validate that the payload can fit within the geometry's MaxPlaintextPayloadLength
-	// CreatePaddedPayload requires 4 bytes for length prefix plus the payload
-	minRequiredSize := len(plaintext) + 4
-	if minRequiredSize > d.cfg.PigeonholeGeometry.MaxPlaintextPayloadLength+4 {
-		d.log.Errorf("encryptWrite: payload too large: %d bytes (+ 4 byte length prefix) exceeds MaxPlaintextPayloadLength + 4 of %d bytes",
-			len(plaintext), d.cfg.PigeonholeGeometry.MaxPlaintextPayloadLength+4)
-		d.sendEncryptWriteError(request, thin.ThinClientErrorInvalidRequest)
-		return
-	}
+	var boxID [bacap.BoxIDSize]byte
+	var sig [bacap.SignatureSize]byte
+	var ciphertext []byte
 
-	// Pad the payload to the geometry's MaxPlaintextPayloadLength + 4
-	paddedPayload, err := pigeonhole.CreatePaddedPayload(plaintext, d.cfg.PigeonholeGeometry.MaxPlaintextPayloadLength+4)
-	if err != nil {
-		d.log.Errorf("encryptWrite: failed to pad payload: %v", err)
-		d.sendEncryptWriteError(request, thin.ThinClientErrorInternalError)
-		return
-	}
+	// Check if this is a tombstone (zero-length plaintext)
+	if len(plaintext) == 0 {
+		d.log.Debug("encryptWrite: Detected tombstone (zero-length plaintext)")
 
-	// Encrypt the message WITHOUT advancing state (using PrepareNext)
-	boxID, ciphertext, sigraw, err := statefulWriter.PrepareNext(paddedPayload)
-	if err != nil {
-		d.log.Errorf("encryptWrite: failed to prepare next message: %v", err)
-		d.sendEncryptWriteError(request, thin.ThinClientErrorInternalError)
-		return
-	}
-	d.log.Debugf("encryptWrite: Generated BoxID: %x", boxID)
+		// For tombstones, we sign an empty payload without encryption
+		var sigraw []byte
+		boxID, sigraw = messageBoxIndex.SignBox(writeCap, constants.PIGEONHOLE_CTX, []byte{})
+		copy(sig[:], sigraw)
+		ciphertext = nil // Empty payload for tombstone
+		d.log.Debugf("encryptWrite: Generated tombstone BoxID: %x", boxID)
+	} else {
+		// Normal write path: validate size, pad, and encrypt
 
-	sig := [bacap.SignatureSize]byte{}
-	copy(sig[:], sigraw)
+		// Validate that the payload can fit within the geometry's MaxPlaintextPayloadLength
+		// CreatePaddedPayload requires 4 bytes for length prefix plus the payload
+		minRequiredSize := len(plaintext) + 4
+		if minRequiredSize > d.cfg.PigeonholeGeometry.MaxPlaintextPayloadLength+4 {
+			d.log.Errorf("encryptWrite: payload too large: %d bytes (+ 4 byte length prefix) exceeds MaxPlaintextPayloadLength + 4 of %d bytes",
+				len(plaintext), d.cfg.PigeonholeGeometry.MaxPlaintextPayloadLength+4)
+			d.sendEncryptWriteError(request, thin.ThinClientErrorInvalidRequest)
+			return
+		}
+
+		// Pad the payload to the geometry's MaxPlaintextPayloadLength + 4
+		paddedPayload, err := pigeonhole.CreatePaddedPayload(plaintext, d.cfg.PigeonholeGeometry.MaxPlaintextPayloadLength+4)
+		if err != nil {
+			d.log.Errorf("encryptWrite: failed to pad payload: %v", err)
+			d.sendEncryptWriteError(request, thin.ThinClientErrorInternalError)
+			return
+		}
+
+		// Create a StatefulWriter from the provided WriteCap and MessageBoxIndex
+		statefulWriter, err := bacap.NewStatefulWriterWithIndex(writeCap, constants.PIGEONHOLE_CTX, messageBoxIndex)
+		if err != nil {
+			d.log.Errorf("encryptWrite: failed to create stateful writer: %v", err)
+			d.sendEncryptWriteError(request, thin.ThinClientErrorInternalError)
+			return
+		}
+
+		// Encrypt the message WITHOUT advancing state (using PrepareNext)
+		var sigraw []byte
+		boxID, ciphertext, sigraw, err = statefulWriter.PrepareNext(paddedPayload)
+		if err != nil {
+			d.log.Errorf("encryptWrite: failed to prepare next message: %v", err)
+			d.sendEncryptWriteError(request, thin.ThinClientErrorInternalError)
+			return
+		}
+		d.log.Debugf("encryptWrite: Generated BoxID: %x", boxID)
+		copy(sig[:], sigraw)
+	}
 
 	// Create the ReplicaWrite message
 	writeRequest := &pigeonhole.ReplicaWrite{

@@ -12,8 +12,6 @@ import (
 	"github.com/katzenpost/hpqc/bacap"
 	"github.com/katzenpost/hpqc/hash"
 	"github.com/katzenpost/hpqc/rand"
-	"github.com/katzenpost/hpqc/util"
-	phgeo "github.com/katzenpost/katzenpost/pigeonhole/geo"
 )
 
 // errorCodeToSentinel maps error codes to sentinel errors for StartResendingEncryptedMessage.
@@ -1379,40 +1377,16 @@ func (t *ThinClient) SendNestedCopy(
 	return nil
 }
 
-func TombstonePlaintext(g *phgeo.Geometry) ([]byte, error) {
-	if g == nil {
-		return nil, fmt.Errorf("nil geometry")
-	}
-	if err := g.Validate(); err != nil {
-		return nil, err
-	}
-	return make([]byte, g.MaxPlaintextPayloadLength), nil
-}
-
-func IsTombstonePlaintext(g *phgeo.Geometry, plaintext []byte) bool {
-	if g == nil {
-		return false
-	}
-	if len(plaintext) != int(g.MaxPlaintextPayloadLength) {
-		return false
-	}
-	return util.CtIsZero(plaintext)
-}
-
+// TombstoneBox creates a tombstone for a single pigeonhole box.
+// The tombstone is created by sending an empty plaintext to EncryptWrite.
+// The daemon detects this and signs an empty payload instead of encrypting,
+// which the replica recognizes as a deletion request.
 func (c *ThinClient) TombstoneBox(
 	ctx context.Context,
-	g *phgeo.Geometry,
 	writeCap *bacap.WriteCap,
 	boxIndex *bacap.MessageBoxIndex,
 ) (messageCiphertext []byte, envelopeDescriptor []byte, envelopeHash *[32]byte, err error) {
 
-	if g == nil {
-		err = fmt.Errorf("nil geometry")
-		return
-	}
-	if err = g.Validate(); err != nil {
-		return
-	}
 	if writeCap == nil {
 		err = fmt.Errorf("nil writeCap")
 		return
@@ -1422,7 +1396,8 @@ func (c *ThinClient) TombstoneBox(
 		return
 	}
 
-	tomb := make([]byte, g.MaxPlaintextPayloadLength)
+	// Tombstones are created by sending an empty plaintext
+	tomb := []byte{}
 
 	messageCiphertext, envelopeDescriptor, envelopeHash, err =
 		c.EncryptWrite(ctx, tomb, writeCap, boxIndex)
@@ -1441,20 +1416,17 @@ type TombstoneRangeResult struct {
 	Next      *bacap.MessageBoxIndex
 }
 
+// TombstoneRange creates tombstones for a range of pigeonhole boxes.
+// The tombstones are created by sending empty plaintexts to EncryptWrite.
+// The daemon detects this and signs empty payloads instead of encrypting,
+// which the replica recognizes as deletion requests.
 func (c *ThinClient) TombstoneRange(
 	ctx context.Context,
-	g *phgeo.Geometry,
 	writeCap *bacap.WriteCap,
 	start *bacap.MessageBoxIndex,
 	maxCount uint32,
 ) (result *TombstoneRangeResult, err error) {
 
-	if g == nil {
-		return nil, fmt.Errorf("nil geometry")
-	}
-	if err := g.Validate(); err != nil {
-		return nil, err
-	}
 	if writeCap == nil {
 		return nil, fmt.Errorf("nil writeCap")
 	}
@@ -1469,7 +1441,7 @@ func (c *ThinClient) TombstoneRange(
 	envelopes := make([]*TombstoneEnvelope, 0, maxCount)
 
 	for uint32(len(envelopes)) < maxCount {
-		messageCiphertext, envelopeDescriptor, envelopeHash, err := c.TombstoneBox(ctx, g, writeCap, cur)
+		messageCiphertext, envelopeDescriptor, envelopeHash, err := c.TombstoneBox(ctx, writeCap, cur)
 		if err != nil {
 			return &TombstoneRangeResult{
 				Envelopes: envelopes,
