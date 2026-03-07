@@ -1228,6 +1228,28 @@ func (d *Daemon) handlePigeonholeARQReply(arqMessage *ARQMessage, reply *sphinxR
 
 	// Check for error in the reply
 	if courierEnvelopeReply.ErrorCode != 0 {
+		// For write operations, BoxAlreadyExists means the original write succeeded
+		// (this happens when a write times out but actually went through, and we retry).
+		// Treat this as success for idempotent write semantics.
+		if !arqMessage.IsRead && courierEnvelopeReply.ErrorCode == pigeonhole.ReplicaErrorBoxAlreadyExists {
+			d.log.Debugf("handlePigeonholeARQReply: BoxAlreadyExists for write operation, treating as success (idempotent retry)")
+			// Remove from ARQ tracking
+			d.replyLock.Lock()
+			delete(d.arqSurbIDMap, *arqMessage.SURBID)
+			delete(d.arqEnvelopeHashMap, *arqMessage.EnvelopeHash)
+			d.replyLock.Unlock()
+
+			// Send success to thin client
+			conn.sendResponse(&Response{
+				AppID: arqMessage.AppID,
+				StartResendingEncryptedMessageReply: &thin.StartResendingEncryptedMessageReply{
+					QueryID:   arqMessage.QueryID,
+					ErrorCode: thin.ThinClientSuccess,
+				},
+			})
+			return
+		}
+
 		d.log.Errorf("handlePigeonholeARQReply: courier reply error code %d", courierEnvelopeReply.ErrorCode)
 		// Remove from ARQ tracking and send error to thin client
 		d.replyLock.Lock()
