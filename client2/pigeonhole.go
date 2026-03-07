@@ -1667,7 +1667,66 @@ func (d *Daemon) handlePayloadReply(arqMessage *ARQMessage, courierEnvelopeReply
 	if err != nil {
 		d.log.Errorf("handlePayloadReply: failed to decrypt reply: %s", err)
 
-		// Remove from ARQ tracking for all error cases
+		// Check if this is a BoxIDNotFound error for a READ operation
+		// This is a transient error - the data might not have been replicated yet
+		// Schedule a retry instead of returning the error immediately
+		var re *replicaError
+		if errors.As(err, &re) && re.code == pigeonhole.ReplicaErrorBoxIDNotFound && arqMessage.IsRead {
+			d.log.Debugf("handlePayloadReply: BoxIDNotFound for read operation, scheduling retry")
+
+			// Create a new SURB ID for the retry
+			newSurbID := &[sphinxConstants.SURBIDLength]byte{}
+			_, err := rand.Reader.Read(newSurbID[:])
+			if err != nil {
+				d.log.Errorf("handlePayloadReply: failed to generate SURB ID for retry: %s", err)
+				// Fall through to error handling
+			} else {
+				// Compose a new packet with a new SURB for the retry
+				pkt, surbKey, rtt, err := d.client.ComposeSphinxPacketForQuery(&thin.SendChannelQuery{
+					DestinationIdHash: arqMessage.DestinationIdHash,
+					RecipientQueueID:  arqMessage.RecipientQueueID,
+					Payload:           arqMessage.Payload,
+				}, newSurbID)
+				if err != nil {
+					d.log.Errorf("handlePayloadReply: failed to compose packet for retry: %s", err)
+					// Fall through to error handling
+				} else {
+					// Update ARQ message with new SURB
+					d.replyLock.Lock()
+					// Remove old SURB ID mapping
+					delete(d.arqSurbIDMap, *arqMessage.SURBID)
+					// Update message with new SURB
+					arqMessage.SURBID = newSurbID
+					arqMessage.SURBDecryptionKeys = surbKey
+					arqMessage.Retransmissions++
+					arqMessage.SentAt = time.Now()
+					arqMessage.ReplyETA = rtt
+					// Reset state back to WaitingForACK for the retry
+					arqMessage.State = ARQStateWaitingForACK
+					// Add new SURB ID mapping
+					d.arqSurbIDMap[*newSurbID] = arqMessage
+					d.replyLock.Unlock()
+
+					// Schedule retry
+					myRtt := arqMessage.SentAt.Add(arqMessage.ReplyETA)
+					myRtt = myRtt.Add(RoundTripTimeSlop)
+					priority := uint64(myRtt.UnixNano())
+					d.arqTimerQueue.Push(priority, newSurbID)
+
+					// Send the packet
+					err = d.client.SendPacket(pkt)
+					if err != nil {
+						d.log.Errorf("handlePayloadReply: failed to send retry packet: %s", err)
+						// Don't return error - the ARQ timer will retry
+					}
+
+					d.log.Debugf("handlePayloadReply: Sent retry for BoxIDNotFound, attempt %d", arqMessage.Retransmissions)
+					return
+				}
+			}
+		}
+
+		// Remove from ARQ tracking for all non-retryable error cases
 		d.replyLock.Lock()
 		delete(d.arqSurbIDMap, *arqMessage.SURBID)
 		delete(d.arqEnvelopeHashMap, *arqMessage.EnvelopeHash)
@@ -1686,7 +1745,6 @@ func (d *Daemon) handlePayloadReply(arqMessage *ARQMessage, courierEnvelopeReply
 			errorCode = thin.ThinClientErrorBACAPDecryptionFailed
 		default:
 			// Check if this is a replica error (with error code)
-			var re *replicaError
 			if errors.As(err, &re) {
 				// Replica error - use the exact error code from the replica
 				d.log.Debugf("handlePayloadReply: Replica error code %d", re.code)

@@ -159,9 +159,29 @@ func TestReplicaReplication(t *testing.T) {
 	for shardNum, shardIdx := range sharding.ReplicaIndices {
 		t.Logf("REPLICATION_TEST: Reading from shard replica %d (index %d)", shardNum, shardIdx)
 
-		// Create a read request targeting this specific shard replica
-		// We'll send to both shard replicas but we're interested in verifying each one
-		readReply := readFromSpecificReplica(t, env, expectedBoxID, shardIdx, replicaEpoch)
+		// Retry loop - replication may take time to propagate
+		var readReply *pigeonhole.ReplicaMessageReplyInnerMessage
+		maxRetries := 10
+		for retry := 0; retry < maxRetries; retry++ {
+			// Create a read request targeting this specific shard replica
+			readReply = readFromSpecificReplica(t, env, expectedBoxID, shardIdx, replicaEpoch)
+
+			if readReply != nil && readReply.ReadReply != nil &&
+				readReply.ReadReply.ErrorCode == pigeonhole.ReplicaSuccess {
+				break // Success!
+			}
+
+			if readReply != nil && readReply.ReadReply != nil &&
+				readReply.ReadReply.ErrorCode == pigeonhole.ReplicaErrorBoxIDNotFound {
+				t.Logf("REPLICATION_TEST: Shard replica %d returned BoxIDNotFound, retrying (%d/%d)...",
+					shardIdx, retry+1, maxRetries)
+				time.Sleep(2 * time.Second)
+				continue
+			}
+
+			// Some other error - break and let the require fail
+			break
+		}
 
 		require.NotNil(t, readReply, "Shard replica %d should return a reply", shardIdx)
 		require.NotNil(t, readReply.ReadReply, "Shard replica %d should return a ReadReply", shardIdx)
