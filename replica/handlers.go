@@ -222,6 +222,15 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 			c.log.Debugf("REPLICA_HANDLER: This replica IS a shard for BoxID %x - writing locally", myCmd.BoxID)
 			writeReply := c.handleReplicaWrite(myCmd)
 
+			// If write succeeded, trigger replication to other K-1 shard replicas
+			// This is the only place replication is triggered (from intermediary level)
+			// to avoid infinite loops between shard replicas
+			if writeReply.ErrorCode == pigeonhole.ReplicaSuccess {
+				wireWrite := pigeonhole.TrunnelReplicaWriteToWireCommand(myCmd, nil)
+				c.log.Debugf("REPLICA_HANDLER: Dispatching replication for BoxID %x to other shards", myCmd.BoxID)
+				c.l.server.connector.DispatchReplication(wireWrite)
+			}
+
 			replyInnerMessage := pigeonhole.ReplicaMessageReplyInnerMessage{
 				MessageType: 1,
 				WriteReply:  writeReply,
@@ -232,6 +241,7 @@ func (c *incomingConn) handleReplicaMessage(replicaMessage *commands.ReplicaMess
 		}
 
 		// This replica is NOT in the shard - proxy the write to a shard replica
+		// The receiving shard will handle replication to other K-1 shards
 		c.log.Debugf("REPLICA_HANDLER: This replica is NOT a shard for BoxID %x - proxying write to shard", myCmd.BoxID)
 		return c.proxyWriteRequest(myCmd, senderpubkey, envelopeHash)
 	default:
