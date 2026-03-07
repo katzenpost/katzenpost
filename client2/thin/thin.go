@@ -148,6 +148,10 @@ var (
 	// ErrReplicationFailed indicates that replication to other replicas failed.
 	ErrReplicationFailed = errors.New("replication failed")
 
+	// ErrBoxAlreadyExists indicates that the box already contains data.
+	// Pigeonhole writes are immutable - once a box has been written, it cannot be overwritten.
+	ErrBoxAlreadyExists = errors.New("box already exists")
+
 	// ErrInvalidEnvelope indicates that the courier envelope format is invalid.
 	ErrInvalidEnvelope = errors.New("invalid envelope")
 

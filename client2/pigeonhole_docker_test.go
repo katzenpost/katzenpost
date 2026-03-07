@@ -1062,3 +1062,84 @@ func TestBoxIDNotFoundError(t *testing.T) {
 
 	t.Log("✓ SUCCESS: Correctly received ErrBoxIDNotFound error when reading from non-existent box")
 }
+
+// TestBoxAlreadyExistsError tests that we receive an ErrBoxAlreadyExists error
+// when attempting to write to a box that has already been written to.
+//
+// This test verifies:
+// - Writing to a box succeeds the first time
+// - Writing to the same box again returns ErrBoxAlreadyExists
+// - The error can be checked using errors.Is()
+func TestBoxAlreadyExistsError(t *testing.T) {
+	// Setup thin client
+	thinClient := setupThinClient(t)
+	defer thinClient.Close()
+
+	// Validate PKI document
+	validatePKIDocument(t, thinClient)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
+	// Create a new keypair
+	t.Log("=== Creating a keypair for the test ===")
+	seed := make([]byte, 32)
+	_, err := rand.Reader.Read(seed)
+	require.NoError(t, err)
+
+	writeCap, _, firstIndex, err := thinClient.NewKeypair(ctx, seed)
+	require.NoError(t, err)
+	require.NotNil(t, writeCap, "WriteCap should not be nil")
+	t.Log("✓ Created keypair")
+
+	// First write - should succeed
+	t.Log("=== First write (should succeed) ===")
+	message1 := []byte("First message - this should work")
+	ciphertext1, envDesc1, envHash1, err := thinClient.EncryptWrite(ctx, message1, writeCap, firstIndex)
+	require.NoError(t, err)
+	require.NotEmpty(t, ciphertext1, "EncryptWrite should return ciphertext")
+	t.Log("✓ Encrypted first message")
+
+	// Send the first write
+	_, err = thinClient.StartResendingEncryptedMessage(
+		ctx,
+		nil,         // readCap (nil for write operations)
+		writeCap,    // writeCap
+		nil,         // nextMessageIndex (nil for write operations)
+		nil,         // replyIndex (nil for write operations)
+		envDesc1,    // envelopeDescriptor
+		ciphertext1, // messageCiphertext
+		envHash1,    // envelopeHash
+	)
+	require.NoError(t, err, "First write should succeed")
+	t.Log("✓ First write succeeded")
+
+	// Wait for propagation
+	t.Log("Waiting for message propagation...")
+	time.Sleep(5 * time.Second)
+
+	// Second write to the SAME box - should fail with ErrBoxAlreadyExists
+	t.Log("=== Second write to same box (should fail) ===")
+	message2 := []byte("Second message - this should fail")
+	ciphertext2, envDesc2, envHash2, err := thinClient.EncryptWrite(ctx, message2, writeCap, firstIndex)
+	require.NoError(t, err, "EncryptWrite should succeed even for duplicate")
+	t.Log("✓ Encrypted second message")
+
+	// Send the second write - this should fail
+	_, err = thinClient.StartResendingEncryptedMessage(
+		ctx,
+		nil,         // readCap
+		writeCap,    // writeCap
+		nil,         // nextMessageIndex
+		nil,         // replyIndex
+		envDesc2,    // envelopeDescriptor
+		ciphertext2, // messageCiphertext
+		envHash2,    // envelopeHash
+	)
+
+	// Verify we got the expected ErrBoxAlreadyExists error
+	require.Error(t, err, "Expected an error when writing to existing box")
+	require.ErrorIs(t, err, thin.ErrBoxAlreadyExists, "Expected ErrBoxAlreadyExists error, got: %v", err)
+
+	t.Log("✓ SUCCESS: Correctly received ErrBoxAlreadyExists error when writing to existing box")
+}

@@ -43,6 +43,8 @@ func errorCodeToSentinel(errorCode uint8) error {
 		return ErrInvalidEpoch
 	case 9: // ReplicaErrorReplicationFailed
 		return ErrReplicationFailed
+	case 10: // ReplicaErrorBoxAlreadyExists
+		return ErrBoxAlreadyExists
 
 	// Thin client decryption error codes
 	case ThinClientErrorMKEMDecryptionFailed:
