@@ -169,7 +169,13 @@ func (co *Connector) processRetryQueue() {
 }
 
 func (co *Connector) DispatchReplication(cmd *commands.ReplicaWrite) {
-	co.replicationCh <- cmd
+	// Spawn a worker goroutine to avoid blocking the caller.
+	// This ensures the handler can return a reply immediately while
+	// replication happens asynchronously. Never drops - will eventually
+	// send when there's space in the channel.
+	co.Go(func() {
+		co.replicationCh <- cmd
+	})
 }
 
 func (co *Connector) doReplication(cmd *commands.ReplicaWrite) {
