@@ -1125,7 +1125,28 @@ func TestBoxAlreadyExistsError(t *testing.T) {
 	require.NoError(t, err, "EncryptWrite should succeed even for duplicate")
 	t.Log("✓ Encrypted second message")
 
-	// Send the second write - this should fail
+	// First send gets ACK from courier (write is queued)
+	t.Log("--- First send: expecting ACK from courier ---")
+	_, err = thinClient.StartResendingEncryptedMessage(
+		ctx,
+		nil,         // readCap
+		writeCap,    // writeCap
+		nil,         // nextMessageIndex
+		nil,         // replyIndex
+		envDesc2,    // envelopeDescriptor
+		ciphertext2, // messageCiphertext
+		envHash2,    // envelopeHash
+	)
+	// First call returns success (ACK received)
+	require.NoError(t, err, "First send should succeed with ACK")
+	t.Log("✓ First send received ACK")
+
+	// Wait for replica to process and cache the error response
+	t.Log("Waiting for replica to process write...")
+	time.Sleep(3 * time.Second)
+
+	// Second send retrieves the cached error from courier
+	t.Log("--- Second send: expecting cached error response ---")
 	_, err = thinClient.StartResendingEncryptedMessage(
 		ctx,
 		nil,         // readCap
