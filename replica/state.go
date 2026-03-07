@@ -112,6 +112,25 @@ func (s *state) stateHandleReplicaRead(replicaRead *pigeonhole.ReplicaRead) (*pi
 	return box, nil
 }
 
+// boxExists checks if a BoxID already exists in the database.
+// Returns true if the box exists, false otherwise.
+func (s *state) boxExists(boxID *[32]byte) (bool, error) {
+	if s.db == nil {
+		return false, ErrDBClosed
+	}
+
+	ro := grocksdb.NewDefaultReadOptions()
+	defer ro.Destroy()
+	existing, err := s.db.Get(ro, boxID[:])
+	if err != nil {
+		s.log.Errorf("state: Failed to check if BoxID %x exists: %s", boxID, err)
+		return false, err
+	}
+	defer existing.Free()
+
+	return existing.Size() > 0, nil
+}
+
 func (s *state) handleReplicaWrite(replicaWrite *commands.ReplicaWrite) error {
 	s.log.Debugf("state: Starting replica write for BoxID: %x", replicaWrite.BoxID)
 

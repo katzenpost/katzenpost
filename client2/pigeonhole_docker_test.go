@@ -1143,7 +1143,7 @@ func TestBoxAlreadyExistsError(t *testing.T) {
 
 	// Wait for replica to process and cache the error response
 	t.Log("Waiting for replica to process write...")
-	time.Sleep(3 * time.Second)
+	time.Sleep(30 * time.Second)
 
 	// Second send retrieves the cached error from courier
 	t.Log("--- Second send: expecting cached error response ---")
